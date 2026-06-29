@@ -1,0 +1,47 @@
+# Dependencies
+node_modules
+
+# Build
+dist
+dist-ssr
+.next
+.turbo
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.sw?
+
+# Docker data
+postgres-data
+redis-data
+
+# OS
+*.local
+Thumbs.db
+
+# MCP config (may contain secrets)
+.mcp.json
+
+# Claude Code / Playwright MCP workspace artifacts
+.claude/scheduled_tasks.lock
+.playwright-mcp/
+audit/
+
+# QA / debug screenshots at repo root
+/*.png
+
+# Auditoria / relatórios locais (não vão pro repo)
+qa-audit-*.md

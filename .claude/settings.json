@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash",
+      "Edit",
+      "Write",
+      "WebFetch",
+      "WebSearch",
+      "Grep",
+      "Glob",
+      "Read",
+      "NotebookEdit",
+      "mcp__notion",
+      "mcp__n8n"
+    ]
+  }
+}
