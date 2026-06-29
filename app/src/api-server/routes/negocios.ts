@@ -1,0 +1,628 @@
+import { Hono } from "hono";
+import { db } from "@/lib/db";
+import { negocios, leads, empresas, negocioLeads, usuarios, pipelines, propostas, propostaItens, contratos, atividades, statusChanges, notas, reunioes, labels, negocioLabels, leadLabels } from "@/lib/db/schema";
+import { desc, asc, eq, ilike, and, or, SQL, count, inArray, notInArray, gte, lte, isNull } from "drizzle-orm";
+import { z } from "zod";
+import { getCtx } from "../compat.js";
+
+const app = new Hono();
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const createNegocioSchema = z.object({
+  leadId: z.string().uuid().optional(), // primary lead (backward compat)
+  leadIds: z.array(z.object({ id: z.string().uuid(), papel: z.string().optional() })).optional(),
+  empresaId: z.string().uuid().optional().nullable(),
+  titulo: z.string().min(1),
+  status: z.string().optional(), // initial stage (defaults to first stage of pipeline)
+  tipoReceita: z.enum(["recorrente", "projeto", "hibrido"]).optional(),
+  servicosInteresse: z.array(z.string()).optional().nullable(),
+  concorrenteAtual: z.string().optional().nullable(),
+  contratoVenceEm: z.string().optional().nullable(),
+  origemNegocio: z.enum(["novo", "carteira"]).optional(),
+  responsavelId: z.string().uuid().optional().nullable(),
+  pipelineId: z.string().uuid().optional().nullable(),
+  camposCustom: z.record(z.string(), z.unknown()).optional(),
+});
+
+const updateNegocioSchema = z.object({
+  titulo: z.string().min(1).optional(),
+  status: z.string().optional(),
+  empresaId: z.string().uuid().optional().nullable(),
+  tipoReceita: z.enum(["recorrente", "projeto", "hibrido"]).optional().nullable(),
+  mrrFechado: z.string().optional().nullable(),
+  valorSetup: z.string().optional().nullable(),
+  motivoPerda: z.string().optional().nullable(),
+  motivoPerdaDetalhe: z.string().optional().nullable(),
+  servicosInteresse: z.array(z.string()).optional().nullable(),
+  concorrenteAtual: z.string().optional().nullable(),
+  contratoVenceEm: z.string().optional().nullable(),
+  contratoTipo: z.string().optional().nullable(),
+  temperatura: z.enum(["quente", "morno", "frio", "indefinido"]).optional().nullable(),
+  moeda: z.enum(["BRL", "USD", "EUR", "CAD"]).optional(),
+  previsaoFechamento: z.string().optional().nullable(),
+  pipelineOrigem: z.string().optional().nullable(),
+  responsavelId: z.string().uuid().optional().nullable(),
+  pipelineId: z.string().uuid().optional().nullable(),
+  camposCustom: z.record(z.string(), z.unknown()).optional(),
+});
+
+const labelAssignSchema = z.object({
+  labelId: z.string().uuid(),
+});
+
+// GET /negocios — list with filters
+app.get("/negocios", async (c) => {
+  const ctx = await getCtx(c);
+
+  const page = parseInt(c.req.query("page") ?? "1");
+  const limit = parseInt(c.req.query("limit") ?? "200");
+  const status = c.req.query("status") ?? null;
+  const leadId = c.req.query("leadId") ?? null;
+  const origemNegocio = c.req.query("origemNegocio") ?? null;
+  const pipelineId = c.req.query("pipelineId") ?? null;
+  const search = c.req.query("search") ?? c.req.query("q") ?? null;
+  const sort = c.req.query("sort") ?? "createdAt";
+  const order = c.req.query("order") ?? "desc";
+  const responsavelId = c.req.query("responsavelId") ?? null;
+  const createdFrom = c.req.query("createdFrom") ?? null;
+  const createdTo = c.req.query("createdTo") ?? null;
+
+  const conditions: SQL[] = [eq(negocios.organizacaoId, ctx.organizacaoId)];
+  // RBAC: vendedor/closer vê só os negócios onde é responsável. admin/gerente/super_admin vê tudo.
+  if (ctx.userRole === "vendedor" || ctx.userRole === "closer") {
+    conditions.push(eq(negocios.responsavelId, ctx.userId));
+  }
+  // Filtro de responsável (server-side; "sem" = sem dono)
+  if (responsavelId === "sem") {
+    conditions.push(isNull(negocios.responsavelId));
+  } else if (responsavelId && UUID_RE.test(responsavelId)) {
+    conditions.push(eq(negocios.responsavelId, responsavelId));
+  }
+  // Filtro de data (intervalo sobre createdAt)
+  if (createdFrom) {
+    conditions.push(gte(negocios.createdAt, new Date(createdFrom)));
+  }
+  if (createdTo) {
+    const _to = new Date(createdTo);
+    _to.setHours(23, 59, 59, 999);
+    conditions.push(lte(negocios.createdAt, _to));
+  }
+  if (leadId) {
+    conditions.push(eq(negocios.leadId, leadId));
+  }
+  if (status) {
+    // Support comma-separated statuses
+    const statuses = status.split(",");
+    if (statuses.length === 1) {
+      conditions.push(eq(negocios.status, statuses[0]));
+    } else {
+      conditions.push(or(...statuses.map((s) => eq(negocios.status, s)))!);
+    }
+  }
+  if (pipelineId) {
+    conditions.push(eq(negocios.pipelineId, pipelineId));
+  }
+  if (origemNegocio && origemNegocio !== "todos") {
+    conditions.push(eq(negocios.origemNegocio, origemNegocio));
+  }
+  if (search) {
+    const searchPattern = `%${search}%`;
+    conditions.push(
+      or(
+        ilike(negocios.titulo, searchPattern),
+        ilike(leads.nome, searchPattern),
+        ilike(leads.empresa, searchPattern),
+        ilike(leads.telefone, searchPattern),
+      )!
+    );
+  }
+
+  const where = and(...conditions);
+
+  const sortColumn = (() => {
+    switch (sort) {
+      case "titulo": return negocios.titulo;
+      case "mrrEstimado": return negocios.mrrEstimado;
+      case "updatedAt": return negocios.updatedAt;
+      default: return negocios.createdAt;
+    }
+  })();
+
+  const orderFn = order === "asc" ? asc : desc;
+
+  const [data, totalResult] = await Promise.all([
+    db
+      .select({
+        id: negocios.id,
+        organizacaoId: negocios.organizacaoId,
+        leadId: negocios.leadId,
+        titulo: negocios.titulo,
+        status: negocios.status,
+        tipoReceita: negocios.tipoReceita,
+        mrrEstimado: negocios.mrrEstimado,
+        valorProjeto: negocios.valorProjeto,
+        mrrFechado: negocios.mrrFechado,
+        valorSetup: negocios.valorSetup,
+        motivoPerda: negocios.motivoPerda,
+        origemNegocio: negocios.origemNegocio,
+        servicosInteresse: negocios.servicosInteresse,
+        responsavelId: negocios.responsavelId,
+        createdAt: negocios.createdAt,
+        updatedAt: negocios.updatedAt,
+        ganhoAt: negocios.ganhoAt,
+        // Lead join fields
+        leadNome: leads.nome,
+        leadEmpresa: leads.empresa,
+        leadTelefone: leads.telefone,
+        leadEmail: leads.email,
+        leadScore: leads.leadScore,
+        leadTipo: leads.tipo,
+        empresaId: negocios.empresaId,
+        empresaNome: empresas.nome,
+        temperatura: negocios.temperatura,
+        valorTotal: negocios.valorTotal,
+        previsaoFechamento: negocios.previsaoFechamento,
+        responsavelNome: usuarios.nome,
+        responsavelAvatar: usuarios.avatarUrl,
+        pipelineId: negocios.pipelineId,
+        pipelineNome: pipelines.nome,
+      })
+      .from(negocios)
+      .leftJoin(leads, eq(negocios.leadId, leads.id))
+      .leftJoin(empresas, eq(negocios.empresaId, empresas.id))
+      .leftJoin(usuarios, eq(negocios.responsavelId, usuarios.id))
+      .leftJoin(pipelines, eq(negocios.pipelineId, pipelines.id))
+      .where(where)
+      .orderBy(orderFn(sortColumn))
+      .limit(limit)
+      .offset((page - 1) * limit),
+    db
+      .select({ count: count() })
+      .from(negocios)
+      .leftJoin(leads, eq(negocios.leadId, leads.id))
+      .leftJoin(empresas, eq(negocios.empresaId, empresas.id))
+      .where(where),
+  ]);
+
+  return c.json({
+    negocios: data,
+    total: Number(totalResult[0].count),
+    page,
+    totalPages: Math.ceil(Number(totalResult[0].count) / limit),
+  });
+});
+
+// GET /negocios/count — count by status
+app.get("/negocios/count", async (c) => {
+  const ctx = await getCtx(c);
+
+  const orgFilter = eq(negocios.organizacaoId, ctx.organizacaoId);
+
+  const [byStatus, totalActive] = await Promise.all([
+    db
+      .select({ status: negocios.status, count: count() })
+      .from(negocios)
+      .where(orgFilter)
+      .groupBy(negocios.status),
+    db
+      .select({ count: count() })
+      .from(negocios)
+      .where(and(orgFilter, notInArray(negocios.status, ["ganho", "perdido", "ativo", "churned"]))),
+  ]);
+
+  const statusCounts: Record<string, number> = {};
+  for (const row of byStatus) {
+    statusCounts[row.status] = Number(row.count);
+  }
+
+  return c.json({
+    byStatus: statusCounts,
+    pipeline: Number(totalActive[0].count), // active in pipeline (not won/lost/active/churned)
+    total: byStatus.reduce((sum, r) => sum + Number(r.count), 0),
+  });
+});
+
+// GET /negocios/:id — full deal detail
+app.get("/negocios/:id", async (c) => {
+  const ctx = await getCtx(c);
+  const id = c.req.param("id");
+  if (!UUID_RE.test(id)) return c.json({ error: "ID inválido" }, 400);
+
+  const [negocio] = await db
+    .select()
+    .from(negocios)
+    .where(and(eq(negocios.id, id), eq(negocios.organizacaoId, ctx.organizacaoId)))
+    .limit(1);
+
+  if (!negocio) {
+    return c.json({ error: "Negócio não encontrado" }, 404);
+  }
+
+  // Fetch all related data in parallel
+  const [primaryLead, empresa, allLeadsJoin, negocioPropostas, negocioContratos, negocioAtividades, negocioStatusChanges, negocioNotas, negocioReunioes] =
+    await Promise.all([
+      negocio.leadId ? db.select().from(leads).where(eq(leads.id, negocio.leadId)).limit(1).then((r) => r[0]) : Promise.resolve(null),
+      negocio.empresaId ? db.select().from(empresas).where(eq(empresas.id, negocio.empresaId)).limit(1).then((r) => r[0]) : Promise.resolve(null),
+      db.select({
+        id: leads.id,
+        nome: leads.nome,
+        email: leads.email,
+        telefone: leads.telefone,
+        empresa: leads.empresa,
+        cargo: leads.cargo,
+        leadScore: leads.leadScore,
+        tipo: leads.tipo,
+        papel: negocioLeads.papel,
+      })
+        .from(negocioLeads)
+        .innerJoin(leads, eq(negocioLeads.leadId, leads.id))
+        .where(eq(negocioLeads.negocioId, id)),
+      db.select().from(propostas).where(eq(propostas.negocioId, id)).orderBy(desc(propostas.createdAt)),
+      db.select().from(contratos).where(eq(contratos.negocioId, id)).orderBy(desc(contratos.createdAt)),
+      db.select().from(atividades).where(eq(atividades.negocioId, id)).orderBy(desc(atividades.createdAt)),
+      db.select().from(statusChanges).where(eq(statusChanges.negocioId, id)).orderBy(desc(statusChanges.createdAt)),
+      db.select({
+        id: notas.id,
+        conteudo: notas.conteudo,
+        autorNome: usuarios.nome,
+        createdAt: notas.createdAt,
+      }).from(notas)
+        .leftJoin(usuarios, eq(notas.autorId, usuarios.id))
+        .where(eq(notas.negocioId, id))
+        .orderBy(desc(notas.createdAt)),
+      db.select({
+        id: reunioes.id,
+        titulo: reunioes.titulo,
+        data: reunioes.data,
+        duracao: reunioes.duracao,
+        tipo: reunioes.tipo,
+        status: reunioes.status,
+        participantes: reunioes.participantes,
+        notas: reunioes.notas,
+        transcript: reunioes.transcript,
+        resumoTranscript: reunioes.resumoTranscript,
+        responsavelNome: usuarios.nome,
+        createdAt: reunioes.createdAt,
+      }).from(reunioes)
+        .leftJoin(usuarios, eq(reunioes.responsavelId, usuarios.id))
+        .where(eq(reunioes.negocioId, id))
+        .orderBy(desc(reunioes.data)),
+    ]);
+
+  // Fetch proposta itens for all propostas
+  const propostasWithItens = negocioPropostas.length > 0
+    ? await (async () => {
+        const propostaIds = negocioPropostas.map((p) => p.id);
+        const allItens = await db
+          .select()
+          .from(propostaItens)
+          .where(inArray(propostaItens.propostaId, propostaIds))
+          .orderBy(propostaItens.ordem);
+        const itensByProposta = new Map<string, typeof allItens>();
+        for (const item of allItens) {
+          const list = itensByProposta.get(item.propostaId) || [];
+          list.push(item);
+          itensByProposta.set(item.propostaId, list);
+        }
+        return negocioPropostas.map((p) => ({ ...p, itens: itensByProposta.get(p.id) || [] }));
+      })()
+    : [];
+
+  return c.json({
+    negocio,
+    lead: primaryLead, // backward compat
+    empresa,
+    leads: allLeadsJoin, // all leads with their papel
+    propostas: propostasWithItens,
+    contratos: negocioContratos,
+    atividades: negocioAtividades,
+    statusChanges: negocioStatusChanges,
+    notas: negocioNotas,
+    reunioes: negocioReunioes,
+  });
+});
+
+// POST /negocios — create new deal
+app.post("/negocios", async (c) => {
+  const ctx = await getCtx(c);
+
+  const body = await c.req.json();
+  const parsed = createNegocioSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json({ error: "Dados inválidos", details: parsed.error.flatten() }, 400);
+  }
+
+  const primaryLeadId = parsed.data.leadId;
+  const leadIdsList = parsed.data.leadIds || (primaryLeadId ? [{ id: primaryLeadId, papel: "contato" }] : []);
+
+  // Negócio pode ser criado sem lead/empresa — associa depois
+
+  // Verify primary lead belongs to org
+  let resolvedLeadId = primaryLeadId;
+  if (resolvedLeadId) {
+    const [lead] = await db
+      .select({ id: leads.id, tipo: leads.tipo })
+      .from(leads)
+      .where(and(eq(leads.id, resolvedLeadId), eq(leads.organizacaoId, ctx.organizacaoId)))
+      .limit(1);
+    if (!lead) return c.json({ error: "Lead não encontrado" }, 404);
+
+    // Promote contato → lead if needed
+    if (lead.tipo === "contato") {
+      await db.update(leads).set({ tipo: "lead", updatedAt: new Date() }).where(eq(leads.id, resolvedLeadId));
+    }
+  } else if (leadIdsList.length > 0) {
+    resolvedLeadId = leadIdsList[0].id;
+  }
+
+  const [negocio] = await db
+    .insert(negocios)
+    .values({
+      organizacaoId: ctx.organizacaoId,
+      leadId: resolvedLeadId || null,
+      empresaId: parsed.data.empresaId || null,
+      titulo: parsed.data.titulo,
+      status: parsed.data.status || "reuniao_agendada",
+      tipoReceita: parsed.data.tipoReceita,
+      servicosInteresse: parsed.data.servicosInteresse,
+      concorrenteAtual: parsed.data.concorrenteAtual,
+      contratoVenceEm: parsed.data.contratoVenceEm,
+      origemNegocio: parsed.data.origemNegocio || "novo",
+      responsavelId: parsed.data.responsavelId || ctx.userId,
+      pipelineId: parsed.data.pipelineId || null,
+      camposCustom: parsed.data.camposCustom || {},
+    })
+    .returning();
+
+  // Create N:N lead associations
+  if (leadIdsList.length > 0) {
+    await db.insert(negocioLeads).values(
+      leadIdsList.map((l) => ({
+        negocioId: negocio.id,
+        leadId: l.id,
+        papel: l.papel || "contato",
+      }))
+    );
+  }
+
+  return c.json(negocio, 201);
+});
+
+// PATCH /negocios/:id — update deal
+app.patch("/negocios/:id", async (c) => {
+  const ctx = await getCtx(c);
+  const id = c.req.param("id");
+  if (!UUID_RE.test(id)) return c.json({ error: "ID inválido" }, 400);
+
+  const body = await c.req.json();
+  const parsed = updateNegocioSchema.safeParse(body);
+
+  if (!parsed.success) {
+    return c.json({ error: "Dados inválidos", details: parsed.error.flatten() }, 400);
+  }
+
+  // Validate perdido requires motivo
+  if (parsed.data.status === "perdido" && !parsed.data.motivoPerda) {
+    return c.json({ error: "motivoPerda é obrigatório ao marcar como perdido" }, 400);
+  }
+
+  const [currentNegocio] = await db
+    .select()
+    .from(negocios)
+    .where(and(eq(negocios.id, id), eq(negocios.organizacaoId, ctx.organizacaoId)))
+    .limit(1);
+
+  if (!currentNegocio) {
+    return c.json({ error: "Negócio não encontrado" }, 404);
+  }
+
+  const updateData: Record<string, unknown> = { ...parsed.data, updatedAt: new Date() };
+
+  // Handle status transitions
+  if (parsed.data.status && parsed.data.status !== currentNegocio.status) {
+    // Record status change
+    await db.insert(statusChanges).values({
+      leadId: currentNegocio.leadId,
+      negocioId: id,
+      deStatus: currentNegocio.status,
+      paraStatus: parsed.data.status,
+      usuarioId: ctx.userId,
+      motivo: parsed.data.motivoPerda || undefined,
+    });
+
+    // → ganho: create contract, promote lead to cliente, clone to carteira as "ativo"
+    if (parsed.data.status === "ganho") {
+      updateData.ganhoAt = new Date();
+
+      // Check if an accepted proposal already created a contract
+      const [existingContract] = await db
+        .select({ id: contratos.id })
+        .from(contratos)
+        .where(eq(contratos.negocioId, id))
+        .limit(1);
+
+      if (!existingContract && currentNegocio.leadId) {
+        await db.insert(contratos).values({
+          organizacaoId: ctx.organizacaoId,
+          leadId: currentNegocio.leadId,
+          negocioId: id,
+          tipo: parsed.data.contratoTipo || currentNegocio.contratoTipo || "servico",
+          mrr: parsed.data.mrrFechado || currentNegocio.mrrEstimado,
+          valorSetup: parsed.data.valorSetup || currentNegocio.valorSetup,
+          status: "ativo",
+          inicio: new Date().toISOString().split("T")[0],
+        });
+      }
+
+      // Promote lead to cliente
+      if (currentNegocio.leadId) {
+        await db.update(leads).set({
+          tipo: "cliente",
+          clienteDesde: new Date(),
+          updatedAt: new Date(),
+        }).where(eq(leads.id, currentNegocio.leadId));
+      }
+
+      // Contract is now created above — carteira reads from contratos table directly
+    }
+
+    // → no_show: cliente não apareceu na reunião. O negócio FICA na coluna No-show;
+    //   o lead vinculado volta pro board SDR (qualifying) + ganha a tag "No-show".
+    //   Quando a SDR recuperar (converter-oportunidade), o negócio volta a reuniao_agendada.
+    if (parsed.data.status === "no_show" && currentNegocio.leadId) {
+      await db.update(leads)
+        .set({ sdrStatus: "qualifying", updatedAt: new Date() })
+        .where(eq(leads.id, currentNegocio.leadId));
+      let [noShowLabel] = await db.select({ id: labels.id }).from(labels)
+        .where(and(eq(labels.nome, "No-show"), eq(labels.organizacaoId, ctx.organizacaoId))).limit(1);
+      if (!noShowLabel) {
+        [noShowLabel] = await db.insert(labels)
+          .values({ nome: "No-show", cor: "#F97316", organizacaoId: ctx.organizacaoId })
+          .returning({ id: labels.id });
+      }
+      if (noShowLabel) {
+        await db.insert(leadLabels)
+          .values({ leadId: currentNegocio.leadId, labelId: noShowLabel.id })
+          .onConflictDoNothing();
+      }
+    }
+  }
+
+  const [updated] = await db
+    .update(negocios)
+    .set(updateData)
+    .where(and(eq(negocios.id, id), eq(negocios.organizacaoId, ctx.organizacaoId)))
+    .returning();
+
+  return c.json(updated);
+});
+
+// DELETE /negocios/:id
+app.delete("/negocios/:id", async (c) => {
+  const ctx = await getCtx(c);
+  const id = c.req.param("id");
+  if (!UUID_RE.test(id)) return c.json({ error: "ID inválido" }, 400);
+
+  const [negocio] = await db
+    .select()
+    .from(negocios)
+    .where(and(eq(negocios.id, id), eq(negocios.organizacaoId, ctx.organizacaoId)))
+    .limit(1);
+
+  if (!negocio) {
+    return c.json({ error: "Negócio não encontrado" }, 404);
+  }
+
+  // Clear negocioAtivoId reference on leads
+  await db.update(leads).set({ negocioAtivoId: null, updatedAt: new Date() }).where(eq(leads.negocioAtivoId, id));
+  // Clean up related records that don't cascade
+  await db.delete(statusChanges).where(eq(statusChanges.negocioId, id));
+  await db.delete(atividades).where(eq(atividades.negocioId, id));
+  await db.delete(propostas).where(eq(propostas.negocioId, id));
+  await db.delete(contratos).where(eq(contratos.negocioId, id));
+  await db.delete(reunioes).where(eq(reunioes.negocioId, id));
+  // negocioLeads, negocioLabels, notas cascade automatically
+  await db.delete(negocios).where(eq(negocios.id, id));
+
+  return c.json({ ok: true });
+});
+
+// GET /negocios/:id/labels
+app.get("/negocios/:id/labels", async (c) => {
+  const ctx = await getCtx(c);
+  const negocioId = c.req.param("id");
+  if (!UUID_RE.test(negocioId)) return c.json({ error: "ID inválido" }, 400);
+
+  const result = await db
+    .select({
+      id: labels.id,
+      nome: labels.nome,
+      cor: labels.cor,
+      assignedAt: negocioLabels.createdAt,
+    })
+    .from(negocioLabels)
+    .innerJoin(labels, eq(negocioLabels.labelId, labels.id))
+    .where(
+      and(
+        eq(negocioLabels.negocioId, negocioId),
+        eq(labels.organizacaoId, ctx.organizacaoId)
+      )
+    );
+
+  return c.json(result);
+});
+
+// POST /negocios/:id/labels
+app.post("/negocios/:id/labels", async (c) => {
+  const ctx = await getCtx(c);
+  const negocioId = c.req.param("id");
+  if (!UUID_RE.test(negocioId)) return c.json({ error: "ID inválido" }, 400);
+
+  try {
+    const body = await c.req.json();
+    const { labelId } = labelAssignSchema.parse(body);
+
+    const [label] = await db
+      .select()
+      .from(labels)
+      .where(and(eq(labels.id, labelId), eq(labels.organizacaoId, ctx.organizacaoId)));
+
+    if (!label) {
+      return c.json({ error: "Label não encontrada" }, 404);
+    }
+
+    const [existing] = await db
+      .select()
+      .from(negocioLabels)
+      .where(and(eq(negocioLabels.negocioId, negocioId), eq(negocioLabels.labelId, labelId)));
+
+    if (existing) {
+      return c.json({ message: "Label já atribuída" }, 200);
+    }
+
+    const [assignment] = await db
+      .insert(negocioLabels)
+      .values({ negocioId, labelId })
+      .returning();
+
+    return c.json(assignment, 201);
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return c.json({ error: "Dados inválidos", details: error.issues }, 400);
+    }
+    console.error("Error assigning label:", error);
+    return c.json({ error: "Erro interno" }, 500);
+  }
+});
+
+// DELETE /negocios/:id/labels
+app.delete("/negocios/:id/labels", async (c) => {
+  const ctx = await getCtx(c);
+  const negocioId = c.req.param("id");
+  if (!UUID_RE.test(negocioId)) return c.json({ error: "ID inválido" }, 400);
+
+  try {
+    const body = await c.req.json();
+    const { labelId } = labelAssignSchema.parse(body);
+
+    const [deleted] = await db
+      .delete(negocioLabels)
+      .where(and(eq(negocioLabels.negocioId, negocioId), eq(negocioLabels.labelId, labelId)))
+      .returning();
+
+    if (!deleted) {
+      return c.json({ error: "Atribuição não encontrada" }, 404);
+    }
+
+    return c.json({ success: true });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return c.json({ error: "Dados inválidos", details: error.issues }, 400);
+    }
+    console.error("Error removing label:", error);
+    return c.json({ error: "Erro interno" }, 500);
+  }
+});
+
+export const negociosRoutes = app;

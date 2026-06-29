@@ -1,0 +1,29 @@
+import { Queue } from "bullmq";
+
+const redisUrl = process.env.REDIS_URL || "redis://localhost:6379";
+const url = new URL(redisUrl);
+
+const connection = {
+  host: url.hostname,
+  port: parseInt(url.port || "6379"),
+  ...(url.password ? { password: decodeURIComponent(url.password) } : {}),
+  db: parseInt(url.pathname?.slice(1) || "0"),
+  maxRetriesPerRequest: null as null,
+  retryStrategy: (times: number) => Math.min(times * 500, 10000),
+  enableOfflineQueue: true,
+};
+
+const defaultJobOptions = { removeOnComplete: { count: 200 }, removeOnFail: { count: 500 } };
+const groqJobOptions = { ...defaultJobOptions, attempts: 5, backoff: { type: "exponential" as const, delay: 60000 } };
+
+export const leadScoringQueue = new Queue("lead-scoring", { connection, defaultJobOptions });
+export const notificationQueue = new Queue("notifications", { connection, defaultJobOptions });
+export const conversionSyncQueue = new Queue("conversion-sync", { connection, defaultJobOptions });
+export const followUpQueue = new Queue("follow-up", { connection, defaultJobOptions });
+export const whatsappIncomingQueue = new Queue("whatsapp-incoming", { connection, defaultJobOptions });
+export const whatsappOutgoingQueue = new Queue("whatsapp-outgoing", { connection, defaultJobOptions });
+export const whatsappStatusQueue = new Queue("whatsapp-status-update", { connection, defaultJobOptions });
+export const enrichmentQueue = new Queue("enrichment", { connection, defaultJobOptions });
+export const cipaAnalysisQueue = new Queue("cipa-analysis", { connection, defaultJobOptions: groqJobOptions });
+export const aiSdrQueue = new Queue("ai-sdr", { connection, defaultJobOptions: groqJobOptions });
+export const siteLeadQualifyQueue = new Queue("site-lead-qualify", { connection, defaultJobOptions: groqJobOptions });
