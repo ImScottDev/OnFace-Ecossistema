@@ -9,11 +9,13 @@ const app = new Hono();
 
 const createTarefaSchema = z.object({
   leadId: z.string().uuid().optional().nullable(),
+  negocioId: z.string().uuid().optional().nullable(),
   titulo: z.string().min(1),
   descricao: z.string().optional().nullable(),
   tipo: z.enum(["follow_up", "ligar", "enviar_proposta", "diagnostico", "renovacao", "nps", "upsell", "geral"]),
   prioridade: z.enum(["baixa", "media", "alta", "urgente"]).optional(),
   dataVencimento: z.string().optional().nullable(),
+  venceEm: z.string().optional().nullable(), // data+hora ISO (lembrete/follow-up)
 });
 
 const updateTarefaSchema = z.object({
@@ -31,10 +33,15 @@ app.get("/tarefas", async (c) => {
 
   const concluida = c.req.query("concluida") ?? null;
   const leadId = c.req.query("leadId") ?? null;
+  const negocioId = c.req.query("negocioId") ?? null;
   const tipo = c.req.query("tipo") ?? null;
   const data = c.req.query("data") || "all";
 
-  const conditions: SQL[] = [eq(tarefas.usuarioId, ctx.userId)];
+  // Por negócio: mostra as tarefas do negócio pro time todo (contexto do card).
+  // Sem negócio: "Minhas Tarefas" (só as do usuário).
+  const conditions: SQL[] = negocioId
+    ? [eq(tarefas.negocioId, negocioId), eq(tarefas.organizacaoId, ctx.organizacaoId)]
+    : [eq(tarefas.usuarioId, ctx.userId)];
 
   if (concluida !== null && concluida !== "") {
     conditions.push(eq(tarefas.concluida, concluida === "true"));
@@ -119,16 +126,26 @@ app.post("/tarefas", async (c) => {
     }
   }
 
+  // venceEm = data+hora combinadas; deriva também data_vencimento (parte data) pra
+  // compatibilidade com o dashboard "Tarefas do Dia" (que filtra por data_vencimento).
+  const venceEm = parsed.data.venceEm ? new Date(parsed.data.venceEm) : null;
+  const dataVenc =
+    parsed.data.dataVencimento ||
+    (venceEm && !isNaN(venceEm.getTime()) ? venceEm.toISOString().split("T")[0] : null);
+
   const [tarefa] = await db
     .insert(tarefas)
     .values({
+      organizacaoId: ctx.organizacaoId, // faltava: sem isso não aparece no dashboard
       leadId: parsed.data.leadId,
+      negocioId: parsed.data.negocioId,
       usuarioId: ctx.userId,
       titulo: parsed.data.titulo,
       descricao: parsed.data.descricao,
       tipo: parsed.data.tipo,
       prioridade: parsed.data.prioridade || "media",
-      dataVencimento: parsed.data.dataVencimento,
+      dataVencimento: dataVenc,
+      venceEm: venceEm && !isNaN(venceEm.getTime()) ? venceEm : null,
     })
     .returning();
 

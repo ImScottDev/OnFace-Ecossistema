@@ -4,6 +4,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { DetailDrawer } from "@/components/crm/DetailDrawer";
 import { CustomFieldsSection } from "@/components/crm/CustomFieldsSection";
 import { QualificacaoSdrSection } from "@/components/crm/QualificacaoSdrSection";
+import { LigacoesSection } from "@/components/crm/LigacoesSection";
+import { callfaceCallUrl } from "@/lib/utils/callface-call";
 import {
   Mail,
   Phone,
@@ -44,6 +46,7 @@ interface LeadData {
   sobrenome?: string | null;
   email?: string | null;
   telefone: string;
+  whatsapp?: string | null;
   cargo?: string | null;
   linkedin?: string | null;
   empresa?: string | null;
@@ -197,7 +200,7 @@ function AddNoteInline({ leadId }: { leadId: string }) {
   }
   return (
     <div className="mt-1.5 space-y-1.5">
-      <textarea ref={inputRef} value={text} onChange={(e) => setText(e.target.value)} placeholder="Escreva uma nota..." className="w-full text-xs bg-white/[0.03] border border-white/[0.08] rounded-lg px-3 py-2 text-white/70 placeholder:text-white/20 outline-none focus:border-[#e23752]/30 resize-none" rows={2}
+      <textarea ref={inputRef} value={text} onChange={(e) => setText(e.target.value)} placeholder="Escreva uma nota..." className="w-full text-xs bg-white/[0.03] border border-white/[0.08] rounded-lg px-3 py-2 text-white/70 placeholder:text-white/20 outline-none focus:border-[#e23752]/30 resize-y" rows={4}
         onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && text.trim()) addNota.mutate(text.trim()); if (e.key === "Escape") { setOpen(false); setText(""); } }} />
       <div className="flex items-center justify-between">
         <span className="text-[10px] text-white/15">Cmd+Enter para salvar</span>
@@ -311,7 +314,7 @@ export function LeadDrawer({ leadId, open, onClose, onOpenEmpresa, onOpenNegocio
       onClose={onClose}
       title={fullName || "Lead"}
       subtitle={lead ? [lead.cargo, lead.empresa || leadDetail?.empresa?.nome].filter(Boolean).join(" · ") || undefined : undefined}
-      fullPageHref={leadId ? `/leads/${leadId}` : undefined}
+      fullPageHref={leadId ? `/contatos/${leadId}` : undefined}
     >
       {isLoading && (
         <div className="flex items-center justify-center h-64 text-white/40 text-sm">
@@ -386,11 +389,26 @@ export function LeadDrawer({ leadId, open, onClose, onOpenEmpresa, onOpenNegocio
 
             {lead.telefone && (
               <a
-                href={`tel:${lead.telefone}`}
+                href={callfaceCallUrl(lead.telefone)}
+                target="_blank"
+                rel="noopener noreferrer"
                 className="flex items-center gap-2.5 px-3 py-2 rounded-lg bg-white/[0.03] hover:bg-white/[0.06] transition-colors group"
               >
                 <Phone className="w-3.5 h-3.5 text-blue-400 shrink-0" />
                 <span className="text-sm text-white/70 group-hover:text-white truncate">{lead.telefone}</span>
+              </a>
+            )}
+
+            {lead.whatsapp && lead.whatsapp.replace(/\D/g, "") !== (lead.telefone || "").replace(/\D/g, "") && (
+              <a
+                href={`https://wa.me/${lead.whatsapp.replace(/\D/g, "")}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2.5 px-3 py-2 rounded-lg bg-white/[0.03] hover:bg-white/[0.06] transition-colors group"
+              >
+                <MessageCircle className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                <span className="text-sm text-white/70 group-hover:text-white truncate">{lead.whatsapp}</span>
+                <span className="text-[10px] text-emerald-400/60 shrink-0">WhatsApp</span>
               </a>
             )}
 
@@ -624,6 +642,9 @@ export function LeadDrawer({ leadId, open, onClose, onOpenEmpresa, onOpenNegocio
             </div>
           )}
 
+          {/* Ligações (telefonia Callface) — sempre visível */}
+          {leadId && <LigacoesSection leadId={leadId} enviarDiscagem />}
+
           {/* Propostas Section */}
           {leadDetail?.propostas && leadDetail.propostas.length > 0 && (
             <div>
@@ -661,7 +682,7 @@ export function LeadDrawer({ leadId, open, onClose, onOpenEmpresa, onOpenNegocio
                   );
                 })}
                 {leadDetail.propostas.length > 5 && (
-                  <Link href={`/leads/${leadId}`} className="block text-center text-[11px] text-[#e23752] hover:text-[#f06d82] pt-1">
+                  <Link href={`/contatos/${leadId}`} className="block text-center text-[11px] text-[#e23752] hover:text-[#f06d82] pt-1">
                     +{leadDetail.propostas.length - 5} propostas
                   </Link>
                 )}
@@ -682,7 +703,7 @@ export function LeadDrawer({ leadId, open, onClose, onOpenEmpresa, onOpenNegocio
                   <TarefaItem key={t.id} tarefa={t} onToggle={(id, concluida) => toggleTarefa.mutate({ id, concluida })} />
                 ))}
                 {tarefas.length > 5 && (
-                  <Link href={`/leads/${leadId}`} className="block text-center text-[11px] text-[#e23752] hover:text-[#f06d82] pt-1">
+                  <Link href={`/contatos/${leadId}`} className="block text-center text-[11px] text-[#e23752] hover:text-[#f06d82] pt-1">
                     +{tarefas.length - 5} tarefas
                   </Link>
                 )}
@@ -714,7 +735,7 @@ export function LeadDrawer({ leadId, open, onClose, onOpenEmpresa, onOpenNegocio
               </h4>
               {notas.length > 3 && (
                 <Link
-                  href={`/leads/${leadId}`}
+                  href={`/contatos/${leadId}`}
                   className="text-[11px] text-[#e23752] hover:text-[#f06d82] font-medium"
                 >
                   Ver todas
@@ -725,7 +746,7 @@ export function LeadDrawer({ leadId, open, onClose, onOpenEmpresa, onOpenNegocio
               <div className="space-y-1.5">
                 {notas.slice(0, 3).map((nota) => (
                   <div key={nota.id} className="px-3 py-2.5 rounded-lg bg-white/[0.03]">
-                    <p className="text-sm text-white/60 line-clamp-2">{nota.conteudo}</p>
+                    <p className="text-sm text-white/60 line-clamp-2 whitespace-pre-wrap">{nota.conteudo}</p>
                     <div className="flex items-center gap-2 mt-1.5">
                       {nota.autorNome && (
                         <span className="text-[11px] text-white/30">{nota.autorNome}</span>
@@ -747,7 +768,7 @@ export function LeadDrawer({ leadId, open, onClose, onOpenEmpresa, onOpenNegocio
               </h4>
               {recentActivities.length > 0 && (
                 <Link
-                  href={`/leads/${leadId}`}
+                  href={`/contatos/${leadId}`}
                   className="text-[11px] text-[#e23752] hover:text-[#f06d82] font-medium flex items-center gap-1"
                 >
                   Ver tudo <ArrowRight className="w-3 h-3" />
@@ -795,7 +816,7 @@ export function LeadDrawer({ leadId, open, onClose, onOpenEmpresa, onOpenNegocio
 
           {/* Full page link */}
           <Link
-            href={`/leads/${leadId}`}
+            href={`/contatos/${leadId}`}
             className="flex items-center justify-center gap-2 w-full py-2.5 rounded-lg border border-white/[0.06] text-sm text-white/50 hover:text-white hover:border-white/[0.12] transition-colors"
           >
             Abrir página completa <ArrowRight className="w-4 h-4" />

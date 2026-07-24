@@ -3,7 +3,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useParams, useRouter } from "next/navigation";
 import { useState, useMemo } from "react";
-import { ArrowLeft, Plus, Trash2, Send, Check, X, Copy, Save, ChevronUp, ChevronDown, Settings2, Link2, MessageCircle } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Send, Check, X, Copy, Save, ChevronUp, ChevronDown, Settings2, Link2, MessageCircle, FileText } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { ServiceCatalogManager } from "@/components/crm/ServiceCatalogManager";
@@ -43,6 +43,8 @@ interface Proposta {
   leadEmpresa: string | null;
   leadTelefone: string;
   leadEmail: string | null;
+  checkoutUrl: string | null;
+  checkoutStatus: { status: string; paymentStatus: string } | null;
   dataEmissao: string | null;
   dataValidade: string | null;
   observacoes: string | null;
@@ -63,6 +65,22 @@ const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
   recusada: { label: "Recusada", color: "#EF4444" },
   expirada: { label: "Expirada", color: "#F59E0B" },
 };
+
+// Badge de status ao vivo do checkout (consulta direta ao Stripe). O Stripe não
+// avisa se o cliente ABRIU o link, só se completou/pagou — por isso não existe
+// um estado "cliente abriu e não pagou": só dá pra saber pago, boleto pendente,
+// aguardando checkout, ou expirado.
+function checkoutStatusBadge(cs: Proposta["checkoutStatus"]): { label: string; color: string } | null {
+  if (!cs) return null;
+  if (cs.status === "expired") return { label: "Link expirado, sem pagamento", color: "#6B7280" };
+  if (cs.paymentStatus === "paid" || cs.paymentStatus === "no_payment_required") {
+    return { label: "Pago", color: "#10B981" };
+  }
+  if (cs.status === "complete" && cs.paymentStatus === "unpaid") {
+    return { label: "Boleto gerado, aguardando compensação", color: "#F59E0B" };
+  }
+  return { label: "Aguardando o cliente finalizar o checkout", color: "#3B82F6" };
+}
 
 const TIPOS_ITEM = [
   { value: "recorrente", label: "Recorrente", color: "#e23752" },
@@ -135,7 +153,12 @@ export default function PropostaDetailPage() {
     return { recorrente, avulso, geral: recorrente + avulso };
   }, [itens]);
 
-  const isEditable = proposta?.status === "rascunho";
+  // Rascunho edita livre. Enviada também edita (o closer pode corrigir prazo/item
+  // depois do link já gerado): salvar regenera o checkout e expira a sessão antiga
+  // no Stripe, mas o link curto /p/<id> continua o mesmo pro cliente. Aceita,
+  // recusada e expirada ficam travadas (aceita já virou contrato).
+  const isEditable = proposta?.status === "rascunho" || proposta?.status === "enviada";
+  const isReenvio = proposta?.status === "enviada";
 
   // Unsaved changes detection
   const currentSnapshot = JSON.stringify({ itens, moeda, observacoes, condicoesPagamento, dataValidade });
@@ -191,6 +214,28 @@ export default function PropostaDetailPage() {
     },
     onError: (e: unknown) => {
       toast.error(e instanceof Error ? e.message : "Erro ao enviar proposta");
+    },
+  });
+
+  // "Salvar": salva as edições E ativa a proposta (gera o link + status enviada,
+  // liberando ganho/perdido), SEM disparar email. O envio do email fica no
+  // "Enviar para o cliente". Se não der pra ativar (ex.: sem valor recorrente),
+  // as edições já ficaram salvas e mostramos o motivo.
+  const salvarAtivarMutation = useMutation({
+    mutationFn: async () => {
+      await saveMutation.mutateAsync();
+      const res = await fetch(`/api/propostas/${id}/enviar?skipEmail=true`, { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Erro ao gerar o link");
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["proposta", id] });
+      setInitialized(false);
+      toast.success("Proposta salva e ativada — link de pagamento gerado.");
+    },
+    onError: (e: unknown) => {
+      toast.error(e instanceof Error ? e.message : "Erro ao salvar/ativar a proposta");
     },
   });
 
@@ -311,7 +356,11 @@ export default function PropostaDetailPage() {
   };
   const primeiroNomeLead = (proposta.leadNome || "").trim().split(/\s+/)[0] || "";
   const valorMes = fmt(parseFloat(proposta.totalRecorrente || "0"));
-  const waMsg = `Olá ${primeiroNomeLead}, tudo bem? Segue o link para ativar a Callface com a condição da sua proposta (${valorMes}/mês). Pagamento seguro via Stripe, é só finalizar por aqui: ${proposta.checkoutUrl || ""} . Qualquer dúvida, fico à disposição.`;
+  // Link curto e branded (crm.callface.io/p/<id>) que redireciona pro checkout do
+  // Stripe. Fica bem menor que a URL crua do Stripe na mensagem do WhatsApp.
+  const origin = typeof window !== "undefined" ? window.location.origin : "https://crm.callface.io";
+  const linkPagamento = proposta.checkoutUrl ? `${origin}/p/${proposta.id}` : "";
+  const waMsg = `Oi ${primeiroNomeLead || "tudo bem"}, tudo certo? Segue o link pra ativar seu plano da Callface (${valorMes}/mês) e já começar a usar: ${linkPagamento} . O pagamento é seguro via Stripe. Qualquer dúvida, é só me chamar por aqui.`;
   const waPhone = (proposta.leadTelefone || "").replace(/\D/g, "");
   const waHref = `https://wa.me/${waPhone}?text=${encodeURIComponent(waMsg)}`;
 
@@ -336,7 +385,7 @@ export default function PropostaDetailPage() {
               )}
             </div>
             <p className="text-sm text-white/50 mt-1">
-              <Link href={`/leads/${proposta.leadId}`} className="hover:text-white transition-colors">
+              <Link href={`/contatos/${proposta.leadId}`} className="hover:text-white transition-colors">
                 {proposta.leadNome}
               </Link>
               {proposta.leadEmpresa && <span> · {proposta.leadEmpresa}</span>}
@@ -346,20 +395,23 @@ export default function PropostaDetailPage() {
 
         {/* Actions */}
         <div className="flex items-center gap-2">
+          <button onClick={() => window.open(`/api/propostas/${proposta.id}/pdf`, "_blank")}
+            disabled={itens.length === 0}
+            className="flex items-center gap-1.5 px-3 py-2 text-xs bg-white/[0.06] text-white/80 rounded-lg hover:bg-white/[0.12] hover:text-white disabled:opacity-40 transition-colors"
+            title="Gerar PDF comercial da proposta (moldes Callface) — para o cliente levar ao superior">
+            <FileText className="w-3.5 h-3.5" /> Formalizar (PDF)
+          </button>
           {isEditable && (
             <>
-              <button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}
-                className={`flex items-center gap-1.5 px-3 py-2 text-xs rounded-lg transition-colors ${hasUnsavedChanges ? "bg-amber-500/20 text-amber-300 hover:bg-amber-500/30" : "bg-white/[0.06] text-white/70 hover:text-white"}`}>
-                <Save className="w-3.5 h-3.5" /> {saveMutation.isPending ? "Salvando..." : "Salvar"}
+              <button onClick={() => salvarAtivarMutation.mutate()} disabled={salvarAtivarMutation.isPending || itens.length === 0}
+                className={`flex items-center gap-1.5 px-3 py-2 text-xs rounded-lg transition-colors ${hasUnsavedChanges ? "bg-amber-500/20 text-amber-300 hover:bg-amber-500/30" : "bg-white/[0.06] text-white/70 hover:text-white"}`}
+                title={isReenvio ? "Salva as alterações e gera um novo link de pagamento (o anterior é invalidado no Stripe). O link curto /p/ continua o mesmo, sem enviar email." : "Salva e gera o link de pagamento (libera ganho/perdido). Sem enviar email."}>
+                <Save className="w-3.5 h-3.5" /> {salvarAtivarMutation.isPending ? "Salvando..." : "Salvar"}
               </button>
               <button onClick={() => enviarMutation.mutate()} disabled={enviarMutation.isPending || itens.length === 0}
                 className="flex items-center gap-1.5 px-3 py-2 text-xs bg-blue-500/80 text-white rounded-lg hover:bg-blue-500 disabled:opacity-50 transition-colors"
-                title="Marcar como enviada ao cliente">
-                <Send className="w-3.5 h-3.5" /> Enviar ao Cliente
-              </button>
-              <button onClick={() => setShowExcluirModal(true)} disabled={deleteMutation.isPending}
-                className="flex items-center gap-1.5 px-3 py-2 text-xs text-red-400/70 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors">
-                <Trash2 className="w-3.5 h-3.5" /> Excluir
+                title={isReenvio ? "Salva, gera um novo link (invalida o anterior no Stripe) e reenvia o email pro cliente" : "Gera o link E envia por email pro cliente"}>
+                <Send className="w-3.5 h-3.5" /> {isReenvio ? "Reenviar ao Cliente" : "Enviar ao Cliente"}
               </button>
             </>
           )}
@@ -374,6 +426,14 @@ export default function PropostaDetailPage() {
                 <X className="w-3.5 h-3.5" /> Recusar
               </button>
             </>
+          )}
+          {/* Excluir: disponível pra closer corrigir erro (qualquer status menos aceita) */}
+          {proposta.status !== "aceita" && (
+            <button onClick={() => setShowExcluirModal(true)} disabled={deleteMutation.isPending}
+              title="Excluir proposta (não conta na taxa de aceite)"
+              className="flex items-center gap-1.5 px-3 py-2 text-xs text-red-400/70 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors">
+              <Trash2 className="w-3.5 h-3.5" /> Excluir
+            </button>
           )}
           {(proposta.status === "recusada" || proposta.status === "expirada") && (
             <button onClick={() => novaVersaoMutation.mutate()} disabled={novaVersaoMutation.isPending}
@@ -391,13 +451,13 @@ export default function PropostaDetailPage() {
             <div className="flex items-center gap-2 min-w-0">
               <Link2 className="w-4 h-4 shrink-0" style={{ color: "#8e27ef" }} />
               <span className="text-sm font-semibold text-white shrink-0">Link de pagamento</span>
-              <a href={proposta.checkoutUrl} target="_blank" rel="noreferrer"
+              <a href={linkPagamento || proposta.checkoutUrl} target="_blank" rel="noreferrer"
                 className="text-xs text-white/40 truncate max-w-[260px] hover:text-white/70 underline">
-                {proposta.checkoutUrl}
+                {linkPagamento || proposta.checkoutUrl}
               </a>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
-              <button onClick={() => copy(proposta.checkoutUrl, "Link copiado")}
+              <button onClick={() => copy(linkPagamento || proposta.checkoutUrl || "", "Link copiado")}
                 className="flex items-center gap-1.5 px-3 py-2 text-xs bg-white/[0.06] text-white/70 hover:text-white rounded-lg transition-colors">
                 <Copy className="w-3.5 h-3.5" /> Copiar link
               </button>
@@ -415,6 +475,16 @@ export default function PropostaDetailPage() {
           <p className="text-xs text-white/40">
             A proposta já foi enviada por email automaticamente. Use os botões para mandar pelo WhatsApp também, com a mensagem padrão pronta.
           </p>
+          {(() => {
+            const badge = checkoutStatusBadge(proposta.checkoutStatus);
+            if (!badge) return null;
+            return (
+              <div className="flex items-center gap-2 pt-1">
+                <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: badge.color }} />
+                <span className="text-xs font-medium" style={{ color: badge.color }}>{badge.label}</span>
+              </div>
+            );
+          })()}
         </div>
       )}
 

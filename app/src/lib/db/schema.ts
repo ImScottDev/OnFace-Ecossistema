@@ -45,7 +45,7 @@ export const usuarios = pgTable("usuarios", {
   nome: text("nome").notNull(),
   email: text("email").unique().notNull(),
   senhaHash: text("senha_hash").notNull(),
-  role: text("role").default("vendedor").notNull(), // admin, gerente, vendedor
+  role: text("role").default("vendedor").notNull(), // admin | gerente | closer | sdr | leitor
   avatarUrl: text("avatar_url"),
   ativo: boolean("ativo").default(true).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -53,6 +53,52 @@ export const usuarios = pgTable("usuarios", {
 }, (table) => [
   index("idx_usuarios_org").on(table.organizacaoId),
 ]);
+
+// ─── METAS (por usuário/mês) ─────────────────────────────────
+// Metas mensais por pessoa. north-star: SDR = reunioes_agendadas, Closer = mrr_fechado.
+export const metas = pgTable(
+  "metas",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+    usuarioId: uuid("usuario_id").references(() => usuarios.id).notNull(),
+    periodo: date("periodo").notNull(), // primeiro dia do mês (ex 2026-06-01)
+    tipo: text("tipo").notNull(), // reunioes_agendadas | mrr_fechado | leads_qualificados | contratos_fechados
+    valorAlvo: decimal("valor_alvo", { precision: 12, scale: 2 }).notNull(),
+    criadoPor: uuid("criado_por").references(() => usuarios.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("uq_metas_org_user_periodo_tipo").on(
+      table.organizacaoId,
+      table.usuarioId,
+      table.periodo,
+      table.tipo,
+    ),
+    index("idx_metas_org_periodo").on(table.organizacaoId, table.periodo),
+  ]
+);
+
+// ─── AUTH TOKENS (convite / redefinição de senha) ────────────
+// Token de uso único, com expiração. Guardamos só o HASH (sha256) do token;
+// o token cru vai no link do email. tipo: 'convite' (primeiro acesso) | 'reset'.
+export const authTokens = pgTable(
+  "auth_tokens",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    usuarioId: uuid("usuario_id").references(() => usuarios.id).notNull(),
+    tipo: text("tipo").notNull(), // convite | reset
+    tokenHash: text("token_hash").notNull(),
+    expiraEm: timestamp("expira_em", { withTimezone: true }).notNull(),
+    usadoEm: timestamp("usado_em", { withTimezone: true }),
+    criadoEm: timestamp("criado_em", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("uq_auth_tokens_hash").on(table.tokenHash),
+    index("idx_auth_tokens_usuario").on(table.usuarioId),
+  ]
+);
 
 // ─── EMPRESAS (COMPANIES) ───────────────────────────────────
 export const empresas = pgTable(
@@ -143,6 +189,12 @@ export const leads = pgTable(
     utmCampaign: text("utm_campaign"),
     utmTerm: text("utm_term"),
     utmContent: text("utm_content"),
+    // IDs reais da Meta (ad_id/adset_id/campaign_id) — populados pelo webhook
+    // meta-lead-ids (n8n Meta Lead Ads), quando disponível. utm_term/utm_content
+    // acima continuam sendo o nome (fallback pra leads sem esse dado ainda).
+    metaAdId: text("meta_ad_id"),
+    metaAdsetId: text("meta_adset_id"),
+    metaCampaignId: text("meta_campaign_id"),
     gclid: text("gclid"),
     gbraid: text("gbraid"),
     wbraid: text("wbraid"),
@@ -197,6 +249,9 @@ export const leads = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
     primeiroContatoAt: timestamp("primeiro_contato_at", { withTimezone: true }),
+    // Quando o lead entrou (a última vez) na etapa "Em Contato" do board pré-vendas.
+    // Base do relógio de escalação automática (6h em Em Contato → Follow up).
+    contatoDesdeAt: timestamp("contato_desde_at", { withTimezone: true }),
     convertidoAt: timestamp("convertido_at", { withTimezone: true }),
     // Pos-venda
     clienteDesde: timestamp("cliente_desde", { withTimezone: true }),
@@ -238,6 +293,14 @@ export const leads = pgTable(
     outreachStartedAt: timestamp("outreach_started_at", { withTimezone: true }),
     lastContactAt: timestamp("last_contact_at", { withTimezone: true }),
     nextFollowupAt: timestamp("next_followup_at", { withTimezone: true }),
+    // Closer oferecido pro lead durante o agendamento (round-robin fixado por lead,
+    // não recalculado a cada turno — evita trocar de closer no meio da conversa
+    // se outro lead fechar reunião nesse intervalo).
+    agendaCloserId: uuid("agenda_closer_id").references(() => usuarios.id),
+    // Callpilot (lib/integrations/callpilot-trigger.ts): marca quando a campanha
+    // de ligação automática da Nathália já foi disparada pra este lead — trava
+    // de idempotência do sweep, mesmo padrão do outreachStartedAt acima.
+    callpilotDisparadoEm: timestamp("callpilot_disparado_em", { withTimezone: true }),
   },
   (table) => [
     index("idx_leads_org").on(table.organizacaoId),
@@ -253,6 +316,72 @@ export const leads = pgTable(
     index("idx_leads_tipo").on(table.tipo),
   ]
 );
+
+// ─── STAGING: IDs reais da Meta (ad_id/adset_id/campaign_id) por Lead Ads ─────
+// Alimentada pelo webhook /api/webhooks/meta-lead-ids (n8n, direto da Graph API).
+// Existe porque a chegada do lead em si (via RD Station, fluxo assíncrono à parte)
+// pode acontecer ANTES ou DEPOIS desse webhook — este staging casa os dois lados
+// não importa a ordem (ver rd-lead/route.ts e meta-lead-ids/route.ts).
+export const metaLeadStaging = pgTable(
+  "meta_lead_staging",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    fbLeadId: text("fb_lead_id"),
+    email: text("email"),
+    telefone: text("telefone"),
+    adId: text("ad_id"),
+    adsetId: text("adset_id"),
+    campaignId: text("campaign_id"),
+    adName: text("ad_name"),
+    adsetName: text("adset_name"),
+    campaignName: text("campaign_name"),
+    usado: boolean("usado").default(false).notNull(), // já casado com um lead
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_meta_lead_staging_email").on(table.email),
+    index("idx_meta_lead_staging_telefone").on(table.telefone),
+    index("idx_meta_lead_staging_created_at").on(table.createdAt),
+  ]
+);
+
+// ─── LIGACOES (telefonia Callface — webhook de saída) ─────────
+// Uma linha POR LIGAÇÃO finalizada. A série histórica do deal_closure_percentage
+// (tendência de fechamento) vem daqui — nunca sobrescrever em campo único.
+// Cada ligação casada com lead também espelha uma linha em `atividades`
+// (tipo='ligacao') pra timeline funcionar sem mudança de UI.
+export const ligacoes = pgTable("ligacoes", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+  leadId: uuid("lead_id").references(() => leads.id), // null = ligação órfã (sem lead casado)
+  negocioId: uuid("negocio_id").references(() => negocios.id),
+  usuarioId: uuid("usuario_id").references(() => usuarios.id), // vendedor (match por user_email)
+  // Idempotência: call_id extraído do call_link; fallback hash(numero|data|email).
+  idempotencyKey: text("idempotency_key").notNull(),
+  callfaceCallId: text("callface_call_id"),
+  callfaceContactId: text("callface_contact_id"),
+  callfaceDealId: text("callface_deal_id"),
+  userEmail: text("user_email"),
+  userName: text("user_name"),
+  destinationNumber: text("destination_number"),
+  callDate: timestamp("call_date", { withTimezone: true }),
+  duracaoSegundos: integer("duracao_segundos"),
+  callStatus: text("call_status"), // ex: FINISHED (valores reais a aprender do payload_raw)
+  resumo: text("resumo"), // summarization (markdown)
+  transcricao: jsonb("transcricao"), // array no payload da Callface
+  callLink: text("call_link"),
+  audioUrl: text("audio_url"),
+  closurePercentage: integer("closure_percentage"), // deal_closure_percentage 0-100 (IA)
+  scheduling: jsonb("scheduling"), // {has_scheduling, items:[{category, communication_type, date, status}]}
+  payloadRaw: jsonb("payload_raw"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("uq_ligacoes_idempotency").on(table.idempotencyKey),
+  index("idx_ligacoes_org").on(table.organizacaoId),
+  index("idx_ligacoes_lead").on(table.leadId),
+  index("idx_ligacoes_negocio").on(table.negocioId),
+  index("idx_ligacoes_call_date").on(table.callDate),
+]);
 
 // ─── PIPELINES ───────────────────────────────────────────────
 export const pipelines = pgTable(
@@ -301,6 +430,9 @@ export const negocios = pgTable(
     motivoPerda: text("motivo_perda"),
     motivoPerdaDetalhe: text("motivo_perda_detalhe"),
     origemNegocio: text("origem_negocio").default("novo").notNull(), // 'novo' | 'carteira'
+    // Como o negócio nasceu na qualificação: 'reuniao' (fluxo com agendamento) |
+    // 'direta' (closer atuando como SDR qualificou sem reunião). Null = anterior à captura.
+    origemQualificacao: text("origem_qualificacao"),
     servicosInteresse: text("servicos_interesse").array(),
     necessidadesConstatadas: text("necessidades_constatadas").array(), // what was identified in pre-analysis (BM form checkboxes)
     concorrenteAtual: text("concorrente_atual"),
@@ -504,6 +636,11 @@ export const faturas = pgTable(
     status: text("status").notNull(), // paga | aberta | falhou | void | uncollectible
     competencia: date("competencia"), // mês de referência
     emitidaEm: timestamp("emitida_em", { withTimezone: true }),
+    // Vencimento real (due_date do Stripe p/ boleto/manual; cobrança automática não tem
+    // due_date — aging usa COALESCE(vencimento, emitida_em)). Dias em atraso é DERIVADO
+    // na query, nunca coluna.
+    vencimento: timestamp("vencimento", { withTimezone: true }),
+    hostedInvoiceUrl: text("hosted_invoice_url"),
     pagaEm: timestamp("paga_em", { withTimezone: true }),
     tentativas: integer("tentativas").default(0),
     raw: jsonb("raw"),
@@ -517,6 +654,34 @@ export const faturas = pgTable(
     index("idx_faturas_status").on(table.status),
     index("idx_faturas_competencia").on(table.competencia),
     uniqueIndex("idx_faturas_origem_ext").on(table.origem, table.externalId),
+  ]
+);
+
+// ─── MOVIMENTOS DE MRR (novo/expansão/contração/churn/reativação) ─────────
+// Alimentada pelo diff do stripe-sync (e futuramente pela importação PABX).
+// Soma dos deltas reconstrói o MRR ativo — base das métricas de SaaS.
+export const mrrMovimentos = pgTable(
+  "mrr_movimentos",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizacaoId: uuid("organizacao_id").references(() => organizacoes.id),
+    leadId: uuid("lead_id").references(() => leads.id),
+    assinaturaId: uuid("assinatura_id").references(() => assinaturas.id),
+    contratoId: uuid("contrato_id").references(() => contratos.id),
+    produto: text("produto").notNull(), // ai | pabx
+    tipo: text("tipo").notNull(), // novo | expansao | contracao | churn | reativacao
+    delta: decimal("delta", { precision: 12, scale: 2 }).notNull(), // negativo p/ contração/churn
+    mrrAntes: decimal("mrr_antes", { precision: 12, scale: 2 }).notNull(),
+    mrrDepois: decimal("mrr_depois", { precision: 12, scale: 2 }).notNull(),
+    ocorridoEm: timestamp("ocorrido_em", { withTimezone: true }).notNull(),
+    origem: text("origem").notNull(), // stripe_sync | backfill | pabx_import
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_mrr_mov_ocorrido").on(table.ocorridoEm),
+    index("idx_mrr_mov_assinatura").on(table.assinaturaId),
+    index("idx_mrr_mov_tipo").on(table.tipo),
+    index("idx_mrr_mov_org").on(table.organizacaoId),
   ]
 );
 
@@ -545,6 +710,71 @@ export const npsRespostas = pgTable(
   ]
 );
 
+// ─── ONBOARDING CHECKLIST (critério de conclusão real — substitui o toggle
+// livre de camposCustom.onboardingStage; card só chega em "concluido" com os
+// 3 itens marcados) ──────────────────────────────────────────
+export const onboardingChecklist = pgTable(
+  "onboarding_checklist",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizacaoId: uuid("organizacao_id").references(() => organizacoes.id),
+    negocioId: uuid("negocio_id").references(() => negocios.id, { onDelete: "cascade" }).notNull(),
+    item: text("item").notNull(), // setup_tecnico | kickoff | primeiro_uso_real
+    concluidoEm: timestamp("concluido_em", { withTimezone: true }),
+    concluidoPor: uuid("concluido_por").references(() => usuarios.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("idx_onboarding_checklist_negocio_item").on(table.negocioId, table.item),
+    index("idx_onboarding_checklist_negocio").on(table.negocioId),
+  ]
+);
+
+// ─── CONTAS CS (pós-onboarding — criada automaticamente quando o checklist
+// acima fecha 100%; health score v1 = saúde de cobrança + marcos, sem
+// Mixpanel ainda — ver callface/onboarding-cs.md no vault) ──
+export const contasCs = pgTable(
+  "contas_cs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizacaoId: uuid("organizacao_id").references(() => organizacoes.id),
+    negocioId: uuid("negocio_id").references(() => negocios.id).notNull(),
+    contratoId: uuid("contrato_id").references(() => contratos.id),
+    leadId: uuid("lead_id").references(() => leads.id),
+    onboardingFinalizadoEm: timestamp("onboarding_finalizado_em", { withTimezone: true }).notNull(),
+    healthScore: integer("health_score").notNull().default(100),
+    healthScoreAtualizadoEm: timestamp("health_score_atualizado_em", { withTimezone: true }),
+    statusSaude: text("status_saude").notNull().default("saudavel"), // saudavel | risco | critico
+    proximoMarcoEm: timestamp("proximo_marco_em", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("idx_contas_cs_negocio").on(table.negocioId),
+    index("idx_contas_cs_org").on(table.organizacaoId),
+    index("idx_contas_cs_status_saude").on(table.statusSaude),
+  ]
+);
+
+// ─── MARCOS CS (checkpoints — base pra Onda 4 do plano; onda 1 só cria a
+// tabela, não popula ainda) ──────────────────────────────────
+export const marcosCs = pgTable(
+  "marcos_cs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    contaCsId: uuid("conta_cs_id").references(() => contasCs.id, { onDelete: "cascade" }).notNull(),
+    previstoPara: timestamp("previsto_para", { withTimezone: true }).notNull(),
+    realizadoEm: timestamp("realizado_em", { withTimezone: true }),
+    resultadoTexto: text("resultado_texto"),
+    sinal: text("sinal"), // risco | neutro | oportunidade
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_marcos_cs_conta").on(table.contaCsId),
+    index("idx_marcos_cs_previsto").on(table.previstoPara),
+  ]
+);
+
 // ─── TAREFAS ────────────────────────────────────────────────
 export const tarefas = pgTable(
   "tarefas",
@@ -552,12 +782,14 @@ export const tarefas = pgTable(
     id: uuid("id").defaultRandom().primaryKey(),
     organizacaoId: uuid("organizacao_id").references(() => organizacoes.id),
     leadId: uuid("lead_id").references(() => leads.id),
+    negocioId: uuid("negocio_id").references(() => negocios.id),
     usuarioId: uuid("usuario_id").references(() => usuarios.id),
     titulo: text("titulo").notNull(),
     descricao: text("descricao"),
     tipo: text("tipo").notNull(),
     prioridade: text("prioridade").default("media").notNull(),
     dataVencimento: date("data_vencimento"),
+    venceEm: timestamp("vence_em", { withTimezone: true }),
     concluida: boolean("concluida").default(false).notNull(),
     concluidaEm: timestamp("concluida_em", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -690,6 +922,31 @@ export const whatsappSessao = pgTable("whatsapp_sessao", {
   index("idx_wa_sessao_org").on(table.organizacaoId),
   index("idx_wa_sessao_user").on(table.usuarioId),
 ]);
+
+// ─── CADENCIA SDR (execuções por lead+toque) ───────────────
+// Estado de cada toque da cadência SDR inbound (13 toques) por lead.
+// Unique (lead_id, ordem): reenviar sobrescreve (upsert).
+export const cadenciaExecucoes = pgTable(
+  "cadencia_execucoes",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+    leadId: uuid("lead_id").references(() => leads.id).notNull(),
+    ordem: integer("ordem").notNull(), // número do toque (1..13)
+    canal: text("canal").notNull(), // whatsapp | email | ligacao
+    status: text("status").default("enviado").notNull(), // enviado | ligacao_feita
+    enviadoPorId: uuid("enviado_por_id").references(() => usuarios.id), // quem clicou
+    sessaoId: uuid("sessao_id").references(() => whatsappSessao.id), // sessão WhatsApp usada
+    conteudoEnviado: text("conteudo_enviado"), // texto final (já editado) enviado
+    enviadoEm: timestamp("enviado_em", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("uq_cadencia_lead_ordem").on(table.leadId, table.ordem),
+    index("idx_cadencia_org").on(table.organizacaoId),
+    index("idx_cadencia_lead").on(table.leadId),
+  ]
+);
 
 // ─── EMAIL CONTAS (CONNECTED ACCOUNTS) ────────────────────────
 export const emailContas = pgTable(
@@ -1024,7 +1281,8 @@ export const reunioes = pgTable(
     tipo: text("tipo").default("call"), // call, presencial, video
     status: text("status").default("agendada"), // agendada, realizada, cancelada, no_show
     participantes: text("participantes").array(),
-    link: text("link"), // URL da reunião (Outlook/Meet/Zoom) — colada pela SDR ao agendar; temporário até integrar o calendário
+    link: text("link"), // URL da reunião (Outlook/Meet/Zoom) — colada pela SDR, ou o joinUrl/webLink devolvido ao criar o evento de verdade no Outlook do closer
+    outlookEventId: text("outlook_event_id"), // id do evento no Outlook do closer (Graph), pra permitir cancelar/atualizar depois
     notas: text("notas"),
     transcript: text("transcript"),
     resumoTranscript: text("resumo_transcript"),
@@ -1036,6 +1294,50 @@ export const reunioes = pgTable(
     index("idx_reunioes_negocio").on(table.negocioId),
     index("idx_reunioes_org").on(table.organizacaoId),
     index("idx_reunioes_lead").on(table.leadId),
+  ]
+);
+
+// ─── DISPONIBILIDADE DE CLOSERS (agenda nativa, sem Calendly/Outlook) ──────
+// Uma linha por closer: horário de trabalho recorrente + pausa de almoço.
+// Usado pelo Agente SDR pra calcular slots livres (horário - reuniões - bloqueios).
+export const closerDisponibilidade = pgTable(
+  "closer_disponibilidade",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+    usuarioId: uuid("usuario_id").references(() => usuarios.id).notNull(),
+    // { inicio: "09:00", fim: "18:00", diasSemana: [1,2,3,4,5], timezone: "America/Sao_Paulo" }
+    horarioTrabalho: jsonb("horario_trabalho").notNull(),
+    // { inicio: "12:00", fim: "13:00" } — bloqueio diário recorrente. null = sem pausa fixa.
+    pausaAlmoco: jsonb("pausa_almoco"),
+    ativo: boolean("ativo").default(true).notNull(),
+    // Fora do rodízio temporariamente (férias/folga) SEM sair da rotação permanente.
+    // Pausada não recebe lead novo pela fila, mas continua agendável manualmente.
+    pausadoRodizio: boolean("pausado_rodizio").default(false).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("uq_closer_disponibilidade_usuario").on(table.usuarioId),
+    index("idx_closer_disponibilidade_org").on(table.organizacaoId),
+  ]
+);
+
+// Bloqueios pontuais (folga, compromisso externo, férias) — não recorrentes.
+export const closerBloqueios = pgTable(
+  "closer_bloqueios",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+    usuarioId: uuid("usuario_id").references(() => usuarios.id).notNull(),
+    inicio: timestamp("inicio", { withTimezone: true }).notNull(),
+    fim: timestamp("fim", { withTimezone: true }).notNull(),
+    motivo: text("motivo"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_closer_bloqueios_usuario").on(table.usuarioId),
+    index("idx_closer_bloqueios_org").on(table.organizacaoId),
   ]
 );
 

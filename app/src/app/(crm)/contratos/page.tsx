@@ -98,7 +98,7 @@ export default function ContratosPage() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="rounded-xl bg-white/[0.03] border border-white/[0.06] p-4">
           <p className="text-xs text-white/40 mb-1" title="Soma do MRR de todos os contratos ativos">Receita Recorrente</p>
-          <p className="text-2xl font-bold text-[#e23752]">R$ {formatCurrency(mrrTotal)}</p>
+          <p className="text-2xl font-bold text-white tabular-nums" style={{ fontFamily: "var(--font-heading)" }}>R$ {formatCurrency(mrrTotal)}</p>
           {setupTotal > 0 && <p className="text-[10px] text-white/30 mt-0.5">Setup: R$ {formatCurrency(setupTotal)}</p>}
         </div>
         <div className="rounded-xl bg-white/[0.03] border border-white/[0.06] p-4">
@@ -111,7 +111,7 @@ export default function ContratosPage() {
         </div>
         <div className="rounded-xl bg-white/[0.03] border border-white/[0.06] p-4">
           <p className="text-xs text-white/40 mb-1" title="Contratos com vencimento nos próximos 60 dias">Renovação Próxima</p>
-          <p className="text-2xl font-bold text-amber-400">{vencendoEm60d.length}</p>
+          <p className={`text-2xl font-bold tabular-nums ${vencendoEm60d.length > 0 ? "text-amber-400" : "text-white"}`}>{vencendoEm60d.length}</p>
         </div>
       </div>
 
@@ -176,7 +176,7 @@ export default function ContratosPage() {
                     </td>
                     <td className="px-4 py-3 text-right">
                       {mrr > 0 ? (
-                        <span className="font-medium text-[#e23752] text-sm">R$ {formatCurrency(mrr)}</span>
+                        <span className="font-medium text-white/85 text-sm tabular-nums">R$ {formatCurrency(mrr)}</span>
                       ) : (
                         <span className="text-white/30 text-xs">—</span>
                       )}

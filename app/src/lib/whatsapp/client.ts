@@ -582,17 +582,19 @@ export async function getStatus(config?: WuzapiSessionConfig): Promise<{
   try {
     const res = await wuzapiFetch("/session/status", {}, config || DEFAULT_CONFIG);
     const data = await res.json();
-    // /session/status retorna connected+loggedIn mas jid VAZIO (o jid só vem em /admin/users).
-    // Por isso NÃO exigir jid — basta connected||loggedIn pra considerar conectado.
+    // Conectado de verdade = AUTENTICADO (loggedIn=true). O flag `connected` (conexão ao servidor
+    // WhatsApp) fica true DURANTE o fluxo de QR, ANTES do scan — usar ele como "conectado" escondia
+    // o QR e invertia o botão (mostrava Desconectar sem ter logado). Por isso: isConnected = loggedIn.
     const loggedIn = data.data?.loggedIn === true;
     const connectedFlag = data.data?.connected === true;
     const jid = data.data?.jid?.split("@")?.[0] || "";
-    const isConnected = connectedFlag || loggedIn;
+    const isConnected = loggedIn;
     const qrCode = data.data?.qrcode || "";
     return {
       connected: isConnected,
       phone: jid,
-      status: isConnected ? "connected" : qrCode ? "waiting_qr" : "disconnected",
+      // sem login + (tem QR ou conectado ao servidor) = está no fluxo de QR → mostra "aguardando QR"
+      status: isConnected ? "connected" : (qrCode || connectedFlag) ? "waiting_qr" : "disconnected",
       qrCode,
     };
   } catch {

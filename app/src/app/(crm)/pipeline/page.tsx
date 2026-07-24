@@ -6,7 +6,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import type { PipelineStage } from "@/lib/crm/pipeline";
 import { usePipelineConfig, usePipelines } from "@/hooks/usePipelineConfig";
-import { Kanban, List, Search, ChevronRight, AlertTriangle, X, Trash2, XCircle, Trophy, Plus, MoreHorizontal } from "lucide-react";
+import { Kanban, List, Search, ChevronRight, AlertTriangle, X, Trash2, XCircle, Trophy, Plus, MoreHorizontal, CalendarClock } from "lucide-react";
 import { STAGNATION_REASONS } from "@/lib/crm/pipeline";
 import { ButtonSpinner } from "@/components/crm/ButtonSpinner";
 import { NegocioDrawer } from "@/components/crm/NegocioDrawer";
@@ -15,7 +15,7 @@ import { EmpresaDrawer } from "@/components/crm/EmpresaDrawer";
 import { SkeletonKanbanColumn } from "@/components/crm/Skeleton";
 import { EmptyState } from "@/components/crm/EmptyState";
 import { Briefcase } from "lucide-react";
-import { BoardFilters, OwnerChip, useOrgUsuarios, matchesResponsavel, matchesDateFilter, type DateFilter } from "@/components/crm/BoardFilters";
+import { BoardFilters, OwnerChip, useOrgUsuarios, matchesResponsavel } from "@/components/crm/BoardFilters";
 
 interface Negocio {
   id: string;
@@ -47,6 +47,10 @@ interface Negocio {
   responsavelNome: string | null;
   responsavelAvatar: string | null;
   pipelineId: string | null;
+  origemQualificacao?: string | null;
+  proximaReuniaoData?: string | null;
+  proximaReuniaoLink?: string | null;
+  proximaReuniaoConvidado?: string | null;
   cipaScore: number | null;
   lpUrl: string | null;
   pipelineNome: string | null;
@@ -103,9 +107,6 @@ export default function PipelinePage() {
   const [selectedPipelineId, setSelectedPipelineId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [respFilter, setRespFilter] = useState("todos");
-  const [periodo, setPeriodo] = useState<DateFilter>("all");
-  const [customFrom, setCustomFrom] = useState("");
-  const [customTo, setCustomTo] = useState("");
   const [drawerNegocioId, setDrawerNegocioId] = useState<string | null>(null);
   const [drawerLeadId, setDrawerLeadId] = useState<string | null>(null);
   const [drawerEmpresaId, setDrawerEmpresaId] = useState<string | null>(null);
@@ -134,19 +135,13 @@ export default function PipelinePage() {
   const displayClosedStages = pipelineView === "estagnados" ? [] : closedStages;
   const origemFilter = pipelineView === "carteira" ? "carteira" : "novo";
 
-  // Filtros de responsável + data aplicados NO SERVIDOR (senão a API só traz 500
-  // e o filtro client-side fica "ilusório"). "meu" vira o id do usuário atual.
+  // Filtro de responsável aplicado NO SERVIDOR (senão a API só traz 500 e o
+  // filtro client-side fica "ilusório"). "meu" vira o id do usuário atual.
   const applyServerFilters = useCallback((params: URLSearchParams) => {
     const r = respFilter === "meu" ? (currentUserId || "") : respFilter;
     if (r && r !== "todos") params.set("responsavelId", r);
-    const iso = (d: Date) => d.toISOString().split("T")[0];
-    const now = new Date();
-    if (periodo === "today") { params.set("createdFrom", iso(now)); params.set("createdTo", iso(now)); }
-    else if (periodo === "7days") { params.set("createdFrom", iso(new Date(now.getTime() - 7 * 864e5))); params.set("createdTo", iso(now)); }
-    else if (periodo === "30days") { params.set("createdFrom", iso(new Date(now.getTime() - 30 * 864e5))); params.set("createdTo", iso(now)); }
-    else if (periodo === "custom") { if (customFrom) params.set("createdFrom", customFrom); if (customTo) params.set("createdTo", customTo); }
-  }, [respFilter, currentUserId, periodo, customFrom, customTo]);
-  const filterKey = [respFilter, currentUserId, periodo, customFrom, customTo];
+  }, [respFilter, currentUserId]);
+  const filterKey = [respFilter, currentUserId];
 
   // Fetch open deals
   const { data, isLoading } = useQuery({
@@ -219,10 +214,9 @@ export default function PipelinePage() {
   const allNegocios: Negocio[] = data?.negocios || [];
   const closedNegocios: Negocio[] = closedData?.negocios || [];
 
-  // Client-side filters: busca + responsável + período
+  // Client-side filters: busca + responsável
   const matchNegocio = useCallback((n: Negocio, q: string) => {
     if (!matchesResponsavel(n.responsavelId, respFilter, currentUserId)) return false;
-    if (!matchesDateFilter(n.createdAt || null, periodo, customFrom, customTo)) return false;
     if (!q) return true;
     return (
       n.titulo.toLowerCase().includes(q) ||
@@ -230,7 +224,7 @@ export default function PipelinePage() {
       (n.empresaNome || "").toLowerCase().includes(q) ||
       (n.leadEmpresa || "").toLowerCase().includes(q)
     );
-  }, [respFilter, currentUserId, periodo, customFrom, customTo]);
+  }, [respFilter, currentUserId]);
 
   const filteredNegocios = useMemo(
     () => allNegocios.filter((n) => matchNegocio(n, searchQuery.trim().toLowerCase())),
@@ -271,7 +265,7 @@ export default function PipelinePage() {
               <p className="text-[12px] text-white/40 hidden sm:block">Arraste os cards entre as etapas para avançar negócios no funil.</p>
             </div>
             <div className="flex items-baseline gap-2 shrink-0">
-              <span className="text-lg font-bold text-[#e23752]">
+              <span className="text-lg font-bold text-white tabular-nums" style={{ fontFamily: "var(--font-heading)" }}>
                 {formatBRL(totalPipelineValue)}
               </span>
               <span className="text-xs text-white/30 hidden sm:inline">
@@ -315,12 +309,7 @@ export default function PipelinePage() {
             currentUserId={currentUserId}
             resp={respFilter}
             setResp={setRespFilter}
-            periodo={periodo}
-            setPeriodo={setPeriodo}
-            customFrom={customFrom}
-            setCustomFrom={setCustomFrom}
-            customTo={customTo}
-            setCustomTo={setCustomTo}
+            showPeriodo={false}
             accent="#8e27ef"
           />
 
@@ -804,15 +793,16 @@ function NegocioCard({ negocio, stageColor, onOpenNegocio, slaHours, onDragStart
       onDragEnd={() => onDragEnd?.()}
       className="group rounded-xl p-3 cursor-grab active:cursor-grabbing transition-all duration-200 hover:-translate-y-0.5 relative"
       style={{
+        // Disciplina de cor (22/07): SLA estourado sinaliza SÓ no pill vermelho de idade —
+        // a borda vermelha em card ficava em quase todos (tudo além do SLA) e virava ruído.
         background: "rgba(255,255,255,0.03)",
-        border: age.breached ? "1px solid rgba(239,68,68,0.4)" : "1px solid rgba(255,255,255,0.06)",
-        ...(age.breached ? { boxShadow: "0 0 12px rgba(239,68,68,0.1)" } : {}),
+        border: "1px solid rgba(255,255,255,0.06)",
       }}
       onMouseEnter={(e) => {
-        if (!age.breached) e.currentTarget.style.borderColor = `${stageColor}40`;
+        e.currentTarget.style.borderColor = "rgba(255,255,255,0.14)";
       }}
       onMouseLeave={(e) => {
-        if (!age.breached) e.currentTarget.style.borderColor = "rgba(255,255,255,0.06)";
+        e.currentTarget.style.borderColor = "rgba(255,255,255,0.06)";
       }}
     >
       {/* Actions menu trigger (top-right) — dropdown renders via portal to avoid clipping */}
@@ -909,6 +899,30 @@ function NegocioCard({ negocio, stageColor, onOpenNegocio, slaHours, onDragStart
           );
         })()}
 
+        {/* Reunião agendada: data/hora + link Teams + convidado — visível sem clique extra */}
+        {negocio.proximaReuniaoData && (
+          <div className="flex items-center gap-1.5 mt-1.5 text-[10px] min-w-0">
+            <CalendarClock className="w-3 h-3 text-[#8e27ef] shrink-0" />
+            <span className="text-white/60 tabular-nums shrink-0">
+              {new Date(negocio.proximaReuniaoData).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" })}
+            </span>
+            {negocio.proximaReuniaoLink && (
+              <a
+                href={negocio.proximaReuniaoLink}
+                target="_blank"
+                rel="noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="text-[#8e27ef] hover:text-[#a855f7] font-medium shrink-0"
+              >
+                Entrar
+              </a>
+            )}
+            {negocio.proximaReuniaoConvidado && (
+              <span className="text-white/25 truncate">{negocio.proximaReuniaoConvidado}</span>
+            )}
+          </div>
+        )}
+
         {/* Row 3: Owner (avatar + nome) + value + badges */}
         <div className="flex items-center justify-between mt-2.5 gap-2">
           <div className="flex items-center gap-2 min-w-0">
@@ -917,7 +931,7 @@ function NegocioCard({ negocio, stageColor, onOpenNegocio, slaHours, onDragStart
 
             {/* Value */}
             {total > 0 ? (
-              <span className="text-xs font-semibold text-[#e23752] shrink-0">
+              <span className="text-xs font-semibold text-white/85 tabular-nums shrink-0">
                 {formatBRL(total)}
               </span>
             ) : (
@@ -934,6 +948,16 @@ function NegocioCard({ negocio, stageColor, onOpenNegocio, slaHours, onDragStart
             {/* Carteira badge */}
             {negocio.origemNegocio === "carteira" && (
               <span className="text-[8px] px-1 py-0.5 rounded bg-blue-500/15 text-blue-400 font-medium">UP</span>
+            )}
+
+            {/* Qualificação direta (closer atuando como SDR, sem reunião) — discreto */}
+            {negocio.origemQualificacao === "direta" && (
+              <span
+                className="text-[8px] px-1 py-0.5 rounded bg-white/[0.06] text-white/40 font-medium"
+                title="Qualificado sem reunião (negociação direta)"
+              >
+                DIR
+              </span>
             )}
 
             {/* Age badge */}
@@ -1151,11 +1175,11 @@ function ListView({ negocios, onOpenNegocio, slaHours, getStatusInfo }: { negoci
                 <td className="px-4 py-3">
                   {total > 0 ? (
                     <div>
-                      <span className="font-semibold text-[#e23752] text-sm">{formatBRL(total)}</span>
+                      <span className="font-semibold text-white/85 text-sm tabular-nums">{formatBRL(total)}</span>
                       {mrr > 0 && proj > 0 && (
                         <div className="flex gap-2 text-[9px] mt-0.5">
-                          <span className="text-emerald-400/50">Rec {formatBRL(mrr)}</span>
-                          <span className="text-[#8e27ef]/70">Av {formatBRL(proj)}</span>
+                          <span className="text-white/45">Rec {formatBRL(mrr)}</span>
+                          <span className="text-white/30">Av {formatBRL(proj)}</span>
                         </div>
                       )}
                     </div>

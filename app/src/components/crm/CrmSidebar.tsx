@@ -6,9 +6,9 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
+import { canSee } from "@/lib/auth/roles";
 import {
   Home,
-  Users,
   Kanban,
   FileText,
   BarChart3,
@@ -33,6 +33,7 @@ import {
   Rocket,
   Wallet,
   Eye,
+  CalendarClock,
 } from "lucide-react";
 
 const COLLAPSED_W = 64;
@@ -41,22 +42,24 @@ const EXPANDED_W = 220;
 const messagingNav = [
   { name: "WhatsApp", href: "/whatsapp", countKey: "whatsapp" as const, icon: MessageCircle, color: "#10B981", colorLight: "rgba(16, 185, 129, 0.15)" },
   { name: "Email", href: "/email", countKey: "email" as const, icon: Mail, color: "#3B82F6", colorLight: "rgba(59, 130, 246, 0.15)" },
-  { name: "Inbox Lemlist", href: "/inbox", countKey: null, icon: Inbox, color: "#8e27ef", colorLight: "rgba(142, 39, 239, 0.15)" },
+  // Oculto a pedido do Scott (não usar agora). Código/página mantidos — reativar é só descomentar.
+  // { name: "Inbox Lemlist", href: "/inbox", countKey: null, icon: Inbox, color: "#8e27ef", colorLight: "rgba(142, 39, 239, 0.15)" },
 ];
 
 const navigation = [
   { name: "Meu Dia", href: "/dashboard", icon: Home, countKey: null },
-  { name: "Leads", href: "/leads", icon: Users, countKey: "leads" as const },
-  { name: "Contatos", href: "/contatos", icon: UserRound, countKey: null },
+  { name: "Contatos", href: "/contatos", icon: UserRound, countKey: "leads" as const },
   { name: "Empresas", href: "/empresas", icon: Building2, countKey: null },
   { name: "Pré-vendas", href: "/pre-vendas", icon: Filter, countKey: null },
   { name: "Pipeline", href: "/pipeline", icon: Kanban, countKey: "pipeline" as const },
   { name: "Propostas", href: "/propostas", icon: ClipboardList, countKey: "propostas" as const },
-  { name: "Onboarding", href: "/onboarding", icon: Rocket, countKey: null, adminOnly: true },
+  // Oculto a pedido do Scott (não usar agora). Código/página mantidos — reativar é só descomentar.
+  // { name: "Onboarding", href: "/onboarding", icon: Rocket, countKey: null, adminOnly: true },
   { name: "Carteira", href: "/carteira", icon: Briefcase, countKey: "carteira" as const },
+  { name: "Agenda", href: "/agenda", icon: CalendarClock, countKey: null },
   { name: "Financeiro", href: "/financeiro", icon: Wallet, countKey: null, adminOnly: true },
   { name: "Contratos", href: "/contratos", icon: FileText, countKey: null },
-  { name: "Prospecção", href: "/prospeccao", icon: Radar, countKey: null },
+  { name: "Prospecção", href: "/prospeccao", icon: Radar, countKey: null, adminOnly: true },
   { name: "Campanhas", href: "/campanhas", icon: Megaphone, countKey: null, adminOnly: true },
   { name: "Relatórios", href: "/relatorios", icon: BarChart3, countKey: null },
   { name: "Configurações", href: "/configuracoes", icon: Settings, countKey: null, adminOnly: true },
@@ -230,6 +233,9 @@ export function CrmSidebar() {
   const sidebarContent = (isMobile: boolean) => {
     const isOpen = isMobile ? true : !collapsed;
 
+    // Gating por papel (somente UI): esconde itens fora do escopo do papel.
+    const visibleMessaging = messagingNav.filter((item) => canSee(item.href, effectiveRole));
+
     return (
       <div className="flex flex-col h-full">
         {/* Logo + toggle */}
@@ -338,8 +344,8 @@ export function CrmSidebar() {
         {/* Navigation */}
         <nav className="flex-1 py-1 px-2 space-y-0.5 overflow-y-auto min-h-0 scrollbar-thin">
           {/* Messaging */}
-          {isOpen && <p className="px-3 pt-1 pb-1.5 text-[10px] text-white/20 uppercase tracking-wider">Mensagens</p>}
-          {messagingNav.map((item) => {
+          {isOpen && visibleMessaging.length > 0 && <p className="px-3 pt-1 pb-1.5 text-[10px] text-white/20 uppercase tracking-wider">Mensagens</p>}
+          {visibleMessaging.map((item) => {
             const isActive = pathname.startsWith(item.href);
             const count = item.countKey ? getCounts(item.countKey) : 0;
             return (
@@ -376,10 +382,13 @@ export function CrmSidebar() {
             );
           })}
 
-          <div className="border-t border-white/[0.06] !my-2" />
+          {visibleMessaging.length > 0 && <div className="border-t border-white/[0.06] !my-2" />}
 
           {/* Main nav */}
-          {navigation.filter((item) => !(item as { adminOnly?: boolean }).adminOnly || effectiveIsAdmin).map((item) => {
+          {navigation
+            .filter((item) => !(item as { adminOnly?: boolean }).adminOnly || effectiveIsAdmin)
+            .filter((item) => canSee(item.href, effectiveRole))
+            .map((item) => {
             const isActive = pathname.startsWith(item.href);
             const count = item.countKey ? getCounts(item.countKey) : 0;
             return (

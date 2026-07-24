@@ -11,6 +11,7 @@ import { db } from "@/lib/db";
 import { propostas, propostaItens, leads, negocios, contratos, atividades, statusChanges } from "@/lib/db/schema";
 import { eq, asc } from "drizzle-orm";
 import { syncNegocioValoresFromPropostas } from "@/lib/crm/sync-negocio-valores";
+import { notificarNegocioGanho } from "@/lib/crm/notificar";
 
 type PropostaRow = typeof propostas.$inferSelect;
 
@@ -21,7 +22,31 @@ export async function marcarPropostaAceita(opts: {
   userId: string | null;
   avancarLead?: boolean;
 }): Promise<{ contratoId: string }> {
-  const { proposta, organizacaoId, userId, avancarLead = false } = opts;
+  const { proposta, organizacaoId, userId } = opts;
+
+  // Proposta pode não ter negocioId (ex.: nova versão que perdeu o vínculo,
+  // ou criada direto do contato/lead). Antes de tratar como "sem negócio" e
+  // criar um negócio novo do zero, tenta achar o negócio ATIVO do lead — assim
+  // a proposta aceita atualiza o negócio que o closer já está trabalhando em
+  // vez de gerar um duplicado (e a meta ir pro dono errado).
+  let negocioId = proposta.negocioId;
+  if (!negocioId) {
+    const [leadRow0] = await db
+      .select({ negocioAtivoId: leads.negocioAtivoId })
+      .from(leads)
+      .where(eq(leads.id, proposta.leadId))
+      .limit(1);
+    if (leadRow0?.negocioAtivoId) {
+      const [ativo] = await db
+        .select({ id: negocios.id, status: negocios.status })
+        .from(negocios)
+        .where(eq(negocios.id, leadRow0.negocioAtivoId))
+        .limit(1);
+      if (ativo && ativo.status !== "ganho" && ativo.status !== "perdido") {
+        negocioId = ativo.id;
+      }
+    }
+  }
 
   const itens = await db
     .select()
@@ -47,7 +72,7 @@ export async function marcarPropostaAceita(opts: {
     .values({
       organizacaoId,
       leadId: proposta.leadId,
-      negocioId: proposta.negocioId,
+      negocioId,
       tipo: itens.length > 0 ? itens[0].nome : "proposta",
       descricao: `Gerado da proposta #P-${String(proposta.numero).padStart(3, "0")}-v${proposta.versao}`,
       moeda: proposta.moeda || "BRL",
@@ -56,16 +81,19 @@ export async function marcarPropostaAceita(opts: {
       servicos: servicoNomes,
       inicio: today,
       status: "ativo",
+      // Venda via proposta/checkout é sempre do produto AI — sem isso o contrato
+      // nasce com produto NULL e some da aba Financeiro (filtro produto='ai').
+      produto: "ai",
     })
     .returning();
 
   await db
     .update(propostas)
-    .set({ status: "aceita", contratoId: contrato.id, updatedAt: new Date() })
+    .set({ status: "aceita", contratoId: contrato.id, negocioId, updatedAt: new Date() })
     .where(eq(propostas.id, proposta.id));
 
-  if (proposta.negocioId) {
-    const [currentNeg] = await db.select().from(negocios).where(eq(negocios.id, proposta.negocioId)).limit(1);
+  if (negocioId) {
+    const [currentNeg] = await db.select().from(negocios).where(eq(negocios.id, negocioId)).limit(1);
 
     await db.update(negocios).set({
       status: "ganho",
@@ -74,11 +102,11 @@ export async function marcarPropostaAceita(opts: {
       valorSetup: setupTotal > 0 ? setupTotal.toFixed(2) : undefined,
       tipoReceita,
       updatedAt: new Date(),
-    }).where(eq(negocios.id, proposta.negocioId));
+    }).where(eq(negocios.id, negocioId));
 
     await db.insert(statusChanges).values({
       leadId: proposta.leadId,
-      negocioId: proposta.negocioId,
+      negocioId,
       deStatus: currentNeg?.status || "proposta_apresentada",
       paraStatus: "ganho",
       usuarioId: userId,
@@ -111,26 +139,68 @@ export async function marcarPropostaAceita(opts: {
         pipelineId: currentNeg.pipelineId,
         contratoTipo: currentNeg.contratoTipo,
         origemNegocio: "carteira",
-        negocioOrigemId: proposta.negocioId,
+        negocioOrigemId: negocioId,
       });
     }
-  } else if (avancarLead) {
-    const leadUpdates: Record<string, unknown> = {
-      tipoReceita,
+  } else {
+    // Proposta SEM negócio vinculado e lead sem negócio ativo aproveitável
+    // (ex.: criada direto do contato/lead, do zero). Cria um negócio JÁ GANHO
+    // pra CREDITAR A META de quem realmente vendeu — prioriza o criador da
+    // proposta (o closer que montou/enviou), caindo pro responsável do lead
+    // só se não houver criador. Sem isso, proposta avulsa aceita/paga não
+    // conta pra ninguém. (Independe de avancarLead: aceitar = fechou = conta.)
+    const [leadRow] = await db.select().from(leads).where(eq(leads.id, proposta.leadId)).limit(1);
+    const valorTotal =
+      totalRecorrente > 0 ? totalRecorrente.toFixed(2) : totalAvulso > 0 ? totalAvulso.toFixed(2) : undefined;
+
+    const [novoNeg] = await db
+      .insert(negocios)
+      .values({
+        organizacaoId,
+        leadId: proposta.leadId,
+        empresaId: leadRow?.empresaId ?? null,
+        titulo: `${leadRow?.empresa || leadRow?.nome || "Proposta"} - Ganho`,
+        status: "ganho",
+        ganhoAt: new Date(),
+        tipoReceita,
+        valorTotal,
+        mrrEstimado: totalRecorrente > 0 ? totalRecorrente.toFixed(2) : undefined,
+        mrrFechado: totalRecorrente > 0 ? totalRecorrente.toFixed(2) : undefined,
+        valorProjeto: totalAvulso > 0 ? totalAvulso.toFixed(2) : undefined,
+        valorSetup: setupTotal > 0 ? setupTotal.toFixed(2) : undefined,
+        moeda: proposta.moeda || "BRL",
+        responsavelId: proposta.criadoPorId ?? leadRow?.responsavelId ?? userId ?? null,
+        origemNegocio: "novo",
+        origemQualificacao: "direta", // proposta avulsa aceita = fechou sem fluxo de reunião
+      })
+      .returning();
+
+    // vincula a proposta e o contrato ao negócio recém-criado
+    await db.update(propostas).set({ negocioId: novoNeg.id, updatedAt: new Date() }).where(eq(propostas.id, proposta.id));
+    await db.update(contratos).set({ negocioId: novoNeg.id }).where(eq(contratos.id, contrato.id));
+
+    await db.insert(statusChanges).values({
+      leadId: proposta.leadId,
+      negocioId: novoNeg.id,
+      deStatus: null,
+      paraStatus: "ganho",
+      usuarioId: userId,
+      motivo: "Proposta aceita (negócio criado no fechamento)",
+    });
+
+    await db.update(leads).set({
       tipo: "cliente",
       clienteDesde: new Date(),
       updatedAt: new Date(),
-    };
-    if (totalRecorrente > 0) leadUpdates.mrrFechado = totalRecorrente.toFixed(2);
-    if (totalAvulso > 0) leadUpdates.valorProjeto = totalAvulso.toFixed(2);
-    if (setupTotal > 0) leadUpdates.valorSetup = setupTotal.toFixed(2);
-    await db.update(leads).set(leadUpdates).where(eq(leads.id, proposta.leadId));
+    }).where(eq(leads.id, proposta.leadId));
+
+    await syncNegocioValoresFromPropostas(novoNeg.id);
   }
 
   await db.insert(atividades).values({
     organizacaoId,
     leadId: proposta.leadId,
-    negocioId: proposta.negocioId,
+    negocioId,
     usuarioId: userId,
     tipo: "proposta_enviada",
     titulo: `Proposta #P-${String(proposta.numero).padStart(3, "0")}-v${proposta.versao} aceita`,
@@ -138,9 +208,14 @@ export async function marcarPropostaAceita(opts: {
     dados: { propostaId: proposta.id, contratoId: contrato.id, acao: "aceita" },
   });
 
-  if (proposta.negocioId) {
-    await syncNegocioValoresFromPropostas(proposta.negocioId);
+  if (negocioId) {
+    await syncNegocioValoresFromPropostas(negocioId);
   }
+
+  // Sino: avisa gestão + responsável que o negócio fechou (link pro card).
+  // No branch sem negócio vinculado, a proposta foi religada ao negócio novo acima.
+  const [pAtual] = await db.select({ negocioId: propostas.negocioId }).from(propostas).where(eq(propostas.id, proposta.id)).limit(1);
+  if (pAtual?.negocioId) await notificarNegocioGanho(pAtual.negocioId);
 
   return { contratoId: contrato.id };
 }

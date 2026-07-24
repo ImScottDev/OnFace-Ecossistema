@@ -35,7 +35,11 @@ export default auth((req) => {
   // Telas de gestão (Configurações, Financeiro, Relatórios, Onboarding, Campanhas):
   // só admin/gerente/super_admin. Vendedor/closer não acessa (vê os números dele no
   // Meu Dia e na Carteira filtrada).
-  if (req.auth && ["/configuracoes", "/financeiro", "/onboarding", "/campanhas"].some((p) => pathname.startsWith(p))) {
+  // Exceção: /configuracoes/email é conexão PESSOAL (cada usuário conecta a própria
+  // conta Microsoft/Google/IMAP pra agenda e e-mail), não config da organização —
+  // libera pra qualquer cargo autenticado, senão closer/SDR nunca consegue conectar.
+  const isPersonalEmailSettings = pathname.startsWith("/configuracoes/email");
+  if (req.auth && !isPersonalEmailSettings && ["/configuracoes", "/financeiro", "/onboarding", "/campanhas"].some((p) => pathname.startsWith(p))) {
     if (!["admin", "gerente", "super_admin"].includes(effectiveRole)) {
       return NextResponse.redirect(new URL("/dashboard", req.url));
     }

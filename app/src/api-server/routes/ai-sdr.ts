@@ -260,12 +260,12 @@ app.post("/style/analyze", async (c) => {
     .where(eq(aiSdrConfig.organizacaoId, orgId))
     .limit(1);
 
-  let apiKey = process.env.GROQ_API_KEY;
+  let apiKey = process.env.OPENAI_API_KEY;
   if (config?.groqApiKey) {
     try { apiKey = decrypt(config.groqApiKey); } catch { /* use env fallback */ }
   }
 
-  if (!apiKey) return c.json({ error: "Groq API key não configurada" }, 400);
+  if (!apiKey) return c.json({ error: "OpenAI API key não configurada" }, 400);
 
   try {
     const sampledMsgs = humanMsgs
@@ -273,14 +273,14 @@ app.post("/style/analyze", async (c) => {
       .map((m) => m.conteudo)
       .join("\n---\n");
 
-    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: config?.modelo || "llama-3.3-70b-versatile",
+        model: config?.modelo || "gpt-4o-mini",
         max_tokens: 2000,
         messages: [
           {
@@ -307,7 +307,7 @@ Retorne um guia de estilo conciso (max 500 palavras) que uma IA possa seguir par
 
     if (!res.ok) {
       const errText = await res.text();
-      return c.json({ error: `Groq API error: ${errText}` }, 500);
+      return c.json({ error: `OpenAI API error: ${errText}` }, 500);
     }
 
     const data = await res.json() as {

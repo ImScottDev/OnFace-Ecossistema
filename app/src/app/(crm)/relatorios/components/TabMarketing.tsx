@@ -13,6 +13,7 @@ import {
 import { ChartCard } from "./charts/ChartCard";
 import { DonutChart } from "./charts/DonutChart";
 import { FunnelChart } from "@/components/crm/FunnelChart";
+import { Megaphone, Users, Coins, Filter, Trophy, TrendingUp } from "lucide-react";
 
 interface TabMarketingProps {
   periodo: string;
@@ -56,6 +57,22 @@ interface PorCriativo {
   cpl: number | null;
   cliques: number;
   impressoes: number;
+  qualificados?: number;
+  clientes?: number;
+  cpq?: number | null;
+  cpc?: number | null;
+}
+
+interface MarketingHero {
+  investimento: number;
+  leadsCrm: number;
+  leadsMeta: number;
+  qualificados: number;
+  vendasAtribuidas: number;
+  receitaAtribuida: number;
+  cpl: number | null;
+  cac: number | null;
+  roas: number | null;
 }
 
 interface MarketingData {
@@ -68,6 +85,7 @@ interface MarketingData {
   metaConfigured: boolean;
   metaErro?: string;
   totalQualificados: number;
+  hero: MarketingHero;
 }
 
 interface TendenciaItem {
@@ -93,6 +111,7 @@ interface TrackingLinha {
   gastoMeta?: number;
   leadsMeta?: number;
   cpl?: number | null;
+  cplq?: number | null;
   cac?: number | null;
   roas?: number | null;
 }
@@ -124,21 +143,20 @@ interface TrackingData {
   meta?: MetaResumo;
 }
 
+// Paleta contida (disciplina de cor 21/07): tons neutros + 1 acento de marca.
 const COLORS = [
   "#e23752",
-  "#10B981",
-  "#F59E0B",
-  "#EF4444",
-  "#3B82F6",
-  "#06B6D4",
-  "#EC4899",
+  "rgba(255,255,255,0.85)",
+  "rgba(255,255,255,0.6)",
+  "rgba(255,255,255,0.42)",
+  "rgba(255,255,255,0.3)",
+  "rgba(255,255,255,0.2)",
+  "rgba(255,255,255,0.12)",
 ];
 
-// Degradê azul→verde para pré-vendas (4 estágios)
-const FUNNEL_PRE_VENDAS_COLORS = ["#3B82F6", "#06B6D4", "#22C55E", "#10B981"];
-
-// Degradê carmim→verde para vendas
-const FUNNEL_VENDAS_COLORS = ["#e23752", "#F59E0B", "#8B5CF6", "#3B82F6", "#10B981"];
+// Funis em rampa de cinza — lima só no estágio final (sucesso)
+const FUNNEL_PRE_VENDAS_COLORS = ["rgba(255,255,255,0.22)", "rgba(255,255,255,0.38)", "rgba(255,255,255,0.55)", "#c8ff00"];
+const FUNNEL_VENDAS_COLORS = ["rgba(255,255,255,0.2)", "rgba(255,255,255,0.3)", "rgba(255,255,255,0.42)", "rgba(255,255,255,0.55)", "rgba(255,255,255,0.7)"];
 
 const darkTooltip = {
   contentStyle: {
@@ -189,6 +207,54 @@ function getCplColor(cpl: number | null): string {
   if (cpl < 50) return "text-emerald-400";
   if (cpl < 100) return "text-amber-400";
   return "text-red-400";
+}
+
+// Métricas de criativo derivadas do que o Meta entrega (spend/impressões/cliques).
+const ctrOf = (cliques: number, impressoes: number): number | null => (impressoes > 0 ? (cliques / impressoes) * 100 : null);
+const cpmOf = (gasto: number, impressoes: number): number | null => (impressoes > 0 ? (gasto / impressoes) * 1000 : null);
+// CTR bom em tráfego pago B2B fica ~>1%; verde acima disso, âmbar médio, vermelho fraco.
+function getCtrColor(ctr: number | null): string {
+  if (ctr === null) return "text-white/40";
+  if (ctr >= 1.5) return "text-emerald-400";
+  if (ctr >= 0.8) return "text-amber-400";
+  return "text-red-400";
+}
+const fmtPct = (v: number | null) => (v == null ? "—" : `${v.toFixed(2)}%`);
+const fmtInt = (v: number) => v.toLocaleString("pt-BR");
+
+function SectionTitle({ children, hint }: { children: React.ReactNode; hint?: string }) {
+  return (
+    <div className="flex items-center gap-3 pt-3">
+      <span className="h-[3px] w-6 rounded-full" style={{ background: "#e23752" }} />
+      <h3 className="text-[12px] uppercase tracking-[0.18em] text-white/60 font-semibold whitespace-nowrap">{children}</h3>
+      {hint && <span className="text-[11px] text-white/25 truncate">{hint}</span>}
+      <div className="flex-1 h-px bg-gradient-to-r from-white/[0.08] to-transparent" />
+    </div>
+  );
+}
+
+// Disciplina de cor (21/07): número SEMPRE branco; accent vira tique e só quando
+// é status (lima/âmbar/vermelho). min-w-0/break-words evita overlap (auditoria item 9).
+const STATUS_ACCENTS = new Set(["#c8ff00", "#F59E0B", "#EF4444", "#10B981"]);
+function HeroKpi({ label, value, sub, accent, big, icon: Icon }: { label: string; value: string; sub?: string; accent?: string; big?: boolean; icon?: React.ComponentType<{ className?: string }> }) {
+  const tick = accent && STATUS_ACCENTS.has(accent) ? accent : "rgba(255,255,255,0.16)";
+  return (
+    <div className="relative min-w-0 rounded-2xl border border-white/[0.07] overflow-hidden transition-colors hover:border-white/[0.12]" style={{ background: "var(--surface, #121212)" }}>
+      <span className="absolute left-0 top-4 bottom-4 w-[3px] rounded-r-full" style={{ background: tick }} />
+      <div className="p-5 pl-6">
+        <div className="flex items-start justify-between gap-2">
+          <p className="text-[10px] uppercase tracking-[0.12em] text-white/40 font-medium leading-snug pt-1">{label}</p>
+          {Icon && (
+            <span className="w-7 h-7 rounded-md border border-white/[0.12] flex items-center justify-center shrink-0">
+              <Icon className="w-3.5 h-3.5 text-white/45" />
+            </span>
+          )}
+        </div>
+        <p className="text-xl xl:text-2xl font-bold mt-2 tabular-nums leading-tight break-words text-white" style={{ fontFamily: "var(--font-heading)", letterSpacing: "-0.01em" }} title={big ? value : undefined}>{value}</p>
+        {sub && <p className="text-[11px] text-white/35 mt-2 leading-snug">{sub}</p>}
+      </div>
+    </div>
+  );
 }
 
 export default function TabMarketing({ periodo }: TabMarketingProps) {
@@ -262,52 +328,49 @@ export default function TabMarketing({ periodo }: TabMarketingProps) {
     color: FUNNEL_PRE_VENDAS_COLORS[i % FUNNEL_PRE_VENDAS_COLORS.length],
   }));
 
-  // Map funilVendas to FunnelChart data — Ganho always gets green
+  // Map funilVendas to FunnelChart data — lima só no Ganho (sucesso)
   const funilVendasData = funilVendas.map((item, i) => {
     const isGanho = item.stage.toLowerCase().includes("ganho") || item.label.toLowerCase().includes("ganho");
     return {
       name: item.label,
       value: item.total,
-      color: isGanho ? "#10B981" : FUNNEL_VENDAS_COLORS[i % (FUNNEL_VENDAS_COLORS.length - 1)],
+      color: isGanho ? "#c8ff00" : FUNNEL_VENDAS_COLORS[i % FUNNEL_VENDAS_COLORS.length],
     };
   });
 
+  // ── Hero executivo: calculado no BACKEND com as fontes canônicas (auditoria
+  // item 8 — antes o front somava dados do /tracking e "Clientes" dava 0).
+  const hero = marketing?.hero;
+  const metaOn = !!marketing?.metaConfigured;
+
   return (
-    <div className="space-y-4">
-      {/* Row 1: Mini KPIs (dados reais) */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <MiniKpi
-          label="Total Leads"
-          value={(tracking?.totalLeads ?? 0).toString()}
-          hint="Leads no periodo"
-          loading={loadingTracking}
-        />
-        <MiniKpi
-          label="Leads rastreados"
-          value={(tracking?.leadsRastreados ?? 0).toString()}
-          hint="Com utm_campaign"
-          loading={loadingTracking}
-        />
-        <MiniKpi
-          label="Gasto Meta"
-          value={tracking?.meta?.configured ? formatCurrency(tracking.meta.totalGasto) : "—"}
-          hint={tracking?.meta?.configured ? "Investimento no periodo" : "Conecte o Meta"}
-          loading={loadingTracking}
-        />
-        <MiniKpi
-          label="CPL Meta"
-          value={tracking?.meta?.configured && (tracking.meta.totalLeads ?? 0) > 0 ? formatCurrency(tracking.meta.totalGasto / tracking.meta.totalLeads) : "—"}
-          hint="Gasto / leads Meta"
-          loading={loadingTracking}
-        />
+    <div className="space-y-6">
+      {/* HERO EXECUTIVO — a jornada em números: investimento → lead → qualificado → venda */}
+      <div>
+        <SectionTitle hint="a jornada do investimento à venda">Visão geral</SectionTitle>
+        <div className="grid grid-cols-2 lg:grid-cols-6 gap-3 mt-3">
+          <HeroKpi label="Investimento" value={metaOn && hero ? formatCurrency(hero.investimento) : "—"} sub={metaOn ? "mídia no período" : "conecte o Meta"} big icon={Megaphone} />
+          <HeroKpi label="Leads" value={hero ? fmtInt(hero.leadsCrm) : "—"} sub={metaOn && hero ? `${fmtInt(hero.leadsMeta)} pela mídia` : "no período"} icon={Users} />
+          <HeroKpi label="CPL" value={hero?.cpl != null ? formatCurrency(hero.cpl) : "—"} sub="gasto ÷ leads da mídia" icon={Coins} />
+          <HeroKpi label="Qualificados" value={hero ? fmtInt(hero.qualificados) : "—"} sub="negócios criados no período (inclui leads antigos)" icon={Filter} />
+          <HeroKpi label="Vendas (mídia)" value={hero ? fmtInt(hero.vendasAtribuidas) : "—"} sub={hero?.cac != null ? `CAC ${formatCurrency(hero.cac)}` : "atribuídas a campanha"} accent={hero && hero.vendasAtribuidas > 0 ? "#c8ff00" : undefined} icon={Trophy} />
+          <HeroKpi label="ROAS" value={hero?.roas != null ? `${hero.roas.toFixed(2)}x` : "—"} sub="receita atribuída ÷ gasto" accent={hero?.roas != null && hero.roas >= 1 ? "#c8ff00" : undefined} icon={TrendingUp} />
+        </div>
+        {!metaOn && (
+          <div className="mt-3 rounded-xl border border-dashed border-white/[0.1] bg-white/[0.02] p-3 text-[12px] text-white/40">
+            Meta Ads não conectado — sem gasto/CPL/CPQ/CAC/ROAS. Configure o token + ad account no .env pra liberar a camada de otimização.
+          </div>
+        )}
       </div>
 
+      {/* AQUISIÇÃO — de onde vem a demanda */}
+      <SectionTitle hint="origem e evolução da captação">Aquisição</SectionTitle>
       {/* Row 2: Leads over time + Leads by channel */}
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="lg:col-span-2">
           <ChartCard
             title="Leads ao Longo do Tempo"
-            subtitle="Evolucao semanal de captacao"
+            subtitle="Evolução diária de captação"
             loading={loadingTendencias}
             empty={tendenciasData.length === 0}
             emptyText="Dados aparecerao conforme leads forem captados."
@@ -359,9 +422,10 @@ export default function TabMarketing({ periodo }: TabMarketingProps) {
                   <Area
                     type="monotone"
                     dataKey="total"
-                    stroke="#e23752"
-                    fill="#e23752"
-                    fillOpacity={0.2}
+                    stroke="rgba(255,255,255,0.85)"
+                    strokeWidth={1.5}
+                    fill="rgba(255,255,255,0.06)"
+                    fillOpacity={1}
                     name="Leads"
                   />
                 </AreaChart>
@@ -390,11 +454,13 @@ export default function TabMarketing({ periodo }: TabMarketingProps) {
         </div>
       </div>
 
+      {/* FUNIL */}
+      <SectionTitle hint="pré-vendas e vendas">Funil</SectionTitle>
       {/* Row 3: Dois funis lado a lado */}
       <div className="grid gap-4 lg:grid-cols-2">
         <ChartCard
           title="Funil de Pre-vendas (SDR)"
-          subtitle="Novo → Em contato → Qualificando → Qualificado"
+          subtitle="Coorte: só leads que ENTRARAM no período — por isso difere do card Qualificados acima, que conta todo negócio criado no período (inclui leads antigos)"
           loading={loadingMarketing}
           empty={funilPreVendas.length === 0}
           emptyText="Sem dados de pre-vendas no periodo."
@@ -404,7 +470,7 @@ export default function TabMarketing({ periodo }: TabMarketingProps) {
 
         <ChartCard
           title="Funil de Vendas"
-          subtitle="Reuniao agendada → Proposta → Negociacao → Ganho"
+          subtitle="Leads que atingiram cada etapa no periodo (por evento)"
           loading={loadingMarketing}
           empty={funilVendas.length === 0}
           emptyText="Sem dados de vendas no periodo."
@@ -413,6 +479,8 @@ export default function TabMarketing({ periodo }: TabMarketingProps) {
         </ChartCard>
       </div>
 
+      {/* CAMPANHAS · OTIMIZAÇÃO */}
+      <SectionTitle hint="onde investir mais e onde cortar">Campanhas · otimização</SectionTitle>
       {/* Row 4: CPL por Campanha */}
       <ChartCard
         title="CPL por Campanha"
@@ -444,6 +512,9 @@ export default function TabMarketing({ periodo }: TabMarketingProps) {
                 <span className="w-14 text-[10px] text-white/30 uppercase tracking-wider text-right">
                   Leads
                 </span>
+                <span className="w-16 text-[10px] text-white/30 uppercase tracking-wider text-right" title="Cliques ÷ impressões">
+                  CTR
+                </span>
                 <span className="w-20 text-[10px] text-white/30 uppercase tracking-wider text-right">
                   CPL
                 </span>
@@ -470,6 +541,9 @@ export default function TabMarketing({ periodo }: TabMarketingProps) {
                   <span className="w-14 text-[12px] text-white/60 text-right tabular-nums">
                     {camp.leads}
                   </span>
+                  <span className={`w-16 text-[12px] font-medium text-right tabular-nums ${getCtrColor(ctrOf(camp.cliques, camp.impressoes))}`}>
+                    {fmtPct(ctrOf(camp.cliques, camp.impressoes))}
+                  </span>
                   <span
                     className={`w-20 text-[12px] font-medium text-right tabular-nums ${getCplColor(camp.cpl)}`}
                   >
@@ -495,10 +569,12 @@ export default function TabMarketing({ periodo }: TabMarketingProps) {
         </>
       </ChartCard>
 
+      {/* CRIATIVOS · OTIMIZAÇÃO */}
+      <SectionTitle hint="qual anúncio engancha e converte">Criativos · otimização</SectionTitle>
       {/* Row 5: Performance por Criativo */}
       <ChartCard
         title="Performance por Criativo"
-        subtitle="Gasto, leads e CPL por criativo (Meta Ads)"
+        subtitle="Gancho e eficiência por anúncio: CTR, cliques, CPL e CPM (Meta Ads)"
         loading={loadingMarketing}
         empty={!metaConfigured || porCriativo.length === 0}
         emptyText={
@@ -514,57 +590,41 @@ export default function TabMarketing({ periodo }: TabMarketingProps) {
             </p>
           )}
           {metaConfigured && porCriativo.length > 0 && (
-            <div className="max-h-[420px] overflow-y-auto">
-              {/* Header */}
-              <div className="flex items-center gap-2 pb-2 border-b border-white/[0.06] sticky top-0 bg-transparent">
-                <span className="flex-1 text-[10px] text-white/30 uppercase tracking-wider min-w-[140px]">
-                  Criativo
-                </span>
-                <span className="w-32 text-[10px] text-white/30 uppercase tracking-wider truncate">
-                  Campanha
-                </span>
-                <span className="w-24 text-[10px] text-white/30 uppercase tracking-wider text-right">
-                  Gasto
-                </span>
-                <span className="w-14 text-[10px] text-white/30 uppercase tracking-wider text-right">
-                  Leads
-                </span>
-                <span className="w-20 text-[10px] text-white/30 uppercase tracking-wider text-right">
-                  CPL
-                </span>
-              </div>
-
-              {/* Rows */}
-              {porCriativo.map((criativo, i) => (
-                <div
-                  key={i}
-                  className="flex items-center gap-2 py-2 border-b border-white/[0.04]"
-                >
-                  <span
-                    className="flex-1 text-[12px] text-white/60 truncate min-w-[140px]"
-                    title={criativo.nome}
-                  >
-                    {criativo.nome}
-                  </span>
-                  <span
-                    className="w-32 text-[11px] text-white/35 truncate"
-                    title={criativo.campanha}
-                  >
-                    {criativo.campanha}
-                  </span>
-                  <span className="w-24 text-[12px] text-white/50 text-right tabular-nums">
-                    {formatCurrency(criativo.gasto)}
-                  </span>
-                  <span className="w-14 text-[12px] text-white/60 text-right tabular-nums">
-                    {criativo.leads}
-                  </span>
-                  <span
-                    className={`w-20 text-[12px] font-medium text-right tabular-nums ${getCplColor(criativo.cpl)}`}
-                  >
-                    {criativo.cpl !== null ? formatCurrency(criativo.cpl) : "—"}
-                  </span>
+            <div className="max-h-[440px] overflow-auto">
+              <div className="min-w-[880px]">
+                {/* Header */}
+                <div className="flex items-center gap-2 pb-2 border-b border-white/[0.06] sticky top-0 bg-[#16161c]/90 backdrop-blur">
+                  <span className="flex-1 text-[10px] text-white/30 uppercase tracking-wider min-w-[160px]">Criativo</span>
+                  <span className="w-24 text-[10px] text-white/30 uppercase tracking-wider text-right">Gasto</span>
+                  <span className="w-16 text-[10px] text-white/30 uppercase tracking-wider text-right" title="Cliques ÷ impressões — mede o gancho do criativo">CTR</span>
+                  <span className="w-14 text-[10px] text-white/30 uppercase tracking-wider text-right" title="Leads reportados pela Meta">Leads</span>
+                  <span className="w-20 text-[10px] text-white/30 uppercase tracking-wider text-right" title="Custo por lead (gasto ÷ leads Meta)">CPL</span>
+                  <span className="w-20 text-[10px] text-white/30 uppercase tracking-wider text-right" title="Custo por lead qualificado (movimentação no CRM)">CPLQ</span>
+                  <span className="w-20 text-[10px] text-white/30 uppercase tracking-wider text-right" title="Custo por cliente convertido (movimentação no CRM)">CAC</span>
+                  <span className="w-16 text-[10px] text-white/30 uppercase tracking-wider text-right" title="Custo por mil impressões">CPM</span>
                 </div>
-              ))}
+
+                {/* Rows */}
+                {porCriativo.map((criativo, i) => {
+                  const ctr = ctrOf(criativo.cliques, criativo.impressoes);
+                  const cpm = cpmOf(criativo.gasto, criativo.impressoes);
+                  return (
+                    <div key={i} className="flex items-center gap-2 py-2 border-b border-white/[0.04]">
+                      <span className="flex-1 text-[12px] text-white/70 truncate min-w-[160px]" title={`${criativo.nome} · ${criativo.campanha}`}>
+                        {criativo.nome}
+                        <span className="block text-[10px] text-white/30 truncate">{criativo.campanha}</span>
+                      </span>
+                      <span className="w-24 text-[12px] text-white/50 text-right tabular-nums">{formatCurrency(criativo.gasto)}</span>
+                      <span className={`w-16 text-[12px] font-medium text-right tabular-nums ${getCtrColor(ctr)}`}>{fmtPct(ctr)}</span>
+                      <span className="w-14 text-[12px] text-white/60 text-right tabular-nums">{criativo.leads}</span>
+                      <span className={`w-20 text-[12px] font-medium text-right tabular-nums ${getCplColor(criativo.cpl)}`}>{criativo.cpl !== null ? formatCurrency(criativo.cpl) : "—"}</span>
+                      <span className="w-20 text-[12px] text-white/60 text-right tabular-nums" title={`${criativo.qualificados ?? 0} qualificados`}>{criativo.cpq != null ? formatCurrency(criativo.cpq) : "—"}</span>
+                      <span className="w-20 text-[12px] text-white/60 text-right tabular-nums" title={`${criativo.clientes ?? 0} clientes`}>{criativo.cpc != null ? formatCurrency(criativo.cpc) : "—"}</span>
+                      <span className="w-16 text-[12px] text-white/40 text-right tabular-nums">{cpm != null ? formatCurrency(cpm) : "—"}</span>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
           {!metaConfigured && (
@@ -577,40 +637,8 @@ export default function TabMarketing({ periodo }: TabMarketingProps) {
         </>
       </ChartCard>
 
-      {/* Atribuicao: quanto da receita ativa liga a alguma campanha */}
-      {tracking?.atribuicao && (
-        <div className="rounded-xl bg-white/[0.03] border border-white/[0.06] p-4">
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-[11px] text-white/40 uppercase tracking-wider font-medium">Atribuicao de receita (MRR ativo)</p>
-            <p className="text-[12px]" style={{ color: tracking.atribuicao.pctAtribuido >= 0.3 ? "#c8ff00" : "#f5a623" }}>
-              {(tracking.atribuicao.pctAtribuido * 100).toFixed(0)}% atribuido a campanha
-            </p>
-          </div>
-          <div className="h-2 rounded-full overflow-hidden bg-white/[0.05] mb-2">
-            <div className="h-full rounded-full" style={{ width: `${Math.max(tracking.atribuicao.pctAtribuido * 100, 2)}%`, background: "#e23752" }} />
-          </div>
-          <p className="text-[11px] text-white/40">
-            {formatCurrency(tracking.atribuicao.mrrAtribuido)} de {formatCurrency(tracking.atribuicao.mrrTotal)} ·{" "}
-            {tracking.atribuicao.clientesAtribuidos}/{tracking.atribuicao.clientesTotal} clientes pagantes ligados a uma campanha.{" "}
-            {tracking.atribuicao.pctAtribuido < 0.5 ? "O resto nao tem utm (anterior ao tracking ou a utm nao persistiu ate o checkout Stripe)." : ""}
-          </p>
-        </div>
-      )}
-
-      {/* Meta Ads: faixa de gasto/CPL ou convite pra conectar */}
-      {tracking?.meta?.configured ? (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <MiniKpi label="Gasto Meta" value={formatCurrency(tracking.meta.totalGasto)} hint="Investimento no periodo" loading={loadingTracking} />
-          <MiniKpi label="Leads Meta" value={String(tracking.meta.totalLeads)} hint="Leads reportados pelo Meta" loading={loadingTracking} />
-          <MiniKpi label="CPL Meta" value={tracking.meta.totalLeads > 0 ? formatCurrency(tracking.meta.totalGasto / tracking.meta.totalLeads) : "—"} hint="Gasto / leads Meta" loading={loadingTracking} />
-          <MiniKpi label="Campanhas s/ match" value={String(tracking.meta.naoCasadas?.length ?? 0)} hint="Meta sem campanha no CRM" loading={loadingTracking} />
-        </div>
-      ) : (
-        <div className="rounded-xl border border-dashed border-white/[0.1] bg-white/[0.02] p-3 text-[12px] text-white/40">
-          Conecte o <span className="text-white/70">Meta Ads</span> pra ver gasto, CPL, CAC e ROAS por campanha aqui (basta o token + ad account no .env).
-        </div>
-      )}
-
+      {/* ATRIBUIÇÃO & ORIGEM */}
+      <SectionTitle hint="funil completo por campanha, origem, source e mídia">Atribuição & origem</SectionTitle>
       {/* Row: TRACKING POR CAMPANHA (funil completo + Meta) */}
       <ChartCard
         title="Tracking por Campanha"
@@ -645,56 +673,38 @@ function TrackingTable({ rows, colLabel, compact, showMeta }: { rows: TrackingLi
     <div className="overflow-x-auto">
       <div className="flex items-center gap-2 pb-2 border-b border-white/[0.06] min-w-max">
         <span className="flex-1 min-w-[140px] text-[10px] text-white/30 uppercase tracking-wider">{colLabel}</span>
-        <span className={`w-14 ${head}`}>Leads</span>
+        <span className={`w-14 ${head}`} title="Leads reportados pela Meta (campanhas pagas); CRM nas demais">Leads</span>
         <span className={`w-16 ${head}`}>Qualif.</span>
         <span className={`w-16 ${head}`}>Clientes</span>
         <span className={`w-16 ${head}`}>Conv.</span>
         {!compact && <span className={`w-24 ${head}`}>MRR real</span>}
         {!compact && showMeta && <span className={`w-24 ${head}`}>Gasto</span>}
         {!compact && showMeta && <span className={`w-20 ${head}`}>CPL</span>}
-        {!compact && showMeta && <span className={`w-20 ${head}`}>CAC</span>}
+        {!compact && showMeta && <span className={`w-20 ${head}`} title="Custo por lead qualificado (movimentação no CRM)">CPLQ</span>}
+        {!compact && showMeta && <span className={`w-20 ${head}`} title="Custo por cliente convertido (movimentação no CRM)">CAC</span>}
         {!compact && showMeta && <span className={`w-16 ${head}`}>ROAS</span>}
       </div>
-      {rows.map((r, i) => (
+      {rows.map((r, i) => {
+        // Leads pagos vêm DIRETO da Meta; qualif/clientes são movimentação do CRM.
+        const usaMeta = showMeta && r.leadsMeta != null;
+        const leadsShown = usaMeta ? r.leadsMeta! : r.leads;
+        return (
         <div key={i} className="flex items-center gap-2 py-2 border-b border-white/[0.04] min-w-max">
           <span className="flex-1 min-w-[140px] text-[12px] text-white/70 truncate" title={r.chave}>{r.chave}</span>
-          <span className={`${cell} w-14 text-white/80 font-medium`}>{r.leads}</span>
+          <span className={`${cell} w-14 text-white/80 font-medium`} title={usaMeta ? `${r.leadsMeta} na Meta · ${r.leads} carregam a utm no CRM` : undefined}>{leadsShown}</span>
           <span className={`${cell} w-16 text-white/50`}>{r.qualificados}</span>
           <span className={`${cell} w-16`} style={{ color: "#c8ff00" }}>{r.clientes}</span>
           <span className={`${cell} w-16 ${r.taxaConversao >= 0.02 ? "text-emerald-400" : "text-white/40"}`}>{(r.taxaConversao * 100).toFixed(1)}%</span>
           {!compact && <span className={`${cell} w-24`} style={{ color: "#e23752" }}>{r.mrrReal > 0 ? formatCurrency(r.mrrReal) : "—"}</span>}
           {!compact && showMeta && <span className={`${cell} w-24 text-white/70`}>{r.gastoMeta != null ? formatCurrency(r.gastoMeta) : "—"}</span>}
           {!compact && showMeta && <span className={`${cell} w-20 text-white/60`}>{r.cpl != null ? formatCurrency(r.cpl) : "—"}</span>}
+          {!compact && showMeta && <span className={`${cell} w-20 text-white/60`}>{r.cplq != null ? formatCurrency(r.cplq) : "—"}</span>}
           {!compact && showMeta && <span className={`${cell} w-20 text-white/60`}>{r.cac != null ? formatCurrency(r.cac) : "—"}</span>}
           {!compact && showMeta && <span className={`${cell} w-16 ${(r.roas ?? 0) >= 1 ? "text-emerald-400" : "text-white/40"}`}>{r.roas != null ? r.roas.toFixed(2) : "—"}</span>}
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
 
-function MiniKpi({
-  label,
-  value,
-  hint,
-  loading,
-}: {
-  label: string;
-  value: string;
-  hint: string;
-  loading: boolean;
-}) {
-  return (
-    <div className="rounded-xl bg-white/[0.03] border border-white/[0.06] p-4">
-      <p className="text-[11px] text-white/40 uppercase tracking-wider font-medium">
-        {label}
-      </p>
-      {loading ? (
-        <div className="h-7 w-24 rounded bg-white/[0.04] animate-pulse mt-1" />
-      ) : (
-        <p className="text-xl font-bold text-white mt-1">{value}</p>
-      )}
-      <p className="text-[10px] text-white/25 mt-1">{hint}</p>
-    </div>
-  );
-}

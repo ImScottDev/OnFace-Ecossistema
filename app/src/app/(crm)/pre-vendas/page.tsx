@@ -12,15 +12,18 @@ import {
   SDR_STAGNATION_STAGES,
   SDR_STAGNATION_KEYS,
   SDR_SLA_HOURS,
+  SDR_OUTBOUND_STAGE,
+  isOutboundLead,
   negocioStatusToSdrMirror,
+  getSdrStatusInfo,
 } from "@/lib/crm/pipeline";
-import { Search, X, MoreHorizontal, Tag, Briefcase, CheckCircle2, XCircle, PauseCircle, RotateCcw } from "lucide-react";
+import { Search, X, MoreHorizontal, Tag, Briefcase, CheckCircle2, XCircle, PauseCircle, RotateCcw, Download } from "lucide-react";
 import { LeadDrawer } from "@/components/crm/LeadDrawer";
 import { EmpresaDrawer } from "@/components/crm/EmpresaDrawer";
 import { NegocioDrawer } from "@/components/crm/NegocioDrawer";
 import { SkeletonKanbanColumn } from "@/components/crm/Skeleton";
 import { AgendarReuniaoModal, type AgendarReuniaoPayload } from "@/components/crm/AgendarReuniaoModal";
-import { BoardFilters, OwnerChip, useOrgUsuarios, matchesResponsavel, matchesDateFilter, type DateFilter, type OrgUsuario } from "@/components/crm/BoardFilters";
+import { BoardFilters, OwnerChip, useOrgUsuarios, matchesResponsavel, matchesOrigem, buildOrigemOptions, type OrgUsuario } from "@/components/crm/BoardFilters";
 
 interface Lead {
   id: string;
@@ -67,8 +70,15 @@ function stageAge(updatedAt: string | undefined, status: string) {
 function sdrBoardColumn(lead: Lead): string {
   const s = lead.sdrStatus || "pending";
   if (s === "disqualified") return "disqualified";
+  // No-show: o negócio fica registrado na coluna No-show do Pipeline, mas o LEAD
+  // volta pro funil de pré-vendas (sdr_status = Follow up) pra SDR retrabalhar.
+  // Sem esse desvio, o espelho capturava o lead e ele sumia do funil.
+  if (lead.negocioPrincipal?.status === "no_show") return s;
   if (lead.negocioPrincipal) return negocioStatusToSdrMirror(lead.negocioPrincipal.status);
   if (lead.negocioCount && lead.negocioCount > 0) return "m_qualified";
+  // Lead de outbound ainda intocado (Novo) fica na coluna colapsada "Outbound",
+  // separado do funil inbound. Ao ser trabalhado (Em Contato), sai daqui.
+  if (s === "pending" && isOutboundLead(lead.origem)) return "outbound";
   return s;
 }
 
@@ -79,10 +89,9 @@ export default function PreVendasPage() {
   const { usuarios, byId: usuariosById, currentUserId } = useOrgUsuarios();
   const [searchQuery, setSearchQuery] = useState("");
   const [respFilter, setRespFilter] = useState("todos");
-  const [periodo, setPeriodo] = useState<DateFilter>("all");
-  const [customFrom, setCustomFrom] = useState("");
-  const [customTo, setCustomTo] = useState("");
+  const [origemFilter, setOrigemFilter] = useState("todos");
   const [view, setView] = useState<View>("qualificacao");
+  const [showExport, setShowExport] = useState(false);
   const [drawerLeadId, setDrawerLeadId] = useState<string | null>(null);
   const [drawerEmpresaId, setDrawerEmpresaId] = useState<string | null>(null);
   const [drawerNegocioId, setDrawerNegocioId] = useState<string | null>(null);
@@ -90,19 +99,22 @@ export default function PreVendasPage() {
   const { data, isLoading } = useQuery({
     queryKey: ["pre-vendas-leads"],
     queryFn: async () => {
-      const r = await fetch("/api/leads?tipo=lead&limit=300&sort=createdAt&order=desc");
+      // limit alto: o board carrega TODOS os leads e agrupa/filtra no cliente.
+      // Com ~640+ leads tipo=lead, um teto baixo (300) escondia colunas inteiras.
+      const r = await fetch("/api/leads?tipo=lead&limit=2000&sort=createdAt&order=desc");
       if (!r.ok) return { leads: [] as Lead[] };
       return (await r.json()) as { leads: Lead[] };
     },
   });
 
   const allLeads = useMemo(() => data?.leads || [], [data]);
+  const origemOptions = useMemo(() => buildOrigemOptions(allLeads), [allLeads]);
 
   const filteredLeads = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return allLeads.filter((l) => {
       if (!matchesResponsavel(l.responsavelId, respFilter, currentUserId)) return false;
-      if (!matchesDateFilter(l.createdAt || null, periodo, customFrom, customTo)) return false;
+      if (!matchesOrigem(l.origem, origemFilter)) return false;
       if (!q) return true;
       return (
         l.nome.toLowerCase().includes(q) ||
@@ -111,7 +123,7 @@ export default function PreVendasPage() {
         (l.origem || "").toLowerCase().includes(q)
       );
     });
-  }, [allLeads, searchQuery, respFilter, currentUserId, periodo, customFrom, customTo]);
+  }, [allLeads, searchQuery, respFilter, origemFilter, currentUserId]);
 
   const isStagnant = (l: Lead) => SDR_STAGNATION_KEYS.includes(l.sdrStatus || "");
   const funnelLeads = filteredLeads.filter((l) => !isStagnant(l));
@@ -120,6 +132,45 @@ export default function PreVendasPage() {
   const openKeys = SDR_STAGES.map((s) => s.key);
   const activeCount = funnelLeads.filter((l) => openKeys.includes(sdrBoardColumn(l))).length;
   const stagnantCount = stagnantLeads.length;
+
+  // Normaliza telefone pro discador: só dígitos, tira DDI 55 quando vem prefixado
+  // (5511987654321 → 11987654321), mantém DDD + número.
+  function telefoneDiscador(tel?: string | null): string {
+    let d = (tel || "").replace(/\D/g, "");
+    if (d.length >= 12 && d.startsWith("55")) d = d.slice(2);
+    return d;
+  }
+
+  // Gera + baixa o CSV no PADRÃO DO DISCADOR automático: Telefone, Nome, E-mail, Empresa.
+  function gerarCsvLeads(lista: Lead[]) {
+    if (lista.length === 0) { toast.error("Nenhum lead na seleção"); return; }
+    const cols: { h: string; get: (l: Lead) => string }[] = [
+      { h: "Telefone", get: (l) => telefoneDiscador(l.telefone) },
+      { h: "Nome", get: (l) => [l.nome, l.sobrenome].filter(Boolean).join(" ") },
+      { h: "E-mail", get: (l) => l.email || "" },
+      { h: "Empresa", get: (l) => l.empresa || "" },
+    ];
+    // só exporta quem tem telefone (o discador precisa do número)
+    const comTelefone = lista.filter((l) => telefoneDiscador(l.telefone).length >= 10);
+    if (comTelefone.length === 0) { toast.error("Nenhum lead da seleção tem telefone válido"); return; }
+    const esc = (v: string) => `"${v.replace(/"/g, '""')}"`;
+    const linhas = [
+      cols.map((c) => c.h).join(","),
+      ...comTelefone.map((l) => cols.map((c) => esc(c.get(l))).join(",")),
+    ];
+    const blob = new Blob(["﻿" + linhas.join("\r\n")], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const stamp = new Date().toISOString().slice(0, 10);
+    a.href = url;
+    a.download = `discador-callface-${stamp}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    const puladas = lista.length - comTelefone.length;
+    toast.success(`${comTelefone.length} leads exportados${puladas > 0 ? ` (${puladas} sem telefone, ignorados)` : ""}`);
+  }
 
   const moveStage = useMutation({
     mutationFn: async ({ id, sdrStatus }: { id: string; sdrStatus: string }) => {
@@ -147,7 +198,7 @@ export default function PreVendasPage() {
   });
 
   const qualificar = useMutation({
-    mutationFn: async ({ id, payload }: { id: string; payload?: AgendarReuniaoPayload }) => {
+    mutationFn: async ({ id, payload }: { id: string; payload?: AgendarReuniaoPayload | { semReuniao: true } }) => {
       const r = await fetch(`/api/leads/${id}/converter-oportunidade`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -156,12 +207,35 @@ export default function PreVendasPage() {
       if (!r.ok) throw new Error("falha ao qualificar");
       return r.json();
     },
-    onSuccess: (_d, vars) => {
-      toast.success(
-        vars.payload
-          ? "Lead qualificado: oportunidade criada no Pipeline com reunião agendada."
-          : "Lead qualificado: oportunidade criada no Pipeline. Fica aqui de espelho."
-      );
+    onSuccess: (d, vars) => {
+      const semReuniao = !!vars.payload && "semReuniao" in vars.payload;
+      const comReuniao = !!vars.payload && !semReuniao;
+      if (semReuniao) {
+        toast.success("Lead qualificado sem reunião: negócio criado no SEU pipeline.");
+      } else if (comReuniao) {
+        // O evento no Outlook não pode falhar em silêncio: quem agendou precisa
+        // saber que a reunião NÃO está na agenda real e por quê.
+        const outlook = d?.outlook as { criado?: boolean; motivo?: string | null } | undefined;
+        if (outlook?.criado) {
+          toast.success(
+            outlook.motivo === "lead_sem_email"
+              ? "Reunião agendada e evento criado no Outlook — mas SEM convite pro lead (sem e-mail)."
+              : "Reunião agendada: evento criado no Outlook da closer com convite pro lead."
+          );
+        } else {
+          const motivos: Record<string, string> = {
+            closer_sem_outlook: "a closer não tem Outlook conectado (Configurações → Email)",
+            token_expirado: "a conexão Outlook da closer expirou — ela precisa reconectar",
+            erro_graph: "erro na API da Microsoft",
+          };
+          toast.warning(
+            `Reunião criada no CRM, mas NÃO entrou na agenda do Outlook: ${motivos[outlook?.motivo || ""] || "sem integração ativa"}.`,
+            { duration: 9000 }
+          );
+        }
+      } else {
+        toast.success("Lead qualificado: oportunidade criada no Pipeline. Fica aqui de espelho.");
+      }
       setAgendarLead(null);
       qc.invalidateQueries({ queryKey: ["pre-vendas-leads"] });
       qc.invalidateQueries({ queryKey: ["pipeline"] });
@@ -234,14 +308,20 @@ export default function PreVendasPage() {
             currentUserId={currentUserId}
             resp={respFilter}
             setResp={setRespFilter}
-            periodo={periodo}
-            setPeriodo={setPeriodo}
-            customFrom={customFrom}
-            setCustomFrom={setCustomFrom}
-            customTo={customTo}
-            setCustomTo={setCustomTo}
+            showPeriodo={false}
+            origem={origemFilter}
+            setOrigem={setOrigemFilter}
+            origemOptions={origemOptions}
             accent="#8e27ef"
           />
+
+          <button
+            onClick={() => setShowExport(true)}
+            title="Exportar leads: escolher responsável e etapas"
+            className="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-white/[0.05] border border-white/[0.08] text-white/60 hover:text-white hover:border-white/20 transition-colors"
+          >
+            <Download className="w-3.5 h-3.5" /> Exportar
+          </button>
 
           <div className="flex gap-1 p-0.5 rounded-lg shrink-0" style={{ background: "rgba(255,255,255,0.05)" }}>
             {([
@@ -306,13 +386,100 @@ export default function PreVendasPage() {
         open={!!agendarLead}
         leadNome={agendarLead?.nome || ""}
         leadEmpresa={agendarLead?.empresa}
+        leadEmail={agendarLead?.email}
         closerSugeridoId={agendarLead?.responsavelId}
         saving={qualificar.isPending}
         onClose={() => setAgendarLead(null)}
         onConfirm={(payload) => {
           if (agendarLead) qualificar.mutate({ id: agendarLead.id, payload });
         }}
+        onQualificarSemAgendar={() => {
+          if (agendarLead) qualificar.mutate({ id: agendarLead.id, payload: { semReuniao: true } });
+        }}
       />
+
+      {showExport && (
+        <ExportLeadsModal
+          leads={allLeads}
+          usuarios={usuarios}
+          onClose={() => setShowExport(false)}
+          onExport={(lista) => { gerarCsvLeads(lista); setShowExport(false); }}
+        />
+      )}
+    </div>
+  );
+}
+
+// Modal de exportação: escolher RESPONSÁVEL (todos ou um) + ETAPAS (multi) antes
+// de baixar o CSV. Ex.: só os leads "Em Contato" da fulana.
+function ExportLeadsModal({
+  leads, usuarios, onClose, onExport,
+}: {
+  leads: Lead[];
+  usuarios: OrgUsuario[];
+  onClose: () => void;
+  onExport: (lista: Lead[]) => void;
+}) {
+  const etapas = [...SDR_STAGES, ...SDR_CLOSED_STAGES];
+  const [resp, setResp] = useState("todos");
+  const [stages, setStages] = useState<Set<string>>(new Set(etapas.map((e) => e.key)));
+
+  const toggle = (k: string) =>
+    setStages((prev) => {
+      const n = new Set(prev);
+      if (n.has(k)) n.delete(k); else n.add(k);
+      return n;
+    });
+  const todasMarcadas = stages.size === etapas.length;
+
+  const selecionados = leads.filter((l) => {
+    if (resp !== "todos" && l.responsavelId !== resp) return false;
+    return stages.has(sdrBoardColumn(l));
+  });
+
+  return (
+    <div className="fixed inset-0 modal-overlay flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="modal-content p-6 w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+        <h3 className="font-semibold text-white mb-1">Exportar leads</h3>
+        <p className="text-[11px] text-white/40 mb-4">Escolha o responsável e as etapas que quer puxar.</p>
+
+        <label className="block text-xs text-white/60 mb-1">Responsável</label>
+        <select value={resp} onChange={(e) => setResp(e.target.value)}
+          className="w-full dark-input rounded-lg px-3 py-2 text-sm mb-4">
+          <option value="todos">Todos</option>
+          {usuarios.map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}
+        </select>
+
+        <div className="flex items-center justify-between mb-1">
+          <label className="text-xs text-white/60">Etapas</label>
+          <button type="button"
+            onClick={() => setStages(todasMarcadas ? new Set() : new Set(etapas.map((e) => e.key)))}
+            className="text-[11px] text-[#8e27ef] hover:underline">
+            {todasMarcadas ? "Limpar" : "Todas"}
+          </button>
+        </div>
+        <div className="space-y-1.5 mb-5">
+          {etapas.map((e) => (
+            <label key={e.key} className="flex items-center gap-2 text-sm text-white/80 cursor-pointer">
+              <input type="checkbox" checked={stages.has(e.key)} onChange={() => toggle(e.key)}
+                className="accent-[#8e27ef] w-3.5 h-3.5" />
+              <span className="w-2 h-2 rounded-full" style={{ background: e.color }} />
+              {e.label}
+            </label>
+          ))}
+        </div>
+
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-xs text-white/40">{selecionados.length} leads na seleção</span>
+          <div className="flex gap-2">
+            <button onClick={onClose} className="px-4 py-2 text-sm text-white/70 hover:text-white">Cancelar</button>
+            <button onClick={() => onExport(selecionados)} disabled={selecionados.length === 0 || stages.size === 0}
+              className="flex items-center gap-1.5 px-4 py-2 text-sm btn-primary rounded-lg disabled:opacity-40">
+              <Download className="w-3.5 h-3.5" /> Exportar CSV
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -343,6 +510,8 @@ function SdrKanbanView({
 
   const openCols = view === "estagnados" ? SDR_STAGNATION_STAGES : SDR_STAGES;
   const closedCols = view === "estagnados" ? [] : [...SDR_MIRROR_STAGES, ...SDR_CLOSED_STAGES];
+  // Coluna(s) colapsada(s) à ESQUERDA (antes de "Novo"): entrada de outbound.
+  const leftCols = view === "estagnados" ? [] : [SDR_OUTBOUND_STAGE];
 
   // Ações da barra inferior (drop zones)
   const actions =
@@ -355,10 +524,12 @@ function SdrKanbanView({
         ];
 
   const renderColumnCards = (stageKey: string) => {
-    const stage = [...openCols, ...closedCols].find((s) => s.key === stageKey);
+    const stage = [...leftCols, ...openCols, ...closedCols].find((s) => s.key === stageKey);
     const mirror = SDR_MIRROR_KEYS.includes(stageKey); // espelho do closer = read-only
     return leads
       .filter((l) => (view === "estagnados" ? (l.sdrStatus || "pending") === stageKey : sdrBoardColumn(l) === stageKey))
+      // No-show sempre no topo da coluna (pedido Kauã 22/07); sort estável preserva a ordem do resto
+      .sort((a, b) => Number(b.negocioPrincipal?.status === "no_show") - Number(a.negocioPrincipal?.status === "no_show"))
       .map((lead) => (
         <LeadCard
           key={lead.id}
@@ -376,9 +547,77 @@ function SdrKanbanView({
       ));
   };
 
+  // Coluna colapsável (52px → 260px ao clicar). Usada tanto na entrada Outbound
+  // (esquerda) quanto nas colunas de espelho/fechadas (direita).
+  const renderCollapsibleColumn = (stage: { key: string; label: string; color: string }) => {
+    const cards = renderColumnCards(stage.key);
+    const isExpanded = expandedClosed.has(stage.key);
+    const isDragOver = dragOverStage === stage.key;
+    return (
+      <div
+        key={stage.key}
+        className={`flex-shrink-0 rounded-2xl flex flex-col max-h-full transition-all duration-300 ${isExpanded ? "w-[260px]" : "w-[52px]"}`}
+        style={{
+          background: isDragOver ? `${stage.color}08` : "rgba(255,255,255,0.015)",
+          border: isDragOver ? `2px dashed ${stage.color}` : "1px solid rgba(255,255,255,0.04)",
+        }}
+        onDragOver={(e) => e.preventDefault()}
+        onDragEnter={(e) => { e.preventDefault(); setDragOverStage(stage.key); }}
+        onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOverStage(null); }}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragOverStage(null);
+          const leadId = e.dataTransfer.getData("leadId");
+          if (leadId) onDrop(leadId, stage.key);
+        }}
+      >
+        {isExpanded ? (
+          <>
+            <button
+              onClick={() => setExpandedClosed((p) => { const s = new Set(p); s.delete(stage.key); return s; })}
+              className="px-3 pt-3 pb-2 border-b border-white/[0.04] shrink-0 text-left w-full hover:bg-white/[0.02] transition-colors"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-2.5 h-2.5 rounded-full opacity-70" style={{ backgroundColor: stage.color }} />
+                  <span className="text-xs font-semibold text-white/40 uppercase tracking-wider">{stage.label}</span>
+                </div>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: `${stage.color}15`, color: stage.color }}>
+                  {cards.length}
+                </span>
+              </div>
+            </button>
+            <div className="flex-1 p-2 space-y-2 overflow-y-auto min-h-0 scrollbar-thin">{cards}</div>
+          </>
+        ) : (
+          <button
+            onClick={() => setExpandedClosed((p) => { const s = new Set(p); s.add(stage.key); return s; })}
+            className="flex flex-col items-center gap-3 py-4 px-1 h-full hover:bg-white/[0.03] transition-colors rounded-2xl"
+          >
+            <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: stage.color }} />
+            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ backgroundColor: `${stage.color}15`, color: stage.color }}>
+              {cards.length}
+            </span>
+            <span className="text-[10px] font-semibold text-white/40 uppercase tracking-widest" style={{ writingMode: "vertical-rl", textOrientation: "mixed" }}>
+              {stage.label}
+            </span>
+          </button>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="relative h-full">
       <div className="flex gap-3 overflow-x-auto overflow-y-hidden pb-4 h-full">
+        {/* Entrada Outbound (colapsada, à esquerda de "Novo") */}
+        {leftCols.map(renderCollapsibleColumn)}
+        {leftCols.length > 0 && (
+          <div className="flex-shrink-0 flex items-center px-1">
+            <div className="w-px h-2/3 bg-white/[0.08]" />
+          </div>
+        )}
+
         {/* Colunas abertas */}
         {openCols.map((stage, stageIdx) => {
           const cards = renderColumnCards(stage.key);
@@ -430,63 +669,7 @@ function SdrKanbanView({
         )}
 
         {/* Colunas fechadas (colapsadas, estilo Ganho/Perdido) */}
-        {closedCols.map((stage) => {
-          const cards = renderColumnCards(stage.key);
-          const isExpanded = expandedClosed.has(stage.key);
-          const isDragOver = dragOverStage === stage.key;
-          return (
-            <div
-              key={stage.key}
-              className={`flex-shrink-0 rounded-2xl flex flex-col max-h-full transition-all duration-300 ${isExpanded ? "w-[260px]" : "w-[52px]"}`}
-              style={{
-                background: isDragOver ? `${stage.color}08` : "rgba(255,255,255,0.015)",
-                border: isDragOver ? `2px dashed ${stage.color}` : "1px solid rgba(255,255,255,0.04)",
-              }}
-              onDragOver={(e) => e.preventDefault()}
-              onDragEnter={(e) => { e.preventDefault(); setDragOverStage(stage.key); }}
-              onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOverStage(null); }}
-              onDrop={(e) => {
-                e.preventDefault();
-                setDragOverStage(null);
-                const leadId = e.dataTransfer.getData("leadId");
-                if (leadId) onDrop(leadId, stage.key);
-              }}
-            >
-              {isExpanded ? (
-                <>
-                  <button
-                    onClick={() => setExpandedClosed((p) => { const s = new Set(p); s.delete(stage.key); return s; })}
-                    className="px-3 pt-3 pb-2 border-b border-white/[0.04] shrink-0 text-left w-full hover:bg-white/[0.02] transition-colors"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <div className="w-2.5 h-2.5 rounded-full opacity-70" style={{ backgroundColor: stage.color }} />
-                        <span className="text-xs font-semibold text-white/40 uppercase tracking-wider">{stage.label}</span>
-                      </div>
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: `${stage.color}15`, color: stage.color }}>
-                        {cards.length}
-                      </span>
-                    </div>
-                  </button>
-                  <div className="flex-1 p-2 space-y-2 overflow-y-auto min-h-0 scrollbar-thin">{cards}</div>
-                </>
-              ) : (
-                <button
-                  onClick={() => setExpandedClosed((p) => { const s = new Set(p); s.add(stage.key); return s; })}
-                  className="flex flex-col items-center gap-3 py-4 px-1 h-full hover:bg-white/[0.03] transition-colors rounded-2xl"
-                >
-                  <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: stage.color }} />
-                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ backgroundColor: `${stage.color}15`, color: stage.color }}>
-                    {cards.length}
-                  </span>
-                  <span className="text-[10px] font-semibold text-white/40 uppercase tracking-widest" style={{ writingMode: "vertical-rl", textOrientation: "mixed" }}>
-                    {stage.label}
-                  </span>
-                </button>
-              )}
-            </div>
-          );
-        })}
+        {closedCols.map(renderCollapsibleColumn)}
       </div>
 
       {/* Barra de ações ao arrastar */}
@@ -557,6 +740,7 @@ function LeadCard({
   const age = stageAge(lead.updatedAt, lead.sdrStatus || "pending");
   const nome = `${lead.nome}${lead.sobrenome ? " " + lead.sobrenome : ""}`;
   const isOportunidade = !!lead.negocioCount && lead.negocioCount > 0;
+  const isNoShow = lead.negocioPrincipal?.status === "no_show";
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
@@ -685,7 +869,12 @@ function LeadCard({
       <div onClick={() => onOpenLead(lead.id)} className="cursor-pointer">
         <div className="min-w-0 flex-1 pr-6 flex items-center gap-1.5">
           <p className="font-medium text-[13px] text-white truncate leading-tight">{nome}</p>
-          {isOportunidade && (
+          {isNoShow && (
+            <span className="shrink-0 text-[8px] px-1 py-0.5 rounded bg-orange-500/15 text-orange-400 font-bold uppercase tracking-wide" title="Não compareceu à reunião. Retrabalhar e reagendar.">
+              No-show
+            </span>
+          )}
+          {isOportunidade && !isNoShow && (
             <span className="shrink-0 text-[8px] px-1 py-0.5 rounded bg-emerald-500/15 text-emerald-400 font-bold uppercase tracking-wide" title="Já é oportunidade no Pipeline">
               Opp
             </span>

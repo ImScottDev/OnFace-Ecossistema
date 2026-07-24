@@ -31,7 +31,11 @@ export async function GET(request: NextRequest) {
     const rows = (await db.execute(sql`
       SELECT f.id, l.id AS lead_id, l.nome, l.email, e.nome AS empresa,
         CASE WHEN f.origem = 'stripe' THEN 'ai' ELSE 'pabx' END AS produto,
-        f.valor::float, f.status, f.competencia, f.emitida_em, f.paga_em, f.tentativas
+        f.valor::float, f.status, f.competencia, f.emitida_em, f.paga_em, f.tentativas,
+        f.vencimento, f.hosted_invoice_url,
+        CASE WHEN f.status IN ('aberta', 'uncollectible')
+             THEN GREATEST(0, EXTRACT(day FROM now() - COALESCE(f.vencimento, f.emitida_em)))::int
+             ELSE 0 END AS dias_atraso
       FROM faturas f
       JOIN leads l ON l.id = f.lead_id
       LEFT JOIN empresas e ON e.id = l.empresa_id

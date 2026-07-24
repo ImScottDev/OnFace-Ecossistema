@@ -22,6 +22,8 @@ interface TimelineItem {
   deStatus?: string;
   paraStatus?: string;
   pagina?: string;
+  usuarioNome?: string | null;
+  dados?: { canal?: string; rotulo?: string; ordem?: number } | null;
   createdAt: string;
 }
 
@@ -35,6 +37,13 @@ const activityIcons: Record<string, typeof FileText> = {
   diagnostico: MousePointer,
   whatsapp: MessageCircle,
   tarefa: RefreshCw,
+  cadencia: Send,
+};
+
+const canalIcons: Record<string, typeof FileText> = {
+  whatsapp: MessageCircle,
+  email: Mail,
+  ligacao: Phone,
 };
 
 const activityLabels: Record<string, string> = {
@@ -47,6 +56,7 @@ const activityLabels: Record<string, string> = {
   diagnostico: "Diagnóstico",
   whatsapp: "WhatsApp",
   tarefa: "Tarefa",
+  cadencia: "Cadência",
 };
 
 const eventLabels: Record<string, string> = {
@@ -76,19 +86,24 @@ export function LeadTimeline({ items }: { items: TimelineItem[] }) {
         });
 
         if (item.timelineType === "atividade") {
-          const Icon = activityIcons[item.tipo || "nota"] || FileText;
-          const isWa = item.tipo === "whatsapp";
+          const canal = item.dados?.canal;
+          const Icon =
+            (item.tipo === "cadencia" && canal ? canalIcons[canal] : undefined) ||
+            activityIcons[item.tipo || "nota"] ||
+            FileText;
+          const isGreen = item.tipo === "whatsapp" || canal === "whatsapp";
           return (
             <div key={item.id} className="flex gap-3">
-              <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${isWa ? "bg-emerald-500/15" : "bg-blue-500/15"}`}>
-                <Icon className={`w-4 h-4 ${isWa ? "text-emerald-400" : "text-blue-400"}`} />
+              <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${isGreen ? "bg-emerald-500/15" : "bg-blue-500/15"}`}>
+                <Icon className={`w-4 h-4 ${isGreen ? "text-emerald-400" : "text-blue-400"}`} />
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-white">
+                  {item.usuarioNome && <span className="text-white/50">{item.usuarioNome} · </span>}
                   {item.titulo || activityLabels[item.tipo || ""] || item.tipo}
                 </p>
                 {item.descricao && (
-                  <p className="text-sm text-white/50 mt-0.5">{item.descricao}</p>
+                  <p className="text-sm text-white/50 mt-0.5 whitespace-pre-wrap">{item.descricao}</p>
                 )}
                 <p className="text-xs text-white/30 mt-1">
                   {dateStr} {timeStr}

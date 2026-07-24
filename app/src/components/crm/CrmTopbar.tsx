@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { LogOut, Search, ChevronRight } from "lucide-react";
 import { NotificationDropdown } from "./NotificationDropdown";
+import { canUseActions } from "@/lib/auth/roles";
 
 interface CrmTopbarProps {
   user: {
@@ -16,7 +17,7 @@ interface CrmTopbarProps {
 
 const pathLabels: Record<string, string> = {
   "/dashboard": "Meu Dia",
-  "/leads": "Leads",
+  "/contatos": "Contatos",
   "/empresas": "Empresas",
   "/pipeline": "Pipeline",
   "/propostas": "Propostas",
@@ -31,7 +32,7 @@ const pathLabels: Record<string, string> = {
 };
 
 const subPathLabels: Record<string, string> = {
-  "/leads/[id]": "Detalhe",
+  "/contatos/[id]": "Detalhe",
   "/admin/organizacoes": "Organizações",
   "/admin/usuarios": "Usuários",
 };
@@ -80,7 +81,14 @@ export function CrmTopbar({ user }: CrmTopbarProps) {
         ? "Admin"
         : user.role === "gerente"
           ? "Gerente"
-          : "Vendedor";
+          : user.role === "sdr"
+            ? "SDR"
+            : user.role === "leitor"
+              ? "Leitor"
+              : "Closer";
+
+  // Leitor é read-only: sem botões de ação na topbar.
+  const showActions = canUseActions(user.role);
 
   const isMac = typeof navigator !== "undefined" && /Mac/.test(navigator.userAgent);
 
@@ -105,30 +113,34 @@ export function CrmTopbar({ user }: CrmTopbarProps) {
         </nav>
       </div>
 
-      {/* Center: Cmd+K search trigger */}
-      <button
-        onClick={() => {
-          window.dispatchEvent(new CustomEvent("open-command-palette"));
-        }}
-        className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg text-white/30 hover:text-white/50 transition-colors cursor-pointer max-w-[240px]"
-        style={{
-          background: "rgba(255,255,255,0.04)",
-          border: "1px solid rgba(255,255,255,0.06)",
-        }}
-      >
-        <Search className="w-3.5 h-3.5 shrink-0" />
-        <span className="text-xs truncate">Buscar...</span>
-        <kbd
-          className="ml-auto text-[10px] px-1.5 py-0.5 rounded shrink-0"
+      {/* Center: Cmd+K search trigger (oculto para leitor \u2014 read-only) */}
+      {showActions ? (
+        <button
+          onClick={() => {
+            window.dispatchEvent(new CustomEvent("open-command-palette"));
+          }}
+          className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg text-white/30 hover:text-white/50 transition-colors cursor-pointer max-w-[240px]"
           style={{
-            background: "rgba(255,255,255,0.06)",
-            border: "1px solid rgba(255,255,255,0.08)",
-            color: "rgba(255,255,255,0.3)",
+            background: "rgba(255,255,255,0.04)",
+            border: "1px solid rgba(255,255,255,0.06)",
           }}
         >
-          {isMac ? "\u2318K" : "Ctrl+K"}
-        </kbd>
-      </button>
+          <Search className="w-3.5 h-3.5 shrink-0" />
+          <span className="text-xs truncate">Buscar...</span>
+          <kbd
+            className="ml-auto text-[10px] px-1.5 py-0.5 rounded shrink-0"
+            style={{
+              background: "rgba(255,255,255,0.06)",
+              border: "1px solid rgba(255,255,255,0.08)",
+              color: "rgba(255,255,255,0.3)",
+            }}
+          >
+            {isMac ? "\u2318K" : "Ctrl+K"}
+          </kbd>
+        </button>
+      ) : (
+        <div />
+      )}
 
       {/* Right: notifications + user + logout */}
       <div className="flex items-center gap-1.5">

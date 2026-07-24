@@ -350,6 +350,7 @@ export async function POST(request: NextRequest) {
       concorrenteAtual: insertData.concorrenteAtual || undefined,
       contratoVenceEm: insertData.contratoVenceEm || undefined,
       origemNegocio: "novo",
+      origemQualificacao: "direta", // negócio criado junto do lead, sem fluxo de reunião
       lpUrl: insertData.lpUrl || null,
     })
     .returning();

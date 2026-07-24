@@ -17,6 +17,8 @@ export interface ParsedRdLead {
   telefone?: string;
   empresa?: string;
   cargo?: string;
+  tipoNegocio?: string; // "Tipo de negócio" do form (via tag "tipo:")
+  tamanhoBase?: string; // "Tamanho da base" do form (via tag "base:")
   origem: string; // "Mídia Paga" | "Site" | "Instagram" | "Linkedin" | "RD Station"
   utmSource?: string;
   utmMedium?: string;
@@ -34,12 +36,32 @@ interface RdLead {
   name?: string;
   email?: string;
   company?: string;
+  job_title?: string;
   personal_phone?: string;
   mobile_phone?: string;
+  tags?: unknown;
   custom_fields?: Record<string, unknown>;
   last_conversion?: { content?: RdContent; conversion_origin?: RdOrigin };
   first_conversion?: { content?: RdContent };
   [key: string]: unknown;
+}
+
+/**
+ * Lê o valor de uma tag no formato "prefixo: valor" (ex.: "tipo: Consultoria").
+ * Prefere as tags do content (mantêm o case original) e cai pras do lead.
+ */
+function tagValue(
+  contentTags: unknown,
+  leadTags: unknown,
+  prefix: string
+): string | undefined {
+  const norm = (t: unknown): string[] =>
+    Array.isArray(t) ? t.map((x) => s(x)) : [];
+  const tags = [...norm(contentTags), ...norm(leadTags)];
+  const hit = tags.find((t) => t.toLowerCase().startsWith(prefix.toLowerCase()));
+  if (!hit) return undefined;
+  const v = hit.slice(hit.indexOf(":") + 1).trim();
+  return v || undefined;
 }
 
 function s(v: unknown): string {
@@ -169,13 +191,29 @@ export function parseRdLead(lead: RdLead): ParsedRdLead {
   if (!utmSource) utmSource = s(origin.source);
   if (!utmMedium) utmMedium = s(origin.medium);
   if (!utmCampaign) utmCampaign = s(origin.campaign);
+  // Criativo do Meta Lead Ads: o fluxo Meta→RD grava traffic_value = "{conjunto}@{anúncio}"
+  // na conversão. É o ÚNICO lugar de onde dá pra tirar o criativo do lead de formulário
+  // (o payload não traz utm_content) — sem isso o relatório de Mídia Paga não consegue
+  // atribuir lead/venda a criativo (auditoria 21/07). utm_content = anúncio; utm_term = conjunto.
+  if (!utmContent) {
+    const tv = s(content.traffic_value || custom.traffic_value);
+    if (tv.includes("@")) {
+      const at = tv.indexOf("@");
+      utmContent = tv.slice(at + 1).trim();
+      if (!utmTerm) utmTerm = tv.slice(0, at).trim();
+    }
+  }
   if (!utmContent) utmContent = s(origin.value);
 
   const telefone =
-    s(content.Telefone || custom.Telefone) ||
-    s(lead.personal_phone) ||
+    s(content.Telefone || content.Celular || custom.Telefone) ||
     s(lead.mobile_phone) ||
+    s(lead.personal_phone) ||
     undefined;
+
+  // Campos de qualificação do form viajam nas tags ("tipo: X", "base: Y").
+  const tipoNegocio = tagValue(content.tags, lead.tags, "tipo:");
+  const tamanhoBase = tagValue(content.tags, lead.tags, "base:");
 
   const cut = (v: string) => (v ? v.substring(0, 250) : undefined);
 
@@ -185,7 +223,9 @@ export function parseRdLead(lead: RdLead): ParsedRdLead {
     email: s(lead.email) || undefined,
     telefone,
     empresa: s(lead.company || content.Empresa) || undefined,
-    cargo: s(content.Cargo) || undefined,
+    cargo: s(content.Cargo || lead.job_title) || undefined,
+    tipoNegocio: cut(s(tipoNegocio)),
+    tamanhoBase: cut(s(tamanhoBase)),
     origem,
     utmSource: cut(utmSource),
     utmMedium: cut(utmMedium),

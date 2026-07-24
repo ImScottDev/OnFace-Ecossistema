@@ -65,6 +65,7 @@ export async function POST(
         leadId: id,
         empresaId: lead.empresaId,
         titulo: parsed.data.titulo || `Negócio - ${lead.nome}`,
+        origemQualificacao: "direta", // vínculo manual de negócio, sem fluxo de reunião
         responsavelId: lead.responsavelId || ctx.userId,
       })
       .returning();

@@ -1,12 +1,14 @@
 import { Hono } from "hono";
 import { db } from "@/lib/db";
 import { propostas, propostaItens, leads, negocios, usuarios, contratos, atividades, statusChanges } from "@/lib/db/schema";
-import { eq, and, desc, asc, sql, ilike, inArray, count } from "drizzle-orm";
+import { eq, and, desc, asc, sql, ilike, inArray, count, gte } from "drizzle-orm";
 import { z } from "zod";
 import { getCtx } from "../compat.js";
 import { syncNegocioValoresFromPropostas } from "@/lib/crm/sync-negocio-valores";
 import { marcarPropostaAceita } from "@/lib/crm/aceitar-proposta";
 import { enviarPropostaComCheckout } from "@/lib/crm/enviar-proposta";
+import { getCheckoutSessionStatus } from "@/lib/integrations/stripe-sync";
+import { propostaPdfHtml, renderPropostaPdf } from "@/lib/propostas/proposta-pdf";
 
 const app = new Hono();
 
@@ -60,10 +62,20 @@ app.get("/propostas", async (c) => {
   const statusFilter = c.req.query("status") ?? null;
   const leadId = c.req.query("leadId") ?? null;
   const search = c.req.query("q") ?? null;
+  const responsavel = c.req.query("responsavel") ?? null; // userId, ou "todas"/null = todos
+  const periodo = c.req.query("periodo") ?? null; // "mes" = mês atual; senão histórico completo
 
   const conditions = [eq(propostas.organizacaoId, ctx.organizacaoId)];
   if (statusFilter) conditions.push(eq(propostas.status, statusFilter));
   if (leadId) conditions.push(eq(propostas.leadId, leadId));
+  // "Minhas" = propostas criadas por esse usuário (bate com a coluna "Criado por").
+  if (responsavel && responsavel !== "todas") conditions.push(eq(propostas.criadoPorId, responsavel));
+  // Padrão do closer: só o mês corrente; histórico só quando pedir "todos".
+  if (periodo === "mes") {
+    const now = new Date();
+    const inicioMes = new Date(now.getFullYear(), now.getMonth(), 1);
+    conditions.push(gte(propostas.createdAt, inicioMes));
+  }
 
   let query = db
     .select({
@@ -164,7 +176,82 @@ app.get("/propostas/:id", async (c) => {
     .where(eq(propostaItens.propostaId, id))
     .orderBy(asc(propostaItens.ordem));
 
-  return c.json({ ...proposta, itens });
+  // Status ao vivo do checkout (só faz sentido enquanto ainda não resolveu:
+  // aceita/recusada/expirada já têm o desfecho gravado, não precisa consultar o Stripe).
+  let checkoutStatus: { status: string; paymentStatus: string } | null = null;
+  if (proposta.status === "enviada" && proposta.stripeSessionId) {
+    const st = await getCheckoutSessionStatus(proposta.stripeSessionId);
+    if (st) checkoutStatus = { status: st.status, paymentStatus: st.payment_status };
+  }
+
+  return c.json({ ...proposta, itens, checkoutStatus });
+});
+
+// GET /propostas/:id/pdf — PDF comercial (moldes Zoho) via Chrome headless
+// PÚBLICO DE PROPÓSITO: é o link que o cliente (sem conta no CRM) recebe pra ver a
+// proposta formalizada e pagar pelo botão embutido. Protegido só pelo UUID da proposta
+// (não sequencial, não enumerável) — mesmo modelo de confiança do link de checkout do
+// Stripe, que já é enviado sem autenticação nenhuma.
+app.get("/propostas/:id/pdf", async (c) => {
+  const id = c.req.param("id");
+
+  const [p] = await db
+    .select({
+      numero: propostas.numero,
+      versao: propostas.versao,
+      moeda: propostas.moeda,
+      dataEmissao: propostas.dataEmissao,
+      dataValidade: propostas.dataValidade,
+      condicoesPagamento: propostas.condicoesPagamento,
+      totalRecorrente: propostas.totalRecorrente,
+      totalAvulso: propostas.totalAvulso,
+      totalGeral: propostas.totalGeral,
+      checkoutUrl: propostas.checkoutUrl,
+      criadoPorNome: usuarios.nome,
+      criadoPorEmail: usuarios.email,
+      leadNome: leads.nome,
+      leadEmpresa: leads.empresa,
+      leadEmail: leads.email,
+      leadTelefone: leads.telefone,
+    })
+    .from(propostas)
+    .leftJoin(leads, eq(propostas.leadId, leads.id))
+    .leftJoin(usuarios, eq(propostas.criadoPorId, usuarios.id))
+    .where(eq(propostas.id, id))
+    .limit(1);
+
+  if (!p) return c.json({ error: "Proposta não encontrada" }, 404);
+
+  const itens = await db
+    .select()
+    .from(propostaItens)
+    .where(eq(propostaItens.propostaId, id))
+    .orderBy(asc(propostaItens.ordem));
+
+  try {
+    const html = propostaPdfHtml({
+      ...p,
+      itens: itens.map((i) => ({
+        nome: i.nome,
+        descricao: i.descricao,
+        tipo: i.tipo,
+        quantidade: i.quantidade,
+        valorUnitario: i.valorUnitario,
+        subtotal: i.subtotal,
+      })),
+    });
+    const pdf = await renderPropostaPdf(html);
+    const fname = `proposta-${String(p.numero).padStart(4, "0")}${p.versao > 1 ? `-v${p.versao}` : ""}.pdf`;
+    return new Response(new Uint8Array(pdf), {
+      headers: {
+        "Content-Type": "application/pdf",
+        "Content-Disposition": `inline; filename="${fname}"`,
+      },
+    });
+  } catch (e) {
+    console.error("[proposta-pdf] falha ao gerar:", e);
+    return c.json({ error: "Falha ao gerar PDF" }, 500);
+  }
 });
 
 // POST /propostas
@@ -197,11 +284,32 @@ app.post("/propostas", async (c) => {
 
   // Verify lead belongs to org
   const [lead] = await db
-    .select({ id: leads.id })
+    .select({ id: leads.id, nome: leads.nome, empresa: leads.empresa, empresaId: leads.empresaId, responsavelId: leads.responsavelId })
     .from(leads)
     .where(and(eq(leads.id, resolvedLeadId), eq(leads.organizacaoId, ctx.organizacaoId)))
     .limit(1);
   if (!lead) return c.json({ error: "Lead não encontrado" }, 404);
+
+  // Toda proposta precisa de um NEGÓCIO. Se veio só o lead (proposta criada do
+  // contato, sem deal), cria um negócio no pipeline ("proposta apresentada") e
+  // vincula. Assim, ao fechar, é ESSE negócio que vira ganho — meta e relatório
+  // batem, e não sobra proposta solta sem negócio.
+  if (!resolvedNegocioId) {
+    const [novoNeg] = await db
+      .insert(negocios)
+      .values({
+        organizacaoId: ctx.organizacaoId,
+        leadId: resolvedLeadId,
+        empresaId: lead.empresaId ?? null,
+        titulo: `${lead.empresa || lead.nome || "Proposta"} - Negócio`,
+        status: "proposta_apresentada",
+        responsavelId: lead.responsavelId ?? ctx.userId,
+        origemNegocio: "novo",
+        origemQualificacao: "direta", // proposta direto do lead, sem fluxo de reunião
+      })
+      .returning({ id: negocios.id });
+    resolvedNegocioId = novoNeg.id;
+  }
 
   // Get next numero for org
   const [{ maxNum }] = await db
@@ -286,8 +394,8 @@ app.patch("/propostas/:id", async (c) => {
     .limit(1);
 
   if (!existing) return c.json({ error: "Proposta não encontrada" }, 404);
-  if (existing.status !== "rascunho") {
-    return c.json({ error: "Só é possível editar propostas em rascunho" }, 400);
+  if (!["rascunho", "enviada"].includes(existing.status)) {
+    return c.json({ error: "Só é possível editar propostas em rascunho ou enviadas (aceita/recusada/expirada ficam travadas)" }, 400);
   }
 
   const body = await c.req.json();
@@ -365,8 +473,11 @@ app.delete("/propostas/:id", async (c) => {
     .limit(1);
 
   if (!existing) return c.json({ error: "Proposta não encontrada" }, 404);
-  if (existing.status !== "rascunho") {
-    return c.json({ error: "Só é possível excluir propostas em rascunho" }, 400);
+  // A closer pode excluir propostas erradas pra não sujar a taxa de aceite
+  // (rascunho/enviada/recusada/expirada). Só a ACEITA fica travada — ela gerou
+  // contrato + negócio ganho; pra desfazer, reabrir o negócio.
+  if (existing.status === "aceita") {
+    return c.json({ error: "Proposta aceita não pode ser excluída (gerou contrato). Reabra o negócio para desfazer." }, 400);
   }
 
   const negocioId = existing.negocioId;
@@ -385,12 +496,14 @@ app.delete("/propostas/:id", async (c) => {
 app.post("/propostas/:id/enviar", async (c) => {
   const ctx = await getCtx(c);
   const id = c.req.param("id");
+  const skipEmail = c.req.query("skipEmail") === "true"; // "Salvar": ativa sem email
 
   const result = await enviarPropostaComCheckout({
     propostaId: id,
     organizacaoId: ctx.organizacaoId,
     userId: ctx.userId,
     userName: ctx.userName,
+    skipEmail,
   });
 
   if (!result.ok) return c.json({ error: result.error }, result.status as 400);
@@ -460,6 +573,7 @@ app.post("/propostas/:id/nova-versao", async (c) => {
     .values({
       organizacaoId: ctx.organizacaoId,
       leadId: original.leadId,
+      negocioId: original.negocioId,
       numero: original.numero,
       versao: original.versao + 1,
       propostaOriginalId: original.propostaOriginalId || original.id,

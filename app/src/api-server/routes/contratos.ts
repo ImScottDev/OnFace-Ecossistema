@@ -112,6 +112,7 @@ app.post("/contratos", async (c) => {
       inicio: parsed.data.inicio,
       vencimento: parsed.data.vencimento,
       renovacaoAuto: parsed.data.renovacaoAuto,
+      produto: "ai",
     })
     .returning();
 

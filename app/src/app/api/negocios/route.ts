@@ -191,6 +191,8 @@ export async function POST(request: NextRequest) {
       concorrenteAtual: parsed.data.concorrenteAtual,
       contratoVenceEm: parsed.data.contratoVenceEm,
       origemNegocio: parsed.data.origemNegocio || "novo",
+      // Espelho da rota Hono: criação manual = qualificação direta sem reunião.
+      origemQualificacao: (parsed.data.origemNegocio || "novo") === "novo" ? "direta" : undefined,
       responsavelId: parsed.data.responsavelId || ctx.userId,
       pipelineId: parsed.data.pipelineId || null,
       camposCustom: parsed.data.camposCustom || {},

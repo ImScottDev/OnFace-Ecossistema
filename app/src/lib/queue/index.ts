@@ -27,3 +27,9 @@ export const enrichmentQueue = new Queue("enrichment", { connection, defaultJobO
 export const cipaAnalysisQueue = new Queue("cipa-analysis", { connection, defaultJobOptions: groqJobOptions });
 export const aiSdrQueue = new Queue("ai-sdr", { connection, defaultJobOptions: groqJobOptions });
 export const siteLeadQualifyQueue = new Queue("site-lead-qualify", { connection, defaultJobOptions: groqJobOptions });
+// Eventos de ligação finalizada vindos do webhook de saída da Callface.
+// Retry generoso: se o worker falhar (banco fora etc.), o evento não se perde.
+export const callfaceCallEventsQueue = new Queue("callface-call-events", {
+  connection,
+  defaultJobOptions: { ...defaultJobOptions, attempts: 5, backoff: { type: "exponential" as const, delay: 30000 } },
+});

@@ -12,6 +12,7 @@ import { usePipelineConfig } from "@/hooks/usePipelineConfig";
 import type { ContatoData } from "./ContatoActionBar";
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
+import { callfaceCallUrl } from "@/lib/utils/callface-call";
 
 interface ContatoInfoSidebarProps {
   contato: ContatoData & { avatarUrl?: string | null };
@@ -121,8 +122,8 @@ function AddNoteInline({ leadId }: { leadId: string }) {
         value={text}
         onChange={(e) => setText(e.target.value)}
         placeholder="Escreva uma nota..."
-        className="w-full text-xs bg-white/[0.03] border border-white/[0.08] rounded-lg px-3 py-2 text-white/70 placeholder:text-white/20 outline-none focus:border-[#e23752]/30 resize-none"
-        rows={2}
+        className="w-full text-xs bg-white/[0.03] border border-white/[0.08] rounded-lg px-3 py-2 text-white/70 placeholder:text-white/20 outline-none focus:border-[#e23752]/30 resize-y"
+        rows={4}
         onKeyDown={(e) => {
           if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && text.trim()) addNota.mutate(text.trim());
           if (e.key === "Escape") { setOpen(false); setText(""); }
@@ -281,7 +282,7 @@ export function ContatoInfoSidebar({ contato }: ContatoInfoSidebarProps) {
         {/* Quick contact */}
         <div className="space-y-1.5">
           {contato.telefone && (
-            <a href={`tel:${contato.telefone}`} className="flex items-center gap-2.5 px-3 py-2 rounded-lg bg-white/[0.03] hover:bg-white/[0.06] transition-colors group">
+            <a href={callfaceCallUrl(contato.telefone)} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2.5 px-3 py-2 rounded-lg bg-white/[0.03] hover:bg-white/[0.06] transition-colors group">
               <Phone className="w-3.5 h-3.5 text-blue-400 shrink-0" />
               <span className="text-sm text-white/70 group-hover:text-white truncate">{contato.telefone}</span>
             </a>
@@ -297,7 +298,7 @@ export function ContatoInfoSidebar({ contato }: ContatoInfoSidebarProps) {
         {/* Edit lead button */}
         {lead && (
           <Link
-            href={`/leads/${lead.id}`}
+            href={`/contatos/${lead.id}`}
             className="flex items-center justify-center gap-2 w-full py-2 rounded-lg border border-white/[0.06] text-xs text-white/50 hover:text-white hover:border-white/[0.12] transition-colors"
           >
             <Pencil className="w-3.5 h-3.5" /> Abrir Lead Completo <ArrowRight className="w-3.5 h-3.5" />
@@ -441,7 +442,7 @@ export function ContatoInfoSidebar({ contato }: ContatoInfoSidebarProps) {
                   />
                 ))}
                 {tarefas.length > 5 && (
-                  <Link href={`/leads/${lead.id}`} className="block text-center text-[11px] text-[#e23752] hover:text-[#f06d82] pt-1">
+                  <Link href={`/contatos/${lead.id}`} className="block text-center text-[11px] text-[#e23752] hover:text-[#f06d82] pt-1">
                     +{tarefas.length - 5} tarefas
                   </Link>
                 )}
@@ -462,7 +463,7 @@ export function ContatoInfoSidebar({ contato }: ContatoInfoSidebarProps) {
                 Notas {notas.length > 0 && `(${notas.length})`}
               </h4>
               {notas.length > 3 && (
-                <Link href={`/leads/${lead.id}`} className="text-[11px] text-[#e23752] hover:text-[#f06d82] font-medium">
+                <Link href={`/contatos/${lead.id}`} className="text-[11px] text-[#e23752] hover:text-[#f06d82] font-medium">
                   Ver todas
                 </Link>
               )}
@@ -471,7 +472,7 @@ export function ContatoInfoSidebar({ contato }: ContatoInfoSidebarProps) {
               <div className="space-y-1.5">
                 {notas.slice(0, 3).map((n: { id: string; conteudo: string; autorNome?: string | null; createdAt: string }) => (
                   <div key={n.id} className="px-3 py-2.5 rounded-lg bg-white/[0.03]">
-                    <p className="text-sm text-white/60 line-clamp-2">{n.conteudo}</p>
+                    <p className="text-sm text-white/60 line-clamp-2 whitespace-pre-wrap">{n.conteudo}</p>
                     <div className="flex items-center gap-2 mt-1.5">
                       {n.autorNome && <span className="text-[11px] text-white/30">{n.autorNome}</span>}
                       <span className="text-[11px] text-white/20">{timeAgo(n.createdAt)}</span>

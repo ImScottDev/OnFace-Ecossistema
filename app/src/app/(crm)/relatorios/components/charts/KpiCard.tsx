@@ -5,14 +5,16 @@ import { LineChart, Line, Area, ComposedChart, ResponsiveContainer } from "recha
 interface KpiCardProps {
   label: string;
   value: string;
-  delta: number;
+  delta: number | null;
   trend: number[];
   color: string;
   delay?: number;
 }
 
 export function KpiCard({ label, value, delta, trend, color, delay = 0 }: KpiCardProps) {
-  const isPositive = delta >= 0;
+  // delta null = base pequena/zero → "n/a" (evita variação absurda tipo +3800%)
+  const hasDelta = delta != null && Number.isFinite(delta);
+  const isPositive = (delta ?? 0) >= 0;
   const sparkData = trend.map((v, i) => ({ v, i }));
 
   return (
@@ -54,16 +56,22 @@ export function KpiCard({ label, value, delta, trend, color, delay = 0 }: KpiCar
       </div>
 
       <div className="mt-2">
-        <span
-          className={`inline-flex items-center gap-0.5 text-[11px] font-medium px-1.5 py-0.5 rounded-full ${
-            isPositive
-              ? "bg-emerald-500/10 text-emerald-400"
-              : "bg-red-500/10 text-red-400"
-          }`}
-        >
-          {isPositive ? "▲" : "▼"} {isPositive ? "+" : ""}
-          {delta.toFixed(1)}%
-        </span>
+        {hasDelta ? (
+          <span
+            className={`inline-flex items-center gap-0.5 text-[11px] font-medium px-1.5 py-0.5 rounded-full ${
+              isPositive
+                ? "bg-emerald-500/10 text-emerald-400"
+                : "bg-red-500/10 text-red-400"
+            }`}
+          >
+            {isPositive ? "▲" : "▼"} {isPositive ? "+" : ""}
+            {delta!.toFixed(1)}%
+          </span>
+        ) : (
+          <span className="inline-flex items-center text-[11px] font-medium px-1.5 py-0.5 rounded-full bg-white/[0.05] text-white/40">
+            n/a
+          </span>
+        )}
       </div>
     </div>
   );

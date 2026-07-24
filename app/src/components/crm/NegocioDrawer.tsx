@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { AddNoteInlineNegocio, TarefasSectionNegocio } from "@/components/crm/NegocioSections";
 import { toast } from "sonner";
 import { DetailDrawer } from "@/components/crm/DetailDrawer";
 import { Building2, User, FileText, Clock, Pencil, StickyNote, Plus, Send, CalendarClock, Tag, X, Phone, Mail, MessageCircle, ChevronDown, ChevronRight, Video, Users, FileAudio, Trash2, XCircle, Trophy } from "lucide-react";
@@ -8,6 +9,8 @@ import { usePipelineConfig, usePipelines } from "@/hooks/usePipelineConfig";
 import { STAGNATION_REASONS, DEFAULT_STAGES, DEFAULT_CLOSED_STAGES, type PipelineStage } from "@/lib/crm/pipeline";
 import { CustomFieldsSection } from "@/components/crm/CustomFieldsSection";
 import { QualificacaoSdrSection } from "@/components/crm/QualificacaoSdrSection";
+import { LigacoesSection } from "@/components/crm/LigacoesSection";
+import { callfaceCallUrl } from "@/lib/utils/callface-call";
 import { isCelular } from "@/lib/utils/phone";
 import Link from "next/link";
 import { useState, useEffect, useRef } from "react";
@@ -67,42 +70,6 @@ function TemperaturaBadge({ temp }: { temp: string | null }) {
   const c = config[temp];
   if (!c) return null;
   return <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${c.bg} ${c.text}`}>{c.label}</span>;
-}
-
-function AddNoteInlineNegocio({ negocioId }: { negocioId: string }) {
-  const [text, setText] = useState("");
-  const [open, setOpen] = useState(false);
-  const queryClient = useQueryClient();
-  const inputRef = useRef<HTMLTextAreaElement>(null);
-  const addNota = useMutation({
-    mutationFn: async (conteudo: string) => {
-      const res = await fetch("/api/notas", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ conteudo, negocioId }) });
-      if (!res.ok) throw new Error("Falha");
-      return res.json();
-    },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["negocio", negocioId] }); setText(""); setOpen(false); },
-  });
-  useEffect(() => { if (open) inputRef.current?.focus(); }, [open]);
-  if (!open) {
-    return (
-      <button onClick={() => setOpen(true)} className="w-full flex items-center justify-center gap-1.5 py-2 text-[11px] text-white/30 hover:text-white/50 hover:bg-white/[0.03] rounded-lg transition-colors mt-1.5">
-        <Plus size={11} /> Adicionar nota
-      </button>
-    );
-  }
-  return (
-    <div className="mt-1.5 space-y-1.5">
-      <textarea ref={inputRef} value={text} onChange={(e) => setText(e.target.value)} placeholder="Escreva uma nota..." className="w-full text-xs bg-white/[0.03] border border-white/[0.08] rounded-lg px-3 py-2 text-white/70 placeholder:text-white/20 outline-none focus:border-[#e23752]/30 resize-none" rows={2}
-        onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && text.trim()) addNota.mutate(text.trim()); if (e.key === "Escape") { setOpen(false); setText(""); } }} />
-      <div className="flex items-center justify-between">
-        <span className="text-[10px] text-white/15">Cmd+Enter para salvar</span>
-        <div className="flex gap-1.5">
-          <button onClick={() => { setOpen(false); setText(""); }} className="text-[10px] text-white/25 hover:text-white/40 px-2 py-1">Cancelar</button>
-          <button onClick={() => text.trim() && addNota.mutate(text.trim())} disabled={!text.trim() || addNota.isPending} className="text-[10px] text-[#e23752] hover:text-[#f06d82] px-2 py-1 disabled:opacity-30 flex items-center gap-1"><Send size={9} /> Salvar</button>
-        </div>
-      </div>
-    </div>
-  );
 }
 
 function AddReuniaoInline({ negocioId }: { negocioId: string }) {
@@ -589,7 +556,7 @@ export function NegocioDrawer({ negocioId, open, onClose, onOpenLead, onOpenEmpr
                           )}
                           {l.telefone && (
                             <div className="flex items-center gap-2">
-                              <a href={`tel:${l.telefone}`} className="flex items-center gap-1.5 text-[11px] text-blue-400 hover:text-blue-300 transition-colors">
+                              <a href={callfaceCallUrl(l.telefone)} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-[11px] text-blue-400 hover:text-blue-300 transition-colors">
                                 <Phone className="w-3 h-3" /> {l.telefone}
                               </a>
                               {isCelular(l.telefone) && (
@@ -637,7 +604,7 @@ export function NegocioDrawer({ negocioId, open, onClose, onOpenLead, onOpenEmpr
                     )}
                     {lead.telefone && (
                       <div className="flex items-center gap-2">
-                        <a href={`tel:${lead.telefone}`} className="flex items-center gap-1.5 text-[11px] text-blue-400 hover:text-blue-300 transition-colors">
+                        <a href={callfaceCallUrl(lead.telefone)} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-[11px] text-blue-400 hover:text-blue-300 transition-colors">
                           <Phone className="w-3 h-3" /> {lead.telefone}
                         </a>
                         {isCelular(lead.telefone) && (
@@ -813,6 +780,13 @@ export function NegocioDrawer({ negocioId, open, onClose, onOpenLead, onOpenEmpr
             {negocioId && <AddReuniaoInline negocioId={negocioId} />}
           </div>
 
+          {/* Ligações (telefonia Callface) — sempre visível */}
+          {negocioId && (
+            <div className="card-solid p-3.5">
+              <LigacoesSection negocioId={negocioId} />
+            </div>
+          )}
+
           {/* Qualificação SDR (herdada do lead, vem da pré-vendas) */}
           {lead?.id && (
             <div className="card-solid p-3.5">
@@ -859,6 +833,9 @@ export function NegocioDrawer({ negocioId, open, onClose, onOpenLead, onOpenEmpr
             )}
             {negocioId && <AddNoteInlineNegocio negocioId={negocioId} />}
           </div>
+
+          {/* Tarefas do negócio (título, descrição, data/hora) → Minhas Tarefas */}
+          {negocioId && <TarefasSectionNegocio negocioId={negocioId} leadId={lead?.id ?? null} />}
 
           {/* Timeline (last 3 status changes) */}
           {statusChanges && statusChanges.length > 0 && (

@@ -397,4 +397,14 @@ app.post("/view-as", async (c) => {
   return c.json({ ok: true, userId: target.id, role: target.role });
 });
 
+// POST /admin/sdr-escalation-run — dispara manualmente a escalação de pré-vendas
+// (Em Contato 6h+ → Follow up + Jenifer assume). Útil pra testar em homolog, que
+// não roda worker; em prod o worker já dispara sozinho a cada 15min.
+app.post("/sdr-escalation-run", async (c) => {
+  await getSuperCtx(c);
+  const { runSdrFollowupEscalation } = await import("@/lib/crm/sdr-escalation");
+  const res = await runSdrFollowupEscalation(db);
+  return c.json({ ok: true, ...res });
+});
+
 export const adminRoutes = app;

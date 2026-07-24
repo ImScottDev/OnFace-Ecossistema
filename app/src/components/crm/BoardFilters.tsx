@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useRef, useEffect, useMemo } from "react";
+import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useSession } from "next-auth/react";
-import { Calendar, ChevronDown, User, Search, X } from "lucide-react";
+import { Calendar, ChevronDown, User, Search, X, Tag } from "lucide-react";
 import { type DateFilter, matchesDateFilter } from "@/components/crm/FilterBar";
 
 export type { DateFilter };
@@ -59,18 +60,49 @@ export function initialsOf(nome: string) {
     .toUpperCase();
 }
 
+interface Rect {
+  top: number;
+  left: number;
+}
+
+/**
+ * Dropdown com painel em PORTAL (document.body), posicionado via getBoundingClientRect
+ * do botão-gatilho. Necessário porque os boards (Pré-vendas/Pipeline) colocam a barra
+ * de filtros dentro de um contêiner com `overflow-x-auto` — um painel `position:absolute`
+ * comum fica CORTADO por esse overflow (abre, mas invisível/inacessível: o clique
+ * "não faz nada" na prática, mesmo com o state mudando certinho por baixo).
+ */
 function useDropdown() {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const [rect, setRect] = useState<Rect | null>(null);
+  const triggerRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  const toggle = () => {
+    setOpen((v) => {
+      const next = !v;
+      if (next && triggerRef.current) {
+        const r = triggerRef.current.getBoundingClientRect();
+        setRect({ top: r.bottom + 4, left: r.left });
+      }
+      return next;
+    });
+  };
+  const close = () => setOpen(false);
+
   useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      const t = e.target as Node;
+      if (triggerRef.current?.contains(t)) return;
+      if (panelRef.current?.contains(t)) return;
+      setOpen(false);
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [open]);
-  return { open, setOpen, ref };
+
+  return { open, toggle, close, triggerRef, panelRef, rect };
 }
 
 /**
@@ -131,8 +163,61 @@ export function matchesResponsavel(
 }
 
 /**
+ * Verdadeiro se o item passa no filtro de origem. Match EXATO contra o valor real
+ * de `origem` (ex: "Mídia Paga", "Site", "outbound"...) — antes reduzia tudo a um
+ * binário Inbound/Outbound e escondia as origens reais.
+ */
+export function matchesOrigem(origem: string | null | undefined, filter: string): boolean {
+  if (filter === "todos") return true;
+  return (origem || "").trim() === filter;
+}
+
+export interface OrigemOption {
+  value: string;
+  label: string;
+  count?: number;
+}
+
+/** Deriva as opções de origem a partir dos dados reais (valores distintos, mais frequentes primeiro). */
+export function buildOrigemOptions(items: { origem?: string | null }[]): OrigemOption[] {
+  const counts = new Map<string, number>();
+  for (const it of items) {
+    const v = (it.origem || "").trim();
+    if (!v) continue;
+    counts.set(v, (counts.get(v) || 0) + 1);
+  }
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([value, count]) => ({ value, label: value, count }));
+}
+
+function DropdownPanel({
+  panelRef,
+  rect,
+  className = "",
+  children,
+}: {
+  panelRef: React.RefObject<HTMLDivElement | null>;
+  rect: Rect | null;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  if (!rect || typeof document === "undefined") return null;
+  return createPortal(
+    <div
+      ref={panelRef}
+      className={`fixed z-[999] rounded-xl shadow-xl py-1 ${className}`}
+      style={{ top: rect.top, left: rect.left, background: "var(--bg-elevated)", border: "1px solid rgba(255,255,255,0.1)" }}
+    >
+      {children}
+    </div>,
+    document.body,
+  );
+}
+
+/**
  * Barra de filtros dos boards (Pré-vendas / Pipeline):
- * Responsável (Todos / Meu / por usuário, com busca) + Período.
+ * Responsável (Todos / Meu / por usuário, com busca) + Período (opcional) + Origem (opcional).
  */
 export function BoardFilters({
   usuarios,
@@ -145,26 +230,37 @@ export function BoardFilters({
   setCustomFrom,
   customTo,
   setCustomTo,
+  origem,
+  setOrigem,
+  origemOptions,
+  showPeriodo = true,
   accent = "#8e27ef",
 }: {
   usuarios: OrgUsuario[];
   currentUserId: string | null;
   resp: string;
   setResp: (v: string) => void;
-  periodo: DateFilter;
-  setPeriodo: (v: DateFilter) => void;
+  periodo?: DateFilter;
+  setPeriodo?: (v: DateFilter) => void;
   customFrom?: string;
   setCustomFrom?: (v: string) => void;
   customTo?: string;
   setCustomTo?: (v: string) => void;
+  origem?: string;
+  setOrigem?: (v: string) => void;
+  origemOptions?: OrigemOption[];
+  showPeriodo?: boolean;
   accent?: string;
 }) {
   const respDd = useDropdown();
   const dateDd = useDropdown();
+  const origemDd = useDropdown();
   const [search, setSearch] = useState("");
 
   const respActive = resp !== "todos";
-  const dateActive = periodo !== "all";
+  const dateActive = showPeriodo && periodo !== undefined && periodo !== "all";
+  const origemActive = !!origem && origem !== "todos";
+  const origemLabel = origemActive ? (origemOptions?.find((o) => o.value === origem)?.label ?? origem) : "Origem";
 
   const respLabel = useMemo(() => {
     if (resp === "todos") return "Responsável";
@@ -184,9 +280,9 @@ export function BoardFilters({
   return (
     <div className="flex items-center gap-1.5">
       {/* Responsável */}
-      <div className="relative shrink-0" ref={respDd.ref}>
+      <div className="relative shrink-0" ref={respDd.triggerRef}>
         <button
-          onClick={() => { respDd.setOpen(!respDd.open); dateDd.setOpen(false); }}
+          onClick={() => { respDd.toggle(); dateDd.close(); origemDd.close(); }}
           className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-[11px] whitespace-nowrap transition-all duration-150"
           style={{
             background: respActive ? `${accent}15` : "rgba(255,255,255,0.03)",
@@ -199,15 +295,12 @@ export function BoardFilters({
           <ChevronDown className="w-2.5 h-2.5 opacity-50" />
         </button>
         {respDd.open && (
-          <div
-            className="absolute left-0 top-full mt-1 z-50 w-[220px] rounded-xl shadow-xl py-1"
-            style={{ background: "var(--bg-elevated)", border: "1px solid rgba(255,255,255,0.1)" }}
-          >
-            <DropItem label="Todos" active={resp === "todos"} accent={accent} onClick={() => { setResp("todos"); respDd.setOpen(false); }} />
+          <DropdownPanel panelRef={respDd.panelRef} rect={respDd.rect} className="w-[220px]">
+            <DropItem label="Todos" active={resp === "todos"} accent={accent} onClick={() => { setResp("todos"); respDd.close(); }} />
             {currentUserId && (
-              <DropItem label="Meus (eu)" active={resp === "meu"} accent={accent} onClick={() => { setResp("meu"); respDd.setOpen(false); }} />
+              <DropItem label="Meus (eu)" active={resp === "meu"} accent={accent} onClick={() => { setResp("meu"); respDd.close(); }} />
             )}
-            <DropItem label="Sem responsável" active={resp === "sem"} accent={accent} onClick={() => { setResp("sem"); respDd.setOpen(false); }} />
+            <DropItem label="Sem responsável" active={resp === "sem"} accent={accent} onClick={() => { setResp("sem"); respDd.close(); }} />
             <div className="px-2 py-1.5 border-t border-white/[0.06] mt-1">
               <div className="relative">
                 <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-white/25" />
@@ -223,7 +316,7 @@ export function BoardFilters({
               {filteredUsuarios.map((u) => (
                 <button
                   key={u.id}
-                  onClick={() => { setResp(u.id); respDd.setOpen(false); }}
+                  onClick={() => { setResp(u.id); respDd.close(); }}
                   className={`w-full text-left px-3 py-1.5 text-[11px] flex items-center gap-2 transition-colors ${resp === u.id ? "bg-white/[0.06]" : "hover:bg-white/[0.04]"}`}
                 >
                   <span
@@ -237,60 +330,93 @@ export function BoardFilters({
               ))}
               {filteredUsuarios.length === 0 && <p className="px-3 py-2 text-[11px] text-white/25">Ninguém encontrado</p>}
             </div>
-          </div>
+          </DropdownPanel>
         )}
       </div>
 
-      {/* Período */}
-      <div className="relative shrink-0" ref={dateDd.ref}>
-        <button
-          onClick={() => { dateDd.setOpen(!dateDd.open); respDd.setOpen(false); }}
-          className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-[11px] whitespace-nowrap transition-all duration-150"
-          style={{
-            background: dateActive ? `${accent}15` : "rgba(255,255,255,0.03)",
-            color: dateActive ? accent : "rgba(255,255,255,0.4)",
-            border: `1px solid ${dateActive ? `${accent}30` : "rgba(255,255,255,0.06)"}`,
-          }}
-        >
-          <Calendar className="w-3.5 h-3.5" />
-          {dateActive && <span>{dateLabel}</span>}
-          <ChevronDown className="w-2.5 h-2.5 opacity-50" />
-        </button>
-        {dateDd.open && (
-          <div
-            className="absolute left-0 top-full mt-1 z-50 min-w-[160px] rounded-xl shadow-xl py-1"
-            style={{ background: "var(--bg-elevated)", border: "1px solid rgba(255,255,255,0.1)" }}
+      {/* Período — opcional (showPeriodo=false esconde, ex: Pré-vendas não usa) */}
+      {showPeriodo && setPeriodo && (
+        <div className="relative shrink-0" ref={dateDd.triggerRef}>
+          <button
+            onClick={() => { dateDd.toggle(); respDd.close(); origemDd.close(); }}
+            className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-[11px] whitespace-nowrap transition-all duration-150"
+            style={{
+              background: dateActive ? `${accent}15` : "rgba(255,255,255,0.03)",
+              color: dateActive ? accent : "rgba(255,255,255,0.4)",
+              border: `1px solid ${dateActive ? `${accent}30` : "rgba(255,255,255,0.06)"}`,
+            }}
           >
-            <DropItem label="Todos" active={periodo === "all"} accent={accent} onClick={() => { setPeriodo("all"); dateDd.setOpen(false); }} />
-            {DATE_OPTIONS.map((opt) => (
-              <DropItem
-                key={opt.value}
-                label={opt.label}
-                active={periodo === opt.value}
-                accent={accent}
-                onClick={() => { setPeriodo(opt.value); if (opt.value !== "custom") dateDd.setOpen(false); }}
-              />
-            ))}
-            {periodo === "custom" && setCustomFrom && setCustomTo && (
-              <div className="px-3 py-2 space-y-1.5 border-t border-white/[0.06]">
-                <div>
-                  <label className="text-[10px] text-white/30 block mb-0.5">De</label>
-                  <input type="date" value={customFrom || ""} onChange={(e) => setCustomFrom(e.target.value)} className="w-full text-[11px] px-2 py-1 rounded bg-white/[0.05] border border-white/[0.08] text-white/70 outline-none" />
+            <Calendar className="w-3.5 h-3.5" />
+            {dateActive && <span>{dateLabel}</span>}
+            <ChevronDown className="w-2.5 h-2.5 opacity-50" />
+          </button>
+          {dateDd.open && (
+            <DropdownPanel panelRef={dateDd.panelRef} rect={dateDd.rect} className="min-w-[160px]">
+              <DropItem label="Todos" active={periodo === "all"} accent={accent} onClick={() => { setPeriodo("all"); dateDd.close(); }} />
+              {DATE_OPTIONS.map((opt) => (
+                <DropItem
+                  key={opt.value}
+                  label={opt.label}
+                  active={periodo === opt.value}
+                  accent={accent}
+                  onClick={() => { setPeriodo(opt.value); if (opt.value !== "custom") dateDd.close(); }}
+                />
+              ))}
+              {periodo === "custom" && setCustomFrom && setCustomTo && (
+                <div className="px-3 py-2 space-y-1.5 border-t border-white/[0.06]">
+                  <div>
+                    <label className="text-[10px] text-white/30 block mb-0.5">De</label>
+                    <input type="date" value={customFrom || ""} onChange={(e) => setCustomFrom(e.target.value)} className="w-full text-[11px] px-2 py-1 rounded bg-white/[0.05] border border-white/[0.08] text-white/70 outline-none" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-white/30 block mb-0.5">Até</label>
+                    <input type="date" value={customTo || ""} onChange={(e) => setCustomTo(e.target.value)} className="w-full text-[11px] px-2 py-1 rounded bg-white/[0.05] border border-white/[0.08] text-white/70 outline-none" />
+                  </div>
+                  <button onClick={() => dateDd.close()} className="w-full text-[10px] text-center py-1 rounded text-white/50 hover:text-white/70 bg-white/[0.04] hover:bg-white/[0.06]">Aplicar</button>
                 </div>
-                <div>
-                  <label className="text-[10px] text-white/30 block mb-0.5">Até</label>
-                  <input type="date" value={customTo || ""} onChange={(e) => setCustomTo(e.target.value)} className="w-full text-[11px] px-2 py-1 rounded bg-white/[0.05] border border-white/[0.08] text-white/70 outline-none" />
-                </div>
-                <button onClick={() => dateDd.setOpen(false)} className="w-full text-[10px] text-center py-1 rounded text-white/50 hover:text-white/70 bg-white/[0.04] hover:bg-white/[0.06]">Aplicar</button>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+              )}
+            </DropdownPanel>
+          )}
+        </div>
+      )}
 
-      {(respActive || dateActive) && (
+      {/* Origem — valores reais (deriva de buildOrigemOptions), só aparece se o board passar setOrigem. */}
+      {setOrigem && (
+        <div className="relative shrink-0" ref={origemDd.triggerRef}>
+          <button
+            onClick={() => { origemDd.toggle(); respDd.close(); dateDd.close(); }}
+            className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-[11px] whitespace-nowrap transition-all duration-150"
+            style={{
+              background: origemActive ? `${accent}15` : "rgba(255,255,255,0.03)",
+              color: origemActive ? accent : "rgba(255,255,255,0.4)",
+              border: `1px solid ${origemActive ? `${accent}30` : "rgba(255,255,255,0.06)"}`,
+            }}
+          >
+            <Tag className="w-3.5 h-3.5" />
+            <span>{origemLabel}</span>
+            <ChevronDown className="w-2.5 h-2.5 opacity-50" />
+          </button>
+          {origemDd.open && (
+            <DropdownPanel panelRef={origemDd.panelRef} rect={origemDd.rect} className="min-w-[180px] max-h-64 overflow-y-auto scrollbar-thin">
+              <DropItem label="Todas as origens" active={!origem || origem === "todos"} accent={accent} onClick={() => { setOrigem("todos"); origemDd.close(); }} />
+              {(origemOptions ?? []).map((opt) => (
+                <DropItem
+                  key={opt.value}
+                  label={opt.count != null ? `${opt.label} (${opt.count})` : opt.label}
+                  active={origem === opt.value}
+                  accent={accent}
+                  onClick={() => { setOrigem(opt.value); origemDd.close(); }}
+                />
+              ))}
+              {(origemOptions ?? []).length === 0 && <p className="px-3 py-2 text-[11px] text-white/25">Nenhuma origem encontrada</p>}
+            </DropdownPanel>
+          )}
+        </div>
+      )}
+
+      {(respActive || dateActive || origemActive) && (
         <button
-          onClick={() => { setResp("todos"); setPeriodo("all"); setCustomFrom?.(""); setCustomTo?.(""); }}
+          onClick={() => { setResp("todos"); setPeriodo?.("all"); setCustomFrom?.(""); setCustomTo?.(""); setOrigem?.("todos"); }}
           className="p-1 rounded-lg hover:bg-white/[0.06] transition-colors shrink-0"
           title="Limpar filtros"
         >

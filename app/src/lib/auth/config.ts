@@ -65,19 +65,30 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       const refreshedAt = (token.refreshedAt as number) || 0;
       const shouldRefresh = trigger === "update" || (now - refreshedAt > 30 * 60 * 1000);
       if (token.id && shouldRefresh) {
+        // Marca ANTES da query: mesmo se o banco estiver lento e a query estourar o
+        // timeout, não reentramos numa tempestade de retries (fica com o valor antigo
+        // por até 30min). Corrige o "carregamento eterno / não vai pro login": este
+        // callback roda DENTRO do middleware (que não tem teto de tempo), então uma
+        // query travada aqui pendura a request inteira. O timeout garante que nunca trava.
+        token.refreshedAt = now;
         try {
-          const [fresh] = await db
-            .select({ nome: usuarios.nome, role: usuarios.role })
-            .from(usuarios)
-            .where(eq(usuarios.id, token.id as string))
-            .limit(1);
+          const rows = (await Promise.race([
+            db
+              .select({ nome: usuarios.nome, role: usuarios.role })
+              .from(usuarios)
+              .where(eq(usuarios.id, token.id as string))
+              .limit(1),
+            new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error("jwt-refresh-timeout")), 3000)
+            ),
+          ])) as { nome: string; role: string }[];
+          const fresh = rows[0];
           if (fresh) {
             token.name = fresh.nome;
             token.role = fresh.role;
           }
-          token.refreshedAt = now;
         } catch {
-          // DB error — keep stale values
+          // DB lento/erro — mantém nome/role do token (stale), nunca pendura a request
         }
       }
       return token;

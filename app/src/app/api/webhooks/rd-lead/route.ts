@@ -1,12 +1,37 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { leads, organizacoes, statusChanges, usuarios } from "@/lib/db/schema";
-import { and, eq } from "drizzle-orm";
+import { leads, organizacoes, statusChanges, notas, metaLeadStaging } from "@/lib/db/schema";
+import { and, eq, or, desc, sql } from "drizzle-orm";
 import {
   parseRdLead,
   isCallfaceLead,
   type ParsedRdLead,
 } from "@/lib/integrations/rd-station";
+
+/**
+ * Busca IDs reais da Meta deixados em staging pelo webhook /api/webhooks/meta-lead-ids
+ * (chega antes do lead existir, já que RD Station processa em paralelo, sem ordem
+ * garantida — ver comentário grande no route.ts de meta-lead-ids). Marca como usado
+ * pra não ser reaproveitado por outro lead.
+ */
+async function buscarMetaIdsStaging(
+  email: string | undefined,
+  telefone: string | undefined
+): Promise<{ adId?: string; adsetId?: string; campaignId?: string } | null> {
+  if (!email && !telefone) return null;
+  const condicoes = [];
+  if (email) condicoes.push(eq(metaLeadStaging.email, email));
+  if (telefone) condicoes.push(eq(metaLeadStaging.telefone, telefone));
+  const [row] = await db
+    .select()
+    .from(metaLeadStaging)
+    .where(and(eq(metaLeadStaging.usado, false), or(...condicoes)))
+    .orderBy(desc(metaLeadStaging.createdAt))
+    .limit(1);
+  if (!row) return null;
+  await db.update(metaLeadStaging).set({ usado: true }).where(eq(metaLeadStaging.id, row.id));
+  return { adId: row.adId ?? undefined, adsetId: row.adsetId ?? undefined, campaignId: row.campaignId ?? undefined };
+}
 
 /**
  * Webhook de ingestão de leads do RD Station.
@@ -75,13 +100,9 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Porta de entrada da pré-vendas: lead novo nasce atribuído à Jenifer (SDR).
-  const [sdrPadrao] = await db
-    .select({ id: usuarios.id })
-    .from(usuarios)
-    .where(and(eq(usuarios.organizacaoId, org.id), eq(usuarios.email, "jenifer.matos@callface.ai")))
-    .limit(1);
-
+  // Porta de entrada da pré-vendas: lead inbound novo nasce SEM DONO (Scott, jul/26).
+  // As meninas pegam o lead no board "Novo" e movem pra "Em Contato". A atribuição
+  // à Jenifer só acontece quando o lead entra em "Follow up".
   const ipAddress =
     req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
     req.headers.get("x-real-ip") ||
@@ -98,23 +119,46 @@ export async function POST(req: NextRequest) {
       }
 
       const p: ParsedRdLead = parseRdLead(rd);
+      const metaIds = await buscarMetaIdsStaging(p.email, p.telefone);
+
+      // Campos do formulário que não têm coluna própria vão pro camposCustom
+      // (Tipo de negócio e Tamanho da base vêm nas tags do RD).
+      const formCampos: Record<string, unknown> = {};
+      if (p.tipoNegocio) formCampos.tipoNegocio = p.tipoNegocio;
+      if (p.tamanhoBase) formCampos.tamanhoBase = p.tamanhoBase;
+
+      // Nota com o que o lead preencheu no form (sempre visível na ficha).
+      const notaLinhas = [
+        "Lead recebido pela Landing Page (formulário).",
+        p.empresa ? `• Empresa: ${p.empresa}` : null,
+        p.tipoNegocio || p.cargo ? `• Tipo de negócio: ${p.tipoNegocio || p.cargo}` : null,
+        p.tamanhoBase ? `• Tamanho da base: ${p.tamanhoBase}` : null,
+        p.telefone ? `• WhatsApp: ${p.telefone}` : null,
+        p.email ? `• E-mail: ${p.email}` : null,
+        p.utmCampaign ? `• Campanha: ${p.utmCampaign}` : null,
+      ].filter(Boolean);
+      const notaConteudo = notaLinhas.join("\n");
+      const temFormData = !!(p.tipoNegocio || p.tamanhoBase || p.empresa);
 
       // Dedup por email (depois telefone) dentro da org
       let existing:
-        | { id: string; tipo: string }
+        | { id: string; tipo: string; camposCustom: unknown }
         | undefined;
       if (p.email) {
         [existing] = await db
-          .select({ id: leads.id, tipo: leads.tipo })
+          .select({ id: leads.id, tipo: leads.tipo, camposCustom: leads.camposCustom })
           .from(leads)
           .where(
             and(eq(leads.organizacaoId, org.id), eq(leads.email, p.email))
           )
+          // Prefere o lead do pipeline sobre o registro de cliente, pra uma
+          // reconversão de cliente atualizar o lead em vez de empilhar duplicata.
+          .orderBy(sql`case when ${leads.tipo} = 'cliente' then 1 else 0 end`)
           .limit(1);
       }
       if (!existing && p.telefone) {
         [existing] = await db
-          .select({ id: leads.id, tipo: leads.tipo })
+          .select({ id: leads.id, tipo: leads.tipo, camposCustom: leads.camposCustom })
           .from(leads)
           .where(
             and(
@@ -122,34 +166,55 @@ export async function POST(req: NextRequest) {
               eq(leads.telefone, p.telefone)
             )
           )
+          .orderBy(sql`case when ${leads.tipo} = 'cliente' then 1 else 0 end`)
           .limit(1);
       }
 
-      if (existing) {
-        // Já é cliente: preserva, só registra que voltou a converter
-        if (existing.tipo === "cliente") {
-          results.push({ status: "skipped:already-client", leadId: existing.id });
-          continue;
-        }
-        // Atualiza dados de tracking sem rebaixar quem já está em andamento
+      // Já existe como lead/prospect no pipeline (não-cliente): atualiza, não duplica.
+      if (existing && existing.tipo !== "cliente") {
+        // Mescla camposCustom pra não apagar qualificação/custom já preenchidos.
+        const mergedCampos = {
+          ...((existing.camposCustom as Record<string, unknown>) || {}),
+          ...formCampos,
+        };
+        // FIRST-TOUCH preservado (pré-requisito ENG-667): reconversão NÃO sobrescreve
+        // a origem/UTM original do lead — a atribuição de receita usa a campanha que
+        // TROUXE o lead, não a última página que ele visitou. Só preenche o que está vazio.
         await db
           .update(leads)
           .set({
             empresa: p.empresa,
             cargo: p.cargo,
-            origem: p.origem,
-            utmSource: p.utmSource,
-            utmMedium: p.utmMedium,
-            utmCampaign: p.utmCampaign,
-            utmTerm: p.utmTerm,
-            utmContent: p.utmContent,
+            origem: sql`COALESCE(NULLIF(${leads.origem}, ''), ${p.origem ?? null})`,
+            utmSource: sql`COALESCE(NULLIF(${leads.utmSource}, ''), ${p.utmSource ?? null})`,
+            utmMedium: sql`COALESCE(NULLIF(${leads.utmMedium}, ''), ${p.utmMedium ?? null})`,
+            utmCampaign: sql`COALESCE(NULLIF(${leads.utmCampaign}, ''), ${p.utmCampaign ?? null})`,
+            utmTerm: sql`COALESCE(NULLIF(${leads.utmTerm}, ''), ${p.utmTerm ?? null})`,
+            utmContent: sql`COALESCE(NULLIF(${leads.utmContent}, ''), ${p.utmContent ?? null})`,
+            ...(metaIds?.adId ? { metaAdId: sql`COALESCE(NULLIF(${leads.metaAdId}, ''), ${metaIds.adId})` } : {}),
+            ...(metaIds?.adsetId ? { metaAdsetId: sql`COALESCE(NULLIF(${leads.metaAdsetId}, ''), ${metaIds.adsetId})` } : {}),
+            ...(metaIds?.campaignId ? { metaCampaignId: sql`COALESCE(NULLIF(${leads.metaCampaignId}, ''), ${metaIds.campaignId})` } : {}),
             landingPage: p.landingPage,
+            camposCustom: mergedCampos,
             updatedAt: new Date(),
           })
           .where(eq(leads.id, existing.id));
+        if (temFormData) {
+          await db.insert(notas).values({
+            organizacaoId: org.id,
+            leadId: existing.id,
+            conteudo: notaConteudo,
+          });
+        }
         results.push({ status: "updated", leadId: existing.id, email: p.email });
         continue;
       }
+
+      // Já é cliente (ou não existe ainda): NÃO bloqueia. Um cliente que converte
+      // na LP quer upgrade / novo produto (ex.: White Label) → tem que ir pro
+      // board de pré-vendas como lead novo, SEM mexer no registro de cliente.
+      // Sinaliza na nota pra SDR saber que é um cliente atual.
+      const jaCliente = existing?.tipo === "cliente";
 
       // Cria lead novo direto no board de pré-vendas (sem negócio)
       const [newLead] = await db
@@ -168,13 +233,17 @@ export async function POST(req: NextRequest) {
           utmCampaign: p.utmCampaign,
           utmTerm: p.utmTerm,
           utmContent: p.utmContent,
+          metaAdId: metaIds?.adId,
+          metaAdsetId: metaIds?.adsetId,
+          metaCampaignId: metaIds?.campaignId,
           landingPage: p.landingPage,
+          camposCustom: formCampos,
           ipAddress,
           userAgent,
           tipo: "lead",
           status: "novo",
           sdrStatus: "pending",
-          responsavelId: sdrPadrao?.id ?? null,
+          responsavelId: null,
         })
         .returning({ id: leads.id });
 
@@ -186,7 +255,24 @@ export async function POST(req: NextRequest) {
         paraStatus: "novo",
       });
 
-      results.push({ status: "created", leadId: newLead.id, email: p.email });
+      // Nota com o que foi preenchido no form (sempre visível na ficha).
+      // Se já é cliente, prefixa um aviso pra SDR (possível upgrade/novo produto).
+      if (temFormData || jaCliente) {
+        const conteudo = jaCliente
+          ? `⚠️ Este contato JÁ É CLIENTE Callface — converteu de novo na LP (possível upgrade / novo produto).\n\n${notaConteudo}`
+          : notaConteudo;
+        await db.insert(notas).values({
+          organizacaoId: org.id,
+          leadId: newLead.id,
+          conteudo,
+        });
+      }
+
+      results.push({
+        status: jaCliente ? "created:client-upgrade" : "created",
+        leadId: newLead.id,
+        email: p.email,
+      });
     } catch (err) {
       console.error("rd-lead webhook error for lead:", err);
       results.push({ status: "error:" + String(err), email: rd.email });

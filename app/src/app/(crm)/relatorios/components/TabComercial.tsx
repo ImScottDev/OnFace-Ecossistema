@@ -9,20 +9,35 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  AreaChart,
-  Area,
   Legend,
 } from "recharts";
 import { ChartCard } from "./charts/ChartCard";
 import { DonutChart } from "./charts/DonutChart";
-import { GaugeChart } from "./charts/GaugeChart";
+import { MetaProgress } from "./MetaProgress";
+import { AlertasCard, metaEmRisco, type AlertaUi } from "./AlertasCard";
+import { HeroBand, Stat, Secao } from "./kit";
+import { Wallet, Receipt, Percent, Clock, Filter, Briefcase, Layers } from "lucide-react";
+
+const STAGE_LABELS: Record<string, string> = {
+  reuniao_agendada: "Reunião Agendada",
+  reuniao_realizada: "Reunião Realizada",
+  trial: "Trial",
+  proposta_apresentada: "Proposta",
+  negociacao_iniciada: "Negociação",
+};
 
 interface TabComercialProps {
-  produto?: string;
   periodo: string;
 }
 
-const COLORS = ["#e23752", "#10B981", "#F59E0B", "#EF4444", "#3B82F6", "#06B6D4", "#EC4899"];
+// Paleta contida (disciplina de cor 21/07): neutros + 1 acento de marca no topo.
+const COLORS = ["#e23752", "rgba(255,255,255,0.85)", "rgba(255,255,255,0.6)", "rgba(255,255,255,0.42)", "rgba(255,255,255,0.3)", "rgba(255,255,255,0.2)", "rgba(255,255,255,0.12)"];
+
+// Mix recorrente × avulso: categórico neutro (2 tons)
+const COR_RECORRENTE = "rgba(255,255,255,0.7)";
+const COR_AVULSO = "rgba(255,255,255,0.3)";
+const COR_GANHO = "#c8ff00"; // status sucesso
+const COR_ALERTA = "#F59E0B"; // status atenção
 
 const darkTooltip = {
   contentStyle: {
@@ -36,31 +51,43 @@ const darkTooltip = {
   labelStyle: { color: "rgba(255,255,255,0.5)", fontSize: 11 },
 };
 
-interface PipelineMrrItem {
+// ─── Shape do GET /api/relatorios/comercial (fonte única: lib/relatorios/comercial.ts) ───
+interface EtapaPipeline {
   status: string;
-  mrrTotal: string | number;
-  projetoTotal: string | number;
-  total: number;
-}
-
-interface MotivoPerda {
-  motivo: string;
   count: number;
+  recorrente: number;
+  avulso: number;
+  valor: number;
 }
 
 interface ComercialData {
-  pipelineMrr: PipelineMrrItem[];
-  winRate: number;
-  motivosPerda: MotivoPerda[];
+  pipeline: {
+    etapas: EtapaPipeline[];
+    total: number;
+    negociosAbertos: number;
+    ponderado: number;
+  };
+  winRateInfo: {
+    ganhos: number;
+    perdidos: number;
+    n: number;
+    taxa: number | null;
+    amostraPequena: boolean;
+  };
+  motivosInfo: {
+    itens: { motivo: string; count: number; pct: number }[];
+    total: number;
+    semClassificacao: number;
+    semClassificacaoPct: number;
+  };
+  fechado: { ganhos: number; receita: number; recorrente: number; avulso: number };
+  ticketMedio: number | null;
+  forecast: number;
+  leadsQualificados: number;
+  metaComercial: { valorAlvo: number; realizado: number; closers: number } | null;
+  pipelineEsfriando: { id: string; titulo: string; status: string; valor: number; diasParado: number }[];
+  // compat ainda presentes no payload
   cicloMedio: number | null;
-  negociosAbertos: number;
-}
-
-interface TendenciaItem {
-  periodo: string;
-  ganhos: number;
-  perdidos: number;
-  receita: number;
 }
 
 interface EquipeMembro {
@@ -76,18 +103,13 @@ interface EquipeMembro {
 }
 
 function formatCurrency(value: number): string {
-  return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-export default function TabComercial({ periodo, produto = "todos" }: TabComercialProps) {
+export default function TabComercial({ periodo }: TabComercialProps) {
   const { data: comercial, isLoading: loadingComercial } = useQuery<ComercialData>({
-    queryKey: ["relatorios", "comercial", periodo, produto],
-    queryFn: () => fetch(`/api/relatorios/comercial?periodo=${periodo}&produto=${produto}`).then((r) => r.json()),
-  });
-
-  const { data: tendencias, isLoading: loadingTendencias } = useQuery<{ data: TendenciaItem[] }>({
-    queryKey: ["relatorios", "tendencias", "negocios", periodo],
-    queryFn: () => fetch(`/api/relatorios/tendencias?periodo=${periodo}&tipo=negocios&produto=${produto}`).then((r) => r.json()),
+    queryKey: ["relatorios", "comercial", periodo],
+    queryFn: () => fetch(`/api/relatorios/comercial?periodo=${periodo}`).then((r) => r.json()),
   });
 
   interface FechadoMes {
@@ -97,8 +119,8 @@ export default function TabComercial({ periodo, produto = "todos" }: TabComercia
     perdidos: number; fatStripe: number; fatPabx: number;
   }
   const { data: fechadoMensal, isLoading: loadingFechado } = useQuery<{ series: FechadoMes[] }>({
-    queryKey: ["relatorios", "fechado-mensal", produto],
-    queryFn: () => fetch(`/api/relatorios/fechado-mensal?meses=12&produto=${produto}`).then((r) => r.json()),
+    queryKey: ["relatorios", "fechado-semanal"],
+    queryFn: () => fetch(`/api/relatorios/fechado-mensal?semanas=12`).then((r) => r.json()),
   });
   const fechadoSeries = fechadoMensal?.series ?? [];
 
@@ -107,171 +129,204 @@ export default function TabComercial({ periodo, produto = "todos" }: TabComercia
     queryFn: () => fetch(`/api/relatorios/equipe?periodo=${periodo}`).then((r) => r.json()),
   });
 
-  // Derived values
-  // Só o funil aberto do closer, na ordem do pipeline (estagnados/fechados ficam fora do gráfico)
-  const openStatuses = ["reuniao_agendada", "reuniao_realizada", "proposta_apresentada", "negociacao_iniciada", "em_fechamento"];
-  const pipelineTotal = comercial?.pipelineMrr
-    ?.filter((item) => openStatuses.includes(item.status.toLowerCase()))
-    .reduce((sum, item) => sum + (Number(item.mrrTotal) || 0) + (Number(item.projetoTotal) || 0), 0) ?? 0;
+  // ─── Derived ───
+  const fechado = comercial?.fechado;
 
-  const pipelineChartData = openStatuses
-    .map((st) => comercial?.pipelineMrr?.find((item) => item.status.toLowerCase() === st))
-    .filter((item): item is NonNullable<typeof item> => Boolean(item))
-    .map((item) => ({
-      status: item.status,
-      mrrTotal: Number(item.mrrTotal) || 0,
-      projetoTotal: Number(item.projetoTotal) || 0,
-    }));
-
-  const motivosDonut = comercial?.motivosPerda?.map((m, i) => ({
+  const motivosDonut = comercial?.motivosInfo?.itens?.map((m, i) => ({
     name: m.motivo,
     value: m.count,
     color: COLORS[i % COLORS.length],
   })) ?? [];
+  const totalPerdidos = comercial?.motivosInfo?.total ?? 0;
+  const semClassPct = comercial?.motivosInfo?.semClassificacaoPct ?? 0;
 
-  const totalPerdidos = comercial?.motivosPerda?.reduce((sum, m) => sum + m.count, 0) ?? 0;
+  const mixDonut = [
+    { name: "Recorrente", value: fechado?.recorrente ?? 0, color: COR_RECORRENTE },
+    { name: "Avulso", value: fechado?.avulso ?? 0, color: COR_AVULSO },
+  ].filter((d) => d.value > 0);
+
+  const winTaxa = comercial?.winRateInfo?.taxa ?? null;
+  const winN = comercial?.winRateInfo?.n ?? 0;
+  const winAmostraPequena = comercial?.winRateInfo?.amostraPequena ?? false;
 
   const membrosOrdenados = [...(equipe?.membros ?? [])].sort((a, b) => b.ganhos - a.ganhos);
-  const maxGanhos = membrosOrdenados.length > 0 ? Math.max(...membrosOrdenados.map((m) => m.ganhos), 1) : 1;
 
-  const tendenciasData = tendencias?.data ?? [];
+  const metaCom = comercial?.metaComercial;
+
+  // ── Alertas acionáveis (derivados do payload — o que fazer, não só o número) ──
+  const alertas: AlertaUi[] = [];
+  if (comercial) {
+    const mr = metaCom ? metaEmRisco(metaCom.valorAlvo, metaCom.realizado) : null;
+    if (mr) alertas.push(mr);
+    const esfriando = comercial.pipelineEsfriando ?? [];
+    if (esfriando.length >= 3) {
+      const valorParado = esfriando.reduce((s, n) => s + n.valor, 0);
+      alertas.push({ nivel: esfriando.length >= 8 ? "vermelho" : "amarelo", texto: `${esfriando.length} negócios sem movimento há 5+ dias (${formatCurrency(valorParado)}) — retomar os mais antigos primeiro.` });
+    }
+    if (totalPerdidos >= 5 && semClassPct >= 30) {
+      alertas.push({ nivel: "amarelo", texto: `${semClassPct}% dos perdidos sem motivo classificado — sem isso não dá pra atacar a causa das perdas.` });
+    }
+    if (winAmostraPequena) alertas.push({ nivel: "amarelo", texto: `Win rate com base pequena (n=${winN}) — não usar pra decisão ainda.` });
+  }
 
   return (
     <div className="space-y-4">
-      {/* Row 1: Mini KPIs */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <div
-          className="rounded-xl bg-white/[0.03] border border-white/[0.06] p-4"
-          style={{ animation: "fadeUp 0.3s ease-out both" }}
-        >
-          <p className="text-[11px] text-white/40 uppercase tracking-wider font-medium">Pipeline Total</p>
-          <p className="text-2xl font-bold text-white mt-2">
-            {loadingComercial ? "..." : formatCurrency(pipelineTotal)}
-          </p>
-          <p className="text-[10px] text-white/25 mt-1">Soma dos negócios abertos</p>
-        </div>
+      {/* O que fazer agora */}
+      <AlertasCard alertas={alertas} loading={loadingComercial} />
 
-        <div
-          className="rounded-xl bg-white/[0.03] border border-white/[0.06] p-4"
-          style={{ animation: "fadeUp 0.3s ease-out both", animationDelay: "0.05s" }}
-        >
-          <p className="text-[11px] text-white/40 uppercase tracking-wider font-medium">Negócios Abertos</p>
-          <p className="text-2xl font-bold text-white mt-2">
-            {loadingComercial ? "..." : comercial?.negociosAbertos ?? 0}
-          </p>
-          <p className="text-[10px] text-white/25 mt-1">Em andamento no pipeline</p>
+      {/* Row 0: Meta comercial do mês = soma das metas das closers (visão de gestão) */}
+      {metaCom && metaCom.valorAlvo > 0 ? (
+        <MetaProgress
+          tipo="mrr_fechado"
+          valorAlvo={metaCom.valorAlvo}
+          realizado={metaCom.realizado}
+          label={`Meta comercial do mês · soma de ${metaCom.closers} closer${metaCom.closers === 1 ? "" : "s"}`}
+        />
+      ) : metaCom ? (
+        <div className="rounded-xl bg-white/[0.03] border border-white/[0.06] p-4 text-[12px] text-white/40">
+          Nenhuma meta de MRR definida pras closers neste mês. Configure por pessoa em <span className="text-white/60">Admin · Usuários</span> (o total aparece aqui).
         </div>
+      ) : null}
 
-        <div
-          className="rounded-xl bg-white/[0.03] border border-white/[0.06] p-4"
-          style={{ animation: "fadeUp 0.3s ease-out both", animationDelay: "0.1s" }}
-        >
-          <p className="text-[11px] text-white/40 uppercase tracking-wider font-medium">Win Rate</p>
-          <p className="text-2xl font-bold text-white mt-2">
-            {loadingComercial ? "..." : `${comercial?.winRate ?? 0}%`}
-          </p>
-          <p className="text-[10px] text-white/25 mt-1">Taxa de conversão geral</p>
-        </div>
+      {/* Faixa-herói: receita fechada no período */}
+      <HeroBand
+        label="Receita fechada no período"
+        value={loadingComercial ? "…" : formatCurrency(fechado?.receita ?? 0)}
+        sub={loadingComercial ? "" : `${fechado?.ganhos ?? 0} negócio${(fechado?.ganhos ?? 0) === 1 ? "" : "s"} ganho${(fechado?.ganhos ?? 0) === 1 ? "" : "s"} · recorrente ${formatCurrency(fechado?.recorrente ?? 0)} · avulso ${formatCurrency(fechado?.avulso ?? 0)}`}
+        cor="ganho"
+        icon={Wallet}
+      >
+        <Stat label="Ticket médio" value={loadingComercial ? "…" : comercial?.ticketMedio != null ? formatCurrency(comercial.ticketMedio) : "—"} sub="por negócio ganho" icon={Receipt} />
+        <Stat
+          label="Win rate"
+          value={loadingComercial ? "…" : winTaxa != null ? `${winTaxa}%` : "n/a"}
+          sub={loadingComercial ? "" : winAmostraPequena ? `base pequena · n=${winN}` : `${winN} decididos`}
+          cor={winAmostraPequena ? "atencao" : "neutro"}
+          icon={Percent}
+        />
+        <Stat label="Ciclo médio" value={loadingComercial ? "…" : comercial?.cicloMedio != null ? `${comercial.cicloMedio}d` : "—"} sub="lead caiu no CRM → ganho" icon={Clock} />
+        <Stat label="Qualificados" value={loadingComercial ? "…" : comercial?.leadsQualificados ?? 0} sub="negócios criados no período" icon={Filter} />
+      </HeroBand>
 
-        <div
-          className="rounded-xl bg-white/[0.03] border border-white/[0.06] p-4"
-          style={{ animation: "fadeUp 0.3s ease-out both", animationDelay: "0.15s" }}
-        >
-          <p className="text-[11px] text-white/40 uppercase tracking-wider font-medium">Ciclo Médio</p>
-          <p className="text-2xl font-bold text-white mt-2">
-            {loadingComercial ? "..." : comercial?.cicloMedio != null ? `${comercial.cicloMedio} dias` : "\u2014"}
-          </p>
-          <p className="text-[10px] text-white/25 mt-1">Tempo médio até fechamento</p>
-        </div>
+      {/* Pipeline */}
+      <Secao cor="pipeline" hint="snapshot de agora — não reage ao período">Pipeline</Secao>
+      <div className="grid grid-cols-2 gap-3">
+        <Stat label="Pipeline total" value={loadingComercial ? "…" : formatCurrency(comercial?.pipeline?.total ?? 0)} sub="soma dos negócios abertos" destaque icon={Briefcase} />
+        <Stat label="Negócios abertos" value={loadingComercial ? "…" : comercial?.pipeline?.negociosAbertos ?? 0} sub="em andamento no funil" icon={Layers} />
       </div>
 
-      {/* Row 2: Pipeline + Win Rate */}
-      <div className="grid lg:grid-cols-3 gap-4">
+      {/* Row 2: Pipeline por etapa (snapshot) + Negócios esfriando */}
+      <div className="grid lg:grid-cols-2 gap-4">
         <ChartCard
-          title="Faturamento por Etapa"
-          subtitle="Receita recorrente e avulsa por estágio do pipeline"
+          title="Pipeline por etapa"
+          subtitle="Valor aberto em cada estágio (snapshot de agora)"
           loading={loadingComercial}
-          empty={pipelineChartData.length === 0}
-          className="lg:col-span-2"
-          delay={0.1}
+          empty={(comercial?.pipeline?.etapas?.length ?? 0) === 0}
+          emptyText="Nenhum negócio aberto"
+          delay={0.18}
         >
-          <div style={{ height: 260 }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={pipelineChartData} barCategoryGap="20%">
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
-                <XAxis
-                  dataKey="status"
-                  tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 11 }}
-                  axisLine={false}
-                  tickLine={false}
-                />
-                <YAxis
-                  tick={{ fill: "rgba(255,255,255,0.3)", fontSize: 11 }}
-                  axisLine={false}
-                  tickLine={false}
-                  tickFormatter={(v: number) => `R$ ${v.toLocaleString("pt-BR")}`}
-                />
-                <Tooltip
-                  {...darkTooltip}
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                  formatter={(value: any, name: any) => [
-                    formatCurrency(Number(value)),
-                    name === "mrrTotal" ? "Recorrente" : "Avulso",
-                  ]}
-                />
-                <Legend
-                  formatter={(value: string) => (
-                    <span className="text-[11px] text-white/50">
-                      {value === "mrrTotal" ? "Recorrente" : "Avulso"}
-                    </span>
-                  )}
-                />
-                <Bar
-                  dataKey="mrrTotal"
-                  stackId="a"
-                  fill="#10B981"
-                  radius={[0, 0, 0, 0]}
-                  name="mrrTotal"
-                />
-                <Bar
-                  dataKey="projetoTotal"
-                  stackId="a"
-                  fill="#F59E0B"
-                  radius={[4, 4, 0, 0]}
-                  name="projetoTotal"
-                />
-              </BarChart>
-            </ResponsiveContainer>
+          <div className="space-y-2 py-1">
+            {(comercial?.pipeline?.etapas ?? []).map((e) => {
+              const max = Math.max(...(comercial?.pipeline?.etapas ?? []).map((x) => x.valor), 1);
+              return (
+                <div key={e.status} className="flex items-center gap-3">
+                  <span className="text-[12px] text-white/60 w-36 truncate">{STAGE_LABELS[e.status] ?? e.status}</span>
+                  <div className="flex-1 h-5 rounded-md bg-white/[0.04] overflow-hidden">
+                    <div className="h-5 rounded-md" style={{ width: `${(e.valor / max) * 100}%`, background: "#3B82F6" }} />
+                  </div>
+                  <span className="text-[12px] text-white/70 w-24 text-right tabular-nums">{formatCurrency(e.valor)}</span>
+                  <span className="text-[11px] text-white/30 w-8 text-right tabular-nums">{e.count}</span>
+                </div>
+              );
+            })}
           </div>
         </ChartCard>
 
         <ChartCard
-          title="Win Rate"
+          title="Negócios esfriando"
+          subtitle="Abertos sem movimento há 5+ dias — retomar antes que morram"
           loading={loadingComercial}
-          empty={!comercial}
-          className="lg:col-span-1"
-          delay={0.15}
+          empty={(comercial?.pipelineEsfriando?.length ?? 0) === 0}
+          emptyText="Pipeline em dia — nada parado"
+          delay={0.2}
         >
-          <GaugeChart
-            value={comercial?.winRate ?? 0}
-            label="taxa de conversão"
-            target={30}
+          <div className="space-y-1.5 py-1">
+            {(comercial?.pipelineEsfriando ?? []).slice(0, 10).map((n) => (
+              <div key={n.id} className="flex items-center gap-3 py-1">
+                <span className="text-[12px] text-white/70 flex-1 truncate">{n.titulo}</span>
+                <span className="text-[11px] text-white/40 tabular-nums">{formatCurrency(n.valor)}</span>
+                <span
+                  className="text-[11px] font-medium px-1.5 py-0.5 rounded-full tabular-nums"
+                  style={{
+                    background: n.diasParado >= 14 ? "rgba(239,68,68,0.12)" : "rgba(245,158,11,0.12)",
+                    color: n.diasParado >= 14 ? "#EF4444" : "#F59E0B",
+                  }}
+                >
+                  {n.diasParado}d
+                </span>
+              </div>
+            ))}
+          </div>
+        </ChartCard>
+      </div>
+
+      {/* Row 3: Motivos de Perda + Mix recorrente × avulso */}
+      <div className="grid lg:grid-cols-2 gap-4">
+        <ChartCard
+          title="Motivos de Perda"
+          subtitle="Por que negócios são perdidos no período"
+          loading={loadingComercial}
+          empty={motivosDonut.length === 0}
+          emptyText="Nenhum negócio perdido no período"
+          delay={0.2}
+        >
+          {semClassPct > 0 && (
+            <div
+              className="mb-3 rounded-lg px-3 py-2 text-[11px] font-medium"
+              style={{
+                background: "rgba(245,158,11,0.10)",
+                border: "1px solid rgba(245,158,11,0.25)",
+                color: COR_ALERTA,
+              }}
+            >
+              {`${semClassPct}% dos perdidos sem motivo classificado`}
+            </div>
+          )}
+          <DonutChart
+            data={motivosDonut}
+            centerValue={String(totalPerdidos)}
+            centerLabel="perdidos"
+          />
+        </ChartCard>
+
+        <ChartCard
+          title="Mix recorrente × avulso"
+          subtitle="Composição da receita fechada no período"
+          loading={loadingComercial}
+          empty={mixDonut.length === 0}
+          emptyText="Nenhuma receita fechada no período"
+          delay={0.22}
+        >
+          <DonutChart
+            data={mixDonut}
+            centerValue={formatCurrency(fechado?.receita ?? 0)}
+            centerLabel="receita fechada"
           />
         </ChartCard>
       </div>
 
-      {/* Row 2.5: Fechado mês a mês — PABX × AI (pedido Scott 12/jun) */}
+      {/* Row 4: Fechado por semana */}
       <div className="grid lg:grid-cols-2 gap-4">
         <ChartCard
-          title="MRR Fechado Mês a Mês"
-          subtitle="Negócios ganhos por produto — PABX × Callface AI"
+          title="MRR Fechado por Semana"
+          subtitle="Receita recorrente nova ganha por semana"
           loading={loadingFechado}
           empty={fechadoSeries.length === 0}
-          delay={0.18}
+          delay={0.24}
         >
           <div style={{ height: 260 }}>
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={fechadoSeries} barCategoryGap="25%">
+              <BarChart data={fechadoSeries.map((m) => ({ ...m, mrr: m.mrrPabx + m.mrrAi + m.mrrOutros }))} barCategoryGap="25%">
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
                 <XAxis dataKey="mes" tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 10 }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fill: "rgba(255,255,255,0.3)", fontSize: 11 }} axisLine={false} tickLine={false}
@@ -279,28 +334,20 @@ export default function TabComercial({ periodo, produto = "todos" }: TabComercia
                 <Tooltip
                   {...darkTooltip}
                   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                  formatter={(value: any, name: any) => [
-                    formatCurrency(Number(value)),
-                    name === "mrrPabx" ? "PABX" : name === "mrrAi" ? "Callface AI" : "Outros",
-                  ]}
+                  formatter={(value: any) => [formatCurrency(Number(value)), "MRR fechado"]}
                 />
-                <Legend formatter={(v: string) => (
-                  <span className="text-[11px] text-white/50">{v === "mrrPabx" ? "PABX" : v === "mrrAi" ? "Callface AI" : "Outros"}</span>
-                )} />
-                <Bar dataKey="mrrPabx" stackId="m" fill="#8e27ef" name="mrrPabx" />
-                <Bar dataKey="mrrAi" stackId="m" fill="#e23752" name="mrrAi" />
-                <Bar dataKey="mrrOutros" stackId="m" fill="#6B7280" radius={[4, 4, 0, 0]} name="mrrOutros" />
+                <Bar dataKey="mrr" fill="rgba(255,255,255,0.55)" radius={[4, 4, 0, 0]} name="mrr" />
               </BarChart>
             </ResponsiveContainer>
           </div>
         </ChartCard>
 
         <ChartCard
-          title="Ganhos × Perdidos por Mês"
+          title="Ganhos × Perdidos por Semana"
           subtitle="Volume de fechamento — inclui faturamento real (faturas)"
           loading={loadingFechado}
           empty={fechadoSeries.length === 0}
-          delay={0.18}
+          delay={0.24}
         >
           <div style={{ height: 260 }}>
             <ResponsiveContainer width="100%" height="100%">
@@ -324,54 +371,7 @@ export default function TabComercial({ periodo, produto = "todos" }: TabComercia
         </ChartCard>
       </div>
 
-      {/* Row 3: Motivos de Perda + Performance Vendedor */}
-      <div className="grid lg:grid-cols-2 gap-4">
-        <ChartCard
-          title="Motivos de Perda"
-          subtitle="Por que negócios são perdidos"
-          loading={loadingComercial}
-          empty={motivosDonut.length === 0}
-          emptyText="Nenhum negócio perdido no período"
-          delay={0.2}
-        >
-          <DonutChart
-            data={motivosDonut}
-            centerValue={String(totalPerdidos)}
-            centerLabel="perdidos"
-          />
-        </ChartCard>
-
-        <ChartCard
-          title="Performance por Vendedor"
-          subtitle="Negócios ganhos no período"
-          loading={loadingEquipe}
-          empty={membrosOrdenados.length === 0}
-          emptyText="Nenhum membro da equipe encontrado"
-          delay={0.25}
-        >
-          <div className="space-y-1">
-            {membrosOrdenados.map((membro) => (
-              <div key={membro.usuarioId}>
-                <div className="flex items-center gap-3 py-2">
-                  <span className="text-[12px] text-white/60 w-24 truncate">{membro.nome}</span>
-                  <div className="flex-1 h-5 rounded-full bg-purple-500/20 overflow-hidden">
-                    <div
-                      className="h-5 rounded-full bg-purple-500 transition-all duration-500"
-                      style={{ width: `${(membro.ganhos / maxGanhos) * 100}%` }}
-                    />
-                  </div>
-                  <span className="text-[12px] text-white/40 w-8 text-right">{membro.ganhos}</span>
-                </div>
-                <p className="text-[10px] text-white/25 pl-[108px]">
-                  Win rate: {membro.winRate}%
-                </p>
-              </div>
-            ))}
-          </div>
-        </ChartCard>
-      </div>
-
-      {/* Row 3.5: Desempenho detalhado por vendedor (pedido Scott) */}
+      {/* Row 5: Desempenho detalhado por vendedor */}
       <div
         className="rounded-xl bg-white/[0.03] border border-white/[0.06] overflow-hidden"
         style={{ animation: "fadeUp 0.3s ease-out both", animationDelay: "0.27s" }}
@@ -415,7 +415,7 @@ export default function TabComercial({ periodo, produto = "todos" }: TabComercia
                           {m.winRate}%
                         </span>
                       </td>
-                      <td className="px-3 py-2.5 text-right text-[#e23752] font-semibold">{formatCurrency(m.receitaTotal)}</td>
+                      <td className="px-3 py-2.5 text-right text-white font-semibold tabular-nums">{formatCurrency(m.receitaTotal)}</td>
                       <td className="px-3 py-2.5 text-right text-white/50 hidden md:table-cell">{m.cicloMedio != null ? `${m.cicloMedio}d` : "—"}</td>
                       <td className="px-4 py-2.5 text-right text-white/50 hidden lg:table-cell">{m.atividadesTotal}</td>
                     </tr>
@@ -427,99 +427,6 @@ export default function TabComercial({ periodo, produto = "todos" }: TabComercia
         )}
       </div>
 
-      {/* Row 4: Negócios ao longo do tempo */}
-      <ChartCard
-        title="Negócios Ganhos ao Longo do Tempo"
-        subtitle="Volume de fechamentos e receita por semana"
-        loading={loadingTendencias}
-        empty={tendenciasData.length === 0}
-        emptyText="Dados insuficientes para o período selecionado"
-        delay={0.3}
-      >
-        <div style={{ height: 280 }}>
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={tendenciasData}>
-              <defs>
-                <linearGradient id="gradGanhos" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#10B981" stopOpacity={0.2} />
-                  <stop offset="100%" stopColor="#10B981" stopOpacity={0} />
-                </linearGradient>
-                <linearGradient id="gradPerdidos" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#EF4444" stopOpacity={0.1} />
-                  <stop offset="100%" stopColor="#EF4444" stopOpacity={0} />
-                </linearGradient>
-                <linearGradient id="gradReceita" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#e23752" stopOpacity={0.15} />
-                  <stop offset="100%" stopColor="#e23752" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
-              <XAxis
-                dataKey="periodo"
-                tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 11 }}
-                axisLine={false}
-                tickLine={false}
-              />
-              <YAxis
-                yAxisId="left"
-                tick={{ fill: "rgba(255,255,255,0.3)", fontSize: 11 }}
-                axisLine={false}
-                tickLine={false}
-                allowDecimals={false}
-              />
-              <YAxis
-                yAxisId="right"
-                orientation="right"
-                tick={{ fill: "rgba(255,255,255,0.3)", fontSize: 11 }}
-                axisLine={false}
-                tickLine={false}
-                tickFormatter={(v: number) => `R$ ${v.toLocaleString("pt-BR")}`}
-              />
-              <Tooltip
-                {...darkTooltip}
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                formatter={(value: any, name: any) => {
-                  if (name === "receita") return [formatCurrency(Number(value)), "Receita"];
-                  if (name === "ganhos") return [value, "Ganhos"];
-                  return [value, "Perdidos"];
-                }}
-              />
-              <Legend
-                formatter={(value: string) => (
-                  <span className="text-[11px] text-white/50">
-                    {value === "ganhos" ? "Ganhos" : value === "perdidos" ? "Perdidos" : "Receita"}
-                  </span>
-                )}
-              />
-              <Area
-                yAxisId="left"
-                type="monotone"
-                dataKey="ganhos"
-                stroke="#10B981"
-                strokeWidth={2}
-                fill="url(#gradGanhos)"
-              />
-              <Area
-                yAxisId="left"
-                type="monotone"
-                dataKey="perdidos"
-                stroke="#EF4444"
-                strokeWidth={1.5}
-                fill="url(#gradPerdidos)"
-              />
-              <Area
-                yAxisId="right"
-                type="monotone"
-                dataKey="receita"
-                stroke="#e23752"
-                strokeWidth={1.5}
-                strokeDasharray="4 2"
-                fill="url(#gradReceita)"
-              />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-      </ChartCard>
     </div>
   );
 }

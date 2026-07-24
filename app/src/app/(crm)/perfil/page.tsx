@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
-import { User, Lock, Save, Check, AlertCircle, Eye, EyeOff, Camera } from "lucide-react";
+import Link from "next/link";
+import { User, Lock, Save, Check, AlertCircle, Eye, EyeOff, Camera, MessageCircle, Mail, ChevronRight, CalendarClock } from "lucide-react";
 
 interface Profile {
   id: string;
@@ -18,7 +19,10 @@ const roleBadge: Record<string, { label: string; color: string }> = {
   super_admin: { label: "Super Admin", color: "bg-purple-500/15 text-purple-400" },
   admin: { label: "Admin", color: "bg-blue-500/15 text-blue-400" },
   gerente: { label: "Gerente", color: "bg-cyan-500/15 text-cyan-400" },
-  vendedor: { label: "Vendedor", color: "bg-green-500/15 text-green-400" },
+  closer: { label: "Closer", color: "bg-green-500/15 text-green-400" },
+  sdr: { label: "SDR", color: "bg-amber-500/15 text-amber-400" },
+  leitor: { label: "Leitor", color: "bg-white/10 text-white/50" },
+  vendedor: { label: "Closer", color: "bg-green-500/15 text-green-400" },
 };
 
 export default function PerfilPage() {
@@ -246,6 +250,44 @@ export default function PerfilPage() {
             <Save className="w-3.5 h-3.5" />
             {savingNome ? "Salvando..." : "Salvar"}
           </button>
+        </div>
+      </div>
+
+      {/* Conexões */}
+      <div className="bg-[rgba(255,255,255,0.03)] rounded-xl p-6 border border-white/[0.06]">
+        <h2 className="text-lg font-semibold text-white mb-1">Conexões</h2>
+        <p className="text-[12px] text-white/40 mb-4">Conecte seus canais para atender do CRM.</p>
+        <div className="grid sm:grid-cols-2 gap-3">
+          <Link href="/whatsapp" className="flex items-center gap-3 rounded-lg bg-white/[0.03] border border-white/[0.06] p-3 hover:border-emerald-400/30 transition-colors">
+            <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ background: "rgba(37,211,102,0.12)" }}>
+              <MessageCircle className="w-4.5 h-4.5" style={{ color: "#25D366" }} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm text-white/80 font-medium">WhatsApp</p>
+              <p className="text-[11px] text-white/40">Conectar meu número (QR)</p>
+            </div>
+            <ChevronRight className="w-4 h-4 text-white/30" />
+          </Link>
+          <Link href="/configuracoes/email" className="flex items-center gap-3 rounded-lg bg-white/[0.03] border border-white/[0.06] p-3 hover:border-blue-400/30 transition-colors">
+            <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ background: "rgba(59,130,246,0.12)" }}>
+              <Mail className="w-4.5 h-4.5" style={{ color: "#3B82F6" }} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm text-white/80 font-medium">Email</p>
+              <p className="text-[11px] text-white/40">Conectar minha caixa (Gmail/Outlook)</p>
+            </div>
+            <ChevronRight className="w-4 h-4 text-white/30" />
+          </Link>
+          <Link href="/agenda" className="flex items-center gap-3 rounded-lg bg-white/[0.03] border border-white/[0.06] p-3 hover:border-[#e23752]/30 transition-colors">
+            <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ background: "rgba(226,55,82,0.12)" }}>
+              <CalendarClock className="w-4.5 h-4.5" style={{ color: "#e23752" }} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm text-white/80 font-medium">Agenda</p>
+              <p className="text-[11px] text-white/40">Configurar disponibilidade pro Agente SDR</p>
+            </div>
+            <ChevronRight className="w-4 h-4 text-white/30" />
+          </Link>
         </div>
       </div>
 

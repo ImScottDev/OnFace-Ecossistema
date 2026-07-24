@@ -36,6 +36,19 @@
   --bg-elevated: #1A1A1A;
   --bg-modal: #181818;
 
+  /* ── Design tokens (reforma 21/07 — disciplina de cor da ref. Earnify) ──
+     Regra: interface NEUTRA por padrão (cinzas), cor SÓ com significado:
+     - marca (carmim) → menu ativo, avatar, 1 ação primária por tela
+     - lima → ganho/sucesso · âmbar → atenção · vermelho → perigo/atraso
+     Nunca cor como decoração (ícone, barra, badge sem semântica). */
+  --surface: #121212;          /* card padrão */
+  --surface-2: #1A1A1A;        /* elevado (dropdown, modal, hero) */
+  --tick-neutral: rgba(255, 255, 255, 0.16); /* barra/tique neutro de card */
+  --chart-1: rgba(255, 255, 255, 0.85);      /* série principal */
+  --chart-2: rgba(255, 255, 255, 0.45);      /* série secundária */
+  --chart-3: rgba(255, 255, 255, 0.22);      /* série terciária / grid */
+  --chart-accent: #e23752;     /* 1 destaque categórico quando precisar */
+
   /* Font vars */
   --background: #0A0A0A;
   --foreground: #F5F5F5;

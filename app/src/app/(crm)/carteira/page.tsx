@@ -110,11 +110,11 @@ export default function CarteiraPage() {
           </div>
           <div className="rounded-xl bg-white/[0.03] border border-white/[0.06] p-4">
             <p className="text-xs text-white/40 mb-1">MRR Total</p>
-            <p className="text-2xl font-bold text-[#e23752]">{formatBRL(totals.totalMrr)}</p>
+            <p className="text-2xl font-bold text-white tabular-nums" style={{ fontFamily: "var(--font-heading)" }}>{formatBRL(totals.totalMrr)}</p>
           </div>
           <div className="rounded-xl bg-white/[0.03] border border-white/[0.06] p-4">
             <p className="text-xs text-white/40 mb-1">Ticket Médio</p>
-            <p className="text-2xl font-bold text-[#c8ff00]">{formatBRL(totals.avgTicket)}</p>
+            <p className="text-2xl font-bold text-white tabular-nums" style={{ fontFamily: "var(--font-heading)" }}>{formatBRL(totals.avgTicket)}</p>
           </div>
           <div className="rounded-xl bg-white/[0.03] border border-white/[0.06] p-4">
             <p className="text-xs text-white/40 mb-1">Ex-Clientes</p>
@@ -208,7 +208,7 @@ export default function CarteiraPage() {
                     </td>
                     <td className="px-4 py-3 text-right">
                       {mrr > 0 ? (
-                        <span className="font-medium text-[#e23752] text-sm">{formatBRL(mrr)}</span>
+                        <span className="font-medium text-white/85 text-sm tabular-nums">{formatBRL(mrr)}</span>
                       ) : (
                         <span className="text-white/30 text-xs">—</span>
                       )}
@@ -271,7 +271,7 @@ export default function CarteiraPage() {
         <div className="flex items-center justify-between px-4 py-2.5 text-xs text-white/30">
           <span>Exibindo {filtered.length} contrato{filtered.length !== 1 ? "s" : ""}</span>
           <span>
-            MRR filtrado: <strong className="text-[#e23752]/70">
+            MRR filtrado: <strong className="text-white/80">
               {formatBRL(filtered.reduce((s, c) => s + (parseFloat(c.mrr || "0") || 0), 0))}
             </strong>
           </span>

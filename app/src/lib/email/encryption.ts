@@ -15,12 +15,19 @@ export function encrypt(plaintext: string): string {
   const iv = randomBytes(IV_LENGTH);
   const cipher = createCipheriv(ALGORITHM, key, iv);
 
-  let encrypted = cipher.update(plaintext, "utf8", "base64");
-  encrypted += cipher.final("base64");
+  // base64url (não base64 puro): esse valor às vezes viaja cru dentro de uma
+  // querystring (ex.: state do OAuth Microsoft). "+" sobrevive em alguns
+  // encoders de terceiro sem virar %2B e o parser de query do Hono converte
+  // "+" solto em espaço ao decodificar — corrompendo o auth tag do GCM antes
+  // mesmo de chegar aqui. base64url não usa "+"/"/"/"=", então não tem essa
+  // ambiguidade em lugar nenhum da URL. Buffer.from(..., "base64") no decrypt
+  // já aceita as duas variantes, então isso não quebra nada que já foi salvo.
+  let encrypted = cipher.update(plaintext, "utf8", "base64url");
+  encrypted += cipher.final("base64url");
   const authTag = cipher.getAuthTag();
 
-  // Format: iv:authTag:ciphertext (all base64)
-  return `${iv.toString("base64")}:${authTag.toString("base64")}:${encrypted}`;
+  // Format: iv:authTag:ciphertext (all base64url)
+  return `${iv.toString("base64url")}:${authTag.toString("base64url")}:${encrypted}`;
 }
 
 export function decrypt(encryptedStr: string): string {
@@ -28,6 +35,8 @@ export function decrypt(encryptedStr: string): string {
   const parts = encryptedStr.split(":");
   if (parts.length !== 3) throw new Error("Invalid encrypted format");
 
+  // "base64" aqui aceita tanto base64 clássico (valores antigos já salvos)
+  // quanto base64url (valores novos) — Node normaliza os dois na decodificação.
   const iv = Buffer.from(parts[0], "base64");
   const authTag = Buffer.from(parts[1], "base64");
   const encrypted = parts[2];

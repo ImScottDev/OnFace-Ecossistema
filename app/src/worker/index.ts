@@ -1,7 +1,7 @@
 import { Worker, Queue } from "bullmq";
 import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
-import { eq, and, lte, sql as rawSql, like, gte, isNull, count as drizzleCount, desc, inArray, gt } from "drizzle-orm";
+import { eq, and, lte, lt, sql as rawSql, like, gte, isNull, isNotNull, count as drizzleCount, desc, inArray, gt } from "drizzle-orm";
 
 import http from "node:http";
 
@@ -570,7 +570,8 @@ async function handleWebhookEvent(data: {
       const isFromMe = !!(info.IsFromMe || info.isFromMe);
 
       const chatJid = (info.Chat || info.chat || "") as string;
-      if (chatJid.includes("@g.us") || chatJid.includes("@broadcast")) break;
+      // Skip groups, broadcasts and WhatsApp Channels (newsletters: 120363...@newsletter)
+      if (chatJid.includes("@g.us") || chatJid.includes("@broadcast") || chatJid.includes("@newsletter")) break;
 
       // Extract phone — prefer @s.whatsapp.net over @lid
       const rawChat = (info.Chat || info.chat || "") as string;
@@ -592,6 +593,9 @@ async function handleWebhookEvent(data: {
         phone = extractPhone(rawChat) || extractPhone(rawSender) || extractPhone(rawSenderAlt) || rawChat.replace(/@.*$/, "").replace(/:.*$/, "");
       }
       if (!phone) break;
+      // Defense-in-depth: real phone numbers never exceed 15 digits.
+      // WhatsApp Channel/community JIDs are 18-digit ids (120363...) — drop them.
+      if (phone.length < 8 || phone.length > 15) break;
 
       // Skip self-messages
       const ownPhone = (sessao.phoneNumber || "").replace(/:.*$/, "");
@@ -832,12 +836,28 @@ async function handleAiSdrResponse(params: {
   }
 
   if (!state.aiAtivo) {
-    console.log(`[AI-SDR] AI disabled for contato ${contatoId}, skipping`);
-    return;
+    // Handoffs "leves" (não achou horário de agenda que bateu, ou o próprio
+    // lead pediu pra deixar registrado) não devem silenciar a IA pra sempre —
+    // achado real (13/07): lead voltou dizendo "consigo sim" depois de um
+    // handoff por horário e a Natália nunca mais respondeu, deixando ele sem
+    // solução. Motivos que indicam necessidade real de humano (frustração,
+    // pedido explícito reforçado, valor alto, keyword, fora de escopo) continuam
+    // bloqueando a IA permanentemente pra este contato.
+    const motivosLeves = ["criterio_concluido", "pedido_contato"];
+    if (state.handoffMotivo && motivosLeves.includes(state.handoffMotivo)) {
+      console.log(`[AI-SDR] Reativando IA pra contato ${contatoId} — handoff leve (${state.handoffMotivo}) e lead voltou a escrever`);
+      await db.update(stateT).set({
+        aiAtivo: true, handoffAt: null, handoffMotivo: null, updatedAt: new Date(),
+      }).where(eq(stateT.id, state.id));
+      state = { ...state, aiAtivo: true };
+    } else {
+      console.log(`[AI-SDR] AI disabled for contato ${contatoId}, skipping`);
+      return;
+    }
   }
 
   // 3. Decrypt API key
-  let apiKey = process.env.GROQ_API_KEY;
+  let apiKey = process.env.OPENAI_API_KEY;
   if (config.groqApiKey) {
     try {
       const { decrypt } = await import("../lib/email/encryption");
@@ -845,7 +865,7 @@ async function handleAiSdrResponse(params: {
     } catch { /* use env fallback */ }
   }
   if (!apiKey) {
-    console.log("[AI-SDR] No Groq API key, skipping");
+    console.log("[AI-SDR] No OpenAI API key, skipping");
     return;
   }
 
@@ -984,13 +1004,20 @@ async function handleAiSdrResponse(params: {
       insumoComercial: negociosT.insumoComercial,
       cipaDiagnostico: negociosT.cipaDiagnostico,
       cipaScore: negociosT.cipaScore,
+      updatedAt: negociosT.updatedAt,
     }).from(negociosT)
       .where(and(
         eq(negociosT.leadId, leadId),
         inArray(negociosT.status, ["reuniao_agendada", "reuniao_realizada", "proposta_apresentada", "negociacao_iniciada", "em_fechamento"]),
       ))
       .limit(1);
-    if (neg) negocioContext = neg;
+    // Negócio parado há mais de 30 dias sem update não deve travar o
+    // autoagendamento pra sempre num lead recorrente que volta com demanda nova
+    // (achado da simulação de QA de 15/07 — mesma classe do bug da Rodada 5, só
+    // que com negócio real/antigo em vez de residual de teste).
+    const NEGOCIO_STALE_DAYS = 30;
+    const isStale = neg && Date.now() - new Date(neg.updatedAt).getTime() > NEGOCIO_STALE_DAYS * 24 * 60 * 60 * 1000;
+    if (neg && !isStale) negocioContext = neg;
 
     // Fallback: if lead has no insumo/cipa but negocio does, enrich lead context
     if (leadContext && neg) {
@@ -1080,7 +1107,54 @@ async function handleAiSdrResponse(params: {
     }
   }
 
-  // 8. Call Groq
+  // 7c. Agenda disponível (calendário nativo, round-robin entre closers) — só
+  // oferece slot se ainda não há negócio ativo pra este lead (já agendado = não
+  // oferece de novo). Round-robin + slots calculados aqui e reaproveitados no
+  // tool schedule_meeting (mesma closer/lista oferecida na conversa).
+  let agendaContext: import("../lib/ai/sdr").AgendaContext | null = null;
+  let pickedCloserId: string | null = null;
+  // Oferece slot se não há negócio ainda, OU se já tem reunião marcada mas o lead
+  // quer remarcar (negocio ainda em "reuniao_agendada" = nada avançou de verdade).
+  if (leadId && (!negocioContext || negocioContext.status === "reuniao_agendada")) {
+    const { pickNextCloser, getAvailableSlots, formatSlotLabel, getActiveClosers } = await import("../lib/crm/agenda-closers");
+
+    // Reaproveita o closer já oferecido pra este lead (leads.agendaCloserId) em vez
+    // de recalcular o round-robin a cada turno — sem isso, se outro lead fechasse
+    // reunião no meio desta conversa, o closer oferecido na msg 1 podia virar
+    // diferente do usado quando o lead confirma o horário na msg 3.
+    const [leadRow] = await db.select({ agendaCloserId: leadsT.agendaCloserId })
+      .from(leadsT).where(eq(leadsT.id, leadId)).limit(1);
+
+    let closer: { id: string; nome: string } | null = null;
+    if (leadRow?.agendaCloserId) {
+      const ativos = await getActiveClosers(db, organizacaoId);
+      closer = ativos.find((c: { id: string }) => c.id === leadRow.agendaCloserId) || null;
+    }
+
+    let slots = closer ? await getAvailableSlots(db, closer.id, { maxSlots: 8 }) : [];
+
+    // Sem closer pinado ainda, ou o pinado ficou sem horário livre (agenda cheia) → repicka.
+    if (!closer || slots.length === 0) {
+      const picked = await pickNextCloser(db, organizacaoId);
+      if (picked) {
+        closer = picked;
+        slots = await getAvailableSlots(db, closer.id, { maxSlots: 8 });
+      }
+    }
+
+    if (closer) {
+      pickedCloserId = closer.id;
+      if (leadRow?.agendaCloserId !== closer.id) {
+        await db.update(leadsT).set({ agendaCloserId: closer.id }).where(eq(leadsT.id, leadId));
+      }
+      agendaContext = {
+        closerNome: closer.nome,
+        slots: slots.map((s) => ({ iso: s.inicio.toISOString(), label: formatSlotLabel(s) })),
+      };
+    }
+  }
+
+  // 8. Call OpenAI
   const { callAiSdr } = await import("../lib/ai/sdr");
 
   const aiResponse = await callAiSdr({
@@ -1112,6 +1186,7 @@ async function handleAiSdrResponse(params: {
     contatoNome,
     conversationSummary: state.conversationSummary,
     qualificacaoExtraida: state.qualificacaoExtraida as Record<string, unknown> | null,
+    agenda: agendaContext,
   });
 
   const latenciaMs = Date.now() - startTime;
@@ -1130,7 +1205,28 @@ async function handleAiSdrResponse(params: {
       if (tc.input.setor) updateFields.empresaSetor = tc.input.setor;
       if (tc.input.porte) updateFields.empresaPorte = tc.input.porte;
       if (tc.input.servicosInteresse) updateFields.servicosInteresse = tc.input.servicosInteresse;
+      if (tc.input.email) updateFields.email = tc.input.email;
       await db.update(leadsT).set(updateFields).where(eq(leadsT.id, leadId));
+
+      // Mesmos campos do painel humano QualificacaoSdrSection (exceto CNPJ, que a
+      // IA nunca pede pelo chat) — assim quando ela qualifica e converte o lead,
+      // o closer já vê o painel preenchido em vez de vazio. Merge raso dentro de
+      // campos_custom.qualificacaoSdr pra não apagar o que o closer já preencheu.
+      const sdrPatch: Record<string, string> = {};
+      if (tc.input.produtoInteresse) sdrPatch.produto = tc.input.produtoInteresse as string;
+      if (tc.input.setoresTelefonia) sdrPatch.quemRealizaCall = tc.input.setoresTelefonia as string;
+      if (tc.input.tomadorDecisao) sdrPatch.tomadorDecisao = tc.input.tomadorDecisao as string;
+      if (tc.input.crmAtual) sdrPatch.crmAtual = tc.input.crmAtual as string;
+      if (tc.input.numUsuarios !== undefined) sdrPatch.numUsuarios = String(tc.input.numUsuarios);
+      if (Object.keys(sdrPatch).length > 0) {
+        await db.execute(rawSql`
+          UPDATE leads SET campos_custom = jsonb_set(
+            COALESCE(campos_custom, '{}'::jsonb),
+            '{qualificacaoSdr}',
+            COALESCE(campos_custom->'qualificacaoSdr', '{}'::jsonb) || ${JSON.stringify(sdrPatch)}::jsonb
+          ) WHERE id = ${leadId}
+        `);
+      }
     }
 
     if (tc.name === "handoff") {
@@ -1183,14 +1279,21 @@ async function handleAiSdrResponse(params: {
             updatedAt: new Date(),
           }).where(and(eq(negociosT.leadId, leadId), eq(negociosT.status, negocioContext.status)));
         }
-        // Update lead sdrStatus
+        // Update lead sdrStatus.
+        // IMPORTANTE: "qualifying" é o valor que o board mostra como coluna "Follow up"
+        // (lead que a IA NÃO conseguiu qualificar em 48h, escalado pra Jenifer — ver
+        // SDR_CONTATO_ESCALATION_HOURS em lib/crm/pipeline.ts). Um lead que só respondeu
+        // e está sendo ativamente trabalhado pela IA NÃO pode cair em "qualifying" — ele
+        // continua em "contacted" ("Em Contato") até qualificar de verdade ou estourar o
+        // prazo (aí quem move é o job de escalação, não este tool call).
         const sdrStatusMap: Record<string, string> = {
-          respondeu: "qualifying",
+          em_contato: "contacted",
+          respondeu: "contacted",
           reuniao_agendada: "scheduled",
           sem_retorno: "disqualified",
         };
         await db.update(leadsT).set({
-          sdrStatus: sdrStatusMap[novoStatus] || "qualifying",
+          sdrStatus: sdrStatusMap[novoStatus] || "contacted",
           updatedAt: new Date(),
         }).where(eq(leadsT.id, leadId));
 
@@ -1206,43 +1309,54 @@ async function handleAiSdrResponse(params: {
     }
 
     if (tc.name === "schedule_meeting" && leadId) {
-      // Create a meeting task
-      const [admin] = await db.select({ id: usuariosT.id })
-        .from(usuariosT)
-        .where(and(eq(usuariosT.organizacaoId, organizacaoId), eq(usuariosT.role, "admin")))
-        .limit(1);
-      if (admin) {
-        await db.insert(tarefasT).values({
+      const horarioIso = tc.input.horarioEscolhidoIso as string | undefined;
+
+      if (!horarioIso || !pickedCloserId) {
+        // Sem slot real oferecido (agenda vazia / closer indisponível) — cai pra
+        // um humano resolver manualmente em vez de fingir que agendou algo.
+        console.error(`[AI-SDR] schedule_meeting sem horarioEscolhidoIso/closer disponível pro lead ${leadId} — handoff manual necessário.`);
+        const [admin] = await db.select({ id: usuariosT.id })
+          .from(usuariosT)
+          .where(and(eq(usuariosT.organizacaoId, organizacaoId), eq(usuariosT.role, "admin")))
+          .limit(1);
+        if (admin) {
+          await db.insert(notifT).values({
+            usuarioId: admin.id,
+            titulo: `Agendar manualmente: ${contatoNome}`,
+            mensagem: `Agente SDR não achou horário/closer disponível pra agendar. Assunto: ${tc.input.assunto || ""}`,
+            tipo: "sdr_meeting",
+            link: `/whatsapp?contato=${contatoId}`,
+          });
+        }
+      } else {
+        // Reaproveita a MESMA lógica do fluxo manual (SDR arrasta card / usa o
+        // modal) — ver lib/crm/converter-oportunidade.ts e
+        // callface/ai-sdr-agente-spec.md seção 6.
+        const { converterLeadEmOportunidade } = await import("../lib/crm/converter-oportunidade");
+        const { resolveAiSdrUserId } = await import("../lib/crm/ai-sdr-outreach");
+        const aiUserId = await resolveAiSdrUserId(db, organizacaoId);
+
+        const result = await converterLeadEmOportunidade(db, {
           organizacaoId,
           leadId,
-          usuarioId: admin.id,
-          titulo: `Reunião: ${tc.input.assunto || contatoNome}`,
-          descricao: `Data preferida: ${tc.input.dataPreferida || "não informada"}. ${tc.input.observacoes || ""}`,
-          tipo: "reuniao",
-          prioridade: "alta",
-          dataVencimento: new Date().toISOString().split("T")[0],
+          usuarioId: aiUserId,
+          closerId: pickedCloserId,
+          reuniao: {
+            data: horarioIso,
+            duracao: 30,
+            tipo: "call",
+            titulo: (tc.input.assunto as string) || undefined,
+            notas: (tc.input.observacoes as string) || undefined,
+          },
         });
 
-        await db.insert(notifT).values({
-          usuarioId: admin.id,
-          titulo: `Reunião agendada: ${contatoNome}`,
-          mensagem: `SDR agendou reunião: ${tc.input.assunto || ""}. ${tc.input.dataPreferida || ""}`,
-          tipo: "sdr_meeting",
-          link: `/whatsapp?contato=${contatoId}`,
-        });
-      }
-
-      // Advance to reuniao_agendada
-      await db.update(leadsT).set({
-        sdrStatus: "scheduled",
-        updatedAt: new Date(),
-      }).where(eq(leadsT.id, leadId));
-
-      if (negocioContext) {
-        await db.update(negociosT).set({
-          status: "reuniao_agendada",
-          updatedAt: new Date(),
-        }).where(and(eq(negociosT.leadId, leadId), eq(negociosT.status, negocioContext.status)));
+        if ("error" in result) {
+          console.error(`[AI-SDR] schedule_meeting falhou pro lead ${leadId}: ${result.error}`);
+        } else {
+          console.log(`[AI-SDR] Reunião criada via schedule_meeting: negocio=${result.negocioId} reuniao=${result.reuniaoId}`);
+          // Lead qualificado e agendado: não precisa mais da cadência de retentativa automática.
+          await db.update(leadsT).set({ nextFollowupAt: null }).where(eq(leadsT.id, leadId));
+        }
       }
     }
   }
@@ -1325,6 +1439,14 @@ async function handleAiSdrResponse(params: {
 
   // 11. Update contato state
   const didSendMessage = !!(aiResponse.responseText && sessaoId && !handoffTriggered);
+
+  // Lead está respondendo e sendo trabalhado ativamente: limpa a retentativa
+  // automática de "sem resposta" (lib/crm/ai-sdr-outreach.ts). Evita o job de
+  // retry mandar um follow-up de "você sumiu" no meio de uma conversa ativa.
+  if (didSendMessage && leadId) {
+    await db.update(leadsT).set({ nextFollowupAt: null, lastContactAt: new Date() }).where(eq(leadsT.id, leadId));
+  }
+
   const stateUpdate: Record<string, unknown> = {
     totalTokensUsados: rawSql`total_tokens_usados + ${aiResponse.tokensInput + aiResponse.tokensOutput}`,
     updatedAt: new Date(),
@@ -1370,6 +1492,477 @@ async function handleAiSdrResponse(params: {
   });
 
   console.log(`[AI-SDR] Processed contato ${contatoId}: intent=${aiResponse.intentDetectado}, tokens=${aiResponse.tokensInput + aiResponse.tokensOutput}, latency=${latenciaMs}ms${handoffTriggered ? " [HANDOFF]" : ""}`);
+}
+
+// Monta a instrução de abertura pro 1º contato (Natália, 10/07: template treinado
+// com o Kauã). Formato fixo: msg 1 = saudação + apresentação; msg 2 = contexto
+// real do motivo do contato (nunca inventa origem que não tem).
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function buildOpenerDirective(lead: any): string {
+  const primeiroNome = (lead.nome || "").trim().split(/\s+/)[0] || lead.nome || "";
+  const origem = (lead.origem || lead.comoConheceu || "").toString().trim();
+  const contextoOrigem = origem
+    ? `Ele veio até a Callface via ${origem}. Use isso pra dar contexto real (ex: "vi que você se interessou pela Callface através de ${origem}"), sem inventar detalhes que você não tem.`
+    : `Não há informação da origem exata dele. Diga só algo como "vi que você deixou contato com a gente", sem inventar canal/campanha específica.`;
+
+  return `Este é o primeiro contato com este lead. A abertura precisa seguir EXATAMENTE esta estrutura, em 2 mensagens separadas (uma por chamada de "respond", ou no array de mensagens em sequência):
+
+1ª mensagem (saudação + apresentação, literal): "Oi ${primeiroNome}! Aqui é a Natália, da Callface."
+2ª mensagem (contexto do motivo do contato): ${contextoOrigem}
+
+NÃO faça nenhuma pergunta de qualificação ainda nessas 2 mensagens iniciais, NÃO ofereça reunião. Espere a resposta do lead antes de avançar pro fluxo (entender o contexto → descobrir a dor → explorar o impacto → confirmar aderência → marcar reunião).`;
+}
+
+// ─── Agente SDR: disparo automático do 1º contato ──────────────────────────
+// Roda em sweep (job "ai-sdr-outreach"). Lead cai em Pré-vendas/Novo (sdrStatus
+// pending) → o Agente SDR (usuário pseudo "Natália", ver lib/crm/ai-sdr-outreach.ts)
+// manda a 1ª mensagem sozinho, move o lead pra "Em Contato" e assume como responsável.
+// Ver callface/ai-sdr-agente-spec.md seção 5.
+async function runAiSdrFirstContactSweep(): Promise<{ iniciados: number }> {
+  const {
+    leads: leadsT, aiSdrConfig: aiSdrConfigT, aiSdrContatoState: stateT,
+    contatos: contatosT, whatsappSessao: waSessaoT, whatsappMensagens: waMsgs,
+    statusChanges, atividades, aiSdrLogs: logsT, organizacoes: orgsT, servicosCatalogo: servicosT,
+  } = await import("../lib/db/schema");
+  const { resolveAiSdrUserId } = await import("../lib/crm/ai-sdr-outreach");
+  const { callAiSdr } = await import("../lib/ai/sdr");
+
+  const configs = await db.select().from(aiSdrConfigT).where(eq(aiSdrConfigT.ativo, true));
+  let iniciados = 0;
+
+  for (const config of configs) {
+    const aiUserId = await resolveAiSdrUserId(db, config.organizacaoId);
+    if (!aiUserId) continue; // usuário "Natália" não existe nessa org ainda
+
+    const [sessao] = await db.select().from(waSessaoT)
+      .where(and(eq(waSessaoT.usuarioId, aiUserId), eq(waSessaoT.status, "connected")))
+      .limit(1);
+    if (!sessao) continue; // sem número conectado (QR não escaneado ainda)
+
+    // ⚠️ TRAVA DE SEGURANÇA (10/07, incidente real): sem o filtro de recência, o
+    // primeiro sweep depois de ligar `ativo=true` varre TODO lead pending que já
+    // existia no banco — incluindo leads antigos de meses atrás nunca trabalhados
+    // (aconteceu em homolog: 20 leads reais de prospecção de 02/07 receberam
+    // mensagem no minuto em que liguei o motor). O gate correto é: só lead que
+    // caiu em "Novo" DEPOIS que o motor está ativo, não backlog histórico.
+    const janelaMaxima = new Date(Date.now() - 2 * 60 * 60 * 1000); // últimas 2h
+
+    const candidatos = await db.select().from(leadsT)
+      .where(and(
+        eq(leadsT.organizacaoId, config.organizacaoId),
+        eq(leadsT.tipo, "lead"),
+        eq(leadsT.sdrStatus, "pending"),
+        isNotNull(leadsT.telefone),
+        gte(leadsT.createdAt, janelaMaxima),
+      ))
+      .limit(20); // teto por rodada — evita rajada se represar muito lead de uma vez
+
+    // Callpilot (ligação de IA) é o canal PRIMÁRIO pra lead "Novo" — o WhatsApp
+    // só assume como FALLBACK se a ligação não rolou ou não teve sucesso
+    // (pedido Kauã 23/07: "cai em Novo, faz a ligação, não teve sucesso aí sim
+    // mensagem no whatsapp"). Lead recém-criado (< 6min, ~1 ciclo de sweep)
+    // ainda sem callpilotDisparadoEm dá tempo do Callpilot tentar primeiro; se
+    // depois disso ainda não tentou (sem closer/horário disponível), ou se já
+    // tentou e não teve sucesso, o WhatsApp libera.
+    const CALLPILOT_GRACE_MS = 6 * 60 * 1000;
+    const { avaliarResultadoCallpilot } = await import("../lib/integrations/callpilot-trigger");
+    const pendentes = [];
+    for (const c of candidatos) {
+      if (!c.callpilotDisparadoEm) {
+        const idadeMs = Date.now() - new Date(c.createdAt).getTime();
+        if (idadeMs < CALLPILOT_GRACE_MS) continue;
+        pendentes.push(c);
+        continue;
+      }
+      const resultado = await avaliarResultadoCallpilot(db, c.id, c.callpilotDisparadoEm);
+      if (resultado !== "pendente") pendentes.push(c);
+    }
+
+    for (const lead of pendentes) {
+      try {
+        const normalized = lead.telefone as string;
+        const last8 = normalized.replace(/\D/g, "").slice(-8);
+
+        const [existingContato] = await db.select({ id: contatosT.id })
+          .from(contatosT)
+          .where(and(eq(contatosT.sessaoId, sessao.id), like(contatosT.telefone, `%${last8}`)))
+          .limit(1);
+
+        let contatoId: string;
+        if (existingContato) {
+          contatoId = existingContato.id;
+          await db.update(contatosT).set({ leadId: lead.id, responsavelId: aiUserId, updatedAt: new Date() }).where(eq(contatosT.id, contatoId));
+        } else {
+          const [novo] = await db.insert(contatosT).values({
+            organizacaoId: config.organizacaoId,
+            canal: "whatsapp",
+            nome: lead.nome,
+            telefone: normalized,
+            sessaoId: sessao.id,
+            leadId: lead.id,
+            responsavelId: aiUserId,
+          }).returning({ id: contatosT.id });
+          contatoId = novo.id;
+        }
+
+        await db.insert(stateT).values({ contatoId, organizacaoId: config.organizacaoId, aiAtivo: true })
+          .onConflictDoNothing({ target: stateT.contatoId });
+
+        const now = new Date();
+        await db.update(leadsT).set({
+          sdrStatus: "contacted",
+          responsavelId: aiUserId,
+          contatoDesdeAt: now,
+          primeiroContatoAt: lead.primeiroContatoAt || now,
+          outreachStartedAt: now,
+          lastContactAt: now,
+          nextFollowupAt: new Date(now.getTime() + 2 * 60 * 60 * 1000),
+          updatedAt: now,
+        }).where(eq(leadsT.id, lead.id));
+
+        await db.insert(statusChanges).values({
+          leadId: lead.id, deStatus: "pending", paraStatus: "contacted",
+          usuarioId: aiUserId, motivo: "Agente SDR iniciou contato automaticamente",
+        });
+        await db.insert(atividades).values({
+          leadId: lead.id, organizacaoId: config.organizacaoId, usuarioId: aiUserId,
+          tipo: "nota", titulo: "Etapa de pré-vendas",
+          descricao: "Novo → Em Contato (Agente SDR, automático)",
+        });
+
+        let apiKey = process.env.OPENAI_API_KEY;
+        if (config.groqApiKey) {
+          try {
+            const { decrypt } = await import("../lib/email/encryption");
+            apiKey = decrypt(config.groqApiKey);
+          } catch { /* env fallback */ }
+        }
+        if (!apiKey) { console.warn("[AI-SDR-Outreach] Sem OPENAI_API_KEY, pulando envio"); continue; }
+
+        const [org] = await db.select({ nome: orgsT.nome }).from(orgsT).where(eq(orgsT.id, config.organizacaoId)).limit(1);
+        const servicos = await db.select({
+          nome: servicosT.nome, descricao: servicosT.descricao, tipo: servicosT.tipo,
+          valorSugerido: servicosT.valorSugerido, unidade: servicosT.unidade,
+        }).from(servicosT).where(and(eq(servicosT.organizacaoId, config.organizacaoId), eq(servicosT.ativo, true))).limit(20);
+
+        const aiResponse = await callAiSdr({
+          config: {
+            groqApiKey: apiKey, modelo: config.modelo, systemPrompt: config.systemPrompt,
+            nomeAssistente: config.nomeAssistente, idiomaResposta: config.idiomaResposta,
+            maxTokensResposta: config.maxTokensResposta, temperaturaModelo: config.temperaturaModelo,
+            stageConfig: config.stageConfig as Record<string, import("../lib/ai/sdr").StageConfig> | null,
+            styleGuide: config.styleGuide, knowledgeBase: config.knowledgeBase,
+            handoffTriggers: config.handoffTriggers as { keywords?: string[]; sentimentoNegativo?: boolean; valorAlto?: number } | null,
+          },
+          orgNome: org?.nome || "Callface",
+          messages: [],
+          currentMessage: "",
+          lead: {
+            nome: lead.nome, sobrenome: lead.sobrenome, empresa: lead.empresa, cargo: lead.cargo,
+            email: lead.email, servicosInteresse: lead.servicosInteresse, leadScore: lead.leadScore,
+            status: lead.status,
+            insumoComercial: lead.insumoComercial as Record<string, unknown> | null,
+            cipaDiagnostico: lead.cipaDiagnostico as Record<string, unknown> | null,
+            cipaScore: lead.cipaScore,
+          },
+          negocio: null,
+          servicos,
+          contatoNome: lead.nome,
+          conversationSummary: null,
+          qualificacaoExtraida: null,
+          openerDirective: buildOpenerDirective(lead),
+        });
+
+        if (aiResponse.responseText) {
+          const { whatsappOutgoingQueue } = await import("../lib/queue/index");
+          const parts = aiResponse.responseText.split("\n---SPLIT---\n").filter(Boolean);
+          for (let i = 0; i < parts.length; i++) {
+            const text = parts[i].trim();
+            if (!text) continue;
+            if (i > 0) await new Promise((r) => setTimeout(r, 2000 + Math.random() * 3000));
+            const [outMsg] = await db.insert(waMsgs).values({
+              contatoId, leadId: lead.id, sessaoId: sessao.id, telefone: normalized,
+              direcao: "out", tipo: "text", conteudo: text, status: "pending",
+              dados: { aiGenerated: true },
+            }).returning({ id: waMsgs.id });
+            await whatsappOutgoingQueue.add("send", { messageId: outMsg.id, phone: normalized, conteudo: text, tipo: "text", sessaoId: sessao.id });
+          }
+          await db.update(contatosT).set({
+            ultimaMsg: parts[parts.length - 1]?.trim().substring(0, 100),
+            ultimaMsgAt: new Date(),
+            updatedAt: new Date(),
+          }).where(eq(contatosT.id, contatoId));
+        }
+
+        // Persiste o resumo da abertura — sem isso, a 1ª retentativa (se o lead
+        // não responder) não sabia o que já tinha sido dito e repetia a mesma
+        // mensagem literalmente (achado real na auditoria de 13/07).
+        if (aiResponse.conversationSummary) {
+          await db.update(stateT).set({
+            conversationSummary: aiResponse.conversationSummary,
+            updatedAt: new Date(),
+          }).where(eq(stateT.contatoId, contatoId));
+        }
+
+        await db.insert(logsT).values({
+          organizacaoId: config.organizacaoId, contatoId, leadId: lead.id,
+          tipo: "resposta", inputContent: "[abertura automática]", outputContent: aiResponse.responseText,
+          decisao: "respond", tokensInput: aiResponse.tokensInput, tokensOutput: aiResponse.tokensOutput,
+          modeloUsado: config.modelo,
+        });
+
+        iniciados++;
+      } catch (e) {
+        console.error(`[AI-SDR-Outreach] erro no lead ${lead.id}:`, e instanceof Error ? e.message : e);
+      }
+    }
+  }
+
+  return { iniciados };
+}
+
+// ─── Agente SDR: retentativa automática (~2h / 24h / 40h sem resposta) ─────
+// Roda em sweep (job "ai-sdr-retry"). Rede de segurança: handleAiSdrResponse já
+// limpa nextFollowupAt sempre que o lead responde e a IA processa reativamente
+// (ver "11. Update contato state" acima) — isso aqui só dispara quando o lead
+// ficou em silêncio. Ver callface/ai-sdr-agente-spec.md seção 5.
+async function runAiSdrRetrySweep(): Promise<{ enviados: number }> {
+  const {
+    leads: leadsT, aiSdrConfig: aiSdrConfigT, contatos: contatosT,
+    whatsappMensagens: waMsgs, aiSdrLogs: logsT, organizacoes: orgsT, servicosCatalogo: servicosT,
+    aiSdrContatoState: stateT,
+  } = await import("../lib/db/schema");
+  const { callAiSdr } = await import("../lib/ai/sdr");
+
+  const now = new Date();
+  const due = await db.select().from(leadsT)
+    .where(and(
+      eq(leadsT.sdrStatus, "contacted"),
+      eq(leadsT.tipo, "lead"),
+      isNotNull(leadsT.nextFollowupAt),
+      lte(leadsT.nextFollowupAt, now),
+    ))
+    .limit(50);
+
+  let enviados = 0;
+
+  for (const lead of due) {
+    try {
+      const [config] = await db.select().from(aiSdrConfigT).where(eq(aiSdrConfigT.organizacaoId, lead.organizacaoId)).limit(1);
+      if (!config || !config.ativo) {
+        await db.update(leadsT).set({ nextFollowupAt: null }).where(eq(leadsT.id, lead.id));
+        continue;
+      }
+
+      const [contato] = await db.select({ id: contatosT.id, sessaoId: contatosT.sessaoId })
+        .from(contatosT).where(eq(contatosT.leadId, lead.id)).limit(1);
+      if (!contato?.sessaoId) continue;
+
+      // Memória entre tentativas: sem isso, cada retentativa esquecia o que a
+      // abertura (ou a retentativa anterior) já tinha dito, e a IA repetia a
+      // mesma mensagem literalmente (achado real na auditoria de 13/07 — mesmo
+      // texto de abertura mandado 2x pro mesmo lead). openerDirective descarta
+      // o histórico bruto de mensagens de propósito (ver callAiSdr em sdr.ts),
+      // mas o resumo/qualificação persistidos SEMPRE são injetados no prompt.
+      const [contatoState] = await db.select({
+        conversationSummary: stateT.conversationSummary,
+        qualificacaoExtraida: stateT.qualificacaoExtraida,
+      }).from(stateT).where(eq(stateT.contatoId, contato.id)).limit(1);
+
+      // Se o lead já respondeu depois do último contato, não é retentativa —
+      // handleAiSdrResponse já cuidou disso (limpou nextFollowupAt). Isso aqui é
+      // só uma checagem de segurança extra.
+      const [ultimaIn] = await db.select({ createdAt: waMsgs.createdAt }).from(waMsgs)
+        .where(and(eq(waMsgs.contatoId, contato.id), eq(waMsgs.direcao, "in")))
+        .orderBy(desc(waMsgs.createdAt)).limit(1);
+      if (ultimaIn && lead.lastContactAt && ultimaIn.createdAt > new Date(lead.lastContactAt)) {
+        await db.update(leadsT).set({ nextFollowupAt: null }).where(eq(leadsT.id, lead.id));
+        continue;
+      }
+
+      const horasDesde = lead.outreachStartedAt
+        ? (now.getTime() - new Date(lead.outreachStartedAt).getTime()) / 3_600_000
+        : 999;
+
+      let directiveMsg: string;
+      let proximoTier: Date | null;
+      if (horasDesde < 24) {
+        directiveMsg = "O lead ainda não respondeu sua mensagem de abertura. Mande um follow-up curto e natural (reforce rapidamente o motivo do contato), sem parecer insistente.";
+        proximoTier = new Date(now.getTime() + 16 * 60 * 60 * 1000); // próxima tentativa perto de 40h desde o início
+      } else if (horasDesde < 40) {
+        directiveMsg = "Este já é o segundo follow-up, o lead segue sem responder há mais de um dia. Mande uma última tentativa breve, sem pressão, deixando a porta aberta pra quando ele puder.";
+        proximoTier = null; // depois desta, quem assume é a escalação de 48h (Jenifer)
+      } else {
+        await db.update(leadsT).set({ nextFollowupAt: null }).where(eq(leadsT.id, lead.id));
+        continue;
+      }
+
+      let apiKey = process.env.OPENAI_API_KEY;
+      if (config.groqApiKey) {
+        try {
+          const { decrypt } = await import("../lib/email/encryption");
+          apiKey = decrypt(config.groqApiKey);
+        } catch { /* env fallback */ }
+      }
+      if (!apiKey) continue;
+
+      const [org] = await db.select({ nome: orgsT.nome }).from(orgsT).where(eq(orgsT.id, lead.organizacaoId)).limit(1);
+      const servicos = await db.select({
+        nome: servicosT.nome, descricao: servicosT.descricao, tipo: servicosT.tipo,
+        valorSugerido: servicosT.valorSugerido, unidade: servicosT.unidade,
+      }).from(servicosT).where(and(eq(servicosT.organizacaoId, lead.organizacaoId), eq(servicosT.ativo, true))).limit(20);
+
+      const aiResponse = await callAiSdr({
+        config: {
+          groqApiKey: apiKey, modelo: config.modelo, systemPrompt: config.systemPrompt,
+          nomeAssistente: config.nomeAssistente, idiomaResposta: config.idiomaResposta,
+          maxTokensResposta: config.maxTokensResposta, temperaturaModelo: config.temperaturaModelo,
+          stageConfig: config.stageConfig as Record<string, import("../lib/ai/sdr").StageConfig> | null,
+          styleGuide: config.styleGuide, knowledgeBase: config.knowledgeBase,
+          handoffTriggers: config.handoffTriggers as { keywords?: string[]; sentimentoNegativo?: boolean; valorAlto?: number } | null,
+        },
+        orgNome: org?.nome || "Callface",
+        messages: [],
+        currentMessage: "",
+        lead: {
+          nome: lead.nome, sobrenome: lead.sobrenome, empresa: lead.empresa, cargo: lead.cargo,
+          email: lead.email, servicosInteresse: lead.servicosInteresse, leadScore: lead.leadScore,
+          status: lead.status,
+          insumoComercial: lead.insumoComercial as Record<string, unknown> | null,
+          cipaDiagnostico: lead.cipaDiagnostico as Record<string, unknown> | null,
+          cipaScore: lead.cipaScore,
+        },
+        negocio: null,
+        servicos,
+        contatoNome: lead.nome,
+        conversationSummary: contatoState?.conversationSummary ?? null,
+        qualificacaoExtraida: contatoState?.qualificacaoExtraida as Record<string, unknown> | null ?? null,
+        openerDirective: directiveMsg,
+      });
+
+      if (aiResponse.responseText) {
+        const { whatsappOutgoingQueue } = await import("../lib/queue/index");
+        const parts = aiResponse.responseText.split("\n---SPLIT---\n").filter(Boolean);
+        for (let i = 0; i < parts.length; i++) {
+          const text = parts[i].trim();
+          if (!text) continue;
+          if (i > 0) await new Promise((r) => setTimeout(r, 2000 + Math.random() * 3000));
+          const [outMsg] = await db.insert(waMsgs).values({
+            contatoId: contato.id, leadId: lead.id, sessaoId: contato.sessaoId, telefone: lead.telefone as string,
+            direcao: "out", tipo: "text", conteudo: text, status: "pending",
+            dados: { aiGenerated: true },
+          }).returning({ id: waMsgs.id });
+          await whatsappOutgoingQueue.add("send", { messageId: outMsg.id, phone: lead.telefone, conteudo: text, tipo: "text", sessaoId: contato.sessaoId });
+        }
+        await db.update(contatosT).set({
+          ultimaMsg: parts[parts.length - 1]?.trim().substring(0, 100),
+          ultimaMsgAt: new Date(),
+          updatedAt: new Date(),
+        }).where(eq(contatosT.id, contato.id));
+        enviados++;
+      }
+
+      // Persiste o resumo/qualificação atualizados pra próxima retentativa (ou
+      // pro fluxo reativo, se o lead responder depois) não perder o que essa
+      // mensagem acrescentou.
+      if (aiResponse.conversationSummary) {
+        await db.update(stateT).set({
+          conversationSummary: aiResponse.conversationSummary,
+          updatedAt: new Date(),
+        }).where(eq(stateT.contatoId, contato.id));
+      }
+
+      await db.update(leadsT).set({ lastContactAt: now, nextFollowupAt: proximoTier }).where(eq(leadsT.id, lead.id));
+
+      await db.insert(logsT).values({
+        organizacaoId: lead.organizacaoId, contatoId: contato.id, leadId: lead.id,
+        tipo: "resposta", inputContent: "[retentativa automática]", outputContent: aiResponse.responseText,
+        decisao: "respond", tokensInput: aiResponse.tokensInput, tokensOutput: aiResponse.tokensOutput,
+        modeloUsado: config.modelo,
+      });
+    } catch (e) {
+      console.error(`[AI-SDR-Retry] erro no lead ${lead.id}:`, e instanceof Error ? e.message : e);
+    }
+  }
+
+  return { enviados };
+}
+
+// ─── Agente SDR: confirmação de reunião no dia ─────────────────────────────
+// Roda 1x/dia de manhã (job "ai-sdr-meeting-confirmation"). Reuniões marcadas
+// pra hoje recebem confirmação via WhatsApp. Se o lead responder que não pode,
+// o handoff normal (motivo pedido_contato/sentimento_negativo) encaminha pra um
+// humano reagendar — reagendamento automático fica fora do escopo desta fase
+// (ver callface/ai-sdr-agente-spec.md seção 7 e riscos na seção 9).
+async function runAiSdrMeetingConfirmationSweep(): Promise<{ enviados: number }> {
+  const {
+    reunioes: reuniosT, leads: leadsT, contatos: contatosT,
+    whatsappMensagens: waMsgs, atividades: ativT, usuarios: usuariosT,
+  } = await import("../lib/db/schema");
+
+  const now = new Date();
+  const startOfDay = new Date(now);
+  startOfDay.setHours(0, 0, 0, 0);
+  const endOfDay = new Date(now);
+  endOfDay.setHours(23, 59, 59, 999);
+
+  const reunioesHoje = await db.select({
+    id: reuniosT.id, data: reuniosT.data, leadId: reuniosT.leadId,
+    organizacaoId: reuniosT.organizacaoId, responsavelId: reuniosT.responsavelId,
+  }).from(reuniosT)
+    .where(and(gte(reuniosT.data, startOfDay), lte(reuniosT.data, endOfDay), eq(reuniosT.status, "agendada")));
+
+  let enviados = 0;
+
+  for (const r of reunioesHoje) {
+    if (!r.leadId) continue;
+    try {
+      const [jaConfirmado] = await db.select({ id: ativT.id }).from(ativT)
+        .where(and(eq(ativT.leadId, r.leadId), eq(ativT.titulo, "Confirmação de reunião enviada"), gte(ativT.createdAt, startOfDay)))
+        .limit(1);
+      if (jaConfirmado) continue; // já mandou hoje, não duplica
+
+      const [lead] = await db.select().from(leadsT).where(eq(leadsT.id, r.leadId)).limit(1);
+      if (!lead?.telefone) continue;
+
+      const [contato] = await db.select({ id: contatosT.id, sessaoId: contatosT.sessaoId })
+        .from(contatosT).where(eq(contatosT.leadId, r.leadId)).limit(1);
+      if (!contato?.sessaoId) continue;
+
+      let closerNome: string | null = null;
+      if (r.responsavelId) {
+        const [closer] = await db.select({ nome: usuariosT.nome }).from(usuariosT).where(eq(usuariosT.id, r.responsavelId)).limit(1);
+        closerNome = closer?.nome || null;
+      }
+
+      const hora = new Date(r.data).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
+      const texto = closerNome
+        ? `Oi ${lead.nome}! Passando pra confirmar: nossa reunião com ${closerNome} é hoje às ${hora}. Tá confirmado?`
+        : `Oi ${lead.nome}! Passando pra confirmar: nossa reunião é hoje às ${hora}. Tá confirmado?`;
+
+      const { whatsappOutgoingQueue } = await import("../lib/queue/index");
+      const [outMsg] = await db.insert(waMsgs).values({
+        contatoId: contato.id, leadId: r.leadId, sessaoId: contato.sessaoId, telefone: lead.telefone,
+        direcao: "out", tipo: "text", conteudo: texto, status: "pending",
+        dados: { aiGenerated: true, tipo: "confirmacao_reuniao", reuniaoId: r.id },
+      }).returning({ id: waMsgs.id });
+      await whatsappOutgoingQueue.add("send", { messageId: outMsg.id, phone: lead.telefone, conteudo: texto, tipo: "text", sessaoId: contato.sessaoId });
+
+      await db.insert(ativT).values({
+        leadId: r.leadId,
+        organizacaoId: r.organizacaoId,
+        tipo: "nota",
+        titulo: "Confirmação de reunião enviada",
+        descricao: `Reunião hoje às ${hora}${closerNome ? ` · closer ${closerNome}` : ""}`,
+      });
+
+      enviados++;
+    } catch (e) {
+      console.error(`[AI-SDR-Confirmacao] erro na reunião ${r.id}:`, e instanceof Error ? e.message : e);
+    }
+  }
+
+  return { enviados };
 }
 
 // ─── WhatsApp Incoming Worker ────────────────────────────────
@@ -1457,10 +2050,11 @@ const whatsappIncomingWorker = new Worker(
 
       for (const conv of conversations) {
         const chatId = (conv.ID || conv.id || "") as string;
-        if (!chatId || chatId.includes("@g.us") || chatId.includes("@broadcast")) continue;
+        if (!chatId || chatId.includes("@g.us") || chatId.includes("@broadcast") || chatId.includes("@newsletter")) continue;
 
         const phone = chatId.replace(/@.*$/, "").replace(/:.*$/, "");
-        if (!phone || phone.length < 8) continue;
+        // Real phone numbers never exceed 15 digits; WhatsApp Channel ids (120363...) are 18.
+        if (!phone || phone.length < 8 || phone.length > 15) continue;
         // Skip self-chats
         if (ownLast8 && phone.endsWith(ownLast8)) continue;
 
@@ -1965,6 +2559,66 @@ const slaWorker = new Worker(
   async (job) => {
     const { leads, negocios, tarefas, notificacoes, usuarios, statusChanges } = await import("../lib/db/schema");
 
+    if (job.name === "sdr-followup-escalation") {
+      // Board Pré-vendas: leads parados em "Em Contato" há 48h+ (2 dias) sobem pra
+      // "Follow up" e a Jenifer assume. Base do relógio = leads.contato_desde_at.
+      try {
+        const { runSdrFollowupEscalation } = await import("../lib/crm/sdr-escalation");
+        const res = await runSdrFollowupEscalation(db);
+        if (res.moved > 0) console.log(`[SDR-Escalation] ${res.moved} leads: Em Contato → Follow up (48h)`);
+      } catch (e) {
+        console.error("[SDR-Escalation] erro:", e instanceof Error ? e.message : e);
+      }
+      return;
+    }
+
+    if (job.name === "ai-sdr-outreach") {
+      // Agente SDR: leads em "Novo" recebem a 1ª mensagem sozinhos.
+      try {
+        const res = await runAiSdrFirstContactSweep();
+        if (res.iniciados > 0) console.log(`[AI-SDR-Outreach] ${res.iniciados} leads: Novo → Em Contato (automático)`);
+      } catch (e) {
+        console.error("[AI-SDR-Outreach] erro:", e instanceof Error ? e.message : e);
+      }
+      return;
+    }
+
+    if (job.name === "callpilot-novo-lead") {
+      // Callpilot: leads em "Novo" recebem ligação automática da IA (Nathália).
+      try {
+        const { runCallpilotNovoLeadSweep } = await import("../lib/integrations/callpilot-trigger");
+        const res = await runCallpilotNovoLeadSweep(db);
+        if (res.disparados > 0 || res.pulados > 0) {
+          console.log(`[Callpilot] ${res.disparados} campanha(s) disparada(s), ${res.pulados} lead(s) pulado(s) (sem closer/horário disponível)`);
+        }
+      } catch (e) {
+        console.error("[Callpilot] erro no sweep:", e instanceof Error ? e.message : e);
+      }
+      return;
+    }
+
+    if (job.name === "ai-sdr-retry") {
+      // Agente SDR: retentativa automática (~2h/24h/40h) pra quem não respondeu.
+      try {
+        const res = await runAiSdrRetrySweep();
+        if (res.enviados > 0) console.log(`[AI-SDR-Retry] ${res.enviados} follow-ups automáticos enviados`);
+      } catch (e) {
+        console.error("[AI-SDR-Retry] erro:", e instanceof Error ? e.message : e);
+      }
+      return;
+    }
+
+    if (job.name === "ai-sdr-meeting-confirmation") {
+      // Agente SDR: confirmação das reuniões marcadas pra hoje.
+      try {
+        const res = await runAiSdrMeetingConfirmationSweep();
+        if (res.enviados > 0) console.log(`[AI-SDR-Confirmacao] ${res.enviados} confirmações de reunião enviadas`);
+      } catch (e) {
+        console.error("[AI-SDR-Confirmacao] erro:", e instanceof Error ? e.message : e);
+      }
+      return;
+    }
+
     if (job.name === "stripe-sync") {
       try {
         const { syncStripe } = await import("../lib/integrations/stripe-sync");
@@ -1972,6 +2626,125 @@ const slaWorker = new Worker(
       } catch (e) {
         console.error("[StripeSync] erro:", e instanceof Error ? e.message : e);
       }
+      return;
+    }
+
+    if (job.name === "outlook-reuniao-sync") {
+      // Reunião reagendada/cancelada direto no Outlook (fora do CRM) reflete
+      // no card do pipeline — polling simples, sem webhook do Graph.
+      try {
+        const { syncOutlookReunioes } = await import("../lib/crm/outlook-reuniao-sync");
+        await syncOutlookReunioes(db);
+      } catch (e) {
+        console.error("[OutlookReuniaoSync] erro:", e instanceof Error ? e.message : e);
+      }
+      return;
+    }
+
+    if (job.name === "rd-criativo-sync") {
+      // Preenche o CRIATIVO (utm_content/utm_term) dos leads pagos recentes que
+      // chegaram sem essa marcação, consultando a API do RD (traffic_value da
+      // conversão de Lead Ads). Cinto-e-suspensório do parser do webhook.
+      try {
+        const { enriquecerCriativosRd } = await import("../lib/integrations/rd-criativo");
+        const r = await enriquecerCriativosRd(3);
+        if (r.candidatos > 0) console.log(`[rd-criativo] candidatos=${r.candidatos} preenchidos=${r.preenchidos} semDado=${r.semDadoNoRd} erros=${r.erros}`);
+      } catch (e) {
+        console.error("[rd-criativo] erro:", e instanceof Error ? e.message : e);
+      }
+      return;
+    }
+
+    if (job.name === "expirar-propostas") {
+      // dataValidade vencida (< hoje, "válido até" inclui o próprio dia) em proposta
+      // ainda "enviada" (aguardando pagamento) → marca expirada e mata o link no
+      // Stripe. Sem isso, o campo de validade era só decorativo (não travava nada).
+      const { propostas } = await import("../lib/db/schema");
+      const { expireCheckoutSession } = await import("../lib/integrations/stripe-checkout");
+      const { syncNegocioValoresFromPropostas } = await import("../lib/crm/sync-negocio-valores");
+      const today = new Date().toISOString().split("T")[0];
+
+      const vencidas = await db
+        .select({
+          id: propostas.id,
+          numero: propostas.numero,
+          stripeSessionId: propostas.stripeSessionId,
+          negocioId: propostas.negocioId,
+        })
+        .from(propostas)
+        .where(and(
+          eq(propostas.status, "enviada"),
+          isNotNull(propostas.dataValidade),
+          lt(propostas.dataValidade, today),
+        ));
+
+      for (const p of vencidas) {
+        await db.update(propostas).set({ status: "expirada", updatedAt: new Date() }).where(eq(propostas.id, p.id));
+        if (p.stripeSessionId) {
+          await expireCheckoutSession(p.stripeSessionId).catch((e) => {
+            console.error(`[ExpirarPropostas] falha ao expirar sessão ${p.stripeSessionId} da proposta #${p.numero}:`, e);
+          });
+        }
+        if (p.negocioId) {
+          await syncNegocioValoresFromPropostas(p.negocioId).catch(() => {});
+        }
+      }
+      console.log(`[ExpirarPropostas] ${vencidas.length} proposta(s) marcada(s) como expirada(s)`);
+      return;
+    }
+
+    if (job.name === "reconcile-pagamentos") {
+      // De-para de 5 dias: propostas dadas como ganhas (aceita) com checkout do
+      // Stripe que NÃO confirmaram pagamento em 5 dias → avisa a responsável
+      // (comercial). O ganho conta na hora (comprovante); isto é a rede de segurança.
+      const { propostas, contratos } = await import("../lib/db/schema");
+      const { getCheckoutSessionStatus } = await import("../lib/integrations/stripe-sync");
+      const fiveDaysAgo = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000);
+      const pend = await db
+        .select({
+          id: propostas.id,
+          numero: propostas.numero,
+          sessionId: propostas.stripeSessionId,
+          leadNome: leads.nome,
+          leadEmpresa: leads.empresa,
+          negResp: negocios.responsavelId,
+          leadResp: leads.responsavelId,
+        })
+        .from(propostas)
+        .innerJoin(contratos, eq(propostas.contratoId, contratos.id))
+        .leftJoin(leads, eq(propostas.leadId, leads.id))
+        .leftJoin(negocios, eq(propostas.negocioId, negocios.id))
+        .where(and(
+          eq(propostas.status, "aceita"),
+          isNotNull(propostas.stripeSessionId),
+          lte(contratos.createdAt, fiveDaysAgo),
+        ));
+
+      let avisados = 0;
+      for (const p of pend) {
+        if (!p.sessionId) continue;
+        const st = await getCheckoutSessionStatus(p.sessionId);
+        if (!st) continue; // sem key / erro: não dá pra afirmar, pula
+        if (st.payment_status === "paid" || st.payment_status === "no_payment_required") continue; // pago, ok
+        const alvo = p.negResp || p.leadResp;
+        if (!alvo) continue;
+        const link = `/propostas/${p.id}`;
+        const [jaAvisou] = await db
+          .select({ id: notificacoes.id })
+          .from(notificacoes)
+          .where(and(eq(notificacoes.tipo, "pagamento_pendente"), eq(notificacoes.link, link)))
+          .limit(1);
+        if (jaAvisou) continue; // já avisamos essa proposta
+        await db.insert(notificacoes).values({
+          usuarioId: alvo,
+          titulo: `Pagamento não confirmado: P-${String(p.numero).padStart(3, "0")}`,
+          mensagem: `A proposta de ${p.leadEmpresa || p.leadNome || "cliente"} foi marcada como ganha, mas o Stripe ainda não confirmou o pagamento após 5 dias. Confira o comprovante / a cobrança.`,
+          tipo: "pagamento_pendente",
+          link,
+        });
+        avisados++;
+      }
+      console.log(`[Depara] ${pend.length} aceitas c/ checkout 5d+, ${avisados} avisos de pagamento não confirmado`);
       return;
     }
 
@@ -2015,32 +2788,61 @@ const slaWorker = new Worker(
     }
 
     if (job.name === "follow-up-proposta") {
+      // Proposta apresentada parada 3+ dias → notifica o DONO do negócio (fallback
+      // admin) com link direto pro card + cria tarefa. Com DEDUPE: antes disso o job
+      // criava tarefa duplicada TODA HORA pro admin (pedido Kauã 21/07: follow-up
+      // com mensagem levando pro card).
       console.log("[FollowUp] Checking proposals needing follow-up...");
       const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
       const staleDeals = await db.select({
-        id: negocios.id, titulo: negocios.titulo, leadId: negocios.leadId,
+        id: negocios.id, titulo: negocios.titulo, leadId: negocios.leadId, responsavelId: negocios.responsavelId,
         leadNome: leads.nome, leadEmpresa: leads.empresa,
       })
         .from(negocios)
         .leftJoin(leads, eq(negocios.leadId, leads.id))
         .where(and(eq(negocios.status, "proposta_apresentada"), lte(negocios.updatedAt, threeDaysAgo)));
 
+      let criadas = 0;
       for (const deal of staleDeals) {
         const [lead] = deal.leadId ? await db.select({ organizacaoId: leads.organizacaoId }).from(leads).where(eq(leads.id, deal.leadId)).limit(1) : [];
         if (!lead?.organizacaoId) continue;
-        const [admin] = await db.select({ id: usuarios.id }).from(usuarios).where(and(eq(usuarios.role, "admin"), eq(usuarios.organizacaoId, lead.organizacaoId))).limit(1);
-        if (admin) {
+        let alvo = deal.responsavelId;
+        if (!alvo) {
+          const [admin] = await db.select({ id: usuarios.id }).from(usuarios).where(and(eq(usuarios.role, "admin"), eq(usuarios.organizacaoId, lead.organizacaoId))).limit(1);
+          alvo = admin?.id ?? null;
+        }
+        if (!alvo) continue;
+        const link = `/negocios/${deal.id}`;
+        const quem = deal.leadEmpresa || deal.leadNome || deal.titulo;
+        // dedupe: se já existe notificação NÃO LIDA deste negócio, não repete
+        const [jaAvisou] = await db.select({ id: notificacoes.id }).from(notificacoes)
+          .where(and(eq(notificacoes.tipo, "followup_proposta"), eq(notificacoes.link, link), eq(notificacoes.lida, false)))
+          .limit(1);
+        if (jaAvisou) continue;
+        await db.insert(notificacoes).values({
+          usuarioId: alvo,
+          tipo: "followup_proposta",
+          titulo: `Follow-up: ${quem}`,
+          mensagem: `A proposta de "${deal.titulo}" está sem resposta há 3+ dias — hora de retomar o contato.`,
+          link,
+        });
+        // dedupe da tarefa: só cria se não houver follow-up aberto pro mesmo lead
+        const [tarefaAberta] = await db.select({ id: tarefas.id }).from(tarefas)
+          .where(and(eq(tarefas.tipo, "follow_up"), eq(tarefas.concluida, false), deal.leadId ? eq(tarefas.leadId, deal.leadId) : rawSql`false`))
+          .limit(1);
+        if (!tarefaAberta) {
           await db.insert(tarefas).values({
             leadId: deal.leadId,
-            usuarioId: admin.id,
-            titulo: `Follow-up proposta: ${deal.leadEmpresa || deal.leadNome || deal.titulo}`,
+            usuarioId: alvo,
+            titulo: `Follow-up proposta: ${quem}`,
             tipo: "follow_up",
             prioridade: "alta",
             dataVencimento: new Date().toISOString().split("T")[0],
           });
         }
+        criadas++;
       }
-      console.log(`[FollowUp] Created ${staleDeals.length} follow-up tasks`);
+      console.log(`[FollowUp] ${criadas} follow-ups notificados (${staleDeals.length} propostas paradas)`);
     }
 
     if (job.name === "alerta-renovacao") {
@@ -2763,8 +3565,24 @@ async function setupScheduledJobs() {
   await cleanStaleRepeatKeys();
 
   await scheduledQueue.upsertJobScheduler("sla-check", { every: 30 * 60 * 1000 }, { name: "check-sla" });
+  await scheduledQueue.upsertJobScheduler("sdr-followup-escalation", { every: 15 * 60 * 1000 }, { name: "sdr-followup-escalation" });
+  await scheduledQueue.upsertJobScheduler("ai-sdr-outreach", { every: 5 * 60 * 1000 }, { name: "ai-sdr-outreach" });
+  // Callpilot (ligação automática por lead via campanha própria) PAUSADO a
+  // pedido do Kauã (23/07) — mecanismo funciona mas ficou instável na etapa
+  // de ativação da campanha (timing), e o pedido por ora é focar só no fluxo
+  // simples (ligar manual + registro + aviso de reunião). Código intacto em
+  // lib/integrations/callpilot-trigger.ts pra retomar quando decidido — só
+  // essa linha de agendamento precisa voltar.
+  // await scheduledQueue.upsertJobScheduler("callpilot-novo-lead", { every: 5 * 60 * 1000 }, { name: "callpilot-novo-lead" });
+  await scheduledQueue.upsertJobScheduler("ai-sdr-retry", { every: 15 * 60 * 1000 }, { name: "ai-sdr-retry" });
+  await scheduledQueue.upsertJobScheduler("ai-sdr-meeting-confirmation", { pattern: "0 9 * * *", tz: "America/Sao_Paulo" }, { name: "ai-sdr-meeting-confirmation" });
   // Stripe = fonte da verdade de billing AI: sync a cada 30 min (polling; vira webhook quando publicar)
   await scheduledQueue.upsertJobScheduler("stripe-sync", { every: 30 * 60 * 1000 }, { name: "stripe-sync" });
+  await scheduledQueue.upsertJobScheduler("reconcile-pagamentos", { every: 24 * 60 * 60 * 1000 }, { name: "reconcile-pagamentos" });
+  await scheduledQueue.upsertJobScheduler("expirar-propostas", { every: 60 * 60 * 1000 }, { name: "expirar-propostas" });
+  await scheduledQueue.upsertJobScheduler("rd-criativo-sync", { every: 6 * 60 * 60 * 1000 }, { name: "rd-criativo-sync" });
+  // Reunião mexida direto no Outlook (reagendada/cancelada) reflete no CRM
+  await scheduledQueue.upsertJobScheduler("outlook-reuniao-sync", { every: 15 * 60 * 1000 }, { name: "outlook-reuniao-sync" });
   await scheduledQueue.upsertJobScheduler("follow-up-proposta", { every: 60 * 60 * 1000 }, { name: "follow-up-proposta" });
   await scheduledQueue.upsertJobScheduler("alerta-renovacao", { every: 24 * 60 * 60 * 1000 }, { name: "alerta-renovacao" });
   await scheduledQueue.upsertJobScheduler("reativar-lead-perdido", { every: 24 * 60 * 60 * 1000 }, { name: "reativar-lead-perdido" });
@@ -3005,6 +3823,23 @@ Responda APENAS com o JSON valido, sem markdown.`;
 );
 trackRedisConnection(siteLeadQualifyWorker);
 
+// ─── Callface Call Events Worker ─────────────────────────────────
+// Eventos de ligação finalizada (webhook de saída da Callface, enfileirados por
+// /api/webhooks/callface). Persistência + matching + timeline + notificações
+// vivem em lib/integrations/callface.ts; idempotência por unique key lá dentro.
+const callfaceCallEventsWorker = new Worker(
+  "callface-call-events",
+  async (job) => {
+    const { payload } = job.data as { payload: Record<string, unknown> };
+    const { processCallfaceCallEvent } = await import("../lib/integrations/callface.js");
+    const r = await processCallfaceCallEvent(db, payload);
+    console.log(`[CallfaceEvents] ${r}`);
+    return { result: r };
+  },
+  { connection, concurrency: 2 }
+);
+trackRedisConnection(callfaceCallEventsWorker);
+
 // Graceful shutdown
 const shutdown = async () => {
   console.log("[Worker] Shutting down...");
@@ -3013,7 +3848,7 @@ const shutdown = async () => {
     followUpWorker.close(), whatsappIncomingWorker.close(), whatsappOutgoingWorker.close(),
     whatsappStatusWorker.close(), slaWorker.close(), enrichmentWorker.close(), scheduledQueue.close(),
     emailSyncWorker.close(), emailSequenceWorker.close(), emailSyncQueue.close(),
-    siteLeadQualifyWorker.close(),
+    siteLeadQualifyWorker.close(), callfaceCallEventsWorker.close(),
   ]);
   await pgSql.end();
   healthServer.close();
