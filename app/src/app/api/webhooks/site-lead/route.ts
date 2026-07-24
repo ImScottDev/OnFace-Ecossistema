@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { leads, organizacoes, statusChanges, usuarios } from "@/lib/db/schema";
+import { leads, organizacoes, statusChanges } from "@/lib/db/schema";
 import { and, eq } from "drizzle-orm";
 
 /**
@@ -87,6 +87,13 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // Bloqueia o feed de "descoberta"/scraping: essas fontes mandam o e-mail como
+  // se fosse o nome (nome = "fulano@dominio.com"), sem nome real de pessoa. O
+  // formulário legítimo do site sempre tem nome. Finge sucesso (não retenta) e ignora.
+  if (/^[^\s]+@[^\s]+\.[^\s]+$/.test(nome) || (email && nome.trim().toLowerCase() === email)) {
+    return NextResponse.json({ ok: true, skipped: "sem-nome-real" }, { status: 200, headers: cors });
+  }
+
   // separa nome / sobrenome
   const partes = nome.split(/\s+/);
   const primeiro = partes.shift() || nome;
@@ -102,18 +109,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "org not found" }, { status: 500, headers: cors });
   }
 
-  // SDR padrão (Jenifer)
-  const [sdrPadrao] = await db
-    .select({ id: usuarios.id })
-    .from(usuarios)
-    .where(
-      and(
-        eq(usuarios.organizacaoId, org.id),
-        eq(usuarios.email, "jenifer.matos@callface.ai")
-      )
-    )
-    .limit(1);
-
+  // Lead inbound novo nasce SEM DONO (Scott, jul/26). As meninas pegam no "Novo"
+  // e movem pra "Em Contato"; a Jenifer só assume quando o lead entra em "Follow up".
   const ipAddress =
     req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
     req.headers.get("x-real-ip") ||
@@ -182,7 +179,7 @@ export async function POST(req: NextRequest) {
       tipo: "lead",
       status: "novo",
       sdrStatus: "pending",
-      responsavelId: sdrPadrao?.id ?? null,
+      responsavelId: null,
     })
     .returning({ id: leads.id });
 

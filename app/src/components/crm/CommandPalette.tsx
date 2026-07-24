@@ -30,7 +30,7 @@ interface CommandItem {
 
 const commands: CommandItem[] = [
   { id: "dashboard", label: "Meu Dia", href: "/dashboard", icon: Home, shortcut: "D", keywords: ["home", "inicio"] },
-  { id: "leads", label: "Leads", href: "/leads", icon: Users, shortcut: "L", keywords: ["contatos", "prospects"] },
+  { id: "contatos", label: "Contatos", href: "/contatos", icon: Users, shortcut: "L", keywords: ["leads", "prospects", "clientes"] },
   { id: "empresas", label: "Empresas", href: "/empresas", icon: Building2, shortcut: "E", keywords: ["companies", "organizacoes"] },
   { id: "pipeline", label: "Pipeline", href: "/pipeline", icon: Kanban, shortcut: "P", keywords: ["kanban", "funil"] },
   { id: "propostas", label: "Propostas", href: "/propostas", icon: ClipboardList, keywords: ["proposals"] },

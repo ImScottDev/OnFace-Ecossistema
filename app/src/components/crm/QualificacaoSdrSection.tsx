@@ -30,7 +30,7 @@ export const PRODUTO_OPTIONS = [
 
 export const SDR_FIELDS: SdrField[] = [
   { key: "produto", label: "Produto de interesse", placeholder: "Selecionar", type: "select", options: PRODUTO_OPTIONS },
-  { key: "quemRealizaCall", label: "Quem realiza as calls", placeholder: "Nome / cargo de quem liga" },
+  { key: "quemRealizaCall", label: "Quais setores utilizam telefonia?", placeholder: "Ex: vendas, atendimento, cobrança" },
   { key: "tomadorDecisao", label: "Tomador de decisão", placeholder: "Quem decide a compra" },
   { key: "cnpj", label: "CNPJ", placeholder: "00.000.000/0000-00" },
   { key: "crmAtual", label: "CRM usado hoje", placeholder: "Ex: nenhum, planilha, RD..." },

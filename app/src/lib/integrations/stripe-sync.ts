@@ -1,20 +1,29 @@
 /**
  * Stripe Sync — fonte da verdade de billing do Callface AI.
  *
- * Roda no worker (job "stripe-sync", a cada 30 min) e também pode ser chamado
- * manualmente. Faz polling da API do Stripe (funciona em localhost — conexão
- * de saída; quando o CRM for publicado, dá pra trocar por webhook):
+ * Roda no worker (job "stripe-sync", a cada 30 min) e é disparado pelo webhook
+ * (/api/webhooks/stripe) em tempo real. Estrutura em duas fases:
  *
- *  1. Assinaturas: upsert em `assinaturas` (status, MRR, cancelamento)
- *  2. Contratos espelho: assinatura ativa/past_due → contrato ativo na Carteira;
- *     cancelada → contrato churned (churn AI registrado SEM depender de humano)
- *  3. Faturas: upsert em `faturas` (paga/aberta/falhou — visão de inadimplência)
+ *  FASE 1 (fetch, fora de transação): puxa da API do Stripe
+ *    - subscriptions status=all (+ catálogo de products p/ nome do plano)
+ *    - invoices dos últimos 60 dias (novas/retries)
+ *    - invoices open/uncollectible SEM janela (fatura antiga não congela)
+ *    - "heal": fatura aberta no CRM que sumiu dos fetches é buscada por id
+ *      (pode ter sido paga/voided depois de sair da janela de 60d)
+ *
+ *  FASE 2 (write, transação única com pg_advisory_xact_lock): serializa syncs
+ *  concorrentes (webhook + worker no mesmo instante) — mata a corrida que
+ *  duplicava contrato — e grava:
+ *    1. Assinaturas: status, MRR, plano (price/product), cancellation_details
+ *    2. Contratos espelho: ativo/churned com MOTIVO real do cancelamento
+ *    3. Faturas: status + vencimento (due_date) + hosted_invoice_url
+ *    4. mrr_movimentos: diff de MRR vira novo/expansão/contração/churn/reativação
  *
  * Requer STRIPE_API_KEY no .env (restricted key, read-only).
  */
 import { db } from "../db";
-import { assinaturas, contratos, faturas, leads, organizacoes } from "../db/schema";
-import { eq, sql } from "drizzle-orm";
+import { assinaturas, contratos, faturas, leads, mrrMovimentos, organizacoes } from "../db/schema";
+import { eq, sql, and, inArray } from "drizzle-orm";
 
 const STRIPE_API = "https://api.stripe.com/v1";
 
@@ -28,6 +37,27 @@ async function stripeGet<T>(path: string, params: Record<string, string> = {}): 
   const r = await fetch(url, { headers: { Authorization: `Bearer ${key}` } });
   if (!r.ok) throw new Error(`Stripe ${path}: HTTP ${r.status} ${(await r.text()).slice(0, 200)}`);
   return r.json();
+}
+
+async function stripeGetOne<T>(path: string): Promise<T | null> {
+  const key = process.env.STRIPE_API_KEY;
+  if (!key) return null;
+  const r = await fetch(`${STRIPE_API}/${path}`, { headers: { Authorization: `Bearer ${key}` } });
+  if (!r.ok) return null;
+  return r.json();
+}
+
+/**
+ * Status de pagamento de uma checkout session (pro de-para de 5 dias).
+ * Retorna null se não der pra consultar (sem key / erro). payment_status:
+ * "paid" | "unpaid" | "no_payment_required".
+ */
+export async function getCheckoutSessionStatus(
+  sessionId: string,
+): Promise<{ status: string; payment_status: string } | null> {
+  const d = await stripeGetOne<{ status?: string; payment_status?: string }>(`checkout/sessions/${sessionId}`);
+  if (!d) return null;
+  return { status: d.status || "", payment_status: d.payment_status || "" };
 }
 
 async function paginate<T extends { id: string }>(path: string, params: Record<string, string> = {}): Promise<T[]> {
@@ -64,7 +94,8 @@ interface StripeSubscription {
   start_date?: number;
   canceled_at?: number | null;
   current_period_end?: number;
-  items?: { data: { quantity?: number; price: { id: string; unit_amount: number | null; recurring?: { interval: string; interval_count?: number } | null } }[] };
+  cancellation_details?: { reason?: string | null; feedback?: string | null; comment?: string | null } | null;
+  items?: { data: { quantity?: number; price: { id: string; unit_amount: number | null; product?: string; recurring?: { interval: string; interval_count?: number } | null } }[] };
 }
 
 interface StripeInvoice {
@@ -73,6 +104,8 @@ interface StripeInvoice {
   status: string;
   amount_due: number;
   created: number;
+  due_date?: number | null;
+  hosted_invoice_url?: string | null;
   period_start?: number;
   attempt_count?: number;
   status_transitions?: { paid_at?: number | null };
@@ -88,145 +121,259 @@ const INVOICE_STATUS: Record<string, string> = {
   draft: "rascunho",
 };
 
-export async function syncStripe(): Promise<{ subs: number; faturas: number; churns: number }> {
+// Status que contam como "gerando receita" pro diff de MRR.
+const BILLABLE = new Set(["active", "past_due", "trialing"]);
+
+/** "payment_failed" | "cancellation_requested (too_expensive): comentário" */
+function motivoCancelamento(s: StripeSubscription): string | null {
+  const cd = s.cancellation_details;
+  if (!cd?.reason) return null;
+  let m = cd.reason;
+  if (cd.feedback) m += ` (${cd.feedback})`;
+  if (cd.comment) m += `: ${cd.comment}`;
+  return m.slice(0, 500);
+}
+
+export async function syncStripe(): Promise<{ subs: number; faturas: number; churns: number; movimentos: number }> {
   const [org] = await db.select({ id: organizacoes.id }).from(organizacoes).limit(1);
   if (!org) throw new Error("organização não encontrada");
 
-  // mapa customer -> lead (preenchido pela importação; novos clientes entram aqui)
+  // ── FASE 1: FETCH (sem transação aberta) ──────────────────────────────────
+
+  const subs = await paginate<StripeSubscription>("subscriptions", { status: "all" });
+
+  // Catálogo price.product -> nome do plano (1 fetch, habilita LTV por plano)
+  const products = await paginate<{ id: string; name?: string }>("products", {});
+  const productName = new Map(products.map((p) => [p.id, p.name || p.id]));
+
+  // Faturas: janela de 60d (novas + retries) + TODAS open/uncollectible (sem janela)
+  const since = Math.floor(Date.now() / 1000) - 60 * 24 * 3600;
+  const invoiceMap = new Map<string, StripeInvoice>();
+  for (const inv of await paginate<StripeInvoice>("invoices", { "created[gte]": String(since) })) invoiceMap.set(inv.id, inv);
+  for (const st of ["open", "uncollectible"]) {
+    for (const inv of await paginate<StripeInvoice>("invoices", { status: st })) invoiceMap.set(inv.id, inv);
+  }
+
+  // Heal: fatura aberta/uncollectible no CRM que não veio em nenhum fetch mudou de
+  // status no Stripe depois de envelhecer (paga tarde / void). Busca por id.
+  const abertasNoCrm = await db
+    .select({ externalId: faturas.externalId })
+    .from(faturas)
+    .where(and(eq(faturas.origem, "stripe"), inArray(faturas.status, ["aberta", "uncollectible"])));
+  let healed = 0;
+  for (const row of abertasNoCrm) {
+    const extId = row.externalId;
+    if (!extId || invoiceMap.has(extId)) continue;
+    const inv = await stripeGetOne<StripeInvoice>(`invoices/${extId}`);
+    if (inv) {
+      invoiceMap.set(inv.id, inv);
+      healed++;
+    }
+  }
+
+  // mapa customer -> lead (preenchido pela importação/webhook; novos clientes entram aqui)
   const leadRows = await db
     .select({ id: leads.id, stripeCustomerId: leads.stripeCustomerId, empresaId: leads.empresaId })
     .from(leads)
     .where(sql`${leads.stripeCustomerId} IS NOT NULL`);
   const leadByCustomer = new Map(leadRows.map((l) => [l.stripeCustomerId as string, l]));
 
-  const subs = await paginate<StripeSubscription>("subscriptions", { status: "all" });
+  // ── FASE 2: WRITE (transação única, serializada por advisory lock) ────────
+
   let churns = 0;
+  let movimentos = 0;
+  let nFat = 0;
 
-  for (const s of subs) {
-    const lead = leadByCustomer.get(s.customer);
-    const mrr = mrrOf(s);
-    const canceladaEm = s.canceled_at ? new Date(s.canceled_at * 1000) : null;
+  await db.transaction(async (tx) => {
+    // Serializa com o outro sync (webhook x worker): sem isso a corrida duplica
+    // contrato espelho e movimento de MRR. Lock solto no commit/rollback.
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('stripe-sync'))`);
 
-    const [existing] = await db
-      .select({ id: assinaturas.id, status: assinaturas.status, contratoId: assinaturas.contratoId })
-      .from(assinaturas)
-      .where(eq(assinaturas.stripeSubscriptionId, s.id));
+    for (const s of subs) {
+      const lead = leadByCustomer.get(s.customer);
+      const mrr = mrrOf(s);
+      const canceladaEm = s.canceled_at ? new Date(s.canceled_at * 1000) : null;
+      const motivo = motivoCancelamento(s);
+      const item0 = s.items?.data?.[0];
+      const planoNome = item0?.price?.product ? productName.get(item0.price.product) || null : null;
 
-    if (existing) {
-      await db
-        .update(assinaturas)
-        .set({
-          status: s.status,
-          mrr: String(mrr),
-          canceladaEm,
-          currentPeriodEnd: s.current_period_end ? new Date(s.current_period_end * 1000) : null,
-          syncedAt: new Date(),
-          updatedAt: new Date(),
-        })
-        .where(eq(assinaturas.id, existing.id));
+      const [existing] = await tx
+        .select({ id: assinaturas.id, status: assinaturas.status, contratoId: assinaturas.contratoId, mrr: assinaturas.mrr, leadId: assinaturas.leadId })
+        .from(assinaturas)
+        .where(eq(assinaturas.stripeSubscriptionId, s.id));
 
-      // transição de status -> reflete no contrato espelho (Carteira)
-      if (existing.contratoId) {
-        if (s.status === "canceled" && existing.status !== "canceled") {
-          await db
-            .update(contratos)
-            .set({
-              status: "churned",
-              motivoChurn: "Assinatura cancelada no Stripe (sync automático)",
-              finalizadoAt: canceladaEm || new Date(),
-              updatedAt: new Date(),
-            })
-            .where(eq(contratos.id, existing.contratoId));
-          churns++;
-        } else if (s.status === "active" && existing.status !== "active") {
-          await db
-            .update(contratos)
-            .set({ status: "ativo", updatedAt: new Date() })
-            .where(eq(contratos.id, existing.contratoId));
+      const registrarMovimento = async (
+        tipo: string,
+        delta: number,
+        antes: number,
+        depois: number,
+        assinaturaId: string,
+        contratoId: string | null,
+        leadId: string | null,
+        ocorridoEm: Date,
+      ) => {
+        if (Math.abs(delta) < 0.005) return;
+        await tx.insert(mrrMovimentos).values({
+          organizacaoId: org.id,
+          leadId,
+          assinaturaId,
+          contratoId,
+          produto: "ai",
+          tipo,
+          delta: delta.toFixed(2),
+          mrrAntes: antes.toFixed(2),
+          mrrDepois: depois.toFixed(2),
+          ocorridoEm,
+          origem: "stripe_sync",
+        });
+        movimentos++;
+      };
+
+      if (existing) {
+        await tx
+          .update(assinaturas)
+          .set({
+            status: s.status,
+            mrr: String(mrr),
+            canceladaEm,
+            motivoCancelamento: motivo,
+            produto: planoNome,
+            stripePriceId: item0?.price?.id || null,
+            currentPeriodEnd: s.current_period_end ? new Date(s.current_period_end * 1000) : null,
+            syncedAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(eq(assinaturas.id, existing.id));
+
+        // Diff -> movimento de MRR
+        const mrrAntes = Number(existing.mrr) || 0;
+        const wasB = BILLABLE.has(existing.status);
+        const isB = BILLABLE.has(s.status);
+        if (wasB && !isB) {
+          await registrarMovimento("churn", -mrrAntes, mrrAntes, 0, existing.id, existing.contratoId, existing.leadId, canceladaEm || new Date());
+        } else if (!wasB && isB) {
+          await registrarMovimento("reativacao", mrr, 0, mrr, existing.id, existing.contratoId, existing.leadId, new Date());
+        } else if (wasB && isB && Math.abs(mrr - mrrAntes) >= 0.005) {
+          await registrarMovimento(mrr > mrrAntes ? "expansao" : "contracao", mrr - mrrAntes, mrrAntes, mrr, existing.id, existing.contratoId, existing.leadId, new Date());
+        }
+
+        // transição de status -> reflete no contrato espelho (Carteira)
+        if (existing.contratoId) {
+          if (s.status === "canceled" && existing.status !== "canceled") {
+            await tx
+              .update(contratos)
+              .set({
+                status: "churned",
+                motivoChurn: motivo || "Assinatura cancelada no Stripe (sync automático)",
+                finalizadoAt: canceladaEm || new Date(),
+                updatedAt: new Date(),
+              })
+              .where(eq(contratos.id, existing.contratoId));
+            churns++;
+          } else if (s.status === "active" && existing.status !== "active") {
+            await tx
+              .update(contratos)
+              .set({ status: "ativo", updatedAt: new Date() })
+              .where(eq(contratos.id, existing.contratoId));
+          }
+        }
+      } else if (lead) {
+        // assinatura nova de cliente conhecido
+        const [contrato] = await tx
+          .insert(contratos)
+          .values({
+            organizacaoId: org.id,
+            leadId: lead.id,
+            tipo: "assinatura",
+            descricao: planoNome ? `Assinatura Stripe — ${planoNome}` : "Assinatura Stripe (sync automático)",
+            mrr: String(mrr),
+            status: s.status === "canceled" ? "churned" : "ativo",
+            motivoChurn: s.status === "canceled" ? motivo : null,
+            produto: "ai",
+            stripeSubscriptionId: s.id,
+            renovacaoAuto: true,
+            inicio: s.start_date ? new Date(s.start_date * 1000).toISOString().slice(0, 10) : null,
+            finalizadoAt: canceladaEm,
+          })
+          .returning({ id: contratos.id });
+        const [novaAss] = await tx
+          .insert(assinaturas)
+          .values({
+            organizacaoId: org.id,
+            leadId: lead.id,
+            empresaId: lead.empresaId,
+            contratoId: contrato?.id,
+            stripeSubscriptionId: s.id,
+            stripeCustomerId: s.customer,
+            produto: planoNome,
+            stripePriceId: item0?.price?.id || null,
+            quantidade: s.items?.data?.reduce((acc, i) => acc + (i.quantity || 1), 0) || 1,
+            mrr: String(mrr),
+            status: s.status,
+            motivoCancelamento: motivo,
+            iniciadaEm: s.start_date ? new Date(s.start_date * 1000) : null,
+            canceladaEm,
+            currentPeriodEnd: s.current_period_end ? new Date(s.current_period_end * 1000) : null,
+            syncedAt: new Date(),
+          })
+          .returning({ id: assinaturas.id });
+        if (novaAss && BILLABLE.has(s.status)) {
+          await registrarMovimento("novo", mrr, 0, mrr, novaAss.id, contrato?.id || null, lead.id, s.start_date ? new Date(s.start_date * 1000) : new Date());
         }
       }
-    } else if (lead) {
-      // assinatura nova de cliente conhecido
-      const [contrato] = await db
-        .insert(contratos)
+      // cliente totalmente novo (sem lead): fica pro próximo import/clientes
+    }
+
+    // Faturas (upsert por origem+external_id)
+    for (const inv of invoiceMap.values()) {
+      const lead = leadByCustomer.get(inv.customer);
+      if (!lead) continue;
+      const subId =
+        inv.parent?.subscription_details?.subscription ||
+        (typeof inv.subscription === "string" ? inv.subscription : inv.subscription?.id);
+      const [ass] = subId
+        ? await tx.select({ id: assinaturas.id }).from(assinaturas).where(eq(assinaturas.stripeSubscriptionId, subId))
+        : [undefined];
+      const comp = new Date((inv.period_start || inv.created) * 1000);
+      const paidAt = inv.status_transitions?.paid_at;
+      const vencimento = inv.due_date ? new Date(inv.due_date * 1000) : null;
+      await tx
+        .insert(faturas)
         .values({
           organizacaoId: org.id,
           leadId: lead.id,
-          tipo: "assinatura",
-          descricao: "Assinatura Stripe (sync automático)",
-          mrr: String(mrr),
-          status: s.status === "canceled" ? "churned" : "ativo",
-          produto: "ai",
-          stripeSubscriptionId: s.id,
-          renovacaoAuto: true,
-          inicio: s.start_date ? new Date(s.start_date * 1000).toISOString().slice(0, 10) : null,
-          finalizadoAt: canceladaEm,
-        })
-        .returning({ id: contratos.id });
-      await db.insert(assinaturas).values({
-        organizacaoId: org.id,
-        leadId: lead.id,
-        empresaId: lead.empresaId,
-        contratoId: contrato?.id,
-        stripeSubscriptionId: s.id,
-        stripeCustomerId: s.customer,
-        quantidade: s.items?.data?.reduce((acc, i) => acc + (i.quantity || 1), 0) || 1,
-        mrr: String(mrr),
-        status: s.status,
-        iniciadaEm: s.start_date ? new Date(s.start_date * 1000) : null,
-        canceladaEm,
-        currentPeriodEnd: s.current_period_end ? new Date(s.current_period_end * 1000) : null,
-        syncedAt: new Date(),
-      });
-    }
-    // cliente totalmente novo (sem lead): fica pro próximo import/clientes — logado abaixo
-  }
-
-  // faturas dos últimos 60 dias (cobre retries de cobrança)
-  const since = Math.floor(Date.now() / 1000) - 60 * 24 * 3600;
-  const invoices = await paginate<StripeInvoice>("invoices", { "created[gte]": String(since) });
-  let nFat = 0;
-  for (const inv of invoices) {
-    const lead = leadByCustomer.get(inv.customer);
-    if (!lead) continue;
-    const subId =
-      inv.parent?.subscription_details?.subscription ||
-      (typeof inv.subscription === "string" ? inv.subscription : inv.subscription?.id);
-    const [ass] = subId
-      ? await db.select({ id: assinaturas.id }).from(assinaturas).where(eq(assinaturas.stripeSubscriptionId, subId))
-      : [undefined];
-    const comp = new Date((inv.period_start || inv.created) * 1000);
-    const paidAt = inv.status_transitions?.paid_at;
-    await db
-      .insert(faturas)
-      .values({
-        organizacaoId: org.id,
-        leadId: lead.id,
-        empresaId: lead.empresaId,
-        assinaturaId: ass?.id,
-        origem: "stripe",
-        externalId: inv.id,
-        valor: String(inv.amount_due / 100),
-        status: INVOICE_STATUS[inv.status] || inv.status,
-        competencia: new Date(comp.getFullYear(), comp.getMonth(), 1).toISOString().slice(0, 10),
-        emitidaEm: new Date(inv.created * 1000),
-        pagaEm: paidAt ? new Date(paidAt * 1000) : null,
-        tentativas: inv.attempt_count || 0,
-        syncedAt: new Date(),
-      })
-      .onConflictDoUpdate({
-        target: [faturas.origem, faturas.externalId],
-        set: {
+          empresaId: lead.empresaId,
+          assinaturaId: ass?.id,
+          origem: "stripe",
+          externalId: inv.id,
+          valor: String(inv.amount_due / 100),
           status: INVOICE_STATUS[inv.status] || inv.status,
+          competencia: new Date(comp.getFullYear(), comp.getMonth(), 1).toISOString().slice(0, 10),
+          emitidaEm: new Date(inv.created * 1000),
+          vencimento,
+          hostedInvoiceUrl: inv.hosted_invoice_url || null,
           pagaEm: paidAt ? new Date(paidAt * 1000) : null,
           tentativas: inv.attempt_count || 0,
           syncedAt: new Date(),
-          updatedAt: new Date(),
-        },
-      });
-    nFat++;
-  }
+        })
+        .onConflictDoUpdate({
+          target: [faturas.origem, faturas.externalId],
+          set: {
+            status: INVOICE_STATUS[inv.status] || inv.status,
+            vencimento,
+            hostedInvoiceUrl: inv.hosted_invoice_url || null,
+            pagaEm: paidAt ? new Date(paidAt * 1000) : null,
+            tentativas: inv.attempt_count || 0,
+            syncedAt: new Date(),
+            updatedAt: new Date(),
+          },
+        });
+      nFat++;
+    }
+  });
 
-  console.log(`[StripeSync] ${subs.length} assinaturas, ${nFat} faturas, ${churns} churns detectados`);
-  return { subs: subs.length, faturas: nFat, churns };
+  console.log(
+    `[StripeSync] ${subs.length} assinaturas, ${nFat} faturas (${healed} healed), ${churns} churns, ${movimentos} movimentos de MRR`,
+  );
+  return { subs: subs.length, faturas: nFat, churns, movimentos };
 }

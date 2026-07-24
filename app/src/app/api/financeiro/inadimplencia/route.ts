@@ -20,8 +20,9 @@ export async function GET(request: NextRequest) {
   const orgId = ctx.organizacaoId;
   const produto = request.nextUrl.searchParams.get("produto") || "todos";
 
-  const prodCtr = produto === "pabx" ? sql` AND c.produto = 'pabx'`
-    : produto === "ai" ? sql` AND c.produto = 'ai'` : sql``;
+  // COALESCE: contrato antigo sem produto é venda AI (backfill 21/07 zerou, mas fica defensivo)
+  const prodCtr = produto === "pabx" ? sql` AND COALESCE(c.produto, 'ai') = 'pabx'`
+    : produto === "ai" ? sql` AND COALESCE(c.produto, 'ai') = 'ai'` : sql``;
   const prodFat = produto === "pabx" ? sql` AND f.origem = 'pabx'`
     : produto === "ai" ? sql` AND f.origem = 'stripe'` : sql``;
 
@@ -53,7 +54,7 @@ export async function GET(request: NextRequest) {
       c.status AS contrato_status,
       c.vencimento,
       (substring(c.descricao from 'prazo (\\d+)'))::int AS prazo_meses,
-      fat.pagas, fat.emitidas, fat.em_atraso, fat.nao_cobrado, fat.em_aberto_wevy, fat.pago_mes, fat.total_pago, fat.ultimo_pagamento, fat.ultima_atividade
+      fat.pagas, fat.emitidas, fat.em_atraso, fat.nao_cobrado, fat.em_aberto_wevy, fat.pago_mes, fat.total_pago, fat.ultimo_pagamento, fat.ultima_atividade, fat.dias_atraso
     FROM contratos c
     JOIN leads l ON l.id = c.lead_id
     LEFT JOIN empresas e ON e.id = l.empresa_id
@@ -67,10 +68,11 @@ export async function GET(request: NextRequest) {
         count(*) FILTER (WHERE f.status = 'paga' AND f.paga_em >= date_trunc('month', now()))::int AS pago_mes,
         COALESCE(sum(f.valor) FILTER (WHERE f.status = 'paga'), 0)::float AS total_pago,
         max(f.paga_em) AS ultimo_pagamento,
-        max(GREATEST(COALESCE(f.paga_em, 'epoch'), COALESCE(f.emitida_em, 'epoch'))) AS ultima_atividade
+        max(GREATEST(COALESCE(f.paga_em, 'epoch'), COALESCE(f.emitida_em, 'epoch'))) AS ultima_atividade,
+        COALESCE(max(EXTRACT(day FROM now() - COALESCE(f.vencimento, f.emitida_em))) FILTER (WHERE f.status IN ('aberta', 'uncollectible')), 0)::int AS dias_atraso
       FROM faturas f
       WHERE f.lead_id = c.lead_id
-        AND ((c.produto = 'pabx' AND f.origem = 'pabx') OR (c.produto <> 'pabx' AND f.origem = 'stripe'))
+        AND ((COALESCE(c.produto, 'ai') = 'pabx' AND f.origem = 'pabx') OR (COALESCE(c.produto, 'ai') <> 'pabx' AND f.origem = 'stripe'))
         AND (c.stripe_subscription_id IS NULL OR f.assinatura_id IS NULL OR f.assinatura_id IN (
           SELECT a.id FROM assinaturas a WHERE a.stripe_subscription_id = c.stripe_subscription_id
         ))
@@ -109,6 +111,7 @@ export async function GET(request: NextRequest) {
       faturasTotal,
       emAtraso,
       naoCobrado,
+      diasAtraso: Number(r.dias_atraso) || 0,
       status,
       pagoMes,
       ultimoPagamento: r.ultimo_pagamento,

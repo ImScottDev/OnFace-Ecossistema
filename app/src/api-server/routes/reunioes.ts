@@ -1,11 +1,33 @@
 import { Hono } from "hono";
 import { db } from "@/lib/db";
-import { reunioes, usuarios } from "@/lib/db/schema";
+import { reunioes, usuarios, emailContas } from "@/lib/db/schema";
 import { eq, and, desc } from "drizzle-orm";
 import { z } from "zod";
 import { getCtx } from "../compat.js";
+import { deleteOutlookEvent } from "@/lib/email/microsoft";
 
 const app = new Hono();
+
+/** Cancela o evento no Outlook do responsável pela reunião, se existir. Best-effort. */
+async function cancelarEventoOutlookSeExistir(reuniaoId: string) {
+  const [reuniao] = await db
+    .select({ outlookEventId: reunioes.outlookEventId, responsavelId: reunioes.responsavelId })
+    .from(reunioes)
+    .where(eq(reunioes.id, reuniaoId))
+    .limit(1);
+  if (!reuniao?.outlookEventId || !reuniao.responsavelId) return;
+
+  const [conta] = await db
+    .select({ id: emailContas.id })
+    .from(emailContas)
+    .where(and(eq(emailContas.usuarioId, reuniao.responsavelId), eq(emailContas.tipo, "microsoft"), eq(emailContas.syncStatus, "active")))
+    .limit(1);
+  if (!conta) return;
+
+  await deleteOutlookEvent(conta.id, reuniao.outlookEventId).catch((e) => {
+    console.error(`[Reunioes] falha ao cancelar evento Outlook da reunião ${reuniaoId}:`, e);
+  });
+}
 
 const createSchema = z.object({
   negocioId: z.string().uuid().optional().nullable(),
@@ -157,6 +179,10 @@ app.patch("/reunioes/:id", async (c) => {
       return c.json({ error: "Reunião não encontrada" }, 404);
     }
 
+    if (data.status === "cancelada") {
+      await cancelarEventoOutlookSeExistir(id);
+    }
+
     return c.json(updated);
   } catch (err) {
     if (err instanceof z.ZodError) {
@@ -171,6 +197,8 @@ app.delete("/reunioes/:id", async (c) => {
   const ctx = await getCtx(c);
 
   const id = c.req.param("id");
+
+  await cancelarEventoOutlookSeExistir(id);
 
   const [deleted] = await db
     .delete(reunioes)

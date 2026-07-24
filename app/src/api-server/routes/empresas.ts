@@ -52,8 +52,27 @@ app.get("/empresas", async (c) => {
   const conditions: SQL[] = [eq(empresas.organizacaoId, ctx.organizacaoId)];
   if (setor) conditions.push(eq(empresas.setor, setor));
   if (search) {
+    // Busca de verdade no banco, em todos os campos relevantes — antes era só
+    // nome + cnpj cru ("12.345.678/0001-90" digitado nunca casava com o CNPJ
+    // salvo sem pontuação, e buscar por cidade/site/telefone não achava nada).
     const pat = `%${search}%`;
-    conditions.push(or(ilike(empresas.nome, pat), ilike(empresas.cnpj, pat))!);
+    const digits = search.replace(/\D/g, "");
+    const buscas: SQL[] = [
+      ilike(empresas.nome, pat),
+      ilike(empresas.website, pat),
+      ilike(empresas.cidade, pat),
+      ilike(empresas.setor, pat),
+      ilike(empresas.industry, pat),
+      ilike(empresas.observacoes, pat),
+    ];
+    if (digits.length >= 4) {
+      // CNPJ e telefone comparados só por dígitos, dos dois lados
+      buscas.push(sql`regexp_replace(coalesce(${empresas.cnpj}, ''), '[^0-9]', '', 'g') LIKE ${"%" + digits + "%"}`);
+      buscas.push(sql`regexp_replace(coalesce(${empresas.telefone}, ''), '[^0-9]', '', 'g') LIKE ${"%" + digits + "%"}`);
+    } else {
+      buscas.push(ilike(empresas.cnpj, pat));
+    }
+    conditions.push(or(...buscas)!);
   }
 
   const where = and(...conditions);

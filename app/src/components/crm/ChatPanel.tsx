@@ -1707,7 +1707,7 @@ export function ChatPanel({
             )}
 
             {/* Open full page link */}
-            <a href={`/leads/${leadId}`}
+            <a href={`/contatos/${leadId}`}
               className="flex items-center justify-center gap-1.5 w-full py-2 rounded-lg text-xs text-white/50 hover:text-white hover:bg-white/[0.04] transition-colors"
               style={{ border: "1px solid rgba(255,255,255,0.06)" }}>
               Abrir página completa <ExternalLink className="w-3 h-3" />

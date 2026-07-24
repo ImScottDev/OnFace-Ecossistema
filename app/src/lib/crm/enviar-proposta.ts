@@ -30,8 +30,9 @@ export async function enviarPropostaComCheckout(opts: {
   organizacaoId: string;
   userId: string;
   userName?: string | null;
+  skipEmail?: boolean; // "Salvar": gera link + ativa (enviada) SEM disparar email
 }): Promise<EnviarPropostaResult> {
-  const { propostaId, organizacaoId, userId, userName } = opts;
+  const { propostaId, organizacaoId, userId, userName, skipEmail } = opts;
 
   const [proposta] = await db
     .select()
@@ -50,7 +51,9 @@ export async function enviarPropostaComCheckout(opts: {
     .where(eq(leads.id, proposta.leadId))
     .limit(1);
 
-  if (!lead?.email) {
+  // Email só é obrigatório quando vamos ENVIAR o email. No "Salvar" (skipEmail) o
+  // link é gerado mesmo sem email do lead (o Stripe coleta no checkout).
+  if (!skipEmail && !lead?.email) {
     return { ok: false, status: 400, error: "O lead não tem email cadastrado. Preencha o email do cliente antes de enviar." };
   }
 
@@ -58,6 +61,7 @@ export async function enviarPropostaComCheckout(opts: {
     .select({
       nome: propostaItens.nome,
       tipo: propostaItens.tipo,
+      quantidade: propostaItens.quantidade,
       subtotal: propostaItens.subtotal,
       stripeProductId: servicosCatalogo.stripeProductId,
     })
@@ -67,12 +71,19 @@ export async function enviarPropostaComCheckout(opts: {
     .orderBy(asc(propostaItens.ordem));
 
   const recorrentes = itens.filter((i) => i.tipo === "recorrente");
-  const checkoutItens = recorrentes.map((i) => ({
-    nome: i.nome,
-    valorUnitario: parseFloat(i.subtotal || "0"),
-    quantidade: 1,
-    stripeProductId: i.stripeProductId, // produto real do Stripe (mantém produto + aplica preço/desconto da proposta)
-  }));
+  const checkoutItens = recorrentes.map((i) => {
+    // subtotal já é quantidade × valor unitário (com desconto aplicado). O Stripe
+    // precisa da quantidade real na subscription (senão a liberação de acesso do
+    // lado do produto, que provavelmente lê `quantity`, ativa 1 usuário em vez de N).
+    const quantidade = Math.max(1, Math.round(parseFloat(i.quantidade || "1") || 1));
+    const subtotal = parseFloat(i.subtotal || "0");
+    return {
+      nome: i.nome,
+      valorUnitario: quantidade > 0 ? subtotal / quantidade : subtotal,
+      quantidade,
+      stripeProductId: i.stripeProductId, // produto real do Stripe (mantém produto + aplica preço/desconto da proposta)
+    };
+  });
   const totalRecorrente = parseFloat(proposta.totalRecorrente || "0");
 
   if (checkoutItens.length === 0 && totalRecorrente <= 0) {
@@ -93,7 +104,7 @@ export async function enviarPropostaComCheckout(opts: {
       moeda: proposta.moeda || "BRL",
       itens: checkoutItens,
       totalRecorrente,
-      customerEmail: lead.email,
+      customerEmail: lead?.email || undefined,
       successUrl: process.env.CHECKOUT_SUCCESS_URL || `${base}/obrigado`,
       cancelUrl: process.env.CHECKOUT_CANCEL_URL || base,
     });
@@ -103,20 +114,39 @@ export async function enviarPropostaComCheckout(opts: {
     return { ok: false, status: 502, error: `Falha ao gerar o checkout no Stripe: ${String(err)}` };
   }
 
-  // 2) Email branded via Resend
-  const { subject, html } = buildPropostaEmail({
-    clienteNome,
-    empresa: lead.empresa,
-    numero: proposta.numero,
-    versao: proposta.versao,
-    moeda: proposta.moeda || "BRL",
-    itens: itens.map((i) => ({ nome: i.nome, tipo: i.tipo, subtotal: parseFloat(i.subtotal || "0") })),
-    totalRecorrente,
-    checkoutUrl,
-    validade: proposta.dataValidade,
-    remetenteNome: userName ?? null,
-  });
-  const emailResult = await sendResendEmail({ to: lead.email, subject, html });
+  // Reenvio/edição de proposta já enviada: a sessão anterior fica com valores
+  // desatualizados (itens/preço mudaram) e não pode continuar aberta pro cliente
+  // pagar o valor errado. Expira ela no Stripe (best-effort, não trava o fluxo).
+  if (proposta.stripeSessionId && proposta.stripeSessionId !== stripeSessionId) {
+    const { expireCheckoutSession } = await import("@/lib/integrations/stripe-checkout");
+    await expireCheckoutSession(proposta.stripeSessionId).catch((e) => {
+      console.error(`[Proposta] falha ao expirar sessão anterior ${proposta.stripeSessionId}:`, e);
+    });
+  }
+
+  // 2) Email branded via Resend — pulado no "Salvar" (skipEmail): só gera o link.
+  let emailResult: { sent: boolean; skipped?: boolean; error?: string | null; id?: string | null } = {
+    sent: false, skipped: true, error: null, id: null,
+  };
+  if (!skipEmail && lead?.email) {
+    // Link curto e branded (não a URL crua do Stripe): se a proposta for editada
+    // depois e o checkout regenerado, esse link continua funcionando pro cliente
+    // que só tem o email antigo (o /p/[id] sempre resolve pro checkoutUrl atual).
+    const linkPagamentoCurto = `${base}/p/${proposta.id}`;
+    const { subject, html } = buildPropostaEmail({
+      clienteNome,
+      empresa: lead.empresa,
+      numero: proposta.numero,
+      versao: proposta.versao,
+      moeda: proposta.moeda || "BRL",
+      itens: itens.map((i) => ({ nome: i.nome, tipo: i.tipo, subtotal: parseFloat(i.subtotal || "0") })),
+      totalRecorrente,
+      checkoutUrl: linkPagamentoCurto,
+      validade: proposta.dataValidade,
+      remetenteNome: userName ?? null,
+    });
+    emailResult = await sendResendEmail({ to: lead.email, subject, html });
+  }
 
   // 3) Atualiza a proposta
   const today = new Date().toISOString().split("T")[0];
@@ -139,8 +169,10 @@ export async function enviarPropostaComCheckout(opts: {
     leadId: proposta.leadId,
     usuarioId: userId,
     tipo: "proposta_enviada",
-    titulo: `Proposta #P-${String(proposta.numero).padStart(3, "0")}-v${proposta.versao} enviada por email`,
-    descricao: `Enviada para ${lead.email}. Valor mensal: R$ ${totalRecorrente.toLocaleString("pt-BR")}. Checkout gerado.`,
+    titulo: `Proposta #P-${String(proposta.numero).padStart(3, "0")}-v${proposta.versao} ${skipEmail ? "ativada (link gerado)" : "enviada por email"}`,
+    descricao: skipEmail
+      ? `Link de pagamento gerado. Valor mensal: R$ ${totalRecorrente.toLocaleString("pt-BR")}. Email não disparado (Salvar).`
+      : `Enviada para ${lead?.email}. Valor mensal: R$ ${totalRecorrente.toLocaleString("pt-BR")}. Checkout gerado.`,
     dados: { propostaId: proposta.id, checkoutUrl, emailId: emailResult.id ?? null },
   });
 

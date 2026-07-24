@@ -1,8 +1,9 @@
 import { Hono } from "hono";
 import { db } from "@/lib/db";
-import { negocios, leads, empresas, negocioLeads, usuarios, pipelines, propostas, propostaItens, contratos, atividades, statusChanges, notas, reunioes, labels, negocioLabels, leadLabels } from "@/lib/db/schema";
-import { desc, asc, eq, ilike, and, or, SQL, count, inArray, notInArray, gte, lte, isNull } from "drizzle-orm";
+import { negocios, leads, empresas, negocioLeads, usuarios, pipelines, propostas, propostaItens, contratos, atividades, statusChanges, notas, reunioes, labels, negocioLabels, leadLabels, notificacoes } from "@/lib/db/schema";
+import { desc, asc, eq, ilike, and, or, SQL, count, inArray, notInArray, gte, lte, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
+import { resolveFollowupOwnerId } from "@/lib/crm/sdr-escalation";
 import { getCtx } from "../compat.js";
 
 const app = new Hono();
@@ -167,6 +168,12 @@ app.get("/negocios", async (c) => {
         responsavelAvatar: usuarios.avatarUrl,
         pipelineId: negocios.pipelineId,
         pipelineNome: pipelines.nome,
+        origemQualificacao: negocios.origemQualificacao,
+        // Próxima reunião agendada do negócio — alimenta o card do board
+        // (data/hora + link Teams + convidado) sem clique extra.
+        proximaReuniaoData: sql<string | null>`(SELECT r.data FROM reunioes r WHERE r.negocio_id = ${negocios.id} AND r.status = 'agendada' ORDER BY r.data ASC LIMIT 1)`,
+        proximaReuniaoLink: sql<string | null>`(SELECT r.link FROM reunioes r WHERE r.negocio_id = ${negocios.id} AND r.status = 'agendada' ORDER BY r.data ASC LIMIT 1)`,
+        proximaReuniaoConvidado: sql<string | null>`(SELECT r.participantes[1] FROM reunioes r WHERE r.negocio_id = ${negocios.id} AND r.status = 'agendada' ORDER BY r.data ASC LIMIT 1)`,
       })
       .from(negocios)
       .leftJoin(leads, eq(negocios.leadId, leads.id))
@@ -261,7 +268,16 @@ app.get("/negocios/:id", async (c) => {
       db.select().from(propostas).where(eq(propostas.negocioId, id)).orderBy(desc(propostas.createdAt)),
       db.select().from(contratos).where(eq(contratos.negocioId, id)).orderBy(desc(contratos.createdAt)),
       db.select().from(atividades).where(eq(atividades.negocioId, id)).orderBy(desc(atividades.createdAt)),
-      db.select().from(statusChanges).where(eq(statusChanges.negocioId, id)).orderBy(desc(statusChanges.createdAt)),
+      db.select({
+        id: statusChanges.id,
+        deStatus: statusChanges.deStatus,
+        paraStatus: statusChanges.paraStatus,
+        motivo: statusChanges.motivo,
+        createdAt: statusChanges.createdAt,
+        autorNome: usuarios.nome,
+      }).from(statusChanges)
+        .leftJoin(usuarios, eq(statusChanges.usuarioId, usuarios.id))
+        .where(eq(statusChanges.negocioId, id)).orderBy(desc(statusChanges.createdAt)),
       db.select({
         id: notas.id,
         conteudo: notas.conteudo,
@@ -279,6 +295,7 @@ app.get("/negocios/:id", async (c) => {
         tipo: reunioes.tipo,
         status: reunioes.status,
         participantes: reunioes.participantes,
+        link: reunioes.link,
         notas: reunioes.notas,
         transcript: reunioes.transcript,
         resumoTranscript: reunioes.resumoTranscript,
@@ -369,6 +386,9 @@ app.post("/negocios", async (c) => {
       concorrenteAtual: parsed.data.concorrenteAtual,
       contratoVenceEm: parsed.data.contratoVenceEm,
       origemNegocio: parsed.data.origemNegocio || "novo",
+      // Negócio criado manualmente (closer direto, sem passar pelo converter) =
+      // qualificação direta sem reunião — relatório SDR separa os dois fluxos.
+      origemQualificacao: (parsed.data.origemNegocio || "novo") === "novo" ? "direta" : undefined,
       responsavelId: parsed.data.responsavelId || ctx.userId,
       pipelineId: parsed.data.pipelineId || null,
       camposCustom: parsed.data.camposCustom || {},
@@ -452,6 +472,7 @@ app.patch("/negocios/:id", async (c) => {
           valorSetup: parsed.data.valorSetup || currentNegocio.valorSetup,
           status: "ativo",
           inicio: new Date().toISOString().split("T")[0],
+          produto: "ai",
         });
       }
 
@@ -464,15 +485,28 @@ app.patch("/negocios/:id", async (c) => {
         }).where(eq(leads.id, currentNegocio.leadId));
       }
 
+      // Sino: avisa gestão + responsável que o negócio fechou (link pro card)
+      const { notificarNegocioGanho } = await import("@/lib/crm/notificar");
+      await notificarNegocioGanho(id);
+
       // Contract is now created above — carteira reads from contratos table directly
     }
 
     // → no_show: cliente não apareceu na reunião. O negócio FICA na coluna No-show;
-    //   o lead vinculado volta pro board SDR (qualifying) + ganha a tag "No-show".
+    //   o lead vinculado volta pro board SDR em "Follow up" (qualifying) + tag "No-show".
     //   Quando a SDR recuperar (converter-oportunidade), o negócio volta a reuniao_agendada.
     if (parsed.data.status === "no_show" && currentNegocio.leadId) {
+      const [ldLead] = await db.select({ responsavelId: leads.responsavelId, nome: leads.nome, empresa: leads.empresa })
+        .from(leads).where(eq(leads.id, currentNegocio.leadId)).limit(1);
+      // lead volta pro board SDR em "Follow up" (decisão Kauã 22/07); como em toda
+      // entrada em Follow up, a dona da coluna assume o lead (resolveFollowupOwnerId)
+      const followupOwner = await resolveFollowupOwnerId(db, ctx.organizacaoId);
       await db.update(leads)
-        .set({ sdrStatus: "qualifying", updatedAt: new Date() })
+        .set({
+          sdrStatus: "qualifying",
+          ...(followupOwner ? { responsavelId: followupOwner } : {}),
+          updatedAt: new Date(),
+        })
         .where(eq(leads.id, currentNegocio.leadId));
       let [noShowLabel] = await db.select({ id: labels.id }).from(labels)
         .where(and(eq(labels.nome, "No-show"), eq(labels.organizacaoId, ctx.organizacaoId))).limit(1);
@@ -485,6 +519,17 @@ app.patch("/negocios/:id", async (c) => {
         await db.insert(leadLabels)
           .values({ leadId: currentNegocio.leadId, labelId: noShowLabel.id })
           .onConflictDoNothing();
+      }
+      // sobe notificação pra quem vai retrabalhar o lead (dona do Follow up ou responsável atual)
+      const notificarId = followupOwner || ldLead?.responsavelId;
+      if (notificarId) {
+        await db.insert(notificacoes).values({
+          usuarioId: notificarId,
+          titulo: "Lead voltou pra pré-vendas (No-show)",
+          mensagem: `${ldLead?.nome ?? "Lead"}${ldLead?.empresa ? ` (${ldLead.empresa})` : ""} não compareceu à reunião. Voltou pro board de pré-vendas em "Follow up".`,
+          tipo: "no_show",
+          link: "/pre-vendas",
+        });
       }
     }
   }

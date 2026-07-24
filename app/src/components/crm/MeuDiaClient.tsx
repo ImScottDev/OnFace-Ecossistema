@@ -53,7 +53,7 @@ function Agenda({ agenda }: { agenda: AgendaItem[] }) {
       <div className="space-y-2">
         {agenda.map((r) => {
           const { dia, hora } = agendaDiaHora(r.data);
-          const href = r.negocioId ? `/negocios/${r.negocioId}` : r.leadId ? `/leads/${r.leadId}` : null;
+          const href = r.negocioId ? `/negocios/${r.negocioId}` : r.leadId ? `/contatos/${r.leadId}` : null;
           const quem = r.leadEmpresa || r.leadNome || "";
           const card = (
             <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-white/[0.06] transition-colors group">
@@ -151,7 +151,7 @@ export function MeuDiaClient({ tarefasIniciais, agenda }: { tarefasIniciais: Tar
               </span>
               <div className="flex-1 min-w-0">
                 {tarefa.leadId ? (
-                  <Link href={`/leads/${tarefa.leadId}`} className="text-sm text-white hover:text-[#e23752] truncate block transition-colors">
+                  <Link href={`/contatos/${tarefa.leadId}`} className="text-sm text-white hover:text-[#e23752] truncate block transition-colors">
                     {tarefa.titulo}
                   </Link>
                 ) : (

@@ -152,6 +152,7 @@ app.post("/contatos/:id/converter", async (c) => {
       valorProjeto: parsed.data.valorProjeto,
       servicosInteresse: parsed.data.servicosInteresse,
       origemNegocio: parsed.data.origemNegocio || "novo",
+      origemQualificacao: "direta", // conversão de contato: negócio nasce sem fluxo de reunião
       responsavelId: ctx.userId,
     })
     .returning();

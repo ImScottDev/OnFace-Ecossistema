@@ -43,6 +43,28 @@ export interface CheckoutResult {
 }
 
 /**
+ * Expira uma checkout session no Stripe (mata o link antes que o cliente pague).
+ * Usado quando uma proposta já enviada é editada ou reenviada: a sessão antiga
+ * fica com valores desatualizados e não pode continuar aberta. Só funciona em
+ * sessões "open" — se já expirou ou foi paga, o Stripe retorna erro (ignorado
+ * pelos chamadores, é best-effort).
+ */
+export async function expireCheckoutSession(sessionId: string): Promise<void> {
+  const key = process.env.STRIPE_API_KEY;
+  if (!key) throw new Error("STRIPE_API_KEY não configurada no .env");
+
+  const res = await fetch(`${STRIPE_API}/checkout/sessions/${sessionId}/expire`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${key}` },
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Stripe expire session: HTTP ${res.status} ${text.slice(0, 300)}`);
+  }
+}
+
+/**
  * Codifica params aninhados no formato form-encoded que o Stripe espera
  * (ex.: line_items[0][price_data][product_data][name]=...).
  */

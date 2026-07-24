@@ -3,6 +3,12 @@
 import { useQuery } from "@tanstack/react-query";
 import { ChartCard } from "./charts/ChartCard";
 import { FunnelChart } from "@/components/crm/FunnelChart";
+import { AlertasCard, type AlertaUi } from "./AlertasCard";
+import { HeroBand, Stat, Secao } from "./kit";
+import {
+  CalendarCheck, CheckCircle2, CalendarX, Users, PhoneCall, Filter, MessageCircle,
+  XCircle, PauseCircle, Timer, ArrowDownUp, Archive,
+} from "lucide-react";
 
 interface FunilStage {
   stage: string;
@@ -23,25 +29,89 @@ interface PorResponsavel {
   taxaQualificacao: number;
 }
 
+interface QualificacaoResponsavel {
+  usuarioId: string | null;
+  nome: string;
+  papel: string; // sdr | closer | vendedor | ia | outro
+  viaReuniao: number;
+  direta: number;
+  total: number;
+}
+
+interface SlaBase {
+  n: number;
+  mediaHoras: number;
+  medianaHoras: number;
+}
+
+interface OrigemGrupo {
+  novos: number;
+  trabalhados: number;
+  qualificados: number;
+  taxaQualificacao: number;
+}
+
+interface BaseParadaEstagio {
+  estagio: string;
+  label: string;
+  total: number;
+  ate7d: number;
+  de7a30d: number;
+  mais30d: number;
+}
+
+interface ContagemReunioes {
+  agendadas: number;
+  realizadas: number;
+  noShow: number;
+  compareceram: number;
+  taxaComparecimento: number;
+}
+
 interface SdrEsteiraData {
   funil: FunilStage[];
   desqualificado: number;
+  estagnados: number;
+  estagnadosFlag: number;
+  estagnadosParados: number;
+  estagnadoDias: number;
+  qualificandoAtual: number;
+  novosLeads: number;
   totalEsteira: number;
   trabalhados: number;
   taxaContato: number;
   taxaQualificacao: number;
+  reunioes: ContagemReunioes;
+  reunioesClosers: ContagemReunioes | null;
   porResponsavel: PorResponsavel[];
+  qualificadosDetalhe: { viaReuniao: number; direta: number };
+  qualificacoesPorResponsavel: QualificacaoResponsavel[];
+  sla: { coorte: SlaBase; fluxo: SlaBase };
+  origem: { inbound: OrigemGrupo; outbound: OrigemGrupo };
+  baseParada: { total: number; porEstagio: BaseParadaEstagio[]; antigosTrabalhadosPeriodo: number } | null;
 }
 
+// Funil em rampa de cinza — cor (lima) só no estágio de SUCESSO (disciplina 21/07)
 const FUNIL_COLORS: Record<string, string> = {
-  Novo: "#6B7280",
-  "Em contato": "#3B82F6",
-  Qualificando: "#F59E0B",
-  Qualificado: "#10B981",
+  Novo: "rgba(255,255,255,0.22)",
+  "Em contato": "rgba(255,255,255,0.38)",
+  Qualificando: "rgba(255,255,255,0.55)",
+  Qualificado: "#c8ff00",
 };
 
-function getFunilColor(label: string): string {
-  return FUNIL_COLORS[label] ?? "#6B7280";
+const PAPEL_LABEL: Record<string, string> = {
+  sdr: "SDR",
+  closer: "Closer",
+  vendedor: "Closer",
+  ia: "Agente IA",
+  outro: "—",
+};
+
+/** Horas → texto curto: até 48h em horas, acima em dias (pt-BR). */
+function fmtHoras(h: number): string {
+  if (!h || h <= 0) return "—";
+  if (h < 48) return `${h.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}h`;
+  return `${(h / 24).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}d`;
 }
 
 export default function TabSdr({ periodo }: { periodo: string }) {
@@ -55,81 +125,97 @@ export default function TabSdr({ periodo }: { periodo: string }) {
     data?.funil.map((f) => ({
       name: f.label,
       value: f.total,
-      color: getFunilColor(f.label),
+      color: FUNIL_COLORS[f.label] ?? "#6B7280",
     })) ?? [];
 
-  const qualificados =
-    data?.funil.find((f) => f.label === "Qualificado")?.total ??
-    data?.funil[data.funil.length - 1]?.total ??
-    0;
-
+  const qualificados = data?.funil.find((f) => f.label === "Qualificado")?.total ?? 0;
   const isEmpty = !isLoading && (data?.totalEsteira ?? 0) === 0;
+  const detalhe = data?.qualificadosDetalhe;
+  const quemQualificou = data?.qualificacoesPorResponsavel ?? [];
+  const totalQualificacoes = quemQualificou.reduce((s, q) => s + q.total, 0);
+
+  // ── Alertas acionáveis da operação de pré-vendas ──
+  const alertas: AlertaUi[] = [];
+  if (data && !isEmpty) {
+    if ((data.taxaContato ?? 0) < 50 && (data.novosLeads ?? 0) >= 20) {
+      alertas.push({ nivel: "vermelho", texto: `Só ${data.taxaContato}% dos leads do período foram trabalhados — tem lead novo esperando primeiro contato.` });
+    }
+    const agClosers = data.reunioesClosers?.agendadas ?? 0;
+    const agSdr = data.reunioes?.agendadas ?? 0;
+    if (agClosers > agSdr && agClosers >= 5) {
+      alertas.push({ nivel: "amarelo", texto: `Closers agendaram ${agClosers} reuniões por fora no período (SDR: ${agSdr}) — a meta da SDR sozinha não conta a atividade toda.` });
+    }
+    const totalComEstagnados = (data.totalEsteira ?? 0) + (data.estagnados ?? 0);
+    if (totalComEstagnados > 0 && (data.estagnados ?? 0) / totalComEstagnados > 0.15) {
+      alertas.push({ nivel: "amarelo", texto: `${data.estagnados} leads do período parados (${data.estagnadoDias}+ dias sem atividade ou flag manual) — agendar retomada.` });
+    }
+    const ag = data.reunioes?.agendadas ?? 0;
+    const ns = data.reunioes?.noShow ?? 0;
+    if (ag >= 8 && ns / ag > 0.25) {
+      alertas.push({ nivel: "vermelho", texto: `No-show em ${Math.round((ns / ag) * 100)}% das reuniões — confirmar presença na véspera e no dia.` });
+    }
+    if ((data.origem?.outbound?.novos ?? 0) >= 30 && (data.origem?.outbound?.qualificados ?? 0) === 0) {
+      alertas.push({ nivel: "amarelo", texto: `Outbound: ${data.origem.outbound.novos} leads no período e nenhum qualificado — revisar abordagem ou lista.` });
+    }
+    const sdrsComVolume = (data.porResponsavel ?? []).filter((r) => r.total >= 10);
+    if (sdrsComVolume.length >= 2) {
+      const melhor = [...sdrsComVolume].sort((a, b) => b.taxaQualificacao - a.taxaQualificacao)[0];
+      alertas.push({ nivel: "verde", texto: `Melhor taxa de qualificação: ${melhor.nome} (${melhor.taxaQualificacao}%).` });
+    }
+  }
 
   return (
     <div className="space-y-4">
-      {/* Row 1: Mini KPIs */}
+      <AlertasCard alertas={alertas} loading={isLoading} />
+
+      {/* Faixa-herói: reuniões agendadas = a meta da SDR */}
+      <HeroBand
+        label="Reuniões agendadas · meta da SDR"
+        value={isLoading ? "…" : data?.reunioes?.agendadas ?? 0}
+        sub={
+          isLoading
+            ? ""
+            : `${data?.reunioes?.taxaComparecimento ?? 0}% dos agendados avançaram no funil${
+                (data?.reunioesClosers?.agendadas ?? 0) > 0 ? ` · closers agendaram +${data?.reunioesClosers?.agendadas} por fora` : ""
+              }`
+        }
+        icon={CalendarCheck}
+      >
+        <Stat label="Realizadas" value={isLoading ? "…" : data?.reunioes?.realizadas ?? 0} sub="avançaram após a entrada" cor="ganho" icon={CheckCircle2} />
+        <Stat label="No-show" value={isLoading ? "…" : data?.reunioes?.noShow ?? 0} sub="a call não aconteceu" cor="critico" icon={CalendarX} />
+        <Stat label="Novos leads" value={isLoading ? "…" : data?.novosLeads ?? 0} sub="entraram no período" icon={Users} />
+        <Stat label="Trabalhados" value={isLoading ? "…" : data?.trabalhados ?? 0} sub={isLoading ? "" : `${data?.taxaContato ?? 0}% contatados`} icon={PhoneCall} />
+      </HeroBand>
+
+      {/* Esteira */}
+      <Secao cor="funil" hint="dos leads que entraram no período">Esteira de qualificação</Secao>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <div
-          className="rounded-xl bg-white/[0.03] border border-white/[0.06] p-4"
-          style={{ animation: "fadeUp 0.3s ease-out both" }}
-        >
-          <p className="text-[11px] text-white/40 uppercase tracking-wider font-medium">
-            Na esteira
-          </p>
-          <p className="text-2xl font-bold text-white mt-2" style={{ fontFamily: "var(--font-heading)" }}>
-            {isLoading ? "..." : data?.totalEsteira ?? 0}
-          </p>
-          <p className="text-[10px] text-white/25 mt-1">Total de leads na pré-venda</p>
-        </div>
-
-        <div
-          className="rounded-xl bg-white/[0.03] border border-white/[0.06] p-4"
-          style={{ animation: "fadeUp 0.3s ease-out both", animationDelay: "0.05s" }}
-        >
-          <p className="text-[11px] text-white/40 uppercase tracking-wider font-medium">
-            Trabalhados
-          </p>
-          <p className="text-2xl font-bold text-white mt-2" style={{ fontFamily: "var(--font-heading)" }}>
-            {isLoading ? "..." : data?.trabalhados ?? 0}
-          </p>
-          <p className="text-[10px] text-white/25 mt-1">
-            {isLoading ? "" : `${data?.taxaContato ?? 0}% contatados`}
-          </p>
-        </div>
-
-        <div
-          className="rounded-xl bg-white/[0.03] border border-white/[0.06] p-4"
-          style={{ animation: "fadeUp 0.3s ease-out both", animationDelay: "0.1s" }}
-        >
-          <p className="text-[11px] text-white/40 uppercase tracking-wider font-medium">
-            Qualificados
-          </p>
-          <p className="text-2xl font-bold mt-2" style={{ color: "#10B981", fontFamily: "var(--font-heading)" }}>
-            {isLoading ? "..." : qualificados}
-          </p>
-          <p className="text-[10px] text-white/25 mt-1">
-            {isLoading ? "" : `${data?.taxaQualificacao ?? 0}% de qualificação`}
-          </p>
-        </div>
-
-        <div
-          className="rounded-xl bg-white/[0.03] border border-white/[0.06] p-4"
-          style={{ animation: "fadeUp 0.3s ease-out both", animationDelay: "0.15s" }}
-        >
-          <p className="text-[11px] text-white/40 uppercase tracking-wider font-medium">
-            Desqualificados
-          </p>
-          <p className="text-2xl font-bold mt-2" style={{ color: "#EF4444", fontFamily: "var(--font-heading)" }}>
-            {isLoading ? "..." : data?.desqualificado ?? 0}
-          </p>
-          <p className="text-[10px] text-white/25 mt-1">Fora do processo</p>
-        </div>
+        <Stat
+          label="Qualificados"
+          value={isLoading ? "…" : qualificados}
+          sub={
+            isLoading || !detalhe
+              ? ""
+              : `${data?.taxaQualificacao ?? 0}% dos trabalhados · ${detalhe.viaReuniao} via reunião · ${detalhe.direta} diretas`
+          }
+          cor="ganho"
+          destaque
+          icon={Filter}
+        />
+        <Stat label="Qualificando" value={isLoading ? "…" : data?.qualificandoAtual ?? 0} sub="em conversa agora" icon={MessageCircle} />
+        <Stat label="Desqualificados" value={isLoading ? "…" : data?.desqualificado ?? 0} sub="fora do processo" icon={XCircle} />
+        <Stat
+          label="Estagnados"
+          value={isLoading ? "…" : data?.estagnados ?? 0}
+          sub={isLoading ? "" : `sem atividade há ${data?.estagnadoDias ?? 7}+ dias ou marcados na esteira`}
+          cor="atencao"
+          icon={PauseCircle}
+        />
       </div>
 
-      {/* Row 2: Funil de pré-qualificação */}
       <ChartCard
         title="Funil de pré-qualificação"
-        subtitle="Volume de leads por estágio da esteira SDR"
+        subtitle="Cumulativo: cada etapa conta quem chegou nela ou além (desqualificados contam como contatados)"
         loading={isLoading}
         empty={isEmpty || funilChartData.length === 0}
         emptyText="Nenhum lead na esteira no período selecionado"
@@ -138,21 +224,147 @@ export default function TabSdr({ periodo }: { periodo: string }) {
         <FunnelChart data={funilChartData} />
       </ChartCard>
 
-      {/* Row 3: Por SDR / responsável */}
+      {/* Quem qualificou — por quem EXECUTOU a qualificação, não pelo dono do lead */}
+      <Secao cor="neutro" hint="quem executou a qualificação — SDR, closer cobrindo ou agente IA">Quem qualificou</Secao>
       <div
         className="rounded-xl bg-white/[0.03] border border-white/[0.06] overflow-hidden"
-        style={{ animation: "fadeUp 0.3s ease-out both", animationDelay: "0.24s" }}
+        style={{ animation: "fadeUp 0.3s ease-out both", animationDelay: "0.2s" }}
       >
-        <div className="px-4 pt-4 pb-2">
-          <h3
-            className="text-sm font-semibold text-white"
-            style={{ fontFamily: "var(--font-heading)" }}
-          >
-            Por SDR / responsável
-          </h3>
-          <p className="text-[11px] text-white/40">Distribuição de leads e taxa de qualificação por agente</p>
-        </div>
+        {isLoading ? (
+          <div className="px-4 py-8 text-center text-white/30 text-sm">Carregando...</div>
+        ) : quemQualificou.length === 0 ? (
+          <div className="px-4 py-8 text-center text-white/30 text-sm">Nenhuma qualificação no período</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm min-w-[560px]">
+              <thead>
+                <tr className="border-b border-white/[0.06] text-[10px] uppercase tracking-wider text-white/40 bg-white/[0.02]">
+                  <th className="text-left font-medium px-4 py-2.5">Responsável</th>
+                  <th className="text-left font-medium px-3 py-2.5">Papel</th>
+                  <th className="text-right font-medium px-3 py-2.5">Via reunião</th>
+                  <th className="text-right font-medium px-3 py-2.5">Direta</th>
+                  <th className="text-right font-medium px-3 py-2.5">Total</th>
+                  <th className="text-right font-medium px-4 py-2.5">% do total</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/[0.04]">
+                {quemQualificou.map((q) => (
+                  <tr key={q.usuarioId ?? "ia"} className="hover:bg-white/[0.02] transition-colors">
+                    <td className="px-4 py-2.5 text-white/80 font-medium truncate max-w-[180px]">{q.nome}</td>
+                    <td className="px-3 py-2.5">
+                      <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full border border-white/[0.12] text-white/50">
+                        {PAPEL_LABEL[q.papel] ?? q.papel}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-white/70">{q.viaReuniao}</td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-white/70">{q.direta}</td>
+                    <td className="px-3 py-2.5 text-right font-semibold tabular-nums" style={{ color: "#c8ff00" }}>{q.total}</td>
+                    <td className="px-4 py-2.5 text-right tabular-nums text-white/50">
+                      {totalQualificacoes > 0 ? Math.round((q.total / totalQualificacoes) * 100) : 0}%
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
 
+      {/* SLA + Inbound × Outbound */}
+      <Secao cor="neutro" hint="tempo entre entrada do lead e qualificação — mediana primeiro, média distorce com outliers">Velocidade e origem</Secao>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <Stat
+          label="SLA · leads do período"
+          value={isLoading ? "…" : fmtHoras(data?.sla?.coorte?.medianaHoras ?? 0)}
+          sub={isLoading ? "" : `mediana · média ${fmtHoras(data?.sla?.coorte?.mediaHoras ?? 0)} · ${data?.sla?.coorte?.n ?? 0} qualificados`}
+          icon={Timer}
+        />
+        <Stat
+          label="SLA · fluxo do período"
+          value={isLoading ? "…" : fmtHoras(data?.sla?.fluxo?.medianaHoras ?? 0)}
+          sub={isLoading ? "" : `inclui leads antigos · média ${fmtHoras(data?.sla?.fluxo?.mediaHoras ?? 0)} · ${data?.sla?.fluxo?.n ?? 0} qualificações`}
+          icon={Timer}
+        />
+        <Stat
+          label="Inbound"
+          value={isLoading ? "…" : data?.origem?.inbound?.qualificados ?? 0}
+          sub={isLoading ? "" : `qualificados de ${data?.origem?.inbound?.novos ?? 0} novos · taxa ${data?.origem?.inbound?.taxaQualificacao ?? 0}%`}
+          cor="ganho"
+          icon={ArrowDownUp}
+        />
+        <Stat
+          label="Outbound"
+          value={isLoading ? "…" : data?.origem?.outbound?.qualificados ?? 0}
+          sub={isLoading ? "" : `qualificados de ${data?.origem?.outbound?.novos ?? 0} novos · taxa ${data?.origem?.outbound?.taxaQualificacao ?? 0}%`}
+          cor={!isLoading && (data?.origem?.outbound?.novos ?? 0) >= 30 && (data?.origem?.outbound?.qualificados ?? 0) === 0 ? "atencao" : "neutro"}
+          icon={ArrowDownUp}
+        />
+      </div>
+
+      {/* Base parada — fora da coorte do período (admin/gerente) */}
+      {data?.baseParada && (
+        <>
+          <Secao cor="neutro" hint="toda a base sem negócio, independente do período selecionado">Base parada · funil completo</Secao>
+          <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+            <Stat
+              label="Leads parados na base"
+              value={isLoading ? "…" : data.baseParada.total.toLocaleString("pt-BR")}
+              sub="sem negócio, aguardando trabalho ou retomada"
+              cor="atencao"
+              destaque
+              icon={Archive}
+            />
+            <Stat
+              label="Parados há 30+ dias"
+              value={isLoading ? "…" : data.baseParada.porEstagio.reduce((s, e) => s + e.mais30d, 0).toLocaleString("pt-BR")}
+              sub="sem nenhuma atividade há mais de um mês"
+              icon={PauseCircle}
+            />
+            <Stat
+              label="Antigos trabalhados no período"
+              value={isLoading ? "…" : data.baseParada.antigosTrabalhadosPeriodo.toLocaleString("pt-BR")}
+              sub="leads de antes do período que tiveram movimento agora (não contam na coorte acima)"
+              icon={PhoneCall}
+            />
+          </div>
+          <div
+            className="rounded-xl bg-white/[0.03] border border-white/[0.06] overflow-hidden"
+            style={{ animation: "fadeUp 0.3s ease-out both", animationDelay: "0.24s" }}
+          >
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm min-w-[560px]">
+                <thead>
+                  <tr className="border-b border-white/[0.06] text-[10px] uppercase tracking-wider text-white/40 bg-white/[0.02]">
+                    <th className="text-left font-medium px-4 py-2.5">Estágio</th>
+                    <th className="text-right font-medium px-3 py-2.5">Total</th>
+                    <th className="text-right font-medium px-3 py-2.5">Ativos (&lt;7d)</th>
+                    <th className="text-right font-medium px-3 py-2.5">7–30 dias</th>
+                    <th className="text-right font-medium px-4 py-2.5">30+ dias</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/[0.04]">
+                  {data.baseParada.porEstagio.map((e) => (
+                    <tr key={e.estagio} className="hover:bg-white/[0.02] transition-colors">
+                      <td className="px-4 py-2.5 text-white/80 font-medium">{e.label}</td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-white/70">{e.total.toLocaleString("pt-BR")}</td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-white/50">{e.ate7d.toLocaleString("pt-BR")}</td>
+                      <td className="px-3 py-2.5 text-right tabular-nums" style={{ color: "#F59E0B" }}>{e.de7a30d.toLocaleString("pt-BR")}</td>
+                      <td className="px-4 py-2.5 text-right tabular-nums" style={{ color: "#EF4444" }}>{e.mais30d.toLocaleString("pt-BR")}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Por SDR — esteira por responsável do lead (papel sdr) */}
+      <Secao cor="neutro" hint="esteira por responsável do lead — volume e taxa por agente">Por SDR</Secao>
+      <div
+        className="rounded-xl bg-white/[0.03] border border-white/[0.06] overflow-hidden"
+        style={{ animation: "fadeUp 0.3s ease-out both", animationDelay: "0.28s" }}
+      >
         {isLoading ? (
           <div className="px-4 py-8 text-center text-white/30 text-sm">Carregando...</div>
         ) : isEmpty || (data?.porResponsavel ?? []).length === 0 ? (
@@ -163,7 +375,7 @@ export default function TabSdr({ periodo }: { periodo: string }) {
           <div className="overflow-x-auto">
             <table className="w-full text-sm min-w-[680px]">
               <thead>
-                <tr className="border-y border-white/[0.06] text-[10px] uppercase tracking-wider text-white/40">
+                <tr className="border-b border-white/[0.06] text-[10px] uppercase tracking-wider text-white/40 bg-white/[0.02]">
                   <th className="text-left font-medium px-4 py-2.5">Responsável</th>
                   <th className="text-right font-medium px-3 py-2.5">Na esteira</th>
                   <th className="text-right font-medium px-3 py-2.5">Em contato</th>
@@ -179,24 +391,24 @@ export default function TabSdr({ periodo }: { periodo: string }) {
                     <td className="px-4 py-2.5 text-white/80 font-medium truncate max-w-[160px]">
                       {r.nome}
                     </td>
-                    <td className="px-3 py-2.5 text-right text-white/70">{r.total}</td>
-                    <td className="px-3 py-2.5 text-right" style={{ color: "#3B82F6" }}>
+                    <td className="px-3 py-2.5 text-right text-white/70 tabular-nums">{r.total}</td>
+                    <td className="px-3 py-2.5 text-right tabular-nums" style={{ color: "#3B82F6" }}>
                       {r.emContato}
                     </td>
-                    <td className="px-3 py-2.5 text-right" style={{ color: "#F59E0B" }}>
+                    <td className="px-3 py-2.5 text-right tabular-nums" style={{ color: "#F59E0B" }}>
                       {r.qualificando}
                     </td>
-                    <td className="px-3 py-2.5 text-right font-semibold" style={{ color: "#10B981" }}>
+                    <td className="px-3 py-2.5 text-right font-semibold tabular-nums" style={{ color: "#c8ff00" }}>
                       {r.qualificado}
                     </td>
-                    <td className="px-3 py-2.5 text-right text-white/40">{r.desqualificado}</td>
-                    <td className="px-4 py-2.5 text-right">
+                    <td className="px-3 py-2.5 text-right text-white/40 tabular-nums">{r.desqualificado}</td>
+                    <td className="px-4 py-2.5 text-right tabular-nums">
                       <span
                         className="font-semibold"
                         style={{
                           color:
                             r.taxaQualificacao >= 30
-                              ? "#10B981"
+                              ? "#c8ff00"
                               : r.taxaQualificacao > 0
                               ? "#F59E0B"
                               : "rgba(255,255,255,0.3)",

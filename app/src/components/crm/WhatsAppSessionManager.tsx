@@ -42,11 +42,18 @@ export function WhatsAppSessionManager() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: actionName, sessionId, ...extra }),
       });
-      // Wait a bit for wuzapi to process, then refetch
-      setTimeout(() => {
-        refetch();
-        queryClient.invalidateQueries({ queryKey: ["whatsapp-sessions"] });
-      }, 2000);
+      queryClient.invalidateQueries({ queryKey: ["whatsapp-sessions"] });
+      // Connect: polling rápido (1s) pra o QR aparecer NA HORA, sem esperar o ciclo de 5s
+      if (actionName === "connect") {
+        for (let i = 0; i < 15; i++) {
+          await new Promise((r) => setTimeout(r, 1000));
+          const res = await refetch();
+          const s = res.data?.sessions?.find((x) => x.id === sessionId);
+          if (s && (s.qrCode || s.status === "connected")) break;
+        }
+      } else {
+        setTimeout(() => refetch(), 1500);
+      }
     } finally {
       setLoading(null);
     }

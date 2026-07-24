@@ -1,28 +1,35 @@
 import { Hono } from "hono";
 import { db } from "@/lib/db";
-import { negocios, leads, campanhas, contratos, npsRespostas, atividades, statusChanges, usuarios } from "@/lib/db/schema";
+import { negocios, leads, campanhas, contratos, npsRespostas, atividades, statusChanges, usuarios, reunioes } from "@/lib/db/schema";
 import { eq, count, sum, avg, and, inArray, sql, gte, isNotNull, lte, desc, not, between, lt, or } from "drizzle-orm";
 import { getCtx } from "../compat.js";
-import { parsePeriodo } from "@/lib/relatorios/periodo";
+import { parsePeriodo, clampDesdeGoLive, GO_LIVE_ISO } from "@/lib/relatorios/periodo";
 import { fetchMetaCampaignInsights, fetchMetaAdInsights, metaConfigured, normCampanha } from "@/lib/integrations/meta-insights";
+import { isPersonalView, isAdminView } from "@/lib/auth/roles";
+import {
+  getPipelineAtual, getWinRate, getMotivosPerda, getCicloMedio,
+  getFechadoPeriodo, getTicketMedio, getFunilConversao, getPipelineEsfriando,
+  getLeadsQualificados, getFechadoPorResponsavel, crescimento,
+} from "@/lib/relatorios/comercial";
+import { contarReunioes, getPerdidosPorResponsavel, getFunilVendasEventos } from "@/lib/relatorios/funil-eventos";
+import { getEsteiraSdr } from "@/lib/relatorios/esteira-sdr";
+import { getVisoesSdr, ESTAGNADO_DIAS } from "@/lib/relatorios/sdr-visoes";
+import { getLeadsPorCanal } from "@/lib/relatorios/canais";
+import { getMetaComercialAgregada } from "@/lib/metas";
+import {
+  getMetricasPorCampanha, getMetricasPorCriativo, getMetricasPorConjunto, agregarFunil, gerarAlertas, rankingPorRoas,
+  getStatusAtualLeadsPagos, getReceitaAtribuida, getRoasCiclo, getPipelineAbertoPago,
+} from "@/lib/relatorios/midia-paga";
 
 const app = new Hono();
 
 // ─── Helpers ────────────────────────────────────────────────────
 
-// GO-LIVE: o CRM passou a ser o sistema de registro em 25/jun/2026. O histórico
-// migrado do Zoho (deals/ganhos/datas antigas) fica no banco pra contexto do lead,
-// mas NÃO entra nos relatórios (senão suja os gráficos). Decisão Scott 25/jun.
-const GO_LIVE = new Date("2026-06-25T00:00:00-03:00");
-const floorGoLive = (d: Date) => (d.getTime() < GO_LIVE.getTime() ? new Date(GO_LIVE) : d);
-
 // Janela do período selecionado (respeita "custom:from:to" e presets "7d/30d/...").
 // Retorna since/until + a janela anterior de mesma duração (pra deltas).
-// O `since` é pisado no go-live: relatórios só contam do go-live pra frente.
+// O piso de go-live já é aplicado dentro de parsePeriodo (lib/relatorios/periodo).
 function periodWindow(periodo: string) {
-  const parsed = parsePeriodo(periodo);
-  const since = floorGoLive(parsed.since);
-  const until = parsed.until;
+  const { since, until } = parsePeriodo(periodo);
   const span = Math.max(0, until.getTime() - since.getTime());
   return { since, until, prevSince: new Date(since.getTime() - span), prevUntil: since };
 }
@@ -40,174 +47,61 @@ function getBuckets(since: Date, until: Date, count = 7) {
 // GET /relatorios/resumo?periodo=30d
 app.get("/resumo", async (c) => {
   const ctx = await getCtx(c);
-  const periodo = c.req.query("periodo") ?? "30d";
+  const periodo = c.req.query("periodo") ?? "mes_atual";
   const { since, until, prevSince } = periodWindow(periodo);
 
   const orgId = ctx.organizacaoId;
+  // Papel: closer vê só o dele; admin/gerente/leitor veem a org. (Win rate/pipeline batem com a aba.)
+  const responsavelId = isPersonalView(ctx.userRole) ? ctx.userId : undefined;
+  const leadResp = responsavelId ? eq(leads.responsavelId, responsavelId) : undefined;
   const buckets = getBuckets(since, until, 7);
 
-  // ── Leads KPI ──
+  // ── Leads (período) ──
   const [leadsCurrent] = await db
     .select({ total: count() })
     .from(leads)
-    .where(and(eq(leads.organizacaoId, orgId), gte(leads.createdAt, since), lt(leads.createdAt, until)));
-
+    .where(and(eq(leads.organizacaoId, orgId), leadResp, gte(leads.createdAt, since), lt(leads.createdAt, until)));
   const [leadsPrev] = await db
     .select({ total: count() })
     .from(leads)
-    .where(and(eq(leads.organizacaoId, orgId), gte(leads.createdAt, prevSince), lt(leads.createdAt, since)));
-
+    .where(and(eq(leads.organizacaoId, orgId), leadResp, gte(leads.createdAt, prevSince), lt(leads.createdAt, since)));
   const leadsTrend = await Promise.all(
     buckets.map(async (b) => {
       const [r] = await db
         .select({ total: count() })
         .from(leads)
-        .where(and(eq(leads.organizacaoId, orgId), gte(leads.createdAt, b.start), lt(leads.createdAt, b.end)));
+        .where(and(eq(leads.organizacaoId, orgId), leadResp, gte(leads.createdAt, b.start), lt(leads.createdAt, b.end)));
       return Number(r.total);
     })
   );
-
   const leadsCurrentN = Number(leadsCurrent.total);
-  const leadsPrevN = Number(leadsPrev.total);
-  const leadsDelta = leadsPrevN > 0 ? ((leadsCurrentN - leadsPrevN) / leadsPrevN) * 100 : 0;
 
-  // ── Pipeline KPI ──
-  const [pipelineCurrent] = await db
-    .select({ total: sum(negocios.valorTotal) })
-    .from(negocios)
-    .where(and(
-      eq(negocios.organizacaoId, orgId),
-      not(inArray(negocios.status, ["ganho", "perdido", "churned"]))
-    ));
+  // ── Pipeline = snapshot da operação AGORA (fonte única; NÃO reage ao período) ──
+  const pipelineSnap = await getPipelineAtual(orgId, responsavelId);
 
-  const [pipelinePrev] = await db
-    .select({ total: sum(negocios.valorTotal) })
-    .from(negocios)
-    .where(and(
-      eq(negocios.organizacaoId, orgId),
-      not(inArray(negocios.status, ["ganho", "perdido", "churned"])),
-      gte(negocios.createdAt, prevSince),
-      lt(negocios.createdAt, since)
-    ));
+  // ── Win rate = MESMA função da aba Comercial → topo e aba não divergem ──
+  const wrCurrent = await getWinRate(orgId, since, until, responsavelId);
+  const wrPrev = await getWinRate(orgId, prevSince, since, responsavelId);
 
-  const pipelineTrend = await Promise.all(
-    buckets.map(async (b) => {
-      const [r] = await db
-        .select({ total: sum(negocios.valorTotal) })
-        .from(negocios)
-        .where(and(
-          eq(negocios.organizacaoId, orgId),
-          not(inArray(negocios.status, ["ganho", "perdido", "churned"])),
-          gte(negocios.createdAt, b.start),
-          lt(negocios.createdAt, b.end)
-        ));
-      return Number(r.total) || 0;
-    })
-  );
-
-  const pipelineCurrentN = Number(pipelineCurrent.total) || 0;
-  const pipelinePrevN = Number(pipelinePrev.total) || 0;
-  const pipelineDelta = pipelinePrevN > 0 ? ((pipelineCurrentN - pipelinePrevN) / pipelinePrevN) * 100 : 0;
-
-  // ── Win Rate KPI ──
-  const winRateRows = await db
-    .select({ status: negocios.status, total: count() })
-    .from(negocios)
-    .where(and(
-      eq(negocios.organizacaoId, orgId),
-      inArray(negocios.status, ["ganho", "perdido"]),
-      eq(negocios.origemNegocio, "novo"),
-      gte(negocios.createdAt, since),
-      lt(negocios.createdAt, until)
-    ))
-    .groupBy(negocios.status);
-
-  const ganhosCurrent = Number(winRateRows.find((r) => r.status === "ganho")?.total || 0);
-  const perdidosCurrent = Number(winRateRows.find((r) => r.status === "perdido")?.total || 0);
-  const winRateCurrentN = (ganhosCurrent + perdidosCurrent) > 0
-    ? (ganhosCurrent / (ganhosCurrent + perdidosCurrent)) * 100
-    : 0;
-
-  const winRatePrevRows = await db
-    .select({ status: negocios.status, total: count() })
-    .from(negocios)
-    .where(and(
-      eq(negocios.organizacaoId, orgId),
-      inArray(negocios.status, ["ganho", "perdido"]),
-      eq(negocios.origemNegocio, "novo"),
-      gte(negocios.createdAt, prevSince),
-      lt(negocios.createdAt, since)
-    ))
-    .groupBy(negocios.status);
-
-  const ganhosPrev = Number(winRatePrevRows.find((r) => r.status === "ganho")?.total || 0);
-  const perdidosPrev = Number(winRatePrevRows.find((r) => r.status === "perdido")?.total || 0);
-  const winRatePrevN = (ganhosPrev + perdidosPrev) > 0
-    ? (ganhosPrev / (ganhosPrev + perdidosPrev)) * 100
-    : 0;
-
-  const winRateDelta = winRatePrevN > 0 ? ((winRateCurrentN - winRatePrevN) / winRatePrevN) * 100 : 0;
-
-  const winRateTrend = await Promise.all(
-    buckets.map(async (b) => {
-      const rows = await db
-        .select({ status: negocios.status, total: count() })
-        .from(negocios)
-        .where(and(
-          eq(negocios.organizacaoId, orgId),
-          inArray(negocios.status, ["ganho", "perdido"]),
-          eq(negocios.origemNegocio, "novo"),
-          gte(negocios.createdAt, b.start),
-          lt(negocios.createdAt, b.end)
-        ))
-        .groupBy(negocios.status);
-      const g = Number(rows.find((r) => r.status === "ganho")?.total || 0);
-      const p = Number(rows.find((r) => r.status === "perdido")?.total || 0);
-      return (g + p) > 0 ? (g / (g + p)) * 100 : 0;
-    })
-  );
-
-  // ── MRR KPI ──
+  // ── MRR ativo ──
   const [mrrCurrent] = await db
     .select({ total: sum(contratos.mrr) })
     .from(contratos)
     .innerJoin(leads, eq(contratos.leadId, leads.id))
-    .where(and(eq(contratos.status, "ativo"), eq(leads.organizacaoId, orgId)));
-
+    .where(and(eq(contratos.status, "ativo"), eq(leads.organizacaoId, orgId), leadResp));
   const [mrrPrev] = await db
     .select({ total: sum(contratos.mrr) })
     .from(contratos)
     .innerJoin(leads, eq(contratos.leadId, leads.id))
-    .where(and(
-      eq(contratos.status, "ativo"),
-      eq(leads.organizacaoId, orgId),
-      lt(contratos.createdAt, since)
-    ));
-
+    .where(and(eq(contratos.status, "ativo"), eq(leads.organizacaoId, orgId), leadResp, lt(contratos.createdAt, since)));
   const mrrCurrentN = Number(mrrCurrent.total) || 0;
-  const mrrPrevN = Number(mrrPrev.total) || 0;
-  const mrrDelta = mrrPrevN > 0 ? ((mrrCurrentN - mrrPrevN) / mrrPrevN) * 100 : 0;
-
-  const mrrTrend = await Promise.all(
-    buckets.map(async (b) => {
-      const [r] = await db
-        .select({ total: sum(contratos.mrr) })
-        .from(contratos)
-        .innerJoin(leads, eq(contratos.leadId, leads.id))
-        .where(and(
-          eq(contratos.status, "ativo"),
-          eq(leads.organizacaoId, orgId),
-          lt(contratos.createdAt, b.end)
-        ));
-      return Number(r.total) || 0;
-    })
-  );
 
   return c.json({
-    leads: { total: leadsCurrentN, delta: Math.round(leadsDelta * 100) / 100, trend: leadsTrend },
-    pipeline: { total: pipelineCurrentN, delta: Math.round(pipelineDelta * 100) / 100, trend: pipelineTrend },
-    winRate: { total: Math.round(winRateCurrentN * 100) / 100, delta: Math.round(winRateDelta * 100) / 100, trend: winRateTrend },
-    mrr: { total: mrrCurrentN, delta: Math.round(mrrDelta * 100) / 100, trend: mrrTrend },
+    leads: { total: leadsCurrentN, delta: crescimento(leadsCurrentN, Number(leadsPrev.total)), trend: leadsTrend },
+    // Pipeline é estoque (snapshot), não série temporal → sem delta de período.
+    pipeline: { total: pipelineSnap.total, delta: null, trend: [] },
+    winRate: { total: wrCurrent.taxa, delta: crescimento(wrCurrent.taxa ?? 0, wrPrev.taxa ?? 0), trend: [] },
+    mrr: { total: mrrCurrentN, delta: crescimento(mrrCurrentN, Number(mrrPrev.total) || 0), trend: [] },
   });
 });
 
@@ -222,16 +116,17 @@ app.get("/tendencias", async (c) => {
   const orgId = ctx.organizacaoId;
 
   if (tipo === "leads") {
+    // DIÁRIO (pedido Kauã 22/07 — antes era semanal e escondia a variação do dia a dia)
     const rows = await db
       .select({
-        week: sql<string>`date_trunc('week', ${leads.createdAt})`.as("week"),
+        week: sql<string>`date_trunc('day', ${leads.createdAt})`.as("week"),
         origem: leads.origem,
         total: count(),
       })
       .from(leads)
       .where(and(eq(leads.organizacaoId, orgId), gte(leads.createdAt, since), lt(leads.createdAt, until)))
-      .groupBy(sql`date_trunc('week', ${leads.createdAt})`, leads.origem)
-      .orderBy(sql`date_trunc('week', ${leads.createdAt})`);
+      .groupBy(sql`date_trunc('day', ${leads.createdAt})`, leads.origem)
+      .orderBy(sql`date_trunc('day', ${leads.createdAt})`);
 
     // Pivot: group by week, origens as sub-keys
     const weekMap = new Map<string, { total: number; origens: Record<string, number> }>();
@@ -291,7 +186,7 @@ app.get("/tendencias", async (c) => {
     // (que é da importação). Mostra os últimos 12 meses, independente do seletor.
     const desde12m = new Date(until);
     desde12m.setMonth(desde12m.getMonth() - 12);
-    const desde12mStr = floorGoLive(desde12m).toISOString().slice(0, 10); // piso go-live; coluna `inicio` é date
+    const desde12mStr = clampDesdeGoLive(desde12m).toISOString().slice(0, 10); // piso go-live; coluna `inicio` é date
     const rows = await db
       .select({
         month: sql<string>`date_trunc('month', ${contratos.inicio})`.as("month"),
@@ -330,33 +225,30 @@ app.get("/equipe", async (c) => {
   const { since, until } = periodWindow(periodo);
   const orgId = ctx.organizacaoId;
 
-  // Vendedores relevantes: exclui admin/gerente/super_admin e o usuário de backup.
+  // Desempenho por Vendedor = só CLOSERS (papel), decisão Scott 30/jun.
+  // Filtro por PAPEL (não por nome): role IN (closer, vendedor) + ativos. A SDR
+  // (Jenifer, papel sdr) sai sozinha e tem o relatório próprio na aba Pré-vendas.
+  // BLINDAGEM por papel: closer/sdr (personal view) só pode ver A SI MESMO — nunca
+  // a equipe inteira (vale também em view-as). Admin/gerente veem todos.
+  const soEu = isPersonalView(ctx.userRole) ? ctx.userId : null;
   const userList = await db
     .select({ id: usuarios.id, nome: usuarios.nome, role: usuarios.role })
     .from(usuarios)
     .where(and(
       eq(usuarios.organizacaoId, orgId),
-      not(inArray(usuarios.role, ["admin", "gerente", "super_admin"])),
-      not(sql`${usuarios.nome} ILIKE '%backup%'`)
+      inArray(usuarios.role, ["closer", "vendedor"]),
+      eq(usuarios.ativo, true),
+      soEu ? eq(usuarios.id, soEu) : undefined,
     ));
 
-  // Negocios stats per responsavel
-  const negocioStats = await db
-    .select({
-      responsavelId: negocios.responsavelId,
-      status: negocios.status,
-      total: count(),
-      receitaTotal: sum(negocios.valorTotal),
-      cicloMedio: sql<number>`avg(CASE WHEN ${negocios.ganhoAt} >= ${negocios.createdAt} THEN extract(epoch from ${negocios.ganhoAt} - ${negocios.createdAt}) / 86400 END)`,
-    })
-    .from(negocios)
-    .where(and(
-      eq(negocios.organizacaoId, orgId),
-      gte(negocios.createdAt, since),
-      lt(negocios.createdAt, until),
-      isNotNull(negocios.responsavelId)
-    ))
-    .groupBy(negocios.responsavelId, negocios.status);
+  // Fechado por responsável = fonte única (janela ganho_at + receita na regra do
+  // total). Antes: janela created_at + valor_total → Σ vendedores ≠ card do período
+  // e receita individual maior que a receita total (auditoria itens 6/7).
+  // Perdidos = EVENTO de perda na janela (status_changes), não coorte de criação.
+  const [fechadoPorResp, perdidosPorResp] = await Promise.all([
+    getFechadoPorResponsavel(orgId, since, until),
+    getPerdidosPorResponsavel(orgId, since, until),
+  ]);
 
   // Leads per responsavel
   const leadStats = await db
@@ -403,11 +295,11 @@ app.get("/equipe", async (c) => {
 
   // Merge by user
   const membros = userList.map((user) => {
-    const userNegocios = negocioStats.filter((n) => n.responsavelId === user.id);
-    const ganhos = Number(userNegocios.find((n) => n.status === "ganho")?.total || 0);
-    const perdidos = Number(userNegocios.find((n) => n.status === "perdido")?.total || 0);
-    const receitaTotal = Number(userNegocios.find((n) => n.status === "ganho")?.receitaTotal || 0);
-    const cicloMedio = userNegocios.find((n) => n.status === "ganho")?.cicloMedio;
+    const fechado = fechadoPorResp.get(user.id);
+    const ganhos = fechado?.ganhos ?? 0;
+    const perdidos = perdidosPorResp.get(user.id) ?? 0;
+    const receitaTotal = fechado?.receita ?? 0;
+    const cicloMedio = fechado?.cicloMedio ?? null;
     const leadsAtribuidos = Number(leadStats.find((l) => l.responsavelId === user.id)?.total || 0);
     const atividadesTotal = Number(atividadeStats.find((a) => a.usuarioId === user.id)?.total || 0);
     const qualificados = Number(qualifStats.find((q) => q.responsavelId === user.id)?.total || 0);
@@ -421,13 +313,19 @@ app.get("/equipe", async (c) => {
       perdidos,
       winRate: (ganhos + perdidos) > 0 ? Math.round((ganhos / (ganhos + perdidos)) * 10000) / 100 : 0,
       receitaTotal,
-      cicloMedio: cicloMedio != null ? Math.round(Number(cicloMedio) * 100) / 100 : null,
+      cicloMedio,
       leadsAtribuidos,
       atividadesTotal,
     };
   });
 
-  return c.json({ membros });
+  // Esconde inativos sem nenhum movimento no período (ex: Alisson zerado).
+  // Mantém quem teve leads, atividades, qualificados ou negócios.
+  const ativos = membros.filter(
+    (m) => m.leadsAtribuidos > 0 || m.atividadesTotal > 0 || m.ganhos > 0 || m.perdidos > 0 || m.qualificados > 0
+  );
+
+  return c.json({ membros: ativos });
 });
 
 // ─── Comercial ───────────────────────────────────────────────────
@@ -435,66 +333,221 @@ app.get("/equipe", async (c) => {
 // GET /relatorios/comercial
 app.get("/comercial", async (c) => {
   const ctx = await getCtx(c);
+  const orgId = ctx.organizacaoId;
+  const periodo = c.req.query("periodo") ?? "mes_atual";
+  const { since, until } = periodWindow(periodo);
+  // Papel: closer vê só os negócios DELE; admin/gerente/leitor veem a org inteira.
+  const responsavelId = isPersonalView(ctx.userRole) ? ctx.userId : undefined;
 
-  const orgFilter = eq(negocios.organizacaoId, ctx.organizacaoId);
+  const [pipeline, winRate, motivos, ciclo, fechado, ticket, funilConversao, esfriando, leadsQualificados] = await Promise.all([
+    getPipelineAtual(orgId, responsavelId),              // snapshot — NÃO filtra período (decisão Scott)
+    getWinRate(orgId, since, until, responsavelId),
+    getMotivosPerda(orgId, since, until, responsavelId),
+    getCicloMedio(orgId, since, until, responsavelId),
+    getFechadoPeriodo(orgId, since, until, responsavelId),
+    getTicketMedio(orgId, since, until, responsavelId),
+    getFunilConversao(orgId, since, until, responsavelId),
+    getPipelineEsfriando(orgId, responsavelId),
+    getLeadsQualificados(orgId, since, until, responsavelId), // passou pré-vendas + call agendada
+  ]);
 
-  // Pipeline revenue: sum mrr_estimado + valor_projeto grouped by status
-  const pipelineMrr = await db
+  // Meta comercial = soma das metas das closers (visão de gestão). Meta é MENSAL:
+  // usa o mês do início do período selecionado (antes havia um ternário no-op que
+  // sempre caía no mês corrente, ignorando o seletor — auditoria item 12).
+  const metaComercial = isAdminView(ctx.userRole)
+    ? await getMetaComercialAgregada(orgId, since)
+    : null;
+
+  // Histórico do que foi de fato fechado no período (drill-down: abre o negócio ganho).
+  const ganhosList = await db
     .select({
-      status: negocios.status,
-      mrrTotal: sum(negocios.mrrEstimado),
-      projetoTotal: sum(negocios.valorProjeto),
-      total: count(),
+      id: negocios.id,
+      titulo: negocios.titulo,
+      leadNome: leads.nome,
+      leadEmpresa: leads.empresa,
+      mrrFechado: negocios.mrrFechado,
+      valorTotal: negocios.valorTotal,
+      tipoReceita: negocios.tipoReceita,
+      ganhoAt: negocios.ganhoAt,
     })
     .from(negocios)
-    .where(orgFilter)
-    .groupBy(negocios.status);
-
-  // Win rate: ganho / (ganho + perdido) — only count pipeline deals, not carteira clones
-  const winRateData = await db
-    .select({
-      status: negocios.status,
-      total: count(),
-    })
-    .from(negocios)
-    .where(and(orgFilter, inArray(negocios.status, ["ganho", "perdido"]), eq(negocios.origemNegocio, "novo")))
-    .groupBy(negocios.status);
-
-  const ganhos = Number(winRateData.find((r) => r.status === "ganho")?.total || 0);
-  const perdidos = Number(winRateData.find((r) => r.status === "perdido")?.total || 0);
-  const totalDecididos = ganhos + perdidos;
-  const winRate = totalDecididos > 0 ? ganhos / totalDecididos : 0;
-
-  // Motivos de perda
-  const motivosPerda = await db
-    .select({
-      motivoPerda: negocios.motivoPerda,
-      total: count(),
-    })
-    .from(negocios)
-    .where(and(orgFilter, eq(negocios.status, "perdido")))
-    .groupBy(negocios.motivoPerda);
-
-  // Ciclo médio (avg days from createdAt to ganhoAt for won deals)
-  const [cicloResult] = await db
-    .select({
-      cicloMedio: sql<number>`avg(CASE WHEN ${negocios.ganhoAt} >= ${negocios.createdAt} THEN extract(epoch from ${negocios.ganhoAt} - ${negocios.createdAt}) / 86400 END)`,
-    })
-    .from(negocios)
-    .where(and(orgFilter, eq(negocios.status, "ganho"), isNotNull(negocios.ganhoAt)));
-
-  // Negocios abertos
-  const [abertosResult] = await db
-    .select({ total: count() })
-    .from(negocios)
-    .where(and(orgFilter, not(inArray(negocios.status, ["ganho", "perdido", "churned"]))));
+    .leftJoin(leads, eq(negocios.leadId, leads.id))
+    .where(and(
+      eq(negocios.organizacaoId, orgId),
+      eq(negocios.status, "ganho"),
+      gte(negocios.ganhoAt, since),
+      lt(negocios.ganhoAt, until),
+      responsavelId ? eq(negocios.responsavelId, responsavelId) : undefined,
+    ))
+    .orderBy(desc(negocios.ganhoAt))
+    .limit(200);
 
   return c.json({
-    pipelineMrr,
-    winRate: Math.round(winRate * 1000) / 10, // % com 1 casa decimal (ex: 60.7)
-    motivosPerda: motivosPerda.map((m) => ({ motivo: m.motivoPerda || "Não informado", count: Number(m.total) })),
-    cicloMedio: cicloResult.cicloMedio != null ? Math.round(Number(cicloResult.cicloMedio) * 100) / 100 : null,
-    negociosAbertos: Number(abertosResult.total),
+    ganhosList,            // [{id,titulo,leadNome,leadEmpresa,mrrFechado,valorTotal,tipoReceita,ganhoAt}]
+    // ─── Fonte única (o /resumo usa as MESMAS funções → topo e aba não divergem) ───
+    pipeline,              // { etapas:[{status,count,recorrente,avulso,valor}], total, negociosAbertos, ponderado }
+    winRateInfo: winRate,  // { ganhos, perdidos, n, taxa, amostraPequena }
+    motivosInfo: motivos,  // { itens:[{motivo,count,pct}], total, semClassificacao, semClassificacaoPct }
+    fechado,               // { ganhos, receita, recorrente, avulso }
+    ticketMedio: ticket,
+    funilConversao,        // { etapas:[{status,label,atingiu,taxaDoAnterior}] }
+    pipelineEsfriando: esfriando, // [{id,titulo,status,valor,diasParado}]
+    leadsQualificados,     // nº de leads que passaram pré-vendas + call agendada (período, escopo do papel)
+    metaComercial,         // { valorAlvo, realizado, closers } | null  (soma das closers; só admin/gerente)
+    forecast: pipeline.ponderado,
+    // ─── compat com o TabComercial atual (até o front ser refatorado) ───
+    pipelineMrr: pipeline.etapas.map((e) => ({ status: e.status, mrrTotal: e.recorrente, projetoTotal: e.avulso, total: e.count })),
+    winRate: winRate.taxa ?? 0,
+    motivosPerda: motivos.itens.map((i) => ({ motivo: i.motivo, count: i.count })),
+    cicloMedio: ciclo,
+    negociosAbertos: pipeline.negociosAbertos,
+  });
+});
+
+// ─── Growth (visão CEO/estratégia — relatório completo) ──────────
+// Agrega aquisição + funil + receita + pipeline + retenção + time num payload só.
+// Respeita o filtro de período (este é o ÚNICO relatório com filtro). admin/gerente.
+// GET /relatorios/growth?periodo=mes_atual
+app.get("/growth", async (c) => {
+  const ctx = await getCtx(c);
+  if (!isAdminView(ctx.userRole)) return c.json({ error: "Forbidden" }, 403);
+  const orgId = ctx.organizacaoId;
+  const periodo = c.req.query("periodo") ?? "mes_atual";
+  const { since, until, prevSince } = periodWindow(periodo);
+  const sinceStr = since.toISOString().slice(0, 10);
+  const untilStr = until.toISOString().slice(0, 10);
+  const sixtyDaysFromNow = new Date(Date.now() + 60 * 86400000).toISOString().slice(0, 10);
+
+  const [
+    leadsCur, leadsPrev, leadsCanal,
+    pipeline, winRate, fechado, ticket, ciclo, funilConversao, esfriando, leadsQualificados,
+    mrrAtivoRow, contratosAtivosRow, npsRow, npsDistRow, vencendoRow,
+    reunioesPeriodo,
+    metaComercial,
+  ] = await Promise.all([
+    // Aquisição
+    db.select({ c: count() }).from(leads).where(and(eq(leads.organizacaoId, orgId), gte(leads.createdAt, since), lt(leads.createdAt, until))),
+    db.select({ c: count() }).from(leads).where(and(eq(leads.organizacaoId, orgId), gte(leads.createdAt, prevSince), lt(leads.createdAt, since))),
+    // canal normalizado = MESMA fonte do /marketing (lib/relatorios/canais)
+    getLeadsPorCanal(orgId, since, until),
+    // Comercial (fonte única)
+    getPipelineAtual(orgId),
+    getWinRate(orgId, since, until),
+    getFechadoPeriodo(orgId, since, until),
+    getTicketMedio(orgId, since, until),
+    getCicloMedio(orgId, since, until),
+    getFunilConversao(orgId, since, until),
+    getPipelineEsfriando(orgId, undefined),
+    getLeadsQualificados(orgId, since, until),
+    // Retenção (snapshot)
+    db.select({ total: sum(contratos.mrr) }).from(contratos).innerJoin(leads, eq(contratos.leadId, leads.id)).where(and(eq(contratos.status, "ativo"), eq(leads.organizacaoId, orgId))),
+    db.select({ c: count() }).from(contratos).innerJoin(leads, eq(contratos.leadId, leads.id)).where(and(eq(contratos.status, "ativo"), eq(leads.organizacaoId, orgId))),
+    db.select({ media: avg(npsRespostas.score), total: count() }).from(npsRespostas).innerJoin(contratos, eq(npsRespostas.contratoId, contratos.id)).innerJoin(leads, eq(contratos.leadId, leads.id)).where(and(isNotNull(npsRespostas.respondidoEm), eq(leads.organizacaoId, orgId))),
+    db.select({
+      promotores: sql<number>`COUNT(*) FILTER (WHERE ${npsRespostas.score} >= 9)`,
+      neutros: sql<number>`COUNT(*) FILTER (WHERE ${npsRespostas.score} BETWEEN 7 AND 8)`,
+      detratores: sql<number>`COUNT(*) FILTER (WHERE ${npsRespostas.score} <= 6)`,
+    }).from(npsRespostas).innerJoin(contratos, eq(npsRespostas.contratoId, contratos.id)).innerJoin(leads, eq(contratos.leadId, leads.id)).where(and(isNotNull(npsRespostas.respondidoEm), eq(leads.organizacaoId, orgId))),
+    db.select({ c: count(), mrr: sum(contratos.mrr) }).from(contratos).innerJoin(leads, eq(contratos.leadId, leads.id)).where(and(eq(contratos.status, "ativo"), eq(leads.organizacaoId, orgId), lte(contratos.vencimento, sixtyDaysFromNow))),
+    // Reuniões por EVENTO (status_changes), org toda no período. Antes: agendadas
+    // contava linhas da tabela `reunioes` (82 vs 31 da aba SDR), realizadas era
+    // sempre 0 (ninguém atualiza `reunioes.status`) e no-show era snapshot all-time
+    // (auditoria itens 1/2/E1).
+    contarReunioes(orgId, since, until),
+    // Metas — mês do início do período selecionado (consistente com a aba Comercial)
+    getMetaComercialAgregada(orgId, since),
+  ]);
+
+  // Closers (papel) com desempenho no período
+  const closers = await db
+    .select({ id: usuarios.id, nome: usuarios.nome })
+    .from(usuarios)
+    .where(and(eq(usuarios.organizacaoId, orgId), inArray(usuarios.role, ["closer", "vendedor"]), eq(usuarios.ativo, true)));
+  // Fonte única por responsável (ganho_at + regra de receita do fechado) — os MESMOS
+  // números da tabela "Desempenho por Vendedor" da aba Comercial. Antes cada aba
+  // calculava diferente (created_at aqui, valor_total lá) e a mesma closer aparecia
+  // com 3 receitas distintas (auditoria itens 6/7).
+  const [fechadoResp, perdidosResp] = await Promise.all([
+    getFechadoPorResponsavel(orgId, since, until),
+    getPerdidosPorResponsavel(orgId, since, until),
+  ]);
+  const time = closers.map((u) => {
+    const f = fechadoResp.get(u.id);
+    const ganhos = f?.ganhos ?? 0;
+    const perdidos = perdidosResp.get(u.id) ?? 0;
+    const receita = f?.receita ?? 0;
+    return { nome: u.nome, ganhos, perdidos, receita, winRate: ganhos + perdidos > 0 ? Math.round((ganhos / (ganhos + perdidos)) * 1000) / 10 : null };
+  }).filter((m) => m.ganhos > 0 || m.perdidos > 0).sort((a, b) => b.receita - a.receita);
+
+  // Mídia paga (Meta) no período
+  let midia = { gasto: 0, leadsPagos: 0, cpl: null as number | null, configurado: metaConfigured() };
+  if (metaConfigured()) {
+    try {
+      const camp = await fetchMetaCampaignInsights(sinceStr, untilStr);
+      const gasto = camp.reduce((s, m) => s + (m.gasto || 0), 0);
+      const leadsPagos = camp.reduce((s, m) => s + (m.leads || 0), 0);
+      midia = { gasto: Math.round(gasto * 100) / 100, leadsPagos, cpl: leadsPagos > 0 ? Math.round((gasto / leadsPagos) * 100) / 100 : null, configurado: true };
+    } catch { /* mantém zerado */ }
+  }
+
+  const leadsTotal = Number(leadsCur[0].c);
+  const leadsAnt = Number(leadsPrev[0].c);
+  const mrrAtivo = Number(mrrAtivoRow[0]?.total) || 0;
+  const ganhosCount = fechado.ganhos;
+  const cac = ganhosCount > 0 && midia.gasto > 0 ? Math.round((midia.gasto / ganhosCount) * 100) / 100 : null;
+  const npsTotal = Number(npsDistRow[0]?.promotores || 0) + Number(npsDistRow[0]?.neutros || 0) + Number(npsDistRow[0]?.detratores || 0);
+  const nps = npsTotal > 0 ? Math.round(((Number(npsDistRow[0].promotores) - Number(npsDistRow[0].detratores)) / npsTotal) * 100) : null;
+
+  return c.json({
+    periodo,
+    aquisicao: {
+      leads: leadsTotal,
+      leadsDelta: crescimento(leadsTotal, leadsAnt),
+      porCanal: leadsCanal,
+      midia,
+      cac,
+    },
+    funil: {
+      leads: leadsTotal,
+      qualificados: leadsQualificados,
+      reunioesAgendadas: reunioesPeriodo.agendadas,
+      reunioesRealizadas: reunioesPeriodo.realizadas,
+      noShow: reunioesPeriodo.noShow,
+      ganhos: ganhosCount,
+      taxaQualificacao: leadsTotal > 0 ? Math.round((leadsQualificados / leadsTotal) * 1000) / 10 : null,
+      taxaFechamento: leadsQualificados > 0 ? Math.round((ganhosCount / leadsQualificados) * 1000) / 10 : null,
+      etapas: funilConversao.etapas,
+    },
+    receita: {
+      mrrNovoFechado: fechado.recorrente,
+      receitaFechada: fechado.receita,
+      mrrAtivo,
+      ticketMedio: ticket,
+      cicloMedio: ciclo,
+      winRate: winRate.taxa,
+      winN: winRate.n,
+      winAmostraPequena: winRate.amostraPequena,
+    },
+    pipeline: {
+      total: pipeline.total,
+      ponderado: pipeline.ponderado,
+      negociosAbertos: pipeline.negociosAbertos,
+      etapas: pipeline.etapas,
+      esfriando,
+    },
+    retencao: {
+      mrrAtivo,
+      contratosAtivos: Number(contratosAtivosRow[0]?.c || 0),
+      npsMedia: npsRow[0]?.media != null ? Math.round(Number(npsRow[0].media) * 10) / 10 : null,
+      nps,
+      npsDistrib: { promotores: Number(npsDistRow[0]?.promotores || 0), neutros: Number(npsDistRow[0]?.neutros || 0), detratores: Number(npsDistRow[0]?.detratores || 0) },
+      contratosVencendo: { count: Number(vencendoRow[0]?.c || 0), mrr: Number(vencendoRow[0]?.mrr || 0) },
+    },
+    time: {
+      sdr: { agendadas: reunioesPeriodo.agendadas, realizadas: reunioesPeriodo.realizadas, noShow: reunioesPeriodo.noShow },
+      closers: time,
+    },
+    metaComercial,
   });
 });
 
@@ -510,60 +563,26 @@ app.get("/marketing", async (c) => {
   const orgFilter = eq(leads.organizacaoId, orgId);
   const dateRange = and(gte(leads.createdAt, since), lt(leads.createdAt, until));
 
-  // Leads por canal (origem)
-  const leadsPorCanal = await db
-    .select({ origem: leads.origem, total: count() })
-    .from(leads)
-    .where(and(orgFilter, dateRange))
-    .groupBy(leads.origem);
+  // Leads por CANAL normalizado — fonte única em lib/relatorios/canais (compartilhada
+  // com o /growth, pra rótulo e número baterem entre as abas — auditoria item 5).
+  const leadsPorCanal = await getLeadsPorCanal(orgId, since, until);
 
-  // ── Funil 1: pré-vendas (esteira SDR) — cumulativo ──
-  const sdrRows = await db
-    .select({ sdrStatus: leads.sdrStatus, total: count() })
-    .from(leads)
-    .where(and(orgFilter, dateRange))
-    .groupBy(leads.sdrStatus);
-  const sg = (s: string) => Number(sdrRows.find((r) => r.sdrStatus === s)?.total || 0);
-  const sNovo = sg("pending"), sCont = sg("contacted"), sQ = sg("qualifying"), sQd = sg("qualified"), sDq = sg("disqualified");
-  const totalSdr = sNovo + sCont + sQ + sQd + sDq;
-  const funilPreVendas = [
-    { stage: "novo", label: "Novo", total: totalSdr },
-    { stage: "contacted", label: "Em contato", total: sCont + sQ + sQd },
-    { stage: "qualifying", label: "Qualificando", total: sQ + sQd },
-    { stage: "qualified", label: "Qualificado", total: sQd },
-  ];
+  // ── Funil 1: pré-vendas — MESMO cálculo da aba SDR (lib/relatorios/esteira-sdr).
+  // Antes este funil usava sdr_status puro e mostrava "Qualificado" diferente da aba
+  // SDR na mesma tela do sistema (68 vs 77 — auditoria item 3).
+  const esteira = await getEsteiraSdr(orgId, since, until);
+  const funilPreVendas = esteira.funil;
 
-  // ── Funil 2: vendas (pipeline do closer) — snapshot por etapa ──
-  const negRows = await db
-    .select({ status: negocios.status, total: count() })
-    .from(negocios)
-    .where(eq(negocios.organizacaoId, orgId))
-    .groupBy(negocios.status);
-  const ng = (s: string) => Number(negRows.find((r) => r.status === s)?.total || 0);
-  // Ganhos do PERÍODO (por ganho_at) — pra o histórico all-time não dominar o funil
-  const [ganhosPeriodo] = await db
-    .select({ total: count() })
-    .from(negocios)
-    .where(and(
-      eq(negocios.organizacaoId, orgId),
-      eq(negocios.status, "ganho"),
-      isNotNull(negocios.ganhoAt),
-      gte(negocios.ganhoAt, since),
-      lt(negocios.ganhoAt, until)
-    ));
-  const funilVendas = [
-    { stage: "reuniao_agendada", label: "Reunião agendada", total: ng("reuniao_agendada") },
-    { stage: "reuniao_realizada", label: "Reunião realizada", total: ng("reuniao_realizada") },
-    { stage: "trial", label: "Trial", total: ng("trial") },
-    { stage: "proposta_apresentada", label: "Proposta", total: ng("proposta_apresentada") },
-    { stage: "negociacao_iniciada", label: "Negociação", total: ng("negociacao_iniciada") },
-    { stage: "ganho", label: "Ganho (período)", total: Number(ganhosPeriodo.total) },
-  ];
+  // ── Funil 2: vendas por EVENTO — leads que ATINGIRAM cada etapa na janela.
+  // Antes era snapshot ("quem está na etapa AGORA", sem período) misturado com
+  // "Ganho (período)": o % de conversão entre etapas não significava nada
+  // (auditoria itens 1/2/E6).
+  const funilVendas = await getFunilVendasEventos(orgId, since, until);
 
   // ── CPL por campanha e por criativo (Meta Ads real: gasto/leads) ──
   const sinceStr = since.toISOString().slice(0, 10);
   const untilStr = until.toISOString().slice(0, 10);
-  type Linha = { nome: string; campaignId?: string; campanha?: string; gasto: number; leads: number; cpl: number | null; cliques: number; impressoes: number; qualificados?: number; clientes?: number; cpq?: number | null; cpc?: number | null };
+  type Linha = { nome: string; campaignId?: string; adId?: string; campanha?: string; gasto: number; leads: number; cpl: number | null; cliques: number; impressoes: number; qualificados?: number; clientes?: number; cpq?: number | null; cpc?: number | null };
   let cpl_por_campanha: Linha[] = [];
   let por_criativo: Linha[] = [];
   let metaErro: string | undefined;
@@ -577,7 +596,8 @@ app.get("/marketing", async (c) => {
         .map((m) => ({ nome: m.campaignName, campaignId: m.campaignId, gasto: Math.round(m.gasto * 100) / 100, leads: m.leads, cpl: m.cpl, cliques: m.cliques, impressoes: m.impressoes }))
         .sort((a, b) => b.gasto - a.gasto);
       por_criativo = ads
-        .map((m) => ({ nome: m.adName, campanha: m.campaignName, gasto: Math.round(m.gasto * 100) / 100, leads: m.leads, cpl: m.cpl, cliques: m.cliques, impressoes: m.impressoes }))
+        .map((m) => ({ nome: m.adName, adId: m.adId, campanha: m.campaignName, gasto: Math.round(m.gasto * 100) / 100, leads: m.leads, cpl: m.cpl, cliques: m.cliques, impressoes: m.impressoes }))
+        .filter((m) => m.gasto > 0 || m.leads > 0 || m.cliques > 0) // só criativos com movimento (tira os desativados/zerados)
         .sort((a, b) => b.gasto - a.gasto)
         .slice(0, 50);
     } catch (e) {
@@ -614,8 +634,61 @@ app.get("/marketing", async (c) => {
     });
   }
 
-  // Total qualificados (esteira SDR)
-  const totalQualificados = sQd;
+  // ── CPQ/CPC por CRIATIVO — mesma lógica, casando por utm_content (adId ou adName) ──
+  if (por_criativo.length > 0) {
+    const [qualAds, cliAds] = await Promise.all([
+      db.select({ utm: leads.utmContent, total: count() }).from(leads)
+        .where(and(orgFilter, dateRange, or(eq(leads.sdrStatus, "qualified"), isNotNull(leads.negocioAtivoId))))
+        .groupBy(leads.utmContent),
+      db.select({ utm: leads.utmContent, total: count() }).from(leads)
+        .where(and(orgFilter, dateRange, eq(leads.tipo, "cliente")))
+        .groupBy(leads.utmContent),
+    ]);
+    const qualAdMap = new Map(qualAds.map((r) => [String(r.utm ?? ""), Number(r.total)]));
+    const cliAdMap = new Map(cliAds.map((r) => [String(r.utm ?? ""), Number(r.total)]));
+    const pickAd = (m: Map<string, number>, id?: string, nome?: string) => m.get(id ?? "") ?? m.get(nome ?? "") ?? 0;
+    por_criativo = por_criativo.map((c) => {
+      const q = pickAd(qualAdMap, c.adId, c.nome);
+      const cl = pickAd(cliAdMap, c.adId, c.nome);
+      return {
+        ...c,
+        qualificados: q,
+        clientes: cl,
+        cpq: q > 0 ? Math.round((c.gasto / q) * 100) / 100 : null,
+        cpc: cl > 0 ? Math.round((c.gasto / cl) * 100) / 100 : null,
+      };
+    });
+  }
+
+  // Qualificados = definição canônica (lead distinto que criou negócio no período —
+  // decisão Scott 15/07). Antes: sdr_status='qualified' puro (definição divergente).
+  const totalQualificados = await getLeadsQualificados(orgId, since, until);
+
+  // ── Hero executivo calculado no SERVIDOR com as fontes canônicas.
+  // Antes o front somava dados do /tracking (qualificados = sdr_status IN
+  // qualifying/qualified; clientes = assinatura Stripe ativa → dava 0) e mostrava
+  // números que não batiam com nenhuma outra aba (auditoria item 8).
+  const [totalLeadsPeriodo] = await db
+    .select({ total: count() })
+    .from(leads)
+    .where(and(orgFilter, dateRange));
+  const campPagas = await getMetricasPorCampanha(orgId, since, until);
+  const funilPago = agregarFunil(campPagas); // só campanhas casadas com a Meta
+  const hero = {
+    investimento: Math.round(funilPago.gastoTotal * 100) / 100,
+    leadsCrm: Number(totalLeadsPeriodo.total),
+    leadsMeta: campPagas.filter((cp) => cp.pago).reduce((s, cp) => s + cp.leadsMeta, 0),
+    qualificados: totalQualificados,
+    // atribuído à mídia paga = negócio ganho de lead com UTM casada com campanha Meta
+    vendasAtribuidas: funilPago.vendas,
+    receitaAtribuida: Math.round(funilPago.receita * 100) / 100,
+    cpl: null as number | null,
+    cac: null as number | null,
+    roas: null as number | null,
+  };
+  if (hero.leadsMeta > 0 && hero.investimento > 0) hero.cpl = Math.round((hero.investimento / hero.leadsMeta) * 100) / 100;
+  if (hero.vendasAtribuidas > 0 && hero.investimento > 0) hero.cac = Math.round((hero.investimento / hero.vendasAtribuidas) * 100) / 100;
+  if (hero.investimento > 0) hero.roas = Math.round((hero.receitaAtribuida / hero.investimento) * 100) / 100;
 
   return c.json({
     periodo,
@@ -627,6 +700,7 @@ app.get("/marketing", async (c) => {
     metaConfigured: metaConfigured(),
     metaErro,
     totalQualificados,
+    hero,
   });
 });
 
@@ -833,12 +907,15 @@ app.get("/tracking", async (c) => {
       chave: r.chave as string,
       leads: Number(r.leads),
       qualificados: Number(r.qualificados),
-      clientes: Number(r.clientes),
+      // "Cliente" = negócio GANHO (mesma régua da aba Mídia Paga). Antes era
+      // "assinatura Stripe ativa vinculada" → venda ganha aparecia como 0 cliente
+      // até o pagamento compensar (validação Kauã 22/07).
+      clientes: Number(r.ganhos),
       mrrReal: Number(r.mrr_real),
       oportunidades: Number(r.oportunidades),
       ganhos: Number(r.ganhos),
       taxaQualificacao: Number(r.leads) > 0 ? Number(r.qualificados) / Number(r.leads) : 0,
-      taxaConversao: Number(r.leads) > 0 ? Number(r.clientes) / Number(r.leads) : 0,
+      taxaConversao: Number(r.leads) > 0 ? Number(r.ganhos) / Number(r.leads) : 0,
     }));
   };
 
@@ -857,24 +934,16 @@ app.get("/tracking", async (c) => {
   `);
   const t = (tot as unknown as Record<string, unknown>[])[0] ?? {};
 
-  // ── Atribuição: receita ativa total vs quanto liga a alguma campanha (utm) ──
-  const atr = await db.execute(sql`
-    SELECT
-      COALESCE(round(sum(a.mrr)::numeric,2),0) AS mrr_total,
-      COALESCE(round(sum(a.mrr) FILTER (WHERE l.utm_campaign IS NOT NULL AND l.utm_campaign <> '')::numeric,2),0) AS mrr_atribuido,
-      count(DISTINCT a.lead_id) AS clientes_total,
-      count(DISTINCT a.lead_id) FILTER (WHERE l.utm_campaign IS NOT NULL AND l.utm_campaign <> '') AS clientes_atribuidos
+  // ── Atribuição: receita ativa (Stripe) × mídia paga. "Atribuído a campanha" agora
+  // exige a utm do lead casar com campanha REAL da Meta — "(direct)", "(referral)",
+  // "unknown" etc. não são campanha (auditoria itens 8/10). Sem Meta configurada,
+  // degrada pro critério antigo (qualquer utm_campaign não-vazio).
+  // Linhas por assinatura ativa (calculado depois do bloco Meta, que dá as chaves pagas).
+  const assinaturasAtivas = (await db.execute(sql`
+    SELECT a.lead_id, l.utm_campaign, a.mrr
     FROM assinaturas a JOIN leads l ON l.id = a.lead_id
     WHERE a.organizacao_id = ${org} AND a.status IN ('active','trialing','past_due')
-  `);
-  const ar = (atr as unknown as Record<string, unknown>[])[0] ?? {};
-  const atribuicao = {
-    mrrTotal: Number(ar.mrr_total ?? 0),
-    mrrAtribuido: Number(ar.mrr_atribuido ?? 0),
-    clientesTotal: Number(ar.clientes_total ?? 0),
-    clientesAtribuidos: Number(ar.clientes_atribuidos ?? 0),
-    pctAtribuido: Number(ar.mrr_total ?? 0) > 0 ? Number(ar.mrr_atribuido ?? 0) / Number(ar.mrr_total ?? 0) : 0,
-  };
+  `)) as unknown as { lead_id: string; utm_campaign: string | null; mrr: unknown }[];
 
   // ── Meta Ads: gasto/CPL/CAC/ROAS por campanha (cruza por nome normalizado) ──
   type MetaResumo = {
@@ -885,32 +954,44 @@ app.get("/tracking", async (c) => {
     erro?: string;
   };
   const meta: MetaResumo = { configured: metaConfigured(), totalGasto: 0, totalLeads: 0, naoCasadas: [] };
+  let chavesPagas: Set<string> | null = null; // nomes normalizados de campanhas Meta
+  let idsPagos: Set<string> | null = null; // campaignIds da Meta
   if (meta.configured) {
     try {
       const mSince = sinceStr ?? new Date(Date.now() - 365 * 86400000).toISOString().slice(0, 10);
       const mUntil = untilStr ?? new Date().toISOString().slice(0, 10);
       const insights = await fetchMetaCampaignInsights(mSince, mUntil);
       const map = new Map<string, { gasto: number; leads: number; cliques: number; nome: string }>();
+      const byId = new Map<string, string>(); // campaignId → chave normalizada (casa utm=ID)
       for (const i of insights) {
         const k = normCampanha(i.campaignName);
         const cur = map.get(k) ?? { gasto: 0, leads: 0, cliques: 0, nome: i.campaignName };
         cur.gasto += i.gasto; cur.leads += i.leads; cur.cliques += i.cliques;
         map.set(k, cur);
+        if (i.campaignId) byId.set(i.campaignId, k);
       }
       meta.totalGasto = Math.round(insights.reduce((s, i) => s + i.gasto, 0) * 100) / 100;
       meta.totalLeads = insights.reduce((s, i) => s + i.leads, 0);
+      chavesPagas = new Set(map.keys());
+      idsPagos = new Set(byId.keys());
       const casadas = new Set<string>();
       for (const row of porCampanha as Array<Record<string, unknown>>) {
-        const m = map.get(normCampanha(row.chave as string));
-        if (!m) continue;
-        casadas.add(normCampanha(row.chave as string));
+        const chave = String(row.chave ?? "");
+        // casa por nome normalizado OU por id da campanha (quando a utm é o id numérico)
+        const key = map.has(normCampanha(chave)) ? normCampanha(chave) : byId.get(chave);
+        const m = key ? map.get(key) : undefined;
+        if (!m || !key) continue;
+        casadas.add(key);
         const clientes = Number(row.clientes);
+        const qualificados = Number(row.qualificados);
         const mrr = Number(row.mrrReal);
-        const leadsCrm = Number(row.leads);
         row.gastoMeta = Math.round(m.gasto * 100) / 100;
         row.leadsMeta = m.leads;
         row.cliquesMeta = m.cliques;
-        row.cpl = m.leads > 0 ? m.gasto / m.leads : (leadsCrm > 0 ? m.gasto / leadsCrm : null);
+        // CPL = gasto / leads ATRIBUÍDOS pela Meta (BM). NUNCA dividir pelos leads do CRM
+        // (utm cola em lead que não veio do clique pago → CPL falso, subestimado).
+        row.cpl = m.leads > 0 ? m.gasto / m.leads : null;
+        row.cplq = qualificados > 0 ? m.gasto / qualificados : null; // custo por lead qualificado
         row.cac = clientes > 0 ? m.gasto / clientes : null; // gasto / clientes pagantes
         row.roas = m.gasto > 0 ? mrr / m.gasto : null; // MRR real mensal / gasto
       }
@@ -923,6 +1004,32 @@ app.get("/tracking", async (c) => {
       meta.erro = String(e);
     }
   }
+
+  // utm do lead casa com campanha paga real? (nome normalizado ou id). Sem Meta
+  // configurada, mantém o critério antigo (qualquer utm não-vazia).
+  const utmEhPaga = (utm: string | null | undefined): boolean => {
+    if (!utm) return false;
+    if (!chavesPagas || !idsPagos) return true;
+    return chavesPagas.has(normCampanha(utm)) || idsPagos.has(utm);
+  };
+  let mrrTotal = 0, mrrAtribuido = 0;
+  const clientesTotalSet = new Set<string>(), clientesAtribuidosSet = new Set<string>();
+  for (const a of assinaturasAtivas) {
+    const mrr = Number(a.mrr ?? 0) || 0;
+    mrrTotal += mrr;
+    clientesTotalSet.add(a.lead_id);
+    if (utmEhPaga(a.utm_campaign)) {
+      mrrAtribuido += mrr;
+      clientesAtribuidosSet.add(a.lead_id);
+    }
+  }
+  const atribuicao = {
+    mrrTotal: Math.round(mrrTotal * 100) / 100,
+    mrrAtribuido: Math.round(mrrAtribuido * 100) / 100,
+    clientesTotal: clientesTotalSet.size,
+    clientesAtribuidos: clientesAtribuidosSet.size,
+    pctAtribuido: mrrTotal > 0 ? mrrAtribuido / mrrTotal : 0,
+  };
 
   return c.json({
     periodo,
@@ -937,6 +1044,48 @@ app.get("/tracking", async (c) => {
   });
 });
 
+// ─── Mídia Paga (funil clique→receita) ────────────────────────────
+// GET /relatorios/midia-paga?periodo=30d
+// Fonte única em lib/relatorios/midia-paga.ts. Ver callface/relatorio-midia-paga-proposta.md.
+// Sem índice de qualidade composto — ranking é ROAS puro (decisão Scott 15/07).
+app.get("/midia-paga", async (c) => {
+  const ctx = await getCtx(c);
+  const periodo = c.req.query("periodo") ?? "30d";
+  const { since, until } = periodWindow(periodo);
+
+  const [porCampanha, porConjunto, porCriativo, statusAtual, receitaAtribuida, roasCiclo, pipelineAberto] = await Promise.all([
+    getMetricasPorCampanha(ctx.organizacaoId, since, until),
+    getMetricasPorConjunto(ctx.organizacaoId, since, until),
+    getMetricasPorCriativo(ctx.organizacaoId, since, until),
+    getStatusAtualLeadsPagos(ctx.organizacaoId, since, until),   // ENG-667a
+    getReceitaAtribuida(ctx.organizacaoId, since, until),        // ENG-667b
+    getRoasCiclo(ctx.organizacaoId),                             // ENG-667c
+    getPipelineAbertoPago(ctx.organizacaoId),                    // ENG-667d
+  ]);
+  const funil = agregarFunil(porCampanha);
+  const alertas = gerarAlertas(porCampanha, porCriativo);
+  const rankingCampanhas = rankingPorRoas(porCampanha);
+  const rankingConjuntos = rankingPorRoas(porConjunto);
+  const rankingCriativos = rankingPorRoas(porCriativo);
+
+  return c.json({
+    periodo,
+    metaConfigured: metaConfigured(),
+    funil,
+    porCampanha,
+    porConjunto,
+    porCriativo,
+    rankingCampanhas,
+    rankingConjuntos,
+    rankingCriativos,
+    alertas,
+    statusAtual,
+    receitaAtribuida,
+    roasCiclo,
+    pipelineAberto,
+  });
+});
+
 // ─── Fechado mês a mês (MRR fechado + ganhos × perdidos) ─────────
 // Usa datas REAIS: ganhos por ganho_at, MRR por contratos.inicio. Perdidos não têm
 // data de perda preservada da migração → usa created_at do negócio como proxy.
@@ -945,51 +1094,54 @@ app.get("/tracking", async (c) => {
 app.get("/fechado-mensal", async (c) => {
   const ctx = await getCtx(c);
   const orgId = ctx.organizacaoId;
-  const meses = Math.min(parseInt(c.req.query("meses") || "12") || 12, 36);
+  // R7/R8 (Scott 30/jun): granularidade SEMANAL. `semanas` é o nº de semanas exibidas
+  // (fallback `meses` por compat com chamadas antigas). Label = 'DD/MM' do início da semana.
+  const semanas = Math.min(parseInt(c.req.query("semanas") || c.req.query("meses") || "12") || 12, 52);
 
-  // Piso go-live (25/jun/2026): não conta meses anteriores ao go-live (histórico Zoho).
+  // Piso go-live (lib/relatorios/periodo GO_LIVE): não conta nada anterior ao go-live (histórico Zoho).
   const ganhos = await db.execute(sql`
-    SELECT to_char(date_trunc('month', ganho_at), 'YYYY-MM') AS mes, count(*)::int AS qtd
+    SELECT to_char(date_trunc('week', ganho_at), 'YYYY-MM-DD') AS wk, to_char(date_trunc('week', ganho_at), 'DD/MM') AS mes, count(*)::int AS qtd
     FROM negocios
     WHERE organizacao_id = ${orgId} AND status = 'ganho' AND ganho_at IS NOT NULL
-      AND ganho_at >= GREATEST(date_trunc('month', now()) - make_interval(months => ${meses - 1}), TIMESTAMPTZ '2026-06-25 00:00:00-03')
-    GROUP BY 1 ORDER BY 1
+      AND ganho_at >= GREATEST(date_trunc('week', now()) - make_interval(weeks => ${semanas - 1}), ${GO_LIVE_ISO}::timestamptz)
+    GROUP BY 1, 2 ORDER BY 1
   `);
 
   const mrr = await db.execute(sql`
-    SELECT to_char(date_trunc('month', c.inicio), 'YYYY-MM') AS mes, COALESCE(sum(c.mrr), 0)::float AS mrr
+    SELECT to_char(date_trunc('week', c.inicio), 'YYYY-MM-DD') AS wk, to_char(date_trunc('week', c.inicio), 'DD/MM') AS mes, COALESCE(sum(c.mrr), 0)::float AS mrr
     FROM contratos c JOIN leads l ON l.id = c.lead_id
     WHERE l.organizacao_id = ${orgId} AND c.status = 'ativo' AND c.inicio IS NOT NULL
-      AND c.inicio >= GREATEST((date_trunc('month', now()) - make_interval(months => ${meses - 1}))::date, DATE '2026-06-25')
-    GROUP BY 1 ORDER BY 1
+      AND c.inicio >= GREATEST((date_trunc('week', now()) - make_interval(weeks => ${semanas - 1}))::date, ${GO_LIVE_ISO}::date)
+    GROUP BY 1, 2 ORDER BY 1
   `);
 
   const perdidos = await db.execute(sql`
-    SELECT to_char(date_trunc('month', created_at), 'YYYY-MM') AS mes, count(*)::int AS qtd
+    SELECT to_char(date_trunc('week', created_at), 'YYYY-MM-DD') AS wk, to_char(date_trunc('week', created_at), 'DD/MM') AS mes, count(*)::int AS qtd
     FROM negocios
     WHERE organizacao_id = ${orgId} AND status = 'perdido'
-      AND created_at >= GREATEST(date_trunc('month', now()) - make_interval(months => ${meses - 1}), TIMESTAMPTZ '2026-06-25 00:00:00-03')
-    GROUP BY 1 ORDER BY 1
+      AND created_at >= GREATEST(date_trunc('week', now()) - make_interval(weeks => ${semanas - 1}), ${GO_LIVE_ISO}::timestamptz)
+    GROUP BY 1, 2 ORDER BY 1
   `);
 
   type Mes = {
-    mes: string;
+    wk: string; mes: string;
     ganhosPabx: number; ganhosAi: number; ganhosOutros: number;
     mrrPabx: number; mrrAi: number; mrrOutros: number;
     perdidos: number; fatStripe: number; fatPabx: number;
   };
   const byMes: Record<string, Mes> = {};
-  const ensure = (mes: string) => (byMes[mes] ||= {
-    mes, ganhosPabx: 0, ganhosAi: 0, ganhosOutros: 0,
+  const ensure = (wk: string, mes: string) => (byMes[wk] ||= {
+    wk, mes, ganhosPabx: 0, ganhosAi: 0, ganhosOutros: 0,
     mrrPabx: 0, mrrAi: 0, mrrOutros: 0, perdidos: 0, fatStripe: 0, fatPabx: 0,
   });
   const rowsOf = (r: unknown) => r as unknown as Record<string, unknown>[];
-  for (const r of rowsOf(ganhos)) ensure(String(r.mes)).ganhosAi += Number(r.qtd);
-  for (const r of rowsOf(mrr)) ensure(String(r.mes)).mrrAi += Number(r.mrr);
-  for (const r of rowsOf(perdidos)) ensure(String(r.mes)).perdidos += Number(r.qtd);
+  for (const r of rowsOf(ganhos)) ensure(String(r.wk), String(r.mes)).ganhosAi += Number(r.qtd);
+  for (const r of rowsOf(mrr)) ensure(String(r.wk), String(r.mes)).mrrAi += Number(r.mrr);
+  for (const r of rowsOf(perdidos)) ensure(String(r.wk), String(r.mes)).perdidos += Number(r.qtd);
 
-  const series = Object.values(byMes).sort((a, b) => a.mes.localeCompare(b.mes));
-  return c.json({ meses, series });
+  // Ordena cronologicamente pela semana (wk = 'YYYY-MM-DD', ordenável lexicograficamente).
+  const series = Object.values(byMes).sort((a, b) => a.wk.localeCompare(b.wk));
+  return c.json({ semanas, series });
 });
 
 // ─── Esteira SDR (pré-qualificação) ──────────────────────────────
@@ -1000,70 +1152,90 @@ app.get("/sdr-esteira", async (c) => {
   const orgId = ctx.organizacaoId;
   const periodo = c.req.query("periodo") ?? "30d";
   const { since, until } = periodWindow(periodo);
-  const dateRange = and(gte(leads.createdAt, since), lt(leads.createdAt, until));
 
-  // Snapshot por estágio do SDR (leads que entraram no período)
-  const porStatus = await db
-    .select({ sdrStatus: leads.sdrStatus, total: count() })
-    .from(leads)
-    .where(and(eq(leads.organizacaoId, orgId), dateRange))
-    .groupBy(leads.sdrStatus);
-
-  const get = (s: string) => Number(porStatus.find((r) => r.sdrStatus === s)?.total || 0);
-  const novo = get("pending");
-  const emContato = get("contacted");
-  const qualificando = get("qualifying");
-  const qualificado = get("qualified");
-  const desqualificado = get("disqualified");
-  const totalEsteira = novo + emContato + qualificando + qualificado + desqualificado;
-  const trabalhados = emContato + qualificando + qualificado + desqualificado;
-
-  // Funil em ordem (cumulativo decrescente: cada etapa = quem chegou nela ou além)
-  // "Em contato" no funil = quem avançou na esteira (sem os desqualificados, que saem).
-  // Casa com o funil de pré-vendas do /marketing.
-  const funil = [
-    { stage: "novo", label: "Novo", total: totalEsteira },
-    { stage: "contacted", label: "Em contato", total: emContato + qualificando + qualificado },
-    { stage: "qualifying", label: "Qualificando", total: qualificando + qualificado },
-    { stage: "qualified", label: "Qualificado", total: qualificado },
-  ];
-
-  // Por responsável (SDR)
-  const porResp = await db
-    .select({ responsavelId: leads.responsavelId, sdrStatus: leads.sdrStatus, total: count() })
-    .from(leads)
-    .where(and(eq(leads.organizacaoId, orgId), dateRange, isNotNull(leads.responsavelId)))
-    .groupBy(leads.responsavelId, leads.sdrStatus);
+  // Esteira = fonte única (lib/relatorios/esteira-sdr) — o MESMO cálculo do funil
+  // de pré-vendas do /marketing, então as duas abas nunca mais divergem (item 3).
+  const esteira = await getEsteiraSdr(orgId, since, until);
+  const { qualificado, desqualificado, estagnados } = esteira.geral;
+  const { totalEsteira, trabalhados, funil } = esteira;
 
   const userList = await db
     .select({ id: usuarios.id, nome: usuarios.nome, role: usuarios.role })
     .from(usuarios)
     .where(eq(usuarios.organizacaoId, orgId));
 
+  // Relatório SDR = só responsáveis com PAPEL sdr (não por nome). BLINDAGEM: se quem
+  // acessa é personal view (a própria SDR), só vê A SI MESMA. Admin/gerente veem todas.
+  const soEuSdr = isPersonalView(ctx.userRole) ? ctx.userId : null;
+  const vazio = { novo: 0, emContato: 0, qualificando: 0, qualificado: 0, desqualificado: 0, estagnados: 0 };
   const porResponsavel = userList
+    // personal view (SDR ou closer que acumula SDR) vê só a si; admin/gerente veem todas as SDR.
+    .filter((u) => (soEuSdr ? u.id === soEuSdr : u.role === "sdr"))
     .map((u) => {
-      const rows = porResp.filter((r) => r.responsavelId === u.id);
-      const g = (s: string) => Number(rows.find((r) => r.sdrStatus === s)?.total || 0);
-      const nv = g("pending"), ec = g("contacted"), qf = g("qualifying"), qd = g("qualified"), dq = g("disqualified");
-      const tot = nv + ec + qf + qd + dq;
-      const trab = ec + qf + qd + dq;
+      const m = esteira.porResponsavel.get(u.id) ?? vazio;
+      const tot = m.novo + m.emContato + m.qualificando + m.qualificado + m.desqualificado;
+      const trab = m.emContato + m.qualificando + m.qualificado + m.desqualificado;
       return {
         usuarioId: u.id, nome: u.nome, role: u.role,
-        total: tot, novo: nv, emContato: ec, qualificando: qf, qualificado: qd, desqualificado: dq,
-        taxaQualificacao: trab > 0 ? Math.round((qd / trab) * 1000) / 10 : 0,
+        total: tot, novo: m.novo, emContato: m.emContato, qualificando: m.qualificando,
+        qualificado: m.qualificado, desqualificado: m.desqualificado,
+        taxaQualificacao: trab > 0 ? Math.round((m.qualificado / trab) * 1000) / 10 : 0,
       };
     })
-    .filter((m) => m.total > 0)
     .sort((a, b) => b.total - a.total);
+
+  // R3 — Reuniões por EVENTO (status_changes), recorte da meta da SDR: agendadas =
+  // quem A SDR moveu pra "Reunião agendada"; realizadas/no-show = desses mesmos
+  // leads. Antes, "realizadas" lia da tabela `reunioes` (nunca atualizada → sempre 0)
+  // e no-show era snapshot all-time (auditoria itens 2/E1/E2).
+  const sdrIds = userList.filter((u) => u.role === "sdr").map((u) => u.id);
+  const escopoSdr = soEuSdr ? [soEuSdr] : sdrIds;
+  const [reunioesSdr, visoes] = await Promise.all([
+    contarReunioes(orgId, since, until, { agendadasPor: escopoSdr }),
+    // Visões da auditoria 22/07 (LOGICA-SDR.md): split reunião/direta, quem qualificou,
+    // SLA em duas bases, inbound×outbound, parados por tempo e base parada fora da coorte.
+    getVisoesSdr(orgId, since, until),
+  ]);
+
+  // Reuniões agendadas na janela por CLOSERS (contexto da meta da SDR — closers
+  // cobrindo SDR agendam por fora e o card sozinho parecia a atividade toda).
+  const closerIds = userList.filter((u) => u.role === "closer" || u.role === "vendedor").map((u) => u.id);
+  const reunioesClosers = soEuSdr
+    ? null
+    : await contarReunioes(orgId, since, until, { agendadasPor: closerIds });
+
+  // BLINDAGEM personal view: a visão "quem qualificou" segue a mesma regra da
+  // tabela Por SDR — quem tem visão pessoal só enxerga a própria linha.
+  const qualificacoesPorResponsavel = soEuSdr
+    ? visoes.qualificacoesPorResponsavel.filter((q) => q.usuarioId === soEuSdr)
+    : visoes.qualificacoesPorResponsavel;
 
   return c.json({
     funil,
     desqualificado,
+    // Card Estagnados = flags manuais da coorte + leads da coorte em contato/
+    // qualificando sem atividade há ESTAGNADO_DIAS+ (a esteira/funil NÃO muda —
+    // estagnado por tempo é overlay, o lead continua contado onde está no board).
+    estagnados: estagnados + visoes.paradosCoorte,
+    estagnadosFlag: estagnados,
+    estagnadosParados: visoes.paradosCoorte,
+    estagnadoDias: ESTAGNADO_DIAS,
+    // Estado REAL "qualificando" da coorte (o funil é cumulativo; o card usava o
+    // valor do funil e mostrava qualificando+qualificado — auditoria 22/07).
+    qualificandoAtual: esteira.geral.qualificando,
+    novosLeads: esteira.totalLeads, // leads que chegaram pra SDR no período
     totalEsteira,
     trabalhados,
     taxaContato: totalEsteira > 0 ? Math.round((trabalhados / totalEsteira) * 1000) / 10 : 0,
     taxaQualificacao: trabalhados > 0 ? Math.round((qualificado / trabalhados) * 1000) / 10 : 0,
+    reunioes: reunioesSdr,
+    reunioesClosers,
     porResponsavel,
+    qualificadosDetalhe: visoes.qualificadosDetalhe,
+    qualificacoesPorResponsavel,
+    sla: visoes.sla,
+    origem: visoes.origem,
+    baseParada: soEuSdr ? null : visoes.baseParada,
   });
 });
 

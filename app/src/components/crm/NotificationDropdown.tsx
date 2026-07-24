@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Bell, Check, ExternalLink, Users, AlertTriangle, Shield } from "lucide-react";
+import { Bell, Check, ExternalLink, Users, AlertTriangle, Shield, Trophy, Clock, CreditCard, CalendarX } from "lucide-react";
 import Link from "next/link";
 
 interface Notification {
@@ -19,12 +19,28 @@ const TIPO_ICONS: Record<string, typeof Bell> = {
   novo_lead: Users,
   sla_alerta: AlertTriangle,
   sistema: Shield,
+  negocio_ganho: Trophy,
+  followup_proposta: Clock,
+  no_show: CalendarX,
+  pagamento_pendente: CreditCard,
+  pagamento_falhou: CreditCard,
+  pagamento_pos_expiracao: CreditCard,
+  cobranca_falhou: CreditCard,
 };
 
+// Disciplina de cor (ref. 21/07): cor SÓ com significado de status —
+// ganho=lima, atenção=âmbar, perigo=vermelho; o resto fica neutro.
 const TIPO_COLORS: Record<string, string> = {
-  novo_lead: "#3B82F6",
+  novo_lead: "#9CA3AF",
   sla_alerta: "#F59E0B",
-  sistema: "#e23752",
+  sistema: "#9CA3AF",
+  negocio_ganho: "#c8ff00",
+  followup_proposta: "#F59E0B",
+  no_show: "#F59E0B",
+  pagamento_pendente: "#F59E0B",
+  pagamento_falhou: "#EF4444",
+  pagamento_pos_expiracao: "#F59E0B",
+  cobranca_falhou: "#EF4444",
 };
 
 function timeAgo(dateStr: string) {

@@ -15,23 +15,28 @@ app.get("/contatos-unified", async (c) => {
   const canal = c.req.query("canal") ?? ""; // whatsapp | email | apollo | all
   const listaId = c.req.query("lista") ?? "";
   const origem = c.req.query("origem") ?? "";
+  // Página unificada Leads+Contatos (13/jul): tipo filtra contato|lead|cliente.
+  // Sem o param, mostra os 3 juntos — não filtra por tipo.
+  const tipo = c.req.query("tipo") ?? "";
   const page = parseInt(c.req.query("page") ?? "1");
   const limit = Math.min(parseInt(c.req.query("limit") ?? "25"), 100);
   const offset = (page - 1) * limit;
 
-  // Base query: leads with tipo='contato'
-  const conditions = [
-    eq(leads.organizacaoId, ctx.organizacaoId),
-    eq(leads.tipo, "contato"),
-  ];
+  const conditions = [eq(leads.organizacaoId, ctx.organizacaoId)];
+  if (tipo === "contato" || tipo === "lead" || tipo === "cliente") {
+    conditions.push(eq(leads.tipo, tipo));
+  }
 
   if (search) {
+    // Busca em nome/email/telefone/empresa (texto solto) + empresa vinculada por empresaId.
+    const searchPattern = `%${search}%`;
     conditions.push(
       or(
-        ilike(leads.nome, `%${search}%`),
-        ilike(leads.email, `%${search}%`),
-        ilike(leads.telefone, `%${search}%`),
-        ilike(leads.empresa, `%${search}%`),
+        ilike(leads.nome, searchPattern),
+        ilike(leads.email, searchPattern),
+        ilike(leads.telefone, searchPattern),
+        ilike(leads.empresa, searchPattern),
+        sql`EXISTS (SELECT 1 FROM ${empresas} WHERE ${empresas.id} = ${leads.empresaId} AND ${empresas.nome} ILIKE ${searchPattern})`,
       )!
     );
   }

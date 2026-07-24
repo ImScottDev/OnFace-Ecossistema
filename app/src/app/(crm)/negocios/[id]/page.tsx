@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { AddNoteInlineNegocio, TarefasSectionNegocio } from "@/components/crm/NegocioSections";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, User, FileText, Clock, CheckCircle, XCircle, Plus, Pencil, Trash2, X, Building2, Users, Thermometer, StickyNote, MessageCircle, Phone } from "lucide-react";
@@ -10,6 +11,7 @@ import { usePipelineConfig } from "@/hooks/usePipelineConfig";
 import { EmpresaDrawer } from "@/components/crm/EmpresaDrawer";
 import { LeadDrawer } from "@/components/crm/LeadDrawer";
 import { QualificacaoSdrSection } from "@/components/crm/QualificacaoSdrSection";
+import { callfaceCallUrl } from "@/lib/utils/callface-call";
 
 export default function NegocioDetailPage() {
   const { id } = useParams();
@@ -69,7 +71,7 @@ export default function NegocioDetailPage() {
   if (isLoading) return <div className="p-8 text-white/40 text-center">Carregando...</div>;
   if (!data?.negocio) return <div className="p-8 text-white/40 text-center">Negócio não encontrado</div>;
 
-  const { negocio, lead, empresa, leads: allLeads, propostas, contratos, atividades: activities, statusChanges: changes } = data;
+  const { negocio, lead, empresa, leads: allLeads, propostas, contratos, atividades: activities, statusChanges: changes, reunioes } = data;
   const stageInfo = getStatusInfo(negocio.status);
   const valorTotal = parseFloat(negocio.valorTotal || "0") || 0;
 
@@ -133,7 +135,7 @@ export default function NegocioDetailPage() {
           <div className="flex items-center gap-2 shrink-0">
             {leadPhone && (
               <>
-                <a href={`tel:${leadPhone}`} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-blue-400 hover:bg-blue-500/10 transition-colors">
+                <a href={callfaceCallUrl(leadPhone)} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-blue-400 hover:bg-blue-500/10 transition-colors">
                   <Phone className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Ligar</span>
                 </a>
                 <button onClick={openWhatsApp} disabled={whatsappLoading} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 transition-colors disabled:opacity-50">
@@ -296,20 +298,47 @@ export default function NegocioDetailPage() {
             </div>
           )}
 
+          {/* Reunião agendada */}
+          {reunioes && reunioes.length > 0 && (
+            <div className="card-solid p-4">
+              <h3 className="text-sm font-medium text-white/50 mb-3">Reunião agendada</h3>
+              <div className="space-y-2">
+                {reunioes.map((r: { id: string; titulo: string; data: string; tipo: string | null; duracao: number | null; link: string | null; responsavelNome: string | null }) => (
+                  <div key={r.id} className="p-3 rounded-lg bg-white/[0.02] border border-white/[0.06] space-y-1.5">
+                    <div className="flex items-center gap-2 text-sm text-white/80">
+                      <Clock className="w-3.5 h-3.5 text-[#e23752] shrink-0" />
+                      <span>{new Date(r.data).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}</span>
+                      {r.tipo && <span className="text-white/40">· {r.tipo}</span>}
+                      {r.duracao && <span className="text-white/40">· {r.duracao}min</span>}
+                    </div>
+                    <p className="text-xs text-white/60">{r.titulo}</p>
+                    {r.responsavelNome && <p className="text-[11px] text-white/40">Closer: {r.responsavelNome}</p>}
+                    {r.link && (
+                      <a href={r.link} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-xs text-blue-400 hover:text-blue-300 underline">
+                        Abrir link da reunião
+                      </a>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Timeline */}
           <div className="card-solid p-4">
             <h3 className="text-sm font-medium text-white/50 mb-3">Timeline</h3>
             <div className="space-y-3">
-              {changes && changes.map((sc: { id: string; deStatus: string | null; paraStatus: string; createdAt: string }) => {
+              {changes && changes.map((sc: { id: string; deStatus: string | null; paraStatus: string; createdAt: string; autorNome?: string | null }) => {
                 const from = sc.deStatus ? getStatusInfo(sc.deStatus) : null;
                 const to = getStatusInfo(sc.paraStatus);
                 return (
-                  <div key={sc.id} className="flex items-center gap-3 text-xs">
+                  <div key={sc.id} className="flex items-center gap-2 text-xs flex-wrap">
                     <Clock className="w-3.5 h-3.5 text-white/30 shrink-0" />
-                    <span className="text-white/50">{new Date(sc.createdAt).toLocaleDateString("pt-BR")}</span>
+                    <span className="text-white/50">{new Date(sc.createdAt).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}</span>
                     <span className="text-white/70">
                       {from ? `${from.label} → ` : ""}{to.label}
                     </span>
+                    {sc.autorNome && <span className="text-white/40">· {sc.autorNome}</span>}
                   </div>
                 );
               })}
@@ -338,7 +367,11 @@ export default function NegocioDetailPage() {
             ) : (
               <p className="text-sm text-white/30">Nenhuma nota. Registre observações internas sobre este negócio.</p>
             )}
+            <AddNoteInlineNegocio negocioId={String(id)} />
           </div>
+
+          {/* Tarefas do negócio (título, descrição, data/hora) → Minhas Tarefas */}
+          <TarefasSectionNegocio negocioId={String(id)} leadId={lead?.id ?? null} />
         </div>
 
         {/* Sidebar */}

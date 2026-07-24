@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { getMoedaInfo, formatCurrencyValue } from "@/components/crm/proposta-utils";
+import { callfaceCallUrl } from "@/lib/utils/callface-call";
 
 interface Contrato {
   id: string;
@@ -177,7 +178,7 @@ export default function ContratoDetailPage() {
               )}
             </div>
             <p className="text-sm text-white/50 mt-1">
-              <Link href={`/leads/${contrato.leadId}`} className="hover:text-white transition-colors">
+              <Link href={`/contatos/${contrato.leadId}`} className="hover:text-white transition-colors">
                 {contrato.leadNome}
               </Link>
               {contrato.leadEmpresa && contrato.leadNome !== contrato.leadEmpresa && (
@@ -403,7 +404,7 @@ export default function ContratoDetailPage() {
           <div className="rounded-xl bg-white/[0.03] border border-white/[0.06] p-5">
             <h3 className="text-sm font-medium text-white/60 mb-3">Contato</h3>
             <div className="space-y-2">
-              <Link href={`/leads/${contrato.leadId}`} className="block text-sm text-white hover:text-purple-300 transition-colors">
+              <Link href={`/contatos/${contrato.leadId}`} className="block text-sm text-white hover:text-purple-300 transition-colors">
                 {contrato.leadNome}
               </Link>
               {contrato.leadEmpresa && <p className="text-xs text-white/40">{contrato.leadEmpresa}</p>}
@@ -411,7 +412,7 @@ export default function ContratoDetailPage() {
                 <a href={`mailto:${contrato.leadEmail}`} className="block text-xs text-blue-400 hover:text-blue-300">{contrato.leadEmail}</a>
               )}
               {contrato.leadTelefone && (
-                <a href={`tel:${contrato.leadTelefone}`} className="block text-xs text-white/50">{contrato.leadTelefone}</a>
+                <a href={callfaceCallUrl(contrato.leadTelefone)} target="_blank" rel="noopener noreferrer" className="block text-xs text-white/50 hover:text-blue-400 transition-colors">{contrato.leadTelefone}</a>
               )}
             </div>
           </div>

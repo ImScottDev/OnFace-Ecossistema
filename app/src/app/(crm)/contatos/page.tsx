@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   UserRound, Search, Plus, X, Trash2, ArrowRightLeft, ListPlus,
   Sparkles, ChevronLeft, ChevronRight, Check, Loader2, Settings2, MessageCircle,
@@ -15,6 +15,7 @@ import { toast } from "sonner";
 interface Contato {
   id: string;
   nome: string;
+  tipo: "contato" | "lead" | "cliente";
   email: string | null;
   telefone: string | null;
   empresa: string | null;
@@ -40,6 +41,19 @@ interface Lista {
 }
 
 /* ─── Constants ─── */
+const TIPO_OPTIONS = [
+  { value: "", label: "Todos" },
+  { value: "contato", label: "Contato" },
+  { value: "lead", label: "Lead" },
+  { value: "cliente", label: "Cliente" },
+] as const;
+
+const TIPO_BADGE: Record<string, { bg: string; text: string; label: string }> = {
+  contato: { bg: "bg-white/[0.06]", text: "text-white/50", label: "Contato" },
+  lead: { bg: "bg-amber-500/15", text: "text-amber-400", label: "Lead" },
+  cliente: { bg: "bg-emerald-500/15", text: "text-emerald-400", label: "Cliente" },
+};
+
 const CANAL_OPTIONS = [
   { value: "", label: "Todos os Canais" },
   { value: "whatsapp", label: "WhatsApp" },
@@ -87,10 +101,16 @@ function formatDate(dateStr: string): string {
 export default function ContatosPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const searchParams = useSearchParams();
 
   // Filters
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+  // Aceita ?tipo=lead|cliente|contato na URL (ex: link antigo de /leads redirecionado).
+  const [tipoFilter, setTipoFilter] = useState(() => {
+    const t = searchParams.get("tipo");
+    return t === "lead" || t === "cliente" || t === "contato" ? t : "";
+  });
   const [canalFilter, setCanalFilter] = useState("");
   const [listaFilter, setListaFilter] = useState("");
   const [origemFilter, setOrigemFilter] = useState("");
@@ -127,15 +147,13 @@ export default function ContatosPage() {
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [search]);
 
-  // Reset page on filter change
-  useEffect(() => { setPage(1); }, [canalFilter, listaFilter, origemFilter]);
-
   /* ─── Queries ─── */
   const { data, isLoading, refetch } = useQuery<ContatosResponse>({
-    queryKey: ["contatos", debouncedSearch, canalFilter, listaFilter, origemFilter, page],
+    queryKey: ["contatos", debouncedSearch, tipoFilter, canalFilter, listaFilter, origemFilter, page],
     queryFn: async () => {
       const params = new URLSearchParams({ page: String(page), limit: "25" });
       if (debouncedSearch) params.set("search", debouncedSearch);
+      if (tipoFilter) params.set("tipo", tipoFilter);
       if (canalFilter) params.set("canal", canalFilter);
       if (listaFilter) params.set("lista", listaFilter);
       if (origemFilter) params.set("origem", origemFilter);
@@ -342,6 +360,21 @@ export default function ContatosPage() {
         </div>
       </div>
 
+      {/* ─── Tipo (eixo primário: contato/lead/cliente) ─── */}
+      <div className="inline-flex rounded-lg p-0.5" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }}>
+        {TIPO_OPTIONS.map(o => (
+          <button
+            key={o.value}
+            onClick={() => { setTipoFilter(o.value); setPage(1); }}
+            className={`px-3 py-1.5 rounded-lg text-[12px] font-medium transition-colors ${
+              tipoFilter === o.value ? "bg-white/[0.08] text-white" : "text-white/40 hover:text-white/60"
+            }`}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
+
       {/* ─── Filters ─── */}
       <div className="flex flex-wrap items-center gap-3">
         <div className="relative flex-1 min-w-0 sm:min-w-[220px] max-w-sm">
@@ -349,13 +382,13 @@ export default function ContatosPage() {
           <input
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="Buscar por nome, email, telefone, empresa..."
+            placeholder="Buscar por nome, empresa, telefone..."
             className="dark-input w-full pl-9"
           />
         </div>
         <select
           value={canalFilter}
-          onChange={e => setCanalFilter(e.target.value)}
+          onChange={e => { setCanalFilter(e.target.value); setPage(1); }}
           className="dark-input text-sm"
         >
           {CANAL_OPTIONS.map(o => (
@@ -364,7 +397,7 @@ export default function ContatosPage() {
         </select>
         <select
           value={listaFilter}
-          onChange={e => setListaFilter(e.target.value)}
+          onChange={e => { setListaFilter(e.target.value); setPage(1); }}
           className="dark-input text-sm"
         >
           <option value="">Todas as Listas</option>
@@ -374,7 +407,7 @@ export default function ContatosPage() {
         </select>
         <select
           value={origemFilter}
-          onChange={e => setOrigemFilter(e.target.value)}
+          onChange={e => { setOrigemFilter(e.target.value); setPage(1); }}
           className="dark-input text-sm"
         >
           {ORIGEM_OPTIONS.map(o => (
@@ -450,6 +483,9 @@ export default function ContatosPage() {
                   <th className="text-left px-4 py-3 text-xs font-medium text-white/50 uppercase tracking-wider">
                     Nome
                   </th>
+                  <th className="text-left px-4 py-3 text-xs font-medium text-white/50 uppercase tracking-wider">
+                    Tipo
+                  </th>
                   <th className="text-left px-4 py-3 text-xs font-medium text-white/50 uppercase tracking-wider hidden md:table-cell">
                     Email
                   </th>
@@ -478,7 +514,7 @@ export default function ContatosPage() {
                   <tr
                     key={c.id}
                     className="border-b border-white/[0.04] hover:bg-white/[0.02] transition-colors cursor-pointer group"
-                    onClick={() => router.push(`/leads/${c.id}`)}
+                    onClick={() => router.push(`/contatos/${c.id}`)}
                   >
                     <td className="w-10 px-3 py-3" onClick={e => e.stopPropagation()}>
                       <input
@@ -497,6 +533,11 @@ export default function ContatosPage() {
                           {c.nome}
                         </span>
                       </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex px-1.5 py-0.5 rounded-full text-[10px] font-medium ${TIPO_BADGE[c.tipo]?.bg ?? "bg-white/[0.06]"} ${TIPO_BADGE[c.tipo]?.text ?? "text-white/40"}`}>
+                        {TIPO_BADGE[c.tipo]?.label ?? c.tipo}
+                      </span>
                     </td>
                     <td className="px-4 py-3 text-sm text-white/50 hidden md:table-cell truncate max-w-[180px]">
                       {c.email || "—"}

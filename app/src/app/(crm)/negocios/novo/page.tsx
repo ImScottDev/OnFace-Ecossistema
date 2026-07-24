@@ -181,7 +181,7 @@ export default function NovoNegocioPage() {
             className="btn-primary px-6 py-2 text-sm disabled:opacity-40">
             {createMutation.isPending ? "Criando..." : "Criar Negócio"}
           </button>
-          <Link href={preLeadId ? `/leads/${preLeadId}` : "/pipeline"} className="px-4 py-2 text-sm text-white/50 hover:text-white">
+          <Link href={preLeadId ? `/contatos/${preLeadId}` : "/pipeline"} className="px-4 py-2 text-sm text-white/50 hover:text-white">
             Cancelar
           </Link>
         </div>

@@ -103,8 +103,8 @@ export async function PATCH(
     .limit(1);
 
   if (!existing) return NextResponse.json({ error: "Proposta não encontrada" }, { status: 404 });
-  if (existing.status !== "rascunho") {
-    return NextResponse.json({ error: "Só é possível editar propostas em rascunho" }, { status: 400 });
+  if (!["rascunho", "enviada"].includes(existing.status)) {
+    return NextResponse.json({ error: "Só é possível editar propostas em rascunho ou enviadas (aceita/recusada/expirada ficam travadas)" }, { status: 400 });
   }
 
   const body = await request.json();

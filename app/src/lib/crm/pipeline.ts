@@ -174,8 +174,27 @@ export type ContatoTipo = (typeof CONTATO_TIPOS)[number]["key"];
 export const SDR_STAGES: PipelineStage[] = [
   { key: "pending", label: "Novo", color: "#3B82F6", slaHours: 1 },
   { key: "contacted", label: "Em Contato", color: "#EAB308", slaHours: 24 },
-  { key: "qualifying", label: "Qualificando", color: "#8e27ef", slaHours: 48 },
+  { key: "qualifying", label: "Follow up", color: "#8e27ef", slaHours: 48 },
 ];
+
+// Coluna de ENTRADA colapsada (à esquerda, antes de "Novo"): leads que vieram do
+// OUTBOUND (origem='outbound') e ainda não foram trabalhados. Ficam separados do
+// funil inbound pra não poluir a visão "Novo" das meninas. Ao serem movidos pra
+// "Em Contato", entram no funil normal. É uma coluna DERIVADA (não é sdr_status).
+export const SDR_OUTBOUND_STAGE: PipelineStage = {
+  key: "outbound",
+  label: "Outbound",
+  color: "#0EA5E9",
+};
+
+// Um lead cai na coluna Outbound se veio do outbound E ainda está intocado (Novo).
+export function isOutboundLead(origem?: string | null): boolean {
+  return (origem || "").trim().toLowerCase() === "outbound";
+}
+
+// Horas em "Em Contato" antes de escalar automaticamente pra "Follow up" (Jenifer assume).
+// 48h = 2 dias (decisão Kauã, 10/07: janela de qualificação do Agente SDR antes do handoff humano).
+export const SDR_CONTATO_ESCALATION_HOURS = 48;
 
 // Colunas de ESPELHO (colapsadas à direita): refletem o avanço do lead no
 // Pipeline do CLOSER. São derivadas do status do negócio vinculado (read-only
@@ -215,7 +234,9 @@ export const SDR_STAGNATION_STAGES: PipelineStage[] = [
 ];
 
 export const ALL_SDR_STATUSES = [
+  SDR_OUTBOUND_STAGE,
   ...SDR_STAGES,
+  ...SDR_MIRROR_STAGES,
   ...SDR_CLOSED_STAGES,
   ...SDR_STAGNATION_STAGES,
 ];

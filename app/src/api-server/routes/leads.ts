@@ -30,6 +30,7 @@ import {
   emailSequenciaExecucoes,
   usuarios,
   pipelines,
+  emailContas,
 } from "@/lib/db/schema";
 import {
   desc,
@@ -56,6 +57,10 @@ import {
 } from "@/lib/apollo/client";
 import { getOrgApolloKey } from "@/lib/apollo/tenant-key";
 import { downloadAndSaveAvatar, sessionToConfig } from "@/lib/whatsapp/client";
+import { getSdrStatusInfo } from "@/lib/crm/pipeline";
+import { converterLeadEmOportunidade } from "@/lib/crm/converter-oportunidade";
+import { createOutlookEvent } from "@/lib/email/microsoft";
+import { resolveFollowupOwnerId } from "@/lib/crm/sdr-escalation";
 
 const app = new Hono();
 
@@ -67,8 +72,10 @@ const createLeadSchema = z.object({
   nome: z.string().min(1),
   sobrenome: z.string().optional().nullable(),
   telefone: z.string().min(8),
-  email: z.string().email().optional().nullable(),
+  email: z.string().email().or(z.literal("")).optional().nullable(),
   empresa: z.string().optional().nullable(),
+  semNegocio: z.boolean().optional(), // lead manual (SDR): não cria negócio no pipeline
+  criarNegocio: z.boolean().optional(), // closer: cria negócio + vincula → pula pré-vendas, vai pro pipeline
   cargo: z.string().optional().nullable(),
   empresaCnpj: z.string().optional().nullable(),
   empresaSetor: z.string().optional().nullable(),
@@ -101,7 +108,7 @@ const createLeadSchema = z.object({
   tipoReceita: z.enum(["recorrente", "projeto", "hibrido"]).optional().nullable(),
   valorProjeto: z.string().optional().nullable(),
   empresaId: z.string().uuid().optional().nullable(),
-  lpUrl: z.string().url().optional().nullable(),
+  lpUrl: z.string().url().or(z.literal("")).optional().nullable(),
   organizacaoId: z.string().uuid().optional(),
   org: z.string().optional(),
 });
@@ -375,9 +382,12 @@ app.get("/leads", async (c) => {
 
   const enrichedLeads = data.map(l => {
     const negs = negocioMap[l.id] || [];
-    // Prioritize active deals (not perdido/churned)
+    // Prioritize active deals (not perdido/churned); dentre os ativos, um negócio
+    // VIVO ganha de um em no_show (o no_show só vira principal se for o único ativo,
+    // e aí o board de pré-vendas devolve o lead pro funil em vez do espelho)
     const activeNegs = negs.filter(n => !["perdido", "churned"].includes(n.status));
-    const primaryNeg = activeNegs[0] || negs[0] || null;
+    const liveNegs = activeNegs.filter(n => n.status !== "no_show");
+    const primaryNeg = liveNegs[0] || activeNegs[0] || negs[0] || null;
     const contato = contatoMap[l.id];
     // Resolve empresa name: use text field, fallback to empresas table
     const empresaNome = l.empresa || (l.empresaId ? empresaNomes[l.empresaId] : null) || null;
@@ -461,51 +471,101 @@ app.post(
       null;
     const userAgent = c.req.header("user-agent") || null;
 
-    const { organizacaoId: _orgId, org: _orgSlug, ...insertData } = parsed.data;
+    const { organizacaoId: _orgId, org: _orgSlug, empresaId: bodyEmpresaId, semNegocio, criarNegocio, ...insertData } = parsed.data;
 
-    // LP form submissions create lead + negócio automatically
+    // Resolve a EMPRESA como entidade real (não só texto): vincula a existente
+    // (empresaId) OU acha por CNPJ/nome na org OU cria uma nova. Assim o lead
+    // fica com empresa_id de verdade (aparece na lista de empresas, dá pra reusar).
+    let resolvedEmpresaId: string | null = bodyEmpresaId || null;
+    if (!resolvedEmpresaId && insertData.empresa?.trim()) {
+      const nomeEmp = insertData.empresa.trim();
+      const cnpj = insertData.empresaCnpj?.replace(/\D/g, "") || null;
+      const [existing] = await db
+        .select({ id: empresas.id })
+        .from(empresas)
+        .where(
+          and(
+            eq(empresas.organizacaoId, orgId),
+            cnpj && cnpj.length === 14 ? eq(empresas.cnpj, cnpj) : ilike(empresas.nome, nomeEmp)
+          )
+        )
+        .limit(1);
+      if (existing) {
+        resolvedEmpresaId = existing.id;
+      } else {
+        const [novaEmp] = await db
+          .insert(empresas)
+          .values({
+            organizacaoId: orgId,
+            nome: nomeEmp,
+            cnpj: cnpj && cnpj.length === 14 ? cnpj : null,
+            setor: insertData.empresaSetor || null,
+            porte: insertData.empresaPorte || null,
+            cidade: insertData.empresaCidade || null,
+            estado: insertData.empresaEstado || null,
+          })
+          .returning({ id: empresas.id });
+        resolvedEmpresaId = novaEmp.id;
+      }
+    }
+
     const [newLead] = await db
       .insert(leads)
       .values({
         ...insertData,
+        empresaId: resolvedEmpresaId,
         organizacaoId: orgId,
-        tipo: "lead", // LP creates lead directly (not contato)
+        tipo: "lead",
         ipAddress,
         userAgent,
       })
       .returning();
 
-    // Auto-create negócio for LP leads
-    const titulo = insertData.empresa
-      ? `${insertData.empresa} - Novo negócio`
-      : `${insertData.nome} - Novo negócio`;
+    // Negócio: cria automaticamente para leads de LP/form; OU quando o closer pede
+    // explicitamente (criarNegocio) pra já abrir a oportunidade no pipeline.
+    // Lead manual da SDR (semNegocio=true, sem criarNegocio) NÃO gera deal.
+    let negocio: typeof negocios.$inferSelect | null = null;
+    if (!semNegocio || criarNegocio) {
+      const titulo = insertData.empresa
+        ? `${insertData.empresa} - Novo negócio`
+        : `${insertData.nome} - Novo negócio`;
 
-    const [negocio] = await db
-      .insert(negocios)
-      .values({
-        organizacaoId: orgId,
-        leadId: newLead.id,
-        titulo,
-        descricao: parsed.data.comoConheceu || undefined,
-        tipoReceita: insertData.tipoReceita || undefined,
-        valorProjeto: insertData.valorProjeto || undefined,
-        servicosInteresse: insertData.servicosInteresse || undefined,
-        concorrenteAtual: insertData.concorrenteAtual || undefined,
-        contratoVenceEm: insertData.contratoVenceEm || undefined,
-        origemNegocio: "novo",
-        lpUrl: insertData.lpUrl || null,
-      })
-      .returning();
+      [negocio] = await db
+        .insert(negocios)
+        .values({
+          organizacaoId: orgId,
+          leadId: newLead.id,
+          empresaId: resolvedEmpresaId,
+          titulo,
+          descricao: parsed.data.comoConheceu || undefined,
+          tipoReceita: insertData.tipoReceita || undefined,
+          valorProjeto: insertData.valorProjeto || undefined,
+          servicosInteresse: insertData.servicosInteresse || undefined,
+          concorrenteAtual: insertData.concorrenteAtual || undefined,
+          contratoVenceEm: insertData.contratoVenceEm || undefined,
+          origemNegocio: "novo",
+          origemQualificacao: "direta", // negócio criado junto do lead, sem fluxo de reunião
+          lpUrl: insertData.lpUrl || null,
+        })
+        .returning();
 
-    // Fallback: raw SQL for descricao (in case Drizzle schema cache)
-    if (parsed.data.comoConheceu) {
-      await db.execute(sql`UPDATE negocios SET descricao = ${parsed.data.comoConheceu} WHERE id = ${negocio.id}`);
+      // Fallback: raw SQL for descricao (in case Drizzle schema cache)
+      if (parsed.data.comoConheceu) {
+        await db.execute(sql`UPDATE negocios SET descricao = ${parsed.data.comoConheceu} WHERE id = ${negocio.id}`);
+      }
+
+      // Closer criando negócio direto: vincula em negocio_leads → o lead vira
+      // oportunidade ativa e SAI da pré-vendas (vai pro pipeline, não pro board
+      // de pré-qualificação). Sem esse vínculo o board ainda mostra o lead.
+      if (criarNegocio && negocio) {
+        await db.insert(negocioLeads).values({ negocioId: negocio.id, leadId: newLead.id, papel: "decisor" });
+      }
     }
 
     // Record initial status change
     await db.insert(statusChanges).values({
       leadId: newLead.id,
-      negocioId: negocio.id,
+      negocioId: negocio?.id ?? null,
       deStatus: null,
       paraStatus: "novo",
     });
@@ -514,7 +574,7 @@ app.post(
     await leadScoringQueue.add("score", { leadId: newLead.id });
 
     // Queue site lead qualification (generates insumoComercial + auto-advance)
-    if (newLead.origem === "site_institucional" && parsed.data.comoConheceu) {
+    if (newLead.origem === "site_institucional" && parsed.data.comoConheceu && negocio) {
       const { siteLeadQualifyQueue } = await import("@/lib/queue");
       await siteLeadQualifyQueue.add("qualify", {
         negocioId: negocio.id,
@@ -539,7 +599,7 @@ app.post(
       },
     });
 
-    return c.json({ ...newLead, negocioId: negocio.id }, 201);
+    return c.json({ ...newLead, negocioId: negocio?.id ?? null }, 201);
   }
 );
 
@@ -616,8 +676,22 @@ app.get("/leads/:id", async (c) => {
         .where(eq(negocios.leadId, id))
         .orderBy(desc(negocios.createdAt)),
       db
-        .select()
+        .select({
+          id: atividades.id,
+          organizacaoId: atividades.organizacaoId,
+          leadId: atividades.leadId,
+          negocioId: atividades.negocioId,
+          usuarioId: atividades.usuarioId,
+          tipo: atividades.tipo,
+          titulo: atividades.titulo,
+          descricao: atividades.descricao,
+          dados: atividades.dados,
+          duracaoSegundos: atividades.duracaoSegundos,
+          createdAt: atividades.createdAt,
+          usuarioNome: usuarios.nome,
+        })
         .from(atividades)
+        .leftJoin(usuarios, eq(atividades.usuarioId, usuarios.id))
         .where(eq(atividades.leadId, id))
         .orderBy(desc(atividades.createdAt)),
       db
@@ -766,6 +840,7 @@ app.patch("/leads/:id", async (c) => {
             valorSetup: parsed.data.valorSetup || parsed.data.valorProjeto,
             status: "ativo",
             inicio: new Date().toISOString().split("T")[0],
+            produto: "ai",
           });
         }
       }
@@ -789,6 +864,52 @@ app.patch("/leads/:id", async (c) => {
         deStatus: "no_show", paraStatus: "reuniao_agendada",
         usuarioId: ctx.userId, motivo: "SDR recuperou o no-show (reagendado)",
       });
+    }
+  }
+
+  // ── Board Pré-vendas: transição de sdr_status → timeline + timestamps + dono ──
+  // Rota Next tem lógica equivalente, mas quem vale no deploy é o Hono (/api → api-server).
+  if (parsed.data.sdrStatus) {
+    const [cur] = await db
+      .select({ sdrStatus: leads.sdrStatus })
+      .from(leads)
+      .where(and(eq(leads.id, id), eq(leads.organizacaoId, ctx.organizacaoId)))
+      .limit(1);
+
+    if (cur && (cur.sdrStatus || "pending") !== parsed.data.sdrStatus) {
+      const de = getSdrStatusInfo(cur.sdrStatus || "pending").label;
+      const para = getSdrStatusInfo(parsed.data.sdrStatus).label;
+
+      await db.insert(statusChanges).values({
+        leadId: id,
+        deStatus: cur.sdrStatus || null,
+        paraStatus: parsed.data.sdrStatus,
+        usuarioId: ctx.userId,
+        motivo: `Pré-vendas: ${de} → ${para}`,
+      });
+
+      await db.insert(atividades).values({
+        leadId: id,
+        organizacaoId: ctx.organizacaoId,
+        usuarioId: ctx.userId,
+        tipo: "nota",
+        titulo: "Etapa de pré-vendas",
+        descricao: `${de} → ${para}`,
+      });
+
+      // Marca primeiro contato ao sair de "Novo"
+      if ((cur.sdrStatus || "pending") === "pending") {
+        updateData.primeiroContatoAt = (updateData.primeiroContatoAt as Date | undefined) ?? new Date();
+      }
+      // Entrou em "Em Contato": (re)inicia o relógio de escalação (6h → Follow up)
+      if (parsed.data.sdrStatus === "contacted") {
+        updateData.contatoDesdeAt = new Date();
+      }
+      // Entrou em "Follow up": a Jenifer assume (manual OU automático)
+      if (parsed.data.sdrStatus === "qualifying") {
+        const owner = await resolveFollowupOwnerId(db, ctx.organizacaoId);
+        if (owner) updateData.responsavelId = owner;
+      }
     }
   }
 
@@ -1442,6 +1563,7 @@ app.post("/leads/:id/vincular-negocio", async (c) => {
         leadId: id,
         empresaId: lead.empresaId,
         titulo: parsed.data.titulo || `Negócio - ${lead.nome}`,
+        origemQualificacao: "direta", // vínculo manual de negócio, sem fluxo de reunião
         responsavelId: lead.responsavelId || ctx.userId,
       })
       .returning();
@@ -1463,65 +1585,22 @@ app.post("/leads/:id/vincular-negocio", async (c) => {
 // Handover SDR → closer. Espelha a rota Next (app/api/leads/[id]/converter-oportunidade)
 // porque em prod o Traefik manda /api/leads/* pro Hono, não pro Next.
 // Fase A (agendamento): body pode trazer { closerId, reuniao: { data, tipo, duracao, titulo, notas } }.
+// Lógica extraída pra lib/crm/converter-oportunidade.ts (reaproveitada pelo Agente SDR
+// no worker, que chama a mesma função direto — ver callface/ai-sdr-agente-spec.md seção 6).
 app.post("/leads/:id/converter-oportunidade", async (c) => {
   const ctx = await getCtx(c);
   const id = c.req.param("id");
 
-  const [lead] = await db
-    .select()
-    .from(leads)
-    .where(and(eq(leads.id, id), eq(leads.organizacaoId, ctx.organizacaoId)))
-    .limit(1);
-
-  if (!lead) {
-    return c.json({ error: "Lead não encontrado" }, 404);
-  }
-
-  // Evita converter duas vezes: se já tem negócio aberto vinculado, devolve ele
-  const existingLinks = await db
-    .select({ negocioId: negocioLeads.negocioId })
-    .from(negocioLeads)
-    .where(eq(negocioLeads.leadId, id));
-  if (existingLinks.length > 0) {
-    const ativos = await db
-      .select({ id: negocios.id, status: negocios.status })
-      .from(negocios)
-      .where(eq(negocios.leadId, id));
-    // Recuperação de No-show: a SDR reconquistou o lead -> reativa o negócio (volta pra Reunião Agendada)
-    const noShow = ativos.find((n) => n.status === "no_show");
-    if (noShow) {
-      await db.update(negocios)
-        .set({ status: "reuniao_agendada", updatedAt: new Date() })
-        .where(eq(negocios.id, noShow.id));
-      await db.update(leads)
-        .set({ negocioAtivoId: noShow.id, sdrStatus: "qualified", updatedAt: new Date() })
-        .where(eq(leads.id, id));
-      await db.insert(statusChanges).values({
-        leadId: id, negocioId: noShow.id,
-        deStatus: "no_show", paraStatus: "reuniao_agendada",
-        usuarioId: ctx.userId, motivo: "SDR recuperou o no-show (reagendado)",
-      });
-      return c.json({ ok: true, recovered: true, negocioId: noShow.id }, 200);
-    }
-    const aberto = ativos.find((n) => !["perdido", "churned", "no_show"].includes(n.status));
-    if (aberto) {
-      return c.json({ ok: true, alreadyConverted: true, negocioId: aberto.id }, 200);
-    }
-  }
-
-  type ReuniaoInput = {
-    data?: string;
-    tipo?: "call" | "presencial" | "video";
-    duracao?: number;
-    titulo?: string;
-    notas?: string;
-  };
   let body: {
     titulo?: string;
     valorProjeto?: string;
     tipoReceita?: string;
     closerId?: string | null;
-    reuniao?: ReuniaoInput | null;
+    /** e-mail do lead confirmado/editado no modal — vira convidado do evento */
+    leadEmail?: string | null;
+    /** qualificação direta: closer atuando como SDR, sem reunião */
+    semReuniao?: boolean;
+    reuniao?: { data?: string; tipo?: "call" | "presencial" | "video"; duracao?: number; titulo?: string; notas?: string; link?: string } | null;
   } = {};
   try {
     body = await c.req.json();
@@ -1529,132 +1608,132 @@ app.post("/leads/:id/converter-oportunidade", async (c) => {
     /* body vazio é ok */
   }
 
-  // Valida o closer (se informado): usuário ativo da org
-  let closerId: string | null = null;
-  let closerNome: string | null = null;
-  if (body.closerId) {
-    const [closer] = await db
-      .select({ id: usuarios.id, nome: usuarios.nome })
-      .from(usuarios)
-      .where(
-        and(
-          eq(usuarios.id, body.closerId),
-          eq(usuarios.organizacaoId, ctx.organizacaoId),
-          eq(usuarios.ativo, true)
-        )
-      )
-      .limit(1);
-    if (!closer) {
-      return c.json({ error: "Closer inválido (usuário não encontrado ou inativo)" }, 400);
-    }
-    closerId = closer.id;
-    closerNome = closer.nome;
+  const semReuniao = !!body.semReuniao;
+  // E-mail vindo do modal: completa o cadastro do lead se ele ainda não tinha
+  // (não sobrescreve e-mail existente — só o evento usa o digitado nesse caso).
+  const leadEmail = body.leadEmail?.trim().toLowerCase() || null;
+  if (leadEmail && leadEmail.includes("@")) {
+    await db
+      .update(leads)
+      .set({ email: leadEmail, updatedAt: new Date() })
+      .where(and(eq(leads.id, id), or(isNull(leads.email), eq(leads.email, ""))));
   }
 
-  const titulo =
-    body.titulo ||
-    (lead.empresa ? `${lead.empresa} - Novo negócio` : `${lead.nome} - Novo negócio`);
-
-  // Pipeline default da org: sem isso o negócio nasce com pipeline_id null e NÃO
-  // aparece no board do closer (que filtra pelo pipeline ativo). Bug do handover.
-  const [defaultPipeline] = await db
-    .select({ id: pipelines.id })
-    .from(pipelines)
-    .where(and(eq(pipelines.organizacaoId, ctx.organizacaoId), eq(pipelines.ativo, true)))
-    .orderBy(desc(pipelines.isDefault))
-    .limit(1);
-
-  const [negocio] = await db
-    .insert(negocios)
-    .values({
-      organizacaoId: ctx.organizacaoId,
-      leadId: lead.id,
-      empresaId: lead.empresaId,
-      titulo,
-      tipoReceita: body.tipoReceita || lead.tipoReceita || undefined,
-      valorProjeto: body.valorProjeto || lead.valorProjeto || undefined,
-      servicosInteresse: lead.servicosInteresse || undefined,
-      concorrenteAtual: lead.concorrenteAtual || undefined,
-      origemNegocio: "novo",
-      status: "reuniao_agendada",
-      pipelineId: defaultPipeline?.id || null,
-      responsavelId: closerId || lead.responsavelId || undefined,
-    })
-    .returning();
-
-  await db.insert(negocioLeads).values({
-    negocioId: negocio.id,
-    leadId: lead.id,
-    papel: "contato",
-  });
-
-  await db
-    .update(leads)
-    .set({ negocioAtivoId: negocio.id, sdrStatus: "qualified", updatedAt: new Date() })
-    .where(eq(leads.id, lead.id));
-
-  await db.insert(statusChanges).values({
-    leadId: lead.id,
-    negocioId: negocio.id,
-    deStatus: lead.sdrStatus || null,
-    paraStatus: "reuniao_agendada",
+  const result = await converterLeadEmOportunidade(db, {
+    organizacaoId: ctx.organizacaoId,
+    leadId: id,
     usuarioId: ctx.userId,
-    motivo: "Convertido em oportunidade (handover SDR → vendas)",
+    // Qualificação direta: o negócio nasce no pipeline de QUEM executou a ação.
+    closerId: semReuniao ? ctx.userId : body.closerId,
+    titulo: body.titulo,
+    valorProjeto: body.valorProjeto,
+    tipoReceita: body.tipoReceita,
+    semReuniao,
+    reuniao: !semReuniao && body.reuniao?.data ? { ...body.reuniao, data: body.reuniao.data } : null,
   });
 
-  // Fase A: reunião agendada com o closer
-  let reuniaoId: string | null = null;
-  if (body.reuniao?.data) {
-    const dataReuniao = new Date(body.reuniao.data);
-    if (Number.isNaN(dataReuniao.getTime())) {
-      return c.json({ error: "Data da reunião inválida" }, 400);
-    }
-    const reuniaoTitulo =
-      body.reuniao.titulo?.trim() ||
-      `Reunião de qualificação · ${lead.empresa || lead.nome}`;
-
-    const [reuniao] = await db
-      .insert(reunioes)
-      .values({
-        organizacaoId: ctx.organizacaoId,
-        negocioId: negocio.id,
-        leadId: lead.id,
-        titulo: reuniaoTitulo,
-        data: dataReuniao,
-        duracao: body.reuniao.duracao || 30,
-        tipo: body.reuniao.tipo || "call",
-        status: "agendada",
-        notas: body.reuniao.notas || null,
-        responsavelId: closerId || ctx.userId,
-      })
-      .returning();
-    reuniaoId = reuniao.id;
-
-    const quando = dataReuniao.toLocaleString("pt-BR", {
-      dateStyle: "short",
-      timeStyle: "short",
-    });
-    await db.insert(atividades).values({
-      organizacaoId: ctx.organizacaoId,
-      leadId: lead.id,
-      negocioId: negocio.id,
-      usuarioId: ctx.userId,
-      tipo: "reuniao",
-      titulo: "Reunião agendada com o closer",
-      descricao: closerNome
-        ? `${reuniaoTitulo} · ${quando} · closer ${closerNome}`
-        : `${reuniaoTitulo} · ${quando}`,
-      dados: {
-        reuniaoId,
-        closerId,
-        closerNome,
-        data: dataReuniao.toISOString(),
-        tipo: body.reuniao.tipo || "call",
-      },
-    });
+  if ("error" in result) {
+    return c.json({ error: result.error }, result.status as 400 | 404);
   }
 
-  return c.json({ ok: true, negocioId: negocio.id, titulo, reuniaoId, closerId }, 201);
+  // Criação do evento de verdade no Outlook do closer — só o fluxo MANUAL de
+  // Pré-vendas passa por aqui (a rota, não a lib compartilhada com o Agente SDR).
+  // A reunião do CRM já existe de qualquer jeito; o resultado do Outlook volta
+  // ESTRUTURADO pro modal avisar quem agendou (nada de falha silenciosa).
+  let outlook: { criado: boolean; motivo: string | null } = { criado: false, motivo: null };
+  if (result.reuniaoId && result.closerId && !result.recovered && !result.alreadyConverted) {
+    const [conta] = await db
+      .select({ id: emailContas.id })
+      .from(emailContas)
+      .where(and(eq(emailContas.usuarioId, result.closerId), eq(emailContas.tipo, "microsoft"), eq(emailContas.syncStatus, "active")))
+      .limit(1);
+
+    if (!conta) {
+      outlook = { criado: false, motivo: "closer_sem_outlook" };
+    } else {
+      try {
+        const [lead] = await db.select({ email: leads.email, nome: leads.nome }).from(leads).where(eq(leads.id, id)).limit(1);
+        const [reuniao] = await db
+          .select({ titulo: reunioes.titulo, data: reunioes.data, duracao: reunioes.duracao, notas: reunioes.notas })
+          .from(reunioes)
+          .where(eq(reunioes.id, result.reuniaoId))
+          .limit(1);
+
+        if (reuniao) {
+          const attendee = leadEmail || lead?.email || null;
+          const inicio = new Date(reuniao.data);
+          const fim = new Date(inicio.getTime() + (reuniao.duracao || 30) * 60000);
+          const evento = await createOutlookEvent({
+            contaId: conta.id,
+            titulo: reuniao.titulo,
+            inicioISO: inicio.toISOString(),
+            fimISO: fim.toISOString(),
+            attendeeEmail: attendee,
+            corpo: reuniao.notas || null,
+          });
+          await db
+            .update(reunioes)
+            .set({
+              link: evento.joinUrl || evento.webLink,
+              outlookEventId: evento.eventId,
+              participantes: attendee ? [attendee] : undefined,
+              updatedAt: new Date(),
+            })
+            .where(eq(reunioes.id, result.reuniaoId));
+          outlook = { criado: true, motivo: attendee ? null : "lead_sem_email" };
+        }
+      } catch (e) {
+        const msg = String(e);
+        outlook = {
+          criado: false,
+          motivo: /401|invalid_grant|token|expirad/i.test(msg) ? "token_expirado" : "erro_graph",
+        };
+        console.error(`[ConverterOportunidade] falha ao criar evento no Outlook (closer ${result.closerId}, reunião ${result.reuniaoId}):`, e);
+      }
+    }
+  }
+
+  const status = result.recovered || result.alreadyConverted ? 200 : 201;
+  // outlookEventoCriado mantido por compatibilidade com quem já lê o campo antigo.
+  return c.json({ ...result, outlook, outlookEventoCriado: outlook.criado }, status);
+});
+
+// ---------------------------------------------------------------------------
+// POST /leads/:id/enviar-discagem — empurra o lead pra fila de discagem da
+// Callface (campanha "Funil <org>", webhook de entrada). Registra na timeline.
+// ---------------------------------------------------------------------------
+app.post("/leads/:id/enviar-discagem", async (c) => {
+  const ctx = await getCtx(c);
+  const leadId = c.req.param("id");
+
+  const [lead] = await db
+    .select({ id: leads.id, nome: leads.nome, telefone: leads.telefone, whatsapp: leads.whatsapp })
+    .from(leads)
+    .where(and(eq(leads.id, leadId), eq(leads.organizacaoId, ctx.organizacaoId)))
+    .limit(1);
+  if (!lead) return c.json({ error: "Lead não encontrado" }, 404);
+
+  const telefone = lead.telefone || lead.whatsapp;
+  if (!telefone) return c.json({ error: "Lead sem telefone cadastrado" }, 400);
+
+  const { enviarParaDiscagem } = await import("@/lib/integrations/callface");
+  const r = await enviarParaDiscagem({ nome: lead.nome, telefone });
+  if (!r.ok) {
+    console.error(`[EnviarDiscagem] lead ${leadId}: ${r.detalhe}`);
+    return c.json({ error: `Falha ao enviar pra Callface: ${r.detalhe}` }, 502);
+  }
+
+  await db.insert(atividades).values({
+    organizacaoId: ctx.organizacaoId,
+    leadId: lead.id,
+    usuarioId: ctx.userId ?? null,
+    tipo: "nota",
+    titulo: "Enviado pra fila de discagem (Callface)",
+    descricao: `Contato "${lead.nome}" adicionado à campanha de discagem automática da Callface.`,
+    dados: { origem: "callface", acao: "enviar_discagem" },
+  });
+
+  return c.json({ ok: true });
 });
 
 export const leadsRoutes = app;

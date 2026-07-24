@@ -47,6 +47,9 @@ export async function sendResendEmail(params: SendResendEmailParams): Promise<Re
     headers: {
       Authorization: `Bearer ${key}`,
       "Content-Type": "application/json",
+      // O Cloudflare do Resend bloqueia User-Agent "de bot" (erro 1010). Mandamos
+      // um UA de browser pra garantir a entrega dos emails transacionais.
+      "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36",
     },
     body: JSON.stringify({
       from,

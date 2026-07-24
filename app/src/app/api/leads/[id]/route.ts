@@ -6,6 +6,7 @@ import { z } from "zod";
 import { getTenantContext, unauthorizedResponse } from "@/lib/auth/tenant";
 import { leadScoringQueue } from "@/lib/queue";
 import { getSdrStatusInfo } from "@/lib/crm/pipeline";
+import { resolveFollowupOwnerId } from "@/lib/crm/sdr-escalation";
 
 const updateLeadSchema = z.object({
   nome: z.string().min(1).optional(),
@@ -305,6 +306,17 @@ export async function PATCH(
       // Marca primeiro contato ao sair de "Novo"
       if ((cur.sdrStatus || "pending") === "pending") {
         updateData.primeiroContatoAt = updateData.primeiroContatoAt ?? new Date();
+      }
+
+      // Entrou em "Em Contato": (re)inicia o relógio de escalação (6h → Follow up).
+      if (parsed.data.sdrStatus === "contacted") {
+        updateData.contatoDesdeAt = new Date();
+      }
+
+      // Entrou em "Follow up": a Jenifer assume (manual OU automático).
+      if (parsed.data.sdrStatus === "qualifying") {
+        const owner = await resolveFollowupOwnerId(db, ctx.organizacaoId);
+        if (owner) updateData.responsavelId = owner;
       }
     }
   }

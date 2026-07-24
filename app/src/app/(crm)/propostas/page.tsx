@@ -9,6 +9,7 @@ import { LeadDrawer } from "@/components/crm/LeadDrawer";
 import { NegocioDrawer } from "@/components/crm/NegocioDrawer";
 import { EmpresaDrawer } from "@/components/crm/EmpresaDrawer";
 import { getMoedaInfo } from "@/components/crm/proposta-utils";
+import { useOrgUsuarios } from "@/components/crm/BoardFilters";
 
 interface Proposta {
   id: string;
@@ -41,8 +42,11 @@ function formatCurrency(value: string | number) {
 }
 
 export default function PropostasPage() {
+  const { usuarios, currentUserId } = useOrgUsuarios();
   const [statusFilter, setStatusFilter] = useState("");
   const [search, setSearch] = useState("");
+  const [respFilter, setRespFilter] = useState("minhas"); // "minhas" | "todas" | userId
+  const [periodoFilter, setPeriodoFilter] = useState("mes"); // "mes" | "todos"
 
   // Drawer state
   const [drawerPropostaId, setDrawerPropostaId] = useState<string | null>(null);
@@ -50,12 +54,18 @@ export default function PropostasPage() {
   const [drawerNegocioId, setDrawerNegocioId] = useState<string | null>(null);
   const [drawerEmpresaId, setDrawerEmpresaId] = useState<string | null>(null);
 
+  // "minhas" resolve pro usuário logado; enquanto ele não carrega, segura a query
+  // pra não piscar a lista de todo mundo.
+  const respParam = respFilter === "minhas" ? currentUserId : respFilter;
   const { data: propostas, isLoading } = useQuery<Proposta[]>({
-    queryKey: ["propostas", statusFilter, search],
+    queryKey: ["propostas", statusFilter, search, respParam, periodoFilter],
+    enabled: respFilter !== "minhas" || !!currentUserId,
     queryFn: async () => {
       const params = new URLSearchParams({ limit: "1000" });
       if (statusFilter) params.set("status", statusFilter);
       if (search) params.set("q", search);
+      if (respParam && respFilter !== "todas") params.set("responsavel", respParam);
+      if (periodoFilter === "mes") params.set("periodo", "mes");
       const res = await fetch(`/api/propostas?${params}`);
       return res.json();
     },
@@ -90,15 +100,15 @@ export default function PropostasPage() {
         </div>
         <div className="rounded-xl bg-white/[0.03] border border-white/[0.06] p-4">
           <p className="text-xs text-white/40 mb-1" title="Valor mensal (MRR) das propostas abertas">Recorrente em Proposta</p>
-          <p className="text-2xl font-bold text-[#e23752]">R$ {formatCurrency(totalAbertasRecorrente)}</p>
+          <p className="text-2xl font-bold text-white tabular-nums" style={{ fontFamily: "var(--font-heading)" }}>R$ {formatCurrency(totalAbertasRecorrente)}</p>
         </div>
         <div className="rounded-xl bg-white/[0.03] border border-white/[0.06] p-4">
           <p className="text-xs text-white/40 mb-1" title="Valor único de projetos nas propostas abertas">Avulso em Proposta</p>
-          <p className="text-2xl font-bold text-[#8e27ef]">R$ {formatCurrency(totalAbertasAvulso)}</p>
+          <p className="text-2xl font-bold text-white tabular-nums" style={{ fontFamily: "var(--font-heading)" }}>R$ {formatCurrency(totalAbertasAvulso)}</p>
         </div>
         <div className="rounded-xl bg-white/[0.03] border border-white/[0.06] p-4">
           <p className="text-xs text-white/40 mb-1" title="Propostas aceitas / total de propostas enviadas. Requer ao menos 3 propostas finalizadas.">Taxa de Aceite</p>
-          <p className="text-2xl font-bold text-[#c8ff00]">{taxaAceite === null ? <span className="text-white/30">—</span> : `${taxaAceite}%`}</p>
+          <p className="text-2xl font-bold text-white tabular-nums" style={{ fontFamily: "var(--font-heading)" }}>{taxaAceite === null ? <span className="text-white/30">—</span> : `${taxaAceite}%`}</p>
         </div>
       </div>
 
@@ -114,6 +124,15 @@ export default function PropostasPage() {
           {Object.entries(STATUS_CONFIG).map(([key, cfg]) => (
             <option key={key} value={key}>{cfg.label}</option>
           ))}
+        </select>
+        <select value={respFilter} onChange={e => setRespFilter(e.target.value)} className="dark-input" title="Responsável">
+          <option value="minhas">Minhas</option>
+          <option value="todas">Todas as pessoas</option>
+          {usuarios.map(u => <option key={u.id} value={u.id}>{u.nome}</option>)}
+        </select>
+        <select value={periodoFilter} onChange={e => setPeriodoFilter(e.target.value)} className="dark-input" title="Período">
+          <option value="mes">Este mês</option>
+          <option value="todos">Todo o histórico</option>
         </select>
       </div>
 
