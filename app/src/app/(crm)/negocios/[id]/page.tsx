@@ -5,12 +5,14 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AddNoteInlineNegocio, TarefasSectionNegocio } from "@/components/crm/NegocioSections";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, User, FileText, Clock, CheckCircle, XCircle, Plus, Pencil, Trash2, X, Building2, Users, Thermometer, StickyNote, MessageCircle, Phone } from "lucide-react";
+import { ArrowLeft, User, FileText, Clock, CheckCircle, XCircle, Plus, Pencil, Trash2, X, Building2, Users, Thermometer, StickyNote, MessageCircle, Phone, Briefcase } from "lucide-react";
 import { toast } from "sonner";
 import { usePipelineConfig } from "@/hooks/usePipelineConfig";
 import { EmpresaDrawer } from "@/components/crm/EmpresaDrawer";
 import { LeadDrawer } from "@/components/crm/LeadDrawer";
 import { QualificacaoSdrSection } from "@/components/crm/QualificacaoSdrSection";
+import { LigacoesSection } from "@/components/crm/LigacoesSection";
+import { LeadTimeline } from "@/components/crm/LeadTimeline";
 import { callfaceCallUrl } from "@/lib/utils/callface-call";
 
 export default function NegocioDetailPage() {
@@ -75,6 +77,12 @@ export default function NegocioDetailPage() {
   const stageInfo = getStatusInfo(negocio.status);
   const valorTotal = parseFloat(negocio.valorTotal || "0") || 0;
 
+  // Timeline unificada (mesmo padrão da página de lead): atividades (nota, ligação, whatsapp...) + mudanças de estágio.
+  const timeline = [
+    ...(activities || []).map((a: Record<string, unknown>) => ({ ...a, timelineType: "atividade" })),
+    ...(changes || []).map((s: Record<string, unknown>) => ({ ...s, timelineType: "status_change" })),
+  ].sort((a, b) => new Date(b.createdAt as string).getTime() - new Date(a.createdAt as string).getTime());
+
   const handleStatusChange = (newStatus: string) => {
     if (newStatus === "perdido") {
       setShowLossModal(true);
@@ -118,6 +126,9 @@ export default function NegocioDetailPage() {
           <button onClick={() => router.back()} className="mt-1 p-1.5 rounded-lg hover:bg-white/[0.06] text-white/40 hover:text-white shrink-0">
             <ArrowLeft className="w-5 h-5" />
           </button>
+          <div className="w-12 h-12 rounded-full bg-[#e23752]/15 flex items-center justify-center shrink-0">
+            <Briefcase className="w-6 h-6 text-[#e23752]" />
+          </div>
           <div className="flex-1 min-w-0">
             <h1 className="text-2xl font-bold text-white truncate">{negocio.titulo}</h1>
             <div className="flex items-center gap-3 mt-1 flex-wrap">
@@ -324,26 +335,16 @@ export default function NegocioDetailPage() {
             </div>
           )}
 
-          {/* Timeline */}
+          {/* Ligações (telefonia Callface) — mesmas ligações do lead vinculado, filtradas pelo negócio.
+              id="ligacoes": alvo do atalho que a Timeline usa pra apontar pro resumo de IA completo. */}
+          <div id="ligacoes" className="card-solid p-4 scroll-mt-4">
+            <LigacoesSection negocioId={String(id)} />
+          </div>
+
+          {/* Timeline — mesmo componente da página de lead: mistura nota/ligação/whatsapp/mudança de estágio. */}
           <div className="card-solid p-4">
             <h3 className="text-sm font-medium text-white/50 mb-3">Timeline</h3>
-            <div className="space-y-3">
-              {changes && changes.map((sc: { id: string; deStatus: string | null; paraStatus: string; createdAt: string; autorNome?: string | null }) => {
-                const from = sc.deStatus ? getStatusInfo(sc.deStatus) : null;
-                const to = getStatusInfo(sc.paraStatus);
-                return (
-                  <div key={sc.id} className="flex items-center gap-2 text-xs flex-wrap">
-                    <Clock className="w-3.5 h-3.5 text-white/30 shrink-0" />
-                    <span className="text-white/50">{new Date(sc.createdAt).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}</span>
-                    <span className="text-white/70">
-                      {from ? `${from.label} → ` : ""}{to.label}
-                    </span>
-                    {sc.autorNome && <span className="text-white/40">· {sc.autorNome}</span>}
-                  </div>
-                );
-              })}
-              {(!changes || changes.length === 0) && <p className="text-sm text-white/30">Sem histórico</p>}
-            </div>
+            <LeadTimeline items={timeline} />
           </div>
 
           {/* Notas */}

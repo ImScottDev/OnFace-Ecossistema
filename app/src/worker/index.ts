@@ -1004,20 +1004,13 @@ async function handleAiSdrResponse(params: {
       insumoComercial: negociosT.insumoComercial,
       cipaDiagnostico: negociosT.cipaDiagnostico,
       cipaScore: negociosT.cipaScore,
-      updatedAt: negociosT.updatedAt,
     }).from(negociosT)
       .where(and(
         eq(negociosT.leadId, leadId),
         inArray(negociosT.status, ["reuniao_agendada", "reuniao_realizada", "proposta_apresentada", "negociacao_iniciada", "em_fechamento"]),
       ))
       .limit(1);
-    // Negócio parado há mais de 30 dias sem update não deve travar o
-    // autoagendamento pra sempre num lead recorrente que volta com demanda nova
-    // (achado da simulação de QA de 15/07 — mesma classe do bug da Rodada 5, só
-    // que com negócio real/antigo em vez de residual de teste).
-    const NEGOCIO_STALE_DAYS = 30;
-    const isStale = neg && Date.now() - new Date(neg.updatedAt).getTime() > NEGOCIO_STALE_DAYS * 24 * 60 * 60 * 1000;
-    if (neg && !isStale) negocioContext = neg;
+    if (neg) negocioContext = neg;
 
     // Fallback: if lead has no insumo/cipa but negocio does, enrich lead context
     if (leadContext && neg) {
@@ -1205,7 +1198,6 @@ async function handleAiSdrResponse(params: {
       if (tc.input.setor) updateFields.empresaSetor = tc.input.setor;
       if (tc.input.porte) updateFields.empresaPorte = tc.input.porte;
       if (tc.input.servicosInteresse) updateFields.servicosInteresse = tc.input.servicosInteresse;
-      if (tc.input.email) updateFields.email = tc.input.email;
       await db.update(leadsT).set(updateFields).where(eq(leadsT.id, leadId));
 
       // Mesmos campos do painel humano QualificacaoSdrSection (exceto CNPJ, que a
@@ -1547,7 +1539,7 @@ async function runAiSdrFirstContactSweep(): Promise<{ iniciados: number }> {
     // caiu em "Novo" DEPOIS que o motor está ativo, não backlog histórico.
     const janelaMaxima = new Date(Date.now() - 2 * 60 * 60 * 1000); // últimas 2h
 
-    const candidatos = await db.select().from(leadsT)
+    const pendentes = await db.select().from(leadsT)
       .where(and(
         eq(leadsT.organizacaoId, config.organizacaoId),
         eq(leadsT.tipo, "lead"),
@@ -1556,27 +1548,6 @@ async function runAiSdrFirstContactSweep(): Promise<{ iniciados: number }> {
         gte(leadsT.createdAt, janelaMaxima),
       ))
       .limit(20); // teto por rodada — evita rajada se represar muito lead de uma vez
-
-    // Callpilot (ligação de IA) é o canal PRIMÁRIO pra lead "Novo" — o WhatsApp
-    // só assume como FALLBACK se a ligação não rolou ou não teve sucesso
-    // (pedido Kauã 23/07: "cai em Novo, faz a ligação, não teve sucesso aí sim
-    // mensagem no whatsapp"). Lead recém-criado (< 6min, ~1 ciclo de sweep)
-    // ainda sem callpilotDisparadoEm dá tempo do Callpilot tentar primeiro; se
-    // depois disso ainda não tentou (sem closer/horário disponível), ou se já
-    // tentou e não teve sucesso, o WhatsApp libera.
-    const CALLPILOT_GRACE_MS = 6 * 60 * 1000;
-    const { avaliarResultadoCallpilot } = await import("../lib/integrations/callpilot-trigger");
-    const pendentes = [];
-    for (const c of candidatos) {
-      if (!c.callpilotDisparadoEm) {
-        const idadeMs = Date.now() - new Date(c.createdAt).getTime();
-        if (idadeMs < CALLPILOT_GRACE_MS) continue;
-        pendentes.push(c);
-        continue;
-      }
-      const resultado = await avaliarResultadoCallpilot(db, c.id, c.callpilotDisparadoEm);
-      if (resultado !== "pendente") pendentes.push(c);
-    }
 
     for (const lead of pendentes) {
       try {
@@ -2583,20 +2554,6 @@ const slaWorker = new Worker(
       return;
     }
 
-    if (job.name === "callpilot-novo-lead") {
-      // Callpilot: leads em "Novo" recebem ligação automática da IA (Nathália).
-      try {
-        const { runCallpilotNovoLeadSweep } = await import("../lib/integrations/callpilot-trigger");
-        const res = await runCallpilotNovoLeadSweep(db);
-        if (res.disparados > 0 || res.pulados > 0) {
-          console.log(`[Callpilot] ${res.disparados} campanha(s) disparada(s), ${res.pulados} lead(s) pulado(s) (sem closer/horário disponível)`);
-        }
-      } catch (e) {
-        console.error("[Callpilot] erro no sweep:", e instanceof Error ? e.message : e);
-      }
-      return;
-    }
-
     if (job.name === "ai-sdr-retry") {
       // Agente SDR: retentativa automática (~2h/24h/40h) pra quem não respondeu.
       try {
@@ -2630,7 +2587,7 @@ const slaWorker = new Worker(
     }
 
     if (job.name === "outlook-reuniao-sync") {
-      // Reunião reagendada/cancelada direto no Outlook (fora do CRM) reflete
+      // Reuniao reagendada/cancelada direto no Outlook (fora do CRM) reflete
       // no card do pipeline — polling simples, sem webhook do Graph.
       try {
         const { syncOutlookReunioes } = await import("../lib/crm/outlook-reuniao-sync");
@@ -2643,8 +2600,8 @@ const slaWorker = new Worker(
 
     if (job.name === "rd-criativo-sync") {
       // Preenche o CRIATIVO (utm_content/utm_term) dos leads pagos recentes que
-      // chegaram sem essa marcação, consultando a API do RD (traffic_value da
-      // conversão de Lead Ads). Cinto-e-suspensório do parser do webhook.
+      // chegaram sem essa marcacao, consultando a API do RD (traffic_value da
+      // conversao de Lead Ads). Cinto-e-suspensorio do parser do webhook.
       try {
         const { enriquecerCriativosRd } = await import("../lib/integrations/rd-criativo");
         const r = await enriquecerCriativosRd(3);
@@ -3567,13 +3524,6 @@ async function setupScheduledJobs() {
   await scheduledQueue.upsertJobScheduler("sla-check", { every: 30 * 60 * 1000 }, { name: "check-sla" });
   await scheduledQueue.upsertJobScheduler("sdr-followup-escalation", { every: 15 * 60 * 1000 }, { name: "sdr-followup-escalation" });
   await scheduledQueue.upsertJobScheduler("ai-sdr-outreach", { every: 5 * 60 * 1000 }, { name: "ai-sdr-outreach" });
-  // Callpilot (ligação automática por lead via campanha própria) PAUSADO a
-  // pedido do Kauã (23/07) — mecanismo funciona mas ficou instável na etapa
-  // de ativação da campanha (timing), e o pedido por ora é focar só no fluxo
-  // simples (ligar manual + registro + aviso de reunião). Código intacto em
-  // lib/integrations/callpilot-trigger.ts pra retomar quando decidido — só
-  // essa linha de agendamento precisa voltar.
-  // await scheduledQueue.upsertJobScheduler("callpilot-novo-lead", { every: 5 * 60 * 1000 }, { name: "callpilot-novo-lead" });
   await scheduledQueue.upsertJobScheduler("ai-sdr-retry", { every: 15 * 60 * 1000 }, { name: "ai-sdr-retry" });
   await scheduledQueue.upsertJobScheduler("ai-sdr-meeting-confirmation", { pattern: "0 9 * * *", tz: "America/Sao_Paulo" }, { name: "ai-sdr-meeting-confirmation" });
   // Stripe = fonte da verdade de billing AI: sync a cada 30 min (polling; vira webhook quando publicar)
@@ -3581,7 +3531,6 @@ async function setupScheduledJobs() {
   await scheduledQueue.upsertJobScheduler("reconcile-pagamentos", { every: 24 * 60 * 60 * 1000 }, { name: "reconcile-pagamentos" });
   await scheduledQueue.upsertJobScheduler("expirar-propostas", { every: 60 * 60 * 1000 }, { name: "expirar-propostas" });
   await scheduledQueue.upsertJobScheduler("rd-criativo-sync", { every: 6 * 60 * 60 * 1000 }, { name: "rd-criativo-sync" });
-  // Reunião mexida direto no Outlook (reagendada/cancelada) reflete no CRM
   await scheduledQueue.upsertJobScheduler("outlook-reuniao-sync", { every: 15 * 60 * 1000 }, { name: "outlook-reuniao-sync" });
   await scheduledQueue.upsertJobScheduler("follow-up-proposta", { every: 60 * 60 * 1000 }, { name: "follow-up-proposta" });
   await scheduledQueue.upsertJobScheduler("alerta-renovacao", { every: 24 * 60 * 60 * 1000 }, { name: "alerta-renovacao" });

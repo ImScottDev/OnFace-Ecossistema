@@ -618,8 +618,9 @@ export default function LeadDetailPage() {
             <CadenciaPanel leadId={lead.id} />
           )}
 
-          {/* Ligações (telefonia Callface) — sempre visível */}
-          <div className="rounded-xl bg-white/[0.03] border border-white/[0.06] p-4">
+          {/* Ligações (telefonia Callface) — sempre visível. id="ligacoes": alvo do atalho que a Timeline usa
+              pra apontar pro resumo de IA completo em vez de duplicar o texto inteiro ali. */}
+          <div id="ligacoes" className="rounded-xl bg-white/[0.03] border border-white/[0.06] p-4 scroll-mt-4">
             <LigacoesSection leadId={lead.id} enviarDiscagem />
           </div>
 

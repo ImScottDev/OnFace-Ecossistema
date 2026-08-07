@@ -3,7 +3,6 @@ import { db } from "@/lib/db";
 import { negocios, leads, empresas } from "@/lib/db/schema";
 import { and, eq, sql } from "drizzle-orm";
 import { getTenantContext, unauthorizedResponse } from "@/lib/auth/tenant";
-import { statusChecklistEmLote } from "@/lib/onboarding/checklist-status";
 
 /**
  * GET /api/onboarding
@@ -44,13 +43,6 @@ export async function GET(request: NextRequest) {
     .orderBy(sql`${negocios.updatedAt} DESC`)
     .limit(500);
 
-  const negociosParaChecklist = rows.map((r) => ({
-    id: r.id,
-    produto: ((r.camposCustom || {}) as Record<string, unknown>).produto as string ?? "ai",
-    ganhoAt: r.ganhoAt,
-  }));
-  const checklistPorNegocio = await statusChecklistEmLote(negociosParaChecklist);
-
   const items = rows
     .map((r) => {
       const cc = (r.camposCustom || {}) as Record<string, unknown>;
@@ -64,7 +56,6 @@ export async function GET(request: NextRequest) {
         empresaNome: r.empresaNome,
         stage: (cc.onboardingStage as string) || "aguardando_pagamento",
         produto: (cc.produto as string) || "ai",
-        checklist: checklistPorNegocio.get(r.id) ?? [],
       };
     })
     .filter((i) => incluirConcluidos || i.stage !== "concluido");

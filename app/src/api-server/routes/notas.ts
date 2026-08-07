@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { db } from "@/lib/db";
-import { notas, usuarios } from "@/lib/db/schema";
+import { notas, usuarios, leads, negocios } from "@/lib/db/schema";
 import { eq, and, desc } from "drizzle-orm";
 import { z } from "zod";
 import { getCtx } from "../compat.js";
@@ -66,6 +66,23 @@ app.post("/notas", async (c) => {
       empresaId: data.empresaId || null,
       autorId: ctx.userId,
     }).returning();
+
+    // Nota é atividade real: reseta o relógio do badge de tempo no board de pré-vendas
+    // e, se o lead tiver negócio ativo (ou a nota já for direto no negócio), no Pipeline também.
+    const now = new Date();
+    if (data.leadId) {
+      const [updatedLead] = await db.update(leads).set({ updatedAt: now })
+        .where(and(eq(leads.id, data.leadId), eq(leads.organizacaoId, ctx.organizacaoId)))
+        .returning({ negocioAtivoId: leads.negocioAtivoId });
+      if (updatedLead?.negocioAtivoId) {
+        await db.update(negocios).set({ updatedAt: now })
+          .where(and(eq(negocios.id, updatedLead.negocioAtivoId), eq(negocios.organizacaoId, ctx.organizacaoId)));
+      }
+    }
+    if (data.negocioId) {
+      await db.update(negocios).set({ updatedAt: now })
+        .where(and(eq(negocios.id, data.negocioId), eq(negocios.organizacaoId, ctx.organizacaoId)));
+    }
 
     return c.json(nota, 201);
   } catch (error) {

@@ -38,7 +38,8 @@ function diasUteisMes() {
  * a cor aparece só no badge de ritmo (status) e num marcador fino do "esperado".
  */
 export function MetaProgress({ tipo, valorAlvo, realizado, label = "Meta do mês" }: MetaProgressProps) {
-  const pct = valorAlvo > 0 ? Math.min((realizado / valorAlvo) * 100, 100) : 0;
+  const pctReal = valorAlvo > 0 ? (realizado / valorAlvo) * 100 : 0;
+  const pct = Math.min(pctReal, 100);
   const { total, decorridos } = diasUteisMes();
   const pctEsperado = valorAlvo > 0 && total > 0 ? Math.min((decorridos / total) * 100, 100) : 0;
   const esperado = valorAlvo * (total > 0 ? decorridos / total : 0);
@@ -96,7 +97,7 @@ export function MetaProgress({ tipo, valorAlvo, realizado, label = "Meta do mês
           </svg>
           <div className="absolute inset-x-0 bottom-0 text-center">
             <p className="text-[1.7rem] font-bold text-white leading-none tabular-nums" style={{ fontFamily: "var(--font-heading)" }}>
-              {Math.round(pct)}%
+              {Math.round(pctReal)}%
             </p>
             <p className="text-[10px] text-white/35 mt-0.5">atingido</p>
           </div>

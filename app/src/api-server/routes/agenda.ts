@@ -37,10 +37,6 @@ const disponibilidadeSchema = z.object({
 });
 
 // GET /agenda/disponibilidade
-// Também devolve o status da conta Outlook do usuário (P6 da auditoria 23/07):
-// antes disso, "nunca conectou" e "conectou mas o token expirou" eram
-// indistinguíveis pra quem olha a tela — os dois só faziam a IA parar de
-// cruzar com a agenda real, em silêncio.
 app.get("/disponibilidade", async (c) => {
   const ctx = await getCtx(c);
   const [disp] = await db
@@ -48,20 +44,7 @@ app.get("/disponibilidade", async (c) => {
     .from(closerDisponibilidade)
     .where(eq(closerDisponibilidade.usuarioId, ctx.userId))
     .limit(1);
-
-  const [conta] = await db
-    .select({ syncStatus: emailContas.syncStatus, lastError: emailContas.lastError, email: emailContas.email })
-    .from(emailContas)
-    .where(and(eq(emailContas.usuarioId, ctx.userId), eq(emailContas.tipo, "microsoft")))
-    .limit(1);
-
-  const outlookStatus = !conta
-    ? { estado: "nunca_conectado" as const, email: null, ultimoErro: null }
-    : conta.syncStatus === "active" && !conta.lastError
-      ? { estado: "conectado" as const, email: conta.email, ultimoErro: null }
-      : { estado: "erro" as const, email: conta.email, ultimoErro: conta.lastError };
-
-  return c.json({ disponibilidade: disp || null, outlookStatus });
+  return c.json({ disponibilidade: disp || null });
 });
 
 // PUT /agenda/disponibilidade
@@ -187,12 +170,9 @@ app.get("/fila-closers", async (c) => {
 // PUT /agenda/closers/:id/pausa-rodizio { pausado: boolean }
 // Pausa temporária (férias/folga) sem tirar a closer da rotação permanente.
 // Admin/gerente pausam qualquer uma; a própria closer pausa a si mesma.
-// ":id" aceita "me" como atalho pro próprio usuário logado (usado pela tela
-// "Minha Agenda", que não tem motivo pra saber o próprio UUID de antemão).
 app.put("/closers/:id/pausa-rodizio", async (c) => {
   const ctx = await getCtx(c);
-  const closerIdParam = c.req.param("id");
-  const closerId = closerIdParam === "me" ? ctx.userId : closerIdParam;
+  const closerId = c.req.param("id");
   const body = await c.req.json().catch(() => ({}));
   const pausado = !!body.pausado;
 

@@ -526,6 +526,9 @@ export function ChatPanel({
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["whatsapp-messages", leadId] });
+      queryClient.invalidateQueries({ queryKey: ["lead", leadId] });
+      queryClient.invalidateQueries({ queryKey: ["pre-vendas-leads"] });
+      queryClient.invalidateQueries({ queryKey: ["pipeline"] });
     },
   });
 

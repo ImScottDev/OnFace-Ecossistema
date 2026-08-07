@@ -92,6 +92,7 @@ export function LeadTimeline({ items }: { items: TimelineItem[] }) {
             activityIcons[item.tipo || "nota"] ||
             FileText;
           const isGreen = item.tipo === "whatsapp" || canal === "whatsapp";
+          const isLigacao = item.tipo === "ligacao";
           return (
             <div key={item.id} className="flex gap-3">
               <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${isGreen ? "bg-emerald-500/15" : "bg-blue-500/15"}`}>
@@ -102,8 +103,18 @@ export function LeadTimeline({ items }: { items: TimelineItem[] }) {
                   {item.usuarioNome && <span className="text-white/50">{item.usuarioNome} · </span>}
                   {item.titulo || activityLabels[item.tipo || ""] || item.tipo}
                 </p>
-                {item.descricao && (
-                  <p className="text-sm text-white/50 mt-0.5 whitespace-pre-wrap">{item.descricao}</p>
+                {/* Ligação: o resumo de IA completo já vive na aba Ligações (com tabs, transcrição, etc.) —
+                    aqui só um atalho, sem duplicar o texto inteiro na timeline. */}
+                {isLigacao ? (
+                  item.descricao && (
+                    <a href="#ligacoes" className="inline-flex items-center gap-1 text-xs text-blue-400/70 hover:text-blue-400 mt-0.5 transition-colors">
+                      Ver resumo completo em Ligações ↑
+                    </a>
+                  )
+                ) : (
+                  item.descricao && (
+                    <p className="text-sm text-white/50 mt-0.5 whitespace-pre-wrap">{item.descricao}</p>
+                  )
                 )}
                 <p className="text-xs text-white/30 mt-1">
                   {dateStr} {timeStr}
@@ -113,43 +124,35 @@ export function LeadTimeline({ items }: { items: TimelineItem[] }) {
           );
         }
 
+        // Mudança de estágio: é rastro/breadcrumb, não conteúdo — menor destaque que nota/ligação/reunião.
         if (item.timelineType === "status_change") {
           return (
-            <div key={item.id} className="flex gap-3">
-              <div className="flex-shrink-0 w-8 h-8 bg-purple-500/15 rounded-full flex items-center justify-center">
-                <ArrowRight className="w-4 h-4 text-purple-400" />
+            <div key={item.id} className="flex items-center gap-2.5 pl-1">
+              <div className="flex-shrink-0 w-5 h-5 bg-purple-500/10 rounded-full flex items-center justify-center">
+                <ArrowRight className="w-3 h-3 text-purple-400/70" />
               </div>
-              <div className="flex-1">
-                <p className="text-sm text-white/70">
-                  Status: <span className="font-medium text-white">{item.deStatus || "—"}</span>
-                  {" → "}
-                  <span className="font-medium text-white">{item.paraStatus}</span>
-                </p>
-                <p className="text-xs text-white/30 mt-1">
-                  {dateStr} {timeStr}
-                </p>
-              </div>
+              <p className="text-xs text-white/40 flex-1">
+                Status: <span className="text-white/60">{item.deStatus || "—"}</span>
+                {" → "}
+                <span className="text-white/60">{item.paraStatus}</span>
+                <span className="text-white/25 ml-2">{dateStr} {timeStr}</span>
+              </p>
             </div>
           );
         }
 
+        // Evento de tracking (visita, clique): mesmo tratamento discreto de breadcrumb.
         if (item.timelineType === "evento") {
           return (
-            <div key={item.id} className="flex gap-3">
-              <div className="flex-shrink-0 w-8 h-8 bg-white/[0.06] rounded-full flex items-center justify-center">
-                <Globe className="w-4 h-4 text-white/40" />
+            <div key={item.id} className="flex items-center gap-2.5 pl-1">
+              <div className="flex-shrink-0 w-5 h-5 bg-white/[0.04] rounded-full flex items-center justify-center">
+                <Globe className="w-3 h-3 text-white/30" />
               </div>
-              <div className="flex-1">
-                <p className="text-sm text-white/50">
-                  {eventLabels[item.tipo || ""] || item.tipo}
-                  {item.pagina && (
-                    <span className="text-white/30 ml-1">({item.pagina})</span>
-                  )}
-                </p>
-                <p className="text-xs text-white/30 mt-1">
-                  {dateStr} {timeStr}
-                </p>
-              </div>
+              <p className="text-xs text-white/35 flex-1">
+                {eventLabels[item.tipo || ""] || item.tipo}
+                {item.pagina && <span className="text-white/25 ml-1">({item.pagina})</span>}
+                <span className="text-white/25 ml-2">{dateStr} {timeStr}</span>
+              </p>
             </div>
           );
         }

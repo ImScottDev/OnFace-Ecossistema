@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { db } from "@/lib/db";
-import { negocios, leads, campanhas, contratos, npsRespostas, atividades, statusChanges, usuarios, reunioes } from "@/lib/db/schema";
+import { negocios, leads, campanhas, contratos, npsRespostas, atividades, statusChanges, usuarios, reunioes, notas, ligacoes, tarefas, whatsappMensagens } from "@/lib/db/schema";
 import { eq, count, sum, avg, and, inArray, sql, gte, isNotNull, lte, desc, not, between, lt, or } from "drizzle-orm";
 import { getCtx } from "../compat.js";
 import { parsePeriodo, clampDesdeGoLive, GO_LIVE_ISO } from "@/lib/relatorios/periodo";
@@ -22,6 +22,8 @@ import {
 } from "@/lib/relatorios/midia-paga";
 
 const app = new Hono();
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // ─── Helpers ────────────────────────────────────────────────────
 
@@ -326,6 +328,210 @@ app.get("/equipe", async (c) => {
   );
 
   return c.json({ membros: ativos });
+});
+
+// ─── Atividade do Time (esforço, não resultado) ──────────────────
+// Pedido do Kauã 27/07: /equipe e /sdr-esteira mostram RESULTADO (ganhos,
+// qualificados). Isso aqui mostra ESFORÇO real por pessoa dia a dia — ligação,
+// nota, mensagem, mudança de estágio, tarefa concluída — pra saber quem de fato
+// está trabalhando, não só quem está performando. Cobre TODOS os papéis
+// (inclui SDR/CDR, que fica de fora do /equipe). Só admin/gerente: é visão de
+// gestão do time, não faz sentido em personal view (closer/SDR olhando a si
+// mesmo já tem /equipe e /sdr-esteira).
+
+// GET /relatorios/atividade-time?dias=14 — grid pessoa × dia
+app.get("/atividade-time", async (c) => {
+  const ctx = await getCtx(c);
+  const orgId = ctx.organizacaoId;
+
+  if (isPersonalView(ctx.userRole)) return c.json({ error: "Sem permissão" }, 403);
+
+  const dias = Math.min(Math.max(Number(c.req.query("dias")) || 14, 1), 31);
+  const until = new Date();
+  until.setUTCHours(0, 0, 0, 0);
+  until.setUTCDate(until.getUTCDate() + 1); // fim exclusivo = amanhã 00:00 UTC
+  const since = new Date(until);
+  since.setUTCDate(since.getUTCDate() - dias);
+
+  const userList = await db
+    .select({ id: usuarios.id, nome: usuarios.nome, role: usuarios.role })
+    .from(usuarios)
+    .where(and(eq(usuarios.organizacaoId, orgId), eq(usuarios.ativo, true)));
+  const userIds = userList.map((u) => u.id);
+  if (userIds.length === 0) return c.json({ dias: [], membros: [] });
+
+  const diaKey = (col: unknown) => sql<string>`to_char(date_trunc('day', ${col}), 'YYYY-MM-DD')`;
+
+  const [ligacoesPorDia, notasPorDia, mensagensPorDia, mudancasPorDia, tarefasPorDia] = await Promise.all([
+    db.select({
+      usuarioId: ligacoes.usuarioId, dia: diaKey(ligacoes.createdAt), total: count(),
+      duracao: sql<number>`coalesce(sum(${ligacoes.duracaoSegundos}), 0)`,
+    }).from(ligacoes)
+      .where(and(eq(ligacoes.organizacaoId, orgId), gte(ligacoes.createdAt, since), lt(ligacoes.createdAt, until), inArray(ligacoes.usuarioId, userIds)))
+      .groupBy(ligacoes.usuarioId, diaKey(ligacoes.createdAt)),
+    db.select({ usuarioId: notas.autorId, dia: diaKey(notas.createdAt), total: count() }).from(notas)
+      .where(and(eq(notas.organizacaoId, orgId), gte(notas.createdAt, since), lt(notas.createdAt, until), inArray(notas.autorId, userIds)))
+      .groupBy(notas.autorId, diaKey(notas.createdAt)),
+    db.select({ usuarioId: whatsappMensagens.enviadoPorId, dia: diaKey(whatsappMensagens.createdAt), total: count() }).from(whatsappMensagens)
+      .where(and(eq(whatsappMensagens.direcao, "out"), gte(whatsappMensagens.createdAt, since), lt(whatsappMensagens.createdAt, until), inArray(whatsappMensagens.enviadoPorId, userIds)))
+      .groupBy(whatsappMensagens.enviadoPorId, diaKey(whatsappMensagens.createdAt)),
+    db.select({ usuarioId: statusChanges.usuarioId, dia: diaKey(statusChanges.createdAt), total: count() }).from(statusChanges)
+      .where(and(gte(statusChanges.createdAt, since), lt(statusChanges.createdAt, until), inArray(statusChanges.usuarioId, userIds)))
+      .groupBy(statusChanges.usuarioId, diaKey(statusChanges.createdAt)),
+    db.select({ usuarioId: tarefas.usuarioId, dia: diaKey(tarefas.concluidaEm), total: count() }).from(tarefas)
+      .where(and(eq(tarefas.organizacaoId, orgId), eq(tarefas.concluida, true), gte(tarefas.concluidaEm, since), lt(tarefas.concluidaEm, until), inArray(tarefas.usuarioId, userIds)))
+      .groupBy(tarefas.usuarioId, diaKey(tarefas.concluidaEm)),
+  ]);
+
+  const diasList: string[] = [];
+  for (let d = new Date(since); d < until; d.setUTCDate(d.getUTCDate() + 1)) {
+    diasList.push(d.toISOString().slice(0, 10));
+  }
+
+  type DiaStats = { ligacoes: number; duracaoLigacoesSegundos: number; notas: number; mensagens: number; mudancasEstagio: number; tarefasConcluidas: number; total: number };
+  const vazio = (): DiaStats => ({ ligacoes: 0, duracaoLigacoesSegundos: 0, notas: 0, mensagens: 0, mudancasEstagio: 0, tarefasConcluidas: 0, total: 0 });
+
+  const membros = userList.map((u) => {
+    const porDia: Record<string, DiaStats> = {};
+    for (const dia of diasList) porDia[dia] = vazio();
+
+    for (const r of ligacoesPorDia) if (r.usuarioId === u.id && porDia[r.dia]) { porDia[r.dia].ligacoes = Number(r.total); porDia[r.dia].duracaoLigacoesSegundos = Number(r.duracao); }
+    for (const r of notasPorDia) if (r.usuarioId === u.id && porDia[r.dia]) porDia[r.dia].notas = Number(r.total);
+    for (const r of mensagensPorDia) if (r.usuarioId === u.id && porDia[r.dia]) porDia[r.dia].mensagens = Number(r.total);
+    for (const r of mudancasPorDia) if (r.usuarioId === u.id && porDia[r.dia]) porDia[r.dia].mudancasEstagio = Number(r.total);
+    for (const r of tarefasPorDia) if (r.usuarioId === u.id && porDia[r.dia]) porDia[r.dia].tarefasConcluidas = Number(r.total);
+
+    let diasAtivos = 0;
+    const totais = vazio();
+    for (const dia of diasList) {
+      const d = porDia[dia];
+      d.total = d.ligacoes + d.notas + d.mensagens + d.mudancasEstagio + d.tarefasConcluidas;
+      if (d.total > 0) diasAtivos++;
+      totais.ligacoes += d.ligacoes;
+      totais.duracaoLigacoesSegundos += d.duracaoLigacoesSegundos;
+      totais.notas += d.notas;
+      totais.mensagens += d.mensagens;
+      totais.mudancasEstagio += d.mudancasEstagio;
+      totais.tarefasConcluidas += d.tarefasConcluidas;
+      totais.total += d.total;
+    }
+
+    return { usuarioId: u.id, nome: u.nome, role: u.role, porDia, totais, diasAtivos };
+  })
+    // Quem trabalhou menos primeiro — é exatamente quem o gestor quer ver de cara.
+    .sort((a, b) => a.totais.total - b.totais.total);
+
+  return c.json({ dias: diasList, membros });
+});
+
+// GET /relatorios/atividade-time/:usuarioId/:dia — feed do dia (drill-down)
+app.get("/atividade-time/:usuarioId/:dia", async (c) => {
+  const ctx = await getCtx(c);
+  const orgId = ctx.organizacaoId;
+  if (isPersonalView(ctx.userRole)) return c.json({ error: "Sem permissão" }, 403);
+
+  const usuarioId = c.req.param("usuarioId");
+  const diaStr = c.req.param("dia");
+  if (!UUID_RE.test(usuarioId) || !/^\d{4}-\d{2}-\d{2}$/.test(diaStr)) {
+    return c.json({ error: "Parâmetros inválidos" }, 400);
+  }
+  const diaInicio = new Date(`${diaStr}T00:00:00.000Z`);
+  const diaFim = new Date(diaInicio);
+  diaFim.setUTCDate(diaFim.getUTCDate() + 1);
+
+  const [ligacoesDia, notasDia, mensagensDia, mudancasDia, tarefasDia] = await Promise.all([
+    db.select({
+      id: ligacoes.id, createdAt: ligacoes.createdAt, duracaoSegundos: ligacoes.duracaoSegundos,
+      callStatus: ligacoes.callStatus, leadId: ligacoes.leadId, negocioId: ligacoes.negocioId,
+      leadNome: leads.nome, negocioTitulo: negocios.titulo,
+    }).from(ligacoes)
+      .leftJoin(leads, eq(ligacoes.leadId, leads.id))
+      .leftJoin(negocios, eq(ligacoes.negocioId, negocios.id))
+      .where(and(eq(ligacoes.organizacaoId, orgId), eq(ligacoes.usuarioId, usuarioId), gte(ligacoes.createdAt, diaInicio), lt(ligacoes.createdAt, diaFim))),
+    db.select({
+      id: notas.id, createdAt: notas.createdAt, conteudo: notas.conteudo, leadId: notas.leadId, negocioId: notas.negocioId,
+      leadNome: leads.nome, negocioTitulo: negocios.titulo,
+    }).from(notas)
+      .leftJoin(leads, eq(notas.leadId, leads.id))
+      .leftJoin(negocios, eq(notas.negocioId, negocios.id))
+      .where(and(eq(notas.organizacaoId, orgId), eq(notas.autorId, usuarioId), gte(notas.createdAt, diaInicio), lt(notas.createdAt, diaFim))),
+    db.select({
+      id: whatsappMensagens.id, createdAt: whatsappMensagens.createdAt, conteudo: whatsappMensagens.conteudo,
+      leadId: whatsappMensagens.leadId, leadNome: leads.nome,
+    }).from(whatsappMensagens)
+      .leftJoin(leads, eq(whatsappMensagens.leadId, leads.id))
+      .where(and(eq(whatsappMensagens.enviadoPorId, usuarioId), eq(whatsappMensagens.direcao, "out"), gte(whatsappMensagens.createdAt, diaInicio), lt(whatsappMensagens.createdAt, diaFim))),
+    db.select({
+      id: statusChanges.id, createdAt: statusChanges.createdAt, deStatus: statusChanges.deStatus, paraStatus: statusChanges.paraStatus,
+      leadId: statusChanges.leadId, negocioId: statusChanges.negocioId, leadNome: leads.nome, negocioTitulo: negocios.titulo,
+    }).from(statusChanges)
+      .leftJoin(leads, eq(statusChanges.leadId, leads.id))
+      .leftJoin(negocios, eq(statusChanges.negocioId, negocios.id))
+      .where(and(eq(statusChanges.usuarioId, usuarioId), gte(statusChanges.createdAt, diaInicio), lt(statusChanges.createdAt, diaFim))),
+    db.select({
+      id: tarefas.id, createdAt: tarefas.concluidaEm, titulo: tarefas.titulo,
+      leadId: tarefas.leadId, negocioId: tarefas.negocioId, leadNome: leads.nome, negocioTitulo: negocios.titulo,
+    }).from(tarefas)
+      .leftJoin(leads, eq(tarefas.leadId, leads.id))
+      .leftJoin(negocios, eq(tarefas.negocioId, negocios.id))
+      .where(and(eq(tarefas.organizacaoId, orgId), eq(tarefas.usuarioId, usuarioId), eq(tarefas.concluida, true), gte(tarefas.concluidaEm, diaInicio), lt(tarefas.concluidaEm, diaFim))),
+  ]);
+
+  const CALL_STATUS_LABEL: Record<string, string> = {
+    FINISHED: "finalizada", ANSWERED: "finalizada", COMPLETED: "finalizada",
+    MISSED: "perdida", NOT_ANSWERED: "perdida", NO_ANSWER: "perdida",
+    NOT_COMPLETED: "não completada", FAILED: "não completada", BUSY: "não completada",
+  };
+  const truncar = (s: string, n: number) => (s.length > n ? s.slice(0, n) + "…" : s);
+
+  const itens = [
+    ...ligacoesDia.map((l) => ({
+      tipo: "ligacao" as const,
+      titulo: `Ligação ${CALL_STATUS_LABEL[String(l.callStatus || "").toUpperCase()] || "registrada"}${l.duracaoSegundos ? ` (${Math.floor(l.duracaoSegundos / 60)}m${String(l.duracaoSegundos % 60).padStart(2, "0")}s)` : ""}`,
+      contexto: l.leadNome || l.negocioTitulo || null,
+      leadId: l.leadId, negocioId: l.negocioId,
+      createdAt: l.createdAt,
+    })),
+    ...notasDia.map((n) => ({
+      tipo: "nota" as const,
+      titulo: truncar(n.conteudo, 140),
+      contexto: n.leadNome || n.negocioTitulo || null,
+      leadId: n.leadId, negocioId: n.negocioId,
+      createdAt: n.createdAt,
+    })),
+    ...mensagensDia.map((m) => ({
+      tipo: "whatsapp" as const,
+      titulo: m.conteudo ? truncar(m.conteudo, 140) : "(mídia)",
+      contexto: m.leadNome || null,
+      leadId: m.leadId, negocioId: null as string | null,
+      createdAt: m.createdAt,
+    })),
+    ...mudancasDia.map((s) => ({
+      tipo: "status_change" as const,
+      titulo: `${s.deStatus || "—"} → ${s.paraStatus}`,
+      contexto: s.leadNome || s.negocioTitulo || null,
+      leadId: s.leadId, negocioId: s.negocioId,
+      createdAt: s.createdAt,
+    })),
+    ...tarefasDia.map((t) => ({
+      tipo: "tarefa" as const,
+      titulo: `Tarefa concluída: ${t.titulo}`,
+      contexto: t.leadNome || t.negocioTitulo || null,
+      leadId: t.leadId, negocioId: t.negocioId,
+      createdAt: t.createdAt,
+    })),
+  ].sort((a, b) => new Date(b.createdAt as unknown as string).getTime() - new Date(a.createdAt as unknown as string).getTime());
+
+  const resumo = {
+    ligacoes: ligacoesDia.length,
+    notas: notasDia.length,
+    mensagens: mensagensDia.length,
+    mudancasEstagio: mudancasDia.length,
+    tarefasConcluidas: tarefasDia.length,
+    total: itens.length,
+  };
+
+  return c.json({ resumo, itens });
 });
 
 // ─── Comercial ───────────────────────────────────────────────────

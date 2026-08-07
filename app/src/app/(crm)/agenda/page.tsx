@@ -5,9 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Clock, Coffee, CalendarClock, CalendarOff, Plus, Trash2,
   Check, AlertCircle, Save, Video, Phone, MapPin, Power,
-  PauseCircle, PlayCircle, Mail, HelpCircle,
 } from "lucide-react";
-import { toast } from "sonner";
 
 interface DisponibilidadeSemanal {
   inicio: string;
@@ -25,13 +23,6 @@ interface Disponibilidade {
   horarioTrabalho: DisponibilidadeSemanal;
   pausaAlmoco: PausaAlmoco | null;
   ativo: boolean;
-  pausadoRodizio: boolean;
-}
-
-interface OutlookStatus {
-  estado: "nunca_conectado" | "conectado" | "erro";
-  email: string | null;
-  ultimoErro: string | null;
 }
 
 interface Bloqueio {
@@ -80,35 +71,14 @@ const TIPO_ICON: Record<string, typeof Phone> = { call: Phone, video: Video, pre
 export default function AgendaPage() {
   const queryClient = useQueryClient();
 
-  const { data: dispData, isLoading: loadingDisp } = useQuery<{ disponibilidade: Disponibilidade | null; outlookStatus: OutlookStatus }>({
+  const { data: dispData, isLoading: loadingDisp } = useQuery<{ disponibilidade: Disponibilidade | null }>({
     queryKey: ["agenda-disponibilidade"],
     queryFn: async () => {
       const res = await fetch("/api/agenda/disponibilidade");
-      if (!res.ok) return { disponibilidade: null, outlookStatus: { estado: "nunca_conectado", email: null, ultimoErro: null } };
+      if (!res.ok) return { disponibilidade: null };
       return res.json();
     },
   });
-
-  const outlookStatus = dispData?.outlookStatus;
-
-  const [pausandoRodizio, setPausandoRodizio] = useState(false);
-  const togglePausaRodizio = async (proximoValor: boolean) => {
-    setPausandoRodizio(true);
-    try {
-      const res = await fetch(`/api/agenda/closers/me/pausa-rodizio`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pausado: proximoValor }),
-      });
-      if (!res.ok) throw new Error();
-      toast.success(proximoValor ? "Rodízio automático pausado" : "Rodízio automático reativado");
-      queryClient.invalidateQueries({ queryKey: ["agenda-disponibilidade"] });
-    } catch {
-      toast.error("Falha ao alterar o rodízio");
-    } finally {
-      setPausandoRodizio(false);
-    }
-  };
 
   const { data: bloqData } = useQuery<{ bloqueios: Bloqueio[] }>({
     queryKey: ["agenda-bloqueios"],
@@ -280,44 +250,23 @@ export default function AgendaPage() {
                 <Clock className="w-4 h-4 text-[#e23752]" />
                 <h2 className="text-lg font-semibold text-white">Horário de trabalho</h2>
               </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => togglePausaRodizio(!(dispData?.disponibilidade?.pausadoRodizio ?? false))}
-                  disabled={pausandoRodizio}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors disabled:opacity-40"
-                  style={{
-                    background: dispData?.disponibilidade?.pausadoRodizio ? "rgba(245,158,11,0.15)" : "rgba(255,255,255,0.06)",
-                    color: dispData?.disponibilidade?.pausadoRodizio ? "#fbbf24" : "rgba(255,255,255,0.4)",
-                  }}
-                  title="Pausa só o RODÍZIO AUTOMÁTICO (férias/folga curta) — você continua agendável na mão. Pra sair de tudo, use o toggle Ativo/Inativo ao lado."
-                >
-                  {dispData?.disponibilidade?.pausadoRodizio ? <PauseCircle className="w-3 h-3" /> : <PlayCircle className="w-3 h-3" />}
-                  {dispData?.disponibilidade?.pausadoRodizio ? "Rodízio pausado" : "No rodízio"}
-                </button>
-                <button
-                  onClick={() => { setAtivo(!ativo); markDirty(); }}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors"
-                  style={{
-                    background: ativo ? "rgba(16,185,129,0.15)" : "rgba(255,255,255,0.06)",
-                    color: ativo ? "#34d399" : "rgba(255,255,255,0.4)",
-                  }}
-                  title="Tira de TUDO (rodízio automático e agendamento manual). Pra só sair do rodízio automático mantendo agendável na mão, use o toggle 'No rodízio' ao lado."
-                >
-                  <Power className="w-3 h-3" />
-                  {ativo ? "Ativo" : "Inativo"}
-                </button>
-              </div>
+              <button
+                onClick={() => { setAtivo(!ativo); markDirty(); }}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors"
+                style={{
+                  background: ativo ? "rgba(16,185,129,0.15)" : "rgba(255,255,255,0.06)",
+                  color: ativo ? "#34d399" : "rgba(255,255,255,0.4)",
+                }}
+                title={ativo ? "Desativar (não recebe agendamentos)" : "Ativar"}
+              >
+                <Power className="w-3 h-3" />
+                {ativo ? "Ativo" : "Inativo"}
+              </button>
             </div>
 
             {!ativo && (
-              <p className="text-[11px] text-amber-400/80 bg-amber-500/10 rounded-lg px-3 py-2 mb-2">
-                Enquanto estiver inativo, ninguém consegue te agendar — nem o rodízio automático, nem manualmente.
-              </p>
-            )}
-            {dispData?.disponibilidade?.pausadoRodizio && (
-              <p className="text-[11px] text-white/40 bg-white/[0.03] rounded-lg px-3 py-2 mb-4 flex items-center gap-1.5">
-                <HelpCircle className="w-3 h-3 shrink-0" />
-                Rodízio automático pausado (férias/folga) — você continua aparecendo pra agendamento manual.
+              <p className="text-[11px] text-amber-400/80 bg-amber-500/10 rounded-lg px-3 py-2 mb-4">
+                Enquanto estiver inativo, o Agente SDR não vai te oferecer como opção de agendamento.
               </p>
             )}
 
@@ -423,34 +372,6 @@ export default function AgendaPage() {
               <Save className="w-3.5 h-3.5" />
               {saving ? "Salvando..." : "Salvar disponibilidade"}
             </button>
-          </div>
-
-          {/* Status Outlook — antes disso, "nunca conectou" e "erro agora" eram indistinguíveis */}
-          <div className="bg-[rgba(255,255,255,0.03)] rounded-xl p-6 border border-white/[0.06]">
-            <div className="flex items-center gap-2 mb-3">
-              <Mail className="w-4 h-4 text-[#e23752]" />
-              <h2 className="text-lg font-semibold text-white">Conta Outlook</h2>
-            </div>
-            {outlookStatus?.estado === "conectado" && (
-              <div className="flex items-center gap-1.5 text-[12px] text-emerald-400">
-                <Check className="w-3.5 h-3.5" /> Conectada ({outlookStatus.email}) — a agenda real é cruzada nos agendamentos.
-              </div>
-            )}
-            {outlookStatus?.estado === "erro" && (
-              <div className="flex items-start gap-1.5 text-[12px] text-red-400 bg-red-500/10 rounded-lg px-3 py-2">
-                <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                <span>
-                  Conectada ({outlookStatus.email}), mas com erro agora — a agenda real NÃO está sendo cruzada nos agendamentos até isso ser corrigido.
-                  {outlookStatus.ultimoErro && <span className="block text-white/40 mt-1">{outlookStatus.ultimoErro}</span>}
-                  {" "}Reconecte em Configurações → Perfil → E-mail.
-                </span>
-              </div>
-            )}
-            {outlookStatus?.estado === "nunca_conectado" && (
-              <div className="flex items-center gap-1.5 text-[12px] text-white/40">
-                <HelpCircle className="w-3.5 h-3.5" /> Nunca conectada — os agendamentos usam só a agenda nativa do CRM (sem cruzar Outlook). Conecte em Configurações → Perfil → E-mail.
-              </div>
-            )}
           </div>
 
           {/* Bloqueios pontuais */}

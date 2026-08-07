@@ -276,7 +276,7 @@ export async function PATCH(
   // Registra mudança de etapa do board Pré-vendas (sdr_status) na timeline + histórico
   if (parsed.data.sdrStatus) {
     const [cur] = await db
-      .select({ sdrStatus: leads.sdrStatus })
+      .select({ sdrStatus: leads.sdrStatus, responsavelId: leads.responsavelId })
       .from(leads)
       .where(and(eq(leads.id, id), eq(leads.organizacaoId, ctx.organizacaoId)))
       .limit(1);
@@ -317,6 +317,11 @@ export async function PATCH(
       if (parsed.data.sdrStatus === "qualifying") {
         const owner = await resolveFollowupOwnerId(db, ctx.organizacaoId);
         if (owner) updateData.responsavelId = owner;
+      }
+      // Fallback de autoria (achado real, 03/08) — ver mesmo fix em
+      // api-server/routes/leads.ts (rota que realmente vale no deploy).
+      if (!updateData.responsavelId && !cur.responsavelId) {
+        updateData.responsavelId = ctx.userId;
       }
     }
   }

@@ -11,6 +11,7 @@ import {
   emailContas,
   reunioes,
   tarefas,
+  negocios,
 } from "@/lib/db/schema";
 import { normalizePhone, phoneLastDigits, formatPhoneDisplay } from "@/lib/whatsapp/phone-utils";
 import { pickNextCloserLocked, closerTemConflito } from "@/lib/crm/agenda-closers";
@@ -162,7 +163,7 @@ interface AutoAgendarResultado {
 async function tentarAutoAgendar(
   db: Db,
   orgId: string,
-  lead: { id: string; nome: string; empresa: string | null; email: string | null; tipo: string; agendaCloserId?: string | null },
+  lead: { id: string; nome: string; empresa: string | null; email: string | null; tipo: string; agendaCloserId?: string | null; responsavelId?: string | null },
   combinado: CallfaceSchedulingItem,
   contexto: { quemLigou: string; numeroFmt: string; resumo?: string | null },
 ): Promise<AutoAgendarResultado> {
@@ -223,7 +224,10 @@ async function tentarAutoAgendar(
     const result = await converterLeadEmOportunidade(tx, {
       organizacaoId: orgId,
       leadId: lead.id,
-      usuarioId: null, // ator = automação, não um humano
+      // ator é a automação, mas o status_change precisa ficar atribuído à SDR
+      // dona do lead — senão getRealizadoMeta('reunioes_agendadas') nunca credita
+      // a meta dela (exige statusChanges.usuarioId = leads.responsavelId = usuarioId).
+      usuarioId: lead.responsavelId ?? null,
       closerId: closer?.id ?? null,
       titulo: `${lead.empresa || lead.nome} - via Callface`,
       reuniao: {
@@ -385,6 +389,15 @@ export async function processCallfaceCallEvent(db: Db, payload: CallfaceCallPayl
       },
       duracaoSegundos: typeof payload.call_duration === "number" ? Math.round(payload.call_duration) : null,
     });
+
+    // Ligação é atividade real: reseta o relógio do badge de tempo no board de pré-vendas
+    // e, se o lead tiver negócio ativo, no Pipeline também (mesmo negócio já usado acima em `negocioId`).
+    await db.update(leads).set({ updatedAt: new Date() })
+      .where(and(eq(leads.id, lead.id), eq(leads.organizacaoId, orgId)));
+    if (lead.negocioAtivoId) {
+      await db.update(negocios).set({ updatedAt: new Date() })
+        .where(and(eq(negocios.id, lead.negocioAtivoId), eq(negocios.organizacaoId, orgId)));
+    }
 
     // Reunião combinada detectada pela IA: tenta qualificar + agendar DE VERDADE
     // com o próximo closer (auto-agendamento). Se não der (lead não é

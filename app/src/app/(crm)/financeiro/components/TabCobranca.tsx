@@ -1,9 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { ListTodo } from "lucide-react";
 import { HeroBand, Stat, Secao, BarraLinha } from "../../relatorios/components/kit";
 import { fmt, fmtPct } from "./fin";
+import { TarefaFormModal } from "@/components/crm/tarefas/TarefaFormModal";
 
 /**
  * Cobrança & Inadimplência (F12): aging em faixas, fila de ação (quem cobrar
@@ -12,9 +14,24 @@ import { fmt, fmtPct } from "./fin";
  */
 export function TabCobranca({ onOpenLead }: { onOpenLead: (leadId: string) => void }) {
   const [copiado, setCopiado] = useState<string | null>(null);
+  const [tarefaAlvo, setTarefaAlvo] = useState<{ leadId: string; label: string; titulo: string } | null>(null);
+  const queryClient = useQueryClient();
   const { data, isLoading } = useQuery({
     queryKey: ["fin-cobranca"],
     queryFn: () => fetch("/api/financeiro/cobranca").then((r) => r.json()),
+  });
+
+  const toggleAcionado = useMutation({
+    mutationFn: async ({ faturaId, acionado }: { faturaId: string; acionado: boolean }) => {
+      const r = await fetch(`/api/financeiro/cobranca/${faturaId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ acionado }),
+      });
+      if (!r.ok) throw new Error("Falha ao atualizar acionamento");
+      return r.json();
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["fin-cobranca"] }),
   });
 
   if (isLoading || !data) {
@@ -63,6 +80,7 @@ export function TabCobranca({ onOpenLead }: { onOpenLead: (leadId: string) => vo
         <table className="w-full text-left">
           <thead>
             <tr className="border-b border-white/[0.06] text-[10px] text-white/35 uppercase tracking-wider">
+              <th className="px-4 py-3 font-medium text-center w-10">Acionado</th>
               <th className="px-4 py-3 font-medium">Cliente</th>
               <th className="px-4 py-3 font-medium text-right">Valor</th>
               <th className="px-4 py-3 font-medium text-right">Dias em atraso</th>
@@ -72,8 +90,16 @@ export function TabCobranca({ onOpenLead }: { onOpenLead: (leadId: string) => vo
             </tr>
           </thead>
           <tbody>
-            {data.fila.map((f: { faturaId: string; leadId: string; nome: string | null; empresa: string | null; valor: number; diasAtraso: number; tentativas: number; temRetryAgendado: boolean; hostedInvoiceUrl: string | null; status: string }) => (
-              <tr key={f.faturaId} className="border-b border-white/[0.03] hover:bg-white/[0.03] transition-colors">
+            {data.fila.map((f: { faturaId: string; leadId: string; nome: string | null; empresa: string | null; valor: number; diasAtraso: number; tentativas: number; temRetryAgendado: boolean; hostedInvoiceUrl: string | null; status: string; acionado: boolean; acionadoEm: string | null; acionadoPorNome: string | null }) => (
+              <tr key={f.faturaId} className={`border-b border-white/[0.03] hover:bg-white/[0.03] transition-colors ${f.acionado ? "opacity-50" : ""}`}>
+                <td className="px-4 py-2.5 text-center" title={f.acionado && f.acionadoPorNome ? `Acionado por ${f.acionadoPorNome}` : "Marcar como já acionado"}>
+                  <input
+                    type="checkbox"
+                    checked={f.acionado}
+                    onChange={(e) => toggleAcionado.mutate({ faturaId: f.faturaId, acionado: e.target.checked })}
+                    className="w-3.5 h-3.5 rounded accent-[#e23752] cursor-pointer"
+                  />
+                </td>
                 <td className="px-4 py-2.5 cursor-pointer" onClick={() => onOpenLead(f.leadId)}>
                   <p className="text-xs text-white/90">{f.empresa || f.nome}</p>
                 </td>
@@ -86,21 +112,36 @@ export function TabCobranca({ onOpenLead }: { onOpenLead: (leadId: string) => vo
                   </span>
                 </td>
                 <td className="px-4 py-2.5 text-right">
-                  {f.hostedInvoiceUrl ? (
+                  <div className="flex items-center justify-end gap-1.5">
                     <button
-                      onClick={() => copiarLink(f.hostedInvoiceUrl!, f.faturaId)}
-                      className="text-[10px] px-2 py-1 rounded-lg bg-white/[0.06] text-white/70 hover:bg-white/[0.1] transition-colors"
+                      onClick={() =>
+                        setTarefaAlvo({
+                          leadId: f.leadId,
+                          label: f.empresa || f.nome || "Cliente",
+                          titulo: `Cobrar ${f.empresa || f.nome} — ${fmt(f.valor)} vencido há ${f.diasAtraso}d`,
+                        })
+                      }
+                      className="text-[10px] px-2 py-1 rounded-lg bg-white/[0.06] text-white/70 hover:bg-white/[0.1] transition-colors flex items-center gap-1"
+                      title="Criar tarefa de cobrança"
                     >
-                      {copiado === f.faturaId ? "Copiado" : "Copiar link de pagamento"}
+                      <ListTodo size={10} /> Tarefa
                     </button>
-                  ) : (
-                    <span className="text-[10px] text-white/20">sem link</span>
-                  )}
+                    {f.hostedInvoiceUrl ? (
+                      <button
+                        onClick={() => copiarLink(f.hostedInvoiceUrl!, f.faturaId)}
+                        className="text-[10px] px-2 py-1 rounded-lg bg-white/[0.06] text-white/70 hover:bg-white/[0.1] transition-colors"
+                      >
+                        {copiado === f.faturaId ? "Copiado" : "Copiar link de pagamento"}
+                      </button>
+                    ) : (
+                      <span className="text-[10px] text-white/20">sem link</span>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}
             {data.fila.length === 0 && (
-              <tr><td colSpan={6} className="px-4 py-8 text-center text-xs text-white/25">Nenhuma fatura em aberto.</td></tr>
+              <tr><td colSpan={7} className="px-4 py-8 text-center text-xs text-white/25">Nenhuma fatura em aberto.</td></tr>
             )}
           </tbody>
         </table>
@@ -119,6 +160,16 @@ export function TabCobranca({ onOpenLead }: { onOpenLead: (leadId: string) => vo
           </div>
         ))}
       </div>
+
+      <TarefaFormModal
+        open={!!tarefaAlvo}
+        onClose={() => setTarefaAlvo(null)}
+        defaultLeadId={tarefaAlvo?.leadId ?? null}
+        defaultLeadLabel={tarefaAlvo?.label ?? null}
+        defaultTitulo={tarefaAlvo?.titulo ?? ""}
+        defaultTipo="follow_up"
+        invalidateKeys={[["tarefas"], ["lead", tarefaAlvo?.leadId ?? null]]}
+      />
     </div>
   );
 }

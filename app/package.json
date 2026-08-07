@@ -11,7 +11,6 @@
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
-    "check:relatorios": "tsx src/scripts/checar-invariantes-relatorios.ts",
     "db:seed": "tsx src/lib/db/seed.ts",
     "db:seed-servicos": "tsx src/lib/db/seed-servicos.ts",
     "db:cleanup-seed": "tsx src/lib/db/cleanup-seed.ts"
@@ -46,7 +45,6 @@
     "sanitize-html": "^2.17.1",
     "sonner": "^2.0.7",
     "tsx": "^4.21.0",
-    "xlsx": "^0.18.5",
     "zod": "^4.3.6"
   },
   "devDependencies": {
