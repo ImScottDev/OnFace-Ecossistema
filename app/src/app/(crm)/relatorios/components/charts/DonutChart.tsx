@@ -46,15 +46,15 @@ export function DonutChart({
         )}
       </div>
 
-      <div className="w-full sm:w-[40%] flex flex-row sm:flex-col flex-wrap gap-2 pl-0 sm:pl-2 mt-2 sm:mt-0">
+      <div className="w-full sm:w-[40%] flex flex-row sm:flex-col flex-wrap gap-2 pl-0 sm:pl-2 mt-2 sm:mt-0 min-w-0">
         {data.map((entry, index) => (
-          <div key={index} className="flex items-center gap-2">
+          <div key={index} className="flex items-center gap-2 min-w-0 max-w-full">
             <span
               className="w-2.5 h-2.5 rounded-full flex-shrink-0"
               style={{ backgroundColor: entry.color }}
             />
-            <div className="flex flex-col min-w-0">
-              <span className="text-[11px] text-white/60 truncate">{entry.name}</span>
+            <div className="flex flex-col min-w-0 flex-1">
+              <span className="block text-[11px] text-white/60 truncate" title={entry.name}>{entry.name}</span>
               <span className="text-[11px] text-white/40">{entry.value}</span>
             </div>
           </div>

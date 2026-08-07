@@ -7,6 +7,7 @@ import { DetailDrawer } from "@/components/crm/DetailDrawer";
 import { Building2, User, FileText, Clock, Pencil, StickyNote, Plus, Send, CalendarClock, Tag, X, Phone, Mail, MessageCircle, ChevronDown, ChevronRight, Video, Users, FileAudio, Trash2, XCircle, Trophy } from "lucide-react";
 import { usePipelineConfig, usePipelines } from "@/hooks/usePipelineConfig";
 import { STAGNATION_REASONS, DEFAULT_STAGES, DEFAULT_CLOSED_STAGES, type PipelineStage } from "@/lib/crm/pipeline";
+import { LossReasonModal } from "@/components/crm/LossReasonModal";
 import { CustomFieldsSection } from "@/components/crm/CustomFieldsSection";
 import { QualificacaoSdrSection } from "@/components/crm/QualificacaoSdrSection";
 import { LigacoesSection } from "@/components/crm/LigacoesSection";
@@ -126,13 +127,14 @@ function AddReuniaoInline({ negocioId }: { negocioId: string }) {
 
 export function NegocioDrawer({ negocioId, open, onClose, onOpenLead, onOpenEmpresa }: NegocioDrawerProps) {
   const queryClient = useQueryClient();
-  const { getStatusInfo: getGlobalStatusInfo, servicos } = usePipelineConfig();
+  const { getStatusInfo: getGlobalStatusInfo, servicos, lossReasons } = usePipelineConfig();
   const { pipelines } = usePipelines();
   const [showLabelPicker, setShowLabelPicker] = useState(false);
   const [expandedLeadId, setExpandedLeadId] = useState<string | null>(null);
   const [expandedPropostaId, setExpandedPropostaId] = useState<string | null>(null);
   const [expandedReuniaoId, setExpandedReuniaoId] = useState<string | null>(null);
   const [showFullTranscript, setShowFullTranscript] = useState<string | null>(null);
+  const [showLossModal, setShowLossModal] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ["negocio", negocioId],
@@ -286,12 +288,13 @@ export function NegocioDrawer({ negocioId, open, onClose, onOpenLead, onOpenEmpr
     }
   };
 
-  const handleStatusChange = async (status: string, motivoPerda?: string) => {
+  const handleStatusChange = async (status: string, motivoPerda?: string, motivoPerdaDetalhe?: string) => {
     if (isChangingStatus) return;
     setIsChangingStatus(true);
     try {
       const body: Record<string, string> = { status };
       if (motivoPerda) body.motivoPerda = motivoPerda;
+      if (motivoPerdaDetalhe) body.motivoPerdaDetalhe = motivoPerdaDetalhe;
       const res = await fetch(`/api/negocios/${negocioId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -346,6 +349,7 @@ export function NegocioDrawer({ negocioId, open, onClose, onOpenLead, onOpenEmpr
   ) : undefined;
 
   return (
+    <>
     <DetailDrawer
       open={open}
       onClose={onClose}
@@ -380,8 +384,7 @@ export function NegocioDrawer({ negocioId, open, onClose, onOpenLead, onOpenEmpr
                       onChange={(e) => {
                         const newStatus = e.target.value;
                         if (newStatus === "perdido") {
-                          const motivo = prompt("Motivo da perda:");
-                          if (motivo) handleStatusChange(newStatus, motivo);
+                          setShowLossModal(true);
                           return;
                         }
                         handleStatusChange(newStatus);
@@ -885,10 +888,7 @@ export function NegocioDrawer({ negocioId, open, onClose, onOpenLead, onOpenEmpr
                 <Trophy className="w-3.5 h-3.5" /> Ganho
               </button>
               <button
-                onClick={() => {
-                  const motivo = prompt("Motivo da perda:");
-                  if (motivo) handleStatusChange("perdido", motivo);
-                }}
+                onClick={() => setShowLossModal(true)}
                 disabled={isChangingStatus}
                 className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium text-amber-400 hover:bg-amber-500/10 transition-colors border border-amber-500/20 disabled:opacity-40 disabled:cursor-not-allowed"
               >
@@ -906,5 +906,16 @@ export function NegocioDrawer({ negocioId, open, onClose, onOpenLead, onOpenEmpr
         </div>
       )}
     </DetailDrawer>
+    {showLossModal && (
+      <LossReasonModal
+        lossReasons={lossReasons}
+        onClose={() => setShowLossModal(false)}
+        onLose={(motivo, detalhe) => {
+          handleStatusChange("perdido", motivo, detalhe);
+          setShowLossModal(false);
+        }}
+      />
+    )}
+    </>
   );
 }

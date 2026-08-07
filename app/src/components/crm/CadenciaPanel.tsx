@@ -66,8 +66,8 @@ export function CadenciaPanel({ leadId }: CadenciaPanelProps) {
   const queryClient = useQueryClient();
   // Edições locais por ordem (conteúdo/assunto que o SDR ajusta antes de enviar)
   const [edits, setEdits] = useState<Record<number, { conteudo?: string; assunto?: string }>>({});
-  // Painel inteiro recolhido? (começa aberto)
-  const [panelOpen, setPanelOpen] = useState(true);
+  // Painel inteiro recolhido? (começa fechado — só o resumo "X/13 enviados" até o usuário abrir)
+  const [panelOpen, setPanelOpen] = useState(false);
   // Toques expandidos (todos começam fechados; pode abrir vários)
   const [openRows, setOpenRows] = useState<Set<number>>(new Set());
 

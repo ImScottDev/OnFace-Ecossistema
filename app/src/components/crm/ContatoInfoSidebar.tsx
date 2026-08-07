@@ -10,9 +10,9 @@ import {
 import { getNegocioStatusInfo } from "../../lib/crm/pipeline";
 import { usePipelineConfig } from "@/hooks/usePipelineConfig";
 import type { ContatoData } from "./ContatoActionBar";
+import { callfaceCallUrl } from "@/lib/utils/callface-call";
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
-import { callfaceCallUrl } from "@/lib/utils/callface-call";
 
 interface ContatoInfoSidebarProps {
   contato: ContatoData & { avatarUrl?: string | null };

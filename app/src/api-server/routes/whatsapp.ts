@@ -141,6 +141,7 @@ app.post("/whatsapp/send", async (c) => {
   let resolvedPhone: string | null = null;
   let leadNome: string | null = null;
   let leadEmpresa: string | null = null;
+  let resolvedNegocioAtivoId: string | null = null;
 
   if (contatoId) {
     const [contato] = await db
@@ -156,10 +157,11 @@ app.post("/whatsapp/send", async (c) => {
     resolvedLeadId = contato.leadId || resolvedLeadId;
 
     if (resolvedLeadId) {
-      const [lead] = await db.select({ nome: leads.nome, empresa: leads.empresa })
+      const [lead] = await db.select({ nome: leads.nome, empresa: leads.empresa, negocioAtivoId: leads.negocioAtivoId })
         .from(leads).where(eq(leads.id, resolvedLeadId)).limit(1);
       leadNome = lead?.nome || null;
       leadEmpresa = lead?.empresa || null;
+      resolvedNegocioAtivoId = lead?.negocioAtivoId || null;
     }
   } else if (leadId) {
     const [lead] = await db
@@ -174,6 +176,7 @@ app.post("/whatsapp/send", async (c) => {
     resolvedPhone = lead.telefone;
     leadNome = lead.nome;
     leadEmpresa = lead.empresa;
+    resolvedNegocioAtivoId = lead.negocioAtivoId;
 
     const [linkedContato] = await db
       .select({ id: contatos.id })
@@ -276,6 +279,17 @@ app.post("/whatsapp/send", async (c) => {
       replyToId: replyToId || null,
     })
     .returning();
+
+  // Mensagem enviada é atividade real: reseta o relógio do badge de tempo no board de pré-vendas
+  // e, se o lead tiver negócio ativo, no Pipeline também.
+  if (resolvedLeadId) {
+    await db.update(leads).set({ updatedAt: new Date() })
+      .where(and(eq(leads.id, resolvedLeadId), eq(leads.organizacaoId, ctx.organizacaoId)));
+  }
+  if (resolvedNegocioAtivoId) {
+    await db.update(negocios).set({ updatedAt: new Date() })
+      .where(and(eq(negocios.id, resolvedNegocioAtivoId), eq(negocios.organizacaoId, ctx.organizacaoId)));
+  }
 
   await whatsappOutgoingQueue.add("send", {
     messageId: message.id,

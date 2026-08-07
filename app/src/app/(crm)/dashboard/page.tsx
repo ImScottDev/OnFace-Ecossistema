@@ -212,15 +212,24 @@ async function getDashboardData(organizacaoId: string, userId: string, role: str
   // - Pipeline aberto = getPipelineAtual (soma valorTotal das etapas ativas).
   // - MRR "real" = espelho do STRIPE (assinaturas ativas), não a soma de contratos
   //   do CRM (que inclui boleto pendente/migração sem espelho).
-  const [pipelineAtual, fechadoMesCanon, mrrStripeRows] = await Promise.all([
+  const [pipelineAtual, fechadoMesCanon, mrrStripeRows, mrrRiscoRows] = await Promise.all([
     getPipelineAtual(organizacaoId, soMeu ? userId : undefined),
     getFechadoPeriodo(organizacaoId, thisMonthStart, now, soMeu ? userId : undefined),
     db.execute(sql`
       SELECT COALESCE(sum(mrr::numeric),0) AS mrr, count(DISTINCT lead_id) AS clientes
       FROM assinaturas WHERE organizacao_id = ${organizacaoId} AND status IN ('active','trialing','past_due')
     `),
+    // MRR "em risco": venda já feita, contrato vivo (não cancelado), mas as
+    // tentativas automáticas de cobrança (past_due, já contado no MRR ativo acima)
+    // já se esgotaram sem sucesso (unpaid) — precisa de ação manual, achado real
+    // 04/08 (escondia parte real do crescimento de MRR atrás do número isolado).
+    db.execute(sql`
+      SELECT COALESCE(sum(mrr::numeric),0) AS mrr, count(*) AS qtd
+      FROM assinaturas WHERE organizacao_id = ${organizacaoId} AND status = 'unpaid'
+    `),
   ]);
   const mrrStripeRow = (mrrStripeRows as unknown as { mrr: unknown; clientes: unknown }[])[0] ?? { mrr: 0, clientes: 0 };
+  const mrrRiscoRow = (mrrRiscoRows as unknown as { mrr: unknown; qtd: unknown }[])[0] ?? { mrr: 0, qtd: 0 };
 
   // Leads aguardando PRIMEIRO contato (esteira SDR) + negócios esfriando (closer)
   const [[pendentesRow], esfriando] = await Promise.all([
@@ -244,6 +253,8 @@ async function getDashboardData(organizacaoId: string, userId: string, role: str
     fechadoMesCanon,
     mrrStripe: Number(mrrStripeRow.mrr) || 0,
     clientesStripe: Number(mrrStripeRow.clientes) || 0,
+    mrrEmRisco: Number(mrrRiscoRow.mrr) || 0,
+    qtdEmRisco: Number(mrrRiscoRow.qtd) || 0,
     alertas: { negociosNovosAntigos, negociosPropSemResposta, npsDetratores, contratosVencendo },
     contratosAtivos: Number(contratosAtivosCount.c),
     contratosNovosMes: Number(contratosNovosMesRow.c),
@@ -450,7 +461,10 @@ export default async function DashboardPage() {
           R$ {data.mrrStripe.toLocaleString("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
         </p>
         <p className="text-sm text-white/40 mt-2">
-          {data.clientesStripe} cliente{data.clientesStripe !== 1 ? "s" : ""} pagante{data.clientesStripe !== 1 ? "s" : ""} no Stripe · {data.contratosAtivos} contrato{data.contratosAtivos !== 1 ? "s" : ""} no CRM ({brl(data.cards.mrrAtivo, 0)})
+          {data.clientesStripe} cliente{data.clientesStripe !== 1 ? "s" : ""} pagante{data.clientesStripe !== 1 ? "s" : ""} no Stripe
+          {data.mrrEmRisco > 0 && (
+            <> · <span className="text-amber-400/80">{brl(data.mrrEmRisco, 0)} em risco</span> ({data.qtdEmRisco} contrato{data.qtdEmRisco !== 1 ? "s" : ""} sem cobrança há semanas)</>
+          )}
         </p>
       </div>
       {/* Série mensal só quando há histórico suficiente pra ler tendência (4+ meses).

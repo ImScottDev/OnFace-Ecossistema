@@ -22,7 +22,7 @@
  * Requer STRIPE_API_KEY no .env (restricted key, read-only).
  */
 import { db } from "../db";
-import { assinaturas, contratos, faturas, leads, mrrMovimentos, organizacoes } from "../db/schema";
+import { assinaturas, contratos, faturas, leads, mrrMovimentos, organizacoes, notificacoes, usuarios } from "../db/schema";
 import { eq, sql, and, inArray } from "drizzle-orm";
 
 const STRIPE_API = "https://api.stripe.com/v1";
@@ -89,13 +89,20 @@ function mrrOf(sub: StripeSubscription): number {
 
 interface StripeSubscription {
   id: string;
-  customer: string;
+  customer: string | { id: string; email?: string | null; name?: string | null };
   status: string;
   start_date?: number;
   canceled_at?: number | null;
   current_period_end?: number;
   cancellation_details?: { reason?: string | null; feedback?: string | null; comment?: string | null } | null;
   items?: { data: { quantity?: number; price: { id: string; unit_amount: number | null; product?: string; recurring?: { interval: string; interval_count?: number } | null } }[] };
+}
+
+function custId(c: StripeSubscription["customer"]): string {
+  return typeof c === "string" ? c : c.id;
+}
+function custEmail(c: StripeSubscription["customer"]): string | null {
+  return typeof c === "string" ? null : (c.email || null);
 }
 
 interface StripeInvoice {
@@ -134,13 +141,17 @@ function motivoCancelamento(s: StripeSubscription): string | null {
   return m.slice(0, 500);
 }
 
-export async function syncStripe(): Promise<{ subs: number; faturas: number; churns: number; movimentos: number }> {
+export async function syncStripe(): Promise<{ subs: number; faturas: number; churns: number; movimentos: number; semLead: number }> {
   const [org] = await db.select({ id: organizacoes.id }).from(organizacoes).limit(1);
   if (!org) throw new Error("organização não encontrada");
 
   // ── FASE 1: FETCH (sem transação aberta) ──────────────────────────────────
 
-  const subs = await paginate<StripeSubscription>("subscriptions", { status: "all" });
+  // expand[]=data.customer traz o e-mail do cliente junto (sem N+1 fetch) — usado
+  // como fallback pra achar o lead quando o customer_id ainda não foi vinculado
+  // (achado real 04/08: 47 assinaturas ativas, R$15.9k/mês, ficavam de fora do
+  // espelho local pra sempre porque só existia o match por stripeCustomerId).
+  const subs = await paginate<StripeSubscription>("subscriptions", { status: "all", "expand[]": "data.customer" });
 
   // Catálogo price.product -> nome do plano (1 fetch, habilita LTV por plano)
   const products = await paginate<{ id: string; name?: string }>("products", {});
@@ -178,11 +189,21 @@ export async function syncStripe(): Promise<{ subs: number; faturas: number; chu
     .where(sql`${leads.stripeCustomerId} IS NOT NULL`);
   const leadByCustomer = new Map(leadRows.map((l) => [l.stripeCustomerId as string, l]));
 
+  // Fallback por e-mail: cliente Stripe cujo customer_id nunca foi vinculado ao
+  // lead (2ª compra com customer novo, importação antiga, etc.) — sem isso a
+  // assinatura fica invisível pro sync pra sempre (achado real 04/08, 47 casos).
+  const leadEmailRows = await db
+    .select({ id: leads.id, email: leads.email, stripeCustomerId: leads.stripeCustomerId, empresaId: leads.empresaId })
+    .from(leads)
+    .where(sql`${leads.email} IS NOT NULL`);
+  const leadByEmail = new Map(leadEmailRows.map((l) => [(l.email as string).toLowerCase(), l]));
+
   // ── FASE 2: WRITE (transação única, serializada por advisory lock) ────────
 
   let churns = 0;
   let movimentos = 0;
   let nFat = 0;
+  const semLead: { subId: string; mrr: number; email: string | null; nome?: string }[] = [];
 
   await db.transaction(async (tx) => {
     // Serializa com o outro sync (webhook x worker): sem isso a corrida duplica
@@ -190,7 +211,20 @@ export async function syncStripe(): Promise<{ subs: number; faturas: number; chu
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('stripe-sync'))`);
 
     for (const s of subs) {
-      const lead = leadByCustomer.get(s.customer);
+      const sCustId = custId(s.customer);
+      let lead = leadByCustomer.get(sCustId);
+      let precisaVincularCustomerId = false;
+      if (!lead) {
+        const email = custEmail(s.customer);
+        if (email) {
+          lead = leadByEmail.get(email.toLowerCase());
+          if (lead && !lead.stripeCustomerId) precisaVincularCustomerId = true;
+        }
+      }
+      if (lead && precisaVincularCustomerId) {
+        await tx.update(leads).set({ stripeCustomerId: sCustId, updatedAt: sql`updated_at` }).where(eq(leads.id, lead.id));
+        leadByCustomer.set(sCustId, lead); // próxima assinatura do mesmo customer já acha direto
+      }
       const mrr = mrrOf(s);
       const canceladaEm = s.canceled_at ? new Date(s.canceled_at * 1000) : null;
       const motivo = motivoCancelamento(s);
@@ -304,7 +338,7 @@ export async function syncStripe(): Promise<{ subs: number; faturas: number; chu
             empresaId: lead.empresaId,
             contratoId: contrato?.id,
             stripeSubscriptionId: s.id,
-            stripeCustomerId: s.customer,
+            stripeCustomerId: sCustId,
             produto: planoNome,
             stripePriceId: item0?.price?.id || null,
             quantidade: s.items?.data?.reduce((acc, i) => acc + (i.quantity || 1), 0) || 1,
@@ -320,8 +354,13 @@ export async function syncStripe(): Promise<{ subs: number; faturas: number; chu
         if (novaAss && BILLABLE.has(s.status)) {
           await registrarMovimento("novo", mrr, 0, mrr, novaAss.id, contrato?.id || null, lead.id, s.start_date ? new Date(s.start_date * 1000) : new Date());
         }
+      } else if (BILLABLE.has(s.status)) {
+        // Cliente pagante SEM nenhum lead correspondente (nem por customer_id, nem
+        // por e-mail) — fica de fora do espelho local pra sempre até alguém revisar
+        // à mão (achado real 04/08: 14 casos, R$4.1k/mês). Rastreado pra alertar,
+        // não fica mais silencioso.
+        semLead.push({ subId: s.id, mrr, email: custEmail(s.customer), nome: (typeof s.customer !== "string" ? s.customer.name : null) || undefined });
       }
-      // cliente totalmente novo (sem lead): fica pro próximo import/clientes
     }
 
     // Faturas (upsert por origem+external_id)
@@ -372,8 +411,38 @@ export async function syncStripe(): Promise<{ subs: number; faturas: number; chu
     }
   });
 
+  // Alerta de divergência: clientes pagantes sem NENHUM lead correspondente ficam
+  // fora do espelho local pra sempre (achado real 04/08 — antes disso o gap só
+  // aparecia comparando print do Stripe com o CRM na mão). Notifica admin/gerente
+  // 1x por dia (não spama a cada 30min enquanto ninguém resolver).
+  if (semLead.length > 0) {
+    const umDiaAtras = new Date(Date.now() - 24 * 3600 * 1000);
+    const [jaAvisado] = await db
+      .select({ id: notificacoes.id })
+      .from(notificacoes)
+      .where(and(eq(notificacoes.tipo, "stripe_sem_lead"), sql`${notificacoes.createdAt} > ${umDiaAtras}`))
+      .limit(1);
+    if (!jaAvisado) {
+      const mrrSemLead = semLead.reduce((a, s) => a + s.mrr, 0);
+      const gestores = await db
+        .select({ id: usuarios.id })
+        .from(usuarios)
+        .where(and(eq(usuarios.organizacaoId, org.id), inArray(usuarios.role, ["admin", "gerente", "super_admin"]), eq(usuarios.ativo, true)));
+      const lista = semLead.slice(0, 10).map((s) => `${s.nome || s.email || s.subId}: R$${s.mrr.toFixed(2)}`).join("; ");
+      for (const g of gestores) {
+        await db.insert(notificacoes).values({
+          usuarioId: g.id,
+          tipo: "stripe_sem_lead",
+          titulo: `${semLead.length} cliente(s) pagante(s) sem lead no CRM`,
+          mensagem: `R$${mrrSemLead.toFixed(2)}/mês de MRR real no Stripe sem nenhum lead correspondente (nem por customer_id, nem por e-mail). Precisa de revisão manual. Exemplos: ${lista}`,
+          link: "/financeiro",
+        }).catch((e) => console.error("[StripeSync] falha ao notificar sem-lead:", e));
+      }
+    }
+  }
+
   console.log(
-    `[StripeSync] ${subs.length} assinaturas, ${nFat} faturas (${healed} healed), ${churns} churns, ${movimentos} movimentos de MRR`,
+    `[StripeSync] ${subs.length} assinaturas, ${nFat} faturas (${healed} healed), ${churns} churns, ${movimentos} movimentos de MRR, ${semLead.length} sem lead`,
   );
-  return { subs: subs.length, faturas: nFat, churns, movimentos };
+  return { subs: subs.length, faturas: nFat, churns, movimentos, semLead: semLead.length };
 }

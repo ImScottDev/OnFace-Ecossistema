@@ -1,29 +1,149 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: callface-crm-postgres
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      POSTGRES_DB: callface_crm
+      POSTGRES_USER: callface
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    networks:
+      - database-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U callface -d callface_crm"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  redis:
+    image: redis:7-alpine
+    container_name: callface-crm-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    networks:
+      - database-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  wuzapi:
+    image: asternic/wuzapi:latest
+    container_name: callface-crm-wuzapi
+    restart: unless-stopped
+    environment:
+      - WUZAPI_ADMIN_TOKEN=${WUZAPI_ADMIN_TOKEN}
+      - WUZAPI_GLOBAL_ENCRYPTION_KEY=${WUZAPI_GLOBAL_ENCRYPTION_KEY}
+      - WUZAPI_GLOBAL_HMAC_KEY=${WUZAPI_GLOBAL_HMAC_KEY}
+      - DB_HOST=callface-crm-postgres
+      - DB_PORT=5432
+      - DB_USER=callface
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=callface_wuzapi
+      - TZ=America/Sao_Paulo
+    networks:
+      - database-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
   app:
     build:
       context: ./app
       dockerfile: Dockerfile
-    container_name: mcrm-production
+    container_name: callface-crm-app
     restart: unless-stopped
     env_file: .env
     environment:
-      - NODE_OPTIONS=--max-old-space-size=384
+      - NODE_OPTIONS=--max-old-space-size=512
       - DB_POOL_SIZE=15
     volumes:
       - ./uploads:/app/public/uploads
     labels:
       - "traefik.enable=true"
-      # Frontend: all routes EXCEPT /api/* (but /api/auth stays here for NextAuth)
-      - "traefik.http.routers.mcrm.rule=Host(`crm.scottstudio.com.br`) && (!PathPrefix(`/api`) || PathPrefix(`/api/auth`))"
-      - "traefik.http.routers.mcrm.entrypoints=websecure"
-      - "traefik.http.routers.mcrm.tls.certresolver=cloudflare"
-      - "traefik.http.routers.mcrm.middlewares=security-headers@file"
-      - "traefik.http.services.mcrm.loadbalancer.server.port=3000"
+      # Frontend: todas as rotas EXCETO /api/* (mas /api/auth fica aqui pro NextAuth)
+      - "traefik.http.routers.callface-crm.rule=Host(`crm.callface.io`) && (!PathPrefix(`/api`) || PathPrefix(`/api/auth`) || PathPrefix(`/api/webhooks`) || PathPrefix(`/api/financeiro`) || PathPrefix(`/api/onboarding`) || PathPrefix(`/api/campanhas`))"
+      - "traefik.http.routers.callface-crm.entrypoints=websecure"
+      - "traefik.http.routers.callface-crm.tls.certresolver=cloudflare"
+      - "traefik.http.routers.callface-crm.middlewares=security-headers@file"
+      - "traefik.http.services.callface-crm.loadbalancer.server.port=3000"
     networks:
       - proxy-network
       - database-network
     depends_on:
       api:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp
+    deploy:
+      resources:
+        limits:
+          cpus: '1.5'
+          memory: 768M
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "--timeout=10", "http://127.0.0.1:3000/api/auth/session"]
+      interval: 15s
+      timeout: 12s
+      retries: 3
+      start_period: 40s
+
+  api:
+    build:
+      context: ./app
+      dockerfile: Dockerfile.api
+    container_name: callface-crm-api
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - API_PORT=3001
+      - NODE_OPTIONS=--max-old-space-size=384
+    volumes:
+      - ./uploads:/app/public/uploads
+    labels:
+      - "traefik.enable=true"
+      # API: rotas /api/* EXCETO /api/auth (NextAuth fica no Next.js)
+      - "traefik.http.routers.callface-crm-api.rule=Host(`crm.callface.io`) && PathPrefix(`/api`) && !PathPrefix(`/api/auth`) && !PathPrefix(`/api/webhooks`) && !PathPrefix(`/api/financeiro`) && !PathPrefix(`/api/onboarding`) && !PathPrefix(`/api/campanhas`)"
+      - "traefik.http.routers.callface-crm-api.entrypoints=websecure"
+      - "traefik.http.routers.callface-crm-api.tls.certresolver=cloudflare"
+      - "traefik.http.routers.callface-crm-api.middlewares=security-headers@file,rate-limit@file"
+      - "traefik.http.routers.callface-crm-api.priority=100"
+      - "traefik.http.services.callface-crm-api.loadbalancer.server.port=3001"
+    networks:
+      - proxy-network
+      - database-network
+    depends_on:
+      postgres:
         condition: service_healthy
     security_opt:
       - no-new-privileges:true
@@ -37,50 +157,6 @@ services:
           cpus: '1.0'
           memory: 512M
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "--timeout=10", "http://127.0.0.1:3000/api/auth/session"]
-      interval: 15s
-      timeout: 12s
-      retries: 3
-      start_period: 40s
-
-  api:
-    build:
-      context: ./app
-      dockerfile: Dockerfile.api
-    container_name: mcrm-api
-    restart: unless-stopped
-    env_file: .env
-    environment:
-      - API_PORT=3001
-      - NODE_OPTIONS=--max-old-space-size=256
-    volumes:
-      - ./uploads:/app/public/uploads
-    labels:
-      - "traefik.enable=true"
-      # API: /api/* routes EXCEPT /api/auth (NextAuth stays on Next.js)
-      - "traefik.http.routers.mcrm-api.rule=Host(`crm.scottstudio.com.br`) && PathPrefix(`/api`) && !PathPrefix(`/api/auth`)"
-      - "traefik.http.routers.mcrm-api.entrypoints=websecure"
-      - "traefik.http.routers.mcrm-api.tls.certresolver=cloudflare"
-      - "traefik.http.routers.mcrm-api.middlewares=security-headers@file,rate-limit@file"
-      - "traefik.http.routers.mcrm-api.priority=100"
-      - "traefik.http.services.mcrm-api.loadbalancer.server.port=3001"
-      - "traefik.http.services.mcrm-api.loadbalancer.healthcheck.path=/api/health"
-      - "traefik.http.services.mcrm-api.loadbalancer.healthcheck.interval=10s"
-    networks:
-      - proxy-network
-      - database-network
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    tmpfs:
-      - /tmp
-    deploy:
-      resources:
-        limits:
-          cpus: '1.0'
-          memory: 384M
-    healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3001/api/health"]
       interval: 15s
       timeout: 5s
@@ -91,16 +167,21 @@ services:
     build:
       context: ./app
       dockerfile: Dockerfile.worker
-    container_name: mcrm-worker
+    container_name: callface-crm-worker
     restart: unless-stopped
     env_file: .env
     environment:
-      - NODE_OPTIONS=--max-old-space-size=256
+      - NODE_OPTIONS=--max-old-space-size=384
       - PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
     volumes:
       - ./uploads:/app/public/uploads
     networks:
       - database-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     security_opt:
       - no-new-privileges:true
     tmpfs:
@@ -117,6 +198,12 @@ services:
         limits:
           cpus: '1.0'
           memory: 512M
+
+volumes:
+  pg_data:
+    name: callface-crm-pg-data
+  redis_data:
+    name: callface-crm-redis-data
 
 networks:
   proxy-network:

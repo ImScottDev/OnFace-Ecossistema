@@ -4,6 +4,7 @@ import { negocios, leads, empresas, negocioLeads, usuarios, pipelines, propostas
 import { desc, asc, eq, ilike, and, or, SQL, count, inArray, notInArray, gte, lte, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { resolveFollowupOwnerId } from "@/lib/crm/sdr-escalation";
+import { syncNegocioValoresFromPropostas } from "@/lib/crm/sync-negocio-valores";
 import { getCtx } from "../compat.js";
 
 const app = new Hono();
@@ -441,6 +442,24 @@ app.patch("/negocios/:id", async (c) => {
 
   // Handle status transitions
   if (parsed.data.status && parsed.data.status !== currentNegocio.status) {
+    // Trava de valor (COM-10): não deixa avançar pra Proposta Enviada sem valor
+    // vinculado. Re-sincroniza defensivamente ANTES de checar — valorTotal já
+    // deveria refletir os itens da proposta (syncNegocioValoresFromPropostas
+    // roda nos endpoints de proposta), mas essa checagem não pode depender de
+    // nenhum caminho externo ter rodado o sync antes de chegar aqui.
+    if (parsed.data.status === "proposta_apresentada") {
+      await syncNegocioValoresFromPropostas(id);
+      const [refreshed] = await db
+        .select({ valorTotal: negocios.valorTotal })
+        .from(negocios)
+        .where(eq(negocios.id, id))
+        .limit(1);
+      const valorTotal = parseFloat(refreshed?.valorTotal || "0");
+      if (!(valorTotal > 0)) {
+        return c.json({ error: "Não é possível avançar para Proposta Enviada sem uma proposta com valor vinculada. Crie ou vincule uma proposta com itens antes de mudar o status." }, 400);
+      }
+    }
+
     // Record status change
     await db.insert(statusChanges).values({
       leadId: currentNegocio.leadId,

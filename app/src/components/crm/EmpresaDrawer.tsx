@@ -16,6 +16,85 @@ interface EmpresaDrawerProps {
   onOpenNegocio?: (id: string) => void;
 }
 
+function CampoEditavel({
+  empresaId,
+  campo,
+  valor,
+  label,
+  placeholder,
+  formatar,
+}: {
+  empresaId: string;
+  campo: string;
+  valor: string | null | undefined;
+  label: string;
+  placeholder: string;
+  formatar?: (v: string) => string;
+}) {
+  const [editando, setEditando] = useState(false);
+  const [texto, setTexto] = useState(valor || "");
+  const queryClient = useQueryClient();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const salvar = useMutation({
+    mutationFn: async (v: string) => {
+      const res = await fetch(`/api/empresas/${empresaId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [campo]: v || null }),
+      });
+      if (!res.ok) throw new Error("Falha ao salvar");
+      return res.json();
+    },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["empresa", empresaId] }); setEditando(false); },
+  });
+  useEffect(() => { if (editando) inputRef.current?.focus(); }, [editando]);
+
+  if (!editando) {
+    return (
+      <div>
+        <p className="text-[10px] text-white/40 uppercase tracking-wide">{label}</p>
+        <button
+          onClick={() => { setTexto(valor || ""); setEditando(true); }}
+          className="text-left w-full text-white/70 font-mono text-xs hover:text-white transition-colors py-0.5 flex items-center gap-1.5 group"
+        >
+          {valor ? valor : <span className="text-white/25 italic font-sans">{placeholder}</span>}
+          <Pencil size={9} className="opacity-0 group-hover:opacity-40 shrink-0" />
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div>
+      <p className="text-[10px] text-white/40 uppercase tracking-wide mb-1">{label}</p>
+      <div className="flex items-center gap-1.5">
+        <input
+          ref={inputRef}
+          value={texto}
+          onChange={(e) => setTexto(formatar ? formatar(e.target.value) : e.target.value)}
+          placeholder={placeholder}
+          className="flex-1 text-xs bg-white/[0.03] border border-white/[0.08] rounded-lg px-2 py-1.5 text-white/70 placeholder:text-white/20 outline-none focus:border-[#e23752]/30 font-mono"
+          onKeyDown={(e) => {
+            if (e.key === "Enter") salvar.mutate(texto.trim());
+            if (e.key === "Escape") setEditando(false);
+          }}
+        />
+        <button onClick={() => salvar.mutate(texto.trim())} disabled={salvar.isPending} className="text-[10px] text-[#e23752] hover:text-[#f06d82] px-1.5 py-1 disabled:opacity-30">
+          <Send size={11} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function formatarCnpj(v: string): string {
+  const d = v.replace(/\D/g, "").slice(0, 14);
+  if (d.length <= 2) return d;
+  if (d.length <= 5) return `${d.slice(0,2)}.${d.slice(2)}`;
+  if (d.length <= 8) return `${d.slice(0,2)}.${d.slice(2,5)}.${d.slice(5)}`;
+  if (d.length <= 12) return `${d.slice(0,2)}.${d.slice(2,5)}.${d.slice(5,8)}/${d.slice(8)}`;
+  return `${d.slice(0,2)}.${d.slice(2,5)}.${d.slice(5,8)}/${d.slice(8,12)}-${d.slice(12)}`;
+}
+
 function AddNoteInlineEmpresa({ empresaId }: { empresaId: string }) {
   const [text, setText] = useState("");
   const [open, setOpen] = useState(false);
@@ -129,12 +208,14 @@ export function EmpresaDrawer({ empresaId, open, onClose, onOpenLead, onOpenNego
           <div className="rounded-xl bg-white/[0.03] border border-white/[0.06] p-3.5">
             <h3 className="text-xs font-medium text-white/50 mb-2.5">Informacoes</h3>
             <div className="space-y-2.5 text-sm">
-              {empresa.cnpj && (
-                <div>
-                  <p className="text-[10px] text-white/40 uppercase tracking-wide">CNPJ</p>
-                  <p className="text-white/70 font-mono text-xs">{empresa.cnpj}</p>
-                </div>
-              )}
+              <CampoEditavel
+                empresaId={empresaId!}
+                campo="cnpj"
+                valor={empresa.cnpj}
+                label="CNPJ"
+                placeholder="Adicionar CNPJ"
+                formatar={formatarCnpj}
+              />
               {empresa.porte && (
                 <div>
                   <p className="text-[10px] text-white/40 uppercase tracking-wide">Porte</p>

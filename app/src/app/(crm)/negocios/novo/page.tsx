@@ -5,7 +5,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
-import { usePipelineConfig } from "@/hooks/usePipelineConfig";
+import { usePipelineConfig, usePipelines } from "@/hooks/usePipelineConfig";
 
 interface Lead {
   id: string;
@@ -14,11 +14,19 @@ interface Lead {
   telefone: string | null;
 }
 
+// GET /api/leads/:id devolve { lead: {...}, empresa: {...}|null, negocios: [...], ... }
+// — NÃO é o lead solto. Usar preselectedLead.lead, nunca preselectedLead direto
+// (bug real: título saía "[object Object] — Negócio" por interpolar o objeto empresa).
+interface LeadDetailResponse {
+  lead: Lead;
+}
+
 export default function NovoNegocioPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const preLeadId = searchParams.get("leadId");
   const { stages, servicos } = usePipelineConfig();
+  const { pipelines } = usePipelines();
 
   const [form, setForm] = useState({
     titulo: "",
@@ -26,13 +34,14 @@ export default function NovoNegocioPage() {
     tipoReceita: "projeto" as string,
     servicosInteresse: [] as string[],
     origemNegocio: "novo" as string,
+    pipelineId: "" as string,
   });
 
   const [leadSearch, setLeadSearch] = useState("");
   const [showLeadList, setShowLeadList] = useState(!preLeadId);
 
   // Fetch lead if preselected
-  const { data: preselectedLead } = useQuery<Lead>({
+  const { data: preselectedLeadResponse } = useQuery<LeadDetailResponse>({
     queryKey: ["lead-pre", preLeadId],
     queryFn: async () => {
       const res = await fetch(`/api/leads/${preLeadId}`);
@@ -40,6 +49,18 @@ export default function NovoNegocioPage() {
     },
     enabled: !!preLeadId,
   });
+  const preselectedLead = preselectedLeadResponse?.lead;
+
+  // Pipeline: sem isso o negócio nasce com pipeline_id NULL e some do board
+  // do Pipeline (que sempre filtra por pipelineId da aba ativa) — bug real
+  // encontrado 05/08, negócio ficava só visível no drawer do contato.
+  useEffect(() => {
+    if (pipelines.length > 0 && !form.pipelineId) {
+      const def = pipelines.find(p => p.isDefault) || pipelines[0];
+      if (def) setForm(f => ({ ...f, pipelineId: def.id }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pipelines]);
 
   // Search leads
   const { data: leadsList } = useQuery<Lead[]>({
@@ -58,6 +79,7 @@ export default function NovoNegocioPage() {
       setForm(f => ({ ...f, titulo: `${preselectedLead.empresa || preselectedLead.nome} — Negócio` }));
       setLeadSearch(preselectedLead.nome);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [preselectedLead]);
 
   const createMutation = useMutation({
@@ -65,7 +87,7 @@ export default function NovoNegocioPage() {
       const res = await fetch("/api/negocios", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify({ ...form, pipelineId: form.pipelineId || undefined }),
       });
       if (!res.ok) {
         const err = await res.json();
@@ -147,6 +169,17 @@ export default function NovoNegocioPage() {
             className="w-full dark-input rounded-lg px-3 py-2 text-sm">
             <option value="novo">Novo</option>
             <option value="carteira">Carteira</option>
+          </select>
+        </div>
+
+        {/* Pipeline — sem isso o negócio some do board (fica só no drawer do contato) */}
+        <div>
+          <label className="text-xs text-white/50 mb-1 block">Pipeline</label>
+          <select value={form.pipelineId} onChange={e => setForm({ ...form, pipelineId: e.target.value })}
+            className="w-full dark-input rounded-lg px-3 py-2 text-sm">
+            {pipelines.map(p => (
+              <option key={p.id} value={p.id}>{p.nome}</option>
+            ))}
           </select>
         </div>
 

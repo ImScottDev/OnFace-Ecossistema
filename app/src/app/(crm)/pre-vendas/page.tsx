@@ -252,7 +252,11 @@ export default function PreVendasPage() {
     if (!lead) return;
     // Qualificar: tanto a ação "QUALIFICAR" (qualified) quanto soltar na coluna
     // espelho "Qualificado" (m_qualified) abrem o popup de agendar reunião com o closer.
-    if ((targetStatus === "qualified" || targetStatus === "m_qualified") && !lead.negocioCount) {
+    // Recuperação de No-show: o lead JÁ tem negócio (o próprio, em no_show), mas isso
+    // não pode bloquear a recuperação — senão a SDR nunca consegue requalificar
+    // (converter-oportunidade já sabe reativar o negócio de no_show pra reuniao_agendada).
+    const isNoShowRecovery = lead.negocioPrincipal?.status === "no_show";
+    if ((targetStatus === "qualified" || targetStatus === "m_qualified") && (!lead.negocioCount || isNoShowRecovery)) {
       setAgendarLead(lead);
       return;
     }

@@ -35,6 +35,24 @@ import {
   fetchMetaAdsetInsights,
 } from "@/lib/integrations/meta-insights";
 
+/**
+ * Campanhas excluídas dos relatórios de mídia paga/comercial (decisão Kauã, 04/08):
+ * captação de lançamento/evento — os leads dessa campanha NÃO entram no CRM neste
+ * primeiro momento (vão pra um funil de evento externo; só quem demonstrar interesse
+ * de verdade num 2º formulário entra como lead comercial de fato). Contar o
+ * `leadsMeta`/gasto dela nos totais de Leads/CPL do comercial infla os números com
+ * algo que não é lead de comercial. Remover o ID daqui quando a campanha passar a
+ * alimentar o CRM de verdade (2ª etapa do funil).
+ */
+const CAMPANHAS_EXCLUIDAS_COMERCIAL = new Set<string>([
+  "120252652947400170", // TRT | Leads | Masterclass
+]);
+// MetaCriativo (nível de anúncio) não traz campaignId, só campaignName — precisa do
+// nome normalizado pra filtrar no mesmo padrão nesse nível.
+const CAMPANHAS_EXCLUIDAS_COMERCIAL_NOMES = new Set<string>([
+  normCampanha("TRT | Leads | Masterclass"),
+]);
+
 const num = (v: unknown): number => Number(v ?? 0) || 0;
 const round2 = (v: number): number => Math.round(v * 100) / 100;
 
@@ -310,6 +328,7 @@ export async function getMetricasPorCampanha(orgId: string, since: Date, until: 
   const porChaveNorm = new Map<string, MetaAgg>();
   const idParaChave = new Map<string, string>();
   for (const i of insights) {
+    if (i.campaignId && CAMPANHAS_EXCLUIDAS_COMERCIAL.has(i.campaignId)) continue;
     const k = normCampanha(i.campaignName);
     const cur = porChaveNorm.get(k) ?? { gasto: 0, impressoes: 0, cliques: 0, leads: 0, nome: i.campaignName };
     cur.gasto += i.gasto; cur.impressoes += i.impressoes; cur.cliques += i.cliques; cur.leads += i.leads;
@@ -340,6 +359,7 @@ export async function getMetricasPorCriativo(orgId: string, since: Date, until: 
   // roda em 2 conjuntos da mesma campanha). Sem o escopo, os dois merjeariam numa linha
   // só, sumindo do drill-down de um dos dois conjuntos. Ver nota grande em juntarCrmComMeta.
   for (const a of ads) {
+    if (a.campaignName && CAMPANHAS_EXCLUIDAS_COMERCIAL_NOMES.has(normCampanha(a.campaignName))) continue;
     const k = `${a.adsetId || normCampanha(a.adsetName)}::${normCampanha(a.adName)}`;
     const cur = porChaveNorm.get(k) ?? { gasto: 0, impressoes: 0, cliques: 0, leads: 0, nome: a.adName, campanha: a.campaignName, conjunto: a.adsetName, adId: a.adId };
     cur.gasto += a.gasto; cur.impressoes += a.impressoes; cur.cliques += a.cliques; cur.leads += a.leads;
@@ -377,6 +397,7 @@ export async function getMetricasPorConjunto(orgId: string, since: Date, until: 
   // se misturam (não achamos esse caso na conta real ainda, mas o mesmo padrão de nome
   // repetido já aconteceu um nível abaixo, então blindar aqui também é barato).
   for (const a of adsets) {
+    if (a.campaignId && CAMPANHAS_EXCLUIDAS_COMERCIAL.has(a.campaignId)) continue;
     const k = `${a.campaignId || normCampanha(a.campaignName)}::${normCampanha(a.adsetName)}`;
     const cur = porChaveNorm.get(k) ?? { gasto: 0, impressoes: 0, cliques: 0, leads: 0, nome: a.adsetName, campanha: a.campaignName, adId: a.adsetId };
     cur.gasto += a.gasto; cur.impressoes += a.impressoes; cur.cliques += a.cliques; cur.leads += a.leads;
@@ -570,6 +591,7 @@ export async function getRoasCiclo(orgId: string): Promise<RoasCicloLinha[]> {
   const gastoPorChave = new Map<string, { gasto: number; nome: string }>();
   const idParaChave = new Map<string, string>();
   for (const i of insights) {
+    if (i.campaignId && CAMPANHAS_EXCLUIDAS_COMERCIAL.has(i.campaignId)) continue;
     const k = normCampanha(i.campaignName);
     const cur = gastoPorChave.get(k) ?? { gasto: 0, nome: i.campaignName };
     cur.gasto += i.gasto;

@@ -34,6 +34,7 @@ import {
   Wallet,
   Eye,
   CalendarClock,
+  ListChecks,
 } from "lucide-react";
 
 const COLLAPSED_W = 64;
@@ -48,6 +49,7 @@ const messagingNav = [
 
 const navigation = [
   { name: "Meu Dia", href: "/dashboard", icon: Home, countKey: null },
+  { name: "Tarefas", href: "/tarefas", icon: ListChecks, countKey: null },
   { name: "Contatos", href: "/contatos", icon: UserRound, countKey: "leads" as const },
   { name: "Empresas", href: "/empresas", icon: Building2, countKey: null },
   { name: "Pré-vendas", href: "/pre-vendas", icon: Filter, countKey: null },

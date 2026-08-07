@@ -103,6 +103,21 @@ export async function createSubscriptionCheckout(params: CreateCheckoutParams): 
   if (params.customerEmail) form.append("customer_email", params.customerEmail);
   // payment_method_collection padrão; cartão habilitado pela conta Stripe.
 
+  // Coleta obrigatória de dados de faturamento — sem isso a NF sai incompleta
+  // (CNPJ/CPF e endereço ficam de fora) e vira risco de cancelamento pela
+  // Receita. Padrão restaurado do checkout antigo (pré-CRM).
+  appendNested(form, "phone_number_collection", { enabled: true });
+  form.append("billing_address_collection", "required");
+  appendNested(form, "name_collection", { business: { enabled: true } });
+  appendNested(form, "custom_fields", [
+    {
+      key: "cpfcnpj",
+      label: { type: "custom", custom: "CPF ou CNPJ" },
+      type: "text",
+      optional: false,
+    },
+  ]);
+
   itens.forEach((item, idx) => {
     // Se o item tem produto real do Stripe (via catálogo CRM), usa o PRODUTO real
     // com preço customizado (valor da proposta, já com desconto). Senão, ad-hoc pelo nome.

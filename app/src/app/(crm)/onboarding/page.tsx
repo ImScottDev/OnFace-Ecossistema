@@ -7,7 +7,6 @@ import { Search } from "lucide-react";
 import { NegocioDrawer } from "@/components/crm/NegocioDrawer";
 import { LeadDrawer } from "@/components/crm/LeadDrawer";
 import { EmpresaDrawer } from "@/components/crm/EmpresaDrawer";
-import { CHECKLIST_LABEL } from "@/lib/onboarding/checklist-config";
 
 /**
  * Board de ONBOARDING (pós-ganho) — layout idêntico ao Pipeline (pedido Scott 12/jun).
@@ -25,13 +24,6 @@ const COLUNAS = [
   { key: "concluido", label: "Concluído", hint: "vira Carteira", color: "#c8ff00" },
 ];
 
-interface ChecklistItem {
-  item: string;
-  concluido: boolean;
-  automatico?: boolean;
-  dentroDoPrazo?: boolean;
-}
-
 interface Item {
   id: string;
   titulo: string;
@@ -41,7 +33,6 @@ interface Item {
   empresaNome: string | null;
   stage: string;
   produto: string;
-  checklist: ChecklistItem[];
 }
 
 const formatBRL = (v: number) =>
@@ -96,19 +87,6 @@ export default function OnboardingPage() {
     onSuccess: (_d, vars) => {
       const col = COLUNAS.find((c) => c.key === vars.stage);
       toast.success(`Movido para ${col?.label || vars.stage}`);
-    },
-    onSettled: () => qc.invalidateQueries({ queryKey: ["onboarding"] }),
-  });
-
-  const toggleChecklist = useMutation({
-    mutationFn: async ({ id, item, concluido }: { id: string; item: string; concluido: boolean }) => {
-      const r = await fetch(`/api/onboarding/${id}/checklist`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ item, concluido }),
-      });
-      if (!r.ok) throw new Error("falha ao atualizar checklist");
-      return r.json();
     },
     onSettled: () => qc.invalidateQueries({ queryKey: ["onboarding"] }),
   });
@@ -175,16 +153,7 @@ export default function OnboardingPage() {
                 e.preventDefault();
                 setDragOverStage(null);
                 const id = e.dataTransfer.getData("onboardingId");
-                if (!id) return;
-                if (col.key === "concluido") {
-                  const item = items.find((i) => i.id === id);
-                  const faltando = item?.checklist.filter((c) => !c.concluido) || [];
-                  if (faltando.length > 0) {
-                    toast.error(`Falta concluir: ${faltando.map((f) => CHECKLIST_LABEL[f.item] || f.item).join(", ")}`);
-                    return;
-                  }
-                }
-                mover.mutate({ id, stage: col.key });
+                if (id) mover.mutate({ id, stage: col.key });
               }}
             >
               {/* Column header */}
@@ -259,33 +228,6 @@ export default function OnboardingPage() {
                         <p className="text-[11px] text-[#c8ff00] mt-2 font-medium ml-[42px]">
                           R$ {valor.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                         </p>
-                      )}
-                      {col.key !== "concluido" && (
-                        <div className="flex items-center gap-1.5 mt-2 ml-[42px] flex-wrap" onClick={(e) => e.stopPropagation()}>
-                          {i.checklist.map((c) => (
-                            <button
-                              key={c.item}
-                              type="button"
-                              disabled={c.automatico}
-                              title={
-                                c.automatico
-                                  ? `${CHECKLIST_LABEL[c.item] || c.item} — automático (via ligações)${c.concluido && c.dentroDoPrazo === false ? ", fora do prazo de TTV" : ""}`
-                                  : CHECKLIST_LABEL[c.item] || c.item
-                              }
-                              onClick={() => !c.automatico && toggleChecklist.mutate({ id: i.id, item: c.item, concluido: !c.concluido })}
-                              className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium transition-colors ${c.automatico ? "cursor-default" : "cursor-pointer"}`}
-                              style={{
-                                backgroundColor: c.concluido ? "#c8ff0022" : "rgba(255,255,255,0.05)",
-                                color: c.concluido ? "#c8ff00" : "rgba(255,255,255,0.35)",
-                                border: `1px solid ${c.concluido ? "#c8ff0044" : "rgba(255,255,255,0.08)"}${c.automatico ? "" : ""}`,
-                                outline: c.automatico ? "1px dotted rgba(255,255,255,0.15)" : "none",
-                                outlineOffset: 1,
-                              }}
-                            >
-                              {CHECKLIST_LABEL[c.item] || c.item}{c.automatico ? " ⚡" : ""}
-                            </button>
-                          ))}
-                        </div>
                       )}
                     </div>
                   );

@@ -871,7 +871,7 @@ app.patch("/leads/:id", async (c) => {
   // Rota Next tem lógica equivalente, mas quem vale no deploy é o Hono (/api → api-server).
   if (parsed.data.sdrStatus) {
     const [cur] = await db
-      .select({ sdrStatus: leads.sdrStatus })
+      .select({ sdrStatus: leads.sdrStatus, responsavelId: leads.responsavelId })
       .from(leads)
       .where(and(eq(leads.id, id), eq(leads.organizacaoId, ctx.organizacaoId)))
       .limit(1);
@@ -909,6 +909,15 @@ app.patch("/leads/:id", async (c) => {
       if (parsed.data.sdrStatus === "qualifying") {
         const owner = await resolveFollowupOwnerId(db, ctx.organizacaoId);
         if (owner) updateData.responsavelId = owner;
+      }
+      // Fallback de autoria (achado real, 03/08): lead desqualificado/contatado
+      // direto sem nunca passar por "Follow up" nunca disparava a regra acima e
+      // ficava com responsavel_id nulo pra sempre, mesmo já tendo sido trabalhado
+      // por alguém (18 leads reais nesse estado, todos de Mídia Paga). Qualquer
+      // mudança de sdr_status que não setou dono acima e o lead ainda não tem
+      // nenhum dono: atribui a quem fez a ação agora.
+      if (!updateData.responsavelId && !cur.responsavelId) {
+        updateData.responsavelId = ctx.userId;
       }
     }
   }

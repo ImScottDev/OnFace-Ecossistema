@@ -11,11 +11,12 @@ import {
   ResponsiveContainer,
   Legend,
 } from "recharts";
+import { useState } from "react";
 import { ChartCard } from "./charts/ChartCard";
 import { DonutChart } from "./charts/DonutChart";
 import { MetaProgress } from "./MetaProgress";
 import { AlertasCard, metaEmRisco, type AlertaUi } from "./AlertasCard";
-import { HeroBand, Stat, Secao } from "./kit";
+import { HeroBand, Stat, Secao, BarraLinha } from "./kit";
 import { Wallet, Receipt, Percent, Clock, Filter, Briefcase, Layers } from "lucide-react";
 
 const STAGE_LABELS: Record<string, string> = {
@@ -86,6 +87,8 @@ interface ComercialData {
   leadsQualificados: number;
   metaComercial: { valorAlvo: number; realizado: number; closers: number } | null;
   pipelineEsfriando: { id: string; titulo: string; status: string; valor: number; diasParado: number }[];
+  coberturaValor: { status: string; total: number; comValor: number; pct: number }[];
+  safra: "todos" | "legado" | "nativo";
   // compat ainda presentes no payload
   cicloMedio: number | null;
 }
@@ -107,9 +110,11 @@ function formatCurrency(value: number): string {
 }
 
 export default function TabComercial({ periodo }: TabComercialProps) {
+  // Filtro de safra (COM-02): legado (zoho_id preenchido) vs nativo — reaproveita zoho_id, sem campo novo.
+  const [safra, setSafra] = useState<"todos" | "legado" | "nativo">("todos");
   const { data: comercial, isLoading: loadingComercial } = useQuery<ComercialData>({
-    queryKey: ["relatorios", "comercial", periodo],
-    queryFn: () => fetch(`/api/relatorios/comercial?periodo=${periodo}`).then((r) => r.json()),
+    queryKey: ["relatorios", "comercial", periodo, safra],
+    queryFn: () => fetch(`/api/relatorios/comercial?periodo=${periodo}${safra !== "todos" ? `&safra=${safra}` : ""}`).then((r) => r.json()),
   });
 
   interface FechadoMes {
@@ -209,7 +214,27 @@ export default function TabComercial({ periodo }: TabComercialProps) {
       </HeroBand>
 
       {/* Pipeline */}
-      <Secao cor="pipeline" hint="snapshot de agora — não reage ao período">Pipeline</Secao>
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <Secao cor="pipeline" hint="snapshot de agora — não reage ao período">Pipeline</Secao>
+        {/* Filtro de safra (COM-02): legado = migrado do Zoho, nativo = criado direto no CRM */}
+        <div className="flex gap-0.5 p-0.5 rounded-lg shrink-0" style={{ background: "rgba(255,255,255,0.05)" }}>
+          {([
+            { key: "todos" as const, label: "Todos" },
+            { key: "nativo" as const, label: "Nativo" },
+            { key: "legado" as const, label: "Legado" },
+          ]).map((t) => (
+            <button
+              key={t.key}
+              onClick={() => setSafra(t.key)}
+              className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-all ${
+                safra === t.key ? "text-white bg-white/10" : "text-white/40 hover:text-white/60"
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      </div>
       <div className="grid grid-cols-2 gap-3">
         <Stat label="Pipeline total" value={loadingComercial ? "…" : formatCurrency(comercial?.pipeline?.total ?? 0)} sub="soma dos negócios abertos" destaque icon={Briefcase} />
         <Stat label="Negócios abertos" value={loadingComercial ? "…" : comercial?.pipeline?.negociosAbertos ?? 0} sub="em andamento no funil" icon={Layers} />
@@ -269,6 +294,33 @@ export default function TabComercial({ periodo }: TabComercialProps) {
           </div>
         </ChartCard>
       </div>
+
+      {/* Cobertura de valor por etapa (COM-12): mede se a trava de valor do COM-10
+          (não deixa avançar pra Proposta Enviada sem valor) está funcionando pra
+          frente. Sempre org toda, não segmenta por safra (legado é tratado à
+          parte na Fase 0 — ver PLANO-RELATORIO-COMERCIAL.md). */}
+      <ChartCard
+        title="Cobertura de valor por etapa"
+        subtitle="% de negócios com valor vinculado (valorTotal > 0) em cada etapa aberta"
+        loading={loadingComercial}
+        empty={(comercial?.coberturaValor?.length ?? 0) === 0}
+        emptyText="Nenhum negócio aberto"
+        delay={0.19}
+      >
+        <div className="space-y-2 py-1">
+          {(comercial?.coberturaValor ?? []).map((e) => (
+            <BarraLinha
+              key={e.status}
+              label={STAGE_LABELS[e.status] ?? e.status}
+              valor={e.pct}
+              max={100}
+              direita={`${e.pct}%`}
+              extra={`${e.comValor}/${e.total}`}
+              cor={e.pct >= 80 ? "ganho" : e.pct >= 40 ? "atencao" : "critico"}
+            />
+          ))}
+        </div>
+      </ChartCard>
 
       {/* Row 3: Motivos de Perda + Mix recorrente × avulso */}
       <div className="grid lg:grid-cols-2 gap-4">

@@ -280,26 +280,13 @@ async function getValidAccessToken(contaId: string): Promise<string> {
 
   if (!conta.refreshToken) return decrypt(conta.accessToken); // sem refresh token, tenta com o que tem
 
-  // Auditoria 23/07: este caminho (agenda/reunião) nunca gravava `lastError` —
-  // só a classe MicrosoftEmailClient (fluxo de e-mail) gravava. Um token
-  // expirado aqui falhava só com exception na hora da chamada, sem deixar
-  // rastro no banco pra tela de status conseguir mostrar "erro agora" em vez
-  // de tratar igual a "nunca conectou".
-  try {
-    const refreshed = await refreshMicrosoftToken(decrypt(conta.refreshToken));
-    await db.update(emailContas).set({
-      accessToken: encrypt(refreshed.accessToken),
-      ...(refreshed.refreshToken ? { refreshToken: encrypt(refreshed.refreshToken) } : {}),
-      tokenExpiry: refreshed.expiryDate,
-      lastError: null,
-    }).where(eq(emailContas.id, contaId));
-    return refreshed.accessToken;
-  } catch (error) {
-    await db.update(emailContas).set({
-      lastError: `Falha ao renovar token (agenda): ${String(error)}`,
-    }).where(eq(emailContas.id, contaId)).catch(() => {});
-    throw error;
-  }
+  const refreshed = await refreshMicrosoftToken(decrypt(conta.refreshToken));
+  await db.update(emailContas).set({
+    accessToken: encrypt(refreshed.accessToken),
+    ...(refreshed.refreshToken ? { refreshToken: encrypt(refreshed.refreshToken) } : {}),
+    tokenExpiry: refreshed.expiryDate,
+  }).where(eq(emailContas.id, contaId));
+  return refreshed.accessToken;
 }
 
 async function graphFetch(accessToken: string, path: string, init?: RequestInit) {

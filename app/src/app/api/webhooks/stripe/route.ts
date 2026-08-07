@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { syncStripe } from "@/lib/integrations/stripe-sync";
 import { db } from "@/lib/db";
-import { propostas, leads, contratos, notificacoes, usuarios } from "@/lib/db/schema";
+import { propostas, leads, empresas, contratos, notificacoes, usuarios } from "@/lib/db/schema";
 import { eq, and, inArray, isNull, or } from "drizzle-orm";
 import { marcarPropostaAceita } from "@/lib/crm/aceitar-proposta";
 
@@ -71,7 +71,21 @@ async function handlePaymentConfirmed(session: Record<string, unknown>): Promise
       .set({ stripeCustomerId: stripeCustomer, updatedAt: new Date() })
       .where(and(eq(leads.id, claimed.leadId), or(isNull(leads.stripeCustomerId), eq(leads.stripeCustomerId, ""))))
       .catch((e) => console.error("[StripeWebhook] falha ao gravar stripeCustomerId:", e));
+
+    // O custom_field de CPF/CNPJ coletado no checkout não é copiado pro Customer
+    // sozinho (é só da sessão) — sem isso, a NF sai sem documento fiscal de novo.
+    // Best-effort: se a key da API não tiver escopo de escrita em Customers, só loga.
+    await gravarDocumentoFiscalNoCustomer(session, stripeCustomer).catch((e) =>
+      console.error("[StripeWebhook] falha ao gravar CPF/CNPJ no Customer:", e)
+    );
   }
+
+  // Devolve os mesmos dados (documento, endereço, telefone) pro lead/empresa do
+  // CRM — não fica só espelhado no Stripe. Só preenche campo vazio, nunca
+  // sobrescreve o que já existe (pedido do time: nada de perder dado editado à mão).
+  await gravarDadosFiscaisNoCRM(session, claimed.leadId).catch((e) =>
+    console.error("[StripeWebhook] falha ao gravar dados fiscais no CRM:", e)
+  );
   if (stripeSubscription) {
     await db.update(contratos)
       .set({ stripeSubscriptionId: stripeSubscription })
@@ -91,6 +105,98 @@ async function handlePaymentConfirmed(session: Record<string, unknown>): Promise
     }).catch((e) => console.error("[StripeWebhook] falha ao notificar pagamento pós-expiração:", e));
   }
   return `proposta ${propostaId} aceita via pagamento, contrato ${contratoId}`;
+}
+
+/**
+ * Copia o custom_field `cpfcnpj` (coletado no checkout, ver stripe-checkout.ts)
+ * pra metadata do Customer no Stripe — sem isso o documento fiscal fica preso
+ * na sessão e some, igual ao problema real da planilha de NFs de 03/08.
+ * Detecta CPF (11 dígitos) vs CNPJ (14) pelo tamanho e grava na chave certa
+ * (`user_cpf`/`user_cnpj`, mesmo padrão já usado nos clientes antigos).
+ */
+async function gravarDocumentoFiscalNoCustomer(session: Record<string, unknown>, customerId: string): Promise<string> {
+  const customFields = (session.custom_fields as Array<{ key?: string; text?: { value?: string } }> | undefined) || [];
+  const campo = customFields.find((f) => f.key === "cpfcnpj");
+  const valor = campo?.text?.value;
+  if (!valor) return "sem custom_field cpfcnpj na sessão";
+
+  const digitos = valor.replace(/\D/g, "");
+  if (digitos.length !== 11 && digitos.length !== 14) return `valor de documento inválido (${digitos.length} dígitos)`;
+  const chave = digitos.length === 14 ? "user_cnpj" : "user_cpf";
+
+  const key = process.env.STRIPE_API_KEY;
+  if (!key) return "STRIPE_API_KEY não configurada";
+
+  const form = new URLSearchParams();
+  form.append(`metadata[${chave}]`, digitos);
+
+  const res = await fetch(`https://api.stripe.com/v1/customers/${customerId}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/x-www-form-urlencoded" },
+    body: form.toString(),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Stripe update customer metadata: HTTP ${res.status} ${text.slice(0, 300)}`);
+  }
+  return `${chave} gravado no customer ${customerId}`;
+}
+
+/**
+ * Devolve pro CRM os dados que o checkout coletou (documento, endereço,
+ * telefone) — sem isso eles ficam só no Stripe e o time volta a caçar
+ * cliente por cliente na próxima auditoria de NF. Só PREENCHE campo vazio,
+ * nunca sobrescreve dado que já existe (editado à mão tem prioridade).
+ * CNPJ (14 dígitos) vai pra empresa vinculada; CPF (11 dígitos) não tem
+ * coluna própria pra pessoa física — grava em `leads.camposCustom.cpf`.
+ */
+async function gravarDadosFiscaisNoCRM(session: Record<string, unknown>, leadId: string): Promise<string> {
+  const details = (session.customer_details as
+    | { phone?: string; address?: { line1?: string; line2?: string; city?: string; state?: string; postal_code?: string } }
+    | undefined) || {};
+  const customFields = (session.custom_fields as Array<{ key?: string; text?: { value?: string } }> | undefined) || [];
+  const documento = customFields.find((f) => f.key === "cpfcnpj")?.text?.value;
+  const digitos = documento ? documento.replace(/\D/g, "") : "";
+  const endereco = [details.address?.line1, details.address?.line2].filter(Boolean).join(", ") || null;
+
+  const [lead] = await db
+    .select({ empresaId: leads.empresaId, telefone: leads.telefone, camposCustom: leads.camposCustom })
+    .from(leads)
+    .where(eq(leads.id, leadId))
+    .limit(1);
+  if (!lead) return `lead ${leadId} não encontrado`;
+
+  const patchLead: Record<string, unknown> = {};
+  if (!lead.telefone && details.phone) patchLead.telefone = details.phone;
+  if (digitos.length === 11 && !(lead.camposCustom as Record<string, unknown> | null)?.cpf) {
+    patchLead.camposCustom = { ...(lead.camposCustom as Record<string, unknown> | null), cpf: digitos };
+  }
+  if (Object.keys(patchLead).length > 0) {
+    patchLead.updatedAt = new Date();
+    await db.update(leads).set(patchLead).where(eq(leads.id, leadId));
+  }
+
+  if (!lead.empresaId) return "lead sem empresa vinculada, só atualizou dados pessoais";
+
+  const [empresa] = await db
+    .select({ cnpj: empresas.cnpj, endereco: empresas.endereco, cep: empresas.cep, cidade: empresas.cidade, estado: empresas.estado, telefone: empresas.telefone })
+    .from(empresas)
+    .where(eq(empresas.id, lead.empresaId))
+    .limit(1);
+  if (!empresa) return "empresa vinculada não encontrada";
+
+  const patchEmpresa: Record<string, unknown> = {};
+  if (digitos.length === 14 && !empresa.cnpj) patchEmpresa.cnpj = digitos;
+  if (!empresa.endereco && endereco) patchEmpresa.endereco = endereco;
+  if (!empresa.cep && details.address?.postal_code) patchEmpresa.cep = details.address.postal_code;
+  if (!empresa.cidade && details.address?.city) patchEmpresa.cidade = details.address.city;
+  if (!empresa.estado && details.address?.state) patchEmpresa.estado = details.address.state;
+  if (!empresa.telefone && details.phone) patchEmpresa.telefone = details.phone;
+
+  if (Object.keys(patchEmpresa).length === 0) return "empresa já estava completa, nada a atualizar";
+  patchEmpresa.updatedAt = new Date();
+  await db.update(empresas).set(patchEmpresa).where(eq(empresas.id, lead.empresaId));
+  return `empresa ${lead.empresaId} atualizada: ${Object.keys(patchEmpresa).join(", ")}`;
 }
 
 /**

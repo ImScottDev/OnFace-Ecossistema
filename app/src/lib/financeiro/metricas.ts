@@ -242,6 +242,9 @@ export interface FilaCobrancaItem {
   temRetryAgendado: boolean; // sincronizado indiretamente: tentativas < 9 aproxima; UI mostra dias/tentativas
   hostedInvoiceUrl: string | null;
   status: string;
+  acionado: boolean;
+  acionadoEm: string | null;
+  acionadoPorNome: string | null;
 }
 
 /** Fila de ação: quem cobrar primeiro (valor alto × atraso recente = mais recuperável). */
@@ -250,10 +253,12 @@ export async function getFilaCobranca(orgId: string, limite = 100): Promise<Fila
     SELECT f.id AS fatura_id, l.id AS lead_id, l.nome, e.nome AS empresa,
       f.valor::float, f.status, f.tentativas,
       f.hosted_invoice_url,
+      f.acionado_cobranca, f.acionado_em, u.nome AS acionado_por_nome,
       GREATEST(0, EXTRACT(day FROM now() - COALESCE(f.vencimento, f.emitida_em)))::int AS dias_atraso
     FROM faturas f
     JOIN leads l ON l.id = f.lead_id
     LEFT JOIN empresas e ON e.id = l.empresa_id
+    LEFT JOIN usuarios u ON u.id = f.acionado_por
     WHERE ${orgFilter("f.organizacao_id", orgId)} AND f.status IN ('aberta', 'uncollectible')
     ORDER BY
       -- prioridade: atraso recente (recuperável) com valor alto primeiro; 60+ vai pro fim
@@ -272,6 +277,9 @@ export async function getFilaCobranca(orgId: string, limite = 100): Promise<Fila
     temRetryAgendado: (Number(r.tentativas) || 0) < 9 && r.status === "aberta",
     hostedInvoiceUrl: (r.hosted_invoice_url as string) || null,
     status: r.status as string,
+    acionado: !!r.acionado_cobranca,
+    acionadoEm: r.acionado_em ? new Date(r.acionado_em as string).toISOString() : null,
+    acionadoPorNome: (r.acionado_por_nome as string) || null,
   }));
 }
 

@@ -12,7 +12,7 @@
  */
 import { db } from "@/lib/db";
 import { negocios, leads } from "@/lib/db/schema";
-import { and, eq, not, inArray, gte, lt, count, sum, sql, isNotNull, asc, type SQL } from "drizzle-orm";
+import { and, eq, not, inArray, gte, lt, count, sum, sql, isNotNull, isNull, asc, type SQL } from "drizzle-orm";
 import { DEFAULT_STAGES } from "@/lib/crm/pipeline";
 
 // Etapas ATIVAS do pipeline (negócio aberto, em andamento). Estagnados e fechados ficam fora.
@@ -33,6 +33,15 @@ const num = (v: unknown): number => Number(v ?? 0) || 0;
 /** Escopo por responsável: closer vê só os negócios dele; admin/etc vê tudo. */
 function scopeResp(responsavelId?: string | null): SQL | undefined {
   return responsavelId ? eq(negocios.responsavelId, responsavelId) : undefined;
+}
+
+// Filtro de safra (COM-02): legado = migrado do Zoho (zoho_id preenchido) vs
+// nativo (criado direto no CRM, pós-corte). Reaproveita zoho_id — sem campo novo.
+export type Safra = "legado" | "nativo";
+
+function scopeSafra(safra?: Safra): SQL | undefined {
+  if (!safra) return undefined;
+  return safra === "legado" ? isNotNull(negocios.zohoId) : isNull(negocios.zohoId);
 }
 
 /**
@@ -63,7 +72,7 @@ export interface PipelineAtual {
  * Pipeline ATUAL (snapshot). Não filtra período. Particiona valor por tipoReceita.
  * Retorna todas as etapas ativas (inclui as zeradas, na ordem do funil).
  */
-export async function getPipelineAtual(orgId: string, responsavelId?: string | null): Promise<PipelineAtual> {
+export async function getPipelineAtual(orgId: string, responsavelId?: string | null, safra?: Safra): Promise<PipelineAtual> {
   const rows = await db
     .select({
       status: negocios.status,
@@ -76,6 +85,7 @@ export async function getPipelineAtual(orgId: string, responsavelId?: string | n
       eq(negocios.organizacaoId, orgId),
       inArray(negocios.status, PIPELINE_ATIVO_STATUSES),
       scopeResp(responsavelId),
+      scopeSafra(safra),
     ))
     .groupBy(negocios.status, negocios.tipoReceita);
 
@@ -110,6 +120,7 @@ export async function getWinRate(
   since: Date,
   until: Date,
   responsavelId?: string | null,
+  safra?: Safra,
 ): Promise<WinRate> {
   const rows = await db
     .select({ status: negocios.status, total: count() })
@@ -121,6 +132,7 @@ export async function getWinRate(
       gte(negocios.createdAt, since),
       lt(negocios.createdAt, until),
       scopeResp(responsavelId),
+      scopeSafra(safra),
     ))
     .groupBy(negocios.status);
 
@@ -456,4 +468,47 @@ export async function getPipelineEsfriando(
     valor: num(r.valor),
     diasParado: Math.floor((Date.now() - new Date(r.updatedAt).getTime()) / 86400000),
   }));
+}
+
+export interface CoberturaEtapa {
+  status: string;
+  total: number;
+  comValor: number;
+  pct: number; // % de negócios com valorTotal > 0
+}
+
+/**
+ * Cobertura de valor por etapa (COM-10/12): % de negócios abertos com valorTotal > 0
+ * em cada etapa do pipeline ativo. Snapshot de agora (não filtra período — mesma
+ * régua do getPipelineAtual). Serve pra medir se a trava do COM-10 (negocios.ts,
+ * bloqueia avançar pra Proposta Enviada sem valor) está funcionando pra frente —
+ * não mistura com a safra legada, que a Fase 0 trata à parte.
+ */
+export async function getCoberturaValorPorEtapa(
+  orgId: string,
+  responsavelId?: string | null,
+  safra?: Safra,
+): Promise<CoberturaEtapa[]> {
+  const rows = await db
+    .select({
+      status: negocios.status,
+      total: count(),
+      comValor: sql<number>`COUNT(*) FILTER (WHERE ${negocios.valorTotal} > 0)`,
+    })
+    .from(negocios)
+    .where(and(
+      eq(negocios.organizacaoId, orgId),
+      inArray(negocios.status, PIPELINE_ATIVO_STATUSES),
+      scopeResp(responsavelId),
+      scopeSafra(safra),
+    ))
+    .groupBy(negocios.status);
+
+  const byStatus = new Map(rows.map((r) => [r.status, r]));
+  return PIPELINE_ATIVO_STATUSES.map((st) => {
+    const r = byStatus.get(st);
+    const total = num(r?.total);
+    const comValor = num(r?.comValor);
+    return { status: st, total, comValor, pct: total > 0 ? Math.round((comValor / total) * 1000) / 10 : 0 };
+  });
 }

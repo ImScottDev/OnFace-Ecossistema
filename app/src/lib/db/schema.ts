@@ -297,10 +297,6 @@ export const leads = pgTable(
     // não recalculado a cada turno — evita trocar de closer no meio da conversa
     // se outro lead fechar reunião nesse intervalo).
     agendaCloserId: uuid("agenda_closer_id").references(() => usuarios.id),
-    // Callpilot (lib/integrations/callpilot-trigger.ts): marca quando a campanha
-    // de ligação automática da Nathália já foi disparada pra este lead — trava
-    // de idempotência do sweep, mesmo padrão do outreachStartedAt acima.
-    callpilotDisparadoEm: timestamp("callpilot_disparado_em", { withTimezone: true }),
   },
   (table) => [
     index("idx_leads_org").on(table.organizacaoId),
@@ -645,6 +641,11 @@ export const faturas = pgTable(
     tentativas: integer("tentativas").default(0),
     raw: jsonb("raw"),
     syncedAt: timestamp("synced_at", { withTimezone: true }),
+    // Acionamento manual da fila de cobrança: quem está trabalhando a fila marca
+    // o que já contatou, pra não perder o fio nem cobrar o mesmo cliente 2x.
+    acionadoCobranca: boolean("acionado_cobranca").default(false).notNull(),
+    acionadoEm: timestamp("acionado_em", { withTimezone: true }),
+    acionadoPor: uuid("acionado_por").references(() => usuarios.id),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
@@ -710,71 +711,6 @@ export const npsRespostas = pgTable(
   ]
 );
 
-// ─── ONBOARDING CHECKLIST (critério de conclusão real — substitui o toggle
-// livre de camposCustom.onboardingStage; card só chega em "concluido" com os
-// 3 itens marcados) ──────────────────────────────────────────
-export const onboardingChecklist = pgTable(
-  "onboarding_checklist",
-  {
-    id: uuid("id").defaultRandom().primaryKey(),
-    organizacaoId: uuid("organizacao_id").references(() => organizacoes.id),
-    negocioId: uuid("negocio_id").references(() => negocios.id, { onDelete: "cascade" }).notNull(),
-    item: text("item").notNull(), // setup_tecnico | kickoff | primeiro_uso_real
-    concluidoEm: timestamp("concluido_em", { withTimezone: true }),
-    concluidoPor: uuid("concluido_por").references(() => usuarios.id),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-  },
-  (table) => [
-    uniqueIndex("idx_onboarding_checklist_negocio_item").on(table.negocioId, table.item),
-    index("idx_onboarding_checklist_negocio").on(table.negocioId),
-  ]
-);
-
-// ─── CONTAS CS (pós-onboarding — criada automaticamente quando o checklist
-// acima fecha 100%; health score v1 = saúde de cobrança + marcos, sem
-// Mixpanel ainda — ver callface/onboarding-cs.md no vault) ──
-export const contasCs = pgTable(
-  "contas_cs",
-  {
-    id: uuid("id").defaultRandom().primaryKey(),
-    organizacaoId: uuid("organizacao_id").references(() => organizacoes.id),
-    negocioId: uuid("negocio_id").references(() => negocios.id).notNull(),
-    contratoId: uuid("contrato_id").references(() => contratos.id),
-    leadId: uuid("lead_id").references(() => leads.id),
-    onboardingFinalizadoEm: timestamp("onboarding_finalizado_em", { withTimezone: true }).notNull(),
-    healthScore: integer("health_score").notNull().default(100),
-    healthScoreAtualizadoEm: timestamp("health_score_atualizado_em", { withTimezone: true }),
-    statusSaude: text("status_saude").notNull().default("saudavel"), // saudavel | risco | critico
-    proximoMarcoEm: timestamp("proximo_marco_em", { withTimezone: true }),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
-  },
-  (table) => [
-    uniqueIndex("idx_contas_cs_negocio").on(table.negocioId),
-    index("idx_contas_cs_org").on(table.organizacaoId),
-    index("idx_contas_cs_status_saude").on(table.statusSaude),
-  ]
-);
-
-// ─── MARCOS CS (checkpoints — base pra Onda 4 do plano; onda 1 só cria a
-// tabela, não popula ainda) ──────────────────────────────────
-export const marcosCs = pgTable(
-  "marcos_cs",
-  {
-    id: uuid("id").defaultRandom().primaryKey(),
-    contaCsId: uuid("conta_cs_id").references(() => contasCs.id, { onDelete: "cascade" }).notNull(),
-    previstoPara: timestamp("previsto_para", { withTimezone: true }).notNull(),
-    realizadoEm: timestamp("realizado_em", { withTimezone: true }),
-    resultadoTexto: text("resultado_texto"),
-    sinal: text("sinal"), // risco | neutro | oportunidade
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-  },
-  (table) => [
-    index("idx_marcos_cs_conta").on(table.contaCsId),
-    index("idx_marcos_cs_previsto").on(table.previstoPara),
-  ]
-);
-
 // ─── TAREFAS ────────────────────────────────────────────────
 export const tarefas = pgTable(
   "tarefas",
@@ -796,6 +732,7 @@ export const tarefas = pgTable(
   },
   (table) => [
     index("idx_tarefas_lead_id").on(table.leadId),
+    index("idx_tarefas_negocio_id").on(table.negocioId),
     index("idx_tarefas_usuario_id").on(table.usuarioId),
     index("idx_tarefas_vencimento").on(table.dataVencimento),
     index("idx_tarefas_concluida").on(table.concluida),

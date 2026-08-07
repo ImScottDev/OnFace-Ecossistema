@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import { getContatoTipoInfo, getNegocioStatusInfo } from "@/lib/crm/pipeline";
 import { usePipelineConfig } from "@/hooks/usePipelineConfig";
+import { TarefaFormModal } from "@/components/crm/tarefas/TarefaFormModal";
 import Link from "next/link";
 import { useState, useEffect, useRef } from "react";
 
@@ -186,7 +187,14 @@ function AddNoteInline({ leadId }: { leadId: string }) {
       if (!res.ok) throw new Error("Falha");
       return res.json();
     },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["notas", "lead", leadId] }); setText(""); setOpen(false); },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["notas", "lead", leadId] });
+      queryClient.invalidateQueries({ queryKey: ["lead", leadId] });
+      queryClient.invalidateQueries({ queryKey: ["pre-vendas-leads"] });
+      queryClient.invalidateQueries({ queryKey: ["pipeline"] });
+      setText("");
+      setOpen(false);
+    },
   });
 
   useEffect(() => { if (open) inputRef.current?.focus(); }, [open]);
@@ -216,6 +224,7 @@ function AddNoteInline({ leadId }: { leadId: string }) {
 export function LeadDrawer({ leadId, open, onClose, onOpenEmpresa, onOpenNegocio }: LeadDrawerProps) {
   const { setores, origens, servicos } = usePipelineConfig();
   const queryClient = useQueryClient();
+  const [tarefaModalOpen, setTarefaModalOpen] = useState(false);
 
   // Fetch lead detail (includes negocios, atividades, tarefas, etc.)
   const { data: leadDetail, isLoading } = useQuery({
@@ -286,6 +295,32 @@ export function LeadDrawer({ leadId, open, onClose, onOpenEmpresa, onOpenNegocio
       queryClient.invalidateQueries({ queryKey: ["pre-vendas-leads"] });
       queryClient.invalidateQueries({ queryKey: ["leads"] });
       queryClient.invalidateQueries({ queryKey: ["pipeline"] });
+    },
+  });
+
+  // Lead com nome de empresa em texto solto (lead.empresa) mas sem empresaId real
+  // vinculado — sem isso não existe registro de Empresa pra anexar CNPJ/endereço/etc.
+  // Cria a Empresa a partir do texto já digitado e vincula ao lead num passo só.
+  const criarEmpresaVinculada = useMutation({
+    mutationFn: async () => {
+      const resCreate = await fetch("/api/empresas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nome: lead?.empresa || "Empresa" }),
+      });
+      if (!resCreate.ok) throw new Error("falha ao criar empresa");
+      const empresaCriada = await resCreate.json();
+      const resLink = await fetch(`/api/leads/${leadId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ empresaId: empresaCriada.id }),
+      });
+      if (!resLink.ok) throw new Error("falha ao vincular empresa ao lead");
+      return empresaCriada;
+    },
+    onSuccess: (empresaCriada) => {
+      queryClient.invalidateQueries({ queryKey: ["lead", leadId] });
+      onOpenEmpresa?.(empresaCriada.id);
     },
   });
 
@@ -486,8 +521,11 @@ export function LeadDrawer({ leadId, open, onClose, onOpenEmpresa, onOpenNegocio
             <div>
               <h4 className="text-[11px] font-medium text-white/30 uppercase tracking-wider mb-2">Empresa</h4>
               <button
-                onClick={() => lead.empresaId && onOpenEmpresa?.(lead.empresaId)}
-                disabled={!lead.empresaId || !onOpenEmpresa}
+                onClick={() => {
+                  if (lead.empresaId) onOpenEmpresa?.(lead.empresaId);
+                  else if (!criarEmpresaVinculada.isPending) criarEmpresaVinculada.mutate();
+                }}
+                disabled={(!lead.empresaId && criarEmpresaVinculada.isPending) || (!!lead.empresaId && !onOpenEmpresa)}
                 className="w-full text-left flex items-center gap-3 px-3 py-2.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.06] transition-colors group disabled:cursor-default disabled:hover:bg-white/[0.03]"
               >
                 <div
@@ -499,14 +537,16 @@ export function LeadDrawer({ leadId, open, onClose, onOpenEmpresa, onOpenNegocio
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-white truncate">{lead.empresa || leadDetail?.empresa?.nome || "Empresa"}</p>
                   <p className="text-xs text-white/40 mt-0.5">
-                    {[
-                      (leadDetail?.empresa?.setor || lead.empresaSetor) ? (setores.find((s) => s.key === (leadDetail?.empresa?.setor || lead.empresaSetor))?.label || leadDetail?.empresa?.setor || lead.empresaSetor) : null,
-                      leadDetail?.empresa?.porte || lead.empresaPorte,
-                      (leadDetail?.empresa?.cidade || lead.empresaCidade) && (leadDetail?.empresa?.estado || lead.empresaEstado) ? `${leadDetail?.empresa?.cidade || lead.empresaCidade}/${leadDetail?.empresa?.estado || lead.empresaEstado}` : (leadDetail?.empresa?.estado || lead.empresaEstado),
-                    ].filter(Boolean).join(" · ") || "—"}
+                    {!lead.empresaId
+                      ? (criarEmpresaVinculada.isPending ? "Vinculando..." : "Sem cadastro — clique pra criar e vincular")
+                      : [
+                          (leadDetail?.empresa?.setor || lead.empresaSetor) ? (setores.find((s) => s.key === (leadDetail?.empresa?.setor || lead.empresaSetor))?.label || leadDetail?.empresa?.setor || lead.empresaSetor) : null,
+                          leadDetail?.empresa?.porte || lead.empresaPorte,
+                          (leadDetail?.empresa?.cidade || lead.empresaCidade) && (leadDetail?.empresa?.estado || lead.empresaEstado) ? `${leadDetail?.empresa?.cidade || lead.empresaCidade}/${leadDetail?.empresa?.estado || lead.empresaEstado}` : (leadDetail?.empresa?.estado || lead.empresaEstado),
+                        ].filter(Boolean).join(" · ") || "—"}
                   </p>
                 </div>
-                {lead.empresaId && onOpenEmpresa && (
+                {((lead.empresaId && onOpenEmpresa) || !lead.empresaId) && (
                   <ChevronRight className="w-4 h-4 text-white/20 group-hover:text-white/40 shrink-0" />
                 )}
               </button>
@@ -691,13 +731,19 @@ export function LeadDrawer({ leadId, open, onClose, onOpenEmpresa, onOpenNegocio
           )}
 
           {/* Tarefas Section */}
-          {tarefas.length > 0 && (
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <h4 className="text-[11px] font-medium text-white/30 uppercase tracking-wider">
-                  Tarefas ({tarefas.length})
-                </h4>
-              </div>
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <h4 className="text-[11px] font-medium text-white/30 uppercase tracking-wider">
+                Tarefas {tarefas.length > 0 && `(${tarefas.length})`}
+              </h4>
+              <button
+                onClick={() => setTarefaModalOpen(true)}
+                className="text-[11px] text-[#e23752] hover:text-[#f06d82] font-medium flex items-center gap-1"
+              >
+                <Plus className="w-3 h-3" /> Nova tarefa
+              </button>
+            </div>
+            {tarefas.length > 0 ? (
               <div className="space-y-1.5">
                 {tarefas.slice(0, 5).map((t) => (
                   <TarefaItem key={t.id} tarefa={t} onToggle={(id, concluida) => toggleTarefa.mutate({ id, concluida })} />
@@ -708,8 +754,10 @@ export function LeadDrawer({ leadId, open, onClose, onOpenEmpresa, onOpenNegocio
                   </Link>
                 )}
               </div>
-            </div>
-          )}
+            ) : (
+              <p className="text-xs text-white/20 py-1">Nenhuma tarefa em aberto</p>
+            )}
+          </div>
 
           {/* Qualificação SDR — campos-chave de pré-vendas */}
           {leadId && (
@@ -822,6 +870,15 @@ export function LeadDrawer({ leadId, open, onClose, onOpenEmpresa, onOpenNegocio
             Abrir página completa <ArrowRight className="w-4 h-4" />
           </Link>
         </div>
+      )}
+      {leadId && (
+        <TarefaFormModal
+          open={tarefaModalOpen}
+          onClose={() => setTarefaModalOpen(false)}
+          defaultLeadId={leadId}
+          defaultLeadLabel={fullName || null}
+          invalidateKeys={[["lead", leadId], ["tarefas"]]}
+        />
       )}
     </DetailDrawer>
   );

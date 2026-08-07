@@ -185,6 +185,10 @@ export default function PipelinePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status, ...(motivoPerda ? { motivoPerda } : {}), ...(motivoPerdaDetalhe ? { motivoPerdaDetalhe } : {}) }),
       });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Erro ao mover negócio" }));
+        throw new Error(err.error || "Erro ao mover negócio");
+      }
       return res.json();
     },
     onSuccess: (_data, vars) => {
@@ -195,7 +199,7 @@ export default function PipelinePage() {
         queryClient.invalidateQueries({ queryKey: ["carteira"] });
       }
     },
-    onError: () => toast.error("Erro ao mover negócio"),
+    onError: (err) => toast.error(err instanceof Error ? err.message : "Erro ao mover negócio"),
   });
 
   const deleteNegocio = useMutation({

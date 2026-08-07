@@ -1,18 +1,35 @@
 import { Hono } from "hono";
 import { db } from "@/lib/db";
-import { tarefas, leads } from "@/lib/db/schema";
+import { tarefas, leads, usuarios, negocios } from "@/lib/db/schema";
 import { desc, eq, and, lte, SQL, asc, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { getCtx } from "../compat.js";
+import { isPersonalView, isAdminView } from "@/lib/auth/roles";
 
 const app = new Hono();
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const TIPOS = [
+  "follow_up",
+  "ligar",
+  "enviar_proposta",
+  "diagnostico",
+  "renovacao",
+  "nps",
+  "upsell",
+  "geral",
+  "confirmar_reuniao_outlook",
+  "gerada_callface",
+] as const;
 
 const createTarefaSchema = z.object({
   leadId: z.string().uuid().optional().nullable(),
   negocioId: z.string().uuid().optional().nullable(),
+  responsavelId: z.string().uuid().optional().nullable(), // default: quem está criando
   titulo: z.string().min(1),
   descricao: z.string().optional().nullable(),
-  tipo: z.enum(["follow_up", "ligar", "enviar_proposta", "diagnostico", "renovacao", "nps", "upsell", "geral"]),
+  tipo: z.enum(TIPOS),
   prioridade: z.enum(["baixa", "media", "alta", "urgente"]).optional(),
   dataVencimento: z.string().optional().nullable(),
   venceEm: z.string().optional().nullable(), // data+hora ISO (lembrete/follow-up)
@@ -21,9 +38,13 @@ const createTarefaSchema = z.object({
 const updateTarefaSchema = z.object({
   titulo: z.string().min(1).optional(),
   descricao: z.string().optional().nullable(),
-  tipo: z.enum(["follow_up", "ligar", "enviar_proposta", "diagnostico", "renovacao", "nps", "upsell", "geral"]).optional(),
+  tipo: z.enum(TIPOS).optional(),
   prioridade: z.enum(["baixa", "media", "alta", "urgente"]).optional(),
   dataVencimento: z.string().optional().nullable(),
+  venceEm: z.string().optional().nullable(),
+  responsavelId: z.string().uuid().optional().nullable(),
+  leadId: z.string().uuid().optional().nullable(),
+  negocioId: z.string().uuid().optional().nullable(),
   concluida: z.boolean().optional(),
 });
 
@@ -36,12 +57,37 @@ app.get("/tarefas", async (c) => {
   const negocioId = c.req.query("negocioId") ?? null;
   const tipo = c.req.query("tipo") ?? null;
   const data = c.req.query("data") || "all";
+  const responsavelId = c.req.query("responsavelId") ?? null; // filtro explícito (aba Tarefas)
+  const escopo = c.req.query("escopo") ?? null; // "org" = aba Tarefas (lista da organização); default = pessoal
 
-  // Por negócio: mostra as tarefas do negócio pro time todo (contexto do card).
-  // Sem negócio: "Minhas Tarefas" (só as do usuário).
-  const conditions: SQL[] = negocioId
-    ? [eq(tarefas.negocioId, negocioId), eq(tarefas.organizacaoId, ctx.organizacaoId)]
-    : [eq(tarefas.usuarioId, ctx.userId)];
+  const hasResponsavelFilter = responsavelId === "sem" || (!!responsavelId && UUID_RE.test(responsavelId));
+
+  const conditions: SQL[] = [eq(tarefas.organizacaoId, ctx.organizacaoId)];
+
+  if (hasResponsavelFilter) {
+    // Filtro explícito de responsável prevalece — mesma regra do Pipeline: closer/sdr
+    // só vê o próprio por padrão, mas ao escolher outro closer no filtro, vê o dele.
+    if (responsavelId === "sem") {
+      conditions.push(isNull(tarefas.usuarioId));
+    } else {
+      conditions.push(eq(tarefas.usuarioId, responsavelId as string));
+    }
+  } else if (negocioId) {
+    // Por negócio: mostra as tarefas do negócio pro time todo (contexto do card) —
+    // nenhum filtro de usuário, independente do papel de quem pediu.
+  } else if (escopo === "org") {
+    // Aba Tarefas sem filtro: closer/sdr só vê o próprio, admin/gerente vê o time todo.
+    if (isPersonalView(ctx.userRole)) {
+      conditions.push(eq(tarefas.usuarioId, ctx.userId));
+    }
+  } else {
+    // "Minhas Tarefas" (dashboard Meu Dia, seções de lead) — sempre pessoal, todo papel.
+    conditions.push(eq(tarefas.usuarioId, ctx.userId));
+  }
+
+  if (negocioId) {
+    conditions.push(eq(tarefas.negocioId, negocioId));
+  }
 
   if (concluida !== null && concluida !== "") {
     conditions.push(eq(tarefas.concluida, concluida === "true"));
@@ -76,8 +122,30 @@ app.get("/tarefas", async (c) => {
   ];
 
   const result = await db
-    .select()
+    .select({
+      id: tarefas.id,
+      organizacaoId: tarefas.organizacaoId,
+      leadId: tarefas.leadId,
+      negocioId: tarefas.negocioId,
+      usuarioId: tarefas.usuarioId,
+      titulo: tarefas.titulo,
+      descricao: tarefas.descricao,
+      tipo: tarefas.tipo,
+      prioridade: tarefas.prioridade,
+      dataVencimento: tarefas.dataVencimento,
+      venceEm: tarefas.venceEm,
+      concluida: tarefas.concluida,
+      concluidaEm: tarefas.concluidaEm,
+      createdAt: tarefas.createdAt,
+      leadNome: leads.nome,
+      negocioTitulo: negocios.titulo,
+      responsavelNome: usuarios.nome,
+      responsavelAvatarUrl: usuarios.avatarUrl,
+    })
     .from(tarefas)
+    .leftJoin(leads, eq(tarefas.leadId, leads.id))
+    .leftJoin(negocios, eq(tarefas.negocioId, negocios.id))
+    .leftJoin(usuarios, eq(tarefas.usuarioId, usuarios.id))
     .where(where)
     .orderBy(asc(tarefas.dataVencimento), asc(tarefas.createdAt));
 
@@ -126,6 +194,33 @@ app.post("/tarefas", async (c) => {
     }
   }
 
+  // If negocioId provided, verify it belongs to org
+  if (parsed.data.negocioId) {
+    const [negocio] = await db
+      .select({ id: negocios.id })
+      .from(negocios)
+      .where(and(eq(negocios.id, parsed.data.negocioId), eq(negocios.organizacaoId, ctx.organizacaoId)))
+      .limit(1);
+
+    if (!negocio) {
+      return c.json({ error: "Negocio nao encontrado" }, 404);
+    }
+  }
+
+  // Responsável: default é quem está criando; se vier outro, precisa ser da mesma org.
+  let usuarioId = ctx.userId;
+  if (parsed.data.responsavelId && parsed.data.responsavelId !== ctx.userId) {
+    const [resp] = await db
+      .select({ id: usuarios.id })
+      .from(usuarios)
+      .where(and(eq(usuarios.id, parsed.data.responsavelId), eq(usuarios.organizacaoId, ctx.organizacaoId)))
+      .limit(1);
+    if (!resp) {
+      return c.json({ error: "Responsavel nao encontrado" }, 404);
+    }
+    usuarioId = parsed.data.responsavelId;
+  }
+
   // venceEm = data+hora combinadas; deriva também data_vencimento (parte data) pra
   // compatibilidade com o dashboard "Tarefas do Dia" (que filtra por data_vencimento).
   const venceEm = parsed.data.venceEm ? new Date(parsed.data.venceEm) : null;
@@ -139,7 +234,7 @@ app.post("/tarefas", async (c) => {
       organizacaoId: ctx.organizacaoId, // faltava: sem isso não aparece no dashboard
       leadId: parsed.data.leadId,
       negocioId: parsed.data.negocioId,
-      usuarioId: ctx.userId,
+      usuarioId,
       titulo: parsed.data.titulo,
       descricao: parsed.data.descricao,
       tipo: parsed.data.tipo,
@@ -167,18 +262,64 @@ app.patch("/tarefas/:id", async (c) => {
     );
   }
 
-  // Verify tarefa belongs to user (which is already org-scoped via usuario)
   const [existing] = await db
-    .select({ id: tarefas.id })
+    .select({ id: tarefas.id, usuarioId: tarefas.usuarioId })
     .from(tarefas)
-    .where(and(eq(tarefas.id, id), eq(tarefas.usuarioId, ctx.userId)))
+    .where(and(eq(tarefas.id, id), eq(tarefas.organizacaoId, ctx.organizacaoId)))
     .limit(1);
 
   if (!existing) {
     return c.json({ error: "Tarefa nao encontrada" }, 404);
   }
 
-  const updateData: Record<string, unknown> = { ...parsed.data };
+  // Dono da tarefa sempre pode editar; outra pessoa só se for admin/gerente.
+  if (existing.usuarioId !== ctx.userId && !isAdminView(ctx.userRole)) {
+    return c.json({ error: "Sem permissao" }, 403);
+  }
+
+  const { responsavelId, leadId, negocioId, ...rest } = parsed.data;
+  const updateData: Record<string, unknown> = { ...rest };
+
+  if (responsavelId) {
+    const [resp] = await db
+      .select({ id: usuarios.id })
+      .from(usuarios)
+      .where(and(eq(usuarios.id, responsavelId), eq(usuarios.organizacaoId, ctx.organizacaoId)))
+      .limit(1);
+    if (!resp) {
+      return c.json({ error: "Responsavel nao encontrado" }, 404);
+    }
+    updateData.usuarioId = responsavelId;
+  }
+
+  // leadId/negocioId: undefined = não mexe; null = desvincula; uuid = precisa ser da mesma org.
+  if (leadId !== undefined) {
+    if (leadId) {
+      const [lead] = await db
+        .select({ id: leads.id })
+        .from(leads)
+        .where(and(eq(leads.id, leadId), eq(leads.organizacaoId, ctx.organizacaoId)))
+        .limit(1);
+      if (!lead) {
+        return c.json({ error: "Lead nao encontrado" }, 404);
+      }
+    }
+    updateData.leadId = leadId;
+  }
+
+  if (negocioId !== undefined) {
+    if (negocioId) {
+      const [negocio] = await db
+        .select({ id: negocios.id })
+        .from(negocios)
+        .where(and(eq(negocios.id, negocioId), eq(negocios.organizacaoId, ctx.organizacaoId)))
+        .limit(1);
+      if (!negocio) {
+        return c.json({ error: "Negocio nao encontrado" }, 404);
+      }
+    }
+    updateData.negocioId = negocioId;
+  }
 
   // When marking as concluida, set concluidaEm
   if (parsed.data.concluida === true) {
@@ -198,6 +339,31 @@ app.patch("/tarefas/:id", async (c) => {
   }
 
   return c.json(updated);
+});
+
+// DELETE /api/tarefas/:id
+app.delete("/tarefas/:id", async (c) => {
+  const ctx = await getCtx(c);
+  const id = c.req.param("id");
+
+  const [existing] = await db
+    .select({ id: tarefas.id, usuarioId: tarefas.usuarioId })
+    .from(tarefas)
+    .where(and(eq(tarefas.id, id), eq(tarefas.organizacaoId, ctx.organizacaoId)))
+    .limit(1);
+
+  if (!existing) {
+    return c.json({ error: "Tarefa nao encontrada" }, 404);
+  }
+
+  // Dono da tarefa sempre pode apagar; outra pessoa só se for admin/gerente.
+  if (existing.usuarioId !== ctx.userId && !isAdminView(ctx.userRole)) {
+    return c.json({ error: "Sem permissao" }, 403);
+  }
+
+  await db.delete(tarefas).where(eq(tarefas.id, id));
+
+  return c.json({ success: true });
 });
 
 export const tarefasRoutes = app;
