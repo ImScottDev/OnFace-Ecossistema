@@ -16,7 +16,8 @@
     "db:cleanup-seed": "tsx src/lib/db/cleanup-seed.ts",
     "db:backfill-domain-model": "tsx --env-file=.env src/lib/db/backfill-domain-model.ts",
     "db:relatorio-duplicidade-contratos": "tsx --env-file=.env src/lib/db/relatorio-duplicidade-contratos.ts",
-    "db:relatorio-data-quality": "tsx --env-file=.env src/lib/db/relatorio-data-quality.ts"
+    "db:relatorio-data-quality": "tsx --env-file=.env src/lib/db/relatorio-data-quality.ts",
+    "check:relatorios": "tsx --env-file=.env src/scripts/checar-invariantes-relatorios.ts"
   },
   "dependencies": {
     "@azure/msal-node": "^5.0.6",

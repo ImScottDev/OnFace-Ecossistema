@@ -64,6 +64,16 @@ disponível — mesmo padrão de "reaproveitar o que já existe" do
 - [x] **Achado real durante a verificação, investigado e descartado como bug de produto**: a sessão parecia expirar em quase toda navegação via Playwright (redirecionava pro `/login` sem motivo aparente). Investiguei via `curl` direto com cookie de sessão real (bypassando o browser) — 5 requisições consecutivas, todas `200 OK` em ~100ms, sem timeout, sem falha. **Conclusão: era flakiness do cookie jar da instância do Playwright MCP nesta sessão, não um bug real do produto** (correção da hipótese inicial, que culpava o timeout de 8s do `resolveSession()` em `layout.tsx` — esse mecanismo existe e é real, mas não foi o causador aqui).
 - [x] `tsc` limpo, dev server + api server saudáveis depois da mudança.
 
+## F6 — follow-up: invariantes de relatório trazidos pro Data Quality Layer (09/08)
+
+Ao fazer um pente-fino mais amplo (procurando outros lugares que calculam MRR/receita, mesmo padrão de risco do bug original), achei `src/scripts/checar-invariantes-relatorios.ts` — checker pré-existente da auditoria de 21/07 (soma por vendedor vs total, funil monotônico), que só roda quando alguém lembra de executar manualmente. **Não estava nem registrado no `package.json`** — adicionei `npm run check:relatorios`.
+
+- [x] Rodei o script contra o banco local pela primeira vez nesta sessão — **todas as invariantes OK**, confirma que nada do que mudei hoje quebrou nenhuma régua existente.
+- [x] Trouxe 3 dos 5 invariantes pro Data Quality Layer (`lib/crm/data-quality.ts`) — rodam sempre via `/admin/qualidade-dados`, não só quando alguém lembra do script: "Σ por responsável = total", "funil SDR monotônico", "funil de vendas monotônico".
+- [x] **Bug real achado e corrigido no processo**: `db.execute(sql\`...ANY(${array})\`)` do Drizzle não expande array em array literal Postgres (vira parâmetros posicionais, quebra `ANY`) — diferente do tagged template do pacote `postgres` puro usado no script original. Corrigido com `sql.raw` de array literal explícito (seguro aqui — lista é constante fixa no código, não input de usuário).
+- [x] **Validado**: os 3 novos checks reproduzem exatamente o mesmo resultado do script original (0 problemas em todos), página confirmada via curl.
+- [x] `tsc` limpo, dev/api saudáveis.
+
 ## F6 — follow-up: 2 checks novos de integridade do Domain Model (F1/F2) (09/08)
 
 Depois de fechar F1/F2 tecnicamente, construí a validação continuada — não basta ter testado uma vez com script descartável, o Data Quality Layer (F6, já existe, já tem UI) é o lugar certo pra isso rodar sempre.
