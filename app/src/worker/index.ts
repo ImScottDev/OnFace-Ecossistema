@@ -2990,6 +2990,17 @@ const slaWorker = new Worker(
       const { processados } = await sweepCadenciasDevidas();
       if (processados > 0) console.log(`[F5/cadence-engine] ${processados} enrollments avançados`);
     }
+
+    if (job.name === "event-outbox-sweep") {
+      // Eventos/Event Outbox: F0 criou a tabela, mas nada publicava nem
+      // consumia até 09/08 (achado da revisão externa). Este sweep é o lado
+      // real do consumidor — ver lib/events/{outbox,consumer}.ts, ADR-EXEC-016.
+      const { processarEventosPendentes } = await import("../lib/events/consumer");
+      const { processados, falhados } = await processarEventosPendentes();
+      if (processados > 0 || falhados > 0) {
+        console.log(`[F0/event-outbox] ${processados} processados, ${falhados} falhados`);
+      }
+    }
   },
   { connection, concurrency: 1 }
 );
@@ -3662,6 +3673,7 @@ async function setupScheduledJobs() {
   await scheduledQueue.upsertJobScheduler("check-whatsapp-connection", { every: 5 * 60 * 1000 }, { name: "check-whatsapp-connection" });
   await scheduledQueue.upsertJobScheduler("snapshot-diario", { every: 60 * 60 * 1000 }, { name: "snapshot-diario" });
   await scheduledQueue.upsertJobScheduler("cadence-sweep", { every: 5 * 60 * 1000 }, { name: "cadence-sweep" });
+  await scheduledQueue.upsertJobScheduler("event-outbox-sweep", { every: 60 * 1000 }, { name: "event-outbox-sweep" });
   // Email sync: trigger every 5 min
   await emailSyncQueue.upsertJobScheduler("email-sync-trigger", { every: 5 * 60 * 1000 }, { name: "sync-trigger" });
   // Email sequences: check every minute

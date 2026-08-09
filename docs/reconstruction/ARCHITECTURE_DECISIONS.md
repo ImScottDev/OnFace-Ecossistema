@@ -320,6 +320,24 @@ banco ou uma camada de write-guard fica como candidato de F1+.
 
 ---
 
+## ADR-EXEC-016 — Event Outbox: de tabela morta a barramento real (Eventos/Event-Driven)
+
+**Contexto**: achado da revisão arquitetural externa de 09/08 — `event_outbox` existia desde F0 (schema completo: idempotência, status, retry, dead-letter), mas **nada nunca escreveu nela e nada nunca leu dela**. Todo o sistema (automação, cadência) sempre disparou por chamada direta de função no ponto exato da mudança de domínio (`dispararAutomacoes(gatilho, ctx)`), nunca por evento publicado/consumido. Marcado como o gap arquitetural 🔴 de maior prioridade antes de qualquer congelamento.
+
+**Decisão**: dois módulos novos, decoplados entre si —
+- `lib/events/outbox.ts` — `publicarEvento()`, insert best-effort em `event_outbox` (mesmo precedente de dual-write: nunca bloqueia o fluxo real).
+- `lib/events/consumer.ts` — `registrarConsumidorEvento(eventType, handler)` (registry local, mesmo padrão do registry de adapters do Cadence Engine) + `processarEventosPendentes()`, chamado pelo worker via novo job agendado `event-outbox-sweep` (1min). Retry com dead-letter em 5 tentativas (`status: failed`, `lastError` preenchido).
+
+**Eventos ligados nesta entrega** (núcleo real do domínio, não é migração de tudo): `LeadCreated` (leads.ts, criação de lead), `DealCreated` (negocios.ts POST + criação de negócio junto do lead), `StageChanged` (negocios.ts PATCH, toda transição de status), `DealLost` (status=perdido), `DealWon` + `CustomerCreated` (dentro do gate de evidência de Won já existente — ADR-EXEC-012 — payload rico com `contratoId`, `produto`, `evidencias`, `mrr`). Todos publicados no MESMO call site onde `dispararAutomacoes` já dispara (F5) — zero pontos novos de descoberta, os 7 gatilhos reais já estavam mapeados.
+
+**Consumidor real #1** (prova de que é barramento, não só tabela): jornal de auditoria de domínio — todo evento processado grava em `audit_log` (`action: event.<Tipo>`, `source: worker`), decoplado do código que publicou. Não substitui nenhuma notificação/automação existente — é um artefato novo (histórico durável e consultável de "quando esta transição de domínio aconteceu", independente de updatedAt mutável).
+
+**Validado com dado real, ponta a ponta, via API real (não script direto)**: login real (cookie de sessão, mesmo fluxo do bug de ADR-EXEC-015) → `POST /leads` real → `LeadCreated`+`DealCreated` publicados, sweep automático (job agendado, não chamada manual) processou os 2 em <70s, `audit_log` recebeu os 2 registros com payload correto → `PATCH /negocios/:id` status=ganho (gate de evidência real, fallback legado via contrato existente) → `StageChanged`+`DealWon`+`CustomerCreated` publicados com payload correto (`contratoId` reaproveitando o contrato existente, sem duplicar; `evidencias: ["signed_contract"]`). Dado de teste removido depois da validação.
+
+**O que isto NÃO faz**: não migra `whatsapp_recebido`/`contrato_vencendo`/`lead_inativo`/`nps_recebido` pra publicar evento ainda (automação já cobre esses 4 via chamada direta, menor prioridade/valor pra CS/Finance/Analytics que ainda não têm nenhum consumidor real do lado de fora do CRM); não cria nenhum consumidor de negócio real além do jornal de auditoria (CS/Onboarding, Financeiro, Business Hub continuam sem existir como sistemas — quando existirem, assinam `DealWon`/`CustomerCreated` sem tocar em `negocios.ts`). O barramento existe de verdade agora; o que falta é gente do outro lado assinando.
+
+---
+
 ## ADR-EXEC-005 — Documentação da reconstrução vive no repo, não só no vault
 
 **Contexto**: instrução do Kauã — outro agente/sessão precisa retomar sem reconstruir raciocínio, mesmo sem acesso ao vault Obsidian.

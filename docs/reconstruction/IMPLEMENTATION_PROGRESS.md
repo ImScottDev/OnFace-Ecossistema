@@ -25,7 +25,7 @@ Visão de alto nível, uma linha por fase. Detalhe operacional em `RECONSTRUCTIO
 - 2 achados técnicos pendentes verificados e quantificados com precisão (ver `ARCHITECTURE_DECISIONS.md` ADR-EXEC-004): MRR duplicado confirmado e MAIOR que a última medição (36 pares, R$17.449,30/mês); reuniões travadas confirmado (60 no total, não só as 53 de julho); assinaturas fora do espelho NÃO reproduzido (descartado).
 - Docs de reconstrução criados e mantidos (`RECONSTRUCTION_STATE.md`, `ARCHITECTURE_DECISIONS.md`, este arquivo).
 - **6/6 tasks de F0 concluídas localmente**:
-  1. Schema hardening (`organizacao_id NOT NULL` em 4 tabelas financeiras, 0 backfill necessário) + 3 tabelas novas (`teams`, `audit_log`, `event_outbox`).
+  1. Schema hardening (`organizacao_id NOT NULL` em 4 tabelas financeiras, 0 backfill necessário) + 3 tabelas novas (`teams`, `audit_log`, `event_outbox` — este último virou barramento real em 09/08, ver ADR-EXEC-016).
   2. Fix IDOR em `POST /leads/enrich-bulk`.
   3. Fix `reunioes.status` nunca atualizado (código + backfill local de 58 linhas).
   4. **101 arquivos de rotas Next.js mortas removidos** — mas só depois de um achado real: essas rotas só são mortas em PRODUÇÃO (via Traefik); em `next dev` local elas respondiam de verdade (sem proxy equivalente). Corrigido com rewrite condicional em `next.config.ts` espelhando a regra do Traefik, testado e confirmado antes de deletar.

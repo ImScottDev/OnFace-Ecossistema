@@ -27,6 +27,18 @@ o ambiente novo existir) nos pontos em que a fase atinge Technical+Data
 Done, pra ter algo estável de verdade pra validar — não um alvo em fluxo
 constante.
 
+## Eventos/Event-Driven — Event Outbox real (09/08)
+
+**Gatilho**: revisão arquitetural externa (o Kauã revisou o snapshot congelado contra o blueprint completo) apontou `event_outbox` como o gap 🔴 de maior prioridade — a tabela existia desde F0, mas nada nunca publicava nem consumia. Depois de um mal-entendido de prompt sobre "congelar/parar" (esclarecido pelo Kauã: seguir fechando backend/domínio inteiro, depois materializar V1 completa de frontend por domínio — não parar), a instrução real e prioritária foi: fechar este gap antes de seguir.
+
+- [x] `lib/events/outbox.ts` (publicar) + `lib/events/consumer.ts` (consumir, registry de handlers + retry/dead-letter em 5 tentativas) — ver ADR-EXEC-016.
+- [x] Eventos reais ligados nos mesmos 7 call sites onde `dispararAutomacoes` já dispara (F5): `LeadCreated`, `DealCreated` (×2 pontos — negocios.ts POST e leads.ts quando cria negócio junto do lead), `StageChanged`, `DealLost`, `DealWon`+`CustomerCreated` (dentro do gate de evidência de Won, payload com `contratoId`/`produto`/`evidencias`/`mrr` reais).
+- [x] Job agendado `event-outbox-sweep` no worker (1min) chamando `processarEventosPendentes()`.
+- [x] Consumidor real #1: jornal de auditoria de domínio (`audit_log`, `action: event.<Tipo>`) — decoplado do código que publica, prova que o barramento funciona pra múltiplos assinantes.
+- [x] **Validado ponta a ponta com dado real, via API real** (não script direto): login real → `POST /leads` → 2 eventos publicados → sweep automático processou em <70s → `audit_log` recebeu os 2 → `PATCH /negocios/:id` status=ganho (gate de evidência real, fallback legado via contrato existente, sem duplicar contrato) → 3 eventos publicados (`StageChanged`+`DealWon`+`CustomerCreated`) com payload correto → processados. Dado de teste (1 lead, 1 negócio, 1 contrato, eventos, audit_log) removido depois, confirmado 0 resto.
+- [x] `npx tsc --noEmit` limpo (mesmos 6 erros de baseline, nenhum novo).
+- [ ] Não incluído nesta entrega (consciente, não é gap esquecido): `whatsapp_recebido`/`contrato_vencendo`/`lead_inativo`/`nps_recebido` ainda não publicam evento (automação já cobre via chamada direta, menor valor sem consumidor real do outro lado); nenhum consumidor de negócio real (CS/Onboarding/Financeiro/Business Hub) existe ainda — só o jornal de auditoria.
+
 ## Fase atual: F7 — Frontend/UX (implementação, greenfield — ver nota abaixo)
 
 **Branch atual**: `feature/crm2-fase7-frontend` (checkpoint do CrmTopbar já commitado, `b3ca3e2`).
