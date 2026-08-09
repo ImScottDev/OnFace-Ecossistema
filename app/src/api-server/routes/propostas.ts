@@ -9,6 +9,7 @@ import { marcarPropostaAceita } from "@/lib/crm/aceitar-proposta";
 import { enviarPropostaComCheckout } from "@/lib/crm/enviar-proposta";
 import { getCheckoutSessionStatus } from "@/lib/integrations/stripe-sync";
 import { propostaPdfHtml, renderPropostaPdf } from "@/lib/propostas/proposta-pdf";
+import { syncOportunidadeFromNegocio } from "@/lib/crm/sync-domain-model";
 
 const app = new Hono();
 
@@ -309,6 +310,9 @@ app.post("/propostas", async (c) => {
       })
       .returning({ id: negocios.id });
     resolvedNegocioId = novoNeg.id;
+
+    // F1/dual-write: negócio criado como fallback (proposta sem deal) — best-effort.
+    await syncOportunidadeFromNegocio(novoNeg.id);
   }
 
   // Get next numero for org

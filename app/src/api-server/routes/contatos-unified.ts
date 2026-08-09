@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { leads, contatos, contatoListas, leadListas, empresas, atividades } from "@/lib/db/schema";
 import { eq, and, or, ilike, desc, sql, inArray } from "drizzle-orm";
 import { getCtx, parseBody } from "../compat.js";
+import { syncPessoaFromLead } from "@/lib/crm/sync-domain-model";
 
 const app = new Hono();
 
@@ -155,6 +156,9 @@ app.post("/contatos-unified", async (c) => {
       responsavelId: ctx.userId,
     })
     .returning();
+
+  // F1/dual-write: contato manual novo — best-effort.
+  await syncPessoaFromLead(newLead.id);
 
   return c.json(newLead);
 });

@@ -5,6 +5,7 @@ import { eq, and, desc } from "drizzle-orm";
 import { getCtx } from "../compat.js";
 import { searchPeople, extractDomainFromEmail, getCreditsInfo, APOLLO_COSTS } from "@/lib/apollo/client";
 import { getOrgApolloKey } from "@/lib/apollo/tenant-key";
+import { syncPessoaFromLead } from "@/lib/crm/sync-domain-model";
 
 const app = new Hono();
 
@@ -213,6 +214,9 @@ app.post("/import", async (c) => {
         tipo: "nota",
         descricao: `Contato importado do Apollo.io${p.title ? ` — ${p.title}` : ""}${orgName ? ` @ ${orgName}` : ""}`,
       });
+
+      // F1/dual-write: import de prospecção — best-effort.
+      await syncPessoaFromLead(newLead.id);
 
       results.push({ apolloId, leadId: newLead.id });
     } catch (error) {

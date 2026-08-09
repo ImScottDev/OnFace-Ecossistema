@@ -6,6 +6,7 @@ import { z } from "zod";
 import { getCtx, parseBody } from "../compat.js";
 import { phoneLikePattern } from "@/lib/whatsapp/phone-utils";
 import { downloadAndSaveAvatar, sessionToConfig } from "@/lib/whatsapp/client";
+import { syncPessoaFromLead, syncOportunidadeFromNegocio } from "@/lib/crm/sync-domain-model";
 
 const app = new Hono();
 
@@ -157,6 +158,10 @@ app.post("/contatos/:id/converter", async (c) => {
     })
     .returning();
 
+  // F1/dual-write: contato promovido a lead + negócio novo — best-effort.
+  await syncPessoaFromLead(id);
+  await syncOportunidadeFromNegocio(negocio.id);
+
   return c.json({ lead: { ...lead, tipo: "lead" }, negocio }, 201);
 });
 
@@ -227,6 +232,9 @@ app.post("/contatos/:id/criar-lead", async (c) => {
 
   // Propagation: find other contatos in same org with same phone or email
   await propagateLeadId(ctx.organizacaoId, id, newLead.id, contato.telefone, contato.email);
+
+  // F1/dual-write: novo lead criado a partir de contato — best-effort.
+  await syncPessoaFromLead(newLead.id);
 
   return c.json({ lead: newLead, contatoId: id }, 201);
 });
