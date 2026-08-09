@@ -16,6 +16,7 @@ import { automacoes, automacaoExecucoes, tarefas, notificacoes, negocios, leads 
 import { eq, and } from "drizzle-orm";
 import { sendResendEmail, isResendConfigured } from "@/lib/email/resend";
 import { whatsappOutgoingQueue } from "@/lib/queue";
+import { avaliarCondicao } from "@/lib/crm/condicao";
 
 export type GatilhoAutomacao =
   | "novo_lead" | "mudanca_status" | "novo_negocio" | "lead_inativo"
@@ -31,21 +32,6 @@ export interface ContextoGatilho {
   telefone?: string | null;
   email?: string | null;
   nome?: string | null;
-}
-
-function avaliarCondicao(condicao: unknown, campos: Record<string, unknown>): boolean {
-  const c = condicao as { campo?: string; operador?: string; valor?: string } | null;
-  if (!c || !c.campo || !c.operador) return true; // sem condição = sempre dispara
-  const valorCampo = campos[c.campo];
-  const valorComparar = c.valor;
-  switch (c.operador) {
-    case "igual": return String(valorCampo ?? "") === String(valorComparar ?? "");
-    case "diferente": return String(valorCampo ?? "") !== String(valorComparar ?? "");
-    case "contem": return String(valorCampo ?? "").toLowerCase().includes(String(valorComparar ?? "").toLowerCase());
-    case "maior_que": return Number(valorCampo) > Number(valorComparar);
-    case "menor_que": return Number(valorCampo) < Number(valorComparar);
-    default: return true;
-  }
 }
 
 interface AcaoConfig {

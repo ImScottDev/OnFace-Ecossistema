@@ -225,6 +225,18 @@ recomputar — decisão futura separada, não decidida agora.
 
 ---
 
+## ADR-EXEC-013 — Cadence Engine: arquitetura construída sem esperar credencial de IA (F5)
+
+**Contexto**: instrução explícita do Kauã (09/08) — "não espere a Groq para construir a arquitetura [do Cadence Builder]... a validação real do agente fica bloqueada pela credencial, mas a arquitetura não". A cadência real hoje existe de 2 formas independentes, cada uma reimplementando sua própria noção de "quando é a próxima tentativa": (1) `cadencia/sdr-inbound.ts` — 13 toques hardcoded, disparo manual pelo SDR; (2) `runAiSdrRetrySweep` no worker — 2 tiers de retry (24h/40h) com lógica de `if` embutida direto na função que também chama a IA e envia WhatsApp, tudo junto.
+
+**Decisão**: construir um motor de cadência genérico (`lib/cadencia/cadence-engine.ts`) — state machine com steps tipados (`wait` | `action`), branching por condição (reusa `avaliarCondicao`, extraído de `automacao-engine.ts` pra um módulo compartilhado `lib/crm/condicao.ts` — mesma gramática, uma implementação só), retry com backoff configurável por step, cancelamento auditável, e um registry de **adapters** (`registrarAdapter(nome, fn)`) — "chamar a IA" é só mais um adapter possível, o engine não sabe nem precisa saber que existe Groq/OpenAI/WhatsApp/email. Schema novo: `cadence_definitions` (steps como grafo jsonb) + `cadence_enrollments` (instância rodando, por entidade) + `cadence_enrollment_events` (audit trail). Sweep periódico no worker (`cadence-sweep`, 5min) já rodando de verdade.
+
+**Validado com dado real** (2 scripts descartáveis, removidos): grafo de 3 steps com branch condicional (pulou um step com base em `vars` atualizado pelo step anterior), retry com 2 falhas simuladas + backoff + sucesso na 3ª tentativa, audit trail completo e correto, cancelamento com motivo, idempotência de enrollment (não duplica), e o sweep pegando exatamente o enrollment vencido e ignorando o que estava agendado pro futuro.
+
+**O que NÃO foi feito (decisão consciente, não corte de escopo por pressa)**: migrar a cadência real do AI SDR ou do SDR inbound pra rodar em cima deste motor. Isso mudaria comportamento de um fluxo de receita que já funciona em produção (mesmo que localmente) — é o tipo de corte que merece ser feito com cuidado e validação (idealmente com a credencial Groq renovada pra testar E2E de verdade), não decisão unilateral só porque a arquitetura ficou pronta. O motor existe, testado, sem nenhum enrollment real usando-o ainda — zero risco de regressão nos 2 sistemas que já funcionam.
+
+---
+
 ## ADR-EXEC-007 — Data Governance: quem escreve o quê
 
 **Contexto**: guardrail 35 do blueprint ("Data Governance & Source of

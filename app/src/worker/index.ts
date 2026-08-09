@@ -3000,6 +3000,16 @@ const slaWorker = new Worker(
       await calcularSnapshotDiarioTodasOrgs();
       console.log("[F6/snapshot-diario] Done");
     }
+
+    if (job.name === "cadence-sweep") {
+      // F5/Cadence Engine: motor genérico ainda sem nenhuma cadence_definitions
+      // real usando-o (a migração da cadência do AI SDR/SDR inbound pra cá é
+      // decisão separada, não feita nesta rodada) — mas o sweep já roda de
+      // verdade, pronto pra processar o que for cadastrado.
+      const { sweepCadenciasDevidas } = await import("../lib/cadencia/cadence-engine");
+      const { processados } = await sweepCadenciasDevidas();
+      if (processados > 0) console.log(`[F5/cadence-engine] ${processados} enrollments avançados`);
+    }
   },
   { connection, concurrency: 1 }
 );
@@ -3647,6 +3657,7 @@ async function setupScheduledJobs() {
   await scheduledQueue.upsertJobScheduler("reativar-lead-perdido", { every: 24 * 60 * 60 * 1000 }, { name: "reativar-lead-perdido" });
   await scheduledQueue.upsertJobScheduler("check-whatsapp-connection", { every: 5 * 60 * 1000 }, { name: "check-whatsapp-connection" });
   await scheduledQueue.upsertJobScheduler("snapshot-diario", { every: 60 * 60 * 1000 }, { name: "snapshot-diario" });
+  await scheduledQueue.upsertJobScheduler("cadence-sweep", { every: 5 * 60 * 1000 }, { name: "cadence-sweep" });
   // Email sync: trigger every 5 min
   await emailSyncQueue.upsertJobScheduler("email-sync-trigger", { every: 5 * 60 * 1000 }, { name: "sync-trigger" });
   // Email sequences: check every minute
