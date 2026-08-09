@@ -1787,6 +1787,40 @@ export const clientes = pgTable("clientes", {
 // ADR-EXEC-001: outbox Postgres + worker BullMQ existente, sem broker novo.
 // Escrito na MESMA transação da mudança de domínio; consumido por job
 // dedicado que publica pros interessados (ex: DealWon -> CS/Finance/Analytics).
+// ═══════════════════════════════════════════════════════════════
+// CRM 2.0 — FASE 6 (Analytics): metricas_diarias — snapshot pré-computado
+// dos agregados de empresa (meta/pipeline/fechado/MRR Stripe), pra sair da
+// OLTP no caminho de leitura do dashboard. Os valores são calculados
+// chamando as MESMAS funções canônicas já usadas pelo dashboard
+// (getMetaComercialAgregada/getPipelineAtual/getFechadoPeriodo) — nunca
+// reimplementados, pra não arriscar reintroduzir bug de contagem duplicada
+// (ver comentário em dashboard/page.tsx sobre o achado de 22/07).
+// Ver docs/reconstruction/ARCHITECTURE_DECISIONS.md (ADR-EXEC-011).
+// ═══════════════════════════════════════════════════════════════
+
+export const metricasDiarias = pgTable("metricas_diarias", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+  data: date("data").notNull(),
+  metaValorAlvo: decimal("meta_valor_alvo", { precision: 12, scale: 2 }).notNull(),
+  metaRealizado: decimal("meta_realizado", { precision: 12, scale: 2 }).notNull(),
+  metaClosers: integer("meta_closers").notNull(),
+  pipelineTotal: decimal("pipeline_total", { precision: 14, scale: 2 }).notNull(),
+  pipelinePonderado: decimal("pipeline_ponderado", { precision: 14, scale: 2 }).notNull(),
+  pipelineNegociosAbertos: integer("pipeline_negocios_abertos").notNull(),
+  fechadoMesGanhos: integer("fechado_mes_ganhos").notNull(),
+  fechadoMesReceita: decimal("fechado_mes_receita", { precision: 14, scale: 2 }).notNull(),
+  fechadoMesRecorrente: decimal("fechado_mes_recorrente", { precision: 14, scale: 2 }).notNull(),
+  fechadoMesAvulso: decimal("fechado_mes_avulso", { precision: 14, scale: 2 }).notNull(),
+  mrrStripe: decimal("mrr_stripe", { precision: 14, scale: 2 }).notNull(),
+  mrrStripeClientes: integer("mrr_stripe_clientes").notNull(),
+  mrrRisco: decimal("mrr_risco", { precision: 14, scale: 2 }).notNull(),
+  mrrRiscoQtd: integer("mrr_risco_qtd").notNull(),
+  calculadoEm: timestamp("calculado_em", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("idx_metricas_diarias_org_data").on(table.organizacaoId, table.data),
+]);
+
 export const eventOutbox = pgTable("event_outbox", {
   id: uuid("id").defaultRandom().primaryKey(),
   organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
