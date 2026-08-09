@@ -52,6 +52,33 @@ Fechando a pendência registrada em F5 ("migrar `lead_inativo`/`contrato_vencend
 - [x] **Testado E2E com dado real** (script descartável, removido): 3 regras reais criadas em `automacoes`, `dispararAutomacoes` chamado pros 3 gatilhos com contexto real, confirmado `automacao_execucoes` com `status='sucesso'` e tarefa de fato criada pros 3, cleanup rodado (dado de teste removido, nenhuma tarefa real do lead tocada — bug no próprio script de teste corrigido antes de rodar: um `delete` inicial ia apagar todas as tarefas do lead real, trocado por filtro exato no prefixo de teste).
 - [x] `tsc` limpo, dev server saudável (`curl /login` → 200) depois da mudança.
 
+## F6 — follow-up: snapshot diário (Analytics separado do OLTP, primeiro passo) (09/08)
+
+**Decisão registrada com honestidade**: entre F6 (Analytics/OLTP) e F5
+(Cadence Builder) como próximo passo, escolhi F6 — Cadence Builder mexe no
+fluxo real de envio do AI SDR (maior risco, e ainda bloqueado por
+`GROQ_API_KEY` inválida pra validar E2E de qualquer forma), Analytics é só
+leitura, sem tocar fluxo de escrita/receita, mais fácil validar sem
+credencial externa.
+
+**Achado real ao ler o código antes de construir**: o dashboard
+(`dashboard/page.tsx`, 780 linhas) não é um cálculo simples de agregação —
+tem histórico documentado de bug real de contagem duplicada (achado
+22/07: card de meta somava mrr+valor_projeto e dobrava híbridos) e fontes
+canônicas já estabelecidas (`getFechadoPeriodo`/`getPipelineAtual`, MRR =
+Stripe nunca CRM). Ver ADR-EXEC-011 pra decisão completa — resumo: o
+snapshot CHAMA essas mesmas funções canônicas, nunca reimplementa a
+agregação, exatamente pra não arriscar reintroduzir esse tipo de bug.
+
+- [x] Schema novo `metricas_diarias` (snapshot por org/dia, `unique(organizacaoId, data)`), aplicado via `drizzle-kit push --force`.
+- [x] `lib/analytics/snapshot-diario.ts`: `calcularSnapshotDiario(organizacaoId)` chama `getMetaComercialAgregada`/`getPipelineAtual`/`getFechadoPeriodo` + as 2 queries de MRR Stripe (ativo/em risco) — as MESMAS já usadas pelo dashboard, upsert em `metricas_diarias`.
+- [x] Job agendado no worker (`snapshot-diario`, a cada 1h, mesmo padrão dos outros `upsertJobScheduler`) + handler que roda pra todas as orgs (best-effort por org).
+- [x] Endpoint de leitura `GET /api/relatorios/snapshot-diario` — lê o snapshot de hoje, calcula on-demand se ainda não rodou (não fica vazio esperando o cron).
+- [x] **Validado com dado real, cross-check exato**: rodei `calcularSnapshotDiario` pro org real e comparei contra os números já confirmados visualmente no dashboard (mesma sessão, F7): meta R$4.545,60/R$50.000 (2 closers) ✓, pipeline R$91.938,53 ✓, fechado do mês R$4.815,50/17 negócios ✓, MRR Stripe R$48.844,50/116 clientes ✓, MRR em risco R$10.106,80/10 ✓ — todos os 7 campos bateram exatamente. Script de teste descartável removido depois.
+- [x] `tsc` limpo, dev server + api server saudáveis (`/login` 200, `/api/health` 200) depois da mudança.
+- [ ] **Dashboard AINDA lê direto da OLTP** — não foi trocado pra ler do snapshot nesta rodada (strangler pattern: construir em paralelo primeiro, trocar depois de rodar de verdade por um tempo). Pendência registrada, decisão futura separada.
+- [ ] Escopo desta rodada foi só o agregado de EMPRESA (`soMeu=false`) — números pessoais/por-usuário não entraram (são baratos e naturais de já ficar de fora).
+
 ## Fase — F1 (histórico) — Domain Model (F0 completo localmente)
 
 **Branch atual**: `feature/crm2-fase1-domain-model` (a partir de `feature/crm2-fase0-foundation`, que já foi commitada e não precisa mais de trabalho — só falta promover pra homolog quando o ambiente novo existir).

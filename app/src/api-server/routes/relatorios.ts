@@ -25,6 +25,31 @@ const app = new Hono();
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+// F6/Analytics: lê o snapshot pré-computado (metricas_diarias), não recalcula
+// nada aqui — o cálculo roda no worker (job "snapshot-diario", a cada 1h).
+// Se ainda não rodou hoje pra essa org, calcula na hora (fallback, mesma
+// função do worker) em vez de devolver vazio — evita a UI ficar sem dado
+// só porque o job agendado ainda não passou.
+app.get("/snapshot-diario", async (c) => {
+  const ctx = await getCtx(c);
+  const { metricasDiarias } = await import("@/lib/db/schema");
+  const hoje = new Date().toISOString().split("T")[0];
+
+  let [snapshot] = await db
+    .select()
+    .from(metricasDiarias)
+    .where(and(eq(metricasDiarias.organizacaoId, ctx.organizacaoId), eq(metricasDiarias.data, hoje)))
+    .limit(1);
+
+  if (!snapshot) {
+    const { calcularSnapshotDiario } = await import("@/lib/analytics/snapshot-diario");
+    const calculado = await calcularSnapshotDiario(ctx.organizacaoId);
+    return c.json({ ...calculado, calculadoAgora: true });
+  }
+
+  return c.json(snapshot);
+});
+
 // ─── Helpers ────────────────────────────────────────────────────
 
 // Janela do período selecionado (respeita "custom:from:to" e presets "7d/30d/...").

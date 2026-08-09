@@ -170,6 +170,43 @@ sozinho** — fica registrada aqui pra decisão do Kauã, mesmo critério de
 
 ---
 
+## ADR-EXEC-011 — Analytics separado da OLTP: snapshot pré-computado, não reimplementação de agregação (F6)
+
+**Contexto**: F6 pedia "Analytics separado do OLTP" — o dashboard hoje
+recomputa ~10 blocos de query síncrona a cada page load. Ao ler o código
+real (`dashboard/page.tsx`, 780 linhas), achei um risco maior do que o
+escopo sugeria: os números agregados de empresa não são um cálculo simples
+— têm comentário explícito documentando um bug real já corrigido em 22/07
+("card somava mrr + valor_projeto e dava R$27.270 quando a meta mostrava
+R$18.177, o projeto de um híbrido entrava dobrado"). Existem fontes
+CANÔNICAS já estabelecidas pra evitar recorrência (`getFechadoPeriodo`,
+`getPipelineAtual`, MRR = espelho do Stripe, nunca soma de contratos do
+CRM).
+
+**Decisão**: em vez de reimplementar a agregação numa tabela de projeção
+(risco real de reintroduzir o mesmo tipo de bug de contagem duplicada que
+já causou dor nesse projeto — MRR duplicado, card de meta errado), o
+módulo novo (`lib/analytics/snapshot-diario.ts`) **chama as mesmas funções
+canônicas** já usadas pelo dashboard e só cacheia o resultado em
+`metricas_diarias` (job agendado, 1h). Escopo desta rodada: só o agregado
+de EMPRESA (visão admin, `soMeu=false`) — os números pessoais/por-usuário
+do dashboard são naturalmente baratos e já ficam de fora.
+
+**Consequência**: infraestrutura de projeção real, construída e validada
+(todos os 7 campos do snapshot bateram exatamente com os números já
+confirmados visualmente no dashboard em F7 — meta, pipeline, fechado do
+mês, MRR Stripe, MRR em risco). O dashboard **ainda lê direto da OLTP**
+— não foi trocado pra ler do snapshot nesta rodada (strangler pattern,
+mesmo critério do resto do projeto: construir em paralelo, só trocar
+depois de rodar de verdade por um tempo e o Kauã validar). Endpoint de
+leitura novo: `GET /api/relatorios/snapshot-diario` (calcula on-demand se
+ainda não rodou hoje pra aquela org, não fica vazio esperando o cron).
+
+**Pendência registrada**: trocar o dashboard pra ler do snapshot em vez de
+recomputar — decisão futura separada, não decidida agora.
+
+---
+
 ## ADR-EXEC-007 — Data Governance: quem escreve o quê
 
 **Contexto**: guardrail 35 do blueprint ("Data Governance & Source of

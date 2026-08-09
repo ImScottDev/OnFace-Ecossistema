@@ -2993,6 +2993,13 @@ const slaWorker = new Worker(
       }
       console.log("[Reativacao] Done checking lost deals");
     }
+
+    if (job.name === "snapshot-diario") {
+      console.log("[F6/snapshot-diario] Calculando snapshot diário de todas as orgs...");
+      const { calcularSnapshotDiarioTodasOrgs } = await import("../lib/analytics/snapshot-diario");
+      await calcularSnapshotDiarioTodasOrgs();
+      console.log("[F6/snapshot-diario] Done");
+    }
   },
   { connection, concurrency: 1 }
 );
@@ -3639,6 +3646,7 @@ async function setupScheduledJobs() {
   await scheduledQueue.upsertJobScheduler("alerta-renovacao", { every: 24 * 60 * 60 * 1000 }, { name: "alerta-renovacao" });
   await scheduledQueue.upsertJobScheduler("reativar-lead-perdido", { every: 24 * 60 * 60 * 1000 }, { name: "reativar-lead-perdido" });
   await scheduledQueue.upsertJobScheduler("check-whatsapp-connection", { every: 5 * 60 * 1000 }, { name: "check-whatsapp-connection" });
+  await scheduledQueue.upsertJobScheduler("snapshot-diario", { every: 60 * 60 * 1000 }, { name: "snapshot-diario" });
   // Email sync: trigger every 5 min
   await emailSyncQueue.upsertJobScheduler("email-sync-trigger", { every: 5 * 60 * 1000 }, { name: "sync-trigger" });
   // Email sequences: check every minute
