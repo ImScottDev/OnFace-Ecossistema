@@ -19,7 +19,31 @@ import {
   pontosContato,
   oportunidades,
   clientes,
+  auditLog,
 } from "@/lib/db/schema";
+
+/**
+ * F0/Observability: falha de sync não pode só ir pro console (ninguém olha
+ * log de container o tempo todo). Grava no audit_log — mesma infra usada
+ * pra impersonation/org-switch — pra ficar consultável de verdade.
+ */
+async function logFalhaSync(entityType: string, entityId: string, organizacaoId: string | null, err: unknown) {
+  console.error(`[sync-domain-model] falha ao sincronizar ${entityType} ${entityId} (best-effort, legado não afetado):`, err);
+  if (!organizacaoId) return;
+  try {
+    await db.insert(auditLog).values({
+      organizacaoId,
+      actorId: null,
+      action: "domain_model_sync.failed",
+      entityType,
+      entityId,
+      after: { erro: err instanceof Error ? err.message : String(err) },
+      source: "worker",
+    });
+  } catch {
+    // se até o audit_log falhar, não tem mais o que fazer — já logamos no console acima.
+  }
+}
 
 type TipoOrigem = "manual" | "organica" | "indicacao" | "sdr" | "importacao" | "campanha";
 
@@ -149,7 +173,8 @@ export async function syncPessoaFromLead(leadId: string): Promise<string | null>
 
     return pessoaId;
   } catch (err) {
-    console.error(`[sync-domain-model] falha ao sincronizar pessoa do lead ${leadId} (best-effort, legado não afetado):`, err);
+    const [leadRow] = await db.select({ organizacaoId: leads.organizacaoId }).from(leads).where(eq(leads.id, leadId)).limit(1).catch(() => [undefined]);
+    await logFalhaSync("lead", leadId, leadRow?.organizacaoId ?? null, err);
     return null;
   }
 }
@@ -205,6 +230,7 @@ export async function syncOportunidadeFromNegocio(negocioId: string): Promise<vo
       await db.insert(oportunidades).values({ ...valores, negocioIdLegado: negocioId });
     }
   } catch (err) {
-    console.error(`[sync-domain-model] falha ao sincronizar oportunidade do negócio ${negocioId} (best-effort, legado não afetado):`, err);
+    const [negRow] = await db.select({ organizacaoId: negocios.organizacaoId }).from(negocios).where(eq(negocios.id, negocioId)).limit(1).catch(() => [undefined]);
+    await logFalhaSync("negocio", negocioId, negRow?.organizacaoId ?? null, err);
   }
 }

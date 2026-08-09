@@ -56,7 +56,11 @@ Todas as 6 tasks de F0 (schema hardening, dev/prod routing parity + remoção de
   - `lib/crm/aceitar-proposta.ts` (`marcarPropostaAceita`) — o caminho de receita real (Won), usado tanto pelo aceite manual quanto pelo webhook do Stripe.
 - [ ] **Ainda não cobertos** (menor tráfego/prioridade, mapeados mas não implementados): `contatos-unified.ts`, `apollo.ts` (import de prospecção), `contatos.ts` (conversão contato→lead), `propostas.ts:299` (fallback de negócio sem proposta aceita ainda). E dentro do próprio `aceitar-proposta.ts`: a 2ª negócio criado no branch `if(currentNeg)` (clone "ativo" pra carteira) não tem `.returning()` hoje, não sincronizado — secundário, o evento principal de Won já está coberto via `pAtual.negocioId`.
 - [x] Testado (`tsc` limpo, dev server saudável) depois de cada rodada de mudança.
-- [ ] Validar F1 pelas 5 dimensões de Done (ver plano) — Technical+Data+Operational OK pros pontos cobertos; falta UX (nenhuma tela ainda expõe o novo Domain Model) e Observability mais formal (hoje só `console.error`).
+- [x] **Observability**: falha de sync agora grava em `audit_log` (`action: "domain_model_sync.failed"`), não só `console.error` — consultável de verdade, não preso em log de container.
+- [ ] Validar F1 pelas 5 dimensões de Done — Technical+Data+Operational+Observability OK pros pontos cobertos de dual-write; falta só UX (nenhuma tela ainda expõe o novo Domain Model, fica pra trilha de design + F7, não bloqueia seguir).
+
+### F1 — considerado suficiente pra seguir pra F2
+Backfill validado + dual-write nos pontos de maior valor real + observability de falha. Os pontos de menor tráfego não cobertos (contatos-unified, apollo, contatos.ts, fallback de propostas.ts) ficam registrados como pendência, não bloqueiam — mesmo critério de "incremental ≠ provisório mas não trava tudo antes de avançar" do plano.
 
 ### Riscos abertos (atualizados)
 - Fix de MRR duplicado (F4): **achado novo relevante 09/08** — não está só no commit `2111650` (`wip/local-pre-sync`), está TAMBÉM completo e wired de verdade na branch `homolog` (backup do Kauã, ver ADR-EXEC-008) — `avaliarContratosAtivosDoLead`/`marcarContratoRenovado` chamados em `aceitar-proposta.ts` e `api-server/routes/contratos.ts`. **NÃO integrar essa branch agora** — Kauã vai revisar essa branch com calma depois, mas serve de referência pronta quando chegar F4.
