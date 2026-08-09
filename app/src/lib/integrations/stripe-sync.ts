@@ -312,24 +312,52 @@ export async function syncStripe(): Promise<{ subs: number; faturas: number; chu
           }
         }
       } else if (lead) {
-        // assinatura nova de cliente conhecido
-        const [contrato] = await tx
-          .insert(contratos)
-          .values({
-            organizacaoId: org.id,
-            leadId: lead.id,
-            tipo: "assinatura",
-            descricao: planoNome ? `Assinatura Stripe — ${planoNome}` : "Assinatura Stripe (sync automático)",
-            mrr: String(mrr),
-            status: s.status === "canceled" ? "churned" : "ativo",
-            motivoChurn: s.status === "canceled" ? motivo : null,
-            produto: "ai",
-            stripeSubscriptionId: s.id,
-            renovacaoAuto: true,
-            inicio: s.start_date ? new Date(s.start_date * 1000).toISOString().slice(0, 10) : null,
-            finalizadoAt: canceladaEm,
-          })
-          .returning({ id: contratos.id });
+        // F4 (09/08) — FIX DA CAUSA RAIZ do bug de MRR duplicado confirmado
+        // na auditoria (36 pares, R$17.449,30/mês de excesso): antes deste
+        // fix, este branch SEMPRE inseria um contrato novo pra qualquer
+        // assinatura que `syncStripe()` visse por 1ª vez — mesmo quando
+        // `marcarPropostaAceita` já tinha criado um contrato pra essa MESMA
+        // assinatura (com `stripeSubscriptionId` estampado) segundos antes,
+        // via o webhook do checkout. Agora checa por `stripeSubscriptionId`
+        // ANTES de decidir criar vs. reaproveitar.
+        const [contratoJaExistente] = await tx
+          .select({ id: contratos.id })
+          .from(contratos)
+          .where(eq(contratos.stripeSubscriptionId, s.id))
+          .limit(1);
+
+        let contrato: { id: string } | undefined = contratoJaExistente;
+        if (contratoJaExistente) {
+          // Contrato já existe (veio do aceite de proposta) — só garante que
+          // reflete o status real do Stripe agora, nunca duplica.
+          await tx
+            .update(contratos)
+            .set({
+              status: s.status === "canceled" ? "churned" : "ativo",
+              motivoChurn: s.status === "canceled" ? motivo : null,
+              updatedAt: new Date(),
+            })
+            .where(eq(contratos.id, contratoJaExistente.id));
+        } else {
+          const [novoContrato] = await tx
+            .insert(contratos)
+            .values({
+              organizacaoId: org.id,
+              leadId: lead.id,
+              tipo: "assinatura",
+              descricao: planoNome ? `Assinatura Stripe — ${planoNome}` : "Assinatura Stripe (sync automático)",
+              mrr: String(mrr),
+              status: s.status === "canceled" ? "churned" : "ativo",
+              motivoChurn: s.status === "canceled" ? motivo : null,
+              produto: "ai",
+              stripeSubscriptionId: s.id,
+              renovacaoAuto: true,
+              inicio: s.start_date ? new Date(s.start_date * 1000).toISOString().slice(0, 10) : null,
+              finalizadoAt: canceladaEm,
+            })
+            .returning({ id: contratos.id });
+          contrato = novoContrato;
+        }
         const [novaAss] = await tx
           .insert(assinaturas)
           .values({

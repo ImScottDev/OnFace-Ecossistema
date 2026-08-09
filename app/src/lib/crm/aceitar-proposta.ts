@@ -8,11 +8,12 @@
  * carteira. Idêntico ao fluxo manual original (extraído pra reuso).
  */
 import { db } from "@/lib/db";
-import { propostas, propostaItens, leads, negocios, contratos, atividades, statusChanges } from "@/lib/db/schema";
+import { propostas, propostaItens, leads, negocios, contratos, atividades, statusChanges, auditLog } from "@/lib/db/schema";
 import { eq, asc } from "drizzle-orm";
 import { syncNegocioValoresFromPropostas } from "@/lib/crm/sync-negocio-valores";
 import { notificarNegocioGanho } from "@/lib/crm/notificar";
 import { syncPessoaFromLead, syncOportunidadeFromNegocio } from "@/lib/crm/sync-domain-model";
+import { avaliarContratosAtivosDuplicados, marcarContratoComoRenovado } from "@/lib/crm/contrato-duplicidade";
 
 type PropostaRow = typeof propostas.$inferSelect;
 
@@ -92,6 +93,35 @@ export async function marcarPropostaAceita(opts: {
     .update(propostas)
     .set({ status: "aceita", contratoId: contrato.id, negocioId, updatedAt: new Date() })
     .where(eq(propostas.id, proposta.id));
+
+  // F4: preventivo contra duplicidade — checa se o lead JÁ tinha outro
+  // contrato "ativo" do mesmo produto (produto="ai" nesta função) além do
+  // que acabamos de criar. "obsoleto_confirmado" (sem assinatura viva) é
+  // seguro marcar como renovado automaticamente; "upsell_confirmado" nunca
+  // se toca (é venda real em paralelo); "ambiguo" NUNCA decide sozinho —
+  // só registra em audit_log pra revisão humana (best-effort, não bloqueia
+  // o aceite real da proposta).
+  try {
+    const antigos = await avaliarContratosAtivosDuplicados(proposta.leadId, "ai", organizacaoId, contrato.id);
+    for (const antigo of antigos) {
+      if (antigo.classificacao === "obsoleto_confirmado") {
+        await marcarContratoComoRenovado(antigo.contrato.id, contrato.id);
+      } else if (antigo.classificacao === "ambiguo") {
+        await db.insert(auditLog).values({
+          organizacaoId,
+          actorId: userId,
+          action: "contrato.duplicidade_ambigua_detectada",
+          entityType: "contrato",
+          entityId: antigo.contrato.id,
+          after: { contratoNovoId: contrato.id, motivo: "lead já tinha contrato ativo do mesmo produto, sem assinatura Stripe vinculada pra desempatar — revisão humana necessária" },
+          source: "api",
+        });
+      }
+      // "upsell_confirmado" — não toca, é venda real em paralelo.
+    }
+  } catch (err) {
+    console.error("[F4] falha ao avaliar duplicidade de contrato (best-effort, aceite da proposta não afetado):", err);
+  }
 
   if (negocioId) {
     const [currentNeg] = await db.select().from(negocios).where(eq(negocios.id, negocioId)).limit(1);

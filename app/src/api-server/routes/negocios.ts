@@ -488,6 +488,33 @@ app.patch("/negocios/:id", async (c) => {
 
     // → ganho: create contract, promote lead to cliente, clone to carteira as "ativo"
     if (parsed.data.status === "ganho") {
+      // F4 — GATE DE WON À PROVA DE EVIDÊNCIA (achado real, guardrail repetido
+      // 5x em todo o processo de reconstrução): antes deste fix, esta transição
+      // criava um contrato "de fallback" SEM checar se existia proposta aceita
+      // — ou seja, dava pra marcar "ganho" só porque o vendedor mudou o status,
+      // sem contrato assinado nem pagamento confirmado por trás. Agora exige
+      // evidência real: proposta aceita OU contrato já existente pra este
+      // negócio, antes de permitir a transição.
+      const [propostaAceita] = await db
+        .select({ id: propostas.id })
+        .from(propostas)
+        .where(and(eq(propostas.negocioId, id), eq(propostas.status, "aceita")))
+        .limit(1);
+      const [contratoExistenteCheck] = await db
+        .select({ id: contratos.id })
+        .from(contratos)
+        .where(eq(contratos.negocioId, id))
+        .limit(1);
+
+      if (!propostaAceita && !contratoExistenteCheck) {
+        return c.json(
+          {
+            error: "Não é possível marcar como ganho sem evidência de fechamento (contrato assinado ou pagamento confirmado). Aceite a proposta primeiro.",
+          },
+          400
+        );
+      }
+
       updateData.ganhoAt = new Date();
 
       // Check if an accepted proposal already created a contract

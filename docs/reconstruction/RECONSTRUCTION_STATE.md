@@ -59,7 +59,48 @@ Todas as 6 tasks de F0 (schema hardening, dev/prod routing parity + remoção de
 - [x] **Observability**: falha de sync agora grava em `audit_log` (`action: "domain_model_sync.failed"`), não só `console.error` — consultável de verdade, não preso em log de container.
 - [ ] Validar F1 pelas 5 dimensões de Done — Technical+Data+Operational+Observability OK pros pontos cobertos de dual-write; falta só UX (nenhuma tela ainda expõe o novo Domain Model, fica pra trilha de design + F7, não bloqueia seguir).
 
-## Fase atual: F3 — AI SDR Agent
+## Fase atual: F4 — Commercial (Won gate + fix de MRR duplicado) — MAIOR RISCO FINANCEIRO DO PLANO
+
+Tudo construído do ZERO nesta fase, a partir dos requisitos já documentados
+— **nada copiado da branch `homolog`** (backup do Kauã, ver ADR-EXEC-008).
+
+- [x] `lib/crm/contrato-duplicidade.ts`: helper `avaliarContratosAtivosDuplicados`
+  (3 casos: upsell_confirmado/obsoleto_confirmado/ambiguo, desempate via
+  tabela `assinaturas`) + `marcarContratoComoRenovado`.
+- [x] **FIX DA CAUSA RAIZ** (`stripe-sync.ts`): `syncStripe()` agora checa
+  `contratos.stripeSubscriptionId` ANTES de decidir criar vs. reaproveitar —
+  fecha o bug confirmado (36 pares, R$17.449,30/mês, crescendo a cada venda
+  desde 30/07). **Não testável E2E localmente** — `STRIPE_API_KEY` é
+  deliberadamente vazia em dev (nunca cobrar cliente real, regra do
+  `CLAUDE.md` do próprio repo). Validei a lógica por leitura cuidadosa +
+  tracing manual do fluxo de variáveis, não por execução real.
+- [x] Preventivo em `aceitar-proposta.ts`: aplica o helper de 3 casos antes
+  de cada aceite de proposta — `obsoleto_confirmado` marca renovado
+  automático, `ambiguo` grava em `audit_log` pra revisão humana, nunca
+  decide sozinho.
+- [x] **Relatório de diagnóstico SÓ LEITURA** (`db:relatorio-duplicidade-contratos`,
+  saída salva em `docs/reconstruction/relatorios/2026-08-09-duplicidade-contratos.md`):
+  57 grupos de contrato ativo duplicado no total (não só os 36 pares do bug
+  de sync) — 68 upsell_confirmado, 4 obsoleto_confirmado, **58 ambíguo**.
+  MRR em excesso confirmado: R$17.449,30. **NENHUMA correção aplicada** —
+  checkpoint humano explícito, decisão fica com o Kauã.
+- [x] **Gate de Won à prova de evidência** (`negocios.ts`, transição pra
+  `status=ganho`): agora exige proposta aceita OU contrato já existente
+  antes de permitir — fecha o loophole real onde um contrato "de fallback"
+  era criado sem checar evidência nenhuma. Validado com dado real: dos 425
+  negócios `ganho` históricos, 158 (37%) não têm evidência, mas 143 desses
+  (90%) têm `zoho_id` (legado importado, o gate não retroage nesses) — só
+  ~15 são recentes/sem zoho_id (~2-5/mês), tamanho real do problema que a
+  terceira via de evidência (PBX/manual, ADR-EXEC-002, ainda pendente)
+  precisa resolver. Dado registrado no ADR pra informar essa decisão futura.
+- [x] `tsc` limpo em cada etapa, dev server saudável.
+- [ ] Terceira via de evidência pra PBX/venda manual — ainda pendente,
+  agora com dado real (ADR-EXEC-002 atualizado).
+- [ ] UX (endpoint de ação explícito `/deals/:id/win` dedicado, em vez do
+  gate embutido no PATCH genérico) — fica pra F7, o gate funciona hoje
+  mesmo sem essa refatoração de API shape.
+
+## Fase — F3 (histórico) — AI SDR Agent
 
 - [x] **Bug do endpoint corrigido** (`lib/ai/sdr.ts`): chamava `api.openai.com` com nome de modelo Groq, sem `OPENAI_API_KEY` documentada. Agora chama `api.groq.com` de verdade, lê `GROQ_API_KEY`, com fallback em cascata de 3 modelos (mesmo padrão já validado no worker). Ver ADR-EXEC-009.
 - [ ] **BLOQUEADO — precisa do Kauã**: `GROQ_API_KEY` no `.env` local está inválida/expirada (confirmado via curl direto, isolado do código). Não posso validar o AI SDR de ponta a ponta de verdade (conversação real) até isso ser renovado no console da Groq.
