@@ -5,6 +5,7 @@ import { desc, asc, eq, ilike, and, or, SQL, count, inArray, notInArray, gte, lt
 import { z } from "zod";
 import { resolveFollowupOwnerId } from "@/lib/crm/sdr-escalation";
 import { syncNegocioValoresFromPropostas } from "@/lib/crm/sync-negocio-valores";
+import { syncOportunidadeFromNegocio } from "@/lib/crm/sync-domain-model";
 import { getCtx } from "../compat.js";
 
 const app = new Hono();
@@ -407,6 +408,9 @@ app.post("/negocios", async (c) => {
     );
   }
 
+  // F1/dual-write: sincroniza Oportunidade — best-effort, nunca bloqueia a criação real.
+  await syncOportunidadeFromNegocio(negocio.id);
+
   return c.json(negocio, 201);
 });
 
@@ -570,6 +574,9 @@ app.patch("/negocios/:id", async (c) => {
     .set(updateData)
     .where(and(eq(negocios.id, id), eq(negocios.organizacaoId, ctx.organizacaoId)))
     .returning();
+
+  // F1/dual-write: sincroniza Oportunidade — best-effort, nunca bloqueia o update real.
+  await syncOportunidadeFromNegocio(id);
 
   return c.json(updated);
 });
