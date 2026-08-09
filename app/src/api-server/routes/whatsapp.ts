@@ -529,11 +529,15 @@ app.get("/whatsapp/conversations", async (c) => {
       empresaNome: empresas.nome,
       negocioTitulo: negocios.titulo,
       negocioStatus: negocios.status,
+      // F3/Human Handoff: estado real existe desde 09/08 (aiSdrContatoState),
+      // mas nenhuma tela nunca expôs — inbox é o lugar certo pra materializar.
+      handoffStatus: aiSdrContatoState.handoffStatus,
     })
     .from(contatos)
     .leftJoin(leads, eq(contatos.leadId, leads.id))
     .leftJoin(empresas, eq(leads.empresaId, empresas.id))
     .leftJoin(negocios, eq(leads.negocioAtivoId, negocios.id))
+    .leftJoin(aiSdrContatoState, eq(aiSdrContatoState.contatoId, contatos.id))
     .where(where)
     .orderBy(sql`${contatos.ultimaMsgAt} DESC NULLS LAST, ${contatos.id} DESC`)
     .limit(limit + 1);
@@ -558,6 +562,7 @@ app.get("/whatsapp/conversations", async (c) => {
     naoLidas: r.naoLidas ?? 0,
     responsavelId: r.responsavelId,
     createdAt: r.createdAt,
+    handoffStatus: r.handoffStatus ?? null,
   }));
 
   if (unread === "1") {
