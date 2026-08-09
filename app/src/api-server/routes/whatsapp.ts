@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import {
   leads, contatos, whatsappMensagens, whatsappTemplates, whatsappSessao,
   usuarios, empresas, negocios, leadLabels, leadUserUnread, aiSdrContatoState,
+  communications, pessoas,
 } from "@/lib/db/schema";
 import { eq, desc, count, and, sql, ilike, or, isNull, inArray, asc, gte, like, SQL } from "drizzle-orm";
 import { z } from "zod";
@@ -320,6 +321,33 @@ app.post("/whatsapp/send", async (c) => {
     replyStanzaId,
   });
 
+  // F2/dual-write (Communication Intelligence) — envio manual, best-effort,
+  // mesmo padrão já usado na mensagem recebida (worker, linha ~2237).
+  try {
+    let pessoaId: string | null = null;
+    if (resolvedLeadId) {
+      const [pessoa] = await db.select({ id: pessoas.id }).from(pessoas).where(eq(pessoas.leadIdLegado, resolvedLeadId)).limit(1);
+      pessoaId = pessoa?.id ?? null;
+    }
+    await db
+      .insert(communications)
+      .values({
+        organizacaoId: ctx.organizacaoId,
+        pessoaId,
+        canal: "whatsapp",
+        direcao: "saida",
+        conteudo: tipo === "location" ? `${latitude},${longitude}` : (finalText || null),
+        status: "pending",
+        externalId: message.id,
+        usuarioId: ctx.userId,
+        ocorridoEm: new Date(),
+        raw: { tipo, contatoId: resolvedContatoId },
+      })
+      .onConflictDoNothing({ target: [communications.canal, communications.externalId] });
+  } catch (err) {
+    console.error("[F2/dual-write] falha ao sincronizar communications do envio manual (best-effort):", err);
+  }
+
   // Cross-save
   if (resolvedSessaoId) {
     try {
@@ -367,6 +395,31 @@ app.post("/whatsapp/send", async (c) => {
             status: "received",
             statusAt: new Date(),
           });
+
+          // F2/dual-write — cross-save também é uma communication real do lado do destinatário.
+          try {
+            let pessoaIdCross: string | null = null;
+            if (targetContato.leadId) {
+              const [pessoaCross] = await db.select({ id: pessoas.id }).from(pessoas).where(eq(pessoas.leadIdLegado, targetContato.leadId)).limit(1);
+              pessoaIdCross = pessoaCross?.id ?? null;
+            }
+            await db
+              .insert(communications)
+              .values({
+                organizacaoId: ctx.organizacaoId,
+                pessoaId: pessoaIdCross,
+                canal: "whatsapp",
+                direcao: "entrada",
+                conteudo: tipo === "location" ? `${latitude},${longitude}` : (finalText || null),
+                status: "received",
+                externalId: `xsave-crm-${message.id}`,
+                ocorridoEm: new Date(),
+                raw: { tipo, contatoId: targetContato.id, crossSave: true },
+              })
+              .onConflictDoNothing({ target: [communications.canal, communications.externalId] });
+          } catch (err) {
+            console.error("[F2/dual-write] falha ao sincronizar communications do cross-save (best-effort):", err);
+          }
         }
       }
     } catch (err) {

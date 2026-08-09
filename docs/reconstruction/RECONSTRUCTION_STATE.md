@@ -262,7 +262,7 @@ Tudo construído do ZERO nesta fase, a partir dos requisitos já documentados
   - Worker WhatsApp, path de mensagem recebida ao vivo (linha ~2237) — idempotência via `unique(canal, external_id)`.
   - Worker `processAndStoreEmails` (sync incremental/full da caixa, cobre entrada E saída) — idempotência via `providerMessageId`.
 - [x] `tsc` limpo, dev server saudável depois de cada mudança.
-- [ ] **Não cobertos ainda** (menor tráfego, mesmo critério de F1 — documentado, não bloqueia): envio manual de WhatsApp (`api-server/routes/whatsapp.ts`), cross-save de sessão WhatsApp (`worker/index.ts` linha ~361), envio de e-mail de sequência automatizada (`worker/index.ts` linha ~3364 — email ainda deve aparecer via sync incremental depois, mas com possível delay/gap).
+- [x] **Fechados 09/08** (mesmo padrão mecânico aplicado em F1): envio manual de WhatsApp (`api-server/routes/whatsapp.ts` `/whatsapp/send`), cross-save de sessão WhatsApp (mesmo handler), envio de e-mail de sequência automatizada (`worker/index.ts`, job `check-sequences`) — todos os 3 pontos restantes de F2 agora com dual-write `communications`. Validado com dado real (script descartável, removido): 3 inserts mimetizando exatamente o padrão de cada ponto, todos linkados corretamente à `pessoa` via `leadIdLegado`, cleanup completo. **F2 agora está tecnicamente completo** (todos os pontos mapeados cobertos), só falta UX (timeline unificada, trilha de design + F7).
 - [ ] Timeline unificada (UI) usando `communications` — ainda não, fica pra trilha de design + F7 (mesmo critério de F1: schema/dado primeiro, tela depois).
 
 ### F1 — considerado suficiente pra seguir pra F2

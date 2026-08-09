@@ -3361,6 +3361,8 @@ const emailSequenceWorker = new Worker(
       emailContas: contasT,
       emails: emailsT,
       leads: leadsT,
+      pessoas: pessoasSeqT,
+      communications: commsSeqT,
     } = await import("../lib/db/schema");
     const { createEmailClient } = await import("../lib/email/factory");
     const { interpolateTemplate } = await import("../lib/email/template-engine");
@@ -3438,6 +3440,28 @@ const emailSequenceWorker = new Worker(
           });
 
           console.log(`[Sequence] Sent step ${exec.passoAtual} to ${lead.email}`);
+
+          // F2/dual-write (Communication Intelligence) — email de sequência
+          // automatizada, best-effort, mesmo padrão do resto do canal email.
+          try {
+            const [pessoaSeq] = await db.select({ id: pessoasSeqT.id }).from(pessoasSeqT).where(eq(pessoasSeqT.leadIdLegado, lead.id)).limit(1);
+            await db
+              .insert(commsSeqT)
+              .values({
+                organizacaoId: conta.organizacaoId,
+                pessoaId: pessoaSeq?.id ?? null,
+                canal: "email",
+                direcao: "saida",
+                conteudo: html,
+                status: "sent",
+                externalId: result.messageId || `seq-${exec.id}-${exec.passoAtual}`,
+                ocorridoEm: new Date(),
+                raw: { sequenciaExecucaoId: exec.id, passo: exec.passoAtual, assunto: subject },
+              })
+              .onConflictDoNothing({ target: [commsSeqT.canal, commsSeqT.externalId] });
+          } catch (err) {
+            console.error("[F2/dual-write] falha ao sincronizar communications do email de sequência (best-effort):", err);
+          }
         }
 
         // Advance to next step
