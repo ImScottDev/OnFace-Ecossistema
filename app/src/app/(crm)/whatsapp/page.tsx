@@ -6,7 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import {
   Search, MessageCircle, Wifi, WifiOff, Plus, Star, Trash2,
-  CheckCheck, EyeOff, Eye, Loader2, Users, UserCheck, Inbox,
+  CheckCheck, EyeOff, Eye, Loader2, Users, UserCheck, Inbox, Bot,
 } from "lucide-react";
 import { ChatPanel } from "@/components/crm/ChatPanel";
 import { ContatoActionBar } from "@/components/crm/ContatoActionBar";
@@ -36,6 +36,7 @@ interface ContatoConversation {
   ultimaMsgAt: string | null;
   naoLidas: number;
   createdAt: string;
+  handoffStatus: "ai_handling" | "human_required" | "human_assigned" | null;
 }
 
 interface ConversationsPage {
@@ -132,6 +133,7 @@ export default function WhatsAppPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [filterUnread, setFilterUnread] = useState(false);
+  const [filterHandoff, setFilterHandoff] = useState(false);
   const [filterTipo, setFilterTipo] = useState<string>("all");
   const [filterDate, setFilterDate] = useState<DateFilter>("all");
   const [customDateFrom, setCustomDateFrom] = useState("");
@@ -229,9 +231,14 @@ export default function WhatsAppPage() {
   const allConversations = convData?.pages.flatMap(p => p.conversations) || [];
   const totalUnread = convData?.pages[0]?.totalUnread ?? 0;
 
+  // F3/Human Handoff: quantos, dos carregados na view atual, estão esperando
+  // um humano assumir de verdade (AI já desistiu/transferiu, ninguém pegou ainda).
+  const handoffCount = allConversations.filter(c => c.handoffStatus === "human_required").length;
+
   // Client-side date filter
   const filteredConversations = allConversations.filter(c => {
     if (!matchesDateFilter(c.ultimaMsgAt, filterDate, customDateFrom, customDateTo)) return false;
+    if (filterHandoff && c.handoffStatus !== "human_required") return false;
     return true;
   });
 
@@ -420,6 +427,21 @@ export default function WhatsAppPage() {
           </div>
           <p className="text-[10px] text-white/25">Meus: suas conversas. Abertos: não atribuídos. Todos: visão geral (admin).</p>
 
+          {/* F3/Human Handoff: IA transferiu, ninguém assumiu ainda — o AI SDR
+              já marca esse estado desde 09/08, mas nenhuma tela mostrava até agora. */}
+          {handoffCount > 0 && (
+            <button
+              onClick={() => setFilterHandoff(!filterHandoff)}
+              className={`mt-2 w-full flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                filterHandoff ? "bg-red-500/25 text-red-300" : "bg-red-500/10 text-red-400 hover:bg-red-500/15"
+              }`}
+            >
+              <Bot size={13} />
+              <span className="flex-1 text-left">{handoffCount} aguardando humano assumir</span>
+              {filterHandoff && <span className="text-[10px] text-red-300/70">(filtrando)</span>}
+            </button>
+          )}
+
           {/* Search */}
           <div className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.05)" }}>
             <Search className="w-4 h-4 text-white/30 shrink-0" />
@@ -507,6 +529,11 @@ export default function WhatsAppPage() {
                           {!contato.responsavelId && (
                             <span className="px-1 py-0 rounded text-[9px] shrink-0 leading-tight bg-amber-500/20 text-amber-400">
                               !
+                            </span>
+                          )}
+                          {contato.handoffStatus === "human_required" && (
+                            <span title="IA transferiu — ninguém assumiu ainda" className="flex items-center gap-0.5 px-1 py-0 rounded text-[9px] font-bold shrink-0 leading-tight bg-red-500/20 text-red-400 animate-pulse">
+                              <Bot size={9} />
                             </span>
                           )}
                         </div>

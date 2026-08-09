@@ -27,6 +27,19 @@ o ambiente novo existir) nos pontos em que a fase atinge Technical+Data
 Done, pra ter algo estável de verdade pra validar — não um alvo em fluxo
 constante.
 
+## V1 Frontend — materialização por domínio (09/08, em andamento)
+
+**Instrução do Kauã** (após corrigir o mal-entendido de "congelar"): terminar backend/domínio inteiro (F0-F6, integrações, RBAC, eventos, migração), depois materializar uma V1 completa de frontend organizada por domínio (App Shell → Command Center → Pessoas&Empresas → Leads&Qualificação → Pipeline Comercial → Deal/Customer 360 → Communications → Atividades → Automação → Analytics/Data Quality → Administração). Regra explícita: o frontend materializa o domínio já construído, não inventa funcionalidade nova só pra preencher tela.
+
+**Auditoria real do App Shell (passo 1 da ordem)**: achado — já está ~90% construído, não é greenfield. `CrmSidebar` (nav com gating por papel via `canSee`, org switcher, view-as/impersonação de leitura, colapsável, contadores ao vivo, mobile), `CrmTopbar` (breadcrumb, trigger de busca, notificações, pill de usuário), `CommandPalette` (Cmd+K, wired via `CustomEvent`), `Providers` (React Query + tratamento global de erro) — tudo real, funcionando, verificado visualmente. Não é trabalho a refazer. "Meu Dia" (`/dashboard`) já cobre boa parte do que seria "Command Center" (KPIs, pipeline, alertas, atividades), com ramificação por papel (admin/gerente vê agregado, closer/sdr vê pessoal) — precisa validação mais profunda antes de decidir se é um gap real ou só um nome diferente do mesmo conceito.
+
+**1º gap real fechado — AI SDR Human Handoff, invisível até agora**: achado ao auditar "Leads & Qualificação" — `aiSdrContatoState.handoffStatus` (`ai_handling`/`human_required`/`human_assigned`) existe desde 09/08 (F3, máquina de estados real, usada em `whatsapp.ts`/`ai-sdr.ts`/worker), mas **nenhuma tela nunca expôs esse campo** — zero uso em `app/src/app` ou `components`. Um lead marcado pela IA como "precisa de humano" ficava invisível pra qualquer closer/SDR, só descobrível lendo a conversa manualmente — risco real de resposta perdida.
+- [x] `GET /api/whatsapp/conversations` (`whatsapp.ts`) — left join com `aiSdrContatoState`, retorna `handoffStatus` por conversa (join 1:1 seguro, `idx_ai_sdr_contato_state_contato` é unique).
+- [x] Inbox do WhatsApp (`/whatsapp`): badge vermelho pulsante (ícone robô) no card da conversa quando `human_required`; botão-filtro "N aguardando humano assumir" (toggle) acima da busca, só aparece quando há pelo menos 1.
+- [x] **Validado visualmente via Playwright com dado real**: login real → view "Todos" → 1 conversa real (`luccaslabres`) marcada manualmente como `human_required` pra teste → badge apareceu certinho no card, filtro isolou a conversa corretamente, contagem "1 aguardando humano assumir" correta. Dado de teste removido depois, confirmado 0 resto.
+- [x] `npx tsc --noEmit` limpo (mesmos 6 erros de baseline).
+- [ ] Não incluído (consciente): nenhum botão explícito "assumir sem responder" — o fluxo já existente (mandar mensagem manual = assume automaticamente, ver `whatsapp.ts:295-308`) continua sendo a única forma de sair de `human_required`, suficiente pra esta entrega. Indicador de status dentro do `ChatPanel` (ao abrir a conversa) não foi feito ainda — badge na lista já cobre a necessidade de triagem, que era o gap real.
+
 ## Eventos/Event-Driven — Event Outbox real (09/08)
 
 **Gatilho**: revisão arquitetural externa (o Kauã revisou o snapshot congelado contra o blueprint completo) apontou `event_outbox` como o gap 🔴 de maior prioridade — a tabela existia desde F0, mas nada nunca publicava nem consumia. Depois de um mal-entendido de prompt sobre "congelar/parar" (esclarecido pelo Kauã: seguir fechando backend/domínio inteiro, depois materializar V1 completa de frontend por domínio — não parar), a instrução real e prioritária foi: fechar este gap antes de seguir.
