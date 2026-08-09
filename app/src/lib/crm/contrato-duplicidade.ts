@@ -77,6 +77,64 @@ export async function avaliarContratosAtivosDuplicados(
   return resultado;
 }
 
+export interface GrupoDuplicidade {
+  leadId: string;
+  produto: string | null;
+  avaliados: ContratoAtivoAvaliado[];
+}
+
+export interface RelatorioDuplicidade {
+  grupos: GrupoDuplicidade[];
+  totalUpsell: number;
+  totalObsoleto: number;
+  totalAmbiguo: number;
+  mrrExcesso: number;
+}
+
+/**
+ * Gera o relatório de duplicidade pra UMA organização, usando o MESMO
+ * helper (`avaliarContratosAtivosDuplicados`) que o código de produção usa
+ * pra decidir upsell vs. renovação — nunca reimplementa a classificação.
+ * Extraído do script `db:relatorio-duplicidade-contratos` pra ser
+ * reusável (CLI e UI chamam a mesma função, evita duplicar a lógica em
+ * dois lugares — o mesmo padrão de bug que já causou o achado de MRR).
+ */
+export async function gerarRelatorioDuplicidade(organizacaoId: string): Promise<RelatorioDuplicidade> {
+  const gruposBrutos = await db.execute<{ lead_id: string; produto: string | null }>(sql`
+    select lead_id, produto
+    from contratos
+    where status = 'ativo' and organizacao_id = ${organizacaoId}
+    group by lead_id, produto
+    having count(*) > 1
+  `);
+
+  const grupos: GrupoDuplicidade[] = [];
+  let totalUpsell = 0, totalObsoleto = 0, totalAmbiguo = 0;
+
+  for (const g of gruposBrutos) {
+    const avaliados = await avaliarContratosAtivosDuplicados(g.lead_id, g.produto, organizacaoId);
+    if (avaliados.length === 0) continue;
+    grupos.push({ leadId: g.lead_id, produto: g.produto, avaliados });
+    for (const { classificacao } of avaliados) {
+      if (classificacao === "upsell_confirmado") totalUpsell++;
+      else if (classificacao === "obsoleto_confirmado") totalObsoleto++;
+      else totalAmbiguo++;
+    }
+  }
+
+  const [mrrRow] = await db.execute<{ total: string }>(sql`
+    with ranked as (
+      select id, mrr, stripe_subscription_id,
+             row_number() over (partition by stripe_subscription_id order by created_at asc) as rn
+      from contratos
+      where status = 'ativo' and organizacao_id = ${organizacaoId} and stripe_subscription_id is not null
+    )
+    select coalesce(sum(mrr), 0)::text as total from ranked where rn > 1
+  `);
+
+  return { grupos, totalUpsell, totalObsoleto, totalAmbiguo, mrrExcesso: Number(mrrRow.total) || 0 };
+}
+
 /**
  * Marca um contrato como substituído por um mais novo (renovação/upgrade
  * real, não churn) — só chamar para contratos já classificados como
