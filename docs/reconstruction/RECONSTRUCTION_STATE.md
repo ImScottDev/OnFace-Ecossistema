@@ -59,7 +59,20 @@ Todas as 6 tasks de F0 (schema hardening, dev/prod routing parity + remoção de
 - [x] **Observability**: falha de sync agora grava em `audit_log` (`action: "domain_model_sync.failed"`), não só `console.error` — consultável de verdade, não preso em log de container.
 - [ ] Validar F1 pelas 5 dimensões de Done — Technical+Data+Operational+Observability OK pros pontos cobertos de dual-write; falta só UX (nenhuma tela ainda expõe o novo Domain Model, fica pra trilha de design + F7, não bloqueia seguir).
 
-## Fase atual: F5 — Automation (motor real construído e testado)
+## Fase atual: F6 — Analytics (Data Quality Layer construído e rodado)
+
+- [x] **Data Quality Layer real** (`lib/crm/data-quality.ts` + `db:relatorio-data-quality`): 10 checks do blueprint bloco 82, todos com query real contra o banco local (não simulado). Rodado de verdade, resultado salvo em `docs/reconstruction/relatorios/2026-08-09-data-quality.md`.
+- [x] **CRM Data Health: 20%** — mas o número importa menos que o que apareceu:
+  - Duplicate: 36 (mesmo achado de F4, validação cruzada — duas implementações independentes bateram no mesmo R$17.449,30).
+  - **Missing Owner: 54** (tipo='lead') — o bug real de 03/08 (18 leads) **voltou a acontecer e cresceu**. Vale investigar se o fix daquela vez cobriu todos os pontos de criação de lead.
+  - Missing Source: 346, Invalid Contact: 3, Invalid Company: 25, Invalid Amount: 2 — achados novos, não estavam mapeados antes.
+  - Inconsistent Stage: 251 — **corrigi um falso positivo meu próprio** durante a construção (esqueci `status='ativo'` no filtro de exceção) — depois de investigar com dado real, não é erro de dado, é status operacional (ativo/outra_data/sem_retorno/trava_negociacao/trava_assinatura) nunca formalizado na config do pipeline. Documentado como nuance, não come reportado como bug.
+  - Orphan Deal: 0, Missing Product: 0 — limpos (o fix de produto NULL já documentado em F4 se confirma aqui).
+- [x] `tsc` limpo, dev server saudável.
+- [ ] **Analytics separado do OLTP** (projeção por evento, dashboard hoje faz ~10 blocos de query síncrona sem cache) — NÃO iniciado nesta sessão, é a outra metade de F6, escopo maior (requer decidir o modelo de projeção). Registrado como pendência real.
+- [ ] **Command Center** — fica pra depois, é mais UX (trilha de design + F7), conforme já decidido no plano.
+
+## Fase — F5 (histórico) — Automation (motor real construído e testado)
 
 - [x] `automacao_execucoes` (schema novo — histórico de execução, blueprint bloco 31).
 - [x] **Motor real** (`lib/crm/automacao-engine.ts`): `dispararAutomacoes(gatilho, contexto)` — busca regras ativas do gatilho, avalia `condicao` (5 operadores: igual/diferente/contem/maior_que/menor_que), executa `acao` (6 tipos implementados de verdade, reaproveitando infra já existente: `criar_tarefa`/`notificar_usuario`/`mudar_status`/`atribuir_responsavel` são puro DB; `enviar_email` via `sendResendEmail` — já no-op gracioso sem chave; `enviar_whatsapp` via `whatsappOutgoingQueue` já existente), grava em `automacao_execucoes` sempre (sucesso/erro/condição não atendida). Best-effort — automação falhando nunca quebra o fluxo real que disparou.
