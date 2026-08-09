@@ -27,9 +27,36 @@ o ambiente novo existir) nos pontos em que a fase atinge Technical+Data
 Done, pra ter algo estável de verdade pra validar — não um alvo em fluxo
 constante.
 
-## Fase atual: F0 — Foundation
+## Fase atual: F1 — Domain Model (F0 completo localmente)
 
-**Subfase atual**: verificação de achados técnicos concluída → iniciando schema hardening.
+**Branch atual**: `feature/crm2-fase1-domain-model` (a partir de `feature/crm2-fase0-foundation`, que já foi commitada e não precisa mais de trabalho — só falta promover pra homolog quando o ambiente novo existir).
+
+**Subfase atual**: schema novo criado e validado (`pessoas`/`pontos_contato`/`oportunidades`/`clientes`, commit `40d0ddb`) → próximo passo é o script de backfill/reconciliação do legado.
+
+### F0 — status final: completo localmente, 6/6 tasks
+Todas as 6 tasks de F0 (schema hardening, dev/prod routing parity + remoção de rotas mortas, IDOR, reunioes.status, RBAC v2, Data Governance) foram concluídas e commitadas (`14ad2a3`, `cc68e19` na branch `feature/crm2-fase0-foundation`). Detalhe completo na seção "F0 — histórico" mais abaixo. RBAC v2 e Data Governance (que apareciam como "em andamento" numa versão anterior deste arquivo) **estão concluídos**: papéis novos (Director/Coordinator/Operations) em `roles.ts`, `teams`+`usuarios.teamId`, helpers `orgScope`/`pushOwnershipScope`, audit log real ligado em `org-switch`/`view-as`, e ADR-EXEC-007 (Data Governance) documentado.
+
+### F1 — progresso
+- [x] Branch `feature/crm2-fase1-domain-model` criada.
+- [x] Schema novo desenhado e aplicado no banco local (`drizzle-kit push --force`), `tsc` limpo, commit `40d0ddb`:
+  - `pessoas` (identidade persistente, Contact do blueprint) — `leadIdLegado` é só bridge de migração.
+  - `pontos_contato` (Attribution/Touchpoints) — ancorado em Pessoa/Empresa, nunca em Lead. `isFirstTouch`/`isLastTouch` explícitos.
+  - `oportunidades` (Deal v2) — referencia `pessoa_id`/`empresa_id`, sem `lead_id` obrigatório. `negocioIdLegado` é bridge de migração.
+  - `clientes` (Customer, entidade nova) — `statusFinanceiro` é cache de leitura, nunca fonte de escrita (Data Governance).
+- [ ] **Próximo passo exato**: script de backfill/reconciliação (leads→pessoas+clientes, negocios→oportunidades), com validação de contagem/dedup por email ANTES de qualquer dual-write real nas rotas. Ainda não iniciado o código do script.
+- [ ] Dual-write nas rotas reais (leads.ts/negocios.ts escrevendo nas duas tabelas) — não iniciado, depende do backfill validado primeiro.
+- [ ] Validar F1 pelos 5 dimensões de Done (ver plano) antes de considerar fase encerrada.
+
+### Riscos abertos (atualizados)
+- Fix de MRR duplicado (F4): **achado novo relevante 09/08** — não está só no commit `2111650` (`wip/local-pre-sync`), está TAMBÉM completo e wired de verdade na branch `homolog` (backup do Kauã, ver ADR-EXEC-008) — `avaliarContratosAtivosDoLead`/`marcarContratoRenovado` chamados em `aceitar-proposta.ts` e `api-server/routes/contratos.ts`. **NÃO integrar essa branch agora** — Kauã vai revisar essa branch com calma depois, mas serve de referência pronta quando chegar F4.
+- Terceira via de evidência de "Won" pra PBX (não passa por Stripe) — decisão ainda pendente, bloqueia fechamento pleno de F4.
+- Backfill de `reunioes.status` (F0) rodado só no banco LOCAL — precisa reaplicar quando homolog/produção forem tocados.
+- **Ambiente de homolog do CRM 2.0 ainda não provisionado** — decisão de infra (mesma EC2 com stack isolado vs. servidor novo) não urgente até 1º checkpoint real de promoção (provável fim de F1). NUNCA usar a branch git `homolog` existente como target (é backup do Kauã).
+- Nada do trabalho de F0/F1 foi promovido pra homolog ou produção — tudo só local.
+
+---
+
+## F0 — histórico (detalhe completo, fase já encerrada localmente)
 
 ### Concluído
 - [x] Ambiente local confirmado operacional (Postgres 5432 + Redis 6379 via Homebrew, `app/.env` com `DATABASE_URL` real).
@@ -51,18 +78,14 @@ constante.
 - [x] `npx tsc --noEmit` limpo — só os 6 erros de baseline pré-existentes (não relacionados, 2 inclusive desapareceram junto com a remoção das rotas mortas que os continham).
 - [x] Servidor de dev (app :3000 + api :3001, processo persistente da equipe desde 07/08) validado saudável depois de todas as mudanças — reiniciado só o `next dev` (necessário pra pegar o `next.config.ts` novo), api/worker não tocados.
 
-### Em andamento
-- [ ] RBAC v2 (helper reusável de org/team/ownership, papéis novos Director/Coordinator/Operations) — Task #5.
-- [ ] Data Governance como contrato documentado — Task #6.
+### RBAC v2 e Data Governance (Tasks #5/#6 — CONCLUÍDAS, commit `cc68e19`)
+- [x] `roles.ts`: papéis novos (director/coordinator/operations) sem quebrar as regras de acúmulo SDR/closer já existentes (decisão Scott 01/jul, preservada).
+- [x] `teams` + `usuarios.teamId` (referência circular resolvida via `AnyPgColumn`).
+- [x] `api-server/auth.ts`: helpers `orgScope`/`pushOwnershipScope` — infraestrutura reusável, adoção incremental rota a rota em F1+.
+- [x] `admin.ts`: audit log real ligado em `POST /admin/org-switch` e `POST /admin/view-as` — fecha o achado de segurança confirmado (zero log de impersonation/org-switch).
+- [x] ADR-EXEC-007 (Data Governance — tabela de autoridade de escrita por domínio) documentado em `ARCHITECTURE_DECISIONS.md`.
 
-### Decisões arquiteturais tomadas nesta sessão
-Ver `ARCHITECTURE_DECISIONS.md` (ADR-EXEC-001 a 005 + nova decisão de dev/prod routing parity, a documentar como ADR-EXEC-006).
+### Decisões arquiteturais (ver `ARCHITECTURE_DECISIONS.md` pra detalhe completo)
+ADR-EXEC-001 (outbox sem broker novo) · 002 (evidência Won×PBX, pendente) · 003 (Schema V2 em paralelo) · 004 (verificação de achados via query real) · 005 (docs no repo) · 006 (dev/prod routing parity) · 007 (Data Governance) · 008 (branch `homolog` é backup do Kauã, não integrar).
 
-### Riscos abertos
-- Fix de MRR duplicado (F4) depende do commit `2111650` (branch `wip/local-pre-sync`, existe em `origin/wip/local-pre-sync`) — ainda não revisado linha a linha nesta sessão, só referenciado por achado anterior. Revisar antes de reaplicar.
-- Terceira via de evidência de "Won" pra PBX (não passa por Stripe) — decisão ainda pendente, bloqueia fechamento pleno de F4.
-- **Backfill de `reunioes.status` rodado só no banco LOCAL (mirror)** — não propaga pra homolog/produção automaticamente. Precisa ser reaplicado (mesma query, documentada acima) quando/se for promovido, com o mesmo cuidado de validação antes/depois.
-- IDOR/rotas mortas/reunioes fix: implementados e validados localmente, **nada promovido pra homolog ou produção ainda** — aguardando ciclo de validação antes de merge pra `homolog`.
-
-### Próximo passo exato
-Task #5 (RBAC v2) e #6 (Data Governance doc) — últimos itens de F0 antes de fechar a fase e considerar promoção pra `homolog` pra validação real.
+Fim do histórico F0 — ver seção "Fase atual: F1" no topo deste arquivo para o estado real e próximo passo.
