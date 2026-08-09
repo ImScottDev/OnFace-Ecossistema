@@ -36,6 +36,7 @@ const subPathLabels: Record<string, string> = {
   "/contatos/[id]": "Detalhe",
   "/admin/organizacoes": "Organizações",
   "/admin/usuarios": "Usuários",
+  "/admin/qualidade-dados": "Qualidade de Dados",
 };
 
 function getBreadcrumb(pathname: string): { parent?: string; current: string } {
