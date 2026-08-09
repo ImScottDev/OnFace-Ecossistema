@@ -430,6 +430,7 @@ export function CrmSidebar() {
                 { name: "Organizações", href: "/admin/organizacoes", icon: Building2 },
                 { name: "Usuários", href: "/admin/usuarios", icon: ShieldCheck },
                 { name: "Qualidade de Dados", href: "/admin/qualidade-dados", icon: ShieldAlert },
+                { name: "Duplicidade de Contratos", href: "/admin/duplicidade-contratos", icon: Wallet },
               ].map((item) => {
                 const isActive = pathname.startsWith(item.href);
                 return (
