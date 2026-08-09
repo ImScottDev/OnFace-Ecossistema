@@ -4,8 +4,8 @@ Visão de alto nível, uma linha por fase. Detalhe operacional em `RECONSTRUCTIO
 
 | Fase | Nome | Status | % | Notas |
 |---|---|---|---|---|
-| F0 | Foundation | 🟡 implementado localmente, falta homolog | ~80% | 6/6 tasks locais concluídas (schema, dev/prod parity, IDOR, reunioes.status, RBAC v2, Data Governance). Falta: validar em homolog antes de considerar "Done" pelos critérios das 5 dimensões |
-| F1 | Domain Model (Lead/Contact/Company/Deal/Attribution) | ⚪ não iniciado | 0% | |
+| F0 | Foundation | 🟡 completo localmente, homolog pendente (não bloqueia) | ~90% | 6/6 tasks locais concluídas. Homolog é um ambiente ainda a provisionar (ver nota 09/08 em RECONSTRUCTION_STATE.md) — não urgente, decidir no 1º checkpoint real |
+| F1 | Domain Model (Lead/Contact/Company/Deal/Attribution) | 🟡 iniciando | ~5% | |
 | F2 | Communication Intelligence | ⚪ não iniciado | 0% | |
 | F3 | AI SDR Agent | ⚪ não iniciado | 0% | |
 | F4 | Commercial (Won gate, MRR fix) | ⚪ não iniciado | 0% | Depende de ADR-EXEC-002 (evidência PBX) |

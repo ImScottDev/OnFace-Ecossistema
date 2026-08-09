@@ -10,6 +10,23 @@
 
 ---
 
+## Nota importante (09/08) — branch `homolog` é backup do Kauã, não é target
+
+A branch git `homolog` (origin/homolog) captura o estado real do servidor
+de homolog em 07/08 — é backup intencional do Kauã pra ele revisar depois
+(módulo CS/Onboarding, callpilot-trigger, fix de MRR completo em
+`lib/crm/contratos.ts`, todos ainda sem decisão dele). **NUNCA fazer merge
+nela, nunca tratar como target de deploy.** Ver ADR-EXEC-008. O CRM 2.0
+precisa de um ambiente de homolog PRÓPRIO — decisão de infra (mesma EC2 com
+stack isolado vs. servidor novo) ainda não tomada, não é urgente até o
+primeiro checkpoint real de promoção (provável fim de F1).
+
+**Cadência de promoção decidida**: por checkpoint de fase/sub-fase coerente,
+não por micro-commit. Trabalho local/dev contínuo; sync pra homolog (quando
+o ambiente novo existir) nos pontos em que a fase atinge Technical+Data
+Done, pra ter algo estável de verdade pra validar — não um alvo em fluxo
+constante.
+
 ## Fase atual: F0 — Foundation
 
 **Subfase atual**: verificação de achados técnicos concluída → iniciando schema hardening.
