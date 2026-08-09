@@ -16,16 +16,19 @@ import {
   Search,
   Building2,
   ClipboardList,
+  Loader2,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 interface CommandItem {
   id: string;
   label: string;
+  sublabel?: string;
   href: string;
   icon: LucideIcon;
   shortcut?: string;
   keywords?: string[];
+  group?: string;
 }
 
 const commands: CommandItem[] = [
@@ -46,11 +49,13 @@ export function CommandPalette() {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [entityResults, setEntityResults] = useState<CommandItem[]>([]);
+  const [searching, setSearching] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
 
-  const filtered = query.trim()
+  const filteredCommands = query.trim()
     ? commands.filter((cmd) => {
         const q = query.toLowerCase();
         return (
@@ -60,6 +65,70 @@ export function CommandPalette() {
         );
       })
     : commands;
+
+  // Busca global real: antes disso, Cmd+K só navegava por uma lista fixa de
+  // páginas — nenhuma entidade (lead/empresa/negócio) era buscável por aqui,
+  // mesmo com os endpoints de busca já existindo (leads.ts/empresas.ts/
+  // negocios.ts todos aceitam ?search=). Reaproveita esses 3 endpoints reais
+  // em paralelo em vez de criar um endpoint agregado novo.
+  useEffect(() => {
+    const q = query.trim();
+    if (q.length < 2) {
+      setEntityResults([]);
+      setSearching(false);
+      return;
+    }
+    const controller = new AbortController();
+    setSearching(true);
+    const timer = setTimeout(async () => {
+      try {
+        const [leadsRes, empresasRes, negociosRes] = await Promise.all([
+          fetch(`/api/leads?search=${encodeURIComponent(q)}&limit=5`, { signal: controller.signal }),
+          fetch(`/api/empresas?search=${encodeURIComponent(q)}&limit=5`, { signal: controller.signal }),
+          fetch(`/api/negocios?search=${encodeURIComponent(q)}&limit=5`, { signal: controller.signal }),
+        ]);
+        const [leadsData, empresasData, negociosData] = await Promise.all([
+          leadsRes.ok ? leadsRes.json() : { leads: [] },
+          empresasRes.ok ? empresasRes.json() : { empresas: [] },
+          negociosRes.ok ? negociosRes.json() : { negocios: [] },
+        ]);
+        const results: CommandItem[] = [
+          ...(leadsData.leads || []).map((l: { id: string; nome: string; empresa?: string | null }) => ({
+            id: `lead-${l.id}`,
+            label: l.nome,
+            sublabel: l.empresa || undefined,
+            href: `/contatos/${l.id}`,
+            icon: Users,
+            group: "Contatos",
+          })),
+          ...(empresasData.empresas || []).map((e: { id: string; nome: string; cidade?: string | null }) => ({
+            id: `empresa-${e.id}`,
+            label: e.nome,
+            sublabel: e.cidade || undefined,
+            href: `/empresas/${e.id}`,
+            icon: Building2,
+            group: "Empresas",
+          })),
+          ...(negociosData.negocios || []).map((n: { id: string; titulo: string; leadEmpresa?: string | null }) => ({
+            id: `negocio-${n.id}`,
+            label: n.titulo,
+            sublabel: n.leadEmpresa || undefined,
+            href: `/negocios/${n.id}`,
+            icon: Kanban,
+            group: "Negócios",
+          })),
+        ];
+        setEntityResults(results);
+      } catch {
+        // AbortError esperado quando a query muda antes da resposta — ignora.
+      } finally {
+        setSearching(false);
+      }
+    }, 250);
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [query]);
+
+  const filtered = [...filteredCommands, ...entityResults];
 
   const handleOpen = useCallback(() => {
     setOpen(true);
@@ -71,6 +140,7 @@ export function CommandPalette() {
     setOpen(false);
     setQuery("");
     setSelectedIndex(0);
+    setEntityResults([]);
   }, []);
 
   const navigate = useCallback(
@@ -192,13 +262,17 @@ export function CommandPalette() {
               className="flex items-center gap-3 px-4 py-3"
               style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}
             >
-              <Search className="w-4 h-4 text-white/30 shrink-0" />
+              {searching ? (
+                <Loader2 className="w-4 h-4 text-white/30 shrink-0 animate-spin" />
+              ) : (
+                <Search className="w-4 h-4 text-white/30 shrink-0" />
+              )}
               <input
                 ref={inputRef}
                 type="text"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Buscar ou navegar..."
+                placeholder="Buscar contatos, empresas, negócios ou navegar..."
                 className="flex-1 bg-transparent text-sm text-white placeholder-white/30 outline-none"
               />
               <kbd
@@ -223,9 +297,14 @@ export function CommandPalette() {
                 filtered.map((cmd, i) => {
                   const Icon = cmd.icon;
                   const isSelected = i === selectedIndex;
+                  const prevGroup = i > 0 ? filtered[i - 1].group : undefined;
+                  const showGroupHeader = cmd.group && cmd.group !== prevGroup;
                   return (
-                    <button
-                      key={cmd.id}
+                    <div key={cmd.id}>
+                      {showGroupHeader && (
+                        <p className="px-3 pt-2 pb-1 text-[10px] uppercase tracking-wider text-white/25">{cmd.group}</p>
+                      )}
+                      <button
                       onClick={() => navigate(cmd.href)}
                       onMouseEnter={() => setSelectedIndex(i)}
                       className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-colors"
@@ -249,12 +328,13 @@ export function CommandPalette() {
                         />
                       </div>
                       <span
-                        className="flex-1 text-sm"
+                        className="flex-1 text-sm truncate"
                         style={{
                           color: isSelected ? "#fff" : "rgba(255,255,255,0.6)",
                         }}
                       >
                         {cmd.label}
+                        {cmd.sublabel && <span className="text-white/25"> · {cmd.sublabel}</span>}
                       </span>
                       {cmd.shortcut && (
                         <kbd
@@ -269,7 +349,8 @@ export function CommandPalette() {
                           {cmd.shortcut}
                         </kbd>
                       )}
-                    </button>
+                      </button>
+                    </div>
                   );
                 })
               )}

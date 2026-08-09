@@ -40,6 +40,12 @@ constante.
 - [x] `npx tsc --noEmit` limpo (mesmos 6 erros de baseline).
 - [ ] Não incluído (consciente): nenhum botão explícito "assumir sem responder" — o fluxo já existente (mandar mensagem manual = assume automaticamente, ver `whatsapp.ts:295-308`) continua sendo a única forma de sair de `human_required`, suficiente pra esta entrega. Indicador de status dentro do `ChatPanel` (ao abrir a conversa) não foi feito ainda — badge na lista já cobre a necessidade de triagem, que era o gap real.
 
+**2º gap real fechado — Cmd+K era só navegação fixa, não busca de verdade (domínio Pessoas&Empresas)**: achado ao auditar "busca global" — `CommandPalette` sempre foi uma lista estática de páginas com fuzzy-match local, nenhuma entidade (lead/empresa/negócio) era buscável por ali, mesmo com os 3 endpoints reais (`leads.ts`/`empresas.ts`/`negocios.ts`) já aceitando `?search=` há tempo.
+- [x] `CommandPalette.tsx`: a partir de 2 caracteres, debounce de 250ms dispara os 3 endpoints reais em paralelo (`limit=5` cada, `AbortController` cancela busca obsoleta) — nenhum endpoint novo criado, só reaproveita o que já existia e era testado.
+- [x] Resultados aparecem agrupados (Contatos/Empresas/Negócios) com sublabel (empresa vinculada), navegação por teclado (↑↓/Enter) funciona sobre a lista combinada (comandos estáticos + resultados reais).
+- [x] **Validado visualmente via Playwright com dado real**: buscou "Filipe" → 5 contatos reais + 3 negócios reais retornados e agrupados corretamente, clique num resultado navegou pra `/contatos/{id}` real, zero erro de console.
+- [x] `npx tsc --noEmit` limpo (mesmos 6 erros de baseline).
+
 ## Eventos/Event-Driven — Event Outbox real (09/08)
 
 **Gatilho**: revisão arquitetural externa (o Kauã revisou o snapshot congelado contra o blueprint completo) apontou `event_outbox` como o gap 🔴 de maior prioridade — a tabela existia desde F0, mas nada nunca publicava nem consumia. Depois de um mal-entendido de prompt sobre "congelar/parar" (esclarecido pelo Kauã: seguir fechando backend/domínio inteiro, depois materializar V1 completa de frontend por domínio — não parar), a instrução real e prioritária foi: fechar este gap antes de seguir.
