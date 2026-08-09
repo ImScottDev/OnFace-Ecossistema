@@ -74,6 +74,34 @@ quebrado o dev local, mesmo sendo seguro em produção).
 
 ---
 
+## ADR-EXEC-008 — Branch `homolog` atual é backup do Kauã, NÃO é target de deploy do CRM 2.0
+
+**Contexto**: investigando como sincronizar F0 pro ambiente de homolog,
+descobri que a branch git `homolog` (origin/homolog, commit `2bcca3d`
+"freeze do estado real de homolog 07/08") não é simplesmente "main
+atrasado" — é uma bifurcação deliberada que captura o estado real do
+servidor de homolog em 07/08, incluindo WIP nunca decidido: módulo CS/
+Onboarding completo (revertido em prod, mas nunca saiu do filesystem de
+homolog), `callpilot-trigger.ts` pausado, e — achado valioso — **o fix de
+MRR duplicado completo e FUNCIONAL** (`lib/crm/contratos.ts`:
+`avaliarContratosAtivosDoLead`/`marcarContratoRenovado`, wired de verdade em
+`lib/crm/aceitar-proposta.ts` e `api-server/routes/contratos.ts` — não só
+existindo solto como no `wip/local-pre-sync`). O próprio commit de freeze
+avisa um risco real: `LossReasonModal.tsx` (feature ATIVA em produção) não
+existe nessa branch.
+
+**Decisão (confirmada pelo Kauã, 09/08)**: essa branch/ambiente é backup
+intencional dele — ele vai revisar com calma depois e decidir o que
+aproveitar. **Não integrar, não fazer merge, não tocar.** O CRM 2.0 precisa
+de um ambiente de homolog PRÓPRIO, novo, separado desse.
+
+**Valor pra depois**: quando chegar a Fase 4 (Won gate + fix de MRR), a
+implementação de referência de `avaliarContratosAtivosDoLead` já existe
+pronta e testada nessa branch — vale revisar como ponto de partida quando
+o Kauã autorizar, em vez de reprojetar do zero.
+
+---
+
 ## ADR-EXEC-007 — Data Governance: quem escreve o quê
 
 **Contexto**: guardrail 35 do blueprint ("Data Governance & Source of
