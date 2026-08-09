@@ -77,10 +77,93 @@ export async function avaliarContratosAtivosDuplicados(
   return resultado;
 }
 
+export type SubClassificacaoAmbiguo = "duplicata_provavel" | "legitimo_provavel" | "revisao_necessaria";
+
+export interface ContratoAmbiguoClassificado {
+  contrato: typeof contratos.$inferSelect;
+  subClassificacao: SubClassificacaoAmbiguo;
+  comparadoCom: string | null; // id do contrato vizinho (temporal) usado na comparação
+  diffValorPct: number | null;
+  diffDias: number | null;
+}
+
 export interface GrupoDuplicidade {
   leadId: string;
   produto: string | null;
   avaliados: ContratoAtivoAvaliado[];
+  /** Só os contratos "ambiguo" de `avaliados`, com sub-classificação por evidência (valor+janela temporal) — ver ADR-EXEC-014. */
+  ambiguosClassificados: ContratoAmbiguoClassificado[];
+}
+
+// Calibrados com dado real (09/08, 13 pares ambíguos analisados): só 2 pares
+// eram mesmo valor + mesmo dia (duplicata clara); o resto tinha diferença de
+// valor >=44% ou estava espalhado por >=1.7 dias (padrão de compra legítima,
+// não duplicata). Ver ADR-EXEC-014 pra análise completa.
+const LIMIAR_VALOR_DUPLICATA_PCT = 5;
+const LIMIAR_DIAS_DUPLICATA = 1;
+const LIMIAR_VALOR_LEGITIMO_PCT = 40;
+const LIMIAR_DIAS_LEGITIMO = 5;
+
+function classificarParPorEvidencia(
+  atual: typeof contratos.$inferSelect,
+  vizinho: typeof contratos.$inferSelect | null
+): ContratoAmbiguoClassificado {
+  if (!vizinho) {
+    // Sem vizinho temporal pra comparar (único ambíguo do grupo, ou 1º da
+    // sequência) — não tem evidência pra afirmar nada, fica pra revisão.
+    return { contrato: atual, subClassificacao: "revisao_necessaria", comparadoCom: null, diffValorPct: null, diffDias: null };
+  }
+  const mrrAtual = Number(atual.mrr) || 0;
+  const mrrVizinho = Number(vizinho.mrr) || 0;
+  const diffValorPct = mrrAtual === 0 && mrrVizinho === 0 ? 0 : Math.abs(mrrAtual - mrrVizinho) / Math.max(mrrAtual, mrrVizinho, 1) * 100;
+  const diffDias = Math.abs((atual.createdAt?.getTime() ?? 0) - (vizinho.createdAt?.getTime() ?? 0)) / 86_400_000;
+
+  let subClassificacao: SubClassificacaoAmbiguo;
+  if (diffValorPct <= LIMIAR_VALOR_DUPLICATA_PCT && diffDias <= LIMIAR_DIAS_DUPLICATA) {
+    subClassificacao = "duplicata_provavel";
+  } else if (diffValorPct >= LIMIAR_VALOR_LEGITIMO_PCT || diffDias >= LIMIAR_DIAS_LEGITIMO) {
+    subClassificacao = "legitimo_provavel";
+  } else {
+    subClassificacao = "revisao_necessaria";
+  }
+  return { contrato: atual, subClassificacao, comparadoCom: vizinho.id, diffValorPct, diffDias };
+}
+
+/**
+ * Classifica os contratos "ambiguo" de um grupo por evidência de valor +
+ * janela temporal (nunca por Stripe — esses já não têm assinatura, é por
+ * isso que estão em "ambiguo"). Compara cada ambíguo com o vizinho mais
+ * próximo NO TEMPO — mas o vizinho pode ser QUALQUER contrato do grupo
+ * (upsell_confirmado/obsoleto_confirmado incluídos), não só outro ambíguo.
+ *
+ * Achado real ao construir isso (09/08): comparar só ambíguo-com-ambíguo
+ * deixava ~43/58 sem nenhum vizinho pra comparar (grupo só tinha aquele 1
+ * ambíguo) — mas esses tinham sim um vizinho confirmado no grupo. Isso
+ * importa de verdade: um ambíguo criado no mesmo dia/valor que um
+ * upsell_confirmado do MESMO grupo é candidato a ser a "metade órfã" da
+ * mesma venda (exatamente o padrão do bug original de MRR: um contrato
+ * ficava sem `stripeSubscriptionId`/assinatura vinculada por um bug de
+ * escrita, não porque era uma venda diferente).
+ *
+ * SÓ CLASSIFICA — nunca corrige nada, mesmo critério do resto do relatório.
+ */
+export function classificarAmbiguosPorEvidencia(todosDoGrupo: ContratoAtivoAvaliado[]): ContratoAmbiguoClassificado[] {
+  const ambiguos = todosDoGrupo.filter((a) => a.classificacao === "ambiguo");
+  const candidatos = [...todosDoGrupo].sort((a, b) => (a.contrato.createdAt?.getTime() ?? 0) - (b.contrato.createdAt?.getTime() ?? 0));
+
+  return ambiguos.map((item) => {
+    const outros = candidatos.filter((c) => c.contrato.id !== item.contrato.id);
+    if (outros.length === 0) return classificarParPorEvidencia(item.contrato, null);
+
+    // Vizinho = menor diffDias absoluto entre TODOS os outros contratos do grupo (não só ambíguos).
+    let vizinho = outros[0].contrato;
+    let menorDiff = Math.abs((item.contrato.createdAt?.getTime() ?? 0) - (vizinho.createdAt?.getTime() ?? 0));
+    for (const c of outros.slice(1)) {
+      const diff = Math.abs((item.contrato.createdAt?.getTime() ?? 0) - (c.contrato.createdAt?.getTime() ?? 0));
+      if (diff < menorDiff) { menorDiff = diff; vizinho = c.contrato; }
+    }
+    return classificarParPorEvidencia(item.contrato, vizinho);
+  });
 }
 
 export interface RelatorioDuplicidade {
@@ -88,6 +171,10 @@ export interface RelatorioDuplicidade {
   totalUpsell: number;
   totalObsoleto: number;
   totalAmbiguo: number;
+  /** Sub-totais do totalAmbiguo, por evidência de valor+janela temporal (ver classificarAmbiguosPorEvidencia). */
+  totalAmbiguoDuplicataProvavel: number;
+  totalAmbiguoLegitimoProvavel: number;
+  totalAmbiguoRevisaoNecessaria: number;
   mrrExcesso: number;
 }
 
@@ -114,7 +201,8 @@ export async function gerarRelatorioDuplicidade(organizacaoId: string): Promise<
   for (const g of gruposBrutos) {
     const avaliados = await avaliarContratosAtivosDuplicados(g.lead_id, g.produto, organizacaoId);
     if (avaliados.length === 0) continue;
-    grupos.push({ leadId: g.lead_id, produto: g.produto, avaliados });
+    const ambiguosClassificados = classificarAmbiguosPorEvidencia(avaliados);
+    grupos.push({ leadId: g.lead_id, produto: g.produto, avaliados, ambiguosClassificados });
     for (const { classificacao } of avaliados) {
       if (classificacao === "upsell_confirmado") totalUpsell++;
       else if (classificacao === "obsoleto_confirmado") totalObsoleto++;
@@ -132,7 +220,16 @@ export async function gerarRelatorioDuplicidade(organizacaoId: string): Promise<
     select coalesce(sum(mrr), 0)::text as total from ranked where rn > 1
   `);
 
-  return { grupos, totalUpsell, totalObsoleto, totalAmbiguo, mrrExcesso: Number(mrrRow.total) || 0 };
+  const todosAmbiguosClassificados = grupos.flatMap((g) => g.ambiguosClassificados);
+  const totalAmbiguoDuplicataProvavel = todosAmbiguosClassificados.filter((a) => a.subClassificacao === "duplicata_provavel").length;
+  const totalAmbiguoLegitimoProvavel = todosAmbiguosClassificados.filter((a) => a.subClassificacao === "legitimo_provavel").length;
+  const totalAmbiguoRevisaoNecessaria = todosAmbiguosClassificados.filter((a) => a.subClassificacao === "revisao_necessaria").length;
+
+  return {
+    grupos, totalUpsell, totalObsoleto, totalAmbiguo,
+    totalAmbiguoDuplicataProvavel, totalAmbiguoLegitimoProvavel, totalAmbiguoRevisaoNecessaria,
+    mrrExcesso: Number(mrrRow.total) || 0,
+  };
 }
 
 /**

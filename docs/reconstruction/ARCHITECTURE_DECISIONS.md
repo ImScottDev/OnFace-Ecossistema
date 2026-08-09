@@ -237,6 +237,18 @@ recomputar — decisão futura separada, não decidida agora.
 
 ---
 
+## ADR-EXEC-014 — 58 contratos ambíguos: classificação por evidência, não tarefa manual (F4)
+
+**Contexto**: instrução do Kauã — não gastar tempo revisando 58 contratos um a um; construir uma classificação automática por evidência (alta confiança duplicata / alta confiança legítimo / ambíguo de verdade) primeiro, e só escalar pra humano o que sobrar.
+
+**Decisão**: `classificarAmbiguosPorEvidencia()` (`lib/crm/contrato-duplicidade.ts`) compara cada contrato "ambiguo" (sem assinatura Stripe vinculada) com o vizinho MAIS PRÓXIMO NO TEMPO dentro do mesmo grupo lead+produto — e o vizinho pode ser QUALQUER contrato do grupo, não só outro ambíguo (achado real ao construir: comparar só ambíguo-com-ambíguo deixava 43/58 sem nenhum vizinho pra comparar, porque a maioria dos grupos só tem 1 ambíguo ao lado de contratos JÁ confirmados). Limiares calibrados com dado real (13 pares analisados antes do fix de escopo): diferença de valor ≤5% E diferença de tempo ≤1 dia → `duplicata_provavel`; diferença de valor ≥40% OU diferença de tempo ≥5 dias → `legitimo_provavel`; o resto → `revisao_necessaria`.
+
+**Resultado real**: dos 58 ambíguos, 33 `duplicata_provavel`, 23 `legitimo_provavel`, só **2 `revisao_necessaria`** (o que de fato precisa de olho humano). Muitos dos 33 `duplicata_provavel` têm `stripeSubscriptionId` preenchido na própria linha do contrato mas SEM registro correspondente em `assinaturas` — consistente com serem mais instâncias do mesmo bug já diagnosticado (dois contratos quase simultâneos pra mesma venda, um deles nunca teve a assinatura vinculada). Não é um achado avulso, é o mesmo padrão em escala maior.
+
+**O que isso NÃO faz**: nenhuma correção automática. `duplicata_provavel` é um SINAL de alta confiança pra entrar numa fila de consolidação, não uma ordem de merge. A decisão de consolidar (e como — qual contrato mantém, qual arquiva) continua humana, só que agora com 33 casos endereçáveis em lote (revisão rápida, confirma o padrão) em vez de 58 individuais.
+
+---
+
 ## ADR-EXEC-007 — Data Governance: quem escreve o quê
 
 **Contexto**: guardrail 35 do blueprint ("Data Governance & Source of
