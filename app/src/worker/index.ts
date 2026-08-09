@@ -2872,6 +2872,22 @@ const slaWorker = new Worker(
             dataVencimento: contrato.vencimento!,
           });
           await db.update(leads).set({ renovacaoAlertada: true }).where(eq(leads.id, lead.id));
+
+          // F5/Automation: gatilho "contrato_vencendo" — best-effort, roda ao
+          // lado da tarefa hardcoded acima (não substitui, motor migrado só
+          // fica ativo pra quem configurar regra em `automacoes`).
+          try {
+            const { dispararAutomacoes } = await import("../lib/crm/automacao-engine");
+            await dispararAutomacoes("contrato_vencendo", {
+              entityType: "lead",
+              entityId: lead.id,
+              organizacaoId: lead.organizacaoId,
+              campos: { mrr: contrato.mrr, vencimento: contrato.vencimento },
+              nome: lead.nome,
+            });
+          } catch (err) {
+            console.error("[F5/automacao-engine] falha ao disparar automações de contrato_vencendo (best-effort):", err);
+          }
         }
       }
       console.log(`[Renovacao] Checked ${expiring.length} expiring contracts`);
@@ -2957,6 +2973,21 @@ const slaWorker = new Worker(
                 dataVencimento: new Date().toISOString().split("T")[0],
               });
             }
+          }
+
+          // F5/Automation: gatilho "lead_inativo" — best-effort, ao lado da
+          // tarefa hardcoded acima (mesmo critério de contrato_vencendo).
+          try {
+            const { dispararAutomacoes } = await import("../lib/crm/automacao-engine");
+            await dispararAutomacoes("lead_inativo", {
+              entityType: "lead",
+              entityId: deal.leadId,
+              organizacaoId: deal.leadOrgId,
+              campos: { motivoPerda: motivo, diasInativo: days },
+              nome: deal.leadNome,
+            });
+          } catch (err) {
+            console.error("[F5/automacao-engine] falha ao disparar automações de lead_inativo (best-effort):", err);
           }
         }
       }
