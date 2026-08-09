@@ -14,7 +14,8 @@
     "db:seed": "tsx src/lib/db/seed.ts",
     "db:seed-servicos": "tsx src/lib/db/seed-servicos.ts",
     "db:cleanup-seed": "tsx src/lib/db/cleanup-seed.ts",
-    "db:backfill-domain-model": "tsx --env-file=.env src/lib/db/backfill-domain-model.ts"
+    "db:backfill-domain-model": "tsx --env-file=.env src/lib/db/backfill-domain-model.ts",
+    "db:relatorio-duplicidade-contratos": "tsx --env-file=.env src/lib/db/relatorio-duplicidade-contratos.ts"
   },
   "dependencies": {
     "@azure/msal-node": "^5.0.6",

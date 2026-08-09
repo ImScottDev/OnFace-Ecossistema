@@ -20,6 +20,16 @@ Formato curto: contexto → decisão → consequência. ADRs numeradas herdadas 
 
 **Decisão**: **ainda não tomada**. Proposta em avaliação: atestação manual financeira com dupla aprovação + audit_log obrigatório (nunca silenciosa), como terceiro caminho de evidência só pra `produto='pabx'`.
 
+**Dado real pra informar a decisão (09/08, gate já implementado em `negocios.ts`)**:
+dos 425 negócios `status='ganho'` no banco local, 158 (37%) não têm nenhuma
+evidência (nem proposta aceita, nem contrato). 143 desses 158 (90%) têm
+`zoho_id` — são legado importado, não atividade recente. Só ~15 são de fato
+recentes/sem zoho_id, distribuídos esparsamente (2-5/mês nos últimos meses)
+— provavelmente os casos reais de PABX/venda manual. **O gate implementado
+não afeta dado histórico** (só bloqueia transição NOVA sem evidência) —
+esses ~15/mês são o tamanho real do problema que a terceira via de
+evidência (ADR pendente) precisa resolver, não é volume alto.
+
 **Bloqueia**: fechamento pleno de F4 (Commercial). Não bloqueia F0-F3.
 
 ---
