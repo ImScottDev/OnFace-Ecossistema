@@ -9,6 +9,7 @@ import {
   usuarios,
   pipelines,
 } from "../db/schema";
+import { syncPessoaFromLead, syncOportunidadeFromNegocio } from "./sync-domain-model";
 
 // Lógica de "Converter em oportunidade" (handover SDR → closer), extraída da rota
 // POST /leads/:id/converter-oportunidade pra ser reaproveitada tanto pelo endpoint
@@ -241,6 +242,11 @@ export async function converterLeadEmOportunidade(
       dados: { reuniaoId, closerId, closerNome, data: dataReuniao.toISOString(), tipo: input.reuniao.tipo || "call" },
     });
   }
+
+  // F1/dual-write: sincroniza Domain Model novo — best-effort, nunca bloqueia
+  // a conversão real (usada tanto pelo endpoint manual quanto pelo Agente SDR).
+  await syncPessoaFromLead(lead.id);
+  await syncOportunidadeFromNegocio(negocio.id);
 
   return { ok: true, negocioId: negocio.id, titulo, reuniaoId, closerId };
 }

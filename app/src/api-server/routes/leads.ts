@@ -49,6 +49,7 @@ import {
 } from "drizzle-orm";
 import { z } from "zod";
 import { leadScoringQueue, notificationQueue, enrichmentQueue } from "@/lib/queue";
+import { syncPessoaFromLead, syncOportunidadeFromNegocio } from "@/lib/crm/sync-domain-model";
 import {
   enrichPerson,
   enrichOrganization,
@@ -599,6 +600,12 @@ app.post(
       },
     });
 
+    // F1/dual-write: sincroniza Domain Model novo (pessoas/pontos_contato/
+    // oportunidades) — best-effort, nunca bloqueia nem falha a criação real
+    // do lead (legado continua sendo a fonte de verdade até a F8).
+    await syncPessoaFromLead(newLead.id);
+    if (negocio?.id) await syncOportunidadeFromNegocio(negocio.id);
+
     return c.json({ ...newLead, negocioId: negocio?.id ?? null }, 201);
   }
 );
@@ -949,6 +956,9 @@ app.patch("/leads/:id", async (c) => {
 
   // Recalculate score
   await leadScoringQueue.add("score", { leadId: id });
+
+  // F1/dual-write: mesma regra da criação — best-effort, nunca bloqueia o update real.
+  await syncPessoaFromLead(id);
 
   return c.json(updated);
 });
