@@ -8,6 +8,7 @@ import TabComercialCloser from "./components/TabComercialCloser";
 import TabSdr from "./components/TabSdr";
 import TabGrowth from "./components/TabGrowth";
 import TabAtividadeTime from "./components/TabAtividadeTime";
+import TabPosVenda from "./components/TabPosVenda";
 import PeriodSelector from "./components/PeriodSelector";
 import { useMe } from "@/lib/useMe";
 import { isAdminView } from "@/lib/auth/roles";
@@ -16,6 +17,7 @@ const TABS = [
   { key: "sdr", label: "Pré-vendas (SDR)" },
   { key: "comercial", label: "Comercial" },
   { key: "atividade-time", label: "Atividade do Time" },
+  { key: "pos-venda", label: "Pós-venda" },
   { key: "growth", label: "Growth" },
   { key: "marketing", label: "Marketing" },
   { key: "midia-paga", label: "Mídia Paga" },
@@ -102,6 +104,7 @@ export default function RelatoriosPage() {
             {tab === "sdr" && <TabSdr periodo={periodo} />}
             {tab === "comercial" && <TabComercial periodo={periodo} />}
             {tab === "atividade-time" && <TabAtividadeTime />}
+            {tab === "pos-venda" && <TabPosVenda />}
             {tab === "growth" && <TabGrowth periodo={periodo} />}
             {tab === "marketing" && <TabMarketing periodo={periodo} />}
             {tab === "midia-paga" && <TabMidiaPaga periodo={periodo} />}
