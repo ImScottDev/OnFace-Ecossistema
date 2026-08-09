@@ -140,6 +140,36 @@ ponta a ponta de verdade até isso ser resolvido.**
 
 ---
 
+## ADR-EXEC-010 — Investigação da causa raiz do "Missing Owner" recorrente (F6)
+
+**Contexto**: o Data Quality Layer (F6) achou 54 leads `tipo='lead'` sem
+`responsavel_id` — inicialmente li isso como "o bug de 03/08 (18 leads)
+recorrendo e crescendo", o que seria preocupante (fix quebrado).
+
+**Investigação (09/08)**: os 54 leads têm **origem='outbound'**,
+**sdr_status='pending'** (nunca avançou), e — o dado decisivo — **o EXATO
+MESMO `created_at`** até o microssegundo (`2026-08-05 18:53:54.647357-03`).
+Isso não é criação orgânica um a um pela aplicação — é um **INSERT em lote
+único**, de um script/import externo, 4 dias antes desta sessão. Confirmado
+que nenhum ponto do código atual (`grep` completo por `"outbound"`) cria
+lead com essa origem — os 3 lugares que usam essa string só a CONSOMEM
+(filtro de relatório/meta), nunca a escrevem. "outbound" é valor
+reconhecido pelo sistema de relatórios, mas não é produzido por nenhuma
+rota/webhook/worker existente hoje.
+
+**Conclusão real**: **não é o mesmo bug de 03/08 recorrendo** — aquele fix
+(fallback reativo, dispara quando `sdr_status` muda) continua funcionando
+pra qualquer lead que passe pelo fluxo normal da aplicação. Este é um
+evento distinto: alguém (Kauã ou outro processo) rodou um import em lote
+de prospecção fora do código da aplicação, sem preencher responsável.
+Mesmo SINTOMA (Missing Owner), causa raiz DIFERENTE — não precisa de fix
+de código, precisa de decisão humana de reconciliação (atribuir os 54 a
+alguém, mesmo padrão do backfill de 03/08). **Não fiz essa reconciliação
+sozinho** — fica registrada aqui pra decisão do Kauã, mesmo critério de
+"correção em massa exige checkpoint humano" já aplicado o resto da sessão.
+
+---
+
 ## ADR-EXEC-007 — Data Governance: quem escreve o quê
 
 **Contexto**: guardrail 35 do blueprint ("Data Governance & Source of
