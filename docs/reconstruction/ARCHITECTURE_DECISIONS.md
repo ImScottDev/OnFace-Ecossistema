@@ -74,6 +74,42 @@ quebrado o dev local, mesmo sendo seguro em produção).
 
 ---
 
+## ADR-EXEC-007 — Data Governance: quem escreve o quê
+
+**Contexto**: guardrail 35 do blueprint ("Data Governance & Source of
+Truth") — não é só "de onde vem o dado pra leitura" (isso já existia no
+bloco 46), é **quem tem autoridade de ESCREVER**. Sem essa regra explícita,
+o legado acumulou campos manuais de receita (`leads.mrrEstimado`,
+`negocios.valorSetup` etc.) que nunca deveriam ter existido como fonte
+paralela.
+
+**Decisão** — tabela de autoridade de escrita por domínio:
+
+| Domínio | Quem escreve | Quem só lê |
+|---|---|---|
+| Identidade (usuarios/organizacoes/teams) | Admin/Operations via `/admin/*` | Todo o resto |
+| Lead/Contact/Company/Deal (comercial) | CRM (rotas Hono `api-server/routes/*`) | Analytics, Business Hub (futuro) |
+| Attribution/Touchpoints | Lead Intake Layer (F1), nunca UI direta | CRM, Analytics |
+| Comunicação (Call/WhatsApp/Email) | Integrações (`lib/integrations/*`) + worker | CRM, AI |
+| MRR/Assinatura/Fatura/Contrato (valor) | **Só** `stripe-sync.ts`/webhook Stripe + fluxo de aceite de proposta. **Nunca** campo manual editável em tela. | CRM (exibe), Financeiro, Business Hub |
+| Won/Lost (`negocios.status`) | Endpoint de ação explícito (`PATCH /negocios/:id`, F4 evolui pra `/deals/:id/win` dedicado) validando evidência (contrato/pagamento) | Analytics |
+| Audit Log / Event Outbox | Escrito pelo próprio código de domínio na mesma transação, nunca editado depois | Observability, compliance |
+| CS/Onboarding/Finance/Business Hub (futuro) | Cada sistema é dono do próprio domínio; CRM só publica evento, nunca escreve direto lá | — |
+
+**Consequência prática imediata**: os campos legacy de valor manual em
+`leads`/`negocios` (`mrrEstimado`, `valorSetup`, `valorProjeto`,
+`mrrFechado`, já marcados "legacy" no schema desde a auditoria original)
+**não devem receber nova escrita** a partir de F1 — ficam congelados como
+histórico até serem removidos na migração de F8. Nenhuma tela nova deve
+escrever neles.
+
+**Enforcement hoje**: convenção documentada + code review, não constraint de
+banco (não dá pra impedir INSERT/UPDATE num campo texto/decimal via schema
+sem trigger). Se isso continuar sendo violado na prática, uma trigger de
+banco ou uma camada de write-guard fica como candidato de F1+.
+
+---
+
 ## ADR-EXEC-005 — Documentação da reconstrução vive no repo, não só no vault
 
 **Contexto**: instrução do Kauã — outro agente/sessão precisa retomar sem reconstruir raciocínio, mesmo sem acesso ao vault Obsidian.

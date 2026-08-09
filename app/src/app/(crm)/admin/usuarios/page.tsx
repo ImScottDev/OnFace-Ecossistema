@@ -28,6 +28,9 @@ interface MetaRow {
 const ROLE_LABEL: Record<Role, string> = {
   admin: "Admin",
   gerente: "Gerente",
+  director: "Diretor",
+  coordinator: "Coordenador",
+  operations: "Operações",
   closer: "Closer",
   sdr: "SDR",
   leitor: "Leitor",

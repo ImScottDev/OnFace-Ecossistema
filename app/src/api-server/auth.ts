@@ -4,7 +4,9 @@ import { jwtDecrypt } from "jose";
 import crypto from "node:crypto";
 import { db } from "@/lib/db";
 import { organizacoes, usuarios } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, SQL } from "drizzle-orm";
+import type { PgColumn } from "drizzle-orm/pg-core";
+import { isPersonalView } from "@/lib/auth/roles";
 
 const NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET || process.env.AUTH_SECRET || "";
 const ORG_OVERRIDE_COOKIE = "mcrm-org-override";
@@ -166,4 +168,35 @@ export function requireAuth(c: Context): TenantContext {
   const ctx = c.get("ctx") as TenantContext | null;
   if (!ctx) throw new Error("UNAUTHORIZED");
   return ctx;
+}
+
+// ─── F0/RBAC v2: escopo reusável de organização/ownership ───────────────────
+// Hoje cada rota reimplementa `and(eq(tabela.id, id), eq(tabela.organizacaoId,
+// ctx.organizacaoId))` na mão (achado confirmado na auditoria: consistente,
+// mas é opt-in por linha de código, não estrutural). Estes 2 helpers são o
+// primeiro passo de infraestrutura pra centralizar isso — adoção é incremental
+// rota a rota (F1+), não é retrofit de tudo de uma vez em F0.
+//
+// Uso: `where(and(orgScope(tabela.organizacaoId, ctx), ...outrasCondicoes))`
+
+/** Condição de escopo de organização, pronta pra `and(...)`. */
+export function orgScope(orgIdColumn: PgColumn, ctx: TenantContext): SQL {
+  return eq(orgIdColumn, ctx.organizacaoId);
+}
+
+/**
+ * Empilha (push) a condição de ownership num array de condições existente —
+ * mesmo idioma já usado no resto do projeto (`const conditions = [...]; if
+ * (x) conditions.push(...)`). SDR/closer só veem os próprios registros
+ * (responsavelId = ctx.userId); admin/gerente/director/coordinator/operations
+ * veem o agregado, então não empilha nada (sem filtro).
+ */
+export function pushOwnershipScope(
+  conditions: SQL[],
+  responsavelIdColumn: PgColumn,
+  ctx: TenantContext
+): void {
+  if (isPersonalView(ctx.userRole)) {
+    conditions.push(eq(responsavelIdColumn, ctx.userId));
+  }
 }

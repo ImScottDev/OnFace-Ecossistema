@@ -1,21 +1,33 @@
 /**
  * Papéis do CRM Callface.
- * - admin   : acesso total + configuração
- * - gerente : vê o agregado da empresa (mesma visão do admin)
- * - closer  : vendedor que fecha; vê os números DELE (north-star: MRR fechado/mês)
- * - sdr     : pré-vendas; vê os números DELE (north-star: reuniões agendadas/mês)
- * - leitor  : acesso read-only de relatório (times externos)
+ * - admin       : acesso total + configuração
+ * - gerente     : vê o agregado da empresa (mesma visão do admin)
+ * - director    : F0/RBAC v2 (blueprint bloco 55) — visão executiva, mesmo
+ *                 agregado de admin/gerente; distinção de nível organizacional
+ *                 fica pra RBAC granular (F1+), aqui é só visão.
+ * - coordinator : F0/RBAC v2 — gestão de time (visão agregada do próprio time,
+ *                 hoje tratado como visão de gestão até time-scoping existir).
+ * - operations  : F0/RBAC v2 — administra config/pipeline/produtos/automações,
+ *                 mesma superfície de admin por enquanto.
+ * - closer      : vendedor que fecha; vê os números DELE (north-star: MRR fechado/mês)
+ * - sdr         : pré-vendas; vê os números DELE (north-star: reuniões agendadas/mês)
+ * - leitor      : acesso read-only de relatório (times externos)
  *
  * Legado: "vendedor" e "super_admin" ainda aparecem no banco/sessão.
  * "vendedor" é migrado pra "closer"; "super_admin" segue como admin global.
+ *
+ * Nota F0: director/coordinator/operations entram como papéis reconhecidos e
+ * com visão de gestão (isAdminView), mas SEM diferenciação de escopo própria
+ * ainda — isso é trabalho de RBAC granular (helper de ownership abaixo é o
+ * primeiro passo, adoção rota a rota é incremental, não retrofit de uma vez).
  */
-export type Role = "admin" | "gerente" | "closer" | "sdr" | "leitor";
+export type Role = "admin" | "gerente" | "director" | "coordinator" | "operations" | "closer" | "sdr" | "leitor";
 
-export const ROLES: Role[] = ["admin", "gerente", "closer", "sdr", "leitor"];
+export const ROLES: Role[] = ["admin", "gerente", "director", "coordinator", "operations", "closer", "sdr", "leitor"];
 
-/** admin e gerente veem o agregado da empresa (visão de gestão). */
+/** admin, gerente e os papéis de gestão novos veem o agregado da empresa. */
 export function isAdminView(role: string | null | undefined): boolean {
-  return role === "admin" || role === "gerente" || role === "super_admin";
+  return role === "admin" || role === "gerente" || role === "super_admin" || role === "director" || role === "coordinator" || role === "operations";
 }
 
 /** SDR e closer veem apenas os próprios dados (filtro por responsavelId). */
@@ -28,12 +40,12 @@ export function isReader(role: string | null | undefined): boolean {
   return role === "leitor";
 }
 
-/** Normaliza papéis legados para os 5 canônicos. */
+/** Normaliza papéis legados para os canônicos (5 originais + 3 novos de RBAC v2). */
 export function normalizeRole(role: string | null | undefined): Role {
   if (role === "vendedor") return "closer";
   if (role === "super_admin") return "admin";
-  if (role === "admin" || role === "gerente" || role === "closer" || role === "sdr" || role === "leitor") {
-    return role;
+  if (ROLES.includes(role as Role)) {
+    return role as Role;
   }
   return "closer";
 }
@@ -74,7 +86,7 @@ export function canSeeSdr(role: string | null | undefined): boolean {
  */
 export function canSee(itemKey: string, role: string | null | undefined): boolean {
   const r = normalizeRole(role);
-  if (r === "admin" || r === "gerente") return true; // vê tudo
+  if (r === "admin" || r === "gerente" || r === "director" || r === "coordinator" || r === "operations") return true; // vê tudo
   if (r === "leitor") return LEITOR_VISIBLE.has(itemKey); // só relatórios + painel
   if (r === "sdr") return !SDR_HIDDEN.has(itemKey);
   if (r === "closer") return !CLOSER_HIDDEN.has(itemKey);
