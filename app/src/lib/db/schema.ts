@@ -548,7 +548,7 @@ export const contratos = pgTable(
   "contratos",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    organizacaoId: uuid("organizacao_id").references(() => organizacoes.id),
+    organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
     leadId: uuid("lead_id")
       .references(() => leads.id)
       .notNull(),
@@ -586,7 +586,7 @@ export const assinaturas = pgTable(
   "assinaturas",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    organizacaoId: uuid("organizacao_id").references(() => organizacoes.id),
+    organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
     leadId: uuid("lead_id").references(() => leads.id),
     empresaId: uuid("empresa_id").references(() => empresas.id),
     contratoId: uuid("contrato_id").references(() => contratos.id),
@@ -620,7 +620,7 @@ export const faturas = pgTable(
   "faturas",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    organizacaoId: uuid("organizacao_id").references(() => organizacoes.id),
+    organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
     leadId: uuid("lead_id").references(() => leads.id),
     empresaId: uuid("empresa_id").references(() => empresas.id),
     assinaturaId: uuid("assinatura_id").references(() => assinaturas.id),
@@ -665,7 +665,7 @@ export const mrrMovimentos = pgTable(
   "mrr_movimentos",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    organizacaoId: uuid("organizacao_id").references(() => organizacoes.id),
+    organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
     leadId: uuid("lead_id").references(() => leads.id),
     assinaturaId: uuid("assinatura_id").references(() => assinaturas.id),
     contratoId: uuid("contrato_id").references(() => contratos.id),
@@ -1521,4 +1521,68 @@ export const outreachCampanhas = pgTable("outreach_campanhas", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   index("idx_outreach_campanhas_org").on(table.organizacaoId),
+]);
+
+// ═══════════════════════════════════════════════════════════════
+// CRM 2.0 — FASE 0 (Foundation): teams, audit_log, event_outbox
+// Ver docs/reconstruction/ARCHITECTURE_DECISIONS.md (ADR-EXEC-001, 005)
+// ═══════════════════════════════════════════════════════════════
+
+// ─── TEAMS (RBAC v2 — usuarios.teamId aponta pra aqui, F0/RBAC) ────
+export const teams = pgTable("teams", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+  nome: text("nome").notNull(),
+  managerId: uuid("manager_id").references(() => usuarios.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("idx_teams_org").on(table.organizacaoId),
+]);
+
+// ─── AUDIT LOG (genérico — before/after, actor, qualquer entidade) ─
+// Fecha o achado de segurança confirmado na auditoria: zero log de
+// impersonation/org-switch hoje. Toda escrita crítica passa a gravar aqui.
+export const auditLog = pgTable("audit_log", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+  actorId: uuid("actor_id").references(() => usuarios.id), // null = sistema/job/worker
+  action: text("action").notNull(), // ex: "impersonate", "org_switch", "deal.win", "lead.enrich_bulk"
+  entityType: text("entity_type").notNull(), // ex: "negocio", "usuario", "organizacao"
+  entityId: uuid("entity_id"),
+  before: jsonb("before"),
+  after: jsonb("after"),
+  source: text("source").notNull().default("api"), // api | worker | admin | webhook
+  ip: text("ip"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("idx_audit_log_org").on(table.organizacaoId),
+  index("idx_audit_log_actor").on(table.actorId),
+  index("idx_audit_log_entity").on(table.entityType, table.entityId),
+  index("idx_audit_log_created").on(table.createdAt),
+]);
+
+// ─── EVENT OUTBOX (espinha dorsal de eventos — Postgres + BullMQ) ──
+// ADR-EXEC-001: outbox Postgres + worker BullMQ existente, sem broker novo.
+// Escrito na MESMA transação da mudança de domínio; consumido por job
+// dedicado que publica pros interessados (ex: DealWon -> CS/Finance/Analytics).
+export const eventOutbox = pgTable("event_outbox", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+  eventType: text("event_type").notNull(), // ex: "DealWon", "LeadCreated", "ContractSigned"
+  aggregateType: text("aggregate_type").notNull(), // ex: "negocio", "lead", "contrato"
+  aggregateId: uuid("aggregate_id").notNull(),
+  payload: jsonb("payload").notNull(),
+  correlationId: uuid("correlation_id"),
+  idempotencyKey: text("idempotency_key"),
+  status: text("status").notNull().default("pending"), // pending | processing | processed | failed
+  attempts: integer("attempts").default(0).notNull(),
+  lastError: text("last_error"),
+  processedAt: timestamp("processed_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("idx_event_outbox_idempotency").on(table.idempotencyKey),
+  index("idx_event_outbox_status").on(table.status),
+  index("idx_event_outbox_org").on(table.organizacaoId),
+  index("idx_event_outbox_aggregate").on(table.aggregateType, table.aggregateId),
 ]);

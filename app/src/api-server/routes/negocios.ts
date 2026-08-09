@@ -470,6 +470,18 @@ app.patch("/negocios/:id", async (c) => {
       motivo: parsed.data.motivoPerda || undefined,
     });
 
+    // → reuniao_realizada: F0 fix (achado 08/08, confirmado via query real: 53
+    // reuniões de julho travadas em status='agendada' mesmo com o negócio já
+    // tendo esse evento em status_changes). A transição de estágio nunca
+    // propagava pra tabela `reunioes` — reflete aqui a reunião mais recente
+    // ainda 'agendada' vinculada a este negócio como 'realizada'.
+    if (parsed.data.status === "reuniao_realizada") {
+      await db
+        .update(reunioes)
+        .set({ status: "realizada", updatedAt: new Date() })
+        .where(and(eq(reunioes.negocioId, id), eq(reunioes.status, "agendada")));
+    }
+
     // → ganho: create contract, promote lead to cliente, clone to carteira as "ativo"
     if (parsed.data.status === "ganho") {
       updateData.ganhoAt = new Date();

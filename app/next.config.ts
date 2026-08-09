@@ -8,10 +8,35 @@ const nextConfig: NextConfig = {
     unoptimized: true,
   },
   async rewrites() {
-    return [
+    const uploadsCompat = {
       // Backward compat: old media URLs stored as /uploads/... in DB → API route
-      { source: "/uploads/:path*", destination: "/api/uploads/:path*" },
-    ];
+      source: "/uploads/:path*",
+      destination: "/api/uploads/:path*",
+    };
+
+    // CRM 2.0 / Fase 0: em produção o Traefik manda /api/* (exceto auth/webhooks/
+    // financeiro/onboarding/campanhas) direto pro container Hono (:3001), então as
+    // rotas Next.js equivalentes (app/src/app/api/*) nunca recebem tráfego real —
+    // são código morto em prod. Só que em `next dev` (:3000) não existe Traefik, e o
+    // frontend chama `fetch("/api/...")` relativo: sem este rewrite, essas chamadas
+    // caem nas rotas Next "mortas" em vez do Hono, e dev passa a testar um caminho
+    // que produção nunca executa. Este rewrite espelha a MESMA regra do Traefik
+    // (docker-compose.yml, routers callface-crm / callface-crm-api) só em dev, pra
+    // eliminar essa divergência antes de remover as rotas Next duplicadas de vez.
+    if (process.env.NODE_ENV === "development") {
+      const apiPort = process.env.HONO_API_PORT || "3001";
+      return {
+        beforeFiles: [
+          uploadsCompat,
+          {
+            source: "/api/:path((?!auth|webhooks|financeiro|onboarding|campanhas)[^/]+.*)",
+            destination: `http://localhost:${apiPort}/api/:path*`,
+          },
+        ],
+      };
+    }
+
+    return [uploadsCompat];
   },
   async headers() {
     return [
