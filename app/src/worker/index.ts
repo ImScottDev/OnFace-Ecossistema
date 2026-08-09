@@ -106,26 +106,6 @@ const notificationWorker = new Worker(
   { connection, concurrency: 1 }
 );
 
-// Conversion Sync Worker
-const conversionSyncWorker = new Worker(
-  "conversion-sync",
-  async (job) => {
-    const { platform, events } = job.data;
-    console.log(`[ConversionSync] Syncing ${events?.length || 0} events to ${platform}`);
-  },
-  { connection, concurrency: 1 }
-);
-
-// Follow-up Worker
-const followUpWorker = new Worker(
-  "follow-up",
-  async (job) => {
-    const { leadId, action } = job.data;
-    console.log(`[FollowUp] Lead ${leadId}: ${action}`);
-  },
-  { connection, concurrency: 1 }
-);
-
 // ─── Helper: Find or create contato for a WhatsApp session + phone ─────
 async function findOrCreateContato(data: {
   phone: string;
@@ -3939,8 +3919,8 @@ trackRedisConnection(callfaceCallEventsWorker);
 const shutdown = async () => {
   console.log("[Worker] Shutting down...");
   await Promise.all([
-    scoringWorker.close(), notificationWorker.close(), conversionSyncWorker.close(),
-    followUpWorker.close(), whatsappIncomingWorker.close(), whatsappOutgoingWorker.close(),
+    scoringWorker.close(),
+    notificationWorker.close(), whatsappIncomingWorker.close(), whatsappOutgoingWorker.close(),
     whatsappStatusWorker.close(), slaWorker.close(), enrichmentWorker.close(), scheduledQueue.close(),
     emailSyncWorker.close(), emailSequenceWorker.close(), emailSyncQueue.close(),
     siteLeadQualifyWorker.close(), callfaceCallEventsWorker.close(),
