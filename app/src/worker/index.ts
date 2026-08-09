@@ -2144,7 +2144,7 @@ const whatsappIncomingWorker = new Worker(
     };
 
     const { normalizePhone, phoneLastDigits } = await import("../lib/whatsapp/phone-utils");
-    const { contatos, leads, whatsappMensagens, atividades, notificacoes, usuarios, whatsappSessao: waSessao } = await import("../lib/db/schema");
+    const { contatos, leads, whatsappMensagens, atividades, notificacoes, usuarios, whatsappSessao: waSessao, pessoas: pessoasT, communications: commsT } = await import("../lib/db/schema");
     const { downloadMedia: dlMedia, downloadMediaByMessageId: dlByMsgId, saveBase64ToDisk: saveToDisk, sessionToConfig: toConfig } = await import("../lib/whatsapp/client");
 
     const normalized = normalizePhone(phone);
@@ -2248,6 +2248,32 @@ const whatsappIncomingWorker = new Worker(
       status: "received",
       statusAt: new Date(timestamp * 1000),
     });
+
+    // F2/dual-write (Communication Intelligence) — best-effort, nunca
+    // bloqueia o processamento real da mensagem recebida.
+    try {
+      let pessoaId: string | null = null;
+      if (contato.leadId) {
+        const [pessoa] = await db.select({ id: pessoasT.id }).from(pessoasT).where(eq(pessoasT.leadIdLegado, contato.leadId)).limit(1);
+        pessoaId = pessoa?.id ?? null;
+      }
+      await db
+        .insert(commsT)
+        .values({
+          organizacaoId,
+          pessoaId,
+          canal: "whatsapp",
+          direcao: "entrada",
+          conteudo: content,
+          status: "received",
+          externalId: message.id || null,
+          ocorridoEm: new Date(timestamp * 1000),
+          raw: { msgType, contatoId: contato.id },
+        })
+        .onConflictDoNothing({ target: [commsT.canal, commsT.externalId] });
+    } catch (err) {
+      console.error("[F2/dual-write] falha ao sincronizar communications da mensagem WhatsApp (best-effort):", err);
+    }
 
     // Update contato preview + unread
     const preview = content.length > 100 ? content.substring(0, 97) + "..." : content;
@@ -3190,6 +3216,35 @@ async function processAndStoreEmails(
       labels: rawEmail.labels || null,
       createdAt: rawEmail.date,
     });
+
+    // F2/dual-write (Communication Intelligence) — best-effort, nunca
+    // bloqueia o sync real da caixa de e-mail. Import local (não veio nos
+    // parâmetros da função, que já são passados pelo caller) — dynamic
+    // import é cacheado pelo Node, custo é desprezível.
+    try {
+      const { pessoas: pessoasEmailT, communications: commsEmailT } = await import("../lib/db/schema");
+      let pessoaIdEmail: string | null = null;
+      if (leadId) {
+        const [pessoa] = await db.select({ id: pessoasEmailT.id }).from(pessoasEmailT).where(eq(pessoasEmailT.leadIdLegado, leadId)).limit(1);
+        pessoaIdEmail = pessoa?.id ?? null;
+      }
+      await db
+        .insert(commsEmailT)
+        .values({
+          organizacaoId: conta.organizacaoId,
+          pessoaId: pessoaIdEmail,
+          canal: "email",
+          direcao: direcao === "in" ? "entrada" : "saida",
+          conteudo: rawEmail.subject || null,
+          status: "sent",
+          externalId: rawEmail.providerMessageId || rawEmail.messageId || null,
+          ocorridoEm: rawEmail.date,
+          raw: { assunto: rawEmail.subject, threadId: rawEmail.threadId },
+        })
+        .onConflictDoNothing({ target: [commsEmailT.canal, commsEmailT.externalId] });
+    } catch (err) {
+      console.error("[F2/dual-write] falha ao sincronizar communications de email (best-effort):", err);
+    }
 
     totalImported++;
 

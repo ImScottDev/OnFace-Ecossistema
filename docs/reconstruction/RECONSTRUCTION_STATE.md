@@ -59,6 +59,17 @@ Todas as 6 tasks de F0 (schema hardening, dev/prod routing parity + remoção de
 - [x] **Observability**: falha de sync agora grava em `audit_log` (`action: "domain_model_sync.failed"`), não só `console.error` — consultável de verdade, não preso em log de container.
 - [ ] Validar F1 pelas 5 dimensões de Done — Technical+Data+Operational+Observability OK pros pontos cobertos de dual-write; falta só UX (nenhuma tela ainda expõe o novo Domain Model, fica pra trilha de design + F7, não bloqueia seguir).
 
+## Fase atual: F2 — Communication Intelligence (schema + dual-write nos canais principais)
+
+- [x] Schema `communications` (unifica Call/WhatsApp/Email, ancorado em `pessoaId`) + `ai_analysis` (genérico, atachável a qualquer entidade) — commit `1d4a550`.
+- [x] Dual-write ligado nos 3 canais, no ponto de maior volume real de cada um:
+  - `processCallfaceCallEvent` (ligação) — reaproveita a idempotência real já existente + grava `ai_analysis` quando há resumo/transcrição. Commit `c41a6cd`.
+  - Worker WhatsApp, path de mensagem recebida ao vivo (linha ~2237) — idempotência via `unique(canal, external_id)`.
+  - Worker `processAndStoreEmails` (sync incremental/full da caixa, cobre entrada E saída) — idempotência via `providerMessageId`.
+- [x] `tsc` limpo, dev server saudável depois de cada mudança.
+- [ ] **Não cobertos ainda** (menor tráfego, mesmo critério de F1 — documentado, não bloqueia): envio manual de WhatsApp (`api-server/routes/whatsapp.ts`), cross-save de sessão WhatsApp (`worker/index.ts` linha ~361), envio de e-mail de sequência automatizada (`worker/index.ts` linha ~3364 — email ainda deve aparecer via sync incremental depois, mas com possível delay/gap).
+- [ ] Timeline unificada (UI) usando `communications` — ainda não, fica pra trilha de design + F7 (mesmo critério de F1: schema/dado primeiro, tela depois).
+
 ### F1 — considerado suficiente pra seguir pra F2
 Backfill validado + dual-write nos pontos de maior valor real + observability de falha. Os pontos de menor tráfego não cobertos (contatos-unified, apollo, contatos.ts, fallback de propostas.ts) ficam registrados como pendência, não bloqueiam — mesmo critério de "incremental ≠ provisório mas não trava tudo antes de avançar" do plano.
 
