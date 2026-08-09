@@ -50,6 +50,7 @@ import {
 import { z } from "zod";
 import { leadScoringQueue, notificationQueue, enrichmentQueue } from "@/lib/queue";
 import { syncPessoaFromLead, syncOportunidadeFromNegocio } from "@/lib/crm/sync-domain-model";
+import { dispararAutomacoes } from "@/lib/crm/automacao-engine";
 import {
   enrichPerson,
   enrichOrganization,
@@ -605,6 +606,25 @@ app.post(
     // do lead (legado continua sendo a fonte de verdade até a F8).
     await syncPessoaFromLead(newLead.id);
     if (negocio?.id) await syncOportunidadeFromNegocio(negocio.id);
+
+    // F5/Automation: dispara automações do gatilho "novo_lead" — best-effort.
+    await dispararAutomacoes("novo_lead", {
+      entityType: "lead",
+      entityId: newLead.id,
+      organizacaoId: orgId,
+      campos: { origem: newLead.origem, sdrStatus: newLead.sdrStatus, tipo: newLead.tipo },
+      telefone: newLead.telefone,
+      email: newLead.email,
+      nome: newLead.nome,
+    });
+    if (negocio?.id) {
+      await dispararAutomacoes("novo_negocio", {
+        entityType: "negocio",
+        entityId: negocio.id,
+        organizacaoId: orgId,
+        campos: { status: negocio.status },
+      });
+    }
 
     return c.json({ ...newLead, negocioId: negocio?.id ?? null }, 201);
   }

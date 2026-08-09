@@ -2278,6 +2278,20 @@ const whatsappIncomingWorker = new Worker(
       console.error("[F2/dual-write] falha ao sincronizar communications da mensagem WhatsApp (best-effort):", err);
     }
 
+    // F5/Automation: gatilho "whatsapp_recebido" — best-effort.
+    try {
+      const { dispararAutomacoes } = await import("../lib/crm/automacao-engine");
+      await dispararAutomacoes("whatsapp_recebido", {
+        entityType: "contato",
+        entityId: contato.id,
+        organizacaoId,
+        campos: { tipo: msgType },
+        telefone: normalized,
+      });
+    } catch (err) {
+      console.error("[F5/automacao-engine] falha ao disparar automações de whatsapp_recebido (best-effort):", err);
+    }
+
     // Update contato preview + unread
     const preview = content.length > 100 ? content.substring(0, 97) + "..." : content;
     await db.update(contatos).set({
