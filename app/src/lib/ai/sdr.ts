@@ -1,6 +1,15 @@
 /**
- * AI SDR Engine — OpenAI-powered sales development representative
- * Uses tool_use pattern with the OpenAI Chat Completions API for:
+ * AI SDR Engine — Groq-powered sales development representative
+ *
+ * F3 (09/08): corrigido o bug confirmado na auditoria — este arquivo chamava
+ * api.openai.com com nome de modelo Groq (llama-3.3-70b-versatile), sem
+ * OPENAI_API_KEY documentada em lugar nenhum do projeto. Não deveria
+ * funcionar com a config default. Agora chama api.groq.com de verdade, com
+ * fallback em cascata (mesmo padrão já validado em worker/index.ts
+ * site-lead-qualify) — ver ARCHITECTURE_DECISIONS.md ADR-EXEC-009.
+ *
+ * Usa tool_use pattern (compatível com a Chat Completions API da OpenAI, que
+ * o Groq espelha) para:
  * - respond: send WhatsApp messages
  * - qualify_lead: extract lead data from conversation
  * - handoff: transfer to human
@@ -541,10 +550,34 @@ export function buildMessages(history: ConversationMessage[], currentMessage: st
 
 // ─── Groq API Call ────────────────────────────────────────────
 
+// Fallback em cascata — cada modelo tem rate limit independente no Groq.
+// Mesmo padrão já validado em worker/index.ts (site-lead-qualify).
+const GROQ_MODEL_FALLBACK = ["llama-3.3-70b-versatile", "meta-llama/llama-4-scout-17b-16e-instruct", "llama-3.1-8b-instant"];
+
+async function fetchGroqComTools(apiKey: string, body: Record<string, unknown>, modeloPreferido: string): Promise<Response> {
+  const modelos = [modeloPreferido, ...GROQ_MODEL_FALLBACK.filter((m) => m !== modeloPreferido)];
+  let ultimaResposta: Response | null = null;
+  for (const model of modelos) {
+    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({ ...body, model }),
+    });
+    if (res.ok) return res;
+    ultimaResposta = res;
+    if (res.status === 429 || res.status === 400) {
+      console.warn(`[AiSdr] modelo ${model} indisponível (${res.status}), tentando o próximo...`);
+      continue;
+    }
+    return res; // erro que não é de disponibilidade de modelo — não vale tentar outro
+  }
+  return ultimaResposta!;
+}
+
 export async function callAiSdr(params: AiSdrCallParams): Promise<AiSdrResponse> {
-  const apiKey = params.config.groqApiKey || process.env.OPENAI_API_KEY;
+  const apiKey = params.config.groqApiKey || process.env.GROQ_API_KEY;
   if (!apiKey) {
-    throw new Error("OPENAI_API_KEY not configured");
+    throw new Error("GROQ_API_KEY not configured (nem em config.groqApiKey nem em process.env.GROQ_API_KEY)");
   }
 
   const systemPrompt = buildSystemPrompt({
@@ -584,25 +617,21 @@ export async function callAiSdr(params: AiSdrCallParams): Promise<AiSdrResponse>
   const MAX_ITERATIONS = 3;
 
   for (let iter = 0; iter < MAX_ITERATIONS; iter++) {
-    const res = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: params.config.modelo || "gpt-4o-mini",
+    const res = await fetchGroqComTools(
+      apiKey,
+      {
         messages: currentMessages,
         tools: AI_SDR_TOOLS,
         tool_choice: "auto",
         max_tokens: params.config.maxTokensResposta || 1024,
         temperature: parseFloat(params.config.temperaturaModelo || "0.3"),
-      }),
-    });
+      },
+      params.config.modelo || "llama-3.3-70b-versatile"
+    );
 
     if (!res.ok) {
       const errText = await res.text();
-      throw new Error(`OpenAI API error ${res.status}: ${errText}`);
+      throw new Error(`Groq API error ${res.status}: ${errText}`);
     }
 
     const data = await res.json() as {

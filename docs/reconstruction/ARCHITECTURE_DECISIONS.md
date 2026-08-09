@@ -102,6 +102,34 @@ o Kauã autorizar, em vez de reprojetar do zero.
 
 ---
 
+## ADR-EXEC-009 — Fix do endpoint AI SDR (OpenAI→Groq) + achado de credencial inválida
+
+**Contexto**: achado confirmado na auditoria original — `lib/ai/sdr.ts` chamava
+`api.openai.com` com nome de modelo Groq (`llama-3.3-70b-versatile`), sem
+`OPENAI_API_KEY` documentada em nenhum lugar do projeto.
+
+**Decisão/fix**: `callAiSdr` agora chama `api.groq.com/openai/v1/chat/completions`
+de verdade, lê `GROQ_API_KEY` (não mais fallback pra `OPENAI_API_KEY`), e
+ganhou fallback em cascata de 3 modelos Groq (mesmo padrão já validado em
+`worker/index.ts` no job `site-lead-qualify` — rate limit independente por
+modelo).
+
+**Achado real, não resolvido por mim (precisa do Kauã)**: testei a chamada
+de ponta a ponta com a `GROQ_API_KEY` real do `.env` local — o request agora
+chega corretamente no Groq (confirmado: a resposta de erro vem do próprio
+Groq, `invalid_api_key`, não mais um 404 genérico do OpenAI), mas **a chave
+armazenada está inválida/expirada**. Confirmado via `curl` direto, isolado
+do código (mesmo resultado). Isso não é bug de código — é credencial que
+precisa ser renovada no console da Groq e atualizada no `.env` (local e,
+quando chegar a hora, homolog/produção). **Bloqueia validar o AI SDR de
+ponta a ponta de verdade até isso ser resolvido.**
+
+**Consequência**: o código está corrigido e verificável estruturalmente
+(endpoint/modelo/formato certos), mas não posso confirmar que a Natália
+"funciona" de ponta a ponta sem uma chave válida — ficaria sendo suposição.
+
+---
+
 ## ADR-EXEC-007 — Data Governance: quem escreve o quê
 
 **Contexto**: guardrail 35 do blueprint ("Data Governance & Source of
