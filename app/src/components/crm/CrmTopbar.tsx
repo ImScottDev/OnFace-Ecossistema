@@ -3,6 +3,7 @@
 import { signOut } from "next-auth/react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { LogOut, Search, ChevronRight } from "lucide-react";
 import { NotificationDropdown } from "./NotificationDropdown";
 import { canUseActions } from "@/lib/auth/roles";
@@ -90,7 +91,13 @@ export function CrmTopbar({ user }: CrmTopbarProps) {
   // Leitor é read-only: sem botões de ação na topbar.
   const showActions = canUseActions(user.role);
 
-  const isMac = typeof navigator !== "undefined" && /Mac/.test(navigator.userAgent);
+  // Detecção de SO só depois de montar: no server `navigator` não existe, então
+  // renderizar isso direto no corpo do componente causa hydration mismatch
+  // (server manda "Ctrl+K", client troca pra "⌘K" e o React descarta a árvore).
+  const [isMac, setIsMac] = useState(false);
+  useEffect(() => {
+    setIsMac(/Mac/.test(navigator.userAgent));
+  }, []);
 
   return (
     <header

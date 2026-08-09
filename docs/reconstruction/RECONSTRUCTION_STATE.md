@@ -27,7 +27,22 @@ o ambiente novo existir) nos pontos em que a fase atinge Technical+Data
 Done, pra ter algo estável de verdade pra validar — não um alvo em fluxo
 constante.
 
-## Fase atual: F1 — Domain Model (F0 completo localmente)
+## Fase atual: F7 — Frontend/UX (implementação, greenfield — ver nota abaixo)
+
+**Branch atual**: `feature/crm2-fase6-analytics` (F7 começou na mesma branch, ainda sem branch dedicada — trocar antes do próximo commit de escopo maior).
+
+**Nota de honestidade sobre o plano original**: a trilha de design paralela (prevista desde Fase 1 no plano) nunca foi formalmente iniciada em nenhuma fase anterior. F7 na prática não é "implementar o que já foi desenhado" — é greenfield de implementação de tela, decisão consciente de reduzir risco reaproveitando o que já existia pronto no código em vez de desenhar do zero sem trilha de design.
+
+### F7 — progresso
+- [x] **`CrmTopbar` revivido**: componente já existia 100% completo (breadcrumb, busca Cmd+K, `NotificationDropdown`, pill de usuário, logout) mas nunca era montado em nenhum lugar — achado confirmado na auditoria original, não é UI nova inventada agora. Montado em `app/src/app/(crm)/layout.tsx`.
+- [x] **Bug real encontrado na verificação visual, corrigido**: hydration mismatch em `CrmTopbar.tsx` — `isMac` era calculado direto no corpo do componente (`typeof navigator !== "undefined"`), server renderiza "Ctrl+K", client troca pra "⌘K" depois de montar, React descarta a árvore inteira e loga erro. Bug estava latente desde que o componente foi escrito, só apareceu agora porque nunca tinha sido renderizado antes. Fix: `isMac` virou `useState(false)` + `useEffect` (client-only), SSR sempre manda "Ctrl+K" primeiro, corrige depois de montar — sem mismatch.
+- [x] **Verificado de ponta a ponta via Playwright** (login real com `scott@scottdev.com.br`, navegação pra `/dashboard`, snapshot + screenshot): topbar renderiza corretamente (breadcrumb "Meu Dia", busca, sino, pill "Scott Ferraz / Super Admin", logout), sem overlap/quebra de layout, dado real carregando (MRR R$48.845, meta 9%). Confirmado ANTES e DEPOIS do fix (12 erros de console → 10, os 2 que sobraram eram exatamente o hydration mismatch + o `TypeError` derivado dele).
+- [x] **Achado separado, registrado mas NÃO corrigido agora (fora de escopo desta tarefa)**: rajada de 401 em ~8 endpoints (`/api/perfil`, `/api/notificacoes`, `/api/admin/*`, contadores do sidebar) nos primeiros ~300ms de qualquer hard reload autenticado — confirmado que já existia ANTES do `CrmTopbar` ser montado (`/api/perfil` vem do `CrmSidebar`, que já estava montado). Recupera sozinho (retry do react-query), dashboard carrega com dado real depois. Provável corrida sessão/cookie NextAuth vs. primeiro fetch client-side. Registrar como pendência de F7/Observability, não bloqueia.
+- [x] `npx tsc --noEmit` limpo (só os 6 erros de baseline pré-existentes, mesmos de sempre).
+- [ ] Nota lateral: durante a verificação, a senha local do usuário seed (`scott@scottdev.com.br`) não batia com `scott2026` documentado no README/seed.ts (hash divergente, causa não investigada — pode ter sido alterada manualmente em sessão anterior). Resetada localmente pra `scott2026` via script descartável (bcrypt, direto no Postgres local) pra poder testar — ação só no banco LOCAL, reversível, não é mudança de código nem afeta homolog/produção.
+- [ ] Resto de F7 (Command Center, telas de Lead/Deal/Communication, Cadence Builder visual, Automation Builder visual) — não iniciado, greenfield real, maior escopo, pendente.
+
+## Fase — F1 (histórico) — Domain Model (F0 completo localmente)
 
 **Branch atual**: `feature/crm2-fase1-domain-model` (a partir de `feature/crm2-fase0-foundation`, que já foi commitada e não precisa mais de trabalho — só falta promover pra homolog quando o ambiente novo existir).
 
