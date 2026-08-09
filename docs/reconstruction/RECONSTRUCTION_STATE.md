@@ -73,6 +73,15 @@ Depois de fechar F1/F2 tecnicamente, construí a validação continuada — não
 - [x] **Resultado real, validado**: 0 e 0 — confirma de verdade (não só afirma) que o trabalho de dual-write de F1/F2 fechado nesta sessão está completo agora.
 - [x] `tsc` limpo, página verificada via curl (ambos os Stat cards renderizando `value:0`, cor "ganho").
 
+## F5 — follow-up: página `/automacoes` com copy desatualizada corrigida (09/08)
+
+**Achado pequeno, real, honesto sobre onde parei**: a página de automações mostrava "serão adicionadas em breve" — texto que ficou desatualizado desde que o motor real (F5) começou a funcionar nesta sessão. Corrigi a mensagem pra refletir a realidade (motor ligado em 7 gatilhos, só falta cadastrar regra) e adicionei contagem/data da última execução por regra (reusa `automacao_execucoes`, dado real).
+
+**Decisão consciente de NÃO ir além**: não construí um formulário de criação de regra — isso é UI nova de verdade (formulário, validação, UX de configuração de condição/ação por tipo), diferente das 2 páginas admin anteriores (que só EXPÕEM dado/lógica já testada via leitura). Cruzaria pra território de "trilha de design" que venho respeitando a sessão inteira. Registrado como candidato real de F7 quando a trilha de design existir.
+
+- [x] Copy corrigida, contagem de execução por regra adicionada.
+- [x] `tsc` limpo, verificado via curl (copy nova confirmada no HTML).
+
 ## F4 — follow-up: 58 contratos ambíguos, classificação por evidência (09/08)
 
 Instrução do Kauã: não revisar os 58 um a um, construir classificação automática primeiro. `classificarAmbiguosPorEvidencia()` — ver **ADR-EXEC-014**.
