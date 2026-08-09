@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { leads, organizacoes, statusChanges } from "@/lib/db/schema";
 import { and, eq } from "drizzle-orm";
+import { syncPessoaFromLead } from "@/lib/crm/sync-domain-model";
 
 /**
  * Webhook do FORMULÁRIO do site institucional (site.callface.io).
@@ -151,6 +152,7 @@ export async function POST(req: NextRequest) {
         updatedAt: new Date(),
       })
       .where(eq(leads.id, existing.id));
+    await syncPessoaFromLead(existing.id); // F1/dual-write, best-effort
     return NextResponse.json(
       { ok: true, status: "updated", leadId: existing.id },
       { status: 200, headers: cors }
@@ -190,6 +192,8 @@ export async function POST(req: NextRequest) {
     paraStatus: "novo",
     motivo: "Lead capturado pelo formulário do site",
   });
+
+  await syncPessoaFromLead(newLead.id); // F1/dual-write, best-effort
 
   return NextResponse.json(
     { ok: true, status: "created", leadId: newLead.id },
