@@ -28,13 +28,17 @@ export function TabVisaoGeral() {
   return (
     <div className="space-y-4">
       <HeroBand
-        label="MRR ativo"
+        label="MRR ativo (contratos no CRM)"
         value={fmt(m.atual)}
         cor="dinheiro"
         sub={
           <>
             ARR {fmtK(m.arr)} · início do mês {fmtK(m.inicioPeriodo)} ·{" "}
             {m.porProduto.map((p: { produto: string; mrr: number; contratos: number }) => `${p.produto.toUpperCase()} ${fmtK(p.mrr)} (${p.contratos})`).join(" · ")}
+            <br />
+            <span className="text-white/30">
+              Soma de todos os contratos ativos no CRM — inclui boleto/manual, pode ser maior que o MRR realmente cobrado via Stripe (ver Componentes do MRR abaixo, que reconstrói só a partir de assinaturas Stripe).
+            </span>
           </>
         }
       >

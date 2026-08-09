@@ -3,8 +3,16 @@
  *
  * Regras de ouro:
  *  - Receita SEMPRE segmentável por produto (ai = Stripe, pabx = planilha Wevy).
- *  - MRR por componente vem de `mrr_movimentos` (diff do sync + backfill),
- *    nunca recalculado de formas diferentes por aba.
+ *  - MRR POR COMPONENTE (novo/expansão/churn/etc, ver `getComponentesMrr`)
+ *    vem de `mrr_movimentos` — nunca recalculado de formas diferentes por aba.
+ *  - MRR ATUAL/PONTUAL (`getMrrAtual`) é DIFERENTE: soma `contratos.mrr`
+ *    (status='ativo'), de propósito — representa o total contratado no CRM,
+ *    incluindo boleto/manual (fora do Stripe). Achado real 09/08: esse
+ *    número (R$119.801,57) é maior que o MRR reconstruído via
+ *    `mrr_movimentos`/espelho Stripe (R$48.844,50) — a MESMA lacuna
+ *    "sem espelho de cobrança" já sinalizada no dashboard, não é bug. UI
+ *    (`TabVisaoGeral.tsx`) rotulada como "MRR ativo (contratos no CRM)"
+ *    exatamente pra não ser confundido com o MRR Stripe.
  *  - Dias em atraso são derivados de COALESCE(vencimento, emitida_em) — nunca coluna.
  *  - Churn voluntário × involuntário: prefixo de motivo_cancelamento
  *    ("payment_failed" = involuntário; "cancellation_requested" = voluntário).
@@ -29,6 +37,7 @@ export interface MrrAtual {
   porProduto: { produto: string; mrr: number; contratos: number }[];
 }
 
+/** Total contratado no CRM (todos os `contratos.status='ativo'`, qualquer forma de cobrança) — NÃO é o mesmo que o MRR realmente cobrado via Stripe. Ver nota no topo do arquivo. */
 export async function getMrrAtual(orgId: string): Promise<MrrAtual> {
   const rows = (await db.execute(sql`
     SELECT COALESCE(c.produto, 'ai') AS produto, COALESCE(sum(c.mrr), 0)::float AS mrr, count(*)::int AS contratos

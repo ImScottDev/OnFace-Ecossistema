@@ -64,6 +64,19 @@ disponível — mesmo padrão de "reaproveitar o que já existe" do
 - [x] **Achado real durante a verificação, investigado e descartado como bug de produto**: a sessão parecia expirar em quase toda navegação via Playwright (redirecionava pro `/login` sem motivo aparente). Investiguei via `curl` direto com cookie de sessão real (bypassando o browser) — 5 requisições consecutivas, todas `200 OK` em ~100ms, sem timeout, sem falha. **Conclusão: era flakiness do cookie jar da instância do Playwright MCP nesta sessão, não um bug real do produto** (correção da hipótese inicial, que culpava o timeout de 8s do `resolveSession()` em `layout.tsx` — esse mecanismo existe e é real, mas não foi o causador aqui).
 - [x] `tsc` limpo, dev server + api server saudáveis depois da mudança.
 
+## F4 — follow-up: "duas verdades" de MRR na aba Financeiro, esclarecido (09/08)
+
+Continuando o pente-fino (procurando outros cálculos de MRR/receita independentes, mesmo padrão de risco do bug original), achei: `lib/financeiro/metricas.ts` tem um comentário no topo dizendo "MRR vem de `mrr_movimentos`, nunca recalculado diferente por aba" — mas a PRIMEIRA função do próprio arquivo (`getMrrAtual`) contradiz isso, somando direto de `contratos.mrr`.
+
+**Verificado com dado real se era bug**: comparei os 3 métodos — `contratos.mrr` soma R$119.801,57; `mrr_movimentos` e o espelho Stripe (`assinaturas`) batem em R$48.844,50 (match exato). **Não é bug novo** — é a MESMA lacuna já sinalizada no card "O que fazer agora" do dashboard ("Contratos no CRM somam R$119.802, mas o Stripe cobra R$48.845"). `getMrrAtual` mede intencionalmente o total contratado no CRM (inclui boleto/manual, fora do Stripe), `mrr_movimentos`/`assinaturas` medem só o que passa pelo Stripe — são métricas DIFERENTES por natureza, não a mesma coisa calculada 2x errado.
+
+**O que era real**: a UI (`TabVisaoGeral.tsx`, aba Financeiro) mostrava esse número só como **"MRR ativo"**, sem nenhum qualificador — alguém vendo essa tela isolada do dashboard veria 2 números de "MRR" bem diferentes sem explicação, risco real de decisão errada.
+
+- [x] Label corrigido pra "MRR ativo (contratos no CRM)" + sub-texto explicando a diferença do MRR Stripe.
+- [x] Comentário do topo do arquivo corrigido pra descrever a realidade (2 métricas diferentes, cada uma documentada), não uma regra que o próprio código não segue.
+- [x] `tsc` limpo. Página é client component (renderiza pós-hidratação, curl não pega o texto — mudança é só JSX, risco zero, não toquei nenhum cálculo).
+- [x] Nenhuma mudança de cálculo — só clareza. O número em si continua correto pro que representa.
+
 ## F6 — follow-up: invariantes de relatório trazidos pro Data Quality Layer (09/08)
 
 Ao fazer um pente-fino mais amplo (procurando outros lugares que calculam MRR/receita, mesmo padrão de risco do bug original), achei `src/scripts/checar-invariantes-relatorios.ts` — checker pré-existente da auditoria de 21/07 (soma por vendedor vs total, funil monotônico), que só roda quando alguém lembra de executar manualmente. **Não estava nem registrado no `package.json`** — adicionei `npm run check:relatorios`.
