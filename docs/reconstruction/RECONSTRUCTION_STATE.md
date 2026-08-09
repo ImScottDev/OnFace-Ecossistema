@@ -42,6 +42,16 @@ constante.
 - [ ] Nota lateral: durante a verificação, a senha local do usuário seed (`scott@scottdev.com.br`) não batia com `scott2026` documentado no README/seed.ts (hash divergente, causa não investigada — pode ter sido alterada manualmente em sessão anterior). Resetada localmente pra `scott2026` via script descartável (bcrypt, direto no Postgres local) pra poder testar — ação só no banco LOCAL, reversível, não é mudança de código nem afeta homolog/produção.
 - [ ] Resto de F7 (Command Center, telas de Lead/Deal/Communication, Cadence Builder visual, Automation Builder visual) — não iniciado, greenfield real, maior escopo, pendente.
 
+## F5 — follow-up: 3 gatilhos periódicos migrados pro motor novo (09/08)
+
+Fechando a pendência registrada em F5 ("migrar `lead_inativo`/`contrato_vencendo`/`nps_recebido` pro motor novo"). **Achado real ao investigar**: os 3 gatilhos já existiam no type union (`GatilhoAutomacao`) e no enum de UI (`automacoes.ts`) desde que o motor foi construído — mas nenhum dos 3 nunca era disparado de verdade (`grep dispararAutomacoes(` confirma). Se algum usuário tivesse configurado uma regra com esses gatilhos, ela nunca rodaria — bug real, mas de impacto zero hoje (`select gatilho, count(*) from automacoes` retornou 0 linhas, nenhuma regra configurada ainda).
+
+- [x] `contrato_vencendo` — ligado no handler `alerta-renovacao` (worker, cron 24h), ao lado da criação de tarefa hardcoded (não substitui).
+- [x] `lead_inativo` — ligado no handler `reativar-lead-perdido` (worker, cron 24h), mesmo critério.
+- [x] `nps_recebido` — **não era periódico, correção da nota anterior**: é reativo, dispara em `POST /nps/:token` (endpoint público, sem sessão — resolve `organizacaoId` a partir do lead atualizado).
+- [x] **Testado E2E com dado real** (script descartável, removido): 3 regras reais criadas em `automacoes`, `dispararAutomacoes` chamado pros 3 gatilhos com contexto real, confirmado `automacao_execucoes` com `status='sucesso'` e tarefa de fato criada pros 3, cleanup rodado (dado de teste removido, nenhuma tarefa real do lead tocada — bug no próprio script de teste corrigido antes de rodar: um `delete` inicial ia apagar todas as tarefas do lead real, trocado por filtro exato no prefixo de teste).
+- [x] `tsc` limpo, dev server saudável (`curl /login` → 200) depois da mudança.
+
 ## Fase — F1 (histórico) — Domain Model (F0 completo localmente)
 
 **Branch atual**: `feature/crm2-fase1-domain-model` (a partir de `feature/crm2-fase0-foundation`, que já foi commitada e não precisa mais de trabalho — só falta promover pra homolog quando o ambiente novo existir).
