@@ -7,6 +7,7 @@ import {
   isCallfaceLead,
   type ParsedRdLead,
 } from "@/lib/integrations/rd-station";
+import { syncPessoaFromLead } from "@/lib/crm/sync-domain-model";
 
 /**
  * Busca IDs reais da Meta deixados em staging pelo webhook /api/webhooks/meta-lead-ids
@@ -206,6 +207,7 @@ export async function POST(req: NextRequest) {
             conteudo: notaConteudo,
           });
         }
+        await syncPessoaFromLead(existing.id); // F1/dual-write, best-effort
         results.push({ status: "updated", leadId: existing.id, email: p.email });
         continue;
       }
@@ -267,6 +269,8 @@ export async function POST(req: NextRequest) {
           conteudo,
         });
       }
+
+      await syncPessoaFromLead(newLead.id); // F1/dual-write, best-effort
 
       results.push({
         status: jaCliente ? "created:client-upgrade" : "created",

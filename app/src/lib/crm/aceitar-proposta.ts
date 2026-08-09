@@ -12,6 +12,7 @@ import { propostas, propostaItens, leads, negocios, contratos, atividades, statu
 import { eq, asc } from "drizzle-orm";
 import { syncNegocioValoresFromPropostas } from "@/lib/crm/sync-negocio-valores";
 import { notificarNegocioGanho } from "@/lib/crm/notificar";
+import { syncPessoaFromLead, syncOportunidadeFromNegocio } from "@/lib/crm/sync-domain-model";
 
 type PropostaRow = typeof propostas.$inferSelect;
 
@@ -216,6 +217,11 @@ export async function marcarPropostaAceita(opts: {
   // No branch sem negócio vinculado, a proposta foi religada ao negócio novo acima.
   const [pAtual] = await db.select({ negocioId: propostas.negocioId }).from(propostas).where(eq(propostas.id, proposta.id)).limit(1);
   if (pAtual?.negocioId) await notificarNegocioGanho(pAtual.negocioId);
+
+  // F1/dual-write: este é o caminho de receita real (proposta aceita = Won),
+  // usado tanto pelo endpoint manual quanto pelo webhook do Stripe — best-effort.
+  await syncPessoaFromLead(proposta.leadId);
+  if (pAtual?.negocioId) await syncOportunidadeFromNegocio(pAtual.negocioId);
 
   return { contratoId: contrato.id };
 }
