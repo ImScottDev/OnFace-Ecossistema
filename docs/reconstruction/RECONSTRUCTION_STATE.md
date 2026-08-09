@@ -69,6 +69,15 @@ disponível — mesmo padrão de "reaproveitar o que já existe" do
 - [x] **Achado real durante a verificação, investigado e descartado como bug de produto**: a sessão parecia expirar em quase toda navegação via Playwright (redirecionava pro `/login` sem motivo aparente). Investiguei via `curl` direto com cookie de sessão real (bypassando o browser) — 5 requisições consecutivas, todas `200 OK` em ~100ms, sem timeout, sem falha. **Conclusão: era flakiness do cookie jar da instância do Playwright MCP nesta sessão, não um bug real do produto** (correção da hipótese inicial, que culpava o timeout de 8s do `resolveSession()` em `layout.tsx` — esse mecanismo existe e é real, mas não foi o causador aqui).
 - [x] `tsc` limpo, dev server + api server saudáveis depois da mudança.
 
+## Bug adicional da MESMA classe corrigido: org-switch/view-as mudos em dev local (09/08)
+
+Continuando a puxar o fio do bug de sessão (ADR-EXEC-015), procurei outros lugares assumindo HTTPS/produção — achei: `api-server/routes/admin.ts` tinha `secure: true` **fixo** nos cookies `mcrm-org-override` (trocar de organização, super_admin) e `mcrm-view-as` (visualizar como outro usuário). Navegadores NUNCA aceitam cookie `Secure` sobre HTTP puro — essas 2 features ficavam completamente mudas em dev local, sem nenhum erro visível (o cookie simplesmente não persiste, a chamada retorna 200 mas nada muda).
+
+- [x] Trocado pra `secure: IS_SECURE_CONTEXT` (`NODE_ENV === "production"`) nos 2 pontos — mesmo padrão de decisão que o NextAuth já usa internamente.
+- [x] **Validado com dado real de ponta a ponta** (org temporária criada, testada, removida): `Set-Cookie` sem `Secure` confirmado, cookie persistiu no jar, `GET /api/admin/org-switch` confirmou `currentOrgId` refletindo a troca de verdade. Limpeza completa depois.
+- [x] Limpeza de processos órfãos do `tsx watch` do api-server (3 gerações acumuladas ao longo da sessão, por causa desse mesmo processo não recarregar sozinho) — mantida só a geração ativa.
+- [x] `tsc` limpo, health check ok.
+
 ## Incidente resolvido: login local do Kauã falhando (09/08) — 2 causas, não 1
 
 Kauã reportou "tento logar local, em menos de 5s já sou deslogado" — investigação encontrou DUAS causas diferentes, encadeadas:
