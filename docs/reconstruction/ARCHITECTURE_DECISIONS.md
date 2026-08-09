@@ -168,6 +168,25 @@ Mesmo SINTOMA (Missing Owner), causa raiz DIFERENTE — não precisa de fix
 de código, precisa de decisão humana de reconciliação (atribuir os 54 a
 alguém, mesmo padrão do backfill de 03/08). **Não fiz essa reconciliação
 sozinho** — fica registrada aqui pra decisão do Kauã, mesmo critério de
+
+**Atualização 09/08 (investigação mais a fundo, a pedido do Kauã)**:
+identificado o processo exato — `campos_custom->>'fonte'` = `apollo_whitelabel_lookalike`
+em 100% dos 54 (`origem='outbound'`), batendo exatamente com a prospecção
+"Apollo White Label" de 05/08 já registrada em memória (88 leads-lixo →
+55 qualificados, mesma data). Não foi um import misterioso — foi uma
+campanha real de prospecção outbound que nasceu fora do fluxo normal da
+aplicação (script/processo próprio, não pelas rotas `leads.ts`/`apollo.ts`),
+por isso não preencheu `responsavel_id`.
+
+**Regra de atribuição histórica encontrada**: TODOS os outros 24 leads com
+`origem='outbound'` no banco pertencem à mesma pessoa — Jenifer Matos
+(gerente, ativa). 100% de consistência, zero exceção. **Proposta (não
+aplicada)**: atribuir os 54 leads à Jenifer Matos, mesmo padrão. Não
+executei essa atribuição sozinho — atribuir 54 leads de uma vez muda a
+carga de trabalho real de uma pessoa (dobra o volume outbound dela, de 24
+pra 78), é o tipo de decisão operacional que merece confirmação antes de
+aplicar, mesmo com a evidência sendo forte. Pronta pra rodar num comando
+só quando confirmado.
 "correção em massa exige checkpoint humano" já aplicado o resto da sessão.
 
 ---
