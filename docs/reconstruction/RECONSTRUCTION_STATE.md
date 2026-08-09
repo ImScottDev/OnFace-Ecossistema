@@ -64,6 +64,15 @@ disponível — mesmo padrão de "reaproveitar o que já existe" do
 - [x] **Achado real durante a verificação, investigado e descartado como bug de produto**: a sessão parecia expirar em quase toda navegação via Playwright (redirecionava pro `/login` sem motivo aparente). Investiguei via `curl` direto com cookie de sessão real (bypassando o browser) — 5 requisições consecutivas, todas `200 OK` em ~100ms, sem timeout, sem falha. **Conclusão: era flakiness do cookie jar da instância do Playwright MCP nesta sessão, não um bug real do produto** (correção da hipótese inicial, que culpava o timeout de 8s do `resolveSession()` em `layout.tsx` — esse mecanismo existe e é real, mas não foi o causador aqui).
 - [x] `tsc` limpo, dev server + api server saudáveis depois da mudança.
 
+## Incidente resolvido: login local do Kauã falhando (09/08)
+
+Kauã reportou "tento logar local, em menos de 5s já sou deslogado". Log real do dev server (`.next/dev/logs/next-development.log`) mostrou 4 tentativas reais com `[auth][error] CredentialsSignin` — **não era logout, era rejeição de credencial** (senha errada), o que visualmente parece "cair" de volta pro login. Confirmado via curl que o servidor/sessão em si funcionam perfeitamente (8 requisições ao longo de 8s, todas 200) — mesmo padrão do achado anterior com `scott@scottdev.com.br` nesta sessão: o hash de senha no banco LOCAL (espelho de produção, tirado há alguns dias) não bate com a senha real atual dele.
+
+- [x] Confirmado que a conta existe local (ativa, role=admin).
+- [x] Senha resetada localmente (bcrypt, script descartável, removido) — só o banco LOCAL, zero relação com produção, reversível.
+- [x] Validado via curl: login + sessão funcionando (`kaua.araujo@callface.ai` / `callface2026` — só ambiente local).
+- [x] **Padrão a reconhecer no futuro**: se algum usuário reportar "login cai na hora" no ambiente local, checar `.next/dev/logs/next-development.log` por `CredentialsSignin` antes de suspeitar de bug de sessão — o espelho local pode ter senha desatualizada em relação à produção.
+
 ## F8 — primeiro passo real (adiantado, zero risco): 4 filas mortas removidas (09/08)
 
 F8 (Migração/Decomissão) formalmente ainda não começou (depende de burn-in em produção, que não existe ainda) — mas o próprio plano cita "decomissionar código morto (filas mortas como `cipa-analysis`)" como parte do objetivo. Ao continuar o pente-fino, achei que essa fila EXATA (citada no plano como exemplo) ainda existia — e mais 3 no mesmo estado.
