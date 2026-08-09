@@ -82,6 +82,12 @@ Kauã reportou "tento logar local, em menos de 5s já sou deslogado" — investi
 - [x] Kauã optou por continuar acompanhando com a conta `scott@scottdev.com.br` local — nenhuma mudança de permissão foi feita (promover o próprio usuário dele pra super_admin seria alterar permissão, checkpoint que não decido sozinho).
 - [x] **Padrão a reconhecer no futuro**: se um usuário reportar "login cai/redireciona" no ambiente local, (1) checar `.next/dev/logs/next-development.log` por `CredentialsSignin` primeiro, (2) se a senha estiver certa, checar `src/middleware.ts` por restrição de role no path antes de suspeitar de bug de sessão.
 
+## Achado registrado (não construído): endpoint `/api/relatorios/pos-venda` sem UI nenhuma (09/08)
+
+Continuando o pente-fino, achei que `GET /api/relatorios/pos-venda` (`relatorios.ts`) é 100% órfão — nenhuma das 7 abas reais de Relatórios (Comercial/Marketing/SDR/ComercialCloser/MidiaPaga/Growth/AtividadeTime) é "Pós-venda", nenhum componente referencia essa rota. Mas, diferente do `DashboardCards`/`PageTransition` (removidos, claramente obsoletos), este é **conteúdo real e relevante**: MRR ativo, contratos ativos, NPS médio + distribuição (detratores/neutros/promotores), churn rate, contratos vencendo — exatamente o tipo de métrica de retenção que é prioridade do negócio (redução de churn).
+
+**Decisão consciente de não construir agora**: criar uma aba nova (`TabPosVenda.tsx`) é UI genuína — diferente de reexpor lógica já testada via leitura (padrão das páginas `/admin/*` que construí), é desenhar uma tela nova do zero. Mantendo a disciplina da sessão inteira: não inventar UI sem trilha de design. **Registrado como candidato real de alto valor pra próxima rodada de F7/design** — o backend já existe, testado, só falta a tela.
+
 ## F8 — primeiro passo real (adiantado, zero risco): 4 filas mortas removidas (09/08)
 
 F8 (Migração/Decomissão) formalmente ainda não começou (depende de burn-in em produção, que não existe ainda) — mas o próprio plano cita "decomissionar código morto (filas mortas como `cipa-analysis`)" como parte do objetivo. Ao continuar o pente-fino, achei que essa fila EXATA (citada no plano como exemplo) ainda existia — e mais 3 no mesmo estado.
