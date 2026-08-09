@@ -1,6 +1,7 @@
 import { auth } from "@/lib/auth/config";
 import { redirect } from "next/navigation";
 import { CrmSidebar } from "@/components/crm/CrmSidebar";
+import { CrmTopbar } from "@/components/crm/CrmTopbar";
 import { Providers } from "@/components/crm/Providers";
 import { ViewAsBanner } from "@/components/crm/ViewAsBanner";
 
@@ -38,7 +39,14 @@ export default async function CrmLayout({
       <ViewAsBanner />
       <div className="flex h-dvh overflow-hidden" style={{ background: 'var(--bg-primary)' }}>
         <CrmSidebar />
-        <main className="flex-1 overflow-hidden min-h-0 pt-12 lg:pt-0">{children}</main>
+        {/* F7 (09/08): CrmTopbar revivido — existia completo (breadcrumb,
+            Cmd+K, notificações, usuário) mas nunca era montado em lugar
+            nenhum, achado confirmado na auditoria original. Não é UI nova
+            inventada agora, é reconectar o que já estava construído. */}
+        <div className="flex-1 flex flex-col overflow-hidden min-h-0 pt-12 lg:pt-0">
+          <CrmTopbar user={{ name: session.user.name, email: session.user.email, role: (session.user as { role?: string }).role }} />
+          <main className="flex-1 overflow-hidden min-h-0">{children}</main>
+        </div>
       </div>
     </Providers>
   );

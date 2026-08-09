@@ -11,7 +11,7 @@ Visão de alto nível, uma linha por fase. Detalhe operacional em `RECONSTRUCTIO
 | F4 | Commercial (Won gate, MRR fix) | 🟡 fix aplicado, PBX evidence pendente | ~70% | Causa raiz do MRR corrigida + gate de Won real, ambos construídos do zero (não copiados de homolog). Diagnóstico de 57 grupos duplicados salvo, nada corrigido em massa (checkpoint humano). Falta: 3ª via de evidência PBX (dado real já levantado), validar stripe-sync fix com Stripe real (bloqueado, sem key local) |
 | F5 | Cadência & Automação | 🟡 motor de automação real, Cadence Builder pendente | ~45% | dispararAutomacoes() construído e testado E2E com dado real (6 ações, 5 operadores de condição), ligado em 4 gatilhos reais. Falta: Cadence Builder (2ª metade da fase, ainda array hardcoded), migrar 3 gatilhos periódicos pro motor novo |
 | F6 | Analytics/Data Quality/Command Center | 🟡 Data Quality real, resto pendente | ~30% | Data Quality Layer com 10 checks reais, rodado contra dado local (achado: bug de "lead sem responsável" de 03/08 recorrendo, 54 casos). Falta: Analytics separado do OLTP, Command Center (fica pra F7/design) |
-| F7 | Frontend/UX (implementação) | ⚪ não iniciado | 0% | Trilha de design paralela ainda não formalmente iniciada |
+| F7 | Frontend/UX (implementação) | 🟡 primeiro passo real, greenfield confirmado | ~10% | `CrmTopbar` revivido + bug de hydration corrigido, verificado via Playwright. Trilha de design paralela nunca foi formalmente iniciada nas fases anteriores — F7 é greenfield de implementação, não "montar o que já foi desenhado" |
 | F8 | Migração completa/decomissão | ⚪ não iniciado | 0% | |
 | F9 | Ecosystem Readiness | ⚪ não iniciado | 0% | |
 
