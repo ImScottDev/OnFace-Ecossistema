@@ -12,6 +12,9 @@ import {
   reunioes,
   tarefas,
   negocios,
+  pessoas,
+  communications,
+  aiAnalysis,
 } from "@/lib/db/schema";
 import { normalizePhone, phoneLastDigits, formatPhoneDisplay } from "@/lib/whatsapp/phone-utils";
 import { pickNextCloserLocked, closerTemConflito } from "@/lib/crm/agenda-closers";
@@ -364,6 +367,46 @@ export async function processCallfaceCallEvent(db: Db, payload: CallfaceCallPayl
     .returning({ id: ligacoes.id });
 
   if (!inserted) return `duplicada (${idempotencyKey}), ignorando`;
+
+  // F2/dual-write (Communication Intelligence): mesma idempotência real que
+  // já existe pra `ligacoes`, aplicada em `communications` — best-effort,
+  // nunca bloqueia o processamento real do evento de ligação.
+  try {
+    let pessoaId: string | null = null;
+    if (lead) {
+      const [pessoa] = await db.select({ id: pessoas.id }).from(pessoas).where(eq(pessoas.leadIdLegado, lead.id)).limit(1);
+      pessoaId = pessoa?.id ?? null;
+    }
+    const [comm] = await db
+      .insert(communications)
+      .values({
+        organizacaoId: orgId,
+        pessoaId,
+        canal: "ligacao",
+        conteudo: payload.summarization ? String(payload.summarization) : null,
+        duracaoSegundos: typeof payload.call_duration === "number" ? Math.round(payload.call_duration) : null,
+        status: payload.call_status ? String(payload.call_status) : null,
+        externalId: idempotencyKey,
+        usuarioId,
+        ocorridoEm: callDate && !Number.isNaN(callDate.getTime()) ? callDate : new Date(),
+        origemLegadoId: inserted.id,
+        raw: payload,
+      })
+      .onConflictDoNothing({ target: [communications.canal, communications.externalId] })
+      .returning({ id: communications.id });
+
+    if (comm && (payload.summarization || payload.transcription)) {
+      await db.insert(aiAnalysis).values({
+        organizacaoId: orgId,
+        entityType: "communication",
+        entityId: comm.id,
+        resumo: payload.summarization ? String(payload.summarization) : null,
+        raw: { transcricao: payload.transcription ?? null, closurePercentage: closure },
+      });
+    }
+  } catch (err) {
+    console.error("[F2/dual-write] falha ao sincronizar communications da ligação (best-effort):", err);
+  }
 
   const numeroFmt = payload.destination_number ? formatPhoneDisplay(String(payload.destination_number)) : "número desconhecido";
   const quemLigou = payload.user_name || payload.user_email || "vendedor";
