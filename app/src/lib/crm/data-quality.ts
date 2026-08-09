@@ -124,6 +124,27 @@ export async function rodarDataQuality(organizacaoId: string): Promise<Resultado
     amostras: [{ mrr_excesso: `R$${total}` }],
   });
 
+  // 11. Domain Model Sync — Leads (F1). NOTA: "sem pessoa via leadIdLegado"
+  // NÃO é o critério certo sozinho — 32 leads reais são reengajamento
+  // deduplicado por e-mail (leadIdLegado aponta pro lead ORIGINAL que criou
+  // a pessoa, não pra todo lead que compartilha o e-mail). Achado real ao
+  // construir este check: só conta como problema se também não bater por
+  // e-mail com NENHUMA pessoa da org.
+  resultados.push(await contarEAmostrar(
+    "Domain Model Sync (Leads)",
+    "Leads sem pessoa correspondente no Domain Model novo (nem por leadIdLegado, nem por e-mail — dedup de reengajamento já considerado)",
+    sql`select count(*)::int as n from leads l where l.organizacao_id=${org} and not exists (select 1 from pessoas p where p.lead_id_legado = l.id) and not exists (select 1 from pessoas p2 where p2.organizacao_id = l.organizacao_id and l.email is not null and lower(p2.email) = lower(l.email))`,
+    sql`select l.id, l.nome, l.email, l.tipo, l.created_at from leads l where l.organizacao_id=${org} and not exists (select 1 from pessoas p where p.lead_id_legado = l.id) and not exists (select 1 from pessoas p2 where p2.organizacao_id = l.organizacao_id and l.email is not null and lower(p2.email) = lower(l.email)) order by l.created_at desc limit 10`
+  ));
+
+  // 12. Domain Model Sync — Negócios (F1). Aqui é 1:1 de verdade (sem dedup), mais simples.
+  resultados.push(await contarEAmostrar(
+    "Domain Model Sync (Negócios)",
+    "Negócios sem oportunidade correspondente no Domain Model novo",
+    sql`select count(*)::int as n from negocios n where n.organizacao_id=${org} and not exists (select 1 from oportunidades o where o.negocio_id_legado = n.id)`,
+    sql`select id, titulo, status, created_at from negocios n where n.organizacao_id=${org} and not exists (select 1 from oportunidades o where o.negocio_id_legado = n.id) order by created_at desc limit 10`
+  ));
+
   return resultados;
 }
 
