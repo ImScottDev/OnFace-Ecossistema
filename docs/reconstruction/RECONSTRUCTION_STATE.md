@@ -64,6 +64,18 @@ disponível — mesmo padrão de "reaproveitar o que já existe" do
 - [x] **Achado real durante a verificação, investigado e descartado como bug de produto**: a sessão parecia expirar em quase toda navegação via Playwright (redirecionava pro `/login` sem motivo aparente). Investiguei via `curl` direto com cookie de sessão real (bypassando o browser) — 5 requisições consecutivas, todas `200 OK` em ~100ms, sem timeout, sem falha. **Conclusão: era flakiness do cookie jar da instância do Playwright MCP nesta sessão, não um bug real do produto** (correção da hipótese inicial, que culpava o timeout de 8s do `resolveSession()` em `layout.tsx` — esse mecanismo existe e é real, mas não foi o causador aqui).
 - [x] `tsc` limpo, dev server + api server saudáveis depois da mudança.
 
+## F5 — Cadence Engine: arquitetura construída sem esperar a Groq (09/08)
+
+Instrução explícita do Kauã: "não espere a Groq pra construir a arquitetura do Cadence Builder... validar o AGENTE é bloqueado pela credencial, construir a arquitetura não". Motor genérico construído — ver **ADR-EXEC-013** pra detalhe completo.
+
+- [x] `lib/crm/condicao.ts` — `avaliarCondicao` extraído de `automacao-engine.ts` (agora reusado por 2 sistemas, uma implementação só).
+- [x] Schema novo: `cadence_definitions` + `cadence_enrollments` + `cadence_enrollment_events`.
+- [x] `lib/cadencia/cadence-engine.ts` — `iniciarCadencia`/`avancarEnrollment`/`cancelarCadencia`/`sweepCadenciasDevidas` + registry de adapters (`registrarAdapter`). Zero dependência de provider de IA no motor.
+- [x] Job agendado no worker (`cadence-sweep`, 5min) já rodando.
+- [x] **Validado com dado real** (2 scripts descartáveis, removidos): branch condicional, retry com backoff (2 falhas + sucesso), audit trail, cancelamento, idempotência, sweep pegando só o vencido.
+- [x] `tsc` limpo, dev/api/worker saudáveis.
+- [ ] **Decisão consciente, não corte por pressa**: migrar a cadência real (AI SDR retry tiers em `runAiSdrRetrySweep`, ou os 13 toques de `sdr-inbound.ts`) pra rodar em cima deste motor NÃO foi feito — mudaria comportamento de fluxo de receita real, merece validação (idealmente com Groq renovada) antes de cortar o que já funciona. Motor pronto, zero enrollment real usando ainda, zero risco de regressão nos 2 sistemas atuais.
+
 ## F4 — follow-up: Commercial Evidence Policy — Won desacoplado de Stripe (09/08)
 
 **Recalibração importante do critério de autonomia** (revisão extensa do Kauã): decidir sozinho TUDO que é técnico/arquitetural; só parar quando a decisão depende de regra de NEGÓCIO que altera receita/dado histórico/permissão/operação. Eu estava tratando "falta decisão de negócio" como razão pra não avançar peças arquiteturais adjacentes que podia construir — isso mudou o resto desta sessão. Salvei essa calibração em memória (`feedback_autonomia_tecnica_vs_checkpoint_negocio`).

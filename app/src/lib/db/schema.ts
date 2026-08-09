@@ -1788,6 +1788,59 @@ export const clientes = pgTable("clientes", {
 // Escrito na MESMA transação da mudança de domínio; consumido por job
 // dedicado que publica pros interessados (ex: DealWon -> CS/Finance/Analytics).
 // ═══════════════════════════════════════════════════════════════
+// CRM 2.0 — FASE 5 (Automação): Cadence Engine — genérico, desacoplado de
+// canal/provider de IA. Ver docs/reconstruction/ARCHITECTURE_DECISIONS.md
+// (ADR-EXEC-013) e lib/cadencia/cadence-engine.ts.
+// ═══════════════════════════════════════════════════════════════
+
+export const cadenceDefinitions = pgTable("cadence_definitions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+  nome: text("nome").notNull(),
+  entityType: text("entity_type").notNull(), // lead | negocio | contato
+  // CadenceStep[] — ver tipo em cadence-engine.ts. Cada step: {id, tipo (wait|action|condition),
+  // adapter (nome registrado, ex: "whatsapp_message"|"ai_agent_message"), config, branches, retry}
+  steps: jsonb("steps").notNull(),
+  ativo: boolean("ativo").default(true).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const cadenceEnrollments = pgTable("cadence_enrollments", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+  cadenceDefinitionId: uuid("cadence_definition_id").references(() => cadenceDefinitions.id, { onDelete: "cascade" }).notNull(),
+  entityType: text("entity_type").notNull(),
+  entityId: uuid("entity_id").notNull(),
+  currentStepId: text("current_step_id"), // null antes do 1º step
+  status: text("status").notNull().default("active"), // active | waiting | completed | cancelled | failed
+  scheduledAt: timestamp("scheduled_at", { withTimezone: true }), // próxima execução devida
+  vars: jsonb("vars").default({}), // contexto acumulado (resolvido pelo caller: nome, empresa, telefone, etc)
+  attempt: integer("attempt").default(0).notNull(), // tentativas do step ATUAL (retry)
+  startedAt: timestamp("started_at", { withTimezone: true }).defaultNow().notNull(),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+  cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+  cancelReason: text("cancel_reason"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("idx_cadence_enrollments_scheduled").on(table.status, table.scheduledAt),
+  index("idx_cadence_enrollments_entity").on(table.entityType, table.entityId),
+  index("idx_cadence_enrollments_org").on(table.organizacaoId),
+]);
+
+export const cadenceEnrollmentEvents = pgTable("cadence_enrollment_events", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  enrollmentId: uuid("enrollment_id").references(() => cadenceEnrollments.id, { onDelete: "cascade" }).notNull(),
+  stepId: text("step_id").notNull(),
+  status: text("status").notNull(), // executado | erro | condicao_nao_atendida | retry_agendado | cancelado
+  resultado: jsonb("resultado"),
+  attempt: integer("attempt").default(0).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("idx_cadence_enrollment_events_enrollment").on(table.enrollmentId),
+]);
+
+// ═══════════════════════════════════════════════════════════════
 // CRM 2.0 — FASE 4 (Commercial): Commercial Evidence — Won não pode ficar
 // acoplado só ao Stripe (achado real: PBX/venda manual fatura fora do
 // Stripe). Ver docs/reconstruction/ARCHITECTURE_DECISIONS.md (ADR-EXEC-012).
