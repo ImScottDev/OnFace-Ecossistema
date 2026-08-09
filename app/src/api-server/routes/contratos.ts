@@ -103,6 +103,7 @@ app.post("/contratos", async (c) => {
   const [contrato] = await db
     .insert(contratos)
     .values({
+      organizacaoId: ctx.organizacaoId,
       leadId: parsed.data.leadId,
       tipo: parsed.data.tipo,
       descricao: parsed.data.descricao,

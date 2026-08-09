@@ -620,7 +620,13 @@ app.post("/leads/enrich-bulk", async (c) => {
   let targetIds: string[];
 
   if (filter === "selected" && ids?.length) {
-    targetIds = ids;
+    // F0/segurança: `ids` vem do client — nunca confiar sem checar organização.
+    // Re-resolve contra o banco escopado por ctx.organizacaoId antes de enfileirar.
+    const owned = await db
+      .select({ id: leads.id })
+      .from(leads)
+      .where(and(inArray(leads.id, ids), eq(leads.organizacaoId, ctx.organizacaoId)));
+    targetIds = owned.map((r) => r.id);
   } else {
     const conditions = [eq(leads.organizacaoId, ctx.organizacaoId)];
     if (filter === "pending") {
@@ -834,6 +840,7 @@ app.patch("/leads/:id", async (c) => {
         if (!acceptedProposta?.contratoId) {
           // Auto-create contrato draft (no accepted proposal)
           await db.insert(contratos).values({
+            organizacaoId: ctx.organizacaoId,
             leadId: id,
             tipo: parsed.data.contratoTipo || "safety_everywhere",
             mrr: parsed.data.mrrFechado || parsed.data.mrrEstimado,
