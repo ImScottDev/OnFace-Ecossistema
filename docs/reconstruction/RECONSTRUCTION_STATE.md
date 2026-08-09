@@ -43,9 +43,11 @@ Todas as 6 tasks de F0 (schema hardening, dev/prod routing parity + remoção de
   - `pontos_contato` (Attribution/Touchpoints) — ancorado em Pessoa/Empresa, nunca em Lead. `isFirstTouch`/`isLastTouch` explícitos.
   - `oportunidades` (Deal v2) — referencia `pessoa_id`/`empresa_id`, sem `lead_id` obrigatório. `negocioIdLegado` é bridge de migração.
   - `clientes` (Customer, entidade nova) — `statusFinanceiro` é cache de leitura, nunca fonte de escrita (Data Governance).
-- [ ] **Próximo passo exato**: script de backfill/reconciliação (leads→pessoas+clientes, negocios→oportunidades), com validação de contagem/dedup por email ANTES de qualquer dual-write real nas rotas. Ainda não iniciado o código do script.
-- [ ] Dual-write nas rotas reais (leads.ts/negocios.ts escrevendo nas duas tabelas) — não iniciado, depende do backfill validado primeiro.
-- [ ] Validar F1 pelos 5 dimensões de Done (ver plano) antes de considerar fase encerrada.
+- [x] **Script de backfill escrito e executado** (`app/src/lib/db/backfill-domain-model.ts`, `npm run db:backfill-domain-model`) — idempotente (TRUNCATE das 4 tabelas novas antes de reconstruir, seguro porque nada ainda lê/escreve nelas).
+- [x] **Resultado no banco local, validado**: 3.164 leads → 3.132 pessoas (32 dedupados por e-mail = reengajamento real) + 3.164 pontos_contato (1:1 com leads) + 231 clientes (de 240 leads tipo='cliente', dedup por empresa). 1.092 negócios → 1.092 oportunidades (1:1), **zero sem pessoa resolvida**.
+- [x] **Validação de integridade extra (não só contagem)**: zero pessoa com >1 `isLastTouch`, zero pessoa com >1 `isFirstTouch`, zero pessoa com touchpoint mas sem first touch, zero oportunidade órfã. Casos reais de reengajamento (32 pessoas, 2 touchpoints cada) confirmados por query.
+- [ ] Dual-write nas rotas reais (leads.ts/negocios.ts escrevendo nas duas tabelas) — não iniciado, é o próximo passo real de F1.
+- [ ] Validar F1 pelas 5 dimensões de Done (ver plano) antes de considerar fase encerrada — hoje só Technical+Data Done, falta Product/UX/Observability/Operational (que dependem do dual-write real nas rotas).
 
 ### Riscos abertos (atualizados)
 - Fix de MRR duplicado (F4): **achado novo relevante 09/08** — não está só no commit `2111650` (`wip/local-pre-sync`), está TAMBÉM completo e wired de verdade na branch `homolog` (backup do Kauã, ver ADR-EXEC-008) — `avaliarContratosAtivosDoLead`/`marcarContratoRenovado` chamados em `aceitar-proposta.ts` e `api-server/routes/contratos.ts`. **NÃO integrar essa branch agora** — Kauã vai revisar essa branch com calma depois, mas serve de referência pronta quando chegar F4.
