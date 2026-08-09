@@ -64,6 +64,15 @@ disponível — mesmo padrão de "reaproveitar o que já existe" do
 - [x] **Achado real durante a verificação, investigado e descartado como bug de produto**: a sessão parecia expirar em quase toda navegação via Playwright (redirecionava pro `/login` sem motivo aparente). Investiguei via `curl` direto com cookie de sessão real (bypassando o browser) — 5 requisições consecutivas, todas `200 OK` em ~100ms, sem timeout, sem falha. **Conclusão: era flakiness do cookie jar da instância do Playwright MCP nesta sessão, não um bug real do produto** (correção da hipótese inicial, que culpava o timeout de 8s do `resolveSession()` em `layout.tsx` — esse mecanismo existe e é real, mas não foi o causador aqui).
 - [x] `tsc` limpo, dev server + api server saudáveis depois da mudança.
 
+## F8 — primeiro passo real (adiantado, zero risco): 4 filas mortas removidas (09/08)
+
+F8 (Migração/Decomissão) formalmente ainda não começou (depende de burn-in em produção, que não existe ainda) — mas o próprio plano cita "decomissionar código morto (filas mortas como `cipa-analysis`)" como parte do objetivo. Ao continuar o pente-fino, achei que essa fila EXATA (citada no plano como exemplo) ainda existia — e mais 3 no mesmo estado.
+
+- [x] **4 filas confirmadas 100% mortas** (grep por variável E por nome de string, nenhum produtor `.add()` em lugar nenhum, sem `upsertJobScheduler` registrando job periódico): `cipaAnalysisQueue` (nem produtor nem worker), `aiSdrQueue` (idem), `conversionSyncQueue`/`followUpQueue` (tinham worker, mas o worker só fazia `console.log` — nunca recebiam job real, sem produtor).
+- [x] Removidas as 4 exports em `lib/queue/index.ts` + os 2 workers stub (`conversionSyncWorker`/`followUpWorker`) + a referência deles no `Promise.all` do shutdown gracioso em `worker/index.ts`.
+- [x] `tsc` limpo (nenhuma outra referência quebrada — prova que estavam mesmo mortas). Worker reiniciado automaticamente via `tsx watch`, saudável.
+- [ ] Isso NÃO é "iniciar F8" — é aproveitar um achado seguro e zero-risco que o próprio plano já antecipava, sem tocar em nada que dependa de burn-in/produção.
+
 ## F4 — follow-up: "duas verdades" de MRR na aba Financeiro, esclarecido (09/08)
 
 Continuando o pente-fino (procurando outros cálculos de MRR/receita independentes, mesmo padrão de risco do bug original), achei: `lib/financeiro/metricas.ts` tem um comentário no topo dizendo "MRR vem de `mrr_movimentos`, nunca recalculado diferente por aba" — mas a PRIMEIRA função do próprio arquivo (`getMrrAtual`) contradiz isso, somando direto de `contratos.mrr`.
