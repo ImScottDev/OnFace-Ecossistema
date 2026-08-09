@@ -35,6 +35,7 @@ import {
   Eye,
   CalendarClock,
   ListChecks,
+  ShieldAlert,
 } from "lucide-react";
 
 const COLLAPSED_W = 64;
@@ -428,6 +429,7 @@ export function CrmSidebar() {
               {[
                 { name: "Organizações", href: "/admin/organizacoes", icon: Building2 },
                 { name: "Usuários", href: "/admin/usuarios", icon: ShieldCheck },
+                { name: "Qualidade de Dados", href: "/admin/qualidade-dados", icon: ShieldAlert },
               ].map((item) => {
                 const isActive = pathname.startsWith(item.href);
                 return (

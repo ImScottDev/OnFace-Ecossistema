@@ -42,6 +42,28 @@ constante.
 - [ ] Nota lateral: durante a verificação, a senha local do usuário seed (`scott@scottdev.com.br`) não batia com `scott2026` documentado no README/seed.ts (hash divergente, causa não investigada — pode ter sido alterada manualmente em sessão anterior). Resetada localmente pra `scott2026` via script descartável (bcrypt, direto no Postgres local) pra poder testar — ação só no banco LOCAL, reversível, não é mudança de código nem afeta homolog/produção.
 - [ ] Resto de F7 (Command Center, telas de Lead/Deal/Communication, Cadence Builder visual, Automation Builder visual) — não iniciado, greenfield real, maior escopo, pendente.
 
+## F7 — follow-up: página "Qualidade de Dados" (09/08)
+
+**Decisão registrada com honestidade**: entre (a) F5 Cadence Builder, (b)
+continuar F6 (trocar dashboard pra ler do snapshot), (c) achar item de
+menor risco em F7 — escolhi (c). Trocar o dashboard pra ler do snapshot
+(b) é uma mudança de comportamento real (dado fica potencialmente
+desatualizado em até 1h) numa tela já verificada funcionando — isso é
+decisão de produto/UX (o Kauã aceita essa defasagem?), não só técnica, não
+decidi isso sozinho. Cadence Builder (a) continua maior risco + bloqueado
+por credencial. Uma página nova simples e utilitária (não é Command
+Center, não precisa de trilha de design real) que só EXPÕE o que já foi
+construído e testado (F6 Data Quality Layer) é o menor risco real
+disponível — mesmo padrão de "reaproveitar o que já existe" do
+`CrmTopbar`.
+
+- [x] `/admin/qualidade-dados` — página nova (server component, gate por `isAdminView`), chama `rodarDataQuality()`/`calcularScoreSaude()` (F6, já testado com dado real) direto, sem endpoint novo. Reaproveita o kit visual já existente (`Stat`/`Secao` de `relatorios/components/kit.tsx`) — sem inventar novo padrão visual.
+- [x] Link novo na sidebar (seção Admin, só super_admin, mesmo critério dos outros 2 links dessa seção).
+- [x] Breadcrumb do `CrmTopbar` atualizado (`/admin/qualidade-dados` → "Qualidade de Dados") — sem isso caía no fallback genérico "Detalhe".
+- [x] **Verificado com dado real via Playwright + curl**: os 10 checks renderizam com os números exatos já documentados em F6 (Duplicate 36, Missing Owner 54, Missing Source 346, Invalid Contact 3, Invalid Company 25, Inconsistent Stage 251, Invalid Amount/Orphan Deal/Missing Product em 0, Financial mismatch com `mrr_excesso`), Health Score 20% confirmado, amostras renderizando.
+- [x] **Achado real durante a verificação, investigado e descartado como bug de produto**: a sessão parecia expirar em quase toda navegação via Playwright (redirecionava pro `/login` sem motivo aparente). Investiguei via `curl` direto com cookie de sessão real (bypassando o browser) — 5 requisições consecutivas, todas `200 OK` em ~100ms, sem timeout, sem falha. **Conclusão: era flakiness do cookie jar da instância do Playwright MCP nesta sessão, não um bug real do produto** (correção da hipótese inicial, que culpava o timeout de 8s do `resolveSession()` em `layout.tsx` — esse mecanismo existe e é real, mas não foi o causador aqui).
+- [x] `tsc` limpo, dev server + api server saudáveis depois da mudança.
+
 ## F5 — follow-up: 3 gatilhos periódicos migrados pro motor novo (09/08)
 
 Fechando a pendência registrada em F5 ("migrar `lead_inativo`/`contrato_vencendo`/`nps_recebido` pro motor novo"). **Achado real ao investigar**: os 3 gatilhos já existiam no type union (`GatilhoAutomacao`) e no enum de UI (`automacoes.ts`) desde que o motor foi construído — mas nenhum dos 3 nunca era disparado de verdade (`grep dispararAutomacoes(` confirma). Se algum usuário tivesse configurado uma regra com esses gatilhos, ela nunca rodaria — bug real, mas de impacto zero hoje (`select gatilho, count(*) from automacoes` retornou 0 linhas, nenhuma regra configurada ainda).
