@@ -26,6 +26,7 @@ async function contarEAmostrar(nomeCheck: string, descricao: string, queryContag
 
 export async function rodarDataQuality(organizacaoId: string): Promise<ResultadoCheck[]> {
   const org = organizacaoId;
+  const now = new Date();
   const resultados: ResultadoCheck[] = [];
 
   // 1. Duplicate — contratos duplicados pela mesma assinatura Stripe (mesmo achado de F4)
@@ -144,6 +145,84 @@ export async function rodarDataQuality(organizacaoId: string): Promise<Resultado
     sql`select count(*)::int as n from negocios n where n.organizacao_id=${org} and not exists (select 1 from oportunidades o where o.negocio_id_legado = n.id)`,
     sql`select id, titulo, status, created_at from negocios n where n.organizacao_id=${org} and not exists (select 1 from oportunidades o where o.negocio_id_legado = n.id) order by created_at desc limit 10`
   ));
+
+  // 13-15. Invariantes de relatório (extraídos de scripts/checar-invariantes-relatorios.ts,
+  // script pré-existente da auditoria de 21/07 — trazidos pro Data Quality Layer pra
+  // rodar sempre, não só quando alguém lembra de rodar o script manual). Janela: mês atual.
+  const inicioMes = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split("T")[0];
+  const hoje = now.toISOString().split("T")[0];
+
+  const [somaVsTotal] = await db.execute<{ ganhos_total: number; ganhos_soma: number; receita_total: string; receita_soma: string }>(sql`
+    with total as (
+      select count(*)::int as ganhos, coalesce(sum(case when tipo_receita='avulso' then valor_total else mrr_fechado end),0)::numeric(14,2) as receita
+      from negocios where organizacao_id=${org} and status='ganho' and ganho_at >= ${inicioMes}::date and ganho_at < (${hoje}::date + 1)
+    ), por_resp as (
+      select count(*)::int as ganhos, coalesce(sum(case when tipo_receita='avulso' then valor_total else mrr_fechado end),0)::numeric(14,2) as receita
+      from negocios where organizacao_id=${org} and status='ganho' and ganho_at >= ${inicioMes}::date and ganho_at < (${hoje}::date + 1)
+      group by coalesce(responsavel_id::text,'(sem responsável)')
+    )
+    select (select ganhos from total) as ganhos_total, coalesce((select sum(ganhos) from por_resp),0)::int as ganhos_soma,
+           (select receita from total)::text as receita_total, coalesce((select sum(receita) from por_resp),0)::text as receita_soma
+  `);
+  const ganhosBatem = Number(somaVsTotal.ganhos_total) === Number(somaVsTotal.ganhos_soma);
+  const receitaBate = Math.abs(Number(somaVsTotal.receita_total) - Number(somaVsTotal.receita_soma)) < 0.01;
+  resultados.push({
+    check: "Invariante: Σ por responsável = total",
+    descricao: "Soma de ganhos/receita agrupada por responsável precisa bater com o total do mês (mesma janela ganho_at) — achado real da auditoria de 21/07, monitorado desde então",
+    problemas: (ganhosBatem && receitaBate) ? 0 : 1,
+    amostras: (ganhosBatem && receitaBate) ? [] : [{ ganhos_total: somaVsTotal.ganhos_total, ganhos_soma: somaVsTotal.ganhos_soma, receita_total: somaVsTotal.receita_total, receita_soma: somaVsTotal.receita_soma }],
+  });
+
+  const [funilSdr] = await db.execute<{ esteira: number; contato: number; qualificando: number; qualificado: number }>(sql`
+    with l as (
+      select ld.id, coalesce(ld.sdr_status,'pending') s, exists(select 1 from negocios n where n.lead_id = ld.id) has_neg
+      from leads ld where ld.organizacao_id=${org} and ld.created_at >= ${inicioMes}::date and ld.created_at < (${hoje}::date + 1)
+    ), cls as (
+      select case
+        when s='disqualified' then 'dq' when has_neg then 'q'
+        when s in ('sdr_sem_retorno','sdr_sem_interesse','sdr_retomar_depois') then 'st'
+        when s='contacted' then 'c' when s='qualifying' then 'qg' else 'n' end col
+      from l
+    )
+    select count(*) filter (where col <> 'st')::int as esteira, count(*) filter (where col in ('c','qg','q','dq'))::int as contato,
+           count(*) filter (where col in ('qg','q'))::int as qualificando, count(*) filter (where col = 'q')::int as qualificado
+    from cls
+  `);
+  const seqSdr = [Number(funilSdr.esteira), Number(funilSdr.contato), Number(funilSdr.qualificando), Number(funilSdr.qualificado)];
+  const sdrMonotonico = seqSdr.every((v, i) => i === 0 || v <= seqSdr[i - 1]);
+  resultados.push({
+    check: "Invariante: funil SDR monotônico",
+    descricao: "Cada estágio da esteira SDR precisa ter ≤ leads que o estágio anterior (esteira ≥ contato ≥ qualificando ≥ qualificado) — mês atual",
+    problemas: sdrMonotonico ? 0 : 1,
+    amostras: sdrMonotonico ? [] : [{ sequencia: seqSdr.join(" ≥ ") }],
+  });
+
+  // Lista fixa/hardcoded (não é input de usuário) — sql.raw seguro aqui.
+  // Achado real ao construir: db.execute(sql`...ANY(${array})`) do Drizzle NÃO
+  // expande array em array literal Postgres (vira params posicionais e quebra
+  // ANY) — diferente do tagged template do pacote `postgres` puro usado no
+  // script original. sql.raw com array literal explícito é o jeito certo aqui.
+  const ordemFunil = ["reuniao_agendada", "reuniao_realizada", "trial", "proposta_apresentada", "negociacao_iniciada", "ganho"];
+  const ordemFunilLiteral = sql.raw(`ARRAY[${ordemFunil.map((v) => `'${v}'`).join(",")}]::text[]`);
+  const eventosFunil = await db.execute<{ lead_id: string; para_status: string }>(sql`
+    select distinct sc.lead_id, sc.para_status from status_changes sc join leads l on l.id = sc.lead_id
+    where l.organizacao_id=${org} and sc.created_at >= ${inicioMes}::date and sc.created_at < (${hoje}::date + 1)
+      and sc.para_status = any(${ordemFunilLiteral})
+  `);
+  const maxIdxPorLead = new Map<string, number>();
+  for (const r of eventosFunil as unknown as { lead_id: string; para_status: string }[]) {
+    const i = ordemFunil.indexOf(r.para_status);
+    const cur = maxIdxPorLead.get(r.lead_id);
+    if (cur == null || i > cur) maxIdxPorLead.set(r.lead_id, i);
+  }
+  const funilVendas = ordemFunil.map((_, i) => [...maxIdxPorLead.values()].filter((m) => m >= i).length);
+  const vendasMonotonico = funilVendas.every((v, i) => i === 0 || v <= funilVendas[i - 1]);
+  resultados.push({
+    check: "Invariante: funil de vendas monotônico",
+    descricao: "Cada etapa do funil por evento (reunião agendada → ... → ganho) precisa ter ≤ leads que a etapa anterior — mês atual",
+    problemas: vendasMonotonico ? 0 : 1,
+    amostras: vendasMonotonico ? [] : [{ sequencia: funilVendas.join(" ≥ ") }],
+  });
 
   return resultados;
 }
