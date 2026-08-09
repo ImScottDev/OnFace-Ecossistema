@@ -11,6 +11,7 @@ import {
   index,
   uniqueIndex,
   date,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 
 // ─── ORGANIZACOES (TENANTS) ──────────────────────────────────
@@ -45,13 +46,16 @@ export const usuarios = pgTable("usuarios", {
   nome: text("nome").notNull(),
   email: text("email").unique().notNull(),
   senhaHash: text("senha_hash").notNull(),
-  role: text("role").default("vendedor").notNull(), // admin | gerente | closer | sdr | leitor
+  role: text("role").default("vendedor").notNull(), // admin | gerente | closer | sdr | leitor | director | coordinator | operations
+  // F0/RBAC v2 (blueprint bloco 26/55): time do usuário, opcional — nem toda org usa.
+  teamId: uuid("team_id").references((): AnyPgColumn => teams.id),
   avatarUrl: text("avatar_url"),
   ativo: boolean("ativo").default(true).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   index("idx_usuarios_org").on(table.organizacaoId),
+  index("idx_usuarios_team").on(table.teamId),
 ]);
 
 // ─── METAS (por usuário/mês) ─────────────────────────────────
@@ -1533,7 +1537,7 @@ export const teams = pgTable("teams", {
   id: uuid("id").defaultRandom().primaryKey(),
   organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
   nome: text("nome").notNull(),
-  managerId: uuid("manager_id").references(() => usuarios.id),
+  managerId: uuid("manager_id").references((): AnyPgColumn => usuarios.id),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [

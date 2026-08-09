@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { setCookie, deleteCookie, getCookie } from "hono/cookie";
 import { db } from "@/lib/db";
-import { organizacoes, usuarios, whatsappSessao } from "@/lib/db/schema";
+import { organizacoes, usuarios, whatsappSessao, auditLog } from "@/lib/db/schema";
 import { eq, and, sql as rawSql } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { getSuperCtx, getCtx } from "../compat.js";
@@ -291,6 +291,14 @@ app.post("/org-switch", async (c) => {
   // Clear override (go back to own org)
   if (!organizacaoId || organizacaoId === ctx.organizacaoId) {
     deleteCookie(c, ORG_OVERRIDE_COOKIE, { path: "/" });
+    await db.insert(auditLog).values({
+      organizacaoId: ctx.organizacaoId,
+      actorId: ctx.userId,
+      action: "org_switch.clear",
+      entityType: "organizacao",
+      entityId: ctx.organizacaoId,
+      source: "admin",
+    });
     return c.json({ ok: true, orgId: ctx.organizacaoId });
   }
 
@@ -311,6 +319,19 @@ app.post("/org-switch", async (c) => {
     sameSite: "Lax",
     path: "/",
     maxAge: 86400, // 24 hours
+  });
+
+  // F0: fecha o achado de segurança confirmado na auditoria — zero log de
+  // org-switch hoje. super_admin trocando de organização passa a deixar rastro.
+  await db.insert(auditLog).values({
+    organizacaoId: org.id,
+    actorId: ctx.userId,
+    action: "org_switch.activate",
+    entityType: "organizacao",
+    entityId: org.id,
+    before: { organizacaoId: ctx.organizacaoId },
+    after: { organizacaoId: org.id },
+    source: "admin",
   });
 
   return c.json({ ok: true, orgId: org.id, orgSlug: org.slug });
@@ -367,6 +388,14 @@ app.post("/view-as", async (c) => {
 
   if (!body.userId || body.userId === ctx.realUserId) {
     deleteCookie(c, VIEW_AS_COOKIE, { path: "/" });
+    await db.insert(auditLog).values({
+      organizacaoId: ctx.organizacaoId,
+      actorId: ctx.realUserId,
+      action: "impersonate.clear",
+      entityType: "usuario",
+      entityId: ctx.realUserId,
+      source: "admin",
+    });
     return c.json({ ok: true, cleared: true });
   }
 
@@ -392,6 +421,18 @@ app.post("/view-as", async (c) => {
     sameSite: "Lax",
     path: "/",
     maxAge: 86400,
+  });
+
+  // F0: fecha o achado de segurança confirmado na auditoria — zero log de
+  // impersonation hoje. Quem ativou "ver como", em quem, e quando, agora tem rastro.
+  await db.insert(auditLog).values({
+    organizacaoId: ctx.organizacaoId,
+    actorId: ctx.realUserId,
+    action: "impersonate.activate",
+    entityType: "usuario",
+    entityId: target.id,
+    after: { targetUserId: target.id, targetRole: target.role },
+    source: "admin",
   });
 
   return c.json({ ok: true, userId: target.id, role: target.role });
