@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useSession } from "next-auth/react";
 import { AddNoteInlineNegocio, TarefasSectionNegocio } from "@/components/crm/NegocioSections";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, User, FileText, Clock, CheckCircle, XCircle, Plus, Pencil, Trash2, X, Building2, Users, Thermometer, StickyNote, MessageCircle, Phone, Briefcase } from "lucide-react";
+import { ArrowLeft, User, FileText, Clock, CheckCircle, XCircle, Plus, Pencil, Trash2, X, Building2, Users, Thermometer, StickyNote, MessageCircle, Phone, Briefcase, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { usePipelineConfig } from "@/hooks/usePipelineConfig";
 import { EmpresaDrawer } from "@/components/crm/EmpresaDrawer";
@@ -14,11 +15,13 @@ import { QualificacaoSdrSection } from "@/components/crm/QualificacaoSdrSection"
 import { LigacoesSection } from "@/components/crm/LigacoesSection";
 import { LeadTimeline } from "@/components/crm/LeadTimeline";
 import { callfaceCallUrl } from "@/lib/utils/callface-call";
+import { isAdminView } from "@/lib/auth/roles";
 
 export default function NegocioDetailPage() {
   const { id } = useParams();
   const router = useRouter();
   const queryClient = useQueryClient();
+  const { data: session } = useSession();
   const [showLossModal, setShowLossModal] = useState(false);
   const [lossReason, setLossReason] = useState("");
   const [lossDetail, setLossDetail] = useState("");
@@ -28,6 +31,20 @@ export default function NegocioDetailPage() {
   const { stages, closedStages, allStatuses, lossReasons, getStatusInfo, servicos } = usePipelineConfig();
   const [drawerLeadId, setDrawerLeadId] = useState<string | null>(null);
   const [whatsappLoading, setWhatsappLoading] = useState(false);
+  // F4/Won Evidence: gate real existe desde 09/08 (ADR-EXEC-012), mas nenhuma
+  // tela oferecia a via manual (PBX/venda fora do Stripe) — sem isso, o
+  // closer clicava em "Ganho", o gate rejeitava (400) e a mutation antiga
+  // (sem checar res.ok) engolia o erro em silêncio.
+  const [showEvidenciaModal, setShowEvidenciaModal] = useState(false);
+  const [evidenciaTipo, setEvidenciaTipo] = useState<"manual_contract" | "admin_approval">("manual_contract");
+  const [evidenciaNota, setEvidenciaNota] = useState("");
+  const isAdmin = isAdminView(session?.user?.role);
+  // true só durante a retentativa automática depois de anexar evidência —
+  // distingue "1ª rejeição, oferece anexar" de "anexou e AINDA foi rejeitado"
+  // (política do produto pode não aceitar manual_contract/admin_approval
+  // ainda — calibração pendente, ver DECISOES-PENDENTES.md item 1). Sem essa
+  // distinção o modal reabriria em loop sem explicar o motivo real.
+  const retentandoAposEvidencia = useRef(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ["negocio", id],
@@ -45,7 +62,12 @@ export default function NegocioDetailPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(updates),
       });
-      return res.json();
+      const body = await res.json();
+      // Achado real: antes disso, um 400 (ex: gate de evidência de Won
+      // rejeitando) era tratado como sucesso — a mutation nunca checava
+      // res.ok, então o erro do backend ficava engolido em silêncio.
+      if (!res.ok) throw new Error(body.error || "Erro ao atualizar negócio");
+      return body;
     },
     onSuccess: (_data, vars) => {
       queryClient.invalidateQueries({ queryKey: ["negocio", id] });
@@ -54,6 +76,48 @@ export default function NegocioDetailPage() {
         queryClient.invalidateQueries({ queryKey: ["carteira"] });
       }
     },
+    onError: (err: Error, vars) => {
+      if (vars.status !== "ganho" || !err.message.includes("evidência")) {
+        toast.error(err.message);
+        return;
+      }
+      if (retentandoAposEvidencia.current) {
+        // Anexou evidência de verdade (audit trail ficou registrado), mas a
+        // política do produto ainda não aceita esse tipo — não é bug, é a
+        // calibração de negócio pendente (item 1 de DECISOES-PENDENTES.md).
+        retentandoAposEvidencia.current = false;
+        toast.error("Evidência registrada, mas a política deste produto ainda não aceita esse tipo (calibração pendente — fale com o gestor). O negócio não foi marcado como ganho.");
+        return;
+      }
+      // Oferece a via manual (F4, ADR-EXEC-012) só quando é especificamente
+      // o gate de evidência rejeitando E o usuário tem papel pra resolver isso.
+      if (isAdmin) {
+        setShowEvidenciaModal(true);
+        return;
+      }
+      toast.error(err.message);
+    },
+  });
+
+  const anexarEvidencia = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/negocios/${id}/evidencia-manual`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tipo: evidenciaTipo, nota: evidenciaNota }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "Erro ao anexar evidência");
+      return body;
+    },
+    onSuccess: () => {
+      setShowEvidenciaModal(false);
+      setEvidenciaNota("");
+      toast.success("Evidência anexada — marcando como ganho...");
+      retentandoAposEvidencia.current = true;
+      updateNegocio.mutate({ status: "ganho" });
+    },
+    onError: (err: Error) => toast.error(err.message),
   });
 
   const deleteNegocio = useMutation({
@@ -541,6 +605,57 @@ export default function NegocioDetailPage() {
                   className="px-4 py-2 text-sm font-medium bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 disabled:opacity-40"
                 >
                   Confirmar Perda
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* F4/Won Evidence Modal — 3ª via de evidência (PBX/venda manual, fora do Stripe/proposta) */}
+      {showEvidenciaModal && (
+        <div className="modal-overlay fixed inset-0 flex items-center justify-center z-50" onClick={() => setShowEvidenciaModal(false)}>
+          <div className="modal-content p-6 w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-2 mb-1">
+              <ShieldCheck className="w-4 h-4 text-emerald-400" />
+              <h2 className="text-lg font-semibold text-white">Anexar evidência de fechamento</h2>
+            </div>
+            <p className="text-xs text-white/40 mb-4">
+              Este negócio não tem contrato assinado nem pagamento confirmado — sem isso não é possível marcar como ganho. Se a venda aconteceu fora do sistema (ex: PBX, fechamento manual), registre a evidência abaixo. Fica sempre auditado.
+            </p>
+            <div className="space-y-3">
+              <div>
+                <label className="text-sm text-white/50 mb-1 block">Tipo de evidência</label>
+                <select
+                  value={evidenciaTipo}
+                  onChange={(e) => setEvidenciaTipo(e.target.value as "manual_contract" | "admin_approval")}
+                  className="w-full dark-input text-sm"
+                >
+                  <option value="manual_contract">Contrato assinado fora do sistema</option>
+                  <option value="admin_approval">Aprovação de admin/gerente</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-sm text-white/50 mb-1 block">Nota *</label>
+                <p className="text-[10px] text-white/25 mb-1">Descreva a evidência (ex: nº do documento, onde o contrato está guardado).</p>
+                <textarea
+                  value={evidenciaNota}
+                  onChange={(e) => setEvidenciaNota(e.target.value)}
+                  className="w-full dark-input text-sm"
+                  rows={3}
+                  placeholder="Ex: Contrato PBX assinado em PDF, enviado por email em 09/08, arquivado no Drive do comercial."
+                />
+              </div>
+              <div className="flex gap-2 justify-end mt-4">
+                <button onClick={() => setShowEvidenciaModal(false)} className="px-4 py-2 text-sm text-white/50 hover:text-white">
+                  Cancelar
+                </button>
+                <button
+                  onClick={() => anexarEvidencia.mutate()}
+                  disabled={!evidenciaNota.trim() || anexarEvidencia.isPending}
+                  className="px-4 py-2 text-sm font-medium bg-emerald-500/20 text-emerald-400 rounded-lg hover:bg-emerald-500/30 disabled:opacity-40"
+                >
+                  {anexarEvidencia.isPending ? "Anexando..." : "Anexar e marcar como ganho"}
                 </button>
               </div>
             </div>

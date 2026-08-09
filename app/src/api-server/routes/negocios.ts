@@ -485,6 +485,29 @@ app.patch("/negocios/:id", async (c) => {
       }
     }
 
+    // F4 — GATE DE WON À PROVA DE EVIDÊNCIA, tem que rodar ANTES de qualquer
+    // efeito colateral (achado real durante validação visual 09/08: o insert
+    // de status_changes/disparo de automação/evento StageChanged abaixo
+    // sempre rodavam mesmo quando o gate ia rejeitar "ganho" depois — ou
+    // seja, uma automação de "negócio ganho" podia disparar, e o histórico
+    // ficava com um "reuniao_agendada → ganho" que NUNCA aconteceu de
+    // verdade, porque o status real do negócio nunca mudava). Ver ADR-EXEC-012.
+    let evidenciaWon: { permitido: boolean; evidencias: string[]; motivo: string } | null = null;
+    let produtoNegocioWon: string | null = null;
+    if (parsed.data.status === "ganho") {
+      const produtoRaw = (currentNegocio.camposCustom as Record<string, unknown> | null)?.produto;
+      produtoNegocioWon = typeof produtoRaw === "string" ? produtoRaw : null;
+      evidenciaWon = await avaliarEvidenciaWon(id, ctx.organizacaoId, produtoNegocioWon);
+      if (!evidenciaWon.permitido) {
+        return c.json(
+          {
+            error: "Não é possível marcar como ganho sem evidência comercial válida (contrato assinado, pagamento confirmado, ou aprovação manual registrada). Aceite a proposta, ou anexe evidência manual em /negocios/:id/evidencia-manual.",
+          },
+          400
+        );
+      }
+    }
+
     // Record status change
     await db.insert(statusChanges).values({
       leadId: currentNegocio.leadId,
@@ -538,28 +561,11 @@ app.patch("/negocios/:id", async (c) => {
 
     // → ganho: create contract, promote lead to cliente, clone to carteira as "ativo"
     if (parsed.data.status === "ganho") {
-      // F4 — GATE DE WON À PROVA DE EVIDÊNCIA (achado real, guardrail repetido
-      // 5x em todo o processo de reconstrução): antes deste fix, esta transição
-      // criava um contrato "de fallback" SEM checar se existia proposta aceita
-      // — ou seja, dava pra marcar "ganho" só porque o vendedor mudou o status,
-      // sem contrato assinado nem pagamento confirmado por trás.
-      //
-      // 09/08: gate migrado pra Commercial Evidence Policy (lib/crm/won-evidence.ts)
-      // — Won NÃO fica mais acoplado a Stripe/contrato direto, é uma pergunta
-      // "esse negócio tem evidência válida conforme a política do produto dele?".
-      // Isso abre o caminho pra venda PBX/manual via evidência admin_approval/
-      // manual_contract sem precisar tocar este gate de novo. Ver ADR-EXEC-012.
-      const produtoNegocio = (currentNegocio.camposCustom as Record<string, unknown> | null)?.produto;
-      const evidencia = await avaliarEvidenciaWon(id, ctx.organizacaoId, typeof produtoNegocio === "string" ? produtoNegocio : null);
-
-      if (!evidencia.permitido) {
-        return c.json(
-          {
-            error: "Não é possível marcar como ganho sem evidência comercial válida (contrato assinado, pagamento confirmado, ou aprovação manual registrada). Aceite a proposta, ou anexe evidência manual em /negocios/:id/evidencia-manual.",
-          },
-          400
-        );
-      }
+      // Gate de evidência (F4, Commercial Evidence Policy — ver ADR-EXEC-012)
+      // já rodou ANTES do insert de status_changes, mais acima — `evidenciaWon`
+      // já é garantidamente `permitido: true` aqui.
+      const evidencia = evidenciaWon!;
+      const produtoNegocio = produtoNegocioWon;
 
       updateData.ganhoAt = new Date();
 
