@@ -304,6 +304,22 @@ banco ou uma camada de write-guard fica como candidato de F1+.
 
 ---
 
+## ADR-EXEC-015 — Bug crítico corrigido: chave de sessão do api-server fixa na variante HTTPS
+
+**Contexto**: Kauã reportou ao vivo, em tempo real, "login funciona mas qualquer tela me desloga de volta pro login" — bloqueava totalmente o uso do CRM local. Investigação inicial (senha desatualizada, middleware `/admin/*` restrito a super_admin) resolveu problemas reais mas MENORES — o bug de verdade só apareceu ao reproduzir "navegar por qualquer tela".
+
+**Causa raiz**: `api-server/auth.ts` (rotas Hono — perfil, notificações, contadores do sidebar, admin) deriva a chave de decriptação da sessão via HKDF usando o NOME DO COOKIE como salt (é assim que o NextAuth v5 funciona). O nome do cookie tinha ficado **hardcoded** na variante HTTPS (`__Secure-authjs.session-token`), mas em dev local (HTTP puro) o cookie real é `authjs.session-token` (sem prefixo). Resultado: chave sempre errada, decode sempre falha, 401 em 100% dos requests pra qualquer endpoint Hono — determinístico, não uma corrida. Como `Providers.tsx` tem um handler global que redireciona pra `/login` em QUALQUER 401 próprio, isso se manifestava como "qualquer navegação desloga". As páginas Next.js (dashboard, admin) nunca eram afetadas porque usam `auth()` do próprio NextAuth (caminho diferente).
+
+**Por que passou despercebido até agora**: eu tinha detectado a rajada de 401 na F7 (revival do CrmTopbar) e **diagnostiquei errado** — registrei como "recupera sozinho, corrida de hidratação de sessão, não bloqueia". Estava errado nas duas partes: não recupera (é permanente por request), e não é corrida (é determinístico). O erro só ficou visível de verdade quando o Kauã testou navegação real entre telas — meus testes anteriores via curl focavam em páginas Next.js (sempre corretas) ou testavam a mesma página repetidamente sem cruzar pelos endpoints Hono afetados.
+
+**Fix**: `getKey`/`decodeSession` agora recebem o nome do cookie encontrado e derivam (cacheando) uma chave por nome — tentam as 2 variantes, igual a leitura do cookie já fazia.
+
+**Achado colateral**: o processo do `api-server` (`tsx watch`) estava rodando sem reiniciar há 2 dias — nenhuma mudança de código desta sessão em rotas Hono tinha sido realmente testada contra o servidor real (só via chamada direta de função em scripts). Reiniciado manualmente. Vale considerar monitorar isso (`tsx watch` não é 100% confiável pra restart automático em todo ambiente).
+
+**Validado**: 9 endpoints que davam 401 (perfil/notificações/leads/whatsapp/propostas/negocios/carteira/admin×2) voltaram 200, checado 5x consecutivas.
+
+---
+
 ## ADR-EXEC-005 — Documentação da reconstrução vive no repo, não só no vault
 
 **Contexto**: instrução do Kauã — outro agente/sessão precisa retomar sem reconstruir raciocínio, mesmo sem acesso ao vault Obsidian.

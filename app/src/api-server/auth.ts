@@ -13,10 +13,19 @@ const ORG_OVERRIDE_COOKIE = "mcrm-org-override";
 const VIEW_AS_COOKIE = "mcrm-view-as";
 const ADMIN_ROLES = ["admin", "gerente", "super_admin"];
 
-// NextAuth v5 derives encryption key using HKDF with cookie name as salt
-const COOKIE_NAME = "__Secure-authjs.session-token";
+// NextAuth v5 derives a chave de criptografia via HKDF usando o NOME DO
+// COOKIE como salt/info — e o nome do cookie muda com o protocolo:
+// "__Secure-authjs.session-token" só em HTTPS real, "authjs.session-token"
+// (sem prefixo) em HTTP local. Bug real achado 09/08: este arquivo tinha
+// o nome fixo na variante HTTPS, então em dev local (HTTP) a chave
+// derivada ficava sempre errada — decodeSession falhava 100% das vezes
+// (não intermitente), causando 401 em qualquer endpoint que passa por
+// aqui, disparando o logout forçado global (Providers.tsx). Fix: deriva
+// (e cacheia) uma chave por nome de cookie, tenta as 2 na leitura.
+const COOKIE_NAME_SECURE = "__Secure-authjs.session-token";
+const COOKIE_NAME_INSECURE = "authjs.session-token";
 
-async function getDerivedKey(secret: string): Promise<Uint8Array> {
+async function getDerivedKey(secret: string, cookieName: string): Promise<Uint8Array> {
   const keyMaterial = await crypto.subtle.importKey(
     "raw",
     new TextEncoder().encode(secret),
@@ -28,8 +37,8 @@ async function getDerivedKey(secret: string): Promise<Uint8Array> {
     {
       name: "HKDF",
       hash: "SHA-256",
-      salt: new TextEncoder().encode(COOKIE_NAME),
-      info: new TextEncoder().encode(`Auth.js Generated Encryption Key (${COOKIE_NAME})`),
+      salt: new TextEncoder().encode(cookieName),
+      info: new TextEncoder().encode(`Auth.js Generated Encryption Key (${cookieName})`),
     },
     keyMaterial,
     512 // 64 bytes for A256CBC-HS512
@@ -37,10 +46,14 @@ async function getDerivedKey(secret: string): Promise<Uint8Array> {
   return new Uint8Array(derived);
 }
 
-let cachedKey: Uint8Array | null = null;
-async function getKey(): Promise<Uint8Array> {
-  if (!cachedKey) cachedKey = await getDerivedKey(NEXTAUTH_SECRET);
-  return cachedKey;
+const cachedKeys = new Map<string, Uint8Array>();
+async function getKey(cookieName: string): Promise<Uint8Array> {
+  let key = cachedKeys.get(cookieName);
+  if (!key) {
+    key = await getDerivedKey(NEXTAUTH_SECRET, cookieName);
+    cachedKeys.set(cookieName, key);
+  }
+  return key;
 }
 
 export interface TenantContext {
@@ -61,9 +74,9 @@ export interface TenantContext {
 }
 
 // Decode the NextAuth session from the encrypted JWT cookie
-async function decodeSession(cookieValue: string): Promise<Record<string, unknown> | null> {
+async function decodeSession(cookieValue: string, cookieName: string): Promise<Record<string, unknown> | null> {
   try {
-    const key = await getKey();
+    const key = await getKey(cookieName);
     const { payload } = await jwtDecrypt(cookieValue, key, {
       clockTolerance: 15,
     });
@@ -75,13 +88,15 @@ async function decodeSession(cookieValue: string): Promise<Record<string, unknow
 
 // Extract tenant context from Hono request (same logic as Next.js getTenantContext)
 export async function getTenantFromRequest(c: Context): Promise<TenantContext | null> {
-  // Try both cookie names (HTTPS uses __Secure- prefix)
-  const token = getCookie(c, "__Secure-authjs.session-token")
-    || getCookie(c, "authjs.session-token");
+  // Try both cookie names (HTTPS usa prefixo __Secure-, HTTP local não) —
+  // a chave de decriptação depende do nome exato do cookie encontrado.
+  const secureToken = getCookie(c, COOKIE_NAME_SECURE);
+  const token = secureToken || getCookie(c, COOKIE_NAME_INSECURE);
+  const cookieName = secureToken ? COOKIE_NAME_SECURE : COOKIE_NAME_INSECURE;
 
   if (!token) return null;
 
-  const payload = await decodeSession(token);
+  const payload = await decodeSession(token, cookieName);
   if (!payload?.id || !payload?.organizacaoId) return null;
 
   let organizacaoId = payload.organizacaoId as string;
