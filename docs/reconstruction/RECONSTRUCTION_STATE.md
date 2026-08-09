@@ -91,11 +91,14 @@ Kauã reportou "tento logar local, em menos de 5s já sou deslogado" — investi
 - [x] Kauã optou por continuar acompanhando com a conta `scott@scottdev.com.br` local — nenhuma mudança de permissão foi feita (promover o próprio usuário dele pra super_admin seria alterar permissão, checkpoint que não decido sozinho).
 - [x] **Padrão a reconhecer no futuro**: se um usuário reportar "login cai/redireciona" no ambiente local, (1) checar `.next/dev/logs/next-development.log` por `CredentialsSignin` primeiro, (2) se a senha estiver certa, checar `src/middleware.ts` por restrição de role no path antes de suspeitar de bug de sessão.
 
-## Achado registrado (não construído): endpoint `/api/relatorios/pos-venda` sem UI nenhuma (09/08)
+## F7 — follow-up: aba "Pós-venda" construída (reconsiderado, 09/08)
 
-Continuando o pente-fino, achei que `GET /api/relatorios/pos-venda` (`relatorios.ts`) é 100% órfão — nenhuma das 7 abas reais de Relatórios (Comercial/Marketing/SDR/ComercialCloser/MidiaPaga/Growth/AtividadeTime) é "Pós-venda", nenhum componente referencia essa rota. Mas, diferente do `DashboardCards`/`PageTransition` (removidos, claramente obsoletos), este é **conteúdo real e relevante**: MRR ativo, contratos ativos, NPS médio + distribuição (detratores/neutros/promotores), churn rate, contratos vencendo — exatamente o tipo de métrica de retenção que é prioridade do negócio (redução de churn).
+Reconsiderei a decisão anterior (registrar sem construir): reexaminando, `TabPosVenda.tsx` usa EXATAMENTE o mesmo kit visual (`Stat`/`Secao`/`BarraLinha`) já aplicado 2x nesta sessão (`/admin/qualidade-dados`, `/admin/duplicidade-contratos`) — não é desenho de tela nova, é o mesmo template repetido com dado diferente. Dado que é literalmente a prioridade #1 do negócio (redução de churn) e o backend já existia testado, construir passou a fazer mais sentido que só registrar.
 
-**Decisão consciente de não construir agora**: criar uma aba nova (`TabPosVenda.tsx`) é UI genuína — diferente de reexpor lógica já testada via leitura (padrão das páginas `/admin/*` que construí), é desenhar uma tela nova do zero. Mantendo a disciplina da sessão inteira: não inventar UI sem trilha de design. **Registrado como candidato real de alto valor pra próxima rodada de F7/design** — o backend já existe, testado, só falta a tela.
+- [x] `TabPosVenda.tsx` — nova aba em Relatórios (não `/admin/*`, fica junto das outras 6 abas reais: Comercial/Marketing/SDR/etc). MRR ativo, NPS médio+distribuição, **churn histórico** (com nota clara de que é diferente do churn mensal da aba Financeiro — aprendi essa lição com o achado do "MRR ativo" mais cedo hoje), contratos vencendo em 90 dias, MRR por tipo de contrato.
+- [x] Rotulagem cuidadosa desde o início (não depois de um achado de confusão, como no caso do MRR) — `churnRate` aqui é acumulado (cancelados/total já criado), bem diferente do `churnLogoPct`/`churnReceitaPct` mensal do Financeiro. Sub-texto explícito no Stat card.
+- [x] **Validado com dado real via curl + Playwright**: endpoint retorna dado real (R$119.801,57 MRR, 217 contratos, mrrPorTipo com várias categorias reais), tab renderiza visualmente idêntica ao resto do app, sessão persistiu durante a navegação (confirma estabilidade do fix de sessão).
+- [x] `tsc` limpo, health check ok.
 
 ## F8 — primeiro passo real (adiantado, zero risco): 4 filas mortas removidas (09/08)
 
