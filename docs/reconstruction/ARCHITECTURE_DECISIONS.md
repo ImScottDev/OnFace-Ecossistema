@@ -14,11 +14,13 @@ Formato curto: contexto → decisão → consequência. ADRs numeradas herdadas 
 
 ---
 
-## ADR-EXEC-002 — Terceira via de evidência de "Won" para PBX — PENDENTE, não fechada
+## ADR-EXEC-002 — Terceira via de evidência de "Won" para PBX — arquitetura RESOLVIDA (09/08), calibração de política ainda pendente
 
 **Contexto**: guardrail "Won só com contrato assinado ou pagamento confirmado" (blueprint bloco 15/99) assume evidência via Stripe/assinatura. PBX fatura pela Holding/Wive, fora do Stripe.
 
-**Decisão**: **ainda não tomada**. Proposta em avaliação: atestação manual financeira com dupla aprovação + audit_log obrigatório (nunca silenciosa), como terceiro caminho de evidência só pra `produto='pabx'`.
+**Atualização 09/08 (revisão do Kauã)**: o gap arquitetural está resolvido — ver ADR-EXEC-012 (Commercial Evidence Policy). O que falta agora é só CALIBRAÇÃO de negócio (quais tipos de evidência valem pra produto='pabx' — ver `won_evidence_policies`), não construção. Registrado em `crm2-decisoes-pendentes.md`.
+
+**Decisão original (mantida como contexto histórico)**: atestação manual financeira com dupla aprovação + audit_log obrigatório (nunca silenciosa), como terceiro caminho de evidência só pra `produto='pabx'` — a "dupla aprovação" é exatamente o tipo de calibração fina que ainda não foi decidida (o default construído usa aprovação única de admin/gerente, reversível).
 
 **Dado real pra informar a decisão (09/08, gate já implementado em `negocios.ts`)**:
 dos 425 negócios `status='ganho'` no banco local, 158 (37%) não têm nenhuma
@@ -204,6 +206,22 @@ ainda não rodou hoje pra aquela org, não fica vazio esperando o cron).
 
 **Pendência registrada**: trocar o dashboard pra ler do snapshot em vez de
 recomputar — decisão futura separada, não decidida agora.
+
+---
+
+## ADR-EXEC-012 — Commercial Evidence Policy: Won desacoplado de Stripe (F4)
+
+**Contexto**: revisão do Kauã (09/08) sobre o relatório de duplicidade de contratos identificou o achado mais importante da sessão — Stripe não pode ser tratado como fonte universal de receita da Callface. É fonte da verdade do que é faturado *pelo Stripe*; PBX/venda manual fatura fora dele. O gate de Won anterior (ADR original, "proposta aceita OU contrato existente") já não acoplava a Stripe diretamente, mas também não tinha um caminho extensível pra registrar QUALQUER tipo de evidência futura — só sabia checar 2 tabelas específicas.
+
+**Decisão**: Won não é mais `if (evidência específica) won = true` — é uma pergunta genérica: "esse negócio tem evidência comercial válida conforme a política do produto dele?". Arquitetura:
+- `comercial_evidencia` (tabela nova): registro tipado de evidência por negócio — `tipo` (`stripe_payment` | `stripe_subscription` | `signed_contract` | `manual_contract` | `admin_approval`), `sourceRef`, `metadata`, `verificadoPor` (null = automático).
+- `won_evidence_policies` (tabela nova): por org × produto (produto=null = catch-all), define quais tipos de evidência valem. Sem política configurada, cai num default idêntico ao comportamento anterior (nunca regride).
+- `lib/crm/won-evidence.ts`: `avaliarEvidenciaWon()` (usado pelo gate), `registrarEvidencia()` (chamado nos pontos reais de origem — hoje: `aceitar-proposta.ts` registra `signed_contract`), `registrarEvidenciaManual()` (endpoint novo `POST /negocios/:id/evidencia-manual`, admin/gerente, sempre audit-logado — a via PBX/manual).
+- Fallback lazy: se um negócio nunca passou por um ponto que registra evidência (dado histórico, ou caminho ainda não coberto como `stripe-sync.ts`), o gate cai no critério legado (proposta aceita OU contrato existente) e AUTO-REGISTRA a evidência retroativamente — sem precisar de script de backfill em massa.
+
+**O que NÃO foi decidido (calibração de negócio, registrada em `crm2-decisoes-pendentes.md`)**: quais tipos de evidência valem pra `produto='pabx'` — a política catch-all seedada hoje é idêntica ao comportamento anterior (`signed_contract`/`stripe_subscription`/`stripe_payment`), então PBX ainda não consegue fechar via `admin_approval` até alguém inserir uma linha em `won_evidence_policies` pra `produto='pabx'` incluindo esse tipo. Validado com dado real (script descartável): evidência manual registrada e auditada corretamente, mas o gate CONTINUA bloqueando até a política aceitar aquele tipo — prova que a política é real, não um carimbo.
+
+**Escopo não coberto nesta rodada**: `stripe-sync.ts` (contrato criado direto de assinatura Stripe, fora do fluxo de proposta) não registra evidência explicitamente — os contratos criados ali frequentemente não têm `negocioId` (não passam por negócio), e a MRR-fix já validada nesse arquivo é sensível o suficiente pra não arriscar tocar sem necessidade real agora. O fallback lazy já cobre os casos onde o contrato tem `negocioId`.
 
 ---
 

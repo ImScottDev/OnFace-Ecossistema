@@ -1788,6 +1788,41 @@ export const clientes = pgTable("clientes", {
 // Escrito na MESMA transação da mudança de domínio; consumido por job
 // dedicado que publica pros interessados (ex: DealWon -> CS/Finance/Analytics).
 // ═══════════════════════════════════════════════════════════════
+// CRM 2.0 — FASE 4 (Commercial): Commercial Evidence — Won não pode ficar
+// acoplado só ao Stripe (achado real: PBX/venda manual fatura fora do
+// Stripe). Ver docs/reconstruction/ARCHITECTURE_DECISIONS.md (ADR-EXEC-012).
+// ═══════════════════════════════════════════════════════════════
+
+export const comercialEvidencia = pgTable("comercial_evidencia", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+  negocioId: uuid("negocio_id").references(() => negocios.id, { onDelete: "cascade" }).notNull(),
+  // stripe_payment | stripe_subscription | signed_contract | manual_contract | admin_approval
+  tipo: text("tipo").notNull(),
+  sourceRef: text("source_ref"), // id do contrato/assinatura/subscription que originou a evidência
+  metadata: jsonb("metadata"),
+  verificadoPor: uuid("verificado_por").references(() => usuarios.id), // null = registrado automaticamente pelo sistema
+  verificadoEm: timestamp("verificado_em", { withTimezone: true }).defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("idx_comercial_evidencia_negocio").on(table.negocioId),
+  index("idx_comercial_evidencia_org").on(table.organizacaoId),
+  uniqueIndex("idx_comercial_evidencia_dedup").on(table.negocioId, table.tipo, table.sourceRef),
+]);
+
+export const wonEvidencePolicies = pgTable("won_evidence_policies", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+  produto: text("produto"), // null = política catch-all (aplica a qualquer produto sem política específica)
+  tiposAceitos: jsonb("tipos_aceitos").notNull(), // string[] de TipoEvidenciaComercial
+  ativo: boolean("ativo").default(true).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("idx_won_evidence_policies_org").on(table.organizacaoId),
+]);
+
+// ═══════════════════════════════════════════════════════════════
 // CRM 2.0 — FASE 6 (Analytics): metricas_diarias — snapshot pré-computado
 // dos agregados de empresa (meta/pipeline/fechado/MRR Stripe), pra sair da
 // OLTP no caminho de leitura do dashboard. Os valores são calculados

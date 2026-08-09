@@ -13,6 +13,7 @@ import { eq, asc } from "drizzle-orm";
 import { syncNegocioValoresFromPropostas } from "@/lib/crm/sync-negocio-valores";
 import { notificarNegocioGanho } from "@/lib/crm/notificar";
 import { syncPessoaFromLead, syncOportunidadeFromNegocio } from "@/lib/crm/sync-domain-model";
+import { registrarEvidencia } from "@/lib/crm/won-evidence";
 import { avaliarContratosAtivosDuplicados, marcarContratoComoRenovado } from "@/lib/crm/contrato-duplicidade";
 
 type PropostaRow = typeof propostas.$inferSelect;
@@ -151,7 +152,7 @@ export async function marcarPropostaAceita(opts: {
     }).where(eq(leads.id, proposta.leadId));
 
     if (currentNeg) {
-      await db.insert(negocios).values({
+      const [negocioCarteira] = await db.insert(negocios).values({
         organizacaoId,
         leadId: currentNeg.leadId,
         empresaId: currentNeg.empresaId,
@@ -171,7 +172,10 @@ export async function marcarPropostaAceita(opts: {
         contratoTipo: currentNeg.contratoTipo,
         origemNegocio: "carteira",
         negocioOrigemId: negocioId,
-      });
+      }).returning({ id: negocios.id });
+
+      // F1/dual-write: clone do negócio pra carteira (pós-venda ativo) — best-effort.
+      await syncOportunidadeFromNegocio(negocioCarteira.id);
     }
   } else {
     // Proposta SEM negócio vinculado e lead sem negócio ativo aproveitável
@@ -252,6 +256,18 @@ export async function marcarPropostaAceita(opts: {
   // usado tanto pelo endpoint manual quanto pelo webhook do Stripe — best-effort.
   await syncPessoaFromLead(proposta.leadId);
   if (pAtual?.negocioId) await syncOportunidadeFromNegocio(pAtual.negocioId);
+
+  // F4/Commercial Evidence: proposta aceita = contrato assinado — registra
+  // a evidência explicitamente (não depende do fallback lazy do gate).
+  if (pAtual?.negocioId) {
+    await registrarEvidencia({
+      negocioId: pAtual.negocioId,
+      organizacaoId,
+      tipo: "signed_contract",
+      sourceRef: contrato.id,
+      metadata: { propostaId: proposta.id },
+    });
+  }
 
   return { contratoId: contrato.id };
 }
