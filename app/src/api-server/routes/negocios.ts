@@ -7,6 +7,8 @@ import { resolveFollowupOwnerId } from "@/lib/crm/sdr-escalation";
 import { syncNegocioValoresFromPropostas } from "@/lib/crm/sync-negocio-valores";
 import { syncOportunidadeFromNegocio } from "@/lib/crm/sync-domain-model";
 import { dispararAutomacoes } from "@/lib/crm/automacao-engine";
+import { avaliarEvidenciaWon, registrarEvidenciaManual } from "@/lib/crm/won-evidence";
+import { isAdminView } from "@/lib/auth/roles";
 import { getCtx } from "../compat.js";
 
 const app = new Hono();
@@ -509,24 +511,20 @@ app.patch("/negocios/:id", async (c) => {
       // 5x em todo o processo de reconstrução): antes deste fix, esta transição
       // criava um contrato "de fallback" SEM checar se existia proposta aceita
       // — ou seja, dava pra marcar "ganho" só porque o vendedor mudou o status,
-      // sem contrato assinado nem pagamento confirmado por trás. Agora exige
-      // evidência real: proposta aceita OU contrato já existente pra este
-      // negócio, antes de permitir a transição.
-      const [propostaAceita] = await db
-        .select({ id: propostas.id })
-        .from(propostas)
-        .where(and(eq(propostas.negocioId, id), eq(propostas.status, "aceita")))
-        .limit(1);
-      const [contratoExistenteCheck] = await db
-        .select({ id: contratos.id })
-        .from(contratos)
-        .where(eq(contratos.negocioId, id))
-        .limit(1);
+      // sem contrato assinado nem pagamento confirmado por trás.
+      //
+      // 09/08: gate migrado pra Commercial Evidence Policy (lib/crm/won-evidence.ts)
+      // — Won NÃO fica mais acoplado a Stripe/contrato direto, é uma pergunta
+      // "esse negócio tem evidência válida conforme a política do produto dele?".
+      // Isso abre o caminho pra venda PBX/manual via evidência admin_approval/
+      // manual_contract sem precisar tocar este gate de novo. Ver ADR-EXEC-012.
+      const produtoNegocio = (currentNegocio.camposCustom as Record<string, unknown> | null)?.produto;
+      const evidencia = await avaliarEvidenciaWon(id, ctx.organizacaoId, typeof produtoNegocio === "string" ? produtoNegocio : null);
 
-      if (!propostaAceita && !contratoExistenteCheck) {
+      if (!evidencia.permitido) {
         return c.json(
           {
-            error: "Não é possível marcar como ganho sem evidência de fechamento (contrato assinado ou pagamento confirmado). Aceite a proposta primeiro.",
+            error: "Não é possível marcar como ganho sem evidência comercial válida (contrato assinado, pagamento confirmado, ou aprovação manual registrada). Aceite a proposta, ou anexe evidência manual em /negocios/:id/evidencia-manual.",
           },
           400
         );
@@ -623,6 +621,44 @@ app.patch("/negocios/:id", async (c) => {
   await syncOportunidadeFromNegocio(id);
 
   return c.json(updated);
+});
+
+// POST /negocios/:id/evidencia-manual — 3ª via de evidência de Won (F4,
+// ADR-EXEC-012): venda PBX/manual que não passa por Stripe nem proposta.
+// Admin/gerente anexa evidência explícita (manual_contract ou
+// admin_approval) — sempre audit-logada, nunca decide "ganho" sozinha
+// (só desbloqueia o gate; a transição de status continua sendo uma ação
+// separada do usuário via PATCH /negocios/:id).
+const evidenciaManualSchema = z.object({
+  tipo: z.enum(["manual_contract", "admin_approval"]),
+  nota: z.string().min(1, "Nota obrigatória — descreva a evidência (ex: contrato PBX assinado fora do sistema, nº do documento)"),
+});
+
+app.post("/negocios/:id/evidencia-manual", async (c) => {
+  const ctx = await getCtx(c);
+  const id = c.req.param("id");
+  if (!UUID_RE.test(id)) return c.json({ error: "ID inválido" }, 400);
+
+  if (!isAdminView(ctx.userRole)) {
+    return c.json({ error: "Só admin/gerente pode anexar evidência manual de fechamento" }, 403);
+  }
+
+  const body = await c.req.json();
+  const parsed = evidenciaManualSchema.safeParse(body);
+  if (!parsed.success) return c.json({ error: "Dados inválidos", details: parsed.error.flatten() }, 400);
+
+  const [negocio] = await db.select({ id: negocios.id }).from(negocios).where(and(eq(negocios.id, id), eq(negocios.organizacaoId, ctx.organizacaoId))).limit(1);
+  if (!negocio) return c.json({ error: "Negócio não encontrado" }, 404);
+
+  await registrarEvidenciaManual({
+    negocioId: id,
+    organizacaoId: ctx.organizacaoId,
+    tipo: parsed.data.tipo,
+    usuarioId: ctx.userId,
+    nota: parsed.data.nota,
+  });
+
+  return c.json({ ok: true }, 201);
 });
 
 // DELETE /negocios/:id

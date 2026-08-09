@@ -1615,6 +1615,9 @@ app.post("/leads/:id/vincular-negocio", async (c) => {
       .returning();
 
     negocioId = newNegocio.id;
+
+    // F1/dual-write: negócio novo vinculado ao lead — best-effort.
+    await syncOportunidadeFromNegocio(negocioId);
   }
 
   // Set as active negocio on lead
