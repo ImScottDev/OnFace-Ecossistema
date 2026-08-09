@@ -7,7 +7,7 @@ Visão de alto nível, uma linha por fase. Detalhe operacional em `RECONSTRUCTIO
 | F0 | Foundation | 🟡 completo localmente, homolog pendente (não bloqueia) | ~90% | 6/6 tasks locais concluídas. Homolog é um ambiente ainda a provisionar (ver nota 09/08 em RECONSTRUCTION_STATE.md) — não urgente, decidir no 1º checkpoint real |
 | F1 | Domain Model (Lead/Contact/Company/Deal/Attribution) | 🟡 suficiente pra seguir, UX pendente | ~75% | Schema+backfill+dual-write+observability locais e validados. Falta: UX (trilha de design, F7), pontos de menor tráfego não cobertos (não bloqueiam) |
 | F2 | Communication Intelligence | 🟡 suficiente pra seguir, UX pendente | ~65% | Schema+dual-write nos 3 canais (ligação/WhatsApp/email) nos pontos de maior volume. Falta: UX (timeline unificada, trilha de design+F7), pontos de menor tráfego |
-| F3 | AI SDR Agent | ⚪ não iniciado | 0% | |
+| F3 | AI SDR Agent | 🟡 bug corrigido, Handoff formalizado, validação E2E bloqueada | ~40% | Endpoint OpenAI→Groq corrigido + Human Handoff com 3 estados. BLOQUEADO: GROQ_API_KEY do .env inválida, precisa o Kauã renovar. Trigger por evento (vs cron) deferido pra F5 (decisão: não compensa construir consumidor de evento antes do motor de automação geral existir) |
 | F4 | Commercial (Won gate, MRR fix) | ⚪ não iniciado | 0% | Depende de ADR-EXEC-002 (evidência PBX) |
 | F5 | Cadência & Automação | ⚪ não iniciado | 0% | |
 | F6 | Analytics/Data Quality/Command Center | ⚪ não iniciado | 0% | |
