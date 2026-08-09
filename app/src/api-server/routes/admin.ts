@@ -8,6 +8,13 @@ import { getSuperCtx, getCtx } from "../compat.js";
 
 const app = new Hono();
 
+// Achado real 09/08 (mesma classe do bug de sessão do api-server): `secure:
+// true` fixo faz o navegador NUNCA aceitar o cookie em HTTP puro (dev local)
+// — org-switch e view-as ficavam mudos localmente, sem nenhum erro visível
+// (o cookie simplesmente não persiste). Em produção (HTTPS real) precisa
+// continuar true. NODE_ENV=production só é setado no build/deploy real.
+const IS_SECURE_CONTEXT = process.env.NODE_ENV === "production";
+
 const ORG_OVERRIDE_COOKIE = "mcrm-org-override";
 
 // ─── Organizacoes ────────────────────────────────────────────────
@@ -315,7 +322,7 @@ app.post("/org-switch", async (c) => {
   // Set cookie — httpOnly, path /, 24h expiry
   setCookie(c, ORG_OVERRIDE_COOKIE, `${org.id}:${org.slug}`, {
     httpOnly: true,
-    secure: true,
+    secure: IS_SECURE_CONTEXT,
     sameSite: "Lax",
     path: "/",
     maxAge: 86400, // 24 hours
@@ -417,7 +424,7 @@ app.post("/view-as", async (c) => {
 
   setCookie(c, VIEW_AS_COOKIE, `${target.id}:${target.role}`, {
     httpOnly: true,
-    secure: true,
+    secure: IS_SECURE_CONTEXT,
     sameSite: "Lax",
     path: "/",
     maxAge: 86400,
