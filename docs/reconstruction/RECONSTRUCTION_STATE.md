@@ -64,6 +64,18 @@ disponível — mesmo padrão de "reaproveitar o que já existe" do
 - [x] **Achado real durante a verificação, investigado e descartado como bug de produto**: a sessão parecia expirar em quase toda navegação via Playwright (redirecionava pro `/login` sem motivo aparente). Investiguei via `curl` direto com cookie de sessão real (bypassando o browser) — 5 requisições consecutivas, todas `200 OK` em ~100ms, sem timeout, sem falha. **Conclusão: era flakiness do cookie jar da instância do Playwright MCP nesta sessão, não um bug real do produto** (correção da hipótese inicial, que culpava o timeout de 8s do `resolveSession()` em `layout.tsx` — esse mecanismo existe e é real, mas não foi o causador aqui).
 - [x] `tsc` limpo, dev server + api server saudáveis depois da mudança.
 
+## F4 — follow-up: 58 contratos ambíguos, classificação por evidência (09/08)
+
+Instrução do Kauã: não revisar os 58 um a um, construir classificação automática primeiro. `classificarAmbiguosPorEvidencia()` — ver **ADR-EXEC-014**.
+
+- [x] Compara cada ambíguo com o vizinho MAIS PRÓXIMO NO TEMPO do mesmo grupo (qualquer contrato, não só outro ambíguo — achado de escopo corrigido no meio da implementação: comparar só ambíguo×ambíguo deixava 43/58 sem vizinho).
+- [x] Limiares calibrados com dado real (13 pares analisados): ≤5% valor + ≤1 dia → `duplicata_provavel`; ≥40% valor OU ≥5 dias → `legitimo_provavel`; resto → `revisao_necessaria`.
+- [x] **Resultado real**: 33 `duplicata_provavel`, 23 `legitimo_provavel`, só **2 `revisao_necessaria`** — dos 58 originais, sobra muito pouco pra revisão humana de verdade.
+- [x] `/admin/duplicidade-contratos` atualizada com os 3 sub-tiers (Stat cards + label por contrato com diff de valor/tempo). Script CLI também atualizado (mesma função, não duplicada).
+- [x] Validado: script CLI rodado com dado real (33/23/2 confirmado), página confirmada via curl (labels dos 3 tiers presentes no HTML).
+- [x] `tsc` limpo.
+- [ ] **Nenhuma correção aplicada** — `duplicata_provavel` é sinal de alta confiança pra fila de consolidação, não ordem de merge. Decisão de consolidar continua humana (mas agora em lote de 33 casos com padrão claro, não 58 individuais).
+
 ## F5 — Cadence Engine: arquitetura construída sem esperar a Groq (09/08)
 
 Instrução explícita do Kauã: "não espere a Groq pra construir a arquitetura do Cadence Builder... validar o AGENTE é bloqueado pela credencial, construir a arquitetura não". Motor genérico construído — ver **ADR-EXEC-013** pra detalhe completo.
