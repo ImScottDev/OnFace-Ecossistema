@@ -64,14 +64,18 @@ disponível — mesmo padrão de "reaproveitar o que já existe" do
 - [x] **Achado real durante a verificação, investigado e descartado como bug de produto**: a sessão parecia expirar em quase toda navegação via Playwright (redirecionava pro `/login` sem motivo aparente). Investiguei via `curl` direto com cookie de sessão real (bypassando o browser) — 5 requisições consecutivas, todas `200 OK` em ~100ms, sem timeout, sem falha. **Conclusão: era flakiness do cookie jar da instância do Playwright MCP nesta sessão, não um bug real do produto** (correção da hipótese inicial, que culpava o timeout de 8s do `resolveSession()` em `layout.tsx` — esse mecanismo existe e é real, mas não foi o causador aqui).
 - [x] `tsc` limpo, dev server + api server saudáveis depois da mudança.
 
-## Incidente resolvido: login local do Kauã falhando (09/08)
+## Incidente resolvido: login local do Kauã falhando (09/08) — 2 causas, não 1
 
-Kauã reportou "tento logar local, em menos de 5s já sou deslogado". Log real do dev server (`.next/dev/logs/next-development.log`) mostrou 4 tentativas reais com `[auth][error] CredentialsSignin` — **não era logout, era rejeição de credencial** (senha errada), o que visualmente parece "cair" de volta pro login. Confirmado via curl que o servidor/sessão em si funcionam perfeitamente (8 requisições ao longo de 8s, todas 200) — mesmo padrão do achado anterior com `scott@scottdev.com.br` nesta sessão: o hash de senha no banco LOCAL (espelho de produção, tirado há alguns dias) não bate com a senha real atual dele.
+Kauã reportou "tento logar local, em menos de 5s já sou deslogado" — investigação encontrou DUAS causas diferentes, encadeadas:
 
-- [x] Confirmado que a conta existe local (ativa, role=admin).
-- [x] Senha resetada localmente (bcrypt, script descartável, removido) — só o banco LOCAL, zero relação com produção, reversível.
-- [x] Validado via curl: login + sessão funcionando (`kaua.araujo@callface.ai` / `callface2026` — só ambiente local).
-- [x] **Padrão a reconhecer no futuro**: se algum usuário reportar "login cai na hora" no ambiente local, checar `.next/dev/logs/next-development.log` por `CredentialsSignin` antes de suspeitar de bug de sessão — o espelho local pode ter senha desatualizada em relação à produção.
+**Causa 1 — senha desatualizada no espelho local**: log real do dev server (`.next/dev/logs/next-development.log`) mostrou tentativas reais com `[auth][error] CredentialsSignin` — não era logout, era rejeição de credencial (visualmente parece "cair" de volta pro login). O banco local é espelho de produção tirado há alguns dias; hash de senha pode estar desatualizado tanto pra `kaua.araujo@callface.ai` quanto pra `scott@scottdev.com.br` (achado ao vivo: ele tentou o super_admin local e TAMBÉM deu CredentialsSignin, mesmo eu tendo validado essa senha via curl minutos antes — suspeita de autofill do navegador com senha antiga salva).
+- [x] Ambas as contas resetadas localmente pra senha unificada `callface2026` (bcrypt, scripts descartáveis, removidos) — só banco LOCAL, zero relação com produção, reversível.
+- [x] Validado via curl pra as 2 contas: login + sessão funcionando.
+
+**Causa 2 — middleware restringe `/admin/*` a `super_admin`, achado real ao investigar**: mesmo com senha certa, a conta `kaua.araujo@callface.ai` (role=`admin`) NUNCA veria `/admin/qualidade-dados` nem `/admin/duplicidade-contratos` — `src/middleware.ts` (pré-existente, não fui eu que escrevi) tem uma regra explícita: `pathname.startsWith("/admin") && effectiveRole !== "super_admin"` → redirect pro `/dashboard`. É o MESMO critério que já protegia "Organizações"/"Usuários" no menu (que eu segui inconscientemente ao adicionar o link, mas as 2 páginas em si checavam `isAdminView` — mais permissivo que o middleware, que sempre ganha).
+- [x] Confirmado via curl: `scott@scottdev.com.br` (super_admin) acessa as 2 páginas normalmente; `kaua.araujo@callface.ai` (admin) é redirecionado pelo middleware antes mesmo da página rodar.
+- [x] Kauã optou por continuar acompanhando com a conta `scott@scottdev.com.br` local — nenhuma mudança de permissão foi feita (promover o próprio usuário dele pra super_admin seria alterar permissão, checkpoint que não decido sozinho).
+- [x] **Padrão a reconhecer no futuro**: se um usuário reportar "login cai/redireciona" no ambiente local, (1) checar `.next/dev/logs/next-development.log` por `CredentialsSignin` primeiro, (2) se a senha estiver certa, checar `src/middleware.ts` por restrição de role no path antes de suspeitar de bug de sessão.
 
 ## F8 — primeiro passo real (adiantado, zero risco): 4 filas mortas removidas (09/08)
 
