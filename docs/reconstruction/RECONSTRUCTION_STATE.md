@@ -59,7 +59,19 @@ Todas as 6 tasks de F0 (schema hardening, dev/prod routing parity + remoção de
 - [x] **Observability**: falha de sync agora grava em `audit_log` (`action: "domain_model_sync.failed"`), não só `console.error` — consultável de verdade, não preso em log de container.
 - [ ] Validar F1 pelas 5 dimensões de Done — Technical+Data+Operational+Observability OK pros pontos cobertos de dual-write; falta só UX (nenhuma tela ainda expõe o novo Domain Model, fica pra trilha de design + F7, não bloqueia seguir).
 
-## Fase atual: F4 — Commercial (Won gate + fix de MRR duplicado) — MAIOR RISCO FINANCEIRO DO PLANO
+## Fase atual: F5 — Automation (motor real construído e testado)
+
+- [x] `automacao_execucoes` (schema novo — histórico de execução, blueprint bloco 31).
+- [x] **Motor real** (`lib/crm/automacao-engine.ts`): `dispararAutomacoes(gatilho, contexto)` — busca regras ativas do gatilho, avalia `condicao` (5 operadores: igual/diferente/contem/maior_que/menor_que), executa `acao` (6 tipos implementados de verdade, reaproveitando infra já existente: `criar_tarefa`/`notificar_usuario`/`mudar_status`/`atribuir_responsavel` são puro DB; `enviar_email` via `sendResendEmail` — já no-op gracioso sem chave; `enviar_whatsapp` via `whatsappOutgoingQueue` já existente), grava em `automacao_execucoes` sempre (sucesso/erro/condição não atendida). Best-effort — automação falhando nunca quebra o fluxo real que disparou.
+- [x] **Testado de ponta a ponta com dado real** (script descartável, removido): criei regra real (novo_lead→criar_tarefa), lead real, disparei o motor, confirmei execução registrada E tarefa criada corretamente, limpei os dados de teste.
+- [x] Gatilhos ligados nos pontos reais: `novo_lead`+`novo_negocio` (`POST /leads`), `novo_negocio` (`POST /negocios`), `mudanca_status` (`PATCH /negocios/:id`), `whatsapp_recebido` (worker, mensagem ao vivo).
+- [x] `tsc` limpo, dev server saudável.
+- [ ] **Não testável E2E localmente**: ações `enviar_email`/`enviar_whatsapp` — sem `RESEND_API_KEY` nem sessão WhatsApp conectada localmente (mesmo padrão de F3/F4: código real, chamando infra real, mas sem credencial local pra confirmar entrega de verdade).
+- [ ] **Gatilhos ainda não ligados** (periódicos, hoje cobertos por cron hardcoded que já funciona): `lead_inativo`, `contrato_vencendo`, `nps_recebido` — migrar esses pro motor novo é follow-up natural, não fiz agora pra não arriscar quebrar 4 crons que já funcionam sem necessidade.
+- [ ] **Cadence Builder — NÃO INICIADO**: hoje ainda é array hardcoded de 13 toques em `sdr-inbound.ts`. É a segunda metade de F5 (motor de automação genérico ≠ motor de cadência de SDR) — registrado como pendência real, não fiz nesta sessão por escopo/tempo.
+- [ ] UX (Cadence Builder visual, Automation Builder visual) — fica pra trilha de design + F7, mesmo critério das fases anteriores.
+
+## Fase — F4 (histórico) — Commercial (Won gate + fix de MRR duplicado) — MAIOR RISCO FINANCEIRO DO PLANO
 
 Tudo construído do ZERO nesta fase, a partir dos requisitos já documentados
 — **nada copiado da branch `homolog`** (backup do Kauã, ver ADR-EXEC-008).

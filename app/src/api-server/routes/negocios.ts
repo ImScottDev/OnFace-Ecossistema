@@ -6,6 +6,7 @@ import { z } from "zod";
 import { resolveFollowupOwnerId } from "@/lib/crm/sdr-escalation";
 import { syncNegocioValoresFromPropostas } from "@/lib/crm/sync-negocio-valores";
 import { syncOportunidadeFromNegocio } from "@/lib/crm/sync-domain-model";
+import { dispararAutomacoes } from "@/lib/crm/automacao-engine";
 import { getCtx } from "../compat.js";
 
 const app = new Hono();
@@ -411,6 +412,14 @@ app.post("/negocios", async (c) => {
   // F1/dual-write: sincroniza Oportunidade — best-effort, nunca bloqueia a criação real.
   await syncOportunidadeFromNegocio(negocio.id);
 
+  // F5/Automation: gatilho "novo_negocio" — best-effort.
+  await dispararAutomacoes("novo_negocio", {
+    entityType: "negocio",
+    entityId: negocio.id,
+    organizacaoId: ctx.organizacaoId,
+    campos: { status: negocio.status, origemNegocio: negocio.origemNegocio },
+  });
+
   return c.json(negocio, 201);
 });
 
@@ -472,6 +481,14 @@ app.patch("/negocios/:id", async (c) => {
       paraStatus: parsed.data.status,
       usuarioId: ctx.userId,
       motivo: parsed.data.motivoPerda || undefined,
+    });
+
+    // F5/Automation: gatilho "mudanca_status" — best-effort.
+    await dispararAutomacoes("mudanca_status", {
+      entityType: "negocio",
+      entityId: id,
+      organizacaoId: ctx.organizacaoId,
+      campos: { status: parsed.data.status, statusAnterior: currentNegocio.status },
     });
 
     // → reuniao_realizada: F0 fix (achado 08/08, confirmado via query real: 53

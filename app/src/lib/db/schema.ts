@@ -1593,6 +1593,29 @@ export const aiAnalysis = pgTable("ai_analysis", {
 ]);
 
 // ═══════════════════════════════════════════════════════════════
+// CRM 2.0 — FASE 5 (Automation): automacao_execucoes
+// A tabela `automacoes` já existe (gatilho/condicao/acao/acaoConfig) mas
+// nunca teve executor (achado confirmado: CRUD sem motor, UI já admite
+// "em breve"). Esta tabela é o histórico de execução (blueprint bloco 31)
+// que o motor novo (lib/crm/automacao-engine.ts) grava a cada disparo.
+// ═══════════════════════════════════════════════════════════════
+export const automacaoExecucoes = pgTable("automacao_execucoes", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  automacaoId: uuid("automacao_id").references(() => automacoes.id, { onDelete: "cascade" }).notNull(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+  entityType: text("entity_type").notNull(), // lead | negocio | contato
+  entityId: uuid("entity_id").notNull(),
+  status: text("status").notNull(), // sucesso | erro | condicao_nao_atendida
+  resultado: jsonb("resultado"),
+  erro: text("erro"),
+  executedAt: timestamp("executed_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("idx_automacao_execucoes_automacao").on(table.automacaoId),
+  index("idx_automacao_execucoes_org").on(table.organizacaoId),
+  index("idx_automacao_execucoes_executed").on(table.executedAt),
+]);
+
+// ═══════════════════════════════════════════════════════════════
 // CRM 2.0 — FASE 0 (Foundation): teams, audit_log, event_outbox
 // Ver docs/reconstruction/ARCHITECTURE_DECISIONS.md (ADR-EXEC-001, 005)
 // ═══════════════════════════════════════════════════════════════
