@@ -5,7 +5,7 @@ Visão de alto nível, uma linha por fase. Detalhe operacional em `RECONSTRUCTIO
 | Fase | Nome | Status | % | Notas |
 |---|---|---|---|---|
 | F0 | Foundation | 🟡 completo localmente, homolog pendente (não bloqueia) | ~90% | 6/6 tasks locais concluídas. Homolog é um ambiente ainda a provisionar (ver nota 09/08 em RECONSTRUCTION_STATE.md) — não urgente, decidir no 1º checkpoint real |
-| F1 | Domain Model (Lead/Contact/Company/Deal/Attribution) | 🟡 iniciando | ~5% | |
+| F1 | Domain Model (Lead/Contact/Company/Deal/Attribution) | 🟡 suficiente pra seguir, UX pendente | ~75% | Schema+backfill+dual-write+observability locais e validados. Falta: UX (trilha de design, F7), pontos de menor tráfego não cobertos (não bloqueiam) |
 | F2 | Communication Intelligence | ⚪ não iniciado | 0% | |
 | F3 | AI SDR Agent | ⚪ não iniciado | 0% | |
 | F4 | Commercial (Won gate, MRR fix) | ⚪ não iniciado | 0% | Depende de ADR-EXEC-002 (evidência PBX) |
