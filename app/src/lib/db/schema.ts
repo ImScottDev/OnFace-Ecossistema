@@ -1566,6 +1566,135 @@ export const auditLog = pgTable("audit_log", {
   index("idx_audit_log_created").on(table.createdAt),
 ]);
 
+// ═══════════════════════════════════════════════════════════════
+// CRM 2.0 — FASE 1 (Domain Model): pessoas, oportunidades, clientes,
+// pontos_contato. Schema V2 em paralelo ao legado (ADR-EXEC-003) —
+// `leads`/`negocios`/`contatos` continuam vivos e são a fonte de verdade
+// em produção durante a transição (dual-write, cutover só na F8).
+// Nomes deliberadamente diferentes do legado pra nunca precisar renomear
+// tabela depois: quando o legado for descomissionado (F8), estas já têm
+// o nome final.
+// ═══════════════════════════════════════════════════════════════
+
+// ─── PESSOAS (identidade persistente — Contact do blueprint) ──────
+// Resolve os 2 conceitos de "Contato" hoje desconectados (leads.tipo vs
+// tabela `contatos` de canal). Pessoa é o registro permanente; Lead é só
+// o estágio transitório de qualificação — uma Pessoa pode ter tido
+// múltiplos Leads ao longo do tempo (reengajamento), todos apontando
+// pra essa mesma identidade via Attribution (ver `pontosContato`).
+export const pessoas = pgTable("pessoas", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+  empresaId: uuid("empresa_id").references(() => empresas.id),
+  nome: text("nome").notNull(),
+  sobrenome: text("sobrenome"),
+  email: text("email"),
+  telefone: text("telefone"),
+  whatsapp: text("whatsapp"),
+  cargo: text("cargo"),
+  // Bridge de migração/dual-write — NÃO é FK operacional (Deal não depende
+  // disso pra existir, ver pontosContato pra atribuição real). Só ajuda o
+  // backfill/reconciliação a rastrear de qual Lead legado esta Pessoa veio.
+  leadIdLegado: uuid("lead_id_legado").references(() => leads.id),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("idx_pessoas_org").on(table.organizacaoId),
+  index("idx_pessoas_empresa").on(table.empresaId),
+  index("idx_pessoas_email").on(table.email),
+  index("idx_pessoas_lead_legado").on(table.leadIdLegado),
+]);
+
+// ─── PONTOS DE CONTATO (Attribution/Touchpoints — camada própria) ──
+// Decisão fechada com o Kauã (08/08): atribuição de origem/campanha NUNCA
+// depende de lead_id no Deal. Touchpoints conectam a Pessoa/Empresa
+// (identidade persistente), sobrevivendo à conversão/expiração do Lead.
+// Não confundir origem do LEAD com origem do DEAL — um mesmo relaciona-
+// mento pode ter vários touchpoints (Google → Meta → WhatsApp → venda).
+export const pontosContato = pgTable("pontos_contato", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+  pessoaId: uuid("pessoa_id").references(() => pessoas.id),
+  empresaId: uuid("empresa_id").references(() => empresas.id),
+  source: text("source"), // google | meta | rd_station | site | manual | indicacao | sdr | importacao
+  medium: text("medium"),
+  campaign: text("campaign"),
+  term: text("term"),
+  content: text("content"),
+  landingPage: text("landing_page"),
+  referrer: text("referrer"),
+  campaignId: text("campaign_id"), // ID real na plataforma de origem (ex: Meta campaign_id)
+  sourceId: text("source_id"),
+  tipoOrigem: text("tipo_origem").notNull(), // manual | organica | indicacao | sdr | importacao | campanha
+  // Mantidos explícitos (não só deriváveis por query) pra sustentar
+  // analytics de funil por campanha sem depender de agregação pesada.
+  isFirstTouch: boolean("is_first_touch").default(false).notNull(),
+  isLastTouch: boolean("is_last_touch").default(false).notNull(),
+  ocorridoEm: timestamp("ocorrido_em", { withTimezone: true }).defaultNow().notNull(),
+  raw: jsonb("raw"), // payload cru da integração de origem, auditoria
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("idx_pontos_contato_org").on(table.organizacaoId),
+  index("idx_pontos_contato_pessoa").on(table.pessoaId),
+  index("idx_pontos_contato_empresa").on(table.empresaId),
+  index("idx_pontos_contato_pessoa_first").on(table.pessoaId, table.isFirstTouch),
+  index("idx_pontos_contato_pessoa_last").on(table.pessoaId, table.isLastTouch),
+]);
+
+// ─── OPORTUNIDADES (Deal v2 — referencia Pessoa+Empresa, NÃO Lead) ──
+// Decisão fechada: Deal não depende de lead_id. Atribuição de origem
+// vive em `pontosContato`, não aqui — "de onde veio" se responde
+// atravessando Pessoa/Empresa → pontosContato, nunca por FK direta pro Lead.
+export const oportunidades = pgTable("oportunidades", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+  pessoaId: uuid("pessoa_id").references(() => pessoas.id),
+  empresaId: uuid("empresa_id").references(() => empresas.id),
+  pipelineId: uuid("pipeline_id").references(() => pipelines.id),
+  stage: text("stage").notNull(),
+  responsavelId: uuid("responsavel_id").references(() => usuarios.id),
+  valor: decimal("valor", { precision: 12, scale: 2 }),
+  mrr: decimal("mrr", { precision: 12, scale: 2 }),
+  probabilidade: integer("probabilidade"),
+  previsaoFechamento: date("previsao_fechamento"),
+  ganhoAt: timestamp("ganho_at", { withTimezone: true }),
+  perdidoAt: timestamp("perdido_at", { withTimezone: true }),
+  motivoPerda: text("motivo_perda"),
+  // Bridge de migração/dual-write — mesma lógica de pessoas.leadIdLegado.
+  negocioIdLegado: uuid("negocio_id_legado").references(() => negocios.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("idx_oportunidades_org").on(table.organizacaoId),
+  index("idx_oportunidades_pessoa").on(table.pessoaId),
+  index("idx_oportunidades_empresa").on(table.empresaId),
+  index("idx_oportunidades_stage").on(table.stage),
+  index("idx_oportunidades_responsavel").on(table.responsavelId),
+  index("idx_oportunidades_negocio_legado").on(table.negocioIdLegado),
+]);
+
+// ─── CLIENTES (Customer — entidade agregadora, não existe hoje) ────
+// Hoje "cliente" é só `leads.tipo = 'cliente'` no mesmo registro do Lead.
+// Cliente passa a ser entidade própria: empresa + pessoa principal +
+// status financeiro (cacheado pra leitura rápida, fonte real continua
+// sendo contratos/assinaturas — ver Data Governance, ADR-EXEC-007).
+export const clientes = pgTable("clientes", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+  empresaId: uuid("empresa_id").references(() => empresas.id),
+  pessoaPrincipalId: uuid("pessoa_principal_id").references(() => pessoas.id),
+  oportunidadeOrigemId: uuid("oportunidade_origem_id").references(() => oportunidades.id),
+  clienteDesde: timestamp("cliente_desde", { withTimezone: true }),
+  statusFinanceiro: text("status_financeiro"), // ativo | inadimplente | churned — cache de leitura, nunca fonte de escrita
+  leadIdLegado: uuid("lead_id_legado").references(() => leads.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("idx_clientes_org").on(table.organizacaoId),
+  index("idx_clientes_empresa").on(table.empresaId),
+]);
+
 // ─── EVENT OUTBOX (espinha dorsal de eventos — Postgres + BullMQ) ──
 // ADR-EXEC-001: outbox Postgres + worker BullMQ existente, sem broker novo.
 // Escrito na MESMA transação da mudança de domínio; consumido por job
