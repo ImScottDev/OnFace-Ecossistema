@@ -1528,6 +1528,65 @@ export const outreachCampanhas = pgTable("outreach_campanhas", {
 ]);
 
 // ═══════════════════════════════════════════════════════════════
+// CRM 2.0 — FASE 2 (Communication Intelligence): communications, ai_analysis
+// Schema V2 em paralelo (ADR-EXEC-003) — ligacoes/whatsapp_mensagens/emails
+// continuam vivos, dual-write igual ao padrão de F1.
+// ═══════════════════════════════════════════════════════════════
+
+// ─── COMMUNICATIONS (unifica Call/WhatsApp/Email — distinta de Activity) ──
+// Hoje são 3 tabelas paralelas sem abstração comum. `pessoaId` é o anchor
+// (F1), não `leadIdLegado` direto — mesma disciplina de Attribution/Deal.
+export const communications = pgTable("communications", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+  pessoaId: uuid("pessoa_id").references(() => pessoas.id),
+  canal: text("canal").notNull(), // ligacao | whatsapp | email
+  direcao: text("direcao"), // entrada | saida (null p/ ligacao, que não é bidirecional do mesmo jeito)
+  conteudo: text("conteudo"), // corpo/mensagem, ou resumo no caso de ligação
+  duracaoSegundos: integer("duracao_segundos"), // só ligação
+  status: text("status"), // delivery status (whatsapp), sent/read (email), call_status (ligação)
+  externalId: text("external_id"), // idempotency_key | uazapi_message_id | provider_message_id
+  usuarioId: uuid("usuario_id").references(() => usuarios.id), // quem enviou/atendeu, quando aplicável
+  ocorridoEm: timestamp("ocorrido_em", { withTimezone: true }).notNull(),
+  // Bridge de migração — canal já diz qual tabela legada, id aponta pra lá.
+  origemLegadoId: uuid("origem_legado_id"),
+  raw: jsonb("raw"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("idx_communications_org").on(table.organizacaoId),
+  index("idx_communications_pessoa").on(table.pessoaId),
+  index("idx_communications_canal").on(table.canal),
+  index("idx_communications_ocorrido").on(table.ocorridoEm),
+  uniqueIndex("idx_communications_external_id").on(table.canal, table.externalId),
+]);
+
+// ─── AI ANALYSIS (genérico — atachável a qualquer entidade) ───────
+// Hoje extração de IA é silo por feature (SDR extrai só pra si, ligação tem
+// resumo só pra si). Esta tabela é o destino comum, começando pelo padrão de
+// qualidade já validado na integração Callface (resumo/sentimento real).
+export const aiAnalysis = pgTable("ai_analysis", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+  entityType: text("entity_type").notNull(), // communication | negocio | lead | proposta
+  entityId: uuid("entity_id").notNull(),
+  resumo: text("resumo"),
+  sentimento: text("sentimento"), // positivo | negativo | neutro
+  intencao: text("intencao"),
+  objecoes: jsonb("objecoes"), // array de string
+  necessidades: jsonb("necessidades"),
+  proximosPassos: text("proximos_passos"),
+  score: decimal("score", { precision: 4, scale: 2 }),
+  risco: text("risco"),
+  oportunidade: text("oportunidade"),
+  modeloUsado: text("modelo_usado"),
+  raw: jsonb("raw"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("idx_ai_analysis_org").on(table.organizacaoId),
+  index("idx_ai_analysis_entity").on(table.entityType, table.entityId),
+]);
+
+// ═══════════════════════════════════════════════════════════════
 // CRM 2.0 — FASE 0 (Foundation): teams, audit_log, event_outbox
 // Ver docs/reconstruction/ARCHITECTURE_DECISIONS.md (ADR-EXEC-001, 005)
 // ═══════════════════════════════════════════════════════════════
