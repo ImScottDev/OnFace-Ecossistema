@@ -64,6 +64,15 @@ disponível — mesmo padrão de "reaproveitar o que já existe" do
 - [x] **Achado real durante a verificação, investigado e descartado como bug de produto**: a sessão parecia expirar em quase toda navegação via Playwright (redirecionava pro `/login` sem motivo aparente). Investiguei via `curl` direto com cookie de sessão real (bypassando o browser) — 5 requisições consecutivas, todas `200 OK` em ~100ms, sem timeout, sem falha. **Conclusão: era flakiness do cookie jar da instância do Playwright MCP nesta sessão, não um bug real do produto** (correção da hipótese inicial, que culpava o timeout de 8s do `resolveSession()` em `layout.tsx` — esse mecanismo existe e é real, mas não foi o causador aqui).
 - [x] `tsc` limpo, dev server + api server saudáveis depois da mudança.
 
+## F6 — follow-up: 2 checks novos de integridade do Domain Model (F1/F2) (09/08)
+
+Depois de fechar F1/F2 tecnicamente, construí a validação continuada — não basta ter testado uma vez com script descartável, o Data Quality Layer (F6, já existe, já tem UI) é o lugar certo pra isso rodar sempre.
+
+- [x] **Achado real ao construir**: minha primeira query ("leads sem `pessoas.leadIdLegado`") deu 32 problemas — mas **não é gap real**, são exatamente os 32 leads que o backfill original deduplicou por e-mail de propósito (reengajamento: `leadIdLegado` só aponta pro lead ORIGINAL que criou a pessoa, um lead novo com o mesmo e-mail não ganha seu próprio `leadIdLegado`). Confirmado 10/10 numa amostra: todos batiam com uma pessoa existente via e-mail. Corrigi a query antes de expor um falso positivo na UI (mesmo tipo de cuidado já aplicado no check "Inconsistent Stage" de F6 original).
+- [x] `Domain Model Sync (Leads)` — conta certo (nem por `leadIdLegado`, nem por e-mail) e `Domain Model Sync (Negócios)` (1:1 sem dedup, mais simples) — 2 checks novos em `lib/crm/data-quality.ts`, aparecem automático em `/admin/qualidade-dados` (reusa a UI já existente, não criei nada novo).
+- [x] **Resultado real, validado**: 0 e 0 — confirma de verdade (não só afirma) que o trabalho de dual-write de F1/F2 fechado nesta sessão está completo agora.
+- [x] `tsc` limpo, página verificada via curl (ambos os Stat cards renderizando `value:0`, cor "ganho").
+
 ## F4 — follow-up: 58 contratos ambíguos, classificação por evidência (09/08)
 
 Instrução do Kauã: não revisar os 58 um a um, construir classificação automática primeiro. `classificarAmbiguosPorEvidencia()` — ver **ADR-EXEC-014**.
