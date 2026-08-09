@@ -29,7 +29,7 @@ constante.
 
 ## Fase atual: F7 — Frontend/UX (implementação, greenfield — ver nota abaixo)
 
-**Branch atual**: `feature/crm2-fase6-analytics` (F7 começou na mesma branch, ainda sem branch dedicada — trocar antes do próximo commit de escopo maior).
+**Branch atual**: `feature/crm2-fase7-frontend` (checkpoint do CrmTopbar já commitado, `b3ca3e2`).
 
 **Nota de honestidade sobre o plano original**: a trilha de design paralela (prevista desde Fase 1 no plano) nunca foi formalmente iniciada em nenhuma fase anterior. F7 na prática não é "implementar o que já foi desenhado" — é greenfield de implementação de tela, decisão consciente de reduzir risco reaproveitando o que já existia pronto no código em vez de desenhar do zero sem trilha de design.
 
