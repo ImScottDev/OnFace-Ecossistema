@@ -3,7 +3,7 @@ import crypto from "crypto";
 import { db } from "@/lib/db";
 import {
   leads, contatos, whatsappMensagens, whatsappTemplates, whatsappSessao,
-  usuarios, empresas, negocios, leadLabels, leadUserUnread,
+  usuarios, empresas, negocios, leadLabels, leadUserUnread, aiSdrContatoState,
 } from "@/lib/db/schema";
 import { eq, desc, count, and, sql, ilike, or, isNull, inArray, asc, gte, like, SQL } from "drizzle-orm";
 import { z } from "zod";
@@ -289,6 +289,21 @@ app.post("/whatsapp/send", async (c) => {
   if (resolvedNegocioAtivoId) {
     await db.update(negocios).set({ updatedAt: new Date() })
       .where(and(eq(negocios.id, resolvedNegocioAtivoId), eq(negocios.organizacaoId, ctx.organizacaoId)));
+  }
+
+  // F3/Human Handoff: humano enviando mensagem manual pra um contato em
+  // "human_required" é exatamente o momento de "assumiu de verdade" —
+  // fecha a máquina de estados (AI_HANDLING -> HUMAN_REQUIRED -> HUMAN_ASSIGNED).
+  // Best-effort, nunca bloqueia o envio real da mensagem.
+  if (resolvedContatoId) {
+    try {
+      await db
+        .update(aiSdrContatoState)
+        .set({ handoffStatus: "human_assigned", handoffUsuarioId: ctx.userId, updatedAt: new Date() })
+        .where(and(eq(aiSdrContatoState.contatoId, resolvedContatoId), eq(aiSdrContatoState.handoffStatus, "human_required")));
+    } catch (err) {
+      console.error("[F3/handoff] falha ao marcar human_assigned (best-effort):", err);
+    }
   }
 
   await whatsappOutgoingQueue.add("send", {
