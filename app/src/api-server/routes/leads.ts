@@ -51,6 +51,7 @@ import { z } from "zod";
 import { leadScoringQueue, notificationQueue, enrichmentQueue } from "@/lib/queue";
 import { syncPessoaFromLead, syncOportunidadeFromNegocio } from "@/lib/crm/sync-domain-model";
 import { dispararAutomacoes } from "@/lib/crm/automacao-engine";
+import { publicarEvento } from "@/lib/events/outbox";
 import {
   enrichPerson,
   enrichOrganization,
@@ -617,12 +618,29 @@ app.post(
       email: newLead.email,
       nome: newLead.nome,
     });
+
+    // Eventos/Event Outbox: evento de domínio real "LeadCreated" — best-effort.
+    await publicarEvento({
+      organizacaoId: orgId,
+      eventType: "LeadCreated",
+      aggregateType: "lead",
+      aggregateId: newLead.id,
+      payload: { nome: newLead.nome, origem: newLead.origem, sdrStatus: newLead.sdrStatus, tipo: newLead.tipo },
+    });
+
     if (negocio?.id) {
       await dispararAutomacoes("novo_negocio", {
         entityType: "negocio",
         entityId: negocio.id,
         organizacaoId: orgId,
         campos: { status: negocio.status },
+      });
+      await publicarEvento({
+        organizacaoId: orgId,
+        eventType: "DealCreated",
+        aggregateType: "negocio",
+        aggregateId: negocio.id,
+        payload: { status: negocio.status, leadId: newLead.id },
       });
     }
 

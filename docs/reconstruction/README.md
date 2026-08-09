@@ -1,6 +1,8 @@
 # CRM 2.0 — Reconstrução — Índice pra Revisão Externa
 
-Snapshot congelado em **09/08/2026**, branch `feature/crm2-fase7-frontend`. Nada foi promovido pra homolog ou produção — todo este trabalho existe só nesta branch e no banco de dev local. Ponto de pausa deliberado pra revisão arquitetural externa contra o blueprint completo, antes de continuar implementando.
+Snapshot inicial congelado em **09/08/2026**, branch `feature/crm2-fase7-frontend`, pra revisão arquitetural externa contra o blueprint completo. Nada foi promovido pra homolog ou produção — todo este trabalho existe só nesta branch e no banco de dev local.
+
+**Atualização (mesmo dia, pós-revisão)**: revisão concluída, sem gaps que exijam parar — plano confirmado: fechar o que resta de backend/domínio/arquitetura (incl. o Event Outbox real, ver ADR-EXEC-016), depois materializar uma V1 completa de frontend organizada por domínio (não por tela), sem inventar funcionalidade fora do que já existe no domínio construído. Este documento continua sendo atualizado — não é mais um ponto de pausa.
 
 ## Por onde começar
 
@@ -35,7 +37,7 @@ Snapshot congelado em **09/08/2026**, branch `feature/crm2-fase7-frontend`. Nada
 | AI SDR (F3) | 🟡 arquitetura pronta, validação real bloqueada (credencial) |
 | Automação / Cadence Engine (F5) | ✅ motor construído e testado, 🟡 cadência real não migrada (decisão consciente) |
 | Analytics / Data Quality (F6) | ✅ Data Quality real, 🟡 Command Center não existe |
-| Eventos / Event-Driven | ⚪ só a tabela (`event_outbox`) existe, sem consumidor real — lacuna real, não é bug |
+| Eventos / Event-Driven | 🟢 barramento real (publish+consume+retry/dead-letter, ver ADR-EXEC-016, 09/08) nos eventos de núcleo (Lead/Deal/Won/Customer); 🟡 sem consumidor de negócio real ainda (só jornal de auditoria) |
 | Segurança / RBAC | ✅ + 2 bugs críticos reais corrigidos (sessão e org-switch/view-as em dev local) |
 | Migração Legacy → New | 🟡 coexistência ativa (strangler pattern), cutover não iniciado (correto, depende de burn-in em produção) |
 

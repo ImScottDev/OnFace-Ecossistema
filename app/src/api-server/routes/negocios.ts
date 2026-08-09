@@ -8,6 +8,7 @@ import { syncNegocioValoresFromPropostas } from "@/lib/crm/sync-negocio-valores"
 import { syncOportunidadeFromNegocio } from "@/lib/crm/sync-domain-model";
 import { dispararAutomacoes } from "@/lib/crm/automacao-engine";
 import { avaliarEvidenciaWon, registrarEvidenciaManual } from "@/lib/crm/won-evidence";
+import { publicarEvento } from "@/lib/events/outbox";
 import { isAdminView } from "@/lib/auth/roles";
 import { getCtx } from "../compat.js";
 
@@ -422,6 +423,15 @@ app.post("/negocios", async (c) => {
     campos: { status: negocio.status, origemNegocio: negocio.origemNegocio },
   });
 
+  // Eventos/Event Outbox: evento de domínio real "DealCreated" — best-effort.
+  await publicarEvento({
+    organizacaoId: ctx.organizacaoId,
+    eventType: "DealCreated",
+    aggregateType: "negocio",
+    aggregateId: negocio.id,
+    payload: { status: negocio.status, origemNegocio: negocio.origemNegocio },
+  });
+
   return c.json(negocio, 201);
 });
 
@@ -493,6 +503,27 @@ app.patch("/negocios/:id", async (c) => {
       campos: { status: parsed.data.status, statusAnterior: currentNegocio.status },
     });
 
+    // Eventos/Event Outbox: "StageChanged" genérico pra toda transição de
+    // status — best-effort. DealWon/DealLost (abaixo) são eventos MAIS
+    // específicos emitidos ADEMAIS deste, não em vez dele.
+    await publicarEvento({
+      organizacaoId: ctx.organizacaoId,
+      eventType: "StageChanged",
+      aggregateType: "negocio",
+      aggregateId: id,
+      payload: { status: parsed.data.status, statusAnterior: currentNegocio.status },
+    });
+
+    if (parsed.data.status === "perdido") {
+      await publicarEvento({
+        organizacaoId: ctx.organizacaoId,
+        eventType: "DealLost",
+        aggregateType: "negocio",
+        aggregateId: id,
+        payload: { statusAnterior: currentNegocio.status, motivoPerda: parsed.data.motivoPerda },
+      });
+    }
+
     // → reuniao_realizada: F0 fix (achado 08/08, confirmado via query real: 53
     // reuniões de julho travadas em status='agendada' mesmo com o negócio já
     // tendo esse evento em status_changes). A transição de estágio nunca
@@ -539,8 +570,9 @@ app.patch("/negocios/:id", async (c) => {
         .where(eq(contratos.negocioId, id))
         .limit(1);
 
+      let contratoId = existingContract?.id;
       if (!existingContract && currentNegocio.leadId) {
-        await db.insert(contratos).values({
+        const [novoContrato] = await db.insert(contratos).values({
           organizacaoId: ctx.organizacaoId,
           leadId: currentNegocio.leadId,
           negocioId: id,
@@ -550,7 +582,8 @@ app.patch("/negocios/:id", async (c) => {
           status: "ativo",
           inicio: new Date().toISOString().split("T")[0],
           produto: "ai",
-        });
+        }).returning({ id: contratos.id });
+        contratoId = novoContrato?.id;
       }
 
       // Promote lead to cliente
@@ -565,6 +598,33 @@ app.patch("/negocios/:id", async (c) => {
       // Sino: avisa gestão + responsável que o negócio fechou (link pro card)
       const { notificarNegocioGanho } = await import("@/lib/crm/notificar");
       await notificarNegocioGanho(id);
+
+      // Eventos/Event Outbox: "DealWon" é o evento de maior valor do domínio
+      // (dispara CS/Onboarding, Financeiro, Analytics, Business Hub no
+      // blueprint — nenhum consumidor real desses ainda existe, mas o
+      // evento passa a existir de verdade a partir de agora) — best-effort.
+      await publicarEvento({
+        organizacaoId: ctx.organizacaoId,
+        eventType: "DealWon",
+        aggregateType: "negocio",
+        aggregateId: id,
+        payload: {
+          leadId: currentNegocio.leadId,
+          contratoId: contratoId || null,
+          produto: typeof produtoNegocio === "string" ? produtoNegocio : null,
+          evidencias: evidencia.evidencias,
+          mrr: parsed.data.mrrFechado || currentNegocio.mrrEstimado,
+        },
+      });
+      if (currentNegocio.leadId) {
+        await publicarEvento({
+          organizacaoId: ctx.organizacaoId,
+          eventType: "CustomerCreated",
+          aggregateType: "lead",
+          aggregateId: currentNegocio.leadId,
+          payload: { negocioId: id, contratoId: contratoId || null },
+        });
+      }
 
       // Contract is now created above — carteira reads from contratos table directly
     }
