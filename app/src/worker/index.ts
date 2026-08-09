@@ -847,7 +847,7 @@ async function handleAiSdrResponse(params: {
     if (state.handoffMotivo && motivosLeves.includes(state.handoffMotivo)) {
       console.log(`[AI-SDR] Reativando IA pra contato ${contatoId} — handoff leve (${state.handoffMotivo}) e lead voltou a escrever`);
       await db.update(stateT).set({
-        aiAtivo: true, handoffAt: null, handoffMotivo: null, updatedAt: new Date(),
+        aiAtivo: true, handoffStatus: "ai_handling", handoffAt: null, handoffMotivo: null, updatedAt: new Date(),
       }).where(eq(stateT.id, state.id));
       state = { ...state, aiAtivo: true };
     } else {
@@ -1050,7 +1050,7 @@ async function handleAiSdrResponse(params: {
       console.log(`[AI-SDR] Handoff trigger keyword matched for contato ${contatoId}`);
       // Auto-handoff: disable AI, notify admin
       await db.update(stateT).set({
-        aiAtivo: false, handoffAt: new Date(),
+        aiAtivo: false, handoffStatus: "human_required", handoffAt: new Date(),
         handoffMotivo: "keyword_trigger", updatedAt: new Date(),
       }).where(eq(stateT.id, state.id));
       const [admin] = await db.select({ id: usuariosT.id }).from(usuariosT)
@@ -1077,7 +1077,7 @@ async function handleAiSdrResponse(params: {
     if (!isNaN(valor) && valor >= triggers.valorAlto) {
       console.log(`[AI-SDR] Handoff trigger: high value deal (${valor}) for contato ${contatoId}`);
       await db.update(stateT).set({
-        aiAtivo: false, handoffAt: new Date(),
+        aiAtivo: false, handoffStatus: "human_required", handoffAt: new Date(),
         handoffMotivo: "valor_alto", updatedAt: new Date(),
       }).where(eq(stateT.id, state.id));
       const [admin] = await db.select({ id: usuariosT.id }).from(usuariosT)
@@ -1226,6 +1226,7 @@ async function handleAiSdrResponse(params: {
       // Disable AI for this contact
       await db.update(stateT).set({
         aiAtivo: false,
+        handoffStatus: "human_required",
         handoffAt: new Date(),
         handoffMotivo: (tc.input.motivo as string) || "ai_triggered",
         updatedAt: new Date(),
@@ -1293,6 +1294,8 @@ async function handleAiSdrResponse(params: {
         if (novoStatus === "sem_retorno") {
           await db.update(stateT).set({
             aiAtivo: false,
+            handoffStatus: "human_required",
+            handoffAt: new Date(),
             handoffMotivo: "sem_retorno",
             updatedAt: new Date(),
           }).where(eq(stateT.contatoId, contatoId));

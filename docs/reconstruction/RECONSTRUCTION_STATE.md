@@ -59,7 +59,15 @@ Todas as 6 tasks de F0 (schema hardening, dev/prod routing parity + remoção de
 - [x] **Observability**: falha de sync agora grava em `audit_log` (`action: "domain_model_sync.failed"`), não só `console.error` — consultável de verdade, não preso em log de container.
 - [ ] Validar F1 pelas 5 dimensões de Done — Technical+Data+Operational+Observability OK pros pontos cobertos de dual-write; falta só UX (nenhuma tela ainda expõe o novo Domain Model, fica pra trilha de design + F7, não bloqueia seguir).
 
-## Fase atual: F2 — Communication Intelligence (schema + dual-write nos canais principais)
+## Fase atual: F3 — AI SDR Agent
+
+- [x] **Bug do endpoint corrigido** (`lib/ai/sdr.ts`): chamava `api.openai.com` com nome de modelo Groq, sem `OPENAI_API_KEY` documentada. Agora chama `api.groq.com` de verdade, lê `GROQ_API_KEY`, com fallback em cascata de 3 modelos (mesmo padrão já validado no worker). Ver ADR-EXEC-009.
+- [ ] **BLOQUEADO — precisa do Kauã**: `GROQ_API_KEY` no `.env` local está inválida/expirada (confirmado via curl direto, isolado do código). Não posso validar o AI SDR de ponta a ponta de verdade (conversação real) até isso ser renovado no console da Groq.
+- [x] **Human Handoff formalizado**: `ai_sdr_contato_state.handoffStatus` novo (`ai_handling | human_required | human_assigned`), mantido em sincronia com `aiAtivo` (compat com código legado). Os 4 gatilhos existentes (keyword, valor_alto, tool-call, sem_retorno) agora setam `human_required`; a reativação leve (handoff reativável) volta pra `ai_handling`; **novo**: humano enviando mensagem manual pra contato em `human_required` transiciona pra `human_assigned` (`POST /whatsapp/send`) — fecha o ciclo AI_HANDLING→HUMAN_REQUIRED→HUMAN_ASSIGNED que antes só existia como binário (`aiAtivo` true/false).
+- [x] `tsc` limpo, schema aplicado localmente, dev server saudável.
+- [ ] **Próximo passo**: trigger por evento (LeadCreated) substituindo o sweep por cron — depende de um consumidor real pro `event_outbox` (F0 criou a tabela, ainda sem consumidor). Avaliar se compensa construir isso agora ou registrar como pendência de F5 (Automação), já que hoje o sweep por cron funciona (mesmo não sendo o ideal arquitetural).
+
+## Fase — F2 (histórico, ver acima resumido) — Communication Intelligence (schema + dual-write nos canais principais)
 
 - [x] Schema `communications` (unifica Call/WhatsApp/Email, ancorado em `pessoaId`) + `ai_analysis` (genérico, atachável a qualquer entidade) — commit `1d4a550`.
 - [x] Dual-write ligado nos 3 canais, no ponto de maior volume real de cada um:

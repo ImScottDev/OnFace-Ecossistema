@@ -1461,6 +1461,12 @@ export const aiSdrContatoState = pgTable("ai_sdr_contato_state", {
   contatoId: uuid("contato_id").references(() => contatos.id, { onDelete: "cascade" }).notNull(),
   organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
   aiAtivo: boolean("ai_ativo").default(true).notNull(),
+  // F3 (09/08): formaliza o Human Handoff do blueprint (AI_HANDLING ->
+  // HUMAN_REQUIRED -> HUMAN_ASSIGNED) — antes só existia aiAtivo (binário),
+  // sem distinguir "handoff disparado, ninguém olhou ainda" de "humano já
+  // assumiu de verdade". Mantido em sincronia com aiAtivo (aiAtivo=false
+  // <=> status != 'ai_handling') pra não quebrar leitura de código legado.
+  handoffStatus: text("handoff_status").default("ai_handling").notNull(), // ai_handling | human_required | human_assigned
   handoffAt: timestamp("handoff_at", { withTimezone: true }),
   handoffMotivo: text("handoff_motivo"),
   handoffUsuarioId: uuid("handoff_usuario_id").references(() => usuarios.id),
