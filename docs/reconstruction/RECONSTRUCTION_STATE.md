@@ -710,3 +710,19 @@ Reskin do detalhe/edição de proposta existente (`[id]`) — visual apenas, ló
 Pedido explícito do mandato inicial de Automações. Não passa pelo motor de automações (`automacao-engine.ts` é por evento síncrono, não por horário) — é sweep periódico no worker (`lembrete-reuniao-30min`, a cada 5min, mesmo padrão de `event-outbox-sweep`/`cadence-sweep`), buscando reuniões `agendada` com `data` entre agora+25min e agora+35min sem `lembrete30minEnviadoEm` ainda. Mensagem personalizada (nome do lead/responsável/horário/link) via `whatsappOutgoingQueue`, mesma fila real do resto do sistema — sem mecanismo paralelo.
 
 **Testado ponta a ponta até o limite do ambiente**: reunião real criada (+30min), query da janela/dedup/personalização/fila confirmados certos via teste isolado. O envio de fato falhou por infra ausente no dev local (`ENOTFOUND callface-crm-wuzapi` — o gateway WhatsApp real não está rodando/alcançável fora do docker-compose completo) — mesma classe de limitação já documentada pro Stripe, não bug de lógica. Dado de teste removido depois.
+
+## Contatos & Empresas — Quick View lateral + Nova Pessoa (retomando #63/#64)
+
+Linhas de Pessoa/Empresa abrem `LeadDrawer`/`EmpresaDrawer` (legado, reutilizado — mesmo padrão já estabelecido) em vez de navegar pra fora da lista. Cross-navegação real entre Lead↔Empresa↔Negócio via os callbacks `onOpenLead`/`onOpenEmpresa`/`onOpenNegocio` que os 3 drawers já tinham — só faltava o estado certo no Workspace novo pra alternar entre eles. Validado com dado real via Playwright, incluindo timeline mostrando a proposta recusada de um teste anterior desta sessão (prova de coerência ponta a ponta entre os módulos).
+
+Modal "Nova Pessoa": campos mínimos reais (nome/telefone obrigatórios), `POST /api/leads` existente, sem endpoint novo. Ao criar, invalida lista+KPIs e já abre o Quick View da pessoa criada. "Nova Empresa" desabilitado com tooltip honesto (não existe endpoint de criação direta de empresa) em vez de fingir.
+
+**Gap consciente, não esquecido**: seleção múltipla / ações em massa (resto do #64) não implementado — não há regra de negócio definida pra quais ações em massa fariam sentido (excluir? atribuir responsável em lote? mudar status?). Inventar isso sem pedido explícito do Kauã seria over-engineering.
+
+---
+
+## Resumo da sessão (10/08) — mandato autônomo + intervenções pontuais do Kauã
+
+Nesta sessão longa: App Shell/Command K, Qualificação, Pipeline/Calendário, Cadências, Automações (lista+builder+3 exemplos reais), módulo de Propostas inteiro (domain model condicional, backend, página pública, notificações, 4 fluxos testados), automação de lembrete de reunião, e Contatos (Quick View + Nova Pessoa). Duas correções urgentes no meio do caminho (Kauã testando ao vivo): tema em portais e roteamento de `/propostas` pra tela antiga — ambas resolvidas na hora.
+
+**Pendente pra próxima rodada, em ordem de prioridade real**: reskin visual do detalhe de proposta existente, Atividades (revisão + integração cruzada), responsividade das telas principais, testes E2E completos dos 6 fluxos nomeados no mandato original (Lead→Qualificação→Reunião→Calendário→Atendimento→Pipeline; Negócio→Atividade→Proposta→Won; Contato→WhatsApp→Atividade→Negócio; Reunião→Automação→Lembrete→Histórico; Automação→Gatilho→Condição→Ação→Execução→Histórico; Busca global→Pessoa→Negócio). Página pública de Propostas fica intocada até o Kauã mandar a referência visual dele.
