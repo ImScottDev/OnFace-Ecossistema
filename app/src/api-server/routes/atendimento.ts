@@ -269,6 +269,62 @@ async function buscarLigacao(opts: {
   });
 }
 
+// ─── GET /atendimento/contatos-quentes ──────────────────────────────
+// Painel de "quem ligar" do discador antes de qualquer busca — 3 seções
+// reais (Kauã, 10/08): ligados recentemente, com proposta em aberto, leads
+// novos. Escopado por dono (mesma privacidade do resto da tela: cada um só
+// vê os seus, admin/super_admin sem exceção).
+
+app.get("/atendimento/contatos-quentes", async (c) => {
+  const ctx = await getCtx(c);
+  const userId = ctx.userId;
+
+  const [recentesRows, propostasRows, novosRows] = await Promise.all([
+    db
+      .select({
+        leadId: ligacoes.leadId, nome: leads.nome, telefone: leads.telefone,
+        empresaNome: empresas.nome, empresaLegacy: leads.empresa, callDate: ligacoes.callDate, createdAt: ligacoes.createdAt,
+      })
+      .from(ligacoes)
+      .innerJoin(leads, eq(leads.id, ligacoes.leadId))
+      .leftJoin(empresas, eq(empresas.id, leads.empresaId))
+      .where(and(eq(ligacoes.organizacaoId, ctx.organizacaoId), eq(ligacoes.usuarioId, userId)))
+      .orderBy(desc(sql`coalesce(${ligacoes.callDate}, ${ligacoes.createdAt})`))
+      .limit(20),
+    db
+      .select({
+        leadId: propostas.leadId, nome: leads.nome, telefone: leads.telefone,
+        empresaNome: empresas.nome, empresaLegacy: leads.empresa, dataEmissao: propostas.dataEmissao,
+      })
+      .from(propostas)
+      .innerJoin(leads, eq(leads.id, propostas.leadId))
+      .leftJoin(empresas, eq(empresas.id, leads.empresaId))
+      .where(and(eq(propostas.organizacaoId, ctx.organizacaoId), eq(propostas.status, "enviada"), eq(leads.responsavelId, userId)))
+      .orderBy(desc(propostas.dataEmissao))
+      .limit(5),
+    db
+      .select({ id: leads.id, nome: leads.nome, telefone: leads.telefone, empresaNome: empresas.nome, empresaLegacy: leads.empresa, createdAt: leads.createdAt })
+      .from(leads)
+      .leftJoin(empresas, eq(empresas.id, leads.empresaId))
+      .where(and(eq(leads.organizacaoId, ctx.organizacaoId), eq(leads.responsavelId, userId)))
+      .orderBy(desc(leads.createdAt))
+      .limit(5),
+  ]);
+
+  // Dedup por lead nos recentes (uma ligação por lead, a mais nova)
+  const vistos = new Set<string>();
+  const recentes = recentesRows
+    .filter((r) => r.leadId && !vistos.has(r.leadId) && vistos.add(r.leadId))
+    .slice(0, 5)
+    .map((r) => ({ id: r.leadId!, nome: r.nome, telefone: r.telefone, empresaNome: r.empresaNome ?? r.empresaLegacy ?? null }));
+
+  return c.json({
+    recentes,
+    comProposta: propostasRows.map((r) => ({ id: r.leadId, nome: r.nome, telefone: r.telefone, empresaNome: r.empresaNome ?? r.empresaLegacy ?? null })),
+    novos: novosRows.map((r) => ({ id: r.id, nome: r.nome, telefone: r.telefone, empresaNome: r.empresaNome ?? r.empresaLegacy ?? null })),
+  });
+});
+
 // ─── GET /atendimento/buscar-leads ──────────────────────────────────
 // Pra o discador: buscar um lead pra ligar sem precisar digitar o número.
 // "Situação" é real (negócio ativo/proposta enviada), mesma cascata do

@@ -8,7 +8,8 @@ import { Cf2Badge } from "../ui/Badge";
 
 const TECLAS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "*", "0", "#"];
 
-type LeadBusca = { id: string; nome: string; telefone: string | null; empresaNome: string | null; situacao: "negociacao" | "proposta" | null };
+type ContatoSimples = { id: string; nome: string; telefone: string | null; empresaNome: string | null };
+type LeadBusca = ContatoSimples & { situacao: "negociacao" | "proposta" | null };
 
 export function Cf2Dialer() {
   const [numero, setNumero] = useState("");
@@ -25,6 +26,16 @@ export function Cf2Dialer() {
       return res.json();
     },
     enabled: busca.length >= 2,
+  });
+
+  const { data: quentes } = useQuery({
+    queryKey: ["cf2-contatos-quentes"],
+    queryFn: async () => {
+      const res = await fetch("/api/atendimento/contatos-quentes");
+      if (!res.ok) return { recentes: [], comProposta: [], novos: [] };
+      return res.json() as Promise<{ recentes: ContatoSimples[]; comProposta: ContatoSimples[]; novos: ContatoSimples[] }>;
+    },
+    enabled: busca.length < 2,
   });
 
   const ligar = (tel: string) => window.open(callfaceCallUrl(tel), "_blank");
@@ -96,34 +107,60 @@ export function Cf2Dialer() {
             style={{ color: "var(--cf2-text-primary)" }}
           />
         </div>
-        <div className="flex-1 overflow-y-auto flex flex-col gap-1">
-          {busca.length >= 2 && (data?.leads ?? []).length === 0 && (
-            <p className="text-[12px] py-2 text-center" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhum lead encontrado.</p>
+        <div className="flex-1 overflow-y-auto flex flex-col gap-3">
+          {busca.length >= 2 ? (
+            <div className="flex flex-col gap-1">
+              {(data?.leads ?? []).length === 0 && (
+                <p className="text-[12px] py-2 text-center" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhum lead encontrado.</p>
+              )}
+              {(data?.leads ?? []).map((l: LeadBusca) => (
+                <ContatoRow key={l.id} contato={l} badge={l.situacao} onLigar={(tel) => { setNumero(tel.replace(/\D/g, "")); ligar(tel); }} />
+              ))}
+            </div>
+          ) : (
+            <>
+              <Secao titulo="Ligados recentemente" itens={quentes?.recentes ?? []} onLigar={(tel) => { setNumero(tel.replace(/\D/g, "")); ligar(tel); }} />
+              <Secao titulo="Com proposta em aberto" itens={quentes?.comProposta ?? []} badge="proposta" onLigar={(tel) => { setNumero(tel.replace(/\D/g, "")); ligar(tel); }} />
+              <Secao titulo="Leads novos" itens={quentes?.novos ?? []} onLigar={(tel) => { setNumero(tel.replace(/\D/g, "")); ligar(tel); }} />
+              {quentes && !quentes.recentes.length && !quentes.comProposta.length && !quentes.novos.length && (
+                <p className="text-[12px] py-4 text-center" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhum contato seu ainda. Busque por nome acima.</p>
+              )}
+            </>
           )}
-          {(data?.leads ?? []).map((l: LeadBusca) => (
-            <button
-              key={l.id}
-              onClick={() => {
-                if (!l.telefone) return;
-                setNumero(l.telefone.replace(/\D/g, ""));
-                ligar(l.telefone);
-              }}
-              disabled={!l.telefone}
-              className="flex flex-col gap-1 p-2.5 rounded-xl text-left disabled:opacity-40"
-              style={{ background: "var(--cf2-bg-surface-muted)" }}
-            >
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-[13px] font-semibold truncate" style={{ color: "var(--cf2-text-primary)" }}>{l.nome}</p>
-                {l.situacao === "negociacao" && <Cf2Badge variant="warning">Negociação</Cf2Badge>}
-                {l.situacao === "proposta" && <Cf2Badge variant="accent">Proposta</Cf2Badge>}
-              </div>
-              <p className="text-[11px] truncate" style={{ color: "var(--cf2-text-secondary)" }}>
-                {l.empresaNome || "—"} {!l.telefone && "· sem telefone"}
-              </p>
-            </button>
-          ))}
         </div>
       </div>
     </>
+  );
+}
+
+function Secao({ titulo, itens, badge, onLigar }: { titulo: string; itens: ContatoSimples[]; badge?: "proposta"; onLigar: (tel: string) => void }) {
+  if (itens.length === 0) return null;
+  return (
+    <div className="flex flex-col gap-1">
+      <p className="text-[10px] font-bold uppercase tracking-wide px-1" style={{ color: "var(--cf2-text-tertiary)" }}>{titulo}</p>
+      {itens.map((c) => (
+        <ContatoRow key={c.id} contato={c} badge={badge} onLigar={onLigar} />
+      ))}
+    </div>
+  );
+}
+
+function ContatoRow({ contato, badge, onLigar }: { contato: ContatoSimples; badge?: "negociacao" | "proposta" | null; onLigar: (tel: string) => void }) {
+  return (
+    <button
+      onClick={() => contato.telefone && onLigar(contato.telefone)}
+      disabled={!contato.telefone}
+      className="flex flex-col gap-1 p-2.5 rounded-xl text-left disabled:opacity-40"
+      style={{ background: "var(--cf2-bg-surface-muted)" }}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[13px] font-semibold truncate" style={{ color: "var(--cf2-text-primary)" }}>{contato.nome}</p>
+        {badge === "negociacao" && <Cf2Badge variant="warning">Negociação</Cf2Badge>}
+        {badge === "proposta" && <Cf2Badge variant="accent">Proposta</Cf2Badge>}
+      </div>
+      <p className="text-[11px] truncate" style={{ color: "var(--cf2-text-secondary)" }}>
+        {contato.empresaNome || "—"} {!contato.telefone && "· sem telefone"}
+      </p>
+    </button>
   );
 }
