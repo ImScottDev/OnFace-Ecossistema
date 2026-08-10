@@ -635,3 +635,47 @@ Decisão: portar a UI que já opera o sistema real (`components/crm/CadenciaPane
 - `components/crm2/cadencia/CadenciaPanel.tsx` (novo): porta 1:1 da lógica do painel legado — `GET /api/cadencia/:leadId`, accordion por toque (ícone/cor por canal), editar conteúdo/assunto antes de enviar, `POST /enviar` (com erro tratado pra `NO_SESSION`/`NO_EMAIL`), `POST /ligacao` pra registrar ligação, aviso de sessão WhatsApp ausente, histórico de quando/quem enviou. Só o visual foi convertido pros tokens `--cf2-*`.
 - Integrado no `Cf2ContextPanel` do Atendimento (`components/crm2/atendimento/ContextPanel.tsx`) como seção colapsável "CADÊNCIAS", visível só quando a conversa tem `leadId` — dá pra ver e agir na régua de 13 toques sem sair da conversa, exatamente o "não perder contexto ao pular de tela" pedido pelo Kauã pro Atendimento.
 - Validado por leitura/contrato (payloads e query keys idênticos aos do painel legado já testado em produção) + `tsc --noEmit` limpo nos dois arquivos — não repeti teste de envio real (dispararia mensagem real de WhatsApp/email pra um lead real, fora do escopo de "não publicar em prod" — testar isso a fundo é o mesmo risco que enviar cadência real sem necessidade).
+
+### Automações — tela lista + builder de fluxo no cf2
+
+Motor real confirmado (`lib/crm/automacao-engine.ts`: 7 gatilhos × 6 ações, 1 condição + 1 ação por regra — não um grafo arbitrário). Construí `components/crm2/automacoes/Workspace.tsx`: lista com histórico de execução por regra (`GET /automacoes/:id/execucoes`, endpoint novo) e builder em formato de fluxo-cards (Gatilho→Condição→Ação, conectores verticais) inspirado na referência visual (Opero) que o Kauã mandou, mas simplificado pro que o motor de fato suporta. Reaproveitados os label maps reais (`GATILHO_OPTIONS`/`ACAO_OPTIONS`/`OPERADOR_OPTIONS`) já validados na tela legada. Rota antiga movida pra `/automacoes-legado`, mesmo padrão de strangler já usado em `/contatos` e `/pre-vendas`. 3 automações reais criadas via API pra revisão do Kauã. Validado com Playwright: criação, listagem, toggle ativo/inativo — tudo com dado real.
+
+## Propostas — fluxo comercial condicional + página pública (mandato detalhado do Kauã, 10/08)
+
+Kauã interrompeu a execução autônoma pra dar direção específica em Propostas — pediu processo completo: analisar → cruzar domain model/legado → identificar inconsistências → definir fluxo correto → implementar → testar ponta a ponta, evoluindo o Figma (4 telas) como referência visual, não como spec fixa.
+
+### Achados da investigação (antes de qualquer código)
+
+- `propostas`/`propostaItens` já reais e completos. Catálogo real (`servicos_catalogo`, 218 linhas migradas do Zoho) tem só 8 itens ativos hoje, todos Callface AI — **PABX não tinha nenhum item ativo** (todo plano PABX real existe mas estava marcado inativo). **White Label não existe em nenhum lugar do código/dados** — não foi inventada categoria pra ele.
+- Aceite/pagamento via Stripe já funcionava ponta a ponta (checkout → webhook → `marcarPropostaAceita` → contrato → negócio ganho → Commercial Evidence), mas conflava "proposta aceita" com "negócio ganho" — não dava pra separar "cliente confirmou intenção" de "Won de verdade" (pedido explícito do Kauã pro fluxo público: aceite é um passo, pagamento/assinatura é outro).
+- **Bug real encontrado**: todo ponto de criação de contrato no sistema (4 call sites) forçava `produto: "ai"` hardcoded, mesmo em venda PABX — corrigido no caminho novo via `determinarProdutoProposta()`.
+- Commercial Evidence (ADR-EXEC-012) e Event Outbox (ADR-EXEC-016) já são arquitetura real e viva — estendidos em vez de duplicados.
+
+### Modelo novo (extensível, nada hardcoded na UI)
+
+- `servicosCatalogo.categoria` + `requerContrato` (boolean explícito no catálogo — não inferido do nome).
+- `propostas.proximoPasso` ("pagamento"|"contrato", derivado dos itens no envio via `lib/crm/proposta-fluxo.ts::determinarProximoPasso`), `visualizacoes`/`primeiraVisualizacaoEm`/`ultimaVisualizacaoEm`, `clienteRespondeuEm` (distinto de "aceita" no status — aceite comercial ≠ Won), `motivoRecusa`.
+- `contratos.assinaturaStatus`/`assinadoNome`/`assinadoIp`/`assinadoEm` — aceite eletrônico simples, não assinatura qualificada (ver decisão pendente #2 em `crm2-decisoes-pendentes.md`).
+- `event_outbox` ganhou `ProposalSent|ProposalViewed|ProposalAccepted|ProposalRejected` + `aggregateType: "proposta"`, consumidos pelo mesmo audit-log automático já provado em Lead/Deal.
+- `lib/crm/notificar-proposta.ts` segue o padrão real de `notificarNegocioGanho` — notifica o responsável do negócio (não gestão inteira, já que aceite ≠ Won ainda).
+- `lib/crm/proposta-publica.ts` — todas as ações do cliente sem conta no CRM (visualizar/aceitar/recusar/pedir ajuste/assinar), mesmo modelo de confiança (UUID não-enumerável) que o PDF/checkout já usavam.
+
+### Fluxo A (Callface AI, pagamento) vs Fluxo B (PABX, contrato)
+
+`enviarPropostaComCheckout` agora bifurca em `determinarProximoPasso`: caminho "pagamento" mantém geração de checkout Stripe como antes; caminho "contrato" (novo, `enviarPropostaSemCheckout`) não toca Stripe, só ativa a proposta e manda o link público. Aceite público (`aceitarPropostaPublica`) bifurca de novo: pagamento → só registra intenção e devolve o `checkoutUrl` (Won continua só vindo do webhook, evidência real, ADR-EXEC-007 intacto); contrato → cria `contratos` em `pendente_assinatura` sem marcar Won ainda. Assinatura (`assinarContratoPublico`, aceite eletrônico simples) é o momento real de Won pro caminho contrato: marca negócio ganho, registra evidência `signed_contract`, notifica, e cria uma **tarefa real de cobrança manual** (sem billing automático pra PABX — gap real, não fingido, ver decisão pendente #3).
+
+### Página pública nova (`/p/[id]`)
+
+Substituiu o `route.ts` antigo (redirect puro pro Stripe) por uma página real (`components/public/PropostaPublica.tsx`): mostra itens/totais/condições, botões Aceitar/Recusar/Solicitar ajuste, formulário de assinatura simples quando aplicável, estados finais (recusada/expirada/assinada) e link secundário de PDF. Achado e corrigido no caminho: o logo que eu ia usar (`/brand/logo-full-black.png`) continha a marca da **Scott Studio**, não da Callface — asset mal rotulado, órfão, sem outro uso no código; troquei pro SVG real da Callface (`callface-logo.svg`) antes de publicar.
+
+### Testado ponta a ponta com dado real (dev local)
+
+Criei 3 propostas de teste reais (leads reais do dev DB, sem negócio ativo prévio) — 2 Callface AI, 1 PABX (ativei 1 plano PABX real que estava inativo no catálogo, só pra ter dado real testável, categoria/requerContrato setados). Validado via API + Playwright + psql:
+
+- **Fluxo B completo**: enviar (sem checkout, `proximoPasso: "contrato"`) → visualizar (contador+evento `ProposalViewed`) → aceitar público (status `aceita`, contrato `pendente_assinatura`, produto `pabx` correto, notificação certa, sem marcar Won ainda) → assinar (contrato `ativo`/`aceite_simples`, negócio `ganho`, evidência `signed_contract` registrada, tarefa de cobrança criada, notificação de negócio ganho disparada pra gestão+responsável). Visual confirmado com screenshot real da página pública nos 3 estados (ações disponíveis, formulário de assinatura, recusada).
+- **Fluxo A validado até o limite do ambiente**: criação/envio/aceite público funcionam e o Won continua evidence-gated corretamente (status não muda pra "aceita" no aceite público, só no webhook) — a geração real de checkout Stripe não pôde ser testada fim-a-fim porque a `STRIPE_API_KEY` está deliberadamente vazia neste ambiente de dev (comentário no `.env`: evita o worker puxar billing real pro banco semente) — limitação pré-existente do ambiente, não regressão. A correção de produto hardcoded foi validada isoladamente (`determinarProdutoProposta` retorna "ai" certo pra item Callface AI).
+- Evento `ProposalRejected`/`ProposalAccepted`/`ProposalViewed`/`ProposalSent` confirmados no `event_outbox` com `status: processed` (worker consumiu e gravou em `audit_log` automaticamente, sem código novo de consumo).
+
+### Pendente pra próxima rodada
+
+Lista cf2 de Propostas (KPIs/hierarquia), builder de criação por categoria de catálogo (navegação lateral), criação a partir do Negócio herdando contexto, aba Propostas dentro do Negócio/Pipeline, testes E2E dos 4 fluxos nomeados pelo Kauã com UI completa (não só API).

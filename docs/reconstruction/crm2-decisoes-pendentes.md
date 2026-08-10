@@ -19,4 +19,20 @@ Sessão iniciada em 10/08/2026, execução autônoma de ponta a ponta (mandato d
 
 ---
 
+## 2. Assinatura digital de contratos (fluxo Propostas → PABX)
+
+**Contexto**: o fluxo novo de Propostas (10/08) precisa que o cliente formalize contrato antes do pagamento pra produtos que exigem contrato (hoje só PABX). Não existe nenhuma integração de assinatura digital qualificada no sistema (DocuSign, Clicksign, etc) — confirmado por auditoria, zero código/schema relacionado.
+
+**Decidido por padrão**: implementei um "aceite eletrônico simples" — cliente confirma nome completo numa página pública, sistema grava nome + IP + timestamp em `contratos.assinadoNome/assinadoIp/assinadoEm`, rotulado explicitamente na UI como "não é assinatura digital com certificação". Isso desbloqueia o fluxo PABX ponta a ponta (aceite → contrato → Won → evidência) sem fingir uma validação jurídica que o sistema não tem.
+
+**Precisa confirmar**: quando você decidir a ferramenta de assinatura (você mencionou que ia procurar opção open source/gratuita), a integração real substitui esse aceite simples no mesmo ponto do fluxo (`assinarContratoPublico` em `lib/crm/proposta-publica.ts`) — não deve mudar o resto da arquitetura (Won/evidência/notificação continuam iguais, só o que conta como "assinado" muda).
+
+## 3. Cobrança PABX pós-assinatura — sem billing automático
+
+**Contexto**: quando um contrato PABX é assinado (aceite simples), não existe nenhuma automação de cobrança pra esse produto (diferente do Callface AI, que já usa Stripe checkout). Implementei uma tarefa manual real ("Cobrar X — sem billing automático") pro responsável do negócio, prioridade alta, vencimento em 1 dia.
+
+**Precisa confirmar**: isso é aceitável como processo por ora (cobrança manual via time comercial/financeiro), ou existe uma forma de cobrança PABX que eu não encontrei no código (ex: emitido fora do CRM, direto na operadora)?
+
+---
+
 (novas entradas serão appendadas abaixo conforme a execução avança)
