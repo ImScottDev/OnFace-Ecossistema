@@ -89,27 +89,49 @@ export async function getDesempenhoDiario(orgId: string, hoje = new Date()) {
  * Novos = sdr_status pending · Em Qualificação = contacted/qualifying ·
  * Qualificados = tem negócio ativo vinculado · No Show = negócios em
  * status no_show. Contagem org-wide, não filtrada por responsável.
+ *
+ * Cada bucket também traz "noMes" (quantos ENTRARAM nesse bucket este mês
+ * — leads/negócios com `createdAt` no mês corrente), pedido do Kauã pra
+ * dar a mesma leitura de vazão que o "26 negócios" do Pipeline Comercial.
  */
-export async function getFunilLeads(orgId: string) {
-  const [porStatus, comNegocioAtivo, noShow] = await Promise.all([
+export async function getFunilLeads(orgId: string, hoje = new Date()) {
+  const { inicio, fim } = monthBounds(hoje);
+  const noMesFiltro = and(gte(leads.createdAt, inicio), lt(leads.createdAt, fim));
+
+  const [porStatus, porStatusMes, comNegocioAtivo, comNegocioAtivoMes, noShow, noShowMes] = await Promise.all([
     db.select({ status: leads.sdrStatus, total: sql<number>`count(*)` })
       .from(leads)
       .where(and(eq(leads.organizacaoId, orgId), eq(leads.tipo, "lead")))
+      .groupBy(leads.sdrStatus),
+    db.select({ status: leads.sdrStatus, total: sql<number>`count(*)` })
+      .from(leads)
+      .where(and(eq(leads.organizacaoId, orgId), eq(leads.tipo, "lead"), noMesFiltro))
       .groupBy(leads.sdrStatus),
     db.select({ total: sql<number>`count(*)` })
       .from(leads)
       .where(and(eq(leads.organizacaoId, orgId), eq(leads.tipo, "lead"), isNotNull(leads.negocioAtivoId))),
     db.select({ total: sql<number>`count(*)` })
+      .from(leads)
+      .where(and(eq(leads.organizacaoId, orgId), eq(leads.tipo, "lead"), isNotNull(leads.negocioAtivoId), noMesFiltro)),
+    db.select({ total: sql<number>`count(*)` })
       .from(negocios)
       .where(and(eq(negocios.organizacaoId, orgId), eq(negocios.status, "no_show"))),
+    db.select({ total: sql<number>`count(*)` })
+      .from(negocios)
+      .where(and(eq(negocios.organizacaoId, orgId), eq(negocios.status, "no_show"), gte(negocios.createdAt, inicio), lt(negocios.createdAt, fim))),
   ]);
 
   const map = new Map(porStatus.map((r) => [r.status, Number(r.total)]));
+  const mapMes = new Map(porStatusMes.map((r) => [r.status, Number(r.total)]));
+
   return {
-    novos: map.get("pending") || 0,
-    emQualificacao: (map.get("contacted") || 0) + (map.get("qualifying") || 0),
-    qualificados: Number(comNegocioAtivo[0]?.total || 0),
-    noShow: Number(noShow[0]?.total || 0),
+    novos: { total: map.get("pending") || 0, noMes: mapMes.get("pending") || 0 },
+    emQualificacao: {
+      total: (map.get("contacted") || 0) + (map.get("qualifying") || 0),
+      noMes: (mapMes.get("contacted") || 0) + (mapMes.get("qualifying") || 0),
+    },
+    qualificados: { total: Number(comNegocioAtivo[0]?.total || 0), noMes: Number(comNegocioAtivoMes[0]?.total || 0) },
+    noShow: { total: Number(noShow[0]?.total || 0), noMes: Number(noShowMes[0]?.total || 0) },
   };
 }
 

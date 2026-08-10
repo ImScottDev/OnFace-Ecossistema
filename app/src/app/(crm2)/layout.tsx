@@ -40,9 +40,16 @@ export default async function Crm2Layout({ children }: { children: React.ReactNo
         <Cf2Sidebar />
         <main
           className="flex-1 overflow-y-auto rounded-tl-2xl rounded-bl-2xl"
-          style={{ background: "var(--cf2-bg-canvas)", boxShadow: "var(--cf2-shadow-shell)" }}
+          style={{
+            backgroundColor: "var(--cf2-bg-canvas)",
+            boxShadow: "var(--cf2-shadow-shell)",
+            // Grid de fundo do Figma (bg-grid-effect): linhas a cada 60px, opacity 50%.
+            backgroundImage:
+              "repeating-linear-gradient(to right, var(--cf2-border-grid) 0 1px, transparent 1px 60px), repeating-linear-gradient(to bottom, var(--cf2-border-grid) 0 1px, transparent 1px 60px)",
+            backgroundSize: "60px 60px",
+          }}
         >
-          <div className="p-6 flex flex-col gap-5 max-w-[1200px] mx-auto">{children}</div>
+          <div className="p-6 flex flex-col gap-5 relative">{children}</div>
         </main>
       </div>
     </Providers>
