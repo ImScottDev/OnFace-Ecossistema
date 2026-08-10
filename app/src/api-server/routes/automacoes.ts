@@ -167,6 +167,28 @@ app.get("/:id", async (c) => {
   return c.json(automacao);
 });
 
+// GET /automacoes/:id/execucoes — histórico recente de execuções da regra
+app.get("/:id/execucoes", async (c) => {
+  const ctx = await getCtx(c);
+  const id = c.req.param("id");
+
+  const rows = await db
+    .select({
+      id: automacaoExecucoes.id,
+      entityType: automacaoExecucoes.entityType,
+      entityId: automacaoExecucoes.entityId,
+      status: automacaoExecucoes.status,
+      erro: automacaoExecucoes.erro,
+      executedAt: automacaoExecucoes.executedAt,
+    })
+    .from(automacaoExecucoes)
+    .where(and(eq(automacaoExecucoes.automacaoId, id), eq(automacaoExecucoes.organizacaoId, ctx.organizacaoId)))
+    .orderBy(desc(automacaoExecucoes.executedAt))
+    .limit(20);
+
+  return c.json(rows);
+});
+
 // PATCH /automacoes/:id — update an automation
 app.patch("/:id", async (c) => {
   const ctx = await getCtx(c);

@@ -68,6 +68,7 @@ const CONFIG: NavItem[] = [{ label: "Ajustes", href: "/configuracoes", icon: Set
 const LEGADO: NavItem[] = [
   { label: "Contatos (antigo)", href: "/contatos-legado", icon: Users },
   { label: "Qualificação (antigo)", href: "/pre-vendas-legado", icon: Filter },
+  { label: "Automações (antigo)", href: "/automacoes-legado", icon: Zap },
   { label: "Carteira", href: "/carteira", icon: Wallet },
   { label: "Financeiro", href: "/financeiro", icon: Landmark },
   { label: "Contratos", href: "/contratos", icon: FileSignature },
