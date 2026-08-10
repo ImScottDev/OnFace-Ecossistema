@@ -595,3 +595,30 @@ Quinto módulo do CRM 2.0. Análise prévia (mesmo padrão de sempre) cruzou os 
 **Validado com Playwright**: KPIs reais renderizando, troca de aba Pessoas/Empresas funcional, busca real filtrando (27 resultados pra "Callface"), badges de relacionamento corretos (Cliente/Qualificado/Lead) com dado de produção. `tsc --noEmit` limpo.
 
 **Validado com Playwright**: Mês (grid real, hoje destacado), Equipe (11 membros reais, status "Outlook conectado"/"Só CRM" correto por pessoa, zero erro de console), typecheck limpo em todas as etapas.
+
+---
+
+## EXECUÇÃO AUTÔNOMA DE PONTA A PONTA (mandato do Kauã, 10/08, sessão longa)
+
+Kauã saiu pra dormir e pediu execução 100% autônoma até o CRM 2.0 virar "produto navegável de ponta a ponta", sem esperar aprovação a cada tela. Checkpoints de negócio (não técnicos) ficam em `docs/reconstruction/crm2-decisoes-pendentes.md`. Daqui pra baixo, tudo dessa execução contínua.
+
+### Bug real de arquitetura encontrado e corrigido: tokens `--cf2-*` não chegavam em portais
+
+Achado testando o board de Qualificação: qualquer `createPortal(..., document.body)` (menu de ações do card, `AgendarReuniaoModal`) renderizava **quase invisível** — fundo/texto sem contraste. Causa: `[data-cf2-theme="light"]` só existia numa `<div>` interna do `(crm2)/layout.tsx`; um portal em `document.body` é IRMÃO dessa div, não descendente, então as variáveis CSS não cascateavam. Corrigido com `components/crm2/ThemeRoot.tsx` — componente client que espelha o atributo em `document.documentElement` (`<html>`) enquanto o App Shell novo está montado, e remove no unmount (não vaza pro `(crm)` legado). Esse bug provavelmente afetava (ou afetaria) qualquer modal futuro que use portal — resolvido na raiz, não caso a caso.
+
+### Command K pertence ao App Shell novo
+
+`components/crm2/CommandPalette.tsx` (novo) — tema `--cf2-*`, busca paralela real em 5 entidades (pessoas via `contatos-unified`, empresas, negócios, propostas, atividades/tarefas), ações rápidas (Criar Negócio) + navegação real do menu. `Providers.tsx` ganhou `variant: "legacy" | "cf2"` — evita também o `<Toaster theme="dark">` vazar pro shell novo (achado extra durante a correção: os toasts de sucesso/erro apareciam escuros em tela clara). `tarefas.ts` ganhou `?search=` (respeitando o mesmo escopo de privacidade pessoal/gestão já existente).
+
+### Qualificação — board completo migrado pro cf2, fluxo validado ponta a ponta com dado real
+
+Auditoria prévia (ver seção detalhada mais abaixo se precisar reconstruir contexto) confirmou TUDO que o fluxo legado faz de verdade antes de portar — exatamente como o Kauã pediu ("não simplesmente redesenhe o modal, faça o fluxo funcionar"):
+
+- `components/crm2/qualificacao/Workspace.tsx`: board Kanban com os estágios reais (`pending/contacted/qualifying` + colunas espelho do closer `m_qualified/m_reuniao/m_convertido` + `disqualified` + estagnação), drag-and-drop real, menu de ações real, exportação CSV pro discador (mesma lógica).
+- `components/crm2/qualificacao/AgendarReuniaoModal.tsx`: reskin completo do modal legado (`AgendarReuniaoModal.tsx`) — 100% da lógica preservada (fila de rodízio real, slots reais CRM+Outlook, payload idêntico), só o visual mudou.
+- Drawers de Lead/Empresa/Negócio (`LeadDrawer`/`EmpresaDrawer`/`NegocioDrawer`) **continuam sendo os legados** (funcionais, tema escuro) — reskin deles é o escopo de Quick View (tasks já rastreadas), não duplicado aqui.
+- Rota `/pre-vendas` — mesma colisão de `/contatos`: lista legada movida pra `/pre-vendas-legado` (preservada, no menu Legado), Sidebar/CommandPalette já apontavam pra `/pre-vendas` direto (intenção documentada desde 09/08).
+
+**Validado end-to-end com dado real (não só visualmente)**: qualifiquei um lead de verdade (via UI, botão "Qualificar (cria oportunidade)" → modal → "Qualificar e agendar") e confirmei no banco: negócio criado (`status: reuniao_agendada`, responsável = closer da fila de rodízio real), reunião criada (data/hora/tipo/duração corretos), atividade criada (`tipo: reuniao`, descrição correta) — e confirmei via `GET /calendario/eventos?responsavelId=...` que essa reunião **aparece de fato no Calendário novo**, com todos os campos batendo (leadId/negocioId/responsavelId/título/empresa). Fechamento real do loop Qualificação → Reunião → Calendário.
+
+**Gap consciente**: `onQualificarSemAgendar` ("Qualificar sem agendar") não foi clicado nesse teste (caminho já coberto pela lib compartilhada, mesma função `converterLeadEmOportunidade`) — comportamento idêntico ao "com reunião" exceto não criar `reunioes`/`atividades`, já confirmado por leitura de código na auditoria, não repeti o teste de UI por já ser a mesma função testada.
