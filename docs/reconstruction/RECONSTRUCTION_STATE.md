@@ -745,3 +745,25 @@ Kauã pausou o avanço de frontend: a migração original Zoho→CRM (12/06, ver
 **Resultado**: dev agora é espelho fiel de produção + toda a arquitetura nova desta sessão por cima. Nenhuma escrita em produção em nenhum momento — só leitura (pg_dump) e depois limpeza do arquivo temporário no servidor.
 
 **Aguardando**: exportação organizada do Zoho feita pelo Kauã, pra decidir junto o que fica pra trás precisa entrar. Frontend pausado até então.
+
+---
+
+## Reenquadramento do projeto: não é migração, é Data Recovery + Data Modeling + Product Design + Migration (10/08, noite)
+
+Kauã trouxe 2 exemplos concretos (LOGITHINK e Vetlog) contra o backup real do Zoho que ele mesmo exportou ("Complete Data Backup", pastas `Attachments`/`Data_001` em `~/Downloads`) provando o mesmo padrão: Zoho tem jornada comercial completa (oportunidade inicial + evento pós-venda ligado via `Oportunidade Origem` — upgrade/churn/renovação — + nota real + contrato nativo + assinatura eletrônica), CRM atual só mostra a venda original, eternamente "ganho". Reenquadrou o projeto inteiro a partir disso, com um framework conceitual explícito pro CRM 2.0: **Oportunidade** (o que aconteceu comercialmente) ≠ **Contrato** (o que foi contratado) ≠ **Lifecycle do cliente** (Prospect→Cliente→Ativo→Churn) ≠ **Eventos** (Won/Upgrade/Downgrade/Renewal/Churn/Reactivation) — nunca conflatar Deal Stage com status atual do cliente.
+
+Regra explícita de reporte, corrigindo minha própria formulação inicial: nenhum achado é veredito ("X está errado/deve ser corrigido") — é evidência que precisa reconciliação ("Identificamos X registros cuja situação precisa ser reconciliada"). Proibições explícitas enquanto essa fase durar: não corrigir nada no CRM, não reimportar, não alterar schema definitivo, não decidir regra de churn a partir de 2 casos, não confiar cegamente em nenhuma das duas fontes. Autorizado: auditar tudo, mapear tudo, reconstruir jornadas, propor modelo canônico — só então migrar.
+
+**Execução**: 6 agentes de investigação em paralelo (background), cada um 100% leitura, sem tocar em nada — inventário Zoho, inventário CRM atual, reconciliação Oportunidades↔Negócios, Propostas↔Contratos nativo, Contatos↔Empresas↔Leads, Atividades↔Notas↔Histórico↔Assinaturas. Os 6 relatórios completos ficam em `docs/reconstruction/auditoria-legado-zoho/01` a `06`; síntese consolidada seguindo a estrutura de 18 entregáveis pedida pelo Kauã em `00-SINTESE-CONSOLIDADA.md`.
+
+**Achados mais graves da síntese** (todos com grau de confiança explícito no documento):
+- 99,3% dos contratos nativos do Zoho (prazo, multa de 30%) nunca migraram — hoje não existe onde nem 1 dos 319 contratos do CRM tem essa informação.
+- 121 negócios "ganho" no CRM já têm evento pós-venda documentado no Zoho depois do ganho (45 são churn = R$64.387/mês, 14,4% do MRR "ganho").
+- Um pipeline PT-BR inteiro do Zoho (~R$957 mil, 516 oportunidades) migrou em 0-3% dos casos.
+- Histórico de status/dono de lead (5.346 linhas), trilha de assinatura eletrônica (368 documentos ZohoSign) e notas visíveis no produto (4.560) — perda estrutural de 100%, não há onde essas informações morariam mesmo tentando recuperar.
+- **Achado vivo, não histórico**: 449 leads (46% do módulo Zoho Leads) continuam entrando no Zoho depois do corte de 12/06 e nunca chegaram ao CRM — é o único item da lista que é bug operacional atual, não arqueologia.
+- Padrões de processo ruim do próprio Zoho documentados pra não replicar no CRM 2.0: nome do registro usado como lógica de negócio (`EMPRESA | CHURN | vendedor`), 2 pipelines de Stage PT/EN nunca normalizados, campo de recorrência/MRR como texto livre.
+
+Documento também traz proposta inicial de modelo canônico (rascunho, não fechado) e lista explícita de casos ambíguos que exigem decisão do Kauã, não minha.
+
+**Aguardando**: leitura/direção do Kauã sobre a síntese antes de qualquer próximo passo — nenhuma correção, reimportação ou mudança de schema foi feita nem está planejada até então.
