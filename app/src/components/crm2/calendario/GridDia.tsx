@@ -1,13 +1,18 @@
 "use client";
 
-import { mesmaData, posicaoNaTimeline, HORA_INICIO, HORA_FIM } from "./dateUtils";
-import { Evento, STATUS_BADGE, fmtHora, iniciais } from "./types";
+import { mesmaData, posicaoFaixaHorario, bloqueioNoDia, posicaoNaTimeline, HORA_INICIO, HORA_FIM } from "./dateUtils";
+import { Evento, STATUS_BADGE, fmtHora, iniciais, Disponibilidade } from "./types";
 import { Cf2Badge } from "../ui/Badge";
 
 const HORAS = Array.from({ length: HORA_FIM - HORA_INICIO }, (_, i) => HORA_INICIO + i);
 
-export function Cf2GridDia({ referencia, eventos, onSelecionar }: { referencia: Date; eventos: Evento[]; onSelecionar: (e: Evento) => void }) {
+export function Cf2GridDia({ referencia, eventos, disponibilidade, onSelecionar }: { referencia: Date; eventos: Evento[]; disponibilidade?: Disponibilidade | null; onSelecionar: (e: Evento) => void }) {
   const evsDoDia = eventos.filter((e) => mesmaData(new Date(e.data), referencia));
+
+  const diaSemana = referencia.getDay();
+  const trabalhaHoje = !disponibilidade?.horarioTrabalho || disponibilidade.horarioTrabalho.diasSemana.includes(diaSemana);
+  const almoco = trabalhaHoje && disponibilidade?.pausaAlmoco ? posicaoFaixaHorario(disponibilidade.pausaAlmoco.inicio, disponibilidade.pausaAlmoco.fim) : null;
+  const bloqueiosDoDia = (disponibilidade?.bloqueios ?? []).map((b) => ({ b, pos: bloqueioNoDia(b, referencia) })).filter((x) => x.pos);
 
   return (
     <div className="flex flex-col h-full rounded-2xl overflow-hidden" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
@@ -20,6 +25,16 @@ export function Cf2GridDia({ referencia, eventos, onSelecionar }: { referencia: 
           </div>
           <div className="relative" style={{ borderLeft: "1px solid var(--cf2-border-default)" }}>
             {HORAS.map((h) => <div key={h} className="h-[72px]" style={{ borderBottom: "1px solid var(--cf2-border-default)" }} />)}
+            {almoco && (
+              <div className="absolute left-0 right-0 flex items-center justify-center" style={{ top: `${almoco.top}%`, height: `${almoco.altura}%`, background: "repeating-linear-gradient(45deg, var(--cf2-bg-surface-muted) 0, var(--cf2-bg-surface-muted) 6px, transparent 6px, transparent 12px)" }}>
+                <p className="text-[11px] font-semibold" style={{ color: "var(--cf2-text-tertiary)" }}>Almoço</p>
+              </div>
+            )}
+            {bloqueiosDoDia.map(({ b, pos }) => pos && (
+              <div key={b.id} className="absolute left-0 right-0 flex items-center justify-center" style={{ top: `${pos.top}%`, height: `${pos.altura}%`, background: "repeating-linear-gradient(45deg, var(--cf2-bg-surface-muted) 0, var(--cf2-bg-surface-muted) 6px, transparent 6px, transparent 12px)" }}>
+                <p className="text-[11px] font-semibold truncate px-2" style={{ color: "var(--cf2-text-tertiary)" }}>{b.motivo || "Bloqueado"}</p>
+              </div>
+            ))}
             {evsDoDia.length === 0 && (
               <p className="absolute top-4 left-4 text-[13px]" style={{ color: "var(--cf2-text-tertiary)" }}>Disponível para agendamento</p>
             )}

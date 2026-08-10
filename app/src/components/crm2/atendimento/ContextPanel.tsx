@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { Pencil, Phone, CalendarPlus, Building2 } from "lucide-react";
 import { ConversaItem, Contexto, iniciais, brl } from "./types";
 import { Cf2Badge } from "../ui/Badge";
+import { Cf2NovoEventoModal, LeadResultado } from "../calendario/NovoEventoModal";
 
 const ETAPA_LABEL: Record<string, string> = {
   reuniao_agendada: "Reunião Agendada",
@@ -21,24 +22,26 @@ const ETAPA_LABEL: Record<string, string> = {
 export function Cf2ContextPanel({ conversa, contexto, loading }: { conversa: ConversaItem; contexto: Contexto | null; loading: boolean }) {
   const queryClient = useQueryClient();
   const [modalAberto, setModalAberto] = useState(false);
-  const [titulo, setTitulo] = useState("Follow-up comercial");
-  const [data, setData] = useState("");
 
-  const agendarMutation = useMutation({
-    mutationFn: async () => {
-      const res = await fetch("/api/reunioes", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ leadId: conversa.leadId, titulo, data: new Date(data).toISOString(), tipo: "call", status: "agendada" }),
-      });
-      if (!res.ok) throw new Error("Falha ao agendar");
-      return res.json();
-    },
-    onSuccess: () => {
-      setModalAberto(false);
-      queryClient.invalidateQueries({ queryKey: ["cf2-contexto", conversa.leadId] });
-    },
-  });
+  const leadPreSelecionado: LeadResultado | null =
+    conversa.leadId && contexto?.pessoa
+      ? {
+          id: conversa.leadId,
+          nome: contexto.pessoa.nome,
+          email: contexto.pessoa.email,
+          empresa: contexto.empresa?.nome || null,
+          negocioAtivoId: contexto.cascata.tipo === "negocio" ? contexto.cascata.id : null,
+        }
+      : null;
+
+  function fecharModal() {
+    setModalAberto(false);
+  }
+
+  function criouEvento() {
+    setModalAberto(false);
+    queryClient.invalidateQueries({ queryKey: ["cf2-contexto", conversa.leadId] });
+  }
 
   return (
     <div
@@ -176,36 +179,13 @@ export function Cf2ContextPanel({ conversa, contexto, loading }: { conversa: Con
       )}
 
       {modalAberto && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.4)" }}>
-          <div className="w-[360px] rounded-2xl p-5 flex flex-col gap-3" style={{ background: "var(--cf2-bg-surface)" }}>
-            <p className="text-[15px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Agendar Reunião</p>
-            <input
-              value={titulo}
-              onChange={(e) => setTitulo(e.target.value)}
-              placeholder="Título"
-              className="px-3 py-2 rounded-lg text-[13px] outline-none"
-              style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }}
-            />
-            <input
-              type="datetime-local"
-              value={data}
-              onChange={(e) => setData(e.target.value)}
-              className="px-3 py-2 rounded-lg text-[13px] outline-none"
-              style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }}
-            />
-            <div className="flex gap-2 justify-end mt-1">
-              <button onClick={() => setModalAberto(false)} className="px-3 py-1.5 rounded-lg text-[12px] font-semibold" style={{ color: "var(--cf2-text-secondary)" }}>Cancelar</button>
-              <button
-                onClick={() => data && agendarMutation.mutate()}
-                disabled={!data || !titulo || agendarMutation.isPending}
-                className="px-3 py-1.5 rounded-lg text-[12px] font-bold disabled:opacity-50"
-                style={{ background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" }}
-              >
-                Agendar
-              </button>
-            </div>
-          </div>
-        </div>
+        <Cf2NovoEventoModal
+          dataInicial={new Date()}
+          leadPreSelecionado={leadPreSelecionado}
+          tituloInicial={contexto?.pessoa ? `Reunião com ${contexto.pessoa.nome}` : ""}
+          onClose={fecharModal}
+          onCriado={criouEvento}
+        />
       )}
     </div>
   );

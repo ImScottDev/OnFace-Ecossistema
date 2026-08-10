@@ -12,6 +12,8 @@ const createSchema = z.object({
   leadId: z.string().uuid().optional().nullable(),
   negocioId: z.string().uuid().optional().nullable(),
   empresaId: z.string().uuid().optional().nullable(),
+  reuniaoId: z.string().uuid().optional().nullable(),
+  clienteId: z.string().uuid().optional().nullable(),
 });
 
 const updateSchema = z.object({
@@ -25,12 +27,16 @@ app.get("/notas", async (c) => {
   const leadId = c.req.query("leadId") ?? null;
   const negocioId = c.req.query("negocioId") ?? null;
   const empresaId = c.req.query("empresaId") ?? null;
+  const reuniaoId = c.req.query("reuniaoId") ?? null;
+  const clienteId = c.req.query("clienteId") ?? null;
 
   const conditions = [eq(notas.organizacaoId, ctx.organizacaoId)];
 
   if (leadId) conditions.push(eq(notas.leadId, leadId));
   if (negocioId) conditions.push(eq(notas.negocioId, negocioId));
   if (empresaId) conditions.push(eq(notas.empresaId, empresaId));
+  if (reuniaoId) conditions.push(eq(notas.reuniaoId, reuniaoId));
+  if (clienteId) conditions.push(eq(notas.clienteId, clienteId));
 
   const result = await db.select({
     id: notas.id,
@@ -38,6 +44,8 @@ app.get("/notas", async (c) => {
     leadId: notas.leadId,
     negocioId: notas.negocioId,
     empresaId: notas.empresaId,
+    reuniaoId: notas.reuniaoId,
+    clienteId: notas.clienteId,
     autorId: notas.autorId,
     autorNome: usuarios.nome,
     createdAt: notas.createdAt,
@@ -64,6 +72,8 @@ app.post("/notas", async (c) => {
       leadId: data.leadId || null,
       negocioId: data.negocioId || null,
       empresaId: data.empresaId || null,
+      reuniaoId: data.reuniaoId || null,
+      clienteId: data.clienteId || null,
       autorId: ctx.userId,
     }).returning();
 

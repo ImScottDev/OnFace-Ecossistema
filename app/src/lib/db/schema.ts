@@ -1201,6 +1201,11 @@ export const notas = pgTable(
     leadId: uuid("lead_id").references(() => leads.id, { onDelete: "cascade" }),
     negocioId: uuid("negocio_id").references(() => negocios.id, { onDelete: "cascade" }),
     empresaId: uuid("empresa_id").references(() => empresas.id, { onDelete: "cascade" }),
+    // Centralização de notas (Kauã, 10/08): reunião e cliente entram no mesmo
+    // lugar que lead/negócio/empresa já usavam — "toda nota, independente de
+    // onde foi colocada, precisa ser centralizada".
+    reuniaoId: uuid("reuniao_id").references(() => reunioes.id, { onDelete: "cascade" }),
+    clienteId: uuid("cliente_id").references(() => clientes.id, { onDelete: "cascade" }),
     conteudo: text("conteudo").notNull(),
     autorId: uuid("autor_id").references(() => usuarios.id),
     pipedriveId: text("pipedrive_id"),
@@ -1211,6 +1216,8 @@ export const notas = pgTable(
     index("idx_notas_lead").on(table.leadId),
     index("idx_notas_negocio").on(table.negocioId),
     index("idx_notas_empresa").on(table.empresaId),
+    index("idx_notas_reuniao").on(table.reuniaoId),
+    index("idx_notas_cliente").on(table.clienteId),
     index("idx_notas_org").on(table.organizacaoId),
   ]
 );
@@ -1281,6 +1288,9 @@ export const closerBloqueios = pgTable(
     inicio: timestamp("inicio", { withTimezone: true }).notNull(),
     fim: timestamp("fim", { withTimezone: true }).notNull(),
     motivo: text("motivo"),
+    // Bloqueio também vira evento real no Outlook do closer, se conectado
+    // (Kauã, 10/08) — guarda o id pra poder cancelar quando o bloqueio for removido.
+    outlookEventId: text("outlook_event_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [

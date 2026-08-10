@@ -24,6 +24,14 @@ export type Resumo = {
 
 export type Membro = { id: string; nome: string; role: string; avatarUrl: string | null; outlookConectado: boolean };
 
+export type Bloqueio = { id: string; inicio: string; fim: string; motivo: string | null };
+
+export type Disponibilidade = {
+  horarioTrabalho: { inicio: string; fim: string; diasSemana: number[] } | null;
+  pausaAlmoco: { inicio: string; fim: string } | null;
+  bloqueios: Bloqueio[];
+};
+
 export type EquipeResposta = {
   membros: Membro[];
   eventos: Evento[];

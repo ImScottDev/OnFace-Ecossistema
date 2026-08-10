@@ -43,7 +43,7 @@ const MENU: NavItem[] = [
   { label: "Dashboard", href: "/inicio", icon: LayoutDashboard },
   { label: "Atendimento", href: "/atendimento", icon: Headset },
   { label: "Propostas", href: "/propostas", icon: FileText },
-  { label: "Calendário", href: "/agenda", icon: Calendar },
+  { label: "Calendário", href: "/calendario", icon: Calendar },
 ];
 
 const CRM: NavItem[] = [
