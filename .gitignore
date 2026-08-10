@@ -45,3 +45,7 @@ audit/
 
 # Auditoria / relatórios locais (não vão pro repo)
 qa-audit-*.md
+
+# Backups locais de banco (nunca versionar dado real)
+_backups/
+*.dump
