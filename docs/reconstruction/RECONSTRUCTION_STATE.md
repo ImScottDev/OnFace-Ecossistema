@@ -60,6 +60,21 @@ constante.
 - [x] `npx tsc --noEmit` limpo (mesmos 6 erros de baseline).
 - [ ] Nota de dívida técnica reconhecida, não corrigida agora (fora do escopo do bug reportado): as 3 implementações continuam duplicadas (não foi extraída pra um hook/helper compartilhado). Se surgir uma 4ª tela com a mesma troca de status, vai precisar do mesmo fix manual de novo — candidato real a refactor (`useUpdateNegocioStatus()` compartilhado) quando a V1 de frontend avançar mais.
 
+## Auditoria do domínio Communications (09/08) — achado real, decisão de não construir agora
+
+Auditei o que existe hoje: `/whatsapp` (inbox completo, com o badge de handoff já ligado) e `/email` (inbox completo) — cada canal tem sua própria tela robusta. `LeadTimeline` (usada em `/contatos/[id]` e `/negocios/[id]`) já existe, mas é um **log de atividades** (nota/ligação/reunião/proposta/follow-up — resumos curtos), **não** o conteúdo real das mensagens de WhatsApp/Email intercaladas cronologicamente num só lugar. É exatamente o gap que F2 já tinha documentado como pendente ("timeline unificada").
+
+**Decisão**: não construir agora. Diferente do badge de handoff ou do modal de evidência (campos que já existiam no backend, só precisavam de UI mecânica e óbvia), uma timeline unificada de verdade é uma decisão de UX real — como intercalar 3 fontes de dado diferentes, paginação, tempo real, o que mostrar resumido vs completo — exatamente o tipo de coisa que a trilha de design (Figma) deveria decidir, não eu inventando sozinho. Registrado como pendente real de F2/Communications pra entrar na V1 de frontend quando a ordem por domínio chegar lá, idealmente já com referência visual.
+
+## Automação — Builder de regras real (domínio Automação, 09/08)
+
+**Achado**: `/automacoes` era 100% read-only — listava regras via query direta no servidor, mas criar/editar dizia explicitamente "peça pro time técnico via API". O motor (`automacao-engine.ts`) e o schema (`automacoes`, CRUD completo em `api-server/routes/automacoes.ts` — GET/POST/PATCH/DELETE, 7 gatilhos × 6 ações totalmente enumerados) já existiam prontos, só faltava a tela. Diferente da timeline unificada, isso não é decisão de design nova — é CRUD direto sobre um domínio já 100% definido (enums fixos), então dá pra materializar sem inventar nada.
+
+- [x] Página convertida de server component read-only pra client component completo: criar, editar, ativar/desativar (toggle), excluir. Campos de `acaoConfig` aparecem condicionalmente conforme a ação escolhida (só os que `executarAcao()` de fato lê — não construí campo pra `diasInatividade`/`diasAntesVencimento`, que existem no schema mas não são lidos em nenhum lugar real, seria UI de mentirinha).
+- [x] Nova rota `GET /automacoes/execucoes-resumo` (precisa vir antes de `/:id` no Hono, mesmo padrão de outras rotas) — total + última execução por regra, pra lista mostrar histórico real sem N+1.
+- [x] **Validado ponta a ponta com dado real, incluindo o motor de verdade**: criou uma regra via UI (novo_lead → criar_tarefa) → criou um lead real via API → **a automação disparou de verdade** (tarefa real criada, `automacao_execucoes` registrou `status: sucesso`) → resumo de execução (“1 execução”) apareceu correto na lista após reload. Testado também toggle ativo/inativo, edição (form pré-preenchido) e exclusão (com confirm), todos funcionando. Dado de teste (regra, lead, tarefa, execução) removido, confirmado 0 resto.
+- [x] `npx tsc --noEmit` limpo (mesmos 6 erros de baseline).
+
 ## Eventos/Event-Driven — Event Outbox real (09/08)
 
 **Gatilho**: revisão arquitetural externa (o Kauã revisou o snapshot congelado contra o blueprint completo) apontou `event_outbox` como o gap 🔴 de maior prioridade — a tabela existia desde F0, mas nada nunca publicava nem consumia. Depois de um mal-entendido de prompt sobre "congelar/parar" (esclarecido pelo Kauã: seguir fechando backend/domínio inteiro, depois materializar V1 completa de frontend por domínio — não parar), a instrução real e prioritária foi: fechar este gap antes de seguir.
