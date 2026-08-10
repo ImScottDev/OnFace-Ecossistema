@@ -33,7 +33,7 @@ export default async function Crm2Layout({ children }: { children: React.ReactNo
   if (!session?.user) redirect("/login");
 
   return (
-    <Providers session={session}>
+    <Providers session={session} variant="cf2">
       <div className="flex h-dvh overflow-hidden" data-cf2-theme="light">
         <Cf2Sidebar />
         <main

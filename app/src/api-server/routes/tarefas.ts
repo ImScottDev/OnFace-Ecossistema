@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { db } from "@/lib/db";
 import { tarefas, leads, usuarios, negocios } from "@/lib/db/schema";
-import { desc, eq, and, lte, SQL, asc, isNull } from "drizzle-orm";
+import { desc, eq, and, lte, ilike, SQL, asc, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { getCtx } from "../compat.js";
 import { isPersonalView, isAdminView } from "@/lib/auth/roles";
@@ -59,12 +59,18 @@ app.get("/tarefas", async (c) => {
   const data = c.req.query("data") || "all";
   const responsavelId = c.req.query("responsavelId") ?? null; // filtro explícito (aba Tarefas)
   const escopo = c.req.query("escopo") ?? null; // "org" = aba Tarefas (lista da organização); default = pessoal
+  const search = c.req.query("search") ?? null; // busca global (Command K) — ignora o filtro padrão de pendente
 
   const hasResponsavelFilter = responsavelId === "sem" || (!!responsavelId && UUID_RE.test(responsavelId));
 
   const conditions: SQL[] = [eq(tarefas.organizacaoId, ctx.organizacaoId)];
 
-  if (hasResponsavelFilter) {
+  if (search) {
+    // Busca global (Command K): mesma regra de escopo pessoal de sempre — só
+    // não aplica o default "pendente" abaixo, pra achar tarefa já concluída também.
+    conditions.push(ilike(tarefas.titulo, `%${search}%`));
+    if (isPersonalView(ctx.userRole)) conditions.push(eq(tarefas.usuarioId, ctx.userId));
+  } else if (hasResponsavelFilter) {
     // Filtro explícito de responsável prevalece — mesma regra do Pipeline: closer/sdr
     // só vê o próprio por padrão, mas ao escolher outro closer no filtro, vê o dele.
     if (responsavelId === "sem") {
@@ -89,11 +95,13 @@ app.get("/tarefas", async (c) => {
     conditions.push(eq(tarefas.negocioId, negocioId));
   }
 
-  if (concluida !== null && concluida !== "") {
-    conditions.push(eq(tarefas.concluida, concluida === "true"));
-  } else {
-    // Default: pending
-    conditions.push(eq(tarefas.concluida, false));
+  if (!search) {
+    if (concluida !== null && concluida !== "") {
+      conditions.push(eq(tarefas.concluida, concluida === "true"));
+    } else {
+      // Default: pending
+      conditions.push(eq(tarefas.concluida, false));
+    }
   }
 
   if (leadId) {
