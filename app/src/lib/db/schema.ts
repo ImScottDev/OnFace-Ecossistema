@@ -1096,6 +1096,10 @@ export const leadLabels = pgTable(
   (table) => [
     index("idx_lead_labels_lead").on(table.leadId),
     index("idx_lead_labels_label").on(table.labelId),
+    // Achado real (09/08): sem essa constraint, o onConflictDoNothing() em
+    // negocios.ts (auto-tag "No-show") era um no-op — mesmo bug da spam de
+    // notificações de SLA, escala bem menor aqui (1 duplicata real achada).
+    uniqueIndex("idx_lead_labels_dedup").on(table.leadId, table.labelId),
   ]
 );
 
@@ -1127,6 +1131,9 @@ export const leadListas = pgTable(
   (table) => [
     index("idx_lead_listas_lead").on(table.leadId),
     index("idx_lead_listas_lista").on(table.listaId),
+    // Mesmo achado do lead_labels — onConflictDoNothing() em
+    // contatos-unified.ts (add em lote pra lista) era no-op sem isso.
+    uniqueIndex("idx_lead_listas_dedup").on(table.leadId, table.listaId),
   ]
 );
 
