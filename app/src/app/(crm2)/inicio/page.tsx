@@ -44,13 +44,14 @@ function tempoRelativo(venc: Date | null): { texto: string; atrasado: boolean } 
   return { texto: venc.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }), atrasado: false };
 }
 
-export default async function InicioPage({ searchParams }: { searchParams: Promise<{ tab?: string; mes?: string }> }) {
+export default async function InicioPage({ searchParams }: { searchParams: Promise<{ tab?: string; mes?: string; periodoLeads?: string }> }) {
   const ctx = await getTenantContext();
   if (!ctx) redirect("/login");
 
   const params = await searchParams;
   const tab = params.tab === "pipeline" || params.tab === "pendencias" ? params.tab : "geral";
   const hoje = params.mes ? new Date(`${params.mes}-01T00:00:00`) : new Date();
+  const periodoLeads = params.periodoLeads === "mes" ? "mes" : "todo";
 
   const [
     org,
@@ -105,6 +106,15 @@ export default async function InicioPage({ searchParams }: { searchParams: Promi
     const qs = new URLSearchParams();
     if (t !== "geral") qs.set("tab", t);
     if (params.mes) qs.set("mes", params.mes);
+    if (periodoLeads !== "todo") qs.set("periodoLeads", periodoLeads);
+    const s = qs.toString();
+    return `/inicio${s ? `?${s}` : ""}`;
+  };
+  const periodoLeadsHref = (p: "todo" | "mes") => {
+    const qs = new URLSearchParams();
+    if (tab !== "geral") qs.set("tab", tab);
+    if (params.mes) qs.set("mes", params.mes);
+    if (p !== "todo") qs.set("periodoLeads", p);
     const s = qs.toString();
     return `/inicio${s ? `?${s}` : ""}`;
   };
@@ -113,6 +123,7 @@ export default async function InicioPage({ searchParams }: { searchParams: Promi
     const qs = new URLSearchParams();
     qs.set("mes", `${ref.getFullYear()}-${String(ref.getMonth() + 1).padStart(2, "0")}`);
     if (tab !== "geral") qs.set("tab", tab);
+    if (periodoLeads !== "todo") qs.set("periodoLeads", periodoLeads);
     return `/inicio?${qs.toString()}`;
   };
   const avatarColors = ["var(--cf2-avatar-1)", "var(--cf2-avatar-2)", "var(--cf2-avatar-3)", "var(--cf2-avatar-4)", "var(--cf2-avatar-5)"];
@@ -332,12 +343,35 @@ export default async function InicioPage({ searchParams }: { searchParams: Promi
 
           {/* Funil de Leads */}
           <div className="flex flex-col gap-4">
-            <Cf2SectionHeader title="Funil de Leads" subtitle="Progressão de leads por etapa do funil (snapshot atual)" />
+            <div className="flex items-center justify-between">
+              <Cf2SectionHeader
+                title="Funil de Leads"
+                subtitle={periodoLeads === "mes" ? "Leads que entraram em cada etapa este mês" : "Progressão de leads por etapa do funil (snapshot de todo o período)"}
+              />
+              {/* Seletor real Todo período/Mês — antes os 2 números apareciam
+                  juntos sem explicar a diferença, achado do Kauã: "bagunçado". */}
+              <div className="flex gap-1 p-1 rounded-full shrink-0" style={{ background: "var(--cf2-bg-surface-muted)" }}>
+                {[{ key: "todo" as const, label: "Todo período" }, { key: "mes" as const, label: "Mês" }].map((p) => (
+                  <Link
+                    key={p.key}
+                    href={periodoLeadsHref(p.key)}
+                    className="px-3 py-1.5 rounded-full text-xs font-semibold"
+                    style={{
+                      background: periodoLeads === p.key ? "var(--cf2-bg-surface)" : "transparent",
+                      color: periodoLeads === p.key ? "var(--cf2-text-primary)" : "var(--cf2-text-secondary)",
+                      boxShadow: periodoLeads === p.key ? "var(--cf2-shadow-card-sm)" : "none",
+                    }}
+                  >
+                    {p.label}
+                  </Link>
+                ))}
+              </div>
+            </div>
             <div className="flex gap-2">
-              <Cf2Card highlight="success" className="flex-1"><FunilCard label="Novos" data={funilLeads.novos} /></Cf2Card>
-              <Cf2Card highlight="success" className="flex-1"><FunilCard label="Em Qualificação" data={funilLeads.emQualificacao} /></Cf2Card>
-              <Cf2Card className="flex-1"><FunilCard label="Qualificados" data={funilLeads.qualificados} /></Cf2Card>
-              <Cf2Card highlight="danger" className="flex-1"><FunilCard label="No Show" data={funilLeads.noShow} danger /></Cf2Card>
+              <Cf2Card highlight="success" className="flex-1"><FunilCard label="Novos" data={funilLeads.novos} periodo={periodoLeads} /></Cf2Card>
+              <Cf2Card highlight="success" className="flex-1"><FunilCard label="Em Qualificação" data={funilLeads.emQualificacao} periodo={periodoLeads} /></Cf2Card>
+              <Cf2Card className="flex-1"><FunilCard label="Qualificados" data={funilLeads.qualificados} periodo={periodoLeads} /></Cf2Card>
+              <Cf2Card highlight="danger" className="flex-1"><FunilCard label="No Show" data={funilLeads.noShow} periodo={periodoLeads} danger /></Cf2Card>
             </div>
           </div>
 
@@ -433,14 +467,16 @@ export default async function InicioPage({ searchParams }: { searchParams: Promi
   );
 }
 
-function FunilCard({ label, data, danger }: { label: string; data: { total: number; noMes: number }; danger?: boolean }) {
+function FunilCard({ label, data, periodo, danger }: { label: string; data: { total: number; noMes: number }; periodo: "todo" | "mes"; danger?: boolean }) {
+  const principal = periodo === "mes" ? data.noMes : data.total;
+  const contexto = periodo === "mes" ? `${data.total} no total` : `${data.noMes} no mês`;
   return (
     <>
       <div className="flex items-center justify-between mb-2.5">
         <p className="text-sm font-semibold" style={{ color: "var(--cf2-text-primary)" }}>{label}</p>
-        <p className="text-xs" style={{ color: "var(--cf2-text-secondary)" }}>{data.noMes} no mês</p>
+        <p className="text-xs" style={{ color: "var(--cf2-text-secondary)" }}>{contexto}</p>
       </div>
-      <p className="text-[28px] font-bold" style={{ color: danger ? "var(--cf2-danger-text)" : "var(--cf2-text-primary)" }}>{data.total}</p>
+      <p className="text-[28px] font-bold" style={{ color: danger ? "var(--cf2-danger-text)" : "var(--cf2-text-primary)" }}>{principal}</p>
     </>
   );
 }
