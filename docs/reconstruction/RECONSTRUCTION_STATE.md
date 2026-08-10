@@ -726,3 +726,22 @@ Modal "Nova Pessoa": campos mínimos reais (nome/telefone obrigatórios), `POST 
 Nesta sessão longa: App Shell/Command K, Qualificação, Pipeline/Calendário, Cadências, Automações (lista+builder+3 exemplos reais), módulo de Propostas inteiro (domain model condicional, backend, página pública, notificações, 4 fluxos testados), automação de lembrete de reunião, e Contatos (Quick View + Nova Pessoa). Duas correções urgentes no meio do caminho (Kauã testando ao vivo): tema em portais e roteamento de `/propostas` pra tela antiga — ambas resolvidas na hora.
 
 **Pendente pra próxima rodada, em ordem de prioridade real**: reskin visual do detalhe de proposta existente, Atividades (revisão + integração cruzada), responsividade das telas principais, testes E2E completos dos 6 fluxos nomeados no mandato original (Lead→Qualificação→Reunião→Calendário→Atendimento→Pipeline; Negócio→Atividade→Proposta→Won; Contato→WhatsApp→Atividade→Negócio; Reunião→Automação→Lembrete→Histórico; Automação→Gatilho→Condição→Ação→Execução→Histórico; Busca global→Pessoa→Negócio). Página pública de Propostas fica intocada até o Kauã mandar a referência visual dele.
+
+---
+
+## PAUSA no frontend — sync do banco de dev com produção real (10/08, tarde)
+
+Kauã pausou o avanço de frontend: a migração original Zoho→CRM (12/06, ver `produto/migracao-zoho-crm.md`) deixou PABX incompleto (só entrou snapshot histórico, sem billing recorrente) e outras variáveis "pra próxima fase" nunca fechadas. Ele vai fazer uma exportação completa do Zoho e organizar, e a gente decide junto o que fazer — até lá, autonomia técnica pausada nessa frente.
+
+**Ação concreta pedida e executada**: banco de dev precisava refletir produção de verdade (não a base semente antiga, cheia de gap). Passos:
+
+1. `pg_dump` da produção via SSH (`callface-crm-postgres`, container real, `docker exec` — **só leitura, zero escrita em prod**), 119MB → dump de 15MB.
+2. Backup do dev antigo antes de sobrescrever (`_backups/dev_pre_prod_sync_*.dump`, git-ignorado — nunca versionar dado real).
+3. Restaurado no Postgres local (`callface_crm`): 54 tabelas legadas, 3.196 leads, 1.104 negócios, 1.560 empresas, 319 contratos, 1.240 propostas — dado real de produção agora em dev.
+4. **Prod não tinha nenhuma das tabelas/colunas novas de F0-F7** (event_outbox, comercial_evidencia, pessoas, pontos_contato, teams, won_evidence_policies, etc. — nem os campos de fluxo condicional de Propostas desta sessão). `npx drizzle-kit push` reconciliou tudo em duas passadas (a 1ª travou num índice único de `lead_labels` — 1 duplicata real, inofensiva, removida só nessa cópia local; a 2ª aplicou limpo).
+5. Categoria/requerContrato do catálogo reaplicada (mesma lógica da migração 0010) — **sem reativar nenhum item PABX artificialmente essa vez**, já que agora é dado real e essa decisão é do Kauã, não minha.
+6. `api-server`/`worker` reiniciados, app validado via Playwright: dashboard/Propostas com número real ("Virtua Software | Pabx Yeastar" — negócio PABX real que não existia na base semente antiga, prova concreta do gap que o Kauã sentiu).
+
+**Resultado**: dev agora é espelho fiel de produção + toda a arquitetura nova desta sessão por cima. Nenhuma escrita em produção em nenhum momento — só leitura (pg_dump) e depois limpeza do arquivo temporário no servidor.
+
+**Aguardando**: exportação organizada do Zoho feita pelo Kauã, pra decidir junto o que fica pra trás precisa entrar. Frontend pausado até então.
