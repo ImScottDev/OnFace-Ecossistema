@@ -69,6 +69,7 @@ const LEGADO: NavItem[] = [
   { label: "Contatos (antigo)", href: "/contatos-legado", icon: Users },
   { label: "Qualificação (antigo)", href: "/pre-vendas-legado", icon: Filter },
   { label: "Automações (antigo)", href: "/automacoes-legado", icon: Zap },
+  { label: "Propostas (antigo)", href: "/propostas-legado", icon: FileText },
   { label: "Carteira", href: "/carteira", icon: Wallet },
   { label: "Financeiro", href: "/financeiro", icon: Landmark },
   { label: "Contratos", href: "/contratos", icon: FileSignature },

@@ -1,0 +1,253 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { useRouter } from "next/navigation";
+import { Search, Plus, Minus, Trash2, ArrowLeft, Send, Save } from "lucide-react";
+import Link from "next/link";
+import { Cf2Card } from "../ui/Card";
+
+interface Lead { id: string; nome: string; empresa: string | null; telefone: string; status: string }
+interface CatalogoItem {
+  id: string; nome: string; descricao: string | null; tipo: string; unidade: string;
+  valorSugerido: string | null; categoria: string | null; requerContrato: boolean;
+}
+interface ItemCarrinho {
+  servicoCatalogoId: string; nome: string; tipo: string; quantidade: number; valorUnitario: number;
+}
+
+const CATEGORIA_LABEL: Record<string, string> = { callface_ai: "Callface AI", pabx: "PABX", white_label: "White Label" };
+
+function calcSubtotal(qty: number, unit: number) {
+  return Math.round(qty * unit * 100) / 100;
+}
+const brl = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
+export function Cf2NovaPropostaWorkspace() {
+  const router = useRouter();
+  const [leadSelecionado, setLeadSelecionado] = useState<Lead | null>(null);
+  const [buscaLead, setBuscaLead] = useState("");
+  const [categoriaAtiva, setCategoriaAtiva] = useState<string | null>(null);
+  const [carrinho, setCarrinho] = useState<ItemCarrinho[]>([]);
+  const [condicoesPagamento, setCondicoesPagamento] = useState("");
+  const [dataValidade, setDataValidade] = useState("");
+  const [observacoes, setObservacoes] = useState("");
+
+  const { data: leads } = useQuery<Lead[]>({
+    queryKey: ["leads-for-proposta", buscaLead],
+    queryFn: async () => {
+      const r = await fetch(`/api/leads?limit=20${buscaLead ? `&q=${encodeURIComponent(buscaLead)}` : ""}`);
+      const data = await r.json();
+      return data.leads || data;
+    },
+    enabled: !leadSelecionado,
+  });
+
+  const { data: catalogo = [] } = useQuery<CatalogoItem[]>({
+    queryKey: ["servicos-catalogo"],
+    queryFn: async () => {
+      const r = await fetch("/api/servicos-catalogo");
+      if (!r.ok) return [];
+      return r.json();
+    },
+    enabled: !!leadSelecionado,
+  });
+
+  const categorias = useMemo(() => {
+    const set = new Set(catalogo.map((c) => c.categoria || "outros"));
+    return Array.from(set);
+  }, [catalogo]);
+
+  const categoriaSelecionada = categoriaAtiva ?? categorias[0] ?? null;
+  const itensDaCategoria = catalogo.filter((c) => (c.categoria || "outros") === categoriaSelecionada);
+
+  const totalRecorrente = carrinho.filter((i) => i.tipo === "recorrente").reduce((s, i) => s + calcSubtotal(i.quantidade, i.valorUnitario), 0);
+  const totalAvulso = carrinho.filter((i) => i.tipo !== "recorrente").reduce((s, i) => s + calcSubtotal(i.quantidade, i.valorUnitario), 0);
+  const totalGeral = totalRecorrente + totalAvulso;
+
+  function adicionarItem(item: CatalogoItem) {
+    if (carrinho.some((i) => i.servicoCatalogoId === item.id)) return;
+    setCarrinho((prev) => [...prev, {
+      servicoCatalogoId: item.id, nome: item.nome, tipo: item.tipo, quantidade: 1,
+      valorUnitario: parseFloat(item.valorSugerido || "0"),
+    }]);
+  }
+  function removerItem(id: string) { setCarrinho((prev) => prev.filter((i) => i.servicoCatalogoId !== id)); }
+  function atualizarQtd(id: string, delta: number) {
+    setCarrinho((prev) => prev.map((i) => i.servicoCatalogoId === id ? { ...i, quantidade: Math.max(1, i.quantidade + delta) } : i));
+  }
+  function atualizarValor(id: string, valor: number) {
+    setCarrinho((prev) => prev.map((i) => i.servicoCatalogoId === id ? { ...i, valorUnitario: valor } : i));
+  }
+
+  const salvarMutation = useMutation({
+    mutationFn: async (enviar: boolean) => {
+      const r = await fetch("/api/propostas", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          leadId: leadSelecionado!.id,
+          condicoesPagamento: condicoesPagamento || undefined,
+          dataValidade: dataValidade || undefined,
+          observacoes: observacoes || undefined,
+          itens: carrinho.map((i) => ({ servicoCatalogoId: i.servicoCatalogoId, nome: i.nome, tipo: i.tipo, quantidade: i.quantidade, valorUnitario: i.valorUnitario })),
+        }),
+      });
+      const proposta = await r.json();
+      if (!r.ok) throw new Error(proposta.error || "Erro ao criar proposta");
+      if (enviar) {
+        const r2 = await fetch(`/api/propostas/${proposta.id}/enviar`, { method: "POST" });
+        const body2 = await r2.json();
+        if (!r2.ok) throw new Error(body2.error || "Proposta criada, mas falhou ao enviar");
+      }
+      return proposta;
+    },
+    onSuccess: (proposta) => router.push(`/propostas/${proposta.id}`),
+  });
+
+  if (!leadSelecionado) {
+    return (
+      <div className="page-scroll space-y-4 max-w-lg">
+        <div className="flex items-center gap-3">
+          <Link href="/propostas" className="p-1.5 rounded-lg" style={{ color: "var(--cf2-text-tertiary)" }}><ArrowLeft className="w-4 h-4" /></Link>
+          <h1 className="text-xl font-bold" style={{ color: "var(--cf2-text-primary)" }}>Nova Proposta</h1>
+        </div>
+        <p className="text-[13px]" style={{ color: "var(--cf2-text-secondary)" }}>Selecione o cliente pra montar a proposta:</p>
+        <div className="relative">
+          <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2" style={{ color: "var(--cf2-text-tertiary)" }} />
+          <input
+            value={buscaLead} onChange={(e) => setBuscaLead(e.target.value)} placeholder="Buscar cliente..." autoFocus
+            className="w-full text-sm pl-8 pr-3 py-2.5 rounded-lg outline-none"
+            style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }}
+          />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          {leads?.map((lead) => (
+            <button key={lead.id} onClick={() => setLeadSelecionado(lead)} className="text-left p-3 rounded-xl flex items-center justify-between" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
+              <div>
+                <p className="text-[14px] font-semibold" style={{ color: "var(--cf2-text-primary)" }}>{lead.nome}</p>
+                <p className="text-[12px]" style={{ color: "var(--cf2-text-secondary)" }}>{[lead.empresa, lead.telefone].filter(Boolean).join(" · ")}</p>
+              </div>
+            </button>
+          ))}
+          {leads?.length === 0 && <p className="text-[13px]" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhum cliente encontrado.</p>}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="page-scroll space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <button onClick={() => setLeadSelecionado(null)} className="p-1.5 rounded-lg" style={{ color: "var(--cf2-text-tertiary)" }}><ArrowLeft className="w-4 h-4" /></button>
+          <div>
+            <h1 className="text-xl font-bold" style={{ color: "var(--cf2-text-primary)" }}>Nova Proposta</h1>
+            <p className="text-[12px]" style={{ color: "var(--cf2-text-secondary)" }}>{leadSelecionado.empresa || leadSelecionado.nome}</p>
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={() => salvarMutation.mutate(false)} disabled={carrinho.length === 0 || salvarMutation.isPending}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-[13px] font-semibold disabled:opacity-40"
+            style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-primary)" }}
+          >
+            <Save className="w-3.5 h-3.5" /> Salvar rascunho
+          </button>
+          <button
+            onClick={() => salvarMutation.mutate(true)} disabled={carrinho.length === 0 || salvarMutation.isPending}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-[13px] font-semibold disabled:opacity-40"
+            style={{ background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" }}
+          >
+            <Send className="w-3.5 h-3.5" /> {salvarMutation.isPending ? "Enviando..." : "Enviar proposta"}
+          </button>
+        </div>
+      </div>
+      {salvarMutation.isError && <p className="text-[12px]" style={{ color: "var(--cf2-danger-text)" }}>{(salvarMutation.error as Error).message}</p>}
+
+      <div className="flex gap-4 flex-col lg:flex-row">
+        {/* Navegação lateral por categoria — estrutura real do catálogo, não lista genérica */}
+        <div className="flex lg:flex-col gap-1.5 lg:w-44 shrink-0 overflow-x-auto">
+          {categorias.map((cat) => (
+            <button
+              key={cat}
+              onClick={() => setCategoriaAtiva(cat)}
+              className="text-left px-3 py-2 rounded-lg text-[13px] font-semibold whitespace-nowrap"
+              style={{
+                background: categoriaSelecionada === cat ? "var(--cf2-accent)" : "transparent",
+                color: categoriaSelecionada === cat ? "var(--cf2-text-on-accent)" : "var(--cf2-text-secondary)",
+              }}
+            >
+              {CATEGORIA_LABEL[cat] || cat}
+            </button>
+          ))}
+        </div>
+
+        {/* Produtos da categoria */}
+        <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-2.5 content-start">
+          {itensDaCategoria.map((item) => {
+            const jaAdicionado = carrinho.some((i) => i.servicoCatalogoId === item.id);
+            return (
+              <button
+                key={item.id}
+                onClick={() => adicionarItem(item)}
+                disabled={jaAdicionado}
+                className="text-left p-3 rounded-xl flex items-start justify-between gap-2 disabled:opacity-50"
+                style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}
+              >
+                <div className="min-w-0">
+                  <p className="text-[13px] font-semibold" style={{ color: "var(--cf2-text-primary)" }}>{item.nome}</p>
+                  <p className="text-[12px]" style={{ color: "var(--cf2-text-secondary)" }}>
+                    {brl(parseFloat(item.valorSugerido || "0"))}{item.tipo === "recorrente" ? "/mês" : ""}
+                    {item.requerContrato && " · exige contrato"}
+                  </p>
+                </div>
+                <Plus className="w-4 h-4 shrink-0" style={{ color: jaAdicionado ? "var(--cf2-text-tertiary)" : "var(--cf2-accent-border)" }} />
+              </button>
+            );
+          })}
+          {itensDaCategoria.length === 0 && <p className="text-[13px] col-span-2" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhum produto ativo nessa categoria.</p>}
+        </div>
+
+        {/* Carrinho / resumo */}
+        <div className="lg:w-80 shrink-0">
+          <Cf2Card>
+            <p className="text-[11px] font-bold uppercase tracking-wide mb-3" style={{ color: "var(--cf2-text-tertiary)" }}>Resumo da proposta</p>
+            {carrinho.length === 0 ? (
+              <p className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>Adicione produtos da categoria ao lado.</p>
+            ) : (
+              <div className="flex flex-col gap-2 mb-3">
+                {carrinho.map((item) => (
+                  <div key={item.servicoCatalogoId} className="flex items-center gap-2 pb-2" style={{ borderBottom: "1px solid var(--cf2-border-default)" }}>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[12px] font-semibold truncate" style={{ color: "var(--cf2-text-primary)" }}>{item.nome}</p>
+                      <div className="flex items-center gap-1.5 mt-1">
+                        <button onClick={() => atualizarQtd(item.servicoCatalogoId, -1)} className="w-5 h-5 rounded flex items-center justify-center" style={{ background: "var(--cf2-bg-surface-muted)" }}><Minus className="w-2.5 h-2.5" /></button>
+                        <span className="text-[11px] w-5 text-center">{item.quantidade}</span>
+                        <button onClick={() => atualizarQtd(item.servicoCatalogoId, 1)} className="w-5 h-5 rounded flex items-center justify-center" style={{ background: "var(--cf2-bg-surface-muted)" }}><Plus className="w-2.5 h-2.5" /></button>
+                        <input
+                          type="number" value={item.valorUnitario}
+                          onChange={(e) => atualizarValor(item.servicoCatalogoId, parseFloat(e.target.value) || 0)}
+                          className="w-20 text-[11px] px-1.5 py-0.5 rounded outline-none ml-1"
+                          style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }}
+                        />
+                      </div>
+                    </div>
+                    <button onClick={() => removerItem(item.servicoCatalogoId)} style={{ color: "var(--cf2-danger-text)" }}><Trash2 className="w-3.5 h-3.5" /></button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="flex flex-col gap-1 text-[12px] mb-3" style={{ color: "var(--cf2-text-secondary)" }}>
+              {totalRecorrente > 0 && <div className="flex justify-between"><span>Mensal</span><span>{brl(totalRecorrente)}</span></div>}
+              {totalAvulso > 0 && <div className="flex justify-between"><span>Avulso</span><span>{brl(totalAvulso)}</span></div>}
+              <div className="flex justify-between text-[13px] font-bold" style={{ color: "var(--cf2-text-primary)" }}><span>Total</span><span>{brl(totalGeral)}</span></div>
+            </div>
+            <input value={condicoesPagamento} onChange={(e) => setCondicoesPagamento(e.target.value)} placeholder="Condições de pagamento" className="w-full text-[12px] px-2.5 py-2 rounded-lg outline-none mb-2" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }} />
+            <input type="date" value={dataValidade} onChange={(e) => setDataValidade(e.target.value)} className="w-full text-[12px] px-2.5 py-2 rounded-lg outline-none mb-2" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }} />
+            <textarea value={observacoes} onChange={(e) => setObservacoes(e.target.value)} placeholder="Observações" rows={2} className="w-full text-[12px] px-2.5 py-2 rounded-lg outline-none resize-none" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }} />
+          </Cf2Card>
+        </div>
+      </div>
+    </div>
+  );
+}
