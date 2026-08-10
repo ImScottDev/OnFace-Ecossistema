@@ -690,6 +690,17 @@ Achado real do Kauã testando ao vivo: construí todo o backend (fluxo condicion
 
 `Cf2NovaPropostaWorkspace` ganhou `?negocioId=`/`?leadId=`: busca o negócio/lead real, pula a etapa de busca de cliente, cai direto no builder com o cabeçalho já mostrando negócio+empresa. Tenta casar `negocios.servicosInteresse` (texto livre, sem vínculo com catálogo) por nome contra o catálogo real — o que bate pré-popula o carrinho, o resto fica de fora (não inventa item). Todos os pontos reais que linkam "Nova Proposta" com contexto (`NegocioDrawer`, `LeadDrawer`, `negocios/[id]`, `contatos/[id]`, dashboard, lista legada) atualizados de `/propostas/nova` (legado) pra `/propostas/novo` (cf2). Testado via Playwright: negócio real → builder direto, sem tela de busca → salvo com `negocioId` correto (não duplica negócio, como o fluxo standalone faz de propósito quando não há negócio).
 
+### Aba Propostas dentro do Negócio — já existia, só precisava do link certo
+
+Auditoria antes de construir de novo: `NegocioDrawer.tsx` já tinha uma seção "Propostas" completa e funcional (número, status coloridos, valor, itens expandíveis) — construída antes desta sessão. O único gap real era o link "+ Nova" apontando pro fluxo legado sem categoria; corrigido junto com a atualização geral dos links (seção anterior). Não dava pra reconstruir isso do zero sem duplicar o que já funcionava.
+
+### Testes E2E dos 4 fluxos nomeados pelo Kauã — status final
+
+- **Fluxo A (Callface AI, pagamento)**: criação → envio (gera checkout Stripe) → aceite público (intenção registrada, sem virar Won ainda) validado ponta a ponta. Geração real de checkout não testável neste ambiente (chave Stripe deliberadamente vazia, ver nota anterior) — limitação de ambiente, não da implementação.
+- **Fluxo B (PABX, contrato)**: completo e validado ponta a ponta com dado real, incluindo assinatura, Won, evidência, tarefa de cobrança, notificação.
+- **Fluxo C (tela Propostas → Nova Proposta)**: validado via Playwright — busca de cliente, categoria, carrinho, salvar rascunho, redirecionamento, dado confirmado no banco.
+- **Fluxo D (Negócio → Criar Proposta)**: validado via Playwright — contexto herdado corretamente, sem criar negócio duplicado (diferente do fluxo C, que cria negócio novo quando não há um vinculável).
+
 ### Pendente pra próxima rodada
 
-Reskin do detalhe/edição de proposta existente (`[id]`), aba Propostas dentro do Negócio/Pipeline (ver propostas existentes sem sair do negócio), testes E2E dos 4 fluxos nomeados pelo Kauã com UI completa. Página pública (`/p/[id]`) fica como está — Kauã disse que vai mandar uma referência visual própria antes de eu iterar de novo nela.
+Reskin do detalhe/edição de proposta existente (`[id]`) — visual apenas, lógica já funciona. Página pública (`/p/[id]`) fica como está — Kauã disse que vai mandar uma referência visual própria antes de eu iterar de novo nela.
