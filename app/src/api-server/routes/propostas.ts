@@ -95,6 +95,8 @@ app.get("/propostas", async (c) => {
       leadId: propostas.leadId,
       leadNome: leads.nome,
       leadEmpresa: leads.empresa,
+      negocioId: propostas.negocioId,
+      negocioTitulo: negocios.titulo,
       moeda: propostas.moeda,
       totalRecorrente: propostas.totalRecorrente,
       totalAvulso: propostas.totalAvulso,
@@ -102,10 +104,14 @@ app.get("/propostas", async (c) => {
       dataEmissao: propostas.dataEmissao,
       dataValidade: propostas.dataValidade,
       criadoPorNome: usuarios.nome,
+      proximoPasso: propostas.proximoPasso,
+      visualizacoes: propostas.visualizacoes,
+      clienteRespondeuEm: propostas.clienteRespondeuEm,
       createdAt: propostas.createdAt,
     })
     .from(propostas)
     .leftJoin(leads, eq(propostas.leadId, leads.id))
+    .leftJoin(negocios, eq(propostas.negocioId, negocios.id))
     .leftJoin(usuarios, eq(propostas.criadoPorId, usuarios.id))
     .where(and(...conditions))
     .orderBy(desc(propostas.createdAt))
@@ -117,6 +123,27 @@ app.get("/propostas", async (c) => {
 
   const results = await query.limit(100);
   return c.json(results);
+});
+
+// GET /propostas/kpis — contadores reais pra hero strip da lista (cf2)
+app.get("/propostas/kpis", async (c) => {
+  const ctx = await getCtx(c);
+  const org = eq(propostas.organizacaoId, ctx.organizacaoId);
+
+  const [linhas] = await db
+    .select({
+      emElaboracao: sql<number>`count(*) filter (where ${propostas.status} = 'rascunho')`,
+      enviadas: sql<number>`count(*) filter (where ${propostas.status} = 'enviada')`,
+      visualizadas: sql<number>`count(*) filter (where ${propostas.status} = 'enviada' and ${propostas.visualizacoes} > 0)`,
+      aceitas: sql<number>`count(*) filter (where ${propostas.status} = 'aceita')`,
+      recusadasExpiradas: sql<number>`count(*) filter (where ${propostas.status} in ('recusada', 'expirada'))`,
+      aguardandoAcao: sql<number>`count(*) filter (where ${propostas.status} = 'enviada' and ${propostas.clienteRespondeuEm} is null)`,
+      valorTotalAtivo: sql<string>`coalesce(sum(${propostas.totalGeral}) filter (where ${propostas.status} not in ('recusada', 'expirada')), 0)`,
+    })
+    .from(propostas)
+    .where(org);
+
+  return c.json(linhas);
 });
 
 // GET /propostas/count — open proposals count for sidebar badge
