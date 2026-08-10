@@ -326,7 +326,7 @@ export default function NegocioDetailPage() {
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-medium text-white/50">Propostas ({propostas?.length || 0})</h3>
               <Link
-                href={`/propostas/nova?negocioId=${negocio.id}`}
+                href={`/propostas/novo?negocioId=${negocio.id}`}
                 className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-[#e23752] hover:bg-[#e23752]/10"
               >
                 <Plus className="w-3.5 h-3.5" /> Nova Proposta

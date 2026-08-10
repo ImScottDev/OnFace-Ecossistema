@@ -579,7 +579,7 @@ export default async function DashboardPage() {
             <Link href="/contatos" className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white/70 bg-white/[0.03] border border-white/[0.06] hover:border-[#e23752]/40 hover:text-white transition-colors">
               <Search className="w-4 h-4 text-[#e23752]" />Buscar contato
             </Link>
-            <Link href="/propostas/nova" className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white/70 bg-white/[0.03] border border-white/[0.06] hover:border-[#e23752]/40 hover:text-white transition-colors">
+            <Link href="/propostas/novo" className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white/70 bg-white/[0.03] border border-white/[0.06] hover:border-[#e23752]/40 hover:text-white transition-colors">
               <FilePlus2 className="w-4 h-4 text-[#e23752]" />Nova proposta
             </Link>
             <Link href="/contatos?tipo=lead" className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white bg-[#e23752]/15 border border-[#e23752]/40 hover:bg-[#e23752]/25 transition-colors">

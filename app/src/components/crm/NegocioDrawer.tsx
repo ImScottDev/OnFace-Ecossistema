@@ -685,7 +685,7 @@ export function NegocioDrawer({ negocioId, open, onClose, onOpenLead, onOpenEmpr
                 Propostas ({propostas.length})
               </h3>
               {negocioId && (
-                <Link href={`/propostas/nova?negocioId=${negocioId}`} className="text-[10px] text-purple-400 hover:text-purple-300 transition-colors">
+                <Link href={`/propostas/novo?negocioId=${negocioId}`} className="text-[10px] text-purple-400 hover:text-purple-300 transition-colors">
                   + Nova
                 </Link>
               )}

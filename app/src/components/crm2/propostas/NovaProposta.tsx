@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Search, Plus, Minus, Trash2, ArrowLeft, Send, Save } from "lucide-react";
 import Link from "next/link";
 import { Cf2Card } from "../ui/Card";
@@ -25,13 +25,54 @@ const brl = (v: number) => v.toLocaleString("pt-BR", { style: "currency", curren
 
 export function Cf2NovaPropostaWorkspace() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const negocioIdPreSelecionado = searchParams.get("negocioId");
+  const leadIdPreSelecionado = searchParams.get("leadId");
+
   const [leadSelecionado, setLeadSelecionado] = useState<Lead | null>(null);
+  const [negocioId, setNegocioId] = useState<string | null>(null);
+  const [negocioTitulo, setNegocioTitulo] = useState<string | null>(null);
   const [buscaLead, setBuscaLead] = useState("");
   const [categoriaAtiva, setCategoriaAtiva] = useState<string | null>(null);
   const [carrinho, setCarrinho] = useState<ItemCarrinho[]>([]);
   const [condicoesPagamento, setCondicoesPagamento] = useState("");
   const [dataValidade, setDataValidade] = useState("");
   const [observacoes, setObservacoes] = useState("");
+  const [herdouServicos, setHerdouServicos] = useState(false);
+
+  // Negócio → Criar proposta: herda lead/empresa/responsável direto, sem
+  // repedir o que o CRM já sabe (pedido explícito do Kauã).
+  const { data: negocioContexto, isLoading: carregandoNegocio } = useQuery({
+    queryKey: ["negocio-para-proposta", negocioIdPreSelecionado],
+    queryFn: async () => {
+      const r = await fetch(`/api/negocios/${negocioIdPreSelecionado}`);
+      if (!r.ok) throw new Error("Negócio não encontrado");
+      return r.json();
+    },
+    enabled: !!negocioIdPreSelecionado && !leadSelecionado,
+  });
+
+  const { data: leadContexto, isLoading: carregandoLead } = useQuery({
+    queryKey: ["lead-para-proposta", leadIdPreSelecionado],
+    queryFn: async () => {
+      const r = await fetch(`/api/leads/${leadIdPreSelecionado}`);
+      if (!r.ok) throw new Error("Lead não encontrado");
+      return r.json();
+    },
+    enabled: !!leadIdPreSelecionado && !negocioIdPreSelecionado && !leadSelecionado,
+  });
+
+  useEffect(() => {
+    if (negocioContexto?.lead && !leadSelecionado) {
+      setLeadSelecionado(negocioContexto.lead);
+      setNegocioId(negocioContexto.negocio?.id ?? null);
+      setNegocioTitulo(negocioContexto.negocio?.titulo ?? null);
+    }
+  }, [negocioContexto, leadSelecionado]);
+
+  useEffect(() => {
+    if (leadContexto?.lead && !leadSelecionado) setLeadSelecionado(leadContexto.lead);
+  }, [leadContexto, leadSelecionado]);
 
   const { data: leads } = useQuery<Lead[]>({
     queryKey: ["leads-for-proposta", buscaLead],
@@ -52,6 +93,25 @@ export function Cf2NovaPropostaWorkspace() {
     },
     enabled: !!leadSelecionado,
   });
+
+  // Itens já definidos no negócio (servicosInteresse é texto livre, sem
+  // vínculo com o catálogo real) — melhor esforço: casa por nome, o que não
+  // bate fica de fora (não inventa item que não existe no catálogo real).
+  useEffect(() => {
+    if (herdouServicos || catalogo.length === 0) return;
+    const nomes: string[] = negocioContexto?.negocio?.servicosInteresse ?? [];
+    if (nomes.length === 0) { setHerdouServicos(true); return; }
+    const encontrados = nomes
+      .map((nome) => catalogo.find((c) => c.nome.toLowerCase() === nome.toLowerCase()))
+      .filter((c): c is CatalogoItem => !!c);
+    if (encontrados.length > 0) {
+      setCarrinho(encontrados.map((item) => ({
+        servicoCatalogoId: item.id, nome: item.nome, tipo: item.tipo, quantidade: 1,
+        valorUnitario: parseFloat(item.valorSugerido || "0"),
+      })));
+    }
+    setHerdouServicos(true);
+  }, [catalogo, negocioContexto, herdouServicos]);
 
   const categorias = useMemo(() => {
     const set = new Set(catalogo.map((c) => c.categoria || "outros"));
@@ -86,6 +146,7 @@ export function Cf2NovaPropostaWorkspace() {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           leadId: leadSelecionado!.id,
+          negocioId: negocioId || undefined,
           condicoesPagamento: condicoesPagamento || undefined,
           dataValidade: dataValidade || undefined,
           observacoes: observacoes || undefined,
@@ -103,6 +164,10 @@ export function Cf2NovaPropostaWorkspace() {
     },
     onSuccess: (proposta) => router.push(`/propostas/${proposta.id}`),
   });
+
+  if ((negocioIdPreSelecionado && carregandoNegocio) || (leadIdPreSelecionado && carregandoLead)) {
+    return <div className="page-scroll"><p className="text-sm" style={{ color: "var(--cf2-text-tertiary)" }}>Carregando contexto do negócio...</p></div>;
+  }
 
   if (!leadSelecionado) {
     return (
@@ -139,10 +204,16 @@ export function Cf2NovaPropostaWorkspace() {
     <div className="page-scroll space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <button onClick={() => setLeadSelecionado(null)} className="p-1.5 rounded-lg" style={{ color: "var(--cf2-text-tertiary)" }}><ArrowLeft className="w-4 h-4" /></button>
+          {negocioIdPreSelecionado || leadIdPreSelecionado ? (
+            <Link href="/propostas" className="p-1.5 rounded-lg" style={{ color: "var(--cf2-text-tertiary)" }}><ArrowLeft className="w-4 h-4" /></Link>
+          ) : (
+            <button onClick={() => setLeadSelecionado(null)} className="p-1.5 rounded-lg" style={{ color: "var(--cf2-text-tertiary)" }}><ArrowLeft className="w-4 h-4" /></button>
+          )}
           <div>
             <h1 className="text-xl font-bold" style={{ color: "var(--cf2-text-primary)" }}>Nova Proposta</h1>
-            <p className="text-[12px]" style={{ color: "var(--cf2-text-secondary)" }}>{leadSelecionado.empresa || leadSelecionado.nome}</p>
+            <p className="text-[12px]" style={{ color: "var(--cf2-text-secondary)" }}>
+              {leadSelecionado.empresa || leadSelecionado.nome}{negocioTitulo ? ` · ${negocioTitulo}` : ""}
+            </p>
           </div>
         </div>
         <div className="flex gap-2">
