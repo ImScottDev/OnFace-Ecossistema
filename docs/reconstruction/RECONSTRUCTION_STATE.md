@@ -87,6 +87,16 @@ Auditei o que existe hoje: `/whatsapp` (inbox completo, com o badge de handoff j
 - [x] `npx tsc --noEmit` limpo (mesmos 6 erros de baseline).
 - [ ] Fora de escopo desta entrega (registrado, não esquecido): dark theme (só a arquitetura que permite), migração de Carteira/Financeiro/Contratos/Prospecção/Campanhas/Admin pra dentro da nova IA, resto dos domínios (Atendimento/Pessoas&Empresas/Qualificação/Pipeline Comercial/Negócios/Atividades/Automações/Indicadores como telas próprias no tema novo) — evoluem em cima desta mesma fundação.
 
+**Correções de fidelidade ao Figma (mesmo dia, feedback direto do Kauã)**:
+- [x] Abas Visão Geral/Pipeline/Pendências: achado real — a 1ª versão condicionava a TELA INTEIRA à aba selecionada (errado). Corrigido: só o grupo chart+ranking troca (mesmo agrupamento real do Figma, `grupo que altera visao geral/pipeline/pendencias`); Insights/Funil de Leads/Pipeline Comercial/Atividades/Comunicações ficam sempre visíveis, em qualquer aba.
+- [x] Navegador de mês (‹ Agosto ›) virou funcional de verdade — `‹`/`›` navegam por `?mes=YYYY-MM`, recalculando todos os dados do mês pedido (antes só mostrava o mês atual, estático).
+- [x] Margem lateral sem sentido no main-content — removido `max-w-[1200px] mx-auto` que eu tinha adicionado por conta própria (não existe no Figma, o conteúdo ocupa 100% do espaço disponível).
+- [x] Grid de fundo do Figma (`bg-grid-effect`, linhas a cada 60px, opacity 40%) — não tinha sido implementado, adicionado via `repeating-linear-gradient` no `<main>`.
+- [x] Botão de recolher sidebar (ícone "☰" ao lado do logo no Figma) — não existia, adicionado com o mesmo padrão de persistência (localStorage) do `CrmSidebar` legado; colapsado vira rail de ícones.
+- [x] Funil de Leads ganhou a mesma marcação de vazão que o Pipeline Comercial já tinha ("26 negócios") — cada card agora mostra "N no mês" (quantos entraram nesse bucket este mês) ao lado do total snapshot, pedido do Kauã pra dar leitura de entrada/vazão.
+- [x] "26 deals" → "26 negócios" (Pipeline Comercial estava em inglês).
+- [x] Validado de novo com Playwright + dado real após cada correção.
+
 ## Eventos/Event-Driven — Event Outbox real (09/08)
 
 **Gatilho**: revisão arquitetural externa (o Kauã revisou o snapshot congelado contra o blueprint completo) apontou `event_outbox` como o gap 🔴 de maior prioridade — a tabela existia desde F0, mas nada nunca publicava nem consumia. Depois de um mal-entendido de prompt sobre "congelar/parar" (esclarecido pelo Kauã: seguir fechando backend/domínio inteiro, depois materializar V1 completa de frontend por domínio — não parar), a instrução real e prioritária foi: fechar este gap antes de seguir.

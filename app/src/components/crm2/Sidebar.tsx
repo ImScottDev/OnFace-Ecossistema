@@ -24,19 +24,15 @@ import {
   Megaphone,
   ShieldCheck,
   ChevronDown,
+  Menu,
   User,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 interface NavItem {
   label: string;
   href: string;
   icon: React.ElementType;
-}
-
-interface NavSection {
-  title: string;
-  items: NavItem[];
 }
 
 // Navegação oficial do Figma (contrato visual/UX da V2, 09/08) — estrutura e
@@ -79,25 +75,28 @@ const LEGADO: NavItem[] = [
 
 const ADMIN: NavItem[] = [{ label: "Administração", href: "/admin/organizacoes", icon: ShieldCheck }];
 
-function NavGroup({ title, items, pathname }: { title: string; items: NavItem[]; pathname: string }) {
+function NavGroup({ title, items, pathname, collapsed }: { title: string; items: NavItem[]; pathname: string; collapsed: boolean }) {
   return (
     <div className="flex flex-col gap-1 w-full">
-      <p
-        className="text-[10px] font-bold uppercase tracking-wider px-1"
-        style={{ color: "var(--cf2-text-tertiary)", fontFamily: "var(--cf2-font-nav)" }}
-      >
-        {title}
-      </p>
+      {title && !collapsed && (
+        <p
+          className="text-[10px] font-bold uppercase tracking-wider px-1"
+          style={{ color: "var(--cf2-text-tertiary)", fontFamily: "var(--cf2-font-nav)" }}
+        >
+          {title}
+        </p>
+      )}
       {items.map((item) => {
         const isActive = pathname === item.href || (item.href !== "/inicio" && pathname.startsWith(item.href));
         return (
           <Link
             key={item.label}
             href={item.href}
-            className="flex items-center gap-3 px-4 py-3 rounded-xl w-full transition-colors"
+            title={collapsed ? item.label : undefined}
+            className={`flex items-center rounded-xl w-full transition-colors ${collapsed ? "justify-center px-0 py-3" : "gap-3 px-4 py-3"}`}
             style={{
               background: isActive ? "var(--cf2-accent)" : "transparent",
-              borderLeft: isActive ? "3px solid var(--cf2-accent-border)" : "3px solid transparent",
+              borderLeft: collapsed ? "none" : isActive ? "3px solid var(--cf2-accent-border)" : "3px solid transparent",
               fontFamily: "var(--cf2-font-nav)",
             }}
           >
@@ -105,15 +104,17 @@ function NavGroup({ title, items, pathname }: { title: string; items: NavItem[];
               className="w-4 h-4 shrink-0"
               style={{ color: isActive ? "var(--cf2-text-on-accent)" : "var(--cf2-text-secondary)" }}
             />
-            <span
-              className="text-sm flex-1"
-              style={{
-                color: isActive ? "var(--cf2-text-primary)" : "var(--cf2-text-secondary)",
-                fontWeight: isActive ? 600 : 500,
-              }}
-            >
-              {item.label}
-            </span>
+            {!collapsed && (
+              <span
+                className="text-sm flex-1"
+                style={{
+                  color: isActive ? "var(--cf2-text-primary)" : "var(--cf2-text-secondary)",
+                  fontWeight: isActive ? 600 : 500,
+                }}
+              >
+                {item.label}
+              </span>
+            )}
           </Link>
         );
       })}
@@ -125,6 +126,16 @@ export function Cf2Sidebar() {
   const pathname = usePathname();
   const { data: session } = useSession();
   const [legadoOpen, setLegadoOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+
+  // Mesmo padrão de persistência do CrmSidebar legado (localStorage).
+  useEffect(() => {
+    if (localStorage.getItem("cf2-sidebar-collapsed") === "true") setCollapsed(true);
+  }, []);
+  useEffect(() => {
+    localStorage.setItem("cf2-sidebar-collapsed", String(collapsed));
+  }, [collapsed]);
+
   const isSuperAdmin = (session?.user as { role?: string } | undefined)?.role === "super_admin";
   const userName = session?.user?.name || "Usuário";
   const userRole = (session?.user as { role?: string } | undefined)?.role;
@@ -134,46 +145,62 @@ export function Cf2Sidebar() {
   return (
     <aside
       data-cf2-theme="light"
-      className="flex flex-col justify-between h-full w-[240px] shrink-0 px-4 py-8"
-      style={{ background: "var(--cf2-bg-page)" }}
+      className="flex flex-col justify-between h-full shrink-0 px-4 py-8 transition-[width] duration-150"
+      style={{ background: "var(--cf2-bg-page)", width: collapsed ? 72 : 240 }}
     >
       <div className="flex flex-col gap-7 w-full overflow-y-auto">
-        <div className="flex items-center gap-2 px-1">
-          <Sparkles className="w-[18px] h-[18px]" style={{ color: "var(--cf2-accent-border)" }} />
-          <p className="text-lg font-bold" style={{ color: "var(--cf2-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>
-            callface
-          </p>
+        <div className={`flex items-center ${collapsed ? "justify-center" : "justify-between"}`}>
+          <div className="flex gap-2 items-center min-w-0">
+            <Sparkles className="w-[18px] h-[18px] shrink-0" style={{ color: "var(--cf2-accent-border)" }} />
+            {!collapsed && (
+              <p className="text-lg font-bold truncate" style={{ color: "var(--cf2-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>
+                callface
+              </p>
+            )}
+          </div>
+          {!collapsed && (
+            <button onClick={() => setCollapsed(true)} title="Recolher menu">
+              <Menu className="w-[18px] h-[18px]" style={{ color: "var(--cf2-text-secondary)" }} />
+            </button>
+          )}
         </div>
+        {collapsed && (
+          <button onClick={() => setCollapsed(false)} title="Expandir menu" className="flex justify-center w-full">
+            <Menu className="w-[18px] h-[18px]" style={{ color: "var(--cf2-text-secondary)" }} />
+          </button>
+        )}
 
-        <NavGroup title="Menu" items={MENU} pathname={pathname} />
-        <NavGroup title="CRM" items={CRM} pathname={pathname} />
-        <NavGroup title="Automação" items={AUTOMACAO} pathname={pathname} />
-        <NavGroup title="Relatórios" items={RELATORIOS} pathname={pathname} />
-        <NavGroup title="Configurações" items={CONFIG} pathname={pathname} />
+        <NavGroup title="Menu" items={MENU} pathname={pathname} collapsed={collapsed} />
+        <NavGroup title="CRM" items={CRM} pathname={pathname} collapsed={collapsed} />
+        <NavGroup title="Automação" items={AUTOMACAO} pathname={pathname} collapsed={collapsed} />
+        <NavGroup title="Relatórios" items={RELATORIOS} pathname={pathname} collapsed={collapsed} />
+        <NavGroup title="Configurações" items={CONFIG} pathname={pathname} collapsed={collapsed} />
 
         {/* Legado — colapsado por padrão, não compete visualmente com a nav nova */}
-        <div className="flex flex-col gap-1 w-full">
-          <button
-            onClick={() => setLegadoOpen(!legadoOpen)}
-            className="flex items-center justify-between px-1 w-full"
-          >
-            <p
-              className="text-[10px] font-bold uppercase tracking-wider"
-              style={{ color: "var(--cf2-text-tertiary)", fontFamily: "var(--cf2-font-nav)" }}
+        {!collapsed && (
+          <div className="flex flex-col gap-1 w-full">
+            <button
+              onClick={() => setLegadoOpen(!legadoOpen)}
+              className="flex items-center justify-between px-1 w-full"
             >
-              Legado
-            </p>
-            <ChevronDown
-              className="w-3 h-3 transition-transform"
-              style={{ color: "var(--cf2-text-tertiary)", transform: legadoOpen ? "rotate(180deg)" : "none" }}
-            />
-          </button>
-          {legadoOpen && <NavGroup title="" items={isSuperAdmin ? [...LEGADO, ...ADMIN] : LEGADO} pathname={pathname} />}
-        </div>
+              <p
+                className="text-[10px] font-bold uppercase tracking-wider"
+                style={{ color: "var(--cf2-text-tertiary)", fontFamily: "var(--cf2-font-nav)" }}
+              >
+                Legado
+              </p>
+              <ChevronDown
+                className="w-3 h-3 transition-transform"
+                style={{ color: "var(--cf2-text-tertiary)", transform: legadoOpen ? "rotate(180deg)" : "none" }}
+              />
+            </button>
+            {legadoOpen && <NavGroup title="" items={isSuperAdmin ? [...LEGADO, ...ADMIN] : LEGADO} pathname={pathname} collapsed={false} />}
+          </div>
+        )}
       </div>
 
       <div
-        className="flex items-center gap-2.5 p-2.5 rounded-2xl w-full"
+        className={`flex items-center gap-2.5 p-2.5 rounded-2xl w-full ${collapsed ? "justify-center" : ""}`}
         style={{ background: "var(--cf2-bg-surface-muted)" }}
       >
         <div
@@ -182,13 +209,17 @@ export function Cf2Sidebar() {
         >
           <p className="text-[11px] font-extrabold" style={{ color: "var(--cf2-text-on-accent)" }}>{initials}</p>
         </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-[13px] font-semibold truncate" style={{ color: "var(--cf2-text-primary)" }}>{userName}</p>
-          <p className="text-[11px] truncate" style={{ color: "var(--cf2-text-secondary)" }}>{displayRole}</p>
-        </div>
-        <button onClick={() => signOut({ callbackUrl: "/login" })} title="Sair">
-          <User className="w-3.5 h-3.5" style={{ color: "var(--cf2-text-secondary)" }} />
-        </button>
+        {!collapsed && (
+          <>
+            <div className="flex-1 min-w-0">
+              <p className="text-[13px] font-semibold truncate" style={{ color: "var(--cf2-text-primary)" }}>{userName}</p>
+              <p className="text-[11px] truncate" style={{ color: "var(--cf2-text-secondary)" }}>{displayRole}</p>
+            </div>
+            <button onClick={() => signOut({ callbackUrl: "/login" })} title="Sair">
+              <User className="w-3.5 h-3.5" style={{ color: "var(--cf2-text-secondary)" }} />
+            </button>
+          </>
+        )}
       </div>
     </aside>
   );
