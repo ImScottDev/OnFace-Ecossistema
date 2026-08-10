@@ -2753,13 +2753,26 @@ const slaWorker = new Worker(
             if (!lead?.organizacaoId) continue;
             const [admin] = await db.select({ id: usuarios.id }).from(usuarios).where(and(eq(usuarios.role, "admin"), eq(usuarios.organizacaoId, lead.organizacaoId))).limit(1);
             if (admin) {
-              await db.insert(notificacoes).values({
-                usuarioId: admin.id,
-                titulo: `SLA estourado: ${neg.titulo}`,
-                mensagem: `Negócio "${neg.titulo}" (${neg.leadEmpresa || neg.leadNome || "sem empresa"}) está em "${status}" há mais de ${hours}h`,
-                tipo: "sla_alerta",
-                link: `/pipeline`,
-              }).onConflictDoNothing();
+              // Achado real (09/08): `notificacoes` não tem unique constraint
+              // nenhum — o onConflictDoNothing() daqui nunca teve conflito pra
+              // detectar, então era um no-op. Rodando a cada 30min sem dedupe
+              // real, isso gerou 167k+ notificações duplicadas em produção
+              // (alguns negócios com 2000+ repetidas desde 25/06). Mesmo
+              // padrão de dedupe já usado corretamente em follow-up-proposta:
+              // só cria se não existir uma não lida do mesmo negócio+etapa.
+              const linkNegocio = `/negocios/${neg.id}`;
+              const [jaAvisou] = await db.select({ id: notificacoes.id }).from(notificacoes)
+                .where(and(eq(notificacoes.tipo, "sla_alerta"), eq(notificacoes.link, linkNegocio), eq(notificacoes.lida, false)))
+                .limit(1);
+              if (!jaAvisou) {
+                await db.insert(notificacoes).values({
+                  usuarioId: admin.id,
+                  titulo: `SLA estourado: ${neg.titulo}`,
+                  mensagem: `Negócio "${neg.titulo}" (${neg.leadEmpresa || neg.leadNome || "sem empresa"}) está em "${status}" há mais de ${hours}h`,
+                  tipo: "sla_alerta",
+                  link: linkNegocio,
+                });
+              }
             }
           }
           console.log(`[SLA] ${breachedNegocios.length} negócios breached in "${status}"`);

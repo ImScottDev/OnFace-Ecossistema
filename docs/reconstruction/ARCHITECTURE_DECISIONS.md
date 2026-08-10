@@ -320,6 +320,22 @@ banco ou uma camada de write-guard fica como candidato de F1+.
 
 ---
 
+## ADR-EXEC-017 — Bug crítico de produção corrigido: notificações duplicadas sem fim (SLA + 2 casos menores)
+
+**Contexto**: durante a auditoria de "Atividades/Tarefas", achado real ao investigar a tabela `notificacoes` — o job `check-sla` (worker, roda a cada 30min desde sempre) usa `.onConflictDoNothing()` pra evitar duplicar alerta de SLA estourado, mas **`notificacoes` nunca teve nenhuma unique constraint** — o `onConflictDoNothing()` não tinha nenhum conflito real pra detectar, então era um no-op silencioso desde que o job existe.
+
+**Impacto real medido**: **167.582 notificações duplicadas** no banco (mirror de produção), alguns negócios com **mais de 2.224 cópias idênticas** de "SLA estourado" cada, acumulando desde 25/06 (46 dias × 48 execuções/dia). Como é o MESMO código do worker que roda em produção, o sininho de notificação de qualquer admin real provavelmente está (ou estava) afogado no mesmo volume de spam.
+
+**Fix**: aplicado o mesmo padrão de dedupe que `follow-up-proposta` já usava corretamente (checa se existe notificação NÃO LIDA do mesmo tipo+link antes de criar) — `check-sla` agora dedupa por negócio (link mudou de `/pipeline` genérico pra `/negocios/:id`, também corrige a UX de "pra onde o clique leva").
+
+**Achado colateral, mesmo padrão root-cause, escala bem menor**: 2 outros `onConflictDoNothing()` na mesma situação (constraint inexistente) — `lead_labels` (auto-tag "No-show" em `negocios.ts`, achada 1 duplicata real) e `lead_listas` (add em lote pra lista, achado 0 duplicatas, mas o próximo double-click criaria). Corrigido adicionando `uniqueIndex` real em ambos (`(leadId, labelId)` e `(leadId, listaId)`), aplicado via `drizzle-kit push --force` depois de deduplicar a 1 linha existente. `comercialEvidencia` (F4, Won Evidence) foi checado e está correto — tem uniqueIndex real desde que foi criado.
+
+**Limpeza**: as 167.582 linhas de spam foram removidas do banco de dev LOCAL (mirror, não produção — zero valor informativo, só ruído). **Produção provavelmente tem o mesmo acúmulo e não foi tocada** — fica registrado aqui pra o Kauã decidir quando/como limpar lá (é um `DELETE FROM notificacoes WHERE tipo = 'sla_alerta'` direto, sem risco, mas é ação em produção real então não decidi isso sozinho).
+
+**Por que não foi achado antes**: o worker sempre reportou "N negócios breached" no log sem erro — o bug é 100% silencioso do ponto de vista operacional, só aparece investigando o volume real da tabela.
+
+---
+
 ## ADR-EXEC-016 — Event Outbox: de tabela morta a barramento real (Eventos/Event-Driven)
 
 **Contexto**: achado da revisão arquitetural externa de 09/08 — `event_outbox` existia desde F0 (schema completo: idempotência, status, retry, dead-letter), mas **nada nunca escreveu nela e nada nunca leu dela**. Todo o sistema (automação, cadência) sempre disparou por chamada direta de função no ponto exato da mudança de domínio (`dispararAutomacoes(gatilho, ctx)`), nunca por evento publicado/consumido. Marcado como o gap arquitetural 🔴 de maior prioridade antes de qualquer congelamento.
