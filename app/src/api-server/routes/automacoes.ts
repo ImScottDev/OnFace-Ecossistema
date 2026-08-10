@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { db } from "@/lib/db";
-import { automacoes } from "@/lib/db/schema";
-import { eq, and, desc } from "drizzle-orm";
+import { automacoes, automacaoExecucoes } from "@/lib/db/schema";
+import { eq, and, desc, sql } from "drizzle-orm";
 import { z } from "zod";
 import { getCtx } from "../compat.js";
 
@@ -125,6 +125,28 @@ app.post("/", async (c) => {
     console.error("Error creating automacao:", error);
     return c.json({ error: "Erro interno" }, 500);
   }
+});
+
+// GET /automacoes/execucoes-resumo — total + última execução por regra
+// (mapa automacaoId -> {total, ultima}). PRECISA vir antes de /:id (Hono
+// trataria "execucoes-resumo" como :id senão, mesmo padrão de outras rotas).
+app.get("/execucoes-resumo", async (c) => {
+  const ctx = await getCtx(c);
+
+  const rows = await db
+    .select({
+      automacaoId: automacaoExecucoes.automacaoId,
+      total: sql<number>`count(*)`,
+      ultima: sql<Date>`max(${automacaoExecucoes.executedAt})`,
+    })
+    .from(automacaoExecucoes)
+    .where(eq(automacaoExecucoes.organizacaoId, ctx.organizacaoId))
+    .groupBy(automacaoExecucoes.automacaoId);
+
+  const resumo: Record<string, { total: number; ultima: Date }> = {};
+  for (const r of rows) resumo[r.automacaoId] = { total: Number(r.total), ultima: r.ultima };
+
+  return c.json(resumo);
 });
 
 // GET /automacoes/:id
