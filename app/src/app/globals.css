@@ -62,6 +62,87 @@
   --font-mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   CRM 2.0 — Theme System (App Shell novo, 09/08)
+   ═══════════════════════════════════════════════════════════════
+   Achado real ao migrar pro Figma: o app inteiro usa cor hardcoded
+   direto no JSX (rgba(255,255,255,0.0X)/text-white/50 etc), não os
+   tokens acima — só uma casca de var() é realmente referenciada.
+   Pra não repetir isso na V2 (pedido explícito do Kauã: "quero que
+   dark entre depois sem reconstruir componente"), todo componente
+   NOVO do CRM 2.0 usa SÓ as variáveis abaixo, nunca cor literal.
+
+   Escopo: só dentro de [data-cf2-theme] — nenhuma tela legada é
+   afetada (elas nem sabem que isso existe). Quando "dark" for
+   implementado, é só adicionar um bloco
+   [data-cf2-theme="dark"] { ...mesmas variáveis, valores diferentes... }
+   — zero componente muda.
+   ═══════════════════════════════════════════════════════════════ */
+[data-cf2-theme="light"] {
+  /* Superfícies */
+  --cf2-bg-page: #fafafa;
+  --cf2-bg-canvas: #f8fafc;
+  --cf2-bg-surface: #ffffff;
+  --cf2-bg-surface-muted: #f3f4f6;
+  --cf2-bg-surface-subtle: #f8fafc;
+  --cf2-bg-inverse: #111827;
+
+  /* Bordas */
+  --cf2-border-default: #e5e7eb;
+  --cf2-border-grid: rgba(217, 222, 229, 0.4);
+
+  /* Texto */
+  --cf2-text-primary: #111827;
+  --cf2-text-secondary: #4b5563;
+  --cf2-text-tertiary: #9ca3af;
+  --cf2-text-on-accent: #0f172a;
+  --cf2-text-on-inverse: #ffffff;
+
+  /* Marca/accent (lima Figma — distinto do carmim do style guide antigo,
+     decisão explícita do Kauã: Figma é o contrato visual da V2) */
+  --cf2-accent: #aaff00;
+  --cf2-accent-border: #88d600;
+  --cf2-accent-bg-subtle: #f3f4f6;
+
+  /* Semânticas */
+  --cf2-success-text: #15803d;
+  --cf2-success-bg: #dcfce7;
+  --cf2-success-fill: #09ba2a;
+  --cf2-warning-text: #f59e0b;
+  --cf2-warning-bg: #fffbeb;
+  --cf2-warning-border: #fef3c7;
+  --cf2-danger-text: #e53333;
+  --cf2-danger-border: #e53333;
+
+  /* Paleta de avatar (ciclo determinístico por índice, não semântico) */
+  --cf2-avatar-1: #aaff00;
+  --cf2-avatar-2: #34d399;
+  --cf2-avatar-3: #ff6b8a;
+  --cf2-avatar-4: #f59e0b;
+  --cf2-avatar-5: #60a5fa;
+
+  /* Sombras */
+  --cf2-shadow-shell: -4px 0px 16px 0px rgba(0, 0, 0, 0.08);
+  --cf2-shadow-card-sm: 0px 4px 8px 0px rgba(0, 0, 0, 0.04);
+  --cf2-shadow-card-md: 0px 4px 16px 0px rgba(0, 0, 0, 0.04);
+
+  /* Radius */
+  --cf2-radius-sm: 8px;
+  --cf2-radius-md: 12px;
+  --cf2-radius-lg: 16px;
+  --cf2-radius-xl: 24px;
+  --cf2-radius-full: 9999px;
+
+  /* Tipografia */
+  --cf2-font-heading: var(--font-cf2-heading), system-ui, sans-serif;
+  --cf2-font-nav: var(--font-cf2-nav), system-ui, sans-serif;
+  --cf2-font-ui: var(--font-cf2-ui), system-ui, sans-serif;
+
+  background: var(--cf2-bg-page);
+  color: var(--cf2-text-primary);
+  font-family: var(--cf2-font-ui);
+}
+
 body {
   background: var(--bg-primary);
   color: var(--text-primary);

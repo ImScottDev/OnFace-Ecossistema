@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Noto_Sans, Poppins } from "next/font/google";
+import { Noto_Sans, Poppins, Manrope, Geist, Inter } from "next/font/google";
 import "./globals.css";
 
 // Noto Sans (UI/body) + Poppins (display/headings — decisão Scott 18/jun, no lugar do Kanit).
@@ -11,6 +11,27 @@ const notoSans = Noto_Sans({
 
 const poppins = Poppins({
   variable: "--font-heading",
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+});
+
+// CRM 2.0 (novo App Shell, tema claro — contrato visual do Figma, 09/08):
+// tipografia própria da V2, desacoplada do style guide antigo (Kanit/Noto).
+// Só adiciona variável CSS nova — não toca nada usado pelas telas legadas.
+const manrope = Manrope({
+  variable: "--font-cf2-heading",
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700", "800"],
+});
+
+const geist = Geist({
+  variable: "--font-cf2-nav",
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+});
+
+const inter = Inter({
+  variable: "--font-cf2-ui",
   subsets: ["latin"],
   weight: ["400", "500", "600", "700"],
 });
@@ -42,7 +63,7 @@ export default function RootLayout({
   return (
     <html lang="pt-BR">
       <body
-        className={`${notoSans.variable} ${poppins.variable} antialiased`}
+        className={`${notoSans.variable} ${poppins.variable} ${manrope.variable} ${geist.variable} ${inter.variable} antialiased`}
       >
         {children}
       </body>

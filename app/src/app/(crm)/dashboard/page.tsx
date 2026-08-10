@@ -4,7 +4,7 @@ import { count, eq, sql, and, gte, lte, desc, or, isNull, notInArray, inArray } 
 import { getPipelineConfig } from "@/lib/crm/getPipelineConfig";
 import { getTenantContext } from "@/lib/auth/tenant";
 import { isAdminView, isPersonalView, isReader } from "@/lib/auth/roles";
-import { getMetasDoUsuario, getRealizadoMeta, getMetaComercialAgregada, metaTipoPorPapel, type MetaTipo } from "@/lib/metas";
+import { getMetasDoUsuario, getRealizadoMeta, getMetaComercialAgregada, getMetasPorVendedor, metaTipoPorPapel, type MetaTipo } from "@/lib/metas";
 import { META_LABELS } from "@/lib/metas-shared";
 import { MetaProgress } from "@/app/(crm)/relatorios/components/MetaProgress";
 import Link from "next/link";
@@ -289,33 +289,6 @@ async function getDashboardData(organizacaoId: string, userId: string, role: str
     pipelineMrr,
     ultimasAtividades,
   };
-}
-
-/** Metas do mês corrente de todos os vendedores ativos (closer/sdr) da org — bloco do gestor. */
-async function getMetasPorVendedor(organizacaoId: string) {
-  const now = new Date();
-  const periodo = new Date(now.getFullYear(), now.getMonth(), 1);
-  const vendedores = await db
-    .select({ id: usuarios.id, nome: usuarios.nome, role: usuarios.role })
-    .from(usuarios)
-    .where(and(
-      eq(usuarios.organizacaoId, organizacaoId),
-      eq(usuarios.ativo, true),
-      inArray(usuarios.role, ["closer", "sdr", "vendedor"]),
-    ))
-    .orderBy(usuarios.nome);
-
-  return Promise.all(vendedores.map(async (u) => {
-    const tipo = metaTipoPorPapel(u.role);
-    const [metasUsuario, realizado] = await Promise.all([
-      getMetasDoUsuario(organizacaoId, u.id, periodo),
-      getRealizadoMeta(organizacaoId, u.id, periodo, tipo),
-    ]);
-    const metaRow = metasUsuario.find((m) => m.tipo === tipo);
-    const valorAlvo = metaRow ? parseFloat(String(metaRow.valorAlvo)) || 0 : 0;
-    const pct = valorAlvo > 0 ? Math.round((realizado / valorAlvo) * 100) : 0;
-    return { id: u.id, nome: u.nome, role: u.role, tipo, valorAlvo, realizado, pct };
-  }));
 }
 
 function fmtMeta(tipo: string, v: number): string {
