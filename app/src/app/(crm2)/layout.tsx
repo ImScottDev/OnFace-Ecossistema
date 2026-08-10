@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { Providers } from "@/components/crm/Providers";
 import { Cf2Sidebar } from "@/components/crm2/Sidebar";
 import { Cf2CarolWidget } from "@/components/crm2/carol/Widget";
+import { Cf2ThemeRoot } from "@/components/crm2/ThemeRoot";
 
 export const dynamic = "force-dynamic";
 
@@ -34,6 +35,7 @@ export default async function Crm2Layout({ children }: { children: React.ReactNo
 
   return (
     <Providers session={session} variant="cf2">
+      <Cf2ThemeRoot />
       <div className="flex h-dvh overflow-hidden" data-cf2-theme="light">
         <Cf2Sidebar />
         <main
