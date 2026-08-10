@@ -66,6 +66,7 @@ const CONFIG: NavItem[] = [{ label: "Ajustes", href: "/configuracoes", icon: Set
 // (fica/migra/substitui/descontinua) é passo futuro, registrado em
 // RECONSTRUCTION_STATE.md.
 const LEGADO: NavItem[] = [
+  { label: "Contatos (antigo)", href: "/contatos-legado", icon: Users },
   { label: "Carteira", href: "/carteira", icon: Wallet },
   { label: "Financeiro", href: "/financeiro", icon: Landmark },
   { label: "Contratos", href: "/contratos", icon: FileSignature },

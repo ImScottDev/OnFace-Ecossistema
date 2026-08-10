@@ -574,4 +574,24 @@ Quarto módulo do CRM 2.0: motor de prioridade heurístico (`lib/carol/priority-
 
 **Validado com Playwright**: abrir o painel mostra saudação contextual real; clicar em cada uma das 7 ações populares uma resposta real (ex: reunião real "nao sei ein" aparecendo dentro da bolha da Carol); `tsc --noEmit` limpo. Nota: durante a validação a sessão de browser automatizada apresentou instabilidade de navegação (cliques antigos "vazando" pra páginas diferentes após uma sessão muito longa de testes) — diagnosticado como artefato do ambiente de teste (Playwright + dev server sobrecarregado), não bug da aplicação; confirmado repetindo a interação com refs frescos, que funcionou corretamente todas as vezes.
 
+## Contatos & Empresas (V1 lista, 5 nós do Figma, 10/08)
+
+Quinto módulo do CRM 2.0. Análise prévia (mesmo padrão de sempre) cruzou os 5 designs do Figma com o domain model real antes de implementar — investigação dedicada (relatório completo salvo na sessão) encontrou vários achados importantes:
+
+**"Pessoa" não é uma tabela única**: cada linha vem de `leads` com `tipo IN ('contato','lead','cliente')` — existe uma tabela `pessoas` (Schema V2, dual-write best-effort ~99% sincronizado) mas a fonte de verdade em produção até a F8 continua sendo `leads` (mesma leitura que a página legada `/contatos` já fazia). Implementado lendo de `leads` direto, sem inventar uma segunda fonte.
+
+**"Relacionamento" (Cliente/Qualificado/Lead) não existe como campo**: regra aplicada (documentada no código, `api-server/routes/contatos-crm2.ts`): Cliente se a empresa tem qualquer pessoa com `tipo='cliente'`; Qualificado se tem negócio ativo (fora de ganho/perdido) vinculado; Lead nos demais casos. Essa é a melhor aproximação real disponível hoje (a única fonte real de "Qualificado" no sistema inteiro é uma coluna derivada do board SDR) — **fica marcado para o Kauã confirmar ou ajustar a regra**, não foi inventado do nada, mas também não é um campo explícito.
+
+**Agregação de negócios por empresa não existia em nenhuma rota**: achado real — 23% dos negócios têm `empresaId` nulo mas 100% têm `leadId` preenchido. Corrigido somando `negocios.empresaId` OU (quando nulo) o `empresaId` do lead vinculado via `negocios.leadId`, sem duplicar.
+
+**MRR/Meta/Pipeline removidos da tela** — 2 dos 5 designs do Figma traziam a hero-metrics-bar do Command Center (MRR Atual/Meta do Mês/Pipeline Ativo), que o próprio Kauã apontou como "coisas nada a ver pra essa seção". Substituído pelo KPI strip real e relevante ao domínio (Total de Pessoas/Leads/Contatos/Clientes/Empresas), presente nos outros 3 designs — contagens 100% reais (3164/1030/1894/240/1559 hoje).
+
+**Colisão de rota resolvida**: `/contatos` já existia no `(crm)` legado (lista + `/contatos/[id]`). Como o próprio Sidebar novo já apontava `/contatos` direto pro CRM 2.0 desde 09/08 ("pra quem já tem tela nova, aponta direto"), a página de LISTA legada foi movida pra `/contatos-legado` (preservada, reversível via git, adicionada na seção Legado do menu) — a página de DETALHE `/contatos/[id]` não foi tocada (usada por vários pontos do CRM antigo: dashboard, CommandPalette, sidebar legado).
+
+**Implementado**: `api-server/routes/contatos-crm2.ts` (3 endpoints: `/kpis`, `/empresas`, `/pessoas`, todos com agregação real via SQL — pessoas por empresa, negócios com fallback de empresaId, última atividade/interação real via `MAX(atividades.created_at)`, próxima atividade via `MIN(tarefas.data_vencimento)` pendente); `components/crm2/contatos/Workspace.tsx` (abas Pessoas/Empresas, busca, filtro por tipo, paginação, tabelas reais).
+
+**Não implementado ainda / próximos passos**: Quick View lateral (portar `LeadDrawer.tsx` legado pro visual `--cf2-*`), modal "+ Nova Pessoa" com criar-empresa-inline, seleção múltipla com barra de ações em massa (o legado já tem esse padrão em `/contatos-legado`, é portar as ações certas). Linhas hoje linkam pra `/empresas/:id` (empresa, real) e `/contatos-legado/:id` (pessoa, real, mas ainda no tema antigo) até o Quick View existir.
+
+**Validado com Playwright**: KPIs reais renderizando, troca de aba Pessoas/Empresas funcional, busca real filtrando (27 resultados pra "Callface"), badges de relacionamento corretos (Cliente/Qualificado/Lead) com dado de produção. `tsc --noEmit` limpo.
+
 **Validado com Playwright**: Mês (grid real, hoje destacado), Equipe (11 membros reais, status "Outlook conectado"/"Só CRM" correto por pessoa, zero erro de console), typecheck limpo em todas as etapas.
