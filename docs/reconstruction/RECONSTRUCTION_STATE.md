@@ -704,3 +704,9 @@ Auditoria antes de construir de novo: `NegocioDrawer.tsx` já tinha uma seção 
 ### Pendente pra próxima rodada
 
 Reskin do detalhe/edição de proposta existente (`[id]`) — visual apenas, lógica já funciona. Página pública (`/p/[id]`) fica como está — Kauã disse que vai mandar uma referência visual própria antes de eu iterar de novo nela.
+
+## Automação real: lembrete de reunião 30min antes via WhatsApp
+
+Pedido explícito do mandato inicial de Automações. Não passa pelo motor de automações (`automacao-engine.ts` é por evento síncrono, não por horário) — é sweep periódico no worker (`lembrete-reuniao-30min`, a cada 5min, mesmo padrão de `event-outbox-sweep`/`cadence-sweep`), buscando reuniões `agendada` com `data` entre agora+25min e agora+35min sem `lembrete30minEnviadoEm` ainda. Mensagem personalizada (nome do lead/responsável/horário/link) via `whatsappOutgoingQueue`, mesma fila real do resto do sistema — sem mecanismo paralelo.
+
+**Testado ponta a ponta até o limite do ambiente**: reunião real criada (+30min), query da janela/dedup/personalização/fila confirmados certos via teste isolado. O envio de fato falhou por infra ausente no dev local (`ENOTFOUND callface-crm-wuzapi` — o gateway WhatsApp real não está rodando/alcançável fora do docker-compose completo) — mesma classe de limitação já documentada pro Stripe, não bug de lógica. Dado de teste removido depois.
