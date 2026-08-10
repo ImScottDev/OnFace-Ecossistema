@@ -87,7 +87,7 @@ export default function PropostasPage() {
           <h1 className="text-2xl font-bold text-white">Propostas</h1>
           <p className="text-[12px] text-white/40 hidden sm:block">Formalize condições comerciais e acompanhe aceites. Cada proposta pode ter múltiplas versões.</p>
         </div>
-        <Link href="/propostas/nova" className="flex items-center gap-2 px-4 py-2 btn-primary rounded-lg text-sm font-medium transition-colors w-fit">
+        <Link href="/propostas/novo" className="flex items-center gap-2 px-4 py-2 btn-primary rounded-lg text-sm font-medium transition-colors w-fit">
           <Plus className="w-4 h-4" /> Nova Proposta
         </Link>
       </div>

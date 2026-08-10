@@ -692,7 +692,7 @@ export function LeadDrawer({ leadId, open, onClose, onOpenEmpresa, onOpenNegocio
                 <h4 className="text-[11px] font-medium text-white/30 uppercase tracking-wider">
                   Propostas ({leadDetail.propostas.length})
                 </h4>
-                <Link href={`/propostas/nova?leadId=${leadId}`} className="text-[10px] text-purple-400 hover:text-purple-300 transition-colors">
+                <Link href={`/propostas/novo?leadId=${leadId}`} className="text-[10px] text-purple-400 hover:text-purple-300 transition-colors">
                   + Nova
                 </Link>
               </div>

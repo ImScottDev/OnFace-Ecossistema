@@ -552,7 +552,7 @@ export default function LeadDetailPage() {
             <div className="rounded-xl bg-white/[0.03] border border-white/[0.06] p-4 space-y-3">
               <div className="flex items-center justify-between">
                 <h2 className="text-sm font-medium text-white/50">Propostas</h2>
-                <Link href={`/propostas/nova?leadId=${lead.id}`} className="text-[10px] text-purple-400 hover:text-purple-300">+ Nova</Link>
+                <Link href={`/propostas/novo?leadId=${lead.id}`} className="text-[10px] text-purple-400 hover:text-purple-300">+ Nova</Link>
               </div>
               {leadPropostas.map((p: Record<string, unknown>) => {
                 const statusColors: Record<string, string> = { rascunho: "#6B7280", enviada: "#3B82F6", aceita: "#10B981", recusada: "#EF4444", expirada: "#F59E0B" };
