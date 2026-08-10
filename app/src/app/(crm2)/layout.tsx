@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth/config";
 import { redirect } from "next/navigation";
 import { Providers } from "@/components/crm/Providers";
 import { Cf2Sidebar } from "@/components/crm2/Sidebar";
+import { Cf2CarolWidget } from "@/components/crm2/carol/Widget";
 
 export const dynamic = "force-dynamic";
 
@@ -52,6 +53,7 @@ export default async function Crm2Layout({ children }: { children: React.ReactNo
               alto que isso (ex: /inicio), então não quebra nada existente. */}
           <div className="p-6 flex flex-col gap-5 relative h-full min-h-0">{children}</div>
         </main>
+        <Cf2CarolWidget />
       </div>
     </Providers>
   );
