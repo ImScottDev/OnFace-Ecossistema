@@ -566,13 +566,22 @@ export const contratos = pgTable(
     inicio: date("inicio"),
     vencimento: date("vencimento"),
     renovacaoAuto: boolean("renovacao_auto").default(true),
-    status: text("status").default("ativo").notNull(), // ativo | pausado | concluido | churned | cancelado | renovado
+    status: text("status").default("ativo").notNull(), // ativo | pausado | concluido | churned | cancelado | renovado | pendente_assinatura
     notas: text("notas"),
     motivoChurn: text("motivo_churn"),
     finalizadoAt: timestamp("finalizado_at", { withTimezone: true }),
     zohoId: text("zoho_id"),
     stripeSubscriptionId: text("stripe_subscription_id"),
     produto: text("produto"), // ai | pabx
+    // Aceite eletrônico simples (não é assinatura digital qualificada — não
+    // existe integração real ainda, ex: DocuSign/Clicksign; ver
+    // crm2-decisoes-pendentes.md). Guarda nome/IP/timestamp de quem clicou
+    // "concordo com os termos" na página pública, pra dar rastreabilidade
+    // honesta enquanto a integração de verdade não é decidida.
+    assinaturaStatus: text("assinatura_status").default("nao_aplicavel").notNull(), // nao_aplicavel | pendente | aceite_simples
+    assinadoEm: timestamp("assinado_em", { withTimezone: true }),
+    assinadoNome: text("assinado_nome"),
+    assinadoIp: text("assinado_ip"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
@@ -998,6 +1007,17 @@ export const servicosCatalogo = pgTable(
     valorSugerido: decimal("valor_sugerido", { precision: 12, scale: 2 }),
     unidade: text("unidade").default("mensal").notNull(), // mensal, hora, unidade, projeto
     stripeProductId: text("stripe_product_id"), // associação ao Produto do Stripe (checkout usa o produto real + preço da proposta)
+    // Categoria comercial real (ex: "callface_ai", "pabx") — livre, não enum de
+    // banco: nasce só com o que existe de fato no catálogo, cresce conforme
+    // produtos novos entram. Usada pra agrupar o builder de proposta por
+    // categoria E pra derivar o próximo passo comercial (ver requerContrato).
+    categoria: text("categoria"),
+    // Regra comercial explícita, não inferida do nome/categoria: alguns itens
+    // exigem formalização contratual (assinatura) antes do pagamento (ex:
+    // PABX), outros vão direto pro pagamento (ex: Callface AI). Fica no
+    // catálogo pra ser extensível sem tocar em código — ver
+    // lib/crm/proposta-fluxo.ts (determinarProximoPasso).
+    requerContrato: boolean("requer_contrato").default(false).notNull(),
     ativo: boolean("ativo").default(true).notNull(),
     ordem: integer("ordem").default(0).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -1034,6 +1054,20 @@ export const propostas = pgTable(
     checkoutUrl: text("checkout_url"),
     stripeSessionId: text("stripe_session_id"),
     enviadaEm: timestamp("enviada_em", { withTimezone: true }),
+    // Próximo passo comercial real, derivado dos itens no envio (ver
+    // determinarProximoPasso) — não recalculado na UI, decide o que a página
+    // pública mostra depois do aceite: ir pro checkout Stripe (pagamento) ou
+    // pro fluxo de contrato/assinatura (contrato).
+    proximoPasso: text("proximo_passo"), // pagamento | contrato
+    visualizacoes: integer("visualizacoes").default(0).notNull(),
+    primeiraVisualizacaoEm: timestamp("primeira_visualizacao_em", { withTimezone: true }),
+    ultimaVisualizacaoEm: timestamp("ultima_visualizacao_em", { withTimezone: true }),
+    // Momento em que o cliente respondeu na página pública (aceitar/recusar/
+    // ajuste) — distinto de "aceita" no status: pro fluxo de pagamento, o
+    // aceite comercial de verdade só vira Won quando o pagamento confirma
+    // (ADR-EXEC-007); isso aqui é só "o cliente reagiu à proposta".
+    clienteRespondeuEm: timestamp("cliente_respondeu_em", { withTimezone: true }),
+    motivoRecusa: text("motivo_recusa"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },

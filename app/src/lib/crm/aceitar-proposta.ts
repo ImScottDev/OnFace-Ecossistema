@@ -15,6 +15,7 @@ import { notificarNegocioGanho } from "@/lib/crm/notificar";
 import { syncPessoaFromLead, syncOportunidadeFromNegocio } from "@/lib/crm/sync-domain-model";
 import { registrarEvidencia } from "@/lib/crm/won-evidence";
 import { avaliarContratosAtivosDuplicados, marcarContratoComoRenovado } from "@/lib/crm/contrato-duplicidade";
+import { determinarProdutoProposta } from "@/lib/crm/proposta-fluxo";
 
 type PropostaRow = typeof propostas.$inferSelect;
 
@@ -69,6 +70,11 @@ export async function marcarPropostaAceita(opts: {
 
   const servicoNomes = itens.map((i) => i.nome);
   const today = new Date().toISOString().split("T")[0];
+  // Derivado dos itens reais (categoria do catálogo), não mais hardcoded —
+  // achado da auditoria de 10/08: TODO ponto de criação de contrato forçava
+  // produto="ai" mesmo em venda PABX. Esse caminho (aceite via pagamento
+  // Stripe) é hoje só usado por Callface AI na prática, mas fica correto.
+  const produto = await determinarProdutoProposta(itens);
 
   const [contrato] = await db
     .insert(contratos)
@@ -84,9 +90,7 @@ export async function marcarPropostaAceita(opts: {
       servicos: servicoNomes,
       inicio: today,
       status: "ativo",
-      // Venda via proposta/checkout é sempre do produto AI — sem isso o contrato
-      // nasce com produto NULL e some da aba Financeiro (filtro produto='ai').
-      produto: "ai",
+      produto,
     })
     .returning();
 
@@ -103,7 +107,7 @@ export async function marcarPropostaAceita(opts: {
   // só registra em audit_log pra revisão humana (best-effort, não bloqueia
   // o aceite real da proposta).
   try {
-    const antigos = await avaliarContratosAtivosDuplicados(proposta.leadId, "ai", organizacaoId, contrato.id);
+    const antigos = await avaliarContratosAtivosDuplicados(proposta.leadId, produto, organizacaoId, contrato.id);
     for (const antigo of antigos) {
       if (antigo.classificacao === "obsoleto_confirmado") {
         await marcarContratoComoRenovado(antigo.contrato.id, contrato.id);

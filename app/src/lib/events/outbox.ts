@@ -23,12 +23,16 @@ export type EventoDominio =
   | "StageChanged"
   | "DealWon"
   | "DealLost"
-  | "CustomerCreated";
+  | "CustomerCreated"
+  | "ProposalSent"
+  | "ProposalViewed"
+  | "ProposalAccepted"
+  | "ProposalRejected";
 
 export interface PublicarEventoOpts {
   organizacaoId: string;
   eventType: EventoDominio;
-  aggregateType: "lead" | "negocio" | "contrato";
+  aggregateType: "lead" | "negocio" | "contrato" | "proposta";
   aggregateId: string;
   payload: Record<string, unknown>;
   correlationId?: string;
