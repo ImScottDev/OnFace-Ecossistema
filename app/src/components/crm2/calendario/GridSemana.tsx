@@ -1,12 +1,12 @@
 "use client";
 
-import { diasDaSemana, isHoje, mesmaData, posicaoNaTimeline, HORA_INICIO, HORA_FIM } from "./dateUtils";
-import { Evento, fmtHora } from "./types";
+import { diasDaSemana, isHoje, mesmaData, posicaoFaixaHorario, bloqueioNoDia, posicaoNaTimeline, HORA_INICIO, HORA_FIM } from "./dateUtils";
+import { Evento, fmtHora, Disponibilidade } from "./types";
 
 const DIAS_SEMANA = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"];
 const HORAS = Array.from({ length: HORA_FIM - HORA_INICIO }, (_, i) => HORA_INICIO + i);
 
-export function Cf2GridSemana({ referencia, eventos, onSelecionar }: { referencia: Date; eventos: Evento[]; onSelecionar: (e: Evento) => void }) {
+export function Cf2GridSemana({ referencia, eventos, disponibilidade, onSelecionar }: { referencia: Date; eventos: Evento[]; disponibilidade?: Disponibilidade | null; onSelecionar: (e: Evento) => void }) {
   const dias = diasDaSemana(referencia);
 
   return (
@@ -34,9 +34,18 @@ export function Cf2GridSemana({ referencia, eventos, onSelecionar }: { referenci
           </div>
           {dias.map((dia, di) => {
             const evsDoDia = eventos.filter((e) => mesmaData(new Date(e.data), dia));
+            const trabalhaNoDia = !disponibilidade?.horarioTrabalho || disponibilidade.horarioTrabalho.diasSemana.includes(dia.getDay());
+            const almoco = trabalhaNoDia && disponibilidade?.pausaAlmoco ? posicaoFaixaHorario(disponibilidade.pausaAlmoco.inicio, disponibilidade.pausaAlmoco.fim) : null;
+            const bloqueiosDoDia = (disponibilidade?.bloqueios ?? []).map((b) => ({ b, pos: bloqueioNoDia(b, dia) })).filter((x) => x.pos);
             return (
               <div key={di} className="relative" style={{ borderLeft: "1px solid var(--cf2-border-default)" }}>
                 {HORAS.map((h) => <div key={h} className="h-16" style={{ borderBottom: "1px solid var(--cf2-border-default)" }} />)}
+                {almoco && (
+                  <div className="absolute left-0 right-0" style={{ top: `${almoco.top}%`, height: `${almoco.altura}%`, background: "repeating-linear-gradient(45deg, var(--cf2-bg-surface-muted) 0, var(--cf2-bg-surface-muted) 5px, transparent 5px, transparent 10px)" }} />
+                )}
+                {bloqueiosDoDia.map(({ b, pos }) => pos && (
+                  <div key={b.id} className="absolute left-0 right-0" style={{ top: `${pos.top}%`, height: `${pos.altura}%`, background: "repeating-linear-gradient(45deg, var(--cf2-bg-surface-muted) 0, var(--cf2-bg-surface-muted) 5px, transparent 5px, transparent 10px)" }} />
+                ))}
                 {evsDoDia.map((ev) => {
                   const { top, altura } = posicaoNaTimeline(ev.data, ev.duracao);
                   return (

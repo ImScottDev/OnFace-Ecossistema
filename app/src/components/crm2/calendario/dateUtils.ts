@@ -79,6 +79,35 @@ export function navegar(view: string, ref: Date, direcao: 1 | -1): Date {
   return r;
 }
 
+/** Posição de uma faixa "HH:MM"–"HH:MM" (ex: almoço) na timeline, em % */
+export function posicaoFaixaHorario(horaInicio: string, horaFim: string) {
+  const [hi, mi] = horaInicio.split(":").map(Number);
+  const [hf, mf] = horaFim.split(":").map(Number);
+  const totalMinutos = (HORA_FIM - HORA_INICIO) * 60;
+  const inicioMin = (hi - HORA_INICIO) * 60 + mi;
+  const fimMin = (hf - HORA_INICIO) * 60 + mf;
+  const top = Math.max(0, Math.min(100, (inicioMin / totalMinutos) * 100));
+  const altura = Math.max(0, Math.min(100 - top, ((fimMin - inicioMin) / totalMinutos) * 100));
+  return { top, altura };
+}
+
+/** Bloqueio real (closer_bloqueios) que cobre o dia — pode ser dia inteiro ou parcial */
+export function bloqueioNoDia(bloqueio: { inicio: string; fim: string }, dia: Date) {
+  const inicio = new Date(bloqueio.inicio);
+  const fim = new Date(bloqueio.fim);
+  const inicioDia = inicioDoDia(dia);
+  const fimDia = fimDoDia(dia);
+  if (fim < inicioDia || inicio > fimDia) return null;
+  const efetivoInicio = inicio < inicioDia ? inicioDia : inicio;
+  const efetivoFim = fim > fimDia ? fimDia : fim;
+  const totalMinutos = (HORA_FIM - HORA_INICIO) * 60;
+  const inicioMin = Math.max(0, (efetivoInicio.getHours() - HORA_INICIO) * 60 + efetivoInicio.getMinutes());
+  const fimMin = Math.min(totalMinutos, (efetivoFim.getHours() - HORA_INICIO) * 60 + efetivoFim.getMinutes());
+  const top = Math.max(0, Math.min(100, (inicioMin / totalMinutos) * 100));
+  const altura = Math.max(2, Math.min(100 - top, ((fimMin - inicioMin) / totalMinutos) * 100));
+  return { top, altura, diaInteiro: inicio <= inicioDia && fim >= fimDia };
+}
+
 /** Posição vertical de um evento na timeline HORA_INICIO–HORA_FIM, em % */
 export function posicaoNaTimeline(dataISO: string, duracaoMin: number | null) {
   const d = new Date(dataISO);

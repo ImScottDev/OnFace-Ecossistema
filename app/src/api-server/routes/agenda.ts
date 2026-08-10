@@ -5,7 +5,7 @@ import { and, eq, gte, asc } from "drizzle-orm";
 import { z } from "zod";
 import { getCtx } from "../compat.js";
 import { getFullAvailability, formatSlotLabel, getFilaClosers } from "@/lib/crm/agenda-closers";
-import { getBusyTimes } from "@/lib/email/microsoft";
+import { getBusyTimes, createOutlookEvent, deleteOutlookEvent } from "@/lib/email/microsoft";
 
 // Agenda nativa das closers (self-service). Alimenta o mesmo horário/pausa/bloqueio
 // que o Agente SDR lê em getAvailableSlots (lib/crm/agenda-closers.ts) — sem isso
@@ -119,6 +119,28 @@ app.post("/bloqueios", async (c) => {
     })
     .returning();
 
+  // Bloqueio também ocupa o Outlook real do closer, se conectado (best-effort,
+  // nunca falha a criação do bloqueio no CRM — mesma disciplina do resto).
+  try {
+    const [conta] = await db
+      .select({ id: emailContas.id })
+      .from(emailContas)
+      .where(and(eq(emailContas.usuarioId, ctx.userId), eq(emailContas.tipo, "microsoft"), eq(emailContas.syncStatus, "active")))
+      .limit(1);
+    if (conta) {
+      const evento = await createOutlookEvent({
+        contaId: conta.id,
+        titulo: parsed.data.motivo || "Bloqueio de agenda",
+        inicioISO: inicio.toISOString(),
+        fimISO: fim.toISOString(),
+        semTeams: true,
+      });
+      await db.update(closerBloqueios).set({ outlookEventId: evento.eventId }).where(eq(closerBloqueios.id, bloqueio.id));
+    }
+  } catch (e) {
+    console.error(`[Agenda] falha ao criar bloqueio no Outlook (bloqueio ${bloqueio.id}):`, e);
+  }
+
   return c.json({ bloqueio });
 });
 
@@ -126,6 +148,23 @@ app.post("/bloqueios", async (c) => {
 app.delete("/bloqueios/:id", async (c) => {
   const ctx = await getCtx(c);
   const id = c.req.param("id");
+
+  const [bloqueio] = await db.select({ outlookEventId: closerBloqueios.outlookEventId })
+    .from(closerBloqueios)
+    .where(and(eq(closerBloqueios.id, id), eq(closerBloqueios.usuarioId, ctx.userId)))
+    .limit(1);
+
+  if (bloqueio?.outlookEventId) {
+    try {
+      const [conta] = await db.select({ id: emailContas.id }).from(emailContas)
+        .where(and(eq(emailContas.usuarioId, ctx.userId), eq(emailContas.tipo, "microsoft"), eq(emailContas.syncStatus, "active")))
+        .limit(1);
+      if (conta) await deleteOutlookEvent(conta.id, bloqueio.outlookEventId);
+    } catch (e) {
+      console.error(`[Agenda] falha ao cancelar bloqueio no Outlook (${id}):`, e);
+    }
+  }
+
   await db
     .delete(closerBloqueios)
     .where(and(eq(closerBloqueios.id, id), eq(closerBloqueios.usuarioId, ctx.userId)));

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { X, Search } from "lucide-react";
-import { Evento } from "./types";
+import { Evento, Disponibilidade } from "./types";
 
 const TIPOS = [
   { key: "video", label: "Reunião" },
@@ -11,7 +11,7 @@ const TIPOS = [
   { key: "presencial", label: "Presencial" },
 ];
 
-type LeadResultado = { id: string; nome: string; email: string | null; empresa: string | null; negocioAtivoId: string | null };
+export type LeadResultado = { id: string; nome: string; email: string | null; empresa: string | null; negocioAtivoId: string | null };
 
 const OUTLOOK_MOTIVO_LABEL: Record<string, string> = {
   closer_sem_outlook: "Evento criado no CRM, mas não gerou link e não foi enviado pro cliente — conecte seu e-mail Microsoft em Configurações para ter a experiência completa.",
@@ -21,20 +21,35 @@ const OUTLOOK_MOTIVO_LABEL: Record<string, string> = {
 };
 
 export function Cf2NovoEventoModal({
-  dataInicial, eventosDoDia, onClose, onCriado,
+  dataInicial, eventosDoDia = [], leadPreSelecionado = null, tituloInicial = "", onClose, onCriado,
 }: {
-  dataInicial: Date; eventosDoDia: Evento[]; onClose: () => void; onCriado: () => void;
+  dataInicial: Date;
+  eventosDoDia?: Evento[];
+  /** Vem de fora (ex: Atendimento) quando o lead já é conhecido — pula a busca. */
+  leadPreSelecionado?: LeadResultado | null;
+  tituloInicial?: string;
+  onClose: () => void;
+  onCriado: () => void;
 }) {
   const queryClient = useQueryClient();
   const [tipo, setTipo] = useState("video");
-  const [titulo, setTitulo] = useState("");
+  const [titulo, setTitulo] = useState(tituloInicial);
   const [data, setData] = useState(dataInicial.toISOString().slice(0, 10));
   const [horaInicio, setHoraInicio] = useState("14:00");
   const [horaFim, setHoraFim] = useState("15:00");
   const [buscaLead, setBuscaLead] = useState("");
-  const [leadSelecionado, setLeadSelecionado] = useState<LeadResultado | null>(null);
+  const [leadSelecionado, setLeadSelecionado] = useState<LeadResultado | null>(leadPreSelecionado);
   const [observacoes, setObservacoes] = useState("");
   const [resultado, setResultado] = useState<{ criado: boolean; motivo: string | null } | null>(null);
+
+  const { data: disponibilidade } = useQuery<Disponibilidade>({
+    queryKey: ["cf2-cal-disponibilidade-modal", data],
+    queryFn: async () => {
+      const res = await fetch(`/api/calendario/disponibilidade?from=${data}T00:00:00.000Z&to=${data}T23:59:59.999Z`);
+      if (!res.ok) return { horarioTrabalho: null, pausaAlmoco: null, bloqueios: [] };
+      return res.json();
+    },
+  });
 
   const { data: leadsBusca } = useQuery({
     queryKey: ["cf2-cal-buscar-leads", buscaLead],
@@ -57,6 +72,20 @@ export function Cf2NovoEventoModal({
     const evInicio = new Date(ev.data).getTime();
     const evFim = evInicio + (ev.duracao || 30) * 60000;
     return inicioDate.getTime() < evFim && evInicio < fimDate.getTime();
+  });
+
+  const trabalhaNoDiaSelecionado = !disponibilidade?.horarioTrabalho || disponibilidade.horarioTrabalho.diasSemana.includes(inicioDate.getDay());
+  const conflitoAlmoco = trabalhaNoDiaSelecionado && disponibilidade?.pausaAlmoco
+    ? (() => {
+        const almocoInicio = new Date(`${data}T${disponibilidade.pausaAlmoco!.inicio}:00`);
+        const almocoFim = new Date(`${data}T${disponibilidade.pausaAlmoco!.fim}:00`);
+        return inicioDate.getTime() < almocoFim.getTime() && almocoInicio.getTime() < fimDate.getTime();
+      })()
+    : false;
+  const conflitoBloqueio = (disponibilidade?.bloqueios ?? []).find((b) => {
+    const bInicio = new Date(b.inicio).getTime();
+    const bFim = new Date(b.fim).getTime();
+    return inicioDate.getTime() < bFim && bInicio < fimDate.getTime();
   });
 
   const criarMutation = useMutation({
@@ -193,6 +222,26 @@ export function Cf2NovoEventoModal({
               <div>
                 <p className="text-[12px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Conflito de agenda detectado</p>
                 <p className="text-[12px]" style={{ color: "var(--cf2-text-secondary)" }}>Você já tem "{conflito.titulo}" nesse horário. Pode criar mesmo assim.</p>
+              </div>
+            </div>
+          )}
+
+          {conflitoAlmoco && (
+            <div className="flex gap-2 p-3 rounded-xl" style={{ background: "var(--cf2-warning-bg)" }}>
+              <span>⚠️</span>
+              <div>
+                <p className="text-[12px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Esse horário cai na pausa de almoço</p>
+                <p className="text-[12px]" style={{ color: "var(--cf2-text-secondary)" }}>Pode criar mesmo assim, mas é bom conferir.</p>
+              </div>
+            </div>
+          )}
+
+          {conflitoBloqueio && (
+            <div className="flex gap-2 p-3 rounded-xl" style={{ background: "var(--cf2-warning-bg)" }}>
+              <span>⚠️</span>
+              <div>
+                <p className="text-[12px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Esse horário está bloqueado</p>
+                <p className="text-[12px]" style={{ color: "var(--cf2-text-secondary)" }}>{conflitoBloqueio.motivo || "Bloqueio de agenda"}. Pode criar mesmo assim, mas é bom conferir.</p>
               </div>
             </div>
           )}

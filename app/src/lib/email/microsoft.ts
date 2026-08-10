@@ -339,6 +339,9 @@ export interface CriarEventoParams {
   fimISO: string;
   attendeeEmail?: string | null;
   corpo?: string | null;
+  // Bloqueio de agenda (férias/folga/compromisso) não é reunião — sem Teams,
+  // só ocupa o horário. Default false preserva todo call site existente.
+  semTeams?: boolean;
 }
 
 export interface EventoCriado {
@@ -354,8 +357,7 @@ export async function createOutlookEvent(params: CriarEventoParams): Promise<Eve
     subject: params.titulo,
     start: { dateTime: params.inicioISO, timeZone: "UTC" },
     end: { dateTime: params.fimISO, timeZone: "UTC" },
-    isOnlineMeeting: true,
-    onlineMeetingProvider: "teamsForBusiness",
+    ...(params.semTeams ? { showAs: "busy" } : { isOnlineMeeting: true, onlineMeetingProvider: "teamsForBusiness" }),
   };
   if (params.corpo) body.body = { contentType: "text", content: params.corpo };
   if (params.attendeeEmail) {

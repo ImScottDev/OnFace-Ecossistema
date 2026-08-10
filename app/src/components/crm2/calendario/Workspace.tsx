@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight, Plus, Settings } from "lucide-react";
-import { Evento, Resumo, EquipeResposta } from "./types";
+import { Evento, Resumo, EquipeResposta, Disponibilidade } from "./types";
 import { diasDoGridMensal, diasDaSemana, inicioDoDia, fimDoDia, formatarPeriodo, navegar, mesmaData } from "./dateUtils";
 import { Cf2GridMes } from "./GridMes";
 import { Cf2GridSemana } from "./GridSemana";
@@ -56,6 +56,16 @@ export function Cf2CalendarioWorkspace({ isAdmin }: { isAdmin: boolean }) {
       return res.json();
     },
     enabled: view === "equipe" && isAdmin,
+  });
+
+  const { data: disponibilidade } = useQuery<Disponibilidade>({
+    queryKey: ["cf2-calendario-disponibilidade", from.toISOString(), to.toISOString()],
+    queryFn: async () => {
+      const res = await fetch(`/api/calendario/disponibilidade?from=${from.toISOString()}&to=${to.toISOString()}`);
+      if (!res.ok) return { horarioTrabalho: null, pausaAlmoco: null, bloqueios: [] };
+      return res.json();
+    },
+    enabled: view === "dia" || view === "semana",
   });
 
   const { data: resumo } = useQuery<Resumo>({
@@ -113,11 +123,11 @@ export function Cf2CalendarioWorkspace({ isAdmin }: { isAdmin: boolean }) {
           ) : view === "mes" ? (
             <Cf2GridMes referencia={referencia} eventos={eventos} onSelecionar={setEventoSelecionado} />
           ) : view === "semana" ? (
-            <Cf2GridSemana referencia={referencia} eventos={eventos} onSelecionar={setEventoSelecionado} />
+            <Cf2GridSemana referencia={referencia} eventos={eventos} disponibilidade={disponibilidade} onSelecionar={setEventoSelecionado} />
           ) : view === "equipe" ? (
             <Cf2GridEquipe referencia={referencia} dados={equipe ?? { membros: [], eventos: [], ocupadoPorMembro: {} }} onSelecionar={setEventoSelecionado} />
           ) : (
-            <Cf2GridDia referencia={referencia} eventos={eventos} onSelecionar={setEventoSelecionado} />
+            <Cf2GridDia referencia={referencia} eventos={eventos} disponibilidade={disponibilidade} onSelecionar={setEventoSelecionado} />
           )}
         </div>
         <Cf2PainelResumo resumo={resumo ?? null} onSelecionarEvento={setEventoSelecionado} />

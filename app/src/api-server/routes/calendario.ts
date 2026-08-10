@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { db } from "@/lib/db";
-import { reunioes, usuarios, leads, negocios, empresas, emailContas } from "@/lib/db/schema";
+import { reunioes, usuarios, leads, negocios, empresas, emailContas, closerDisponibilidade, closerBloqueios } from "@/lib/db/schema";
 import { eq, and, or, gte, lte, ne, sql, asc, inArray } from "drizzle-orm";
 import { getCtx } from "../compat.js";
 import { isAdminView } from "@/lib/auth/roles";
@@ -71,6 +71,35 @@ app.get("/calendario/eventos", async (c) => {
     .orderBy(asc(reunioes.data));
 
   return c.json(rows.map((r) => ({ ...r, empresaNome: r.empresaNome ?? r.empresaLegacy ?? null })));
+});
+
+// ─── GET /calendario/disponibilidade — pausa de almoço + bloqueios reais ──
+// Mesmas tabelas de /agenda (closerDisponibilidade/closerBloqueios) — achado
+// do Kauã (10/08): os grids mostravam só `reunioes`, sem refletir almoço nem
+// bloqueio configurados em Configurações. Corrigido lendo daqui.
+app.get("/calendario/disponibilidade", async (c) => {
+  const ctx = await getCtx(c);
+  const from = c.req.query("from");
+  const to = c.req.query("to");
+  const responsavelIdQuery = c.req.query("responsavelId") ?? null;
+  const responsavelId = scopeResponsavel(ctx, responsavelIdQuery);
+  if (!from || !to) return c.json({ error: "Informe from e to" }, 400);
+
+  const [disp, bloqueios] = await Promise.all([
+    db.select({ horarioTrabalho: closerDisponibilidade.horarioTrabalho, pausaAlmoco: closerDisponibilidade.pausaAlmoco, ativo: closerDisponibilidade.ativo })
+      .from(closerDisponibilidade)
+      .where(eq(closerDisponibilidade.usuarioId, responsavelId))
+      .limit(1),
+    db.select({ id: closerBloqueios.id, inicio: closerBloqueios.inicio, fim: closerBloqueios.fim, motivo: closerBloqueios.motivo })
+      .from(closerBloqueios)
+      .where(and(eq(closerBloqueios.organizacaoId, ctx.organizacaoId), eq(closerBloqueios.usuarioId, responsavelId), gte(closerBloqueios.fim, new Date(from)), lte(closerBloqueios.inicio, new Date(to)))),
+  ]);
+
+  return c.json({
+    horarioTrabalho: disp[0]?.horarioTrabalho ?? null,
+    pausaAlmoco: disp[0]?.ativo ? (disp[0]?.pausaAlmoco ?? null) : null,
+    bloqueios,
+  });
 });
 
 // ─── GET /calendario/resumo — próximos, atrasados, conflitos reais ──
