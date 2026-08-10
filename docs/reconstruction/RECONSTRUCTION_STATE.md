@@ -686,6 +686,10 @@ Achado real do Kauã testando ao vivo: construí todo o backend (fluxo condicion
 - Rota antiga movida pra `/propostas-legado` (preservada). **Detalhe/edição de proposta existente (`[id]`) continua legado** por ora — não foi o gap que o Kauã sinalizou (ele reclamou da lista e da criação por categoria), fica pra próxima rodada.
 - **Nota de ambiente**: dev API server (`tsx watch`) não recarregou sozinho duas vezes nesta sessão depois de edição de arquivo — sintoma: comportamento antigo persistindo mesmo com código novo correto (confirmado testando a função isolada). Se algo parecer "não aplicou", reiniciar o processo manualmente (`kill` + `npx tsx watch --env-file=.env src/api-server/index.ts`) antes de investigar mais.
 
+### Negócio → Criar Proposta herda contexto
+
+`Cf2NovaPropostaWorkspace` ganhou `?negocioId=`/`?leadId=`: busca o negócio/lead real, pula a etapa de busca de cliente, cai direto no builder com o cabeçalho já mostrando negócio+empresa. Tenta casar `negocios.servicosInteresse` (texto livre, sem vínculo com catálogo) por nome contra o catálogo real — o que bate pré-popula o carrinho, o resto fica de fora (não inventa item). Todos os pontos reais que linkam "Nova Proposta" com contexto (`NegocioDrawer`, `LeadDrawer`, `negocios/[id]`, `contatos/[id]`, dashboard, lista legada) atualizados de `/propostas/nova` (legado) pra `/propostas/novo` (cf2). Testado via Playwright: negócio real → builder direto, sem tela de busca → salvo com `negocioId` correto (não duplica negócio, como o fluxo standalone faz de propósito quando não há negócio).
+
 ### Pendente pra próxima rodada
 
-Reskin do detalhe/edição de proposta existente (`[id]`), criação a partir do Negócio herdando contexto, aba Propostas dentro do Negócio/Pipeline, testes E2E dos 4 fluxos nomeados pelo Kauã com UI completa. Página pública (`/p/[id]`) fica como está — Kauã disse que vai mandar uma referência visual própria antes de eu iterar de novo nela.
+Reskin do detalhe/edição de proposta existente (`[id]`), aba Propostas dentro do Negócio/Pipeline (ver propostas existentes sem sair do negócio), testes E2E dos 4 fluxos nomeados pelo Kauã com UI completa. Página pública (`/p/[id]`) fica como está — Kauã disse que vai mandar uma referência visual própria antes de eu iterar de novo nela.
