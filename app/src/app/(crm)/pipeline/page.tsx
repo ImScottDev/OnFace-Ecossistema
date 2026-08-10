@@ -3,10 +3,12 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useSession } from "next-auth/react";
 import { toast } from "sonner";
 import type { PipelineStage } from "@/lib/crm/pipeline";
 import { usePipelineConfig, usePipelines } from "@/hooks/usePipelineConfig";
-import { Kanban, List, Search, ChevronRight, AlertTriangle, X, Trash2, XCircle, Trophy, Plus, MoreHorizontal, CalendarClock } from "lucide-react";
+import { Kanban, List, Search, ChevronRight, AlertTriangle, X, Trash2, XCircle, Trophy, Plus, MoreHorizontal, CalendarClock, ShieldCheck } from "lucide-react";
+import { isAdminView } from "@/lib/auth/roles";
 import { STAGNATION_REASONS } from "@/lib/crm/pipeline";
 import { ButtonSpinner } from "@/components/crm/ButtonSpinner";
 import { NegocioDrawer } from "@/components/crm/NegocioDrawer";
@@ -100,6 +102,8 @@ function formatBRL(value: number) {
 
 export default function PipelinePage() {
   const queryClient = useQueryClient();
+  const { data: session } = useSession();
+  const isAdmin = isAdminView(session?.user?.role);
   const { stages: defaultStages, closedStages: defaultClosedStages, slaHours, getStatusInfo } = usePipelineConfig();
   const { pipelines } = usePipelines();
   const { usuarios, currentUserId } = useOrgUsuarios();
@@ -199,7 +203,48 @@ export default function PipelinePage() {
         queryClient.invalidateQueries({ queryKey: ["carteira"] });
       }
     },
-    onError: (err) => toast.error(err instanceof Error ? err.message : "Erro ao mover negócio"),
+    onError: (err, vars) => {
+      const message = err instanceof Error ? err.message : "Erro ao mover negócio";
+      if (vars.status !== "ganho" || !message.includes("evidência")) {
+        toast.error(message);
+        return;
+      }
+      if (retentandoAposEvidencia.current) {
+        // Evidência foi anexada de verdade, mas a política do produto ainda
+        // não aceita esse tipo (calibração pendente, DECISOES-PENDENTES.md
+        // item 1) — não reabre o modal em loop, explica o motivo real.
+        retentandoAposEvidencia.current = false;
+        toast.error("Evidência registrada, mas a política deste produto ainda não aceita esse tipo (calibração pendente — fale com o gestor). O negócio não foi marcado como ganho.");
+        return;
+      }
+      if (isAdmin) {
+        setEvidenciaModalNegocioId(vars.id);
+        return;
+      }
+      toast.error(`${message} Peça a um admin/gerente para anexar evidência de fechamento.`);
+    },
+  });
+
+  const anexarEvidencia = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/negocios/${evidenciaModalNegocioId}/evidencia-manual`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tipo: evidenciaTipo, nota: evidenciaNota }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "Erro ao anexar evidência");
+      return body;
+    },
+    onSuccess: () => {
+      const negocioId = evidenciaModalNegocioId!;
+      setEvidenciaModalNegocioId(null);
+      setEvidenciaNota("");
+      toast.success("Evidência anexada — marcando como ganho...");
+      retentandoAposEvidencia.current = true;
+      updateStatus.mutate({ id: negocioId, status: "ganho" });
+    },
+    onError: (err: Error) => toast.error(err.message),
   });
 
   const deleteNegocio = useMutation({
@@ -246,6 +291,15 @@ export default function PipelinePage() {
   );
 
   const [lossModalNegocioId, setLossModalNegocioId] = useState<string | null>(null);
+  // F4/Won Evidence (ADR-EXEC-012): achado real — arrastar card pra "Ganho"
+  // sem contrato/pagamento gerava um toast de erro sem NENHUMA ação possível
+  // (Kauã reportou: "aparece uma notificação mas não tem lugar pra subir
+  // nada"). O drag-and-drop é a via principal do board, não só o detalhe do
+  // negócio — precisa da mesma via manual de evidência aqui.
+  const [evidenciaModalNegocioId, setEvidenciaModalNegocioId] = useState<string | null>(null);
+  const [evidenciaTipo, setEvidenciaTipo] = useState<"manual_contract" | "admin_approval">("manual_contract");
+  const [evidenciaNota, setEvidenciaNota] = useState("");
+  const retentandoAposEvidencia = useRef(false);
 
   const handleDrop = (negocioId: string, newStatus: string) => {
     if (newStatus === "perdido") {
@@ -397,6 +451,56 @@ export default function PipelinePage() {
             setLossModalNegocioId(null);
           }}
         />
+      )}
+      {/* F4/Won Evidence Modal — mesma via manual do detalhe do negócio, agora também no drag-and-drop do board */}
+      {evidenciaModalNegocioId && (
+        <div className="modal-overlay fixed inset-0 flex items-center justify-center z-50" onClick={() => setEvidenciaModalNegocioId(null)}>
+          <div className="modal-content p-6 w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-2 mb-1">
+              <ShieldCheck className="w-4 h-4 text-emerald-400" />
+              <h2 className="text-lg font-semibold text-white">Anexar evidência de fechamento</h2>
+            </div>
+            <p className="text-xs text-white/40 mb-4">
+              Este negócio não tem contrato assinado nem pagamento confirmado — sem isso não é possível marcar como ganho. Se a venda aconteceu fora do sistema (ex: PBX, fechamento manual), registre a evidência abaixo. Fica sempre auditado.
+            </p>
+            <div className="space-y-3">
+              <div>
+                <label className="text-sm text-white/50 mb-1 block">Tipo de evidência</label>
+                <select
+                  value={evidenciaTipo}
+                  onChange={(e) => setEvidenciaTipo(e.target.value as "manual_contract" | "admin_approval")}
+                  className="w-full dark-input text-sm"
+                >
+                  <option value="manual_contract">Contrato assinado fora do sistema</option>
+                  <option value="admin_approval">Aprovação de admin/gerente</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-sm text-white/50 mb-1 block">Nota *</label>
+                <p className="text-[10px] text-white/25 mb-1">Descreva a evidência (ex: nº do documento, onde o contrato está guardado).</p>
+                <textarea
+                  value={evidenciaNota}
+                  onChange={(e) => setEvidenciaNota(e.target.value)}
+                  className="w-full dark-input text-sm"
+                  rows={3}
+                  placeholder="Ex: Contrato PBX assinado em PDF, enviado por email em 09/08, arquivado no Drive do comercial."
+                />
+              </div>
+              <div className="flex gap-2 justify-end mt-4">
+                <button onClick={() => setEvidenciaModalNegocioId(null)} className="px-4 py-2 text-sm text-white/50 hover:text-white">
+                  Cancelar
+                </button>
+                <button
+                  onClick={() => anexarEvidencia.mutate()}
+                  disabled={!evidenciaNota.trim() || anexarEvidencia.isPending}
+                  className="px-4 py-2 text-sm font-medium bg-emerald-500/20 text-emerald-400 rounded-lg hover:bg-emerald-500/30 disabled:opacity-40"
+                >
+                  {anexarEvidencia.isPending ? "Anexando..." : "Anexar e marcar como ganho"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
       <NegocioDrawer
         negocioId={drawerNegocioId}
