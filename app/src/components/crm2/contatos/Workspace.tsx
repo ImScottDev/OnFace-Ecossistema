@@ -1,12 +1,17 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Search, Plus, Building2 } from "lucide-react";
 import { Kpis, EmpresaLinha, PessoaLinha, RELACIONAMENTO_BADGE, TIPO_BADGE, brl, fmtData, iniciais } from "./types";
+import { LeadDrawer } from "@/components/crm/LeadDrawer";
+import { EmpresaDrawer } from "@/components/crm/EmpresaDrawer";
+import { NegocioDrawer } from "@/components/crm/NegocioDrawer";
+import { Cf2NovaPessoaModal } from "./NovaPessoaModal";
 
 type Aba = "pessoas" | "empresas";
 type TipoFiltro = "" | "contato" | "lead" | "cliente";
+type DrawerAberto = { tipo: "lead" | "empresa" | "negocio"; id: string } | null;
 
 async function buscarJson(url: string) {
   const res = await fetch(url);
@@ -15,10 +20,13 @@ async function buscarJson(url: string) {
 }
 
 export function Cf2ContatosWorkspace() {
+  const queryClient = useQueryClient();
   const [aba, setAba] = useState<Aba>("pessoas");
   const [busca, setBusca] = useState("");
   const [tipoFiltro, setTipoFiltro] = useState<TipoFiltro>("");
   const [pagina, setPagina] = useState(1);
+  const [drawer, setDrawer] = useState<DrawerAberto>(null);
+  const [modalNovaPessoa, setModalNovaPessoa] = useState(false);
 
   const { data: kpis } = useQuery<Kpis>({
     queryKey: ["cf2-contatos-kpis"],
@@ -63,7 +71,10 @@ export function Cf2ContatosWorkspace() {
           <p className="text-[13px]" style={{ color: "var(--cf2-text-secondary)" }}>Gerencie seus relacionamentos e contas em um só lugar</p>
         </div>
         <button
-          className="flex items-center gap-1.5 px-4 py-2 rounded-full text-[13px] font-bold"
+          onClick={() => aba === "pessoas" && setModalNovaPessoa(true)}
+          disabled={aba === "empresas"}
+          title={aba === "empresas" ? "Criação de empresa ainda não disponível aqui" : undefined}
+          className="flex items-center gap-1.5 px-4 py-2 rounded-full text-[13px] font-bold disabled:opacity-40"
           style={{ background: "var(--cf2-accent)", border: "1px solid var(--cf2-accent-border)", color: "var(--cf2-text-on-accent)" }}
         >
           <Plus className="w-3.5 h-3.5" /> {aba === "empresas" ? "Nova Empresa" : "Nova Pessoa"}
@@ -125,9 +136,9 @@ export function Cf2ContatosWorkspace() {
           {carregando ? (
             <p className="p-6 text-[13px]" style={{ color: "var(--cf2-text-tertiary)" }}>Carregando...</p>
           ) : aba === "empresas" ? (
-            <TabelaEmpresas linhas={empresasResp?.empresas ?? []} />
+            <TabelaEmpresas linhas={empresasResp?.empresas ?? []} onAbrir={(id) => setDrawer({ tipo: "empresa", id })} />
           ) : (
-            <TabelaPessoas linhas={pessoasResp?.pessoas ?? []} />
+            <TabelaPessoas linhas={pessoasResp?.pessoas ?? []} onAbrir={(id) => setDrawer({ tipo: "lead", id })} />
           )}
         </div>
 
@@ -155,11 +166,45 @@ export function Cf2ContatosWorkspace() {
           </div>
         </div>
       </div>
+
+      <LeadDrawer
+        leadId={drawer?.tipo === "lead" ? drawer.id : null}
+        open={drawer?.tipo === "lead"}
+        onClose={() => setDrawer(null)}
+        onOpenEmpresa={(id) => setDrawer({ tipo: "empresa", id })}
+        onOpenNegocio={(id) => setDrawer({ tipo: "negocio", id })}
+      />
+      <EmpresaDrawer
+        empresaId={drawer?.tipo === "empresa" ? drawer.id : null}
+        open={drawer?.tipo === "empresa"}
+        onClose={() => setDrawer(null)}
+        onOpenLead={(id) => setDrawer({ tipo: "lead", id })}
+        onOpenNegocio={(id) => setDrawer({ tipo: "negocio", id })}
+      />
+      <NegocioDrawer
+        negocioId={drawer?.tipo === "negocio" ? drawer.id : null}
+        open={drawer?.tipo === "negocio"}
+        onClose={() => setDrawer(null)}
+        onOpenLead={(id) => setDrawer({ tipo: "lead", id })}
+        onOpenEmpresa={(id) => setDrawer({ tipo: "empresa", id })}
+      />
+
+      {modalNovaPessoa && (
+        <Cf2NovaPessoaModal
+          onClose={() => setModalNovaPessoa(false)}
+          onCriada={(leadId) => {
+            setModalNovaPessoa(false);
+            queryClient.invalidateQueries({ queryKey: ["cf2-contatos-pessoas"] });
+            queryClient.invalidateQueries({ queryKey: ["cf2-contatos-kpis"] });
+            setDrawer({ tipo: "lead", id: leadId });
+          }}
+        />
+      )}
     </div>
   );
 }
 
-function TabelaEmpresas({ linhas }: { linhas: EmpresaLinha[] }) {
+function TabelaEmpresas({ linhas, onAbrir }: { linhas: EmpresaLinha[]; onAbrir: (id: string) => void }) {
   if (linhas.length === 0) return <p className="p-6 text-[13px]" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhuma empresa encontrada.</p>;
   return (
     <table className="w-full text-left">
@@ -174,9 +219,9 @@ function TabelaEmpresas({ linhas }: { linhas: EmpresaLinha[] }) {
         {linhas.map((e) => {
           const badge = RELACIONAMENTO_BADGE[e.relacionamento];
           return (
-            <tr key={e.id} className="cursor-pointer" style={{ borderTop: "1px solid var(--cf2-border-default)" }}>
+            <tr key={e.id} className="cursor-pointer" style={{ borderTop: "1px solid var(--cf2-border-default)" }} onClick={() => onAbrir(e.id)}>
               <td className="px-4 py-3">
-                <a href={`/empresas/${e.id}`} className="flex items-center gap-2.5">
+                <div className="flex items-center gap-2.5">
                   <div className="flex items-center justify-center rounded-lg shrink-0 w-8 h-8" style={{ background: "var(--cf2-bg-inverse)" }}>
                     <Building2 className="w-4 h-4 text-white" />
                   </div>
@@ -184,7 +229,7 @@ function TabelaEmpresas({ linhas }: { linhas: EmpresaLinha[] }) {
                     <p className="text-[13px] font-bold truncate" style={{ color: "var(--cf2-text-primary)" }}>{e.nome}</p>
                     <p className="text-[11px] truncate" style={{ color: "var(--cf2-text-secondary)" }}>{e.setor || "—"}</p>
                   </div>
-                </a>
+                </div>
               </td>
               <td className="px-4 py-3 text-[13px]" style={{ color: "var(--cf2-text-primary)" }}>{e.pessoas} pessoa{e.pessoas === 1 ? "" : "s"}</td>
               <td className="px-4 py-3">
@@ -204,7 +249,7 @@ function TabelaEmpresas({ linhas }: { linhas: EmpresaLinha[] }) {
   );
 }
 
-function TabelaPessoas({ linhas }: { linhas: PessoaLinha[] }) {
+function TabelaPessoas({ linhas, onAbrir }: { linhas: PessoaLinha[]; onAbrir: (id: string) => void }) {
   if (linhas.length === 0) return <p className="p-6 text-[13px]" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhuma pessoa encontrada.</p>;
   return (
     <table className="w-full text-left">
@@ -219,9 +264,9 @@ function TabelaPessoas({ linhas }: { linhas: PessoaLinha[] }) {
         {linhas.map((p) => {
           const badge = TIPO_BADGE[p.tipo];
           return (
-            <tr key={p.id} style={{ borderTop: "1px solid var(--cf2-border-default)" }}>
+            <tr key={p.id} className="cursor-pointer" style={{ borderTop: "1px solid var(--cf2-border-default)" }} onClick={() => onAbrir(p.id)}>
               <td className="px-4 py-3">
-                <a href={`/contatos-legado/${p.id}`} className="flex items-center gap-2.5">
+                <div className="flex items-center gap-2.5">
                   <div className="flex items-center justify-center rounded-full shrink-0 w-8 h-8" style={{ background: "var(--cf2-bg-surface-muted)" }}>
                     <p className="text-[11px] font-extrabold" style={{ color: "var(--cf2-text-secondary)" }}>{iniciais(p.nome)}</p>
                   </div>
@@ -229,7 +274,7 @@ function TabelaPessoas({ linhas }: { linhas: PessoaLinha[] }) {
                     <p className="text-[13px] font-bold truncate" style={{ color: "var(--cf2-text-primary)" }}>{p.nome}</p>
                     <p className="text-[11px] truncate" style={{ color: "var(--cf2-text-secondary)" }}>{p.email || "—"}</p>
                   </div>
-                </a>
+                </div>
               </td>
               <td className="px-4 py-3 text-[13px]" style={{ color: "var(--cf2-text-primary)" }}>{p.empresa_nome || "—"}</td>
               <td className="px-4 py-3">
