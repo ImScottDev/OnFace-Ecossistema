@@ -1276,6 +1276,11 @@ export const reunioes = pgTable(
     transcript: text("transcript"),
     resumoTranscript: text("resumo_transcript"),
     responsavelId: uuid("responsavel_id").references(() => usuarios.id),
+    // Lembrete automático 30min antes (automação real, não hardcoded na UI —
+    // ver lib/crm/lembrete-reuniao.ts). Timestamp em vez de boolean pra dar
+    // rastreabilidade de quando foi enviado, e evitar reenvio se o sweep
+    // rodar 2x na mesma janela.
+    lembrete30minEnviadoEm: timestamp("lembrete_30min_enviado_em", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
   },

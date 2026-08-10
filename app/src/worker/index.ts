@@ -3004,6 +3004,17 @@ const slaWorker = new Worker(
       if (processados > 0) console.log(`[F5/cadence-engine] ${processados} enrollments avançados`);
     }
 
+    if (job.name === "lembrete-reuniao-30min") {
+      // Automação real pedida pelo Kauã (10/08) — lembrete de reunião 30min
+      // antes via WhatsApp, usando a mesma fila real de envio do resto do
+      // sistema. Ver lib/crm/lembrete-reuniao.ts.
+      const { enviarLembretesReunioes30min } = await import("../lib/crm/lembrete-reuniao");
+      const { enviados, falhados } = await enviarLembretesReunioes30min();
+      if (enviados > 0 || falhados > 0) {
+        console.log(`[lembrete-reuniao] ${enviados} enviados, ${falhados} falhados`);
+      }
+    }
+
     if (job.name === "event-outbox-sweep") {
       // Eventos/Event Outbox: F0 criou a tabela, mas nada publicava nem
       // consumia até 09/08 (achado da revisão externa). Este sweep é o lado
@@ -3687,6 +3698,7 @@ async function setupScheduledJobs() {
   await scheduledQueue.upsertJobScheduler("snapshot-diario", { every: 60 * 60 * 1000 }, { name: "snapshot-diario" });
   await scheduledQueue.upsertJobScheduler("cadence-sweep", { every: 5 * 60 * 1000 }, { name: "cadence-sweep" });
   await scheduledQueue.upsertJobScheduler("event-outbox-sweep", { every: 60 * 1000 }, { name: "event-outbox-sweep" });
+  await scheduledQueue.upsertJobScheduler("lembrete-reuniao-30min", { every: 5 * 60 * 1000 }, { name: "lembrete-reuniao-30min" });
   // Email sync: trigger every 5 min
   await emailSyncQueue.upsertJobScheduler("email-sync-trigger", { every: 5 * 60 * 1000 }, { name: "sync-trigger" });
   // Email sequences: check every minute
