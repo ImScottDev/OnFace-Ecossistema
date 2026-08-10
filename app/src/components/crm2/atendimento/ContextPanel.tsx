@@ -2,10 +2,11 @@
 
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Pencil, Phone, CalendarPlus, Building2 } from "lucide-react";
+import { Pencil, Phone, CalendarPlus, Building2, Repeat, ChevronDown } from "lucide-react";
 import { ConversaItem, Contexto, iniciais, brl } from "./types";
 import { Cf2Badge } from "../ui/Badge";
 import { Cf2NovoEventoModal, LeadResultado } from "../calendario/NovoEventoModal";
+import { Cf2CadenciaPanel } from "../cadencia/CadenciaPanel";
 
 const ETAPA_LABEL: Record<string, string> = {
   reuniao_agendada: "Reunião Agendada",
@@ -22,6 +23,7 @@ const ETAPA_LABEL: Record<string, string> = {
 export function Cf2ContextPanel({ conversa, contexto, loading }: { conversa: ConversaItem; contexto: Contexto | null; loading: boolean }) {
   const queryClient = useQueryClient();
   const [modalAberto, setModalAberto] = useState(false);
+  const [cadenciaAberta, setCadenciaAberta] = useState(false);
 
   const leadPreSelecionado: LeadResultado | null =
     conversa.leadId && contexto?.pessoa
@@ -175,6 +177,21 @@ export function Cf2ContextPanel({ conversa, contexto, loading }: { conversa: Con
               </div>
             ))}
           </div>
+
+          {conversa.leadId && (
+            <>
+              <div className="h-px w-full" style={{ background: "var(--cf2-border-default)" }} />
+              <div className="flex flex-col gap-3">
+                <button onClick={() => setCadenciaAberta((v) => !v)} className="flex items-center justify-between w-full">
+                  <p className="text-[11px] font-bold flex items-center gap-1.5" style={{ color: "var(--cf2-text-tertiary)" }}>
+                    <Repeat className="w-3 h-3" /> CADÊNCIAS
+                  </p>
+                  <ChevronDown className="w-3.5 h-3.5 transition-transform" style={{ color: "var(--cf2-text-tertiary)", transform: cadenciaAberta ? "rotate(180deg)" : "none" }} />
+                </button>
+                {cadenciaAberta && <Cf2CadenciaPanel leadId={conversa.leadId} />}
+              </div>
+            </>
+          )}
         </>
       )}
 
