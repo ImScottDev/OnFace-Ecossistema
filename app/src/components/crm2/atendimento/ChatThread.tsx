@@ -1,0 +1,350 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  Send, MoreHorizontal, Reply, Smile, Trash2, Check, CheckCheck, Clock,
+  AlertCircle, Paperclip, Camera, File as FileIcon, MapPin, User, X,
+} from "lucide-react";
+import { ConversaItem, Contexto, iniciais } from "./types";
+import { Cf2Badge } from "../ui/Badge";
+
+type Mensagem = {
+  id: string;
+  direcao: "in" | "out";
+  conteudo: string | null;
+  tipo: string;
+  mediaUrl: string | null;
+  status: string | null;
+  uazapiMessageId: string | null;
+  replyToId: string | null;
+  createdAt: string;
+  sessaoUsuarioNome: string | null;
+  enviadoPorNome: string | null;
+};
+
+const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
+
+function StatusIcon({ status }: { status: string | null }) {
+  switch (status) {
+    case "pending":
+      return <Clock className="w-3 h-3" style={{ color: "var(--cf2-text-tertiary)" }} />;
+    case "sent":
+      return <Check className="w-3 h-3" style={{ color: "var(--cf2-text-tertiary)" }} />;
+    case "delivered":
+      return <CheckCheck className="w-3 h-3" style={{ color: "var(--cf2-text-tertiary)" }} />;
+    case "read":
+      return <CheckCheck className="w-3 h-3" style={{ color: "#3b82f6" }} />;
+    case "failed":
+      return <AlertCircle className="w-3 h-3" style={{ color: "var(--cf2-danger-text)" }} />;
+    default:
+      return <Check className="w-3 h-3" style={{ color: "var(--cf2-text-tertiary)" }} />;
+  }
+}
+
+export function Cf2ChatThread({
+  conversa,
+  contexto,
+  onAtribuir,
+}: {
+  conversa: ConversaItem;
+  contexto: Contexto | null;
+  onAtribuir: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const [texto, setTexto] = useState("");
+  const [replyTo, setReplyTo] = useState<Mensagem | null>(null);
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [reactionPickerId, setReactionPickerId] = useState<string | null>(null);
+  const [showAttachMenu, setShowAttachMenu] = useState(false);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const { data } = useQuery({
+    queryKey: ["cf2-whatsapp-messages", conversa.id],
+    queryFn: async () => {
+      const res = await fetch(`/api/whatsapp/messages/${conversa.id}?limit=100`);
+      if (!res.ok) return { messages: [] };
+      return res.json();
+    },
+    refetchInterval: 4000,
+  });
+
+  const mensagens: Mensagem[] = [...(data?.messages ?? [])].reverse();
+  const findMsg = (id: string | null) => (id ? mensagens.find((m) => m.id === id) : undefined);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ block: "end" });
+  }, [mensagens.length]);
+
+  const invalidateAll = () => {
+    queryClient.invalidateQueries({ queryKey: ["cf2-whatsapp-messages", conversa.id] });
+    queryClient.invalidateQueries({ queryKey: ["cf2-conversas"] });
+  };
+
+  const sendMutation = useMutation({
+    mutationFn: async (payload: { conteudo?: string; tipo?: string; mediaData?: string; fileName?: string; latitude?: number; longitude?: number }) => {
+      const res = await fetch("/api/whatsapp/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contatoId: conversa.id, tipo: "text", ...payload, replyToId: replyTo?.id }),
+      });
+      if (!res.ok) throw new Error("Falha ao enviar");
+      return res.json();
+    },
+    onSuccess: () => {
+      setTexto("");
+      setReplyTo(null);
+      invalidateAll();
+    },
+  });
+
+  const handleSendText = () => {
+    if (!texto.trim()) return;
+    sendMutation.mutate({ conteudo: texto.trim(), tipo: "text" });
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    let tipo = "document";
+    if (file.type.startsWith("image/")) tipo = "image";
+    else if (file.type.startsWith("video/")) tipo = "video";
+    const reader = new FileReader();
+    reader.onload = () => {
+      sendMutation.mutate({ conteudo: "", tipo, mediaData: reader.result as string, fileName: file.name });
+    };
+    reader.readAsDataURL(file);
+    setShowAttachMenu(false);
+  };
+
+  const handleLocationShare = () => {
+    setShowAttachMenu(false);
+    if (!("geolocation" in navigator)) return;
+    navigator.geolocation.getCurrentPosition((pos) => {
+      sendMutation.mutate({ conteudo: "", tipo: "location", latitude: pos.coords.latitude, longitude: pos.coords.longitude });
+    });
+  };
+
+  const handleContactShare = () => {
+    setShowAttachMenu(false);
+    const name = prompt("Nome do contato:");
+    if (!name) return;
+    const phone = prompt("Telefone do contato (com DDD):");
+    if (!phone) return;
+    const vcard = `BEGIN:VCARD\nVERSION:3.0\nFN:${name}\nTEL;type=CELL:${phone}\nEND:VCARD`;
+    sendMutation.mutate({ conteudo: JSON.stringify({ name, vcard }), tipo: "contact" });
+  };
+
+  const handleReact = (msg: Mensagem, emoji: string) => {
+    if (!msg.uazapiMessageId || !conversa.telefone) return;
+    fetch("/api/whatsapp/actions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "react", phone: conversa.telefone, messageId: msg.uazapiMessageId, emoji }),
+    }).then(invalidateAll).catch(() => {});
+    setReactionPickerId(null);
+    setHoveredId(null);
+  };
+
+  const handleDelete = (msg: Mensagem) => {
+    if (!msg.uazapiMessageId || !conversa.telefone || msg.direcao !== "out") return;
+    if (!confirm("Apagar esta mensagem?")) return;
+    fetch("/api/whatsapp/actions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "delete", phone: conversa.telefone, messageId: msg.uazapiMessageId }),
+    }).then(invalidateAll).catch(() => {});
+    setHoveredId(null);
+  };
+
+  const ultimaSessaoNome = [...mensagens].reverse().find((m) => m.sessaoUsuarioNome)?.sessaoUsuarioNome;
+
+  return (
+    <div
+      className="flex-1 flex flex-col h-full min-w-0 rounded-3xl overflow-hidden"
+      style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}
+    >
+      <div
+        className="flex items-center justify-between p-4 shrink-0"
+        style={{ background: "var(--cf2-bg-page)", borderBottom: "1px solid var(--cf2-border-default)" }}
+      >
+        <div className="flex gap-3 items-center min-w-0">
+          <div className="flex items-center justify-center rounded-[20px] shrink-0 w-10 h-10" style={{ background: "var(--cf2-accent)" }}>
+            <p className="text-[14px] font-extrabold" style={{ color: "var(--cf2-text-on-accent)" }}>{iniciais(conversa.nome)}</p>
+          </div>
+          <div className="min-w-0">
+            <div className="flex gap-1.5 items-center">
+              <p className="text-[16px] font-bold truncate" style={{ color: "var(--cf2-text-primary)" }}>{conversa.nome}</p>
+              {conversa.empresaNome && <p className="text-[12px]" style={{ color: "var(--cf2-text-secondary)" }}>· {conversa.empresaNome}</p>}
+              {contexto && <Cf2Badge variant={contexto.isCliente ? "success" : "neutral"}>{contexto.isCliente ? "Cliente" : "Lead"}</Cf2Badge>}
+            </div>
+            <p className="text-[11px] truncate" style={{ color: "var(--cf2-text-secondary)" }}>
+              {ultimaSessaoNome ? `via WhatsApp de ${ultimaSessaoNome}` : "WhatsApp"}
+            </p>
+          </div>
+        </div>
+        <div className="flex gap-2 items-center shrink-0">
+          <button onClick={onAtribuir} className="px-3 py-1.5 rounded-lg text-[12px] font-semibold" style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-primary)" }}>
+            Atribuir
+          </button>
+          <button className="p-1.5 rounded-lg" style={{ background: "var(--cf2-bg-surface-muted)" }}>
+            <MoreHorizontal className="w-4 h-4" style={{ color: "var(--cf2-text-secondary)" }} />
+          </button>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto flex flex-col gap-1 p-5" style={{ background: "var(--cf2-bg-canvas)" }}>
+        {mensagens.map((m) => {
+          const isOut = m.direcao === "out";
+          const isHovered = hoveredId === m.id;
+          const replyMsg = findMsg(m.replyToId);
+          return (
+            <div
+              key={m.id}
+              className={`flex ${isOut ? "justify-end" : "justify-start"} relative py-1`}
+              onMouseEnter={() => setHoveredId(m.id)}
+              onMouseLeave={() => { if (reactionPickerId !== m.id) setHoveredId(null); }}
+            >
+              {isHovered && (
+                <div
+                  className={`absolute top-0 z-10 flex items-center gap-0.5 px-1 py-0.5 rounded-lg shadow-md ${isOut ? "right-2 -translate-y-full" : "left-2 -translate-y-full"}`}
+                  style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}
+                >
+                  <button onClick={() => setReplyTo(m)} title="Responder" className="p-1.5 rounded hover:bg-[var(--cf2-bg-surface-muted)]">
+                    <Reply className="w-3.5 h-3.5" style={{ color: "var(--cf2-text-secondary)" }} />
+                  </button>
+                  <button onClick={() => setReactionPickerId(reactionPickerId === m.id ? null : m.id)} title="Reagir" className="p-1.5 rounded hover:bg-[var(--cf2-bg-surface-muted)]">
+                    <Smile className="w-3.5 h-3.5" style={{ color: "var(--cf2-text-secondary)" }} />
+                  </button>
+                  {isOut && m.uazapiMessageId && (
+                    <button onClick={() => handleDelete(m)} title="Apagar" className="p-1.5 rounded hover:bg-red-500/10">
+                      <Trash2 className="w-3.5 h-3.5" style={{ color: "var(--cf2-danger-text)" }} />
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {reactionPickerId === m.id && (
+                <div
+                  className={`absolute z-20 flex items-center gap-1 px-2 py-1.5 rounded-full shadow-md ${isOut ? "right-2" : "left-2"}`}
+                  style={{ top: -44, background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}
+                >
+                  {QUICK_REACTIONS.map((emoji) => (
+                    <button key={emoji} onClick={() => handleReact(m, emoji)} className="w-6 h-6 flex items-center justify-center hover:scale-125 transition-transform">
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              <div
+                className="max-w-[70%] p-3 rounded-2xl flex flex-col gap-1"
+                style={{
+                  background: isOut ? "var(--cf2-success-bg)" : "var(--cf2-bg-surface-muted)",
+                  border: isOut ? "0.5px solid var(--cf2-success-fill)" : "0.5px solid var(--cf2-border-default)",
+                }}
+              >
+                {isOut && m.enviadoPorNome && (
+                  <p className="text-[10px] font-semibold" style={{ color: "var(--cf2-success-text)" }}>{m.enviadoPorNome}</p>
+                )}
+                {replyMsg && (
+                  <div className="px-2 py-1.5 rounded-lg text-[11px] border-l-2" style={{ background: "rgba(0,0,0,0.03)", borderColor: "var(--cf2-accent-border)" }}>
+                    <p className="truncate" style={{ color: "var(--cf2-text-secondary)" }}>{replyMsg.conteudo || "Mensagem"}</p>
+                  </div>
+                )}
+                {m.mediaUrl && m.tipo === "image" && <img src={m.mediaUrl} alt="" className="rounded-lg max-w-full" />}
+                {m.mediaUrl && m.tipo === "audio" && <audio controls src={m.mediaUrl} className="max-w-full" />}
+                {m.mediaUrl && m.tipo === "document" && (
+                  <a href={m.mediaUrl} target="_blank" rel="noreferrer" className="text-[12px] underline">📎 Documento</a>
+                )}
+                {m.conteudo && m.tipo !== "location" && m.tipo !== "contact" && (
+                  <p className="text-[13px] leading-[18px] whitespace-pre-wrap" style={{ color: "var(--cf2-text-primary)" }}>{m.conteudo}</p>
+                )}
+                <div className="flex items-center gap-1 justify-end">
+                  <p className="text-[10px]" style={{ color: "var(--cf2-text-secondary)" }}>
+                    {new Date(m.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                  </p>
+                  {isOut && <StatusIcon status={m.status} />}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+        <div ref={bottomRef} />
+      </div>
+
+      {showAttachMenu && (
+        <div className="mx-4 mb-2 rounded-xl p-3 grid grid-cols-4 gap-1" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }}>
+          <label className="flex flex-col items-center gap-1.5 p-2 rounded-xl cursor-pointer hover:bg-[var(--cf2-bg-surface)]">
+            <div className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: "#a855f726" }}>
+              <Camera className="w-4 h-4" style={{ color: "#a855f7" }} />
+            </div>
+            <span className="text-[10px]" style={{ color: "var(--cf2-text-secondary)" }}>Foto/Vídeo</span>
+            <input type="file" accept="image/*,video/*" className="hidden" onChange={handleFileSelect} />
+          </label>
+          <label className="flex flex-col items-center gap-1.5 p-2 rounded-xl cursor-pointer hover:bg-[var(--cf2-bg-surface)]">
+            <div className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: "#3b82f626" }}>
+              <FileIcon className="w-4 h-4" style={{ color: "#3b82f6" }} />
+            </div>
+            <span className="text-[10px]" style={{ color: "var(--cf2-text-secondary)" }}>Documento</span>
+            <input type="file" className="hidden" onChange={handleFileSelect} />
+          </label>
+          <button onClick={handleLocationShare} className="flex flex-col items-center gap-1.5 p-2 rounded-xl hover:bg-[var(--cf2-bg-surface)]">
+            <div className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: "var(--cf2-danger-text)26" }}>
+              <MapPin className="w-4 h-4" style={{ color: "var(--cf2-danger-text)" }} />
+            </div>
+            <span className="text-[10px]" style={{ color: "var(--cf2-text-secondary)" }}>Localização</span>
+          </button>
+          <button onClick={handleContactShare} className="flex flex-col items-center gap-1.5 p-2 rounded-xl hover:bg-[var(--cf2-bg-surface)]">
+            <div className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: "var(--cf2-success-fill)26" }}>
+              <User className="w-4 h-4" style={{ color: "var(--cf2-success-fill)" }} />
+            </div>
+            <span className="text-[10px]" style={{ color: "var(--cf2-text-secondary)" }}>Contato</span>
+          </button>
+        </div>
+      )}
+
+      <div className="p-4 shrink-0 flex flex-col gap-2" style={{ background: "var(--cf2-bg-page)", borderTop: "1px solid var(--cf2-border-default)" }}>
+        {replyTo && (
+          <div className="flex items-center justify-between px-3 py-2 rounded-lg" style={{ background: "var(--cf2-bg-surface-muted)" }}>
+            <p className="text-[11px] truncate" style={{ color: "var(--cf2-text-secondary)" }}>Respondendo: {replyTo.conteudo || "mensagem"}</p>
+            <button onClick={() => setReplyTo(null)}><X className="w-3 h-3" style={{ color: "var(--cf2-text-tertiary)" }} /></button>
+          </div>
+        )}
+        <div className="flex gap-3 items-center">
+          <button
+            onClick={() => setShowAttachMenu(!showAttachMenu)}
+            className="p-2 rounded-lg shrink-0"
+            style={{ background: showAttachMenu ? "var(--cf2-accent)" : "var(--cf2-bg-surface-muted)" }}
+          >
+            <Paperclip className="w-4 h-4" style={{ color: showAttachMenu ? "var(--cf2-text-on-accent)" : "var(--cf2-text-secondary)" }} />
+          </button>
+          <div
+            className="flex-1 flex items-center gap-2 px-4 py-2.5 rounded-xl"
+            style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}
+          >
+            <input
+              value={texto}
+              onChange={(e) => setTexto(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") handleSendText(); }}
+              placeholder={`Escrever uma mensagem para ${conversa.nome.split(" ")[0]}...`}
+              className="flex-1 bg-transparent outline-none text-[13px]"
+              style={{ color: "var(--cf2-text-primary)" }}
+            />
+          </div>
+          <button
+            onClick={handleSendText}
+            disabled={!texto.trim() || sendMutation.isPending}
+            className="flex items-center justify-center rounded-[20px] shrink-0 w-10 h-10 disabled:opacity-50"
+            style={{ background: "var(--cf2-accent)", border: "1px solid var(--cf2-accent-border)" }}
+          >
+            <Send className="w-4 h-4" style={{ color: "var(--cf2-text-on-accent)" }} />
+          </button>
+        </div>
+      </div>
+      <input ref={fileInputRef} type="file" className="hidden" />
+    </div>
+  );
+}

@@ -2,7 +2,6 @@ import { auth } from "@/lib/auth/config";
 import { redirect } from "next/navigation";
 import { Providers } from "@/components/crm/Providers";
 import { Cf2Sidebar } from "@/components/crm2/Sidebar";
-import { isAdminView } from "@/lib/auth/roles";
 
 export const dynamic = "force-dynamic";
 
@@ -23,16 +22,14 @@ async function resolveSession() {
  * princípio já usado no backend a sessão inteira): convive com o `(crm)`
  * legado (dark) sem tocar nele. Rotas migram uma a uma pra aqui.
  *
- * Escopo atual: só Super Admin/Admin/Gerente (visão agregada) — os outros
- * papéis (closer/sdr) ainda usam o dashboard pessoal legado, "derivação"
- * pros outros papéis é passo futuro explícito (decisão do Kauã, 09/08).
+ * Escopo de acesso: qualquer papel autenticado da organização — fase de
+ * construção, decisão explícita do Kauã (10/08) de deixar tudo visível por
+ * enquanto em vez de manter um gate fino por papel a cada tela nova. RBAC
+ * por tela fica pra quando a IA de navegação estiver mais assentada.
  */
 export default async function Crm2Layout({ children }: { children: React.ReactNode }) {
   const session = await resolveSession();
   if (!session?.user) redirect("/login");
-
-  const role = (session.user as { role?: string }).role;
-  if (!isAdminView(role)) redirect("/dashboard");
 
   return (
     <Providers session={session}>
@@ -49,7 +46,11 @@ export default async function Crm2Layout({ children }: { children: React.ReactNo
             backgroundSize: "60px 60px",
           }}
         >
-          <div className="p-6 flex flex-col gap-5 relative">{children}</div>
+          {/* h-full aqui é o que permite telas como /atendimento terem scroll
+              interno próprio (lista/conversa) em vez de esticar a página —
+              main continua scrollando normalmente quando o conteúdo é mais
+              alto que isso (ex: /inicio), então não quebra nada existente. */}
+          <div className="p-6 flex flex-col gap-5 relative h-full min-h-0">{children}</div>
         </main>
       </div>
     </Providers>

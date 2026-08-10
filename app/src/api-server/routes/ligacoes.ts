@@ -1,14 +1,16 @@
 import { Hono } from "hono";
 import { getCtx } from "../compat.js";
 import { db } from "@/lib/db";
-import { ligacoes, usuarios, negocios, negocioLeads } from "@/lib/db/schema";
-import { eq, and, or, desc, inArray, sql } from "drizzle-orm";
+import { ligacoes, usuarios, negocios, negocioLeads, leads } from "@/lib/db/schema";
+import { eq, and, or, desc, inArray, sql, ilike } from "drizzle-orm";
 
 /**
  * Histórico de ligações da telefonia Callface (webhook de saída).
  *
  * GET /ligacoes?leadId=...          → ligações do lead
  * GET /ligacoes?negocioId=...       → ligações do negócio (diretas + dos leads vinculados)
+ * GET /ligacoes (sem params)        → listagem geral da org, pra Atendimento
+ *   (?usuarioId=, ?search=, ?limit=)
  *
  * Retorna a lista ordenada da mais recente pra mais antiga, com o nome do
  * vendedor resolvido. A série do closurePercentage (tendência de fechamento)
@@ -20,7 +22,42 @@ app.get("/ligacoes", async (c) => {
   const ctx = await getCtx(c);
   const leadId = c.req.query("leadId") ?? null;
   const negocioId = c.req.query("negocioId") ?? null;
-  if (!leadId && !negocioId) return c.json({ error: "Informe leadId ou negocioId" }, 400);
+
+  if (!leadId && !negocioId) {
+    const usuarioId = c.req.query("usuarioId") ?? null;
+    const search = c.req.query("search") ?? null;
+    const limit = Math.min(parseInt(c.req.query("limit") || "50"), 200);
+
+    const conds = [eq(ligacoes.organizacaoId, ctx.organizacaoId)];
+    if (usuarioId) conds.push(eq(ligacoes.usuarioId, usuarioId));
+    if (search) conds.push(ilike(leads.nome, `%${search}%`));
+
+    const rows = await db
+      .select({
+        id: ligacoes.id,
+        leadId: ligacoes.leadId,
+        negocioId: ligacoes.negocioId,
+        usuarioId: ligacoes.usuarioId,
+        usuarioNome: usuarios.nome,
+        leadNome: leads.nome,
+        leadEmpresa: leads.empresa,
+        destinationNumber: ligacoes.destinationNumber,
+        callDate: ligacoes.callDate,
+        duracaoSegundos: ligacoes.duracaoSegundos,
+        callStatus: ligacoes.callStatus,
+        resumo: ligacoes.resumo,
+        closurePercentage: ligacoes.closurePercentage,
+        createdAt: ligacoes.createdAt,
+      })
+      .from(ligacoes)
+      .leftJoin(usuarios, eq(usuarios.id, ligacoes.usuarioId))
+      .leftJoin(leads, eq(leads.id, ligacoes.leadId))
+      .where(and(...conds))
+      .orderBy(desc(sql`coalesce(${ligacoes.callDate}, ${ligacoes.createdAt})`))
+      .limit(limit);
+
+    return c.json(rows);
+  }
 
   const conds = [eq(ligacoes.organizacaoId, ctx.organizacaoId)];
 

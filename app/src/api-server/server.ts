@@ -42,6 +42,7 @@ import { aiSdrRoutes } from "./routes/ai-sdr.js";
 import { metasRoutes } from "./routes/metas.js";
 import { meRoutes } from "./routes/me.js";
 import { authFlowRoutes } from "./routes/auth-flow.js";
+import { atendimentoRoutes } from "./routes/atendimento.js";
 
 const app = new Hono();
 
@@ -75,6 +76,7 @@ app.route("/api", ligacoesRoutes);
 app.route("/api", reunioesRoutes);
 app.route("/api", whatsappRoutes);
 app.route("/api", emailRoutes);
+app.route("/api", atendimentoRoutes);
 app.route("/api", cadenciaRoutes);
 app.route("/api/relatorios", relatoriosRoutes);
 app.route("/api/configuracoes", configuracoesRoutes);
