@@ -41,7 +41,7 @@ interface NavItem {
 // no tema antigo — salto visual esperado até essa tela ser migrada).
 const MENU: NavItem[] = [
   { label: "Dashboard", href: "/inicio", icon: LayoutDashboard },
-  { label: "Atendimento", href: "/whatsapp", icon: Headset },
+  { label: "Atendimento", href: "/atendimento", icon: Headset },
   { label: "Propostas", href: "/propostas", icon: FileText },
   { label: "Calendário", href: "/agenda", icon: Calendar },
 ];

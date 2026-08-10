@@ -481,3 +481,47 @@ Backfill validado + dual-write nos pontos de maior valor real + observability de
 ADR-EXEC-001 (outbox sem broker novo) · 002 (evidência Won×PBX, pendente) · 003 (Schema V2 em paralelo) · 004 (verificação de achados via query real) · 005 (docs no repo) · 006 (dev/prod routing parity) · 007 (Data Governance) · 008 (branch `homolog` é backup do Kauã, não integrar).
 
 Fim do histórico F0 — ver seção "Fase atual: F1" no topo deste arquivo para o estado real e próximo passo.
+
+## Achado — Pipeline Comercial (Command Center) subconta "Negociação" (10/08)
+
+Kauã notou "tem muito mais em negociação" do que o card mostra (21 negócios/R$1.939). Confirmado com dado real: **não é bug de zerar valor** — é o bucket "Negociação" só contar `negocios.status = 'negociacao_iniciada'` (21 no banco, 71% com proposta expirada). O volume real que ele sente existe está em outros status hoje fora de qualquer bucket: `ativo` (68 negócios, R$75.187) + `proposta_apresentada` (43, R$74.670).
+
+**Proposta do Kauã pra tratar depois** (não implementado agora, ele mesmo pediu "depois"):
+1. Revisar o mapeamento de status→bucket do Pipeline Comercial (`getPipelineComercial`, `lib/analytics/command-center.ts`) pra cobrir os status reais de "em negociação", não só o literal.
+2. Quando `propostas.dataValidade` vence e o status vira `expirada`, disparar automaticamente tarefa + notificação pro responsável (hoje não existe esse gatilho — nem no Automation Builder nem em job agendado). O valor do negócio deve continuar sendo mostrado normalmente (não depende da proposta vencer).
+
+Ambos ficam registrados aqui como próximo passo, fora do escopo da tela de Atendimento em andamento.
+
+## V1 Frontend — Central de Atendimento (Figma node 53:518, 10/08)
+
+Segunda tela do CRM 2.0 sobre o mesmo App Shell (`(crm2)/atendimento`). Análise prévia (padrão do brief original) cruzou o Figma com o Domain Model antes de implementar — achados e decisões do Kauã:
+
+**Achado real, não previsto**: `communications` (tabela unificadora F2) está com 0 linhas no ambiente local (dual-write certo desde F2, mas nunca houve backfill do histórico) e o vínculo `contatos.leadId` cobre só **11 de 957 contatos** (~1%). Ativar leitura real de `communications` pra montar a aba "Todas" produziria um inbox quase vazio, escondendo dado real que existe nas tabelas antigas. Decisão (Kauã optou por "ativar communications", mas dado real bloqueou): seguido pragmático — "Todas" mescla as 3 fontes reais na leitura (`contatos`=WhatsApp, `emails`=E-mail por thread, `ligacoes`=Ligação), sem depender de `communications`/`pessoas` ainda. Gap de vínculo contato↔lead registrado como projeto de dados separado, fora do escopo desta tela.
+
+**Decisões do Kauã aplicadas**:
+- RBAC: `(crm2)` liberado pra qualquer papel autenticado (fase de construção, decisão explícita — antes só admin/gerente/super_admin).
+- "Resolver": mantido — fecha gap real (não existia status aberta/resolvida em `contatos`). Campo novo `contatos.status` (default `aberta`).
+- "ALTA" (prioridade): removido — sem fonte real, seria inventar.
+- "Cliente/Lead": mantido, real (`clientes.leadIdLegado` — existe cliente convertido daquele lead ou não).
+- "Negócio Ativo" fixo: virou cascata real por prioridade — Negócio Ativo (status não-fechado) → Proposta Enviada (`propostas.status='enviada'`) → Reunião Agendada (`reunioes` futura) → CTA "Agendar Reunião" (cria reunião real via `/reunioes`). Sem inventar % de conversão (mesmo princípio do achado dos 231% no Command Center).
+- "Callface AI Copilot" (sugestão de resposta): **não implementado nesta rodada** — decisão do Kauã, geração de texto real precisa de LLM (Groq), e ele quer tratar isso junto de um fluxo maior (dado de ligação/mensagem/e-mail alimentando IA) depois.
+- Handoff entre vendedores esclarecido: `responsavelId` (dono no CRM) é independente de `sessaoId` (número de WhatsApp de origem) — trocar responsável NÃO muda o número de envio; quem responde sempre envia pelo próprio WhatsApp (`/whatsapp/send` já resolve a sessão pelo usuário que está mandando, não pela sessão salva no contato). Confirmado no código existente, nenhuma mudança necessária; só exposto na UI (`via WhatsApp de X`, usando `sessaoUsuarioNome` que já vinha da API).
+
+**Implementado**: `GET/POST /api/atendimento/*` (conversas mescladas, contexto em cascata, resolver), `GET /api/ligacoes` sem params vira listagem geral (antes só por lead/negócio), 8 componentes novos (`components/crm2/atendimento/*`) — lista/thread WhatsApp real (envio funcional)/thread E-mail real (resposta funcional, exige `contaId` do e-mail original)/detalhe de Ligação (resumo IA + transcrição + áudio, tudo real)/painel de contexto/modais de Atribuir e Nova Mensagem.
+
+**Bug de layout achado pelo Kauã e corrigido**: a tela crescia sem limite (e-mail longo empurrava a página inteira) em vez de rolar internamente — causa raiz era a cadeia de `height` quebrada no wrapper do App Shell (`(crm2)/layout.tsx`), que fazia `h-full` não resolver contra nada definido. Corrigido com `h-full min-h-0` no wrapper — não afeta o Dashboard (que depende do scroll normal da página pra conteúdo longo).
+
+**Validado end-to-end com dado real via Playwright**: WhatsApp (thread real com histórico + envio), E-mail (thread real), Ligação (resumo/transcrição/áudio reais de uma chamada de verdade), painel de contexto mostrando negócio ativo real com valor e etapa, estado honesto "sem lead vinculado" quando não há dado pra mostrar.
+
+**Não implementado, registrado como gap consciente**: Insight/Copilot de IA (deferido pelo Kauã); "Atribuir" pra e-mail/ligação (só WhatsApp tem esse conceito hoje); backfill de `communications`/correção do vínculo contato↔lead (projeto de dados separado).
+
+## Correções de fidelidade/segurança na Central de Atendimento (mesmo dia, feedback direto do Kauã)
+
+- [x] **Vazamento de privacidade entre vendedores (achado crítico do Kauã, prioridade máxima)**: o filtro "Todos" (e o "todos" de e-mail/ligação) deixava admin/super_admin ver WhatsApp/e-mail/ligação de QUALQUER vendedor. Corrigido: `buscarWhatsapp`/`buscarEmail`/`buscarLigacao` agora escopam por `responsavelId`/`usuarioId`/conta própria pra TODOS os papéis, sem exceção — só "Atribuir" muda quem tem acesso a uma conversa. Supervisão de verdade (ver como outro vendedor) fica como feature separada e explícita, não um toggle passivo. Validado com dado real: "todos" antes retornava 3 donos distintos, depois só o do usuário logado.
+- [x] **"Resolver" removido por completo** (Kauã mudou de ideia: "não faz sentido, atribuir sim") — botão, endpoint `POST /atendimento/contatos/:id/resolver`, coluna `contatos.status` (dropada do banco), filtro por status. Só "Atribuir" ficou.
+- [x] **"Todas" virou fila de pendência, não histórico**: filtra pra só mostrar WhatsApp/E-mail não lidos (abrir já marca como lido — WhatsApp já fazia isso, e-mail passou a fazer via `PATCH /email/:id {lido:true}` ao abrir a thread). Ligação fica sempre visível em "Todas" (não tem sinal de "não lida" pra aplicar o mesmo filtro sem inventar um).
+- [x] **Empresa/Negócio/Proposta no painel direito agora são clicáveis** (iam pra lugar nenhum antes) — linkam pra `/empresas/:id`, `/negocios/:id`, `/propostas/:id` reais.
+- [x] **Aba Ligar**: histórico de ligações real (igual antes), mas agora sem seleção mostra um **discador real** (teclado numérico + busca de contato no painel direito, com badge real "Negociação"/"Proposta" quando aplicável) em vez do vazio genérico — usa o mesmo mecanismo já existente no resto do CRM (`callfaceCallUrl`, deep link pro webphone da Callface; não existe endpoint de originar chamada por API, confirmado no código).
+- [x] **Detalhe de ligação portado do componente real de produção** (`LigacaoModal` em `components/crm/LigacoesSection.tsx`) em vez da versão simplificada inicial — Chance de Fechar (com sparkline), Urgência, Contato identificado pela IA, aviso de reunião combinada, abas Resumo/Transcrição, Interesses/Objeções/Palavras-chave/Próximos passos (tudo via `lib/utils/parse-resumo-callface.ts`, parser real do markdown que a Callface manda — nenhum desses campos é coluna do banco, documentado no próprio parser), link "Abrir na Callface".
+- [x] **Paridade de chat com o legado**: tique de status (pending/sent/delivered/read/failed, `StatusIcon`), menu de anexo funcional (Foto/Vídeo, Documento, Localização, Contato — mesmos 4 do Figma/legado, tudo enviando de verdade via `/whatsapp/send`), ações no hover (Responder/Reagir/Apagar via `/whatsapp/actions`, mesmo endpoint do legado), nome de quem enviou por mensagem quando o time inteiro atende o mesmo contato.
+- [x] Validado de novo com dado real via Playwright + curl após cada correção.

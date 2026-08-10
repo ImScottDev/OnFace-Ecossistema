@@ -114,6 +114,7 @@ app.get("/email", async (c) => {
         lido: emails.lido,
         messageId: emails.messageId,
         threadId: emails.threadId,
+        contaId: emails.contaId,
         createdAt: emails.createdAt,
       })
       .from(emails)
