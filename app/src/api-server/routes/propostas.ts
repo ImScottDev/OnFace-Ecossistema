@@ -10,6 +10,14 @@ import { enviarPropostaComCheckout } from "@/lib/crm/enviar-proposta";
 import { getCheckoutSessionStatus } from "@/lib/integrations/stripe-sync";
 import { propostaPdfHtml, renderPropostaPdf } from "@/lib/propostas/proposta-pdf";
 import { syncOportunidadeFromNegocio } from "@/lib/crm/sync-domain-model";
+import { determinarProximoPasso } from "@/lib/crm/proposta-fluxo";
+import {
+  registrarVisualizacao,
+  aceitarPropostaPublica,
+  recusarPropostaPublica,
+  solicitarAjustePropostaPublica,
+  assinarContratoPublico,
+} from "@/lib/crm/proposta-publica";
 
 const app = new Hono();
 
@@ -253,6 +261,151 @@ app.get("/propostas/:id/pdf", async (c) => {
     console.error("[proposta-pdf] falha ao gerar:", e);
     return c.json({ error: "Falha ao gerar PDF" }, 500);
   }
+});
+
+// ── PÚBLICO (sem auth — cliente sem conta no CRM) ───────────────────────
+// Mesmo modelo de confiança do PDF/checkout já existentes: UUID não-enumerável
+// como trust boundary, sem verificação de organização via sessão.
+
+// GET /propostas/:id/publica — payload pra página pública ver a proposta.
+// Registra visualização (contador + evento ProposalViewed no 1º view real).
+app.get("/propostas/:id/publica", async (c) => {
+  const id = c.req.param("id");
+
+  const [proposta] = await db.select().from(propostas).where(eq(propostas.id, id)).limit(1);
+  if (!proposta) return c.json({ error: "Proposta não encontrada" }, 404);
+
+  const [lead] = await db
+    .select({ nome: leads.nome, empresa: leads.empresa })
+    .from(leads)
+    .where(eq(leads.id, proposta.leadId))
+    .limit(1);
+
+  const [negocio] = proposta.negocioId
+    ? await db.select({ titulo: negocios.titulo }).from(negocios).where(eq(negocios.id, proposta.negocioId)).limit(1)
+    : [];
+
+  const itens = await db
+    .select({
+      nome: propostaItens.nome, descricao: propostaItens.descricao, tipo: propostaItens.tipo,
+      quantidade: propostaItens.quantidade, valorUnitario: propostaItens.valorUnitario, subtotal: propostaItens.subtotal,
+      servicoCatalogoId: propostaItens.servicoCatalogoId,
+    })
+    .from(propostaItens)
+    .where(eq(propostaItens.propostaId, id))
+    .orderBy(asc(propostaItens.ordem));
+
+  let contrato = null;
+  if (proposta.contratoId) {
+    const [c2] = await db.select().from(contratos).where(eq(contratos.id, proposta.contratoId)).limit(1);
+    contrato = c2 ?? null;
+  }
+
+  await registrarVisualizacao(proposta);
+
+  const proximoPasso = proposta.proximoPasso ?? await determinarProximoPasso(itens);
+
+  // Checkout Stripe expira em até 24h — se o cliente abre o link depois disso,
+  // regenera na hora (mesmo comportamento que o antigo /p/[id] já tinha como
+  // redirect puro; aqui só devolve o estado pra página pública decidir o quê
+  // mostrar em vez de redirecionar direto).
+  let checkoutUrl = proposta.checkoutUrl;
+  let pagamentoEstado: "aberto" | "pago" | "boleto_pendente" | "indisponivel" | null = null;
+  if (proximoPasso === "pagamento" && proposta.status === "enviada" && proposta.checkoutUrl) {
+    const st = proposta.stripeSessionId ? await getCheckoutSessionStatus(proposta.stripeSessionId) : null;
+    if (st?.status === "open") pagamentoEstado = "aberto";
+    else if (st?.status === "complete" && st.payment_status !== "paid") pagamentoEstado = "boleto_pendente";
+    else if (st?.status === "complete" && st.payment_status === "paid") pagamentoEstado = "pago";
+    else if (proposta.criadoPorId) {
+      const regen = await enviarPropostaComCheckout({
+        propostaId: proposta.id, organizacaoId: proposta.organizacaoId, userId: proposta.criadoPorId, skipEmail: true,
+      });
+      if (regen.ok) { checkoutUrl = regen.checkoutUrl; pagamentoEstado = "aberto"; }
+      else pagamentoEstado = "indisponivel";
+    } else {
+      pagamentoEstado = "indisponivel";
+    }
+  }
+
+  return c.json({
+    id: proposta.id,
+    numero: proposta.numero,
+    versao: proposta.versao,
+    status: proposta.status,
+    moeda: proposta.moeda,
+    dataValidade: proposta.dataValidade,
+    condicoesPagamento: proposta.condicoesPagamento,
+    totalRecorrente: proposta.totalRecorrente,
+    totalAvulso: proposta.totalAvulso,
+    totalGeral: proposta.totalGeral,
+    checkoutUrl,
+    pagamentoEstado,
+    proximoPasso,
+    motivoRecusa: proposta.motivoRecusa,
+    clienteRespondeuEm: proposta.clienteRespondeuEm,
+    clienteNome: lead?.nome ?? null,
+    empresa: lead?.empresa ?? null,
+    negocioTitulo: negocio?.titulo ?? null,
+    itens,
+    contrato: contrato ? { assinaturaStatus: contrato.assinaturaStatus, status: contrato.status } : null,
+  });
+});
+
+// POST /propostas/:id/aceitar-publico — cliente aceita na página pública
+app.post("/propostas/:id/aceitar-publico", async (c) => {
+  const id = c.req.param("id");
+  const [proposta] = await db.select().from(propostas).where(eq(propostas.id, id)).limit(1);
+  if (!proposta) return c.json({ error: "Proposta não encontrada" }, 404);
+
+  const result = await aceitarPropostaPublica(proposta);
+  if (!result.ok) return c.json({ error: result.error }, 400);
+  return c.json(result);
+});
+
+// POST /propostas/:id/recusar-publico
+app.post("/propostas/:id/recusar-publico", async (c) => {
+  const id = c.req.param("id");
+  const body = await c.req.json().catch(() => ({}));
+  const motivo = typeof body?.motivo === "string" ? body.motivo : undefined;
+
+  const [proposta] = await db.select().from(propostas).where(eq(propostas.id, id)).limit(1);
+  if (!proposta) return c.json({ error: "Proposta não encontrada" }, 404);
+
+  const result = await recusarPropostaPublica(proposta, motivo);
+  if (!result.ok) return c.json({ error: result.error }, 400);
+  return c.json(result);
+});
+
+// POST /propostas/:id/ajuste-publico — não muda status, só avisa o time
+app.post("/propostas/:id/ajuste-publico", async (c) => {
+  const id = c.req.param("id");
+  const body = await c.req.json().catch(() => ({}));
+  const mensagem = typeof body?.mensagem === "string" ? body.mensagem.trim() : "";
+  if (!mensagem) return c.json({ error: "Descreva o ajuste que você gostaria de solicitar." }, 400);
+
+  const [proposta] = await db.select().from(propostas).where(eq(propostas.id, id)).limit(1);
+  if (!proposta) return c.json({ error: "Proposta não encontrada" }, 404);
+
+  await solicitarAjustePropostaPublica(proposta, mensagem);
+  return c.json({ ok: true });
+});
+
+// POST /propostas/:id/assinar-publico — aceite eletrônico simples do contrato
+// (fluxo "contrato"). Não é assinatura digital qualificada — ver nota em
+// lib/crm/proposta-publica.ts e crm2-decisoes-pendentes.md.
+app.post("/propostas/:id/assinar-publico", async (c) => {
+  const id = c.req.param("id");
+  const body = await c.req.json().catch(() => ({}));
+  const nomeCompleto = typeof body?.nomeCompleto === "string" ? body.nomeCompleto.trim() : "";
+  if (!nomeCompleto) return c.json({ error: "Informe o nome completo de quem está assinando." }, 400);
+
+  const [proposta] = await db.select().from(propostas).where(eq(propostas.id, id)).limit(1);
+  if (!proposta) return c.json({ error: "Proposta não encontrada" }, 404);
+
+  const ip = c.req.header("x-forwarded-for")?.split(",")[0]?.trim() || c.req.header("x-real-ip") || "desconhecido";
+  const result = await assinarContratoPublico(proposta, nomeCompleto, ip);
+  if (!result.ok) return c.json({ error: result.error }, 400);
+  return c.json(result);
 });
 
 // POST /propostas

@@ -11,6 +11,8 @@ import { eq, and, asc } from "drizzle-orm";
 import { createSubscriptionCheckout } from "@/lib/integrations/stripe-checkout";
 import { sendResendEmail } from "@/lib/email/resend";
 import { buildPropostaEmail } from "@/lib/email/proposta-email";
+import { determinarProximoPasso } from "@/lib/crm/proposta-fluxo";
+import { publicarEvento } from "@/lib/events/outbox";
 
 type PropostaRow = typeof propostas.$inferSelect;
 
@@ -63,12 +65,23 @@ export async function enviarPropostaComCheckout(opts: {
       tipo: propostaItens.tipo,
       quantidade: propostaItens.quantidade,
       subtotal: propostaItens.subtotal,
+      servicoCatalogoId: propostaItens.servicoCatalogoId,
       stripeProductId: servicosCatalogo.stripeProductId,
     })
     .from(propostaItens)
     .leftJoin(servicosCatalogo, eq(propostaItens.servicoCatalogoId, servicosCatalogo.id))
     .where(eq(propostaItens.propostaId, propostaId))
     .orderBy(asc(propostaItens.ordem));
+
+  // Fluxo comercial condicional (Kauã, 10/08): itens que exigem contrato
+  // (ex: PABX) não passam pelo checkout Stripe no envio — vão pro fluxo de
+  // aceite → contrato → assinatura, o pagamento acontece só depois disso.
+  const proximoPasso = await determinarProximoPasso(itens);
+  const totalRecorrente = parseFloat(proposta.totalRecorrente || "0");
+
+  if (proximoPasso === "contrato") {
+    return enviarPropostaSemCheckout({ proposta, organizacaoId, userId, userName, skipEmail, itens, totalRecorrente });
+  }
 
   const recorrentes = itens.filter((i) => i.tipo === "recorrente");
   const checkoutItens = recorrentes.map((i) => {
@@ -84,7 +97,6 @@ export async function enviarPropostaComCheckout(opts: {
       stripeProductId: i.stripeProductId, // produto real do Stripe (mantém produto + aplica preço/desconto da proposta)
     };
   });
-  const totalRecorrente = parseFloat(proposta.totalRecorrente || "0");
 
   if (checkoutItens.length === 0 && totalRecorrente <= 0) {
     return { ok: false, status: 400, error: "Proposta sem valor recorrente. O checkout de assinatura precisa de um valor mensal." };
@@ -158,10 +170,16 @@ export async function enviarPropostaComCheckout(opts: {
       checkoutUrl,
       stripeSessionId,
       enviadaEm: new Date(),
+      proximoPasso: "pagamento",
       updatedAt: new Date(),
     })
     .where(eq(propostas.id, propostaId))
     .returning();
+
+  await publicarEvento({
+    organizacaoId, eventType: "ProposalSent", aggregateType: "proposta", aggregateId: proposta.id,
+    payload: { propostaId: proposta.id, negocioId: proposta.negocioId, proximoPasso: "pagamento" },
+  });
 
   // 4) Timeline
   await db.insert(atividades).values({
@@ -180,6 +198,95 @@ export async function enviarPropostaComCheckout(opts: {
     ok: true,
     proposta: updated,
     checkoutUrl,
+    emailSent: emailResult.sent,
+    emailSkipped: emailResult.skipped ?? false,
+    emailError: emailResult.error ?? null,
+  };
+}
+
+/**
+ * Envio pro caminho "contrato" (ex: PABX): sem checkout Stripe — o pagamento
+ * só existe depois da assinatura. O link enviado é sempre a página pública
+ * (/p/[id]), que mostra o aceite/contrato em vez de um botão de pagamento.
+ */
+async function enviarPropostaSemCheckout(opts: {
+  proposta: PropostaRow;
+  organizacaoId: string;
+  userId: string;
+  userName?: string | null;
+  skipEmail?: boolean;
+  itens: { nome: string; tipo: string; subtotal: string | null }[];
+  totalRecorrente: number;
+}): Promise<EnviarPropostaResult> {
+  const { proposta, organizacaoId, userId, userName, skipEmail, itens, totalRecorrente } = opts;
+
+  const [lead] = await db
+    .select({ nome: leads.nome, sobrenome: leads.sobrenome, empresa: leads.empresa, email: leads.email })
+    .from(leads)
+    .where(eq(leads.id, proposta.leadId))
+    .limit(1);
+
+  if (!skipEmail && !lead?.email) {
+    return { ok: false, status: 400, error: "O lead não tem email cadastrado. Preencha o email do cliente antes de enviar." };
+  }
+
+  const base = process.env.NEXTAUTH_URL || "https://crm.callface.io";
+  const clienteNome = [lead?.nome, lead?.sobrenome].filter(Boolean).join(" ") || lead?.nome || "";
+  const linkPublico = `${base}/p/${proposta.id}`;
+
+  let emailResult: { sent: boolean; skipped?: boolean; error?: string | null; id?: string | null } = {
+    sent: false, skipped: true, error: null, id: null,
+  };
+  if (!skipEmail && lead?.email) {
+    const { subject, html } = buildPropostaEmail({
+      clienteNome,
+      empresa: lead.empresa,
+      numero: proposta.numero,
+      versao: proposta.versao,
+      moeda: proposta.moeda || "BRL",
+      itens: itens.map((i) => ({ nome: i.nome, tipo: i.tipo, subtotal: parseFloat(i.subtotal || "0") })),
+      totalRecorrente,
+      checkoutUrl: linkPublico,
+      validade: proposta.dataValidade,
+      remetenteNome: userName ?? null,
+    });
+    emailResult = await sendResendEmail({ to: lead.email, subject, html });
+  }
+
+  const today = new Date().toISOString().split("T")[0];
+  const [updated] = await db
+    .update(propostas)
+    .set({
+      status: "enviada",
+      dataEmissao: proposta.dataEmissao || today,
+      enviadaEm: new Date(),
+      proximoPasso: "contrato",
+      updatedAt: new Date(),
+    })
+    .where(eq(propostas.id, proposta.id))
+    .returning();
+
+  await publicarEvento({
+    organizacaoId, eventType: "ProposalSent", aggregateType: "proposta", aggregateId: proposta.id,
+    payload: { propostaId: proposta.id, negocioId: proposta.negocioId, proximoPasso: "contrato" },
+  });
+
+  await db.insert(atividades).values({
+    organizacaoId,
+    leadId: proposta.leadId,
+    usuarioId: userId,
+    tipo: "proposta_enviada",
+    titulo: `Proposta #P-${String(proposta.numero).padStart(3, "0")}-v${proposta.versao} ${skipEmail ? "ativada (link gerado)" : "enviada por email"} — fluxo de contrato`,
+    descricao: skipEmail
+      ? "Link público gerado. Sem checkout (produto exige contrato). Email não disparado (Salvar)."
+      : `Enviada para ${lead?.email}. Sem checkout (produto exige contrato).`,
+    dados: { propostaId: proposta.id, emailId: emailResult.id ?? null },
+  });
+
+  return {
+    ok: true,
+    proposta: updated,
+    checkoutUrl: linkPublico,
     emailSent: emailResult.sent,
     emailSkipped: emailResult.skipped ?? false,
     emailError: emailResult.error ?? null,
