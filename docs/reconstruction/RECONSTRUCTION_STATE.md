@@ -767,3 +767,21 @@ Regra explícita de reporte, corrigindo minha própria formulação inicial: nen
 Documento também traz proposta inicial de modelo canônico (rascunho, não fechado) e lista explícita de casos ambíguos que exigem decisão do Kauã, não minha.
 
 **Aguardando**: leitura/direção do Kauã sobre a síntese antes de qualquer próximo passo — nenhuma correção, reimportação ou mudança de schema foi feita nem está planejada até então.
+
+---
+
+## Fase 2 da auditoria: semântica, temporalidade e procedência (10-11/08/2026)
+
+Depois de ler a síntese da fase 1, Kauã pediu uma segunda etapa: não "o que existe/falta" (já respondido), mas **"o que cada coisa significa e como reconstruir a verdade histórica sem reproduzir a estrutura/processos ruins do Zoho"** — análise semântica + temporal + de procedência, ainda sem tocar em nada do CRM. Framework de 3 categorias temporais explícito (legado Zoho / dados do CRM vindos do legado / dados novos pós-cutover, já que o CRM está em produção desde 12/06/2026 e isso precisa ser preservado).
+
+5 frentes em paralelo (background, 100% leitura), relatórios em `docs/reconstruction/auditoria-legado-zoho/fase2-semantica-temporal/`, síntese em `00-SINTESE-FASE2.md`:
+
+- **A** — mapa semântico: classificação das 1.551 oportunidades do Zoho em 13 categorias reais (não "módulo Zoho"); refinamento do achado da fase 1 de 244 para 247 eventos pós-venda distintos; achado novo de 145 casos de alteração pós-venda sem token de evento no nome.
+- **B** — timeline evidence-based de 20 empresas de maior impacto (CONFIRMED/INFERRED/AMBIGUOUS em cada evento) — **achado mais grave**: 2 churns aconteceram na própria semana desta auditoria (Ammo Varejo 20/07, Compucenter 04/08) e nenhum está no CRM — não é mais só arqueologia de migração, é o gap acontecendo agora.
+- **C** — procedência forense: as 563 faturas são 100% Stripe; 171 dos 319 contratos nascem no mesmo microssegundo de 01/07 (backfill, não uso orgânico), 78 vêm do fluxo orgânico real (proposta aceita→negócio ganho). **Achado urgente**: 76 contratos (38 pares) ainda duplicados por `stripe_subscription_id` um dia depois do fix que corrigiu a causa raiz — passivo de MRR duplicado pode não ter sido limpo.
+- **D** — os 449 leads pós-cutover, processados 100% (não amostra): **conclusão inverte a leitura da fase 1** — 89,5% são duplicata da mesma submissão que também chegou certinho no CRM (causa raiz: workflow n8n RD Station→Zoho continuou ativo pós-corte, dedupe só olha pro Zoho, nunca pro CRM novo), 7,1% já são clientes pagantes. Só 12 (2,7%) são leads reais represados de fato.
+- **E** — state vs event no schema: achou o mesmo anti-padrão do Zoho ("fato como texto livre") reencarnado no CRM 2.0 (`contrato-duplicidade.ts`); validou que a hipótese das 4 dimensões (Opportunity/Contract/Lifecycle/Event) do Kauã é fortemente sustentada pelos dados só para Opportunity≠Event — Contract≠Lifecycle é antecipação de escala, não correção de sintoma medido.
+
+**3 achados que pedem decisão rápida, não é só material de modelagem**: (1) os 76 contratos duplicados podem estar inflando MRR reportado agora; (2) os 2 churns recentes mostram que o gap está ativo, não é só histórico; (3) o workflow n8n pode continuar duplicando lead hoje — sem acesso ao painel da Wevy/Zoho nesta sessão pra confirmar se ainda está ligado.
+
+**Status**: síntese da fase 2 entregue, aguardando leitura/direção do Kauã antes do modelo canônico definitivo e de qualquer migração/reconstrução.
