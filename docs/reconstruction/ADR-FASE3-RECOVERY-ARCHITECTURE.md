@@ -3,6 +3,8 @@
 > **Status: proposta para revisão. Nada aqui foi implementado, nenhuma migration foi aplicada, nenhum ambiente foi alterado.** Este documento responde à pergunta: *"Como recuperamos corretamente TODA a história relevante do Zoho para o CRM operacional atual, testando primeiro em homologação, sem introduzir uma representação que depois conflite com o Domain Model CRM 2.0 já construído?"*
 >
 > Entrada: fase 1 (`docs/reconstruction/auditoria-legado-zoho/00-SINTESE-CONSOLIDADA.md` + 6 relatórios) e fase 2 (`fase2-semantica-temporal/00-SINTESE-FASE2.md` + 5 relatórios). Arquitetura CRM 2.0 existente lida integralmente antes de escrever isto: `ARCHITECTURE_DECISIONS.md`, `vault-referencia/PLANO-RECONSTRUCAO-CRM2.md`, `crm2-decisoes-pendentes.md`, `IMPLEMENTATION_PROGRESS.md`, `app/src/lib/db/schema.ts`, `app/src/lib/crm/sync-domain-model.ts`, `app/src/lib/db/backfill-domain-model.ts`. Nenhuma decisão já fechada nesses documentos foi redesenhada — este ADR só confronta os achados novos (fase 1/2) contra o que já existe.
+>
+> **Revisão 2 (11/08, pós-review do Kauã)**: a v1 propôs estender `mrr_movimentos` como lugar do Lifecycle Event. Corrigido — `mrr_movimentos` é ledger financeiro, não pode ser a fonte de verdade do evento comercial (eventos como Cancellation Requested/Retention Started/Renewal/Contract Change podem ter R$0 de impacto, e Upgrade/Downgrade perderiam identidade própria ficando só como `expansao`/`contracao` com o rótulo escondido em `evidencia`). Seções afetadas por esta revisão: 1.4, 1.10, 1.13, 2.2, 2.3, 3, 4, 5, 6, 7, 8, 9, 10 e "Perguntas em aberto" (agora fechadas). O resto do documento (aprovado pelo Kauã) não foi tocado.
 
 ---
 
@@ -70,11 +72,11 @@ Ver seção 2 (ADR Delta) — tratado em profundidade porque é o achado mais im
 |---|---|
 | Fato legado | 1.551 oportunidades, das quais 247 são eventos pós-venda (churn/upgrade/downgrade/renovação/alteração contratual) ligados via `Oportunidade Origem`, e 512 não têm negócio correspondente hoje. |
 | Representação atual | Oportunidade original (aquisição real) → `negocios` (1:1, já existe). Evento pós-venda → **NÃO cria novo `negocios`** (isso reproduziria o erro do Zoho) → vai para o Lifecycle Event Ledger (seção 2). |
-| Mudança mínima | Extensão de `mrr_movimentos` (seção 2/6), não tabela nova. |
-| Provenance | `negocios.zohoId` (aquisição) + `mrr_movimentos.zohoId`/`negocioOrigemId` (evento) — ver seção 5. |
-| Conflito Zoho×Prod | Os 121 negócios "ganho" com evento documentado depois — regra: negócio original NUNCA muda de status; o evento entra como linha nova no ledger. Nunca resolver silenciosamente os 512 órfãos — cada um vira candidato a `negocios` novo só com confiança alta (tem Stage de vitória real + valor + data, não é rascunho/duplicata). |
+| Mudança mínima | Nova tabela `eventos_comerciais` (seção 2/6) — Lifecycle Event como conceito de 1ª classe, distinto do ledger financeiro. Não é extensão de `mrr_movimentos` (corrigido na revisão 2). |
+| Provenance | `negocios.zohoId` (aquisição) + `eventos_comerciais.zohoId`/`negocioOrigemId` (evento) — ver seção 5. |
+| Conflito Zoho×Prod | Os 121 negócios "ganho" com evento documentado depois — regra: negócio original NUNCA muda de status; o evento entra como linha nova em `eventos_comerciais`. Nunca resolver silenciosamente os 512 órfãos — cada um vira candidato a `negocios` novo só com confiança alta (tem Stage de vitória real + valor + data, não é rascunho/duplicata). |
 | Regra temporal | `ganhoAt` do negócio original nunca é tocado por um evento posterior. Evento carrega `ocorridoEm` = `Data de Fechamento` do registro-evento no Zoho. |
-| Mapeamento V2 | `oportunidades.negocioIdLegado` já é a bridge pra `negocios`. O ledger de evento (seção 2) precisa, no futuro (fora de escopo agora), ganhar `oportunidadeId`/`clienteId` quando F1 for promovido — hoje só referencia `negocioId` (legado), que é tudo que existe no ambiente-alvo. |
+| Mapeamento V2 | `oportunidades.negocioIdLegado` já é a bridge pra `negocios`. `eventos_comerciais` (seção 2) precisa, no futuro (fora de escopo agora), ganhar `oportunidadeId`/`clienteId` quando F1 for promovido — hoje só referencia `negocioId` (legado), que é tudo que existe no ambiente-alvo. |
 
 ### 1.5 Proposals / Proposal Items
 
@@ -82,8 +84,8 @@ Ver seção 2 (ADR Delta) — tratado em profundidade porque é o achado mais im
 |---|---|
 | Fato legado | 1.067 Quotes, 1.876 Itens Cotados. Fase 1: 591 propostas atuais batem por valor+data (não há ID), 44% sem equivalente. |
 | Representação atual | `propostas`/`proposta_itens` — entidade correta, sem ambiguidade estrutural. |
-| Mudança mínima | **Adicionar `propostas.zoho_id` (text, nullable)** — hoje não existe, e é por isso que o match é heurístico (valor+data) em vez de exato. Sem essa coluna, toda reconciliação futura de proposta continua sendo aproximação. |
-| Provenance | `propostas.zoho_id` (novo). |
+| Mudança mínima | Nenhuma coluna nova em `propostas` (revisão 2: usa `legacy_provenance`, seção 5, em vez de `zoho_id` direto) — resolve o mesmo problema (match hoje é só heurístico valor+data) sem sprawl de schema. |
+| Provenance | `legacy_provenance` (`entidade_tipo='proposta'`) — ver seção 5. |
 | Conflito Zoho×Prod | Proposta recuperada nunca sobrescreve proposta com atividade real pós-corte (`clienteRespondeuEm` preenchido = intocável). |
 | Regra temporal | `createdAt`/`enviadaEm` = datas reais do Zoho. |
 | Mapeamento V2 | Nenhuma tabela V2 de Proposal existe ainda (é escopo de F4 do plano de reconstrução, "Commercial" — `proposals`/`proposal_items` novos, ainda não construídos). Nada a mapear agora; `propostas.zoho_id` só precisa existir pra quando F4 chegar lá. |
@@ -130,8 +132,8 @@ Ver seção 2 (ADR Delta) — tratado em profundidade porque é o achado mais im
 |---|---|
 | Fato legado | 4.560 notas, 0% presentes em `notas` (achado #6 fase 1 — foram pra `atividades`, tabela errada pra UI mostrar). |
 | Representação atual | `notas` — é a tabela certa pra nota visível no produto hoje. |
-| Mudança mínima | **`notas.zoho_id` (text, nullable)** — não existe hoje, necessário pra idempotência de qualquer recovery de nota. |
-| Provenance | `notas.zoho_id` (novo). |
+| Mudança mínima | Nenhuma coluna nova em `notas` (revisão 2: usa `legacy_provenance`, seção 5). |
+| Provenance | `legacy_provenance` (`entidade_tipo='nota'`) — ver seção 5. |
 | Conflito Zoho×Prod | Nenhum esperado (não há nota nova concorrente no mesmo registro). |
 | Regra temporal | `createdAt` = data real da nota no Zoho — **crítico**: preservar a data original, não a data da recuperação, porque a fase 2 usou justamente `createdAt` de nota pra reconstruir jornada com confiança CONFIRMED. |
 | Mapeamento V2 | Nenhuma entidade Note V2 dedicada existe — permanece em `notas` até decisão futura de Communication/Timeline (F2, já parcialmente construída). |
@@ -143,7 +145,7 @@ Ver seção 2 (ADR Delta) — tratado em profundidade porque é o achado mais im
 | Fato legado | 6.429 transições de estágio de negócio + 5.346 linhas de histórico de status/dono de lead. Achado #6 da fase 1: 100% perdido, `audit_log` nunca ligado — e agora sabemos que `audit_log` nem existe em produção (seção 0). |
 | Representação atual | `status_changes` — já existe em produção, já é append-only por design, é a estrutura certa pra Stage History de negócio. Para lead, mesma tabela (tem `leadId`). |
 | Mudança mínima | Nenhuma de schema — só passar a popular via recovery. |
-| Provenance | `status_changes.motivo` carrega referência textual ao registro Zoho de origem (não há coluna de zoho_id em `status_changes` hoje — se o volume justificar rastreabilidade exata por linha, avaliar `zoho_id` nullable aqui também; tratado como decisão aberta, não bloqueante). |
+| Provenance | **`status_changes.zoho_id` (text, nullable, novo — decisão fechada pelo Kauã na revisão 2)**: rastreabilidade exata por linha, não escondida dentro de `motivo`. |
 | Conflito Zoho×Prod | Nenhum — é aditivo puro, histórico nunca é sobrescrito. |
 | Regra temporal | `createdAt` = `Hora da modificação` real do Zoho. |
 | Mapeamento V2 | Nenhuma tabela de histórico V2 existe (F1 dual-write ainda não cobre isso). Quando existir, é leitura direta de `status_changes`, sem transformação. |
@@ -155,8 +157,8 @@ Ver seção 2 (ADR Delta) — tratado em profundidade porque é o achado mais im
 |---|---|
 | Fato legado | 414/382/510/177 registros, 0% migrados (tudo que existe hoje é atividade nova pós-corte). |
 | Representação atual | `atividades` (genérica, `tipo`+`dados` jsonb) — ligações reais hoje também espelham em `ligacoes`; reunião real em `reunioes`. Recovery histórico não deveria criar `ligacoes`/`reunioes` retroativas com metadados de integração que nunca existiram — só `atividades`. |
-| Mudança mínima | **`atividades.zoho_id` (text, nullable)** — não existe hoje, necessário pra idempotência. |
-| Provenance | `atividades.zoho_id` (novo) + `dados` (jsonb, já existe) guarda o payload cru do registro Zoho. |
+| Mudança mínima | Nenhuma coluna nova em `atividades` (revisão 2: usa `legacy_provenance`, seção 5). |
+| Provenance | `legacy_provenance` (`entidade_tipo='atividade'`) + `dados` (jsonb, já existe) guarda o payload cru do registro Zoho. |
 | Conflito Zoho×Prod | Nenhum esperado. |
 | Regra temporal | `createdAt` = data real do Zoho. |
 | Mapeamento V2 | `communications`/`ai_analysis` (F2) já parcialmente construídos, mas ainda não substituem `atividades` como fonte — recovery fica em `atividades`, migração futura (quando F2 assumir de fato) é decisão separada. |
@@ -179,7 +181,7 @@ Ver seção 2 (ADR Delta) — tratado em profundidade porque é o achado mais im
 |---|---|
 | Fato legado | 1.980 arquivos, 831MB, majoritariamente ligados a ZohoSign (achado #12 fase 1). |
 | Representação atual | Não existe tabela de anexo genérica hoje. |
-| Mudança mínima | Decisão explícita necessária, não resolvida aqui (ver seção 9 — não é bloqueante pro resto): recuperar **metadado primeiro** (tabela nova leve `anexos_legado`: id, entidade_tipo, entidade_id, zoho_id, nome_arquivo, tamanho_bytes, criado_em_original) sem migrar o binário; upload físico do arquivo é decisão operacional separada (custo/local de armazenamento) que não deveria travar o resto da Fase 3. |
+| Mudança mínima | **Decisão fechada pelo Kauã (revisão 2): recuperar metadado E os binários** — legado não é considerado 100% recuperado até os 1.980 arquivos estarem preservados e verificáveis, não só indexados. Tabela nova leve `anexos_legado` (id, entidade_tipo, entidade_id, zoho_id, nome_arquivo, tamanho_bytes, criado_em_original, storage_url/path) + rotina de upload físico. Pode rodar como lote separado (não bloqueia o resto do dry-run — Companies/Leads/Opportunities/Eventos/Contratos seguem em paralelo), mas entra no critério de "recovery completo" antes de declarar a Fase 3 encerrada. |
 | Provenance | `zoho_id` do anexo. |
 | Conflito Zoho×Prod | Nenhum esperado. |
 | Regra temporal | `criado_em_original` = data real do Zoho. |
@@ -225,41 +227,54 @@ Tratado integralmente na seção 5 (Estratégia de Provenance) — não repetido
 
 **Financial State ≠ Customer Lifecycle.** Mesma lógica — `faturas.status`/aging já é o estado financeiro (pago/aberto/falhou), e não precisa ser confundido com "o cliente está ativo". Nenhuma mudança de schema pedida por esta distinção hoje; é orientação de **uso**, não de estrutura: recovery nunca deve inferir `contratos.status='churned'` só porque existe fatura em atraso — precisa de evidência de encerramento real (nota, Stage do Zoho, ou o evento de churn recuperado).
 
-**Cancellation Requested ≠ Churn.** Achado direto da fase 2 (seção A/4.1): 50% dos "downgrade" e 34,6% das "renovação" nomeadas no Zoho têm Stage=Perdido/Closed Lost — indício de que foram *propostas*, não *efetivadas*. **Regra de recovery**: um evento só entra no ledger (seção 2.3) com `confianca='confirmado'` quando há evidência de efetivação (nota confirmando, contrato assinado, ou Stage de vitória real) — Stage isolado nunca é suficiente. Quando só existe o registro nomeado sem confirmação de efetivação, entra como `confianca='ambiguo'`, nunca como fato consumado.
+**Cancellation Requested ≠ Churn.** Achado direto da fase 2 (seção A/4.1): 50% dos "downgrade" e 34,6% das "renovação" nomeadas no Zoho têm Stage=Perdido/Closed Lost — indício de que foram *propostas*, não *efetivadas*. **Regra de recovery**: um evento só entra em `eventos_comerciais` (seção 2.3) com `confianca='confirmado'` quando há evidência de efetivação (nota confirmando, contrato assinado, ou Stage de vitória real) — Stage isolado nunca é suficiente. Quando só existe o registro nomeado sem confirmação de efetivação, entra como `confianca='ambiguo'`, nunca como fato consumado.
 
-**Churn de contrato ≠ churn completo do Customer.** Coerente com "Contract ≠ Customer Lifecycle" acima — o ledger de evento (2.3) é escopado por **negócio/contrato**, nunca dispara automaticamente uma mudança de "cliente inteiro churnou" (que nem tem onde morar hoje, seção 2.2). Se um cliente tem 2 contratos (AI+PABX) e só 1 sofre churn, só aquele evento entra — nenhuma inferência sobre o outro.
+**Churn de contrato ≠ churn completo do Customer.** Coerente com "Contract ≠ Customer Lifecycle" acima — `eventos_comerciais` (2.3) é escopado por **negócio/contrato**, nunca dispara automaticamente uma mudança de "cliente inteiro churnou" (que nem tem onde morar hoje, seção 2.2). Se um cliente tem 2 contratos (AI+PABX) e só 1 sofre churn, só aquele evento entra — nenhuma inferência sobre o outro.
 
-**Upgrade e Downgrade preservam semântica própria.** A fase 2 (seção A/4) já identificou que colapsar os dois em "expansão"/"alteração contratual" genéricas é uma leitura possível mas não obrigatória, e a leitura literal preserva mais informação. **Decisão deste ADR**: manter upgrade/downgrade como tipos próprios no vocabulário do ledger — não colapsar. Ver 2.3.
+**Upgrade e Downgrade preservam semântica própria.** A fase 2 (seção A/4) já identificou que colapsar os dois em "expansão"/"alteração contratual" genéricas é uma leitura possível mas não obrigatória, e a leitura literal preserva mais informação. **Decisão fechada (revisão 2)**: upgrade/downgrade são tipos próprios de primeira classe no Lifecycle Event (`eventos_comerciais.tipo`, seção 2.3) — nunca colapsados nem escondidos em `evidencia`. Quando há impacto de MRR, o evento *projeta* uma linha em `mrr_movimentos` com `tipo='expansao'`/`'contracao'` (vocabulário financeiro já existente) — mas essa projeção é uma consequência do evento, não o evento em si.
 
 ### 2.2 A pergunta central: onde mora o Lifecycle Event
 
-Confrontando os 4 candidatos que já existem (só em dev, seção 0) mais os que já existem em produção:
+**Correção de rumo (revisão 2, pós-review do Kauã)**: a v1 deste ADR propunha estender `mrr_movimentos`. Está errado, e o motivo é conceitual, não de detalhe de schema: `mrr_movimentos` é — e deve continuar sendo — o **ledger financeiro** (fato: "o MRR mudou de X pra Y, nesta data, por este motivo"). Lifecycle Event é um conceito mais amplo — o **fato comercial em si** (Won, Upgrade, Downgrade, Renewal, Churn, Reactivation, Cancellation Requested, Retention Started, Contract Change). Vários desses eventos legitimamente **não têm impacto de MRR** (Cancellation Requested pode não ter se efetivado ainda; Retention Started é uma ação, não um valor; Renewal pode manter o mesmo preço; Contract Change pode ser só troca de hardware/plano sem alterar receita — casos reais confirmados nos 247 registros da fase 2, ex.: migração pra Yeastar com delta R$0). Se o evento só existe quando gera uma linha financeira, todo evento sem impacto de MRR simplesmente não teria onde ser registrado — o gap que a fase 2 identificou continuaria aberto pra metade dos casos.
+
+Confrontando os 4 candidatos que já existem (só em dev, seção 0) mais os que já existem em produção — análise mantida da v1, ainda válida:
 
 | Candidato | Onde existe hoje | Por que não serve puro |
 |---|---|---|
 | `event_outbox` | Só dev | Função é orquestração assíncrona (fan-out), não histórico consultável — a própria diretriz do Kauã confirma que deve continuar assim. Também não existe em produção. |
 | `status_changes` | **Produção** (legado) | Vocabulário rígido (`de_status`→`para_status` de `negocios.status`/`leads.status`), sem tipo de evento comercial (Won/Upgrade/Downgrade/Renewal/Churn/Reactivation), apagado em cascata. Correto pra Stage History (seção 1.10), não pra Lifecycle Event. |
 | `comercial_evidencia` | Só dev | Escopo fechado em "prova de Won" (5 tipos fixos de evidência) — não é lifecycle, é evidência de UM evento específico (o Won). |
-| `mrr_movimentos` | **Produção** (legado, alimentado por `stripe-sync.ts`, já ativo) | Já tem vocabulário de evento (`novo`\|`expansao`\|`contracao`\|`churn`\|`reativacao`), já é append-only, já é datado (`ocorridoEm`) — **é o candidato mais próximo, e já roda em produção hoje**. Limitação real: só referencia `leadId`/`assinaturaId`/`contratoId`, nunca `negocioId` — não consegue responder "qual Oportunidade originou este evento", que é exatamente o que os 247 registros do Zoho (via `Oportunidade Origem`) respondem. |
+| `mrr_movimentos` | **Produção** (legado, alimentado por `stripe-sync.ts`, já ativo) | Já tem vocabulário de evento financeiro (`novo`\|`expansao`\|`contracao`\|`churn`\|`reativacao`), já é append-only, já é datado — mas é **escopado a impacto de MRR por definição**. Esticar seu propósito pra caber evento sem impacto financeiro (delta=0 forçado) é o erro que a v1 cometeu — mistura duas perguntas diferentes ("o que aconteceu comercialmente" vs. "quanto isso mudou a receita"). Continua sendo o ledger financeiro, papel que já desempenha hoje, intocado. |
 | `clientes.statusFinanceiro` | Só dev | Não existe no ambiente-alvo. Fora de jogo pra esta fase por definição (seção 0). |
 
-**Decisão deste ADR**: o delta mínimo correto é **estender `mrr_movimentos`**, não criar tabela nova. Justificativa: já existe, já roda em produção, já tem o formato certo (append-only, datado, tipado), e a única lacuna real (não referenciar Oportunidade) se resolve com 2 colunas novas nullable — mudança aditiva, sem risco pro que já funciona (o `stripe-sync.ts` que já escreve nela continua escrevendo exatamente igual, as colunas novas só ficam null pra ele).
+**Decisão corrigida**: nenhum candidato existente deve ser esticado. O Lifecycle Event ganha uma tabela própria, mínima, append-only, **no schema atual** (mesma restrição de ambiente da seção 0 — não é tabela V2/dev): `eventos_comerciais`. `mrr_movimentos` permanece exclusivamente o ledger financeiro. A relação entre as duas é de **projeção, não de substituição**: `Lifecycle Event → (quando houver impacto financeiro) → mrr_movimentos`.
 
 ### 2.3 O delta proposto (detalhe — implementação NÃO aplicada, só especificada)
 
-`mrr_movimentos` ganha (todas nullable, aditivas, zero impacto no que já escreve hoje):
+**Tabela nova: `eventos_comerciais`** (schema atual, produção/homologação — não V2):
 
-- `negocio_id` (uuid, FK `negocios.id`) — a Oportunidade que este evento afeta.
-- `negocio_origem_id` (uuid) — mesma semântica de `negocios.negocioOrigemId` (já existente e já usado 1x em `aceitar-proposta.ts` pro clone Won→ativo, ver achado da fase 2/E seção 3.3) — propaga a cadeia de proveniência de evento pós-venda sem inventar vocabulário novo.
-- `zoho_id` (text) — o ID do registro-evento no Zoho (ex: a Oportunidade "VETLOG | CHURN").
-- `confianca` (text: `confirmado`\|`inferido`\|`ambiguo`) — vocabulário já validado nas 2 fases da auditoria.
-- `evidencia` (jsonb) — nota/contrato/proposta/Stage que sustenta a classificação, mesma disciplina de proveniência da seção 5.
+| Coluna | Tipo | Observação |
+|---|---|---|
+| `id` | uuid, PK | |
+| `organizacao_id` | uuid, FK `organizacoes.id`, not null | Mesmo padrão multi-tenant do resto do schema. |
+| `negocio_id` | uuid, FK `negocios.id`, nullable | A Oportunidade que este evento afeta. |
+| `negocio_origem_id` | uuid, nullable | Mesma semântica de `negocios.negocioOrigemId` (já existente, já usado 1x em `aceitar-proposta.ts` pro clone Won→ativo — fase 2/E seção 3.3) — propaga a cadeia `Oportunidade Origem` sem vocabulário novo. |
+| `contrato_id` | uuid, FK `contratos.id`, nullable | Quando o evento envolve um contrato específico. |
+| `tipo` | text, not null | **Vocabulário de 1ª classe, não financeiro**: `ganho`\|`upgrade`\|`downgrade`\|`renovacao`\|`churn`\|`reativacao`\|`cancelamento_solicitado`\|`retencao_iniciada`\|`alteracao_contratual`\|`outro`. Upgrade e downgrade ficam aqui como tipos próprios — nunca reduzidos a `expansao`/`contracao` (isso só acontece na projeção financeira, ver `mrr_movimento_id` abaixo). |
+| `mrr_movimento_id` | uuid, FK `mrr_movimentos.id`, nullable | **Preenchido só quando o evento tem projeção financeira.** Link nos 2 sentidos: dá pra saber, a partir do evento, se e qual linha financeira ele gerou; e a partir da linha financeira, qual evento comercial a originou. Null é um valor válido e esperado (Cancellation Requested/Retention Started/Renewal sem mudança de preço/Contract Change sem impacto de MRR). |
+| `zoho_id` | text, nullable | ID do registro-evento no Zoho (ex.: a Oportunidade "VETLOG \| CHURN"). |
+| `confianca` | text, not null, default `'confirmado'` | `confirmado`\|`inferido`\|`ambiguo` — vocabulário já validado nas 2 fases da auditoria. Coluna direta, não depende de log externo (ver seção 5, corrigida). |
+| `evidencia` | jsonb, nullable | Nota/contrato/proposta/Stage que sustenta a classificação — evidência DO evento, não um lugar pra escapar o rótulo real quando o campo `tipo` "não cabe". |
+| `responsavel_id` | uuid, FK `usuarios.id`, nullable | Owner recuperado do Zoho quando mapeável a um usuário real. |
+| `ocorrido_em` | timestamptz, not null | Data real do evento (regra temporal, seção 4). |
+| `origem` | text, not null | `zoho_recovery` (esta fase) \| `producao_organica` (futuro, quando/se algum fluxo passar a escrever evento organicamente). |
+| `created_at` | timestamptz, default now() | Momento da execução do recovery — **nunca confundido com `ocorrido_em`**. |
 
-Ampliação de **valores aceitos** em `tipo` (convenção, não constraint de banco — mesmo padrão do resto do schema): `renovacao`, `alteracao_contratual`, somando aos 5 já existentes (`novo`\|`expansao`\|`contracao`\|`churn`\|`reativacao`). Upgrade mapeia pra `expansao`, downgrade pra `contracao` (mantendo o vocabulário financeiro já existente) — **mas o registro de proveniência (`evidencia`/`zoho_id`) preserva o rótulo original do Zoho** (`UPGRADE`/`DOWNGRADE`), então a semântica comercial própria (achado 2.1) não se perde, só o campo `tipo` usa o vocabulário financeiro já estabelecido. Isso resolve a decisão pendente que a própria fase 2 deixou aberta (seção A/4, "upgrade/downgrade tipo próprio ou subtipo?") sem inventar um terceiro vocabulário: usa o que já existe em produção, guarda o original como evidência.
+**Idempotência real** (corrige o ponto técnico #1 do Kauã): `UNIQUE INDEX ... ON eventos_comerciais (zoho_id) WHERE zoho_id IS NOT NULL` — índice único parcial (Postgres suporta nativamente), não apenas a coluna existir. Sem esse índice, `ON CONFLICT (zoho_id) DO NOTHING` não tem o que fazer conflito contra, e a operação deixa de ser idempotente de fato. O mesmo padrão de índice único parcial se aplica a toda coluna `zoho_id` nova ou pré-existente usada como chave de upsert — ver seção 6, que agora inclui isso explicitamente também para `empresas`/`leads`/`negocios`/`contratos` (nenhum dos 4 tem hoje qualquer índice em `zoho_id`, único ou não — achado adicional, mesma classe de risco que o Kauã apontou, só que já presente no schema atual, não introduzido por este ADR).
 
-Ampliação de valores aceitos em `origem`: `zoho_recovery`, somando a `stripe_sync`\|`backfill`\|`pabx_import` já existentes.
+**Upgrade/Downgrade → projeção financeira** (fecha a decisão #5 do Kauã): quando um evento `tipo='upgrade'` ou `tipo='downgrade'` tem valor de MRR associado e recuperável, o recovery cria a linha correspondente em `mrr_movimentos` (`tipo='expansao'`/`'contracao'`, vocabulário financeiro já existente, sem mudança de schema em `mrr_movimentos`) e preenche `eventos_comerciais.mrr_movimento_id` com o id gerado. O evento comercial (`eventos_comerciais`) é sempre escrito primeiro e é sempre a fonte de verdade do que aconteceu — a linha financeira é derivada dele, nunca o contrário. Eventos sem valor de MRR recuperável (a maioria dos `cancelamento_solicitado`/`retencao_iniciada`/`renovacao`/`alteracao_contratual`, achado real da fase 2: migração pra Yeastar com delta R$0) simplesmente não geram linha em `mrr_movimentos` — `mrr_movimento_id` fica null, e isso é o comportamento correto, não uma lacuna.
 
-**O que este delta explicitamente NÃO faz** (por design, não por esquecimento): não cria uma nova Opportunity por evento pós-venda (ver regra explícita do Kauã, seção 2.1 desta análise); não toca `negocios.status` do negócio original nunca; não introduz vocabulário de "Customer Lifecycle" (permanece decisão futura, seção 2.1); não migra `event_outbox` de função.
+**O que este delta explicitamente NÃO faz** (por design, não por esquecimento): não cria uma nova Opportunity por evento pós-venda (regra explícita do Kauã, seção 2.1); não toca `negocios.status` do negócio original nunca; não introduz vocabulário de "Customer Lifecycle" (permanece decisão futura, seção 2.1); não migra `event_outbox` de função; não faz `mrr_movimentos` carregar evento sem impacto financeiro (erro corrigido nesta revisão).
 
 ---
 
@@ -270,7 +285,8 @@ Ampliação de valores aceitos em `origem`: `zoho_recovery`, somando a `stripe_s
 | `empresas` (recuperada) | `empresas` (mesma tabela, V2 não recria Company) | Nenhuma — já é a mesma tabela nas 2 gerações. | Nenhum. |
 | `leads` (recuperado, tipo=lead/contato/cliente) | `pessoas` + `clientes` (quando tipo=cliente) | `backfill-domain-model.ts`/`syncPessoaFromLead` já fazem isso, sem código novo — dedupe por e-mail já implementado. | Dedup por e-mail pode juntar 2 leads recuperados que a fase 2 já sinalizou como "mesma pessoa, 2 submissões" — **desejável**, não é bug. |
 | `negocios` (aquisição recuperada) | `oportunidades` (Deal v2) | `syncOportunidadeFromNegocio`/backfill já fazem isso — nenhuma transformação nova necessária. | Nenhum — `oportunidades.stage` já espelha `negocios.status` 1:1 hoje. |
-| `mrr_movimentos` (evento recuperado, extensão seção 2.3) | **Não existe ainda em V2** | Quando F1/F4 chegar a formalizar Lifecycle Event em V2 (fora de escopo agora): projetar `mrr_movimentos.negocioId`→`oportunidades.negocioIdLegado`, `mrr_movimentos.negocioOrigemId`→mesma bridge, mantendo `zohoId`/`confianca`/`evidencia` intactos. Padrão idêntico ao já usado por `syncOportunidadeFromNegocio`. | Se V2 decidir por um vocabulário de tipo diferente do usado aqui (seção 2.3), a transformação precisa de um mapa de tradução — registrado como risco conhecido, não bloqueante hoje. |
+| `eventos_comerciais` (novo, seção 2.3) | **Não existe ainda em V2** | Quando F1/F4 chegar a formalizar Lifecycle Event em V2 (fora de escopo agora): projetar `eventos_comerciais.negocioId`→`oportunidades.negocioIdLegado`, `negocioOrigemId`→mesma bridge, mantendo `zohoId`/`confianca`/`evidencia`/`tipo` intactos (vocabulário próprio, não financeiro — preservado como está). Padrão idêntico ao já usado por `syncOportunidadeFromNegocio`. | Se V2 decidir por um vocabulário de `tipo` diferente do usado aqui, a transformação precisa de um mapa de tradução — registrado como risco conhecido, não bloqueante hoje. |
+| `mrr_movimentos` (projeção financeira do evento, quando aplicável, seção 2.3) | **Não existe ainda em V2** | `mrr_movimentos` continua sendo só o ledger financeiro — projeção V2 dele é decisão independente da projeção de `eventos_comerciais`, e não precisa acontecer no mesmo momento. | Nenhum novo — mesmo papel que já desempenha hoje. |
 | `contratos.prazoMeses`/`multaPercentual`/`codigoLegado` (novos, seção 6) | **Não existe ainda em V2** (`contracts` é F4, não construído) | Direta quando F4 nascer — são campos escalares simples, sem ambiguidade de mapeamento. | Nenhum antecipável. |
 | `contratos.assinaturaLegadoZoho` (jsonb, novo) | **Não existe ainda em V2** (`SignatureProvider`, decisão pendente #3) | Fonte de dado histórico pra popular o provider quando ele existir — sem transformação, é leitura do jsonb. | Nenhum antecipável. |
 | `propostas.zohoId` (novo) | **Não existe ainda em V2** (`proposals` é F4) | Direta. | Nenhum antecipável. |
@@ -290,20 +306,36 @@ Ampliação de valores aceitos em `origem`: `zoho_recovery`, somando a `stripe_s
 4. **Conflito de valores (mesmo fato, 2 respostas diferentes)**: nunca resolvido automaticamente por heurística sozinha. Fica marcado (`confianca='ambiguo'` + os 2 valores registrados em `evidencia`) para decisão humana — nunca um `UPDATE` silencioso.
 5. **Regra temporal universal**: toda coluna `criado_em`/`ocorrido_em` recuperada usa a **data real do evento no Zoho**, nunca a data em que o script de recovery rodou. A data da execução do recovery fica só em log/auditoria de execução (fora das tabelas de domínio).
 6. **Regra de efetivação** (direta da seção 2.1, "Cancellation Requested ≠ Churn"): nenhum evento entra como fato confirmado só com Stage nomeado — precisa de 2º sinal (nota, contrato, ou Stage de vitória real do próprio registro-evento).
-7. **Regra de não-duplicação de Opportunity**: evento pós-venda nunca cria negócio novo — sempre entra no ledger (`mrr_movimentos` estendido) referenciando o negócio existente.
-8. **Idempotência como regra, não como QA posterior**: toda operação de recovery é `INSERT ... ON CONFLICT DO NOTHING` (ou `UPDATE` explícito e auditado) chaveada por `zoho_id` (ou `(negocio_origem_id, tipo, ocorrido_em)` quando não há `zoho_id` de evento único) — rodar o script 2x nunca duplica.
+7. **Regra de não-duplicação de Opportunity**: evento pós-venda nunca cria negócio novo — sempre entra em `eventos_comerciais` referenciando o negócio existente, com projeção pra `mrr_movimentos` só quando há impacto financeiro (seção 2.3).
+8. **Idempotência como regra, não como QA posterior, e sustentada por constraint de banco, não só por convenção de código**: toda operação de recovery é `INSERT ... ON CONFLICT (zoho_id) DO NOTHING` (ou `UPDATE` explícito e auditado), e isso só funciona de verdade se existir um índice único (parcial, `WHERE zoho_id IS NOT NULL`) por trás — ver seção 6. Rodar o script 2x nunca duplica porque o banco impede, não porque o script promete não duplicar.
 
 ---
 
 ## 5. Estratégia de provenance
 
-Padrão único, repetido em toda entidade recuperada (consolidando o que já apareceu disperso na seção 1):
+**Correção (revisão 2, ponto técnico #2 do Kauã)**: a v1 deixava confiança/evidência de várias entidades só no log de execução do recovery. Corrigido — provenance histórica não pode depender de um artefato externo ao banco (o log pode se perder, não é consultável em query, não sobrevive a quem não tem acesso ao arquivo). Toda entidade recuperada tem confiança/evidência **no banco**, via coluna direta (quando já existe um lugar natural) ou via a tabela genérica nova abaixo.
 
-- **Origem**: coluna `zoho_id` (ou equivalente novo listado seção 6) — nunca null quando a origem é Zoho.
-- **Confiança**: vocabulário fixo `confirmado`\|`inferido`\|`ambiguo` (já validado nas 2 fases da auditoria) — em `mrr_movimentos.confianca` (novo, seção 2.3) para eventos; para as demais entidades (empresas/leads/negocios/contratos/propostas/notas/atividades recuperados), a confiança fica registrada no **log de execução do recovery** (não em coluna nova por tabela — evitaria poluir schema legado com uma coluna que só importa durante a janela de reconciliação, não depois).
-- **Evidência**: jsonb (`evidencia`, novo em `mrr_movimentos`; `dados`/`raw` já existentes em `atividades`/`assinaturas`/`faturas` reaproveitados para as demais) — sempre a referência ao registro-fonte Zoho (nota, contrato, Stage), nunca só um texto livre solto.
+**Tabela nova: `legacy_provenance`** (schema atual) — cobre as entidades que não ganham coluna própria de confiança/evidência (empresas/leads/negocios/contratos já têm `zoho_id` nativo mas não tinham onde guardar confiança — agora ganham aqui também; propostas/notas/atividades usam esta tabela **em vez de** ganhar uma coluna `zoho_id` própria cada, simplificando o delta de schema da seção 6):
+
+| Coluna | Tipo | Observação |
+|---|---|---|
+| `id` | uuid, PK | |
+| `organizacao_id` | uuid, FK, not null | |
+| `entidade_tipo` | text, not null | `empresa`\|`lead`\|`negocio`\|`contrato`\|`proposta`\|`nota`\|`atividade`\|`evento_comercial`\|... |
+| `entidade_id` | uuid, not null | Aponta pra linha recuperada na tabela de domínio correspondente. |
+| `zoho_id` | text, not null | Chave de idempotência do recovery — ver índice único abaixo. |
+| `confianca` | text, not null, default `'confirmado'` | `confirmado`\|`inferido`\|`ambiguo`. |
+| `evidencia` | jsonb, nullable | Nota/contrato/proposta/Stage que sustenta a classificação. |
+| `recovered_at` | timestamptz, default now() | Momento da execução — distinto de `ocorrido_em`/`created_at` do dado de domínio. |
+
+`UNIQUE INDEX ... ON legacy_provenance (entidade_tipo, zoho_id)` — idempotência real (mesmo padrão da seção 2.3): antes de inserir uma `notas`/`atividades`/`propostas` nova a partir de um registro Zoho, o script consulta esta tabela por `(entidade_tipo, zoho_id)`; se já existe, é update ou no-op, nunca duplicata.
+
+Resumo do padrão por tipo de entidade:
+
+- **Empresas/Leads/Negócios/Contratos** (já têm `zoho_id` nativo): mantêm o `zoho_id` da própria tabela pra dedupe básico (comportamento pré-existente, inalterado) **e** ganham linha em `legacy_provenance` pra confiança/evidência — resolve o gap que o Kauã apontou (essas 4 tabelas também não tinham onde guardar confiança antes desta correção).
+- **Propostas/Notas/Atividades** (sem `zoho_id` nativo): usam só `legacy_provenance` — dedupe, confiança e evidência todos ali, sem precisar de coluna nova em cada tabela (simplificação em relação à v1, que pedia `zoho_id` direto nas 3).
+- **`eventos_comerciais`/`status_changes`** (seção 2.3/1.10): ganham `zoho_id`/`confianca`/`evidencia` como colunas diretas mesmo assim — volume alto (milhares de linhas) e consulta frequente por evento individual justificam não depender de join com uma tabela genérica pra essas duas.
 - **Owner**: `responsavelId` recuperado só quando mapeável a um `usuarios.id` real e ativo — nunca inventado, nunca atribuído a um usuário genérico "sistema" como default silencioso.
-- **Distinção execução vs. fato**: toda rodada de recovery grava um registro de execução (script/log, fora do schema de domínio — pode ser tão simples quanto um arquivo de relatório versionado, seguindo o padrão já usado pelas fases 1/2) com contagens antes/depois, nunca misturado com `created_at` do dado de domínio.
 
 ---
 
@@ -317,17 +349,14 @@ Todas aditivas (colunas nullable, sem `NOT NULL` novo, sem alterar comportamento
 | 2 | `contratos` | `+ multa_percentual decimal(5,2)` | Recuperar multa (92% = 30%). |
 | 3 | `contratos` | `+ codigo_legado text` | Código humano do contrato Zoho (`CT-288-05/2026`), distinto do `zoho_id` interno. |
 | 4 | `contratos` | `+ assinatura_legado_zoho jsonb` | Trilha ZohoSign recuperada, separada do fluxo de aceite simples ativo. |
-| 5 | `mrr_movimentos` | `+ negocio_id uuid REFERENCES negocios(id)` | Ancorar evento na Oportunidade — a lacuna central identificada na seção 2. |
-| 6 | `mrr_movimentos` | `+ negocio_origem_id uuid` | Propagar a cadeia `Oportunidade Origem`, mesmo padrão de `negocios.negocioOrigemId`. |
-| 7 | `mrr_movimentos` | `+ zoho_id text` | Provenance do registro-evento. |
-| 8 | `mrr_movimentos` | `+ confianca text` | `confirmado`\|`inferido`\|`ambiguo`. |
-| 9 | `mrr_movimentos` | `+ evidencia jsonb` | Nota/contrato/proposta/Stage que sustenta o evento. |
-| 10 | `propostas` | `+ zoho_id text` | Hoje não existe — reconciliação de proposta é só heurística (valor+data). |
-| 11 | `notas` | `+ zoho_id text` | Idempotência do recovery de notas. |
-| 12 | `atividades` | `+ zoho_id text` | Idempotência do recovery de Calls/Meetings/Tasks/Emails. |
-| 13 | (nova tabela, leve) | `anexos_legado` | Metadado de Attachments — só se a decisão da seção 1.13/9 for seguir adiante com attachments nesta rodada. |
+| 5 | (**nova tabela**) | `eventos_comerciais` (schema completo na seção 2.3) | Lifecycle Event como conceito de 1ª classe — a correção central desta revisão. Substitui os itens #5-9 da v1 (extensão de `mrr_movimentos`, descartada). |
+| 6 | (**nova tabela**) | `legacy_provenance` (schema completo na seção 5) | Confiança/evidência em coluna de banco pra toda entidade recuperada, nunca só em log. Substitui os itens #10-12 da v1 (`zoho_id` direto em `propostas`/`notas`/`atividades`). |
+| 7 | `status_changes` | `+ zoho_id text` | Rastreabilidade exata de Stage History por linha (decisão fechada pelo Kauã — não esconder o ID dentro de `motivo`). |
+| 8 | (**nova tabela, leve**) | `anexos_legado` | Metadado de Attachments (decisão fechada: recuperar metadado **e** binário, seção 1.13). |
+| 9 | Índices únicos (**retroativos**, não é feature nova) | `UNIQUE ... WHERE zoho_id IS NOT NULL` em `empresas.zoho_id`, `leads.zoho_id`, `negocios.zoho_id`, `contratos.zoho_id` | Achado ao corrigir o ponto técnico #1 do Kauã: nenhuma das 4 colunas `zoho_id` pré-existentes tem hoje qualquer índice (nem único, nem simples) — mesma classe de risco de idempotência que ele apontou nas colunas novas, só que já presente no schema atual. Pré-requisito de fato pra `ON CONFLICT (zoho_id)` funcionar em qualquer uma das 4. |
+| 10 | Índices únicos (**nas tabelas novas**) | `eventos_comerciais(zoho_id) WHERE zoho_id IS NOT NULL`, `legacy_provenance(entidade_tipo, zoho_id)`, `status_changes(zoho_id) WHERE zoho_id IS NOT NULL` | Idempotência real, não assumida (seções 2.3/5). |
 
-**Convenções, não schema** (documentar, sem migration): `mrr_movimentos.tipo` ganha `renovacao`\|`alteracao_contratual`; `mrr_movimentos.origem` e `faturas.origem` ganham `zoho_recovery`/`zoho_legado`.
+**Convenções, não schema** (documentar, sem migration): `mrr_movimentos.origem` ganha `zoho_recovery` só para as linhas geradas por projeção de evento (seção 2.3); `faturas.origem` ganha `zoho_legado`. `mrr_movimentos.tipo` **não muda** — continua só `novo`\|`expansao`\|`contracao`\|`churn`\|`reativacao`, papel financeiro puro (correção desta revisão).
 
 ---
 
@@ -340,7 +369,9 @@ Todas aditivas (colunas nullable, sem `NOT NULL` novo, sem alterar comportamento
 - **Os 402 leads "DUPLICADO" e os 32 "CLIENTE_EXISTENTE"** dos 449 investigados na fase 2/D — não importar, ponto (regra de negócio já fechada na fase 2, reafirmada aqui).
 - **`event_outbox`** — continua sendo infraestrutura de orquestração, não histórico consultável (diretriz explícita do Kauã, seção 2.2 confirma que não há razão arquitetural forte pra mudar isso agora).
 - **`clientes.statusFinanceiro`/separação Contract≠Lifecycle** — fica como decisão futura, não resolvida por esta recuperação (seção 2.1).
-- **Qualquer contrato/negócio já duplicado por `stripe_subscription_id` (os 76/38 pares)** — não misturar a resolução desse bug vivo com o backfill de contrato legado; são operações independentes (resolver a duplicidade primeiro, seção abaixo).
+- **`mrr_movimentos` não ganha vocabulário de evento comercial** (correção desta revisão) — permanece só ledger financeiro; o vocabulário de 1ª classe (upgrade/downgrade/churn/etc.) mora exclusivamente em `eventos_comerciais.tipo`.
+- **Qualquer contrato/negócio já duplicado por `stripe_subscription_id` (os 76/38 pares)** — decisão fechada pelo Kauã: **considerar pendente até confirmação explícita**, mesmo que possa ter sido resolvido manualmente desde a fase 2. Não misturar a resolução desse bug vivo com o backfill de contrato legado; reconciliar primeiro em homologação (seção 8, agora pré-requisito bloqueante, não só recomendação).
+- **Products/Contract Items** — decisão fechada pelo Kauã: auditoria dedicada é pré-requisito do dry-run (seção 8), não opcional/paralela.
 
 ---
 
@@ -348,13 +379,19 @@ Todas aditivas (colunas nullable, sem `NOT NULL` novo, sem alterar comportamento
 
 **Pré-condição já satisfeita** (seção 0.1): schema homolog×produção em paridade, dados resincados nesta sessão.
 
-1. **Aplicar as mudanças de schema da seção 6 em homologação** (migration aditiva, `drizzle-kit push` ou SQL direto — reversível, colunas nullable, zero dado existente afetado).
-2. **Resolver primeiro a duplicidade viva de contrato** (76/38 pares por `stripe_subscription_id`) em homologação — pré-requisito pro backfill de contrato legado não ficar ambíguo sobre qual dos 2 duplicados recebe o dado recuperado.
-3. **Rodar recovery por prioridade financeira** (mesma ordem já validada nas fases 1/2): (a) Companies/Leads/Opportunities de maior valor histórico primeiro; (b) Contratos nativos + eventos de churn/upgrade/downgrade/renovação (o ledger, seção 2.3); (c) Propostas/Invoices; (d) Notes/Activities/ZohoSign; (e) Attachments (se decidido seguir, seção 1.13).
-4. **Cada lote roda como script direto no banco (SQL/Drizzle), nunca através das rotas de API da aplicação** — ponto crítico de segurança operacional: `PATCH /negocios/:id`, `POST /contratos`, etc. disparam `dispararAutomacoes`/notificações/webhooks. Popular histórico de 2023-2026 através desses endpoints reativaria automação (e-mail, WhatsApp, notificação de SLA) para eventos que já aconteceram há anos — repetiria em escala o próprio tipo de bug que o `ADR-EXEC-017` já corrigiu (167.582 notificações duplicadas). Recovery é sempre escrita direta, transacional, auditada por log de execução — nunca via side-effects de rota.
-5. **Validar cada lote antes do próximo**: contagem esperada vs. real, spot-check manual dos casos já conhecidos (LOGITHINK, Vetlog, Ammo Varejo, Compucenter — os 20 casos da fase 2/B já têm o resultado esperado documentado, servem de teste de regressão).
-6. **Testar idempotência de verdade**: rodar o mesmo lote 2x, confirmar 0 linha nova na 2ª execução.
-7. **Só com validação completa em homologação, aprovação explícita do Kauã antes de repetir em produção.**
+**Pré-requisitos bloqueantes, antes do passo 1** (decisões fechadas pelo Kauã nesta revisão — não são mais "nice to have"):
+
+- **Confirmar o estado real dos 76/38 pares de contrato duplicado por `stripe_subscription_id`** — tratado como pendente até prova em contrário. Se ainda existirem, reconciliar em homologação primeiro; o backfill de contrato legado não pode rodar contra um estado ambíguo (2 contratos concorrentes pro mesmo `negocio_id`).
+- **Auditoria dedicada de Products/Contract Items** (seção 1.7) — não coberta pelas fases 1/2, e mexe direto com Proposta/Contrato/futuro F4. Roda como investigação própria (mesmo formato das fases 1/2) antes do dry-run, não em paralelo torcendo pra não conflitar.
+
+Só depois dos 2 pré-requisitos resolvidos:
+
+1. **Aplicar as mudanças de schema da seção 6 em homologação** (migration aditiva, `drizzle-kit push` ou SQL direto — reversível, colunas/tabelas nullable, zero dado existente afetado). Inclui `eventos_comerciais`, `legacy_provenance`, `status_changes.zoho_id`, `anexos_legado`, e os índices únicos retroativos nas 4 colunas `zoho_id` pré-existentes.
+2. **Rodar recovery por prioridade financeira** (mesma ordem já validada nas fases 1/2): (a) Companies/Leads/Opportunities de maior valor histórico primeiro; (b) Contratos nativos + Lifecycle Events em `eventos_comerciais` com projeção pra `mrr_movimentos` quando aplicável (seção 2.3); (c) Propostas/Invoices; (d) Notes/Activities/ZohoSign; (e) Attachments — metadado + binário (seção 1.13), pode rodar como lote separado sem bloquear os demais.
+3. **Cada lote roda como script direto no banco (SQL/Drizzle), nunca através das rotas de API da aplicação** — ponto crítico de segurança operacional: `PATCH /negocios/:id`, `POST /contratos`, etc. disparam `dispararAutomacoes`/notificações/webhooks. Popular histórico de 2023-2026 através desses endpoints reativaria automação (e-mail, WhatsApp, notificação de SLA) para eventos que já aconteceram há anos — repetiria em escala o próprio tipo de bug que o `ADR-EXEC-017` já corrigiu (167.582 notificações duplicadas). Recovery é sempre escrita direta, transacional, com provenance gravada no banco (seção 5) — nunca via side-effects de rota.
+4. **Validar cada lote antes do próximo**: contagem esperada vs. real, spot-check manual dos casos já conhecidos (LOGITHINK, Vetlog, Ammo Varejo, Compucenter — os 20 casos da fase 2/B já têm o resultado esperado documentado, servem de teste de regressão).
+5. **Testar idempotência de verdade, contra a constraint, não contra a promessa do script**: rodar o mesmo lote 2x, confirmar 0 linha nova na 2ª execução — e confirmar que o índice único (seção 6, itens 9-10) é o que está impedindo a duplicata, não só o código do script.
+6. **Só com validação completa em homologação, aprovação explícita do Kauã antes de repetir em produção.**
 
 ---
 
@@ -364,12 +401,13 @@ Só promove pra produção se **todos** os itens abaixo forem verdadeiros em hom
 
 - [ ] Contagem de cada entidade recuperada bate com o esperado (documentado nas fases 1/2) — nenhuma discrepância sem explicação.
 - [ ] Zero negócio com `status='ganho'` teve `status`/`ganhoAt` alterado pelo recovery (Won permanece Won, sempre).
-- [ ] Zero novo negócio/contrato duplicado criado pelo processo de recovery (checar por `zoho_id` único, e por `(negocio_id, zoho_id)` no ledger).
-- [ ] 100% dos registros recuperados carregam provenance (`zoho_id`/`confianca`/`evidencia` conforme seção 5) — nenhuma linha "muda" sobre sua origem.
-- [ ] Reconciliação financeira bate com os totais já publicados nas fases 1/2 (ex.: soma de `delta` dos eventos `churn` recuperados = R$ -17.715,68, mesmo número já confirmado 2x independentemente nas fases 1 e 2 — se não bater, algo quebrou no meio do caminho).
-- [ ] Rodada dupla do mesmo lote não gera linha nova (idempotência comprovada, não assumida).
+- [ ] Zero novo negócio/contrato duplicado criado pelo processo de recovery (checar pelos índices únicos da seção 6, itens 9-10 — não por convenção, por constraint).
+- [ ] 100% dos registros recuperados carregam provenance **em coluna de banco** (`eventos_comerciais`/`status_changes` direto, `legacy_provenance` pras demais — nunca só em log de execução, seção 5 corrigida).
+- [ ] **Reconciliação em 2 camadas, separadas** (correção desta revisão — antes era 1 checagem só): (a) contagem de eventos por `tipo` em `eventos_comerciais` bate com o classificado nas fases 1/2 (ex.: 88 `churn`, 87 `upgrade`, 30 `downgrade`, 26 `renovacao`); (b) soma de `delta` das linhas de `mrr_movimentos` geradas por projeção bate com os totais financeiros já publicados (ex.: churn = R$ -17.715,68, confirmado 2x independentemente nas fases 1 e 2). As duas precisam bater — bater só a financeira sem bater a contagem de evento indicaria que algum evento sem impacto de MRR foi perdido no meio do caminho.
+- [ ] Rodada dupla do mesmo lote não gera linha nova, **e a causa confirmada é o índice único fazendo o `ON CONFLICT` funcionar** — não só a ausência observada de duplicata.
 - [ ] Nenhuma automação/notificação/webhook disparou durante o recovery (checado via ausência de linha nova em `notificacoes`/log de envio de WhatsApp/e-mail correlacionada à janela do script).
-- [ ] Os 76/38 pares de contrato duplicado por Stripe já resolvidos **antes** de rodar o backfill de contrato legado.
+- [ ] Os 76/38 pares de contrato duplicado por Stripe confirmados resolvidos (não assumidos) **antes** de rodar o backfill de contrato legado.
+- [ ] Auditoria dedicada de Products/Contract Items concluída **antes** do dry-run (pré-requisito, seção 8).
 - [ ] Revisão humana explícita de cada caso listado na seção 7 ("o que NÃO deve ser remodelado") — confirmando que nenhum foi promovido a fato automaticamente.
 - [ ] Kauã revisou e aprovou explicitamente o relatório de homologação antes de qualquer escrita em produção.
 
@@ -390,17 +428,17 @@ produção consolidada (pós-recovery)
 
 **O que já funciona sem mudança nenhuma**: `refresh-dev-db.sh` pega qualquer coisa que exista em produção — as mudanças de schema da seção 6 chegam em dev automaticamente no próximo refresh, sem script novo. `backfill-domain-model.ts` já lê `leads`/`negocios` por completo (não filtra por `zoho_id`) — qualquer Company/Lead/Opportunity recuperada entra na próxima rodada de backfill sem alteração de código.
 
-**O que vai precisar de trabalho novo, fora de escopo agora, mas identificado**: nenhum backfill hoje projeta `mrr_movimentos` (o ledger estendido, seção 2.3) para dentro do Domain Model V2, porque V2 ainda não tem um conceito de Lifecycle Event pra receber essa projeção (seção 2.2 — é decisão de F1/F4, não desta fase). Quando esse conceito V2 existir, `backfill-domain-model.ts` ganha uma nova função (mesmo padrão de `syncOportunidadeFromNegocio`) que lê `mrr_movimentos.negocioId`/`negocioOrigemId` e projeta pro schema V2 via as bridges que já existem (`oportunidades.negocioIdLegado`). **Efeito colateral positivo já garantido, sem trabalho extra**: como o recovery de Stage History (seção 1.10) popula `status_changes` com dados reais, a lógica já existente de `perdidoAt` em `backfill-domain-model.ts`/`sync-domain-model.ts` (que busca a transição mais recente pra "perdido" em `status_changes`) fica automaticamente mais precisa pra negócios históricos perdidos, sem qualquer alteração de código.
+**O que vai precisar de trabalho novo, fora de escopo agora, mas identificado**: nenhum backfill hoje projeta `eventos_comerciais` (seção 2.3) para dentro do Domain Model V2, porque V2 ainda não tem um conceito de Lifecycle Event pra receber essa projeção (seção 2.2 — é decisão de F1/F4, não desta fase). Quando esse conceito V2 existir, `backfill-domain-model.ts` ganha uma nova função (mesmo padrão de `syncOportunidadeFromNegocio`) que lê `eventos_comerciais.negocioId`/`negocioOrigemId` e projeta pro schema V2 via as bridges que já existem (`oportunidades.negocioIdLegado`) — preservando `tipo` como vocabulário próprio, não financeiro. A projeção pra `mrr_movimentos` (quando existir equivalente V2) é um backfill independente, no seu próprio ritmo. **Efeito colateral positivo já garantido, sem trabalho extra**: como o recovery de Stage History (seção 1.10) popula `status_changes` com dados reais, a lógica já existente de `perdidoAt` em `backfill-domain-model.ts`/`sync-domain-model.ts` (que busca a transição mais recente pra "perdido" em `status_changes`) fica automaticamente mais precisa pra negócios históricos perdidos, sem qualquer alteração de código.
 
 ---
 
-## Perguntas em aberto pro Kauã (não decidido aqui, decisão fica com ele)
+## Decisões fechadas pelo Kauã (11/08, revisão 2) — não são mais perguntas abertas
 
-1. Attachments (seção 1.13/6.13): seguir com metadado + upload físico nesta fase, ou só metadado por agora?
-2. Products/Contract Items (seção 1.7): abrir uma rodada de investigação dedicada antes do recovery, ou aceitar risco de reconciliar junto sem auditoria própria?
-3. Os 76/38 pares de contrato duplicado por Stripe (pré-requisito da seção 8, item 2) — já foram resolvidos manualmente desde a fase 2, ou seguem pendentes? Bloqueia o início do dry-run se ainda pendente.
-4. `status_changes.zoho_id` (seção 1.10) — vale a coluna nova pra rastreabilidade exata por linha, ou o campo `motivo` textual já é suficiente?
-5. Confirma a decisão da seção 2.3 (upgrade→`expansao`, downgrade→`contracao` no campo `tipo`, rótulo original preservado em `evidencia`) — ou prefere um vocabulário de 7 tipos próprios em vez de reaproveitar o de `mrr_movimentos`?
+1. **Attachments** (seção 1.13/6): metadado **e** upload físico dos binários. Pode rodar em lote separado, mas o legado só é considerado 100% recuperado com os 1.980 arquivos preservados e verificáveis.
+2. **Products/Contract Items** (seção 1.7): auditoria dedicada **antes** do dry-run — vira pré-requisito bloqueante (seção 8), não investigação em paralelo.
+3. **76/38 pares de contrato duplicado por Stripe**: tratados como **pendentes** até confirmação explícita — pré-requisito bloqueante do dry-run (seção 8), reconciliar primeiro em homologação.
+4. **`status_changes.zoho_id`**: sim, coluna direta — rastreabilidade exata por linha, não escondida em `motivo` (aplicado seção 1.10/6).
+5. **Upgrade/Downgrade**: tipos próprios de 1ª classe em `eventos_comerciais.tipo` — nunca perdem identidade. Financeiramente, projetam pra `expansao`/`contracao` em `mrr_movimentos` só quando há impacto de MRR recuperável, sem substituir o evento original (seção 2.3).
 
 ---
 
