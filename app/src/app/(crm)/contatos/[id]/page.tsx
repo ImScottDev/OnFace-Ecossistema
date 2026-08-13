@@ -192,9 +192,11 @@ export default function LeadDetailPage() {
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <a href={callfaceCallUrl(lead.telefone)} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-blue-400 hover:bg-blue-500/10 transition-colors">
-            <Phone className="w-3.5 h-3.5" /> Ligar
-          </a>
+          {lead.telefone && (
+            <a href={callfaceCallUrl(lead.telefone)} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-blue-400 hover:bg-blue-500/10 transition-colors">
+              <Phone className="w-3.5 h-3.5" /> Ligar
+            </a>
+          )}
           <button onClick={toggleChat} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${showChat ? "bg-emerald-500/15 text-emerald-400" : "text-emerald-400 hover:bg-emerald-500/10"}`}>
             <MessageCircle className="w-3.5 h-3.5" /> WhatsApp
           </button>

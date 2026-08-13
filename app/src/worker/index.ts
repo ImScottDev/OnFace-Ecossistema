@@ -2730,13 +2730,26 @@ const slaWorker = new Worker(
             if (!lead?.organizacaoId) continue;
             const [admin] = await db.select({ id: usuarios.id }).from(usuarios).where(and(eq(usuarios.role, "admin"), eq(usuarios.organizacaoId, lead.organizacaoId))).limit(1);
             if (admin) {
-              await db.insert(notificacoes).values({
-                usuarioId: admin.id,
-                titulo: `SLA estourado: ${neg.titulo}`,
-                mensagem: `Negócio "${neg.titulo}" (${neg.leadEmpresa || neg.leadNome || "sem empresa"}) está em "${status}" há mais de ${hours}h`,
-                tipo: "sla_alerta",
-                link: `/pipeline`,
-              }).onConflictDoNothing();
+              // Achado real (09/08): `notificacoes` não tem unique constraint
+              // nenhum — o onConflictDoNothing() daqui nunca teve conflito pra
+              // detectar, então era um no-op. Rodando a cada 30min sem dedupe
+              // real, isso gerou 167k+ notificações duplicadas em produção
+              // (alguns negócios com 2000+ repetidas desde 25/06). Mesmo
+              // padrão de dedupe já usado corretamente em follow-up-proposta:
+              // só cria se não existir uma não lida do mesmo negócio+etapa.
+              const linkNegocio = `/negocios/${neg.id}`;
+              const [jaAvisou] = await db.select({ id: notificacoes.id }).from(notificacoes)
+                .where(and(eq(notificacoes.tipo, "sla_alerta"), eq(notificacoes.link, linkNegocio), eq(notificacoes.lida, false)))
+                .limit(1);
+              if (!jaAvisou) {
+                await db.insert(notificacoes).values({
+                  usuarioId: admin.id,
+                  titulo: `SLA estourado: ${neg.titulo}`,
+                  mensagem: `Negócio "${neg.titulo}" (${neg.leadEmpresa || neg.leadNome || "sem empresa"}) está em "${status}" há mais de ${hours}h`,
+                  tipo: "sla_alerta",
+                  link: linkNegocio,
+                });
+              }
             }
           }
           console.log(`[SLA] ${breachedNegocios.length} negócios breached in "${status}"`);
@@ -2861,13 +2874,24 @@ const slaWorker = new Worker(
             if (sessao.lastConnectedAt < tenMinutesAgo) {
               const [admin] = await db.select({ id: usuarios.id }).from(usuarios).where(and(eq(usuarios.role, "admin"), eq(usuarios.organizacaoId, sessao.organizacaoId))).limit(1);
               if (admin) {
-                await db.insert(notificacoes).values({
-                  usuarioId: admin.id,
-                  titulo: `WhatsApp desconectado: ${sessao.label || sessao.sessionName}`,
-                  mensagem: `A sessão "${sessao.label || sessao.sessionName}" está desconectada há mais de 10 minutos.`,
-                  tipo: "sistema",
-                  link: "/whatsapp",
-                });
+                // Dedupe (mesmo padrão de sla_alerta/follow-up-proposta, ver ca6c633):
+                // roda a cada 5min sem isso — achado real 13/08, 17k+ notificações
+                // duplicadas (uma sessão desconectada por dias gera uma por ciclo,
+                // pra sempre). Título já é específico por sessão (link é fixo
+                // "/whatsapp" pra todas, não serve de chave de dedupe aqui).
+                const titulo = `WhatsApp desconectado: ${sessao.label || sessao.sessionName}`;
+                const [jaAvisou] = await db.select({ id: notificacoes.id }).from(notificacoes)
+                  .where(and(eq(notificacoes.tipo, "sistema"), eq(notificacoes.titulo, titulo), eq(notificacoes.lida, false)))
+                  .limit(1);
+                if (!jaAvisou) {
+                  await db.insert(notificacoes).values({
+                    usuarioId: admin.id,
+                    titulo,
+                    mensagem: `A sessão "${sessao.label || sessao.sessionName}" está desconectada há mais de 10 minutos.`,
+                    tipo: "sistema",
+                    link: "/whatsapp",
+                  });
+                }
               }
             }
           }
