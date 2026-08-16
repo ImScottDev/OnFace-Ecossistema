@@ -103,13 +103,28 @@ export async function avaliarEvidenciaWon(negocioId: string, organizacaoId: stri
 
   // Fallback legado — mesmo critério do gate anterior, só pra negócios que
   // nunca passaram por um ponto que registra evidência explicitamente.
-  const [propostaAceita] = await db.select({ id: propostas.id }).from(propostas).where(and(eq(propostas.negocioId, negocioId), eq(propostas.status, "aceita"))).limit(1);
+  //
+  // Achado real (E2E do Commercial Core, 16/08): no fluxo condicional de
+  // proposta (ADR-EXEC-020), "aceita" no caminho contrato significa "cliente
+  // aceitou comercialmente, aguardando assinatura" — NUNCA "contrato
+  // assinado" (ver comentário em proposta-publica.ts::aceitarPropostaPublica,
+  // "não é Won ainda"). O fallback tratava os dois como equivalentes e
+  // liberava Won antes da assinatura de verdade — exatamente a promessa
+  // verbal/status manual que a Commercial Evidence Policy existe pra barrar.
+  // Corrigido: ambos os fallbacks agora ignoram contrato com
+  // assinatura_status='pendente'.
+  const [propostaAceita] = await db.select({ id: propostas.id, contratoId: propostas.contratoId }).from(propostas).where(and(eq(propostas.negocioId, negocioId), eq(propostas.status, "aceita"))).limit(1);
   if (propostaAceita) {
-    await registrarEvidencia({ negocioId, organizacaoId, tipo: "signed_contract", sourceRef: propostaAceita.id, metadata: { origem: "fallback_legado_proposta_aceita" } });
-    if (tiposAceitos.includes("signed_contract")) return { permitido: true, evidencias: ["signed_contract"], motivo: "proposta aceita (fallback legado)" };
+    const contratoPendente = propostaAceita.contratoId
+      ? await db.select({ assinaturaStatus: contratos.assinaturaStatus }).from(contratos).where(eq(contratos.id, propostaAceita.contratoId)).limit(1).then((r) => r[0]?.assinaturaStatus === "pendente")
+      : false;
+    if (!contratoPendente) {
+      await registrarEvidencia({ negocioId, organizacaoId, tipo: "signed_contract", sourceRef: propostaAceita.id, metadata: { origem: "fallback_legado_proposta_aceita" } });
+      if (tiposAceitos.includes("signed_contract")) return { permitido: true, evidencias: ["signed_contract"], motivo: "proposta aceita (fallback legado)" };
+    }
   }
-  const [contratoExistente] = await db.select({ id: contratos.id }).from(contratos).where(eq(contratos.negocioId, negocioId)).limit(1);
-  if (contratoExistente) {
+  const [contratoExistente] = await db.select({ id: contratos.id, assinaturaStatus: contratos.assinaturaStatus }).from(contratos).where(eq(contratos.negocioId, negocioId)).limit(1);
+  if (contratoExistente && contratoExistente.assinaturaStatus !== "pendente") {
     await registrarEvidencia({ negocioId, organizacaoId, tipo: "signed_contract", sourceRef: contratoExistente.id, metadata: { origem: "fallback_legado_contrato_existente" } });
     if (tiposAceitos.includes("signed_contract")) return { permitido: true, evidencias: ["signed_contract"], motivo: "contrato existente (fallback legado)" };
   }

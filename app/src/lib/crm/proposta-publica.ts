@@ -24,6 +24,8 @@ import { syncNegocioValoresFromPropostas } from "@/lib/crm/sync-negocio-valores"
 import { syncOportunidadeFromNegocio, syncPessoaFromLead } from "@/lib/crm/sync-domain-model";
 import { registrarEvidencia } from "@/lib/crm/won-evidence";
 import { determinarProdutoProposta, determinarProximoPasso } from "@/lib/crm/proposta-fluxo";
+import { syncOportunidadeItensFromProposta } from "@/lib/crm/composicao-comercial";
+import { materializarServicosCanonicosDoNegocio } from "@/lib/crm/servico-canonico";
 
 type PropostaRow = typeof propostas.$inferSelect;
 
@@ -70,11 +72,21 @@ export async function aceitarPropostaPublica(
     payload: { propostaId: proposta.id, negocioId: proposta.negocioId, proximoPasso },
   });
 
+  // Composição comercial reflete o que foi de fato aceito, nos dois caminhos.
+  await syncOportunidadeItensFromProposta(proposta.id);
+
   if (proximoPasso === "pagamento") {
     await notificarPropostaRespondida({
       propostaId: proposta.id, negocioId: proposta.negocioId, leadId: proposta.leadId,
       numero: proposta.numero, versao: proposta.versao, tipo: "aceita",
       motivo: "Cliente aceitou e foi direcionado para o pagamento.",
+    });
+    await publicarEvento({
+      organizacaoId: proposta.organizacaoId,
+      eventType: "PaymentStarted",
+      aggregateType: "proposta",
+      aggregateId: proposta.id,
+      payload: { propostaId: proposta.id, negocioId: proposta.negocioId, checkoutUrl: proposta.checkoutUrl ?? null },
     });
     return { ok: true, proximoPasso, checkoutUrl: proposta.checkoutUrl };
   }
@@ -110,6 +122,14 @@ export async function aceitarPropostaPublica(
     propostaId: proposta.id, negocioId: proposta.negocioId, leadId: proposta.leadId,
     numero: proposta.numero, versao: proposta.versao, tipo: "aceita",
     motivo: "Cliente aceitou — aguardando assinatura do contrato.",
+  });
+
+  await publicarEvento({
+    organizacaoId: proposta.organizacaoId,
+    eventType: "ContractRequired",
+    aggregateType: "contrato",
+    aggregateId: contrato.id,
+    payload: { propostaId: proposta.id, negocioId: proposta.negocioId, produto },
   });
 
   return { ok: true, proximoPasso };
@@ -199,6 +219,15 @@ export async function assinarContratoPublico(
     updatedAt: new Date(),
   }).where(eq(contratos.id, contrato.id));
 
+  await publicarEvento({
+    organizacaoId: proposta.organizacaoId,
+    eventType: "ContractSigned",
+    aggregateType: "contrato",
+    aggregateId: contrato.id,
+    payload: { propostaId: proposta.id, negocioId: proposta.negocioId, assinaturaSimples: true },
+    idempotencyKey: `contract-signed:${contrato.id}`,
+  });
+
   const negocioId = proposta.negocioId;
   if (negocioId) {
     const [neg] = await db.select().from(negocios).where(eq(negocios.id, negocioId)).limit(1);
@@ -230,6 +259,18 @@ export async function assinarContratoPublico(
     await syncNegocioValoresFromPropostas(negocioId);
     await syncPessoaFromLead(proposta.leadId);
     await syncOportunidadeFromNegocio(negocioId);
+
+    // Commercial Core (ADR-EXEC-020): composição comercial + serviço
+    // canônico — best-effort, roda DEPOIS do negócio já estar ganho de
+    // verdade (contrato assinado é a evidência real, já registrada acima).
+    await syncOportunidadeItensFromProposta(proposta.id);
+    await materializarServicosCanonicosDoNegocio({
+      negocioId,
+      organizacaoId: proposta.organizacaoId,
+      contratoId: contrato.id,
+      wonAt: new Date(),
+      stripeSubscriptionId: null, // caminho contrato nunca tem assinatura Stripe por trás
+    });
 
     // Sem billing automático pra PABX ainda (gap real, não fingir automação) —
     // cria tarefa explícita pro time cobrar manualmente.

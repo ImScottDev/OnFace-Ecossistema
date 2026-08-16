@@ -46,12 +46,20 @@ async function handlePaymentConfirmed(session: Record<string, unknown>): Promise
     return `proposta em status '${statusAnterior}', ignorando`;
   }
 
+  // Espelho de billing: liga o cliente e o contrato ao Stripe (dados já vêm no evento).
+  // Extraído ANTES do aceite pra já ir na Commercial Evidence (stripe_subscription
+  // real, não signed_contract genérico) e no Serviço Canônico (canonical_key
+  // STRIPE:sub_x, mesma convenção da reconciliação histórica).
+  const stripeCustomer = typeof session.customer === "string" ? session.customer : null;
+  const stripeSubscription = typeof session.subscription === "string" ? session.subscription : null;
+
   let contratoId: string;
   try {
     const r = await marcarPropostaAceita({
       proposta: claimed,
       organizacaoId: claimed.organizacaoId,
       userId: claimed.criadoPorId, // ator: quem criou a proposta
+      stripeSubscriptionId: stripeSubscription,
     });
     contratoId = r.contratoId;
   } catch (e) {
@@ -63,9 +71,6 @@ async function handlePaymentConfirmed(session: Record<string, unknown>): Promise
     throw e;
   }
 
-  // Espelho de billing: liga o cliente e o contrato ao Stripe (dados já vêm no evento).
-  const stripeCustomer = typeof session.customer === "string" ? session.customer : null;
-  const stripeSubscription = typeof session.subscription === "string" ? session.subscription : null;
   if (stripeCustomer) {
     await db.update(leads)
       .set({ stripeCustomerId: stripeCustomer, updatedAt: new Date() })

@@ -16,6 +16,9 @@ import { syncPessoaFromLead, syncOportunidadeFromNegocio } from "@/lib/crm/sync-
 import { registrarEvidencia } from "@/lib/crm/won-evidence";
 import { avaliarContratosAtivosDuplicados, marcarContratoComoRenovado } from "@/lib/crm/contrato-duplicidade";
 import { determinarProdutoProposta } from "@/lib/crm/proposta-fluxo";
+import { syncOportunidadeItensFromProposta } from "@/lib/crm/composicao-comercial";
+import { materializarServicosCanonicosDoNegocio } from "@/lib/crm/servico-canonico";
+import { publicarEvento } from "@/lib/events/outbox";
 
 type PropostaRow = typeof propostas.$inferSelect;
 
@@ -25,6 +28,8 @@ export async function marcarPropostaAceita(opts: {
   /** ator da ação; no webhook usamos o criador da proposta */
   userId: string | null;
   avancarLead?: boolean;
+  /** presente só quando este aceite vem do webhook Stripe (checkout.session.completed) */
+  stripeSubscriptionId?: string | null;
 }): Promise<{ contratoId: string }> {
   const { proposta, organizacaoId, userId } = opts;
 
@@ -267,10 +272,34 @@ export async function marcarPropostaAceita(opts: {
     await registrarEvidencia({
       negocioId: pAtual.negocioId,
       organizacaoId,
-      tipo: "signed_contract",
-      sourceRef: contrato.id,
+      tipo: opts.stripeSubscriptionId ? "stripe_subscription" : "signed_contract",
+      sourceRef: opts.stripeSubscriptionId || contrato.id,
       metadata: { propostaId: proposta.id },
     });
+  }
+
+  // Commercial Core (ADR-EXEC-020): composição comercial + serviço canônico —
+  // best-effort, roda DEPOIS do negócio já estar ganho de verdade (evidência
+  // acima só confirma o que já aconteceu, nunca bloqueia).
+  if (pAtual?.negocioId) {
+    await syncOportunidadeItensFromProposta(proposta.id);
+    await materializarServicosCanonicosDoNegocio({
+      negocioId: pAtual.negocioId,
+      organizacaoId,
+      contratoId: contrato.id,
+      wonAt: new Date(),
+      stripeSubscriptionId: opts.stripeSubscriptionId ?? null,
+    });
+    if (opts.stripeSubscriptionId) {
+      await publicarEvento({
+        organizacaoId,
+        eventType: "PaymentCompleted",
+        aggregateType: "contrato",
+        aggregateId: contrato.id,
+        payload: { propostaId: proposta.id, negocioId: pAtual.negocioId, stripeSubscriptionId: opts.stripeSubscriptionId },
+        idempotencyKey: `payment-completed:${contrato.id}`,
+      });
+    }
   }
 
   return { contratoId: contrato.id };

@@ -1072,6 +1072,11 @@ export const servicosCatalogo = pgTable(
     // produtos novos entram. Usada pra agrupar o builder de proposta por
     // categoria E pra derivar o próximo passo comercial (ver requerContrato).
     categoria: text("categoria"),
+    // Família comercial declarada no catálogo (ADR-EXEC-020) — nunca inferida
+    // por nome/categoria em runtime. Todo item novo precisa declarar a sua;
+    // é o que permite oportunidade_itens carregar família real sem
+    // string-match. PABX | CALLFACE_AI | WHITE_LABEL | UNKNOWN.
+    serviceFamily: text("service_family").notNull().default("UNKNOWN"),
     // Regra comercial explícita, não inferida do nome/categoria: alguns itens
     // exigem formalização contratual (assinatura) antes do pagamento (ex:
     // PABX), outros vão direto pro pagamento (ex: Callface AI). Fica no
@@ -2255,10 +2260,11 @@ export const oportunidadeItens = pgTable("oportunidade_itens", {
   desconto: decimal("desconto", { precision: 12, scale: 2 }).default("0"),
   valorTotal: decimal("valor_total", { precision: 12, scale: 2 }).default("0").notNull(),
   servicoCanonicoId: uuid("servico_canonico_id").references(() => servicosCanonicos.id),
-  // Bridge de migração/dual-write: de onde este item veio no legado. Só um
-  // dos dois é preenchido — prioridade pro contrato (venda fechada) sobre a
-  // proposta (composição proposta), nunca os dois pro mesmo negócio.
-  origemLegado: text("origem_legado").notNull(), // contrato_item | proposta_item
+  // De onde este item veio: contrato_item/proposta_item são bridge de
+  // migração legado (só um dos dois FKs abaixo preenchido); "manual" é
+  // Commercial Core (ADR-EXEC-020) — Won 100% manual sem proposta por trás,
+  // sem FK de bridge nenhum, quantidade/valor derivados direto do negócio.
+  origemLegado: text("origem_legado").notNull(), // contrato_item | proposta_item | manual
   contratoItemIdLegado: uuid("contrato_item_id_legado").references(() => contratoItens.id),
   propostaItemIdLegado: uuid("proposta_item_id_legado").references(() => propostaItens.id),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
