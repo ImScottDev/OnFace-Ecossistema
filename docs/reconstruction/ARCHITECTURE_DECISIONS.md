@@ -4,6 +4,24 @@ Formato curto: contexto → decisão → consequência. ADRs numeradas herdadas 
 
 ---
 
+## ADR-EXEC-022 — oportunidade_bundle: linhas comerciais independentes viram oportunidades separadas
+
+**Contexto**: ADR-EXEC-021 modelou fulfillment por "grupo comercial" DENTRO de uma proposta/oportunidade só. O Kauã corrigiu: isso ainda deixava uma oportunidade contendo Callface AI + PABX simultaneamente, exigindo um `PARTIAL_WON` que cria ambiguidade real de pipeline — de quem é o stage? o aging? o resultado? quando família A ganha e família B perde, o card representa o quê?
+
+**Decisão 1 — a unidade operacional do pipeline é a oportunidade que chega a um resultado SOZINHA.** Callface AI, PABX e White Label, quando têm ciclos comerciais independentes, viram oportunidades DISTINTAS — cada uma com stage/responsável/valor/probabilidade/resultado próprios. O critério de separação é `service_family` do catálogo (a mesma dimensão já usada em todo o Commercial Core, não um conceito novo).
+
+**Decisão 2 — itens da MESMA família continuam na MESMA oportunidade.** White Label licença MRR + setup + adicional é 1 oportunidade com N `oportunidade_itens` — a separação é por LINHA, não por item. `oportunidade_itens`/`revenue_nature`/`servicos_canonicos` (ADR-EXEC-019) ficam 100% intactos.
+
+**Decisão 3 — `oportunidade_bundle` é agregação pura, nunca status.** Liga oportunidades nascidas da mesma negociação (`negocios.bundle_id` + `oportunidades.bundle_id`, dual-write). Não tem stage, não decide won/lost, não é lido por `avaliarEvidenciaWon`. Uma visão "1 de 2 oportunidades ganhas" é só uma consulta de agregação sobre os négocios do mesmo bundle — nunca um campo de status gravado em lugar nenhum.
+
+**Decisão 4 — Won não precisou de nova modelagem.** Como cada negócio agora é single-family, `marcarNegocioGanhoSeAindaNao` (ADR-EXEC-021, inalterado) já produz exatamente o comportamento pedido: cada oportunidade fecha (ganha/perdida) pelo seu próprio mérito. `PARTIAL_WON` nunca existiu como valor de enum em código — só como conceito de UI/agregação, corretamente descartado.
+
+**Decisão 5 — a separação acontece na CRIAÇÃO, nunca numa edição silenciosa.** `POST /propostas` detecta composição multi-família e organiza (`organizarVendaMultiLinha`) ANTES de criar qualquer negócio — retorna `{multiLinha:true, oportunidades:[...]}` com mensagem explícita ("Esta venda foi organizada em N oportunidades..."), nunca uma duplicação invisível. `PATCH /propostas/:id` REJEITA introduzir uma família nova num negócio já estabelecido noutra — orienta criar proposta separada em vez de corromper a identidade single-family do negócio via edição.
+
+**Consequência**: `scripts/e2e-commercial-core.ts` prova AI+PABX como 2 oportunidades relacionadas com resultados independentes (E1-E8), AI ganho + PABX perdido sem `PARTIAL_WON` em lugar nenhum (E2), todas perdidas (E3) — 44/44, idempotente. Investigação real da Stripe PROD (leitura, via SSH) confirmou a chave `rk_live_` restrita a GETs e um gap real no webhook de PROD (3 eventos que o código trata nunca chegam, porque a assinatura do endpoint não os inclui). Nenhuma alteração em PROD/HOMOLOG.
+
+---
+
 ## ADR-EXEC-021 — Commercial Core v2: modelo comercial por item, fulfillment por grupo independente
 
 **Contexto**: ADR-EXEC-020 fechou o Commercial Core v1, mas com uma premissa errada exposta pelo próprio Kauã: "próximo passo" era decidido pela PROPOSTA INTEIRA (se qualquer item exigisse contrato, tudo esperava contrato). Isso quebra dois casos reais: (1) a mesma família (Callface AI) pode ser vendida COM ou SEM contrato dependendo só do desconto negociado — não é propriedade fixa do produto; (2) uma venda mista (AI sem fidelidade + PABX contratual) não pode travar o AI esperando o PABX assinar.
