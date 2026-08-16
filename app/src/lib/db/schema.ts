@@ -13,6 +13,7 @@ import {
   date,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 // ─── ORGANIZACOES (TENANTS) ──────────────────────────────────
 export const organizacoes = pgTable("organizacoes", {
@@ -150,12 +151,19 @@ export const empresas = pgTable(
     // IDs externos (unificação Zoho/Stripe/PABX)
     zohoId: text("zoho_id"),
     stripeCustomerId: text("stripe_customer_id"),
+    // Identidade canônica (reconciliação v1.1) — resolve duplicidade de
+    // empresa (mesmo CNPJ importado 2x do Zoho). alias.canonicalEmpresaId
+    // aponta pra empresa "de verdade"; nunca merge destrutivo.
+    canonicalEmpresaId: uuid("canonical_empresa_id").references((): AnyPgColumn => empresas.id),
+    identityConfidence: text("identity_confidence"), // CONFIRMED | PROBABLE | AMBIGUOUS | UNRESOLVED
+    identityEvidence: jsonb("identity_evidence"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
     index("idx_empresas_org").on(table.organizacaoId),
     index("idx_empresas_nome").on(table.nome),
+    index("idx_empresas_canonical").on(table.canonicalEmpresaId),
   ]
 );
 
@@ -301,6 +309,11 @@ export const leads = pgTable(
     // não recalculado a cada turno — evita trocar de closer no meio da conversa
     // se outro lead fechar reunião nesse intervalo).
     agendaCloserId: uuid("agenda_closer_id").references(() => usuarios.id),
+    // Identidade canônica (reconciliação v1.1) — mesma lógica de
+    // empresas.canonicalEmpresaId, pro lead legado.
+    canonicalLeadId: uuid("canonical_lead_id").references((): AnyPgColumn => leads.id),
+    identityConfidence: text("identity_confidence"),
+    identityEvidence: jsonb("identity_evidence"),
   },
   (table) => [
     index("idx_leads_org").on(table.organizacaoId),
@@ -460,6 +473,17 @@ export const negocios = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
     convertidoAt: timestamp("convertido_at", { withTimezone: true }),
     ganhoAt: timestamp("ganho_at", { withTimezone: true }),
+    // Classificação de recuperação legado (reconciliação v1.1). Vive aqui
+    // (negócio LEGADO), não em `oportunidades` — ver ADR-EXEC-019: no domain
+    // model novo, família/natureza são propriedade do item (oportunidadeItens),
+    // não do container. Estes campos são snapshot/provenance histórico do
+    // negócio legado, acessível via oportunidades.negocioIdLegado -> aqui.
+    serviceFamily: text("service_family"), // PABX | CALLFACE_AI | WHITE_LABEL | UNKNOWN
+    revenueNature: text("revenue_nature"),
+    semanticConfidence: text("semantic_confidence"),
+    semanticEvidence: jsonb("semantic_evidence"),
+    semanticProvenance: text("semantic_provenance"),
+    semanticAsOfDate: date("semantic_as_of_date"),
   },
   (table) => [
     index("idx_negocios_org").on(table.organizacaoId),
@@ -527,6 +551,12 @@ export const atividades = pgTable(
     dados: jsonb("dados"),
     duracaoSegundos: integer("duracao_segundos"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    // Recuperação legado Zoho (reconciliação v1.1).
+    descricaoRaw: text("descricao_raw"),
+    supersededByNoteId: uuid("superseded_by_note_id"),
+    timelineVisible: boolean("timeline_visible").default(true).notNull(),
+    usuarioDisplayName: text("usuario_display_name"),
+    usuarioSourceId: text("usuario_source_id"),
   },
   (table) => [
     index("idx_atividades_lead_id").on(table.leadId),
@@ -545,6 +575,10 @@ export const statusChanges = pgTable("status_changes", {
   usuarioId: uuid("usuario_id").references(() => usuarios.id),
   motivo: text("motivo"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  // Recuperação legado Zoho (reconciliação v1.1).
+  confianca: text("confianca").default("confirmado").notNull(),
+  evidencia: jsonb("evidencia"),
+  zohoId: text("zoho_id"),
 });
 
 // ─── CONTRATOS ──────────────────────────────────────────────
@@ -584,6 +618,16 @@ export const contratos = pgTable(
     assinadoIp: text("assinado_ip"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    // Recuperação legado Zoho (reconciliação v1.1).
+    assinaturaLegadoZoho: jsonb("assinatura_legado_zoho"),
+    codigoLegado: text("codigo_legado"),
+    commercialLifecycle: text("commercial_lifecycle"),
+    currentRecurringValue: decimal("current_recurring_value", { precision: 14, scale: 2 }),
+    multaPercentual: decimal("multa_percentual", { precision: 5, scale: 2 }),
+    prazoMeses: integer("prazo_meses"),
+    semanticConfidence: text("semantic_confidence"),
+    semanticEvidence: jsonb("semantic_evidence"),
+    serviceFamily: text("service_family"),
   },
   (table) => [
     index("idx_contratos_lead_id").on(table.leadId),
@@ -619,6 +663,13 @@ export const assinaturas = pgTable(
     syncedAt: timestamp("synced_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    // Reconciliação v1.1: carteira canônica / current MRR.
+    servicoId: uuid("servico_id").references((): AnyPgColumn => servicosCanonicos.id),
+    revenueNature: text("revenue_nature"),
+    billingStatus: text("billing_status"),
+    commercialLifecycle: text("commercial_lifecycle"),
+    semanticConfidence: text("semantic_confidence"),
+    semanticEvidence: jsonb("semantic_evidence"),
   },
   (table) => [
     uniqueIndex("idx_assinaturas_stripe_id").on(table.stripeSubscriptionId),
@@ -661,6 +712,10 @@ export const faturas = pgTable(
     acionadoPor: uuid("acionado_por").references(() => usuarios.id),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    // Recuperação legado Zoho (reconciliação v1.1).
+    receivableState: text("receivable_state"),
+    semanticConfidence: text("semantic_confidence"),
+    semanticEvidence: jsonb("semantic_evidence"),
   },
   (table) => [
     index("idx_faturas_org").on(table.organizacaoId),
@@ -690,12 +745,17 @@ export const mrrMovimentos = pgTable(
     ocorridoEm: timestamp("ocorrido_em", { withTimezone: true }).notNull(),
     origem: text("origem").notNull(), // stripe_sync | backfill | pabx_import
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    // Idempotency key do backfill de recuperação legado (evento_comercial ->
+    // mrr_movimento, só quando financeiramente determinístico — ver
+    // ADR-EXEC-019). Sem isso, reexecutar o backfill duplicava o movimento.
+    eventoComercialId: uuid("evento_comercial_id").references(() => eventosComerciais.id),
   },
   (table) => [
     index("idx_mrr_mov_ocorrido").on(table.ocorridoEm),
     index("idx_mrr_mov_assinatura").on(table.assinaturaId),
     index("idx_mrr_mov_tipo").on(table.tipo),
     index("idx_mrr_mov_org").on(table.organizacaoId),
+    uniqueIndex("idx_mrr_movimentos_evento_comercial").on(table.eventoComercialId).where(sql`evento_comercial_id IS NOT NULL`),
   ]
 );
 
@@ -1097,6 +1157,16 @@ export const propostaItens = pgTable(
     subtotal: decimal("subtotal", { precision: 12, scale: 2 }).default("0").notNull(),
     ordem: integer("ordem").default(0).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    // Recuperação legado Zoho (reconciliação v1.1).
+    billingSource: text("billing_source"),
+    nonRecurringValue: decimal("non_recurring_value", { precision: 14, scale: 2 }),
+    provenance: text("provenance"),
+    recurringValue: decimal("recurring_value", { precision: 14, scale: 2 }),
+    revenueNature: text("revenue_nature"),
+    semanticConfidence: text("semantic_confidence"),
+    semanticEvidence: jsonb("semantic_evidence"),
+    serviceFamily: text("service_family"),
+    zohoId: text("zoho_id"),
   },
   (table) => [
     index("idx_proposta_itens_proposta").on(table.propostaId),
@@ -1245,6 +1315,10 @@ export const notas = pgTable(
     pipedriveId: text("pipedrive_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    // Recuperação legado Zoho (reconciliação v1.1).
+    autorDisplayName: text("autor_display_name"),
+    autorSourceId: text("autor_source_id"),
+    conteudoRaw: text("conteudo_raw"),
   },
   (table) => [
     index("idx_notas_lead").on(table.leadId),
@@ -1711,6 +1785,344 @@ export const auditLog = pgTable("audit_log", {
 ]);
 
 // ═══════════════════════════════════════════════════════════════
+// RECONCILIAÇÃO v1.1 + RECUPERAÇÃO LEGADO ZOHO (formalizado 2026-08-16)
+// Estado consolidado de PROD (tag prod-consolidated-2026-08-16, commit
+// 89460f8), promovido de HOMOLOG. Ver ADR-EXEC-019 em
+// ARCHITECTURE_DECISIONS.md. Escopo: só o que tem dado válido pra reconciliar
+// (histórico Zoho, contratos/anexos, carteira canônica) — NÃO inclui o
+// módulo CS (revertido, 0 linhas) nem nada específico do CRM2.0 inacabado.
+// ═══════════════════════════════════════════════════════════════
+
+export const servicosCanonicos = pgTable(
+  "servicos_canonicos",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+    empresaId: uuid("empresa_id").references(() => empresas.id, { onDelete: "set null" }),
+    leadId: uuid("lead_id").references(() => leads.id, { onDelete: "set null" }),
+    contratoId: uuid("contrato_id").references(() => contratos.id, { onDelete: "set null" }),
+    canonicalKey: text("canonical_key").notNull(),
+    serviceFamily: text("service_family").notNull(), // PABX | CALLFACE_AI | WHITE_LABEL | UNKNOWN
+    canonicalProduct: text("canonical_product"),
+    revenueNature: text("revenue_nature").notNull(), // MRR | SETUP | PROJECT | ONE_TIME | USAGE | HARDWARE | UNKNOWN
+    billingSource: text("billing_source").notNull(),
+    commercialLifecycle: text("commercial_lifecycle").notNull(), // ACTIVE | CHURNED | SUPERSEDED
+    billingStatus: text("billing_status").notNull(),
+    // Fonte da verdade do current MRR — nunca recalcular por SUM(contratos.mrr).
+    currentRecurringValue: decimal("current_recurring_value", { precision: 14, scale: 2 }).default("0").notNull(),
+    currentSubscriptionId: text("current_subscription_id"),
+    asOfDate: date("as_of_date"),
+    portfolioIncluded: boolean("portfolio_included").default(false).notNull(),
+    confidence: text("confidence").notNull(), // CONFIRMED | PROBABLE | AMBIGUOUS | UNRESOLVED
+    evidence: jsonb("evidence").default({}).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("idx_servicos_canonicos_org_key").on(table.organizacaoId, table.canonicalKey),
+    index("idx_servicos_canonicos_portfolio").on(table.organizacaoId, table.portfolioIncluded, table.serviceFamily),
+  ],
+);
+
+export const serviceLedgerBatches = pgTable(
+  "service_ledger_batches",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+    competence: date("competence").notNull(),
+    version: text("version").notNull(),
+    sourceFile: text("source_file").notNull(),
+    sourceSha256: text("source_sha256").notNull(),
+    expectedTotal: decimal("expected_total", { precision: 14, scale: 2 }).notNull(),
+    importedTotal: decimal("imported_total", { precision: 14, scale: 2 }).notNull(),
+    rowCount: integer("row_count").notNull(),
+    status: text("status").notNull(), // OPEN | CLOSED | SUPERSEDED — CLOSED é imutável
+    evidence: jsonb("evidence").default({}).notNull(),
+    importedAt: timestamp("imported_at", { withTimezone: true }).defaultNow().notNull(),
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("idx_service_ledger_batch_version").on(table.organizacaoId, table.competence, table.version),
+  ],
+);
+
+export const serviceLedgerEntries = pgTable(
+  "service_ledger_entries",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    batchId: uuid("batch_id").references(() => serviceLedgerBatches.id).notNull(),
+    organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+    sourceRowHash: text("source_row_hash").notNull(),
+    sourceRowNumber: integer("source_row_number").notNull(),
+    document: text("document"),
+    companyName: text("company_name").notNull(),
+    billedValue: decimal("billed_value", { precision: 14, scale: 2 }).notNull(),
+    serviceFamily: text("service_family").notNull(),
+    revenueNature: text("revenue_nature").notNull(),
+    serviceId: uuid("service_id").references(() => servicosCanonicos.id),
+    confidence: text("confidence").notNull(),
+    evidence: jsonb("evidence").default({}).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("idx_service_ledger_entry_source").on(table.batchId, table.sourceRowHash),
+    index("idx_service_ledger_entries_service_id").on(table.serviceId),
+  ],
+);
+
+export const servicoBillingTimeline = pgTable(
+  "servico_billing_timeline",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+    empresaId: uuid("empresa_id").references(() => empresas.id),
+    leadId: uuid("lead_id").references(() => leads.id),
+    contratoId: uuid("contrato_id").references(() => contratos.id),
+    assinaturaId: uuid("assinatura_id"),
+    provider: text("provider").notNull(),
+    externalId: text("external_id").notNull(),
+    serviceFamily: text("service_family").notNull(),
+    revenueNature: text("revenue_nature").notNull(),
+    billingStatus: text("billing_status").notNull(),
+    amount: decimal("amount", { precision: 14, scale: 2 }).default("0").notNull(),
+    effectiveAt: timestamp("effective_at", { withTimezone: true }),
+    isCurrent: boolean("is_current").default(false).notNull(),
+    confidence: text("confidence").notNull(),
+    evidence: jsonb("evidence").default({}).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    servicoId: uuid("servico_id").references(() => servicosCanonicos.id),
+  },
+  (table) => [
+    uniqueIndex("idx_servico_billing_timeline_external").on(table.organizacaoId, table.provider, table.externalId),
+    index("idx_servico_billing_timeline_servico_id").on(table.servicoId),
+  ],
+);
+
+export const reconciliationRuns = pgTable(
+  "reconciliation_runs",
+  {
+    id: uuid("id").primaryKey(),
+    organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+    packageVersion: text("package_version").notNull(),
+    packageSha256: text("package_sha256").notNull(),
+    environment: text("environment").notNull(), // HOMOLOG | PROD
+    status: text("status").notNull(), // RUNNING | COMPLETED | FAILED
+    startedAt: timestamp("started_at", { withTimezone: true }).defaultNow().notNull(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    writesInserted: integer("writes_inserted").default(0).notNull(),
+    writesUpdated: integer("writes_updated").default(0).notNull(),
+    writesDeactivated: integer("writes_deactivated").default(0).notNull(),
+    summary: jsonb("summary").default({}).notNull(),
+  },
+  (table) => [
+    uniqueIndex("idx_reconciliation_run_package").on(table.organizacaoId, table.packageVersion, table.packageSha256),
+  ],
+);
+
+export const reconciliationChanges = pgTable(
+  "reconciliation_changes",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    runId: uuid("run_id").references(() => reconciliationRuns.id).notNull(),
+    actionId: text("action_id").notNull(),
+    tableName: text("table_name").notNull(),
+    recordKey: text("record_key").notNull(),
+    operation: text("operation").notNull(), // INSERT | UPDATE | DEACTIVATE
+    beforeState: jsonb("before_state"),
+    afterState: jsonb("after_state").notNull(),
+    evidence: jsonb("evidence").default({}).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("idx_reconciliation_change").on(table.runId, table.actionId, table.tableName, table.recordKey),
+  ],
+);
+
+// ─── Recuperação legado Zoho (histórico, anexos, provenance) ───────────────
+
+export const anexosLegado = pgTable("anexos_legado", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+  entidadeTipo: text("entidade_tipo").notNull(),
+  entidadeId: uuid("entidade_id"),
+  categoria: text("categoria").default("anexo_generico").notNull(),
+  zohoId: text("zoho_id"),
+  nomeArquivo: text("nome_arquivo").notNull(),
+  tamanhoBytes: integer("tamanho_bytes"),
+  criadoEmOriginal: timestamp("criado_em_original", { withTimezone: true }),
+  storagePath: text("storage_path"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  checksumSha256: text("checksum_sha256"),
+}, (table) => [
+  index("idx_anexos_legado_entidade").on(table.entidadeTipo, table.entidadeId),
+  index("idx_anexos_legado_org").on(table.organizacaoId),
+  uniqueIndex("idx_anexos_legado_zoho_dedup").on(table.organizacaoId, table.zohoId).where(sql`zoho_id IS NOT NULL`),
+]);
+
+export const legacyProvenance = pgTable("legacy_provenance", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+  entidadeTipo: text("entidade_tipo").notNull(),
+  entidadeId: uuid("entidade_id").notNull(),
+  zohoId: text("zoho_id").notNull(),
+  confianca: text("confianca").default("confirmado").notNull(),
+  evidencia: jsonb("evidencia"),
+  recoveredAt: timestamp("recovered_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("idx_legacy_provenance_entidade").on(table.entidadeTipo, table.entidadeId),
+  index("idx_legacy_provenance_org").on(table.organizacaoId),
+  uniqueIndex("idx_legacy_provenance_zoho_dedup").on(table.organizacaoId, table.entidadeTipo, table.zohoId),
+]);
+
+export const billingIdentities = pgTable("billing_identities", {
+  id: uuid("id").primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+  canonicalEmpresaId: uuid("canonical_empresa_id").references(() => empresas.id, { onDelete: "set null" }),
+  canonicalLeadId: uuid("canonical_lead_id").references(() => leads.id, { onDelete: "set null" }),
+  provider: text("provider").notNull(),
+  externalCustomerId: text("external_customer_id").notNull(),
+  emails: jsonb("emails").default([]).notNull(),
+  phones: jsonb("phones").default([]).notNull(),
+  confidence: text("confidence").notNull(),
+  evidence: jsonb("evidence").default({}).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("idx_billing_identities_dedup").on(table.organizacaoId, table.provider, table.externalCustomerId, table.canonicalLeadId),
+]);
+
+export const catalogoMapeamentosLegacy = pgTable("catalogo_mapeamentos_legacy", {
+  id: uuid("id").primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+  legacyProductId: text("legacy_product_id").notNull(),
+  legacyName: text("legacy_name").notNull(),
+  canonicalProductId: uuid("canonical_product_id").references(() => servicosCatalogo.id, { onDelete: "set null" }),
+  canonicalName: text("canonical_name"),
+  serviceFamily: text("service_family").notNull(),
+  defaultRevenueNature: text("default_revenue_nature").notNull(),
+  activeSelectable: boolean("active_selectable").default(false).notNull(),
+  historicalOnly: boolean("historical_only").default(true).notNull(),
+  confidence: text("confidence").notNull(),
+  evidence: text("evidence"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("idx_catalogo_mapeamentos_legacy_dedup").on(table.organizacaoId, table.legacyProductId),
+]);
+
+export const contratoItens = pgTable("contrato_itens", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  contratoId: uuid("contrato_id").references(() => contratos.id, { onDelete: "cascade" }),
+  servicoCatalogoId: uuid("servico_catalogo_id").references(() => servicosCatalogo.id),
+  nome: text("nome").notNull(),
+  descricao: text("descricao"),
+  quantidade: decimal("quantidade", { precision: 10, scale: 2 }).default("1").notNull(),
+  valorUnitario: decimal("valor_unitario", { precision: 12, scale: 2 }).default("0").notNull(),
+  desconto: decimal("desconto", { precision: 5, scale: 2 }).default("0"),
+  subtotal: decimal("subtotal", { precision: 12, scale: 2 }).default("0").notNull(),
+  zohoId: text("zoho_id"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  serviceFamily: text("service_family"),
+  revenueNature: text("revenue_nature"),
+  recurringValue: decimal("recurring_value", { precision: 14, scale: 2 }),
+  nonRecurringValue: decimal("non_recurring_value", { precision: 14, scale: 2 }),
+  billingSource: text("billing_source"),
+  semanticConfidence: text("semantic_confidence"),
+  semanticEvidence: jsonb("semantic_evidence"),
+  provenance: text("provenance"),
+}, (table) => [
+  index("idx_contrato_itens_contrato").on(table.contratoId),
+  index("idx_contrato_itens_servico").on(table.servicoCatalogoId),
+  uniqueIndex("idx_contrato_itens_zoho_dedup").on(table.zohoId).where(sql`zoho_id IS NOT NULL`),
+]);
+
+export const faturaItens = pgTable("fatura_itens", {
+  id: uuid("id").primaryKey(),
+  faturaId: uuid("fatura_id").references(() => faturas.id, { onDelete: "cascade" }).notNull(),
+  servicoCatalogoId: uuid("servico_catalogo_id").references(() => servicosCatalogo.id, { onDelete: "set null" }),
+  nome: text("nome").notNull(),
+  descricao: text("descricao"),
+  quantidade: decimal("quantidade", { precision: 14, scale: 2 }).default("1").notNull(),
+  valorUnitario: decimal("valor_unitario", { precision: 14, scale: 2 }).default("0").notNull(),
+  desconto: decimal("desconto", { precision: 14, scale: 2 }).default("0").notNull(),
+  subtotal: decimal("subtotal", { precision: 14, scale: 2 }).default("0").notNull(),
+  moeda: text("moeda").default("BRL").notNull(),
+  zohoId: text("zoho_id"),
+  provenance: text("provenance"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  servicoId: uuid("servico_id").references(() => servicosCanonicos.id, { onDelete: "set null" }),
+}, (table) => [
+  index("idx_fatura_itens_servico_id").on(table.servicoId),
+  uniqueIndex("idx_fatura_itens_zoho_id").on(table.zohoId).where(sql`zoho_id IS NOT NULL`),
+]);
+
+// ─── EVENTOS_COMERCIAIS (fato/evidência histórica bruta) ───────────────────
+// Fluxo de normalização (decisão fechada 2026-08-16): eventos_comerciais é o
+// fato bruto recuperado do Zoho; comercialEvidencia é a representação
+// normalizada dentro do domínio comercial CRM2; mrrMovimentos é a
+// representação financeira normalizada, só quando o evento altera MRR de
+// forma determinística (nunca cópia cega — ver mrrMovimentos.eventoComercialId).
+export const eventosComerciais = pgTable("eventos_comerciais", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+  negocioId: uuid("negocio_id").references(() => negocios.id),
+  negocioOrigemId: uuid("negocio_origem_id"),
+  contratoId: uuid("contrato_id").references(() => contratos.id),
+  tipo: text("tipo").notNull(), // churn | upgrade | downgrade | renovacao | alteracao_contratual
+  zohoId: text("zoho_id"),
+  confianca: text("confianca").default("confirmado").notNull(),
+  evidencia: jsonb("evidencia"),
+  responsavelId: uuid("responsavel_id").references(() => usuarios.id),
+  ocorridoEm: timestamp("ocorrido_em", { withTimezone: true }).notNull(),
+  origem: text("origem").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  servicoId: uuid("servico_id").references(() => servicosCanonicos.id, { onDelete: "set null" }),
+}, (table) => [
+  index("idx_eventos_comerciais_contrato").on(table.contratoId),
+  index("idx_eventos_comerciais_negocio").on(table.negocioId),
+  index("idx_eventos_comerciais_negocio_origem").on(table.negocioOrigemId),
+  index("idx_eventos_comerciais_org").on(table.organizacaoId),
+  index("idx_eventos_comerciais_servico_id").on(table.servicoId),
+  index("idx_eventos_comerciais_tipo").on(table.tipo),
+  uniqueIndex("idx_eventos_comerciais_zoho_dedup").on(table.organizacaoId, table.zohoId).where(sql`zoho_id IS NOT NULL`),
+]);
+
+export const portfolioSnapshots = pgTable("portfolio_snapshots", {
+  id: uuid("id").primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+  snapshotDate: date("snapshot_date").notNull(),
+  component: text("component").notNull(),
+  value: decimal("value", { precision: 14, scale: 2 }).notNull(),
+  asOfDate: date("as_of_date"),
+  confidence: text("confidence").notNull(),
+  evidence: text("evidence"),
+  currentExact: boolean("current_exact").default(false).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("idx_portfolio_snapshots_dedup").on(table.organizacaoId, table.snapshotDate, table.component),
+]);
+
+// ─── Auditoria da correção v1.0 (evidência de proveniência) ────────────────
+export const correctionRuns = pgTable("correction_runs", {
+  id: uuid("id").primaryKey(),
+  ledgerSha256: text("ledger_sha256").notNull(),
+  mode: text("mode").notNull(),
+  startedAt: timestamp("started_at", { withTimezone: true }).defaultNow().notNull(),
+  finishedAt: timestamp("finished_at", { withTimezone: true }),
+  changeCount: integer("change_count").default(0).notNull(),
+  details: jsonb("details").default({}).notNull(),
+});
+
+export const correctionChangeLog = pgTable("correction_change_log", {
+  id: integer("id").generatedByDefaultAsIdentity().primaryKey(),
+  runId: uuid("run_id").references(() => correctionRuns.id).notNull(),
+  entityType: text("entity_type").notNull(),
+  entityId: text("entity_id").notNull(),
+  field: text("field").notNull(),
+  oldValue: text("old_value"),
+  newValue: text("new_value"),
+  changedAt: timestamp("changed_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+// ═══════════════════════════════════════════════════════════════
 // CRM 2.0 — FASE 1 (Domain Model): pessoas, oportunidades, clientes,
 // pontos_contato. Schema V2 em paralelo ao legado (ADR-EXEC-003) —
 // `leads`/`negocios`/`contatos` continuam vivos e são a fonte de verdade
@@ -1778,12 +2190,16 @@ export const pontosContato = pgTable("pontos_contato", {
   ocorridoEm: timestamp("ocorrido_em", { withTimezone: true }).defaultNow().notNull(),
   raw: jsonb("raw"), // payload cru da integração de origem, auditoria
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  // Bridge de migração/dual-write (backfill de recuperação legado, 2026-08-16)
+  // — mesma lógica de pessoas.leadIdLegado.
+  leadIdLegado: uuid("lead_id_legado").references(() => leads.id),
 }, (table) => [
   index("idx_pontos_contato_org").on(table.organizacaoId),
   index("idx_pontos_contato_pessoa").on(table.pessoaId),
   index("idx_pontos_contato_empresa").on(table.empresaId),
   index("idx_pontos_contato_pessoa_first").on(table.pessoaId, table.isFirstTouch),
   index("idx_pontos_contato_pessoa_last").on(table.pessoaId, table.isLastTouch),
+  uniqueIndex("idx_pontos_contato_lead_legado").on(table.leadIdLegado).where(sql`lead_id_legado IS NOT NULL`),
 ]);
 
 // ─── OPORTUNIDADES (Deal v2 — referencia Pessoa+Empresa, NÃO Lead) ──
@@ -1816,6 +2232,41 @@ export const oportunidades = pgTable("oportunidades", {
   index("idx_oportunidades_stage").on(table.stage),
   index("idx_oportunidades_responsavel").on(table.responsavelId),
   index("idx_oportunidades_negocio_legado").on(table.negocioIdLegado),
+]);
+
+// ─── OPORTUNIDADE_ITENS (item/produto/serviço comercial — ADR-EXEC-019) ────
+// Correção arquitetural (2026-08-16): service_family/revenue_nature NÃO são
+// propriedade estrutural de Oportunidade. Uma oportunidade é o container da
+// negociação e pode conter múltiplos produtos/naturezas simultâneos (ex:
+// Callface AI MRR + White Label SETUP + White Label MRR + PABX MRR na mesma
+// venda) — modelar 1 oportunidade = 1 família = 1 natureza cria uma pergunta
+// sem resposta certa assim que a venda é mista. Família/natureza vivem aqui,
+// no item; depois do fechamento cada item dá origem a um servicoCanonico
+// correspondente (servicoCanonicoId linka quando existir).
+export const oportunidadeItens = pgTable("oportunidade_itens", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+  oportunidadeId: uuid("oportunidade_id").references(() => oportunidades.id, { onDelete: "cascade" }).notNull(),
+  produto: text("produto"),
+  serviceFamily: text("service_family").notNull(), // PABX | CALLFACE_AI | WHITE_LABEL | UNKNOWN
+  revenueNature: text("revenue_nature").notNull(), // MRR | SETUP | PROJECT | ONE_TIME | USAGE | HARDWARE | UNKNOWN
+  quantidade: decimal("quantidade", { precision: 10, scale: 2 }).default("1").notNull(),
+  precoUnitario: decimal("preco_unitario", { precision: 12, scale: 2 }).default("0").notNull(),
+  desconto: decimal("desconto", { precision: 12, scale: 2 }).default("0"),
+  valorTotal: decimal("valor_total", { precision: 12, scale: 2 }).default("0").notNull(),
+  servicoCanonicoId: uuid("servico_canonico_id").references(() => servicosCanonicos.id),
+  // Bridge de migração/dual-write: de onde este item veio no legado. Só um
+  // dos dois é preenchido — prioridade pro contrato (venda fechada) sobre a
+  // proposta (composição proposta), nunca os dois pro mesmo negócio.
+  origemLegado: text("origem_legado").notNull(), // contrato_item | proposta_item
+  contratoItemIdLegado: uuid("contrato_item_id_legado").references(() => contratoItens.id),
+  propostaItemIdLegado: uuid("proposta_item_id_legado").references(() => propostaItens.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("idx_oportunidade_itens_oportunidade").on(table.oportunidadeId),
+  uniqueIndex("idx_oportunidade_itens_contrato_legado").on(table.contratoItemIdLegado).where(sql`contrato_item_id_legado IS NOT NULL`),
+  uniqueIndex("idx_oportunidade_itens_proposta_legado").on(table.propostaItemIdLegado).where(sql`proposta_item_id_legado IS NOT NULL`),
 ]);
 
 // ─── CLIENTES (Customer — entidade agregadora, não existe hoje) ────

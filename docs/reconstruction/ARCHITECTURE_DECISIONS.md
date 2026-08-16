@@ -4,6 +4,43 @@ Formato curto: contexto → decisão → consequência. ADRs numeradas herdadas 
 
 ---
 
+## ADR-EXEC-019 — Consolidação PROD→DEV: reconciliação v1.1 versionada + oportunidade_itens (item, não a oportunidade, carrega família/natureza)
+
+**Contexto**: fechada a ponte de dados PROD consolidado (tag `prod-consolidated-2026-08-16`, commit `89460f8`) → HOMOLOG → DEV/CRM2. Antes de retomar features, era preciso formalizar em código (schema.ts + migration versionada) o que até então só existia via `db:push`/SQL manual: a reconciliação v1.1 (carteira canônica, ledger histórico, recuperação Zoho — 16 estruturas) e o backfill do Domain Model CRM2 (`pessoas`/`oportunidades`/`clientes`/`pontos_contato`).
+
+**Decisão 1 — reconciliação v1.1 + recuperação legado formalizadas em migration única** (`0012_reconciliation_and_crm2_domain_model.sql`): `servicosCanonicos`, `serviceLedgerBatches/Entries`, `servicoBillingTimeline`, `reconciliationRuns/Changes`, `anexosLegado`, `legacyProvenance`, `billingIdentities`, `catalogoMapeamentosLegacy`, `contratoItens`, `faturaItens`, `eventosComerciais`, `portfolioSnapshots`, `correctionRuns/ChangeLog` + colunas de classificação em `contratos`/`leads`/`notas`/`atividades`/`faturas`/`statusChanges`/`assinaturas`/`propostaItens`/`empresas`/`negocios`. Escopo deliberadamente **não** inclui o módulo CS (0 linhas, revertido) nem nada do CRM2.0 ainda inacabado.
+
+**Decisão 2 — correção arquitetural: `service_family`/`revenue_nature` NÃO são propriedade de `oportunidades`.** Uma oportunidade é o container comercial da negociação; pode conter múltiplos produtos/naturezas simultâneos numa venda mista (ex.: Callface AI licença MRR + Callface AI consumo USAGE + PABX plano MRR + PABX instalação SETUP + White Label licença MRR + White Label implantação SETUP, tudo na mesma proposta). Modelar 1 oportunidade = 1 família = 1 natureza quebra assim que a venda é mista — não existe resposta certa pra "qual família vai em `oportunidades.service_family`" numa venda AI+PABX.
+
+Estrutura correta, criada agora (`oportunidade_itens`, nova):
+```
+OPORTUNIDADE (container: pessoa/empresa, responsável, pipeline/stage, valor estimado, origem)
+   └── OPORTUNIDADE_ITEM (produto, service_family, revenue_nature, quantidade, preço, desconto, recorrência) × N
+```
+Depois do fechamento, cada item dá origem a um `servicoCanonico` correspondente (`oportunidadeItens.servicoCanonicoId`). Isso já conversa com o desenho de Propostas existente (fluxo comercial condicional: composição decide o caminho — AI vai proposta→aceite→pagamento, PABX/White Label podem exigir proposta→contrato→pagamento, uma proposta mista precisa representar os dois).
+
+A classificação do **negócio legado** (que era 1:1 família/natureza, dado real da reconciliação) continua 100% preservada — não em `oportunidades`, mas no próprio `negocios` (legado, colunas `serviceFamily`/`revenueNature`/`semantic*` já existiam), acessível via `oportunidades.negocioIdLegado → negocios`. Zero duplicação, zero contaminação do Domain Model novo com uma limitação que só existe pro dado histórico.
+
+**Decisão 3 — fluxo de normalização evento→domínio, fechado (não é mais decisão pendente):**
+```
+eventos_comerciais  (fato/evidência histórica bruta, recuperada/consolidada)
+      │
+      ▼
+comercial_evidencia (representação normalizada dentro do domínio comercial CRM2 — SEMPRE gerada)
+      │
+      ▼ (só quando financeiramente determinístico)
+mrr_movimentos      (representação financeira normalizada — NUNCA cópia cega)
+```
+`mrr_movimentos.eventoComercialId` (nova, unique) é a chave de idempotência dessa ponte. Na prática (backfill real, 2026-08-16): dos 169 eventos elegíveis (excluído `alteracao_contratual` e `renovacao` sem delta), só 3 resolveram família+empresa sem ambiguidade e viraram `mrr_movimentos`; os outros 166 ficam representados em `comercial_evidencia` (fato preservado) sem heurística forçada — ausência de movimento normalizado **não é perda do evento**.
+
+**Decisão 4 — identidade: dedup só por chave canônica, nunca por PII.** `pessoas` faz backfill 1:1 lead legado→pessoa; dedup real só via `canonicalLeadId` explícito (0 casos no dataset atual — nenhum lead foi marcado alias de outro). E-mail/telefone/nome nunca geram merge automático — no máximo, no futuro, uma sugestão de possível duplicidade pra revisão humana.
+
+**Decisão 5 — `clientes.statusFinanceiro` é cache/projeção, nunca fonte de verdade.** Current MRR continua exclusivamente `servicosCanonicos.currentRecurringValue`. Quando não há serviço canônico vinculado à empresa do cliente, o status fica `"indefinido"` — não é inferido artificialmente (172/249 casos reais no backfill, por falta de `empresa_id` ou de serviço vinculado).
+
+**Consequência**: schema.ts, migration e script de backfill (`app/scripts/backfill-crm2-domain-model.sql`, idempotente, versionado) ficam coerentes entre si e reproduzíveis do zero (validado rodando a migration + o backfill contra uma base `dev` recém-materializada via `drizzle-kit push`, sem depender de nenhum estado manual de sessão). Typecheck limpo. Nenhuma alteração adicional em PROD/HOMOLOG.
+
+---
+
 ## ADR-EXEC-018 — App Shell V1 (tema claro) + Command Center — fundação do frontend do CRM 2.0
 
 **Contexto**: Kauã trouxe a 1ª tela oficial do Figma (`crm-command-center-light`, node 42:6718) como contrato visual/UX da V2, com um conjunto de decisões explícitas: (1) tema claro é o padrão da V1, mas a arquitetura precisa suportar dark depois sem reconstruir componente; (2) a navegação do Figma é a direção oficial — itens do sistema atual que não couberem entram numa seção "Legado", sem forçar encaixe; (3) todo número do mockup é placeholder — implementar com dado real, e se não existir fonte confiável, mostrar indisponível/N-A, nunca inventar; (4) taxa de abertura de e-mail fica indisponível (sem tracking, e-mail não é canal principal agora); (5) "Callface AI Insights" usa heurística real (meta-realizado), desacoplado por trás de uma interface que aceita IA depois sem mudar a UI; (6) o card de ranking reflete a organização/time do contexto RBAC atual (org-switch de super_admin já existente); (7) Figma define COMO mostrar, CRM 2.0 define O QUE mostrar — divergência resolve a favor do backend; (8) métricas com fonte confiável entram calculadas com regra clara e registrada, métricas ambíguas ficam indisponíveis; (9) Command Center é o Home consolidado, não uma página por bloco; (10) esta tela estabelece o padrão de componente/tema pro resto do CRM 2.0; (11) critério de pronto é o pipeline completo Figma→componente→API→dado real→estado→interação→navegação, não só semelhança visual.
