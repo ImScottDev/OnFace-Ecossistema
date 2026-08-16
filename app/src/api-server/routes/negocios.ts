@@ -10,6 +10,7 @@ import { dispararAutomacoes } from "@/lib/crm/automacao-engine";
 import { avaliarEvidenciaWon, registrarEvidenciaManual } from "@/lib/crm/won-evidence";
 import { publicarEvento } from "@/lib/events/outbox";
 import { garantirItemComercialManual } from "@/lib/crm/composicao-comercial";
+import { listarOportunidadesIrmas } from "@/lib/crm/oportunidade-bundle";
 import { materializarServicosCanonicosDoNegocio } from "@/lib/crm/servico-canonico";
 import { isAdminView } from "@/lib/auth/roles";
 import { getCtx } from "../compat.js";
@@ -338,7 +339,7 @@ app.get("/negocios/:id", async (c) => {
   // + evidências de Won — pra tela de negócio no App Shell novo enxergar a
   // composição real (família/natureza por item) sem recalcular nada aqui.
   const [oportunidade] = await db.select({ id: oportunidades.id }).from(oportunidades).where(eq(oportunidades.negocioIdLegado, id)).limit(1);
-  const [composicaoComercial, evidenciasComerciais, gruposComerciais] = await Promise.all([
+  const [composicaoComercial, evidenciasComerciais, gruposComerciais, oportunidadesIrmas] = await Promise.all([
     oportunidade
       ? db.select().from(oportunidadeItens).where(eq(oportunidadeItens.oportunidadeId, oportunidade.id)).orderBy(desc(oportunidadeItens.createdAt))
       : Promise.resolve([]),
@@ -346,6 +347,10 @@ app.get("/negocios/:id", async (c) => {
     // Commercial Core v2 (ADR-EXEC-021): fulfillment por grupo — só existem
     // depois do aceite; venda mista tem estado independente por grupo.
     db.select().from(propostaGrupoComercial).where(eq(propostaGrupoComercial.negocioId, id)).orderBy(desc(propostaGrupoComercial.createdAt)),
+    // Commercial Core v3 (ADR-EXEC-022): oportunidades IRMÃS (mesmo bundle,
+    // linhas comerciais distintas da mesma negociação) — agregação, nunca
+    // status. Cada uma com resultado independente.
+    listarOportunidadesIrmas(id),
   ]);
 
   return c.json({
@@ -359,6 +364,7 @@ app.get("/negocios/:id", async (c) => {
     statusChanges: negocioStatusChanges,
     notas: negocioNotas,
     reunioes: negocioReunioes,
+    oportunidadesIrmas: oportunidadesIrmas.filter((o) => o.id !== id),
     comercial: {
       oportunidadeId: oportunidade?.id ?? null,
       itens: composicaoComercial,

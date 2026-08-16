@@ -125,6 +125,23 @@ export function Cf2NovaPropostaWorkspace() {
   const totalAvulso = carrinho.filter((i) => i.tipo !== "recorrente").reduce((s, i) => s + calcSubtotal(i.quantidade, i.valorUnitario), 0);
   const totalGeral = totalRecorrente + totalAvulso;
 
+  // Commercial Core v3 (ADR-EXEC-022): preview client-side de quantas
+  // oportunidades essa composição vai virar — categoria do catálogo mapeia
+  // 1:1 pra service_family (a separação real/autoritativa acontece no
+  // backend; isso é só pro vendedor ver ANTES de submeter).
+  const linhasNoCarrinho = useMemo(() => {
+    const grupos = new Map<string, { total: number; qtd: number }>();
+    for (const item of carrinho) {
+      const cat = catalogo.find((c) => c.id === item.servicoCatalogoId)?.categoria || "outros";
+      const label = CATEGORIA_LABEL[cat] || cat;
+      const atual = grupos.get(label) || { total: 0, qtd: 0 };
+      atual.total += calcSubtotal(item.quantidade, item.valorUnitario);
+      atual.qtd += 1;
+      grupos.set(label, atual);
+    }
+    return grupos;
+  }, [carrinho, catalogo]);
+
   function adicionarItem(item: CatalogoItem) {
     if (carrinho.some((i) => i.servicoCatalogoId === item.id)) return;
     setCarrinho((prev) => [...prev, {
@@ -153,16 +170,36 @@ export function Cf2NovaPropostaWorkspace() {
           itens: carrinho.map((i) => ({ servicoCatalogoId: i.servicoCatalogoId, nome: i.nome, tipo: i.tipo, quantidade: i.quantidade, valorUnitario: i.valorUnitario })),
         }),
       });
-      const proposta = await r.json();
-      if (!r.ok) throw new Error(proposta.error || "Erro ao criar proposta");
+      const resultado = await r.json();
+      if (!r.ok) throw new Error(resultado.error || "Erro ao criar proposta");
+
+      // Commercial Core v3 (ADR-EXEC-022): composição multi-linha vira N
+      // oportunidades relacionadas, cada uma com sua proposta.
+      if (resultado.multiLinha) {
+        if (enviar) {
+          for (const op of resultado.oportunidades as { propostaId: string }[]) {
+            const r2 = await fetch(`/api/propostas/${op.propostaId}/enviar`, { method: "POST" });
+            const body2 = await r2.json();
+            if (!r2.ok) throw new Error(body2.error || "Propostas criadas, mas falhou ao enviar uma delas");
+          }
+        }
+        return resultado as { multiLinha: true; oportunidades: { negocioId: string }[] };
+      }
+
       if (enviar) {
-        const r2 = await fetch(`/api/propostas/${proposta.id}/enviar`, { method: "POST" });
+        const r2 = await fetch(`/api/propostas/${resultado.id}/enviar`, { method: "POST" });
         const body2 = await r2.json();
         if (!r2.ok) throw new Error(body2.error || "Proposta criada, mas falhou ao enviar");
       }
-      return proposta;
+      return resultado as { id: string };
     },
-    onSuccess: (proposta) => router.push(`/propostas/${proposta.id}`),
+    onSuccess: (resultado) => {
+      if ("multiLinha" in resultado && resultado.multiLinha) {
+        router.push(`/negocios/${resultado.oportunidades[0].negocioId}`);
+      } else {
+        router.push(`/propostas/${(resultado as { id: string }).id}`);
+      }
+    },
   });
 
   if ((negocioIdPreSelecionado && carregandoNegocio) || (leadIdPreSelecionado && carregandoLead)) {
@@ -283,6 +320,16 @@ export function Cf2NovaPropostaWorkspace() {
         <div className="lg:w-80 shrink-0">
           <Cf2Card>
             <p className="text-[11px] font-bold uppercase tracking-wide mb-3" style={{ color: "var(--cf2-text-tertiary)" }}>Resumo da proposta</p>
+            {linhasNoCarrinho.size > 1 && (
+              <div className="mb-3 p-2.5 rounded-lg text-[12px]" style={{ background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" }}>
+                <p className="font-bold mb-1">Esta venda será organizada em {linhasNoCarrinho.size} oportunidades:</p>
+                <ul className="space-y-0.5">
+                  {[...linhasNoCarrinho.entries()].map(([label, info]) => (
+                    <li key={label}>{label} · {info.qtd} {info.qtd === 1 ? "item" : "itens"} · {brl(info.total)}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
             {carrinho.length === 0 ? (
               <p className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>Adicione produtos da categoria ao lado.</p>
             ) : (

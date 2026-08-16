@@ -484,6 +484,12 @@ export const negocios = pgTable(
     semanticEvidence: jsonb("semantic_evidence"),
     semanticProvenance: text("semantic_provenance"),
     semanticAsOfDate: date("semantic_as_of_date"),
+    // Commercial Core v3 (ADR-EXEC-022): quando esta venda nasceu de uma
+    // composição multi-linha (ex: Callface AI + PABX), este negócio é UMA
+    // das oportunidades irmãs — relacionadas via bundle, cada uma com
+    // resultado (ganho/perdido) próprio e independente. Null = negócio
+    // avulso, não faz parte de nenhuma composição multi-linha.
+    bundleId: uuid("bundle_id").references((): AnyPgColumn => oportunidadeBundle.id),
   },
   (table) => [
     index("idx_negocios_org").on(table.organizacaoId),
@@ -2242,6 +2248,24 @@ export const pontosContato = pgTable("pontos_contato", {
   uniqueIndex("idx_pontos_contato_lead_legado").on(table.leadIdLegado).where(sql`lead_id_legado IS NOT NULL`),
 ]);
 
+// ─── OPORTUNIDADE_BUNDLE (agregação de oportunidades irmãs — ADR-EXEC-022) ──
+// Quando uma negociação nasce multi-linha (ex: cliente quer Callface AI +
+// PABX ao mesmo tempo), cada linha vira sua PRÓPRIA oportunidade — com
+// stage/resultado/responsável/valor independentes. O bundle só AGREGA pra
+// mostrar "essas N oportunidades vieram da mesma negociação" — não é status,
+// não tem stage próprio, não decide won/lost de ninguém.
+export const oportunidadeBundle = pgTable("oportunidade_bundle", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+  nome: text("nome").notNull(), // ex: "Máxima Educacional — Nova venda"
+  leadId: uuid("lead_id").references(() => leads.id),
+  empresaId: uuid("empresa_id").references(() => empresas.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("idx_oportunidade_bundle_org").on(table.organizacaoId),
+  index("idx_oportunidade_bundle_lead").on(table.leadId),
+]);
+
 // ─── OPORTUNIDADES (Deal v2 — referencia Pessoa+Empresa, NÃO Lead) ──
 // Decisão fechada: Deal não depende de lead_id. Atribuição de origem
 // vive em `pontosContato`, não aqui — "de onde veio" se responde
@@ -2263,6 +2287,8 @@ export const oportunidades = pgTable("oportunidades", {
   motivoPerda: text("motivo_perda"),
   // Bridge de migração/dual-write — mesma lógica de pessoas.leadIdLegado.
   negocioIdLegado: uuid("negocio_id_legado").references(() => negocios.id),
+  // Commercial Core v3 (ADR-EXEC-022) — espelha negocios.bundleId (dual-write).
+  bundleId: uuid("bundle_id").references((): AnyPgColumn => oportunidadeBundle.id),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
@@ -2274,15 +2300,17 @@ export const oportunidades = pgTable("oportunidades", {
   index("idx_oportunidades_negocio_legado").on(table.negocioIdLegado),
 ]);
 
-// ─── OPORTUNIDADE_ITENS (item/produto/serviço comercial — ADR-EXEC-019) ────
-// Correção arquitetural (2026-08-16): service_family/revenue_nature NÃO são
-// propriedade estrutural de Oportunidade. Uma oportunidade é o container da
-// negociação e pode conter múltiplos produtos/naturezas simultâneos (ex:
-// Callface AI MRR + White Label SETUP + White Label MRR + PABX MRR na mesma
-// venda) — modelar 1 oportunidade = 1 família = 1 natureza cria uma pergunta
-// sem resposta certa assim que a venda é mista. Família/natureza vivem aqui,
-// no item; depois do fechamento cada item dá origem a um servicoCanonico
-// correspondente (servicoCanonicoId linka quando existir).
+// ─── OPORTUNIDADE_ITENS (item/produto/serviço comercial — ADR-EXEC-019/022) ─
+// Correção arquitetural (16/08): service_family/revenue_nature NÃO são
+// propriedade estrutural de Oportunidade — vivem no item, não no container.
+// Uma oportunidade pode ter múltiplos itens da MESMA linha comercial (ex:
+// White Label licença MRR + setup + adicional, ou Callface AI plano +
+// adicionais) — isso continua 1 oportunidade só. O que NÃO acontece mais
+// (correção ADR-EXEC-022): linhas comerciais INDEPENDENTES (Callface AI +
+// PABX) misturadas na mesma oportunidade — cada ciclo independente agora
+// vira sua própria oportunidade, relacionadas via oportunidadeBundle quando
+// nasceram da mesma negociação. Depois do fechamento cada item dá origem a
+// um servicoCanonico correspondente (servicoCanonicoId linka quando existir).
 export const oportunidadeItens = pgTable("oportunidade_itens", {
   id: uuid("id").defaultRandom().primaryKey(),
   organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),

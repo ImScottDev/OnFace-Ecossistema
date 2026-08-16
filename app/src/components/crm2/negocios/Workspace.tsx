@@ -34,6 +34,7 @@ interface OportunidadeItem {
 }
 interface Evidencia { id: string; tipo: string; sourceRef: string | null; verificadoEm: string; verificadoPor: string | null }
 interface GrupoComercial { id: string; commercialModel: string; status: string }
+interface OportunidadeIrma { id: string; titulo: string; status: string; valorTotal: string | null; mrrFechado: string | null; mrrEstimado: string | null }
 
 export function Cf2NegocioWorkspace({ negocioId }: { negocioId: string }) {
   const router = useRouter();
@@ -93,6 +94,7 @@ export function Cf2NegocioWorkspace({ negocioId }: { negocioId: string }) {
   const itens: OportunidadeItem[] = comercial?.itens ?? [];
   const evidencias: Evidencia[] = comercial?.evidencias ?? [];
   const grupos: GrupoComercial[] = comercial?.grupos ?? [];
+  const oportunidadesIrmas: OportunidadeIrma[] = data.oportunidadesIrmas ?? [];
   const jaGanho = negocio.status === "ganho";
   const jaPerdido = negocio.status === "perdido";
 
@@ -149,6 +151,21 @@ export function Cf2NegocioWorkspace({ negocioId }: { negocioId: string }) {
       {erroWon && (
         <div className="p-3 rounded-lg text-[13px]" style={{ background: "var(--cf2-warning-bg)", color: "var(--cf2-warning-text)" }}>
           {erroWon}
+        </div>
+      )}
+
+      {/* Oportunidades irmãs (ADR-EXEC-022) — mesma negociação, linhas
+          comerciais independentes, resultado próprio de cada uma. Agregação,
+          nunca status: "1 de 2 ganhas" é informativo, não define nada aqui. */}
+      {oportunidadesIrmas.length > 0 && (
+        <div className="p-3 rounded-lg flex items-center gap-2 flex-wrap" style={{ background: "var(--cf2-bg-surface-muted)" }}>
+          <span className="text-[12px] font-semibold" style={{ color: "var(--cf2-text-secondary)" }}>Esta negociação também inclui:</span>
+          {oportunidadesIrmas.map((o) => (
+            <Link key={o.id} href={`/negocios/${o.id}`} className="flex items-center gap-1.5 px-2.5 py-1 rounded-md" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
+              <span className="text-[12px] font-medium" style={{ color: "var(--cf2-text-primary)" }}>{o.titulo}</span>
+              <Cf2Badge variant={o.status === "ganho" ? "success" : o.status === "perdido" ? "danger" : "neutral"}>{o.status}</Cf2Badge>
+            </Link>
+          ))}
         </div>
       )}
 

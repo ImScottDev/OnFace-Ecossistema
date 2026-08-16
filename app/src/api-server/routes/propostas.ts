@@ -25,6 +25,8 @@ import {
   solicitarAjustePropostaPublica,
   assinarContratoPublico,
 } from "@/lib/crm/proposta-publica";
+import { criarPropostaComItens } from "@/lib/crm/proposta-criacao";
+import { agruparItensPorLinhaComercial, organizarVendaMultiLinha } from "@/lib/crm/oportunidade-bundle";
 
 const app = new Hono();
 
@@ -520,6 +522,33 @@ app.post("/propostas", async (c) => {
     .limit(1);
   if (!lead) return c.json({ error: "Lead não encontrado" }, 404);
 
+  // Commercial Core v3 (ADR-EXEC-022): a composição pode spanar mais de uma
+  // LINHA comercial (ex: Callface AI + PABX) — quando isso acontece, não
+  // misturamos tudo numa oportunidade só (ambiguidade de pipeline/stage/
+  // resultado). Detecta ANTES de criar qualquer negócio.
+  const gruposPorFamilia = await agruparItensPorLinhaComercial(parsed.data.itens);
+
+  if (gruposPorFamilia.size > 1) {
+    const { bundleId, oportunidades } = await organizarVendaMultiLinha({
+      organizacaoId: ctx.organizacaoId,
+      leadId: resolvedLeadId,
+      responsavelId: lead.responsavelId ?? ctx.userId,
+      negocioBaseId: resolvedNegocioId ?? null,
+      itensPorFamilia: gruposPorFamilia,
+      moeda: parsed.data.moeda,
+      observacoes: parsed.data.observacoes,
+      condicoesPagamento: parsed.data.condicoesPagamento,
+      dataValidade: parsed.data.dataValidade,
+      criadoPorId: ctx.userId,
+    });
+    return c.json({
+      multiLinha: true,
+      bundleId,
+      mensagem: `Esta venda foi organizada em ${oportunidades.length} oportunidades (${oportunidades.map((o) => o.label).join(", ")}), relacionadas pela mesma negociação.`,
+      oportunidades,
+    }, 201);
+  }
+
   // Toda proposta precisa de um NEGÓCIO. Se veio só o lead (proposta criada do
   // contato, sem deal), cria um negócio no pipeline ("proposta apresentada") e
   // vincula. Assim, ao fechar, é ESSE negócio que vira ganho — meta e relatório
@@ -544,86 +573,19 @@ app.post("/propostas", async (c) => {
     await syncOportunidadeFromNegocio(novoNeg.id);
   }
 
-  // Get next numero for org
-  const [{ maxNum }] = await db
-    .select({ maxNum: sql<number>`COALESCE(MAX(${propostas.numero}), 0)` })
-    .from(propostas)
-    .where(eq(propostas.organizacaoId, ctx.organizacaoId));
-
-  const numero = (maxNum || 0) + 1;
-
-  // Calculate totals
-  let totalRecorrente = 0;
-  let totalAvulso = 0;
-  const moeda = parsed.data.moeda;
-  const itensWithCalc = parsed.data.itens.map((item, idx) => {
-    const subtotal = calcSubtotal(item.quantidade, item.valorUnitario, item.desconto, item.descontoTipo);
-    if (item.tipo === "recorrente") totalRecorrente += subtotal;
-    else totalAvulso += subtotal;
-    return { ...item, subtotal, ordem: item.ordem ?? idx };
+  const proposta = await criarPropostaComItens({
+    organizacaoId: ctx.organizacaoId,
+    leadId: resolvedLeadId,
+    negocioId: resolvedNegocioId,
+    moeda: parsed.data.moeda,
+    observacoes: parsed.data.observacoes,
+    condicoesPagamento: parsed.data.condicoesPagamento,
+    dataValidade: parsed.data.dataValidade,
+    itens: parsed.data.itens,
+    criadoPorId: ctx.userId,
   });
 
-  const today = new Date().toISOString().split("T")[0];
-
-  // Create proposal
-  const [proposta] = await db
-    .insert(propostas)
-    .values({
-      organizacaoId: ctx.organizacaoId,
-      leadId: resolvedLeadId,
-      negocioId: resolvedNegocioId,
-      numero,
-      versao: 1,
-      moeda,
-      status: "rascunho",
-      dataEmissao: today,
-      dataValidade: parsed.data.dataValidade || undefined,
-      observacoes: parsed.data.observacoes,
-      condicoesPagamento: parsed.data.condicoesPagamento,
-      totalRecorrente: totalRecorrente.toFixed(2),
-      totalAvulso: totalAvulso.toFixed(2),
-      totalGeral: (totalRecorrente + totalAvulso).toFixed(2),
-      criadoPorId: ctx.userId,
-    })
-    .returning();
-
-  // Insert items — service_family/revenue_nature já nascem preenchidos
-  // (ADR-EXEC-020): família vem do catálogo, natureza do tipo estrutural do
-  // item, nunca inferidos depois por nome.
-  if (itensWithCalc.length > 0) {
-    const familyMap = await resolverServiceFamiliesPorCatalogoIds(itensWithCalc.map((i) => i.servicoCatalogoId));
-    const commercialModelMap = await resolverCommercialModelPadraoPorCatalogoIds(itensWithCalc.map((i) => i.servicoCatalogoId));
-    await db.insert(propostaItens).values(
-      itensWithCalc.map((item) => ({
-        propostaId: proposta.id,
-        servicoCatalogoId: item.servicoCatalogoId || undefined,
-        nome: item.nome,
-        descricao: item.descricao,
-        tipo: item.tipo,
-        moeda,
-        quantidade: item.quantidade.toString(),
-        valorUnitario: item.valorUnitario.toFixed(2),
-        desconto: item.desconto.toFixed(2),
-        descontoTipo: item.descontoTipo,
-        subtotal: item.subtotal.toFixed(2),
-        ordem: item.ordem,
-        serviceFamily: item.servicoCatalogoId ? familyMap.get(item.servicoCatalogoId) || "UNKNOWN" : "UNKNOWN",
-        revenueNature: mapTipoParaRevenueNature(item.tipo),
-        commercialModel: resolverCommercialModelDoItem({ overrideExplicito: item.commercialModel, servicoCatalogoId: item.servicoCatalogoId, catalogoDefaultMap: commercialModelMap }),
-      }))
-    );
-  }
-
-  // Sync negocio values from propostas
-  if (resolvedNegocioId) {
-    await syncNegocioValoresFromPropostas(resolvedNegocioId);
-  }
-
-  // Commercial Core (ADR-EXEC-020): composição comercial da oportunidade
-  // reflete a proposta desde o rascunho — best-effort.
-  await syncOportunidadeItensFromProposta(proposta.id);
-
-  return c.json({ ...proposta, numero: `#P-${String(numero).padStart(3, "0")}-v1` }, 201);
+  return c.json({ ...proposta, numero: proposta.numeroFormatado }, 201);
 });
 
 // PATCH /propostas/:id (only rascunho)
@@ -656,6 +618,19 @@ app.patch("/propostas/:id", async (c) => {
 
   // Replace items if provided
   if (parsed.data.itens) {
+    // Commercial Core v3 (ADR-EXEC-022): editar uma proposta já vinculada a
+    // UM negócio nunca pode introduzir uma SEGUNDA linha comercial nele —
+    // isso corromperia a identidade single-family do negócio (a separação
+    // por linha só acontece na CRIAÇÃO, com o usuário confirmando N
+    // oportunidades). Se a composição spanar >1 família, a resposta orienta
+    // criar uma proposta separada em vez de silenciosamente misturar.
+    const gruposEdicao = await agruparItensPorLinhaComercial(parsed.data.itens);
+    if (gruposEdicao.size > 1) {
+      return c.json({
+        error: `Esta edição mistura ${gruposEdicao.size} linhas comerciais (${[...gruposEdicao.keys()].join(", ")}) num negócio que já é de uma linha só. Crie uma proposta separada para a outra linha (ela vira uma oportunidade relacionada, não duplicada) em vez de editar esta.`,
+      }, 400);
+    }
+
     // Commercial Core (ADR-EXEC-020): oportunidade_itens.proposta_item_id_legado
     // é FK (RESTRICT) pra proposta_itens — sem limpar antes, o DELETE abaixo quebra.
     if (existing.negocioId) {
