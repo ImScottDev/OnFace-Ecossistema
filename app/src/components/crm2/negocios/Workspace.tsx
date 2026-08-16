@@ -16,12 +16,24 @@ const brl = (v: string | number | null | undefined) =>
 const FAMILY_LABEL: Record<string, string> = { CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label", UNKNOWN: "Não classificado" };
 const NATURE_LABEL: Record<string, string> = { MRR: "Recorrente (MRR)", SETUP: "Setup", PROJECT: "Projeto", ONE_TIME: "Avulso", USAGE: "Uso", HARDWARE: "Hardware", UNKNOWN: "Não classificado" };
 const NATURE_VARIANT: Record<string, "success" | "warning" | "neutral"> = { MRR: "success", SETUP: "warning", PROJECT: "warning", ONE_TIME: "neutral", USAGE: "neutral", HARDWARE: "neutral", UNKNOWN: "neutral" };
+const MODEL_LABEL: Record<string, string> = { PAGAMENTO_DIRETO: "Pagamento direto", CONTRATO_OBRIGATORIO: "Contrato obrigatório", CONTRATO_FIDELIDADE_OPCIONAL: "Contrato com fidelidade" };
+const GRUPO_STATUS_LABEL: Record<string, string> = {
+  aguardando_aceite: "Aguardando aceite", aguardando_contrato: "Preparando contrato", contrato_enviado_assinatura: "Aguardando assinatura",
+  contrato_assinado: "Contrato assinado", aguardando_checkout: "Preparando pagamento", checkout_gerado: "Aguardando pagamento",
+  pagamento_pendente: "Pagamento em processamento", pago: "Pago", concluido: "Concluído", falhou: "Falhou",
+};
+const GRUPO_STATUS_VARIANT: Record<string, "success" | "warning" | "neutral" | "danger"> = {
+  aguardando_aceite: "neutral", aguardando_contrato: "neutral", contrato_enviado_assinatura: "warning",
+  contrato_assinado: "success", aguardando_checkout: "neutral", checkout_gerado: "warning",
+  pagamento_pendente: "warning", pago: "success", concluido: "success", falhou: "danger",
+};
 
 interface OportunidadeItem {
   id: string; produto: string | null; serviceFamily: string; revenueNature: string;
   quantidade: string; valorTotal: string; servicoCanonicoId: string | null;
 }
 interface Evidencia { id: string; tipo: string; sourceRef: string | null; verificadoEm: string; verificadoPor: string | null }
+interface GrupoComercial { id: string; commercialModel: string; status: string }
 
 export function Cf2NegocioWorkspace({ negocioId }: { negocioId: string }) {
   const router = useRouter();
@@ -80,6 +92,7 @@ export function Cf2NegocioWorkspace({ negocioId }: { negocioId: string }) {
   const { negocio, lead, empresa, propostas, atividades, reunioes, statusChanges, comercial } = data;
   const itens: OportunidadeItem[] = comercial?.itens ?? [];
   const evidencias: Evidencia[] = comercial?.evidencias ?? [];
+  const grupos: GrupoComercial[] = comercial?.grupos ?? [];
   const jaGanho = negocio.status === "ganho";
   const jaPerdido = negocio.status === "perdido";
 
@@ -172,6 +185,22 @@ export function Cf2NegocioWorkspace({ negocioId }: { negocioId: string }) {
               )}
             </div>
           </Cf2Card>
+
+          {/* Fulfillment por grupo comercial — ADR-EXEC-021: venda mista tem
+              estados INDEPENDENTES (AI pago não precisa esperar PABX assinar). */}
+          {grupos.length > 0 && (
+            <Cf2Card>
+              <Cf2SectionHeader title="Fulfillment" subtitle="Estado de cada composição comercial, independente entre si" />
+              <div className="mt-3 space-y-1.5">
+                {grupos.map((g) => (
+                  <div key={g.id} className="flex items-center justify-between p-2.5 rounded-lg" style={{ background: "var(--cf2-bg-surface-muted)" }}>
+                    <span className="text-[13px] font-medium" style={{ color: "var(--cf2-text-primary)" }}>{MODEL_LABEL[g.commercialModel] || g.commercialModel}</span>
+                    <Cf2Badge variant={GRUPO_STATUS_VARIANT[g.status] || "neutral"}>{GRUPO_STATUS_LABEL[g.status] || g.status}</Cf2Badge>
+                  </div>
+                ))}
+              </div>
+            </Cf2Card>
+          )}
 
           {/* Propostas */}
           <Cf2Card>

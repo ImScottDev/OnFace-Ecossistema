@@ -17,6 +17,7 @@
 import { db } from "@/lib/db";
 import { eventOutbox, auditLog } from "@/lib/db/schema";
 import { eq, asc } from "drizzle-orm";
+import { materializarServicosCanonicosDoGrupo } from "@/lib/crm/servico-canonico";
 
 type EventoOutbox = typeof eventOutbox.$inferSelect;
 type Handler = (evento: EventoOutbox) => Promise<void>;
@@ -86,6 +87,27 @@ for (const eventType of [
   "ProposalSent", "ProposalViewed", "ProposalAccepted", "ProposalRejected",
   // Commercial Core (ADR-EXEC-020)
   "PaymentStarted", "PaymentCompleted", "ContractRequired", "ContractSigned", "CanonicalServiceActivated",
+  // Commercial Core v2 (ADR-EXEC-021)
+  "ProposalOpened", "ProposalAdjustmentRequested", "CheckoutCreated", "CheckoutOpened",
+  "PaymentFailed", "CheckoutExpired", "FulfillmentGroupCompleted",
 ]) {
   registrarConsumidorEvento(eventType, registrarNoAuditLog);
 }
+
+/**
+ * Consumidor real #2 (ADR-EXEC-021, resiliência da materialização): a
+ * confirmação de pagamento/assinatura só PERSISTE a intenção (grupo.status =
+ * concluido + este evento) — quem de fato materializa/atualiza o serviço
+ * canônico é este consumer, rodando no sweep do worker, com o retry/
+ * dead-letter da infra acima. Se falhar (ex: Postgres momentaneamente fora),
+ * o FATO comercial (grupo concluído) não se perde — só o evento fica
+ * "pending" e tenta de novo no próximo sweep, até 5x, depois "failed"
+ * (rastreável, nunca silencioso).
+ */
+registrarConsumidorEvento("FulfillmentGroupCompleted", async (evento) => {
+  const grupoComercialId = evento.aggregateId;
+  const { servicoIds } = await materializarServicosCanonicosDoGrupo(grupoComercialId);
+  if (servicoIds.length === 0) {
+    throw new Error(`materializarServicosCanonicosDoGrupo(${grupoComercialId}) não gerou nenhum serviço — grupo sem itens? investigar antes de aceitar como sucesso silencioso.`);
+  }
+});

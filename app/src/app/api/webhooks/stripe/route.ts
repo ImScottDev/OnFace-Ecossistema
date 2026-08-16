@@ -2,114 +2,100 @@ import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { syncStripe } from "@/lib/integrations/stripe-sync";
 import { db } from "@/lib/db";
-import { propostas, leads, empresas, contratos, notificacoes, usuarios } from "@/lib/db/schema";
-import { eq, and, inArray, isNull, or } from "drizzle-orm";
-import { marcarPropostaAceita } from "@/lib/crm/aceitar-proposta";
+import { propostas, leads, empresas, checkouts, notificacoes, usuarios } from "@/lib/db/schema";
+import { eq, and, isNull, or } from "drizzle-orm";
+import { buscarCheckoutPorSessionId } from "@/lib/crm/checkout";
+import { concluirGrupo, marcarPagamentoFalhouNoGrupo } from "@/lib/crm/grupo-comercial";
+import { registrarEvidencia, marcarNegocioGanhoSeAindaNao } from "@/lib/crm/won-evidence";
+import { publicarEvento } from "@/lib/events/outbox";
 
 /**
- * Pagamento CONFIRMADO (payment_status === "paid"): acha a proposta pela metadata
- * (gravada na criação do checkout) e marca como aceita → negócio ganho +
- * contrato + cliente.
+ * Pagamento CONFIRMADO (payment_status === "paid") — Commercial Core v2
+ * (ADR-EXEC-021): o checkout já nasce vinculado a um GRUPO COMERCIAL
+ * específico (criado no aceite ou manualmente pelo vendedor), então este
+ * handler não "aceita a proposta" mais — a proposta JÁ estava aceita antes
+ * do checkout existir. Aqui só: confirma o pagamento do checkout, registra
+ * evidência (escopada ao grupo), marca Won se ainda não, e conclui o grupo
+ * (o que dispara a materialização do serviço canônico via Event Outbox —
+ * ver consumer.ts, nunca inline best-effort).
  *
- * Hardening da auditoria Stripe 21/07:
- * - CLAIM ATÔMICO: `UPDATE ... WHERE status IN (...) RETURNING` — duas entregas
- *   concorrentes do mesmo evento (retry do Stripe) não geram contrato duplicado.
- * - Aceita também proposta EXPIRADA/RECUSADA: boleto compensa em ~1 dia útil e podia
- *   chegar DEPOIS do job de validade marcar "expirada" — antes o pagamento era
- *   ignorado e a assinatura ficava cobrando no Stripe sem contrato no CRM.
- * - Em falha, o status é revertido e o handler estoura → resposta 500 → o Stripe
- *   REENVIA o evento (antes: log + 200 = pagamento confirmado perdido pra sempre).
- * - Captura session.customer → leads.stripe_customer_id e session.subscription →
- *   contratos.stripe_subscription_id: sem isso, a venda feita pelo checkout ficava
- *   fora do espelho de billing (churn/inadimplência cegos pra vendas novas).
+ * Idempotente: checkout.status='pago' já setado é um no-op (Stripe reenvia
+ * o mesmo evento por retry/duplicidade).
  */
 async function handlePaymentConfirmed(session: Record<string, unknown>): Promise<string> {
-  const metadata = (session.metadata as Record<string, string> | undefined) || {};
-  const propostaId = metadata.propostaId;
-  if (!propostaId) return "sem propostaId na metadata";
+  const stripeSessionId = typeof session.id === "string" ? session.id : null;
+  if (!stripeSessionId) return "session sem id";
 
-  // Status anterior (informativo, pra notificação de "pagou depois de expirar").
-  const [antes] = await db.select({ status: propostas.status }).from(propostas).where(eq(propostas.id, propostaId)).limit(1);
-  const statusAnterior = antes?.status ?? null;
+  const checkout = await buscarCheckoutPorSessionId(stripeSessionId);
+  if (!checkout) return `checkout não rastreado pra session ${stripeSessionId} — fora do fluxo atual, ignorado`;
+  if (checkout.status === "pago") return "checkout já estava pago (idempotente)";
 
-  // Claim atômico: só UMA execução consegue mover pra 'aceita'.
-  const ACEITAVEIS = ["enviada", "expirada", "recusada"];
-  const [claimed] = await db
-    .update(propostas)
-    .set({ status: "aceita", updatedAt: new Date() })
-    .where(and(eq(propostas.id, propostaId), inArray(propostas.status, ACEITAVEIS)))
-    .returning();
-
-  if (!claimed) {
-    if (!antes) return `proposta ${propostaId} não encontrada`;
-    if (statusAnterior === "aceita") return "proposta já estava aceita (idempotente)";
-    return `proposta em status '${statusAnterior}', ignorando`;
-  }
-
-  // Espelho de billing: liga o cliente e o contrato ao Stripe (dados já vêm no evento).
-  // Extraído ANTES do aceite pra já ir na Commercial Evidence (stripe_subscription
-  // real, não signed_contract genérico) e no Serviço Canônico (canonical_key
-  // STRIPE:sub_x, mesma convenção da reconciliação histórica).
   const stripeCustomer = typeof session.customer === "string" ? session.customer : null;
   const stripeSubscription = typeof session.subscription === "string" ? session.subscription : null;
 
-  let contratoId: string;
-  try {
-    const r = await marcarPropostaAceita({
-      proposta: claimed,
-      organizacaoId: claimed.organizacaoId,
-      userId: claimed.criadoPorId, // ator: quem criou a proposta
-      stripeSubscriptionId: stripeSubscription,
+  await db.update(checkouts).set({
+    status: "pago", completadoEm: new Date(), stripeSubscriptionId: stripeSubscription,
+  }).where(eq(checkouts.id, checkout.id));
+
+  if (checkout.negocioId) {
+    await registrarEvidencia({
+      negocioId: checkout.negocioId,
+      organizacaoId: checkout.organizacaoId,
+      tipo: stripeSubscription ? "stripe_subscription" : "stripe_payment",
+      sourceRef: stripeSessionId,
+      grupoComercialId: checkout.grupoComercialId,
+      metadata: { checkoutId: checkout.id },
     });
-    contratoId = r.contratoId;
-  } catch (e) {
-    // Reverte o claim pra o retry do Stripe reprocessar do zero.
-    // (Risco residual documentado: falha no MEIO do marcarPropostaAceita pode deixar
-    // contrato parcial — follow-up: transacionar o aceite. Ainda assim é estritamente
-    // melhor que o comportamento antigo, que engolia o erro e perdia o pagamento.)
-    await db.update(propostas).set({ status: statusAnterior ?? "enviada", updatedAt: new Date() }).where(eq(propostas.id, propostaId)).catch(() => {});
-    throw e;
+    await marcarNegocioGanhoSeAindaNao(checkout.negocioId, checkout.organizacaoId);
   }
 
-  if (stripeCustomer) {
-    await db.update(leads)
-      .set({ stripeCustomerId: stripeCustomer, updatedAt: new Date() })
-      .where(and(eq(leads.id, claimed.leadId), or(isNull(leads.stripeCustomerId), eq(leads.stripeCustomerId, ""))))
-      .catch((e) => console.error("[StripeWebhook] falha ao gravar stripeCustomerId:", e));
+  if (checkout.grupoComercialId) {
+    await concluirGrupo(checkout.grupoComercialId);
+  }
 
-    // O custom_field de CPF/CNPJ coletado no checkout não é copiado pro Customer
-    // sozinho (é só da sessão) — sem isso, a NF sai sem documento fiscal de novo.
-    // Best-effort: se a key da API não tiver escopo de escrita em Customers, só loga.
-    await gravarDocumentoFiscalNoCustomer(session, stripeCustomer).catch((e) =>
-      console.error("[StripeWebhook] falha ao gravar CPF/CNPJ no Customer:", e)
+  // Espelho de billing / dados fiscais (igual antes, agora resolvido via checkout->proposta).
+  const [propostaRow] = await db.select({ leadId: propostas.leadId }).from(propostas).where(eq(propostas.id, checkout.propostaId)).limit(1);
+  if (propostaRow) {
+    if (stripeCustomer) {
+      await db.update(leads)
+        .set({ stripeCustomerId: stripeCustomer, updatedAt: new Date() })
+        .where(and(eq(leads.id, propostaRow.leadId), or(isNull(leads.stripeCustomerId), eq(leads.stripeCustomerId, ""))))
+        .catch((e) => console.error("[StripeWebhook] falha ao gravar stripeCustomerId:", e));
+
+      await gravarDocumentoFiscalNoCustomer(session, stripeCustomer).catch((e) =>
+        console.error("[StripeWebhook] falha ao gravar CPF/CNPJ no Customer:", e)
+      );
+    }
+    await gravarDadosFiscaisNoCRM(session, propostaRow.leadId).catch((e) =>
+      console.error("[StripeWebhook] falha ao gravar dados fiscais no CRM:", e)
     );
   }
 
-  // Devolve os mesmos dados (documento, endereço, telefone) pro lead/empresa do
-  // CRM — não fica só espelhado no Stripe. Só preenche campo vazio, nunca
-  // sobrescreve o que já existe (pedido do time: nada de perder dado editado à mão).
-  await gravarDadosFiscaisNoCRM(session, claimed.leadId).catch((e) =>
-    console.error("[StripeWebhook] falha ao gravar dados fiscais no CRM:", e)
-  );
-  if (stripeSubscription) {
-    await db.update(contratos)
-      .set({ stripeSubscriptionId: stripeSubscription })
-      .where(eq(contratos.id, contratoId))
-      .catch((e) => console.error("[StripeWebhook] falha ao gravar stripeSubscriptionId:", e));
-  }
+  await publicarEvento({
+    organizacaoId: checkout.organizacaoId, eventType: "PaymentCompleted", aggregateType: "checkout", aggregateId: checkout.id,
+    payload: { propostaId: checkout.propostaId, negocioId: checkout.negocioId, grupoComercialId: checkout.grupoComercialId, stripeSessionId },
+    idempotencyKey: `payment-completed:${checkout.id}`,
+  });
 
-  // Pagamento que chegou DEPOIS da proposta expirar/ser recusada: humano precisa saber
-  // (o boleto compensou tarde — conferir valor/condições com o cliente).
-  if (statusAnterior && statusAnterior !== "enviada" && claimed.criadoPorId) {
-    await db.insert(notificacoes).values({
-      usuarioId: claimed.criadoPorId,
-      tipo: "pagamento_pos_expiracao",
-      titulo: `Pagamento recebido de proposta ${statusAnterior}`,
-      mensagem: `A proposta #P-${String(claimed.numero).padStart(3, "0")}-v${claimed.versao} estava '${statusAnterior}' e o pagamento compensou agora (boleto). Contrato criado — confira valor e condições com o cliente.`,
-      link: `/propostas/${claimed.id}`,
-    }).catch((e) => console.error("[StripeWebhook] falha ao notificar pagamento pós-expiração:", e));
-  }
-  return `proposta ${propostaId} aceita via pagamento, contrato ${contratoId}`;
+  return `checkout ${checkout.id} pago, grupo ${checkout.grupoComercialId ?? "—"} concluído`;
+}
+
+/** checkout.session.expired — não configurado no Stripe Dashboard ainda (confirmar assinatura do webhook antes de depender disso em produção). */
+async function handleCheckoutExpired(session: Record<string, unknown>): Promise<string> {
+  const stripeSessionId = typeof session.id === "string" ? session.id : null;
+  if (!stripeSessionId) return "session sem id";
+  const checkout = await buscarCheckoutPorSessionId(stripeSessionId);
+  if (!checkout) return `checkout não rastreado pra session ${stripeSessionId}`;
+  if (checkout.status === "pago") return "checkout já pago antes de expirar, ignorando";
+
+  await db.update(checkouts).set({ status: "expirado" }).where(eq(checkouts.id, checkout.id));
+  if (checkout.grupoComercialId) await marcarPagamentoFalhouNoGrupo(checkout.grupoComercialId).catch(() => {});
+
+  await publicarEvento({
+    organizacaoId: checkout.organizacaoId, eventType: "CheckoutExpired", aggregateType: "checkout", aggregateId: checkout.id,
+    payload: { propostaId: checkout.propostaId, grupoComercialId: checkout.grupoComercialId },
+  });
+  return `checkout ${checkout.id} expirado`;
 }
 
 /**
@@ -205,22 +191,30 @@ async function gravarDadosFiscaisNoCRM(session: Record<string, unknown>, leadId:
 }
 
 /**
- * Boleto NÃO compensou (venceu sem pagamento): antes o evento era ignorado e a
- * proposta ficava "enviada" pra sempre, com um checkout morto. Agora notifica o
- * dono da proposta pra reenviar/regenerar o link (o /p/[id] também regenera sozinho).
+ * Boleto NÃO compensou (venceu sem pagamento): notifica o dono da proposta
+ * e marca o checkout/grupo como falhou — o grupo volta pra
+ * aguardando_checkout (a página pública /p/[id] regenera um novo sozinha).
  */
 async function handleAsyncPaymentFailed(session: Record<string, unknown>): Promise<string> {
-  const metadata = (session.metadata as Record<string, string> | undefined) || {};
-  const propostaId = metadata.propostaId;
-  if (!propostaId) return "sem propostaId na metadata";
+  const stripeSessionId = typeof session.id === "string" ? session.id : null;
+  if (!stripeSessionId) return "session sem id";
 
-  const [proposta] = await db.select().from(propostas).where(eq(propostas.id, propostaId)).limit(1);
-  if (!proposta) return `proposta ${propostaId} não encontrada`;
-  if (proposta.status === "aceita") return "proposta já aceita, ignorando falha antiga";
+  const checkout = await buscarCheckoutPorSessionId(stripeSessionId);
+  if (!checkout) return `checkout não rastreado pra session ${stripeSessionId}`;
+  if (checkout.status === "pago") return "checkout já pago, ignorando falha antiga (boleto duplicado)";
 
-  const [lead] = await db.select({ nome: leads.nome, empresa: leads.empresa }).from(leads).where(eq(leads.id, proposta.leadId)).limit(1);
-  const quem = lead?.empresa || lead?.nome || "cliente";
-  if (proposta.criadoPorId) {
+  await db.update(checkouts).set({ status: "falhou" }).where(eq(checkouts.id, checkout.id));
+  if (checkout.grupoComercialId) await marcarPagamentoFalhouNoGrupo(checkout.grupoComercialId);
+
+  await publicarEvento({
+    organizacaoId: checkout.organizacaoId, eventType: "PaymentFailed", aggregateType: "checkout", aggregateId: checkout.id,
+    payload: { propostaId: checkout.propostaId, grupoComercialId: checkout.grupoComercialId, motivo: "boleto_nao_compensou" },
+  });
+
+  const [proposta] = await db.select().from(propostas).where(eq(propostas.id, checkout.propostaId)).limit(1);
+  if (proposta?.criadoPorId && proposta.leadId) {
+    const [lead] = await db.select({ nome: leads.nome, empresa: leads.empresa }).from(leads).where(eq(leads.id, proposta.leadId)).limit(1);
+    const quem = lead?.empresa || lead?.nome || "cliente";
     await db.insert(notificacoes).values({
       usuarioId: proposta.criadoPorId,
       tipo: "pagamento_falhou",
@@ -229,7 +223,7 @@ async function handleAsyncPaymentFailed(session: Record<string, unknown>): Promi
       link: `/propostas/${proposta.id}`,
     }).catch((e) => console.error("[StripeWebhook] falha ao notificar boleto falhado:", e));
   }
-  return `boleto falhou na proposta ${propostaId} — responsável notificado`;
+  return `boleto falhou no checkout ${checkout.id} — responsável notificado`;
 }
 
 /**
@@ -289,8 +283,11 @@ async function handleInvoicePaymentFailed(invoice: Record<string, unknown>): Pro
 //   Developers > Webhooks > Add endpoint: https://crm.callface.io/api/webhooks/stripe
 //   Eventos: invoice.paid, invoice.payment_failed, customer.subscription.*,
 //            checkout.session.completed, checkout.session.async_payment_succeeded,
-//            checkout.session.async_payment_failed
+//            checkout.session.async_payment_failed, checkout.session.expired
 //   Copiar o "Signing secret" (whsec_...) -> STRIPE_WEBHOOK_SECRET no .env.
+//   IMPORTANTE (Commercial Core v2): checkout.session.expired precisa estar
+//   marcado no painel Stripe pra CheckoutExpired disparar de verdade — não
+//   dá pra confirmar isso por código, só no Dashboard da conta.
 export const dynamic = "force-dynamic";
 
 const RELEVANT = new Set([
@@ -303,6 +300,7 @@ const RELEVANT = new Set([
   "checkout.session.completed",
   "checkout.session.async_payment_succeeded",
   "checkout.session.async_payment_failed",
+  "checkout.session.expired",
 ]);
 
 // Tolerância de timestamp (doc Stripe: proteger contra replay) + suporte a múltiplos
@@ -387,6 +385,16 @@ export async function POST(request: NextRequest) {
       console.log(`[StripeWebhook] ${type} -> ${r}`);
     } catch (e) {
       console.error("[StripeWebhook] erro ao tratar boleto falhado:", e);
+    }
+  }
+
+  if (type === "checkout.session.expired") {
+    try {
+      const session = (event as { data?: { object?: Record<string, unknown> } }).data?.object || {};
+      const r = await handleCheckoutExpired(session);
+      console.log(`[StripeWebhook] ${type} -> ${r}`);
+    } catch (e) {
+      console.error("[StripeWebhook] erro ao tratar checkout expirado:", e);
     }
   }
 

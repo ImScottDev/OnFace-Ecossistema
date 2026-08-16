@@ -17,6 +17,9 @@
 import { db } from "@/lib/db";
 import { eventOutbox } from "@/lib/db/schema";
 
+/** `db` ou um client de transação (`db.transaction(async (tx) => ...)`) — o insert funciona igual nos dois. */
+type DbClient = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
+
 export type EventoDominio =
   | "LeadCreated"
   | "DealCreated"
@@ -34,12 +37,21 @@ export type EventoDominio =
   | "PaymentCompleted"
   | "ContractRequired"
   | "ContractSigned"
-  | "CanonicalServiceActivated";
+  | "CanonicalServiceActivated"
+  // Commercial Core v2 (ADR-EXEC-021) — proposta pública rica + checkout
+  // como entidade própria + fulfillment por grupo comercial independente.
+  | "ProposalOpened"
+  | "ProposalAdjustmentRequested"
+  | "CheckoutCreated"
+  | "CheckoutOpened"
+  | "PaymentFailed"
+  | "CheckoutExpired"
+  | "FulfillmentGroupCompleted";
 
 export interface PublicarEventoOpts {
   organizacaoId: string;
   eventType: EventoDominio;
-  aggregateType: "lead" | "negocio" | "contrato" | "proposta" | "servico";
+  aggregateType: "lead" | "negocio" | "contrato" | "proposta" | "servico" | "checkout" | "grupo_comercial";
   aggregateId: string;
   payload: Record<string, unknown>;
   correlationId?: string;
@@ -47,10 +59,16 @@ export interface PublicarEventoOpts {
   idempotencyKey?: string;
 }
 
-/** Best-effort — igual ao precedente de dual-write: nunca bloqueia o fluxo real por falha de evento. */
-export async function publicarEvento(opts: PublicarEventoOpts): Promise<void> {
+/**
+ * Best-effort por padrão (dual-write) — MAS aceita um client de transação
+ * opcional (`dbClient`) pra quando a publicação precisa estar na MESMA
+ * transação da mudança de domínio (ADR-EXEC-021, resiliência da
+ * materialização): se a transação falhar/reverter, nem o status muda nem o
+ * evento é publicado — nunca um sem o outro.
+ */
+export async function publicarEvento(opts: PublicarEventoOpts, dbClient: DbClient = db): Promise<void> {
   try {
-    await db.insert(eventOutbox).values({
+    await dbClient.insert(eventOutbox).values({
       organizacaoId: opts.organizacaoId,
       eventType: opts.eventType,
       aggregateType: opts.aggregateType,
