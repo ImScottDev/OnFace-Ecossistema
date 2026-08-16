@@ -4,6 +4,24 @@ Formato curto: contexto → decisão → consequência. ADRs numeradas herdadas 
 
 ---
 
+## ADR-EXEC-020 — Commercial Core fechado: Oportunidade → oportunidade_itens → Won → Serviço Canônico
+
+**Contexto**: ADR-EXEC-019 formalizou o schema de `oportunidade_itens` mas nenhum código de aplicação ainda os populava, e nenhum código escrevia em `servicos_canonicos` numa venda nova (só existia dado histórico da reconciliação). Pedido do Kauã (16/08): fechar o fluxo operacional inteiro, não só telas.
+
+**Decisão 1 — `servicos_catalogo.service_family` como campo declarado.** Mesmo padrão de `requer_contrato` (0010): cada item do catálogo declara sua família — nunca inferida por nome/categoria em runtime. Catálogo White Label criado (não existia nenhum item ativo até então), `requer_contrato=true` por padrão (mesmo tratamento de PABX) — **decisão de negócio a confirmar**, registrada em `crm2-decisoes-pendentes.md`.
+
+**Decisão 2 — `oportunidade_itens` é sempre a composição ATIVA, nunca uma soma histórica.** `syncOportunidadeItensFromProposta` remove, antes de inserir, qualquer item de origem `proposta_item` que não pertença à proposta sendo sincronizada — uma nova versão de proposta ou uma proposta nova substitui a composição anterior do negócio, não acumula. Fallback `garantirItemComercialManual` cobre o Won 100% manual (sem proposta nenhuma) sintetizando 1 item por natureza presente (MRR/SETUP/ONE_TIME) a partir dos campos legados do negócio.
+
+**Decisão 3 — Serviço Canônico nasce/atualiza no momento do Won, um por item.** `materializarServicosCanonicosDoNegocio` roda nos 3 pontos reais de Won (pagamento Stripe confirmado, assinatura de contrato, gate manual em `negocios.ts`). Regras duras, codificadas (não só documentadas): `revenue_nature != MRR` nunca seta `current_recurring_value`; `commercial_lifecycle` é sempre `ACTIVE` num Won novo, nunca derivado de `billing_status`; `canonical_key` usa `STRIPE:<subscriptionId>` quando há assinatura Stripe real (mesma convenção da reconciliação, permite futura reconciliação por essa chave) ou `CRM2:<oportunidadeItemId>` caso contrário — nunca colide com prefixos legados (`ZOHO:`/`LEDGER:`/`MANUAL:`/`WEVY`).
+
+**Decisão 4 — fluxo pós-aceite é policy, não string de produto.** Já existia (`servicosCatalogo.requerContrato` + `determinarProximoPasso`, ver `proposta-fluxo.ts`) — reaproveitado tal qual. Uma proposta mista com QUALQUER item `requerContrato=true` vai inteira pelo caminho contrato; limitação conhecida (não trata pagamento parcial dos itens que não exigem contrato numa venda mista) — não resolvida agora, fora do escopo desta rodada.
+
+**Decisão 5 (fix de correção, não de arquitetura) — Commercial Evidence Policy tinha um furo real.** O fallback legado de `avaliarEvidenciaWon` tratava `propostas.status = 'aceita'` como equivalente a `signed_contract` — mas no fluxo condicional (caminho contrato), "aceita" significa só "cliente confirmou, aguardando assinatura" (comentário already existente em `proposta-publica.ts`: "não é Won ainda"). Achado pelo próprio E2E deste ADR (cenário 7): um negócio no caminho contrato conseguia passar no gate de Won ANTES da assinatura. Corrigido: os dois fallbacks legados (`proposta aceita` e `contrato existente`) agora ignoram contrato com `assinatura_status = 'pendente'`.
+
+**Consequência**: eventos novos no Event Outbox (`PaymentStarted`, `PaymentCompleted`, `ContractRequired`, `ContractSigned`, `CanonicalServiceActivated`) + aggregateType `"servico"`. Página de negócio nova no App Shell (`/negocios/[id]`, substitui a rota — legado movido pra `/negocios-legado/[id]`) mostra composição comercial real. `scripts/e2e-commercial-core.ts` prova os 10 cenários pedidos + invariantes de portfolio/ledger histórico intocados (33/33, idempotente em reruns). Nenhuma alteração em PROD/HOMOLOG.
+
+---
+
 ## ADR-EXEC-019 — Consolidação PROD→DEV: reconciliação v1.1 versionada + oportunidade_itens (item, não a oportunidade, carrega família/natureza)
 
 **Contexto**: fechada a ponte de dados PROD consolidado (tag `prod-consolidated-2026-08-16`, commit `89460f8`) → HOMOLOG → DEV/CRM2. Antes de retomar features, era preciso formalizar em código (schema.ts + migration versionada) o que até então só existia via `db:push`/SQL manual: a reconciliação v1.1 (carteira canônica, ledger histórico, recuperação Zoho — 16 estruturas) e o backfill do Domain Model CRM2 (`pessoas`/`oportunidades`/`clientes`/`pontos_contato`).
