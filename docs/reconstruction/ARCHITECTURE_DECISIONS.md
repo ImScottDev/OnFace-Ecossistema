@@ -4,6 +4,32 @@ Formato curto: contexto → decisão → consequência. ADRs numeradas herdadas 
 
 ---
 
+## ADR-EXEC-021 — Commercial Core v2: modelo comercial por item, fulfillment por grupo independente
+
+**Contexto**: ADR-EXEC-020 fechou o Commercial Core v1, mas com uma premissa errada exposta pelo próprio Kauã: "próximo passo" era decidido pela PROPOSTA INTEIRA (se qualquer item exigisse contrato, tudo esperava contrato). Isso quebra dois casos reais: (1) a mesma família (Callface AI) pode ser vendida COM ou SEM contrato dependendo só do desconto negociado — não é propriedade fixa do produto; (2) uma venda mista (AI sem fidelidade + PABX contratual) não pode travar o AI esperando o PABX assinar.
+
+**Decisão 1 — Commercial Model vive no ITEM, não na família/catálogo.** `servicos_catalogo.commercial_model_padrao` é só a sugestão; `proposta_itens.commercial_model` é o valor real, resolvido assim: override do vendedor > default do catálogo > `PAGAMENTO_DIRETO` (nunca inventa exigência de contrato). `PAGAMENTO_DIRETO | CONTRATO_OBRIGATORIO | CONTRATO_FIDELIDADE_OPCIONAL`.
+
+**Decisão 2 — Grupo Comercial é a unidade real de fulfillment.** No aceite, `formarGruposComerciais` agrupa os itens da proposta por `commercial_model` distinto — cada grupo (`proposta_grupo_comercial`) tem contrato/checkout PRÓPRIOS e uma state machine independente (`aguardando_contrato → contrato_enviado_assinatura → contrato_assinado → aguardando_checkout → checkout_gerado → pago → concluido`, ou o atalho direto pra `PAGAMENTO_DIRETO`). Uma proposta mista gera N grupos; cada um avança no seu próprio ritmo.
+
+**Decisão 3 — Won (negócio) e Fulfillment (grupo) são conceitos DESACOPLADOS.** `marcarNegocioGanhoSeAindaNao` dispara na PRIMEIRA evidência real de QUALQUER grupo (mesma Commercial Evidence Policy de sempre, ADR-EXEC-012, agora só escopada por grupo via `comercial_evidencia.grupo_comercial_id`) — não espera todos os grupos concluírem, e não perde o que já foi confirmado só porque outro componente da venda ainda está em aberto. Materialização de serviço canônico é rigorosamente por GRUPO (`materializarServicosCanonicosDoGrupo`), não pelo negócio inteiro — um grupo concluído nunca materializa item de outro grupo ainda pendente.
+
+**Decisão 4 — Checkout deixa de ser efeito colateral de enviar proposta.** Comportamento legado real (achado nesta sessão): `enviarPropostaComCheckout` criava um Payment Link Stripe todo envio, presumindo decisão de compra que ainda não existia. Removido. Checkout agora é `checkouts` (entidade própria, com `origem`: `automatico_pos_aceite` | `manual_vendedor`), criado só: (a) automaticamente, logo após o cliente aceitar um grupo sem contrato; (b) manualmente, por ação explícita e auditada do vendedor (`POST /propostas/grupos/:grupoId/gerar-checkout`) — nunca marca Won sozinha.
+
+**Decisão 5 — PABX/White Label também faturam via Stripe daqui pra frente.** Depois da assinatura, todo grupo (mesmo `CONTRATO_OBRIGATORIO`) tenta gerar checkout automaticamente — substitui o "sem billing automático, cobrar manualmente" do v1. Se a chamada Stripe falhar (ex: catálogo sem produto configurado, ou — como neste sandbox — sem `STRIPE_API_KEY`), o grupo fica em `aguardando_checkout` e o vendedor pode gerar manualmente depois; nunca crasha, nunca finge sucesso. Histórico/billing antigo da holding continua intocado — isso vale só pra vendas novas.
+
+**Decisão 6 — Contrato = domínio próprio, gerado por template.** `contrato_templates` (parametrizado, `commercial_model`-aware) + `lib/crm/contrato-template.ts::gerarContratoDeTemplate` resolve variáveis reais (pessoa/empresa/CNPJ/itens/valores/condições) e renderiza — nenhum contrato mais montado campo-a-campo na mão. `contratos.grupo_comercial_id` liga o contrato ao GRUPO, não à proposta inteira (é o que permite PABX assinar sem travar o Callface AI da mesma venda).
+
+**Decisão 7 — Assinatura via abstração `SignatureProvider`.** Provider definitivo ainda não escolhido (Kauã avaliando). `lib/crm/signature/provider.ts` define a interface (`contract_created→sent_for_signature→opened→signed/declined/expired/canceled`); `SimpleElectronicSignatureProvider` (única implementação registrada) é o aceite eletrônico simples já existente, agora isolado atrás da interface — trocar de provider no futuro é só registrar outra classe, zero mudança no domínio de Contratos.
+
+**Decisão 8 — Materialização resiliente via Event Outbox real, não mais best-effort inline.** `concluirGrupo` persiste `status='concluido'` + publica `FulfillmentGroupCompleted` (mesma transação). Um consumer REAL (`consumer.ts`, roda no sweep do worker) processa esse evento e materializa — se falhar (grupo órfão, DB fora do ar), o evento fica `pending`/retry (5 tentativas) e só então `failed` — nunca perde o fato comercial, nunca falha silenciosamente. O consumer FALHA explicitamente se a materialização resultar em 0 serviços (nunca "sucesso" vazio).
+
+**Decisão 9 — checkout público via Hosted Checkout (redirect), não Embedded.** Verificado antes de codar: a integração Stripe atual é REST direto sem SDK/publishable key — não há Embedded Checkout/Elements configurado. Migrar exigiria nova infra client-side, fora de escopo. Bridge `/checkout/{id}` preserva nossa identidade visual e registra `CheckoutOpened` de verdade antes do redirect pro domínio do Stripe.
+
+**Consequência**: `scripts/e2e-commercial-core.ts` prova os cenários A-J pedidos (AI sem/com contrato, PABX, White Label, MISTA com estados independentes provados item-a-item, ajuste sem encerrar proposta, recusa, checkout manual sem marcar Won, falha de materialização com retry/dead-letter, retry sem duplicar) — 39/39, idempotente, invariantes de portfolio/ledger histórico intocados. Nenhuma alteração em PROD/HOMOLOG.
+
+---
+
 ## ADR-EXEC-020 — Commercial Core fechado: Oportunidade → oportunidade_itens → Won → Serviço Canônico
 
 **Contexto**: ADR-EXEC-019 formalizou o schema de `oportunidade_itens` mas nenhum código de aplicação ainda os populava, e nenhum código escrevia em `servicos_canonicos` numa venda nova (só existia dado histórico da reconciliação). Pedido do Kauã (16/08): fechar o fluxo operacional inteiro, não só telas.

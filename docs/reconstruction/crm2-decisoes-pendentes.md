@@ -51,4 +51,20 @@ Sessão iniciada em 10/08/2026, execução autônoma de ponta a ponta (mandato d
 
 **Precisa confirmar**: existe hoje algum item "avulso" no catálogo que devesse virar `PROJECT` (ex: uma implantação grande, cobrada por escopo) ou `USAGE` (ex: minutos excedentes, consumo variável — "Pacote 500min Adicionais" e "Minutos adicionais Callface AI" são candidatos reais a `USAGE`, hoje classificados como `ONE_TIME`)? Se sim, ajusto o mapeamento (é um dicionário simples em `lib/crm/composicao-comercial.ts`, não um redesenho).
 
+## 6. Quando uma oportunidade mista é "Won" de fato?
+
+**Contexto** (Commercial Core v2, 16/08): numa venda mista, o Callface AI pode ser pago no mesmo dia enquanto o PABX ainda aguarda contrato por semanas. `marcarNegocioGanhoSeAindaNao` marca o NEGÓCIO como ganho na primeira evidência real de qualquer grupo — não espera todos os componentes.
+
+**Decidido por padrão**: Won no nível do negócio/pipeline dispara com UMA evidência válida (mesma Commercial Evidence Policy de sempre); o fulfillment de cada grupo é rastreado à parte (`proposta_grupo_comercial.status`) e NUNCA é resumido de volta pro status do negócio. Ou seja: "ganho" = "fechamos negócio de verdade", não "entregamos tudo".
+
+**Precisa confirmar**: essa é a leitura certa pro relatório de meta/comissão (contar a venda inteira como fechada assim que o primeiro componente confirma), ou vocês preferem que meta/comissão só considere o valor dos grupos JÁ concluídos (parcial, crescendo conforme PABX/White Label também fecham)? Isso é calibração de indicador, não vou inventar — o dado bruto (por grupo) já está disponível pros dois jeitos de calcular.
+
+## 7. Checkout automático pós-assinatura pra PABX/White Label — sempre tentar?
+
+**Contexto**: depois que o contrato é assinado (PABX/White Label/AI-com-fidelidade), o sistema agora tenta gerar checkout Stripe automaticamente (antes era só manual pro PABX). Nesse sandbox a chamada falha (sem STRIPE_API_KEY) e o grupo fica aguardando o vendedor gerar manualmente — comportamento correto e esperado.
+
+**Decidido por padrão**: sempre tentar automático primeiro, cair pro manual se falhar.
+
+**Precisa confirmar**: existe algum caso (ex: contrato PABX que ainda depende de aprovação financeira antes de cobrar) onde vocês NÃO querem que o checkout seja dado automaticamente logo após a assinatura — preferindo sempre a ação manual do vendedor como gatilho? Se sim, é uma flag por `commercial_model` ou por item de catálogo, não uma mudança de arquitetura.
+
 (novas entradas serão appendadas abaixo conforme a execução avança)
