@@ -84,6 +84,8 @@ async function registrarNoAuditLog(evento: EventoOutbox): Promise<void> {
 for (const eventType of [
   "LeadCreated", "DealCreated", "StageChanged", "DealWon", "DealLost", "CustomerCreated",
   "ProposalSent", "ProposalViewed", "ProposalAccepted", "ProposalRejected",
+  // Commercial Core (ADR-EXEC-020)
+  "PaymentStarted", "PaymentCompleted", "ContractRequired", "ContractSigned", "CanonicalServiceActivated",
 ]) {
   registrarConsumidorEvento(eventType, registrarNoAuditLog);
 }

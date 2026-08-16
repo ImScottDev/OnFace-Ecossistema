@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { db } from "@/lib/db";
-import { negocios, leads, empresas, negocioLeads, usuarios, pipelines, propostas, propostaItens, contratos, atividades, statusChanges, notas, reunioes, labels, negocioLabels, leadLabels, notificacoes } from "@/lib/db/schema";
+import { negocios, leads, empresas, negocioLeads, usuarios, pipelines, propostas, propostaItens, contratos, atividades, statusChanges, notas, reunioes, labels, negocioLabels, leadLabels, notificacoes, oportunidades, oportunidadeItens, comercialEvidencia } from "@/lib/db/schema";
 import { desc, asc, eq, ilike, and, or, SQL, count, inArray, notInArray, gte, lte, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { resolveFollowupOwnerId } from "@/lib/crm/sdr-escalation";
@@ -9,6 +9,8 @@ import { syncOportunidadeFromNegocio } from "@/lib/crm/sync-domain-model";
 import { dispararAutomacoes } from "@/lib/crm/automacao-engine";
 import { avaliarEvidenciaWon, registrarEvidenciaManual } from "@/lib/crm/won-evidence";
 import { publicarEvento } from "@/lib/events/outbox";
+import { garantirItemComercialManual } from "@/lib/crm/composicao-comercial";
+import { materializarServicosCanonicosDoNegocio } from "@/lib/crm/servico-canonico";
 import { isAdminView } from "@/lib/auth/roles";
 import { getCtx } from "../compat.js";
 
@@ -332,6 +334,17 @@ app.get("/negocios/:id", async (c) => {
       })()
     : [];
 
+  // Commercial Core (ADR-EXEC-020): composição comercial (oportunidade_itens)
+  // + evidências de Won — pra tela de negócio no App Shell novo enxergar a
+  // composição real (família/natureza por item) sem recalcular nada aqui.
+  const [oportunidade] = await db.select({ id: oportunidades.id }).from(oportunidades).where(eq(oportunidades.negocioIdLegado, id)).limit(1);
+  const [composicaoComercial, evidenciasComerciais] = await Promise.all([
+    oportunidade
+      ? db.select().from(oportunidadeItens).where(eq(oportunidadeItens.oportunidadeId, oportunidade.id)).orderBy(desc(oportunidadeItens.createdAt))
+      : Promise.resolve([]),
+    db.select().from(comercialEvidencia).where(eq(comercialEvidencia.negocioId, id)).orderBy(desc(comercialEvidencia.verificadoEm)),
+  ]);
+
   return c.json({
     negocio,
     lead: primaryLead, // backward compat
@@ -343,6 +356,11 @@ app.get("/negocios/:id", async (c) => {
     statusChanges: negocioStatusChanges,
     notas: negocioNotas,
     reunioes: negocioReunioes,
+    comercial: {
+      oportunidadeId: oportunidade?.id ?? null,
+      itens: composicaoComercial,
+      evidencias: evidenciasComerciais,
+    },
   });
 });
 
@@ -464,6 +482,13 @@ app.patch("/negocios/:id", async (c) => {
   }
 
   const updateData: Record<string, unknown> = { ...parsed.data, updatedAt: new Date() };
+
+  // Commercial Core (ADR-EXEC-020): setado dentro do bloco "ganho" abaixo,
+  // consumido só DEPOIS do update real de negocios (linha ~700) — lido ali
+  // pra garantir que mrrFechado/valorSetup já estejam persistidos antes de
+  // materializar o item comercial manual (mesma cautela do dual-write de
+  // oportunidade, que também só roda pós-update).
+  let contratoIdGanhoManual: string | null = null;
 
   // Handle status transitions
   if (parsed.data.status && parsed.data.status !== currentNegocio.status) {
@@ -587,7 +612,11 @@ app.patch("/negocios/:id", async (c) => {
           valorSetup: parsed.data.valorSetup || currentNegocio.valorSetup,
           status: "ativo",
           inicio: new Date().toISOString().split("T")[0],
-          produto: "ai",
+          // Derivado do produto já conhecido do negócio (camposCustom), nunca
+          // mais hardcoded — achado real da auditoria de 10/08 (este era um
+          // dos 3 call sites legados fora do escopo daquele fix; corrigido
+          // agora ao tocar neste bloco pro Commercial Core, 16/08).
+          produto: produtoNegocio === "pabx" ? "pabx" : "ai",
         }).returning({ id: contratos.id });
         contratoId = novoContrato?.id;
       }
@@ -633,6 +662,7 @@ app.patch("/negocios/:id", async (c) => {
       }
 
       // Contract is now created above — carteira reads from contratos table directly
+      contratoIdGanhoManual = contratoId ?? null;
     }
 
     // → no_show: cliente não apareceu na reunião. O negócio FICA na coluna No-show;
@@ -685,6 +715,22 @@ app.patch("/negocios/:id", async (c) => {
 
   // F1/dual-write: sincroniza Oportunidade — best-effort, nunca bloqueia o update real.
   await syncOportunidadeFromNegocio(id);
+
+  // Commercial Core (ADR-EXEC-020): Won 100% manual (sem proposta por trás)
+  // ainda precisa de composição comercial + serviço canônico. Roda só depois
+  // do update real de negocios acima — garantirItemComercialManual só age se
+  // a oportunidade não tiver NENHUM item ainda (não pisa em cima de um Won
+  // que já veio de proposta).
+  if (contratoIdGanhoManual) {
+    await garantirItemComercialManual(id);
+    await materializarServicosCanonicosDoNegocio({
+      negocioId: id,
+      organizacaoId: ctx.organizacaoId,
+      contratoId: contratoIdGanhoManual,
+      wonAt: new Date(),
+      stripeSubscriptionId: null,
+    });
+  }
 
   return c.json(updated);
 });

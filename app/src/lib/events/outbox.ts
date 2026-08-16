@@ -27,12 +27,19 @@ export type EventoDominio =
   | "ProposalSent"
   | "ProposalViewed"
   | "ProposalAccepted"
-  | "ProposalRejected";
+  | "ProposalRejected"
+  // Commercial Core (ADR-EXEC-020) — fechamento ponta a ponta
+  // Oportunidade -> Proposta -> Aceite -> Contrato -> Won -> Serviço Canônico.
+  | "PaymentStarted"
+  | "PaymentCompleted"
+  | "ContractRequired"
+  | "ContractSigned"
+  | "CanonicalServiceActivated";
 
 export interface PublicarEventoOpts {
   organizacaoId: string;
   eventType: EventoDominio;
-  aggregateType: "lead" | "negocio" | "contrato" | "proposta";
+  aggregateType: "lead" | "negocio" | "contrato" | "proposta" | "servico";
   aggregateId: string;
   payload: Record<string, unknown>;
   correlationId?: string;

@@ -12,6 +12,12 @@ import { propostaPdfHtml, renderPropostaPdf } from "@/lib/propostas/proposta-pdf
 import { syncOportunidadeFromNegocio } from "@/lib/crm/sync-domain-model";
 import { determinarProximoPasso } from "@/lib/crm/proposta-fluxo";
 import {
+  resolverServiceFamiliesPorCatalogoIds,
+  mapTipoParaRevenueNature,
+  syncOportunidadeItensFromProposta,
+  limparOportunidadeItensDeOrigemProposta,
+} from "@/lib/crm/composicao-comercial";
+import {
   registrarVisualizacao,
   aceitarPropostaPublica,
   recusarPropostaPublica,
@@ -538,8 +544,11 @@ app.post("/propostas", async (c) => {
     })
     .returning();
 
-  // Insert items
+  // Insert items — service_family/revenue_nature já nascem preenchidos
+  // (ADR-EXEC-020): família vem do catálogo, natureza do tipo estrutural do
+  // item, nunca inferidos depois por nome.
   if (itensWithCalc.length > 0) {
+    const familyMap = await resolverServiceFamiliesPorCatalogoIds(itensWithCalc.map((i) => i.servicoCatalogoId));
     await db.insert(propostaItens).values(
       itensWithCalc.map((item) => ({
         propostaId: proposta.id,
@@ -554,6 +563,8 @@ app.post("/propostas", async (c) => {
         descontoTipo: item.descontoTipo,
         subtotal: item.subtotal.toFixed(2),
         ordem: item.ordem,
+        serviceFamily: item.servicoCatalogoId ? familyMap.get(item.servicoCatalogoId) || "UNKNOWN" : "UNKNOWN",
+        revenueNature: mapTipoParaRevenueNature(item.tipo),
       }))
     );
   }
@@ -562,6 +573,10 @@ app.post("/propostas", async (c) => {
   if (resolvedNegocioId) {
     await syncNegocioValoresFromPropostas(resolvedNegocioId);
   }
+
+  // Commercial Core (ADR-EXEC-020): composição comercial da oportunidade
+  // reflete a proposta desde o rascunho — best-effort.
+  await syncOportunidadeItensFromProposta(proposta.id);
 
   return c.json({ ...proposta, numero: `#P-${String(numero).padStart(3, "0")}-v1` }, 201);
 });
@@ -596,6 +611,12 @@ app.patch("/propostas/:id", async (c) => {
 
   // Replace items if provided
   if (parsed.data.itens) {
+    // Commercial Core (ADR-EXEC-020): oportunidade_itens.proposta_item_id_legado
+    // é FK (RESTRICT) pra proposta_itens — sem limpar antes, o DELETE abaixo quebra.
+    if (existing.negocioId) {
+      await limparOportunidadeItensDeOrigemProposta(existing.negocioId);
+    }
+
     // Delete existing items
     await db.delete(propostaItens).where(eq(propostaItens.propostaId, id));
 
@@ -609,6 +630,7 @@ app.patch("/propostas/:id", async (c) => {
       return { ...item, subtotal, ordem: item.ordem ?? idx };
     });
 
+    const familyMap = await resolverServiceFamiliesPorCatalogoIds(itensWithCalc.map((i) => i.servicoCatalogoId));
     await db.insert(propostaItens).values(
       itensWithCalc.map((item) => ({
         propostaId: id,
@@ -623,6 +645,8 @@ app.patch("/propostas/:id", async (c) => {
         descontoTipo: item.descontoTipo,
         subtotal: item.subtotal.toFixed(2),
         ordem: item.ordem,
+        serviceFamily: item.servicoCatalogoId ? familyMap.get(item.servicoCatalogoId) || "UNKNOWN" : "UNKNOWN",
+        revenueNature: mapTipoParaRevenueNature(item.tipo),
       }))
     );
 
@@ -640,6 +664,10 @@ app.patch("/propostas/:id", async (c) => {
   // Sync negocio values from propostas
   if (existing.negocioId) {
     await syncNegocioValoresFromPropostas(existing.negocioId);
+  }
+
+  if (parsed.data.itens) {
+    await syncOportunidadeItensFromProposta(id);
   }
 
   return c.json(updated);
@@ -773,7 +801,8 @@ app.post("/propostas/:id/nova-versao", async (c) => {
     })
     .returning();
 
-  // Clone items
+  // Clone items — clona também service_family/revenue_nature já resolvidos
+  // do original (não precisa re-resolver catálogo numa nova versão idêntica).
   if (itens.length > 0) {
     await db.insert(propostaItens).values(
       itens.map((item) => ({
@@ -787,9 +816,15 @@ app.post("/propostas/:id/nova-versao", async (c) => {
         desconto: item.desconto,
         subtotal: item.subtotal,
         ordem: item.ordem,
+        serviceFamily: item.serviceFamily,
+        revenueNature: item.revenueNature,
       }))
     );
   }
+
+  // Commercial Core (ADR-EXEC-020): nova versão rascunho já reflete
+  // composição comercial — best-effort.
+  await syncOportunidadeItensFromProposta(novaProposta.id);
 
   return c.json(novaProposta, 201);
 });

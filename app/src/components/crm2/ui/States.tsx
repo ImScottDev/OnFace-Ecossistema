@@ -45,3 +45,14 @@ export function Cf2UnavailableMetric({ reason }: { reason: string }) {
     </div>
   );
 }
+
+/** Estado explícito de acesso negado — RBAC por tela ainda não formalizado (ver Crm2Layout), mas nenhuma tela deve fingir dado que o usuário não tem permissão de ver. */
+export function Cf2PermissionDenied({ message = "Você não tem permissão para ver este conteúdo." }: { message?: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center text-center py-10 gap-2">
+      <ShieldOff className="w-8 h-8" style={{ color: "var(--cf2-danger-border)" }} />
+      <p className="text-sm font-medium" style={{ color: "var(--cf2-text-primary)" }}>Acesso restrito</p>
+      <p className="text-xs max-w-xs" style={{ color: "var(--cf2-text-secondary)" }}>{message}</p>
+    </div>
+  );
+}
