@@ -21,8 +21,9 @@
  * Ver ADR-EXEC-012 em ARCHITECTURE_DECISIONS.md.
  */
 import { db } from "@/lib/db";
-import { comercialEvidencia, wonEvidencePolicies, negocios, propostas, contratos, auditLog } from "@/lib/db/schema";
+import { comercialEvidencia, wonEvidencePolicies, negocios, propostas, contratos, auditLog, leads, statusChanges } from "@/lib/db/schema";
 import { eq, and, or, isNull } from "drizzle-orm";
+import { publicarEvento } from "@/lib/events/outbox";
 
 export type TipoEvidenciaComercial =
   | "stripe_payment"
@@ -47,6 +48,8 @@ export async function registrarEvidencia(opts: {
   sourceRef?: string | null;
   metadata?: Record<string, unknown>;
   verificadoPor?: string | null;
+  /** Commercial Core v2 (ADR-EXEC-021) — a que grupo comercial esta evidência pertence (venda mista tem evidência por grupo). */
+  grupoComercialId?: string | null;
 }): Promise<void> {
   try {
     await db
@@ -58,6 +61,7 @@ export async function registrarEvidencia(opts: {
         sourceRef: opts.sourceRef ?? null,
         metadata: opts.metadata ?? {},
         verificadoPor: opts.verificadoPor ?? null,
+        grupoComercialId: opts.grupoComercialId ?? null,
       })
       .onConflictDoNothing();
   } catch (err) {
@@ -172,4 +176,47 @@ export async function getProdutoNegocio(negocioId: string): Promise<string | nul
   const [row] = await db.select({ camposCustom: negocios.camposCustom }).from(negocios).where(eq(negocios.id, negocioId)).limit(1);
   const produto = (row?.camposCustom as Record<string, unknown> | null)?.produto;
   return typeof produto === "string" ? produto : null;
+}
+
+/**
+ * Commercial Core v2 (ADR-EXEC-021) — ponto ÚNICO que marca um negócio como
+ * ganho a partir de evidência real (chamado por: assinatura de contrato,
+ * confirmação de pagamento Stripe). Centraliza o que antes estava
+ * duplicado em 3 lugares (aceitar-proposta.ts, proposta-publica.ts,
+ * negocios.ts) — mesma regra sempre: Won dispara na PRIMEIRA evidência
+ * válida de QUALQUER grupo comercial da oportunidade, não espera todos os
+ * grupos concluírem (uma venda mista com AI pago e PABX ainda em contrato
+ * já é um negócio "ganho" no sentido comercial/pipeline — o que falta é
+ * FULFILLMENT dos demais grupos, rastreado à parte em
+ * proposta_grupo_comercial.status, não no status do negócio). Idempotente.
+ */
+export async function marcarNegocioGanhoSeAindaNao(negocioId: string, organizacaoId: string): Promise<void> {
+  const [negocio] = await db.select().from(negocios).where(eq(negocios.id, negocioId)).limit(1);
+  if (!negocio || negocio.status === "ganho") return;
+
+  const produto = await getProdutoNegocio(negocioId);
+  const evidencia = await avaliarEvidenciaWon(negocioId, organizacaoId, produto);
+  if (!evidencia.permitido) return;
+
+  const deStatus = negocio.status;
+  await db.update(negocios).set({ status: "ganho", ganhoAt: new Date(), updatedAt: new Date() }).where(eq(negocios.id, negocioId));
+
+  await db.insert(statusChanges).values({
+    leadId: negocio.leadId, negocioId, deStatus, paraStatus: "ganho", motivo: "Evidência comercial confirmada",
+  });
+
+  if (negocio.leadId) {
+    await db.update(leads).set({ tipo: "cliente", clienteDesde: new Date(), updatedAt: new Date() }).where(eq(leads.id, negocio.leadId));
+  }
+
+  const { notificarNegocioGanho } = await import("@/lib/crm/notificar");
+  await notificarNegocioGanho(negocioId).catch((e) => console.error("[won-evidence] falha ao notificar negócio ganho (best-effort):", e));
+
+  await publicarEvento({
+    organizacaoId, eventType: "DealWon", aggregateType: "negocio", aggregateId: negocioId,
+    payload: { leadId: negocio.leadId, produto, evidencias: evidencia.evidencias },
+  });
+  if (negocio.leadId) {
+    await publicarEvento({ organizacaoId, eventType: "CustomerCreated", aggregateType: "lead", aggregateId: negocio.leadId, payload: { negocioId } });
+  }
 }

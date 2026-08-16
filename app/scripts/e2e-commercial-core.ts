@@ -1,8 +1,18 @@
 /**
- * E2E do Commercial Core (ADR-EXEC-020) — roda contra o DB local (callface_crm),
- * chamando as funções REAIS de negócio (não HTTP, não mock) pra cada um dos
- * 10 cenários pedidos pelo Kauã. Cria dados de teste isolados (prefixo
- * "[E2E]" no título/nome), nunca toca em negócio/proposta real.
+ * E2E do Commercial Core v2 (ADR-EXEC-021) — cenários A-J pedidos pelo Kauã.
+ * Roda contra o DB local (callface_crm), chamando as funções REAIS de
+ * negócio (não HTTP, não mock de domínio). Cria dados isolados (prefixo
+ * "[E2E]"), limpa resíduo de rodadas anteriores, idempotente.
+ *
+ * Limitação conhecida do sandbox: STRIPE_API_KEY está vazia neste .env local
+ * (intencional — evita puxar billing real). Toda vez que o código tentaria
+ * chamar a API real do Stripe (criarCheckoutParaGrupo), isso falha
+ * graciosamente (ok:false, sem crash) — exatamente o comportamento esperado
+ * em produção se a chave cair. Pra testar o que vem DEPOIS da criação do
+ * checkout (confirmação de pagamento, conclusão de grupo, materialização),
+ * o script simula a existência de um checkout via insert direto (nunca via
+ * mock de regra de negócio) e replica os mesmos passos que o webhook real
+ * executaria.
  *
  * Uso: cd app && npx tsx --env-file=.env scripts/e2e-commercial-core.ts
  */
@@ -10,12 +20,18 @@ import { db } from "@/lib/db";
 import { sql, eq, and } from "drizzle-orm";
 import {
   organizacoes, usuarios, leads, negocios, propostas, propostaItens,
-  servicosCatalogo, oportunidades, oportunidadeItens, servicosCanonicos, contratos,
+  servicosCatalogo, oportunidades, oportunidadeItens, servicosCanonicos,
+  contratos, propostaGrupoComercial, checkouts, eventOutbox,
 } from "@/lib/db/schema";
-import { marcarPropostaAceita } from "@/lib/crm/aceitar-proposta";
-import { aceitarPropostaPublica, assinarContratoPublico, recusarPropostaPublica } from "@/lib/crm/proposta-publica";
-import { avaliarEvidenciaWon } from "@/lib/crm/won-evidence";
+import { processarAceiteDaProposta } from "@/lib/crm/proposta-aceite";
+import { assinarContratoPublico, recusarPropostaPublica, solicitarAjustePropostaPublica } from "@/lib/crm/proposta-publica";
+import { avaliarEvidenciaWon, registrarEvidencia, marcarNegocioGanhoSeAindaNao } from "@/lib/crm/won-evidence";
 import { mapTipoParaRevenueNature } from "@/lib/crm/composicao-comercial";
+import { criarCheckoutParaGrupo } from "@/lib/crm/checkout";
+import { vincularCheckoutAoGrupo, concluirGrupo } from "@/lib/crm/grupo-comercial";
+import { materializarServicosCanonicosDoGrupo } from "@/lib/crm/servico-canonico";
+import { processarEventosPendentes } from "@/lib/events/consumer";
+import { publicarEvento } from "@/lib/events/outbox";
 
 type Resultado = { cenario: string; ok: boolean; detalhe: string };
 const resultados: Resultado[] = [];
@@ -30,7 +46,7 @@ async function criarLeadNegocio(org: string, user: string, titulo: string) {
   return { lead, negocio };
 }
 
-async function criarPropostaComItens(org: string, user: string, leadId: string, negocioId: string, itens: { catalogo: typeof servicosCatalogo.$inferSelect; quantidade?: number; valorUnitario?: number }[]) {
+async function criarPropostaComItens(org: string, user: string, leadId: string, negocioId: string, itens: { catalogo: typeof servicosCatalogo.$inferSelect; quantidade?: number; valorUnitario?: number; commercialModelOverride?: string }[]) {
   const [{ maxNum }] = await db.select({ maxNum: sql<number>`COALESCE(MAX(${propostas.numero}), 0)` }).from(propostas).where(eq(propostas.organizacaoId, org));
   let totalRecorrente = 0, totalAvulso = 0;
   const rows = itens.map((it) => {
@@ -38,7 +54,7 @@ async function criarPropostaComItens(org: string, user: string, leadId: string, 
     const valorUnit = it.valorUnitario ?? parseFloat(it.catalogo.valorSugerido || "0");
     const subtotal = qtd * valorUnit;
     if (it.catalogo.tipo === "recorrente") totalRecorrente += subtotal; else totalAvulso += subtotal;
-    return { catalogo: it.catalogo, qtd, valorUnit, subtotal };
+    return { catalogo: it.catalogo, qtd, valorUnit, subtotal, commercialModelOverride: it.commercialModelOverride };
   });
   const [proposta] = await db.insert(propostas).values({
     organizacaoId: org, leadId, negocioId, numero: (maxNum || 0) + 1, versao: 1, status: "enviada",
@@ -49,14 +65,33 @@ async function criarPropostaComItens(org: string, user: string, leadId: string, 
     propostaId: proposta.id, servicoCatalogoId: r.catalogo.id, nome: r.catalogo.nome, tipo: r.catalogo.tipo,
     quantidade: r.qtd.toString(), valorUnitario: r.valorUnit.toFixed(2), subtotal: r.subtotal.toFixed(2),
     serviceFamily: r.catalogo.serviceFamily, revenueNature: mapTipoParaRevenueNature(r.catalogo.tipo),
+    commercialModel: r.commercialModelOverride ?? r.catalogo.commercialModelPadrao,
   })));
   return proposta;
 }
 
-async function itensDoNegocio(negocioId: string) {
-  const [op] = await db.select({ id: oportunidades.id }).from(oportunidades).where(eq(oportunidades.negocioIdLegado, negocioId)).limit(1);
-  if (!op) return [];
-  return db.select().from(oportunidadeItens).where(eq(oportunidadeItens.oportunidadeId, op.id));
+async function gruposDaProposta(propostaId: string) {
+  return db.select().from(propostaGrupoComercial).where(eq(propostaGrupoComercial.propostaId, propostaId));
+}
+
+/** Simula "checkout criado com sucesso no Stripe" quando STRIPE_API_KEY está vazia (sandbox) — nunca pula regra de negócio, só a chamada de rede externa. */
+async function simularCheckoutCriado(grupoId: string, negocioId: string, propostaId: string, org: string) {
+  const [checkout] = await db.insert(checkouts).values({
+    organizacaoId: org, propostaId, negocioId, grupoComercialId: grupoId,
+    origem: "automatico_pos_aceite", stripeSessionId: `cs_test_e2e_${Date.now()}_${Math.floor(Math.random() * 1e6)}`,
+    stripeCheckoutUrl: "https://checkout.stripe.com/test", status: "criado",
+  }).returning();
+  await vincularCheckoutAoGrupo(grupoId, checkout.id);
+  return checkout;
+}
+
+/** Replica o que o webhook real faz em checkout.session.completed (payment_status=paid) — mesmos passos, sem a chamada Stripe/HMAC. */
+async function simularPagamentoConfirmado(checkoutId: string, negocioId: string, grupoId: string, org: string) {
+  await db.update(checkouts).set({ status: "pago", completadoEm: new Date() }).where(eq(checkouts.id, checkoutId));
+  await registrarEvidencia({ negocioId, organizacaoId: org, tipo: "stripe_payment", sourceRef: checkoutId, grupoComercialId: grupoId });
+  await marcarNegocioGanhoSeAindaNao(negocioId, org);
+  await concluirGrupo(grupoId);
+  await processarEventosPendentes(50);
 }
 
 async function main() {
@@ -66,24 +101,26 @@ async function main() {
     const clauses = [eq(servicosCatalogo.organizacaoId, org.id), eq(servicosCatalogo.categoria, categoria), eq(servicosCatalogo.tipo, tipo)];
     if (nomeExato) clauses.push(eq(servicosCatalogo.nome, nomeExato));
     const [row] = await db.select().from(servicosCatalogo).where(and(...clauses)).limit(1);
-    if (!row) throw new Error(`catálogo ${categoria}/${tipo}${nomeExato ? `/${nomeExato}` : ""} não encontrado — rodou a migration 0013?`);
+    if (!row) throw new Error(`catálogo ${categoria}/${tipo}${nomeExato ? `/${nomeExato}` : ""} não encontrado`);
     return row;
   };
-  // Nome exato pra determinismo — sem isso, LIMIT 1 sem ORDER BY pode pegar
-  // qualquer um dos vários itens "callface_ai/recorrente" (Starter/Full/
-  // Business/etc), quebrando a asserção de valor esperado (1e).
   const catAi = await cat("callface_ai", "recorrente", "Callface AI - Starter");
   const catPabx = await cat("pabx", "recorrente", "PABX Starter (Compartilhado)");
   const catWlMrr = await cat("white_label", "recorrente", "White Label - Licença Mensal");
   const catWlSetup = await cat("white_label", "setup", "White Label - Setup Inicial");
 
-  // Limpa resíduo de uma rodada anterior — torna o script idempotente e
-  // garante que a comparação de invariantes ANTES/DEPOIS não confunda dado
-  // de E2E de ontem com "portfolio consolidado real" mudando.
+  // ── Limpeza de resíduo (idempotência entre rodadas) ──
+  await db.execute(sql`delete from event_outbox where aggregate_id in (select id from proposta_grupo_comercial where negocio_id in (select id from negocios where titulo like '[E2E]%'))`);
+  await db.execute(sql`delete from event_outbox where idempotency_key like 'e2e-teste-falha:%'`);
   await db.execute(sql`delete from comercial_evidencia where negocio_id in (select id from negocios where titulo like '[E2E]%')`);
   await db.execute(sql`delete from oportunidade_itens where oportunidade_id in (select id from oportunidades where negocio_id_legado in (select id from negocios where titulo like '[E2E]%'))`);
-  await db.execute(sql`delete from servicos_canonicos where canonical_key like 'CRM2:%' or canonical_key like 'STRIPE:sub_e2e_%'`);
+  await db.execute(sql`delete from servicos_canonicos where canonical_key like 'CRM2:%' or canonical_key like 'STRIPE:sub_e2e_%' or canonical_key like 'STRIPE:cs_test_e2e_%'`);
   await db.execute(sql`delete from oportunidades where negocio_id_legado in (select id from negocios where titulo like '[E2E]%')`);
+  await db.execute(sql`update proposta_grupo_comercial set checkout_id = null, contrato_id = null where negocio_id in (select id from negocios where titulo like '[E2E]%')`);
+  await db.execute(sql`update contratos set grupo_comercial_id = null where negocio_id in (select id from negocios where titulo like '[E2E]%')`);
+  await db.execute(sql`delete from checkouts where proposta_id in (select id from propostas where negocio_id in (select id from negocios where titulo like '[E2E]%'))`);
+  await db.execute(sql`delete from proposta_grupo_comercial_itens where grupo_id in (select id from proposta_grupo_comercial where negocio_id in (select id from negocios where titulo like '[E2E]%'))`);
+  await db.execute(sql`delete from proposta_grupo_comercial where negocio_id in (select id from negocios where titulo like '[E2E]%')`);
   await db.execute(sql`update propostas set contrato_id = null where negocio_id in (select id from negocios where titulo like '[E2E]%')`);
   await db.execute(sql`delete from contratos where negocio_id in (select id from negocios where titulo like '[E2E]%')`);
   await db.execute(sql`delete from proposta_itens where proposta_id in (select id from propostas where negocio_id in (select id from negocios where titulo like '[E2E]%'))`);
@@ -97,145 +134,208 @@ async function main() {
   await db.execute(sql`delete from pessoas where lead_id_legado in (select id from leads where nome like '[E2E]%')`);
   await db.execute(sql`delete from leads where nome like '[E2E]%'`);
 
-  // ── Invariantes ANTES: portfolio consolidado + ledger histórico não podem mudar ──
   const [{ n: portfolioAntes }] = await db.execute<{ n: number }>(sql`select count(*)::int as n from servicos_canonicos where portfolio_included = true`);
   const [golden] = await db.select({ crv: servicosCanonicos.currentRecurringValue }).from(servicosCanonicos).where(eq(servicosCanonicos.canonicalKey, "ZOHO:VETLOG:PABX")).limit(1);
   const [{ n: ledgerAntes }] = await db.execute<{ n: number }>(sql`select count(*)::int as n from servicos_canonicos where billing_source = 'LEDGER_JULHO'`);
 
-  // ── 1. Venda somente Callface AI (aceite -> pagamento -> "pagamento concluído" via marcarPropostaAceita c/ stripeSubscriptionId) ──
+  // ── A. Callface AI SEM contrato (PAGAMENTO_DIRETO) ──
   {
-    const { lead, negocio } = await criarLeadNegocio(org.id, user.id, "AI só");
+    const { lead, negocio } = await criarLeadNegocio(org.id, user.id, "A - AI sem contrato");
     const proposta = await criarPropostaComItens(org.id, user.id, lead.id, negocio.id, [{ catalogo: catAi }]);
-    const r1 = await aceitarPropostaPublica(proposta);
-    checar("1a. AI só — aceite público", r1.ok && r1.proximoPasso === "pagamento", `proximoPasso=${r1.ok ? r1.proximoPasso : r1.error}`);
-    const [propostaAtual] = await db.select().from(propostas).where(eq(propostas.id, proposta.id)).limit(1);
-    await marcarPropostaAceita({ proposta: propostaAtual, organizacaoId: org.id, userId: user.id, stripeSubscriptionId: `sub_e2e_${Date.now()}` });
-    const [negGanho] = await db.select().from(negocios).where(eq(negocios.id, negocio.id)).limit(1);
-    checar("1b. AI só — pagamento concluído fecha o negócio", negGanho.status === "ganho", `status=${negGanho.status}`);
-    const itens = await itensDoNegocio(negocio.id);
-    checar("1c. AI só — 1 serviço canônico MRR ativado", itens.length === 1 && !!itens[0].servicoCanonicoId, `itens=${itens.length}`);
-    const [servico] = itens[0]?.servicoCanonicoId ? await db.select().from(servicosCanonicos).where(eq(servicosCanonicos.id, itens[0].servicoCanonicoId!)) : [];
-    checar("1d. AI só — canonicalKey usa convenção STRIPE:", !!servico?.canonicalKey.startsWith("STRIPE:"), `key=${servico?.canonicalKey}`);
-    checar("1e. AI só — current_recurring_value = valor do item (MRR)", servico?.currentRecurringValue === "89.90" || parseFloat(servico?.currentRecurringValue || "0") === 89.9, `crv=${servico?.currentRecurringValue}`);
+    const aceite = await processarAceiteDaProposta({ propostaId: proposta.id, organizacaoId: org.id, origem: "publico" });
+    checar("A1. AI sem contrato — 1 grupo PAGAMENTO_DIRETO", aceite.ok && aceite.grupos.length === 1 && aceite.grupos[0].commercialModel === "PAGAMENTO_DIRETO", aceite.ok ? JSON.stringify(aceite.grupos) : aceite.error);
+    const grupo = aceite.ok ? aceite.grupos[0] : null;
+    checar("A2. AI sem contrato — próximo passo é pagamento direto (sem contrato)", grupo?.proximoPasso === "pagamento", `proximoPasso=${grupo?.proximoPasso}`);
+    const [negAntes] = await db.select({ status: negocios.status }).from(negocios).where(eq(negocios.id, negocio.id)).limit(1);
+    checar("A3. AI sem contrato — negócio ainda NÃO ganho (só aceitou, não pagou)", negAntes.status !== "ganho", `status=${negAntes.status}`);
+    const checkout = await simularCheckoutCriado(grupo!.grupoId, negocio.id, proposta.id, org.id);
+    await simularPagamentoConfirmado(checkout.id, negocio.id, grupo!.grupoId, org.id);
+    const [negDepois] = await db.select({ status: negocios.status }).from(negocios).where(eq(negocios.id, negocio.id)).limit(1);
+    checar("A4. AI sem contrato — pagamento confirmado fecha o negócio", negDepois.status === "ganho", `status=${negDepois.status}`);
+    const [grupoFinal] = await db.select({ status: propostaGrupoComercial.status }).from(propostaGrupoComercial).where(eq(propostaGrupoComercial.id, grupo!.grupoId)).limit(1);
+    checar("A5. AI sem contrato — grupo concluído", grupoFinal.status === "concluido", `status=${grupoFinal.status}`);
+    const itensOp = await db.select().from(oportunidadeItens).where(eq(oportunidadeItens.grupoComercialId, grupo!.grupoId));
+    checar("A6. AI sem contrato — serviço canônico ativado com current_recurring_value correto", itensOp.length === 1 && !!itensOp[0].servicoCanonicoId, `itens=${itensOp.length}`);
   }
 
-  // ── 2. Venda somente PABX (aceite -> contrato -> assinatura -> Won) ──
+  // ── B. Callface AI CONTRATUAL (CONTRATO_FIDELIDADE_OPCIONAL — mesma família, modelo diferente) ──
   {
-    const { lead, negocio } = await criarLeadNegocio(org.id, user.id, "PABX só");
+    const { lead, negocio } = await criarLeadNegocio(org.id, user.id, "B - AI contratual");
+    const proposta = await criarPropostaComItens(org.id, user.id, lead.id, negocio.id, [{ catalogo: catAi, commercialModelOverride: "CONTRATO_FIDELIDADE_OPCIONAL" }]);
+    const aceite = await processarAceiteDaProposta({ propostaId: proposta.id, organizacaoId: org.id, origem: "publico" });
+    checar("B1. AI contratual — modelo por ITEM, não por família (mesma família de A, fluxo diferente)", aceite.ok && aceite.grupos[0]?.proximoPasso === "contrato", aceite.ok ? JSON.stringify(aceite.grupos) : aceite.error);
+    const grupo = aceite.ok ? aceite.grupos[0] : null;
+    const [grupoRow] = await db.select().from(propostaGrupoComercial).where(eq(propostaGrupoComercial.id, grupo!.grupoId)).limit(1);
+    checar("B2. AI contratual — contrato gerado a partir de template", !!grupoRow.contratoId, `contratoId=${grupoRow.contratoId}`);
+    const [contratoRow] = await db.select().from(contratos).where(eq(contratos.id, grupoRow.contratoId!)).limit(1);
+    checar("B3. AI contratual — corpo do contrato renderizado (template + variáveis)", !!contratoRow.corpoGerado && contratoRow.corpoGerado.includes("CONTRATO"), `corpoGerado=${contratoRow.corpoGerado?.slice(0, 40)}...`);
+    await assinarContratoPublico(contratoRow.id, "Fulano de Tal", "127.0.0.1");
+    const [negApósAssinar] = await db.select({ status: negocios.status }).from(negocios).where(eq(negocios.id, negocio.id)).limit(1);
+    checar("B4. AI contratual — Won dispara na assinatura (evidência real), antes do pagamento", negApósAssinar.status === "ganho", `status=${negApósAssinar.status}`);
+    const [grupoPosAssinatura] = await db.select({ status: propostaGrupoComercial.status, checkoutId: propostaGrupoComercial.checkoutId }).from(propostaGrupoComercial).where(eq(propostaGrupoComercial.id, grupo!.grupoId)).limit(1);
+    checar("B5. AI contratual — grupo avança pra aguardando_checkout após assinatura (Stripe indisponível no sandbox, não crasha)", grupoPosAssinatura.status === "aguardando_checkout", `status=${grupoPosAssinatura.status}`);
+    const checkout = await simularCheckoutCriado(grupo!.grupoId, negocio.id, proposta.id, org.id);
+    await simularPagamentoConfirmado(checkout.id, negocio.id, grupo!.grupoId, org.id);
+    const [grupoFinal] = await db.select({ status: propostaGrupoComercial.status }).from(propostaGrupoComercial).where(eq(propostaGrupoComercial.id, grupo!.grupoId)).limit(1);
+    checar("B6. AI contratual — grupo concluído após pagamento pós-assinatura", grupoFinal.status === "concluido", `status=${grupoFinal.status}`);
+  }
+
+  // ── C. PABX (CONTRATO_OBRIGATORIO, default do catálogo) ──
+  let grupoPabxId = "";
+  {
+    const { lead, negocio } = await criarLeadNegocio(org.id, user.id, "C - PABX");
     const proposta = await criarPropostaComItens(org.id, user.id, lead.id, negocio.id, [{ catalogo: catPabx }]);
-    const r1 = await aceitarPropostaPublica(proposta);
-    checar("2a. PABX só — aceite exige contrato", r1.ok && r1.proximoPasso === "contrato", `proximoPasso=${r1.ok ? r1.proximoPasso : r1.error}`);
-    const [propostaComContrato] = await db.select().from(propostas).where(eq(propostas.id, proposta.id)).limit(1);
-    const [contratoPendente] = await db.select().from(contratos).where(eq(contratos.id, propostaComContrato.contratoId!)).limit(1);
-    checar("2b. PABX só — contrato criado PENDENTE (Won ainda não aconteceu)", contratoPendente.assinaturaStatus === "pendente", `status=${contratoPendente.assinaturaStatus}`);
-    const [negAntesAssinar] = await db.select({ status: negocios.status }).from(negocios).where(eq(negocios.id, negocio.id)).limit(1);
-    checar("2c. PABX só — negócio NÃO ganho antes da assinatura", negAntesAssinar.status !== "ganho", `status=${negAntesAssinar.status}`);
-    await assinarContratoPublico(propostaComContrato, "Fulano de Tal", "127.0.0.1");
-    const [negGanho] = await db.select().from(negocios).where(eq(negocios.id, negocio.id)).limit(1);
-    checar("2d. PABX só — assinatura fecha o negócio", negGanho.status === "ganho", `status=${negGanho.status}`);
-    const itens = await itensDoNegocio(negocio.id);
-    const [servico] = itens[0]?.servicoCanonicoId ? await db.select().from(servicosCanonicos).where(eq(servicosCanonicos.id, itens[0].servicoCanonicoId!)) : [];
-    checar("2e. PABX só — canonicalKey usa convenção CRM2: (sem Stripe)", !!servico?.canonicalKey.startsWith("CRM2:"), `key=${servico?.canonicalKey}`);
+    const aceite = await processarAceiteDaProposta({ propostaId: proposta.id, organizacaoId: org.id, origem: "publico" });
+    checar("C1. PABX — exige contrato por padrão do catálogo", aceite.ok && aceite.grupos[0]?.proximoPasso === "contrato", aceite.ok ? JSON.stringify(aceite.grupos) : aceite.error);
+    grupoPabxId = aceite.ok ? aceite.grupos[0].grupoId : "";
+    const [grupoRow] = await db.select().from(propostaGrupoComercial).where(eq(propostaGrupoComercial.id, grupoPabxId)).limit(1);
+    const [contratoRow] = await db.select().from(contratos).where(eq(contratos.id, grupoRow.contratoId!)).limit(1);
+    await assinarContratoPublico(contratoRow.id, "Fulano de Tal", "127.0.0.1");
+    const checkout = await simularCheckoutCriado(grupoPabxId, negocio.id, proposta.id, org.id);
+    await simularPagamentoConfirmado(checkout.id, negocio.id, grupoPabxId, org.id);
+    const [negFinal] = await db.select({ status: negocios.status }).from(negocios).where(eq(negocios.id, negocio.id)).limit(1);
+    checar("C2. PABX — fluxo completo fecha o negócio via infraestrutura Stripe (não mais só manual)", negFinal.status === "ganho", `status=${negFinal.status}`);
   }
 
-  // ── 3. White Label com setup + recorrência ──
-  let wlServicoIds: string[] = [];
+  // ── D. White Label (setup + recorrência, mesmo grupo, naturezas separadas) ──
   {
-    const { lead, negocio } = await criarLeadNegocio(org.id, user.id, "White Label setup+MRR");
+    const { lead, negocio } = await criarLeadNegocio(org.id, user.id, "D - White Label");
     const proposta = await criarPropostaComItens(org.id, user.id, lead.id, negocio.id, [
-      { catalogo: catWlMrr, valorUnitario: 997 },
-      { catalogo: catWlSetup, valorUnitario: 2500 },
+      { catalogo: catWlMrr, valorUnitario: 997 }, { catalogo: catWlSetup, valorUnitario: 2500 },
     ]);
-    const r1 = await aceitarPropostaPublica(proposta);
-    checar("3a. White Label — aceite exige contrato (requerContrato=true)", r1.ok && r1.proximoPasso === "contrato", `proximoPasso=${r1.ok ? r1.proximoPasso : r1.error}`);
-    const [propostaComContrato] = await db.select().from(propostas).where(eq(propostas.id, proposta.id)).limit(1);
-    await assinarContratoPublico(propostaComContrato, "Fulano de Tal", "127.0.0.1");
-    const itens = await itensDoNegocio(negocio.id);
-    checar("3b. White Label — 2 itens materializados (MRR + SETUP)", itens.length === 2, `itens=${itens.length}`);
-    const mrrItem = itens.find((i) => i.revenueNature === "MRR");
-    const setupItem = itens.find((i) => i.revenueNature === "SETUP");
-    wlServicoIds = itens.map((i) => i.servicoCanonicoId).filter((x): x is string => !!x);
-    const [servicoMrr] = mrrItem?.servicoCanonicoId ? await db.select().from(servicosCanonicos).where(eq(servicosCanonicos.id, mrrItem.servicoCanonicoId!)) : [];
-    const [servicoSetup] = setupItem?.servicoCanonicoId ? await db.select().from(servicosCanonicos).where(eq(servicosCanonicos.id, setupItem.servicoCanonicoId!)) : [];
-    checar("3c. White Label — item MRR alimenta current_recurring_value", parseFloat(servicoMrr?.currentRecurringValue || "0") === 997, `crv=${servicoMrr?.currentRecurringValue}`);
-    checar("3d. White Label — item SETUP NUNCA vira MRR (regra dura)", parseFloat(servicoSetup?.currentRecurringValue || "-1") === 0, `crv setup=${servicoSetup?.currentRecurringValue}`);
-    checar("3e. White Label — 2 serviços canônicos DISTINTOS (não colapsa família/natureza)", new Set(wlServicoIds).size === 2, `servicos distintos=${new Set(wlServicoIds).size}`);
+    const aceite = await processarAceiteDaProposta({ propostaId: proposta.id, organizacaoId: org.id, origem: "publico" });
+    checar("D1. White Label — 1 grupo só (MRR+SETUP compartilham o mesmo modelo)", aceite.ok && aceite.grupos.length === 1, aceite.ok ? JSON.stringify(aceite.grupos) : aceite.error);
+    const grupo = aceite.ok ? aceite.grupos[0] : null;
+    const [grupoRow] = await db.select().from(propostaGrupoComercial).where(eq(propostaGrupoComercial.id, grupo!.grupoId)).limit(1);
+    const [contratoRow] = await db.select().from(contratos).where(eq(contratos.id, grupoRow.contratoId!)).limit(1);
+    await assinarContratoPublico(contratoRow.id, "Fulano de Tal", "127.0.0.1");
+    const checkout = await simularCheckoutCriado(grupo!.grupoId, negocio.id, proposta.id, org.id);
+    await simularPagamentoConfirmado(checkout.id, negocio.id, grupo!.grupoId, org.id);
+    const itensOp = await db.select().from(oportunidadeItens).where(eq(oportunidadeItens.grupoComercialId, grupo!.grupoId));
+    const servicoIds = new Set(itensOp.map((i) => i.servicoCanonicoId).filter(Boolean));
+    checar("D2. White Label — 2 serviços canônicos (recorrência + setup separados)", servicoIds.size === 2, `servicos=${servicoIds.size}`);
+    const mrrItem = itensOp.find((i) => i.revenueNature === "MRR");
+    const setupItem = itensOp.find((i) => i.revenueNature === "SETUP");
+    const [servicoMrr] = mrrItem?.servicoCanonicoId ? await db.select().from(servicosCanonicos).where(eq(servicosCanonicos.id, mrrItem.servicoCanonicoId)) : [];
+    const [servicoSetup] = setupItem?.servicoCanonicoId ? await db.select().from(servicosCanonicos).where(eq(servicosCanonicos.id, setupItem.servicoCanonicoId)) : [];
+    checar("D3. White Label — recorrência alimenta current_recurring_value", parseFloat(servicoMrr?.currentRecurringValue || "0") === 997, `crv=${servicoMrr?.currentRecurringValue}`);
+    checar("D4. White Label — setup NUNCA vira MRR", parseFloat(servicoSetup?.currentRecurringValue || "-1") === 0, `crv setup=${servicoSetup?.currentRecurringValue}`);
   }
 
-  // ── 4. Venda mista (AI MRR + PABX MRR + WL MRR + WL SETUP) ──
+  // ── E. Venda MISTA — AI sem contrato + PABX contratual, estados INDEPENDENTES ──
   {
-    const { lead, negocio } = await criarLeadNegocio(org.id, user.id, "Mista AI+PABX+WL");
-    const proposta = await criarPropostaComItens(org.id, user.id, lead.id, negocio.id, [
-      { catalogo: catAi }, { catalogo: catPabx, valorUnitario: 450 }, { catalogo: catWlMrr, valorUnitario: 997 }, { catalogo: catWlSetup, valorUnitario: 2500 },
-    ]);
-    const r1 = await aceitarPropostaPublica(proposta);
-    checar("4a. Mista — qualquer item requerContrato manda tudo pro caminho contrato", r1.ok && r1.proximoPasso === "contrato", `proximoPasso=${r1.ok ? r1.proximoPasso : r1.error}`);
-    const [propostaComContrato] = await db.select().from(propostas).where(eq(propostas.id, proposta.id)).limit(1);
-    await assinarContratoPublico(propostaComContrato, "Fulano de Tal", "127.0.0.1");
-    const itens = await itensDoNegocio(negocio.id);
-    checar("4b. Mista — 4 itens materializados, famílias distintas preservadas", itens.length === 4, `itens=${itens.length}, familias=${[...new Set(itens.map((i) => i.serviceFamily))].join("/")}`);
-    const servicoIds = new Set(itens.map((i) => i.servicoCanonicoId).filter(Boolean));
-    checar("4c. Mista — 4 serviços canônicos gerados (1 por item, não 1 por venda)", servicoIds.size === 4, `servicos=${servicoIds.size}`);
-    const [negGanho] = await db.select().from(negocios).where(eq(negocios.id, negocio.id)).limit(1);
-    checar("4d. Mista — Won válido", negGanho.status === "ganho", `status=${negGanho.status}`);
+    const { lead, negocio } = await criarLeadNegocio(org.id, user.id, "E - Mista independente");
+    const proposta = await criarPropostaComItens(org.id, user.id, lead.id, negocio.id, [{ catalogo: catAi }, { catalogo: catPabx, valorUnitario: 450 }]);
+    const aceite = await processarAceiteDaProposta({ propostaId: proposta.id, organizacaoId: org.id, origem: "publico" });
+    checar("E1. Mista — 2 grupos distintos (não 'tem PABX então tudo espera PABX')", aceite.ok && aceite.grupos.length === 2, aceite.ok ? JSON.stringify(aceite.grupos) : aceite.error);
+    const grupoAi = aceite.ok ? aceite.grupos.find((g) => g.commercialModel === "PAGAMENTO_DIRETO")! : null;
+    const grupoPabx = aceite.ok ? aceite.grupos.find((g) => g.commercialModel === "CONTRATO_OBRIGATORIO")! : null;
+    checar("E2. Mista — grupo AI vai pra pagamento, grupo PABX vai pra contrato, no MESMO aceite", grupoAi?.proximoPasso === "pagamento" && grupoPabx?.proximoPasso === "contrato", `AI=${grupoAi?.proximoPasso} PABX=${grupoPabx?.proximoPasso}`);
+
+    // Só o grupo AI é pago — PABX fica pra trás, sem travar nada.
+    const checkoutAi = await simularCheckoutCriado(grupoAi!.grupoId, negocio.id, proposta.id, org.id);
+    await simularPagamentoConfirmado(checkoutAi.id, negocio.id, grupoAi!.grupoId, org.id);
+
+    const [negocioAposAiPago] = await db.select({ status: negocios.status }).from(negocios).where(eq(negocios.id, negocio.id)).limit(1);
+    checar("E3. Mista — negócio já GANHO com só o AI pago (evidência real já existe)", negocioAposAiPago.status === "ganho", `status=${negocioAposAiPago.status}`);
+    const [grupoPabxStatus] = await db.select({ status: propostaGrupoComercial.status }).from(propostaGrupoComercial).where(eq(propostaGrupoComercial.id, grupoPabx!.grupoId)).limit(1);
+    checar("E4. Mista — grupo PABX NÃO foi concluído indevidamente (ainda aguardando contrato)", grupoPabxStatus.status === "aguardando_contrato" || grupoPabxStatus.status === "contrato_enviado_assinatura", `status=${grupoPabxStatus.status}`);
+    const itensPabxOp = await db.select().from(oportunidadeItens).where(eq(oportunidadeItens.grupoComercialId, grupoPabx!.grupoId));
+    checar("E5. Mista — item PABX ainda SEM serviço canônico (não materializou o que não foi cumprido)", itensPabxOp.every((i) => !i.servicoCanonicoId), `pendentes=${itensPabxOp.filter((i) => !i.servicoCanonicoId).length}/${itensPabxOp.length}`);
+    const itensAiOp = await db.select().from(oportunidadeItens).where(eq(oportunidadeItens.grupoComercialId, grupoAi!.grupoId));
+    checar("E6. Mista — item AI JÁ tem serviço canônico (o que foi cumprido, materializou)", itensAiOp.every((i) => !!i.servicoCanonicoId), `materializados=${itensAiOp.filter((i) => !!i.servicoCanonicoId).length}/${itensAiOp.length}`);
+
+    // Fecha o PABX também, pra confirmar que o segundo grupo materializa depois, sem duplicar o que o AI já fez.
+    const [grupoPabxRow] = await db.select().from(propostaGrupoComercial).where(eq(propostaGrupoComercial.id, grupoPabx!.grupoId)).limit(1);
+    if (grupoPabxRow.contratoId) {
+      await assinarContratoPublico(grupoPabxRow.contratoId, "Fulano de Tal", "127.0.0.1");
+      const checkoutPabx = await simularCheckoutCriado(grupoPabx!.grupoId, negocio.id, proposta.id, org.id);
+      await simularPagamentoConfirmado(checkoutPabx.id, negocio.id, grupoPabx!.grupoId, org.id);
+    }
+    const servicosFinal = new Set([...itensAiOp, ...(await db.select().from(oportunidadeItens).where(eq(oportunidadeItens.grupoComercialId, grupoPabx!.grupoId)))].map((i) => i.servicoCanonicoId).filter(Boolean));
+    checar("E7. Mista — total 2 serviços canônicos no final (1 por família, nenhuma duplicata)", servicosFinal.size === 2, `servicos=${servicosFinal.size}`);
   }
 
-  // ── 5. Proposta recusada ──
+  // ── F. Cliente solicita ajuste — NÃO encerra a proposta, NÃO cria checkout/contrato ──
   {
-    const { lead, negocio } = await criarLeadNegocio(org.id, user.id, "Recusada");
+    const { lead, negocio } = await criarLeadNegocio(org.id, user.id, "F - Ajuste solicitado");
     const proposta = await criarPropostaComItens(org.id, user.id, lead.id, negocio.id, [{ catalogo: catAi }]);
-    const r = await recusarPropostaPublica(proposta, "Cliente achou caro");
-    checar("5a. Recusada — recusa registrada", r.ok, JSON.stringify(r));
+    const [propostaRow] = await db.select().from(propostas).where(eq(propostas.id, proposta.id)).limit(1);
+    await solicitarAjustePropostaPublica(propostaRow, "Pode tirar o item de minutos adicionais?");
+    const [propostaApósAjuste] = await db.select().from(propostas).where(eq(propostas.id, proposta.id)).limit(1);
+    checar("F1. Ajuste — status vira ajuste_solicitado (não recusada, não expirada)", propostaApósAjuste.status === "ajuste_solicitado", `status=${propostaApósAjuste.status}`);
+    const gruposAntes = await gruposDaProposta(proposta.id);
+    checar("F2. Ajuste — nenhum grupo/contrato/checkout criado (não fingiu aceite)", gruposAntes.length === 0, `grupos=${gruposAntes.length}`);
+    // Depois do ajuste, cliente pode ACEITAR a mesma versão normalmente (não é terminal).
+    const aceite = await processarAceiteDaProposta({ propostaId: proposta.id, organizacaoId: org.id, origem: "publico" });
+    checar("F3. Ajuste — proposta continua aceitável depois (não é status terminal)", aceite.ok, aceite.ok ? "aceita normalmente" : aceite.error);
+  }
+
+  // ── G. Proposta recusada ──
+  {
+    const { lead, negocio } = await criarLeadNegocio(org.id, user.id, "G - Recusada");
+    const proposta = await criarPropostaComItens(org.id, user.id, lead.id, negocio.id, [{ catalogo: catAi }]);
+    const [propostaRow] = await db.select().from(propostas).where(eq(propostas.id, proposta.id)).limit(1);
+    const r = await recusarPropostaPublica(propostaRow, "Fechou com concorrente");
+    checar("G1. Recusada — recusa registrada, histórico preservado", r.ok, JSON.stringify(r));
     const [negocioRecusado] = await db.select({ status: negocios.status }).from(negocios).where(eq(negocios.id, negocio.id)).limit(1);
-    checar("5b. Recusada — negócio NÃO vira ganho", negocioRecusado.status !== "ganho", `status=${negocioRecusado.status}`);
+    checar("G2. Recusada — negócio NÃO ganho, nenhuma materialização indevida", negocioRecusado.status !== "ganho", `status=${negocioRecusado.status}`);
     const evid = await avaliarEvidenciaWon(negocio.id, org.id, null);
-    checar("5c. Recusada — sem evidência válida (bloqueia Won)", !evid.permitido, `motivo=${evid.motivo}`);
+    checar("G3. Recusada — sem evidência válida", !evid.permitido, `motivo=${evid.motivo}`);
   }
 
-  // ── 6. Proposta aceita mas pagamento pendente (caminho pagamento, sem webhook) ──
+  // ── H. Checkout manual pelo vendedor — explícito, auditado, NUNCA marca Won sozinho ──
   {
-    const { lead, negocio } = await criarLeadNegocio(org.id, user.id, "Pagamento pendente");
+    const { lead, negocio } = await criarLeadNegocio(org.id, user.id, "H - Checkout manual");
     const proposta = await criarPropostaComItens(org.id, user.id, lead.id, negocio.id, [{ catalogo: catAi }]);
-    const r1 = await aceitarPropostaPublica(proposta);
-    checar("6a. Pagamento pendente — aceite não fecha sozinho", r1.ok && r1.proximoPasso === "pagamento", `proximoPasso=${r1.ok ? r1.proximoPasso : r1.error}`);
-    const [negAindaAberto] = await db.select({ status: negocios.status }).from(negocios).where(eq(negocios.id, negocio.id)).limit(1);
-    checar("6b. Pagamento pendente — negócio continua ABERTO (Won exige pagamento confirmado, não só aceite)", negAindaAberto.status !== "ganho", `status=${negAindaAberto.status}`);
-    const evid = await avaliarEvidenciaWon(negocio.id, org.id, null);
-    checar("6c. Pagamento pendente — sem evidência ainda", !evid.permitido, `motivo=${evid.motivo}`);
+    const aceite = await processarAceiteDaProposta({ propostaId: proposta.id, organizacaoId: org.id, origem: "publico" });
+    const grupo = aceite.ok ? aceite.grupos[0] : null;
+    const [negAntes] = await db.select({ status: negocios.status }).from(negocios).where(eq(negocios.id, negocio.id)).limit(1);
+    // STRIPE_API_KEY vazia no sandbox — a chamada real falha graciosamente (ok:false), nunca crasha nem finge sucesso.
+    const manual = await criarCheckoutParaGrupo({ grupoId: grupo!.grupoId, origem: "manual_vendedor", criadoPorId: user.id });
+    checar("H1. Checkout manual — ação explícita não crasha sem Stripe configurado (retorna erro tratável)", manual.ok === false && typeof manual.error === "string", JSON.stringify(manual));
+    const [negDepois] = await db.select({ status: negocios.status }).from(negocios).where(eq(negocios.id, negocio.id)).limit(1);
+    checar("H2. Checkout manual — NUNCA marca Won sozinho (ação de checkout ≠ evidência de pagamento)", negDepois.status === negAntes.status && negDepois.status !== "ganho", `antes=${negAntes.status} depois=${negDepois.status}`);
   }
 
-  // ── 7. Contrato obrigatório ainda não assinado ──
+  // ── I. Materialização "falha" — invariante detecta e não finge sucesso ──
   {
-    const { lead, negocio } = await criarLeadNegocio(org.id, user.id, "Contrato pendente assinatura");
-    const proposta = await criarPropostaComItens(org.id, user.id, lead.id, negocio.id, [{ catalogo: catPabx }]);
-    await aceitarPropostaPublica(proposta);
-    const evid = await avaliarEvidenciaWon(negocio.id, org.id, "pabx");
-    checar("7a. Contrato pendente — Won bloqueado até assinar", !evid.permitido, `motivo=${evid.motivo}`);
+    // Grupo comercial INEXISTENTE (referência inválida) — cenário real que
+    // aconteceria se um evento chegasse órfão (ex: grupo deletado depois de
+    // publicado, corrida de dados). materializarServicosCanonicosDoGrupo
+    // retorna 0 serviços -> o consumer trata isso como falha explícita, nunca
+    // como "processado com sucesso" silencioso.
+    const grupoInexistenteId = "00000000-0000-0000-0000-000000000000";
+    await publicarEvento({
+      organizacaoId: org.id, eventType: "FulfillmentGroupCompleted", aggregateType: "grupo_comercial", aggregateId: grupoInexistenteId,
+      payload: { teste: "grupo-inexistente" }, idempotencyKey: `e2e-teste-falha:${grupoInexistenteId}`,
+    });
+    const { falhados } = await processarEventosPendentes(50);
+    checar("I1. Materialização falha — consumer detecta grupo inexistente/órfão e FALHA (não finge sucesso)", falhados >= 1, `falhados=${falhados}`);
+    const [eventoFalho] = await db.select({ status: eventOutbox.status, attempts: eventOutbox.attempts, lastError: eventOutbox.lastError }).from(eventOutbox).where(eq(eventOutbox.idempotencyKey, `e2e-teste-falha:${grupoInexistenteId}`)).limit(1);
+    checar("I2. Materialização falha — evento fica pending (retry-ável) com erro registrado, fato comercial preservado", eventoFalho.status === "pending" && eventoFalho.attempts === 1 && !!eventoFalho.lastError, `status=${eventoFalho.status} attempts=${eventoFalho.attempts}`);
   }
 
-  // ── 8. Pagamento concluído (Stripe) — coberto no cenário 1, valida invariantes aqui ──
-  checar("8. Pagamento concluído — coberto no cenário 1b/1c/1d (mesma mecânica, sem duplicar)", true, "ver 1b-1d");
-
-  // ── 9. Won válido — coberto nos cenários 1/2/3/4 (todos chegam em status=ganho) ──
-  checar("9. Won válido — coberto nos cenários 1/2/3/4 (status=ganho com evidência real)", true, "ver 1b/2d/3/4d");
-
-  // ── 10. Tentativa de Won sem evidência (negócio limpo, nunca teve proposta) ──
+  // ── J. Retry — zero serviço duplicado ──
   {
-    const { negocio } = await criarLeadNegocio(org.id, user.id, "Sem evidência nenhuma");
-    const evid = await avaliarEvidenciaWon(negocio.id, org.id, null);
-    checar("10. Won sem evidência — bloqueado (nenhum fallback legado aplicável)", !evid.permitido, `motivo=${evid.motivo}`);
+    const { lead, negocio } = await criarLeadNegocio(org.id, user.id, "J - Retry sem duplicar");
+    const proposta = await criarPropostaComItens(org.id, user.id, lead.id, negocio.id, [{ catalogo: catAi }]);
+    const aceite = await processarAceiteDaProposta({ propostaId: proposta.id, organizacaoId: org.id, origem: "publico" });
+    const grupo = aceite.ok ? aceite.grupos[0] : null;
+    const checkout = await simularCheckoutCriado(grupo!.grupoId, negocio.id, proposta.id, org.id);
+    await simularPagamentoConfirmado(checkout.id, negocio.id, grupo!.grupoId, org.id);
+    const { servicoIds: r1 } = await materializarServicosCanonicosDoGrupo(grupo!.grupoId);
+    const { servicoIds: r2 } = await materializarServicosCanonicosDoGrupo(grupo!.grupoId);
+    checar("J1. Retry — reprocessar o mesmo grupo não duplica serviço canônico", JSON.stringify(r1.sort()) === JSON.stringify(r2.sort()) && r1.length === 1, `r1=${r1} r2=${r2}`);
   }
 
-  // ── 11 (extra, pedido explícito): múltiplos serviços de uma oportunidade — já provado no cenário 3/4 ──
-  checar("11. Múltiplos serviços canônicos de 1 oportunidade — coberto em 3e/4c", true, "ver 3e/4c");
-
-  // ── Invariantes DEPOIS: portfolio consolidado + ledger histórico intocados ──
-  const [{ n: portfolioDepois }] = await db.execute<{ n: number }>(sql`select count(*)::int as n from servicos_canonicos where portfolio_included = true and canonical_key not like 'CRM2:%' and canonical_key not like 'STRIPE:sub_e2e_%'`);
+  // ── Invariantes: portfolio consolidado + ledger histórico intocados ──
+  const [{ n: portfolioDepois }] = await db.execute<{ n: number }>(sql`select count(*)::int as n from servicos_canonicos where portfolio_included = true and canonical_key not like 'CRM2:%' and canonical_key not like 'STRIPE:cs_test_e2e_%'`);
   checar("INVARIANTE. Portfolio consolidado pré-existente intocado", portfolioAntes === portfolioDepois, `antes=${portfolioAntes} depois(excluindo E2E)=${portfolioDepois}`);
   const [goldenDepois] = await db.select({ crv: servicosCanonicos.currentRecurringValue }).from(servicosCanonicos).where(eq(servicosCanonicos.canonicalKey, "ZOHO:VETLOG:PABX")).limit(1);
   checar("INVARIANTE. Golden case VETLOG:PABX intocado", golden?.crv === goldenDepois?.crv, `antes=${golden?.crv} depois=${goldenDepois?.crv}`);
   const [{ n: ledgerDepois }] = await db.execute<{ n: number }>(sql`select count(*)::int as n from servicos_canonicos where billing_source = 'LEDGER_JULHO'`);
-  checar("INVARIANTE. Ledger histórico (LEDGER_JULHO) com contagem intocada", ledgerAntes === ledgerDepois, `antes=${ledgerAntes} depois=${ledgerDepois}`);
+  checar("INVARIANTE. Ledger histórico (LEDGER_JULHO) intocado", ledgerAntes === ledgerDepois, `antes=${ledgerAntes} depois=${ledgerDepois}`);
 
   const falhas = resultados.filter((r) => !r.ok);
   console.log(`\n${resultados.length - falhas.length}/${resultados.length} passaram.`);

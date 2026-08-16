@@ -81,6 +81,102 @@ function appendNested(form: URLSearchParams, key: string, value: unknown): void 
   }
 }
 
+export interface CreateGroupCheckoutParams {
+  propostaId: string;
+  negocioId?: string | null;
+  grupoComercialId: string;
+  organizacaoId: string;
+  moeda: string;
+  itensRecorrentes: CheckoutItem[];
+  itensAvulsos: CheckoutItem[]; // setup/one-time — cobrados uma vez, na mesma sessão
+  customerEmail?: string | null;
+  successUrl: string;
+  cancelUrl: string;
+}
+
+/**
+ * Checkout de um GRUPO COMERCIAL (Commercial Core v2, ADR-EXEC-021) — cobre
+ * recorrente + avulso (ex: White Label licença MRR + setup) na MESMA sessão
+ * quando ambos existem no grupo. Stripe suporta linha one-time dentro de uma
+ * sessão mode=subscription (cobrada uma vez, no ato) — só cai pra
+ * mode=payment se o grupo não tiver NENHUM item recorrente (Stripe rejeita
+ * subscription sem linha recorrente).
+ */
+export async function createGroupCheckout(params: CreateGroupCheckoutParams): Promise<CheckoutResult> {
+  const key = process.env.STRIPE_API_KEY;
+  if (!key) throw new Error("STRIPE_API_KEY não configurada no .env");
+
+  const currency = (params.moeda || "BRL").toLowerCase();
+  const recorrentes = params.itensRecorrentes.filter((i) => i.valorUnitario > 0);
+  const avulsos = params.itensAvulsos.filter((i) => i.valorUnitario > 0);
+
+  if (recorrentes.length === 0 && avulsos.length === 0) {
+    throw new Error("Grupo comercial sem itens com valor para gerar checkout");
+  }
+
+  const mode = recorrentes.length > 0 ? "subscription" : "payment";
+
+  const form = new URLSearchParams();
+  form.append("mode", mode);
+  form.append("success_url", params.successUrl);
+  form.append("cancel_url", params.cancelUrl);
+  if (params.customerEmail) form.append("customer_email", params.customerEmail);
+
+  appendNested(form, "phone_number_collection", { enabled: true });
+  form.append("billing_address_collection", "required");
+  appendNested(form, "custom_fields", [
+    { key: "cpfcnpj", label: { type: "custom", custom: "CPF ou CNPJ" }, type: "text", optional: false },
+  ]);
+
+  let idx = 0;
+  for (const item of recorrentes) {
+    const priceData: Record<string, unknown> = {
+      currency, unit_amount: Math.round(item.valorUnitario * 100), recurring: { interval: "month" },
+    };
+    if (item.stripeProductId) priceData.product = item.stripeProductId;
+    else priceData.product_data = { name: item.nome };
+    appendNested(form, `line_items[${idx}]`, { quantity: Math.max(1, Math.round(item.quantidade || 1)), price_data: priceData });
+    idx++;
+  }
+  for (const item of avulsos) {
+    const priceData: Record<string, unknown> = { currency, unit_amount: Math.round(item.valorUnitario * 100) };
+    if (item.stripeProductId) priceData.product = item.stripeProductId;
+    else priceData.product_data = { name: item.nome };
+    appendNested(form, `line_items[${idx}]`, { quantity: Math.max(1, Math.round(item.quantidade || 1)), price_data: priceData });
+    idx++;
+  }
+
+  appendNested(form, "metadata", {
+    propostaId: params.propostaId,
+    negocioId: params.negocioId || "",
+    grupoComercialId: params.grupoComercialId,
+    organizacaoId: params.organizacaoId,
+    origem: "callface-crm-grupo-comercial",
+  });
+  if (mode === "subscription") {
+    appendNested(form, "subscription_data[metadata]", {
+      propostaId: params.propostaId,
+      negocioId: params.negocioId || "",
+      grupoComercialId: params.grupoComercialId,
+      organizacaoId: params.organizacaoId,
+    });
+  }
+
+  const res = await fetch(`${STRIPE_API}/checkout/sessions`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/x-www-form-urlencoded" },
+    body: form.toString(),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Stripe checkout (grupo): HTTP ${res.status} ${text.slice(0, 300)}`);
+  }
+
+  const session = (await res.json()) as { id: string; url: string };
+  return { sessionId: session.id, url: session.url };
+}
+
 export async function createSubscriptionCheckout(params: CreateCheckoutParams): Promise<CheckoutResult> {
   const key = process.env.STRIPE_API_KEY;
   if (!key) throw new Error("STRIPE_API_KEY não configurada no .env");

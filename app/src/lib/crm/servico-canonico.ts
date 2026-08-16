@@ -22,8 +22,82 @@
  */
 import { db } from "@/lib/db";
 import { eq, and } from "drizzle-orm";
-import { negocios, oportunidades, oportunidadeItens, servicosCanonicos } from "@/lib/db/schema";
+import { negocios, oportunidades, oportunidadeItens, servicosCanonicos, propostaGrupoComercial, checkouts } from "@/lib/db/schema";
 import { publicarEvento } from "@/lib/events/outbox";
+
+type OportunidadeItemRow = typeof oportunidadeItens.$inferSelect;
+
+/** Upsert de UM item -> serviço canônico. Compartilhado pelos dois pontos de materialização (manual e via grupo). */
+async function materializarItem(item: OportunidadeItemRow, ctx: { organizacaoId: string; empresaId: string | null; leadId: string | null; negocioId: string; contratoId: string | null; wonAt: Date; stripeSubscriptionId: string | null }): Promise<string> {
+  const isMrr = item.revenueNature === "MRR";
+  // STRIPE:<subscriptionId> mantém a mesma convenção da reconciliação
+  // (permite um futuro stripe-sync reconciliar pela MESMA chave); tudo que
+  // não é MRR-via-Stripe usa o prefixo novo CRM2:<itemId>, nunca colidindo
+  // com chaves legadas (STRIPE:/ZOHO:/LEDGER:/MANUAL:).
+  const canonicalKey = isMrr && ctx.stripeSubscriptionId ? `STRIPE:${ctx.stripeSubscriptionId}` : `CRM2:${item.id}`;
+
+  const valores = {
+    organizacaoId: ctx.organizacaoId,
+    empresaId: ctx.empresaId,
+    leadId: ctx.leadId,
+    contratoId: ctx.contratoId,
+    canonicalKey,
+    serviceFamily: item.serviceFamily,
+    canonicalProduct: item.produto,
+    revenueNature: item.revenueNature,
+    billingSource: isMrr && ctx.stripeSubscriptionId ? "STRIPE" : "CRM2_COMERCIAL",
+    // Lifecycle é SEMPRE ACTIVE num Won novo — não deriva de billing_status.
+    commercialLifecycle: "ACTIVE",
+    billingStatus: isMrr ? "ACTIVE" : "BILLED",
+    // Regra dura: só MRR alimenta current_recurring_value.
+    currentRecurringValue: isMrr ? item.valorTotal : "0.00",
+    currentSubscriptionId: isMrr ? ctx.stripeSubscriptionId : null,
+    asOfDate: ctx.wonAt.toISOString().split("T")[0],
+    portfolioIncluded: true,
+    confidence: "CONFIRMED" as const,
+    evidence: {
+      origem: "crm2_venda_nova",
+      oportunidadeItemId: item.id,
+      negocioId: ctx.negocioId,
+      contratoId: ctx.contratoId,
+      wonAt: ctx.wonAt.toISOString(),
+    },
+    updatedAt: new Date(),
+  };
+
+  const [existente] = await db
+    .select({ id: servicosCanonicos.id })
+    .from(servicosCanonicos)
+    .where(and(eq(servicosCanonicos.organizacaoId, ctx.organizacaoId), eq(servicosCanonicos.canonicalKey, canonicalKey)))
+    .limit(1);
+
+  let servicoId: string;
+  if (existente) {
+    servicoId = existente.id;
+    await db.update(servicosCanonicos).set(valores).where(eq(servicosCanonicos.id, servicoId));
+  } else {
+    const [novo] = await db.insert(servicosCanonicos).values(valores).returning({ id: servicosCanonicos.id });
+    servicoId = novo.id;
+  }
+
+  if (item.servicoCanonicoId !== servicoId) {
+    await db.update(oportunidadeItens).set({ servicoCanonicoId: servicoId, updatedAt: new Date() }).where(eq(oportunidadeItens.id, item.id));
+  }
+
+  await publicarEvento({
+    organizacaoId: ctx.organizacaoId,
+    eventType: "CanonicalServiceActivated",
+    aggregateType: "servico",
+    aggregateId: servicoId,
+    payload: {
+      negocioId: ctx.negocioId, oportunidadeItemId: item.id, serviceFamily: item.serviceFamily,
+      revenueNature: item.revenueNature, currentRecurringValue: valores.currentRecurringValue,
+    },
+    idempotencyKey: `canonical-service-activated:${servicoId}:${ctx.negocioId}`,
+  });
+
+  return servicoId;
+}
 
 export interface MaterializarServicosCanonicosOpts {
   negocioId: string;
@@ -34,106 +108,61 @@ export interface MaterializarServicosCanonicosOpts {
   stripeSubscriptionId?: string | null;
 }
 
+/**
+ * Won 100% MANUAL (sem proposta por trás — ver garantirItemComercialManual)
+ * — materializa TODOS os itens da oportunidade de uma vez, porque não existe
+ * conceito de "grupo comercial" nesse caminho (não passou por proposta).
+ */
 export async function materializarServicosCanonicosDoNegocio(
   opts: MaterializarServicosCanonicosOpts
 ): Promise<{ servicoIds: string[] }> {
   try {
-    const [negocio] = await db
-      .select({ empresaId: negocios.empresaId, leadId: negocios.leadId })
-      .from(negocios)
-      .where(eq(negocios.id, opts.negocioId))
-      .limit(1);
+    const [negocio] = await db.select({ empresaId: negocios.empresaId, leadId: negocios.leadId }).from(negocios).where(eq(negocios.id, opts.negocioId)).limit(1);
     if (!negocio) return { servicoIds: [] };
 
-    const [oportunidade] = await db
-      .select({ id: oportunidades.id })
-      .from(oportunidades)
-      .where(eq(oportunidades.negocioIdLegado, opts.negocioId))
-      .limit(1);
+    const [oportunidade] = await db.select({ id: oportunidades.id }).from(oportunidades).where(eq(oportunidades.negocioIdLegado, opts.negocioId)).limit(1);
     if (!oportunidade) return { servicoIds: [] };
 
     const itens = await db.select().from(oportunidadeItens).where(eq(oportunidadeItens.oportunidadeId, oportunidade.id));
     if (itens.length === 0) return { servicoIds: [] };
 
-    const servicoIds: string[] = [];
-
-    for (const item of itens) {
-      const isMrr = item.revenueNature === "MRR";
-      // STRIPE:<subscriptionId> mantém a mesma convenção da reconciliação
-      // (permite um futuro stripe-sync reconciliar pela MESMA chave); tudo
-      // que não é MRR-via-Stripe usa o prefixo novo CRM2:<itemId>, nunca
-      // colidindo com chaves legadas (STRIPE:/ZOHO:/LEDGER:/MANUAL:).
-      const canonicalKey = isMrr && opts.stripeSubscriptionId ? `STRIPE:${opts.stripeSubscriptionId}` : `CRM2:${item.id}`;
-
-      const valores = {
-        organizacaoId: opts.organizacaoId,
-        empresaId: negocio.empresaId,
-        leadId: negocio.leadId,
-        contratoId: opts.contratoId ?? null,
-        canonicalKey,
-        serviceFamily: item.serviceFamily,
-        canonicalProduct: item.produto,
-        revenueNature: item.revenueNature,
-        billingSource: isMrr && opts.stripeSubscriptionId ? "STRIPE" : "CRM2_COMERCIAL",
-        // Lifecycle é SEMPRE ACTIVE num Won novo — não deriva de billing_status.
-        commercialLifecycle: "ACTIVE",
-        billingStatus: isMrr ? "ACTIVE" : "BILLED",
-        // Regra dura: só MRR alimenta current_recurring_value.
-        currentRecurringValue: isMrr ? item.valorTotal : "0.00",
-        currentSubscriptionId: isMrr ? opts.stripeSubscriptionId ?? null : null,
-        asOfDate: opts.wonAt.toISOString().split("T")[0],
-        portfolioIncluded: true,
-        confidence: "CONFIRMED" as const,
-        evidence: {
-          origem: "crm2_venda_nova",
-          oportunidadeItemId: item.id,
-          negocioId: opts.negocioId,
-          contratoId: opts.contratoId ?? null,
-          wonAt: opts.wonAt.toISOString(),
-        },
-        updatedAt: new Date(),
-      };
-
-      const [existente] = await db
-        .select({ id: servicosCanonicos.id })
-        .from(servicosCanonicos)
-        .where(and(eq(servicosCanonicos.organizacaoId, opts.organizacaoId), eq(servicosCanonicos.canonicalKey, canonicalKey)))
-        .limit(1);
-
-      let servicoId: string;
-      if (existente) {
-        servicoId = existente.id;
-        await db.update(servicosCanonicos).set(valores).where(eq(servicosCanonicos.id, servicoId));
-      } else {
-        const [novo] = await db.insert(servicosCanonicos).values(valores).returning({ id: servicosCanonicos.id });
-        servicoId = novo.id;
-      }
-
-      if (item.servicoCanonicoId !== servicoId) {
-        await db.update(oportunidadeItens).set({ servicoCanonicoId: servicoId, updatedAt: new Date() }).where(eq(oportunidadeItens.id, item.id));
-      }
-
-      servicoIds.push(servicoId);
-
-      await publicarEvento({
-        organizacaoId: opts.organizacaoId,
-        eventType: "CanonicalServiceActivated",
-        aggregateType: "servico",
-        aggregateId: servicoId,
-        payload: {
-          negocioId: opts.negocioId,
-          oportunidadeItemId: item.id,
-          serviceFamily: item.serviceFamily,
-          revenueNature: item.revenueNature,
-          currentRecurringValue: valores.currentRecurringValue,
-        },
-        idempotencyKey: `canonical-service-activated:${servicoId}:${opts.negocioId}`,
-      });
-    }
-
+    const ctx = { organizacaoId: opts.organizacaoId, empresaId: negocio.empresaId, leadId: negocio.leadId, negocioId: opts.negocioId, contratoId: opts.contratoId ?? null, wonAt: opts.wonAt, stripeSubscriptionId: opts.stripeSubscriptionId ?? null };
+    const servicoIds = await Promise.all(itens.map((item) => materializarItem(item, ctx)));
     return { servicoIds };
   } catch (err) {
     console.error(`[servico-canonico] falha ao materializar serviços canônicos do negócio ${opts.negocioId} (best-effort):`, err);
     return { servicoIds: [] };
   }
+}
+
+/**
+ * Commercial Core v2 (ADR-EXEC-021) — materializa SÓ os itens do GRUPO
+ * comercial concluído (não a oportunidade inteira): numa venda mista, o
+ * grupo PABX materializa quando o SEU pagamento confirma, independente do
+ * grupo Callface AI já ter materializado antes ou depois. Chamado pelo
+ * consumer real do Event Outbox (FulfillmentGroupCompleted, ver
+ * consumer.ts) — nunca inline best-effort na rota que confirma o pagamento.
+ */
+export async function materializarServicosCanonicosDoGrupo(grupoComercialId: string): Promise<{ servicoIds: string[] }> {
+  const [grupo] = await db.select().from(propostaGrupoComercial).where(eq(propostaGrupoComercial.id, grupoComercialId)).limit(1);
+  if (!grupo || !grupo.negocioId) return { servicoIds: [] };
+
+  const [negocio] = await db.select({ empresaId: negocios.empresaId, leadId: negocios.leadId }).from(negocios).where(eq(negocios.id, grupo.negocioId)).limit(1);
+  if (!negocio) return { servicoIds: [] };
+
+  const itens = await db.select().from(oportunidadeItens).where(eq(oportunidadeItens.grupoComercialId, grupoComercialId));
+  if (itens.length === 0) return { servicoIds: [] };
+
+  let stripeSubscriptionId: string | null = null;
+  if (grupo.checkoutId) {
+    const [checkout] = await db.select({ stripeSubscriptionId: checkouts.stripeSubscriptionId }).from(checkouts).where(eq(checkouts.id, grupo.checkoutId)).limit(1);
+    stripeSubscriptionId = checkout?.stripeSubscriptionId ?? null;
+  }
+
+  const ctx = {
+    organizacaoId: grupo.organizacaoId, empresaId: negocio.empresaId, leadId: negocio.leadId, negocioId: grupo.negocioId,
+    contratoId: grupo.contratoId, wonAt: grupo.concluidoEm ?? new Date(), stripeSubscriptionId,
+  };
+  const servicoIds = await Promise.all(itens.map((item) => materializarItem(item, ctx)));
+  return { servicoIds };
 }

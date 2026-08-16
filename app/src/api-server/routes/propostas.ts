@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { db } from "@/lib/db";
-import { propostas, propostaItens, leads, negocios, usuarios, contratos, atividades, statusChanges } from "@/lib/db/schema";
+import { propostas, propostaItens, leads, negocios, usuarios, contratos, atividades, statusChanges, propostaGrupoComercial, propostaGrupoComercialItens, checkouts } from "@/lib/db/schema";
 import { eq, and, desc, asc, sql, ilike, inArray, count, gte } from "drizzle-orm";
 import { z } from "zod";
 import { getCtx } from "../compat.js";
@@ -10,13 +10,14 @@ import { enviarPropostaComCheckout } from "@/lib/crm/enviar-proposta";
 import { getCheckoutSessionStatus } from "@/lib/integrations/stripe-sync";
 import { propostaPdfHtml, renderPropostaPdf } from "@/lib/propostas/proposta-pdf";
 import { syncOportunidadeFromNegocio } from "@/lib/crm/sync-domain-model";
-import { determinarProximoPasso } from "@/lib/crm/proposta-fluxo";
+import { criarCheckoutParaGrupo } from "@/lib/crm/checkout";
 import {
   resolverServiceFamiliesPorCatalogoIds,
   mapTipoParaRevenueNature,
   syncOportunidadeItensFromProposta,
   limparOportunidadeItensDeOrigemProposta,
 } from "@/lib/crm/composicao-comercial";
+import { resolverCommercialModelPadraoPorCatalogoIds, resolverCommercialModelDoItem } from "@/lib/crm/commercial-model";
 import {
   registrarVisualizacao,
   aceitarPropostaPublica,
@@ -37,6 +38,11 @@ const itemSchema = z.object({
   desconto: z.number().min(0).default(0),
   descontoTipo: z.enum(["percentual", "valor"]).default("percentual"),
   ordem: z.number().int().optional(),
+  // Commercial Core v2 (ADR-EXEC-021): override explícito do vendedor — a
+  // MESMA família pode ser vendida com ou sem contrato dependendo da
+  // negociação (ex: Callface AI com fidelidade em troca de desconto). Sem
+  // override, herda o default do catálogo.
+  commercialModel: z.enum(["PAGAMENTO_DIRETO", "CONTRATO_OBRIGATORIO", "CONTRATO_FIDELIDADE_OPCIONAL"]).optional(),
 });
 
 const createSchema = z.object({
@@ -320,45 +326,64 @@ app.get("/propostas/:id/publica", async (c) => {
 
   const itens = await db
     .select({
-      nome: propostaItens.nome, descricao: propostaItens.descricao, tipo: propostaItens.tipo,
+      id: propostaItens.id, nome: propostaItens.nome, descricao: propostaItens.descricao, tipo: propostaItens.tipo,
       quantidade: propostaItens.quantidade, valorUnitario: propostaItens.valorUnitario, subtotal: propostaItens.subtotal,
-      servicoCatalogoId: propostaItens.servicoCatalogoId,
+      servicoCatalogoId: propostaItens.servicoCatalogoId, commercialModel: propostaItens.commercialModel,
     })
     .from(propostaItens)
     .where(eq(propostaItens.propostaId, id))
     .orderBy(asc(propostaItens.ordem));
 
-  let contrato = null;
-  if (proposta.contratoId) {
-    const [c2] = await db.select().from(contratos).where(eq(contratos.id, proposta.contratoId)).limit(1);
-    contrato = c2 ?? null;
-  }
-
   await registrarVisualizacao(proposta);
 
-  const proximoPasso = proposta.proximoPasso ?? await determinarProximoPasso(itens);
+  // Commercial Core v2 (ADR-EXEC-021): grupos só existem DEPOIS do aceite —
+  // cada grupo tem seu PRÓPRIO próximo passo/estado, independente dos
+  // outros (venda mista: Callface AI pode já estar pago enquanto PABX ainda
+  // aguarda contrato — seção 15 do briefing).
+  const gruposRows = await db.select().from(propostaGrupoComercial).where(eq(propostaGrupoComercial.propostaId, id));
+  const grupos = await Promise.all(gruposRows.map(async (grupo) => {
+    const itensDoGrupoIds = (await db.select({ propostaItemId: propostaGrupoComercialItens.propostaItemId }).from(propostaGrupoComercialItens).where(eq(propostaGrupoComercialItens.grupoId, grupo.id))).map((r) => r.propostaItemId);
 
-  // Checkout Stripe expira em até 24h — se o cliente abre o link depois disso,
-  // regenera na hora (mesmo comportamento que o antigo /p/[id] já tinha como
-  // redirect puro; aqui só devolve o estado pra página pública decidir o quê
-  // mostrar em vez de redirecionar direto).
-  let checkoutUrl = proposta.checkoutUrl;
-  let pagamentoEstado: "aberto" | "pago" | "boleto_pendente" | "indisponivel" | null = null;
-  if (proximoPasso === "pagamento" && proposta.status === "enviada" && proposta.checkoutUrl) {
-    const st = proposta.stripeSessionId ? await getCheckoutSessionStatus(proposta.stripeSessionId) : null;
-    if (st?.status === "open") pagamentoEstado = "aberto";
-    else if (st?.status === "complete" && st.payment_status !== "paid") pagamentoEstado = "boleto_pendente";
-    else if (st?.status === "complete" && st.payment_status === "paid") pagamentoEstado = "pago";
-    else if (proposta.criadoPorId) {
-      const regen = await enviarPropostaComCheckout({
-        propostaId: proposta.id, organizacaoId: proposta.organizacaoId, userId: proposta.criadoPorId, skipEmail: true,
-      });
-      if (regen.ok) { checkoutUrl = regen.checkoutUrl; pagamentoEstado = "aberto"; }
-      else pagamentoEstado = "indisponivel";
-    } else {
-      pagamentoEstado = "indisponivel";
+    let contrato: { id: string; corpoGerado: string | null; assinaturaStatus: string; status: string } | null = null;
+    if (grupo.contratoId) {
+      const [c2] = await db.select().from(contratos).where(eq(contratos.id, grupo.contratoId)).limit(1);
+      if (c2) contrato = { id: c2.id, corpoGerado: c2.corpoGerado, assinaturaStatus: c2.assinaturaStatus, status: c2.status };
     }
-  }
+
+    const base = process.env.NEXTAUTH_URL || "https://crm.callface.io";
+    let checkoutUrl: string | null = null;
+    let pagamentoEstado: "aberto" | "pago" | "boleto_pendente" | "indisponivel" | null = null;
+    if (grupo.checkoutId) {
+      const [checkout] = await db.select().from(checkouts).where(eq(checkouts.id, grupo.checkoutId)).limit(1);
+      if (checkout) {
+        // Aponta pra NOSSA bridge (/checkout/{id}), não direto pro Stripe —
+        // é lá que CheckoutOpened é registrado de verdade (ver checkouts.ts).
+        checkoutUrl = `${base}/checkout/${checkout.id}`;
+        if (checkout.status === "pago") pagamentoEstado = "pago";
+        else if (checkout.status === "falhou" || checkout.status === "expirado") {
+          // Regenera na hora — mesmo comportamento que o /p/[id] antigo tinha.
+          const regen = await criarCheckoutParaGrupo({ grupoId: grupo.id, origem: "automatico_pos_aceite" });
+          if (regen.ok) { checkoutUrl = `${base}/checkout/${regen.checkoutId}`; pagamentoEstado = "aberto"; } else pagamentoEstado = "indisponivel";
+        } else {
+          const st = checkout.stripeSessionId ? await getCheckoutSessionStatus(checkout.stripeSessionId) : null;
+          if (st?.status === "open") pagamentoEstado = "aberto";
+          else if (st?.status === "complete" && st.payment_status !== "paid") pagamentoEstado = "boleto_pendente";
+          else if (st?.status === "complete" && st.payment_status === "paid") pagamentoEstado = "pago";
+          else pagamentoEstado = "aberto";
+        }
+      }
+    }
+
+    return {
+      id: grupo.id,
+      commercialModel: grupo.commercialModel,
+      status: grupo.status,
+      itens: itens.filter((i) => itensDoGrupoIds.includes(i.id)),
+      contrato,
+      checkoutUrl,
+      pagamentoEstado,
+    };
+  }));
 
   return c.json({
     id: proposta.id,
@@ -371,16 +396,13 @@ app.get("/propostas/:id/publica", async (c) => {
     totalRecorrente: proposta.totalRecorrente,
     totalAvulso: proposta.totalAvulso,
     totalGeral: proposta.totalGeral,
-    checkoutUrl,
-    pagamentoEstado,
-    proximoPasso,
     motivoRecusa: proposta.motivoRecusa,
     clienteRespondeuEm: proposta.clienteRespondeuEm,
     clienteNome: lead?.nome ?? null,
     empresa: lead?.empresa ?? null,
     negocioTitulo: negocio?.titulo ?? null,
     itens,
-    contrato: contrato ? { assinaturaStatus: contrato.assinaturaStatus, status: contrato.status } : null,
+    grupos, // [] antes do aceite — a página pública mostra os itens crus e o botão de aceitar
   });
 });
 
@@ -423,22 +445,43 @@ app.post("/propostas/:id/ajuste-publico", async (c) => {
   return c.json({ ok: true });
 });
 
-// POST /propostas/:id/assinar-publico — aceite eletrônico simples do contrato
-// (fluxo "contrato"). Não é assinatura digital qualificada — ver nota em
-// lib/crm/proposta-publica.ts e crm2-decisoes-pendentes.md.
+// POST /propostas/:id/assinar-publico — aceite eletrônico simples de UM
+// contrato específico (uma proposta mista pode ter mais de um contrato, um
+// por grupo comercial que exige) — corpoTemplate/contratoId vêm do payload
+// de /propostas/:id/publica (grupos[].contrato.id). Não é assinatura
+// digital qualificada — ver nota em lib/crm/signature/ e crm2-decisoes-pendentes.md.
 app.post("/propostas/:id/assinar-publico", async (c) => {
   const id = c.req.param("id");
   const body = await c.req.json().catch(() => ({}));
   const nomeCompleto = typeof body?.nomeCompleto === "string" ? body.nomeCompleto.trim() : "";
+  const contratoId = typeof body?.contratoId === "string" ? body.contratoId : "";
   if (!nomeCompleto) return c.json({ error: "Informe o nome completo de quem está assinando." }, 400);
+  if (!contratoId) return c.json({ error: "contratoId é obrigatório." }, 400);
 
   const [proposta] = await db.select().from(propostas).where(eq(propostas.id, id)).limit(1);
   if (!proposta) return c.json({ error: "Proposta não encontrada" }, 404);
 
   const ip = c.req.header("x-forwarded-for")?.split(",")[0]?.trim() || c.req.header("x-real-ip") || "desconhecido";
-  const result = await assinarContratoPublico(proposta, nomeCompleto, ip);
+  const result = await assinarContratoPublico(contratoId, nomeCompleto, ip);
   if (!result.ok) return c.json({ error: result.error }, 400);
   return c.json(result);
+});
+
+// POST /propostas/grupos/:grupoId/gerar-checkout — ação MANUAL do vendedor
+// (seção 3 do briefing): cliente já topou em reunião, só falta formalizar +
+// entregar o link de pagamento. Diferente do automático: é explícita,
+// auditada (fica em checkouts.origem/criadoPorId), respeita a composição do
+// grupo, e NUNCA marca Won sozinha — só devolve o link pra copiar/enviar.
+app.post("/propostas/grupos/:grupoId/gerar-checkout", async (c) => {
+  const ctx = await getCtx(c);
+  const grupoId = c.req.param("grupoId");
+
+  const [grupo] = await db.select().from(propostaGrupoComercial).where(and(eq(propostaGrupoComercial.id, grupoId), eq(propostaGrupoComercial.organizacaoId, ctx.organizacaoId))).limit(1);
+  if (!grupo) return c.json({ error: "Grupo comercial não encontrado" }, 404);
+
+  const result = await criarCheckoutParaGrupo({ grupoId, origem: "manual_vendedor", criadoPorId: ctx.userId });
+  if (!result.ok) return c.json({ error: result.error }, 400);
+  return c.json({ checkoutId: result.checkoutId, url: result.url });
 });
 
 // POST /propostas
@@ -549,6 +592,7 @@ app.post("/propostas", async (c) => {
   // item, nunca inferidos depois por nome.
   if (itensWithCalc.length > 0) {
     const familyMap = await resolverServiceFamiliesPorCatalogoIds(itensWithCalc.map((i) => i.servicoCatalogoId));
+    const commercialModelMap = await resolverCommercialModelPadraoPorCatalogoIds(itensWithCalc.map((i) => i.servicoCatalogoId));
     await db.insert(propostaItens).values(
       itensWithCalc.map((item) => ({
         propostaId: proposta.id,
@@ -565,6 +609,7 @@ app.post("/propostas", async (c) => {
         ordem: item.ordem,
         serviceFamily: item.servicoCatalogoId ? familyMap.get(item.servicoCatalogoId) || "UNKNOWN" : "UNKNOWN",
         revenueNature: mapTipoParaRevenueNature(item.tipo),
+        commercialModel: resolverCommercialModelDoItem({ overrideExplicito: item.commercialModel, servicoCatalogoId: item.servicoCatalogoId, catalogoDefaultMap: commercialModelMap }),
       }))
     );
   }
@@ -631,6 +676,7 @@ app.patch("/propostas/:id", async (c) => {
     });
 
     const familyMap = await resolverServiceFamiliesPorCatalogoIds(itensWithCalc.map((i) => i.servicoCatalogoId));
+    const commercialModelMap = await resolverCommercialModelPadraoPorCatalogoIds(itensWithCalc.map((i) => i.servicoCatalogoId));
     await db.insert(propostaItens).values(
       itensWithCalc.map((item) => ({
         propostaId: id,
@@ -647,6 +693,7 @@ app.patch("/propostas/:id", async (c) => {
         ordem: item.ordem,
         serviceFamily: item.servicoCatalogoId ? familyMap.get(item.servicoCatalogoId) || "UNKNOWN" : "UNKNOWN",
         revenueNature: mapTipoParaRevenueNature(item.tipo),
+        commercialModel: resolverCommercialModelDoItem({ overrideExplicito: item.commercialModel, servicoCatalogoId: item.servicoCatalogoId, catalogoDefaultMap: commercialModelMap }),
       }))
     );
 
@@ -728,14 +775,12 @@ app.post("/propostas/:id/enviar", async (c) => {
   });
 });
 
-// POST /propostas/:id/aceitar — enviada → aceita + cria contrato
+// POST /propostas/:id/aceitar — aceite MANUAL (vendedor), mesmo núcleo do
+// aceite público: forma os grupos comerciais e dispara contrato/checkout
+// por grupo, independentemente.
 app.post("/propostas/:id/aceitar", async (c) => {
   const ctx = await getCtx(c);
   const id = c.req.param("id");
-
-  const body = await c.req.json().catch(() => ({}));
-  const parsed = aceitarBodySchema.safeParse(body);
-  const avancarLead = parsed.success ? parsed.data.avancarLeadStatus : false;
 
   const [proposta] = await db
     .select()
@@ -744,18 +789,13 @@ app.post("/propostas/:id/aceitar", async (c) => {
     .limit(1);
 
   if (!proposta) return c.json({ error: "Proposta não encontrada" }, 404);
-  if (proposta.status !== "enviada") {
-    return c.json({ error: "Só é possível aceitar propostas enviadas" }, 400);
+  if (!["enviada", "ajuste_solicitado"].includes(proposta.status)) {
+    return c.json({ error: "Só é possível aceitar propostas enviadas (ou com ajuste solicitado)" }, 400);
   }
 
-  const { contratoId } = await marcarPropostaAceita({
-    proposta,
-    organizacaoId: ctx.organizacaoId,
-    userId: ctx.userId,
-    avancarLead,
-  });
+  const { grupos } = await marcarPropostaAceita({ proposta, organizacaoId: ctx.organizacaoId, userId: ctx.userId });
 
-  return c.json({ proposta: { ...proposta, status: "aceita", contratoId }, contratoId });
+  return c.json({ proposta: { ...proposta, status: "aceita" }, grupos });
 });
 
 // POST /propostas/:id/nova-versao — clone into new version
@@ -818,6 +858,7 @@ app.post("/propostas/:id/nova-versao", async (c) => {
         ordem: item.ordem,
         serviceFamily: item.serviceFamily,
         revenueNature: item.revenueNature,
+        commercialModel: item.commercialModel,
       }))
     );
   }

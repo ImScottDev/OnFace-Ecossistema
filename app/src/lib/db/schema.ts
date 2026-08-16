@@ -628,6 +628,25 @@ export const contratos = pgTable(
     semanticConfidence: text("semantic_confidence"),
     semanticEvidence: jsonb("semantic_evidence"),
     serviceFamily: text("service_family"),
+    // Commercial Core v2 (ADR-EXEC-021) — contrato passa a pertencer a um
+    // GRUPO comercial da proposta (não à proposta inteira): numa venda mista,
+    // o contrato do PABX não precisa esperar/travar o Callface AI sem
+    // fidelidade da mesma proposta.
+    grupoComercialId: uuid("grupo_comercial_id").references((): AnyPgColumn => propostaGrupoComercial.id),
+    templateId: uuid("template_id").references(() => contratoTemplates.id),
+    templateVersao: integer("template_versao"),
+    variaveisPreenchidas: jsonb("variaveis_preenchidas"),
+    // Texto já renderizado (template + variáveis) ANTES da assinatura — o
+    // que o cliente lê na página pública. documentoFinalUrl é o documento
+    // FINAL assinado (futuro, quando um provider real existir).
+    corpoGerado: text("corpo_gerado"),
+    documentoFinalUrl: text("documento_final_url"),
+    // SignatureProvider (ADR-EXEC-021) — status normalizado, provider-agnóstico.
+    // assinatura_status/assinado_* continuam sendo o armazenamento concreto
+    // do provider atual (aceite eletrônico simples); signature_status é o
+    // que qualquer provider futuro (DocuSign/Clicksign) também preenche.
+    signatureProviderRef: text("signature_provider_ref"),
+    signatureStatus: text("signature_status"), // contract_created|sent_for_signature|opened|signed|declined|expired|canceled
   },
   (table) => [
     index("idx_contratos_lead_id").on(table.leadId),
@@ -1082,7 +1101,17 @@ export const servicosCatalogo = pgTable(
     // PABX), outros vão direto pro pagamento (ex: Callface AI). Fica no
     // catálogo pra ser extensível sem tocar em código — ver
     // lib/crm/proposta-fluxo.ts (determinarProximoPasso).
+    // Legado — mantido por compat (dashboards/queries antigas), mas não é
+    // mais a fonte de verdade do fluxo pós-aceite. Ver commercialModelPadrao.
     requerContrato: boolean("requer_contrato").default(false).notNull(),
+    // Commercial Core v2 (ADR-EXEC-021): DEFAULT do modelo comercial pro
+    // item — não é mais propriedade fixa/única da família. A mesma família
+    // (ex: Callface AI) pode ser vendida sob modelos diferentes conforme a
+    // negociação (com ou sem fidelidade) — o vendedor pode sobrescrever isso
+    // por item na proposta (proposta_itens.commercial_model). Este campo é só
+    // a sugestão/default do catálogo.
+    // PAGAMENTO_DIRETO | CONTRATO_OBRIGATORIO | CONTRATO_FIDELIDADE_OPCIONAL
+    commercialModelPadrao: text("commercial_model_padrao").default("PAGAMENTO_DIRETO").notNull(),
     ativo: boolean("ativo").default(true).notNull(),
     ordem: integer("ordem").default(0).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -1172,6 +1201,12 @@ export const propostaItens = pgTable(
     semanticEvidence: jsonb("semantic_evidence"),
     serviceFamily: text("service_family"),
     zohoId: text("zoho_id"),
+    // Commercial Core v2 (ADR-EXEC-021): modelo comercial resolvido no
+    // momento da criação/edição do item (default do catálogo, sobrescrevível
+    // pelo vendedor) — nunca inferido de novo depois. É o que permite a
+    // MESMA família (ex: Callface AI) ter itens com modelos diferentes na
+    // mesma proposta.
+    commercialModel: text("commercial_model").notNull().default("PAGAMENTO_DIRETO"),
   },
   (table) => [
     index("idx_proposta_itens_proposta").on(table.propostaId),
@@ -2267,6 +2302,11 @@ export const oportunidadeItens = pgTable("oportunidade_itens", {
   origemLegado: text("origem_legado").notNull(), // contrato_item | proposta_item | manual
   contratoItemIdLegado: uuid("contrato_item_id_legado").references(() => contratoItens.id),
   propostaItemIdLegado: uuid("proposta_item_id_legado").references(() => propostaItens.id),
+  // Commercial Core v2 (ADR-EXEC-021) — herdado do proposta_item no momento
+  // do sync; grupoComercialId só existe depois do aceite (quando os grupos
+  // de fulfillment são formados), null em rascunho.
+  commercialModel: text("commercial_model"),
+  grupoComercialId: uuid("grupo_comercial_id").references((): AnyPgColumn => propostaGrupoComercial.id),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
@@ -2367,6 +2407,10 @@ export const comercialEvidencia = pgTable("comercial_evidencia", {
   tipo: text("tipo").notNull(),
   sourceRef: text("source_ref"), // id do contrato/assinatura/subscription que originou a evidência
   metadata: jsonb("metadata"),
+  // Commercial Core v2 (ADR-EXEC-021) — a que grupo comercial esta evidência
+  // pertence (venda mista: evidência do grupo AI é distinta da do grupo PABX).
+  // Nullable pra manter compat com evidência pré-existente sem grupo.
+  grupoComercialId: uuid("grupo_comercial_id").references((): AnyPgColumn => propostaGrupoComercial.id),
   verificadoPor: uuid("verificado_por").references(() => usuarios.id), // null = registrado automaticamente pelo sistema
   verificadoEm: timestamp("verificado_em", { withTimezone: true }).defaultNow().notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -2441,4 +2485,81 @@ export const eventOutbox = pgTable("event_outbox", {
   index("idx_event_outbox_status").on(table.status),
   index("idx_event_outbox_org").on(table.organizacaoId),
   index("idx_event_outbox_aggregate").on(table.aggregateType, table.aggregateId),
+]);
+
+// ═══════════════════════════════════════════════════════════════
+// Commercial Core v2 (ADR-EXEC-021) — Checkout como entidade própria +
+// Grupo Comercial (fulfillment independente por composição dentro da mesma
+// proposta/oportunidade) + Templates de Contrato.
+// ═══════════════════════════════════════════════════════════════
+
+export const checkouts = pgTable("checkouts", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+  propostaId: uuid("proposta_id").references(() => propostas.id).notNull(),
+  negocioId: uuid("negocio_id").references(() => negocios.id),
+  grupoComercialId: uuid("grupo_comercial_id").references((): AnyPgColumn => propostaGrupoComercial.id),
+  origem: text("origem").notNull(), // automatico_pos_aceite | manual_vendedor
+  criadoPorId: uuid("criado_por_id").references(() => usuarios.id), // só quando origem=manual_vendedor
+  stripeSessionId: text("stripe_session_id"),
+  stripeSubscriptionId: text("stripe_subscription_id"),
+  stripeCheckoutUrl: text("stripe_checkout_url"),
+  status: text("status").default("criado").notNull(), // criado | aberto | pago | falhou | expirado | cancelado
+  criadoEm: timestamp("criado_em", { withTimezone: true }).defaultNow().notNull(),
+  aberturaEm: timestamp("abertura_em", { withTimezone: true }),
+  completadoEm: timestamp("completado_em", { withTimezone: true }),
+  expiraEm: timestamp("expira_em", { withTimezone: true }),
+}, (table) => [
+  index("idx_checkouts_proposta").on(table.propostaId),
+  index("idx_checkouts_org").on(table.organizacaoId),
+  uniqueIndex("idx_checkouts_stripe_session").on(table.stripeSessionId).where(sql`stripe_session_id IS NOT NULL`),
+]);
+
+// Agrupa proposta_itens que compartilham o MESMO modelo comercial — cada
+// grupo tem estado PRÓPRIO e independente dos outros grupos da mesma
+// proposta (achado real do E2E anterior: "tem PABX na proposta, então tudo
+// espera PABX" quebra venda mista de verdade).
+export const propostaGrupoComercial = pgTable("proposta_grupo_comercial", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+  propostaId: uuid("proposta_id").references(() => propostas.id).notNull(),
+  negocioId: uuid("negocio_id").references(() => negocios.id),
+  oportunidadeId: uuid("oportunidade_id").references(() => oportunidades.id),
+  commercialModel: text("commercial_model").notNull(), // PAGAMENTO_DIRETO | CONTRATO_OBRIGATORIO | CONTRATO_FIDELIDADE_OPCIONAL
+  status: text("status").default("aguardando_aceite").notNull(),
+  // aguardando_aceite | aguardando_contrato | contrato_enviado_assinatura |
+  // contrato_assinado | aguardando_checkout | checkout_gerado |
+  // pagamento_pendente | pago | concluido | falhou
+  contratoId: uuid("contrato_id").references(() => contratos.id),
+  checkoutId: uuid("checkout_id").references(() => checkouts.id),
+  concluidoEm: timestamp("concluido_em", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("idx_grupo_comercial_proposta").on(table.propostaId),
+  index("idx_grupo_comercial_negocio").on(table.negocioId),
+  index("idx_grupo_comercial_status").on(table.organizacaoId, table.status),
+]);
+
+export const propostaGrupoComercialItens = pgTable("proposta_grupo_comercial_itens", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  grupoId: uuid("grupo_id").references(() => propostaGrupoComercial.id, { onDelete: "cascade" }).notNull(),
+  propostaItemId: uuid("proposta_item_id").references(() => propostaItens.id).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("idx_grupo_itens_proposta_item").on(table.propostaItemId),
+  index("idx_grupo_itens_grupo").on(table.grupoId),
+]);
+
+export const contratoTemplates = pgTable("contrato_templates", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+  nome: text("nome").notNull(),
+  versao: integer("versao").default(1).notNull(),
+  commercialModel: text("commercial_model"), // null = genérico, aplica a qualquer modelo
+  corpoTemplate: text("corpo_template").notNull(), // texto com {{variavel}} — substituição simples
+  ativo: boolean("ativo").default(true).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("idx_contrato_templates_org").on(table.organizacaoId, table.ativo),
 ]);

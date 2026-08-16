@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { db } from "@/lib/db";
-import { negocios, leads, empresas, negocioLeads, usuarios, pipelines, propostas, propostaItens, contratos, atividades, statusChanges, notas, reunioes, labels, negocioLabels, leadLabels, notificacoes, oportunidades, oportunidadeItens, comercialEvidencia } from "@/lib/db/schema";
+import { negocios, leads, empresas, negocioLeads, usuarios, pipelines, propostas, propostaItens, contratos, atividades, statusChanges, notas, reunioes, labels, negocioLabels, leadLabels, notificacoes, oportunidades, oportunidadeItens, comercialEvidencia, propostaGrupoComercial } from "@/lib/db/schema";
 import { desc, asc, eq, ilike, and, or, SQL, count, inArray, notInArray, gte, lte, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { resolveFollowupOwnerId } from "@/lib/crm/sdr-escalation";
@@ -338,11 +338,14 @@ app.get("/negocios/:id", async (c) => {
   // + evidências de Won — pra tela de negócio no App Shell novo enxergar a
   // composição real (família/natureza por item) sem recalcular nada aqui.
   const [oportunidade] = await db.select({ id: oportunidades.id }).from(oportunidades).where(eq(oportunidades.negocioIdLegado, id)).limit(1);
-  const [composicaoComercial, evidenciasComerciais] = await Promise.all([
+  const [composicaoComercial, evidenciasComerciais, gruposComerciais] = await Promise.all([
     oportunidade
       ? db.select().from(oportunidadeItens).where(eq(oportunidadeItens.oportunidadeId, oportunidade.id)).orderBy(desc(oportunidadeItens.createdAt))
       : Promise.resolve([]),
     db.select().from(comercialEvidencia).where(eq(comercialEvidencia.negocioId, id)).orderBy(desc(comercialEvidencia.verificadoEm)),
+    // Commercial Core v2 (ADR-EXEC-021): fulfillment por grupo — só existem
+    // depois do aceite; venda mista tem estado independente por grupo.
+    db.select().from(propostaGrupoComercial).where(eq(propostaGrupoComercial.negocioId, id)).orderBy(desc(propostaGrupoComercial.createdAt)),
   ]);
 
   return c.json({
@@ -360,6 +363,7 @@ app.get("/negocios/:id", async (c) => {
       oportunidadeId: oportunidade?.id ?? null,
       itens: composicaoComercial,
       evidencias: evidenciasComerciais,
+      grupos: gruposComerciais,
     },
   });
 });

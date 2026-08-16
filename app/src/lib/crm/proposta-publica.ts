@@ -1,35 +1,30 @@
 /**
- * Ações da página pública da proposta (cliente sem conta no CRM) — mesmo
- * modelo de confiança do PDF/checkout já existentes (UUID não-enumerável,
- * sem auth). Pedido do Kauã (10/08): a proposta precisa ser um fluxo
- * comercial de ponta a ponta, não uma tela de PDF — então "aceitar" aqui
- * NUNCA é sinônimo direto de Won:
+ * Commercial Core v2 (ADR-EXEC-021) — Ações da página pública da proposta.
  *
- *  - Caminho "pagamento" (ex: Callface AI): aceitar só registra a intenção
- *    e manda pro checkout Stripe já existente. Won continua exigindo
- *    evidência real (pagamento confirmado via webhook) — ADR-EXEC-007.
- *  - Caminho "contrato" (ex: PABX): aceitar cria um contrato PENDENTE de
- *    assinatura. Só quando o cliente assina (aceite eletrônico simples,
- *    ver nota de decisão pendente) é que o negócio vira Won de verdade,
- *    com a mesma evidência `signed_contract` que o caminho de pagamento já
- *    usa (ADR-EXEC-012) — só desloca o ponto em que ela é real.
+ * Aceitar NUNCA é sinônimo de Won — só forma os grupos comerciais e dispara
+ * o requisito real de cada um (contrato ou checkout), ver
+ * lib/crm/proposta-aceite.ts. Won só acontece com evidência real
+ * (contrato assinado ou pagamento confirmado — lib/crm/won-evidence.ts).
+ *
+ * "Aceitar" != "abrir o link" (ProposalOpened != ProposalViewed != ProposalAccepted)
+ * e "Solicitar ajuste" NUNCA encerra a proposta nem sobrescreve versão —
+ * só sinaliza status="ajuste_solicitado" e avisa o responsável.
  */
 import { db } from "@/lib/db";
-import { propostas, propostaItens, leads, negocios, contratos, atividades, statusChanges, tarefas } from "@/lib/db/schema";
+import { propostas, atividades, contratos } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { publicarEvento } from "@/lib/events/outbox";
 import { notificarPropostaRespondida } from "@/lib/crm/notificar-proposta";
-import { notificarNegocioGanho } from "@/lib/crm/notificar";
 import { syncNegocioValoresFromPropostas } from "@/lib/crm/sync-negocio-valores";
-import { syncOportunidadeFromNegocio, syncPessoaFromLead } from "@/lib/crm/sync-domain-model";
-import { registrarEvidencia } from "@/lib/crm/won-evidence";
-import { determinarProdutoProposta, determinarProximoPasso } from "@/lib/crm/proposta-fluxo";
-import { syncOportunidadeItensFromProposta } from "@/lib/crm/composicao-comercial";
-import { materializarServicosCanonicosDoNegocio } from "@/lib/crm/servico-canonico";
+import { processarAceiteDaProposta, type ResultadoGrupoAceite } from "@/lib/crm/proposta-aceite";
+import { marcarContratoAssinadoNoGrupo } from "@/lib/crm/grupo-comercial";
+import { registrarEvidencia, marcarNegocioGanhoSeAindaNao } from "@/lib/crm/won-evidence";
+import { getSignatureProvider } from "@/lib/crm/signature";
+import { criarCheckoutParaGrupo } from "@/lib/crm/checkout";
 
 type PropostaRow = typeof propostas.$inferSelect;
 
-/** Chamado a cada GET da página pública. Só publica evento no primeiro view real. */
+/** Chamado a cada GET da página pública. ProposalOpened em TODA visita; ProposalViewed só na 1ª (evento distinto — abertura do link != decisão do cliente). */
 export async function registrarVisualizacao(proposta: PropostaRow): Promise<void> {
   const primeiraVez = !proposta.primeiraVisualizacaoEm;
   await db
@@ -40,6 +35,11 @@ export async function registrarVisualizacao(proposta: PropostaRow): Promise<void
       ultimaVisualizacaoEm: new Date(),
     })
     .where(eq(propostas.id, proposta.id));
+
+  await publicarEvento({
+    organizacaoId: proposta.organizacaoId, eventType: "ProposalOpened", aggregateType: "proposta", aggregateId: proposta.id,
+    payload: { propostaId: proposta.id, negocioId: proposta.negocioId },
+  });
 
   if (primeiraVez) {
     await publicarEvento({
@@ -52,91 +52,16 @@ export async function registrarVisualizacao(proposta: PropostaRow): Promise<void
   }
 }
 
-export async function aceitarPropostaPublica(
-  proposta: PropostaRow,
-): Promise<{ ok: true; proximoPasso: "pagamento" | "contrato"; checkoutUrl?: string | null } | { ok: false; error: string }> {
-  if (proposta.status !== "enviada") return { ok: false, error: "Essa proposta não está mais aguardando resposta." };
-
-  const itens = await db.select().from(propostaItens).where(eq(propostaItens.propostaId, proposta.id));
-  const proximoPasso = proposta.proximoPasso === "contrato" || proposta.proximoPasso === "pagamento"
-    ? proposta.proximoPasso
-    : await determinarProximoPasso(itens);
-
-  await db.update(propostas).set({ clienteRespondeuEm: new Date(), updatedAt: new Date() }).where(eq(propostas.id, proposta.id));
-
-  await publicarEvento({
-    organizacaoId: proposta.organizacaoId,
-    eventType: "ProposalAccepted",
-    aggregateType: "proposta",
-    aggregateId: proposta.id,
-    payload: { propostaId: proposta.id, negocioId: proposta.negocioId, proximoPasso },
-  });
-
-  // Composição comercial reflete o que foi de fato aceito, nos dois caminhos.
-  await syncOportunidadeItensFromProposta(proposta.id);
-
-  if (proximoPasso === "pagamento") {
-    await notificarPropostaRespondida({
-      propostaId: proposta.id, negocioId: proposta.negocioId, leadId: proposta.leadId,
-      numero: proposta.numero, versao: proposta.versao, tipo: "aceita",
-      motivo: "Cliente aceitou e foi direcionado para o pagamento.",
-    });
-    await publicarEvento({
-      organizacaoId: proposta.organizacaoId,
-      eventType: "PaymentStarted",
-      aggregateType: "proposta",
-      aggregateId: proposta.id,
-      payload: { propostaId: proposta.id, negocioId: proposta.negocioId, checkoutUrl: proposta.checkoutUrl ?? null },
-    });
-    return { ok: true, proximoPasso, checkoutUrl: proposta.checkoutUrl };
-  }
-
-  // Caminho contrato: status já reflete aceite comercial (não é Won ainda).
-  await db.update(propostas).set({ status: "aceita", updatedAt: new Date() }).where(eq(propostas.id, proposta.id));
-
-  const produto = await determinarProdutoProposta(itens);
-  const totalRecorrente = parseFloat(proposta.totalRecorrente || "0");
-  const setupTotal = itens.filter((i) => i.tipo === "setup").reduce((s, i) => s + parseFloat(i.subtotal || "0"), 0);
-
-  const [contrato] = await db
-    .insert(contratos)
-    .values({
-      organizacaoId: proposta.organizacaoId,
-      leadId: proposta.leadId,
-      negocioId: proposta.negocioId,
-      tipo: itens.length > 0 ? itens[0].nome : "proposta",
-      descricao: `Gerado da proposta #P-${String(proposta.numero).padStart(3, "0")}-v${proposta.versao} — aguardando assinatura`,
-      moeda: proposta.moeda || "BRL",
-      mrr: totalRecorrente > 0 ? totalRecorrente.toFixed(2) : undefined,
-      valorSetup: setupTotal > 0 ? setupTotal.toFixed(2) : undefined,
-      servicos: itens.map((i) => i.nome),
-      status: "pendente_assinatura",
-      produto,
-      assinaturaStatus: "pendente",
-    })
-    .returning();
-
-  await db.update(propostas).set({ contratoId: contrato.id }).where(eq(propostas.id, proposta.id));
-
-  await notificarPropostaRespondida({
-    propostaId: proposta.id, negocioId: proposta.negocioId, leadId: proposta.leadId,
-    numero: proposta.numero, versao: proposta.versao, tipo: "aceita",
-    motivo: "Cliente aceitou — aguardando assinatura do contrato.",
-  });
-
-  await publicarEvento({
-    organizacaoId: proposta.organizacaoId,
-    eventType: "ContractRequired",
-    aggregateType: "contrato",
-    aggregateId: contrato.id,
-    payload: { propostaId: proposta.id, negocioId: proposta.negocioId, produto },
-  });
-
-  return { ok: true, proximoPasso };
+export async function aceitarPropostaPublica(proposta: PropostaRow): Promise<
+  { ok: true; grupos: ResultadoGrupoAceite[] } | { ok: false; error: string }
+> {
+  return processarAceiteDaProposta({ propostaId: proposta.id, organizacaoId: proposta.organizacaoId, origem: "publico" });
 }
 
 export async function recusarPropostaPublica(proposta: PropostaRow, motivo?: string): Promise<{ ok: true } | { ok: false; error: string }> {
-  if (proposta.status !== "enviada") return { ok: false, error: "Essa proposta não está mais aguardando resposta." };
+  if (!["enviada", "ajuste_solicitado"].includes(proposta.status)) {
+    return { ok: false, error: "Essa proposta não está mais aguardando resposta." };
+  }
 
   await db.update(propostas).set({
     status: "recusada", clienteRespondeuEm: new Date(), motivoRecusa: motivo || null, updatedAt: new Date(),
@@ -169,7 +94,16 @@ export async function recusarPropostaPublica(proposta: PropostaRow, motivo?: str
   return { ok: true };
 }
 
+/**
+ * NÃO encerra a proposta — status vira "ajuste_solicitado" (continua
+ * respondível: cliente pode aceitar a mesma versão depois, ou o vendedor
+ * cria nova-versao). Nunca sobrescreve silenciosamente a versão atual.
+ */
 export async function solicitarAjustePropostaPublica(proposta: PropostaRow, mensagem: string): Promise<void> {
+  if (!["enviada", "ajuste_solicitado"].includes(proposta.status)) return;
+
+  await db.update(propostas).set({ status: "ajuste_solicitado", updatedAt: new Date() }).where(eq(propostas.id, proposta.id));
+
   await db.insert(atividades).values({
     organizacaoId: proposta.organizacaoId,
     leadId: proposta.leadId,
@@ -180,6 +114,11 @@ export async function solicitarAjustePropostaPublica(proposta: PropostaRow, mens
     dados: { propostaId: proposta.id, acao: "ajuste_solicitado", mensagem },
   });
 
+  await publicarEvento({
+    organizacaoId: proposta.organizacaoId, eventType: "ProposalAdjustmentRequested", aggregateType: "proposta", aggregateId: proposta.id,
+    payload: { propostaId: proposta.id, negocioId: proposta.negocioId, mensagem },
+  });
+
   await notificarPropostaRespondida({
     propostaId: proposta.id, negocioId: proposta.negocioId, leadId: proposta.leadId,
     numero: proposta.numero, versao: proposta.versao, tipo: "ajuste_solicitado", motivo: mensagem,
@@ -187,109 +126,53 @@ export async function solicitarAjustePropostaPublica(proposta: PropostaRow, mens
 }
 
 /**
- * Aceite eletrônico simples (nome + IP + timestamp) — NÃO é assinatura
- * digital qualificada, não existe integração real ainda (DocuSign/Clicksign
- * etc — Kauã está avaliando opções, 10/08). Documentado em
- * crm2-decisoes-pendentes.md. É honesto sobre o que é: desbloqueia o fluxo
- * PABX sem fingir uma validação jurídica que o sistema não tem.
- *
- * Este é o ponto real em que o negócio vira Won pro caminho "contrato" —
- * mesma evidência (`signed_contract`) que o caminho de pagamento já usa,
- * só que aqui é genuína (assinatura), não inferida do clique de aceite.
+ * Aceite eletrônico simples via SignatureProvider ativo — assina UM contrato
+ * específico (uma proposta mista pode ter mais de um contrato, um por grupo
+ * que exige). Won só é avaliado/marcado DEPOIS da assinatura real (nunca
+ * antes) — ver won-evidence.ts::marcarNegocioGanhoSeAindaNao.
  */
-export async function assinarContratoPublico(
-  proposta: PropostaRow,
-  nomeCompleto: string,
-  ip: string,
-): Promise<{ ok: true } | { ok: false; error: string }> {
-  if (!proposta.contratoId) return { ok: false, error: "Nenhum contrato pendente pra essa proposta." };
-
-  const [contrato] = await db.select().from(contratos).where(eq(contratos.id, proposta.contratoId)).limit(1);
+export async function assinarContratoPublico(contratoId: string, nomeCompleto: string, ip: string): Promise<{ ok: true; checkoutUrl?: string | null } | { ok: false; error: string }> {
+  const [contrato] = await db.select().from(contratos).where(eq(contratos.id, contratoId)).limit(1);
   if (!contrato || contrato.assinaturaStatus !== "pendente") {
     return { ok: false, error: "Esse contrato não está aguardando assinatura." };
   }
+  if (!contrato.grupoComercialId) return { ok: false, error: "Contrato sem grupo comercial vinculado (dado inconsistente)." };
 
-  await db.update(contratos).set({
-    status: "ativo",
-    assinaturaStatus: "aceite_simples",
-    assinadoEm: new Date(),
-    assinadoNome: nomeCompleto,
-    assinadoIp: ip,
-    inicio: new Date().toISOString().split("T")[0],
-    updatedAt: new Date(),
-  }).where(eq(contratos.id, contrato.id));
+  const provider = getSignatureProvider();
+  await provider.confirmarAssinatura({ providerRef: contrato.signatureProviderRef || contrato.id, nomeSignatario: nomeCompleto, ip });
 
   await publicarEvento({
-    organizacaoId: proposta.organizacaoId,
-    eventType: "ContractSigned",
-    aggregateType: "contrato",
-    aggregateId: contrato.id,
-    payload: { propostaId: proposta.id, negocioId: proposta.negocioId, assinaturaSimples: true },
+    organizacaoId: contrato.organizacaoId, eventType: "ContractSigned", aggregateType: "contrato", aggregateId: contrato.id,
+    payload: { negocioId: contrato.negocioId, grupoComercialId: contrato.grupoComercialId, assinaturaSimples: true },
     idempotencyKey: `contract-signed:${contrato.id}`,
   });
 
-  const negocioId = proposta.negocioId;
-  if (negocioId) {
-    const [neg] = await db.select().from(negocios).where(eq(negocios.id, negocioId)).limit(1);
-    const totalRecorrente = parseFloat(proposta.totalRecorrente || "0");
+  await marcarContratoAssinadoNoGrupo(contrato.grupoComercialId);
 
-    await db.update(negocios).set({
-      status: "ganho",
-      ganhoAt: new Date(),
-      mrrFechado: totalRecorrente > 0 ? totalRecorrente.toFixed(2) : undefined,
-      updatedAt: new Date(),
-    }).where(eq(negocios.id, negocioId));
-
-    await db.insert(statusChanges).values({
-      leadId: proposta.leadId,
-      negocioId,
-      deStatus: neg?.status || "proposta_apresentada",
-      paraStatus: "ganho",
-      motivo: "Contrato assinado (aceite eletrônico simples)",
-    });
-
-    await db.update(leads).set({ tipo: "cliente", clienteDesde: new Date(), updatedAt: new Date() }).where(eq(leads.id, proposta.leadId));
-
+  if (contrato.negocioId) {
     await registrarEvidencia({
-      negocioId, organizacaoId: proposta.organizacaoId, tipo: "signed_contract",
-      sourceRef: contrato.id, metadata: { propostaId: proposta.id, assinaturaSimples: true },
+      negocioId: contrato.negocioId, organizacaoId: contrato.organizacaoId, tipo: "signed_contract",
+      sourceRef: contrato.id, grupoComercialId: contrato.grupoComercialId, metadata: { assinaturaSimples: true },
     });
-
-    await notificarNegocioGanho(negocioId);
-    await syncNegocioValoresFromPropostas(negocioId);
-    await syncPessoaFromLead(proposta.leadId);
-    await syncOportunidadeFromNegocio(negocioId);
-
-    // Commercial Core (ADR-EXEC-020): composição comercial + serviço
-    // canônico — best-effort, roda DEPOIS do negócio já estar ganho de
-    // verdade (contrato assinado é a evidência real, já registrada acima).
-    await syncOportunidadeItensFromProposta(proposta.id);
-    await materializarServicosCanonicosDoNegocio({
-      negocioId,
-      organizacaoId: proposta.organizacaoId,
-      contratoId: contrato.id,
-      wonAt: new Date(),
-      stripeSubscriptionId: null, // caminho contrato nunca tem assinatura Stripe por trás
-    });
-
-    // Sem billing automático pra PABX ainda (gap real, não fingir automação) —
-    // cria tarefa explícita pro time cobrar manualmente.
-    if (neg?.responsavelId) {
-      const amanha = new Date();
-      amanha.setDate(amanha.getDate() + 1);
-      await db.insert(tarefas).values({
-        organizacaoId: proposta.organizacaoId,
-        leadId: proposta.leadId,
-        negocioId,
-        usuarioId: neg.responsavelId,
-        titulo: `Cobrar ${neg.titulo} — contrato assinado, sem billing automático (PABX)`,
-        descricao: "Contrato PABX assinado eletronicamente. Não há integração de cobrança automática pra esse produto ainda — seguir cobrança manual.",
-        tipo: "cobranca_manual",
-        prioridade: "alta",
-        dataVencimento: amanha.toISOString().split("T")[0],
-      });
-    }
+    await marcarNegocioGanhoSeAindaNao(contrato.negocioId, contrato.organizacaoId);
+    await syncNegocioValoresFromPropostas(contrato.negocioId);
   }
 
-  return { ok: true };
+  // Seção 10 do briefing: PABX/White Label também faturam via Stripe agora
+  // (não mais só cobrança manual) — tenta gerar o checkout automaticamente;
+  // se falhar (catálogo sem stripeProductId configurado, etc), o grupo fica
+  // em aguardando_checkout e o vendedor pode gerar manualmente depois.
+  let checkoutUrl: string | null = null;
+  const checkoutResult = await criarCheckoutParaGrupo({ grupoId: contrato.grupoComercialId, origem: "automatico_pos_aceite" });
+  if (checkoutResult.ok) {
+    checkoutUrl = checkoutResult.url;
+    await publicarEvento({
+      organizacaoId: contrato.organizacaoId, eventType: "PaymentStarted", aggregateType: "checkout", aggregateId: checkoutResult.checkoutId,
+      payload: { negocioId: contrato.negocioId, grupoComercialId: contrato.grupoComercialId, checkoutUrl },
+    });
+  } else {
+    console.error(`[proposta-publica] checkout automático pós-assinatura falhou pro grupo ${contrato.grupoComercialId}: ${checkoutResult.error}`);
+  }
+
+  return { ok: true, checkoutUrl };
 }
