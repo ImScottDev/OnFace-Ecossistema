@@ -221,6 +221,8 @@ export async function syncOportunidadeFromNegocio(negocioId: string): Promise<vo
       ganhoAt: negocio.ganhoAt,
       perdidoAt,
       motivoPerda: negocio.motivoPerda,
+      // Commercial Core v3 (ADR-EXEC-022) — espelha o bundle (oportunidades irmãs da mesma negociação).
+      bundleId: negocio.bundleId,
       updatedAt: new Date(),
     };
 

@@ -1,8 +1,10 @@
 /**
- * E2E do Commercial Core v2 (ADR-EXEC-021) — cenários A-J pedidos pelo Kauã.
- * Roda contra o DB local (callface_crm), chamando as funções REAIS de
- * negócio (não HTTP, não mock de domínio). Cria dados isolados (prefixo
- * "[E2E]"), limpa resíduo de rodadas anteriores, idempotente.
+ * E2E do Commercial Core (ADR-EXEC-020/021/022) — cenários A-J + E2/E3
+ * (AI ganho + PABX perdido / todas perdidas) pedidos pelo Kauã. Roda contra
+ * o DB local (callface_crm), chamando as funções REAIS de negócio (não
+ * HTTP, não mock de domínio). Cria dados isolados (prefixo "[E2E]"), limpa
+ * resíduo de rodadas anteriores, idempotente (rodado 3x nesta sessão, 44/44
+ * estável).
  *
  * Limitação conhecida do sandbox: STRIPE_API_KEY está vazia neste .env local
  * (intencional — evita puxar billing real). Toda vez que o código tentaria
@@ -21,7 +23,7 @@ import { sql, eq, and } from "drizzle-orm";
 import {
   organizacoes, usuarios, leads, negocios, propostas, propostaItens,
   servicosCatalogo, oportunidades, oportunidadeItens, servicosCanonicos,
-  contratos, propostaGrupoComercial, checkouts, eventOutbox,
+  contratos, propostaGrupoComercial, checkouts, eventOutbox, statusChanges,
 } from "@/lib/db/schema";
 import { processarAceiteDaProposta } from "@/lib/crm/proposta-aceite";
 import { assinarContratoPublico, recusarPropostaPublica, solicitarAjustePropostaPublica } from "@/lib/crm/proposta-publica";
@@ -32,6 +34,8 @@ import { vincularCheckoutAoGrupo, concluirGrupo } from "@/lib/crm/grupo-comercia
 import { materializarServicosCanonicosDoGrupo } from "@/lib/crm/servico-canonico";
 import { processarEventosPendentes } from "@/lib/events/consumer";
 import { publicarEvento } from "@/lib/events/outbox";
+import { organizarVendaMultiLinha, listarOportunidadesIrmas } from "@/lib/crm/oportunidade-bundle";
+import type { ItemEntrada } from "@/lib/crm/proposta-criacao";
 
 type Resultado = { cenario: string; ok: boolean; detalhe: string };
 const resultados: Resultado[] = [];
@@ -44,6 +48,18 @@ async function criarLeadNegocio(org: string, user: string, titulo: string) {
   const [lead] = await db.insert(leads).values({ organizacaoId: org, nome: `[E2E] ${titulo}`, tipo: "lead", responsavelId: user }).returning();
   const [negocio] = await db.insert(negocios).values({ organizacaoId: org, leadId: lead.id, titulo: `[E2E] ${titulo}`, status: "proposta_apresentada", responsavelId: user }).returning();
   return { lead, negocio };
+}
+
+async function criarLeadSemNegocio(org: string, user: string, titulo: string) {
+  const [lead] = await db.insert(leads).values({ organizacaoId: org, nome: `[E2E] ${titulo}`, tipo: "lead", responsavelId: user }).returning();
+  return lead;
+}
+
+function itemEntrada(catalogo: typeof servicosCatalogo.$inferSelect, valorUnitario?: number): ItemEntrada {
+  return {
+    servicoCatalogoId: catalogo.id, nome: catalogo.nome, tipo: catalogo.tipo as "recorrente" | "avulso" | "setup",
+    quantidade: 1, valorUnitario: valorUnitario ?? parseFloat(catalogo.valorSugerido || "0"), desconto: 0, descontoTipo: "percentual",
+  };
 }
 
 async function criarPropostaComItens(org: string, user: string, leadId: string, negocioId: string, itens: { catalogo: typeof servicosCatalogo.$inferSelect; quantidade?: number; valorUnitario?: number; commercialModelOverride?: string }[]) {
@@ -129,6 +145,9 @@ async function main() {
   await db.execute(sql`delete from atividades where negocio_id in (select id from negocios where titulo like '[E2E]%')`);
   await db.execute(sql`delete from tarefas where negocio_id in (select id from negocios where titulo like '[E2E]%')`);
   await db.execute(sql`delete from negocios where titulo like '[E2E]%'`);
+  // Commercial Core v3 (ADR-EXEC-022) — bundle referenciado por negocios.bundle_id
+  // (já deletados acima) e oportunidades.bundle_id (dual-write, também limpo antes).
+  await db.execute(sql`delete from oportunidade_bundle where lead_id in (select id from leads where nome like '[E2E]%')`);
   await db.execute(sql`delete from pontos_contato where pessoa_id in (select id from pessoas where lead_id_legado in (select id from leads where nome like '[E2E]%'))`);
   await db.execute(sql`delete from clientes where lead_id_legado in (select id from leads where nome like '[E2E]%')`);
   await db.execute(sql`delete from pessoas where lead_id_legado in (select id from leads where nome like '[E2E]%')`);
@@ -222,38 +241,94 @@ async function main() {
     checar("D4. White Label — setup NUNCA vira MRR", parseFloat(servicoSetup?.currentRecurringValue || "-1") === 0, `crv setup=${servicoSetup?.currentRecurringValue}`);
   }
 
-  // ── E. Venda MISTA — AI sem contrato + PABX contratual, estados INDEPENDENTES ──
+  // ── E. AI + PABX — DUAS oportunidades relacionadas (ADR-EXEC-022), não 1 mista ──
   {
-    const { lead, negocio } = await criarLeadNegocio(org.id, user.id, "E - Mista independente");
-    const proposta = await criarPropostaComItens(org.id, user.id, lead.id, negocio.id, [{ catalogo: catAi }, { catalogo: catPabx, valorUnitario: 450 }]);
-    const aceite = await processarAceiteDaProposta({ propostaId: proposta.id, organizacaoId: org.id, origem: "publico" });
-    checar("E1. Mista — 2 grupos distintos (não 'tem PABX então tudo espera PABX')", aceite.ok && aceite.grupos.length === 2, aceite.ok ? JSON.stringify(aceite.grupos) : aceite.error);
-    const grupoAi = aceite.ok ? aceite.grupos.find((g) => g.commercialModel === "PAGAMENTO_DIRETO")! : null;
-    const grupoPabx = aceite.ok ? aceite.grupos.find((g) => g.commercialModel === "CONTRATO_OBRIGATORIO")! : null;
-    checar("E2. Mista — grupo AI vai pra pagamento, grupo PABX vai pra contrato, no MESMO aceite", grupoAi?.proximoPasso === "pagamento" && grupoPabx?.proximoPasso === "contrato", `AI=${grupoAi?.proximoPasso} PABX=${grupoPabx?.proximoPasso}`);
+    const lead = await criarLeadSemNegocio(org.id, user.id, "E - AI+PABX bundle");
+    const itensPorFamilia = new Map<string, ItemEntrada[]>([
+      ["CALLFACE_AI", [itemEntrada(catAi)]],
+      ["PABX", [itemEntrada(catPabx, 450)]],
+    ]);
+    const { bundleId, oportunidades } = await organizarVendaMultiLinha({
+      organizacaoId: org.id, leadId: lead.id, responsavelId: user.id, negocioBaseId: null,
+      itensPorFamilia, moeda: "BRL", criadoPorId: user.id,
+    });
+    checar("E1. AI+PABX — 2 oportunidades relacionadas pelo MESMO bundle (não 1 negócio misto)", oportunidades.length === 2 && !!bundleId, JSON.stringify(oportunidades.map((o) => ({ family: o.family, negocioId: o.negocioId }))));
+    const opAi = oportunidades.find((o) => o.family === "CALLFACE_AI")!;
+    const opPabx = oportunidades.find((o) => o.family === "PABX")!;
+    checar("E2. AI+PABX — negócios distintos, títulos próprios", opAi.negocioId !== opPabx.negocioId, `AI=${opAi.negocioId} PABX=${opPabx.negocioId}`);
 
-    // Só o grupo AI é pago — PABX fica pra trás, sem travar nada.
-    const checkoutAi = await simularCheckoutCriado(grupoAi!.grupoId, negocio.id, proposta.id, org.id);
-    await simularPagamentoConfirmado(checkoutAi.id, negocio.id, grupoAi!.grupoId, org.id);
+    // Aceite/pagamento do AI, independente do PABX.
+    await db.update(propostas).set({ status: "enviada", enviadaEm: new Date() }).where(eq(propostas.id, opAi.propostaId));
+    const aceiteAi = await processarAceiteDaProposta({ propostaId: opAi.propostaId, organizacaoId: org.id, origem: "publico" });
+    checar("E3. AI — 1 grupo PAGAMENTO_DIRETO dentro da SUA própria oportunidade", aceiteAi.ok && aceiteAi.grupos.length === 1 && aceiteAi.grupos[0].commercialModel === "PAGAMENTO_DIRETO", aceiteAi.ok ? JSON.stringify(aceiteAi.grupos) : aceiteAi.error);
+    const checkoutAi = await simularCheckoutCriado(aceiteAi.ok ? aceiteAi.grupos[0].grupoId : "", opAi.negocioId, opAi.propostaId, org.id);
+    await simularPagamentoConfirmado(checkoutAi.id, opAi.negocioId, aceiteAi.ok ? aceiteAi.grupos[0].grupoId : "", org.id);
 
-    const [negocioAposAiPago] = await db.select({ status: negocios.status }).from(negocios).where(eq(negocios.id, negocio.id)).limit(1);
-    checar("E3. Mista — negócio já GANHO com só o AI pago (evidência real já existe)", negocioAposAiPago.status === "ganho", `status=${negocioAposAiPago.status}`);
-    const [grupoPabxStatus] = await db.select({ status: propostaGrupoComercial.status }).from(propostaGrupoComercial).where(eq(propostaGrupoComercial.id, grupoPabx!.grupoId)).limit(1);
-    checar("E4. Mista — grupo PABX NÃO foi concluído indevidamente (ainda aguardando contrato)", grupoPabxStatus.status === "aguardando_contrato" || grupoPabxStatus.status === "contrato_enviado_assinatura", `status=${grupoPabxStatus.status}`);
-    const itensPabxOp = await db.select().from(oportunidadeItens).where(eq(oportunidadeItens.grupoComercialId, grupoPabx!.grupoId));
-    checar("E5. Mista — item PABX ainda SEM serviço canônico (não materializou o que não foi cumprido)", itensPabxOp.every((i) => !i.servicoCanonicoId), `pendentes=${itensPabxOp.filter((i) => !i.servicoCanonicoId).length}/${itensPabxOp.length}`);
-    const itensAiOp = await db.select().from(oportunidadeItens).where(eq(oportunidadeItens.grupoComercialId, grupoAi!.grupoId));
-    checar("E6. Mista — item AI JÁ tem serviço canônico (o que foi cumprido, materializou)", itensAiOp.every((i) => !!i.servicoCanonicoId), `materializados=${itensAiOp.filter((i) => !!i.servicoCanonicoId).length}/${itensAiOp.length}`);
+    const [negAi] = await db.select({ status: negocios.status }).from(negocios).where(eq(negocios.id, opAi.negocioId)).limit(1);
+    checar("E4. Oportunidade AI = GANHO", negAi.status === "ganho", `status=${negAi.status}`);
+    const [negPabxAntes] = await db.select({ status: negocios.status }).from(negocios).where(eq(negocios.id, opPabx.negocioId)).limit(1);
+    checar("E5. Oportunidade PABX continua OPEN — NÃO fecha prematuramente por causa do AI", negPabxAntes.status !== "ganho" && negPabxAntes.status !== "perdido", `status=${negPabxAntes.status}`);
 
-    // Fecha o PABX também, pra confirmar que o segundo grupo materializa depois, sem duplicar o que o AI já fez.
-    const [grupoPabxRow] = await db.select().from(propostaGrupoComercial).where(eq(propostaGrupoComercial.id, grupoPabx!.grupoId)).limit(1);
-    if (grupoPabxRow.contratoId) {
-      await assinarContratoPublico(grupoPabxRow.contratoId, "Fulano de Tal", "127.0.0.1");
-      const checkoutPabx = await simularCheckoutCriado(grupoPabx!.grupoId, negocio.id, proposta.id, org.id);
-      await simularPagamentoConfirmado(checkoutPabx.id, negocio.id, grupoPabx!.grupoId, org.id);
+    const irmasDeAi = await listarOportunidadesIrmas(opAi.negocioId);
+    checar("E6. Oportunidades permanecem relacionadas historicamente (mesmo bundle)", irmasDeAi.length === 2, `irmas=${irmasDeAi.length}`);
+
+    // Aceite/contrato/pagamento do PABX, depois — independente, sem duplicar o que o AI já fez.
+    await db.update(propostas).set({ status: "enviada", enviadaEm: new Date() }).where(eq(propostas.id, opPabx.propostaId));
+    const aceitePabx = await processarAceiteDaProposta({ propostaId: opPabx.propostaId, organizacaoId: org.id, origem: "publico" });
+    const grupoPabxId = aceitePabx.ok ? aceitePabx.grupos[0].grupoId : "";
+    const [grupoPabxRow] = await db.select().from(propostaGrupoComercial).where(eq(propostaGrupoComercial.id, grupoPabxId)).limit(1);
+    await assinarContratoPublico(grupoPabxRow.contratoId!, "Fulano de Tal", "127.0.0.1");
+    const checkoutPabx = await simularCheckoutCriado(grupoPabxId, opPabx.negocioId, opPabx.propostaId, org.id);
+    await simularPagamentoConfirmado(checkoutPabx.id, opPabx.negocioId, grupoPabxId, org.id);
+
+    const [negPabxDepois] = await db.select({ status: negocios.status }).from(negocios).where(eq(negocios.id, opPabx.negocioId)).limit(1);
+    checar("E7. Oportunidade PABX = GANHO depois de concluir seu próprio ciclo", negPabxDepois.status === "ganho", `status=${negPabxDepois.status}`);
+
+    const servicosAi = await db.select().from(oportunidadeItens).where(eq(oportunidadeItens.grupoComercialId, aceiteAi.ok ? aceiteAi.grupos[0].grupoId : ""));
+    const servicosPabx = await db.select().from(oportunidadeItens).where(eq(oportunidadeItens.grupoComercialId, grupoPabxId));
+    const servicosUnicos = new Set([...servicosAi, ...servicosPabx].map((i) => i.servicoCanonicoId).filter(Boolean));
+    checar("E8. 2 serviços canônicos totais (1 por oportunidade), nenhuma duplicata", servicosUnicos.size === 2, `servicos=${servicosUnicos.size}`);
+  }
+
+  // ── E2. AI ganho + PABX perdido — resultado independente, sem PARTIAL_WON ──
+  {
+    const lead = await criarLeadSemNegocio(org.id, user.id, "E2 - AI ganho PABX perdido");
+    const itensPorFamilia = new Map<string, ItemEntrada[]>([["CALLFACE_AI", [itemEntrada(catAi)]], ["PABX", [itemEntrada(catPabx, 450)]]]);
+    const { oportunidades } = await organizarVendaMultiLinha({ organizacaoId: org.id, leadId: lead.id, responsavelId: user.id, negocioBaseId: null, itensPorFamilia, moeda: "BRL", criadoPorId: user.id });
+    const opAi = oportunidades.find((o) => o.family === "CALLFACE_AI")!;
+    const opPabx = oportunidades.find((o) => o.family === "PABX")!;
+
+    await db.update(propostas).set({ status: "enviada", enviadaEm: new Date() }).where(eq(propostas.id, opAi.propostaId));
+    const aceiteAi = await processarAceiteDaProposta({ propostaId: opAi.propostaId, organizacaoId: org.id, origem: "publico" });
+    const checkoutAi = await simularCheckoutCriado(aceiteAi.ok ? aceiteAi.grupos[0].grupoId : "", opAi.negocioId, opAi.propostaId, org.id);
+    await simularPagamentoConfirmado(checkoutAi.id, opAi.negocioId, aceiteAi.ok ? aceiteAi.grupos[0].grupoId : "", org.id);
+
+    // PABX perdido — mesmo mecanismo do board legado (motivo obrigatório).
+    const [pabxAntes] = await db.select().from(negocios).where(eq(negocios.id, opPabx.negocioId)).limit(1);
+    await db.update(negocios).set({ status: "perdido", motivoPerda: "Cliente optou por outra solução de telefonia", updatedAt: new Date() }).where(eq(negocios.id, opPabx.negocioId));
+    await db.insert(statusChanges).values({ leadId: pabxAntes.leadId, negocioId: opPabx.negocioId, deStatus: pabxAntes.status, paraStatus: "perdido", motivo: "Cliente optou por outra solução de telefonia" });
+
+    const [negAiFinal] = await db.select({ status: negocios.status }).from(negocios).where(eq(negocios.id, opAi.negocioId)).limit(1);
+    const [negPabxFinal] = await db.select({ status: negocios.status }).from(negocios).where(eq(negocios.id, opPabx.negocioId)).limit(1);
+    checar("E2.1. AI ganho + PABX perdido — resultados INDEPENDENTES (não é 'parcialmente ganho' de uma entidade só)", negAiFinal.status === "ganho" && negPabxFinal.status === "perdido", `AI=${negAiFinal.status} PABX=${negPabxFinal.status}`);
+    const irmas = await listarOportunidadesIrmas(opAi.negocioId);
+    checar("E2.2. Agregação: 1 de 2 oportunidades ganhas (informativo, não é status de entidade)", irmas.filter((i) => i.status === "ganho").length === 1 && irmas.filter((i) => i.status === "perdido").length === 1, `ganhas=${irmas.filter((i) => i.status === "ganho").length} perdidas=${irmas.filter((i) => i.status === "perdido").length}`);
+    const historico = await db.select().from(statusChanges).where(eq(statusChanges.negocioId, opPabx.negocioId));
+    checar("E2.3. Histórico do PABX perdido preservado (não apaga o que aconteceu)", historico.length > 0, `statusChanges=${historico.length}`);
+  }
+
+  // ── E3. Todas as oportunidades perdidas ──
+  {
+    const lead = await criarLeadSemNegocio(org.id, user.id, "E3 - Todas perdidas");
+    const itensPorFamilia = new Map<string, ItemEntrada[]>([["CALLFACE_AI", [itemEntrada(catAi)]], ["PABX", [itemEntrada(catPabx, 450)]]]);
+    const { oportunidades } = await organizarVendaMultiLinha({ organizacaoId: org.id, leadId: lead.id, responsavelId: user.id, negocioBaseId: null, itensPorFamilia, moeda: "BRL", criadoPorId: user.id });
+    for (const op of oportunidades) {
+      const [antes] = await db.select().from(negocios).where(eq(negocios.id, op.negocioId)).limit(1);
+      await db.update(negocios).set({ status: "perdido", motivoPerda: "Orçamento cancelado" }).where(eq(negocios.id, op.negocioId));
+      await db.insert(statusChanges).values({ leadId: antes.leadId, negocioId: op.negocioId, deStatus: antes.status, paraStatus: "perdido", motivo: "Orçamento cancelado" });
     }
-    const servicosFinal = new Set([...itensAiOp, ...(await db.select().from(oportunidadeItens).where(eq(oportunidadeItens.grupoComercialId, grupoPabx!.grupoId)))].map((i) => i.servicoCanonicoId).filter(Boolean));
-    checar("E7. Mista — total 2 serviços canônicos no final (1 por família, nenhuma duplicata)", servicosFinal.size === 2, `servicos=${servicosFinal.size}`);
+    const statusFinais = await Promise.all(oportunidades.map((op) => db.select({ status: negocios.status }).from(negocios).where(eq(negocios.id, op.negocioId)).limit(1).then((r) => r[0].status)));
+    checar("E3.1. Todas perdidas — cada oportunidade perdida independentemente", statusFinais.every((s) => s === "perdido"), `status=${statusFinais.join(",")}`);
   }
 
   // ── F. Cliente solicita ajuste — NÃO encerra a proposta, NÃO cria checkout/contrato ──
