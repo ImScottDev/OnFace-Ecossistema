@@ -35,4 +35,20 @@ Sessão iniciada em 10/08/2026, execução autônoma de ponta a ponta (mandato d
 
 ---
 
+## 4. White Label exige contrato assinado antes do pagamento?
+
+**Contexto**: não existia nenhum item de catálogo White Label ativo até 16/08 (Commercial Core, ADR-EXEC-020) — não dava pra fechar o fluxo ponta a ponta sem criar um. `requer_contrato` decide se o fluxo pós-aceite é proposta→pagamento (como Callface AI) ou proposta→contrato→assinatura→pagamento (como PABX).
+
+**Decidido por padrão**: `requer_contrato=true`, mesmo tratamento de PABX (reseller com compromisso de infra, não é self-serve tipo SaaS).
+
+**Precisa confirmar**: essa é a política certa pra White Label, ou o produto real que vocês vendem é mais parecido com Callface AI (aceite → pagamento direto, sem contrato formal)? Reversível sem tocar em código — é só um campo no catálogo (`servicos_catalogo.requer_contrato`).
+
+## 5. Item "avulso" de proposta — sempre ONE_TIME?
+
+**Contexto**: `proposta_itens.tipo` tem só 3 valores estruturais (`recorrente`|`avulso`|`setup`), mas `revenue_nature` do domínio novo tem 6 (`MRR`|`SETUP`|`PROJECT`|`ONE_TIME`|`USAGE`|`HARDWARE`). Faltava uma correspondência clara pra "avulso".
+
+**Decidido por padrão**: `avulso` → `ONE_TIME` (opção mais conservadora — não presume que seja consumo variável nem projeto grande).
+
+**Precisa confirmar**: existe hoje algum item "avulso" no catálogo que devesse virar `PROJECT` (ex: uma implantação grande, cobrada por escopo) ou `USAGE` (ex: minutos excedentes, consumo variável — "Pacote 500min Adicionais" e "Minutos adicionais Callface AI" são candidatos reais a `USAGE`, hoje classificados como `ONE_TIME`)? Se sim, ajusto o mapeamento (é um dicionário simples em `lib/crm/composicao-comercial.ts`, não um redesenho).
+
 (novas entradas serão appendadas abaixo conforme a execução avança)
