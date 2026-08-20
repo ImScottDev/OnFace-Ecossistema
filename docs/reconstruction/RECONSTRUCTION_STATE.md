@@ -785,3 +785,39 @@ Depois de ler a síntese da fase 1, Kauã pediu uma segunda etapa: não "o que e
 **3 achados que pedem decisão rápida, não é só material de modelagem**: (1) os 76 contratos duplicados podem estar inflando MRR reportado agora; (2) os 2 churns recentes mostram que o gap está ativo, não é só histórico; (3) o workflow n8n pode continuar duplicando lead hoje — sem acesso ao painel da Wevy/Zoho nesta sessão pra confirmar se ainda está ligado.
 
 **Status**: síntese da fase 2 entregue, aguardando leitura/direção do Kauã antes do modelo canônico definitivo e de qualquer migração/reconstrução.
+
+---
+
+## Fase 3 — Recovery Architecture + CRM 2.0 Compatibility (ADR, 11/08/2026)
+
+Kauã leu fases 1+2 e corrigiu o escopo: o foco volta a ser **recuperar o legado Zoho pro CRM operacional atual** (não implementar/modificar o CRM 2.0 do dev nesta etapa), mas toda decisão de recovery precisa ser compatível/mapeável pro Domain Model V2 que já existe no dev (schema.ts, sync-domain-model.ts, backfill-domain-model.ts, ARCHITECTURE_DECISIONS.md, PLANO-RECONSTRUCAO-CRM2.md — nada disso foi redesenhado, só confrontado). Sequência de ambientes confirmada por ele: Zoho+produção real → reconstrução em homologação → QA → mesma migração em produção → produção consolidada → refresh do dev → CRM 2.0 continua.
+
+**Entregável**: `docs/reconstruction/ADR-FASE3-RECOVERY-ARCHITECTURE.md`. Só arquitetura/decisão — nenhuma migration aplicada, nenhum ambiente alterado.
+
+**Achado de guardrail mais importante desta fase**: nenhuma tabela do Domain Model CRM 2.0 (F0-F7 — `event_outbox`, `comercial_evidencia`, `pessoas`, `oportunidades`, `clientes`, `won_evidence_policies` etc.) existe em homologação ou produção hoje — tudo isso só existe no dev local. Isso significa que "confrontar com o que já existe no dev" só pode ser conceitual/de mapeamento futuro nesta fase — qualquer schema novo pro recovery só pode nascer no schema legado (que é o que de fato roda em homolog/produção).
+
+**Delta de modelagem proposto pro Lifecycle Event** (a peça que a fase 2 já tinha identificado como faltante): em vez de tabela nova, **estender `mrr_movimentos`** (já existe em produção, já é append-only, já alimentada pelo `stripe-sync.ts`, já tem vocabulário de evento — `novo`/`expansao`/`contracao`/`churn`/`reativacao`). Delta: colunas novas nullable (`negocio_id`, `negocio_origem_id`, `zoho_id`, `confianca`, `evidencia`) + 2 valores novos de `tipo` (`renovacao`, `alteracao_contratual`). Resolve a lacuna real (não referenciar Oportunidade) sem inventar mecanismo novo — e upgrade/downgrade mapeiam pro vocabulário financeiro já existente (`expansao`/`contracao`) preservando o rótulo original do Zoho em `evidencia`, sem perder a semântica comercial própria que a fase 2 exigiu preservar.
+
+Documento cobre as 14 dimensões pedidas (Companies/Contacts/Leads/Opportunities/Proposals/Contracts/Products/Invoices/Notes/Stage History/Calls-Meetings-Tasks-Emails/ZohoSign/Attachments/Campos Customizados/Attribution), a matriz forward-migration Zoho→CRM atual→CRM 2.0, regras de precedência/temporalidade, estratégia de provenance, lista de mudanças mínimas de schema (13 colunas novas, todas aditivas/nullable, + 1 tabela leve opcional pra Attachments), lista do que preservar sem remodelar, plano de dry-run em homologação (já resincada e com paridade de schema confirmada nesta mesma sessão) e critérios objetivos de go/no-go — incluindo um achado de segurança operacional: recovery precisa escrever direto no banco, nunca via rotas da API, senão reativa automação/notificação (mesmo tipo de bug do ADR-EXEC-017, 167k notificações duplicadas).
+
+**Status**: ADR entregue pra revisão, 5 perguntas em aberto listadas no fim do documento pro Kauã decidir. Nada implementado ainda.
+
+---
+
+## Fase 3 — pré-requisitos cumpridos + migration estrutural em Homologação (12/08)
+
+Kauã aprovou o ADR conceitualmente, pediu 4 correções pontuais (patch 3: `legacy_provenance` em vez de `zoho_id` espalhado, `status_changes` completo, cardinalidade 1:N `eventos_comerciais`→`mrr_movimentos`, vocabulário com `retido`) e depois deu sinal verde pra etapa 1: os 2 pré-requisitos bloqueantes + preflight de idempotência, com mais 3 pedidos extras (busca forense antes de declarar perda, governança de catálogo de produto, preservação de binário real de documento assinado).
+
+**Preflight de `zoho_id`**: zero duplicata em `empresas`/`leads`/`negocios`/`contratos`. Escopo de unicidade fechado como `(organizacao_id, zoho_id)` — hoje só existe 1 organização, mas o padrão já existe no schema (`idx_pipelines_org_slug`) e a arquitetura é multi-tenant por design.
+
+**Reconciliação Stripe em homologação**: eram **39 pares/78 contratos**, não 38/76 (achado ao reconciliar — 1 par novo criado 10-11/08). Investigado o porquê: **o fix de dedupe existe no código do homolog/dev mas nunca foi deployado em produção** (grep no código real de `/opt/callface/crm/app` — zero ocorrência). Isso é bloqueante novo pro go-live: produção continua gerando contrato duplicado até hoje, registrado no ADR seção 7/9 como gate específico de produção (fix + preflight novo lá antes de qualquer recovery em PROD). Reconciliado em homolog: keeper = contrato com `negocio_id`, dependentes reatribuídos (39 assinaturas + 59 mrr_movimentos), 322→283 contratos, R$18.438,90/mês de MRR duplicado eliminado.
+
+**Auditoria Products/Contract Items** (`docs/reconstruction/auditoria-legado-zoho/07-produtos-itens-contrato.md`): catálogo já 74,5% resolvido por efeito colateral da fase 1 — gap real é só 3 produtos. Achado estrutural confirmado: não existe tabela relacional de item de contrato (`contratos.servicos` é só `text[]`) — 487 Itens Solicitados não têm onde morar.
+
+**Busca forense nos 3 contratos-pai ausentes** (pedida antes de declarar perda): 1 recuperável com confiança alta — `CT-292-06/2026`, MASCARENHAS BARBOSA ADVOGADOS, reconstruído via cruzamento Deal+Quote+ZohoSign+Itens Solicitados, tudo reconcilia em valor. 2 genuinamente irrecuperáveis (zero vínculo de empresa/contato em qualquer módulo pesquisado) — ficam como evidência órfã, nunca inventando contrato/empresa pra elas.
+
+**ADR patch 4**: incorporado `contrato_itens` (nova tabela, mesmo padrão de `proposta_itens`), regra de governança de catálogo (produto legado nunca `ativo=true` automático), preservação de binário real pra documento assinado (`anexos_legado` ganha `categoria`+`storage_path`, servido pela rota já existente `GET /api/uploads/*` — zero código novo pra visualização/download).
+
+**Migration estrutural aplicada em homologação** (backup de segurança antes, containers seguem healthy depois): `contratos` +4 colunas, `status_changes` +3 colunas, `mrr_movimentos` +1 coluna, 4 tabelas novas (`eventos_comerciais`, `legacy_provenance`, `anexos_legado`, `contrato_itens`), 9 índices únicos de idempotência (incluindo os 4 retroativos em `empresas`/`leads`/`negocios`/`contratos`, que nunca tiveram índice nenhum em `zoho_id`). 1 correção no caminho: `status_changes` não tem coluna `organizacao_id` (achado só ao aplicar) — índice ajustado sem escopo de org, mesmo padrão de `contrato_itens`.
+
+**Status**: pré-requisitos + migration estrutural concluídos em homologação. Nada em produção. Próximo passo é o recovery de dado propriamente dito (fase 8 do ADR), aguardando sinal do Kauã.
