@@ -48,6 +48,22 @@ interface PropostaItem {
   itens?: { id: string; nome: string; tipo: string; quantidade: string; valorUnitario: string; subtotal: string }[];
 }
 
+interface ContratoItem {
+  id: string;
+  status: string;
+  assinaturaStatus: string | null;
+  signatureStatus: string | null;
+  corpoGerado: string | null;
+  mrr: string | null;
+  valorSetup: string | null;
+  createdAt: string;
+  assinadoEm: string | null;
+  assinadoNome: string | null;
+  documentoFinalUrl: string | null;
+  descricao: string | null;
+  zohoId?: string | null;
+}
+
 interface ReuniaoItem {
   id: string;
   titulo: string;
@@ -136,6 +152,7 @@ export function NegocioDrawer({ negocioId, open, onClose, onOpenLead, onOpenEmpr
   const [showLabelPicker, setShowLabelPicker] = useState(false);
   const [expandedLeadId, setExpandedLeadId] = useState<string | null>(null);
   const [expandedPropostaId, setExpandedPropostaId] = useState<string | null>(null);
+  const [expandedContratoId, setExpandedContratoId] = useState<string | null>(null);
   const [expandedReuniaoId, setExpandedReuniaoId] = useState<string | null>(null);
   const [showFullTranscript, setShowFullTranscript] = useState<string | null>(null);
   const [showLossModal, setShowLossModal] = useState(false);
@@ -148,6 +165,32 @@ export function NegocioDrawer({ negocioId, open, onClose, onOpenLead, onOpenEmpr
       return res.json();
     },
     enabled: !!negocioId && open,
+  });
+
+  // Fulfillment (entrega pós-Won) — só existe depois que o Won materializa
+  // o serviço canônico; negócio ainda aberto legitimamente não tem nenhum.
+  const { data: fulfillmentData } = useQuery<{ fulfillments: { fulfillment: { id: string; status: string; serviceFamily: string; responsavelNome: string | null }; itens: { id: string; workstream: string; titulo: string; status: string; blockerType: string | null; blockerReason: string | null }[] }[] }>({
+    queryKey: ["fulfillments", "negocio", negocioId],
+    queryFn: async () => {
+      const res = await fetch(`/api/fulfillments/by-negocio/${negocioId}`);
+      if (!res.ok) return { fulfillments: [] };
+      return res.json();
+    },
+    enabled: !!negocioId && open,
+  });
+
+  const toggleFulfillmentItem = useMutation({
+    mutationFn: async ({ itemId, status }: { itemId: string; status: string }) => {
+      const res = await fetch(`/api/fulfillments/itens/${itemId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      if (!res.ok) throw new Error("falha");
+      return res.json();
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["fulfillments", "negocio", negocioId] }),
+    onError: () => toast.error("Não foi possível atualizar o item de entrega"),
   });
 
   // Fetch labels for this negocio
@@ -244,6 +287,7 @@ export function NegocioDrawer({ negocioId, open, onClose, onOpenLead, onOpenEmpr
   const reunioesData: ReuniaoItem[] = data?.reunioes || [];
   const notasData = data?.notas;
   const statusChanges = data?.statusChanges;
+  const contratosData: ContratoItem[] = data?.contratos || [];
 
   // Resolve status from the deal's specific pipeline, falling back to global config
   const getStatusInfo = (status: string) => {
@@ -278,7 +322,7 @@ export function NegocioDrawer({ negocioId, open, onClose, onOpenLead, onOpenEmpr
   // é a 3ª implementação independente da mesma troca de status (mesmo padrão
   // de lógica duplicada já visto no bug de MRR), então precisa do mesmo fix.
   const [showEvidenciaModal, setShowEvidenciaModal] = useState(false);
-  const [evidenciaTipo, setEvidenciaTipo] = useState<"manual_contract" | "admin_approval">("manual_contract");
+  const [evidenciaTipo, setEvidenciaTipo] = useState<"manual_contract" | "admin_approval" | "financial_attestation">("manual_contract");
   const [evidenciaNota, setEvidenciaNota] = useState("");
   const [isAnexandoEvidencia, setIsAnexandoEvidencia] = useState(false);
   const retentandoAposEvidencia = useRef(false);
@@ -521,6 +565,95 @@ export function NegocioDrawer({ negocioId, open, onClose, onOpenLead, onOpenEmpr
               ))}
             </select>
           </div>
+
+          {/* Contrato(s) — correção 19/08: contrato existente (nativo ou
+              histórico/Zoho) não aparecia na experiência da oportunidade,
+              mesmo com o dado real vinculado. Não recria contrato legado na
+              engine nova — só mostra o que já existe (corpoGerado quando
+              veio do template; sem corpo, mostra os metadados). */}
+          {contratosData.length > 0 && (
+            <div className="card-solid p-3.5">
+              <h3 className="text-xs font-medium text-white/50 mb-2">Contrato{contratosData.length > 1 ? "s" : ""}</h3>
+              <div className="flex flex-col gap-2">
+                {contratosData.map((ct) => {
+                  const aberto = expandedContratoId === ct.id;
+                  const assinado = ct.signatureStatus === "signed" || ct.assinaturaStatus === "aceite_simples";
+                  return (
+                    <div key={ct.id} className="rounded-lg border border-white/[0.06] overflow-hidden">
+                      <button
+                        onClick={() => setExpandedContratoId(aberto ? null : ct.id)}
+                        className="w-full flex items-center justify-between gap-2 p-2.5 text-left hover:bg-white/[0.03]"
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="text-sm text-white/80 truncate">{ct.descricao || "Contrato"}</span>
+                          {ct.zohoId && <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/[0.06] text-white/40 shrink-0">histórico (Zoho)</span>}
+                        </div>
+                        <span className="text-[11px] shrink-0" style={{ color: assinado ? "#4ade80" : "#9497ab" }}>
+                          {assinado ? "Assinado" : ct.status === "pendente_assinatura" ? "Aguardando assinatura" : ct.status}
+                        </span>
+                      </button>
+                      {aberto && (
+                        <div className="p-2.5 pt-0 flex flex-col gap-2 text-xs text-white/60">
+                          <div className="flex gap-4">
+                            {ct.mrr && <span>MRR: R$ {ct.mrr}</span>}
+                            {ct.valorSetup && <span>Setup: R$ {ct.valorSetup}</span>}
+                            {ct.assinadoEm && <span>Assinado em {new Date(ct.assinadoEm).toLocaleDateString("pt-BR")} por {ct.assinadoNome || "—"}</span>}
+                          </div>
+                          {ct.corpoGerado ? (
+                            <div className="rounded-lg bg-white/[0.03] p-2.5 whitespace-pre-wrap text-white/50 max-h-48 overflow-y-auto">{ct.corpoGerado}</div>
+                          ) : (
+                            <p className="text-white/30">Sem corpo de contrato gerado (contrato criado fora da engine de template — comum em contratos legados/manuais).</p>
+                          )}
+                          <div className="flex gap-3">
+                            {ct.documentoFinalUrl && (
+                              <a href={ct.documentoFinalUrl} target="_blank" rel="noreferrer" className="underline text-white/60">Abrir documento final</a>
+                            )}
+                            <a href={`/api/contratos/${ct.id}/pdf`} target="_blank" rel="noreferrer" className="underline text-white/60">Abrir PDF</a>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Entrega/Implantação — Fulfillment pós-Won (19/08). Nasce só
+              depois do Won materializar o serviço; negócio ainda aberto ou
+              perdido não tem nada aqui, por design. */}
+          {fulfillmentData && fulfillmentData.fulfillments.length > 0 && fulfillmentData.fulfillments.map((f) => (
+            <div key={f.fulfillment.id} className="card-solid p-3.5">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-xs font-medium text-white/50">Entrega — {f.fulfillment.serviceFamily}</h3>
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-white/[0.06] text-white/60">{f.fulfillment.status}</span>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                {f.itens.map((item) => (
+                  <div key={item.id} className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-white/[0.03]">
+                    <input
+                      type="checkbox"
+                      checked={item.status === "DONE"}
+                      onChange={(e) => toggleFulfillmentItem.mutate({ itemId: item.id, status: e.target.checked ? "DONE" : "PENDING" })}
+                      className="shrink-0"
+                    />
+                    <span className={`text-xs flex-1 ${item.status === "DONE" ? "text-white/30 line-through" : "text-white/70"}`}>{item.titulo}</span>
+                    {item.status === "BLOCKED" && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-500/15 text-red-400 shrink-0">Bloqueado{item.blockerType ? ` (${item.blockerType.toLowerCase()})` : ""}</span>
+                    )}
+                    {item.status !== "DONE" && item.status !== "BLOCKED" && (
+                      <button
+                        onClick={() => toggleFulfillmentItem.mutate({ itemId: item.id, status: "BLOCKED" })}
+                        className="text-[10px] text-white/30 hover:text-red-400 shrink-0"
+                      >
+                        Bloquear
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
 
           {/* Empresa */}
           {empresa && (
@@ -983,11 +1116,12 @@ export function NegocioDrawer({ negocioId, open, onClose, onOpenLead, onOpenEmpr
               <label className="text-sm text-white/50 mb-1 block">Tipo de evidência</label>
               <select
                 value={evidenciaTipo}
-                onChange={(e) => setEvidenciaTipo(e.target.value as "manual_contract" | "admin_approval")}
+                onChange={(e) => setEvidenciaTipo(e.target.value as "manual_contract" | "admin_approval" | "financial_attestation")}
                 className="w-full dark-input text-sm"
               >
                 <option value="manual_contract">Contrato assinado fora do sistema</option>
                 <option value="admin_approval">Aprovação de admin/gerente</option>
+                  <option value="financial_attestation">Atestado financeiro (exceção auditada)</option>
               </select>
             </div>
             <div>

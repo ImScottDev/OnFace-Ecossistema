@@ -13,6 +13,10 @@ export type ConversaItem = {
   callStatus: string | null;
   emailThreadId: string | null;
   telefone: string | null;
+  // Resumo gerado pela IA (Carol) da conversa — só existe quando o Agente
+  // SDR já rodou nesse contato (ai_sdr_contato_state.conversation_summary).
+  // null é o caso comum hoje: não é "carregando", é "ainda não tem resumo".
+  conversationSummary: string | null;
 };
 
 export type Cascata =
@@ -23,7 +27,7 @@ export type Cascata =
 
 export type Contexto = {
   pessoa: { nome: string; cargo: string | null; telefone: string | null; email: string | null } | null;
-  empresa: { id: string | null; nome: string; setor: string | null } | null;
+  empresa: { id: string | null; nome: string; setor: string | null; cnpj: string | null; porte: string | null } | null;
   isCliente: boolean;
   cascata: Cascata;
   proximasAtividades: { id: string; titulo: string; data: string }[];

@@ -5,12 +5,10 @@ import { createPortal } from "react-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
-  SDR_STAGES, SDR_CLOSED_STAGES, SDR_MIRROR_STAGES, SDR_MIRROR_KEYS,
-  SDR_STAGNATION_STAGES, SDR_STAGNATION_KEYS, SDR_SLA_HOURS, SDR_OUTBOUND_STAGE,
-  isOutboundLead, negocioStatusToSdrMirror,
+  SDR_STAGES, SDR_CLOSED_STAGES, SDR_MIRROR_KEYS,
+  SDR_STAGNATION_STAGES, SDR_STAGNATION_KEYS,
 } from "@/lib/crm/pipeline";
 import { Search, X, MoreHorizontal, Tag, Briefcase, CheckCircle2, XCircle, PauseCircle, RotateCcw, Download, User } from "lucide-react";
-import { LeadDrawer } from "@/components/crm/LeadDrawer";
 import { EmpresaDrawer } from "@/components/crm/EmpresaDrawer";
 import { NegocioDrawer } from "@/components/crm/NegocioDrawer";
 import { Cf2AgendarReuniaoModal, type AgendarReuniaoPayload } from "./AgendarReuniaoModal";
@@ -25,54 +23,12 @@ import { useOrgUsuarios, matchesResponsavel, matchesOrigem, buildOrigemOptions, 
  * (Quick View / drawer de negócio, já rastreado).
  */
 
-interface Lead {
-  id: string;
-  nome: string;
-  sobrenome?: string | null;
-  email?: string | null;
-  telefone?: string | null;
-  empresa?: string | null;
-  cargo?: string | null;
-  origem?: string | null;
-  utmCampaign?: string | null;
-  leadScore?: number | null;
-  sdrStatus?: string | null;
-  responsavelId?: string | null;
-  tipo: string;
-  negocioCount?: number;
-  negocioPrincipal?: { id: string; titulo: string; status: string } | null;
-  createdAt?: string;
-  updatedAt?: string;
-  avatarUrl?: string | null;
-}
-
-function stageAge(updatedAt: string | undefined, status: string) {
-  if (!updatedAt) return null;
-  const ms = Date.now() - new Date(updatedAt).getTime();
-  const mins = Math.floor(ms / 60000);
-  const hours = ms / (1000 * 60 * 60);
-  const sla = SDR_SLA_HOURS[status] || 48;
-  const ratio = hours / sla;
-  let text: string;
-  if (mins < 60) text = `${mins}min`;
-  else if (mins < 1440) text = `${Math.floor(mins / 60)}h`;
-  else text = `${Math.floor(mins / 1440)}d`;
-  let color: string, bg: string;
-  if (ratio < 0.5) { color = "var(--cf2-success-text)"; bg = "var(--cf2-success-bg)"; }
-  else if (ratio <= 1) { color = "var(--cf2-warning-text)"; bg = "var(--cf2-warning-bg)"; }
-  else { color = "var(--cf2-danger-text)"; bg = "#fde8e8"; }
-  return { text, color, bg, breached: ratio > 1 };
-}
-
-function sdrBoardColumn(lead: Lead): string {
-  const s = lead.sdrStatus || "pending";
-  if (s === "disqualified") return "disqualified";
-  if (lead.negocioPrincipal?.status === "no_show") return s;
-  if (lead.negocioPrincipal) return negocioStatusToSdrMirror(lead.negocioPrincipal.status);
-  if (lead.negocioCount && lead.negocioCount > 0) return "m_qualified";
-  if (s === "pending" && isOutboundLead(lead.origem)) return "outbound";
-  return s;
-}
+import {
+  type Lead, type KanbanCol, stageAge, sdrBoardColumn, resolveDisplayStage,
+  NOVO_COL, EM_CONTATO_COL, QUALIFICACAO_COL, QUALIFICADO_SQL_COL, AGENDA_CONFIRMADA_COL, OPEN_COLS_QUALIFICACAO,
+  SEM_RESPOSTA_COL, NUTRICAO_MERGED_COL, DESQUALIFICADO_ESTAGNADOS_COL, OPEN_COLS_ESTAGNADOS,
+} from "./shared";
+import { Cf2LeadDrawer } from "./LeadDrawerCf2";
 
 type View = "qualificacao" | "estagnados";
 
@@ -118,6 +74,11 @@ export function Cf2QualificacaoWorkspace() {
   const isStagnant = (l: Lead) => SDR_STAGNATION_KEYS.includes(l.sdrStatus || "");
   const funnelLeads = filteredLeads.filter((l) => !isStagnant(l));
   const stagnantLeads = filteredLeads.filter(isStagnant);
+  // Pedido do Kauã (17/08): a view Estagnados ganhou uma 3ª coluna
+  // (Desqualificado) só pra visualização — o badge da aba "Estagnados 55"
+  // continua contando só sem_resposta/nutrição (stagnantCount abaixo),
+  // Desqualificado não entra nessa conta, só no board dessa view.
+  const estagnadosViewLeads = filteredLeads.filter((l) => isStagnant(l) || (l.sdrStatus || "pending") === "disqualified");
   const openKeys = SDR_STAGES.map((s) => s.key);
   const activeCount = funnelLeads.filter((l) => openKeys.includes(sdrBoardColumn(l))).length;
   const stagnantCount = stagnantLeads.length;
@@ -223,61 +184,54 @@ export function Cf2QualificacaoWorkspace() {
   return (
     <div className="h-full flex flex-col gap-4 min-h-0">
       <div className="flex flex-col gap-3 shrink-0">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-4 min-w-0">
-            <div>
-              <p className="text-[24px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Qualificação</p>
-              <p className="text-[12px] hidden sm:block" style={{ color: "var(--cf2-text-secondary)" }}>Arraste pro rodapé pra qualificar, desqualificar ou estagnar.</p>
-            </div>
-            <div className="flex items-baseline gap-2 shrink-0">
-              <span className="text-[18px] font-bold" style={{ color: "var(--cf2-accent-border)" }}>{activeCount}</span>
-              <span className="text-[11px] hidden sm:inline" style={{ color: "var(--cf2-text-tertiary)" }}>no funil</span>
-            </div>
-          </div>
-        </div>
-
+        {/* Título/subtítulo da seção já vêm de fora (page.tsx: "Kanban de
+            Qualificação") — removido daqui pra não duplicar cabeçalho e
+            devolver altura pro board (pedido do Kauã: "ocupar espaço,
+            dá pra dar mais visualização"). Contagem "no funil" continua
+            visível no pill "Qualificação {activeCount}" das quick-tabs
+            abaixo. */}
         <div className="flex items-center gap-2 overflow-x-auto pb-0.5">
           <div className="relative shrink-0">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: "var(--cf2-text-tertiary)" }} />
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: "var(--cf2-chrome-text-secondary)" }} />
             <input
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Buscar lead, empresa, campanha..."
-              className="w-44 sm:w-60 pl-8 pr-7 py-1.5 rounded-lg text-[12px] outline-none"
-              style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }}
+              className="w-56 sm:w-80 pl-8 pr-7 py-1.5 rounded-lg text-[12px] outline-none"
+              style={{ background: "rgba(255,255,255,0.06)", border: "1px solid var(--cf2-chrome-border-subtle)", color: "var(--cf2-chrome-text-primary)" }}
             />
             {searchQuery && (
-              <button onClick={() => setSearchQuery("")} className="absolute right-2 top-1/2 -translate-y-1/2" style={{ color: "var(--cf2-text-tertiary)" }}>
+              <button onClick={() => setSearchQuery("")} className="absolute right-2 top-1/2 -translate-y-1/2" style={{ color: "var(--cf2-chrome-text-secondary)" }}>
                 <X className="w-3 h-3" />
               </button>
             )}
           </div>
 
-          <select value={respFilter} onChange={(e) => setRespFilter(e.target.value)} className="px-2.5 py-1.5 rounded-lg text-[12px] font-medium outline-none shrink-0" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-secondary)" }}>
+          <select value={respFilter} onChange={(e) => setRespFilter(e.target.value)} className="px-2.5 py-1.5 rounded-lg text-[12px] font-medium outline-none shrink-0 [&>option]:bg-[#1c1f26]" style={{ background: "rgba(255,255,255,0.06)", border: "1px solid var(--cf2-chrome-border-subtle)", color: "var(--cf2-chrome-text-secondary)" }}>
             <option value="todos">Responsável: Todos</option>
             {currentUserId && <option value="meu">Meus (eu)</option>}
             <option value="sem">Sem responsável</option>
             {usuarios.map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}
           </select>
 
-          <select value={origemFilter} onChange={(e) => setOrigemFilter(e.target.value)} className="px-2.5 py-1.5 rounded-lg text-[12px] font-medium outline-none shrink-0" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-secondary)" }}>
+          <select value={origemFilter} onChange={(e) => setOrigemFilter(e.target.value)} className="px-2.5 py-1.5 rounded-lg text-[12px] font-medium outline-none shrink-0 [&>option]:bg-[#1c1f26]" style={{ background: "rgba(255,255,255,0.06)", border: "1px solid var(--cf2-chrome-border-subtle)", color: "var(--cf2-chrome-text-secondary)" }}>
             <option value="todos">Origem: Todas</option>
             {origemOptions.map((o) => <option key={o.value} value={o.value}>{o.label} ({o.count})</option>)}
           </select>
 
-          <button onClick={() => setShowExport(true)} title="Exportar leads: escolher responsável e etapas" className="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[12px] font-medium" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-secondary)" }}>
+          <button onClick={() => setShowExport(true)} title="Exportar leads: escolher responsável e etapas" className="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[12px] font-medium" style={{ background: "rgba(255,255,255,0.06)", border: "1px solid var(--cf2-chrome-border-subtle)", color: "var(--cf2-chrome-text-secondary)" }}>
             <Download className="w-3.5 h-3.5" /> Exportar
           </button>
 
-          <div className="flex gap-1 p-0.5 rounded-lg shrink-0" style={{ background: "var(--cf2-bg-surface-muted)" }}>
+          <div className="flex gap-1 p-0.5 rounded-lg shrink-0" style={{ background: "rgba(255,255,255,0.06)" }}>
             {([{ key: "qualificacao" as const, label: "Qualificação", count: activeCount }, { key: "estagnados" as const, label: "Estagnados", count: stagnantCount }]).map((tab) => (
               <button
                 key={tab.key}
                 onClick={() => setView(tab.key)}
                 className="px-2.5 py-1.5 rounded-md text-[12px] font-semibold whitespace-nowrap flex items-center gap-1.5"
-                style={{ background: view === tab.key ? "var(--cf2-bg-surface)" : "transparent", color: view === tab.key ? "var(--cf2-text-primary)" : "var(--cf2-text-tertiary)" }}
+                style={{ background: view === tab.key ? "var(--cf2-accent)" : "transparent", color: view === tab.key ? "var(--cf2-text-on-accent)" : "var(--cf2-chrome-text-secondary)" }}
               >
-                {tab.label} <span className="text-[10px] opacity-60">{tab.count}</span>
+                {tab.label} <span className="text-[10px] opacity-70">{tab.count}</span>
               </button>
             ))}
           </div>
@@ -286,10 +240,11 @@ export function Cf2QualificacaoWorkspace() {
 
       <div className="flex-1 min-h-0">
         {isLoading ? (
-          <p className="text-[13px]" style={{ color: "var(--cf2-text-tertiary)" }}>Carregando...</p>
+          <p className="text-[13px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Carregando...</p>
         ) : (
           <SdrKanbanView
-            leads={view === "estagnados" ? stagnantLeads : funnelLeads}
+            leads={view === "estagnados" ? estagnadosViewLeads : funnelLeads}
+            allFilteredLeads={filteredLeads}
             view={view}
             usuariosById={usuariosById}
             onDrop={handleMove}
@@ -299,7 +254,7 @@ export function Cf2QualificacaoWorkspace() {
         )}
       </div>
 
-      <LeadDrawer leadId={drawerLeadId} open={!!drawerLeadId} onClose={() => setDrawerLeadId(null)} onOpenEmpresa={(id) => { setDrawerLeadId(null); setDrawerEmpresaId(id); }} onOpenNegocio={(id) => { setDrawerLeadId(null); setDrawerNegocioId(id); }} />
+      <Cf2LeadDrawer leadId={drawerLeadId} open={!!drawerLeadId} onClose={() => setDrawerLeadId(null)} onOpenEmpresa={(id) => { setDrawerLeadId(null); setDrawerEmpresaId(id); }} onOpenNegocio={(id) => { setDrawerLeadId(null); setDrawerNegocioId(id); }} onMove={handleMove} usuariosById={usuariosById} />
       <EmpresaDrawer empresaId={drawerEmpresaId} open={!!drawerEmpresaId} onClose={() => setDrawerEmpresaId(null)} onOpenLead={(id) => { setDrawerEmpresaId(null); setDrawerLeadId(id); }} onOpenNegocio={(id) => { setDrawerEmpresaId(null); setDrawerNegocioId(id); }} />
       <NegocioDrawer negocioId={drawerNegocioId} open={!!drawerNegocioId} onClose={() => setDrawerNegocioId(null)} onOpenLead={(id) => { setDrawerNegocioId(null); setDrawerLeadId(id); }} onOpenEmpresa={(id) => { setDrawerNegocioId(null); setDrawerEmpresaId(id); }} />
 
@@ -333,25 +288,25 @@ function ExportLeadsModal({ leads, usuarios, onClose, onExport }: { leads: Lead[
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(15,23,42,0.45)" }} onClick={onClose}>
-      <div className="w-full max-w-md rounded-2xl p-6" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }} onClick={(e) => e.stopPropagation()}>
-        <p className="font-bold text-[15px] mb-1" style={{ color: "var(--cf2-text-primary)" }}>Exportar leads</p>
-        <p className="text-[11px] mb-4" style={{ color: "var(--cf2-text-tertiary)" }}>Escolha o responsável e as etapas que quer puxar.</p>
+      <div className="w-full max-w-md rounded-2xl p-6" style={{ background: "var(--cf2-chrome-surface-active)", border: "1px solid var(--cf2-chrome-border-subtle)" }} onClick={(e) => e.stopPropagation()}>
+        <p className="font-bold text-[15px] mb-1" style={{ color: "var(--cf2-chrome-text-primary)" }}>Exportar leads</p>
+        <p className="text-[11px] mb-4" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Escolha o responsável e as etapas que quer puxar.</p>
 
-        <label className="block text-[12px] mb-1" style={{ color: "var(--cf2-text-secondary)" }}>Responsável</label>
-        <select value={resp} onChange={(e) => setResp(e.target.value)} className="w-full rounded-lg px-3 py-2 text-[13px] mb-4 outline-none" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }}>
+        <label className="block text-[12px] mb-1" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Responsável</label>
+        <select value={resp} onChange={(e) => setResp(e.target.value)} className="w-full rounded-lg px-3 py-2 text-[13px] mb-4 outline-none" style={{ background: "rgba(255,255,255,0.06)", border: "1px solid var(--cf2-chrome-border-subtle)", color: "var(--cf2-chrome-text-primary)" }}>
           <option value="todos">Todos</option>
           {usuarios.map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}
         </select>
 
         <div className="flex items-center justify-between mb-1">
-          <label className="text-[12px]" style={{ color: "var(--cf2-text-secondary)" }}>Etapas</label>
+          <label className="text-[12px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Etapas</label>
           <button type="button" onClick={() => setStages(todasMarcadas ? new Set() : new Set(etapas.map((e) => e.key)))} className="text-[11px] font-semibold" style={{ color: "var(--cf2-success-text)" }}>
             {todasMarcadas ? "Limpar" : "Todas"}
           </button>
         </div>
         <div className="space-y-1.5 mb-5 max-h-40 overflow-y-auto">
           {etapas.map((e) => (
-            <label key={e.key} className="flex items-center gap-2 text-[13px] cursor-pointer" style={{ color: "var(--cf2-text-primary)" }}>
+            <label key={e.key} className="flex items-center gap-2 text-[13px] cursor-pointer" style={{ color: "var(--cf2-chrome-text-primary)" }}>
               <input type="checkbox" checked={stages.has(e.key)} onChange={() => toggle(e.key)} className="w-3.5 h-3.5" />
               <span className="w-2 h-2 rounded-full" style={{ background: e.color }} />
               {e.label}
@@ -360,9 +315,9 @@ function ExportLeadsModal({ leads, usuarios, onClose, onExport }: { leads: Lead[
         </div>
 
         <div className="flex items-center justify-between gap-2">
-          <span className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>{selecionados.length} leads na seleção</span>
+          <span className="text-[12px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>{selecionados.length} leads na seleção</span>
           <div className="flex gap-2">
-            <button onClick={onClose} className="px-4 py-2 text-[13px] font-semibold" style={{ color: "var(--cf2-text-secondary)" }}>Cancelar</button>
+            <button onClick={onClose} className="px-4 py-2 text-[13px] font-semibold" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Cancelar</button>
             <button onClick={() => onExport(selecionados)} disabled={selecionados.length === 0 || stages.size === 0} className="flex items-center gap-1.5 px-4 py-2 text-[13px] font-bold rounded-lg disabled:opacity-40" style={{ background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" }}>
               <Download className="w-3.5 h-3.5" /> Exportar CSV
             </button>
@@ -376,8 +331,8 @@ function ExportLeadsModal({ leads, usuarios, onClose, onExport }: { leads: Lead[
 function OwnerChipCf2({ nome, avatarUrl, color }: { nome?: string | null; avatarUrl?: string | null; color: string }) {
   if (!nome) {
     return (
-      <span className="flex items-center gap-1 text-[10px]" style={{ color: "var(--cf2-text-tertiary)" }}>
-        <span className="rounded-full flex items-center justify-center shrink-0" style={{ width: 20, height: 20, border: "1px dashed var(--cf2-border-default)" }}>
+      <span className="flex items-center gap-1 text-[10px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>
+        <span className="rounded-full flex items-center justify-center shrink-0" style={{ width: 20, height: 20, border: "1px dashed var(--cf2-chrome-border-subtle)" }}>
           <User className="w-2.5 h-2.5" />
         </span>
         Sem dono
@@ -386,7 +341,7 @@ function OwnerChipCf2({ nome, avatarUrl, color }: { nome?: string | null; avatar
   }
   const iniciais = nome.split(/\s+/).slice(0, 2).map((w) => w[0]).join("").toUpperCase();
   return (
-    <span className="flex items-center gap-1 text-[10px] min-w-0" style={{ color: "var(--cf2-text-secondary)" }} title={`Responsável: ${nome}`}>
+    <span className="flex items-center gap-1 text-[10px] min-w-0" style={{ color: "var(--cf2-chrome-text-secondary)" }} title={`Responsável: ${nome}`}>
       <span className="rounded-full flex items-center justify-center shrink-0 overflow-hidden text-[8px] font-bold" style={{ width: 20, height: 20, background: `${color}25`, color }}>
         {avatarUrl ? <img src={avatarUrl} alt={nome} className="w-full h-full object-cover" referrerPolicy="no-referrer" /> : iniciais}
       </span>
@@ -397,18 +352,21 @@ function OwnerChipCf2({ nome, avatarUrl, color }: { nome?: string | null; avatar
 
 /* ═══ KANBAN ═══ */
 
-function SdrKanbanView({ leads, view, usuariosById, onDrop, onOpenLead, onOpenNegocio }: {
-  leads: Lead[]; view: View; usuariosById: Map<string, OrgUsuario>;
+function SdrKanbanView({ leads, allFilteredLeads, view, usuariosById, onDrop, onOpenLead, onOpenNegocio }: {
+  leads: Lead[]; allFilteredLeads: Lead[]; view: View; usuariosById: Map<string, OrgUsuario>;
   onDrop: (id: string, sdrStatus: string) => void; onOpenLead: (id: string) => void; onOpenNegocio: (id: string) => void;
 }) {
   const [dragOverStage, setDragOverStage] = useState<string | null>(null);
   const [draggingLeadId, setDraggingLeadId] = useState<string | null>(null);
   const [dragOverAction, setDragOverAction] = useState<string | null>(null);
-  const [expandedClosed, setExpandedClosed] = useState<Set<string>>(() => new Set());
+  const [bucketOpen, setBucketOpen] = useState<{ label: string; leads: Lead[] } | null>(null);
 
-  const openCols = view === "estagnados" ? SDR_STAGNATION_STAGES : SDR_STAGES;
-  const closedCols = view === "estagnados" ? [] : [...SDR_MIRROR_STAGES, ...SDR_CLOSED_STAGES];
-  const leftCols = view === "estagnados" ? [] : [SDR_OUTBOUND_STAGE];
+  // 5 colunas abertas do fluxo principal (Novo/Em Contato/Qualificação/
+  // Qualificado SQL/Agenda Confirmada, De/Para aprovado 17/08) — todas
+  // largura igual, sem barra colapsada; na view Estagnados, 2 colunas (Sem
+  // resposta/Nutrição-Retomar depois). Desqualificado não vira coluna aqui —
+  // vira card-resumo abaixo do board (ver bottomBuckets).
+  const openCols = view === "estagnados" ? OPEN_COLS_ESTAGNADOS : OPEN_COLS_QUALIFICACAO;
 
   const actions = view === "estagnados"
     ? [{ key: "qualifying", label: "REATIVAR", icon: RotateCcw, color: "#3B82F6" }]
@@ -418,11 +376,12 @@ function SdrKanbanView({ leads, view, usuariosById, onDrop, onOpenLead, onOpenNe
         { key: "qualified", label: "QUALIFICAR", icon: CheckCircle2, color: "#22C55E" },
       ];
 
-  const renderColumnCards = (stageKey: string) => {
-    const stage = [...leftCols, ...openCols, ...closedCols].find((s) => s.key === stageKey);
-    const mirror = SDR_MIRROR_KEYS.includes(stageKey);
+  const renderColumnCards = (stage: KanbanCol) => {
+    const matchKeys = stage.keys || [stage.key];
+    const mirror = SDR_MIRROR_KEYS.includes(stage.key);
     return leads
-      .filter((l) => (view === "estagnados" ? (l.sdrStatus || "pending") === stageKey : sdrBoardColumn(l) === stageKey))
+      .filter((l) => matchKeys.includes(view === "estagnados" ? (l.sdrStatus || "pending") : sdrBoardColumn(l)))
+      .filter((l) => (stage.filter ? stage.filter(l) : true))
       .sort((a, b) => Number(b.negocioPrincipal?.status === "no_show") - Number(a.negocioPrincipal?.status === "no_show"))
       .map((lead) => (
         <LeadCard
@@ -434,83 +393,80 @@ function SdrKanbanView({ leads, view, usuariosById, onDrop, onOpenLead, onOpenNe
       ));
   };
 
-  const renderCollapsibleColumn = (stage: { key: string; label: string; color: string }) => {
-    const cards = renderColumnCards(stage.key);
-    const isExpanded = expandedClosed.has(stage.key);
-    const isDragOver = dragOverStage === stage.key;
-    return (
-      <div
-        key={stage.key}
-        className={`flex-shrink-0 rounded-2xl flex flex-col max-h-full transition-all duration-300 ${isExpanded ? "w-[260px]" : "w-[52px]"}`}
-        style={{ background: isDragOver ? `${stage.color}10` : "var(--cf2-bg-surface)", border: isDragOver ? `2px dashed ${stage.color}` : "1px solid var(--cf2-border-default)" }}
-        onDragOver={(e) => e.preventDefault()}
-        onDragEnter={(e) => { e.preventDefault(); setDragOverStage(stage.key); }}
-        onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOverStage(null); }}
-        onDrop={(e) => { e.preventDefault(); setDragOverStage(null); const leadId = e.dataTransfer.getData("leadId"); if (leadId) onDrop(leadId, stage.key); }}
-      >
-        {isExpanded ? (
-          <>
-            <button onClick={() => setExpandedClosed((p) => { const s = new Set(p); s.delete(stage.key); return s; })} className="px-3 pt-3 pb-2 shrink-0 text-left w-full" style={{ borderBottom: "1px solid var(--cf2-border-default)" }}>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: stage.color }} />
-                  <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--cf2-text-tertiary)" }}>{stage.label}</span>
-                </div>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: `${stage.color}18`, color: stage.color }}>{cards.length}</span>
-              </div>
-            </button>
-            <div className="flex-1 p-2 space-y-2 overflow-y-auto min-h-0">{cards}</div>
-          </>
-        ) : (
-          <button onClick={() => setExpandedClosed((p) => { const s = new Set(p); s.add(stage.key); return s; })} className="flex flex-col items-center gap-3 py-4 px-1 h-full rounded-2xl">
-            <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: stage.color }} />
-            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ backgroundColor: `${stage.color}18`, color: stage.color }}>{cards.length}</span>
-            <span className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: "var(--cf2-text-tertiary)", writingMode: "vertical-rl", textOrientation: "mixed" }}>{stage.label}</span>
-          </button>
-        )}
-      </div>
-    );
-  };
+  // Buckets auxiliares (Sem Resposta/No-show/Desqualificado) — cards de
+  // resumo fixos abaixo do board, não colunas de drag-and-drop. Contam sobre
+  // `allFilteredLeads` (o conjunto INTEIRO que respeita busca/responsável/
+  // origem, ANTES do split funil/estagnados) — usar `leads` aqui era o bug:
+  // na view principal `leads` é `funnelLeads`, que já exclui quem tá em
+  // sdr_sem_retorno, então "Sem Resposta" sempre dava 0.
+  const bottomBuckets = view === "estagnados" ? [] : [
+    { key: "sdr_sem_retorno", label: "Sem Resposta", sub: "Leads aguardando retorno", color: "#6b7280", leads: allFilteredLeads.filter((l) => (l.sdrStatus || "pending") === "sdr_sem_retorno") },
+    { key: "no_show", label: "No-show", sub: "Reuniões não realizadas", color: "#f59e0b", leads: allFilteredLeads.filter((l) => l.negocioPrincipal?.status === "no_show") },
+    { key: "disqualified", label: "Desqualificado", sub: "Leads removidos do funil", color: "#dc2626", leads: allFilteredLeads.filter((l) => (l.sdrStatus || "pending") === "disqualified") },
+  ];
 
   return (
-    <div className="relative h-full">
-      <div className="flex gap-3 overflow-x-auto overflow-y-hidden pb-4 h-full">
-        {leftCols.map(renderCollapsibleColumn)}
-        {leftCols.length > 0 && <div className="flex-shrink-0 flex items-center px-1"><div className="w-px h-2/3" style={{ background: "var(--cf2-border-default)" }} /></div>}
-
+    <div className="relative h-full flex flex-col gap-3">
+      <div className="flex-1 flex gap-4 min-h-0">
         {openCols.map((stage) => {
-          const cards = renderColumnCards(stage.key);
+          const cards = renderColumnCards(stage);
           const isDragOver = dragOverStage === stage.key;
           return (
             <div
               key={stage.key}
-              className="flex-shrink-0 w-[260px] sm:w-[280px] rounded-2xl flex flex-col max-h-full"
-              style={{ background: isDragOver ? `${stage.color}10` : "var(--cf2-bg-surface)", border: isDragOver ? `2px dashed ${stage.color}` : "1px solid var(--cf2-border-default)" }}
+              className="flex-1 min-w-0 rounded-2xl flex flex-col max-h-full"
+              style={{ background: isDragOver ? `${stage.color}10` : "var(--cf2-chrome-bg-alt)", border: isDragOver ? `2px dashed ${stage.color}` : "1px solid var(--cf2-chrome-border-subtle)" }}
               onDragOver={(e) => e.preventDefault()}
               onDragEnter={(e) => { e.preventDefault(); setDragOverStage(stage.key); }}
               onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOverStage(null); }}
-              onDrop={(e) => { e.preventDefault(); setDragOverStage(null); const leadId = e.dataTransfer.getData("leadId"); if (leadId) onDrop(leadId, stage.key); }}
+              onDrop={(e) => { e.preventDefault(); setDragOverStage(null); const leadId = e.dataTransfer.getData("leadId"); if (leadId) onDrop(leadId, stage.dropTarget); }}
             >
-              <div className="px-3 pt-3 pb-2 shrink-0" style={{ borderBottom: "1px solid var(--cf2-border-default)" }}>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: stage.color }} />
-                    <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--cf2-text-secondary)" }}>{stage.label}</span>
-                  </div>
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: `${stage.color}18`, color: stage.color }}>{cards.length}</span>
+              <div className="px-3 pt-3 pb-2 shrink-0 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: stage.color }} />
+                  <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: stage.color }}>{stage.label}</span>
                 </div>
+                <span className="text-[11px] font-bold px-2 py-0.5 rounded-full" style={{ background: "var(--cf2-chrome-surface-active)", border: "1px solid var(--cf2-chrome-border-subtle)", color: "var(--cf2-chrome-text-primary)" }}>{cards.length}</span>
               </div>
               <div className="flex-1 p-2 space-y-2 overflow-y-auto min-h-0">
                 {cards}
-                {cards.length === 0 && <div className="flex h-16 items-center justify-center text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>vazio</div>}
+                {cards.length === 0 && <div className="flex h-16 items-center justify-center text-[11px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>vazio</div>}
               </div>
             </div>
           );
         })}
-
-        {closedCols.length > 0 && <div className="flex-shrink-0 flex items-center px-1"><div className="w-px h-2/3" style={{ background: "var(--cf2-border-default)" }} /></div>}
-        {closedCols.map(renderCollapsibleColumn)}
       </div>
+
+      {bottomBuckets.length > 0 && (
+        <div className="shrink-0 flex gap-4 mb-2">
+          {bottomBuckets.map((b) => (
+            <button
+              key={b.key}
+              onClick={() => setBucketOpen({ label: b.label, leads: b.leads })}
+              className="flex-1 min-w-0 rounded-xl p-3 flex items-center gap-3 text-left"
+              style={{ background: "var(--cf2-chrome-surface-active)", border: "1px solid var(--cf2-chrome-border-subtle)", borderLeft: `3px solid ${b.color}` }}
+            >
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <p className="text-[13px] font-bold" style={{ color: "var(--cf2-chrome-text-primary)" }}>{b.label}</p>
+                  <span className="text-[11px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: `${b.color}18`, color: b.color }}>{b.leads.length}</span>
+                </div>
+                <p className="text-[11px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>{b.sub}</p>
+              </div>
+              <span className="text-[11px] font-semibold shrink-0" style={{ color: "var(--cf2-success-text)" }}>Ver →</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {bucketOpen && (
+        <Cf2BucketLeadsModal
+          title={bucketOpen.label}
+          leads={bucketOpen.leads}
+          onClose={() => setBucketOpen(null)}
+          onOpenLead={(id) => { setBucketOpen(null); onOpenLead(id); }}
+        />
+      )}
 
       {draggingLeadId && (
         <div className="absolute bottom-0 left-0 right-0 flex gap-2 p-3 z-20">
@@ -538,6 +494,40 @@ function SdrKanbanView({ leads, view, usuariosById, onDrop, onOpenLead, onOpenNe
   );
 }
 
+/** Lista real dos leads de um bucket auxiliar (Sem Resposta/No-show/
+ * Desqualificado) — clicar num card-resumo abre isso em vez de só mostrar
+ * um número. Clicar num lead abre o LeadDrawer de verdade (mesmo drawer do
+ * board), não uma tela nova. */
+function Cf2BucketLeadsModal({ title, leads, onClose, onOpenLead }: { title: string; leads: Lead[]; onClose: () => void; onOpenLead: (id: string) => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(15,23,42,0.45)" }} onClick={onClose}>
+      <div className="w-full max-w-md rounded-2xl p-6 max-h-[80vh] flex flex-col" style={{ background: "var(--cf2-chrome-surface-active)", border: "1px solid var(--cf2-chrome-border-subtle)" }} onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-1 shrink-0">
+          <p className="font-bold text-[15px]" style={{ color: "var(--cf2-chrome-text-primary)" }}>{title}</p>
+          <button onClick={onClose} className="p-1" style={{ color: "var(--cf2-chrome-text-secondary)" }}><X className="w-4 h-4" /></button>
+        </div>
+        <p className="text-[11px] mb-4 shrink-0" style={{ color: "var(--cf2-chrome-text-secondary)" }}>{leads.length} lead(s) — clique pra abrir.</p>
+        <div className="flex-1 overflow-y-auto space-y-1.5">
+          {leads.length === 0 && <p className="text-[12px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Nenhum lead nesse bucket agora.</p>}
+          {leads.map((l) => (
+            <button
+              key={l.id}
+              onClick={() => onOpenLead(l.id)}
+              className="w-full text-left px-3 py-2 rounded-lg flex items-center justify-between gap-2"
+              style={{ border: "1px solid var(--cf2-chrome-border-subtle)" }}
+            >
+              <div className="min-w-0">
+                <p className="text-[13px] font-semibold truncate" style={{ color: "var(--cf2-chrome-text-primary)" }}>{l.nome}{l.sobrenome ? ` ${l.sobrenome}` : ""}</p>
+                {(l.empresa || l.cargo) && <p className="text-[11px] truncate" style={{ color: "var(--cf2-chrome-text-secondary)" }}>{l.empresa || ""}{l.empresa && l.cargo ? " · " : ""}{l.cargo || ""}</p>}
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ═══ CARD ═══ */
 
 function LeadCard({ lead, stageColor, view, readOnly = false, owner, onOpenLead, onOpenNegocio, onMove, onDragStart, onDragEnd }: {
@@ -546,6 +536,17 @@ function LeadCard({ lead, stageColor, view, readOnly = false, owner, onOpenLead,
   onDragStart?: () => void; onDragEnd?: () => void;
 }) {
   const age = stageAge(lead.updatedAt, lead.sdrStatus || "pending");
+  // `stageAge()` devolve bg/color claros (pensados pro drawer, tema claro) —
+  // aqui, no card escuro, ignoramos `age.bg` e usamos uma versão translúcida
+  // da MESMA cor (`age.color`) como fundo, com um tom mais claro pro texto,
+  // senão o selo de "3d/12d" vira um retângulo pastel destoando do card
+  // escuro (achado real do Kauã, 17/08: "essas cores do dias no funil...
+  // ta pessima").
+  const ageDark = age ? (() => {
+    if (age.color === "var(--cf2-success-text)") return { bg: "rgba(34,197,94,0.16)", text: "#4ade80" };
+    if (age.color === "var(--cf2-warning-text)") return { bg: "rgba(245,158,11,0.16)", text: "#fbbf24" };
+    return { bg: "rgba(248,113,113,0.18)", text: "#f87171" };
+  })() : null;
   const nome = `${lead.nome}${lead.sobrenome ? " " + lead.sobrenome : ""}`;
   const isOportunidade = !!lead.negocioCount && lead.negocioCount > 0;
   const isNoShow = lead.negocioPrincipal?.status === "no_show";
@@ -590,40 +591,40 @@ function LeadCard({ lead, stageColor, view, readOnly = false, owner, onOpenLead,
       onDragStart={readOnly ? undefined : (e) => { e.dataTransfer.setData("leadId", lead.id); onDragStart?.(); }}
       onDragEnd={readOnly ? undefined : () => onDragEnd?.()}
       className={`group rounded-xl p-3 transition-all duration-200 hover:-translate-y-0.5 relative ${readOnly ? "cursor-pointer" : "cursor-grab active:cursor-grabbing"}`}
-      style={{ background: "var(--cf2-bg-surface)", border: age?.breached ? "1px solid var(--cf2-danger-border)" : "1px solid var(--cf2-border-default)" }}
+      style={{ background: "var(--cf2-chrome-surface-active)", border: "1px solid var(--cf2-chrome-border-subtle)" }}
     >
       <button ref={menuTriggerRef} onClick={toggleMenu} onMouseDown={(e) => e.stopPropagation()} draggable={false} onDragStart={(e) => e.preventDefault()} className="absolute top-2 right-2 z-10 p-1 rounded opacity-0 group-hover:opacity-70 hover:opacity-100" title="Ações">
-        <MoreHorizontal className="w-3.5 h-3.5" style={{ color: "var(--cf2-text-tertiary)" }} />
+        <MoreHorizontal className="w-3.5 h-3.5" style={{ color: "var(--cf2-chrome-text-secondary)" }} />
       </button>
       {menuOpen && menuPos && typeof window !== "undefined" && createPortal(
-        <div ref={menuPortalRef} className="fixed min-w-[230px] rounded-lg shadow-xl py-1 text-[11px]" style={{ top: menuPos.top, left: menuPos.left, background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)", zIndex: 9999 }} onClick={(e) => e.stopPropagation()}>
+        <div ref={menuPortalRef} className="fixed min-w-[230px] rounded-lg shadow-xl py-1 text-[11px]" style={{ top: menuPos.top, left: menuPos.left, background: "var(--cf2-chrome-surface-active)", border: "1px solid var(--cf2-chrome-border-subtle)", zIndex: 9999 }} onClick={(e) => e.stopPropagation()}>
           {isOportunidade && lead.negocioPrincipal && (
             <>
-              <button onClick={() => { onOpenNegocio(lead.negocioPrincipal!.id); setMenuOpen(false); }} className="w-full text-left px-3 py-1.5 flex items-center gap-2 font-medium" style={{ color: "var(--cf2-text-primary)" }}>
+              <button onClick={() => { onOpenNegocio(lead.negocioPrincipal!.id); setMenuOpen(false); }} className="w-full text-left px-3 py-1.5 flex items-center gap-2 font-medium" style={{ color: "var(--cf2-chrome-text-primary)" }}>
                 <Briefcase className="w-3 h-3" style={{ color: "var(--cf2-success-text)" }} /> Abrir oportunidade
               </button>
-              <div className="my-1 h-px" style={{ background: "var(--cf2-border-default)" }} />
+              <div className="my-1 h-px" style={{ background: "var(--cf2-chrome-border-subtle)" }} />
             </>
           )}
           {readOnly ? (
-            <div className="px-3 py-1.5 text-[10px]" style={{ color: "var(--cf2-text-tertiary)" }}>Etapa controlada pelo closer no Pipeline.</div>
+            <div className="px-3 py-1.5 text-[10px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Etapa controlada pelo closer no Pipeline.</div>
           ) : (
             <>
               {!isOportunidade && (
-                <button onClick={() => { onMove("qualified"); setMenuOpen(false); }} className="w-full text-left px-3 py-1.5 flex items-center gap-2 font-medium" style={{ color: "var(--cf2-text-primary)" }}>
+                <button onClick={() => { onMove("qualified"); setMenuOpen(false); }} className="w-full text-left px-3 py-1.5 flex items-center gap-2 font-medium" style={{ color: "var(--cf2-chrome-text-primary)" }}>
                   <CheckCircle2 className="w-3 h-3" style={{ color: "var(--cf2-success-text)" }} /> Qualificar (cria oportunidade)
                 </button>
               )}
-              <div className="px-3 py-1 text-[9px] uppercase tracking-wide" style={{ color: "var(--cf2-text-tertiary)" }}>Mover no funil</div>
+              <div className="px-3 py-1 text-[9px] uppercase tracking-wide" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Mover no funil</div>
               {funnelStages.filter((s) => s.key !== currentStatus).map((s) => (
-                <button key={s.key} onClick={() => { onMove(s.key); setMenuOpen(false); }} className="w-full text-left px-3 py-1.5 flex items-center gap-2" style={{ color: "var(--cf2-text-secondary)" }}>
+                <button key={s.key} onClick={() => { onMove(s.key); setMenuOpen(false); }} className="w-full text-left px-3 py-1.5 flex items-center gap-2" style={{ color: "var(--cf2-chrome-text-secondary)" }}>
                   <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: s.color }} /> {s.label}
                 </button>
               ))}
-              <div className="my-1 h-px" style={{ background: "var(--cf2-border-default)" }} />
-              <div className="px-3 py-1 text-[9px] uppercase tracking-wide" style={{ color: "var(--cf2-text-tertiary)" }}>{view === "estagnados" ? "Reativar / mudar motivo" : "Marcar estagnado"}</div>
+              <div className="my-1 h-px" style={{ background: "var(--cf2-chrome-border-subtle)" }} />
+              <div className="px-3 py-1 text-[9px] uppercase tracking-wide" style={{ color: "var(--cf2-chrome-text-secondary)" }}>{view === "estagnados" ? "Reativar / mudar motivo" : "Marcar estagnado"}</div>
               {SDR_STAGNATION_STAGES.filter((s) => s.key !== currentStatus).map((s) => (
-                <button key={s.key} onClick={() => { onMove(s.key); setMenuOpen(false); }} className="w-full text-left px-3 py-1.5 flex items-center gap-2" style={{ color: "var(--cf2-text-secondary)" }}>
+                <button key={s.key} onClick={() => { onMove(s.key); setMenuOpen(false); }} className="w-full text-left px-3 py-1.5 flex items-center gap-2" style={{ color: "var(--cf2-chrome-text-secondary)" }}>
                   <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: s.color }} /> {s.label}
                 </button>
               ))}
@@ -635,19 +636,19 @@ function LeadCard({ lead, stageColor, view, readOnly = false, owner, onOpenLead,
 
       <div onClick={() => onOpenLead(lead.id)} className="cursor-pointer">
         <div className="min-w-0 flex-1 pr-6 flex items-center gap-1.5">
-          <p className="font-semibold text-[13px] truncate leading-tight" style={{ color: "var(--cf2-text-primary)" }}>{nome}</p>
-          {isNoShow && <span className="shrink-0 text-[8px] px-1 py-0.5 rounded font-bold uppercase tracking-wide" style={{ background: "var(--cf2-warning-bg)", color: "var(--cf2-warning-text)" }} title="Não compareceu à reunião. Retrabalhar e reagendar.">No-show</span>}
-          {isOportunidade && !isNoShow && <span className="shrink-0 text-[8px] px-1 py-0.5 rounded font-bold uppercase tracking-wide" style={{ background: "var(--cf2-success-bg)", color: "var(--cf2-success-text)" }} title="Já é oportunidade no Pipeline">Opp</span>}
+          <p className="font-semibold text-[13px] truncate leading-tight" style={{ color: "var(--cf2-chrome-text-primary)" }}>{nome}</p>
+          {isNoShow && <span className="shrink-0 text-[8px] px-1 py-0.5 rounded font-bold uppercase tracking-wide" style={{ background: "rgba(245,158,11,0.15)", color: "var(--cf2-warning-text)" }} title="Não compareceu à reunião. Retrabalhar e reagendar.">No-show</span>}
+          {isOportunidade && !isNoShow && <span className="shrink-0 text-[8px] px-1 py-0.5 rounded font-bold uppercase tracking-wide" style={{ background: "rgba(34,197,94,0.15)", color: "#4ade80" }} title="Já é oportunidade no Pipeline">Opp</span>}
         </div>
 
         {(lead.empresa || lead.cargo) && (
-          <p className="text-[11px] truncate mt-1" style={{ color: "var(--cf2-text-tertiary)" }}>{lead.empresa || ""}{lead.empresa && lead.cargo ? " · " : ""}{lead.cargo || ""}</p>
+          <p className="text-[11px] truncate mt-1" style={{ color: "var(--cf2-chrome-text-secondary)" }}>{lead.empresa || ""}{lead.empresa && lead.cargo ? " · " : ""}{lead.cargo || ""}</p>
         )}
 
         <div className="flex flex-wrap items-center gap-1.5 mt-2">
-          {lead.origem && <span className="text-[9px] px-1.5 py-0.5 rounded font-medium" style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-secondary)" }}>{lead.origem}</span>}
+          {lead.origem && <span className="text-[9px] px-1.5 py-0.5 rounded font-medium" style={{ background: "rgba(255,255,255,0.06)", color: "var(--cf2-chrome-text-secondary)" }}>{lead.origem}</span>}
           {lead.utmCampaign && (
-            <span className="flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 rounded font-medium" style={{ background: "#f3e8ff", color: "#8e27ef" }} title={`Campanha: ${lead.utmCampaign}`}>
+            <span className="flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 rounded font-medium" style={{ background: "rgba(142,39,239,0.18)", color: "#c084fc" }} title={`Campanha: ${lead.utmCampaign}`}>
               <Tag className="w-2.5 h-2.5" /> {lead.utmCampaign}
             </span>
           )}
@@ -656,10 +657,7 @@ function LeadCard({ lead, stageColor, view, readOnly = false, owner, onOpenLead,
         <div className="flex items-center justify-between mt-2.5 gap-2">
           <OwnerChipCf2 nome={owner?.nome} avatarUrl={owner?.avatarUrl} color={stageColor} />
           <div className="flex items-center gap-1.5 shrink-0">
-            {typeof lead.leadScore === "number" && lead.leadScore > 0 && (
-              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" }}>{lead.leadScore}</span>
-            )}
-            {age && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ backgroundColor: age.bg, color: age.color }}>{age.text}</span>}
+            {age && ageDark && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ backgroundColor: ageDark.bg, color: ageDark.text }}>{age.text}</span>}
           </div>
         </div>
       </div>

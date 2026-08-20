@@ -50,6 +50,7 @@ import {
 import { z } from "zod";
 import { leadScoringQueue, notificationQueue, enrichmentQueue } from "@/lib/queue";
 import { syncPessoaFromLead, syncOportunidadeFromNegocio } from "@/lib/crm/sync-domain-model";
+import { registrarMudancaResponsavel } from "@/lib/crm/owner";
 import { dispararAutomacoes } from "@/lib/crm/automacao-engine";
 import { publicarEvento } from "@/lib/events/outbox";
 import {
@@ -336,6 +337,7 @@ app.get("/leads", async (c) => {
   let negocioMap: Record<string, { id: string; titulo: string; status: string }[]> = {};
   let contatoMap: Record<string, { id: string; avatarUrl: string | null }> = {};
   let empresaNomes: Record<string, string> = {};
+  let reuniaoAgendadaSet: Set<string> = new Set();
   if (leadIds.length > 0) {
     // Collect empresaIds for leads that have empresaId but no empresa text
     const empresaIds = data
@@ -356,6 +358,15 @@ app.get("/leads", async (c) => {
       db.select({ leadId: contatos.leadId, id: contatos.id, avatarUrl: contatos.avatarUrl })
         .from(contatos)
         .where(inArray(contatos.leadId, leadIds)),
+      // Reunião agendada futura (De/Para CRM2 17/08: distingue "Qualificado
+      // SQL" de "Agenda Confirmada" no board de Pré-vendas — negocios.status
+      // já vira 'reuniao_agendada' na conversão MESMO sem reunião marcada
+      // (qualificar sem reunião), então o sinal real é a EXISTÊNCIA de uma
+      // linha em reunioes, não o status do negócio).
+      db.select({ negocioId: reunioes.negocioId })
+        .from(reunioes)
+        .innerJoin(negocioLeads, eq(negocioLeads.negocioId, reunioes.negocioId))
+        .where(and(inArray(negocioLeads.leadId, leadIds), eq(reunioes.status, "agendada"), sql`${reunioes.data} > now()`)),
     ];
     if (empresaIds.length > 0) {
       queries.push(
@@ -368,7 +379,8 @@ app.get("/leads", async (c) => {
     const results = await Promise.all(queries);
     const allNegocios = results[0] as { leadId: string | null; negocioId: string; titulo: string; status: string }[];
     const contatoLinks = results[1] as { leadId: string | null; id: string; avatarUrl: string | null }[];
-    const empresaList = (results[2] || []) as { id: string; nome: string }[];
+    const reuniaoAgendadaNegocioIds = new Set((results[2] as { negocioId: string | null }[]).map(r => r.negocioId).filter(Boolean));
+    const empresaList = (results[3] || []) as { id: string; nome: string }[];
 
     for (const n of allNegocios) {
       if (!n.leadId) continue;
@@ -381,6 +393,8 @@ app.get("/leads", async (c) => {
     for (const e of empresaList) {
       empresaNomes[e.id] = e.nome;
     }
+
+    reuniaoAgendadaSet = reuniaoAgendadaNegocioIds as Set<string>;
   }
 
   const enrichedLeads = data.map(l => {
@@ -400,6 +414,7 @@ app.get("/leads", async (c) => {
       negocioCount: negs.length,
       negocioPrincipal: primaryNeg,
       negocioAtivoStatus: primaryNeg?.status || null,
+      temReuniaoAgendada: primaryNeg ? reuniaoAgendadaSet.has(primaryNeg.id) : false,
       contatoId: contato?.id || null,
       avatarUrl: contato?.avatarUrl || null,
     };
@@ -804,6 +819,23 @@ app.get("/leads/:id", async (c) => {
   const contatoAvatar = leadContatos[0]?.avatarUrl || null;
   const contatoId = leadContatos[0]?.id || null;
 
+  // negocioPrincipal + temReuniaoAgendada — mesma regra do enrichment da
+  // listagem (GET /leads), pro drawer novo (Figma 230:8825) mostrar a
+  // etapa CRM2 certa sem recalcular do zero (Qualificado SQL vs Agenda
+  // Confirmada dependem desse sinal real, não só do status do negócio).
+  const activeNegs = leadNegocios.filter((n) => !["perdido", "churned"].includes(n.status));
+  const liveNegs = activeNegs.filter((n) => n.status !== "no_show");
+  const primaryNeg = liveNegs[0] || activeNegs[0] || leadNegocios[0] || null;
+  let temReuniaoAgendada = false;
+  if (primaryNeg) {
+    const [futura] = await db
+      .select({ id: reunioes.id })
+      .from(reunioes)
+      .where(and(eq(reunioes.negocioId, primaryNeg.id), eq(reunioes.status, "agendada"), sql`${reunioes.data} > now()`))
+      .limit(1);
+    temReuniaoAgendada = !!futura;
+  }
+
   return c.json({
     lead: {
       ...lead,
@@ -811,6 +843,9 @@ app.get("/leads/:id", async (c) => {
       avatarUrl: lead.avatarUrl || contatoAvatar,
       contatoId,
       labels: leadLabelRows,
+      negocioPrincipal: primaryNeg ? { id: primaryNeg.id, titulo: primaryNeg.titulo, status: primaryNeg.status } : null,
+      negocioCount: leadNegocios.length,
+      temReuniaoAgendada,
     },
     empresa: empresaData,
     negocios: leadNegocios,
@@ -974,6 +1009,10 @@ app.patch("/leads/:id", async (c) => {
     }
   }
 
+  const previousResponsavel = parsed.data.responsavelId !== undefined
+    ? (await db.select({ responsavelId: leads.responsavelId }).from(leads).where(eq(leads.id, id)).limit(1))[0]?.responsavelId ?? null
+    : null;
+
   const [updated] = await db
     .update(leads)
     .set({ ...updateData, updatedAt: new Date() })
@@ -982,6 +1021,18 @@ app.patch("/leads/:id", async (c) => {
 
   if (!updated) {
     return c.json({ error: "Lead nao encontrado" }, 404);
+  }
+
+  // AssignOwner (19/08) — mesma regra central de owner.ts (ver negocios.ts).
+  if (parsed.data.responsavelId !== undefined) {
+    await registrarMudancaResponsavel({
+      organizacaoId: ctx.organizacaoId,
+      entityType: "lead",
+      entityId: id,
+      previousOwnerId: previousResponsavel,
+      newOwnerId: parsed.data.responsavelId,
+      actorId: ctx.userId,
+    });
   }
 
   // Sync contato name when lead name changes

@@ -131,11 +131,17 @@ app.patch("/contatos/:id/toggle", async (c) => {
     updatedAt: new Date(),
   };
 
+  // Correção 19/08: aiAtivo era gravado sem tocar handoffStatus, violando o
+  // invariante que o próprio schema documenta ("aiAtivo mantido em
+  // sincronia com handoffStatus") — endpoint nunca tinha UI que o
+  // chamasse até agora, então o desvio passou sem sintoma visível.
   if (!aiAtivo) {
+    values.handoffStatus = "human_assigned";
     values.handoffAt = new Date();
     values.handoffMotivo = "manual_toggle";
     values.handoffUsuarioId = ctx.userId;
   } else {
+    values.handoffStatus = "ai_handling";
     values.handoffAt = null;
     values.handoffMotivo = null;
     values.handoffUsuarioId = null;

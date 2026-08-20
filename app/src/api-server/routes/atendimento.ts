@@ -36,6 +36,10 @@ type ItemUnificado = {
   callStatus: string | null; // só ligação
   emailThreadId: string | null; // só email — null quando o e-mail é standalone (usar emailId nesse caso)
   telefone: string | null; // só whatsapp — necessário pras actions (reagir/apagar)
+  // Resumo real gerado pela IA (Carol/Agente SDR) — só whatsapp, só quando
+  // ai_sdr_contato_state.conversation_summary já foi preenchido (20/08,
+  // referência UX). null é o caso comum hoje: sem resumo, não "carregando".
+  conversationSummary: string | null;
 };
 
 // ─── GET /atendimento/conversas ─────────────────────────────────────
@@ -52,30 +56,34 @@ app.get("/atendimento/conversas", async (c) => {
   const isAdmin = ctx.userRole === "admin" || ctx.userRole === "super_admin";
   const effectiveUserId = isAdmin && viewAs ? viewAs : ctx.userId;
 
-  const incluirWhatsapp = canal === "todas" || canal === "whatsapp";
-  const incluirEmail = canal === "todas" || canal === "email";
-  const incluirLigacao = canal === "todas" || canal === "ligacao";
-
+  // Contadores por aba (19/08, referência de UX): busca as 3 fontes sempre
+  // — mesmas funções/filtros de view+search já usados pra montar a lista,
+  // sem duplicar a regra de "todas = fila de atenção" num segundo lugar
+  // (risco real de dessincronia, já visto nesta sessão noutro campo). Custo
+  // extra é aceitável: são as mesmas queries indexadas que "todas" já fazia.
   const [whatsappItens, emailItens, ligacaoItens] = await Promise.all([
-    incluirWhatsapp ? buscarWhatsapp({ ctx, view, search, effectiveUserId, limit }) : Promise.resolve([]),
-    incluirEmail ? buscarEmail({ ctx, view, search, effectiveUserId, limit }) : Promise.resolve([]),
-    incluirLigacao ? buscarLigacao({ ctx, view, search, effectiveUserId, limit }) : Promise.resolve([]),
+    buscarWhatsapp({ ctx, view, search, effectiveUserId, limit }),
+    buscarEmail({ ctx, view, search, effectiveUserId, limit }),
+    buscarLigacao({ ctx, view, search, effectiveUserId, limit }),
   ]);
 
-  let merged = [...whatsappItens, ...emailItens, ...ligacaoItens].sort((a, b) => {
+  const todasFiltrado = [...whatsappItens, ...emailItens, ...ligacaoItens].filter((m) => m.tipo === "ligacao" || m.naoLidas > 0);
+  const contagens = {
+    todas: todasFiltrado.length,
+    whatsapp: whatsappItens.length,
+    email: emailItens.length,
+    ligacao: ligacaoItens.length,
+  };
+
+  const porCanal: Record<string, ItemUnificado[]> = { whatsapp: whatsappItens, email: emailItens, ligacao: ligacaoItens };
+  let merged = canal === "todas" ? todasFiltrado : [...porCanal[canal]];
+  merged = merged.sort((a, b) => {
     const ta = a.timestamp ? new Date(a.timestamp).getTime() : 0;
     const tb = b.timestamp ? new Date(b.timestamp).getTime() : 0;
     return tb - ta;
   });
 
-  // "Todas" é a fila do que precisa de atenção, não o histórico completo
-  // (Kauã, 10/08) — só o que ainda não foi aberto. Abrir zera naoLidas (já
-  // acontece pro WhatsApp; e-mail marca lido ao abrir a thread) e o item sai
-  // da lista sozinho. Ligação não tem "não lida" — abrir uma vez não some
-  // com o histórico de ligações, então "Todas" só filtra Whats+Email.
-  if (canal === "todas") merged = merged.filter((m) => m.tipo === "ligacao" || m.naoLidas > 0);
-
-  return c.json({ conversas: merged.slice(0, limit) });
+  return c.json({ conversas: merged.slice(0, limit), contagens });
 });
 
 async function buscarWhatsapp(opts: {
@@ -112,6 +120,7 @@ async function buscarWhatsapp(opts: {
       leadId: contatos.leadId,
       responsavelId: contatos.responsavelId,
       handoffStatus: aiSdrContatoState.handoffStatus,
+      conversationSummary: aiSdrContatoState.conversationSummary,
     })
     .from(contatos)
     .leftJoin(leads, eq(contatos.leadId, leads.id))
@@ -136,6 +145,7 @@ async function buscarWhatsapp(opts: {
     duracaoSegundos: null,
     callStatus: null,
     emailThreadId: null,
+    conversationSummary: r.conversationSummary ?? null,
   }));
 }
 
@@ -209,6 +219,7 @@ async function buscarEmail(opts: {
       duracaoSegundos: null,
       callStatus: null,
       emailThreadId: r.threadId,
+      conversationSummary: null,
     }));
 }
 
@@ -265,6 +276,7 @@ async function buscarLigacao(opts: {
       duracaoSegundos: r.duracaoSegundos,
       callStatus: r.callStatus,
       emailThreadId: null,
+      conversationSummary: null,
     };
   });
 }
@@ -386,7 +398,7 @@ app.get("/atendimento/contexto", async (c) => {
   if (!lead) return c.json({ pessoa: null, empresa: null, cascata: { tipo: "nenhum" }, proximasAtividades: [] });
 
   const [empresa] = lead.empresaId
-    ? await db.select({ id: empresas.id, nome: empresas.nome, setor: empresas.setor }).from(empresas).where(eq(empresas.id, lead.empresaId)).limit(1)
+    ? await db.select({ id: empresas.id, nome: empresas.nome, setor: empresas.setor, cnpj: empresas.cnpj, porte: empresas.porte }).from(empresas).where(eq(empresas.id, lead.empresaId)).limit(1)
     : [null];
 
   const [cliente] = await db.select({ id: clientes.id }).from(clientes).where(eq(clientes.leadIdLegado, leadId)).limit(1);
@@ -447,7 +459,9 @@ app.get("/atendimento/contexto", async (c) => {
 
   return c.json({
     pessoa: { nome: lead.nome, cargo: lead.cargo, telefone: lead.telefone, email: lead.email },
-    empresa: empresa ? { id: empresa.id, nome: empresa.nome, setor: empresa.setor } : (lead.empresaLegacy ? { id: null, nome: lead.empresaLegacy, setor: lead.empresaSetorLegacy } : null),
+    empresa: empresa
+      ? { id: empresa.id, nome: empresa.nome, setor: empresa.setor, cnpj: empresa.cnpj, porte: empresa.porte }
+      : (lead.empresaLegacy ? { id: null, nome: lead.empresaLegacy, setor: lead.empresaSetorLegacy, cnpj: null, porte: null } : null),
     isCliente: !!cliente,
     cascata,
     proximasAtividades,

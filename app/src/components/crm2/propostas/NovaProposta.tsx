@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Search, Plus, Minus, Trash2, ArrowLeft, Send, Save } from "lucide-react";
+import { Search, Plus, Minus, Trash2, ArrowLeft, Send, Save, AlertTriangle, CheckCircle2 } from "lucide-react";
 import Link from "next/link";
 import { Cf2Card } from "../ui/Card";
 
@@ -28,17 +28,33 @@ export function Cf2NovaPropostaWorkspace() {
   const searchParams = useSearchParams();
   const negocioIdPreSelecionado = searchParams.get("negocioId");
   const leadIdPreSelecionado = searchParams.get("leadId");
+  const propostaIdEditando = searchParams.get("propostaId");
 
   const [leadSelecionado, setLeadSelecionado] = useState<Lead | null>(null);
   const [negocioId, setNegocioId] = useState<string | null>(null);
   const [negocioTitulo, setNegocioTitulo] = useState<string | null>(null);
   const [buscaLead, setBuscaLead] = useState("");
+  const [buscaProduto, setBuscaProduto] = useState("");
   const [categoriaAtiva, setCategoriaAtiva] = useState<string | null>(null);
   const [carrinho, setCarrinho] = useState<ItemCarrinho[]>([]);
   const [condicoesPagamento, setCondicoesPagamento] = useState("");
   const [dataValidade, setDataValidade] = useState("");
   const [observacoes, setObservacoes] = useState("");
   const [herdouServicos, setHerdouServicos] = useState(false);
+  const [carregouEdicao, setCarregouEdicao] = useState(false);
+
+  // Modo edição (spec 18/08: "Editar" no drawer) — PATCH em vez de POST,
+  // não permite trocar lead/negócio (edição só ajusta itens/condições da
+  // MESMA proposta), gate real já no backend (só rascunho/enviada editável).
+  const { data: propostaEditando, isLoading: carregandoProposta } = useQuery({
+    queryKey: ["proposta-para-editar", propostaIdEditando],
+    queryFn: async () => {
+      const r = await fetch(`/api/propostas/${propostaIdEditando}`);
+      if (!r.ok) throw new Error("Proposta não encontrada");
+      return r.json();
+    },
+    enabled: !!propostaIdEditando && !carregouEdicao,
+  });
 
   // Negócio → Criar proposta: herda lead/empresa/responsável direto, sem
   // repedir o que o CRM já sabe (pedido explícito do Kauã).
@@ -74,15 +90,50 @@ export function Cf2NovaPropostaWorkspace() {
     if (leadContexto?.lead && !leadSelecionado) setLeadSelecionado(leadContexto.lead);
   }, [leadContexto, leadSelecionado]);
 
+  useEffect(() => {
+    if (!propostaEditando || carregouEdicao) return;
+    setLeadSelecionado({
+      id: propostaEditando.leadId, nome: propostaEditando.leadNome || "", empresa: propostaEditando.leadEmpresa,
+      telefone: propostaEditando.leadTelefone || "", status: "",
+    });
+    setNegocioId(propostaEditando.negocioId ?? null);
+    setNegocioTitulo(propostaEditando.negocioTitulo ?? null);
+    setCarrinho((propostaEditando.itens || []).map((i: { servicoCatalogoId: string | null; nome: string; tipo: string; quantidade: string; valorUnitario: string }) => ({
+      servicoCatalogoId: i.servicoCatalogoId || i.nome, nome: i.nome, tipo: i.tipo, quantidade: parseFloat(i.quantidade), valorUnitario: parseFloat(i.valorUnitario),
+    })));
+    setCondicoesPagamento(propostaEditando.condicoesPagamento || "");
+    setDataValidade(propostaEditando.dataValidade || "");
+    setObservacoes(propostaEditando.observacoes || "");
+    setHerdouServicos(true);
+    setCarregouEdicao(true);
+  }, [propostaEditando, carregouEdicao]);
+
   const { data: leads } = useQuery<Lead[]>({
     queryKey: ["leads-for-proposta", buscaLead],
     queryFn: async () => {
-      const r = await fetch(`/api/leads?limit=20${buscaLead ? `&q=${encodeURIComponent(buscaLead)}` : ""}`);
+      const r = await fetch(`/api/leads?limit=20${buscaLead ? `&search=${encodeURIComponent(buscaLead)}` : ""}`);
       const data = await r.json();
       return data.leads || data;
     },
     enabled: !leadSelecionado,
   });
+
+  // Validação real (referência de UX, 19/08): o backend já rejeita
+  // `POST /propostas/:id/enviar` sem e-mail no lead (ver
+  // lib/crm/enviar-proposta.ts) — só nunca foi surfaced ANTES do clique,
+  // então o vendedor só descobria depois de tentar enviar. `leads` da busca
+  // não traz e-mail (lista enxuta); busca o detalhe completo só quando um
+  // lead é selecionado.
+  const { data: leadDetalhe } = useQuery<{ email: string | null }>({
+    queryKey: ["lead-email-para-proposta", leadSelecionado?.id],
+    queryFn: async () => {
+      const r = await fetch(`/api/leads/${leadSelecionado!.id}`);
+      if (!r.ok) return { email: null };
+      return r.json();
+    },
+    enabled: !!leadSelecionado?.id,
+  });
+  const semEmail = !!leadSelecionado && leadDetalhe !== undefined && !leadDetalhe?.email;
 
   const { data: catalogo = [] } = useQuery<CatalogoItem[]>({
     queryKey: ["servicos-catalogo"],
@@ -119,7 +170,10 @@ export function Cf2NovaPropostaWorkspace() {
   }, [catalogo]);
 
   const categoriaSelecionada = categoriaAtiva ?? categorias[0] ?? null;
-  const itensDaCategoria = catalogo.filter((c) => (c.categoria || "outros") === categoriaSelecionada);
+  const buscaProdutoNorm = buscaProduto.trim().toLowerCase();
+  const itensDaCategoria = catalogo
+    .filter((c) => (c.categoria || "outros") === categoriaSelecionada)
+    .filter((c) => !buscaProdutoNorm || c.nome.toLowerCase().includes(buscaProdutoNorm) || (c.descricao || "").toLowerCase().includes(buscaProdutoNorm));
 
   const totalRecorrente = carrinho.filter((i) => i.tipo === "recorrente").reduce((s, i) => s + calcSubtotal(i.quantidade, i.valorUnitario), 0);
   const totalAvulso = carrinho.filter((i) => i.tipo !== "recorrente").reduce((s, i) => s + calcSubtotal(i.quantidade, i.valorUnitario), 0);
@@ -159,6 +213,29 @@ export function Cf2NovaPropostaWorkspace() {
 
   const salvarMutation = useMutation({
     mutationFn: async (enviar: boolean) => {
+      // Modo edição (propostaId na URL) — PATCH na MESMA proposta, sem
+      // reabrir a separação multi-linha (já decidida na criação; o backend
+      // rejeita edição que introduza uma 2ª família, ver ADR-EXEC-022).
+      if (propostaIdEditando) {
+        const r = await fetch(`/api/propostas/${propostaIdEditando}`, {
+          method: "PATCH", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            condicoesPagamento: condicoesPagamento || undefined,
+            dataValidade: dataValidade || undefined,
+            observacoes: observacoes || undefined,
+            itens: carrinho.map((i) => ({ servicoCatalogoId: i.servicoCatalogoId, nome: i.nome, tipo: i.tipo, quantidade: i.quantidade, valorUnitario: i.valorUnitario })),
+          }),
+        });
+        const resultado = await r.json();
+        if (!r.ok) throw new Error(resultado.error || "Erro ao editar proposta");
+        if (enviar) {
+          const r2 = await fetch(`/api/propostas/${propostaIdEditando}/enviar`, { method: "POST" });
+          const body2 = await r2.json();
+          if (!r2.ok) throw new Error(body2.error || "Proposta editada, mas falhou ao (re)enviar");
+        }
+        return { id: propostaIdEditando } as { id: string };
+      }
+
       const r = await fetch("/api/propostas", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -197,13 +274,13 @@ export function Cf2NovaPropostaWorkspace() {
       if ("multiLinha" in resultado && resultado.multiLinha) {
         router.push(`/negocios/${resultado.oportunidades[0].negocioId}`);
       } else {
-        router.push(`/propostas/${(resultado as { id: string }).id}`);
+        router.push("/propostas");
       }
     },
   });
 
-  if ((negocioIdPreSelecionado && carregandoNegocio) || (leadIdPreSelecionado && carregandoLead)) {
-    return <div className="page-scroll"><p className="text-sm" style={{ color: "var(--cf2-text-tertiary)" }}>Carregando contexto do negócio...</p></div>;
+  if ((negocioIdPreSelecionado && carregandoNegocio) || (leadIdPreSelecionado && carregandoLead) || (propostaIdEditando && carregandoProposta && !carregouEdicao)) {
+    return <div className="page-scroll"><p className="text-sm" style={{ color: "var(--cf2-text-tertiary)" }}>Carregando proposta...</p></div>;
   }
 
   if (!leadSelecionado) {
@@ -241,13 +318,13 @@ export function Cf2NovaPropostaWorkspace() {
     <div className="page-scroll space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          {negocioIdPreSelecionado || leadIdPreSelecionado ? (
+          {negocioIdPreSelecionado || leadIdPreSelecionado || propostaIdEditando ? (
             <Link href="/propostas" className="p-1.5 rounded-lg" style={{ color: "var(--cf2-text-tertiary)" }}><ArrowLeft className="w-4 h-4" /></Link>
           ) : (
             <button onClick={() => setLeadSelecionado(null)} className="p-1.5 rounded-lg" style={{ color: "var(--cf2-text-tertiary)" }}><ArrowLeft className="w-4 h-4" /></button>
           )}
           <div>
-            <h1 className="text-xl font-bold" style={{ color: "var(--cf2-text-primary)" }}>Nova Proposta</h1>
+            <h1 className="text-xl font-bold" style={{ color: "var(--cf2-text-primary)" }}>{propostaIdEditando ? "Editar Proposta" : "Nova Proposta"}</h1>
             <p className="text-[12px]" style={{ color: "var(--cf2-text-secondary)" }}>
               {leadSelecionado.empresa || leadSelecionado.nome}{negocioTitulo ? ` · ${negocioTitulo}` : ""}
             </p>
@@ -259,22 +336,31 @@ export function Cf2NovaPropostaWorkspace() {
             className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-[13px] font-semibold disabled:opacity-40"
             style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-primary)" }}
           >
-            <Save className="w-3.5 h-3.5" /> Salvar rascunho
+            <Save className="w-3.5 h-3.5" /> {propostaIdEditando ? "Salvar alterações" : "Salvar rascunho"}
           </button>
           <button
-            onClick={() => salvarMutation.mutate(true)} disabled={carrinho.length === 0 || salvarMutation.isPending}
+            onClick={() => salvarMutation.mutate(true)} disabled={carrinho.length === 0 || salvarMutation.isPending || semEmail}
+            title={semEmail ? "O lead não tem e-mail cadastrado — preencha antes de enviar" : undefined}
             className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-[13px] font-semibold disabled:opacity-40"
             style={{ background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" }}
           >
-            <Send className="w-3.5 h-3.5" /> {salvarMutation.isPending ? "Enviando..." : "Enviar proposta"}
+            <Send className="w-3.5 h-3.5" />
+            {salvarMutation.isPending
+              ? "Enviando..."
+              : propostaIdEditando
+              ? "Salvar e reenviar"
+              : linhasNoCarrinho.size > 1
+              ? `Gerar ${linhasNoCarrinho.size} propostas →`
+              : "Gerar proposta →"}
           </button>
         </div>
       </div>
       {salvarMutation.isError && <p className="text-[12px]" style={{ color: "var(--cf2-danger-text)" }}>{(salvarMutation.error as Error).message}</p>}
 
       <div className="flex gap-4 flex-col lg:flex-row">
-        {/* Navegação lateral por categoria — estrutura real do catálogo, não lista genérica */}
+        {/* Painel 1 — Famílias comerciais: a família determina o configurador ao lado, não existe formulário universal */}
         <div className="flex lg:flex-col gap-1.5 lg:w-44 shrink-0 overflow-x-auto">
+          <p className="hidden lg:block text-[10px] font-bold uppercase px-1 mb-1" style={{ color: "var(--cf2-text-tertiary)" }}>Famílias comerciais</p>
           {categorias.map((cat) => (
             <button
               key={cat}
@@ -290,8 +376,18 @@ export function Cf2NovaPropostaWorkspace() {
           ))}
         </div>
 
-        {/* Produtos da categoria */}
-        <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-2.5 content-start">
+        {/* Painel 2 — Configurador: monta a solução da família selecionada. Troca de família = configurador diferente, não existe formulário universal */}
+        <div className="flex-1 flex flex-col gap-2.5">
+          <p className="text-[10px] font-bold uppercase px-1" style={{ color: "var(--cf2-text-tertiary)" }}>Configurador — {CATEGORIA_LABEL[categoriaSelecionada || ""] || categoriaSelecionada}</p>
+          <div className="relative">
+            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2" style={{ color: "var(--cf2-text-tertiary)" }} />
+            <input
+              value={buscaProduto} onChange={(e) => setBuscaProduto(e.target.value)} placeholder="Buscar produto ou funcionalidade..."
+              className="w-full text-[13px] pl-8 pr-3 py-2 rounded-lg outline-none"
+              style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }}
+            />
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 content-start">
           {itensDaCategoria.map((item) => {
             const jaAdicionado = carrinho.some((i) => i.servicoCatalogoId === item.id);
             return (
@@ -313,13 +409,18 @@ export function Cf2NovaPropostaWorkspace() {
               </button>
             );
           })}
-          {itensDaCategoria.length === 0 && <p className="text-[13px] col-span-2" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhum produto ativo nessa categoria.</p>}
+          {itensDaCategoria.length === 0 && (
+            <p className="text-[13px] col-span-2" style={{ color: "var(--cf2-text-tertiary)" }}>
+              {buscaProdutoNorm ? "Nenhum produto encontrado pra essa busca." : "Nenhum produto ativo nessa categoria."}
+            </p>
+          )}
+          </div>
         </div>
 
-        {/* Carrinho / resumo */}
+        {/* Painel 3 — Resumo comercial: vivo enquanto monta, conduz o próximo passo */}
         <div className="lg:w-80 shrink-0">
           <Cf2Card>
-            <p className="text-[11px] font-bold uppercase tracking-wide mb-3" style={{ color: "var(--cf2-text-tertiary)" }}>Resumo da proposta</p>
+            <p className="text-[11px] font-bold uppercase tracking-wide mb-3" style={{ color: "var(--cf2-text-tertiary)" }}>Resumo comercial</p>
             {linhasNoCarrinho.size > 1 && (
               <div className="mb-3 p-2.5 rounded-lg text-[12px]" style={{ background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" }}>
                 <p className="font-bold mb-1">Esta venda será organizada em {linhasNoCarrinho.size} oportunidades:</p>
@@ -360,6 +461,27 @@ export function Cf2NovaPropostaWorkspace() {
               {totalAvulso > 0 && <div className="flex justify-between"><span>Avulso</span><span>{brl(totalAvulso)}</span></div>}
               <div className="flex justify-between text-[13px] font-bold" style={{ color: "var(--cf2-text-primary)" }}><span>Total</span><span>{brl(totalGeral)}</span></div>
             </div>
+            {/* Validação (referência de UX, 19/08) — regra real do backend
+                (lib/crm/enviar-proposta.ts rejeita envio sem e-mail),
+                surfaced ANTES do clique em vez do vendedor só descobrir
+                depois de tentar enviar e ver o erro. */}
+            {leadSelecionado && (
+              <div className="flex flex-col gap-1 mb-3 p-2.5 rounded-lg" style={{ background: "var(--cf2-bg-surface-muted)" }}>
+                <p className="text-[10px] font-bold uppercase" style={{ color: "var(--cf2-text-tertiary)" }}>Antes de enviar</p>
+                <div className="flex items-center gap-1.5">
+                  {semEmail ? <AlertTriangle className="w-3 h-3 shrink-0" style={{ color: "var(--cf2-danger-text)" }} /> : <CheckCircle2 className="w-3 h-3 shrink-0" style={{ color: "var(--cf2-success-text)" }} />}
+                  <p className="text-[11px]" style={{ color: semEmail ? "var(--cf2-danger-text)" : "var(--cf2-text-secondary)" }}>
+                    {semEmail ? "Lead sem e-mail cadastrado — obrigatório pra enviar" : "E-mail do lead cadastrado"}
+                  </p>
+                </div>
+                {carrinho.some((i) => catalogo.find((c) => c.id === i.servicoCatalogoId)?.requerContrato) && (
+                  <div className="flex items-center gap-1.5">
+                    <AlertTriangle className="w-3 h-3 shrink-0" style={{ color: "var(--cf2-warning-text)" }} />
+                    <p className="text-[11px]" style={{ color: "var(--cf2-text-secondary)" }}>Um ou mais itens exigem contrato após aceite</p>
+                  </div>
+                )}
+              </div>
+            )}
             <input value={condicoesPagamento} onChange={(e) => setCondicoesPagamento(e.target.value)} placeholder="Condições de pagamento" className="w-full text-[12px] px-2.5 py-2 rounded-lg outline-none mb-2" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }} />
             <input type="date" value={dataValidade} onChange={(e) => setDataValidade(e.target.value)} className="w-full text-[12px] px-2.5 py-2 rounded-lg outline-none mb-2" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }} />
             <textarea value={observacoes} onChange={(e) => setObservacoes(e.target.value)} placeholder="Observações" rows={2} className="w-full text-[12px] px-2.5 py-2 rounded-lg outline-none resize-none" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }} />

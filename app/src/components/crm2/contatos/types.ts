@@ -6,7 +6,10 @@ export type Kpis = {
   empresas: number;
 };
 
-export type Relacionamento = "cliente" | "qualificado" | "lead";
+// "Ex-cliente" (18/08, arquitetura Pessoa/Empresa do Kauã) — cliente=tipo,
+// não status; aqui é sempre estado DERIVADO ao vivo (contrato histórico sem
+// contrato ativo), nunca gravado como campo.
+export type Relacionamento = "cliente" | "ex_cliente" | "qualificado" | "lead";
 
 export type EmpresaLinha = {
   id: string;
@@ -20,12 +23,15 @@ export type EmpresaLinha = {
   ultima_atividade: string | null;
 };
 
+export type StatusComercial = "leads" | "qualificacao" | "oportunidade" | "cliente" | "ex_cliente" | "contato";
+
 export type PessoaLinha = {
   id: string;
   nome: string;
   email: string | null;
   cargo: string | null;
   tipo: "contato" | "lead" | "cliente";
+  status_comercial: StatusComercial;
   empresa_nome: string | null;
   empresa_id: string | null;
   responsavel_nome: string | null;
@@ -37,13 +43,17 @@ export type PessoaLinha = {
 
 export const RELACIONAMENTO_BADGE: Record<Relacionamento, { label: string; bg: string; text: string }> = {
   cliente: { label: "Cliente", bg: "var(--cf2-success-bg)", text: "var(--cf2-success-text)" },
-  qualificado: { label: "Qualificado", bg: "#dbeafe", text: "#1e40af" },
-  lead: { label: "Lead", bg: "var(--cf2-warning-bg)", text: "var(--cf2-warning-text)" },
+  ex_cliente: { label: "Ex-cliente", bg: "var(--cf2-bg-surface-muted)", text: "var(--cf2-text-secondary)" },
+  qualificado: { label: "Com oportunidade", bg: "#dbeafe", text: "#1e40af" },
+  lead: { label: "Prospect", bg: "var(--cf2-warning-bg)", text: "var(--cf2-warning-text)" },
 };
 
-export const TIPO_BADGE: Record<PessoaLinha["tipo"], { label: string; bg: string; text: string }> = {
+export const STATUS_COMERCIAL_BADGE: Record<StatusComercial, { label: string; bg: string; text: string }> = {
+  leads: { label: "Lead", bg: "var(--cf2-warning-bg)", text: "var(--cf2-warning-text)" },
+  qualificacao: { label: "Em qualificação", bg: "#f3e8ff", text: "#8e27ef" },
+  oportunidade: { label: "Em oportunidade", bg: "#dbeafe", text: "#1e40af" },
   cliente: { label: "Cliente", bg: "var(--cf2-success-bg)", text: "var(--cf2-success-text)" },
-  lead: { label: "Lead", bg: "var(--cf2-warning-bg)", text: "var(--cf2-warning-text)" },
+  ex_cliente: { label: "Ex-cliente", bg: "var(--cf2-bg-surface-muted)", text: "var(--cf2-text-secondary)" },
   contato: { label: "Contato", bg: "var(--cf2-bg-surface-muted)", text: "var(--cf2-text-secondary)" },
 };
 

@@ -13,6 +13,9 @@ import { garantirItemComercialManual } from "@/lib/crm/composicao-comercial";
 import { listarOportunidadesIrmas } from "@/lib/crm/oportunidade-bundle";
 import { materializarServicosCanonicosDoNegocio } from "@/lib/crm/servico-canonico";
 import { isAdminView } from "@/lib/auth/roles";
+import { registrarMudancaResponsavel } from "@/lib/crm/owner";
+import { resolverCorpoContrato } from "@/lib/crm/contrato-template";
+import { criarFulfillmentsParaServicos } from "@/lib/crm/fulfillment";
 import { getCtx } from "../compat.js";
 
 const app = new Hono();
@@ -613,6 +616,32 @@ app.patch("/negocios/:id", async (c) => {
 
       let contratoId = existingContract?.id;
       if (!existingContract && currentNegocio.leadId) {
+        // Correção 19/08: este call site (Won 100% manual, sem grupo
+        // comercial/proposta por trás) era 1 dos 2 caminhos legados que
+        // criavam contrato sem corpo/template — achado real, contrato ficava
+        // sem nada pra mostrar na experiência (ver visibilidade de contrato
+        // na Oportunidade/Empresa, mesma rodada). Reusa a MESMA resolução de
+        // template de `gerarContratoDeTemplate` (commercialModel=null aqui,
+        // pois não há grupo — cai no genérico/catch-all se existir, senão no
+        // fallback textual honesto de sempre).
+        const mrrValor = parsed.data.mrrFechado || currentNegocio.mrrEstimado || "0";
+        const setupValor = parsed.data.valorSetup || currentNegocio.valorSetup || "0";
+        const [leadDoContrato] = await db.select({ nome: leads.nome, empresa: leads.empresa, empresaId: leads.empresaId, empresaCnpj: leads.empresaCnpj, email: leads.email }).from(leads).where(eq(leads.id, currentNegocio.leadId)).limit(1);
+        const empresaNome = leadDoContrato?.empresaId
+          ? (await db.select({ nome: empresas.nome }).from(empresas).where(eq(empresas.id, leadDoContrato.empresaId)).limit(1))[0]?.nome
+          : undefined;
+        const variaveis: Record<string, string> = {
+          empresa_nome: empresaNome || leadDoContrato?.empresa || leadDoContrato?.nome || "—",
+          empresa_cnpj: leadDoContrato?.empresaCnpj || "não informado",
+          pessoa_nome: leadDoContrato?.nome || "—",
+          pessoa_email: leadDoContrato?.email || "não informado",
+          itens_descricao: currentNegocio.titulo || "serviço",
+          valor_total: (parseFloat(mrrValor) + parseFloat(setupValor)).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
+          prazo_descricao: "conforme condições comerciais acordadas",
+          condicoes_pagamento: "conforme negociação comercial registrada no negócio",
+        };
+        const { corpoGerado, templateId, templateVersao } = await resolverCorpoContrato(ctx.organizacaoId, null, variaveis);
+
         const [novoContrato] = await db.insert(contratos).values({
           organizacaoId: ctx.organizacaoId,
           leadId: currentNegocio.leadId,
@@ -627,6 +656,10 @@ app.patch("/negocios/:id", async (c) => {
           // dos 3 call sites legados fora do escopo daquele fix; corrigido
           // agora ao tocar neste bloco pro Commercial Core, 16/08).
           produto: produtoNegocio === "pabx" ? "pabx" : "ai",
+          templateId,
+          templateVersao,
+          variaveisPreenchidas: variaveis,
+          corpoGerado,
         }).returning({ id: contratos.id });
         contratoId = novoContrato?.id;
       }
@@ -723,6 +756,20 @@ app.patch("/negocios/:id", async (c) => {
     .where(and(eq(negocios.id, id), eq(negocios.organizacaoId, ctx.organizacaoId)))
     .returning();
 
+  // AssignOwner (19/08) — troca de responsável sempre auditada, mesmo vindo
+  // do PATCH genérico (não é uma ação separada, é o mesmo update — só o
+  // rastro de auditoria é centralizado, ver lib/crm/owner.ts).
+  if (parsed.data.responsavelId !== undefined) {
+    await registrarMudancaResponsavel({
+      organizacaoId: ctx.organizacaoId,
+      entityType: "negocio",
+      entityId: id,
+      previousOwnerId: currentNegocio.responsavelId,
+      newOwnerId: parsed.data.responsavelId,
+      actorId: ctx.userId,
+    });
+  }
+
   // F1/dual-write: sincroniza Oportunidade — best-effort, nunca bloqueia o update real.
   await syncOportunidadeFromNegocio(id);
 
@@ -733,13 +780,14 @@ app.patch("/negocios/:id", async (c) => {
   // que já veio de proposta).
   if (contratoIdGanhoManual) {
     await garantirItemComercialManual(id);
-    await materializarServicosCanonicosDoNegocio({
+    const { servicoIds } = await materializarServicosCanonicosDoNegocio({
       negocioId: id,
       organizacaoId: ctx.organizacaoId,
       contratoId: contratoIdGanhoManual,
       wonAt: new Date(),
       stripeSubscriptionId: null,
     });
+    await criarFulfillmentsParaServicos(servicoIds, ctx.organizacaoId);
   }
 
   return c.json(updated);
@@ -752,7 +800,7 @@ app.patch("/negocios/:id", async (c) => {
 // (só desbloqueia o gate; a transição de status continua sendo uma ação
 // separada do usuário via PATCH /negocios/:id).
 const evidenciaManualSchema = z.object({
-  tipo: z.enum(["manual_contract", "admin_approval"]),
+  tipo: z.enum(["manual_contract", "admin_approval", "financial_attestation"]),
   nota: z.string().min(1, "Nota obrigatória — descreva a evidência (ex: contrato PBX assinado fora do sistema, nº do documento)"),
 });
 

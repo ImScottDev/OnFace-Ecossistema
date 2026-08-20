@@ -1,51 +1,63 @@
 "use client";
 
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer } from "recharts";
 
-interface Ponto { dia: number; valorAcumulado: number }
+interface PontoMensal { mes: string; valor: number }
 
 const brl = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 0, maximumFractionDigits: 0 });
 
-export function DesempenhoChart({ atual, anterior }: { atual: Ponto[]; anterior: Ponto[] }) {
-  const data = atual.map((p, i) => ({
-    dia: p.dia,
-    atual: p.valorAcumulado,
-    anterior: anterior[i]?.valorAcumulado ?? null,
-  }));
-
-  const semDadoNenhum = atual.every((p) => p.valorAcumulado === 0) && anterior.every((p) => p.valorAcumulado === 0);
+// Correção de 17/08 (fidelidade Figma node 172:1259): a legenda mora no
+// cabeçalho da seção ("Desempenho Mensal"), não dentro do card — quem
+// renderiza esse pedaço agora é a própria página. Este componente só
+// desenha o gráfico: série MENSAL real (não diária) + linha de Meta.
+export function DesempenhoChart({ dados, meta }: { dados: PontoMensal[]; meta?: number }) {
+  const semDadoNenhum = dados.every((p) => p.valor === 0);
+  const ultimo = dados[dados.length - 1];
 
   return (
-    <div className="w-full h-[380px] flex flex-col">
-      <div className="flex items-center gap-4 px-2 pb-2">
-        <div className="flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full" style={{ background: "var(--cf2-accent-border)" }} />
-          <span className="text-[11px]" style={{ color: "var(--cf2-text-secondary)" }}>Mês Atual</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full" style={{ background: "var(--cf2-text-tertiary)" }} />
-          <span className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>Mês Anterior</span>
-        </div>
-      </div>
+    <div className="w-full h-[380px]">
       {semDadoNenhum ? (
-        <div className="flex-1 flex items-center justify-center">
-          <p className="text-sm" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhum negócio ganho registrado nesses 2 meses ainda.</p>
+        <div className="h-full flex items-center justify-center">
+          <p className="text-sm" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhum negócio ganho registrado nesse período ainda.</p>
         </div>
       ) : (
-        <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={data} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} debounce={50}>
+          <AreaChart data={dados} margin={{ top: 10, right: 40, left: 0, bottom: 0 }}>
             <CartesianGrid vertical={false} stroke="var(--cf2-border-default)" />
-            <XAxis dataKey="dia" tick={{ fontSize: 10, fill: "#4b5563" }} axisLine={false} tickLine={false} />
+            <XAxis dataKey="mes" tick={{ fontSize: 10, fill: "var(--cf2-text-secondary)" }} axisLine={false} tickLine={false} />
             <YAxis
-              tickFormatter={(v) => `R$ ${(v / 1000).toFixed(1)}k`}
-              tick={{ fontSize: 10, fill: "#4b5563" }}
+              tickFormatter={(v) => `R$ ${(v / 1000).toFixed(0)}k`}
+              tick={{ fontSize: 10, fill: "var(--cf2-text-secondary)" }}
               axisLine={false}
               tickLine={false}
               width={56}
             />
-            <Tooltip formatter={(v) => brl(Number(v) || 0)} labelFormatter={(d) => `Dia ${d}`} />
-            <Area type="monotone" dataKey="anterior" stroke="#9ca3af" fill="#9ca3af" fillOpacity={0.06} strokeWidth={1.5} strokeDasharray="4 3" dot={false} />
-            <Area type="monotone" dataKey="atual" stroke="#88d600" fill="#aaff00" fillOpacity={0.18} strokeWidth={2.5} dot={false} />
+            <Tooltip formatter={(v) => brl(Number(v) || 0)} />
+            {meta !== undefined && meta > 0 && (
+              <ReferenceLine y={meta} stroke="var(--cf2-text-tertiary)" strokeDasharray="4 3" label={{ value: "Meta", position: "insideTopRight", fontSize: 10, fill: "var(--cf2-text-tertiary)" }} />
+            )}
+            <Area
+              type="monotone"
+              dataKey="valor"
+              stroke="var(--cf2-accent-border)"
+              fill="var(--cf2-accent)"
+              fillOpacity={0.18}
+              strokeWidth={2.5}
+              dot={(props: { cx?: number; cy?: number; payload: PontoMensal }) => {
+                const { cx, cy, payload } = props;
+                const isLast = payload.mes === ultimo?.mes;
+                if (!isLast || cx === undefined || cy === undefined) return <circle key={payload.mes} cx={cx ?? 0} cy={cy ?? 0} r={0} />;
+                return (
+                  <g key="ultimo-ponto">
+                    <circle cx={cx} cy={cy} r={4} fill="var(--cf2-accent-border)" stroke="#fff" strokeWidth={2} />
+                    <rect x={cx - 34} y={cy - 28} width={68} height={20} rx={6} fill="var(--cf2-accent)" stroke="var(--cf2-accent-border)" />
+                    <text x={cx} y={cy - 14} textAnchor="middle" fontSize={11} fontWeight={700} fill="var(--cf2-text-on-accent)">
+                      {`R$${(ultimo.valor / 1000).toFixed(1)}k`}
+                    </text>
+                  </g>
+                );
+              }}
+            />
           </AreaChart>
         </ResponsiveContainer>
       )}

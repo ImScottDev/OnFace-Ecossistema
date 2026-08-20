@@ -4,6 +4,7 @@ import { contratos, leads, npsRespostas } from "@/lib/db/schema";
 import { desc, eq, and, sql, SQL } from "drizzle-orm";
 import { z } from "zod";
 import { getCtx } from "../compat.js";
+import { contratoPdfHtml, renderContratoPdf } from "@/lib/crm/contrato-pdf";
 
 const app = new Hono();
 
@@ -167,6 +168,51 @@ app.get("/contratos/:id", async (c) => {
     .orderBy(desc(npsRespostas.createdAt));
 
   return c.json({ contrato, npsRespostas: npsHistory });
+});
+
+// GET /api/contratos/:id/pdf — correção 19/08 (visibilidade de contrato):
+// mesma engine de render de proposta-pdf.ts, corpo já vem de
+// contrato-template.ts (ou vazio, quando o contrato nasceu fora da engine —
+// nesse caso o PDF já avisa isso, não finge um corpo que não existe).
+app.get("/contratos/:id/pdf", async (c) => {
+  const ctx = await getCtx(c);
+  const id = c.req.param("id");
+
+  const [ct] = await db
+    .select({
+      descricao: contratos.descricao,
+      corpoGerado: contratos.corpoGerado,
+      createdAt: contratos.createdAt,
+      signatureStatus: contratos.signatureStatus,
+      assinaturaStatus: contratos.assinaturaStatus,
+      assinadoNome: contratos.assinadoNome,
+      assinadoEm: contratos.assinadoEm,
+      assinadoIp: contratos.assinadoIp,
+      leadNome: leads.nome,
+      leadEmpresa: leads.empresa,
+    })
+    .from(contratos)
+    .innerJoin(leads, eq(contratos.leadId, leads.id))
+    .where(and(eq(contratos.id, id), eq(leads.organizacaoId, ctx.organizacaoId)))
+    .limit(1);
+
+  if (!ct) return c.json({ error: "Contrato não encontrado" }, 404);
+
+  const assinado = ct.signatureStatus === "signed" || ct.assinaturaStatus === "aceite_simples";
+  const html = contratoPdfHtml({
+    descricao: ct.descricao,
+    corpoGerado: ct.corpoGerado,
+    clienteNome: ct.leadEmpresa || ct.leadNome,
+    createdAt: ct.createdAt,
+    assinado,
+    assinadoNome: ct.assinadoNome,
+    assinadoEm: ct.assinadoEm,
+    assinadoIp: ct.assinadoIp,
+  });
+  const pdf = await renderContratoPdf(html);
+  return new Response(new Uint8Array(pdf), {
+    headers: { "Content-Type": "application/pdf", "Content-Disposition": `inline; filename="contrato-${id.slice(0, 8)}.pdf"` },
+  });
 });
 
 // PATCH /api/contratos/:id

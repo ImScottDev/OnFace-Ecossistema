@@ -3,7 +3,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { DetailDrawer } from "@/components/crm/DetailDrawer";
 import { CustomFieldsSection } from "@/components/crm/CustomFieldsSection";
-import { Building2, User, Briefcase, Globe, MapPin, Phone, Instagram, Pencil, StickyNote, Plus, Send } from "lucide-react";
+import { Building2, User, Briefcase, Globe, MapPin, Phone, Instagram, Pencil, StickyNote, Plus, Send, FileText, Download } from "lucide-react";
 import { usePipelineConfig } from "@/hooks/usePipelineConfig";
 import Link from "next/link";
 import { useState, useEffect, useRef } from "react";
@@ -131,6 +131,52 @@ function AddNoteInlineEmpresa({ empresaId }: { empresaId: string }) {
   );
 }
 
+interface AnexoLegado {
+  id: string;
+  entidadeId: string | null;
+  nomeArquivo: string;
+  tamanhoBytes: number | null;
+  categoria: string;
+  criadoEmOriginal: string | null;
+  zohoId: string | null;
+  arquivoDisponivel: boolean;
+}
+
+function formatBytes(bytes: number | null): string {
+  if (!bytes) return "tamanho desconhecido";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+// Anexos legados (histórico Zoho, tabela `anexos_legado`) — 1.980 docs
+// recuperados sem superfície até 18/08 (achado real). Agrega da mesma
+// forma que a seção Contratos acima: empresa direto + negócios +
+// contratos vinculados (contratos/negócios não têm empresaId direto na
+// tabela de anexos, então cada tipo é buscado separadamente e mesclado
+// aqui, no client — a rota fica simples e reutilizável pro NegocioDrawer).
+function useAnexosLegadoEmpresa(empresaId: string | null, negocioIds: string[], contratoIds: string[], enabled: boolean) {
+  return useQuery({
+    queryKey: ["anexos-legado-empresa", empresaId, negocioIds.join(","), contratoIds.join(",")],
+    queryFn: async () => {
+      const fetchTipo = async (tipo: string, ids: string[]): Promise<AnexoLegado[]> => {
+        if (ids.length === 0) return [];
+        const res = await fetch(`/api/anexos-legado?entidadeTipo=${tipo}&entidadeIds=${ids.join(",")}`);
+        if (!res.ok) return [];
+        const j = await res.json();
+        return (j.anexos || []) as AnexoLegado[];
+      };
+      const [empresaAnexos, negocioAnexos, contratoAnexos] = await Promise.all([
+        fetchTipo("empresa", empresaId ? [empresaId] : []),
+        fetchTipo("negocio", negocioIds),
+        fetchTipo("contrato", contratoIds),
+      ]);
+      return [...empresaAnexos, ...negocioAnexos, ...contratoAnexos];
+    },
+    enabled,
+  });
+}
+
 export function EmpresaDrawer({ empresaId, open, onClose, onOpenLead, onOpenNegocio }: EmpresaDrawerProps) {
   const { setores } = usePipelineConfig();
   const queryClient = useQueryClient();
@@ -159,8 +205,13 @@ export function EmpresaDrawer({ empresaId, open, onClose, onOpenLead, onOpenNego
   const empresa = data?.empresa;
   const leads = data?.leads;
   const negocios = data?.negocios;
-  const notas: Array<{ id: string; conteudo: string; autorNome: string | null; createdAt: string }> = data?.notas || [];
+  const notas: Array<{ id: string; conteudo: string; autorNome: string | null; createdAt: string; pessoaNome?: string | null }> = data?.notas || [];
+  const contratosEmpresa: Array<{ id: string; status: string; assinaturaStatus: string | null; signatureStatus: string | null; descricao: string | null; createdAt: string; zohoId?: string | null }> = data?.contratos || [];
   const setorLabel = empresa ? setores.find((s) => s.key === empresa.setor)?.label : undefined;
+
+  const negocioIdsParaAnexos: string[] = (negocios || []).map((n: { id: string }) => n.id);
+  const contratoIdsParaAnexos: string[] = contratosEmpresa.map((c) => c.id);
+  const { data: anexosLegado = [] } = useAnexosLegadoEmpresa(empresaId, negocioIdsParaAnexos, contratoIdsParaAnexos, !!empresa);
 
   return (
     <DetailDrawer
@@ -197,6 +248,14 @@ export function EmpresaDrawer({ empresaId, open, onClose, onOpenLead, onOpenNego
                 )}
               </div>
             </div>
+            <Link
+              href="/negocios/novo"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold shrink-0"
+              style={{ background: "#e23752", color: "#fff" }}
+              title="Escolha o contato dessa empresa na tela de criação"
+            >
+              <Briefcase className="w-3.5 h-3.5" /> Nova oportunidade
+            </Link>
           </div>
 
           {/* Apollo description */}
@@ -394,6 +453,80 @@ export function EmpresaDrawer({ empresaId, open, onClose, onOpenLead, onOpenNego
             )}
           </div>
 
+          {/* Contratos — correção 19/08: histórico de contratos (nativo ou
+              Zoho) da empresa não aparecia; resolvido via leadId/negocioId
+              vinculado (contratos não tem empresaId direto). */}
+          <div className="rounded-xl bg-white/[0.03] border border-white/[0.06] p-3.5">
+            <h3 className="text-xs font-medium text-white/50 mb-2.5">Contratos ({contratosEmpresa.length})</h3>
+            {contratosEmpresa.length > 0 ? (
+              <div className="space-y-1.5">
+                {contratosEmpresa.map((ct) => {
+                  const assinado = ct.signatureStatus === "signed" || ct.assinaturaStatus === "aceite_simples";
+                  return (
+                    <div key={ct.id} className="w-full flex items-center justify-between p-2 rounded-lg">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <FileText className="w-3.5 h-3.5 text-white/30 shrink-0" />
+                        <div className="min-w-0">
+                          <p className="text-xs font-medium text-white truncate">{ct.descricao || "Contrato"}</p>
+                          <p className="text-[10px] text-white/40">{new Date(ct.createdAt).toLocaleDateString("pt-BR")}{ct.zohoId ? " · histórico (Zoho)" : ""}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <a href={`/api/contratos/${ct.id}/pdf`} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="text-[10px] underline text-white/40">PDF</a>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium" style={{ background: assinado ? "rgba(74,222,128,0.15)" : "rgba(255,255,255,0.06)", color: assinado ? "#4ade80" : "#9497ab" }}>
+                          {assinado ? "Assinado" : ct.status}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-xs text-white/30 py-2 text-center">Nenhum contrato vinculado</p>
+            )}
+          </div>
+
+          {/* Documentos — histórico Zoho (anexos_legado), achado real
+              18/08: 1.980 docs recuperados sem superfície nenhuma até
+              aqui. Baixa direto de ~/Downloads/Attachments, DEV-ONLY —
+              ver aviso em src/lib/storage/legacy-attachment-storage.ts. */}
+          <div className="rounded-xl bg-white/[0.03] border border-white/[0.06] p-3.5">
+            <h3 className="text-xs font-medium text-white/50 mb-2.5">Documentos ({anexosLegado.length})</h3>
+            {anexosLegado.length > 0 ? (
+              <div className="space-y-1.5">
+                {anexosLegado.map((doc) => (
+                  <div key={doc.id} className="w-full flex items-center justify-between gap-2 p-2 rounded-lg">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <FileText className="w-3.5 h-3.5 text-white/30 shrink-0" />
+                      <div className="min-w-0">
+                        <p className="text-xs font-medium text-white truncate" title={doc.nomeArquivo}>{doc.nomeArquivo}</p>
+                        <p className="text-[10px] text-white/40">{formatBytes(doc.tamanhoBytes)} · histórico (Zoho)</p>
+                      </div>
+                    </div>
+                    {doc.arquivoDisponivel ? (
+                      <a
+                        href={`/api/anexos-legado/${doc.id}/download`}
+                        onClick={(e) => e.stopPropagation()}
+                        className="flex items-center gap-1 text-[10px] text-[#e23752] hover:text-[#f06d82] shrink-0"
+                      >
+                        <Download className="w-3 h-3" /> Baixar
+                      </a>
+                    ) : (
+                      <span
+                        title="Arquivo físico não disponível neste ambiente"
+                        className="text-[10px] text-white/20 shrink-0 cursor-not-allowed"
+                      >
+                        Indisponível
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-white/30 py-2 text-center">Nenhum documento histórico vinculado</p>
+            )}
+          </div>
+
           {/* Custom Fields */}
           <CustomFieldsSection
             entidade="empresa"
@@ -416,6 +549,7 @@ export function EmpresaDrawer({ empresaId, open, onClose, onOpenLead, onOpenNego
                     </p>
                     <div className="flex items-center gap-2 mt-1">
                       <span className="text-[10px] text-white/30">{n.autorNome || "Sistema"}</span>
+                      {n.pessoaNome && <span className="text-[10px] text-white/25">· via {n.pessoaNome}</span>}
                       <span className="text-[10px] text-white/30">{new Date(n.createdAt).toLocaleDateString("pt-BR")}</span>
                     </div>
                   </div>

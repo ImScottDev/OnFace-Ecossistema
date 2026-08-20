@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { db } from "@/lib/db";
 import { propostas, propostaItens, leads, negocios, usuarios, contratos, atividades, statusChanges, propostaGrupoComercial, propostaGrupoComercialItens, checkouts } from "@/lib/db/schema";
-import { eq, and, desc, asc, sql, ilike, inArray, count, gte } from "drizzle-orm";
+import { eq, and, or, desc, asc, sql, ilike, inArray, count, gte } from "drizzle-orm";
 import { z } from "zod";
 import { getCtx } from "../compat.js";
 import { syncNegocioValoresFromPropostas } from "@/lib/crm/sync-negocio-valores";
@@ -87,6 +87,7 @@ app.get("/propostas", async (c) => {
   const search = c.req.query("q") ?? null;
   const responsavel = c.req.query("responsavel") ?? null; // userId, ou "todas"/null = todos
   const periodo = c.req.query("periodo") ?? null; // "mes" = mês atual; senão histórico completo
+  const familia = c.req.query("familia") ?? null; // CALLFACE_AI | PABX | WHITE_LABEL | UNKNOWN
 
   const conditions = [eq(propostas.organizacaoId, ctx.organizacaoId)];
   if (statusFilter) conditions.push(eq(propostas.status, statusFilter));
@@ -98,6 +99,15 @@ app.get("/propostas", async (c) => {
     const now = new Date();
     const inicioMes = new Date(now.getFullYear(), now.getMonth(), 1);
     conditions.push(gte(propostas.createdAt, inicioMes));
+  }
+  if (familia) {
+    const idsComFamilia = await db
+      .select({ propostaId: propostaItens.propostaId })
+      .from(propostaItens)
+      .where(eq(propostaItens.serviceFamily, familia));
+    const ids = idsComFamilia.map((r) => r.propostaId);
+    if (ids.length === 0) return c.json([]);
+    conditions.push(inArray(propostas.id, ids));
   }
 
   let query = db
@@ -117,10 +127,13 @@ app.get("/propostas", async (c) => {
       totalGeral: propostas.totalGeral,
       dataEmissao: propostas.dataEmissao,
       dataValidade: propostas.dataValidade,
+      criadoPorId: propostas.criadoPorId,
       criadoPorNome: usuarios.nome,
       proximoPasso: propostas.proximoPasso,
       visualizacoes: propostas.visualizacoes,
+      primeiraVisualizacaoEm: propostas.primeiraVisualizacaoEm,
       clienteRespondeuEm: propostas.clienteRespondeuEm,
+      enviadaEm: propostas.enviadaEm,
       createdAt: propostas.createdAt,
     })
     .from(propostas)
@@ -132,11 +145,36 @@ app.get("/propostas", async (c) => {
     .$dynamic();
 
   if (search) {
-    query = query.where(and(...conditions, ilike(leads.nome, `%${search}%`)));
+    const numeroBusca = parseInt(search.replace(/\D/g, ""), 10);
+    const condicoesBusca = [
+      ilike(leads.nome, `%${search}%`),
+      ilike(leads.empresa, `%${search}%`),
+      ilike(negocios.titulo, `%${search}%`),
+    ];
+    if (!Number.isNaN(numeroBusca)) condicoesBusca.push(eq(propostas.numero, numeroBusca));
+    query = query.where(and(...conditions, or(...condicoesBusca)!));
   }
 
   const results = await query.limit(100);
-  return c.json(results);
+
+  // Família comercial por proposta — derivada dos itens reais (populados na
+  // criação via `resolverServiceFamiliesPorCatalogoIds`), não fabricada aqui.
+  const propostaIds = results.map((p) => p.id);
+  let familiasPorProposta = new Map<string, string[]>();
+  if (propostaIds.length > 0) {
+    const itensFamilia = await db
+      .select({ propostaId: propostaItens.propostaId, serviceFamily: propostaItens.serviceFamily })
+      .from(propostaItens)
+      .where(inArray(propostaItens.propostaId, propostaIds));
+    for (const i of itensFamilia) {
+      const fam = i.serviceFamily || "UNKNOWN";
+      const atual = familiasPorProposta.get(i.propostaId) || [];
+      if (!atual.includes(fam)) atual.push(fam);
+      familiasPorProposta.set(i.propostaId, atual);
+    }
+  }
+
+  return c.json(results.map((p) => ({ ...p, familias: familiasPorProposta.get(p.id) || [] })));
 });
 
 // GET /propostas/kpis — contadores reais pra hero strip da lista (cf2)
@@ -153,11 +191,17 @@ app.get("/propostas/kpis", async (c) => {
       recusadasExpiradas: sql<number>`count(*) filter (where ${propostas.status} in ('recusada', 'expirada'))`,
       aguardandoAcao: sql<number>`count(*) filter (where ${propostas.status} = 'enviada' and ${propostas.clienteRespondeuEm} is null)`,
       valorTotalAtivo: sql<string>`coalesce(sum(${propostas.totalGeral}) filter (where ${propostas.status} not in ('recusada', 'expirada')), 0)`,
+      // Taxa de aceite = aceitas / decididas (aceita+recusada+expirada), mesmo
+      // critério do winRate real de negócios (ver lib/relatorios/comercial.ts).
+      decididas: sql<number>`count(*) filter (where ${propostas.status} in ('aceita', 'recusada', 'expirada'))`,
+      // Tempo médio até aceite: enviadaEm → clienteRespondeuEm, só propostas aceitas com os 2 timestamps reais.
+      tempoMedioAceiteDias: sql<number | null>`avg(extract(epoch from ${propostas.clienteRespondeuEm} - ${propostas.enviadaEm}) / 86400) filter (where ${propostas.status} = 'aceita' and ${propostas.clienteRespondeuEm} is not null and ${propostas.enviadaEm} is not null)`,
     })
     .from(propostas)
     .where(org);
 
-  return c.json(linhas);
+  const taxaAceite = linhas.decididas > 0 ? Math.round((linhas.aceitas / linhas.decididas) * 1000) / 10 : null;
+  return c.json({ ...linhas, taxaAceite, tempoMedioAceiteDias: linhas.tempoMedioAceiteDias != null ? Math.round(Number(linhas.tempoMedioAceiteDias) * 10) / 10 : null });
 });
 
 // GET /propostas/count — open proposals count for sidebar badge
@@ -203,17 +247,25 @@ app.get("/propostas/:id", async (c) => {
       checkoutUrl: propostas.checkoutUrl,
       stripeSessionId: propostas.stripeSessionId,
       enviadaEm: propostas.enviadaEm,
+      primeiraVisualizacaoEm: propostas.primeiraVisualizacaoEm,
+      ultimaVisualizacaoEm: propostas.ultimaVisualizacaoEm,
+      visualizacoes: propostas.visualizacoes,
+      clienteRespondeuEm: propostas.clienteRespondeuEm,
+      motivoRecusa: propostas.motivoRecusa,
       criadoPorId: propostas.criadoPorId,
       criadoPorNome: usuarios.nome,
       leadNome: leads.nome,
       leadEmpresa: leads.empresa,
       leadTelefone: leads.telefone,
       leadEmail: leads.email,
+      negocioId: propostas.negocioId,
+      negocioTitulo: negocios.titulo,
       createdAt: propostas.createdAt,
       updatedAt: propostas.updatedAt,
     })
     .from(propostas)
     .leftJoin(leads, eq(propostas.leadId, leads.id))
+    .leftJoin(negocios, eq(propostas.negocioId, negocios.id))
     .leftJoin(usuarios, eq(propostas.criadoPorId, usuarios.id))
     .where(and(eq(propostas.id, id), eq(propostas.organizacaoId, ctx.organizacaoId)))
     .limit(1);

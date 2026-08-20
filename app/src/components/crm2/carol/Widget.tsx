@@ -123,11 +123,31 @@ export function Cf2CarolWidget() {
   }, [feed, carregando]);
 
   function abrirPainel() {
-    setAberto(true);
-    if (feed.length === 0) {
-      setFeed([{ id: "boas-vindas", pose: "padrao", texto: `${saudacao()}${primeiroNome ? `, ${primeiroNome}` : ""}!${contextoPorRota(pathname)}` }]);
-    }
+    setAberto((prev) => {
+      const next = !prev;
+      if (next && feed.length === 0) {
+        setFeed([{ id: "boas-vindas", pose: "padrao", texto: `${saudacao()}${primeiroNome ? `, ${primeiroNome}` : ""}!${contextoPorRota(pathname)}` }]);
+      }
+      return next;
+    });
   }
+
+  // Contrato visual do Figma (16/08, node 184:4645 "bottom-bar"): a barra da
+  // Carol convida a "Pergunte, analise ou execute algo com a Carol..." via
+  // ⌘J. Não existe input de texto livre real (V1 é só ações pré-definidas,
+  // ver ACOES) — o atalho abre o mesmo painel de ações que o clique na
+  // barra já abre, não é um chat novo.
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "j") {
+        e.preventDefault();
+        abrirPainel();
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [feed.length, pathname, primeiroNome]);
 
   const { data: prioridadesBadge } = useQuery<{ itens: PrioridadeItem[] }>({
     queryKey: ["cf2-carol-badge"],
@@ -165,30 +185,47 @@ export function Cf2CarolWidget() {
 
   return (
     <>
-      {!aberto && (
-        <button
-          onClick={abrirPainel}
-          className="fixed bottom-6 right-6 z-40 flex items-center justify-center rounded-full w-16 h-16 shadow-lg overflow-hidden"
-          style={{ border: "2px solid var(--cf2-accent-border)", background: "var(--cf2-accent)" }}
-          title="Carol, sua copiloto de vendas"
-        >
-          <img src={CAROL_POSE_SRC.padrao} alt="Carol" className="w-full h-full object-cover" style={{ objectPosition: "50% 15%" }} />
-          {itensUrgentes > 0 ? (
-            <span
-              className="absolute -top-1 -right-1 flex items-center justify-center rounded-full text-[10px] font-extrabold w-5 h-5"
-              style={{ background: "var(--cf2-danger-text)", color: "#fff" }}
-            >
-              {itensUrgentes}
-            </span>
-          ) : totalItens > 0 ? (
-            <span className="absolute -top-0.5 -right-0.5 rounded-full w-3 h-3" style={{ background: "var(--cf2-warning-text)" }} />
-          ) : null}
-        </button>
-      )}
+      {/* Barra global (16/08) — deixou de ser widget flutuante só de /inicio;
+          agora é rodapé fixo do App Shell inteiro, sempre visível, igual a
+          sidebar. Clicar em qualquer ponto da barra abre o mesmo painel que
+          já existia (nenhuma lógica nova, só mudou o trigger visual). */}
+      <button
+        onClick={abrirPainel}
+        className="flex items-center justify-between w-full shrink-0 px-8 py-3 text-left"
+        style={{ background: "var(--cf2-chrome-bg-alt)" }}
+        title="Abrir Carol"
+      >
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="relative flex items-center justify-center rounded-full shrink-0 size-7 overflow-hidden" style={{ background: "var(--cf2-accent)" }}>
+            <img src={CAROL_POSE_SRC.padrao} alt="Carol" className="w-full h-full object-cover" style={{ objectPosition: "50% 15%" }} />
+            {itensUrgentes > 0 ? (
+              <span
+                className="absolute -top-1 -right-1 flex items-center justify-center rounded-full text-[9px] font-extrabold w-4 h-4"
+                style={{ background: "var(--cf2-danger-text)", color: "#fff" }}
+              >
+                {itensUrgentes}
+              </span>
+            ) : totalItens > 0 ? (
+              <span className="absolute -top-0.5 -right-0.5 rounded-full w-2.5 h-2.5" style={{ background: "var(--cf2-warning-text)" }} />
+            ) : null}
+          </div>
+          <p className="text-[13px] font-bold whitespace-nowrap" style={{ color: "var(--cf2-chrome-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>
+            Carol AI
+          </p>
+          <span className="rounded-full shrink-0 size-1" style={{ background: "var(--cf2-accent)" }} />
+          <p className="text-[12px] whitespace-nowrap" style={{ color: "var(--cf2-accent)" }}>Online</p>
+          <p className="text-[12px] truncate" style={{ color: "var(--cf2-chrome-text-secondary)" }}>
+            Pergunte, analise ou execute algo com a Carol...
+          </p>
+        </div>
+        <p className="text-[12px] whitespace-nowrap shrink-0 ml-4" style={{ color: "var(--cf2-chrome-text-secondary)" }}>
+          Pressione ⌘J pra abrir a Carol em qualquer lugar
+        </p>
+      </button>
 
       {aberto && (
         <div
-          className="fixed bottom-6 right-6 z-40 w-[380px] max-h-[640px] flex flex-col rounded-3xl overflow-hidden shadow-2xl"
+          className="fixed bottom-[62px] right-6 z-40 w-[380px] max-h-[640px] flex flex-col rounded-3xl overflow-hidden shadow-2xl"
           style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}
         >
           <div className="flex items-center justify-between p-3 pl-4" style={{ borderBottom: "1px solid var(--cf2-border-default)", background: "var(--cf2-accent)" }}>
