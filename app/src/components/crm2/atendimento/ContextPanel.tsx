@@ -2,11 +2,20 @@
 
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Pencil, Phone, CalendarPlus, Building2, Repeat, ChevronDown } from "lucide-react";
+import { Pencil, Phone, CalendarPlus, Building2, Repeat, ChevronDown, FileText, Info, LayoutList } from "lucide-react";
 import { ConversaItem, Contexto, iniciais, brl } from "./types";
 import { Cf2Badge } from "../ui/Badge";
 import { Cf2NovoEventoModal, LeadResultado } from "../calendario/NovoEventoModal";
 import { Cf2CadenciaPanel } from "../cadencia/CadenciaPanel";
+import { useScriptsAtendimento, SCRIPTS_CATEGORIA_LABEL } from "./useScriptsAtendimento";
+
+const PORTE_LABEL: Record<string, string> = { pequena: "Pequena empresa", media: "Média empresa", grande: "Grande empresa" };
+
+function formatarCnpjCurto(v: string): string {
+  const digits = v.replace(/\D/g, "");
+  if (digits.length !== 14) return v;
+  return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8, 12)}-${digits.slice(12)}`;
+}
 
 const ETAPA_LABEL: Record<string, string> = {
   reuniao_agendada: "Reunião Agendada",
@@ -24,6 +33,11 @@ export function Cf2ContextPanel({ conversa, contexto, loading }: { conversa: Con
   const queryClient = useQueryClient();
   const [modalAberto, setModalAberto] = useState(false);
   const [cadenciaAberta, setCadenciaAberta] = useState(false);
+  // Duas abas (20/08, referência de UX): "Contexto" (pessoa/empresa/cascata/
+  // atividades/cadências, já existia) e "Detalhes" (CNPJ/segmento/porte +
+  // Scripts sugeridos) — reorganização de UI com dado que já chegava aqui,
+  // só empilhado verticalmente antes.
+  const [aba, setAba] = useState<"contexto" | "detalhes">("contexto");
 
   const leadPreSelecionado: LeadResultado | null =
     conversa.leadId && contexto?.pessoa
@@ -60,6 +74,21 @@ export function Cf2ContextPanel({ conversa, contexto, loading }: { conversa: Con
 
       {contexto?.pessoa && (
         <>
+          <div className="flex gap-1 p-1 rounded-xl shrink-0" style={{ background: "var(--cf2-bg-surface-muted)" }}>
+            {([["contexto", "Contexto", LayoutList], ["detalhes", "Detalhes", Info]] as const).map(([key, label, Icon]) => (
+              <button
+                key={key}
+                onClick={() => setAba(key)}
+                className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[12px] font-semibold"
+                style={{ background: aba === key ? "var(--cf2-bg-surface)" : "transparent", color: aba === key ? "var(--cf2-text-primary)" : "var(--cf2-text-secondary)" }}
+              >
+                <Icon className="w-3.5 h-3.5" /> {label}
+              </button>
+            ))}
+          </div>
+
+          {aba === "contexto" && (
+          <>
           <div className="flex flex-col gap-3">
             <div className="flex items-center justify-between">
               <p className="text-[11px] font-bold" style={{ color: "var(--cf2-text-tertiary)" }}>PESSOA</p>
@@ -109,7 +138,7 @@ export function Cf2ContextPanel({ conversa, contexto, loading }: { conversa: Con
                 </div>
                 <div className="min-w-0">
                   <p className="text-[14px] font-bold truncate" style={{ color: "var(--cf2-text-primary)" }}>{contexto.empresa.nome}</p>
-                  <p className="text-[11px] truncate" style={{ color: "var(--cf2-text-secondary)" }}>{contexto.empresa.setor ? `Segmento: ${contexto.empresa.setor}` : "—"}</p>
+                  <p className="text-[11px] truncate" style={{ color: "var(--cf2-text-secondary)" }}>Ver CNPJ, porte e segmento na aba Detalhes</p>
                 </div>
               </a>
             </div>
@@ -122,31 +151,43 @@ export function Cf2ContextPanel({ conversa, contexto, loading }: { conversa: Con
               {contexto.cascata.tipo === "negocio" ? "NEGÓCIO ATIVO" : contexto.cascata.tipo === "proposta" ? "PROPOSTA ENVIADA" : contexto.cascata.tipo === "reuniao" ? "REUNIÃO AGENDADA" : "SEM NEGOCIAÇÃO ATIVA"}
             </p>
 
+            {/* Relacionamentos ativos clicáveis (19/08) — igual ao card de
+                Empresa acima, achado real olhando referência de UX: card de
+                Negócio/Proposta/Reunião existia só como leitura, sem levar
+                pro registro real (a Empresa já era clicável, esses três
+                não). */}
             {contexto.cascata.tipo === "negocio" && (
-              <div className="flex flex-col gap-2 p-3 rounded-xl" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }}>
+              <a href={`/negocios/${contexto.cascata.id}`} className="flex flex-col gap-2 p-3 rounded-xl hover:opacity-80" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }}>
                 <div className="flex items-center justify-between">
                   <p className="text-[13px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>{contexto.cascata.titulo}</p>
                   <p className="text-[13px] font-extrabold" style={{ color: "var(--cf2-text-primary)" }}>{brl(contexto.cascata.valor)}</p>
                 </div>
                 <Cf2Badge variant="warning">{ETAPA_LABEL[contexto.cascata.etapa] || contexto.cascata.etapa}</Cf2Badge>
-              </div>
+              </a>
             )}
 
             {contexto.cascata.tipo === "proposta" && (
-              <div className="flex flex-col gap-2 p-3 rounded-xl" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }}>
+              <a href={`/propostas/${contexto.cascata.id}`} className="flex flex-col gap-2 p-3 rounded-xl hover:opacity-80" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }}>
                 <div className="flex items-center justify-between">
                   <p className="text-[13px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Proposta #{contexto.cascata.numero}</p>
                   <p className="text-[13px] font-extrabold" style={{ color: "var(--cf2-text-primary)" }}>{brl(contexto.cascata.valor)}</p>
                 </div>
                 <Cf2Badge variant="accent">Enviada</Cf2Badge>
-              </div>
+              </a>
             )}
 
             {contexto.cascata.tipo === "reuniao" && (
-              <div className="flex flex-col gap-2 p-3 rounded-xl" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }}>
-                <p className="text-[13px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>{contexto.cascata.titulo}</p>
-                <p className="text-[11px]" style={{ color: "var(--cf2-text-secondary)" }}>{new Date(contexto.cascata.data).toLocaleString("pt-BR")}</p>
-              </div>
+              contexto.cascata.link ? (
+                <a href={contexto.cascata.link} target="_blank" rel="noreferrer" className="flex flex-col gap-2 p-3 rounded-xl hover:opacity-80" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }}>
+                  <p className="text-[13px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>{contexto.cascata.titulo}</p>
+                  <p className="text-[11px]" style={{ color: "var(--cf2-text-secondary)" }}>{new Date(contexto.cascata.data).toLocaleString("pt-BR")} · Abrir link da reunião ↗</p>
+                </a>
+              ) : (
+                <div className="flex flex-col gap-2 p-3 rounded-xl" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }}>
+                  <p className="text-[13px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>{contexto.cascata.titulo}</p>
+                  <p className="text-[11px]" style={{ color: "var(--cf2-text-secondary)" }}>{new Date(contexto.cascata.data).toLocaleString("pt-BR")}</p>
+                </div>
+              )
             )}
 
             {contexto.cascata.tipo === "nenhum" && (
@@ -192,6 +233,10 @@ export function Cf2ContextPanel({ conversa, contexto, loading }: { conversa: Con
               </div>
             </>
           )}
+          </>
+          )}
+
+          {aba === "detalhes" && <DetalhesTab contexto={contexto} />}
         </>
       )}
 
@@ -204,6 +249,61 @@ export function Cf2ContextPanel({ conversa, contexto, loading }: { conversa: Con
           onCriado={criouEvento}
         />
       )}
+    </div>
+  );
+}
+
+/**
+ * Aba "Detalhes" (20/08, referência de UX) — CNPJ/porte/segmento (dado que
+ * já chegava no Contexto, só reorganizado) + Scripts sugeridos. Sem
+ * matching por IA: mostra todos os scripts ativos, mais recente primeiro —
+ * não existe critério real de relevância por contato ainda, não fabricado.
+ */
+function DetalhesTab({ contexto }: { contexto: Contexto }) {
+  const [scriptAberto, setScriptAberto] = useState<string | null>(null);
+  const { data } = useScriptsAtendimento();
+  const scripts = [...(data?.scripts ?? [])].sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-3">
+        <p className="text-[11px] font-bold" style={{ color: "var(--cf2-text-tertiary)" }}>EMPRESA</p>
+        {contexto.empresa ? (
+          <div className="flex flex-col gap-1.5 text-[12px]" style={{ color: "var(--cf2-text-secondary)" }}>
+            <p className="text-[14px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>{contexto.empresa.nome}</p>
+            {contexto.empresa.setor && <p>Segmento: {contexto.empresa.setor}</p>}
+            {contexto.empresa.cnpj && <p>CNPJ: {formatarCnpjCurto(contexto.empresa.cnpj)}</p>}
+            {contexto.empresa.porte && <p>{PORTE_LABEL[contexto.empresa.porte] || contexto.empresa.porte}</p>}
+            {!contexto.empresa.setor && !contexto.empresa.cnpj && !contexto.empresa.porte && (
+              <p style={{ color: "var(--cf2-text-tertiary)" }}>Sem CNPJ/porte/segmento cadastrado.</p>
+            )}
+          </div>
+        ) : (
+          <p className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>Sem empresa vinculada.</p>
+        )}
+      </div>
+
+      <div className="h-px w-full" style={{ background: "var(--cf2-border-default)" }} />
+
+      <div className="flex flex-col gap-2">
+        <p className="text-[11px] font-bold" style={{ color: "var(--cf2-text-tertiary)" }}>SCRIPTS SUGERIDOS</p>
+        {scripts.length === 0 && (
+          <p className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhum script cadastrado ainda.</p>
+        )}
+        {scripts.map((s) => (
+          <div key={s.id} className="rounded-lg overflow-hidden" style={{ background: "var(--cf2-bg-surface-muted)" }}>
+            <button onClick={() => setScriptAberto(scriptAberto === s.id ? null : s.id)} className="w-full flex items-center gap-2 p-2 text-left">
+              <FileText className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--cf2-text-tertiary)" }} />
+              <p className="flex-1 text-[12px] font-semibold truncate" style={{ color: "var(--cf2-text-primary)" }}>{s.titulo}</p>
+              <span className="text-[9px] px-1.5 py-0.5 rounded shrink-0" style={{ background: "var(--cf2-bg-surface)", color: "var(--cf2-text-tertiary)" }}>{SCRIPTS_CATEGORIA_LABEL[s.categoria] || s.categoria}</span>
+              <ChevronDown className="w-3 h-3 shrink-0" style={{ color: "var(--cf2-text-tertiary)", transform: scriptAberto === s.id ? "rotate(180deg)" : undefined }} />
+            </button>
+            {scriptAberto === s.id && (
+              <p className="px-2 pb-2 text-[12px] whitespace-pre-wrap" style={{ color: "var(--cf2-text-secondary)" }}>{s.conteudo}</p>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

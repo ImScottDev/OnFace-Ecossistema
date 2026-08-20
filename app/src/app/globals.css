@@ -141,6 +141,35 @@
   background: var(--cf2-bg-page);
   color: var(--cf2-text-primary);
   font-family: var(--cf2-font-ui);
+
+  /* ── Chrome escuro (App Shell — sidebar/hero/Carol bar) ──────────────
+     Contrato visual do Figma (16/08): sidebar, zona superior de /inicio
+     e a barra da Carol são SEMPRE escuras, independente do tema geral
+     ser claro — não é um "dark mode" alternativo, é a cor fixa desses
+     3 elementos de chrome. Mesma disciplina: nenhum componente usa hex
+     literal, só estas vars. */
+  --cf2-chrome-bg: #1c1f26;
+  --cf2-chrome-bg-alt: #16171c;
+  --cf2-chrome-surface-active: #1a1d24;
+  --cf2-chrome-border: rgba(255, 255, 255, 0.17);
+  --cf2-chrome-border-subtle: #22252a;
+  --cf2-chrome-text-primary: #ffffff;
+  --cf2-chrome-text-secondary: #9ca3af;
+}
+
+/* Scroll interno do App Shell (17/08) — a área de conteúdo de /inicio
+   cruza uma zona escura (hero) e uma clara (o resto); o elemento que rola
+   só tem UMA cor de fundo, então a barra de rolagem nativa sempre revela
+   essa cor no próprio gutter, sem noção do que está por baixo — aparecia
+   como uma faixa clara sobre o hero escuro. O Figma não mostra indicador
+   de scroll nenhum, então a barra fica só invisível (o scroll continua
+   funcionando por mouse/trackpad/teclado, sem hack de layout). */
+.cf2-hide-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.cf2-hide-scrollbar::-webkit-scrollbar {
+  display: none;
 }
 
 body {

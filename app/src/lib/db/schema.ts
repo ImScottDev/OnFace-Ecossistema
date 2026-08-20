@@ -301,6 +301,26 @@ export const leads = pgTable(
     insumoComercial: jsonb("insumo_comercial"), // { abertura_recomendada, angulo_de_ataque, objecao_provavel, argumento_scott_studio, closer_c, closer_l, dor_principal, bottleneck }
     // SDR Agent
     sdrStatus: text("sdr_status").default("pending"), // pending, contacted, qualifying, scheduled, disqualified
+    // Taxonomia nova de Pré-vendas do CRM2 (17/08) — ADITIVO, nunca substitui
+    // sdrStatus. novo/em_contato/qualificacao/qualificado/agenda_confirmada
+    // (fluxo principal) ou sem_resposta/nutricao_retomar/desqualificado
+    // (buckets auxiliares). Populado 1x via backfill (scripts/migrate-pre-
+    // vendas-crm2.ts) a partir da coluna REAL do board legado (sdrBoardColumn),
+    // não do sdrStatus bruto — ver crm2PreVendasStageFonte pra rastreabilidade.
+    crm2PreVendasStage: text("crm2_pre_vendas_stage"),
+    // Coluna derivada do board legado que originou o crm2PreVendasStage acima
+    // (pending/contacted/qualifying/m_qualified/m_reuniao/m_convertido/
+    // disqualified/sdr_sem_retorno/sdr_sem_interesse/sdr_retomar_depois/
+    // qualified_orfao/outbound) — preserva o rastro pra auditoria.
+    crm2PreVendasStageFonte: text("crm2_pre_vendas_stage_fonte"),
+    // Fatos históricos que o De/Para exige preservar mesmo quando não são
+    // mais a etapa operacional atual (ex: lead que já teve reunião realizada
+    // mas hoje está Qualificado). Fonte: status_changes (negócios vinculados
+    // ao lead via negocio_leads), primeira ocorrência de cada transição.
+    crm2ReuniaoRealizadaEm: timestamp("crm2_reuniao_realizada_em", { withTimezone: true }),
+    crm2ClienteConvertidoEm: timestamp("crm2_cliente_convertido_em", { withTimezone: true }),
+    crm2NoShowEm: timestamp("crm2_no_show_em", { withTimezone: true }),
+    crm2MigradoEm: timestamp("crm2_migrado_em", { withTimezone: true }),
     outreachChannel: text("outreach_channel"), // whatsapp, email, instagram
     outreachStartedAt: timestamp("outreach_started_at", { withTimezone: true }),
     lastContactAt: timestamp("last_contact_at", { withTimezone: true }),
@@ -704,6 +724,53 @@ export const assinaturas = pgTable(
   ]
 );
 
+// ─── ASSINATURA_ITENS (Subscription Items — 19/08, correção de escopo) ────
+// Gap real confirmado por investigação: `assinaturas` é 1 linha por
+// subscription do Stripe — multi-item (ex: White Label licença MRR + setup
+// + adicional na MESMA subscription) hoje é resumido ("price do item0 +
+// quantidade somada"), perde granularidade real de produto/preço por item.
+// Esta tabela é só o SCHEMA (schema não é feature) — ainda não é lida/
+// escrita por `stripe-sync.ts`/webhook; a granularidade continua vindo só
+// de `assinaturas.raw` (payload Stripe completo) até esse wiring ser feito
+// num bloco dedicado (mudança em reconciliação de billing ao vivo pede
+// validação própria, não é extensão de schema).
+export const assinaturaItens = pgTable(
+  "assinatura_itens",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+    assinaturaId: uuid("assinatura_id").references(() => assinaturas.id, { onDelete: "cascade" }).notNull(),
+    stripeSubscriptionItemId: text("stripe_subscription_item_id"),
+    stripeProductId: text("stripe_product_id"),
+    stripePriceId: text("stripe_price_id"),
+    produto: text("produto"),
+    quantidade: integer("quantidade").default(1).notNull(),
+    precoUnitario: decimal("preco_unitario", { precision: 12, scale: 2 }),
+    moeda: text("moeda").default("BRL").notNull(),
+    recurringInterval: text("recurring_interval"), // month | year | null (item avulso/one-time dentro da subscription)
+    serviceFamily: text("service_family").default("UNKNOWN").notNull(),
+    revenueNature: text("revenue_nature"),
+    servicoCanonicoId: uuid("servico_canonico_id").references((): AnyPgColumn => servicosCanonicos.id),
+    descontoPercentual: decimal("desconto_percentual", { precision: 5, scale: 2 }),
+    // Comportamento declarado do item (o que o Stripe reportar), não decisão
+    // de política — quem decide QUANDO aplicar proração é a policy comercial,
+    // não este campo.
+    prorationBehavior: text("proration_behavior"), // create_prorations | none | always_invoice
+    currentPeriodStart: timestamp("current_period_start", { withTimezone: true }),
+    currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }),
+    status: text("status"), // null = herda o status da assinatura pai
+    raw: jsonb("raw"),
+    syncedAt: timestamp("synced_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("idx_assinatura_itens_stripe_id").on(table.stripeSubscriptionItemId),
+    index("idx_assinatura_itens_assinatura").on(table.assinaturaId),
+    index("idx_assinatura_itens_org").on(table.organizacaoId),
+  ]
+);
+
 // ─── FATURAS (cobranças: Stripe invoices + faturamento PABX/Wevy) ─────────
 export const faturas = pgTable(
   "faturas",
@@ -937,6 +1004,57 @@ export const whatsappTemplates = pgTable(
   ]
 );
 
+// ─── SCRIPTS DE ATENDIMENTO (19/08, correção de escopo — P0.6) ───────────
+// Roteiro humano pra ligação/conversa (não confundir com whatsapp_templates,
+// que é mensagem pronta pra enviar). Versionado (integer simples, mesmo
+// padrão de contrato_templates) — script pode mudar, mas não reescreve a
+// versão que o vendedor usou numa ligação passada (auditoria/performance
+// futura). Categoria é texto livre por área operacional (pre_vendas |
+// comercial | entrega | cs | geral), nunca enum travado — cresce conforme
+// o time cria.
+export const scriptsAtendimento = pgTable(
+  "scripts_atendimento",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+    titulo: text("titulo").notNull(),
+    categoria: text("categoria").notNull(), // pre_vendas | comercial | entrega | cs | geral
+    conteudo: text("conteudo").notNull(),
+    versao: integer("versao").default(1).notNull(),
+    ativo: boolean("ativo").default(true).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_scripts_atendimento_org").on(table.organizacaoId),
+  ]
+);
+
+// ─── DOCUMENTOS DE ATENDIMENTO (19/08, P0.6) — biblioteca de material pra
+// enviar durante a conversa (apresentação/deck/PDF), diferente de
+// anexos_legado (histórico Zoho, read-only) e de contratos/propostas
+// (documento transacional). Taxonomia livre (categoria: texto), arquivo
+// vive fora do banco (URL), versão simples pra não perder o antigo quando
+// trocar o material.
+export const documentosAtendimento = pgTable(
+  "documentos_atendimento",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+    titulo: text("titulo").notNull(),
+    categoria: text("categoria").notNull(), // apresentacao | tecnico | comercial | manual | outro
+    familia: text("familia"), // CALLFACE_AI | PABX | WHITE_LABEL | null (genérico, qualquer família)
+    arquivoUrl: text("arquivo_url").notNull(),
+    descricao: text("descricao"),
+    ativo: boolean("ativo").default(true).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_documentos_atendimento_org").on(table.organizacaoId),
+  ]
+);
+
 // ─── WHATSAPP SESSAO ───────────────────────────────────────
 export const whatsappSessao = pgTable("whatsapp_sessao", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -1102,6 +1220,11 @@ export const servicosCatalogo = pgTable(
     // é o que permite oportunidade_itens carregar família real sem
     // string-match. PABX | CALLFACE_AI | WHITE_LABEL | UNKNOWN.
     serviceFamily: text("service_family").notNull().default("UNKNOWN"),
+    // Natureza de receita do item (19/08) — mesma semântica de
+    // oportunidade_itens/contrato_itens/proposta_itens, agora também na
+    // origem (catálogo), pra não nascer UNKNOWN em item novo.
+    // MRR | SETUP | PROJECT | ONE_TIME | USAGE | HARDWARE | UNKNOWN
+    revenueNature: text("revenue_nature").notNull().default("UNKNOWN"),
     // Regra comercial explícita, não inferida do nome/categoria: alguns itens
     // exigem formalização contratual (assinatura) antes do pagamento (ex:
     // PABX), outros vão direto pro pagamento (ex: Callface AI). Fica no
@@ -1110,6 +1233,19 @@ export const servicosCatalogo = pgTable(
     // Legado — mantido por compat (dashboards/queries antigas), mas não é
     // mais a fonte de verdade do fluxo pós-aceite. Ver commercialModelPadrao.
     requerContrato: boolean("requer_contrato").default(false).notNull(),
+    // Campos semânticos do item (19/08, correção de escopo) — descrevem
+    // COMPORTAMENTO comercial declarado no catálogo, nunca inferido por nome
+    // em runtime. Servem pro Proposal Builder/Won-gate/Billing decidirem sem
+    // if-by-name. Default conservador: false/UNIT até existir evidência real
+    // pra marcar diferente (não presumir capacidade que não foi validada).
+    quantityBehavior: text("quantity_behavior").default("UNIT").notNull(), // UNIT | CAPACITY | LICENSE_SEATS
+    requiresSignature: boolean("requires_signature").default(false).notNull(),
+    requiresPaymentBeforeWon: boolean("requires_payment_before_won").default(false).notNull(),
+    createsCanonicalService: boolean("creates_canonical_service").default(true).notNull(),
+    createsFulfillment: boolean("creates_fulfillment").default(false).notNull(),
+    supportsUpgrade: boolean("supports_upgrade").default(false).notNull(),
+    supportsDowngrade: boolean("supports_downgrade").default(false).notNull(),
+    supportsProration: boolean("supports_proration").default(false).notNull(),
     // Commercial Core v2 (ADR-EXEC-021): DEFAULT do modelo comercial pro
     // item — não é mais propriedade fixa/única da família. A mesma família
     // (ex: Callface AI) pode ser vendida sob modelos diferentes conforme a
@@ -1870,6 +2006,107 @@ export const servicosCanonicos = pgTable(
   ],
 );
 
+// ─── FULFILLMENT (entrega/implantação pós-Won — 19/08, correção de escopo) ─
+// Won termina o comercial; Fulfillment é outro processo, com vida própria,
+// nunca uma etapa do Pipeline (achado real do legado Zoho: "Delivery PABX"
+// como Stage de Deal — exatamente o erro que este modelo corrige). Um
+// serviço (`servicosCanonicos`) pode ter um Fulfillment; o checklist
+// (`fulfillmentItens`) é dado configurável, não state machine fixa no
+// código — hoje o seed real (PABX) vem do processo operacional real
+// (Delivery de Projeto PABX, 8 etapas: levantamento/portabilidade/
+// softswitch/infra/licenciamento/configuração/QA/validação-cliente), mas
+// isso é STARTING POINT editável por instância, nunca enum travado.
+export const fulfillments = pgTable(
+  "fulfillments",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+    servicoCanonicoId: uuid("servico_canonico_id").references(() => servicosCanonicos.id, { onDelete: "cascade" }).notNull(),
+    serviceFamily: text("service_family").notNull(), // denormalizado de servicosCanonicos, pra filtrar sem join
+    // Estado MACRO — nunca 1 status por etapa do checklist (isso vive em
+    // fulfillment_itens). NOT_STARTED|IN_PROGRESS|WAITING_CUSTOMER|
+    // BLOCKED_CUSTOMER|BLOCKED_INTERNAL|BLOCKED_PROVIDER|
+    // READY_FOR_VALIDATION|COMPLETED|CANCELED
+    status: text("status").default("NOT_STARTED").notNull(),
+    responsavelId: uuid("responsavel_id").references(() => usuarios.id),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    targetAt: timestamp("target_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    // Snapshot do escopo vendido no momento do Won (itens/quantidades) — a
+    // referência real pra validar o que o cliente pediu vs o que foi
+    // contratado (correção de escopo, seção 32/37 do briefing).
+    escopoVendidoSnapshot: jsonb("escopo_vendido_snapshot"),
+    // Token opaco pra página pública de coleta de informações do cliente
+    // (formulário de implantação PABX, seção 33-36 do briefing) — nunca ID
+    // sequencial/previsível, sem exigir login do cliente.
+    publicToken: uuid("public_token").defaultRandom().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("idx_fulfillments_servico").on(table.servicoCanonicoId),
+    uniqueIndex("idx_fulfillments_public_token").on(table.publicToken),
+    index("idx_fulfillments_org").on(table.organizacaoId),
+    index("idx_fulfillments_status").on(table.organizacaoId, table.status),
+  ]
+);
+
+// Formulário de implantação (PABX hoje) — respostas do cliente, vinculadas
+// ao Fulfillment. Payload livre (jsonb) porque os campos variam por família/
+// processo real (seção 34 do briefing: contatos/ramais/linhas/canais/URAs/
+// filas/regras/telefones/outras informações) — não travar em colunas
+// fixas enquanto o processo real pode mudar.
+export const fulfillmentFormularios = pgTable(
+  "fulfillment_formularios",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+    fulfillmentId: uuid("fulfillment_id").references(() => fulfillments.id, { onDelete: "cascade" }).notNull(),
+    status: text("status").default("NOT_SENT").notNull(), // NOT_SENT|SENT|IN_PROGRESS|SUBMITTED|IN_REVIEW|CORRECTION_REQUIRED|APPROVED
+    respostas: jsonb("respostas").default({}).notNull(),
+    enviadoEm: timestamp("enviado_em", { withTimezone: true }),
+    submetidoEm: timestamp("submetido_em", { withTimezone: true }),
+    revisadoPor: uuid("revisado_por").references(() => usuarios.id),
+    revisadoEm: timestamp("revisado_em", { withTimezone: true }),
+    notaRevisao: text("nota_revisao"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_fulfillment_formularios_fulfillment").on(table.fulfillmentId),
+    index("idx_fulfillment_formularios_org").on(table.organizacaoId),
+  ]
+);
+
+export const fulfillmentItens = pgTable(
+  "fulfillment_itens",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+    fulfillmentId: uuid("fulfillment_id").references(() => fulfillments.id, { onDelete: "cascade" }).notNull(),
+    // Workstream é texto livre, não enum de banco — cresce conforme o
+    // processo real (ex.: "levantamento", "portabilidade", "softswitch",
+    // "infraestrutura", "licenciamento", "configuracao_pbx", "qa_interno",
+    // "validacao_cliente" hoje pro PABX; outras famílias terão suas
+    // próprias). Nunca decidir a lista definitiva em código.
+    workstream: text("workstream").notNull(),
+    titulo: text("titulo").notNull(),
+    status: text("status").default("PENDING").notNull(), // PENDING|IN_PROGRESS|BLOCKED|DONE
+    blockerType: text("blocker_type"), // CUSTOMER | INTERNAL | PROVIDER
+    blockerReason: text("blocker_reason"),
+    ordem: integer("ordem").default(0).notNull(),
+    metadata: jsonb("metadata"),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    completedBy: uuid("completed_by").references(() => usuarios.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_fulfillment_itens_fulfillment").on(table.fulfillmentId),
+    index("idx_fulfillment_itens_org").on(table.organizacaoId),
+  ]
+);
+
 export const serviceLedgerBatches = pgTable(
   "service_ledger_batches",
   {
@@ -2356,6 +2593,10 @@ export const clientes = pgTable("clientes", {
   oportunidadeOrigemId: uuid("oportunidade_origem_id").references(() => oportunidades.id),
   clienteDesde: timestamp("cliente_desde", { withTimezone: true }),
   statusFinanceiro: text("status_financeiro"), // ativo | inadimplente | churned — cache de leitura, nunca fonte de escrita
+  // CS Owner (18/08, referência de UX da Carteira) — dono da conta pós-venda,
+  // distinto do responsável comercial (negocios.responsavelId, quem vendeu)
+  // e do responsável de entrega (fulfillments.responsavelId, quem implanta).
+  responsavelId: uuid("responsavel_id").references(() => usuarios.id),
   leadIdLegado: uuid("lead_id_legado").references(() => leads.id),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
@@ -2431,7 +2672,7 @@ export const comercialEvidencia = pgTable("comercial_evidencia", {
   id: uuid("id").defaultRandom().primaryKey(),
   organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
   negocioId: uuid("negocio_id").references(() => negocios.id, { onDelete: "cascade" }).notNull(),
-  // stripe_payment | stripe_subscription | signed_contract | manual_contract | admin_approval
+  // stripe_payment | stripe_subscription | signed_contract | manual_contract | admin_approval | financial_attestation
   tipo: text("tipo").notNull(),
   sourceRef: text("source_ref"), // id do contrato/assinatura/subscription que originou a evidência
   metadata: jsonb("metadata"),
@@ -2452,7 +2693,19 @@ export const wonEvidencePolicies = pgTable("won_evidence_policies", {
   id: uuid("id").defaultRandom().primaryKey(),
   organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
   produto: text("produto"), // null = política catch-all (aplica a qualquer produto sem política específica)
-  tiposAceitos: jsonb("tipos_aceitos").notNull(), // string[] de TipoEvidenciaComercial
+  tiposAceitos: jsonb("tipos_aceitos").notNull(), // string[] de TipoEvidenciaComercial — legado: QUALQUER um já libera Won (OR)
+  // Correção de escopo (19/08): "qualquer evidência isolada libera Won" é
+  // perigoso quando o fluxo exige contrato E pagamento juntos (ex: PABX
+  // novo). requiredCombinations descreve isso como OR-de-AND: array de
+  // combinações, cada combinação é um array de tipos que precisam TODOS
+  // estar presentes; basta UMA combinação ser satisfeita.
+  // Ex.: [["signed_contract","stripe_payment"]] exige as duas evidências
+  // juntas. Nullable de propósito: quando ausente, o gate cai no
+  // comportamento legado (tiposAceitos como OR simples) — nenhuma política
+  // existente muda de comportamento só por esta coluna existir. Qual
+  // combinação vale pra qual produto é calibração comercial, não decidida
+  // aqui (crm2-decisoes-pendentes.md).
+  requiredCombinations: jsonb("required_combinations"),
   ativo: boolean("ativo").default(true).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),

@@ -174,7 +174,9 @@ export type ContatoTipo = (typeof CONTATO_TIPOS)[number]["key"];
 export const SDR_STAGES: PipelineStage[] = [
   { key: "pending", label: "Novo", color: "#3B82F6", slaHours: 1 },
   { key: "contacted", label: "Em Contato", color: "#EAB308", slaHours: 24 },
-  { key: "qualifying", label: "Follow up", color: "#8e27ef", slaHours: 48 },
+  // Label "Qualificação" (era "Follow up") — De/Para CRM2 aprovado pelo Kauã
+  // 17/08, key `qualifying` mantida por compat de dados/rotas existentes.
+  { key: "qualifying", label: "Qualificação", color: "#8e27ef", slaHours: 48 },
 ];
 
 // Coluna de ENTRADA colapsada (à esquerda, antes de "Novo"): leads que vieram do
@@ -192,7 +194,7 @@ export function isOutboundLead(origem?: string | null): boolean {
   return (origem || "").trim().toLowerCase() === "outbound";
 }
 
-// Horas em "Em Contato" antes de escalar automaticamente pra "Follow up" (Jenifer assume).
+// Horas em "Em Contato" antes de escalar automaticamente pra "Qualificação" (Jenifer assume).
 // 48h = 2 dias (decisão Kauã, 10/07: janela de qualificação do Agente SDR antes do handoff humano).
 export const SDR_CONTATO_ESCALATION_HOURS = 48;
 

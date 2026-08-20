@@ -20,21 +20,27 @@ export interface SdrField {
   options?: { value: string; label: string }[];
 }
 
-// Produto de interesse: sinalização da SDR pro closer (badge nos cards).
-// A fonte da verdade do fluxo pós-ganho é a PROPOSTA aceita, não este campo.
-export const PRODUTO_OPTIONS = [
-  { value: "ai", label: "Callface AI" },
-  { value: "pabx", label: "PABX" },
-  { value: "ai_pabx", label: "AI + PABX" },
+// Campo trocado pra bater 1:1 com o Figma (node 230:8825, 17/08) — decisão
+// explícita do Kauã, não é mockup. Substituiu o conjunto antigo (produto/
+// setores/CRM atual/nº usuários) por CNPJ/Cargo/Necessidade-Dor/Tomador de
+// decisão. O worker de AI SDR (`src/worker/index.ts`) ainda escreve nas
+// keys antigas (produto/quemRealizaCall/crmAtual/numUsuarios) quando
+// qualifica um lead pelo chat — isso continua funcionando sem erro (merge
+// raso em JSON, não quebra nada), só que esses valores ficam invisíveis
+// aqui agora, já que não têm campo correspondente na UI nova. Ajustar a
+// extração da IA pra escrever nas keys novas é escopo separado, registrado
+// como pendência.
+export const TOMADOR_DECISAO_OPTIONS = [
+  { value: "sim", label: "Sim" },
+  { value: "nao", label: "Não" },
+  { value: "nao_identificado", label: "Não identificado" },
 ];
 
 export const SDR_FIELDS: SdrField[] = [
-  { key: "produto", label: "Produto de interesse", placeholder: "Selecionar", type: "select", options: PRODUTO_OPTIONS },
-  { key: "quemRealizaCall", label: "Quais setores utilizam telefonia?", placeholder: "Ex: vendas, atendimento, cobrança" },
-  { key: "tomadorDecisao", label: "Tomador de decisão", placeholder: "Quem decide a compra" },
   { key: "cnpj", label: "CNPJ", placeholder: "00.000.000/0000-00" },
-  { key: "crmAtual", label: "CRM usado hoje", placeholder: "Ex: nenhum, planilha, RD..." },
-  { key: "numUsuarios", label: "Nº de usuários", placeholder: "Ex: 12", type: "number" },
+  { key: "cargo", label: "Cargo", placeholder: "Cargo do contato" },
+  { key: "necessidadeDor", label: "Necessidade / Dor", placeholder: "Descrever a necessidade/dor identificada" },
+  { key: "tomadorDecisao", label: "Tomador de decisão?", placeholder: "Sim · Não · Não identificado", type: "select", options: TOMADOR_DECISAO_OPTIONS },
 ];
 
 type SdrValues = Record<string, string>;
@@ -44,16 +50,31 @@ export function QualificacaoSdrSection({
   camposCustom,
   readOnly = false,
   queryKeysToInvalidate = [],
+  variant = "dark",
+  prefill,
 }: {
   leadId: string;
   camposCustom?: Record<string, unknown> | null;
   readOnly?: boolean;
   queryKeysToInvalidate?: string[];
+  /** "light" reusa a MESMA lista de campos/mutação (save no blur em
+   * camposCustom.qualificacaoSdr) só com a casca visual do CRM2 — usado pelo
+   * drawer novo de Pré-vendas. Default "dark" mantém 100% do visual legado
+   * em todo resto do app. */
+  variant?: "dark" | "light";
+  /** Valores reais já conhecidos fora da qualificação (ex: CNPJ da Empresa
+   * vinculada, Cargo já preenchido no lead) — usados como default só quando
+   * o campo ainda não foi respondido na qualificação em si. Requisito
+   * explícito do mapa mestre de produto (17/08): "CNPJ e Cargo devem vir
+   * pré-preenchidos quando já existirem". Não são salvos automaticamente —
+   * só populam a tela; a gravação continua acontecendo no blur, igual antes. */
+  prefill?: Partial<SdrValues>;
 }) {
+  const light = variant === "light";
   const qc = useQueryClient();
   const initial = ((camposCustom?.qualificacaoSdr as SdrValues) || {}) as SdrValues;
   const [vals, setVals] = useState<SdrValues>(() =>
-    Object.fromEntries(SDR_FIELDS.map((f) => [f.key, initial[f.key] || ""]))
+    Object.fromEntries(SDR_FIELDS.map((f) => [f.key, initial[f.key] || prefill?.[f.key] || ""]))
   );
   const [savedKey, setSavedKey] = useState<string | null>(null);
 
@@ -90,17 +111,17 @@ export function QualificacaoSdrSection({
     return (
       <div>
         <div className="flex items-center gap-2 mb-2">
-          <ClipboardCheck className="w-3.5 h-3.5 text-[#c8ff00]" />
-          <h4 className="text-[11px] font-medium text-white/30 uppercase tracking-wider">
+          <ClipboardCheck className="w-3.5 h-3.5" style={{ color: light ? "#88d600" : "#c8ff00" }} />
+          <h4 className={light ? "text-[11px] font-medium uppercase tracking-wider" : "text-[11px] font-medium text-white/30 uppercase tracking-wider"} style={light ? { color: "var(--cf2-text-tertiary)" } : undefined}>
             Qualificação SDR
           </h4>
         </div>
         {anyFilled ? (
           <div className="space-y-1.5">
             {SDR_FIELDS.filter((f) => vals[f.key]?.trim()).map((f) => (
-              <div key={f.key} className="flex items-start justify-between gap-3 px-3 py-1.5 rounded-lg bg-white/[0.03]">
-                <span className="text-[11px] text-white/40">{f.label}</span>
-                <span className="text-xs text-white/80 text-right">
+              <div key={f.key} className={light ? "flex items-start justify-between gap-3 px-3 py-1.5 rounded-lg" : "flex items-start justify-between gap-3 px-3 py-1.5 rounded-lg bg-white/[0.03]"} style={light ? { background: "var(--cf2-bg-surface)" } : undefined}>
+                <span className="text-[11px]" style={light ? { color: "var(--cf2-text-tertiary)" } : { color: "rgba(255,255,255,0.4)" }}>{f.label}</span>
+                <span className="text-xs text-right" style={light ? { color: "var(--cf2-text-primary)" } : { color: "rgba(255,255,255,0.8)" }}>
                   {f.type === "select"
                     ? f.options?.find((o) => o.value === vals[f.key])?.label || vals[f.key]
                     : vals[f.key]}
@@ -109,7 +130,7 @@ export function QualificacaoSdrSection({
             ))}
           </div>
         ) : (
-          <p className="text-xs text-white/20 py-1">Lead ainda não qualificado pela SDR.</p>
+          <p className="text-xs py-1" style={light ? { color: "var(--cf2-text-tertiary)" } : { color: "rgba(255,255,255,0.2)" }}>Lead ainda não qualificado pela SDR.</p>
         )}
       </div>
     );
@@ -119,19 +140,19 @@ export function QualificacaoSdrSection({
     <div>
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
-          <ClipboardCheck className="w-3.5 h-3.5 text-[#c8ff00]" />
-          <h4 className="text-[11px] font-medium text-white/30 uppercase tracking-wider">
+          <ClipboardCheck className="w-3.5 h-3.5" style={{ color: light ? "#88d600" : "#c8ff00" }} />
+          <h4 className={light ? "text-[14px] font-bold" : "text-[11px] font-medium text-white/30 uppercase tracking-wider"} style={light ? { color: "var(--cf2-text-primary)", fontFamily: "var(--cf2-font-heading)" } : undefined}>
             Qualificação SDR
           </h4>
         </div>
-        <span className="text-[10px] text-white/30">{filledCount}/{SDR_FIELDS.length}</span>
+        <span className="text-[12px]" style={light ? { color: "var(--cf2-text-tertiary)" } : { color: "rgba(255,255,255,0.3)" }}>{filledCount}/{SDR_FIELDS.length}</span>
       </div>
       <div className="space-y-2">
         {SDR_FIELDS.map((f) => (
           <div key={f.key}>
-            <label className="text-[10px] text-white/40 mb-0.5 flex items-center gap-1">
+            <label className="text-[12px] mb-0.5 flex items-center gap-1" style={light ? { color: "var(--cf2-text-secondary)" } : { color: "rgba(255,255,255,0.4)" }}>
               {f.label}
-              {savedKey === f.key && <Check className="w-2.5 h-2.5 text-emerald-400" />}
+              {savedKey === f.key && <Check className="w-2.5 h-2.5" style={{ color: light ? "#22c55e" : "#34d399" }} />}
             </label>
             {f.type === "select" ? (
               <select
@@ -143,7 +164,8 @@ export function QualificacaoSdrSection({
                   setSavedKey(f.key);
                   setTimeout(() => setSavedKey((k) => (k === f.key ? null : k)), 1500);
                 }}
-                className="w-full px-3 py-1.5 rounded-lg text-xs bg-white/[0.05] border border-white/[0.08] text-white outline-none focus:border-[#c8ff00]/40 transition-colors [&>option]:bg-[#16161a]"
+                className={light ? "w-full px-3 h-9 rounded-md text-[13px] outline-none" : "w-full px-3 py-1.5 rounded-lg text-xs bg-white/[0.05] border border-white/[0.08] text-white outline-none focus:border-[#c8ff00]/40 transition-colors [&>option]:bg-[#16161a]"}
+                style={light ? { background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" } : undefined}
               >
                 <option value="">{f.placeholder}</option>
                 {(f.options || []).map((o) => (
@@ -160,7 +182,8 @@ export function QualificacaoSdrSection({
                 if (e.key === "Enter") (e.target as HTMLInputElement).blur();
               }}
               placeholder={f.placeholder}
-              className="w-full px-3 py-1.5 rounded-lg text-xs bg-white/[0.05] border border-white/[0.08] text-white placeholder:text-white/20 outline-none focus:border-[#c8ff00]/40 transition-colors"
+              className={light ? "w-full px-3 h-9 rounded-md text-[13px] outline-none" : "w-full px-3 py-1.5 rounded-lg text-xs bg-white/[0.05] border border-white/[0.08] text-white placeholder:text-white/20 outline-none focus:border-[#c8ff00]/40 transition-colors"}
+              style={light ? { background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" } : undefined}
             />
             )}
           </div>

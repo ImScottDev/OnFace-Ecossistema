@@ -7,9 +7,27 @@
  * Governance do resto do projeto.
  */
 import { db } from "@/lib/db";
-import { leads, negocios, ligacoes, whatsappMensagens, emails, contatos, usuarios } from "@/lib/db/schema";
+import { leads, negocios, ligacoes, whatsappMensagens, emails, contatos, usuarios, tarefas, mrrMovimentos, clientes } from "@/lib/db/schema";
 import { eq, and, gte, lt, sql, inArray, isNotNull, desc } from "drizzle-orm";
-import { getFechadoPeriodo } from "@/lib/relatorios/comercial";
+import { getFechadoPeriodo, PIPELINE_ATIVO_STATUSES } from "@/lib/relatorios/comercial";
+
+/**
+ * Dias úteis (seg-sex) restantes no mês a partir de `hoje`, incluindo hoje
+ * se for dia útil. Cálculo puro de calendário — NÃO considera feriados
+ * (sem fonte de feriados no projeto), registrado como aproximação no
+ * relatório da rodada.
+ */
+export function diasUteisRestantesNoMes(hoje = new Date()): number {
+  const fimMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0);
+  const cursor = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate());
+  let count = 0;
+  while (cursor <= fimMes) {
+    const dow = cursor.getDay();
+    if (dow !== 0 && dow !== 6) count++;
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return count;
+}
 
 function monthBounds(ref: Date) {
   const inicio = new Date(ref.getFullYear(), ref.getMonth(), 1);
@@ -260,4 +278,149 @@ export async function getAtividadeRecente(orgId: string, limite = 3): Promise<At
   ];
 
   return itens.sort((a, b) => b.quando.getTime() - a.quando.getTime()).slice(0, limite);
+}
+
+// ─── Jornada Operacional + Saúde da Receita (App Shell V2, 16/08) ─────
+// Funções novas pro frame "crm-command-center-light" (Figma node 172:1259).
+// Cada uma documenta se é RECORTE NOVO de dado real já existente (ok, é só
+// filtro/agregação) vs. algo que exigiria conceito novo no domínio — esse
+// segundo caso NÃO tem função aqui, fica documentado como pendência no
+// relatório da rodada e a UI usa Cf2UnavailableMetric.
+
+/**
+ * Aquisição de leads no período — total + split Inbound/Outbound pela
+ * convenção JÁ usada em produção (getPreVendasVisoes/getMetasPorVendedor/
+ * isOutboundLead): leads.origem = 'outbound' (trim+lowercase) é Outbound;
+ * qualquer outro valor (incluindo vazio) é Inbound. Não é categorização
+ * nova, é reaproveitar a regra canônica existente.
+ */
+export async function getAquisicaoPeriodo(orgId: string, hoje = new Date()) {
+  const { inicio, fim } = monthBounds(hoje);
+  const rows = await db
+    .select({ origem: leads.origem, total: sql<number>`count(*)` })
+    .from(leads)
+    .where(and(eq(leads.organizacaoId, orgId), eq(leads.tipo, "lead"), gte(leads.createdAt, inicio), lt(leads.createdAt, fim)))
+    .groupBy(leads.origem);
+
+  let outbound = 0, total = 0;
+  for (const r of rows) {
+    const n = Number(r.total) || 0;
+    total += n;
+    if ((r.origem || "").trim().toLowerCase() === "outbound") outbound += n;
+  }
+  return { total, outbound, inbound: total - outbound };
+}
+
+/**
+ * Tarefas atrasadas de leads em fase de pré-vendas/qualificação (mesmo
+ * bucket sdrStatus contacted|qualifying do "Em Qualificação" no Funil de
+ * Leads). Recorte novo — antes só existia a lista geral da organização
+ * (tarefasPendentesLista, sem filtro de fase); "atrasado" usa a mesma
+ * regra visual do resto da página (vencimento antes de hoje).
+ */
+export async function getPreVendasAtrasados(orgId: string): Promise<number> {
+  const hojeStr = new Date().toISOString().split("T")[0];
+  const rows = await db
+    .select({ total: sql<number>`count(*)` })
+    .from(tarefas)
+    .innerJoin(leads, eq(leads.id, tarefas.leadId))
+    .where(and(
+      eq(tarefas.organizacaoId, orgId),
+      eq(tarefas.concluida, false),
+      lt(tarefas.dataVencimento, hojeStr),
+      inArray(leads.sdrStatus, ["contacted", "qualifying"]),
+    ));
+  return Number(rows[0]?.total || 0);
+}
+
+export interface NegociosTravadosResumo { total: number; valor: number; diasMin: number }
+
+/**
+ * Negócios abertos sem atividade há >= diasMin dias — AGREGADO org-wide
+ * (count+soma), mesmo conceito e mesmo threshold (5 dias) que
+ * `getPipelineEsfriando` (comercial.ts) já usa pra listar top-N pro
+ * vendedor na Carol. Não duplica regra nova, só agrega em vez de listar.
+ */
+export async function getNegociosTravadosResumo(orgId: string, diasMin = 5): Promise<NegociosTravadosResumo> {
+  const corte = new Date(Date.now() - diasMin * 86_400_000);
+  const rows = await db
+    .select({ total: sql<number>`count(*)`, valor: sql<string>`sum(${negocios.valorTotal})` })
+    .from(negocios)
+    .where(and(
+      eq(negocios.organizacaoId, orgId),
+      inArray(negocios.status, PIPELINE_ATIVO_STATUSES),
+      lt(negocios.updatedAt, corte),
+    ));
+  return { total: Number(rows[0]?.total || 0), valor: Number(rows[0]?.valor) || 0, diasMin };
+}
+
+export interface MrrLedgerPeriodo { novo: number; expansao: number; churn: number }
+
+/**
+ * Ledger de MRR do mês — agrega `mrr_movimentos.tipo` (5 valores reais,
+ * escritos só pelo stripe-sync: novo|reativacao|expansao|contracao|churn)
+ * nas 3 categorias visuais do Command Center: Novo = novo+reativação ·
+ * Expansão = expansao · Downgrades e Churn = contração+churn (delta já
+ * vem negativo nesses 2). Escopo real hoje: só produto='ai' passa pelo
+ * stripe-sync — MRR de PABX não tem ledger ainda (pendência registrada
+ * no relatório da rodada, não é omissão silenciosa).
+ */
+export async function getMrrLedgerPeriodo(orgId: string, hoje = new Date()): Promise<MrrLedgerPeriodo> {
+  const { inicio, fim } = monthBounds(hoje);
+  const rows = await db
+    .select({ tipo: mrrMovimentos.tipo, delta: sql<string>`sum(${mrrMovimentos.delta})` })
+    .from(mrrMovimentos)
+    .where(and(eq(mrrMovimentos.organizacaoId, orgId), gte(mrrMovimentos.ocorridoEm, inicio), lt(mrrMovimentos.ocorridoEm, fim)))
+    .groupBy(mrrMovimentos.tipo);
+
+  const byTipo = new Map(rows.map((r) => [r.tipo, Number(r.delta) || 0]));
+  return {
+    novo: (byTipo.get("novo") || 0) + (byTipo.get("reativacao") || 0),
+    expansao: byTipo.get("expansao") || 0,
+    churn: (byTipo.get("contracao") || 0) + (byTipo.get("churn") || 0),
+  };
+}
+
+export interface SaudeBaseClientes { ativo: number; inadimplente: number; churned: number }
+
+/**
+ * Distribuição real de `clientes.statusFinanceiro` (ativo|inadimplente|
+ * churned — cache de leitura já existente, nunca fonte de escrita),
+ * mapeada 1:1 pro conceito visual do Figma (Saudáveis/Atenção/Risco).
+ * Achado da correção de 17/08: não é health score novo — é a MESMA
+ * coluna 3-valores que já existia, eu só não tinha reaproveitado direito
+ * na primeira versão desta tela. "Expansão"/"MRR em risco" continuam sem
+ * fonte real (não tem MRR corrente por cliente nem flag de risco de MRR
+ * estruturada) — ver pendência no relatório da rodada.
+ */
+export async function getSaudeBaseClientes(orgId: string): Promise<SaudeBaseClientes> {
+  const rows = await db
+    .select({ status: clientes.statusFinanceiro, total: sql<number>`count(*)` })
+    .from(clientes)
+    .where(eq(clientes.organizacaoId, orgId))
+    .groupBy(clientes.statusFinanceiro);
+  const map = new Map(rows.map((r) => [r.status, Number(r.total) || 0]));
+  return { ativo: map.get("ativo") || 0, inadimplente: map.get("inadimplente") || 0, churned: map.get("churned") || 0 };
+}
+
+export interface PontoMensal { mes: string; valor: number }
+
+/**
+ * Série MENSAL (não diária) de MRR fechado recorrente — mesma fonte real
+ * de `getFechadoPeriodo`, agregada por mês em vez de por dia. Correção de
+ * 17/08: a V1 desta tela reaproveitou por engano o acumulado diário do
+ * mês corrente (`getDesempenhoDiario`) pra essa seção — o Figma pede
+ * tendência de `meses` meses (Mar→Ago no frame de referência), não
+ * acumulado do mês atual. `meses` inclui o mês corrente (parcial).
+ */
+export async function getDesempenhoMensalTrend(orgId: string, hoje = new Date(), meses = 6): Promise<PontoMensal[]> {
+  const refs = Array.from({ length: meses }, (_, i) => new Date(hoje.getFullYear(), hoje.getMonth() - (meses - 1 - i), 1));
+  const dados = await Promise.all(refs.map((ref) => {
+    const { inicio, fim } = monthBounds(ref);
+    return getFechadoPeriodo(orgId, inicio, fim);
+  }));
+  return refs.map((ref, i) => {
+    const label = ref.toLocaleDateString("pt-BR", { month: "short" }).replace(".", "");
+    return { mes: label.charAt(0).toUpperCase() + label.slice(1), valor: dados[i].recorrente };
+  });
 }

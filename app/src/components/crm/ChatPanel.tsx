@@ -433,7 +433,10 @@ export function ChatPanel({
     queryFn: async () => {
       const res = await fetch("/api/whatsapp/templates");
       if (!res.ok) return [];
-      return res.json();
+      // Achado real 19/08: a rota devolve { templates: [...] }, não array
+      // bare — o picker ficava sempre vazio mesmo com template cadastrado.
+      const body = await res.json();
+      return body?.templates ?? [];
     },
     staleTime: 60000,
   });

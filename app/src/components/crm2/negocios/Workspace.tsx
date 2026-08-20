@@ -2,13 +2,20 @@
 
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import Link from "next/link";
-import { ArrowLeft, Plus, Phone, Mail, Building2, User, CalendarClock, FileText, CheckCircle2, XCircle, History, ShieldCheck } from "lucide-react";
+import {
+  Plus, Phone, Mail, MessageCircle, Building2, User, CalendarClock, FileText, ChevronRight, ChevronDown,
+  Check, History, ShieldCheck, AlertTriangle, Beaker, Calendar,
+} from "lucide-react";
 import { Cf2Card, Cf2SectionHeader, Cf2Eyebrow } from "@/components/crm2/ui/Card";
 import { Cf2Badge } from "@/components/crm2/ui/Badge";
 import { Cf2Skeleton, Cf2EmptyState, Cf2ErrorState, Cf2PermissionDenied } from "@/components/crm2/ui/States";
 import { Cf2NovaPropostaSlideOver } from "@/components/crm2/negocios/NovaPropostaSlideOver";
+import { Cf2Topbar } from "@/components/crm2/Topbar";
+import { TarefaFormModal } from "@/components/crm/tarefas/TarefaFormModal";
+import { callfaceCallUrl } from "@/lib/utils/callface-call";
+import { PIPELINE_OPEN_COLS, MOTIVO_PERDA_ESTRUTURADO, proximoStatusReal, tempoNaEtapa } from "@/components/crm2/pipeline/shared";
 
 const brl = (v: string | number | null | undefined) =>
   parseFloat(String(v || "0")).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -35,13 +42,27 @@ interface OportunidadeItem {
 interface Evidencia { id: string; tipo: string; sourceRef: string | null; verificadoEm: string; verificadoPor: string | null }
 interface GrupoComercial { id: string; commercialModel: string; status: string }
 interface OportunidadeIrma { id: string; titulo: string; status: string; valorTotal: string | null; mrrFechado: string | null; mrrEstimado: string | null }
+interface Tarefa { id: string; titulo: string; dataVencimento: string | null; concluida: boolean }
 
+/**
+ * Página completa da oportunidade (spec+mockups do Kauã, 17/08). Reaproveita
+ * 100% da lógica comercial real que já existia aqui (Composição Comercial/
+ * Fulfillment/Evidências Won/Oportunidades Irmãs/Nova Proposta — Commercial
+ * Core v2/v3, ADR-EXEC-020/021/022) — nenhuma dessas seções está no mockup
+ * mas são reais e continuam. O que muda: App Shell (breadcrumb+faixa de
+ * ação, mesmo padrão de `Cf2LeadPaginaCompleta`), + Próxima Ação/Jornada
+ * Comercial/Trial/Tarefas Pendentes/Dados do Contato, e a barra de rodapé
+ * (Mover etapa/Perder/Avançar) substitui o antigo par "Marcar ganho/Marcar
+ * perdido" com motivo via `window.prompt` — mesmos gates reais do endpoint
+ * (`/api/negocios/:id` PATCH), só a UI virou séria.
+ */
 export function Cf2NegocioWorkspace({ negocioId }: { negocioId: string }) {
-  const router = useRouter();
   const qc = useQueryClient();
   const [novaPropostaAberta, setNovaPropostaAberta] = useState(false);
-  const [motivoPerda, setMotivoPerda] = useState("");
-  const [erroWon, setErroWon] = useState<string | null>(null);
+  const [moveMenuOpen, setMoveMenuOpen] = useState(false);
+  const [perderMenuOpen, setPerderMenuOpen] = useState(false);
+  const [motivoOutro, setMotivoOutro] = useState("");
+  const [tarefaModalOpen, setTarefaModalOpen] = useState(false);
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ["negocio-detalhe", negocioId],
@@ -53,20 +74,28 @@ export function Cf2NegocioWorkspace({ negocioId }: { negocioId: string }) {
     },
   });
 
-  const statusMutation = useMutation({
-    mutationFn: async (status: "ganho" | "perdido") => {
-      setErroWon(null);
-      const r = await fetch(`/api/negocios/${negocioId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(status === "perdido" ? { status, motivoPerda: motivoPerda || "Não informado" } : { status }),
-      });
-      const body = await r.json();
-      if (!r.ok) throw new Error(body.error || "Falha ao atualizar status.");
-      return body;
+  const { data: tarefas = [] } = useQuery<Tarefa[]>({
+    queryKey: ["tarefas", "negocio", negocioId],
+    queryFn: async () => { const r = await fetch(`/api/tarefas?negocioId=${negocioId}`); if (!r.ok) return []; const j = await r.json(); return j.tarefas || []; },
+  });
+
+  const toggleTarefa = useMutation({
+    mutationFn: async ({ id, concluida }: { id: string; concluida: boolean }) => {
+      const r = await fetch(`/api/tarefas/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ concluida }) });
+      if (!r.ok) throw new Error("falha");
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["negocio-detalhe", negocioId] }),
-    onError: (e: Error) => setErroWon(e.message),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["tarefas", "negocio", negocioId] }),
+  });
+
+  const patch = useMutation({
+    mutationFn: async (body: Record<string, unknown>) => {
+      const r = await fetch(`/api/negocios/${negocioId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || "Falha ao atualizar status.");
+      return j;
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["negocio-detalhe", negocioId] }); setMoveMenuOpen(false); setPerderMenuOpen(false); setMotivoOutro(""); },
+    onError: (e: Error) => toast.error(e.message),
   });
 
   if (isLoading) {
@@ -97,6 +126,12 @@ export function Cf2NegocioWorkspace({ negocioId }: { negocioId: string }) {
   const oportunidadesIrmas: OportunidadeIrma[] = data.oportunidadesIrmas ?? [];
   const jaGanho = negocio.status === "ganho";
   const jaPerdido = negocio.status === "perdido";
+  const stage = PIPELINE_OPEN_COLS.find((c) => c.keys.includes(negocio.status));
+  const proximoStatus = proximoStatusReal(negocio.status);
+  const isTrial = negocio.status === "trial";
+  const trialDesde = statusChanges?.find((s: { paraStatus: string }) => s.paraStatus === "trial")?.createdAt as string | undefined;
+  const tarefasAbertas = tarefas.filter((t) => !t.concluida);
+  const proximaTarefa = [...tarefasAbertas].filter((t) => t.dataVencimento).sort((a, b) => new Date(a.dataVencimento!).getTime() - new Date(b.dataVencimento!).getTime())[0];
 
   const itensPorFamilia = itens.reduce<Record<string, OportunidadeItem[]>>((acc, item) => {
     (acc[item.serviceFamily] ||= []).push(item);
@@ -104,56 +139,85 @@ export function Cf2NegocioWorkspace({ negocioId }: { negocioId: string }) {
   }, {});
 
   return (
-    <div className="page-scroll space-y-4 pb-16">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div className="flex items-center gap-3">
-          <button onClick={() => router.back()} className="p-1.5 rounded-lg" style={{ color: "var(--cf2-text-tertiary)" }}><ArrowLeft className="w-4 h-4" /></button>
-          <div>
-            <h1 className="text-xl font-bold" style={{ color: "var(--cf2-text-primary)" }}>{negocio.titulo}</h1>
-            <div className="flex items-center gap-2 mt-1">
-              <Cf2Badge variant={jaGanho ? "success" : jaPerdido ? "danger" : "neutral"}>{negocio.status}</Cf2Badge>
-              {(negocio.mrrFechado || negocio.mrrEstimado) && <span className="text-[12px]" style={{ color: "var(--cf2-text-secondary)" }}>MRR {brl(negocio.mrrFechado || negocio.mrrEstimado)}</span>}
-              {negocio.valorSetup && parseFloat(negocio.valorSetup) > 0 && <span className="text-[12px]" style={{ color: "var(--cf2-text-secondary)" }}>Setup {brl(negocio.valorSetup)}</span>}
+    <>
+      <div className="-m-6 mb-0 flex flex-col">
+        <div className="rounded-tl-2xl px-8 pt-7 pb-5" style={{ background: "var(--cf2-bg-canvas)" }}>
+          <Cf2Topbar orgNome="Callface" variant="light" title="Vendas" subtitle="Pipeline comercial — oportunidades reais, do primeiro contato ao contrato" />
+        </div>
+
+        <div className="px-8 py-6 flex flex-col gap-4" style={{ background: "var(--cf2-chrome-bg-alt)" }}>
+          <div className="flex items-center gap-1.5 text-[12px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>
+            <Link href="/vendas" className="hover:underline">Vendas</Link>
+            <ChevronRight className="w-3 h-3" />
+            <Link href="/pipeline" className="hover:underline">Pipeline</Link>
+            <ChevronRight className="w-3 h-3" />
+            <span style={{ color: "var(--cf2-chrome-text-primary)" }}>{empresa?.nome || negocio.titulo}</span>
+          </div>
+
+          <div className="flex items-start justify-between flex-wrap gap-4">
+            <div className="flex flex-col gap-1.5">
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <p className="text-[26px] font-bold" style={{ color: "var(--cf2-chrome-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>{empresa?.nome || negocio.titulo}</p>
+                {stage && <span className="px-2.5 py-1 rounded-full text-[12px] font-semibold" style={{ background: `${stage.color}22`, color: stage.color }}>{stage.label}</span>}
+                {jaGanho && <Cf2Badge variant="success">Ganho</Cf2Badge>}
+                {jaPerdido && <Cf2Badge variant="danger">Perdido</Cf2Badge>}
+                {negocio.serviceFamily && <span className="px-2.5 py-1 rounded-full text-[11px] font-medium" style={{ background: "rgba(255,255,255,0.08)", color: "var(--cf2-chrome-text-secondary)" }}>{FAMILY_LABEL[negocio.serviceFamily] || negocio.serviceFamily}</span>}
+              </div>
+              <p className="text-[13px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>{lead?.nome || "Sem contato vinculado"}{(negocio.mrrFechado || negocio.mrrEstimado) ? ` · MRR ${brl(negocio.mrrFechado || negocio.mrrEstimado)}` : ""}{negocio.valorSetup && parseFloat(negocio.valorSetup) > 0 ? ` · Setup ${brl(negocio.valorSetup)}` : ""} · Tempo na etapa: {tempoNaEtapa(negocio.updatedAt)}</p>
+            </div>
+            <div className="flex items-center gap-4">
+              <div className="flex gap-2">
+                <HeaderAction icon={Phone} label="Ligar" href={lead?.telefone ? callfaceCallUrl(lead.telefone) : undefined} />
+                <HeaderAction icon={MessageCircle} label="WhatsApp" href={lead?.telefone ? `https://wa.me/${lead.telefone.replace(/\D/g, "")}` : undefined} />
+                <HeaderAction icon={Mail} label="E-mail" href={lead?.email ? `mailto:${lead.email}` : undefined} />
+                <HeaderAction icon={Calendar} label="Agendar" onClick={() => setTarefaModalOpen(true)} />
+                <HeaderAction icon={Plus} label="Tarefa" onClick={() => setTarefaModalOpen(true)} />
+                <HeaderAction icon={FileText} label="Nova proposta" onClick={() => setNovaPropostaAberta(true)} accent />
+              </div>
             </div>
           </div>
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={() => setNovaPropostaAberta(true)}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-[13px] font-semibold"
-            style={{ background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" }}
-          >
-            <Plus className="w-3.5 h-3.5" /> Nova proposta
-          </button>
+
           {!jaGanho && !jaPerdido && (
-            <>
-              <button
-                onClick={() => statusMutation.mutate("ganho")}
-                disabled={statusMutation.isPending}
-                className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-[13px] font-semibold disabled:opacity-40"
-                style={{ background: "var(--cf2-success-bg)", color: "var(--cf2-success-text)" }}
-              >
-                <CheckCircle2 className="w-3.5 h-3.5" /> Marcar ganho
+            <div className="flex items-center gap-4 relative">
+              <button onClick={() => setMoveMenuOpen((v) => !v)} className="flex items-center gap-2 h-10 px-3.5 rounded-xl text-[13px] font-semibold" style={{ background: "var(--cf2-bg-canvas)", color: "var(--cf2-text-primary)" }}>
+                Mover etapa <ChevronDown className="w-3.5 h-3.5" />
               </button>
-              <button
-                onClick={() => { const m = window.prompt("Motivo da perda:"); if (m !== null) { setMotivoPerda(m); statusMutation.mutate("perdido"); } }}
-                disabled={statusMutation.isPending}
-                className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-[13px] font-semibold disabled:opacity-40"
-                style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-secondary)" }}
-              >
-                <XCircle className="w-3.5 h-3.5" /> Marcar perdido
-              </button>
-            </>
+              {moveMenuOpen && (
+                <div className="absolute top-12 left-0 min-w-[180px] rounded-xl py-1 z-10" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)", boxShadow: "0 8px 16px rgba(15,23,42,0.2)" }}>
+                  {PIPELINE_OPEN_COLS.map((s) => (
+                    <button key={s.key} onClick={() => patch.mutate({ status: s.dropTarget })} className="w-full text-left px-3 py-1.5 text-[13px] flex items-center gap-2" style={{ color: "var(--cf2-text-primary)" }}>
+                      <span className="w-2 h-2 rounded-full shrink-0" style={{ background: s.color }} /> {s.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div className="relative">
+                <button onClick={() => setPerderMenuOpen((v) => !v)} className="text-[13px] font-bold" style={{ color: "#f87171" }}>Perder Oportunidade</button>
+                {perderMenuOpen && (
+                  <div className="absolute top-8 left-0 min-w-[240px] rounded-xl p-2 z-10 flex flex-col gap-1" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)", boxShadow: "0 8px 16px rgba(15,23,42,0.2)" }}>
+                    {Object.entries(MOTIVO_PERDA_ESTRUTURADO).map(([statusKey, label]) => (
+                      <button key={statusKey} onClick={() => patch.mutate({ status: statusKey })} className="w-full text-left px-2.5 py-1.5 rounded-lg text-[12px]" style={{ color: "var(--cf2-text-primary)" }}>{label}</button>
+                    ))}
+                    <div className="h-px my-1" style={{ background: "var(--cf2-border-default)" }} />
+                    <div className="flex items-center gap-1.5 px-1">
+                      <input value={motivoOutro} onChange={(e) => setMotivoOutro(e.target.value)} placeholder="Outro motivo..." className="flex-1 px-2 py-1 rounded-lg text-[12px] outline-none" style={{ background: "var(--cf2-bg-canvas)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }} />
+                      <button onClick={() => motivoOutro.trim() && patch.mutate({ status: "perdido", motivoPerda: motivoOutro.trim() })} disabled={!motivoOutro.trim()} className="text-[11px] font-bold px-2 py-1 rounded-lg disabled:opacity-40" style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-primary)" }}>OK</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div className="flex-1" />
+              {proximoStatus && (
+                <button onClick={() => patch.mutate({ status: proximoStatus })} disabled={patch.isPending} className="flex items-center gap-2 h-10 px-4 rounded-xl text-[13px] font-bold disabled:opacity-60" style={{ background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" }}>
+                  <Check className="w-4 h-4" /> Avançar etapa →
+                </button>
+              )}
+            </div>
           )}
         </div>
       </div>
 
-      {erroWon && (
-        <div className="p-3 rounded-lg text-[13px]" style={{ background: "var(--cf2-warning-bg)", color: "var(--cf2-warning-text)" }}>
-          {erroWon}
-        </div>
-      )}
-
+      <div className="pt-8 space-y-4 pb-16">
       {/* Oportunidades irmãs (ADR-EXEC-022) — mesma negociação, linhas
           comerciais independentes, resultado próprio de cada uma. Agregação,
           nunca status: "1 de 2 ganhas" é informativo, não define nada aqui. */}
@@ -171,6 +235,43 @@ export function Cf2NegocioWorkspace({ negocioId }: { negocioId: string }) {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-2 space-y-4">
+          {/* Próxima ação — destaque, spec explícita */}
+          <div className="p-4 rounded-2xl" style={proximaTarefa ? { background: "rgba(34,197,94,0.08)", border: "1px solid rgba(34,197,94,0.25)" } : { background: "var(--cf2-warning-bg)", border: "1px solid rgba(245,158,11,0.3)" }}>
+            {proximaTarefa ? (
+              <>
+                <p className="text-[11px] font-bold uppercase" style={{ color: "var(--cf2-success-text)" }}>Próxima Ação Mapeada</p>
+                <p className="text-[14px] font-bold mt-0.5" style={{ color: "var(--cf2-text-primary)" }}>{proximaTarefa.titulo}</p>
+                <p className="text-[12px] mt-0.5" style={{ color: "var(--cf2-text-secondary)" }}>{new Date(proximaTarefa.dataVencimento!).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", weekday: "short" })}</p>
+              </>
+            ) : (
+              <p className="text-[13px] font-semibold flex items-center gap-1.5" style={{ color: "var(--cf2-warning-text)" }}><AlertTriangle className="w-4 h-4" /> Nenhuma próxima ação definida</p>
+            )}
+          </div>
+
+          {/* Jornada comercial */}
+          <Cf2Card>
+            <Cf2SectionHeader title="Jornada comercial" />
+            <div className="mt-3 flex items-center justify-between px-1">
+              {PIPELINE_OPEN_COLS.concat([{ key: "ganho", label: "Ganho", color: "#22c55e", keys: ["ganho"], dropTarget: "ganho" }]).map((s) => {
+                const ativo = stage?.key === s.key || (s.key === "ganho" && jaGanho);
+                const passou = stage ? PIPELINE_OPEN_COLS.findIndex((c) => c.key === s.key) < PIPELINE_OPEN_COLS.findIndex((c) => c.key === stage.key) : false;
+                return (
+                  <div key={s.key} className="flex flex-col items-center gap-1 flex-1">
+                    <span className="w-2.5 h-2.5 rounded-full" style={{ background: ativo || passou ? s.color : "var(--cf2-border-default)" }} />
+                    <span className="text-[11px] text-center" style={{ color: ativo ? s.color : "var(--cf2-text-tertiary)", fontWeight: ativo ? 700 : 400 }}>{s.label}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </Cf2Card>
+
+          {isTrial && (
+            <div className="flex items-center gap-2 p-4 rounded-2xl" style={{ background: "rgba(20,184,166,0.08)", border: "1px solid rgba(20,184,166,0.25)" }}>
+              <Beaker className="w-4 h-4 shrink-0" style={{ color: "#14B8A6" }} />
+              <p className="text-[13px]" style={{ color: "var(--cf2-text-primary)" }}>Trial ativo{trialDesde ? ` desde ${new Date(trialDesde).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}` : ""}</p>
+            </div>
+          )}
+
           {/* Composição comercial — ADR-EXEC-020: 1 negócio, N itens, família/natureza por item */}
           <Cf2Card>
             <Cf2SectionHeader title="Composição comercial" subtitle="O que está sendo vendido nesta oportunidade" />
@@ -268,15 +369,34 @@ export function Cf2NegocioWorkspace({ negocioId }: { negocioId: string }) {
         </div>
 
         <div className="space-y-4">
-          {/* Contato/empresa/responsável */}
+          {/* Tarefas pendentes */}
           <Cf2Card>
-            <Cf2SectionHeader title="Contato" />
+            <div className="flex items-center justify-between">
+              <Cf2SectionHeader title="Tarefas pendentes" />
+              <button onClick={() => setTarefaModalOpen(true)} className="text-[12px] font-semibold" style={{ color: "var(--cf2-success-text)" }}>+ Nova tarefa</button>
+            </div>
+            <div className="mt-3 space-y-1.5">
+              {tarefasAbertas.length === 0 && <Cf2EmptyState title="Nenhuma tarefa em aberto" />}
+              {tarefasAbertas.map((t) => (
+                <div key={t.id} className="flex items-center gap-2.5 p-2.5 rounded-lg" style={{ background: "var(--cf2-bg-surface-muted)" }}>
+                  <button onClick={() => toggleTarefa.mutate({ id: t.id, concluida: true })} className="w-4 h-4 rounded-full shrink-0" style={{ border: "1px solid var(--cf2-border-default)" }} />
+                  <p className="flex-1 text-[13px]" style={{ color: "var(--cf2-text-primary)" }}>{t.titulo}</p>
+                  {t.dataVencimento && <span className="text-[11px] shrink-0" style={{ color: "var(--cf2-text-tertiary)" }}>{new Date(t.dataVencimento).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}</span>}
+                </div>
+              ))}
+            </div>
+          </Cf2Card>
+
+          {/* Dados do contato/empresa */}
+          <Cf2Card>
+            <Cf2SectionHeader title="Dados do contato" />
             <div className="mt-3 space-y-2 text-[13px]" style={{ color: "var(--cf2-text-primary)" }}>
               {lead && (
                 <>
-                  <p className="flex items-center gap-1.5"><User className="w-3.5 h-3.5" style={{ color: "var(--cf2-text-tertiary)" }} />{lead.nome}</p>
+                  <p className="flex items-center gap-1.5"><User className="w-3.5 h-3.5" style={{ color: "var(--cf2-text-tertiary)" }} />{lead.nome}{lead.cargo ? ` · ${lead.cargo}` : ""}</p>
                   {lead.telefone && <p className="flex items-center gap-1.5"><Phone className="w-3.5 h-3.5" style={{ color: "var(--cf2-text-tertiary)" }} />{lead.telefone}</p>}
                   {lead.email && <p className="flex items-center gap-1.5"><Mail className="w-3.5 h-3.5" style={{ color: "var(--cf2-text-tertiary)" }} />{lead.email}</p>}
+                  {lead.empresaCnpj && <p className="flex items-center gap-1.5"><Building2 className="w-3.5 h-3.5" style={{ color: "var(--cf2-text-tertiary)" }} />CNPJ {lead.empresaCnpj}</p>}
                   <Link href={`/contatos/${lead.id}`} className="text-[12px] underline" style={{ color: "var(--cf2-text-secondary)" }}>Ver perfil completo</Link>
                 </>
               )}
@@ -326,6 +446,7 @@ export function Cf2NegocioWorkspace({ negocioId }: { negocioId: string }) {
           </Cf2Card>
         </div>
       </div>
+      </div>
 
       {novaPropostaAberta && (
         <Cf2NovaPropostaSlideOver
@@ -336,6 +457,24 @@ export function Cf2NegocioWorkspace({ negocioId }: { negocioId: string }) {
           }}
         />
       )}
-    </div>
+      <TarefaFormModal
+        open={tarefaModalOpen}
+        onClose={() => setTarefaModalOpen(false)}
+        defaultNegocioId={negocioId}
+        defaultNegocioLabel={negocio.titulo}
+        defaultTipo="diagnostico"
+        invalidateKeys={[["tarefas", "negocio", negocioId]]}
+      />
+    </>
   );
+}
+
+function HeaderAction({ icon: Icon, label, href, onClick, accent }: { icon: typeof Phone; label: string; href?: string; onClick?: () => void; accent?: boolean }) {
+  const disabled = !href && !onClick;
+  const cls = "flex items-center gap-1.5 h-10 px-3 rounded-xl text-[13px] font-semibold";
+  const style = accent
+    ? { background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)", opacity: disabled ? 0.4 : 1 }
+    : { background: "var(--cf2-bg-canvas)", color: "var(--cf2-text-primary)", opacity: disabled ? 0.4 : 1 };
+  if (href && !disabled) return <a href={href} target="_blank" rel="noopener noreferrer" className={cls} style={style}><Icon className="w-3.5 h-3.5" /> {label}</a>;
+  return <button onClick={onClick} disabled={disabled} className={cls} style={style}><Icon className="w-3.5 h-3.5" /> {label}</button>;
 }

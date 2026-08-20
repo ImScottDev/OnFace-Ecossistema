@@ -297,7 +297,7 @@ export default function PipelinePage() {
   // nada"). O drag-and-drop é a via principal do board, não só o detalhe do
   // negócio — precisa da mesma via manual de evidência aqui.
   const [evidenciaModalNegocioId, setEvidenciaModalNegocioId] = useState<string | null>(null);
-  const [evidenciaTipo, setEvidenciaTipo] = useState<"manual_contract" | "admin_approval">("manual_contract");
+  const [evidenciaTipo, setEvidenciaTipo] = useState<"manual_contract" | "admin_approval" | "financial_attestation">("manual_contract");
   const [evidenciaNota, setEvidenciaNota] = useState("");
   const retentandoAposEvidencia = useRef(false);
 
@@ -468,11 +468,12 @@ export default function PipelinePage() {
                 <label className="text-sm text-white/50 mb-1 block">Tipo de evidência</label>
                 <select
                   value={evidenciaTipo}
-                  onChange={(e) => setEvidenciaTipo(e.target.value as "manual_contract" | "admin_approval")}
+                  onChange={(e) => setEvidenciaTipo(e.target.value as "manual_contract" | "admin_approval" | "financial_attestation")}
                   className="w-full dark-input text-sm"
                 >
                   <option value="manual_contract">Contrato assinado fora do sistema</option>
                   <option value="admin_approval">Aprovação de admin/gerente</option>
+                  <option value="financial_attestation">Atestado financeiro (exceção auditada)</option>
                 </select>
               </div>
               <div>

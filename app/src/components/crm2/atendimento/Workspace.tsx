@@ -11,9 +11,14 @@ import { Cf2Dialer } from "./Dialer";
 import { Cf2ContextPanel } from "./ContextPanel";
 import { Cf2NovaMensagemModal } from "./NovaMensagemModal";
 import { Cf2AtribuirModal } from "./AtribuirModal";
+import { Cf2ScriptsPanel } from "./ScriptsPanel";
+import { Cf2DocumentosPanel } from "./DocumentosPanel";
 
 export function Cf2AtendimentoWorkspace() {
   const queryClient = useQueryClient();
+  // Pré-vendas/Comercial/Entrega/CS precisam de roteiro (Scripts) além da
+  // caixa de entrada — aba própria dentro de Atendimento (19/08, P0.6).
+  const [pagina, setPagina] = useState<"inbox" | "scripts" | "documentos">("inbox");
   const [canal, setCanal] = useState("todas");
   const [view, setView] = useState("meus");
   const [search, setSearch] = useState("");
@@ -40,6 +45,7 @@ export function Cf2AtendimentoWorkspace() {
   });
 
   const conversas: ConversaItem[] = data?.conversas ?? [];
+  const contagens = data?.contagens as { todas: number; whatsapp: number; email: number; ligacao: number } | undefined;
 
   // Mantém a seleção sincronizada (naoLidas atualiza sem perder o item aberto).
   // Aba Ligar não auto-seleciona a primeira ligação — só mostra detalhe se o
@@ -73,7 +79,26 @@ export function Cf2AtendimentoWorkspace() {
   });
 
   return (
-    <div className="flex gap-4 h-full min-h-0">
+    <div className="flex flex-col gap-3 h-full min-h-0">
+      <div className="flex gap-2 p-1 rounded-xl w-fit shrink-0" style={{ background: "var(--cf2-bg-surface-muted)" }}>
+        {([["inbox", "Caixa de entrada"], ["scripts", "Scripts"], ["documentos", "Documentos"]] as const).map(([key, label]) => (
+          <button
+            key={key}
+            onClick={() => setPagina(key)}
+            className="px-4 py-1.5 rounded-lg text-[13px] font-semibold"
+            style={{ background: pagina === key ? "var(--cf2-bg-surface)" : "transparent", color: pagina === key ? "var(--cf2-text-primary)" : "var(--cf2-text-secondary)" }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {pagina === "scripts" ? (
+        <Cf2ScriptsPanel />
+      ) : pagina === "documentos" ? (
+        <Cf2DocumentosPanel />
+      ) : (
+    <div className="flex gap-4 flex-1 min-h-0">
       <Cf2ConversationList
         conversas={conversas}
         loading={isLoading}
@@ -86,6 +111,7 @@ export function Cf2AtendimentoWorkspace() {
         selectedId={conversaAtual?.id ?? null}
         onSelect={setSelecionada}
         onNovaMensagem={() => setNovaMensagemAberta(true)}
+        contagens={contagens}
       />
 
       {conversaAtual ? (
@@ -111,6 +137,8 @@ export function Cf2AtendimentoWorkspace() {
         >
           <p className="text-[13px]" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhuma conversa por aqui ainda.</p>
         </div>
+      )}
+    </div>
       )}
 
       {novaMensagemAberta && (

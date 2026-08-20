@@ -18,6 +18,7 @@ import { db } from "@/lib/db";
 import { eventOutbox, auditLog } from "@/lib/db/schema";
 import { eq, asc } from "drizzle-orm";
 import { materializarServicosCanonicosDoGrupo } from "@/lib/crm/servico-canonico";
+import { criarFulfillmentsParaServicos } from "@/lib/crm/fulfillment";
 
 type EventoOutbox = typeof eventOutbox.$inferSelect;
 type Handler = (evento: EventoOutbox) => Promise<void>;
@@ -110,4 +111,5 @@ registrarConsumidorEvento("FulfillmentGroupCompleted", async (evento) => {
   if (servicoIds.length === 0) {
     throw new Error(`materializarServicosCanonicosDoGrupo(${grupoComercialId}) não gerou nenhum serviço — grupo sem itens? investigar antes de aceitar como sucesso silencioso.`);
   }
+  await criarFulfillmentsParaServicos(servicoIds, evento.organizacaoId);
 });

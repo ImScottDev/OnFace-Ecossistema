@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { db } from "@/lib/db";
-import { empresas, leads, negocios, negocioLeads, notas, usuarios } from "@/lib/db/schema";
+import { empresas, leads, negocios, negocioLeads, notas, usuarios, contratos } from "@/lib/db/schema";
 import { eq, and, ilike, or, desc, count, SQL, ne, isNull, isNotNull, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { getCtx, parseBody } from "../compat.js";
@@ -271,7 +271,7 @@ app.get("/empresas/:id", async (c) => {
     return c.json({ error: "Empresa não encontrada" }, 404);
   }
 
-  const [empresaLeads, empresaNegocios, empresaNotas] = await Promise.all([
+  const [empresaLeads, empresaNegocios, notasDiretas] = await Promise.all([
     db.select().from(leads).where(eq(leads.empresaId, id)).orderBy(desc(leads.updatedAt)),
     db.select().from(negocios).where(eq(negocios.empresaId, id)).orderBy(desc(negocios.createdAt)),
     db.select({
@@ -279,13 +279,54 @@ app.get("/empresas/:id", async (c) => {
       conteudo: notas.conteudo,
       autorNome: usuarios.nome,
       createdAt: notas.createdAt,
+      pessoaNome: sql<string | null>`null`,
     }).from(notas)
       .leftJoin(usuarios, eq(notas.autorId, usuarios.id))
       .where(eq(notas.empresaId, id))
       .orderBy(desc(notas.createdAt)),
   ]);
 
-  return c.json({ empresa, leads: empresaLeads, negocios: empresaNegocios, notas: empresaNotas });
+  // Correção 19/08 (Timeline da Empresa = projeção agregada, não só nota
+  // gravada direto em empresaId): 3155/3517 notas do banco estão vinculadas
+  // por lead_id, só 70 por empresa_id — sem isso a Timeline da Empresa
+  // mostrava quase nada. Não duplica o dado (mesma nota, mesma linha no
+  // banco) — só agrega as duas origens numa projeção só, com autoria da
+  // pessoa preservada pra transparência (ver contexto no card).
+  const leadIdsParaNotas = empresaLeads.map((l) => l.id);
+  const notasDePessoas = leadIdsParaNotas.length > 0
+    ? await db.select({
+        id: notas.id,
+        conteudo: notas.conteudo,
+        autorNome: usuarios.nome,
+        createdAt: notas.createdAt,
+        pessoaNome: leads.nome,
+      }).from(notas)
+        .leftJoin(usuarios, eq(notas.autorId, usuarios.id))
+        .innerJoin(leads, eq(notas.leadId, leads.id))
+        .where(inArray(notas.leadId, leadIdsParaNotas))
+        .orderBy(desc(notas.createdAt))
+    : [];
+  const empresaNotas = [...notasDiretas, ...notasDePessoas].sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  );
+
+  // Correção 19/08: contrato (nativo ou histórico/Zoho) vinculado à empresa
+  // via lead OU negócio — `contratos` não tem empresaId direto, então
+  // resolve pelos dois caminhos já buscados acima (mesmo padrão de
+  // `negocio_empresa` em contatos-crm2.ts). Sem contrato/negócio, não
+  // dispara query extra.
+  const leadIds = empresaLeads.map((l) => l.id);
+  const negocioIds = empresaNegocios.map((n) => n.id);
+  const empresaContratos = (leadIds.length > 0 || negocioIds.length > 0)
+    ? await db.select().from(contratos).where(
+        or(
+          leadIds.length > 0 ? inArray(contratos.leadId, leadIds) : undefined,
+          negocioIds.length > 0 ? inArray(contratos.negocioId, negocioIds) : undefined,
+        )
+      ).orderBy(desc(contratos.createdAt))
+    : [];
+
+  return c.json({ empresa, leads: empresaLeads, negocios: empresaNegocios, notas: empresaNotas, contratos: empresaContratos });
 });
 
 // ── PATCH /empresas/:id ──────────────────────────────────────────────

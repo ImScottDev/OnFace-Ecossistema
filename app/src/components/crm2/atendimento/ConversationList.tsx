@@ -1,6 +1,6 @@
 "use client";
 
-import { MessageSquare, Mail, Phone, Search, SlidersHorizontal } from "lucide-react";
+import { MessageSquare, Mail, Phone, Search, SlidersHorizontal, AlertCircle } from "lucide-react";
 import { ConversaItem, iniciais, formatarHora } from "./types";
 
 const TABS = [
@@ -28,6 +28,7 @@ export function Cf2ConversationList({
   selectedId,
   onSelect,
   onNovaMensagem,
+  contagens,
 }: {
   conversas: ConversaItem[];
   loading: boolean;
@@ -40,6 +41,7 @@ export function Cf2ConversationList({
   selectedId: string | null;
   onSelect: (item: ConversaItem) => void;
   onNovaMensagem: () => void;
+  contagens?: { todas: number; whatsapp: number; email: number; ligacao: number };
 }) {
   return (
     <div
@@ -57,20 +59,26 @@ export function Cf2ConversationList({
         </div>
 
         <div className="flex gap-1 p-[3px] rounded-[10px]" style={{ background: "var(--cf2-bg-surface-muted)" }}>
-          {TABS.map((t) => (
-            <button
-              key={t.key}
-              onClick={() => onCanalChange(t.key)}
-              className="flex-1 py-1.5 rounded-[7px] text-[12px] font-bold"
-              style={{
-                background: canal === t.key ? "var(--cf2-bg-surface)" : "transparent",
-                color: canal === t.key ? "var(--cf2-text-primary)" : "var(--cf2-text-secondary)",
-                boxShadow: canal === t.key ? "0 2px 2px rgba(0,0,0,0.03)" : "none",
-              }}
-            >
-              {t.label}
-            </button>
-          ))}
+          {TABS.map((t) => {
+            const n = contagens?.[t.key];
+            return (
+              <button
+                key={t.key}
+                onClick={() => onCanalChange(t.key)}
+                className="flex-1 py-1.5 rounded-[7px] text-[12px] font-bold flex items-center justify-center gap-1"
+                style={{
+                  background: canal === t.key ? "var(--cf2-bg-surface)" : "transparent",
+                  color: canal === t.key ? "var(--cf2-text-primary)" : "var(--cf2-text-secondary)",
+                  boxShadow: canal === t.key ? "0 2px 2px rgba(0,0,0,0.03)" : "none",
+                }}
+              >
+                {t.label}
+                {typeof n === "number" && n > 0 && (
+                  <span className="text-[10px] px-1 rounded-full" style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-tertiary)" }}>{n}</span>
+                )}
+              </button>
+            );
+          })}
         </div>
 
         <div className="flex gap-2 items-center">
@@ -136,6 +144,11 @@ export function Cf2ConversationList({
                   </div>
                 </div>
                 <div className="flex gap-1.5 items-center shrink-0">
+                  {item.handoffStatus === "human_required" && (
+                    <span title="Precisa de humano">
+                      <AlertCircle className="w-3.5 h-3.5" style={{ color: "var(--cf2-warning-text)" }} />
+                    </span>
+                  )}
                   <Icone className="w-3.5 h-3.5" style={{ color: "var(--cf2-text-tertiary)" }} />
                   <p className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>{formatarHora(item.timestamp)}</p>
                 </div>

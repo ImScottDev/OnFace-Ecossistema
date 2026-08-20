@@ -36,7 +36,7 @@ export default function NegocioDetailPage() {
   // closer clicava em "Ganho", o gate rejeitava (400) e a mutation antiga
   // (sem checar res.ok) engolia o erro em silêncio.
   const [showEvidenciaModal, setShowEvidenciaModal] = useState(false);
-  const [evidenciaTipo, setEvidenciaTipo] = useState<"manual_contract" | "admin_approval">("manual_contract");
+  const [evidenciaTipo, setEvidenciaTipo] = useState<"manual_contract" | "admin_approval" | "financial_attestation">("manual_contract");
   const [evidenciaNota, setEvidenciaNota] = useState("");
   const isAdmin = isAdminView(session?.user?.role);
   // true só durante a retentativa automática depois de anexar evidência —
@@ -628,11 +628,12 @@ export default function NegocioDetailPage() {
                 <label className="text-sm text-white/50 mb-1 block">Tipo de evidência</label>
                 <select
                   value={evidenciaTipo}
-                  onChange={(e) => setEvidenciaTipo(e.target.value as "manual_contract" | "admin_approval")}
+                  onChange={(e) => setEvidenciaTipo(e.target.value as "manual_contract" | "admin_approval" | "financial_attestation")}
                   className="w-full dark-input text-sm"
                 >
                   <option value="manual_contract">Contrato assinado fora do sistema</option>
                   <option value="admin_approval">Aprovação de admin/gerente</option>
+                  <option value="financial_attestation">Atestado financeiro (exceção auditada)</option>
                 </select>
               </div>
               <div>

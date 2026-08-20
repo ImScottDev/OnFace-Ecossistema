@@ -19,11 +19,15 @@ import {
 import { getSignatureProvider } from "@/lib/crm/signature";
 import { determinarProdutoProposta } from "@/lib/crm/proposta-fluxo";
 
-async function escolherTemplate(organizacaoId: string, commercialModel: string) {
+async function escolherTemplate(organizacaoId: string, commercialModel: string | null) {
   const rows = await db
     .select()
     .from(contratoTemplates)
-    .where(and(eq(contratoTemplates.organizacaoId, organizacaoId), eq(contratoTemplates.ativo, true), or(eq(contratoTemplates.commercialModel, commercialModel), isNull(contratoTemplates.commercialModel))));
+    .where(and(
+      eq(contratoTemplates.organizacaoId, organizacaoId),
+      eq(contratoTemplates.ativo, true),
+      commercialModel ? or(eq(contratoTemplates.commercialModel, commercialModel), isNull(contratoTemplates.commercialModel)) : isNull(contratoTemplates.commercialModel)
+    ));
   if (rows.length === 0) return null;
   // Template específico do modelo comercial tem prioridade sobre o genérico.
   return rows.find((r) => r.commercialModel === commercialModel) ?? rows.find((r) => r.commercialModel === null) ?? rows[0];
@@ -31,6 +35,23 @@ async function escolherTemplate(organizacaoId: string, commercialModel: string) 
 
 function renderizar(corpo: string, variaveis: Record<string, string>): string {
   return corpo.replace(/\{\{(\w+)\}\}/g, (_, chave) => variaveis[chave] ?? `{{${chave}}}`);
+}
+
+/**
+ * Resolve+renderiza o corpo do contrato — extraído de `gerarContratoDeTemplate`
+ * (19/08) pra ser reusável por QUALQUER call site que crie contrato, não só
+ * o fluxo de grupo comercial (ex: Won manual em negocios.ts, que não tem
+ * grupo/commercialModel formal). Nunca retorna corpo vazio: sem template
+ * configurado, cai no mesmo fallback textual honesto de sempre.
+ */
+export async function resolverCorpoContrato(
+  organizacaoId: string,
+  commercialModel: string | null,
+  variaveis: Record<string, string>
+): Promise<{ corpoGerado: string; templateId: string | null; templateVersao: number | null }> {
+  const template = await escolherTemplate(organizacaoId, commercialModel);
+  const corpoGerado = template ? renderizar(template.corpoTemplate, variaveis) : `Contrato — ${variaveis.itens_descricao || "serviço"}. Valor: ${variaveis.valor_total || "—"}.`;
+  return { corpoGerado, templateId: template?.id ?? null, templateVersao: template?.versao ?? null };
 }
 
 /**
@@ -62,7 +83,6 @@ export async function gerarContratoDeTemplate(grupoId: string): Promise<{ contra
   const setup = itensDoGrupo.filter((i) => i.tipo === "setup").reduce((s, i) => s + parseFloat(i.subtotal || "0"), 0);
   const itensDescricao = itensDoGrupo.map((i) => `${i.nome} (${i.tipo})`).join(", ") || "—";
 
-  const template = await escolherTemplate(proposta.organizacaoId, grupo.commercialModel);
   const variaveis: Record<string, string> = {
     empresa_nome: empresa?.nome || lead?.empresa || lead?.nome || "—",
     empresa_cnpj: empresa?.cnpj || lead?.empresaCnpj || "não informado",
@@ -73,15 +93,15 @@ export async function gerarContratoDeTemplate(grupoId: string): Promise<{ contra
     prazo_descricao: "conforme condições comerciais acordadas na proposta",
     condicoes_pagamento: proposta.condicoesPagamento || "conforme proposta",
   };
-  const corpoGerado = template ? renderizar(template.corpoTemplate, variaveis) : `Contrato — ${itensDescricao}. Valor: ${variaveis.valor_total}.`;
+  const { corpoGerado, templateId, templateVersao } = await resolverCorpoContrato(proposta.organizacaoId, grupo.commercialModel, variaveis);
 
   const [contrato] = await db.insert(contratos).values({
     organizacaoId: proposta.organizacaoId,
     leadId: proposta.leadId,
     negocioId: proposta.negocioId,
     grupoComercialId: grupoId,
-    templateId: template?.id ?? null,
-    templateVersao: template?.versao ?? null,
+    templateId,
+    templateVersao,
     variaveisPreenchidas: variaveis,
     corpoGerado,
     tipo: itensDoGrupo[0]?.nome || "proposta",

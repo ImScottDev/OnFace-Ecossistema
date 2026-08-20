@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   LayoutDashboard, Headset, FileText, Calendar, Users, Filter, GitBranch,
   Briefcase, CheckCircle2, Zap, TrendingUp, Settings, Search, Building2,
-  Kanban, Plus, Loader2,
+  Kanban, Plus, Loader2, UserCheck,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -68,26 +68,36 @@ export function Cf2CommandPalette() {
     setSearching(true);
     const timer = setTimeout(async () => {
       try {
-        const [leadsRes, empresasRes, negociosRes, propostasRes, tarefasRes] = await Promise.all([
+        const [leadsRes, empresasRes, negociosRes, propostasRes, tarefasRes, clientesRes] = await Promise.all([
           fetch(`/api/contatos-unified?search=${encodeURIComponent(q)}&limit=5`, { signal: controller.signal }),
           fetch(`/api/empresas?search=${encodeURIComponent(q)}&limit=5`, { signal: controller.signal }),
           fetch(`/api/negocios?search=${encodeURIComponent(q)}&limit=5`, { signal: controller.signal }),
           fetch(`/api/propostas?q=${encodeURIComponent(q)}`, { signal: controller.signal }),
           fetch(`/api/tarefas?search=${encodeURIComponent(q)}`, { signal: controller.signal }),
+          // Clientes (19/08) — grupo próprio, real (Empresa+Serviço, MRR
+          // certo), separado de "Empresas" (diretório genérico) pra levar
+          // direto pro Customer 360 quando a busca já é de um cliente ativo.
+          fetch(`/api/clientes-crm2?search=${encodeURIComponent(q)}&limit=5`, { signal: controller.signal }),
         ]);
-        const [leadsData, empresasData, negociosData, propostasData, tarefasData] = await Promise.all([
+        const [leadsData, empresasData, negociosData, propostasData, tarefasData, clientesData] = await Promise.all([
           leadsRes.ok ? leadsRes.json() : { contatos: [] },
           empresasRes.ok ? empresasRes.json() : { empresas: [] },
           negociosRes.ok ? negociosRes.json() : { negocios: [] },
           propostasRes.ok ? propostasRes.json() : { propostas: [] },
           tarefasRes.ok ? tarefasRes.json() : { tarefas: [] },
+          clientesRes.ok ? clientesRes.json() : { clientes: [] },
         ]);
         const results: CommandItem[] = [
           ...(leadsData.contatos ?? leadsData ?? []).slice(0, 5).map((l: { id: string; nome: string; empresa?: string | null; tipo?: string }) => ({
             id: `lead-${l.id}`,
             label: l.nome,
             sublabel: l.empresa || (l.tipo === "cliente" ? "Cliente" : l.tipo === "lead" ? "Lead" : undefined),
-            href: `/contatos-legado/${l.id}`,
+            // Saneamento CRM2 (16/08): apontava pra /contatos-legado/${id}, que
+            // NUNCA existiu como rota (contatos-legado só tem a listagem na
+            // raiz, sem [id]) — 100% dos cliques em "Pessoas" no Cmd+K
+            // caíam em 404. /contatos/${id} é o detalhe real (ainda dark,
+            // não migrado — ver pendência registrada), mas pelo menos existe.
+            href: `/contatos/${l.id}`,
             icon: Users,
             group: "Pessoas",
           })),
@@ -119,9 +129,22 @@ export function Cf2CommandPalette() {
             id: `tarefa-${t.id}`,
             label: t.titulo,
             sublabel: "Atividade",
-            href: t.negocioId ? `/negocios/${t.negocioId}` : t.leadId ? `/contatos-legado/${t.leadId}` : "/tarefas",
+            // Mesmo fix do grupo "Pessoas" acima — /contatos-legado/${id} nunca existiu como rota.
+            href: t.negocioId ? `/negocios/${t.negocioId}` : t.leadId ? `/contatos/${t.leadId}` : "/tarefas",
             icon: CheckCircle2,
             group: "Atividades",
+          })),
+          // Grupo "Clientes" (19/08) — Empresa com serviço ativo no
+          // portfólio (carteira real), distinto de "Empresas" (diretório
+          // genérico, inclui prospect/ex-cliente/nunca-cliente). Leva pro
+          // Customer 360 novo (/clientes/:id), não pro /empresas/:id legado.
+          ...(clientesData.clientes ?? []).slice(0, 5).map((cli: { id: string; nome: string; familias?: string[] | null }) => ({
+            id: `cliente-${cli.id}`,
+            label: cli.nome,
+            sublabel: (cli.familias ?? []).filter(Boolean).join(" · ") || "Cliente",
+            href: `/clientes/${cli.id}`,
+            icon: UserCheck,
+            group: "Clientes",
           })),
         ];
         setEntityResults(results);

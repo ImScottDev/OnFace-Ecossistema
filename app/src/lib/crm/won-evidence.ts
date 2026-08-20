@@ -21,7 +21,7 @@
  * Ver ADR-EXEC-012 em ARCHITECTURE_DECISIONS.md.
  */
 import { db } from "@/lib/db";
-import { comercialEvidencia, wonEvidencePolicies, negocios, propostas, contratos, auditLog, leads, statusChanges } from "@/lib/db/schema";
+import { comercialEvidencia, wonEvidencePolicies, negocios, propostas, contratos, auditLog, leads, statusChanges, oportunidadeItens, oportunidades } from "@/lib/db/schema";
 import { eq, and, or, isNull } from "drizzle-orm";
 import { publicarEvento } from "@/lib/events/outbox";
 
@@ -30,7 +30,12 @@ export type TipoEvidenciaComercial =
   | "stripe_subscription"
   | "signed_contract"
   | "manual_contract"
-  | "admin_approval";
+  | "admin_approval"
+  // Correção de escopo (19/08) — via de exceção auditada pra venda que não
+  // passa por Stripe/proposta/contrato formal (ex: PABX legado/negociação
+  // fora do fluxo padrão). Só nasce via registrarEvidenciaManual (admin,
+  // sempre audit-logada) — nunca automática.
+  | "financial_attestation";
 
 /** Default catch-all — idêntico ao comportamento do gate anterior (contrato assinado ou assinatura Stripe). Usado quando não existe política configurada pro produto/org. */
 const POLICY_DEFAULT: TipoEvidenciaComercial[] = ["signed_contract", "stripe_subscription", "stripe_payment"];
@@ -69,18 +74,21 @@ export async function registrarEvidencia(opts: {
   }
 }
 
-async function getPolicyTiposAceitos(organizacaoId: string, produto: string | null): Promise<TipoEvidenciaComercial[]> {
+async function getPolicyAplicavel(organizacaoId: string, produto: string | null): Promise<{ tiposAceitos: TipoEvidenciaComercial[]; requiredCombinations: TipoEvidenciaComercial[][] | null }> {
   const rows = await db
-    .select({ produto: wonEvidencePolicies.produto, tiposAceitos: wonEvidencePolicies.tiposAceitos })
+    .select({ produto: wonEvidencePolicies.produto, tiposAceitos: wonEvidencePolicies.tiposAceitos, requiredCombinations: wonEvidencePolicies.requiredCombinations })
     .from(wonEvidencePolicies)
     .where(and(eq(wonEvidencePolicies.organizacaoId, organizacaoId), eq(wonEvidencePolicies.ativo, true), or(isNull(wonEvidencePolicies.produto), produto ? eq(wonEvidencePolicies.produto, produto) : undefined)));
 
-  if (rows.length === 0) return POLICY_DEFAULT;
+  if (rows.length === 0) return { tiposAceitos: POLICY_DEFAULT, requiredCombinations: null };
   // política específica do produto tem prioridade sobre a catch-all (produto=null)
   const especifica = rows.find((r) => r.produto === produto);
   const catchAll = rows.find((r) => r.produto === null);
   const escolhida = especifica ?? catchAll;
-  return (escolhida?.tiposAceitos as TipoEvidenciaComercial[]) ?? POLICY_DEFAULT;
+  return {
+    tiposAceitos: (escolhida?.tiposAceitos as TipoEvidenciaComercial[]) ?? POLICY_DEFAULT,
+    requiredCombinations: (escolhida?.requiredCombinations as TipoEvidenciaComercial[][] | null) ?? null,
+  };
 }
 
 /**
@@ -92,7 +100,7 @@ async function getPolicyTiposAceitos(organizacaoId: string, produto: string | nu
  * precisar de script de backfill em massa).
  */
 export async function avaliarEvidenciaWon(negocioId: string, organizacaoId: string, produto: string | null): Promise<{ permitido: boolean; evidencias: TipoEvidenciaComercial[]; motivo: string }> {
-  const tiposAceitos = await getPolicyTiposAceitos(organizacaoId, produto);
+  const { tiposAceitos, requiredCombinations } = await getPolicyAplicavel(organizacaoId, produto);
 
   const evidenciasExistentes = await db
     .select({ tipo: comercialEvidencia.tipo })
@@ -100,6 +108,22 @@ export async function avaliarEvidenciaWon(negocioId: string, organizacaoId: stri
     .where(eq(comercialEvidencia.negocioId, negocioId));
 
   const tiposEncontrados = evidenciasExistentes.map((e) => e.tipo as TipoEvidenciaComercial);
+
+  // Política com combinação explícita (OR-de-AND): precisa de TODAS as
+  // evidências de PELO MENOS uma combinação — uma evidência isolada não
+  // basta quando o fluxo exige mais de uma junto (ex: contrato + pagamento).
+  if (requiredCombinations && requiredCombinations.length > 0) {
+    for (const combinacao of requiredCombinations) {
+      if (combinacao.length > 0 && combinacao.every((t) => tiposEncontrados.includes(t))) {
+        return { permitido: true, evidencias: combinacao, motivo: "combinação de evidências exigida pela política satisfeita" };
+      }
+    }
+    // Combinação configurada e não satisfeita: não cai no fallback legado
+    // (fallback é OR simples — reintroduziria exatamente o risco que a
+    // combinação existe pra evitar).
+    return { permitido: false, evidencias: tiposEncontrados.filter((t) => tiposAceitos.includes(t)), motivo: "nenhuma combinação de evidências exigida pela política foi satisfeita" };
+  }
+
   const valida = tiposEncontrados.filter((t) => tiposAceitos.includes(t));
   if (valida.length > 0) {
     return { permitido: true, evidencias: valida, motivo: "evidência registrada" };
@@ -148,7 +172,7 @@ export async function avaliarEvidenciaWon(negocioId: string, organizacaoId: stri
 export async function registrarEvidenciaManual(opts: {
   negocioId: string;
   organizacaoId: string;
-  tipo: "manual_contract" | "admin_approval";
+  tipo: "manual_contract" | "admin_approval" | "financial_attestation";
   usuarioId: string;
   nota: string;
 }): Promise<void> {
@@ -172,7 +196,26 @@ export async function registrarEvidenciaManual(opts: {
 }
 
 /** Lê o produto de um negócio a partir de campos_custom (não é coluna direta hoje). */
+/**
+ * Correção 19/08 (chave real do Won-gate): a chave histórica
+ * (`negocios.campos_custom.produto`) só tem 2 valores reais em produção
+ * ("ai"/"ai_pabx") — não dá pra expressar PABX_STANDARD/WHITE_LABEL_STANDARD
+ * como políticas próprias com essa granularidade. Quando o negócio tem
+ * itens reais do Commercial Core v2 (`oportunidade_itens`, via
+ * `oportunidades.negocio_id_legado`) com família classificada, essa é a
+ * chave real (PABX|CALLFACE_AI|WHITE_LABEL) — sempre prioridade sobre o
+ * campo legado. Sem isso, cai no campo legado (compat, nenhuma política
+ * existente quebra).
+ */
 export async function getProdutoNegocio(negocioId: string): Promise<string | null> {
+  const itensReais = await db
+    .select({ serviceFamily: oportunidadeItens.serviceFamily })
+    .from(oportunidadeItens)
+    .innerJoin(oportunidades, eq(oportunidades.id, oportunidadeItens.oportunidadeId))
+    .where(eq(oportunidades.negocioIdLegado, negocioId));
+  const familiasReais = new Set(itensReais.map((i) => i.serviceFamily).filter((f) => f && f !== "UNKNOWN"));
+  if (familiasReais.size === 1) return [...familiasReais][0];
+
   const [row] = await db.select({ camposCustom: negocios.camposCustom }).from(negocios).where(eq(negocios.id, negocioId)).limit(1);
   const produto = (row?.camposCustom as Record<string, unknown> | null)?.produto;
   return typeof produto === "string" ? produto : null;

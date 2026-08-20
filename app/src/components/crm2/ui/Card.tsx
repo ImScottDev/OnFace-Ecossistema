@@ -5,12 +5,14 @@ export function Cf2Card({
   className = "",
   padding = "20px",
   highlight,
+  style,
 }: {
   children: React.ReactNode;
   className?: string;
   padding?: string;
   /** "success" | "danger" — borda colorida com significado (não decorativa) */
   highlight?: "success" | "danger";
+  style?: React.CSSProperties;
 }) {
   const borderColor =
     highlight === "success" ? "var(--cf2-accent-border)" : highlight === "danger" ? "var(--cf2-danger-border)" : "var(--cf2-border-default)";
@@ -23,6 +25,7 @@ export function Cf2Card({
         border: `${borderWidth} solid ${borderColor}`,
         boxShadow: "var(--cf2-shadow-card-sm)",
         padding,
+        ...style,
       }}
     >
       {children}

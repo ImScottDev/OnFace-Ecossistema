@@ -26,7 +26,9 @@ function timeAgo(dateStr: string) {
 
 // Mesma fonte de dado do NotificationDropdown (dark, legado) — UI própria
 // pro tema claro da V2, mesmo endpoint/mutations reais.
-export function Cf2NotificationBell() {
+// `variant="dark"` só troca a cor do sino fechado (usado no hero escuro de
+// /inicio) — o dropdown aberto é sempre claro, autocontido, não precisa mudar.
+export function Cf2NotificationBell({ variant = "light" }: { variant?: "light" | "dark" }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
@@ -72,7 +74,7 @@ export function Cf2NotificationBell() {
         className="relative flex items-center justify-center rounded-full w-9 h-9 transition-colors"
         style={{ background: open ? "var(--cf2-bg-surface-muted)" : "transparent" }}
       >
-        <Bell className="w-4 h-4" style={{ color: "var(--cf2-text-secondary)" }} />
+        <Bell className="w-4 h-4" style={{ color: variant === "dark" ? "var(--cf2-chrome-text-secondary)" : "var(--cf2-text-secondary)" }} />
         {unreadCount > 0 && (
           <span
             className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full"

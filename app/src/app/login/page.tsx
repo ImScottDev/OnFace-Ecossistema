@@ -1,11 +1,24 @@
 "use client";
 
 import { signIn } from "next-auth/react";
-import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useState } from "react";
 
+// Saneamento CRM2 (16/08): `useSearchParams` exige um Suspense boundary no
+// build de produção (Next 16 falha o prerender de /login sem isso — só
+// aparece no `next build`, não no dev). Componente real fica em
+// `LoginForm`; o export default só encapsula o boundary.
 export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginForm />
+    </Suspense>
+  );
+}
+
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -25,7 +38,12 @@ export default function LoginPage() {
       setError("Email ou senha inválidos");
       setLoading(false);
     } else {
-      router.push("/dashboard");
+      // Saneamento CRM2 (16/08): sempre mandava pro dashboard legado,
+      // inclusive ignorando o callbackUrl que o middleware anexa quando o
+      // usuário tentou acessar uma rota protegida sem sessão — o destino
+      // padrão correto é a Home do App Shell novo, não o MVP.
+      const callbackUrl = searchParams.get("callbackUrl");
+      router.push(callbackUrl && callbackUrl.startsWith("/") ? callbackUrl : "/inicio");
     }
   };
 

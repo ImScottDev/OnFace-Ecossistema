@@ -5,7 +5,11 @@ export default auth((req) => {
   const { pathname } = req.nextUrl;
 
   // Protect CRM routes
-  const crmRoutes = ["/dashboard", "/leads", "/pipeline", "/negocios", "/pre-vendas", "/carteira", "/contatos", "/empresas", "/contratos", "/propostas", "/financeiro", "/relatorios", "/campanhas", "/prospeccao", "/inbox", "/automacoes", "/configuracoes", "/whatsapp", "/perfil", "/admin", "/tarefas"];
+  // Saneamento CRM2 (16/08): /inicio, /atendimento, /calendario (rotas do
+  // App Shell novo) nunca tinham entrado nesta lista nem no matcher abaixo —
+  // o guard de autenticação simplesmente não rodava pra elas (gap real de
+  // proteção, não só cosmético).
+  const crmRoutes = ["/dashboard", "/inicio", "/leads", "/pipeline", "/negocios", "/pre-vendas", "/carteira", "/contatos", "/empresas", "/contratos", "/propostas", "/financeiro", "/relatorios", "/campanhas", "/prospeccao", "/inbox", "/atendimento", "/calendario", "/automacoes", "/configuracoes", "/whatsapp", "/perfil", "/admin", "/tarefas"];
   const isCrmRoute = crmRoutes.some((route) => pathname.startsWith(route));
 
   if (isCrmRoute && !req.auth) {
@@ -28,7 +32,7 @@ export default auth((req) => {
   // Admin routes require super_admin role
   if (pathname.startsWith("/admin") && req.auth) {
     if (effectiveRole !== "super_admin") {
-      return NextResponse.redirect(new URL("/dashboard", req.url));
+      return NextResponse.redirect(new URL("/inicio", req.url));
     }
   }
 
@@ -41,7 +45,7 @@ export default auth((req) => {
   const isPersonalEmailSettings = pathname.startsWith("/configuracoes/email");
   if (req.auth && !isPersonalEmailSettings && ["/configuracoes", "/financeiro", "/onboarding", "/campanhas"].some((p) => pathname.startsWith(p))) {
     if (!["admin", "gerente", "super_admin"].includes(effectiveRole)) {
-      return NextResponse.redirect(new URL("/dashboard", req.url));
+      return NextResponse.redirect(new URL("/inicio", req.url));
     }
   }
 
@@ -49,5 +53,5 @@ export default auth((req) => {
 });
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/leads/:path*", "/pipeline/:path*", "/negocios/:path*", "/pre-vendas/:path*", "/carteira/:path*", "/contatos/:path*", "/empresas/:path*", "/contratos/:path*", "/propostas/:path*", "/financeiro/:path*", "/relatorios/:path*", "/campanhas/:path*", "/prospeccao/:path*", "/inbox/:path*", "/automacoes/:path*", "/configuracoes/:path*", "/whatsapp/:path*", "/perfil/:path*", "/admin/:path*", "/tarefas/:path*"],
+  matcher: ["/dashboard/:path*", "/inicio/:path*", "/leads/:path*", "/pipeline/:path*", "/negocios/:path*", "/pre-vendas/:path*", "/carteira/:path*", "/contatos/:path*", "/empresas/:path*", "/contratos/:path*", "/propostas/:path*", "/financeiro/:path*", "/relatorios/:path*", "/campanhas/:path*", "/prospeccao/:path*", "/inbox/:path*", "/atendimento/:path*", "/calendario/:path*", "/automacoes/:path*", "/configuracoes/:path*", "/whatsapp/:path*", "/perfil/:path*", "/admin/:path*", "/tarefas/:path*"],
 };

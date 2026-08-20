@@ -4,10 +4,13 @@ import { useEffect, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Send, MoreHorizontal, Reply, Smile, Trash2, Check, CheckCheck, Clock,
-  AlertCircle, Paperclip, Camera, File as FileIcon, MapPin, User, X,
+  AlertCircle, Paperclip, Camera, File as FileIcon, MapPin, User, X, FileText,
+  Bot, UserCog, Loader2, MessageSquareOff, FileSpreadsheet, FileArchive,
+  Sparkles, ChevronDown,
 } from "lucide-react";
 import { ConversaItem, Contexto, iniciais } from "./types";
 import { Cf2Badge } from "../ui/Badge";
+import { WhatsappTemplatesModal } from "./WhatsappTemplatesModal";
 
 type Mensagem = {
   id: string;
@@ -15,6 +18,7 @@ type Mensagem = {
   conteudo: string | null;
   tipo: string;
   mediaUrl: string | null;
+  mediaFilename: string | null;
   status: string | null;
   uazapiMessageId: string | null;
   replyToId: string | null;
@@ -24,6 +28,56 @@ type Mensagem = {
 };
 
 const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
+
+// Card de anexo (20/08, referência de UX) — antes era um link cru "📎
+// Documento" sem nome nem tipo. Ícone/cor por extensão real do nome do
+// arquivo (whatsapp_mensagens.media_filename já chega com nome real, ex:
+// "Callface_White_Label.pdf"); tamanho em bytes NÃO existe no schema —
+// não é mostrado (não inventar um número).
+const FILE_KIND: Record<string, { Icon: typeof FileText; color: string; bg: string; label: string }> = {
+  pdf: { Icon: FileText, color: "#ef4444", bg: "#ef444426", label: "PDF" },
+  doc: { Icon: FileText, color: "#3b82f6", bg: "#3b82f626", label: "DOC" },
+  docx: { Icon: FileText, color: "#3b82f6", bg: "#3b82f626", label: "DOC" },
+  xls: { Icon: FileSpreadsheet, color: "#22c55e", bg: "#22c55e26", label: "XLS" },
+  xlsx: { Icon: FileSpreadsheet, color: "#22c55e", bg: "#22c55e26", label: "XLS" },
+  csv: { Icon: FileSpreadsheet, color: "#22c55e", bg: "#22c55e26", label: "CSV" },
+  zip: { Icon: FileArchive, color: "#a855f7", bg: "#a855f726", label: "ZIP" },
+  rar: { Icon: FileArchive, color: "#a855f7", bg: "#a855f726", label: "RAR" },
+};
+const FILE_KIND_DEFAULT = { Icon: FileIcon, color: "#64748b", bg: "#64748b26", label: "Arquivo" };
+
+function fileKindFor(filename: string | null): typeof FILE_KIND_DEFAULT {
+  const ext = filename?.split(".").pop()?.toLowerCase();
+  return (ext && FILE_KIND[ext]) || FILE_KIND_DEFAULT;
+}
+
+function FileAttachmentCard({ url, filename }: { url: string | null; filename: string | null }) {
+  const { Icon, color, bg, label } = fileKindFor(filename);
+  const content = (
+    <div className="flex items-center gap-2.5 p-2 rounded-xl" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
+      <div className="flex items-center justify-center rounded-lg shrink-0 w-9 h-9" style={{ background: bg }}>
+        <Icon className="w-4 h-4" style={{ color }} />
+      </div>
+      <div className="min-w-0">
+        <p className="text-[12px] font-semibold truncate max-w-[180px]" style={{ color: "var(--cf2-text-primary)" }}>{filename || "Documento"}</p>
+        <p className="text-[10px]" style={{ color: "var(--cf2-text-tertiary)" }}>{label}</p>
+      </div>
+    </div>
+  );
+  return url ? (
+    <a href={url} target="_blank" rel="noreferrer" className="hover:opacity-80">{content}</a>
+  ) : content;
+}
+
+// F3/Human Handoff (19/08): estado real existe no backend desde 09/08
+// (aiSdrContatoState.handoffStatus), mas nunca teve superfície em
+// nenhuma tela — inbox é onde faz sentido materializar. Sem isso, "IA
+// respondendo" e "precisa de humano" são indistinguíveis pro atendente.
+const HANDOFF_INFO: Record<string, { label: string; icon: typeof Bot; variant: "neutral" | "warning" | "success" }> = {
+  ai_handling: { label: "IA atendendo", icon: Bot, variant: "neutral" },
+  human_required: { label: "Precisa de humano", icon: AlertCircle, variant: "warning" },
+  human_assigned: { label: "Você está atendendo", icon: UserCog, variant: "success" },
+};
 
 function StatusIcon({ status }: { status: string | null }) {
   switch (status) {
@@ -57,10 +111,29 @@ export function Cf2ChatThread({
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [reactionPickerId, setReactionPickerId] = useState<string | null>(null);
   const [showAttachMenu, setShowAttachMenu] = useState(false);
+  const [showTemplates, setShowTemplates] = useState(false);
+  const [gerenciarTemplates, setGerenciarTemplates] = useState(false);
+  const [resumoAberto, setResumoAberto] = useState(false);
+  // Correção 19/08 (Atendimento): template já existia real (backend +
+  // gestão no legado ChatPanel.tsx), só não estava ligado no inbox novo do
+  // CRM2 — mesma rota, mesmo dado, sem duplicar.
+  const { data: templates } = useQuery<{ id: string; nome: string; categoria: string; conteudo: string }[]>({
+    queryKey: ["whatsapp-templates"],
+    queryFn: async () => {
+      const r = await fetch("/api/whatsapp/templates");
+      if (!r.ok) return [];
+      // GET /whatsapp/templates devolve envelope { templates: [...] }, não
+      // array bare — achado real (19/08): o legado ChatPanel.tsx tratava
+      // como array direto, então o picker ficava sempre vazio mesmo com
+      // template real cadastrado. Corrigido aqui e lá.
+      const body = await r.json();
+      return body?.templates ?? [];
+    },
+  });
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const { data } = useQuery({
+  const { data, isLoading } = useQuery({
     queryKey: ["cf2-whatsapp-messages", conversa.id],
     queryFn: async () => {
       const res = await fetch(`/api/whatsapp/messages/${conversa.id}?limit=100`);
@@ -68,6 +141,19 @@ export function Cf2ChatThread({
       return res.json();
     },
     refetchInterval: 4000,
+  });
+
+  const toggleAiMutation = useMutation({
+    mutationFn: async (aiAtivo: boolean) => {
+      const res = await fetch(`/api/ai-sdr/contatos/${conversa.id}/toggle`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ aiAtivo }),
+      });
+      if (!res.ok) throw new Error("Falha ao mudar o atendimento");
+      return res.json();
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["cf2-conversas"] }),
   });
 
   const mensagens: Mensagem[] = [...(data?.messages ?? [])].reverse();
@@ -102,6 +188,14 @@ export function Cf2ChatThread({
   const handleSendText = () => {
     if (!texto.trim()) return;
     sendMutation.mutate({ conteudo: texto.trim(), tipo: "text" });
+  };
+
+  const handleTemplateSelect = (tpl: { conteudo: string }) => {
+    const interpolado = tpl.conteudo
+      .replace(/\{\{nome\}\}/g, conversa.nome.split(" ")[0] || "")
+      .replace(/\{\{empresa\}\}/g, conversa.empresaNome || "");
+    setTexto(interpolado);
+    setShowTemplates(false);
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -179,6 +273,11 @@ export function Cf2ChatThread({
               <p className="text-[16px] font-bold truncate" style={{ color: "var(--cf2-text-primary)" }}>{conversa.nome}</p>
               {conversa.empresaNome && <p className="text-[12px]" style={{ color: "var(--cf2-text-secondary)" }}>· {conversa.empresaNome}</p>}
               {contexto && <Cf2Badge variant={contexto.isCliente ? "success" : "neutral"}>{contexto.isCliente ? "Cliente" : "Lead"}</Cf2Badge>}
+              {conversa.handoffStatus && HANDOFF_INFO[conversa.handoffStatus] && (
+                <Cf2Badge variant={HANDOFF_INFO[conversa.handoffStatus].variant}>
+                  {HANDOFF_INFO[conversa.handoffStatus].label}
+                </Cf2Badge>
+              )}
             </div>
             <p className="text-[11px] truncate" style={{ color: "var(--cf2-text-secondary)" }}>
               {ultimaSessaoNome ? `via WhatsApp de ${ultimaSessaoNome}` : "WhatsApp"}
@@ -186,6 +285,29 @@ export function Cf2ChatThread({
           </div>
         </div>
         <div className="flex gap-2 items-center shrink-0">
+          {conversa.tipo === "whatsapp" && conversa.handoffStatus !== "human_assigned" ? (
+            <button
+              onClick={() => toggleAiMutation.mutate(false)}
+              disabled={toggleAiMutation.isPending}
+              title="Pausa a IA e assume a conversa você mesmo"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold disabled:opacity-50"
+              style={{ background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" }}
+            >
+              {toggleAiMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserCog className="w-3.5 h-3.5" />}
+              Assumir conversa
+            </button>
+          ) : conversa.tipo === "whatsapp" && conversa.handoffStatus === "human_assigned" ? (
+            <button
+              onClick={() => toggleAiMutation.mutate(true)}
+              disabled={toggleAiMutation.isPending}
+              title="Devolve a conversa pra IA responder"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold disabled:opacity-50"
+              style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-primary)" }}
+            >
+              {toggleAiMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Bot className="w-3.5 h-3.5" />}
+              Devolver pra IA
+            </button>
+          ) : null}
           <button onClick={onAtribuir} className="px-3 py-1.5 rounded-lg text-[12px] font-semibold" style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-primary)" }}>
             Atribuir
           </button>
@@ -196,6 +318,41 @@ export function Cf2ChatThread({
       </div>
 
       <div className="flex-1 overflow-y-auto flex flex-col gap-1 p-5" style={{ background: "var(--cf2-bg-canvas)" }}>
+        {isLoading && (
+          <div className="flex-1 flex flex-col items-center justify-center gap-2 py-10">
+            <Loader2 className="w-5 h-5 animate-spin" style={{ color: "var(--cf2-text-tertiary)" }} />
+            <p className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>Carregando conversa...</p>
+          </div>
+        )}
+        {!isLoading && mensagens.length === 0 && (
+          <div className="flex-1 flex flex-col items-center justify-center gap-2 py-10">
+            <MessageSquareOff className="w-6 h-6" style={{ color: "var(--cf2-text-tertiary)" }} />
+            <p className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhuma mensagem ainda nesta conversa.</p>
+          </div>
+        )}
+
+        {/* Resumo por IA (20/08, referência UX) — só aparece quando existe
+            dado real em ai_sdr_contato_state.conversation_summary (o Agente
+            SDR já processou essa conversa). Sem dado, não renderiza nada:
+            não fabricar resumo nem chamar IA nova aqui. */}
+        {conversa.conversationSummary && (
+          <div className="self-center flex flex-col gap-2 max-w-[85%] my-2">
+            <button
+              onClick={() => setResumoAberto((v) => !v)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold self-center"
+              style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-accent)", border: "1px solid var(--cf2-accent-border)" }}
+            >
+              <Sparkles className="w-3 h-3" /> Carol AI resumiu esta conversa
+              <ChevronDown className="w-3 h-3 transition-transform" style={{ transform: resumoAberto ? "rotate(180deg)" : "none" }} />
+            </button>
+            {resumoAberto && (
+              <div className="p-3 rounded-xl text-[12px] whitespace-pre-wrap" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-secondary)" }}>
+                {conversa.conversationSummary}
+              </div>
+            )}
+          </div>
+        )}
+
         {mensagens.map((m) => {
           const isOut = m.direcao === "out";
           const isHovered = hoveredId === m.id;
@@ -256,8 +413,8 @@ export function Cf2ChatThread({
                 )}
                 {m.mediaUrl && m.tipo === "image" && <img src={m.mediaUrl} alt="" className="rounded-lg max-w-full" />}
                 {m.mediaUrl && m.tipo === "audio" && <audio controls src={m.mediaUrl} className="max-w-full" />}
-                {m.mediaUrl && m.tipo === "document" && (
-                  <a href={m.mediaUrl} target="_blank" rel="noreferrer" className="text-[12px] underline">📎 Documento</a>
+                {m.tipo === "document" && (m.mediaUrl || m.mediaFilename) && (
+                  <FileAttachmentCard url={m.mediaUrl} filename={m.mediaFilename} />
                 )}
                 {m.conteudo && m.tipo !== "location" && m.tipo !== "contact" && (
                   <p className="text-[13px] leading-[18px] whitespace-pre-wrap" style={{ color: "var(--cf2-text-primary)" }}>{m.conteudo}</p>
@@ -266,7 +423,20 @@ export function Cf2ChatThread({
                   <p className="text-[10px]" style={{ color: "var(--cf2-text-secondary)" }}>
                     {new Date(m.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
                   </p>
-                  {isOut && <StatusIcon status={m.status} />}
+                  {/* Retry só cobre texto: mensagens com mídia falhas não têm
+                      o arquivo original guardado no cliente pra reenviar. */}
+                  {isOut && m.status === "failed" && m.tipo === "text" ? (
+                    <button
+                      onClick={() => sendMutation.mutate({ conteudo: m.conteudo || "", tipo: "text" })}
+                      disabled={sendMutation.isPending}
+                      title="Falhou ao entregar. Clique para tentar novamente."
+                      className="disabled:opacity-50"
+                    >
+                      <StatusIcon status={m.status} />
+                    </button>
+                  ) : (
+                    isOut && <StatusIcon status={m.status} />
+                  )}
                 </div>
               </div>
             </div>
@@ -306,6 +476,27 @@ export function Cf2ChatThread({
         </div>
       )}
 
+      {showTemplates && (
+        <div className="mx-4 mb-2 rounded-xl overflow-hidden max-h-48 overflow-y-auto" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }}>
+          {templates && templates.length > 0 ? templates.map((tpl) => (
+            <button key={tpl.id} onClick={() => handleTemplateSelect(tpl)} className="w-full text-left px-4 py-2.5 hover:bg-[var(--cf2-bg-surface)]">
+              <div className="text-[10px]" style={{ color: "var(--cf2-text-tertiary)" }}>{tpl.categoria}</div>
+              <div className="text-[13px] line-clamp-2" style={{ color: "var(--cf2-text-primary)" }}>{tpl.conteudo}</div>
+            </button>
+          )) : (
+            <p className="px-4 py-3 text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhum template cadastrado ainda.</p>
+          )}
+          <button
+            onClick={() => { setGerenciarTemplates(true); setShowTemplates(false); }}
+            className="w-full text-left px-4 py-2.5 text-[12px] font-semibold"
+            style={{ color: "var(--cf2-accent)", borderTop: "1px solid var(--cf2-border-default)" }}
+          >
+            + Gerenciar templates
+          </button>
+        </div>
+      )}
+      {gerenciarTemplates && <WhatsappTemplatesModal onClose={() => setGerenciarTemplates(false)} />}
+
       <div className="p-4 shrink-0 flex flex-col gap-2" style={{ background: "var(--cf2-bg-page)", borderTop: "1px solid var(--cf2-border-default)" }}>
         {replyTo && (
           <div className="flex items-center justify-between px-3 py-2 rounded-lg" style={{ background: "var(--cf2-bg-surface-muted)" }}>
@@ -315,11 +506,19 @@ export function Cf2ChatThread({
         )}
         <div className="flex gap-3 items-center">
           <button
-            onClick={() => setShowAttachMenu(!showAttachMenu)}
+            onClick={() => { setShowAttachMenu(!showAttachMenu); setShowTemplates(false); }}
             className="p-2 rounded-lg shrink-0"
             style={{ background: showAttachMenu ? "var(--cf2-accent)" : "var(--cf2-bg-surface-muted)" }}
           >
             <Paperclip className="w-4 h-4" style={{ color: showAttachMenu ? "var(--cf2-text-on-accent)" : "var(--cf2-text-secondary)" }} />
+          </button>
+          <button
+            onClick={() => { setShowTemplates(!showTemplates); setShowAttachMenu(false); }}
+            title="Usar template"
+            className="p-2 rounded-lg shrink-0"
+            style={{ background: showTemplates ? "var(--cf2-accent)" : "var(--cf2-bg-surface-muted)" }}
+          >
+            <FileText className="w-4 h-4" style={{ color: showTemplates ? "var(--cf2-text-on-accent)" : "var(--cf2-text-secondary)" }} />
           </button>
           <div
             className="flex-1 flex items-center gap-2 px-4 py-2.5 rounded-xl"
