@@ -424,7 +424,7 @@ function ExportLeadsModal({
   onClose: () => void;
   onExport: (lista: Lead[]) => void;
 }) {
-  const etapas = [...SDR_STAGES, ...SDR_CLOSED_STAGES];
+  const etapas = [SDR_OUTBOUND_STAGE, ...SDR_STAGES, ...SDR_MIRROR_STAGES, ...SDR_CLOSED_STAGES, ...SDR_STAGNATION_STAGES];
   const [resp, setResp] = useState("todos");
   const [stages, setStages] = useState<Set<string>>(new Set(etapas.map((e) => e.key)));
 

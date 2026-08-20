@@ -6,7 +6,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import type { PipelineStage } from "@/lib/crm/pipeline";
 import { usePipelineConfig, usePipelines } from "@/hooks/usePipelineConfig";
-import { Kanban, List, Search, ChevronRight, AlertTriangle, X, Trash2, XCircle, Trophy, Plus, MoreHorizontal, CalendarClock } from "lucide-react";
+import { Kanban, List, Search, ChevronRight, AlertTriangle, X, Trash2, XCircle, Trophy, Plus, MoreHorizontal, CalendarClock, Download } from "lucide-react";
 import { STAGNATION_REASONS } from "@/lib/crm/pipeline";
 import { ButtonSpinner } from "@/components/crm/ButtonSpinner";
 import { NegocioDrawer } from "@/components/crm/NegocioDrawer";
@@ -15,7 +15,7 @@ import { EmpresaDrawer } from "@/components/crm/EmpresaDrawer";
 import { SkeletonKanbanColumn } from "@/components/crm/Skeleton";
 import { EmptyState } from "@/components/crm/EmptyState";
 import { Briefcase } from "lucide-react";
-import { BoardFilters, OwnerChip, useOrgUsuarios, matchesResponsavel } from "@/components/crm/BoardFilters";
+import { BoardFilters, OwnerChip, useOrgUsuarios, matchesResponsavel, type OrgUsuario } from "@/components/crm/BoardFilters";
 
 interface Negocio {
   id: string;
@@ -113,6 +113,7 @@ export default function PipelinePage() {
   const [showNewNegocio, setShowNewNegocio] = useState(false);
   const [newNegocioStage, setNewNegocioStage] = useState<string | undefined>(undefined);
   const [pipelineView, setPipelineView] = useState<"novos" | "carteira" | "estagnados">("novos");
+  const [showExport, setShowExport] = useState(false);
 
   // Stagnation stages (shown when pipelineView === "estagnados")
   const stagnationStages: PipelineStage[] = [
@@ -121,6 +122,12 @@ export default function PipelinePage() {
     { key: "trava_assinatura", label: "Trava na Assinatura do Contrato", color: "#EAB308" },
     { key: "outra_data", label: "Quer Negociar em Outra Data", color: "#8B5CF6" },
   ];
+
+  // Resolve label/cor de QUALQUER status de negócio pro modal de exportação (que
+  // busca TODOS os negócios, de todos os pipelines/origens/abas de uma vez) —
+  // tenta estagnação primeiro, depois a config do pipeline, com fallback pro key cru.
+  const resolveNegocioStage = (status: string): PipelineStage =>
+    stagnationStages.find((s) => s.key === status) || getStatusInfo(status);
 
   // Determine active pipeline and its stages
   const hasPipelines = pipelines.length > 0;
@@ -317,6 +324,14 @@ export default function PipelinePage() {
             accent="#8e27ef"
           />
 
+          <button
+            onClick={() => setShowExport(true)}
+            title="Exportar negócios: escolher responsável e etapas"
+            className="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-white/[0.05] border border-white/[0.08] text-white/60 hover:text-white hover:border-white/20 transition-colors"
+          >
+            <Download className="w-3.5 h-3.5" /> Exportar
+          </button>
+
           {/* Pipeline view tabs (Novos / Carteira / Estagnados) */}
           <div className="flex gap-1 p-0.5 rounded-lg shrink-0" style={{ background: "rgba(255,255,255,0.05)" }}>
             {([
@@ -433,6 +448,149 @@ export default function PipelinePage() {
           }}
         />
       )}
+
+      {showExport && (
+        <ExportNegociosModal
+          usuarios={usuarios}
+          resolveStage={resolveNegocioStage}
+          onClose={() => setShowExport(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+// Normaliza telefone pro discador: só dígitos, tira DDI 55 quando vem prefixado
+// (5511987654321 → 11987654321), mantém DDD + número. Mesmo padrão do export de Pré-vendas.
+function telefoneDiscador(tel?: string | null): string {
+  let d = (tel || "").replace(/\D/g, "");
+  if (d.length >= 12 && d.startsWith("55")) d = d.slice(2);
+  return d;
+}
+
+// Gera + baixa o CSV no PADRÃO DO DISCADOR automático: Telefone, Nome, E-mail, Empresa.
+function gerarCsvNegocios(lista: Negocio[]) {
+  if (lista.length === 0) { toast.error("Nenhum negócio na seleção"); return; }
+  const cols: { h: string; get: (n: Negocio) => string }[] = [
+    { h: "Telefone", get: (n) => telefoneDiscador(n.leadTelefone) },
+    { h: "Nome", get: (n) => n.leadNome || "" },
+    { h: "E-mail", get: (n) => n.leadEmail || "" },
+    { h: "Empresa", get: (n) => n.empresaNome || n.leadEmpresa || "" },
+  ];
+  // só exporta quem tem telefone (o discador precisa do número)
+  const comTelefone = lista.filter((n) => telefoneDiscador(n.leadTelefone).length >= 10);
+  if (comTelefone.length === 0) { toast.error("Nenhum negócio da seleção tem telefone válido"); return; }
+  const esc = (v: string) => `"${v.replace(/"/g, '""')}"`;
+  const linhas = [
+    cols.map((c) => c.h).join(","),
+    ...comTelefone.map((n) => cols.map((c) => esc(c.get(n))).join(",")),
+  ];
+  const blob = new Blob(["﻿" + linhas.join("\r\n")], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const stamp = new Date().toISOString().slice(0, 10);
+  a.href = url;
+  a.download = `discador-callface-negocios-${stamp}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  const puladas = lista.length - comTelefone.length;
+  toast.success(`${comTelefone.length} negócios exportados${puladas > 0 ? ` (${puladas} sem telefone, ignorados)` : ""}`);
+}
+
+// Modal de exportação: escolher RESPONSÁVEL (todos ou um) + ETAPAS (multi) antes de
+// baixar o CSV. Busca TODOS os negócios (sem filtro de origem/status/pipeline) pra
+// cobrir Novos, Carteira e Estagnados de uma vez só — as etapas do checklist saem
+// dos status realmente presentes nos negócios buscados, via resolveStage.
+function ExportNegociosModal({
+  usuarios, resolveStage, onClose,
+}: {
+  usuarios: OrgUsuario[];
+  resolveStage: (status: string) => PipelineStage;
+  onClose: () => void;
+}) {
+  const { data, isLoading } = useQuery({
+    queryKey: ["negocios-export-all"],
+    queryFn: async () => {
+      const res = await fetch("/api/negocios?limit=3000");
+      return res.json();
+    },
+  });
+  const todos: Negocio[] = data?.negocios || [];
+
+  const etapas = useMemo(() => {
+    const seen = new Map<string, PipelineStage>();
+    for (const n of todos) {
+      if (!seen.has(n.status)) seen.set(n.status, resolveStage(n.status));
+    }
+    return Array.from(seen.values());
+  }, [todos, resolveStage]);
+
+  const [resp, setResp] = useState("todos");
+  const [stagesOverride, setStagesOverride] = useState<Set<string> | null>(null);
+  const stages = stagesOverride ?? new Set(etapas.map((e) => e.key));
+
+  const toggle = (k: string) => {
+    const n = new Set(stages);
+    if (n.has(k)) n.delete(k); else n.add(k);
+    setStagesOverride(n);
+  };
+  const todasMarcadas = stages.size === etapas.length;
+
+  const selecionados = todos.filter((n) => {
+    if (resp !== "todos" && n.responsavelId !== resp) return false;
+    return stages.has(n.status);
+  });
+
+  return (
+    <div className="fixed inset-0 modal-overlay flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="modal-content p-6 w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+        <h3 className="font-semibold text-white mb-1">Exportar negócios</h3>
+        <p className="text-[11px] text-white/40 mb-4">Escolha o responsável e as etapas que quer puxar.</p>
+
+        <label className="block text-xs text-white/60 mb-1">Responsável</label>
+        <select value={resp} onChange={(e) => setResp(e.target.value)}
+          className="w-full dark-input rounded-lg px-3 py-2 text-sm mb-4">
+          <option value="todos">Todos</option>
+          {usuarios.map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}
+        </select>
+
+        <div className="flex items-center justify-between mb-1">
+          <label className="text-xs text-white/60">Etapas</label>
+          <button type="button"
+            onClick={() => setStagesOverride(todasMarcadas ? new Set() : new Set(etapas.map((e) => e.key)))}
+            className="text-[11px] text-[#8e27ef] hover:underline">
+            {todasMarcadas ? "Limpar" : "Todas"}
+          </button>
+        </div>
+        <div className="space-y-1.5 mb-5 max-h-64 overflow-y-auto">
+          {isLoading ? (
+            <p className="text-xs text-white/30">Carregando etapas...</p>
+          ) : (
+            etapas.map((e) => (
+              <label key={e.key} className="flex items-center gap-2 text-sm text-white/80 cursor-pointer">
+                <input type="checkbox" checked={stages.has(e.key)} onChange={() => toggle(e.key)}
+                  className="accent-[#8e27ef] w-3.5 h-3.5" />
+                <span className="w-2 h-2 rounded-full" style={{ background: e.color }} />
+                {e.label}
+              </label>
+            ))
+          )}
+        </div>
+
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-xs text-white/40">{selecionados.length} negócios na seleção</span>
+          <div className="flex gap-2">
+            <button onClick={onClose} className="px-4 py-2 text-sm text-white/70 hover:text-white">Cancelar</button>
+            <button onClick={() => { gerarCsvNegocios(selecionados); onClose(); }}
+              disabled={selecionados.length === 0 || stages.size === 0}
+              className="flex items-center gap-1.5 px-4 py-2 text-sm btn-primary rounded-lg disabled:opacity-40">
+              <Download className="w-3.5 h-3.5" /> Exportar CSV
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
