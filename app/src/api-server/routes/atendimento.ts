@@ -118,14 +118,18 @@ async function buscarWhatsapp(opts: {
       conditions.push(eq(contatos.status, "open"), or(isNull(contatos.snoozedUntil), sql`${contatos.snoozedUntil} <= now()`)!);
     }
 
-    // Privacidade real entre vendedores (Kauã, 10/08): cada um só vê as
-    // conversas de WhatsApp que são dele (ou ainda sem dono) — nem admin/super
-    // admin vê o WhatsApp de outro vendedor por padrão aqui. Só "Atribuir"
-    // (responsavelId) muda quem tem acesso. Supervisão de verdade (ver como
-    // outro vendedor) é feature separada e explícita, não esse filtro.
+    // Privacidade real entre vendedores (Kauã, 10/08): por padrão, cada um só
+    // vê as conversas de WhatsApp que são dele (ou ainda sem dono). "Todos"
+    // é exatamente a ação explícita que o comentário original previa como
+    // separada desse filtro passivo — achado real 24/08: a rota nunca tinha
+    // esse `else if`, então "Todos" no dropdown se comportava idêntico a
+    // "Meus" (mesmo branch), motivo real de WhatsApp aparecer vazio pra
+    // quem não tinha nenhuma conversa atribuída. Só "Atribuir" continua
+    // sendo o que muda o dono de fato — "Todos" aqui é só visão, não toca
+    // `responsavelId` de nada.
     if (view === "nao_atribuidos") {
       conditions.push(isNull(contatos.responsavelId));
-    } else {
+    } else if (view !== "todos") {
       conditions.push(or(eq(contatos.responsavelId, effectiveUserId), isNull(contatos.responsavelId))!);
     }
   }

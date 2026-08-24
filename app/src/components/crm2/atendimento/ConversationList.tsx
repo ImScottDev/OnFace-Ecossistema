@@ -1,7 +1,7 @@
 "use client";
 
 import { MessageSquare, Mail, Phone, Search, SlidersHorizontal, AlertCircle } from "lucide-react";
-import { ConversaItem, iniciais, formatarHora } from "./types";
+import { ConversaItem, iniciais, formatarHora, nomeExibicao } from "./types";
 
 const TABS = [
   { key: "todas", label: "Todas" },
@@ -137,11 +137,11 @@ export function Cf2ConversationList({
                     style={{ background: naoLida ? "var(--cf2-accent)" : "var(--cf2-bg-surface-muted)" }}
                   >
                     <p className="text-[11px] font-extrabold" style={{ color: naoLida ? "var(--cf2-text-on-accent)" : "var(--cf2-text-secondary)" }}>
-                      {iniciais(item.nome)}
+                      {/^\d+$/.test(item.nome) ? "#" : iniciais(item.nome)}
                     </p>
                   </div>
                   <div className="min-w-0">
-                    <p className="text-[13px] font-bold truncate" style={{ color: "var(--cf2-text-primary)" }}>{item.nome}</p>
+                    <p className="text-[13px] font-bold truncate" style={{ color: "var(--cf2-text-primary)" }}>{nomeExibicao(item.nome, item.telefone)}</p>
                     <p className="text-[11px] truncate" style={{ color: "var(--cf2-text-secondary)" }}>{item.empresaNome || "—"}</p>
                   </div>
                 </div>
