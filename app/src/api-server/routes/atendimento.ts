@@ -22,6 +22,44 @@ import { publicarEvento } from "@/lib/events/outbox";
  */
 const app = new Hono();
 
+/**
+ * Achado real 24/08 (Kauã, testando ao vivo: "essa Rhay tá no CRM e é da
+ * G30" — a conversa mostrava "sem lead vinculado"): `contatos.leadId` só
+ * cobre ~1% dos contatos de WhatsApp de verdade (11 de 1171 no ambiente
+ * local), mesmo quando existe um lead real com o MESMO telefone. O ADR já
+ * documentava esse gap como "projeto de dados separado" — mas essa função
+ * é enriquecimento não-destrutivo em tempo de leitura (nunca escreve
+ * `leadId` de volta no contato), então cabe aqui: casa pelos últimos 8
+ * dígitos do telefone (ignora DDD de propósito — formatos de origem
+ * divergem, "47 9668-8248" vs "554796688248" — e o risco de colisão
+ * cross-DDD é aceitável pra um fallback de exibição, não de identidade).
+ */
+function ultimosDigitos(tel: string | null | undefined, n = 8): string | null {
+  if (!tel) return null;
+  const d = tel.replace(/\D/g, "");
+  return d.length >= n ? d.slice(-n) : null;
+}
+
+async function mapaLeadPorTelefone(organizacaoId: string): Promise<Map<string, string>> {
+  // Achado real 24/08 (mesmo teste da Rhay): existem leads DUPLICADOS com o
+  // mesmo telefone (um "Rhay" sem empresa, outro "Rhay" com empresa G30 —
+  // provavelmente 2 entradas do mesmo contato criadas em momentos
+  // diferentes). Pegar o primeiro da query sem critério é arbitrário e
+  // pode escolher o lead "vazio". Ordena pra preferir o mais completo:
+  // tem empresa vinculada > mais recentemente atualizado.
+  const rows = await db
+    .select({ id: leads.id, telefone: leads.telefone, empresaId: leads.empresaId, updatedAt: leads.updatedAt })
+    .from(leads)
+    .where(and(eq(leads.organizacaoId, organizacaoId), sql`${leads.telefone} IS NOT NULL`))
+    .orderBy(sql`${leads.empresaId} IS NULL ASC`, desc(leads.updatedAt));
+  const mapa = new Map<string, string>();
+  for (const r of rows) {
+    const chave = ultimosDigitos(r.telefone);
+    if (chave && !mapa.has(chave)) mapa.set(chave, r.id); // já ordenado do mais completo pro menos — 1º que aparece vence
+  }
+  return mapa;
+}
+
 type ItemUnificado = {
   id: string;
   tipo: "whatsapp" | "email" | "ligacao";
@@ -161,6 +199,11 @@ async function buscarWhatsapp(opts: {
     .orderBy(sql`${contatos.ultimaMsgAt} DESC NULLS LAST`)
     .limit(limit);
 
+  // Fallback por telefone só pra quem não tem leadId direto — evita a
+  // query de leads inteira quando não há nenhum caso pra enriquecer.
+  const semLeadDireto = rows.some((r) => !r.leadId && r.telefone);
+  const porTelefone = semLeadDireto ? await mapaLeadPorTelefone(ctx.organizacaoId) : null;
+
   return rows.map((r) => ({
     id: r.id,
     tipo: "whatsapp" as const,
@@ -170,7 +213,7 @@ async function buscarWhatsapp(opts: {
     preview: r.ultimaMsg ?? "",
     timestamp: r.ultimaMsgAt ? r.ultimaMsgAt.toISOString() : null,
     naoLidas: r.naoLidas ?? 0,
-    leadId: r.leadId,
+    leadId: r.leadId ?? (porTelefone ? porTelefone.get(ultimosDigitos(r.telefone) ?? "") ?? null : null),
     responsavelId: r.responsavelId,
     handoffStatus: r.handoffStatus ?? null,
     duracaoSegundos: null,
