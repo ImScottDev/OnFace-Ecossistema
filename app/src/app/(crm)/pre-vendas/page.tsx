@@ -117,7 +117,7 @@ export default function PreVendasPage() {
       if (!matchesOrigem(l.origem, origemFilter)) return false;
       if (!q) return true;
       return (
-        l.nome.toLowerCase().includes(q) ||
+        (l.nome || "").toLowerCase().includes(q) ||
         (l.empresa || "").toLowerCase().includes(q) ||
         (l.utmCampaign || "").toLowerCase().includes(q) ||
         (l.origem || "").toLowerCase().includes(q)

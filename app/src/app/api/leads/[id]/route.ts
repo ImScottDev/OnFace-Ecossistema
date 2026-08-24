@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { leads, negocios, atividades, statusChanges, eventos, tarefas, contratos, propostas, whatsappMensagens, emails, npsRespostas, contatos, empresas, labels, leadLabels, usuarios } from "@/lib/db/schema";
+import { leads, negocios, atividades, statusChanges, eventos, tarefas, contratos, propostas, whatsappMensagens, emails, npsRespostas, contatos, empresas, labels, leadLabels, usuarios, ligacoes, cadenciaExecucoes } from "@/lib/db/schema";
 import { eq, desc, and, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { getTenantContext, unauthorizedResponse } from "@/lib/auth/tenant";
@@ -449,6 +449,15 @@ export async function DELETE(
   }
 
   // Delete in dependency order
+  // Ligações são histórico real de telefonia (áudio/transcrição/billing) — nunca
+  // deletar, só órfã (mesmo padrão de "ligação sem lead casado" já usado no
+  // schema). Sem isso, a FK ligacoes.negocio_id/lead_id trava o delete abaixo.
+  const negocioIds = leadNegocios.map((n) => n.id);
+  if (negocioIds.length > 0) {
+    await db.update(ligacoes).set({ negocioId: null }).where(inArray(ligacoes.negocioId, negocioIds));
+  }
+  await db.update(ligacoes).set({ leadId: null }).where(eq(ligacoes.leadId, id));
+
   // First delete negocio-related: propostas, contratos, statusChanges, atividades linked to negocios
   for (const n of leadNegocios) {
     await db.delete(propostas).where(eq(propostas.negocioId, n.id));
@@ -468,6 +477,7 @@ export async function DELETE(
   await db.delete(contratos).where(eq(contratos.leadId, id));
   await db.delete(propostas).where(eq(propostas.leadId, id));
   await db.delete(npsRespostas).where(eq(npsRespostas.leadId, id));
+  await db.delete(cadenciaExecucoes).where(eq(cadenciaExecucoes.leadId, id));
 
   // Finally delete the lead
   await db.delete(leads).where(eq(leads.id, id));

@@ -230,8 +230,8 @@ export default function PipelinePage() {
     if (!matchesResponsavel(n.responsavelId, respFilter, currentUserId)) return false;
     if (!q) return true;
     return (
-      n.titulo.toLowerCase().includes(q) ||
-      n.leadNome.toLowerCase().includes(q) ||
+      (n.titulo || "").toLowerCase().includes(q) ||
+      (n.leadNome || "").toLowerCase().includes(q) ||
       (n.empresaNome || "").toLowerCase().includes(q) ||
       (n.leadEmpresa || "").toLowerCase().includes(q)
     );

@@ -31,6 +31,8 @@ import {
   usuarios,
   pipelines,
   emailContas,
+  ligacoes,
+  cadenciaExecucoes,
 } from "@/lib/db/schema";
 import {
   desc,
@@ -1036,6 +1038,16 @@ app.delete("/leads/:id", async (c) => {
   }
 
   // Delete in dependency order
+  // Ligações são histórico real de telefonia (áudio/transcrição/billing) — nunca
+  // deletar, só órfã (mesmo padrão de "ligação sem lead casado" já usado no
+  // schema). Sem isso, a FK ligacoes.negocio_id/lead_id trava o delete abaixo
+  // pra qualquer lead que já recebeu uma ligação de verdade.
+  const negocioIds = leadNegocios.map((n) => n.id);
+  if (negocioIds.length > 0) {
+    await db.update(ligacoes).set({ negocioId: null }).where(inArray(ligacoes.negocioId, negocioIds));
+  }
+  await db.update(ligacoes).set({ leadId: null }).where(eq(ligacoes.leadId, id));
+
   // First delete negocio-related data
   for (const n of leadNegocios) {
     // proposta_itens cascade from propostas, but delete propostas first
@@ -1077,6 +1089,7 @@ app.delete("/leads/:id", async (c) => {
   await db.delete(reunioes).where(eq(reunioes.leadId, id));
   await db.delete(leadUserUnread).where(eq(leadUserUnread.leadId, id));
   await db.delete(emailSequenciaExecucoes).where(eq(emailSequenciaExecucoes.leadId, id));
+  await db.delete(cadenciaExecucoes).where(eq(cadenciaExecucoes.leadId, id));
   await db.delete(contatos).where(eq(contatos.leadId, id));
 
   // Finally delete the lead
