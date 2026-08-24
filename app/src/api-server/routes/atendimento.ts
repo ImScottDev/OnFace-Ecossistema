@@ -82,6 +82,11 @@ type ItemUnificado = {
   conversationSummary: string | null;
   status: string;
   snoozedUntil: string | null;
+  // Enriquecido em lote pelo handler principal (24/08, Kauã: "aqui
+  // minimalista precisa ter uma tag... se é lead, cliente") — cada
+  // buscarX() nasce com false; o handler troca por cima batendo os
+  // leadId contra a tabela `clientes` de uma vez só pras 3 fontes.
+  isCliente: boolean;
 };
 
 // ─── GET /atendimento/conversas ─────────────────────────────────────
@@ -116,6 +121,19 @@ app.get("/atendimento/conversas", async (c) => {
     buscarEmail({ ctx, view, search, effectiveUserId, limit, leadIdFiltro }),
     buscarLigacao({ ctx, view, search, effectiveUserId, limit, leadIdFiltro }),
   ]);
+
+  // Badge Lead/Cliente na lista (24/08, Kauã: "aqui minimalista precisa ter
+  // uma tag... se é lead, cliente") — 1 query batendo os leadId já
+  // resolvidos (direto ou por telefone) das 3 fontes contra `clientes`, em
+  // vez de uma query por item.
+  const todosLeadIds = [...new Set([...whatsappItens, ...emailItens, ...ligacaoItens].map((i) => i.leadId).filter((id): id is string => !!id))];
+  if (todosLeadIds.length > 0) {
+    const clientesRows = await db.select({ leadId: clientes.leadIdLegado }).from(clientes).where(inArray(clientes.leadIdLegado, todosLeadIds));
+    const leadIdsClientes = new Set(clientesRows.map((r) => r.leadId));
+    for (const item of [...whatsappItens, ...emailItens, ...ligacaoItens]) {
+      if (item.leadId && leadIdsClientes.has(item.leadId)) item.isCliente = true;
+    }
+  }
 
   const todasFiltrado = [...whatsappItens, ...emailItens, ...ligacaoItens].filter((m) => m.tipo === "ligacao" || m.naoLidas > 0);
   const contagens = {
@@ -223,6 +241,7 @@ async function buscarWhatsapp(opts: {
     conversationSummary: r.conversationSummary ?? null,
     status: r.status,
     snoozedUntil: r.snoozedUntil ? r.snoozedUntil.toISOString() : null,
+    isCliente: false,
   }));
 }
 
@@ -439,6 +458,7 @@ async function buscarEmail(opts: {
       conversationSummary: null,
       status: "open",
       snoozedUntil: null,
+      isCliente: false,
     }));
 }
 
@@ -502,6 +522,7 @@ async function buscarLigacao(opts: {
       conversationSummary: null,
       status: "open",
       snoozedUntil: null,
+      isCliente: false,
     };
   });
 }
