@@ -290,16 +290,21 @@ export function Cf2ContextPanel({ conversa, contexto, loading }: { conversa: Con
             </div>
             <div className="flex gap-2">
               {conversa.leadId && (
-                <a href={`/leads/${conversa.leadId}`} className="flex items-center justify-center gap-1.5 flex-1 py-1.5 rounded-lg text-[11px] font-semibold" style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-primary)" }}>
-                  <Pencil className="w-3 h-3" /> Editar lead (legado)
+                <a
+                  href={`/leads/${conversa.leadId}`}
+                  title="Abre a ficha do lead (tela legada)"
+                  className="flex items-center justify-center gap-1.5 flex-1 py-1.5 rounded-lg text-[11px] font-semibold whitespace-nowrap"
+                  style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-primary)" }}
+                >
+                  <Pencil className="w-3 h-3" /> Editar lead
                 </a>
               )}
               {contexto.pessoa.telefone && (
-                <a href={`tel:${contexto.pessoa.telefone}`} className="flex items-center justify-center gap-1.5 flex-1 py-1.5 rounded-lg text-[11px] font-semibold" style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-primary)" }}>
+                <a href={`tel:${contexto.pessoa.telefone}`} className="flex items-center justify-center gap-1.5 flex-1 py-1.5 rounded-lg text-[11px] font-semibold whitespace-nowrap" style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-primary)" }}>
                   <Phone className="w-3 h-3" /> Ligar
                 </a>
               )}
-              <button onClick={() => setModalAberto(true)} className="flex items-center justify-center gap-1.5 flex-1 py-1.5 rounded-lg text-[11px] font-semibold" style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-primary)" }}>
+              <button onClick={() => setModalAberto(true)} className="flex items-center justify-center gap-1.5 flex-1 py-1.5 rounded-lg text-[11px] font-semibold whitespace-nowrap" style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-primary)" }}>
                 <CalendarPlus className="w-3 h-3" /> Agenda
               </button>
             </div>

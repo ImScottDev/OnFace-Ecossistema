@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { db } from "@/lib/db";
 import {
   contatos, emails, emailContas, ligacoes, leads, empresas, negocios,
-  propostas, reunioes, tarefas, aiSdrContatoState, clientes, contatoLabels, labels, leadLabels,
+  propostas, reunioes, tarefas, aiSdrContatoState, contatoLabels, labels, leadLabels,
 } from "@/lib/db/schema";
 import { eq, and, or, desc, asc, isNull, ilike, inArray, gte, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
@@ -85,7 +85,7 @@ type ItemUnificado = {
   // Enriquecido em lote pelo handler principal (24/08, Kauã: "aqui
   // minimalista precisa ter uma tag... se é lead, cliente") — cada
   // buscarX() nasce com false; o handler troca por cima batendo os
-  // leadId contra a tabela `clientes` de uma vez só pras 3 fontes.
+  // leadId contra `leads.tipo === 'cliente'` de uma vez só pras 3 fontes.
   isCliente: boolean;
 };
 
@@ -124,12 +124,17 @@ app.get("/atendimento/conversas", async (c) => {
 
   // Badge Lead/Cliente na lista (24/08, Kauã: "aqui minimalista precisa ter
   // uma tag... se é lead, cliente") — 1 query batendo os leadId já
-  // resolvidos (direto ou por telefone) das 3 fontes contra `clientes`, em
-  // vez de uma query por item.
+  // resolvidos (direto ou por telefone) das 3 fontes contra `leads.tipo`.
+  //
+  // Corrigido no mesmo dia (Scott, testando: "essa rhay é cliente porque tá
+  // como lead??") — a versão original batia contra a tabela `clientes`,
+  // que está com 0 linhas no ambiente local; a fonte de verdade real já
+  // usada na ficha do lead (qualificacao/shared.ts) é `leads.tipo ===
+  // 'cliente'` (255 leads reais têm esse valor).
   const todosLeadIds = [...new Set([...whatsappItens, ...emailItens, ...ligacaoItens].map((i) => i.leadId).filter((id): id is string => !!id))];
   if (todosLeadIds.length > 0) {
-    const clientesRows = await db.select({ leadId: clientes.leadIdLegado }).from(clientes).where(inArray(clientes.leadIdLegado, todosLeadIds));
-    const leadIdsClientes = new Set(clientesRows.map((r) => r.leadId));
+    const leadsClientesRows = await db.select({ id: leads.id }).from(leads).where(and(inArray(leads.id, todosLeadIds), eq(leads.tipo, "cliente")));
+    const leadIdsClientes = new Set(leadsClientesRows.map((r) => r.id));
     for (const item of [...whatsappItens, ...emailItens, ...ligacaoItens]) {
       if (item.leadId && leadIdsClientes.has(item.leadId)) item.isCliente = true;
     }
@@ -637,6 +642,7 @@ app.get("/atendimento/contexto", async (c) => {
     .select({
       id: leads.id, nome: leads.nome, cargo: leads.cargo, telefone: leads.telefone, email: leads.email,
       empresaId: leads.empresaId, empresaLegacy: leads.empresa, empresaSetorLegacy: leads.empresaSetor,
+      tipo: leads.tipo,
     })
     .from(leads)
     .where(and(eq(leads.id, leadId), eq(leads.organizacaoId, ctx.organizacaoId)))
@@ -647,7 +653,13 @@ app.get("/atendimento/contexto", async (c) => {
     ? await db.select({ id: empresas.id, nome: empresas.nome, setor: empresas.setor, cnpj: empresas.cnpj, porte: empresas.porte }).from(empresas).where(eq(empresas.id, lead.empresaId)).limit(1)
     : [null];
 
-  const [cliente] = await db.select({ id: clientes.id }).from(clientes).where(eq(clientes.leadIdLegado, leadId)).limit(1);
+  // Achado real 24/08 (Scott: "essa rhay é cliente porque tá como lead??")
+  // — `clientes` (tabela) está com 0 linhas no ambiente local; a fonte de
+  // verdade real de "é cliente" já usada na ficha do lead (qualificacao/
+  // shared.ts) é `leads.tipo === 'cliente'` (255 leads reais têm esse
+  // valor). O lookup em `clientes` sempre voltava vazio e todo mundo virava
+  // "Lead" na tela, mesmo clientes de verdade.
+  const isCliente = lead.tipo === "cliente";
 
   // Cascata por prioridade real: negócio ativo > proposta enviada > reunião agendada > nada
   const [negocioAtivo] = await db
@@ -708,7 +720,7 @@ app.get("/atendimento/contexto", async (c) => {
     empresa: empresa
       ? { id: empresa.id, nome: empresa.nome, setor: empresa.setor, cnpj: empresa.cnpj, porte: empresa.porte }
       : (lead.empresaLegacy ? { id: null, nome: lead.empresaLegacy, setor: lead.empresaSetorLegacy, cnpj: null, porte: null } : null),
-    isCliente: !!cliente,
+    isCliente,
     cascata,
     proximasAtividades,
   });
