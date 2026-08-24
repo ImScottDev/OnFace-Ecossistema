@@ -49,3 +49,10 @@ qa-audit-*.md
 # Backups locais de banco (nunca versionar dado real)
 _backups/
 *.dump
+
+# Maestri (ferramenta local, não é parte do projeto)
+.maestri/
+
+# Sessão de dev com secret em texto puro (achado 24/08 — nunca commitar)
+forge-session.mjs
+.forge-session.mjs

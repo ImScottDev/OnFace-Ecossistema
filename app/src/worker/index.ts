@@ -44,8 +44,8 @@ const healthServer = http.createServer((req, res) => {
     res.writeHead(404).end();
   }
 });
-healthServer.listen(3002, "0.0.0.0", () => {
-  console.log("[Worker] Health check listening on :3002");
+healthServer.listen(3001, "0.0.0.0", () => {
+  console.log("[Worker] Health check listening on :3001");
 });
 
 console.log("[Worker] Starting Scott Studio CRM background workers...");

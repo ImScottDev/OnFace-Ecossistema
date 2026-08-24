@@ -104,6 +104,8 @@ export function Cf2ConversationList({
             <option value="meus">Meus</option>
             <option value="nao_atribuidos">Não atribuídos</option>
             <option value="todos">Todos</option>
+            <option value="fechadas">Fechadas</option>
+            <option value="ia">IA</option>
           </select>
         </div>
       </div>

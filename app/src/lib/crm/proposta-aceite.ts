@@ -12,13 +12,13 @@
  * obrigação correspondente (contrato ou pagamento) realmente aconteceu.
  */
 import { db } from "@/lib/db";
-import { eq } from "drizzle-orm";
-import { propostas } from "@/lib/db/schema";
+import { eq, and } from "drizzle-orm";
+import { atividades, propostas } from "@/lib/db/schema";
 import { publicarEvento } from "@/lib/events/outbox";
 import { syncOportunidadeItensFromProposta } from "@/lib/crm/composicao-comercial";
 import { formarGruposComerciais, vincularContratoAoGrupo, type GrupoComercialRow } from "@/lib/crm/grupo-comercial";
 import { exigeContrato } from "@/lib/crm/commercial-model";
-import { gerarContratoDeTemplate } from "@/lib/crm/contrato-template";
+import { gerarContratoDeTemplate, enviarContratoParaAssinatura } from "@/lib/crm/contrato-template";
 import { criarCheckoutParaGrupo } from "@/lib/crm/checkout";
 import { notificarPropostaRespondida } from "@/lib/crm/notificar-proposta";
 
@@ -47,10 +47,23 @@ export async function processarAceiteDaProposta(opts: {
   organizacaoId: string;
   origem: "publico" | "manual";
 }): Promise<ResultadoAceite | { ok: false; error: string }> {
-  const [proposta] = await db.select().from(propostas).where(eq(propostas.id, opts.propostaId)).limit(1);
+  const [proposta] = await db.select().from(propostas).where(and(eq(propostas.id, opts.propostaId), eq(propostas.organizacaoId, opts.organizacaoId))).limit(1);
   if (!proposta) return { ok: false, error: "Proposta não encontrada" };
   if (!["enviada", "ajuste_solicitado"].includes(proposta.status)) {
     return { ok: false, error: "Essa proposta não está mais aguardando resposta." };
+  }
+  // A validade da proposta é uma data comercial própria, diferente da
+  // vigência contratual. O aceite não pode furar o prazo só porque o worker
+  // ainda não marcou o registro como expirada.
+  if (proposta.dataValidade) {
+    const hojeUtc = new Date();
+    hojeUtc.setUTCHours(0, 0, 0, 0);
+    const [ano, mes, dia] = proposta.dataValidade.split("-").map(Number);
+    const validadeUtc = new Date(Date.UTC(ano, (mes || 1) - 1, dia || 1));
+    if (Number.isFinite(validadeUtc.getTime()) && hojeUtc.getTime() > validadeUtc.getTime()) {
+      await db.update(propostas).set({ status: "expirada", updatedAt: new Date() }).where(eq(propostas.id, proposta.id));
+      return { ok: false, error: "O prazo de validade desta proposta terminou. Solicite uma nova versão ao time comercial." };
+    }
   }
 
   await db.update(propostas).set({ status: "aceita", clienteRespondeuEm: new Date(), updatedAt: new Date() }).where(eq(propostas.id, opts.propostaId));
@@ -67,16 +80,35 @@ export async function processarAceiteDaProposta(opts: {
   for (const grupo of grupos) {
     if (exigeContrato(grupo.commercialModel)) {
       try {
-        const { contratoId } = await gerarContratoDeTemplate(grupo.id);
+        const { contratoId } = grupo.contratoId ? { contratoId: grupo.contratoId } : await gerarContratoDeTemplate(grupo.id);
+        await enviarContratoParaAssinatura(contratoId);
         await vincularContratoAoGrupo(grupo.id, contratoId);
         await publicarEvento({
-          organizacaoId: opts.organizacaoId, eventType: "ContractRequired", aggregateType: "contrato", aggregateId: contratoId,
+          organizacaoId: opts.organizacaoId, eventType: "SignatureRequested", aggregateType: "contrato", aggregateId: contratoId,
           payload: { propostaId: opts.propostaId, negocioId: proposta.negocioId, grupoComercialId: grupo.id, commercialModel: grupo.commercialModel },
         });
         resultados.push({ grupoId: grupo.id, commercialModel: grupo.commercialModel, proximoPasso: "contrato" });
       } catch (err) {
         console.error(`[proposta-aceite] falha ao gerar contrato do grupo ${grupo.id}:`, err);
-        resultados.push({ grupoId: grupo.id, commercialModel: grupo.commercialModel, proximoPasso: "contrato", erro: String(err) });
+        const erro = String(err);
+        await publicarEvento({
+          organizacaoId: opts.organizacaoId,
+          eventType: "ContractPreparationFailed",
+          aggregateType: "grupo_comercial",
+          aggregateId: grupo.id,
+          payload: { propostaId: opts.propostaId, negocioId: proposta.negocioId, grupoComercialId: grupo.id, commercialModel: grupo.commercialModel, erro },
+          idempotencyKey: `contract-preparation-failed:${grupo.id}`,
+        });
+        await db.insert(atividades).values({
+          organizacaoId: opts.organizacaoId,
+          leadId: proposta.leadId,
+          negocioId: proposta.negocioId,
+          tipo: "contrato_preparacao_falhou",
+          titulo: "Preparação de contrato precisa de atenção",
+          descricao: `A proposta foi aceita, mas o grupo ${grupo.commercialModel} não conseguiu iniciar a assinatura. ${erro}`,
+          dados: { propostaId: opts.propostaId, grupoComercialId: grupo.id, commercialModel: grupo.commercialModel, erro },
+        });
+        resultados.push({ grupoId: grupo.id, commercialModel: grupo.commercialModel, proximoPasso: "contrato", erro });
       }
     } else {
       const checkout = await criarCheckoutParaGrupo({ grupoId: grupo.id, origem: "automatico_pos_aceite" });

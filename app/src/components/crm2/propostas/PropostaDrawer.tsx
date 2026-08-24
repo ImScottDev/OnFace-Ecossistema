@@ -17,7 +17,7 @@ interface PropostaDetalhe {
   leadNome: string | null; leadEmpresa: string | null; leadTelefone: string | null; leadEmail: string | null;
   negocioId: string | null; negocioTitulo: string | null;
   totalRecorrente: string; totalAvulso: string; totalGeral: string;
-  dataValidade: string | null; condicoesPagamento: string | null; observacoes: string | null;
+  dataValidade: string | null; prazoContratoMeses?: number | null; condicoesPagamento: string | null; observacoes: string | null;
   criadoPorNome: string | null;
   createdAt: string; enviadaEm: string | null; primeiraVisualizacaoEm: string | null; ultimaVisualizacaoEm: string | null;
   visualizacoes: number; clienteRespondeuEm: string | null; motivoRecusa: string | null;
@@ -156,6 +156,7 @@ export function Cf2PropostaDrawer({ propostaId, open, onClose, onChanged }: { pr
             {descontoPct > 0 && <KV label="Desconto aplicado" value={`${descontoPct}%`} />}
             <KV label="Valor final (1º mês)" value={brl(proposta.totalGeral)} />
             <KV label="Validade" value={proposta.dataValidade ? new Date(proposta.dataValidade).toLocaleDateString("pt-BR") : "—"} />
+            {proposta.prazoContratoMeses && <KV label="Vigência contratual" value={`${proposta.prazoContratoMeses} meses`} />}
             <KV label="Responsável" value={proposta.criadoPorNome || "—"} />
             {proposta.condicoesPagamento && <KV label="Condições" value={proposta.condicoesPagamento} />}
           </div>

@@ -36,6 +36,15 @@ export type EventoDominio =
   | "PaymentStarted"
   | "PaymentCompleted"
   | "ContractRequired"
+  | "ContractGenerated"
+  | "ContractPreparationFailed"
+  | "SignatureRequested"
+  | "SignerViewed"
+  | "SignerSigned"
+  | "ContractCompleted"
+  | "FinalDocumentGenerated"
+  | "ContractDeclined"
+  | "ContractExpired"
   | "ContractSigned"
   | "CanonicalServiceActivated"
   // Commercial Core v2 (ADR-EXEC-021) — proposta pública rica + checkout
@@ -46,12 +55,18 @@ export type EventoDominio =
   | "CheckoutOpened"
   | "PaymentFailed"
   | "CheckoutExpired"
-  | "FulfillmentGroupCompleted";
+  | "FulfillmentGroupCompleted"
+  | "ConversationClaimed"
+  | "ConversationTransferred"
+  | "ConversationReleased"
+  | "ConversationSnoozed"
+  | "ConversationClosed"
+  | "ConversationReopened";
 
 export interface PublicarEventoOpts {
   organizacaoId: string;
   eventType: EventoDominio;
-  aggregateType: "lead" | "negocio" | "contrato" | "proposta" | "servico" | "checkout" | "grupo_comercial";
+  aggregateType: "lead" | "negocio" | "contrato" | "proposta" | "servico" | "checkout" | "grupo_comercial" | "contato";
   aggregateId: string;
   payload: Record<string, unknown>;
   correlationId?: string;

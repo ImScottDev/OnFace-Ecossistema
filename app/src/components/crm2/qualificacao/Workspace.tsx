@@ -8,7 +8,12 @@ import {
   SDR_STAGES, SDR_CLOSED_STAGES, SDR_MIRROR_KEYS,
   SDR_STAGNATION_STAGES, SDR_STAGNATION_KEYS,
 } from "@/lib/crm/pipeline";
-import { Search, X, MoreHorizontal, Tag, Briefcase, CheckCircle2, XCircle, PauseCircle, RotateCcw, Download, User } from "lucide-react";
+import {
+  Search, X, MoreHorizontal, Tag, Briefcase, CheckCircle2, XCircle, PauseCircle, RotateCcw, Download, User,
+  Filter, List as ListIcon, LayoutGrid, Globe, Megaphone, Instagram, Linkedin, UserPlus, PhoneOutgoing,
+  Phone, MessageCircle, Star, Calendar,
+} from "lucide-react";
+import { callfaceCallUrl } from "@/lib/utils/callface-call";
 import { EmpresaDrawer } from "@/components/crm/EmpresaDrawer";
 import { NegocioDrawer } from "@/components/crm/NegocioDrawer";
 import { Cf2AgendarReuniaoModal, type AgendarReuniaoPayload } from "./AgendarReuniaoModal";
@@ -38,6 +43,11 @@ export function Cf2QualificacaoWorkspace() {
   const [searchQuery, setSearchQuery] = useState("");
   const [respFilter, setRespFilter] = useState("todos");
   const [origemFilter, setOrigemFilter] = useState("todos");
+  const [statusFilter, setStatusFilter] = useState("todos");
+  const [slaFilter, setSlaFilter] = useState<"todos" | "dentro" | "fora">("todos");
+  const [semContatoOnly, setSemContatoOnly] = useState(false);
+  const [filtrosExtraOpen, setFiltrosExtraOpen] = useState(false);
+  const [layout, setLayout] = useState<"kanban" | "lista">("kanban");
   const [view, setView] = useState<View>("qualificacao");
   const [showExport, setShowExport] = useState(false);
   const [drawerLeadId, setDrawerLeadId] = useState<string | null>(null);
@@ -56,11 +66,34 @@ export function Cf2QualificacaoWorkspace() {
   const allLeads = useMemo(() => data?.leads || [], [data]);
   const origemOptions = useMemo(() => buildOrigemOptions(allLeads), [allLeads]);
 
+  // Colunas visíveis na tab atual — usadas tanto pro Kanban quanto pro
+  // dropdown "Status" do toolbar (opções mudam com a view, igual ao board).
+  const statusColumns = view === "estagnados" ? OPEN_COLS_ESTAGNADOS : OPEN_COLS_QUALIFICACAO;
+
+  const matchesStatus = (l: Lead): boolean => {
+    if (statusFilter === "todos") return true;
+    const col = statusColumns.find((c) => c.key === statusFilter);
+    if (!col) return true;
+    const board = view === "estagnados" ? (l.sdrStatus || "pending") : sdrBoardColumn(l);
+    if (!col.keys.includes(board)) return false;
+    return col.filter ? col.filter(l) : true;
+  };
+
+  const matchesSla = (l: Lead): boolean => {
+    if (slaFilter === "todos") return true;
+    const age = stageAge(l.updatedAt, l.sdrStatus || "pending");
+    if (!age) return true; // sem dado de tempo na etapa — não exclui, não fabrica sinal
+    return slaFilter === "fora" ? age.breached : !age.breached;
+  };
+
   const filteredLeads = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return allLeads.filter((l) => {
       if (!matchesResponsavel(l.responsavelId, respFilter, currentUserId)) return false;
       if (!matchesOrigem(l.origem, origemFilter)) return false;
+      if (!matchesStatus(l)) return false;
+      if (!matchesSla(l)) return false;
+      if (semContatoOnly && l.lastContactAt) return false;
       if (!q) return true;
       return (
         l.nome.toLowerCase().includes(q) ||
@@ -69,7 +102,8 @@ export function Cf2QualificacaoWorkspace() {
         (l.origem || "").toLowerCase().includes(q)
       );
     });
-  }, [allLeads, searchQuery, respFilter, origemFilter, currentUserId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allLeads, searchQuery, respFilter, origemFilter, statusFilter, slaFilter, semContatoOnly, currentUserId, view]);
 
   const isStagnant = (l: Lead) => SDR_STAGNATION_KEYS.includes(l.sdrStatus || "");
   const funnelLeads = filteredLeads.filter((l) => !isStagnant(l));
@@ -219,6 +253,36 @@ export function Cf2QualificacaoWorkspace() {
             {origemOptions.map((o) => <option key={o.value} value={o.value}>{o.label} ({o.count})</option>)}
           </select>
 
+          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="px-2.5 py-1.5 rounded-lg text-[12px] font-medium outline-none shrink-0 [&>option]:bg-[#1c1f26]" style={{ background: "rgba(255,255,255,0.06)", border: "1px solid var(--cf2-chrome-border-subtle)", color: "var(--cf2-chrome-text-secondary)" }}>
+            <option value="todos">Status: Todos</option>
+            {statusColumns.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
+          </select>
+
+          <select value={slaFilter} onChange={(e) => setSlaFilter(e.target.value as typeof slaFilter)} className="px-2.5 py-1.5 rounded-lg text-[12px] font-medium outline-none shrink-0 [&>option]:bg-[#1c1f26]" style={{ background: "rgba(255,255,255,0.06)", border: "1px solid var(--cf2-chrome-border-subtle)", color: "var(--cf2-chrome-text-secondary)" }}>
+            <option value="todos">SLA: Todos</option>
+            <option value="dentro">Dentro do SLA</option>
+            <option value="fora">Fora do SLA</option>
+          </select>
+
+          <div className="relative shrink-0">
+            <button
+              onClick={() => setFiltrosExtraOpen((v) => !v)}
+              title="Mais filtros"
+              className="p-1.5 rounded-lg flex items-center justify-center"
+              style={{ background: semContatoOnly ? "var(--cf2-accent)" : "rgba(255,255,255,0.06)", border: "1px solid var(--cf2-chrome-border-subtle)", color: semContatoOnly ? "var(--cf2-text-on-accent)" : "var(--cf2-chrome-text-secondary)" }}
+            >
+              <Filter className="w-3.5 h-3.5" />
+            </button>
+            {filtrosExtraOpen && (
+              <div className="absolute top-full left-0 mt-1 min-w-[200px] rounded-lg p-2.5 z-20" style={{ background: "var(--cf2-chrome-surface-active)", border: "1px solid var(--cf2-chrome-border-subtle)", boxShadow: "0 8px 16px rgba(0,0,0,0.3)" }}>
+                <label className="flex items-center gap-2 text-[12px] cursor-pointer" style={{ color: "var(--cf2-chrome-text-primary)" }}>
+                  <input type="checkbox" checked={semContatoOnly} onChange={(e) => setSemContatoOnly(e.target.checked)} className="w-3.5 h-3.5" />
+                  Somente sem contato
+                </label>
+              </div>
+            )}
+          </div>
+
           <button onClick={() => setShowExport(true)} title="Exportar leads: escolher responsável e etapas" className="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[12px] font-medium" style={{ background: "rgba(255,255,255,0.06)", border: "1px solid var(--cf2-chrome-border-subtle)", color: "var(--cf2-chrome-text-secondary)" }}>
             <Download className="w-3.5 h-3.5" /> Exportar
           </button>
@@ -227,7 +291,7 @@ export function Cf2QualificacaoWorkspace() {
             {([{ key: "qualificacao" as const, label: "Qualificação", count: activeCount }, { key: "estagnados" as const, label: "Estagnados", count: stagnantCount }]).map((tab) => (
               <button
                 key={tab.key}
-                onClick={() => setView(tab.key)}
+                onClick={() => { setView(tab.key); setStatusFilter("todos"); }}
                 className="px-2.5 py-1.5 rounded-md text-[12px] font-semibold whitespace-nowrap flex items-center gap-1.5"
                 style={{ background: view === tab.key ? "var(--cf2-accent)" : "transparent", color: view === tab.key ? "var(--cf2-text-on-accent)" : "var(--cf2-chrome-text-secondary)" }}
               >
@@ -235,12 +299,27 @@ export function Cf2QualificacaoWorkspace() {
               </button>
             ))}
           </div>
+
+          <div className="flex gap-0.5 p-0.5 rounded-lg shrink-0 ml-auto" style={{ background: "rgba(255,255,255,0.06)" }}>
+            <button onClick={() => setLayout("kanban")} title="Visualização em quadro" className="p-1.5 rounded-md" style={{ background: layout === "kanban" ? "var(--cf2-chrome-surface-active)" : "transparent", color: layout === "kanban" ? "var(--cf2-chrome-text-primary)" : "var(--cf2-chrome-text-secondary)" }}>
+              <LayoutGrid className="w-3.5 h-3.5" />
+            </button>
+            <button onClick={() => setLayout("lista")} title="Visualização em lista" className="p-1.5 rounded-md" style={{ background: layout === "lista" ? "var(--cf2-chrome-surface-active)" : "transparent", color: layout === "lista" ? "var(--cf2-chrome-text-primary)" : "var(--cf2-chrome-text-secondary)" }}>
+              <ListIcon className="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
       </div>
 
       <div className="flex-1 min-h-0">
         {isLoading ? (
           <p className="text-[13px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Carregando...</p>
+        ) : layout === "lista" ? (
+          <SdrListView
+            leads={view === "estagnados" ? estagnadosViewLeads : funnelLeads}
+            usuariosById={usuariosById}
+            onOpenLead={(id) => setDrawerLeadId(id)}
+          />
         ) : (
           <SdrKanbanView
             leads={view === "estagnados" ? estagnadosViewLeads : funnelLeads}
@@ -254,7 +333,7 @@ export function Cf2QualificacaoWorkspace() {
         )}
       </div>
 
-      <Cf2LeadDrawer leadId={drawerLeadId} open={!!drawerLeadId} onClose={() => setDrawerLeadId(null)} onOpenEmpresa={(id) => { setDrawerLeadId(null); setDrawerEmpresaId(id); }} onOpenNegocio={(id) => { setDrawerLeadId(null); setDrawerNegocioId(id); }} onMove={handleMove} usuariosById={usuariosById} />
+      <Cf2LeadDrawer leadId={drawerLeadId} open={!!drawerLeadId} onClose={() => setDrawerLeadId(null)} onOpenEmpresa={(id) => { setDrawerLeadId(null); setDrawerEmpresaId(id); }} onOpenNegocio={(id) => { setDrawerLeadId(null); setDrawerNegocioId(id); }} onMove={handleMove} usuariosById={usuariosById} dark />
       <EmpresaDrawer empresaId={drawerEmpresaId} open={!!drawerEmpresaId} onClose={() => setDrawerEmpresaId(null)} onOpenLead={(id) => { setDrawerEmpresaId(null); setDrawerLeadId(id); }} onOpenNegocio={(id) => { setDrawerEmpresaId(null); setDrawerNegocioId(id); }} />
       <NegocioDrawer negocioId={drawerNegocioId} open={!!drawerNegocioId} onClose={() => setDrawerNegocioId(null)} onOpenLead={(id) => { setDrawerNegocioId(null); setDrawerLeadId(id); }} onOpenEmpresa={(id) => { setDrawerNegocioId(null); setDrawerEmpresaId(id); }} />
 
@@ -350,6 +429,67 @@ function OwnerChipCf2({ nome, avatarUrl, color }: { nome?: string | null; avatar
   );
 }
 
+/** Ícone por origem (só cosmético, nunca decide dado) — cobre as chaves
+ * reais de DEFAULT_ORIGENS + as observadas nos dados (site, instagram,
+ * outbound, rd_station), fallback Globe pra qualquer origem desconhecida. */
+function OrigemIcon({ origem }: { origem?: string | null }) {
+  const key = (origem || "").toLowerCase();
+  const Icon =
+    key.includes("instagram") ? Instagram :
+    key.includes("linkedin") ? Linkedin :
+    key.includes("indicacao") ? UserPlus :
+    key.includes("outbound") ? PhoneOutgoing :
+    key.includes("ads") || key.includes("midia") ? Megaphone :
+    Globe;
+  return <Icon className="w-2.5 h-2.5 shrink-0" />;
+}
+
+/** Visualização em lista (toggle do toolbar) — mesmo dataset filtrado do
+ * Kanban, sem drag-and-drop; clicar na linha abre o mesmo drawer. */
+function SdrListView({ leads, usuariosById, onOpenLead }: {
+  leads: Lead[]; usuariosById: Map<string, OrgUsuario>; onOpenLead: (id: string) => void;
+}) {
+  return (
+    <div className="h-full overflow-y-auto rounded-2xl" style={{ background: "var(--cf2-chrome-bg-alt)", border: "1px solid var(--cf2-chrome-border-subtle)" }}>
+      <table className="w-full text-[12px] border-collapse">
+        <thead className="sticky top-0" style={{ background: "var(--cf2-chrome-bg-alt)" }}>
+          <tr style={{ borderBottom: "1px solid var(--cf2-chrome-border-subtle)" }}>
+            {["Nome", "Empresa", "Etapa", "Responsável", "Origem", "Tempo na etapa"].map((h) => (
+              <th key={h} className="text-left font-semibold uppercase tracking-wide px-3 py-2.5" style={{ color: "var(--cf2-chrome-text-secondary)", fontSize: 10 }}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {leads.length === 0 && (
+            <tr><td colSpan={6} className="text-center py-8" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Nenhum lead nessa seleção.</td></tr>
+          )}
+          {leads.map((lead) => {
+            const stage = resolveDisplayStage(lead);
+            const age = stageAge(lead.updatedAt, lead.sdrStatus || "pending");
+            const owner = lead.responsavelId ? usuariosById.get(lead.responsavelId) : undefined;
+            return (
+              <tr key={lead.id} onClick={() => onOpenLead(lead.id)} className="cursor-pointer hover:opacity-80" style={{ borderBottom: "1px solid var(--cf2-chrome-border-subtle)" }}>
+                <td className="px-3 py-2.5 font-semibold" style={{ color: "var(--cf2-chrome-text-primary)" }}>{lead.nome}{lead.sobrenome ? ` ${lead.sobrenome}` : ""}</td>
+                <td className="px-3 py-2.5" style={{ color: "var(--cf2-chrome-text-secondary)" }}>{lead.empresa || "—"}</td>
+                <td className="px-3 py-2.5">
+                  <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full font-semibold" style={{ background: `${stage.color}18`, color: stage.color }}>
+                    <span className="w-1.5 h-1.5 rounded-full" style={{ background: stage.color }} /> {stage.label}
+                  </span>
+                </td>
+                <td className="px-3 py-2.5" style={{ color: "var(--cf2-chrome-text-secondary)" }}>{owner?.nome || "Sem responsável"}</td>
+                <td className="px-3 py-2.5" style={{ color: "var(--cf2-chrome-text-secondary)" }}>
+                  <span className="inline-flex items-center gap-1.5"><OrigemIcon origem={lead.origem} /> {lead.origem || "—"}</span>
+                </td>
+                <td className="px-3 py-2.5" style={{ color: age?.breached ? "var(--cf2-danger-text)" : "var(--cf2-chrome-text-secondary)" }}>{age?.text || "—"}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 /* ═══ KANBAN ═══ */
 
 function SdrKanbanView({ leads, allFilteredLeads, view, usuariosById, onDrop, onOpenLead, onOpenNegocio }: {
@@ -359,13 +499,18 @@ function SdrKanbanView({ leads, allFilteredLeads, view, usuariosById, onDrop, on
   const [dragOverStage, setDragOverStage] = useState<string | null>(null);
   const [draggingLeadId, setDraggingLeadId] = useState<string | null>(null);
   const [dragOverAction, setDragOverAction] = useState<string | null>(null);
-  const [bucketOpen, setBucketOpen] = useState<{ label: string; leads: Lead[] } | null>(null);
+  const [expandedEstagnado, setExpandedEstagnado] = useState<string | null>(null);
 
   // 5 colunas abertas do fluxo principal (Novo/Em Contato/Qualificação/
   // Qualificado SQL/Agenda Confirmada, De/Para aprovado 17/08) — todas
   // largura igual, sem barra colapsada; na view Estagnados, 2 colunas (Sem
   // resposta/Nutrição-Retomar depois). Desqualificado não vira coluna aqui —
-  // vira card-resumo abaixo do board (ver bottomBuckets).
+  const estagnadosBuckets = [
+    { label: "Sem resposta", color: "#8e27ef", leads: allFilteredLeads.filter((l) => (l.sdrStatus || "pending") === "sdr_sem_retorno") },
+    { label: "No-show", color: "#f59e0b", leads: allFilteredLeads.filter((l) => l.negocioPrincipal?.status === "no_show") },
+    { label: "Nutrição / Retomar", color: "#8B5CF6", leads: allFilteredLeads.filter((l) => ["sdr_sem_interesse", "sdr_retomar_depois"].includes(l.sdrStatus || "")) },
+    { label: "Desqualificado", color: "#dc2626", leads: allFilteredLeads.filter((l) => (l.sdrStatus || "pending") === "disqualified") },
+  ];
   const openCols = view === "estagnados" ? OPEN_COLS_ESTAGNADOS : OPEN_COLS_QUALIFICACAO;
 
   const actions = view === "estagnados"
@@ -393,80 +538,69 @@ function SdrKanbanView({ leads, allFilteredLeads, view, usuariosById, onDrop, on
       ));
   };
 
-  // Buckets auxiliares (Sem Resposta/No-show/Desqualificado) — cards de
-  // resumo fixos abaixo do board, não colunas de drag-and-drop. Contam sobre
-  // `allFilteredLeads` (o conjunto INTEIRO que respeita busca/responsável/
-  // origem, ANTES do split funil/estagnados) — usar `leads` aqui era o bug:
-  // na view principal `leads` é `funnelLeads`, que já exclui quem tá em
-  // sdr_sem_retorno, então "Sem Resposta" sempre dava 0.
-  const bottomBuckets = view === "estagnados" ? [] : [
-    { key: "sdr_sem_retorno", label: "Sem Resposta", sub: "Leads aguardando retorno", color: "#6b7280", leads: allFilteredLeads.filter((l) => (l.sdrStatus || "pending") === "sdr_sem_retorno") },
-    { key: "no_show", label: "No-show", sub: "Reuniões não realizadas", color: "#f59e0b", leads: allFilteredLeads.filter((l) => l.negocioPrincipal?.status === "no_show") },
-    { key: "disqualified", label: "Desqualificado", sub: "Leads removidos do funil", color: "#dc2626", leads: allFilteredLeads.filter((l) => (l.sdrStatus || "pending") === "disqualified") },
-  ];
-
   return (
     <div className="relative h-full flex flex-col gap-3">
-      <div className="flex-1 flex gap-4 min-h-0">
-        {openCols.map((stage) => {
-          const cards = renderColumnCards(stage);
-          const isDragOver = dragOverStage === stage.key;
-          return (
-            <div
-              key={stage.key}
-              className="flex-1 min-w-0 rounded-2xl flex flex-col max-h-full"
-              style={{ background: isDragOver ? `${stage.color}10` : "var(--cf2-chrome-bg-alt)", border: isDragOver ? `2px dashed ${stage.color}` : "1px solid var(--cf2-chrome-border-subtle)" }}
-              onDragOver={(e) => e.preventDefault()}
-              onDragEnter={(e) => { e.preventDefault(); setDragOverStage(stage.key); }}
-              onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOverStage(null); }}
-              onDrop={(e) => { e.preventDefault(); setDragOverStage(null); const leadId = e.dataTransfer.getData("leadId"); if (leadId) onDrop(leadId, stage.dropTarget); }}
-            >
-              <div className="px-3 pt-3 pb-2 shrink-0 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: stage.color }} />
-                  <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: stage.color }}>{stage.label}</span>
+      <div className="flex-1 flex min-h-0 flex-col gap-3">
+        <div className="flex-1 flex gap-4 min-h-0 overflow-x-auto pb-1">
+          {openCols.map((stage) => {
+            const cards = renderColumnCards(stage);
+            const isDragOver = dragOverStage === stage.key;
+            return (
+              <div
+                key={stage.key}
+                className="flex-1 min-w-[220px] rounded-2xl flex flex-col max-h-full"
+                style={{ background: isDragOver ? `${stage.color}10` : "var(--cf2-chrome-bg-alt)", border: isDragOver ? `2px dashed ${stage.color}` : "1px solid var(--cf2-chrome-border-subtle)" }}
+                onDragOver={(e) => e.preventDefault()}
+                onDragEnter={(e) => { e.preventDefault(); setDragOverStage(stage.key); }}
+                onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOverStage(null); }}
+                onDrop={(e) => { e.preventDefault(); setDragOverStage(null); const leadId = e.dataTransfer.getData("leadId"); if (leadId) onDrop(leadId, stage.dropTarget); }}
+              >
+                <div className="px-3 pt-3 pb-2 shrink-0 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: stage.color }} />
+                    <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: stage.color }}>{stage.label}</span>
+                  </div>
+                  <span className="text-[11px] font-bold px-2 py-0.5 rounded-full" style={{ background: "var(--cf2-chrome-surface-active)", border: "1px solid var(--cf2-chrome-border-subtle)", color: "var(--cf2-chrome-text-primary)" }}>{cards.length}</span>
                 </div>
-                <span className="text-[11px] font-bold px-2 py-0.5 rounded-full" style={{ background: "var(--cf2-chrome-surface-active)", border: "1px solid var(--cf2-chrome-border-subtle)", color: "var(--cf2-chrome-text-primary)" }}>{cards.length}</span>
-              </div>
-              <div className="flex-1 p-2 space-y-2 overflow-y-auto min-h-0">
-                {cards}
-                {cards.length === 0 && <div className="flex h-16 items-center justify-center text-[11px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>vazio</div>}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {bottomBuckets.length > 0 && (
-        <div className="shrink-0 flex gap-4 mb-2">
-          {bottomBuckets.map((b) => (
-            <button
-              key={b.key}
-              onClick={() => setBucketOpen({ label: b.label, leads: b.leads })}
-              className="flex-1 min-w-0 rounded-xl p-3 flex items-center gap-3 text-left"
-              style={{ background: "var(--cf2-chrome-surface-active)", border: "1px solid var(--cf2-chrome-border-subtle)", borderLeft: `3px solid ${b.color}` }}
-            >
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <p className="text-[13px] font-bold" style={{ color: "var(--cf2-chrome-text-primary)" }}>{b.label}</p>
-                  <span className="text-[11px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: `${b.color}18`, color: b.color }}>{b.leads.length}</span>
+                <div className="flex-1 p-2 space-y-2 overflow-y-auto min-h-0">
+                  {cards}
+                  {cards.length === 0 && (
+                    stage.key === AGENDA_CONFIRMADA_COL.key ? (
+                      <div className="flex flex-col items-center justify-center text-center gap-1.5 py-6 px-2">
+                        <Calendar className="w-5 h-5" style={{ color: "var(--cf2-chrome-text-secondary)" }} />
+                        <p className="text-[11px] font-semibold" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Nenhuma agenda confirmada</p>
+                        <p className="text-[10px]" style={{ color: "var(--cf2-chrome-text-secondary)", opacity: 0.7 }}>Leads com reunião aparecem aqui.</p>
+                      </div>
+                    ) : (
+                      <div className="flex h-16 items-center justify-center text-[11px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Vazio</div>
+                    )
+                  )}
                 </div>
-                <p className="text-[11px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>{b.sub}</p>
               </div>
-              <span className="text-[11px] font-semibold shrink-0" style={{ color: "var(--cf2-success-text)" }}>Ver →</span>
-            </button>
-          ))}
+            );
+          })}
         </div>
-      )}
 
-      {bucketOpen && (
-        <Cf2BucketLeadsModal
-          title={bucketOpen.label}
-          leads={bucketOpen.leads}
-          onClose={() => setBucketOpen(null)}
-          onOpenLead={(id) => { setBucketOpen(null); onOpenLead(id); }}
-        />
-      )}
+        {view !== "estagnados" && (
+          <div className="grid shrink-0 grid-cols-2 gap-3 xl:grid-cols-4" aria-label="Estados auxiliares">
+            {estagnadosBuckets.map((item) => (
+              <div key={item.label} className="rounded-xl border px-3 py-2.5" style={{ background: "var(--cf2-chrome-bg)", borderColor: "var(--cf2-chrome-border-subtle)" }}>
+                <button type="button" onClick={() => setExpandedEstagnado((current) => current === item.label ? null : item.label)} className="flex w-full items-center gap-2 text-left" aria-expanded={expandedEstagnado === item.label}>
+                  <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: item.color }} />
+                  <span className="min-w-0 flex-1 truncate text-[12px] font-semibold" style={{ color: "var(--cf2-chrome-text-primary)" }}>{item.label}</span>
+                  <span className="rounded-full px-2 py-0.5 text-[11px] font-bold" style={{ color: item.color, background: `${item.color}12` }}>{item.leads.length}</span>
+                  <span className="text-[11px]" style={{ color: "var(--cf2-accent-border)" }}>Ver →</span>
+                </button>
+                {expandedEstagnado === item.label && (
+                  <div className="mt-2 flex max-h-36 flex-col gap-1 overflow-y-auto border-t pt-2" style={{ borderColor: "var(--cf2-chrome-border-subtle)" }}>
+                    {item.leads.length === 0 ? <span className="text-[11px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Nenhum lead</span> : item.leads.map((lead) => <button type="button" key={lead.id} className="w-full truncate rounded-md px-2 py-1 text-left text-[11px]" style={{ background: "var(--cf2-chrome-surface-active)", color: "var(--cf2-chrome-text-primary)" }} onClick={() => onOpenLead(lead.id)}>{lead.nome}</button>)}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       {draggingLeadId && (
         <div className="absolute bottom-0 left-0 right-0 flex gap-2 p-3 z-20">
@@ -490,40 +624,6 @@ function SdrKanbanView({ leads, allFilteredLeads, view, usuariosById, onDrop, on
           })}
         </div>
       )}
-    </div>
-  );
-}
-
-/** Lista real dos leads de um bucket auxiliar (Sem Resposta/No-show/
- * Desqualificado) — clicar num card-resumo abre isso em vez de só mostrar
- * um número. Clicar num lead abre o LeadDrawer de verdade (mesmo drawer do
- * board), não uma tela nova. */
-function Cf2BucketLeadsModal({ title, leads, onClose, onOpenLead }: { title: string; leads: Lead[]; onClose: () => void; onOpenLead: (id: string) => void }) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(15,23,42,0.45)" }} onClick={onClose}>
-      <div className="w-full max-w-md rounded-2xl p-6 max-h-[80vh] flex flex-col" style={{ background: "var(--cf2-chrome-surface-active)", border: "1px solid var(--cf2-chrome-border-subtle)" }} onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-1 shrink-0">
-          <p className="font-bold text-[15px]" style={{ color: "var(--cf2-chrome-text-primary)" }}>{title}</p>
-          <button onClick={onClose} className="p-1" style={{ color: "var(--cf2-chrome-text-secondary)" }}><X className="w-4 h-4" /></button>
-        </div>
-        <p className="text-[11px] mb-4 shrink-0" style={{ color: "var(--cf2-chrome-text-secondary)" }}>{leads.length} lead(s) — clique pra abrir.</p>
-        <div className="flex-1 overflow-y-auto space-y-1.5">
-          {leads.length === 0 && <p className="text-[12px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Nenhum lead nesse bucket agora.</p>}
-          {leads.map((l) => (
-            <button
-              key={l.id}
-              onClick={() => onOpenLead(l.id)}
-              className="w-full text-left px-3 py-2 rounded-lg flex items-center justify-between gap-2"
-              style={{ border: "1px solid var(--cf2-chrome-border-subtle)" }}
-            >
-              <div className="min-w-0">
-                <p className="text-[13px] font-semibold truncate" style={{ color: "var(--cf2-chrome-text-primary)" }}>{l.nome}{l.sobrenome ? ` ${l.sobrenome}` : ""}</p>
-                {(l.empresa || l.cargo) && <p className="text-[11px] truncate" style={{ color: "var(--cf2-chrome-text-secondary)" }}>{l.empresa || ""}{l.empresa && l.cargo ? " · " : ""}{l.cargo || ""}</p>}
-              </div>
-            </button>
-          ))}
-        </div>
-      </div>
     </div>
   );
 }
@@ -646,7 +746,11 @@ function LeadCard({ lead, stageColor, view, readOnly = false, owner, onOpenLead,
         )}
 
         <div className="flex flex-wrap items-center gap-1.5 mt-2">
-          {lead.origem && <span className="text-[9px] px-1.5 py-0.5 rounded font-medium" style={{ background: "rgba(255,255,255,0.06)", color: "var(--cf2-chrome-text-secondary)" }}>{lead.origem}</span>}
+          {lead.origem && (
+            <span className="flex items-center gap-1 text-[9px] font-medium" style={{ color: "var(--cf2-chrome-text-secondary)" }}>
+              <OrigemIcon origem={lead.origem} /> {lead.origem}
+            </span>
+          )}
           {lead.utmCampaign && (
             <span className="flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 rounded font-medium" style={{ background: "rgba(142,39,239,0.18)", color: "#c084fc" }} title={`Campanha: ${lead.utmCampaign}`}>
               <Tag className="w-2.5 h-2.5" /> {lead.utmCampaign}
@@ -660,6 +764,26 @@ function LeadCard({ lead, stageColor, view, readOnly = false, owner, onOpenLead,
             {age && ageDark && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ backgroundColor: ageDark.bg, color: ageDark.text }}>{age.text}</span>}
           </div>
         </div>
+
+        {(lead.telefone || (typeof lead.leadScore === "number" && lead.leadScore > 0)) && (
+          <div className="flex items-center gap-2.5 mt-2 pt-2" style={{ borderTop: "1px solid var(--cf2-chrome-border-subtle)" }}>
+            {lead.telefone && (
+              <a href={callfaceCallUrl(lead.telefone)} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} title="Ligar" style={{ color: "var(--cf2-chrome-text-secondary)" }}>
+                <Phone className="w-3 h-3" />
+              </a>
+            )}
+            {lead.telefone && (
+              <a href={`https://wa.me/${lead.telefone.replace(/\D/g, "")}`} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} title="WhatsApp" style={{ color: "var(--cf2-chrome-text-secondary)" }}>
+                <MessageCircle className="w-3 h-3" />
+              </a>
+            )}
+            {typeof lead.leadScore === "number" && lead.leadScore > 0 && (
+              <span className="ml-auto" title={`Lead score: ${lead.leadScore}`}>
+                <Star className="w-3 h-3" style={{ color: "var(--cf2-accent-border)", fill: "var(--cf2-accent-border)" }} />
+              </span>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -12,7 +12,7 @@ interface Grupo {
   commercialModel: string;
   status: string;
   itens: Item[];
-  contrato: { id: string; corpoGerado: string | null; assinaturaStatus: string; status: string } | null;
+  contrato: { id: string; corpoGerado: string | null; assinaturaStatus: string; signatureStatus: string | null; status: string; signingUrl?: string | null } | null;
   checkoutUrl: string | null;
   pagamentoEstado: "aberto" | "pago" | "boleto_pendente" | "indisponivel" | null;
 }
@@ -30,7 +30,7 @@ const brl = (v: string | number) =>
 
 const TIPO_LABEL: Record<string, string> = { recorrente: "Mensal", avulso: "Avulso", setup: "Setup" };
 const GRUPO_STATUS_LABEL: Record<string, { texto: string; cor: string }> = {
-  aguardando_contrato: { texto: "Preparando contrato...", cor: "#9497ab" },
+  aguardando_contrato: { texto: "Contrato preparado", cor: "#9497ab" },
   contrato_enviado_assinatura: { texto: "Aguardando assinatura", cor: "#b8860b" },
   contrato_assinado: { texto: "Contrato assinado", cor: "#0f9d58" },
   aguardando_checkout: { texto: "Preparando pagamento...", cor: "#9497ab" },
@@ -101,6 +101,12 @@ function GrupoCard({ grupo, id, onAssinado }: { grupo: Grupo; id: string; onAssi
 
       {grupo.status === "contrato_enviado_assinatura" && grupo.contrato && (
         <>
+          {grupo.contrato.signingUrl ? (
+            <a href={grupo.contrato.signingUrl} target="_blank" rel="noreferrer" style={{ display: "block", textAlign: "center", padding: "12px", borderRadius: 10, background: CARMIM, color: "#fff", fontWeight: 700, fontSize: 14, textDecoration: "none" }}>
+              Ler e assinar contrato
+            </a>
+          ) : (
+            <>
           {grupo.contrato.corpoGerado && (
             <div style={{ fontSize: 12, color: "#4b4d63", background: "#f7f7fa", borderRadius: 10, padding: 12, marginBottom: 12, whiteSpace: "pre-wrap", maxHeight: 160, overflowY: "auto" }}>
               {grupo.contrato.corpoGerado}
@@ -120,6 +126,8 @@ function GrupoCard({ grupo, id, onAssinado }: { grupo: Grupo; id: string; onAssi
             {assinar.isPending ? "Enviando..." : "Concordo e assino eletronicamente"}
           </button>
           {assinar.isError && <p style={{ color: CARMIM, fontSize: 12, marginTop: 8 }}>{(assinar.error as Error).message}</p>}
+            </>
+          )}
         </>
       )}
 
@@ -226,7 +234,7 @@ export function PropostaPublica({ id }: { id: string }) {
   }
 
   const todosGruposConcluidos = data.grupos.length > 0 && data.grupos.every((g) => g.status === "concluido" || g.status === "pago");
-  const aindaNaoAceitou = ["enviada", "ajuste_solicitado"].includes(data.status) && data.grupos.length === 0;
+  const aindaNaoAceitou = ["enviada", "ajuste_solicitado"].includes(data.status);
 
   return (
     <Shell>

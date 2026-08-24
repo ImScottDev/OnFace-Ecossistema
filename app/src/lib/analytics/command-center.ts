@@ -8,8 +8,9 @@
  */
 import { db } from "@/lib/db";
 import { leads, negocios, ligacoes, whatsappMensagens, emails, contatos, usuarios, tarefas, mrrMovimentos, clientes } from "@/lib/db/schema";
-import { eq, and, gte, lt, sql, inArray, isNotNull, desc } from "drizzle-orm";
+import { eq, and, gte, lt, sql, inArray, isNotNull, isNull, or, desc } from "drizzle-orm";
 import { getFechadoPeriodo, PIPELINE_ATIVO_STATUSES } from "@/lib/relatorios/comercial";
+import { getFluxoMes, getCalendarioRenovacao } from "@/lib/financeiro/metricas";
 
 /**
  * Dias úteis (seg-sex) restantes no mês a partir de `hoje`, incluindo hoje
@@ -423,4 +424,184 @@ export async function getDesempenhoMensalTrend(orgId: string, hoje = new Date(),
     const label = ref.toLocaleDateString("pt-BR", { month: "short" }).replace(".", "");
     return { mes: label.charAt(0).toUpperCase() + label.slice(1), valor: dados[i].recorrente };
   });
+}
+
+// ─── Blocos executivos de "Início" (23/08) — Atendimento/Implantação/CS/
+// Financeiro. Contrato do Kauã (prompt mestre): a tela precisa responder
+// "como está a operação hoje?" nos 6 eixos (Receita/Comercial já existiam
+// nas seções acima; estes 4 fecham o resto). Cada função abaixo REUSA um
+// critério real já validado em produção em outro módulo — nunca inventa um
+// conceito novo de risco/SLA/atraso. Onde não existe fonte confiável, a
+// função simplesmente não existe e a UI usa Cf2UnavailableMetric.
+
+export interface AtendimentoResumo {
+  whatsappAbertas: number;
+  emailPendentes: number;
+  esperaMaisAntigaMinutos: number | null;
+}
+
+/**
+ * Atendimento — conversas aguardando resposta. Mesmo critério do bucket
+ * "todas" de GET /atendimento/conversas (atendimento.ts): WhatsApp aberto
+ * (`contatos.status='open'`) com `naoLidas>0` e não adormecido
+ * (snoozedUntil nulo ou já expirado); e-mail usa `emails.lido=false` +
+ * direção "in" (o inbox de e-mail não passa por `contatos`, é lido direto
+ * de `emails` — mesma fonte que `buscarEmail`). Não existe SLA formal (alvo
+ * de tempo de resposta) definido em nenhum lugar do produto hoje — em vez
+ * de inventar um threshold, expõe o tempo real de espera da mensagem mais
+ * antiga da fila (`esperaMaisAntigaMinutos`), que é 100% dado real.
+ */
+export async function getAtendimentoResumo(orgId: string): Promise<AtendimentoResumo> {
+  const [wa] = await db
+    .select({ total: sql<number>`count(*)`, minTs: sql<string | null>`min(${contatos.ultimaMsgAt})` })
+    .from(contatos)
+    .where(and(
+      eq(contatos.organizacaoId, orgId),
+      eq(contatos.canal, "whatsapp"),
+      eq(contatos.status, "open"),
+      sql`${contatos.naoLidas} > 0`,
+      or(isNull(contatos.snoozedUntil), sql`${contatos.snoozedUntil} <= now()`)!,
+    ));
+  const [email] = await db
+    .select({ total: sql<number>`count(*)` })
+    .from(emails)
+    .where(and(eq(emails.organizacaoId, orgId), eq(emails.direcao, "in"), eq(emails.lido, false)));
+
+  const minTs = wa?.minTs ? new Date(wa.minTs) : null;
+  return {
+    whatsappAbertas: Number(wa?.total || 0),
+    emailPendentes: Number(email?.total || 0),
+    esperaMaisAntigaMinutos: minTs ? Math.max(0, Math.floor((Date.now() - minTs.getTime()) / 60_000)) : null,
+  };
+}
+
+export interface ImplantacaoResumo {
+  ativas: number;
+  ativasNovas30d: number;
+  aguardandoCliente: number;
+  bloqueadas: number;
+  atrasadas: number;
+}
+
+/**
+ * Implantação — mesmo recorte de GET /fulfillments/resumo (fulfillments.ts),
+ * agregado org-wide sem filtro de família. `atrasadas` é um recorte NOVO
+ * (não existia lá) mas sobre dado 100% real já existente
+ * (`fulfillments.targetAt`, preenchido manualmente pelo time de entrega):
+ * ativo (não COMPLETED/CANCELED) com prazo-alvo já passado. Sem targetAt
+ * preenchido não entra — nunca fabricar atraso pra quem não tem prazo
+ * definido.
+ */
+export async function getImplantacaoResumo(orgId: string): Promise<ImplantacaoResumo> {
+  const [row] = await db.execute<{
+    ativas: number; ativas_novas_30d: number; aguardando_cliente: number; bloqueadas: number; atrasadas: number;
+  }>(sql`
+    WITH base AS (SELECT * FROM fulfillments WHERE organizacao_id = ${orgId})
+    SELECT
+      (SELECT COUNT(*)::int FROM base WHERE status NOT IN ('COMPLETED', 'CANCELED')) AS ativas,
+      (SELECT COUNT(*)::int FROM base WHERE status NOT IN ('COMPLETED', 'CANCELED') AND started_at >= now() - interval '30 days') AS ativas_novas_30d,
+      (SELECT COUNT(*)::int FROM base WHERE status = 'BLOCKED_CUSTOMER') AS aguardando_cliente,
+      (SELECT COUNT(*)::int FROM base WHERE status IN ('BLOCKED_INTERNAL', 'BLOCKED_PROVIDER')) AS bloqueadas,
+      (SELECT COUNT(*)::int FROM base WHERE status NOT IN ('COMPLETED', 'CANCELED') AND target_at IS NOT NULL AND target_at < now()) AS atrasadas
+  `);
+  return {
+    ativas: Number(row?.ativas || 0),
+    ativasNovas30d: Number(row?.ativas_novas_30d || 0),
+    aguardandoCliente: Number(row?.aguardando_cliente || 0),
+    bloqueadas: Number(row?.bloqueadas || 0),
+    atrasadas: Number(row?.atrasadas || 0),
+  };
+}
+
+export interface CsResumo {
+  clientesEmRisco: number;
+  tarefasAtrasadas: number;
+  renovacoesProximas30d: number;
+}
+
+/**
+ * CS — `clientesEmRisco` usa o critério JÁ CORRIGIDO de GET
+ * /clientes-crm2/resumo (linha ~40-49 daquele arquivo): fatura atrasada,
+ * ponto. NÃO usa os 3 sinais originais da fila de GET /clientes-crm2/sucesso
+ * (fatura atrasada OU sem próxima tarefa OU sem atividade há >=14 dias) —
+ * validado agora no Postgres dev (23/08) que aqueles 3 sinais devolvem
+ * 272 em risco pra uma base de 272 clientes ativos (100%, mesmo achado de
+ * ruído já documentado no comentário daquele arquivo: "sem próxima ação"
+ * tem 0% de cobertura, "sem atividade" flagra a maioria da base). Um
+ * card executivo com 100% "em risco" não informa nada — por isso usa a
+ * MESMA correção que o Kauã já aceitou pra /resumo (real: 13 clientes
+ * hoje), não um critério novo. `tarefasAtrasadas` é um recorte novo sobre
+ * o MESMO join leads→empresa já usado em `proxima_tarefa_agg` daquela
+ * rota (tarefa vinculada a lead de empresa cliente ativa), só trocando
+ * "vence no futuro" por "já venceu". `renovacoesProximas30d` reusa 1:1
+ * `getCalendarioRenovacao` (mesma função que já alimenta o Financeiro/
+ * metricas.ts), `dias=30` em vez do padrão 90 — "próximas" pede uma
+ * janela mais curta que o alerta geral do calendário.
+ */
+export async function getCsResumo(orgId: string): Promise<CsResumo> {
+  const [row] = await db.execute<{ em_risco: number; tarefas_atrasadas: number }>(sql`
+    WITH clientes_ativos AS (
+      SELECT DISTINCT sc.empresa_id
+      FROM servicos_canonicos sc
+      JOIN empresas e ON e.id = sc.empresa_id AND e.organizacao_id = ${orgId}
+      WHERE sc.portfolio_included = true AND sc.empresa_id IS NOT NULL
+    ),
+    faturas_atrasadas AS (
+      SELECT COALESCE(f.empresa_id, a.empresa_id) AS empresa_id, COUNT(*)::int AS n
+      FROM faturas f
+      LEFT JOIN assinaturas a ON a.id = f.assinatura_id
+      WHERE f.status = 'aberta' AND COALESCE(f.vencimento, f.emitida_em) < now()
+      GROUP BY 1
+    )
+    SELECT
+      (SELECT COUNT(*)::int
+        FROM clientes_ativos ca
+        JOIN faturas_atrasadas fa ON fa.empresa_id = ca.empresa_id
+        WHERE fa.n > 0
+      ) AS em_risco,
+      (SELECT COUNT(*)::int
+        FROM tarefas t
+        JOIN leads l ON l.id = t.lead_id
+        WHERE l.empresa_id IN (SELECT empresa_id FROM clientes_ativos)
+          AND t.concluida = false AND t.vence_em IS NOT NULL AND t.vence_em < now()
+      ) AS tarefas_atrasadas
+  `);
+
+  const renovacoes = await getCalendarioRenovacao(orgId, 30);
+  return {
+    clientesEmRisco: Number(row?.em_risco || 0),
+    tarefasAtrasadas: Number(row?.tarefas_atrasadas || 0),
+    renovacoesProximas30d: renovacoes.length,
+  };
+}
+
+export interface FinanceiroResumo {
+  recebidoMes: number;
+  emAberto: number;
+  atrasadoValor: number;
+  atrasadoCount: number;
+}
+
+/**
+ * Financeiro — `recebidoMes`/`emAberto` reusam 1:1 `getFluxoMes` (mesma
+ * função que já alimenta a aba Visão Geral do Financeiro em
+ * lib/financeiro/metricas.ts). `atrasadoValor`/`atrasadoCount` são um
+ * recorte novo, mas sobre o MESMO critério de "atrasada" repetido em todo
+ * o resto do projeto (`status='aberta' AND COALESCE(vencimento,emitida_em)
+ * < now()`, ver clientes-crm2.ts/clientes-financeiro.ts) — é o subconjunto
+ * vencido dentro de `emAberto`, nunca um valor paralelo.
+ */
+export async function getFinanceiroResumo(orgId: string): Promise<FinanceiroResumo> {
+  const fluxo = await getFluxoMes(orgId);
+  const [row] = await db.execute<{ n: number; valor: string }>(sql`
+    SELECT COUNT(*)::int AS n, COALESCE(SUM(f.valor), 0) AS valor
+    FROM faturas f
+    WHERE f.organizacao_id = ${orgId} AND f.status = 'aberta' AND COALESCE(f.vencimento, f.emitida_em) < now()
+  `);
+  return {
+    recebidoMes: fluxo.recebidoMes,
+    emAberto: fluxo.emAberto,
+    atrasadoValor: Number(row?.valor || 0),
+    atrasadoCount: Number(row?.n || 0),
+  };
 }

@@ -15,6 +15,7 @@ interface CatalogoItem {
 interface ItemCarrinho {
   servicoCatalogoId: string; nome: string; tipo: string; quantidade: number; valorUnitario: number;
 }
+interface Signatario { nome: string; email: string; papel: string; ordem: number }
 
 const CATEGORIA_LABEL: Record<string, string> = { callface_ai: "Callface AI", pabx: "PABX", white_label: "White Label" };
 
@@ -38,8 +39,10 @@ export function Cf2NovaPropostaWorkspace() {
   const [categoriaAtiva, setCategoriaAtiva] = useState<string | null>(null);
   const [carrinho, setCarrinho] = useState<ItemCarrinho[]>([]);
   const [condicoesPagamento, setCondicoesPagamento] = useState("");
+  const [prazoContratoMeses, setPrazoContratoMeses] = useState("");
   const [dataValidade, setDataValidade] = useState("");
   const [observacoes, setObservacoes] = useState("");
+  const [signatarios, setSignatarios] = useState<Signatario[]>([{ nome: "", email: "", papel: "Signatário", ordem: 1 }]);
   const [herdouServicos, setHerdouServicos] = useState(false);
   const [carregouEdicao, setCarregouEdicao] = useState(false);
 
@@ -102,8 +105,10 @@ export function Cf2NovaPropostaWorkspace() {
       servicoCatalogoId: i.servicoCatalogoId || i.nome, nome: i.nome, tipo: i.tipo, quantidade: parseFloat(i.quantidade), valorUnitario: parseFloat(i.valorUnitario),
     })));
     setCondicoesPagamento(propostaEditando.condicoesPagamento || "");
+    setPrazoContratoMeses(propostaEditando.prazoContratoMeses ? String(propostaEditando.prazoContratoMeses) : "");
     setDataValidade(propostaEditando.dataValidade || "");
     setObservacoes(propostaEditando.observacoes || "");
+    setSignatarios(Array.isArray(propostaEditando.signatarios) && propostaEditando.signatarios.length > 0 ? propostaEditando.signatarios.map((s: Partial<Signatario>, i: number) => ({ nome: s.nome || "", email: s.email || "", papel: s.papel || "Signatário", ordem: s.ordem || i + 1 })) : [{ nome: "", email: "", papel: "Signatário", ordem: 1 }]);
     setHerdouServicos(true);
     setCarregouEdicao(true);
   }, [propostaEditando, carregouEdicao]);
@@ -178,6 +183,9 @@ export function Cf2NovaPropostaWorkspace() {
   const totalRecorrente = carrinho.filter((i) => i.tipo === "recorrente").reduce((s, i) => s + calcSubtotal(i.quantidade, i.valorUnitario), 0);
   const totalAvulso = carrinho.filter((i) => i.tipo !== "recorrente").reduce((s, i) => s + calcSubtotal(i.quantidade, i.valorUnitario), 0);
   const totalGeral = totalRecorrente + totalAvulso;
+  const exigeContrato = carrinho.some((i) => catalogo.find((c) => c.id === i.servicoCatalogoId)?.requerContrato);
+  const signatariosValidos = signatarios.filter((s) => s.nome.trim() && s.email.trim()).map((s, i) => ({ ...s, papel: s.papel.trim() || "Signatário", ordem: s.ordem || i + 1 }));
+  const prazoContratoValido = !exigeContrato || (Number.isInteger(Number(prazoContratoMeses)) && Number(prazoContratoMeses) > 0);
 
   // Commercial Core v3 (ADR-EXEC-022): preview client-side de quantas
   // oportunidades essa composição vai virar — categoria do catálogo mapeia
@@ -221,8 +229,10 @@ export function Cf2NovaPropostaWorkspace() {
           method: "PATCH", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             condicoesPagamento: condicoesPagamento || undefined,
+            prazoContratoMeses: prazoContratoMeses ? Number(prazoContratoMeses) : undefined,
             dataValidade: dataValidade || undefined,
             observacoes: observacoes || undefined,
+            signatarios: signatariosValidos,
             itens: carrinho.map((i) => ({ servicoCatalogoId: i.servicoCatalogoId, nome: i.nome, tipo: i.tipo, quantidade: i.quantidade, valorUnitario: i.valorUnitario })),
           }),
         });
@@ -242,8 +252,10 @@ export function Cf2NovaPropostaWorkspace() {
           leadId: leadSelecionado!.id,
           negocioId: negocioId || undefined,
           condicoesPagamento: condicoesPagamento || undefined,
+          prazoContratoMeses: prazoContratoMeses ? Number(prazoContratoMeses) : undefined,
           dataValidade: dataValidade || undefined,
           observacoes: observacoes || undefined,
+          signatarios: signatariosValidos,
           itens: carrinho.map((i) => ({ servicoCatalogoId: i.servicoCatalogoId, nome: i.nome, tipo: i.tipo, quantidade: i.quantidade, valorUnitario: i.valorUnitario })),
         }),
       });
@@ -339,8 +351,8 @@ export function Cf2NovaPropostaWorkspace() {
             <Save className="w-3.5 h-3.5" /> {propostaIdEditando ? "Salvar alterações" : "Salvar rascunho"}
           </button>
           <button
-            onClick={() => salvarMutation.mutate(true)} disabled={carrinho.length === 0 || salvarMutation.isPending || semEmail}
-            title={semEmail ? "O lead não tem e-mail cadastrado — preencha antes de enviar" : undefined}
+            onClick={() => salvarMutation.mutate(true)} disabled={carrinho.length === 0 || salvarMutation.isPending || semEmail || (exigeContrato && signatariosValidos.length === 0) || !prazoContratoValido}
+            title={semEmail ? "O lead não tem e-mail cadastrado — preencha antes de enviar" : exigeContrato && signatariosValidos.length === 0 ? "Informe os signatários antes de enviar" : exigeContrato && !prazoContratoValido ? "Informe o prazo do contrato em meses" : undefined}
             className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-[13px] font-semibold disabled:opacity-40"
             style={{ background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" }}
           >
@@ -480,9 +492,30 @@ export function Cf2NovaPropostaWorkspace() {
                     <p className="text-[11px]" style={{ color: "var(--cf2-text-secondary)" }}>Um ou mais itens exigem contrato após aceite</p>
                   </div>
                 )}
+                {exigeContrato && (
+                  <div className="mt-2 pt-2" style={{ borderTop: "1px solid var(--cf2-border-default)" }}>
+                    <p className="text-[11px] font-bold mb-1" style={{ color: "var(--cf2-text-primary)" }}>Signatários do contrato</p>
+                    <p className="text-[10px] mb-2" style={{ color: "var(--cf2-text-secondary)" }}>Informe antes do envio quem assina, o papel e a ordem. Exemplos: representante legal, vendedor, testemunha.</p>
+                    <div className="flex items-center gap-2 mb-2">
+                      <label className="text-[10px] font-semibold whitespace-nowrap" style={{ color: "var(--cf2-text-secondary)" }}>Vigência do contrato</label>
+                      <input type="number" min={1} value={prazoContratoMeses} onChange={(e) => setPrazoContratoMeses(e.target.value)} placeholder="meses" className="w-24 text-[11px] px-2 py-1.5 rounded outline-none" style={{ background: "var(--cf2-bg-surface-muted)", border: `1px solid ${exigeContrato && !prazoContratoValido ? "var(--cf2-danger-text)" : "var(--cf2-border-default)"}` }} />
+                    </div>
+                    {signatarios.map((s, idx) => (
+                      <div key={idx} className="flex gap-1.5 mb-1.5">
+                        <input value={s.nome} onChange={(e) => setSignatarios((prev) => prev.map((x, i) => i === idx ? { ...x, nome: e.target.value } : x))} placeholder="Nome completo" className="min-w-0 flex-1 text-[11px] px-2 py-1.5 rounded outline-none" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }} />
+                        <input type="email" value={s.email} onChange={(e) => setSignatarios((prev) => prev.map((x, i) => i === idx ? { ...x, email: e.target.value } : x))} placeholder="E-mail" className="min-w-0 flex-1 text-[11px] px-2 py-1.5 rounded outline-none" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }} />
+                        <input value={s.papel} onChange={(e) => setSignatarios((prev) => prev.map((x, i) => i === idx ? { ...x, papel: e.target.value } : x))} placeholder="Papel (ex.: testemunha)" className="w-32 text-[11px] px-2 py-1.5 rounded outline-none" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }} />
+                        <input type="number" min={1} value={s.ordem} onChange={(e) => setSignatarios((prev) => prev.map((x, i) => i === idx ? { ...x, ordem: Math.max(1, Number(e.target.value) || 1) } : x))} title="Ordem de assinatura" className="w-10 text-[11px] px-2 py-1.5 rounded outline-none" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }} />
+                        {signatarios.length > 1 && <button type="button" onClick={() => setSignatarios((prev) => prev.filter((_, i) => i !== idx))} aria-label="Remover signatário" style={{ color: "var(--cf2-danger-text)" }}>×</button>}
+                      </div>
+                    ))}
+                    <button type="button" onClick={() => setSignatarios((prev) => [...prev, { nome: "", email: "", papel: "Signatário", ordem: prev.length + 1 }])} className="text-[10px] font-semibold" style={{ color: "var(--cf2-accent-border)" }}>+ Adicionar signatário</button>
+                  </div>
+                )}
               </div>
             )}
             <input value={condicoesPagamento} onChange={(e) => setCondicoesPagamento(e.target.value)} placeholder="Condições de pagamento" className="w-full text-[12px] px-2.5 py-2 rounded-lg outline-none mb-2" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }} />
+            <label className="block text-[10px] mb-1" style={{ color: "var(--cf2-text-secondary)" }}>Validade da proposta</label>
             <input type="date" value={dataValidade} onChange={(e) => setDataValidade(e.target.value)} className="w-full text-[12px] px-2.5 py-2 rounded-lg outline-none mb-2" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }} />
             <textarea value={observacoes} onChange={(e) => setObservacoes(e.target.value)} placeholder="Observações" rows={2} className="w-full text-[12px] px-2.5 py-2 rounded-lg outline-none resize-none" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }} />
           </Cf2Card>

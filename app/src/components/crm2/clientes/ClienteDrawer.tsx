@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Building2, ArrowUpRight, Phone, Mail, MessageCircle, Calendar, StickyNote, CheckSquare, FileText } from "lucide-react";
+import { Building2, ArrowUpRight, Phone, Mail, MessageCircle, Calendar, StickyNote, CheckSquare, FileText, Download } from "lucide-react";
 import { DetailDrawer } from "@/components/crm/DetailDrawer";
 import { useOrgUsuarios } from "@/components/crm/BoardFilters";
 import { AssignOwnerControl } from "@/components/crm2/shared/AssignOwnerControl";
@@ -18,6 +18,23 @@ interface Servico {
 }
 interface Atividade { id: string; tipo: string; titulo: string | null; createdAt: string; autorNome: string | null; pessoaNome: string | null }
 interface ProximaAcao { id: string; titulo: string; venceEm: string | null; usuarioNome: string | null }
+interface ContratoCliente {
+  id: string;
+  tipo: string;
+  descricao: string | null;
+  status: string;
+  mrr: string | null;
+  currentRecurringValue: string | null;
+  inicio: string | null;
+  vencimento: string | null;
+  temCorpoGerado: boolean;
+}
+interface AnexoLegado {
+  id: string;
+  entidadeId: string;
+  nomeArquivo: string;
+  arquivoDisponivel: boolean;
+}
 interface ClienteDetalhe {
   empresa: { id: string; nome: string; setor: string | null; cnpj: string | null; porte: string | null };
   servicos: Servico[];
@@ -30,6 +47,8 @@ interface ClienteDetalhe {
   proximasAcoes: ProximaAcao[];
   atividadesRecentes: Atividade[];
   mrrMensal: { mes: string; valor: number }[];
+  contratoIds: string[];
+  contratos: ContratoCliente[];
 }
 
 const FAMILIA_LABEL: Record<string, string> = { CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label", UNKNOWN: "Não classificado" };
@@ -49,8 +68,18 @@ const CANAL_ICON: Record<string, React.ElementType> = {
 const brl = (v: string | number) => Number(v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const brlData = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString("pt-BR") : "—");
 
-const TABS = ["Visão geral", "Serviços", "Financeiro", "Atividades", "Riscos"] as const;
+const TABS = ["Visão geral", "Serviços", "Contratos", "Financeiro", "Atividades", "Riscos"] as const;
 type Tab = (typeof TABS)[number];
+
+const CONTRATO_STATUS_LABEL: Record<string, string> = {
+  ativo: "Ativo", pausado: "Pausado", concluido: "Concluído", churned: "Churned",
+  cancelado: "Cancelado", renovado: "Renovado", pendente_assinatura: "Pendente de assinatura",
+};
+const CONTRATO_STATUS_COLOR: Record<string, string> = {
+  ativo: "var(--cf2-success-text)", renovado: "var(--cf2-success-text)",
+  pausado: "var(--cf2-warning-text, #d97706)", pendente_assinatura: "var(--cf2-warning-text, #d97706)",
+  churned: "var(--cf2-danger-text)", cancelado: "var(--cf2-danger-text)",
+};
 
 /**
  * Drawer lateral de Clientes/Carteira (referência de UX do Kauã, 18/08) —
@@ -86,6 +115,20 @@ export function Cf2ClienteDrawer({ empresaId, open, onClose }: { empresaId: stri
   const atividadesRecentes = data?.atividadesRecentes ?? [];
   const proximasAcoes = data?.proximasAcoes ?? [];
   const mrrMensal = data?.mrrMensal ?? [];
+  const contratos = data?.contratos ?? [];
+  const contratoIds = data?.contratoIds ?? [];
+
+  const { data: anexosContrato = [], isLoading: anexosLoading } = useQuery<AnexoLegado[]>({
+    queryKey: ["anexos-legado-cliente-drawer", empresaId, contratoIds.join(",")],
+    queryFn: async () => {
+      if (contratoIds.length === 0) return [];
+      const r = await fetch(`/api/anexos-legado?entidadeTipo=contrato&entidadeIds=${contratoIds.join(",")}`);
+      if (!r.ok) return [];
+      const body = await r.json();
+      return (body.anexos || []) as AnexoLegado[];
+    },
+    enabled: !!empresaId && open && contratoIds.length > 0,
+  });
 
   return (
     <DetailDrawer
@@ -165,6 +208,14 @@ export function Cf2ClienteDrawer({ empresaId, open, onClose }: { empresaId: stri
                   </div>
                 </Secao>
 
+                <Secao titulo={`Contratos (${contratos.length})`} acao={{ label: "Ver contratos", onClick: () => setTab("Contratos") }}>
+                  <div className="flex flex-col gap-2">
+                    {contratos.slice(0, 3).map((contrato) => <ContratoRow key={contrato.id} contrato={contrato} anexos={anexosContrato} />)}
+                    {contratos.length === 0 && <p className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhum contrato vinculado a este cliente.</p>}
+                    {contratos.length > 3 && <button onClick={() => setTab("Contratos")} className="text-left text-[11px] font-semibold" style={{ color: "var(--cf2-accent-border)" }}>+ {contratos.length - 3} contrato(s)</button>}
+                  </div>
+                </Secao>
+
                 <Secao titulo="Últimas atividades" acao={{ label: "Ver todas", onClick: () => setTab("Atividades") }}>
                   <div className="flex flex-col gap-2">
                     {atividadesRecentes.slice(0, 4).map((a) => <AtividadeRow key={a.id} atividade={a} />)}
@@ -194,6 +245,18 @@ export function Cf2ClienteDrawer({ empresaId, open, onClose }: { empresaId: stri
               <div className="flex flex-col gap-2">
                 {servicos.map((s) => <ServicoRow key={s.id} servico={s} />)}
                 {servicos.length === 0 && <p className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhum serviço encontrado.</p>}
+              </div>
+            )}
+
+            {tab === "Contratos" && (
+              <div className="flex flex-col gap-3">
+                <div>
+                  <p className="text-[11px] font-bold uppercase" style={{ color: "var(--cf2-text-tertiary)" }}>Contratos do cliente</p>
+                  <p className="text-[12px] mt-1" style={{ color: "var(--cf2-text-secondary)" }}>Contratos canônicos e documentos históricos recuperados do Zoho.</p>
+                </div>
+                {contratos.map((contrato) => <ContratoRow key={contrato.id} contrato={contrato} anexos={anexosContrato} />)}
+                {anexosLoading && contratos.length > 0 && <p className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>Verificando arquivos históricos...</p>}
+                {contratos.length === 0 && <p className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhum contrato vinculado a este cliente.</p>}
               </div>
             )}
 
@@ -279,6 +342,43 @@ function ServicoRow({ servico }: { servico: Servico }) {
         <p className="text-[11px]" style={{ color: "var(--cf2-text-secondary)" }}>{servico.portfolioIncluded ? "Ativo" : servico.commercialLifecycle}</p>
       </div>
       <p className="text-[12px] font-bold shrink-0" style={{ color: "var(--cf2-success-text)" }}>{brl(servico.currentRecurringValue)}</p>
+    </div>
+  );
+}
+
+function ContratoRow({ contrato, anexos }: { contrato: ContratoCliente; anexos: AnexoLegado[] }) {
+  const anexo = anexos.find((item) => item.entidadeId === contrato.id);
+  const documento = contrato.temCorpoGerado ? (
+    <a href={`/api/contratos/${contrato.id}/pdf`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] underline" style={{ color: "var(--cf2-text-secondary)" }}>
+      <FileText className="w-3 h-3" /> Ver contrato
+    </a>
+  ) : anexo?.arquivoDisponivel ? (
+    <a href={`/api/anexos-legado/${anexo.id}/download`} className="inline-flex items-center gap-1 text-[11px] underline" style={{ color: "var(--cf2-text-secondary)" }}>
+      <Download className="w-3 h-3" /> {anexo.nomeArquivo || "Baixar histórico Zoho"}
+    </a>
+  ) : anexo ? (
+    <span className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>{anexo.nomeArquivo} · indisponível</span>
+  ) : (
+    <span className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>Sem documento</span>
+  );
+
+  return (
+    <div className="flex flex-col gap-2 p-3 rounded-xl" style={{ background: "var(--cf2-bg-surface-muted)" }}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[12px] font-bold truncate" style={{ color: "var(--cf2-text-primary)" }}>{contrato.descricao || contrato.tipo || "Contrato"}</p>
+          <p className="text-[11px] mt-0.5" style={{ color: "var(--cf2-text-secondary)" }}>
+            <span style={{ color: CONTRATO_STATUS_COLOR[contrato.status] || "var(--cf2-text-secondary)" }}>{CONTRATO_STATUS_LABEL[contrato.status] || contrato.status}</span>
+            {contrato.mrr || contrato.currentRecurringValue ? ` · ${brl(contrato.mrr || contrato.currentRecurringValue || "0")}/mês` : ""}
+          </p>
+        </div>
+        <FileText className="w-4 h-4 shrink-0" style={{ color: "var(--cf2-text-tertiary)" }} />
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <Campo label="Início" valor={brlData(contrato.inicio)} />
+        <Campo label="Vencimento" valor={brlData(contrato.vencimento)} />
+      </div>
+      {documento}
     </div>
   );
 }

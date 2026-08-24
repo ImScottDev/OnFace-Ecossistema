@@ -3,8 +3,10 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Check, Clock, Circle, AlertTriangle } from "lucide-react";
+import { Check, Clock, Circle, AlertTriangle, ShieldCheck } from "lucide-react";
 import { DetailDrawer } from "@/components/crm/DetailDrawer";
+import { useOrgUsuarios } from "@/components/crm/BoardFilters";
+import { AssignOwnerControl } from "@/components/crm2/shared/AssignOwnerControl";
 
 interface ItemMetadata {
   estagioPedagogico?: string[];
@@ -15,12 +17,14 @@ interface Item {
   id: string;
   workstream: string;
   titulo: string;
-  status: "PENDING" | "IN_PROGRESS" | "BLOCKED" | "DONE";
+  status: "PENDING" | "IN_PROGRESS" | "BLOCKED" | "VALIDATION" | "DONE";
   blockerType: string | null;
   blockerReason: string | null;
   metadata?: ItemMetadata | null;
   completedAt: string | null;
   completedByNome: string | null;
+  responsavelId?: string | null;
+  responsavelNome?: string | null;
 }
 
 const WORKSTREAM_LABEL: Record<string, string> = {
@@ -33,9 +37,12 @@ const WORKSTREAM_LABEL: Record<string, string> = {
 };
 
 const STATUS_OPTIONS: { value: Item["status"]; label: string; icon: React.ElementType; color: string }[] = [
-  { value: "PENDING", label: "Pendente", icon: Circle, color: "var(--cf2-text-tertiary)" },
+  { value: "PENDING", label: "Não iniciado", icon: Circle, color: "var(--cf2-text-tertiary)" },
   { value: "IN_PROGRESS", label: "Em andamento", icon: Clock, color: "var(--cf2-accent-border)" },
   { value: "BLOCKED", label: "Bloqueado", icon: AlertTriangle, color: "var(--cf2-danger-text)" },
+  // VALIDATION (20/08, pedido Kauã) — estado real distinto de DONE, pra
+  // itens já feitos que ainda dependem de validação antes de fechar.
+  { value: "VALIDATION", label: "Validação", icon: ShieldCheck, color: "#8e27ef" },
   { value: "DONE", label: "Concluído", icon: Check, color: "var(--cf2-success-text)" },
 ];
 
@@ -51,8 +58,9 @@ const BLOCKER_TYPE_LABEL: Record<string, string> = { CUSTOMER: "Aguardando clien
  * motivo, mesmo a seção "Pendências principais" já exibindo esse motivo
  * quando existia — inconsistência real corrigida aqui).
  */
-export function Cf2FulfillmentItemDrawer({ item, fulfillmentId, open, onClose }: { item: Item | null; fulfillmentId: string; open: boolean; onClose: () => void }) {
+export function Cf2FulfillmentItemDrawer({ item, fulfillmentId, open, onClose, fulfillmentResponsavelId }: { item: Item | null; fulfillmentId: string; open: boolean; onClose: () => void; fulfillmentResponsavelId?: string | null }) {
   const qc = useQueryClient();
+  const { byId: usuariosById } = useOrgUsuarios();
   const [status, setStatus] = useState<Item["status"]>("PENDING");
   const [blockerType, setBlockerType] = useState<string>("INTERNAL");
   const [blockerReason, setBlockerReason] = useState("");
@@ -90,6 +98,20 @@ export function Cf2FulfillmentItemDrawer({ item, fulfillmentId, open, onClose }:
           <p className="text-[11px] font-bold uppercase" style={{ color: "var(--cf2-text-tertiary)" }}>{WORKSTREAM_LABEL[item.workstream] || item.workstream}</p>
           <p className="text-[16px] font-bold mt-1" style={{ color: "var(--cf2-text-primary)" }}>{item.titulo}</p>
           {isMilestone && <p className="text-[11px] font-bold mt-1" style={{ color: "#8e27ef" }}>Primeiro valor · marco manual</p>}
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <p className="text-[11px] font-bold uppercase" style={{ color: "var(--cf2-text-tertiary)" }}>Responsável pelo item</p>
+          <AssignOwnerControl
+            entityType="fulfillment_item"
+            entityId={item.id}
+            currentOwnerId={item.responsavelId ?? fulfillmentResponsavelId}
+            usuarios={Array.from(usuariosById.values())}
+            onChanged={() => qc.invalidateQueries({ queryKey: ["cf2-fulfillment", fulfillmentId] })}
+          />
+          {!item.responsavelId && fulfillmentResponsavelId && (
+            <p className="text-[10px]" style={{ color: "var(--cf2-text-tertiary)" }}>Sem responsável próprio — usando o responsável do projeto.</p>
+          )}
         </div>
 
         <div className="flex flex-col gap-2">

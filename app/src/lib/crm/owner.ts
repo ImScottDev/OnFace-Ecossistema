@@ -13,7 +13,7 @@
 import { db } from "@/lib/db";
 import { auditLog } from "@/lib/db/schema";
 
-export type OwnerEntityType = "lead" | "negocio" | "pessoa" | "fulfillment" | "cliente";
+export type OwnerEntityType = "lead" | "negocio" | "pessoa" | "fulfillment" | "cliente" | "fulfillment_item";
 
 export async function registrarMudancaResponsavel(opts: {
   organizacaoId: string;

@@ -16,9 +16,11 @@ export type ScriptAtendimento = {
 
 export const SCRIPTS_CATEGORIA_LABEL: Record<string, string> = {
   pre_vendas: "Pré-vendas",
-  comercial: "Comercial",
-  entrega: "Entrega",
+  comercial_b2b: "Comercial B2B",
+  implantacao_entrega: "Implantação/Entrega",
+  onboarding: "Onboarding",
   cs: "CS",
+  cobranca_financeiro: "Cobrança/Financeiro",
   geral: "Geral",
 };
 

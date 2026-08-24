@@ -121,7 +121,7 @@ export function Cf2EntregaWorkspace({ familiaFixa }: { familiaFixa?: "PABX" | "C
         <div>
           <p className="text-[24px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>{familiaFixa ? FAMILIA_LABEL[familiaFixa] : "Entrega"}</p>
           <p className="text-[13px]" style={{ color: "var(--cf2-text-secondary)" }}>
-            {familiaFixa === "PABX" ? "Implantação PABX em andamento — nasce automaticamente após o Won." : familiaFixa === "CALLFACE_AI" ? "Onboarding Callface AI em andamento — nasce automaticamente após o Won." : "Implantação/onboarding em andamento — nasce automaticamente após o Won, checklist real por família."}
+            {familiaFixa === "CALLFACE_AI" ? "Onboarding Callface AI em andamento — nasce automaticamente após o Won." : "Implantação/onboarding em andamento — nasce automaticamente após o Won, checklist real por família."}
           </p>
         </div>
         <div className="flex items-center gap-2">

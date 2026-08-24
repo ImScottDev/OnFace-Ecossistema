@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { AlertTriangle } from "lucide-react";
 
-interface Conta {
+export interface Conta {
   id: string;
   nome: string;
   faturas_atrasadas: number;
@@ -18,7 +18,10 @@ function brl(v: string | number) {
   return `R$ ${Number(v || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-function motivos(c: Conta): string[] {
+// Exportado pro CS embutido no Cliente 360 (reestruturação 20/08) — MESMO
+// critério/motivo real usado na fila de atenção cross-cliente, nunca uma
+// segunda lógica pra "explicar" o sinal de um cliente específico.
+export function motivos(c: Conta): string[] {
   const m: string[] = [];
   if (c.faturas_atrasadas > 0) m.push(`${c.faturas_atrasadas} fatura${c.faturas_atrasadas > 1 ? "s" : ""} atrasada${c.faturas_atrasadas > 1 ? "s" : ""} (${brl(c.valor_atrasado)})`);
   if (c.dias_sem_atividade === null) m.push("Nenhuma atividade registrada");
@@ -28,7 +31,7 @@ function motivos(c: Conta): string[] {
 }
 
 /**
- * Clientes → Sucesso (19/08) — prioridade real do CS é visibilidade de
+ * Clientes → CS (rota legada `/clientes/sucesso`, 19/08) — prioridade real do CS é visibilidade de
  * cobrança/recovery, não Health Score (regra fechada do projeto: nunca
  * inventar score 0-100, sempre motivo explicável). Sinais usados são só os
  * que existem de verdade hoje: fatura atrasada, dias sem atividade, sem
@@ -51,7 +54,7 @@ export function Cf2SucessoWorkspace() {
   return (
     <div className="flex flex-col gap-5">
       <div>
-        <p className="text-[24px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Sucesso</p>
+        <p className="text-[24px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>CS</p>
         <p className="text-[13px]" style={{ color: "var(--cf2-text-secondary)" }}>Fila de atenção — cobrança/recovery é prioridade imediata. Motivo real sempre explicado, nunca um score sozinho.</p>
       </div>
 

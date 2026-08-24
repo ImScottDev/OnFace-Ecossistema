@@ -106,7 +106,7 @@ export function Cf2ContextPanel({ conversa, contexto, loading }: { conversa: Con
             <div className="flex gap-2">
               {conversa.leadId && (
                 <a href={`/leads/${conversa.leadId}`} className="flex items-center justify-center gap-1.5 flex-1 py-1.5 rounded-lg text-[11px] font-semibold" style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-primary)" }}>
-                  <Pencil className="w-3 h-3" /> Editar
+                  <Pencil className="w-3 h-3" /> Editar lead (legado)
                 </a>
               )}
               {contexto.pessoa.telefone && (
@@ -138,7 +138,7 @@ export function Cf2ContextPanel({ conversa, contexto, loading }: { conversa: Con
                 </div>
                 <div className="min-w-0">
                   <p className="text-[14px] font-bold truncate" style={{ color: "var(--cf2-text-primary)" }}>{contexto.empresa.nome}</p>
-                  <p className="text-[11px] truncate" style={{ color: "var(--cf2-text-secondary)" }}>Ver CNPJ, porte e segmento na aba Detalhes</p>
+                  <p className="text-[11px] truncate" style={{ color: "var(--cf2-text-secondary)" }}>Ver empresa (tela legada) · CNPJ, porte e segmento</p>
                 </div>
               </a>
             </div>

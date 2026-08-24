@@ -15,6 +15,10 @@ const createAutomacaoSchema = z.object({
     "contrato_vencendo",
     "whatsapp_recebido",
     "nps_recebido",
+    "pagamento_falhou",
+    "fatura_atrasada",
+    "fatura_paga",
+    "assinatura_status_alterado",
   ]),
   condicao: z.object({
     campo: z.string().optional(),
@@ -28,6 +32,8 @@ const createAutomacaoSchema = z.object({
     "atribuir_responsavel",
     "mudar_status",
     "enviar_whatsapp",
+    "adicionar_tag_empresa",
+    "remover_tag_empresa",
   ]),
   acaoConfig: z.object({
     templateId: z.string().uuid().optional(),
@@ -39,6 +45,7 @@ const createAutomacaoSchema = z.object({
     mensagem: z.string().optional(),
     diasInatividade: z.number().int().positive().optional(),
     diasAntesVencimento: z.number().int().positive().optional(),
+    tag: z.string().min(1).max(80).optional(),
   }).optional().nullable(),
   ativo: z.boolean().default(true),
 });
@@ -53,6 +60,10 @@ const updateAutomacaoSchema = z.object({
     "contrato_vencendo",
     "whatsapp_recebido",
     "nps_recebido",
+    "pagamento_falhou",
+    "fatura_atrasada",
+    "fatura_paga",
+    "assinatura_status_alterado",
   ]).optional(),
   condicao: z.object({
     campo: z.string().optional(),
@@ -66,6 +77,8 @@ const updateAutomacaoSchema = z.object({
     "atribuir_responsavel",
     "mudar_status",
     "enviar_whatsapp",
+    "adicionar_tag_empresa",
+    "remover_tag_empresa",
   ]).optional(),
   acaoConfig: z.object({
     templateId: z.string().uuid().optional(),
@@ -77,6 +90,7 @@ const updateAutomacaoSchema = z.object({
     mensagem: z.string().optional(),
     diasInatividade: z.number().int().positive().optional(),
     diasAntesVencimento: z.number().int().positive().optional(),
+    tag: z.string().min(1).max(80).optional(),
   }).optional().nullable(),
   ativo: z.boolean().optional(),
 });

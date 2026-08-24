@@ -15,8 +15,18 @@ import { eq, asc, and } from "drizzle-orm";
 import { sendResendEmail } from "@/lib/email/resend";
 import { buildPropostaEmail } from "@/lib/email/proposta-email";
 import { publicarEvento } from "@/lib/events/outbox";
+import { syncOportunidadeItensFromProposta } from "@/lib/crm/composicao-comercial";
+import { formarGruposComerciais, vincularContratoPreparadoAoGrupo } from "@/lib/crm/grupo-comercial";
+import { exigeContrato } from "@/lib/crm/commercial-model";
+import { gerarContratoDeTemplate } from "@/lib/crm/contrato-template";
 
 type PropostaRow = typeof propostas.$inferSelect;
+
+function validadePadraoIso(): string {
+  const data = new Date();
+  data.setUTCDate(data.getUTCDate() + 10);
+  return data.toISOString().slice(0, 10);
+}
 
 export type EnviarPropostaResult =
   | {
@@ -60,12 +70,39 @@ export async function enviarPropostaComCheckout(opts: {
   }
 
   const itens = await db
-    .select({ nome: propostaItens.nome, tipo: propostaItens.tipo, subtotal: propostaItens.subtotal })
+    .select({ nome: propostaItens.nome, tipo: propostaItens.tipo, subtotal: propostaItens.subtotal, commercialModel: propostaItens.commercialModel })
     .from(propostaItens)
     .where(eq(propostaItens.propostaId, propostaId))
     .orderBy(asc(propostaItens.ordem));
 
+  const propostaExigeContrato = itens.some((item) => item.commercialModel !== "PAGAMENTO_DIRETO");
+  const signatarios = Array.isArray(proposta.signatarios) ? proposta.signatarios : [];
+  if (propostaExigeContrato && signatarios.length === 0) {
+    return { ok: false, status: 400, error: "Informe ao menos um signatário antes de enviar esta proposta contratual." };
+  }
+  if (propostaExigeContrato && (!proposta.prazoContratoMeses || proposta.prazoContratoMeses < 1)) {
+    return { ok: false, status: 400, error: "Informe o prazo do contrato em meses antes de enviar esta proposta." };
+  }
+
+  // Prepara grupos e contratos ANTES de tornar a proposta pública. Nenhuma
+  // assinatura é distribuída aqui; isso só ocorre depois de ProposalAccepted.
+  // Assim não existe a tarefa manual "gerar contrato" após o aceite.
+  if (propostaExigeContrato) {
+    await syncOportunidadeItensFromProposta(propostaId);
+    const grupos = await formarGruposComerciais(propostaId);
+    for (const grupo of grupos) {
+      if (!exigeContrato(grupo.commercialModel) || grupo.contratoId) continue;
+      const { contratoId } = await gerarContratoDeTemplate(grupo.id);
+      await vincularContratoPreparadoAoGrupo(grupo.id, contratoId);
+      await publicarEvento({ organizacaoId, eventType: "ContractGenerated", aggregateType: "contrato", aggregateId: contratoId, payload: { propostaId, negocioId: proposta.negocioId, grupoComercialId: grupo.id, preparadoAntesDoEnvio: true }, idempotencyKey: `contract-generated:${contratoId}` });
+    }
+  }
+
   const totalRecorrente = parseFloat(proposta.totalRecorrente || "0");
+  // O PDF/email histórico já informava "10 dias após o recebimento" quando
+  // o vendedor não preenchia uma data. Materializamos essa regra no registro
+  // no momento do envio para que exibição, worker e aceite usem a mesma data.
+  const dataValidadeEfetiva = proposta.dataValidade || validadePadraoIso();
   const base = process.env.NEXTAUTH_URL || "https://crm.callface.io";
   const clienteNome = [lead?.nome, lead?.sobrenome].filter(Boolean).join(" ") || lead?.nome || "";
   const linkPublico = `${base}/p/${proposta.id}`;
@@ -83,7 +120,7 @@ export async function enviarPropostaComCheckout(opts: {
       itens: itens.map((i) => ({ nome: i.nome, tipo: i.tipo, subtotal: parseFloat(i.subtotal || "0") })),
       totalRecorrente,
       checkoutUrl: linkPublico,
-      validade: proposta.dataValidade,
+      validade: dataValidadeEfetiva,
       remetenteNome: userName ?? null,
     });
     emailResult = await sendResendEmail({ to: lead.email, subject, html });
@@ -95,6 +132,7 @@ export async function enviarPropostaComCheckout(opts: {
     .set({
       status: "enviada",
       dataEmissao: proposta.dataEmissao || today,
+      dataValidade: dataValidadeEfetiva,
       enviadaEm: proposta.enviadaEm || new Date(),
       updatedAt: new Date(),
     })

@@ -5,6 +5,8 @@ import { desc, eq, and, sql, SQL } from "drizzle-orm";
 import { z } from "zod";
 import { getCtx } from "../compat.js";
 import { contratoPdfHtml, renderContratoPdf } from "@/lib/crm/contrato-pdf";
+import { baixarDocumentoAssinado, isDocumensoConfigured } from "@/lib/crm/signature/documenso-provider";
+import { enviarEmailFinalContrato } from "@/lib/crm/contrato-email-final";
 
 const app = new Hono();
 
@@ -65,6 +67,10 @@ app.get("/contratos", async (c) => {
       notas: contratos.notas,
       createdAt: contratos.createdAt,
       updatedAt: contratos.updatedAt,
+      emailEntrega: contratos.emailEntrega,
+      documentoFinalUrl: contratos.documentoFinalUrl,
+      signatureStatus: contratos.signatureStatus,
+      signatarios: contratos.signatarios,
       leadNome: leads.nome,
       leadEmpresa: leads.empresa,
     })
@@ -198,7 +204,7 @@ app.get("/contratos/:id/pdf", async (c) => {
 
   if (!ct) return c.json({ error: "Contrato não encontrado" }, 404);
 
-  const assinado = ct.signatureStatus === "signed" || ct.assinaturaStatus === "aceite_simples";
+  const assinado = ct.signatureStatus === "signed" || ["aceite_simples", "assinado"].includes(ct.assinaturaStatus);
   const html = contratoPdfHtml({
     descricao: ct.descricao,
     corpoGerado: ct.corpoGerado,
@@ -213,6 +219,58 @@ app.get("/contratos/:id/pdf", async (c) => {
   return new Response(new Uint8Array(pdf), {
     headers: { "Content-Type": "application/pdf", "Content-Disposition": `inline; filename="contrato-${id.slice(0, 8)}.pdf"` },
   });
+});
+
+// PDF final assinado pelo provider externo. O arquivo é buscado sob demanda
+// com a chave do servidor, nunca exposta ao navegador nem gravada em URL
+// pública do Documenso.
+app.get("/contratos/:id/pdf-final", async (c) => {
+  const ctx = await getCtx(c);
+  const id = c.req.param("id");
+  const [ct] = await db
+    .select({ id: contratos.id, providerRef: contratos.signatureProviderRef, assinaturaStatus: contratos.assinaturaStatus, leadNome: leads.nome, leadEmpresa: leads.empresa })
+    .from(contratos)
+    .innerJoin(leads, eq(contratos.leadId, leads.id))
+    .where(and(eq(contratos.id, id), eq(leads.organizacaoId, ctx.organizacaoId)))
+    .limit(1);
+  if (!ct) return c.json({ error: "Contrato não encontrado" }, 404);
+  if (!isDocumensoConfigured() || !ct.providerRef || ct.assinaturaStatus !== "assinado") {
+    return c.json({ error: "PDF final externo ainda não está disponível" }, 404);
+  }
+  try {
+    const { buffer, filename } = await baixarDocumentoAssinado(ct.providerRef);
+    return new Response(new Uint8Array(buffer), { headers: { "Content-Type": "application/pdf", "Content-Disposition": `inline; filename="${filename}"` } });
+  } catch (error) {
+    console.error(`[Contratos] falha ao baixar PDF final ${id}:`, error);
+    return c.json({ error: "Não foi possível obter o PDF final do provider" }, 502);
+  }
+});
+
+// POST /api/contratos/:id/email-final/retry — reprocessa somente a cópia
+// final; não reenvia assinatura, não altera status do contrato e deixa uma
+// atividade auditável. Útil quando Resend estava sem configuração ou falhou.
+app.post("/contratos/:id/email-final/retry", async (c) => {
+  const ctx = await getCtx(c);
+  const id = c.req.param("id");
+  const [contract] = await db
+    .select({
+      id: contratos.id,
+      organizacaoId: contratos.organizacaoId,
+      leadId: contratos.leadId,
+      negocioId: contratos.negocioId,
+      signatarios: contratos.signatarios,
+      emailEntrega: contratos.emailEntrega,
+      assinaturaStatus: contratos.assinaturaStatus,
+    })
+    .from(contratos)
+    .where(and(eq(contratos.id, id), eq(contratos.organizacaoId, ctx.organizacaoId)))
+    .limit(1);
+  if (!contract) return c.json({ error: "Contrato não encontrado" }, 404);
+  if (contract.assinaturaStatus !== "assinado") return c.json({ error: "O contrato ainda não está assinado" }, 409);
+
+  const base = process.env.NEXTAUTH_URL || "https://crm.callface.io";
+  const entrega = await enviarEmailFinalContrato({ contrato: contract, baseUrl: base, force: true });
+  return c.json({ contratoId: id, entrega });
 });
 
 // PATCH /api/contratos/:id

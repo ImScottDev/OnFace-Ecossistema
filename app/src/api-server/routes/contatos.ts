@@ -7,6 +7,7 @@ import { getCtx, parseBody } from "../compat.js";
 import { phoneLikePattern } from "@/lib/whatsapp/phone-utils";
 import { downloadAndSaveAvatar, sessionToConfig } from "@/lib/whatsapp/client";
 import { syncPessoaFromLead, syncOportunidadeFromNegocio } from "@/lib/crm/sync-domain-model";
+import { publicarEvento } from "@/lib/events/outbox";
 
 const app = new Hono();
 
@@ -103,6 +104,15 @@ app.post("/contatos/:id/atribuir", async (c) => {
     })
     .where(eq(contatos.id, id))
     .returning();
+
+  await publicarEvento({
+    organizacaoId: ctx.organizacaoId,
+    eventType: contato.responsavelId === targetUserId ? "ConversationClaimed" : "ConversationTransferred",
+    aggregateType: "contato",
+    aggregateId: id,
+    payload: { actorId: ctx.userId, usuarioAnteriorId: contato.responsavelId, usuarioId: targetUserId },
+    idempotencyKey: `contato:${id}:assignment:${updated.updatedAt?.getTime() ?? Date.now()}`,
+  });
 
   return c.json({ contato: updated });
 });

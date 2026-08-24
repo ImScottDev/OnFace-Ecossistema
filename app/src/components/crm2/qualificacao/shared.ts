@@ -12,10 +12,17 @@ export interface Lead {
   sobrenome?: string | null;
   email?: string | null;
   telefone?: string | null;
+  whatsapp?: string | null;
   empresa?: string | null;
   cargo?: string | null;
   origem?: string | null;
+  utmSource?: string | null;
+  utmMedium?: string | null;
   utmCampaign?: string | null;
+  utmContent?: string | null;
+  metaAdId?: string | null;
+  metaAdsetId?: string | null;
+  landingPage?: string | null;
   leadScore?: number | null;
   sdrStatus?: string | null;
   responsavelId?: string | null;
@@ -26,6 +33,8 @@ export interface Lead {
   createdAt?: string;
   updatedAt?: string;
   avatarUrl?: string | null;
+  lastContactAt?: string | null;
+  whatsappUltimaMsgAt?: string | null;
 }
 
 /**

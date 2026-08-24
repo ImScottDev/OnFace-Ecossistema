@@ -157,6 +157,10 @@ export const empresas = pgTable(
     canonicalEmpresaId: uuid("canonical_empresa_id").references((): AnyPgColumn => empresas.id),
     identityConfidence: text("identity_confidence"), // CONFIRMED | PROBABLE | AMBIGUOUS | UNRESOLVED
     identityEvidence: jsonb("identity_evidence"),
+    // Tags livres do Cliente 360 (mockup 20/08) — campo novo, aditivo.
+    // Nasce vazio pra toda empresa; nunca populado automaticamente/em
+    // massa, só via ação manual do usuário (PATCH /clientes-crm2/:id/tags).
+    tags: text("tags").array().default([]),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
@@ -463,6 +467,15 @@ export const negocios = pgTable(
     motivoPerda: text("motivo_perda"),
     motivoPerdaDetalhe: text("motivo_perda_detalhe"),
     origemNegocio: text("origem_negocio").default("novo").notNull(), // 'novo' | 'carteira'
+    // Commercial motion (item 4 do gap de carteira, 20/08): NEW_BUSINESS |
+    // EXPANSION | RENEWAL | REACTIVATION. Backfill real na migração: só
+    // origemNegocio='carteira' virou REACTIVATION (sinal real de que o
+    // negócio nasceu de uma empresa já cliente saindo do portfólio); todo o
+    // resto ficou NEW_BUSINESS. EXPANSION/RENEWAL não têm sinal retroativo
+    // real na base — não foram adivinhados, só passam a existir daqui pra
+    // frente (ex: EXPANSION setado pelo fluxo "Nova oportunidade" a partir
+    // do Cliente 360).
+    commercialMotion: text("commercial_motion").default("NEW_BUSINESS").notNull(), // NEW_BUSINESS | EXPANSION | RENEWAL | REACTIVATION
     // Como o negócio nasceu na qualificação: 'reuniao' (fluxo com agendamento) |
     // 'direta' (closer atuando como SDR qualificou sem reunião). Null = anterior à captura.
     origemQualificacao: text("origem_qualificacao"),
@@ -673,6 +686,17 @@ export const contratos = pgTable(
     // que qualquer provider futuro (DocuSign/Clicksign) também preenche.
     signatureProviderRef: text("signature_provider_ref"),
     signatureStatus: text("signature_status"), // contract_created|sent_for_signature|opened|signed|declined|expired|canceled
+    // Lista estruturada congelada no momento da geração. O provider externo
+    // pode ter sua própria tabela de recipients, mas o CRM preserva a cópia
+    // que originou o envelope para auditoria e Cliente 360.
+    signatarios: jsonb("signatarios"),
+    // Estado do envio da cópia final por e-mail. Resend é apenas transporte;
+    // o CRM precisa saber se enviou, falhou ou ficou pendente para retry.
+    emailEntrega: jsonb("email_entrega"),
+    // O link público do PDF guarda somente o hash do bearer token. O token cru
+    // nunca é persistido e expira, permitindo reenvio seguro da cópia final.
+    documentoPublicoTokenHash: text("documento_publico_token_hash"),
+    documentoPublicoExpiraEm: timestamp("documento_publico_expira_em", { withTimezone: true }),
   },
   (table) => [
     index("idx_contratos_lead_id").on(table.leadId),
@@ -1018,7 +1042,7 @@ export const scriptsAtendimento = pgTable(
     id: uuid("id").defaultRandom().primaryKey(),
     organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
     titulo: text("titulo").notNull(),
-    categoria: text("categoria").notNull(), // pre_vendas | comercial | entrega | cs | geral
+    categoria: text("categoria").notNull(), // pre_vendas | comercial_b2b | implantacao_entrega | onboarding | cs | cobranca_financeiro | geral
     conteudo: text("conteudo").notNull(),
     versao: integer("versao").default(1).notNull(),
     ativo: boolean("ativo").default(true).notNull(),
@@ -1281,6 +1305,13 @@ export const propostas = pgTable(
     dataValidade: date("data_validade"),
     observacoes: text("observacoes"),
     condicoesPagamento: text("condicoes_pagamento"),
+    // Prazo informado pelo vendedor antes do envio quando a composição exige
+    // contrato. Não existe default: prazo jurídico precisa ser explícito.
+    prazoContratoMeses: integer("prazo_contrato_meses"),
+    // Signatários informados pelo vendedor antes do envio quando a composição
+    // usa contrato. Mantido na proposta para ser copiado ao contrato gerado
+    // automaticamente no aceite, sem acoplar o domínio a um provider externo.
+    signatarios: jsonb("signatarios"),
     totalRecorrente: decimal("total_recorrente", { precision: 12, scale: 2 }).default("0"),
     totalAvulso: decimal("total_avulso", { precision: 12, scale: 2 }).default("0"),
     totalGeral: decimal("total_geral", { precision: 12, scale: 2 }).default("0"),
@@ -1615,6 +1646,12 @@ export const contatos = pgTable(
     contaId: uuid("conta_id").references(() => emailContas.id), // se canal=email
     // Atribuição
     responsavelId: uuid("responsavel_id").references(() => usuarios.id), // nullable = não atribuído
+    // Estado operacional da conversa. O contato continua sendo a entidade
+    // canônica do canal; estes campos evitam criar uma tabela paralela de inbox.
+    status: text("status").default("open").notNull(), // open | closed
+    snoozedUntil: timestamp("snoozed_until", { withTimezone: true }),
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+    closedById: uuid("closed_by_id").references(() => usuarios.id),
     // Vínculo CRM
     leadId: uuid("lead_id").references(() => leads.id),
     // Preview (denorm para lista de conversas)
@@ -1636,8 +1673,26 @@ export const contatos = pgTable(
     // Queries
     index("idx_contatos_org").on(table.organizacaoId),
     index("idx_contatos_responsavel").on(table.responsavelId),
+    index("idx_contatos_status_snooze").on(table.organizacaoId, table.status, table.snoozedUntil),
     index("idx_contatos_lead").on(table.leadId),
     index("idx_contatos_ultima_msg").on(table.responsavelId, table.ultimaMsgAt),
+  ]
+);
+
+// Tags operacionais da conversa. Diferentes de leadLabels: uma tag de inbox
+// pode disparar automação de atendimento sem alterar a classificação comercial.
+export const contatoLabels = pgTable(
+  "contato_labels",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    contatoId: uuid("contato_id").references(() => contatos.id, { onDelete: "cascade" }).notNull(),
+    labelId: uuid("label_id").references(() => labels.id, { onDelete: "cascade" }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("idx_contato_labels_dedup").on(table.contatoId, table.labelId),
+    index("idx_contato_labels_contato").on(table.contatoId),
+    index("idx_contato_labels_label").on(table.labelId),
   ]
 );
 
@@ -1765,6 +1820,72 @@ export const aiSdrConfig = pgTable("ai_sdr_config", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   uniqueIndex("idx_ai_sdr_config_org").on(table.organizacaoId),
+]);
+
+// Catalogo de agentes versionados. O AI SDR legado permanece em ai_sdr_config
+// durante a migracao; estas tabelas sao o contrato novo para multiplos agentes.
+export const aiAgents = pgTable("ai_agents", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+  nome: text("nome").notNull(),
+  slug: text("slug").notNull(),
+  descricao: text("descricao"),
+  finalidade: text("finalidade").notNull().default("atendimento"),
+  prioridade: integer("prioridade").default(100).notNull(),
+  status: text("status").default("draft").notNull(), // draft | published | paused | archived
+  createdById: uuid("created_by_id").references(() => usuarios.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("idx_ai_agents_org_slug").on(table.organizacaoId, table.slug),
+  index("idx_ai_agents_org_status").on(table.organizacaoId, table.status),
+]);
+
+export const aiAgentVersions = pgTable("ai_agent_versions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  agentId: uuid("agent_id").references(() => aiAgents.id, { onDelete: "cascade" }).notNull(),
+  versao: integer("versao").notNull(),
+  status: text("status").default("draft").notNull(), // draft | published | superseded
+  systemPrompt: text("system_prompt").notNull().default(""),
+  provider: text("provider"),
+  modelo: text("modelo"),
+  tools: jsonb("tools").default([]).notNull(),
+  triggerConfig: jsonb("trigger_config").default({}).notNull(),
+  handoffConfig: jsonb("handoff_config").default({}).notNull(),
+  knowledgeConfig: jsonb("knowledge_config").default({}).notNull(),
+  maxSteps: integer("max_steps").default(8).notNull(),
+  tokenBudget: integer("token_budget").default(4000).notNull(),
+  costBudget: decimal("cost_budget", { precision: 10, scale: 4 }),
+  createdById: uuid("created_by_id").references(() => usuarios.id),
+  publishedAt: timestamp("published_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("idx_ai_agent_versions_number").on(table.agentId, table.versao),
+  index("idx_ai_agent_versions_status").on(table.agentId, table.status),
+]);
+
+export const aiAgentRuns = pgTable("ai_agent_runs", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+  agentId: uuid("agent_id").references(() => aiAgents.id).notNull(),
+  versionId: uuid("version_id").references(() => aiAgentVersions.id),
+  contatoId: uuid("contato_id").references(() => contatos.id),
+  leadId: uuid("lead_id").references(() => leads.id),
+  sourceMessageId: uuid("source_message_id").references(() => whatsappMensagens.id),
+  modo: text("modo").default("live").notNull(), // dry_run | live
+  status: text("status").notNull(), // queued | running | completed | failed | handed_off
+  input: jsonb("input"),
+  trace: jsonb("trace").default([]).notNull(),
+  tokens: integer("tokens").default(0).notNull(),
+  custo: decimal("custo", { precision: 10, scale: 4 }),
+  erro: text("erro"),
+  handoffMotivo: text("handoff_motivo"),
+  startedAt: timestamp("started_at", { withTimezone: true }).defaultNow().notNull(),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+}, (table) => [
+  index("idx_ai_agent_runs_org_started").on(table.organizacaoId, table.startedAt),
+  index("idx_ai_agent_runs_agent").on(table.agentId, table.startedAt),
+  index("idx_ai_agent_runs_contato").on(table.contatoId, table.startedAt),
 ]);
 
 // ─── AI SDR CONTATO STATE (per-contact AI state) ────────────────
@@ -2091,19 +2212,86 @@ export const fulfillmentItens = pgTable(
     // próprias). Nunca decidir a lista definitiva em código.
     workstream: text("workstream").notNull(),
     titulo: text("titulo").notNull(),
-    status: text("status").default("PENDING").notNull(), // PENDING|IN_PROGRESS|BLOCKED|DONE
+    // PENDING|IN_PROGRESS|BLOCKED|VALIDATION|DONE. VALIDATION (20/08, pedido
+    // Kauã) é estado real e distinto de DONE — usado principalmente pelos
+    // workstreams qa_interno/validacao_cliente quando o item já foi feito
+    // mas ainda depende de validação (interna ou do cliente) antes de virar
+    // DONE de fato. Continua texto livre (sem enum de banco), igual ao resto
+    // do modelo — a UI (FulfillmentDetail/ItemDrawer) que mapeia pros 7
+    // rótulos exatos do Kauã (Não iniciado/Em andamento/Aguardando cliente/
+    // Aguardando fornecedor/Bloqueado/Validação/Concluído), combinando este
+    // campo com blockerType quando status=BLOCKED.
+    status: text("status").default("PENDING").notNull(),
     blockerType: text("blocker_type"), // CUSTOMER | INTERNAL | PROVIDER
     blockerReason: text("blocker_reason"),
     ordem: integer("ordem").default(0).notNull(),
     metadata: jsonb("metadata"),
     completedAt: timestamp("completed_at", { withTimezone: true }),
     completedBy: uuid("completed_by").references(() => usuarios.id),
+    // Responsável por ITEM (20/08, pedido Kauã) — hoje só existia 1
+    // responsável a nível de fulfillment inteiro (fulfillments.responsavelId).
+    // Null pra tudo que já existe (sem backfill); a UI cai pro responsável
+    // do fulfillment como fallback SÓ na exibição, nunca grava esse fallback
+    // aqui.
+    responsavelId: uuid("responsavel_id").references(() => usuarios.id),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
     index("idx_fulfillment_itens_fulfillment").on(table.fulfillmentId),
     index("idx_fulfillment_itens_org").on(table.organizacaoId),
+  ]
+);
+
+// Materialização relacional do formulário público de implantação PABX
+// (20/08, pedido Kauã: "não deixar só no jsonb invisível"). O jsonb bruto em
+// `fulfillment_formularios.respostas` continua sendo gravado e É a fonte de
+// verdade/backup; estas duas tabelas são uma PROJEÇÃO relacional dele,
+// recriada do zero (delete+insert) a cada submissão — idempotente, nunca
+// acumula linha órfã de um envio anterior.
+export const fulfillmentLinhasPortabilidade = pgTable(
+  "fulfillment_linhas_portabilidade",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+    fulfillmentId: uuid("fulfillment_id").references(() => fulfillments.id, { onDelete: "cascade" }).notNull(),
+    ddd: text("ddd"),
+    numero: text("numero"),
+    tipo: text("tipo").notNull(), // portabilidade | nova_linha
+    operadoraAtual: text("operadora_atual"),
+    titular: text("titular"), // razaoSocialTitular/cnpjCpfTitular do formulário (nível formulário, replicado por linha pra consulta simples)
+    anexoUrl: text("anexo_url"),
+    anexoId: text("anexo_id"), // nome original do arquivo enviado — não existe entidade "anexo" própria pra este upload hoje (fs local), guardado aqui como referência textual
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_fulfillment_linhas_portabilidade_fulfillment").on(table.fulfillmentId),
+    index("idx_fulfillment_linhas_portabilidade_org").on(table.organizacaoId),
+  ]
+);
+
+export const fulfillmentRamais = pgTable(
+  "fulfillment_ramais",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+    fulfillmentId: uuid("fulfillment_id").references(() => fulfillments.id, { onDelete: "cascade" }).notNull(),
+    departamento: text("departamento"),
+    numeroExterno: text("numero_externo"),
+    ramal: text("ramal"),
+    usuario: text("usuario"), // nome da pessoa (campo `nome` do formulário)
+    email: text("email"),
+    celular: text("celular"),
+    modeloAparelho: text("modelo_aparelho"),
+    usaAparelhoFisico: boolean("usa_aparelho_fisico").default(false).notNull(),
+    gravacao: boolean("gravacao").default(false).notNull(),
+    ligacoesInternacionais: boolean("ligacoes_internacionais").default(false).notNull(),
+    paisesPermitidos: text("paises_permitidos").array(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_fulfillment_ramais_fulfillment").on(table.fulfillmentId),
+    index("idx_fulfillment_ramais_org").on(table.organizacaoId),
   ]
 );
 
@@ -2442,7 +2630,7 @@ export const pessoas = pgTable("pessoas", {
   index("idx_pessoas_org").on(table.organizacaoId),
   index("idx_pessoas_empresa").on(table.empresaId),
   index("idx_pessoas_email").on(table.email),
-  index("idx_pessoas_lead_legado").on(table.leadIdLegado),
+  uniqueIndex("idx_pessoas_lead_legado").on(table.leadIdLegado),
 ]);
 
 // ─── PONTOS DE CONTATO (Attribution/Touchpoints — camada própria) ──
@@ -2534,7 +2722,7 @@ export const oportunidades = pgTable("oportunidades", {
   index("idx_oportunidades_empresa").on(table.empresaId),
   index("idx_oportunidades_stage").on(table.stage),
   index("idx_oportunidades_responsavel").on(table.responsavelId),
-  index("idx_oportunidades_negocio_legado").on(table.negocioIdLegado),
+  uniqueIndex("idx_oportunidades_negocio_legado").on(table.negocioIdLegado),
 ]);
 
 // ─── OPORTUNIDADE_ITENS (item/produto/serviço comercial — ADR-EXEC-019/022) ─
@@ -2603,6 +2791,7 @@ export const clientes = pgTable("clientes", {
 }, (table) => [
   index("idx_clientes_org").on(table.organizacaoId),
   index("idx_clientes_empresa").on(table.empresaId),
+  uniqueIndex("idx_clientes_lead_legado").on(table.leadIdLegado),
 ]);
 
 // ─── EVENT OUTBOX (espinha dorsal de eventos — Postgres + BullMQ) ──
@@ -2623,6 +2812,9 @@ export const cadenceDefinitions = pgTable("cadence_definitions", {
   // CadenceStep[] — ver tipo em cadence-engine.ts. Cada step: {id, tipo (wait|action|condition),
   // adapter (nome registrado, ex: "whatsapp_message"|"ai_agent_message"), config, branches, retry}
   steps: jsonb("steps").notNull(),
+  draftSteps: jsonb("draft_steps"),
+  versao: integer("versao").default(1).notNull(),
+  publishedAt: timestamp("published_at", { withTimezone: true }),
   ativo: boolean("ativo").default(true).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
@@ -2759,6 +2951,7 @@ export const eventOutbox = pgTable("event_outbox", {
   status: text("status").notNull().default("pending"), // pending | processing | processed | failed
   attempts: integer("attempts").default(0).notNull(),
   lastError: text("last_error"),
+  processingStartedAt: timestamp("processing_started_at", { withTimezone: true }),
   processedAt: timestamp("processed_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
@@ -2766,6 +2959,32 @@ export const eventOutbox = pgTable("event_outbox", {
   index("idx_event_outbox_status").on(table.status),
   index("idx_event_outbox_org").on(table.organizacaoId),
   index("idx_event_outbox_aggregate").on(table.aggregateType, table.aggregateId),
+]);
+
+// Inbox de eventos externos Stripe. O evento é persistido depois da verificação
+// de assinatura e antes de qualquer materialização de billing. `organizacaoId`
+// pode ser nulo enquanto o Customer/Subscription ainda não foi reconciliado;
+// nesse caso o webhook não deve promover estado comercial silenciosamente.
+export const stripeWebhookEvents = pgTable("stripe_webhook_events", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  eventId: text("event_id").notNull(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id),
+  eventType: text("event_type").notNull(),
+  apiVersion: text("api_version"),
+  livemode: boolean("livemode"),
+  status: text("status").notNull().default("pending"), // pending | processing | processed | failed | unresolved
+  attempts: integer("attempts").notNull().default(0),
+  payload: jsonb("payload").notNull(),
+  lastError: text("last_error"),
+  receivedAt: timestamp("received_at", { withTimezone: true }).defaultNow().notNull(),
+  processedAt: timestamp("processed_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("uq_stripe_webhook_events_event_id").on(table.eventId),
+  index("idx_stripe_webhook_events_status").on(table.status),
+  index("idx_stripe_webhook_events_org").on(table.organizacaoId),
+  index("idx_stripe_webhook_events_received").on(table.receivedAt),
 ]);
 
 // ═══════════════════════════════════════════════════════════════
@@ -2844,3 +3063,95 @@ export const contratoTemplates = pgTable("contrato_templates", {
 }, (table) => [
   index("idx_contrato_templates_org").on(table.organizacaoId, table.ativo),
 ]);
+
+// ─── CALLFACE AI — FUNDAÇÃO DE INTEGRAÇÃO EXTERNAL IDENTITY (20/08) ────────
+// Baseado na auditoria read-only do banco do SaaS Callface AI
+// (projetos/callface/dados/callface-ai-db-audit-2026-08-20/
+// CALLFACE_AI_DB_AUDIT_HANDOFF.md). Recomendação da própria auditoria:
+// nunca consultar o banco do SaaS em tempo real pelas telas — snapshot/
+// agregado local, sincronizado por job incremental dedicado (usuário
+// Postgres read-only próprio no SaaS, sem rolbypassrls, ainda não criado).
+// Decisão pendente com o Kauã (crm2-decisoes-pendentes.md item 9): SEM
+// acesso de sync recorrente aprovado ainda — estas 4 tabelas nascem
+// 100% vazias, só estrutura pronta pra receber dado real quando a decisão
+// de acesso for tomada. Nenhuma conexão nova ao banco do SaaS foi feita
+// nesta rodada, além da auditoria já realizada.
+export const callfaceAiExternalIdentities = pgTable(
+  "callface_ai_external_identities",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    entityType: text("entity_type").notNull(), // empresa | servico_canonico
+    // FK polimórfica (aponta pra empresas.id OU servicos_canonicos.id,
+    // conforme entityType) — sem FK de banco por design, entidade variável.
+    entityId: uuid("entity_id").notNull(),
+    provider: text("provider").default("callface_ai").notNull(),
+    externalType: text("external_type").notNull(), // organization | app_client | stripe_customer | subscription | workspace
+    externalId: text("external_id").notNull(),
+    confidence: text("confidence").notNull(), // deterministic | verified | candidate
+    source: text("source"),
+    verifiedAt: timestamp("verified_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_callface_ai_ext_ident_entity").on(table.entityType, table.entityId),
+    uniqueIndex("idx_callface_ai_ext_ident_unique").on(table.provider, table.externalType, table.externalId),
+  ]
+);
+
+export const callfaceAiTenantSnapshots = pgTable(
+  "callface_ai_tenant_snapshots",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    externalIdentityId: uuid("external_identity_id").references(() => callfaceAiExternalIdentities.id, { onDelete: "cascade" }).notNull(),
+    snapshotAt: timestamp("snapshot_at", { withTimezone: true }).notNull(),
+    usuariosTotal: integer("usuarios_total"),
+    usuariosAtivos: integer("usuarios_ativos"),
+    usuariosPendentes: integer("usuarios_pendentes"),
+    licencasAtivas: integer("licencas_ativas"),
+    workspacesAtivos: integer("workspaces_ativos"),
+    campanhasAtivas: integer("campanhas_ativas"),
+    campanhasConcluidas: integer("campanhas_concluidas"),
+    chamadasTotal: integer("chamadas_total"),
+    chamadasFinalizadas: integer("chamadas_finalizadas"),
+    minutosUso: decimal("minutos_uso", { precision: 14, scale: 2 }),
+    agentesProntos: integer("agentes_prontos"),
+    integracaoWhatsappConectada: boolean("integracao_whatsapp_conectada"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_callface_ai_snapshots_identity").on(table.externalIdentityId, table.snapshotAt),
+  ]
+);
+
+export const callfaceAiUsageEvents = pgTable(
+  "callface_ai_usage_events",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    externalIdentityId: uuid("external_identity_id").references(() => callfaceAiExternalIdentities.id, { onDelete: "cascade" }).notNull(),
+    eventType: text("event_type").notNull(), // first_call | first_campaign | agent_completed | copilot_session_ended | ...
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_callface_ai_usage_events_identity").on(table.externalIdentityId, table.occurredAt),
+    index("idx_callface_ai_usage_events_type").on(table.eventType),
+  ]
+);
+
+export const callfaceAiReconciliationCandidates = pgTable(
+  "callface_ai_reconciliation_candidates",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    empresaId: uuid("empresa_id").references(() => empresas.id, { onDelete: "cascade" }).notNull(),
+    externalOrganizationId: text("external_organization_id").notNull(),
+    matchSignal: text("match_signal").notNull(), // cnpj | stripe_customer_id | email | nome
+    score: decimal("score", { precision: 5, scale: 4 }),
+    status: text("status").default("pendente").notNull(), // pendente | aprovado | rejeitado
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_callface_ai_recon_empresa").on(table.empresaId),
+    index("idx_callface_ai_recon_status").on(table.status),
+  ]
+);

@@ -21,7 +21,7 @@ export function AssignOwnerControl({
   onChanged,
   disabled,
 }: {
-  entityType: "lead" | "negocio" | "fulfillment" | "cliente";
+  entityType: "lead" | "negocio" | "fulfillment" | "cliente" | "fulfillment_item";
   entityId: string;
   currentOwnerId: string | null | undefined;
   usuarios: OrgUsuario[];
@@ -33,6 +33,9 @@ export function AssignOwnerControl({
     entityType === "lead" ? `/api/leads/${entityId}` :
     entityType === "negocio" ? `/api/negocios/${entityId}` :
     entityType === "cliente" ? `/api/clientes-crm2/${entityId}` :
+    // Responsável por item de checklist (20/08) — mesmo PATCH que já aceita
+    // status/blocker, campo novo `responsavelId`.
+    entityType === "fulfillment_item" ? `/api/fulfillments/itens/${entityId}` :
     `/api/fulfillments/${entityId}`;
 
   async function trocar(novoId: string) {

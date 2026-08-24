@@ -13,8 +13,9 @@
  * de Treinamento e Onboarding" real (base comum — módulos condicionais
  * como integração de CRM/campanhas/reuniões/agente de IA ainda não têm
  * detecção real no catálogo, fica pra quando existir esse sinal); White
- * Label ainda é placeholder honesto (`[EXEMPLO]`, sem processo operacional
- * disponível). Cada instância de Fulfillment é dado (linhas em
+ * Label usa um checklist operacional mínimo baseado no fluxo validado do
+ * produto, sem inventar provisionamento técnico de infraestrutura. Cada
+ * instância de Fulfillment é dado (linhas em
  * `fulfillment_itens`), editável, não enum de código.
  */
 import { db } from "@/lib/db";
@@ -190,9 +191,19 @@ export const AI_CHECKLIST_BASE: ChecklistSeed = [
   },
 ];
 
-export const WHITE_LABEL_CHECKLIST_PLACEHOLDER: ChecklistSeed = [
-  { workstream: "branding", titulo: "[EXEMPLO] Configuração de branding (logo, cores, domínio)" },
-  { workstream: "ativacao_capacidade", titulo: "[EXEMPLO] Ativação de capacidade/licenças" },
+export const WHITE_LABEL_CHECKLIST: ChecklistSeed = [
+  { workstream: "acesso", titulo: "Enviar convite e provisionar acesso do cliente" },
+  { workstream: "acesso", titulo: "Confirmar primeiro acesso" },
+  { workstream: "branding", titulo: "Coletar e validar logo e identidade visual" },
+  { workstream: "dominio", titulo: "Definir domínio white label" },
+  { workstream: "dominio", titulo: "Configurar e validar DNS" },
+  { workstream: "ambiente", titulo: "Configurar ambiente white label" },
+  { workstream: "capacidade", titulo: "Registrar capacidade contratada" },
+  { workstream: "qualidade", titulo: "Executar testes internos" },
+  { workstream: "treinamento", titulo: "Realizar treinamento" },
+  { workstream: "ativacao", titulo: "Confirmar primeiro uso e primeiro valor", metadata: { milestone: "FIRST_VALUE", marcacaoManual: true } },
+  { workstream: "ativacao", titulo: "Confirmar ativação do ambiente" },
+  { workstream: "handoff", titulo: "Preparar handoff para Customer Success", metadata: { handoffCs: true } },
 ];
 
 // Fase do Kanban de Implantação PABX (referência de UX, 19/08) — agrupamento
@@ -217,7 +228,7 @@ export const FASE_PABX_POR_WORKSTREAM: Record<string, "planejamento" | "preparac
 function checklistParaFamilia(serviceFamily: string): ChecklistSeed {
   if (serviceFamily === "PABX") return PABX_CHECKLIST;
   if (serviceFamily === "CALLFACE_AI") return AI_CHECKLIST_BASE;
-  if (serviceFamily === "WHITE_LABEL") return WHITE_LABEL_CHECKLIST_PLACEHOLDER;
+  if (serviceFamily === "WHITE_LABEL") return WHITE_LABEL_CHECKLIST;
   return [];
 }
 

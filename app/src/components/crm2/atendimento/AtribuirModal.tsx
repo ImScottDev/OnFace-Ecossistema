@@ -6,12 +6,18 @@ import { X } from "lucide-react";
 type Usuario = { id: string; nome: string; role: string; ativo: boolean };
 
 export function Cf2AtribuirModal({ onClose, onConfirmar }: { onClose: () => void; onConfirmar: (usuarioId: string) => void }) {
-  const { data } = useQuery({
+  // GET /api/usuarios devolve envelope { usuarios: [...] }, não array direto
+  // (confirmado em src/api-server/routes/usuarios.ts) — achado real (23/08):
+  // este modal tratava `data` como array e quebrava com
+  // "(data ?? []).filter is not a function". Normalizado aqui, na origem do
+  // dado, não com cast escondendo o formato real da resposta.
+  const { data, isLoading, isError } = useQuery({
     queryKey: ["cf2-usuarios"],
     queryFn: async () => {
       const res = await fetch("/api/usuarios");
-      if (!res.ok) return [] as Usuario[];
-      return (await res.json()) as Usuario[];
+      if (!res.ok) throw new Error("Falha ao carregar equipe");
+      const body = await res.json();
+      return (body?.usuarios ?? []) as Usuario[];
     },
   });
 
@@ -36,7 +42,9 @@ export function Cf2AtribuirModal({ onClose, onConfirmar }: { onClose: () => void
               <p className="text-[10px] uppercase" style={{ color: "var(--cf2-text-tertiary)" }}>{u.role}</p>
             </button>
           ))}
-          {usuarios.length === 0 && <p className="text-[12px] py-2" style={{ color: "var(--cf2-text-tertiary)" }}>Carregando equipe...</p>}
+          {isLoading && <p className="text-[12px] py-2" style={{ color: "var(--cf2-text-tertiary)" }}>Carregando equipe...</p>}
+          {isError && <p className="text-[12px] py-2" style={{ color: "var(--cf2-danger-text)" }}>Não foi possível carregar a equipe. Tente novamente.</p>}
+          {!isLoading && !isError && usuarios.length === 0 && <p className="text-[12px] py-2" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhum usuário ativo pra atribuir.</p>}
         </div>
       </div>
     </div>

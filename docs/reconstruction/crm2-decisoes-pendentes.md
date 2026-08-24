@@ -67,4 +67,20 @@ Sessão iniciada em 10/08/2026, execução autônoma de ponta a ponta (mandato d
 
 **Precisa confirmar**: existe algum caso (ex: contrato PABX que ainda depende de aprovação financeira antes de cobrar) onde vocês NÃO querem que o checkout seja dado automaticamente logo após a assinatura — preferindo sempre a ação manual do vendedor como gatilho? Se sim, é uma flag por `commercial_model` ou por item de catálogo, não uma mudança de arquitetura.
 
+## 8. `clientes.empresa_id` sem unique constraint — linha duplicada por empresa
+
+**Contexto** (20/08, rodada de frontend da Carteira): a tabela `clientes` não tem constraint única em `empresa_id` — 8 empresas reais têm mais de uma linha em `clientes`, causando duplicação na listagem da Carteira antes do fix.
+
+**Decidido por padrão**: mitiguei na query (`DISTINCT ON (empresa_id) ORDER BY updated_at DESC`, pega a linha mais recente), sem tocar em schema/dado — reversível, não decide nada.
+
+**Precisa confirmar**: essas linhas duplicadas representam histórico real (ex: reabertura de cliente após churn, precisaria de auditoria linha a linha) ou é lixo de import/bug de escrita que deveria ser limpo + constraint única adicionada pra nunca duplicar de novo? Enquanto não decidir, toda query nova sobre `clientes` precisa repetir esse mesmo `DISTINCT ON`, senão o bug volta em outro lugar.
+
+## 9. Acesso contínuo ao banco do SaaS Callface AI (integração external_identity)
+
+**Contexto**: a auditoria de 20/08 confirmou que dá pra ligar Empresa/Service do CRM2 a `organizations` do SaaS Callface AI (usuários, licenças, chamadas, agentes, uso real) via `organizations.id`/`stripe_customer_id`/CNPJ. Recomendação da própria auditoria: nunca consultar o banco do SaaS em tempo real pelas telas, e usar um usuário de leitura DEDICADO com grants mínimos pra job de sincronização (o usuário usado na auditoria de hoje tem `rolbypassrls=true`, adequado pra uma auditoria pontual, não pra rotina).
+
+**Decidido por padrão**: construí só o lado do CRM2 (tabelas `callface_ai_external_identities`/`tenant_snapshots`/`usage_events`/`reconciliation_candidates`, todas vazias, prontas pra receber dado). NÃO fiz nenhuma consulta nova ao banco do SaaS além da auditoria já feita hoje de manhã.
+
+**Precisa confirmar**: quer que eu peça pra criar um usuário Postgres novo, só leitura, sem `rolbypassrls`, no banco do SaaS Callface AI (pra rodar o job de sync com segurança), ou prefere que eu use o acesso de hoje pra fazer uma primeira carga pontual (não recorrente) enquanto isso não é criado? Sem essa decisão, a integração fica com a estrutura pronta mas sem dado real chegando.
+
 (novas entradas serão appendadas abaixo conforme a execução avança)

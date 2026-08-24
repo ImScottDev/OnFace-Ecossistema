@@ -18,7 +18,7 @@ import { notificarPropostaRespondida } from "@/lib/crm/notificar-proposta";
 import { syncNegocioValoresFromPropostas } from "@/lib/crm/sync-negocio-valores";
 import { processarAceiteDaProposta, type ResultadoGrupoAceite } from "@/lib/crm/proposta-aceite";
 import { marcarContratoAssinadoNoGrupo } from "@/lib/crm/grupo-comercial";
-import { registrarEvidencia, marcarNegocioGanhoSeAindaNao } from "@/lib/crm/won-evidence";
+import { registrarEvidencia } from "@/lib/crm/won-evidence";
 import { getSignatureProvider } from "@/lib/crm/signature";
 import { criarCheckoutParaGrupo } from "@/lib/crm/checkout";
 
@@ -127,9 +127,8 @@ export async function solicitarAjustePropostaPublica(proposta: PropostaRow, mens
 
 /**
  * Aceite eletrônico simples via SignatureProvider ativo — assina UM contrato
- * específico (uma proposta mista pode ter mais de um contrato, um por grupo
- * que exige). Won só é avaliado/marcado DEPOIS da assinatura real (nunca
- * antes) — ver won-evidence.ts::marcarNegocioGanhoSeAindaNao.
+ * específico. A assinatura registra SIGNED_CONTRACT e abre a cobrança; Won
+ * só é avaliado depois de PAYMENT_CONFIRMED.
  */
 export async function assinarContratoPublico(contratoId: string, nomeCompleto: string, ip: string): Promise<{ ok: true; checkoutUrl?: string | null } | { ok: false; error: string }> {
   const [contrato] = await db.select().from(contratos).where(eq(contratos.id, contratoId)).limit(1);
@@ -137,6 +136,22 @@ export async function assinarContratoPublico(contratoId: string, nomeCompleto: s
     return { ok: false, error: "Esse contrato não está aguardando assinatura." };
   }
   if (!contrato.grupoComercialId) return { ok: false, error: "Contrato sem grupo comercial vinculado (dado inconsistente)." };
+
+  const signatarios = Array.isArray(contrato.signatarios) ? contrato.signatarios : [];
+  if (signatarios.length > 0) {
+    const nomeNormalizado = nomeCompleto.trim().toLocaleLowerCase("pt-BR").replace(/\s+/g, " ");
+    const corresponde = signatarios.some((item) => {
+      if (!item || typeof item !== "object") return false;
+      const raw = item as Record<string, unknown>;
+      const nomeValor = raw.nome;
+      const papelValor = raw.papel;
+      const nome = typeof nomeValor === "string" ? nomeValor : "";
+      const papel = typeof papelValor === "string" ? papelValor : "";
+      if (["cc", "viewer", "observador"].includes(papel.toLocaleLowerCase("pt-BR"))) return false;
+      return nome.trim().toLocaleLowerCase("pt-BR").replace(/\s+/g, " ") === nomeNormalizado;
+    });
+    if (!corresponde) return { ok: false, error: "O nome informado não corresponde a um signatário preparado para este contrato." };
+  }
 
   const provider = getSignatureProvider();
   await provider.confirmarAssinatura({ providerRef: contrato.signatureProviderRef || contrato.id, nomeSignatario: nomeCompleto, ip });
@@ -154,7 +169,9 @@ export async function assinarContratoPublico(contratoId: string, nomeCompleto: s
       negocioId: contrato.negocioId, organizacaoId: contrato.organizacaoId, tipo: "signed_contract",
       sourceRef: contrato.id, grupoComercialId: contrato.grupoComercialId, metadata: { assinaturaSimples: true },
     });
-    await marcarNegocioGanhoSeAindaNao(contrato.negocioId, contrato.organizacaoId);
+    // Assinatura libera a evidência SIGNED_CONTRACT e o próximo passo de
+    // cobrança, mas não fecha a oportunidade. Won só pode nascer depois de
+    // PAYMENT_CONFIRMED, materializado pelo webhook de pagamento.
     await syncNegocioValoresFromPropostas(contrato.negocioId);
   }
 

@@ -2,10 +2,13 @@
 
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Search, Building2, Wallet, Users, Package, AlertTriangle } from "lucide-react";
+import { Search, Wallet, Users, AlertTriangle, Truck, Sparkles, ShieldAlert } from "lucide-react";
 import { useOrgUsuarios } from "@/components/crm/BoardFilters";
 import { AssignOwnerControl } from "@/components/crm2/shared/AssignOwnerControl";
+import { iniciaisEmpresa, corAvatarEmpresa } from "@/components/crm2/shared/avatar";
 import { Cf2ClienteDrawer } from "./ClienteDrawer";
+
+type StatusGeral = "ativo" | "em_risco" | "implantacao" | "onboarding" | "inadimplente" | "cancelado";
 
 interface ClienteLinha {
   id: string;
@@ -18,12 +21,14 @@ interface ClienteLinha {
   faturas_atrasadas: number;
   fatura_venceu_em: string | null;
   status_financeiro: "ativo" | "inadimplente" | "churned" | "indefinido";
-  lifecycle: "cliente";
   ultima_atividade_tipo: string | null;
   ultima_atividade_em: string | null;
+  proxima_acao_titulo: string | null;
+  proxima_acao_vence_em: string | null;
   cs_owner_id: string | null;
   cs_owner_nome: string | null;
   risco: "alto" | "baixo";
+  status_geral: StatusGeral;
 }
 
 // Bucket sintético criado na reconciliação (Zoho/Stripe) pra agregar serviços
@@ -57,6 +62,51 @@ const STATUS_COLOR: Record<string, string> = {
   churned: "var(--cf2-text-tertiary)",
   indefinido: "var(--cf2-text-tertiary)",
 };
+
+// Status Geral (20/08) — coluna nova que substitui Lifecycle+Billing+Entrega
+// na tabela (as 3 mostravam sinal fraco/constante ou já cabem aqui, ver
+// comentário no backend, GET /clientes-crm2). MESMOS 7 baldes da barra de
+// abas abaixo, precedência idêntica (cancelado > inadimplente > em_risco >
+// implantação > onboarding > ativo).
+const STATUS_GERAL_LABEL: Record<StatusGeral, string> = {
+  cancelado: "Cancelado",
+  inadimplente: "Inadimplente",
+  em_risco: "Em risco",
+  implantacao: "Em implantação",
+  onboarding: "Onboarding",
+  ativo: "Ativo",
+};
+
+// Cores reaproveitadas do que já existe no produto (nunca inventadas pra
+// esta coluna): roxo/azul são os mesmos de Cf2EntregaWorkspace (READY_FOR_
+// VALIDATION / IN_PROGRESS), sucesso/perigo/atenção/terciário são os tokens
+// --cf2-* já usados no resto desta mesma tela.
+const STATUS_GERAL_COLOR: Record<StatusGeral, string> = {
+  cancelado: "var(--cf2-text-tertiary)",
+  inadimplente: "var(--cf2-danger-text)",
+  em_risco: "var(--cf2-warning-text)",
+  implantacao: "#3b82f6",
+  onboarding: "#8e27ef",
+  ativo: "var(--cf2-success-text)",
+};
+
+// Barra de abas de contagem por status (mockup do Kauã, 20/08) — filtra a
+// lista real, mesmos critérios já usados nos cards/coluna Status Geral,
+// nunca uma fórmula nova. "" = Todos (sem filtro de aba).
+const ABAS: { key: string; label: string; contagemKey: keyof AbaCounts }[] = [
+  { key: "", label: "Todos", contagemKey: "todos" },
+  { key: "ativos", label: "Ativos", contagemKey: "ativos" },
+  { key: "onboarding", label: "Onboarding", contagemKey: "onboarding" },
+  { key: "implantacao", label: "Implantação", contagemKey: "implantacao" },
+  { key: "risco", label: "Em Risco", contagemKey: "emRisco" },
+  { key: "inadimplentes", label: "Inadimplentes", contagemKey: "inadimplentes" },
+  { key: "cancelados", label: "Cancelados", contagemKey: "cancelados" },
+];
+
+interface AbaCounts {
+  todos: number; ativos: number; onboarding: number; implantacao: number;
+  emRisco: number; inadimplentes: number; cancelados: number;
+}
 
 // Rótulo curto pro canal da última atividade real (`atividades.tipo`,
 // valores crus do banco, inclusive variantes `_legado` da recuperação
@@ -95,11 +145,14 @@ function brl(v: string | number) {
 }
 
 /**
- * Clientes / Carteira (CRM2, 19/08) — primeira versão real do módulo que
- * antes não existia (Sidebar apontava "Clientes" pra /contatos como
- * interino). Unidade é Empresa + Serviços — nunca Oportunidade. MRR vem de
+ * Clientes / Carteira (CRM2, 19/08 → 20/08 alinhado ao mockup do Kauã).
+ * Unidade é Empresa + Serviços — nunca Oportunidade. MRR vem de
  * `servicos_canonicos.current_recurring_value` (fonte fechada), nunca de
  * contrato/oportunidade.
+ *
+ * 20/08 — Health Score NUNCA entra aqui (decisão fechada, sem esse dado no
+ * produto): nem card, nem filtro, nem coluna. Onde o mockup pedia Health
+ * Score, a coluna/filtro simplesmente não existe nesta versão.
  */
 export function Cf2ClientesWorkspace() {
   const qc = useQueryClient();
@@ -108,13 +161,14 @@ export function Cf2ClientesWorkspace() {
   const [familia, setFamilia] = useState("");
   const [status, setStatus] = useState("");
   const [owner, setOwner] = useState("");
+  const [aba, setAba] = useState("");
   const [pagina, setPagina] = useState(1);
   const [drawerEmpresaId, setDrawerEmpresaId] = useState<string | null>(null);
 
   const { data, isLoading } = useQuery<{ clientes: ClienteLinha[]; total: number; totalPages: number }>({
-    queryKey: ["cf2-clientes", busca, familia, status, owner, pagina],
+    queryKey: ["cf2-clientes", busca, familia, status, owner, aba, pagina],
     queryFn: async () => {
-      const r = await fetch(`/api/clientes-crm2?search=${encodeURIComponent(busca)}&familia=${familia}&status=${status}&owner=${owner}&page=${pagina}&limit=20`);
+      const r = await fetch(`/api/clientes-crm2?search=${encodeURIComponent(busca)}&familia=${familia}&status=${status}&owner=${owner}&aba=${aba}&page=${pagina}&limit=20`);
       if (!r.ok) return { clientes: [], total: 0, totalPages: 0 };
       return r.json();
     },
@@ -128,22 +182,34 @@ export function Cf2ClientesWorkspace() {
   const { data: resumo } = useQuery<{
     clientesAtivos: number; servicosAtivos: number; mrrTotal: string; emRisco: number;
     mrrDelta30d: string; clientesNovos30d: number; familias: Record<string, number>;
+    emImplantacao: number; onboarding: number; inadimplentes: number; abaCounts: AbaCounts;
   }>({
     queryKey: ["cf2-clientes-resumo"],
     queryFn: async () => {
       const r = await fetch("/api/clientes-crm2/resumo");
-      if (!r.ok) return { clientesAtivos: 0, servicosAtivos: 0, mrrTotal: "0", emRisco: 0, mrrDelta30d: "0", clientesNovos30d: 0, familias: {} };
+      if (!r.ok) {
+        return {
+          clientesAtivos: 0, servicosAtivos: 0, mrrTotal: "0", emRisco: 0, mrrDelta30d: "0", clientesNovos30d: 0, familias: {},
+          emImplantacao: 0, onboarding: 0, inadimplentes: 0,
+          abaCounts: { todos: 0, ativos: 0, onboarding: 0, implantacao: 0, emRisco: 0, inadimplentes: 0, cancelados: 0 },
+        };
+      }
       return r.json();
     },
   });
 
   const clientes = data?.clientes ?? [];
+  const abaCounts = resumo?.abaCounts;
 
   const mrrDelta = resumo ? parseFloat(resumo.mrrDelta30d) : 0;
   const mrrBase = resumo ? Number(resumo.mrrTotal) - mrrDelta : 0;
   const mrrDeltaPct = mrrBase > 0 ? (mrrDelta / mrrBase) * 100 : null;
-  const familiasResumo = Object.entries(resumo?.familias ?? {}).map(([f, n]) => `${FAMILIA_LABEL[f] || f} ${n}`).join(" · ");
 
+  // 6 cards (mockup do Kauã: MRR Total/Clientes Ativos/Em Implantação/
+  // Onboarding/Em Risco/Inadimplentes). Contagens INDEPENDENTES entre si —
+  // mesmo padrão que já existia entre "Clientes Ativos"/"Em Risco": cada
+  // card responde sua própria pergunta, uma empresa pode acender mais de
+  // um ao mesmo tempo (ex.: em risco E em onboarding simultaneamente).
   const CARDS = [
     {
       label: "MRR ATUAL (TOTAL)", valor: resumo ? brl(resumo.mrrTotal) : "—", icon: Wallet, tone: "var(--cf2-success-text)",
@@ -154,31 +220,60 @@ export function Cf2ClientesWorkspace() {
       sub: resumo ? `+${resumo.clientesNovos30d} novos (30d)` : null,
     },
     {
-      label: "SERVIÇOS ATIVOS", valor: resumo ? resumo.servicosAtivos.toLocaleString("pt-BR") : "—", icon: Package, tone: "var(--cf2-text-primary)",
-      sub: familiasResumo || null,
+      label: "EM IMPLANTAÇÃO", valor: resumo ? resumo.emImplantacao.toLocaleString("pt-BR") : "—", icon: Truck, tone: "#3b82f6",
+      sub: "PABX pós-Won",
     },
-    { label: "EM RISCO", valor: resumo ? resumo.emRisco.toLocaleString("pt-BR") : "—", icon: AlertTriangle, tone: "var(--cf2-danger-text)", sub: "fatura em atraso" },
+    {
+      label: "ONBOARDING", valor: resumo ? resumo.onboarding.toLocaleString("pt-BR") : "—", icon: Sparkles, tone: "#8e27ef",
+      sub: "Callface AI pós-Won",
+    },
+    { label: "EM RISCO", valor: resumo ? resumo.emRisco.toLocaleString("pt-BR") : "—", icon: AlertTriangle, tone: "var(--cf2-warning-text)", sub: "fatura em atraso" },
+    { label: "INADIMPLENTES", valor: resumo ? resumo.inadimplentes.toLocaleString("pt-BR") : "—", icon: ShieldAlert, tone: "var(--cf2-danger-text)", sub: "status financeiro" },
   ];
 
   return (
     <div className="flex flex-col gap-5 h-full min-h-0">
-      <div className="grid grid-cols-4 gap-3 shrink-0">
+      <div className="grid grid-cols-3 lg:grid-cols-6 gap-3 shrink-0">
         {CARDS.map((k) => (
-          <div key={k.label} className="flex items-center justify-between gap-3 p-3.5 rounded-2xl" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
+          <div key={k.label} className="flex items-center justify-between gap-2 p-3.5 rounded-2xl" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
             <div className="flex flex-col gap-1.5 min-w-0">
               <p className="text-[10px] font-bold truncate" style={{ color: "var(--cf2-text-tertiary)" }}>{k.label}</p>
-              <p className="text-[22px] font-bold" style={{ color: k.tone }}>{k.valor}</p>
+              <p className="text-[20px] font-bold truncate" style={{ color: k.tone }}>{k.valor}</p>
               {k.sub && <p className="text-[11px] truncate" style={{ color: "var(--cf2-text-tertiary)" }}>{k.sub}</p>}
             </div>
-            <div className="flex items-center justify-center rounded-xl shrink-0 w-10 h-10" style={{ background: "var(--cf2-bg-surface-muted)" }}>
-              <k.icon className="w-4.5 h-4.5" style={{ color: k.tone }} />
+            <div className="flex items-center justify-center rounded-xl shrink-0 w-9 h-9" style={{ background: "var(--cf2-bg-surface-muted)" }}>
+              <k.icon className="w-4 h-4" style={{ color: k.tone }} />
             </div>
           </div>
         ))}
       </div>
 
       <div className="flex-1 min-h-0 flex flex-col rounded-3xl overflow-hidden" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
-        <div className="p-4 shrink-0" style={{ borderBottom: "1px solid var(--cf2-border-default)" }}>
+        <div className="p-4 shrink-0 flex flex-col gap-3" style={{ borderBottom: "1px solid var(--cf2-border-default)" }}>
+          {/* Barra de abas por status (20/08) — filtra a lista real, não é
+              o mesmo pill nav de navegação entre Carteira/Implantação/
+              Onboarding/Sucesso/Financeiro (esse continua no nível acima,
+              fora deste componente). */}
+          <div className="flex items-center gap-1 overflow-x-auto pb-0.5">
+            {ABAS.map((a) => {
+              const ativo = aba === a.key;
+              const n = abaCounts ? abaCounts[a.contagemKey] : null;
+              return (
+                <button
+                  key={a.key || "todos"}
+                  onClick={() => { setAba(a.key); setPagina(1); }}
+                  className="shrink-0 px-3 py-1.5 rounded-lg text-[12px] font-semibold whitespace-nowrap transition-colors"
+                  style={{
+                    background: ativo ? "var(--cf2-accent)" : "transparent",
+                    color: ativo ? "var(--cf2-text-on-accent)" : "var(--cf2-text-secondary)",
+                  }}
+                >
+                  {a.label}{n !== null ? ` (${n.toLocaleString("pt-BR")})` : ""}
+                </button>
+              );
+            })}
+          </div>
+
           <div className="flex items-center gap-2 px-3 py-2 rounded-xl" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }}>
             <Search className="w-3.5 h-3.5" style={{ color: "var(--cf2-text-tertiary)" }} />
             <input
@@ -189,14 +284,18 @@ export function Cf2ClientesWorkspace() {
               style={{ color: "var(--cf2-text-primary)" }}
             />
           </div>
-          <div className="flex gap-2 mt-2">
+          <div className="flex gap-2">
+            {/* "Serviço" do mockup = famílias (PABX/Callface AI/White Label)
+                já existentes — mesmo filtro, só relabelado pro nome que o
+                Kauã usa. Health Score NÃO entra como filtro (regra
+                fechada, sem esse dado no produto). */}
             <select
               value={familia}
               onChange={(e) => { setFamilia(e.target.value); setPagina(1); }}
               className="text-[12px] rounded-lg px-3 py-2 outline-none"
               style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-secondary)" }}
             >
-              <option value="">Todas as famílias</option>
+              <option value="">Todos os serviços</option>
               {Object.entries(FAMILIA_LABEL).map(([k, label]) => (
                 <option key={k} value={k}>{label}</option>
               ))}
@@ -207,7 +306,7 @@ export function Cf2ClientesWorkspace() {
               className="text-[12px] rounded-lg px-3 py-2 outline-none"
               style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-secondary)" }}
             >
-              <option value="">Todos os status</option>
+              <option value="">Todos os status financeiros</option>
               {Object.entries(STATUS_LABEL).map(([k, label]) => (
                 <option key={k} value={k}>{label}</option>
               ))}
@@ -218,7 +317,7 @@ export function Cf2ClientesWorkspace() {
               className="text-[12px] rounded-lg px-3 py-2 outline-none"
               style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-secondary)" }}
             >
-              <option value="">Todos os donos (CS)</option>
+              <option value="">Todos os responsáveis CS</option>
               <option value="sem_dono">Sem dono</option>
               {usuarios.map((u) => (
                 <option key={u.id} value={u.id}>{u.nome}</option>
@@ -231,12 +330,12 @@ export function Cf2ClientesWorkspace() {
           {isLoading ? (
             <p className="p-6 text-[13px]" style={{ color: "var(--cf2-text-tertiary)" }}>Carregando...</p>
           ) : clientes.length === 0 ? (
-            <p className="p-6 text-[13px]" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhum cliente com serviço ativo encontrado.</p>
+            <p className="p-6 text-[13px]" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhum cliente encontrado com esses filtros.</p>
           ) : (
             <table className="w-full text-left">
               <thead>
                 <tr style={{ background: "var(--cf2-bg-surface-muted)" }}>
-                  {["Empresa", "Serviços", "Famílias", "MRR atual", "Lifecycle", "Financeiro", "Billing", "CS Owner", "Última atividade", "Entrega", "Risco"].map((h) => (
+                  {["Cliente", "Serviços", "MRR", "Status Geral", "Financeiro", "Responsável CS", "Última Atividade", "Próxima Ação"].map((h) => (
                     <th key={h} className="px-4 py-2.5 text-[11px] font-bold" style={{ color: "var(--cf2-text-tertiary)" }}>{h}</th>
                   ))}
                 </tr>
@@ -244,6 +343,7 @@ export function Cf2ClientesWorkspace() {
               <tbody>
                 {clientes.map((cl) => {
                   const naoResolvida = cl.nome === EMPRESA_NAO_RESOLVIDA;
+                  const iniciais = iniciaisEmpresa(cl.nome);
                   return (
                   <tr
                     key={cl.id}
@@ -253,8 +353,15 @@ export function Cf2ClientesWorkspace() {
                   >
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2.5">
-                        <div className="flex items-center justify-center rounded-lg shrink-0 w-8 h-8" style={{ background: naoResolvida ? "var(--cf2-warning-text)" : "var(--cf2-bg-inverse)" }}>
-                          {naoResolvida ? <AlertTriangle className="w-4 h-4 text-white" /> : <Building2 className="w-4 h-4 text-white" />}
+                        <div
+                          className="flex items-center justify-center rounded-lg shrink-0 w-8 h-8"
+                          style={{ background: naoResolvida ? "var(--cf2-warning-text)" : corAvatarEmpresa(cl.id) }}
+                        >
+                          {naoResolvida ? (
+                            <AlertTriangle className="w-4 h-4 text-white" />
+                          ) : (
+                            <span className="text-[11px] font-extrabold" style={{ color: "var(--cf2-text-on-accent)" }}>{iniciais || "—"}</span>
+                          )}
                         </div>
                         <div className="min-w-0">
                           <p className="text-[13px] font-bold truncate" style={{ color: naoResolvida ? "var(--cf2-warning-text)" : "var(--cf2-text-primary)" }}>
@@ -264,8 +371,10 @@ export function Cf2ClientesWorkspace() {
                         </div>
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-[13px]" style={{ color: "var(--cf2-text-primary)" }}>{cl.total_servicos}</td>
                     <td className="px-4 py-3">
+                      <p className="text-[12px] font-semibold mb-1" style={{ color: "var(--cf2-text-primary)" }}>
+                        {cl.total_servicos} {cl.total_servicos === 1 ? "serviço" : "serviços"}
+                      </p>
                       <div className="flex gap-1 flex-wrap">
                         {cl.familias.map((f) => (
                           <span key={f} className="text-[10px] px-2 py-0.5 rounded-full font-semibold" style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-secondary)" }}>{FAMILIA_LABEL[f] || f}</span>
@@ -274,18 +383,17 @@ export function Cf2ClientesWorkspace() {
                     </td>
                     <td className="px-4 py-3 text-[13px] font-bold" style={{ color: "var(--cf2-success-text)" }}>{brl(cl.current_mrr)}</td>
                     <td className="px-4 py-3">
-                      <span className="text-[11px] font-semibold" style={{ color: "var(--cf2-success-text)" }}>Cliente</span>
+                      <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold" style={{ color: STATUS_GERAL_COLOR[cl.status_geral] }}>
+                        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: "currentColor" }} />
+                        {STATUS_GERAL_LABEL[cl.status_geral]}
+                      </span>
                     </td>
                     <td className="px-4 py-3">
                       <span className="text-[11px] font-semibold" style={{ color: STATUS_COLOR[cl.status_financeiro] }}>
                         {STATUS_LABEL[cl.status_financeiro] || cl.status_financeiro}
                       </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      {cl.faturas_atrasadas > 0 ? (
-                        <span className="text-[11px] font-semibold" style={{ color: "var(--cf2-danger-text)" }}>Atrasado · {diasAtraso(cl.fatura_venceu_em)}d</span>
-                      ) : (
-                        <span className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>Em dia</span>
+                      {cl.faturas_atrasadas > 0 && (
+                        <p className="text-[11px] font-semibold" style={{ color: "var(--cf2-danger-text)" }}>Atrasado · {diasAtraso(cl.fatura_venceu_em)}d</p>
                       )}
                     </td>
                     <td className="px-4 py-3">
@@ -309,14 +417,17 @@ export function Cf2ClientesWorkspace() {
                         <span style={{ color: "var(--cf2-text-tertiary)" }}>—</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-[13px]" style={{ color: cl.entregas_em_andamento > 0 ? "var(--cf2-warning-text)" : "var(--cf2-text-tertiary)" }}>
-                      {cl.entregas_em_andamento > 0 ? `${cl.entregas_em_andamento} em andamento` : "—"}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold" style={{ color: cl.risco === "alto" ? "var(--cf2-danger-text)" : "var(--cf2-success-text)" }}>
-                        <span className="w-1.5 h-1.5 rounded-full" style={{ background: "currentColor" }} />
-                        {cl.risco === "alto" ? "Alto" : "Baixo"}
-                      </span>
+                    <td className="px-4 py-3 text-[12px] max-w-[200px]" style={{ color: "var(--cf2-text-secondary)" }}>
+                      {cl.proxima_acao_titulo ? (
+                        <>
+                          <p className="font-semibold truncate" style={{ color: "var(--cf2-text-primary)" }}>{cl.proxima_acao_titulo}</p>
+                          <p className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>
+                            {cl.proxima_acao_vence_em ? new Date(cl.proxima_acao_vence_em).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) : "sem prazo"}
+                          </p>
+                        </>
+                      ) : (
+                        <span style={{ color: "var(--cf2-text-tertiary)" }}>—</span>
+                      )}
                     </td>
                   </tr>
                   );

@@ -4,8 +4,6 @@ import { eq } from "drizzle-orm";
 import { getTenantContext } from "@/lib/auth/tenant";
 import { redirect } from "next/navigation";
 import { Cf2Topbar } from "@/components/crm2/Topbar";
-import { Cf2ModuleTabs } from "@/components/crm2/ModuleTabs";
-import { VENDAS_TABS } from "@/components/crm2/vendas-tabs";
 import { Cf2ProspeccaoWorkspace } from "@/components/crm2/prospeccao/Workspace";
 import { ProspeccaoTopbarActions } from "@/components/crm2/prospeccao/TopbarActions";
 
@@ -20,10 +18,9 @@ export default async function ProspeccaoPage() {
     <div className="flex flex-col gap-6">
       <div className="-m-6 mb-0 relative flex flex-col gap-6 px-8 pt-7 pb-10 rounded-tl-2xl" style={{ background: "var(--cf2-bg-canvas)" }}>
         <Cf2Topbar orgNome={orgNome} variant="light" title="Vendas" subtitle="Prospecção outbound — trabalhando quem a Callface escolheu abordar" actions={<ProspeccaoTopbarActions />} />
-        <Cf2ModuleTabs items={VENDAS_TABS} notchFillColor="var(--cf2-bg-canvas)" />
       </div>
 
-      <div className="pt-10">
+      <div className="pt-6">
         <Cf2ProspeccaoWorkspace />
       </div>
     </div>
