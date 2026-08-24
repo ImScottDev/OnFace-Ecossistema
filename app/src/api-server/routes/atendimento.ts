@@ -319,14 +319,21 @@ app.post("/atendimento/conversas/:id/tags", async (c) => {
   // dispara o gatilho "tag_adicionada" real (automacao-engine.ts, fechado
   // ainda hoje) — assim marcar aqui já pode acionar cadência/automação sem
   // esperar um segundo passo manual no lead.
-  if (contato.leadId) {
+  //
+  // leadId direto cobre só ~1% dos contatos reais (mesmo achado do
+  // ADR-EXEC-019 citado no topo do arquivo) — sem o fallback por telefone
+  // abaixo (mesma resolução usada em buscarWhatsapp/GET /contexto), a
+  // dual-write silenciosamente não disparava pra praticamente nenhum
+  // contato de verdade.
+  const leadIdResolvido = contato.leadId ?? (contato.telefone ? (await mapaLeadPorTelefone(ctx.organizacaoId)).get(ultimosDigitos(contato.telefone) ?? "") ?? null : null);
+  if (leadIdResolvido) {
     try {
-      const [jaTem] = await db.select({ leadId: leadLabels.leadId }).from(leadLabels).where(and(eq(leadLabels.leadId, contato.leadId), eq(leadLabels.labelId, label.id))).limit(1);
+      const [jaTem] = await db.select({ leadId: leadLabels.leadId }).from(leadLabels).where(and(eq(leadLabels.leadId, leadIdResolvido), eq(leadLabels.labelId, label.id))).limit(1);
       if (!jaTem) {
-        await db.insert(leadLabels).values({ leadId: contato.leadId, labelId: label.id }).onConflictDoNothing();
+        await db.insert(leadLabels).values({ leadId: leadIdResolvido, labelId: label.id }).onConflictDoNothing();
         await dispararAutomacoes("tag_adicionada", {
           entityType: "lead",
-          entityId: contato.leadId,
+          entityId: leadIdResolvido,
           organizacaoId: ctx.organizacaoId,
           campos: { tag: label.nome },
           telefone: contato.telefone,

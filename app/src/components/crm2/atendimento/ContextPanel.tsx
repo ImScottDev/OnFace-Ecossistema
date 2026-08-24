@@ -1,13 +1,186 @@
 "use client";
 
-import { useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
-import { Pencil, Phone, CalendarPlus, Building2, Repeat, ChevronDown, FileText, Info, LayoutList } from "lucide-react";
+import { useRef, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
+import { Pencil, Phone, CalendarPlus, Building2, Repeat, ChevronDown, FileText, Info, LayoutList, Tag, Plus, X } from "lucide-react";
 import { ConversaItem, Contexto, iniciais, brl } from "./types";
 import { Cf2Badge } from "../ui/Badge";
 import { Cf2NovoEventoModal, LeadResultado } from "../calendario/NovoEventoModal";
 import { Cf2CadenciaPanel } from "../cadencia/CadenciaPanel";
 import { useScriptsAtendimento, SCRIPTS_CATEGORIA_LABEL } from "./useScriptsAtendimento";
+
+// Paleta rotativa pra tag nova (24/08) — usuário não escolhe cor na criação
+// inline, só dá o nome; cor é decorativa pra diferenciar visualmente no chat,
+// não carrega significado (sem semântica tipo "vermelho = urgente").
+const TAG_PALETTE = ["#22c55e", "#3b82f6", "#f59e0b", "#ec4899", "#8b5cf6", "#06b6d4", "#ef4444", "#64748b"];
+
+/**
+ * Tags da conversa (24/08, Kauã: "faltou a opção de colocar tag... vai ser
+ * usado para ativar automações depois... precisa ser associado ao lead
+ * e/ou ao negócio"). Vivia como um <select> apertado no cabeçalho do chat
+ * (ChatThread.tsx) — movido pra cá com espaço pra criar tag nova inline.
+ * Independente de ter lead vinculado: a tag é sempre do contato/conversa
+ * (contato_labels); o dual-write pro lead (lead_labels + gatilho
+ * tag_adicionada) já acontece no backend quando existe leadId.
+ */
+function Cf2TagsSection({ conversaId }: { conversaId: string }) {
+  const queryClient = useQueryClient();
+  const [aberto, setAberto] = useState(false);
+  const [busca, setBusca] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const { data: tagsData } = useQuery<{ tags: { id: string; nome: string; cor: string }[] }>({
+    queryKey: ["cf2-conversation-tags", conversaId],
+    queryFn: async () => {
+      const r = await fetch(`/api/atendimento/conversas/${conversaId}/tags`);
+      return r.ok ? r.json() : { tags: [] };
+    },
+  });
+  const { data: todasLabels = [] } = useQuery<{ id: string; nome: string; cor: string }[]>({
+    queryKey: ["labels"],
+    queryFn: async () => {
+      const r = await fetch("/api/labels");
+      return r.ok ? r.json() : [];
+    },
+  });
+
+  const tags = tagsData?.tags ?? [];
+  const disponiveis = todasLabels.filter((l) => !tags.some((t) => t.id === l.id));
+  const termo = busca.trim().toLowerCase();
+  const sugestoes = termo ? disponiveis.filter((l) => l.nome.toLowerCase().includes(termo)) : disponiveis;
+  const jaExiste = termo.length > 0 && (
+    disponiveis.some((l) => l.nome.toLowerCase() === termo) || tags.some((t) => t.nome.toLowerCase() === termo)
+  );
+
+  const invalidar = () => {
+    queryClient.invalidateQueries({ queryKey: ["cf2-conversation-tags", conversaId] });
+    queryClient.invalidateQueries({ queryKey: ["cf2-conversas"] });
+  };
+
+  const addMutation = useMutation({
+    mutationFn: async (labelId: string) => {
+      const r = await fetch(`/api/atendimento/conversas/${conversaId}/tags`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ labelId }),
+      });
+      if (!r.ok) throw new Error("Falha ao adicionar tag");
+    },
+    onSuccess: () => { invalidar(); setBusca(""); setAberto(false); },
+    onError: () => toast.error("Não foi possível adicionar a tag."),
+  });
+
+  const removeMutation = useMutation({
+    mutationFn: async (labelId: string) => {
+      const r = await fetch(`/api/atendimento/conversas/${conversaId}/tags/${labelId}`, { method: "DELETE" });
+      if (!r.ok) throw new Error("Falha ao remover tag");
+    },
+    onSuccess: invalidar,
+    onError: () => toast.error("Não foi possível remover a tag."),
+  });
+
+  const criarMutation = useMutation({
+    mutationFn: async (nome: string) => {
+      const cor = TAG_PALETTE[todasLabels.length % TAG_PALETTE.length];
+      const r = await fetch("/api/labels", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nome, cor }),
+      });
+      if (!r.ok) throw new Error("Falha ao criar tag");
+      return r.json() as Promise<{ id: string; nome: string; cor: string }>;
+    },
+    onSuccess: async (novaTag) => {
+      queryClient.invalidateQueries({ queryKey: ["labels"] });
+      await addMutation.mutateAsync(novaTag.id);
+    },
+    onError: () => toast.error("Não foi possível criar a tag."),
+  });
+
+  const confirmar = () => {
+    const nome = busca.trim();
+    if (!nome) return;
+    const exata = disponiveis.find((l) => l.nome.toLowerCase() === nome.toLowerCase());
+    if (exata) { addMutation.mutate(exata.id); return; }
+    if (!jaExiste) criarMutation.mutate(nome);
+  };
+
+  return (
+    <div className="flex flex-col gap-2 shrink-0">
+      <p className="text-[11px] font-bold flex items-center gap-1.5" style={{ color: "var(--cf2-text-tertiary)" }}>
+        <Tag className="w-3 h-3" /> TAGS DA CONVERSA
+      </p>
+      <div className="flex flex-wrap gap-1.5">
+        {tags.length === 0 && !aberto && (
+          <p className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>Sem tags ainda.</p>
+        )}
+        {tags.map((tag) => (
+          <span key={tag.id} className="inline-flex items-center gap-1 pl-2 pr-1 py-1 rounded-full text-[11px] font-semibold" style={{ color: tag.cor, background: `${tag.cor}18` }}>
+            {tag.nome}
+            <button onClick={() => removeMutation.mutate(tag.id)} title={`Remover ${tag.nome}`} className="flex items-center justify-center rounded-full w-3.5 h-3.5 hover:opacity-70">
+              <X className="w-2.5 h-2.5" />
+            </button>
+          </span>
+        ))}
+      </div>
+
+      {aberto ? (
+        <div className="flex flex-col gap-1.5">
+          <div className="flex gap-1.5">
+            <input
+              ref={inputRef}
+              autoFocus
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") confirmar();
+                if (e.key === "Escape") { setAberto(false); setBusca(""); }
+              }}
+              placeholder="Nova tag..."
+              className="flex-1 rounded-lg px-2.5 py-1.5 text-[12px] outline-none"
+              style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }}
+            />
+            <button
+              onClick={confirmar}
+              disabled={!busca.trim() || criarMutation.isPending || addMutation.isPending}
+              className="flex items-center justify-center rounded-lg w-8 shrink-0 disabled:opacity-40"
+              style={{ background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" }}
+              title="Adicionar tag"
+            >
+              <Plus className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          {sugestoes.length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              {sugestoes.slice(0, 6).map((l) => (
+                <button
+                  key={l.id}
+                  onClick={() => addMutation.mutate(l.id)}
+                  className="inline-flex items-center px-2 py-1 rounded-full text-[11px] font-semibold hover:opacity-80"
+                  style={{ color: l.cor, background: `${l.cor}18` }}
+                >
+                  {l.nome}
+                </button>
+              ))}
+            </div>
+          )}
+          {termo && !jaExiste && (
+            <p className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>Enter cria a tag &ldquo;{busca.trim()}&rdquo;.</p>
+          )}
+        </div>
+      ) : (
+        <button
+          onClick={() => setAberto(true)}
+          className="inline-flex items-center gap-1 self-start text-[11px] font-semibold rounded-full px-2.5 py-1"
+          style={{ color: "var(--cf2-text-secondary)", background: "var(--cf2-bg-surface-muted)" }}
+        >
+          <Plus className="w-3 h-3" /> Adicionar tag
+        </button>
+      )}
+    </div>
+  );
+}
 
 const PORTE_LABEL: Record<string, string> = { pequena: "Pequena empresa", media: "Média empresa", grande: "Grande empresa" };
 
@@ -64,6 +237,18 @@ export function Cf2ContextPanel({ conversa, contexto, loading }: { conversa: Con
       className="flex flex-col gap-4 h-full shrink-0 w-[320px] rounded-3xl overflow-y-auto p-4"
       style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}
     >
+      {/* Só WhatsApp por agora (24/08): a rota de tags resolve por
+          contatos.id, e só o WhatsApp usa esse id — ligação/e-mail guardam
+          id de outra tabela (ligacoes.id/emails.id), então dava 404 antes
+          mesmo de mexer aqui. Estender pra esses canais é escopo de dados
+          separado (tag por lead direto, não por "contato"). */}
+      {conversa.tipo === "whatsapp" && (
+        <>
+          <Cf2TagsSection conversaId={conversa.id} />
+          <div className="h-px w-full shrink-0" style={{ background: "var(--cf2-border-default)" }} />
+        </>
+      )}
+
       {loading && <p className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>Carregando...</p>}
 
       {!loading && !contexto?.pessoa && (

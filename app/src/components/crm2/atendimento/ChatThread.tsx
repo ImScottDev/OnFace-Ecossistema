@@ -9,7 +9,7 @@ import {
   Send, MoreHorizontal, Reply, Smile, Trash2, Check, CheckCheck, Clock,
   AlertCircle, Paperclip, Camera, File as FileIcon, MapPin, User, UserCheck, X, FileText,
   Bot, UserCog, Loader2, MessageSquareOff, FileSpreadsheet, FileArchive,
-  Sparkles, ChevronDown, Archive, Clock3, RotateCcw, Tag,
+  Sparkles, ChevronDown, Archive, Clock3, RotateCcw,
   Copy, UserRound, MessageSquareText,
 } from "lucide-react";
 import { ConversaItem, Contexto, iniciais, nomeExibicao } from "./types";
@@ -137,20 +137,6 @@ export function Cf2ChatThread({
       return body?.templates ?? [];
     },
   });
-  const { data: tagsData, refetch: refetchTags } = useQuery<{ tags: { id: string; nome: string; cor: string }[] }>({
-    queryKey: ["cf2-conversation-tags", conversa.id],
-    queryFn: async () => {
-      const r = await fetch(`/api/atendimento/conversas/${conversa.id}/tags`);
-      return r.ok ? r.json() : { tags: [] };
-    },
-  });
-  const { data: labels = [] } = useQuery<{ id: string; nome: string; cor: string }[]>({
-    queryKey: ["labels"],
-    queryFn: async () => {
-      const r = await fetch("/api/labels");
-      return r.ok ? r.json() : [];
-    },
-  });
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -205,18 +191,6 @@ export function Cf2ChatThread({
       if (msg) toast.success(msg);
     },
     onError: () => toast.error("Falha ao atualizar a conversa. Tente novamente."),
-  });
-
-  const tagMutation = useMutation({
-    mutationFn: async ({ labelId, remove }: { labelId: string; remove?: boolean }) => {
-      const r = await fetch(`/api/atendimento/conversas/${conversa.id}/tags${remove ? `/${labelId}` : ""}`, {
-        method: remove ? "DELETE" : "POST",
-        headers: remove ? undefined : { "Content-Type": "application/json" },
-        body: remove ? undefined : JSON.stringify({ labelId }),
-      });
-      if (!r.ok) throw new Error("Falha ao atualizar tag");
-    },
-    onSuccess: () => refetchTags(),
   });
 
   const snooze = () => {
@@ -360,23 +334,6 @@ export function Cf2ChatThread({
                 <Cf2Badge variant={HANDOFF_INFO[conversa.handoffStatus].variant}>
                   {HANDOFF_INFO[conversa.handoffStatus].label}
                 </Cf2Badge>
-              )}
-              {tagsData?.tags.map((tag) => (
-                <button key={tag.id} onClick={() => tagMutation.mutate({ labelId: tag.id, remove: true })} title="Remover tag" className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold" style={{ color: tag.cor, background: `${tag.cor}18` }}>
-                  <Tag className="w-2.5 h-2.5" />{tag.nome}
-                </button>
-              ))}
-              {labels.filter((label) => !tagsData?.tags.some((tag) => tag.id === label.id)).length > 0 && (
-                <select
-                  aria-label="Adicionar tag à conversa"
-                  value=""
-                  onChange={(e) => { if (e.target.value) tagMutation.mutate({ labelId: e.target.value }); }}
-                  className="max-w-[110px] rounded px-1 py-0.5 text-[10px] outline-none"
-                  style={{ color: "var(--cf2-text-secondary)", background: "var(--cf2-bg-surface-muted)" }}
-                >
-                  <option value="">+ tag</option>
-                  {labels.filter((label) => !tagsData?.tags.some((tag) => tag.id === label.id)).map((label) => <option key={label.id} value={label.id}>{label.nome}</option>)}
-                </select>
               )}
             </div>
             <p className="text-[11px] truncate" style={{ color: "var(--cf2-text-secondary)" }}>
