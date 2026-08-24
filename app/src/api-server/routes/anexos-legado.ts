@@ -95,14 +95,35 @@ app.get("/anexos-legado/:id/download", async (c) => {
 
   const fileBuffer = fs.readFileSync(localPath);
   const safeName = sanitizeFilenameForHeader(row.nomeArquivo);
+  const { contentType, inline } = tipoParaExtensao(row.nomeArquivo);
 
   return new Response(fileBuffer, {
     headers: {
-      "Content-Type": "application/octet-stream",
+      "Content-Type": contentType,
       "Content-Length": String(fileBuffer.length),
-      "Content-Disposition": `attachment; filename="${safeName}"`,
+      "Content-Disposition": `${inline ? "inline" : "attachment"}; filename="${safeName}"`,
     },
   });
 });
+
+// Achado real 24/08 (Kauã: "preciso clicar e ver o PDF no navegador, não
+// baixar — só se eu quiser baixar eu baixo") — a rota sempre respondia
+// application/octet-stream + attachment, forçando download pra TUDO
+// (inclusive os 1.753 de 1.980 anexos que são PDF de verdade, 88,5% do
+// total). PDF/imagem abrem inline com o Content-Type certo; o resto
+// (xlsx/eml/zip/docx/msg/ogg) continua forçando download de propósito —
+// não tem como o navegador renderizar isso inline mesmo com Content-Type
+// certo, então baixar é o comportamento certo pra esses, não um bug.
+function tipoParaExtensao(nomeArquivo: string): { contentType: string; inline: boolean } {
+  const ext = nomeArquivo.split(".").pop()?.toLowerCase() ?? "";
+  const INLINE_TYPES: Record<string, string> = {
+    pdf: "application/pdf",
+    png: "image/png",
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+  };
+  if (ext in INLINE_TYPES) return { contentType: INLINE_TYPES[ext], inline: true };
+  return { contentType: "application/octet-stream", inline: false };
+}
 
 export const anexosLegadoRoutes = app;
