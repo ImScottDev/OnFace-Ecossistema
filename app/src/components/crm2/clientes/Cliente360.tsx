@@ -84,6 +84,7 @@ interface ContratoCliente {
   // chegar sem o agregado de faturas. A ausência de payload não pode derrubar
   // o Cliente 360.
   faturas?: { total: number; abertas: number; atrasadas: number; pagas: number };
+  itens?: { nome: string; descricao: string | null; quantidade: string; valorUnitario: string; subtotal: string }[];
 }
 interface OrigemAquisicao {
   origem: string | null; campanha: string | null; conjunto: string | null; criativo: string | null;
@@ -210,6 +211,7 @@ function badgeVencimento(dias: number): "neutral" | "warning" | "danger" {
 // export do Zoho) e cai pra descrição/tipo só quando não tem produto
 // nenhum pra mostrar, nunca expõe a origem técnica do dado.
 function tituloContrato(ct: ContratoCliente): string {
+  if (ct.itens && ct.itens.length > 0) return ct.itens.map((i) => i.nome).join(" + ");
   if (ct.servicos && ct.servicos.length > 0) return ct.servicos.join(" + ");
   if (ct.descricao) return ct.descricao;
   if (ct.tipo && ct.tipo !== "legado_zoho") return ct.tipo;
@@ -1254,6 +1256,20 @@ export function Cf2Cliente360({ empresaId }: { empresaId: string }) {
                     <DocumentoContrato contrato={ct} anexosLegado={documentos.data ?? []} />
                   </div>
                 </div>
+
+                {ct.itens && ct.itens.length > 0 && (
+                  <div className="flex flex-col gap-1 pt-2" style={{ borderTop: "1px solid var(--cf2-border-default)" }}>
+                    <p className="text-[10px] font-bold" style={{ color: "var(--cf2-text-tertiary)" }}>PRODUTOS</p>
+                    {ct.itens.map((item, idx) => (
+                      <div key={idx} className="flex items-center justify-between gap-2 text-[11px]">
+                        <p className="truncate" style={{ color: "var(--cf2-text-secondary)" }}>
+                          {item.nome}{parseFloat(item.quantidade) !== 1 ? ` (x${parseFloat(item.quantidade)})` : ""}
+                        </p>
+                        <p className="shrink-0 tabular-nums" style={{ color: "var(--cf2-text-tertiary)" }}>{brl(parseFloat(item.subtotal))}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
                 ))}
               </>
