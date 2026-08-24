@@ -102,6 +102,7 @@ export interface NegocioBoard {
   responsavelId: string | null; responsavelNome: string | null;
   leadId: string | null; leadNome: string | null; leadSobrenome: string | null;
   leadOrigem: string | null;
+  leadTelefone: string | null; leadEmail: string | null;
   empresaId: string | null; empresaNome: string | null;
   previsaoFechamento: string | null; motivoPerda: string | null;
   bundleId: string | null;

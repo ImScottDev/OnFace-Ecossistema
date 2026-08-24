@@ -15,15 +15,22 @@ export default async function PipelinePage() {
   const orgNome = org[0]?.nome || "Callface";
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="-m-6 mb-0 relative flex flex-col gap-6 px-8 pt-7 pb-10 rounded-tl-2xl" style={{ background: "var(--cf2-bg-canvas)" }}>
-        <Cf2Topbar orgNome={orgNome} variant="light" title="Vendas" subtitle="Workspace dos closers — oportunidades de Entrada até Negociação" actions={<PipelineTopbarActions />} />
-      </div>
+    <div className="-m-6 min-h-full flex flex-col">
+      <header className="flex flex-col gap-5 px-8 pt-7 pb-5" style={{ background: "var(--cf2-chrome-bg-alt)", borderBottom: "1px solid var(--cf2-chrome-border-subtle)" }}>
+        <Cf2Topbar orgNome={orgNome} variant="dark" title="Vendas" subtitle="Workspace dos closers — oportunidades de Entrada até Negociação" actions={<PipelineTopbarActions />} />
+      </header>
 
-      <div className="flex flex-col gap-4 pt-6">
+      <div
+        className="flex flex-col flex-1 min-h-[calc(100dvh-130px)] gap-4 px-6 pt-5 pb-6"
+        style={{
+          background: "var(--cf2-chrome-bg-alt)",
+          backgroundImage: "repeating-linear-gradient(to right, rgba(255,255,255,0.035) 0 1px, transparent 1px 60px), repeating-linear-gradient(to bottom, rgba(255,255,255,0.035) 0 1px, transparent 1px 60px)",
+          backgroundSize: "60px 60px",
+        }}
+      >
         <div>
-          <p className="text-[18px] font-bold" style={{ color: "var(--cf2-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>Pipeline</p>
-          <p className="text-[13px]" style={{ color: "var(--cf2-text-secondary)" }}>Entrada → Diagnóstico → Proposta → Negociação. Reunião, trial e no-show são estados da oportunidade, não etapas do board.</p>
+          <p className="text-[18px] font-bold" style={{ color: "var(--cf2-chrome-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>Pipeline</p>
+          <p className="text-[13px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Entrada → Diagnóstico → Proposta → Negociação. Reunião, trial e no-show são estados da oportunidade, não etapas do board.</p>
         </div>
         <Cf2PipelineWorkspace />
       </div>
