@@ -73,8 +73,38 @@ interface Usuario { id: string; nome: string }
 interface CadenciaDef { id: string; nome: string; totalSteps: number }
 interface LabelDef { id: string; nome: string; cor: string }
 
+// Origens selecionáveis quando `allowOrigemChange` (24/08, Pré-vendas
+// reaproveitando este wizard pra importar leads inbound em massa — sem
+// isso todo lead importado nascia com `origem="outbound"` fixo). Prospecção
+// continua sem esse seletor (allowOrigemChange=false por padrão), zero
+// mudança de comportamento pra quem já usa este modal hoje.
+const ORIGEM_IMPORT_OPTIONS = [
+  { value: "outbound", label: "Outbound" },
+  { value: "site", label: "Site" },
+  { value: "indicacao", label: "Indicação" },
+  { value: "instagram", label: "Instagram" },
+  { value: "linkedin", label: "LinkedIn" },
+  { value: "midia_paga", label: "Mídia paga" },
+  { value: "rd_station", label: "RD Station" },
+];
+
+function baixarModeloCsv() {
+  const header = "Nome completo,Empresa,Cargo,E-mail,Telefone,LinkedIn";
+  const exemplo = "Maria Silva,Empresa Exemplo,Diretora,maria@exemplo.com,11999998888,linkedin.com/in/mariasilva";
+  const blob = new Blob(["﻿" + [header, exemplo].join("\r\n")], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "modelo-importacao-leads.csv";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 export function ImportModal({
   open, onClose, listas, usuarios, cadencias, onImported,
+  title = "Importar Prospects", entityLabel = "prospects", defaultOrigem = "outbound", allowOrigemChange = false,
 }: {
   open: boolean;
   onClose: () => void;
@@ -82,6 +112,18 @@ export function ImportModal({
   usuarios: Usuario[];
   cadencias: CadenciaDef[];
   onImported: () => void;
+  /** Título do modal e nome da entidade nos textos ("Importar Leads",
+   * "X leads válidos serão importados") — default preserva o texto de
+   * sempre pra Prospecção. */
+  title?: string;
+  entityLabel?: string;
+  /** Origem gravada em todo lead importado quando o usuário não troca no
+   * seletor (só aparece se `allowOrigemChange`). */
+  defaultOrigem?: string;
+  /** Mostra o seletor de origem no passo de Configuração (24/08, Pré-vendas:
+   * "marcar se é inbound ou outbound... são distintos diferentes"). Prospecção
+   * não passa isso — continua 100% outbound, sem seletor, como sempre foi. */
+  allowOrigemChange?: boolean;
 }) {
   const qc = useQueryClient();
   const [step, setStep] = useState(1);
@@ -98,6 +140,7 @@ export function ImportModal({
   const [tagIds, setTagIds] = useState<Set<string>>(new Set());
   const [newTagInput, setNewTagInput] = useState("");
   const [cadenceDefinitionId, setCadenceDefinitionId] = useState("");
+  const [origemImport, setOrigemImport] = useState(defaultOrigem);
   const [importing, setImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -124,7 +167,7 @@ export function ImportModal({
     setStep(1); setFileName(null); setHeader([]); setDataRows([]);
     setMapping({ nome: null, empresa: null, cargo: null, email: null, telefone: null, linkedin: null });
     setValidation(null); setListaId(""); setListaNomeNovo(""); setResponsavelId("");
-    setTagIds(new Set()); setCadenceDefinitionId("");
+    setTagIds(new Set()); setCadenceDefinitionId(""); setOrigemImport(defaultOrigem);
   }
 
   function handleClose() { reset(); onClose(); }
@@ -180,11 +223,12 @@ export function ImportModal({
         responsavelId: responsavelId || null,
         tagIds: Array.from(tagIds),
         cadenceDefinitionId: cadenceDefinitionId || null,
+        origem: origemImport,
       };
       const r = await fetch("/api/prospeccao/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ rows, dryRun: false, config }) });
       if (!r.ok) throw new Error();
       const result = await r.json();
-      toast.success(`${result.importados} prospects importados.`);
+      toast.success(`${result.importados} ${entityLabel} importados.`);
       onImported();
       handleClose();
     } catch {
@@ -200,7 +244,7 @@ export function ImportModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(15,23,42,0.5)" }} onClick={handleClose}>
       <div className="w-full max-w-2xl rounded-2xl p-6 flex flex-col gap-5 max-h-[90vh] overflow-y-auto" style={{ background: "var(--cf2-bg-surface)" }} onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between">
-          <p className="text-lg font-bold" style={{ color: "var(--cf2-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>Importar Prospects</p>
+          <p className="text-lg font-bold" style={{ color: "var(--cf2-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>{title}</p>
           <button onClick={handleClose}><X className="w-4 h-4" style={{ color: "var(--cf2-text-tertiary)" }} /></button>
         </div>
 
@@ -230,7 +274,10 @@ export function ImportModal({
               <p className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>ou clique para selecionar · .csv, máx. 10MB</p>
             </div>
             <input ref={fileInputRef} type="file" accept=".csv,text/csv" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
-            <p className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>XLSX ainda não é suportado nesta versão — exporte como CSV.</p>
+            <div className="flex items-center justify-between">
+              <p className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>XLSX ainda não é suportado nesta versão — exporte como CSV.</p>
+              <button type="button" onClick={baixarModeloCsv} className="text-[12px] font-semibold shrink-0" style={{ color: "var(--cf2-accent)" }}>Baixar modelo</button>
+            </div>
           </div>
         )}
 
@@ -273,6 +320,15 @@ export function ImportModal({
 
         {step === 4 && (
           <div className="flex flex-col gap-4">
+            {allowOrigemChange && (
+              <div className="flex flex-col gap-1.5">
+                <span className="text-[13px] font-semibold" style={{ color: "var(--cf2-text-primary)" }}>Origem</span>
+                <select value={origemImport} onChange={(e) => setOrigemImport(e.target.value)} className="px-3 py-1.5 rounded-lg text-[13px] outline-none" style={{ background: "var(--cf2-bg-canvas)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }}>
+                  {ORIGEM_IMPORT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+                <p className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>Vale pra todos os {entityLabel} deste arquivo. Se o arquivo mistura origens diferentes, importe em lotes separados.</p>
+              </div>
+            )}
             <div className="flex flex-col gap-1.5">
               <span className="text-[13px] font-semibold" style={{ color: "var(--cf2-text-primary)" }}>Lista</span>
               <div className="flex gap-2">
@@ -337,7 +393,7 @@ export function ImportModal({
         {step === 5 && validation && (
           <div className="flex flex-col gap-3">
             <div className="px-4 py-3 rounded-xl text-[13px] font-semibold" style={{ background: "rgba(34,197,94,0.1)", color: "var(--cf2-success-text)" }}>
-              {validation.validos - validation.duplicados} prospects válidos serão importados
+              {validation.validos - validation.duplicados} {entityLabel} válidos serão importados
             </div>
             <div className="flex flex-col gap-1.5 text-[13px] p-3 rounded-xl" style={{ border: "1px solid var(--cf2-border-default)" }}>
               <KV label="Lista" value={listaMode === "existing" ? listas.find((l) => l.id === listaId)?.nome || "— nenhuma —" : listaNomeNovo || "— nenhuma —"} />
@@ -357,7 +413,7 @@ export function ImportModal({
           {step === 2 && <NextButton disabled={mapping.nome === null} onClick={() => setStep(3)} label="Próximo" />}
           {step === 3 && (validation ? <NextButton onClick={() => setStep(4)} label="Próximo" /> : <NextButton disabled={validating} onClick={runValidation} label={validating ? "Validando..." : "Validar"} />)}
           {step === 4 && <NextButton onClick={() => setStep(5)} label="Próximo" />}
-          {step === 5 && <NextButton disabled={importing} onClick={commit} label={importing ? "Importando..." : `Importar ${validation ? validation.validos - validation.duplicados : 0} prospects`} />}
+          {step === 5 && <NextButton disabled={importing} onClick={commit} label={importing ? "Importando..." : `Importar ${validation ? validation.validos - validation.duplicados : 0} ${entityLabel}`} />}
         </div>
       </div>
     </div>

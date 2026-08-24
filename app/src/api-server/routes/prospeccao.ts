@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { db } from "@/lib/db";
-import { leads, usuarios, empresas, negocios, negocioLeads, contatoListas, leadListas, leadLabels, cadenceDefinitions, cadenceEnrollments } from "@/lib/db/schema";
+import { leads, usuarios, empresas, negocios, negocioLeads, contatoListas, leadListas, labels, leadLabels, cadenceDefinitions, cadenceEnrollments } from "@/lib/db/schema";
 import { eq, and, inArray, sql, desc } from "drizzle-orm";
 import { getCtx } from "../compat.js";
 import { iniciarCadencia, cancelarCadencia } from "@/lib/cadencia/cadence-engine";
@@ -56,10 +56,14 @@ app.get("/prospeccao/board", async (c) => {
 
   const leadIds = rows.map((r) => r.id);
   if (leadIds.length === 0) {
-    return c.json({ leads: [], kpis: { ativos: 0, emCadencia: 0, contatados: 0, responderam: 0, qualificados: 0, conversaoPct: 0 } });
+    return c.json({
+      leads: [],
+      kpis: { ativos: 0, emCadencia: 0, aguardandoResposta: 0, contatados: 0, responderam: 0, qualificados: 0, conversaoPct: 0, semContato: 0, semCadencia: 0, errosCadencia: 0 },
+      cadenciasPerformance: [],
+    });
   }
 
-  const [negs, listas, enrollments] = await Promise.all([
+  const [negs, listas, enrollments, labelRows] = await Promise.all([
     db
       .select({ leadId: negocioLeads.leadId, negocioId: negocios.id, titulo: negocios.titulo, status: negocios.status })
       .from(negocioLeads)
@@ -83,7 +87,13 @@ app.get("/prospeccao/board", async (c) => {
       })
       .from(cadenceEnrollments)
       .innerJoin(cadenceDefinitions, eq(cadenceDefinitions.id, cadenceEnrollments.cadenceDefinitionId))
-      .where(and(eq(cadenceEnrollments.entityType, "lead"), inArray(cadenceEnrollments.entityId, leadIds))),
+      .where(and(eq(cadenceEnrollments.entityType, "lead"), inArray(cadenceEnrollments.entityId, leadIds)))
+      .orderBy(desc(cadenceEnrollments.updatedAt)),
+    db
+      .select({ leadId: leadLabels.leadId, id: labels.id, nome: labels.nome, cor: labels.cor })
+      .from(leadLabels)
+      .innerJoin(labels, eq(labels.id, leadLabels.labelId))
+      .where(and(inArray(leadLabels.leadId, leadIds), eq(labels.organizacaoId, ctx.organizacaoId))),
   ]);
 
   const negMap = new Map<string, { id: string; titulo: string; status: string }[]>();
@@ -93,7 +103,17 @@ app.get("/prospeccao/board", async (c) => {
     negMap.get(n.leadId)!.push({ id: n.negocioId, titulo: n.titulo, status: n.status });
   }
   const listaMap = new Map(listas.map((l) => [l.leadId, { listaId: l.listaId, listaNome: l.listaNome }]));
-  const enrollMap = new Map(enrollments.map((e) => [e.entityId, e]));
+  // A query vem da matrícula mais recente para a mais antiga; preserve a
+  // primeira por prospect para não exibir uma cadência histórica no lugar da atual.
+  const enrollMap = new Map<string, (typeof enrollments)[number]>();
+  for (const enrollment of enrollments) {
+    if (!enrollMap.has(enrollment.entityId)) enrollMap.set(enrollment.entityId, enrollment);
+  }
+  const labelMap = new Map<string, Array<{ id: string; nome: string; cor: string }>>();
+  for (const label of labelRows) {
+    if (!label.leadId) continue;
+    labelMap.set(label.leadId, [...(labelMap.get(label.leadId) || []), { id: label.id, nome: label.nome, cor: label.cor }]);
+  }
 
   const enriched = rows.map((r) => {
     const negsDoLead = negMap.get(r.id) || [];
@@ -123,26 +143,61 @@ app.get("/prospeccao/board", async (c) => {
       negocioPrincipal,
       listaId: lista?.listaId || null,
       listaNome: lista?.listaNome || null,
+      labels: labelMap.get(r.id) || [],
       cadencia,
     };
   });
 
   const total = enriched.length;
   const emCadencia = enriched.filter((l) => l.cadencia && ["active", "waiting"].includes(l.cadencia.status)).length;
+  const aguardandoResposta = enriched.filter((l) => l.cadencia && ["active", "waiting"].includes(l.cadencia.status) && l.sdrStatus !== "qualifying").length;
   const contatados = enriched.filter((l) => (l.sdrStatus || "pending") !== "pending").length;
   const responderam = enriched.filter((l) => l.sdrStatus === "qualifying").length;
   const qualificados = enriched.filter((l) => l.negocioPrincipal || l.negocioCount > 0).length;
+  const semContato = enriched.filter((l) => !l.telefone?.trim() && !l.email?.trim()).length;
+  const semCadencia = enriched.filter((l) => !l.cadencia && !l.negocioPrincipal && (l.sdrStatus || "pending") !== "disqualified").length;
+  const errosCadencia = enriched.filter((l) => l.cadencia?.status === "failed").length;
+
+  const performanceMap = new Map<string, {
+    id: string; nome: string; matriculados: number; ativos: number;
+    responderam: number; qualificados: number; falhas: number;
+  }>();
+  for (const lead of enriched) {
+    if (!lead.cadencia) continue;
+    const current = performanceMap.get(lead.cadencia.definitionId) || {
+      id: lead.cadencia.definitionId,
+      nome: lead.cadencia.definitionNome,
+      matriculados: 0,
+      ativos: 0,
+      responderam: 0,
+      qualificados: 0,
+      falhas: 0,
+    };
+    current.matriculados += 1;
+    if (["active", "waiting"].includes(lead.cadencia.status)) current.ativos += 1;
+    if (lead.cadencia.status === "failed") current.falhas += 1;
+    if (lead.sdrStatus === "qualifying") current.responderam += 1;
+    if (lead.negocioPrincipal || lead.negocioCount > 0) current.qualificados += 1;
+    performanceMap.set(current.id, current);
+  }
+  const cadenciasPerformance = Array.from(performanceMap.values())
+    .sort((a, b) => b.ativos - a.ativos || b.matriculados - a.matriculados);
 
   return c.json({
     leads: enriched,
     kpis: {
       ativos: total,
       emCadencia,
+      aguardandoResposta,
       contatados,
       responderam,
       qualificados,
+      semContato,
+      semCadencia,
+      errosCadencia,
       conversaoPct: total > 0 ? Math.round((qualificados / total) * 1000) / 10 : 0,
     },
+    cadenciasPerformance,
   });
 });
 
@@ -158,6 +213,54 @@ app.get("/prospeccao/cadencias", async (c) => {
   return c.json(
     rows.map((r) => ({ id: r.id, nome: r.nome, totalSteps: ((r.steps as CadenceStep[]) || []).filter((s) => s.tipo === "action").length }))
   );
+});
+
+// ── GET /prospeccao/cadencia/status — enrollment atual de 1 lead ───────
+// Mesmo enrichment de `cadencia` do board acima, só que pra 1 lead fora do
+// contexto de Prospecção (usado pela Página Completa do lead em Pré-vendas,
+// pedido do Kauã 24/08: "adicionar esse lead numa cadência" fora do board
+// outbound). Nome de rota fica em `/prospeccao/*` por já ser o namespace real
+// do Cadence Engine genérico — não é exclusivo de lead outbound, `leads` de
+// qualquer origem podem ser matriculados (mesma coluna `entity_type='lead'`).
+
+app.get("/prospeccao/cadencia/status", async (c) => {
+  const ctx = await getCtx(c);
+  const leadId = c.req.query("leadId");
+  if (!leadId) return c.json({ error: "leadId é obrigatório" }, 400);
+
+  const rows = await db
+    .select({
+      id: cadenceEnrollments.id,
+      status: cadenceEnrollments.status,
+      currentStepId: cadenceEnrollments.currentStepId,
+      scheduledAt: cadenceEnrollments.scheduledAt,
+      definitionId: cadenceEnrollments.cadenceDefinitionId,
+      definitionNome: cadenceDefinitions.nome,
+      steps: cadenceDefinitions.steps,
+    })
+    .from(cadenceEnrollments)
+    .innerJoin(cadenceDefinitions, eq(cadenceDefinitions.id, cadenceEnrollments.cadenceDefinitionId))
+    .where(and(eq(cadenceEnrollments.entityType, "lead"), eq(cadenceEnrollments.entityId, leadId), eq(cadenceDefinitions.organizacaoId, ctx.organizacaoId)))
+    .orderBy(desc(cadenceEnrollments.updatedAt))
+    .limit(1);
+
+  const enr = rows[0];
+  if (!enr) return c.json({ cadencia: null });
+
+  const steps = (enr.steps as CadenceStep[]) || [];
+  const actionSteps = steps.filter((s) => s.tipo === "action");
+  const idx = enr.currentStepId ? actionSteps.findIndex((s) => s.id === enr.currentStepId) : -1;
+  return c.json({
+    cadencia: {
+      enrollmentId: enr.id,
+      definitionId: enr.definitionId,
+      definitionNome: enr.definitionNome,
+      status: enr.status,
+      stepIndex: idx >= 0 ? idx + 1 : actionSteps.length > 0 ? 1 : 0,
+      totalSteps: actionSteps.length,
+      proximaAcaoEm: ["active", "waiting"].includes(enr.status) ? enr.scheduledAt : null,
+    },
+  });
 });
 
 // ── POST /prospeccao/cadencia/enroll — matricula em massa ───────────────
@@ -280,7 +383,10 @@ app.post("/prospeccao/import", async (c) => {
         telefone: row.telefone?.trim() || null,
         linkedin: row.linkedin?.trim() || null,
         tipo: "lead",
-        origem: "outbound",
+        // Default "outbound" preserva o comportamento de sempre pra
+        // Prospecção; Pré-vendas (24/08, pedido do Kauã: "marcar se é
+        // inbound ou outbound") passa `config.origem` explícito.
+        origem: config.origem || "outbound",
         responsavelId: config.responsavelId || null,
       })
       .returning({ id: leads.id });

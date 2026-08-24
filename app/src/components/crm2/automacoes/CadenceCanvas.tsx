@@ -419,7 +419,7 @@ export function CadenceCanvas({ steps, onStepsChange, nome, entityType, onNomeCh
             <div>
               <p className="text-[13px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Fim</p>
               <p className="text-[11px] mt-1" style={{ color: "var(--cf2-text-secondary)" }}>
-                Nó terminal — não existe no dado salvo, é só a representação visual de "cadência encerrada" (`status: completed`). Qualquer branch com destino "Fim" ou o fim da lista de etapas chega aqui.
+                Nó terminal — não existe no dado salvo, é só a representação visual de "follow-up encerrado" (`status: completed`). Qualquer branch com destino "Fim" ou o fim da lista de etapas chega aqui.
               </p>
             </div>
           ) : stepSelecionado ? (
@@ -456,9 +456,9 @@ function TriggerInspector({ nome, entityType, onNomeChange, onEntityTypeChange }
     <div className="flex flex-col gap-2">
       <p className="text-[13px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Início</p>
       <p className="text-[11px]" style={{ color: "var(--cf2-text-secondary)" }}>
-        Único ponto de entrada da cadência. Dispara pra uma entidade quando algum código chama <code>iniciarCadencia</code> com esta definição — mesmo mecanismo de inscrição que já existe hoje, nenhum gatilho automático novo nesta rodada.
+        Único ponto de entrada do follow-up. Dispara para uma entidade quando algum código chama <code>iniciarCadencia</code> com esta definição — mesmo mecanismo de inscrição que já existe hoje, nenhum gatilho automático novo nesta rodada.
       </p>
-      <label className="text-[11px] font-semibold" style={fieldLabelStyle()}>Nome da cadência</label>
+      <label className="text-[11px] font-semibold" style={fieldLabelStyle()}>Nome do follow-up</label>
       <input value={nome} onChange={(e) => onNomeChange(e.target.value)} className="px-2.5 py-1.5 rounded-lg text-[12px] outline-none" style={inputStyle()} />
       <label className="text-[11px] font-semibold" style={fieldLabelStyle()}>Entidade inscrita</label>
       <select value={entityType} onChange={(e) => onEntityTypeChange(e.target.value)} className="px-2.5 py-1.5 rounded-lg text-[12px] outline-none" style={inputStyle()}>

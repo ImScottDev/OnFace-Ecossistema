@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
@@ -104,7 +104,7 @@ const MACRO: MacroItem[] = [
     icon: Zap,
     children: [
       { label: "Visão geral", href: "/automacoes", icon: Zap },
-      { label: "Cadências", href: "/automacoes/cadencias", icon: ListChecks },
+      { label: "Follow-ups", href: "/automacoes/cadencias", icon: ListChecks },
       { label: "Agentes IA", href: "/automacoes/agentes", icon: Bot },
       { label: "Execuções", href: "/automacoes/execucoes", icon: BarChart2 },
     ],
@@ -137,24 +137,23 @@ export function Cf2Sidebar() {
   const { data: session } = useSession();
   const [collapsed, setCollapsed] = useState(false);
   const [query, setQuery] = useState("");
-  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  // Override manual por macro (usuário clicou na seta pra abrir/fechar).
+  // Sem override, o default é "aberto só se for o macro ativo da rota atual"
+  // — dá o comportamento de auto-expandir o ativo sem precisar sincronizar
+  // isso via effect (nada de setState dentro de useEffect aqui).
+  const [manualOverride, setManualOverride] = useState<Map<string, boolean>>(() => new Map());
 
   const userName = session?.user?.name || "Usuário";
   const initials = userName.split(" ").slice(0, 2).map((w) => w[0]).join("").toUpperCase();
   const isVendasRoute = VENDAS_TABS.some((tab) => pathname === tab.href || pathname.startsWith(`${tab.href}/`));
   const activeKey = MACRO.find((item) => isMacroActive(item, pathname, isVendasRoute))?.key ?? MACRO[0].key;
 
-  // O macro ativo (pela rota atual) sempre entra expandido; os demais
-  // continuam como o usuário deixou.
-  useEffect(() => {
-    setExpanded((prev) => (prev.has(activeKey) ? prev : new Set(prev).add(activeKey)));
-  }, [activeKey]);
+  const isExpanded = (key: string) => manualOverride.get(key) ?? key === activeKey;
 
   const toggle = (key: string) => {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
+    setManualOverride((prev) => {
+      const next = new Map(prev);
+      next.set(key, !isExpanded(key));
       return next;
     });
   };
@@ -196,7 +195,7 @@ export function Cf2Sidebar() {
         {MACRO.map((item) => {
           const active = isMacroActive(item, pathname, isVendasRoute);
           const hasChildren = !!item.children?.length;
-          const isOpen = !collapsed && hasChildren && (expanded.has(item.key) || (!!query && item.children!.some((c) => matchesQuery(c.label, query))));
+          const isOpen = !collapsed && hasChildren && (isExpanded(item.key) || (!!query && item.children!.some((c) => matchesQuery(c.label, query))));
 
           return (
             <div key={item.key}>

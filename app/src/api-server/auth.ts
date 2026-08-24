@@ -1,7 +1,6 @@
 import { Context, Next } from "hono";
 import { getCookie } from "hono/cookie";
-import { jwtDecrypt } from "jose";
-import crypto from "node:crypto";
+import { decode } from "@auth/core/jwt";
 import { db } from "@/lib/db";
 import { organizacoes, usuarios } from "@/lib/db/schema";
 import { eq, SQL } from "drizzle-orm";
@@ -25,37 +24,6 @@ const ADMIN_ROLES = ["admin", "gerente", "super_admin"];
 const COOKIE_NAME_SECURE = "__Secure-authjs.session-token";
 const COOKIE_NAME_INSECURE = "authjs.session-token";
 
-async function getDerivedKey(secret: string, cookieName: string): Promise<Uint8Array> {
-  const keyMaterial = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(secret),
-    { name: "HKDF" },
-    false,
-    ["deriveBits"]
-  );
-  const derived = await crypto.subtle.deriveBits(
-    {
-      name: "HKDF",
-      hash: "SHA-256",
-      salt: new TextEncoder().encode(cookieName),
-      info: new TextEncoder().encode(`Auth.js Generated Encryption Key (${cookieName})`),
-    },
-    keyMaterial,
-    512 // 64 bytes for A256CBC-HS512
-  );
-  return new Uint8Array(derived);
-}
-
-const cachedKeys = new Map<string, Uint8Array>();
-async function getKey(cookieName: string): Promise<Uint8Array> {
-  let key = cachedKeys.get(cookieName);
-  if (!key) {
-    key = await getDerivedKey(NEXTAUTH_SECRET, cookieName);
-    cachedKeys.set(cookieName, key);
-  }
-  return key;
-}
-
 export interface TenantContext {
   userId: string;
   userName: string;
@@ -76,11 +44,15 @@ export interface TenantContext {
 // Decode the NextAuth session from the encrypted JWT cookie
 async function decodeSession(cookieValue: string, cookieName: string): Promise<Record<string, unknown> | null> {
   try {
-    const key = await getKey(cookieName);
-    const { payload } = await jwtDecrypt(cookieValue, key, {
-      clockTolerance: 15,
-    });
-    return payload as Record<string, unknown>;
+    // Use exatamente o mesmo decoder da versão instalada do Auth.js.
+    // O formato do JWE (incluindo `kid` e algoritmos aceitos) pertence ao
+    // Auth.js; reimplementá-lo aqui fez o Next autenticar enquanto a API
+    // Hono recusava o mesmo cookie e disparava o redirect global pro login.
+    return await decode({
+      token: cookieValue,
+      secret: NEXTAUTH_SECRET,
+      salt: cookieName,
+    }) as Record<string, unknown> | null;
   } catch {
     return null;
   }

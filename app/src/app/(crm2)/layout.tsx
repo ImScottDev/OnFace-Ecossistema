@@ -63,6 +63,11 @@ export default async function Crm2Layout({ children }: { children: React.ReactNo
             className="flex-1 overflow-y-auto min-h-0 cf2-hide-scrollbar"
             style={{
               backgroundColor: "var(--cf2-bg-canvas)",
+              // Achado real 24/08: passar do limite do scroll (trackpad)
+              // revelava esse fundo claro por baixo do conteúdo em páginas
+              // com chrome escuro (Pré-vendas, Atendimento) — `contain`
+              // trava o elástico dentro desta caixa em vez de vazar.
+              overscrollBehavior: "contain",
               // Grid de fundo do Figma (bg-grid-effect): linhas a cada 60px, opacity 50%.
               backgroundImage:
                 "repeating-linear-gradient(to right, var(--cf2-border-grid) 0 1px, transparent 1px 60px), repeating-linear-gradient(to bottom, var(--cf2-border-grid) 0 1px, transparent 1px 60px)",

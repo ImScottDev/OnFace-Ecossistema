@@ -3,13 +3,9 @@
  * workspace EXCLUSIVO de outbound, separado de Pré-vendas. Reaproveita o
  * mesmo `Lead` base de `qualificacao/shared.ts` (mesmo endpoint `/api/leads`,
  * mesmos sinais reais) só que com um vocabulário de status PRÓPRIO — os 6
- * do spec (Novo/Em prospecção/Respondeu/Qualificado/Sem resposta/
- * Desqualificado), todos derivados de campos que já existem hoje
- * (`sdrStatus`, negócio vinculado). Nenhum literal novo foi criado: dado
- * real da org Callface (17/08) mostra só pending/contacted/disqualified
- * entre os 78 leads outbound — "Respondeu" e "Sem resposta" reaproveitam
- * `qualifying`/`sdr_sem_retorno`, os mesmos já usados no board de
- * Pré-vendas, e ficam vazios até algum prospect real chegar nesse estado.
+ * operacional próprio. O estado é derivado de sinais reais já persistidos:
+ * lista, enrollment de cadência, sdrStatus e oportunidade vinculada. Isso
+ * mantém Prospect separado de Pré-vendas sem criar um segundo CRM.
  */
 import type { Lead } from "@/components/crm2/qualificacao/shared";
 
@@ -27,6 +23,7 @@ export interface ProspeccaoLead extends Lead {
   listaId?: string | null;
   listaNome?: string | null;
   cadencia?: CadenciaInfo | null;
+  labels?: Array<{ id: string; nome: string; cor: string }>;
 }
 
 export interface ProspeccaoStatus {
@@ -36,10 +33,11 @@ export interface ProspeccaoStatus {
 }
 
 export const PROSPECCAO_STATUS: ProspeccaoStatus[] = [
-  { key: "novo", label: "Novo", color: "#3B82F6" },
-  { key: "em_prospeccao", label: "Em prospecção", color: "#EAB308" },
+  { key: "novo", label: "Novo", color: "#64748B" },
+  { key: "selecionado", label: "Selecionado", color: "#2563EB" },
+  { key: "em_cadencia", label: "Em cadência", color: "#7C3AED" },
   { key: "respondeu", label: "Respondeu", color: "#0EA5E9" },
-  { key: "qualificado", label: "Qualificado", color: "#22C55E" },
+  { key: "qualificado", label: "Pré-vendas", color: "#16A34A" },
   { key: "sem_resposta", label: "Sem resposta", color: "#8e27ef" },
   { key: "desqualificado", label: "Desqualificado", color: "#dc2626" },
 ];
@@ -50,17 +48,19 @@ const BY_KEY = new Map(PROSPECCAO_STATUS.map((s) => [s.key, s]));
  * Status de Prospecção pro lead, calculado ao VIVO — mesma disciplina do
  * `resolveDisplayStage` de Pré-vendas (nunca lê snapshot de coluna, sempre
  * recalcula dos campos reais). "Qualificado" aqui significa que a
- * oportunidade JÁ foi criada (negocioPrincipal/negocioCount reais) — no
- * fluxo de Prospecção isso acontece direto (sem passar por Pré-vendas), via
- * `/leads/:id/converter-oportunidade` com `semReuniao: true`.
+ * oportunidade JÁ foi criada (negocioPrincipal/negocioCount reais). Nesse
+ * momento o prospect passa a aparecer na coluna Qualificado de Pré-vendas,
+ * preservando origem, lista, cadência e histórico outbound.
  */
-export function resolveProspeccaoStatus(lead: Lead): ProspeccaoStatus {
+export function resolveProspeccaoStatus(lead: Lead & Partial<ProspeccaoLead>): ProspeccaoStatus {
   const s = lead.sdrStatus || "pending";
   if (s === "disqualified") return BY_KEY.get("desqualificado")!;
   if (lead.negocioPrincipal || (lead.negocioCount && lead.negocioCount > 0)) return BY_KEY.get("qualificado")!;
   if (s === "sdr_sem_retorno") return BY_KEY.get("sem_resposta")!;
   if (s === "qualifying") return BY_KEY.get("respondeu")!;
-  if (s === "contacted") return BY_KEY.get("em_prospeccao")!;
+  if (lead.cadencia && ["active", "waiting"].includes(lead.cadencia.status)) return BY_KEY.get("em_cadencia")!;
+  if (lead.cadencia?.status === "completed") return BY_KEY.get("sem_resposta")!;
+  if (lead.listaId || s === "contacted") return BY_KEY.get("selecionado")!;
   return BY_KEY.get("novo")!;
 }
 

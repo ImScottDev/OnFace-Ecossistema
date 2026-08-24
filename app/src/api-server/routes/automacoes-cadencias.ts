@@ -8,8 +8,8 @@
 // resposta pra não passar a falsa impressão de que já é 1 motor só.
 import { Hono } from "hono";
 import { db } from "@/lib/db";
-import { cadenceDefinitions, cadenceEnrollments, cadenceEnrollmentEvents } from "@/lib/db/schema";
-import { eq, sql, and, desc } from "drizzle-orm";
+import { cadenceDefinitions, cadenceEnrollments, cadenceEnrollmentEvents, contatos, leads, negocios } from "@/lib/db/schema";
+import { eq, sql, and, desc, inArray } from "drizzle-orm";
 import { getCtx } from "../compat.js";
 import { z } from "zod";
 import { cancelarCadencia } from "@/lib/cadencia/cadence-engine";
@@ -44,6 +44,64 @@ app.get("/automacoes/cadencias", async (c) => {
       aiSdrRetrySweep: "hardcoded no worker (runAiSdrRetrySweep), não passa por cadence_definitions",
     },
   });
+});
+
+// Fila operacional dos Follow-ups. A inscrição é a fonte de verdade; o
+// nome da entidade é resolvido só para leitura, preservando o motor genérico
+// (lead | negocio | contato) e sem criar uma tabela paralela de fila.
+app.get("/automacoes/cadencias/fila", async (c) => {
+  const ctx = await getCtx(c);
+  const status = c.req.query("status");
+  const definitionId = c.req.query("definitionId");
+  const query = (c.req.query("q") ?? "").trim().toLowerCase();
+
+  const conditions = [eq(cadenceEnrollments.organizacaoId, ctx.organizacaoId)];
+  if (status && status !== "all") conditions.push(eq(cadenceEnrollments.status, status));
+  if (definitionId && definitionId !== "all") conditions.push(eq(cadenceEnrollments.cadenceDefinitionId, definitionId));
+
+  const [definitions, enrollments] = await Promise.all([
+    db.select().from(cadenceDefinitions).where(eq(cadenceDefinitions.organizacaoId, ctx.organizacaoId)),
+    db.select().from(cadenceEnrollments).where(and(...conditions)).orderBy(desc(cadenceEnrollments.updatedAt)).limit(250),
+  ]);
+  const definitionById = new Map(definitions.map((definition) => [definition.id, definition]));
+  const idsByType = enrollments.reduce((acc, enrollment) => {
+    if (enrollment.entityType === "lead" || enrollment.entityType === "negocio" || enrollment.entityType === "contato") acc[enrollment.entityType].push(enrollment.entityId);
+    return acc;
+  }, { lead: [] as string[], negocio: [] as string[], contato: [] as string[] });
+  const [leadRows, negocioRows, contatoRows] = await Promise.all([
+    idsByType.lead.length ? db.select({ id: leads.id, nome: leads.nome, empresa: leads.empresa, email: leads.email, telefone: leads.telefone }).from(leads).where(and(eq(leads.organizacaoId, ctx.organizacaoId), inArray(leads.id, idsByType.lead))) : [],
+    idsByType.negocio.length ? db.select({ id: negocios.id, titulo: negocios.titulo }).from(negocios).where(and(eq(negocios.organizacaoId, ctx.organizacaoId), inArray(negocios.id, idsByType.negocio))) : [],
+    idsByType.contato.length ? db.select({ id: contatos.id, nome: contatos.nome, email: contatos.email, telefone: contatos.telefone }).from(contatos).where(and(eq(contatos.organizacaoId, ctx.organizacaoId), inArray(contatos.id, idsByType.contato))) : [],
+  ]);
+  const leadById = new Map(leadRows.map((row) => [row.id, row]));
+  const negocioById = new Map(negocioRows.map((row) => [row.id, row]));
+  const contatoById = new Map(contatoRows.map((row) => [row.id, row]));
+
+  const items = enrollments.map((enrollment) => {
+    const definition = definitionById.get(enrollment.cadenceDefinitionId);
+    const steps = (definition?.steps ?? []) as Array<{ id?: string; tipo?: string; config?: Record<string, unknown>; esperaMinutos?: number }>;
+    const currentStep = steps.find((step) => step.id === enrollment.currentStepId);
+    const lead = enrollment.entityType === "lead" ? leadById.get(enrollment.entityId) : undefined;
+    const negocio = enrollment.entityType === "negocio" ? negocioById.get(enrollment.entityId) : undefined;
+    const contato = enrollment.entityType === "contato" ? contatoById.get(enrollment.entityId) : undefined;
+    const entityName = lead?.nome ?? negocio?.titulo ?? contato?.nome ?? "Registro indisponível";
+    return {
+      id: enrollment.id,
+      status: enrollment.status,
+      startedAt: enrollment.startedAt,
+      updatedAt: enrollment.updatedAt,
+      nextFireAt: enrollment.scheduledAt,
+      entityType: enrollment.entityType,
+      entityId: enrollment.entityId,
+      entityName,
+      entityDetail: lead?.empresa ?? lead?.email ?? lead?.telefone ?? contato?.email ?? contato?.telefone ?? null,
+      definitionId: enrollment.cadenceDefinitionId,
+      definitionName: definition?.nome ?? "Fluxo removido",
+      currentStep: currentStep ? ((currentStep.config?.label as string | undefined) || (currentStep.tipo === "wait" ? `Aguardar ${currentStep.esperaMinutos ?? 0} min` : currentStep.tipo === "condition" ? "Condição" : "Ação")) : "Aguardando início",
+    };
+  }).filter((item) => !query || `${item.entityName} ${item.entityDetail ?? ""} ${item.definitionName}`.toLowerCase().includes(query));
+
+  return c.json({ items, total: items.length, definitions: definitions.map((definition) => ({ id: definition.id, nome: definition.nome })) });
 });
 
 const stepSchema = z.object({

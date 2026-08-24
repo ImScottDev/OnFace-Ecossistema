@@ -38,6 +38,9 @@ export interface PropostaRow {
   primeiraVisualizacaoEm: string | null; clienteRespondeuEm: string | null;
   enviadaEm: string | null; createdAt: string;
   familias: string[];
+  itensResumo: Array<{ nome: string; quantidade: string; tipo: string }>;
+  ultimaAtividadeEm: string;
+  ultimaAtividadeTipo: "criou" | "enviou" | "visualizou" | "respondeu";
 }
 
 export const brl = (v: string | number | null | undefined) => Number(v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });

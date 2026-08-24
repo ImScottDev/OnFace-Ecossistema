@@ -4,7 +4,7 @@ import {
   contatos, emails, emailContas, ligacoes, leads, empresas, negocios,
   propostas, reunioes, tarefas, aiSdrContatoState, clientes, contatoLabels, labels,
 } from "@/lib/db/schema";
-import { eq, and, or, desc, asc, isNull, ilike, inArray, gte, sql } from "drizzle-orm";
+import { eq, and, or, desc, asc, isNull, ilike, inArray, gte, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import { getCtx, parseBody } from "../compat.js";
 import { publicarEvento } from "@/lib/events/outbox";
@@ -55,6 +55,14 @@ app.get("/atendimento/conversas", async (c) => {
   const search = c.req.query("search") ?? null;
   const viewAs = c.req.query("viewAs") ?? null;
   const limit = Math.min(parseInt(c.req.query("limit") || "40"), 100);
+  // Deep link por lead (24/08, achado real: clicar em Ligar/WhatsApp num
+  // lead específico não encontrava a conversa quando ela era de outro
+  // vendedor ou já estava fechada — o filtro de privacidade de 10/08 é do
+  // INBOX GERAL, não deveria valer pra "abrir a conversa DESSE lead
+  // específico" que o usuário já está vendo no CRM). Com `leadId` presente,
+  // as 3 buscas ignoram dono/status — acham a conversa desse lead sempre
+  // que ela existir na org, sem abrir a caixa de entrada de outra pessoa.
+  const leadIdFiltro = c.req.query("leadId") ?? null;
 
   const isAdmin = ctx.userRole === "admin" || ctx.userRole === "super_admin";
   const effectiveUserId = isAdmin && viewAs ? viewAs : ctx.userId;
@@ -65,9 +73,9 @@ app.get("/atendimento/conversas", async (c) => {
   // (risco real de dessincronia, já visto nesta sessão noutro campo). Custo
   // extra é aceitável: são as mesmas queries indexadas que "todas" já fazia.
   const [whatsappItens, emailItens, ligacaoItens] = await Promise.all([
-    buscarWhatsapp({ ctx, view, search, effectiveUserId, limit }),
-    buscarEmail({ ctx, view, search, effectiveUserId, limit }),
-    buscarLigacao({ ctx, view, search, effectiveUserId, limit }),
+    buscarWhatsapp({ ctx, view, search, effectiveUserId, limit, leadIdFiltro }),
+    buscarEmail({ ctx, view, search, effectiveUserId, limit, leadIdFiltro }),
+    buscarLigacao({ ctx, view, search, effectiveUserId, limit, leadIdFiltro }),
   ]);
 
   const todasFiltrado = [...whatsappItens, ...emailItens, ...ligacaoItens].filter((m) => m.tipo === "ligacao" || m.naoLidas > 0);
@@ -91,29 +99,35 @@ app.get("/atendimento/conversas", async (c) => {
 
 async function buscarWhatsapp(opts: {
   ctx: Awaited<ReturnType<typeof getCtx>>; view: string; search: string | null;
-  effectiveUserId: string; limit: number;
+  effectiveUserId: string; limit: number; leadIdFiltro?: string | null;
 }): Promise<ItemUnificado[]> {
-  const { ctx, view, search, effectiveUserId, limit } = opts;
+  const { ctx, view, search, effectiveUserId, limit, leadIdFiltro } = opts;
 
   const conditions = [eq(contatos.organizacaoId, ctx.organizacaoId), eq(contatos.canal, "whatsapp")];
 
-  if (view === "fechadas") {
-    conditions.push(eq(contatos.status, "closed"));
-  } else if (view === "ia") {
-    conditions.push(eq(contatos.status, "open"), eq(aiSdrContatoState.handoffStatus, "ai_handling"));
+  if (leadIdFiltro) {
+    // Deep link: acha a conversa DESSE lead na org, sem filtro de dono/status
+    // (ver comentário na rota) — não é o browse geral do inbox.
+    conditions.push(eq(contatos.leadId, leadIdFiltro));
   } else {
-    conditions.push(eq(contatos.status, "open"), or(isNull(contatos.snoozedUntil), sql`${contatos.snoozedUntil} <= now()`)!);
-  }
+    if (view === "fechadas") {
+      conditions.push(eq(contatos.status, "closed"));
+    } else if (view === "ia") {
+      conditions.push(eq(contatos.status, "open"), eq(aiSdrContatoState.handoffStatus, "ai_handling"));
+    } else {
+      conditions.push(eq(contatos.status, "open"), or(isNull(contatos.snoozedUntil), sql`${contatos.snoozedUntil} <= now()`)!);
+    }
 
-  // Privacidade real entre vendedores (Kauã, 10/08): cada um só vê as
-  // conversas de WhatsApp que são dele (ou ainda sem dono) — nem admin/super
-  // admin vê o WhatsApp de outro vendedor por padrão aqui. Só "Atribuir"
-  // (responsavelId) muda quem tem acesso. Supervisão de verdade (ver como
-  // outro vendedor) é feature separada e explícita, não esse filtro.
-  if (view === "nao_atribuidos") {
-    conditions.push(isNull(contatos.responsavelId));
-  } else {
-    conditions.push(or(eq(contatos.responsavelId, effectiveUserId), isNull(contatos.responsavelId))!);
+    // Privacidade real entre vendedores (Kauã, 10/08): cada um só vê as
+    // conversas de WhatsApp que são dele (ou ainda sem dono) — nem admin/super
+    // admin vê o WhatsApp de outro vendedor por padrão aqui. Só "Atribuir"
+    // (responsavelId) muda quem tem acesso. Supervisão de verdade (ver como
+    // outro vendedor) é feature separada e explícita, não esse filtro.
+    if (view === "nao_atribuidos") {
+      conditions.push(isNull(contatos.responsavelId));
+    } else {
+      conditions.push(or(eq(contatos.responsavelId, effectiveUserId), isNull(contatos.responsavelId))!);
+    }
   }
 
   if (search) conditions.push(or(ilike(contatos.nome, `%${search}%`), ilike(contatos.telefone, `%${search}%`))!);
@@ -265,25 +279,31 @@ app.delete("/atendimento/conversas/:id/tags/:labelId", async (c) => {
 
 async function buscarEmail(opts: {
   ctx: Awaited<ReturnType<typeof getCtx>>; view: string; search: string | null;
-  effectiveUserId: string; limit: number;
+  effectiveUserId: string; limit: number; leadIdFiltro?: string | null;
 }): Promise<ItemUnificado[]> {
-  const { ctx, view, search, effectiveUserId, limit } = opts;
+  const { ctx, view, search, effectiveUserId, limit, leadIdFiltro } = opts;
 
   // E-mail não tem conceito de "responsável"/"não atribuído" (é por conta
   // conectada, não por atribuição manual) — "não atribuídos" não existe pra
   // esse canal, retorna vazio nesse view em vez de inventar um significado.
-  if (view === "nao_atribuidos") return [];
+  if (view === "nao_atribuidos" && !leadIdFiltro) return [];
 
-  // Mesma privacidade do WhatsApp: cada um só vê os e-mails da própria conta
-  // conectada, sem exceção de papel — "todos" não é um jeito de bisbilhotar
-  // a caixa de entrada de outro vendedor.
-  const contaConds = [eq(emailContas.organizacaoId, ctx.organizacaoId), eq(emailContas.usuarioId, effectiveUserId)];
-
-  const contas = await db.select({ id: emailContas.id, usuarioId: emailContas.usuarioId }).from(emailContas).where(and(...contaConds));
-  if (contas.length === 0) return [];
-  const contaIds = contas.map((cta) => cta.id);
-
-  const conditions = [inArray(emails.contaId, contaIds)];
+  let conditions: SQL[];
+  if (leadIdFiltro) {
+    // Deep link: acha o e-mail DESSE lead na org inteira (qualquer conta),
+    // não só a conta do usuário atual (ver comentário na rota).
+    const contasOrg = await db.select({ id: emailContas.id }).from(emailContas).where(eq(emailContas.organizacaoId, ctx.organizacaoId));
+    if (contasOrg.length === 0) return [];
+    conditions = [inArray(emails.contaId, contasOrg.map((cta) => cta.id)), eq(emails.leadId, leadIdFiltro)];
+  } else {
+    // Mesma privacidade do WhatsApp: cada um só vê os e-mails da própria conta
+    // conectada, sem exceção de papel — "todos" não é um jeito de bisbilhotar
+    // a caixa de entrada de outro vendedor.
+    const contaConds = [eq(emailContas.organizacaoId, ctx.organizacaoId), eq(emailContas.usuarioId, effectiveUserId)];
+    const contas = await db.select({ id: emailContas.id, usuarioId: emailContas.usuarioId }).from(emailContas).where(and(...contaConds));
+    if (contas.length === 0) return [];
+    conditions = [inArray(emails.contaId, contas.map((cta) => cta.id))];
+  }
   if (search) conditions.push(or(ilike(emails.assunto, `%${search}%`), ilike(emails.de, `%${search}%`), ilike(emails.para, `%${search}%`))!);
 
   const rows = await db
@@ -341,16 +361,20 @@ async function buscarEmail(opts: {
 
 async function buscarLigacao(opts: {
   ctx: Awaited<ReturnType<typeof getCtx>>; view: string; search: string | null;
-  effectiveUserId: string; limit: number;
+  effectiveUserId: string; limit: number; leadIdFiltro?: string | null;
 }): Promise<ItemUnificado[]> {
-  const { ctx, view, search, effectiveUserId, limit } = opts;
+  const { ctx, view, search, effectiveUserId, limit, leadIdFiltro } = opts;
 
   // Ligação não tem "não atribuído" — toda ligação já tem o vendedor que
   // atendeu (usuarioId), não existe fila de ligação sem dono.
-  if (view === "nao_atribuidos") return [];
+  if (view === "nao_atribuidos" && !leadIdFiltro) return [];
 
-  // Mesma privacidade — ligação só aparece pra quem atendeu, sem exceção de papel.
-  const conditions = [eq(ligacoes.organizacaoId, ctx.organizacaoId), eq(ligacoes.usuarioId, effectiveUserId)];
+  const conditions = leadIdFiltro
+    // Deep link: todas as ligações DESSE lead na org, não só as que o
+    // usuário atual atendeu (ver comentário na rota).
+    ? [eq(ligacoes.organizacaoId, ctx.organizacaoId), eq(ligacoes.leadId, leadIdFiltro)]
+    // Mesma privacidade — ligação só aparece pra quem atendeu, sem exceção de papel.
+    : [eq(ligacoes.organizacaoId, ctx.organizacaoId), eq(ligacoes.usuarioId, effectiveUserId)];
   if (search) conditions.push(ilike(leads.nome, `%${search}%`));
 
   const rows = await db

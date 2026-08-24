@@ -87,7 +87,15 @@ export function QualificacaoSdrSection({
   const qc = useQueryClient();
   const initial = ((camposCustom?.qualificacaoSdr as SdrValues) || {}) as SdrValues;
   const [vals, setVals] = useState<SdrValues>(() =>
-    Object.fromEntries(SDR_FIELDS.map((f) => [f.key, initial[f.key] || prefill?.[f.key] || ""]))
+    Object.fromEntries(SDR_FIELDS.map((f) => {
+      const v = initial[f.key] || prefill?.[f.key] || "";
+      // "Tomador de decisão?" nunca começa vazio (24/08, pedido do Kauã:
+      // mostrar as 3 opções coladas como placeholder "não faz sentido") —
+      // o estado de repouso real é "Não identificado", SDR troca pra
+      // Sim/Não quando descobre.
+      if (!v && f.key === "tomadorDecisao") return [f.key, "nao_identificado"];
+      return [f.key, v];
+    }))
   );
   const [savedKey, setSavedKey] = useState<string | null>(null);
 

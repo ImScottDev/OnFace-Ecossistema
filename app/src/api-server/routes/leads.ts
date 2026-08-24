@@ -215,6 +215,7 @@ app.get("/leads", async (c) => {
   const hasWhatsapp = c.req.query("hasWhatsapp") ?? null;
   const labelIds = c.req.query("labelIds") ?? null;
   const estagio = c.req.query("estagio") ?? null;
+  const context = c.req.query("context") ?? null;
   // Segmento do ciclo de vida (#2 Scott): lead (cru, SDR) | qualificado (oportunidade
   // no closer) | cliente (convertido/pagante). Quando presente, manda no lugar do `tipo`.
   const segmento = c.req.query("segmento") ?? null;
@@ -233,6 +234,12 @@ app.get("/leads", async (c) => {
   };
 
   const conditions: SQL[] = [eq(leads.organizacaoId, ctx.organizacaoId)];
+  // Prospecção e Pré-vendas são operações distintas. Um registro outbound
+  // cru fica somente na máquina de prospecção; ele entra em Pré-vendas já
+  // na coluna Qualificado quando o handoff cria a oportunidade.
+  if (context === "pre_vendas") {
+    conditions.push(sql`(coalesce(lower(${leads.origem}), '') <> 'outbound' OR ${isQualif})`);
+  }
   if (!segmento && tipo && tipo !== "todos") {
     if (tipo.includes(",")) {
       const tipos = tipo.split(",").map(t => t.trim());

@@ -3,7 +3,7 @@
 import { useRef, useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Phone, MessageCircle, Mail, Plus, Calendar, ChevronDown, Check, Send, Clock } from "lucide-react";
+import { Phone, MessageCircle, Mail, Plus, Calendar, ChevronDown, Check, Send, Clock, X } from "lucide-react";
 import { DetailDrawer } from "@/components/crm/DetailDrawer";
 import { QualificacaoSdrSection } from "@/components/crm/QualificacaoSdrSection";
 import { LigacoesSection } from "@/components/crm/LigacoesSection";
@@ -51,13 +51,10 @@ function timeAgoShort(dateStr: string): string {
 }
 
 /**
- * Drawer dedicado de Prospecção (spec do Kauã, 17/08) — diferente do
- * `Cf2LeadDrawer` de Pré-vendas em 2 pontos centrais: (1) qualificar aqui
- * chama `converter-oportunidade` DIRETO com `semReuniao: true` (a
- * oportunidade nasce no Pipeline sem passar por Pré-vendas — o trabalho de
- * pré-venda outbound já aconteceu dentro de Prospecção, spec explícita);
- * (2) mostra o card de Cadência (etapa real do Cadence Engine), que não
- * existe no drawer de Pré-vendas.
+ * Workspace lateral dedicado ao prospect outbound. O foco é histórico da
+ * abordagem, cadência, prontidão do handoff e ações operacionais. Ao
+ * qualificar, a oportunidade é criada e o registro passa a aparecer em
+ * "Qualificado" de Pré-vendas, com origem e histórico outbound preservados.
  */
 export function ProspeccaoDrawer({
   leadId, open, onClose, usuariosById, cadencias, onChanged,
@@ -78,7 +75,7 @@ export function ProspeccaoDrawer({
   const [noteOpen, setNoteOpen] = useState(false);
   const noteRef = useRef<HTMLTextAreaElement>(null);
 
-  const { data: detail, isLoading } = useQuery({
+  const { data: detail, isLoading, isError } = useQuery({
     queryKey: ["lead", leadId],
     queryFn: async () => {
       const r = await fetch(`/api/leads/${leadId}`);
@@ -124,7 +121,7 @@ export function ProspeccaoDrawer({
       return r.json();
     },
     onSuccess: () => {
-      toast.success("Prospect qualificado — oportunidade criada no Pipeline.");
+      toast.success("Prospect enviado para Qualificado em Pré-vendas.");
       qc.invalidateQueries({ queryKey: ["lead", leadId] });
       onChanged();
       onClose();
@@ -137,8 +134,8 @@ export function ProspeccaoDrawer({
       const r = await fetch("/api/prospeccao/cadencia/enroll", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ leadIds: [leadId], cadenceDefinitionId }) });
       if (!r.ok) throw new Error("falha");
     },
-    onSuccess: () => { toast.success("Cadência iniciada."); onChanged(); setEnrollSelect(""); },
-    onError: () => toast.error("Não foi possível iniciar a cadência"),
+    onSuccess: () => { toast.success("Follow-up iniciado."); onChanged(); setEnrollSelect(""); },
+    onError: () => toast.error("Não foi possível iniciar o follow-up"),
   });
 
   const pausar = useMutation({
@@ -146,7 +143,7 @@ export function ProspeccaoDrawer({
       const r = await fetch("/api/prospeccao/cadencia/pausar", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ leadIds: [leadId] }) });
       if (!r.ok) throw new Error("falha");
     },
-    onSuccess: () => { toast.success("Cadência pausada."); onChanged(); },
+    onSuccess: () => { toast.success("Follow-up pausado."); onChanged(); },
     onError: () => toast.error("Não foi possível pausar"),
   });
 
@@ -221,32 +218,39 @@ export function ProspeccaoDrawer({
         className="flex items-center gap-2 h-10 px-4 rounded-xl text-[13px] font-bold disabled:opacity-60"
         style={{ background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" }}
       >
-        <Check className="w-4 h-4" /> Qualificar prospect →
+        <Check className="w-4 h-4" /> Enviar para Pré-vendas
       </button>
     </div>
   );
 
   return (
     <>
-    <DetailDrawer open={open && !!leadId} onClose={onClose} bare panelBg="#ffffff" width="w-full sm:w-[500px]" footer={footer}>
-      {isLoading && <div className="p-6 text-sm" style={{ color: "var(--cf2-text-tertiary)" }}>Carregando...</div>}
+    <DetailDrawer open={open && !!leadId} onClose={onClose} bare panelBg="#ffffff" width="w-full sm:w-[620px]" footer={footer}>
+      {isLoading && <div className="space-y-3 p-6" aria-label="Carregando prospect">{Array.from({ length: 6 }).map((_, index) => <div key={index} className="h-12 animate-pulse rounded-xl" style={{ background: "var(--cf2-bg-surface-muted)" }} />)}</div>}
+      {isError && <div className="flex flex-col items-center gap-2 p-10 text-center"><p className="text-sm font-bold" style={{ color: "var(--cf2-text-primary)" }}>Não foi possível abrir o prospect</p><p className="text-xs" style={{ color: "var(--cf2-text-tertiary)" }}>Feche o painel e tente novamente.</p></div>}
       {lead && (
         <div className="flex flex-col gap-4 p-5">
           <div className="flex flex-col gap-3">
-            <div className="flex flex-col gap-1.5">
-              <p className="text-[18px] font-bold" style={{ color: "var(--cf2-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>{fullName}</p>
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex min-w-0 flex-col gap-1.5">
+              <p className="text-[10px] font-bold uppercase tracking-[0.12em]" style={{ color: "var(--cf2-text-tertiary)" }}>Perfil outbound</p>
+              <p className="truncate text-[20px] font-bold" style={{ color: "var(--cf2-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>{fullName}</p>
               <p className="text-[13px]" style={{ color: "var(--cf2-text-tertiary)" }}>{[lead.empresa, lead.cargo].filter(Boolean).join(" · ") || "—"}</p>
-              <div className="flex items-center gap-2.5">
+              <div className="flex flex-wrap items-center gap-1.5">
                 <span className="px-2.5 py-1 rounded-full text-[12px] font-semibold" style={{ background: `${status.color}18`, color: status.color }}>{status.label}</span>
-                {boardLead?.listaNome && <span className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>Origem: {boardLead.listaNome}</span>}
+                <span className="rounded-full px-2.5 py-1 text-[11px] font-bold uppercase" style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-secondary)" }}>Outbound</span>
+                {boardLead?.listaNome && <span className="rounded-full px-2.5 py-1 text-[11px] font-semibold" style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-secondary)" }}>{boardLead.listaNome}</span>}
+                {boardLead?.labels?.filter((label) => label.nome.toLowerCase() !== "outbound").slice(0, 3).map((label) => <span key={label.id} className="rounded-full px-2.5 py-1 text-[11px] font-semibold" style={{ background: `${label.cor}16`, color: label.cor }}>{label.nome}</span>)}
               </div>
+              </div>
+              <button onClick={onClose} aria-label="Fechar perfil do prospect" className="rounded-lg p-2" style={{ color: "var(--cf2-text-tertiary)" }}><X className="h-4 w-4" /></button>
             </div>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <span className="flex items-center justify-center rounded-full text-[11px] font-extrabold shrink-0" style={{ width: 28, height: 28, background: "var(--cf2-text-tertiary)", color: "var(--cf2-text-on-accent)" }}>{initials(owner?.nome)}</span>
                 <span className="text-[12px]" style={{ color: "var(--cf2-text-secondary)" }}>{owner?.nome || "Sem responsável"}</span>
               </div>
-              <a href={`/contatos/${leadId}`} className="text-[12px] font-semibold" style={{ color: "var(--cf2-success-text)" }}>Abrir perfil completo →</a>
+              <span className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>{cadencia ? `${cadencia.definitionNome} · etapa ${cadencia.stepIndex}/${cadencia.totalSteps}` : "Fora de follow-up"}</span>
             </div>
           </div>
 
@@ -274,14 +278,14 @@ export function ProspeccaoDrawer({
           {/* Cadência — Cadence Engine real (lib/cadencia/cadence-engine.ts), 1º consumidor sendo Prospecção */}
           <div className="flex flex-col gap-3 p-4 rounded-2xl" style={{ background: "var(--cf2-bg-canvas)", border: "1px solid var(--cf2-border-default)" }}>
             <div className="flex items-center justify-between">
-              <p className="text-[14px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Cadência</p>
+              <p className="text-[14px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Follow-up</p>
               {cadencia && ["active", "waiting"].includes(cadencia.status) && (
                 <button onClick={() => pausar.mutate()} className="text-[12px] font-semibold" style={{ color: "var(--cf2-text-tertiary)" }}>Pausar</button>
               )}
             </div>
             {cadencia ? (
               <div className="flex flex-col gap-2 text-[12px]">
-                <KV label="Cadência atual" value={cadencia.definitionNome} />
+                <KV label="Follow-up atual" value={cadencia.definitionNome} />
                 <KV label="Etapa atual" value={`${cadencia.stepIndex} de ${cadencia.totalSteps}`} />
                 <KV label="Status" value={cadencia.status} />
                 {cadencia.proximaAcaoEm && (
@@ -294,7 +298,7 @@ export function ProspeccaoDrawer({
             ) : (
               <div className="flex items-center gap-2">
                 <select value={enrollSelect} onChange={(e) => setEnrollSelect(e.target.value)} className="flex-1 px-3 py-1.5 rounded-lg text-[12px] outline-none" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }}>
-                  <option value="">Sem cadência ativa — selecionar...</option>
+                  <option value="">Sem follow-up ativo — selecionar...</option>
                   {cadencias.map((c) => <option key={c.id} value={c.id}>{c.nome} ({c.totalSteps} toques)</option>)}
                 </select>
                 <button onClick={() => enrollSelect && enroll.mutate(enrollSelect)} disabled={!enrollSelect || enroll.isPending} className="px-3 py-1.5 rounded-lg text-[12px] font-bold disabled:opacity-40 shrink-0" style={{ background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" }}>Adicionar</button>
@@ -314,6 +318,7 @@ export function ProspeccaoDrawer({
           </div>
 
           <div className="p-4 rounded-2xl" style={{ background: "var(--cf2-bg-canvas)", border: "1px solid var(--cf2-border-default)" }}>
+            <div className="mb-3"><p className="text-[14px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Prontidão para o handoff</p><p className="mt-1 text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>Dados que acompanham o prospect ao entrar em Qualificado de Pré-vendas.</p></div>
             <QualificacaoSdrSection leadId={leadId!} camposCustom={lead.camposCustom} variant="light" queryKeysToInvalidate={["prospeccao-board"]} prefill={{ cnpj: detail?.empresa?.cnpj || lead.empresaCnpj || "", cargo: lead.cargo || "" }} />
           </div>
 
