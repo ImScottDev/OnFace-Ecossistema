@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Search, X, Clock, FileText, FileWarning, CreditCard, Link2, AlertTriangle, Beaker, Download } from "lucide-react";
+import { Search, X, Clock, FileText, FileWarning, CreditCard, Link2, Beaker, Download } from "lucide-react";
 import { useOrgUsuarios, matchesResponsavel } from "@/components/crm/BoardFilters";
 import {
   PIPELINE_OPEN_COLS, PERDIDO_KEYS, FAMILY_LABEL, FAMILY_COLOR,
@@ -83,23 +83,38 @@ export function Cf2PipelineWorkspace() {
   const origensReais = useMemo(() => Array.from(new Set(allNegocios.map((n) => n.leadOrigem).filter(Boolean))) as string[], [allNegocios]);
   const inicioMes = useMemo(() => { const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); return d; }, []);
 
-  const filtered = allNegocios.filter((n) => {
+  // Filtros comuns (responsável/família/origem/período/busca) — NÃO exclui
+  // ganho/perdido/ativo aqui: os buckets de Ganho/Perdido (24/08, colunas
+  // sempre visíveis na mesma linha do board) precisam desses negócios pra
+  // aparecer independente do toggle "Status" — achado real do Kauã ("cadê
+  // os ganhos e perdidos??" com o filtro padrão "Abertas" selecionado, que
+  // antes apagava os dois buckets sem nenhum aviso). `statusFilter` só
+  // decide se as 4 colunas abertas somem os negócios "ativo" (pós-venda) da
+  // busca por texto — nunca os buckets fixos.
+  const passaFiltrosComuns = (n: NegocioBoard) => {
     if (!matchesResponsavel(n.responsavelId, respFilter, currentUserId)) return false;
     if (familiaFilter !== "todas" && (n.serviceFamily || "UNKNOWN") !== familiaFilter) return false;
     if (origemFilter !== "todas" && n.leadOrigem !== origemFilter) return false;
     if (periodoFilter === "mes" && new Date(n.createdAt) < inicioMes) return false;
-    if (statusFilter === "abertas" && (n.status === "ganho" || PERDIDO_KEYS.includes(n.status) || n.status === "ativo")) return false;
     if (!search.trim()) return true;
     const q = search.trim().toLowerCase();
     return (n.titulo || "").toLowerCase().includes(q) || (n.leadNome || "").toLowerCase().includes(q) || (n.empresaNome || "").toLowerCase().includes(q);
+  };
+
+  const filtered = allNegocios.filter((n) => {
+    if (!passaFiltrosComuns(n)) return false;
+    if (statusFilter === "abertas" && n.status === "ativo") return false;
+    return true;
   });
 
   const negociosDaColuna = (col: PipelineCol) =>
     filtered.filter((n) => col.keys.includes(n.status)).sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
 
-  const ganhoNegocios = filtered.filter((n) => n.status === "ganho");
-  const perdidoNegocios = filtered.filter((n) => PERDIDO_KEYS.includes(n.status));
-  const ativoNegocios = filtered.filter((n) => n.status === "ativo");
+  // Ganho/Perdido/ativo vêm de `allNegocios` + filtros comuns, nunca de
+  // `filtered` — são buckets sempre visíveis, independentes do toggle
+  // "Status: Abertas/Todas" (que só afeta as 4 colunas abertas).
+  const ganhoNegocios = allNegocios.filter((n) => n.status === "ganho" && passaFiltrosComuns(n));
+  const perdidoNegocios = allNegocios.filter((n) => PERDIDO_KEYS.includes(n.status) && passaFiltrosComuns(n));
 
   return (
     <div className="h-full flex flex-col gap-4 min-h-0">
@@ -188,13 +203,6 @@ export function Cf2PipelineWorkspace() {
             <BucketColumn label="Ganho" color={SUCCESS_DARK} negocios={ganhoNegocios} expanded={expandedBucket === "ganho"} onToggle={() => setExpandedBucket((b) => (b === "ganho" ? null : "ganho"))} onOpen={setDrawerNegocioId} />
             <BucketColumn label="Perdido" color="#f87171" negocios={perdidoNegocios} expanded={expandedBucket === "perdido"} onToggle={() => setExpandedBucket((b) => (b === "perdido" ? null : "perdido"))} onOpen={setDrawerNegocioId} showMotivo />
           </div>
-
-          {ativoNegocios.length > 0 && (
-            <div className="shrink-0 flex items-center gap-2 px-3.5 py-2 rounded-xl text-[12px]" style={{ background: "rgba(255,255,255,0.06)", color: "var(--cf2-chrome-text-secondary)" }}>
-              <AlertTriangle className="w-3.5 h-3.5 shrink-0" style={{ color: WARNING_DARK }} />
-              {ativoNegocios.length} negócio{ativoNegocios.length > 1 ? "s" : ""} em status <code className="px-1 rounded" style={{ background: "var(--cf2-chrome-surface-active)" }}>ativo</code> (pós-venda recorrente) — fora do De/Para deste Pipeline; não decidido se deveria viver em Carteira/Clientes. Pendência aberta, não escondida.
-            </div>
-          )}
         </div>
       )}
 
@@ -393,7 +401,6 @@ function NegocioCard({ n, onOpen, onDragStart }: { n: NegocioBoard; onOpen: () =
         {propostaDisplay && <Badge icon={FileText} label={`Proposta #${n.proposta!.numero} · ${propostaDisplay.label}`} color={propostaDisplay.tom === "danger" ? "#f87171" : propostaDisplay.tom === "success" ? SUCCESS_DARK : propostaDisplay.tom === "warning" ? WARNING_DARK : "var(--cf2-chrome-text-secondary)"} />}
         {n.contratoPendente && <Badge icon={FileWarning} label="Contrato pendente" color={WARNING_DARK} />}
         {n.pagamentoPendente && <Badge icon={CreditCard} label="Pagamento pendente" color={WARNING_DARK} />}
-        {!n.proximaAcao && <Badge icon={AlertTriangle} label="Sem próxima ação" color="#f87171" />}
         {semAvancoRelevante && <Badge icon={Clock} label={`${dias} dias sem avanço`} color="#f87171" />}
         {n.oportunidadesRelacionadas > 0 && <Badge icon={Link2} label={`+${n.oportunidadesRelacionadas} oportunidade${n.oportunidadesRelacionadas > 1 ? "s" : ""}`} color="var(--cf2-chrome-text-secondary)" />}
       </div>
