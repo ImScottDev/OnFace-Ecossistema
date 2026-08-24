@@ -1,13 +1,21 @@
 "use client";
 
-import { MessageSquare, Mail, Phone, Search, SlidersHorizontal, AlertCircle, Inbox } from "lucide-react";
+import { MessageSquare, Mail, Phone, Search, SlidersHorizontal, AlertCircle, Inbox, LayoutGrid, ChevronDown } from "lucide-react";
 import { ConversaItem, iniciais, formatarHora, nomeExibicao } from "./types";
 
 const TABS = [
-  { key: "todas", label: "Todas" },
-  { key: "whatsapp", label: "Whats" },
-  { key: "email", label: "E-mail" },
-  { key: "ligacao", label: "Ligar" },
+  { key: "todas", label: "Todas", Icon: LayoutGrid },
+  { key: "whatsapp", label: "Whats", Icon: MessageSquare },
+  { key: "email", label: "E-mail", Icon: Mail },
+  { key: "ligacao", label: "Ligar", Icon: Phone },
+] as const;
+
+const VIEW_OPTIONS = [
+  { value: "meus", label: "Meus" },
+  { value: "nao_atribuidos", label: "Não atribuídos" },
+  { value: "todos", label: "Todos" },
+  { value: "fechadas", label: "Fechadas" },
+  { value: "ia", label: "IA" },
 ] as const;
 
 const ICONE: Record<ConversaItem["tipo"], React.ElementType> = {
@@ -58,24 +66,35 @@ export function Cf2ConversationList({
           </button>
         </div>
 
-        <div className="flex gap-1 p-[3px] rounded-[10px]" style={{ background: "var(--cf2-bg-surface-muted)" }}>
+        <div className="grid grid-cols-4 gap-1 p-1 rounded-xl" style={{ background: "var(--cf2-bg-surface-muted)" }}>
           {TABS.map((t) => {
             const n = contagens?.[t.key];
+            const ativo = canal === t.key;
             return (
               <button
                 key={t.key}
                 onClick={() => onCanalChange(t.key)}
-                className="flex-1 py-1.5 rounded-[7px] text-[12px] font-bold flex items-center justify-center gap-1"
+                className="flex flex-col items-center justify-center gap-1 py-2 rounded-[9px] text-[11px] font-bold transition-colors min-w-0"
                 style={{
-                  background: canal === t.key ? "var(--cf2-bg-surface)" : "transparent",
-                  color: canal === t.key ? "var(--cf2-text-primary)" : "var(--cf2-text-secondary)",
-                  boxShadow: canal === t.key ? "0 2px 2px rgba(0,0,0,0.03)" : "none",
+                  background: ativo ? "var(--cf2-bg-surface)" : "transparent",
+                  color: ativo ? "var(--cf2-text-primary)" : "var(--cf2-text-secondary)",
+                  boxShadow: ativo ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
                 }}
               >
-                {t.label}
-                {typeof n === "number" && n > 0 && (
-                  <span className="text-[10px] px-1 rounded-full" style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-tertiary)" }}>{n}</span>
-                )}
+                <t.Icon className="w-3.5 h-3.5" />
+                <span className="flex items-center gap-1 leading-none">
+                  <span className="truncate">{t.label}</span>
+                  <span
+                    className="text-[9px] font-bold px-1 rounded-full tabular-nums leading-tight"
+                    style={{
+                      background: ativo ? "var(--cf2-bg-surface-muted)" : "var(--cf2-bg-surface)",
+                      color: "var(--cf2-text-tertiary)",
+                      visibility: typeof n === "number" && n > 0 ? "visible" : "hidden",
+                    }}
+                  >
+                    {n ?? 0}
+                  </span>
+                </span>
               </button>
             );
           })}
@@ -83,7 +102,7 @@ export function Cf2ConversationList({
 
         <div className="flex gap-2 items-center">
           <div
-            className="flex-1 flex items-center gap-2 px-3 py-2 rounded-[10px]"
+            className="flex-1 flex items-center gap-2 px-3 h-9 rounded-[10px]"
             style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }}
           >
             <Search className="w-3 h-3 shrink-0" style={{ color: "var(--cf2-text-tertiary)" }} />
@@ -91,22 +110,21 @@ export function Cf2ConversationList({
               value={search}
               onChange={(e) => onSearchChange(e.target.value)}
               placeholder="Buscar conversa, pessoa..."
-              className="flex-1 bg-transparent outline-none text-[11px]"
+              className="flex-1 min-w-0 bg-transparent outline-none text-[11px]"
               style={{ color: "var(--cf2-text-primary)" }}
             />
           </div>
-          <select
-            value={view}
-            onChange={(e) => onViewChange(e.target.value)}
-            className="text-[11px] rounded-[10px] px-2 py-2 outline-none"
-            style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-secondary)" }}
-          >
-            <option value="meus">Meus</option>
-            <option value="nao_atribuidos">Não atribuídos</option>
-            <option value="todos">Todos</option>
-            <option value="fechadas">Fechadas</option>
-            <option value="ia">IA</option>
-          </select>
+          <div className="relative shrink-0">
+            <select
+              value={view}
+              onChange={(e) => onViewChange(e.target.value)}
+              className="appearance-none text-[11px] font-medium rounded-[10px] h-9 pl-3 pr-6 outline-none cursor-pointer"
+              style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-secondary)" }}
+            >
+              {VIEW_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+            <ChevronDown className="w-3 h-3 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: "var(--cf2-text-tertiary)" }} />
+          </div>
         </div>
       </div>
 
