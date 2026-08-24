@@ -2,12 +2,13 @@ import { Hono } from "hono";
 import { db } from "@/lib/db";
 import {
   contatos, emails, emailContas, ligacoes, leads, empresas, negocios,
-  propostas, reunioes, tarefas, aiSdrContatoState, clientes, contatoLabels, labels,
+  propostas, reunioes, tarefas, aiSdrContatoState, clientes, contatoLabels, labels, leadLabels,
 } from "@/lib/db/schema";
 import { eq, and, or, desc, asc, isNull, ilike, inArray, gte, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import { getCtx, parseBody } from "../compat.js";
 import { publicarEvento } from "@/lib/events/outbox";
+import { dispararAutomacoes } from "@/lib/crm/automacao-engine";
 
 /**
  * Central de Atendimento (CRM 2.0, Figma node 53:518) — inbox omnicanal.
@@ -300,15 +301,43 @@ app.post("/atendimento/conversas/:id/tags", async (c) => {
   const body = await c.req.json();
   const parsed = z.object({ labelId: z.string().uuid() }).safeParse(body);
   if (!parsed.success) return c.json({ error: "labelId invalido" }, 400);
-  const [label] = await db.select({ id: labels.id }).from(labels).where(and(
+  const [label] = await db.select({ id: labels.id, nome: labels.nome }).from(labels).where(and(
     eq(labels.id, parsed.data.labelId), eq(labels.organizacaoId, ctx.organizacaoId),
   )).limit(1);
   if (!label) return c.json({ error: "Tag nao encontrada" }, 404);
-  const [contato] = await db.select({ id: contatos.id }).from(contatos).where(and(
+  const [contato] = await db.select({ id: contatos.id, leadId: contatos.leadId, telefone: contatos.telefone, nome: contatos.nome }).from(contatos).where(and(
     eq(contatos.id, c.req.param("id")), eq(contatos.organizacaoId, ctx.organizacaoId),
   )).limit(1);
   if (!contato) return c.json({ error: "Conversa nao encontrada" }, 404);
   await db.insert(contatoLabels).values({ contatoId: contato.id, labelId: label.id }).onConflictDoNothing();
+
+  // Achado real 24/08 (Kauã: "essa tag precisa ser associada ao lead e/ou
+  // negócio, vai ser usada pra ativar automações depois") — tag de
+  // conversa e tag de lead eram dois sistemas paralelos (contato_labels vs
+  // lead_labels), sem nenhuma ligação. Dual-write best-effort: quando a
+  // conversa tem lead vinculado, a mesma tag também entra em lead_labels e
+  // dispara o gatilho "tag_adicionada" real (automacao-engine.ts, fechado
+  // ainda hoje) — assim marcar aqui já pode acionar cadência/automação sem
+  // esperar um segundo passo manual no lead.
+  if (contato.leadId) {
+    try {
+      const [jaTem] = await db.select({ leadId: leadLabels.leadId }).from(leadLabels).where(and(eq(leadLabels.leadId, contato.leadId), eq(leadLabels.labelId, label.id))).limit(1);
+      if (!jaTem) {
+        await db.insert(leadLabels).values({ leadId: contato.leadId, labelId: label.id }).onConflictDoNothing();
+        await dispararAutomacoes("tag_adicionada", {
+          entityType: "lead",
+          entityId: contato.leadId,
+          organizacaoId: ctx.organizacaoId,
+          campos: { tag: label.nome },
+          telefone: contato.telefone,
+          nome: contato.nome,
+        });
+      }
+    } catch (err) {
+      console.error("[atendimento] tag do contato aplicada, mas dual-write pro lead falhou (best-effort):", err);
+    }
+  }
+
   return c.json({ ok: true }, 201);
 });
 
