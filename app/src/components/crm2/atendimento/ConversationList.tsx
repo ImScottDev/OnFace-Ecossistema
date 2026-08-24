@@ -1,6 +1,6 @@
 "use client";
 
-import { MessageSquare, Mail, Phone, Search, SlidersHorizontal, AlertCircle } from "lucide-react";
+import { MessageSquare, Mail, Phone, Search, SlidersHorizontal, AlertCircle, Inbox } from "lucide-react";
 import { ConversaItem, iniciais, formatarHora, nomeExibicao } from "./types";
 
 const TABS = [
@@ -110,10 +110,15 @@ export function Cf2ConversationList({
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto flex flex-col gap-[2px] p-2 mt-2">
+      <div className="flex-1 overflow-y-auto flex flex-col gap-1 p-2 mt-2">
         {loading && <p className="text-[12px] text-center py-6" style={{ color: "var(--cf2-text-tertiary)" }}>Carregando...</p>}
         {!loading && conversas.length === 0 && (
-          <p className="text-[12px] text-center py-6" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhuma conversa aqui.</p>
+          <div className="flex flex-col items-center gap-2 py-10 px-4 text-center">
+            <span className="flex items-center justify-center w-9 h-9 rounded-full" style={{ background: "var(--cf2-bg-surface-muted)" }}>
+              <Inbox className="w-4 h-4" style={{ color: "var(--cf2-text-tertiary)" }} />
+            </span>
+            <p className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhuma conversa por aqui.</p>
+          </div>
         )}
         {conversas.map((item) => {
           const Icone = ICONE[item.tipo];
@@ -123,26 +128,25 @@ export function Cf2ConversationList({
             <button
               key={`${item.tipo}-${item.id}`}
               onClick={() => onSelect(item)}
-              className="flex flex-col gap-2 p-3 rounded-2xl text-left w-full transition-colors"
-              style={{
-                background: isSelected ? "var(--cf2-bg-surface)" : "transparent",
-                border: isSelected ? "1.5px solid var(--cf2-accent-border)" : "1.5px solid transparent",
-                boxShadow: isSelected ? "0 4px 6px rgba(0,0,0,0.04)" : "none",
-              }}
+              className="relative flex flex-col gap-1.5 py-3 pl-4 pr-3 rounded-xl text-left w-full transition-colors"
+              style={{ background: isSelected ? "var(--cf2-bg-surface-muted)" : "transparent" }}
             >
+              {isSelected && (
+                <span className="absolute left-0 top-2 bottom-2 w-[3px] rounded-full" style={{ background: "var(--cf2-accent-border)" }} />
+              )}
               <div className="flex items-center justify-between w-full">
-                <div className="flex gap-2 items-center min-w-0">
+                <div className="flex gap-2.5 items-center min-w-0">
                   <div
-                    className="flex items-center justify-center rounded-2xl shrink-0 w-8 h-8"
-                    style={{ background: naoLida ? "var(--cf2-accent)" : "var(--cf2-bg-surface-muted)" }}
+                    className="flex items-center justify-center rounded-full shrink-0 w-8 h-8"
+                    style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }}
                   >
-                    <p className="text-[11px] font-extrabold" style={{ color: naoLida ? "var(--cf2-text-on-accent)" : "var(--cf2-text-secondary)" }}>
+                    <p className="text-[11px] font-bold" style={{ color: "var(--cf2-text-secondary)" }}>
                       {/^\d+$/.test(item.nome) ? "#" : iniciais(item.nome)}
                     </p>
                   </div>
                   <div className="min-w-0">
-                    <p className="text-[13px] font-bold truncate" style={{ color: "var(--cf2-text-primary)" }}>{nomeExibicao(item.nome, item.telefone)}</p>
-                    <p className="text-[11px] truncate" style={{ color: "var(--cf2-text-secondary)" }}>{item.empresaNome || "—"}</p>
+                    <p className="text-[13px] truncate leading-tight" style={{ color: "var(--cf2-text-primary)", fontWeight: naoLida ? 700 : 600 }}>{nomeExibicao(item.nome, item.telefone)}</p>
+                    <p className="text-[11px] truncate leading-tight mt-0.5" style={{ color: "var(--cf2-text-tertiary)" }}>{item.empresaNome || "—"}</p>
                   </div>
                 </div>
                 <div className="flex gap-1.5 items-center shrink-0">
@@ -151,14 +155,14 @@ export function Cf2ConversationList({
                       <AlertCircle className="w-3.5 h-3.5" style={{ color: "var(--cf2-warning-text)" }} />
                     </span>
                   )}
-                  <Icone className="w-3.5 h-3.5" style={{ color: "var(--cf2-text-tertiary)" }} />
-                  <p className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>{formatarHora(item.timestamp)}</p>
+                  <Icone className="w-3 h-3" style={{ color: "var(--cf2-text-tertiary)" }} />
+                  <p className="text-[10.5px]" style={{ color: "var(--cf2-text-tertiary)" }}>{formatarHora(item.timestamp)}</p>
                 </div>
               </div>
-              <div className="flex items-center justify-between w-full gap-2">
-                <p className="text-[12px] font-semibold truncate flex-1" style={{ color: "var(--cf2-text-primary)" }}>{item.preview}</p>
+              <div className="flex items-center justify-between w-full gap-2 pl-[42px]">
+                <p className="text-[12px] truncate flex-1" style={{ color: naoLida ? "var(--cf2-text-secondary)" : "var(--cf2-text-tertiary)", fontWeight: naoLida ? 600 : 400 }}>{item.preview}</p>
                 {naoLida && (
-                  <span className="shrink-0 w-2 h-2 rounded-full" style={{ background: "var(--cf2-accent-border)" }} />
+                  <span className="shrink-0 w-[7px] h-[7px] rounded-full" style={{ background: "var(--cf2-accent-border)" }} />
                 )}
               </div>
             </button>
