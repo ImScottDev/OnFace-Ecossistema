@@ -8,7 +8,7 @@
 import { Hono } from "hono";
 import { db } from "@/lib/db";
 import {
-  empresas, servicosCanonicos, contratos, leads, pessoas as pessoasTable, pontosContato, fulfillments, fulfillmentItens, notas, usuarios,
+  empresas, servicosCanonicos, contratos, contratoItens, leads, pessoas as pessoasTable, pontosContato, fulfillments, fulfillmentItens, notas, usuarios,
   clientes, faturas, assinaturas, propostas, tarefas, mrrMovimentos, atividades,
   negocios, negocioLeads, callfaceAiExternalIdentities, npsRespostas,
 } from "@/lib/db/schema";
@@ -1203,6 +1203,25 @@ app.get("/clientes-crm2/:empresaId", async (c) => {
     : [];
   const faturasPorContrato = new Map(faturasDosContratos.map((f) => [f.contrato_id, f]));
 
+  // Itens do contrato (24/08, Kauã: "preciso saber qual produto o cliente
+  // contratou... produto por produto") — tabela `contrato_itens` já existe
+  // com 487 linhas reais (nome, quantidade, valor unitário, subtotal,
+  // classificação semântica com evidência), recuperada do Zoho junto com o
+  // resto da migração — só nunca tinha rota nem tela lendo ela até hoje.
+  const itensDosContratos = contratoIdsParaConciliacao.length > 0
+    ? await db.select({
+        contratoId: contratoItens.contratoId, nome: contratoItens.nome, descricao: contratoItens.descricao,
+        quantidade: contratoItens.quantidade, valorUnitario: contratoItens.valorUnitario, subtotal: contratoItens.subtotal,
+      }).from(contratoItens).where(inArray(contratoItens.contratoId, contratoIdsParaConciliacao))
+    : [];
+  const itensPorContrato = new Map<string, typeof itensDosContratos>();
+  for (const item of itensDosContratos) {
+    if (!item.contratoId) continue;
+    const lista = itensPorContrato.get(item.contratoId) ?? [];
+    lista.push(item);
+    itensPorContrato.set(item.contratoId, lista);
+  }
+
   // Proposta origem (regra fechada, sem FK direta contrato→proposta): entre
   // as propostas ACEITAS do MESMO negócio do contrato, a mais próxima em
   // data da assinatura do contrato (assinadoEm quando aceite_simples, senão
@@ -1258,6 +1277,7 @@ app.get("/clientes-crm2/:empresaId", async (c) => {
         atrasadas: faturasContrato?.atrasadas ?? 0,
         pagas: faturasContrato?.pagas ?? 0,
       },
+      itens: itensPorContrato.get(c.id) ?? [],
     };
   }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
