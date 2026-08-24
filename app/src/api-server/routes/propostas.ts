@@ -15,7 +15,7 @@ const app = new Hono();
 const itemSchema = z.object({
   servicoCatalogoId: z.string().uuid().optional().nullable(),
   nome: z.string().min(1),
-  descricao: z.string().optional(),
+  descricao: z.string().optional().nullable(),
   tipo: z.enum(["recorrente", "avulso", "setup"]),
   quantidade: z.number().positive().default(1),
   valorUnitario: z.number().min(0).default(0),
