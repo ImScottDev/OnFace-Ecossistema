@@ -167,7 +167,7 @@ export function Cf2ContextPanel({ conversa, contexto, loading }: { conversa: Con
             )}
 
             {contexto.cascata.tipo === "proposta" && (
-              <a href={`/propostas/${contexto.cascata.id}`} className="flex flex-col gap-2 p-3 rounded-xl hover:opacity-80" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }}>
+              <a href={`/propostas?propostaId=${contexto.cascata.id}`} className="flex flex-col gap-2 p-3 rounded-xl hover:opacity-80" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }}>
                 <div className="flex items-center justify-between">
                   <p className="text-[13px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Proposta #{contexto.cascata.numero}</p>
                   <p className="text-[13px] font-extrabold" style={{ color: "var(--cf2-text-primary)" }}>{brl(contexto.cascata.valor)}</p>

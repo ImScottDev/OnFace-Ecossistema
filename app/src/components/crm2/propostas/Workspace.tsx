@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { Plus, Search, Eye, Clock, ArrowUpRight, FileText, Send, CheckCircle2 } from "lucide-react";
@@ -33,7 +34,20 @@ export function Cf2PropostasWorkspace() {
   const [responsavel, setResponsavel] = useState("todas");
   const [familia, setFamilia] = useState("");
   const [periodo, setPeriodo] = useState<"mes" | "todos">("todos");
-  const [drawerId, setDrawerId] = useState<string | null>(null);
+  // Deep link `?propostaId=X` (24/08, achado real: 5 lugares no CRM2
+  // — Negócio, Cliente 360, Atendimento — ainda apontavam pra rota
+  // `/propostas/:id` legada, que só existe em `(crm)`, porque o CRM2 nunca
+  // criou essa página e usa drawer em vez de página de detalhe). Ajuste de
+  // estado durante o render (não useEffect) — mesmo padrão já usado no
+  // Atendimento pra resolver deep link sem setState-em-efeito.
+  const searchParams = useSearchParams();
+  const propostaIdParam = searchParams.get("propostaId");
+  const [drawerId, setDrawerId] = useState<string | null>(propostaIdParam);
+  const [propostaIdAplicado, setPropostaIdAplicado] = useState<string | null>(propostaIdParam);
+  if (propostaIdParam && propostaIdParam !== propostaIdAplicado) {
+    setPropostaIdAplicado(propostaIdParam);
+    setDrawerId(propostaIdParam);
+  }
 
   const { data: kpis } = useQuery<Kpis>({
     queryKey: ["propostas-kpis"],

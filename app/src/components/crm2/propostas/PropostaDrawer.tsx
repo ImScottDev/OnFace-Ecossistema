@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import Link from "next/link";
-import { X, ExternalLink, Pencil, Send, Copy, Ban, FileText } from "lucide-react";
+import { X, ExternalLink, Pencil, Send, Copy, Ban, FileText, Wallet, Clock } from "lucide-react";
 import { DetailDrawer } from "@/components/crm/DetailDrawer";
 import { Cf2Badge } from "../ui/Badge";
 import { statusDisplay, brl } from "./shared";
@@ -135,13 +135,13 @@ export function Cf2PropostaDrawer({ propostaId, open, onClose, onChanged }: { pr
       {isLoading && <div className="p-6 text-sm" style={{ color: "var(--cf2-text-tertiary)" }}>Carregando...</div>}
       {proposta && (
         <div className="flex flex-col gap-4 p-5">
-          <div className="flex flex-col gap-1.5">
+          <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between">
-              <p className="text-[18px] font-bold" style={{ color: "var(--cf2-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>#PROP-{String(proposta.numero).padStart(4, "0")}{proposta.versao > 1 ? ` v${proposta.versao}` : ""}</p>
+              <p className="text-[16px] font-bold" style={{ color: "var(--cf2-text-secondary)", fontFamily: "var(--cf2-font-heading)" }}>#PROP-{String(proposta.numero).padStart(4, "0")}{proposta.versao > 1 ? ` v${proposta.versao}` : ""}</p>
               <button onClick={onClose}><X className="w-4 h-4" style={{ color: "var(--cf2-text-tertiary)" }} /></button>
             </div>
-            <p className="text-[13px]" style={{ color: "var(--cf2-text-tertiary)" }}>{proposta.leadEmpresa || proposta.leadNome || "—"}</p>
-            <div className="flex items-center gap-2">
+            <p className="text-[15px] font-semibold" style={{ color: "var(--cf2-text-primary)" }}>{proposta.leadEmpresa || proposta.leadNome || "—"}</p>
+            <div className="flex items-center gap-2 flex-wrap">
               <Cf2Badge variant={status!.tom}>{status!.label}</Cf2Badge>
               {proposta.negocioId && (
                 <Link href={`/negocios/${proposta.negocioId}`} className="text-[12px] font-semibold" style={{ color: "var(--cf2-success-text)" }}>Oportunidade: {proposta.negocioTitulo || "ver"} →</Link>
@@ -149,36 +149,56 @@ export function Cf2PropostaDrawer({ propostaId, open, onClose, onChanged }: { pr
             </div>
           </div>
 
-          <div className="flex flex-col gap-2 p-4 rounded-2xl" style={{ background: "var(--cf2-bg-canvas)", border: "1px solid var(--cf2-border-default)" }}>
-            <p className="text-[14px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Valores comerciais</p>
-            <KV label="Setup / avulso" value={brl(proposta.totalAvulso)} />
-            <KV label="Recorrência" value={`${brl(proposta.totalRecorrente)}/mês`} />
-            {descontoPct > 0 && <KV label="Desconto aplicado" value={`${descontoPct}%`} />}
-            <KV label="Valor final (1º mês)" value={brl(proposta.totalGeral)} />
-            <KV label="Validade" value={proposta.dataValidade ? new Date(proposta.dataValidade).toLocaleDateString("pt-BR") : "—"} />
-            {proposta.prazoContratoMeses && <KV label="Vigência contratual" value={`${proposta.prazoContratoMeses} meses`} />}
-            <KV label="Responsável" value={proposta.criadoPorNome || "—"} />
-            {proposta.condicoesPagamento && <KV label="Condições" value={proposta.condicoesPagamento} />}
+          {/* Valor em destaque (24/08, achado do Kauã: modal raso, número
+              principal enterrado numa lista) — o mesmo número que já era
+              calculado, só ganhou hierarquia visual de hero. */}
+          <div className="flex items-center justify-between gap-3 p-4 rounded-2xl" style={{ background: "var(--cf2-accent-soft, var(--cf2-bg-canvas))", border: "1px solid var(--cf2-border-default)" }}>
+            <div>
+              <p className="text-[11px] font-bold uppercase tracking-wide" style={{ color: "var(--cf2-text-tertiary)" }}>Valor no 1º mês</p>
+              <p className="text-[26px] font-bold" style={{ color: "var(--cf2-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>{brl(proposta.totalGeral)}</p>
+              {parseFloat(proposta.totalRecorrente) > 0 && (
+                <p className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>{brl(proposta.totalRecorrente)}/mês recorrente depois</p>
+              )}
+            </div>
+            {descontoPct > 0 && (
+              <span className="text-[12px] font-bold px-2.5 py-1 rounded-full shrink-0" style={{ background: "var(--cf2-success-bg)", color: "var(--cf2-success-text)" }}>-{descontoPct}%</span>
+            )}
           </div>
 
           <div className="flex flex-col gap-2 p-4 rounded-2xl" style={{ background: "var(--cf2-bg-canvas)", border: "1px solid var(--cf2-border-default)" }}>
-            <p className="text-[14px] font-bold flex items-center gap-1.5" style={{ color: "var(--cf2-text-primary)" }}><FileText className="w-3.5 h-3.5" /> Itens da proposta</p>
+            <p className="text-[13px] font-bold uppercase tracking-wide flex items-center gap-1.5" style={{ color: "var(--cf2-text-tertiary)" }}><Wallet className="w-3.5 h-3.5" /> Condições comerciais</p>
+            <KV label="Setup / avulso" value={brl(proposta.totalAvulso)} />
+            <KV label="Recorrência" value={`${brl(proposta.totalRecorrente)}/mês`} />
+            <KV label="Validade" value={proposta.dataValidade ? new Date(proposta.dataValidade).toLocaleDateString("pt-BR") : "—"} />
+            {proposta.prazoContratoMeses && <KV label="Vigência contratual" value={`${proposta.prazoContratoMeses} meses`} />}
+            <KV label="Responsável" value={proposta.criadoPorNome || "—"} />
+            {proposta.condicoesPagamento && <KV label="Condições de pagamento" value={proposta.condicoesPagamento} />}
+          </div>
+
+          <div className="flex flex-col gap-2.5 p-4 rounded-2xl" style={{ background: "var(--cf2-bg-canvas)", border: "1px solid var(--cf2-border-default)" }}>
+            <p className="text-[13px] font-bold uppercase tracking-wide flex items-center gap-1.5" style={{ color: "var(--cf2-text-tertiary)" }}><FileText className="w-3.5 h-3.5" /> Itens da proposta ({proposta.itens.length})</p>
             {proposta.itens.length === 0 ? (
               <p className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>Sem itens.</p>
             ) : proposta.itens.map((i) => (
-              <div key={i.id} className="flex items-center justify-between text-[12px]">
-                <span style={{ color: "var(--cf2-text-primary)" }}>{i.nome} <span style={{ color: "var(--cf2-text-tertiary)" }}>· {i.quantidade}x</span></span>
-                <span className="font-semibold" style={{ color: "var(--cf2-text-primary)" }}>{brl(i.subtotal)}{i.tipo === "recorrente" ? "/mês" : ""}</span>
+              <div key={i.id} className="flex items-center justify-between gap-3 py-1.5" style={{ borderBottom: "1px solid var(--cf2-border-default)" }}>
+                <span className="text-[13px] min-w-0 truncate" style={{ color: "var(--cf2-text-primary)" }}>{i.nome} <span className="whitespace-nowrap" style={{ color: "var(--cf2-text-tertiary)" }}>· {i.quantidade}x</span></span>
+                <span className="text-[13px] font-semibold shrink-0" style={{ color: "var(--cf2-text-primary)" }}>{brl(i.subtotal)}{i.tipo === "recorrente" ? "/mês" : ""}</span>
               </div>
             ))}
           </div>
 
-          <div className="flex flex-col gap-2 p-4 rounded-2xl" style={{ background: "var(--cf2-bg-canvas)", border: "1px solid var(--cf2-border-default)" }}>
-            <p className="text-[14px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Histórico</p>
+          <div className="flex flex-col gap-1 p-4 rounded-2xl" style={{ background: "var(--cf2-bg-canvas)", border: "1px solid var(--cf2-border-default)" }}>
+            <p className="text-[13px] font-bold uppercase tracking-wide flex items-center gap-1.5 mb-1" style={{ color: "var(--cf2-text-tertiary)" }}><Clock className="w-3.5 h-3.5" /> Histórico</p>
             {historico.map((h, i) => (
-              <div key={i} className="flex items-center justify-between text-[12px]">
-                <span style={{ color: "var(--cf2-text-secondary)" }}>{h.label}</span>
-                <span style={{ color: "var(--cf2-text-tertiary)" }}>{fmtDataHora(h.data)}</span>
+              <div key={i} className="flex gap-3">
+                <div className="flex flex-col items-center pt-1">
+                  <span className="w-2 h-2 rounded-full shrink-0" style={{ background: i === historico.length - 1 ? "var(--cf2-success-text)" : "var(--cf2-border-default)" }} />
+                  {i < historico.length - 1 && <span className="w-px flex-1 my-0.5" style={{ background: "var(--cf2-border-default)" }} />}
+                </div>
+                <div className="flex-1 min-w-0 pb-3 flex items-center justify-between gap-3">
+                  <span className="text-[13px]" style={{ color: "var(--cf2-text-primary)" }}>{h.label}</span>
+                  <span className="text-[11px] shrink-0" style={{ color: "var(--cf2-text-tertiary)" }}>{fmtDataHora(h.data)}</span>
+                </div>
               </div>
             ))}
           </div>

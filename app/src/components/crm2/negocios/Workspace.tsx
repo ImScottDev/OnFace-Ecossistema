@@ -14,7 +14,7 @@ import { Cf2Skeleton, Cf2EmptyState, Cf2ErrorState, Cf2PermissionDenied } from "
 import { Cf2NovaPropostaSlideOver } from "@/components/crm2/negocios/NovaPropostaSlideOver";
 import { Cf2Topbar } from "@/components/crm2/Topbar";
 import { TarefaFormModal } from "@/components/crm/tarefas/TarefaFormModal";
-import { callfaceCallUrl } from "@/lib/utils/callface-call";
+import { digitsForDialer } from "@/lib/utils/callface-call";
 import { PIPELINE_OPEN_COLS, MOTIVO_PERDA_ESTRUTURADO, proximoStatusReal, tempoNaEtapa } from "@/components/crm2/pipeline/shared";
 
 const brl = (v: string | number | null | undefined) =>
@@ -133,6 +133,16 @@ export function Cf2NegocioWorkspace({ negocioId }: { negocioId: string }) {
   const tarefasAbertas = tarefas.filter((t) => !t.concluida);
   const proximaTarefa = [...tarefasAbertas].filter((t) => t.dataVencimento).sort((a, b) => new Date(a.dataVencimento!).getTime() - new Date(b.dataVencimento!).getTime())[0];
 
+  // Ligar/WhatsApp/E-mail abrem em Atendimento (não link externo tel:/wa.me/
+  // mailto:) — mesmo achado real 24/08 de todo o resto do CRM2.
+  const telefoneDialer = lead?.telefone ? digitsForDialer(lead.telefone) : "";
+  const atendimentoHref = (canal: "whatsapp" | "email" | "ligacao") => {
+    if (!lead?.id) return undefined;
+    const params = new URLSearchParams({ leadId: lead.id, canal });
+    if (telefoneDialer) params.set("telefone", telefoneDialer);
+    return `/atendimento?${params.toString()}`;
+  };
+
   const itensPorFamilia = itens.reduce<Record<string, OportunidadeItem[]>>((acc, item) => {
     (acc[item.serviceFamily] ||= []).push(item);
     return acc;
@@ -167,9 +177,9 @@ export function Cf2NegocioWorkspace({ negocioId }: { negocioId: string }) {
             </div>
             <div className="flex items-center gap-4">
               <div className="flex gap-2">
-                <HeaderAction icon={Phone} label="Ligar" href={lead?.telefone ? callfaceCallUrl(lead.telefone) : undefined} />
-                <HeaderAction icon={MessageCircle} label="WhatsApp" href={lead?.telefone ? `https://wa.me/${lead.telefone.replace(/\D/g, "")}` : undefined} />
-                <HeaderAction icon={Mail} label="E-mail" href={lead?.email ? `mailto:${lead.email}` : undefined} />
+                <HeaderAction icon={Phone} label="Ligar" href={lead?.telefone && lead.id ? atendimentoHref("ligacao") : undefined} />
+                <HeaderAction icon={MessageCircle} label="WhatsApp" href={lead?.telefone && lead.id ? atendimentoHref("whatsapp") : undefined} />
+                <HeaderAction icon={Mail} label="E-mail" href={lead?.email && lead.id ? atendimentoHref("email") : undefined} />
                 <HeaderAction icon={Calendar} label="Agendar" onClick={() => setTarefaModalOpen(true)} />
                 <HeaderAction icon={Plus} label="Tarefa" onClick={() => setTarefaModalOpen(true)} />
                 <HeaderAction icon={FileText} label="Nova proposta" onClick={() => setNovaPropostaAberta(true)} accent />
@@ -326,7 +336,7 @@ export function Cf2NegocioWorkspace({ negocioId }: { negocioId: string }) {
             <div className="mt-3 space-y-1.5">
               {propostas?.length === 0 && <Cf2EmptyState title="Nenhuma proposta ainda" />}
               {propostas?.map((p: { id: string; numero: number; versao: number; status: string; totalGeral: string }) => (
-                <Link key={p.id} href={`/propostas/${p.id}`} className="flex items-center justify-between p-2.5 rounded-lg" style={{ background: "var(--cf2-bg-surface-muted)" }}>
+                <Link key={p.id} href={`/propostas?propostaId=${p.id}`} className="flex items-center justify-between p-2.5 rounded-lg" style={{ background: "var(--cf2-bg-surface-muted)" }}>
                   <span className="text-[13px] font-medium flex items-center gap-1.5" style={{ color: "var(--cf2-text-primary)" }}>
                     <FileText className="w-3.5 h-3.5" /> #P-{String(p.numero).padStart(3, "0")}-v{p.versao}
                   </span>
@@ -475,6 +485,6 @@ function HeaderAction({ icon: Icon, label, href, onClick, accent }: { icon: type
   const style = accent
     ? { background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)", opacity: disabled ? 0.4 : 1 }
     : { background: "var(--cf2-bg-canvas)", color: "var(--cf2-text-primary)", opacity: disabled ? 0.4 : 1 };
-  if (href && !disabled) return <a href={href} target="_blank" rel="noopener noreferrer" className={cls} style={style}><Icon className="w-3.5 h-3.5" /> {label}</a>;
+  if (href && !disabled) return <Link href={href} className={cls} style={style}><Icon className="w-3.5 h-3.5" /> {label}</Link>;
   return <button onClick={onClick} disabled={disabled} className={cls} style={style}><Icon className="w-3.5 h-3.5" /> {label}</button>;
 }
