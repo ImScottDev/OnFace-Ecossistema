@@ -1,6 +1,6 @@
 /**
  * Tipos e helpers compartilhados entre o builder visual de cadências
- * (CadenceCanvas.tsx) e a tela que lista/salva/publica cadências
+ * (FollowupFlowCanvas.tsx) e a tela que lista/salva/publica cadências
  * (CadenciasWorkspace.tsx). Único lugar que descreve a forma de
  * `cadence_definitions.steps`/`draft_steps` no lado do cliente — espelha
  * `CadenceStep` de `src/lib/cadencia/cadence-engine.ts` (fonte de verdade
@@ -28,7 +28,7 @@ export interface Step {
   tipo: StepTipo;
   /** Só tipo="wait": minutos de espera antes do próximo step. */
   esperaMinutos?: number;
-  /** Só tipo="action": nome do adapter registrado no engine (hoje só "noop" existe de verdade). */
+  /** Só tipo="action": nome do adapter registrado no engine ("noop", "whatsapp" ou "email" — ver ADAPTERS em cadence-engine.ts). */
   adapter?: string;
   /**
    * Config livre passada pro adapter. `config.label` é um rótulo amigável

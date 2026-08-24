@@ -17,11 +17,13 @@ import { eq, and, or, sql } from "drizzle-orm";
 import { sendResendEmail, isResendConfigured } from "@/lib/email/resend";
 import { whatsappOutgoingQueue } from "@/lib/queue";
 import { avaliarCondicao } from "@/lib/crm/condicao";
+import { iniciarCadencia } from "@/lib/cadencia/cadence-engine";
 
 export type GatilhoAutomacao =
   | "novo_lead" | "mudanca_status" | "novo_negocio" | "lead_inativo"
   | "contrato_vencendo" | "whatsapp_recebido" | "nps_recebido"
-  | "pagamento_falhou" | "fatura_atrasada" | "fatura_paga" | "assinatura_status_alterado";
+  | "pagamento_falhou" | "fatura_atrasada" | "fatura_paga" | "assinatura_status_alterado"
+  | "tag_adicionada";
 
 export interface ContextoGatilho {
   entityType: "lead" | "negocio" | "contato" | "empresa" | "servico";
@@ -49,6 +51,7 @@ interface AcaoConfig {
   diasInatividade?: number;
   diasAntesVencimento?: number;
   tag?: string;
+  cadenceDefinitionId?: string;
 }
 
 async function executarAcao(acao: string, config: AcaoConfig | null, ctx: ContextoGatilho): Promise<Record<string, unknown>> {
@@ -146,6 +149,21 @@ async function executarAcao(acao: string, config: AcaoConfig | null, ctx: Contex
         tipo: "text",
       });
       return { enviado: true, jobId: job.id };
+    }
+    case "iniciar_cadencia": {
+      if (!cfg.cadenceDefinitionId) throw new Error("acaoConfig.cadenceDefinitionId obrigatório pra iniciar_cadencia");
+      if (ctx.entityType !== "lead" && ctx.entityType !== "negocio" && ctx.entityType !== "contato") {
+        throw new Error(`iniciar_cadencia não suporta entityType "${ctx.entityType}"`);
+      }
+      const enrollmentId = await iniciarCadencia({
+        cadenceDefinitionId: cfg.cadenceDefinitionId,
+        organizacaoId: ctx.organizacaoId,
+        entityType: ctx.entityType,
+        entityId: ctx.entityId,
+        varsIniciais: { telefone: ctx.telefone ?? null, email: ctx.email ?? null, nome: ctx.nome ?? null },
+      });
+      if (!enrollmentId) throw new Error("cadência inexistente, inativa ou sem etapas — nada matriculado");
+      return { enrollmentId, cadenceDefinitionId: cfg.cadenceDefinitionId };
     }
     default:
       throw new Error(`Ação desconhecida: ${acao}`);

@@ -26,9 +26,11 @@
  * Ver ADR-EXEC-013.
  */
 import { db } from "@/lib/db";
-import { cadenceDefinitions, cadenceEnrollments, cadenceEnrollmentEvents } from "@/lib/db/schema";
+import { cadenceDefinitions, cadenceEnrollments, cadenceEnrollmentEvents, leads, contatos, negocios } from "@/lib/db/schema";
 import { eq, and, lte, inArray } from "drizzle-orm";
 import { avaliarCondicao, type Condicao } from "@/lib/crm/condicao";
+import { whatsappOutgoingQueue } from "@/lib/queue";
+import { sendResendEmail, isResendConfigured } from "@/lib/email/resend";
 
 // ─── Tipos do grafo de steps (armazenado em cadence_definitions.steps) ─────
 
@@ -85,6 +87,75 @@ export function registrarAdapter(nome: string, fn: CadenceAdapter): void {
 
 /** Adapter builtin — não faz nada, só existe pra steps de espera pura sem ação (equivalente a um "no-op" explícito). */
 registrarAdapter("noop", async () => ({ sucesso: true }));
+
+/**
+ * Resolve telefone/email/nome de uma entidade genérica do motor. Só usado
+ * como fallback quando o enrollment não trouxe essa info em `vars`
+ * (`iniciarCadencia({ varsIniciais })`) — pontos de entrada antigos
+ * (matrícula em massa/import da Prospecção) não passam `varsIniciais`, então
+ * os adapters de canal precisam saber buscar por conta própria.
+ */
+async function resolverContatoDaEntidade(
+  entityType: string,
+  entityId: string,
+  organizacaoId: string,
+): Promise<{ telefone: string | null; email: string | null; nome: string | null }> {
+  const vazio = { telefone: null, email: null, nome: null };
+  if (entityType === "lead") {
+    const [row] = await db
+      .select({ telefone: leads.telefone, email: leads.email, nome: leads.nome })
+      .from(leads)
+      .where(and(eq(leads.id, entityId), eq(leads.organizacaoId, organizacaoId)))
+      .limit(1);
+    return row ?? vazio;
+  }
+  if (entityType === "contato") {
+    const [row] = await db
+      .select({ telefone: contatos.telefone, email: contatos.email, nome: contatos.nome })
+      .from(contatos)
+      .where(and(eq(contatos.id, entityId), eq(contatos.organizacaoId, organizacaoId)))
+      .limit(1);
+    return row ?? vazio;
+  }
+  if (entityType === "negocio") {
+    const [row] = await db
+      .select({ telefone: leads.telefone, email: leads.email, nome: leads.nome })
+      .from(negocios)
+      .innerJoin(leads, eq(leads.id, negocios.leadId))
+      .where(and(eq(negocios.id, entityId), eq(negocios.organizacaoId, organizacaoId)))
+      .limit(1);
+    return row ?? vazio;
+  }
+  return vazio;
+}
+
+/** Adapter real — envia WhatsApp via a mesma fila usada pelo motor de automação (`enviar_whatsapp`). `step.config.mensagem` é obrigatório. */
+registrarAdapter("whatsapp", async (ctx) => {
+  const mensagem = (ctx.step.config?.mensagem as string | undefined)?.trim();
+  if (!mensagem) return { sucesso: false, erro: 'step de ação "whatsapp" sem config.mensagem' };
+  let telefone = (ctx.vars.telefone as string | null | undefined) ?? null;
+  if (!telefone) {
+    telefone = (await resolverContatoDaEntidade(ctx.entityType, ctx.entityId, ctx.organizacaoId)).telefone;
+  }
+  if (!telefone) return { sucesso: false, erro: "sem telefone resolvido pra esta entidade" };
+  const job = await whatsappOutgoingQueue.add("send", { phone: telefone, conteudo: mensagem, tipo: "text" });
+  return { sucesso: true, resultado: { jobId: job.id } };
+});
+
+/** Adapter real — envia e-mail via Resend (mesmo provider do motor de automação). `step.config.mensagem` é obrigatório; `step.config.assunto` é opcional. */
+registrarAdapter("email", async (ctx) => {
+  const mensagem = (ctx.step.config?.mensagem as string | undefined)?.trim();
+  if (!mensagem) return { sucesso: false, erro: 'step de ação "email" sem config.mensagem' };
+  const assunto = (ctx.step.config?.assunto as string | undefined)?.trim() || "Callface";
+  let email = (ctx.vars.email as string | null | undefined) ?? null;
+  if (!email) {
+    email = (await resolverContatoDaEntidade(ctx.entityType, ctx.entityId, ctx.organizacaoId)).email;
+  }
+  if (!email) return { sucesso: false, erro: "sem e-mail resolvido pra esta entidade" };
+  const resultado = await sendResendEmail({ to: email, subject: assunto, html: mensagem });
+  if (!resultado.sent) return { sucesso: false, erro: "envio não confirmado pelo Resend", resultado: { resendConfigurado: isResendConfigured(), ...resultado } };
+  return { sucesso: true, resultado: { resendConfigurado: isResendConfigured(), ...resultado } };
+});
 
 // ─── Engine ─────────────────────────────────────────────────────────────────
 

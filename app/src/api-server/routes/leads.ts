@@ -1508,6 +1508,15 @@ app.post("/leads/:id/labels", async (c) => {
     const body = await c.req.json();
     const { labelId } = labelAssignSchema.parse(body);
 
+    const [lead] = await db
+      .select({ nome: leads.nome, telefone: leads.telefone, email: leads.email, sdrStatus: leads.sdrStatus, tipo: leads.tipo })
+      .from(leads)
+      .where(and(eq(leads.id, leadId), eq(leads.organizacaoId, ctx.organizacaoId)));
+
+    if (!lead) {
+      return c.json({ error: "Lead não encontrado" }, 404);
+    }
+
     // Verify label belongs to same org
     const [label] = await db
       .select()
@@ -1532,6 +1541,19 @@ app.post("/leads/:id/labels", async (c) => {
       .insert(leadLabels)
       .values({ leadId, labelId })
       .returning();
+
+    // F5/Automation: dispara automações do gatilho "tag_adicionada" — best-effort.
+    // ctx.campos.tag é o nome real da tag, pra permitir condição por tag
+    // específica na regra (ex.: só cadenciar quando a tag for "quente").
+    await dispararAutomacoes("tag_adicionada", {
+      entityType: "lead",
+      entityId: leadId,
+      organizacaoId: ctx.organizacaoId,
+      campos: { tag: label.nome, sdrStatus: lead.sdrStatus, tipo: lead.tipo },
+      telefone: lead.telefone,
+      email: lead.email,
+      nome: lead.nome,
+    });
 
     return c.json(assignment, 201);
   } catch (error) {
