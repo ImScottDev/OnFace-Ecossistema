@@ -263,6 +263,7 @@ export default function TabMidiaPaga({ periodo }: TabMidiaPagaProps) {
     queryKey: ["relatorios-midia-paga-v2", periodo],
     queryFn: async () => {
       const res = await fetch(`/api/relatorios/midia-paga?periodo=${periodo}`);
+      if (!res.ok) throw new Error(`midia-paga ${res.status}`);
       return res.json();
     },
   });
@@ -387,19 +388,19 @@ export default function TabMidiaPaga({ periodo }: TabMidiaPagaProps) {
 
       <SectionTitle hint="ordenado por ROAS — sem nota composta, sem mínimo de amostra">Ranking por ROAS</SectionTitle>
       <div className="grid gap-4 lg:grid-cols-3">
-        <ChartCard title="Top campanhas" loading={isLoading} empty={(data?.rankingCampanhas.length ?? 0) === 0} emptyText="Nenhuma campanha com dado no período.">
+        <ChartCard title="Top campanhas" loading={isLoading} empty={(data?.rankingCampanhas?.length ?? 0) === 0} emptyText="Nenhuma campanha com dado no período.">
           <RankingList itens={data?.rankingCampanhas ?? []} />
         </ChartCard>
-        <ChartCard title="Top conjuntos" loading={isLoading} empty={(data?.rankingConjuntos.length ?? 0) === 0} emptyText="Nenhum conjunto com dado no período.">
+        <ChartCard title="Top conjuntos" loading={isLoading} empty={(data?.rankingConjuntos?.length ?? 0) === 0} emptyText="Nenhum conjunto com dado no período.">
           <RankingList itens={data?.rankingConjuntos ?? []} />
         </ChartCard>
-        <ChartCard title="Top criativos" loading={isLoading} empty={(data?.rankingCriativos.length ?? 0) === 0} emptyText="Nenhum criativo com dado no período.">
+        <ChartCard title="Top criativos" loading={isLoading} empty={(data?.rankingCriativos?.length ?? 0) === 0} emptyText="Nenhum criativo com dado no período.">
           <RankingList itens={data?.rankingCriativos ?? []} />
         </ChartCard>
       </div>
 
       <SectionTitle hint="todas as campanhas com atividade no período — inclusive as sem lead casado no CRM · clique na seta pra ver os conjuntos">Campanhas</SectionTitle>
-      <ChartCard title="Performance por campanha" loading={isLoading} empty={(data?.porCampanha.length ?? 0) === 0} emptyText="Sem campanhas com dado no período.">
+      <ChartCard title="Performance por campanha" loading={isLoading} empty={(data?.porCampanha?.length ?? 0) === 0} emptyText="Sem campanhas com dado no período.">
         <DimensaoTable
           rows={data?.porCampanha ?? []}
           colLabel="Campanha"
@@ -415,7 +416,7 @@ export default function TabMidiaPaga({ periodo }: TabMidiaPagaProps) {
       </ChartCard>
 
       <SectionTitle hint="segmentação de público e orçamento dentro de cada campanha — clique na seta pra ver os criativos">Conjuntos de Anúncios</SectionTitle>
-      <ChartCard title="Performance por conjunto de anúncios" loading={isLoading} empty={(data?.porConjunto.length ?? 0) === 0} emptyText="Sem conjuntos com dado no período.">
+      <ChartCard title="Performance por conjunto de anúncios" loading={isLoading} empty={(data?.porConjunto?.length ?? 0) === 0} emptyText="Sem conjuntos com dado no período.">
         <DimensaoTable
           rows={data?.porConjunto ?? []}
           colLabel="Conjunto"
