@@ -282,7 +282,7 @@ export function Cf2NegocioDrawer({ negocioId, open, onClose, onChanged }: { nego
                       <FileText className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--cf2-text-tertiary)" }} />
                       <div className="min-w-0">
                         <p className="text-[12px] font-semibold truncate" style={{ color: "var(--cf2-text-primary)" }} title={doc.nomeArquivo}>{doc.nomeArquivo}</p>
-                        <p className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>{formatBytesAnexo(doc.tamanhoBytes)} · histórico (Zoho)</p>
+                        <p className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>{formatBytesAnexo(doc.tamanhoBytes)}</p>
                       </div>
                     </div>
                     {doc.arquivoDisponivel ? (

@@ -252,7 +252,7 @@ export function Cf2ClienteDrawer({ empresaId, open, onClose }: { empresaId: stri
               <div className="flex flex-col gap-3">
                 <div>
                   <p className="text-[11px] font-bold uppercase" style={{ color: "var(--cf2-text-tertiary)" }}>Contratos do cliente</p>
-                  <p className="text-[12px] mt-1" style={{ color: "var(--cf2-text-secondary)" }}>Contratos canônicos e documentos históricos recuperados do Zoho.</p>
+                  <p className="text-[12px] mt-1" style={{ color: "var(--cf2-text-secondary)" }}>Contratos e documentos vinculados a este cliente.</p>
                 </div>
                 {contratos.map((contrato) => <ContratoRow key={contrato.id} contrato={contrato} anexos={anexosContrato} />)}
                 {anexosLoading && contratos.length > 0 && <p className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>Verificando arquivos históricos...</p>}
@@ -354,7 +354,7 @@ function ContratoRow({ contrato, anexos }: { contrato: ContratoCliente; anexos: 
     </a>
   ) : anexo?.arquivoDisponivel ? (
     <a href={`/api/anexos-legado/${anexo.id}/download`} className="inline-flex items-center gap-1 text-[11px] underline" style={{ color: "var(--cf2-text-secondary)" }}>
-      <Download className="w-3 h-3" /> {anexo.nomeArquivo || "Baixar histórico Zoho"}
+      <Download className="w-3 h-3" /> {anexo.nomeArquivo || "Baixar documento"}
     </a>
   ) : anexo ? (
     <span className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>{anexo.nomeArquivo} · indisponível</span>

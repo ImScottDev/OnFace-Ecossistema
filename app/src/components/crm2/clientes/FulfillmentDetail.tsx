@@ -568,7 +568,7 @@ export function Cf2FulfillmentDetail({ fulfillmentId }: { fulfillmentId: string 
                 <FileText className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--cf2-text-secondary)" }} />
                 <div className="flex-1 min-w-0">
                   <p className="text-[12px] font-semibold truncate" style={{ color: "var(--cf2-text-primary)" }}>{d.nomeArquivo}</p>
-                  <p className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>{formatBytes(d.tamanhoBytes)}{d.zohoId ? " · histórico (Zoho)" : ""}</p>
+                  <p className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>{formatBytes(d.tamanhoBytes)}</p>
                 </div>
                 {d.arquivoDisponivel && (
                   <a href={`/api/anexos-legado/${d.id}/download`} className="p-1.5 rounded-lg shrink-0" style={{ background: "var(--cf2-bg-surface)" }}>
