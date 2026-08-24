@@ -73,12 +73,13 @@ app.get("/fulfillments", async (c) => {
     )
     SELECT f.id, f.status, f.service_family, f.started_at, f.target_at,
       u.nome AS responsavel_nome,
-      e.id AS empresa_id, e.nome AS empresa_nome,
+      e.id AS empresa_id, e.nome AS empresa_nome, l.nome AS lead_nome,
       COALESCE(p.total_itens, 0) AS total_itens,
       COALESCE(p.itens_concluidos, 0) AS itens_concluidos
     FROM fulfillments f
     JOIN servicos_canonicos sc ON sc.id = f.servico_canonico_id
     LEFT JOIN empresas e ON e.id = sc.empresa_id
+    LEFT JOIN leads l ON l.id = sc.lead_id
     LEFT JOIN usuarios u ON u.id = f.responsavel_id
     LEFT JOIN progresso p ON p.fulfillment_id = f.id
     WHERE f.organizacao_id = ${ctx.organizacaoId}

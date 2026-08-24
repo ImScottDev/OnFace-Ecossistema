@@ -15,6 +15,7 @@ interface FulfillmentLinha {
   responsavel_nome: string | null;
   empresa_id: string | null;
   empresa_nome: string | null;
+  lead_nome: string | null;
   total_itens: number;
   itens_concluidos: number;
   fase: "planejamento" | "preparacao" | "execucao" | "validacao" | "concluida" | null;
@@ -193,7 +194,7 @@ export function Cf2EntregaWorkspace({ familiaFixa }: { familiaFixa?: "PABX" | "C
                         <div className="flex items-center justify-center rounded-lg shrink-0 w-8 h-8" style={{ background: "var(--cf2-bg-inverse)" }}>
                           <Truck className="w-4 h-4 text-white" />
                         </div>
-                        <p className="text-[13px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>{f.empresa_nome || "—"}</p>
+                        <p className="text-[13px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>{f.empresa_nome || f.lead_nome || "—"}</p>
                       </div>
                     </td>
                     <td className="px-4 py-3 text-[13px]" style={{ color: "var(--cf2-text-primary)" }}>{FAMILIA_LABEL[f.service_family] || f.service_family}</td>
@@ -334,7 +335,7 @@ function KanbanImplantacaoPabx({
                         className="cursor-pointer flex flex-col gap-2 p-3 rounded-xl"
                         style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}
                       >
-                        <p className="text-[12px] font-bold truncate" style={{ color: "var(--cf2-text-primary)" }}>{f.empresa_nome || "—"}</p>
+                        <p className="text-[12px] font-bold truncate" style={{ color: "var(--cf2-text-primary)" }}>{f.empresa_nome || f.lead_nome || "—"}</p>
                         <p className="text-[11px] truncate" style={{ color: "var(--cf2-text-secondary)" }}>{f.etapa_atual || "—"}</p>
                         <div className="flex items-center gap-2">
                           <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: "var(--cf2-bg-surface-muted)" }}>
@@ -396,7 +397,7 @@ function KanbanImplantacaoPabx({
             {proximosVencimentos.map((f) => (
               <div key={f.id} className="flex items-center gap-2 cursor-pointer" onClick={() => router.push(`/clientes/entrega/${f.id}`)}>
                 <span className="text-[11px] font-semibold w-10 shrink-0" style={{ color: "var(--cf2-text-tertiary)" }}>{formatarData(f.target_at)}</span>
-                <span className="text-[11px] flex-1 truncate" style={{ color: "var(--cf2-text-secondary)" }}>{f.empresa_nome || "—"}</span>
+                <span className="text-[11px] flex-1 truncate" style={{ color: "var(--cf2-text-secondary)" }}>{f.empresa_nome || f.lead_nome || "—"}</span>
                 <span className="text-[10px]" style={{ color: "var(--cf2-text-tertiary)" }}>{FASE_COLUNAS.find((c) => c.key === f.fase)?.label ?? "—"}</span>
               </div>
             ))}
