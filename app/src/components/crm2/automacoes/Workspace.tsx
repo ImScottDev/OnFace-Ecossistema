@@ -24,11 +24,16 @@ import { Cf2EmptyState } from "../ui/States";
 
 /**
  * Builder de Automações do cf2 — motor real por trás (lib/crm/automacao-engine.ts):
- * 7 gatilhos × 6 ações já rodando em produção, 1 condição + 1 ação por regra
+ * 12 gatilhos × 8 ações já rodando em produção, 1 condição + 1 ação por regra
  * (não é um grafo arbitrário). O card de referência do Kauã (Opero) inspirou
  * o formato visual de "fluxo" (gatilho → condição → ação, ligados por
  * conectores), mas adaptado ao que o motor de fato suporta — não um canvas
  * multi-nó que a engine não executaria.
+ *
+ * "Tag adicionada ao lead" → "Iniciar cadência/follow-up" (24/08) é o gatilho
+ * que faltava pra fechar o gap real vs. DeskComm ("tag entra numa sequência
+ * automaticamente") — antes disso os dois motores (automação e cadência)
+ * eram paralelos e nada ligava um ao outro.
  */
 
 interface Condicao {
@@ -45,6 +50,14 @@ interface AcaoConfig {
   novoStatus?: string;
   mensagem?: string;
   tag?: string;
+  cadenceDefinitionId?: string;
+}
+
+interface Cadencia {
+  id: string;
+  nome: string;
+  ativo: boolean;
+  entityType: string;
 }
 
 interface Automacao {
@@ -80,6 +93,7 @@ const GATILHO_OPTIONS = [
   { value: "fatura_atrasada", label: "Fatura ficou atrasada" },
   { value: "fatura_paga", label: "Fatura foi paga" },
   { value: "assinatura_status_alterado", label: "Status da assinatura mudou" },
+  { value: "tag_adicionada", label: "Tag adicionada ao lead" },
 ];
 
 const ACAO_OPTIONS = [
@@ -91,6 +105,7 @@ const ACAO_OPTIONS = [
   { value: "enviar_whatsapp", label: "Enviar WhatsApp" },
   { value: "adicionar_tag_empresa", label: "Adicionar tag à empresa" },
   { value: "remover_tag_empresa", label: "Remover tag da empresa" },
+  { value: "iniciar_cadencia", label: "Iniciar cadência/follow-up" },
 ];
 
 const OPERADOR_OPTIONS = [
@@ -121,6 +136,7 @@ const emptyForm = {
   novoStatus: "",
   mensagem: "",
   tag: "",
+  cadenceDefinitionId: "",
 };
 
 function gatilhoLabel(v: string) {
@@ -219,6 +235,16 @@ export function Cf2AutomacoesWorkspace() {
     enabled: rules.length > 0,
   });
 
+  const { data: cadencias = [] } = useQuery<Cadencia[]>({
+    queryKey: ["automacoes-cadencias-select"],
+    queryFn: async () => {
+      const r = await fetch("/api/automacoes/cadencias");
+      if (!r.ok) return [];
+      const body = await r.json();
+      return body.cadencias || [];
+    },
+  });
+
   const buildPayload = () => ({
     nome: form.nome,
     gatilho: form.gatilho,
@@ -231,6 +257,7 @@ export function Cf2AutomacoesWorkspace() {
       ...(form.novoStatus ? { novoStatus: form.novoStatus } : {}),
       ...(form.mensagem ? { mensagem: form.mensagem } : {}),
       ...((form.acao === "adicionar_tag_empresa" || form.acao === "remover_tag_empresa") && form.tag ? { tag: form.tag } : {}),
+      ...(form.acao === "iniciar_cadencia" && form.cadenceDefinitionId ? { cadenceDefinitionId: form.cadenceDefinitionId } : {}),
     },
   });
 
@@ -326,6 +353,7 @@ export function Cf2AutomacoesWorkspace() {
       novoStatus: rule.acaoConfig?.novoStatus || "",
       mensagem: rule.acaoConfig?.mensagem || "",
       tag: rule.acaoConfig?.tag || "",
+      cadenceDefinitionId: rule.acaoConfig?.cadenceDefinitionId || "",
     });
     setShowForm(true);
   };
@@ -337,7 +365,7 @@ export function Cf2AutomacoesWorkspace() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold" style={{ color: "var(--cf2-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>Automações</h1>
-          <p className="text-xs mt-1" style={{ color: "var(--cf2-text-secondary)" }}>Motor real: 7 gatilhos × 6 ações já rodando em produção. Crie ou edite regras aqui.</p>
+          <p className="text-xs mt-1" style={{ color: "var(--cf2-text-secondary)" }}>Motor real: 12 gatilhos × 8 ações já rodando em produção. Crie ou edite regras aqui.</p>
         </div>
         <button
           onClick={() => setShowForm(true)}
@@ -351,7 +379,7 @@ export function Cf2AutomacoesWorkspace() {
       {isLoading ? (
         <p className="text-sm" style={{ color: "var(--cf2-text-tertiary)" }}>Carregando...</p>
       ) : rules.length === 0 ? (
-        <Cf2EmptyState title="Nenhuma automação configurada ainda" description={'O motor já roda de verdade (7 gatilhos ligados) — clique em "Nova Automação" pra cadastrar a 1ª regra.'} />
+        <Cf2EmptyState title="Nenhuma automação configurada ainda" description={'O motor já roda de verdade (12 gatilhos ligados) — clique em "Nova Automação" pra cadastrar a 1ª regra.'} />
       ) : (
         <div className="space-y-3">
           {rules.map((rule) => {
@@ -496,6 +524,12 @@ export function Cf2AutomacoesWorkspace() {
                 )}
                 {(form.acao === "adicionar_tag_empresa" || form.acao === "remover_tag_empresa") && (
                   <input value={form.tag} onChange={(e) => setForm({ ...form, tag: e.target.value })} className="w-full text-sm px-3 py-2 rounded-lg outline-none" style={inputStyle} placeholder="Tag (ex: financeiro_em_aberto)" />
+                )}
+                {form.acao === "iniciar_cadencia" && (
+                  <select value={form.cadenceDefinitionId} onChange={(e) => setForm({ ...form, cadenceDefinitionId: e.target.value })} className="w-full text-sm px-3 py-2 rounded-lg outline-none" style={inputStyle}>
+                    <option value="">Selecione a cadência/follow-up *</option>
+                    {cadencias.filter((c) => c.ativo).map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
+                  </select>
                 )}
                 {(form.acao === "notificar_usuario" || form.acao === "enviar_email" || form.acao === "enviar_whatsapp") && (
                   <textarea value={form.mensagem} onChange={(e) => setForm({ ...form, mensagem: e.target.value })} className="w-full text-sm px-3 py-2 rounded-lg outline-none resize-y" style={inputStyle} rows={3} placeholder="Mensagem" />
