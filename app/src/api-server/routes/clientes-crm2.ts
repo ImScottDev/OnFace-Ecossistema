@@ -1433,7 +1433,12 @@ app.get("/clientes-crm2/:empresaId", async (c) => {
     negocios: negociosComVendedor,
     timelineEventos,
     origemAquisicao,
-    negocioIds: [...new Set(contratosDoServico.map((ct) => ct.negocioId).filter((id): id is string => !!id))],
+    // Achado real 24/08: usava `contratosDoServico` (só contratos vindos de
+    // servico_canonico) enquanto `contratoIds` abaixo já tinha sido corrigido
+    // pra união completa — Documentos/Contratos ficavam sem achar PDF de
+    // contrato legado anexado no NEGÓCIO (não no contrato) sempre que esse
+    // contrato não vinha de um serviço. Mesma fonte agora nos dois.
+    negocioIds: [...new Set(contratosParaResposta.map((ct) => ct.negocioId).filter((id): id is string => !!id))],
     // Union de TODOS os contratos da empresa (servico_canonico + lead/negócio
     // resolvidos, ver bloco acima) — não só os que vieram via serviço. Alimenta
     // tanto a aba Contratos nova quanto o fetch de anexos_legado tipo=contrato
