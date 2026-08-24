@@ -23,13 +23,12 @@ const brl = (v: number) => v.toLocaleString("pt-BR", { style: "currency", curren
 const SUCCESS_DARK = "#4ade80";
 const WARNING_DARK = "#fbbf24";
 
-interface Resumo { pipelineAberto: number; forecast: number; oportunidadesAbertas: number; ticketMedio: number | null; winRate: number | null; winRateAmostraPequena: boolean; semProximaAcao: number }
-
 /**
  * Board de Pipeline (CRM2, spec+mockups do Kauã 17/08, reskin escuro 24/08
  * "mesma pegada do Pré-vendas") — Kanban de OPORTUNIDADES (não leads), 4
- * colunas abertas fixas + resumo operacional + filtros reais. Clique no
- * card abre drawer lateral primeiro (mesmo padrão de Pré-vendas/
+ * colunas abertas fixas + filtros reais (cards de KPI removidos 24/08,
+ * pedido do Kauã: "pode sair" — informação redundante com o board). Clique
+ * no card abre drawer lateral primeiro (mesmo padrão de Pré-vendas/
  * Prospecção) — "Abrir oportunidade completa" navega pra `/negocios/:id`.
  * Ganho/Perdido são estados finais acessíveis por bucket clicável no
  * rodapé, não colunas do board principal.
@@ -64,25 +63,13 @@ export function Cf2PipelineWorkspace() {
     },
   });
 
-  const { data: resumo } = useQuery<Resumo>({
-    queryKey: ["pipeline-crm2-resumo", respFilter, periodoFilter],
-    queryFn: async () => {
-      const params = new URLSearchParams({ periodo: periodoFilter });
-      if (respFilter !== "todos" && respFilter !== "meu") params.set("responsavelId", respFilter);
-      if (respFilter === "meu" && currentUserId) params.set("responsavelId", currentUserId);
-      const r = await fetch(`/api/pipeline-crm2/resumo?${params}`);
-      if (!r.ok) return { pipelineAberto: 0, forecast: 0, oportunidadesAbertas: 0, ticketMedio: null, winRate: null, winRateAmostraPequena: false, semProximaAcao: 0 };
-      return r.json();
-    },
-  });
-
   const moveStage = useMutation({
     mutationFn: async ({ id, status, motivoPerda }: { id: string; status: string; motivoPerda?: string }) => {
       const r = await fetch(`/api/negocios/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(motivoPerda ? { status, motivoPerda } : { status }) });
       if (!r.ok) { const b = await r.json().catch(() => ({})); throw new Error(b.error || "falha ao mover"); }
       return r.json();
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["pipeline-crm2-board"] }); qc.invalidateQueries({ queryKey: ["pipeline-crm2-resumo"] }); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["pipeline-crm2-board"] }); },
     onError: (e: Error) => toast.error(e.message),
   });
 
@@ -115,18 +102,9 @@ export function Cf2PipelineWorkspace() {
   const ativoNegocios = filtered.filter((n) => n.status === "ativo");
 
   return (
-    <div className="flex flex-col gap-4">
-      {/* Resumo operacional */}
-      <div className="grid grid-cols-5 gap-3">
-        <ResumoCard label="Pipeline aberto" valor={brl(resumo?.pipelineAberto ?? 0)} />
-        <ResumoCard label="Forecast" valor={brl(resumo?.forecast ?? 0)} />
-        <ResumoCard label="Oportunidades abertas" valor={String(resumo?.oportunidadesAbertas ?? 0)} />
-        <ResumoCard label="Ticket médio" valor={resumo?.ticketMedio != null ? brl(resumo.ticketMedio) : "—"} />
-        <ResumoCard label="Win rate" valor={resumo?.winRate != null ? `${resumo.winRate}%` : "—"} sub={resumo?.winRateAmostraPequena ? "amostra pequena" : undefined} />
-      </div>
-
+    <div className="h-full flex flex-col gap-4 min-h-0">
       {/* Filtros */}
-      <div className="flex items-center gap-2 flex-wrap">
+      <div className="flex items-center gap-2 flex-wrap shrink-0">
         <div className="relative shrink-0">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: "var(--cf2-chrome-text-secondary)" }} />
           <input
@@ -170,8 +148,8 @@ export function Cf2PipelineWorkspace() {
       {isLoading ? (
         <p className="text-[13px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Carregando...</p>
       ) : (
-        <>
-          <div className="flex gap-3 overflow-x-auto pb-1">
+        <div className="flex-1 min-h-0 flex flex-col gap-4">
+          <div className="flex-1 min-h-0 flex gap-3 overflow-x-auto pb-1">
             {PIPELINE_OPEN_COLS.map((col) => {
               const negociosCol = negociosDaColuna(col);
               const totalCol = negociosCol.reduce((s, n) => s + negocioValor(n), 0);
@@ -179,7 +157,7 @@ export function Cf2PipelineWorkspace() {
               return (
                 <div
                   key={col.key}
-                  className="w-[300px] shrink-0 rounded-2xl flex flex-col max-h-full"
+                  className="w-[300px] shrink-0 rounded-2xl flex flex-col"
                   style={{ background: isDragOver ? `color-mix(in srgb, ${col.color} 10%, transparent)` : "var(--cf2-chrome-bg-alt)", border: isDragOver ? `2px dashed ${col.color}` : "1px solid var(--cf2-chrome-border-subtle)" }}
                   onDragOver={(e) => e.preventDefault()}
                   onDragEnter={(e) => { e.preventDefault(); setDragOverCol(col.key); }}
@@ -193,7 +171,7 @@ export function Cf2PipelineWorkspace() {
                     </div>
                     <span className="text-[12px] font-bold" style={{ color: "var(--cf2-chrome-text-primary)" }}>{brl(totalCol)}</span>
                   </div>
-                  <div className="flex-1 p-2 space-y-2 min-h-[120px] max-h-[calc(100vh-420px)] overflow-y-auto">
+                  <div className="flex-1 p-2 space-y-2 min-h-[120px] overflow-y-auto">
                     {negociosCol.map((n) => (
                       <NegocioCard key={n.id} n={n} onOpen={() => setDrawerNegocioId(n.id)} onDragStart={(e) => e.dataTransfer.setData("negocioId", n.id)} />
                     ))}
@@ -212,12 +190,12 @@ export function Cf2PipelineWorkspace() {
           </div>
 
           {ativoNegocios.length > 0 && (
-            <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-[12px]" style={{ background: "rgba(255,255,255,0.06)", color: "var(--cf2-chrome-text-secondary)" }}>
+            <div className="shrink-0 flex items-center gap-2 px-3.5 py-2 rounded-xl text-[12px]" style={{ background: "rgba(255,255,255,0.06)", color: "var(--cf2-chrome-text-secondary)" }}>
               <AlertTriangle className="w-3.5 h-3.5 shrink-0" style={{ color: WARNING_DARK }} />
               {ativoNegocios.length} negócio{ativoNegocios.length > 1 ? "s" : ""} em status <code className="px-1 rounded" style={{ background: "var(--cf2-chrome-surface-active)" }}>ativo</code> (pós-venda recorrente) — fora do De/Para deste Pipeline; não decidido se deveria viver em Carteira/Clientes. Pendência aberta, não escondida.
             </div>
           )}
-        </>
+        </div>
       )}
 
       {showExport && (
@@ -229,7 +207,7 @@ export function Cf2PipelineWorkspace() {
         />
       )}
 
-      <Cf2NegocioDrawer negocioId={drawerNegocioId} open={!!drawerNegocioId} onClose={() => setDrawerNegocioId(null)} onChanged={() => { qc.invalidateQueries({ queryKey: ["pipeline-crm2-board"] }); qc.invalidateQueries({ queryKey: ["pipeline-crm2-resumo"] }); }} />
+      <Cf2NegocioDrawer negocioId={drawerNegocioId} open={!!drawerNegocioId} onClose={() => setDrawerNegocioId(null)} onChanged={() => qc.invalidateQueries({ queryKey: ["pipeline-crm2-board"] })} />
       <NovaOportunidadeModal open={novaOpen} onClose={() => setNovaOpen(false)} usuarios={usuarios} onCreated={() => qc.invalidateQueries({ queryKey: ["pipeline-crm2-board"] })} />
     </div>
   );
@@ -337,16 +315,6 @@ function Select({ value, onChange, children }: { value: string; onChange: (v: st
   );
 }
 
-function ResumoCard({ label, valor, sub }: { label: string; valor: string; sub?: string }) {
-  return (
-    <div className="flex flex-col gap-1 p-3.5 rounded-2xl" style={{ background: "var(--cf2-chrome-surface-active)", border: "1px solid var(--cf2-chrome-border-subtle)" }}>
-      <p className="text-[10px] font-bold uppercase" style={{ color: "var(--cf2-chrome-text-secondary)" }}>{label}</p>
-      <p className="text-[20px] font-bold" style={{ color: "var(--cf2-chrome-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>{valor}</p>
-      {sub && <p className="text-[10px]" style={{ color: WARNING_DARK }}>{sub}</p>}
-    </div>
-  );
-}
-
 /** Coluna colapsável pra Ganho/Perdido — mesma anatomia das colunas
  * auxiliares do Kanban de Pré-vendas (barra estreita recolhida, clique
  * expande e mostra os cards de verdade, reaproveitando `NegocioCard`). */
@@ -371,7 +339,7 @@ function BucketColumn({ label, color, negocios, expanded, onToggle, onOpen, show
   }
 
   return (
-    <div className="w-[300px] shrink-0 rounded-2xl flex flex-col max-h-full" style={{ background: "var(--cf2-chrome-bg-alt)", border: "1px solid var(--cf2-chrome-border-subtle)" }}>
+    <div className="w-[300px] shrink-0 rounded-2xl flex flex-col" style={{ background: "var(--cf2-chrome-bg-alt)", border: "1px solid var(--cf2-chrome-border-subtle)" }}>
       <button type="button" onClick={onToggle} className="px-3 pt-3 pb-2 shrink-0 flex items-center justify-between text-left">
         <div className="flex items-center gap-2">
           <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: color }} />
@@ -379,7 +347,7 @@ function BucketColumn({ label, color, negocios, expanded, onToggle, onOpen, show
         </div>
         <span className="text-[12px] font-bold" style={{ color: "var(--cf2-chrome-text-primary)" }}>{brl(total)}</span>
       </button>
-      <div className="flex-1 p-2 space-y-2 min-h-[120px] max-h-[calc(100vh-420px)] overflow-y-auto">
+      <div className="flex-1 p-2 space-y-2 min-h-[120px] overflow-y-auto">
         {negocios.length === 0 ? (
           <div className="flex h-16 items-center justify-center text-[11px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>vazio</div>
         ) : negocios.map((n) => (
