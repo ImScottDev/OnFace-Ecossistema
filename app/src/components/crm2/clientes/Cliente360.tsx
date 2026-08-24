@@ -203,6 +203,19 @@ function badgeVencimento(dias: number): "neutral" | "warning" | "danger" {
   return "neutral";
 }
 
+// Título do card de contrato (24/08, Kauã: "não quero nada falando legado
+// zoho ou esse lixo, preciso dos dados e das informações") — `tipo` às
+// vezes é a origem interna do registro ("legado_zoho"), não um produto;
+// prioriza produto(s) reais (servicos, recém-preenchido via backfill do
+// export do Zoho) e cai pra descrição/tipo só quando não tem produto
+// nenhum pra mostrar, nunca expõe a origem técnica do dado.
+function tituloContrato(ct: ContratoCliente): string {
+  if (ct.servicos && ct.servicos.length > 0) return ct.servicos.join(" + ");
+  if (ct.descricao) return ct.descricao;
+  if (ct.tipo && ct.tipo !== "legado_zoho") return ct.tipo;
+  return "Contrato";
+}
+
 function brl(v: number | string) {
   const n = typeof v === "string" ? parseFloat(v) : v;
   return `R$ ${(n || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -310,7 +323,7 @@ function DocumentoContrato({ contrato, anexosLegado }: { contrato: ContratoClien
   }
   return (
     <a href={`/api/anexos-legado/${anexo.id}/download`} className="text-[11px] underline inline-flex items-center gap-1" style={{ color: "var(--cf2-text-secondary)" }}>
-      <Download className="w-3 h-3" /> {anexo.nomeArquivo} (histórico Zoho)
+      <Download className="w-3 h-3" /> {anexo.nomeArquivo}
     </a>
   );
 }
@@ -340,7 +353,7 @@ function ContratosConciliacao({ contratos, anexosLegado }: { contratos: Contrato
     ["Comercial", comercial, contratos.length, "contrato → negócio/proposta"],
     ["Stripe", stripe, contratos.length, "assinatura vinculada"],
     ["Cobrança", cobranca, contratos.length, "com fatura registrada"],
-    ["Documento", documentos, contratos.length, "gerado ou Zoho"],
+    ["Documento", documentos, contratos.length, "gerado ou anexado"],
   ];
   return (
     <div className="p-4 rounded-xl flex flex-col gap-3" style={{ background: "var(--cf2-bg-surface-subtle)", border: "1px solid var(--cf2-border-default)" }}>
@@ -1145,10 +1158,9 @@ export function Cf2Cliente360({ empresaId }: { empresaId: string }) {
                 <div className="flex items-center justify-between gap-2 flex-wrap">
                   <div className="flex items-center gap-2 flex-wrap">
                     <p className="text-[13px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>
-                      {ct.tipo}{ct.descricao ? ` — ${ct.descricao}` : ""}
+                      {tituloContrato(ct)}
                     </p>
                     <Cf2Badge variant={CONTRATO_STATUS_BADGE[ct.status] || "neutral"}>{CONTRATO_STATUS_LABEL[ct.status] || ct.status}</Cf2Badge>
-                    {ct.zohoId && <Cf2Badge variant="neutral">Histórico Zoho</Cf2Badge>}
                     {/* Alerta de vencimento (90/60/30d) — só existe pra contrato ATIVO
                         com vencimento futuro dentro da janela (calculado no backend);
                         contrato vencido ou sem vencimento nunca ganha este badge. */}
@@ -1290,7 +1302,7 @@ export function Cf2Cliente360({ empresaId }: { empresaId: string }) {
                     )}
                     {s.contrato?.corpoGerado && (
                       <a href={`/api/contratos/${s.contrato.id}/pdf`} target="_blank" rel="noreferrer" className="text-[11px] underline inline-flex items-center gap-1 mt-1" style={{ color: "var(--cf2-text-secondary)" }}>
-                        <FileText className="w-3 h-3" /> Contrato{s.contrato.zohoId ? " (histórico Zoho)" : ""}
+                        <FileText className="w-3 h-3" /> Contrato
                       </a>
                     )}
                   </div>
@@ -1465,7 +1477,7 @@ export function Cf2Cliente360({ empresaId }: { empresaId: string }) {
                   <div className="flex-1 min-w-0">
                     <p className="text-[13px] font-semibold truncate" style={{ color: "var(--cf2-text-primary)" }}>{d.nomeArquivo}</p>
                     <p className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>
-                      {formatBytes(d.tamanhoBytes)}{d.zohoId ? " · histórico (Zoho)" : ""}{d.criadoEmOriginal ? ` · ${data(d.criadoEmOriginal)}` : ""}
+                      {formatBytes(d.tamanhoBytes)}{d.criadoEmOriginal ? ` · ${data(d.criadoEmOriginal)}` : ""}
                     </p>
                   </div>
                   {d.arquivoDisponivel ? (
