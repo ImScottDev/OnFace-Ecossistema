@@ -285,8 +285,12 @@ function SaudeComponente({
  * Documentos (não duplicada, só extraída): corpo gerado pela engine nova
  * (`temCorpoGerado`) vira link pra `/api/contratos/:id/pdf`; senão, procura
  * nos anexos_legado (Zoho) já buscados via `useAnexosLegadoCliente` um
- * anexo tipo "contrato" com `entidadeId` igual ao id do contrato. Sem os
- * dois, honesto: "sem documento".
+ * anexo tipo "contrato" com `entidadeId` igual ao id do contrato — e, na
+ * falta desse, um anexo tipo "negócio" no negócio de origem do contrato
+ * (achado real 24/08: 9 contratos com zoho_id tinham o PDF real anexado
+ * no negócio em vez do contrato durante a importação do Zoho; a tela só
+ * olhava o nível do contrato e mostrava "Sem documento" com o arquivo
+ * existindo). Sem os dois, honesto: "sem documento".
  */
 function DocumentoContrato({ contrato, anexosLegado }: { contrato: ContratoCliente; anexosLegado: AnexoLegado[] }) {
   if (contrato.temCorpoGerado) {
@@ -296,7 +300,8 @@ function DocumentoContrato({ contrato, anexosLegado }: { contrato: ContratoClien
       </a>
     );
   }
-  const anexo = anexosLegado.find((a) => a.entidadeId === contrato.id);
+  const anexo = anexosLegado.find((a) => a.entidadeId === contrato.id)
+    ?? (contrato.negocioId ? anexosLegado.find((a) => a.entidadeId === contrato.negocioId) : undefined);
   if (!anexo) {
     return <span className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>Sem documento</span>;
   }
@@ -323,7 +328,9 @@ function ContratosConciliacao({ contratos, anexosLegado }: { contratos: Contrato
   const comercial = contratos.filter((c) => c.negocioId || c.propostaOrigem).length;
   const stripe = contratos.filter((c) => c.stripeSubscriptionId).length;
   const cobranca = contratos.filter((c) => (c.faturas?.total ?? 0) > 0).length;
-  const documentos = contratos.filter((c) => c.temCorpoGerado || c.zohoId || anexosLegado.some((a) => a.entidadeId === c.id)).length;
+  const documentos = contratos.filter((c) =>
+    c.temCorpoGerado || anexosLegado.some((a) => a.entidadeId === c.id || (c.negocioId && a.entidadeId === c.negocioId))
+  ).length;
   const legadoSemStripe = contratos.filter((c) => !c.stripeSubscriptionId && Boolean(c.zohoId)).length;
   // Falta de Stripe em contrato migrado do Zoho é contexto histórico, não uma
   // falha de conciliação. Só sinalizamos como pendência quando o contrato não
