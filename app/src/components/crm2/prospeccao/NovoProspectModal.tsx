@@ -8,6 +8,16 @@ import { X } from "lucide-react";
 interface Lista { id: string; nome: string }
 interface Usuario { id: string; nome: string }
 
+// Mesmo padrão de máscara do Novo Lead (Pré-vendas, 24/08) — telefone cru
+// sem formatação era um dos pontos que o Kauã apontou como "feio" aqui.
+function formatarTelefone(valor: string): string {
+  const digitos = valor.replace(/\D/g, "").slice(0, 11);
+  if (digitos.length <= 2) return digitos.length ? `(${digitos}` : "";
+  if (digitos.length <= 6) return `(${digitos.slice(0, 2)}) ${digitos.slice(2)}`;
+  if (digitos.length <= 10) return `(${digitos.slice(0, 2)}) ${digitos.slice(2, 6)}-${digitos.slice(6)}`;
+  return `(${digitos.slice(0, 2)}) ${digitos.slice(2, 7)}-${digitos.slice(7)}`;
+}
+
 /** Criação manual de 1 prospect outbound — reaproveita POST /api/leads (mesmo endpoint do resto do CRM), `semNegocio: true` porque prospect recém-criado ainda não foi qualificado. */
 export function NovoProspectModal({
   open, onClose, listas, usuarios, onCreated,
@@ -31,7 +41,7 @@ export function NovoProspectModal({
       const r = await fetch("/api/leads", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nome, empresa: empresa || undefined, cargo: cargo || undefined, telefone, email: email || undefined, responsavelId: responsavelId || undefined, origem: "outbound", semNegocio: true }),
+        body: JSON.stringify({ nome, empresa: empresa || undefined, cargo: cargo || undefined, telefone: telefone.replace(/\D/g, ""), email: email || undefined, responsavelId: responsavelId || undefined, origem: "outbound", semNegocio: true }),
       });
       if (!r.ok) { const err = await r.json().catch(() => ({})); throw new Error(err.error || "falha"); }
       return r.json();
@@ -64,7 +74,7 @@ export function NovoProspectModal({
         <Field label="Nome *" value={nome} onChange={setNome} placeholder="Nome do prospect" />
         <Field label="Empresa" value={empresa} onChange={setEmpresa} placeholder="Empresa" />
         <Field label="Cargo" value={cargo} onChange={setCargo} placeholder="Cargo" />
-        <Field label="Telefone *" value={telefone} onChange={setTelefone} placeholder="(11) 99999-9999" />
+        <Field label="Telefone *" value={formatarTelefone(telefone)} onChange={(v) => setTelefone(v.replace(/\D/g, ""))} placeholder="(11) 99999-9999" />
         <Field label="E-mail" value={email} onChange={setEmail} placeholder="email@empresa.com" />
         <div className="flex flex-col gap-1.5">
           <span className="text-[13px] font-semibold" style={{ color: "var(--cf2-text-primary)" }}>Lista</span>

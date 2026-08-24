@@ -1,12 +1,13 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Phone, MessageCircle, Mail, Plus, Calendar, ChevronDown, Check, X, Beaker, AlertTriangle, FileText, Download } from "lucide-react";
 import { DetailDrawer } from "@/components/crm/DetailDrawer";
 import { TarefaFormModal } from "@/components/crm/tarefas/TarefaFormModal";
-import { callfaceCallUrl } from "@/lib/utils/callface-call";
+import { digitsForDialer } from "@/lib/utils/callface-call";
 import {
   PIPELINE_OPEN_COLS, MOTIVO_PERDA_ESTRUTURADO, proximoStatusReal, tempoNaEtapa,
   FAMILY_LABEL, resolvePropostaDisplay,
@@ -161,6 +162,18 @@ export function Cf2NegocioDrawer({ negocioId, open, onClose, onChanged }: { nego
 
   const stage = negocio ? PIPELINE_OPEN_COLS.find((c) => c.keys.includes(negocio.status)) : null;
 
+  // Ligar/WhatsApp/E-mail abrem em Atendimento (não link externo tel:/wa.me/
+  // mailto:) — mesmo achado real 24/08 de todo o resto do CRM2: o telefone
+  // vai em qualquer canal, é o que permite achar a conversa certa quando
+  // `contatos.leadId` não está preenchido no banco.
+  const telefoneDialer = lead?.telefone ? digitsForDialer(lead.telefone) : "";
+  const atendimentoHref = (canal: "whatsapp" | "email" | "ligacao") => {
+    if (!lead?.id) return undefined;
+    const params = new URLSearchParams({ leadId: lead.id, canal });
+    if (telefoneDialer) params.set("telefone", telefoneDialer);
+    return `/atendimento?${params.toString()}`;
+  };
+
   return (
     <>
     <DetailDrawer open={open && !!negocioId} onClose={onClose} bare panelBg="#ffffff" width="w-full sm:w-[500px]" footer={footer}>
@@ -178,15 +191,15 @@ export function Cf2NegocioDrawer({ negocioId, open, onClose, onChanged }: { nego
               {stage && <span className="px-2.5 py-1 rounded-full text-[12px] font-semibold" style={{ background: `${stage.color}18`, color: stage.color }}>{stage.label}</span>}
               <span className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>Tempo na etapa: {tempoNaEtapa(negocio.updatedAt)}</span>
             </div>
-            <a href={`/negocios/${negocioId}`} className="text-[12px] font-semibold" style={{ color: "var(--cf2-success-text)" }}>Abrir oportunidade completa →</a>
+            <Link href={`/negocios/${negocioId}`} className="text-[12px] font-semibold" style={{ color: "var(--cf2-success-text)" }}>Abrir oportunidade completa →</Link>
           </div>
 
           <div className="flex flex-col gap-2.5">
             <p className="text-[14px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Ações rápidas</p>
             <div className="flex gap-2 flex-wrap">
-              <QuickAction icon={Phone} label="Ligar" href={lead?.telefone ? callfaceCallUrl(lead.telefone) : undefined} />
-              <QuickAction icon={MessageCircle} label="WhatsApp" href={lead?.telefone ? `https://wa.me/${lead.telefone.replace(/\D/g, "")}` : undefined} />
-              <QuickAction icon={Mail} label="E-mail" href={lead?.email ? `mailto:${lead.email}` : undefined} />
+              <QuickAction icon={Phone} label="Ligar" href={lead?.telefone ? atendimentoHref("ligacao") : undefined} />
+              <QuickAction icon={MessageCircle} label="WhatsApp" href={lead?.telefone ? atendimentoHref("whatsapp") : undefined} />
+              <QuickAction icon={Mail} label="E-mail" href={lead?.email ? atendimentoHref("email") : undefined} />
               <QuickAction icon={Calendar} label="Agendar" onClick={() => setTarefaModalOpen(true)} />
               <QuickAction icon={Plus} label="Tarefa" onClick={() => setTarefaModalOpen(true)} />
             </div>
@@ -249,7 +262,7 @@ export function Cf2NegocioDrawer({ negocioId, open, onClose, onChanged }: { nego
                   <p className="text-[13px] font-semibold flex items-center gap-1.5" style={{ color: "var(--cf2-text-primary)" }}><FileText className="w-3.5 h-3.5" /> #{ultimaProposta.numero} · {brl(ultimaProposta.totalGeral)}</p>
                   <p className="text-[11px] mt-0.5" style={{ color: "var(--cf2-text-tertiary)" }}>{resolvePropostaDisplay(ultimaProposta).label}</p>
                 </div>
-                <a href={`/propostas/${ultimaProposta.id}`} className="text-[12px] font-semibold" style={{ color: "var(--cf2-success-text)" }}>Ver →</a>
+                <a href={`/propostas?propostaId=${ultimaProposta.id}`} className="text-[12px] font-semibold" style={{ color: "var(--cf2-success-text)" }}>Ver →</a>
               </div>
             ) : (
               <p className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhuma proposta criada.</p>
@@ -321,7 +334,7 @@ function QuickAction({ icon: Icon, label, href, onClick }: { icon: typeof Phone;
   const disabled = !href && !onClick;
   const cls = "flex items-center justify-center gap-1.5 h-10 px-3 rounded-xl text-[13px] font-semibold";
   const style = { border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)", opacity: disabled ? 0.4 : 1 };
-  if (href && !disabled) return <a href={href} target="_blank" rel="noopener noreferrer" className={cls} style={style}><Icon className="w-4 h-4" /> {label}</a>;
+  if (href && !disabled) return <Link href={href} className={cls} style={style}><Icon className="w-4 h-4" /> {label}</Link>;
   return <button onClick={onClick} disabled={disabled} className={cls} style={style}><Icon className="w-4 h-4" /> {label}</button>;
 }
 

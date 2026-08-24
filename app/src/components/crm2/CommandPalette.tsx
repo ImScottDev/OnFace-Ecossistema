@@ -121,7 +121,7 @@ export function Cf2CommandPalette() {
             id: `proposta-${p.id}`,
             label: `Proposta #${p.numero}`,
             sublabel: p.leadNome || undefined,
-            href: `/propostas/${p.id}`,
+            href: `/propostas?propostaId=${p.id}`,
             icon: FileText,
             group: "Propostas",
           })),

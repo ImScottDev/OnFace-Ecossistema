@@ -35,7 +35,13 @@ export function Cf2PipelineWorkspace() {
   const [periodoFilter, setPeriodoFilter] = useState<"mes" | "tudo">("mes");
   const [statusFilter, setStatusFilter] = useState<"abertas" | "todas">("abertas");
   const [dragOverCol, setDragOverCol] = useState<string | null>(null);
-  const [bucketOpen, setBucketOpen] = useState<{ label: string; negocios: NegocioBoard[] } | null>(null);
+  // Ganho/Perdido eram botões que abriam um modal por cima do Kanban — agora
+  // são colunas colapsáveis NA MESMA linha das 4 abertas (24/08, mesma
+  // referência visual do Kauã pra Pré-vendas: "pegar Pré-vendas como
+  // referência e adaptar em Pipeline"). Só visualização, não são drop
+  // target (Ganho/Perdido nascem de ações reais — aceite de proposta,
+  // marcar perdido com motivo — nunca de um drag cru).
+  const [expandedBucket, setExpandedBucket] = useState<"ganho" | "perdido" | null>(null);
   const [drawerNegocioId, setDrawerNegocioId] = useState<string | null>(null);
   const [novaOpen, setNovaOpen] = useState(false);
 
@@ -152,7 +158,7 @@ export function Cf2PipelineWorkspace() {
         <p className="text-[13px]" style={{ color: "var(--cf2-text-tertiary)" }}>Carregando...</p>
       ) : (
         <>
-          <div className="flex gap-4">
+          <div className="flex gap-3 overflow-x-auto pb-1">
             {PIPELINE_OPEN_COLS.map((col) => {
               const negociosCol = negociosDaColuna(col);
               const totalCol = negociosCol.reduce((s, n) => s + negocioValor(n), 0);
@@ -160,7 +166,7 @@ export function Cf2PipelineWorkspace() {
               return (
                 <div
                   key={col.key}
-                  className="flex-1 min-w-0 rounded-2xl flex flex-col"
+                  className="w-[300px] shrink-0 rounded-2xl flex flex-col max-h-full"
                   style={{ background: isDragOver ? `${col.color}10` : "var(--cf2-bg-canvas)", border: isDragOver ? `2px dashed ${col.color}` : "1px solid var(--cf2-border-default)" }}
                   onDragOver={(e) => e.preventDefault()}
                   onDragEnter={(e) => { e.preventDefault(); setDragOverCol(col.key); }}
@@ -183,11 +189,13 @@ export function Cf2PipelineWorkspace() {
                 </div>
               );
             })}
-          </div>
 
-          <div className="flex gap-3">
-            <BucketButton label="Ganho" color="#22c55e" negocios={ganhoNegocios} onClick={() => setBucketOpen({ label: "Ganho", negocios: ganhoNegocios })} />
-            <BucketButton label="Perdido" color="#dc2626" negocios={perdidoNegocios} onClick={() => setBucketOpen({ label: "Perdido", negocios: perdidoNegocios })} />
+            {/* Ganho/Perdido — colunas colapsáveis na MESMA linha (24/08,
+                referência visual de Pré-vendas), não mais botão+modal por
+                cima. Não são drop target: nascem de ação real (aceite de
+                proposta, marcar perdido com motivo), nunca de drag cru. */}
+            <BucketColumn label="Ganho" color="#22c55e" negocios={ganhoNegocios} expanded={expandedBucket === "ganho"} onToggle={() => setExpandedBucket((b) => (b === "ganho" ? null : "ganho"))} onOpen={setDrawerNegocioId} />
+            <BucketColumn label="Perdido" color="#dc2626" negocios={perdidoNegocios} expanded={expandedBucket === "perdido"} onToggle={() => setExpandedBucket((b) => (b === "perdido" ? null : "perdido"))} onOpen={setDrawerNegocioId} showMotivo />
           </div>
 
           {ativoNegocios.length > 0 && (
@@ -197,10 +205,6 @@ export function Cf2PipelineWorkspace() {
             </div>
           )}
         </>
-      )}
-
-      {bucketOpen && (
-        <NegocioBucketModal title={bucketOpen.label} negocios={bucketOpen.negocios} onClose={() => setBucketOpen(null)} onOpen={(id) => { setBucketOpen(null); setDrawerNegocioId(id); }} />
       )}
 
       <Cf2NegocioDrawer negocioId={drawerNegocioId} open={!!drawerNegocioId} onClose={() => setDrawerNegocioId(null)} onChanged={() => { qc.invalidateQueries({ queryKey: ["pipeline-crm2-board"] }); qc.invalidateQueries({ queryKey: ["pipeline-crm2-resumo"] }); }} />
@@ -227,19 +231,51 @@ function ResumoCard({ label, valor, sub }: { label: string; valor: string; sub?:
   );
 }
 
-function BucketButton({ label, color, negocios, onClick }: { label: string; color: string; negocios: NegocioBoard[]; onClick: () => void }) {
+/** Coluna colapsável pra Ganho/Perdido — mesma anatomia das colunas
+ * auxiliares do Kanban de Pré-vendas (barra estreita recolhida, clique
+ * expande e mostra os cards de verdade, reaproveitando `NegocioCard`). */
+function BucketColumn({ label, color, negocios, expanded, onToggle, onOpen, showMotivo = false }: {
+  label: string; color: string; negocios: NegocioBoard[]; expanded: boolean; onToggle: () => void; onOpen: (id: string) => void; showMotivo?: boolean;
+}) {
   const total = negocios.reduce((s, n) => s + negocioValor(n), 0);
+
+  if (!expanded) {
+    return (
+      <button
+        type="button"
+        onClick={onToggle}
+        title={`${label} — ${negocios.length} negócio${negocios.length === 1 ? "" : "s"} (${brl(total)})`}
+        className="w-12 shrink-0 rounded-2xl flex flex-col items-center gap-2 pt-3 pb-3"
+        style={{ background: "var(--cf2-bg-canvas)", border: "1px solid var(--cf2-border-default)" }}
+      >
+        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ color, background: `${color}18` }}>{negocios.length}</span>
+        <span className="flex-1 text-[11px] font-semibold uppercase tracking-wider whitespace-nowrap" style={{ color, writingMode: "vertical-rl", transform: "rotate(180deg)" }}>{label}</span>
+      </button>
+    );
+  }
+
   return (
-    <button onClick={onClick} className="flex-1 min-w-0 rounded-xl p-3 flex items-center gap-3 text-left" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)", borderLeft: `3px solid ${color}` }}>
-      <div className="flex-1 min-w-0">
+    <div className="w-[300px] shrink-0 rounded-2xl flex flex-col max-h-full" style={{ background: "var(--cf2-bg-canvas)", border: "1px solid var(--cf2-border-default)" }}>
+      <button type="button" onClick={onToggle} className="px-3 pt-3 pb-2 shrink-0 flex items-center justify-between text-left">
         <div className="flex items-center gap-2">
-          <p className="text-[13px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>{label}</p>
-          <span className="text-[11px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: `${color}18`, color }}>{negocios.length}</span>
+          <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: color }} />
+          <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color }}>{label} ({negocios.length})</span>
         </div>
-        <p className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>{brl(total)}</p>
+        <span className="text-[12px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>{brl(total)}</span>
+      </button>
+      <div className="flex-1 p-2 space-y-2 min-h-[120px] max-h-[calc(100vh-420px)] overflow-y-auto">
+        {negocios.length === 0 ? (
+          <div className="flex h-16 items-center justify-center text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>vazio</div>
+        ) : negocios.map((n) => (
+          <div key={n.id}>
+            <NegocioCard n={n} onOpen={() => onOpen(n.id)} onDragStart={() => {}} />
+            {showMotivo && (
+              <p className="text-[11px] mt-1 px-1 truncate" style={{ color: "var(--cf2-danger-text)" }}>{motivoPerdaLabel(n)}</p>
+            )}
+          </div>
+        ))}
       </div>
-      <span className="text-[11px] font-semibold shrink-0" style={{ color: "var(--cf2-success-text)" }}>Ver →</span>
-    </button>
+    </div>
   );
 }
 
@@ -263,14 +299,18 @@ function NegocioCard({ n, onOpen, onDragStart }: { n: NegocioBoard; onOpen: () =
       {(n.empresaNome || nomeLead) && <p className="text-[11px] truncate mt-0.5" style={{ color: "var(--cf2-text-tertiary)" }}>{nomeLead}{n.serviceFamily ? ` · ${FAMILY_LABEL[n.serviceFamily] || n.serviceFamily}` : ""}</p>}
 
       <div className="flex items-center gap-1 mt-2 flex-wrap">
-        {isTrial && <Badge icon={Beaker} label="Trial ativo" color="#14B8A6" />}
-        {isNoShow && <Badge label="No-show" color="#F97316" />}
-        {propostaDisplay && <Badge icon={FileText} label={`Proposta #${n.proposta!.numero} · ${propostaDisplay.label}`} color={propostaDisplay.tom === "danger" ? "#dc2626" : propostaDisplay.tom === "success" ? "#22c55e" : propostaDisplay.tom === "warning" ? "#EAB308" : "#6B7280"} />}
-        {n.contratoPendente && <Badge icon={FileWarning} label="Contrato pendente" color="#EAB308" />}
-        {n.pagamentoPendente && <Badge icon={CreditCard} label="Pagamento pendente" color="#EAB308" />}
-        {!n.proximaAcao && <Badge icon={AlertTriangle} label="Sem próxima ação" color="#dc2626" />}
-        {semAvancoRelevante && <Badge icon={Clock} label={`${dias} dias sem avanço`} color="#dc2626" />}
-        {n.oportunidadesRelacionadas > 0 && <Badge icon={Link2} label={`+${n.oportunidadesRelacionadas} oportunidade${n.oportunidadesRelacionadas > 1 ? "s" : ""}`} color="#6B7280" />}
+        {/* Cores por SEMÂNTICA, não por badge (24/08, achado do Kauã: "cores
+            aleatório") — sempre os mesmos 4 tokens do resto do CRM2:
+            sucesso/info (accent), atenção (warning), problema (danger),
+            neutro (tertiary). Nenhum hex solto novo. */}
+        {isTrial && <Badge icon={Beaker} label="Trial ativo" color="var(--cf2-accent-border)" />}
+        {isNoShow && <Badge label="No-show" color="var(--cf2-warning-text)" />}
+        {propostaDisplay && <Badge icon={FileText} label={`Proposta #${n.proposta!.numero} · ${propostaDisplay.label}`} color={propostaDisplay.tom === "danger" ? "var(--cf2-danger-text)" : propostaDisplay.tom === "success" ? "var(--cf2-success-text)" : propostaDisplay.tom === "warning" ? "var(--cf2-warning-text)" : "var(--cf2-text-tertiary)"} />}
+        {n.contratoPendente && <Badge icon={FileWarning} label="Contrato pendente" color="var(--cf2-warning-text)" />}
+        {n.pagamentoPendente && <Badge icon={CreditCard} label="Pagamento pendente" color="var(--cf2-warning-text)" />}
+        {!n.proximaAcao && <Badge icon={AlertTriangle} label="Sem próxima ação" color="var(--cf2-danger-text)" />}
+        {semAvancoRelevante && <Badge icon={Clock} label={`${dias} dias sem avanço`} color="var(--cf2-danger-text)" />}
+        {n.oportunidadesRelacionadas > 0 && <Badge icon={Link2} label={`+${n.oportunidadesRelacionadas} oportunidade${n.oportunidadesRelacionadas > 1 ? "s" : ""}`} color="var(--cf2-text-tertiary)" />}
       </div>
 
       <div className="flex items-center justify-between mt-2.5 gap-2">
@@ -288,35 +328,13 @@ function NegocioCard({ n, onOpen, onDragStart }: { n: NegocioBoard; onOpen: () =
 }
 
 function Badge({ icon: Icon, label, color }: { icon?: typeof Beaker; label: string; color: string }) {
+  // `color-mix` em vez de concatenar alpha no hex (`${color}18`) — os tokens
+  // agora são `var(--cf2-*)`, não hex literal, então a concatenação de
+  // string quebraria o CSS.
   return (
-    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold" style={{ background: `${color}18`, color }}>
+    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold" style={{ background: `color-mix(in srgb, ${color} 16%, transparent)`, color }}>
       {Icon && <Icon className="w-2.5 h-2.5" />} {label}
     </span>
   );
 }
 
-function NegocioBucketModal({ title, negocios, onClose, onOpen }: { title: string; negocios: NegocioBoard[]; onClose: () => void; onOpen: (id: string) => void }) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(15,23,42,0.45)" }} onClick={onClose}>
-      <div className="w-full max-w-md rounded-2xl p-6 max-h-[80vh] flex flex-col" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }} onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-1 shrink-0">
-          <p className="font-bold text-[15px]" style={{ color: "var(--cf2-text-primary)" }}>{title}</p>
-          <button onClick={onClose} className="p-1" style={{ color: "var(--cf2-text-tertiary)" }}><X className="w-4 h-4" /></button>
-        </div>
-        <p className="text-[11px] mb-4 shrink-0" style={{ color: "var(--cf2-text-tertiary)" }}>{negocios.length} negócio(s) — clique pra abrir.</p>
-        <div className="flex-1 overflow-y-auto space-y-1.5">
-          {negocios.length === 0 && <p className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhum negócio nesse bucket agora.</p>}
-          {negocios.map((n) => (
-            <button key={n.id} onClick={() => onOpen(n.id)} className="w-full text-left px-3 py-2 rounded-lg flex items-center justify-between gap-2" style={{ border: "1px solid var(--cf2-border-default)" }}>
-              <div className="min-w-0">
-                <p className="text-[13px] font-semibold truncate" style={{ color: "var(--cf2-text-primary)" }}>{n.empresaNome || n.titulo}</p>
-                {title === "Perdido" && <p className="text-[11px] truncate" style={{ color: "var(--cf2-danger-text)" }}>{motivoPerdaLabel(n)}</p>}
-              </div>
-              <span className="text-[12px] font-bold shrink-0" style={{ color: "var(--cf2-text-primary)" }}>{brl(negocioValor(n))}</span>
-            </button>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}

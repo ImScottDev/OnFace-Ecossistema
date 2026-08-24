@@ -1111,7 +1111,7 @@ export function Cf2Cliente360({ empresaId }: { empresaId: string }) {
               {propostas.length === 0 ? (
                 <p className="text-[13px]" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhuma proposta registrada.</p>
               ) : propostas.map((p) => (
-                <Link key={p.id} href={`/propostas/${p.id}`} className="flex items-center justify-between p-3 rounded-xl hover:bg-[var(--cf2-bg-surface-muted)]" style={{ background: "var(--cf2-bg-surface-muted)" }}>
+                <Link key={p.id} href={`/propostas?propostaId=${p.id}`} className="flex items-center justify-between p-3 rounded-xl hover:bg-[var(--cf2-bg-surface-muted)]" style={{ background: "var(--cf2-bg-surface-muted)" }}>
                   <div>
                     <p className="text-[13px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Proposta #{p.numero}</p>
                     <p className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>{data(p.createdAt)}</p>
@@ -1200,7 +1200,7 @@ export function Cf2Cliente360({ empresaId }: { empresaId: string }) {
                   <div className="flex flex-col gap-0.5">
                     <p className="text-[10px] font-bold" style={{ color: "var(--cf2-text-tertiary)" }}>PROPOSTA ORIGEM</p>
                     {ct.propostaOrigem ? (
-                      <Link href={`/propostas/${ct.propostaOrigem.id}`} className="text-[12px] underline" style={{ color: "var(--cf2-text-secondary)" }}>
+                      <Link href={`/propostas?propostaId=${ct.propostaOrigem.id}`} className="text-[12px] underline" style={{ color: "var(--cf2-text-secondary)" }}>
                         Proposta #{ct.propostaOrigem.numero}
                       </Link>
                     ) : (
