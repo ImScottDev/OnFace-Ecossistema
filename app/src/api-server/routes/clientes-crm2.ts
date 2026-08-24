@@ -10,11 +10,26 @@ import { db } from "@/lib/db";
 import {
   empresas, servicosCanonicos, contratos, leads, pessoas as pessoasTable, pontosContato, fulfillments, fulfillmentItens, notas, usuarios,
   clientes, faturas, assinaturas, propostas, tarefas, mrrMovimentos, atividades,
-  negocios, negocioLeads, callfaceAiExternalIdentities,
+  negocios, negocioLeads, callfaceAiExternalIdentities, npsRespostas,
 } from "@/lib/db/schema";
 import { eq, and, or, inArray, sql, desc, asc, isNotNull } from "drizzle-orm";
+import { z } from "zod";
 import { getCtx } from "../compat.js";
 import { registrarMudancaResponsavel } from "@/lib/crm/owner";
+
+// CS — Health Check (24/08, achado real: NPS já existe como infra (tabela
+// `nps_respostas`, rota pública de resposta em nps.ts) mas NUNCA é
+// alimentada por código nenhum — 0 linhas no banco de produção. O que falta
+// não é o dado, é o mecanismo de coleta ativa (o CS liga/manda WhatsApp e
+// registra a resposta ao vivo, como o playbook real da Callface descreve).
+// Classificação por faixa de NPS — mesma régua usada no playbook de CS
+// (verde 7-10 / amarelo 5-6 / vermelho 0-4), não um score composto
+// fabricado: é a resposta direta e real que o cliente deu.
+export function faixaNps(score: number): "verde" | "amarelo" | "vermelho" {
+  if (score >= 7) return "verde";
+  if (score >= 5) return "amarelo";
+  return "vermelho";
+}
 
 const app = new Hono();
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -534,19 +549,21 @@ app.patch("/clientes-crm2/:empresaId/tags", async (c) => {
 
 // GET /clientes-crm2/sucesso — fila de CS. Prioridade real do time (não
 // Health Score inventado): recovery/cobrança visível + ausência de próxima
-// ação. Motivo é sempre explicado em texto, nunca um score opaco.
+// ação + Health Check com NPS baixo. Motivo é sempre explicado em texto,
+// nunca um score opaco — NPS entra como um motivo A MAIS na lista, não
+// como um número composto escondendo os outros sinais.
 // ?empresaId= (item "CS" embutido no Cliente 360, reestruturação 20/08) —
 // MESMA query/critério acima, só trocando o filtro: em vez de "só quem
 // precisa de atenção agora" (lista da fila), retorna o sinal real desta
 // UMA empresa sempre, esteja ela flagrada ou não — a aba CS do Cliente 360
 // precisa mostrar "sem sinal de atenção" honesto, não só aparecer quando
-// o cliente já está na fila. Nenhuma fórmula nova, mesmos 3 sinais.
+// o cliente já está na fila. Mesmo princípio de sempre, agora com 4 sinais
+// reais (24/08: Health Check/NPS é o novo — infra já existia, coleta não).
 app.get("/clientes-crm2/sucesso", async (c) => {
   const ctx = await getCtx(c);
   const empresaIdFiltro = c.req.query("empresaId") ?? "";
   const temFiltroEmpresa = UUID_RE.test(empresaIdFiltro);
   const filtroEmpresa = temFiltroEmpresa ? sql`AND e.id = ${empresaIdFiltro}` : sql``;
-  const filtroFila = temFiltroEmpresa ? sql`` : sql`AND (fa.n > 0 OR pt.proxima IS NULL OR ua.ultima IS NULL OR ua.ultima < now() - interval '14 days')`;
 
   const rows = await db.execute(sql`
     WITH clientes_ativos AS (
@@ -575,23 +592,74 @@ app.get("/clientes-crm2/sucesso", async (c) => {
       JOIN leads l ON l.id = t.lead_id
       WHERE l.empresa_id IS NOT NULL AND t.concluida = false AND t.vence_em IS NOT NULL AND t.vence_em > now()
       GROUP BY 1
+    ),
+    health_check_agg AS (
+      SELECT DISTINCT ON (l.empresa_id) l.empresa_id, np.score, np.respondido_em
+      FROM nps_respostas np
+      JOIN leads l ON l.id = np.lead_id
+      WHERE np.tipo = 'health_check' AND l.empresa_id IS NOT NULL AND np.score IS NOT NULL
+      ORDER BY l.empresa_id, np.respondido_em DESC
     )
     SELECT e.id, e.nome,
       COALESCE(fa.n, 0) AS faturas_atrasadas, COALESCE(fa.valor, 0) AS valor_atrasado,
       ua.ultima AS ultima_atividade,
       EXTRACT(DAY FROM now() - ua.ultima)::int AS dias_sem_atividade,
-      (pt.proxima IS NULL) AS sem_proxima_acao
+      (pt.proxima IS NULL) AS sem_proxima_acao,
+      hc.score AS nps_score, hc.respondido_em AS nps_respondido_em
     FROM empresas e
     JOIN clientes_ativos ca ON ca.empresa_id = e.id
     LEFT JOIN faturas_atrasadas fa ON fa.empresa_id = e.id
     LEFT JOIN ultima_atividade_agg ua ON ua.empresa_id = e.id
     LEFT JOIN proxima_tarefa_agg pt ON pt.empresa_id = e.id
-    WHERE e.organizacao_id = ${ctx.organizacaoId} ${filtroEmpresa} ${filtroFila}
+    LEFT JOIN health_check_agg hc ON hc.empresa_id = e.id
+    WHERE e.organizacao_id = ${ctx.organizacaoId} ${filtroEmpresa}
+      ${temFiltroEmpresa ? sql`` : sql`AND (fa.n > 0 OR pt.proxima IS NULL OR ua.ultima IS NULL OR ua.ultima < now() - interval '14 days' OR hc.score <= 6)`}
     ORDER BY COALESCE(fa.valor, 0) DESC, dias_sem_atividade DESC NULLS LAST
     LIMIT 100
   `);
 
   return c.json({ contas: rows });
+});
+
+// POST /clientes-crm2/:empresaId/health-check — registro ao vivo do CS
+// (ligação/WhatsApp real, não survey automático). Escolhe o lead mais
+// recentemente ativo da empresa como destinatário — mesma heurística de
+// "contato principal por atividade" já usada em outros pontos do CRM2, não
+// um campo novo de "contato CS" a manter.
+const healthCheckSchema = z.object({
+  score: z.number().int().min(0).max(10),
+  comentario: z.string().trim().max(2000).optional(),
+});
+
+app.post("/clientes-crm2/:empresaId/health-check", async (c) => {
+  const ctx = await getCtx(c);
+  const empresaId = c.req.param("empresaId");
+  if (!UUID_RE.test(empresaId)) return c.json({ error: "empresaId inválido" }, 400);
+
+  const parsed = healthCheckSchema.safeParse(await c.req.json().catch(() => ({})));
+  if (!parsed.success) return c.json({ error: "Dados inválidos", details: parsed.error.issues }, 400);
+
+  const [empresa] = await db.select({ id: empresas.id }).from(empresas).where(and(eq(empresas.id, empresaId), eq(empresas.organizacaoId, ctx.organizacaoId))).limit(1);
+  if (!empresa) return c.json({ error: "Empresa não encontrada" }, 404);
+
+  const [lead] = await db
+    .select({ id: leads.id })
+    .from(leads)
+    .where(and(eq(leads.empresaId, empresaId), eq(leads.organizacaoId, ctx.organizacaoId)))
+    .orderBy(desc(leads.updatedAt))
+    .limit(1);
+  if (!lead) return c.json({ error: "Nenhum contato encontrado pra esta empresa — não é possível registrar o Health Check" }, 400);
+
+  const [registro] = await db.insert(npsRespostas).values({
+    organizacaoId: ctx.organizacaoId,
+    leadId: lead.id,
+    score: parsed.data.score,
+    comentario: parsed.data.comentario || null,
+    tipo: "health_check",
+    respondidoEm: new Date(),
+  }).returning({ id: npsRespostas.id });
+
+  return c.json({ id: registro.id, faixa: faixaNps(parsed.data.score) }, 201);
 });
 
 // GET /clientes-crm2/financeiro/operacional — visão operacional CRM2. O
