@@ -9,10 +9,10 @@ import {
   Send, MoreHorizontal, Reply, Smile, Trash2, Check, CheckCheck, Clock,
   AlertCircle, Paperclip, Camera, File as FileIcon, MapPin, User, UserCheck, X, FileText,
   Bot, UserCog, Loader2, MessageSquareOff, FileSpreadsheet, FileArchive,
-  Sparkles, ChevronDown, Archive, Clock3, RotateCcw, Tag, ScrollText,
-  Copy, UserRound,
+  Sparkles, ChevronDown, Archive, Clock3, RotateCcw, Tag, BookOpen,
+  Copy, UserRound, MessageSquareText,
 } from "lucide-react";
-import { ConversaItem, Contexto, iniciais } from "./types";
+import { ConversaItem, Contexto, iniciais, nomeExibicao } from "./types";
 import { Cf2Badge } from "../ui/Badge";
 import { WhatsappTemplatesModal } from "./WhatsappTemplatesModal";
 import { Cf2ScriptsDocumentosModal } from "./ScriptsDocumentosModal";
@@ -351,11 +351,11 @@ export function Cf2ChatThread({
       >
         <div className="flex gap-3 items-center min-w-0">
           <div className="flex items-center justify-center rounded-[20px] shrink-0 w-10 h-10" style={{ background: "var(--cf2-accent)" }}>
-            <p className="text-[14px] font-extrabold" style={{ color: "var(--cf2-text-on-accent)" }}>{iniciais(conversa.nome)}</p>
+            <p className="text-[14px] font-extrabold" style={{ color: "var(--cf2-text-on-accent)" }}>{/^\d+$/.test(conversa.nome) ? "#" : iniciais(conversa.nome)}</p>
           </div>
           <div className="min-w-0">
             <div className="flex gap-1.5 items-center">
-              <p className="text-[16px] font-bold truncate" style={{ color: "var(--cf2-text-primary)" }}>{conversa.nome}</p>
+              <p className="text-[16px] font-bold truncate" style={{ color: "var(--cf2-text-primary)" }}>{nomeExibicao(conversa.nome, conversa.telefone)}</p>
               {conversa.empresaNome && <p className="text-[12px]" style={{ color: "var(--cf2-text-secondary)" }}>· {conversa.empresaNome}</p>}
               {contexto && <Cf2Badge variant={contexto.isCliente ? "success" : "neutral"}>{contexto.isCliente ? "Cliente" : "Lead"}</Cf2Badge>}
               {conversa.handoffStatus && HANDOFF_INFO[conversa.handoffStatus] && (
@@ -746,7 +746,7 @@ export function Cf2ChatThread({
             className="p-2 rounded-lg shrink-0"
             style={{ background: showTemplates ? "var(--cf2-accent)" : "var(--cf2-bg-surface-muted)" }}
           >
-            <FileText className="w-4 h-4" style={{ color: showTemplates ? "var(--cf2-text-on-accent)" : "var(--cf2-text-secondary)" }} />
+            <MessageSquareText className="w-4 h-4" style={{ color: showTemplates ? "var(--cf2-text-on-accent)" : "var(--cf2-text-secondary)" }} />
           </button>
           <button
             onClick={() => setScriptsDocumentosAberto(true)}
@@ -754,7 +754,7 @@ export function Cf2ChatThread({
             className="p-2 rounded-lg shrink-0"
             style={{ background: "var(--cf2-bg-surface-muted)" }}
           >
-            <ScrollText className="w-4 h-4" style={{ color: "var(--cf2-text-secondary)" }} />
+            <BookOpen className="w-4 h-4" style={{ color: "var(--cf2-text-secondary)" }} />
           </button>
           <div
             className="flex-1 flex items-center gap-2 px-4 py-2.5 rounded-xl"
