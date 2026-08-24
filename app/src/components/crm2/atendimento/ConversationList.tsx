@@ -145,7 +145,20 @@ export function Cf2ConversationList({
                     </p>
                   </div>
                   <div className="min-w-0">
-                    <p className="text-[13px] truncate leading-tight" style={{ color: "var(--cf2-text-primary)", fontWeight: naoLida ? 700 : 600 }}>{nomeExibicao(item.nome, item.telefone)}</p>
+                    <div className="flex items-center gap-1.5">
+                      <p className="text-[13px] truncate leading-tight" style={{ color: "var(--cf2-text-primary)", fontWeight: naoLida ? 700 : 600 }}>{nomeExibicao(item.nome, item.telefone)}</p>
+                      {item.leadId && (
+                        <span
+                          className="shrink-0 text-[9px] font-bold px-1.5 py-[1px] rounded-full leading-tight"
+                          style={{
+                            background: item.isCliente ? "var(--cf2-success-bg)" : "var(--cf2-bg-surface-muted)",
+                            color: item.isCliente ? "var(--cf2-success-text)" : "var(--cf2-text-tertiary)",
+                          }}
+                        >
+                          {item.isCliente ? "Cliente" : "Lead"}
+                        </span>
+                      )}
+                    </div>
                     <p className="text-[11px] truncate leading-tight mt-0.5" style={{ color: "var(--cf2-text-tertiary)" }}>{item.empresaNome || "—"}</p>
                   </div>
                 </div>

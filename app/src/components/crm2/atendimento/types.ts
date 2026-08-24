@@ -19,6 +19,7 @@ export type ConversaItem = {
   conversationSummary: string | null;
   status: string;
   snoozedUntil: string | null;
+  isCliente: boolean;
 };
 
 export type Cascata =

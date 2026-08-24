@@ -145,6 +145,7 @@ export function Cf2AtendimentoWorkspace() {
         leadId: leadIdParam, responsavelId: null, handoffStatus: null, duracaoSegundos: null,
         callStatus: null, emailThreadId: null, telefone: contexto.pessoa.telefone,
         conversationSummary: null, status: "open", snoozedUntil: null,
+        isCliente: contexto?.isCliente ?? false,
       }
     : null;
 
