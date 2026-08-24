@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Search, X, Clock, FileText, FileWarning, CreditCard, Link2, AlertTriangle, Beaker } from "lucide-react";
+import { Search, X, Clock, FileText, FileWarning, CreditCard, Link2, AlertTriangle, Beaker, Download } from "lucide-react";
 import { useOrgUsuarios, matchesResponsavel } from "@/components/crm/BoardFilters";
 import {
   PIPELINE_OPEN_COLS, PERDIDO_KEYS, FAMILY_LABEL, FAMILY_COLOR,
@@ -15,15 +15,24 @@ import { NovaOportunidadeModal } from "./NovaOportunidadeModal";
 
 const brl = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 0, maximumFractionDigits: 0 });
 
+// Chrome escuro (App Shell, ver globals.css) não tem variante própria de
+// success/warning legível em fundo escuro — --cf2-success-text/--cf2-warning-text
+// são tons pensados pra fundo claro. Mesmo ajuste já usado em
+// qualificacao/Workspace.tsx (Pré-vendas) pra manter os dois tabuleiros
+// escuros com a mesma paleta semântica de verdade.
+const SUCCESS_DARK = "#4ade80";
+const WARNING_DARK = "#fbbf24";
+
 interface Resumo { pipelineAberto: number; forecast: number; oportunidadesAbertas: number; ticketMedio: number | null; winRate: number | null; winRateAmostraPequena: boolean; semProximaAcao: number }
 
 /**
- * Board de Pipeline (CRM2, spec+mockups do Kauã 17/08) — Kanban de
- * OPORTUNIDADES (não leads), 4 colunas abertas fixas + resumo operacional +
- * filtros reais. Clique no card abre drawer lateral primeiro (mesmo padrão
- * de Pré-vendas/Prospecção) — "Abrir oportunidade completa" navega pra
- * `/negocios/:id`. Ganho/Perdido são estados finais acessíveis por bucket
- * clicável no rodapé, não colunas do board principal.
+ * Board de Pipeline (CRM2, spec+mockups do Kauã 17/08, reskin escuro 24/08
+ * "mesma pegada do Pré-vendas") — Kanban de OPORTUNIDADES (não leads), 4
+ * colunas abertas fixas + resumo operacional + filtros reais. Clique no
+ * card abre drawer lateral primeiro (mesmo padrão de Pré-vendas/
+ * Prospecção) — "Abrir oportunidade completa" navega pra `/negocios/:id`.
+ * Ganho/Perdido são estados finais acessíveis por bucket clicável no
+ * rodapé, não colunas do board principal.
  */
 export function Cf2PipelineWorkspace() {
   const qc = useQueryClient();
@@ -44,6 +53,7 @@ export function Cf2PipelineWorkspace() {
   const [expandedBucket, setExpandedBucket] = useState<"ganho" | "perdido" | null>(null);
   const [drawerNegocioId, setDrawerNegocioId] = useState<string | null>(null);
   const [novaOpen, setNovaOpen] = useState(false);
+  const [showExport, setShowExport] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ["pipeline-crm2-board"],
@@ -114,22 +124,17 @@ export function Cf2PipelineWorkspace() {
         <ResumoCard label="Ticket médio" valor={resumo?.ticketMedio != null ? brl(resumo.ticketMedio) : "—"} />
         <ResumoCard label="Win rate" valor={resumo?.winRate != null ? `${resumo.winRate}%` : "—"} sub={resumo?.winRateAmostraPequena ? "amostra pequena" : undefined} />
       </div>
-      {resumo && resumo.semProximaAcao > 0 && (
-        <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-[12px] font-semibold" style={{ background: "var(--cf2-warning-bg)", color: "var(--cf2-warning-text)" }}>
-          <AlertTriangle className="w-3.5 h-3.5" /> {resumo.semProximaAcao} oportunidade{resumo.semProximaAcao > 1 ? "s" : ""} aberta{resumo.semProximaAcao > 1 ? "s" : ""} sem próxima ação definida ou com ação atrasada
-        </div>
-      )}
 
       {/* Filtros */}
       <div className="flex items-center gap-2 flex-wrap">
         <div className="relative shrink-0">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: "var(--cf2-text-tertiary)" }} />
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: "var(--cf2-chrome-text-secondary)" }} />
           <input
             value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar oportunidade, empresa..."
             className="w-56 sm:w-72 pl-8 pr-7 py-1.5 rounded-lg text-[12px] outline-none"
-            style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }}
+            style={{ background: "rgba(255,255,255,0.06)", border: "1px solid var(--cf2-chrome-border-subtle)", color: "var(--cf2-chrome-text-primary)" }}
           />
-          {search && <button onClick={() => setSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2" style={{ color: "var(--cf2-text-tertiary)" }}><X className="w-3 h-3" /></button>}
+          {search && <button onClick={() => setSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2" style={{ color: "var(--cf2-chrome-text-secondary)" }}><X className="w-3 h-3" /></button>}
         </div>
         <Select value={respFilter} onChange={setRespFilter}>
           <option value="todos">Responsável: Todos</option>
@@ -152,10 +157,18 @@ export function Cf2PipelineWorkspace() {
           <option value="abertas">Status: Abertas</option>
           <option value="todas">Status: Todas</option>
         </Select>
+        <button
+          onClick={() => setShowExport(true)}
+          title="Exportar oportunidades: escolher responsável e etapas"
+          className="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[12px] font-medium"
+          style={{ background: "rgba(255,255,255,0.06)", border: "1px solid var(--cf2-chrome-border-subtle)", color: "var(--cf2-chrome-text-secondary)" }}
+        >
+          <Download className="w-3.5 h-3.5" /> Exportar
+        </button>
       </div>
 
       {isLoading ? (
-        <p className="text-[13px]" style={{ color: "var(--cf2-text-tertiary)" }}>Carregando...</p>
+        <p className="text-[13px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Carregando...</p>
       ) : (
         <>
           <div className="flex gap-3 overflow-x-auto pb-1">
@@ -167,7 +180,7 @@ export function Cf2PipelineWorkspace() {
                 <div
                   key={col.key}
                   className="w-[300px] shrink-0 rounded-2xl flex flex-col max-h-full"
-                  style={{ background: isDragOver ? `${col.color}10` : "var(--cf2-bg-canvas)", border: isDragOver ? `2px dashed ${col.color}` : "1px solid var(--cf2-border-default)" }}
+                  style={{ background: isDragOver ? `color-mix(in srgb, ${col.color} 10%, transparent)` : "var(--cf2-chrome-bg-alt)", border: isDragOver ? `2px dashed ${col.color}` : "1px solid var(--cf2-chrome-border-subtle)" }}
                   onDragOver={(e) => e.preventDefault()}
                   onDragEnter={(e) => { e.preventDefault(); setDragOverCol(col.key); }}
                   onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOverCol(null); }}
@@ -178,13 +191,13 @@ export function Cf2PipelineWorkspace() {
                       <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: col.color }} />
                       <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: col.color }}>{col.label} ({negociosCol.length})</span>
                     </div>
-                    <span className="text-[12px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>{brl(totalCol)}</span>
+                    <span className="text-[12px] font-bold" style={{ color: "var(--cf2-chrome-text-primary)" }}>{brl(totalCol)}</span>
                   </div>
                   <div className="flex-1 p-2 space-y-2 min-h-[120px] max-h-[calc(100vh-420px)] overflow-y-auto">
                     {negociosCol.map((n) => (
                       <NegocioCard key={n.id} n={n} onOpen={() => setDrawerNegocioId(n.id)} onDragStart={(e) => e.dataTransfer.setData("negocioId", n.id)} />
                     ))}
-                    {negociosCol.length === 0 && <div className="flex h-16 items-center justify-center text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>vazio</div>}
+                    {negociosCol.length === 0 && <div className="flex h-16 items-center justify-center text-[11px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>vazio</div>}
                   </div>
                 </div>
               );
@@ -194,17 +207,26 @@ export function Cf2PipelineWorkspace() {
                 referência visual de Pré-vendas), não mais botão+modal por
                 cima. Não são drop target: nascem de ação real (aceite de
                 proposta, marcar perdido com motivo), nunca de drag cru. */}
-            <BucketColumn label="Ganho" color="#22c55e" negocios={ganhoNegocios} expanded={expandedBucket === "ganho"} onToggle={() => setExpandedBucket((b) => (b === "ganho" ? null : "ganho"))} onOpen={setDrawerNegocioId} />
-            <BucketColumn label="Perdido" color="#dc2626" negocios={perdidoNegocios} expanded={expandedBucket === "perdido"} onToggle={() => setExpandedBucket((b) => (b === "perdido" ? null : "perdido"))} onOpen={setDrawerNegocioId} showMotivo />
+            <BucketColumn label="Ganho" color={SUCCESS_DARK} negocios={ganhoNegocios} expanded={expandedBucket === "ganho"} onToggle={() => setExpandedBucket((b) => (b === "ganho" ? null : "ganho"))} onOpen={setDrawerNegocioId} />
+            <BucketColumn label="Perdido" color="#f87171" negocios={perdidoNegocios} expanded={expandedBucket === "perdido"} onToggle={() => setExpandedBucket((b) => (b === "perdido" ? null : "perdido"))} onOpen={setDrawerNegocioId} showMotivo />
           </div>
 
           {ativoNegocios.length > 0 && (
-            <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-[12px]" style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-tertiary)" }}>
-              <AlertTriangle className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--cf2-warning-text)" }} />
-              {ativoNegocios.length} negócio{ativoNegocios.length > 1 ? "s" : ""} em status <code className="px-1 rounded" style={{ background: "var(--cf2-bg-surface)" }}>ativo</code> (pós-venda recorrente) — fora do De/Para deste Pipeline; não decidido se deveria viver em Carteira/Clientes. Pendência aberta, não escondida.
+            <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-[12px]" style={{ background: "rgba(255,255,255,0.06)", color: "var(--cf2-chrome-text-secondary)" }}>
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0" style={{ color: WARNING_DARK }} />
+              {ativoNegocios.length} negócio{ativoNegocios.length > 1 ? "s" : ""} em status <code className="px-1 rounded" style={{ background: "var(--cf2-chrome-surface-active)" }}>ativo</code> (pós-venda recorrente) — fora do De/Para deste Pipeline; não decidido se deveria viver em Carteira/Clientes. Pendência aberta, não escondida.
             </div>
           )}
         </>
+      )}
+
+      {showExport && (
+        <ExportNegociosModal
+          negocios={allNegocios}
+          usuarios={usuarios}
+          onClose={() => setShowExport(false)}
+          onExport={(lista) => { gerarCsvNegocios(lista); setShowExport(false); }}
+        />
       )}
 
       <Cf2NegocioDrawer negocioId={drawerNegocioId} open={!!drawerNegocioId} onClose={() => setDrawerNegocioId(null)} onChanged={() => { qc.invalidateQueries({ queryKey: ["pipeline-crm2-board"] }); qc.invalidateQueries({ queryKey: ["pipeline-crm2-resumo"] }); }} />
@@ -213,9 +235,103 @@ export function Cf2PipelineWorkspace() {
   );
 }
 
+function telefoneDiscador(tel?: string | null): string {
+  let d = (tel || "").replace(/\D/g, "");
+  if (d.length >= 12 && d.startsWith("55")) d = d.slice(2);
+  return d;
+}
+
+function gerarCsvNegocios(lista: NegocioBoard[]) {
+  if (lista.length === 0) { toast.error("Nenhuma oportunidade na seleção"); return; }
+  const cols: { h: string; get: (n: NegocioBoard) => string }[] = [
+    { h: "Telefone", get: (n) => telefoneDiscador(n.leadTelefone) },
+    { h: "Nome", get: (n) => [n.leadNome, n.leadSobrenome].filter(Boolean).join(" ") },
+    { h: "E-mail", get: (n) => n.leadEmail || "" },
+    { h: "Empresa", get: (n) => n.empresaNome || "" },
+  ];
+  const comTelefone = lista.filter((n) => telefoneDiscador(n.leadTelefone).length >= 10);
+  if (comTelefone.length === 0) { toast.error("Nenhuma oportunidade da seleção tem telefone válido"); return; }
+  const esc = (v: string) => `"${v.replace(/"/g, '""')}"`;
+  const linhas = [cols.map((c) => c.h).join(","), ...comTelefone.map((n) => cols.map((c) => esc(c.get(n))).join(","))];
+  const blob = new Blob(["﻿" + linhas.join("\r\n")], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const stamp = new Date().toISOString().slice(0, 10);
+  a.href = url;
+  a.download = `discador-pipeline-${stamp}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  const puladas = lista.length - comTelefone.length;
+  toast.success(`${comTelefone.length} oportunidades exportadas${puladas > 0 ? ` (${puladas} sem telefone, ignoradas)` : ""}`);
+}
+
+// Todas as colunas reais do board (4 abertas + Ganho/Perdido) — mesmo
+// princípio do export de Pré-vendas: `match` replica exatamente o filtro
+// que a coluna correspondente usa, nenhuma regra nova.
+const EXPORT_COLUNAS: { key: string; label: string; color: string; match: (n: NegocioBoard) => boolean }[] = [
+  ...PIPELINE_OPEN_COLS.map((col) => ({ key: col.key, label: col.label, color: col.color, match: (n: NegocioBoard) => col.keys.includes(n.status) })),
+  { key: "ganho", label: "Ganho", color: SUCCESS_DARK, match: (n: NegocioBoard) => n.status === "ganho" },
+  { key: "perdido", label: "Perdido", color: "#f87171", match: (n: NegocioBoard) => PERDIDO_KEYS.includes(n.status) },
+];
+
+function ExportNegociosModal({ negocios, usuarios, onClose, onExport }: { negocios: NegocioBoard[]; usuarios: { id: string; nome: string }[]; onClose: () => void; onExport: (lista: NegocioBoard[]) => void }) {
+  const [resp, setResp] = useState("todos");
+  const [stages, setStages] = useState<Set<string>>(new Set(EXPORT_COLUNAS.map((e) => e.key)));
+
+  const toggle = (k: string) => setStages((prev) => { const n = new Set(prev); if (n.has(k)) n.delete(k); else n.add(k); return n; });
+  const todasMarcadas = stages.size === EXPORT_COLUNAS.length;
+  const selecionados = negocios.filter((n) => {
+    if (resp !== "todos" && n.responsavelId !== resp) return false;
+    return EXPORT_COLUNAS.some((c) => stages.has(c.key) && c.match(n));
+  });
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.55)" }} onClick={onClose}>
+      <div className="w-full max-w-md rounded-2xl p-6" style={{ background: "var(--cf2-chrome-surface-active)", border: "1px solid var(--cf2-chrome-border-subtle)" }} onClick={(e) => e.stopPropagation()}>
+        <p className="font-bold text-[15px] mb-1" style={{ color: "var(--cf2-chrome-text-primary)" }}>Exportar oportunidades</p>
+        <p className="text-[11px] mb-4" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Escolha o responsável e as etapas que quer puxar.</p>
+
+        <label className="block text-[12px] mb-1" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Responsável</label>
+        <select value={resp} onChange={(e) => setResp(e.target.value)} className="w-full rounded-lg px-3 py-2 text-[13px] mb-4 outline-none" style={{ background: "rgba(255,255,255,0.06)", border: "1px solid var(--cf2-chrome-border-subtle)", color: "var(--cf2-chrome-text-primary)" }}>
+          <option value="todos">Todos</option>
+          {usuarios.map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}
+        </select>
+
+        <div className="flex items-center justify-between mb-1">
+          <label className="text-[12px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Etapas</label>
+          <button type="button" onClick={() => setStages(todasMarcadas ? new Set() : new Set(EXPORT_COLUNAS.map((e) => e.key)))} className="text-[11px] font-semibold" style={{ color: SUCCESS_DARK }}>
+            {todasMarcadas ? "Limpar" : "Todas"}
+          </button>
+        </div>
+        <div className="space-y-1.5 mb-5 max-h-52 overflow-y-auto">
+          {EXPORT_COLUNAS.map((e) => (
+            <label key={e.key} className="flex items-center gap-2 text-[13px] cursor-pointer" style={{ color: "var(--cf2-chrome-text-primary)" }}>
+              <input type="checkbox" checked={stages.has(e.key)} onChange={() => toggle(e.key)} className="w-3.5 h-3.5" />
+              <span className="w-2 h-2 rounded-full" style={{ background: e.color }} />
+              {e.label}
+            </label>
+          ))}
+        </div>
+
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[12px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>{selecionados.length} oportunidades na seleção</span>
+          <div className="flex gap-2">
+            <button onClick={onClose} className="px-4 py-2 text-[13px] font-semibold" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Cancelar</button>
+            <button onClick={() => onExport(selecionados)} disabled={selecionados.length === 0 || stages.size === 0} className="flex items-center gap-1.5 px-4 py-2 text-[13px] font-bold rounded-lg disabled:opacity-40" style={{ background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" }}>
+              <Download className="w-3.5 h-3.5" /> Exportar CSV
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Select({ value, onChange, children }: { value: string; onChange: (v: string) => void; children: React.ReactNode }) {
   return (
-    <select value={value} onChange={(e) => onChange(e.target.value)} className="px-2.5 py-1.5 rounded-lg text-[12px] font-medium outline-none" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-secondary)" }}>
+    <select value={value} onChange={(e) => onChange(e.target.value)} className="px-2.5 py-1.5 rounded-lg text-[12px] font-medium outline-none" style={{ background: "rgba(255,255,255,0.06)", border: "1px solid var(--cf2-chrome-border-subtle)", color: "var(--cf2-chrome-text-secondary)" }}>
       {children}
     </select>
   );
@@ -223,10 +339,10 @@ function Select({ value, onChange, children }: { value: string; onChange: (v: st
 
 function ResumoCard({ label, valor, sub }: { label: string; valor: string; sub?: string }) {
   return (
-    <div className="flex flex-col gap-1 p-3.5 rounded-2xl" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
-      <p className="text-[10px] font-bold uppercase" style={{ color: "var(--cf2-text-tertiary)" }}>{label}</p>
-      <p className="text-[20px] font-bold" style={{ color: "var(--cf2-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>{valor}</p>
-      {sub && <p className="text-[10px]" style={{ color: "var(--cf2-warning-text)" }}>{sub}</p>}
+    <div className="flex flex-col gap-1 p-3.5 rounded-2xl" style={{ background: "var(--cf2-chrome-surface-active)", border: "1px solid var(--cf2-chrome-border-subtle)" }}>
+      <p className="text-[10px] font-bold uppercase" style={{ color: "var(--cf2-chrome-text-secondary)" }}>{label}</p>
+      <p className="text-[20px] font-bold" style={{ color: "var(--cf2-chrome-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>{valor}</p>
+      {sub && <p className="text-[10px]" style={{ color: WARNING_DARK }}>{sub}</p>}
     </div>
   );
 }
@@ -246,31 +362,31 @@ function BucketColumn({ label, color, negocios, expanded, onToggle, onOpen, show
         onClick={onToggle}
         title={`${label} — ${negocios.length} negócio${negocios.length === 1 ? "" : "s"} (${brl(total)})`}
         className="w-12 shrink-0 rounded-2xl flex flex-col items-center gap-2 pt-3 pb-3"
-        style={{ background: "var(--cf2-bg-canvas)", border: "1px solid var(--cf2-border-default)" }}
+        style={{ background: "var(--cf2-chrome-bg-alt)", border: "1px solid var(--cf2-chrome-border-subtle)" }}
       >
-        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ color, background: `${color}18` }}>{negocios.length}</span>
+        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ color, background: `color-mix(in srgb, ${color} 18%, transparent)` }}>{negocios.length}</span>
         <span className="flex-1 text-[11px] font-semibold uppercase tracking-wider whitespace-nowrap" style={{ color, writingMode: "vertical-rl", transform: "rotate(180deg)" }}>{label}</span>
       </button>
     );
   }
 
   return (
-    <div className="w-[300px] shrink-0 rounded-2xl flex flex-col max-h-full" style={{ background: "var(--cf2-bg-canvas)", border: "1px solid var(--cf2-border-default)" }}>
+    <div className="w-[300px] shrink-0 rounded-2xl flex flex-col max-h-full" style={{ background: "var(--cf2-chrome-bg-alt)", border: "1px solid var(--cf2-chrome-border-subtle)" }}>
       <button type="button" onClick={onToggle} className="px-3 pt-3 pb-2 shrink-0 flex items-center justify-between text-left">
         <div className="flex items-center gap-2">
           <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: color }} />
           <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color }}>{label} ({negocios.length})</span>
         </div>
-        <span className="text-[12px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>{brl(total)}</span>
+        <span className="text-[12px] font-bold" style={{ color: "var(--cf2-chrome-text-primary)" }}>{brl(total)}</span>
       </button>
       <div className="flex-1 p-2 space-y-2 min-h-[120px] max-h-[calc(100vh-420px)] overflow-y-auto">
         {negocios.length === 0 ? (
-          <div className="flex h-16 items-center justify-center text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>vazio</div>
+          <div className="flex h-16 items-center justify-center text-[11px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>vazio</div>
         ) : negocios.map((n) => (
           <div key={n.id}>
             <NegocioCard n={n} onOpen={() => onOpen(n.id)} onDragStart={() => {}} />
             {showMotivo && (
-              <p className="text-[11px] mt-1 px-1 truncate" style={{ color: "var(--cf2-danger-text)" }}>{motivoPerdaLabel(n)}</p>
+              <p className="text-[11px] mt-1 px-1 truncate" style={{ color: "#f87171" }}>{motivoPerdaLabel(n)}</p>
             )}
           </div>
         ))}
@@ -293,35 +409,36 @@ function NegocioCard({ n, onOpen, onDragStart }: { n: NegocioBoard; onOpen: () =
       onDragStart={onDragStart}
       onClick={onOpen}
       className="rounded-xl p-3 cursor-grab active:cursor-grabbing hover:-translate-y-0.5 transition-all duration-200"
-      style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)", boxShadow: "0 1px 2px rgba(15,23,42,0.05)" }}
+      style={{ background: "var(--cf2-chrome-surface-active)", border: "1px solid var(--cf2-chrome-border-subtle)", boxShadow: "0 1px 2px rgba(0,0,0,0.3)" }}
     >
-      <p className="text-[13px] font-bold truncate" style={{ color: "var(--cf2-text-primary)" }}>{n.empresaNome || nomeLead || n.titulo}</p>
-      {(n.empresaNome || nomeLead) && <p className="text-[11px] truncate mt-0.5" style={{ color: "var(--cf2-text-tertiary)" }}>{nomeLead}{n.serviceFamily ? ` · ${FAMILY_LABEL[n.serviceFamily] || n.serviceFamily}` : ""}</p>}
+      <p className="text-[13px] font-bold truncate" style={{ color: "var(--cf2-chrome-text-primary)" }}>{n.empresaNome || nomeLead || n.titulo}</p>
+      {(n.empresaNome || nomeLead) && <p className="text-[11px] truncate mt-0.5" style={{ color: "var(--cf2-chrome-text-secondary)" }}>{nomeLead}{n.serviceFamily ? ` · ${FAMILY_LABEL[n.serviceFamily] || n.serviceFamily}` : ""}</p>}
 
       <div className="flex items-center gap-1 mt-2 flex-wrap">
         {/* Cores por SEMÂNTICA, não por badge (24/08, achado do Kauã: "cores
-            aleatório") — sempre os mesmos 4 tokens do resto do CRM2:
+            aleatório") — sempre os mesmos 4 significados do resto do CRM2:
             sucesso/info (accent), atenção (warning), problema (danger),
-            neutro (tertiary). Nenhum hex solto novo. */}
+            neutro. Nenhum hex solto novo, só as variantes dark-safe já
+            estabelecidas em Pré-vendas. */}
         {isTrial && <Badge icon={Beaker} label="Trial ativo" color="var(--cf2-accent-border)" />}
-        {isNoShow && <Badge label="No-show" color="var(--cf2-warning-text)" />}
-        {propostaDisplay && <Badge icon={FileText} label={`Proposta #${n.proposta!.numero} · ${propostaDisplay.label}`} color={propostaDisplay.tom === "danger" ? "var(--cf2-danger-text)" : propostaDisplay.tom === "success" ? "var(--cf2-success-text)" : propostaDisplay.tom === "warning" ? "var(--cf2-warning-text)" : "var(--cf2-text-tertiary)"} />}
-        {n.contratoPendente && <Badge icon={FileWarning} label="Contrato pendente" color="var(--cf2-warning-text)" />}
-        {n.pagamentoPendente && <Badge icon={CreditCard} label="Pagamento pendente" color="var(--cf2-warning-text)" />}
-        {!n.proximaAcao && <Badge icon={AlertTriangle} label="Sem próxima ação" color="var(--cf2-danger-text)" />}
-        {semAvancoRelevante && <Badge icon={Clock} label={`${dias} dias sem avanço`} color="var(--cf2-danger-text)" />}
-        {n.oportunidadesRelacionadas > 0 && <Badge icon={Link2} label={`+${n.oportunidadesRelacionadas} oportunidade${n.oportunidadesRelacionadas > 1 ? "s" : ""}`} color="var(--cf2-text-tertiary)" />}
+        {isNoShow && <Badge label="No-show" color={WARNING_DARK} />}
+        {propostaDisplay && <Badge icon={FileText} label={`Proposta #${n.proposta!.numero} · ${propostaDisplay.label}`} color={propostaDisplay.tom === "danger" ? "#f87171" : propostaDisplay.tom === "success" ? SUCCESS_DARK : propostaDisplay.tom === "warning" ? WARNING_DARK : "var(--cf2-chrome-text-secondary)"} />}
+        {n.contratoPendente && <Badge icon={FileWarning} label="Contrato pendente" color={WARNING_DARK} />}
+        {n.pagamentoPendente && <Badge icon={CreditCard} label="Pagamento pendente" color={WARNING_DARK} />}
+        {!n.proximaAcao && <Badge icon={AlertTriangle} label="Sem próxima ação" color="#f87171" />}
+        {semAvancoRelevante && <Badge icon={Clock} label={`${dias} dias sem avanço`} color="#f87171" />}
+        {n.oportunidadesRelacionadas > 0 && <Badge icon={Link2} label={`+${n.oportunidadesRelacionadas} oportunidade${n.oportunidadesRelacionadas > 1 ? "s" : ""}`} color="var(--cf2-chrome-text-secondary)" />}
       </div>
 
       <div className="flex items-center justify-between mt-2.5 gap-2">
-        <span className="text-[12px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>{brl(negocioValor(n))}</span>
+        <span className="text-[12px] font-bold" style={{ color: "var(--cf2-chrome-text-primary)" }}>{brl(negocioValor(n))}</span>
         <div className="flex items-center gap-1.5 shrink-0">
-          {n.responsavelNome && <span className="text-[10px]" style={{ color: "var(--cf2-text-tertiary)" }}>{n.responsavelNome.split(" ")[0]}</span>}
-          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-secondary)" }}>{tempoNaEtapa(n.updatedAt)}</span>
+          {n.responsavelNome && <span className="text-[10px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>{n.responsavelNome.split(" ")[0]}</span>}
+          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: "rgba(255,255,255,0.08)", color: "var(--cf2-chrome-text-secondary)" }}>{tempoNaEtapa(n.updatedAt)}</span>
         </div>
       </div>
       {n.proximaAcao && (
-        <p className="text-[11px] mt-1.5 truncate" style={{ color: "var(--cf2-success-text)" }}>{n.proximaAcao.titulo}{n.proximaAcao.dataVencimento ? ` · ${new Date(n.proximaAcao.dataVencimento).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}` : ""}</p>
+        <p className="text-[11px] mt-1.5 truncate" style={{ color: SUCCESS_DARK }}>{n.proximaAcao.titulo}{n.proximaAcao.dataVencimento ? ` · ${new Date(n.proximaAcao.dataVencimento).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}` : ""}</p>
       )}
     </div>
   );
@@ -332,9 +449,8 @@ function Badge({ icon: Icon, label, color }: { icon?: typeof Beaker; label: stri
   // agora são `var(--cf2-*)`, não hex literal, então a concatenação de
   // string quebraria o CSS.
   return (
-    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold" style={{ background: `color-mix(in srgb, ${color} 16%, transparent)`, color }}>
+    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold" style={{ background: `color-mix(in srgb, ${color} 20%, transparent)`, color }}>
       {Icon && <Icon className="w-2.5 h-2.5" />} {label}
     </span>
   );
 }
-

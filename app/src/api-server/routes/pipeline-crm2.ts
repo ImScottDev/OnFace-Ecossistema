@@ -41,6 +41,8 @@ app.get("/pipeline-crm2/board", async (c) => {
       leadSobrenome: leads.sobrenome,
       leadEmpresaTexto: leads.empresa,
       leadOrigem: leads.origem,
+      leadTelefone: leads.telefone,
+      leadEmail: leads.email,
       empresaId: negocios.empresaId,
       empresaNome: empresas.nome,
       previsaoFechamento: negocios.previsaoFechamento,
