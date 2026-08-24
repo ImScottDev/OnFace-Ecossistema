@@ -55,15 +55,25 @@ export function Cf2AtendimentoWorkspace() {
   // sem seleção nessa aba = discador, não a última ligação escolhida antes.
   useEffect(() => setSelecionada(null), [canal]);
 
+  // Filtro de `leadId` só entra na busca ENQUANTO o deep link ainda não foi
+  // resolvido (achado real 24/08: mandava `leadId` pro backend pra sempre
+  // que ele existisse na URL — inclusive no polling de 8s depois da
+  // conversa certa já selecionada — então a lista ficava restrita àquele
+  // lead pra sempre, "as outras conversas somem"). Uma vez resolvido
+  // (`leadIdAplicado === leadIdParam`), a busca volta a ser a lista normal;
+  // `selecionada` já guarda a conversa certa independente do que a lista
+  // retornar depois.
+  const leadIdParaFiltro = leadIdParam && leadIdParam !== leadIdAplicado ? leadIdParam : null;
+
   const { data, isLoading } = useQuery({
-    queryKey: ["cf2-conversas", canal, view, search, leadIdParam],
+    queryKey: ["cf2-conversas", canal, view, search, leadIdParaFiltro],
     queryFn: async () => {
       const params = new URLSearchParams({ canal, view });
       if (search) params.set("search", search);
       // Deep link: manda `leadId` pro backend achar a conversa DESSE lead
       // mesmo se for de outro atendente ou já estiver fechada (ver
       // comentário na rota `/atendimento/conversas`).
-      if (leadIdParam) params.set("leadId", leadIdParam);
+      if (leadIdParaFiltro) params.set("leadId", leadIdParaFiltro);
       const res = await fetch(`/api/atendimento/conversas?${params.toString()}`);
       if (!res.ok) return { conversas: [] as ConversaItem[] };
       return res.json();

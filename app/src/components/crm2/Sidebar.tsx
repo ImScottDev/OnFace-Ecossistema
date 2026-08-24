@@ -17,10 +17,8 @@ import {
   ExternalLink,
   ChevronDown,
   ChevronRight,
-  Search,
   PanelLeftClose,
   PanelLeftOpen,
-  Inbox,
   FileText,
   Bot,
   ListChecks,
@@ -46,6 +44,8 @@ interface MacroItem {
    */
   legado?: boolean;
   children?: SubItem[];
+  /** Sempre renderizado em accent/verde, mesmo fora da rota ativa — dar destaque visual (24/08, Atendimento). */
+  destaque?: boolean;
 }
 
 // Sidebar único (24/08, reescrito a pedido do Kauã): antes eram duas colunas
@@ -54,34 +54,19 @@ interface MacroItem {
 // única — cada macro é uma linha com ícone+label+seta, a seta expande as
 // sub-abas ABAIXO da própria linha (accordion), sem painel separado.
 const MACRO: MacroItem[] = [
-  {
-    key: "inicio",
-    label: "Início",
-    href: "/inicio",
-    icon: LayoutDashboard,
-    children: [
-      { label: "Visão geral", href: "/inicio", icon: LayoutDashboard },
-      { label: "Pipeline", href: "/inicio?tab=pipeline", icon: Briefcase },
-      { label: "Pendências", href: "/inicio?tab=pendencias", icon: ListChecks },
-    ],
-  },
+  { key: "inicio", label: "Início", href: "/inicio", icon: LayoutDashboard },
+  // Destaque (24/08, pedido do Kauã): 1º item abaixo de Início, sempre em
+  // verde/accent — é a fila de trabalho do dia a dia, não mais um macro
+  // igual aos outros. Sem sub-abas: "Atendimento não tem outras abas, é só
+  // Atendimento mesmo" (Caixa de entrada/Calendário viviam como filhos
+  // aqui, mas já são item próprio ou têm seu macro — não precisa duplicar).
+  { key: "atendimento", label: "Atendimento", href: "/atendimento", icon: Headphones, destaque: true },
   {
     key: "vendas",
     label: "Vendas",
     href: "/vendas",
     icon: Briefcase,
     children: VENDAS_TABS.map((tab) => ({ label: tab.label, href: tab.href, icon: Briefcase })),
-  },
-  {
-    key: "atendimento",
-    label: "Atendimento",
-    href: "/atendimento",
-    icon: Headphones,
-    children: [
-      { label: "Caixa de entrada", href: "/inbox", icon: Inbox },
-      { label: "Atendimentos", href: "/atendimento", icon: Headphones },
-      { label: "Calendário", href: "/calendario", icon: Calendar },
-    ],
   },
   { key: "calendario", label: "Calendário", href: "/calendario", icon: Calendar },
   {
@@ -128,15 +113,10 @@ function isMacroActive(item: MacroItem, pathname: string, isVendasRoute: boolean
   return pathname === item.href || (item.href !== "/inicio" && pathname.startsWith(item.href));
 }
 
-function matchesQuery(label: string, query: string) {
-  return !query || label.toLowerCase().includes(query.toLowerCase());
-}
-
 export function Cf2Sidebar() {
   const pathname = usePathname();
   const { data: session } = useSession();
   const [collapsed, setCollapsed] = useState(false);
-  const [query, setQuery] = useState("");
   // Override manual por macro (usuário clicou na seta pra abrir/fechar).
   // Sem override, o default é "aberto só se for o macro ativo da rota atual"
   // — dá o comportamento de auto-expandir o ativo sem precisar sincronizar
@@ -176,26 +156,12 @@ export function Cf2Sidebar() {
         )}
       </div>
 
-      {!collapsed && (
-        <div className="px-3 pt-3">
-          <label className="flex h-9 items-center gap-2 rounded-lg px-3" style={{ background: "var(--cf2-chrome-surface-active)", border: "1px solid var(--cf2-chrome-border)" }}>
-            <Search className="h-4 w-4 shrink-0" style={{ color: "var(--cf2-chrome-text-secondary)" }} />
-            <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Buscar módulo..."
-              className="w-full bg-transparent text-[12px] outline-none"
-              style={{ color: "var(--cf2-chrome-text-primary)" }}
-            />
-          </label>
-        </div>
-      )}
-
       <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-3 py-3">
         {MACRO.map((item) => {
           const active = isMacroActive(item, pathname, isVendasRoute);
           const hasChildren = !!item.children?.length;
-          const isOpen = !collapsed && hasChildren && (isExpanded(item.key) || (!!query && item.children!.some((c) => matchesQuery(c.label, query))));
+          const isOpen = !collapsed && hasChildren && isExpanded(item.key);
+          const corDestaque = item.destaque && !active ? "var(--cf2-accent-border)" : null;
 
           return (
             <div key={item.key}>
@@ -207,7 +173,7 @@ export function Cf2Sidebar() {
                   style={{ background: active && !hasChildren ? "var(--cf2-chrome-surface-active)" : "transparent" }}
                 >
                   <div className="relative flex shrink-0 items-center justify-center">
-                    <item.icon className="h-[18px] w-[18px]" style={{ color: active ? "var(--cf2-chrome-text-primary)" : "var(--cf2-chrome-text-secondary)" }} />
+                    <item.icon className="h-[18px] w-[18px]" style={{ color: corDestaque ?? (active ? "var(--cf2-chrome-text-primary)" : "var(--cf2-chrome-text-secondary)") }} />
                     {item.legado && (
                       <span className="absolute -top-1 -right-1.5 flex items-center justify-center rounded-full" style={{ width: 11, height: 11, background: "var(--cf2-warning-bg)" }}>
                         <ExternalLink className="w-[7px] h-[7px]" style={{ color: "var(--cf2-warning-text)" }} />
@@ -217,7 +183,7 @@ export function Cf2Sidebar() {
                   {!collapsed && (
                     <span
                       className="truncate text-[13px] leading-none"
-                      style={{ color: active ? "var(--cf2-chrome-text-primary)" : "var(--cf2-chrome-text-secondary)", fontFamily: "var(--cf2-font-nav)", fontWeight: active ? 600 : 500 }}
+                      style={{ color: corDestaque ?? (active ? "var(--cf2-chrome-text-primary)" : "var(--cf2-chrome-text-secondary)"), fontFamily: "var(--cf2-font-nav)", fontWeight: active || item.destaque ? 600 : 500 }}
                     >
                       {item.label}
                     </span>
@@ -242,7 +208,7 @@ export function Cf2Sidebar() {
 
               {isOpen && (
                 <div className="ml-[27px] mt-0.5 mb-1 flex flex-col gap-0.5 border-l pl-3" style={{ borderColor: "var(--cf2-chrome-border)" }}>
-                  {item.children!.filter((sub) => matchesQuery(sub.label, query)).map((sub) => {
+                  {item.children!.map((sub) => {
                     const subActive = pathname === sub.href;
                     return (
                       <Link
