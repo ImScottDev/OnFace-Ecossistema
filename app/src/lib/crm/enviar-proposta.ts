@@ -8,7 +8,7 @@
 import { db } from "@/lib/db";
 import { propostas, propostaItens, leads, atividades, servicosCatalogo } from "@/lib/db/schema";
 import { eq, and, asc } from "drizzle-orm";
-import { createSubscriptionCheckout } from "@/lib/integrations/stripe-checkout";
+import { createSubscriptionCheckout, createOneTimeCheckout } from "@/lib/integrations/stripe-checkout";
 import { sendResendEmail } from "@/lib/email/resend";
 import { buildPropostaEmail } from "@/lib/email/proposta-email";
 
@@ -70,11 +70,10 @@ export async function enviarPropostaComCheckout(opts: {
     .where(eq(propostaItens.propostaId, propostaId))
     .orderBy(asc(propostaItens.ordem));
 
-  const recorrentes = itens.filter((i) => i.tipo === "recorrente");
-  const checkoutItens = recorrentes.map((i) => {
-    // subtotal já é quantidade × valor unitário (com desconto aplicado). O Stripe
-    // precisa da quantidade real na subscription (senão a liberação de acesso do
-    // lado do produto, que provavelmente lê `quantity`, ativa 1 usuário em vez de N).
+  // subtotal já é quantidade × valor unitário (com desconto aplicado). O Stripe
+  // precisa da quantidade real na sessão (senão a liberação de acesso do lado do
+  // produto, que provavelmente lê `quantity`, ativa 1 usuário em vez de N).
+  const paraCheckoutItem = (i: (typeof itens)[number]) => {
     const quantidade = Math.max(1, Math.round(parseFloat(i.quantidade || "1") || 1));
     const subtotal = parseFloat(i.subtotal || "0");
     return {
@@ -83,11 +82,22 @@ export async function enviarPropostaComCheckout(opts: {
       quantidade,
       stripeProductId: i.stripeProductId, // produto real do Stripe (mantém produto + aplica preço/desconto da proposta)
     };
-  });
-  const totalRecorrente = parseFloat(proposta.totalRecorrente || "0");
+  };
 
-  if (checkoutItens.length === 0 && totalRecorrente <= 0) {
-    return { ok: false, status: 400, error: "Proposta sem valor recorrente. O checkout de assinatura precisa de um valor mensal." };
+  const recorrentes = itens.filter((i) => i.tipo === "recorrente");
+  const checkoutItens = recorrentes.map(paraCheckoutItem);
+  const totalRecorrente = parseFloat(proposta.totalRecorrente || "0");
+  const totalAvulso = parseFloat(proposta.totalAvulso || "0");
+  const temRecorrente = checkoutItens.length > 0 || totalRecorrente > 0;
+
+  // Proposta 100% avulso/setup (ex.: WHITE LABEL só com setup fee, sem plano
+  // mensal junto): sem item recorrente não há o que assinar, então o checkout
+  // vira pagamento único pelos itens avulsos/setup em vez de assinatura.
+  const naoRecorrentes = itens.filter((i) => i.tipo !== "recorrente");
+  const oneTimeItens = naoRecorrentes.map(paraCheckoutItem);
+
+  if (!temRecorrente && oneTimeItens.length === 0) {
+    return { ok: false, status: 400, error: "Proposta sem itens. Adicione ao menos um item antes de salvar/enviar." };
   }
 
   const base = process.env.NEXTAUTH_URL || "https://crm.callface.io";
@@ -97,17 +107,28 @@ export async function enviarPropostaComCheckout(opts: {
   let checkoutUrl: string;
   let stripeSessionId: string;
   try {
-    const checkout = await createSubscriptionCheckout({
-      propostaId: proposta.id,
-      negocioId: proposta.negocioId,
-      organizacaoId,
-      moeda: proposta.moeda || "BRL",
-      itens: checkoutItens,
-      totalRecorrente,
-      customerEmail: lead?.email || undefined,
-      successUrl: process.env.CHECKOUT_SUCCESS_URL || `${base}/obrigado`,
-      cancelUrl: process.env.CHECKOUT_CANCEL_URL || base,
-    });
+    const checkout = temRecorrente
+      ? await createSubscriptionCheckout({
+          propostaId: proposta.id,
+          negocioId: proposta.negocioId,
+          organizacaoId,
+          moeda: proposta.moeda || "BRL",
+          itens: checkoutItens,
+          totalRecorrente,
+          customerEmail: lead?.email || undefined,
+          successUrl: process.env.CHECKOUT_SUCCESS_URL || `${base}/obrigado`,
+          cancelUrl: process.env.CHECKOUT_CANCEL_URL || base,
+        })
+      : await createOneTimeCheckout({
+          propostaId: proposta.id,
+          negocioId: proposta.negocioId,
+          organizacaoId,
+          moeda: proposta.moeda || "BRL",
+          itens: oneTimeItens,
+          customerEmail: lead?.email || undefined,
+          successUrl: process.env.CHECKOUT_SUCCESS_URL || `${base}/obrigado`,
+          cancelUrl: process.env.CHECKOUT_CANCEL_URL || base,
+        });
     checkoutUrl = checkout.url;
     stripeSessionId = checkout.sessionId;
   } catch (err) {
@@ -141,6 +162,7 @@ export async function enviarPropostaComCheckout(opts: {
       moeda: proposta.moeda || "BRL",
       itens: itens.map((i) => ({ nome: i.nome, tipo: i.tipo, subtotal: parseFloat(i.subtotal || "0") })),
       totalRecorrente,
+      totalAvulso,
       checkoutUrl: linkPagamentoCurto,
       validade: proposta.dataValidade,
       remetenteNome: userName ?? null,
@@ -170,9 +192,13 @@ export async function enviarPropostaComCheckout(opts: {
     usuarioId: userId,
     tipo: "proposta_enviada",
     titulo: `Proposta #P-${String(proposta.numero).padStart(3, "0")}-v${proposta.versao} ${skipEmail ? "ativada (link gerado)" : "enviada por email"}`,
-    descricao: skipEmail
-      ? `Link de pagamento gerado. Valor mensal: R$ ${totalRecorrente.toLocaleString("pt-BR")}. Email não disparado (Salvar).`
-      : `Enviada para ${lead?.email}. Valor mensal: R$ ${totalRecorrente.toLocaleString("pt-BR")}. Checkout gerado.`,
+    descricao: temRecorrente
+      ? (skipEmail
+          ? `Link de pagamento gerado. Valor mensal: R$ ${totalRecorrente.toLocaleString("pt-BR")}. Email não disparado (Salvar).`
+          : `Enviada para ${lead?.email}. Valor mensal: R$ ${totalRecorrente.toLocaleString("pt-BR")}. Checkout gerado.`)
+      : (skipEmail
+          ? `Link de pagamento único gerado. Valor: R$ ${totalAvulso.toLocaleString("pt-BR")}. Email não disparado (Salvar).`
+          : `Enviada para ${lead?.email}. Valor: R$ ${totalAvulso.toLocaleString("pt-BR")}. Checkout de pagamento único gerado.`),
     dados: { propostaId: proposta.id, checkoutUrl, emailId: emailResult.id ?? null },
   });
 

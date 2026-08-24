@@ -168,3 +168,82 @@ export async function createSubscriptionCheckout(params: CreateCheckoutParams): 
   const session = (await res.json()) as { id: string; url: string };
   return { sessionId: session.id, url: session.url };
 }
+
+/**
+ * Checkout de PAGAMENTO ÚNICO (mode=payment) — pra proposta 100% avulso/setup,
+ * sem nenhum item recorrente (ex.: WHITE LABEL só com setup fee). A assinatura
+ * mensal (`createSubscriptionCheckout`) exige valor recorrente pra existir;
+ * esse caminho cobra os itens avulsos/setup de uma vez só.
+ */
+export async function createOneTimeCheckout(params: CreateCheckoutParams): Promise<CheckoutResult> {
+  const key = process.env.STRIPE_API_KEY;
+  if (!key) throw new Error("STRIPE_API_KEY não configurada no .env");
+
+  const currency = (params.moeda || "BRL").toLowerCase();
+
+  const itens = params.itens.filter((i) => i.valorUnitario > 0);
+  if (itens.length === 0) {
+    throw new Error("Proposta sem itens avulsos para gerar checkout de pagamento único");
+  }
+
+  const form = new URLSearchParams();
+  form.append("mode", "payment");
+  form.append("success_url", params.successUrl);
+  form.append("cancel_url", params.cancelUrl);
+  if (params.customerEmail) form.append("customer_email", params.customerEmail);
+  // mode=payment não cria Customer sozinho (diferente de subscription) — sem isso
+  // não teria stripeCustomerId pra ligar no lead nem pra gravar CPF/CNPJ da NF.
+  form.append("customer_creation", "always");
+
+  appendNested(form, "phone_number_collection", { enabled: true });
+  form.append("billing_address_collection", "required");
+  appendNested(form, "name_collection", { business: { enabled: true } });
+  appendNested(form, "custom_fields", [
+    {
+      key: "cpfcnpj",
+      label: { type: "custom", custom: "CPF ou CNPJ" },
+      type: "text",
+      optional: false,
+    },
+  ]);
+
+  itens.forEach((item, idx) => {
+    const priceData: Record<string, unknown> = {
+      currency,
+      unit_amount: Math.round(item.valorUnitario * 100),
+    };
+    if (item.stripeProductId) {
+      priceData.product = item.stripeProductId;
+    } else {
+      priceData.product_data = { name: item.nome };
+    }
+    appendNested(form, `line_items[${idx}]`, {
+      quantity: Math.max(1, Math.round(item.quantidade || 1)),
+      price_data: priceData,
+    });
+  });
+
+  appendNested(form, "metadata", {
+    propostaId: params.propostaId,
+    negocioId: params.negocioId || "",
+    organizacaoId: params.organizacaoId,
+    origem: "callface-crm-proposta",
+  });
+
+  const res = await fetch(`${STRIPE_API}/checkout/sessions`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${key}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: form.toString(),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Stripe checkout: HTTP ${res.status} ${text.slice(0, 300)}`);
+  }
+
+  const session = (await res.json()) as { id: string; url: string };
+  return { sessionId: session.id, url: session.url };
+}
