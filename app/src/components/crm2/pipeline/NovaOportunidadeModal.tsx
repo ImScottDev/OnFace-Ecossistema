@@ -8,16 +8,47 @@ import { Search, X, UserRound } from "lucide-react";
 interface Usuario { id: string; nome: string }
 interface LeadOption { id: string; nome: string; empresa?: string | null }
 
-/** Criação manual de oportunidade — reaproveita POST /api/negocios (mesmo endpoint do resto do CRM). Vincular a um lead existente é opcional (mesma regra do domínio: negócio pode nascer sem lead/empresa e ser associado depois). */
-export function NovaOportunidadeModal({ open, onClose, usuarios, onCreated }: { open: boolean; onClose: () => void; usuarios: Usuario[]; onCreated: () => void }) {
+/**
+ * Criação manual de oportunidade — reaproveita POST /api/negocios (mesmo
+ * endpoint do resto do CRM, mesmo pipeline). Vincular a um lead existente é
+ * opcional (mesma regra do domínio: negócio pode nascer sem lead/empresa e
+ * ser associado depois).
+ *
+ * Modo "a partir do cliente" (item 4, 20/08, Cliente 360 → "Nova
+ * oportunidade"): `fromCliente` já vincula a empresa e envia
+ * `commercialMotion: "EXPANSION"` — decisão de negócio real (oportunidade
+ * nascida de dentro da carteira é expansão, não novo negócio). `leadId`
+ * sugerido (ex: o decisor da empresa, se `negocio_leads.papel` tiver um)
+ * vem pré-selecionado mas o usuário ainda pode trocar pela busca normal. No
+ * modo padrão (Pipeline, sem `fromCliente`), comportamento e default
+ * (`NEW_BUSINESS`) continuam exatamente os mesmos de antes.
+ */
+export function NovaOportunidadeModal({
+  open, onClose, usuarios, onCreated, fromCliente,
+}: {
+  open: boolean;
+  onClose: () => void;
+  usuarios: Usuario[];
+  onCreated: () => void;
+  fromCliente?: { empresaId: string; leadId?: string | null; leadLabel?: string | null };
+}) {
   const [titulo, setTitulo] = useState("");
-  const [leadId, setLeadId] = useState<string | null>(null);
-  const [leadLabel, setLeadLabel] = useState<string | null>(null);
+  const [leadId, setLeadId] = useState<string | null>(fromCliente?.leadId ?? null);
+  const [leadLabel, setLeadLabel] = useState<string | null>(fromCliente?.leadLabel ?? null);
   const [responsavelId, setResponsavelId] = useState("");
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<LeadOption[]>([]);
   const [searchOpen, setSearchOpen] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Reabrir com um cliente diferente precisa refletir o novo leadId sugerido
+  // (o modal fica montado entre aberturas na tela do Cliente 360).
+  useEffect(() => {
+    if (open) {
+      setLeadId(fromCliente?.leadId ?? null);
+      setLeadLabel(fromCliente?.leadLabel ?? null);
+    }
+  }, [open, fromCliente?.leadId, fromCliente?.leadLabel]);
 
   useEffect(() => {
     if (!query.trim()) { setResults([]); return; }
@@ -36,7 +67,12 @@ export function NovaOportunidadeModal({ open, onClose, usuarios, onCreated }: { 
       const r = await fetch("/api/negocios", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ titulo, leadId: leadId || undefined, responsavelId: responsavelId || undefined }),
+        body: JSON.stringify({
+          titulo,
+          leadId: leadId || undefined,
+          responsavelId: responsavelId || undefined,
+          ...(fromCliente ? { empresaId: fromCliente.empresaId, commercialMotion: "EXPANSION" } : {}),
+        }),
       });
       if (!r.ok) { const err = await r.json().catch(() => ({})); throw new Error(err.error || "falha"); }
       return r.json();

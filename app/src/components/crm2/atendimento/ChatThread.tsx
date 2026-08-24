@@ -1,16 +1,21 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import { useSession } from "next-auth/react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import {
   Send, MoreHorizontal, Reply, Smile, Trash2, Check, CheckCheck, Clock,
-  AlertCircle, Paperclip, Camera, File as FileIcon, MapPin, User, X, FileText,
+  AlertCircle, Paperclip, Camera, File as FileIcon, MapPin, User, UserCheck, X, FileText,
   Bot, UserCog, Loader2, MessageSquareOff, FileSpreadsheet, FileArchive,
-  Sparkles, ChevronDown,
+  Sparkles, ChevronDown, Archive, Clock3, RotateCcw, Tag, ScrollText,
+  Copy, UserRound,
 } from "lucide-react";
 import { ConversaItem, Contexto, iniciais } from "./types";
 import { Cf2Badge } from "../ui/Badge";
 import { WhatsappTemplatesModal } from "./WhatsappTemplatesModal";
+import { Cf2ScriptsDocumentosModal } from "./ScriptsDocumentosModal";
 
 type Mensagem = {
   id: string;
@@ -106,6 +111,8 @@ export function Cf2ChatThread({
   onAtribuir: () => void;
 }) {
   const queryClient = useQueryClient();
+  const { data: session } = useSession();
+  const meuUsuarioId = session?.user?.id ?? null;
   const [texto, setTexto] = useState("");
   const [replyTo, setReplyTo] = useState<Mensagem | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
@@ -113,7 +120,9 @@ export function Cf2ChatThread({
   const [showAttachMenu, setShowAttachMenu] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
   const [gerenciarTemplates, setGerenciarTemplates] = useState(false);
+  const [scriptsDocumentosAberto, setScriptsDocumentosAberto] = useState(false);
   const [resumoAberto, setResumoAberto] = useState(false);
+  const [menuAberto, setMenuAberto] = useState(false);
   // Correção 19/08 (Atendimento): template já existia real (backend +
   // gestão no legado ChatPanel.tsx), só não estava ligado no inbox novo do
   // CRM2 — mesma rota, mesmo dado, sem duplicar.
@@ -128,6 +137,20 @@ export function Cf2ChatThread({
       // template real cadastrado. Corrigido aqui e lá.
       const body = await r.json();
       return body?.templates ?? [];
+    },
+  });
+  const { data: tagsData, refetch: refetchTags } = useQuery<{ tags: { id: string; nome: string; cor: string }[] }>({
+    queryKey: ["cf2-conversation-tags", conversa.id],
+    queryFn: async () => {
+      const r = await fetch(`/api/atendimento/conversas/${conversa.id}/tags`);
+      return r.ok ? r.json() : { tags: [] };
+    },
+  });
+  const { data: labels = [] } = useQuery<{ id: string; nome: string; cor: string }[]>({
+    queryKey: ["labels"],
+    queryFn: async () => {
+      const r = await fetch("/api/labels");
+      return r.ok ? r.json() : [];
     },
   });
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -155,6 +178,63 @@ export function Cf2ChatThread({
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["cf2-conversas"] }),
   });
+
+  // Mensagens reais de sucesso/erro por ação (23/08) — antes essa mutation
+  // não dava nenhum retorno visível: clique em "Atribuir a mim"/"Devolver
+  // pra fila" (ícone de pessoa no cabeçalho) parecia não fazer nada além de
+  // o próprio botão mudar de estado. `acao` já vem tipado pelo backend
+  // (claim/transfer/release/snooze/unsnooze/close/reopen).
+  const ACAO_SUCESSO: Record<string, string> = {
+    claim: "Conversa atribuída a você",
+    release: "Conversa devolvida pra fila",
+    snooze: "Conversa adiada",
+    close: "Conversa marcada como resolvida",
+    reopen: "Conversa reaberta",
+  };
+  const conversationActionMutation = useMutation({
+    mutationFn: async ({ acao, minutos }: { acao: string; minutos?: number }) => {
+      const res = await fetch(`/api/atendimento/conversas/${conversa.id}/acao`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ acao, minutos }),
+      });
+      if (!res.ok) throw new Error("Falha ao atualizar a conversa");
+      return res.json();
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["cf2-conversas"] });
+      const msg = ACAO_SUCESSO[variables.acao];
+      if (msg) toast.success(msg);
+    },
+    onError: () => toast.error("Falha ao atualizar a conversa. Tente novamente."),
+  });
+
+  const tagMutation = useMutation({
+    mutationFn: async ({ labelId, remove }: { labelId: string; remove?: boolean }) => {
+      const r = await fetch(`/api/atendimento/conversas/${conversa.id}/tags${remove ? `/${labelId}` : ""}`, {
+        method: remove ? "DELETE" : "POST",
+        headers: remove ? undefined : { "Content-Type": "application/json" },
+        body: remove ? undefined : JSON.stringify({ labelId }),
+      });
+      if (!r.ok) throw new Error("Falha ao atualizar tag");
+    },
+    onSuccess: () => refetchTags(),
+  });
+
+  const snooze = () => {
+    const value = window.prompt("Adiar por quantos minutos?", "60");
+    if (!value) return;
+    const minutos = Number(value);
+    if (Number.isFinite(minutos) && minutos > 0) conversationActionMutation.mutate({ acao: "snooze", minutos });
+  };
+
+  const copiarTelefone = () => {
+    if (!conversa.telefone) return;
+    navigator.clipboard.writeText(conversa.telefone)
+      .then(() => toast.success("Telefone copiado"))
+      .catch(() => toast.error("Não foi possível copiar o telefone"));
+    setMenuAberto(false);
+  };
 
   const mensagens: Mensagem[] = [...(data?.messages ?? [])].reverse();
   const findMsg = (id: string | null) => (id ? mensagens.find((m) => m.id === id) : undefined);
@@ -197,6 +277,11 @@ export function Cf2ChatThread({
     setTexto(interpolado);
     setShowTemplates(false);
   };
+
+  const templatesVisiveis = (templates ?? []).filter((tpl) => {
+    const termo = texto.startsWith("/") ? texto.slice(1).trim().toLowerCase() : "";
+    return !termo || tpl.nome.toLowerCase().includes(termo) || tpl.categoria.toLowerCase().includes(termo);
+  });
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -278,6 +363,23 @@ export function Cf2ChatThread({
                   {HANDOFF_INFO[conversa.handoffStatus].label}
                 </Cf2Badge>
               )}
+              {tagsData?.tags.map((tag) => (
+                <button key={tag.id} onClick={() => tagMutation.mutate({ labelId: tag.id, remove: true })} title="Remover tag" className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold" style={{ color: tag.cor, background: `${tag.cor}18` }}>
+                  <Tag className="w-2.5 h-2.5" />{tag.nome}
+                </button>
+              ))}
+              {labels.filter((label) => !tagsData?.tags.some((tag) => tag.id === label.id)).length > 0 && (
+                <select
+                  aria-label="Adicionar tag à conversa"
+                  value=""
+                  onChange={(e) => { if (e.target.value) tagMutation.mutate({ labelId: e.target.value }); }}
+                  className="max-w-[110px] rounded px-1 py-0.5 text-[10px] outline-none"
+                  style={{ color: "var(--cf2-text-secondary)", background: "var(--cf2-bg-surface-muted)" }}
+                >
+                  <option value="">+ tag</option>
+                  {labels.filter((label) => !tagsData?.tags.some((tag) => tag.id === label.id)).map((label) => <option key={label.id} value={label.id}>{label.nome}</option>)}
+                </select>
+              )}
             </div>
             <p className="text-[11px] truncate" style={{ color: "var(--cf2-text-secondary)" }}>
               {ultimaSessaoNome ? `via WhatsApp de ${ultimaSessaoNome}` : "WhatsApp"}
@@ -311,9 +413,134 @@ export function Cf2ChatThread({
           <button onClick={onAtribuir} className="px-3 py-1.5 rounded-lg text-[12px] font-semibold" style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-primary)" }}>
             Atribuir
           </button>
-          <button className="p-1.5 rounded-lg" style={{ background: "var(--cf2-bg-surface-muted)" }}>
-            <MoreHorizontal className="w-4 h-4" style={{ color: "var(--cf2-text-secondary)" }} />
-          </button>
+          {/* Responsável pela conversa (contatos.responsavelId) — correção
+              23/08: antes só existia como botão "Devolver para a fila"
+              (acao=release), visível apenas quando JÁ havia responsável;
+              clicar zerava responsavelId e o próprio botão desaparecia sem
+              nenhum retorno visível ("ícone que some sem fazer nada útil").
+              Vira toggle real de 3 estados usando as ações que o backend já
+              suporta (claim/release em atendimento.ts) — mesmo padrão do
+              toggle IA/Humano acima, dimensão diferente (dono da conversa,
+              não quem está respondendo). */}
+          {conversa.status !== "closed" && (
+            meuUsuarioId && conversa.responsavelId === meuUsuarioId ? (
+              <button
+                onClick={() => conversationActionMutation.mutate({ acao: "release" })}
+                disabled={conversationActionMutation.isPending}
+                title="Você está com esta conversa. Clique para devolver pra fila."
+                className="p-1.5 rounded-lg disabled:opacity-50"
+                style={{ background: "var(--cf2-accent)" }}
+              >
+                {conversationActionMutation.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin" style={{ color: "var(--cf2-text-on-accent)" }} />
+                ) : (
+                  <UserCheck className="w-4 h-4" style={{ color: "var(--cf2-text-on-accent)" }} />
+                )}
+              </button>
+            ) : conversa.responsavelId ? (
+              <button
+                disabled
+                title="Atribuída a outro atendente"
+                className="p-1.5 rounded-lg opacity-50 cursor-not-allowed"
+                style={{ background: "var(--cf2-bg-surface-muted)" }}
+              >
+                <User className="w-4 h-4" style={{ color: "var(--cf2-text-secondary)" }} />
+              </button>
+            ) : (
+              <button
+                onClick={() => conversationActionMutation.mutate({ acao: "claim" })}
+                disabled={conversationActionMutation.isPending}
+                title="Assumir esta conversa para você"
+                className="p-1.5 rounded-lg disabled:opacity-50"
+                style={{ background: "var(--cf2-bg-surface-muted)" }}
+              >
+                {conversationActionMutation.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin" style={{ color: "var(--cf2-text-secondary)" }} />
+                ) : (
+                  <User className="w-4 h-4" style={{ color: "var(--cf2-text-secondary)" }} />
+                )}
+              </button>
+            )
+          )}
+          {conversa.status === "closed" ? (
+            <button
+              onClick={() => conversationActionMutation.mutate({ acao: "reopen" })}
+              disabled={conversationActionMutation.isPending}
+              title="Reabrir conversa"
+              className="p-1.5 rounded-lg disabled:opacity-50"
+              style={{ background: "var(--cf2-bg-surface-muted)" }}
+            >
+              <RotateCcw className="w-4 h-4" style={{ color: "var(--cf2-text-secondary)" }} />
+            </button>
+          ) : (
+            <>
+              <button
+                onClick={snooze}
+                disabled={conversationActionMutation.isPending}
+                title="Adiar conversa"
+                className="p-1.5 rounded-lg disabled:opacity-50"
+                style={{ background: "var(--cf2-bg-surface-muted)" }}
+              >
+                <Clock3 className="w-4 h-4" style={{ color: "var(--cf2-text-secondary)" }} />
+              </button>
+              <button
+                onClick={() => conversationActionMutation.mutate({ acao: "close" })}
+                disabled={conversationActionMutation.isPending}
+                title="Fechar conversa"
+                className="p-1.5 rounded-lg disabled:opacity-50"
+                style={{ background: "var(--cf2-bg-surface-muted)" }}
+              >
+                <Archive className="w-4 h-4" style={{ color: "var(--cf2-text-secondary)" }} />
+              </button>
+            </>
+          )}
+          {/* Menu "..." (correção 23/08): antes não tinha onClick, botão
+              morto. Populado só com ações reais que já têm dado/rota pronta
+              — perfil do contato (mesma rota já usada em Cliente360/
+              PaginaCompleta) e copiar telefone (dado já disponível em
+              conversa.telefone). Marcar resolvido/reabrir/adiar já têm
+              botão dedicado no cabeçalho, não duplicados aqui. Sem
+              leadId/telefone reais, a opção correspondente nem aparece —
+              não fabrica ação sem dado por trás. */}
+          <div className="relative">
+            <button
+              onClick={() => setMenuAberto((v) => !v)}
+              className="p-1.5 rounded-lg"
+              style={{ background: menuAberto ? "var(--cf2-accent)" : "var(--cf2-bg-surface-muted)" }}
+            >
+              <MoreHorizontal className="w-4 h-4" style={{ color: menuAberto ? "var(--cf2-text-on-accent)" : "var(--cf2-text-secondary)" }} />
+            </button>
+            {menuAberto && (
+              <div
+                className="absolute right-0 top-full mt-1 z-20 w-52 rounded-xl overflow-hidden shadow-md"
+                style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}
+              >
+                {conversa.leadId ? (
+                  <Link
+                    href={`/contatos/${conversa.leadId}`}
+                    onClick={() => setMenuAberto(false)}
+                    className="flex items-center gap-2 px-3 py-2.5 text-[12px] font-semibold hover:bg-[var(--cf2-bg-surface-muted)]"
+                    style={{ color: "var(--cf2-text-primary)" }}
+                  >
+                    <UserRound className="w-3.5 h-3.5" /> Ver perfil do contato
+                  </Link>
+                ) : (
+                  <p className="px-3 py-2.5 text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>
+                    Sem lead vinculado — sem perfil pra abrir.
+                  </p>
+                )}
+                {conversa.telefone && (
+                  <button
+                    onClick={copiarTelefone}
+                    className="w-full flex items-center gap-2 px-3 py-2.5 text-[12px] font-semibold text-left hover:bg-[var(--cf2-bg-surface-muted)]"
+                    style={{ color: "var(--cf2-text-primary)", borderTop: "1px solid var(--cf2-border-default)" }}
+                  >
+                    <Copy className="w-3.5 h-3.5" /> Copiar telefone
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -478,7 +705,7 @@ export function Cf2ChatThread({
 
       {showTemplates && (
         <div className="mx-4 mb-2 rounded-xl overflow-hidden max-h-48 overflow-y-auto" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }}>
-          {templates && templates.length > 0 ? templates.map((tpl) => (
+          {templatesVisiveis.length > 0 ? templatesVisiveis.map((tpl) => (
             <button key={tpl.id} onClick={() => handleTemplateSelect(tpl)} className="w-full text-left px-4 py-2.5 hover:bg-[var(--cf2-bg-surface)]">
               <div className="text-[10px]" style={{ color: "var(--cf2-text-tertiary)" }}>{tpl.categoria}</div>
               <div className="text-[13px] line-clamp-2" style={{ color: "var(--cf2-text-primary)" }}>{tpl.conteudo}</div>
@@ -496,6 +723,7 @@ export function Cf2ChatThread({
         </div>
       )}
       {gerenciarTemplates && <WhatsappTemplatesModal onClose={() => setGerenciarTemplates(false)} />}
+      {scriptsDocumentosAberto && <Cf2ScriptsDocumentosModal onClose={() => setScriptsDocumentosAberto(false)} />}
 
       <div className="p-4 shrink-0 flex flex-col gap-2" style={{ background: "var(--cf2-bg-page)", borderTop: "1px solid var(--cf2-border-default)" }}>
         {replyTo && (
@@ -520,14 +748,33 @@ export function Cf2ChatThread({
           >
             <FileText className="w-4 h-4" style={{ color: showTemplates ? "var(--cf2-text-on-accent)" : "var(--cf2-text-secondary)" }} />
           </button>
+          <button
+            onClick={() => setScriptsDocumentosAberto(true)}
+            title="Scripts e documentos"
+            className="p-2 rounded-lg shrink-0"
+            style={{ background: "var(--cf2-bg-surface-muted)" }}
+          >
+            <ScrollText className="w-4 h-4" style={{ color: "var(--cf2-text-secondary)" }} />
+          </button>
           <div
             className="flex-1 flex items-center gap-2 px-4 py-2.5 rounded-xl"
             style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}
           >
             <input
               value={texto}
-              onChange={(e) => setTexto(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") handleSendText(); }}
+              onChange={(e) => {
+                const value = e.target.value;
+                setTexto(value);
+                setShowTemplates(value.startsWith("/") && value.length > 0);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && showTemplates && templatesVisiveis[0]) {
+                  e.preventDefault();
+                  handleTemplateSelect(templatesVisiveis[0]);
+                } else if (e.key === "Enter") {
+                  handleSendText();
+                }
+              }}
               placeholder={`Escrever uma mensagem para ${conversa.nome.split(" ")[0]}...`}
               className="flex-1 bg-transparent outline-none text-[13px]"
               style={{ color: "var(--cf2-text-primary)" }}

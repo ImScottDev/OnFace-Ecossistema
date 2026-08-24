@@ -941,7 +941,7 @@ function NegocioCard({ negocio, stageColor, onOpenNegocio, slaHours, onDragStart
               {STAGNATION_REASONS.map((r) => (
                 <button
                   key={r.key}
-                  onClick={() => { onChangeStatus(r.key); setMenuOpen(false); }}
+                  onClick={() => { onChangeStatus?.(r.key); setMenuOpen(false); }}
                   className="w-full text-left px-3 py-1.5 text-white/70 hover:bg-white/5 flex items-center gap-2"
                 >
                   <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: r.color }} />
@@ -955,7 +955,7 @@ function NegocioCard({ negocio, stageColor, onOpenNegocio, slaHours, onDragStart
               {(stages || []).map((s) => (
                 <button
                   key={s.key}
-                  onClick={() => { onChangeStatus(s.key); setMenuOpen(false); }}
+                  onClick={() => { onChangeStatus?.(s.key); setMenuOpen(false); }}
                   className="w-full text-left px-3 py-1.5 text-white/70 hover:bg-white/5 flex items-center gap-2"
                 >
                   <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: s.color }} />

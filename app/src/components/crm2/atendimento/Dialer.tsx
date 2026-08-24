@@ -11,8 +11,12 @@ const TECLAS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "*", "0", "#"];
 type ContatoSimples = { id: string; nome: string; telefone: string | null; empresaNome: string | null };
 type LeadBusca = ContatoSimples & { situacao: "negociacao" | "proposta" | null };
 
-export function Cf2Dialer() {
-  const [numero, setNumero] = useState("");
+export function Cf2Dialer({ numeroInicial }: { numeroInicial?: string } = {}) {
+  // Prefill real (23/08): deep link "Ligar" do drawer de Pré-vendas manda o
+  // telefone do lead via `/atendimento?canal=ligacao&telefone=X` — mesmo
+  // dígitos que `callfaceCallUrl` já usa (DDD+número sem código do país).
+  // Sem isso a SDR tinha que redigitar o número na mão depois do deep link.
+  const [numero, setNumero] = useState(numeroInicial || "");
   const [busca, setBusca] = useState("");
 
   const podeLigar = numero.replace(/\D/g, "").length >= 10;

@@ -15,8 +15,9 @@
  * Isto NÃO decide a regra de negócio de qual evidência vale pra qual
  * produto (isso é calibração comercial, registrada em
  * crm2-decisoes-pendentes.md) — só constrói a arquitetura extensível e
- * aplica um default conservador (idêntico ao gate anterior: contrato
- * assinado ou assinatura Stripe), pra nunca regredir comportamento.
+ * aplica um default conservador alinhado aos gates atuais: pagamento
+ * confirmado para pagamento direto; contrato assinado E pagamento confirmado
+ * quando existe contrato. Contrato sozinho nunca libera Won.
  *
  * Ver ADR-EXEC-012 em ARCHITECTURE_DECISIONS.md.
  */
@@ -37,7 +38,7 @@ export type TipoEvidenciaComercial =
   // sempre audit-logada) — nunca automática.
   | "financial_attestation";
 
-/** Default catch-all — idêntico ao comportamento do gate anterior (contrato assinado ou assinatura Stripe). Usado quando não existe política configurada pro produto/org. */
+/** Tipos possíveis do default; a combinação real é resolvida por existência de contrato. */
 const POLICY_DEFAULT: TipoEvidenciaComercial[] = ["signed_contract", "stripe_subscription", "stripe_payment"];
 
 /**
@@ -74,13 +75,13 @@ export async function registrarEvidencia(opts: {
   }
 }
 
-async function getPolicyAplicavel(organizacaoId: string, produto: string | null): Promise<{ tiposAceitos: TipoEvidenciaComercial[]; requiredCombinations: TipoEvidenciaComercial[][] | null }> {
+async function getPolicyAplicavel(organizacaoId: string, produto: string | null): Promise<{ tiposAceitos: TipoEvidenciaComercial[]; requiredCombinations: TipoEvidenciaComercial[][] | null; isDefault: boolean }> {
   const rows = await db
     .select({ produto: wonEvidencePolicies.produto, tiposAceitos: wonEvidencePolicies.tiposAceitos, requiredCombinations: wonEvidencePolicies.requiredCombinations })
     .from(wonEvidencePolicies)
     .where(and(eq(wonEvidencePolicies.organizacaoId, organizacaoId), eq(wonEvidencePolicies.ativo, true), or(isNull(wonEvidencePolicies.produto), produto ? eq(wonEvidencePolicies.produto, produto) : undefined)));
 
-  if (rows.length === 0) return { tiposAceitos: POLICY_DEFAULT, requiredCombinations: null };
+  if (rows.length === 0) return { tiposAceitos: POLICY_DEFAULT, requiredCombinations: null, isDefault: true };
   // política específica do produto tem prioridade sobre a catch-all (produto=null)
   const especifica = rows.find((r) => r.produto === produto);
   const catchAll = rows.find((r) => r.produto === null);
@@ -88,6 +89,7 @@ async function getPolicyAplicavel(organizacaoId: string, produto: string | null)
   return {
     tiposAceitos: (escolhida?.tiposAceitos as TipoEvidenciaComercial[]) ?? POLICY_DEFAULT,
     requiredCombinations: (escolhida?.requiredCombinations as TipoEvidenciaComercial[][] | null) ?? null,
+    isDefault: false,
   };
 }
 
@@ -100,7 +102,7 @@ async function getPolicyAplicavel(organizacaoId: string, produto: string | null)
  * precisar de script de backfill em massa).
  */
 export async function avaliarEvidenciaWon(negocioId: string, organizacaoId: string, produto: string | null): Promise<{ permitido: boolean; evidencias: TipoEvidenciaComercial[]; motivo: string }> {
-  const { tiposAceitos, requiredCombinations } = await getPolicyAplicavel(organizacaoId, produto);
+  const { tiposAceitos, requiredCombinations, isDefault } = await getPolicyAplicavel(organizacaoId, produto);
 
   const evidenciasExistentes = await db
     .select({ tipo: comercialEvidencia.tipo })
@@ -108,6 +110,32 @@ export async function avaliarEvidenciaWon(negocioId: string, organizacaoId: stri
     .where(eq(comercialEvidencia.negocioId, negocioId));
 
   const tiposEncontrados = evidenciasExistentes.map((e) => e.tipo as TipoEvidenciaComercial);
+
+  // Default sem política explícita: contrato define o gate. Isso impede que
+  // o fallback histórico transforme proposta aceita/contrato pendente em Won.
+  // `stripe_subscription` conta como pagamento confirmado somente porque é
+  // gravado pelo webhook de Checkout com payment_status=paid.
+  if (isDefault) {
+    const pagamentoConfirmado = tiposEncontrados.includes("stripe_payment") || tiposEncontrados.includes("stripe_subscription");
+    const contratoAssinado = tiposEncontrados.includes("signed_contract");
+    const contratosDoNegocio = await db.select({ id: contratos.id }).from(contratos).where(eq(contratos.negocioId, negocioId)).limit(1);
+    const exigeContrato = contratosDoNegocio.length > 0;
+    if (tiposEncontrados.includes("financial_attestation")) {
+      return { permitido: true, evidencias: ["financial_attestation"], motivo: "exceção financeira/legado registrada por usuário autorizado" };
+    }
+    if (pagamentoConfirmado && (!exigeContrato || contratoAssinado)) {
+      return {
+        permitido: true,
+        evidencias: exigeContrato ? ["signed_contract", "stripe_payment"] : ["stripe_payment"],
+        motivo: exigeContrato ? "contrato assinado e pagamento confirmado" : "pagamento confirmado",
+      };
+    }
+    return {
+      permitido: false,
+      evidencias: tiposEncontrados.filter((tipo) => tiposAceitos.includes(tipo)),
+      motivo: exigeContrato ? "contrato assinado e pagamento confirmado são obrigatórios" : "pagamento confirmado é obrigatório",
+    };
+  }
 
   // Política com combinação explícita (OR-de-AND): precisa de TODAS as
   // evidências de PELO MENOS uma combinação — uma evidência isolada não

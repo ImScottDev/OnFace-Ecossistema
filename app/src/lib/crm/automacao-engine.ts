@@ -12,18 +12,19 @@
  * do mesmo padrão: sincronizar no ponto real de escrita, best-effort).
  */
 import { db } from "@/lib/db";
-import { automacoes, automacaoExecucoes, tarefas, notificacoes, negocios, leads } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import { automacoes, automacaoExecucoes, tarefas, notificacoes, negocios, leads, empresas, assinaturas, faturas, auditLog } from "@/lib/db/schema";
+import { eq, and, or, sql } from "drizzle-orm";
 import { sendResendEmail, isResendConfigured } from "@/lib/email/resend";
 import { whatsappOutgoingQueue } from "@/lib/queue";
 import { avaliarCondicao } from "@/lib/crm/condicao";
 
 export type GatilhoAutomacao =
   | "novo_lead" | "mudanca_status" | "novo_negocio" | "lead_inativo"
-  | "contrato_vencendo" | "whatsapp_recebido" | "nps_recebido";
+  | "contrato_vencendo" | "whatsapp_recebido" | "nps_recebido"
+  | "pagamento_falhou" | "fatura_atrasada" | "fatura_paga" | "assinatura_status_alterado";
 
 export interface ContextoGatilho {
-  entityType: "lead" | "negocio" | "contato";
+  entityType: "lead" | "negocio" | "contato" | "empresa" | "servico";
   entityId: string;
   organizacaoId: string;
   /** campos relevantes do registro, usados pra avaliar `condicao` (ex: {status: "ganho", origem: "site"}) */
@@ -32,6 +33,9 @@ export interface ContextoGatilho {
   telefone?: string | null;
   email?: string | null;
   nome?: string | null;
+  empresaId?: string | null;
+  leadId?: string | null;
+  servicoId?: string | null;
 }
 
 interface AcaoConfig {
@@ -44,6 +48,7 @@ interface AcaoConfig {
   mensagem?: string;
   diasInatividade?: number;
   diasAntesVencimento?: number;
+  tag?: string;
 }
 
 async function executarAcao(acao: string, config: AcaoConfig | null, ctx: ContextoGatilho): Promise<Record<string, unknown>> {
@@ -52,7 +57,7 @@ async function executarAcao(acao: string, config: AcaoConfig | null, ctx: Contex
     case "criar_tarefa": {
       const [t] = await db.insert(tarefas).values({
         organizacaoId: ctx.organizacaoId,
-        leadId: ctx.entityType === "lead" ? ctx.entityId : undefined,
+        leadId: ctx.entityType === "lead" ? ctx.entityId : (ctx.leadId || undefined),
         negocioId: ctx.entityType === "negocio" ? ctx.entityId : undefined,
         usuarioId: cfg.usuarioId || null,
         titulo: cfg.tituloTarefa || "Tarefa gerada por automação",
@@ -88,6 +93,38 @@ async function executarAcao(acao: string, config: AcaoConfig | null, ctx: Contex
         await db.update(leads).set({ responsavelId: cfg.usuarioId, updatedAt: new Date() }).where(eq(leads.id, ctx.entityId));
       }
       return { responsavelId: cfg.usuarioId };
+    }
+    case "adicionar_tag_empresa":
+    case "remover_tag_empresa": {
+      if (!ctx.empresaId && ctx.entityType !== "empresa") throw new Error("empresaId ausente no contexto financeiro");
+      if (!cfg.tag?.trim()) throw new Error("acaoConfig.tag obrigatório para ação de tag");
+      const empresaId = ctx.empresaId || ctx.entityId;
+      const [empresa] = await db.select({ tags: empresas.tags })
+        .from(empresas)
+        .where(and(eq(empresas.id, empresaId), eq(empresas.organizacaoId, ctx.organizacaoId)))
+        .limit(1);
+      if (!empresa) throw new Error("empresa não encontrada no tenant");
+      const tagsAtuais = empresa.tags || [];
+      const tags = acao === "adicionar_tag_empresa"
+        ? Array.from(new Set([...tagsAtuais, cfg.tag.trim()]))
+        : tagsAtuais.filter((tag) => tag !== cfg.tag?.trim());
+      await db.update(empresas).set({ tags, updatedAt: new Date() })
+        .where(and(eq(empresas.id, empresaId), eq(empresas.organizacaoId, ctx.organizacaoId)));
+      try {
+        await db.insert(auditLog).values({
+          organizacaoId: ctx.organizacaoId,
+          actorId: null,
+          action: acao === "adicionar_tag_empresa" ? "empresa.tag_adicionada" : "empresa.tag_removida",
+          entityType: "empresa",
+          entityId: empresaId,
+          before: { tags: tagsAtuais, origem: "automacao_financeira" },
+          after: { tags, origem: "automacao_financeira" },
+          source: "worker",
+        });
+      } catch (auditError) {
+        console.error("[automacao] tag financeira aplicada, mas auditoria falhou", auditError);
+      }
+      return { empresaId, tag: cfg.tag.trim(), tags, operacao: acao === "adicionar_tag_empresa" ? "adicionada" : "removida" };
     }
     case "enviar_email": {
       // sendResendEmail já faz no-op gracioso sem RESEND_API_KEY configurada
@@ -158,4 +195,53 @@ export async function dispararAutomacoes(gatilho: GatilhoAutomacao, ctx: Context
       }).catch(() => {});
     }
   }
+}
+
+/**
+ * Converte um evento Stripe em contexto da Empresa/Service do CRM. A função é
+ * chamada somente depois do sync materializar a fatura/assinatura; se ainda não
+ * houver reconciliação, não fabrica empresa nem dispara regra no tenant errado.
+ */
+export async function dispararAutomacoesFinanceiras(params: {
+  gatilho: Extract<GatilhoAutomacao, "pagamento_falhou" | "fatura_atrasada" | "fatura_paga" | "assinatura_status_alterado">;
+  organizacaoId: string;
+  stripeCustomerId?: string | null;
+  stripeInvoiceId?: string | null;
+  stripeSubscriptionId?: string | null;
+  campos: Record<string, unknown>;
+}): Promise<void> {
+  const links = await db.execute<{ empresa_id: string | null; lead_id: string | null; servico_id: string | null }>(sql`
+    SELECT COALESCE(f.empresa_id, a.empresa_id) AS empresa_id,
+           COALESCE(f.lead_id, a.lead_id) AS lead_id,
+           a.servico_id AS servico_id
+    FROM (SELECT 1) seed
+    LEFT JOIN faturas f ON f.organizacao_id = ${params.organizacaoId}
+      AND ${params.stripeInvoiceId || null} IS NOT NULL
+      AND f.origem = 'stripe' AND f.external_id = ${params.stripeInvoiceId || null}
+    LEFT JOIN assinaturas a ON a.organizacao_id = ${params.organizacaoId}
+      AND (
+        (${params.stripeSubscriptionId || null} IS NOT NULL AND a.stripe_subscription_id = ${params.stripeSubscriptionId || null})
+        OR (${params.stripeCustomerId || null} IS NOT NULL AND a.stripe_customer_id = ${params.stripeCustomerId || null})
+      )
+    LIMIT 1
+  `);
+  const link = links[0];
+  if (!link?.empresa_id) return;
+
+  const [lead] = link.lead_id
+    ? await db.select({ nome: leads.nome, email: leads.email, telefone: leads.telefone })
+      .from(leads).where(and(eq(leads.id, link.lead_id), eq(leads.organizacaoId, params.organizacaoId))).limit(1)
+    : [];
+  await dispararAutomacoes(params.gatilho, {
+    entityType: "empresa",
+    entityId: link.empresa_id,
+    organizacaoId: params.organizacaoId,
+    empresaId: link.empresa_id,
+    leadId: link.lead_id,
+    servicoId: link.servico_id,
+    campos: params.campos,
+    nome: lead?.nome || null,
+    email: lead?.email || null,
+    telefone: lead?.telefone || null,
+  });
 }

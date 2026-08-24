@@ -23,7 +23,7 @@ function saudacao(hora: number): string {
 // Sem eles, o comportamento da Home (saudação + data · org) continua
 // idêntico — nenhuma tela existente muda.
 export function Cf2Topbar({
-  orgNome, variant = "light", title, subtitle, ctaLabel = "Novo negócio", ctaHref = "/negocios/novo", actions,
+  orgNome, variant = "light", title, subtitle, ctaLabel = "Novo negócio", ctaHref = "/negocios/novo", actions, compact = false,
 }: {
   orgNome: string;
   variant?: "light" | "dark";
@@ -35,6 +35,9 @@ export function Cf2Topbar({
    * botões diferentes (ex: Prospecção — "+ Novo prospect" / "+ Importar
    * prospects"). Sem isso, comportamento idêntico a antes. */
   actions?: React.ReactNode;
+  /** Omits the contextual greeting/title for detail workspaces that render
+   * their own page heading below the global controls. */
+  compact?: boolean;
 }) {
   const { data: session } = useSession();
   const primeiroNome = (session?.user?.name || "").split(" ")[0] || "";
@@ -59,14 +62,15 @@ export function Cf2Topbar({
 
   return (
     <div className="flex items-center justify-between w-full">
-      <div className="flex flex-col gap-1">
+      {!compact && <div className="flex flex-col gap-1">
         <p className={dark ? "text-[28px] font-bold" : "text-[28px] font-semibold"} style={{ color: textPrimary, fontFamily: "var(--cf2-font-heading)" }}>
           {title ?? (now ? `${saudacao(now.getHours())}, ${primeiroNome}.` : " ")}
         </p>
         <p className="text-sm" style={{ color: textSecondary, fontFamily: "var(--cf2-font-heading)" }}>
           {subtitle ?? <>{dataCapitalizada}{dataCapitalizada ? " · " : ""}{orgNome}</>}
         </p>
-      </div>
+      </div>}
+      {compact && <div className="flex-1" />}
 
       <div className="flex items-center gap-4">
         <button

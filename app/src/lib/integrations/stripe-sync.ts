@@ -22,7 +22,7 @@
  * Requer STRIPE_API_KEY no .env (restricted key, read-only).
  */
 import { db } from "../db";
-import { assinaturas, contratos, faturas, leads, mrrMovimentos, organizacoes, notificacoes, usuarios } from "../db/schema";
+import { assinaturaItens, assinaturas, contratos, faturas, leads, mrrMovimentos, organizacoes, notificacoes, usuarios } from "../db/schema";
 import { eq, sql, and, inArray } from "drizzle-orm";
 
 const STRIPE_API = "https://api.stripe.com/v1";
@@ -93,9 +93,19 @@ interface StripeSubscription {
   status: string;
   start_date?: number;
   canceled_at?: number | null;
+  current_period_start?: number;
   current_period_end?: number;
   cancellation_details?: { reason?: string | null; feedback?: string | null; comment?: string | null } | null;
-  items?: { data: { quantity?: number; price: { id: string; unit_amount: number | null; product?: string; recurring?: { interval: string; interval_count?: number } | null } }[] };
+  items?: { data: {
+    id: string;
+    quantity?: number;
+    price: {
+      id: string;
+      unit_amount: number | null;
+      product?: string | { id: string };
+      recurring?: { interval: string; interval_count?: number } | null;
+    };
+  }[] };
 }
 
 function custId(c: StripeSubscription["customer"]): string {
@@ -141,9 +151,15 @@ function motivoCancelamento(s: StripeSubscription): string | null {
   return m.slice(0, 500);
 }
 
-export async function syncStripe(): Promise<{ subs: number; faturas: number; churns: number; movimentos: number; semLead: number }> {
-  const [org] = await db.select({ id: organizacoes.id }).from(organizacoes).limit(1);
-  if (!org) throw new Error("organização não encontrada");
+export async function syncStripe(organizacaoId?: string): Promise<{ subs: number; faturas: number; churns: number; movimentos: number; semLead: number }> {
+  const orgs = await db
+    .select({ id: organizacoes.id })
+    .from(organizacoes)
+    .where(organizacaoId ? eq(organizacoes.id, organizacaoId) : undefined)
+    .limit(2);
+  if (orgs.length === 0) throw new Error("organização não encontrada");
+  if (!organizacaoId && orgs.length > 1) throw new Error("syncStripe exige organizacaoId quando há mais de uma organização");
+  const org = orgs[0];
 
   // ── FASE 1: FETCH (sem transação aberta) ──────────────────────────────────
 
@@ -229,10 +245,13 @@ export async function syncStripe(): Promise<{ subs: number; faturas: number; chu
       const canceladaEm = s.canceled_at ? new Date(s.canceled_at * 1000) : null;
       const motivo = motivoCancelamento(s);
       const item0 = s.items?.data?.[0];
-      const planoNome = item0?.price?.product ? productName.get(item0.price.product) || null : null;
+      const item0ProductId = typeof item0?.price?.product === "string"
+        ? item0.price.product
+        : item0?.price?.product?.id || null;
+      const planoNome = item0ProductId ? productName.get(item0ProductId) || null : null;
 
       const [existing] = await tx
-        .select({ id: assinaturas.id, status: assinaturas.status, contratoId: assinaturas.contratoId, mrr: assinaturas.mrr, leadId: assinaturas.leadId })
+        .select({ id: assinaturas.id, status: assinaturas.status, contratoId: assinaturas.contratoId, mrr: assinaturas.mrr, leadId: assinaturas.leadId, servicoId: assinaturas.servicoId })
         .from(assinaturas)
         .where(eq(assinaturas.stripeSubscriptionId, s.id));
 
@@ -263,6 +282,80 @@ export async function syncStripe(): Promise<{ subs: number; faturas: number; chu
         movimentos++;
       };
 
+      // Subscription pode carregar vários itens (MRR, setup, capacidade etc.).
+      // O resumo em assinaturas continua útil para compatibilidade, mas a fonte
+      // operacional de preço/quantidade é esta tabela. Família fica UNKNOWN
+      // quando o catálogo não declarou explicitamente a semântica do item.
+      const sincronizarItens = async (assinaturaId: string, servicoCanonicoId: string | null) => {
+        const itens = s.items?.data || [];
+        const ids = itens.map((item) => item.id).filter(Boolean);
+        if (ids.length > 0) {
+          await tx
+            .update(assinaturaItens)
+            .set({ status: "inactive", updatedAt: new Date() })
+            .where(and(
+              eq(assinaturaItens.assinaturaId, assinaturaId),
+              sql`NOT (${assinaturaItens.stripeSubscriptionItemId} IN (${sql.join(ids.map((id) => sql`${id}`), sql`, `)}))`,
+            ));
+        } else {
+          await tx
+            .update(assinaturaItens)
+            .set({ status: "inactive", updatedAt: new Date() })
+            .where(eq(assinaturaItens.assinaturaId, assinaturaId));
+        }
+
+        for (const item of itens) {
+          const productId = typeof item.price.product === "string"
+            ? item.price.product
+            : item.price.product?.id || null;
+          const itemStatus = BILLABLE.has(s.status) ? "active" : s.status;
+          await tx
+            .insert(assinaturaItens)
+            .values({
+              organizacaoId: org.id,
+              assinaturaId,
+              stripeSubscriptionItemId: item.id,
+              stripeProductId: productId,
+              stripePriceId: item.price.id,
+              produto: productId ? productName.get(productId) || productId : null,
+              quantidade: item.quantity || 1,
+              precoUnitario: item.price.unit_amount == null ? null : String(item.price.unit_amount / 100),
+              moeda: "BRL",
+              recurringInterval: item.price.recurring?.interval || null,
+              serviceFamily: "UNKNOWN",
+              revenueNature: item.price.recurring ? "MRR" : "ONE_TIME",
+              servicoCanonicoId,
+              currentPeriodStart: s.current_period_start ? new Date(s.current_period_start * 1000) : null,
+              currentPeriodEnd: s.current_period_end ? new Date(s.current_period_end * 1000) : null,
+              status: itemStatus,
+              raw: item,
+              syncedAt: new Date(),
+            })
+            .onConflictDoUpdate({
+              target: assinaturaItens.stripeSubscriptionItemId,
+              set: {
+                organizacaoId: org.id,
+                assinaturaId,
+                stripeProductId: productId,
+                stripePriceId: item.price.id,
+                produto: productId ? productName.get(productId) || productId : null,
+                quantidade: item.quantity || 1,
+                precoUnitario: item.price.unit_amount == null ? null : String(item.price.unit_amount / 100),
+                moeda: "BRL",
+                recurringInterval: item.price.recurring?.interval || null,
+                revenueNature: item.price.recurring ? "MRR" : "ONE_TIME",
+                servicoCanonicoId,
+                currentPeriodStart: s.current_period_start ? new Date(s.current_period_start * 1000) : null,
+                currentPeriodEnd: s.current_period_end ? new Date(s.current_period_end * 1000) : null,
+                status: itemStatus,
+                raw: item,
+                syncedAt: new Date(),
+                updatedAt: new Date(),
+              },
+            });
+        }
+      };
+
       if (existing) {
         await tx
           .update(assinaturas)
@@ -278,6 +371,8 @@ export async function syncStripe(): Promise<{ subs: number; faturas: number; chu
             updatedAt: new Date(),
           })
           .where(eq(assinaturas.id, existing.id));
+
+        await sincronizarItens(existing.id, existing.servicoId || null);
 
         // Diff -> movimento de MRR
         const mrrAntes = Number(existing.mrr) || 0;
@@ -379,6 +474,7 @@ export async function syncStripe(): Promise<{ subs: number; faturas: number; chu
             syncedAt: new Date(),
           })
           .returning({ id: assinaturas.id });
+        if (novaAss) await sincronizarItens(novaAss.id, null);
         if (novaAss && BILLABLE.has(s.status)) {
           await registrarMovimento("novo", mrr, 0, mrr, novaAss.id, contrato?.id || null, lead.id, s.start_date ? new Date(s.start_date * 1000) : new Date());
         }

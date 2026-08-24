@@ -8,12 +8,15 @@
 import { db } from "@/lib/db";
 import { eq } from "drizzle-orm";
 import { contratos } from "@/lib/db/schema";
-import type { SignatureProvider, SignatureStatus, EnviarParaAssinaturaResult, ConfirmarAssinaturaOpts, ConfirmarAssinaturaResult } from "@/lib/crm/signature/provider";
+import type { SignatureProvider, SignatureStatus, EnviarParaAssinaturaResult, ConfirmarAssinaturaOpts, ConfirmarAssinaturaResult, EnviarParaAssinaturaOpts } from "@/lib/crm/signature/provider";
 
 export class SimpleElectronicSignatureProvider implements SignatureProvider {
   readonly nome = "simple_electronic";
 
-  async enviarParaAssinatura(contratoId: string): Promise<EnviarParaAssinaturaResult> {
+  async enviarParaAssinatura(contratoId: string, opts?: EnviarParaAssinaturaOpts): Promise<EnviarParaAssinaturaResult> {
+    if ((opts?.signatarios?.length || 0) > 1) {
+      throw new Error("Múltiplos signatários exigem um provider de assinatura configurado (DOCUMENSO_API_URL/DOCUMENSO_API_KEY).");
+    }
     // Não existe envio real (não há API externa) — o link público JÁ é a
     // "disponibilização pra assinatura". providerRef = o próprio contrato,
     // já que não há um ID de terceiro pra rastrear.

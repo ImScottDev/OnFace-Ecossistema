@@ -2,12 +2,12 @@
 // Ver lib/crm/fulfillment.ts pra contexto completo do modelo.
 import { Hono } from "hono";
 import { db } from "@/lib/db";
-import { fulfillments, fulfillmentItens, servicosCanonicos, contratos, negocios, usuarios, empresas, fulfillmentFormularios, tarefas, leads, propostas, atividades } from "@/lib/db/schema";
+import { fulfillments, fulfillmentItens, servicosCanonicos, contratos, negocios, usuarios, empresas, fulfillmentFormularios, tarefas, leads, propostas, atividades, fulfillmentLinhasPortabilidade, fulfillmentRamais } from "@/lib/db/schema";
 import { eq, and, sql, inArray, desc } from "drizzle-orm";
 import { z } from "zod";
 import { getCtx } from "../compat.js";
 import { registrarMudancaResponsavel } from "@/lib/crm/owner";
-import { PABX_CHECKLIST, AI_CHECKLIST_BASE, WHITE_LABEL_CHECKLIST_PLACEHOLDER, FASE_PABX_POR_WORKSTREAM } from "@/lib/crm/fulfillment";
+import { PABX_CHECKLIST, AI_CHECKLIST_BASE, WHITE_LABEL_CHECKLIST, FASE_PABX_POR_WORKSTREAM } from "@/lib/crm/fulfillment";
 
 const app = new Hono();
 
@@ -30,11 +30,21 @@ async function carregarFulfillment(fulfillmentId: string, organizacaoId: string)
   // "Atividades recentes" (referência de UX, 19/08) — completedAt/completedBy
   // já são reais (setados de verdade no PATCH de item, não fabricados aqui).
   const itensRaw = await db.select().from(fulfillmentItens).where(eq(fulfillmentItens.fulfillmentId, fulfillmentId)).orderBy(fulfillmentItens.ordem);
-  const completedByIds = [...new Set(itensRaw.map((i) => i.completedBy).filter((id): id is string => !!id))];
-  const completedByUsuarios = completedByIds.length > 0
-    ? await db.select({ id: usuarios.id, nome: usuarios.nome }).from(usuarios).where(inArray(usuarios.id, completedByIds))
+  // Responsável por item (20/08) — mesmo padrão de completedByNome: resolve
+  // nome numa query só, sem N+1. usuariosById cobre completedBy E
+  // responsavelId (podem ser pessoas diferentes).
+  const usuarioIds = [...new Set([
+    ...itensRaw.map((i) => i.completedBy).filter((id): id is string => !!id),
+    ...itensRaw.map((i) => i.responsavelId).filter((id): id is string => !!id),
+  ])];
+  const usuariosEnvolvidos = usuarioIds.length > 0
+    ? await db.select({ id: usuarios.id, nome: usuarios.nome }).from(usuarios).where(inArray(usuarios.id, usuarioIds))
     : [];
-  const itens = itensRaw.map((i) => ({ ...i, completedByNome: completedByUsuarios.find((u) => u.id === i.completedBy)?.nome ?? null }));
+  const itens = itensRaw.map((i) => ({
+    ...i,
+    completedByNome: usuariosEnvolvidos.find((u) => u.id === i.completedBy)?.nome ?? null,
+    responsavelNome: usuariosEnvolvidos.find((u) => u.id === i.responsavelId)?.nome ?? null,
+  }));
   return { fulfillment, itens };
 }
 
@@ -177,7 +187,7 @@ app.get("/fulfillments/templates", async (c) => {
     templates: {
       PABX: PABX_CHECKLIST,
       CALLFACE_AI: AI_CHECKLIST_BASE,
-      WHITE_LABEL: WHITE_LABEL_CHECKLIST_PLACEHOLDER,
+      WHITE_LABEL: WHITE_LABEL_CHECKLIST,
     },
   });
 });
@@ -204,6 +214,7 @@ app.get("/fulfillments/:id", async (c) => {
       // fulfillments) — não incluído aqui, sinalizado no frontend como
       // "sem dado" em vez de inventado.
       empresaWebsite: empresas.website,
+      empresaLogoUrl: empresas.logoUrl,
     })
     .from(fulfillments)
     .innerJoin(servicosCanonicos, eq(servicosCanonicos.id, fulfillments.servicoCanonicoId))
@@ -212,6 +223,12 @@ app.get("/fulfillments/:id", async (c) => {
     .limit(1);
 
   const [formulario] = await db.select().from(fulfillmentFormularios).where(eq(fulfillmentFormularios.fulfillmentId, id)).orderBy(fulfillmentFormularios.createdAt).limit(1);
+
+  // Materialização relacional do formulário (20/08) — projeção real das
+  // linhas/ramais que o cliente submeteu, pra não deixar só no jsonb
+  // invisível. Vazio até a 1ª submissão real do formulário público.
+  const linhasPortabilidade = await db.select().from(fulfillmentLinhasPortabilidade).where(eq(fulfillmentLinhasPortabilidade.fulfillmentId, id)).orderBy(fulfillmentLinhasPortabilidade.createdAt);
+  const ramaisMaterializados = await db.select().from(fulfillmentRamais).where(eq(fulfillmentRamais.fulfillmentId, id)).orderBy(fulfillmentRamais.createdAt);
 
   // Responsável comercial (referência de UX, 19/08) — não é um "papel"
   // novo no modelo (só existe 1 responsável real por fulfillment, via
@@ -283,7 +300,7 @@ app.get("/fulfillments/:id", async (c) => {
         .limit(1)
     : [null];
 
-  return c.json({ ...carregado, ...detalhes, formulario: formulario ?? null, proximaAcao: proximaAcao ?? null, responsavelComercialNome, negocioId, propostaId, propostaNumero, atividadesEmpresa });
+  return c.json({ ...carregado, ...detalhes, formulario: formulario ?? null, linhasPortabilidade, ramaisMaterializados, proximaAcao: proximaAcao ?? null, responsavelComercialNome, negocioId, propostaId, propostaNumero, atividadesEmpresa });
 });
 
 // PATCH /fulfillments/:id — atualizar responsável/target/status macro
@@ -351,9 +368,17 @@ app.get("/fulfillments/by-negocio/:negocioId", async (c) => {
 });
 
 const updateItemSchema = z.object({
-  status: z.enum(["PENDING", "IN_PROGRESS", "BLOCKED", "DONE"]).optional(),
+  // VALIDATION (20/08, pedido Kauã) — estado real distinto de DONE, pros
+  // itens de qa_interno/validacao_cliente que já foram feitos mas ainda
+  // dependem de validação antes de fechar. Ver comentário completo em
+  // lib/db/schema.ts (fulfillmentItens.status).
+  status: z.enum(["PENDING", "IN_PROGRESS", "BLOCKED", "VALIDATION", "DONE"]).optional(),
   blockerType: z.enum(["CUSTOMER", "INTERNAL", "PROVIDER"]).nullable().optional(),
   blockerReason: z.string().nullable().optional(),
+  // Responsável por item (20/08, pedido Kauã) — mesmo PATCH, campo novo.
+  // null explícito = remove o responsável do item (cai pro fallback do
+  // fulfillment inteiro só na exibição, nunca grava esse fallback aqui).
+  responsavelId: z.string().uuid().nullable().optional(),
 });
 
 // PATCH /fulfillments/itens/:id — marcar item concluído/bloqueado. Ação
@@ -383,6 +408,19 @@ app.patch("/fulfillments/itens/:id", async (c) => {
 
   const [updated] = await db.update(fulfillmentItens).set(updateData).where(eq(fulfillmentItens.id, id)).returning();
 
+  // AssignOwner por item (20/08) — mesmo helper central de auditoria já
+  // usado em Lead/Negócio/Pessoa/Fulfillment, sem duplicar lógica.
+  if (parsed.data.responsavelId !== undefined) {
+    await registrarMudancaResponsavel({
+      organizacaoId: ctx.organizacaoId,
+      entityType: "fulfillment_item",
+      entityId: id,
+      previousOwnerId: item.responsavelId,
+      newOwnerId: parsed.data.responsavelId,
+      actorId: ctx.userId,
+    });
+  }
+
   // Estado macro simples e honesto: todos os itens DONE → fulfillment
   // COMPLETED. Qualquer item BLOCKED → fulfillment reflete o bloqueio mais
   // recente. Fora isso, IN_PROGRESS. Não é state machine rígida — só a
@@ -390,7 +428,9 @@ app.patch("/fulfillments/itens/:id", async (c) => {
   const todos = await db.select({ status: fulfillmentItens.status, blockerType: fulfillmentItens.blockerType }).from(fulfillmentItens).where(eq(fulfillmentItens.fulfillmentId, item.fulfillmentId));
   const todosDone = todos.length > 0 && todos.every((t) => t.status === "DONE");
   const bloqueado = todos.find((t) => t.status === "BLOCKED");
-  const algumEmAndamento = todos.some((t) => t.status === "IN_PROGRESS" || t.status === "DONE");
+  // VALIDATION conta como "em andamento" pro macro — item em validação não é
+  // nem parado (PENDING) nem concluído (DONE).
+  const algumEmAndamento = todos.some((t) => t.status === "IN_PROGRESS" || t.status === "DONE" || t.status === "VALIDATION");
 
   const statusMacro = todosDone ? "COMPLETED" : bloqueado ? `BLOCKED_${bloqueado.blockerType || "INTERNAL"}` : algumEmAndamento ? "IN_PROGRESS" : "NOT_STARTED";
   await db.update(fulfillments).set({ status: statusMacro, updatedAt: new Date(), completedAt: todosDone ? new Date() : null }).where(eq(fulfillments.id, item.fulfillmentId));

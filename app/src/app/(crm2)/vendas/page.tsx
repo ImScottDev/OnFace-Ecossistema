@@ -8,11 +8,11 @@ import { redirect } from "next/navigation";
 import { getMetaComercialAgregada, getMetasPorVendedor } from "@/lib/metas";
 import { getPipelineAtual, getFechadoPeriodo, getWinRate, getTicketMedio } from "@/lib/relatorios/comercial";
 import { getPipelineComercial, getNegociosTravadosResumo } from "@/lib/analytics/command-center";
+import { getPulsoPreVendas } from "@/lib/analytics/pre-vendas";
 import { getMovimentoPipeline, getPropostasPendentesCount, getNegociosSemAgendamentoCount, getPrevisoesExpiradasCount } from "@/lib/analytics/vendas";
 import { Cf2Topbar } from "@/components/crm2/Topbar";
-import { Cf2ModuleTabs } from "@/components/crm2/ModuleTabs";
-import { VENDAS_TABS } from "@/components/crm2/vendas-tabs";
 import { Cf2UnavailableMetric } from "@/components/crm2/ui/States";
+import { Cf2PreVendasPulse } from "@/components/crm2/PreVendasPulse";
 
 const brl0 = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 0, maximumFractionDigits: 0 });
 const brl2 = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -52,6 +52,8 @@ export default async function VendasVisaoGeralPage() {
     previsoesExpiradas,
     pipelineComercial,
     vendedores,
+    pulsoPreVendas,
+    pulsoPreVendasAnterior,
   ] = await Promise.all([
     db.select({ nome: organizacoes.nome }).from(organizacoes).where(eq(organizacoes.id, ctx.organizacaoId)).limit(1),
     getPipelineAtual(ctx.organizacaoId),
@@ -67,6 +69,8 @@ export default async function VendasVisaoGeralPage() {
     getPrevisoesExpiradasCount(ctx.organizacaoId),
     getPipelineComercial(ctx.organizacaoId, hoje),
     getMetasPorVendedor(ctx.organizacaoId),
+    getPulsoPreVendas(ctx.organizacaoId, inicio, fim),
+    getPulsoPreVendas(ctx.organizacaoId, inicioAnt, fimAnt),
   ]);
 
   const orgNome = org[0]?.nome || "Callface";
@@ -105,13 +109,12 @@ export default async function VendasVisaoGeralPage() {
           title="Vendas"
           subtitle="Visão executiva da operação comercial e performance do pipeline"
         />
-        <Cf2ModuleTabs items={VENDAS_TABS} />
       </div>
 
       {/* corpo escuro do módulo — grid mais sutil (opacity menor) que o
           hero da Home, igual ao "bg-grid-effect" deste frame específico. */}
       <div
-        className="flex-1 flex flex-col gap-5 px-6 pt-16 pb-6 relative"
+        className="flex-1 flex flex-col gap-5 px-6 pt-7 pb-6 relative"
         style={{
           background: "var(--cf2-chrome-bg-alt)",
           backgroundImage:
@@ -154,6 +157,8 @@ export default async function VendasVisaoGeralPage() {
             </div>
           </div>
         </div>
+
+        <Cf2PreVendasPulse pulso={pulsoPreVendas} pulsoAnterior={pulsoPreVendasAnterior} />
 
         <div className="flex gap-8 items-start">
           {/* Movimento do Pipeline */}

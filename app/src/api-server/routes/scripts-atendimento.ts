@@ -12,7 +12,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 const createSchema = z.object({
   titulo: z.string().min(1),
-  categoria: z.enum(["pre_vendas", "comercial", "entrega", "cs", "geral"]),
+  categoria: z.enum(["pre_vendas", "comercial_b2b", "implantacao_entrega", "onboarding", "cs", "cobranca_financeiro", "geral"]),
   conteudo: z.string().min(1),
 });
 const updateSchema = createSchema.partial();

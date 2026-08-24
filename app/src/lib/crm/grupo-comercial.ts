@@ -37,6 +37,7 @@ export interface GrupoComercialRow {
   commercialModel: CommercialModel;
   status: StatusGrupoComercial;
   itensIds: string[];
+  contratoId?: string | null;
 }
 
 /**
@@ -102,7 +103,7 @@ export async function formarGruposComerciais(propostaId: string): Promise<GrupoC
       await db.insert(propostaGrupoComercialItens).values({ grupoId: grupo.id, propostaItemId: item.id });
     }
 
-    grupos.push({ id: grupo.id, commercialModel, status: grupo.status as StatusGrupoComercial, itensIds: itensDoGrupo.map((i) => i.id) });
+    grupos.push({ id: grupo.id, commercialModel, status: grupo.status as StatusGrupoComercial, itensIds: itensDoGrupo.map((i) => i.id), contratoId: grupo.contratoId });
   }
 
   // Propaga o modelo/grupo pra oportunidade_itens já materializados (se
@@ -130,6 +131,11 @@ async function atualizarStatusGrupo(grupoId: string, status: StatusGrupoComercia
 
 export async function vincularContratoAoGrupo(grupoId: string, contratoId: string): Promise<void> {
   await atualizarStatusGrupo(grupoId, "contrato_enviado_assinatura", { contratoId });
+}
+
+/** Vincula um contrato já preparado, mantendo o grupo aguardando o aceite. */
+export async function vincularContratoPreparadoAoGrupo(grupoId: string, contratoId: string): Promise<void> {
+  await atualizarStatusGrupo(grupoId, "aguardando_contrato", { contratoId });
 }
 
 /**

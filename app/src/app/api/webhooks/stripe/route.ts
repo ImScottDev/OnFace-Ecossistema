@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { syncStripe } from "@/lib/integrations/stripe-sync";
 import { db } from "@/lib/db";
-import { propostas, leads, empresas, checkouts, notificacoes, usuarios } from "@/lib/db/schema";
-import { eq, and, isNull, or } from "drizzle-orm";
+import { propostas, leads, empresas, checkouts, notificacoes, usuarios, assinaturas, faturas, stripeWebhookEvents, organizacoes, auditLog } from "@/lib/db/schema";
+import { eq, and, isNull, or, sql } from "drizzle-orm";
 import { buscarCheckoutPorSessionId } from "@/lib/crm/checkout";
 import { concluirGrupo, marcarPagamentoFalhouNoGrupo } from "@/lib/crm/grupo-comercial";
 import { registrarEvidencia, marcarNegocioGanhoSeAindaNao } from "@/lib/crm/won-evidence";
 import { publicarEvento } from "@/lib/events/outbox";
+import { dispararAutomacoesFinanceiras } from "@/lib/crm/automacao-engine";
 
 /**
  * Pagamento CONFIRMADO (payment_status === "paid") — Commercial Core v2
@@ -294,6 +295,7 @@ const RELEVANT = new Set([
   "invoice.paid",
   "invoice.payment_failed",
   "invoice.finalized",
+  "invoice.updated",
   "customer.subscription.created",
   "customer.subscription.updated",
   "customer.subscription.deleted",
@@ -329,6 +331,56 @@ function verify(payload: string, sigHeader: string | null, secret: string): bool
   });
 }
 
+type StripeEventPayload = {
+  id?: string;
+  type?: string;
+  api_version?: string | null;
+  livemode?: boolean;
+  data?: { object?: Record<string, unknown> };
+};
+
+/** Resolve o tenant por vínculos persistidos antes de rodar qualquer sync. */
+async function resolveWebhookOrganization(event: StripeEventPayload): Promise<string | null> {
+  const object = event.data?.object || {};
+  const customerId = typeof object.customer === "string" ? object.customer : null;
+  const subscriptionId = typeof object.subscription === "string"
+    ? object.subscription
+    : typeof object.id === "string" && event.type?.startsWith("customer.subscription.")
+      ? object.id
+      : null;
+  const invoiceId = typeof object.id === "string" && event.type?.startsWith("invoice.") ? object.id : null;
+  const sessionId = typeof object.id === "string" && event.type?.startsWith("checkout.session.") ? object.id : null;
+  const candidates = new Set<string>();
+
+  if (customerId) {
+    const rows = await db.select({ organizacaoId: assinaturas.organizacaoId })
+      .from(assinaturas).where(eq(assinaturas.stripeCustomerId, customerId)).limit(3);
+    rows.forEach((row) => candidates.add(row.organizacaoId));
+  }
+  if (subscriptionId) {
+    const rows = await db.select({ organizacaoId: assinaturas.organizacaoId })
+      .from(assinaturas).where(eq(assinaturas.stripeSubscriptionId, subscriptionId)).limit(3);
+    rows.forEach((row) => candidates.add(row.organizacaoId));
+  }
+  if (invoiceId) {
+    const rows = await db.select({ organizacaoId: faturas.organizacaoId })
+      .from(faturas).where(and(eq(faturas.origem, "stripe"), eq(faturas.externalId, invoiceId))).limit(3);
+    rows.forEach((row) => candidates.add(row.organizacaoId));
+  }
+  if (sessionId) {
+    const rows = await db.select({ organizacaoId: checkouts.organizacaoId })
+      .from(checkouts).where(eq(checkouts.stripeSessionId, sessionId)).limit(3);
+    rows.forEach((row) => candidates.add(row.organizacaoId));
+  }
+  if (candidates.size === 1) return [...candidates][0];
+  if (candidates.size > 1) return null;
+
+  // Instalação atual de uma organização: fallback explícito e seguro. Quando
+  // houver mais de uma, o evento permanece unresolved e não faz sync global.
+  const orgs = await db.select({ id: organizacoes.id }).from(organizacoes).limit(2);
+  return orgs.length === 1 ? orgs[0].id : null;
+}
+
 export async function POST(request: NextRequest) {
   const payload = await request.text();
   const secret = process.env.STRIPE_WEBHOOK_SECRET;
@@ -345,7 +397,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "invalid signature" }, { status: 400 });
   }
 
-  let event: { type?: string; id?: string };
+  let event: StripeEventPayload;
   try {
     event = JSON.parse(payload);
   } catch {
@@ -356,6 +408,60 @@ export async function POST(request: NextRequest) {
   if (!RELEVANT.has(type)) {
     return NextResponse.json({ received: true, ignored: type });
   }
+
+  if (!event.id) {
+    return NextResponse.json({ error: "event id missing" }, { status: 400 });
+  }
+
+  const organizacaoId = await resolveWebhookOrganization(event);
+  const [inboxEvent] = await db.insert(stripeWebhookEvents).values({
+    eventId: event.id,
+    organizacaoId,
+    eventType: type,
+    apiVersion: event.api_version || null,
+    livemode: event.livemode ?? null,
+    status: organizacaoId ? "pending" : "unresolved",
+    payload: event,
+    receivedAt: new Date(),
+    updatedAt: new Date(),
+  }).onConflictDoNothing({ target: stripeWebhookEvents.eventId }).returning({ id: stripeWebhookEvents.id });
+
+  // Stripe reenvia eventos por timeout/erro. O event_id é a chave idempotente
+  // externa; se já existe, não repetimos aceite, notificação ou sync.
+  if (!inboxEvent) {
+    return NextResponse.json({ received: true, duplicate: true, eventId: event.id });
+  }
+
+  if (!organizacaoId) {
+    return NextResponse.json({ received: true, unresolved: true, eventId: event.id }, { status: 202 });
+  }
+
+  await db.update(stripeWebhookEvents)
+    .set({ status: "processing", attempts: sql`${stripeWebhookEvents.attempts} + 1`, updatedAt: new Date() })
+    .where(eq(stripeWebhookEvents.id, inboxEvent.id));
+
+  const finishInboxEvent = async (status: "processed" | "failed", lastError?: string) => {
+    await db.update(stripeWebhookEvents).set({
+      status,
+      lastError: lastError ? lastError.slice(0, 2000) : null,
+      processedAt: status === "processed" ? new Date() : null,
+      updatedAt: new Date(),
+    }).where(eq(stripeWebhookEvents.id, inboxEvent.id));
+    try {
+      await db.insert(auditLog).values({
+        organizacaoId,
+        actorId: null,
+        action: status === "processed" ? "stripe.webhook_processado" : "stripe.webhook_falhou",
+        entityType: "stripe_event",
+        entityId: inboxEvent.id,
+        before: { status: "processing", eventId: event.id, eventType: type },
+        after: { status, eventId: event.id, eventType: type, error: lastError || null },
+        source: "webhook",
+      });
+    } catch (auditError) {
+      console.error("[StripeWebhook] evento processado, mas auditoria falhou:", auditError);
+    }
+  };
 
   // checkout.session.completed dispara quando o cliente TERMINA o checkout, não quando
   // ele PAGA — pra métodos assíncronos (boleto), a sessão fica "complete" com
@@ -371,6 +477,7 @@ export async function POST(request: NextRequest) {
         // 500 de propósito: o Stripe reenvia o evento e o aceite é retentado.
         // (Antes: log + 200 = pagamento confirmado sem contrato, pra sempre.)
         console.error("[StripeWebhook] erro ao aceitar proposta (Stripe vai retentar):", e);
+        await finishInboxEvent("failed", String(e));
         return NextResponse.json({ error: "accept failed, retry" }, { status: 500 });
       }
     } else {
@@ -412,11 +519,50 @@ export async function POST(request: NextRequest) {
 
   // Sync incremental (idempotente: upsert por stripe id). Reconcilia assinaturas/faturas/churn.
   try {
-    const r = await syncStripe();
+    const r = await syncStripe(organizacaoId);
     console.log(`[StripeWebhook] ${type} -> sync: ${r.subs} subs, ${r.faturas} faturas, ${r.churns} churns`);
+
+    // Só disparamos regras financeiras depois da materialização local. Assim a
+    // automação de tag/tarefa enxerga a mesma Empresa/Service que o Financeiro.
+    const object = event.data?.object || {};
+    const customerId = typeof object.customer === "string" ? object.customer : null;
+    const invoiceId = type.startsWith("invoice.") && typeof object.id === "string" ? object.id : null;
+    const subscriptionId = typeof object.subscription === "string"
+      ? object.subscription
+      : type.startsWith("customer.subscription.") && typeof object.id === "string" ? object.id : null;
+    let gatilho: "pagamento_falhou" | "fatura_atrasada" | "fatura_paga" | "assinatura_status_alterado" | null = null;
+    if (type === "invoice.payment_failed") gatilho = "pagamento_falhou";
+    else if (type === "invoice.paid") gatilho = "fatura_paga";
+    else if (type === "invoice.updated") {
+      const status = typeof object.status === "string" ? object.status : null;
+      const dueDate = typeof object.due_date === "number" ? object.due_date * 1000 : null;
+      if (status === "paid") gatilho = "fatura_paga";
+      else if (status === "open" && dueDate != null && dueDate < Date.now()) gatilho = "fatura_atrasada";
+    } else if (type.startsWith("customer.subscription.")) gatilho = "assinatura_status_alterado";
+    if (gatilho) {
+      await dispararAutomacoesFinanceiras({
+        gatilho,
+        organizacaoId,
+        stripeCustomerId: customerId,
+        stripeInvoiceId: invoiceId,
+        stripeSubscriptionId: subscriptionId,
+        campos: {
+          stripeEvent: type,
+          stripeCustomerId: customerId,
+          stripeInvoiceId: invoiceId,
+          stripeSubscriptionId: subscriptionId,
+          status: typeof object.status === "string" ? object.status : null,
+          amountDue: typeof object.amount_due === "number" ? object.amount_due / 100 : null,
+          attemptCount: typeof object.attempt_count === "number" ? object.attempt_count : null,
+          nextPaymentAttempt: typeof object.next_payment_attempt === "number" ? new Date(object.next_payment_attempt * 1000).toISOString() : null,
+        },
+      });
+    }
+    await finishInboxEvent("processed");
     return NextResponse.json({ received: true, type, synced: r });
   } catch (e) {
     console.error("[StripeWebhook] erro no sync:", e);
+    await finishInboxEvent("failed", String(e));
     // 200 mesmo assim p/ o Stripe não ficar reenviando; o polling de 30min cobre.
     return NextResponse.json({ received: true, type, syncError: String(e) });
   }

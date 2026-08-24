@@ -32,6 +32,7 @@ export interface PropostaPdfData {
   moeda?: string | null;
   dataEmissao?: string | Date | null;
   dataValidade?: string | Date | null;
+  prazoContratoMeses?: number | null;
   condicoesPagamento?: string | null;
   totalRecorrente?: string | number | null;
   totalAvulso?: string | number | null;
@@ -312,6 +313,7 @@ export function propostaPdfHtml(p: PropostaPdfData): string {
       </tbody>
     </table>
     ${p.condicoesPagamento ? `<p class="muted" style="margin-top:12px"><strong>Condições de pagamento:</strong> ${esc(p.condicoesPagamento)}</p>` : ""}
+    ${p.prazoContratoMeses ? `<p class="muted" style="margin-top:8px"><strong>Vigência contratual:</strong> ${p.prazoContratoMeses} meses, conforme contrato aplicável.</p>` : ""}
     ${p.checkoutUrl ? `<div style="margin-top:20px;text-align:center">
       <a href="${esc(p.checkoutUrl)}" style="display:inline-block;background:${CARMIM};color:#fff;text-decoration:none;font-weight:700;font-size:14px;padding:14px 34px;border-radius:10px">Contratar e pagar agora</a>
       <p class="muted" style="margin-top:8px;font-size:10px">Link de pagamento seguro • clique para finalizar</p>

@@ -17,6 +17,8 @@ export type ConversaItem = {
   // SDR já rodou nesse contato (ai_sdr_contato_state.conversation_summary).
   // null é o caso comum hoje: não é "carregando", é "ainda não tem resumo".
   conversationSummary: string | null;
+  status: string;
+  snoozedUntil: string | null;
 };
 
 export type Cascata =

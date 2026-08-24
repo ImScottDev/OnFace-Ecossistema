@@ -14,11 +14,24 @@
  *                                                   \-> canceled
  */
 export type SignatureStatus =
-  | "contract_created" | "sent_for_signature" | "opened" | "signed" | "declined" | "expired" | "canceled";
+  | "contract_created" | "sent_for_signature" | "opened" | "partially_signed" | "signed" | "declined" | "expired" | "canceled";
 
 export interface EnviarParaAssinaturaResult {
   providerRef: string;
   status: SignatureStatus;
+}
+
+export interface SignatureRecipient {
+  nome: string;
+  email: string;
+  papel?: string | null;
+  ordem?: number | null;
+  signingUrl?: string | null;
+}
+
+export interface EnviarParaAssinaturaOpts {
+  signatarios?: SignatureRecipient[];
+  titulo?: string;
 }
 
 export interface ConfirmarAssinaturaOpts {
@@ -39,7 +52,7 @@ export interface SignatureProvider {
   readonly nome: string;
 
   /** Disponibiliza o contrato pra assinatura. Não bloqueia em rede externa no provider simples. */
-  enviarParaAssinatura(contratoId: string): Promise<EnviarParaAssinaturaResult>;
+  enviarParaAssinatura(contratoId: string, opts?: EnviarParaAssinaturaOpts): Promise<EnviarParaAssinaturaResult>;
 
   /** Cliente abriu o link/documento — best-effort, nunca lança. */
   registrarAbertura(providerRef: string): Promise<SignatureStatus>;

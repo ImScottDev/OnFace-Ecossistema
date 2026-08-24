@@ -53,7 +53,9 @@ const createSchema = z.object({
   moeda: z.enum(["BRL", "USD", "EUR", "CAD"]).default("BRL"),
   observacoes: z.string().optional(),
   condicoesPagamento: z.string().optional(),
+  prazoContratoMeses: z.number().int().positive().optional().nullable(),
   dataValidade: z.string().optional(),
+  signatarios: z.array(z.object({ nome: z.string().trim().min(1), email: z.string().trim().email(), papel: z.string().trim().optional(), ordem: z.number().int().positive().optional() })).default([]),
   itens: z.array(itemSchema).default([]),
 });
 
@@ -61,7 +63,9 @@ const updateSchema = z.object({
   moeda: z.enum(["BRL", "USD", "EUR", "CAD"]).optional(),
   observacoes: z.string().optional().nullable(),
   condicoesPagamento: z.string().optional().nullable(),
+  prazoContratoMeses: z.number().int().positive().optional().nullable(),
   dataValidade: z.string().optional().nullable(),
+  signatarios: z.array(z.object({ nome: z.string().trim().min(1), email: z.string().trim().email(), papel: z.string().trim().optional(), ordem: z.number().int().positive().optional() })).optional(),
   itens: z.array(itemSchema).min(1).optional(),
 });
 
@@ -127,6 +131,7 @@ app.get("/propostas", async (c) => {
       totalGeral: propostas.totalGeral,
       dataEmissao: propostas.dataEmissao,
       dataValidade: propostas.dataValidade,
+      prazoContratoMeses: propostas.prazoContratoMeses,
       criadoPorId: propostas.criadoPorId,
       criadoPorNome: usuarios.nome,
       proximoPasso: propostas.proximoPasso,
@@ -239,6 +244,7 @@ app.get("/propostas/:id", async (c) => {
       dataValidade: propostas.dataValidade,
       observacoes: propostas.observacoes,
       condicoesPagamento: propostas.condicoesPagamento,
+      prazoContratoMeses: propostas.prazoContratoMeses,
       moeda: propostas.moeda,
       totalRecorrente: propostas.totalRecorrente,
       totalAvulso: propostas.totalAvulso,
@@ -305,6 +311,7 @@ app.get("/propostas/:id/pdf", async (c) => {
       dataEmissao: propostas.dataEmissao,
       dataValidade: propostas.dataValidade,
       condicoesPagamento: propostas.condicoesPagamento,
+      prazoContratoMeses: propostas.prazoContratoMeses,
       totalRecorrente: propostas.totalRecorrente,
       totalAvulso: propostas.totalAvulso,
       totalGeral: propostas.totalGeral,
@@ -398,10 +405,13 @@ app.get("/propostas/:id/publica", async (c) => {
   const grupos = await Promise.all(gruposRows.map(async (grupo) => {
     const itensDoGrupoIds = (await db.select({ propostaItemId: propostaGrupoComercialItens.propostaItemId }).from(propostaGrupoComercialItens).where(eq(propostaGrupoComercialItens.grupoId, grupo.id))).map((r) => r.propostaItemId);
 
-    let contrato: { id: string; corpoGerado: string | null; assinaturaStatus: string; status: string } | null = null;
+    let contrato: { id: string; corpoGerado: string | null; assinaturaStatus: string; signatureStatus: string | null; status: string; signingUrl?: string | null } | null = null;
     if (grupo.contratoId) {
       const [c2] = await db.select().from(contratos).where(eq(contratos.id, grupo.contratoId)).limit(1);
-      if (c2) contrato = { id: c2.id, corpoGerado: c2.corpoGerado, assinaturaStatus: c2.assinaturaStatus, status: c2.status };
+      if (c2) {
+        const signatarios = Array.isArray(c2.signatarios) ? c2.signatarios as Array<{ signingUrl?: string | null }> : [];
+        contrato = { id: c2.id, corpoGerado: c2.corpoGerado, assinaturaStatus: c2.assinaturaStatus, signatureStatus: c2.signatureStatus, status: c2.status, signingUrl: signatarios.find((s) => s.signingUrl)?.signingUrl || null };
+      }
     }
 
     const base = process.env.NEXTAUTH_URL || "https://crm.callface.io";
@@ -446,6 +456,7 @@ app.get("/propostas/:id/publica", async (c) => {
     status: proposta.status,
     moeda: proposta.moeda,
     dataValidade: proposta.dataValidade,
+    prazoContratoMeses: proposta.prazoContratoMeses,
     condicoesPagamento: proposta.condicoesPagamento,
     totalRecorrente: proposta.totalRecorrente,
     totalAvulso: proposta.totalAvulso,
@@ -514,6 +525,17 @@ app.post("/propostas/:id/assinar-publico", async (c) => {
 
   const [proposta] = await db.select().from(propostas).where(eq(propostas.id, id)).limit(1);
   if (!proposta) return c.json({ error: "Proposta não encontrada" }, 404);
+  if (proposta.status !== "aceita") return c.json({ error: "A proposta precisa estar aceita antes da assinatura do contrato." }, 400);
+
+  const [vinculoContrato] = await db.select({ id: propostaGrupoComercial.id })
+    .from(propostaGrupoComercial)
+    .where(and(
+      eq(propostaGrupoComercial.propostaId, proposta.id),
+      eq(propostaGrupoComercial.contratoId, contratoId),
+      eq(propostaGrupoComercial.organizacaoId, proposta.organizacaoId),
+    ))
+    .limit(1);
+  if (!vinculoContrato) return c.json({ error: "Esse contrato não pertence à proposta informada." }, 400);
 
   const ip = c.req.header("x-forwarded-for")?.split(",")[0]?.trim() || c.req.header("x-real-ip") || "desconhecido";
   const result = await assinarContratoPublico(contratoId, nomeCompleto, ip);
@@ -590,7 +612,9 @@ app.post("/propostas", async (c) => {
       moeda: parsed.data.moeda,
       observacoes: parsed.data.observacoes,
       condicoesPagamento: parsed.data.condicoesPagamento,
+      prazoContratoMeses: parsed.data.prazoContratoMeses,
       dataValidade: parsed.data.dataValidade,
+      signatarios: parsed.data.signatarios,
       criadoPorId: ctx.userId,
     });
     return c.json({
@@ -632,7 +656,9 @@ app.post("/propostas", async (c) => {
     moeda: parsed.data.moeda,
     observacoes: parsed.data.observacoes,
     condicoesPagamento: parsed.data.condicoesPagamento,
+    prazoContratoMeses: parsed.data.prazoContratoMeses,
     dataValidade: parsed.data.dataValidade,
+    signatarios: parsed.data.signatarios,
     itens: parsed.data.itens,
     criadoPorId: ctx.userId,
   });
@@ -666,7 +692,9 @@ app.patch("/propostas/:id", async (c) => {
   if (parsed.data.moeda !== undefined) updateData.moeda = parsed.data.moeda;
   if (parsed.data.observacoes !== undefined) updateData.observacoes = parsed.data.observacoes;
   if (parsed.data.condicoesPagamento !== undefined) updateData.condicoesPagamento = parsed.data.condicoesPagamento;
+  if (parsed.data.prazoContratoMeses !== undefined) updateData.prazoContratoMeses = parsed.data.prazoContratoMeses;
   if (parsed.data.dataValidade !== undefined) updateData.dataValidade = parsed.data.dataValidade;
+  if (parsed.data.signatarios !== undefined) updateData.signatarios = parsed.data.signatarios;
 
   // Replace items if provided
   if (parsed.data.itens) {
@@ -861,6 +889,7 @@ app.post("/propostas/:id/nova-versao", async (c) => {
       dataValidade: original.dataValidade,
       observacoes: original.observacoes,
       condicoesPagamento: original.condicoesPagamento,
+      prazoContratoMeses: original.prazoContratoMeses,
       totalRecorrente: original.totalRecorrente,
       totalAvulso: original.totalAvulso,
       totalGeral: original.totalGeral,

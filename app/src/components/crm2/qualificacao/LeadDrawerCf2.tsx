@@ -1,14 +1,18 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Phone, MessageCircle, Mail, Plus, Calendar, ChevronDown, ArrowRight, Check, Send, Briefcase } from "lucide-react";
+import {
+  Phone, MessageCircle, Mail, Plus, Calendar, ChevronDown, Send, Briefcase,
+  X, AlertTriangle, ClipboardCheck,
+} from "lucide-react";
 import { DetailDrawer } from "@/components/crm/DetailDrawer";
 import { QualificacaoSdrSection } from "@/components/crm/QualificacaoSdrSection";
 import { LigacoesSection } from "@/components/crm/LigacoesSection";
 import { TarefaFormModal } from "@/components/crm/tarefas/TarefaFormModal";
-import { callfaceCallUrl } from "@/lib/utils/callface-call";
+import { digitsForDialer } from "@/lib/utils/callface-call";
 import { usePipelineConfig } from "@/hooks/usePipelineConfig";
 import { SDR_STAGES } from "@/lib/crm/pipeline";
 import { stageAge, resolveDisplayStage, resolveContextoCliente, type Lead as KanbanLead } from "./shared";
@@ -19,6 +23,7 @@ interface Negocio { id: string; titulo: string; status: string; createdAt: strin
 interface Atividade { id: string; tipo: string; titulo?: string | null; descricao?: string | null; createdAt: string; usuarioNome?: string | null }
 interface Nota { id: string; conteudo: string; autorNome?: string | null; createdAt: string }
 interface Tarefa { id: string; titulo: string; prioridade: string; dataVencimento?: string | null; concluida: boolean }
+interface LigacaoResumo { id: string; createdAt: string; callDate?: string | null; callStatus?: string | null }
 
 interface LeadDetail extends KanbanLead {
   email?: string | null;
@@ -48,23 +53,56 @@ function timeAgoShort(dateStr: string): string {
   return `${Math.floor(mins / 1440)}d`;
 }
 
+/** "há 2h" / "ontem 15:32" / "12 ago" — formato da seção compacta
+ * "Atendimento Recente" (Figma 230:8825, 23/08); a Timeline unificada
+ * completa (mais abaixo) continua usando `timeAgoShort`, sem mudar. */
+function formatQuando(iso: string): string {
+  const d = new Date(iso);
+  const now = new Date();
+  const mesmodia = d.toDateString() === now.toDateString();
+  const ontemRef = new Date(now); ontemRef.setDate(now.getDate() - 1);
+  const ontem = d.toDateString() === ontemRef.toDateString();
+  const hhmm = d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  if (mesmodia) {
+    const mins = Math.floor((now.getTime() - d.getTime()) / 60000);
+    return mins < 60 ? `há ${Math.max(mins, 0)}min` : `há ${Math.floor(mins / 60)}h`;
+  }
+  if (ontem) return `ontem ${hhmm}`;
+  return `${d.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })} ${hhmm}`;
+}
+
+function callStatusInfo(status?: string | null): { label: string; color: string } {
+  const s = String(status || "").toUpperCase();
+  if (["FINISHED", "ANSWERED", "COMPLETED"].includes(s)) return { label: "Ligação atendida", color: "#4ade80" };
+  if (["MISSED", "NOT_ANSWERED", "NO_ANSWER"].includes(s)) return { label: "Ligação não atendida", color: "#f59e0b" };
+  if (["NOT_COMPLETED", "FAILED", "BUSY"].includes(s)) return { label: "Ligação não completada", color: "#f87171" };
+  return { label: "Ligação registrada", color: "var(--cf2-chrome-text-secondary)" };
+}
+
+interface Tokens {
+  bg: string; bgAlt: string; surface: string; surfaceAlt: string; border: string;
+  textPrimary: string; textSecondary: string; success: string; warningBg: string; warningText: string; danger: string;
+}
+
 const TIPO_LABEL: Record<string, string> = { ligacao: "Ligação", whatsapp: "WhatsApp", email: "E-mail", nota: "Nota", reuniao: "Reunião", proposta_enviada: "Proposta" };
+const TIPO_DOT: Record<string, string> = { whatsapp: "#4ade80", email: "var(--cf2-chrome-text-secondary)", nota: "var(--cf2-chrome-text-secondary)", reuniao: "#8e27ef", proposta_enviada: "#22C55E" };
 const EMPTY_USUARIOS = new Map<string, OrgUsuario>();
 
 /**
- * Drawer novo de lead (Figma node 230:8825, 17/08) — substitui o LeadDrawer
- * legado (dark, `(crm)`) SÓ no board de Pré-vendas do CRM2. Reaproveita 100%
- * da lógica real que já existia: fetch `/api/leads/:id` (mesma query key
- * `["lead", leadId]` do drawer legado, cache compartilhado), `/api/notas`,
+ * Drawer novo de lead (Figma node 230:8825, reskin dark 23/08) — substitui o
+ * LeadDrawer legado (dark, `(crm)`) SÓ no board de Pré-vendas do CRM2.
+ * Reaproveita 100% da lógica real que já existia: fetch `/api/leads/:id`
+ * (mesma query key `["lead", leadId]` do drawer legado, cache compartilhado),
+ * `/api/notas`, `/api/ligacoes` (mesma fonte real da LigacoesSection),
  * `QualificacaoSdrSection` (campos CNPJ/Cargo/Necessidade-Dor/Tomador de
- * decisão, De/Para pedido pelo Kauã 17/08 — substituiu o conjunto antigo),
- * `LigacoesSection` (histórico real de ligação com gravação/transcrição/IA) e
- * `TarefaFormModal`. Mover etapa/Qualificar/Desqualificar chamam `onMove`,
- * a MESMA função (`handleMove`) que os cards do Kanban já usam — nenhuma
- * regra de negócio nova.
+ * decisão) e `TarefaFormModal`. Mover etapa/Qualificar/Desqualificar chamam
+ * `onMove`, a MESMA função (`handleMove`) que os cards do Kanban já usam —
+ * nenhuma regra de negócio nova. "Ligar"/"WhatsApp"/"E-mail" navegam pra
+ * `/atendimento?leadId=X&canal=...` (mesmo deep link que o Negócio já usa),
+ * com `telefone` extra pra pré-preencher o discador na aba Ligar.
  */
 export function Cf2LeadDrawer({
-  leadId, open, onClose, onOpenEmpresa, onOpenNegocio, onMove, usuariosById = EMPTY_USUARIOS,
+  leadId, open, onClose, onOpenEmpresa, onOpenNegocio, onMove, usuariosById = EMPTY_USUARIOS, dark = false,
 }: {
   leadId: string | null;
   open: boolean;
@@ -77,7 +115,24 @@ export function Cf2LeadDrawer({
    * de fingir uma ação que não faz nada. */
   onMove?: (id: string, status: string) => void;
   usuariosById?: Map<string, OrgUsuario>;
+  /** Reskin dark (23/08, Figma node 230:8825) — só o board de Pré-vendas
+   * (`qualificacao/Workspace.tsx`) passa `dark`. Contatos & Empresas,
+   * Prospecção e a Página Completa do lead continuam no tema claro
+   * original (default `false`) — mesmo drawer, zero regressão visual nas
+   * outras 3 telas que já usam este componente. */
+  dark?: boolean;
 }) {
+  const T: Tokens = dark
+    ? {
+        bg: "var(--cf2-chrome-bg-alt)", bgAlt: "var(--cf2-chrome-bg-alt)", surface: "var(--cf2-chrome-surface-active)", surfaceAlt: "var(--cf2-chrome-bg)",
+        border: "var(--cf2-chrome-border-subtle)", textPrimary: "var(--cf2-chrome-text-primary)", textSecondary: "var(--cf2-chrome-text-secondary)",
+        success: "#4ade80", warningBg: "rgba(245,158,11,0.12)", warningText: "#f3b75f", danger: "#f87171",
+      }
+    : {
+        bg: "#ffffff", bgAlt: "#ffffff", surface: "var(--cf2-bg-canvas)", surfaceAlt: "var(--cf2-bg-surface)",
+        border: "var(--cf2-border-default)", textPrimary: "var(--cf2-text-primary)", textSecondary: "var(--cf2-text-tertiary)",
+        success: "var(--cf2-success-text)", warningBg: "var(--cf2-warning-bg)", warningText: "var(--cf2-warning-text)", danger: "var(--cf2-danger-text)",
+      };
   const qc = useQueryClient();
   const { origens } = usePipelineConfig();
   const [tab, setTab] = useState<Tab>("Tudo");
@@ -86,6 +141,7 @@ export function Cf2LeadDrawer({
   const [noteText, setNoteText] = useState("");
   const [noteOpen, setNoteOpen] = useState(false);
   const noteRef = useRef<HTMLTextAreaElement>(null);
+  const [qualProgress, setQualProgress] = useState({ count: 0, total: 4, tomadorDecisao: "" });
 
   const { data: detail, isLoading } = useQuery({
     queryKey: ["lead", leadId],
@@ -108,6 +164,20 @@ export function Cf2LeadDrawer({
     queryKey: ["notas", "lead", leadId],
     queryFn: async () => {
       const r = await fetch(`/api/notas?leadId=${leadId}`);
+      if (!r.ok) return [];
+      return r.json();
+    },
+    enabled: !!leadId && open,
+  });
+
+  // Mesma fonte real da LigacoesSection (`/api/ligacoes`) — só usada aqui pra
+  // alimentar o preview compacto "Atendimento Recente" com o status REAL da
+  // ligação (atendida/não atendida), sem fabricar esse sinal a partir de
+  // `atividades` (que não guarda call_status).
+  const { data: ligacoes = [] } = useQuery<LigacaoResumo[]>({
+    queryKey: ["ligacoes-resumo", leadId],
+    queryFn: async () => {
+      const r = await fetch(`/api/ligacoes?leadId=${leadId}`);
       if (!r.ok) return [];
       return r.json();
     },
@@ -154,6 +224,7 @@ export function Cf2LeadDrawer({
   const age = lead ? stageAge(lead.updatedAt, lead.sdrStatus || "pending") : null;
   const contextoCliente = lead ? resolveContextoCliente(lead, detail?.contratos) : null;
   const origemLabel = lead?.origem ? origens.find((o) => o.key === lead.origem)?.label || lead.origem : "—";
+  const isOportunidade = !!lead?.negocioCount && lead.negocioCount > 0;
 
   const feed = [
     ...atividades.filter((a) => a.tipo !== "ligacao").map((a) => ({ id: a.id, tipo: a.tipo, titulo: a.titulo || TIPO_LABEL[a.tipo] || a.tipo, sub: a.descricao || undefined, createdAt: a.createdAt, usuarioNome: a.usuarioNome })),
@@ -166,111 +237,144 @@ export function Cf2LeadDrawer({
     : tab === "Notas" ? feed.filter((e) => e.tipo === "nota")
     : [];
 
+  // Preview "Atendimento Recente" (Figma) — merge de feed (whatsapp/email/
+  // reunião/nota) + ligações reais, só os 3 mais recentes.
+  const atendimentoRecente = [
+    ...feed.map((e) => ({ id: e.id, createdAt: e.createdAt, label: e.titulo, color: TIPO_DOT[e.tipo] || T.textSecondary })),
+    ...ligacoes.map((l) => { const info = callStatusInfo(l.callStatus); return { id: l.id, createdAt: l.callDate || l.createdAt, label: info.label, color: info.color }; }),
+  ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 3);
+
+  const telefoneDialer = lead?.telefone ? digitsForDialer(lead.telefone) : "";
+  const atendimentoHref = (canal: "whatsapp" | "email" | "ligacao") => {
+    const params = new URLSearchParams({ leadId: leadId || "", canal });
+    if (canal === "ligacao" && telefoneDialer) params.set("telefone", telefoneDialer);
+    return `/atendimento?${params.toString()}`;
+  };
+
+  // Atribuição de origem — mesmos campos reais usados em clientes-crm2.ts
+  // (origemAquisicao): "criativo" é utm_content (nome legível) quando existe,
+  // senão o ID real do anúncio da Meta; nunca um nome inventado.
+  const criativo = lead?.utmContent || lead?.metaAdId || null;
+  const utmQuery = lead ? [
+    lead.utmSource ? `utm_source=${lead.utmSource}` : null,
+    lead.utmMedium ? `utm_medium=${lead.utmMedium}` : null,
+    lead.utmCampaign ? `utm_campaign=${lead.utmCampaign}` : null,
+  ].filter(Boolean).join("&") : "";
+
   const footer = lead && onMove && (
-    <div className="p-3 flex items-center justify-between" style={{ background: "var(--cf2-bg-surface)", borderTop: "1px solid var(--cf2-border-default)" }}>
-      <div className="flex items-center gap-3 relative">
-        <button onClick={() => setMoveMenuOpen((v) => !v)} className="flex items-center gap-2 h-10 px-3 rounded-xl text-[13px] font-semibold" style={{ border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }}>
-          <ArrowRight className="w-4 h-4" /> Mover etapa <ChevronDown className="w-3.5 h-3.5" />
-        </button>
-        {moveMenuOpen && (
-          <div className="absolute bottom-12 left-0 min-w-[180px] rounded-xl py-1 z-10" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)", boxShadow: "0 8px 16px rgba(15,23,42,0.12)" }}>
-            {SDR_STAGES.map((s) => (
-              <button key={s.key} onClick={() => { onMove(leadId!, s.key); setMoveMenuOpen(false); }} className="w-full text-left px-3 py-1.5 text-[13px] flex items-center gap-2" style={{ color: "var(--cf2-text-primary)" }}>
-                <span className="w-2 h-2 rounded-full shrink-0" style={{ background: s.color }} /> {s.label}
-              </button>
-            ))}
+    <div className="p-3 flex flex-col gap-2" style={{ background: T.surfaceAlt, borderTop: `1px solid ${T.border}` }}>
+      {isOportunidade ? (
+        lead.negocioPrincipal && onOpenNegocio && (
+          <button onClick={() => onOpenNegocio(lead.negocioPrincipal!.id)} className="flex items-center justify-center gap-2 h-11 rounded-xl text-[13px] font-bold" style={{ background: T.surface, border: `1px solid ${T.border}`, color: T.textPrimary }}>
+            <Briefcase className="w-4 h-4" style={{ color: T.success }} /> Abrir oportunidade
+          </button>
+        )
+      ) : (
+        <>
+          <button onClick={() => onMove(leadId!, "qualified")} className="flex items-center justify-center gap-2 h-11 rounded-xl text-[13px] font-bold" style={{ background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" }}>
+            <Calendar className="w-4 h-4" /> Agendar reunião
+          </button>
+          <div className="relative">
+            <button onClick={() => setMoveMenuOpen((v) => !v)} className="w-full flex items-center justify-center gap-2 h-10 rounded-xl text-[13px] font-semibold" style={{ border: `1px solid ${T.border}`, color: T.textPrimary }}>
+              Qualificar <ChevronDown className="w-3.5 h-3.5" />
+            </button>
+            {moveMenuOpen && (
+              <div className="absolute bottom-11 left-0 right-0 rounded-xl py-1 z-10" style={{ background: T.surface, border: `1px solid ${T.border}`, boxShadow: "0 8px 16px rgba(0,0,0,0.35)" }}>
+                <div className="px-3 py-1 text-[9px] uppercase tracking-wide" style={{ color: T.textSecondary }}>Mover etapa</div>
+                {SDR_STAGES.filter((s) => s.key !== (lead.sdrStatus || "pending")).map((s) => (
+                  <button key={s.key} onClick={() => { onMove(leadId!, s.key); setMoveMenuOpen(false); }} className="w-full text-left px-3 py-1.5 text-[13px] flex items-center gap-2" style={{ color: T.textPrimary }}>
+                    <span className="w-2 h-2 rounded-full shrink-0" style={{ background: s.color }} /> {s.label}
+                  </button>
+                ))}
+                <div className="my-1 h-px" style={{ background: T.border }} />
+                <button onClick={() => { onMove(leadId!, "disqualified"); setMoveMenuOpen(false); }} className="w-full text-left px-3 py-1.5 text-[13px] font-bold" style={{ color: T.danger }}>Desqualificar</button>
+              </div>
+            )}
           </div>
-        )}
-        <button onClick={() => onMove(leadId!, "disqualified")} className="text-[13px] font-bold" style={{ color: "#dc2626" }}>Desqualificar</button>
-      </div>
-      <button onClick={() => onMove(leadId!, "qualified")} className="flex items-center gap-2 h-10 px-4 rounded-xl text-[13px] font-bold" style={{ background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" }}>
-        <Check className="w-4 h-4" /> Qualificar lead →
-      </button>
+        </>
+      )}
     </div>
   );
 
   return (
     <>
-    <DetailDrawer open={open && !!leadId} onClose={onClose} bare panelBg="#ffffff" width="w-full sm:w-[500px]" footer={footer}>
-      {isLoading && <div className="p-6 text-sm" style={{ color: "var(--cf2-text-tertiary)" }}>Carregando...</div>}
+    <DetailDrawer open={open && !!leadId} onClose={onClose} bare panelBg={T.bgAlt} borderColor={T.border} width="w-full sm:w-[500px]" footer={footer}>
+      {isLoading && <div className="p-6 text-sm" style={{ color: T.textSecondary }}>Carregando...</div>}
       {lead && (
         <div className="flex flex-col gap-4 p-5">
           {/* header */}
           <div className="flex flex-col gap-3">
-            <div className="flex flex-col gap-1.5">
-              <div className="flex items-center gap-2.5">
-                <p className="text-[18px] font-bold" style={{ color: "var(--cf2-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>{fullName}</p>
-                {typeof lead.leadScore === "number" && lead.leadScore > 0 && (
-                  <span className="flex items-center justify-center rounded-full text-[12px] font-extrabold shrink-0" style={{ width: 28, height: 28, background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" }}>{lead.leadScore}</span>
-                )}
-              </div>
-              <p className="text-[13px]" style={{ color: "var(--cf2-text-tertiary)" }}>{[lead.empresa, lead.cargo].filter(Boolean).join(" · ") || "—"}</p>
-              {/* Contexto atual (cliente/oportunidade) é sempre o badge PRIMÁRIO —
-                  correção 19/08: o estágio de SDR é processo histórico, nunca a
-                  identidade atual da pessoa (ex: cliente ativo com um Lead antigo
-                  "Desqualificado" não pode aparecer como se estivesse desqualificado). */}
-              {contextoCliente && (
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className="px-2.5 py-1 rounded-full text-[12px] font-bold" style={{ background: contextoCliente.bg, color: contextoCliente.color }}>{contextoCliente.label}</span>
-                  {lead.negocioPrincipal && !["ganho", "perdido"].includes(lead.negocioPrincipal.status) && (
-                    <span className="px-2.5 py-1 rounded-full text-[12px] font-semibold" style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-secondary)" }}>Oportunidade aberta</span>
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex flex-col gap-1.5 min-w-0">
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  <p className="text-[18px] font-bold" style={{ color: T.textPrimary, fontFamily: "var(--cf2-font-heading)" }}>{fullName}</p>
+                  {typeof lead.leadScore === "number" && lead.leadScore > 0 && (
+                    <span className="flex items-center justify-center rounded-full text-[12px] font-extrabold shrink-0" style={{ width: 26, height: 26, background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" }}>{lead.leadScore}</span>
+                  )}
+                  {/* Contexto atual (cliente/oportunidade) é sempre o badge PRIMÁRIO —
+                      correção 19/08: o estágio de SDR é processo histórico, nunca a
+                      identidade atual da pessoa. */}
+                  {contextoCliente ? (
+                    <span className="px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-wide" style={{ background: contextoCliente.bg, color: contextoCliente.color }}>{contextoCliente.label}</span>
+                  ) : (
+                    <span className="px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-wide" style={{ background: `${stage.color}22`, color: stage.color }}>{stage.label}</span>
                   )}
                 </div>
-              )}
-              <div className="flex items-center gap-2.5">
-                {contextoCliente ? (
-                  <span className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>Lead histórico: {stage.label}</span>
-                ) : (
-                  <span className="px-2.5 py-1 rounded-full text-[12px] font-semibold" style={{ background: `${stage.color}18`, color: stage.color }}>{stage.label}</span>
-                )}
-                {age && !contextoCliente && <span className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>Tempo na etapa: {age.text}</span>}
+                <p className="text-[13px]" style={{ color: T.textSecondary }}>{[lead.empresa, lead.cargo].filter(Boolean).join(" · ") || "—"}</p>
+                {contextoCliente && <span className="text-[11px]" style={{ color: T.textSecondary }}>Lead histórico: {stage.label}</span>}
+                {age && !contextoCliente && <span className="text-[11px]" style={{ color: T.textSecondary }}>Tempo na etapa: {age.text}{age.breached ? " · SLA vencido" : ""}</span>}
               </div>
+              <button onClick={onClose} className="p-1 rounded shrink-0" style={{ color: T.textSecondary }}>
+                <X className="w-4 h-4" />
+              </button>
             </div>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <span className="flex items-center justify-center rounded-full text-[11px] font-extrabold shrink-0" style={{ width: 28, height: 28, background: "var(--cf2-text-tertiary)", color: "var(--cf2-text-on-accent)" }}>{initials(owner?.nome)}</span>
-                <span className="text-[12px]" style={{ color: "var(--cf2-text-secondary)" }}>{owner?.nome || "Sem responsável"}</span>
+                <span className="flex items-center justify-center rounded-full text-[11px] font-extrabold shrink-0" style={{ width: 26, height: 26, background: T.surface, color: T.textPrimary }}>{initials(owner?.nome)}</span>
+                <span className="text-[12px]" style={{ color: T.textSecondary }}>{owner?.nome || "Sem responsável"}</span>
               </div>
-              <a href={`/contatos/${leadId}`} className="text-[12px] font-semibold" style={{ color: "var(--cf2-success-text)" }}>Abrir página completa →</a>
+              <a href={`/contatos/${leadId}`} className="text-[12px] font-semibold" style={{ color: T.success }}>Abrir página completa →</a>
             </div>
-            <p className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>{[origemLabel, lead.utmCampaign].filter(Boolean).join(" · ")}</p>
           </div>
 
-          {/* ações rápidas */}
-          <div className="flex flex-col gap-2.5">
-            <p className="text-[14px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Ações rápidas</p>
-            <div className="flex gap-2">
-              <QuickAction icon={Phone} label="Ligar" href={lead.telefone ? callfaceCallUrl(lead.telefone) : undefined} />
-              <QuickAction icon={MessageCircle} label="WhatsApp" href={lead.telefone ? `https://wa.me/${lead.telefone.replace(/\D/g, "")}` : undefined} />
-              <QuickAction icon={Mail} label="E-mail" href={lead.email ? `mailto:${lead.email}` : undefined} />
-              <QuickAction icon={Plus} label="Tarefa" onClick={() => setTarefaModalOpen(true)} />
-              <QuickAction icon={Briefcase} label="Oportunidade" href={`/negocios/novo?leadId=${leadId}`} />
-            </div>
-            {proximaTarefa ? (
-              <div className="flex items-center gap-2">
-                <Calendar className="w-4 h-4 shrink-0" style={{ color: "var(--cf2-text-tertiary)" }} />
-                <p className="text-[12px] flex-1" style={{ color: "var(--cf2-text-secondary)" }}>Próxima ação: {proximaTarefa.titulo}, {new Date(proximaTarefa.dataVencimento!).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}</p>
-              </div>
-            ) : (
-              <div className="flex items-center gap-2">
-                <Calendar className="w-4 h-4 shrink-0" style={{ color: "var(--cf2-text-tertiary)" }} />
-                <p className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>Sem próxima ação agendada</p>
-              </div>
-            )}
+          {/* ações rápidas — Ligar/WhatsApp/E-mail navegam pro Atendimento
+              (mesmo deep link `?leadId=X` que o Negócio já usa), sem inventar
+              um fluxo de discagem paralelo. */}
+          <div className="flex gap-2">
+            <QuickPill icon={Phone} label="Ligar" href={lead.telefone ? atendimentoHref("ligacao") : undefined}  T={T} />
+            <QuickPill icon={MessageCircle} label="WhatsApp" href={lead.telefone || lead.whatsapp ? atendimentoHref("whatsapp") : undefined}  T={T} />
+            <QuickPill icon={Mail} label="E-mail" href={lead.email ? atendimentoHref("email") : undefined}  T={T} />
           </div>
+
+          {/* próxima ação + responsável SDR */}
+          <div className="flex items-center justify-between gap-3 px-3.5 py-3 rounded-2xl" style={{ background: T.surface, border: `1px solid ${T.border}` }}>
+            <div className="flex items-center gap-2 min-w-0">
+              <Calendar className="w-4 h-4 shrink-0" style={{ color: T.textSecondary }} />
+              {proximaTarefa ? (
+                <p className="text-[12px] truncate" style={{ color: T.textPrimary }}>
+                  <span style={{ color: T.textSecondary }}>Próxima ação: </span>
+                  {proximaTarefa.titulo} · {new Date(proximaTarefa.dataVencimento!).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}
+                </p>
+              ) : (
+                <p className="text-[12px]" style={{ color: T.textSecondary }}>Sem próxima ação agendada</p>
+              )}
+            </div>
+            <button onClick={() => setTarefaModalOpen(true)} title="Agendar próxima ação" className="p-1 rounded shrink-0" style={{ color: T.success }}>
+              <Plus className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          <p className="text-[11px] -mt-2" style={{ color: T.textSecondary }}>Responsável SDR: <span style={{ color: T.textPrimary, fontWeight: 600 }}>{owner?.nome || "—"}</span></p>
 
           {/* resumo do lead */}
-          <div className="flex flex-col gap-3 p-4 rounded-2xl" style={{ background: "var(--cf2-bg-canvas)", border: "1px solid var(--cf2-border-default)" }}>
-            <p className="text-[14px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Resumo do lead</p>
+          <div className="flex flex-col gap-3 p-4 rounded-2xl" style={{ background: T.surface, border: `1px solid ${T.border}` }}>
+            <p className="text-[12px] font-bold uppercase tracking-wide" style={{ color: T.textSecondary }}>Resumo do lead</p>
             <div className="flex flex-col gap-2.5 text-[12px]">
-              <KV label="Telefone" value={lead.telefone || "—"} />
-              <KV label="E-mail" value={lead.email || "—"} />
-              <KV label="Empresa" value={lead.empresa || "—"} onClick={lead.empresaId ? () => onOpenEmpresa?.(lead.empresaId!) : undefined} />
-              <KV label="Cargo" value={lead.cargo || "—"} />
-              <KV label="Origem" value={origemLabel} />
-              <KV label="Campanha" value={lead.utmCampaign || "—"} />
+              <KV label="Telefone" value={lead.telefone || "—"}  T={T} />
+              <KV label="E-mail" value={lead.email || "—"}  T={T} />
+              <KV label="Empresa" value={lead.empresa || "—"} onClick={lead.empresaId ? () => onOpenEmpresa?.(lead.empresaId!) : undefined} T={T} />
+              <KV label="Cargo" value={lead.cargo || "—"}  T={T} />
               <div className="flex items-center justify-between gap-3">
-                <span style={{ color: "var(--cf2-text-tertiary)" }}>Responsável</span>
+                <span style={{ color: T.textSecondary }}>Responsável</span>
                 <AssignOwnerControl
                   entityType="lead"
                   entityId={leadId!}
@@ -279,42 +383,100 @@ export function Cf2LeadDrawer({
                   onChanged={() => qc.invalidateQueries({ queryKey: ["lead", leadId] })}
                 />
               </div>
-              <KV label="Data de entrada" value={new Date(lead.createdAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" })} />
+              <KV label="Data de entrada" value={new Date(lead.createdAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" })}  T={T} />
             </div>
           </div>
 
-          {/* qualificação SDR — CNPJ/Cargo/Necessidade-Dor/Tomador de decisão */}
-          <div className="p-4 rounded-2xl" style={{ background: "var(--cf2-bg-canvas)", border: "1px solid var(--cf2-border-default)" }}>
+          {/* QUALIFICAÇÃO (SDR) — Critérios atingidos X/4 + barra + checklist */}
+          <div className="flex flex-col gap-3 p-4 rounded-2xl" style={{ background: T.surface, border: `1px solid ${T.border}` }}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <ClipboardCheck className="w-3.5 h-3.5" style={{ color: "var(--cf2-accent-border)" }} />
+                <p className="text-[12px] font-bold uppercase tracking-wide" style={{ color: T.textSecondary }}>Qualificação (SDR)</p>
+              </div>
+              <span className="text-[12px] font-semibold" style={{ color: T.textSecondary }}>Critérios atingidos {qualProgress.count}/{qualProgress.total}</span>
+            </div>
+            <div className="h-1.5 w-full rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.08)" }}>
+              <div className="h-full rounded-full transition-all" style={{ width: `${(qualProgress.count / qualProgress.total) * 100}%`, background: T.success }} />
+            </div>
             {leadId && (
               <QualificacaoSdrSection
                 leadId={leadId}
                 camposCustom={lead.camposCustom}
-                variant="light"
+                variant="dark"
+                hideHeader
+                showFieldStatusDots
                 queryKeysToInvalidate={["pre-vendas-leads"]}
                 prefill={{ cnpj: detail?.empresa?.cnpj || lead.empresaCnpj || "", cargo: lead.cargo || "" }}
+                onProgressChange={setQualProgress}
               />
+            )}
+            {(qualProgress.tomadorDecisao === "" || qualProgress.tomadorDecisao === "nao_identificado") && (
+              <div className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background: T.warningBg }}>
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0" style={{ color: "#f59e0b" }} />
+                <p className="text-[11px]" style={{ color: T.warningText }}>Tomador de decisão: Não identificado</p>
+              </div>
+            )}
+          </div>
+
+          {/* ATRIBUIÇÃO DE ORIGEM */}
+          <div className="flex flex-col gap-2.5 p-4 rounded-2xl" style={{ background: T.surface, border: `1px solid ${T.border}` }}>
+            <p className="text-[12px] font-bold uppercase tracking-wide" style={{ color: T.textSecondary }}>Atribuição de Origem</p>
+            <div className="flex flex-col gap-2 text-[12px]">
+              <KV label="Fonte" value={origemLabel}  T={T} />
+              <KV label="Campanha" value={lead.utmCampaign || "—"}  T={T} />
+              <KV label="Criativo" value={criativo || "—"}  T={T} />
+              <div className="flex items-center justify-between gap-3">
+                <span style={{ color: T.textSecondary }}>UTM</span>
+                <span className="font-semibold truncate max-w-[220px]" title={utmQuery || undefined} style={{ color: T.textPrimary }}>{utmQuery || "—"}</span>
+              </div>
+            </div>
+            {lead.empresaId ? (
+              <button onClick={() => onOpenEmpresa?.(lead.empresaId!)} className="text-[12px] font-semibold text-left" style={{ color: T.success }}>Ver detalhes da origem →</button>
+            ) : (
+              <span className="text-[11px]" style={{ color: T.textSecondary }}>Sem empresa vinculada pra detalhar a origem.</span>
+            )}
+          </div>
+
+          {/* ATENDIMENTO RECENTE — preview compacto (3 últimos, mistura real
+              de whatsapp/e-mail/ligação com status real); histórico completo
+              com filtros continua na Timeline unificada, mais abaixo. */}
+          <div className="flex flex-col gap-2.5 p-4 rounded-2xl" style={{ background: T.surface, border: `1px solid ${T.border}` }}>
+            <p className="text-[12px] font-bold uppercase tracking-wide" style={{ color: T.textSecondary }}>Atendimento Recente</p>
+            {atendimentoRecente.length === 0 ? (
+              <p className="text-[12px]" style={{ color: T.textSecondary }}>Nenhum atendimento registrado ainda.</p>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {atendimentoRecente.map((item) => (
+                  <div key={item.id} className="flex items-center gap-2.5">
+                    <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: item.color }} />
+                    <p className="flex-1 text-[12px] truncate" style={{ color: T.textPrimary }}>{item.label}</p>
+                    <span className="text-[11px] shrink-0" style={{ color: T.textSecondary }}>{formatQuando(item.createdAt)}</span>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
 
           {/* negócios vinculados */}
           {detail && detail.negocios.length > 0 && (
             <div className="flex flex-col gap-2">
-              <p className="text-[14px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Negócios ({detail.negocios.length})</p>
+              <p className="text-[12px] font-bold uppercase tracking-wide" style={{ color: T.textSecondary }}>Negócios ({detail.negocios.length})</p>
               {detail.negocios.slice(0, 5).map((n) => (
-                <button key={n.id} onClick={() => onOpenNegocio?.(n.id)} disabled={!onOpenNegocio} className="text-left px-3 py-2 rounded-lg flex items-center justify-between gap-2" style={{ border: "1px solid var(--cf2-border-default)" }}>
-                  <span className="text-[13px] truncate" style={{ color: "var(--cf2-text-primary)" }}>{n.titulo}</span>
-                  <span className="text-[11px] shrink-0" style={{ color: "var(--cf2-text-tertiary)" }}>{n.status}</span>
+                <button key={n.id} onClick={() => onOpenNegocio?.(n.id)} disabled={!onOpenNegocio} className="text-left px-3 py-2 rounded-lg flex items-center justify-between gap-2" style={{ border: `1px solid ${T.border}` }}>
+                  <span className="text-[13px] truncate" style={{ color: T.textPrimary }}>{n.titulo}</span>
+                  <span className="text-[11px] shrink-0" style={{ color: T.textSecondary }}>{n.status}</span>
                 </button>
               ))}
             </div>
           )}
 
-          {/* timeline unificada */}
-          <div className="flex flex-col gap-3 p-4 rounded-2xl" style={{ background: "var(--cf2-bg-canvas)", border: "1px solid var(--cf2-border-default)" }}>
-            <p className="text-[14px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Timeline unificada</p>
+          {/* timeline unificada (histórico completo, com filtro por canal) */}
+          <div className="flex flex-col gap-3 p-4 rounded-2xl" style={{ background: T.surface, border: `1px solid ${T.border}` }}>
+            <p className="text-[12px] font-bold uppercase tracking-wide" style={{ color: T.textSecondary }}>Timeline unificada</p>
             <div className="flex gap-2 overflow-x-auto pb-0.5">
               {TABS.map((t) => (
-                <button key={t} onClick={() => setTab(t)} className="px-2.5 py-1.5 rounded-full text-[12px] font-semibold whitespace-nowrap shrink-0" style={{ background: tab === t ? "var(--cf2-text-primary)" : "var(--cf2-bg-surface)", color: tab === t ? "#ffffff" : "var(--cf2-text-secondary)", border: tab === t ? "none" : "1px solid var(--cf2-border-default)" }}>
+                <button key={t} onClick={() => setTab(t)} className="px-2.5 py-1.5 rounded-full text-[12px] font-semibold whitespace-nowrap shrink-0" style={{ background: tab === t ? "var(--cf2-accent)" : T.bgAlt, color: tab === t ? "var(--cf2-text-on-accent)" : T.textSecondary, border: tab === t ? "none" : `1px solid ${T.border}` }}>
                   {t}
                 </button>
               ))}
@@ -326,29 +488,29 @@ export function Cf2LeadDrawer({
               tarefasAbertas.length > 0 ? (
                 <div className="flex flex-col gap-2">
                   {tarefasAbertas.map((t) => (
-                    <div key={t.id} className="flex items-center gap-2.5 p-3 rounded-xl" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
-                      <button onClick={() => toggleTarefa.mutate({ id: t.id, concluida: true })} className="w-4 h-4 rounded-full shrink-0" style={{ border: "1px solid var(--cf2-border-default)" }} />
-                      <p className="flex-1 text-[13px]" style={{ color: "var(--cf2-text-primary)" }}>{t.titulo}</p>
-                      {t.dataVencimento && <span className="text-[11px] shrink-0" style={{ color: "var(--cf2-text-tertiary)" }}>{new Date(t.dataVencimento).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}</span>}
+                    <div key={t.id} className="flex items-center gap-2.5 p-3 rounded-xl" style={{ background: T.bgAlt, border: `1px solid ${T.border}` }}>
+                      <button onClick={() => toggleTarefa.mutate({ id: t.id, concluida: true })} className="w-4 h-4 rounded-full shrink-0" style={{ border: `1px solid ${T.border}` }} />
+                      <p className="flex-1 text-[13px]" style={{ color: T.textPrimary }}>{t.titulo}</p>
+                      {t.dataVencimento && <span className="text-[11px] shrink-0" style={{ color: T.textSecondary }}>{new Date(t.dataVencimento).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}</span>}
                     </div>
                   ))}
                 </div>
               ) : (
-                <p className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhuma tarefa em aberto.</p>
+                <p className="text-[12px]" style={{ color: T.textSecondary }}>Nenhuma tarefa em aberto.</p>
               )
             ) : (
               <div className="flex flex-col gap-2">
-                {feedFiltrado.length === 0 && <p className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>Nada por aqui ainda.</p>}
+                {feedFiltrado.length === 0 && <p className="text-[12px]" style={{ color: T.textSecondary }}>Nada por aqui ainda.</p>}
                 {feedFiltrado.map((e) => (
-                  <div key={e.id} className="flex flex-col gap-2 p-3 rounded-xl" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
+                  <div key={e.id} className="flex flex-col gap-2 p-3 rounded-xl" style={{ background: T.bgAlt, border: `1px solid ${T.border}` }}>
                     <div className="flex items-center gap-2.5">
-                      <span className="flex items-center justify-center rounded-full text-[11px] font-extrabold shrink-0" style={{ width: 28, height: 28, background: "var(--cf2-text-tertiary)", color: "var(--cf2-text-on-accent)" }}>{initials(e.usuarioNome)}</span>
+                      <span className="flex items-center justify-center rounded-full text-[11px] font-extrabold shrink-0" style={{ width: 26, height: 26, background: T.surfaceAlt, color: T.textPrimary }}>{initials(e.usuarioNome)}</span>
                       <div className="flex-1 min-w-0">
-                        <p className="text-[12px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>{timeAgoShort(e.createdAt)} atrás</p>
+                        <p className="text-[12px] font-bold" style={{ color: T.textPrimary }}>{timeAgoShort(e.createdAt)} atrás</p>
                       </div>
-                      <span className="px-2 py-1 rounded-full text-[11px] font-bold shrink-0" style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-secondary)" }}>{TIPO_LABEL[e.tipo] || e.tipo}</span>
+                      <span className="px-2 py-1 rounded-full text-[11px] font-bold shrink-0" style={{ background: T.surfaceAlt, color: T.textSecondary }}>{TIPO_LABEL[e.tipo] || e.tipo}</span>
                     </div>
-                    <p className="text-[13px]" style={{ color: "var(--cf2-text-primary)" }}>{e.usuarioNome ? `${e.usuarioNome} — ` : ""}{e.titulo}</p>
+                    <p className="text-[13px]" style={{ color: T.textPrimary }}>{e.usuarioNome ? `${e.usuarioNome} — ` : ""}{e.titulo}</p>
                   </div>
                 ))}
                 {tab === "Notas" && (
@@ -356,15 +518,15 @@ export function Cf2LeadDrawer({
                     {noteOpen ? (
                       <div className="flex flex-col gap-1.5">
                         <textarea ref={noteRef} value={noteText} onChange={(ev) => setNoteText(ev.target.value)} placeholder="Escreva uma nota..." rows={3}
-                          className="w-full text-[13px] rounded-lg px-3 py-2 outline-none resize-y" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }}
+                          className="w-full text-[13px] rounded-lg px-3 py-2 outline-none resize-y" style={{ background: T.bgAlt, border: `1px solid ${T.border}`, color: T.textPrimary }}
                           onKeyDown={(ev) => { if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey) && noteText.trim()) addNota.mutate(noteText.trim()); if (ev.key === "Escape") { setNoteOpen(false); setNoteText(""); } }} />
                         <div className="flex justify-end gap-2">
-                          <button onClick={() => { setNoteOpen(false); setNoteText(""); }} className="text-[12px] px-2 py-1" style={{ color: "var(--cf2-text-tertiary)" }}>Cancelar</button>
-                          <button onClick={() => noteText.trim() && addNota.mutate(noteText.trim())} disabled={!noteText.trim() || addNota.isPending} className="text-[12px] px-2 py-1 flex items-center gap-1 font-semibold disabled:opacity-40" style={{ color: "var(--cf2-success-text)" }}><Send className="w-3 h-3" /> Salvar</button>
+                          <button onClick={() => { setNoteOpen(false); setNoteText(""); }} className="text-[12px] px-2 py-1" style={{ color: T.textSecondary }}>Cancelar</button>
+                          <button onClick={() => noteText.trim() && addNota.mutate(noteText.trim())} disabled={!noteText.trim() || addNota.isPending} className="text-[12px] px-2 py-1 flex items-center gap-1 font-semibold disabled:opacity-40" style={{ color: T.success }}><Send className="w-3 h-3" /> Salvar</button>
                         </div>
                       </div>
                     ) : (
-                      <button onClick={() => setNoteOpen(true)} className="w-full flex items-center justify-center gap-1.5 py-2 text-[12px] rounded-lg" style={{ color: "var(--cf2-text-tertiary)", border: "1px dashed var(--cf2-border-default)" }}>
+                      <button onClick={() => setNoteOpen(true)} className="w-full flex items-center justify-center gap-1.5 py-2 text-[12px] rounded-lg" style={{ color: T.textSecondary, border: `1px dashed ${T.border}` }}>
                         <Plus className="w-3.5 h-3.5" /> Adicionar nota
                       </button>
                     )}
@@ -383,32 +545,26 @@ export function Cf2LeadDrawer({
   );
 }
 
-function QuickAction({ icon: Icon, label, href, onClick }: { icon: typeof Phone; label: string; href?: string; onClick?: () => void }) {
-  const disabled = !href && !onClick;
-  const cls = "flex-1 flex items-center justify-center gap-1.5 h-10 rounded-xl text-[13px] font-semibold";
-  const style = { border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)", opacity: disabled ? 0.4 : 1 };
-  if (href && !disabled) {
-    return (
-      <a href={href} target="_blank" rel="noopener noreferrer" className={cls} style={style}>
-        <Icon className="w-4 h-4" /> {label}
-      </a>
-    );
+function QuickPill({ icon: Icon, label, href, T }: { icon: typeof Phone; label: string; href?: string; T: Tokens }) {
+  const cls = "flex-1 flex items-center justify-center gap-1.5 h-10 rounded-full text-[13px] font-semibold";
+  if (!href) {
+    return <span className={cls} style={{ border: `1px solid ${T.border}`, color: T.textPrimary, background: T.bgAlt, opacity: 0.4 }}><Icon className="w-4 h-4" /> {label}</span>;
   }
   return (
-    <button onClick={onClick} disabled={disabled} className={cls} style={style}>
+    <Link href={href} className={cls} style={{ border: `1px solid ${T.border}`, color: T.textPrimary, background: T.bgAlt }}>
       <Icon className="w-4 h-4" /> {label}
-    </button>
+    </Link>
   );
 }
 
-function KV({ label, value, onClick }: { label: string; value: string; onClick?: () => void }) {
+function KV({ label, value, onClick, T }: { label: string; value: string; onClick?: () => void; T: Tokens }) {
   return (
     <div className="flex items-center justify-between gap-3">
-      <span style={{ color: "var(--cf2-text-tertiary)" }}>{label}</span>
+      <span style={{ color: T.textSecondary }}>{label}</span>
       {onClick ? (
-        <button onClick={onClick} className="font-semibold underline truncate max-w-[220px]" style={{ color: "var(--cf2-text-primary)" }}>{value}</button>
+        <button onClick={onClick} className="font-semibold underline truncate max-w-[220px]" style={{ color: T.textPrimary }}>{value}</button>
       ) : (
-        <span className="font-semibold truncate max-w-[220px]" style={{ color: "var(--cf2-text-primary)" }}>{value}</span>
+        <span className="font-semibold truncate max-w-[220px]" style={{ color: T.textPrimary }}>{value}</span>
       )}
     </div>
   );

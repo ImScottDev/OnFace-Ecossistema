@@ -44,6 +44,7 @@ interface AcaoConfig {
   prioridade?: "baixa" | "media" | "alta";
   novoStatus?: string;
   mensagem?: string;
+  tag?: string;
 }
 
 interface Automacao {
@@ -65,7 +66,7 @@ interface Execucao {
   executedAt: string;
 }
 
-// Só os 7 gatilhos/6 ações reais que dispararAutomacoes() de fato executa —
+// Gatilhos e ações reais que dispararAutomacoes() de fato executa —
 // mesmos rótulos amigáveis já validados no builder legado.
 const GATILHO_OPTIONS = [
   { value: "novo_lead", label: "Novo lead criado" },
@@ -75,6 +76,10 @@ const GATILHO_OPTIONS = [
   { value: "contrato_vencendo", label: "Contrato vencendo" },
   { value: "lead_inativo", label: "Lead inativo" },
   { value: "nps_recebido", label: "NPS recebido" },
+  { value: "pagamento_falhou", label: "Pagamento falhou no Stripe" },
+  { value: "fatura_atrasada", label: "Fatura ficou atrasada" },
+  { value: "fatura_paga", label: "Fatura foi paga" },
+  { value: "assinatura_status_alterado", label: "Status da assinatura mudou" },
 ];
 
 const ACAO_OPTIONS = [
@@ -84,6 +89,8 @@ const ACAO_OPTIONS = [
   { value: "mudar_status", label: "Mudar status" },
   { value: "enviar_email", label: "Enviar e-mail" },
   { value: "enviar_whatsapp", label: "Enviar WhatsApp" },
+  { value: "adicionar_tag_empresa", label: "Adicionar tag à empresa" },
+  { value: "remover_tag_empresa", label: "Remover tag da empresa" },
 ];
 
 const OPERADOR_OPTIONS = [
@@ -113,6 +120,7 @@ const emptyForm = {
   prioridade: "media" as NonNullable<AcaoConfig["prioridade"]>,
   novoStatus: "",
   mensagem: "",
+  tag: "",
 };
 
 function gatilhoLabel(v: string) {
@@ -222,6 +230,7 @@ export function Cf2AutomacoesWorkspace() {
       ...(form.acao === "criar_tarefa" ? { prioridade: form.prioridade } : {}),
       ...(form.novoStatus ? { novoStatus: form.novoStatus } : {}),
       ...(form.mensagem ? { mensagem: form.mensagem } : {}),
+      ...((form.acao === "adicionar_tag_empresa" || form.acao === "remover_tag_empresa") && form.tag ? { tag: form.tag } : {}),
     },
   });
 
@@ -316,6 +325,7 @@ export function Cf2AutomacoesWorkspace() {
       prioridade: rule.acaoConfig?.prioridade || "media",
       novoStatus: rule.acaoConfig?.novoStatus || "",
       mensagem: rule.acaoConfig?.mensagem || "",
+      tag: rule.acaoConfig?.tag || "",
     });
     setShowForm(true);
   };
@@ -463,7 +473,7 @@ export function Cf2AutomacoesWorkspace() {
                 </select>
               </div>
 
-              {/* Campos condicionais por ação — só os que automacao-engine.ts de fato lê */}
+              {/* Campos condicionais por ação — todos têm executor real no motor */}
               <div className="space-y-2">
                 {form.acao === "criar_tarefa" && (
                   <>
@@ -483,6 +493,9 @@ export function Cf2AutomacoesWorkspace() {
                 )}
                 {form.acao === "mudar_status" && (
                   <input value={form.novoStatus} onChange={(e) => setForm({ ...form, novoStatus: e.target.value })} className="w-full text-sm px-3 py-2 rounded-lg outline-none" style={inputStyle} placeholder="Novo status (ex: qualifying, reuniao_agendada)" />
+                )}
+                {(form.acao === "adicionar_tag_empresa" || form.acao === "remover_tag_empresa") && (
+                  <input value={form.tag} onChange={(e) => setForm({ ...form, tag: e.target.value })} className="w-full text-sm px-3 py-2 rounded-lg outline-none" style={inputStyle} placeholder="Tag (ex: financeiro_em_aberto)" />
                 )}
                 {(form.acao === "notificar_usuario" || form.acao === "enviar_email" || form.acao === "enviar_whatsapp") && (
                   <textarea value={form.mensagem} onChange={(e) => setForm({ ...form, mensagem: e.target.value })} className="w-full text-sm px-3 py-2 rounded-lg outline-none resize-y" style={inputStyle} rows={3} placeholder="Mensagem" />

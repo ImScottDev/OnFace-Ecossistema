@@ -33,6 +33,10 @@ const createNegocioSchema = z.object({
   concorrenteAtual: z.string().optional().nullable(),
   contratoVenceEm: z.string().optional().nullable(),
   origemNegocio: z.enum(["novo", "carteira"]).optional(),
+  // Commercial motion (item 4, 20/08): default NEW_BUSINESS no fluxo normal
+  // do Pipeline; o modo "a partir do cliente" (NovaOportunidadeModal com
+  // fromCliente) envia EXPANSION explicitamente.
+  commercialMotion: z.enum(["NEW_BUSINESS", "EXPANSION", "RENEWAL", "REACTIVATION"]).optional(),
   responsavelId: z.string().uuid().optional().nullable(),
   pipelineId: z.string().uuid().optional().nullable(),
   camposCustom: z.record(z.string(), z.unknown()).optional(),
@@ -423,6 +427,7 @@ app.post("/negocios", async (c) => {
       concorrenteAtual: parsed.data.concorrenteAtual,
       contratoVenceEm: parsed.data.contratoVenceEm,
       origemNegocio: parsed.data.origemNegocio || "novo",
+      commercialMotion: parsed.data.commercialMotion || "NEW_BUSINESS",
       // Negócio criado manualmente (closer direto, sem passar pelo converter) =
       // qualificação direta sem reunião — relatório SDR separa os dois fluxos.
       origemQualificacao: (parsed.data.origemNegocio || "novo") === "novo" ? "direta" : undefined,

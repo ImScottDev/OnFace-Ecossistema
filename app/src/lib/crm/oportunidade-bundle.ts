@@ -59,7 +59,9 @@ export async function organizarVendaMultiLinha(opts: {
   moeda: string;
   observacoes?: string;
   condicoesPagamento?: string;
+  prazoContratoMeses?: number | null;
   dataValidade?: string;
+  signatarios?: Array<{ nome: string; email: string; papel?: string; ordem?: number }>;
   criadoPorId: string;
 }): Promise<{ bundleId: string; oportunidades: OportunidadeCriada[] }> {
   const [lead] = await db
@@ -106,7 +108,8 @@ export async function organizarVendaMultiLinha(opts: {
 
     const proposta = await criarPropostaComItens({
       organizacaoId: opts.organizacaoId, leadId: opts.leadId, negocioId, moeda: opts.moeda,
-      observacoes: opts.observacoes, condicoesPagamento: opts.condicoesPagamento, dataValidade: opts.dataValidade,
+      observacoes: opts.observacoes, condicoesPagamento: opts.condicoesPagamento, prazoContratoMeses: opts.prazoContratoMeses, dataValidade: opts.dataValidade,
+      signatarios: opts.signatarios,
       itens, criadoPorId: opts.criadoPorId,
     });
 

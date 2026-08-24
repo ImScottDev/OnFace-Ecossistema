@@ -7,11 +7,18 @@ import { X } from "lucide-react";
 interface NovaPessoaModalProps {
   onClose: () => void;
   onCriada: (leadId: string) => void;
+  // Vínculo direto por ID (Cliente 360 → aba Pessoas, 20/08): quando vem de
+  // dentro de uma empresa já existente, manda `empresaId` em vez de
+  // `empresa` (nome) — evita o POST /leads resolver por ILIKE e arriscar
+  // criar uma empresa duplicada por variação de grafia. Campo de empresa
+  // fica travado/preenchido, não editável.
+  empresaId?: string;
+  empresaNome?: string;
 }
 
 const inputStyle = { background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" };
 
-export function Cf2NovaPessoaModal({ onClose, onCriada }: NovaPessoaModalProps) {
+export function Cf2NovaPessoaModal({ onClose, onCriada, empresaId, empresaNome }: NovaPessoaModalProps) {
   const [nome, setNome] = useState("");
   const [sobrenome, setSobrenome] = useState("");
   const [telefone, setTelefone] = useState("");
@@ -26,8 +33,9 @@ export function Cf2NovaPessoaModal({ onClose, onCriada }: NovaPessoaModalProps) 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           nome, sobrenome: sobrenome || undefined, telefone,
-          email: email || undefined, empresa: empresa || undefined, cargo: cargo || undefined,
+          email: email || undefined, cargo: cargo || undefined,
           semNegocio: true,
+          ...(empresaId ? { empresaId } : { empresa: empresa || undefined }),
         }),
       });
       const body = await r.json();
@@ -57,7 +65,14 @@ export function Cf2NovaPessoaModal({ onClose, onCriada }: NovaPessoaModalProps) 
           <input value={telefone} onChange={(e) => setTelefone(e.target.value)} placeholder="Telefone *" className="w-full text-sm px-3 py-2 rounded-lg outline-none" style={inputStyle} />
           <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="E-mail" className="w-full text-sm px-3 py-2 rounded-lg outline-none" style={inputStyle} />
           <div className="grid grid-cols-2 gap-2.5">
-            <input value={empresa} onChange={(e) => setEmpresa(e.target.value)} placeholder="Empresa" className="text-sm px-3 py-2 rounded-lg outline-none" style={inputStyle} />
+            <input
+              value={empresaId ? (empresaNome ?? "") : empresa}
+              onChange={(e) => { if (!empresaId) setEmpresa(e.target.value); }}
+              readOnly={!!empresaId}
+              placeholder="Empresa"
+              className="text-sm px-3 py-2 rounded-lg outline-none disabled:opacity-70"
+              style={inputStyle}
+            />
             <input value={cargo} onChange={(e) => setCargo(e.target.value)} placeholder="Cargo" className="text-sm px-3 py-2 rounded-lg outline-none" style={inputStyle} />
           </div>
 

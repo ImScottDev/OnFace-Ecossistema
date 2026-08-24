@@ -21,6 +21,10 @@ interface DetailDrawerProps {
   bare?: boolean;
   /** Cor de fundo do painel — default mantém o escuro legado (#12141a). */
   panelBg?: string;
+  /** Cor da borda esquerda em modo `bare` — default é a borda clara (drawers
+   * CRM2 tema claro). Drawer novo de Pré-vendas (dark, 23/08) passa um tom
+   * escuro pra não deixar uma linha clara destoando do painel escuro. */
+  borderColor?: string;
   /** Rodapé fixo (ex: ações "Mover etapa/Qualificar") — renderizado como
    * irmão do conteúdo rolável, NÃO dentro dele. Achado real (17/08): um
    * footer com `position:absolute` dentro do `children` ainda rola junto
@@ -33,7 +37,7 @@ interface DetailDrawerProps {
   footer?: React.ReactNode;
 }
 
-export function DetailDrawer({ open, onClose, title, subtitle, subtitleColor, fullPageHref, headerExtra, children, width = "w-full sm:w-[500px]", bare = false, panelBg = "#12141a", footer }: DetailDrawerProps) {
+export function DetailDrawer({ open, onClose, title, subtitle, subtitleColor, fullPageHref, headerExtra, children, width = "w-full sm:w-[500px]", bare = false, panelBg = "#12141a", borderColor, footer }: DetailDrawerProps) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -56,7 +60,7 @@ export function DetailDrawer({ open, onClose, title, subtitle, subtitleColor, fu
       <div
         ref={ref}
         className={`relative ${width} max-w-[90vw] h-full flex flex-col animate-slide-in-right`}
-        style={{ background: panelBg, borderLeft: bare ? "1px solid #e5e7eb" : "1px solid rgba(255,255,255,0.08)" }}
+        style={{ background: panelBg, borderLeft: bare ? `1px solid ${borderColor || "#e5e7eb"}` : "1px solid rgba(255,255,255,0.08)" }}
       >
         {bare ? (
           <>

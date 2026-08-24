@@ -29,10 +29,10 @@ const NAV: CommandItem[] = [
   { id: "nav-qualificacao", label: "Qualificação", href: "/pre-vendas", icon: Filter, group: "Navegar" },
   { id: "nav-pipeline", label: "Pipeline", href: "/pipeline", icon: GitBranch, group: "Navegar" },
   { id: "nav-negocios", label: "Negócios", href: "/pipeline", icon: Briefcase, group: "Navegar" },
-  { id: "nav-atividades", label: "Atividades", href: "/tarefas", icon: CheckCircle2, group: "Navegar" },
+  { id: "nav-atividades", label: "Atividades", sublabel: "Tela legada", href: "/tarefas", icon: CheckCircle2, group: "Navegar" },
   { id: "nav-automacoes", label: "Automações", href: "/automacoes", icon: Zap, group: "Navegar" },
-  { id: "nav-indicadores", label: "Indicadores", href: "/relatorios", icon: TrendingUp, group: "Navegar" },
-  { id: "nav-config", label: "Ajustes", href: "/configuracoes", icon: Settings, group: "Navegar" },
+  { id: "nav-indicadores", label: "Indicadores", sublabel: "Tela legada", href: "/relatorios", icon: TrendingUp, group: "Navegar" },
+  { id: "nav-config", label: "Ajustes", sublabel: "Tela legada", href: "/configuracoes", icon: Settings, group: "Navegar" },
 ];
 
 const ACOES: CommandItem[] = [

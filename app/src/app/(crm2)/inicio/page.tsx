@@ -19,6 +19,10 @@ import {
   getMrrLedgerPeriodo,
   getSaudeBaseClientes,
   diasUteisRestantesNoMes,
+  getAtendimentoResumo,
+  getImplantacaoResumo,
+  getCsResumo,
+  getFinanceiroResumo,
 } from "@/lib/analytics/command-center";
 import { Cf2Topbar } from "@/components/crm2/Topbar";
 import { Cf2Card, Cf2SectionHeader, Cf2Eyebrow } from "@/components/crm2/ui/Card";
@@ -26,10 +30,17 @@ import { Cf2Badge } from "@/components/crm2/ui/Badge";
 import { Cf2EmptyState, Cf2UnavailableMetric } from "@/components/crm2/ui/States";
 import { Cf2Gauge } from "@/components/crm2/ui/Gauge";
 import { DesempenhoChart } from "@/components/crm2/DesempenhoChart";
-import { Phone, MessageCircle, Mail } from "lucide-react";
+import { Phone, MessageCircle, Mail, Headset, Truck, HeartHandshake, Wallet } from "lucide-react";
 
 const brl0 = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 0, maximumFractionDigits: 0 });
 const brl2 = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+function formatMinutos(min: number): string {
+  if (min < 60) return `${min}min`;
+  const horas = Math.floor(min / 60);
+  if (horas < 24) return `${horas}h${min % 60 > 0 ? ` ${min % 60}min` : ""}`;
+  return `${Math.floor(horas / 24)}d ${horas % 24}h`;
+}
 
 const ACTION_BY_TIPO: Record<string, string> = {
   ligacao: "Ligar",
@@ -75,6 +86,10 @@ export default async function InicioPage({ searchParams }: { searchParams: Promi
     negociosTravados,
     mrrLedger,
     saudeBase,
+    atendimento,
+    implantacao,
+    cs,
+    financeiro,
   ] = await Promise.all([
     db.select({ nome: organizacoes.nome }).from(organizacoes).where(eq(organizacoes.id, ctx.organizacaoId)).limit(1),
     getMetaComercialAgregada(ctx.organizacaoId, hoje),
@@ -103,6 +118,10 @@ export default async function InicioPage({ searchParams }: { searchParams: Promi
     getNegociosTravadosResumo(ctx.organizacaoId, 5),
     getMrrLedgerPeriodo(ctx.organizacaoId, hoje),
     getSaudeBaseClientes(ctx.organizacaoId),
+    getAtendimentoResumo(ctx.organizacaoId),
+    getImplantacaoResumo(ctx.organizacaoId),
+    getCsResumo(ctx.organizacaoId),
+    getFinanceiroResumo(ctx.organizacaoId),
   ]);
 
   const orgNome = org[0]?.nome || "Callface";
@@ -325,9 +344,69 @@ export default async function InicioPage({ searchParams }: { searchParams: Promi
               })}
             </div>
           )}
-          <Link href="/tarefas" className="text-sm font-semibold" style={{ color: "var(--cf2-success-text)" }}>Ver todas em /tarefas →</Link>
+          <Link href="/tarefas" className="text-sm font-semibold" style={{ color: "var(--cf2-success-text)" }}>Ver atividades (tela legada) →</Link>
         </div>
       )}
+
+      {/* Operação Hoje (23/08) — os 4 eixos do contrato "Início" que ainda
+          não tinham representação nesta tela: Atendimento/Implantação/CS/
+          Financeiro (Receita e Comercial já existem no Pulso do Negócio e
+          na Jornada Operacional abaixo). Cada card é 100% clicável pro
+          módulo real — decorativo não conta como "responder como está a
+          operação hoje". Cada número reusa um critério já validado em
+          produção em outro módulo (ver command-center.ts), nunca um
+          conceito novo de risco/SLA/atraso. */}
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-1">
+          <p className="text-lg font-semibold" style={{ color: "var(--cf2-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>Operação Hoje</p>
+          <p className="text-[13px]" style={{ color: "var(--cf2-text-secondary)" }}>Atendimento, Implantação, CS e Financeiro — visão executiva das 4 frentes operacionais</p>
+        </div>
+        <div className="grid grid-cols-4 gap-4">
+          <OperacaoCard
+            icon={Headset}
+            titulo="ATENDIMENTO"
+            href="/atendimento"
+            valor={`${atendimento.whatsappAbertas + atendimento.emailPendentes} aguardando`}
+            linhas={[
+              { texto: `${atendimento.whatsappAbertas} WhatsApp · ${atendimento.emailPendentes} e-mail` },
+              atendimento.esperaMaisAntigaMinutos !== null
+                ? { texto: `Mais antiga esperando: ${formatMinutos(atendimento.esperaMaisAntigaMinutos)}`, tom: atendimento.esperaMaisAntigaMinutos > 240 ? "warning" : undefined }
+                : { texto: "Fila zerada agora" },
+            ]}
+          />
+          <OperacaoCard
+            icon={Truck}
+            titulo="IMPLANTAÇÃO"
+            href="/clientes/implantacao"
+            valor={`${implantacao.ativas} ativas`}
+            linhas={[
+              { texto: `${implantacao.aguardandoCliente} aguardando cliente · ${implantacao.bloqueadas} bloqueadas`, tom: implantacao.bloqueadas > 0 ? "warning" : undefined },
+              { texto: `${implantacao.atrasadas} com prazo estourado`, tom: implantacao.atrasadas > 0 ? "danger" : undefined },
+            ]}
+          />
+          <OperacaoCard
+            icon={HeartHandshake}
+            titulo="CS"
+            href="/clientes/sucesso"
+            valor={`${cs.clientesEmRisco} em risco`}
+            linhas={[
+              { texto: `${cs.tarefasAtrasadas} tarefa${cs.tarefasAtrasadas === 1 ? "" : "s"} atrasada${cs.tarefasAtrasadas === 1 ? "" : "s"}`, tom: cs.tarefasAtrasadas > 0 ? "warning" : undefined },
+              { texto: `${cs.renovacoesProximas30d} renovação${cs.renovacoesProximas30d === 1 ? "" : "ões"} em 30 dias` },
+            ]}
+          />
+          <OperacaoCard
+            icon={Wallet}
+            titulo="FINANCEIRO"
+            href="/financeiro"
+            valor={brl0(financeiro.recebidoMes)}
+            sub="recebido no mês"
+            linhas={[
+              { texto: `${brl0(financeiro.emAberto)} em aberto` },
+              { texto: `${brl0(financeiro.atrasadoValor)} atrasado (${financeiro.atrasadoCount})`, tom: financeiro.atrasadoCount > 0 ? "danger" : undefined },
+            ]}
+          />
+        </div>
+      </div>
 
       {/* Jornada Operacional — flow Aquisição → Pré-vendas → Vendas →
           Entrega → Clientes. Substitui os antigos "Funil de Leads" e
@@ -453,6 +532,41 @@ export default async function InicioPage({ searchParams }: { searchParams: Promi
   );
 }
 
+function OperacaoCard({
+  icon: Icon, titulo, href, valor, sub, linhas,
+}: {
+  icon: React.ElementType;
+  titulo: string;
+  href: string;
+  valor: string;
+  sub?: string;
+  linhas: { texto: string; tom?: "warning" | "danger" }[];
+}) {
+  const tomCor: Record<string, string> = {
+    warning: "var(--cf2-warning-text)",
+    danger: "var(--cf2-danger-text)",
+  };
+  return (
+    <Link href={href} className="block">
+      <Cf2Card className="flex flex-col gap-3 h-full transition-transform hover:-translate-y-0.5 cursor-pointer">
+        <div className="flex items-center justify-between">
+          <p className="text-xs font-semibold" style={{ color: "var(--cf2-text-secondary)" }}>{titulo}</p>
+          <Icon className="w-4 h-4" style={{ color: "var(--cf2-text-tertiary)" }} />
+        </div>
+        <div>
+          <p className="text-[22px] font-bold leading-tight" style={{ color: "var(--cf2-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>{valor}</p>
+          {sub && <p className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>{sub}</p>}
+        </div>
+        <div className="flex flex-col gap-0.5 mt-auto">
+          {linhas.map((l, i) => (
+            <p key={i} className="text-[11px]" style={{ color: l.tom ? tomCor[l.tom] : "var(--cf2-text-secondary)", fontWeight: l.tom ? 600 : 400 }}>{l.texto}</p>
+          ))}
+        </div>
+      </Cf2Card>
+    </Link>
+  );
+}
+
 function Seta() {
   return (
     <div className="flex flex-col items-center justify-center shrink-0 w-4 self-stretch">
@@ -539,7 +653,7 @@ function TopVendedores({
       <div className="flex items-center justify-between p-3 shrink-0" style={{ background: "var(--cf2-chrome-bg)", borderTop: "1px solid var(--cf2-chrome-border)" }}>
         <p className="text-xs" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Atualizado há 3 min</p>
         <Link href="/relatorios" className="px-4 py-2 rounded-xl text-[13px] font-bold" style={{ background: "var(--cf2-accent)", border: "1px solid var(--cf2-accent-border)", color: "var(--cf2-text-on-accent)" }}>
-          Ver Ranking Completo
+          Ver Ranking Completo (tela legada)
         </Link>
       </div>
     </Cf2Card>

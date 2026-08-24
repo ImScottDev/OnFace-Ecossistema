@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ClipboardCheck, Check } from "lucide-react";
+import { ClipboardCheck, Check, CheckCircle2, Circle } from "lucide-react";
 
 /**
  * Qualificação SDR — campos-chave que a SDR preenche rápido durante a
@@ -52,6 +52,9 @@ export function QualificacaoSdrSection({
   queryKeysToInvalidate = [],
   variant = "dark",
   prefill,
+  hideHeader = false,
+  onProgressChange,
+  showFieldStatusDots = false,
 }: {
   leadId: string;
   camposCustom?: Record<string, unknown> | null;
@@ -69,6 +72,16 @@ export function QualificacaoSdrSection({
    * pré-preenchidos quando já existirem". Não são salvos automaticamente —
    * só populam a tela; a gravação continua acontecendo no blur, igual antes. */
   prefill?: Partial<SdrValues>;
+  /** Esconde o header interno ("Qualificação SDR" + X/4) — usado quando o
+   * container (ex: drawer novo de Pré-vendas, Figma 211:4/23-08) já renderiza
+   * seu próprio header com barra de progresso, pra não duplicar. */
+  hideHeader?: boolean;
+  /** Notifica o container do progresso real (sem duplicar o cálculo de
+   * `filledCount` fora daqui) — usado pra desenhar a barra de progresso e o
+   * alerta de "Tomador de decisão: Não identificado" no header externo. */
+  onProgressChange?: (info: { count: number; total: number; tomadorDecisao: string }) => void;
+  /** Ver comentário acima do label — indicador visual opt-in de preenchido/pendente por campo. */
+  showFieldStatusDots?: boolean;
 }) {
   const light = variant === "light";
   const qc = useQueryClient();
@@ -106,6 +119,11 @@ export function QualificacaoSdrSection({
 
   const filledCount = SDR_FIELDS.filter((f) => vals[f.key]?.trim()).length;
 
+  useEffect(() => {
+    onProgressChange?.({ count: filledCount, total: SDR_FIELDS.length, tomadorDecisao: vals.tomadorDecisao || "" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filledCount, vals.tomadorDecisao]);
+
   if (readOnly) {
     const anyFilled = filledCount > 0;
     return (
@@ -138,19 +156,31 @@ export function QualificacaoSdrSection({
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-2">
-          <ClipboardCheck className="w-3.5 h-3.5" style={{ color: light ? "#88d600" : "#c8ff00" }} />
-          <h4 className={light ? "text-[14px] font-bold" : "text-[11px] font-medium text-white/30 uppercase tracking-wider"} style={light ? { color: "var(--cf2-text-primary)", fontFamily: "var(--cf2-font-heading)" } : undefined}>
-            Qualificação SDR
-          </h4>
+      {!hideHeader && (
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <ClipboardCheck className="w-3.5 h-3.5" style={{ color: light ? "#88d600" : "#c8ff00" }} />
+            <h4 className={light ? "text-[14px] font-bold" : "text-[11px] font-medium text-white/30 uppercase tracking-wider"} style={light ? { color: "var(--cf2-text-primary)", fontFamily: "var(--cf2-font-heading)" } : undefined}>
+              Qualificação SDR
+            </h4>
+          </div>
+          <span className="text-[12px]" style={light ? { color: "var(--cf2-text-tertiary)" } : { color: "rgba(255,255,255,0.3)" }}>{filledCount}/{SDR_FIELDS.length}</span>
         </div>
-        <span className="text-[12px]" style={light ? { color: "var(--cf2-text-tertiary)" } : { color: "rgba(255,255,255,0.3)" }}>{filledCount}/{SDR_FIELDS.length}</span>
-      </div>
+      )}
       <div className="space-y-2">
         {SDR_FIELDS.map((f) => (
           <div key={f.key}>
-            <label className="text-[12px] mb-0.5 flex items-center gap-1" style={light ? { color: "var(--cf2-text-secondary)" } : { color: "rgba(255,255,255,0.4)" }}>
+            <label className="text-[12px] mb-0.5 flex items-center gap-1.5" style={light ? { color: "var(--cf2-text-secondary)" } : { color: "rgba(255,255,255,0.4)" }}>
+              {/* Ponto de status (23/08, drawer novo de Pré-vendas): dá a
+                  leitura de "checklist" do Figma sem virar campo read-only —
+                  o critério continua editável, só ganha um indicador visual
+                  de preenchido/pendente. Opt-in (`showFieldStatusDots`) pra
+                  não mudar o visual dos outros 5 usos deste componente. */}
+              {showFieldStatusDots && (
+                vals[f.key]?.trim()
+                  ? <CheckCircle2 className="w-3 h-3 shrink-0" style={{ color: "#4ade80" }} />
+                  : <Circle className="w-3 h-3 shrink-0" style={{ color: "rgba(255,255,255,0.25)" }} />
+              )}
               {f.label}
               {savedKey === f.key && <Check className="w-2.5 h-2.5" style={{ color: light ? "#22c55e" : "#34d399" }} />}
             </label>

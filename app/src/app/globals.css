@@ -157,6 +157,41 @@
   --cf2-chrome-text-secondary: #9ca3af;
 }
 
+/* Editor de automações: o canvas é uma ferramenta de trabalho contínuo,
+   não um card de configuração. Mantém a linguagem Callface (lima + chrome)
+   e dá ao grafo o contraste necessário para leitura de arestas e nós. */
+[data-cf2-theme="builder"] {
+  --cf2-bg-page: #171812;
+  --cf2-bg-canvas: #151611;
+  --cf2-bg-surface: #20211b;
+  --cf2-bg-surface-muted: #292a23;
+  --cf2-bg-surface-subtle: #1b1c17;
+  --cf2-bg-inverse: #f4f6ed;
+  --cf2-border-default: #383a30;
+  --cf2-border-grid: rgba(181, 190, 168, 0.17);
+  --cf2-text-primary: #f5f7ef;
+  --cf2-text-secondary: #aeb3a4;
+  --cf2-text-tertiary: #747a6c;
+  --cf2-text-on-accent: #12150c;
+  --cf2-text-on-inverse: #171812;
+  --cf2-accent: #b5ff16;
+  --cf2-accent-border: #8ac400;
+  --cf2-accent-bg-subtle: #313b1d;
+  --cf2-success-text: #9fe870;
+  --cf2-success-bg: #26351e;
+  --cf2-success-fill: #9fe870;
+  --cf2-warning-text: #f3b75f;
+  --cf2-warning-bg: #332d1b;
+  --cf2-warning-border: #554626;
+  --cf2-danger-text: #ff8e83;
+  --cf2-danger-border: #b8544e;
+  --cf2-shadow-card-sm: 0 14px 35px rgba(0, 0, 0, 0.22);
+  --cf2-shadow-card-md: 0 20px 55px rgba(0, 0, 0, 0.3);
+  background: var(--cf2-bg-page);
+  color: var(--cf2-text-primary);
+  font-family: var(--cf2-font-ui);
+}
+
 /* Scroll interno do App Shell (17/08) — a área de conteúdo de /inicio
    cruza uma zona escura (hero) e uma clara (o resto); o elemento que rola
    só tem UMA cor de fundo, então a barra de rolagem nativa sempre revela

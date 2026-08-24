@@ -136,7 +136,7 @@ app.route("/api/me", meRoutes);
 app.route("/api/conta", authFlowRoutes);
 
 export function startServer() {
-  const port = parseInt(process.env.API_PORT || "3001");
+  const port = parseInt(process.env.API_PORT || "3002");
   const server = serve({ fetch: app.fetch, port }, () => {
     console.log(`[API] Process ${process.pid} listening on port ${port}`);
   });

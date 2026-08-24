@@ -2,11 +2,12 @@ import { Hono } from "hono";
 import { db } from "@/lib/db";
 import {
   contatos, emails, emailContas, ligacoes, leads, empresas, negocios,
-  propostas, reunioes, tarefas, aiSdrContatoState, clientes,
+  propostas, reunioes, tarefas, aiSdrContatoState, clientes, contatoLabels, labels,
 } from "@/lib/db/schema";
 import { eq, and, or, desc, asc, isNull, ilike, inArray, gte, sql } from "drizzle-orm";
 import { z } from "zod";
 import { getCtx, parseBody } from "../compat.js";
+import { publicarEvento } from "@/lib/events/outbox";
 
 /**
  * Central de Atendimento (CRM 2.0, Figma node 53:518) — inbox omnicanal.
@@ -40,6 +41,8 @@ type ItemUnificado = {
   // ai_sdr_contato_state.conversation_summary já foi preenchido (20/08,
   // referência UX). null é o caso comum hoje: sem resumo, não "carregando".
   conversationSummary: string | null;
+  status: string;
+  snoozedUntil: string | null;
 };
 
 // ─── GET /atendimento/conversas ─────────────────────────────────────
@@ -48,7 +51,7 @@ app.get("/atendimento/conversas", async (c) => {
   const ctx = await getCtx(c);
 
   const canal = c.req.query("canal") || "todas"; // todas | whatsapp | email | ligacao
-  const view = c.req.query("view") || "meus"; // meus | nao_atribuidos | todos
+  const view = c.req.query("view") || "meus"; // meus | nao_atribuidos | todos | fechadas | ia
   const search = c.req.query("search") ?? null;
   const viewAs = c.req.query("viewAs") ?? null;
   const limit = Math.min(parseInt(c.req.query("limit") || "40"), 100);
@@ -94,6 +97,14 @@ async function buscarWhatsapp(opts: {
 
   const conditions = [eq(contatos.organizacaoId, ctx.organizacaoId), eq(contatos.canal, "whatsapp")];
 
+  if (view === "fechadas") {
+    conditions.push(eq(contatos.status, "closed"));
+  } else if (view === "ia") {
+    conditions.push(eq(contatos.status, "open"), eq(aiSdrContatoState.handoffStatus, "ai_handling"));
+  } else {
+    conditions.push(eq(contatos.status, "open"), or(isNull(contatos.snoozedUntil), sql`${contatos.snoozedUntil} <= now()`)!);
+  }
+
   // Privacidade real entre vendedores (Kauã, 10/08): cada um só vê as
   // conversas de WhatsApp que são dele (ou ainda sem dono) — nem admin/super
   // admin vê o WhatsApp de outro vendedor por padrão aqui. Só "Atribuir"
@@ -121,6 +132,8 @@ async function buscarWhatsapp(opts: {
       responsavelId: contatos.responsavelId,
       handoffStatus: aiSdrContatoState.handoffStatus,
       conversationSummary: aiSdrContatoState.conversationSummary,
+      status: contatos.status,
+      snoozedUntil: contatos.snoozedUntil,
     })
     .from(contatos)
     .leftJoin(leads, eq(contatos.leadId, leads.id))
@@ -146,8 +159,109 @@ async function buscarWhatsapp(opts: {
     callStatus: null,
     emailThreadId: null,
     conversationSummary: r.conversationSummary ?? null,
+    status: r.status,
+    snoozedUntil: r.snoozedUntil ? r.snoozedUntil.toISOString() : null,
   }));
 }
+
+const acaoConversaSchema = z.object({
+  acao: z.enum(["claim", "transfer", "release", "snooze", "unsnooze", "close", "reopen"]),
+  usuarioId: z.string().uuid().nullable().optional(),
+  minutos: z.number().int().min(1).max(60 * 24 * 30).optional(),
+});
+
+// Acoes de operacao do Inbox. Todas alteram o contato/canal canonico e
+// publicam evento para Timeline/automacoes, sem criar uma conversa paralela.
+app.post("/atendimento/conversas/:id/acao", async (c) => {
+  const ctx = await getCtx(c);
+  const contatoId = c.req.param("id");
+  const parsed = acaoConversaSchema.safeParse(await c.req.json());
+  if (!parsed.success) return c.json({ error: "Dados invalidos", details: parsed.error.flatten() }, 400);
+
+  const [contato] = await db.select().from(contatos).where(and(
+    eq(contatos.id, contatoId),
+    eq(contatos.organizacaoId, ctx.organizacaoId),
+  )).limit(1);
+  if (!contato) return c.json({ error: "Conversa nao encontrada" }, 404);
+
+  const acao = parsed.data.acao;
+  const isAdmin = ["admin", "super_admin", "gerente"].includes(ctx.userRole);
+  const alvo = parsed.data.usuarioId ?? ctx.userId;
+  if (["claim", "transfer"].includes(acao) && !isAdmin && alvo !== ctx.userId) {
+    return c.json({ error: "Sem permissao para transferir para outro usuario" }, 403);
+  }
+
+  const agora = new Date();
+  const patch = {
+    ...(acao === "claim" || acao === "transfer" ? { responsavelId: alvo } : {}),
+    ...(acao === "release" ? { responsavelId: null } : {}),
+    ...(acao === "snooze" ? { snoozedUntil: new Date(agora.getTime() + (parsed.data.minutos ?? 60) * 60_000) } : {}),
+    ...(acao === "unsnooze" ? { snoozedUntil: null } : {}),
+    ...(acao === "close" ? { status: "closed", closedAt: agora, closedById: ctx.userId, snoozedUntil: null } : {}),
+    ...(acao === "reopen" ? { status: "open", closedAt: null, closedById: null, snoozedUntil: null } : {}),
+    updatedAt: agora,
+  };
+  const [updated] = await db.update(contatos).set(patch).where(eq(contatos.id, contatoId)).returning();
+
+  const eventByAction = {
+    claim: "ConversationClaimed",
+    transfer: "ConversationTransferred",
+    release: "ConversationReleased",
+    snooze: "ConversationSnoozed",
+    unsnooze: "ConversationReopened",
+    close: "ConversationClosed",
+    reopen: "ConversationReopened",
+  } as const;
+  await publicarEvento({
+    organizacaoId: ctx.organizacaoId,
+    eventType: eventByAction[acao],
+    aggregateType: "contato",
+    aggregateId: contatoId,
+    payload: { acao, usuarioId: alvo, actorId: ctx.userId, minutos: parsed.data.minutos ?? null },
+    idempotencyKey: `contato:${contatoId}:${acao}:${agora.getTime()}`,
+  });
+
+  return c.json({ contato: updated });
+});
+
+app.get("/atendimento/conversas/:id/tags", async (c) => {
+  const ctx = await getCtx(c);
+  const rows = await db.select({ id: labels.id, nome: labels.nome, cor: labels.cor })
+    .from(contatoLabels)
+    .innerJoin(labels, eq(labels.id, contatoLabels.labelId))
+    .where(and(eq(contatoLabels.contatoId, c.req.param("id")), eq(labels.organizacaoId, ctx.organizacaoId)))
+    .orderBy(asc(labels.nome));
+  return c.json({ tags: rows });
+});
+
+app.post("/atendimento/conversas/:id/tags", async (c) => {
+  const ctx = await getCtx(c);
+  const body = await c.req.json();
+  const parsed = z.object({ labelId: z.string().uuid() }).safeParse(body);
+  if (!parsed.success) return c.json({ error: "labelId invalido" }, 400);
+  const [label] = await db.select({ id: labels.id }).from(labels).where(and(
+    eq(labels.id, parsed.data.labelId), eq(labels.organizacaoId, ctx.organizacaoId),
+  )).limit(1);
+  if (!label) return c.json({ error: "Tag nao encontrada" }, 404);
+  const [contato] = await db.select({ id: contatos.id }).from(contatos).where(and(
+    eq(contatos.id, c.req.param("id")), eq(contatos.organizacaoId, ctx.organizacaoId),
+  )).limit(1);
+  if (!contato) return c.json({ error: "Conversa nao encontrada" }, 404);
+  await db.insert(contatoLabels).values({ contatoId: contato.id, labelId: label.id }).onConflictDoNothing();
+  return c.json({ ok: true }, 201);
+});
+
+app.delete("/atendimento/conversas/:id/tags/:labelId", async (c) => {
+  const ctx = await getCtx(c);
+  const [contato] = await db.select({ id: contatos.id }).from(contatos).where(and(
+    eq(contatos.id, c.req.param("id")), eq(contatos.organizacaoId, ctx.organizacaoId),
+  )).limit(1);
+  if (!contato) return c.json({ error: "Conversa nao encontrada" }, 404);
+  await db.delete(contatoLabels).where(and(
+    eq(contatoLabels.contatoId, contato.id), eq(contatoLabels.labelId, c.req.param("labelId")),
+  ));
+  return c.json({ ok: true });
+});
 
 async function buscarEmail(opts: {
   ctx: Awaited<ReturnType<typeof getCtx>>; view: string; search: string | null;
@@ -220,6 +334,8 @@ async function buscarEmail(opts: {
       callStatus: null,
       emailThreadId: r.threadId,
       conversationSummary: null,
+      status: "open",
+      snoozedUntil: null,
     }));
 }
 
@@ -277,6 +393,8 @@ async function buscarLigacao(opts: {
       callStatus: r.callStatus,
       emailThreadId: null,
       conversationSummary: null,
+      status: "open",
+      snoozedUntil: null,
     };
   });
 }

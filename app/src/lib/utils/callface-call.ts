@@ -13,7 +13,14 @@
  * DDD+número puro (ex: 11987654321), mesmo formato usado no upload de
  * planilha de campanha (ver lib/integrations/callpilot-trigger.ts).
  */
+/** DDD+número puro, sem código de país — mesma normalização usada pelo
+ * webphone da Callface. Extraído pra reusar tanto no deep link direto
+ * (`callfaceCallUrl`) quanto no prefill do discador interno (`Cf2Dialer`,
+ * via `/atendimento?canal=ligacao&telefone=...`). */
+export function digitsForDialer(telefone: string): string {
+  return telefone.replace(/\D/g, "").replace(/^55(?=\d{10,11}$)/, "");
+}
+
 export function callfaceCallUrl(telefone: string): string {
-  const digits = telefone.replace(/\D/g, "").replace(/^55(?=\d{10,11}$)/, "");
-  return `https://app.callface.ai/calls?call_to=${digits}`;
+  return `https://app.callface.ai/calls?call_to=${digitsForDialer(telefone)}`;
 }

@@ -5,8 +5,8 @@
  * automático (proposta aceita via pagamento Stripe — marcarPropostaAceita).
  */
 import { db } from "@/lib/db";
-import { notificacoes, usuarios, negocios, leads } from "@/lib/db/schema";
-import { and, eq, inArray } from "drizzle-orm";
+import { notificacoes, usuarios, negocios, leads, fulfillments, servicosCanonicos, empresas, atividades } from "@/lib/db/schema";
+import { and, eq, inArray, desc } from "drizzle-orm";
 
 const brl = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -61,5 +61,75 @@ export async function notificarNegocioGanho(negocioId: string): Promise<void> {
     );
   } catch (e) {
     console.error("[notificar] falha ao notificar negócio ganho:", e);
+  }
+}
+
+/**
+ * Formulário de implantação recebido (20/08, pedido Kauã) — chamado pela
+ * rota pública quando o cliente submete o formulário de implantação PABX.
+ * Mesmo princípio de fire-and-forget de notificarNegocioGanho: nunca deixa
+ * uma falha de notificação/atividade derrubar a submissão do formulário.
+ * Notifica o `responsavelId` do fulfillment (nível projeto — item 1 desta
+ * rodada trouxe responsável por item, mas quem entrega o formulário é o
+ * projeto como um todo). Também registra uma atividade real (mesma tabela
+ * `atividades` de qualquer outra Timeline do CRM), vinculada ao primeiro
+ * lead real da empresa (leads.empresaId — mesma fonte que já alimenta
+ * "Atividades recentes" no FulfillmentDetail). Se a empresa não tiver
+ * nenhum lead vinculado (gap real observado no fulfillment de teste
+ * HOSPITAL CARE, sem negócio/lead formal no CRM), a atividade é pulada
+ * honestamente — não inventa um leadId falso só pra satisfazer o NOT NULL.
+ */
+export async function notificarFormularioImplantacaoRecebido(fulfillmentId: string): Promise<void> {
+  try {
+    const [f] = await db
+      .select({
+        id: fulfillments.id,
+        organizacaoId: fulfillments.organizacaoId,
+        responsavelId: fulfillments.responsavelId,
+        empresaId: empresas.id,
+        empresaNome: empresas.nome,
+      })
+      .from(fulfillments)
+      .innerJoin(servicosCanonicos, eq(servicosCanonicos.id, fulfillments.servicoCanonicoId))
+      .leftJoin(empresas, eq(empresas.id, servicosCanonicos.empresaId))
+      .where(eq(fulfillments.id, fulfillmentId))
+      .limit(1);
+    if (!f) return;
+
+    const quem = f.empresaNome || "cliente sem nome cadastrado";
+    const link = `/clientes/entrega/${f.id}`;
+
+    if (f.responsavelId) {
+      await db.insert(notificacoes).values({
+        usuarioId: f.responsavelId,
+        tipo: "fulfillment_formulario_recebido",
+        titulo: `Formulário de implantação recebido — ${quem}`,
+        mensagem: "O cliente enviou as informações do formulário de implantação. Confira e siga com o levantamento.",
+        link,
+      });
+    }
+
+    if (f.empresaId) {
+      const [lead] = await db
+        .select({ id: leads.id })
+        .from(leads)
+        .where(eq(leads.empresaId, f.empresaId))
+        .orderBy(desc(leads.createdAt))
+        .limit(1);
+      if (lead) {
+        await db.insert(atividades).values({
+          organizacaoId: f.organizacaoId,
+          leadId: lead.id,
+          tipo: "formulario_implantacao_recebido",
+          titulo: "Formulário de implantação recebido",
+          descricao: `${quem} enviou o formulário de implantação (portabilidade, ramais e URA).`,
+          dados: { fulfillmentId: f.id },
+        });
+      } else {
+        console.warn(`[notificar] fulfillment ${f.id}: sem lead vinculado à empresa, atividade não registrada (gap real, não fabricado).`);
+      }
+    }
+  } catch (e) {
+    console.error("[notificar] falha ao notificar formulário de implantação recebido:", e);
   }
 }

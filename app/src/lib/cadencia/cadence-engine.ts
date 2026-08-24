@@ -44,7 +44,7 @@ export interface CadenceStepBranch {
 
 export interface CadenceStep {
   id: string;
-  tipo: "wait" | "action";
+  tipo: "wait" | "action" | "condition";
   /** Só pra tipo="wait": quanto esperar antes do PRÓXIMO step (minutos). */
   esperaMinutos?: number;
   /** Só pra tipo="action": nome do adapter registrado (ver ADAPTERS abaixo). */
@@ -188,6 +188,27 @@ export async function avancarEnrollment(enrollmentId: string): Promise<void> {
   if (step.tipo === "wait") {
     // Wait não executa nada — só existe pra dar nome/observabilidade ao
     // intervalo. A espera de verdade é o próximo `scheduledAt`.
+    await avancarParaProximoStep(enrollment.id, steps, step, vars, {});
+    return;
+  }
+
+  if (step.tipo === "condition") {
+    // Condition não executa ação nem espera — só avalia `branches` (mesma
+    // `avaliarCondicao` de lib/crm/condicao.ts, via `resolverBranch` já
+    // existente neste módulo, sem duplicar a gramática de condição) e
+    // avança direto pro branch resolvido. Registra evento pra aparecer na
+    // fila de Execuções (vocabulário já previsto no schema:
+    // "executado" quando um branch bateu, "condicao_nao_atendida" quando
+    // nenhum bateu e a cadência seguiu pelo fallback sequencial/branch
+    // default).
+    const branchResolvido = resolverBranch(step, vars);
+    await db.insert(cadenceEnrollmentEvents).values({
+      enrollmentId,
+      stepId: step.id,
+      status: branchResolvido !== undefined ? "executado" : "condicao_nao_atendida",
+      resultado: { branchResolvido: branchResolvido ?? null },
+      attempt: enrollment.attempt,
+    });
     await avancarParaProximoStep(enrollment.id, steps, step, vars, {});
     return;
   }

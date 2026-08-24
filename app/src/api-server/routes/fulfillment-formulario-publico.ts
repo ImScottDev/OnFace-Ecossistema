@@ -7,11 +7,12 @@
 // URL, nunca por ID sequencial.
 import { Hono } from "hono";
 import { db } from "@/lib/db";
-import { fulfillments, fulfillmentFormularios } from "@/lib/db/schema";
+import { fulfillments, fulfillmentFormularios, fulfillmentLinhasPortabilidade, fulfillmentRamais } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import fs from "fs";
 import path from "path";
+import { notificarFormularioImplantacaoRecebido } from "@/lib/crm/notificar";
 
 const app = new Hono();
 
@@ -144,6 +145,69 @@ const respostasSchema = z
 
 const postSchema = z.object({ respostas: respostasSchema });
 
+// Materialização relacional (20/08, pedido Kauã: "não deixar só no jsonb
+// invisível") — projeta linhas de portabilidade e ramais do jsonb bruto
+// (fonte de verdade/backup, continua sendo gravado igual) pras duas tabelas
+// novas. Idempotente por reconstrução: apaga tudo daquele fulfillment e
+// reinsere do payload atual — nunca acumula linha órfã de um envio
+// anterior. Mesmo filtro de "linha em branco" que o frontend já aplica
+// antes de mandar (defensivo: reaplicado aqui pro caso de payload vir de
+// outro client no futuro).
+async function materializarLinhasERamais(fulfillmentId: string, organizacaoId: string, respostas: Record<string, unknown>): Promise<void> {
+  const portabilidade = (respostas.portabilidade ?? {}) as Record<string, unknown>;
+  const linhasRaw = Array.isArray(portabilidade.linhas) ? (portabilidade.linhas as Record<string, unknown>[]) : [];
+  const titular = portabilidade.razaoSocialTitular ? String(portabilidade.razaoSocialTitular) : null;
+  const operadoraAtual = portabilidade.operadoraAtual ? String(portabilidade.operadoraAtual) : null;
+  const linhasValidas = linhasRaw.filter((l) => l.ddd || l.numero || l.anexoUrl);
+
+  const ramaisRaw = Array.isArray(respostas.ramais) ? (respostas.ramais as Record<string, unknown>[]) : [];
+  const ramaisValidos = ramaisRaw.filter((r) => r.ramal || r.nome || r.departamento);
+
+  await db.delete(fulfillmentLinhasPortabilidade).where(eq(fulfillmentLinhasPortabilidade.fulfillmentId, fulfillmentId));
+  await db.delete(fulfillmentRamais).where(eq(fulfillmentRamais.fulfillmentId, fulfillmentId));
+
+  if (linhasValidas.length > 0) {
+    await db.insert(fulfillmentLinhasPortabilidade).values(
+      linhasValidas.map((l) => ({
+        organizacaoId,
+        fulfillmentId,
+        ddd: l.ddd ? String(l.ddd) : null,
+        numero: l.novaLinha ? null : l.numero ? String(l.numero) : null,
+        tipo: l.novaLinha ? "nova_linha" : "portabilidade",
+        operadoraAtual,
+        titular,
+        anexoUrl: l.anexoUrl ? String(l.anexoUrl) : null,
+        // Sem entidade "anexo" própria pra este upload (fs local direto,
+        // ver rota de upload abaixo) — guarda o nome original do arquivo
+        // como referência textual, não um ID de outra tabela.
+        anexoId: l.anexoNome ? String(l.anexoNome) : null,
+      }))
+    );
+  }
+
+  if (ramaisValidos.length > 0) {
+    await db.insert(fulfillmentRamais).values(
+      ramaisValidos.map((r) => ({
+        organizacaoId,
+        fulfillmentId,
+        departamento: r.departamento ? String(r.departamento) : null,
+        numeroExterno: r.numeroExterno ? String(r.numeroExterno) : null,
+        ramal: r.ramal ? String(r.ramal) : null,
+        usuario: r.nome ? String(r.nome) : null,
+        email: r.email ? String(r.email) : null,
+        celular: r.celular ? String(r.celular) : null,
+        modeloAparelho: r.modeloAparelho ? String(r.modeloAparelho) : null,
+        usaAparelhoFisico: !!r.utilizaAparelhoMesa,
+        gravacao: !!r.gravarLigacao,
+        ligacoesInternacionais: !!r.ligacoesInternacionais,
+        paisesPermitidos: r.paises
+          ? String(r.paises).split(",").map((s) => s.trim()).filter(Boolean)
+          : null,
+      }))
+    );
+  }
+}
+
 // POST /fulfillment-formulario/:publicToken — submissão do cliente.
 // Escolha: SOBRESCREVE `respostas` por completo com o que veio no body (não
 // faz merge campo a campo com o valor anterior). A página pública sempre
@@ -174,6 +238,19 @@ app.post("/fulfillment-formulario/:publicToken", async (c) => {
     })
     .where(eq(fulfillmentFormularios.id, formulario.id))
     .returning();
+
+  // Materialização relacional — best-effort: uma falha aqui não pode
+  // derrubar a submissão (o jsonb acima já é a fonte de verdade/backup e
+  // já foi salvo com sucesso).
+  try {
+    await materializarLinhasERamais(fulfillment.id, fulfillment.organizacaoId, parsed.data.respostas);
+  } catch (err) {
+    console.error(`[fulfillment-formulario] falha ao materializar linhas/ramais do fulfillment ${fulfillment.id}:`, err);
+  }
+
+  // Notificação real ao responsável + atividade (fire-and-forget, nunca
+  // derruba a submissão — ver lib/crm/notificar.ts).
+  await notificarFormularioImplantacaoRecebido(fulfillment.id);
 
   return c.json({
     formulario: {

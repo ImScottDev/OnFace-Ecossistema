@@ -16,7 +16,7 @@
  */
 import { db } from "@/lib/db";
 import { eventOutbox, auditLog } from "@/lib/db/schema";
-import { eq, asc } from "drizzle-orm";
+import { eq, asc, and, or, lt, isNull } from "drizzle-orm";
 import { materializarServicosCanonicosDoGrupo } from "@/lib/crm/servico-canonico";
 import { criarFulfillmentsParaServicos } from "@/lib/crm/fulfillment";
 
@@ -34,10 +34,17 @@ export function registrarConsumidorEvento(eventType: string, handler: Handler): 
 const MAX_TENTATIVAS = 5;
 
 export async function processarEventosPendentes(limite = 50): Promise<{ processados: number; falhados: number }> {
+  // Claim atômico por evento: múltiplos workers podem listar o mesmo pending,
+  // mas só um muda seu estado para processing. Eventos presos em processing
+  // há mais de 15 minutos voltam a ser elegíveis para recuperação.
+  const staleBefore = new Date(Date.now() - 15 * 60 * 1000);
   const pendentes = await db
     .select()
     .from(eventOutbox)
-    .where(eq(eventOutbox.status, "pending"))
+    .where(or(
+      eq(eventOutbox.status, "pending"),
+      and(eq(eventOutbox.status, "processing"), or(isNull(eventOutbox.processingStartedAt), lt(eventOutbox.processingStartedAt, staleBefore))),
+    ))
     .orderBy(asc(eventOutbox.createdAt))
     .limit(limite);
 
@@ -45,12 +52,24 @@ export async function processarEventosPendentes(limite = 50): Promise<{ processa
   let falhados = 0;
 
   for (const evento of pendentes) {
+    const [claimed] = await db.update(eventOutbox)
+      .set({ status: "processing", processingStartedAt: new Date() })
+      .where(and(
+        eq(eventOutbox.id, evento.id),
+        or(
+          eq(eventOutbox.status, "pending"),
+          and(eq(eventOutbox.status, "processing"), or(isNull(eventOutbox.processingStartedAt), lt(eventOutbox.processingStartedAt, staleBefore))),
+        ),
+      ))
+      .returning({ id: eventOutbox.id });
+    if (!claimed) continue;
+
     try {
       const list = handlers.get(evento.eventType) || [];
       for (const handler of list) await handler(evento);
       await db
         .update(eventOutbox)
-        .set({ status: "processed", processedAt: new Date() })
+        .set({ status: "processed", processedAt: new Date(), processingStartedAt: null })
         .where(eq(eventOutbox.id, evento.id));
       processados++;
     } catch (err) {
@@ -61,6 +80,7 @@ export async function processarEventosPendentes(limite = 50): Promise<{ processa
           status: attempts >= MAX_TENTATIVAS ? "failed" : "pending",
           attempts,
           lastError: err instanceof Error ? err.message : String(err),
+          processingStartedAt: null,
         })
         .where(eq(eventOutbox.id, evento.id));
       falhados++;
@@ -87,10 +107,14 @@ for (const eventType of [
   "LeadCreated", "DealCreated", "StageChanged", "DealWon", "DealLost", "CustomerCreated",
   "ProposalSent", "ProposalViewed", "ProposalAccepted", "ProposalRejected",
   // Commercial Core (ADR-EXEC-020)
-  "PaymentStarted", "PaymentCompleted", "ContractRequired", "ContractSigned", "CanonicalServiceActivated",
+  "PaymentStarted", "PaymentCompleted", "ContractRequired", "ContractGenerated", "ContractPreparationFailed", "SignatureRequested",
+  "SignerViewed", "SignerSigned", "ContractCompleted", "FinalDocumentGenerated", "ContractDeclined",
+  "ContractExpired", "ContractSigned", "CanonicalServiceActivated",
   // Commercial Core v2 (ADR-EXEC-021)
   "ProposalOpened", "ProposalAdjustmentRequested", "CheckoutCreated", "CheckoutOpened",
   "PaymentFailed", "CheckoutExpired", "FulfillmentGroupCompleted",
+  "ConversationClaimed", "ConversationTransferred", "ConversationReleased",
+  "ConversationSnoozed", "ConversationClosed", "ConversationReopened",
 ]) {
   registrarConsumidorEvento(eventType, registrarNoAuditLog);
 }

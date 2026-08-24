@@ -7,9 +7,10 @@
 // quando esses outros agentes existirem de fato.
 import { Hono } from "hono";
 import { db } from "@/lib/db";
-import { aiSdrConfig, aiSdrContatoState, aiSdrLogs } from "@/lib/db/schema";
-import { eq, and, gte, count } from "drizzle-orm";
+import { aiSdrConfig, aiSdrContatoState, aiSdrLogs, aiAgents, aiAgentVersions, aiAgentRuns } from "@/lib/db/schema";
+import { eq, and, gte, count, desc } from "drizzle-orm";
 import { getCtx } from "../compat.js";
+import { z } from "zod";
 
 const app = new Hono();
 
@@ -46,8 +47,39 @@ app.get("/automacoes/agentes", async (c) => {
     {} as Record<string, number>,
   );
 
+  const catalogo = await db.select({
+    id: aiAgents.id,
+    tipo: aiAgents.finalidade,
+    nome: aiAgents.nome,
+    descricao: aiAgents.descricao,
+    ativo: eq(aiAgents.status, "published"),
+    status: aiAgents.status,
+    prioridade: aiAgents.prioridade,
+    atualizadoEm: aiAgents.updatedAt,
+    versao: aiAgentVersions.versao,
+    modelo: aiAgentVersions.modelo,
+  }).from(aiAgents)
+    .leftJoin(aiAgentVersions, and(eq(aiAgentVersions.agentId, aiAgents.id), eq(aiAgentVersions.status, "published")))
+    .where(eq(aiAgents.organizacaoId, orgId))
+    .orderBy(aiAgents.prioridade, desc(aiAgents.updatedAt));
+
   return c.json({
     agentes: [
+      ...catalogo.map((agent) => ({
+        id: agent.id,
+        tipo: agent.tipo,
+        nome: agent.nome,
+        descricao: agent.descricao || "Agente configuravel do Callface.",
+        ativo: agent.ativo,
+        configurado: true,
+        modelo: agent.modelo,
+        atualizadoEm: agent.atualizadoEm,
+        status: agent.status,
+        versao: agent.versao,
+        leads: { total: 0, porStatus: {} },
+        execucoes24h: 0,
+        configHref: `/automacoes/agentes/${agent.id}`,
+      })),
       {
         id: "ai-sdr",
         tipo: "ai_sdr",
@@ -63,12 +95,219 @@ app.get("/automacoes/agentes", async (c) => {
         },
         execucoes24h,
         configHref: "/configuracoes/ai-sdr",
-      },
-    ],
+      }],
     // Próximos agentes do catálogo ainda não existem de verdade — não
     // inventar tela/dado pra eles, só deixar visível que o catálogo cresce.
     planejados: ["recovery_agent", "collection_agent", "cs_agent"],
   });
+});
+
+const versionSchema = z.object({
+  systemPrompt: z.string().default(""),
+  provider: z.string().nullable().optional(),
+  modelo: z.string().nullable().optional(),
+  tools: z.array(z.string()).default([]),
+  triggerConfig: z.record(z.string(), z.unknown()).default({}),
+  handoffConfig: z.record(z.string(), z.unknown()).default({}),
+  knowledgeConfig: z.record(z.string(), z.unknown()).default({}),
+  maxSteps: z.number().int().min(1).max(30).default(8),
+  tokenBudget: z.number().int().min(1).max(100000).default(4000),
+  costBudget: z.number().nonnegative().nullable().optional(),
+});
+
+const agentSchema = z.object({
+  nome: z.string().min(1).max(120),
+  slug: z.string().regex(/^[a-z0-9-]+$/).max(80),
+  descricao: z.string().max(500).nullable().optional(),
+  finalidade: z.string().min(1).max(80).default("atendimento"),
+  prioridade: z.number().int().min(0).max(10000).default(100),
+  versao: versionSchema.default({
+    systemPrompt: "",
+    tools: [],
+    triggerConfig: {},
+    handoffConfig: {},
+    knowledgeConfig: {},
+    maxSteps: 8,
+    tokenBudget: 4000,
+  }),
+});
+
+function normalizarVersao(version: z.infer<typeof versionSchema>) {
+  return {
+    ...version,
+    costBudget: version.costBudget == null ? null : String(version.costBudget),
+  };
+}
+
+app.post("/automacoes/agentes", async (c) => {
+  const ctx = await getCtx(c);
+  const parsed = agentSchema.safeParse(await c.req.json());
+  if (!parsed.success) return c.json({ error: "Agente invalido", details: parsed.error.flatten() }, 400);
+  const [agent] = await db.insert(aiAgents).values({
+    organizacaoId: ctx.organizacaoId,
+    nome: parsed.data.nome,
+    slug: parsed.data.slug,
+    descricao: parsed.data.descricao ?? null,
+    finalidade: parsed.data.finalidade,
+    prioridade: parsed.data.prioridade,
+    createdById: ctx.userId,
+  }).returning();
+  await db.insert(aiAgentVersions).values({ agentId: agent.id, versao: 1, createdById: ctx.userId, ...normalizarVersao(parsed.data.versao) });
+  return c.json({ agent }, 201);
+});
+
+// Dispatcher V1: roteamento determinístico e seguro para validação do fluxo.
+// Não chama provedor de IA, não envia mensagem e não executa ferramentas. A
+// execução é persistida em ai_agent_runs para podermos validar seleção,
+// versão, limites e handoff antes de habilitar qualquer modo live.
+const dispatchDryRunSchema = z.object({
+  eventType: z.string().min(1).max(120),
+  entityType: z.string().min(1).max(80).default("lead"),
+  entityId: z.string().uuid().optional().nullable(),
+  leadId: z.string().uuid().optional().nullable(),
+  contatoId: z.string().uuid().optional().nullable(),
+  agentId: z.string().uuid().optional().nullable(),
+  message: z.string().max(10000).optional().nullable(),
+  payload: z.record(z.string(), z.unknown()).default({}),
+  requestedTools: z.array(z.string()).default([]),
+});
+
+app.post("/automacoes/agentes/dispatch-dry-run", async (c) => {
+  const ctx = await getCtx(c);
+  const parsed = dispatchDryRunSchema.safeParse(await c.req.json());
+  if (!parsed.success) return c.json({ error: "Evento inválido", details: parsed.error.flatten() }, 400);
+
+  const [candidatos] = await Promise.all([
+    db.select({
+      agent: aiAgents,
+      version: aiAgentVersions,
+    }).from(aiAgents)
+      .innerJoin(aiAgentVersions, and(eq(aiAgentVersions.agentId, aiAgents.id), eq(aiAgentVersions.status, "published")))
+      .where(and(eq(aiAgents.organizacaoId, ctx.organizacaoId), eq(aiAgents.status, "published"))),
+  ]);
+
+  const eventType = parsed.data.eventType.trim();
+  const matches = candidatos.filter(({ agent, version }) => {
+    if (parsed.data.agentId && agent.id !== parsed.data.agentId) return false;
+    const config = version.triggerConfig && typeof version.triggerConfig === "object" ? version.triggerConfig as Record<string, unknown> : {};
+    const configured = [config.eventType, config.trigger, ...(Array.isArray(config.events) ? config.events : []), ...(Array.isArray(config.eventTypes) ? config.eventTypes : [])]
+      .filter((value): value is string => typeof value === "string")
+      .map((value) => value.trim());
+    // Versão publicada sem trigger explícito é elegível somente quando o
+    // vendedor seleciona o agentId, evitando roteamento acidental.
+    return configured.includes(eventType);
+  }).sort((a, b) => a.agent.prioridade - b.agent.prioridade || b.agent.updatedAt.getTime() - a.agent.updatedAt.getTime());
+
+  const selecionado = matches[0] ?? null;
+  if (!selecionado) {
+    return c.json({ ok: true, modo: "dry_run", selecionado: null, motivo: "nenhum agente publicado corresponde ao evento", candidatos: candidatos.length });
+  }
+
+  const configuredTools = Array.isArray(selecionado.version.tools)
+    ? selecionado.version.tools.filter((tool): tool is string => typeof tool === "string")
+    : [];
+  const requestedTools = parsed.data.requestedTools;
+  const allowedTools = requestedTools.length > 0
+    ? requestedTools.filter((tool) => configuredTools.includes(tool))
+    : configuredTools;
+  const blockedTools = requestedTools.filter((tool) => !configuredTools.includes(tool));
+  const trace = [
+    { type: "dispatch", eventType, entityType: parsed.data.entityType, entityId: parsed.data.entityId ?? null },
+    { type: "agent_selected", agentId: selecionado.agent.id, versionId: selecionado.version.id, prioridade: selecionado.agent.prioridade },
+    { type: "policy", modo: "dry_run", allowedTools, blockedTools, maxSteps: selecionado.version.maxSteps, tokenBudget: selecionado.version.tokenBudget },
+    { type: "handoff", required: false, reason: null },
+    { type: "dry_run", message: "Execução simulada; nenhuma mensagem, chamada de modelo ou ferramenta externa foi executada." },
+  ];
+  const [run] = await db.insert(aiAgentRuns).values({
+    organizacaoId: ctx.organizacaoId,
+    agentId: selecionado.agent.id,
+    versionId: selecionado.version.id,
+    contatoId: parsed.data.contatoId ?? null,
+    leadId: parsed.data.leadId ?? null,
+    modo: "dry_run",
+    status: "completed",
+    input: parsed.data,
+    trace,
+    tokens: 0,
+    custo: "0",
+    completedAt: new Date(),
+  }).returning();
+
+  return c.json({
+    ok: true,
+    modo: "dry_run",
+    selecionado: { agentId: selecionado.agent.id, nome: selecionado.agent.nome, versionId: selecionado.version.id, versao: selecionado.version.versao },
+    policy: { allowedTools, blockedTools, maxSteps: selecionado.version.maxSteps, tokenBudget: selecionado.version.tokenBudget },
+    run,
+  });
+});
+
+app.get("/automacoes/agentes/:id", async (c) => {
+  const ctx = await getCtx(c);
+  const [agent] = await db.select().from(aiAgents).where(and(eq(aiAgents.id, c.req.param("id")), eq(aiAgents.organizacaoId, ctx.organizacaoId))).limit(1);
+  if (!agent) return c.json({ error: "Agente nao encontrado" }, 404);
+  const versions = await db.select().from(aiAgentVersions).where(eq(aiAgentVersions.agentId, agent.id)).orderBy(desc(aiAgentVersions.versao));
+  const runs = await db.select().from(aiAgentRuns).where(and(eq(aiAgentRuns.agentId, agent.id), eq(aiAgentRuns.organizacaoId, ctx.organizacaoId))).orderBy(desc(aiAgentRuns.startedAt)).limit(50);
+  return c.json({ agent, versions, runs });
+});
+
+app.patch("/automacoes/agentes/:id", async (c) => {
+  const ctx = await getCtx(c);
+  const parsed = agentSchema.partial({ versao: true }).safeParse(await c.req.json());
+  if (!parsed.success) return c.json({ error: "Agente invalido", details: parsed.error.flatten() }, 400);
+  const [updated] = await db.update(aiAgents).set({
+    ...(parsed.data.nome ? { nome: parsed.data.nome } : {}),
+    ...(parsed.data.slug ? { slug: parsed.data.slug } : {}),
+    ...(parsed.data.descricao !== undefined ? { descricao: parsed.data.descricao } : {}),
+    ...(parsed.data.finalidade ? { finalidade: parsed.data.finalidade } : {}),
+    ...(parsed.data.prioridade !== undefined ? { prioridade: parsed.data.prioridade } : {}),
+    updatedAt: new Date(),
+  }).where(and(eq(aiAgents.id, c.req.param("id")), eq(aiAgents.organizacaoId, ctx.organizacaoId))).returning();
+  if (!updated) return c.json({ error: "Agente nao encontrado" }, 404);
+  return c.json(updated);
+});
+
+app.post("/automacoes/agentes/:id/versions", async (c) => {
+  const ctx = await getCtx(c);
+  const [agent] = await db.select().from(aiAgents).where(and(eq(aiAgents.id, c.req.param("id")), eq(aiAgents.organizacaoId, ctx.organizacaoId))).limit(1);
+  if (!agent) return c.json({ error: "Agente nao encontrado" }, 404);
+  const parsed = versionSchema.safeParse(await c.req.json());
+  if (!parsed.success) return c.json({ error: "Versao invalida", details: parsed.error.flatten() }, 400);
+  const [last] = await db.select({ versao: aiAgentVersions.versao }).from(aiAgentVersions).where(eq(aiAgentVersions.agentId, agent.id)).orderBy(desc(aiAgentVersions.versao)).limit(1);
+  const [version] = await db.insert(aiAgentVersions).values({ agentId: agent.id, versao: (last?.versao ?? 0) + 1, createdById: ctx.userId, ...normalizarVersao(parsed.data) }).returning();
+  return c.json(version, 201);
+});
+
+app.post("/automacoes/agentes/:id/versions/:versionId/publish", async (c) => {
+  const ctx = await getCtx(c);
+  const [agent] = await db.select({ id: aiAgents.id }).from(aiAgents).where(and(eq(aiAgents.id, c.req.param("id")), eq(aiAgents.organizacaoId, ctx.organizacaoId))).limit(1);
+  if (!agent) return c.json({ error: "Agente nao encontrado" }, 404);
+  const [version] = await db.select().from(aiAgentVersions).where(and(eq(aiAgentVersions.id, c.req.param("versionId")), eq(aiAgentVersions.agentId, agent.id))).limit(1);
+  if (!version) return c.json({ error: "Versao nao encontrada" }, 404);
+  await db.update(aiAgentVersions).set({ status: "superseded" }).where(and(eq(aiAgentVersions.agentId, agent.id), eq(aiAgentVersions.status, "published")));
+  await db.update(aiAgentVersions).set({ status: "published", publishedAt: new Date() }).where(eq(aiAgentVersions.id, version.id));
+  const [updated] = await db.update(aiAgents).set({ status: "published", updatedAt: new Date() }).where(eq(aiAgents.id, agent.id)).returning();
+  return c.json({ agent: updated, versionId: version.id });
+});
+
+app.post("/automacoes/agentes/:id/test", async (c) => {
+  const ctx = await getCtx(c);
+  const [agent] = await db.select().from(aiAgents).where(and(eq(aiAgents.id, c.req.param("id")), eq(aiAgents.organizacaoId, ctx.organizacaoId))).limit(1);
+  if (!agent) return c.json({ error: "Agente nao encontrado" }, 404);
+  const [version] = await db.select().from(aiAgentVersions).where(and(eq(aiAgentVersions.agentId, agent.id), eq(aiAgentVersions.status, "published"))).orderBy(desc(aiAgentVersions.versao)).limit(1);
+  if (!version) return c.json({ error: "Agente ainda nao tem versao publicada" }, 409);
+  const body = await c.req.json();
+  const [run] = await db.insert(aiAgentRuns).values({
+    organizacaoId: ctx.organizacaoId,
+    agentId: agent.id,
+    versionId: version.id,
+    modo: "dry_run",
+    status: "completed",
+    input: body,
+    trace: [{ type: "dry_run", message: "Execucao simulada; nenhuma mensagem foi enviada." }],
+    completedAt: new Date(),
+  }).returning();
+  return c.json({ run });
 });
 
 export const automacoesAgentesRoutes = app;
