@@ -130,8 +130,24 @@ function GrupoCard({ grupo, id, onAssinado }: { grupo: Grupo; id: string; onAssi
           ) : (
             <>
               {grupo.contrato.corpoGerado && (
-                <div style={{ fontSize: 12.5, color: "#4b4d63", background: "#f7f7fa", border: "1px solid #ececf2", borderRadius: 12, padding: 14, marginBottom: 14, whiteSpace: "pre-wrap", lineHeight: 1.6, maxHeight: 180, overflowY: "auto" }}>
-                  {grupo.contrato.corpoGerado}
+                <div style={{ background: "#fff", border: "1px solid #ececf2", borderRadius: 14, marginBottom: 14, overflow: "hidden" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", borderBottom: "1px solid #ececf2", background: "#f7f7fa" }}>
+                    <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: 0.4, textTransform: "uppercase", color: "#78788c" }}>Contrato de prestação de serviços</span>
+                    <FileSignature size={14} color="#9497ab" />
+                  </div>
+                  <div style={{ padding: "16px 18px", maxHeight: 260, overflowY: "auto" }}>
+                    {grupo.contrato.corpoGerado.split(/\r?\n/).map((linha) => linha.trim()).filter(Boolean).map((linha, i) => {
+                      const doisPontos = linha.indexOf(":");
+                      const rotulo = doisPontos > 0 && doisPontos < 24 ? linha.slice(0, doisPontos) : null;
+                      const resto = rotulo ? linha.slice(doisPontos + 1).trim() : linha;
+                      return (
+                        <p key={i} style={{ fontSize: 12.5, color: "#3a3b4d", lineHeight: 1.7, margin: "0 0 10px", fontFamily: FONT_BODY }}>
+                          {rotulo && <span style={{ fontWeight: 700, color: "#181a32" }}>{rotulo}: </span>}
+                          {resto}
+                        </p>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
               <p style={{ fontSize: 12.5, color: "#6b7280", lineHeight: 1.6, margin: "0 0 12px" }}>
