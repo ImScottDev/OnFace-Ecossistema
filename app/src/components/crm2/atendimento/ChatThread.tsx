@@ -9,13 +9,12 @@ import {
   Send, MoreHorizontal, Reply, Smile, Trash2, Check, CheckCheck, Clock,
   AlertCircle, Paperclip, Camera, File as FileIcon, MapPin, User, UserCheck, X, FileText,
   Bot, UserCog, Loader2, MessageSquareOff, FileSpreadsheet, FileArchive,
-  Sparkles, ChevronDown, Archive, Clock3, RotateCcw, Tag, BookOpen,
+  Sparkles, ChevronDown, Archive, Clock3, RotateCcw, Tag,
   Copy, UserRound, MessageSquareText,
 } from "lucide-react";
 import { ConversaItem, Contexto, iniciais, nomeExibicao } from "./types";
 import { Cf2Badge } from "../ui/Badge";
 import { WhatsappTemplatesModal } from "./WhatsappTemplatesModal";
-import { Cf2ScriptsDocumentosModal } from "./ScriptsDocumentosModal";
 
 type Mensagem = {
   id: string;
@@ -120,7 +119,6 @@ export function Cf2ChatThread({
   const [showAttachMenu, setShowAttachMenu] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
   const [gerenciarTemplates, setGerenciarTemplates] = useState(false);
-  const [scriptsDocumentosAberto, setScriptsDocumentosAberto] = useState(false);
   const [resumoAberto, setResumoAberto] = useState(false);
   const [menuAberto, setMenuAberto] = useState(false);
   // Correção 19/08 (Atendimento): template já existia real (backend +
@@ -723,7 +721,6 @@ export function Cf2ChatThread({
         </div>
       )}
       {gerenciarTemplates && <WhatsappTemplatesModal onClose={() => setGerenciarTemplates(false)} />}
-      {scriptsDocumentosAberto && <Cf2ScriptsDocumentosModal onClose={() => setScriptsDocumentosAberto(false)} />}
 
       <div className="p-4 shrink-0 flex flex-col gap-2" style={{ background: "var(--cf2-bg-page)", borderTop: "1px solid var(--cf2-border-default)" }}>
         {replyTo && (
@@ -747,14 +744,6 @@ export function Cf2ChatThread({
             style={{ background: showTemplates ? "var(--cf2-accent)" : "var(--cf2-bg-surface-muted)" }}
           >
             <MessageSquareText className="w-4 h-4" style={{ color: showTemplates ? "var(--cf2-text-on-accent)" : "var(--cf2-text-secondary)" }} />
-          </button>
-          <button
-            onClick={() => setScriptsDocumentosAberto(true)}
-            title="Scripts e documentos"
-            className="p-2 rounded-lg shrink-0"
-            style={{ background: "var(--cf2-bg-surface-muted)" }}
-          >
-            <BookOpen className="w-4 h-4" style={{ color: "var(--cf2-text-secondary)" }} />
           </button>
           <div
             className="flex-1 flex items-center gap-2 px-4 py-2.5 rounded-xl"
