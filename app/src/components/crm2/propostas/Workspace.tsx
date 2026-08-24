@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import { Plus, Search, Eye, Clock } from "lucide-react";
+import { Plus, Search, Eye, Clock, ArrowUpRight, FileText, Send, CheckCircle2 } from "lucide-react";
 import { Cf2Badge } from "../ui/Badge";
 import { useOrgUsuarios } from "@/components/crm/BoardFilters";
 import { statusDisplay, FAMILY_LABEL, FAMILY_COLOR, brl, type PropostaRow } from "./shared";
@@ -60,29 +60,23 @@ export function Cf2PropostasWorkspace() {
 
   return (
     <div className="flex flex-col gap-5">
-      {/* Pulso de Propostas — mesmo padrão escuro já usado em Prospecção/Pipeline/Pré-vendas */}
-      <div className="rounded-3xl p-6 flex flex-col gap-5" style={{ background: "var(--cf2-chrome-bg)", border: "1px solid var(--cf2-chrome-border)" }}>
-        <div className="flex items-center justify-between">
-          <div className="flex flex-col gap-1">
-            <p className="text-[18px] font-bold" style={{ color: "var(--cf2-chrome-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>Pulso de Propostas</p>
-            <p className="text-[13px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Acompanhamento em tempo real da volumetria, andamento e conversão de propostas enviadas</p>
-          </div>
-          <Link href="/propostas/novo" className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-[13px] font-bold shrink-0" style={{ background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" }}>
-            <Plus className="w-3.5 h-3.5" /> Nova proposta
-          </Link>
+      <header className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="text-[24px] font-bold" style={{ color: "var(--cf2-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>Propostas</p>
+          <p className="mt-1 text-[13px]" style={{ color: "var(--cf2-text-secondary)" }}>Acompanhe a negociação do envio ao aceite, contrato e pagamento.</p>
         </div>
-        <div className="grid grid-cols-6 gap-4">
-          <ChromeKpi label="Valor total ativo" valor={kpis ? brl(kpis.valorTotalAtivo) : "—"} />
-          <ChromeKpi label="Enviadas" valor={kpis?.enviadas ?? "—"} />
-          <ChromeKpi label="Aguardando ação" valor={kpis?.aguardandoAcao ?? "—"} />
-          <ChromeKpi label="Aceitas" valor={kpis?.aceitas ?? "—"} accent />
-          <ChromeKpi label="Taxa de aceite" valor={kpis?.taxaAceite != null ? `${kpis.taxaAceite}%` : "—"} accent />
-          <ChromeKpi label="Tempo médio até aceite" valor={kpis?.tempoMedioAceiteDias != null ? `${kpis.tempoMedioAceiteDias}d` : "—"} />
-        </div>
+        <Link href="/propostas/novo" className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-[13px] font-bold shrink-0" style={{ background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" }}><Plus className="w-3.5 h-3.5" /> Nova proposta</Link>
+      </header>
+      <div className="grid gap-px overflow-hidden rounded-2xl sm:grid-cols-2 lg:grid-cols-5" style={{ background: "var(--cf2-border-default)", border: "1px solid var(--cf2-border-default)" }}>
+        <ProposalMetric icon={FileText} label="Em rascunho" value={kpis?.emElaboracao ?? "—"} />
+        <ProposalMetric icon={Send} label="Aguardando retorno" value={kpis?.aguardandoAcao ?? "—"} />
+        <ProposalMetric icon={Eye} label="Visualizadas" value={kpis?.visualizadas ?? "—"} />
+        <ProposalMetric icon={CheckCircle2} label="Aceitas" value={kpis?.aceitas ?? "—"} />
+        <ProposalMetric icon={ArrowUpRight} label="Valor em propostas abertas" value={kpis ? brl(kpis.valorTotalAtivo) : "—"} />
       </div>
 
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <p className="text-lg font-semibold" style={{ color: "var(--cf2-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>Gestão Operacional de Propostas</p>
+        <p className="text-lg font-semibold" style={{ color: "var(--cf2-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>Em negociação</p>
         <div className="flex items-center gap-2 flex-wrap">
           <div className="relative">
             <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2" style={{ color: "var(--cf2-text-tertiary)" }} />
@@ -123,10 +117,10 @@ export function Cf2PropostasWorkspace() {
           <p className="text-sm p-6" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhuma proposta encontrada.</p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full min-w-[1080px] text-sm">
               <thead>
                 <tr style={{ background: "var(--cf2-bg-surface-muted)" }}>
-                  {["Proposta", "Empresa", "Oportunidade", "Responsável", "Valor", "Recorrência", "Enviada em", "Validade", "Status", ""].map((h) => (
+                  {["Cliente", "Proposta e serviços", "Investimento", "Responsável", "Última atividade", "Status", ""].map((h) => (
                     <th key={h} className="text-left px-3 py-2.5 text-[11px] font-bold whitespace-nowrap" style={{ color: "var(--cf2-text-tertiary)" }}>{h}</th>
                   ))}
                 </tr>
@@ -135,26 +129,17 @@ export function Cf2PropostasWorkspace() {
                 {propostas.map((p) => {
                   const badge = statusDisplay(p.status);
                   const aguardando = p.status === "enviada" && !p.clienteRespondeuEm;
+                  const itens = p.itensResumo ?? [];
+                  const ultimaAtividadeEm = p.ultimaAtividadeEm ?? p.createdAt;
+                  const ultimaAtividadeTipo = p.ultimaAtividadeTipo ?? "criou";
                   return (
                     <tr key={p.id} className="cursor-pointer" style={{ borderTop: "1px solid var(--cf2-border-default)" }} onClick={() => setDrawerId(p.id)}>
-                      <td className="px-3 py-3 whitespace-nowrap">
-                        <span className="font-semibold" style={{ color: "var(--cf2-text-primary)" }}>#PROP-{String(p.numero).padStart(4, "0")}{p.versao > 1 ? ` v${p.versao}` : ""}</span>
-                        {(p.familias || []).length > 0 && (
-                          <div className="flex gap-1 mt-1">
-                            {p.familias.map((f) => <span key={f} className="text-[9px] px-1.5 py-0.5 rounded font-semibold" style={{ background: `${FAMILY_COLOR[f] || "#9ca3af"}18`, color: FAMILY_COLOR[f] || "#9ca3af" }}>{FAMILY_LABEL[f] || f}</span>)}
-                          </div>
-                        )}
-                      </td>
-                      <td className="px-3 py-3 whitespace-nowrap" style={{ color: "var(--cf2-text-primary)" }}>{p.leadEmpresa || p.leadNome || "—"}</td>
-                      <td className="px-3 py-3 whitespace-nowrap" style={{ color: "var(--cf2-text-secondary)" }}>
-                        {p.negocioId ? <Link href={`/negocios/${p.negocioId}`} onClick={(e) => e.stopPropagation()} className="hover:underline">{p.negocioTitulo || "Ver negócio"}</Link> : "—"}
-                      </td>
-                      <td className="px-3 py-3 whitespace-nowrap" style={{ color: "var(--cf2-text-secondary)" }}>{p.criadoPorNome || "—"}</td>
-                      <td className="px-3 py-3 whitespace-nowrap font-semibold" style={{ color: "var(--cf2-text-primary)" }}>{brl(p.totalAvulso)}</td>
-                      <td className="px-3 py-3 whitespace-nowrap" style={{ color: "var(--cf2-text-secondary)" }}>{Number(p.totalRecorrente) > 0 ? `${brl(p.totalRecorrente)}/mês` : "—"}</td>
-                      <td className="px-3 py-3 whitespace-nowrap" style={{ color: "var(--cf2-text-secondary)" }}>{p.enviadaEm ? new Date(p.enviadaEm).toLocaleDateString("pt-BR") : "—"}</td>
-                      <td className="px-3 py-3 whitespace-nowrap" style={{ color: "var(--cf2-text-secondary)" }}>{p.dataValidade ? new Date(p.dataValidade).toLocaleDateString("pt-BR") : "—"}</td>
-                      <td className="px-3 py-3 whitespace-nowrap"><Cf2Badge variant={badge.tom}>{badge.label}</Cf2Badge></td>
+                      <td className="px-4 py-3.5 whitespace-nowrap"><p className="font-semibold" style={{ color: "var(--cf2-text-primary)" }}>{p.leadEmpresa || p.leadNome || "—"}</p><p className="mt-0.5 text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>{p.leadEmpresa && p.leadNome ? p.leadNome : "Contato comercial"}</p></td>
+                      <td className="px-4 py-3.5"><p className="font-semibold" style={{ color: "var(--cf2-text-primary)" }}>#PROP-{String(p.numero).padStart(4, "0")}{p.versao > 1 ? ` v${p.versao}` : ""}</p><p className="mt-0.5 max-w-[260px] truncate text-[11px]" style={{ color: "var(--cf2-text-secondary)" }}>{itens.length ? itens.slice(0, 2).map((item) => `${item.nome}${Number(item.quantidade) > 1 ? ` · ${item.quantidade}x` : ""}`).join(" · ") : "Sem serviços adicionados"}{itens.length > 2 ? ` +${itens.length - 2}` : ""}</p>{(p.familias || []).length > 0 && <div className="mt-1.5 flex gap-1">{p.familias.map((f) => <span key={f} className="rounded px-1.5 py-0.5 text-[9px] font-semibold" style={{ background: `${FAMILY_COLOR[f] || "#9ca3af"}18`, color: FAMILY_COLOR[f] || "#9ca3af" }}>{FAMILY_LABEL[f] || f}</span>)}</div>}</td>
+                      <td className="px-4 py-3.5 whitespace-nowrap"><p className="font-semibold" style={{ color: "var(--cf2-text-primary)" }}>{Number(p.totalAvulso) > 0 ? brl(p.totalAvulso) : "Sem valor inicial"}</p><p className="mt-0.5 text-[11px]" style={{ color: "var(--cf2-text-secondary)" }}>{Number(p.totalRecorrente) > 0 ? `${brl(p.totalRecorrente)}/mês` : "Sem recorrência"}</p></td>
+                      <td className="px-4 py-3.5 whitespace-nowrap"><p style={{ color: "var(--cf2-text-secondary)" }}>{p.criadoPorNome || "—"}</p>{p.negocioId && <Link href={`/negocios/${p.negocioId}`} onClick={(e) => e.stopPropagation()} className="mt-1 inline-block text-[11px] font-semibold hover:underline" style={{ color: "var(--cf2-success-text)" }}>{p.negocioTitulo || "Abrir negócio"}</Link>}</td>
+                      <td className="px-4 py-3.5 whitespace-nowrap"><p className="text-[12px]" style={{ color: "var(--cf2-text-secondary)" }}>{activityLabel(ultimaAtividadeTipo)}</p><p className="mt-0.5 text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>{new Date(ultimaAtividadeEm).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</p></td>
+                      <td className="px-4 py-3.5 whitespace-nowrap"><Cf2Badge variant={p.status === "enviada" && p.visualizacoes > 0 ? "accent" : badge.tom}>{p.status === "enviada" && p.visualizacoes > 0 ? "Visualizada" : badge.label}</Cf2Badge>{p.dataValidade && <p className="mt-1 text-[10px]" style={{ color: "var(--cf2-text-tertiary)" }}>Válida até {new Date(p.dataValidade).toLocaleDateString("pt-BR")}</p>}</td>
                       <td className="px-3 py-3 whitespace-nowrap">
                         <div className="flex items-center gap-2 justify-end">
                           {p.visualizacoes > 0 && (
@@ -191,11 +176,15 @@ function Select({ value, onChange, children }: { value: string; onChange: (v: st
   );
 }
 
-function ChromeKpi({ label, valor, accent }: { label: string; valor: string | number; accent?: boolean }) {
+function ProposalMetric({ icon: Icon, label, value }: { icon: typeof FileText; label: string; value: string | number }) {
   return (
-    <div className="flex flex-col gap-1">
-      <p className="text-[10px] font-bold uppercase" style={{ color: "var(--cf2-chrome-text-secondary)" }}>{label}</p>
-      <p className="text-[20px] font-bold" style={{ color: accent ? "var(--cf2-accent-border)" : "var(--cf2-chrome-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>{valor}</p>
+    <div className="flex min-w-0 items-center gap-3 bg-[var(--cf2-bg-surface)] px-4 py-3.5">
+      <span className="flex size-8 shrink-0 items-center justify-center rounded-lg" style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-secondary)" }}><Icon className="size-4" /></span>
+      <div className="min-w-0"><p className="truncate text-[10px] font-bold uppercase" style={{ color: "var(--cf2-text-tertiary)" }}>{label}</p><p className="mt-0.5 truncate text-[17px] font-bold" style={{ color: "var(--cf2-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>{value}</p></div>
     </div>
   );
+}
+
+function activityLabel(type: PropostaRow["ultimaAtividadeTipo"] | undefined) {
+  return { criou: "Proposta criada", enviou: "Enviada ao cliente", visualizou: "Cliente visualizou", respondeu: "Cliente respondeu" }[type ?? "criou"];
 }

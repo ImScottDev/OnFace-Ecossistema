@@ -1,159 +1,42 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { GitBranch, AlertTriangle, Plus, Pencil, Save, Send } from "lucide-react";
-import { CadenceCanvas } from "./CadenceCanvas";
+import { toast } from "sonner";
+import { AlertTriangle, CirclePause, GitBranch, ListChecks, Pencil, Play, Plus, Save, Search, Send, XCircle } from "lucide-react";
+import { FollowupFlowCanvas } from "./FollowupFlowCanvas";
 import type { Cadencia, Step } from "./cadence-types";
 import { novoStep } from "./cadence-types";
 
-const STATUS_LABEL: Record<string, string> = { active: "Ativas", waiting: "Aguardando", completed: "Concluídas", cancelled: "Canceladas", failed: "Falharam" };
+type FlowData = { cadencias: Cadencia[]; mecanismosParalelos: { cadenciaSdrInboundExecucoes: number; aiSdrRetrySweep: string } };
+type QueueItem = { id: string; status: string; entityType: string; entityName: string; entityDetail: string | null; definitionName: string; currentStep: string; nextFireAt: string | null };
+type QueueData = { items: QueueItem[]; total: number; definitions: Array<{ id: string; nome: string }> };
+const statusLabel: Record<string, string> = { active: "Ativo", waiting: "Aguardando", paused: "Pausado", completed: "Concluído", cancelled: "Cancelado", failed: "Falhou" };
+const entityLabel: Record<string, string> = { lead: "Lead", contato: "Contato", negocio: "Negócio" };
+async function request(url: string, init?: RequestInit) { const r = await fetch(url, init); if (!r.ok) { const b = await r.json().catch(() => null); throw new Error(b?.error ?? "Não foi possível concluir a ação."); } return r.json(); }
 
-/**
- * Automações → Cadências (19/08) — motor genérico real
- * (lib/cadencia/cadence-engine.ts: steps, branches, retry/backoff), hoje
- * com 1 consumidor real (Prospecção outbound). Achado de arquitetura
- * explícito (não escondido): existem 2 outros mecanismos de "sequência no
- * tempo" ainda não unificados a este motor — mostrado abaixo, não
- * fabricado como se já fosse tudo 1 engine só.
- */
+/** Produto chama Follow-ups. O motor interno permanece cadence_* para não criar um sistema paralelo. */
 export function Cf2CadenciasWorkspace() {
-  const { data, isLoading } = useQuery<{ cadencias: Cadencia[]; mecanismosParalelos: { cadenciaSdrInboundExecucoes: number; aiSdrRetrySweep: string } }>({
-    queryKey: ["cf2-automacoes-cadencias"],
-    queryFn: async () => {
-      const r = await fetch("/api/automacoes/cadencias");
-      if (!r.ok) return { cadencias: [], mecanismosParalelos: { cadenciaSdrInboundExecucoes: 0, aiSdrRetrySweep: "" } };
-      return r.json();
-    },
-  });
-
-  const cadencias = data?.cadencias ?? [];
+  const qc = useQueryClient();
+  const [view, setView] = useState<"flows" | "queue">("flows");
   const [editando, setEditando] = useState<Cadencia | null>(null);
-  const [nome, setNome] = useState("");
-  const [entityType, setEntityType] = useState("lead");
-  const [steps, setSteps] = useState<Step[]>([]);
-
-  const abrirEditor = (cadencia?: Cadencia) => {
-    const base = cadencia?.draftSteps?.length ? cadencia.draftSteps : cadencia?.steps;
-    setEditando(cadencia ?? null);
-    setNome(cadencia?.nome ?? "Nova cadência");
-    setEntityType(cadencia?.entityType ?? "lead");
-    setSteps(base?.length ? base : [novoStep("action"), novoStep("wait")]);
-  };
-
-  const salvar = async (action: "save_draft" | "publish") => {
-    const url = editando ? `/api/automacoes/cadencias/${editando.id}` : "/api/automacoes/cadencias";
-    const res = await fetch(url, {
-      method: editando ? "PATCH" : "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(editando ? { action, nome, entityType, steps } : { nome, entityType, steps }),
-    });
-    if (!res.ok) return;
-    if (!editando && action === "publish") return;
-    setEditando(null);
-    window.location.reload();
-  };
-
-  const publicar = async (cadencia: Cadencia) => {
-    await fetch(`/api/automacoes/cadencias/${cadencia.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "publish" }) });
-    window.location.reload();
-  };
-
-  return (
-    <div className="flex flex-col gap-5">
-      <div>
-        <p className="text-[24px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Cadências</p>
-        <p className="text-[13px]" style={{ color: "var(--cf2-text-secondary)" }}>Motor genérico de sequência no tempo (steps/branches/retry) — hoje usado pela Prospecção outbound.</p>
-      </div>
-      <button onClick={() => abrirEditor()} className="self-start flex items-center gap-2 px-3 py-2 rounded-lg text-[12px] font-semibold" style={{ background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" }}>
-        <Plus className="w-3.5 h-3.5" /> Nova cadência
-      </button>
-
-      {isLoading ? (
-        <p className="text-[13px]" style={{ color: "var(--cf2-text-tertiary)" }}>Carregando...</p>
-      ) : cadencias.length === 0 ? (
-        <p className="text-[13px]" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhuma cadência configurada.</p>
-      ) : (
-        <div className="flex flex-col gap-2">
-          {cadencias.map((cd) => (
-              <div key={cd.id} className="p-4 rounded-2xl flex items-center justify-between" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
-              <div className="flex items-center gap-3">
-                <div className="flex items-center justify-center rounded-lg shrink-0 w-9 h-9" style={{ background: "var(--cf2-bg-inverse)" }}>
-                  <GitBranch className="w-4 h-4 text-white" />
-                </div>
-                <div>
-                  <p className="text-[14px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>{cd.nome}</p>
-                  <p className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>{cd.totalPassos} passos · entidade: {cd.entityType} · {cd.ativo ? "ativa" : "inativa"}</p>
-                </div>
-              </div>
-              <div className="flex gap-3">
-                {Object.entries(cd.enrollmentsPorStatus).map(([status, n]) => (
-                  <div key={status} className="text-center">
-                    <p className="text-[16px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>{n}</p>
-                    <p className="text-[10px]" style={{ color: "var(--cf2-text-tertiary)" }}>{STATUS_LABEL[status] || status}</p>
-                  </div>
-                ))}
-              </div>
-              <div className="flex gap-1.5 ml-4">
-                <button onClick={() => abrirEditor(cd)} title="Editar rascunho" className="p-2 rounded-lg" style={{ background: "var(--cf2-bg-surface-muted)" }}><Pencil className="w-3.5 h-3.5" /></button>
-                <button onClick={() => publicar(cd)} title="Publicar versão" className="p-2 rounded-lg" style={{ background: "var(--cf2-bg-surface-muted)" }}><Send className="w-3.5 h-3.5" /></button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {editando !== null || nome ? (
-        <div data-cf2-theme="builder" className="fixed inset-0 z-[1000] flex flex-col" style={{ background: "var(--cf2-bg-page)" }}>
-          <div className="h-[72px] shrink-0 flex items-center gap-5 px-7" style={{ borderBottom: "1px solid var(--cf2-border-default)" }}>
-            <div className="min-w-0">
-              <div className="flex items-center gap-3">
-                <span className="text-[13px] font-extrabold tracking-tight">Automações</span>
-                <span className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>/</span>
-                <span className="text-[12px]" style={{ color: "var(--cf2-text-secondary)" }}>Cadências</span>
-              </div>
-              <p className="text-[16px] font-bold mt-1 truncate" style={{ color: "var(--cf2-text-primary)" }}>{nome || "Nova cadência"}</p>
-            </div>
-            <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-[0.12em]" style={{ background: "var(--cf2-warning-bg)", color: "var(--cf2-warning-text)", border: "1px solid var(--cf2-warning-border)" }}>Rascunho</span>
-            <div className="ml-auto flex items-center gap-2">
-              <span className="text-[11px] hidden lg:inline" style={{ color: "var(--cf2-text-tertiary)" }}>As mudanças só entram no motor ao salvar</span>
-              <button onClick={() => { setEditando(null); setNome(""); }} className="px-3 py-2 rounded-lg text-[12px] font-semibold" style={{ color: "var(--cf2-text-secondary)" }}>Fechar</button>
-            </div>
-          </div>
-          <div className="flex-1 min-h-0 p-5 lg:p-6">
-            <CadenceCanvas
-              key={editando?.id ?? "nova"}
-              steps={steps}
-              onStepsChange={setSteps}
-              nome={nome}
-              entityType={entityType}
-              onNomeChange={setNome}
-              onEntityTypeChange={setEntityType}
-            />
-          </div>
-          <div className="h-[68px] shrink-0 flex items-center gap-2 px-7" style={{ borderTop: "1px solid var(--cf2-border-default)", background: "var(--cf2-bg-surface-subtle)" }}>
-            <span className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>{steps.length} {steps.length === 1 ? "etapa configurada" : "etapas configuradas"}</span>
-            <div className="ml-auto flex gap-2">
-              <button onClick={() => salvar("save_draft")} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-[12px] font-semibold" style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-primary)", border: "1px solid var(--cf2-border-default)" }}><Save className="w-3.5 h-3.5" /> Salvar rascunho</button>
-              {editando && <button onClick={() => salvar("publish")} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-[12px] font-bold" style={{ background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" }}><Send className="w-3.5 h-3.5" /> Publicar</button>}
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {data?.mecanismosParalelos && (data.mecanismosParalelos.cadenciaSdrInboundExecucoes > 0) && (
-        <div className="p-4 rounded-2xl flex items-start gap-3" style={{ background: "var(--cf2-warning-bg)", border: "1px solid var(--cf2-warning-border)" }}>
-          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" style={{ color: "var(--cf2-warning-text)" }} />
-          <div>
-            <p className="text-[13px] font-semibold" style={{ color: "var(--cf2-warning-text)" }}>Mecanismos paralelos ainda não unificados a este motor</p>
-            <p className="text-[12px] mt-1" style={{ color: "var(--cf2-text-secondary)" }}>
-              Cadência SDR inbound (legado): {data.mecanismosParalelos.cadenciaSdrInboundExecucoes} execuções registradas em `cadencia_execucoes`.
-              <br />
-              Retry do AI SDR: {data.mecanismosParalelos.aiSdrRetrySweep}
-            </p>
-          </div>
-        </div>
-      )}
-    </div>
-  );
+  const [nome, setNome] = useState(""); const [entityType, setEntityType] = useState("lead"); const [steps, setSteps] = useState<Step[]>([]);
+  const [status, setStatus] = useState("all"); const [flow, setFlow] = useState("all"); const [search, setSearch] = useState("");
+  const flows = useQuery<FlowData>({ queryKey: ["cf2-followups"], queryFn: () => request("/api/automacoes/cadencias") });
+  const queue = useQuery<QueueData>({ queryKey: ["cf2-followups-queue", status, flow, search], queryFn: () => request(`/api/automacoes/cadencias/fila?status=${status}&definitionId=${flow}&q=${encodeURIComponent(search)}`), enabled: view === "queue" });
+  const refresh = () => { qc.invalidateQueries({ queryKey: ["cf2-followups"] }); qc.invalidateQueries({ queryKey: ["cf2-followups-queue"] }); };
+  const enrollmentAction = useMutation({ mutationFn: ({ id, action }: { id: string; action: "pause" | "resume" | "cancel" }) => request(`/api/automacoes/cadencias/enrollments/${id}/action`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }) }), onSuccess: (_, v) => { toast.success(v.action === "pause" ? "Follow-up pausado." : v.action === "resume" ? "Follow-up retomado." : "Follow-up cancelado."); refresh(); }, onError: (e: Error) => toast.error(e.message) });
+  const open = (cd?: Cadencia) => { const base = cd?.draftSteps?.length ? cd.draftSteps : cd?.steps; setEditando(cd ?? null); setNome(cd?.nome ?? "Novo follow-up"); setEntityType(cd?.entityType ?? "lead"); setSteps(base?.length ? base : [novoStep("action"), novoStep("wait")]); };
+  const close = () => { setEditando(null); setNome(""); };
+  const save = async (action: "save_draft" | "publish") => { try { const created = await request(editando ? `/api/automacoes/cadencias/${editando.id}` : "/api/automacoes/cadencias", { method: editando ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(editando ? { action, nome, entityType, steps } : { nome, entityType, steps }) }); if (!editando && action === "publish") await request(`/api/automacoes/cadencias/${created.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "publish" }) }); toast.success(action === "publish" ? "Follow-up publicado." : "Rascunho salvo."); close(); refresh(); } catch (e) { toast.error(e instanceof Error ? e.message : "Não foi possível salvar."); } };
+  const pauseFlow = async (cd: Cadencia) => { try { await request(`/api/automacoes/cadencias/${cd.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "pause" }) }); toast.success("Fluxo pausado."); refresh(); } catch (e) { toast.error(e instanceof Error ? e.message : "Não foi possível pausar."); } };
+  const cadencias = flows.data?.cadencias ?? [];
+  return <div className="flex flex-col gap-5"><header className="flex flex-wrap items-end justify-between gap-3"><div><h1 className="text-[24px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Follow-ups</h1><p className="mt-1 text-[13px]" style={{ color: "var(--cf2-text-secondary)" }}>Fluxos de retomada e acompanhamento, com cada inscrição rastreável até concluir, pausar ou cancelar.</p></div><button onClick={() => open()} className="flex items-center gap-2 rounded-lg px-3 py-2 text-[12px] font-semibold" style={{ background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" }}><Plus className="size-3.5" />Novo follow-up</button></header><nav className="flex w-fit gap-1 rounded-xl p-1" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }}><Tab active={view === "flows"} onClick={() => setView("flows")} icon={GitBranch}>Fluxos</Tab><Tab active={view === "queue"} onClick={() => setView("queue")} icon={ListChecks}>Fila</Tab></nav>{view === "flows" ? <Flows cadencias={cadencias} loading={flows.isLoading} error={flows.isError} onEdit={open} onPause={pauseFlow} /> : <Queue data={queue.data} loading={queue.isLoading} error={queue.isError} status={status} flow={flow} search={search} onStatus={setStatus} onFlow={setFlow} onSearch={setSearch} onAction={(id, action) => enrollmentAction.mutate({ id, action })} busy={enrollmentAction.isPending} />}{flows.data?.mecanismosParalelos.cadenciaSdrInboundExecucoes ? <div className="flex gap-3 rounded-xl p-4" style={{ background: "var(--cf2-warning-bg)", border: "1px solid var(--cf2-warning-border)" }}><AlertTriangle className="mt-0.5 size-4 shrink-0" style={{ color: "var(--cf2-warning-text)" }} /><p className="text-[12px] leading-5" style={{ color: "var(--cf2-text-secondary)" }}><strong style={{ color: "var(--cf2-warning-text)" }}>Legado separado.</strong> Existem {flows.data.mecanismosParalelos.cadenciaSdrInboundExecucoes} execuções de SDR inbound fora deste motor. Elas seguem visíveis para não fingir que já foram migradas.</p></div> : null}{editando !== null || nome ? <Editor nome={nome} entityType={entityType} steps={steps} existing={editando} onClose={close} onSave={save} onNome={setNome} onEntity={setEntityType} onSteps={setSteps} /> : null}</div>;
 }
+
+function Tab({ active, onClick, icon: Icon, children }: { active: boolean; onClick: () => void; icon: typeof GitBranch; children: React.ReactNode }) { return <button onClick={onClick} className="flex items-center gap-2 rounded-lg px-3 py-2 text-[12px] font-semibold" style={{ background: active ? "var(--cf2-bg-surface)" : "transparent", color: active ? "var(--cf2-text-primary)" : "var(--cf2-text-secondary)" }}><Icon className="size-3.5" />{children}</button>; }
+function FlowStatus({ cd }: { cd: Cadencia }) { const x = cd.ativo ? ["Ativo", "var(--cf2-success-bg)", "var(--cf2-success-text)"] : cd.publishedAt ? ["Pausado", "var(--cf2-warning-bg)", "var(--cf2-warning-text)"] : ["Rascunho", "var(--cf2-bg-surface-muted)", "var(--cf2-text-secondary)"]; return <span className="rounded-full px-2 py-1 text-[10px] font-bold" style={{ background: x[1], color: x[2] }}>{x[0]}</span>; }
+function Flows({ cadencias, loading, error, onEdit, onPause }: { cadencias: Cadencia[]; loading: boolean; error: boolean; onEdit: (cd: Cadencia) => void; onPause: (cd: Cadencia) => void }) { if (loading) return <p className="text-[13px]" style={{ color: "var(--cf2-text-tertiary)" }}>Carregando fluxos…</p>; if (error) return <p className="text-[13px]" style={{ color: "var(--cf2-danger-text)" }}>Não foi possível carregar os follow-ups.</p>; if (!cadencias.length) return <div className="rounded-2xl border border-dashed p-10 text-center" style={{ borderColor: "var(--cf2-border-default)" }}><GitBranch className="mx-auto mb-3 size-5" style={{ color: "var(--cf2-text-tertiary)" }} /><p className="text-[13px] font-semibold" style={{ color: "var(--cf2-text-primary)" }}>Nenhum follow-up configurado</p><p className="mt-1 text-[12px]" style={{ color: "var(--cf2-text-secondary)" }}>Crie o primeiro fluxo para acompanhar leads, contatos ou negócios.</p></div>; return <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{cadencias.map(cd => { const queued = (cd.enrollmentsPorStatus.active ?? 0) + (cd.enrollmentsPorStatus.waiting ?? 0); return <article key={cd.id} className="rounded-2xl p-4" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}><div className="flex items-start justify-between gap-2"><div className="min-w-0"><p className="truncate text-[14px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>{cd.nome}</p><p className="mt-1 text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>{entityLabel[cd.entityType] ?? cd.entityType} · versão {cd.versao}</p></div><FlowStatus cd={cd} /></div><div className="mt-5 grid grid-cols-3 gap-2"><Mini label="Etapas" value={cd.totalPassos} /><Mini label="Na fila" value={queued} /><Mini label="Falhas" value={cd.enrollmentsPorStatus.failed ?? 0} /></div><div className="mt-4 flex gap-2"><button onClick={() => onEdit(cd)} className="flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-[11px] font-semibold" style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-primary)" }}><Pencil className="size-3" />Editar</button>{cd.ativo ? <button onClick={() => onPause(cd)} className="flex items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-[11px] font-semibold" style={{ background: "var(--cf2-warning-bg)", color: "var(--cf2-warning-text)" }}><CirclePause className="size-3" />Pausar</button> : <button onClick={() => onEdit(cd)} className="flex items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-[11px] font-semibold" style={{ background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" }}><Send className="size-3" />Publicar</button>}</div></article>; })}</div>; }
+function Mini({ label, value }: { label: string; value: number }) { return <div><p className="text-[16px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>{value}</p><p className="text-[10px]" style={{ color: "var(--cf2-text-tertiary)" }}>{label}</p></div>; }
+function Queue({ data, loading, error, status, flow, search, onStatus, onFlow, onSearch, onAction, busy }: { data?: QueueData; loading: boolean; error: boolean; status: string; flow: string; search: string; onStatus: (x: string) => void; onFlow: (x: string) => void; onSearch: (x: string) => void; onAction: (id: string, a: "pause" | "resume" | "cancel") => void; busy: boolean }) { return <div className="rounded-2xl" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}><div className="flex flex-wrap gap-2 border-b p-3" style={{ borderColor: "var(--cf2-border-default)" }}><label className="flex min-w-[220px] flex-1 items-center gap-2 rounded-lg px-2.5" style={{ background: "var(--cf2-bg-surface-muted)" }}><Search className="size-3.5" style={{ color: "var(--cf2-text-tertiary)" }} /><input value={search} onChange={e => onSearch(e.target.value)} placeholder="Buscar pessoa, empresa ou fluxo" className="min-w-0 flex-1 bg-transparent py-2 text-[12px] outline-none" style={{ color: "var(--cf2-text-primary)" }} /></label><select value={status} onChange={e => onStatus(e.target.value)} className="rounded-lg px-2 text-[12px]" style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-primary)" }}><option value="all">Todos os status</option>{Object.entries(statusLabel).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select><select value={flow} onChange={e => onFlow(e.target.value)} className="rounded-lg px-2 text-[12px]" style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-primary)" }}><option value="all">Todos os fluxos</option>{data?.definitions.map(d => <option key={d.id} value={d.id}>{d.nome}</option>)}</select></div>{loading ? <p className="p-6 text-[13px]" style={{ color: "var(--cf2-text-tertiary)" }}>Carregando fila…</p> : error ? <p className="p-6 text-[13px]" style={{ color: "var(--cf2-danger-text)" }}>Não foi possível carregar a fila.</p> : !data?.items.length ? <p className="p-10 text-center text-[13px]" style={{ color: "var(--cf2-text-secondary)" }}>Nenhuma inscrição encontrada com estes filtros.</p> : <div className="overflow-x-auto"><table className="min-w-[840px] w-full text-left"><thead><tr className="text-[10px] uppercase tracking-wide" style={{ color: "var(--cf2-text-tertiary)", background: "var(--cf2-bg-surface-subtle)" }}><th className="px-4 py-3">Pessoa / registro</th><th className="px-4 py-3">Follow-up</th><th className="px-4 py-3">Etapa atual</th><th className="px-4 py-3">Próxima execução</th><th className="px-4 py-3">Status</th><th className="px-4 py-3" /></tr></thead><tbody>{data.items.map(item => <tr key={item.id} className="border-t text-[12px]" style={{ borderColor: "var(--cf2-border-default)" }}><td className="px-4 py-3"><p className="font-semibold" style={{ color: "var(--cf2-text-primary)" }}>{item.entityName}</p><p className="mt-0.5 text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>{item.entityDetail ?? entityLabel[item.entityType] ?? item.entityType}</p></td><td className="px-4 py-3" style={{ color: "var(--cf2-text-secondary)" }}>{item.definitionName}</td><td className="px-4 py-3" style={{ color: "var(--cf2-text-secondary)" }}>{item.currentStep}</td><td className="px-4 py-3" style={{ color: "var(--cf2-text-secondary)" }}>{item.nextFireAt ? new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(item.nextFireAt)) : "—"}</td><td className="px-4 py-3"><span className="rounded-full px-2 py-1 text-[10px] font-semibold" style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-secondary)" }}>{statusLabel[item.status] ?? item.status}</span></td><td className="px-4 py-3"><div className="flex justify-end gap-1">{(item.status === "active" || item.status === "waiting") ? <button disabled={busy} onClick={() => onAction(item.id, "pause")} title="Pausar" className="rounded p-1.5" style={{ background: "var(--cf2-warning-bg)", color: "var(--cf2-warning-text)" }}><CirclePause className="size-3.5" /></button> : item.status === "paused" ? <button disabled={busy} onClick={() => onAction(item.id, "resume")} title="Retomar" className="rounded p-1.5" style={{ background: "var(--cf2-success-bg)", color: "var(--cf2-success-text)" }}><Play className="size-3.5" /></button> : null}{!['completed', 'cancelled'].includes(item.status) ? <button disabled={busy} onClick={() => onAction(item.id, "cancel")} title="Cancelar" className="rounded p-1.5" style={{ background: "var(--cf2-danger-bg)", color: "var(--cf2-danger-text)" }}><XCircle className="size-3.5" /></button> : null}</div></td></tr>)}</tbody></table></div>}</div>; }
+function Editor({ nome, entityType, steps, existing, onClose, onSave, onNome, onEntity, onSteps }: { nome: string; entityType: string; steps: Step[]; existing: Cadencia | null; onClose: () => void; onSave: (a: "save_draft" | "publish") => void; onNome: (x: string) => void; onEntity: (x: string) => void; onSteps: (x: Step[]) => void }) { return <div data-cf2-theme="builder" className="fixed inset-0 z-[1000] flex flex-col" style={{ background: "var(--cf2-bg-page)" }}><header className="flex h-[72px] shrink-0 items-center gap-4 border-b px-7" style={{ borderColor: "var(--cf2-border-default)" }}><div><p className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>Automações / Follow-ups</p><p className="mt-1 text-[16px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>{nome || "Novo follow-up"}</p></div><span className="rounded-full px-2.5 py-1 text-[10px] font-bold uppercase" style={{ background: existing?.ativo ? "var(--cf2-success-bg)" : "var(--cf2-warning-bg)", color: existing?.ativo ? "var(--cf2-success-text)" : "var(--cf2-warning-text)" }}>{existing?.ativo ? "Publicado" : "Rascunho"}</span><button onClick={onClose} className="ml-auto rounded-lg px-3 py-2 text-[12px] font-semibold" style={{ color: "var(--cf2-text-secondary)" }}>Fechar</button></header><main className="min-h-0 flex-1 p-5 lg:p-6"><FollowupFlowCanvas key={existing?.id ?? "new"} steps={steps} onStepsChange={onSteps} nome={nome} entityType={entityType} onNomeChange={onNome} onEntityTypeChange={onEntity} /></main><footer className="flex h-[68px] shrink-0 items-center border-t px-7" style={{ borderColor: "var(--cf2-border-default)", background: "var(--cf2-bg-surface-subtle)" }}><span className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>{steps.length} etapas configuradas</span><div className="ml-auto flex gap-2"><button onClick={() => onSave("save_draft")} className="flex items-center gap-1.5 rounded-lg px-4 py-2 text-[12px] font-semibold" style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-primary)", border: "1px solid var(--cf2-border-default)" }}><Save className="size-3.5" />Salvar</button><button onClick={() => onSave("publish")} className="flex items-center gap-1.5 rounded-lg px-4 py-2 text-[12px] font-bold" style={{ background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" }}><Send className="size-3.5" />Publicar</button></div></footer></div>; }

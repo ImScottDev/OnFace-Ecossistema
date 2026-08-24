@@ -17,7 +17,7 @@ export default async function ProspeccaoPage() {
   return (
     <div className="flex flex-col gap-6">
       <div className="-m-6 mb-0 relative flex flex-col gap-6 px-8 pt-7 pb-10 rounded-tl-2xl" style={{ background: "var(--cf2-bg-canvas)" }}>
-        <Cf2Topbar orgNome={orgNome} variant="light" title="Vendas" subtitle="Prospecção outbound — trabalhando quem a Callface escolheu abordar" actions={<ProspeccaoTopbarActions />} />
+        <Cf2Topbar orgNome={orgNome} variant="light" title="Prospecção" subtitle="Listas, cadências e respostas em uma única operação outbound" actions={<ProspeccaoTopbarActions />} />
       </div>
 
       <div className="pt-6">

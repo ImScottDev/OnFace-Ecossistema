@@ -207,10 +207,22 @@
   display: none;
 }
 
+/* Overscroll/rubber-band (24/08, achado real: "zuado" branco aparecendo em
+   cima e embaixo ao passar do limite do scroll em qualquer página) — o
+   elástico do trackpad revelava o branco padrão de `html` por trás de
+   `body` (só `body` tinha cor de fundo definida). `overscroll-behavior`
+   evita o elástico se propagar pro documento; a cor no `html` é o fallback
+   pros navegadores/situações que ainda deixam passar. */
+html {
+  background: var(--bg-primary);
+  overscroll-behavior-y: none;
+}
+
 body {
   background: var(--bg-primary);
   color: var(--text-primary);
   font-family: var(--font-body), system-ui, sans-serif;
+  overscroll-behavior-y: none;
 }
 
 /* Animations */

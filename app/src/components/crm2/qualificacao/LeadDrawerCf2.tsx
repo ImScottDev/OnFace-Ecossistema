@@ -53,6 +53,13 @@ function timeAgoShort(dateStr: string): string {
   return `${Math.floor(mins / 1440)}d`;
 }
 
+/** Data/hora absoluta (24/08, pedido do Kauã: a Timeline só mostrava
+ * "Xd atrás", sem data/hora real) — sempre junto do relativo, nunca no lugar. */
+function formatDataHora(iso: string): string {
+  const d = new Date(iso);
+  return `${d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" })} ${d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`;
+}
+
 /** "há 2h" / "ontem 15:32" / "12 ago" — formato da seção compacta
  * "Atendimento Recente" (Figma 230:8825, 23/08); a Timeline unificada
  * completa (mais abaixo) continua usando `timeAgoShort`, sem mudar. */
@@ -247,7 +254,10 @@ export function Cf2LeadDrawer({
   const telefoneDialer = lead?.telefone ? digitsForDialer(lead.telefone) : "";
   const atendimentoHref = (canal: "whatsapp" | "email" | "ligacao") => {
     const params = new URLSearchParams({ leadId: leadId || "", canal });
-    if (canal === "ligacao" && telefoneDialer) params.set("telefone", telefoneDialer);
+    // Telefone vai em qualquer canal (não só ligação) — é o que a tela de
+    // Atendimento usa pra achar a conversa certa quando `contatos.leadId`
+    // não está preenchido no banco (achado real 24/08).
+    if (telefoneDialer) params.set("telefone", telefoneDialer);
     return `/atendimento?${params.toString()}`;
   };
 
@@ -331,7 +341,16 @@ export function Cf2LeadDrawer({
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <span className="flex items-center justify-center rounded-full text-[11px] font-extrabold shrink-0" style={{ width: 26, height: 26, background: T.surface, color: T.textPrimary }}>{initials(owner?.nome)}</span>
-                <span className="text-[12px]" style={{ color: T.textSecondary }}>{owner?.nome || "Sem responsável"}</span>
+                {/* Responsável trocável direto aqui (24/08, pedido do Kauã:
+                    "às vezes muda") — única superfície editável no drawer,
+                    a linha duplicada que só mostrava texto foi removida. */}
+                <AssignOwnerControl
+                  entityType="lead"
+                  entityId={leadId!}
+                  currentOwnerId={lead.responsavelId}
+                  usuarios={Array.from(usuariosById.values())}
+                  onChanged={() => qc.invalidateQueries({ queryKey: ["lead", leadId] })}
+                />
               </div>
               <a href={`/contatos/${leadId}`} className="text-[12px] font-semibold" style={{ color: T.success }}>Abrir página completa →</a>
             </div>
@@ -363,39 +382,26 @@ export function Cf2LeadDrawer({
               <Plus className="w-3.5 h-3.5" />
             </button>
           </div>
-          <p className="text-[11px] -mt-2" style={{ color: T.textSecondary }}>Responsável SDR: <span style={{ color: T.textPrimary, fontWeight: 600 }}>{owner?.nome || "—"}</span></p>
 
           {/* resumo do lead */}
-          <div className="flex flex-col gap-3 p-4 rounded-2xl" style={{ background: T.surface, border: `1px solid ${T.border}` }}>
-            <p className="text-[12px] font-bold uppercase tracking-wide" style={{ color: T.textSecondary }}>Resumo do lead</p>
+          <Section title="Resumo do lead" T={T} defaultOpen>
             <div className="flex flex-col gap-2.5 text-[12px]">
               <KV label="Telefone" value={lead.telefone || "—"}  T={T} />
               <KV label="E-mail" value={lead.email || "—"}  T={T} />
               <KV label="Empresa" value={lead.empresa || "—"} onClick={lead.empresaId ? () => onOpenEmpresa?.(lead.empresaId!) : undefined} T={T} />
               <KV label="Cargo" value={lead.cargo || "—"}  T={T} />
-              <div className="flex items-center justify-between gap-3">
-                <span style={{ color: T.textSecondary }}>Responsável</span>
-                <AssignOwnerControl
-                  entityType="lead"
-                  entityId={leadId!}
-                  currentOwnerId={lead.responsavelId}
-                  usuarios={Array.from(usuariosById.values())}
-                  onChanged={() => qc.invalidateQueries({ queryKey: ["lead", leadId] })}
-                />
-              </div>
               <KV label="Data de entrada" value={new Date(lead.createdAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" })}  T={T} />
             </div>
-          </div>
+          </Section>
 
           {/* QUALIFICAÇÃO (SDR) — Critérios atingidos X/4 + barra + checklist */}
-          <div className="flex flex-col gap-3 p-4 rounded-2xl" style={{ background: T.surface, border: `1px solid ${T.border}` }}>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <ClipboardCheck className="w-3.5 h-3.5" style={{ color: "var(--cf2-accent-border)" }} />
-                <p className="text-[12px] font-bold uppercase tracking-wide" style={{ color: T.textSecondary }}>Qualificação (SDR)</p>
-              </div>
-              <span className="text-[12px] font-semibold" style={{ color: T.textSecondary }}>Critérios atingidos {qualProgress.count}/{qualProgress.total}</span>
-            </div>
+          <Section
+            title="Qualificação (SDR)"
+            T={T}
+            defaultOpen
+            icon={<ClipboardCheck className="w-3.5 h-3.5" style={{ color: "var(--cf2-accent-border)" }} />}
+            right={<span className="text-[12px] font-semibold" style={{ color: T.textSecondary }}>{qualProgress.count}/{qualProgress.total}</span>}
+          >
             <div className="h-1.5 w-full rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.08)" }}>
               <div className="h-full rounded-full transition-all" style={{ width: `${(qualProgress.count / qualProgress.total) * 100}%`, background: T.success }} />
             </div>
@@ -417,11 +423,10 @@ export function Cf2LeadDrawer({
                 <p className="text-[11px]" style={{ color: T.warningText }}>Tomador de decisão: Não identificado</p>
               </div>
             )}
-          </div>
+          </Section>
 
           {/* ATRIBUIÇÃO DE ORIGEM */}
-          <div className="flex flex-col gap-2.5 p-4 rounded-2xl" style={{ background: T.surface, border: `1px solid ${T.border}` }}>
-            <p className="text-[12px] font-bold uppercase tracking-wide" style={{ color: T.textSecondary }}>Atribuição de Origem</p>
+          <Section title="Atribuição de Origem" T={T}>
             <div className="flex flex-col gap-2 text-[12px]">
               <KV label="Fonte" value={origemLabel}  T={T} />
               <KV label="Campanha" value={lead.utmCampaign || "—"}  T={T} />
@@ -436,7 +441,7 @@ export function Cf2LeadDrawer({
             ) : (
               <span className="text-[11px]" style={{ color: T.textSecondary }}>Sem empresa vinculada pra detalhar a origem.</span>
             )}
-          </div>
+          </Section>
 
           {/* ATENDIMENTO RECENTE — preview compacto (3 últimos, mistura real
               de whatsapp/e-mail/ligação com status real); histórico completo
@@ -472,9 +477,8 @@ export function Cf2LeadDrawer({
           )}
 
           {/* timeline unificada (histórico completo, com filtro por canal) */}
-          <div className="flex flex-col gap-3 p-4 rounded-2xl" style={{ background: T.surface, border: `1px solid ${T.border}` }}>
-            <p className="text-[12px] font-bold uppercase tracking-wide" style={{ color: T.textSecondary }}>Timeline unificada</p>
-            <div className="flex gap-2 overflow-x-auto pb-0.5">
+          <Section title="Timeline unificada" T={T}>
+            <div className="flex gap-2 overflow-x-auto [&::-webkit-scrollbar]:hidden" style={{ scrollbarWidth: "none" }}>
               {TABS.map((t) => (
                 <button key={t} onClick={() => setTab(t)} className="px-2.5 py-1.5 rounded-full text-[12px] font-semibold whitespace-nowrap shrink-0" style={{ background: tab === t ? "var(--cf2-accent)" : T.bgAlt, color: tab === t ? "var(--cf2-text-on-accent)" : T.textSecondary, border: tab === t ? "none" : `1px solid ${T.border}` }}>
                   {t}
@@ -506,7 +510,7 @@ export function Cf2LeadDrawer({
                     <div className="flex items-center gap-2.5">
                       <span className="flex items-center justify-center rounded-full text-[11px] font-extrabold shrink-0" style={{ width: 26, height: 26, background: T.surfaceAlt, color: T.textPrimary }}>{initials(e.usuarioNome)}</span>
                       <div className="flex-1 min-w-0">
-                        <p className="text-[12px] font-bold" style={{ color: T.textPrimary }}>{timeAgoShort(e.createdAt)} atrás</p>
+                        <p className="text-[12px] font-bold" style={{ color: T.textPrimary }}>{timeAgoShort(e.createdAt)} atrás <span className="font-normal" style={{ color: T.textSecondary }}>· {formatDataHora(e.createdAt)}</span></p>
                       </div>
                       <span className="px-2 py-1 rounded-full text-[11px] font-bold shrink-0" style={{ background: T.surfaceAlt, color: T.textSecondary }}>{TIPO_LABEL[e.tipo] || e.tipo}</span>
                     </div>
@@ -534,7 +538,7 @@ export function Cf2LeadDrawer({
                 )}
               </div>
             )}
-          </div>
+          </Section>
         </div>
       )}
     </DetailDrawer>
@@ -542,6 +546,31 @@ export function Cf2LeadDrawer({
       <TarefaFormModal open={tarefaModalOpen} onClose={() => setTarefaModalOpen(false)} defaultLeadId={leadId} defaultLeadLabel={fullName || null} invalidateKeys={[["lead", leadId], ["tarefas"]]} />
     )}
     </>
+  );
+}
+
+/** Seção sanfona (24/08, pedido do Kauã: "abre e fecha... pra não ficar
+ * mostrando tudo") — usada em Resumo do lead/Qualificação/Atribuição de
+ * Origem/Timeline unificada. `right` (contador/badge) fica sempre visível no
+ * cabeçalho, mesmo fechada, pra não perder o resumo ao colapsar. */
+function Section({ title, icon, right, defaultOpen = false, T, children }: {
+  title: string; icon?: React.ReactNode; right?: React.ReactNode; defaultOpen?: boolean; T: Tokens; children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="flex flex-col rounded-2xl" style={{ background: T.surface, border: `1px solid ${T.border}` }}>
+      <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} className="flex items-center justify-between gap-3 p-4 text-left">
+        <div className="flex items-center gap-2 min-w-0">
+          {icon}
+          <p className="text-[12px] font-bold uppercase tracking-wide truncate" style={{ color: T.textSecondary }}>{title}</p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          {right}
+          <ChevronDown className="w-3.5 h-3.5 transition-transform" style={{ color: T.textSecondary, transform: open ? "rotate(180deg)" : undefined }} />
+        </div>
+      </button>
+      {open && <div className="flex flex-col gap-3 px-4 pb-4">{children}</div>}
+    </div>
   );
 }
 

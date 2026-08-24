@@ -1,4 +1,4 @@
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, inArray, sql } from "drizzle-orm";
 import {
   leads,
   negocios,
@@ -8,6 +8,9 @@ import {
   reunioes,
   usuarios,
   pipelines,
+  labels,
+  leadLabels,
+  cadenceEnrollments,
 } from "../db/schema";
 import { syncPessoaFromLead, syncOportunidadeFromNegocio } from "./sync-domain-model";
 
@@ -68,6 +71,37 @@ export async function converterLeadEmOportunidade(
 
   if (!lead) {
     return { error: "Lead não encontrado", status: 404 };
+  }
+
+  const isOutbound = String(lead.origem || "").toLowerCase() === "outbound";
+  if (isOutbound) {
+    // A origem continua sendo a fonte estrutural; a tag torna o handoff
+    // visível para quem opera Pré-vendas sem duplicar pessoa/empresa.
+    const [existingOutboundLabel] = await db
+      .select({ id: labels.id })
+      .from(labels)
+      .where(and(eq(labels.organizacaoId, organizacaoId), sql`lower(${labels.nome}) = 'outbound'`))
+      .limit(1);
+    let outboundLabelId = existingOutboundLabel?.id as string | undefined;
+    if (!outboundLabelId) {
+      const [createdLabel] = await db
+        .insert(labels)
+        .values({ organizacaoId, nome: "Outbound", cor: "#2563EB" })
+        .returning({ id: labels.id });
+      outboundLabelId = createdLabel.id;
+    }
+    await db.insert(leadLabels).values({ leadId, labelId: outboundLabelId }).onConflictDoNothing();
+
+    // Uma cadência outbound não pode continuar enviando depois do handoff.
+    await db
+      .update(cadenceEnrollments)
+      .set({ status: "cancelled", cancelledAt: new Date(), cancelReason: "Prospect qualificado e enviado para Pré-vendas", updatedAt: new Date() })
+      .where(and(
+        eq(cadenceEnrollments.organizacaoId, organizacaoId),
+        eq(cadenceEnrollments.entityType, "lead"),
+        eq(cadenceEnrollments.entityId, leadId),
+        inArray(cadenceEnrollments.status, ["active", "waiting"]),
+      ));
   }
 
   // Evita converter duas vezes: se já tem negócio aberto vinculado, devolve ele
@@ -240,6 +274,19 @@ export async function converterLeadEmOportunidade(
       titulo: "Reunião agendada com o closer",
       descricao: closerNome ? `${reuniaoTitulo} · ${quando} · closer ${closerNome}` : `${reuniaoTitulo} · ${quando}`,
       dados: { reuniaoId, closerId, closerNome, data: dataReuniao.toISOString(), tipo: input.reuniao.tipo || "call" },
+    });
+  }
+
+  if (isOutbound) {
+    await db.insert(atividades).values({
+      organizacaoId,
+      leadId: lead.id,
+      negocioId: negocio.id,
+      usuarioId,
+      tipo: "nota",
+      titulo: "Prospect outbound enviado para Pré-vendas",
+      descricao: "Qualificado na operação de Prospecção e disponibilizado na coluna Qualificado de Pré-vendas.",
+      dados: { origem: "outbound", handoff: "prospeccao_para_pre_vendas" },
     });
   }
 

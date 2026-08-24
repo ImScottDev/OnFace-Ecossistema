@@ -1,47 +1,56 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { Search, ChevronDown, X, ExternalLink } from "lucide-react";
-import { useOrgUsuarios, matchesResponsavel, type DateFilter, matchesDateFilter } from "@/components/crm/BoardFilters";
-import { resolveProspeccaoStatus, PROSPECCAO_STATUS, BULK_ACTIONS, type ProspeccaoLead, type BulkActionKey } from "./shared";
+import {
+  AlertTriangle, ArrowUpRight, Building2, CheckCircle2, ChevronDown,
+  ExternalLink, KanbanSquare, List, ListFilter, MessageSquareReply,
+  Search, Sparkles, UsersRound, X,
+} from "lucide-react";
+import { toast } from "sonner";
+import {
+  matchesDateFilter, matchesResponsavel, type DateFilter, useOrgUsuarios,
+} from "@/components/crm/BoardFilters";
+import {
+  BULK_ACTIONS, PROSPECCAO_STATUS, resolveProspeccaoStatus,
+  type BulkActionKey, type ProspeccaoLead,
+} from "./shared";
 import { ImportModal } from "./ImportModal";
-import { ProspeccaoDrawer } from "./ProspeccaoDrawer";
 import { NovoProspectModal } from "./NovoProspectModal";
-
-/**
- * Prospecção (CRM2, reconstrução 17/08 a partir de spec+mockups do Kauã) —
- * workspace EXCLUSIVO de outbound, separado de Pré-vendas (regra explícita
- * do spec: "o trabalho de pré-venda outbound já aconteceu dentro de
- * Prospecção" — qualificar aqui cria a oportunidade DIRETO no Pipeline, sem
- * passar pelo board de Pré-vendas). Tabela em vez de Kanban (spec: "aqui
- * você vai operar volume"). Todo dado vem de `/api/prospeccao/board`
- * (leads.origem='outbound' reais da org, hoje 78) — nada fabricado; onde o
- * dado real ainda não existe (ex: nenhuma lista/cadência cadastrada ainda),
- * a célula mostra "—" em vez de inventar.
- */
+import { ProspeccaoDrawer } from "./ProspeccaoDrawer";
 
 interface Lista { id: string; nome: string; cor: string; count: number }
 interface CadenciaDef { id: string; nome: string; totalSteps: number }
 interface LabelDef { id: string; nome: string; cor: string }
-
+interface CadenciaPerformance {
+  id: string; nome: string; matriculados: number; ativos: number;
+  responderam: number; qualificados: number; falhas: number;
+}
 interface BoardResponse {
   leads: ProspeccaoLead[];
-  kpis: { ativos: number; emCadencia: number; contatados: number; responderam: number; qualificados: number; conversaoPct: number };
+  kpis: {
+    ativos: number; emCadencia: number; aguardandoResposta: number;
+    responderam: number; qualificados: number; conversaoPct: number;
+    semContato: number; semCadencia: number; errosCadencia: number;
+  };
+  cadenciasPerformance: CadenciaPerformance[];
 }
 
+const EMPTY_KPIS: BoardResponse["kpis"] = {
+  ativos: 0, emCadencia: 0, aguardandoResposta: 0, responderam: 0,
+  qualificados: 0, conversaoPct: 0, semContato: 0, semCadencia: 0,
+  errosCadencia: 0,
+};
 const DATE_OPTIONS: { value: DateFilter; label: string }[] = [
-  { value: "all", label: "Todo o período" },
-  { value: "today", label: "Hoje" },
-  { value: "7days", label: "7 dias" },
-  { value: "30days", label: "30 dias" },
+  { value: "all", label: "Todo o período" }, { value: "today", label: "Hoje" },
+  { value: "7days", label: "7 dias" }, { value: "30days", label: "30 dias" },
 ];
 
 export function Cf2ProspeccaoWorkspace() {
   const qc = useQueryClient();
   const { usuarios, byId: usuariosById, currentUserId } = useOrgUsuarios();
+  const [view, setView] = useState<"table" | "kanban">("table");
   const [search, setSearch] = useState("");
   const [respFilter, setRespFilter] = useState("todos");
   const [listaFilter, setListaFilter] = useState("todas");
@@ -54,77 +63,67 @@ export function Cf2ProspeccaoWorkspace() {
   const [novoOpen, setNovoOpen] = useState(false);
   const [bulkMenu, setBulkMenu] = useState<BulkActionKey | null>(null);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery<BoardResponse>({
     queryKey: ["prospeccao-board"],
     queryFn: async () => {
-      const r = await fetch("/api/prospeccao/board");
-      if (!r.ok) return { leads: [], kpis: { ativos: 0, emCadencia: 0, contatados: 0, responderam: 0, qualificados: 0, conversaoPct: 0 } } as BoardResponse;
-      return (await r.json()) as BoardResponse;
+      const response = await fetch("/api/prospeccao/board");
+      if (!response.ok) throw new Error("Não foi possível carregar a operação outbound");
+      return response.json();
     },
   });
-
   const { data: listas = [] } = useQuery<Lista[]>({
     queryKey: ["contato-listas"],
     queryFn: async () => {
-      const r = await fetch("/api/contatos-unified/listas");
-      return r.ok ? r.json() : [];
+      const response = await fetch("/api/contatos-unified/listas");
+      if (!response.ok) throw new Error("Não foi possível carregar as listas");
+      return response.json();
     },
   });
-
   const { data: cadencias = [] } = useQuery<CadenciaDef[]>({
     queryKey: ["prospeccao-cadencias"],
     queryFn: async () => {
-      const r = await fetch("/api/prospeccao/cadencias");
-      return r.ok ? r.json() : [];
+      const response = await fetch("/api/prospeccao/cadencias");
+      if (!response.ok) throw new Error("Não foi possível carregar as cadências");
+      return response.json();
     },
   });
-
   const { data: labels = [] } = useQuery<LabelDef[]>({
     queryKey: ["labels"],
     queryFn: async () => {
-      const r = await fetch("/api/labels");
-      return r.ok ? r.json() : [];
+      const response = await fetch("/api/labels");
+      if (!response.ok) throw new Error("Não foi possível carregar as tags");
+      return response.json();
     },
   });
 
-  const allLeads = data?.leads || [];
-  const kpis = data?.kpis || { ativos: 0, emCadencia: 0, contatados: 0, responderam: 0, qualificados: 0, conversaoPct: 0 };
-
+  const allLeads = useMemo(() => data?.leads ?? [], [data?.leads]);
+  // Compatível com uma API local que ainda esteja reiniciando sobre o
+  // contrato anterior: nunca deixa `undefined` vazar para a interface.
+  const kpis = { ...EMPTY_KPIS, ...(data?.kpis ?? {}) };
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return allLeads.filter((l) => {
-      if (!matchesResponsavel(l.responsavelId, respFilter, currentUserId)) return false;
-      if (listaFilter !== "todas" && l.listaId !== listaFilter) return false;
-      if (cadenciaFilter === "ativas" && !(l.cadencia && ["active", "waiting"].includes(l.cadencia.status))) return false;
-      if (cadenciaFilter === "sem" && l.cadencia) return false;
-      if (!matchesDateFilter(l.createdAt || null, dateFilter)) return false;
-      if (statusFilter !== "todos" && resolveProspeccaoStatus(l).key !== statusFilter) return false;
-      if (!q) return true;
-      return l.nome.toLowerCase().includes(q) || (l.empresa || "").toLowerCase().includes(q) || (l.cargo || "").toLowerCase().includes(q);
+    const query = search.trim().toLowerCase();
+    return allLeads.filter((lead) => {
+      if (!matchesResponsavel(lead.responsavelId, respFilter, currentUserId)) return false;
+      if (listaFilter !== "todas" && lead.listaId !== listaFilter) return false;
+      if (cadenciaFilter === "ativas" && !(lead.cadencia && ["active", "waiting"].includes(lead.cadencia.status))) return false;
+      if (cadenciaFilter === "sem" && lead.cadencia) return false;
+      if (!matchesDateFilter(lead.createdAt || null, dateFilter)) return false;
+      if (statusFilter !== "todos" && resolveProspeccaoStatus(lead).key !== statusFilter) return false;
+      if (!query) return true;
+      return [lead.nome, lead.sobrenome, lead.empresa, lead.cargo, lead.email, lead.telefone, lead.listaNome]
+        .filter(Boolean).some((value) => String(value).toLowerCase().includes(query));
     });
-  }, [allLeads, search, respFilter, listaFilter, cadenciaFilter, dateFilter, statusFilter, currentUserId]);
+  }, [allLeads, cadenciaFilter, currentUserId, dateFilter, listaFilter, respFilter, search, statusFilter]);
 
-  const allSelectedOnPage = filtered.length > 0 && filtered.every((l) => selected.has(l.id));
-  const toggleAll = () => {
-    if (allSelectedOnPage) setSelected(new Set());
-    else setSelected(new Set(filtered.map((l) => l.id)));
-  };
-  const toggleOne = (id: string) => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
+  const allSelected = filtered.length > 0 && filtered.every((lead) => selected.has(lead.id));
+  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(filtered.map((lead) => lead.id)));
+  const toggleOne = (id: string) => setSelected((current) => {
+    const next = new Set(current);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
   const invalidate = () => qc.invalidateQueries({ queryKey: ["prospeccao-board"] });
 
-  // CTAs "+ Novo prospect"/"+ Importar prospects" moram no Topbar (fora
-  // dessa árvore — page.tsx é Server Component, o Topbar recebe
-  // `<ProspeccaoTopbarActions />` via prop `actions`). Ponte via
-  // CustomEvent, mesmo padrão já usado pro command palette
-  // ("open-command-palette") em outras telas do CRM2.
   useEffect(() => {
     const abrirNovo = () => setNovoOpen(true);
     const abrirImportar = () => setImportOpen(true);
@@ -139,257 +138,157 @@ export function Cf2ProspeccaoWorkspace() {
   const bulk = useMutation({
     mutationFn: async ({ action, payload }: { action: BulkActionKey; payload?: string }) => {
       const leadIds = Array.from(selected);
-      if (action === "atribuir_responsavel") {
-        await Promise.all(leadIds.map((id) => fetch(`/api/leads/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ responsavelId: payload || null }) })));
-      } else if (action === "adicionar_cadencia") {
-        await fetch("/api/prospeccao/cadencia/enroll", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ leadIds, cadenceDefinitionId: payload }) });
-      } else if (action === "trocar_lista") {
-        // Remove da lista anterior (quando conhecida) antes de adicionar na nova — "trocar", não só "adicionar".
-        const porListaAntiga = new Map<string, string[]>();
-        for (const l of allLeads) {
-          if (selected.has(l.id) && l.listaId) {
-            if (!porListaAntiga.has(l.listaId)) porListaAntiga.set(l.listaId, []);
-            porListaAntiga.get(l.listaId)!.push(l.id);
-          }
+      const ensureOk = async (response: Response) => {
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({}));
+          throw new Error(body.error || "A operação não pôde ser concluída");
         }
-        await Promise.all(
-          Array.from(porListaAntiga.entries()).map(([listaId, ids]) =>
-            fetch("/api/contatos-unified/listas", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "remove", listaId, leadIds: ids }) })
-          )
-        );
-        await fetch("/api/contatos-unified/listas", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "add", listaId: payload, leadIds }) });
+      };
+      if (action === "atribuir_responsavel") {
+        await Promise.all(leadIds.map(async (id) => ensureOk(await fetch(`/api/leads/${id}`, {
+          method: "PATCH", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ responsavelId: payload || null }),
+        }))));
+      } else if (action === "adicionar_cadencia") {
+        await ensureOk(await fetch("/api/prospeccao/cadencia/enroll", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ leadIds, cadenceDefinitionId: payload }),
+        }));
+      } else if (action === "trocar_lista") {
+        const previousLists = new Map<string, string[]>();
+        for (const lead of allLeads) if (selected.has(lead.id) && lead.listaId) previousLists.set(lead.listaId, [...(previousLists.get(lead.listaId) ?? []), lead.id]);
+        await Promise.all(Array.from(previousLists.entries()).map(async ([listaId, ids]) => ensureOk(await fetch("/api/contatos-unified/listas", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "remove", listaId, leadIds: ids }),
+        }))));
+        await ensureOk(await fetch("/api/contatos-unified/listas", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "add", listaId: payload, leadIds }),
+        }));
       } else if (action === "adicionar_tag") {
-        await Promise.all(leadIds.map((id) => fetch(`/api/leads/${id}/labels`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ labelId: payload }) })));
+        await Promise.all(leadIds.map(async (id) => ensureOk(await fetch(`/api/leads/${id}/labels`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ labelId: payload }),
+        }))));
       } else if (action === "pausar") {
-        await fetch("/api/prospeccao/cadencia/pausar", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ leadIds }) });
+        await ensureOk(await fetch("/api/prospeccao/cadencia/pausar", {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ leadIds }),
+        }));
       } else if (action === "arquivar") {
-        // Reaproveita o mesmo bucket real de "Desqualificado" — não existe
-        // ainda um estado "arquivado" distinto no domínio; registrado como
-        // pendência em vez de inventar um status novo silenciosamente.
-        await Promise.all(leadIds.map((id) => fetch(`/api/leads/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sdrStatus: "disqualified" }) })));
+        await Promise.all(leadIds.map(async (id) => ensureOk(await fetch(`/api/leads/${id}`, {
+          method: "PATCH", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sdrStatus: "disqualified" }),
+        }))));
       }
     },
     onSuccess: () => {
-      invalidate();
-      setSelected(new Set());
-      setBulkMenu(null);
-      toast.success("Ação aplicada.");
+      invalidate(); setSelected(new Set()); setBulkMenu(null);
+      toast.success("Ação aplicada aos prospects selecionados.");
     },
-    onError: () => toast.error("Não foi possível aplicar a ação."),
+    onError: (error) => toast.error(error instanceof Error ? error.message : "Não foi possível aplicar a ação"),
   });
 
   return (
-    <div className="flex flex-col gap-5">
-      {/* Resumo Operacional de Outbound — dark, mesmo padrão de chrome já usado no Kanban de Pré-vendas */}
-      <div className="rounded-3xl p-6 flex flex-col gap-5" style={{ background: "var(--cf2-chrome-bg)", border: "1px solid var(--cf2-chrome-border)" }}>
-        <div className="flex flex-col gap-1">
-          <p className="text-[18px] font-bold" style={{ color: "var(--cf2-chrome-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>Resumo Operacional de Outbound</p>
-          <p className="text-[13px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Acompanhamento em tempo real da volumetria, cadências e taxa de conversão final</p>
+    <div className="flex flex-col gap-4 pb-6">
+      <section className="overflow-hidden rounded-2xl border" style={{ background: "var(--cf2-bg-surface)", borderColor: "var(--cf2-border-default)" }}>
+        <div className="grid grid-cols-2 divide-x divide-y lg:grid-cols-5 lg:divide-y-0">
+          <Metric icon={UsersRound} label="Prospects na máquina" value={kpis.ativos} detail={`${listas.length} lista${listas.length === 1 ? "" : "s"}`} />
+          <Metric icon={Sparkles} label="Em follow-up" value={kpis.emCadencia} detail={`${kpis.aguardandoResposta} aguardando resposta`} />
+          <Metric icon={MessageSquareReply} label="Responderam" value={kpis.responderam} detail="Precisam de decisão" tone="attention" />
+          <Metric icon={CheckCircle2} label="Qualificados" value={kpis.qualificados} detail="Enviados para Pré-vendas" tone="success" />
+          <Metric icon={ArrowUpRight} label="Conversão outbound" value={`${kpis.conversaoPct}%`} detail="Base → Pré-vendas" accent />
         </div>
-        <div className="grid grid-cols-5 gap-4">
-          <Kpi label="Prospects ativos" valor={kpis.ativos} sub="Na base de fluxo" />
-          <Kpi label="Em cadência" valor={kpis.emCadencia} sub="Sendo acionados" />
-          <Kpi label="Contatados" valor={kpis.contatados} sub="1º toque realizado" />
-          <Kpi label="Responderam" valor={kpis.responderam} sub="Interação positiva" />
-          <Kpi label="Conversão (SQL)" valor={`${kpis.conversaoPct}%`} sub={`${kpis.qualificados} oportunidade${kpis.qualificados === 1 ? "" : "s"} criada${kpis.qualificados === 1 ? "" : "s"}`} accent />
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <select value={dateFilter} onChange={(e) => setDateFilter(e.target.value as DateFilter)} className="px-3 py-1.5 rounded-lg text-[12px] font-medium outline-none" style={{ background: "rgba(255,255,255,0.08)", border: "1px solid var(--cf2-chrome-border-subtle)", color: "var(--cf2-chrome-text-secondary)" }}>
-            {DATE_OPTIONS.map((o) => <option key={o.value} value={o.value}>Período: {o.label}</option>)}
-          </select>
-          <select value={respFilter} onChange={(e) => setRespFilter(e.target.value)} className="px-3 py-1.5 rounded-lg text-[12px] font-medium outline-none" style={{ background: "rgba(255,255,255,0.08)", border: "1px solid var(--cf2-chrome-border-subtle)", color: "var(--cf2-chrome-text-secondary)" }}>
-            <option value="todos">Responsável: Todos</option>
-            {currentUserId && <option value="meu">Meus (eu)</option>}
-            {usuarios.map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}
-          </select>
-          <select value={listaFilter} onChange={(e) => setListaFilter(e.target.value)} className="px-3 py-1.5 rounded-lg text-[12px] font-medium outline-none" style={{ background: "rgba(255,255,255,0.08)", border: "1px solid var(--cf2-chrome-border-subtle)", color: "var(--cf2-chrome-text-secondary)" }}>
-            <option value="todas">Lista: Todas</option>
-            {listas.map((l) => <option key={l.id} value={l.id}>{l.nome}</option>)}
-          </select>
-          <select value={cadenciaFilter} onChange={(e) => setCadenciaFilter(e.target.value as typeof cadenciaFilter)} className="px-3 py-1.5 rounded-lg text-[12px] font-medium outline-none" style={{ background: "rgba(255,255,255,0.08)", border: "1px solid var(--cf2-chrome-border-subtle)", color: "var(--cf2-chrome-text-secondary)" }}>
-            <option value="todas">Cadência: Todas</option>
-            <option value="ativas">Cadência: Ativas</option>
-            <option value="sem">Sem cadência</option>
-          </select>
-        </div>
-      </div>
+      </section>
 
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <div className="flex items-center gap-2 flex-wrap">
-          <p className="text-lg font-semibold" style={{ color: "var(--cf2-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>Fluxo Operacional de Prospects</p>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="relative shrink-0">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: "var(--cf2-text-tertiary)" }} />
-            <input
-              value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar prospect, empresa, cargo..."
-              className="w-56 sm:w-72 pl-8 pr-3 py-1.5 rounded-lg text-[12px] outline-none"
-              style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }}
-            />
+      <section className="grid gap-3 xl:grid-cols-[minmax(0,1.65fr)_minmax(300px,0.75fr)]">
+        <div className="rounded-2xl border p-4" style={{ background: "var(--cf2-bg-surface)", borderColor: "var(--cf2-border-default)" }}>
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div><h2 className="text-sm font-bold" style={{ color: "var(--cf2-text-primary)" }}>Follow-ups em execução</h2><p className="mt-0.5 text-xs" style={{ color: "var(--cf2-text-tertiary)" }}>Desempenho real das inscrições, sem estimar entrega ou abertura.</p></div>
+            <Link href="/automacoes/cadencias" className="flex items-center gap-1 text-xs font-semibold" style={{ color: "var(--cf2-success-text)" }}>Gerenciar <ArrowUpRight className="h-3.5 w-3.5" /></Link>
           </div>
-          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="px-2.5 py-1.5 rounded-lg text-[12px] font-medium outline-none" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-secondary)" }}>
-            <option value="todos">Status: Todos</option>
-            {PROSPECCAO_STATUS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
-          </select>
-          <Link
-            href="/prospeccao-legado"
-            className="flex items-center gap-1 text-[12px] font-semibold shrink-0"
-            style={{ color: "var(--cf2-text-tertiary)" }}
-            title="Ferramenta de busca Apollo (ainda no tema legado — sem Figma aprovado pra migrar)"
-          >
-            Buscar no Apollo <ExternalLink className="w-3 h-3" />
-          </Link>
+          {data?.cadenciasPerformance?.length ? (
+            <div className="overflow-x-auto"><table className="w-full min-w-[620px] text-left"><thead><tr className="text-[10px] font-bold uppercase tracking-[0.08em]" style={{ color: "var(--cf2-text-tertiary)" }}><th className="pb-2">Follow-up</th><th className="pb-2">Inscritos</th><th className="pb-2">Ativos</th><th className="pb-2">Respostas</th><th className="pb-2">Pré-vendas</th></tr></thead><tbody>
+              {data.cadenciasPerformance.slice(0, 5).map((cadence) => <tr key={cadence.id} className="border-t text-xs" style={{ borderColor: "var(--cf2-border-default)", color: "var(--cf2-text-secondary)" }}><td className="py-2.5 font-semibold" style={{ color: "var(--cf2-text-primary)" }}>{cadence.nome}</td><td className="py-2.5">{cadence.matriculados}</td><td className="py-2.5">{cadence.ativos}</td><td className="py-2.5">{cadence.responderam}</td><td className="py-2.5 font-semibold">{cadence.qualificados}</td></tr>)}
+            </tbody></table></div>
+          ) : <p className="rounded-xl border border-dashed px-4 py-5 text-xs" style={{ borderColor: "var(--cf2-border-default)", color: "var(--cf2-text-tertiary)" }}>Nenhum follow-up possui prospects inscritos ainda.</p>}
         </div>
-      </div>
-
-      {selected.size > 0 && (
-        <div className="flex items-center justify-between gap-3 px-4 py-2.5 rounded-xl" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)", boxShadow: "0 4px 12px rgba(15,23,42,0.08)" }}>
-          <p className="text-[13px] font-semibold" style={{ color: "var(--cf2-text-primary)" }}>{selected.size} selecionado{selected.size > 1 ? "s" : ""}</p>
-          <div className="flex items-center gap-1.5 flex-wrap">
-            {BULK_ACTIONS.map((a) => (
-              <BulkButton key={a.key} label={a.label} active={bulkMenu === a.key} onClick={() => setBulkMenu(bulkMenu === a.key ? null : a.key)} />
-            ))}
-            <button onClick={() => setSelected(new Set())} className="p-1.5 rounded-lg" style={{ color: "var(--cf2-text-tertiary)" }}><X className="w-3.5 h-3.5" /></button>
-          </div>
+        <div className="rounded-2xl border p-4" style={{ background: "var(--cf2-bg-surface)", borderColor: "var(--cf2-border-default)" }}>
+          <div className="mb-3 flex items-center gap-2"><AlertTriangle className="h-4 w-4" style={{ color: "var(--cf2-warning-text)" }} /><h2 className="text-sm font-bold" style={{ color: "var(--cf2-text-primary)" }}>Atenção agora</h2></div>
+          <div className="divide-y"><AlertRow value={kpis.semCadencia} label="prospects sem follow-up" onClick={() => setCadenciaFilter("sem")} /><AlertRow value={kpis.semContato} label="sem telefone e e-mail" /><AlertRow value={kpis.responderam} label="respostas aguardando decisão" onClick={() => setStatusFilter("respondeu")} /><AlertRow value={kpis.errosCadencia} label="follow-ups com falha" /></div>
         </div>
-      )}
+      </section>
 
-      {bulkMenu && (
-        <BulkActionPanel
-          action={bulkMenu}
-          usuarios={usuarios}
-          listas={listas}
-          cadencias={cadencias}
-          labels={labels}
-          pending={bulk.isPending}
-          onConfirm={(payload) => bulk.mutate({ action: bulkMenu, payload })}
-          onCancel={() => setBulkMenu(null)}
-        />
-      )}
-
-      <div className="rounded-2xl overflow-hidden" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
-        {isLoading ? (
-          <p className="p-6 text-[13px]" style={{ color: "var(--cf2-text-tertiary)" }}>Carregando...</p>
-        ) : filtered.length === 0 ? (
-          <p className="p-6 text-[13px]" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhum prospect outbound encontrado.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead>
-                <tr style={{ background: "var(--cf2-bg-surface-muted)" }}>
-                  <th className="w-10 px-4 py-2.5">
-                    <input type="checkbox" checked={allSelectedOnPage} onChange={toggleAll} />
-                  </th>
-                  {["Prospect", "Empresa", "Cargo", "Lista/Origem", "Responsável", "Cadência", "Etapa", "Última interação", "Próxima ação", "Status"].map((h) => (
-                    <th key={h} className="px-3 py-2.5 text-[11px] font-bold whitespace-nowrap" style={{ color: "var(--cf2-text-tertiary)" }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((l) => {
-                  const status = resolveProspeccaoStatus(l);
-                  const owner = l.responsavelId ? usuariosById.get(l.responsavelId) : undefined;
-                  return (
-                    <tr key={l.id} className="cursor-pointer" style={{ borderTop: "1px solid var(--cf2-border-default)" }} onClick={() => setDrawerLeadId(l.id)}>
-                      <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                        <input type="checkbox" checked={selected.has(l.id)} onChange={() => toggleOne(l.id)} />
-                      </td>
-                      <td className="px-3 py-3 text-[13px] font-semibold whitespace-nowrap" style={{ color: "var(--cf2-text-primary)" }}>{l.nome}{l.sobrenome ? ` ${l.sobrenome}` : ""}</td>
-                      <td className="px-3 py-3 text-[12px] whitespace-nowrap" style={{ color: "var(--cf2-text-secondary)" }}>{l.empresa || "—"}</td>
-                      <td className="px-3 py-3 text-[12px] whitespace-nowrap" style={{ color: "var(--cf2-text-secondary)" }}>{l.cargo || "—"}</td>
-                      <td className="px-3 py-3 text-[12px] whitespace-nowrap" style={{ color: "var(--cf2-text-secondary)" }}>{l.listaNome || l.origem || "—"}</td>
-                      <td className="px-3 py-3 text-[12px] whitespace-nowrap" style={{ color: "var(--cf2-text-secondary)" }}>{owner?.nome || "—"}</td>
-                      <td className="px-3 py-3 text-[12px] whitespace-nowrap" style={{ color: "var(--cf2-text-secondary)" }}>{l.cadencia?.definitionNome || "—"}</td>
-                      <td className="px-3 py-3 text-[12px] whitespace-nowrap" style={{ color: "var(--cf2-text-secondary)" }}>{l.cadencia ? `${l.cadencia.stepIndex}/${l.cadencia.totalSteps}` : "—"}</td>
-                      <td className="px-3 py-3 text-[12px] whitespace-nowrap" style={{ color: "var(--cf2-text-tertiary)" }} title="Baseado na última atualização real do registro">{l.updatedAt ? relTime(l.updatedAt) : "—"}</td>
-                      <td className="px-3 py-3 text-[12px] whitespace-nowrap" style={{ color: "var(--cf2-text-tertiary)" }}>{l.cadencia?.proximaAcaoEm ? new Date(l.cadencia.proximaAcaoEm).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—"}</td>
-                      <td className="px-3 py-3 whitespace-nowrap">
-                        <span className="inline-flex px-2 py-0.5 rounded-full text-[11px] font-bold" style={{ background: `${status.color}18`, color: status.color }}>{status.label}</span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+      <section className="rounded-2xl border" style={{ background: "var(--cf2-bg-surface)", borderColor: "var(--cf2-border-default)" }}>
+        <div className="flex flex-col gap-3 border-b p-3.5 xl:flex-row xl:items-center xl:justify-between" style={{ borderColor: "var(--cf2-border-default)" }}>
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+            <div className="relative min-w-[220px] flex-1 xl:max-w-[340px]"><Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2" style={{ color: "var(--cf2-text-tertiary)" }} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar pessoa, empresa, cargo ou contato" aria-label="Buscar prospects" className="h-9 w-full rounded-lg border bg-transparent pl-9 pr-3 text-xs outline-none focus-visible:ring-2" style={{ borderColor: "var(--cf2-border-default)", color: "var(--cf2-text-primary)" }} /></div>
+            <FilterSelect value={listaFilter} onChange={setListaFilter} label="Lista"><option value="todas">Todas as listas</option>{listas.map((lista) => <option key={lista.id} value={lista.id}>{lista.nome} ({lista.count})</option>)}</FilterSelect>
+            <FilterSelect value={statusFilter} onChange={setStatusFilter} label="Status"><option value="todos">Todos os status</option>{PROSPECCAO_STATUS.map((status) => <option key={status.key} value={status.key}>{status.label}</option>)}</FilterSelect>
+            <FilterSelect value={cadenciaFilter} onChange={(value) => setCadenciaFilter(value as typeof cadenciaFilter)} label="Follow-up"><option value="todas">Todos</option><option value="ativas">Ativos</option><option value="sem">Sem follow-up</option></FilterSelect>
+            <FilterSelect value={respFilter} onChange={setRespFilter} label="Responsável"><option value="todos">Todos</option>{currentUserId && <option value="meu">Meus prospects</option>}{usuarios.map((usuario) => <option key={usuario.id} value={usuario.id}>{usuario.nome}</option>)}</FilterSelect>
+            <FilterSelect value={dateFilter} onChange={(value) => setDateFilter(value as DateFilter)} label="Período">{DATE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</FilterSelect>
           </div>
-        )}
-      </div>
-      <p className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>Mostrando {filtered.length} de {allLeads.length} prospects</p>
+          <div className="flex items-center justify-between gap-2 xl:justify-end"><span className="text-xs tabular-nums" style={{ color: "var(--cf2-text-tertiary)" }}>{filtered.length} de {allLeads.length}</span><div className="flex rounded-lg border p-0.5" style={{ borderColor: "var(--cf2-border-default)", background: "var(--cf2-bg-surface-muted)" }}><ViewButton active={view === "table"} label="Tabela" icon={List} onClick={() => setView("table")} /><ViewButton active={view === "kanban"} label="Kanban" icon={KanbanSquare} onClick={() => setView("kanban")} /></div><Link href="/prospeccao-legado" title="Busca Apollo disponível no módulo legado" className="flex h-9 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold" style={{ borderColor: "var(--cf2-border-default)", color: "var(--cf2-text-secondary)" }}>Apollo <ExternalLink className="h-3.5 w-3.5" /></Link></div>
+        </div>
+
+        {selected.size > 0 && <div className="flex flex-col gap-2 border-b px-3.5 py-2.5 lg:flex-row lg:items-center lg:justify-between" style={{ borderColor: "var(--cf2-border-default)", background: "var(--cf2-bg-surface-muted)" }}><p className="text-xs font-semibold" style={{ color: "var(--cf2-text-primary)" }}>{selected.size} prospect{selected.size === 1 ? "" : "s"} selecionado{selected.size === 1 ? "" : "s"}</p><div className="flex flex-wrap items-center gap-1.5">{BULK_ACTIONS.map((action) => <BulkButton key={action.key} label={action.label} active={bulkMenu === action.key} onClick={() => setBulkMenu(bulkMenu === action.key ? null : action.key)} />)}<button onClick={() => setSelected(new Set())} aria-label="Limpar seleção" className="rounded-lg p-2" style={{ color: "var(--cf2-text-tertiary)" }}><X className="h-3.5 w-3.5" /></button></div></div>}
+        {bulkMenu && <BulkActionPanel action={bulkMenu} usuarios={usuarios} listas={listas} cadencias={cadencias} labels={labels} pending={bulk.isPending} onConfirm={(payload) => bulk.mutate({ action: bulkMenu, payload })} onCancel={() => setBulkMenu(null)} />}
+
+        {isLoading ? <LoadingState /> : isError ? <div className="flex flex-col items-center gap-3 px-6 py-14 text-center"><AlertTriangle className="h-5 w-5" style={{ color: "var(--cf2-danger-text)" }} /><div><p className="text-sm font-semibold" style={{ color: "var(--cf2-text-primary)" }}>A operação outbound não carregou</p><p className="mt-1 text-xs" style={{ color: "var(--cf2-text-tertiary)" }}>Verifique a API e tente novamente.</p></div><button onClick={() => refetch()} className="rounded-lg border px-3 py-2 text-xs font-semibold" style={{ borderColor: "var(--cf2-border-default)", color: "var(--cf2-text-primary)" }}>Tentar novamente</button></div> : filtered.length === 0 ? <div className="flex flex-col items-center gap-2 px-6 py-14 text-center"><ListFilter className="h-5 w-5" style={{ color: "var(--cf2-text-tertiary)" }} /><p className="text-sm font-semibold" style={{ color: "var(--cf2-text-primary)" }}>Nenhum prospect neste recorte</p><p className="max-w-sm text-xs" style={{ color: "var(--cf2-text-tertiary)" }}>Ajuste os filtros ou importe uma lista para alimentar a operação outbound.</p></div> : view === "table" ? <ProspectsTable leads={filtered} selected={selected} allSelected={allSelected} usuariosById={usuariosById} onToggleAll={toggleAll} onToggle={toggleOne} onOpen={setDrawerLeadId} /> : <ProspectsKanban leads={filtered} selected={selected} usuariosById={usuariosById} onToggle={toggleOne} onOpen={setDrawerLeadId} />}
+      </section>
 
       <ProspeccaoDrawer leadId={drawerLeadId} open={!!drawerLeadId} onClose={() => setDrawerLeadId(null)} usuariosById={usuariosById} cadencias={cadencias} onChanged={invalidate} />
-      <ImportModal open={importOpen} onClose={() => setImportOpen(false)} listas={listas} usuarios={usuarios} cadencias={cadencias} onImported={invalidate} />
-      <NovoProspectModal open={novoOpen} onClose={() => setNovoOpen(false)} listas={listas} usuarios={usuarios} onCreated={invalidate} />
+      <ImportModal open={importOpen} onClose={() => setImportOpen(false)} listas={listas} usuarios={usuarios} cadencias={cadencias} onImported={() => { invalidate(); qc.invalidateQueries({ queryKey: ["contato-listas"] }); }} />
+      <NovoProspectModal open={novoOpen} onClose={() => setNovoOpen(false)} listas={listas} usuarios={usuarios} onCreated={() => { invalidate(); qc.invalidateQueries({ queryKey: ["contato-listas"] }); }} />
     </div>
   );
 }
 
-function relTime(iso: string): string {
-  const mins = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
-  if (mins < 1) return "agora";
-  if (mins < 60) return `${mins}min`;
-  if (mins < 1440) return `${Math.floor(mins / 60)}h`;
-  return `${Math.floor(mins / 1440)}d`;
+function Metric({ icon: Icon, label, value, detail, accent, tone }: { icon: typeof UsersRound; label: string; value: string | number; detail: string; accent?: boolean; tone?: "attention" | "success" }) {
+  const iconColor = accent ? "var(--cf2-accent-border)" : tone === "attention" ? "var(--cf2-warning-text)" : tone === "success" ? "var(--cf2-success-text)" : "var(--cf2-text-tertiary)";
+  return <div className="flex min-h-[106px] flex-col justify-between gap-3 p-4 lg:min-h-[116px]"><div className="flex items-center justify-between gap-3"><span className="text-[11px] font-semibold" style={{ color: "var(--cf2-text-secondary)" }}>{label}</span><Icon className="h-4 w-4" style={{ color: iconColor }} /></div><div><p className="text-2xl font-bold tabular-nums" style={{ color: accent ? "var(--cf2-success-text)" : "var(--cf2-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>{value}</p><p className="mt-1 text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>{detail}</p></div></div>;
+}
+function AlertRow({ value, label, onClick }: { value: number; label: string; onClick?: () => void }) {
+  const content = <><span className="font-bold tabular-nums" style={{ color: value > 0 ? "var(--cf2-text-primary)" : "var(--cf2-text-tertiary)" }}>{value}</span><span className="flex-1" style={{ color: "var(--cf2-text-secondary)" }}>{label}</span>{onClick && <ArrowUpRight className="h-3.5 w-3.5" style={{ color: "var(--cf2-text-tertiary)" }} />}</>;
+  return onClick ? <button onClick={onClick} className="flex w-full items-center gap-2 py-2.5 text-left text-xs hover:opacity-75">{content}</button> : <div className="flex items-center gap-2 py-2.5 text-xs">{content}</div>;
+}
+function FilterSelect({ value, onChange, label, children }: { value: string; onChange: (value: string) => void; label: string; children: React.ReactNode }) {
+  return <select value={value} onChange={(event) => onChange(event.target.value)} aria-label={label} className="h-9 max-w-[180px] rounded-lg border bg-transparent px-2.5 text-xs font-medium outline-none focus-visible:ring-2" style={{ borderColor: "var(--cf2-border-default)", color: "var(--cf2-text-secondary)" }}>{children}</select>;
+}
+function ViewButton({ active, label, icon: Icon, onClick }: { active: boolean; label: string; icon: typeof List; onClick: () => void }) {
+  return <button onClick={onClick} aria-pressed={active} className="flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-semibold" style={{ background: active ? "var(--cf2-bg-surface)" : "transparent", color: active ? "var(--cf2-text-primary)" : "var(--cf2-text-tertiary)", boxShadow: active ? "0 1px 3px rgba(15,23,42,.08)" : "none" }}><Icon className="h-3.5 w-3.5" />{label}</button>;
 }
 
-function Kpi({ label, valor, sub, accent }: { label: string; valor: string | number; sub: string; accent?: boolean }) {
-  return (
-    <div className="flex flex-col gap-1">
-      <p className="text-[10px] font-bold uppercase" style={{ color: "var(--cf2-chrome-text-secondary)" }}>{label}</p>
-      <p className="text-[26px] font-bold" style={{ color: accent ? "var(--cf2-accent-border)" : "var(--cf2-chrome-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>{valor}</p>
-      <p className="text-[11px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>{sub}</p>
-    </div>
-  );
+function ProspectsTable({ leads, selected, allSelected, usuariosById, onToggleAll, onToggle, onOpen }: { leads: ProspeccaoLead[]; selected: Set<string>; allSelected: boolean; usuariosById: Map<string, { nome: string }>; onToggleAll: () => void; onToggle: (id: string) => void; onOpen: (id: string) => void }) {
+  return <div className="overflow-x-auto"><table className="w-full min-w-[1180px] text-left"><thead className="sticky top-0 z-[1]" style={{ background: "var(--cf2-bg-surface-muted)" }}><tr><th className="w-10 px-3.5 py-2.5"><input aria-label="Selecionar todos os prospects visíveis" type="checkbox" checked={allSelected} onChange={onToggleAll} /></th>{["Prospect", "Empresa", "Contato", "Lista / origem", "Follow-up", "Último toque", "Próxima ação", "Responsável", "Status"].map((heading) => <th key={heading} className="px-3 py-2.5 text-[10px] font-bold uppercase tracking-[0.06em] whitespace-nowrap" style={{ color: "var(--cf2-text-tertiary)" }}>{heading}</th>)}</tr></thead><tbody>{leads.map((lead) => {
+    const status = resolveProspeccaoStatus(lead); const owner = lead.responsavelId ? usuariosById.get(lead.responsavelId) : undefined;
+    return <tr key={lead.id} className="group cursor-pointer border-t hover:bg-black/[0.018]" style={{ borderColor: "var(--cf2-border-default)" }} onClick={() => onOpen(lead.id)}><td className="px-3.5 py-3" onClick={(event) => event.stopPropagation()}><input aria-label={`Selecionar ${lead.nome}`} type="checkbox" checked={selected.has(lead.id)} onChange={() => onToggle(lead.id)} /></td><td className="px-3 py-3"><p className="text-xs font-bold" style={{ color: "var(--cf2-text-primary)" }}>{lead.nome}{lead.sobrenome ? ` ${lead.sobrenome}` : ""}</p><p className="mt-0.5 max-w-[170px] truncate text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>{lead.cargo || "Cargo não informado"}</p></td><td className="px-3 py-3"><p className="max-w-[180px] truncate text-xs font-medium" style={{ color: "var(--cf2-text-secondary)" }}>{lead.empresa || "—"}</p></td><td className="px-3 py-3"><p className="text-xs" style={{ color: "var(--cf2-text-secondary)" }}>{lead.telefone || lead.email || "—"}</p><p className="mt-0.5 max-w-[160px] truncate text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>{lead.telefone && lead.email ? lead.email : ""}</p></td><td className="px-3 py-3"><p className="text-xs" style={{ color: "var(--cf2-text-secondary)" }}>{lead.listaNome || "Sem lista"}</p><p className="mt-0.5 text-[11px] uppercase" style={{ color: "var(--cf2-text-tertiary)" }}>{lead.origem || "outbound"}</p></td><td className="px-3 py-3"><CadenceCell lead={lead} /></td><td className="px-3 py-3 text-xs whitespace-nowrap" style={{ color: "var(--cf2-text-secondary)" }}>{lead.updatedAt ? relTime(lead.updatedAt) : "—"}</td><td className="px-3 py-3 text-xs whitespace-nowrap" style={{ color: "var(--cf2-text-secondary)" }}>{formatNextAction(lead)}</td><td className="px-3 py-3 text-xs whitespace-nowrap" style={{ color: "var(--cf2-text-secondary)" }}>{owner?.nome || "Sem responsável"}</td><td className="px-3 py-3"><StatusBadge status={status} /></td></tr>;
+  })}</tbody></table></div>;
 }
 
-function BulkButton({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
-  return (
-    <button onClick={onClick} className="px-3 py-1.5 rounded-lg text-[12px] font-semibold flex items-center gap-1" style={{ background: active ? "var(--cf2-accent)" : "var(--cf2-bg-surface-muted)", color: active ? "var(--cf2-text-on-accent)" : "var(--cf2-text-secondary)" }}>
-      {label} <ChevronDown className="w-3 h-3" />
-    </button>
-  );
+function ProspectsKanban({ leads, selected, usuariosById, onToggle, onOpen }: { leads: ProspeccaoLead[]; selected: Set<string>; usuariosById: Map<string, { nome: string }>; onToggle: (id: string) => void; onOpen: (id: string) => void }) {
+  return <div className="overflow-x-auto p-3.5"><div className="flex min-w-max gap-3">{PROSPECCAO_STATUS.map((status) => {
+    const columnLeads = leads.filter((lead) => resolveProspeccaoStatus(lead).key === status.key);
+    return <section key={status.key} className="flex w-[272px] flex-col rounded-xl border" style={{ borderColor: "var(--cf2-border-default)", background: "var(--cf2-bg-canvas)" }}><header className="flex items-center justify-between border-b px-3 py-2.5" style={{ borderColor: "var(--cf2-border-default)" }}><div className="flex items-center gap-2"><span className="h-2 w-2 rounded-full" style={{ background: status.color }} /><h3 className="text-xs font-bold" style={{ color: "var(--cf2-text-primary)" }}>{status.label}</h3></div><span className="rounded-md px-1.5 py-0.5 text-[10px] font-bold tabular-nums" style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-tertiary)" }}>{columnLeads.length}</span></header><div className="flex min-h-[176px] flex-col gap-2 p-2">{columnLeads.length === 0 && <p className="px-2 py-5 text-center text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhum prospect</p>}{columnLeads.map((lead) => <ProspectCard key={lead.id} lead={lead} selected={selected.has(lead.id)} owner={lead.responsavelId ? usuariosById.get(lead.responsavelId)?.nome : undefined} onToggle={() => onToggle(lead.id)} onOpen={() => onOpen(lead.id)} />)}</div></section>;
+  })}</div></div>;
 }
 
-function BulkActionPanel({
-  action, usuarios, listas, cadencias, labels, pending, onConfirm, onCancel,
-}: {
-  action: BulkActionKey;
-  usuarios: { id: string; nome: string }[];
-  listas: Lista[];
-  cadencias: CadenciaDef[];
-  labels: LabelDef[];
-  pending: boolean;
-  onConfirm: (payload?: string) => void;
-  onCancel: () => void;
-}) {
-  const [value, setValue] = useState("");
+function ProspectCard({ lead, owner, selected, onToggle, onOpen }: { lead: ProspeccaoLead; owner?: string; selected: boolean; onToggle: () => void; onOpen: () => void }) {
+  return <article role="button" tabIndex={0} onClick={onOpen} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") onOpen(); }} className="cursor-pointer rounded-xl border p-3 outline-none transition-shadow hover:shadow-sm focus-visible:ring-2" style={{ background: "var(--cf2-bg-surface)", borderColor: selected ? "var(--cf2-accent-border)" : "var(--cf2-border-default)" }}><div className="flex items-start justify-between gap-2"><div className="min-w-0"><h4 className="truncate text-xs font-bold" style={{ color: "var(--cf2-text-primary)" }}>{lead.nome}{lead.sobrenome ? ` ${lead.sobrenome}` : ""}</h4><p className="mt-0.5 truncate text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>{lead.cargo || "Cargo não informado"}</p></div><input aria-label={`Selecionar ${lead.nome}`} type="checkbox" checked={selected} onClick={(event) => event.stopPropagation()} onChange={onToggle} /></div><div className="mt-3 flex items-center gap-1.5 text-[11px]" style={{ color: "var(--cf2-text-secondary)" }}><Building2 className="h-3 w-3 shrink-0" /><span className="truncate">{lead.empresa || "Empresa não informada"}</span></div><div className="mt-3 flex flex-wrap gap-1">{lead.listaNome && <MiniTag>{lead.listaNome}</MiniTag>}{lead.labels?.slice(0, 2).map((label) => <MiniTag key={label.id}>{label.nome}</MiniTag>)}</div><div className="mt-3"><CadenceCell lead={lead} compact /></div><div className="mt-3 grid grid-cols-2 gap-2 border-t pt-2.5 text-[10px]" style={{ borderColor: "var(--cf2-border-default)", color: "var(--cf2-text-tertiary)" }}><div><span className="block">Último toque</span><strong className="mt-0.5 block truncate font-semibold" style={{ color: "var(--cf2-text-secondary)" }}>{lead.updatedAt ? relTime(lead.updatedAt) : "—"}</strong></div><div><span className="block">Responsável</span><strong className="mt-0.5 block truncate font-semibold" style={{ color: "var(--cf2-text-secondary)" }}>{owner || "Não atribuído"}</strong></div></div></article>;
+}
+function CadenceCell({ lead, compact = false }: { lead: ProspeccaoLead; compact?: boolean }) {
+  if (!lead.cadencia) return <span className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>Sem follow-up</span>;
+  return <div className="min-w-[118px]"><p className={`${compact ? "text-[11px]" : "text-xs"} truncate font-semibold`} style={{ color: "var(--cf2-text-secondary)" }}>{lead.cadencia.definitionNome}</p><div className="mt-1 flex items-center gap-2"><div className="h-1 flex-1 overflow-hidden rounded-full" style={{ background: "var(--cf2-bg-surface-muted)" }}><div className="h-full rounded-full" style={{ width: `${Math.min(100, lead.cadencia.totalSteps ? (lead.cadencia.stepIndex / lead.cadencia.totalSteps) * 100 : 0)}%`, background: "var(--cf2-accent-border)" }} /></div><span className="text-[10px] tabular-nums" style={{ color: "var(--cf2-text-tertiary)" }}>{lead.cadencia.stepIndex}/{lead.cadencia.totalSteps}</span></div></div>;
+}
+function StatusBadge({ status }: { status: { label: string; color: string } }) { return <span className="inline-flex whitespace-nowrap rounded-full px-2 py-1 text-[10px] font-bold" style={{ background: `${status.color}16`, color: status.color }}>{status.label}</span>; }
+function MiniTag({ children }: { children: React.ReactNode }) { return <span className="max-w-[118px] truncate rounded-md px-1.5 py-0.5 text-[9px] font-semibold" style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-secondary)" }}>{children}</span>; }
+function LoadingState() { return <div className="space-y-2 p-4" aria-label="Carregando prospects">{Array.from({ length: 6 }).map((_, index) => <div key={index} className="h-11 animate-pulse rounded-lg" style={{ background: "var(--cf2-bg-surface-muted)" }} />)}</div>; }
+function relTime(iso: string): string { const minutes = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 60000)); if (minutes < 1) return "agora"; if (minutes < 60) return `${minutes}min`; if (minutes < 1440) return `${Math.floor(minutes / 60)}h`; return `${Math.floor(minutes / 1440)}d`; }
+function formatNextAction(lead: ProspeccaoLead): string { if (!lead.cadencia?.proximaAcaoEm) return "—"; return new Date(lead.cadencia.proximaAcaoEm).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }); }
+function BulkButton({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) { return <button onClick={onClick} className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold" style={{ background: active ? "var(--cf2-accent)" : "var(--cf2-bg-surface)", color: active ? "var(--cf2-text-on-accent)" : "var(--cf2-text-secondary)" }}>{label}<ChevronDown className="h-3 w-3" /></button>; }
 
-  if (action === "pausar" || action === "arquivar") {
-    return (
-      <div className="flex items-center gap-3 px-4 py-3 rounded-xl" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
-        <p className="text-[13px]" style={{ color: "var(--cf2-text-secondary)" }}>
-          {action === "pausar" ? "Pausar a cadência ativa dos selecionados?" : "Arquivar os selecionados? (reaproveita o bucket de Desqualificado — pendência: estado próprio de arquivado ainda não existe no domínio)"}
-        </p>
-        <button onClick={() => onConfirm()} disabled={pending} className="px-3 py-1.5 rounded-lg text-[12px] font-bold shrink-0" style={{ background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" }}>Confirmar</button>
-        <button onClick={onCancel} className="text-[12px] shrink-0" style={{ color: "var(--cf2-text-tertiary)" }}>Cancelar</button>
-      </div>
-    );
-  }
-
-  const options =
-    action === "atribuir_responsavel" ? usuarios.map((u) => ({ value: u.id, label: u.nome })) :
-    action === "adicionar_cadencia" ? cadencias.map((c) => ({ value: c.id, label: `${c.nome} (${c.totalSteps} toques)` })) :
-    action === "trocar_lista" ? listas.map((l) => ({ value: l.id, label: l.nome })) :
-    action === "adicionar_tag" ? labels.map((l) => ({ value: l.id, label: l.nome })) : [];
-
-  return (
-    <div className="flex items-center gap-3 px-4 py-3 rounded-xl" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
-      <select value={value} onChange={(e) => setValue(e.target.value)} className="px-3 py-1.5 rounded-lg text-[13px] outline-none flex-1 max-w-xs" style={{ background: "var(--cf2-bg-canvas)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }}>
-        <option value="">Selecione...</option>
-        {options.length === 0 && <option value="" disabled>Nenhuma opção cadastrada ainda</option>}
-        {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-      </select>
-      <button onClick={() => value && onConfirm(value)} disabled={!value || pending} className="px-3 py-1.5 rounded-lg text-[12px] font-bold shrink-0 disabled:opacity-40" style={{ background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" }}>Aplicar</button>
-      <button onClick={onCancel} className="text-[12px] shrink-0" style={{ color: "var(--cf2-text-tertiary)" }}>Cancelar</button>
-    </div>
-  );
+function BulkActionPanel({ action, usuarios, listas, cadencias, labels, pending, onConfirm, onCancel }: { action: BulkActionKey; usuarios: { id: string; nome: string }[]; listas: Lista[]; cadencias: CadenciaDef[]; labels: LabelDef[]; pending: boolean; onConfirm: (payload?: string) => void; onCancel: () => void }) {
+  const [value, setValue] = useState(""); const destructive = action === "pausar" || action === "arquivar";
+  const options = action === "atribuir_responsavel" ? usuarios.map((item) => ({ value: item.id, label: item.nome })) : action === "adicionar_cadencia" ? cadencias.map((item) => ({ value: item.id, label: `${item.nome} (${item.totalSteps} toques)` })) : action === "trocar_lista" ? listas.map((item) => ({ value: item.id, label: item.nome })) : action === "adicionar_tag" ? labels.map((item) => ({ value: item.id, label: item.nome })) : [];
+  return <div className="flex flex-col gap-2 border-b px-3.5 py-3 sm:flex-row sm:items-center" style={{ borderColor: "var(--cf2-border-default)" }}>{destructive ? <p className="flex-1 text-xs" style={{ color: "var(--cf2-text-secondary)" }}>{action === "pausar" ? "Pausar as cadências ativas dos prospects selecionados?" : "Desqualificar e retirar estes prospects da operação ativa?"}</p> : <select value={value} onChange={(event) => setValue(event.target.value)} className="h-9 min-w-[240px] rounded-lg border bg-transparent px-3 text-xs outline-none" style={{ borderColor: "var(--cf2-border-default)", color: "var(--cf2-text-primary)" }}><option value="">Selecione uma opção</option>{options.length === 0 && <option disabled>Nenhuma opção cadastrada</option>}{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>}<button onClick={() => onConfirm(destructive ? undefined : value)} disabled={pending || (!destructive && !value)} className="h-9 rounded-lg px-3 text-xs font-bold disabled:opacity-40" style={{ background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" }}>{pending ? "Aplicando..." : "Confirmar"}</button><button onClick={onCancel} className="h-9 px-2 text-xs" style={{ color: "var(--cf2-text-tertiary)" }}>Cancelar</button></div>;
 }

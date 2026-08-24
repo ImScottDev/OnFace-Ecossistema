@@ -166,20 +166,33 @@ app.get("/propostas", async (c) => {
   // criação via `resolverServiceFamiliesPorCatalogoIds`), não fabricada aqui.
   const propostaIds = results.map((p) => p.id);
   let familiasPorProposta = new Map<string, string[]>();
+  let itensResumoPorProposta = new Map<string, Array<{ nome: string; quantidade: string; tipo: string }>>();
   if (propostaIds.length > 0) {
     const itensFamilia = await db
-      .select({ propostaId: propostaItens.propostaId, serviceFamily: propostaItens.serviceFamily })
+      .select({ propostaId: propostaItens.propostaId, serviceFamily: propostaItens.serviceFamily, nome: propostaItens.nome, quantidade: propostaItens.quantidade, tipo: propostaItens.tipo, ordem: propostaItens.ordem })
       .from(propostaItens)
-      .where(inArray(propostaItens.propostaId, propostaIds));
+      .where(inArray(propostaItens.propostaId, propostaIds))
+      .orderBy(asc(propostaItens.ordem));
     for (const i of itensFamilia) {
       const fam = i.serviceFamily || "UNKNOWN";
       const atual = familiasPorProposta.get(i.propostaId) || [];
       if (!atual.includes(fam)) atual.push(fam);
       familiasPorProposta.set(i.propostaId, atual);
+      const itens = itensResumoPorProposta.get(i.propostaId) || [];
+      itens.push({ nome: i.nome, quantidade: i.quantidade, tipo: i.tipo });
+      itensResumoPorProposta.set(i.propostaId, itens);
     }
   }
 
-  return c.json(results.map((p) => ({ ...p, familias: familiasPorProposta.get(p.id) || [] })));
+  return c.json(results.map((p) => ({
+    ...p,
+    familias: familiasPorProposta.get(p.id) || [],
+    itensResumo: itensResumoPorProposta.get(p.id) || [],
+    // Evento mais recente que a lista consegue provar hoje, sem inventar
+    // timeline paralela: resposta > última visualização > envio > criação.
+    ultimaAtividadeEm: p.clienteRespondeuEm ?? p.primeiraVisualizacaoEm ?? p.enviadaEm ?? p.createdAt,
+    ultimaAtividadeTipo: p.clienteRespondeuEm ? "respondeu" : p.primeiraVisualizacaoEm ? "visualizou" : p.enviadaEm ? "enviou" : "criou",
+  })));
 });
 
 // GET /propostas/kpis — contadores reais pra hero strip da lista (cf2)

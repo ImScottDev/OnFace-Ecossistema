@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { digitsForDialer } from "@/lib/utils/callface-call";
 import { ConversaItem, Contexto } from "./types";
 import { Cf2ConversationList } from "./ConversationList";
 import { Cf2ChatThread } from "./ChatThread";
@@ -12,6 +13,7 @@ import { Cf2Dialer } from "./Dialer";
 import { Cf2ContextPanel } from "./ContextPanel";
 import { Cf2NovaMensagemModal } from "./NovaMensagemModal";
 import { Cf2AtribuirModal } from "./AtribuirModal";
+import { Cf2NovaConversaThread } from "./NovaConversaThread";
 
 export function Cf2AtendimentoWorkspace() {
   const queryClient = useQueryClient();
@@ -34,12 +36,18 @@ export function Cf2AtendimentoWorkspace() {
   const canalParam = searchParams.get("canal");
   const telefoneParam = searchParams.get("telefone");
   const [canal, setCanal] = useState(canalParam || (leadIdParam ? "whatsapp" : "todas"));
-  const [view, setView] = useState("meus");
+  // Deep link com leadId não pode nascer restrito a "meus" (24/08, achado
+  // real: clique no card de Pré-vendas caía em "Nenhuma conversa por aqui
+  // ainda" sempre que a conversa pertencia a outro atendente — o match por
+  // leadId só busca dentro do view atual, então "meus" apagava a conversa
+  // certa da lista antes mesmo de tentar selecioná-la). Sem leadId, o
+  // comportamento de sempre (fila do próprio usuário) continua o mesmo.
+  const [view, setView] = useState(leadIdParam ? "todos" : "meus");
   const [search, setSearch] = useState("");
   const [selecionada, setSelecionada] = useState<ConversaItem | null>(null);
   const [novaMensagemAberta, setNovaMensagemAberta] = useState(false);
   const [atribuirAberta, setAtribuirAberta] = useState(false);
-  const deepLinkResolvidoRef = useRef(false);
+  const [leadIdAplicado, setLeadIdAplicado] = useState<string | null>(null);
 
   // Trocar de aba limpa a seleção — não faz sentido continuar mostrando uma
   // conversa de WhatsApp depois de clicar em "Ligar", por exemplo. Também é
@@ -48,10 +56,14 @@ export function Cf2AtendimentoWorkspace() {
   useEffect(() => setSelecionada(null), [canal]);
 
   const { data, isLoading } = useQuery({
-    queryKey: ["cf2-conversas", canal, view, search],
+    queryKey: ["cf2-conversas", canal, view, search, leadIdParam],
     queryFn: async () => {
       const params = new URLSearchParams({ canal, view });
       if (search) params.set("search", search);
+      // Deep link: manda `leadId` pro backend achar a conversa DESSE lead
+      // mesmo se for de outro atendente ou já estiver fechada (ver
+      // comentário na rota `/atendimento/conversas`).
+      if (leadIdParam) params.set("leadId", leadIdParam);
       const res = await fetch(`/api/atendimento/conversas?${params.toString()}`);
       if (!res.ok) return { conversas: [] as ConversaItem[] };
       return res.json();
@@ -62,42 +74,78 @@ export function Cf2AtendimentoWorkspace() {
   const conversas: ConversaItem[] = data?.conversas ?? [];
   const contagens = data?.contagens as { todas: number; whatsapp: number; email: number; ligacao: number } | undefined;
 
-  // Resolve o deep link uma única vez, no primeiro carregamento completo
-  // (não fica competindo com seleção manual do usuário depois, nem tenta de
-  // novo a cada refetch de 8s). Sem match no dado real (ex: contato sem
-  // conversa de WhatsApp ainda, ou pertence a outro atendente — privacidade
-  // já filtra isso no backend) não fabrica seleção: cai no fallback normal
-  // da tela abaixo, exatamente como se não houvesse leadId na URL.
-  useEffect(() => {
-    if (!leadIdParam || deepLinkResolvidoRef.current || isLoading) return;
-    deepLinkResolvidoRef.current = true;
-    const match = conversas.find((c) => c.leadId === leadIdParam);
+  // Resolve o deep link uma única vez por leadId, no primeiro carregamento
+  // completo (não fica competindo com seleção manual do usuário depois, nem
+  // tenta de novo a cada refetch de 8s) — ajuste de estado durante o render
+  // em vez de efeito (mesmo padrão recomendado pra "sincronizar com uma prop
+  // que mudou", evita o setState-em-efeito). Match por `leadId` OU telefone
+  // (achado real 24/08: muito contato de WhatsApp não tem `contatos.leadId`
+  // preenchido no banco — telefone é o dado que de fato liga a conversa ao
+  // lead, mesma normalização do discador). Sem match nos dois, não fabrica
+  // seleção: cai no fallback normal da tela abaixo.
+  const telefoneNormalizado = telefoneParam || null;
+  if (leadIdParam && leadIdParam !== leadIdAplicado && !isLoading) {
+    setLeadIdAplicado(leadIdParam);
+    const match = conversas.find((c) =>
+      c.leadId === leadIdParam || (!!telefoneNormalizado && !!c.telefone && digitsForDialer(c.telefone) === telefoneNormalizado)
+    );
     if (match) setSelecionada(match);
-  }, [leadIdParam, conversas, isLoading]);
+  }
 
   // Enquanto o deep link ainda não foi resolvido, não cai no fallback
   // "primeira conversa da lista" — evita mostrar por um instante a conversa
-  // errada antes de trocar pra certa.
-  const deepLinkPendente = !!leadIdParam && !deepLinkResolvidoRef.current;
+  // errada antes de trocar pra certa. E se já resolveu SEM achar nada,
+  // também não cai nesse fallback (achado 24/08: caía numa conversa
+  // qualquer, sem relação com o lead clicado — pior que mostrar vazio).
+  const deepLinkPendente = !!leadIdParam && leadIdParam !== leadIdAplicado;
+  const deepLinkSemMatch = !!leadIdParam && leadIdParam === leadIdAplicado && !selecionada;
 
   // Mantém a seleção sincronizada (naoLidas atualiza sem perder o item aberto).
   // Aba Ligar não auto-seleciona a primeira ligação — só mostra detalhe se o
   // usuário clicar em algo; sem clique, fica no discador.
   const conversaAtual = selecionada
     ? conversas.find((c) => c.id === selecionada.id) ?? selecionada
-    : canal === "ligacao" || deepLinkPendente
+    : canal === "ligacao" || deepLinkPendente || deepLinkSemMatch
       ? null
       : conversas[0] ?? null;
 
+  // Contexto do lead independe de já existir conversa (24/08, pedido do
+  // Kauã: "mesmo que não tenha conversa era pra pelo menos abrir... com os
+  // dados do lado") — sem isso, `deepLinkSemMatch` só mostrava um vazio morto.
+  const contextoLeadId = conversaAtual?.leadId ?? (deepLinkSemMatch ? leadIdParam : null);
   const { data: contexto, isLoading: carregandoContexto } = useQuery<Contexto>({
-    queryKey: ["cf2-contexto", conversaAtual?.leadId ?? null],
+    queryKey: ["cf2-contexto", contextoLeadId],
     queryFn: async () => {
-      const params = conversaAtual?.leadId ? `?leadId=${conversaAtual.leadId}` : "";
+      const params = contextoLeadId ? `?leadId=${contextoLeadId}` : "";
       const res = await fetch(`/api/atendimento/contexto${params}`);
       return res.json();
     },
-    enabled: !!conversaAtual,
+    enabled: !!contextoLeadId,
   });
+
+  // "Conversa rascunho": WhatsApp sem `contatos` ainda, mas o lead é
+  // conhecido — mostra a mesma casca de conversa (header + contexto do
+  // lado), só sem histórico, com o composer já pronto pra mandar a 1ª
+  // mensagem. Some sozinha quando a conversa real aparece (via `onSent`
+  // abaixo → invalida a lista → o próximo bloco promove pra seleção real).
+  const draftConversa: ConversaItem | null = deepLinkSemMatch && canal === "whatsapp" && leadIdParam && contexto?.pessoa
+    ? {
+        id: `draft-${leadIdParam}`, tipo: "whatsapp", nome: contexto.pessoa.nome,
+        empresaNome: contexto.empresa?.nome ?? null, preview: "", timestamp: null, naoLidas: 0,
+        leadId: leadIdParam, responsavelId: null, handoffStatus: null, duracaoSegundos: null,
+        callStatus: null, emailThreadId: null, telefone: contexto.pessoa.telefone,
+        conversationSummary: null, status: "open", snoozedUntil: null,
+      }
+    : null;
+
+  // Depois de enviar a 1ª mensagem, o contato real existe no banco — assim
+  // que o refetch da lista trouxer ele, promove pra seleção de verdade (sem
+  // isso o usuário ficava preso na tela de rascunho até recarregar).
+  const [pendingContatoId, setPendingContatoId] = useState<string | null>(null);
+  if (pendingContatoId) {
+    const criado = conversas.find((c) => c.id === pendingContatoId);
+    if (criado) { setSelecionada(criado); setPendingContatoId(null); }
+  }
 
   const atribuirMutation = useMutation({
     mutationFn: async ({ contatoId, usuarioId }: { contatoId: string; usuarioId: string }) => {
@@ -143,6 +191,19 @@ export function Cf2AtendimentoWorkspace() {
 
           <Cf2ContextPanel conversa={conversaAtual} contexto={contexto ?? null} loading={carregandoContexto} />
         </>
+      ) : draftConversa ? (
+        <>
+          <Cf2NovaConversaThread
+            leadId={leadIdParam!}
+            leadNome={draftConversa.nome}
+            leadTelefone={draftConversa.telefone}
+            onSent={(contatoId) => {
+              setPendingContatoId(contatoId);
+              queryClient.invalidateQueries({ queryKey: ["cf2-conversas"] });
+            }}
+          />
+          <Cf2ContextPanel conversa={draftConversa} contexto={contexto ?? null} loading={carregandoContexto} />
+        </>
       ) : canal === "ligacao" ? (
         <Cf2Dialer numeroInicial={telefoneParam || undefined} />
       ) : (
@@ -150,7 +211,9 @@ export function Cf2AtendimentoWorkspace() {
           className="flex-1 flex items-center justify-center rounded-3xl"
           style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}
         >
-          <p className="text-[13px]" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhuma conversa por aqui ainda.</p>
+          <p className="text-[13px]" style={{ color: "var(--cf2-text-tertiary)" }}>
+            {deepLinkSemMatch ? "Esse lead ainda não tem conversa nesse canal." : "Nenhuma conversa por aqui ainda."}
+          </p>
         </div>
       )}
       </div>
