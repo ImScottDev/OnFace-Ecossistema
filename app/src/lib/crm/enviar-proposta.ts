@@ -8,7 +8,7 @@
 import { db } from "@/lib/db";
 import { propostas, propostaItens, leads, atividades, servicosCatalogo } from "@/lib/db/schema";
 import { eq, and, asc } from "drizzle-orm";
-import { createSubscriptionCheckout, createOneTimeCheckout } from "@/lib/integrations/stripe-checkout";
+import { createSubscriptionCheckout, createOneTimeCheckout, boletoExpiresAfterDaysFromValidade } from "@/lib/integrations/stripe-checkout";
 import { sendResendEmail } from "@/lib/email/resend";
 import { buildPropostaEmail } from "@/lib/email/proposta-email";
 
@@ -104,6 +104,9 @@ export async function enviarPropostaComCheckout(opts: {
   const clienteNome = [lead.nome, lead.sobrenome].filter(Boolean).join(" ") || lead.nome;
 
   // 1) Checkout Stripe (assinatura) com email do cliente + metadata
+  // Boleto vence junto com a "Validade" da proposta — sem isso a Stripe usa o
+  // default da conta (3 dias), ignorando a data que o closer escolheu.
+  const boletoExpiresAfterDays = boletoExpiresAfterDaysFromValidade(proposta.dataValidade);
   let checkoutUrl: string;
   let stripeSessionId: string;
   try {
@@ -118,6 +121,7 @@ export async function enviarPropostaComCheckout(opts: {
           customerEmail: lead?.email || undefined,
           successUrl: process.env.CHECKOUT_SUCCESS_URL || `${base}/obrigado`,
           cancelUrl: process.env.CHECKOUT_CANCEL_URL || base,
+          boletoExpiresAfterDays,
         })
       : await createOneTimeCheckout({
           propostaId: proposta.id,
@@ -128,6 +132,7 @@ export async function enviarPropostaComCheckout(opts: {
           customerEmail: lead?.email || undefined,
           successUrl: process.env.CHECKOUT_SUCCESS_URL || `${base}/obrigado`,
           cancelUrl: process.env.CHECKOUT_CANCEL_URL || base,
+          boletoExpiresAfterDays,
         });
     checkoutUrl = checkout.url;
     stripeSessionId = checkout.sessionId;

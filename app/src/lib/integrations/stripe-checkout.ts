@@ -35,6 +35,27 @@ export interface CreateCheckoutParams {
   customerEmail?: string | null;
   successUrl: string;
   cancelUrl: string;
+  /**
+   * Vencimento do boleto em dias a partir de hoje (payment_method_options.boleto.
+   * expires_after_days). Sem isso a Stripe usa o default da conta — 3 dias —
+   * independente da "Validade" escolhida na proposta. Range aceito pela Stripe: 0–60.
+   */
+  boletoExpiresAfterDays?: number;
+}
+
+/**
+ * Converte a data de validade da proposta (ex.: "2026-09-25") em dias a partir
+ * de hoje pro boleto vencer junto — em vez do default fixo de 3 dias da Stripe.
+ * Retorna undefined se a data já passou ou for inválida (deixa a Stripe usar o
+ * default em vez de mandar um valor sem sentido tipo 0 ou negativo).
+ */
+export function boletoExpiresAfterDaysFromValidade(dataValidade?: string | null): number | undefined {
+  if (!dataValidade) return undefined;
+  const validade = new Date(`${dataValidade}T23:59:59-03:00`);
+  if (Number.isNaN(validade.getTime())) return undefined;
+  const dias = Math.ceil((validade.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+  if (dias <= 0) return undefined;
+  return Math.min(dias, 60);
 }
 
 export interface CheckoutResult {
@@ -117,6 +138,9 @@ export async function createSubscriptionCheckout(params: CreateCheckoutParams): 
       optional: false,
     },
   ]);
+  if (params.boletoExpiresAfterDays) {
+    appendNested(form, "payment_method_options", { boleto: { expires_after_days: params.boletoExpiresAfterDays } });
+  }
 
   itens.forEach((item, idx) => {
     // Se o item tem produto real do Stripe (via catálogo CRM), usa o PRODUTO real
@@ -206,6 +230,9 @@ export async function createOneTimeCheckout(params: CreateCheckoutParams): Promi
       optional: false,
     },
   ]);
+  if (params.boletoExpiresAfterDays) {
+    appendNested(form, "payment_method_options", { boleto: { expires_after_days: params.boletoExpiresAfterDays } });
+  }
 
   itens.forEach((item, idx) => {
     const priceData: Record<string, unknown> = {
