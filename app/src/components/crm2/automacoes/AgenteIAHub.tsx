@@ -19,7 +19,7 @@ import { Cf2Badge } from "@/components/crm2/ui/Badge";
 /**
  * Hub "Agente de IA" (23/08) — organiza tudo que já é real hoje sob o
  * conceito de produto "Agente de IA" (Callpilot + follow-ups automáticos)
- * e deixa visível, sem fabricar dado nenhum, o que ainda é só conceito.
+ * e expõe os módulos nativos da plataforma de IA.
  * Mesmo padrão visual/estrutural do hub de Ajustes
  * (`src/app/(crm2)/ajustes/page.tsx`, AjusteCardItem) — bloco com título +
  * grid de cards, card sem `href` vira card desabilitado com badge.
@@ -31,10 +31,7 @@ import { Cf2Badge } from "@/components/crm2/ui/Badge";
  * - Execuções       -> /automacoes/execucoes
  * - Propostas       -> /propostas
  *
- * Os 8 cards seguintes são conceito de produto sem schema/rota/código
- * ainda (auditoria de 23/08) — aparecem desabilitados, badge "Em breve",
- * sem link. Não remover: o pedido original era deixar visível que existem
- * como conceito, só não implementados.
+ * Os módulos seguintes usam as APIs tenant-scoped da plataforma nativa.
  */
 
 interface HubCard {
@@ -71,45 +68,53 @@ const REAIS: HubCard[] = [
   },
 ];
 
-const EM_BREVE: HubCard[] = [
+const PLATAFORMA_IA: HubCard[] = [
   {
     titulo: "Roteadores",
     descricao: "Regras de roteamento de conversa/ligação entre agentes e equipe humana.",
+    href: "/automacoes/ai/roteadores",
     icon: Route,
   },
   {
     titulo: "Credenciais",
-    descricao: "Chaves e segredos usados pelos agentes (provedores de IA, telefonia).",
+    descricao: "Chaves cifradas e mascaradas usadas pelos provedores de IA.",
+    href: "/automacoes/ai/credenciais",
     icon: KeyRound,
   },
   {
     titulo: "Provedores",
-    descricao: "Provedores de modelo de IA e de telefonia (Asterisk/SIP) conectados.",
+    descricao: "Modelos de IA e bindings por finalidade do sistema.",
+    href: "/automacoes/ai/provedores",
     icon: Server,
   },
   {
     titulo: "Conhecimento",
     descricao: "Base de conhecimento que os agentes consultam para responder.",
+    href: "/automacoes/ai/conhecimento",
     icon: BookOpen,
   },
   {
     titulo: "Memória",
     descricao: "Memória de longo prazo dos agentes por contato/negócio.",
+    href: "/automacoes/ai/memoria",
     icon: Brain,
   },
   {
     titulo: "Skills",
     descricao: "Habilidades/ferramentas plugáveis que um agente pode executar.",
+    href: "/automacoes/ai/skills",
     icon: Puzzle,
   },
   {
     titulo: "Casos",
     descricao: "Casos de uso e exemplos que orientam o comportamento do agente.",
+    href: "/automacoes/ai/casos",
     icon: ClipboardList,
   },
   {
     titulo: "Alertas de Uso/Orçamento",
     descricao: "Limites e alertas de consumo/orçamento de IA por organização.",
+    href: "/automacoes/ai/uso",
     icon: Gauge,
   },
 ];
@@ -176,10 +181,10 @@ export function Cf2AgenteIAHub() {
           className="text-[12px] font-bold uppercase tracking-wide"
           style={{ color: "var(--cf2-text-tertiary)", fontFamily: "var(--cf2-font-heading)" }}
         >
-          Em breve
+          Plataforma de IA
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {EM_BREVE.map((card) => (
+          {PLATAFORMA_IA.map((card) => (
             <Cf2HubCardItem key={card.titulo} card={card} />
           ))}
         </div>
