@@ -56,3 +56,7 @@ _backups/
 # Sessão de dev com secret em texto puro (achado 24/08 — nunca commitar)
 forge-session.mjs
 .forge-session.mjs
+
+# Uploads de runtime (dado real de usuario, nunca versionar)
+app/public/uploads/
+uploads/

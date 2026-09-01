@@ -1,0 +1,368 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   CALLFACE UI SYSTEM — Fundação (30/08)
+   ═══════════════════════════════════════════════════════════════════════
+   Por que este arquivo existe (auditoria que motivou):
+     - 13 raios diferentes em uso no (crm2): rounded-lg 382x, xl 198x,
+       2xl 145x — contra 33 usos do "padrão".
+     - 24 tamanhos de fonte, incluindo meio-pixels (12.5, 11.5, 10.5, 9.5).
+     - 3 escalas de raio CONCORRENTES: os tokens --cf2-radius-* (8/12/16/24),
+       o ds/index.tsx (28/20/14/10) e o default do Tailwind, que era o que o
+       JSX de fato usava. Nenhuma era "a" escala.
+     - 4 verdes de sucesso (--success, --cf2-success-fill, --cf2-home-positive,
+       --cf2-home-positive-alt) porque a paleta da Home virou paralela.
+
+   A decisão: UMA escala, exposta como utilitário do Tailwind. Quem escreve
+   tela usa `rounded-card` / `text-corpo`, nunca um número. Trocar o valor
+   aqui muda o produto inteiro — que é o requisito do Kauã ("não quero abrir
+   300 arquivos pra trocar uma cor").
+
+   Contrato visual: a página /inicio, aprovada. Foi dela que a escala saiu.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ── ESCALA RESPONSIVA ──────────────────────────────────────────────────
+   Ideia trazida do Once UI (--font-scaling-mobile/tablet/desktop): em vez de
+   redeclarar cada tamanho por breakpoint, um multiplicador único reescala a
+   tipografia inteira. No celular o texto sobe ~4% (a mesma UI densa fica
+   legível na mão) e a proporção entre os 8 degraus nunca se perde. */
+:root {
+  --cf2-escala: 1;
+}
+@media (width < 640px) {
+  :root { --cf2-escala: 1.04; }
+}
+
+@theme inline {
+  /* ── TIPOGRAFIA ───────────────────────────────────────────────────────
+     8 degraus, não 24. Meio-pixel foi eliminado: não existe text-[12.5px],
+     existe `text-corpo`.
+     Escala SUBIDA um degrau em 31/08 — o Kauã leu a primeira versão como
+     apertada de `text-titulo` pra baixo, e estava certo: corpo a 12px é
+     tamanho de legenda, não de leitura. O mercado (shadcn, Linear) assenta o
+     corpo em 13–14px. Agora corpo=13 e item=14, mantendo a densidade de
+     ferramenta sem forçar a vista em 8h de uso.
+     line-height junto do tamanho para o par nunca se separar. */
+  --text-micro: calc(11px * var(--cf2-escala));
+  --text-micro--line-height: 1.3;
+  --text-micro--letter-spacing: 0.4px;
+
+  --text-apoio: calc(12px * var(--cf2-escala));
+  --text-apoio--line-height: 1.35;
+
+  --text-corpo: calc(13px * var(--cf2-escala));
+  --text-corpo--line-height: 1.45;
+
+  --text-item: calc(14px * var(--cf2-escala));
+  --text-item--line-height: 1.45;
+
+  --text-titulo: calc(17px * var(--cf2-escala));
+  --text-titulo--line-height: 1.3;
+  --text-titulo--letter-spacing: -0.4px;
+
+  --text-kpi: calc(22px * var(--cf2-escala));
+  --text-kpi--line-height: 1.05;
+  --text-kpi--letter-spacing: -0.7px;
+
+  --text-destaque: calc(30px * var(--cf2-escala));
+  --text-destaque--line-height: 1;
+  --text-destaque--letter-spacing: -1.2px;
+
+  --text-hero: calc(40px * var(--cf2-escala));
+  --text-hero--line-height: 1;
+  --text-hero--letter-spacing: -1.4px;
+
+  /* ── ESPAÇAMENTO ──────────────────────────────────────────────────────
+     Grade de 4px, como manda o checklist do design-squad. O Tailwind já dá a
+     escala numérica (p-1…p-6); o que faltava era o degrau SEMÂNTICO — o
+     espaço que separa seções, o que separa itens de uma lista, o respiro
+     interno de um card. Sem nome, cada tela escolhe um número diferente e a
+     página inteira fica com ritmo irregular. */
+  --spacing-colado: 4px;
+  --spacing-item: 8px;
+  --spacing-grupo: 12px;
+  --spacing-bloco: 16px;
+  --spacing-secao: 24px;
+  --spacing-pagina: 32px;
+
+  /* ── BREAKPOINTS ──────────────────────────────────────────────────────
+     Nomeados pelo dispositivo real de uso, não por letra. O Kauã vai usar
+     no celular, então `movel` é o caso de projeto, não a exceção. */
+  --breakpoint-movel: 480px;
+  --breakpoint-tablet: 768px;
+  --breakpoint-desktop: 1024px;
+  --breakpoint-amplo: 1440px;
+
+  /* ── RAIO ─────────────────────────────────────────────────────────────
+     6 degraus com NOME DE PAPEL, não de tamanho. `rounded-card` sobrevive
+     a uma mudança de valor; `rounded-[28px]` não. Valores vindos de /inicio. */
+  --radius-hero: 32px;
+  --radius-card: 28px;
+  --radius-inner: 20px;
+  --radius-control: 14px;
+  --radius-chip: 10px;
+
+  /* ── ELEVAÇÃO ─────────────────────────────────────────────────────────
+     Elevação é hierarquia, não decoração. 3 níveis: repouso, flutuante
+     (dropdown/popover) e modal. */
+  --shadow-repouso: 0px 4px 8px 0px rgba(0, 0, 0, 0.04);
+  --shadow-flutuante: 0px 8px 24px -4px rgba(0, 0, 0, 0.10);
+  --shadow-modal: 0px 24px 48px -12px rgba(0, 0, 0, 0.18);
+
+  /* ── MOTION ───────────────────────────────────────────────────────────
+     Interface "morta" foi um dos diagnósticos de "cara de IA". Motion é
+     token, não improviso: mesma duração e curva em todo lugar.
+     `saida` é mais rápida que `entrada` — sair deve parecer instantâneo. */
+  --ease-padrao: cubic-bezier(0.2, 0, 0, 1);
+  --ease-saida: cubic-bezier(0.4, 0, 1, 1);
+  --animate-duracao-rapida: 120ms;
+  --animate-duracao-padrao: 200ms;
+  --animate-duracao-lenta: 320ms;
+
+  /* ── CORES SEMÂNTICAS ─────────────────────────────────────────────────
+     Aponta para as vars de tema (definidas por [data-cf2-theme] abaixo),
+     então light/dark trocam sem nenhum componente mudar.
+     Cor SÓ com significado — nunca decoração. */
+  /* Escala base disponível como utilitário (bg-seaweed-600, text-seaweed-700…)
+     para os casos que precisam de um tom específico — gráfico, ilustração.
+     Regra: em UI comum use o token SEMÂNTICO, não o tom cru. */
+  --color-seaweed-50: var(--seaweed-50);
+  --color-seaweed-100: var(--seaweed-100);
+  --color-seaweed-200: var(--seaweed-200);
+  --color-seaweed-300: var(--seaweed-300);
+  --color-seaweed-400: var(--seaweed-400);
+  --color-seaweed-500: var(--seaweed-500);
+  --color-seaweed-600: var(--seaweed-600);
+  --color-seaweed-700: var(--seaweed-700);
+  --color-seaweed-800: var(--seaweed-800);
+  --color-seaweed-900: var(--seaweed-900);
+  --color-seaweed-950: var(--seaweed-950);
+
+  --color-marca: var(--cf2-brand);
+  --color-marca-tinta: var(--cf2-brand-ink);
+  --color-marca-suave: var(--cf2-brand-bg);
+
+  /* Convenção background/foreground do shadcn, adotada de propósito: cada
+     superfície tem o par de texto que garante contraste sobre ela. Sem isso
+     alguém escreve `bg-positivo-suave text-positivo` numa tela e
+     `bg-positivo-suave text-tinta` em outra — e o badge de "ganho" fica
+     diferente em duas telas. Com o par, existe uma resposta só. */
+  --color-positivo: var(--cf2-positivo);
+  --color-positivo-suave: var(--cf2-positivo-bg);
+  --color-positivo-foreground: var(--cf2-positivo-fg);
+  --color-negativo: var(--cf2-negativo);
+  --color-negativo-suave: var(--cf2-negativo-bg);
+  --color-negativo-foreground: var(--cf2-negativo-fg);
+  --color-atencao: var(--cf2-atencao);
+  --color-atencao-suave: var(--cf2-atencao-bg);
+  --color-atencao-foreground: var(--cf2-atencao-fg);
+  --color-informativo: var(--cf2-informativo);
+  --color-informativo-suave: var(--cf2-informativo-bg);
+  --color-informativo-foreground: var(--cf2-informativo-fg);
+
+  /* Pesos weak/medium/strong (convenção do Once UI): a mesma cor em três
+     intensidades, para hierarquia dentro de um estado. Ex.: uma linha em
+     risco usa a borda `weak`, o texto `strong` e o preenchimento `medium` —
+     sem ninguém inventar opacidade na hora. */
+  --color-positivo-weak: var(--cf2-positivo-weak);
+  --color-negativo-weak: var(--cf2-negativo-weak);
+  --color-atencao-weak: var(--cf2-atencao-weak);
+  --color-informativo-weak: var(--cf2-informativo-weak);
+  --color-marca-weak: var(--cf2-brand-weak);
+
+  --color-tinta: var(--cf2-text-primary);
+  --color-tinta-suave: var(--cf2-text-secondary);
+  --color-tinta-fraca: var(--cf2-text-tertiary);
+
+  --color-superficie: var(--cf2-bg-surface);
+  --color-superficie-alt: var(--cf2-bg-surface-muted);
+  --color-fundo: var(--cf2-bg-page);
+  --color-linha: var(--cf2-border-default);
+  --color-linha-controle: var(--cf2-border-control);
+  --color-marca-vivid: var(--cf2-brand-vivid);
+  --color-positivo-solido: var(--cf2-positivo-solido);
+  --color-atencao-tinta: var(--cf2-atencao-ink);
+
+  /* Chrome escuro (sidebar, hero, barra da Carol) — cor fixa por contrato,
+     não é "dark mode". */
+  --color-chrome: var(--cf2-chrome-bg);
+  --color-chrome-alt: var(--cf2-chrome-bg-alt);
+  --color-chrome-tinta: var(--cf2-chrome-text-primary);
+  --color-chrome-tinta-suave: var(--cf2-chrome-text-secondary);
+
+  /* Séries de gráfico — nomeadas por posição, para barra/área/linha/pizza/
+     radar usarem a MESMA paleta e um dashboard não brigar com o outro. */
+  /* Nomes chart-1..5 e sidebar-* do shadcn apontando pros nossos tokens:
+     o componente `chart` e o `sidebar` do CLI passam a funcionar sem
+     nenhuma edição, na paleta certa. */
+  --color-chart-1: var(--cf2-serie-1);
+  --color-chart-2: var(--cf2-serie-2);
+  --color-chart-3: var(--cf2-serie-3);
+  --color-chart-4: var(--cf2-serie-4);
+  --color-chart-5: var(--cf2-serie-5);
+  --color-sidebar: var(--cf2-chrome-bg);
+  --color-sidebar-foreground: var(--cf2-chrome-text-primary);
+  --color-sidebar-primary: var(--cf2-brand);
+  --color-sidebar-primary-foreground: var(--cf2-brand-ink);
+  --color-sidebar-accent: var(--cf2-chrome-surface-active);
+  --color-sidebar-accent-foreground: var(--cf2-chrome-text-primary);
+  --color-sidebar-border: var(--cf2-chrome-border);
+  --color-sidebar-ring: var(--cf2-brand);
+
+  --color-serie-1: var(--cf2-serie-1);
+  --color-serie-2: var(--cf2-serie-2);
+  --color-serie-3: var(--cf2-serie-3);
+  --color-serie-4: var(--cf2-serie-4);
+  --color-serie-5: var(--cf2-serie-5);
+  --color-grade: var(--cf2-grid-line);
+
+  /* Tipos de letra. 3 famílias é o que já existe; aqui elas ganham papel
+     explícito em vez de serem escolhidas no olho a cada tela. */
+  --font-display: var(--cf2-font-heading);
+  --font-interface: var(--cf2-font-ui);
+  --font-nav: var(--cf2-font-nav);
+}
+
+/* ── UTILITÁRIOS COMPOSTOS ──────────────────────────────────────────────
+   Padrões de layout que se repetiam copiados à mão em toda tela. Viram
+   uma classe só — e já nascem responsivos, porque o Kauã vai usar no
+   celular. Densidade menor no mobile, confortável no desktop. */
+
+/* Cartão padrão do produto: superfície + raio + borda + elevação. */
+@utility cf2-card {
+  background: var(--cf2-bg-surface);
+  border: 1px solid var(--cf2-border-default);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-repouso);
+}
+
+/* Faixa escura (hero, blocos de destaque). */
+@utility cf2-faixa {
+  background: var(--cf2-hero-bg);
+  border-radius: var(--radius-hero);
+  color: var(--cf2-chrome-text-primary);
+}
+
+/* Respiro interno de cartão — o valor que /inicio usa, agora com nome. */
+@utility cf2-p-card {
+  padding: 1rem 1.25rem;
+  @media (width >= 640px) {
+    padding: 1.25rem 1.5rem;
+  }
+}
+
+/* Respiro da página. Mobile aperta, desktop respira. */
+@utility cf2-p-pagina {
+  padding: 1rem;
+  @media (width >= 640px) {
+    padding: 1.5rem;
+  }
+}
+
+/* Transição padrão de interação — hover/foco nunca mais "no olho". */
+@utility cf2-transicao {
+  transition-property: color, background-color, border-color, box-shadow, transform, opacity;
+  transition-duration: var(--animate-duracao-padrao);
+  transition-timing-function: var(--ease-padrao);
+}
+
+/* Alvo de toque mínimo (44px) — requisito real de mobile, não estética.
+   Aplicado em botão/linha clicável de lista. */
+@utility cf2-alvo-toque {
+  min-height: 44px;
+  @media (width >= 768px) {
+    min-height: 0;
+  }
+}
+
+/* Anel de foco visível e consistente — acessibilidade e teclado. */
+/* Foco: UM anel, sempre igual (31/08 — o padrão do shadcn empilhava um ring
+   de 3px translúcido com a borda trocada, o que lia como duas bordas de cores
+   diferentes ao redor do campo). Aqui é um contorno só, com folga, e a cor
+   vem da marca. Vale para botão, campo, link e linha navegável. */
+@utility cf2-foco {
+  &:focus-visible {
+    outline: 2px solid var(--cf2-brand-deep);
+    outline-offset: 2px;
+    border-radius: inherit;
+  }
+}
+
+/* Aplica o mesmo foco a todo controle vindo do shadcn, sem editar componente
+   por componente: neutraliza o ring empilhado e põe o nosso contorno. */
+[data-cf2-theme] :is(input, textarea, select, button, [role="tab"], [role="combobox"]) {
+  &:focus-visible {
+    --tw-ring-shadow: 0 0 #0000;
+    box-shadow: none;
+    outline: 2px solid var(--cf2-brand-deep);
+    outline-offset: 2px;
+  }
+}
+
+/* Respeita quem desativou animação no sistema operacional. */
+@media (prefers-reduced-motion: reduce) {
+  .cf2-transicao {
+    transition-duration: 1ms;
+  }
+}
+
+
+/* ── ACABAMENTO DOS COMPONENTES EM PORTAL ───────────────────────────────
+   Dropdown, modal, popover e tooltip do shadcn chegam com raio grande,
+   borda marcada e itens espaçados — proporções de documentação, não de
+   ferramenta. O Kauã apontou o menu de ações: "ficou feio".
+   Corrigido aqui, num lugar só, em vez de por className em cada uso:
+   raio do design system, borda sutil (a hierarquia vem da SOMBRA, não de
+   um contorno grosso) e item denso o bastante pra um menu de 6 opções
+   caber sem virar página. */
+[data-cf2-theme] {
+  [data-slot="dropdown-menu-content"],
+  [data-slot="select-content"],
+  [data-slot="popover-content"],
+  [data-slot="hover-card-content"] {
+    border-radius: var(--radius-control);
+    border-color: var(--cf2-border-default);
+    box-shadow: var(--shadow-flutuante);
+    padding: 0.25rem;
+    background: var(--cf2-bg-surface);
+    color: var(--cf2-text-primary);
+  }
+
+  [data-slot="dropdown-menu-item"],
+  [data-slot="select-item"] {
+    border-radius: var(--radius-chip);
+    font-size: var(--text-corpo);
+    padding-block: 0.375rem;
+    min-height: 32px;
+  }
+
+  [data-slot="dialog-content"],
+  [data-slot="drawer-content"],
+  [data-slot="sheet-content"] {
+    border-radius: var(--radius-card);
+    border-color: var(--cf2-border-default);
+    box-shadow: var(--shadow-modal);
+    background: var(--cf2-bg-surface);
+    /* Sem isto o conteúdo herda a cor do body e some no fundo claro. */
+    color: var(--cf2-text-primary);
+  }
+
+  /* Drawer lateral e sheet encostam na borda: arredondar os 4 cantos deixa
+     uma fresta esquisita contra a lateral da janela. */
+  [data-slot="drawer-content"][data-vaul-drawer-direction="right"] {
+    border-radius: var(--radius-card) 0 0 var(--radius-card);
+  }
+  [data-slot="drawer-content"][data-vaul-drawer-direction="left"] {
+    border-radius: 0 var(--radius-card) var(--radius-card) 0;
+  }
+
+  [data-slot="tooltip-content"] {
+    border-radius: var(--radius-chip);
+    font-size: var(--text-apoio);
+  }
+}
+
+
+/* Controles usam a borda que passa 3:1 (WCAG non-text contrast): num campo
+   de fundo branco a borda é o ÚNICO indicador de que ali há um componente. */
+[data-cf2-theme] :is(input, textarea, select, [data-slot="input"], [data-slot="textarea"], [data-slot="select-trigger"]) {
+  border-color: var(--cf2-border-control);
+}
