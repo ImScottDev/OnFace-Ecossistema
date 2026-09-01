@@ -286,6 +286,7 @@ export default async function AjustesPage() {
         variant="light"
         title="Ajustes"
         subtitle="Organização, comercial, comunicação e integrações — tudo num só lugar"
+        compactTitle
       />
 
       <div className="flex flex-col gap-8">

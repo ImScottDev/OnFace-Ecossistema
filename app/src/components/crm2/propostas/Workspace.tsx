@@ -1,58 +1,79 @@
 "use client";
 
 import { useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import { Plus, Search, Eye, Clock, ArrowUpRight, FileText, Send, CheckCircle2 } from "lucide-react";
+import { toastDark } from "../shared/toast-dark";
+import {
+  Plus, Search, Eye, ArrowUpRight, CheckCircle2, FileText, Send, MoreHorizontal, Pencil, Copy, Trash2,
+} from "lucide-react";
 import { Cf2Badge } from "../ui/Badge";
+import { Cf2ChromeCard } from "../shared/ChromeCard";
+import { Cf2NotificationBell } from "../NotificationBell";
+import {
+  Cf2DropdownMenu, Cf2DropdownMenuContent, Cf2DropdownMenuItem, Cf2DropdownMenuTrigger,
+} from "../ui/DropdownMenu";
 import { useOrgUsuarios } from "@/components/crm/BoardFilters";
-import { statusDisplay, FAMILY_LABEL, FAMILY_COLOR, brl, type PropostaRow } from "./shared";
+import { DarkFilterSelect, DarkItem } from "../shared/DarkFilterSelect";
+import { statusDisplay, resolveEtapaNegocio, FAMILY_LABEL, brl, type PropostaRow } from "./shared";
+import { Cf2PropostaStatusChart, Cf2PropostaSerieChart } from "./PropostaCharts";
 import { Cf2PropostaDrawer } from "./PropostaDrawer";
 
+function timeAgoShort(iso: string): string {
+  const mins = Math.floor((Date.now() - new Date(iso).getTime()) / 60_000);
+  if (mins < 1) return "agora";
+  if (mins < 60) return `há ${mins}min`;
+  if (mins < 1440) return `há ${Math.floor(mins / 60)}h`;
+  return `há ${Math.floor(mins / 1440)}d`;
+}
+
 interface Kpis {
-  emElaboracao: number; enviadas: number; visualizadas: number; aceitas: number;
+  totalPropostas: number; emElaboracao: number; enviadas: number; visualizadas: number; aceitas: number;
   recusadasExpiradas: number; aguardandoAcao: number; valorTotalAtivo: string;
   taxaAceite: number | null; tempoMedioAceiteDias: number | null;
+  serieMensal: { mes: string; enviadas: number; aceitas: number; valorAceito: number }[];
+  tendencia: { enviadas: number | null; aceitas: number | null };
 }
 
 /**
- * Propostas (CRM2, reconstrução 18/08 — spec + mockups + correção do Kauã:
- * "Propostas é o configurador comercial + gerador da proposta + orquestrador
- * do próximo passo", não só uma tela de listagem achatada). Esta tela é o
- * contexto de GESTÃO (encontrar propostas existentes); criar/editar mora em
- * `NovaProposta.tsx` (3 painéis: família → configurador → resumo comercial,
- * já real desde antes desta rodada — só ganhou modo de edição e rótulos
- * explícitos hoje). Clique na linha abre drawer primeiro (mesmo padrão de
- * Pré-vendas/Prospecção/Pipeline) — "Abrir" (link público) e "Abrir
- * oportunidade" continuam sendo navegação explícita, não o clique da linha.
+ * Propostas (CRM2). Reconstrução visual 25/08 — referência direta do Kauã
+ * (mockup dark: sidebar+topbar escuros, KPIs com tendência, tabela rica,
+ * drawer de preview) — página inteira passa de clara pra "chrome" escuro
+ * (mesmo esquema do Pipeline), substituindo o header claro genérico
+ * "Vendas" que ficava aqui (space reclamado pros KPIs, pedido explícito:
+ * "isso pode subir, no lugar do nome Vendas e do outro botão").
+ *
+ * Clique na linha abre o DRAWER (preview rápido, voltou depois de ter sido
+ * removido nesta mesma sessão — o Kauã queria de volta como estilo
+ * lista+preview). Gestão completa (Aceitar com conversão em cliente,
+ * Recusar com motivo, Excluir, PDF) mora em `/propostas/[id]`
+ * (`PropostaDetalhe.tsx`) — acessível pelo menu "..." de cada linha
+ * ("Ver página completa") e pelo próprio drawer.
  */
 export function Cf2PropostasWorkspace() {
+  const router = useRouter();
   const { usuarios } = useOrgUsuarios();
   const [search, setSearch] = useState("");
-  const [status, setStatus] = useState("");
+  const [status, setStatus] = useState("todos");
   const [responsavel, setResponsavel] = useState("todas");
-  const [familia, setFamilia] = useState("");
+  const [familia, setFamilia] = useState("todas");
   const [periodo, setPeriodo] = useState<"mes" | "todos">("todos");
-  // Deep link `?propostaId=X` (24/08, achado real: 5 lugares no CRM2
-  // — Negócio, Cliente 360, Atendimento — ainda apontavam pra rota
-  // `/propostas/:id` legada, que só existe em `(crm)`, porque o CRM2 nunca
-  // criou essa página e usa drawer em vez de página de detalhe). Ajuste de
-  // estado durante o render (não useEffect) — mesmo padrão já usado no
-  // Atendimento pra resolver deep link sem setState-em-efeito.
-  const searchParams = useSearchParams();
-  const propostaIdParam = searchParams.get("propostaId");
-  const [drawerId, setDrawerId] = useState<string | null>(propostaIdParam);
-  const [propostaIdAplicado, setPropostaIdAplicado] = useState<string | null>(propostaIdParam);
-  if (propostaIdParam && propostaIdParam !== propostaIdAplicado) {
-    setPropostaIdAplicado(propostaIdParam);
-    setDrawerId(propostaIdParam);
-  }
+  const [drawerId, setDrawerId] = useState<string | null>(null);
 
+  // KPIs/gráficos respeitam os MESMOS filtros da tabela (achado real 25/08,
+  // Kauã: "usando os filtros tinha que atualizar os dados ali presente") —
+  // mesmos params que a query da tabela já manda, backend usa a mesma
+  // função de condições pras duas rotas.
   const { data: kpis } = useQuery<Kpis>({
-    queryKey: ["propostas-kpis"],
+    queryKey: ["propostas-kpis", status, responsavel, familia, periodo],
     queryFn: async () => {
-      const r = await fetch("/api/propostas/kpis");
+      const params = new URLSearchParams();
+      if (status !== "todos") params.set("status", status);
+      if (responsavel !== "todas") params.set("responsavel", responsavel);
+      if (familia !== "todas") params.set("familia", familia);
+      if (periodo === "mes") params.set("periodo", "mes");
+      const r = await fetch(`/api/propostas/kpis?${params.toString()}`);
       return r.json();
     },
   });
@@ -62,9 +83,9 @@ export function Cf2PropostasWorkspace() {
     queryFn: async () => {
       const params = new URLSearchParams();
       if (search) params.set("q", search);
-      if (status) params.set("status", status);
+      if (status !== "todos") params.set("status", status);
       if (responsavel !== "todas") params.set("responsavel", responsavel);
-      if (familia) params.set("familia", familia);
+      if (familia !== "todas") params.set("familia", familia);
       if (periodo === "mes") params.set("periodo", "mes");
       const r = await fetch(`/api/propostas?${params.toString()}`);
       if (!r.ok) return [];
@@ -73,132 +94,180 @@ export function Cf2PropostasWorkspace() {
   });
 
   return (
-    <div className="flex flex-col gap-5">
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <p className="text-[24px] font-bold" style={{ color: "var(--cf2-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>Propostas</p>
-          <p className="mt-1 text-[13px]" style={{ color: "var(--cf2-text-secondary)" }}>Acompanhe a negociação do envio ao aceite, contrato e pagamento.</p>
-        </div>
-        <Link href="/propostas/novo" className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-[13px] font-bold shrink-0" style={{ background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" }}><Plus className="w-3.5 h-3.5" /> Nova proposta</Link>
-      </header>
-      <div className="grid gap-px overflow-hidden rounded-2xl sm:grid-cols-2 lg:grid-cols-5" style={{ background: "var(--cf2-border-default)", border: "1px solid var(--cf2-border-default)" }}>
-        <ProposalMetric icon={FileText} label="Em rascunho" value={kpis?.emElaboracao ?? "—"} />
-        <ProposalMetric icon={Send} label="Aguardando retorno" value={kpis?.aguardandoAcao ?? "—"} />
-        <ProposalMetric icon={Eye} label="Visualizadas" value={kpis?.visualizadas ?? "—"} />
-        <ProposalMetric icon={CheckCircle2} label="Aceitas" value={kpis?.aceitas ?? "—"} />
-        <ProposalMetric icon={ArrowUpRight} label="Valor em propostas abertas" value={kpis ? brl(kpis.valorTotalAtivo) : "—"} />
-      </div>
+    <div className="-m-6 min-h-full flex flex-col" style={{ background: "var(--cf2-chrome-bg-alt)" }}>
+      <div className="flex flex-col gap-5 px-6 pt-6 pb-8">
+        <header className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <p className="text-[24px] font-bold" style={{ color: "var(--cf2-chrome-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>Propostas</p>
+            <p className="mt-0.5 text-[13px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Gerencie, acompanhe e converta suas propostas comerciais.</p>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2" style={{ color: "var(--cf2-chrome-text-secondary)" }} />
+              <input
+                value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar proposta, cliente ou negócio..."
+                className="w-64 text-[13px] pl-8 pr-3 py-2 rounded-full outline-none"
+                style={{ background: "rgba(255,255,255,0.08)", border: "1px solid var(--cf2-chrome-border-subtle)", color: "var(--cf2-chrome-text-primary)" }}
+              />
+            </div>
+            <Cf2NotificationBell variant="dark" />
+            <Link href="/propostas/novo" className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-[13px] font-bold shrink-0" style={{ background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" }}><Plus className="w-3.5 h-3.5" /> Nova proposta</Link>
+          </div>
+        </header>
 
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <p className="text-lg font-semibold" style={{ color: "var(--cf2-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>Em negociação</p>
+        {/* KPIs com tendência mês-a-mês real (deltas de estoque como "valor
+            total" e "total de propostas" não têm histórico gravado pra
+            comparar — mostrados sem seta em vez de inventar tendência). */}
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <KpiCard icon={FileText} label="Total de propostas" value={kpis?.totalPropostas ?? "—"} />
+          <KpiCard icon={Send} label="Abertas pelo cliente" value={kpis && kpis.enviadas > 0 ? `${Math.round((kpis.visualizadas / kpis.enviadas) * 100)}%` : "—"} trend={kpis?.tendencia?.enviadas ?? undefined} trendLabel="envios" />
+          <KpiCard icon={ArrowUpRight} label="Valor em propostas abertas" value={kpis ? brl(kpis.valorTotalAtivo) : "—"} />
+          <KpiCard icon={CheckCircle2} label="Taxa de aceite" value={kpis?.taxaAceite != null ? `${kpis.taxaAceite}%` : "—"} trend={kpis?.tendencia?.aceitas ?? undefined} trendLabel="aceites" />
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-2">
+          <Cf2PropostaStatusChart
+            emElaboracao={kpis?.emElaboracao ?? 0}
+            enviadas={kpis?.enviadas ?? 0}
+            aceitas={kpis?.aceitas ?? 0}
+            recusadasExpiradas={kpis?.recusadasExpiradas ?? 0}
+          />
+          <Cf2PropostaSerieChart dados={kpis?.serieMensal ?? []} />
+        </div>
+
         <div className="flex items-center gap-2 flex-wrap">
-          <div className="relative">
-            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2" style={{ color: "var(--cf2-text-tertiary)" }} />
-            <input
-              value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar proposta, empresa, oportunidade..."
-              className="w-64 text-[12px] pl-8 pr-3 py-1.5 rounded-lg outline-none"
-              style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }}
-            />
-          </div>
-          <Select value={status} onChange={setStatus}>
-            <option value="">Status: Todos</option>
-            <option value="rascunho">Rascunho</option>
-            <option value="enviada">Enviada</option>
-            <option value="ajuste_solicitado">Ajuste solicitado</option>
-            <option value="aceita">Aceita</option>
-            <option value="recusada">Recusada</option>
-            <option value="expirada">Expirada</option>
-          </Select>
-          <Select value={responsavel} onChange={setResponsavel}>
-            <option value="todas">Responsável: Todos</option>
-            {usuarios.map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}
-          </Select>
-          <Select value={familia} onChange={setFamilia}>
-            <option value="">Família: Todas</option>
-            {Object.entries(FAMILY_LABEL).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
-          </Select>
-          <Select value={periodo} onChange={(v) => setPeriodo(v as "mes" | "todos")}>
-            <option value="todos">Período: Todo o período</option>
-            <option value="mes">Período: Este mês</option>
-          </Select>
+          <DarkFilterSelect value={status} onChange={setStatus} label="Status" placeholder="Todos">
+            <DarkItem value="todos">Todos</DarkItem>
+            <DarkItem value="rascunho">Rascunho</DarkItem>
+            <DarkItem value="enviada">Enviada</DarkItem>
+            <DarkItem value="ajuste_solicitado">Ajuste solicitado</DarkItem>
+            <DarkItem value="aceita">Aceita</DarkItem>
+            <DarkItem value="recusada">Recusada</DarkItem>
+            <DarkItem value="expirada">Expirada</DarkItem>
+          </DarkFilterSelect>
+          <DarkFilterSelect value={responsavel} onChange={setResponsavel} label="Responsável" placeholder="Todos">
+            <DarkItem value="todas">Todos</DarkItem>
+            {usuarios.map((u) => <DarkItem key={u.id} value={u.id}>{u.nome}</DarkItem>)}
+          </DarkFilterSelect>
+          <DarkFilterSelect value={familia} onChange={setFamilia} label="Família" placeholder="Todas">
+            <DarkItem value="todas">Todas</DarkItem>
+            {Object.entries(FAMILY_LABEL).map(([k, label]) => <DarkItem key={k} value={k}>{label}</DarkItem>)}
+          </DarkFilterSelect>
+          <DarkFilterSelect value={periodo} onChange={(v) => setPeriodo(v as "mes" | "todos")} label="Período" placeholder="Todo o período">
+            <DarkItem value="todos">Todo o período</DarkItem>
+            <DarkItem value="mes">Este mês</DarkItem>
+          </DarkFilterSelect>
         </div>
+
+        {/* Lista estilo Circle (25/08, pedido explícito do Kauã: "pega as
+            tabelas de referência e estilo do Circle") — linha única flat
+            (h-12, sem <table>/colunas de grid), igual a
+            issue-line.tsx do Circle: cluster fixo à esquerda (família+
+            número+status), título flexível no meio, cluster auxiliar
+            empurrado pra direita com ml-auto. Isso é estrutural: elimina o
+            scroll horizontal por definição (nada aqui tem largura fixa
+            somada além do necessário), não é só ajuste de padding. */}
+        <Cf2ChromeCard padding="0px" className="overflow-hidden">
+          {isLoading ? (
+            <p className="text-sm p-6" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Carregando...</p>
+          ) : propostas.length === 0 ? (
+            <p className="text-sm p-6" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Nenhuma proposta encontrada.</p>
+          ) : (
+            <div className="flex flex-col">
+              {propostas.map((p) => {
+                const badge = statusDisplay(p.status);
+                const etapa = resolveEtapaNegocio(p.negocioStatus);
+                const visualizada = p.status === "enviada" && p.visualizacoes > 0;
+                return (
+                  <div
+                    key={p.id}
+                    className="w-full flex items-center h-12 px-4 gap-3 cursor-pointer hover:bg-white/[0.03] transition-colors border-b"
+                    style={{ borderColor: "var(--cf2-chrome-border-subtle)" }}
+                    onClick={() => setDrawerId(p.id)}
+                  >
+                    <span className="text-[12px] font-mono shrink-0 w-[92px] truncate" style={{ color: "var(--cf2-chrome-text-secondary)" }}>#PROP-{String(p.numero).padStart(4, "0")}{p.versao > 1 ? `v${p.versao}` : ""}</span>
+                    <Cf2Badge dark variant={visualizada ? "accent" : badge.tom}>{visualizada ? "Visualizada" : badge.label}</Cf2Badge>
+
+                    <div className="min-w-0 flex items-baseline gap-1.5 mr-2">
+                      <span className="text-[13px] font-medium truncate" style={{ color: "var(--cf2-chrome-text-primary)" }}>{p.leadEmpresa || p.leadNome || "—"}</span>
+                      <span className="text-[12px] truncate hidden md:inline" style={{ color: "var(--cf2-chrome-text-secondary)" }}>{p.itensResumo?.[0]?.nome}</span>
+                    </div>
+
+                    <div className="flex items-center justify-end gap-3 ml-auto shrink-0">
+                      {p.negocioId && (
+                        <Link href={`/negocios/${p.negocioId}`} onClick={(e) => e.stopPropagation()} className="text-[11px] hover:underline hidden lg:inline-block max-w-[140px] truncate" style={{ color: "var(--cf2-chrome-text-secondary)" }}>{p.negocioTitulo || "negócio"}</Link>
+                      )}
+                      {etapa && (
+                        <span className="text-[10px] font-medium px-1.5 py-0.5 rounded shrink-0 hidden lg:inline-block" style={{ background: "rgba(255,255,255,0.06)", color: "var(--cf2-chrome-text-secondary)" }}>{etapa.label}</span>
+                      )}
+                      {p.primeiraVisualizacaoEm && (
+                        <Eye className="w-3.5 h-3.5 shrink-0 hidden sm:inline-block" style={{ color: "var(--cf2-chrome-text-secondary)" }} />
+                      )}
+                      <span className="text-[12px] shrink-0 hidden sm:inline-block" style={{ color: "var(--cf2-chrome-text-secondary)" }}>{timeAgoShort(p.ultimaAtividadeEm ?? p.createdAt)}</span>
+                      <span className="text-[13px] font-semibold shrink-0 w-[92px] text-right" style={{ color: "var(--cf2-chrome-text-primary)" }}>{brl(p.totalGeral)}</span>
+                      <div onClick={(e) => e.stopPropagation()}>
+                        <RowMenu proposta={p} router={router} refetch={refetch} />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </Cf2ChromeCard>
       </div>
 
-      <div className="rounded-2xl overflow-hidden" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
-        {isLoading ? (
-          <p className="text-sm p-6" style={{ color: "var(--cf2-text-tertiary)" }}>Carregando...</p>
-        ) : propostas.length === 0 ? (
-          <p className="text-sm p-6" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhuma proposta encontrada.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[1080px] text-sm">
-              <thead>
-                <tr style={{ background: "var(--cf2-bg-surface-muted)" }}>
-                  {["Cliente", "Proposta e serviços", "Investimento", "Responsável", "Última atividade", "Status", ""].map((h) => (
-                    <th key={h} className="text-left px-3 py-2.5 text-[11px] font-bold whitespace-nowrap" style={{ color: "var(--cf2-text-tertiary)" }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {propostas.map((p) => {
-                  const badge = statusDisplay(p.status);
-                  const aguardando = p.status === "enviada" && !p.clienteRespondeuEm;
-                  const itens = p.itensResumo ?? [];
-                  const ultimaAtividadeEm = p.ultimaAtividadeEm ?? p.createdAt;
-                  const ultimaAtividadeTipo = p.ultimaAtividadeTipo ?? "criou";
-                  return (
-                    <tr key={p.id} className="cursor-pointer" style={{ borderTop: "1px solid var(--cf2-border-default)" }} onClick={() => setDrawerId(p.id)}>
-                      <td className="px-4 py-3.5 whitespace-nowrap"><p className="font-semibold" style={{ color: "var(--cf2-text-primary)" }}>{p.leadEmpresa || p.leadNome || "—"}</p><p className="mt-0.5 text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>{p.leadEmpresa && p.leadNome ? p.leadNome : "Contato comercial"}</p></td>
-                      <td className="px-4 py-3.5"><p className="font-semibold" style={{ color: "var(--cf2-text-primary)" }}>#PROP-{String(p.numero).padStart(4, "0")}{p.versao > 1 ? ` v${p.versao}` : ""}</p><p className="mt-0.5 max-w-[260px] truncate text-[11px]" style={{ color: "var(--cf2-text-secondary)" }}>{itens.length ? itens.slice(0, 2).map((item) => `${item.nome}${Number(item.quantidade) > 1 ? ` · ${item.quantidade}x` : ""}`).join(" · ") : "Sem serviços adicionados"}{itens.length > 2 ? ` +${itens.length - 2}` : ""}</p>{(p.familias || []).length > 0 && <div className="mt-1.5 flex gap-1">{p.familias.map((f) => <span key={f} className="rounded px-1.5 py-0.5 text-[9px] font-semibold" style={{ background: `${FAMILY_COLOR[f] || "#9ca3af"}18`, color: FAMILY_COLOR[f] || "#9ca3af" }}>{FAMILY_LABEL[f] || f}</span>)}</div>}</td>
-                      <td className="px-4 py-3.5 whitespace-nowrap"><p className="font-semibold" style={{ color: "var(--cf2-text-primary)" }}>{Number(p.totalAvulso) > 0 ? brl(p.totalAvulso) : "Sem valor inicial"}</p><p className="mt-0.5 text-[11px]" style={{ color: "var(--cf2-text-secondary)" }}>{Number(p.totalRecorrente) > 0 ? `${brl(p.totalRecorrente)}/mês` : "Sem recorrência"}</p></td>
-                      <td className="px-4 py-3.5 whitespace-nowrap"><p style={{ color: "var(--cf2-text-secondary)" }}>{p.criadoPorNome || "—"}</p>{p.negocioId && <Link href={`/negocios/${p.negocioId}`} onClick={(e) => e.stopPropagation()} className="mt-1 inline-block text-[11px] font-semibold hover:underline" style={{ color: "var(--cf2-success-text)" }}>{p.negocioTitulo || "Abrir negócio"}</Link>}</td>
-                      <td className="px-4 py-3.5 whitespace-nowrap"><p className="text-[12px]" style={{ color: "var(--cf2-text-secondary)" }}>{activityLabel(ultimaAtividadeTipo)}</p><p className="mt-0.5 text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>{new Date(ultimaAtividadeEm).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</p></td>
-                      <td className="px-4 py-3.5 whitespace-nowrap"><Cf2Badge variant={p.status === "enviada" && p.visualizacoes > 0 ? "accent" : badge.tom}>{p.status === "enviada" && p.visualizacoes > 0 ? "Visualizada" : badge.label}</Cf2Badge>{p.dataValidade && <p className="mt-1 text-[10px]" style={{ color: "var(--cf2-text-tertiary)" }}>Válida até {new Date(p.dataValidade).toLocaleDateString("pt-BR")}</p>}</td>
-                      <td className="px-3 py-3 whitespace-nowrap">
-                        <div className="flex items-center gap-2 justify-end">
-                          {p.visualizacoes > 0 && (
-                            <span className="inline-flex items-center gap-1 text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }} title={`${p.visualizacoes} visualização(ões)`}>
-                              <Eye className="w-3.5 h-3.5" /> {p.visualizacoes}
-                            </span>
-                          )}
-                          {aguardando && (
-                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "var(--cf2-warning-bg)", color: "var(--cf2-warning-text)" }}>
-                              <Clock className="w-3 h-3" /> aguardando
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+      <Cf2PropostaDrawer propostaId={drawerId} open={!!drawerId} onClose={() => setDrawerId(null)} onChanged={() => refetch()} />
+    </div>
+  );
+}
+
+function RowMenu({ proposta, router, refetch }: { proposta: PropostaRow; router: ReturnType<typeof useRouter>; refetch: () => void }) {
+  const [open, setOpen] = useState(false);
+  const editavel = ["rascunho", "enviada", "ajuste_solicitado"].includes(proposta.status);
+
+  const excluir = async () => {
+    const r = await fetch(`/api/propostas/${proposta.id}`, { method: "DELETE" });
+    if (r.ok) { toastDark.success("Proposta excluída."); refetch(); }
+    else toastDark.error("Erro ao excluir proposta");
+    setOpen(false);
+  };
+
+  return (
+    <Cf2DropdownMenu open={open} onOpenChange={setOpen}>
+      <Cf2DropdownMenuTrigger asChild>
+        <button className="p-1.5 rounded-md hover:bg-white/[0.06]" style={{ color: "var(--cf2-chrome-text-secondary)" }}><MoreHorizontal className="w-4 h-4" /></button>
+      </Cf2DropdownMenuTrigger>
+      <Cf2DropdownMenuContent align="end" className="min-w-[180px]" style={{ background: "#1c1f26", border: "1px solid var(--cf2-chrome-border-subtle)" }}>
+        <Cf2DropdownMenuItem onClick={() => router.push(`/propostas/${proposta.id}`)} className="gap-2 data-[highlighted]:bg-white/[0.06]" style={{ color: "var(--cf2-chrome-text-primary)" }}>Ver página completa</Cf2DropdownMenuItem>
+        {editavel && (
+          <Cf2DropdownMenuItem onClick={() => router.push(`/propostas/novo?propostaId=${proposta.id}`)} className="gap-2 data-[highlighted]:bg-white/[0.06]" style={{ color: "var(--cf2-chrome-text-primary)" }}><Pencil className="w-3.5 h-3.5" /> Editar</Cf2DropdownMenuItem>
         )}
+        {(proposta.status === "recusada" || proposta.status === "expirada") && (
+          <Cf2DropdownMenuItem onClick={async () => { const r = await fetch(`/api/propostas/${proposta.id}/nova-versao`, { method: "POST" }); const j = await r.json(); if (r.ok) router.push(`/propostas/${j.id}`); else toastDark.error("Erro ao criar nova versão"); }} className="gap-2 data-[highlighted]:bg-white/[0.06]" style={{ color: "var(--cf2-chrome-text-primary)" }}><Copy className="w-3.5 h-3.5" /> Nova versão</Cf2DropdownMenuItem>
+        )}
+        {proposta.status !== "aceita" && (
+          <Cf2DropdownMenuItem onClick={excluir} className="gap-2 data-[highlighted]:bg-white/[0.06]" style={{ color: "#f87171" }}><Trash2 className="w-3.5 h-3.5" /> Excluir</Cf2DropdownMenuItem>
+        )}
+      </Cf2DropdownMenuContent>
+    </Cf2DropdownMenu>
+  );
+}
+
+
+function KpiCard({ icon: Icon, label, value, trend, trendLabel }: { icon: typeof FileText; label: string; value: string | number; trend?: number; trendLabel?: string }) {
+  return (
+    <Cf2ChromeCard>
+      <div className="flex items-start justify-between gap-2">
+        <span className="flex items-center justify-center w-9 h-9 rounded-xl shrink-0" style={{ background: "rgba(255,255,255,0.06)", color: "var(--cf2-chrome-text-secondary)" }}><Icon className="w-4 h-4" /></span>
       </div>
-
-      <Cf2PropostaDrawer propostaId={drawerId} open={!!drawerId} onClose={() => setDrawerId(null)} onChanged={() => { refetch(); }} />
-    </div>
+      <p className="mt-3 text-[11px] font-bold uppercase tracking-wide" style={{ color: "var(--cf2-chrome-text-secondary)" }}>{label}</p>
+      <p className="mt-1 text-[22px] font-bold" style={{ color: "var(--cf2-chrome-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>{value}</p>
+      {trend != null && (
+        <p className="mt-1 text-[11px] font-semibold" style={{ color: trend >= 0 ? "#4ade80" : "#f87171" }}>
+          {trend >= 0 ? "↑" : "↓"} {Math.abs(trend)}% {trendLabel ? `de ${trendLabel} ` : ""}vs mês anterior
+        </p>
+      )}
+    </Cf2ChromeCard>
   );
-}
-
-function Select({ value, onChange, children }: { value: string; onChange: (v: string) => void; children: React.ReactNode }) {
-  return (
-    <select value={value} onChange={(e) => onChange(e.target.value)} className="px-2.5 py-1.5 rounded-lg text-[12px] font-medium outline-none" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-secondary)" }}>
-      {children}
-    </select>
-  );
-}
-
-function ProposalMetric({ icon: Icon, label, value }: { icon: typeof FileText; label: string; value: string | number }) {
-  return (
-    <div className="flex min-w-0 items-center gap-3 bg-[var(--cf2-bg-surface)] px-4 py-3.5">
-      <span className="flex size-8 shrink-0 items-center justify-center rounded-lg" style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-secondary)" }}><Icon className="size-4" /></span>
-      <div className="min-w-0"><p className="truncate text-[10px] font-bold uppercase" style={{ color: "var(--cf2-text-tertiary)" }}>{label}</p><p className="mt-0.5 truncate text-[17px] font-bold" style={{ color: "var(--cf2-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>{value}</p></div>
-    </div>
-  );
-}
-
-function activityLabel(type: PropostaRow["ultimaAtividadeTipo"] | undefined) {
-  return { criou: "Proposta criada", enviou: "Enviada ao cliente", visualizou: "Cliente visualizou", respondeu: "Cliente respondeu" }[type ?? "criou"];
 }

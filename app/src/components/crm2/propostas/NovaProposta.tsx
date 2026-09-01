@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Search, Plus, Minus, Trash2, ArrowLeft, Send, Save, AlertTriangle, CheckCircle2 } from "lucide-react";
 import Link from "next/link";
 import { Cf2Card } from "../ui/Card";
+import { calcSubtotal as calcSubDesconto, getMoedaInfo } from "@/components/crm/proposta-utils";
 
 interface Lead { id: string; nome: string; empresa: string | null; telefone: string; status: string }
 interface CatalogoItem {
@@ -13,16 +14,19 @@ interface CatalogoItem {
   valorSugerido: string | null; categoria: string | null; requerContrato: boolean;
 }
 interface ItemCarrinho {
-  servicoCatalogoId: string; nome: string; tipo: string; quantidade: number; valorUnitario: number;
+  servicoCatalogoId: string; nome: string; descricao: string | null; tipo: string; quantidade: number; valorUnitario: number;
+  desconto: number; descontoTipo: "percentual" | "valor";
 }
 interface Signatario { nome: string; email: string; papel: string; ordem: number }
 
-const CATEGORIA_LABEL: Record<string, string> = { callface_ai: "Callface AI", pabx: "PABX", white_label: "White Label" };
-
-function calcSubtotal(qty: number, unit: number) {
-  return Math.round(qty * unit * 100) / 100;
-}
-const brl = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+const CATEGORIA_LABEL: Record<string, string> = { callface_ai: "Callface AI", pabx: "PABX", white_label: "White Label", outros: "Outros produtos" };
+const MOEDA_OPCOES = [
+  { value: "BRL", label: "BRL — Real" },
+  { value: "USD", label: "USD — Dólar" },
+  { value: "EUR", label: "EUR — Euro" },
+  { value: "CAD", label: "CAD — Dólar canadense" },
+];
+const brl = (v: number, moeda: string = "BRL") => v.toLocaleString("pt-BR", { style: "currency", currency: moeda });
 
 export function Cf2NovaPropostaWorkspace() {
   const router = useRouter();
@@ -38,7 +42,15 @@ export function Cf2NovaPropostaWorkspace() {
   const [buscaProduto, setBuscaProduto] = useState("");
   const [categoriaAtiva, setCategoriaAtiva] = useState<string | null>(null);
   const [carrinho, setCarrinho] = useState<ItemCarrinho[]>([]);
+  const [moeda, setMoeda] = useState("BRL");
   const [condicoesPagamento, setCondicoesPagamento] = useState("");
+  // Condição de pagamento estruturada (25/08, billing avançado) — o texto
+  // livre acima passa a ser só observação extra; isto aqui é o que o
+  // checkout Stripe usa de fato (payment_method_types + vencimento do
+  // boleto, ver stripe-checkout.ts).
+  const [condicaoPagamentoTipo, setCondicaoPagamentoTipo] = useState<"" | "cartao" | "boleto" | "boleto_parcelado" | "outro">("");
+  const [parcelas, setParcelas] = useState("1");
+  const [vencimentoDias, setVencimentoDias] = useState("3");
   const [prazoContratoMeses, setPrazoContratoMeses] = useState("");
   const [dataValidade, setDataValidade] = useState("");
   const [observacoes, setObservacoes] = useState("");
@@ -101,10 +113,15 @@ export function Cf2NovaPropostaWorkspace() {
     });
     setNegocioId(propostaEditando.negocioId ?? null);
     setNegocioTitulo(propostaEditando.negocioTitulo ?? null);
-    setCarrinho((propostaEditando.itens || []).map((i: { servicoCatalogoId: string | null; nome: string; tipo: string; quantidade: string; valorUnitario: string }) => ({
-      servicoCatalogoId: i.servicoCatalogoId || i.nome, nome: i.nome, tipo: i.tipo, quantidade: parseFloat(i.quantidade), valorUnitario: parseFloat(i.valorUnitario),
+    setCarrinho((propostaEditando.itens || []).map((i: { servicoCatalogoId: string | null; nome: string; descricao?: string | null; tipo: string; quantidade: string; valorUnitario: string; desconto?: string; descontoTipo?: string }) => ({
+      servicoCatalogoId: i.servicoCatalogoId || i.nome, nome: i.nome, descricao: i.descricao ?? null, tipo: i.tipo, quantidade: parseFloat(i.quantidade), valorUnitario: parseFloat(i.valorUnitario),
+      desconto: parseFloat(i.desconto || "0"), descontoTipo: (i.descontoTipo as "percentual" | "valor") || "percentual",
     })));
+    setMoeda(propostaEditando.moeda || "BRL");
     setCondicoesPagamento(propostaEditando.condicoesPagamento || "");
+    setCondicaoPagamentoTipo(propostaEditando.condicaoPagamentoTipo || "");
+    setParcelas(propostaEditando.parcelas ? String(propostaEditando.parcelas) : "1");
+    setVencimentoDias(propostaEditando.vencimentoDias ? String(propostaEditando.vencimentoDias) : "3");
     setPrazoContratoMeses(propostaEditando.prazoContratoMeses ? String(propostaEditando.prazoContratoMeses) : "");
     setDataValidade(propostaEditando.dataValidade || "");
     setObservacoes(propostaEditando.observacoes || "");
@@ -134,16 +151,30 @@ export function Cf2NovaPropostaWorkspace() {
     queryFn: async () => {
       const r = await fetch(`/api/leads/${leadSelecionado!.id}`);
       if (!r.ok) return { email: null };
-      return r.json();
+      // `GET /api/leads/:id` responde `{ lead: {...}, empresa, ... }` — o
+      // e-mail está em `.lead.email`, não na raiz. Achado real 25/08: isso
+      // fazia `leadDetalhe?.email` vir sempre undefined e o aviso de "sem
+      // e-mail" aparecer pra TODO lead, mesmo com e-mail cadastrado.
+      const j = await r.json();
+      return { email: j.lead?.email ?? null };
     },
     enabled: !!leadSelecionado?.id,
   });
   const semEmail = !!leadSelecionado && leadDetalhe !== undefined && !leadDetalhe?.email;
 
+  // Por padrão só mostra item classificado (família/categoria já definida) —
+  // pra não despejar as ~190 linhas históricas do Zoho no vendedor (correção
+  // 19/08). "Ver outros produtos" (achado real 25/08, Kauã: "a maioria vai
+  // ser PABX, mas se alguém precisar ele precisa conseguir localizar")
+  // reusa o `?incluirNaoClassificados=true` que a rota já suporta pra isso.
+  const [mostrarOutros, setMostrarOutros] = useState(false);
   const { data: catalogo = [] } = useQuery<CatalogoItem[]>({
-    queryKey: ["servicos-catalogo"],
+    queryKey: ["servicos-catalogo", mostrarOutros],
     queryFn: async () => {
-      const r = await fetch("/api/servicos-catalogo");
+      // `all=true` also bypasses o filtro `ativo=true` — sem ele os ~190
+      // itens legados continuam invisíveis (a maioria está inativa, não só
+      // não-classificada).
+      const r = await fetch(`/api/servicos-catalogo${mostrarOutros ? "?incluirNaoClassificados=true&all=true" : ""}`);
       if (!r.ok) return [];
       return r.json();
     },
@@ -162,8 +193,8 @@ export function Cf2NovaPropostaWorkspace() {
       .filter((c): c is CatalogoItem => !!c);
     if (encontrados.length > 0) {
       setCarrinho(encontrados.map((item) => ({
-        servicoCatalogoId: item.id, nome: item.nome, tipo: item.tipo, quantidade: 1,
-        valorUnitario: parseFloat(item.valorSugerido || "0"),
+        servicoCatalogoId: item.id, nome: item.nome, descricao: item.descricao, tipo: item.tipo, quantidade: 1,
+        valorUnitario: parseFloat(item.valorSugerido || "0"), desconto: 0, descontoTipo: "percentual",
       })));
     }
     setHerdouServicos(true);
@@ -180,8 +211,8 @@ export function Cf2NovaPropostaWorkspace() {
     .filter((c) => (c.categoria || "outros") === categoriaSelecionada)
     .filter((c) => !buscaProdutoNorm || c.nome.toLowerCase().includes(buscaProdutoNorm) || (c.descricao || "").toLowerCase().includes(buscaProdutoNorm));
 
-  const totalRecorrente = carrinho.filter((i) => i.tipo === "recorrente").reduce((s, i) => s + calcSubtotal(i.quantidade, i.valorUnitario), 0);
-  const totalAvulso = carrinho.filter((i) => i.tipo !== "recorrente").reduce((s, i) => s + calcSubtotal(i.quantidade, i.valorUnitario), 0);
+  const totalRecorrente = carrinho.filter((i) => i.tipo === "recorrente").reduce((s, i) => s + calcSubDesconto(i.quantidade, i.valorUnitario, i.desconto, i.descontoTipo), 0);
+  const totalAvulso = carrinho.filter((i) => i.tipo !== "recorrente").reduce((s, i) => s + calcSubDesconto(i.quantidade, i.valorUnitario, i.desconto, i.descontoTipo), 0);
   const totalGeral = totalRecorrente + totalAvulso;
   const exigeContrato = carrinho.some((i) => catalogo.find((c) => c.id === i.servicoCatalogoId)?.requerContrato);
   const signatariosValidos = signatarios.filter((s) => s.nome.trim() && s.email.trim()).map((s, i) => ({ ...s, papel: s.papel.trim() || "Signatário", ordem: s.ordem || i + 1 }));
@@ -197,7 +228,7 @@ export function Cf2NovaPropostaWorkspace() {
       const cat = catalogo.find((c) => c.id === item.servicoCatalogoId)?.categoria || "outros";
       const label = CATEGORIA_LABEL[cat] || cat;
       const atual = grupos.get(label) || { total: 0, qtd: 0 };
-      atual.total += calcSubtotal(item.quantidade, item.valorUnitario);
+      atual.total += calcSubDesconto(item.quantidade, item.valorUnitario, item.desconto, item.descontoTipo);
       atual.qtd += 1;
       grupos.set(label, atual);
     }
@@ -207,8 +238,8 @@ export function Cf2NovaPropostaWorkspace() {
   function adicionarItem(item: CatalogoItem) {
     if (carrinho.some((i) => i.servicoCatalogoId === item.id)) return;
     setCarrinho((prev) => [...prev, {
-      servicoCatalogoId: item.id, nome: item.nome, tipo: item.tipo, quantidade: 1,
-      valorUnitario: parseFloat(item.valorSugerido || "0"),
+      servicoCatalogoId: item.id, nome: item.nome, descricao: item.descricao, tipo: item.tipo, quantidade: 1,
+      valorUnitario: parseFloat(item.valorSugerido || "0"), desconto: 0, descontoTipo: "percentual",
     }]);
   }
   function removerItem(id: string) { setCarrinho((prev) => prev.filter((i) => i.servicoCatalogoId !== id)); }
@@ -217,6 +248,12 @@ export function Cf2NovaPropostaWorkspace() {
   }
   function atualizarValor(id: string, valor: number) {
     setCarrinho((prev) => prev.map((i) => i.servicoCatalogoId === id ? { ...i, valorUnitario: valor } : i));
+  }
+  function atualizarDesconto(id: string, desconto: number) {
+    setCarrinho((prev) => prev.map((i) => i.servicoCatalogoId === id ? { ...i, desconto: Math.max(0, desconto) } : i));
+  }
+  function alternarDescontoTipo(id: string) {
+    setCarrinho((prev) => prev.map((i) => i.servicoCatalogoId === id ? { ...i, descontoTipo: i.descontoTipo === "percentual" ? "valor" : "percentual" } : i));
   }
 
   const salvarMutation = useMutation({
@@ -228,12 +265,16 @@ export function Cf2NovaPropostaWorkspace() {
         const r = await fetch(`/api/propostas/${propostaIdEditando}`, {
           method: "PATCH", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            moeda,
             condicoesPagamento: condicoesPagamento || undefined,
+            condicaoPagamentoTipo: condicaoPagamentoTipo || undefined,
+            parcelas: condicaoPagamentoTipo === "boleto_parcelado" ? Number(parcelas) : undefined,
+            vencimentoDias: condicaoPagamentoTipo === "boleto" || condicaoPagamentoTipo === "boleto_parcelado" ? Number(vencimentoDias) : undefined,
             prazoContratoMeses: prazoContratoMeses ? Number(prazoContratoMeses) : undefined,
             dataValidade: dataValidade || undefined,
             observacoes: observacoes || undefined,
             signatarios: signatariosValidos,
-            itens: carrinho.map((i) => ({ servicoCatalogoId: i.servicoCatalogoId, nome: i.nome, tipo: i.tipo, quantidade: i.quantidade, valorUnitario: i.valorUnitario })),
+            itens: carrinho.map((i) => ({ servicoCatalogoId: i.servicoCatalogoId, nome: i.nome, descricao: i.descricao || undefined, tipo: i.tipo, quantidade: i.quantidade, valorUnitario: i.valorUnitario, desconto: i.desconto, descontoTipo: i.descontoTipo })),
           }),
         });
         const resultado = await r.json();
@@ -251,12 +292,16 @@ export function Cf2NovaPropostaWorkspace() {
         body: JSON.stringify({
           leadId: leadSelecionado!.id,
           negocioId: negocioId || undefined,
+          moeda,
           condicoesPagamento: condicoesPagamento || undefined,
+          condicaoPagamentoTipo: condicaoPagamentoTipo || undefined,
+          parcelas: condicaoPagamentoTipo === "boleto_parcelado" ? Number(parcelas) : undefined,
+          vencimentoDias: condicaoPagamentoTipo === "boleto" || condicaoPagamentoTipo === "boleto_parcelado" ? Number(vencimentoDias) : undefined,
           prazoContratoMeses: prazoContratoMeses ? Number(prazoContratoMeses) : undefined,
           dataValidade: dataValidade || undefined,
           observacoes: observacoes || undefined,
           signatarios: signatariosValidos,
-          itens: carrinho.map((i) => ({ servicoCatalogoId: i.servicoCatalogoId, nome: i.nome, tipo: i.tipo, quantidade: i.quantidade, valorUnitario: i.valorUnitario })),
+          itens: carrinho.map((i) => ({ servicoCatalogoId: i.servicoCatalogoId, nome: i.nome, descricao: i.descricao || undefined, tipo: i.tipo, quantidade: i.quantidade, valorUnitario: i.valorUnitario, desconto: i.desconto, descontoTipo: i.descontoTipo })),
         }),
       });
       const resultado = await r.json();
@@ -386,6 +431,13 @@ export function Cf2NovaPropostaWorkspace() {
               {CATEGORIA_LABEL[cat] || cat}
             </button>
           ))}
+          <button
+            onClick={() => { setMostrarOutros((v) => !v); if (!mostrarOutros) setCategoriaAtiva("outros"); }}
+            className="text-left px-3 py-2 rounded-lg text-[12px] font-medium whitespace-nowrap"
+            style={{ color: "var(--cf2-text-tertiary)" }}
+          >
+            {mostrarOutros ? "− Ocultar outros produtos" : "+ Ver outros produtos"}
+          </button>
         </div>
 
         {/* Painel 2 — Configurador: monta a solução da família selecionada. Troca de família = configurador diferente, não existe formulário universal */}
@@ -412,8 +464,9 @@ export function Cf2NovaPropostaWorkspace() {
               >
                 <div className="min-w-0">
                   <p className="text-[13px] font-semibold" style={{ color: "var(--cf2-text-primary)" }}>{item.nome}</p>
-                  <p className="text-[12px]" style={{ color: "var(--cf2-text-secondary)" }}>
-                    {brl(parseFloat(item.valorSugerido || "0"))}{item.tipo === "recorrente" ? "/mês" : ""}
+                  {item.descricao && <p className="text-[11px] mt-0.5 line-clamp-2" style={{ color: "var(--cf2-text-tertiary)" }}>{item.descricao}</p>}
+                  <p className="text-[12px] mt-0.5" style={{ color: "var(--cf2-text-secondary)" }}>
+                    {brl(parseFloat(item.valorSugerido || "0"), moeda)}{item.tipo === "recorrente" ? "/mês" : ""}
                     {item.requerContrato && " · exige contrato"}
                   </p>
                 </div>
@@ -438,7 +491,7 @@ export function Cf2NovaPropostaWorkspace() {
                 <p className="font-bold mb-1">Esta venda será organizada em {linhasNoCarrinho.size} oportunidades:</p>
                 <ul className="space-y-0.5">
                   {[...linhasNoCarrinho.entries()].map(([label, info]) => (
-                    <li key={label}>{label} · {info.qtd} {info.qtd === 1 ? "item" : "itens"} · {brl(info.total)}</li>
+                    <li key={label}>{label} · {info.qtd} {info.qtd === 1 ? "item" : "itens"} · {brl(info.total, moeda)}</li>
                   ))}
                 </ul>
               </div>
@@ -448,30 +501,50 @@ export function Cf2NovaPropostaWorkspace() {
             ) : (
               <div className="flex flex-col gap-2 mb-3">
                 {carrinho.map((item) => (
-                  <div key={item.servicoCatalogoId} className="flex items-center gap-2 pb-2" style={{ borderBottom: "1px solid var(--cf2-border-default)" }}>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[12px] font-semibold truncate" style={{ color: "var(--cf2-text-primary)" }}>{item.nome}</p>
-                      <div className="flex items-center gap-1.5 mt-1">
-                        <button onClick={() => atualizarQtd(item.servicoCatalogoId, -1)} className="w-5 h-5 rounded flex items-center justify-center" style={{ background: "var(--cf2-bg-surface-muted)" }}><Minus className="w-2.5 h-2.5" /></button>
-                        <span className="text-[11px] w-5 text-center">{item.quantidade}</span>
-                        <button onClick={() => atualizarQtd(item.servicoCatalogoId, 1)} className="w-5 h-5 rounded flex items-center justify-center" style={{ background: "var(--cf2-bg-surface-muted)" }}><Plus className="w-2.5 h-2.5" /></button>
-                        <input
-                          type="number" value={item.valorUnitario}
-                          onChange={(e) => atualizarValor(item.servicoCatalogoId, parseFloat(e.target.value) || 0)}
-                          className="w-20 text-[11px] px-1.5 py-0.5 rounded outline-none ml-1"
-                          style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }}
-                        />
+                  <div key={item.servicoCatalogoId} className="flex flex-col gap-1.5 pb-2" style={{ borderBottom: "1px solid var(--cf2-border-default)" }}>
+                    <div className="flex items-start gap-2">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[12px] font-semibold truncate" style={{ color: "var(--cf2-text-primary)" }}>{item.nome}</p>
+                        {item.descricao && <p className="text-[10px] truncate" style={{ color: "var(--cf2-text-tertiary)" }}>{item.descricao}</p>}
                       </div>
+                      <button onClick={() => removerItem(item.servicoCatalogoId)} className="shrink-0" style={{ color: "var(--cf2-danger-text)" }}><Trash2 className="w-3.5 h-3.5" /></button>
                     </div>
-                    <button onClick={() => removerItem(item.servicoCatalogoId)} style={{ color: "var(--cf2-danger-text)" }}><Trash2 className="w-3.5 h-3.5" /></button>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <button onClick={() => atualizarQtd(item.servicoCatalogoId, -1)} className="w-5 h-5 rounded flex items-center justify-center" style={{ background: "var(--cf2-bg-surface-muted)" }}><Minus className="w-2.5 h-2.5" /></button>
+                      <span className="text-[11px] w-5 text-center">{item.quantidade}</span>
+                      <button onClick={() => atualizarQtd(item.servicoCatalogoId, 1)} className="w-5 h-5 rounded flex items-center justify-center" style={{ background: "var(--cf2-bg-surface-muted)" }}><Plus className="w-2.5 h-2.5" /></button>
+                      <input
+                        type="number" value={item.valorUnitario} title="Valor unitário"
+                        onChange={(e) => atualizarValor(item.servicoCatalogoId, parseFloat(e.target.value) || 0)}
+                        className="w-16 text-[11px] px-1.5 py-0.5 rounded outline-none"
+                        style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }}
+                      />
+                      <input
+                        type="number" min={0} value={item.desconto} title="Desconto"
+                        onChange={(e) => atualizarDesconto(item.servicoCatalogoId, parseFloat(e.target.value) || 0)}
+                        className="w-14 text-[11px] px-1.5 py-0.5 rounded outline-none"
+                        style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }}
+                      />
+                      <button
+                        onClick={() => alternarDescontoTipo(item.servicoCatalogoId)}
+                        title={item.descontoTipo === "percentual" ? "Desconto em %" : "Desconto em valor"}
+                        className="shrink-0 px-1.5 py-1 text-[10px] rounded font-semibold"
+                        style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-secondary)" }}
+                      >
+                        {item.descontoTipo === "percentual" ? "%" : getMoedaInfo(moeda).symbol}
+                      </button>
+                      <span className="text-[11px] font-semibold ml-auto" style={{ color: "var(--cf2-text-primary)" }}>
+                        {brl(calcSubDesconto(item.quantidade, item.valorUnitario, item.desconto, item.descontoTipo), moeda)}
+                      </span>
+                    </div>
                   </div>
                 ))}
               </div>
             )}
             <div className="flex flex-col gap-1 text-[12px] mb-3" style={{ color: "var(--cf2-text-secondary)" }}>
-              {totalRecorrente > 0 && <div className="flex justify-between"><span>Mensal</span><span>{brl(totalRecorrente)}</span></div>}
-              {totalAvulso > 0 && <div className="flex justify-between"><span>Avulso</span><span>{brl(totalAvulso)}</span></div>}
-              <div className="flex justify-between text-[13px] font-bold" style={{ color: "var(--cf2-text-primary)" }}><span>Total</span><span>{brl(totalGeral)}</span></div>
+              {totalRecorrente > 0 && <div className="flex justify-between"><span>Mensal</span><span>{brl(totalRecorrente, moeda)}</span></div>}
+              {totalAvulso > 0 && <div className="flex justify-between"><span>Avulso</span><span>{brl(totalAvulso, moeda)}</span></div>}
+              <div className="flex justify-between text-[13px] font-bold" style={{ color: "var(--cf2-text-primary)" }}><span>Total</span><span>{brl(totalGeral, moeda)}</span></div>
             </div>
             {/* Validação (referência de UX, 19/08) — regra real do backend
                 (lib/crm/enviar-proposta.ts rejeita envio sem e-mail),
@@ -498,7 +571,13 @@ export function Cf2NovaPropostaWorkspace() {
                     <p className="text-[10px] mb-2" style={{ color: "var(--cf2-text-secondary)" }}>Informe antes do envio quem assina, o papel e a ordem. Exemplos: representante legal, vendedor, testemunha.</p>
                     <div className="flex items-center gap-2 mb-2">
                       <label className="text-[10px] font-semibold whitespace-nowrap" style={{ color: "var(--cf2-text-secondary)" }}>Vigência do contrato</label>
-                      <input type="number" min={1} value={prazoContratoMeses} onChange={(e) => setPrazoContratoMeses(e.target.value)} placeholder="meses" className="w-24 text-[11px] px-2 py-1.5 rounded outline-none" style={{ background: "var(--cf2-bg-surface-muted)", border: `1px solid ${exigeContrato && !prazoContratoValido ? "var(--cf2-danger-text)" : "var(--cf2-border-default)"}` }} />
+                      <select aria-label="Vigência do contrato" value={prazoContratoMeses} onChange={(e) => setPrazoContratoMeses(e.target.value)} className="w-28 text-[11px] px-2 py-1.5 rounded outline-none focus-visible:ring-2 focus-visible:ring-[var(--cf2-accent-border)]" style={{ background: "var(--cf2-bg-surface-muted)", border: `1px solid ${exigeContrato && !prazoContratoValido ? "var(--cf2-danger-text)" : "var(--cf2-border-default)"}` }}>
+                        <option value="">Selecione...</option>
+                        <option value="12">12 meses</option>
+                        <option value="24">24 meses</option>
+                        <option value="36">36 meses</option>
+                        <option value="48">48 meses</option>
+                      </select>
                     </div>
                     {signatarios.map((s, idx) => (
                       <div key={idx} className="flex gap-1.5 mb-1.5">
@@ -514,7 +593,40 @@ export function Cf2NovaPropostaWorkspace() {
                 )}
               </div>
             )}
-            <input value={condicoesPagamento} onChange={(e) => setCondicoesPagamento(e.target.value)} placeholder="Condições de pagamento" className="w-full text-[12px] px-2.5 py-2 rounded-lg outline-none mb-2" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }} />
+            <label className="block text-[10px] mb-1" style={{ color: "var(--cf2-text-secondary)" }}>Moeda</label>
+            <select aria-label="Moeda" value={moeda} onChange={(e) => setMoeda(e.target.value)} className="w-full text-[12px] px-2.5 py-2 rounded-lg outline-none mb-2 focus-visible:ring-2 focus-visible:ring-[var(--cf2-accent-border)]" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }}>
+              {MOEDA_OPCOES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+            <label className="block text-[10px] mb-1" style={{ color: "var(--cf2-text-secondary)" }}>Condição de pagamento</label>
+            <select aria-label="Condição de pagamento" value={condicaoPagamentoTipo} onChange={(e) => setCondicaoPagamentoTipo(e.target.value as typeof condicaoPagamentoTipo)} className="w-full text-[12px] px-2.5 py-2 rounded-lg outline-none mb-2 focus-visible:ring-2 focus-visible:ring-[var(--cf2-accent-border)]" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }}>
+              <option value="">Não especificar (padrão da conta Stripe)</option>
+              <option value="cartao">Cartão</option>
+              <option value="boleto">Boleto à vista</option>
+              <option value="boleto_parcelado">Boleto parcelado</option>
+              <option value="outro">Outro</option>
+            </select>
+            {(condicaoPagamentoTipo === "boleto" || condicaoPagamentoTipo === "boleto_parcelado") && (
+              <div className="flex gap-2 mb-2">
+                {condicaoPagamentoTipo === "boleto_parcelado" && (
+                  <div className="flex-1">
+                    <label className="block text-[10px] mb-1" style={{ color: "var(--cf2-text-secondary)" }}>Parcelas</label>
+                    <select aria-label="Número de parcelas" value={parcelas} onChange={(e) => setParcelas(e.target.value)} className="w-full text-[12px] px-2.5 py-2 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-[var(--cf2-accent-border)]" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }}>
+                      {Array.from({ length: 11 }, (_, i) => i + 2).map((n) => <option key={n} value={n}>{n}x</option>)}
+                    </select>
+                  </div>
+                )}
+                <div className="flex-1">
+                  <label className="block text-[10px] mb-1" style={{ color: "var(--cf2-text-secondary)" }}>Vencimento (dias)</label>
+                  <input type="number" min={1} max={60} value={vencimentoDias} onChange={(e) => setVencimentoDias(e.target.value)} className="w-full text-[12px] px-2.5 py-2 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-[var(--cf2-accent-border)]" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }} />
+                </div>
+              </div>
+            )}
+            {condicaoPagamentoTipo === "boleto_parcelado" && (
+              <p className="text-[10px] mb-2" style={{ color: "var(--cf2-text-tertiary)" }}>
+                O 1º boleto sai no checkout; as demais parcelas são geradas manualmente após o aceite (ver ação &quot;Gerar parcelamento&quot; no negócio).
+              </p>
+            )}
+            <input value={condicoesPagamento} onChange={(e) => setCondicoesPagamento(e.target.value)} placeholder="Observações sobre o pagamento (opcional)" className="w-full text-[12px] px-2.5 py-2 rounded-lg outline-none mb-2" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }} />
             <label className="block text-[10px] mb-1" style={{ color: "var(--cf2-text-secondary)" }}>Validade da proposta</label>
             <input type="date" value={dataValidade} onChange={(e) => setDataValidade(e.target.value)} className="w-full text-[12px] px-2.5 py-2 rounded-lg outline-none mb-2" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }} />
             <textarea value={observacoes} onChange={(e) => setObservacoes(e.target.value)} placeholder="Observações" rows={2} className="w-full text-[12px] px-2.5 py-2 rounded-lg outline-none resize-none" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }} />
