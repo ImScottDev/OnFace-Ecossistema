@@ -215,3 +215,15 @@ npm run db:relatorio-data-quality
 ```
 
 Segredos ficam em `app/.env` (gitignored). **Nunca commitar.**
+
+---
+
+## 9. Banco de dados
+
+Schema completo (DDL, 137 tabelas, sem dados) e inventário de tabelas com volume
+em [`docs/db/`](./docs/db/). Migrations em `app/src/lib/db/migrations/`; a fonte
+da verdade da aplicação é `app/src/lib/db/schema.ts` (Drizzle).
+
+Dump com dados **não está no repo e não deve entrar** — o banco de dev espelha
+produção (leads, empresas, conversas de WhatsApp, contratos de clientes reais).
+Ver [`docs/db/README.md`](./docs/db/README.md).
