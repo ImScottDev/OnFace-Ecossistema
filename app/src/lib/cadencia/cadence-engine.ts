@@ -26,10 +26,11 @@
  * Ver ADR-EXEC-013.
  */
 import { db } from "@/lib/db";
-import { cadenceDefinitions, cadenceEnrollments, cadenceEnrollmentEvents, leads, contatos, negocios } from "@/lib/db/schema";
-import { eq, and, lte, inArray } from "drizzle-orm";
+import { cadenceDefinitions, cadenceDefinitionPointers, cadenceVersions, cadenceEnrollments, cadenceEnrollmentEvents, leads, contatos, negocios, whatsappTemplates, whatsappMensagens, atividades } from "@/lib/db/schema";
+import { eq, and, lte, inArray, desc } from "drizzle-orm";
 import { avaliarCondicao, type Condicao } from "@/lib/crm/condicao";
 import { whatsappOutgoingQueue } from "@/lib/queue";
+import { executeAgent } from "@/lib/ai-platform/runtime/execute-agent";
 import { sendResendEmail, isResendConfigured } from "@/lib/email/resend";
 
 // ─── Tipos do grafo de steps (armazenado em cadence_definitions.steps) ─────
@@ -157,6 +158,136 @@ registrarAdapter("email", async (ctx) => {
   return { sucesso: true, resultado: { resendConfigurado: isResendConfigured(), ...resultado } };
 });
 
+/** Igual a `resolverContatoDaEntidade`, mas devolve o registro completo do contato (necessário pra egress via ai_agent_message/whatsapp_template, que precisam de sessaoId/leadId/botSilencedUntil, não só telefone/nome). */
+async function resolverContatoCompleto(entityType: string, entityId: string, organizacaoId: string): Promise<typeof contatos.$inferSelect | null> {
+  if (entityType === "contato") {
+    const [row] = await db.select().from(contatos).where(and(eq(contatos.id, entityId), eq(contatos.organizacaoId, organizacaoId))).limit(1);
+    return row ?? null;
+  }
+  if (entityType === "lead") {
+    const [row] = await db.select().from(contatos).where(and(eq(contatos.leadId, entityId), eq(contatos.organizacaoId, organizacaoId))).orderBy(desc(contatos.ultimaMsgAt)).limit(1);
+    return row ?? null;
+  }
+  if (entityType === "negocio") {
+    const [row] = await db.select({ contato: contatos }).from(negocios)
+      .innerJoin(leads, eq(leads.id, negocios.leadId))
+      .innerJoin(contatos, eq(contatos.leadId, leads.id))
+      .where(and(eq(negocios.id, entityId), eq(negocios.organizacaoId, organizacaoId)))
+      .orderBy(desc(contatos.ultimaMsgAt)).limit(1);
+    return row?.contato ?? null;
+  }
+  return null;
+}
+
+function resolveLeadId(entityType: string, entityId: string, contato: typeof contatos.$inferSelect | null): string | null {
+  if (entityType === "lead") return entityId;
+  return contato?.leadId ?? null;
+}
+
+async function enviarWhatsappTemplate(args: { organizacaoId: string; contato: typeof contatos.$inferSelect; templateId: string; vars: Record<string, unknown> }): Promise<CadenceActionResult> {
+  if (!args.contato.telefone) return { sucesso: false, erro: "contato sem telefone" };
+  const [template] = await db.select().from(whatsappTemplates)
+    .where(and(eq(whatsappTemplates.id, args.templateId), eq(whatsappTemplates.organizacaoId, args.organizacaoId), eq(whatsappTemplates.ativo, true)))
+    .limit(1);
+  if (!template) return { sucesso: false, erro: "template não encontrado ou inativo" };
+
+  let texto = template.conteudo.replace(/\{\{nome\}\}/g, args.contato.nome || "");
+  for (const [chave, valor] of Object.entries(args.vars)) {
+    if (typeof valor === "string" || typeof valor === "number") texto = texto.replace(new RegExp(`\\{\\{${chave}\\}\\}`, "g"), String(valor));
+  }
+
+  const [row] = await db.insert(whatsappMensagens).values({
+    contatoId: args.contato.id, leadId: args.contato.leadId, sessaoId: args.contato.sessaoId, telefone: args.contato.telefone,
+    direcao: "out", tipo: "text", conteudo: texto, status: "pending", templateNome: template.nome,
+  }).returning({ id: whatsappMensagens.id });
+  const job = await whatsappOutgoingQueue.add("send", { messageId: row.id, phone: args.contato.telefone, conteudo: texto, tipo: "text", sessaoId: args.contato.sessaoId ?? undefined });
+  await db.update(contatos).set({ ultimaMsg: texto.slice(0, 100), ultimaMsgAt: new Date(), updatedAt: new Date() }).where(eq(contatos.id, args.contato.id));
+  return { sucesso: true, resultado: { jobId: job.id, messageId: row.id } };
+}
+
+/** Adapter real — chama o agente publicado configurado no nó (mesmo runtime do chat ao vivo). Egress passa pela fila/ledger do próprio `executeAgent`, não duplica envio aqui. Se falhar e houver `fallback_template_id`, tenta o template antes de reportar erro. */
+registrarAdapter("ai_agent_message", async (ctx) => {
+  const config = ctx.step.config as { agent_id?: string; prompt_hint?: string; fallback_template_id?: string };
+  const contato = await resolverContatoCompleto(ctx.entityType, ctx.entityId, ctx.organizacaoId);
+  if (!contato) return { sucesso: false, erro: "sem contato resolvido para esta entidade" };
+  if (contato.botSilencedUntil && contato.botSilencedUntil > new Date()) return { sucesso: false, erro: "contato com bot silenciado (handoff em curso)" };
+
+  try {
+    const result = await executeAgent({
+      organizacaoId: ctx.organizacaoId,
+      agentId: config.agent_id ?? undefined,
+      eventType: "cadence.step_due",
+      message: config.prompt_hint ?? "",
+      contatoId: contato.id,
+      leadId: resolveLeadId(ctx.entityType, ctx.entityId, contato),
+      mode: "live",
+      suppressEgress: false,
+    });
+    return { sucesso: true, resultado: { runId: result.runId, status: result.status, sentMessageIds: result.sentMessageIds } };
+  } catch (err) {
+    const erro = err instanceof Error ? err.message : String(err);
+    if (config.fallback_template_id) {
+      const fallback = await enviarWhatsappTemplate({ organizacaoId: ctx.organizacaoId, contato, templateId: config.fallback_template_id, vars: ctx.vars });
+      if (fallback.sucesso) return { sucesso: true, resultado: { fallbackTemplate: true, ...fallback.resultado } };
+    }
+    return { sucesso: false, erro };
+  }
+});
+
+/** Adapter real — envia template WhatsApp cadastrado (`whatsapp_templates`), com substituição de `{{variavel}}` a partir de `vars` do enrollment. */
+registrarAdapter("whatsapp_template", async (ctx) => {
+  const config = ctx.step.config as { template_id?: string };
+  if (!config.template_id) return { sucesso: false, erro: 'step de ação "whatsapp_template" sem config.template_id' };
+  const contato = await resolverContatoCompleto(ctx.entityType, ctx.entityId, ctx.organizacaoId);
+  if (!contato) return { sucesso: false, erro: "sem contato resolvido para esta entidade" };
+  if (contato.botSilencedUntil && contato.botSilencedUntil > new Date()) return { sucesso: false, erro: "contato com bot silenciado (handoff em curso)" };
+  return enviarWhatsappTemplate({ organizacaoId: ctx.organizacaoId, contato, templateId: config.template_id, vars: ctx.vars });
+});
+
+/**
+ * Adapter real — classifica a última resposta do contato (ou `vars.summary`, se
+ * `target: "summary"`) usando o agente configurado no nó. Sem resposta ainda →
+ * "no_reply" direto, sem chamar modelo (o tempo de espera real é responsabilidade
+ * de um nó "wait" anterior no grafo, este nó só decide com o que já existe agora).
+ */
+registrarAdapter("ai_classify", async (ctx) => {
+  const config = ctx.step.config as { classes: Array<{ id: string; label: string }>; target?: "last_reply" | "summary"; hint?: string; agent_id?: string };
+  const varKey = `classification.${ctx.step.id}`;
+  const classIds = config.classes.map((item) => item.id);
+
+  let inputText = "";
+  if (config.target === "summary") {
+    inputText = typeof ctx.vars.summary === "string" ? ctx.vars.summary : "";
+  } else {
+    const contato = await resolverContatoCompleto(ctx.entityType, ctx.entityId, ctx.organizacaoId);
+    if (contato) {
+      const [reply] = await db.select({ conteudo: whatsappMensagens.conteudo }).from(whatsappMensagens)
+        .where(and(eq(whatsappMensagens.contatoId, contato.id), eq(whatsappMensagens.direcao, "in")))
+        .orderBy(desc(whatsappMensagens.createdAt)).limit(1);
+      inputText = reply?.conteudo ?? "";
+    }
+  }
+
+  if (!inputText.trim()) return { sucesso: true, varsAtualizadas: { [varKey]: "no_reply" }, resultado: { classId: "no_reply" } };
+  if (!config.agent_id) return { sucesso: false, erro: "nó de classificação sem agente configurado" };
+
+  try {
+    const result = await executeAgent({
+      organizacaoId: ctx.organizacaoId,
+      agentId: config.agent_id,
+      eventType: "cadence.step_due",
+      message: `Classifique a mensagem do contato em exatamente uma destas classes: ${classIds.join(", ")}.${config.hint ? ` Contexto: ${config.hint}.` : ""} Responda apenas com o id da classe, sem mais nada.\n\nMensagem do contato: """${inputText}"""`,
+      mode: "live",
+      suppressEgress: true,
+    });
+    const raw = (result.responseText ?? "").trim().toLowerCase();
+    const classId = classIds.find((id) => raw === id.toLowerCase() || raw.includes(id.toLowerCase())) ?? "else";
+    return { sucesso: true, varsAtualizadas: { [varKey]: classId }, resultado: { classId, raw: result.responseText } };
+  } catch (err) {
+    return { sucesso: false, erro: err instanceof Error ? err.message : String(err) };
+  }
+});
+
 // ─── Engine ─────────────────────────────────────────────────────────────────
 
 /** Inicia uma cadência pra uma entidade (lead/negocio/contato). Idempotente por (definição, entidade) — não duplica enrollment ativo. */
@@ -182,19 +313,40 @@ export async function iniciarCadencia(opts: {
   const [definicao] = await db.select().from(cadenceDefinitions).where(eq(cadenceDefinitions.id, opts.cadenceDefinitionId)).limit(1);
   if (!definicao || !definicao.ativo) return null;
 
-  const steps = definicao.steps as CadenceStep[];
+  const [pointer] = await db.select().from(cadenceDefinitionPointers)
+    .where(and(eq(cadenceDefinitionPointers.cadenceDefinitionId, definicao.id), eq(cadenceDefinitionPointers.organizacaoId, opts.organizacaoId)))
+    .limit(1);
+  const [pinnedVersion] = pointer?.publishedVersionId
+    ? await db.select().from(cadenceVersions).where(and(eq(cadenceVersions.id, pointer.publishedVersionId), eq(cadenceVersions.organizacaoId, opts.organizacaoId))).limit(1)
+    : [];
+  const steps = (pinnedVersion?.compiledSteps ?? definicao.steps) as CadenceStep[];
   if (steps.length === 0) return null;
 
   const [enrollment] = await db.insert(cadenceEnrollments).values({
     organizacaoId: opts.organizacaoId,
     cadenceDefinitionId: opts.cadenceDefinitionId,
+    cadenceVersionId: pinnedVersion?.id ?? null,
     entityType: opts.entityType,
     entityId: opts.entityId,
     currentStepId: null,
+    currentNodeId: null,
     status: "active",
     scheduledAt: new Date(), // 1º step roda já no próximo sweep
+    nextEvalAt: new Date(),
     vars: opts.varsIniciais ?? {},
   }).returning({ id: cadenceEnrollments.id });
+
+  // Timeline semântica (25/08, achado real: página da Pessoa precisa
+  // mostrar "cadência iniciada") — só pra lead (atividades.leadId é
+  // NOT NULL, não dá pra logar aqui pra negocio/contato). Único ponto de
+  // entrada real de todo enroll (Prospecção, automação via
+  // ação "iniciar_cadencia", etc.) — nunca duplicado por caller.
+  if (opts.entityType === "lead") {
+    await db.insert(atividades).values({
+      leadId: opts.entityId, organizacaoId: opts.organizacaoId,
+      tipo: "cadencia_iniciada", titulo: definicao.nome,
+    });
+  }
 
   return enrollment.id;
 }
@@ -247,7 +399,10 @@ export async function avancarEnrollment(enrollmentId: string): Promise<void> {
     return;
   }
 
-  const steps = definicao.steps as CadenceStep[];
+  const [pinnedVersion] = enrollment.cadenceVersionId
+    ? await db.select().from(cadenceVersions).where(and(eq(cadenceVersions.id, enrollment.cadenceVersionId), eq(cadenceVersions.organizacaoId, enrollment.organizacaoId))).limit(1)
+    : [];
+  const steps = (pinnedVersion?.compiledSteps ?? definicao.steps) as CadenceStep[];
   const step = enrollment.currentStepId === null ? steps[0] : steps.find((s) => s.id === enrollment.currentStepId);
   if (!step) {
     await db.update(cadenceEnrollments).set({ status: "completed", completedAt: new Date(), updatedAt: new Date() }).where(eq(cadenceEnrollments.id, enrollmentId));
@@ -305,7 +460,8 @@ export async function avancarEnrollment(enrollmentId: string): Promise<void> {
     if (retry && tentativaAtual < retry.maxTentativas) {
       const backoffMin = retry.backoffMinutos[Math.min(tentativaAtual - 1, retry.backoffMinutos.length - 1)] ?? 60;
       await db.insert(cadenceEnrollmentEvents).values({ enrollmentId, stepId: step.id, status: "retry_agendado", resultado: { erro: resultado.erro, proximaTentativaEm: backoffMin }, attempt: tentativaAtual });
-      await db.update(cadenceEnrollments).set({ attempt: tentativaAtual, status: "waiting", scheduledAt: new Date(Date.now() + backoffMin * 60_000), updatedAt: new Date() }).where(eq(cadenceEnrollments.id, enrollmentId));
+      const retryAt = new Date(Date.now() + backoffMin * 60_000);
+      await db.update(cadenceEnrollments).set({ attempt: tentativaAtual, status: "waiting", scheduledAt: retryAt, nextEvalAt: retryAt, updatedAt: new Date() }).where(eq(cadenceEnrollments.id, enrollmentId));
       return;
     }
     await db.insert(cadenceEnrollmentEvents).values({ enrollmentId, stepId: step.id, status: "erro", resultado: { erro: resultado.erro }, attempt: tentativaAtual });
@@ -333,8 +489,10 @@ async function avancarParaProximoStep(enrollmentId: string, steps: CadenceStep[]
   const esperaMs = (stepAtual.tipo === "wait" ? stepAtual.esperaMinutos ?? 0 : 0) * 60_000;
   await db.update(cadenceEnrollments).set({
     currentStepId: proximo.id,
+    currentNodeId: proximo.id,
     status: "active",
     scheduledAt: new Date(Date.now() + esperaMs),
+    nextEvalAt: new Date(Date.now() + esperaMs),
     vars,
     attempt: 0,
     updatedAt: new Date(),

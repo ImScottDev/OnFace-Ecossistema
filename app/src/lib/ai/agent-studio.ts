@@ -11,21 +11,31 @@ export interface AgentToolDefinition {
 
 /**
  * Catálogo único de capacidades dos agentes Callface.
- * `dry_run` significa que a capacidade pode ser selecionada e auditada, mas o
- * dispatcher ainda não pode executá-la no mundo externo. Isso evita uma UI que
- * promete automações que o runtime ainda não entrega.
+ * Catálogo client-safe. A implementação canônica vive no registry do runtime;
+ * todo item listado aqui possui executor real (mutações viram preview no modo
+ * de teste e executam somente no modo live).
  */
 export const AGENT_TOOL_CATALOG: AgentToolDefinition[] = [
   { id: "context.read_contact", nome: "Consultar pessoa e empresa", descricao: "Lê identidade, empresa, tags e dados disponíveis do contato.", categoria: "contexto", modo: "leitura", disponibilidade: "live" },
   { id: "context.read_conversation", nome: "Consultar conversa", descricao: "Lê o histórico recente e o estado operacional da conversa.", categoria: "contexto", modo: "leitura", disponibilidade: "live" },
   { id: "context.read_crm", nome: "Consultar contexto do CRM", descricao: "Lê lead, oportunidades, serviços e próximas ações vinculadas.", categoria: "contexto", modo: "leitura", disponibilidade: "live" },
-  { id: "response.classify", nome: "Classificar resposta", descricao: "Classifica intenção, interesse e necessidade de intervenção humana.", categoria: "comunicacao", modo: "acao", disponibilidade: "dry_run" },
-  { id: "message.prepare", nome: "Preparar resposta", descricao: "Gera uma sugestão de resposta sem enviá-la automaticamente.", categoria: "comunicacao", modo: "acao", disponibilidade: "dry_run" },
-  { id: "handoff.request", nome: "Solicitar atendimento humano", descricao: "Pausa a IA e encaminha a conversa para uma pessoa.", categoria: "operacao", modo: "acao", disponibilidade: "dry_run" },
-  { id: "task.create", nome: "Criar tarefa", descricao: "Cria uma próxima ação para o responsável no CRM.", categoria: "operacao", modo: "acao", disponibilidade: "dry_run" },
-  { id: "prospect.update_status", nome: "Atualizar prospect", descricao: "Atualiza o estado operacional de um prospect.", categoria: "crm", modo: "acao", disponibilidade: "dry_run" },
-  { id: "prospect.qualify", nome: "Enviar para Pré-vendas", descricao: "Converte um prospect qualificado preservando origem e histórico.", categoria: "crm", modo: "acao", disponibilidade: "dry_run" },
-  { id: "cadence.pause", nome: "Pausar cadência", descricao: "Interrompe a cadência ativa quando há resposta ou handoff.", categoria: "operacao", modo: "acao", disponibilidade: "dry_run" },
+  { id: "knowledge.search", nome: "Buscar conhecimento", descricao: "Busca trechos nas fontes publicadas da organização.", categoria: "contexto", modo: "leitura", disponibilidade: "live" },
+  { id: "memory.read", nome: "Consultar memória", descricao: "Lê memória e aprendizados ativos da organização.", categoria: "contexto", modo: "leitura", disponibilidade: "live" },
+  { id: "response.classify", nome: "Classificar resposta", descricao: "Classifica intenção, interesse e confiança para próximas decisões.", categoria: "comunicacao", modo: "acao", disponibilidade: "live" },
+  { id: "message.prepare", nome: "Preparar resposta", descricao: "Define as mensagens finais; o egress usa o ledger e a fila do Callface.", categoria: "comunicacao", modo: "acao", disponibilidade: "live" },
+  { id: "handoff.request", nome: "Solicitar atendimento humano", descricao: "Pausa a IA, registra handoff e abre alerta operacional.", categoria: "operacao", modo: "acao", disponibilidade: "live" },
+  { id: "task.create", nome: "Criar tarefa", descricao: "Cria uma próxima ação real para responsável ou administrador.", categoria: "operacao", modo: "acao", disponibilidade: "live" },
+  { id: "lead.update_status", nome: "Atualizar status do lead", descricao: "Atualiza o estado operacional do lead vinculado.", categoria: "crm", modo: "acao", disponibilidade: "live" },
+  { id: "lead.qualify", nome: "Qualificar lead", descricao: "Atualiza dados comerciais não sensíveis extraídos da conversa.", categoria: "crm", modo: "acao", disponibilidade: "live" },
+  { id: "deal.advance", nome: "Avançar negócio", descricao: "Move um negócio real para um novo estágio.", categoria: "crm", modo: "acao", disponibilidade: "live" },
+  { id: "cadence.pause", nome: "Pausar follow-ups", descricao: "Pausa inscrições ativas quando há resposta ou handoff.", categoria: "operacao", modo: "acao", disponibilidade: "live" },
+  { id: "followup.enroll", nome: "Iniciar follow-up", descricao: "Inscreve a entidade em um fluxo publicado.", categoria: "operacao", modo: "acao", disponibilidade: "live" },
+  { id: "followup.cancel", nome: "Cancelar follow-up", descricao: "Cancela uma inscrição da organização com motivo.", categoria: "operacao", modo: "acao", disponibilidade: "live" },
+  { id: "contact.propose_field", nome: "Propor dado do contato", descricao: "Propõe nome, email ou telefone para confirmação humana.", categoria: "crm", modo: "acao", disponibilidade: "live" },
+  { id: "case.open", nome: "Abrir caso humano", descricao: "Abre um caso assíncrono para a equipe ajudar o agente.", categoria: "operacao", modo: "acao", disponibilidade: "live" },
+  { id: "skill.activate", nome: "Ativar skill", descricao: "Carrega e registra o uso de uma skill instalada.", categoria: "contexto", modo: "leitura", disponibilidade: "live" },
+  { id: "alert.create", nome: "Criar alerta", descricao: "Cria um alerta operacional para a equipe.", categoria: "operacao", modo: "acao", disponibilidade: "live" },
+  { id: "budget.read", nome: "Consultar orçamento", descricao: "Consulta limites e consumo mensal da organização.", categoria: "contexto", modo: "leitura", disponibilidade: "live" },
 ];
 
 export const AGENT_EVENT_CATALOG = [
@@ -46,7 +56,7 @@ export const AGENT_PURPOSES = [
 export const AGENT_PRESETS: Record<string, { prompt: string; tools: string[]; events: string[] }> = {
   prospeccao: {
     prompt: "Você é um agente de prospecção da Callface. Analise o contexto disponível, personalize a abordagem sem inventar informações, classifique respostas e encaminhe para uma pessoa quando houver interesse, dúvida sensível ou pedido explícito de atendimento humano.",
-    tools: ["context.read_contact", "context.read_conversation", "context.read_crm", "response.classify", "message.prepare", "handoff.request", "prospect.update_status", "prospect.qualify", "cadence.pause"],
+    tools: ["context.read_contact", "context.read_conversation", "context.read_crm", "knowledge.search", "response.classify", "message.prepare", "handoff.request", "lead.update_status", "lead.qualify", "cadence.pause"],
     events: ["prospect.response_received"],
   },
   pre_vendas: {

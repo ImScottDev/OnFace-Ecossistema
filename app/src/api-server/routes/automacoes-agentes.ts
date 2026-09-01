@@ -19,6 +19,7 @@ import {
   DEFAULT_TRIGGER_CONFIG,
   isKnownAgentTool,
 } from "@/lib/ai/agent-studio";
+import { executeAgent } from "@/lib/ai-platform/runtime/execute-agent";
 
 const app = new Hono();
 
@@ -76,15 +77,21 @@ app.get("/automacoes/agentes/catalogo", async (c) => {
 
 const versionSchema = z.object({
   systemPrompt: z.string().default(""),
-  provider: z.string().nullable().optional(),
+  provider: z.enum(["groq", "openai", "anthropic", "google"]).nullable().optional(),
   modelo: z.string().nullable().optional(),
+  credentialId: z.string().uuid().nullable().optional(),
+  channelSessionId: z.string().uuid().nullable().optional(),
   tools: z.array(z.string()).max(30).default([]).refine((tools) => tools.every(isKnownAgentTool), "Capacidade desconhecida"),
   triggerConfig: z.record(z.string(), z.unknown()).default(DEFAULT_TRIGGER_CONFIG),
   handoffConfig: z.record(z.string(), z.unknown()).default(DEFAULT_HANDOFF_CONFIG),
   knowledgeConfig: z.record(z.string(), z.unknown()).default({}),
+  guardrailConfig: z.record(z.string(), z.unknown()).default({}),
   maxSteps: z.number().int().min(1).max(30).default(8),
   tokenBudget: z.number().int().min(1).max(100000).default(4000),
   costBudget: z.number().nonnegative().nullable().optional(),
+  historyMessageWindow: z.number().int().min(1).max(100).default(20),
+  historyTokenWindow: z.number().int().min(500).max(100000).default(8000),
+  casesEnabled: z.boolean().default(false),
 });
 
 const agentSchema = z.object({
@@ -99,8 +106,12 @@ const agentSchema = z.object({
     triggerConfig: DEFAULT_TRIGGER_CONFIG,
     handoffConfig: DEFAULT_HANDOFF_CONFIG,
     knowledgeConfig: {},
+    guardrailConfig: {},
     maxSteps: 8,
     tokenBudget: 4000,
+    historyMessageWindow: 20,
+    historyTokenWindow: 8000,
+    casesEnabled: false,
   }),
 });
 
@@ -124,7 +135,7 @@ app.post("/automacoes/agentes", async (c) => {
     prioridade: parsed.data.prioridade,
     createdById: ctx.userId,
   }).returning();
-  await db.insert(aiAgentVersions).values({ agentId: agent.id, versao: 1, createdById: ctx.userId, ...normalizarVersao(parsed.data.versao) });
+  await db.insert(aiAgentVersions).values({ organizacaoId: ctx.organizacaoId, agentId: agent.id, versao: 1, createdById: ctx.userId, ...normalizarVersao(parsed.data.versao) });
   return c.json({ agent }, 201);
 });
 
@@ -246,7 +257,7 @@ app.post("/automacoes/agentes/:id/versions", async (c) => {
   const parsed = versionSchema.safeParse(await c.req.json());
   if (!parsed.success) return c.json({ error: "Versao invalida", details: parsed.error.flatten() }, 400);
   const [last] = await db.select({ versao: aiAgentVersions.versao }).from(aiAgentVersions).where(eq(aiAgentVersions.agentId, agent.id)).orderBy(desc(aiAgentVersions.versao)).limit(1);
-  const [version] = await db.insert(aiAgentVersions).values({ agentId: agent.id, versao: (last?.versao ?? 0) + 1, createdById: ctx.userId, ...normalizarVersao(parsed.data) }).returning();
+  const [version] = await db.insert(aiAgentVersions).values({ organizacaoId: ctx.organizacaoId, agentId: agent.id, versao: (last?.versao ?? 0) + 1, createdById: ctx.userId, ...normalizarVersao(parsed.data) }).returning();
   return c.json(version, 201);
 });
 
@@ -280,9 +291,9 @@ app.post("/automacoes/agentes/:id/versions/:versionId/publish", async (c) => {
   if (version.systemPrompt.trim().length < 20) return c.json({ error: "Complete as instrucoes antes de publicar" }, 409);
   if (events.length === 0) return c.json({ error: "Escolha pelo menos um gatilho antes de publicar" }, 409);
   const updated = await db.transaction(async (tx) => {
-    await tx.update(aiAgentVersions).set({ status: "superseded" }).where(and(eq(aiAgentVersions.agentId, agent.id), eq(aiAgentVersions.status, "published")));
+    await tx.update(aiAgentVersions).set({ status: "superseded", supersededAt: new Date() }).where(and(eq(aiAgentVersions.agentId, agent.id), eq(aiAgentVersions.status, "published")));
     await tx.update(aiAgentVersions).set({ status: "published", publishedAt: new Date() }).where(eq(aiAgentVersions.id, version.id));
-    const [publishedAgent] = await tx.update(aiAgents).set({ status: "published", updatedAt: new Date() }).where(eq(aiAgents.id, agent.id)).returning();
+    const [publishedAgent] = await tx.update(aiAgents).set({ status: "published", publishedVersionId: version.id, updatedAt: new Date() }).where(eq(aiAgents.id, agent.id)).returning();
     return publishedAgent;
   });
   return c.json({ agent: updated, versionId: version.id });
@@ -292,29 +303,37 @@ app.post("/automacoes/agentes/:id/test", async (c) => {
   const ctx = await getCtx(c);
   const [agent] = await db.select().from(aiAgents).where(and(eq(aiAgents.id, c.req.param("id")), eq(aiAgents.organizacaoId, ctx.organizacaoId))).limit(1);
   if (!agent) return c.json({ error: "Agente nao encontrado" }, 404);
-  const body = await c.req.json();
+  const parsed = z.object({
+    versionId: z.string().uuid().optional(),
+    message: z.string().min(1).max(10000),
+    contatoId: z.string().uuid().nullable().optional(),
+    leadId: z.string().uuid().nullable().optional(),
+    payload: z.record(z.string(), z.unknown()).default({}),
+  }).safeParse(await c.req.json());
+  if (!parsed.success) return c.json({ error: "Teste invalido", details: parsed.error.flatten() }, 400);
+  const body = parsed.data;
   const [version] = body?.versionId
     ? await db.select().from(aiAgentVersions).where(and(eq(aiAgentVersions.agentId, agent.id), eq(aiAgentVersions.id, body.versionId))).limit(1)
     : await db.select().from(aiAgentVersions).where(and(eq(aiAgentVersions.agentId, agent.id), eq(aiAgentVersions.status, "published"))).orderBy(desc(aiAgentVersions.versao)).limit(1);
   if (!version) return c.json({ error: "Versao do agente nao encontrada" }, 409);
-  const requestedTools = Array.isArray(body?.requestedTools) ? body.requestedTools.filter((tool: unknown): tool is string => typeof tool === "string") : [];
-  const configuredTools = Array.isArray(version.tools) ? version.tools.filter((tool): tool is string => typeof tool === "string") : [];
-  const allowedTools = requestedTools.filter((tool: string) => configuredTools.includes(tool));
-  const [run] = await db.insert(aiAgentRuns).values({
-    organizacaoId: ctx.organizacaoId,
-    agentId: agent.id,
-    versionId: version.id,
-    modo: "dry_run",
-    status: "completed",
-    input: body,
-    trace: [
-      { type: "version_selected", versionId: version.id, versao: version.versao, status: version.status },
-      { type: "policy", allowedTools, maxSteps: version.maxSteps, tokenBudget: version.tokenBudget },
-      { type: "dry_run", message: "Execucao simulada; nenhuma LLM, mensagem ou ferramenta externa foi acionada." },
-    ],
-    completedAt: new Date(),
-  }).returning();
-  return c.json({ run });
+  try {
+    const result = await executeAgent({
+      organizacaoId: ctx.organizacaoId,
+      agentId: agent.id,
+      versionId: version.id,
+      eventType: "agent.test",
+      message: body.message,
+      contatoId: body.contatoId ?? null,
+      leadId: body.leadId ?? null,
+      mode: "test",
+      suppressEgress: true,
+      payload: body.payload,
+    });
+    const [run] = await db.select().from(aiAgentRuns).where(and(eq(aiAgentRuns.id, result.runId), eq(aiAgentRuns.organizacaoId, ctx.organizacaoId))).limit(1);
+    return c.json({ mode: "test", externalEgress: false, result, run });
+  } catch (error) {
+    return c.json({ error: error instanceof Error ? error.message : String(error) }, 502);
+  }
 });
 
 export const automacoesAgentesRoutes = app;
