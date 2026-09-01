@@ -20,7 +20,8 @@
  */
 import { db } from "@/lib/db";
 import { eq } from "drizzle-orm";
-import { fulfillments, fulfillmentItens, servicosCanonicos } from "@/lib/db/schema";
+import { fulfillments, fulfillmentItens, servicosCanonicos, contratos, negocios, tarefas } from "@/lib/db/schema";
+import { notificarFulfillmentOnboardingCriado } from "@/lib/crm/notificar";
 
 // Estágio pedagógico do "Guia de Treinamento e Onboarding de Clientes
 // Callface" (base do checklist CALLFACE_AI, 19/08): EXPLICAR → DEMONSTRAR →
@@ -134,59 +135,172 @@ export const PABX_CHECKLIST: ChecklistSeed = [
 ];
 
 // Callface AI: baseado no "Guia de Treinamento e Onboarding de Clientes
-// Callface" (recebido 19/08, enriquecido 19/08 seguindo a progressão
-// pedagógica do guia). Só a BASE (comum a qualquer contratação) — módulos
-// condicionais (integração de CRM, campanhas, reuniões online, agente de
-// IA) dependem de saber o que o Service/Catalog realmente contratou, e
-// essa detecção ainda não existe no catálogo (nenhum campo tipo
-// "incluiIntegracaoCrm"/"incluiAgente" hoje) — não fabricar isso aqui;
-// fica registrado como próximo passo real, não fingido com item solto.
+// Callface" real (Alisson/Suporte, 2026) — o roteiro que o time efetivamente
+// segue AO VIVO com o cliente, quase sempre numa reunião só (o próprio guia:
+// "o treinamento não termina quando a tela é apresentada — termina quando o
+// cliente sai com acessos funcionando, funcionalidades configuradas e
+// autonomia pra operar sozinho"). Granularidade pareada com PABX_CHECKLIST
+// acima (uma checkbox por atividade real do documento, não um item
+// genérico por etapa) — reconstruído 25/08 depois do time apontar que a
+// versão anterior (7 itens abstratos) tinha "engolido" o guia real.
 //
-// Nota honesta sobre a progressão EXPLICAR→DEMONSTRAR→FAZER JUNTO→CLIENTE
-// EXECUTA→VALIDAR: o processo real recebido não descreve um passo próprio
-// de "fazer junto" pro onboarding Callface AI (o time explica+demonstra e
-// depois o cliente já executa a primeira ligação real sozinho) — por isso
-// nenhum item aqui carrega o estágio FAZER_JUNTO. Não inventado; é um gap
-// real do processo tal como descrito, não do modelo de dado.
-//
-// Princípio do guia preservado: treinamento concluído ≠ onboarding
-// concluído (Activation ≠ Adoption) — por isso "primeiro_valor_confirmado"
-// é item explícito do checklist (não só um efeito colateral de outro
-// passo), e é ele (junto com todos os demais) que precisa estar DONE pra
-// fulfillment.status virar COMPLETED — ver PATCH /fulfillments/itens/:id.
-// Isso faz "pronto tecnicamente" e "adotado de fato" convergirem no mesmo
-// gate, de propósito.
+// Campanhas/Reuniões online/Agente de IA são descritos no guia como
+// condicionais ("planos acima do Full", "clientes com o módulo
+// contratado") — igual antes, não fabricamos aqui uma detecção real de
+// módulo contratado (não existe campo no catálogo pra isso); por ora todo
+// onboarding Callface AI ganha o checklist completo, e workstreams
+// condicionais ficam marcados no comentário pra quando esse sinal existir.
 export const AI_CHECKLIST_BASE: ChecklistSeed = [
-  { workstream: "validacao_contratacao", titulo: "Validar contratação (plano, módulos, responsável, dados da empresa)" },
-  { workstream: "acessos", titulo: "Configurar acessos e usuários" },
+  // Tópico 2 — Abertura
+  { workstream: "abertura", titulo: "Validar responsável, empresa e cargo" },
+  { workstream: "abertura", titulo: "Confirmar usuários, plano e módulos contratados" },
+  { workstream: "abertura", titulo: "Checar se contratou Agente de IA e/ou Reuniões Online" },
+  { workstream: "abertura", titulo: "Confirmar o que foi contratado antes de demonstrar" },
+
+  // Tópico 3 — CRM e integração
+  { workstream: "crm_integracao", titulo: "Perguntar se o cliente possui CRM" },
+  { workstream: "crm_integracao", titulo: "Com integração pronta: integrar e validar junto com o cliente" },
+  { workstream: "crm_integracao", titulo: "Sem integração pronta: apresentar os Webhooks" },
+  { workstream: "crm_integracao", titulo: "Sem CRM: alinhar operação acompanhada pela Callface" },
+
+  // Tópico 4 — Acessos
+  { workstream: "acessos", titulo: "Validar login, senha e usuários" },
+  { workstream: "acessos", titulo: "Confirmar permissões e número/linha" },
+  { workstream: "acessos", titulo: "Checar recursos contratados" },
+  { workstream: "acessos", titulo: "Registrar pendências de acesso antes de avançar" },
+
+  // Tópico 5 — Dados da empresa
+  { workstream: "dados_empresa", titulo: "Perguntar se os dados da empresa já foram preenchidos" },
+  { workstream: "dados_empresa", titulo: "Mostrar onde ficam e como editar os dados da empresa" },
+  { workstream: "dados_empresa", titulo: "Validar as informações da empresa junto com o cliente" },
+
+  // Tópico 6 — Gestão de usuários e times
+  { workstream: "usuarios_times", titulo: "Se há equipe: apresentar Gestão de Usuários e organização por times" },
+  { workstream: "usuarios_times", titulo: "Se não há equipe ainda: explicar que dá pra separar por times no futuro" },
+  { workstream: "usuarios_times", titulo: "Alinhar que toda adição de novo usuário passa pelo time Comercial" },
+
+  // Tópico 7 — Ligação manual e histórico
   {
-    workstream: "explicar_demonstrar",
-    titulo: "Explicar e demonstrar a plataforma (ligação de exemplo)",
+    workstream: "primeira_ligacao",
+    titulo: "Demonstrar fazendo uma ligação manual na frente do cliente",
     metadata: { estagioPedagogico: ["EXPLICAR", "DEMONSTRAR"] },
   },
   {
     workstream: "primeira_ligacao",
-    titulo: "Cliente realizar a primeira ligação real",
+    titulo: "Cliente realizar a ligação de teste sozinho",
     metadata: { estagioPedagogico: ["CLIENTE_EXECUTA"] },
   },
   {
-    workstream: "primeiro_valor",
-    titulo: "Validar primeiro valor (histórico, transcrição e resumo da ligação)",
+    workstream: "primeira_ligacao",
+    titulo: "Abrir o Histórico de Interações (registro, transcrição, resumo e análises)",
     metadata: { estagioPedagogico: ["VALIDAR"] },
   },
-  // First-Value milestone — marco de negócio, não passo técnico. Sempre
-  // manual: só o time confirma quando souber que o cliente de fato teve
-  // valor real (ex.: uma ligação real atendida com sucesso pela IA, um
-  // lead qualificado automaticamente) — não decidido/inferido em código
-  // aqui porque não há sinal técnico confiável disponível hoje.
+
+  // Tópico 8 — Scorecard e Insights
+  { workstream: "scorecard_insights", titulo: "Ativar o Scorecard junto com o cliente e confirmar que ficou ativo" },
+  { workstream: "scorecard_insights", titulo: "Mostrar um Scorecard real aplicado a uma ligação já registrada" },
+  { workstream: "scorecard_insights", titulo: "Apresentar os Insights gerados automaticamente pela IA" },
+  { workstream: "scorecard_insights", titulo: "Explicar como transformar os insights em ligações mais assertivas" },
   {
-    workstream: "primeiro_valor_confirmado",
+    workstream: "scorecard_insights",
+    titulo: "Checkpoint: confirmar que o cliente localiza e interpreta os insights sozinho",
+    metadata: { estagioPedagogico: ["VALIDAR"] },
+  },
+
+  // Tópicos 9 e 10 — Próximos passos, tarefas e relatórios (mesmo marco
+  // "Scorecard e insights" da Jornada — é a continuação natural do tópico 8).
+  { workstream: "proximos_passos", titulo: "Mostrar os próximos passos sugeridos pela IA" },
+  { workstream: "proximos_passos", titulo: "Criar uma tarefa junto com o cliente (responsável e prazo)" },
+  {
+    workstream: "proximos_passos",
+    titulo: "Validar se o cliente repete o processo de criar tarefa sozinho",
+    metadata: { estagioPedagogico: ["VALIDAR"] },
+  },
+  { workstream: "relatorios", titulo: "Empresas com +1 usuário: mostrar visão por usuário e por time" },
+  { workstream: "relatorios", titulo: "Apresentar o relatório de performance por usuário" },
+  { workstream: "relatorios", titulo: "Apresentar as objeções detectadas pela IA" },
+  { workstream: "relatorios", titulo: "Mostrar Minutos Falados por Dia e por Horário" },
+
+  // Tópicos 11-13 — Reuniões online e campanhas (condicional: "planos acima
+  // do Full" pra Reuniões, sem detecção real de plano no catálogo hoje).
+  { workstream: "reunioes_online", titulo: "Mostrar como incluir o Agente na reunião online" },
+  { workstream: "reunioes_online", titulo: "Mostrar onde revisitar a gravação depois" },
+  { workstream: "reunioes_online", titulo: "Apresentar resumo, pontos-chave e próximos passos gerados por IA" },
+  { workstream: "campanhas", titulo: "Demonstrar a criação e o upload de uma campanha" },
+  { workstream: "campanhas", titulo: "Fazer um exemplo real de campanha junto com o cliente" },
+  { workstream: "campanhas", titulo: "Enviar a planilha modelo da Callface" },
+  { workstream: "campanhas", titulo: "Mostrar mapeamento de campos e configuração da campanha" },
+  { workstream: "campanhas", titulo: "Mostrar onde consultar os resultados da campanha" },
+  { workstream: "campanhas", titulo: "Focar na distribuição de resultados apresentada pela IA" },
+  { workstream: "campanhas", titulo: "Explicar volume de contatos e padrões identificados" },
+
+  // Tópicos 14-15 — Agente de IA (condicional: "clientes com o módulo
+  // contratado", sem detecção real de módulo no catálogo hoje).
+  { workstream: "agente_prompt", titulo: "Montar o prompt junto com o cliente, campo por campo" },
+  { workstream: "agente_prompt", titulo: "Configurar o Data Collection (o que a IA deve coletar)" },
+  { workstream: "agente_prompt", titulo: "Definir o essencial: objetivo, produto, público, qualificação, objeções e próximo passo" },
+  {
+    workstream: "agente_prompt",
+    titulo: "Testar o Agente, ajustar o prompt e testar novamente",
+    metadata: { estagioPedagogico: ["VALIDAR"] },
+  },
+  { workstream: "agente_config", titulo: "Configurar identificação de caixa postal" },
+  { workstream: "agente_config", titulo: "Configurar barreiras eletrônicas / atendimento automático (inclusive iPhone)" },
+  { workstream: "agente_config", titulo: "Configurar comportamento quando o cliente diz \"alô\" novamente" },
+  { workstream: "agente_config", titulo: "Configurar comportamento em silêncio e interrupções" },
+  { workstream: "agente_config", titulo: "Enviar o material de referência de configuração de prompt" },
+
+  // Tópicos 16-18 — First Message, prompt-base e bateria de testes
+  { workstream: "first_message", titulo: "Criar a First Message junto com o cliente (variável de nome via planilha)" },
+  {
+    workstream: "bateria_testes",
+    titulo: "Testar cenário: cliente interessado",
+    metadata: { estagioPedagogico: ["VALIDAR"] },
+  },
+  { workstream: "bateria_testes", titulo: "Testar cenário: cliente sem interesse" },
+  { workstream: "bateria_testes", titulo: "Testar cenário: objeção" },
+  { workstream: "bateria_testes", titulo: "Testar cenário: silêncio" },
+  { workstream: "bateria_testes", titulo: "Testar cenário: repetição de \"alô\"" },
+  { workstream: "bateria_testes", titulo: "Testar cenário: caixa postal / barreira eletrônica" },
+  { workstream: "bateria_testes", titulo: "Testar cenário: uso de dados da planilha" },
+
+  // Tópicos 19-20 — SLA e canais
+  { workstream: "sla_canais", titulo: "Apresentar o SLA oficial vigente" },
+  { workstream: "sla_canais", titulo: "Explicar abertura e acompanhamento de chamados" },
+  { workstream: "sla_canais", titulo: "Apresentar os canais oficiais de atendimento" },
+  { workstream: "sla_canais", titulo: "Explicar qual canal usar para cada necessidade" },
+
+  // Tópico 21 — Critério de sucesso (Activation ≠ Adoption: treinamento
+  // concluído ≠ onboarding concluído — por isso é checklist explícito, não
+  // efeito colateral de outro item). Handoff pro CS fecha o processo.
+  {
+    workstream: "validacao_final",
+    titulo: "Cliente consegue operar: realizar ligação e localizar o histórico sozinho",
+    metadata: { estagioPedagogico: ["VALIDAR"] },
+  },
+  {
+    workstream: "validacao_final",
+    titulo: "Cliente consegue interpretar: ler os insights da IA e agir sobre eles",
+    metadata: { estagioPedagogico: ["VALIDAR"] },
+  },
+  {
+    workstream: "validacao_final",
+    titulo: "Cliente consegue organizar: criar tarefa e acompanhar performance",
+    metadata: { estagioPedagogico: ["VALIDAR"] },
+  },
+  {
+    workstream: "validacao_final",
+    titulo: "Cliente consegue escalar: subir campanha e interpretar resultados",
+    metadata: { estagioPedagogico: ["VALIDAR"] },
+  },
+  {
+    workstream: "validacao_final",
     titulo: "Confirmar primeiro valor real atingido (marco manual)",
     metadata: { milestone: "FIRST_VALUE", marcacaoManual: true },
   },
   {
-    workstream: "proximos_passos",
-    titulo: "Definir próximos passos e handoff para o Customer Success",
+    workstream: "validacao_final",
+    titulo: "Handoff estruturado para o Customer Success",
     metadata: { handoffCs: true },
   },
 ];
@@ -225,6 +339,52 @@ export const FASE_PABX_POR_WORKSTREAM: Record<string, "planejamento" | "preparac
   validacao_cliente: "validacao",
 };
 
+// Os 10 marcos da "Jornada do onboarding" (25/08, 2ª correção — a 1ª
+// versão desta nota comprimia o guia real em 4 fases genéricas, achado do
+// Kauã como "muito simplório"). Nomes e ordem batem exatamente com o
+// stepper de referência que ele mandou: Abertura e validação → Acessos e
+// integração → Usuários e times → Primeira ligação → Scorecard e insights
+// → Campanhas → Agente de IA → First Message e testes → SLA e canais →
+// Validação final. Cada marco agrupa os workstreams reais do guia que
+// pertencem ao mesmo tópico/tema — não um campo novo no banco, é derivado
+// do checklist real (AI_CHECKLIST_BASE), igual o padrão já usado pro PABX.
+export const MARCOS_AI = [
+  { key: "abertura_validacao", label: "Abertura e validação" },
+  { key: "acessos_integracao", label: "Acessos e integração" },
+  { key: "usuarios_times", label: "Usuários e times" },
+  { key: "primeira_ligacao", label: "Primeira ligação" },
+  { key: "scorecard_insights", label: "Scorecard e insights" },
+  { key: "campanhas", label: "Campanhas" },
+  { key: "agente_ia", label: "Agente de IA" },
+  { key: "first_message_testes", label: "First Message e testes" },
+  { key: "sla_canais", label: "SLA e canais" },
+  { key: "validacao_final", label: "Validação final" },
+] as const;
+export type MarcoAI = (typeof MARCOS_AI)[number]["key"];
+
+export const MARCO_AI_POR_WORKSTREAM: Record<string, MarcoAI> = {
+  abertura: "abertura_validacao",
+  dados_empresa: "abertura_validacao",
+  crm_integracao: "acessos_integracao",
+  acessos: "acessos_integracao",
+  usuarios_times: "usuarios_times",
+  primeira_ligacao: "primeira_ligacao",
+  scorecard_insights: "scorecard_insights",
+  proximos_passos: "scorecard_insights",
+  relatorios: "scorecard_insights",
+  // Reuniões online cai no marco "Campanhas" — o stepper de referência não
+  // tem nó próprio pra reuniões, e as duas são features de crescimento
+  // condicionais ao plano/módulo contratado (ver nota no checklist acima).
+  reunioes_online: "campanhas",
+  campanhas: "campanhas",
+  agente_prompt: "agente_ia",
+  agente_config: "agente_ia",
+  first_message: "first_message_testes",
+  bateria_testes: "first_message_testes",
+  sla_canais: "sla_canais",
+  validacao_final: "validacao_final",
+};
+
 function checklistParaFamilia(serviceFamily: string): ChecklistSeed {
   if (serviceFamily === "PABX") return PABX_CHECKLIST;
   if (serviceFamily === "CALLFACE_AI") return AI_CHECKLIST_BASE;
@@ -232,11 +392,37 @@ function checklistParaFamilia(serviceFamily: string): ChecklistSeed {
   return [];
 }
 
+// Onboarding (não Implantação) — Callface AI e White Label (27/08, contexto
+// mestre do Kauã: "Implantação agora é PABX. White Label fica em Onboarding"
+// + seção White Label "pertence ao Onboarding"). Isso reverte a correção de
+// 25/08 que tinha jogado White Label pra Implantação; a instrução de 27/08 é
+// posterior e explícita nos dois pontos do documento. O JSDoc de
+// `criarFulfillmentsParaServicos` abaixo já descrevia CALLFACE_AI/WHITE_LABEL
+// — a constante é que tinha ficado divergente do comportamento documentado.
+// Usado aqui pra decidir responsável automático + 1ª tarefa + notificação,
+// e reusado pelas rotas/telas de Onboarding pra filtrar a família certa
+// sem duplicar a regra em mais de um lugar.
+export const FAMILIAS_ONBOARDING = ["CALLFACE_AI", "WHITE_LABEL"] as const;
+
 /**
  * Cria o Fulfillment + checklist inicial pra cada serviço canônico
  * informado, se ainda não existir (idempotente via UNIQUE em
  * fulfillments.servico_canonico_id). Best-effort — nunca deve derrubar o
  * fluxo de Won que a chamou.
+ *
+ * Pra famílias de Onboarding (CALLFACE_AI/WHITE_LABEL — 25/08, spec do
+ * Kauã "nada disso deve depender de alguém clicar em novo onboarding"),
+ * além do fulfillment+checklist isso também: (1) atribui responsável —
+ * regra real reaproveitada, não inventada: mesmo responsável do negócio que
+ * gerou a venda (`contratos.negocioId → negocios.responsavelId`), já que
+ * ainda não existe um time/regra dedicada de "responsável de onboarding"
+ * separado do comercial; (2) cria a 1ª tarefa real ("Agendar reunião de
+ * onboarding com o cliente" — o guia real confirma que quase tudo acontece
+ * numa reunião só, então essa é literalmente a primeira ação que precisa
+ * existir); (3) notifica o responsável e registra o evento na timeline
+ * (`notificarFulfillmentOnboardingCriado`, mesmo padrão fire-and-forget de
+ * `notificarFormularioImplantacaoRecebido`). PABX não recebe nada disso
+ * aqui — Implantação continua com o fluxo que já tinha.
  */
 export async function criarFulfillmentsParaServicos(servicoIds: string[], organizacaoId: string): Promise<void> {
   for (const servicoId of servicoIds) {
@@ -244,8 +430,22 @@ export async function criarFulfillmentsParaServicos(servicoIds: string[], organi
       const [existente] = await db.select({ id: fulfillments.id }).from(fulfillments).where(eq(fulfillments.servicoCanonicoId, servicoId)).limit(1);
       if (existente) continue;
 
-      const [servico] = await db.select({ serviceFamily: servicosCanonicos.serviceFamily }).from(servicosCanonicos).where(eq(servicosCanonicos.id, servicoId)).limit(1);
+      const [servico] = await db.select({ serviceFamily: servicosCanonicos.serviceFamily, contratoId: servicosCanonicos.contratoId, leadId: servicosCanonicos.leadId })
+        .from(servicosCanonicos).where(eq(servicosCanonicos.id, servicoId)).limit(1);
       if (!servico) continue;
+
+      const ehOnboarding = (FAMILIAS_ONBOARDING as readonly string[]).includes(servico.serviceFamily);
+
+      let responsavelId: string | null = null;
+      if (ehOnboarding && servico.contratoId) {
+        const [comercial] = await db
+          .select({ responsavelId: negocios.responsavelId })
+          .from(contratos)
+          .innerJoin(negocios, eq(negocios.id, contratos.negocioId))
+          .where(eq(contratos.id, servico.contratoId))
+          .limit(1);
+        responsavelId = comercial?.responsavelId ?? null;
+      }
 
       const checklist = checklistParaFamilia(servico.serviceFamily);
       const [fulfillment] = await db.insert(fulfillments).values({
@@ -254,6 +454,7 @@ export async function criarFulfillmentsParaServicos(servicoIds: string[], organi
         serviceFamily: servico.serviceFamily,
         status: "NOT_STARTED",
         startedAt: new Date(),
+        responsavelId,
       }).returning({ id: fulfillments.id });
 
       if (checklist.length > 0) {
@@ -267,6 +468,21 @@ export async function criarFulfillmentsParaServicos(servicoIds: string[], organi
             metadata: item.metadata ?? null,
           }))
         );
+      }
+
+      if (ehOnboarding) {
+        if (servico.leadId) {
+          await db.insert(tarefas).values({
+            organizacaoId,
+            leadId: servico.leadId,
+            usuarioId: responsavelId,
+            titulo: "Agendar reunião de onboarding com o cliente",
+            tipo: "onboarding_agendar_reuniao",
+            prioridade: "alta",
+            venceEm: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000),
+          });
+        }
+        await notificarFulfillmentOnboardingCriado(fulfillment.id);
       }
     } catch (err) {
       console.error(`[fulfillment] falha ao criar fulfillment do serviço ${servicoId} (best-effort):`, err);

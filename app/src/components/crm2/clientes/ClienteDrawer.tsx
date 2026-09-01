@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { Cf2Avatar } from "@/components/crm2/ds/Avatar";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Building2, ArrowUpRight, Phone, Mail, MessageCircle, Calendar, StickyNote, CheckSquare, FileText, Download } from "lucide-react";
+import { ArrowUpRight, Phone, Mail, MessageCircle, Calendar, StickyNote, CheckSquare, FileText, Download } from "lucide-react";
 import { DetailDrawer } from "@/components/crm/DetailDrawer";
 import { useOrgUsuarios } from "@/components/crm/BoardFilters";
 import { AssignOwnerControl } from "@/components/crm2/shared/AssignOwnerControl";
@@ -105,7 +106,6 @@ export function Cf2ClienteDrawer({ empresaId, open, onClose }: { empresaId: stri
   });
 
   const nome = data?.empresa?.nome || "";
-  const initials = nome.split(" ").slice(0, 2).map((w) => w[0]).join("").toUpperCase();
   const statusKey = data?.statusFinanceiro || "";
   // Fallback ?? [] em todo campo-array da resposta (mesmo padrão já
   // endurecido no Cliente 360) — nunca quebra se o dev server servir uma
@@ -144,9 +144,7 @@ export function Cf2ClienteDrawer({ empresaId, open, onClose }: { empresaId: stri
         <div className="flex flex-col h-full min-h-0">
           {/* Header */}
           <div className="flex items-center gap-3 p-5 shrink-0" style={{ borderBottom: "1px solid var(--cf2-border-default)" }}>
-            <div className="flex items-center justify-center rounded-2xl shrink-0 w-11 h-11" style={{ background: "var(--cf2-bg-inverse)" }}>
-              {initials ? <span className="text-[13px] font-extrabold text-white">{initials}</span> : <Building2 className="w-5 h-5 text-white" />}
-            </div>
+            <Cf2Avatar nome={nome} tipo="empresa" size="lg" className="size-11" />
             <div className="flex-1 min-w-0">
               <p className="text-[16px] font-bold truncate" style={{ color: "var(--cf2-text-primary)" }}>{nome}</p>
               {statusKey && (

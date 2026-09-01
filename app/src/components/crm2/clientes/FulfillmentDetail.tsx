@@ -3,53 +3,39 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { ChevronRight, Truck, Copy, Check, Star, ArrowRightLeft, Calendar, FileText, Download, AlertTriangle, Clock, Circle } from "lucide-react";
+import {
+  ChevronRight, Truck, Check, Star, ArrowRightLeft, FileText, Download, AlertTriangle,
+  Phone, MessageCircle, Mail, Plus, ExternalLink, Users, Rocket, ListChecks, Building2, ShieldAlert, History, Paperclip, X,
+} from "lucide-react";
 import { toast } from "sonner";
 import { useOrgUsuarios, type OrgUsuario } from "@/components/crm/BoardFilters";
 import { AssignOwnerControl } from "@/components/crm2/shared/AssignOwnerControl";
-import { Cf2FulfillmentItemDrawer } from "./FulfillmentItemDrawer";
+import { digitsForDialer } from "@/lib/utils/callface-call";
+import { Cf2Card } from "@/components/crm2/ui/Card";
+import { Cf2Tabs, Cf2TabsList, Cf2TabsTrigger, Cf2TabsContent } from "@/components/crm2/ui/Tabs";
+import { Cf2Dialog, Cf2DialogContent, Cf2DialogHeader, Cf2DialogTitle } from "@/components/crm2/ui/Dialog";
+import { Cf2FulfillmentItemDrawer, type FulfillmentItem } from "./FulfillmentItemDrawer";
 
-// Metadata aditiva do item de checklist (fulfillment_itens.metadata, jsonb
-// já existia nulo no schema — sem migração nova). Hoje só populada pro
-// checklist CALLFACE_AI (ver src/lib/crm/fulfillment.ts). Ausente = etapa
-// administrativa/preparatória, fora da progressão pedagógica do guia de
-// onboarding.
+// Metadata aditiva do item de checklist (fulfillment_itens.metadata, jsonb já
+// existia nulo no schema). Hoje só populada pro checklist CALLFACE_AI (ver
+// src/lib/crm/fulfillment.ts). Ausente = etapa administrativa/preparatória.
 interface ItemMetadata {
   estagioPedagogico?: ("EXPLICAR" | "DEMONSTRAR" | "FAZER_JUNTO" | "CLIENTE_EXECUTA" | "VALIDAR")[];
   milestone?: "FIRST_VALUE";
-  marcacaoManual?: boolean;
   handoffCs?: boolean;
 }
 
-interface Item {
-  id: string;
-  workstream: string;
-  titulo: string;
-  status: "PENDING" | "IN_PROGRESS" | "BLOCKED" | "VALIDATION" | "DONE";
-  blockerType: string | null;
-  blockerReason: string | null;
+interface Item extends FulfillmentItem {
   metadata?: ItemMetadata | null;
-  completedAt: string | null;
-  completedByNome: string | null;
-  // Responsável por item (20/08) — null = usa o responsável do fulfillment
-  // inteiro como fallback só na exibição (nunca gravado como valor real).
-  responsavelId: string | null;
-  responsavelNome: string | null;
 }
 
 const ESTAGIO_LABEL: Record<string, string> = {
-  EXPLICAR: "Explicar",
-  DEMONSTRAR: "Demonstrar",
-  FAZER_JUNTO: "Fazer junto",
-  CLIENTE_EXECUTA: "Cliente executa",
-  VALIDAR: "Validar",
+  EXPLICAR: "Explicar", DEMONSTRAR: "Demonstrar", FAZER_JUNTO: "Fazer junto", CLIENTE_EXECUTA: "Cliente executa", VALIDAR: "Validar",
 };
 
 // Rótulo legível pro workstream livre (texto) — família a família, sem
-// travar a lista definitiva em código (workstream continua sendo
-// `text` no schema, cresce conforme o processo real). Mantido fiel ao
-// vocabulário do processo real de Delivery PABX (não renomeado pra bater
-// com o vocabulário de uma referência de UX externa).
+// travar a lista definitiva em código (workstream continua `text` no
+// schema). As 8 macroetapas reais de Delivery PABX + as de onboarding AI.
 const WORKSTREAM_LABEL: Record<string, string> = {
   levantamento: "Levantamento", portabilidade: "Portabilidade", softswitch: "Softswitch",
   infraestrutura: "Infraestrutura", licenciamento: "Licenciamento", configuracao_pbx: "Configuração PBX",
@@ -59,20 +45,11 @@ const WORKSTREAM_LABEL: Record<string, string> = {
   proximos_passos: "Próximos passos", branding: "Branding", ativacao_capacidade: "Ativação de capacidade",
 };
 
-const PABX_ABAS = [
-  { key: "visao-geral", label: "Visão geral" },
-  { key: "checklist", label: "Checklist" },
-  { key: "informacoes", label: "Informações coletadas" },
-  { key: "portabilidade", label: "Portabilidade" },
-  { key: "ura-ramais", label: "URA e Ramais" },
-];
-
 interface Formulario {
   id: string;
   status: string;
+  enviadoEm: string | null;
   submetidoEm: string | null;
-  // Respostas reais (jsonb livre) — já vinha completo do backend
-  // (db.select() sem projeção), só não estava tipado/lido no frontend.
   respostas?: {
     portabilidade?: { linhas?: { ddd?: string; numero?: string; novaLinha?: boolean }[]; razaoSocialTitular?: string; cnpjCpfTitular?: string; operadoraAtual?: string; responsavelTecnico?: { nome?: string; email?: string; telefone?: string } };
     ramais?: Record<string, unknown>[];
@@ -80,45 +57,15 @@ interface Formulario {
     outrasInformacoes?: string;
   };
 }
-
-interface ProximaAcao {
-  id: string;
-  titulo: string;
-  venceEm: string | null;
-  usuarioNome: string | null;
-}
-
-interface AnexoLegado {
-  id: string;
-  nomeArquivo: string;
-  tamanhoBytes: number | null;
-  criadoEmOriginal: string | null;
-  zohoId: string | null;
-  arquivoDisponivel: boolean;
-}
-
-// Materialização relacional do formulário (20/08) — mesma projeção real
-// que o backend grava em fulfillment_linhas_portabilidade/fulfillment_ramais
-// a cada submissão (delete+insert idempotente). Fonte mais confiável que o
-// jsonb bruto pra exibir em tabela — o jsonb continua sendo só backup.
-interface LinhaPortabilidadeRow {
-  id: string; ddd: string | null; numero: string | null; tipo: string;
-  operadoraAtual: string | null; titular: string | null; anexoUrl: string | null; anexoId: string | null;
-}
-interface RamalRow {
-  id: string; departamento: string | null; numeroExterno: string | null; ramal: string | null; usuario: string | null;
-  email: string | null; celular: string | null; modeloAparelho: string | null; usaAparelhoFisico: boolean;
-  gravacao: boolean; ligacoesInternacionais: boolean; paisesPermitidos: string[] | null;
-}
-
-interface AtividadeEmpresa {
-  id: string;
-  tipo: string;
-  titulo: string | null;
-  descricao: string | null;
-  createdAt: string;
-  autorNome: string | null;
-}
+interface ProximaAcao { id: string; titulo: string; venceEm: string | null; usuarioId: string | null; usuarioNome: string | null; }
+interface AnexoLegado { id: string; nomeArquivo: string; tamanhoBytes: number | null; criadoEmOriginal: string | null; zohoId: string | null; arquivoDisponivel: boolean; }
+interface AnexoReal { id: string; nomeArquivo: string; url: string; tipoMime: string | null; tamanhoBytes: number | null; createdAt: string; }
+interface LinhaPortabilidadeRow { id: string; ddd: string | null; numero: string | null; tipo: string; operadoraAtual: string | null; titular: string | null; anexoUrl: string | null; anexoId: string | null; }
+interface RamalRow { id: string; departamento: string | null; numeroExterno: string | null; ramal: string | null; usuario: string | null; email: string | null; celular: string | null; modeloAparelho: string | null; usaAparelhoFisico: boolean; gravacao: boolean; ligacoesInternacionais: boolean; paisesPermitidos: string[] | null; }
+interface AtividadeEmpresa { id: string; tipo: string; titulo: string | null; descricao: string | null; createdAt: string; autorNome: string | null; }
+interface Pessoa { leadId: string; nome: string; telefone: string | null; email: string | null; cargo: string | null; papel: string | null; }
+interface TarefaAvulsa { id: string; titulo: string; prioridade: string | null; venceEm: string | null; concluida: boolean; concluidaEm: string | null; usuarioId: string | null; usuarioNome: string | null; }
+interface Assinatura { status: string; mrr: number | null; moeda: string | null; currentPeriodEnd: string | null; stripeSubscriptionId: string | null; canceladaEm: string | null; }
 
 interface FulfillmentData {
   fulfillment: { id: string; status: string; serviceFamily: string; responsavelId: string | null; responsavelNome: string | null; startedAt: string | null; targetAt: string | null; completedAt: string | null; servicoCanonicoId: string };
@@ -129,68 +76,110 @@ interface FulfillmentData {
   empresaNome?: string | null;
   empresaWebsite?: string | null;
   empresaLogoUrl?: string | null;
+  leadId?: string | null;
+  leadNome?: string | null;
+  leadTelefone?: string | null;
+  leadEmail?: string | null;
+  leadCargo?: string | null;
   formulario?: Formulario | null;
   linhasPortabilidade?: LinhaPortabilidadeRow[];
   ramaisMaterializados?: RamalRow[];
   proximaAcao?: ProximaAcao | null;
   responsavelComercialNome?: string | null;
   negocioId?: string | null;
+  negocioTitulo?: string | null;
   propostaId?: string | null;
   propostaNumero?: number | null;
   atividadesEmpresa?: AtividadeEmpresa[];
+  pessoasEnvolvidas?: Pessoa[];
+  contextoVenda?: string | null;
+  tarefasOnboarding?: TarefaAvulsa[];
+  assinatura?: Assinatura | null;
 }
 
-// Rótulo curto pro tipo de atividade real (mesmo enum cru usado em
-// qualquer outra Timeline do CRM) — nunca mostrar o valor cru na UI.
 const ATIVIDADE_TIPO_LABEL: Record<string, string> = {
   nota: "Nota", documento: "Documento anexado", tarefa: "Tarefa criada", tarefa_legado: "Tarefa criada",
   ligacao: "Ligação", ligacao_legado: "Ligação", email: "E-mail", email_legado: "E-mail",
   whatsapp: "WhatsApp", reuniao: "Reunião", reuniao_legado: "Reunião",
+  responsavel_alterado: "Responsável alterado", implantacao_concluida: "Implantação concluída", onboarding_concluido: "Onboarding concluído",
 };
-
 const FAMILIA_LABEL: Record<string, string> = { CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label" };
+// 5 estados pedidos no redesign (26/08) — achatados a partir dos 7 reais do
+// banco (IN_REVIEW/CORRECTION_REQUIRED/APPROVED nunca são gravados hoje,
+// nenhuma rota de revisão grava isso ainda — mapeamento honesto, não uma
+// mudança de schema).
 const FORM_STATUS_LABEL: Record<string, string> = {
-  NOT_SENT: "Não enviado", SENT: "Enviado, aguardando cliente", IN_PROGRESS: "Cliente preenchendo",
-  SUBMITTED: "Enviado pelo cliente", IN_REVIEW: "Em revisão", CORRECTION_REQUIRED: "Correção solicitada", APPROVED: "Aprovado",
+  NOT_SENT: "Não enviado", SENT: "Enviado", IN_PROGRESS: "Em preenchimento",
+  SUBMITTED: "Recebido", IN_REVIEW: "Recebido", CORRECTION_REQUIRED: "Recebido", APPROVED: "Validado",
 };
 const STATUS_MACRO_LABEL: Record<string, string> = {
   NOT_STARTED: "Não iniciado", IN_PROGRESS: "Em andamento", BLOCKED_CUSTOMER: "Aguardando cliente",
-  BLOCKED_INTERNAL: "Bloqueio interno", BLOCKED_PROVIDER: "Bloqueio (operadora)",
-  READY_FOR_VALIDATION: "Pronto pra validação", COMPLETED: "Concluído", CANCELED: "Cancelado",
+  BLOCKED_INTERNAL: "Bloqueio interno", BLOCKED_PROVIDER: "Bloqueio (fornecedor)", BLOCKED_CARRIER: "Bloqueio (operadora)",
+  READY_FOR_VALIDATION: "Pronto pra Go Live", COMPLETED: "Concluída", CANCELED: "Cancelada",
 };
-function formatBytes(b: number | null): string {
-  if (!b) return "";
-  if (b < 1024 * 1024) return `${(b / 1024).toFixed(0)} KB`;
-  return `${(b / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-// Escopo contratado — mesmo dado de `escopoVendidoSnapshot`, chaves variam
-// por família/venda (snapshot é jsonb livre). Rótulo cai pra chave crua
-// quando não tem tradução, nunca esconde um campo real.
+const PAPEL_LABEL: Record<string, string> = { decisor: "Decisor", tecnico: "Responsável técnico", influenciador: "Influenciador", contato: "Contato" };
+const PRIORIDADE_LABEL: Record<string, string> = { alta: "Alta", media: "Média", baixa: "Baixa", urgente: "Urgente" };
 const ESCOPO_LABEL: Record<string, string> = {
   ramais: "Ramais", linhas: "Linhas", troncosSip: "Troncos SIP", ura: "URA",
   filasAtendimento: "Filas de atendimento", gravacao: "Gravação", portabilidade: "Portabilidade",
   hardware: "Hardware", plano: "Plano",
 };
 
+function formatBytes(b: number | null): string {
+  if (!b) return "";
+  if (b < 1024 * 1024) return `${(b / 1024).toFixed(0)} KB`;
+  return `${(b / (1024 * 1024)).toFixed(1)} MB`;
+}
+function formatDataHora(iso?: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return `${d.toLocaleDateString("pt-BR")} às ${d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`;
+}
+function toDateInputValue(iso?: string | null) {
+  return iso ? iso.slice(0, 10) : "";
+}
+function kindDeArquivo(nome: string, tipoMime?: string | null): "imagem" | "pdf" | "outro" {
+  if (tipoMime?.startsWith("image/")) return "imagem";
+  if (tipoMime === "application/pdf") return "pdf";
+  const ext = (nome.split(".").pop() || "").toLowerCase();
+  if (["png", "jpg", "jpeg", "gif", "webp"].includes(ext)) return "imagem";
+  if (ext === "pdf") return "pdf";
+  return "outro";
+}
+
+function CardTitulo({ icon: Icon, tint, title, subtitle }: { icon: React.ElementType; tint: string; title: string; subtitle?: string }) {
+  return (
+    <div className="flex items-center gap-2.5 mb-3">
+      <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: `color-mix(in srgb, ${tint} 16%, transparent)` }}>
+        <Icon className="w-4 h-4" style={{ color: tint }} />
+      </div>
+      <div className="min-w-0">
+        <p className="text-[13px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>{title}</p>
+        {subtitle && <p className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>{subtitle}</p>}
+      </div>
+    </div>
+  );
+}
+
+function Campo({ label, valor }: { label: string; valor: string }) {
+  return (
+    <div className="min-w-0">
+      <p className="text-[10px]" style={{ color: "var(--cf2-text-tertiary)" }}>{label}</p>
+      <p className="text-[13px] font-bold break-words" style={{ color: "var(--cf2-text-primary)" }}>{valor}</p>
+    </div>
+  );
+}
+
 /**
- * Workspace específico de Fulfillment (19/08, reconstrução completa 20/08
- * após referência de UX do Kauã; header + navegação por abas reconstruídos
- * em nova referência). Won terminou o comercial; isto é o processo de
- * entrega, com vida própria — nunca uma etapa do Pipeline. "Marcos de
- * ativação"/"Workstreams"/abas por etapa são REPRESENTAÇÕES do MESMO
- * checklist real (fulfillment_itens), nunca uma segunda fonte de dado —
- * as abas por workstream mostram um subconjunto filtrado dos mesmos itens,
- * a aba "Histórico" reusa a mesma atividade de conclusão real (completedAt/
- * completedBy), não um audit log fabricado à parte.
+ * Workspace de Fulfillment (redesign 26/08 — Implantação PABX vira workspace
+ * operacional em vez de checklist disperso em 5 abas; ver plano em
+ * decisoes/crm2-implantacao-pabx-redesign no vault). Compartilhado com
+ * onboarding Callface AI/White Label: PABX ganha a IA nova completa
+ * (Jornada por macroetapa, Tarefas, Documentos, Linha do tempo); as outras
+ * famílias continuam na visão antiga (fora do escopo deste redesign, só
+ * precisa continuar funcionando).
  */
 export function Cf2FulfillmentDetail({ fulfillmentId }: { fulfillmentId: string }) {
-  const qc = useQueryClient();
-  const [copiado, setCopiado] = useState(false);
-  const [itemSelecionado, setItemSelecionado] = useState<Item | null>(null);
-  const [aba, setAba] = useState<string>("visao-geral");
-  const { byId: usuariosById } = useOrgUsuarios();
-
   const { data, isLoading } = useQuery<FulfillmentData>({
     queryKey: ["cf2-fulfillment", fulfillmentId],
     queryFn: async () => {
@@ -200,7 +189,7 @@ export function Cf2FulfillmentDetail({ fulfillmentId }: { fulfillmentId: string 
     },
   });
 
-  const documentos = useQuery<AnexoLegado[]>({
+  const documentosLegado = useQuery<AnexoLegado[]>({
     queryKey: ["anexos-legado-fulfillment", data?.negocioId],
     queryFn: async () => {
       if (!data?.negocioId) return [];
@@ -212,653 +201,703 @@ export function Cf2FulfillmentDetail({ fulfillmentId }: { fulfillmentId: string 
     enabled: !!data?.negocioId,
   });
 
-  const toggleItem = useMutation({
-    mutationFn: async ({ itemId, status, blockerType }: { itemId: string; status: string; blockerType?: string | null }) => {
-      const body: Record<string, unknown> = { status };
-      if (status === "BLOCKED") body.blockerType = blockerType ?? "INTERNAL";
+  if (isLoading) return <p className="p-6 text-[13px]" style={{ color: "var(--cf2-text-tertiary)" }}>Carregando...</p>;
+  if (!data) return <p className="p-6 text-[13px]" style={{ color: "var(--cf2-text-tertiary)" }}>Fulfillment não encontrado.</p>;
+
+  if (data.fulfillment.serviceFamily !== "PABX") {
+    return <OnboardingLegacyView fulfillmentId={fulfillmentId} data={data} documentosLegado={documentosLegado.data ?? []} />;
+  }
+  return <PabxWorkspace fulfillmentId={fulfillmentId} data={data} documentosLegado={documentosLegado.data ?? []} />;
+}
+
+// ============================================================================
+// PABX — workspace novo (redesign 26/08)
+// ============================================================================
+
+interface Macroetapa { key: string; label: string; itens: Item[]; status: "blocked" | "done" | "current" | "pending"; responsavel: string | null; prazo: string | null; bloqueio: Item | null; }
+interface PreviewArquivo { nome: string; url: string; tipoMime?: string | null; }
+
+function PabxWorkspace({ fulfillmentId, data, documentosLegado }: { fulfillmentId: string; data: FulfillmentData; documentosLegado: AnexoLegado[] }) {
+  const qc = useQueryClient();
+  const { byId: usuariosById } = useOrgUsuarios();
+  const usuarios = Array.from(usuariosById.values());
+  const [aba, setAba] = useState("visao-geral");
+  const [copiado, setCopiado] = useState(false);
+  const [drawerWorkstream, setDrawerWorkstream] = useState<string | null>(null);
+  const [preview, setPreview] = useState<PreviewArquivo | null>(null);
+  const [novaTarefaOpen, setNovaTarefaOpen] = useState(false);
+  const [notaOpen, setNotaOpen] = useState(false);
+  const [notaTexto, setNotaTexto] = useState("");
+  const [respostasOpen, setRespostasOpen] = useState(false);
+  const [portabilidadeOpen, setPortabilidadeOpen] = useState(false);
+  const [ramaisOpen, setRamaisOpen] = useState(false);
+
+  const { fulfillment, itens, publicToken, escopoVendidoSnapshot, empresaId, empresaNome, empresaLogoUrl, leadId, leadNome, leadTelefone, leadCargo, formulario, linhasPortabilidade, ramaisMaterializados, proximaAcao, responsavelComercialNome, negocioId, negocioTitulo, propostaId, propostaNumero, atividadesEmpresa, pessoasEnvolvidas, contextoVenda, tarefasOnboarding, assinatura } = data;
+
+  const anexosReais = useQuery<AnexoReal[]>({
+    queryKey: ["anexos-fulfillment", negocioId],
+    queryFn: async () => {
+      if (!negocioId) return [];
+      const r = await fetch(`/api/anexos?negocioId=${negocioId}`);
+      if (!r.ok) return [];
+      const j = await r.json();
+      return j.anexos || [];
+    },
+    enabled: !!negocioId,
+  });
+
+  const invalidar = () => qc.invalidateQueries({ queryKey: ["cf2-fulfillment", fulfillmentId] });
+
+  const patchItem = useMutation({
+    mutationFn: async ({ itemId, body }: { itemId: string; body: Record<string, unknown> }) => {
       const r = await fetch(`/api/fulfillments/itens/${itemId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       if (!r.ok) throw new Error("falha");
       return r.json();
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["cf2-fulfillment", fulfillmentId] }),
-    onError: () => toast.error("Não foi possível atualizar o item"),
+    onSuccess: invalidar,
+    onError: () => toast.error("Não foi possível atualizar a tarefa"),
   });
 
-  if (isLoading) return <p className="p-6 text-[13px]" style={{ color: "var(--cf2-text-tertiary)" }}>Carregando...</p>;
-  if (!data) return <p className="p-6 text-[13px]" style={{ color: "var(--cf2-text-tertiary)" }}>Fulfillment não encontrado.</p>;
+  const criarItem = useMutation({
+    mutationFn: async (body: Record<string, unknown>) => {
+      const r = await fetch(`/api/fulfillments/${fulfillmentId}/itens`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      if (!r.ok) throw new Error("falha");
+      return r.json();
+    },
+    onSuccess: () => { invalidar(); setNovaTarefaOpen(false); toast.success("Tarefa adicionada"); },
+    onError: () => toast.error("Não foi possível criar a tarefa"),
+  });
 
-  const { fulfillment, itens, publicToken, escopoVendidoSnapshot, empresaId, empresaNome, empresaWebsite, empresaLogoUrl, formulario, linhasPortabilidade, ramaisMaterializados, proximaAcao, responsavelComercialNome, propostaId, propostaNumero, atividadesEmpresa } = data;
-  const isPabx = fulfillment.serviceFamily === "PABX";
-  const isAi = fulfillment.serviceFamily === "CALLFACE_AI";
-  const linkPublico = publicToken ? `${typeof window !== "undefined" ? window.location.origin : ""}/impl-pabx/${publicToken}` : null;
-  const concluidos = itens.filter((i) => i.status === "DONE").length;
-  const primeiroPendente = itens.find((i) => i.status !== "DONE");
+  const criarTarefaAvulsa = useMutation({
+    mutationFn: async (body: Record<string, unknown>) => {
+      const r = await fetch(`/api/tarefas`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      if (!r.ok) throw new Error("falha");
+      return r.json();
+    },
+    onSuccess: () => { invalidar(); setNovaTarefaOpen(false); toast.success("Tarefa adicionada"); },
+    onError: () => toast.error("Não foi possível criar a tarefa"),
+  });
 
-  // Workstreams — agrupa os itens reais pelo campo já existente
-  // (fulfillment_itens.workstream), preservando a ordem de primeira
-  // aparição (mesma ordem do checklist). Vira tanto os cards de "Workstreams"
-  // na Visão Geral quanto a lista de abas do header.
-  const workstreams: { key: string; itens: Item[] }[] = [];
+  const patchTarefaAvulsa = useMutation({
+    mutationFn: async ({ id, body }: { id: string; body: Record<string, unknown> }) => {
+      const r = await fetch(`/api/tarefas/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      if (!r.ok) throw new Error("falha");
+      return r.json();
+    },
+    onSuccess: invalidar,
+    onError: () => toast.error("Não foi possível atualizar a tarefa"),
+  });
+
+  const criarNota = useMutation({
+    mutationFn: async () => {
+      const r = await fetch(`/api/notas`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ conteudo: notaTexto, negocioId: negocioId || null, empresaId: empresaId || null }) });
+      if (!r.ok) throw new Error("falha");
+      return r.json();
+    },
+    onSuccess: () => { setNotaTexto(""); setNotaOpen(false); toast.success("Nota adicionada"); invalidar(); },
+    onError: () => toast.error("Não foi possível criar a nota"),
+  });
+
+  const editarPrevisao = useMutation({
+    mutationFn: async (targetAt: string | null) => {
+      const r = await fetch(`/api/fulfillments/${fulfillmentId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ targetAt }) });
+      if (!r.ok) throw new Error("falha");
+      return r.json();
+    },
+    onSuccess: invalidar,
+    onError: () => toast.error("Não foi possível atualizar a previsão"),
+  });
+
+  const goLive = useMutation({
+    mutationFn: async () => {
+      const r = await fetch(`/api/fulfillments/${fulfillmentId}/concluir`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ acao: "concluir_onboarding" }) });
+      if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error || "falha"); }
+      return r.json();
+    },
+    onSuccess: () => { invalidar(); toast.success("Implantação concluída"); },
+    onError: (e: Error) => toast.error(e.message || "Não foi possível concluir a implantação"),
+  });
+
+  // Macroetapas — agrupa os itens reais por workstream (mesmo dado real do
+  // checklist), preservando ordem de aparição. 9ª etapa (Go Live) é
+  // sintética, sem itens próprios — reflete só o status macro do fulfillment.
+  const grupos: { key: string; itens: Item[] }[] = [];
   for (const item of itens) {
-    let grupo = workstreams.find((w) => w.key === item.workstream);
-    if (!grupo) { grupo = { key: item.workstream, itens: [] }; workstreams.push(grupo); }
-    grupo.itens.push(item);
+    let g = grupos.find((x) => x.key === item.workstream);
+    if (!g) { g = { key: item.workstream, itens: [] }; grupos.push(g); }
+    g.itens.push(item);
   }
-
-  const pendencias = itens.filter((i) => i.status === "BLOCKED");
-  const atividadesRecentes = [...itens]
-    .filter((i) => i.completedAt)
-    .sort((a, b) => new Date(b.completedAt!).getTime() - new Date(a.completedAt!).getTime())
-    .slice(0, 8);
-  // "Histórico" (aba própria, referência de UX): mesma fonte real, sem
-  // limite de 8 — é a mesma atividade de conclusão, só a versão completa.
-  const historicoCompleto = [...itens]
-    .filter((i) => i.completedAt)
-    .sort((a, b) => new Date(b.completedAt!).getTime() - new Date(a.completedAt!).getTime());
-
-  // Resumo por status (referência de UX, 18/08) — 5 buckets reais, batem
-  // com os 5 status que o backend aceita (PENDING/IN_PROGRESS/BLOCKED/
-  // VALIDATION/DONE — VALIDATION somado 20/08, pedido Kauã).
-  const contagem = {
-    DONE: itens.filter((i) => i.status === "DONE").length,
-    VALIDATION: itens.filter((i) => i.status === "VALIDATION").length,
-    IN_PROGRESS: itens.filter((i) => i.status === "IN_PROGRESS").length,
-    PENDING: itens.filter((i) => i.status === "PENDING").length,
-    BLOCKED: itens.filter((i) => i.status === "BLOCKED").length,
-  };
-  const pct = itens.length > 0 ? Math.round((contagem.DONE / itens.length) * 100) : 0;
-
-  // A timeline mostra fases do mesmo projeto, não cada tarefa como uma
-  // etapa visual. Cada fase continua derivada dos itens reais do checklist.
-  const fases = workstreams.map((workstream, index) => {
-    const faseItens = workstream.itens;
-    const temBloqueio = faseItens.some((item) => item.status === "BLOCKED");
-    const temAndamento = faseItens.some((item) => item.status === "IN_PROGRESS" || item.status === "VALIDATION");
-    const concluida = faseItens.length > 0 && faseItens.every((item) => item.status === "DONE");
-    const atual = !concluida && (temBloqueio || temAndamento || !workstreams.slice(0, index).some((anterior) => anterior.itens.some((item) => item.status !== "DONE")));
+  const macroetapas: Macroetapa[] = grupos.map((g, index) => {
+    const bloqueio = g.itens.find((i) => i.status === "BLOCKED") ?? null;
+    const concluida = g.itens.length > 0 && g.itens.every((i) => i.status === "DONE" || i.status === "NOT_APPLICABLE");
+    const emAndamento = g.itens.some((i) => i.status === "IN_PROGRESS" || i.status === "VALIDATION");
+    const anteriorPendente = grupos.slice(0, index).some((ant) => ant.itens.some((i) => i.status !== "DONE" && i.status !== "NOT_APPLICABLE"));
+    const atual = !concluida && !bloqueio && (emAndamento || !anteriorPendente);
+    const responsaveis = new Set(g.itens.map((i) => i.responsavelId).filter(Boolean));
+    const prazos = g.itens.map((i) => i.dueDate).filter(Boolean) as string[];
     return {
-      ...workstream,
-      label: WORKSTREAM_LABEL[workstream.key] || workstream.key,
-      status: temBloqueio ? "blocked" : concluida ? "done" : atual ? "current" : "pending",
-      atual,
+      key: g.key, label: WORKSTREAM_LABEL[g.key] || g.key, itens: g.itens,
+      status: bloqueio ? "blocked" : concluida ? "done" : atual ? "current" : "pending",
+      responsavel: responsaveis.size === 1 ? (usuariosById.get(g.itens.find((i) => i.responsavelId)!.responsavelId!)?.nome ?? null) : responsaveis.size > 1 ? "Vários" : null,
+      prazo: prazos.length > 0 ? prazos.sort()[0] : null,
+      bloqueio,
     };
   });
+  const totalItens = itens.length;
+  const concluidosOuNA = itens.filter((i) => i.status === "DONE" || i.status === "NOT_APPLICABLE").length;
+  const pct = totalItens > 0 ? Math.round((concluidosOuNA / totalItens) * 100) : 0;
+  const bloqueioPrincipal = itens.find((i) => i.status === "BLOCKED") ?? null;
+  const eventoConclusao = (atividadesEmpresa ?? []).find((a) => a.tipo === "implantacao_concluida") ?? null;
 
-  // Próximas ações (18/08, pedido do Kauã: "tem que ter as tarefas pra
-  // clicar e abrir") — são os PRÓPRIOS itens do checklist real ainda não
-  // concluídos, não uma segunda lista fabricada. Cada um abre o mesmo
-  // drawer que o checklist completo usa.
-  const proximasAcoesChecklist = itens.filter((i) => i.status === "PENDING" || i.status === "IN_PROGRESS").slice(0, 4);
-
-  const diasUteis = (de: Date, ate: Date) => {
-    let n = 0;
-    const d = new Date(de);
-    while (d < ate) { d.setDate(d.getDate() + 1); const dow = d.getDay(); if (dow !== 0 && dow !== 6) n++; }
-    return n;
-  };
-  const inicio = fulfillment.startedAt ? new Date(fulfillment.startedAt) : null;
-  const previsao = fulfillment.targetAt ? new Date(fulfillment.targetAt) : null;
-  const hoje = new Date();
-  const tempoDecorrido = inicio ? diasUteis(inicio, hoje) : null;
-  const tempoRestante = previsao ? (previsao > hoje ? diasUteis(hoje, previsao) : 0) : null;
-
+  const linkPublico = publicToken ? `${typeof window !== "undefined" ? window.location.origin : ""}/impl-pabx/${publicToken}` : null;
   const escopoEntries = escopoVendidoSnapshot ? Object.entries(escopoVendidoSnapshot).filter(([, v]) => v !== null && v !== undefined && v !== "") : [];
-  // Resumo curto de capacidade contratada pro header (referência de UX) —
-  // pega até 3 campos do MESMO escopoVendidoSnapshot já usado na seção
-  // "Escopo contratado" abaixo, nunca uma segunda leitura/fonte.
-  const capacidadeResumo = escopoEntries
-    .filter(([k]) => ["ramais", "linhas", "troncosSip", "ura"].includes(k))
-    .map(([k, v]) => `${v} ${(ESCOPO_LABEL[k] || k).toLowerCase()}`)
-    .join(" · ");
 
-  // As fases ficam dentro da página do projeto. Só dados operacionais
-  // transversais têm aba própria, evitando transformar cada fase em uma
-  // navegação paralela.
-  const ABAS = isPabx
-    ? PABX_ABAS
-    : [
-        { key: "visao-geral", label: "Visão geral" },
-        { key: "checklist", label: "Checklist" },
-        { key: "atividades", label: "Atividades" },
-        { key: "historico", label: "Histórico" },
-      ];
+  const documentos: { id: string; nome: string; url: string | null; tamanho: number | null; origem: string; download?: string }[] = [
+    ...documentosLegado.map((d) => ({ id: `legado-${d.id}`, nome: d.nomeArquivo, url: d.arquivoDisponivel ? `/api/anexos-legado/${d.id}/download` : null, tamanho: d.tamanhoBytes, origem: "Histórico migrado", download: d.arquivoDisponivel ? `/api/anexos-legado/${d.id}/download` : undefined })),
+    ...(anexosReais.data ?? []).map((a) => ({ id: `anexo-${a.id}`, nome: a.nomeArquivo, url: a.url, tamanho: a.tamanhoBytes, origem: "Anexo", download: a.url })),
+    ...(linhasPortabilidade ?? []).filter((l) => l.anexoUrl).map((l) => ({ id: `porta-${l.id}`, nome: l.anexoId || "Comprovante de portabilidade", url: l.anexoUrl, tamanho: null, origem: "Portabilidade", download: l.anexoUrl || undefined })),
+  ];
+
+  // Linha do tempo semântica (26/08) — só eventos com sinal real, nunca
+  // fabricado. "Retorno da operadora"/"portabilidade solicitada" citados no
+  // brief não têm fonte hoje — ficam de fora até existir uma ação real.
+  const timelineEventos: { id: string; tipo: "tarefa" | "comunicacao" | "portabilidade" | "sistema" | "nota"; titulo: string; data: string }[] = [
+    { id: "criada", tipo: "sistema" as const, titulo: "Implantação criada", data: fulfillment.startedAt || "" },
+    ...(formulario?.enviadoEm ? [{ id: "form-enviado", tipo: "comunicacao" as const, titulo: "Formulário enviado ao cliente", data: formulario.enviadoEm }] : []),
+    ...(formulario?.submetidoEm ? [{ id: "form-recebido", tipo: "portabilidade" as const, titulo: "Formulário recebido do cliente", data: formulario.submetidoEm }] : []),
+    ...itens.filter((i) => i.completedAt).map((i) => ({ id: `item-${i.id}`, tipo: "tarefa" as const, titulo: `${i.completedByNome ? `${i.completedByNome} concluiu` : "Concluído:"} ${i.titulo}`, data: i.completedAt! })),
+    ...itens.filter((i) => i.blockedAt).map((i) => ({ id: `bloq-${i.id}`, tipo: "tarefa" as const, titulo: `Bloqueio criado: ${i.titulo}`, data: i.blockedAt! })),
+    ...(atividadesEmpresa ?? []).filter((a) => a.tipo === "responsavel_alterado" || a.tipo === "implantacao_concluida" || a.tipo === "nota").map((a) => ({ id: `ativ-${a.id}`, tipo: (a.tipo === "nota" ? "nota" : "sistema") as "nota" | "sistema", titulo: a.titulo || ATIVIDADE_TIPO_LABEL[a.tipo] || a.tipo, data: a.createdAt })),
+  ].filter((e) => e.data).sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime());
+  const [filtroTimeline, setFiltroTimeline] = useState<"todos" | "tarefa" | "comunicacao" | "portabilidade" | "sistema" | "nota">("todos");
+  const timelineFiltrada = filtroTimeline === "todos" ? timelineEventos : timelineEventos.filter((e) => e.tipo === filtroTimeline);
+
+  // Tarefas — unifica itens do checklist (com etapa/prazo/prioridade) e
+  // tarefas avulsas (leadId, sem etapa) na mesma tabela operacional.
+  type TarefaRow = { id: string; origem: "checklist" | "avulsa"; titulo: string; etapa: string | null; statusLabel: string; concluida: boolean; item?: Item; avulsa?: TarefaAvulsa };
+  const tarefaRows: TarefaRow[] = [
+    ...itens.map((i) => ({ id: i.id, origem: "checklist" as const, titulo: i.titulo, etapa: WORKSTREAM_LABEL[i.workstream] || i.workstream, statusLabel: "", concluida: i.status === "DONE" || i.status === "NOT_APPLICABLE", item: i })),
+    ...(tarefasOnboarding ?? []).map((t) => ({ id: t.id, origem: "avulsa" as const, titulo: t.titulo, etapa: null, statusLabel: t.concluida ? "Concluída" : "Pendente", concluida: t.concluida, avulsa: t })),
+  ].sort((a, b) => Number(a.concluida) - Number(b.concluida));
+
+  const acaoAtendimento = (canal: "ligacao" | "whatsapp" | "email") => {
+    if (!leadId) return undefined;
+    const params = new URLSearchParams({ leadId, canal });
+    if (leadTelefone) params.set("telefone", digitsForDialer(leadTelefone));
+    return `/atendimento?${params.toString()}`;
+  };
 
   return (
     <div className="flex flex-col gap-5 pb-8">
       <div className="flex items-center gap-1.5 text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>
-        <Link href={isPabx ? "/clientes/implantacao" : "/clientes/onboarding"} className="hover:underline">
-          {isPabx ? "Implantação" : "Onboarding"}
-        </Link>
+        <Link href="/clientes/implantacao" className="hover:underline">Implantação</Link>
         <ChevronRight className="w-3 h-3" />
         <span style={{ color: "var(--cf2-text-primary)" }}>{empresaNome || "—"}</span>
       </div>
 
-      <div className="flex items-center gap-3">
-        <h1 className="text-[22px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Implantação PABX</h1>
-        <span className="px-2.5 py-1 rounded-full text-[11px] font-bold" style={{ background: fulfillment.status === "COMPLETED" ? "#effaf2" : fulfillment.status === "BLOCKED_PROVIDER" || fulfillment.status === "BLOCKED_INTERNAL" ? "#fff1f2" : "#eef9e8", color: fulfillment.status === "COMPLETED" ? "var(--cf2-success-text)" : fulfillment.status.startsWith("BLOCKED") ? "#dc2626" : "#4d8a1d" }}>
-          {STATUS_MACRO_LABEL[fulfillment.status] || fulfillment.status}
-        </span>
-      </div>
-      <p className="-mt-3 text-[12px]" style={{ color: "var(--cf2-text-secondary)" }}>Acompanhe todas as etapas e tarefas da implantação para este cliente.</p>
-
-      {/* Header (reconstruído fiel à referência de UX): card da empresa à
-          esquerda (domínio real de empresas.website, responsável, plano
-          contratado real de escopoVendidoSnapshot.plano) + estatísticas à
-          direita. "E-mail técnico" da referência NÃO tem fonte real hoje —
-          sinalizado explicitamente em vez de inventado. */}
-      <div className="flex flex-col lg:flex-row gap-4 p-4 rounded-2xl" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
-        <div className="flex items-start gap-3 lg:w-[410px] shrink-0">
-          <div className="flex items-center justify-center rounded-xl shrink-0 w-14 h-14 overflow-hidden" style={{ background: "var(--cf2-bg-inverse)" }}>
-            {empresaLogoUrl ? <img src={empresaLogoUrl} alt="" className="w-full h-full object-cover" /> : <Truck className="w-5 h-5 text-white" />}
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <p className="text-[17px] font-bold truncate" style={{ color: "var(--cf2-text-primary)" }}>{empresaId ? <Link href={`/clientes/${empresaId}`} className="hover:underline">{empresaNome}</Link> : empresaNome || "—"}</p>
-              <span className="text-[10px] px-2 py-0.5 rounded-full font-bold" style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-secondary)" }}>{FAMILIA_LABEL[fulfillment.serviceFamily] || fulfillment.serviceFamily}</span>
+      {/* Header — identidade, status, ações e panorama num só bloco escuro
+          (mesmo padrão de contraste já usado no header de Empresa/Negócio). */}
+      <div className="rounded-2xl p-5 flex flex-col gap-4" style={{ background: "var(--cf2-chrome-bg-alt)", border: "1px solid var(--cf2-chrome-border)" }}>
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="flex items-start gap-3 min-w-0">
+            <div className="flex items-center justify-center rounded-xl shrink-0 w-12 h-12 overflow-hidden" style={{ background: "var(--cf2-chrome-surface-active)" }}>
+              {empresaLogoUrl ? <img src={empresaLogoUrl} alt="" className="w-full h-full object-cover" /> : <Truck className="w-5 h-5" style={{ color: "var(--cf2-chrome-text-primary)" }} />}
             </div>
-            <div className="grid grid-cols-2 gap-x-4 gap-y-1 mt-2">
-              <Campo label="Domínio" valor={empresaWebsite || "—"} />
-              <div className="min-w-0">
-                <p className="text-[10px]" style={{ color: "var(--cf2-text-tertiary)" }}>Responsável interno</p>
-                <AssignOwnerControl
-                  entityType="fulfillment"
-                  entityId={fulfillment.id}
-                  currentOwnerId={fulfillment.responsavelId}
-                  usuarios={Array.from(usuariosById.values())}
-                  onChanged={() => qc.invalidateQueries({ queryKey: ["cf2-fulfillment", fulfillmentId] })}
-                />
-              </div>
-              {/* Responsável comercial (19/08) — não é papel novo no modelo,
-                  é só quem fechou a venda (negocios.responsavelId), dado
-                  real de outra tabela, mostrado pra dar contexto de handoff. */}
-              <Campo label="Plano contratado" valor={(escopoVendidoSnapshot?.plano as string) || "—"} />
-              <Campo label="E-mail técnico" valor="Sem fonte no modelo hoje" />
-            </div>
-          </div>
-        </div>
-
-        <div className="flex-1 grid grid-cols-2 sm:grid-cols-5 gap-4 lg:pl-5 lg:border-l" style={{ borderColor: "var(--cf2-border-default)" }}>
-          <Campo label="Status da implantação" valor={STATUS_MACRO_LABEL[fulfillment.status] || fulfillment.status} />
-          <div>
-            <p className="text-[10px]" style={{ color: "var(--cf2-text-tertiary)" }}>Progresso geral</p>
-            <p className="text-[16px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>{pct}%</p>
-            <div className="w-full h-1.5 rounded-full overflow-hidden mt-1" style={{ background: "var(--cf2-bg-surface-muted)" }}>
-              <div className="h-full rounded-full" style={{ width: `${pct}%`, background: "var(--cf2-success-text)" }} />
-            </div>
-          </div>
-          <Campo label="Capacidade contratada" valor={capacidadeResumo || "—"} />
-          <Campo label="Previsão de conclusão" valor={previsao ? previsao.toLocaleDateString("pt-BR") : "—"} />
-          <Campo label="Responsável atual" valor={fulfillment.responsavelNome || "Sem responsável"} />
-        </div>
-      </div>
-
-      {/* Navegação por abas (referência de UX) — Visão Geral é o conteúdo
-          completo de sempre; uma aba por workstream real (nunca uma lista
-          fixa — cresce/encolhe com o checklist de cada família); Atividades
-          e Histórico reusam a mesma atividade de conclusão real. */}
-      <div className="flex items-center gap-1 overflow-x-auto pb-1" style={{ borderBottom: "1px solid var(--cf2-border-default)" }}>
-        {ABAS.map((a) => (
-          <button
-            key={a.key}
-            onClick={() => setAba(a.key)}
-            className="shrink-0 px-3 py-2 text-[12px] font-semibold whitespace-nowrap"
-            style={{
-              color: aba === a.key ? "var(--cf2-accent-border)" : "var(--cf2-text-secondary)",
-              borderBottom: aba === a.key ? "2px solid var(--cf2-accent-border)" : "2px solid transparent",
-            }}
-          >
-            {a.label}
-          </button>
-        ))}
-      </div>
-
-      {aba === "visao-geral" && (
-        <>
-          {/* Progresso por etapa (referência de UX) + Resumo da implantação —
-              mesma linha, mesmos itens reais do checklist (fulfillment_itens),
-              nunca uma segunda fonte. Banner de aviso é texto fixo real (o
-              processo real permite paralelismo entre workstreams, documentado
-              em fulfillment.ts), não um estado calculado. */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-            <div className="lg:col-span-2 p-5 rounded-2xl flex flex-col gap-3" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
-              <p className="text-[14px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Progresso por etapa</p>
-              <div className="flex items-start overflow-x-auto pb-1">
-                {fases.map((fase, i) => {
-                  const done = fase.status === "done";
-                  const bloqueado = fase.status === "blocked";
-                  const destacado = fase.status === "current" || bloqueado;
-                  const corDestaque = bloqueado ? "#ef4444" : "var(--cf2-accent)";
-                  const corTexto = done ? "var(--cf2-success-text)" : bloqueado ? "#ef4444" : destacado ? "var(--cf2-accent-border)" : "var(--cf2-text-tertiary)";
-                  const itemDaFase = fase.itens.find((item) => item.status !== "DONE") || fase.itens[0];
-                  return (
-                    <div key={fase.key} className="flex items-center shrink-0">
-                      <button onClick={() => itemDaFase && setItemSelecionado(itemDaFase)} className="flex flex-col items-center gap-1.5 w-[98px]">
-                        <div
-                          className="flex items-center justify-center rounded-full w-8 h-8 text-[11px] font-bold shrink-0"
-                          style={{
-                            background: done ? "var(--cf2-success-text)" : destacado ? corDestaque : "var(--cf2-bg-surface-muted)",
-                            color: done || destacado ? "#fff" : "var(--cf2-text-tertiary)",
-                            border: destacado && !bloqueado ? "2px solid var(--cf2-accent-border)" : "none",
-                          }}
-                        >
-                          {done ? <Check className="w-3.5 h-3.5" /> : bloqueado ? <AlertTriangle className="w-3.5 h-3.5" /> : i + 1}
-                        </div>
-                        <p className="text-[10px] text-center leading-tight font-semibold" style={{ color: done || destacado ? "var(--cf2-text-primary)" : "var(--cf2-text-tertiary)" }}>{i + 1}. {fase.label}</p>
-                        <p className="text-[9px] text-center" style={{ color: corTexto }}>{done ? "Concluído" : bloqueado ? "Bloqueado" : destacado ? "Em andamento" : "Pendente"}</p>
-                      </button>
-                      {i < fases.length - 1 && <div className="w-5 h-[2px] mt-4 shrink-0" style={{ background: done ? "var(--cf2-success-text)" : "var(--cf2-border-default)" }} />}
-                    </div>
-                  );
-                })}
-              </div>
-              <p className="text-[11px] px-3 py-2 rounded-lg" style={{ background: "var(--cf2-accent-bg-subtle)", color: "var(--cf2-accent-border)" }}>
-                Algumas etapas podem ocorrer em paralelo (ex.: portabilidade e softswitch) — acompanhe os blocos abaixo pra mais detalhes.
-              </p>
-            </div>
-
-            {/* Resumo da implantação — 4 buckets reais, batem exatamente com os
-                5 status que o backend suporta (PENDING/IN_PROGRESS/BLOCKED/
-                VALIDATION/DONE — VALIDATION somado 20/08). Donut via
-                conic-gradient puro, sem lib nova. */}
-            <div className="p-5 rounded-2xl flex flex-col gap-4" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
-              <p className="text-[14px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Resumo da implantação</p>
-              <div className="flex items-center gap-5">
-                <div
-                  className="rounded-full shrink-0 flex items-center justify-center"
-                  style={{
-                    width: 88, height: 88,
-                    background: itens.length === 0 ? "var(--cf2-bg-surface-muted)" : `conic-gradient(
-                      var(--cf2-success-text) 0 ${(contagem.DONE / itens.length) * 360}deg,
-                      #8e27ef 0 ${((contagem.DONE + contagem.VALIDATION) / itens.length) * 360}deg,
-                      var(--cf2-accent-border) 0 ${((contagem.DONE + contagem.VALIDATION + contagem.IN_PROGRESS) / itens.length) * 360}deg,
-                      #ef4444 0 ${((contagem.DONE + contagem.VALIDATION + contagem.IN_PROGRESS + contagem.BLOCKED) / itens.length) * 360}deg,
-                      var(--cf2-border-default) 0 360deg)`,
-                  }}
-                >
-                  <div className="rounded-full flex items-center justify-center" style={{ width: 62, height: 62, background: "var(--cf2-bg-surface)" }}>
-                    <p className="text-[16px] font-extrabold" style={{ color: "var(--cf2-text-primary)" }}>{pct}%</p>
-                  </div>
-                </div>
-                <div className="flex flex-col gap-1.5 flex-1">
-                  {[
-                    { label: "Concluídas", n: contagem.DONE, cor: "var(--cf2-success-text)" },
-                    { label: "Validação", n: contagem.VALIDATION, cor: "#8e27ef" },
-                    { label: "Em andamento", n: contagem.IN_PROGRESS, cor: "var(--cf2-accent-border)" },
-                    { label: "Pendente", n: contagem.PENDING, cor: "var(--cf2-border-default)" },
-                    { label: "Bloqueadas", n: contagem.BLOCKED, cor: "#ef4444" },
-                  ].map((b) => (
-                    <div key={b.label} className="flex items-center justify-between text-[11px]">
-                      <span className="flex items-center gap-1.5" style={{ color: "var(--cf2-text-secondary)" }}>
-                        <span className="w-2 h-2 rounded-full shrink-0" style={{ background: b.cor }} />{b.label}
-                      </span>
-                      <span className="font-bold" style={{ color: "var(--cf2-text-primary)" }}>{b.n} etapa{b.n === 1 ? "" : "s"}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-            <div className="lg:col-span-2 p-5 rounded-2xl" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
-              <div className="flex items-start justify-between gap-4 mb-3"><div><p className="text-[14px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Checklist da implantação</p><p className="text-[11px] mt-1" style={{ color: "var(--cf2-text-secondary)" }}>Acompanhe todas as tarefas e entregas necessárias.</p></div><button onClick={() => setAba("checklist")} className="text-[11px] font-bold whitespace-nowrap" style={{ color: "var(--cf2-accent-border)" }}>Ver checklist completo →</button></div>
-              <div className="flex flex-wrap gap-2 mb-3">
-                {[{ label: "Todos", n: itens.length }, { label: "Pendentes", n: contagem.PENDING }, { label: "Em andamento", n: contagem.IN_PROGRESS }, { label: "Concluídos", n: contagem.DONE }, { label: "Bloqueados", n: contagem.BLOCKED }].map((f) => <span key={f.label} className="px-2.5 py-1 rounded-full text-[10px] font-bold" style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-secondary)" }}>{f.label} <strong>{f.n}</strong></span>)}
-              </div>
-              <ChecklistLista itens={itens.slice(0, 6)} toggleItem={toggleItem} setItemSelecionado={setItemSelecionado} usuarios={Array.from(usuariosById.values())} fulfillmentResponsavelId={fulfillment.responsavelId} fulfillmentResponsavelNome={fulfillment.responsavelNome} onOwnerChanged={() => qc.invalidateQueries({ queryKey: ["cf2-fulfillment", fulfillmentId] })} />
-            </div>
-
-            <div className="flex flex-col gap-5">
-              <div className="p-5 rounded-2xl" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
-                <p className="text-[14px] font-bold mb-3" style={{ color: "var(--cf2-text-primary)" }}>Bloqueios e pendências</p>
-                {pendencias.length === 0 ? <p className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhuma pendência bloqueada.</p> : pendencias.slice(0, 3).map((p) => <button key={p.id} onClick={() => setItemSelecionado(p)} className="w-full flex items-start gap-2.5 p-2.5 mb-2 rounded-lg text-left" style={{ background: "var(--cf2-bg-surface-muted)" }}><AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" style={{ color: "var(--cf2-danger-text)" }} /><span className="min-w-0"><span className="block text-[12px] font-semibold truncate" style={{ color: "var(--cf2-text-primary)" }}>{p.titulo}</span><span className="block text-[11px] truncate" style={{ color: "var(--cf2-text-tertiary)" }}>{p.blockerReason || "Bloqueio registrado no checklist"}</span></span></button>)}
-              </div>
-              <div className="p-5 rounded-2xl" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
-                <p className="text-[14px] font-bold mb-3" style={{ color: "var(--cf2-text-primary)" }}>Próximas ações</p>
-                {proximasAcoesChecklist.slice(0, 3).map((item) => <button key={item.id} onClick={() => setItemSelecionado(item)} className="w-full flex items-center gap-2.5 p-2.5 mb-2 rounded-lg text-left" style={{ background: "var(--cf2-bg-surface-muted)" }}>{item.status === "IN_PROGRESS" ? <Clock className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--cf2-accent-border)" }} /> : <Circle className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--cf2-text-tertiary)" }} />}<span className="text-[12px] font-semibold truncate" style={{ color: "var(--cf2-text-primary)" }}>{item.titulo}</span></button>)}
-                {proximaAcao && <p className="text-[11px] mt-2 pt-2" style={{ borderTop: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-tertiary)" }}>Tarefa vinculada: {proximaAcao.titulo}</p>}
-              </div>
-            </div>
-          </div>
-
-          {/* Informações coletadas e atividades recentes seguem as fontes reais
-              do formulário e da Timeline da empresa. */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-            <div className="p-5 rounded-2xl" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
-              <p className="text-[14px] font-bold mb-1" style={{ color: "var(--cf2-text-primary)" }}>Informações coletadas</p>
-              <p className="text-[11px] mb-3" style={{ color: "var(--cf2-text-secondary)" }}>Resumo das informações já levantadas no formulário de implantação.</p>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-                <Campo label="Responsável técnico" valor={formulario?.respostas?.portabilidade?.responsavelTecnico?.nome || "—"} />
-                <Campo label="Telefone de contato" valor={formulario?.respostas?.portabilidade?.responsavelTecnico?.telefone || "—"} />
-                <Campo label="Linhas de portabilidade" valor={String(linhasPortabilidade?.length ?? formulario?.respostas?.portabilidade?.linhas?.length ?? 0)} />
-                <Campo label="Quantidade de ramais" valor={String(ramaisMaterializados?.length ?? formulario?.respostas?.ramais?.length ?? 0)} />
-                <Campo label="Opções de URA" valor={String(formulario?.respostas?.ura?.opcoes?.length ?? 0)} />
-                <Campo label="Horário de atendimento" valor={formulario?.respostas?.ura?.diasHorarioAtendimento || "—"} />
-              </div>
-              {linkPublico && <div className="flex items-center gap-2 mt-3 pt-3" style={{ borderTop: "1px solid var(--cf2-border-default)" }}><span className="text-[11px] flex-1 truncate" style={{ color: "var(--cf2-text-tertiary)" }}>Formulário: {FORM_STATUS_LABEL[formulario?.status || ""] || formulario?.status || "link disponível"}</span><button onClick={() => { navigator.clipboard.writeText(linkPublico); setCopiado(true); setTimeout(() => setCopiado(false), 2000); }} className="px-2 py-1 rounded-md text-[10px] font-bold" style={{ background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" }}>{copiado ? "Copiado" : "Copiar link"}</button></div>}
-            </div>
-            <div className="p-5 rounded-2xl flex flex-col gap-2" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
-              <p className="text-[14px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Atividades recentes</p>
-              {(atividadesEmpresa ?? []).length === 0 ? (
-                <p className="text-[13px]" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhuma atividade registrada pra esta empresa ainda.</p>
-              ) : (atividadesEmpresa ?? []).map((a) => (
-                <div key={a.id} className="flex items-start gap-2.5 p-2.5 rounded-lg" style={{ background: "var(--cf2-bg-surface-muted)" }}>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[12px] truncate" style={{ color: "var(--cf2-text-primary)" }}>
-                      {a.autorNome ? `${a.autorNome} · ` : ""}{ATIVIDADE_TIPO_LABEL[a.tipo] || a.tipo}{a.titulo ? ` — ${a.titulo}` : ""}
-                    </p>
-                    {a.descricao && <p className="text-[11px] truncate" style={{ color: "var(--cf2-text-tertiary)" }}>{a.descricao}</p>}
-                  </div>
-                  <p className="text-[11px] shrink-0" style={{ color: "var(--cf2-text-tertiary)" }}>{new Date(a.createdAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })} {new Date(a.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</p>
-                </div>
-              ))}
-            </div>
-
-          </div>
-
-          {/* Documentos e guias (referência de UX) — histórico Zoho real via
-              negocioId resolvido no backend + contrato real quando existe
-              corpo gerado. Sem seção fingindo ter "guias" que não existem. */}
-          <div className="p-5 rounded-2xl flex flex-col gap-2" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
-            <p className="text-[14px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Documentos</p>
-            {(documentos.data ?? []).length === 0 ? (
-              <p className="text-[13px]" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhum documento histórico encontrado pra este negócio.</p>
-            ) : (documentos.data ?? []).map((d) => (
-              <div key={d.id} className="flex items-center gap-3 p-2.5 rounded-lg" style={{ background: "var(--cf2-bg-surface-muted)" }}>
-                <FileText className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--cf2-text-secondary)" }} />
-                <div className="flex-1 min-w-0">
-                  <p className="text-[12px] font-semibold truncate" style={{ color: "var(--cf2-text-primary)" }}>{d.nomeArquivo}</p>
-                  <p className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>{formatBytes(d.tamanhoBytes)}</p>
-                </div>
-                {d.arquivoDisponivel && (
-                  <a href={`/api/anexos-legado/${d.id}/download`} className="p-1.5 rounded-lg shrink-0" style={{ background: "var(--cf2-bg-surface)" }}>
-                    <Download className="w-3.5 h-3.5" style={{ color: "var(--cf2-text-secondary)" }} />
-                  </a>
-                )}
-              </div>
-            ))}
-          </div>
-        </>
-      )}
-
-      {aba === "checklist" && (
-        <div className="flex flex-col gap-5">
-          <div className="p-5 rounded-2xl" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
-            <p className="text-[16px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Checklist da implantação</p>
-            <p className="text-[12px] mt-1" style={{ color: "var(--cf2-text-secondary)" }}>Todas as tarefas pertencem ao mesmo projeto. Abra uma tarefa para atualizar status, bloqueio ou responsável.</p>
-          </div>
-          {fases.map((fase) => (
-            <div key={fase.key} className="p-5 rounded-2xl" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
-              <div className="flex items-center justify-between gap-3 mb-3">
-                <div>
-                  <p className="text-[14px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>{fase.label}</p>
-                  <p className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>{fase.itens.filter((item) => item.status === "DONE").length} de {fase.itens.length} tarefas concluídas</p>
-                </div>
-                <span className="text-[10px] px-2 py-1 rounded-full font-bold" style={{ background: fase.status === "blocked" ? "#fff1f2" : fase.status === "done" ? "#effaf2" : "var(--cf2-bg-surface-muted)", color: fase.status === "blocked" ? "#dc2626" : fase.status === "done" ? "var(--cf2-success-text)" : "var(--cf2-text-secondary)" }}>
-                  {fase.status === "blocked" ? "Bloqueada" : fase.status === "done" ? "Concluída" : fase.status === "current" ? "Em andamento" : "Pendente"}
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h1 className="text-[19px] font-bold truncate" style={{ color: "var(--cf2-chrome-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>{empresaNome || "—"}</h1>
+                <span className="text-[10px] px-2 py-0.5 rounded-full font-bold" style={{ background: "var(--cf2-chrome-surface-active)", color: "var(--cf2-chrome-text-secondary)" }}>{FAMILIA_LABEL[fulfillment.serviceFamily]}</span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full font-bold" style={{ background: fulfillment.status === "COMPLETED" ? "var(--cf2-accent-bg-subtle)" : fulfillment.status.startsWith("BLOCKED") ? "#ef444422" : "var(--cf2-chrome-surface-active)", color: fulfillment.status === "COMPLETED" ? "var(--cf2-accent-border)" : fulfillment.status.startsWith("BLOCKED") ? "#ff8e83" : "var(--cf2-chrome-text-primary)" }}>
+                  {STATUS_MACRO_LABEL[fulfillment.status] || fulfillment.status}
                 </span>
               </div>
-              <ChecklistLista
-                itens={fase.itens}
-                toggleItem={toggleItem}
-                setItemSelecionado={setItemSelecionado}
-                usuarios={Array.from(usuariosById.values())}
-                fulfillmentResponsavelId={fulfillment.responsavelId}
-                fulfillmentResponsavelNome={fulfillment.responsavelNome}
-                onOwnerChanged={() => qc.invalidateQueries({ queryKey: ["cf2-fulfillment", fulfillmentId] })}
-              />
+              <p className="text-[12px] mt-0.5" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Implantação PABX{leadNome ? ` · contato principal ${leadNome}${leadCargo ? ` (${leadCargo})` : ""}` : ""}</p>
             </div>
-          ))}
-        </div>
-      )}
+          </div>
 
-      {aba === "informacoes" && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          <div className="p-5 rounded-2xl" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
-            <p className="text-[14px] font-bold mb-3" style={{ color: "var(--cf2-text-primary)" }}>Informações do formulário público</p>
-            {!formulario?.respostas ? <p className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhuma resposta recebida do cliente.</p> : (
-              <div className="grid grid-cols-2 gap-3">
-                <Campo label="Responsável técnico" valor={formulario.respostas.portabilidade?.responsavelTecnico?.nome || "—"} />
-                <Campo label="Contato técnico" valor={formulario.respostas.portabilidade?.responsavelTecnico?.telefone || "—"} />
-                <Campo label="Linhas portadas/novas" valor={String(formulario.respostas.portabilidade?.linhas?.length ?? linhasPortabilidade?.length ?? 0)} />
-                <Campo label="Ramais e usuários" valor={String(ramaisMaterializados?.length ?? formulario.respostas.ramais?.length ?? 0)} />
-                <Campo label="Opções de URA" valor={String(formulario.respostas.ura?.opcoes?.filter((opcao) => (opcao.destinos?.length ?? 0) > 0).length ?? 0)} />
-                <Campo label="Voz da URA" valor={formulario.respostas.ura?.vozSelecionada || "—"} />
-                <Campo label="Horário de atendimento" valor={formulario.respostas.ura?.diasHorarioAtendimento || "—"} />
-                <Campo label="Status" valor={FORM_STATUS_LABEL[formulario.status] || formulario.status} />
+          <div className="flex flex-wrap gap-1.5">
+            <AcaoHeader href={acaoAtendimento("ligacao")} icon={Phone} label="Ligar" />
+            <AcaoHeader href={acaoAtendimento("whatsapp")} icon={MessageCircle} label="WhatsApp" />
+            <AcaoHeader href={acaoAtendimento("email")} icon={Mail} label="E-mail" />
+            <button onClick={() => setNovaTarefaOpen(true)} className="flex items-center gap-1.5 text-[12px] font-semibold px-3 py-1.5 rounded-lg" style={{ background: "var(--cf2-chrome-surface-active)", color: "var(--cf2-chrome-text-primary)" }}><Plus className="w-3.5 h-3.5" />Tarefa</button>
+            <button onClick={() => setNotaOpen(true)} className="flex items-center gap-1.5 text-[12px] font-semibold px-3 py-1.5 rounded-lg" style={{ background: "var(--cf2-chrome-surface-active)", color: "var(--cf2-chrome-text-primary)" }}><FileText className="w-3.5 h-3.5" />Nota</button>
+            {empresaId && <Link href={`/clientes/${empresaId}`} className="flex items-center gap-1.5 text-[12px] font-semibold px-3 py-1.5 rounded-lg" style={{ background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" }}><ExternalLink className="w-3.5 h-3.5" />Cliente 360</Link>}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 pt-3" style={{ borderTop: "1px solid var(--cf2-chrome-border-subtle)" }}>
+          <CampoChrome label="Responsável atual" valor={fulfillment.responsavelNome || "Sem responsável"} />
+          <CampoChrome label="Início" valor={fulfillment.startedAt ? new Date(fulfillment.startedAt).toLocaleDateString("pt-BR") : "—"} />
+          <label className="min-w-0 cursor-pointer">
+            <p className="text-[10px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Previsão de conclusão</p>
+            <input
+              type="date" defaultValue={toDateInputValue(fulfillment.targetAt)}
+              onBlur={(e) => editarPrevisao.mutate(e.target.value || null)}
+              className="text-[13px] font-bold outline-none bg-transparent"
+              style={{ color: "var(--cf2-chrome-text-primary)", colorScheme: "dark" }}
+            />
+          </label>
+          <div>
+            <p className="text-[10px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Progresso</p>
+            <p className="text-[15px] font-bold" style={{ color: "var(--cf2-chrome-text-primary)" }}>{pct}% <span className="text-[11px] font-normal" style={{ color: "var(--cf2-chrome-text-secondary)" }}>({concluidosOuNA}/{totalItens})</span></p>
+          </div>
+          <CampoChrome label="Última atividade" valor={atividadesEmpresa && atividadesEmpresa.length > 0 ? formatDataHora(atividadesEmpresa[0].createdAt) : "—"} />
+          <CampoChrome label="Principal bloqueio" valor={bloqueioPrincipal ? bloqueioPrincipal.titulo : "Nenhum"} destaque={!!bloqueioPrincipal} />
+        </div>
+      </div>
+
+      <Cf2Tabs value={aba} onValueChange={setAba}>
+        <Cf2TabsList>
+          <Cf2TabsTrigger value="visao-geral">Visão geral</Cf2TabsTrigger>
+          <Cf2TabsTrigger value="tarefas">Tarefas</Cf2TabsTrigger>
+          <Cf2TabsTrigger value="documentos">Documentos ({documentos.length})</Cf2TabsTrigger>
+          <Cf2TabsTrigger value="timeline">Linha do tempo</Cf2TabsTrigger>
+        </Cf2TabsList>
+
+        <Cf2TabsContent value="visao-geral">
+          <div className="flex flex-col gap-5">
+            {/* Contexto da venda */}
+            <Cf2Card>
+              <CardTitulo icon={Building2} tint="#3B82F6" title="Contexto da venda" subtitle="Negócio, proposta e escopo que originaram esta implantação" />
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                <div>
+                  <p className="text-[10px]" style={{ color: "var(--cf2-text-tertiary)" }}>Negócio</p>
+                  {negocioId ? <Link href={`/negocios/${negocioId}`} className="text-[13px] font-bold hover:underline" style={{ color: "var(--cf2-accent-border)" }}>{negocioTitulo || "Ver negócio"} →</Link> : <p className="text-[13px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>—</p>}
+                </div>
+                <div>
+                  <p className="text-[10px]" style={{ color: "var(--cf2-text-tertiary)" }}>Proposta aceita</p>
+                  {propostaId ? <Link href={`/propostas/${propostaId}`} className="text-[13px] font-bold hover:underline" style={{ color: "var(--cf2-accent-border)" }}>Proposta #{propostaNumero} →</Link> : <p className="text-[13px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>—</p>}
+                </div>
+                <Campo label="Responsável comercial" valor={responsavelComercialNome || "—"} />
+                <Campo label="Plano contratado" valor={(escopoVendidoSnapshot?.plano as string) || "—"} />
+                {assinatura && <Campo label="Assinatura" valor={`${assinatura.status}${assinatura.mrr ? ` · ${assinatura.moeda || "BRL"} ${assinatura.mrr}/mês` : ""}`} />}
+              </div>
+              {escopoEntries.length > 0 && (
+                <div className="flex flex-wrap gap-2 mt-3 pt-3" style={{ borderTop: "1px solid var(--cf2-border-default)" }}>
+                  {escopoEntries.filter(([k]) => k !== "plano").map(([k, v]) => (
+                    <span key={k} className="text-[11px] px-2.5 py-1 rounded-full font-semibold" style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-secondary)" }}>{String(v)} {(ESCOPO_LABEL[k] || k).toLowerCase()}</span>
+                  ))}
+                </div>
+              )}
+              {contextoVenda && <p className="text-[12px] mt-3 pt-3 leading-relaxed" style={{ borderTop: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-secondary)" }}><span className="font-semibold" style={{ color: "var(--cf2-text-primary)" }}>Observações da venda: </span>{contextoVenda}</p>}
+            </Cf2Card>
+
+            {/* Pessoas envolvidas */}
+            <Cf2Card>
+              <CardTitulo icon={Users} tint="#06B6D4" title="Pessoas envolvidas" />
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {(pessoasEnvolvidas ?? []).map((p) => <PessoaCard key={p.leadId} nome={p.nome} cargo={p.cargo} telefone={p.telefone} email={p.email} papel={PAPEL_LABEL[p.papel || ""] || p.papel} leadId={p.leadId} />)}
+                {formulario?.respostas?.portabilidade?.responsavelTecnico?.nome && (
+                  <PessoaCard nome={formulario.respostas.portabilidade.responsavelTecnico.nome} cargo="Informado pelo cliente" telefone={formulario.respostas.portabilidade.responsavelTecnico.telefone ?? null} email={formulario.respostas.portabilidade.responsavelTecnico.email ?? null} papel="Contato técnico (formulário)" leadId={null} />
+                )}
+                {(pessoasEnvolvidas ?? []).length === 0 && !formulario?.respostas?.portabilidade?.responsavelTecnico?.nome && <p className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhuma pessoa vinculada ainda.</p>}
+              </div>
+            </Cf2Card>
+
+            {/* Jornada da implantação — 9 macroetapas */}
+            <Cf2Card>
+              <CardTitulo icon={ListChecks} tint="var(--cf2-accent-border)" title="Jornada da implantação" subtitle="Algumas etapas podem ocorrer em paralelo (ex.: portabilidade e preparação técnica)" />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {macroetapas.map((m) => <MacroetapaCard key={m.key} m={m} onContinuar={() => setDrawerWorkstream(m.key)} />)}
+                <GoLiveCard fulfillment={fulfillment} evento={eventoConclusao} onConcluir={() => goLive.mutate()} loading={goLive.isPending} />
+              </div>
+            </Cf2Card>
+
+            {/* Próxima ação */}
+            <Cf2Card>
+              <CardTitulo icon={Rocket} tint="var(--cf2-success-text)" title="Próxima ação" />
+              {proximaAcao ? (
+                <div className="flex items-center justify-between gap-3 p-3 rounded-xl" style={{ background: "var(--cf2-bg-surface-muted)" }}>
+                  <div className="min-w-0">
+                    <p className="text-[15px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>{proximaAcao.titulo}</p>
+                    <p className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>{proximaAcao.usuarioNome ? `${proximaAcao.usuarioNome} · ` : ""}{proximaAcao.venceEm ? `prazo ${new Date(proximaAcao.venceEm).toLocaleDateString("pt-BR")}` : "sem prazo"}</p>
+                  </div>
+                  <button onClick={() => patchTarefaAvulsa.mutate({ id: proximaAcao.id, body: { concluida: true } })} className="text-[12px] font-bold px-3 py-1.5 rounded-lg shrink-0" style={{ background: "var(--cf2-bg-inverse)", color: "#fff" }}>Concluir</button>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhuma próxima ação definida.</p>
+                  <button onClick={() => setNovaTarefaOpen(true)} className="text-[12px] font-bold px-3 py-1.5 rounded-lg" style={{ background: "var(--cf2-bg-inverse)", color: "#fff" }}>Criar ação</button>
+                </div>
+              )}
+            </Cf2Card>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+              {/* Formulário */}
+              <Cf2Card>
+                <CardTitulo icon={FileText} tint="var(--cf2-accent-border)" title="Formulário técnico" subtitle={FORM_STATUS_LABEL[formulario?.status || ""] || "—"} />
+                <div className="grid grid-cols-2 gap-2.5 mb-3">
+                  <Campo label="Contato técnico" valor={formulario?.respostas?.portabilidade?.responsavelTecnico?.nome || "—"} />
+                  <Campo label="Linhas de portabilidade" valor={String(linhasPortabilidade?.length ?? 0)} />
+                  <Campo label="Ramais" valor={String(ramaisMaterializados?.length ?? 0)} />
+                  <Campo label="Voz da URA" valor={formulario?.respostas?.ura?.vozSelecionada || "—"} />
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {linkPublico && <button onClick={() => { navigator.clipboard.writeText(linkPublico); setCopiado(true); setTimeout(() => setCopiado(false), 2000); }} className="text-[11px] font-bold px-2.5 py-1.5 rounded-lg" style={{ background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" }}>{copiado ? "Copiado" : "Copiar link"}</button>}
+                  <button onClick={() => setRespostasOpen(true)} disabled={!formulario?.respostas} className="text-[11px] font-bold px-2.5 py-1.5 rounded-lg disabled:opacity-40" style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-secondary)" }}>Abrir respostas</button>
+                </div>
+              </Cf2Card>
+
+              {/* Bloqueios e dependências */}
+              <Cf2Card>
+                <CardTitulo icon={ShieldAlert} tint="var(--cf2-danger-text)" title="Bloqueios e dependências" />
+                {itens.filter((i) => i.status === "BLOCKED").length === 0 ? <p className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhum bloqueio ativo.</p> : (
+                  <div className="flex flex-col gap-2">
+                    {itens.filter((i) => i.status === "BLOCKED").map((i) => <BloqueioRow key={i.id} item={i} onAbrir={() => setDrawerWorkstream(i.workstream)} />)}
+                  </div>
+                )}
+              </Cf2Card>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+              <Cf2Card>
+                <div className="flex items-center justify-between mb-1"><CardTitulo icon={Phone} tint="#8B5CF6" title="Portabilidade" subtitle={`${(linhasPortabilidade ?? []).length} linha(s)`} /><button onClick={() => setPortabilidadeOpen(true)} className="text-[11px] font-bold" style={{ color: "var(--cf2-accent-border)" }}>Ver tudo →</button></div>
+                {(linhasPortabilidade ?? []).length === 0 ? <p className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhuma linha submetida ainda.</p> : (
+                  <p className="text-[12px]" style={{ color: "var(--cf2-text-secondary)" }}>{(linhasPortabilidade ?? []).filter((l) => !l.anexoUrl).length} pendente(s) de comprovante · operadoras: {[...new Set((linhasPortabilidade ?? []).map((l) => l.operadoraAtual).filter(Boolean))].join(", ") || "—"}</p>
+                )}
+              </Cf2Card>
+              <Cf2Card>
+                <div className="flex items-center justify-between mb-1"><CardTitulo icon={ListChecks} tint="#F59E0B" title="Ramais e URA" subtitle={`${(ramaisMaterializados ?? []).length} ramal(is)`} /><button onClick={() => setRamaisOpen(true)} className="text-[11px] font-bold" style={{ color: "var(--cf2-accent-border)" }}>Ver tudo →</button></div>
+                <p className="text-[12px]" style={{ color: "var(--cf2-text-secondary)" }}>Horário: {formulario?.respostas?.ura?.diasHorarioAtendimento || "—"} · {formulario?.respostas?.ura?.opcoes?.length ?? 0} opção(ões) de URA</p>
+              </Cf2Card>
+            </div>
+          </div>
+        </Cf2TabsContent>
+
+        <Cf2TabsContent value="tarefas">
+          <Cf2Card padding="0px" className="overflow-hidden">
+            <div className="flex items-center justify-between p-4" style={{ borderBottom: "1px solid var(--cf2-border-default)" }}>
+              <p className="text-[13px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Tarefas ({tarefaRows.length})</p>
+              <button onClick={() => setNovaTarefaOpen(true)} className="flex items-center gap-1.5 text-[12px] font-bold px-3 py-1.5 rounded-lg" style={{ background: "var(--cf2-bg-inverse)", color: "#fff" }}><Plus className="w-3.5 h-3.5" />Nova tarefa</button>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-[12px]" style={{ borderCollapse: "collapse" }}>
+                <thead><tr style={{ color: "var(--cf2-text-tertiary)", textAlign: "left" }}>
+                  <th className="py-2 px-4 font-semibold">Tarefa</th><th className="py-2 px-3 font-semibold">Etapa</th><th className="py-2 px-3 font-semibold">Status</th><th className="py-2 px-3 font-semibold">Responsável</th><th className="py-2 px-3 font-semibold">Prazo</th><th className="py-2 px-3 font-semibold">Prioridade</th>
+                </tr></thead>
+                <tbody>
+                  {tarefaRows.map((row) => (
+                    <tr key={row.id} style={{ borderTop: "1px solid var(--cf2-border-default)" }}>
+                      <td className="py-2 px-4 font-semibold" style={{ color: row.concluida ? "var(--cf2-text-tertiary)" : "var(--cf2-text-primary)", textDecoration: row.concluida ? "line-through" : "none" }}>{row.titulo}</td>
+                      <td className="py-2 px-3" style={{ color: "var(--cf2-text-secondary)" }}>{row.etapa || <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ background: "var(--cf2-bg-surface-muted)" }}>Avulsa</span>}</td>
+                      <td className="py-2 px-3">
+                        {row.item ? <StatusPillSelect status={row.item.status} blockerType={row.item.blockerType} onChange={(status, blockerType) => patchItem.mutate({ itemId: row.item!.id, body: { status, blockerType } })} /> : (
+                          <button onClick={() => patchTarefaAvulsa.mutate({ id: row.avulsa!.id, body: { concluida: !row.avulsa!.concluida } })} className="text-[11px] font-bold px-2 py-1 rounded-full" style={{ background: row.concluida ? "var(--cf2-success-bg)" : "var(--cf2-bg-surface-muted)", color: row.concluida ? "var(--cf2-success-text)" : "var(--cf2-text-secondary)" }}>{row.statusLabel}</button>
+                        )}
+                      </td>
+                      <td className="py-2 px-3">
+                        {row.item ? <AssignOwnerControl entityType="fulfillment_item" entityId={row.item.id} currentOwnerId={row.item.responsavelId ?? fulfillment.responsavelId} usuarios={usuarios} onChanged={invalidar} /> : <span style={{ color: "var(--cf2-text-secondary)" }}>{row.avulsa!.usuarioNome || "—"}</span>}
+                      </td>
+                      <td className="py-2 px-3">
+                        {row.item ? <input type="date" defaultValue={toDateInputValue(row.item.dueDate)} onBlur={(e) => patchItem.mutate({ itemId: row.item!.id, body: { dueDate: e.target.value || null } })} className="text-[11px] rounded px-1.5 py-1 outline-none" style={{ border: "1px solid var(--cf2-border-default)" }} /> : <span style={{ color: "var(--cf2-text-secondary)" }}>{row.avulsa!.venceEm ? new Date(row.avulsa!.venceEm!).toLocaleDateString("pt-BR") : "—"}</span>}
+                      </td>
+                      <td className="py-2 px-3">
+                        {row.item ? (
+                          <select defaultValue={row.item.priority || ""} onChange={(e) => patchItem.mutate({ itemId: row.item!.id, body: { priority: e.target.value || null } })} className="text-[11px] rounded px-1.5 py-1 outline-none" style={{ border: "1px solid var(--cf2-border-default)" }}>
+                            <option value="">—</option>{Object.entries(PRIORIDADE_LABEL).filter(([k]) => k !== "urgente").map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                          </select>
+                        ) : <span style={{ color: "var(--cf2-text-secondary)" }}>{PRIORIDADE_LABEL[row.avulsa!.prioridade || ""] || "—"}</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Cf2Card>
+        </Cf2TabsContent>
+
+        <Cf2TabsContent value="documentos">
+          <Cf2Card>
+            {documentos.length === 0 ? <p className="text-[13px]" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhum documento ainda.</p> : (
+              <div className="flex flex-col gap-2">
+                {documentos.map((d) => (
+                  <div key={d.id} className="flex items-center gap-3 p-2.5 rounded-lg" style={{ background: "var(--cf2-bg-surface-muted)" }}>
+                    <Paperclip className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--cf2-text-secondary)" }} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[12px] font-semibold truncate" style={{ color: "var(--cf2-text-primary)" }}>{d.nome}</p>
+                      <p className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>{d.origem}{d.tamanho ? ` · ${formatBytes(d.tamanho)}` : ""}</p>
+                    </div>
+                    {d.url && <button onClick={() => setPreview({ nome: d.nome, url: d.url! })} className="text-[11px] font-bold px-2 py-1 rounded-lg shrink-0" style={{ background: "var(--cf2-bg-surface)", color: "var(--cf2-text-secondary)" }}>Visualizar</button>}
+                    {d.download && <a href={d.download} className="p-1.5 rounded-lg shrink-0" style={{ background: "var(--cf2-bg-surface)" }}><Download className="w-3.5 h-3.5" style={{ color: "var(--cf2-text-secondary)" }} /></a>}
+                  </div>
+                ))}
               </div>
             )}
-          </div>
-          <div className="p-5 rounded-2xl" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
-            <p className="text-[14px] font-bold mb-3" style={{ color: "var(--cf2-text-primary)" }}>Observações técnicas</p>
-            <p className="text-[13px] leading-relaxed" style={{ color: "var(--cf2-text-secondary)" }}>{formulario?.respostas?.outrasInformacoes || "Nenhuma observação adicional foi registrada pelo cliente."}</p>
-          </div>
-        </div>
-      )}
+          </Cf2Card>
+        </Cf2TabsContent>
 
-      {aba === "portabilidade" && (
-        <div className="p-5 rounded-2xl" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
-          <p className="text-[14px] font-bold mb-1" style={{ color: "var(--cf2-text-primary)" }}>Portabilidade e novas linhas</p>
-          <p className="text-[12px] mb-4" style={{ color: "var(--cf2-text-secondary)" }}>Dados materializados a partir do formulário enviado pelo cliente.</p>
-          {(linhasPortabilidade ?? []).length === 0 ? <p className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhuma linha submetida ainda.</p> : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {(linhasPortabilidade ?? []).map((linha) => (
-                <div key={linha.id} className="p-4 rounded-xl" style={{ background: "var(--cf2-bg-surface-muted)" }}>
-                  <div className="flex items-center justify-between gap-3 mb-2"><span className="text-[13px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>{linha.ddd || "—"} {linha.tipo === "nova_linha" ? "· linha nova" : linha.numero || "—"}</span><span className="text-[10px] font-bold" style={{ color: "var(--cf2-text-secondary)" }}>{linha.tipo === "nova_linha" ? "Nova" : "Portabilidade"}</span></div>
-                  <p className="text-[11px]" style={{ color: "var(--cf2-text-secondary)" }}>{linha.operadoraAtual || "Operadora não informada"} · {linha.titular || "Titular não informado"}</p>
-                  {linha.anexoUrl && <a href={linha.anexoUrl} target="_blank" rel="noreferrer" className="inline-block mt-2 text-[11px] font-semibold hover:underline" style={{ color: "var(--cf2-accent-border)" }}>Abrir fatura/documento</a>}
-                </div>
+        <Cf2TabsContent value="timeline">
+          <Cf2Card>
+            <div className="flex items-center gap-1.5 mb-3 overflow-x-auto pb-1">
+              {([["todos", "Tudo"], ["tarefa", "Tarefas"], ["comunicacao", "Comunicação"], ["portabilidade", "Portabilidade"], ["sistema", "Sistema"], ["nota", "Notas"]] as const).map(([key, label]) => (
+                <button key={key} onClick={() => setFiltroTimeline(key)} className="shrink-0 text-[11px] font-bold px-2.5 py-1 rounded-full" style={{ background: filtroTimeline === key ? "var(--cf2-bg-inverse)" : "var(--cf2-bg-surface-muted)", color: filtroTimeline === key ? "#fff" : "var(--cf2-text-secondary)" }}>{label}</button>
               ))}
             </div>
-          )}
-        </div>
-      )}
-
-      {aba === "ura-ramais" && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          <div className="p-5 rounded-2xl" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
-            <p className="text-[14px] font-bold mb-3" style={{ color: "var(--cf2-text-primary)" }}>Ramais e usuários</p>
-            {(ramaisMaterializados ?? []).length === 0 ? <p className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhum ramal submetido ainda.</p> : <div className="flex flex-col gap-2">{(ramaisMaterializados ?? []).map((ramal) => <div key={ramal.id} className="flex items-center justify-between gap-3 p-3 rounded-lg" style={{ background: "var(--cf2-bg-surface-muted)" }}><div><p className="text-[12px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>{ramal.ramal || "—"} · {ramal.usuario || "Usuário não informado"}</p><p className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>{ramal.departamento || "Departamento não informado"} · {ramal.email || "Sem e-mail"}</p></div><span className="text-[10px] font-semibold" style={{ color: ramal.gravacao ? "var(--cf2-success-text)" : "var(--cf2-text-tertiary)" }}>{ramal.gravacao ? "Gravação ativa" : "Sem gravação"}</span></div>)}</div>}
-          </div>
-          <div className="p-5 rounded-2xl" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
-            <p className="text-[14px] font-bold mb-3" style={{ color: "var(--cf2-text-primary)" }}>URA e atendimento</p>
-            <div className="grid grid-cols-2 gap-3"><Campo label="Números atendidos" valor={String(formulario?.respostas?.ura?.numerosAtendidos?.length ?? 0)} /><Campo label="Opções configuradas" valor={String(formulario?.respostas?.ura?.opcoes?.length ?? 0)} /><Campo label="Voz selecionada" valor={formulario?.respostas?.ura?.vozSelecionada || "—"} /><Campo label="Horário" valor={formulario?.respostas?.ura?.diasHorarioAtendimento || "—"} /></div>
-          </div>
-        </div>
-      )}
-
-      {aba === "testes" && (
-        <div className="p-5 rounded-2xl" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
-          <p className="text-[14px] font-bold mb-1" style={{ color: "var(--cf2-text-primary)" }}>Testes internos</p>
-          <p className="text-[12px] mb-4" style={{ color: "var(--cf2-text-secondary)" }}>Checklist real da fase de QA interno, dentro do mesmo projeto de implantação.</p>
-          <ChecklistLista itens={itens.filter((item) => item.workstream === "qa_interno")} toggleItem={toggleItem} setItemSelecionado={setItemSelecionado} usuarios={Array.from(usuariosById.values())} fulfillmentResponsavelId={fulfillment.responsavelId} fulfillmentResponsavelNome={fulfillment.responsavelNome} onOwnerChanged={() => qc.invalidateQueries({ queryKey: ["cf2-fulfillment", fulfillmentId] })} />
-        </div>
-      )}
-
-      {/* Aba por workstream — subconjunto real dos mesmos itens, filtrado.
-          Mesma UI de checklist da Visão Geral, reaproveitada. Levantamento/
-          Portabilidade/Configuração PBX ganham um bloco extra com o dado
-          REAL submetido pelo cliente no formulário público (mesma fonte:
-          fulfillment_formularios.respostas) — antes as abas só mostravam o
-          checklist genérico sem contexto nenhum. */}
-      {workstreams.some((w) => w.key === aba) && (
-        <div className="flex flex-col gap-5">
-          {aba === "levantamento" && formulario?.respostas && (
-            <div className="p-5 rounded-2xl" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
-              <p className="text-[14px] font-bold mb-2" style={{ color: "var(--cf2-text-primary)" }}>O que o cliente enviou no formulário</p>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <Campo label="Números/linhas informados" valor={String(formulario.respostas.portabilidade?.linhas?.length ?? 0)} />
-                <Campo label="Ramais cadastrados" valor={String(formulario.respostas.ramais?.length ?? 0)} />
-                <Campo label="Opções de URA" valor={String(formulario.respostas.ura?.opcoes?.filter((o) => (o.destinos?.length ?? 0) > 0).length ?? 0)} />
-                <Campo label="Status do formulário" valor={formulario ? FORM_STATUS_LABEL[formulario.status] || formulario.status : "—"} />
+            {timelineFiltrada.length === 0 ? <p className="text-[13px]" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhum evento neste filtro.</p> : (
+              <div className="flex flex-col gap-1.5">
+                {timelineFiltrada.map((e) => (
+                  <div key={e.id} className="flex items-center gap-2.5 p-2.5 rounded-lg" style={{ background: "var(--cf2-bg-surface-muted)" }}>
+                    <History className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--cf2-text-tertiary)" }} />
+                    <p className="flex-1 text-[12px] truncate" style={{ color: "var(--cf2-text-primary)" }}>{e.titulo}</p>
+                    <p className="text-[11px] shrink-0" style={{ color: "var(--cf2-text-tertiary)" }}>{formatDataHora(e.data)}</p>
+                  </div>
+                ))}
               </div>
-              {formulario.respostas.outrasInformacoes && (
-                <p className="text-[12px] mt-3 pt-3" style={{ borderTop: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-secondary)" }}>
-                  <span className="font-semibold" style={{ color: "var(--cf2-text-primary)" }}>Observações do cliente: </span>{formulario.respostas.outrasInformacoes}
-                </p>
-              )}
-            </div>
-          )}
+            )}
+          </Cf2Card>
+        </Cf2TabsContent>
+      </Cf2Tabs>
 
-          {/* Portabilidade — 20/08: fonte passou a ser a tabela relacional
-              materializada (fulfillment_linhas_portabilidade), não mais só o
-              jsonb bruto. Preenchida na submissão real do formulário
-              público (delete+insert idempotente); vazia até isso acontecer. */}
-          {aba === "portabilidade" && (
-            <div className="p-5 rounded-2xl" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
-              <p className="text-[14px] font-bold mb-2" style={{ color: "var(--cf2-text-primary)" }}>Linhas enviadas pelo cliente ({(linhasPortabilidade ?? []).length})</p>
-              {(linhasPortabilidade ?? []).length === 0 ? (
-                <p className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhum número/linha submetido ainda pelo formulário público.</p>
-              ) : (
-                <div style={{ overflowX: "auto" }}>
-                  <table className="w-full text-[12px]" style={{ borderCollapse: "collapse" }}>
-                    <thead>
-                      <tr style={{ color: "var(--cf2-text-tertiary)", textAlign: "left" }}>
-                        <th className="pb-2 pr-3 font-semibold">DDD</th>
-                        <th className="pb-2 pr-3 font-semibold">Número</th>
-                        <th className="pb-2 pr-3 font-semibold">Tipo</th>
-                        <th className="pb-2 pr-3 font-semibold">Operadora atual</th>
-                        <th className="pb-2 pr-3 font-semibold">Titular</th>
-                        <th className="pb-2 font-semibold">Anexo</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(linhasPortabilidade ?? []).map((l) => (
-                        <tr key={l.id} style={{ borderTop: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }}>
-                          <td className="py-1.5 pr-3">{l.ddd || "—"}</td>
-                          <td className="py-1.5 pr-3">{l.tipo === "nova_linha" ? "(linha nova)" : l.numero || "—"}</td>
-                          <td className="py-1.5 pr-3">{l.tipo === "nova_linha" ? "Linha nova" : "Portabilidade"}</td>
-                          <td className="py-1.5 pr-3">{l.operadoraAtual || "—"}</td>
-                          <td className="py-1.5 pr-3">{l.titular || "—"}</td>
-                          <td className="py-1.5">
-                            {l.anexoUrl ? <a href={l.anexoUrl} target="_blank" rel="noreferrer" className="hover:underline" style={{ color: "var(--cf2-accent-border)" }}>{l.anexoId || "arquivo"}</a> : "—"}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          )}
+      {drawerWorkstream && (
+        <Cf2FulfillmentItemDrawer
+          items={itens.filter((i) => i.workstream === drawerWorkstream)}
+          workstreamLabel={WORKSTREAM_LABEL[drawerWorkstream] || drawerWorkstream}
+          fulfillmentId={fulfillmentId}
+          open={!!drawerWorkstream}
+          onClose={() => setDrawerWorkstream(null)}
+          fulfillmentResponsavelId={fulfillment.responsavelId}
+        />
+      )}
 
-          {/* Ramais — 20/08: mesma troca, fonte agora é fulfillment_ramais. */}
-          {aba === "configuracao_pbx" && (
-            <div className="p-5 rounded-2xl" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
-              <p className="text-[14px] font-bold mb-2" style={{ color: "var(--cf2-text-primary)" }}>Ramais enviados pelo cliente ({(ramaisMaterializados ?? []).length})</p>
-              {(ramaisMaterializados ?? []).length === 0 ? (
-                <p className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhum ramal submetido ainda pelo formulário público.</p>
-              ) : (
-                <div style={{ overflowX: "auto" }}>
-                  <table className="w-full text-[12px]" style={{ borderCollapse: "collapse" }}>
-                    <thead>
-                      <tr style={{ color: "var(--cf2-text-tertiary)", textAlign: "left" }}>
-                        <th className="pb-2 pr-3 font-semibold">Ramal</th>
-                        <th className="pb-2 pr-3 font-semibold">Usuário</th>
-                        <th className="pb-2 pr-3 font-semibold">Departamento</th>
-                        <th className="pb-2 pr-3 font-semibold">Nº externo</th>
-                        <th className="pb-2 pr-3 font-semibold">Aparelho</th>
-                        <th className="pb-2 pr-3 font-semibold">Gravação</th>
-                        <th className="pb-2 font-semibold">Internacional</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(ramaisMaterializados ?? []).map((r) => (
-                        <tr key={r.id} style={{ borderTop: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }}>
-                          <td className="py-1.5 pr-3 font-semibold">{r.ramal || "—"}</td>
-                          <td className="py-1.5 pr-3">{r.usuario || "—"}</td>
-                          <td className="py-1.5 pr-3">{r.departamento || "—"}</td>
-                          <td className="py-1.5 pr-3">{r.numeroExterno || "—"}</td>
-                          <td className="py-1.5 pr-3">{r.usaAparelhoFisico ? r.modeloAparelho || "Sim" : "Não"}</td>
-                          <td className="py-1.5 pr-3">{r.gravacao ? "Sim" : "Não"}</td>
-                          <td className="py-1.5">{r.ligacoesInternacionais ? (r.paisesPermitidos?.join(", ") || "Sim") : "Não"}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          )}
+      <NovaTarefaDialog
+        open={novaTarefaOpen}
+        onClose={() => setNovaTarefaOpen(false)}
+        workstreams={macroetapas.map((m) => ({ key: m.key, label: m.label }))}
+        usuarios={usuarios}
+        onCriarChecklist={(body) => criarItem.mutate(body)}
+        onCriarAvulsa={(body) => criarTarefaAvulsa.mutate({ ...body, leadId: leadId || null, negocioId: negocioId || null, tipo: "geral" })}
+        loading={criarItem.isPending || criarTarefaAvulsa.isPending}
+      />
 
-          <div className="p-5 rounded-2xl flex flex-col gap-2" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
-            <p className="text-[14px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>{WORKSTREAM_LABEL[aba] || aba} — checklist</p>
-            <ChecklistLista
-              itens={itens.filter((i) => i.workstream === aba)}
-              toggleItem={toggleItem}
-              setItemSelecionado={setItemSelecionado}
-              usuarios={Array.from(usuariosById.values())}
-              fulfillmentResponsavelId={fulfillment.responsavelId}
-              fulfillmentResponsavelNome={fulfillment.responsavelNome}
-              onOwnerChanged={() => qc.invalidateQueries({ queryKey: ["cf2-fulfillment", fulfillmentId] })}
-            />
+      <Cf2Dialog open={notaOpen} onOpenChange={setNotaOpen}>
+        <Cf2DialogContent>
+          <Cf2DialogHeader><Cf2DialogTitle>Nova nota</Cf2DialogTitle></Cf2DialogHeader>
+          <textarea autoFocus value={notaTexto} onChange={(e) => setNotaTexto(e.target.value)} rows={4} className="w-full text-[13px] rounded-lg px-3 py-2 outline-none resize-none" style={{ border: "1px solid var(--cf2-border-default)" }} placeholder="Escreva a nota..." />
+          <button onClick={() => criarNota.mutate()} disabled={!notaTexto.trim() || criarNota.isPending} className="mt-3 text-[12px] font-bold px-3 py-2 rounded-lg" style={{ background: "var(--cf2-bg-inverse)", color: "#fff" }}>Salvar nota</button>
+        </Cf2DialogContent>
+      </Cf2Dialog>
+
+      <Cf2Dialog open={respostasOpen} onOpenChange={setRespostasOpen}>
+        <Cf2DialogContent className="max-w-lg">
+          <Cf2DialogHeader><Cf2DialogTitle>Respostas do formulário</Cf2DialogTitle></Cf2DialogHeader>
+          <div className="flex flex-col gap-3 max-h-[60vh] overflow-y-auto">
+            <div className="grid grid-cols-2 gap-3">
+              <Campo label="Responsável técnico" valor={formulario?.respostas?.portabilidade?.responsavelTecnico?.nome || "—"} />
+              <Campo label="Telefone" valor={formulario?.respostas?.portabilidade?.responsavelTecnico?.telefone || "—"} />
+              <Campo label="Titular" valor={formulario?.respostas?.portabilidade?.razaoSocialTitular || "—"} />
+              <Campo label="Operadora atual" valor={formulario?.respostas?.portabilidade?.operadoraAtual || "—"} />
+              <Campo label="Voz da URA" valor={formulario?.respostas?.ura?.vozSelecionada || "—"} />
+              <Campo label="Horário de atendimento" valor={formulario?.respostas?.ura?.diasHorarioAtendimento || "—"} />
+            </div>
+            {formulario?.respostas?.outrasInformacoes && <p className="text-[12px] pt-2" style={{ borderTop: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-secondary)" }}><span className="font-semibold">Observações: </span>{formulario.respostas.outrasInformacoes}</p>}
+          </div>
+        </Cf2DialogContent>
+      </Cf2Dialog>
+
+      <Cf2Dialog open={portabilidadeOpen} onOpenChange={setPortabilidadeOpen}>
+        <Cf2DialogContent className="max-w-2xl">
+          <Cf2DialogHeader><Cf2DialogTitle>Portabilidade e novas linhas</Cf2DialogTitle></Cf2DialogHeader>
+          <div className="overflow-x-auto max-h-[60vh]">
+            <table className="w-full text-[12px]" style={{ borderCollapse: "collapse" }}>
+              <thead><tr style={{ color: "var(--cf2-text-tertiary)", textAlign: "left" }}><th className="pb-2 pr-3">DDD</th><th className="pb-2 pr-3">Número</th><th className="pb-2 pr-3">Tipo</th><th className="pb-2 pr-3">Operadora</th><th className="pb-2 pr-3">Titular</th><th className="pb-2">Anexo</th></tr></thead>
+              <tbody>{(linhasPortabilidade ?? []).map((l) => (
+                <tr key={l.id} style={{ borderTop: "1px solid var(--cf2-border-default)" }}>
+                  <td className="py-1.5 pr-3">{l.ddd || "—"}</td><td className="py-1.5 pr-3">{l.tipo === "nova_linha" ? "(nova)" : l.numero || "—"}</td><td className="py-1.5 pr-3">{l.tipo === "nova_linha" ? "Linha nova" : "Portabilidade"}</td><td className="py-1.5 pr-3">{l.operadoraAtual || "—"}</td><td className="py-1.5 pr-3">{l.titular || "—"}</td>
+                  <td className="py-1.5">{l.anexoUrl ? <button onClick={() => setPreview({ nome: l.anexoId || "comprovante", url: l.anexoUrl! })} className="hover:underline" style={{ color: "var(--cf2-accent-border)" }}>Ver</button> : "—"}</td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+        </Cf2DialogContent>
+      </Cf2Dialog>
+
+      <Cf2Dialog open={ramaisOpen} onOpenChange={setRamaisOpen}>
+        <Cf2DialogContent className="max-w-2xl">
+          <Cf2DialogHeader><Cf2DialogTitle>Ramais e usuários</Cf2DialogTitle></Cf2DialogHeader>
+          <div className="overflow-x-auto max-h-[60vh]">
+            <table className="w-full text-[12px]" style={{ borderCollapse: "collapse" }}>
+              <thead><tr style={{ color: "var(--cf2-text-tertiary)", textAlign: "left" }}><th className="pb-2 pr-3">Ramal</th><th className="pb-2 pr-3">Usuário</th><th className="pb-2 pr-3">Depto</th><th className="pb-2 pr-3">Nº externo</th><th className="pb-2">Gravação</th></tr></thead>
+              <tbody>{(ramaisMaterializados ?? []).map((r) => (
+                <tr key={r.id} style={{ borderTop: "1px solid var(--cf2-border-default)" }}>
+                  <td className="py-1.5 pr-3 font-semibold">{r.ramal || "—"}</td><td className="py-1.5 pr-3">{r.usuario || "—"}</td><td className="py-1.5 pr-3">{r.departamento || "—"}</td><td className="py-1.5 pr-3">{r.numeroExterno || "—"}</td><td className="py-1.5">{r.gravacao ? "Sim" : "Não"}</td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+        </Cf2DialogContent>
+      </Cf2Dialog>
+
+      {preview && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center p-6 bg-black/60" onClick={() => setPreview(null)}>
+          <div className="relative max-w-3xl w-full max-h-full rounded-2xl overflow-hidden flex flex-col" style={{ background: "var(--cf2-bg-surface)" }} onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-3" style={{ borderBottom: "1px solid var(--cf2-border-default)" }}>
+              <p className="text-[13px] font-semibold truncate" style={{ color: "var(--cf2-text-primary)" }}>{preview.nome}</p>
+              <button onClick={() => setPreview(null)}><X className="w-4 h-4" style={{ color: "var(--cf2-text-tertiary)" }} /></button>
+            </div>
+            <div className="flex-1 overflow-auto p-3 flex items-center justify-center min-h-[300px]">
+              {kindDeArquivo(preview.nome, preview.tipoMime) === "imagem" ? <img src={preview.url} alt={preview.nome} className="max-w-full max-h-[70vh] object-contain" /> :
+                kindDeArquivo(preview.nome, preview.tipoMime) === "pdf" ? <iframe src={preview.url} className="w-full h-[70vh]" /> :
+                  <div className="flex flex-col items-center gap-3 py-10"><p className="text-[13px]" style={{ color: "var(--cf2-text-tertiary)" }}>Pré-visualização não disponível para este tipo de arquivo.</p><a href={preview.url} target="_blank" rel="noreferrer" className="text-[12px] font-bold px-3 py-1.5 rounded-lg" style={{ background: "var(--cf2-bg-inverse)", color: "#fff" }}>Baixar arquivo</a></div>}
+            </div>
           </div>
         </div>
       )}
-
-      {aba === "atividades" && (
-        <div className="p-5 rounded-2xl flex flex-col gap-2" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
-          <p className="text-[14px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Atividades recentes</p>
-          {atividadesRecentes.length === 0 ? (
-            <p className="text-[13px]" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhuma etapa concluída ainda.</p>
-          ) : atividadesRecentes.map((a) => (
-            <div key={a.id} className="flex items-center gap-2.5 p-2.5 rounded-lg" style={{ background: "var(--cf2-bg-surface-muted)" }}>
-              <Check className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--cf2-success-text)" }} />
-              <p className="flex-1 text-[12px] truncate" style={{ color: "var(--cf2-text-primary)" }}>
-                {a.completedByNome ? `${a.completedByNome} concluiu ` : "Concluído: "}{a.titulo}
-              </p>
-              <p className="text-[11px] shrink-0" style={{ color: "var(--cf2-text-tertiary)" }}>{new Date(a.completedAt!).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}</p>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {aba === "historico" && (
-        <div className="p-5 rounded-2xl flex flex-col gap-2" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
-          <p className="text-[14px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Histórico de conclusão</p>
-          <p className="text-[11px] mb-1" style={{ color: "var(--cf2-text-tertiary)" }}>Mesma atividade real das etapas concluídas — sem limite de itens.</p>
-          {historicoCompleto.length === 0 ? (
-            <p className="text-[13px]" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhuma etapa concluída ainda.</p>
-          ) : historicoCompleto.map((a) => (
-            <div key={a.id} className="flex items-center gap-2.5 p-2.5 rounded-lg" style={{ background: "var(--cf2-bg-surface-muted)" }}>
-              <Check className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--cf2-success-text)" }} />
-              <p className="flex-1 text-[12px] truncate" style={{ color: "var(--cf2-text-primary)" }}>
-                {a.completedByNome ? `${a.completedByNome} concluiu ` : "Concluído: "}{a.titulo}
-              </p>
-              <p className="text-[11px] shrink-0" style={{ color: "var(--cf2-text-tertiary)" }}>{new Date(a.completedAt!).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}</p>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <Cf2FulfillmentItemDrawer
-        item={itemSelecionado}
-        fulfillmentId={fulfillmentId}
-        open={!!itemSelecionado}
-        onClose={() => setItemSelecionado(null)}
-        fulfillmentResponsavelId={fulfillment.responsavelId}
-      />
     </div>
   );
 }
 
-// Lista de checklist reaproveitada entre a Visão Geral (todos os itens) e
-// as abas por workstream (subconjunto filtrado) — mesma UI, mesma lógica
-// de toggle, nunca duas implementações divergentes.
-// Status do item como pill colorido (referência de UX: ferramenta de
-// tarefas do Kauã — Não iniciado/Em andamento/Pendência/Finalizado), não
-// mais um checkbox solto. Mesmos 4 status reais que o backend já aceita
-// (PENDING/IN_PROGRESS/BLOCKED/DONE) — só a representação visual muda.
-// 7 rótulos exatos do Kauã (20/08) sobre os 5 valores reais do banco
-// (PENDING/IN_PROGRESS/BLOCKED/VALIDATION/DONE) — BLOCKED se desdobra em 3
-// rótulos (Aguardando cliente/Aguardando fornecedor/Bloqueado) conforme
-// blockerType. A chave composta abaixo é só de UI (pra virar um <select>
-// com as 7 opções reais de escolha); o PATCH sempre manda {status,
-// blockerType} de volta pro backend, nunca essa chave composta.
-type StatusEtapaKey = "PENDING" | "IN_PROGRESS" | "BLOCKED_CUSTOMER" | "BLOCKED_PROVIDER" | "BLOCKED_INTERNAL" | "VALIDATION" | "DONE";
+function AcaoHeader({ href, icon: Icon, label }: { href: string | undefined; icon: React.ElementType; label: string }) {
+  if (!href) return <span title="Sem contato cadastrado" className="flex items-center gap-1.5 text-[12px] font-semibold px-3 py-1.5 rounded-lg opacity-40 cursor-not-allowed" style={{ background: "var(--cf2-chrome-surface-active)", color: "var(--cf2-chrome-text-secondary)" }}><Icon className="w-3.5 h-3.5" />{label}</span>;
+  return <Link href={href} className="flex items-center gap-1.5 text-[12px] font-semibold px-3 py-1.5 rounded-lg" style={{ background: "var(--cf2-chrome-surface-active)", color: "var(--cf2-chrome-text-primary)" }}><Icon className="w-3.5 h-3.5" />{label}</Link>;
+}
+
+function CampoChrome({ label, valor, destaque }: { label: string; valor: string; destaque?: boolean }) {
+  return (
+    <div className="min-w-0">
+      <p className="text-[10px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>{label}</p>
+      <p className="text-[13px] font-bold truncate" style={{ color: destaque ? "#ff8e83" : "var(--cf2-chrome-text-primary)" }}>{valor}</p>
+    </div>
+  );
+}
+
+function PessoaCard({ nome, cargo, telefone, email, papel, leadId }: { nome: string; cargo: string | null; telefone: string | null; email: string | null; papel: string | null; leadId: string | null }) {
+  return (
+    <div className="p-3 rounded-xl flex flex-col gap-1.5" style={{ background: "var(--cf2-bg-surface-muted)" }}>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[13px] font-bold truncate" style={{ color: "var(--cf2-text-primary)" }}>{nome}</p>
+        {leadId && <Link href={`/contatos/${leadId}`} title="Abrir perfil"><ExternalLink className="w-3.5 h-3.5" style={{ color: "var(--cf2-text-tertiary)" }} /></Link>}
+      </div>
+      {papel && <span className="text-[10px] font-bold self-start px-1.5 py-0.5 rounded" style={{ background: "var(--cf2-accent-bg-subtle)", color: "var(--cf2-accent-border)" }}>{papel}</span>}
+      {cargo && <p className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>{cargo}</p>}
+      <div className="flex items-center gap-2 mt-1">
+        {telefone && <a href={`tel:${telefone}`} title="Ligar"><Phone className="w-3.5 h-3.5" style={{ color: "var(--cf2-text-secondary)" }} /></a>}
+        {telefone && <a href={`https://wa.me/${digitsForDialer(telefone)}`} target="_blank" rel="noreferrer" title="WhatsApp"><MessageCircle className="w-3.5 h-3.5" style={{ color: "var(--cf2-text-secondary)" }} /></a>}
+        {email && <a href={`mailto:${email}`} title="E-mail"><Mail className="w-3.5 h-3.5" style={{ color: "var(--cf2-text-secondary)" }} /></a>}
+        {!telefone && !email && <span className="text-[10px]" style={{ color: "var(--cf2-text-tertiary)" }}>Sem contato cadastrado</span>}
+      </div>
+    </div>
+  );
+}
+
+function MacroetapaCard({ m, onContinuar }: { m: Macroetapa; onContinuar: () => void }) {
+  const done = m.itens.filter((i) => i.status === "DONE" || i.status === "NOT_APPLICABLE").length;
+  const corStatus = m.status === "blocked" ? "var(--cf2-danger-text)" : m.status === "done" ? "var(--cf2-success-text)" : m.status === "current" ? "var(--cf2-accent-border)" : "var(--cf2-text-tertiary)";
+  const rotulo = m.status === "blocked" ? "Bloqueada" : m.status === "done" ? "Concluída" : m.status === "current" ? "Em andamento" : "Pendente";
+  return (
+    <div className="p-3.5 rounded-xl flex flex-col gap-2" style={{ background: "var(--cf2-bg-surface-muted)", border: m.status === "blocked" ? "1px solid var(--cf2-danger-border)" : "1px solid transparent" }}>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[13px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>{m.label}</p>
+        <span className="text-[10px] font-bold shrink-0" style={{ color: corStatus }}>{rotulo}</span>
+      </div>
+      <p className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>{done}/{m.itens.length} tarefas · {m.responsavel || "sem responsável"}{m.prazo ? ` · prazo ${new Date(m.prazo).toLocaleDateString("pt-BR")}` : ""}</p>
+      {m.bloqueio && <p className="text-[11px] px-2 py-1 rounded-lg" style={{ background: "color-mix(in srgb, var(--cf2-danger-text) 10%, transparent)", color: "var(--cf2-danger-text)" }}>{m.bloqueio.blockerReason || "Etapa bloqueada"}</p>}
+      <button onClick={onContinuar} className="text-[11px] font-bold self-start mt-1" style={{ color: "var(--cf2-accent-border)" }}>Continuar etapa →</button>
+    </div>
+  );
+}
+
+function GoLiveCard({ fulfillment, evento, onConcluir, loading }: { fulfillment: FulfillmentData["fulfillment"]; evento: AtividadeEmpresa | null; onConcluir: () => void; loading: boolean }) {
+  const concluida = fulfillment.status === "COMPLETED";
+  const pronta = fulfillment.status === "READY_FOR_VALIDATION";
+  return (
+    <div className="p-3.5 rounded-xl flex flex-col gap-2" style={{ background: concluida ? "var(--cf2-success-bg)" : "var(--cf2-bg-surface-muted)" }}>
+      <div className="flex items-center gap-2">
+        <Rocket className="w-4 h-4" style={{ color: concluida ? "var(--cf2-success-text)" : "var(--cf2-text-tertiary)" }} />
+        <p className="text-[13px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Go Live / Conclusão</p>
+      </div>
+      {concluida ? (
+        <p className="text-[11px]" style={{ color: "var(--cf2-success-text)" }}>Concluída{evento?.autorNome ? ` por ${evento.autorNome}` : ""} em {fulfillment.completedAt ? new Date(fulfillment.completedAt).toLocaleDateString("pt-BR") : "—"}</p>
+      ) : pronta ? (
+        <>
+          <p className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>Todas as etapas estão prontas — confirme o Go Live.</p>
+          <button onClick={onConcluir} disabled={loading} className="text-[12px] font-bold px-3 py-1.5 rounded-lg self-start" style={{ background: "var(--cf2-bg-inverse)", color: "#fff" }}>Confirmar Go Live</button>
+        </>
+      ) : (
+        <p className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>Aguardando conclusão das etapas anteriores.</p>
+      )}
+    </div>
+  );
+}
+
+function BloqueioRow({ item, onAbrir }: { item: Item; onAbrir: () => void }) {
+  return (
+    <button onClick={onAbrir} className="w-full flex items-start gap-2.5 p-2.5 rounded-lg text-left" style={{ background: "var(--cf2-bg-surface-muted)" }}>
+      <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" style={{ color: "var(--cf2-danger-text)" }} />
+      <span className="min-w-0 flex-1">
+        <span className="block text-[12px] font-semibold" style={{ color: "var(--cf2-text-primary)" }}>{item.titulo}</span>
+        <span className="block text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>{item.blockerReason || "Sem motivo registrado"} · {WORKSTREAM_LABEL[item.workstream] || item.workstream}</span>
+      </span>
+      <span className="shrink-0 flex flex-col items-end gap-0.5 text-[10px]" style={{ color: "var(--cf2-text-tertiary)" }}>
+        <span className="font-bold" style={{ color: "var(--cf2-danger-text)" }}>{item.blockerType === "CARRIER" ? "Operadora" : item.blockerType === "CUSTOMER" ? "Cliente" : item.blockerType === "PROVIDER" ? "Fornecedor" : "Interno"}{item.blockerImpact ? ` · impacto ${item.blockerImpact}` : ""}</span>
+        {item.blockedAt && <span>desde {new Date(item.blockedAt).toLocaleDateString("pt-BR")}</span>}
+      </span>
+    </button>
+  );
+}
+
+function NovaTarefaDialog({ open, onClose, workstreams, usuarios, onCriarChecklist, onCriarAvulsa, loading }: {
+  open: boolean; onClose: () => void; workstreams: { key: string; label: string }[]; usuarios: OrgUsuario[];
+  onCriarChecklist: (body: Record<string, unknown>) => void; onCriarAvulsa: (body: Record<string, unknown>) => void; loading: boolean;
+}) {
+  const [titulo, setTitulo] = useState("");
+  const [destino, setDestino] = useState<"checklist" | "avulsa">("avulsa");
+  const [workstream, setWorkstream] = useState(workstreams[0]?.key ?? "");
+  const [responsavelId, setResponsavelId] = useState("");
+  const [prazo, setPrazo] = useState("");
+  const [prioridade, setPrioridade] = useState("");
+
+  function submit() {
+    if (!titulo.trim()) return;
+    if (destino === "checklist") {
+      onCriarChecklist({ workstream, titulo, responsavelId: responsavelId || null, dueDate: prazo || null, priority: prioridade || null });
+    } else {
+      onCriarAvulsa({ titulo, responsavelId: responsavelId || null, venceEm: prazo ? new Date(prazo).toISOString() : null, prioridade: prioridade || undefined });
+    }
+    setTitulo(""); setPrazo(""); setPrioridade(""); setResponsavelId("");
+  }
+
+  return (
+    <Cf2Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+      <Cf2DialogContent>
+        <Cf2DialogHeader><Cf2DialogTitle>Nova tarefa</Cf2DialogTitle></Cf2DialogHeader>
+        <div className="flex flex-col gap-3">
+          <input autoFocus value={titulo} onChange={(e) => setTitulo(e.target.value)} placeholder="Título da tarefa" className="text-[13px] rounded-lg px-3 py-2 outline-none" style={{ border: "1px solid var(--cf2-border-default)" }} />
+          <div className="flex gap-2">
+            <button onClick={() => setDestino("avulsa")} className="flex-1 text-[12px] font-bold py-1.5 rounded-lg" style={{ background: destino === "avulsa" ? "var(--cf2-bg-inverse)" : "var(--cf2-bg-surface-muted)", color: destino === "avulsa" ? "#fff" : "var(--cf2-text-secondary)" }}>Avulsa</button>
+            <button onClick={() => setDestino("checklist")} className="flex-1 text-[12px] font-bold py-1.5 rounded-lg" style={{ background: destino === "checklist" ? "var(--cf2-bg-inverse)" : "var(--cf2-bg-surface-muted)", color: destino === "checklist" ? "#fff" : "var(--cf2-text-secondary)" }}>Numa etapa do checklist</button>
+          </div>
+          {destino === "checklist" && (
+            <select value={workstream} onChange={(e) => setWorkstream(e.target.value)} className="text-[12px] rounded-lg px-3 py-2 outline-none" style={{ border: "1px solid var(--cf2-border-default)" }}>
+              {workstreams.map((w) => <option key={w.key} value={w.key}>{w.label}</option>)}
+            </select>
+          )}
+          <select value={responsavelId} onChange={(e) => setResponsavelId(e.target.value)} className="text-[12px] rounded-lg px-3 py-2 outline-none" style={{ border: "1px solid var(--cf2-border-default)" }}>
+            <option value="">Sem responsável</option>{usuarios.map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}
+          </select>
+          <div className="grid grid-cols-2 gap-2">
+            <input type="date" value={prazo} onChange={(e) => setPrazo(e.target.value)} className="text-[12px] rounded-lg px-3 py-2 outline-none" style={{ border: "1px solid var(--cf2-border-default)" }} />
+            <select value={prioridade} onChange={(e) => setPrioridade(e.target.value)} className="text-[12px] rounded-lg px-3 py-2 outline-none" style={{ border: "1px solid var(--cf2-border-default)" }}>
+              <option value="">Prioridade —</option>{Object.entries(PRIORIDADE_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+            </select>
+          </div>
+          <button onClick={submit} disabled={!titulo.trim() || loading} className="text-[12px] font-bold px-3 py-2 rounded-lg" style={{ background: "var(--cf2-bg-inverse)", color: "#fff" }}>Criar tarefa</button>
+        </div>
+      </Cf2DialogContent>
+    </Cf2Dialog>
+  );
+}
+
+// ============================================================================
+// Onboarding (Callface AI / White Label) — visão antiga, fora do escopo
+// deste redesign (que cobriu só Implantação PABX). Mantida praticamente
+// intacta, só adaptada à nova API do Cf2FulfillmentItemDrawer (que passou a
+// receber uma lista de itens em vez de 1 item fixo).
+// ============================================================================
+
+type StatusEtapaKey = "PENDING" | "IN_PROGRESS" | "BLOCKED_CUSTOMER" | "BLOCKED_PROVIDER" | "BLOCKED_INTERNAL" | "BLOCKED_CARRIER" | "VALIDATION" | "DONE";
 const STATUS_ETAPA_LABEL: Record<StatusEtapaKey, string> = {
   PENDING: "Não iniciado", IN_PROGRESS: "Em andamento",
-  BLOCKED_CUSTOMER: "Aguardando cliente", BLOCKED_PROVIDER: "Aguardando fornecedor", BLOCKED_INTERNAL: "Bloqueado",
+  BLOCKED_CUSTOMER: "Aguardando cliente", BLOCKED_PROVIDER: "Aguardando fornecedor", BLOCKED_CARRIER: "Aguardando operadora", BLOCKED_INTERNAL: "Bloqueado",
   VALIDATION: "Validação", DONE: "Concluído",
 };
 const STATUS_ETAPA_COLOR: Record<StatusEtapaKey, { bg: string; text: string; dot: string }> = {
@@ -866,24 +905,20 @@ const STATUS_ETAPA_COLOR: Record<StatusEtapaKey, { bg: string; text: string; dot
   IN_PROGRESS: { bg: "var(--cf2-accent-bg-subtle)", text: "var(--cf2-accent-border)", dot: "var(--cf2-accent-border)" },
   BLOCKED_CUSTOMER: { bg: "#f59e0b18", text: "#b45309", dot: "#f59e0b" },
   BLOCKED_PROVIDER: { bg: "#f59e0b18", text: "#b45309", dot: "#f59e0b" },
+  BLOCKED_CARRIER: { bg: "#f59e0b18", text: "#b45309", dot: "#f59e0b" },
   BLOCKED_INTERNAL: { bg: "#ef444418", text: "#ef4444", dot: "#ef4444" },
   VALIDATION: { bg: "#8e27ef18", text: "#8e27ef", dot: "#8e27ef" },
   DONE: { bg: "var(--cf2-success-bg)", text: "var(--cf2-success-text)", dot: "var(--cf2-success-text)" },
 };
-// Item real (status + blockerType) → chave composta de UI.
 function chaveStatusEtapa(item: { status: string; blockerType?: string | null }): StatusEtapaKey {
   if (item.status === "BLOCKED") {
     if (item.blockerType === "CUSTOMER") return "BLOCKED_CUSTOMER";
     if (item.blockerType === "PROVIDER") return "BLOCKED_PROVIDER";
+    if (item.blockerType === "CARRIER") return "BLOCKED_CARRIER";
     return "BLOCKED_INTERNAL";
   }
   return (item.status as StatusEtapaKey) in STATUS_ETAPA_LABEL ? (item.status as StatusEtapaKey) : "PENDING";
 }
-// Rótulo legado (usado em textos soltos que só têm o status cru, sem
-// blockerType à mão) — mantido só pra não quebrar leitura simples.
-const STATUS_ITEM_LABEL: Record<string, string> = {
-  PENDING: "Não iniciado", IN_PROGRESS: "Em andamento", BLOCKED: "Bloqueado", VALIDATION: "Validação", DONE: "Concluído",
-};
 
 function StatusPillSelect({ status, blockerType, onChange }: { status: string; blockerType?: string | null; onChange: (status: string, blockerType: string | null) => void }) {
   const chave = chaveStatusEtapa({ status, blockerType });
@@ -901,9 +936,7 @@ function StatusPillSelect({ status, blockerType, onChange }: { status: string; b
         className="appearance-none text-[11px] font-bold pl-3 pr-6 py-1.5 rounded-full cursor-pointer outline-none"
         style={{ background: cor.bg, color: cor.text }}
       >
-        {Object.entries(STATUS_ETAPA_LABEL).map(([k, label]) => (
-          <option key={k} value={k}>{label}</option>
-        ))}
+        {Object.entries(STATUS_ETAPA_LABEL).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
       </select>
       <span className="w-1.5 h-1.5 rounded-full absolute left-1.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ background: cor.dot }} />
     </div>
@@ -927,52 +960,25 @@ function ChecklistLista({
         const isMilestone = item.metadata?.milestone === "FIRST_VALUE";
         const isHandoff = !!item.metadata?.handoffCs;
         const estagios = item.metadata?.estagioPedagogico ?? [];
-        // Responsável por item (20/08) — sem valor próprio, cai pro
-        // responsável do fulfillment inteiro só na exibição (nunca grava
-        // esse fallback de volta no item).
         const semResponsavelProprio = !item.responsavelId;
         return (
-          <div
-            key={item.id}
-            className="flex items-center gap-3 p-2.5 rounded-lg"
-            style={{ background: "var(--cf2-bg-surface-muted)", border: isMilestone ? "1px dashed var(--cf2-accent)" : "none" }}
-          >
-            <StatusPillSelect
-              status={item.status}
-              blockerType={item.blockerType}
-              onChange={(status, blockerType) => toggleItem.mutate({ itemId: item.id, status, blockerType })}
-            />
+          <div key={item.id} className="flex items-center gap-3 p-2.5 rounded-lg" style={{ background: "var(--cf2-bg-surface-muted)", border: isMilestone ? "1px dashed var(--cf2-accent)" : "none" }}>
+            <StatusPillSelect status={item.status} blockerType={item.blockerType} onChange={(status, blockerType) => toggleItem.mutate({ itemId: item.id, status, blockerType })} />
             {isMilestone && <Star className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--cf2-accent)" }} />}
             <button onClick={() => setItemSelecionado(item)} className="flex-1 flex flex-col gap-1 text-left">
               <span className="text-[13px]" style={{ color: item.status === "DONE" ? "var(--cf2-text-tertiary)" : "var(--cf2-text-primary)", textDecoration: item.status === "DONE" ? "line-through" : "none" }}>{item.titulo}</span>
               {(estagios.length > 0 || isMilestone || isHandoff) && (
                 <div className="flex items-center gap-1 flex-wrap">
-                  {estagios.map((e) => (
-                    <span key={e} className="text-[9px] px-1.5 py-0.5 rounded font-bold" style={{ background: "var(--cf2-bg-surface)", color: "var(--cf2-text-secondary)", border: "1px solid var(--cf2-border-default)" }}>{ESTAGIO_LABEL[e] || e}</span>
-                  ))}
+                  {estagios.map((e) => <span key={e} className="text-[9px] px-1.5 py-0.5 rounded font-bold" style={{ background: "var(--cf2-bg-surface)", color: "var(--cf2-text-secondary)", border: "1px solid var(--cf2-border-default)" }}>{ESTAGIO_LABEL[e] || e}</span>)}
                   {isMilestone && <span className="text-[9px] px-1.5 py-0.5 rounded font-bold" style={{ background: "#8e27ef18", color: "#8e27ef" }}>Primeiro valor · marco manual</span>}
-                  {isHandoff && (
-                    <span className="text-[9px] px-1.5 py-0.5 rounded font-bold inline-flex items-center gap-1" style={{ background: "#3b82f618", color: "#3b82f6" }}>
-                      <ArrowRightLeft className="w-2.5 h-2.5" /> Handoff CS
-                    </span>
-                  )}
+                  {isHandoff && <span className="text-[9px] px-1.5 py-0.5 rounded font-bold inline-flex items-center gap-1" style={{ background: "#3b82f618", color: "#3b82f6" }}><ArrowRightLeft className="w-2.5 h-2.5" /> Handoff CS</span>}
                 </div>
               )}
             </button>
-            {item.blockerReason && item.status === "BLOCKED" && (
-              <span className="text-[10px] max-w-[160px] truncate shrink-0" style={{ color: "var(--cf2-text-tertiary)" }} title={item.blockerReason}>{item.blockerReason}</span>
-            )}
+            {item.blockerReason && item.status === "BLOCKED" && <span className="text-[10px] max-w-[160px] truncate shrink-0" style={{ color: "var(--cf2-text-tertiary)" }} title={item.blockerReason}>{item.blockerReason}</span>}
             <div className="shrink-0 flex flex-col items-end gap-0.5" onClick={(e) => e.stopPropagation()}>
-              <AssignOwnerControl
-                entityType="fulfillment_item"
-                entityId={item.id}
-                currentOwnerId={item.responsavelId ?? fulfillmentResponsavelId}
-                usuarios={usuarios}
-                onChanged={onOwnerChanged}
-              />
-              {semResponsavelProprio && fulfillmentResponsavelNome && (
-                <span className="text-[9px]" style={{ color: "var(--cf2-text-tertiary)" }}>via responsável do projeto</span>
-              )}
+              <AssignOwnerControl entityType="fulfillment_item" entityId={item.id} currentOwnerId={item.responsavelId ?? fulfillmentResponsavelId} usuarios={usuarios} onChanged={onOwnerChanged} />
+              {semResponsavelProprio && fulfillmentResponsavelNome && <span className="text-[9px]" style={{ color: "var(--cf2-text-tertiary)" }}>via responsável do projeto</span>}
             </div>
             <ChevronRight className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--cf2-text-tertiary)" }} onClick={() => setItemSelecionado(item)} />
           </div>
@@ -982,11 +988,159 @@ function ChecklistLista({
   );
 }
 
-function Campo({ label, valor }: { label: string; valor: string }) {
+function OnboardingLegacyView({ fulfillmentId, data, documentosLegado }: { fulfillmentId: string; data: FulfillmentData; documentosLegado: AnexoLegado[] }) {
+  const qc = useQueryClient();
+  const [itemSelecionado, setItemSelecionado] = useState<Item | null>(null);
+  const [aba, setAba] = useState<string>("visao-geral");
+  const { byId: usuariosById } = useOrgUsuarios();
+
+  const { fulfillment, itens, empresaId, empresaNome, empresaLogoUrl, atividadesEmpresa } = data;
+
+  const toggleItem = useMutation({
+    mutationFn: async ({ itemId, status, blockerType }: { itemId: string; status: string; blockerType?: string | null }) => {
+      const body: Record<string, unknown> = { status };
+      if (status === "BLOCKED") body.blockerType = blockerType ?? "INTERNAL";
+      const r = await fetch(`/api/fulfillments/itens/${itemId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      if (!r.ok) throw new Error("falha");
+      return r.json();
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["cf2-fulfillment", fulfillmentId] }),
+    onError: () => toast.error("Não foi possível atualizar o item"),
+  });
+
+  const workstreams: { key: string; itens: Item[] }[] = [];
+  for (const item of itens) {
+    let grupo = workstreams.find((w) => w.key === item.workstream);
+    if (!grupo) { grupo = { key: item.workstream, itens: [] }; workstreams.push(grupo); }
+    grupo.itens.push(item);
+  }
+  const atividadesRecentes = [...itens].filter((i) => i.completedAt).sort((a, b) => new Date(b.completedAt!).getTime() - new Date(a.completedAt!).getTime()).slice(0, 8);
+  const historicoCompleto = [...itens].filter((i) => i.completedAt).sort((a, b) => new Date(b.completedAt!).getTime() - new Date(a.completedAt!).getTime());
+  const contagem = {
+    DONE: itens.filter((i) => i.status === "DONE").length, VALIDATION: itens.filter((i) => i.status === "VALIDATION").length,
+    IN_PROGRESS: itens.filter((i) => i.status === "IN_PROGRESS").length, PENDING: itens.filter((i) => i.status === "PENDING").length,
+    BLOCKED: itens.filter((i) => i.status === "BLOCKED").length,
+  };
+  const pct = itens.length > 0 ? Math.round((contagem.DONE / itens.length) * 100) : 0;
+  const ABAS = [{ key: "visao-geral", label: "Visão geral" }, { key: "checklist", label: "Checklist" }, { key: "atividades", label: "Atividades" }, { key: "historico", label: "Histórico" }];
+
   return (
-    <div className="min-w-0">
-      <p className="text-[10px]" style={{ color: "var(--cf2-text-tertiary)" }}>{label}</p>
-      <p className="text-[13px] font-bold break-words" style={{ color: "var(--cf2-text-primary)" }}>{valor}</p>
+    <div className="flex flex-col gap-5 pb-8">
+      <div className="flex items-center gap-1.5 text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>
+        <Link href="/clientes/onboarding" className="hover:underline">Onboarding</Link>
+        <ChevronRight className="w-3 h-3" />
+        <span style={{ color: "var(--cf2-text-primary)" }}>{empresaNome || "—"}</span>
+      </div>
+      <div className="flex items-center gap-3">
+        <h1 className="text-[22px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Onboarding</h1>
+        <span className="px-2.5 py-1 rounded-full text-[11px] font-bold" style={{ background: fulfillment.status === "COMPLETED" ? "#effaf2" : fulfillment.status.startsWith("BLOCKED") ? "#fff1f2" : "#eef9e8", color: fulfillment.status === "COMPLETED" ? "var(--cf2-success-text)" : fulfillment.status.startsWith("BLOCKED") ? "#dc2626" : "#4d8a1d" }}>
+          {STATUS_MACRO_LABEL[fulfillment.status] || fulfillment.status}
+        </span>
+      </div>
+
+      <div className="flex flex-col lg:flex-row gap-4 p-4 rounded-2xl" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
+        <div className="flex items-start gap-3 lg:w-[410px] shrink-0">
+          <div className="flex items-center justify-center rounded-xl shrink-0 w-14 h-14 overflow-hidden" style={{ background: "var(--cf2-bg-inverse)" }}>
+            {empresaLogoUrl ? <img src={empresaLogoUrl} alt="" className="w-full h-full object-cover" /> : <Truck className="w-5 h-5 text-white" />}
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-[17px] font-bold truncate" style={{ color: "var(--cf2-text-primary)" }}>{empresaId ? <Link href={`/clientes/${empresaId}`} className="hover:underline">{empresaNome}</Link> : empresaNome || "—"}</p>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1 mt-2">
+              <div className="min-w-0">
+                <p className="text-[10px]" style={{ color: "var(--cf2-text-tertiary)" }}>Responsável interno</p>
+                <AssignOwnerControl entityType="fulfillment" entityId={fulfillment.id} currentOwnerId={fulfillment.responsavelId} usuarios={Array.from(usuariosById.values())} onChanged={() => qc.invalidateQueries({ queryKey: ["cf2-fulfillment", fulfillmentId] })} />
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="flex-1 grid grid-cols-2 sm:grid-cols-4 gap-4 lg:pl-5 lg:border-l" style={{ borderColor: "var(--cf2-border-default)" }}>
+          <Campo label="Status" valor={STATUS_MACRO_LABEL[fulfillment.status] || fulfillment.status} />
+          <div>
+            <p className="text-[10px]" style={{ color: "var(--cf2-text-tertiary)" }}>Progresso geral</p>
+            <p className="text-[16px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>{pct}%</p>
+          </div>
+          <Campo label="Previsão de conclusão" valor={fulfillment.targetAt ? new Date(fulfillment.targetAt).toLocaleDateString("pt-BR") : "—"} />
+          <Campo label="Responsável atual" valor={fulfillment.responsavelNome || "Sem responsável"} />
+        </div>
+      </div>
+
+      <div className="flex items-center gap-1 overflow-x-auto pb-1" style={{ borderBottom: "1px solid var(--cf2-border-default)" }}>
+        {ABAS.map((a) => (
+          <button key={a.key} onClick={() => setAba(a.key)} className="shrink-0 px-3 py-2 text-[12px] font-semibold whitespace-nowrap" style={{ color: aba === a.key ? "var(--cf2-accent-border)" : "var(--cf2-text-secondary)", borderBottom: aba === a.key ? "2px solid var(--cf2-accent-border)" : "2px solid transparent" }}>{a.label}</button>
+        ))}
+      </div>
+
+      {aba === "visao-geral" && (
+        <div className="p-5 rounded-2xl" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
+          <p className="text-[14px] font-bold mb-3" style={{ color: "var(--cf2-text-primary)" }}>Checklist do onboarding</p>
+          <ChecklistLista itens={itens.slice(0, 8)} toggleItem={toggleItem} setItemSelecionado={setItemSelecionado} usuarios={Array.from(usuariosById.values())} fulfillmentResponsavelId={fulfillment.responsavelId} fulfillmentResponsavelNome={fulfillment.responsavelNome} onOwnerChanged={() => qc.invalidateQueries({ queryKey: ["cf2-fulfillment", fulfillmentId] })} />
+        </div>
+      )}
+
+      {aba === "checklist" && (
+        <div className="flex flex-col gap-5">
+          {workstreams.map((w) => (
+            <div key={w.key} className="p-5 rounded-2xl" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
+              <p className="text-[14px] font-bold mb-3" style={{ color: "var(--cf2-text-primary)" }}>{WORKSTREAM_LABEL[w.key] || w.key}</p>
+              <ChecklistLista itens={w.itens} toggleItem={toggleItem} setItemSelecionado={setItemSelecionado} usuarios={Array.from(usuariosById.values())} fulfillmentResponsavelId={fulfillment.responsavelId} fulfillmentResponsavelNome={fulfillment.responsavelNome} onOwnerChanged={() => qc.invalidateQueries({ queryKey: ["cf2-fulfillment", fulfillmentId] })} />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {aba === "atividades" && (
+        <div className="p-5 rounded-2xl flex flex-col gap-2" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
+          <p className="text-[14px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Atividades recentes</p>
+          {atividadesRecentes.length === 0 ? <p className="text-[13px]" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhuma etapa concluída ainda.</p> : atividadesRecentes.map((a) => (
+            <div key={a.id} className="flex items-center gap-2.5 p-2.5 rounded-lg" style={{ background: "var(--cf2-bg-surface-muted)" }}>
+              <Check className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--cf2-success-text)" }} />
+              <p className="flex-1 text-[12px] truncate" style={{ color: "var(--cf2-text-primary)" }}>{a.completedByNome ? `${a.completedByNome} concluiu ` : "Concluído: "}{a.titulo}</p>
+              <p className="text-[11px] shrink-0" style={{ color: "var(--cf2-text-tertiary)" }}>{new Date(a.completedAt!).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}</p>
+            </div>
+          ))}
+          {(atividadesEmpresa ?? []).length > 0 && <p className="text-[11px] mt-2 pt-2" style={{ borderTop: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-tertiary)" }}>{atividadesEmpresa!.length} atividade(s) da empresa também disponíveis no Cliente 360.</p>}
+        </div>
+      )}
+
+      {aba === "historico" && (
+        <div className="p-5 rounded-2xl flex flex-col gap-2" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
+          <p className="text-[14px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Histórico de conclusão</p>
+          {historicoCompleto.length === 0 ? <p className="text-[13px]" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhuma etapa concluída ainda.</p> : historicoCompleto.map((a) => (
+            <div key={a.id} className="flex items-center gap-2.5 p-2.5 rounded-lg" style={{ background: "var(--cf2-bg-surface-muted)" }}>
+              <Check className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--cf2-success-text)" }} />
+              <p className="flex-1 text-[12px] truncate" style={{ color: "var(--cf2-text-primary)" }}>{a.completedByNome ? `${a.completedByNome} concluiu ` : "Concluído: "}{a.titulo}</p>
+              <p className="text-[11px] shrink-0" style={{ color: "var(--cf2-text-tertiary)" }}>{new Date(a.completedAt!).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {documentosLegado.length > 0 && aba === "visao-geral" && (
+        <div className="p-5 rounded-2xl flex flex-col gap-2" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
+          <p className="text-[14px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Documentos</p>
+          {documentosLegado.map((d) => (
+            <div key={d.id} className="flex items-center gap-3 p-2.5 rounded-lg" style={{ background: "var(--cf2-bg-surface-muted)" }}>
+              <FileText className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--cf2-text-secondary)" }} />
+              <div className="flex-1 min-w-0">
+                <p className="text-[12px] font-semibold truncate" style={{ color: "var(--cf2-text-primary)" }}>{d.nomeArquivo}</p>
+                <p className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>{formatBytes(d.tamanhoBytes)}</p>
+              </div>
+              {d.arquivoDisponivel && <a href={`/api/anexos-legado/${d.id}/download`} className="p-1.5 rounded-lg shrink-0" style={{ background: "var(--cf2-bg-surface)" }}><Download className="w-3.5 h-3.5" style={{ color: "var(--cf2-text-secondary)" }} /></a>}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {itemSelecionado && (
+        <Cf2FulfillmentItemDrawer
+          items={[itemSelecionado]}
+          workstreamLabel={WORKSTREAM_LABEL[itemSelecionado.workstream] || itemSelecionado.workstream}
+          fulfillmentId={fulfillmentId}
+          open={!!itemSelecionado}
+          onClose={() => setItemSelecionado(null)}
+          fulfillmentResponsavelId={fulfillment.responsavelId}
+        />
+      )}
     </div>
   );
 }
