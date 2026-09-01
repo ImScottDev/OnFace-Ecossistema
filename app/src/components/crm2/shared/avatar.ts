@@ -6,9 +6,14 @@
  *
  * - Iniciais: MESMO algoritmo já usado em ClienteDrawer.tsx (primeiras 2
  *   palavras do nome, 1ª letra de cada, maiúsculas).
- * - Paleta: MESMAS 5 cores já usadas pra avatar em Início/Vendas
- *   (--cf2-avatar-1..5, definidas em globals.css) — não a cor genérica do
- *   mockup, seguindo a regra da sessão de manter a marca real da Callface.
+ * - Paleta: cores já usadas pra avatar em Início/Vendas (--cf2-avatar-1..12,
+ *   definidas em globals.css) — não a cor genérica do mockup, seguindo a
+ *   regra da sessão de manter a marca real da Callface.
+ *
+ * Ampliada de 5 pra 12 cores (25/08, achado real do Kauã): com só 5 cores e
+ * ~15 usuários reais na org, colisão de hash era praticamente garantida —
+ * "Mayara Anjos" e "Mayra Schincariol" caíram na mesma cor e confundiam o
+ * time. 12 cores dá folga real pro tamanho do time hoje.
  *
  * A ÚNICA peça nova é a escolha DETERMINÍSTICA da cor por hash do id da
  * empresa. Em Início/Vendas a cor é escolhida por posição na lista
@@ -24,6 +29,13 @@ const PALETA_AVATAR = [
   "var(--cf2-avatar-3)",
   "var(--cf2-avatar-4)",
   "var(--cf2-avatar-5)",
+  "var(--cf2-avatar-6)",
+  "var(--cf2-avatar-7)",
+  "var(--cf2-avatar-8)",
+  "var(--cf2-avatar-9)",
+  "var(--cf2-avatar-10)",
+  "var(--cf2-avatar-11)",
+  "var(--cf2-avatar-12)",
 ];
 
 export function iniciaisEmpresa(nome: string): string {

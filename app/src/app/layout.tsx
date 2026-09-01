@@ -61,9 +61,19 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="pt-BR">
+    // As variáveis de fonte ficam no <html>, não no <body> (correção 31/08).
+    // Motivo: o Cf2ThemeRoot põe `data-cf2-theme` no <html>, e é lá que
+    // `--cf2-font-ui: var(--font-cf2-ui), …` é calculada. Com as vars só no
+    // body, `--font-cf2-ui` não existia nesse escopo, o var() ficava vazio e a
+    // declaração inteira virava inválida — o browser caía no SERIF padrão.
+    // Aparecia só em portal (drawer/dropdown/modal), que herda do body a
+    // versão já quebrada vinda do html.
+    <html
+      lang="pt-BR"
+      className={`${notoSans.variable} ${poppins.variable} ${manrope.variable} ${geist.variable} ${inter.variable}`}
+    >
       <body
-        className={`${notoSans.variable} ${poppins.variable} ${manrope.variable} ${geist.variable} ${inter.variable} antialiased`}
+        className={`antialiased`}
       >
         {children}
       </body>
