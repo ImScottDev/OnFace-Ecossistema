@@ -15,8 +15,8 @@ export default async function ClientesImplantacaoPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="-m-6 mb-0 relative flex flex-col gap-6 px-8 pt-7 pb-10 rounded-tl-2xl" style={{ background: "var(--cf2-bg-canvas)" }}>
-        <Cf2Topbar orgNome={orgNome} variant="light" title="Clientes" subtitle="Implantação — PABX pós-Won" />
+      <div className="-m-6 mb-0 relative flex flex-col px-6 py-3.5 rounded-tl-2xl border-b" style={{ background: "var(--cf2-bg-surface)", borderColor: "var(--cf2-border-default)" }}>
+        <Cf2Topbar orgNome={orgNome} variant="light" title="Clientes" subtitle="Implantação — PABX pós-Won" compactTitle />
       </div>
       <div className="pt-6">
         <Cf2EntregaWorkspace familiaFixa="PABX" />

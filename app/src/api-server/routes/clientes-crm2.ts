@@ -10,7 +10,7 @@ import { db } from "@/lib/db";
 import {
   empresas, servicosCanonicos, contratos, contratoItens, leads, pessoas as pessoasTable, pontosContato, fulfillments, fulfillmentItens, notas, usuarios,
   clientes, faturas, assinaturas, propostas, tarefas, mrrMovimentos, atividades,
-  negocios, negocioLeads, callfaceAiExternalIdentities, npsRespostas,
+  negocios, negocioLeads, callfaceAiExternalIdentities, npsRespostas, oportunidades,
 } from "@/lib/db/schema";
 import { eq, and, or, inArray, sql, desc, asc, isNotNull } from "drizzle-orm";
 import { z } from "zod";
@@ -1351,10 +1351,24 @@ app.get("/clientes-crm2/:empresaId", async (c) => {
     leadOrigemId = leadMaisAntigo?.id ?? null;
   }
 
+  // Oportunidade que originou o cliente — vínculo PERSISTIDO
+  // (`clientes.oportunidade_origem_id`, preenchido pelo backfill do domain
+  // model). Sem isso o card respondia "de qual campanha veio" mas não
+  // "quanto essa venda valeu", que é a metade da pergunta que interessa.
+  // Fallback silencioso pro cálculo por empresa acima quando o vínculo ainda
+  // não existe (cliente sem nenhum negócio ganho no legado) — nunca fabrica.
+  const [oportunidadeOrigem] = await db
+    .select({ id: oportunidades.id, valor: oportunidades.valor, mrr: oportunidades.mrr, ganhoAt: oportunidades.ganhoAt, negocioIdLegado: oportunidades.negocioIdLegado })
+    .from(clientes)
+    .innerJoin(oportunidades, eq(oportunidades.id, clientes.oportunidadeOrigemId))
+    .where(and(eq(clientes.empresaId, empresaId), eq(clientes.organizacaoId, ctx.organizacaoId)))
+    .limit(1);
+
   let origemAquisicao: {
     origem: string | null; campanha: string | null; conjunto: string | null; criativo: string | null;
     utmSource: string | null; utmMedium: string | null; utmCampaign: string | null; landingPage: string | null;
     firstTouch: string; lastTouch: string | null;
+    vendaOrigem: { negocioId: string | null; valor: string | null; mrr: string | null; ganhoAt: string | null } | null;
   } | null = null;
 
   if (leadOrigemId) {
@@ -1382,6 +1396,16 @@ app.get("/clientes-crm2/:empresaId", async (c) => {
         landingPage: leadOrigem.landingPage,
         firstTouch: isoServer(leadOrigem.createdAt)!,
         lastTouch: isoServer(ultimaAtividadeLeadOrigem?.createdAt ?? null),
+        // Fecha a pergunta inteira: campanha X gerou uma venda de R$ Y. O
+        // negocioIdLegado é o que a UI já sabe abrir (`/negocios/:id`).
+        vendaOrigem: oportunidadeOrigem
+          ? {
+              negocioId: oportunidadeOrigem.negocioIdLegado,
+              valor: oportunidadeOrigem.valor,
+              mrr: oportunidadeOrigem.mrr,
+              ganhoAt: isoServer(oportunidadeOrigem.ganhoAt),
+            }
+          : null,
       };
     }
   }

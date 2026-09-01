@@ -90,6 +90,7 @@ interface OrigemAquisicao {
   origem: string | null; campanha: string | null; conjunto: string | null; criativo: string | null;
   utmSource: string | null; utmMedium: string | null; utmCampaign: string | null; landingPage: string | null;
   firstTouch: string; lastTouch: string | null;
+  vendaOrigem: { negocioId: string | null; valor: string | null; mrr: string | null; ganhoAt: string | null } | null;
 }
 
 interface Executivo { id: string; nome: string | null; email: string | null }
@@ -629,6 +630,9 @@ export function Cf2Cliente360({ empresaId }: { empresaId: string }) {
   // aba ainda é útil pra ver o histórico). Cliente com múltiplos
   // fulfillments na mesma família (raro, mas real — ex.: reativação) ganha
   // um seletor simples em vez de esconder os outros.
+  // Onboarding = só Callface AI; Implantação = PABX + White Label (25/08,
+  // correção do Kauã depois de instrução equivocada — White Label é
+  // implantação mesmo, não onboarding).
   const fulfillmentsOnboarding = servicos.filter((s) => s.serviceFamily === "CALLFACE_AI" && s.fulfillment).map((s) => s.fulfillment!);
   const fulfillmentsImplantacao = servicos.filter((s) => (s.serviceFamily === "PABX" || s.serviceFamily === "WHITE_LABEL") && s.fulfillment).map((s) => s.fulfillment!);
   const emAndamento = (f: { status: string }) => f.status !== "COMPLETED" && f.status !== "CANCELED";
@@ -657,14 +661,22 @@ export function Cf2Cliente360({ empresaId }: { empresaId: string }) {
         }
       />
       <div className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-5 pb-8">
+        {/* Breadcrumb honesto (25/08): "Carteira" só faz sentido pra quem
+            tem serviço de verdade — pra empresa sem venda ainda (aberta a
+            partir de Contatos & Empresas), volta pra lá em vez de mentir
+            que ela está na Carteira. */}
         <div className="flex items-center gap-1.5 text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>
-          <Link href="/clientes" className="hover:underline">Clientes</Link>
+          {servicos.length > 0 ? (
+            <>
+              <Link href="/clientes" className="hover:underline">Clientes</Link>
+              <ChevronRight className="w-3 h-3" />
+              <Link href="/clientes" className="hover:underline">Carteira</Link>
+            </>
+          ) : (
+            <Link href="/contatos" className="hover:underline">Contatos & Empresas</Link>
+          )}
           <ChevronRight className="w-3 h-3" />
-          <Link href="/clientes" className="hover:underline">Carteira</Link>
-          <ChevronRight className="w-3 h-3" />
-          <span>{empresa.nome}</span>
-          <ChevronRight className="w-3 h-3" />
-          <span style={{ color: "var(--cf2-text-primary)" }}>Cliente 360</span>
+          <span style={{ color: "var(--cf2-text-primary)" }}>{empresa.nome}</span>
         </div>
 
         {/* Header */}
@@ -678,10 +690,23 @@ export function Cf2Cliente360({ empresaId }: { empresaId: string }) {
                 <div className="flex items-center gap-2 flex-wrap">
                   <p className="text-[20px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>{empresa.nome}</p>
                   <Cf2Badge variant={servicosAtivos.length > 0 ? "success" : "neutral"}>{servicosAtivos.length > 0 ? "Ativo" : "Sem serviço ativo"}</Cf2Badge>
-                  {/* Lifecycle+Fase (item 3, 20/08): lifecycle é sempre "Cliente" aqui
-                      (mesma convenção literal da Carteira — toda empresa neste
-                      endpoint já tem serviço), fase é clientes.status_financeiro real. */}
-                  <Cf2Badge variant="neutral">Cliente · {STATUS_FINANCEIRO_LABEL[statusFinanceiro ?? ""] || "Indefinido"}</Cf2Badge>
+                  {/* Lifecycle+Fase (item 3, 20/08): lifecycle era sempre
+                      "Cliente" aqui, premissa válida enquanto essa página só
+                      era alcançável a partir da Carteira (que só lista
+                      empresa com serviço real). Deixou de ser verdade 25/08,
+                      quando a página passou a ser a "página de empresa" do
+                      CRM2 pra QUALQUER empresa (Contatos & Empresas, sem
+                      filtro de venda) — corrigido pra refletir dado real:
+                      só fala "Cliente" quando existe serviço de verdade,
+                      "Prospect" quando tem negócio mas nenhum serviço, e
+                      nem mostra o badge quando não tem nada disso ainda. */}
+                  {servicos.length > 0 ? (
+                    <Cf2Badge variant="neutral">Cliente · {STATUS_FINANCEIRO_LABEL[statusFinanceiro ?? ""] || "Indefinido"}</Cf2Badge>
+                  ) : negocios.length > 0 ? (
+                    <Cf2Badge variant="neutral">Prospect · em negociação</Cf2Badge>
+                  ) : (
+                    <Cf2Badge variant="neutral">Sem negócio ainda</Cf2Badge>
+                  )}
                   {familias.map((f) => <Cf2Badge key={f} variant="neutral">{FAMILIA_LABEL[f] || f}</Cf2Badge>)}
                   {/* Alerta agregado de vencimento (item 3, 21/08) — só aparece com
                       contrato ATIVO vencendo em <=30 dias (real, calculado no backend
@@ -993,6 +1018,27 @@ export function Cf2Cliente360({ empresaId }: { empresaId: string }) {
                       </div>
                     ))}
                   </div>
+                  {/* Fecha a cadeia campanha → dinheiro: a venda que originou
+                      este cliente, clicável pro negócio. Sem o valor, o card
+                      dizia de onde veio mas não quanto valeu. Só aparece
+                      quando existe vínculo real (clientes.oportunidade_origem_id). */}
+                  {origemAquisicao.vendaOrigem && (
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-3 mt-1" style={{ borderTop: "1px solid var(--cf2-border-default)" }}>
+                      <p className="text-[10px] font-bold" style={{ color: "var(--cf2-text-tertiary)" }}>VENDA DE ORIGEM</p>
+                      {origemAquisicao.vendaOrigem.valor && (
+                        <p className="text-[13px] font-semibold" style={{ color: "var(--cf2-text-primary)" }}>{brl(origemAquisicao.vendaOrigem.valor)}</p>
+                      )}
+                      {origemAquisicao.vendaOrigem.mrr && (
+                        <p className="text-[12px]" style={{ color: "var(--cf2-text-secondary)" }}>MRR {brl(origemAquisicao.vendaOrigem.mrr)}</p>
+                      )}
+                      {origemAquisicao.vendaOrigem.ganhoAt && (
+                        <p className="text-[12px]" style={{ color: "var(--cf2-text-secondary)" }}>ganho em {data(origemAquisicao.vendaOrigem.ganhoAt)}</p>
+                      )}
+                      {origemAquisicao.vendaOrigem.negocioId && (
+                        <a href={`/negocios/${origemAquisicao.vendaOrigem.negocioId}`} className="text-[12px] font-semibold" style={{ color: "var(--cf2-accent-border)" }}>abrir negócio →</a>
+                      )}
+                    </div>
+                  )}
                 </>
               )}
             </div>
@@ -1133,7 +1179,7 @@ export function Cf2Cliente360({ empresaId }: { empresaId: string }) {
               {propostas.length === 0 ? (
                 <p className="text-[13px]" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhuma proposta registrada.</p>
               ) : propostas.map((p) => (
-                <Link key={p.id} href={`/propostas?propostaId=${p.id}`} className="flex items-center justify-between p-3 rounded-xl hover:bg-[var(--cf2-bg-surface-muted)]" style={{ background: "var(--cf2-bg-surface-muted)" }}>
+                <Link key={p.id} href={`/propostas/${p.id}`} className="flex items-center justify-between p-3 rounded-xl hover:bg-[var(--cf2-bg-surface-muted)]" style={{ background: "var(--cf2-bg-surface-muted)" }}>
                   <div>
                     <p className="text-[13px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Proposta #{p.numero}</p>
                     <p className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>{data(p.createdAt)}</p>
@@ -1221,7 +1267,7 @@ export function Cf2Cliente360({ empresaId }: { empresaId: string }) {
                   <div className="flex flex-col gap-0.5">
                     <p className="text-[10px] font-bold" style={{ color: "var(--cf2-text-tertiary)" }}>PROPOSTA ORIGEM</p>
                     {ct.propostaOrigem ? (
-                      <Link href={`/propostas?propostaId=${ct.propostaOrigem.id}`} className="text-[12px] underline" style={{ color: "var(--cf2-text-secondary)" }}>
+                      <Link href={`/propostas/${ct.propostaOrigem.id}`} className="text-[12px] underline" style={{ color: "var(--cf2-text-secondary)" }}>
                         Proposta #{ct.propostaOrigem.numero}
                       </Link>
                     ) : (
@@ -1308,7 +1354,7 @@ export function Cf2Cliente360({ empresaId }: { empresaId: string }) {
                         há tempo) não ganha botão nenhum, não fabrica estado. */}
                     {s.fulfillment && (
                       <Link
-                        href={`/clientes/entrega/${s.fulfillment.id}`}
+                        href={s.serviceFamily === "CALLFACE_AI" ? `/clientes/onboarding/${s.fulfillment.id}` : `/clientes/entrega/${s.fulfillment.id}`}
                         className="text-[11px] underline inline-flex items-center gap-1 mt-1"
                         style={{ color: "var(--cf2-text-secondary)" }}
                       >
