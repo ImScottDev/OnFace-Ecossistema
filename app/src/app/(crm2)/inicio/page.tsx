@@ -1,674 +1,248 @@
-import Link from "next/link";
 import { db } from "@/lib/db";
-import { organizacoes, tarefas, usuarios } from "@/lib/db/schema";
-import { eq, and, or, lte, isNull } from "drizzle-orm";
+import { organizacoes } from "@/lib/db/schema";
+import { eq } from "drizzle-orm";
 import { getTenantContext } from "@/lib/auth/tenant";
 import { redirect } from "next/navigation";
-import { getMetaComercialAgregada, getMetasPorVendedor } from "@/lib/metas";
-import { getPipelineAtual } from "@/lib/relatorios/comercial";
+import { getMetaComercialAgregada } from "@/lib/metas";
+import { getPipelineAtual, getFechadoPeriodo } from "@/lib/relatorios/comercial";
 import {
-  getMrrComparativo,
-  getDesempenhoMensalTrend,
-  getFunilLeads,
-  getPipelineComercial,
-  getComunicacoesResumo,
-  getAtividadeRecente,
-  getAquisicaoPeriodo,
-  getPreVendasAtrasados,
-  getNegociosTravadosResumo,
-  getMrrLedgerPeriodo,
-  getSaudeBaseClientes,
-  diasUteisRestantesNoMes,
-  getAtendimentoResumo,
-  getImplantacaoResumo,
-  getCsResumo,
-  getFinanceiroResumo,
+  getMrrComparativo, getFunilLeads, getAquisicaoPeriodo,
+  getAtendimentoResumo, getCsResumo, getFinanceiroResumo,
 } from "@/lib/analytics/command-center";
+import {
+  getEntregaResumoPorFamilia, getMetaPorProduto, getAgendaHoje, getPrecisaAtencao,
+  getMrrSeries, getEquipeAtiva, getClientesAtivos, FAMILIAS_ONBOARDING_HOME, FAMILIAS_IMPLANTACAO_HOME,
+} from "@/lib/analytics/inicio";
 import { Cf2Topbar } from "@/components/crm2/Topbar";
-import { Cf2Card, Cf2SectionHeader, Cf2Eyebrow } from "@/components/crm2/ui/Card";
-import { Cf2Badge } from "@/components/crm2/ui/Badge";
-import { Cf2EmptyState, Cf2UnavailableMetric } from "@/components/crm2/ui/States";
-import { Cf2Gauge } from "@/components/crm2/ui/Gauge";
-import { DesempenhoChart } from "@/components/crm2/DesempenhoChart";
-import { Phone, MessageCircle, Mail, Headset, Truck, HeartHandshake, Wallet } from "lucide-react";
+import { Cf2HeroPulso, type KpiCard } from "@/components/crm2/inicio/HeroPulso";
+import { Cf2JornadaOperacao } from "@/components/crm2/inicio/JornadaOperacao";
+import { Cf2MrrEvolucao } from "@/components/crm2/inicio/MrrEvolucao";
+import { Cf2MetaMes } from "@/components/crm2/inicio/MetaMes";
+import { Cf2PrecisaAtencao } from "@/components/crm2/inicio/PrecisaAtencao";
+import { Cf2OperacaoHoje } from "@/components/crm2/inicio/OperacaoHoje";
+import { Cf2Workspaces, type WorkspaceCard } from "@/components/crm2/inicio/Workspaces";
 
+const TZ = "America/Sao_Paulo";
 const brl0 = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 0, maximumFractionDigits: 0 });
-const brl2 = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const brlK = (v: number) =>
+  v >= 1000 ? `R$ ${(v / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}k` : brl0(v);
 
-function formatMinutos(min: number): string {
-  if (min < 60) return `${min}min`;
-  const horas = Math.floor(min / 60);
-  if (horas < 24) return `${horas}h${min % 60 > 0 ? ` ${min % 60}min` : ""}`;
-  return `${Math.floor(horas / 24)}d ${horas % 24}h`;
+/** Semana ISO-8601 — mesma numeração que o time usa pra falar de "semana 36". */
+function semanaIso(d: Date) {
+  const alvo = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  alvo.setUTCDate(alvo.getUTCDate() + 4 - (alvo.getUTCDay() || 7));
+  const inicioAno = new Date(Date.UTC(alvo.getUTCFullYear(), 0, 1));
+  return Math.ceil(((alvo.getTime() - inicioAno.getTime()) / 86_400_000 + 1) / 7);
 }
 
-const ACTION_BY_TIPO: Record<string, string> = {
-  ligacao: "Ligar",
-  whatsapp: "Responder",
-  proposta_enviada: "Enviar",
-  reuniao: "Preparar",
-  follow_up: "Retomar",
-  email: "Enviar",
-};
-
-function tempoRelativo(venc: Date | null): { texto: string; atrasado: boolean } {
-  if (!venc) return { texto: "Sem prazo", atrasado: false };
-  const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
-  const dias = Math.round((venc.getTime() - hoje.getTime()) / 86_400_000);
-  if (dias < 0) return { texto: "Atrasado", atrasado: true };
-  if (dias === 0) return { texto: "Hoje", atrasado: false };
-  if (dias === 1) return { texto: "Amanhã", atrasado: false };
-  return { texto: venc.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }), atrasado: false };
+function formatarEspera(min: number | null) {
+  if (min === null) return "sem fila de espera";
+  if (min < 60) return `espera de ${min}min`;
+  const h = Math.floor(min / 60);
+  return h < 24 ? `espera de ${h}h` : `espera de ${Math.floor(h / 24)}d`;
 }
 
-export default async function InicioPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
+/**
+ * Home / Command Center (redesign 30/08 — Figma 559:2159).
+ *
+ * Tela única (o desenho tirou as abas Visão Geral/Pipeline/Pendências da
+ * versão anterior): hero com o pulso do negócio, a jornada inteira da
+ * operação numa faixa, evolução de MRR + meta, a fila do que precisa de
+ * atenção, a agenda do dia e os atalhos por frente.
+ *
+ * Todo número aqui vem de fonte real. Onde o desenho mostra um sinal que o
+ * produto não tem como calcular de verdade (ex.: variação de clientes ativos
+ * no mês, "% fora do SLA" — SLA formal não existe no modelo), o elemento sai
+ * em vez de aparecer com número inventado.
+ */
+export default async function InicioPage() {
   const ctx = await getTenantContext();
   if (!ctx) redirect("/login");
 
-  const params = await searchParams;
-  const tab = params.tab === "pipeline" || params.tab === "pendencias" ? params.tab : "geral";
   const hoje = new Date();
+  const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+  const fimMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 1);
 
   const [
-    org,
-    metaMes,
-    pipelineAtivo,
-    mrrComparativo,
-    desempenhoMensal,
-    funilLeads,
-    pipelineComercial,
-    vendedores,
-    comunicacoes,
-    atividadeRecente,
-    tarefasPendentesLista,
-    aquisicao,
-    preVendasAtrasados,
-    negociosTravados,
-    mrrLedger,
-    saudeBase,
-    atendimento,
-    implantacao,
-    cs,
-    financeiro,
+    org, metaMes, pipelineAtivo, mrrComparativo, funilLeads, aquisicao,
+    atendimento, cs, financeiro, onboarding, implantacao, metaProdutos, mrrSeries,
+    precisaAtencao, agendaHoje, equipe, fechadoMes, clientesAtivos,
   ] = await Promise.all([
     db.select({ nome: organizacoes.nome }).from(organizacoes).where(eq(organizacoes.id, ctx.organizacaoId)).limit(1),
     getMetaComercialAgregada(ctx.organizacaoId, hoje),
     getPipelineAtual(ctx.organizacaoId),
     getMrrComparativo(ctx.organizacaoId, hoje),
-    getDesempenhoMensalTrend(ctx.organizacaoId, hoje, 6),
     getFunilLeads(ctx.organizacaoId, hoje),
-    getPipelineComercial(ctx.organizacaoId, hoje),
-    getMetasPorVendedor(ctx.organizacaoId),
-    getComunicacoesResumo(ctx.organizacaoId, hoje),
-    getAtividadeRecente(ctx.organizacaoId, 3),
-    db.select({
-      id: tarefas.id, titulo: tarefas.titulo, dataVencimento: tarefas.dataVencimento,
-      usuarioNome: usuarios.nome,
-    }).from(tarefas)
-      .leftJoin(usuarios, eq(usuarios.id, tarefas.usuarioId))
-      .where(and(
-        eq(tarefas.organizacaoId, ctx.organizacaoId),
-        eq(tarefas.concluida, false),
-        or(lte(tarefas.dataVencimento, new Date().toISOString().split("T")[0]), isNull(tarefas.dataVencimento)),
-      ))
-      .orderBy(tarefas.dataVencimento)
-      .limit(50),
     getAquisicaoPeriodo(ctx.organizacaoId, hoje),
-    getPreVendasAtrasados(ctx.organizacaoId),
-    getNegociosTravadosResumo(ctx.organizacaoId, 5),
-    getMrrLedgerPeriodo(ctx.organizacaoId, hoje),
-    getSaudeBaseClientes(ctx.organizacaoId),
     getAtendimentoResumo(ctx.organizacaoId),
-    getImplantacaoResumo(ctx.organizacaoId),
     getCsResumo(ctx.organizacaoId),
     getFinanceiroResumo(ctx.organizacaoId),
+    getEntregaResumoPorFamilia(ctx.organizacaoId, FAMILIAS_ONBOARDING_HOME, hoje),
+    getEntregaResumoPorFamilia(ctx.organizacaoId, FAMILIAS_IMPLANTACAO_HOME, hoje),
+    getMetaPorProduto(ctx.organizacaoId, hoje),
+    getMrrSeries(ctx.organizacaoId, hoje),
+    getPrecisaAtencao(ctx.organizacaoId, hoje),
+    getAgendaHoje(ctx.organizacaoId, ctx.userId, hoje),
+    getEquipeAtiva(ctx.organizacaoId, 5),
+    getFechadoPeriodo(ctx.organizacaoId, inicioMes, fimMes),
+    getClientesAtivos(ctx.organizacaoId),
   ]);
 
   const orgNome = org[0]?.nome || "Callface";
-  const pipelineTotalCount = pipelineAtivo.etapas.reduce((s, e) => s + e.count, 0);
-  const rankingOrdenado = [...vendedores].sort((a, b) => b.realizado - a.realizado).slice(0, 3);
+  const primeiroNome = (ctx.userName || "").split(" ")[0];
+  const horaSp = Number(hoje.toLocaleString("pt-BR", { timeZone: TZ, hour: "2-digit", hour12: false }));
+  const periodo = horaSp < 12 ? "Bom dia" : horaSp < 18 ? "Boa tarde" : "Boa noite";
+  const dataExtenso = hoje.toLocaleDateString("pt-BR", { timeZone: TZ, weekday: "long", day: "numeric", month: "long" });
 
-  const metaPct = metaMes.valorAlvo > 0 ? Math.round((metaMes.realizado / metaMes.valorAlvo) * 100) : 0;
-  const faltantes = Math.max(metaMes.valorAlvo - metaMes.realizado, 0);
-  const diasUteisRestantes = diasUteisRestantesNoMes(hoje);
-  const metaPorDia = diasUteisRestantes > 0 ? faltantes / diasUteisRestantes : null;
-  const coberturaRatio = faltantes > 0 ? pipelineAtivo.ponderado / faltantes : null;
-  const totalContasSaude = saudeBase.ativo + saudeBase.inadimplente + saudeBase.churned;
+  const conversasAguardando = atendimento.whatsappAbertas + atendimento.emailPendentes;
+  // O gauge da meta usa a MESMA base do breakdown por produto (negócios
+  // ganhos no mês), senão o "total realizado" não fecharia com a soma das
+  // linhas logo abaixo dele — `metaMes.realizado` tem escopo diferente (só
+  // negócios de closers com meta cadastrada).
+  const realizadoMes = metaProdutos.reduce((s, p) => s + p.valor, 0);
 
-  const tabHref = (t: string) => (t === "geral" ? "/inicio" : `/inicio?tab=${t}`);
-  const avatarColors = ["var(--cf2-avatar-1)", "var(--cf2-avatar-2)", "var(--cf2-avatar-3)", "var(--cf2-avatar-4)", "var(--cf2-avatar-5)"];
+  const kpiHero: KpiCard = {
+    label: "MRR ativo",
+    valor: brl0(mrrComparativo.atual),
+    rodape: `${clientesAtivos} ${clientesAtivos === 1 ? "cliente ativo" : "clientes ativos"}`,
+    icone: "wallet",
+    href: "/clientes/financeiro",
+    tendencia: mrrComparativo.deltaPct !== null
+      ? {
+          texto: `${mrrComparativo.deltaPct >= 0 ? "+" : ""}${mrrComparativo.deltaPct.toFixed(1)}%`,
+          direcao: mrrComparativo.deltaPct >= 0 ? "up" : "down",
+          tom: mrrComparativo.deltaPct >= 0 ? "positivo" : "negativo",
+        }
+      : undefined,
+  };
+
+  const kpis: KpiCard[] = [
+    {
+      label: "Pipeline aberto", valor: brl0(pipelineAtivo.total), icone: "layers", href: "/pipeline",
+      rodape: `${pipelineAtivo.negociosAbertos} ${pipelineAtivo.negociosAbertos === 1 ? "negócio" : "negócios"}`,
+    },
+    {
+      label: "Clientes ativos", valor: String(clientesAtivos), icone: "empresa", href: "/clientes",
+      rodape: `${cs.renovacoesProximas30d} ${cs.renovacoesProximas30d === 1 ? "renovação próxima" : "renovações próximas"}`,
+    },
+    {
+      label: "Onboardings", valor: String(onboarding.ativas), icone: "rocket", href: "/clientes/onboarding",
+      rodape: `${onboarding.aguardandoContato} aguardando contato`,
+    },
+    {
+      label: "Implantações PABX", valor: String(implantacao.ativas), icone: "server", href: "/clientes/implantacao",
+      rodape: `${implantacao.bloqueadas} ${implantacao.bloqueadas === 1 ? "bloqueada" : "bloqueadas"}`,
+      tendencia: implantacao.atrasadas > 0
+        ? { texto: `${implantacao.atrasadas} atrasadas`, direcao: "down", tom: "negativo" }
+        : undefined,
+    },
+    {
+      label: "Atendimentos", valor: String(conversasAguardando), icone: "inbox", href: "/atendimento",
+      rodape: formatarEspera(atendimento.esperaMaisAntigaMinutos),
+    },
+  ];
+
+  const workspaces: WorkspaceCard[] = [
+    {
+      key: "vendas", titulo: "Vendas", href: "/pipeline", cta: "Abrir Vendas",
+      metricas: [
+        { label: "Em pipeline", valor: brlK(pipelineAtivo.total) },
+        { label: "Negócios abertos", valor: String(pipelineAtivo.negociosAbertos) },
+        { label: "Ganhos no mês", valor: brlK(mrrComparativo.atual), tom: "neutro" },
+      ],
+    },
+    {
+      key: "atendimento", titulo: "Atendimento", href: "/atendimento", cta: "Abrir Atendimento",
+      metricas: [
+        { label: "Conversas aguardando", valor: String(conversasAguardando) },
+        { label: "WhatsApp abertos", valor: String(atendimento.whatsappAbertas), tom: atendimento.whatsappAbertas > 0 ? "warning" : "neutro" },
+        { label: "E-mails pendentes", valor: String(atendimento.emailPendentes), tom: atendimento.emailPendentes > 0 ? "warning" : "neutro" },
+      ],
+    },
+    {
+      key: "onboarding", titulo: "Onboarding", href: "/clientes/onboarding", cta: "Abrir Onboarding",
+      metricas: [
+        { label: "Ativos", valor: String(onboarding.ativas) },
+        { label: "Aguardando contato", valor: String(onboarding.aguardandoContato), tom: onboarding.aguardandoContato > 0 ? "warning" : "neutro" },
+        { label: "Reuniões hoje", valor: String(onboarding.reunioesHoje) },
+      ],
+    },
+    {
+      key: "implantacao", titulo: "Implantação PABX", href: "/clientes/implantacao", cta: "Abrir Implantação",
+      metricas: [
+        { label: "Projetos ativos", valor: String(implantacao.ativas) },
+        { label: "Bloqueados", valor: String(implantacao.bloqueadas), tom: implantacao.bloqueadas > 0 ? "danger" : "neutro" },
+        { label: "Aguardando cliente", valor: String(implantacao.aguardandoCliente), tom: implantacao.aguardandoCliente > 0 ? "warning" : "neutro" },
+      ],
+    },
+    {
+      key: "cs", titulo: "Customer Success", href: "/clientes/sucesso", cta: "Abrir CS",
+      metricas: [
+        { label: "Ações pendentes", valor: String(cs.tarefasAtrasadas) },
+        { label: "Renovações próximas", valor: String(cs.renovacoesProximas30d), tom: cs.renovacoesProximas30d > 0 ? "warning" : "neutro" },
+        { label: "Sinais de risco", valor: String(cs.clientesEmRisco), tom: cs.clientesEmRisco > 0 ? "danger" : "neutro" },
+      ],
+    },
+    {
+      key: "financeiro", titulo: "Financeiro", href: "/clientes/financeiro", cta: "Abrir Financeiro",
+      metricas: [
+        { label: "MRR atual", valor: brlK(mrrComparativo.atual) },
+        { label: "Valor vencido", valor: brlK(financeiro.atrasadoValor), tom: financeiro.atrasadoValor > 0 ? "danger" : "neutro" },
+        { label: "Cobranças vencidas", valor: String(financeiro.atrasadoCount), tom: financeiro.atrasadoCount > 0 ? "warning" : "neutro" },
+      ],
+    },
+  ];
 
   return (
     <div className="flex flex-col gap-6">
-      {/* Hero escuro full-bleed — só o Topbar agora (17/08, pedido do Kauã:
-          "descer o Pulso do Negócio"). -m-6 escapa do padding p-6 do shell
-          (mesmo valor, 24px) sem tocar no layout global, que continua
-          servindo todas as outras telas crm2 sem mudança. */}
-      <div className="-m-6 mb-0 flex flex-col gap-6 px-8 pt-7 pb-10 rounded-tl-2xl" style={{ background: "var(--cf2-chrome-bg-alt)" }}>
-        <Cf2Topbar orgNome={orgNome} variant="dark" />
+      {/* Só a topbar sangra até a borda (-mx-6 -mt-6): ela é o topo do shell.
+          O hero escuro fica DENTRO do padding da página, alinhado com as
+          demais seções (Jornada, MRR, Workspaces) — antes ele escapava junto
+          e ficava colado nas laterais, destoando do resto da tela. */}
+      <div className="-mx-6 -mt-6 px-4 sm:px-6 py-2.5 rounded-tl-2xl" style={{ background: "var(--cf2-bg-surface)" }}>
+        <Cf2Topbar orgNome={orgNome} variant="light" compact compactTitle title="Início" actions={null} />
       </div>
 
-      {/* Tabs flutuantes (17/08, 4ª correção) — UM card branco compartilhado
-          (com sombra) por baixo de tudo, não pills individuais. Só o item
-          ATIVO ganha sua própria pill (verde, com sombra própria); os
-          inativos são só texto direto sobre o card branco, sem fundo
-          nenhum. O recorte escuro (notch-bump real do Figma, 10px côncavo
-          nos 2 cantos de baixo) fica por trás do card branco, preenchendo
-          a costura com o hero. Sem seletor de mês — não existe no frame. */}
-      <div className="-mt-12 flex justify-center relative z-10">
-        <div className="relative">
-          <div className="absolute bottom-0 -left-2.5 w-2.5 h-2.5" style={{ background: "radial-gradient(circle at top left, transparent 10px, var(--cf2-bg-canvas) 10px)" }} />
-          <div className="absolute bottom-0 -right-2.5 w-2.5 h-2.5" style={{ background: "radial-gradient(circle at top right, transparent 10px, var(--cf2-bg-canvas) 10px)" }} />
-          <div className="relative flex gap-3 p-3 rounded-2xl" style={{ background: "var(--cf2-bg-surface)", boxShadow: "var(--cf2-shadow-card-md)" }}>
-            {[{ key: "geral", label: "Visão Geral" }, { key: "pipeline", label: "Pipeline" }, { key: "pendencias", label: "Pendências", badge: tarefasPendentesLista.length }].map((t) => (
-              <Link
-                key={t.key}
-                href={tabHref(t.key)}
-                scroll={false}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm whitespace-nowrap"
-                style={{
-                  background: tab === t.key ? "var(--cf2-accent)" : "transparent",
-                  color: tab === t.key ? "var(--cf2-text-on-accent)" : "var(--cf2-text-primary)",
-                  fontWeight: tab === t.key ? 700 : 500,
-                  boxShadow: tab === t.key ? "0 2px 4px rgba(0,0,0,0.15)" : "none",
-                }}
-              >
-                {t.label}
-                {t.badge !== undefined && t.badge > 0 && <Cf2Badge variant={tab === t.key ? "neutral" : "accent"}>{t.badge}</Cf2Badge>}
-              </Link>
-            ))}
-          </div>
-        </div>
+      <Cf2HeroPulso
+        eyebrow={`${dataExtenso} · Semana ${semanaIso(hoje)}`}
+        saudacao={primeiroNome ? `${periodo}, ${primeiroNome}` : periodo}
+        subtitulo="Aqui está o pulso da operação e o que merece a sua atenção agora."
+        kpiHero={kpiHero}
+        kpis={kpis}
+        equipe={equipe}
+      />
+
+      <div className="pt-6">
+        <Cf2JornadaOperacao
+          comercial={[
+            { label: "Aquisição", valor: String(aquisicao.total), apoio: "leads no período", href: "/prospeccao" },
+            { label: "Pré-vendas", valor: String(funilLeads.emQualificacao.total), apoio: "em qualificação", href: "/pre-vendas" },
+            { label: "Pipeline", valor: String(pipelineAtivo.negociosAbertos), apoio: "oportunidades", href: "/pipeline" },
+            { label: "Ganhos", valor: String(fechadoMes.ganhos), apoio: "no período", href: "/pipeline?status=ganho" },
+          ]}
+          posVenda={[
+            { label: "Ativação", valor: String(onboarding.ativas), apoio: "em andamento", href: "/clientes/onboarding" },
+            { label: "Clientes ativos", valor: String(clientesAtivos), apoio: "base ativa", href: "/clientes" },
+            { label: "CS", valor: String(cs.tarefasAtrasadas), apoio: "ações pendentes", href: "/clientes/sucesso" },
+          ]}
+        />
       </div>
 
-      {/* Pulso do Negócio (17/08) — descido pra baixo das tabs (Figma novo),
-          não mais colado no Topbar. Só na aba Visão Geral (pedido do Kauã:
-          em Pipeline/Pendências ele não precisa estar visível). */}
-      {tab === "geral" && (
-        <div className="rounded-3xl p-6 flex flex-col gap-5" style={{ background: "var(--cf2-chrome-bg)", border: "1px solid var(--cf2-chrome-border)" }}>
-          <div className="flex items-center justify-between">
-            <div className="flex flex-col gap-1">
-              <p className="text-[18px] font-bold" style={{ color: "var(--cf2-chrome-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>Pulso do Negócio</p>
-              <p className="text-[13px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Visão executiva unificada da performance e ritmo do período comercial</p>
-            </div>
-            <div className="flex items-center gap-2.5">
-              <span className="text-[13px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Equipe</span>
-              <div className="flex">
-                {rankingOrdenado.map((v, i) => (
-                  <div
-                    key={v.id}
-                    className="flex items-center justify-center rounded-full border-2 border-white text-[10px] font-bold"
-                    style={{ width: 28, height: 28, marginLeft: i > 0 ? -8 : 0, background: avatarColors[i], color: "var(--cf2-text-on-accent)", zIndex: 3 - i }}
-                  >
-                    {v.nome.split(" ").slice(0, 2).map((w) => w[0]).join("").toUpperCase()}
-                  </div>
-                ))}
-              </div>
-              {mrrComparativo.deltaPct !== null ? (
-                <Cf2Badge variant={mrrComparativo.deltaPct >= 0 ? "success" : "danger"}>
-                  {mrrComparativo.deltaPct >= 0 ? "+" : ""}{mrrComparativo.deltaPct.toFixed(1)}% vs anterior
-                </Cf2Badge>
-              ) : (
-                <Cf2UnavailableMetric reason="Sem MRR no mês anterior pra comparar" />
-              )}
-            </div>
-          </div>
-
-          <div className="flex items-center gap-8">
-            <div className="flex flex-col gap-3 w-[340px]">
-              <p className="text-[11px] font-bold uppercase" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Meta Mensal de Receita</p>
-              <div className="flex items-center gap-5">
-                <Cf2Gauge pct={metaPct} label={`${metaPct}%`} />
-                <div className="flex flex-col gap-1">
-                  <p className="text-[32px] font-bold" style={{ color: "var(--cf2-chrome-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>{brl0(metaMes.realizado)}</p>
-                  <p className="text-[13px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>de {brl0(metaMes.valorAlvo)} (meta do período)</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="w-px self-stretch" style={{ background: "var(--cf2-chrome-border-subtle)" }} />
-
-            <div className="flex-1 flex flex-col gap-3">
-              <p className="text-[11px] font-bold uppercase" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Cadência em Andamento</p>
-              <div className="flex gap-6">
-                <div className="flex-1 flex flex-col gap-1">
-                  <p className="text-[13px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Faltantes</p>
-                  <p className="text-[20px] font-bold" style={{ color: "var(--cf2-chrome-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>{brl0(faltantes)}</p>
-                </div>
-                <div className="flex-1 flex flex-col gap-1">
-                  <p className="text-[13px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Dias úteis restantes</p>
-                  <p className="text-[20px] font-bold" style={{ color: "var(--cf2-chrome-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>{diasUteisRestantes} dias</p>
-                </div>
-                <div className="flex-1 flex flex-col gap-1">
-                  <p className="text-[13px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Meta/dia necessária</p>
-                  {metaPorDia !== null ? (
-                    <p className="text-[20px] font-bold" style={{ color: "var(--cf2-accent-border)", fontFamily: "var(--cf2-font-heading)" }}>{brl0(metaPorDia)}/dia</p>
-                  ) : (
-                    <Cf2UnavailableMetric reason="Sem dias úteis restantes no período" />
-                  )}
-                </div>
-              </div>
-            </div>
-
-            <div className="w-px self-stretch" style={{ background: "var(--cf2-chrome-border-subtle)" }} />
-
-            <div className="flex flex-col gap-3 w-[300px]">
-              <p className="text-[11px] font-bold uppercase" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Projeção de Resultado</p>
-              <div className="flex flex-col gap-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-[13px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Pipeline aberto:</span>
-                  <span className="text-sm font-bold" style={{ color: "var(--cf2-chrome-text-primary)" }}>{brl0(pipelineAtivo.total)}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-[13px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Forecast mapeado:</span>
-                  <span className="text-sm font-bold" style={{ color: "var(--cf2-chrome-text-primary)" }}>{brl0(pipelineAtivo.ponderado)}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-[13px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Cobertura de meta:</span>
-                  {faltantes <= 0 ? (
-                    <span className="text-sm font-bold" style={{ color: "var(--cf2-accent-border)" }}>Meta batida</span>
-                  ) : coberturaRatio !== null ? (
-                    <span className="text-sm font-bold" style={{ color: "var(--cf2-accent-border)" }}>{coberturaRatio.toFixed(1)}x</span>
-                  ) : (
-                    <Cf2UnavailableMetric reason="Sem faltante calculável" />
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {tab === "geral" && (
-        <div className="flex gap-8 items-stretch">
-          <div className="flex-1 flex flex-col gap-4 min-w-0">
-            <div className="flex items-center justify-between">
-              <p className="text-lg font-semibold" style={{ color: "var(--cf2-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>Desempenho Mensal</p>
-              <div className="flex items-center gap-4">
-                <div className="flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full" style={{ background: "var(--cf2-accent-border)" }} />
-                  <span className="text-[11px]" style={{ color: "var(--cf2-text-secondary)" }}>Realizado</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full" style={{ background: "var(--cf2-text-tertiary)" }} />
-                  <span className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>Meta</span>
-                </div>
-              </div>
-            </div>
-            <Cf2Card padding="16px">
-              <DesempenhoChart dados={desempenhoMensal} meta={metaMes.valorAlvo} />
-            </Cf2Card>
-          </div>
-          <div className="w-[420px] shrink-0">
-            <TopVendedores rankingOrdenado={rankingOrdenado} avatarColors={avatarColors} />
-          </div>
-        </div>
-      )}
-
-      {tab === "pipeline" && (
-        <div className="flex flex-col gap-4">
-          <Cf2Eyebrow>Pipeline — só etapas abertas</Cf2Eyebrow>
-          <div className="flex gap-2">
-            {pipelineComercial.map((etapa) => (
-              <Cf2Card key={etapa.label} className="flex-1">
-                <p className="text-sm font-semibold mb-2" style={{ color: "var(--cf2-text-primary)" }}>{etapa.label}</p>
-                <p className="text-lg font-bold" style={{ color: "var(--cf2-text-primary)" }}>{brl0(etapa.valor)}</p>
-                <p className="text-xs mt-1" style={{ color: "var(--cf2-text-secondary)" }}>{etapa.total} negócios</p>
-              </Cf2Card>
-            ))}
-          </div>
-          <Link href="/pipeline" className="text-sm font-semibold" style={{ color: "var(--cf2-success-text)" }}>Abrir o board completo →</Link>
-        </div>
-      )}
-
-      {tab === "pendencias" && (
-        <div className="flex flex-col gap-3">
-          <Cf2Eyebrow>{tarefasPendentesLista.length} tarefas atrasadas ou sem prazo, da organização toda</Cf2Eyebrow>
-          {tarefasPendentesLista.length === 0 ? (
-            <Cf2EmptyState title="Nada pendente" description="Todas as tarefas da organização estão em dia." />
-          ) : (
-            <div className="flex flex-col gap-2 max-h-[320px] overflow-y-auto">
-              {tarefasPendentesLista.slice(0, 20).map((t) => {
-                const venc = tempoRelativo(t.dataVencimento ? new Date(t.dataVencimento) : null);
-                return (
-                  <Cf2Card key={t.id} padding="12px">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-medium" style={{ color: "var(--cf2-text-primary)" }}>{t.titulo}</p>
-                        <p className="text-xs" style={{ color: "var(--cf2-text-secondary)" }}>{t.usuarioNome || "Sem responsável"} · {venc.texto}</p>
-                      </div>
-                      {venc.atrasado && <Cf2Badge variant="warning">Atrasado</Cf2Badge>}
-                    </div>
-                  </Cf2Card>
-                );
-              })}
-            </div>
-          )}
-          <Link href="/tarefas" className="text-sm font-semibold" style={{ color: "var(--cf2-success-text)" }}>Ver atividades (tela legada) →</Link>
-        </div>
-      )}
-
-      {/* Operação Hoje (23/08) — os 4 eixos do contrato "Início" que ainda
-          não tinham representação nesta tela: Atendimento/Implantação/CS/
-          Financeiro (Receita e Comercial já existem no Pulso do Negócio e
-          na Jornada Operacional abaixo). Cada card é 100% clicável pro
-          módulo real — decorativo não conta como "responder como está a
-          operação hoje". Cada número reusa um critério já validado em
-          produção em outro módulo (ver command-center.ts), nunca um
-          conceito novo de risco/SLA/atraso. */}
-      <div className="flex flex-col gap-4">
-        <div className="flex flex-col gap-1">
-          <p className="text-lg font-semibold" style={{ color: "var(--cf2-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>Operação Hoje</p>
-          <p className="text-[13px]" style={{ color: "var(--cf2-text-secondary)" }}>Atendimento, Implantação, CS e Financeiro — visão executiva das 4 frentes operacionais</p>
-        </div>
-        <div className="grid grid-cols-4 gap-4">
-          <OperacaoCard
-            icon={Headset}
-            titulo="ATENDIMENTO"
-            href="/atendimento"
-            valor={`${atendimento.whatsappAbertas + atendimento.emailPendentes} aguardando`}
-            linhas={[
-              { texto: `${atendimento.whatsappAbertas} WhatsApp · ${atendimento.emailPendentes} e-mail` },
-              atendimento.esperaMaisAntigaMinutos !== null
-                ? { texto: `Mais antiga esperando: ${formatMinutos(atendimento.esperaMaisAntigaMinutos)}`, tom: atendimento.esperaMaisAntigaMinutos > 240 ? "warning" : undefined }
-                : { texto: "Fila zerada agora" },
-            ]}
-          />
-          <OperacaoCard
-            icon={Truck}
-            titulo="IMPLANTAÇÃO"
-            href="/clientes/implantacao"
-            valor={`${implantacao.ativas} ativas`}
-            linhas={[
-              { texto: `${implantacao.aguardandoCliente} aguardando cliente · ${implantacao.bloqueadas} bloqueadas`, tom: implantacao.bloqueadas > 0 ? "warning" : undefined },
-              { texto: `${implantacao.atrasadas} com prazo estourado`, tom: implantacao.atrasadas > 0 ? "danger" : undefined },
-            ]}
-          />
-          <OperacaoCard
-            icon={HeartHandshake}
-            titulo="CS"
-            href="/clientes/sucesso"
-            valor={`${cs.clientesEmRisco} em risco`}
-            linhas={[
-              { texto: `${cs.tarefasAtrasadas} tarefa${cs.tarefasAtrasadas === 1 ? "" : "s"} atrasada${cs.tarefasAtrasadas === 1 ? "" : "s"}`, tom: cs.tarefasAtrasadas > 0 ? "warning" : undefined },
-              { texto: `${cs.renovacoesProximas30d} renovação${cs.renovacoesProximas30d === 1 ? "" : "ões"} em 30 dias` },
-            ]}
-          />
-          <OperacaoCard
-            icon={Wallet}
-            titulo="FINANCEIRO"
-            href="/financeiro"
-            valor={brl0(financeiro.recebidoMes)}
-            sub="recebido no mês"
-            linhas={[
-              { texto: `${brl0(financeiro.emAberto)} em aberto` },
-              { texto: `${brl0(financeiro.atrasadoValor)} atrasado (${financeiro.atrasadoCount})`, tom: financeiro.atrasadoCount > 0 ? "danger" : undefined },
-            ]}
-          />
-        </div>
+      <div className="grid grid-cols-1 xl:grid-cols-[1.4fr_1fr] gap-4">
+        <Cf2MrrEvolucao
+          series={mrrSeries}
+          totalFaturamento={mrrComparativo.atual}
+          variacaoPct={mrrComparativo.deltaPct}
+        />
+        <Cf2MetaMes realizado={realizadoMes} meta={metaMes.valorAlvo} produtos={metaProdutos} />
       </div>
 
-      {/* Jornada Operacional — flow Aquisição → Pré-vendas → Vendas →
-          Entrega → Clientes. Substitui os antigos "Funil de Leads" e
-          "Pipeline Comercial" sempre-visíveis (não fazem parte do frame
-          novo do Figma) — as funções que os alimentavam continuam
-          existindo em command-center.ts/comercial.ts, só não renderizam
-          mais aqui. Cada estágio documenta se o número é real ou pendente. */}
-      <div className="flex flex-col gap-4">
-        <div className="flex flex-col gap-1">
-          <p className="text-lg font-semibold" style={{ color: "var(--cf2-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>Jornada Operacional</p>
-          <p className="text-[13px]" style={{ color: "var(--cf2-text-secondary)" }}>Flow operacional unificado e conversão entre as frentes de Revenue Operations</p>
-        </div>
-        <Cf2Card padding="24px">
-          <div className="flex gap-3 items-stretch">
-            <EstagioCard titulo="AQUISIÇÃO" valor={`${aquisicao.total} leads`} sub={`${aquisicao.inbound} inbound · ${aquisicao.outbound} outbound`} />
-            <Seta />
-            <EstagioCard
-              titulo="PRÉ-VENDAS"
-              valor={`${funilLeads.emQualificacao.total} ativos`}
-              linhas={[
-                { texto: `${funilLeads.qualificados.total} qualificados` },
-                { texto: `${preVendasAtrasados} atrasados`, tom: preVendasAtrasados > 0 ? "warning" : undefined },
-              ]}
-            />
-            <Seta />
-            <EstagioCard
-              titulo="VENDAS"
-              valor={brl0(pipelineAtivo.total)}
-              linhas={[
-                { texto: `${pipelineTotalCount} oportunidades` },
-                { texto: `${brl0(negociosTravados.valor)} travados (${negociosTravados.total}, ${negociosTravados.diasMin}+ dias sem atividade)`, tom: negociosTravados.total > 0 ? "warning" : undefined },
-              ]}
-            />
-            <Seta />
-            <EstagioCard titulo="ENTREGA" indisponivel="Onboarding de serviço ainda sem status estruturado no domínio novo (Commercial Core) — pendência desta rodada" />
-            <Seta />
-            <EstagioCard
-              titulo="CLIENTES"
-              valor={`${saudeBase.ativo} ativos`}
-              linhas={[
-                { texto: `${saudeBase.inadimplente} inadimplentes`, tom: saudeBase.inadimplente > 0 ? "warning" : undefined },
-                { texto: `${saudeBase.churned} churned`, tom: saudeBase.churned > 0 ? "danger" : undefined },
-              ]}
-            />
-          </div>
-        </Cf2Card>
+      <div className="grid grid-cols-1 xl:grid-cols-[1.4fr_1fr] gap-4 items-start">
+        <Cf2PrecisaAtencao itens={precisaAtencao} />
+        <Cf2OperacaoHoje itens={agendaHoje} />
       </div>
 
-      {/* Saúde da Receita & Base + Comunicações */}
-      <div className="flex gap-8 items-start">
-        <div className="flex-1 flex flex-col gap-4 min-w-0">
-          <div className="flex flex-col gap-1">
-            <p className="text-lg font-semibold" style={{ color: "var(--cf2-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>Saúde da Receita &amp; Base</p>
-            <p className="text-[13px]" style={{ color: "var(--cf2-text-secondary)" }}>Movimentação financeira mensal e distribuição de integridade da base</p>
-          </div>
-          <Cf2Card>
-            <div className="flex flex-col gap-2.5">
-              <LedgerLinha label="MRR Atual Ativo" valor={brl0(mrrComparativo.atual)} />
-              <LedgerLinha label="+ Novo MRR Adicionado" valor={`+ ${brl0(mrrLedger.novo)}`} tom="success" />
-              <LedgerLinha label="+ Expansão de Contas" valor={`+ ${brl0(mrrLedger.expansao)}`} tom="teal" />
-              <LedgerLinha label="- Downgrades e Churn" valor={brl0(mrrLedger.churn)} tom="danger" />
-            </div>
-            <div className="h-px my-4" style={{ background: "var(--cf2-border-default)" }} />
-            <div className="flex items-center justify-between p-2 rounded-lg" style={{ background: "rgba(254,242,242,0.6)" }}>
-              <span className="text-[13px] font-bold" style={{ color: "var(--cf2-danger-text)" }}>MRR Total em Risco Ativo</span>
-              <Cf2UnavailableMetric reason="Sem conceito estruturado de risco de MRR ainda (payment_failed hoje é só texto de auditoria, não flag por cliente) — pendência desta rodada" />
-            </div>
-            <div className="h-px my-4" style={{ background: "var(--cf2-border-default)" }} />
-            <div className="flex flex-col gap-2">
-              <p className="text-xs" style={{ color: "var(--cf2-text-secondary)" }}>Distribuição de Saúde de Contas</p>
-              {totalContasSaude === 0 ? (
-                <Cf2UnavailableMetric reason="Nenhum cliente cadastrado ainda" />
-              ) : (
-                <>
-                  <div className="flex gap-[3px] h-4 w-full">
-                    {saudeBase.ativo > 0 && <div className="rounded-l h-full" style={{ background: "var(--cf2-chrome-bg)", width: `${(saudeBase.ativo / totalContasSaude) * 100}%` }} />}
-                    {saudeBase.inadimplente > 0 && <div className="h-full" style={{ background: "var(--cf2-warning-text)", width: `${(saudeBase.inadimplente / totalContasSaude) * 100}%` }} />}
-                    {saudeBase.churned > 0 && <div className="rounded-r h-full" style={{ background: "var(--cf2-danger-text)", width: `${(saudeBase.churned / totalContasSaude) * 100}%` }} />}
-                  </div>
-                  <div className="flex gap-3 text-[11px]">
-                    <span style={{ color: "var(--cf2-chrome-bg)" }}>● {saudeBase.ativo} Saudáveis</span>
-                    <span style={{ color: "var(--cf2-warning-text)" }}>● {saudeBase.inadimplente} Atenção</span>
-                    <span style={{ color: "var(--cf2-danger-text)" }}>● {saudeBase.churned} Risco</span>
-                  </div>
-                </>
-              )}
-            </div>
-          </Cf2Card>
-        </div>
-
-        <div className="flex flex-col gap-4 w-[420px] shrink-0">
-          <p className="text-[11px] font-bold" style={{ color: "var(--cf2-text-secondary)" }}>COMUNICAÇÕES</p>
-          <div className="flex gap-3">
-            <Cf2Card padding="12px" className="flex-1">
-              <ComunicacaoMiniCard icon={Phone} label="Ligações" total={comunicacoes.ligacoes} />
-            </Cf2Card>
-            <Cf2Card padding="12px" className="flex-1">
-              <ComunicacaoMiniCard icon={MessageCircle} label="WhatsApp" total={comunicacoes.whatsapp} />
-            </Cf2Card>
-            <Cf2Card padding="12px" className="flex-1">
-              <ComunicacaoMiniCard icon={Mail} label="E-mail" total={comunicacoes.email} />
-            </Cf2Card>
-          </div>
-          <p className="text-[13px] font-semibold" style={{ color: "var(--cf2-text-primary)" }}>Canais</p>
-          <Cf2Card padding="12px">
-            <p className="text-[13px] font-semibold mb-2.5" style={{ color: "var(--cf2-text-primary)" }}>Atividade em Tempo Real</p>
-            {atividadeRecente.length === 0 ? (
-              <p className="text-xs" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhuma atividade registrada ainda.</p>
-            ) : (
-              <div className="flex flex-col gap-2">
-                {atividadeRecente.map((a, i) => (
-                  <div key={a.id}>
-                    <p className="text-xs" style={{ color: "var(--cf2-text-secondary)" }}>• {a.texto}</p>
-                    {i < atividadeRecente.length - 1 && <div className="h-px my-2" style={{ background: "var(--cf2-border-default)" }} />}
-                  </div>
-                ))}
-              </div>
-            )}
-          </Cf2Card>
-        </div>
-      </div>
+      <Cf2Workspaces cards={workspaces} />
     </div>
-  );
-}
-
-function OperacaoCard({
-  icon: Icon, titulo, href, valor, sub, linhas,
-}: {
-  icon: React.ElementType;
-  titulo: string;
-  href: string;
-  valor: string;
-  sub?: string;
-  linhas: { texto: string; tom?: "warning" | "danger" }[];
-}) {
-  const tomCor: Record<string, string> = {
-    warning: "var(--cf2-warning-text)",
-    danger: "var(--cf2-danger-text)",
-  };
-  return (
-    <Link href={href} className="block">
-      <Cf2Card className="flex flex-col gap-3 h-full transition-transform hover:-translate-y-0.5 cursor-pointer">
-        <div className="flex items-center justify-between">
-          <p className="text-xs font-semibold" style={{ color: "var(--cf2-text-secondary)" }}>{titulo}</p>
-          <Icon className="w-4 h-4" style={{ color: "var(--cf2-text-tertiary)" }} />
-        </div>
-        <div>
-          <p className="text-[22px] font-bold leading-tight" style={{ color: "var(--cf2-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>{valor}</p>
-          {sub && <p className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>{sub}</p>}
-        </div>
-        <div className="flex flex-col gap-0.5 mt-auto">
-          {linhas.map((l, i) => (
-            <p key={i} className="text-[11px]" style={{ color: l.tom ? tomCor[l.tom] : "var(--cf2-text-secondary)", fontWeight: l.tom ? 600 : 400 }}>{l.texto}</p>
-          ))}
-        </div>
-      </Cf2Card>
-    </Link>
-  );
-}
-
-function Seta() {
-  return (
-    <div className="flex flex-col items-center justify-center shrink-0 w-4 self-stretch">
-      <span className="text-base" style={{ color: "var(--cf2-text-tertiary)" }}>→</span>
-    </div>
-  );
-}
-
-function EstagioCard({
-  titulo, valor, sub, linhas, indisponivel,
-}: {
-  titulo: string;
-  valor?: string;
-  sub?: string;
-  linhas?: { texto: string; tom?: "warning" | "danger" | "success" }[];
-  indisponivel?: string;
-}) {
-  const tomCor: Record<string, string> = {
-    warning: "var(--cf2-warning-text)",
-    danger: "var(--cf2-danger-text)",
-    success: "var(--cf2-success-text)",
-  };
-  return (
-    <div className="flex-1 flex flex-col gap-3 p-4 rounded-lg border min-w-0" style={{ borderColor: "var(--cf2-border-default)" }}>
-      <p className="text-xs font-semibold" style={{ color: "var(--cf2-text-secondary)" }}>{titulo}</p>
-      {valor && <p className="text-[22px] font-bold" style={{ color: "var(--cf2-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>{valor}</p>}
-      {sub && <p className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>{sub}</p>}
-      {linhas && (
-        <div className="flex flex-col gap-0.5">
-          {linhas.map((l, i) => (
-            <p key={i} className="text-[11px]" style={{ color: l.tom ? tomCor[l.tom] : "var(--cf2-text-secondary)", fontWeight: l.tom ? 600 : 400 }}>{l.texto}</p>
-          ))}
-        </div>
-      )}
-      {indisponivel && <Cf2UnavailableMetric reason={indisponivel} />}
-    </div>
-  );
-}
-
-function LedgerLinha({ label, valor, tom }: { label: string; valor: string; tom?: "success" | "danger" | "teal" }) {
-  const cor = tom === "success" ? "var(--cf2-success-text)" : tom === "danger" ? "var(--cf2-danger-text)" : tom === "teal" ? "#0d9488" : "var(--cf2-text-primary)";
-  return (
-    <div className="flex items-center justify-between text-[13px]" style={{ color: cor }}>
-      <span style={{ fontWeight: tom ? 600 : 400 }}>{label}</span>
-      <span className="font-bold">{valor}</span>
-    </div>
-  );
-}
-
-function TopVendedores({
-  rankingOrdenado, avatarColors,
-}: {
-  rankingOrdenado: { id: string; nome: string; valorAlvo: number; realizado: number; pct: number }[];
-  avatarColors: string[];
-}) {
-  return (
-    <Cf2Card padding="0px" className="overflow-hidden h-full flex flex-col" style={{ background: "var(--cf2-chrome-bg)" }}>
-      <div className="flex items-center justify-center p-5 shrink-0" style={{ background: "var(--cf2-chrome-bg)" }}>
-        <p className="text-xl font-bold" style={{ color: "var(--cf2-chrome-text-primary)", fontFamily: "var(--cf2-font-heading)" }}># TOP Vendedores</p>
-      </div>
-      <div className="flex-1 flex flex-col gap-2.5 px-4 pb-4 overflow-y-auto" style={{ background: "var(--cf2-chrome-bg)" }}>
-        {rankingOrdenado.length === 0 ? (
-          <Cf2EmptyState title="Ninguém com meta cadastrada ainda" />
-        ) : (
-          rankingOrdenado.map((v, i) => (
-            <div key={v.id} className="flex flex-col gap-2.5 p-3 rounded-2xl" style={{ border: "1px solid var(--cf2-chrome-border)" }}>
-              <div className="flex items-center gap-3">
-                <div className="flex items-center justify-center rounded-full text-xs font-extrabold shrink-0" style={{ width: 36, height: 36, background: avatarColors[i], color: "var(--cf2-text-on-accent)" }}>
-                  {v.nome.split(" ").slice(0, 2).map((w) => w[0]).join("").toUpperCase()}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-bold truncate" style={{ color: "var(--cf2-chrome-text-primary)" }}>{v.nome}</p>
-                  <p className="text-xs" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Meta: {brl2(v.valorAlvo)}</p>
-                </div>
-                <p className="text-sm font-extrabold whitespace-nowrap" style={{ color: "var(--cf2-chrome-text-primary)" }}>{brl2(v.realizado)}</p>
-              </div>
-              <div className="rounded-full overflow-hidden h-1.5 w-full" style={{ background: "rgba(255,255,255,0.17)" }}>
-                <div className="h-full" style={{ width: `${Math.min(v.pct, 100)}%`, background: "var(--cf2-success-fill)" }} />
-              </div>
-            </div>
-          ))
-        )}
-      </div>
-      <div className="flex items-center justify-between p-3 shrink-0" style={{ background: "var(--cf2-chrome-bg)", borderTop: "1px solid var(--cf2-chrome-border)" }}>
-        <p className="text-xs" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Atualizado há 3 min</p>
-        <Link href="/relatorios" className="px-4 py-2 rounded-xl text-[13px] font-bold" style={{ background: "var(--cf2-accent)", border: "1px solid var(--cf2-accent-border)", color: "var(--cf2-text-on-accent)" }}>
-          Ver Ranking Completo (tela legada)
-        </Link>
-      </div>
-    </Cf2Card>
-  );
-}
-
-function ComunicacaoMiniCard({ icon: Icon, label, total }: { icon: React.ElementType; label: string; total: number }) {
-  return (
-    <>
-      <div className="flex items-center justify-between mb-2.5">
-        <p className="text-xs" style={{ color: "var(--cf2-text-secondary)" }}>{label}</p>
-        <Icon className="w-3.5 h-3.5" style={{ color: "var(--cf2-text-tertiary)" }} />
-      </div>
-      <p className="text-2xl font-bold mb-1" style={{ color: "var(--cf2-text-primary)" }}>{total}</p>
-      <Cf2UnavailableMetric reason="Taxa de sucesso ainda sem regra formal — ver ADR do Command Center" />
-    </>
   );
 }

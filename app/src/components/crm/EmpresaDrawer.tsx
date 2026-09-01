@@ -3,10 +3,13 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { DetailDrawer } from "@/components/crm/DetailDrawer";
 import { CustomFieldsSection } from "@/components/crm/CustomFieldsSection";
-import { Building2, User, Briefcase, Globe, MapPin, Phone, Instagram, Pencil, StickyNote, Plus, Send, FileText, Download } from "lucide-react";
+import { Building2, User, Briefcase, FileText, Download, Send, Plus, Sparkles, X, ExternalLink } from "lucide-react";
 import { usePipelineConfig } from "@/hooks/usePipelineConfig";
 import Link from "next/link";
-import { useState, useEffect, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
+import { Section, PropertyRow } from "@/components/crm2/shared/DrawerSection";
+import { Cf2Badge } from "@/components/crm2/ui/Badge";
+import { Cf2Card } from "@/components/crm2/ui/Card";
 
 interface EmpresaDrawerProps {
   empresaId: string | null;
@@ -14,121 +17,6 @@ interface EmpresaDrawerProps {
   onClose: () => void;
   onOpenLead?: (id: string) => void;
   onOpenNegocio?: (id: string) => void;
-}
-
-function CampoEditavel({
-  empresaId,
-  campo,
-  valor,
-  label,
-  placeholder,
-  formatar,
-}: {
-  empresaId: string;
-  campo: string;
-  valor: string | null | undefined;
-  label: string;
-  placeholder: string;
-  formatar?: (v: string) => string;
-}) {
-  const [editando, setEditando] = useState(false);
-  const [texto, setTexto] = useState(valor || "");
-  const queryClient = useQueryClient();
-  const inputRef = useRef<HTMLInputElement>(null);
-  const salvar = useMutation({
-    mutationFn: async (v: string) => {
-      const res = await fetch(`/api/empresas/${empresaId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ [campo]: v || null }),
-      });
-      if (!res.ok) throw new Error("Falha ao salvar");
-      return res.json();
-    },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["empresa", empresaId] }); setEditando(false); },
-  });
-  useEffect(() => { if (editando) inputRef.current?.focus(); }, [editando]);
-
-  if (!editando) {
-    return (
-      <div>
-        <p className="text-[10px] text-white/40 uppercase tracking-wide">{label}</p>
-        <button
-          onClick={() => { setTexto(valor || ""); setEditando(true); }}
-          className="text-left w-full text-white/70 font-mono text-xs hover:text-white transition-colors py-0.5 flex items-center gap-1.5 group"
-        >
-          {valor ? valor : <span className="text-white/25 italic font-sans">{placeholder}</span>}
-          <Pencil size={9} className="opacity-0 group-hover:opacity-40 shrink-0" />
-        </button>
-      </div>
-    );
-  }
-  return (
-    <div>
-      <p className="text-[10px] text-white/40 uppercase tracking-wide mb-1">{label}</p>
-      <div className="flex items-center gap-1.5">
-        <input
-          ref={inputRef}
-          value={texto}
-          onChange={(e) => setTexto(formatar ? formatar(e.target.value) : e.target.value)}
-          placeholder={placeholder}
-          className="flex-1 text-xs bg-white/[0.03] border border-white/[0.08] rounded-lg px-2 py-1.5 text-white/70 placeholder:text-white/20 outline-none focus:border-[#e23752]/30 font-mono"
-          onKeyDown={(e) => {
-            if (e.key === "Enter") salvar.mutate(texto.trim());
-            if (e.key === "Escape") setEditando(false);
-          }}
-        />
-        <button onClick={() => salvar.mutate(texto.trim())} disabled={salvar.isPending} className="text-[10px] text-[#e23752] hover:text-[#f06d82] px-1.5 py-1 disabled:opacity-30">
-          <Send size={11} />
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function formatarCnpj(v: string): string {
-  const d = v.replace(/\D/g, "").slice(0, 14);
-  if (d.length <= 2) return d;
-  if (d.length <= 5) return `${d.slice(0,2)}.${d.slice(2)}`;
-  if (d.length <= 8) return `${d.slice(0,2)}.${d.slice(2,5)}.${d.slice(5)}`;
-  if (d.length <= 12) return `${d.slice(0,2)}.${d.slice(2,5)}.${d.slice(5,8)}/${d.slice(8)}`;
-  return `${d.slice(0,2)}.${d.slice(2,5)}.${d.slice(5,8)}/${d.slice(8,12)}-${d.slice(12)}`;
-}
-
-function AddNoteInlineEmpresa({ empresaId }: { empresaId: string }) {
-  const [text, setText] = useState("");
-  const [open, setOpen] = useState(false);
-  const queryClient = useQueryClient();
-  const inputRef = useRef<HTMLTextAreaElement>(null);
-  const addNota = useMutation({
-    mutationFn: async (conteudo: string) => {
-      const res = await fetch("/api/notas", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ conteudo, empresaId }) });
-      if (!res.ok) throw new Error("Falha");
-      return res.json();
-    },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["empresa", empresaId] }); setText(""); setOpen(false); },
-  });
-  useEffect(() => { if (open) inputRef.current?.focus(); }, [open]);
-  if (!open) {
-    return (
-      <button onClick={() => setOpen(true)} className="w-full flex items-center justify-center gap-1.5 py-2 text-[11px] text-white/30 hover:text-white/50 hover:bg-white/[0.03] rounded-lg transition-colors mt-1.5">
-        <Plus size={11} /> Adicionar nota
-      </button>
-    );
-  }
-  return (
-    <div className="mt-1.5 space-y-1.5">
-      <textarea ref={inputRef} value={text} onChange={(e) => setText(e.target.value)} placeholder="Escreva uma nota..." className="w-full text-xs bg-white/[0.03] border border-white/[0.08] rounded-lg px-3 py-2 text-white/70 placeholder:text-white/20 outline-none focus:border-[#e23752]/30 resize-y" rows={4}
-        onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && text.trim()) addNota.mutate(text.trim()); if (e.key === "Escape") { setOpen(false); setText(""); } }} />
-      <div className="flex items-center justify-between">
-        <span className="text-[10px] text-white/15">Cmd+Enter para salvar</span>
-        <div className="flex gap-1.5">
-          <button onClick={() => { setOpen(false); setText(""); }} className="text-[10px] text-white/25 hover:text-white/40 px-2 py-1">Cancelar</button>
-          <button onClick={() => text.trim() && addNota.mutate(text.trim())} disabled={!text.trim() || addNota.isPending} className="text-[10px] text-[#e23752] hover:text-[#f06d82] px-2 py-1 disabled:opacity-30 flex items-center gap-1"><Send size={9} /> Salvar</button>
-        </div>
-      </div>
-    </div>
-  );
 }
 
 interface AnexoLegado {
@@ -149,12 +37,10 @@ function formatBytes(bytes: number | null): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-// Anexos legados (histórico Zoho, tabela `anexos_legado`) — 1.980 docs
-// recuperados sem superfície até 18/08 (achado real). Agrega da mesma
-// forma que a seção Contratos acima: empresa direto + negócios +
-// contratos vinculados (contratos/negócios não têm empresaId direto na
-// tabela de anexos, então cada tipo é buscado separadamente e mesclado
-// aqui, no client — a rota fica simples e reutilizável pro NegocioDrawer).
+// Anexos legados (histórico Zoho, tabela `anexos_legado`) — agrega empresa
+// direto + negócios + contratos vinculados (contrato/negócio não têm
+// empresaId direto na tabela de anexos, então cada tipo é buscado
+// separado e mesclado aqui no client).
 function useAnexosLegadoEmpresa(empresaId: string | null, negocioIds: string[], contratoIds: string[], enabled: boolean) {
   return useQuery({
     queryKey: ["anexos-legado-empresa", empresaId, negocioIds.join(","), contratoIds.join(",")],
@@ -177,6 +63,58 @@ function useAnexosLegadoEmpresa(empresaId: string | null, negocioIds: string[], 
   });
 }
 
+function AddNoteInlineEmpresa({ empresaId }: { empresaId: string }) {
+  const [text, setText] = useState("");
+  const [open, setOpen] = useState(false);
+  const queryClient = useQueryClient();
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const addNota = useMutation({
+    mutationFn: async (conteudo: string) => {
+      const res = await fetch("/api/notas", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ conteudo, empresaId }) });
+      if (!res.ok) throw new Error("Falha");
+      return res.json();
+    },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["empresa", empresaId] }); setText(""); setOpen(false); },
+  });
+  useEffect(() => { if (open) inputRef.current?.focus(); }, [open]);
+  if (!open) {
+    return (
+      <button onClick={() => setOpen(true)} className="flex items-center gap-1.5 text-[12px] font-semibold" style={{ color: "var(--cf2-success-text)" }}>
+        <Plus className="w-3.5 h-3.5" /> Adicionar nota
+      </button>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-1.5">
+      <textarea
+        ref={inputRef} value={text} onChange={(e) => setText(e.target.value)} placeholder="Escreva uma nota…" rows={3}
+        className="w-full text-[13px] rounded-lg px-3 py-2 outline-none resize-y focus-visible:ring-2 focus-visible:ring-[var(--cf2-accent-border)]"
+        style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }}
+        onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && text.trim()) addNota.mutate(text.trim()); if (e.key === "Escape") { setOpen(false); setText(""); } }}
+      />
+      <div className="flex justify-end gap-2">
+        <button onClick={() => { setOpen(false); setText(""); }} className="text-[12px] px-2 py-1" style={{ color: "var(--cf2-text-secondary)" }}>Cancelar</button>
+        <button onClick={() => text.trim() && addNota.mutate(text.trim())} disabled={!text.trim() || addNota.isPending} className="text-[12px] px-2 py-1 flex items-center gap-1 font-semibold disabled:opacity-40" style={{ color: "var(--cf2-success-text)" }}>
+          <Send className="w-3 h-3" /> {addNota.isPending ? "Salvando…" : "Salvar"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Drawer de empresa (25/08) — modernizado pro tema claro do CRM2. Antes era
+ * o componente legado (dark theme hardcoded, `#e23752`/`bg-white/[0.03]`)
+ * flutuando dentro do shell claro de Contatos & Empresas — achado direto do
+ * Kauã vendo a tela ("ainda tá com o drawer na versão antiga"). Mesmos
+ * dados/endpoint de sempre (`GET /api/empresas/:id`), mesmos callbacks
+ * (`onOpenLead`/`onOpenNegocio`) — só a casca visual mudou, pra não quebrar
+ * os 3 pontos de entrada que já usam este componente (Contatos & Empresas,
+ * Qualificação, LeadDrawer). Edição de campo a campo (CNPJ etc., que antes
+ * vivia aqui via `CampoEditavel`) foi pra "Editar" na página completa
+ * (`/empresas/[id]`), que já tem formulário de verdade — não duplicar 2
+ * jeitos de editar a mesma coisa.
+ */
 export function EmpresaDrawer({ empresaId, open, onClose, onOpenLead, onOpenNegocio }: EmpresaDrawerProps) {
   const { setores } = usePipelineConfig();
   const queryClient = useQueryClient();
@@ -203,374 +141,256 @@ export function EmpresaDrawer({ empresaId, open, onClose, onOpenLead, onOpenNego
   });
 
   const empresa = data?.empresa;
-  const leads = data?.leads;
-  const negocios = data?.negocios;
+  const leads: Array<{ id: string; nome: string; email: string | null; telefone: string; cargo: string | null; tipo: string; leadScore: number }> = data?.leads || [];
+  const negocios: Array<{ id: string; titulo: string; status: string; mrrEstimado: string | null; valorProjeto: string | null; valorTotal: string | null; createdAt: string }> = data?.negocios || [];
   const notas: Array<{ id: string; conteudo: string; autorNome: string | null; createdAt: string; pessoaNome?: string | null }> = data?.notas || [];
   const contratosEmpresa: Array<{ id: string; status: string; assinaturaStatus: string | null; signatureStatus: string | null; descricao: string | null; createdAt: string; zohoId?: string | null }> = data?.contratos || [];
   const setorLabel = empresa ? setores.find((s) => s.key === empresa.setor)?.label : undefined;
 
-  const negocioIdsParaAnexos: string[] = (negocios || []).map((n: { id: string }) => n.id);
-  const contratoIdsParaAnexos: string[] = contratosEmpresa.map((c) => c.id);
+  const negocioIdsParaAnexos = negocios.map((n) => n.id);
+  const contratoIdsParaAnexos = contratosEmpresa.map((c) => c.id);
   const { data: anexosLegado = [] } = useAnexosLegadoEmpresa(empresaId, negocioIdsParaAnexos, contratoIdsParaAnexos, !!empresa);
 
   return (
     <DetailDrawer
       open={open}
       onClose={onClose}
-      title={empresa?.nome || "Empresa"}
-      subtitle={[setorLabel, empresa?.porte && empresa.porte.charAt(0).toUpperCase() + empresa.porte.slice(1)].filter(Boolean).join(" · ") || undefined}
-      fullPageHref={empresaId ? `/empresas/${empresaId}` : undefined}
+      bare
+      // Canvas (não branco puro) pra os cards de seção terem contraste de
+      // verdade — bug real 25/08: com panelBg branco, `Cf2Card` (também
+      // branco) ficava sem nenhuma borda visível de fato, texto flutuando
+      // solto sem estrutura ("ficou péssimo", feedback direto do Kauã).
+      panelBg="var(--cf2-bg-canvas)"
+      width="w-full sm:w-[540px]"
     >
+      {/* Header próprio — modo `bare` do DetailDrawer NÃO renderiza header
+          nenhum (nem botão de fechar, nem "ver página completa"): quem usa
+          `bare` precisa construir os dois. Bug real 25/08 corrigido: o
+          rewrite anterior esqueceu isso, a versão nova saiu sem "X" pra
+          fechar e sem link pra página completa — achado direto do Kauã. */}
+      <div className="flex items-center justify-between gap-3 px-5 py-4 shrink-0" style={{ background: "var(--cf2-bg-surface)", borderBottom: "1px solid var(--cf2-border-default)" }}>
+        <p className="text-[15px] font-bold truncate" style={{ color: "var(--cf2-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>{empresa?.nome || "Empresa"}</p>
+        <div className="flex items-center gap-1 shrink-0">
+          {empresaId && (
+            <Link href={`/empresas/${empresaId}`} title="Abrir página completa" aria-label="Abrir página completa" className="p-1.5 rounded-lg hover:bg-[var(--cf2-bg-surface-muted)]" style={{ color: "var(--cf2-text-tertiary)" }}>
+              <ExternalLink className="w-4 h-4" />
+            </Link>
+          )}
+          <button onClick={onClose} aria-label="Fechar" className="p-1.5 rounded-lg hover:bg-[var(--cf2-bg-surface-muted)]" style={{ color: "var(--cf2-text-tertiary)" }}>
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+
       {isLoading ? (
-        <div className="p-8 text-white/40 text-center text-sm">Carregando...</div>
+        <div className="p-6 space-y-3">
+          {Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-12 rounded-xl animate-pulse" style={{ background: "var(--cf2-bg-surface-muted)" }} />)}
+        </div>
       ) : !empresa ? (
-        <div className="p-8 text-white/40 text-center text-sm">Empresa nao encontrada</div>
+        <div className="p-8 text-center text-sm" style={{ color: "var(--cf2-text-tertiary)" }}>Empresa não encontrada</div>
       ) : (
-        <div className="p-4 space-y-5">
-          {/* Header icon / logo */}
-          <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-xl bg-[#e23752]/15 flex items-center justify-center shrink-0 overflow-hidden">
+        <div className="flex flex-col gap-3 p-4">
+          {/* Sub-header (logo/setor/porte) — o nome já está no header fixo acima */}
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="flex items-center justify-center rounded-xl shrink-0 w-11 h-11 overflow-hidden" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }}>
               {empresa.logoUrl ? (
                 <img src={empresa.logoUrl} alt={empresa.nome} className="w-full h-full object-contain p-1" referrerPolicy="no-referrer" />
               ) : (
-                <Building2 className="w-5 h-5 text-[#e23752]" />
+                <Building2 className="w-5 h-5" style={{ color: "var(--cf2-text-secondary)" }} />
               )}
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-base font-semibold text-white truncate">{empresa.nome}</p>
-              <div className="flex items-center gap-2 flex-wrap">
-                {setorLabel && <span className="text-xs text-white/40">{setorLabel}</span>}
-                {empresa.industry && empresa.industry !== setorLabel && (
-                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-purple-500/10 text-purple-400">{empresa.industry}</span>
-                )}
-                {empresa.employeeCount && (
-                  <span className="text-[10px] text-white/30">{Number(empresa.employeeCount).toLocaleString("pt-BR")} func.</span>
-                )}
-              </div>
+            <div className="min-w-0 flex items-center gap-1.5 flex-wrap">
+              {setorLabel && <span className="text-[12px]" style={{ color: "var(--cf2-text-secondary)" }}>{setorLabel}</span>}
+              {empresa.industry && empresa.industry !== setorLabel && <Cf2Badge variant="accent">{empresa.industry}</Cf2Badge>}
+              {empresa.employeeCount && <span className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>{Number(empresa.employeeCount).toLocaleString("pt-BR")} func.</span>}
             </div>
-            <Link
-              href="/negocios/novo"
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold shrink-0"
-              style={{ background: "#e23752", color: "#fff" }}
-              title="Escolha o contato dessa empresa na tela de criação"
-            >
-              <Briefcase className="w-3.5 h-3.5" /> Nova oportunidade
-            </Link>
           </div>
 
-          {/* Apollo description */}
+          <Link href="/negocios/novo" title="Escolha o contato dessa empresa na tela de criação" className="flex items-center justify-center gap-1.5 h-9 rounded-xl text-[13px] font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--cf2-accent-border)]" style={{ background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" }}>
+            <Briefcase className="w-3.5 h-3.5" /> Nova oportunidade
+          </Link>
+
           {empresa.apolloDescription && (
-            <p className="text-xs text-white/40 leading-relaxed">{String(empresa.apolloDescription).length > 200 ? String(empresa.apolloDescription).slice(0, 200) + "..." : empresa.apolloDescription}</p>
+            <p className="text-[13px] leading-relaxed px-1" style={{ color: "var(--cf2-text-secondary)" }}>
+              {String(empresa.apolloDescription).length > 220 ? `${String(empresa.apolloDescription).slice(0, 220)}…` : empresa.apolloDescription}
+            </p>
           )}
 
-          {/* Info section */}
-          <div className="rounded-xl bg-white/[0.03] border border-white/[0.06] p-3.5">
-            <h3 className="text-xs font-medium text-white/50 mb-2.5">Informacoes</h3>
-            <div className="space-y-2.5 text-sm">
-              <CampoEditavel
-                empresaId={empresaId!}
-                campo="cnpj"
-                valor={empresa.cnpj}
-                label="CNPJ"
-                placeholder="Adicionar CNPJ"
-                formatar={formatarCnpj}
-              />
-              {empresa.porte && (
-                <div>
-                  <p className="text-[10px] text-white/40 uppercase tracking-wide">Porte</p>
-                  <p className="text-white/70 text-xs capitalize">{empresa.porte}</p>
-                </div>
-              )}
-              {(empresa.cidade || empresa.estado) && (
-                <div className="flex items-start gap-1.5">
-                  <MapPin className="w-3.5 h-3.5 text-white/30 mt-0.5 shrink-0" />
-                  <p className="text-white/70 text-xs">{[empresa.cidade, empresa.estado].filter(Boolean).join(" / ")}</p>
-                </div>
-              )}
-              {empresa.telefone && (
-                <div className="flex items-start gap-1.5">
-                  <Phone className="w-3.5 h-3.5 text-white/30 mt-0.5 shrink-0" />
-                  <p className="text-white/70 text-xs">{empresa.telefone}</p>
-                </div>
-              )}
+          <Cf2Card padding="14px">
+          <Section title="Informações">
+            <div className="flex flex-col gap-2">
+              <PropertyRow label="CNPJ" value={empresa.cnpj || "—"} />
+              {empresa.porte && <PropertyRow label="Porte" value={empresa.porte} />}
+              {(empresa.cidade || empresa.estado) && <PropertyRow label="Localização" value={[empresa.cidade, empresa.estado].filter(Boolean).join(" / ")} />}
+              {empresa.telefone && <PropertyRow label="Telefone" value={empresa.telefone} />}
               {empresa.website && (
-                <div className="flex items-start gap-1.5">
-                  <Globe className="w-3.5 h-3.5 text-white/30 mt-0.5 shrink-0" />
-                  <a
-                    href={empresa.website.startsWith("http") ? empresa.website : `https://${empresa.website}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-[#e23752] hover:underline text-xs truncate"
-                  >
-                    {empresa.website}
-                  </a>
+                <div className="flex items-center justify-between gap-3 text-[13px]">
+                  <span style={{ color: "var(--cf2-text-tertiary)" }}>Website</span>
+                  <a href={empresa.website.startsWith("http") ? empresa.website : `https://${empresa.website}`} target="_blank" rel="noopener noreferrer" className="font-medium truncate max-w-[220px] hover:underline" style={{ color: "var(--cf2-accent-border)" }}>{empresa.website}</a>
                 </div>
               )}
               {empresa.instagram && (
-                <div className="flex items-start gap-1.5">
-                  <Instagram className="w-3.5 h-3.5 text-white/30 mt-0.5 shrink-0" />
-                  <a
-                    href={`https://instagram.com/${(empresa.instagram as string).replace(/^@/, "")}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-[#e23752] hover:underline text-xs truncate"
-                  >
-                    @{(empresa.instagram as string).replace(/^@/, "")}
-                  </a>
-                </div>
-              )}
-              {empresa.tiktok && (
-                <div className="flex items-start gap-1.5">
-                  <svg className="w-3.5 h-3.5 text-white/30 mt-0.5 shrink-0" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-2.88 2.5 2.89 2.89 0 01-2.89-2.89 2.89 2.89 0 012.89-2.89c.28 0 .54.04.79.1v-3.5a6.37 6.37 0 00-.79-.05A6.34 6.34 0 003.15 15.2a6.34 6.34 0 006.34 6.34 6.34 6.34 0 006.34-6.34V8.73a8.19 8.19 0 004.76 1.52V6.8a4.84 4.84 0 01-1-.11z" />
-                  </svg>
-                  <a
-                    href={`https://tiktok.com/@${(empresa.tiktok as string).replace(/^@/, "")}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-[#e23752] hover:underline text-xs truncate"
-                  >
-                    @{(empresa.tiktok as string).replace(/^@/, "")}
-                  </a>
+                <div className="flex items-center justify-between gap-3 text-[13px]">
+                  <span style={{ color: "var(--cf2-text-tertiary)" }}>Instagram</span>
+                  <a href={`https://instagram.com/${(empresa.instagram as string).replace(/^@/, "")}`} target="_blank" rel="noopener noreferrer" className="font-medium hover:underline" style={{ color: "var(--cf2-accent-border)" }}>@{(empresa.instagram as string).replace(/^@/, "")}</a>
                 </div>
               )}
               {empresa.linkedin && (
-                <div className="flex items-start gap-1.5">
-                  <svg className="w-3.5 h-3.5 text-white/30 mt-0.5 shrink-0" viewBox="0 0 24 24" fill="currentColor"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
-                  <a href={String(empresa.linkedin).startsWith("http") ? String(empresa.linkedin) : `https://linkedin.com/company/${empresa.linkedin}`} target="_blank" rel="noopener noreferrer" className="text-[#e23752] hover:underline text-xs truncate">LinkedIn</a>
+                <div className="flex items-center justify-between gap-3 text-[13px]">
+                  <span style={{ color: "var(--cf2-text-tertiary)" }}>LinkedIn</span>
+                  <a href={String(empresa.linkedin).startsWith("http") ? String(empresa.linkedin) : `https://linkedin.com/company/${empresa.linkedin}`} target="_blank" rel="noopener noreferrer" className="font-medium hover:underline" style={{ color: "var(--cf2-accent-border)" }}>Ver perfil</a>
                 </div>
               )}
-              {/* Apollo metrics row */}
               {(empresa.annualRevenue || empresa.foundedYear) && (
-                <div className="flex items-center gap-3 pt-1 border-t border-white/[0.04]">
-                  {empresa.annualRevenue && (
-                    <div>
-                      <p className="text-[10px] text-white/30">Receita</p>
-                      <p className="text-xs text-white/60">{empresa.annualRevenue}</p>
-                    </div>
-                  )}
-                  {empresa.foundedYear && (
-                    <div>
-                      <p className="text-[10px] text-white/30">Fundada</p>
-                      <p className="text-xs text-white/60">{empresa.foundedYear}</p>
-                    </div>
-                  )}
+                <div className="flex items-center gap-4 pt-1.5" style={{ borderTop: "1px solid var(--cf2-border-default)" }}>
+                  {empresa.annualRevenue && <span className="text-[12px]" style={{ color: "var(--cf2-text-secondary)" }}>Receita: <b style={{ color: "var(--cf2-text-primary)" }}>{empresa.annualRevenue}</b></span>}
+                  {empresa.foundedYear && <span className="text-[12px]" style={{ color: "var(--cf2-text-secondary)" }}>Fundada em <b style={{ color: "var(--cf2-text-primary)" }}>{empresa.foundedYear}</b></span>}
                 </div>
               )}
             </div>
-          </div>
+          </Section>
+          </Cf2Card>
 
-          {/* Leads */}
-          <div className="rounded-xl bg-white/[0.03] border border-white/[0.06] p-3.5">
-            <h3 className="text-xs font-medium text-white/50 mb-2.5">Leads ({leads?.length || 0})</h3>
-            {leads && leads.length > 0 ? (
-              <div className="space-y-1.5">
-                {leads.map((l: { id: string; nome: string; email: string | null; telefone: string; cargo: string | null; tipo: string; leadScore: number }) => (
-                  <button
-                    key={l.id}
-                    onClick={() => onOpenLead?.(l.id)}
-                    className="w-full flex items-center gap-2.5 p-2 rounded-lg hover:bg-white/[0.04] text-left transition-colors"
-                  >
-                    <div className="w-7 h-7 rounded-full bg-[#e23752]/20 flex items-center justify-center shrink-0">
-                      <User className="w-3.5 h-3.5 text-[#e23752]" />
-                    </div>
+          <Cf2Card padding="14px">
+          <Section title={`Leads (${leads.length})`}>
+            {leads.length > 0 ? (
+              <div className="flex flex-col gap-1.5">
+                {leads.map((l) => (
+                  <button key={l.id} onClick={() => onOpenLead?.(l.id)} className="flex items-center gap-2.5 p-2 rounded-lg text-left transition-colors hover:bg-[var(--cf2-bg-surface-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--cf2-accent-border)]">
+                    <span className="flex items-center justify-center rounded-full shrink-0 w-7 h-7" style={{ background: "var(--cf2-bg-surface-muted)" }}>
+                      <User className="w-3.5 h-3.5" style={{ color: "var(--cf2-text-secondary)" }} />
+                    </span>
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium text-white truncate">{l.nome}</p>
-                      <p className="text-[10px] text-white/40 truncate">{l.cargo || l.email || l.telefone}</p>
+                      <p className="text-[13px] font-medium truncate" style={{ color: "var(--cf2-text-primary)" }}>{l.nome}</p>
+                      <p className="text-[11px] truncate" style={{ color: "var(--cf2-text-tertiary)" }}>{l.cargo || l.email || l.telefone}</p>
                     </div>
                     <div className="flex items-center gap-1.5 shrink-0">
-                      <span
-                        className={`text-[10px] px-1.5 py-0.5 rounded capitalize ${
-                          l.tipo === "cliente"
-                            ? "bg-emerald-500/15 text-emerald-400"
-                            : l.tipo === "lead"
-                            ? "bg-blue-500/15 text-blue-400"
-                            : "bg-white/[0.06] text-white/40"
-                        }`}
-                      >
-                        {l.tipo}
-                      </span>
-                      <span
-                        className="text-[10px] font-medium"
-                        style={{ color: l.leadScore >= 70 ? "#10B981" : l.leadScore >= 40 ? "#F59E0B" : "rgba(255,255,255,0.3)" }}
-                      >
-                        {l.leadScore}
-                      </span>
+                      <Cf2Badge variant={l.tipo === "cliente" ? "success" : l.tipo === "lead" ? "accent" : "neutral"}>{l.tipo}</Cf2Badge>
+                      <span className="text-[11px] font-semibold" style={{ color: l.leadScore >= 70 ? "var(--cf2-success-text)" : l.leadScore >= 40 ? "var(--cf2-warning-text)" : "var(--cf2-text-tertiary)" }}>{l.leadScore}</span>
                     </div>
                   </button>
                 ))}
               </div>
             ) : (
-              <p className="text-xs text-white/30 py-2 text-center">Nenhum lead vinculado</p>
+              <p className="text-[12px] py-2 text-center" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhum lead vinculado</p>
             )}
-          </div>
+          </Section>
+          </Cf2Card>
 
-          {/* Negocios */}
-          <div className="rounded-xl bg-white/[0.03] border border-white/[0.06] p-3.5">
-            <h3 className="text-xs font-medium text-white/50 mb-2.5">Negocios ({negocios?.length || 0})</h3>
-            {negocios && negocios.length > 0 ? (
-              <div className="space-y-1.5">
-                {negocios.map((n: { id: string; titulo: string; status: string; mrrEstimado: string | null; valorProjeto: string | null; valorTotal: string | null; createdAt: string }) => {
+          <Cf2Card padding="14px">
+          <Section title={`Negócios (${negocios.length})`}>
+            {negocios.length > 0 ? (
+              <div className="flex flex-col gap-1.5">
+                {negocios.map((n) => {
                   const total = parseFloat(n.valorTotal || "0") || (parseFloat(n.mrrEstimado || "0") || 0) + (parseFloat(n.valorProjeto || "0") || 0);
-
                   return (
-                    <button
-                      key={n.id}
-                      onClick={() => onOpenNegocio?.(n.id)}
-                      className="w-full flex items-center justify-between p-2 rounded-lg hover:bg-white/[0.04] text-left transition-colors"
-                    >
+                    <button key={n.id} onClick={() => onOpenNegocio?.(n.id)} className="flex items-center justify-between p-2 rounded-lg text-left transition-colors hover:bg-[var(--cf2-bg-surface-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--cf2-accent-border)]">
                       <div className="flex items-center gap-2.5 min-w-0">
-                        <Briefcase className="w-3.5 h-3.5 text-white/30 shrink-0" />
+                        <Briefcase className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--cf2-text-tertiary)" }} />
                         <div className="min-w-0">
-                          <p className="text-xs font-medium text-white truncate">{n.titulo}</p>
-                          <p className="text-[10px] text-white/40">{new Date(n.createdAt).toLocaleDateString("pt-BR")}</p>
+                          <p className="text-[13px] font-medium truncate" style={{ color: "var(--cf2-text-primary)" }}>{n.titulo}</p>
+                          <p className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>{new Date(n.createdAt).toLocaleDateString("pt-BR")}</p>
                         </div>
                       </div>
                       <div className="flex items-center gap-1.5 shrink-0">
-                        <span
-                          className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
-                            n.status === "ganho"
-                              ? "bg-emerald-500/15 text-emerald-400"
-                              : n.status === "perdido"
-                              ? "bg-red-500/15 text-red-400"
-                              : "bg-white/[0.06] text-white/50"
-                          }`}
-                        >
-                          {n.status}
-                        </span>
-                        {total > 0 && (
-                          <span className="text-[10px] text-[#e23752] font-medium">
-                            R$ {total.toLocaleString("pt-BR")}
-                          </span>
-                        )}
+                        <Cf2Badge variant={n.status === "ganho" ? "success" : n.status === "perdido" ? "danger" : "neutral"}>{n.status}</Cf2Badge>
+                        {total > 0 && <span className="text-[11px] font-semibold" style={{ color: "var(--cf2-text-primary)" }}>{total.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</span>}
                       </div>
                     </button>
                   );
                 })}
               </div>
             ) : (
-              <p className="text-xs text-white/30 py-2 text-center">Nenhum negocio vinculado</p>
+              <p className="text-[12px] py-2 text-center" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhum negócio vinculado</p>
             )}
-          </div>
+          </Section>
+          </Cf2Card>
 
-          {/* Contratos — correção 19/08: histórico de contratos (nativo ou
-              Zoho) da empresa não aparecia; resolvido via leadId/negocioId
-              vinculado (contratos não tem empresaId direto). */}
-          <div className="rounded-xl bg-white/[0.03] border border-white/[0.06] p-3.5">
-            <h3 className="text-xs font-medium text-white/50 mb-2.5">Contratos ({contratosEmpresa.length})</h3>
+          <Cf2Card padding="14px">
+          <Section title={`Contratos (${contratosEmpresa.length})`}>
             {contratosEmpresa.length > 0 ? (
-              <div className="space-y-1.5">
+              <div className="flex flex-col gap-1.5">
                 {contratosEmpresa.map((ct) => {
                   const assinado = ct.signatureStatus === "signed" || ct.assinaturaStatus === "aceite_simples";
                   return (
-                    <div key={ct.id} className="w-full flex items-center justify-between p-2 rounded-lg">
+                    <div key={ct.id} className="flex items-center justify-between p-2 rounded-lg" style={{ background: "var(--cf2-bg-surface-muted)" }}>
                       <div className="flex items-center gap-2.5 min-w-0">
-                        <FileText className="w-3.5 h-3.5 text-white/30 shrink-0" />
+                        <FileText className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--cf2-text-tertiary)" }} />
                         <div className="min-w-0">
-                          <p className="text-xs font-medium text-white truncate">{ct.descricao || "Contrato"}</p>
-                          <p className="text-[10px] text-white/40">{new Date(ct.createdAt).toLocaleDateString("pt-BR")}{ct.zohoId ? " · histórico (Zoho)" : ""}</p>
+                          <p className="text-[13px] font-medium truncate" style={{ color: "var(--cf2-text-primary)" }}>{ct.descricao || "Contrato"}</p>
+                          <p className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>{new Date(ct.createdAt).toLocaleDateString("pt-BR")}{ct.zohoId ? " · histórico (Zoho)" : ""}</p>
                         </div>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
-                        <a href={`/api/contratos/${ct.id}/pdf`} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="text-[10px] underline text-white/40">PDF</a>
-                        <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium" style={{ background: assinado ? "rgba(74,222,128,0.15)" : "rgba(255,255,255,0.06)", color: assinado ? "#4ade80" : "#9497ab" }}>
-                          {assinado ? "Assinado" : ct.status}
-                        </span>
+                        <a href={`/api/contratos/${ct.id}/pdf`} target="_blank" rel="noreferrer" className="text-[11px] font-medium hover:underline" style={{ color: "var(--cf2-accent-border)" }}>PDF</a>
+                        <Cf2Badge variant={assinado ? "success" : "neutral"}>{assinado ? "Assinado" : ct.status}</Cf2Badge>
                       </div>
                     </div>
                   );
                 })}
               </div>
             ) : (
-              <p className="text-xs text-white/30 py-2 text-center">Nenhum contrato vinculado</p>
+              <p className="text-[12px] py-2 text-center" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhum contrato vinculado</p>
             )}
-          </div>
+          </Section>
+          </Cf2Card>
 
-          {/* Documentos — histórico Zoho (anexos_legado), achado real
-              18/08: 1.980 docs recuperados sem superfície nenhuma até
-              aqui. Baixa direto de ~/Downloads/Attachments, DEV-ONLY —
-              ver aviso em src/lib/storage/legacy-attachment-storage.ts. */}
-          <div className="rounded-xl bg-white/[0.03] border border-white/[0.06] p-3.5">
-            <h3 className="text-xs font-medium text-white/50 mb-2.5">Documentos ({anexosLegado.length})</h3>
+          <Cf2Card padding="14px">
+          <Section title={`Documentos (${anexosLegado.length})`} description="Histórico migrado (Zoho) — pode não estar disponível pra baixar dependendo do ambiente">
             {anexosLegado.length > 0 ? (
-              <div className="space-y-1.5">
+              <div className="flex flex-col gap-1.5">
                 {anexosLegado.map((doc) => (
-                  <div key={doc.id} className="w-full flex items-center justify-between gap-2 p-2 rounded-lg">
+                  <div key={doc.id} className="flex items-center justify-between gap-2 p-2 rounded-lg" style={{ background: "var(--cf2-bg-surface-muted)" }}>
                     <div className="flex items-center gap-2.5 min-w-0">
-                      <FileText className="w-3.5 h-3.5 text-white/30 shrink-0" />
-                      <div className="min-w-0">
-                        <p className="text-xs font-medium text-white truncate" title={doc.nomeArquivo}>{doc.nomeArquivo}</p>
-                        <p className="text-[10px] text-white/40">{formatBytes(doc.tamanhoBytes)} · histórico (Zoho)</p>
-                      </div>
+                      <FileText className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--cf2-text-tertiary)" }} />
+                      <p className="text-[13px] font-medium truncate" title={doc.nomeArquivo} style={{ color: "var(--cf2-text-primary)" }}>{doc.nomeArquivo}</p>
                     </div>
                     {doc.arquivoDisponivel ? (
-                      <a
-                        href={`/api/anexos-legado/${doc.id}/download`}
-                        onClick={(e) => e.stopPropagation()}
-                        className="flex items-center gap-1 text-[10px] text-[#e23752] hover:text-[#f06d82] shrink-0"
-                      >
-                        <Download className="w-3 h-3" /> Baixar
-                      </a>
+                      <a href={`/api/anexos-legado/${doc.id}/download`} className="flex items-center gap-1 text-[11px] font-medium shrink-0" style={{ color: "var(--cf2-success-text)" }}><Download className="w-3 h-3" /> Baixar</a>
                     ) : (
-                      <span
-                        title="Arquivo físico não disponível neste ambiente"
-                        className="text-[10px] text-white/20 shrink-0 cursor-not-allowed"
-                      >
-                        Indisponível
-                      </span>
+                      <span title="Arquivo físico não disponível neste ambiente" className="text-[11px] shrink-0" style={{ color: "var(--cf2-text-tertiary)" }}>Indisponível</span>
                     )}
                   </div>
                 ))}
               </div>
             ) : (
-              <p className="text-xs text-white/30 py-2 text-center">Nenhum documento histórico vinculado</p>
+              <p className="text-[12px] py-2 text-center" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhum documento histórico vinculado</p>
             )}
-          </div>
+          </Section>
+          </Cf2Card>
 
-          {/* Custom Fields */}
+          <Cf2Card padding="14px">
           <CustomFieldsSection
             entidade="empresa"
             valores={empresa?.camposCustom as Record<string, unknown> | null | undefined}
             onUpdate={(campos) => updateEmpresaCustomFields.mutate(campos)}
           />
+          </Cf2Card>
 
-          {/* Notas */}
-          <div className="rounded-xl bg-white/[0.03] border border-white/[0.06] p-3.5">
-            <h3 className="text-xs font-medium text-white/50 mb-2.5">
-              <StickyNote className="w-3 h-3 inline mr-1" />
-              Notas {notas.length > 0 && `(${notas.length})`}
-            </h3>
-            {notas.length > 0 && (
-              <div className="space-y-1.5">
-                {notas.slice(0, 3).map((n) => (
-                  <div key={n.id} className="p-2 rounded-lg bg-white/[0.02]">
-                    <p className="text-xs text-white/70 whitespace-pre-wrap">
-                      {n.conteudo.length > 150 ? n.conteudo.slice(0, 150) + "..." : n.conteudo}
-                    </p>
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className="text-[10px] text-white/30">{n.autorNome || "Sistema"}</span>
-                      {n.pessoaNome && <span className="text-[10px] text-white/25">· via {n.pessoaNome}</span>}
-                      <span className="text-[10px] text-white/30">{new Date(n.createdAt).toLocaleDateString("pt-BR")}</span>
-                    </div>
+          <Cf2Card padding="14px">
+          <Section title={`Notas${notas.length > 0 ? ` (${notas.length})` : ""}`}>
+            <div className="flex flex-col gap-2">
+              {notas.slice(0, 3).map((n) => (
+                <div key={n.id} className="p-2 rounded-lg" style={{ background: "var(--cf2-bg-surface-muted)" }}>
+                  <p className="text-[13px] whitespace-pre-wrap" style={{ color: "var(--cf2-text-primary)" }}>{n.conteudo.length > 150 ? `${n.conteudo.slice(0, 150)}…` : n.conteudo}</p>
+                  <div className="flex items-center gap-1.5 mt-1 text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>
+                    <span>{n.autorNome || "Sistema"}</span>
+                    {n.pessoaNome && <span>· via {n.pessoaNome}</span>}
+                    <span>{new Date(n.createdAt).toLocaleDateString("pt-BR")}</span>
                   </div>
-                ))}
-                {notas.length > 3 && (
-                  <p className="text-[10px] text-white/30 text-center pt-1">+{notas.length - 3} notas</p>
-                )}
-              </div>
-            )}
-            {empresaId && <AddNoteInlineEmpresa empresaId={empresaId} />}
-          </div>
+                </div>
+              ))}
+              {notas.length > 3 && <p className="text-[11px] text-center" style={{ color: "var(--cf2-text-tertiary)" }}>+{notas.length - 3} nota{notas.length - 3 === 1 ? "" : "s"}</p>}
+              {empresaId && <AddNoteInlineEmpresa empresaId={empresaId} />}
+            </div>
+          </Section>
+          </Cf2Card>
 
-          {/* Editar button */}
-          <div className="pt-1">
-            <Link
-              href={`/empresas/${empresaId}`}
-              className="flex items-center justify-center gap-1.5 w-full py-2 rounded-lg text-xs font-medium text-[#e23752] hover:bg-[#e23752]/10 transition-colors border border-[#e23752]/20"
-            >
-              <Pencil className="w-3.5 h-3.5" /> Editar
-            </Link>
-          </div>
+          {empresa.enrichStatus === "enriched" && (
+            <div className="flex items-center gap-1.5 text-[11px] px-1" style={{ color: "var(--cf2-text-tertiary)" }}>
+              <Sparkles className="w-3 h-3" /> Enriquecido via Apollo
+            </div>
+          )}
         </div>
       )}
     </DetailDrawer>
