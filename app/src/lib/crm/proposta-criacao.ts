@@ -36,6 +36,9 @@ export async function criarPropostaComItens(opts: {
   moeda: string;
   observacoes?: string;
   condicoesPagamento?: string;
+  condicaoPagamentoTipo?: string;
+  parcelas?: number;
+  vencimentoDias?: number;
   prazoContratoMeses?: number | null;
   dataValidade?: string;
   signatarios?: Array<{ nome: string; email: string; papel?: string; ordem?: number }>;
@@ -68,6 +71,9 @@ export async function criarPropostaComItens(opts: {
     dataValidade: opts.dataValidade || undefined,
     observacoes: opts.observacoes,
     condicoesPagamento: opts.condicoesPagamento,
+    condicaoPagamentoTipo: opts.condicaoPagamentoTipo,
+    parcelas: opts.parcelas ?? 1,
+    vencimentoDias: opts.vencimentoDias,
     prazoContratoMeses: opts.prazoContratoMeses ?? undefined,
     signatarios: opts.signatarios,
     totalRecorrente: totalRecorrente.toFixed(2),

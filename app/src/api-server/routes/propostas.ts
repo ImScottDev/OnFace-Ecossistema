@@ -1,15 +1,17 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { db } from "@/lib/db";
 import { propostas, propostaItens, leads, negocios, usuarios, contratos, atividades, statusChanges, propostaGrupoComercial, propostaGrupoComercialItens, checkouts } from "@/lib/db/schema";
 import { eq, and, or, desc, asc, sql, ilike, inArray, count, gte } from "drizzle-orm";
 import { z } from "zod";
 import { getCtx } from "../compat.js";
+import { isAdminView } from "@/lib/auth/roles";
 import { syncNegocioValoresFromPropostas } from "@/lib/crm/sync-negocio-valores";
 import { marcarPropostaAceita } from "@/lib/crm/aceitar-proposta";
 import { enviarPropostaComCheckout } from "@/lib/crm/enviar-proposta";
 import { getCheckoutSessionStatus } from "@/lib/integrations/stripe-sync";
 import { propostaPdfHtml, renderPropostaPdf } from "@/lib/propostas/proposta-pdf";
 import { syncOportunidadeFromNegocio } from "@/lib/crm/sync-domain-model";
+import { publicarEvento } from "@/lib/events/outbox";
 import { criarCheckoutParaGrupo } from "@/lib/crm/checkout";
 import {
   resolverServiceFamiliesPorCatalogoIds,
@@ -53,6 +55,12 @@ const createSchema = z.object({
   moeda: z.enum(["BRL", "USD", "EUR", "CAD"]).default("BRL"),
   observacoes: z.string().optional(),
   condicoesPagamento: z.string().optional(),
+  // Estruturado (25/08, billing avançado) — o texto livre acima continua
+  // existindo pra observação extra; isto aqui é o que o checkout Stripe usa
+  // de fato pra decidir payment_method_types e vencimento do boleto.
+  condicaoPagamentoTipo: z.enum(["cartao", "boleto", "boleto_parcelado", "outro"]).optional(),
+  parcelas: z.number().int().min(1).max(24).optional(),
+  vencimentoDias: z.number().int().min(1).max(60).optional(),
   prazoContratoMeses: z.number().int().positive().optional().nullable(),
   dataValidade: z.string().optional(),
   signatarios: z.array(z.object({ nome: z.string().trim().min(1), email: z.string().trim().email(), papel: z.string().trim().optional(), ordem: z.number().int().positive().optional() })).default([]),
@@ -63,6 +71,9 @@ const updateSchema = z.object({
   moeda: z.enum(["BRL", "USD", "EUR", "CAD"]).optional(),
   observacoes: z.string().optional().nullable(),
   condicoesPagamento: z.string().optional().nullable(),
+  condicaoPagamentoTipo: z.enum(["cartao", "boleto", "boleto_parcelado", "outro"]).optional().nullable(),
+  parcelas: z.number().int().min(1).max(24).optional().nullable(),
+  vencimentoDias: z.number().int().min(1).max(60).optional().nullable(),
   prazoContratoMeses: z.number().int().positive().optional().nullable(),
   dataValidade: z.string().optional().nullable(),
   signatarios: z.array(z.object({ nome: z.string().trim().min(1), email: z.string().trim().email(), papel: z.string().trim().optional(), ordem: z.number().int().positive().optional() })).optional(),
@@ -83,17 +94,18 @@ function calcSubtotal(qty: number, unit: number, desc: number, descTipo: string 
 }
 
 // GET /propostas
-app.get("/propostas", async (c) => {
-  const ctx = await getCtx(c);
-
+// Extraído 25/08 (achado do Kauã: filtrar a lista não refletia nos KPIs/
+// gráficos — cada endpoint reconstruía os mesmos 5 filtros do zero e foram
+// divergindo). Único lugar que decide o que "status/responsável/família/
+// período/busca" significam pra Propostas; lista e KPIs chamam isto.
+async function buildPropostaConditions(c: Context, organizacaoId: string) {
   const statusFilter = c.req.query("status") ?? null;
   const leadId = c.req.query("leadId") ?? null;
-  const search = c.req.query("q") ?? null;
   const responsavel = c.req.query("responsavel") ?? null; // userId, ou "todas"/null = todos
   const periodo = c.req.query("periodo") ?? null; // "mes" = mês atual; senão histórico completo
   const familia = c.req.query("familia") ?? null; // CALLFACE_AI | PABX | WHITE_LABEL | UNKNOWN
 
-  const conditions = [eq(propostas.organizacaoId, ctx.organizacaoId)];
+  const conditions = [eq(propostas.organizacaoId, organizacaoId)];
   if (statusFilter) conditions.push(eq(propostas.status, statusFilter));
   if (leadId) conditions.push(eq(propostas.leadId, leadId));
   // "Minhas" = propostas criadas por esse usuário (bate com a coluna "Criado por").
@@ -110,9 +122,15 @@ app.get("/propostas", async (c) => {
       .from(propostaItens)
       .where(eq(propostaItens.serviceFamily, familia));
     const ids = idsComFamilia.map((r) => r.propostaId);
-    if (ids.length === 0) return c.json([]);
-    conditions.push(inArray(propostas.id, ids));
+    conditions.push(ids.length === 0 ? sql`false` : inArray(propostas.id, ids));
   }
+  return conditions;
+}
+
+app.get("/propostas", async (c) => {
+  const ctx = await getCtx(c);
+  const search = c.req.query("q") ?? null;
+  const conditions = await buildPropostaConditions(c, ctx.organizacaoId);
 
   let query = db
     .select({
@@ -125,6 +143,7 @@ app.get("/propostas", async (c) => {
       leadEmpresa: leads.empresa,
       negocioId: propostas.negocioId,
       negocioTitulo: negocios.titulo,
+      negocioStatus: negocios.status,
       moeda: propostas.moeda,
       totalRecorrente: propostas.totalRecorrente,
       totalAvulso: propostas.totalAvulso,
@@ -198,20 +217,31 @@ app.get("/propostas", async (c) => {
 // GET /propostas/kpis — contadores reais pra hero strip da lista (cf2)
 app.get("/propostas/kpis", async (c) => {
   const ctx = await getCtx(c);
-  const org = eq(propostas.organizacaoId, ctx.organizacaoId);
+  // 25/08, achado do Kauã: os filtros da lista (status/responsável/família/
+  // período) não refletiam nos KPIs/gráficos — mesma função de condições da
+  // rota de listagem, pra nunca divergir do que a tabela já mostra filtrada.
+  const condicoesFiltro = await buildPropostaConditions(c, ctx.organizacaoId);
+  const org = and(...condicoesFiltro)!;
 
+  // Achado real 25/08: o driver do Postgres devolve count(*)/bigint como
+  // STRING em JS (evita perda de precisão em número grande) — a anotação
+  // `sql<number>` do drizzle é só um cast de TIPO, não converte o valor em
+  // runtime. Sem `::int` aqui, `emElaboracao` etc chegavam como "503" (string)
+  // no JSON — quebrava silenciosamente o donut (soma virava concatenação:
+  // 0 + "503" = "0503") e qualquer comparação numérica no front.
   const [linhas] = await db
     .select({
-      emElaboracao: sql<number>`count(*) filter (where ${propostas.status} = 'rascunho')`,
-      enviadas: sql<number>`count(*) filter (where ${propostas.status} = 'enviada')`,
-      visualizadas: sql<number>`count(*) filter (where ${propostas.status} = 'enviada' and ${propostas.visualizacoes} > 0)`,
-      aceitas: sql<number>`count(*) filter (where ${propostas.status} = 'aceita')`,
-      recusadasExpiradas: sql<number>`count(*) filter (where ${propostas.status} in ('recusada', 'expirada'))`,
-      aguardandoAcao: sql<number>`count(*) filter (where ${propostas.status} = 'enviada' and ${propostas.clienteRespondeuEm} is null)`,
+      totalPropostas: sql<number>`count(*)::int`,
+      emElaboracao: sql<number>`count(*) filter (where ${propostas.status} = 'rascunho')::int`,
+      enviadas: sql<number>`count(*) filter (where ${propostas.status} = 'enviada')::int`,
+      visualizadas: sql<number>`count(*) filter (where ${propostas.status} = 'enviada' and ${propostas.visualizacoes} > 0)::int`,
+      aceitas: sql<number>`count(*) filter (where ${propostas.status} = 'aceita')::int`,
+      recusadasExpiradas: sql<number>`count(*) filter (where ${propostas.status} in ('recusada', 'expirada'))::int`,
+      aguardandoAcao: sql<number>`count(*) filter (where ${propostas.status} = 'enviada' and ${propostas.clienteRespondeuEm} is null)::int`,
       valorTotalAtivo: sql<string>`coalesce(sum(${propostas.totalGeral}) filter (where ${propostas.status} not in ('recusada', 'expirada')), 0)`,
       // Taxa de aceite = aceitas / decididas (aceita+recusada+expirada), mesmo
       // critério do winRate real de negócios (ver lib/relatorios/comercial.ts).
-      decididas: sql<number>`count(*) filter (where ${propostas.status} in ('aceita', 'recusada', 'expirada'))`,
+      decididas: sql<number>`count(*) filter (where ${propostas.status} in ('aceita', 'recusada', 'expirada'))::int`,
       // Tempo médio até aceite: enviadaEm → clienteRespondeuEm, só propostas aceitas com os 2 timestamps reais.
       tempoMedioAceiteDias: sql<number | null>`avg(extract(epoch from ${propostas.clienteRespondeuEm} - ${propostas.enviadaEm}) / 86400) filter (where ${propostas.status} = 'aceita' and ${propostas.clienteRespondeuEm} is not null and ${propostas.enviadaEm} is not null)`,
     })
@@ -219,7 +249,63 @@ app.get("/propostas/kpis", async (c) => {
     .where(org);
 
   const taxaAceite = linhas.decididas > 0 ? Math.round((linhas.aceitas / linhas.decididas) * 1000) / 10 : null;
-  return c.json({ ...linhas, taxaAceite, tempoMedioAceiteDias: linhas.tempoMedioAceiteDias != null ? Math.round(Number(linhas.tempoMedioAceiteDias) * 10) / 10 : null });
+
+  // Série mensal (25/08, achado do Kauã: KPIs precisam de gráfico, não só
+  // número plano) — 6 meses fixos, zero-fill em JS pra mês sem dado real
+  // aparecer como 0 (não sumir da série). "Enviadas" conta por `enviadaEm`
+  // (quando o link saiu), "aceitas"/valor por `clienteRespondeuEm` (quando o
+  // cliente decidiu) — cada evento no mês em que aconteceu de fato, não no
+  // mês em que a proposta foi criada como rascunho.
+  const seisMesesAtras = new Date();
+  seisMesesAtras.setMonth(seisMesesAtras.getMonth() - 5);
+  seisMesesAtras.setDate(1);
+  const [enviadasPorMes, aceitasPorMes] = await Promise.all([
+    db.select({
+      mes: sql<string>`to_char(${propostas.enviadaEm}, 'YYYY-MM')`,
+      qtd: sql<number>`count(*)::int`,
+    }).from(propostas).where(and(org, sql`${propostas.enviadaEm} >= ${seisMesesAtras.toISOString()}`))
+      .groupBy(sql`to_char(${propostas.enviadaEm}, 'YYYY-MM')`),
+    db.select({
+      mes: sql<string>`to_char(${propostas.clienteRespondeuEm}, 'YYYY-MM')`,
+      qtd: sql<number>`count(*)::int`,
+      valor: sql<string>`coalesce(sum(${propostas.totalGeral}), 0)`,
+    }).from(propostas).where(and(org, eq(propostas.status, "aceita"), sql`${propostas.clienteRespondeuEm} >= ${seisMesesAtras.toISOString()}`))
+      .groupBy(sql`to_char(${propostas.clienteRespondeuEm}, 'YYYY-MM')`),
+  ]);
+  const enviadasMap = new Map(enviadasPorMes.map((r) => [r.mes, r.qtd]));
+  const aceitasMap = new Map(aceitasPorMes.map((r) => [r.mes, { qtd: r.qtd, valor: parseFloat(r.valor) }]));
+  const MES_LABEL = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+  const serieMensal = Array.from({ length: 6 }, (_, i) => {
+    const d = new Date(seisMesesAtras.getFullYear(), seisMesesAtras.getMonth() + i, 1);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    const aceitas = aceitasMap.get(key);
+    return {
+      mes: MES_LABEL[d.getMonth()],
+      enviadas: enviadasMap.get(key) ?? 0,
+      aceitas: aceitas?.qtd ?? 0,
+      valorAceito: aceitas?.valor ?? 0,
+    };
+  });
+
+  // Tendência mês atual vs anterior (25/08, referência visual pedida pelo
+  // Kauã — cards com "+X% vs mês anterior", mesmo padrão do Pulso Comercial
+  // em vendas/page.tsx). SÓ pra métricas de FLUXO (enviadas/aceitas por mês
+  // — dado real na serieMensal); "valor total em aberto" e "total de
+  // propostas" são ESTOQUE (snapshot de agora), não tem histórico mensal
+  // gravado pra comparar — mostrado sem seta de tendência em vez de
+  // inventar um número.
+  const mesAtual = serieMensal[serieMensal.length - 1];
+  const mesAnterior = serieMensal[serieMensal.length - 2];
+  const pctDelta = (atual: number, anterior: number): number | null => {
+    if (anterior === 0) return atual > 0 ? null : 0;
+    return Math.round(((atual - anterior) / anterior) * 1000) / 10;
+  };
+  const tendencia = {
+    enviadas: pctDelta(mesAtual.enviadas, mesAnterior.enviadas),
+    aceitas: pctDelta(mesAtual.aceitas, mesAnterior.aceitas),
+  };
+
+  return c.json({ ...linhas, taxaAceite, tempoMedioAceiteDias: linhas.tempoMedioAceiteDias != null ? Math.round(Number(linhas.tempoMedioAceiteDias) * 10) / 10 : null, serieMensal, tendencia });
 });
 
 // GET /propostas/count — open proposals count for sidebar badge
@@ -257,6 +343,9 @@ app.get("/propostas/:id", async (c) => {
       dataValidade: propostas.dataValidade,
       observacoes: propostas.observacoes,
       condicoesPagamento: propostas.condicoesPagamento,
+      condicaoPagamentoTipo: propostas.condicaoPagamentoTipo,
+      parcelas: propostas.parcelas,
+      vencimentoDias: propostas.vencimentoDias,
       prazoContratoMeses: propostas.prazoContratoMeses,
       moeda: propostas.moeda,
       totalRecorrente: propostas.totalRecorrente,
@@ -279,6 +368,7 @@ app.get("/propostas/:id", async (c) => {
       leadEmail: leads.email,
       negocioId: propostas.negocioId,
       negocioTitulo: negocios.titulo,
+      negocioStatus: negocios.status,
       createdAt: propostas.createdAt,
       updatedAt: propostas.updatedAt,
     })
@@ -625,6 +715,9 @@ app.post("/propostas", async (c) => {
       moeda: parsed.data.moeda,
       observacoes: parsed.data.observacoes,
       condicoesPagamento: parsed.data.condicoesPagamento,
+      condicaoPagamentoTipo: parsed.data.condicaoPagamentoTipo,
+      parcelas: parsed.data.parcelas,
+      vencimentoDias: parsed.data.vencimentoDias,
       prazoContratoMeses: parsed.data.prazoContratoMeses,
       dataValidade: parsed.data.dataValidade,
       signatarios: parsed.data.signatarios,
@@ -669,6 +762,9 @@ app.post("/propostas", async (c) => {
     moeda: parsed.data.moeda,
     observacoes: parsed.data.observacoes,
     condicoesPagamento: parsed.data.condicoesPagamento,
+    condicaoPagamentoTipo: parsed.data.condicaoPagamentoTipo,
+    parcelas: parsed.data.parcelas,
+    vencimentoDias: parsed.data.vencimentoDias,
     prazoContratoMeses: parsed.data.prazoContratoMeses,
     dataValidade: parsed.data.dataValidade,
     signatarios: parsed.data.signatarios,
@@ -705,6 +801,9 @@ app.patch("/propostas/:id", async (c) => {
   if (parsed.data.moeda !== undefined) updateData.moeda = parsed.data.moeda;
   if (parsed.data.observacoes !== undefined) updateData.observacoes = parsed.data.observacoes;
   if (parsed.data.condicoesPagamento !== undefined) updateData.condicoesPagamento = parsed.data.condicoesPagamento;
+  if (parsed.data.condicaoPagamentoTipo !== undefined) updateData.condicaoPagamentoTipo = parsed.data.condicaoPagamentoTipo;
+  if (parsed.data.parcelas !== undefined) updateData.parcelas = parsed.data.parcelas;
+  if (parsed.data.vencimentoDias !== undefined) updateData.vencimentoDias = parsed.data.vencimentoDias;
   if (parsed.data.prazoContratoMeses !== undefined) updateData.prazoContratoMeses = parsed.data.prazoContratoMeses;
   if (parsed.data.dataValidade !== undefined) updateData.dataValidade = parsed.data.dataValidade;
   if (parsed.data.signatarios !== undefined) updateData.signatarios = parsed.data.signatarios;
@@ -900,8 +999,15 @@ app.post("/propostas/:id/nova-versao", async (c) => {
       status: "rascunho",
       dataEmissao: today,
       dataValidade: original.dataValidade,
+      // Bug real corrigido 25/08: nova versão sempre nascia BRL/sem condição
+      // estruturada, mesmo quando o original tinha outra moeda/pagamento —
+      // achado durante o trabalho de billing avançado pedido pelo Kauã.
+      moeda: original.moeda,
       observacoes: original.observacoes,
       condicoesPagamento: original.condicoesPagamento,
+      condicaoPagamentoTipo: original.condicaoPagamentoTipo,
+      parcelas: original.parcelas,
+      vencimentoDias: original.vencimentoDias,
       prazoContratoMeses: original.prazoContratoMeses,
       totalRecorrente: original.totalRecorrente,
       totalAvulso: original.totalAvulso,
@@ -920,9 +1026,11 @@ app.post("/propostas/:id/nova-versao", async (c) => {
         nome: item.nome,
         descricao: item.descricao,
         tipo: item.tipo,
+        moeda: item.moeda,
         quantidade: item.quantidade,
         valorUnitario: item.valorUnitario,
         desconto: item.desconto,
+        descontoTipo: item.descontoTipo,
         subtotal: item.subtotal,
         ordem: item.ordem,
         serviceFamily: item.serviceFamily,
@@ -937,6 +1045,70 @@ app.post("/propostas/:id/nova-versao", async (c) => {
   await syncOportunidadeItensFromProposta(novaProposta.id);
 
   return c.json(novaProposta, 201);
+});
+
+// POST /propostas/:id/gerar-parcelamento — cria as parcelas RESTANTES de uma
+// proposta "boleto_parcelado" (25/08, billing avançado). A 1ª parcela sai
+// no checkout normal (Stripe Checkout Session, ver stripe-checkout.ts); as
+// demais são geradas aqui como Invoices avulsas (mesmo mecanismo de
+// cobrança avulsa) — greenfield, sem menção prévia no projeto, então
+// ação explícita e auditada (admin/gerente), nunca automática dentro do
+// fluxo de aceite (que já é área frágil — MRR duplicado, evidência de Won
+// ambígua com boleto — ver crm2-decisoes-pendentes.md).
+app.post("/propostas/:id/gerar-parcelamento", async (c) => {
+  const ctx = await getCtx(c);
+  const id = c.req.param("id");
+
+  if (!isAdminView(ctx.userRole)) {
+    return c.json({ error: "Só admin/gerente pode gerar o plano de parcelas" }, 403);
+  }
+
+  const [proposta] = await db.select().from(propostas).where(and(eq(propostas.id, id), eq(propostas.organizacaoId, ctx.organizacaoId))).limit(1);
+  if (!proposta) return c.json({ error: "Proposta não encontrada" }, 404);
+  if (proposta.condicaoPagamentoTipo !== "boleto_parcelado") {
+    return c.json({ error: "Esta proposta não está configurada como boleto parcelado" }, 400);
+  }
+  const totalParcelas = proposta.parcelas || 1;
+  if (totalParcelas < 2) return c.json({ error: "Proposta com menos de 2 parcelas — nada a gerar" }, 400);
+
+  const [lead] = await db.select({ stripeCustomerId: leads.stripeCustomerId }).from(leads).where(eq(leads.id, proposta.leadId)).limit(1);
+  if (!lead?.stripeCustomerId) {
+    return c.json({ error: "Este cliente ainda não tem um customer no Stripe — a 1ª parcela (checkout) precisa ser paga antes de gerar as demais." }, 400);
+  }
+
+  const valorTotal = parseFloat(proposta.totalGeral || "0");
+  if (valorTotal <= 0) return c.json({ error: "Proposta sem valor" }, 400);
+  const valorParcela = Math.round((valorTotal / totalParcelas) * 100) / 100;
+  const quantidadeRestante = totalParcelas - 1; // a 1ª já sai no checkout
+
+  const { criarPlanoDeParcelas } = await import("@/lib/integrations/stripe-invoice");
+  let resultados: { invoiceId: string; hostedInvoiceUrl: string | null; status: string }[];
+  try {
+    resultados = await criarPlanoDeParcelas({
+      stripeCustomerId: lead.stripeCustomerId,
+      descricaoBase: `Proposta #${proposta.numero} — ${proposta.moeda}`,
+      valorParcela,
+      moeda: proposta.moeda,
+      quantidade: quantidadeRestante,
+      diasVencimento: proposta.vencimentoDias || 3,
+      metadata: { propostaId: proposta.id, negocioId: proposta.negocioId || "", organizacaoId: ctx.organizacaoId, origem: "callface-crm-parcelamento" },
+    });
+  } catch (err) {
+    return c.json({ error: `Falha ao gerar parcelas no Stripe: ${String(err)}` }, 502);
+  }
+
+  await db.insert(atividades).values({
+    organizacaoId: ctx.organizacaoId,
+    leadId: proposta.leadId,
+    negocioId: proposta.negocioId,
+    usuarioId: ctx.userId,
+    tipo: "parcelamento_gerado",
+    titulo: `${quantidadeRestante} parcela(s) gerada(s) no Stripe`,
+    descricao: `Proposta #${proposta.numero}, ${totalParcelas}x de ${proposta.moeda} ${valorParcela.toFixed(2)}`,
+    dados: { propostaId: proposta.id, parcelas: resultados },
+  });
+
+  return c.json({ parcelas: resultados }, 201);
 });
 
 // POST /propostas/:id/recusar — enviada → recusada
@@ -959,20 +1131,39 @@ app.post("/propostas/:id/recusar", async (c) => {
     return c.json({ error: "Só é possível recusar propostas enviadas" }, 400);
   }
 
+  // Mesmo efeito colateral da recusa na página pública
+  // (`lib/crm/proposta-publica.ts:recusarPropostaPublica`): registrar QUANDO o
+  // cliente respondeu e POR QUÊ. Sem isso o bloco "Cliente respondeu" do
+  // detalhe ficava vazio quando o vendedor registrava a recusa pelo CRM em vez
+  // de o cliente recusar sozinho no link — mesma informação comercial, dois
+  // caminhos, só um gravava.
   const [updated] = await db
     .update(propostas)
-    .set({ status: "recusada", updatedAt: new Date() })
+    .set({ status: "recusada", clienteRespondeuEm: new Date(), motivoRecusa: motivo || null, updatedAt: new Date() })
     .where(eq(propostas.id, id))
     .returning();
 
   await db.insert(atividades).values({
     organizacaoId: ctx.organizacaoId,
     leadId: proposta.leadId,
+    negocioId: proposta.negocioId,
     usuarioId: ctx.userId,
     tipo: "proposta_enviada",
     titulo: `Proposta #P-${String(proposta.numero).padStart(3, "0")}-v${proposta.versao} recusada`,
     descricao: motivo || "Proposta recusada pelo cliente",
     dados: { propostaId: proposta.id, acao: "recusada", motivo },
+  });
+
+  // Mesmo evento que a recusa pública emite — é o que alimenta timeline,
+  // automações e qualquer consumidor de ProposalRejected. Recusa registrada
+  // pelo vendedor não pode ser invisível pro resto do sistema só por ter
+  // entrado por outra porta.
+  await publicarEvento({
+    organizacaoId: ctx.organizacaoId,
+    eventType: "ProposalRejected",
+    aggregateType: "proposta",
+    aggregateId: proposta.id,
+    payload: { propostaId: proposta.id, negocioId: proposta.negocioId, motivo: motivo ?? null },
   });
 
   // Sync negocio values from propostas

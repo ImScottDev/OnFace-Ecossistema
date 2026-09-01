@@ -30,7 +30,7 @@ export const FAMILY_COLOR: Record<string, string> = { CALLFACE_AI: "#88d600", PA
 export interface PropostaRow {
   id: string; numero: number; versao: number; status: string;
   leadId: string | null; leadNome: string | null; leadEmpresa: string | null;
-  negocioId: string | null; negocioTitulo: string | null;
+  negocioId: string | null; negocioTitulo: string | null; negocioStatus: string | null;
   totalRecorrente: string; totalAvulso: string; totalGeral: string;
   dataEmissao: string | null; dataValidade: string | null;
   criadoPorId: string | null; criadoPorNome: string | null;
@@ -44,3 +44,15 @@ export interface PropostaRow {
 }
 
 export const brl = (v: string | number | null | undefined) => Number(v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
+// Etapa do negócio vinculado, exibida na tabela/drawer de Propostas (25/08,
+// referência do Kauã) — reusa o MESMO de/para de Pipeline (nunca reinventa
+// um 2º vocabulário de etapa pra negócio).
+import { PIPELINE_OPEN_COLS } from "../pipeline/shared";
+export function resolveEtapaNegocio(status: string | null): { label: string; color: string } | null {
+  if (!status) return null;
+  if (status === "ganho") return { label: "Ganho", color: "#22C55E" };
+  if (status === "perdido" || ["sem_retorno", "trava_negociacao", "trava_assinatura", "outra_data"].includes(status)) return { label: "Perdido", color: "#dc2626" };
+  const col = PIPELINE_OPEN_COLS.find((c) => c.keys.includes(status));
+  return col ? { label: col.label, color: col.color } : null;
+}

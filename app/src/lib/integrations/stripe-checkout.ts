@@ -92,6 +92,30 @@ export interface CreateGroupCheckoutParams {
   customerEmail?: string | null;
   successUrl: string;
   cancelUrl: string;
+  /** Condição de pagamento estruturada da proposta (25/08) — ver applyCondicaoPagamento */
+  condicaoPagamentoTipo?: string | null;
+  vencimentoDias?: number | null;
+}
+
+/**
+ * Aplica a condição de pagamento estruturada da proposta na sessão de
+ * checkout. Sem valor (proposta antiga, ou "outro"): não seta
+ * `payment_method_types` — Stripe decide pelos métodos habilitados na
+ * conta, MESMO comportamento de antes (zero regressão). Com "cartao"/
+ * "boleto"/"boleto_parcelado": restringe o método explicitamente. O
+ * vencimento do boleto (`expires_after_days`) só existe no Checkout Session
+ * pra QUANDO o boleto é gerado — não modela parcelamento de verdade (N
+ * boletos futuros); isso é o próximo passo, via Invoice API pós-contrato
+ * (ver stripe-invoice.ts), não dentro da sessão de checkout.
+ */
+function applyCondicaoPagamento(form: URLSearchParams, tipo: string | null | undefined, vencimentoDias: number | null | undefined): void {
+  if (tipo === "cartao") {
+    appendNested(form, "payment_method_types", ["card"]);
+  } else if (tipo === "boleto" || tipo === "boleto_parcelado") {
+    appendNested(form, "payment_method_types", ["boleto"]);
+    appendNested(form, "payment_method_options", { boleto: { expires_after_days: Math.max(1, Math.min(60, vencimentoDias || 3)) } });
+  }
+  // "outro" ou ausente: não restringe — comportamento atual da conta.
 }
 
 /**
@@ -127,6 +151,7 @@ export async function createGroupCheckout(params: CreateGroupCheckoutParams): Pr
   appendNested(form, "custom_fields", [
     { key: "cpfcnpj", label: { type: "custom", custom: "CPF ou CNPJ" }, type: "text", optional: false },
   ]);
+  applyCondicaoPagamento(form, params.condicaoPagamentoTipo, params.vencimentoDias);
 
   let idx = 0;
   for (const item of recorrentes) {

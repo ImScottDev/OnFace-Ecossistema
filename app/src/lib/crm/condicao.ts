@@ -7,8 +7,8 @@
  */
 export interface Condicao {
   campo?: string;
-  operador?: "igual" | "diferente" | "contem" | "maior_que" | "menor_que";
-  valor?: string;
+  operador?: "igual" | "diferente" | "contem" | "maior_que" | "menor_que" | "maior_igual" | "menor_igual";
+  valor?: string | number | boolean;
 }
 
 export function avaliarCondicao(condicao: unknown, campos: Record<string, unknown>): boolean {
@@ -22,6 +22,8 @@ export function avaliarCondicao(condicao: unknown, campos: Record<string, unknow
     case "contem": return String(valorCampo ?? "").toLowerCase().includes(String(valorComparar ?? "").toLowerCase());
     case "maior_que": return Number(valorCampo) > Number(valorComparar);
     case "menor_que": return Number(valorCampo) < Number(valorComparar);
+    case "maior_igual": return Number(valorCampo) >= Number(valorComparar);
+    case "menor_igual": return Number(valorCampo) <= Number(valorComparar);
     default: return true;
   }
 }

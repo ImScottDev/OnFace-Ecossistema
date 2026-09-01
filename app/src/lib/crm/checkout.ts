@@ -88,6 +88,7 @@ export async function criarCheckoutParaGrupo(opts: {
     const session = await createGroupCheckout({
       propostaId: proposta.id, negocioId: proposta.negocioId, grupoComercialId: opts.grupoId, organizacaoId: proposta.organizacaoId,
       moeda: proposta.moeda || "BRL", itensRecorrentes, itensAvulsos, customerEmail: lead?.email || undefined,
+      condicaoPagamentoTipo: proposta.condicaoPagamentoTipo, vencimentoDias: proposta.vencimentoDias,
       successUrl: process.env.CHECKOUT_SUCCESS_URL || `${base}/obrigado`,
       cancelUrl: process.env.CHECKOUT_CANCEL_URL || base,
     });
