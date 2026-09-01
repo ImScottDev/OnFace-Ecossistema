@@ -1,5 +1,9 @@
 # CRM Callface — Instruções pro Claude / agentes
 
+> **Trabalhando na branch `dev` (CRM 2.0)? Leia [`HANDOFF.md`](./HANDOFF.md)
+> primeiro.** Ele tem o estado atual da reconstrução, a definição de pronto,
+> as armadilhas já conhecidas, as pendências abertas e as dívidas técnicas.
+
 ## O que é
 
 CRM interno da Callface (SaaS B2B de telefonia + IA — Callpilot é o módulo de
