@@ -31,6 +31,7 @@ import {
   usuarios,
   pipelines,
   emailContas,
+  auditLog,
 } from "@/lib/db/schema";
 import {
   desc,
@@ -741,7 +742,7 @@ app.get("/leads/:id", async (c) => {
     return c.json({ error: "Lead nao encontrado" }, 404);
   }
 
-  const [leadNegocios, leadActivities, leadStatusChanges, leadEvents, leadTarefas, leadContratos, leadPropostas, leadContatos, leadLabelRows] =
+  const [leadNegocios, leadActivities, leadStatusChanges, leadEvents, leadTarefas, leadContratos, leadPropostas, leadContatos, leadLabelRows, leadResponsavelHistorico] =
     await Promise.all([
       db
         .select()
@@ -805,6 +806,15 @@ app.get("/leads/:id", async (c) => {
         .from(leadLabels)
         .innerJoin(labels, eq(labels.id, leadLabels.labelId))
         .where(eq(leadLabels.leadId, id)),
+      // Histórico de responsável (25/08) — já é gravado de verdade em
+      // registrarMudancaResponsavel (owner.ts), só nunca tinha sido puxado
+      // pra timeline da página da Pessoa. before/after têm o formato
+      // `{ responsavelId }`, nome resolvido no front via usuariosById.
+      db
+        .select({ id: auditLog.id, before: auditLog.before, after: auditLog.after, actorId: auditLog.actorId, createdAt: auditLog.createdAt })
+        .from(auditLog)
+        .where(and(eq(auditLog.entityType, "lead"), eq(auditLog.entityId, id), eq(auditLog.action, "lead.responsavel_alterado")))
+        .orderBy(desc(auditLog.createdAt)),
     ]);
 
   // Enrich: resolve empresa name from empresas table if lead.empresa text is empty
@@ -862,6 +872,7 @@ app.get("/leads/:id", async (c) => {
     tarefas: leadTarefas,
     contratos: leadContratos,
     propostas: leadPropostas,
+    responsavelHistorico: leadResponsavelHistorico,
   });
 });
 
@@ -1555,6 +1566,14 @@ app.post("/leads/:id/labels", async (c) => {
       nome: lead.nome,
     });
 
+    // Timeline semântica (25/08, achado real: página da Pessoa precisa
+    // mostrar "tag adicionada" na timeline — não existia nenhum registro em
+    // `atividades` pra esse evento, só o disparo de automação acima).
+    await db.insert(atividades).values({
+      leadId, organizacaoId: ctx.organizacaoId, usuarioId: ctx.userId,
+      tipo: "tag_adicionada", titulo: label.nome,
+    });
+
     return c.json(assignment, 201);
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -1576,6 +1595,8 @@ app.delete("/leads/:id/labels", async (c) => {
     const body = await c.req.json();
     const { labelId } = labelAssignSchema.parse(body);
 
+    const [label] = await db.select({ nome: labels.nome }).from(labels).where(eq(labels.id, labelId));
+
     const [deleted] = await db
       .delete(leadLabels)
       .where(and(eq(leadLabels.leadId, leadId), eq(leadLabels.labelId, labelId)))
@@ -1583,6 +1604,14 @@ app.delete("/leads/:id/labels", async (c) => {
 
     if (!deleted) {
       return c.json({ error: "Atribuição não encontrada" }, 404);
+    }
+
+    // Timeline semântica (25/08) — mesmo critério do add (ver POST acima).
+    if (label) {
+      await db.insert(atividades).values({
+        leadId, organizacaoId: ctx.organizacaoId, usuarioId: ctx.userId,
+        tipo: "tag_removida", titulo: label.nome,
+      });
     }
 
     return c.json({ success: true });

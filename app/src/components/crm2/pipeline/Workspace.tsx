@@ -4,7 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Search, X, Clock, FileText, FileWarning, CreditCard, Link2, Beaker, Download } from "lucide-react";
-import { useOrgUsuarios, matchesResponsavel } from "@/components/crm/BoardFilters";
+import { useOrgUsuarios, matchesResponsavel, type OrgUsuario } from "@/components/crm/BoardFilters";
+import { DarkFilterSelect, DarkItem } from "@/components/crm2/shared/DarkFilterSelect";
+import { OwnerPicker } from "@/components/crm2/prospeccao/OwnerPicker";
 import {
   PIPELINE_OPEN_COLS, PERDIDO_KEYS, FAMILY_LABEL, FAMILY_COLOR,
   negocioValor, tempoNaEtapa, diasSemAvanco, motivoPerdaLabel, resolvePropostaDisplay,
@@ -73,6 +75,17 @@ export function Cf2PipelineWorkspace() {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  // Responsável editável direto no card (25/08, mesmo padrão já aplicado em
+  // Prospecção/Pré-vendas).
+  const assignOwner = useMutation({
+    mutationFn: async ({ negocioId, responsavelId }: { negocioId: string; responsavelId: string | null }) => {
+      const r = await fetch(`/api/negocios/${negocioId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ responsavelId }) });
+      if (!r.ok) throw new Error("falha ao atribuir responsável");
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["pipeline-crm2-board"] }); toast.success("Responsável atualizado."); },
+    onError: () => toast.error("Não foi possível atribuir o responsável"),
+  });
+
   useEffect(() => {
     const abrir = () => setNovaOpen(true);
     window.addEventListener("pipeline-nova-oportunidade", abrir);
@@ -118,8 +131,10 @@ export function Cf2PipelineWorkspace() {
 
   return (
     <div className="h-full flex flex-col gap-4 min-h-0">
-      {/* Filtros */}
-      <div className="flex items-center gap-2 flex-wrap shrink-0">
+      {/* Filtros — faixa rolável + selects rotulados (mesmo ajuste 25/08 já
+          aplicado em Prospecção/Pré-vendas: 5 selects de largura variável
+          quebravam linha de forma desalinhada). */}
+      <div className="flex items-center gap-2 shrink-0">
         <div className="relative shrink-0">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: "var(--cf2-chrome-text-secondary)" }} />
           <input
@@ -129,27 +144,31 @@ export function Cf2PipelineWorkspace() {
           />
           {search && <button onClick={() => setSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2" style={{ color: "var(--cf2-chrome-text-secondary)" }}><X className="w-3 h-3" /></button>}
         </div>
-        <Select value={respFilter} onChange={setRespFilter}>
-          <option value="todos">Responsável: Todos</option>
-          {currentUserId && <option value="meu">Meus (eu)</option>}
-          {usuarios.map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}
-        </Select>
-        <Select value={familiaFilter} onChange={setFamiliaFilter}>
-          <option value="todas">Família: Todas</option>
-          {Object.entries(FAMILY_LABEL).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
-        </Select>
-        <Select value={origemFilter} onChange={setOrigemFilter}>
-          <option value="todas">Origem: Todas</option>
-          {origensReais.map((o) => <option key={o} value={o}>{o}</option>)}
-        </Select>
-        <Select value={periodoFilter} onChange={(v) => setPeriodoFilter(v as "mes" | "tudo")}>
-          <option value="mes">Período: Este mês</option>
-          <option value="tudo">Período: Todo o período</option>
-        </Select>
-        <Select value={statusFilter} onChange={(v) => setStatusFilter(v as "abertas" | "todas")}>
-          <option value="abertas">Status: Abertas</option>
-          <option value="todas">Status: Todas</option>
-        </Select>
+
+        <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto cf2-hide-scrollbar">
+          <DarkFilterSelect value={respFilter} onChange={setRespFilter} label="Responsável" placeholder="Todos">
+            <DarkItem value="todos">Todos</DarkItem>
+            {currentUserId && <DarkItem value="meu">Meus (eu)</DarkItem>}
+            {usuarios.map((u) => <DarkItem key={u.id} value={u.id}>{u.nome}</DarkItem>)}
+          </DarkFilterSelect>
+          <DarkFilterSelect value={familiaFilter} onChange={setFamiliaFilter} label="Família" placeholder="Todas">
+            <DarkItem value="todas">Todas</DarkItem>
+            {Object.entries(FAMILY_LABEL).map(([k, label]) => <DarkItem key={k} value={k}>{label}</DarkItem>)}
+          </DarkFilterSelect>
+          <DarkFilterSelect value={origemFilter} onChange={setOrigemFilter} label="Origem" placeholder="Todas">
+            <DarkItem value="todas">Todas</DarkItem>
+            {origensReais.map((o) => <DarkItem key={o} value={o}>{o}</DarkItem>)}
+          </DarkFilterSelect>
+          <DarkFilterSelect value={periodoFilter} onChange={(v) => setPeriodoFilter(v as "mes" | "tudo")} label="Período" placeholder="Este mês">
+            <DarkItem value="mes">Este mês</DarkItem>
+            <DarkItem value="tudo">Todo o período</DarkItem>
+          </DarkFilterSelect>
+          <DarkFilterSelect value={statusFilter} onChange={(v) => setStatusFilter(v as "abertas" | "todas")} label="Status" placeholder="Abertas">
+            <DarkItem value="abertas">Abertas</DarkItem>
+            <DarkItem value="todas">Todas</DarkItem>
+          </DarkFilterSelect>
+        </div>
+
         <button
           onClick={() => setShowExport(true)}
           title="Exportar oportunidades: escolher responsável e etapas"
@@ -188,7 +207,7 @@ export function Cf2PipelineWorkspace() {
                   </div>
                   <div className="flex-1 p-2 space-y-2 min-h-[120px] overflow-y-auto">
                     {negociosCol.map((n) => (
-                      <NegocioCard key={n.id} n={n} onOpen={() => setDrawerNegocioId(n.id)} onDragStart={(e) => e.dataTransfer.setData("negocioId", n.id)} />
+                      <NegocioCard key={n.id} n={n} usuarios={usuarios} onAssignOwner={(userId) => assignOwner.mutate({ negocioId: n.id, responsavelId: userId })} onOpen={() => setDrawerNegocioId(n.id)} onDragStart={(e) => e.dataTransfer.setData("negocioId", n.id)} />
                     ))}
                     {negociosCol.length === 0 && <div className="flex h-16 items-center justify-center text-[11px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>vazio</div>}
                   </div>
@@ -200,8 +219,8 @@ export function Cf2PipelineWorkspace() {
                 referência visual de Pré-vendas), não mais botão+modal por
                 cima. Não são drop target: nascem de ação real (aceite de
                 proposta, marcar perdido com motivo), nunca de drag cru. */}
-            <BucketColumn label="Ganho" color={SUCCESS_DARK} negocios={ganhoNegocios} expanded={expandedBucket === "ganho"} onToggle={() => setExpandedBucket((b) => (b === "ganho" ? null : "ganho"))} onOpen={setDrawerNegocioId} />
-            <BucketColumn label="Perdido" color="#f87171" negocios={perdidoNegocios} expanded={expandedBucket === "perdido"} onToggle={() => setExpandedBucket((b) => (b === "perdido" ? null : "perdido"))} onOpen={setDrawerNegocioId} showMotivo />
+            <BucketColumn label="Ganho" color={SUCCESS_DARK} negocios={ganhoNegocios} expanded={expandedBucket === "ganho"} onToggle={() => setExpandedBucket((b) => (b === "ganho" ? null : "ganho"))} onOpen={setDrawerNegocioId} usuarios={usuarios} onAssignOwner={(negocioId, userId) => assignOwner.mutate({ negocioId, responsavelId: userId })} />
+            <BucketColumn label="Perdido" color="#f87171" negocios={perdidoNegocios} expanded={expandedBucket === "perdido"} onToggle={() => setExpandedBucket((b) => (b === "perdido" ? null : "perdido"))} onOpen={setDrawerNegocioId} showMotivo usuarios={usuarios} onAssignOwner={(negocioId, userId) => assignOwner.mutate({ negocioId, responsavelId: userId })} />
           </div>
         </div>
       )}
@@ -315,19 +334,13 @@ function ExportNegociosModal({ negocios, usuarios, onClose, onExport }: { negoci
   );
 }
 
-function Select({ value, onChange, children }: { value: string; onChange: (v: string) => void; children: React.ReactNode }) {
-  return (
-    <select value={value} onChange={(e) => onChange(e.target.value)} className="px-2.5 py-1.5 rounded-lg text-[12px] font-medium outline-none" style={{ background: "rgba(255,255,255,0.06)", border: "1px solid var(--cf2-chrome-border-subtle)", color: "var(--cf2-chrome-text-secondary)" }}>
-      {children}
-    </select>
-  );
-}
 
 /** Coluna colapsável pra Ganho/Perdido — mesma anatomia das colunas
  * auxiliares do Kanban de Pré-vendas (barra estreita recolhida, clique
  * expande e mostra os cards de verdade, reaproveitando `NegocioCard`). */
-function BucketColumn({ label, color, negocios, expanded, onToggle, onOpen, showMotivo = false }: {
+function BucketColumn({ label, color, negocios, expanded, onToggle, onOpen, showMotivo = false, usuarios, onAssignOwner }: {
   label: string; color: string; negocios: NegocioBoard[]; expanded: boolean; onToggle: () => void; onOpen: (id: string) => void; showMotivo?: boolean;
+  usuarios: OrgUsuario[]; onAssignOwner: (negocioId: string, userId: string | null) => void;
 }) {
   const total = negocios.reduce((s, n) => s + negocioValor(n), 0);
 
@@ -360,7 +373,7 @@ function BucketColumn({ label, color, negocios, expanded, onToggle, onOpen, show
           <div className="flex h-16 items-center justify-center text-[11px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>vazio</div>
         ) : negocios.map((n) => (
           <div key={n.id}>
-            <NegocioCard n={n} onOpen={() => onOpen(n.id)} onDragStart={() => {}} />
+            <NegocioCard n={n} usuarios={usuarios} onAssignOwner={onAssignOwner} onOpen={() => onOpen(n.id)} onDragStart={() => {}} />
             {showMotivo && (
               <p className="text-[11px] mt-1 px-1 truncate" style={{ color: "#f87171" }}>{motivoPerdaLabel(n)}</p>
             )}
@@ -371,7 +384,10 @@ function BucketColumn({ label, color, negocios, expanded, onToggle, onOpen, show
   );
 }
 
-function NegocioCard({ n, onOpen, onDragStart }: { n: NegocioBoard; onOpen: () => void; onDragStart: (e: React.DragEvent) => void }) {
+function NegocioCard({ n, usuarios, onAssignOwner, onOpen, onDragStart }: {
+  n: NegocioBoard; usuarios: OrgUsuario[]; onAssignOwner: (negocioId: string, userId: string | null) => void;
+  onOpen: () => void; onDragStart: (e: React.DragEvent) => void;
+}) {
   const nomeLead = [n.leadNome, n.leadSobrenome].filter(Boolean).join(" ");
   const isTrial = n.status === "trial";
   const isNoShow = n.status === "no_show";
@@ -408,8 +424,8 @@ function NegocioCard({ n, onOpen, onDragStart }: { n: NegocioBoard; onOpen: () =
       <div className="flex items-center justify-between mt-2.5 gap-2">
         <span className="text-[12px] font-bold" style={{ color: "var(--cf2-chrome-text-primary)" }}>{brl(negocioValor(n))}</span>
         <div className="flex items-center gap-1.5 shrink-0">
-          {n.responsavelNome && <span className="text-[10px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>{n.responsavelNome.split(" ")[0]}</span>}
           <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: "rgba(255,255,255,0.08)", color: "var(--cf2-chrome-text-secondary)" }}>{tempoNaEtapa(n.updatedAt)}</span>
+          <OwnerPicker ownerId={n.responsavelId} ownerName={n.responsavelNome} usuarios={usuarios} onAssign={(userId) => onAssignOwner(n.id, userId)} size={18} />
         </div>
       </div>
       {n.proximaAcao && (

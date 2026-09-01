@@ -16,8 +16,8 @@ export default async function PipelinePage() {
 
   return (
     <div className="-m-6 h-[calc(100%+3rem)] flex flex-col min-h-0">
-      <header className="shrink-0 flex flex-col gap-5 px-8 pt-7 pb-5" style={{ background: "var(--cf2-chrome-bg-alt)", borderBottom: "1px solid var(--cf2-chrome-border-subtle)" }}>
-        <Cf2Topbar orgNome={orgNome} variant="dark" title="Vendas" subtitle="Workspace dos closers — oportunidades de Entrada até Negociação" actions={<PipelineTopbarActions />} />
+      <header className="shrink-0 flex flex-col px-6 py-3.5" style={{ background: "var(--cf2-chrome-bg-alt)", borderBottom: "1px solid var(--cf2-chrome-border-subtle)" }}>
+        <Cf2Topbar orgNome={orgNome} variant="dark" title="Vendas" subtitle="Workspace dos closers — oportunidades de Entrada até Negociação" actions={<PipelineTopbarActions />} compactTitle />
       </header>
 
       <div

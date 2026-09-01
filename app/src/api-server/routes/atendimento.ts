@@ -1,10 +1,13 @@
 import { Hono } from "hono";
 import { db } from "@/lib/db";
 import {
-  contatos, emails, emailContas, ligacoes, leads, empresas, negocios,
-  propostas, reunioes, tarefas, aiSdrContatoState, contatoLabels, labels, leadLabels,
+  contatos, emails, emailContas, ligacoes, leads, empresas, negocios, negocioLeads,
+  propostas, reunioes, tarefas, aiSdrContatoState, contatoLabels, labels, leadLabels, usuarios,
 } from "@/lib/db/schema";
 import { eq, and, or, desc, asc, isNull, ilike, inArray, gte, sql, type SQL } from "drizzle-orm";
+// Mesma taxonomia de estágio do board real de Pré-vendas (Kanban), não uma
+// etiqueta inventada pro widget do discador — ver shared.ts pra contexto.
+import { NOVO_COL, EM_CONTATO_COL, QUALIFICACAO_COL, SEM_RESPOSTA_COL, NUTRICAO_MERGED_COL, DESQUALIFICADO_ESTAGNADOS_COL } from "@/components/crm2/qualificacao/shared";
 import { z } from "zod";
 import { getCtx, parseBody } from "../compat.js";
 import { publicarEvento } from "@/lib/events/outbox";
@@ -481,8 +484,14 @@ async function buscarLigacao(opts: {
     // Deep link: todas as ligações DESSE lead na org, não só as que o
     // usuário atual atendeu (ver comentário na rota).
     ? [eq(ligacoes.organizacaoId, ctx.organizacaoId), eq(ligacoes.leadId, leadIdFiltro)]
-    // Mesma privacidade — ligação só aparece pra quem atendeu, sem exceção de papel.
-    : [eq(ligacoes.organizacaoId, ctx.organizacaoId), eq(ligacoes.usuarioId, effectiveUserId)];
+    : [eq(ligacoes.organizacaoId, ctx.organizacaoId)];
+  // "Todos" (25/08, mesmo achado real já corrigido em buscarWhatsapp em
+  // 24/08, que passou batido aqui): sem este `else if`, "Todos" no dropdown
+  // se comportava idêntico a "Meus" — motivo real de Ligações aparecer
+  // vazio pra quem não tinha nenhuma ligação atendida por si mesmo, mesmo
+  // com "Todos" selecionado. Só a lista de "quem ligou" muda; nada aqui
+  // reatribui ligação de ninguém.
+  if (!leadIdFiltro && view !== "todos") conditions.push(eq(ligacoes.usuarioId, effectiveUserId));
   if (search) conditions.push(ilike(leads.nome, `%${search}%`));
 
   const rows = await db
@@ -565,14 +574,59 @@ app.get("/atendimento/contatos-quentes", async (c) => {
       .where(and(eq(propostas.organizacaoId, ctx.organizacaoId), eq(propostas.status, "enviada"), eq(leads.responsavelId, userId)))
       .orderBy(desc(propostas.dataEmissao))
       .limit(5),
+    // "Leads novos" (25/08, Kauã: "os leads novos que estão em pré-vendas" /
+    // "precisa aparecer todos os novos") — org inteira, não só os seus (like
+    // "recentes"/"comProposta" acima, que são privados; "novos" é visão de
+    // fila, não de dono).
+    //
+    // Achado real (25/08): a primeira versão usava o critério de ELEGIBILIDADE
+    // pro board inteiro de pré-vendas (context=pre_vendas em leads.ts — "não é
+    // outbound cru"), que deixa passar QUALQUER etapa (inclusive qualified e
+    // disqualified) desde que a origem não seja outbound. Testado contra o
+    // banco real: "Guilherme Viana" (sdr_status=qualified) e "naty"
+    // (sdr_status=disqualified) apareciam como "novos", o que está errado —
+    // eligibilidade pro board ≠ estar na coluna Novo. Critério certo é o
+    // mesmo que decide a coluna "Novo" do Kanban (sdrBoardColumn/NOVO_COL em
+    // shared.ts): sdr_status nulo/pending E sem negócio ativo (senão
+    // sdrBoardColumn promove pra m_qualified mesmo com sdr_status stale).
     db
-      .select({ id: leads.id, nome: leads.nome, telefone: leads.telefone, empresaNome: empresas.nome, empresaLegacy: leads.empresa, createdAt: leads.createdAt })
+      .select({
+        id: leads.id, nome: leads.nome, telefone: leads.telefone, empresaNome: empresas.nome, empresaLegacy: leads.empresa,
+        createdAt: leads.createdAt, sdrStatus: leads.sdrStatus, responsavelNome: usuarios.nome,
+      })
       .from(leads)
       .leftJoin(empresas, eq(empresas.id, leads.empresaId))
-      .where(and(eq(leads.organizacaoId, ctx.organizacaoId), eq(leads.responsavelId, userId)))
+      .leftJoin(usuarios, eq(usuarios.id, leads.responsavelId))
+      .where(and(
+        eq(leads.organizacaoId, ctx.organizacaoId),
+        eq(leads.tipo, "lead"),
+        sql`coalesce(${leads.sdrStatus}, 'pending') = 'pending'`,
+        sql`NOT EXISTS (
+          SELECT 1 FROM ${negocioLeads} nl JOIN ${negocios} n ON n.id = nl.negocio_id
+          WHERE nl.lead_id = ${leads.id} AND n.status NOT IN ('perdido', 'churned')
+        )`,
+      ))
       .orderBy(desc(leads.createdAt))
-      .limit(5),
+      .limit(8),
   ]);
+
+  // Rótulo/cor de estágio — mesma taxonomia do board de Pré-vendas
+  // (sdrBoardColumn/resolveDisplayStage em shared.ts), simplificada aqui
+  // pra não precisar juntar negócio/reunião num widget de discador: a
+  // distinção "Qualificado (SQL)" vs "Agenda Confirmada" (que depende de
+  // reunião agendada) some, e o board mostra só "Qualificado" — real e
+  // honesto, só menos granular que o Kanban completo.
+  const ESTAGIO_POR_SDR_STATUS: Record<string, { label: string; color: string }> = {
+    pending: { label: NOVO_COL.label, color: NOVO_COL.color },
+    contacted: { label: EM_CONTATO_COL.label, color: EM_CONTATO_COL.color },
+    qualifying: { label: QUALIFICACAO_COL.label, color: QUALIFICACAO_COL.color },
+    m_qualified: { label: "Qualificado", color: "#22C55E" },
+    sdr_sem_retorno: { label: SEM_RESPOSTA_COL.label, color: SEM_RESPOSTA_COL.color },
+    sdr_sem_interesse: { label: NUTRICAO_MERGED_COL.label, color: NUTRICAO_MERGED_COL.color },
+    sdr_retomar_depois: { label: NUTRICAO_MERGED_COL.label, color: NUTRICAO_MERGED_COL.color },
+    disqualified: { label: DESQUALIFICADO_ESTAGNADOS_COL.label, color: DESQUALIFICADO_ESTAGNADOS_COL.color },
+  };
+  const estagioDoLead = (sdrStatus: string | null) => ESTAGIO_POR_SDR_STATUS[sdrStatus || "pending"] ?? { label: NOVO_COL.label, color: NOVO_COL.color };
 
   // Dedup por lead nos recentes (uma ligação por lead, a mais nova)
   const vistos = new Set<string>();
@@ -584,7 +638,10 @@ app.get("/atendimento/contatos-quentes", async (c) => {
   return c.json({
     recentes,
     comProposta: propostasRows.map((r) => ({ id: r.leadId, nome: r.nome, telefone: r.telefone, empresaNome: r.empresaNome ?? r.empresaLegacy ?? null })),
-    novos: novosRows.map((r) => ({ id: r.id, nome: r.nome, telefone: r.telefone, empresaNome: r.empresaNome ?? r.empresaLegacy ?? null })),
+    novos: novosRows.map((r) => ({
+      id: r.id, nome: r.nome, telefone: r.telefone, empresaNome: r.empresaNome ?? r.empresaLegacy ?? null,
+      estagio: estagioDoLead(r.sdrStatus), responsavelNome: r.responsavelNome,
+    })),
   });
 });
 
@@ -642,7 +699,7 @@ app.get("/atendimento/contexto", async (c) => {
     .select({
       id: leads.id, nome: leads.nome, cargo: leads.cargo, telefone: leads.telefone, email: leads.email,
       empresaId: leads.empresaId, empresaLegacy: leads.empresa, empresaSetorLegacy: leads.empresaSetor,
-      tipo: leads.tipo,
+      tipo: leads.tipo, camposCustom: leads.camposCustom,
     })
     .from(leads)
     .where(and(eq(leads.id, leadId), eq(leads.organizacaoId, ctx.organizacaoId)))
@@ -723,6 +780,13 @@ app.get("/atendimento/contexto", async (c) => {
     isCliente,
     cascata,
     proximasAtividades,
+    // Qualificação SDR (mesmo dado de leads.campos_custom.qualificacaoSdr já
+    // exibido em QualificacaoSdrSection na ficha do lead) — aba Detalhes do
+    // Atendimento não tinha nenhum dado de qualificação real, só CNPJ/porte
+    // de empresa (às vezes nulo) e scripts. Read-only aqui, a edição
+    // continua só na ficha do lead.
+    leadId: lead.id,
+    camposCustom: lead.camposCustom ?? {},
   });
 });
 

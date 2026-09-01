@@ -205,6 +205,44 @@ async function main() {
     console.log(`⚠ ${oportunidadesSemPessoa} oportunidades sem pessoa resolvida (negócio sem leadId, ou leadId não encontrado no mapeamento) — pessoaId ficou null, revisar manualmente.`);
   }
 
+  // ─── 3.5. Cliente -> Oportunidade de origem (Attribution sobrevive ao Won) ──
+  // Sem isso o Cliente 360 não consegue responder "de qual venda/campanha veio
+  // esse cliente que hoje paga R$ X" — a cadeia lead->negócio->cliente existia
+  // no legado, mas parava no cliente. Roda DEPOIS das oportunidades porque
+  // precisa do id delas.
+  //
+  // Regra (determinística, sem inventar vínculo): a oportunidade de origem é a
+  // GANHA mais antiga da mesma pessoa; se a pessoa não tiver nenhuma, cai pra
+  // GANHA mais antiga da mesma empresa. Sem match, fica null — honesto.
+  console.log("\nLigando clientes à oportunidade de origem...");
+  const vinculoOrigem = await db.execute(sql`
+    WITH origem AS (
+      SELECT c.id AS cliente_id,
+             (
+               SELECT o.id FROM oportunidades o
+               WHERE o.stage = 'ganho'
+                 AND o.organizacao_id = c.organizacao_id
+                 AND (
+                   (o.pessoa_id IS NOT NULL AND o.pessoa_id = (
+                      SELECT p.id FROM pessoas p WHERE p.lead_id_legado = c.lead_id_legado LIMIT 1))
+                   OR (o.pessoa_id IS NULL AND c.empresa_id IS NOT NULL AND o.empresa_id = c.empresa_id)
+                 )
+               ORDER BY o.created_at ASC
+               LIMIT 1
+             ) AS oportunidade_id
+      FROM clientes c
+    )
+    UPDATE clientes c
+       SET oportunidade_origem_id = origem.oportunidade_id,
+           updated_at = now()
+      FROM origem
+     WHERE c.id = origem.cliente_id
+       AND origem.oportunidade_id IS NOT NULL
+  `);
+  const [clientesComOrigem] = await db.select({ n: sql<number>`count(*)` }).from(clientes).where(sql`oportunidade_origem_id IS NOT NULL`);
+  console.log(`Clientes com oportunidade de origem: ${clientesComOrigem.n} de ${clientesCriados} (o resto não tem nenhum negócio ganho no legado — fica null de propósito).`);
+  void vinculoOrigem;
+
   // ─── 4. Validação de contagem (não avança silenciosamente se não bater) ──
   console.log("\n=== Validação ===");
   const [totalPessoas] = await db.select({ n: sql<number>`count(*)` }).from(pessoas);

@@ -112,7 +112,7 @@ export function Cf2EventoDrawer({ evento, onClose }: { evento: Evento; onClose: 
             <div className="flex items-center gap-3 text-[13px]">
               <User className="w-4 h-4 shrink-0" style={{ color: "var(--cf2-text-tertiary)" }} />
               <span style={{ color: "var(--cf2-text-secondary)" }}>Pessoa</span>
-              <a href={`/leads/${evento.leadId}`} className="flex-1 text-right truncate" style={{ color: "var(--cf2-accent-border)" }}>{evento.leadNome} →</a>
+              <a href={`/contatos/${evento.leadId}`} className="flex-1 text-right truncate" style={{ color: "var(--cf2-accent-border)" }}>{evento.leadNome} →</a>
             </div>
           )}
           {evento.empresaNome && (

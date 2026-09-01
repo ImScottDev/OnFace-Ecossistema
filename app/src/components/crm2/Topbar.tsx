@@ -4,6 +4,7 @@ import { useSession } from "next-auth/react";
 import Link from "next/link";
 import { Search, Plus } from "lucide-react";
 import { useEffect, useState } from "react";
+import { Cf2SidebarTrigger } from "@/components/crm2/ui/Sidebar";
 import { Cf2NotificationBell } from "./NotificationBell";
 
 function saudacao(hora: number): string {
@@ -23,7 +24,7 @@ function saudacao(hora: number): string {
 // Sem eles, o comportamento da Home (saudação + data · org) continua
 // idêntico — nenhuma tela existente muda.
 export function Cf2Topbar({
-  orgNome, variant = "light", title, subtitle, ctaLabel = "Novo negócio", ctaHref = "/negocios/novo", actions, compact = false,
+  orgNome, variant = "light", title, subtitle, ctaLabel = "Novo negócio", ctaHref = "/negocios/novo", actions, compact = false, compactTitle = false,
 }: {
   orgNome: string;
   variant?: "light" | "dark";
@@ -38,6 +39,11 @@ export function Cf2Topbar({
   /** Omits the contextual greeting/title for detail workspaces that render
    * their own page heading below the global controls. */
   compact?: boolean;
+  /** Header de área operacional (lista/board), não Home: título pequeno
+   * numa única linha em vez do hero de saudação (24/08, referência Circle
+   * — headers/issues/header-nav.tsx é h-10, sem hero). Início/Vendas não
+   * passam isso e continuam com o título grande de sempre. */
+  compactTitle?: boolean;
 }) {
   const { data: session } = useSession();
   const primeiroNome = (session?.user?.name || "").split(" ")[0] || "";
@@ -61,8 +67,18 @@ export function Cf2Topbar({
   const kbdText = dark ? "var(--cf2-chrome-text-primary)" : "var(--cf2-text-secondary)";
 
   return (
-    <div className="flex items-center justify-between w-full">
-      {!compact && <div className="flex flex-col gap-1">
+    <div className="flex items-center justify-between w-full gap-2">
+      {/* Botão de abrir/fechar sidebar (30/08) — fora da barra, no canto
+          superior esquerdo do topo (referência do Kauã). No mobile abre o
+          Sheet; no desktop fixa/desfixa o modo expandido (o hover-to-peek
+          continua funcionando independente disso). */}
+      <Cf2SidebarTrigger className="shrink-0 hover:bg-[var(--cf2-bg-surface-muted)]" style={{ color: textPrimary }} />
+      {!compact && compactTitle && (
+        <p className="text-[15px] font-semibold" style={{ color: textPrimary, fontFamily: "var(--cf2-font-heading)" }}>
+          {title ?? orgNome}
+        </p>
+      )}
+      {!compact && !compactTitle && <div className="flex flex-col gap-1">
         <p className={dark ? "text-[28px] font-bold" : "text-[28px] font-semibold"} style={{ color: textPrimary, fontFamily: "var(--cf2-font-heading)" }}>
           {title ?? (now ? `${saudacao(now.getHours())}, ${primeiroNome}.` : " ")}
         </p>
@@ -87,7 +103,12 @@ export function Cf2Topbar({
 
         <Cf2NotificationBell variant={variant} />
 
-        {actions ?? (
+        {/* `actions` ausente = CTA padrão; `actions={null}` = sem CTA nenhum
+            (a Home já tem o "Novo negócio" como botão primário do hero e
+            não pode repetir o mesmo botão duas vezes na mesma faixa).
+            Checagem por `undefined` em vez de `??` porque um Fragment vazio
+            vindo de Server Component chega como null e cairia no fallback. */}
+        {actions !== undefined ? actions : (
           <Link
             href={ctaHref}
             className="flex items-center gap-1.5 px-[18px] py-2.5 rounded-xl text-sm font-bold"

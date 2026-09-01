@@ -15,7 +15,7 @@ export default async function CalendarioPage() {
 
   return (
     <div className="flex flex-col gap-5 h-full min-h-0">
-      <Cf2Topbar orgNome={org?.nome || "Callface"} />
+      <Cf2Topbar orgNome={org?.nome || "Callface"} title="Calendário" compactTitle />
       <div className="flex-1 min-h-0">
         <Cf2CalendarioWorkspace isAdmin={isAdminView(ctx.userRole)} />
       </div>

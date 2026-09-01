@@ -34,6 +34,8 @@ export type Contexto = {
   isCliente: boolean;
   cascata: Cascata;
   proximasAtividades: { id: string; titulo: string; data: string }[];
+  leadId?: string;
+  camposCustom?: Record<string, unknown>;
 };
 
 export function iniciais(nome: string) {

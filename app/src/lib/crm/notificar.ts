@@ -133,3 +133,66 @@ export async function notificarFormularioImplantacaoRecebido(fulfillmentId: stri
     console.error("[notificar] falha ao notificar formulário de implantação recebido:", e);
   }
 }
+
+/**
+ * Onboarding (Callface AI — White Label é Implantação, não Onboarding)
+ * criado automaticamente após o Won (25/08, spec do Kauã: "nada disso deve
+ * depender de alguém clicar em novo onboarding" — precisa gerar
+ * notificação pro responsável e registrar evento na timeline sozinho).
+ * Mesmo padrão fire-and-forget e mesma busca de lead via `leads.empresaId`
+ * de `notificarFormularioImplantacaoRecebido` — chamada por
+ * `criarFulfillmentsParaServicos` (lib/crm/fulfillment.ts) assim que o
+ * fulfillment de onboarding é criado.
+ */
+export async function notificarFulfillmentOnboardingCriado(fulfillmentId: string): Promise<void> {
+  try {
+    const [f] = await db
+      .select({
+        id: fulfillments.id,
+        organizacaoId: fulfillments.organizacaoId,
+        responsavelId: fulfillments.responsavelId,
+        serviceFamily: fulfillments.serviceFamily,
+        empresaId: empresas.id,
+        empresaNome: empresas.nome,
+        leadId: servicosCanonicos.leadId,
+      })
+      .from(fulfillments)
+      .innerJoin(servicosCanonicos, eq(servicosCanonicos.id, fulfillments.servicoCanonicoId))
+      .leftJoin(empresas, eq(empresas.id, servicosCanonicos.empresaId))
+      .where(eq(fulfillments.id, fulfillmentId))
+      .limit(1);
+    if (!f) return;
+
+    const quem = f.empresaNome || "cliente sem nome cadastrado";
+    const link = `/clientes/onboarding/${f.id}`;
+
+    if (f.responsavelId) {
+      await db.insert(notificacoes).values({
+        usuarioId: f.responsavelId,
+        tipo: "onboarding_criado",
+        titulo: `Novo onboarding atribuído a você — ${quem}`,
+        mensagem: "O Won gerou um novo onboarding. A primeira ação é agendar a reunião com o cliente.",
+        link,
+      });
+    }
+
+    const leadIdParaAtividade = f.leadId ?? (f.empresaId
+      ? (await db.select({ id: leads.id }).from(leads).where(eq(leads.empresaId, f.empresaId)).orderBy(desc(leads.createdAt)).limit(1))[0]?.id ?? null
+      : null);
+
+    if (leadIdParaAtividade) {
+      await db.insert(atividades).values({
+        organizacaoId: f.organizacaoId,
+        leadId: leadIdParaAtividade,
+        tipo: "onboarding_criado",
+        titulo: "Onboarding criado",
+        descricao: "Onboarding de Callface AI criado automaticamente após o Won.",
+        dados: { fulfillmentId: f.id },
+      });
+    } else {
+      console.warn(`[notificar] fulfillment ${f.id}: sem lead vinculado, atividade de onboarding criado não registrada (gap real, não fabricado).`);
+    }
+  } catch (e) {
+    console.error("[notificar] falha ao notificar onboarding criado:", e);
+  }
+}

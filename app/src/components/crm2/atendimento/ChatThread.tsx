@@ -33,6 +33,18 @@ type Mensagem = {
 
 const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
 
+// Mesmos slugs de categoria cadastrados via WhatsappTemplatesModal — rótulo
+// amigável só pra exibição; categoria não cadastrada aqui cai no valor cru.
+const CATEGORIA_LABEL: Record<string, string> = {
+  primeiro_contato: "Primeiro contato",
+  follow_up: "Follow-up",
+  cobranca: "Cobrança",
+  reuniao: "Reunião",
+  proposta: "Proposta",
+  pos_venda: "Pós-venda",
+  geral: "Geral",
+};
+
 // Card de anexo (20/08, referência de UX) — antes era um link cru "📎
 // Documento" sem nome nem tipo. Ícone/cor por extensão real do nome do
 // arquivo (whatsapp_mensagens.media_filename já chega com nome real, ex:
@@ -104,15 +116,21 @@ export function Cf2ChatThread({
   conversa,
   contexto,
   onAtribuir,
+  textoInicial,
 }: {
   conversa: ConversaItem;
   contexto: Contexto | null;
   onAtribuir: () => void;
+  // Deep link `?texto=` (25/08, pedido do Kauã na tela de Onboarding: "usar
+  // template já tinha que me levar pra aba de atendimento" — com a
+  // mensagem pronta, não só a conversa aberta vazia). Só preenche a caixa,
+  // nunca envia sozinho — o humano ainda revisa/edita antes de mandar.
+  textoInicial?: string;
 }) {
   const queryClient = useQueryClient();
   const { data: session } = useSession();
   const meuUsuarioId = session?.user?.id ?? null;
-  const [texto, setTexto] = useState("");
+  const [texto, setTexto] = useState(textoInicial ?? "");
   const [replyTo, setReplyTo] = useState<Mensagem | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [reactionPickerId, setReactionPickerId] = useState<string | null>(null);
@@ -314,21 +332,20 @@ export function Cf2ChatThread({
 
   return (
     <div
-      className="flex-1 flex flex-col h-full min-w-0 rounded-3xl overflow-hidden"
+      className="flex-1 flex flex-col h-full min-w-0 rounded-2xl overflow-hidden"
       style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}
     >
       <div
-        className="flex items-center justify-between p-4 shrink-0"
-        style={{ background: "var(--cf2-bg-page)", borderBottom: "1px solid var(--cf2-border-default)" }}
+        className="flex items-center justify-between gap-4 px-5 py-4 shrink-0"
+        style={{ background: "var(--cf2-bg-surface)", borderBottom: "1px solid var(--cf2-border-default)" }}
       >
         <div className="flex gap-3 items-center min-w-0">
-          <div className="flex items-center justify-center rounded-[20px] shrink-0 w-10 h-10" style={{ background: "var(--cf2-accent)" }}>
-            <p className="text-[14px] font-extrabold" style={{ color: "var(--cf2-text-on-accent)" }}>{/^\d+$/.test(conversa.nome) ? "#" : iniciais(conversa.nome)}</p>
+          <div className="flex items-center justify-center rounded-full shrink-0 w-10 h-10" style={{ background: "var(--cf2-accent)" }}>
+            <p className="text-[14px] font-bold" style={{ color: "var(--cf2-text-on-accent)" }}>{/^\d+$/.test(conversa.nome) ? "#" : iniciais(conversa.nome)}</p>
           </div>
           <div className="min-w-0">
-            <div className="flex gap-1.5 items-center">
-              <p className="text-[16px] font-bold truncate" style={{ color: "var(--cf2-text-primary)" }}>{nomeExibicao(conversa.nome, conversa.telefone)}</p>
-              {conversa.empresaNome && <p className="text-[12px]" style={{ color: "var(--cf2-text-secondary)" }}>· {conversa.empresaNome}</p>}
+            <div className="flex gap-2 items-center flex-wrap">
+              <p className="text-[15px] font-semibold truncate" style={{ color: "var(--cf2-text-primary)" }}>{nomeExibicao(conversa.nome, conversa.telefone)}</p>
               {contexto && <Cf2Badge variant={contexto.isCliente ? "success" : "neutral"}>{contexto.isCliente ? "Cliente" : "Lead"}</Cf2Badge>}
               {conversa.handoffStatus && HANDOFF_INFO[conversa.handoffStatus] && (
                 <Cf2Badge variant={HANDOFF_INFO[conversa.handoffStatus].variant}>
@@ -336,18 +353,18 @@ export function Cf2ChatThread({
                 </Cf2Badge>
               )}
             </div>
-            <p className="text-[11px] truncate" style={{ color: "var(--cf2-text-secondary)" }}>
-              {ultimaSessaoNome ? `via WhatsApp de ${ultimaSessaoNome}` : "WhatsApp"}
+            <p className="text-[12px] truncate mt-0.5" style={{ color: "var(--cf2-text-tertiary)" }}>
+              {conversa.empresaNome ? `${conversa.empresaNome} · ` : ""}{ultimaSessaoNome ? `WhatsApp de ${ultimaSessaoNome}` : "WhatsApp"}
             </p>
           </div>
         </div>
-        <div className="flex gap-2 items-center shrink-0">
+        <div className="flex gap-1.5 items-center shrink-0">
           {conversa.tipo === "whatsapp" && conversa.handoffStatus !== "human_assigned" ? (
             <button
               onClick={() => toggleAiMutation.mutate(false)}
               disabled={toggleAiMutation.isPending}
               title="Pausa a IA e assume a conversa você mesmo"
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold disabled:opacity-50"
+              className="flex items-center gap-1.5 px-3 h-9 rounded-lg text-[12.5px] font-semibold disabled:opacity-50 transition-colors"
               style={{ background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" }}
             >
               {toggleAiMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserCog className="w-3.5 h-3.5" />}
@@ -358,14 +375,17 @@ export function Cf2ChatThread({
               onClick={() => toggleAiMutation.mutate(true)}
               disabled={toggleAiMutation.isPending}
               title="Devolve a conversa pra IA responder"
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold disabled:opacity-50"
+              className="flex items-center gap-1.5 px-3 h-9 rounded-lg text-[12.5px] font-semibold disabled:opacity-50 transition-colors"
               style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-primary)" }}
             >
               {toggleAiMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Bot className="w-3.5 h-3.5" />}
               Devolver pra IA
             </button>
           ) : null}
-          <button onClick={onAtribuir} className="px-3 py-1.5 rounded-lg text-[12px] font-semibold" style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-primary)" }}>
+
+          <span className="w-px h-5 shrink-0" style={{ background: "var(--cf2-border-default)" }} />
+
+          <button onClick={onAtribuir} className="px-3 h-9 rounded-lg text-[12.5px] font-semibold transition-colors hover:bg-[var(--cf2-bg-surface-muted)]" style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-primary)" }}>
             Atribuir
           </button>
           {/* Responsável pela conversa (contatos.responsavelId) — correção
@@ -383,7 +403,7 @@ export function Cf2ChatThread({
                 onClick={() => conversationActionMutation.mutate({ acao: "release" })}
                 disabled={conversationActionMutation.isPending}
                 title="Você está com esta conversa. Clique para devolver pra fila."
-                className="p-1.5 rounded-lg disabled:opacity-50"
+                className="flex items-center justify-center w-9 h-9 rounded-lg disabled:opacity-50 transition-colors"
                 style={{ background: "var(--cf2-accent)" }}
               >
                 {conversationActionMutation.isPending ? (
@@ -396,7 +416,7 @@ export function Cf2ChatThread({
               <button
                 disabled
                 title="Atribuída a outro atendente"
-                className="p-1.5 rounded-lg opacity-50 cursor-not-allowed"
+                className="flex items-center justify-center w-9 h-9 rounded-lg opacity-50 cursor-not-allowed"
                 style={{ background: "var(--cf2-bg-surface-muted)" }}
               >
                 <User className="w-4 h-4" style={{ color: "var(--cf2-text-secondary)" }} />
@@ -406,7 +426,7 @@ export function Cf2ChatThread({
                 onClick={() => conversationActionMutation.mutate({ acao: "claim" })}
                 disabled={conversationActionMutation.isPending}
                 title="Assumir esta conversa para você"
-                className="p-1.5 rounded-lg disabled:opacity-50"
+                className="flex items-center justify-center w-9 h-9 rounded-lg disabled:opacity-50 transition-colors hover:bg-[var(--cf2-bg-surface-muted)]"
                 style={{ background: "var(--cf2-bg-surface-muted)" }}
               >
                 {conversationActionMutation.isPending ? (
@@ -422,7 +442,7 @@ export function Cf2ChatThread({
               onClick={() => conversationActionMutation.mutate({ acao: "reopen" })}
               disabled={conversationActionMutation.isPending}
               title="Reabrir conversa"
-              className="p-1.5 rounded-lg disabled:opacity-50"
+              className="flex items-center justify-center w-9 h-9 rounded-lg disabled:opacity-50 transition-colors hover:bg-[var(--cf2-bg-surface-muted)]"
               style={{ background: "var(--cf2-bg-surface-muted)" }}
             >
               <RotateCcw className="w-4 h-4" style={{ color: "var(--cf2-text-secondary)" }} />
@@ -433,7 +453,7 @@ export function Cf2ChatThread({
                 onClick={snooze}
                 disabled={conversationActionMutation.isPending}
                 title="Adiar conversa"
-                className="p-1.5 rounded-lg disabled:opacity-50"
+                className="flex items-center justify-center w-9 h-9 rounded-lg disabled:opacity-50 transition-colors hover:bg-[var(--cf2-bg-surface-muted)]"
                 style={{ background: "var(--cf2-bg-surface-muted)" }}
               >
                 <Clock3 className="w-4 h-4" style={{ color: "var(--cf2-text-secondary)" }} />
@@ -442,7 +462,7 @@ export function Cf2ChatThread({
                 onClick={() => conversationActionMutation.mutate({ acao: "close" })}
                 disabled={conversationActionMutation.isPending}
                 title="Fechar conversa"
-                className="p-1.5 rounded-lg disabled:opacity-50"
+                className="flex items-center justify-center w-9 h-9 rounded-lg disabled:opacity-50 transition-colors hover:bg-[var(--cf2-bg-surface-muted)]"
                 style={{ background: "var(--cf2-bg-surface-muted)" }}
               >
                 <Archive className="w-4 h-4" style={{ color: "var(--cf2-text-secondary)" }} />
@@ -460,37 +480,37 @@ export function Cf2ChatThread({
           <div className="relative">
             <button
               onClick={() => setMenuAberto((v) => !v)}
-              className="p-1.5 rounded-lg"
+              className="flex items-center justify-center w-9 h-9 rounded-lg transition-colors"
               style={{ background: menuAberto ? "var(--cf2-accent)" : "var(--cf2-bg-surface-muted)" }}
             >
               <MoreHorizontal className="w-4 h-4" style={{ color: menuAberto ? "var(--cf2-text-on-accent)" : "var(--cf2-text-secondary)" }} />
             </button>
             {menuAberto && (
               <div
-                className="absolute right-0 top-full mt-1 z-20 w-52 rounded-xl overflow-hidden shadow-md"
-                style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}
+                className="absolute right-0 top-full mt-1.5 z-20 w-56 rounded-xl overflow-hidden"
+                style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)", boxShadow: "var(--cf2-shadow-card-md)" }}
               >
                 {conversa.leadId ? (
                   <Link
                     href={`/contatos/${conversa.leadId}`}
                     onClick={() => setMenuAberto(false)}
-                    className="flex items-center gap-2 px-3 py-2.5 text-[12px] font-semibold hover:bg-[var(--cf2-bg-surface-muted)]"
+                    className="flex items-center gap-2.5 px-3.5 py-3 text-[12.5px] font-medium hover:bg-[var(--cf2-bg-surface-muted)]"
                     style={{ color: "var(--cf2-text-primary)" }}
                   >
-                    <UserRound className="w-3.5 h-3.5" /> Ver perfil do contato
+                    <UserRound className="w-4 h-4" style={{ color: "var(--cf2-text-tertiary)" }} /> Ver perfil do contato
                   </Link>
                 ) : (
-                  <p className="px-3 py-2.5 text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>
+                  <p className="px-3.5 py-3 text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>
                     Sem lead vinculado — sem perfil pra abrir.
                   </p>
                 )}
                 {conversa.telefone && (
                   <button
                     onClick={copiarTelefone}
-                    className="w-full flex items-center gap-2 px-3 py-2.5 text-[12px] font-semibold text-left hover:bg-[var(--cf2-bg-surface-muted)]"
+                    className="w-full flex items-center gap-2.5 px-3.5 py-3 text-[12.5px] font-medium text-left hover:bg-[var(--cf2-bg-surface-muted)]"
                     style={{ color: "var(--cf2-text-primary)", borderTop: "1px solid var(--cf2-border-default)" }}
                   >
-                    <Copy className="w-3.5 h-3.5" /> Copiar telefone
+                    <Copy className="w-4 h-4" style={{ color: "var(--cf2-text-tertiary)" }} /> Copiar telefone
                   </button>
                 )}
               </div>
@@ -499,17 +519,17 @@ export function Cf2ChatThread({
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto flex flex-col gap-1 p-5" style={{ background: "var(--cf2-bg-canvas)" }}>
+      <div className="flex-1 overflow-y-auto flex flex-col gap-2.5 px-5 py-6" style={{ background: "var(--cf2-bg-canvas)" }}>
         {isLoading && (
-          <div className="flex-1 flex flex-col items-center justify-center gap-2 py-10">
+          <div className="flex-1 flex flex-col items-center justify-center gap-2.5 py-10">
             <Loader2 className="w-5 h-5 animate-spin" style={{ color: "var(--cf2-text-tertiary)" }} />
-            <p className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>Carregando conversa...</p>
+            <p className="text-[13px]" style={{ color: "var(--cf2-text-tertiary)" }}>Carregando conversa…</p>
           </div>
         )}
         {!isLoading && mensagens.length === 0 && (
-          <div className="flex-1 flex flex-col items-center justify-center gap-2 py-10">
+          <div className="flex-1 flex flex-col items-center justify-center gap-2.5 py-10">
             <MessageSquareOff className="w-6 h-6" style={{ color: "var(--cf2-text-tertiary)" }} />
-            <p className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhuma mensagem ainda nesta conversa.</p>
+            <p className="text-[13px]" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhuma mensagem ainda nesta conversa.</p>
           </div>
         )}
 
@@ -518,47 +538,49 @@ export function Cf2ChatThread({
             SDR já processou essa conversa). Sem dado, não renderiza nada:
             não fabricar resumo nem chamar IA nova aqui. */}
         {conversa.conversationSummary && (
-          <div className="self-center flex flex-col gap-2 max-w-[85%] my-2">
+          <div className="self-center flex flex-col gap-2 max-w-[85%] mb-2">
             <button
               onClick={() => setResumoAberto((v) => !v)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold self-center"
-              style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-accent)", border: "1px solid var(--cf2-accent-border)" }}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-full text-[12px] font-semibold self-center transition-colors"
+              style={{ background: "var(--cf2-accent-bg-subtle)", color: "var(--cf2-text-primary)" }}
             >
-              <Sparkles className="w-3 h-3" /> Carol AI resumiu esta conversa
-              <ChevronDown className="w-3 h-3 transition-transform" style={{ transform: resumoAberto ? "rotate(180deg)" : "none" }} />
+              <Sparkles className="w-3.5 h-3.5" style={{ color: "var(--cf2-accent-border)" }} /> Carol AI resumiu esta conversa
+              <ChevronDown className="w-3.5 h-3.5 transition-transform" style={{ transform: resumoAberto ? "rotate(180deg)" : "none", color: "var(--cf2-text-tertiary)" }} />
             </button>
             {resumoAberto && (
-              <div className="p-3 rounded-xl text-[12px] whitespace-pre-wrap" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-secondary)" }}>
+              <div className="p-3.5 rounded-xl text-[12.5px] leading-relaxed whitespace-pre-wrap" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-secondary)" }}>
                 {conversa.conversationSummary}
               </div>
             )}
           </div>
         )}
 
-        {mensagens.map((m) => {
+        {mensagens.map((m, index) => {
           const isOut = m.direcao === "out";
           const isHovered = hoveredId === m.id;
           const replyMsg = findMsg(m.replyToId);
+          const anterior = mensagens[index - 1];
+          const novoGrupo = !anterior || anterior.direcao !== m.direcao;
           return (
             <div
               key={m.id}
-              className={`flex ${isOut ? "justify-end" : "justify-start"} relative py-1`}
+              className={`flex ${isOut ? "justify-end" : "justify-start"} relative ${novoGrupo ? "mt-2" : ""}`}
               onMouseEnter={() => setHoveredId(m.id)}
               onMouseLeave={() => { if (reactionPickerId !== m.id) setHoveredId(null); }}
             >
               {isHovered && (
                 <div
-                  className={`absolute top-0 z-10 flex items-center gap-0.5 px-1 py-0.5 rounded-lg shadow-md ${isOut ? "right-2 -translate-y-full" : "left-2 -translate-y-full"}`}
-                  style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}
+                  className={`absolute top-0 z-10 flex items-center gap-0.5 p-1 rounded-lg -translate-y-[calc(100%+4px)] ${isOut ? "right-2" : "left-2"}`}
+                  style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)", boxShadow: "var(--cf2-shadow-card-sm)" }}
                 >
-                  <button onClick={() => setReplyTo(m)} title="Responder" className="p-1.5 rounded hover:bg-[var(--cf2-bg-surface-muted)]">
+                  <button onClick={() => setReplyTo(m)} title="Responder" className="p-1.5 rounded-md hover:bg-[var(--cf2-bg-surface-muted)]">
                     <Reply className="w-3.5 h-3.5" style={{ color: "var(--cf2-text-secondary)" }} />
                   </button>
-                  <button onClick={() => setReactionPickerId(reactionPickerId === m.id ? null : m.id)} title="Reagir" className="p-1.5 rounded hover:bg-[var(--cf2-bg-surface-muted)]">
+                  <button onClick={() => setReactionPickerId(reactionPickerId === m.id ? null : m.id)} title="Reagir" className="p-1.5 rounded-md hover:bg-[var(--cf2-bg-surface-muted)]">
                     <Smile className="w-3.5 h-3.5" style={{ color: "var(--cf2-text-secondary)" }} />
                   </button>
                   {isOut && m.uazapiMessageId && (
-                    <button onClick={() => handleDelete(m)} title="Apagar" className="p-1.5 rounded hover:bg-red-500/10">
+                    <button onClick={() => handleDelete(m)} title="Apagar" className="p-1.5 rounded-md hover:bg-red-500/10">
                       <Trash2 className="w-3.5 h-3.5" style={{ color: "var(--cf2-danger-text)" }} />
                     </button>
                   )}
@@ -567,8 +589,8 @@ export function Cf2ChatThread({
 
               {reactionPickerId === m.id && (
                 <div
-                  className={`absolute z-20 flex items-center gap-1 px-2 py-1.5 rounded-full shadow-md ${isOut ? "right-2" : "left-2"}`}
-                  style={{ top: -44, background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}
+                  className={`absolute z-20 flex items-center gap-1 px-2 py-1.5 rounded-full ${isOut ? "right-2" : "left-2"}`}
+                  style={{ top: -44, background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)", boxShadow: "var(--cf2-shadow-card-sm)" }}
                 >
                   {QUICK_REACTIONS.map((emoji) => (
                     <button key={emoji} onClick={() => handleReact(m, emoji)} className="w-6 h-6 flex items-center justify-center hover:scale-125 transition-transform">
@@ -579,17 +601,17 @@ export function Cf2ChatThread({
               )}
 
               <div
-                className="max-w-[70%] p-3 rounded-2xl flex flex-col gap-1"
+                className="max-w-[68%] px-3.5 py-2.5 rounded-2xl flex flex-col gap-1.5"
                 style={{
-                  background: isOut ? "var(--cf2-success-bg)" : "var(--cf2-bg-surface-muted)",
-                  border: isOut ? "0.5px solid var(--cf2-success-fill)" : "0.5px solid var(--cf2-border-default)",
+                  background: isOut ? "var(--cf2-success-bg)" : "var(--cf2-bg-surface)",
+                  border: isOut ? "1px solid var(--cf2-success-bg)" : "1px solid var(--cf2-border-default)",
                 }}
               >
                 {isOut && m.enviadoPorNome && (
-                  <p className="text-[10px] font-semibold" style={{ color: "var(--cf2-success-text)" }}>{m.enviadoPorNome}</p>
+                  <p className="text-[10.5px] font-semibold" style={{ color: "var(--cf2-success-text)" }}>{m.enviadoPorNome}</p>
                 )}
                 {replyMsg && (
-                  <div className="px-2 py-1.5 rounded-lg text-[11px] border-l-2" style={{ background: "rgba(0,0,0,0.03)", borderColor: "var(--cf2-accent-border)" }}>
+                  <div className="px-2.5 py-1.5 rounded-lg text-[11.5px] border-l-2" style={{ background: "rgba(0,0,0,0.03)", borderColor: "var(--cf2-accent-border)" }}>
                     <p className="truncate" style={{ color: "var(--cf2-text-secondary)" }}>{replyMsg.conteudo || "Mensagem"}</p>
                   </div>
                 )}
@@ -599,10 +621,10 @@ export function Cf2ChatThread({
                   <FileAttachmentCard url={m.mediaUrl} filename={m.mediaFilename} />
                 )}
                 {m.conteudo && m.tipo !== "location" && m.tipo !== "contact" && (
-                  <p className="text-[13px] leading-[18px] whitespace-pre-wrap" style={{ color: "var(--cf2-text-primary)" }}>{m.conteudo}</p>
+                  <p className="text-[13.5px] leading-[20px] whitespace-pre-wrap" style={{ color: "var(--cf2-text-primary)" }}>{m.conteudo}</p>
                 )}
                 <div className="flex items-center gap-1 justify-end">
-                  <p className="text-[10px]" style={{ color: "var(--cf2-text-secondary)" }}>
+                  <p className="text-[10.5px] tabular-nums" style={{ color: "var(--cf2-text-tertiary)" }}>
                     {new Date(m.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
                   </p>
                   {/* Retry só cobre texto: mensagens com mídia falhas não têm
@@ -628,83 +650,110 @@ export function Cf2ChatThread({
       </div>
 
       {showAttachMenu && (
-        <div className="mx-4 mb-2 rounded-xl p-3 grid grid-cols-4 gap-1" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }}>
-          <label className="flex flex-col items-center gap-1.5 p-2 rounded-xl cursor-pointer hover:bg-[var(--cf2-bg-surface)]">
-            <div className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: "#a855f726" }}>
+        <div className="mx-5 mb-3 rounded-xl p-2 grid grid-cols-4 gap-1" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)", boxShadow: "var(--cf2-shadow-card-md)" }}>
+          <label className="flex flex-col items-center gap-2 p-3 rounded-lg cursor-pointer transition-colors hover:bg-[var(--cf2-bg-surface-muted)]">
+            <div className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: "#a855f71f" }}>
               <Camera className="w-4 h-4" style={{ color: "#a855f7" }} />
             </div>
-            <span className="text-[10px]" style={{ color: "var(--cf2-text-secondary)" }}>Foto/Vídeo</span>
+            <span className="text-[11px] font-medium" style={{ color: "var(--cf2-text-secondary)" }}>Foto/Vídeo</span>
             <input type="file" accept="image/*,video/*" className="hidden" onChange={handleFileSelect} />
           </label>
-          <label className="flex flex-col items-center gap-1.5 p-2 rounded-xl cursor-pointer hover:bg-[var(--cf2-bg-surface)]">
-            <div className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: "#3b82f626" }}>
+          <label className="flex flex-col items-center gap-2 p-3 rounded-lg cursor-pointer transition-colors hover:bg-[var(--cf2-bg-surface-muted)]">
+            <div className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: "#3b82f61f" }}>
               <FileIcon className="w-4 h-4" style={{ color: "#3b82f6" }} />
             </div>
-            <span className="text-[10px]" style={{ color: "var(--cf2-text-secondary)" }}>Documento</span>
+            <span className="text-[11px] font-medium" style={{ color: "var(--cf2-text-secondary)" }}>Documento</span>
             <input type="file" className="hidden" onChange={handleFileSelect} />
           </label>
-          <button onClick={handleLocationShare} className="flex flex-col items-center gap-1.5 p-2 rounded-xl hover:bg-[var(--cf2-bg-surface)]">
-            <div className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: "var(--cf2-danger-text)26" }}>
+          <button onClick={handleLocationShare} className="flex flex-col items-center gap-2 p-3 rounded-lg transition-colors hover:bg-[var(--cf2-bg-surface-muted)]">
+            <div className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: "color-mix(in srgb, var(--cf2-danger-text) 16%, transparent)" }}>
               <MapPin className="w-4 h-4" style={{ color: "var(--cf2-danger-text)" }} />
             </div>
-            <span className="text-[10px]" style={{ color: "var(--cf2-text-secondary)" }}>Localização</span>
+            <span className="text-[11px] font-medium" style={{ color: "var(--cf2-text-secondary)" }}>Localização</span>
           </button>
-          <button onClick={handleContactShare} className="flex flex-col items-center gap-1.5 p-2 rounded-xl hover:bg-[var(--cf2-bg-surface)]">
-            <div className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: "var(--cf2-success-fill)26" }}>
+          <button onClick={handleContactShare} className="flex flex-col items-center gap-2 p-3 rounded-lg transition-colors hover:bg-[var(--cf2-bg-surface-muted)]">
+            <div className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: "color-mix(in srgb, var(--cf2-success-fill) 16%, transparent)" }}>
               <User className="w-4 h-4" style={{ color: "var(--cf2-success-fill)" }} />
             </div>
-            <span className="text-[10px]" style={{ color: "var(--cf2-text-secondary)" }}>Contato</span>
+            <span className="text-[11px] font-medium" style={{ color: "var(--cf2-text-secondary)" }}>Contato</span>
           </button>
         </div>
       )}
 
       {showTemplates && (
-        <div className="mx-4 mb-2 rounded-xl overflow-hidden max-h-48 overflow-y-auto" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }}>
-          {templatesVisiveis.length > 0 ? templatesVisiveis.map((tpl) => (
-            <button key={tpl.id} onClick={() => handleTemplateSelect(tpl)} className="w-full text-left px-4 py-2.5 hover:bg-[var(--cf2-bg-surface)]">
-              <div className="text-[10px]" style={{ color: "var(--cf2-text-tertiary)" }}>{tpl.categoria}</div>
-              <div className="text-[13px] line-clamp-2" style={{ color: "var(--cf2-text-primary)" }}>{tpl.conteudo}</div>
+        <div className="mx-5 mb-3 rounded-xl overflow-hidden" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)", boxShadow: "var(--cf2-shadow-card-md)" }}>
+          <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: "1px solid var(--cf2-border-default)" }}>
+            <p className="text-[12.5px] font-semibold" style={{ color: "var(--cf2-text-primary)" }}>Templates de mensagem</p>
+            <button
+              onClick={() => { setGerenciarTemplates(true); setShowTemplates(false); }}
+              className="text-[11.5px] font-semibold"
+              style={{ color: "var(--cf2-text-secondary)" }}
+            >
+              Gerenciar
             </button>
-          )) : (
-            <p className="px-4 py-3 text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhum template cadastrado ainda.</p>
-          )}
-          <button
-            onClick={() => { setGerenciarTemplates(true); setShowTemplates(false); }}
-            className="w-full text-left px-4 py-2.5 text-[12px] font-semibold"
-            style={{ color: "var(--cf2-accent)", borderTop: "1px solid var(--cf2-border-default)" }}
-          >
-            + Gerenciar templates
-          </button>
+          </div>
+          <div className="max-h-64 overflow-y-auto p-2">
+            {templatesVisiveis.length > 0 ? (
+              Object.entries(
+                templatesVisiveis.reduce<Record<string, typeof templatesVisiveis>>((acc, tpl) => {
+                  (acc[tpl.categoria] ??= []).push(tpl);
+                  return acc;
+                }, {})
+              ).map(([categoria, itens]) => (
+                <div key={categoria} className="mb-1 last:mb-0">
+                  <p className="px-2.5 pt-2 pb-1 text-[10.5px] font-bold uppercase tracking-wide" style={{ color: "var(--cf2-text-tertiary)" }}>
+                    {CATEGORIA_LABEL[categoria] ?? categoria}
+                  </p>
+                  {itens.map((tpl) => (
+                    <button
+                      key={tpl.id}
+                      onClick={() => handleTemplateSelect(tpl)}
+                      className="w-full flex items-start justify-between gap-3 text-left px-2.5 py-2.5 rounded-lg transition-colors hover:bg-[var(--cf2-bg-surface-muted)]"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-[12.5px] font-semibold truncate" style={{ color: "var(--cf2-text-primary)" }}>{tpl.nome}</p>
+                        <p className="text-[12px] line-clamp-1 mt-0.5" style={{ color: "var(--cf2-text-tertiary)" }}>{tpl.conteudo}</p>
+                      </div>
+                      <span className="shrink-0 self-center text-[11px] font-semibold px-2 py-1 rounded-md" style={{ color: "var(--cf2-text-secondary)", background: "var(--cf2-bg-surface-muted)" }}>Usar</span>
+                    </button>
+                  ))}
+                </div>
+              ))
+            ) : (
+              <p className="px-3 py-4 text-center text-[12.5px]" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhum template cadastrado ainda.</p>
+            )}
+          </div>
         </div>
       )}
       {gerenciarTemplates && <WhatsappTemplatesModal onClose={() => setGerenciarTemplates(false)} />}
 
-      <div className="p-4 shrink-0 flex flex-col gap-2" style={{ background: "var(--cf2-bg-page)", borderTop: "1px solid var(--cf2-border-default)" }}>
+      <div className="px-5 py-4 shrink-0 flex flex-col gap-2.5" style={{ background: "var(--cf2-bg-surface)", borderTop: "1px solid var(--cf2-border-default)" }}>
         {replyTo && (
-          <div className="flex items-center justify-between px-3 py-2 rounded-lg" style={{ background: "var(--cf2-bg-surface-muted)" }}>
-            <p className="text-[11px] truncate" style={{ color: "var(--cf2-text-secondary)" }}>Respondendo: {replyTo.conteudo || "mensagem"}</p>
-            <button onClick={() => setReplyTo(null)}><X className="w-3 h-3" style={{ color: "var(--cf2-text-tertiary)" }} /></button>
+          <div className="flex items-center justify-between px-3.5 py-2.5 rounded-lg" style={{ background: "var(--cf2-bg-surface-muted)" }}>
+            <p className="text-[12px] truncate" style={{ color: "var(--cf2-text-secondary)" }}>Respondendo: {replyTo.conteudo || "mensagem"}</p>
+            <button onClick={() => setReplyTo(null)} className="shrink-0 ml-2"><X className="w-3.5 h-3.5" style={{ color: "var(--cf2-text-tertiary)" }} /></button>
           </div>
         )}
-        <div className="flex gap-3 items-center">
+        <div className="flex gap-2 items-center">
           <button
             onClick={() => { setShowAttachMenu(!showAttachMenu); setShowTemplates(false); }}
-            className="p-2 rounded-lg shrink-0"
+            title="Anexar arquivo"
+            className="flex items-center justify-center w-9 h-9 rounded-lg shrink-0 transition-colors"
             style={{ background: showAttachMenu ? "var(--cf2-accent)" : "var(--cf2-bg-surface-muted)" }}
           >
             <Paperclip className="w-4 h-4" style={{ color: showAttachMenu ? "var(--cf2-text-on-accent)" : "var(--cf2-text-secondary)" }} />
           </button>
           <button
             onClick={() => { setShowTemplates(!showTemplates); setShowAttachMenu(false); }}
-            title="Usar template"
-            className="p-2 rounded-lg shrink-0"
+            title="Templates"
+            className="flex items-center justify-center w-9 h-9 rounded-lg shrink-0 transition-colors"
             style={{ background: showTemplates ? "var(--cf2-accent)" : "var(--cf2-bg-surface-muted)" }}
           >
             <MessageSquareText className="w-4 h-4" style={{ color: showTemplates ? "var(--cf2-text-on-accent)" : "var(--cf2-text-secondary)" }} />
           </button>
           <div
-            className="flex-1 flex items-center gap-2 px-4 py-2.5 rounded-xl"
-            style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}
+            className="flex-1 flex items-center gap-2 px-4 h-11 rounded-xl min-w-0"
+            style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }}
           >
             <input
               value={texto}
@@ -721,16 +770,17 @@ export function Cf2ChatThread({
                   handleSendText();
                 }
               }}
-              placeholder={`Escrever uma mensagem para ${conversa.nome.split(" ")[0]}...`}
-              className="flex-1 bg-transparent outline-none text-[13px]"
+              placeholder={`Escrever para ${conversa.nome.split(" ")[0]}… (/ busca templates)`}
+              className="flex-1 min-w-0 bg-transparent outline-none text-[13.5px]"
               style={{ color: "var(--cf2-text-primary)" }}
             />
           </div>
           <button
             onClick={handleSendText}
             disabled={!texto.trim() || sendMutation.isPending}
-            className="flex items-center justify-center rounded-[20px] shrink-0 w-10 h-10 disabled:opacity-50"
-            style={{ background: "var(--cf2-accent)", border: "1px solid var(--cf2-accent-border)" }}
+            title="Enviar"
+            className="flex items-center justify-center rounded-full shrink-0 w-11 h-11 disabled:opacity-40 transition-opacity"
+            style={{ background: "var(--cf2-accent)" }}
           >
             <Send className="w-4 h-4" style={{ color: "var(--cf2-text-on-accent)" }} />
           </button>

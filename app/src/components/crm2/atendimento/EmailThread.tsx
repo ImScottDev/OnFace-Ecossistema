@@ -77,57 +77,58 @@ export function Cf2EmailThread({ conversa, contexto }: { conversa: ConversaItem;
 
   return (
     <div
-      className="flex-1 flex flex-col h-full min-w-0 rounded-3xl overflow-hidden"
+      className="flex-1 flex flex-col h-full min-w-0 rounded-2xl overflow-hidden"
       style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}
     >
-      <div className="flex items-center gap-3 p-4 shrink-0" style={{ background: "var(--cf2-bg-page)", borderBottom: "1px solid var(--cf2-border-default)" }}>
-        <div className="flex items-center justify-center rounded-[20px] shrink-0 w-10 h-10" style={{ background: "var(--cf2-bg-surface-muted)" }}>
-          <p className="text-[14px] font-extrabold" style={{ color: "var(--cf2-text-secondary)" }}>{iniciais(conversa.nome)}</p>
+      <div className="flex items-center gap-3 px-5 py-4 shrink-0" style={{ background: "var(--cf2-bg-surface)", borderBottom: "1px solid var(--cf2-border-default)" }}>
+        <div className="flex items-center justify-center rounded-full shrink-0 w-10 h-10" style={{ background: "var(--cf2-bg-surface-muted)" }}>
+          <p className="text-[14px] font-bold" style={{ color: "var(--cf2-text-secondary)" }}>{iniciais(conversa.nome)}</p>
         </div>
         <div className="min-w-0">
-          <div className="flex gap-1.5 items-center">
-            <p className="text-[16px] font-bold truncate" style={{ color: "var(--cf2-text-primary)" }}>{conversa.nome}</p>
+          <div className="flex gap-2 items-center">
+            <p className="text-[15px] font-semibold truncate" style={{ color: "var(--cf2-text-primary)" }}>{conversa.nome}</p>
             {contexto && <Cf2Badge variant={contexto.isCliente ? "success" : "neutral"}>{contexto.isCliente ? "Cliente" : "Lead"}</Cf2Badge>}
           </div>
-          <p className="text-[11px] truncate" style={{ color: "var(--cf2-text-secondary)" }}>{conversa.preview}</p>
+          <p className="text-[12px] truncate mt-0.5" style={{ color: "var(--cf2-text-tertiary)" }}>{conversa.preview}</p>
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto flex flex-col gap-3 p-5" style={{ background: "var(--cf2-bg-canvas)" }}>
-        {mensagens.length === 0 && <p className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>Sem mensagens carregadas.</p>}
+      <div className="flex-1 overflow-y-auto flex flex-col gap-3 px-5 py-6" style={{ background: "var(--cf2-bg-canvas)" }}>
+        {mensagens.length === 0 && <p className="text-[13px]" style={{ color: "var(--cf2-text-tertiary)" }}>Sem mensagens carregadas.</p>}
         {mensagens.map((m) => (
           <div key={m.id} className={`flex ${m.direcao === "out" ? "justify-end" : "justify-start"}`}>
             <div
-              className="max-w-[80%] p-3 rounded-2xl flex flex-col gap-1"
+              className="max-w-[80%] p-3.5 rounded-2xl flex flex-col gap-1.5"
               style={{
-                background: m.direcao === "out" ? "var(--cf2-success-bg)" : "var(--cf2-bg-surface-muted)",
-                border: m.direcao === "out" ? "0.5px solid var(--cf2-success-fill)" : "0.5px solid var(--cf2-border-default)",
+                background: m.direcao === "out" ? "var(--cf2-success-bg)" : "var(--cf2-bg-surface)",
+                border: m.direcao === "out" ? "1px solid var(--cf2-success-bg)" : "1px solid var(--cf2-border-default)",
               }}
             >
               <p className="text-[11px] font-semibold" style={{ color: "var(--cf2-text-secondary)" }}>{m.de}</p>
-              <p className="text-[13px] leading-[18px] whitespace-pre-wrap" style={{ color: "var(--cf2-text-primary)" }}>{m.corpoTexto || "(sem texto)"}</p>
-              <p className="text-[10px]" style={{ color: "var(--cf2-text-secondary)" }}>{new Date(m.createdAt).toLocaleString("pt-BR")}</p>
+              <p className="text-[13.5px] leading-[20px] whitespace-pre-wrap" style={{ color: "var(--cf2-text-primary)" }}>{m.corpoTexto || "(sem texto)"}</p>
+              <p className="text-[10.5px]" style={{ color: "var(--cf2-text-tertiary)" }}>{new Date(m.createdAt).toLocaleString("pt-BR")}</p>
             </div>
           </div>
         ))}
       </div>
 
-      <div className="p-4 shrink-0" style={{ background: "var(--cf2-bg-page)", borderTop: "1px solid var(--cf2-border-default)" }}>
-        <div className="flex gap-3 items-center">
-          <div className="flex-1 flex items-center gap-2 px-4 py-2.5 rounded-xl" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
+      <div className="px-5 py-4 shrink-0" style={{ background: "var(--cf2-bg-surface)", borderTop: "1px solid var(--cf2-border-default)" }}>
+        <div className="flex gap-2 items-center">
+          <div className="flex-1 flex items-center gap-2 px-4 h-11 rounded-xl min-w-0" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }}>
             <input
               value={texto}
               onChange={(e) => setTexto(e.target.value)}
-              placeholder="Responder por e-mail..."
-              className="flex-1 bg-transparent outline-none text-[13px]"
+              placeholder="Responder por e-mail…"
+              className="flex-1 min-w-0 bg-transparent outline-none text-[13.5px]"
               style={{ color: "var(--cf2-text-primary)" }}
             />
           </div>
           <button
             onClick={() => texto.trim() && sendMutation.mutate(texto.trim())}
             disabled={!texto.trim() || !ultimo?.contaId || sendMutation.isPending}
-            className="flex items-center justify-center rounded-[20px] shrink-0 w-10 h-10 disabled:opacity-50"
-            style={{ background: "var(--cf2-accent)", border: "1px solid var(--cf2-accent-border)" }}
+            title="Enviar"
+            className="flex items-center justify-center rounded-full shrink-0 w-11 h-11 disabled:opacity-40 transition-opacity"
+            style={{ background: "var(--cf2-accent)" }}
           >
             <Send className="w-4 h-4" style={{ color: "var(--cf2-text-on-accent)" }} />
           </button>

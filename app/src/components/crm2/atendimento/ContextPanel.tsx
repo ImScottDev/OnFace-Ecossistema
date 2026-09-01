@@ -3,12 +3,13 @@
 import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Pencil, Phone, CalendarPlus, Building2, Repeat, ChevronDown, FileText, Info, LayoutList, Tag, Plus, X } from "lucide-react";
+import { Pencil, Phone, Mail, CalendarPlus, Building2, Repeat, ChevronDown, FileText, Info, LayoutList, Tag, Plus, X } from "lucide-react";
 import { ConversaItem, Contexto, iniciais, brl } from "./types";
 import { Cf2Badge } from "../ui/Badge";
 import { Cf2NovoEventoModal, LeadResultado } from "../calendario/NovoEventoModal";
 import { Cf2CadenciaPanel } from "../cadencia/CadenciaPanel";
 import { useScriptsAtendimento, SCRIPTS_CATEGORIA_LABEL } from "./useScriptsAtendimento";
+import { QualificacaoSdrSection } from "../../crm/QualificacaoSdrSection";
 
 // Paleta rotativa pra tag nova (24/08) — usuário não escolhe cor na criação
 // inline, só dá o nome; cor é decorativa pra diferenciar visualmente no chat,
@@ -108,21 +109,28 @@ function Cf2TagsSection({ conversaId }: { conversaId: string }) {
 
   return (
     <div className="flex flex-col gap-2 shrink-0">
-      <p className="text-[11px] font-bold flex items-center gap-1.5" style={{ color: "var(--cf2-text-tertiary)" }}>
-        <Tag className="w-3 h-3" /> TAGS DA CONVERSA
-      </p>
-      <div className="flex flex-wrap gap-1.5">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <Tag className="w-3 h-3 shrink-0" style={{ color: "var(--cf2-text-tertiary)" }} />
         {tags.length === 0 && !aberto && (
-          <p className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>Sem tags ainda.</p>
+          <p className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>Sem tags ainda</p>
         )}
         {tags.map((tag) => (
-          <span key={tag.id} className="inline-flex items-center gap-1 pl-2 pr-1 py-1 rounded-full text-[11px] font-semibold" style={{ color: tag.cor, background: `${tag.cor}18` }}>
+          <span key={tag.id} className="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-full text-[11px] font-semibold" style={{ color: tag.cor, background: `${tag.cor}18` }}>
             {tag.nome}
             <button onClick={() => removeMutation.mutate(tag.id)} title={`Remover ${tag.nome}`} className="flex items-center justify-center rounded-full w-3.5 h-3.5 hover:opacity-70">
               <X className="w-2.5 h-2.5" />
             </button>
           </span>
         ))}
+        {!aberto && (
+          <button
+            onClick={() => setAberto(true)}
+            className="inline-flex items-center gap-1 text-[11px] font-semibold rounded-full px-2 py-0.5 transition-colors hover:bg-[var(--cf2-bg-surface)]"
+            style={{ color: "var(--cf2-text-secondary)" }}
+          >
+            <Plus className="w-3 h-3" /> tag
+          </button>
+        )}
       </div>
 
       {aberto ? (
@@ -169,15 +177,7 @@ function Cf2TagsSection({ conversaId }: { conversaId: string }) {
             <p className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>Enter cria a tag &ldquo;{busca.trim()}&rdquo;.</p>
           )}
         </div>
-      ) : (
-        <button
-          onClick={() => setAberto(true)}
-          className="inline-flex items-center gap-1 self-start text-[11px] font-semibold rounded-full px-2.5 py-1"
-          style={{ color: "var(--cf2-text-secondary)", background: "var(--cf2-bg-surface-muted)" }}
-        >
-          <Plus className="w-3 h-3" /> Adicionar tag
-        </button>
-      )}
+      ) : null}
     </div>
   );
 }
@@ -234,25 +234,14 @@ export function Cf2ContextPanel({ conversa, contexto, loading }: { conversa: Con
 
   return (
     <div
-      className="flex flex-col gap-4 h-full shrink-0 w-[320px] rounded-3xl overflow-y-auto p-4"
+      data-cf2-theme="dark"
+      className="flex flex-col gap-3 h-full shrink-0 w-[336px] rounded-2xl overflow-y-auto p-4"
       style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}
     >
-      {/* Só WhatsApp por agora (24/08): a rota de tags resolve por
-          contatos.id, e só o WhatsApp usa esse id — ligação/e-mail guardam
-          id de outra tabela (ligacoes.id/emails.id), então dava 404 antes
-          mesmo de mexer aqui. Estender pra esses canais é escopo de dados
-          separado (tag por lead direto, não por "contato"). */}
-      {conversa.tipo === "whatsapp" && (
-        <>
-          <Cf2TagsSection conversaId={conversa.id} />
-          <div className="h-px w-full shrink-0" style={{ background: "var(--cf2-border-default)" }} />
-        </>
-      )}
-
-      {loading && <p className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>Carregando...</p>}
+      {loading && <p className="text-[13px]" style={{ color: "var(--cf2-text-tertiary)" }}>Carregando contexto…</p>}
 
       {!loading && !contexto?.pessoa && (
-        <p className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>
+        <p className="text-[13px] px-1" style={{ color: "var(--cf2-text-tertiary)" }}>
           Sem lead vinculado a esse contato ainda — nenhum dado de CRM pra mostrar aqui.
         </p>
       )}
@@ -264,8 +253,8 @@ export function Cf2ContextPanel({ conversa, contexto, loading }: { conversa: Con
               <button
                 key={key}
                 onClick={() => setAba(key)}
-                className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[12px] font-semibold"
-                style={{ background: aba === key ? "var(--cf2-bg-surface)" : "transparent", color: aba === key ? "var(--cf2-text-primary)" : "var(--cf2-text-secondary)" }}
+                className="flex-1 flex items-center justify-center gap-1.5 h-8 rounded-lg text-[12.5px] font-semibold transition-colors"
+                style={{ background: aba === key ? "var(--cf2-bg-surface)" : "transparent", color: aba === key ? "var(--cf2-text-primary)" : "var(--cf2-text-secondary)", boxShadow: aba === key ? "var(--cf2-shadow-card-sm)" : "none" }}
               >
                 <Icon className="w-3.5 h-3.5" /> {label}
               </button>
@@ -274,70 +263,77 @@ export function Cf2ContextPanel({ conversa, contexto, loading }: { conversa: Con
 
           {aba === "contexto" && (
           <>
-          <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-3.5 rounded-xl p-3.5" style={{ background: "var(--cf2-bg-surface-muted)" }}>
             <div className="flex items-center justify-between">
-              <p className="text-[11px] font-bold" style={{ color: "var(--cf2-text-tertiary)" }}>PESSOA</p>
+              <p className="text-[11px] font-bold tracking-wide" style={{ color: "var(--cf2-text-tertiary)" }}>PESSOA</p>
               <Cf2Badge variant={contexto.isCliente ? "success" : "neutral"}>{contexto.isCliente ? "Cliente" : "Lead"}</Cf2Badge>
             </div>
-            <div className="flex gap-2.5 items-center">
-              <div className="flex items-center justify-center rounded-[18px] shrink-0 w-9 h-9" style={{ background: "var(--cf2-accent)" }}>
-                <p className="text-[12px] font-extrabold" style={{ color: "var(--cf2-text-on-accent)" }}>{iniciais(contexto.pessoa.nome)}</p>
+            <div className="flex gap-3 items-center">
+              <div className="flex items-center justify-center rounded-full shrink-0 w-10 h-10" style={{ background: "var(--cf2-accent)" }}>
+                <p className="text-[13px] font-bold" style={{ color: "var(--cf2-text-on-accent)" }}>{iniciais(contexto.pessoa.nome)}</p>
               </div>
               <div className="min-w-0">
-                <p className="text-[14px] font-bold truncate" style={{ color: "var(--cf2-text-primary)" }}>{contexto.pessoa.nome}</p>
-                <p className="text-[11px] truncate" style={{ color: "var(--cf2-text-secondary)" }}>{contexto.pessoa.cargo || "—"}</p>
+                <p className="text-[14.5px] font-semibold truncate" style={{ color: "var(--cf2-text-primary)" }}>{contexto.pessoa.nome}</p>
+                <p className="text-[12px] truncate" style={{ color: "var(--cf2-text-secondary)" }}>{contexto.pessoa.cargo || "Cargo não informado"}</p>
               </div>
+            </div>
+            <div className="flex flex-col gap-1.5 text-[12.5px]" style={{ color: "var(--cf2-text-secondary)" }}>
+              {contexto.pessoa.telefone && <p className="flex items-center gap-2"><Phone className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--cf2-text-tertiary)" }} />{contexto.pessoa.telefone}</p>}
+              {contexto.pessoa.email && <p className="flex items-center gap-2"><Mail className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--cf2-text-tertiary)" }} />{contexto.pessoa.email}</p>}
             </div>
             <div className="flex gap-2">
               {conversa.leadId && (
                 <a
-                  href={`/leads/${conversa.leadId}`}
-                  title="Abre a ficha do lead (tela legada)"
-                  className="flex items-center justify-center gap-1.5 flex-1 py-1.5 rounded-lg text-[11px] font-semibold whitespace-nowrap"
-                  style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-primary)" }}
+                  href={`/contatos/${conversa.leadId}`}
+                  title="Abre a ficha completa da pessoa"
+                  className="flex items-center justify-center gap-1.5 flex-1 h-8 rounded-lg text-[11.5px] font-semibold whitespace-nowrap transition-colors hover:bg-[var(--cf2-bg-surface-subtle)]"
+                  style={{ background: "var(--cf2-bg-surface)", color: "var(--cf2-text-primary)", border: "1px solid var(--cf2-border-default)" }}
                 >
                   <Pencil className="w-3 h-3" /> Editar lead
                 </a>
               )}
               {contexto.pessoa.telefone && (
-                <a href={`tel:${contexto.pessoa.telefone}`} className="flex items-center justify-center gap-1.5 flex-1 py-1.5 rounded-lg text-[11px] font-semibold whitespace-nowrap" style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-primary)" }}>
+                <a href={`tel:${contexto.pessoa.telefone}`} className="flex items-center justify-center gap-1.5 flex-1 h-8 rounded-lg text-[11.5px] font-semibold whitespace-nowrap transition-colors hover:bg-[var(--cf2-bg-surface-subtle)]" style={{ background: "var(--cf2-bg-surface)", color: "var(--cf2-text-primary)", border: "1px solid var(--cf2-border-default)" }}>
                   <Phone className="w-3 h-3" /> Ligar
                 </a>
               )}
-              <button onClick={() => setModalAberto(true)} className="flex items-center justify-center gap-1.5 flex-1 py-1.5 rounded-lg text-[11px] font-semibold whitespace-nowrap" style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-primary)" }}>
+              <button onClick={() => setModalAberto(true)} className="flex items-center justify-center gap-1.5 flex-1 h-8 rounded-lg text-[11.5px] font-semibold whitespace-nowrap transition-colors hover:bg-[var(--cf2-bg-surface-subtle)]" style={{ background: "var(--cf2-bg-surface)", color: "var(--cf2-text-primary)", border: "1px solid var(--cf2-border-default)" }}>
                 <CalendarPlus className="w-3 h-3" /> Agenda
               </button>
             </div>
-            <div className="flex flex-col gap-1 text-[11px]" style={{ color: "var(--cf2-text-secondary)" }}>
-              {contexto.pessoa.telefone && <p>📞 {contexto.pessoa.telefone}</p>}
-              {contexto.pessoa.email && <p>✉️ {contexto.pessoa.email}</p>}
-            </div>
+            {/* Tag embaixo da pessoa (pedido do Kauã, 25/08: "pessoa em cima
+                e tag embaixo, mais minimalista") — mesma seção de antes, só
+                sem card/header pesado em volta, encaixada dentro do próprio
+                card de Pessoa. Só WhatsApp por agora: a rota de tags resolve
+                por contatos.id, e só o WhatsApp usa esse id. */}
+            {conversa.tipo === "whatsapp" && (
+              <div className="pt-3" style={{ borderTop: "1px solid var(--cf2-border-default)" }}>
+                <Cf2TagsSection conversaId={conversa.id} />
+              </div>
+            )}
           </div>
 
-          <div className="h-px w-full" style={{ background: "var(--cf2-border-default)" }} />
-
           {contexto.empresa && (
-            <div className="flex flex-col gap-3">
-              <p className="text-[11px] font-bold" style={{ color: "var(--cf2-text-tertiary)" }}>EMPRESA</p>
-              <a
-                href={contexto.empresa.id ? `/empresas/${contexto.empresa.id}` : undefined}
-                className={`flex gap-2.5 items-center rounded-xl p-1 -m-1 ${contexto.empresa.id ? "hover:bg-[var(--cf2-bg-surface-muted)]" : "cursor-default"}`}
-              >
-                <div className="flex items-center justify-center rounded-lg shrink-0 w-8 h-8" style={{ background: "var(--cf2-bg-inverse)" }}>
-                  <Building2 className="w-4 h-4 text-white" />
+            <a
+              href={contexto.empresa.id ? `/empresas/${contexto.empresa.id}` : undefined}
+              className={`flex flex-col gap-2 rounded-xl p-3.5 transition-colors ${contexto.empresa.id ? "hover:bg-[var(--cf2-bg-surface-subtle)]" : "cursor-default"}`}
+              style={{ background: "var(--cf2-bg-surface-muted)" }}
+            >
+              <p className="text-[11px] font-bold tracking-wide" style={{ color: "var(--cf2-text-tertiary)" }}>EMPRESA</p>
+              <div className="flex gap-3 items-center">
+                <div className="flex items-center justify-center rounded-lg shrink-0 w-9 h-9" style={{ background: "var(--cf2-bg-inverse)" }}>
+                  <Building2 className="w-4 h-4" style={{ color: "var(--cf2-text-on-inverse)" }} />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-[14px] font-bold truncate" style={{ color: "var(--cf2-text-primary)" }}>{contexto.empresa.nome}</p>
-                  <p className="text-[11px] truncate" style={{ color: "var(--cf2-text-secondary)" }}>Ver empresa (tela legada) · CNPJ, porte e segmento</p>
+                  <p className="text-[14px] font-semibold truncate" style={{ color: "var(--cf2-text-primary)" }}>{contexto.empresa.nome}</p>
+                  <p className="text-[11.5px] truncate" style={{ color: "var(--cf2-text-tertiary)" }}>CNPJ, porte e segmento na ficha completa</p>
                 </div>
-              </a>
-            </div>
+              </div>
+            </a>
           )}
 
-          <div className="h-px w-full" style={{ background: "var(--cf2-border-default)" }} />
-
-          <div className="flex flex-col gap-3">
-            <p className="text-[11px] font-bold" style={{ color: "var(--cf2-text-tertiary)" }}>
+          <div className="flex flex-col gap-3 rounded-xl p-3.5" style={{ background: "var(--cf2-bg-surface-muted)" }}>
+            <p className="text-[11px] font-bold tracking-wide" style={{ color: "var(--cf2-text-tertiary)" }}>
               {contexto.cascata.tipo === "negocio" ? "NEGÓCIO ATIVO" : contexto.cascata.tipo === "proposta" ? "PROPOSTA ENVIADA" : contexto.cascata.tipo === "reuniao" ? "REUNIÃO AGENDADA" : "SEM NEGOCIAÇÃO ATIVA"}
             </p>
 
@@ -347,20 +343,20 @@ export function Cf2ContextPanel({ conversa, contexto, loading }: { conversa: Con
                 pro registro real (a Empresa já era clicável, esses três
                 não). */}
             {contexto.cascata.tipo === "negocio" && (
-              <a href={`/negocios/${contexto.cascata.id}`} className="flex flex-col gap-2 p-3 rounded-xl hover:opacity-80" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }}>
-                <div className="flex items-center justify-between">
-                  <p className="text-[13px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>{contexto.cascata.titulo}</p>
-                  <p className="text-[13px] font-extrabold" style={{ color: "var(--cf2-text-primary)" }}>{brl(contexto.cascata.valor)}</p>
+              <a href={`/negocios/${contexto.cascata.id}`} className="flex flex-col gap-2 p-3 rounded-lg transition-colors hover:bg-[var(--cf2-bg-surface-subtle)]" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[13px] font-semibold truncate" style={{ color: "var(--cf2-text-primary)" }}>{contexto.cascata.titulo}</p>
+                  <p className="text-[13px] font-bold shrink-0" style={{ color: "var(--cf2-text-primary)" }}>{brl(contexto.cascata.valor)}</p>
                 </div>
                 <Cf2Badge variant="warning">{ETAPA_LABEL[contexto.cascata.etapa] || contexto.cascata.etapa}</Cf2Badge>
               </a>
             )}
 
             {contexto.cascata.tipo === "proposta" && (
-              <a href={`/propostas?propostaId=${contexto.cascata.id}`} className="flex flex-col gap-2 p-3 rounded-xl hover:opacity-80" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }}>
-                <div className="flex items-center justify-between">
-                  <p className="text-[13px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Proposta #{contexto.cascata.numero}</p>
-                  <p className="text-[13px] font-extrabold" style={{ color: "var(--cf2-text-primary)" }}>{brl(contexto.cascata.valor)}</p>
+              <a href={`/propostas/${contexto.cascata.id}`} className="flex flex-col gap-2 p-3 rounded-lg transition-colors hover:bg-[var(--cf2-bg-surface-subtle)]" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[13px] font-semibold truncate" style={{ color: "var(--cf2-text-primary)" }}>Proposta #{contexto.cascata.numero}</p>
+                  <p className="text-[13px] font-bold shrink-0" style={{ color: "var(--cf2-text-primary)" }}>{brl(contexto.cascata.valor)}</p>
                 </div>
                 <Cf2Badge variant="accent">Enviada</Cf2Badge>
               </a>
@@ -368,14 +364,14 @@ export function Cf2ContextPanel({ conversa, contexto, loading }: { conversa: Con
 
             {contexto.cascata.tipo === "reuniao" && (
               contexto.cascata.link ? (
-                <a href={contexto.cascata.link} target="_blank" rel="noreferrer" className="flex flex-col gap-2 p-3 rounded-xl hover:opacity-80" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }}>
-                  <p className="text-[13px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>{contexto.cascata.titulo}</p>
-                  <p className="text-[11px]" style={{ color: "var(--cf2-text-secondary)" }}>{new Date(contexto.cascata.data).toLocaleString("pt-BR")} · Abrir link da reunião ↗</p>
+                <a href={contexto.cascata.link} target="_blank" rel="noreferrer" className="flex flex-col gap-1.5 p-3 rounded-lg transition-colors hover:bg-[var(--cf2-bg-surface-subtle)]" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
+                  <p className="text-[13px] font-semibold" style={{ color: "var(--cf2-text-primary)" }}>{contexto.cascata.titulo}</p>
+                  <p className="text-[11.5px]" style={{ color: "var(--cf2-text-secondary)" }}>{new Date(contexto.cascata.data).toLocaleString("pt-BR")} · Abrir link da reunião ↗</p>
                 </a>
               ) : (
-                <div className="flex flex-col gap-2 p-3 rounded-xl" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }}>
-                  <p className="text-[13px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>{contexto.cascata.titulo}</p>
-                  <p className="text-[11px]" style={{ color: "var(--cf2-text-secondary)" }}>{new Date(contexto.cascata.data).toLocaleString("pt-BR")}</p>
+                <div className="flex flex-col gap-1.5 p-3 rounded-lg" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
+                  <p className="text-[13px] font-semibold" style={{ color: "var(--cf2-text-primary)" }}>{contexto.cascata.titulo}</p>
+                  <p className="text-[11.5px]" style={{ color: "var(--cf2-text-secondary)" }}>{new Date(contexto.cascata.data).toLocaleString("pt-BR")}</p>
                 </div>
               )
             )}
@@ -384,44 +380,39 @@ export function Cf2ContextPanel({ conversa, contexto, loading }: { conversa: Con
               <button
                 onClick={() => setModalAberto(true)}
                 disabled={!conversa.leadId}
-                className="flex items-center justify-center gap-2 py-2.5 rounded-xl text-[12px] font-bold disabled:opacity-50"
-                style={{ background: "var(--cf2-accent)", border: "1px solid var(--cf2-accent-border)", color: "var(--cf2-text-on-accent)" }}
+                className="flex items-center justify-center gap-2 h-9 rounded-lg text-[12.5px] font-semibold disabled:opacity-50 transition-opacity"
+                style={{ background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" }}
               >
-                <CalendarPlus className="w-3.5 h-3.5" /> Agendar Reunião
+                <CalendarPlus className="w-3.5 h-3.5" /> Agendar reunião
               </button>
             )}
           </div>
 
-          <div className="h-px w-full" style={{ background: "var(--cf2-border-default)" }} />
-
-          <div className="flex flex-col gap-2">
-            <p className="text-[11px] font-bold" style={{ color: "var(--cf2-text-tertiary)" }}>PRÓXIMAS ATIVIDADES</p>
+          <div className="flex flex-col gap-2.5 rounded-xl p-3.5" style={{ background: "var(--cf2-bg-surface-muted)" }}>
+            <p className="text-[11px] font-bold tracking-wide" style={{ color: "var(--cf2-text-tertiary)" }}>PRÓXIMAS ATIVIDADES</p>
             {contexto.proximasAtividades.length === 0 && (
-              <p className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhuma atividade futura.</p>
+              <p className="text-[12.5px]" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhuma atividade futura.</p>
             )}
             {contexto.proximasAtividades.map((a) => (
-              <div key={a.id} className="flex gap-1.5 items-center">
+              <div key={a.id} className="flex gap-2 items-center">
                 <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: "var(--cf2-accent-border)" }} />
-                <p className="text-[12px] flex-1" style={{ color: "var(--cf2-text-primary)" }}>
-                  {a.titulo} ({new Date(a.data).toLocaleDateString("pt-BR")})
+                <p className="text-[12.5px] flex-1 truncate" style={{ color: "var(--cf2-text-primary)" }}>
+                  {a.titulo} <span style={{ color: "var(--cf2-text-tertiary)" }}>· {new Date(a.data).toLocaleDateString("pt-BR")}</span>
                 </p>
               </div>
             ))}
           </div>
 
           {conversa.leadId && (
-            <>
-              <div className="h-px w-full" style={{ background: "var(--cf2-border-default)" }} />
-              <div className="flex flex-col gap-3">
-                <button onClick={() => setCadenciaAberta((v) => !v)} className="flex items-center justify-between w-full">
-                  <p className="text-[11px] font-bold flex items-center gap-1.5" style={{ color: "var(--cf2-text-tertiary)" }}>
-                    <Repeat className="w-3 h-3" /> CADÊNCIAS
-                  </p>
-                  <ChevronDown className="w-3.5 h-3.5 transition-transform" style={{ color: "var(--cf2-text-tertiary)", transform: cadenciaAberta ? "rotate(180deg)" : "none" }} />
-                </button>
-                {cadenciaAberta && <Cf2CadenciaPanel leadId={conversa.leadId} />}
-              </div>
-            </>
+            <div className="flex flex-col gap-3 rounded-xl p-3.5" style={{ background: "var(--cf2-bg-surface-muted)" }}>
+              <button onClick={() => setCadenciaAberta((v) => !v)} className="flex items-center justify-between w-full">
+                <p className="text-[11px] font-bold tracking-wide flex items-center gap-1.5" style={{ color: "var(--cf2-text-tertiary)" }}>
+                  <Repeat className="w-3 h-3" /> CADÊNCIAS
+                </p>
+                <ChevronDown className="w-3.5 h-3.5 transition-transform" style={{ color: "var(--cf2-text-tertiary)", transform: cadenciaAberta ? "rotate(180deg)" : "none" }} />
+              </button>
+              {cadenciaAberta && <Cf2CadenciaPanel leadId={conversa.leadId} />}
+            </div>
           )}
           </>
           )}
@@ -455,12 +446,18 @@ function DetalhesTab({ contexto }: { contexto: Contexto }) {
   const scripts = [...(data?.scripts ?? [])].sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-col gap-3">
-        <p className="text-[11px] font-bold" style={{ color: "var(--cf2-text-tertiary)" }}>EMPRESA</p>
+    <div className="flex flex-col gap-3">
+      {contexto.leadId && (
+        <div className="rounded-xl p-3.5" style={{ background: "var(--cf2-bg-surface-muted)" }}>
+          <QualificacaoSdrSection leadId={contexto.leadId} camposCustom={contexto.camposCustom} readOnly variant="light" showFieldStatusDots />
+        </div>
+      )}
+
+      <div className="flex flex-col gap-3 rounded-xl p-3.5" style={{ background: "var(--cf2-bg-surface-muted)" }}>
+        <p className="text-[11px] font-bold tracking-wide" style={{ color: "var(--cf2-text-tertiary)" }}>EMPRESA</p>
         {contexto.empresa ? (
-          <div className="flex flex-col gap-1.5 text-[12px]" style={{ color: "var(--cf2-text-secondary)" }}>
-            <p className="text-[14px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>{contexto.empresa.nome}</p>
+          <div className="flex flex-col gap-1.5 text-[12.5px]" style={{ color: "var(--cf2-text-secondary)" }}>
+            <p className="text-[14px] font-semibold" style={{ color: "var(--cf2-text-primary)" }}>{contexto.empresa.nome}</p>
             {contexto.empresa.setor && <p>Segmento: {contexto.empresa.setor}</p>}
             {contexto.empresa.cnpj && <p>CNPJ: {formatarCnpjCurto(contexto.empresa.cnpj)}</p>}
             {contexto.empresa.porte && <p>{PORTE_LABEL[contexto.empresa.porte] || contexto.empresa.porte}</p>}
@@ -469,27 +466,25 @@ function DetalhesTab({ contexto }: { contexto: Contexto }) {
             )}
           </div>
         ) : (
-          <p className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>Sem empresa vinculada.</p>
+          <p className="text-[12.5px]" style={{ color: "var(--cf2-text-tertiary)" }}>Sem empresa vinculada.</p>
         )}
       </div>
 
-      <div className="h-px w-full" style={{ background: "var(--cf2-border-default)" }} />
-
-      <div className="flex flex-col gap-2">
-        <p className="text-[11px] font-bold" style={{ color: "var(--cf2-text-tertiary)" }}>SCRIPTS SUGERIDOS</p>
+      <div className="flex flex-col gap-2.5 rounded-xl p-3.5" style={{ background: "var(--cf2-bg-surface-muted)" }}>
+        <p className="text-[11px] font-bold tracking-wide" style={{ color: "var(--cf2-text-tertiary)" }}>SCRIPTS SUGERIDOS</p>
         {scripts.length === 0 && (
-          <p className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhum script cadastrado ainda.</p>
+          <p className="text-[12.5px]" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhum script cadastrado ainda.</p>
         )}
         {scripts.map((s) => (
-          <div key={s.id} className="rounded-lg overflow-hidden" style={{ background: "var(--cf2-bg-surface-muted)" }}>
-            <button onClick={() => setScriptAberto(scriptAberto === s.id ? null : s.id)} className="w-full flex items-center gap-2 p-2 text-left">
+          <div key={s.id} className="rounded-lg overflow-hidden" style={{ background: "var(--cf2-bg-surface)" }}>
+            <button onClick={() => setScriptAberto(scriptAberto === s.id ? null : s.id)} className="w-full flex items-center gap-2 p-2.5 text-left transition-colors hover:bg-[var(--cf2-bg-surface-subtle)]">
               <FileText className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--cf2-text-tertiary)" }} />
-              <p className="flex-1 text-[12px] font-semibold truncate" style={{ color: "var(--cf2-text-primary)" }}>{s.titulo}</p>
-              <span className="text-[9px] px-1.5 py-0.5 rounded shrink-0" style={{ background: "var(--cf2-bg-surface)", color: "var(--cf2-text-tertiary)" }}>{SCRIPTS_CATEGORIA_LABEL[s.categoria] || s.categoria}</span>
-              <ChevronDown className="w-3 h-3 shrink-0" style={{ color: "var(--cf2-text-tertiary)", transform: scriptAberto === s.id ? "rotate(180deg)" : undefined }} />
+              <p className="flex-1 text-[12.5px] font-semibold truncate" style={{ color: "var(--cf2-text-primary)" }}>{s.titulo}</p>
+              <span className="text-[10px] font-medium px-1.5 py-0.5 rounded shrink-0" style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-tertiary)" }}>{SCRIPTS_CATEGORIA_LABEL[s.categoria] || s.categoria}</span>
+              <ChevronDown className="w-3.5 h-3.5 shrink-0 transition-transform" style={{ color: "var(--cf2-text-tertiary)", transform: scriptAberto === s.id ? "rotate(180deg)" : undefined }} />
             </button>
             {scriptAberto === s.id && (
-              <p className="px-2 pb-2 text-[12px] whitespace-pre-wrap" style={{ color: "var(--cf2-text-secondary)" }}>{s.conteudo}</p>
+              <p className="px-2.5 pb-2.5 text-[12.5px] leading-relaxed whitespace-pre-wrap" style={{ color: "var(--cf2-text-secondary)" }}>{s.conteudo}</p>
             )}
           </div>
         ))}
