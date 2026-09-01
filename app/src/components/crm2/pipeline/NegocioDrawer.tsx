@@ -1,10 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Phone, MessageCircle, Mail, Plus, Calendar, ChevronDown, Check, X, Beaker, AlertTriangle, FileText, Download } from "lucide-react";
+import {
+  Phone, MessageCircle, Mail, Plus, Calendar, ChevronDown, Check, X, Beaker, AlertTriangle,
+  FileText, Download, MoreHorizontal, NotebookPen, Send, ExternalLink,
+} from "lucide-react";
 import { DetailDrawer } from "@/components/crm/DetailDrawer";
 import { TarefaFormModal } from "@/components/crm/tarefas/TarefaFormModal";
 import { digitsForDialer } from "@/lib/utils/callface-call";
@@ -12,12 +15,26 @@ import {
   PIPELINE_OPEN_COLS, MOTIVO_PERDA_ESTRUTURADO, proximoStatusReal, tempoNaEtapa,
   FAMILY_LABEL, resolvePropostaDisplay,
 } from "./shared";
+import { Section, PropertyRow } from "@/components/crm2/shared/DrawerSection";
+import { Cf2Button } from "@/components/crm2/ui/Button";
+import { Cf2Tabs, Cf2TabsList, Cf2TabsTrigger } from "@/components/crm2/ui/Tabs";
+import {
+  Cf2DropdownMenu, Cf2DropdownMenuContent, Cf2DropdownMenuItem, Cf2DropdownMenuTrigger,
+} from "@/components/crm2/ui/DropdownMenu";
 
 const brl = (v: string | null) => (parseFloat(v || "0") || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
 import { Cf2NovaPropostaSlideOver } from "@/components/crm2/negocios/NovaPropostaSlideOver";
 
-interface Lead { id: string; nome: string; email?: string | null; telefone?: string | null; empresa?: string | null; cargo?: string | null; camposCustom?: Record<string, unknown> | null }
-interface Proposta { id: string; numero: number; versao: number; status: string; totalGeral: string; primeiraVisualizacaoEm: string | null; clienteRespondeuEm: string | null; dataValidade: string | null }
+// Chrome escuro não tem variante própria de success/warning legível em
+// fundo escuro (mesmo achado já documentado em pipeline/Workspace.tsx) —
+// reusa as mesmas 2 constantes dark-safe.
+const SUCCESS_DARK = "#4ade80";
+const WARNING_DARK = "#fbbf24";
+
+interface Lead { id: string; nome: string; email?: string | null; telefone?: string | null; empresa?: string | null; cargo?: string | null; camposCustom?: Record<string, unknown> | null; stripeCustomerId?: string | null }
+interface PropostaItem { id: string; nome: string; tipo: string; quantidade: string; subtotal: string }
+interface Proposta { id: string; numero: number; versao: number; status: string; totalGeral: string; totalRecorrente: string | null; totalAvulso: string | null; primeiraVisualizacaoEm: string | null; clienteRespondeuEm: string | null; dataValidade: string | null; itens?: PropostaItem[]; condicaoPagamentoTipo?: string | null; parcelas?: number | null; moeda?: string }
+interface Contrato { id: string; status: string; stripeSubscriptionId: string | null }
 interface StatusChange { id: string; deStatus: string | null; paraStatus: string; motivo: string | null; createdAt: string; autorNome: string | null }
 interface Atividade { id: string; tipo: string; titulo?: string | null; descricao?: string | null; createdAt: string }
 interface Nota { id: string; conteudo: string; autorNome?: string | null; createdAt: string }
@@ -56,13 +73,58 @@ export function Cf2NegocioDrawer({ negocioId, open, onClose, onChanged }: { nego
   const [motivoOutro, setMotivoOutro] = useState("");
   const [tarefaModalOpen, setTarefaModalOpen] = useState(false);
   const [novaPropostaOpen, setNovaPropostaOpen] = useState(false);
+  const [acoesMenuOpen, setAcoesMenuOpen] = useState(false);
+  const [noteOpen, setNoteOpen] = useState(false);
+  const [noteText, setNoteText] = useState("");
+  const noteRef = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => { if (noteOpen) noteRef.current?.focus(); }, [noteOpen]);
+
+  const [cobrancaOpen, setCobrancaOpen] = useState(false);
+  const [cobrancaDescricao, setCobrancaDescricao] = useState("");
+  const [cobrancaValor, setCobrancaValor] = useState("");
+  const [cobrancaVencimento, setCobrancaVencimento] = useState("3");
+
+  const cobrancaMutation = useMutation({
+    mutationFn: async () => {
+      const r = await fetch(`/api/negocios/${negocioId}/cobranca-avulsa`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ descricao: cobrancaDescricao, valor: Number(cobrancaValor), diasVencimento: Number(cobrancaVencimento) }),
+      });
+      const body = await r.json();
+      if (!r.ok) throw new Error(body.error || "Erro ao gerar cobrança");
+      return body as { hostedInvoiceUrl: string | null };
+    },
+    onSuccess: (res) => {
+      toast.success("Cobrança avulsa gerada e enviada pelo Stripe");
+      if (res.hostedInvoiceUrl) window.open(res.hostedInvoiceUrl, "_blank");
+      setCobrancaOpen(false);
+      setCobrancaDescricao(""); setCobrancaValor(""); setCobrancaVencimento("3");
+      qc.invalidateQueries({ queryKey: ["negocio-detalhe", negocioId] });
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const parcelamentoMutation = useMutation({
+    mutationFn: async () => {
+      if (!propostaParcelavel) throw new Error("Nenhuma proposta parcelada vinculada");
+      const r = await fetch(`/api/propostas/${propostaParcelavel.id}/gerar-parcelamento`, { method: "POST" });
+      const body = await r.json();
+      if (!r.ok) throw new Error(body.error || "Erro ao gerar parcelamento");
+      return body;
+    },
+    onSuccess: () => {
+      toast.success("Parcelas restantes geradas no Stripe");
+      qc.invalidateQueries({ queryKey: ["negocio-detalhe", negocioId] });
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
 
   const { data, isLoading } = useQuery({
     queryKey: ["negocio-detalhe", negocioId],
     queryFn: async () => {
       const r = await fetch(`/api/negocios/${negocioId}`);
       if (!r.ok) throw new Error("Negócio não encontrado");
-      return r.json() as Promise<{ negocio: Negocio; lead: Lead | null; empresa: { nome: string } | null; propostas: Proposta[]; atividades: Atividade[]; notas: Nota[]; reunioes: Reuniao[]; statusChanges: StatusChange[]; oportunidadesIrmas: { id: string; titulo: string; status: string }[] }>;
+      return r.json() as Promise<{ negocio: Negocio; lead: Lead | null; empresa: { nome: string } | null; propostas: Proposta[]; contratos: Contrato[]; atividades: Atividade[]; notas: Nota[]; reunioes: Reuniao[]; statusChanges: StatusChange[]; oportunidadesIrmas: { id: string; titulo: string; status: string }[] }>;
     },
     enabled: !!negocioId && open,
   });
@@ -106,6 +168,15 @@ export function Cf2NegocioDrawer({ negocioId, open, onClose, onChanged }: { nego
     onSuccess: () => qc.invalidateQueries({ queryKey: ["tarefas", "negocio", negocioId] }),
   });
 
+  const addNota = useMutation({
+    mutationFn: async (conteudo: string) => {
+      const r = await fetch("/api/notas", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ conteudo, negocioId }) });
+      if (!r.ok) throw new Error("falha ao salvar nota");
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["negocio-detalhe", negocioId] }); setNoteText(""); setNoteOpen(false); },
+    onError: () => toast.error("Não foi possível salvar a nota"),
+  });
+
   const negocio = data?.negocio;
   if (!negocio && !isLoading) return null;
 
@@ -117,44 +188,57 @@ export function Cf2NegocioDrawer({ negocioId, open, onClose, onChanged }: { nego
   const isTrial = negocio?.status === "trial";
   const trialDesde = data?.statusChanges?.find((s) => s.paraStatus === "trial")?.createdAt;
 
+  // Stripe (25/08, billing avançado) — link direto pro dashboard real (não
+  // reconstrói nada do lado do CRM: ajuste de assentos/cartão/cancelamento
+  // já existe no Customer Portal nativo do Stripe, só falta o atalho pra
+  // achar o cliente certo) + cobrança avulsa / parcelamento restante via
+  // Invoice API (ver stripe-invoice.ts). Assinatura vem do contrato mais
+  // recente que já tem stripeSubscriptionId — pode não existir ainda.
+  const stripeCustomerId = data?.lead?.stripeCustomerId || null;
+  const stripeSubscriptionId = data?.contratos?.find((ct) => ct.stripeSubscriptionId)?.stripeSubscriptionId || null;
+  const propostaParcelavel = data?.propostas?.find((p) => p.condicaoPagamentoTipo === "boleto_parcelado" && (p.parcelas || 1) > 1) || null;
+
   const footer = negocio && (
-    <div className="p-3 flex items-center justify-between flex-wrap gap-2" style={{ background: "var(--cf2-bg-surface)", borderTop: "1px solid var(--cf2-border-default)" }}>
-      <div className="flex items-center gap-3 relative">
-        <button onClick={() => setMoveMenuOpen((v) => !v)} className="flex items-center gap-2 h-10 px-3 rounded-xl text-[13px] font-semibold" style={{ border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }}>
-          Mover etapa <ChevronDown className="w-3.5 h-3.5" />
-        </button>
-        {moveMenuOpen && (
-          <div className="absolute bottom-12 left-0 min-w-[180px] rounded-xl py-1 z-10" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)", boxShadow: "0 8px 16px rgba(15,23,42,0.12)" }}>
+    <div className="p-3 flex items-center justify-between flex-wrap gap-2" style={{ background: "var(--cf2-chrome-bg-alt)", borderTop: "1px solid var(--cf2-chrome-border-subtle)" }}>
+      <div className="flex items-center gap-3">
+        <Cf2DropdownMenu open={moveMenuOpen} onOpenChange={setMoveMenuOpen}>
+          <Cf2DropdownMenuTrigger asChild>
+            <Cf2Button variant="ghost" className="gap-2" style={{ border: "1px solid var(--cf2-chrome-border-subtle)", color: "var(--cf2-chrome-text-primary)" }}>
+              Mover etapa <ChevronDown className="w-3.5 h-3.5" />
+            </Cf2Button>
+          </Cf2DropdownMenuTrigger>
+          <Cf2DropdownMenuContent align="start" className="min-w-[180px]" style={{ background: "#1c1f26", border: "1px solid var(--cf2-chrome-border-subtle)" }}>
             {PIPELINE_OPEN_COLS.map((s) => (
-              <button key={s.key} onClick={() => patch.mutate({ status: s.dropTarget })} className="w-full text-left px-3 py-1.5 text-[13px] flex items-center gap-2" style={{ color: "var(--cf2-text-primary)" }}>
+              <Cf2DropdownMenuItem key={s.key} onClick={() => patch.mutate({ status: s.dropTarget })} className="data-[highlighted]:bg-white/[0.06]" style={{ color: "var(--cf2-chrome-text-primary)" }}>
                 <span className="w-2 h-2 rounded-full shrink-0" style={{ background: s.color }} /> {s.label}
-              </button>
+              </Cf2DropdownMenuItem>
             ))}
-          </div>
-        )}
-        <div className="relative">
-          <button onClick={() => setPerderMenuOpen((v) => !v)} className="text-[13px] font-bold" style={{ color: "#dc2626" }}>Perder</button>
-          {perderMenuOpen && (
-            <div className="absolute bottom-8 left-0 min-w-[240px] rounded-xl p-2 z-10 flex flex-col gap-1" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)", boxShadow: "0 8px 16px rgba(15,23,42,0.12)" }}>
-              {Object.entries(MOTIVO_PERDA_ESTRUTURADO).map(([statusKey, label]) => (
-                <button key={statusKey} onClick={() => patch.mutate({ status: statusKey })} className="w-full text-left px-2.5 py-1.5 rounded-lg text-[12px]" style={{ color: "var(--cf2-text-primary)" }}>{label}</button>
-              ))}
-              <div className="h-px my-1" style={{ background: "var(--cf2-border-default)" }} />
-              <div className="flex items-center gap-1.5 px-1">
-                <input value={motivoOutro} onChange={(e) => setMotivoOutro(e.target.value)} placeholder="Outro motivo..." className="flex-1 px-2 py-1 rounded-lg text-[12px] outline-none" style={{ background: "var(--cf2-bg-canvas)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }} />
-                <button onClick={() => motivoOutro.trim() && patch.mutate({ status: "perdido", motivoPerda: motivoOutro.trim() })} disabled={!motivoOutro.trim()} className="text-[11px] font-bold px-2 py-1 rounded-lg disabled:opacity-40" style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-primary)" }}>OK</button>
-              </div>
+          </Cf2DropdownMenuContent>
+        </Cf2DropdownMenu>
+
+        <Cf2DropdownMenu open={perderMenuOpen} onOpenChange={setPerderMenuOpen}>
+          <Cf2DropdownMenuTrigger asChild>
+            <Cf2Button variant="ghost" className="font-bold" style={{ color: "#f87171" }}>Perder</Cf2Button>
+          </Cf2DropdownMenuTrigger>
+          <Cf2DropdownMenuContent align="start" className="min-w-[240px]" style={{ background: "#1c1f26", border: "1px solid var(--cf2-chrome-border-subtle)" }}>
+            {Object.entries(MOTIVO_PERDA_ESTRUTURADO).map(([statusKey, label]) => (
+              <Cf2DropdownMenuItem key={statusKey} onClick={() => patch.mutate({ status: statusKey })} className="data-[highlighted]:bg-white/[0.06]" style={{ color: "var(--cf2-chrome-text-primary)" }}>{label}</Cf2DropdownMenuItem>
+            ))}
+            <div className="h-px my-1" style={{ background: "var(--cf2-chrome-border-subtle)" }} />
+            <div className="flex items-center gap-1.5 px-1 py-1">
+              <input value={motivoOutro} onChange={(e) => setMotivoOutro(e.target.value)} onClick={(e) => e.stopPropagation()} placeholder="Outro motivo..." className="flex-1 px-2 py-1 rounded-lg text-[12px] outline-none" style={{ background: "var(--cf2-chrome-bg-alt)", border: "1px solid var(--cf2-chrome-border-subtle)", color: "var(--cf2-chrome-text-primary)" }} />
+              <button onClick={() => motivoOutro.trim() && patch.mutate({ status: "perdido", motivoPerda: motivoOutro.trim() })} disabled={!motivoOutro.trim()} className="text-[11px] font-bold px-2 py-1 rounded-lg disabled:opacity-40" style={{ background: "rgba(255,255,255,0.08)", color: "var(--cf2-chrome-text-primary)" }}>OK</button>
             </div>
-          )}
-        </div>
+          </Cf2DropdownMenuContent>
+        </Cf2DropdownMenu>
       </div>
       {(() => {
         const proximo = proximoStatusReal(negocio.status);
         if (!proximo) return null;
         return (
-          <button onClick={() => patch.mutate({ status: proximo })} disabled={patch.isPending} className="flex items-center gap-2 h-10 px-4 rounded-xl text-[13px] font-bold disabled:opacity-60" style={{ background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" }}>
+          <Cf2Button onClick={() => patch.mutate({ status: proximo })} loading={patch.isPending} className="gap-2">
             <Check className="w-4 h-4" /> Avançar →
-          </button>
+          </Cf2Button>
         );
       })()}
     </div>
@@ -176,175 +260,293 @@ export function Cf2NegocioDrawer({ negocioId, open, onClose, onChanged }: { nego
 
   return (
     <>
-    <DetailDrawer open={open && !!negocioId} onClose={onClose} bare panelBg="#ffffff" width="w-full sm:w-[500px]" footer={footer}>
-      {isLoading && <div className="p-6 text-sm" style={{ color: "var(--cf2-text-tertiary)" }}>Carregando...</div>}
+    <DetailDrawer open={open && !!negocioId} onClose={onClose} bare panelBg="var(--cf2-chrome-bg-alt)" borderColor="var(--cf2-chrome-border-subtle)" width="w-full sm:w-[500px]" footer={footer}>
+      {isLoading && <div className="p-6 text-sm" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Carregando...</div>}
       {negocio && (
-        <div className="flex flex-col gap-4 p-5">
-          <div className="flex flex-col gap-1.5">
-            <p className="text-[18px] font-bold" style={{ color: "var(--cf2-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>{data?.empresa?.nome || negocio.titulo}</p>
-            <p className="text-[13px]" style={{ color: "var(--cf2-text-tertiary)" }}>{lead ? `${lead.nome}${lead.cargo ? ` · ${lead.cargo}` : ""}` : "Sem contato vinculado"}</p>
-            <div className="flex items-center gap-2 flex-wrap">
-              {negocio.serviceFamily && <span className="px-2 py-0.5 rounded-full text-[11px] font-bold" style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-secondary)" }}>{FAMILY_LABEL[negocio.serviceFamily] || negocio.serviceFamily}</span>}
-              <span className="text-[13px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>{brl(negocio.mrrFechado || negocio.mrrEstimado || negocio.valorTotal)}</span>
+        <div className="flex flex-col gap-7 px-6 py-7">
+          <div className="flex flex-col gap-2">
+            <div className="flex items-start justify-between gap-4">
+              <p className="text-[22px] font-semibold leading-tight" style={{ color: "var(--cf2-chrome-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>{data?.empresa?.nome || negocio.titulo}</p>
+              <button onClick={onClose} aria-label="Fechar oportunidade" className="rounded-md p-1.5 shrink-0 hover:bg-white/[0.06]" style={{ color: "var(--cf2-chrome-text-secondary)" }}><X className="h-4 w-4" /></button>
             </div>
-            <div className="flex items-center gap-2">
-              {stage && <span className="px-2.5 py-1 rounded-full text-[12px] font-semibold" style={{ background: `${stage.color}18`, color: stage.color }}>{stage.label}</span>}
-              <span className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>Tempo na etapa: {tempoNaEtapa(negocio.updatedAt)}</span>
+            <p className="text-[13px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>{lead ? `${lead.nome}${lead.cargo ? ` · ${lead.cargo}` : ""}` : "Sem contato vinculado"}</p>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {stage && <span className="text-[12px] font-medium" style={{ color: stage.color }}>● {stage.label}</span>}
+              {negocio.serviceFamily && <span className="text-[12px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>· {FAMILY_LABEL[negocio.serviceFamily] || negocio.serviceFamily}</span>}
+              <span className="text-[12px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>· {tempoNaEtapa(negocio.updatedAt)} na etapa</span>
             </div>
-            <Link href={`/negocios/${negocioId}`} className="text-[12px] font-semibold" style={{ color: "var(--cf2-success-text)" }}>Abrir oportunidade completa →</Link>
+            <div className="flex items-center gap-3">
+              <span className="text-[15px] font-semibold" style={{ color: "var(--cf2-chrome-text-primary)" }}>{brl(negocio.mrrFechado || negocio.mrrEstimado || negocio.valorTotal)}</span>
+              <Link href={`/negocios/${negocioId}`} className="text-[12px] font-medium" style={{ color: SUCCESS_DARK }}>Abrir oportunidade completa →</Link>
+            </div>
           </div>
 
           <div className="flex flex-col gap-2.5">
-            <p className="text-[14px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Ações rápidas</p>
-            <div className="flex gap-2 flex-wrap">
+            <div className="flex items-center gap-2">
               <QuickAction icon={Phone} label="Ligar" href={lead?.telefone ? atendimentoHref("ligacao") : undefined} />
               <QuickAction icon={MessageCircle} label="WhatsApp" href={lead?.telefone ? atendimentoHref("whatsapp") : undefined} />
               <QuickAction icon={Mail} label="E-mail" href={lead?.email ? atendimentoHref("email") : undefined} />
-              <QuickAction icon={Calendar} label="Agendar" onClick={() => setTarefaModalOpen(true)} />
-              <QuickAction icon={Plus} label="Tarefa" onClick={() => setTarefaModalOpen(true)} />
+              {/* Agendar/Tarefa/Nota entram no overflow — com as 3 ações de
+                  contato mais o botão "..." tudo cabe numa linha só mesmo
+                  no drawer estreito (500px); achado real 25/08: com os 5
+                  botões antigos direto na linha, quebrava pra 2 linhas. */}
+              <Cf2DropdownMenu open={acoesMenuOpen} onOpenChange={setAcoesMenuOpen}>
+                <Cf2DropdownMenuTrigger asChild>
+                  <button aria-label="Mais ações" className="flex items-center justify-center h-9 w-9 rounded-[var(--cf2-radius-md)] shrink-0 hover:bg-white/[0.06]" style={{ border: "1px solid var(--cf2-chrome-border-subtle)", color: "var(--cf2-chrome-text-primary)" }}>
+                    <MoreHorizontal className="w-4 h-4" />
+                  </button>
+                </Cf2DropdownMenuTrigger>
+                <Cf2DropdownMenuContent align="end" className="min-w-[180px]" style={{ background: "#1c1f26", border: "1px solid var(--cf2-chrome-border-subtle)" }}>
+                  <Cf2DropdownMenuItem onClick={() => setTarefaModalOpen(true)} className="gap-2 data-[highlighted]:bg-white/[0.06]" style={{ color: "var(--cf2-chrome-text-primary)" }}><Calendar className="w-3.5 h-3.5" /> Agendar</Cf2DropdownMenuItem>
+                  <Cf2DropdownMenuItem onClick={() => setTarefaModalOpen(true)} className="gap-2 data-[highlighted]:bg-white/[0.06]" style={{ color: "var(--cf2-chrome-text-primary)" }}><Plus className="w-3.5 h-3.5" /> Tarefa</Cf2DropdownMenuItem>
+                  <Cf2DropdownMenuItem onClick={() => { setTab("Notas"); setNoteOpen(true); }} className="gap-2 data-[highlighted]:bg-white/[0.06]" style={{ color: "var(--cf2-chrome-text-primary)" }}><NotebookPen className="w-3.5 h-3.5" /> Nota</Cf2DropdownMenuItem>
+                  {(stripeCustomerId || stripeSubscriptionId || propostaParcelavel) && (
+                    <div className="my-1 h-px" style={{ background: "var(--cf2-chrome-border-subtle)" }} />
+                  )}
+                  {stripeCustomerId && (
+                    <Cf2DropdownMenuItem asChild className="gap-2 data-[highlighted]:bg-white/[0.06]" style={{ color: "var(--cf2-chrome-text-primary)" }}>
+                      <a href={`https://dashboard.stripe.com/customers/${stripeCustomerId}`} target="_blank" rel="noopener noreferrer"><ExternalLink className="w-3.5 h-3.5" /> Ver cliente no Stripe</a>
+                    </Cf2DropdownMenuItem>
+                  )}
+                  {stripeSubscriptionId && (
+                    <Cf2DropdownMenuItem asChild className="gap-2 data-[highlighted]:bg-white/[0.06]" style={{ color: "var(--cf2-chrome-text-primary)" }}>
+                      <a href={`https://dashboard.stripe.com/subscriptions/${stripeSubscriptionId}`} target="_blank" rel="noopener noreferrer"><ExternalLink className="w-3.5 h-3.5" /> Ver assinatura no Stripe</a>
+                    </Cf2DropdownMenuItem>
+                  )}
+                  {stripeCustomerId && (
+                    <Cf2DropdownMenuItem onClick={() => setCobrancaOpen(true)} className="gap-2 data-[highlighted]:bg-white/[0.06]" style={{ color: "var(--cf2-chrome-text-primary)" }}><Send className="w-3.5 h-3.5" /> Cobrança avulsa</Cf2DropdownMenuItem>
+                  )}
+                  {propostaParcelavel && (
+                    <Cf2DropdownMenuItem onClick={() => parcelamentoMutation.mutate()} className="gap-2 data-[highlighted]:bg-white/[0.06]" style={{ color: "var(--cf2-chrome-text-primary)" }}><Send className="w-3.5 h-3.5" /> Gerar parcelamento restante</Cf2DropdownMenuItem>
+                  )}
+                </Cf2DropdownMenuContent>
+              </Cf2DropdownMenu>
+            </div>
+            {/* Próxima ação — único callout com cor de fundo que mantive: é
+                alerta real (ação em aberto vs. nenhuma definida), não
+                informação neutra — mesmo critério do resto do CRM2 de só
+                usar cor com significado. */}
+            <div className="flex items-center gap-2 rounded-[var(--cf2-radius-md)] px-3 py-2.5" style={proximaTarefa ? { background: "color-mix(in srgb, #4ade80 10%, transparent)" } : { background: "color-mix(in srgb, #fbbf24 10%, transparent)" }}>
+              {proximaTarefa ? (
+                <>
+                  <Calendar className="w-4 h-4 shrink-0" style={{ color: SUCCESS_DARK }} />
+                  <p className="text-[12px]" style={{ color: "var(--cf2-chrome-text-primary)" }}>{proximaTarefa.titulo} · {new Date(proximaTarefa.dataVencimento!).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", weekday: "short" })}</p>
+                </>
+              ) : (
+                <>
+                  <AlertTriangle className="w-4 h-4 shrink-0" style={{ color: WARNING_DARK }} />
+                  <p className="text-[12px]" style={{ color: WARNING_DARK }}>Nenhuma próxima ação definida</p>
+                </>
+              )}
             </div>
           </div>
 
-          {/* Próxima ação — destaque, spec explícita */}
-          <div className="p-4 rounded-2xl" style={proximaTarefa ? { background: "rgba(34,197,94,0.08)", border: "1px solid rgba(34,197,94,0.25)" } : { background: "var(--cf2-warning-bg)", border: "1px solid rgba(245,158,11,0.3)" }}>
-            {proximaTarefa ? (
-              <>
-                <p className="text-[11px] font-bold uppercase" style={{ color: "var(--cf2-success-text)" }}>Próxima ação</p>
-                <p className="text-[14px] font-bold mt-0.5" style={{ color: "var(--cf2-text-primary)" }}>{proximaTarefa.titulo}</p>
-                <p className="text-[12px] mt-0.5" style={{ color: "var(--cf2-text-secondary)" }}>{new Date(proximaTarefa.dataVencimento!).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", weekday: "short" })}</p>
-              </>
-            ) : (
-              <p className="text-[13px] font-semibold flex items-center gap-1.5" style={{ color: "var(--cf2-warning-text)" }}><AlertTriangle className="w-4 h-4" /> Nenhuma próxima ação definida</p>
-            )}
-          </div>
-
-          {/* Jornada comercial */}
-          <div className="flex items-center justify-between px-1">
-            {PIPELINE_OPEN_COLS.concat([{ key: "ganho", label: "Ganho", color: "#22c55e", keys: ["ganho"], dropTarget: "ganho" }]).map((s) => {
-              const ativo = stage?.key === s.key || (s.key === "ganho" && negocio.status === "ganho");
-              const passou = stage ? PIPELINE_OPEN_COLS.findIndex((c) => c.key === s.key) < PIPELINE_OPEN_COLS.findIndex((c) => c.key === stage.key) : false;
-              return (
-                <div key={s.key} className="flex flex-col items-center gap-1 flex-1">
-                  <span className="w-2.5 h-2.5 rounded-full" style={{ background: ativo || passou ? s.color : "var(--cf2-border-default)" }} />
-                  <span className="text-[10px] text-center" style={{ color: ativo ? s.color : "var(--cf2-text-tertiary)", fontWeight: ativo ? 700 : 400 }}>{s.label}</span>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Resumo comercial */}
-          <div className="flex flex-col gap-2.5 p-4 rounded-2xl" style={{ background: "var(--cf2-bg-canvas)", border: "1px solid var(--cf2-border-default)" }}>
-            <p className="text-[14px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Resumo comercial</p>
-            <div className="flex flex-col gap-2 text-[12px]">
-              <KV label="Necessidade/Dor" value={qualif.necessidadeDor || "—"} />
-              <KV label="Decisor" value={lead?.nome || "—"} />
-              <KV label="Data de entrada" value={new Date(negocio.createdAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" })} />
-              <KV label="Forecast" value={negocio.previsaoFechamento ? new Date(negocio.previsaoFechamento).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" }) : "—"} />
-            </div>
-          </div>
+          <Cf2DarkCard>
+            <Section title="Resumo comercial" dark>
+              <div className="flex flex-col gap-2">
+                <PropertyRow dark label="Necessidade/Dor" value={qualif.necessidadeDor || "—"} />
+                <PropertyRow dark label="Decisor" value={lead?.nome || "—"} />
+                <PropertyRow dark label="Data de entrada" value={new Date(negocio.createdAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" })} />
+                <PropertyRow dark label="Forecast" value={negocio.previsaoFechamento ? new Date(negocio.previsaoFechamento).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" }) : "—"} />
+              </div>
+            </Section>
+          </Cf2DarkCard>
 
           {isTrial && (
-            <div className="flex items-center gap-2 p-4 rounded-2xl" style={{ background: "rgba(20,184,166,0.08)", border: "1px solid rgba(20,184,166,0.25)" }}>
-              <Beaker className="w-4 h-4 shrink-0" style={{ color: "#14B8A6" }} />
-              <p className="text-[13px]" style={{ color: "var(--cf2-text-primary)" }}>Trial ativo{trialDesde ? ` desde ${new Date(trialDesde).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}` : ""}</p>
+            <div className="flex items-center gap-2 rounded-[var(--cf2-radius-md)] px-3 py-2.5" style={{ background: "color-mix(in srgb, #14B8A6 10%, transparent)" }}>
+              <Beaker className="w-4 h-4 shrink-0" style={{ color: "#2dd4bf" }} />
+              <p className="text-[13px]" style={{ color: "var(--cf2-chrome-text-primary)" }}>Trial ativo{trialDesde ? ` desde ${new Date(trialDesde).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}` : ""}</p>
             </div>
           )}
 
-          {/* Proposta */}
-          <div className="flex flex-col gap-2.5 p-4 rounded-2xl" style={{ background: "var(--cf2-bg-canvas)", border: "1px solid var(--cf2-border-default)" }}>
-            <div className="flex items-center justify-between">
-              <p className="text-[14px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Proposta</p>
-              {!ultimaProposta && <button onClick={() => setNovaPropostaOpen(true)} className="px-3 py-1.5 rounded-lg text-[12px] font-bold" style={{ background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" }}>+ Criar proposta</button>}
-            </div>
-            {ultimaProposta ? (
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-[13px] font-semibold flex items-center gap-1.5" style={{ color: "var(--cf2-text-primary)" }}><FileText className="w-3.5 h-3.5" /> #{ultimaProposta.numero} · {brl(ultimaProposta.totalGeral)}</p>
-                  <p className="text-[11px] mt-0.5" style={{ color: "var(--cf2-text-tertiary)" }}>{resolvePropostaDisplay(ultimaProposta).label}</p>
-                </div>
-                <a href={`/propostas?propostaId=${ultimaProposta.id}`} className="text-[12px] font-semibold" style={{ color: "var(--cf2-success-text)" }}>Ver →</a>
-              </div>
-            ) : (
-              <p className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhuma proposta criada.</p>
-            )}
-          </div>
+          <Cf2DarkCard>
+            <Section
+              title="Proposta"
+              dark
+              action={!ultimaProposta ? { label: "+ Criar proposta", onClick: () => setNovaPropostaOpen(true) } : undefined}
+            >
+              {ultimaProposta ? (
+                <PropostaResumo proposta={ultimaProposta} />
+              ) : (
+                <p className="text-[12px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Nenhuma proposta criada.</p>
+              )}
+            </Section>
+          </Cf2DarkCard>
 
           {/* Documentos — histórico Zoho (anexos_legado), achado real
               18/08. Baixa direto de ~/Downloads/Attachments, DEV-ONLY —
               ver aviso em src/lib/storage/legacy-attachment-storage.ts. */}
           {anexosLegado.length > 0 && (
-            <div className="flex flex-col gap-2.5 p-4 rounded-2xl" style={{ background: "var(--cf2-bg-canvas)", border: "1px solid var(--cf2-border-default)" }}>
-              <p className="text-[14px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Documentos ({anexosLegado.length})</p>
-              <div className="flex flex-col gap-1.5">
-                {anexosLegado.map((doc) => (
-                  <div key={doc.id} className="flex items-center justify-between gap-2 p-2 rounded-xl" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
-                    <div className="flex items-center gap-2 min-w-0">
-                      <FileText className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--cf2-text-tertiary)" }} />
-                      <div className="min-w-0">
-                        <p className="text-[12px] font-semibold truncate" style={{ color: "var(--cf2-text-primary)" }} title={doc.nomeArquivo}>{doc.nomeArquivo}</p>
-                        <p className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>{formatBytesAnexo(doc.tamanhoBytes)}</p>
+            <Cf2DarkCard>
+              <Section title={`Documentos (${anexosLegado.length})`} dark>
+                <div className="flex flex-col border-t" style={{ borderColor: "var(--cf2-chrome-border-subtle)" }}>
+                  {anexosLegado.map((doc) => (
+                    <div key={doc.id} className="flex items-center justify-between gap-2 h-10 border-b" style={{ borderColor: "var(--cf2-chrome-border-subtle)" }}>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <FileText className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--cf2-chrome-text-secondary)" }} />
+                        <div className="min-w-0">
+                          <p className="text-[12px] font-medium truncate" style={{ color: "var(--cf2-chrome-text-primary)" }} title={doc.nomeArquivo}>{doc.nomeArquivo}</p>
+                        </div>
+                        <span className="text-[11px] shrink-0" style={{ color: "var(--cf2-chrome-text-secondary)" }}>{formatBytesAnexo(doc.tamanhoBytes)}</span>
                       </div>
+                      {doc.arquivoDisponivel ? (
+                        <a href={`/api/anexos-legado/${doc.id}/download`} className="flex items-center gap-1 text-[11px] font-medium shrink-0" style={{ color: SUCCESS_DARK }}>
+                          <Download className="w-3 h-3" /> Baixar
+                        </a>
+                      ) : (
+                        <span title="Arquivo físico não disponível neste ambiente" className="text-[11px] shrink-0 cursor-not-allowed" style={{ color: "var(--cf2-chrome-text-secondary)" }}>
+                          Indisponível
+                        </span>
+                      )}
                     </div>
-                    {doc.arquivoDisponivel ? (
-                      <a href={`/api/anexos-legado/${doc.id}/download`} className="flex items-center gap-1 text-[11px] font-semibold shrink-0" style={{ color: "var(--cf2-success-text)" }}>
-                        <Download className="w-3 h-3" /> Baixar
-                      </a>
-                    ) : (
-                      <span title="Arquivo físico não disponível neste ambiente" className="text-[11px] shrink-0 cursor-not-allowed" style={{ color: "var(--cf2-text-tertiary)" }}>
-                        Indisponível
-                      </span>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
+                  ))}
+                </div>
+              </Section>
+            </Cf2DarkCard>
           )}
 
-          {/* Timeline */}
-          <div className="flex flex-col gap-3 p-4 rounded-2xl" style={{ background: "var(--cf2-bg-canvas)", border: "1px solid var(--cf2-border-default)" }}>
-            <p className="text-[14px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Timeline unificada</p>
-            <div className="flex gap-2 overflow-x-auto pb-0.5">
-              {TABS.map((t) => (
-                <button key={t} onClick={() => setTab(t)} className="px-2.5 py-1.5 rounded-full text-[12px] font-semibold whitespace-nowrap shrink-0" style={{ background: tab === t ? "var(--cf2-text-primary)" : "var(--cf2-bg-surface)", color: tab === t ? "#ffffff" : "var(--cf2-text-secondary)", border: tab === t ? "none" : "1px solid var(--cf2-border-default)" }}>{t}</button>
-              ))}
-            </div>
-            <TimelineFeed tab={tab} data={data} />
-            {tarefasAbertas.length > 0 && (
-              <div className="flex flex-col gap-1.5 pt-1">
-                <p className="text-[12px] font-bold" style={{ color: "var(--cf2-text-secondary)" }}>Tarefas pendentes</p>
-                {tarefasAbertas.map((t) => (
-                  <div key={t.id} className="flex items-center gap-2.5 p-2.5 rounded-xl" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
-                    <button onClick={() => toggleTarefa.mutate({ id: t.id, concluida: true })} className="w-4 h-4 rounded-full shrink-0" style={{ border: "1px solid var(--cf2-border-default)" }} />
-                    <p className="flex-1 text-[13px]" style={{ color: "var(--cf2-text-primary)" }}>{t.titulo}</p>
+          <Cf2DarkCard>
+            <Section title="Timeline unificada" dark>
+              <div className="flex flex-col gap-3">
+                <Cf2Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
+                  <Cf2TabsList className="w-full flex-wrap justify-start overflow-x-auto" style={{ background: "rgba(255,255,255,0.06)" }}>
+                    {TABS.map((t) => (
+                      <Cf2TabsTrigger key={t} value={t} className="whitespace-nowrap data-[state=active]:bg-white/10 data-[state=active]:text-white" style={{ color: "var(--cf2-chrome-text-secondary)" }}>{t}</Cf2TabsTrigger>
+                    ))}
+                  </Cf2TabsList>
+                </Cf2Tabs>
+                <TimelineFeed tab={tab} data={data} />
+                {tab === "Notas" && (
+                  <div className="pt-1 border-t" style={{ borderColor: "var(--cf2-chrome-border-subtle)" }}>
+                    {noteOpen ? (
+                      <div className="flex flex-col gap-1.5 pt-3">
+                        <textarea
+                          ref={noteRef}
+                          value={noteText}
+                          onChange={(ev) => setNoteText(ev.target.value)}
+                          placeholder="Escreva uma nota..."
+                          rows={3}
+                          className="w-full text-[13px] rounded-[var(--cf2-radius-sm)] px-3 py-2 outline-none resize-y"
+                          style={{ background: "var(--cf2-chrome-bg-alt)", border: "1px solid var(--cf2-chrome-border-subtle)", color: "var(--cf2-chrome-text-primary)" }}
+                          onKeyDown={(ev) => { if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey) && noteText.trim()) addNota.mutate(noteText.trim()); if (ev.key === "Escape") { setNoteOpen(false); setNoteText(""); } }}
+                        />
+                        <div className="flex justify-end gap-2">
+                          <button onClick={() => { setNoteOpen(false); setNoteText(""); }} className="text-[12px] px-2 py-1" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Cancelar</button>
+                          <button onClick={() => noteText.trim() && addNota.mutate(noteText.trim())} disabled={!noteText.trim() || addNota.isPending} className="text-[12px] px-2 py-1 flex items-center gap-1 font-semibold disabled:opacity-40" style={{ color: SUCCESS_DARK }}><Send className="w-3 h-3" /> Salvar</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button onClick={() => setNoteOpen(true)} className="flex items-center gap-1.5 text-[12px] pt-3 hover:text-white" style={{ color: "var(--cf2-chrome-text-secondary)" }}><Plus className="w-3.5 h-3.5" /> Adicionar nota</button>
+                    )}
                   </div>
-                ))}
+                )}
+                {tarefasAbertas.length > 0 && (
+                  <div className="flex flex-col border-t" style={{ borderColor: "var(--cf2-chrome-border-subtle)" }}>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.06em] pt-2 pb-1" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Tarefas pendentes</p>
+                    {tarefasAbertas.map((t) => (
+                      <div key={t.id} className="flex items-center gap-2.5 h-10 border-b" style={{ borderColor: "var(--cf2-chrome-border-subtle)" }}>
+                        <button onClick={() => toggleTarefa.mutate({ id: t.id, concluida: true })} className="w-3.5 h-3.5 rounded-full shrink-0" style={{ border: "1px solid var(--cf2-chrome-border-subtle)" }} />
+                        <p className="flex-1 text-[13px] truncate" style={{ color: "var(--cf2-chrome-text-primary)" }}>{t.titulo}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-            )}
-          </div>
+            </Section>
+          </Cf2DarkCard>
         </div>
       )}
     </DetailDrawer>
     {negocioId && <TarefaFormModal open={tarefaModalOpen} onClose={() => setTarefaModalOpen(false)} defaultNegocioId={negocioId} defaultNegocioLabel={negocio?.titulo || null} defaultTipo="diagnostico" invalidateKeys={[["tarefas", "negocio", negocioId], ["pipeline-crm2-board"]]} />}
     {negocioId && novaPropostaOpen && <Cf2NovaPropostaSlideOver negocioId={negocioId} onClose={() => { setNovaPropostaOpen(false); qc.invalidateQueries({ queryKey: ["negocio-detalhe", negocioId] }); onChanged(); }} />}
+    {cobrancaOpen && (
+      <div className="fixed inset-0 z-[80] flex items-center justify-center p-4" style={{ background: "rgba(15,23,42,0.5)" }} onClick={() => setCobrancaOpen(false)}>
+        <div className="w-full max-w-sm rounded-2xl p-6 flex flex-col gap-3" style={{ background: "var(--cf2-bg-surface)" }} onClick={(e) => e.stopPropagation()}>
+          <div className="flex items-center justify-between">
+            <p className="text-[15px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Cobrança avulsa</p>
+            <button onClick={() => setCobrancaOpen(false)} aria-label="Fechar"><X className="w-4 h-4" style={{ color: "var(--cf2-text-tertiary)" }} /></button>
+          </div>
+          <p className="text-[12px]" style={{ color: "var(--cf2-text-secondary)" }}>Gera uma cobrança fora do ciclo da assinatura, cobrada direto no cliente Stripe já existente.</p>
+          <div className="flex flex-col gap-1">
+            <label className="text-[11px] font-semibold" style={{ color: "var(--cf2-text-secondary)" }}>Descrição</label>
+            <input value={cobrancaDescricao} onChange={(e) => setCobrancaDescricao(e.target.value)} placeholder="Ex.: Ajuste de setup, usuário extra..." className="text-[13px] px-2.5 py-2 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-[var(--cf2-accent-border)]" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }} />
+          </div>
+          <div className="flex gap-2">
+            <div className="flex-1 flex flex-col gap-1">
+              <label className="text-[11px] font-semibold" style={{ color: "var(--cf2-text-secondary)" }}>Valor (R$)</label>
+              <input type="number" min={0} step="0.01" value={cobrancaValor} onChange={(e) => setCobrancaValor(e.target.value)} className="text-[13px] px-2.5 py-2 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-[var(--cf2-accent-border)]" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }} />
+            </div>
+            <div className="flex-1 flex flex-col gap-1">
+              <label className="text-[11px] font-semibold" style={{ color: "var(--cf2-text-secondary)" }}>Vencimento (dias)</label>
+              <input type="number" min={1} max={60} value={cobrancaVencimento} onChange={(e) => setCobrancaVencimento(e.target.value)} className="text-[13px] px-2.5 py-2 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-[var(--cf2-accent-border)]" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }} />
+            </div>
+          </div>
+          <Cf2Button onClick={() => cobrancaMutation.mutate()} disabled={!cobrancaDescricao.trim() || !cobrancaValor || cobrancaMutation.isPending} className="mt-1">
+            {cobrancaMutation.isPending ? "Gerando..." : "Gerar cobrança"}
+          </Cf2Button>
+        </div>
+      </div>
+    )}
     </>
+  );
+}
+
+// Card escuro pra organizar visualmente cada bloco do drawer — achado real
+// 25/08 (feedback do Kauã comparando com o drawer antigo do CRM legado):
+// seções soltas sem nenhuma caixa ficaram "poluídas"/"bagunçadas" quando
+// empilhadas muitas seguidas; uma caixa por bloco (sem virar tabela cheia
+// de borda interna) resolve sem voltar ao visual antigo carregado.
+function Cf2DarkCard({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="rounded-[var(--cf2-radius-md)] p-4" style={{ background: "var(--cf2-chrome-surface-active)" }}>
+      {children}
+    </div>
+  );
+}
+
+// Resumo itemizado da proposta — mesmo formato que o drawer antigo (ver
+// components/crm/NegocioDrawer.tsx) que o Kauã pediu de volta: item a item,
+// depois "Rec: X/mês · Avulso: Y" e "Total: Z", com link pra proposta cheia.
+function PropostaResumo({ proposta }: { proposta: Proposta }) {
+  const display = resolvePropostaDisplay(proposta);
+  const tomColor: Record<string, string> = { success: SUCCESS_DARK, danger: "#f87171", warning: WARNING_DARK, neutral: "var(--cf2-chrome-text-secondary)" };
+  const rec = parseFloat(proposta.totalRecorrente || "0") || 0;
+  const avulso = parseFloat(proposta.totalAvulso || "0") || 0;
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[12px] font-medium font-mono" style={{ color: "var(--cf2-chrome-text-primary)" }}>#P-{String(proposta.numero).padStart(3, "0")}-v{proposta.versao}</span>
+        <span className="text-[11px] px-1.5 py-0.5 rounded-full font-medium shrink-0" style={{ background: `color-mix(in srgb, ${tomColor[display.tom]} 18%, transparent)`, color: tomColor[display.tom] }}>{display.label}</span>
+      </div>
+      {proposta.itens && proposta.itens.length > 0 && (
+        <div className="flex flex-col gap-1">
+          {proposta.itens.map((item) => (
+            <div key={item.id} className="flex items-center justify-between gap-2 text-[12px]">
+              <span className="truncate" style={{ color: "var(--cf2-chrome-text-secondary)" }}>{item.nome}</span>
+              <span className="shrink-0" style={{ color: "var(--cf2-chrome-text-primary)" }}>{brl(item.subtotal)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="flex items-center justify-between gap-2 pt-1.5 border-t text-[12px]" style={{ borderColor: "var(--cf2-chrome-border-subtle)" }}>
+        <span style={{ color: "var(--cf2-chrome-text-secondary)" }}>
+          {rec > 0 && `Rec: ${brl(proposta.totalRecorrente)}/mês`}
+          {rec > 0 && avulso > 0 && " · "}
+          {avulso > 0 && `Avulso: ${brl(proposta.totalAvulso)}`}
+        </span>
+        <span className="font-semibold shrink-0" style={{ color: "var(--cf2-chrome-text-primary)" }}>Total: {brl(proposta.totalGeral)}</span>
+      </div>
+      <Link href={`/propostas/${proposta.id}`} className="text-[12px] font-medium text-center" style={{ color: SUCCESS_DARK }}>Ver proposta completa</Link>
+    </div>
   );
 }
 
 function QuickAction({ icon: Icon, label, href, onClick }: { icon: typeof Phone; label: string; href?: string; onClick?: () => void }) {
   const disabled = !href && !onClick;
-  const cls = "flex items-center justify-center gap-1.5 h-10 px-3 rounded-xl text-[13px] font-semibold";
-  const style = { border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)", opacity: disabled ? 0.4 : 1 };
+  const cls = "flex items-center justify-center gap-1.5 h-9 px-3 rounded-[var(--cf2-radius-md)] text-[13px] font-medium transition-colors hover:bg-white/[0.06]";
+  const style = { border: "1px solid var(--cf2-chrome-border-subtle)", color: "var(--cf2-chrome-text-primary)", opacity: disabled ? 0.4 : 1 };
   if (href && !disabled) return <Link href={href} className={cls} style={style}><Icon className="w-4 h-4" /> {label}</Link>;
   return <button onClick={onClick} disabled={disabled} className={cls} style={style}><Icon className="w-4 h-4" /> {label}</button>;
-}
-
-function KV({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between gap-3">
-      <span style={{ color: "var(--cf2-text-tertiary)" }}>{label}</span>
-      <span className="font-semibold text-right truncate max-w-[220px]" style={{ color: "var(--cf2-text-primary)" }}>{value}</span>
-    </div>
-  );
 }
 
 const TIPO_LABEL: Record<string, string> = { ligacao: "Ligação", whatsapp: "WhatsApp", email: "E-mail", nota: "Nota", reuniao: "Reunião" };
@@ -360,16 +562,16 @@ function TimelineFeed({ tab, data }: { tab: Tab; data: { atividades: Atividade[]
       : []),
   ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-  if (feed.length === 0) return <p className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>Nada por aqui ainda.</p>;
+  if (feed.length === 0) return <p className="text-[12px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Nada por aqui ainda.</p>;
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col">
       {feed.map((e) => (
-        <div key={e.id} className="flex flex-col gap-1 p-2.5 rounded-xl" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
+        <div key={e.id} className="flex flex-col gap-1 py-2.5 border-b" style={{ borderColor: "var(--cf2-chrome-border-subtle)" }}>
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold" style={{ color: "var(--cf2-text-tertiary)" }}>{new Date(e.createdAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}{e.autor ? ` · ${e.autor}` : ""}</span>
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold" style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-secondary)" }}>{TIPO_LABEL[e.tipo] || e.tipo}</span>
+            <span className="text-[11px] font-medium" style={{ color: "var(--cf2-chrome-text-secondary)" }}>{new Date(e.createdAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}{e.autor ? ` · ${e.autor}` : ""}</span>
+            <span className="text-[10px] font-semibold" style={{ color: "var(--cf2-chrome-text-secondary)" }}>{TIPO_LABEL[e.tipo] || e.tipo}</span>
           </div>
-          <p className="text-[12px]" style={{ color: "var(--cf2-text-primary)" }}>{e.titulo}</p>
+          <p className="text-[12px]" style={{ color: "var(--cf2-chrome-text-primary)" }}>{e.titulo}</p>
         </div>
       ))}
     </div>

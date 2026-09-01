@@ -1305,6 +1305,16 @@ export const propostas = pgTable(
     dataValidade: date("data_validade"),
     observacoes: text("observacoes"),
     condicoesPagamento: text("condicoes_pagamento"),
+    // Condição de pagamento ESTRUTURADA (25/08, pedido do Kauã — billing
+    // avançado). `condicoesPagamento` (texto livre acima) continua existindo
+    // pra observação extra; estes 3 campos é o que o checkout Stripe de fato
+    // usa pra decidir payment_method_types e o vencimento do boleto (ver
+    // stripe-checkout.ts). null/undefined preserva o comportamento atual
+    // (Stripe decide pelos métodos habilitados na conta, boleto com os 3
+    // dias padrão) — zero regressão em proposta que não usa o campo novo.
+    condicaoPagamentoTipo: text("condicao_pagamento_tipo"), // cartao | boleto | boleto_parcelado | outro
+    parcelas: integer("parcelas").default(1),
+    vencimentoDias: integer("vencimento_dias"),
     // Prazo informado pelo vendedor antes do envio quando a composição exige
     // contrato. Não existe default: prazo jurídico precisa ser explícito.
     prazoContratoMeses: integer("prazo_contrato_meses"),
@@ -1650,6 +1660,10 @@ export const contatos = pgTable(
     // canônica do canal; estes campos evitam criar uma tabela paralela de inbox.
     status: text("status").default("open").notNull(), // open | closed
     snoozedUntil: timestamp("snoozed_until", { withTimezone: true }),
+    botSilencedUntil: timestamp("bot_silenced_until", { withTimezone: true }),
+    activeAiAgentId: uuid("active_ai_agent_id").references((): AnyPgColumn => aiAgents.id, { onDelete: "set null" }),
+    activeAiIntent: text("active_ai_intent"),
+    activeAiAgentSetAt: timestamp("active_ai_agent_set_at", { withTimezone: true }),
     closedAt: timestamp("closed_at", { withTimezone: true }),
     closedById: uuid("closed_by_id").references(() => usuarios.id),
     // Vínculo CRM
@@ -1831,8 +1845,11 @@ export const aiAgents = pgTable("ai_agents", {
   slug: text("slug").notNull(),
   descricao: text("descricao"),
   finalidade: text("finalidade").notNull().default("atendimento"),
+  kind: text("kind").notNull().default("mcp_agent"), // rag_bot | mcp_agent
   prioridade: integer("prioridade").default(100).notNull(),
   status: text("status").default("draft").notNull(), // draft | published | paused | archived
+  publishedVersionId: uuid("published_version_id").references((): AnyPgColumn => aiAgentVersions.id, { onDelete: "set null" }),
+  archivedAt: timestamp("archived_at", { withTimezone: true }),
   createdById: uuid("created_by_id").references(() => usuarios.id),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
@@ -1841,21 +1858,90 @@ export const aiAgents = pgTable("ai_agents", {
   index("idx_ai_agents_org_status").on(table.organizacaoId, table.status),
 ]);
 
+// Catálogo global e credenciais BYOK tenant-scoped. O segredo é AES-GCM em
+// base64 (ciphertext/iv/tag separados); endpoints de leitura nunca selecionam
+// estes três campos, somente last4/estado de validação.
+export const aiModels = pgTable("ai_models", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  provider: text("provider").notNull(),
+  modelId: text("model_id").notNull(),
+  displayName: text("display_name").notNull(),
+  description: text("description"),
+  contextWindow: integer("context_window"),
+  inputPricePerMillion: decimal("input_price_per_million", { precision: 12, scale: 6 }),
+  outputPricePerMillion: decimal("output_price_per_million", { precision: 12, scale: 6 }),
+  supportsTools: boolean("supports_tools").default(true).notNull(),
+  supportsVision: boolean("supports_vision").default(false).notNull(),
+  isDefaultForProvider: boolean("is_default_for_provider").default(false).notNull(),
+  deprecatedAt: timestamp("deprecated_at", { withTimezone: true }),
+  metadata: jsonb("metadata").default({}).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("uq_ai_models_provider_model").on(table.provider, table.modelId),
+  index("idx_ai_models_provider").on(table.provider),
+]);
+
+export const aiProviderCredentials = pgTable("ai_provider_credentials", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id, { onDelete: "cascade" }).notNull(),
+  provider: text("provider").notNull(),
+  label: text("label").notNull(),
+  apiKeyCiphertext: text("api_key_ciphertext").notNull(),
+  apiKeyIv: text("api_key_iv").notNull(),
+  apiKeyTag: text("api_key_tag").notNull(),
+  apiKeyLast4: text("api_key_last4").notNull(),
+  encryptionVersion: integer("encryption_version").default(1).notNull(),
+  validatedAt: timestamp("validated_at", { withTimezone: true }),
+  validationError: text("validation_error"),
+  modelsAvailable: text("models_available").array(),
+  ativo: boolean("ativo").default(true).notNull(),
+  createdById: uuid("created_by_id").references(() => usuarios.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("uq_ai_provider_credentials_org_provider_label").on(table.organizacaoId, table.provider, table.label),
+  index("idx_ai_provider_credentials_org_provider").on(table.organizacaoId, table.provider),
+]);
+
+export const aiPurposeBindings = pgTable("ai_purpose_bindings", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id, { onDelete: "cascade" }).notNull(),
+  purpose: text("purpose").notNull(),
+  provider: text("provider").notNull(),
+  credentialId: uuid("credential_id").references(() => aiProviderCredentials.id, { onDelete: "set null" }),
+  modelId: text("model_id").notNull(),
+  baseUrl: text("base_url"),
+  ativo: boolean("ativo").default(true).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("uq_ai_purpose_bindings_org_purpose").on(table.organizacaoId, table.purpose),
+  index("idx_ai_purpose_bindings_credential").on(table.credentialId),
+]);
+
 export const aiAgentVersions = pgTable("ai_agent_versions", {
   id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id, { onDelete: "cascade" }),
   agentId: uuid("agent_id").references(() => aiAgents.id, { onDelete: "cascade" }).notNull(),
   versao: integer("versao").notNull(),
   status: text("status").default("draft").notNull(), // draft | published | superseded
   systemPrompt: text("system_prompt").notNull().default(""),
   provider: text("provider"),
   modelo: text("modelo"),
+  credentialId: uuid("credential_id").references(() => aiProviderCredentials.id, { onDelete: "restrict" }),
+  channelSessionId: uuid("channel_session_id").references(() => whatsappSessao.id, { onDelete: "restrict" }),
   tools: jsonb("tools").default([]).notNull(),
   triggerConfig: jsonb("trigger_config").default({}).notNull(),
   handoffConfig: jsonb("handoff_config").default({}).notNull(),
   knowledgeConfig: jsonb("knowledge_config").default({}).notNull(),
+  guardrailConfig: jsonb("guardrail_config").default({}).notNull(),
   maxSteps: integer("max_steps").default(8).notNull(),
   tokenBudget: integer("token_budget").default(4000).notNull(),
   costBudget: decimal("cost_budget", { precision: 10, scale: 4 }),
+  historyMessageWindow: integer("history_message_window").default(20).notNull(),
+  historyTokenWindow: integer("history_token_window").default(8000).notNull(),
+  casesEnabled: boolean("cases_enabled").default(false).notNull(),
+  supersededAt: timestamp("superseded_at", { withTimezone: true }),
   createdById: uuid("created_by_id").references(() => usuarios.id),
   publishedAt: timestamp("published_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -1872,13 +1958,22 @@ export const aiAgentRuns = pgTable("ai_agent_runs", {
   contatoId: uuid("contato_id").references(() => contatos.id),
   leadId: uuid("lead_id").references(() => leads.id),
   sourceMessageId: uuid("source_message_id").references(() => whatsappMensagens.id),
+  outboundMessageId: uuid("outbound_message_id").references(() => whatsappMensagens.id),
+  channelSessionId: uuid("channel_session_id").references(() => whatsappSessao.id),
+  correlationId: uuid("correlation_id"),
   modo: text("modo").default("live").notNull(), // dry_run | live
   status: text("status").notNull(), // queued | running | completed | failed | handed_off
   input: jsonb("input"),
   trace: jsonb("trace").default([]).notNull(),
   tokens: integer("tokens").default(0).notNull(),
+  tokensInput: integer("tokens_input").default(0).notNull(),
+  tokensOutput: integer("tokens_output").default(0).notNull(),
   custo: decimal("custo", { precision: 10, scale: 4 }),
   erro: text("erro"),
+  errorCode: text("error_code"),
+  abortReason: text("abort_reason"),
+  latencyMs: integer("latency_ms"),
+  stepsCount: integer("steps_count").default(0).notNull(),
   handoffMotivo: text("handoff_motivo"),
   startedAt: timestamp("started_at", { withTimezone: true }).defaultNow().notNull(),
   completedAt: timestamp("completed_at", { withTimezone: true }),
@@ -1886,6 +1981,338 @@ export const aiAgentRuns = pgTable("ai_agent_runs", {
   index("idx_ai_agent_runs_org_started").on(table.organizacaoId, table.startedAt),
   index("idx_ai_agent_runs_agent").on(table.agentId, table.startedAt),
   index("idx_ai_agent_runs_contato").on(table.contatoId, table.startedAt),
+  uniqueIndex("uq_ai_agent_runs_one_live_per_contact").on(table.contatoId).where(sql`${table.status} = 'running' AND ${table.modo} = 'live' AND ${table.contatoId} IS NOT NULL`),
+]);
+
+export const aiAgentRunSteps = pgTable("ai_agent_run_steps", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id, { onDelete: "cascade" }).notNull(),
+  runId: uuid("run_id").references(() => aiAgentRuns.id, { onDelete: "cascade" }).notNull(),
+  sequence: integer("sequence").notNull(),
+  kind: text("kind").notNull(), // model_call | tool_call | guardrail | egress | handoff
+  name: text("name"),
+  status: text("status").notNull(), // running | completed | failed | blocked
+  input: jsonb("input"),
+  output: jsonb("output"),
+  tokensInput: integer("tokens_input").default(0).notNull(),
+  tokensOutput: integer("tokens_output").default(0).notNull(),
+  custo: decimal("custo", { precision: 10, scale: 4 }),
+  latencyMs: integer("latency_ms"),
+  errorCode: text("error_code"),
+  errorMessage: text("error_message"),
+  startedAt: timestamp("started_at", { withTimezone: true }).defaultNow().notNull(),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+}, (table) => [
+  uniqueIndex("uq_ai_agent_run_steps_sequence").on(table.runId, table.sequence),
+  index("idx_ai_agent_run_steps_org_started").on(table.organizacaoId, table.startedAt),
+]);
+
+export const aiSendLedger = pgTable("ai_send_ledger", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id, { onDelete: "cascade" }).notNull(),
+  runId: uuid("run_id").references(() => aiAgentRuns.id, { onDelete: "cascade" }).notNull(),
+  sequence: integer("sequence").notNull(),
+  bodyHash: text("body_hash").notNull(),
+  channel: text("channel").notNull(),
+  status: text("status").default("pending").notNull(),
+  externalMessageId: text("external_message_id"),
+  attempts: integer("attempts").default(0).notNull(),
+  lastError: text("last_error"),
+  sentAt: timestamp("sent_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("uq_ai_send_ledger_run_sequence").on(table.runId, table.sequence),
+  index("idx_ai_send_ledger_org_created").on(table.organizacaoId, table.createdAt),
+]);
+
+export const aiAlerts = pgTable("ai_alerts", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id, { onDelete: "cascade" }),
+  kind: text("kind").notNull(), // handoff | budget_exceeded | run_dead | credential | guardrail | other
+  severity: text("severity").default("warning").notNull(), // info | warning | critical
+  title: text("title").notNull(),
+  body: text("body"),
+  refKind: text("ref_kind"),
+  refId: uuid("ref_id"),
+  status: text("status").default("open").notNull(), // open | acknowledged | resolved
+  acknowledgedById: uuid("acknowledged_by_id").references(() => usuarios.id),
+  acknowledgedAt: timestamp("acknowledged_at", { withTimezone: true }),
+  resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("idx_ai_alerts_org_status_created").on(table.organizacaoId, table.status, table.createdAt),
+]);
+
+export const aiUsageBudgets = pgTable("ai_usage_budgets", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id, { onDelete: "cascade" }).notNull(),
+  agentId: uuid("agent_id").references(() => aiAgents.id, { onDelete: "cascade" }),
+  provider: text("provider"),
+  period: text("period").default("monthly").notNull(), // daily | monthly
+  tokenLimit: integer("token_limit"),
+  costLimit: decimal("cost_limit", { precision: 12, scale: 4 }),
+  warningPercent: integer("warning_percent").default(80).notNull(),
+  hardStop: boolean("hard_stop").default(true).notNull(),
+  ativo: boolean("ativo").default(true).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("idx_ai_usage_budgets_org").on(table.organizacaoId),
+  index("idx_ai_usage_budgets_agent").on(table.agentId),
+]);
+
+export const aiRouters = pgTable("ai_routers", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id, { onDelete: "cascade" }).notNull(),
+  nome: text("nome").notNull(),
+  channelSessionId: uuid("channel_session_id").references(() => whatsappSessao.id, { onDelete: "cascade" }).notNull(),
+  ativo: boolean("ativo").default(true).notNull(),
+  config: jsonb("config").default({ classifierModel: null, sticky: true, minConfidence: 0.6 }).notNull(),
+  fallbackAgentId: uuid("fallback_agent_id").references(() => aiAgents.id, { onDelete: "set null" }),
+  createdById: uuid("created_by_id").references(() => usuarios.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("idx_ai_routers_org").on(table.organizacaoId),
+  uniqueIndex("uq_ai_routers_active_session").on(table.channelSessionId).where(sql`${table.ativo} = true`),
+]);
+
+export const aiRouterMembers = pgTable("ai_router_members", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id, { onDelete: "cascade" }).notNull(),
+  routerId: uuid("router_id").references(() => aiRouters.id, { onDelete: "cascade" }).notNull(),
+  agentId: uuid("agent_id").references(() => aiAgents.id, { onDelete: "cascade" }).notNull(),
+  intentName: text("intent_name").notNull(),
+  intentDescription: text("intent_description").notNull(),
+  examples: text("examples").array().default([]).notNull(),
+  position: integer("position").default(0).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("uq_ai_router_members_intent").on(table.routerId, table.intentName),
+  index("idx_ai_router_members_router_position").on(table.routerId, table.position),
+]);
+
+export const aiRouterDecisions = pgTable("ai_router_decisions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id, { onDelete: "cascade" }).notNull(),
+  routerId: uuid("router_id").references(() => aiRouters.id, { onDelete: "set null" }),
+  contatoId: uuid("contato_id").references(() => contatos.id, { onDelete: "set null" }),
+  intentName: text("intent_name"),
+  confidence: decimal("confidence", { precision: 4, scale: 3 }),
+  agentId: uuid("agent_id").references(() => aiAgents.id, { onDelete: "set null" }),
+  outcome: text("outcome").notNull(), // classified | sticky | reclassified | fallback | no_match | classifier_failed
+  correlationId: uuid("correlation_id"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("idx_ai_router_decisions_org_created").on(table.organizacaoId, table.createdAt),
+  index("idx_ai_router_decisions_router_created").on(table.routerId, table.createdAt),
+]);
+
+export const aiKnowledgeSources = pgTable("ai_knowledge_sources", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id, { onDelete: "cascade" }).notNull(),
+  nome: text("nome").notNull(),
+  sourceType: text("source_type").notNull(), // text | url | file | faq
+  sourceUri: text("source_uri"),
+  mimeType: text("mime_type"),
+  checksum: text("checksum"),
+  status: text("status").default("pending").notNull(), // pending | indexing | ready | failed | archived
+  errorMessage: text("error_message"),
+  metadata: jsonb("metadata").default({}).notNull(),
+  createdById: uuid("created_by_id").references(() => usuarios.id),
+  indexedAt: timestamp("indexed_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("idx_ai_knowledge_sources_org_status").on(table.organizacaoId, table.status),
+]);
+
+export const aiKnowledgeVersions = pgTable("ai_knowledge_versions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id, { onDelete: "cascade" }).notNull(),
+  sourceId: uuid("source_id").references(() => aiKnowledgeSources.id, { onDelete: "cascade" }).notNull(),
+  versionNumber: integer("version_number").notNull(),
+  content: text("content").notNull(),
+  chunkCount: integer("chunk_count").default(0).notNull(),
+  status: text("status").default("draft").notNull(), // draft | published | superseded
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("uq_ai_knowledge_versions_source_number").on(table.sourceId, table.versionNumber),
+  index("idx_ai_knowledge_versions_org").on(table.organizacaoId),
+]);
+
+export const aiKnowledgeChunks = pgTable("ai_knowledge_chunks", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id, { onDelete: "cascade" }).notNull(),
+  versionId: uuid("version_id").references(() => aiKnowledgeVersions.id, { onDelete: "cascade" }).notNull(),
+  sequence: integer("sequence").notNull(),
+  content: text("content").notNull(),
+  tokenCount: integer("token_count"),
+  embedding: jsonb("embedding"),
+  metadata: jsonb("metadata").default({}).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("uq_ai_knowledge_chunks_version_sequence").on(table.versionId, table.sequence),
+  index("idx_ai_knowledge_chunks_org").on(table.organizacaoId),
+]);
+
+export const aiKnowledgeSearches = pgTable("ai_knowledge_searches", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id, { onDelete: "cascade" }).notNull(),
+  runId: uuid("run_id").references(() => aiAgentRuns.id, { onDelete: "set null" }),
+  knowledgeVersionId: uuid("knowledge_version_id").references(() => aiKnowledgeVersions.id, { onDelete: "set null" }),
+  hits: integer("hits").default(0).notNull(),
+  topScore: decimal("top_score", { precision: 8, scale: 6 }),
+  threshold: decimal("threshold", { precision: 8, scale: 6 }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("idx_ai_knowledge_searches_org_created").on(table.organizacaoId, table.createdAt),
+]);
+
+export const aiMemoryVersions = pgTable("ai_memory_versions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id, { onDelete: "cascade" }).notNull(),
+  versionNumber: integer("version_number").notNull(),
+  content: text("content").notNull(),
+  createdById: uuid("created_by_id").references(() => usuarios.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("uq_ai_memory_versions_org_number").on(table.organizacaoId, table.versionNumber),
+]);
+
+export const aiMemoryPointers = pgTable("ai_memory_pointers", {
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id, { onDelete: "cascade" }).primaryKey(),
+  versionId: uuid("version_id").references(() => aiMemoryVersions.id, { onDelete: "restrict" }).notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const aiMemoryEntries = pgTable("ai_memory_entries", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id, { onDelete: "cascade" }).notNull(),
+  title: text("title").notNull(),
+  body: text("body").notNull(),
+  source: text("source").notNull(), // manual | flywheel | agent
+  status: text("status").default("active").notNull(), // proposed | active | archived
+  createdById: uuid("created_by_id").references(() => usuarios.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("idx_ai_memory_entries_org_status").on(table.organizacaoId, table.status, table.createdAt),
+]);
+
+export const aiSkillVersions = pgTable("ai_skill_versions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  versionNumber: integer("version_number").notNull(),
+  description: text("description"),
+  instructions: text("instructions").notNull(),
+  manifest: jsonb("manifest").default([]).notNull(),
+  forkedFromVersionId: uuid("forked_from_version_id").references((): AnyPgColumn => aiSkillVersions.id, { onDelete: "set null" }),
+  createdById: uuid("created_by_id").references(() => usuarios.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("uq_ai_skill_versions_org_name_number").on(table.organizacaoId, table.name, table.versionNumber),
+  index("idx_ai_skill_versions_name").on(table.name),
+]);
+
+export const aiSkillPointers = pgTable("ai_skill_pointers", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id, { onDelete: "cascade" }).notNull(),
+  name: text("name").notNull(),
+  versionId: uuid("version_id").references(() => aiSkillVersions.id, { onDelete: "restrict" }).notNull(),
+  ativo: boolean("ativo").default(true).notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("uq_ai_skill_pointers_org_name").on(table.organizacaoId, table.name),
+]);
+
+export const aiSkillActivations = pgTable("ai_skill_activations", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id, { onDelete: "cascade" }).notNull(),
+  skillName: text("skill_name").notNull(),
+  skillVersionId: uuid("skill_version_id").references(() => aiSkillVersions.id, { onDelete: "set null" }),
+  runId: uuid("run_id").references(() => aiAgentRuns.id, { onDelete: "set null" }),
+  trigger: text("trigger").notNull(), // hard | probe
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("idx_ai_skill_activations_org_created").on(table.organizacaoId, table.createdAt),
+]);
+
+export const aiCases = pgTable("ai_cases", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id, { onDelete: "cascade" }).notNull(),
+  contatoId: uuid("contato_id").references(() => contatos.id, { onDelete: "cascade" }).notNull(),
+  leadId: uuid("lead_id").references(() => leads.id, { onDelete: "set null" }),
+  agentId: uuid("agent_id").references(() => aiAgents.id, { onDelete: "set null" }),
+  runId: uuid("run_id").references(() => aiAgentRuns.id, { onDelete: "set null" }),
+  status: text("status").default("awaiting_human").notNull(), // awaiting_human | awaiting_contact | resolved | escalated | cancelled
+  title: text("title").notNull(),
+  summary: text("summary").notNull(),
+  blocker: text("blocker").notNull(),
+  contextSnapshot: jsonb("context_snapshot").default({}).notNull(),
+  source: text("source").default("agent").notNull(),
+  followupAttempts: integer("followup_attempts").default(0).notNull(),
+  openedAt: timestamp("opened_at", { withTimezone: true }).defaultNow().notNull(),
+  closedAt: timestamp("closed_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("idx_ai_cases_org_status").on(table.organizacaoId, table.status),
+  index("idx_ai_cases_contato").on(table.organizacaoId, table.contatoId),
+]);
+
+export const aiCaseEvents = pgTable("ai_case_events", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id, { onDelete: "cascade" }).notNull(),
+  caseId: uuid("case_id").references(() => aiCases.id, { onDelete: "cascade" }).notNull(),
+  kind: text("kind").notNull(),
+  actorKind: text("actor_kind").notNull(), // agent | human | system | contact
+  actorUserId: uuid("actor_user_id").references(() => usuarios.id, { onDelete: "set null" }),
+  humanAction: text("human_action"),
+  body: text("body"),
+  metadata: jsonb("metadata").default({}).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("idx_ai_case_events_case_created").on(table.caseId, table.createdAt),
+]);
+
+export const aiContactFieldProposals = pgTable("ai_contact_field_proposals", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id, { onDelete: "cascade" }).notNull(),
+  contatoId: uuid("contato_id").references(() => contatos.id, { onDelete: "cascade" }).notNull(),
+  campo: text("campo").notNull(), // email | nome | telefone
+  valorProposto: text("valor_proposto").notNull(),
+  valorAnterior: text("valor_anterior"),
+  messageId: uuid("message_id").references(() => whatsappMensagens.id, { onDelete: "set null" }),
+  trecho: text("trecho"),
+  proposedByAgentId: uuid("proposed_by_agent_id").references(() => aiAgents.id, { onDelete: "set null" }),
+  status: text("status").default("pending").notNull(), // pending | accepted | dismissed | expired
+  proposedAt: timestamp("proposed_at", { withTimezone: true }).defaultNow().notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  decidedAt: timestamp("decided_at", { withTimezone: true }),
+  decidedByUserId: uuid("decided_by_user_id").references(() => usuarios.id, { onDelete: "set null" }),
+  motivoRecusa: text("motivo_recusa"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("uq_ai_contact_field_proposals_pending").on(table.organizacaoId, table.contatoId, table.campo).where(sql`${table.status} = 'pending'`),
+  index("idx_ai_contact_field_proposals_expiring").on(table.organizacaoId, table.expiresAt),
+]);
+
+export const aiImprovementProposals = pgTable("ai_improvement_proposals", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id, { onDelete: "cascade" }).notNull(),
+  type: text("type").notNull(), // playbook | skill | memory | golden_case
+  title: text("title").notNull(),
+  content: jsonb("content").notNull(),
+  evidence: jsonb("evidence").default({}).notNull(),
+  status: text("status").default("proposed").notNull(), // proposed | accepted | rejected
+  decidedById: uuid("decided_by_id").references(() => usuarios.id),
+  decidedAt: timestamp("decided_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("idx_ai_improvement_proposals_org_status").on(table.organizacaoId, table.status, table.createdAt),
 ]);
 
 // ─── AI SDR CONTATO STATE (per-contact AI state) ────────────────
@@ -2234,6 +2661,18 @@ export const fulfillmentItens = pgTable(
     // do fulfillment como fallback SÓ na exibição, nunca grava esse fallback
     // aqui.
     responsavelId: uuid("responsavel_id").references(() => usuarios.id),
+    // Prazo/prioridade por item (26/08, redesign da tela de Implantação
+    // PABX — antes só existia `fulfillments.targetAt` no nível do projeto
+    // todo; de propósito não existia por item até ter um pedido real de UI
+    // que precisasse disso, que é este). Texto livre pra prioridade, mesmo
+    // padrão de `status`/`blockerType` — sem enum de banco.
+    dueDate: timestamp("due_date", { withTimezone: true }),
+    priority: text("priority"), // alta | media | baixa
+    // Setado só na transição PARA BLOCKED (mesmo padrão de completedAt/
+    // completedBy na transição pra DONE) — "desde quando" no bloco de
+    // Bloqueios não pode depender de updatedAt (muda em qualquer edição).
+    blockedAt: timestamp("blocked_at", { withTimezone: true }),
+    blockerImpact: text("blocker_impact"), // alto | medio | baixo — só relevante quando status=BLOCKED
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
@@ -2429,6 +2868,32 @@ export const anexosLegado = pgTable("anexos_legado", {
   index("idx_anexos_legado_org").on(table.organizacaoId),
   uniqueIndex("idx_anexos_legado_zoho_dedup").on(table.organizacaoId, table.zohoId).where(sql`zoho_id IS NOT NULL`),
 ]);
+
+// ─── ANEXOS (upload real, 25/08) ────────────────────────────
+// Diferente de `anexosLegado` (histórico Zoho, read-only, arquivo físico
+// pode não existir neste ambiente): estes são uploads REAIS feitos pelo
+// time direto no CRM (nota, negócio, etc.), salvos em `UPLOADS_DIR` —
+// mesmo mecanismo já usado pra avatar de perfil (`api-server/routes/perfil.ts`).
+export const anexos = pgTable(
+  "anexos",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+    negocioId: uuid("negocio_id").references(() => negocios.id, { onDelete: "cascade" }),
+    notaId: uuid("nota_id").references(() => notas.id, { onDelete: "cascade" }),
+    nomeArquivo: text("nome_arquivo").notNull(),
+    url: text("url").notNull(),
+    tipoMime: text("tipo_mime"),
+    tamanhoBytes: integer("tamanho_bytes"),
+    criadoPorId: uuid("criado_por_id").references(() => usuarios.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_anexos_negocio").on(table.negocioId),
+    index("idx_anexos_nota").on(table.notaId),
+    index("idx_anexos_org").on(table.organizacaoId),
+  ]
+);
 
 export const legacyProvenance = pgTable("legacy_provenance", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -2813,6 +3278,9 @@ export const cadenceDefinitions = pgTable("cadence_definitions", {
   // adapter (nome registrado, ex: "whatsapp_message"|"ai_agent_message"), config, branches, retry}
   steps: jsonb("steps").notNull(),
   draftSteps: jsonb("draft_steps"),
+  triggerConfig: jsonb("trigger_config").default({}).notNull(),
+  handoffPolicy: jsonb("handoff_policy").default({ mode: "pause_on_reply" }).notNull(),
+  status: text("status").default("draft").notNull(), // draft | published | disabled | archived
   versao: integer("versao").default(1).notNull(),
   publishedAt: timestamp("published_at", { withTimezone: true }),
   ativo: boolean("ativo").default(true).notNull(),
@@ -2820,15 +3288,51 @@ export const cadenceDefinitions = pgTable("cadence_definitions", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
+export const cadenceVersions = pgTable("cadence_versions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id, { onDelete: "cascade" }).notNull(),
+  cadenceDefinitionId: uuid("cadence_definition_id").references(() => cadenceDefinitions.id, { onDelete: "cascade" }).notNull(),
+  versionNumber: integer("version_number").notNull(),
+  status: text("status").default("draft").notNull(), // draft | published | superseded
+  graph: jsonb("graph").notNull(),
+  compiledSteps: jsonb("compiled_steps").notNull(),
+  triggerConfig: jsonb("trigger_config").default({}).notNull(),
+  handoffPolicy: jsonb("handoff_policy").default({ mode: "pause_on_reply" }).notNull(),
+  validationSnapshot: jsonb("validation_snapshot").default({}).notNull(),
+  createdById: uuid("created_by_id").references(() => usuarios.id),
+  publishedAt: timestamp("published_at", { withTimezone: true }),
+  supersededAt: timestamp("superseded_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("uq_cadence_versions_definition_number").on(table.cadenceDefinitionId, table.versionNumber),
+  index("idx_cadence_versions_org_status").on(table.organizacaoId, table.status),
+]);
+
+export const cadenceDefinitionPointers = pgTable("cadence_definition_pointers", {
+  cadenceDefinitionId: uuid("cadence_definition_id").references(() => cadenceDefinitions.id, { onDelete: "cascade" }).primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id, { onDelete: "cascade" }).notNull(),
+  draftVersionId: uuid("draft_version_id").references(() => cadenceVersions.id, { onDelete: "set null" }),
+  publishedVersionId: uuid("published_version_id").references(() => cadenceVersions.id, { onDelete: "set null" }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("idx_cadence_definition_pointers_org").on(table.organizacaoId),
+]);
+
 export const cadenceEnrollments = pgTable("cadence_enrollments", {
   id: uuid("id").defaultRandom().primaryKey(),
   organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
   cadenceDefinitionId: uuid("cadence_definition_id").references(() => cadenceDefinitions.id, { onDelete: "cascade" }).notNull(),
+  cadenceVersionId: uuid("cadence_version_id").references(() => cadenceVersions.id, { onDelete: "restrict" }),
   entityType: text("entity_type").notNull(),
   entityId: uuid("entity_id").notNull(),
   currentStepId: text("current_step_id"), // null antes do 1º step
+  currentNodeId: text("current_node_id"),
   status: text("status").notNull().default("active"), // active | waiting | completed | cancelled | failed
   scheduledAt: timestamp("scheduled_at", { withTimezone: true }), // próxima execução devida
+  nextEvalAt: timestamp("next_eval_at", { withTimezone: true }),
+  claimedUntil: timestamp("claimed_until", { withTimezone: true }),
+  lastInboundAt: timestamp("last_inbound_at", { withTimezone: true }),
+  handoffSnapshot: jsonb("handoff_snapshot"),
   vars: jsonb("vars").default({}), // contexto acumulado (resolvido pelo caller: nome, empresa, telefone, etc)
   attempt: integer("attempt").default(0).notNull(), // tentativas do step ATUAL (retry)
   startedAt: timestamp("started_at", { withTimezone: true }).defaultNow().notNull(),
@@ -2838,6 +3342,7 @@ export const cadenceEnrollments = pgTable("cadence_enrollments", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   index("idx_cadence_enrollments_scheduled").on(table.status, table.scheduledAt),
+  index("idx_cadence_enrollments_due").on(table.status, table.nextEvalAt, table.claimedUntil),
   index("idx_cadence_enrollments_entity").on(table.entityType, table.entityId),
   index("idx_cadence_enrollments_org").on(table.organizacaoId),
 ]);

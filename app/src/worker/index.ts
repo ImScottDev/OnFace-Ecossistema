@@ -786,8 +786,38 @@ async function handleAiSdrResponse(params: {
   sessaoId: string | null;
   currentMessage: string;
   phone: string;
+  sourceMessageId?: string | null;
 }) {
-  const { contatoId, contatoNome, leadId, organizacaoId, sessaoId, currentMessage, phone } = params;
+  const { contatoId, contatoNome, leadId, organizacaoId, sessaoId, currentMessage, phone, sourceMessageId } = params;
+
+  // Callpilot nativo (port Deskcomm, P0 #1 — ver docs/reconstruction/DESKCOMM-AI-NATIVE-PORT-2026-08-24.md):
+  // se a organização tem agente publicado elegível para este evento, o runtime novo assume a
+  // conversa e o legado abaixo nem roda. Se o agente nativo existir mas falhar de verdade, NÃO
+  // cai no legado por baixo — geraria resposta duplicada/incoerente; a falha fica registrada no
+  // run (ai_agent_runs) pra aparecer em Execuções/Alertas.
+  try {
+    const { executeAgent, NoEligibleAgentError } = await import("../lib/ai-platform/runtime/execute-agent");
+    try {
+      await executeAgent({
+        organizacaoId,
+        eventType: "conversation.message_received",
+        message: currentMessage,
+        contatoId,
+        leadId,
+        sourceMessageId: sourceMessageId ?? null,
+        mode: "live",
+      });
+      return;
+    } catch (err) {
+      if (!(err instanceof NoEligibleAgentError)) {
+        console.error(`[Callpilot] Falha na execução do agente nativo para contato ${contatoId} (sem fallback pro legado, evita resposta duplicada):`, err);
+        return;
+      }
+      // Sem agente nativo publicado elegível — segue fluxo legado abaixo, sem mudança de comportamento.
+    }
+  } catch (importErr) {
+    console.error(`[Callpilot] Falha ao carregar runtime nativo, seguindo fluxo legado:`, importErr);
+  }
 
   const {
     aiSdrConfig: aiSdrConfigT, aiSdrContatoState: stateT, aiSdrLogs: logsT,
@@ -2217,7 +2247,7 @@ const whatsappIncomingWorker = new Worker(
       }
     }
 
-    await db.insert(whatsappMensagens).values({
+    const [inboundMsgRow] = await db.insert(whatsappMensagens).values({
       contatoId: contato.id,
       leadId: contato.leadId || undefined,
       sessaoId: sessaoId || null,
@@ -2230,7 +2260,7 @@ const whatsappIncomingWorker = new Worker(
       uazapiMessageId: message.id || null,
       status: "received",
       statusAt: new Date(timestamp * 1000),
-    });
+    }).returning({ id: whatsappMensagens.id });
 
     // F2/dual-write (Communication Intelligence) — best-effort, nunca
     // bloqueia o processamento real da mensagem recebida.
@@ -2339,6 +2369,7 @@ const whatsappIncomingWorker = new Worker(
             sessaoId: sessaoId || null,
             currentMessage: sdrMessage,
             phone: normalized,
+            sourceMessageId: inboundMsgRow?.id ?? null,
           });
         } catch (sdrErr) {
           console.error(`[AI-SDR] Error processing for contato ${contato.id}:`, sdrErr);

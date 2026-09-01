@@ -4,7 +4,15 @@ import { eq, and, notInArray, sql } from "drizzle-orm";
 
 /**
  * Recalculates negocio financial fields (mrrEstimado, valorProjeto, valorTotal)
- * from all non-rejected/expired propostas linked to it.
+ * from all non-rejected propostas linked to it.
+ *
+ * "expirada" NÃO entra na exclusão (achado real 25/08, Kauã): expirar é só
+ * a proposta ter passado da validade sem resposta — o negócio continua
+ * aberto e o valor estimado continua valendo pra pipeline/forecast. Excluir
+ * junto com "recusada" zerava mrrEstimado/valorTotal de negócios cuja única
+ * proposta expirou, quebrando o cálculo mostrado no board. Só "recusada" é
+ * sinal real de que o cliente disse não àquele valor.
+ *
  * Call this after any proposta mutation (create, update, delete, accept, reject).
  */
 export async function syncNegocioValoresFromPropostas(negocioId: string) {
@@ -19,7 +27,7 @@ export async function syncNegocioValoresFromPropostas(negocioId: string) {
     .where(
       and(
         eq(propostas.negocioId, negocioId),
-        notInArray(propostas.status, ["recusada", "expirada"]),
+        notInArray(propostas.status, ["recusada"]),
       )
     );
 

@@ -9,7 +9,7 @@ import {
   SDR_STAGES, SDR_CLOSED_STAGES, SDR_MIRROR_KEYS, SDR_STAGNATION_STAGES,
 } from "@/lib/crm/pipeline";
 import {
-  Search, X, MoreHorizontal, Tag, Briefcase, CheckCircle2, Download, User,
+  Search, X, MoreHorizontal, Tag, Briefcase, CheckCircle2, Download,
   List as ListIcon, LayoutGrid, Globe, Megaphone, Instagram, Linkedin, UserPlus, PhoneOutgoing,
   Phone, MessageCircle, Calendar, Clock,
 } from "lucide-react";
@@ -18,6 +18,8 @@ import { EmpresaDrawer } from "@/components/crm/EmpresaDrawer";
 import { NegocioDrawer } from "@/components/crm/NegocioDrawer";
 import { Cf2AgendarReuniaoModal, type AgendarReuniaoPayload } from "./AgendarReuniaoModal";
 import { useOrgUsuarios, matchesResponsavel, matchesOrigem, buildOrigemOptions, type OrgUsuario } from "@/components/crm/BoardFilters";
+import { OwnerPicker } from "@/components/crm2/prospeccao/OwnerPicker";
+import { DarkFilterSelect, DarkItem } from "@/components/crm2/shared/DarkFilterSelect";
 
 /**
  * Board de Qualificação (cf2) — mesma lógica de negócio do legado
@@ -218,6 +220,22 @@ export function Cf2QualificacaoWorkspace() {
     onError: () => toast.error("Não foi possível qualificar o lead"),
   });
 
+  // Atribuição individual de responsável direto no card/linha (25/08,
+  // mesmo padrão já aplicado em Prospecção — "responsável em canto nenhum
+  // dá pra editar").
+  const assignOwner = useMutation({
+    mutationFn: async ({ leadId, responsavelId }: { leadId: string; responsavelId: string | null }) => {
+      const r = await fetch(`/api/leads/${leadId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ responsavelId }),
+      });
+      if (!r.ok) throw new Error("falha ao atribuir responsável");
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["pre-vendas-leads"] }); toast.success("Responsável atualizado."); },
+    onError: () => toast.error("Não foi possível atribuir o responsável"),
+  });
+
   const [agendarLead, setAgendarLead] = useState<Lead | null>(null);
 
   const handleMove = (leadId: string, targetStatus: string) => {
@@ -244,7 +262,7 @@ export function Cf2QualificacaoWorkspace() {
             dá pra dar mais visualização"). Contagem "no funil" continua
             visível no pill "Qualificação {activeCount}" das quick-tabs
             abaixo. */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-0.5">
+        <div className="flex items-center gap-2">
           <div className="relative shrink-0">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: "var(--cf2-chrome-text-secondary)" }} />
             <input
@@ -261,34 +279,39 @@ export function Cf2QualificacaoWorkspace() {
             )}
           </div>
 
-          <select value={respFilter} onChange={(e) => setRespFilter(e.target.value)} className="px-2.5 py-1.5 rounded-lg text-[12px] font-medium outline-none shrink-0 [&>option]:bg-[#1c1f26]" style={{ background: "rgba(255,255,255,0.06)", border: "1px solid var(--cf2-chrome-border-subtle)", color: "var(--cf2-chrome-text-secondary)" }}>
-            <option value="todos">Responsável: Todos</option>
-            {currentUserId && <option value="meu">Meus (eu)</option>}
-            <option value="sem">Sem responsável</option>
-            {usuarios.map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}
-          </select>
+          {/* Faixa rolável em vez de wrap — mesmo ajuste feito em Prospecção
+              25/08 (5 selects de largura variável quebravam linha de forma
+              desalinhada). */}
+          <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto cf2-hide-scrollbar">
+            <DarkFilterSelect value={respFilter} onChange={setRespFilter} label="Responsável" placeholder="Todos">
+              <DarkItem value="todos">Todos</DarkItem>
+              {currentUserId && <DarkItem value="meu">Meus (eu)</DarkItem>}
+              <DarkItem value="sem">Sem responsável</DarkItem>
+              {usuarios.map((u) => <DarkItem key={u.id} value={u.id}>{u.nome}</DarkItem>)}
+            </DarkFilterSelect>
 
-          <select value={origemFilter} onChange={(e) => setOrigemFilter(e.target.value)} className="px-2.5 py-1.5 rounded-lg text-[12px] font-medium outline-none shrink-0 [&>option]:bg-[#1c1f26]" style={{ background: "rgba(255,255,255,0.06)", border: "1px solid var(--cf2-chrome-border-subtle)", color: "var(--cf2-chrome-text-secondary)" }}>
-            <option value="todos">Origem: Todas</option>
-            {origemOptions.map((o) => <option key={o.value} value={o.value}>{o.label} ({o.count})</option>)}
-          </select>
+            <DarkFilterSelect value={origemFilter} onChange={setOrigemFilter} label="Origem" placeholder="Todas">
+              <DarkItem value="todos">Todas</DarkItem>
+              {origemOptions.map((o) => <DarkItem key={o.value} value={o.value}>{o.label} ({o.count})</DarkItem>)}
+            </DarkFilterSelect>
 
-          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="px-2.5 py-1.5 rounded-lg text-[12px] font-medium outline-none shrink-0 [&>option]:bg-[#1c1f26]" style={{ background: "rgba(255,255,255,0.06)", border: "1px solid var(--cf2-chrome-border-subtle)", color: "var(--cf2-chrome-text-secondary)" }}>
-            <option value="todos">Status: Todos</option>
-            {statusColumns.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
-          </select>
+            <DarkFilterSelect value={statusFilter} onChange={setStatusFilter} label="Status" placeholder="Todos">
+              <DarkItem value="todos">Todos</DarkItem>
+              {statusColumns.map((c) => <DarkItem key={c.key} value={c.key}>{c.label}</DarkItem>)}
+            </DarkFilterSelect>
 
-          <select value={slaFilter} onChange={(e) => setSlaFilter(e.target.value as typeof slaFilter)} className="px-2.5 py-1.5 rounded-lg text-[12px] font-medium outline-none shrink-0 [&>option]:bg-[#1c1f26]" style={{ background: "rgba(255,255,255,0.06)", border: "1px solid var(--cf2-chrome-border-subtle)", color: "var(--cf2-chrome-text-secondary)" }}>
-            <option value="todos">SLA: Todos</option>
-            <option value="dentro">Dentro do SLA</option>
-            <option value="fora">Fora do SLA</option>
-          </select>
+            <DarkFilterSelect value={slaFilter} onChange={(v) => setSlaFilter(v as typeof slaFilter)} label="SLA" placeholder="Todos">
+              <DarkItem value="todos">Todos</DarkItem>
+              <DarkItem value="dentro">Dentro do SLA</DarkItem>
+              <DarkItem value="fora">Fora do SLA</DarkItem>
+            </DarkFilterSelect>
+          </div>
 
           <button onClick={() => setShowExport(true)} title="Exportar leads: escolher responsável e etapas" className="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[12px] font-medium" style={{ background: "rgba(255,255,255,0.06)", border: "1px solid var(--cf2-chrome-border-subtle)", color: "var(--cf2-chrome-text-secondary)" }}>
             <Download className="w-3.5 h-3.5" /> Exportar
           </button>
 
-          <div className="flex gap-0.5 p-0.5 rounded-lg shrink-0 ml-auto" style={{ background: "rgba(255,255,255,0.06)" }}>
+          <div className="flex gap-0.5 p-0.5 rounded-lg shrink-0" style={{ background: "rgba(255,255,255,0.06)" }}>
             <button onClick={() => setLayout("kanban")} title="Visualização em quadro" className="p-1.5 rounded-md" style={{ background: layout === "kanban" ? "var(--cf2-chrome-surface-active)" : "transparent", color: layout === "kanban" ? "var(--cf2-chrome-text-primary)" : "var(--cf2-chrome-text-secondary)" }}>
               <LayoutGrid className="w-3.5 h-3.5" />
             </button>
@@ -306,15 +329,19 @@ export function Cf2QualificacaoWorkspace() {
           <SdrListView
             leads={filteredLeads}
             usuariosById={usuariosById}
+            usuarios={usuarios}
             onOpenLead={(id) => setDrawerLeadId(id)}
+            onAssignOwner={(leadId, userId) => assignOwner.mutate({ leadId, responsavelId: userId })}
           />
         ) : (
           <SdrKanbanView
             leads={filteredLeads}
             usuariosById={usuariosById}
+            usuarios={usuarios}
             onDrop={handleMove}
             onOpenLead={(id) => setDrawerLeadId(id)}
             onOpenNegocio={(id) => setDrawerNegocioId(id)}
+            onAssignOwner={(leadId, userId) => assignOwner.mutate({ leadId, responsavelId: userId })}
           />
         )}
       </div>
@@ -432,24 +459,16 @@ function ExportLeadsModal({ leads, usuarios, onClose, onExport }: { leads: Lead[
   );
 }
 
-function OwnerChipCf2({ nome, avatarUrl, color }: { nome?: string | null; avatarUrl?: string | null; color: string }) {
-  if (!nome) {
-    return (
-      <span className="flex items-center gap-1 text-[10px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>
-        <span className="rounded-full flex items-center justify-center shrink-0" style={{ width: 20, height: 20, border: "1px dashed var(--cf2-chrome-border-subtle)" }}>
-          <User className="w-2.5 h-2.5" />
-        </span>
-        Sem dono
-      </span>
-    );
-  }
-  const iniciais = nome.split(/\s+/).slice(0, 2).map((w) => w[0]).join("").toUpperCase();
+// Responsável editável direto no card (25/08, mesmo pedido/padrão já
+// aplicado em Prospecção) — reaproveita o OwnerPicker compartilhado em vez
+// de inventar um segundo dropdown de atribuição.
+function OwnerChipCf2({ ownerId, nome, usuarios, onAssign }: {
+  ownerId?: string | null; nome?: string | null; usuarios: OrgUsuario[]; onAssign: (userId: string | null) => void;
+}) {
   return (
-    <span className="flex items-center gap-1 text-[10px] min-w-0" style={{ color: "var(--cf2-chrome-text-secondary)" }} title={`Responsável: ${nome}`}>
-      <span className="rounded-full flex items-center justify-center shrink-0 overflow-hidden text-[8px] font-bold" style={{ width: 20, height: 20, background: `${color}25`, color }}>
-        {avatarUrl ? <img src={avatarUrl} alt={nome} className="w-full h-full object-cover" referrerPolicy="no-referrer" /> : iniciais}
-      </span>
-      <span className="truncate max-w-[80px]">{nome.split(/\s+/)[0]}</span>
+    <span className="flex items-center gap-1.5 text-[10px] min-w-0" style={{ color: "var(--cf2-chrome-text-secondary)" }}>
+      <OwnerPicker ownerId={ownerId} ownerName={nome} usuarios={usuarios} onAssign={onAssign} size={20} align="start" />
+      <span className="truncate max-w-[80px]">{nome ? nome.split(/\s+/)[0] : "Sem dono"}</span>
     </span>
   );
 }
@@ -469,57 +488,98 @@ function OrigemIcon({ origem }: { origem?: string | null }) {
   return <Icon className="w-2.5 h-2.5 shrink-0" />;
 }
 
+// Ordem de exibição dos grupos — mesma ordem das colunas do Kanban, pra não
+// ler como uma lista solta sem hierarquia.
+const LIST_STAGE_ORDER = [
+  NOVO_COL, EM_CONTATO_COL, QUALIFICACAO_COL, QUALIFICADO_SQL_COL, AGENDA_CONFIRMADA_COL,
+  SEM_RESPOSTA_COL, NUTRICAO_MERGED_COL, DESQUALIFICADO_ESTAGNADOS_COL,
+];
+
 /** Visualização em lista (toggle do toolbar) — mesmo dataset filtrado do
- * Kanban, sem drag-and-drop; clicar na linha abre o mesmo drawer. */
-function SdrListView({ leads, usuariosById, onOpenLead }: {
-  leads: Lead[]; usuariosById: Map<string, OrgUsuario>; onOpenLead: (id: string) => void;
+ * Kanban, sem drag-and-drop. Linhas únicas agrupadas por etapa (padrão
+ * Circle: issue-line.tsx — nunca uma tabela de colunas fixas), mesmo
+ * espírito já aplicado em Prospecção 25/08. */
+function SdrListView({ leads, usuariosById, usuarios, onOpenLead, onAssignOwner }: {
+  leads: Lead[]; usuariosById: Map<string, OrgUsuario>; usuarios: OrgUsuario[];
+  onOpenLead: (id: string) => void; onAssignOwner: (leadId: string, userId: string | null) => void;
 }) {
+  const groups = LIST_STAGE_ORDER
+    .map((col) => ({ stage: col, leads: leads.filter((l) => resolveDisplayStage(l).label === col.label) }))
+    .filter((group) => group.leads.length > 0);
+  const grouped = new Set(groups.flatMap((g) => g.leads.map((l) => l.id)));
+  const outros = leads.filter((l) => !grouped.has(l.id));
+
+  if (leads.length === 0) {
+    return (
+      <div className="h-full flex items-center justify-center rounded-2xl text-[13px]" style={{ background: "var(--cf2-chrome-bg-alt)", border: "1px solid var(--cf2-chrome-border-subtle)", color: "var(--cf2-chrome-text-secondary)" }}>
+        Nenhum lead nessa seleção.
+      </div>
+    );
+  }
+
   return (
     <div className="h-full overflow-y-auto rounded-2xl" style={{ background: "var(--cf2-chrome-bg-alt)", border: "1px solid var(--cf2-chrome-border-subtle)" }}>
-      <table className="w-full text-[12px] border-collapse">
-        <thead className="sticky top-0" style={{ background: "var(--cf2-chrome-bg-alt)" }}>
-          <tr style={{ borderBottom: "1px solid var(--cf2-chrome-border-subtle)" }}>
-            {["Nome", "Empresa", "Etapa", "Responsável", "Origem", "Tempo na etapa"].map((h) => (
-              <th key={h} className="text-left font-semibold uppercase tracking-wide px-3 py-2.5" style={{ color: "var(--cf2-chrome-text-secondary)", fontSize: 10 }}>{h}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {leads.length === 0 && (
-            <tr><td colSpan={6} className="text-center py-8" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Nenhum lead nessa seleção.</td></tr>
-          )}
-          {leads.map((lead) => {
-            const stage = resolveDisplayStage(lead);
-            const age = stageAge(lead.updatedAt, lead.sdrStatus || "pending");
-            const owner = lead.responsavelId ? usuariosById.get(lead.responsavelId) : undefined;
-            return (
-              <tr key={lead.id} onClick={() => onOpenLead(lead.id)} className="cursor-pointer hover:opacity-80" style={{ borderBottom: "1px solid var(--cf2-chrome-border-subtle)" }}>
-                <td className="px-3 py-2.5 font-semibold" style={{ color: "var(--cf2-chrome-text-primary)" }}>{lead.nome}{lead.sobrenome ? ` ${lead.sobrenome}` : ""}</td>
-                <td className="px-3 py-2.5" style={{ color: "var(--cf2-chrome-text-secondary)" }}>{lead.empresa || "—"}</td>
-                <td className="px-3 py-2.5">
-                  <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full font-semibold" style={{ background: `${stage.color}18`, color: stage.color }}>
-                    <span className="w-1.5 h-1.5 rounded-full" style={{ background: stage.color }} /> {stage.label}
-                  </span>
-                </td>
-                <td className="px-3 py-2.5" style={{ color: "var(--cf2-chrome-text-secondary)" }}>{owner?.nome || "Sem responsável"}</td>
-                <td className="px-3 py-2.5" style={{ color: "var(--cf2-chrome-text-secondary)" }}>
-                  <span className="inline-flex items-center gap-1.5"><OrigemIcon origem={lead.origem} /> {lead.origem || "—"}</span>
-                </td>
-                <td className="px-3 py-2.5" style={{ color: age?.breached ? "var(--cf2-danger-text)" : "var(--cf2-chrome-text-secondary)" }}>{age?.text || "—"}</td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+      {groups.map((group) => (
+        <div key={group.stage.key}>
+          <div className="flex items-center gap-2 px-4 h-9 sticky top-0" style={{ background: "var(--cf2-chrome-surface-active)" }}>
+            <span className="h-2 w-2 rounded-full shrink-0" style={{ background: group.stage.color }} />
+            <h3 className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: group.stage.color }}>{group.stage.label}</h3>
+            <span className="text-[11px] tabular-nums" style={{ color: "var(--cf2-chrome-text-secondary)" }}>{group.leads.length}</span>
+          </div>
+          {group.leads.map((lead) => (
+            <SdrListRow key={lead.id} lead={lead} owner={lead.responsavelId ? usuariosById.get(lead.responsavelId) : undefined} usuarios={usuarios} onOpenLead={onOpenLead} onAssignOwner={onAssignOwner} />
+          ))}
+        </div>
+      ))}
+      {outros.length > 0 && (
+        <div>
+          <div className="flex items-center gap-2 px-4 h-9 sticky top-0" style={{ background: "var(--cf2-chrome-surface-active)" }}>
+            <h3 className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Outros</h3>
+            <span className="text-[11px] tabular-nums" style={{ color: "var(--cf2-chrome-text-secondary)" }}>{outros.length}</span>
+          </div>
+          {outros.map((lead) => (
+            <SdrListRow key={lead.id} lead={lead} owner={lead.responsavelId ? usuariosById.get(lead.responsavelId) : undefined} usuarios={usuarios} onOpenLead={onOpenLead} onAssignOwner={onAssignOwner} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SdrListRow({ lead, owner, usuarios, onOpenLead, onAssignOwner }: {
+  lead: Lead; owner?: OrgUsuario; usuarios: OrgUsuario[]; onOpenLead: (id: string) => void; onAssignOwner: (leadId: string, userId: string | null) => void;
+}) {
+  const age = stageAge(lead.updatedAt, lead.sdrStatus || "pending");
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={() => onOpenLead(lead.id)}
+      onKeyDown={(e) => { if (e.key === "Enter") onOpenLead(lead.id); }}
+      className="flex items-center gap-3 h-11 px-4 cursor-pointer outline-none hover:bg-white/[0.03]"
+      style={{ borderBottom: "1px solid var(--cf2-chrome-border-subtle)" }}
+    >
+      <span className="text-[12.5px] font-semibold truncate w-[180px] shrink-0" style={{ color: "var(--cf2-chrome-text-primary)" }}>{lead.nome}{lead.sobrenome ? ` ${lead.sobrenome}` : ""}</span>
+      <span className="text-[12px] truncate w-[160px] shrink-0 hidden sm:block" style={{ color: "var(--cf2-chrome-text-secondary)" }}>{lead.empresa || "—"}</span>
+      <span className="text-[11px] items-center gap-1.5 hidden md:flex" style={{ color: "var(--cf2-chrome-text-secondary)" }}>
+        <OrigemIcon origem={lead.origem} /> {lead.origem || "—"}
+      </span>
+      <div className="flex items-center gap-3 shrink-0 ml-auto">
+        <span className="text-[11px] tabular-nums hidden lg:inline-block" style={{ color: age?.breached ? "var(--cf2-danger-text)" : "var(--cf2-chrome-text-secondary)" }}>{age?.text || "—"}</span>
+        <span onClick={(e) => e.stopPropagation()}>
+          <OwnerPicker ownerId={lead.responsavelId} ownerName={owner?.nome} usuarios={usuarios} onAssign={(userId) => onAssignOwner(lead.id, userId)} size={22} />
+        </span>
+      </div>
     </div>
   );
 }
 
 /* ═══ KANBAN ═══ */
 
-function SdrKanbanView({ leads, usuariosById, onDrop, onOpenLead, onOpenNegocio }: {
-  leads: Lead[]; usuariosById: Map<string, OrgUsuario>;
+function SdrKanbanView({ leads, usuariosById, usuarios, onDrop, onOpenLead, onOpenNegocio, onAssignOwner }: {
+  leads: Lead[]; usuariosById: Map<string, OrgUsuario>; usuarios: OrgUsuario[];
   onDrop: (id: string, sdrStatus: string) => void; onOpenLead: (id: string) => void; onOpenNegocio: (id: string) => void;
+  onAssignOwner: (leadId: string, userId: string | null) => void;
 }) {
   const [dragOverStage, setDragOverStage] = useState<string | null>(null);
   const [expandedEstagnado, setExpandedEstagnado] = useState<string | null>(null);
@@ -553,8 +613,9 @@ function SdrKanbanView({ leads, usuariosById, onDrop, onOpenLead, onOpenNegocio 
       .sort((a, b) => Number(b.negocioPrincipal?.status === "no_show") - Number(a.negocioPrincipal?.status === "no_show"))
       .map((lead) => (
         <LeadCard
-          key={lead.id} lead={lead} stageColor={stage?.color || "#6B7280"} readOnly={mirror}
+          key={lead.id} lead={lead} readOnly={mirror}
           owner={lead.responsavelId ? usuariosById.get(lead.responsavelId) : undefined}
+          usuarios={usuarios} onAssignOwner={onAssignOwner}
           onOpenLead={onOpenLead} onOpenNegocio={onOpenNegocio} onMove={(s) => onDrop(lead.id, s)}
         />
       ));
@@ -614,6 +675,8 @@ function SdrKanbanView({ leads, usuariosById, onDrop, onOpenLead, onOpenNegocio 
               onOpenNegocio={onOpenNegocio}
               onDrop={onDrop}
               usuariosById={usuariosById}
+              usuarios={usuarios}
+              onAssignOwner={onAssignOwner}
             />
           ))}
         </div>
@@ -628,7 +691,7 @@ function SdrKanbanView({ leads, usuariosById, onDrop, onOpenLead, onOpenNegocio 
 // que ficava embaixo do kanban.
 
 function AuxKanbanColumn({
-  item, expanded, onToggle, isDragOver, setDragOverStage, onOpenLead, onOpenNegocio, onDrop, usuariosById,
+  item, expanded, onToggle, isDragOver, setDragOverStage, onOpenLead, onOpenNegocio, onDrop, usuariosById, usuarios, onAssignOwner,
 }: {
   item: { key: string; label: string; color: string; dropTarget: string | null; leads: Lead[] };
   expanded: boolean;
@@ -639,6 +702,8 @@ function AuxKanbanColumn({
   onOpenNegocio: (id: string) => void;
   onDrop: (id: string, status: string) => void;
   usuariosById: Map<string, OrgUsuario>;
+  usuarios: OrgUsuario[];
+  onAssignOwner: (leadId: string, userId: string | null) => void;
 }) {
   const canDrop = !!item.dropTarget;
   const dragProps = canDrop
@@ -698,8 +763,9 @@ function AuxKanbanColumn({
           <LeadCard
             key={lead.id}
             lead={lead}
-            stageColor={item.color}
             owner={lead.responsavelId ? usuariosById.get(lead.responsavelId) : undefined}
+            usuarios={usuarios}
+            onAssignOwner={onAssignOwner}
             onOpenLead={onOpenLead}
             onOpenNegocio={onOpenNegocio}
             onMove={(s) => onDrop(lead.id, s)}
@@ -734,8 +800,9 @@ function relativeShort(iso: string): string {
   return `${Math.floor(mins / 1440)}d`;
 }
 
-function LeadCard({ lead, stageColor, readOnly = false, owner, onOpenLead, onOpenNegocio, onMove, onDragStart, onDragEnd }: {
-  lead: Lead; stageColor: string; readOnly?: boolean; owner?: OrgUsuario;
+function LeadCard({ lead, readOnly = false, owner, usuarios, onAssignOwner, onOpenLead, onOpenNegocio, onMove, onDragStart, onDragEnd }: {
+  lead: Lead; readOnly?: boolean; owner?: OrgUsuario; usuarios: OrgUsuario[];
+  onAssignOwner: (leadId: string, userId: string | null) => void;
   onOpenLead: (id: string) => void; onOpenNegocio: (id: string) => void; onMove: (status: string) => void;
   onDragStart?: () => void; onDragEnd?: () => void;
 }) {
@@ -864,7 +931,7 @@ function LeadCard({ lead, stageColor, readOnly = false, owner, onOpenLead, onOpe
         </div>
 
         <div className="flex items-center justify-between mt-2.5 gap-2">
-          <OwnerChipCf2 nome={owner?.nome} avatarUrl={owner?.avatarUrl} color={stageColor} />
+          <OwnerChipCf2 ownerId={lead.responsavelId} nome={owner?.nome} usuarios={usuarios} onAssign={(userId) => onAssignOwner(lead.id, userId)} />
           <div className="flex items-center gap-1 shrink-0">
             {/* 2 tempos distintos (24/08, pedido do Kauã): tempo NO ESTÁGIO
                 (colorido por SLA, já existia) vs. última AÇÃO real — nota,

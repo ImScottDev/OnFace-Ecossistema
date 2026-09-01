@@ -1,14 +1,23 @@
 "use client";
 
-import { useRef, useState, useEffect } from "react";
+import { useRef, useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import Link from "next/link";
 import { toast } from "sonner";
 import { Phone, MessageCircle, Mail, Plus, Calendar, ChevronDown, Check, Send, Clock, X } from "lucide-react";
 import { DetailDrawer } from "@/components/crm/DetailDrawer";
 import { QualificacaoSdrSection } from "@/components/crm/QualificacaoSdrSection";
 import { LigacoesSection } from "@/components/crm/LigacoesSection";
 import { TarefaFormModal } from "@/components/crm/tarefas/TarefaFormModal";
-import { callfaceCallUrl } from "@/lib/utils/callface-call";
+import { digitsForDialer } from "@/lib/utils/callface-call";
+import { corAvatarEmpresa, iniciaisEmpresa } from "@/components/crm2/shared/avatar";
+import { OwnerPicker } from "./OwnerPicker";
+import { Cf2Button } from "@/components/crm2/ui/Button";
+import { Cf2Tabs, Cf2TabsList, Cf2TabsTrigger } from "@/components/crm2/ui/Tabs";
+import {
+  Cf2DropdownMenu, Cf2DropdownMenuContent, Cf2DropdownMenuItem, Cf2DropdownMenuTrigger,
+} from "@/components/crm2/ui/DropdownMenu";
+import { Section, PropertyRow } from "@/components/crm2/shared/DrawerSection";
 import type { OrgUsuario } from "@/components/crm/BoardFilters";
 import { resolveProspeccaoStatus, PROSPECCAO_STATUS, type ProspeccaoLead } from "./shared";
 
@@ -36,11 +45,6 @@ interface LeadDetail {
 const TABS = ["Tudo", "Ligações", "WhatsApp", "E-mails", "Notas", "Tarefas"] as const;
 type Tab = (typeof TABS)[number];
 const TIPO_LABEL: Record<string, string> = { ligacao: "Ligação", whatsapp: "WhatsApp", email: "E-mail", nota: "Nota", tarefa: "Tarefa" };
-
-function initials(nome?: string | null): string {
-  const parts = (nome || "?").trim().split(/\s+/);
-  return ((parts[0]?.[0] || "") + (parts.length > 1 ? parts[parts.length - 1][0] : "")).toUpperCase() || "?";
-}
 
 function timeAgoShort(dateStr: string): string {
   const mins = Math.floor((Date.now() - new Date(dateStr).getTime()) / 60000);
@@ -166,6 +170,11 @@ export function ProspeccaoDrawer({
 
   useEffect(() => { if (noteOpen) noteRef.current?.focus(); }, [noteOpen]);
 
+  const usuariosArray = useMemo(
+    () => Array.from(usuariosById.entries()).map(([id, u]) => ({ id, nome: u.nome })),
+    [usuariosById]
+  );
+
   const lead = detail?.lead;
   if (!lead && !isLoading) return null;
 
@@ -198,28 +207,32 @@ export function ProspeccaoDrawer({
   const footer = lead && (
     <div className="p-3 flex items-center justify-between flex-wrap gap-2" style={{ background: "var(--cf2-bg-surface)", borderTop: "1px solid var(--cf2-border-default)" }}>
       <div className="flex items-center gap-3 relative">
-        <button onClick={() => setMoveMenuOpen((v) => !v)} className="flex items-center gap-2 h-10 px-3 rounded-xl text-[13px] font-semibold" style={{ border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }}>
-          Mover etapa <ChevronDown className="w-3.5 h-3.5" />
-        </button>
-        {moveMenuOpen && (
-          <div className="absolute bottom-12 left-0 min-w-[180px] rounded-xl py-1 z-10" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)", boxShadow: "0 8px 16px rgba(15,23,42,0.12)" }}>
+        <Cf2DropdownMenu open={moveMenuOpen} onOpenChange={setMoveMenuOpen}>
+          <Cf2DropdownMenuTrigger asChild>
+            <Cf2Button variant="secondary" className="gap-2">
+              Mover etapa <ChevronDown className="w-3.5 h-3.5" />
+            </Cf2Button>
+          </Cf2DropdownMenuTrigger>
+          <Cf2DropdownMenuContent align="start" className="min-w-[180px]">
             {MOVE_OPTIONS.map((s) => (
-              <button key={s.key} onClick={() => { patchLead.mutate({ sdrStatus: s.key }); setMoveMenuOpen(false); }} className="w-full text-left px-3 py-1.5 text-[13px] flex items-center gap-2" style={{ color: "var(--cf2-text-primary)" }}>
+              <Cf2DropdownMenuItem key={s.key} onClick={() => patchLead.mutate({ sdrStatus: s.key })}>
                 <span className="w-2 h-2 rounded-full shrink-0" style={{ background: s.color }} /> {s.label}
-              </button>
+              </Cf2DropdownMenuItem>
             ))}
-          </div>
-        )}
-        <button onClick={() => patchLead.mutate({ sdrStatus: "disqualified" })} className="text-[13px] font-bold" style={{ color: "#dc2626" }}>Desqualificar</button>
+          </Cf2DropdownMenuContent>
+        </Cf2DropdownMenu>
+        <Cf2Button variant="ghost" className="font-bold" style={{ color: "var(--cf2-danger-text)" }} onClick={() => patchLead.mutate({ sdrStatus: "disqualified" })}>
+          Desqualificar
+        </Cf2Button>
       </div>
-      <button
+      <Cf2Button
+        variant="primary"
         onClick={() => criteriosFaltando.length > 0 ? toast.error(`Faltam: ${criteriosFaltando.join(", ")}`) : qualificar.mutate()}
-        disabled={qualificar.isPending}
-        className="flex items-center gap-2 h-10 px-4 rounded-xl text-[13px] font-bold disabled:opacity-60"
-        style={{ background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" }}
+        loading={qualificar.isPending}
+        className="gap-2"
       >
         <Check className="w-4 h-4" /> Enviar para Pré-vendas
-      </button>
+      </Cf2Button>
     </div>
   );
 
@@ -229,65 +242,73 @@ export function ProspeccaoDrawer({
       {isLoading && <div className="space-y-3 p-6" aria-label="Carregando prospect">{Array.from({ length: 6 }).map((_, index) => <div key={index} className="h-12 animate-pulse rounded-xl" style={{ background: "var(--cf2-bg-surface-muted)" }} />)}</div>}
       {isError && <div className="flex flex-col items-center gap-2 p-10 text-center"><p className="text-sm font-bold" style={{ color: "var(--cf2-text-primary)" }}>Não foi possível abrir o prospect</p><p className="text-xs" style={{ color: "var(--cf2-text-tertiary)" }}>Feche o painel e tente novamente.</p></div>}
       {lead && (
-        <div className="flex flex-col gap-4 p-5">
-          <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-7 px-6 py-7">
+          {/* Header — sem card, título grande solto (padrão Circle: issue-details.tsx
+              renderiza <h1> direto no fundo da página, sem moldura). */}
+          <div className="flex flex-col gap-2">
             <div className="flex items-start justify-between gap-4">
-              <div className="flex min-w-0 flex-col gap-1.5">
-              <p className="text-[10px] font-bold uppercase tracking-[0.12em]" style={{ color: "var(--cf2-text-tertiary)" }}>Perfil outbound</p>
-              <p className="truncate text-[20px] font-bold" style={{ color: "var(--cf2-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>{fullName}</p>
-              <p className="text-[13px]" style={{ color: "var(--cf2-text-tertiary)" }}>{[lead.empresa, lead.cargo].filter(Boolean).join(" · ") || "—"}</p>
-              <div className="flex flex-wrap items-center gap-1.5">
-                <span className="px-2.5 py-1 rounded-full text-[12px] font-semibold" style={{ background: `${status.color}18`, color: status.color }}>{status.label}</span>
-                <span className="rounded-full px-2.5 py-1 text-[11px] font-bold uppercase" style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-secondary)" }}>Outbound</span>
-                {boardLead?.listaNome && <span className="rounded-full px-2.5 py-1 text-[11px] font-semibold" style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-secondary)" }}>{boardLead.listaNome}</span>}
-                {boardLead?.labels?.filter((label) => label.nome.toLowerCase() !== "outbound").slice(0, 3).map((label) => <span key={label.id} className="rounded-full px-2.5 py-1 text-[11px] font-semibold" style={{ background: `${label.cor}16`, color: label.cor }}>{label.nome}</span>)}
+              <div className="min-w-0">
+                <p className="text-[11px] font-medium uppercase tracking-[0.08em]" style={{ color: "var(--cf2-text-tertiary)" }}>Perfil outbound</p>
+                <h1 className="truncate text-[22px] font-semibold leading-tight mt-1" style={{ color: "var(--cf2-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>{fullName}</h1>
+                <p className="text-[13px] mt-1" style={{ color: "var(--cf2-text-tertiary)" }}>{[lead.empresa, lead.cargo].filter(Boolean).join(" · ") || "—"}</p>
               </div>
-              </div>
-              <button onClick={onClose} aria-label="Fechar perfil do prospect" className="rounded-lg p-2" style={{ color: "var(--cf2-text-tertiary)" }}><X className="h-4 w-4" /></button>
+              <button onClick={onClose} aria-label="Fechar perfil do prospect" className="rounded-md p-1.5 shrink-0 hover:bg-[var(--cf2-bg-surface-muted)]" style={{ color: "var(--cf2-text-tertiary)" }}><X className="h-4 w-4" /></button>
             </div>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="flex items-center justify-center rounded-full text-[11px] font-extrabold shrink-0" style={{ width: 28, height: 28, background: "var(--cf2-text-tertiary)", color: "var(--cf2-text-on-accent)" }}>{initials(owner?.nome)}</span>
-                <span className="text-[12px]" style={{ color: "var(--cf2-text-secondary)" }}>{owner?.nome || "Sem responsável"}</span>
-              </div>
-              <span className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>{cadencia ? `${cadencia.definitionNome} · etapa ${cadencia.stepIndex}/${cadencia.totalSteps}` : "Fora de follow-up"}</span>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-[12px] font-medium" style={{ color: status.color }}>● {status.label}</span>
+              {boardLead?.listaNome && <span className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>· {boardLead.listaNome}</span>}
+              {boardLead?.labels?.filter((label) => label.nome.toLowerCase() !== "outbound").slice(0, 3).map((label) => <span key={label.id} className="text-[12px]" style={{ color: label.cor }}>· {label.nome}</span>)}
             </div>
           </div>
 
+          {/* Ações rápidas — logo abaixo do título, sem seção própria (Circle
+              coloca reação/anexo direto sob a descrição, mesma ideia). */}
           <div className="flex flex-col gap-2.5">
-            <p className="text-[14px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Ações rápidas</p>
             <div className="flex gap-2">
-              <QuickAction icon={Phone} label="Ligar" href={lead.telefone ? callfaceCallUrl(lead.telefone) : undefined} />
-              <QuickAction icon={MessageCircle} label="WhatsApp" href={lead.telefone ? `https://wa.me/${lead.telefone.replace(/\D/g, "")}` : undefined} />
-              <QuickAction icon={Mail} label="E-mail" href={lead.email ? `mailto:${lead.email}` : undefined} />
+              <QuickAction icon={Phone} label="Ligar" href={lead.telefone ? `/atendimento?leadId=${lead.id}&canal=ligacao&telefone=${digitsForDialer(lead.telefone)}` : undefined} />
+              <QuickAction icon={MessageCircle} label="WhatsApp" href={lead.telefone ? `/atendimento?leadId=${lead.id}&canal=whatsapp&telefone=${digitsForDialer(lead.telefone)}` : undefined} />
+              <QuickAction icon={Mail} label="E-mail" href={lead.email ? `/atendimento?leadId=${lead.id}&canal=email` : undefined} />
               <QuickAction icon={Plus} label="Tarefa" onClick={() => setTarefaModalOpen(true)} />
             </div>
-            {proximaTarefa ? (
-              <div className="flex items-center gap-2">
-                <Calendar className="w-4 h-4 shrink-0" style={{ color: "var(--cf2-text-tertiary)" }} />
-                <p className="text-[12px] flex-1" style={{ color: "var(--cf2-text-secondary)" }}>Próxima ação: {proximaTarefa.titulo}, {new Date(proximaTarefa.dataVencimento!).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}</p>
-              </div>
-            ) : (
-              <div className="flex items-center gap-2">
-                <Calendar className="w-4 h-4 shrink-0" style={{ color: "var(--cf2-text-tertiary)" }} />
-                <p className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>Sem próxima ação agendada</p>
-              </div>
-            )}
+            <div className="flex items-center gap-2">
+              <Calendar className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--cf2-text-tertiary)" }} />
+              <p className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>
+                {proximaTarefa ? <>Próxima ação: {proximaTarefa.titulo}, {new Date(proximaTarefa.dataVencimento!).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}</> : "Sem próxima ação agendada"}
+              </p>
+            </div>
           </div>
 
-          {/* Cadência — Cadence Engine real (lib/cadencia/cadence-engine.ts), 1º consumidor sendo Prospecção */}
-          <div className="flex flex-col gap-3 p-4 rounded-2xl" style={{ background: "var(--cf2-bg-canvas)", border: "1px solid var(--cf2-border-default)" }}>
-            <div className="flex items-center justify-between">
-              <p className="text-[14px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Follow-up</p>
-              {cadencia && ["active", "waiting"].includes(cadencia.status) && (
-                <button onClick={() => pausar.mutate()} className="text-[12px] font-semibold" style={{ color: "var(--cf2-text-tertiary)" }}>Pausar</button>
-              )}
+          <Section title="Propriedades">
+            <div className="flex flex-col gap-2.5">
+              <div className="flex items-center gap-2 text-sm">
+                <OwnerPicker
+                  ownerId={boardLead?.responsavelId}
+                  ownerName={owner?.nome}
+                  usuarios={usuariosArray}
+                  onAssign={(userId) => patchLead.mutate({ responsavelId: userId })}
+                  size={20}
+                  align="start"
+                />
+                <span style={{ color: "var(--cf2-text-primary)" }}>{owner?.nome || "Sem responsável"}</span>
+              </div>
+              <PropertyRow label="Telefone" value={lead.telefone || "—"} />
+              <PropertyRow label="E-mail" value={lead.email || "—"} />
+              <PropertyRow label="Empresa" value={lead.empresa || "—"} />
+              <PropertyRow label="Cargo" value={lead.cargo || "—"} />
+              <PropertyRow label="Entrou em" value={new Date(lead.createdAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" })} />
             </div>
+          </Section>
+
+          {/* Cadência — Cadence Engine real (lib/cadencia/cadence-engine.ts), 1º consumidor sendo Prospecção */}
+          <Section
+            title="Follow-up"
+            action={cadencia && ["active", "waiting"].includes(cadencia.status) ? { label: "Pausar", onClick: () => pausar.mutate() } : undefined}
+          >
             {cadencia ? (
-              <div className="flex flex-col gap-2 text-[12px]">
-                <KV label="Follow-up atual" value={cadencia.definitionNome} />
-                <KV label="Etapa atual" value={`${cadencia.stepIndex} de ${cadencia.totalSteps}`} />
-                <KV label="Status" value={cadencia.status} />
+              <div className="flex flex-col gap-2 text-[13px]">
+                <PropertyRow label="Follow-up atual" value={cadencia.definitionNome} />
+                <PropertyRow label="Etapa atual" value={`${cadencia.stepIndex} de ${cadencia.totalSteps}`} />
+                <PropertyRow label="Status" value={cadencia.status} />
                 {cadencia.proximaAcaoEm && (
                   <div className="flex items-center gap-1.5">
                     <Clock className="w-3 h-3" style={{ color: "var(--cf2-text-tertiary)" }} />
@@ -297,85 +318,76 @@ export function ProspeccaoDrawer({
               </div>
             ) : (
               <div className="flex items-center gap-2">
-                <select value={enrollSelect} onChange={(e) => setEnrollSelect(e.target.value)} className="flex-1 px-3 py-1.5 rounded-lg text-[12px] outline-none" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }}>
+                <select value={enrollSelect} onChange={(e) => setEnrollSelect(e.target.value)} className="flex-1 px-3 py-1.5 rounded-[var(--cf2-radius-sm)] text-[12px] outline-none" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }}>
                   <option value="">Sem follow-up ativo — selecionar...</option>
                   {cadencias.map((c) => <option key={c.id} value={c.id}>{c.nome} ({c.totalSteps} toques)</option>)}
                 </select>
-                <button onClick={() => enrollSelect && enroll.mutate(enrollSelect)} disabled={!enrollSelect || enroll.isPending} className="px-3 py-1.5 rounded-lg text-[12px] font-bold disabled:opacity-40 shrink-0" style={{ background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" }}>Adicionar</button>
+                <Cf2Button size="sm" onClick={() => enrollSelect && enroll.mutate(enrollSelect)} disabled={!enrollSelect} loading={enroll.isPending}>Adicionar</Cf2Button>
               </div>
             )}
-          </div>
+          </Section>
 
-          <div className="flex flex-col gap-3 p-4 rounded-2xl" style={{ background: "var(--cf2-bg-canvas)", border: "1px solid var(--cf2-border-default)" }}>
-            <p className="text-[14px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Dados de contato</p>
-            <div className="flex flex-col gap-2.5 text-[12px]">
-              <KV label="Telefone" value={lead.telefone || "—"} />
-              <KV label="E-mail" value={lead.email || "—"} />
-              <KV label="Empresa" value={lead.empresa || "—"} />
-              <KV label="Cargo" value={lead.cargo || "—"} />
-              <KV label="Data de entrada" value={new Date(lead.createdAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" })} />
-            </div>
-          </div>
-
-          <div className="p-4 rounded-2xl" style={{ background: "var(--cf2-bg-canvas)", border: "1px solid var(--cf2-border-default)" }}>
-            <div className="mb-3"><p className="text-[14px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Prontidão para o handoff</p><p className="mt-1 text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>Dados que acompanham o prospect ao entrar em Qualificado de Pré-vendas.</p></div>
+          <Section title="Prontidão para o handoff" description="Dados que acompanham o prospect ao entrar em Qualificado de Pré-vendas.">
             <QualificacaoSdrSection leadId={leadId!} camposCustom={lead.camposCustom} variant="light" queryKeysToInvalidate={["prospeccao-board"]} prefill={{ cnpj: detail?.empresa?.cnpj || lead.empresaCnpj || "", cargo: lead.cargo || "" }} />
-          </div>
+          </Section>
 
-          <div className="flex flex-col gap-3 p-4 rounded-2xl" style={{ background: "var(--cf2-bg-canvas)", border: "1px solid var(--cf2-border-default)" }}>
-            <p className="text-[14px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Timeline unificada</p>
-            <div className="flex gap-2 overflow-x-auto pb-0.5">
-              {TABS.map((t) => (
-                <button key={t} onClick={() => setTab(t)} className="px-2.5 py-1.5 rounded-full text-[12px] font-semibold whitespace-nowrap shrink-0" style={{ background: tab === t ? "var(--cf2-text-primary)" : "var(--cf2-bg-surface)", color: tab === t ? "#ffffff" : "var(--cf2-text-secondary)", border: tab === t ? "none" : "1px solid var(--cf2-border-default)" }}>{t}</button>
-              ))}
-            </div>
-            {tab === "Ligações" ? (
-              <LigacoesSection leadId={leadId!} enviarDiscagem />
-            ) : tab === "Tarefas" ? (
-              tarefasAbertas.length > 0 ? (
-                <div className="flex flex-col gap-2">
-                  {tarefasAbertas.map((t) => (
-                    <div key={t.id} className="flex items-center gap-2.5 p-3 rounded-xl" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
-                      <button onClick={() => toggleTarefa.mutate({ id: t.id, concluida: true })} className="w-4 h-4 rounded-full shrink-0" style={{ border: "1px solid var(--cf2-border-default)" }} />
-                      <p className="flex-1 text-[13px]" style={{ color: "var(--cf2-text-primary)" }}>{t.titulo}</p>
-                      {t.dataVencimento && <span className="text-[11px] shrink-0" style={{ color: "var(--cf2-text-tertiary)" }}>{new Date(t.dataVencimento).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}</span>}
+          <Section title="Timeline unificada">
+            <div className="flex flex-col gap-3">
+              <Cf2Tabs value={tab} onValueChange={(value) => setTab(value as Tab)}>
+                <Cf2TabsList className="w-full flex-wrap justify-start overflow-x-auto">
+                  {TABS.map((t) => (
+                    <Cf2TabsTrigger key={t} value={t} className="whitespace-nowrap">{t}</Cf2TabsTrigger>
+                  ))}
+                </Cf2TabsList>
+              </Cf2Tabs>
+              {tab === "Ligações" ? (
+                <LigacoesSection leadId={leadId!} enviarDiscagem />
+              ) : tab === "Tarefas" ? (
+                tarefasAbertas.length > 0 ? (
+                  <div className="flex flex-col border-t" style={{ borderColor: "var(--cf2-border-default)" }}>
+                    {tarefasAbertas.map((t) => (
+                      <div key={t.id} className="flex items-center gap-2.5 h-10 border-b" style={{ borderColor: "var(--cf2-border-default)" }}>
+                        <button onClick={() => toggleTarefa.mutate({ id: t.id, concluida: true })} className="w-3.5 h-3.5 rounded-full shrink-0" style={{ border: "1px solid var(--cf2-border-default)" }} />
+                        <p className="flex-1 text-[13px] truncate" style={{ color: "var(--cf2-text-primary)" }}>{t.titulo}</p>
+                        {t.dataVencimento && <span className="text-[11px] shrink-0" style={{ color: "var(--cf2-text-tertiary)" }}>{new Date(t.dataVencimento).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}</span>}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhuma tarefa em aberto.</p>
+                )
+              ) : (
+                <div className="flex flex-col">
+                  {feedFiltrado.length === 0 && <p className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>Nada por aqui ainda.</p>}
+                  {feedFiltrado.map((e) => (
+                    <div key={e.id} className="flex flex-col gap-1.5 py-3 border-b" style={{ borderColor: "var(--cf2-border-default)" }}>
+                      <div className="flex items-center gap-2.5">
+                        <span className="flex items-center justify-center rounded-full text-[10px] font-bold shrink-0" style={{ width: 22, height: 22, background: corAvatarEmpresa(e.usuarioNome || e.id), color: "var(--cf2-text-on-accent)" }}>{iniciaisEmpresa(e.usuarioNome || "?")}</span>
+                        <p className="flex-1 min-w-0 text-[12px] font-medium" style={{ color: "var(--cf2-text-primary)" }}>{timeAgoShort(e.createdAt)} atrás</p>
+                        <span className="text-[11px] font-medium shrink-0" style={{ color: "var(--cf2-text-tertiary)" }}>{TIPO_LABEL[e.tipo] || e.tipo}</span>
+                      </div>
+                      <p className="text-[13px] pl-[30px]" style={{ color: "var(--cf2-text-primary)" }}>{e.usuarioNome ? `${e.usuarioNome} — ` : ""}{e.titulo}</p>
                     </div>
                   ))}
-                </div>
-              ) : (
-                <p className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhuma tarefa em aberto.</p>
-              )
-            ) : (
-              <div className="flex flex-col gap-2">
-                {feedFiltrado.length === 0 && <p className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>Nada por aqui ainda.</p>}
-                {feedFiltrado.map((e) => (
-                  <div key={e.id} className="flex flex-col gap-2 p-3 rounded-xl" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
-                    <div className="flex items-center gap-2.5">
-                      <span className="flex items-center justify-center rounded-full text-[11px] font-extrabold shrink-0" style={{ width: 28, height: 28, background: "var(--cf2-text-tertiary)", color: "var(--cf2-text-on-accent)" }}>{initials(e.usuarioNome)}</span>
-                      <div className="flex-1 min-w-0"><p className="text-[12px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>{timeAgoShort(e.createdAt)} atrás</p></div>
-                      <span className="px-2 py-1 rounded-full text-[11px] font-bold shrink-0" style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-secondary)" }}>{TIPO_LABEL[e.tipo] || e.tipo}</span>
-                    </div>
-                    <p className="text-[13px]" style={{ color: "var(--cf2-text-primary)" }}>{e.usuarioNome ? `${e.usuarioNome} — ` : ""}{e.titulo}</p>
-                  </div>
-                ))}
-                {tab === "Notas" && (
-                  <div className="pt-1">
-                    {noteOpen ? (
-                      <div className="flex flex-col gap-1.5">
-                        <textarea ref={noteRef} value={noteText} onChange={(ev) => setNoteText(ev.target.value)} placeholder="Escreva uma nota..." rows={3} className="w-full text-[13px] rounded-lg px-3 py-2 outline-none resize-y" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }} onKeyDown={(ev) => { if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey) && noteText.trim()) addNota.mutate(noteText.trim()); if (ev.key === "Escape") { setNoteOpen(false); setNoteText(""); } }} />
-                        <div className="flex justify-end gap-2">
-                          <button onClick={() => { setNoteOpen(false); setNoteText(""); }} className="text-[12px] px-2 py-1" style={{ color: "var(--cf2-text-tertiary)" }}>Cancelar</button>
-                          <button onClick={() => noteText.trim() && addNota.mutate(noteText.trim())} disabled={!noteText.trim() || addNota.isPending} className="text-[12px] px-2 py-1 flex items-center gap-1 font-semibold disabled:opacity-40" style={{ color: "var(--cf2-success-text)" }}><Send className="w-3 h-3" /> Salvar</button>
+                  {tab === "Notas" && (
+                    <div className="pt-3">
+                      {noteOpen ? (
+                        <div className="flex flex-col gap-1.5">
+                          <textarea ref={noteRef} value={noteText} onChange={(ev) => setNoteText(ev.target.value)} placeholder="Escreva uma nota..." rows={3} className="w-full text-[13px] rounded-[var(--cf2-radius-sm)] px-3 py-2 outline-none resize-y" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }} onKeyDown={(ev) => { if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey) && noteText.trim()) addNota.mutate(noteText.trim()); if (ev.key === "Escape") { setNoteOpen(false); setNoteText(""); } }} />
+                          <div className="flex justify-end gap-2">
+                            <button onClick={() => { setNoteOpen(false); setNoteText(""); }} className="text-[12px] px-2 py-1" style={{ color: "var(--cf2-text-tertiary)" }}>Cancelar</button>
+                            <button onClick={() => noteText.trim() && addNota.mutate(noteText.trim())} disabled={!noteText.trim() || addNota.isPending} className="text-[12px] px-2 py-1 flex items-center gap-1 font-semibold disabled:opacity-40" style={{ color: "var(--cf2-success-text)" }}><Send className="w-3 h-3" /> Salvar</button>
+                          </div>
                         </div>
-                      </div>
-                    ) : (
-                      <button onClick={() => setNoteOpen(true)} className="w-full flex items-center justify-center gap-1.5 py-2 text-[12px] rounded-lg" style={{ color: "var(--cf2-text-tertiary)", border: "1px dashed var(--cf2-border-default)" }}><Plus className="w-3.5 h-3.5" /> Adicionar nota</button>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
+                      ) : (
+                        <button onClick={() => setNoteOpen(true)} className="flex items-center gap-1.5 text-[12px] hover:text-[var(--cf2-text-primary)]" style={{ color: "var(--cf2-text-tertiary)" }}><Plus className="w-3.5 h-3.5" /> Adicionar nota</button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </Section>
         </div>
       )}
     </DetailDrawer>
@@ -386,17 +398,12 @@ export function ProspeccaoDrawer({
 
 function QuickAction({ icon: Icon, label, href, onClick }: { icon: typeof Phone; label: string; href?: string; onClick?: () => void }) {
   const disabled = !href && !onClick;
-  const cls = "flex-1 flex items-center justify-center gap-1.5 h-10 rounded-xl text-[13px] font-semibold";
+  const cls = "flex-1 flex items-center justify-center gap-1.5 h-10 rounded-[var(--cf2-radius-md)] text-[13px] font-semibold transition-colors";
   const style = { border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)", opacity: disabled ? 0.4 : 1 };
-  if (href && !disabled) return <a href={href} target="_blank" rel="noopener noreferrer" className={cls} style={style}><Icon className="w-4 h-4" /> {label}</a>;
-  return <button onClick={onClick} disabled={disabled} className={cls} style={style}><Icon className="w-4 h-4" /> {label}</button>;
+  // Navegação INTERNA pro Atendimento (não abre fora do CRM) — requisito
+  // original do Kauã, mesmo padrão já usado no drawer de Pré-vendas
+  // (qualificacao/Workspace.tsx): /atendimento?leadId=X&canal=Y&telefone=Z.
+  if (href && !disabled) return <Link href={href} className={`${cls} hover:bg-[var(--cf2-bg-surface-muted)]`} style={style}><Icon className="w-4 h-4" /> {label}</Link>;
+  return <button onClick={onClick} disabled={disabled} className={`${cls} hover:bg-[var(--cf2-bg-surface-muted)]`} style={style}><Icon className="w-4 h-4" /> {label}</button>;
 }
 
-function KV({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between gap-3">
-      <span style={{ color: "var(--cf2-text-tertiary)" }}>{label}</span>
-      <span className="font-semibold truncate max-w-[220px]" style={{ color: "var(--cf2-text-primary)" }}>{value}</span>
-    </div>
-  );
-}

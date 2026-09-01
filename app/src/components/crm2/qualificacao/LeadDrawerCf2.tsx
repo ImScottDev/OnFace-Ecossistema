@@ -409,7 +409,16 @@ export function Cf2LeadDrawer({
               <QualificacaoSdrSection
                 leadId={leadId}
                 camposCustom={lead.camposCustom}
-                variant="dark"
+                // Bug real 25/08 (achado do Kauã: "no de pessoas tudo
+                // bugado" — campos de Qualificação SDR invisíveis, texto
+                // branco em fundo branco): este componente vem em 2
+                // temas (`variant="dark"|"light"`), mas aqui estava
+                // fixo em "dark" mesmo quando o próprio drawer (prop
+                // `dark`, default false) está renderizando claro nas
+                // outras 3 telas que o usam (Contatos & Empresas,
+                // Prospecção, Página Completa) — só Pré-vendas é
+                // realmente escuro. Precisa acompanhar a MESMA prop.
+                variant={dark ? "dark" : "light"}
                 hideHeader
                 showFieldStatusDots
                 queryKeysToInvalidate={["pre-vendas-leads"]}

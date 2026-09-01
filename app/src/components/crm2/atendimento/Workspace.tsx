@@ -35,6 +35,7 @@ export function Cf2AtendimentoWorkspace() {
   // discador (abaixo), nunca decide o canal.
   const canalParam = searchParams.get("canal");
   const telefoneParam = searchParams.get("telefone");
+  const textoParam = searchParams.get("texto");
   const [canal, setCanal] = useState(canalParam || (leadIdParam ? "whatsapp" : "todas"));
   // Deep link com leadId não pode nascer restrito a "meus" (24/08, achado
   // real: clique no card de Pré-vendas caía em "Nenhuma conversa por aqui
@@ -195,6 +196,7 @@ export function Cf2AtendimentoWorkspace() {
               conversa={conversaAtual}
               contexto={contexto ?? null}
               onAtribuir={() => setAtribuirAberta(true)}
+              textoInicial={textoParam || undefined}
             />
           )}
           {conversaAtual.tipo === "email" && <Cf2EmailThread conversa={conversaAtual} contexto={contexto ?? null} />}
@@ -219,7 +221,7 @@ export function Cf2AtendimentoWorkspace() {
         <Cf2Dialer numeroInicial={telefoneParam || undefined} />
       ) : (
         <div
-          className="flex-1 flex items-center justify-center rounded-3xl"
+          className="flex-1 flex items-center justify-center rounded-2xl"
           style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}
         >
           <p className="text-[13px]" style={{ color: "var(--cf2-text-tertiary)" }}>

@@ -4,7 +4,7 @@
  * próprio pra evitar import circular entre os dois (o drawer precisa da
  * mesma lógica de coluna/etapa que o Kanban usa, e o Kanban usa o drawer).
  */
-import { SDR_MIRROR_KEYS, SDR_SLA_HOURS, SDR_STAGNATION_KEYS, isOutboundLead, negocioStatusToSdrMirror } from "@/lib/crm/pipeline";
+import { SDR_MIRROR_KEYS, SDR_MIRROR_STAGES, SDR_SLA_HOURS, SDR_STAGNATION_KEYS, isOutboundLead, negocioStatusToSdrMirror } from "@/lib/crm/pipeline";
 
 export interface Lead {
   id: string;
@@ -154,6 +154,14 @@ export function resolveDisplayStage(lead: Lead): { label: string; color: string 
   const col = [NOVO_COL, EM_CONTATO_COL, QUALIFICACAO_COL].find((c) => c.keys.includes(board));
   if (col) return { label: col.label, color: col.color };
   if (board === "disqualified") return { label: "Desqualificado", color: "#dc2626" };
+  // Achado real 25/08 (Kauã: "que merda é essa... m_reuniao porra") — board
+  // também pode vir de negocioStatusToSdrMirror como "m_reuniao"/
+  // "m_convertido" quando o negócio já avançou pro closer (reunião+/ganho);
+  // faltava esse pedaço aqui, caía direto no fallback e mostrava a CHAVE
+  // crua em vez do rótulo. SDR_MIRROR_STAGES já tinha os 2 rótulos certos,
+  // só nunca eram consultados nesta função.
+  const mirror = SDR_MIRROR_STAGES.find((c) => c.key === board);
+  if (mirror) return { label: mirror.label, color: mirror.color };
   return { label: board, color: "#6B7280" };
 }
 

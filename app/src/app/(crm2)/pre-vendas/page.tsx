@@ -16,8 +16,12 @@ export default async function PreVendasPage() {
   const orgNome = org?.nome || "Callface";
   return (
     <div className="-m-6 min-h-full flex flex-col">
-      <header className="flex flex-col gap-5 px-8 pt-7 pb-5" style={{ background: "var(--cf2-chrome-bg-alt)", borderBottom: "1px solid var(--cf2-chrome-border-subtle)" }}>
-        <Cf2Topbar orgNome={orgNome} variant="dark" title="Vendas" subtitle="Gestão de pré-vendas, qualificação e distribuição de leads" actions={<PreVendasTopbarActions />} />
+      {/* Header compacto, mesma altura/tamanho de texto da Prospecção
+          (achado real 25/08, pedido do Kauã: "todas as telas... o tamanho
+          precisa ser o mesmo") — só a cor de fundo muda (chrome escuro
+          aqui, claro lá), a caixa em si é idêntica. */}
+      <header className="flex flex-col px-6 py-3.5" style={{ background: "var(--cf2-chrome-bg-alt)", borderBottom: "1px solid var(--cf2-chrome-border-subtle)" }}>
+        <Cf2Topbar orgNome={orgNome} variant="dark" title="Vendas" subtitle="Gestão de pré-vendas, qualificação e distribuição de leads" actions={<PreVendasTopbarActions />} compactTitle />
       </header>
 
       <div

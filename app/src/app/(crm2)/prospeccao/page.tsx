@@ -15,14 +15,15 @@ export default async function ProspeccaoPage() {
   const orgNome = org[0]?.nome || "Callface";
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="-m-6 mb-0 relative flex flex-col gap-6 px-8 pt-7 pb-10 rounded-tl-2xl" style={{ background: "var(--cf2-bg-canvas)" }}>
-        <Cf2Topbar orgNome={orgNome} variant="light" title="Prospecção" subtitle="Listas, cadências e respostas em uma única operação outbound" actions={<ProspeccaoTopbarActions />} />
+    <div className="flex flex-col gap-4">
+      {/* Header compacto de área operacional (Circle: headers/issues/header-nav.tsx
+          é h-10, uma linha só, sem hero de saudação) — a hero grande do Início
+          faz sentido pra Home, não pra uma tela de lista/operação como esta. */}
+      <div className="-m-6 mb-0 relative flex flex-col px-6 py-3.5 rounded-tl-2xl border-b" style={{ background: "var(--cf2-bg-surface)", borderColor: "var(--cf2-border-default)" }}>
+        <Cf2Topbar orgNome={orgNome} variant="light" title="Prospecção" subtitle="Listas, cadências e respostas em uma única operação outbound" actions={<ProspeccaoTopbarActions />} compactTitle />
       </div>
 
-      <div className="pt-6">
-        <Cf2ProspeccaoWorkspace />
-      </div>
+      <Cf2ProspeccaoWorkspace />
     </div>
   );
 }

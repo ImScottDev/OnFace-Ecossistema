@@ -44,6 +44,10 @@ const createNegocioSchema = z.object({
 
 const updateNegocioSchema = z.object({
   titulo: z.string().min(1).optional(),
+  // Coluna real (`negocios.descricao`) já existia, só nunca tinha sido
+  // exposta pro PATCH — achado 25/08 ao construir a edição inline de
+  // "Sobre o negócio" na página de oportunidade.
+  descricao: z.string().optional().nullable(),
   status: z.string().optional(),
   empresaId: z.string().uuid().optional().nullable(),
   tipoReceita: z.enum(["recorrente", "projeto", "hibrido"]).optional().nullable(),
@@ -834,6 +838,74 @@ app.post("/negocios/:id/evidencia-manual", async (c) => {
   });
 
   return c.json({ ok: true }, 201);
+});
+
+// POST /negocios/:id/cobranca-avulsa — cobrança pontual fora do ciclo de uma
+// assinatura já ativa (25/08, billing avançado). Só existe pro lead JÁ ter
+// um stripeCustomerId (cliente real no Stripe) — sem isso não tem pra quem
+// cobrar. Admin/gerente, sempre auditado em `atividades` (mesmo padrão de
+// evidencia-manual acima) — nunca automático, o vendedor confirma o valor
+// antes de qualquer coisa sair do CRM.
+const cobrancaAvulsaSchema = z.object({
+  descricao: z.string().min(1, "Descreva o que está sendo cobrado"),
+  valor: z.number().positive(),
+  moeda: z.enum(["BRL", "USD", "EUR", "CAD"]).default("BRL"),
+  diasVencimento: z.number().int().min(1).max(60).default(3),
+});
+
+app.post("/negocios/:id/cobranca-avulsa", async (c) => {
+  const ctx = await getCtx(c);
+  const id = c.req.param("id");
+  if (!UUID_RE.test(id)) return c.json({ error: "ID inválido" }, 400);
+
+  if (!isAdminView(ctx.userRole)) {
+    return c.json({ error: "Só admin/gerente pode gerar cobrança avulsa" }, 403);
+  }
+
+  const body = await c.req.json();
+  const parsed = cobrancaAvulsaSchema.safeParse(body);
+  if (!parsed.success) return c.json({ error: "Dados inválidos", details: parsed.error.flatten() }, 400);
+
+  const [negocio] = await db
+    .select({ id: negocios.id, leadId: negocios.leadId })
+    .from(negocios)
+    .where(and(eq(negocios.id, id), eq(negocios.organizacaoId, ctx.organizacaoId)))
+    .limit(1);
+  if (!negocio) return c.json({ error: "Negócio não encontrado" }, 404);
+  if (!negocio.leadId) return c.json({ error: "Negócio sem contato vinculado" }, 400);
+
+  const [lead] = await db.select({ stripeCustomerId: leads.stripeCustomerId }).from(leads).where(eq(leads.id, negocio.leadId)).limit(1);
+  if (!lead?.stripeCustomerId) {
+    return c.json({ error: "Este cliente ainda não tem um customer no Stripe (nenhum pagamento processado até agora) — sem isso não há pra quem cobrar." }, 400);
+  }
+
+  const { criarCobrancaAvulsa } = await import("@/lib/integrations/stripe-invoice");
+  let resultado: { invoiceId: string; hostedInvoiceUrl: string | null; status: string };
+  try {
+    resultado = await criarCobrancaAvulsa({
+      stripeCustomerId: lead.stripeCustomerId,
+      descricao: parsed.data.descricao,
+      valor: parsed.data.valor,
+      moeda: parsed.data.moeda,
+      diasVencimento: parsed.data.diasVencimento,
+      metadata: { negocioId: id, organizacaoId: ctx.organizacaoId, origem: "callface-crm-cobranca-avulsa" },
+    });
+  } catch (err) {
+    return c.json({ error: `Falha ao gerar cobrança no Stripe: ${String(err)}` }, 502);
+  }
+
+  await db.insert(atividades).values({
+    organizacaoId: ctx.organizacaoId,
+    leadId: negocio.leadId,
+    negocioId: id,
+    usuarioId: ctx.userId,
+    tipo: "cobranca_avulsa_gerada",
+    titulo: "Cobrança avulsa gerada",
+    descricao: `${parsed.data.descricao} — ${parsed.data.moeda} ${parsed.data.valor.toFixed(2)}, vencimento em ${parsed.data.diasVencimento} dias`,
+    dados: { invoiceId: resultado.invoiceId, hostedInvoiceUrl: resultado.hostedInvoiceUrl, valor: parsed.data.valor, moeda: parsed.data.moeda },
+  });
+
+  return c.json(resultado, 201);
 });
 
 // DELETE /negocios/:id

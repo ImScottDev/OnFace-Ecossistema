@@ -116,36 +116,36 @@ export function Cf2CallDetail({ conversa }: { conversa: ConversaItem }) {
 
   return (
     <div
-      className="flex-1 flex flex-col h-full min-w-0 rounded-3xl overflow-hidden"
+      className="flex-1 flex flex-col h-full min-w-0 rounded-2xl overflow-hidden"
       style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}
     >
-      <div className="flex items-start justify-between gap-3 p-4 shrink-0" style={{ background: "var(--cf2-bg-page)", borderBottom: "1px solid var(--cf2-border-default)" }}>
+      <div className="flex items-start justify-between gap-3 px-5 py-4 shrink-0" style={{ background: "var(--cf2-bg-surface)", borderBottom: "1px solid var(--cf2-border-default)" }}>
         <div className="flex gap-3 items-start min-w-0">
-          <div className="flex items-center justify-center rounded-[20px] shrink-0 w-10 h-10" style={{ background: "var(--cf2-bg-surface-muted)" }}>
-            <p className="text-[14px] font-extrabold" style={{ color: "var(--cf2-text-secondary)" }}>{iniciais(conversa.nome)}</p>
+          <div className="flex items-center justify-center rounded-full shrink-0 w-10 h-10" style={{ background: "var(--cf2-bg-surface-muted)" }}>
+            <p className="text-[14px] font-bold" style={{ color: "var(--cf2-text-secondary)" }}>{iniciais(conversa.nome)}</p>
           </div>
           <div className="min-w-0">
-            <p className="text-[15px] font-bold flex items-center gap-2" style={{ color: "var(--cf2-text-primary)" }}>
+            <p className="text-[15px] font-semibold flex items-center gap-2" style={{ color: "var(--cf2-text-primary)" }}>
               Ligação de {conversa.nome}
-              <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold" style={{ color: "var(--cf2-text-secondary)" }}>
+              <span className="inline-flex items-center gap-1.5 text-[11.5px] font-semibold" style={{ color: "var(--cf2-text-secondary)" }}>
                 <span className="w-[3px] h-3 rounded-full" style={{ background: st.color }} />
                 {st.label}
               </span>
             </p>
-            <p className="text-[11px] mt-0.5" style={{ color: "var(--cf2-text-secondary)" }}>
+            <p className="text-[12px] mt-0.5" style={{ color: "var(--cf2-text-tertiary)" }}>
               {fmtData(detalhe?.callDate || detalhe?.createdAt || conversa.timestamp)} · {detalhe?.destinationNumber || "—"} ·{" "}
               <Clock className="w-2.5 h-2.5 inline -mt-0.5" /> {fmtDuracao(detalhe?.duracaoSegundos ?? conversa.duracaoSegundos)}
             </p>
           </div>
         </div>
         {detalhe?.audioUrl && (
-          <a href={detalhe.audioUrl} download target="_blank" rel="noreferrer" className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold shrink-0" style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-secondary)" }}>
+          <a href={detalhe.audioUrl} download target="_blank" rel="noreferrer" className="flex items-center gap-1.5 px-3 h-8 rounded-lg text-[11.5px] font-semibold shrink-0 transition-colors hover:bg-[var(--cf2-bg-surface-subtle)]" style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-secondary)" }}>
             <Download className="w-3 h-3" /> Áudio
           </a>
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto flex flex-col gap-4 p-5" style={{ background: "var(--cf2-bg-canvas)" }}>
+      <div className="flex-1 overflow-y-auto flex flex-col gap-4 px-5 py-6" style={{ background: "var(--cf2-bg-canvas)" }}>
         {!conversa.leadId && (
           <p className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>
             Essa ligação não tem lead vinculado — sem transcrição/áudio disponível pra consulta.
