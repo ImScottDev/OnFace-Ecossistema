@@ -10,6 +10,8 @@ import {
   negocioStatusToSdrMirror,
 } from "@/lib/crm/pipeline";
 import { AgendarReuniaoModal, type AgendarReuniaoPayload } from "@/components/crm/AgendarReuniaoModal";
+import { DisqualifyReasonModal } from "@/components/crm/DisqualifyReasonModal";
+import { DEFAULT_DISQUALIFY_REASONS } from "@/lib/crm/pipeline";
 
 interface NegocioRef {
   id: string;
@@ -60,12 +62,19 @@ export function SdrStageControl({ leadId, nome, empresa, sdrStatus, responsavelI
     onChanged?.();
   };
 
+  const [desqualificarOpen, setDesqualificarOpen] = useState(false);
+
   const mover = useMutation({
-    mutationFn: async (novoStatus: string) => {
+    mutationFn: async (arg: string | { status: string; motivoPerda: string; motivoPerdaDetalhe?: string }) => {
+      const novoStatus = typeof arg === "string" ? arg : arg.status;
+      const motivo = typeof arg === "string" ? null : arg;
       const r = await fetch(`/api/leads/${leadId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sdrStatus: novoStatus }),
+        body: JSON.stringify({
+          sdrStatus: novoStatus,
+          ...(motivo ? { motivoPerda: motivo.motivoPerda, motivoPerdaDetalhe: motivo.motivoPerdaDetalhe ?? null } : {}),
+        }),
       });
       if (!r.ok) throw new Error("falha ao mover");
       return r.json();
@@ -163,7 +172,7 @@ export function SdrStageControl({ leadId, nome, empresa, sdrStatus, responsavelI
               <PauseCircle className="w-3.5 h-3.5" />
             </button>
             <button
-              onClick={() => mover.mutate("disqualified")}
+              onClick={() => setDesqualificarOpen(true)}
               disabled={mover.isPending}
               className="flex items-center justify-center gap-1.5 px-2.5 py-2 text-xs font-semibold rounded-lg transition-colors disabled:opacity-40"
               style={{ background: "#EF444420", color: "#EF4444", border: "1px solid #EF444455" }}
@@ -173,6 +182,18 @@ export function SdrStageControl({ leadId, nome, empresa, sdrStatus, responsavelI
             </button>
           </div>
         </>
+      )}
+
+      {desqualificarOpen && (
+        <DisqualifyReasonModal
+          leadNome={empresa ? `${nome} — ${empresa}` : nome}
+          reasons={DEFAULT_DISQUALIFY_REASONS}
+          onClose={() => setDesqualificarOpen(false)}
+          onConfirm={(motivoPerda, motivoPerdaDetalhe) => {
+            mover.mutate({ status: "disqualified", motivoPerda, motivoPerdaDetalhe });
+            setDesqualificarOpen(false);
+          }}
+        />
       )}
 
       <AgendarReuniaoModal

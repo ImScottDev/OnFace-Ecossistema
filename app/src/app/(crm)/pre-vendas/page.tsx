@@ -23,6 +23,8 @@ import { EmpresaDrawer } from "@/components/crm/EmpresaDrawer";
 import { NegocioDrawer } from "@/components/crm/NegocioDrawer";
 import { SkeletonKanbanColumn } from "@/components/crm/Skeleton";
 import { AgendarReuniaoModal, type AgendarReuniaoPayload } from "@/components/crm/AgendarReuniaoModal";
+import { DisqualifyReasonModal } from "@/components/crm/DisqualifyReasonModal";
+import { DEFAULT_DISQUALIFY_REASONS } from "@/lib/crm/pipeline";
 import { BoardFilters, OwnerChip, useOrgUsuarios, matchesResponsavel, matchesOrigem, buildOrigemOptions, type OrgUsuario } from "@/components/crm/BoardFilters";
 
 interface Lead {
@@ -173,11 +175,11 @@ export default function PreVendasPage() {
   }
 
   const moveStage = useMutation({
-    mutationFn: async ({ id, sdrStatus }: { id: string; sdrStatus: string }) => {
+    mutationFn: async ({ id, sdrStatus, motivoPerda, motivoPerdaDetalhe }: { id: string; sdrStatus: string; motivoPerda?: string; motivoPerdaDetalhe?: string }) => {
       const r = await fetch(`/api/leads/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sdrStatus }),
+        body: JSON.stringify({ sdrStatus, ...(motivoPerda ? { motivoPerda, motivoPerdaDetalhe: motivoPerdaDetalhe ?? null } : {}) }),
       });
       if (!r.ok) throw new Error("falha ao mover");
       return r.json();
@@ -246,6 +248,7 @@ export default function PreVendasPage() {
 
   // Lead em vias de ser qualificado → abre o popup de agendamento (Fase A)
   const [agendarLead, setAgendarLead] = useState<Lead | null>(null);
+  const [desqualificarLead, setDesqualificarLead] = useState<Lead | null>(null);
 
   const handleMove = (leadId: string, targetStatus: string) => {
     const lead = allLeads.find((l) => l.id === leadId);
@@ -264,6 +267,14 @@ export default function PreVendasPage() {
     // pelo closer no Pipeline — a SDR não move o lead pra elas na mão.
     if (SDR_MIRROR_KEYS.includes(targetStatus)) {
       toast.info("Essa etapa é controlada pelo closer no Pipeline.");
+      return;
+    }
+    // Desqualificar exige motivo estruturado (pedido Kauã 08/09): sem isso o
+    // relatório de SDR só sabe QUANTOS leads morreram, nunca POR QUÊ. O modal
+    // é obrigatório aqui no board; a automação do worker (sem_retorno →
+    // disqualified) segue sem motivo, por isso a trava é no front e não na API.
+    if (targetStatus === "disqualified") {
+      setDesqualificarLead(lead);
       return;
     }
     moveStage.mutate({ id: leadId, sdrStatus: targetStatus });
@@ -401,6 +412,23 @@ export default function PreVendasPage() {
           if (agendarLead) qualificar.mutate({ id: agendarLead.id, payload: { semReuniao: true } });
         }}
       />
+
+      {desqualificarLead && (
+        <DisqualifyReasonModal
+          leadNome={desqualificarLead.empresa ? `${desqualificarLead.nome} — ${desqualificarLead.empresa}` : desqualificarLead.nome}
+          reasons={DEFAULT_DISQUALIFY_REASONS}
+          onClose={() => setDesqualificarLead(null)}
+          onConfirm={(motivo, detalhe) => {
+            moveStage.mutate({
+              id: desqualificarLead.id,
+              sdrStatus: "disqualified",
+              motivoPerda: motivo,
+              motivoPerdaDetalhe: detalhe,
+            });
+            setDesqualificarLead(null);
+          }}
+        />
+      )}
 
       {showExport && (
         <ExportLeadsModal
