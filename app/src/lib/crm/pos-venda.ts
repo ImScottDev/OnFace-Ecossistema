@@ -35,6 +35,7 @@ import {
   fulfillments,
   fulfillmentItens,
   tarefas,
+  pipelines,
 } from "@/lib/db/schema";
 import {
   classificarItensDaProposta,
@@ -137,9 +138,10 @@ export interface ResultadoPosVenda {
  *      (acontece no Won manual arrastado no pipeline);
  *   3. `contratos.produto` ('ai' | 'pabx') do contrato do negócio;
  *   4. `negocios.campos_custom.produto`, gravado pela qualificação SDR;
- *   5. título do negócio, último recurso.
+ *   5. título do negócio;
+ *   6. o PIPELINE em que o negócio está (funil PABX ou Callface AI).
  *
- * Retorna UNKNOWN quando nenhuma das cinco diz nada — nunca um palpite.
+ * Retorna UNKNOWN quando nenhuma das seis diz nada — nunca um palpite.
  */
 export async function resolverFamiliaDoNegocio(negocioId: string): Promise<FamiliaServico> {
   // 1./2. itens de proposta
@@ -183,9 +185,9 @@ export async function resolverFamiliaDoNegocio(negocioId: string): Promise<Famil
     if (porServico !== "UNKNOWN") return porServico;
   }
 
-  // 4./5. campos_custom.produto e título
+  // 4. campos_custom.produto (qualificação SDR)
   const [negocio] = await db
-    .select({ camposCustom: negocios.camposCustom, titulo: negocios.titulo })
+    .select({ camposCustom: negocios.camposCustom, titulo: negocios.titulo, pipelineId: negocios.pipelineId })
     .from(negocios)
     .where(eq(negocios.id, negocioId))
     .limit(1);
@@ -197,7 +199,29 @@ export async function resolverFamiliaDoNegocio(negocioId: string): Promise<Famil
     if (porCustom !== "UNKNOWN") return porCustom;
   }
 
-  return classificarProdutoPorNome(negocio?.titulo);
+  // 5. título do negócio
+  const porTitulo = classificarProdutoPorNome(negocio?.titulo);
+  if (porTitulo !== "UNKNOWN") return porTitulo;
+
+  // 6. PIPELINE em que o negócio está. Vem por último de propósito, e depois
+  // do título: o funil "Callface AI" também abriga venda White Label (medido
+  // no banco — "Spot Sales - White Label" mora lá), então o nome do negócio,
+  // quando diz algo, é mais confiável que o funil.
+  //
+  // Sem este passo, 52% dos negócios abertos caíam em Validação manual só
+  // porque se chamam "Fulano - Novo negócio" e não têm proposta com itens.
+  // O funil é uma escolha explícita de quem vendeu, não um palpite.
+  if (negocio?.pipelineId) {
+    const [pipe] = await db
+      .select({ nome: pipelines.nome })
+      .from(pipelines)
+      .where(eq(pipelines.id, negocio.pipelineId))
+      .limit(1);
+    const porPipeline = classificarProdutoPorNome(pipe?.nome);
+    if (porPipeline !== "UNKNOWN") return porPipeline;
+  }
+
+  return "UNKNOWN";
 }
 
 /**

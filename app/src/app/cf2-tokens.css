@@ -1,7 +1,8 @@
 /* Tokens do design system cf2, extraídos do globals.css do CRM 2.0 (branch dev).
  * Arquivo separado de propósito: o globals.css de produção não é tocado, e as
- * telas de pós-venda importam só isto + cf2-design-system.css. Precisa ser global
- * (não module) porque portais de Dialog/Dropdown renderizam fora da árvore. */
+ * telas de pós-venda importam só isto + cf2-design-system.css. Precisa ser
+ * global (não module) porque portais de Dialog/Dropdown renderizam fora da
+ * árvore do layout. */
 
 [data-cf2-theme="light"] {
   --cf2-bg-page: #fafafa;
@@ -52,9 +53,6 @@
   --cf2-font-heading: var(--font-cf2-heading), system-ui, sans-serif;
   --cf2-font-nav: var(--font-cf2-nav), system-ui, sans-serif;
   --cf2-font-ui: var(--font-cf2-ui), system-ui, sans-serif;
-  background: var(--cf2-bg-page);
-  color: var(--cf2-text-primary);
-  font-family: var(--cf2-font-ui);
   --cf2-chrome-bg: #1c1f26;
   --cf2-chrome-bg-alt: #16171c;
   --cf2-chrome-surface-active: #1a1d24;
@@ -92,9 +90,6 @@
   --cf2-home-serie-mrr: #a6e635;
   --cf2-home-serie-novo: #1c1f26;
   --cf2-home-grid-line: #e5e5e5;
-  Achado da auditoria: a paleta `--cf2-home-*` tinha vazado pra 13
-  --cf2-success-fill, --cf2-home-positive, --cf2-home-positive-alt).
-  --cf2-home-* seguem existindo como apelido, então nada quebra. */
   --cf2-brand: var(--seaweed-500);
   --cf2-brand-ink: var(--seaweed-950);
   --cf2-brand-vivid: var(--seaweed-400);
@@ -126,33 +121,8 @@
   --cf2-serie-4: #9b7ef0;
   --cf2-serie-5: #f2708a;
   --cf2-grid-line: #e5e5e5;
-  --background: var(--cf2-bg-surface);
-  --foreground: var(--cf2-text-primary);
-  --primary: var(--cf2-accent);
-  --primary-foreground: var(--cf2-text-on-accent);
-  --secondary: var(--cf2-bg-surface-muted);
-  --secondary-foreground: var(--cf2-text-primary);
-  --muted: var(--cf2-bg-surface-muted);
-  --muted-foreground: var(--cf2-text-secondary);
-  --accent: var(--cf2-bg-surface-muted);
-  --accent-foreground: var(--cf2-text-primary);
-  --destructive: var(--cf2-danger-text);
-  --card: var(--cf2-bg-surface);
-  --card-foreground: var(--cf2-text-primary);
-  --popover: var(--cf2-bg-surface);
-  --popover-foreground: var(--cf2-text-primary);
-  --border: var(--cf2-border-default);
-  --input: var(--cf2-border-default);
-  --ring: var(--cf2-accent-border);
 }
 
-/* Tema escuro real do CRM 2.0 (25/08) — exatamente o bloco que o comentário
-   acima já previa ("quando dark for implementado, é só adicionar um bloco
-   [data-cf2-theme=\"dark\"]... zero componente muda"). Usa os tokens de marca
-   Callface já definidos em :root (bg-primary/bg-card/accent-lima) como base
-   — não inventa paleta nova. Aplicado por componente via `data-cf2-theme=
-   "dark"` no wrapper (ex.: painel de contexto do Atendimento), não no app
-   inteiro — mesmo escopo local que "builder" já usa. */
 [data-cf2-theme="dark"] {
   --cf2-bg-page: var(--bg-primary);
   --cf2-bg-canvas: var(--bg-sidebar);
@@ -223,14 +193,8 @@
   --cf2-shadow-shell: -4px 0px 16px 0px rgba(0, 0, 0, 0.5);
   --cf2-shadow-card-sm: 0px 4px 10px 0px rgba(0, 0, 0, 0.35);
   --cf2-shadow-card-md: 0px 8px 24px 0px rgba(0, 0, 0, 0.45);
-  background: var(--cf2-bg-page);
-  color: var(--cf2-text-primary);
-  font-family: var(--cf2-font-ui);
 }
 
-/* Editor de automações: o canvas é uma ferramenta de trabalho contínuo,
-   não um card de configuração. Mantém a linguagem Callface (lima + chrome)
-   e dá ao grafo o contraste necessário para leitura de arestas e nós. */
 [data-cf2-theme="builder"] {
   --cf2-bg-page: #171812;
   --cf2-bg-canvas: #151611;
@@ -258,32 +222,12 @@
   --cf2-danger-border: #b8544e;
   --cf2-shadow-card-sm: 0 14px 35px rgba(0, 0, 0, 0.22);
   --cf2-shadow-card-md: 0 20px 55px rgba(0, 0, 0, 0.3);
-  background: var(--cf2-bg-page);
-  color: var(--cf2-text-primary);
-  font-family: var(--cf2-font-ui);
 }
 
-/* BUG RAIZ (31/08): `body` fixava `color: var(--text-primary)` = #F5F5F5, o
-   branco do tema escuro LEGADO. Componentes que só pintam o fundo e deixam o
-   texto herdar (DialogContent tem `bg-background` mas nenhum `text-*`) ficavam
-   BRANCO SOBRE BRANCO. Sintoma que o Kauã viu: título do modal e o botão
-   "Cancelar" quase invisíveis, enquanto a descrição — que usa
-   `text-muted-foreground` explícito — aparecia normal.
-   O `Cf2ThemeRoot` põe o atributo no <html>, então isto cobre inclusive o que
-   é renderizado em portal (dropdown, modal, tooltip, sheet) fora da árvore
-   do layout. */
-[data-cf2-theme="light"] body {
-  background: var(--cf2-bg-page);
-  color: var(--cf2-text-primary);
-  font-family: var(--cf2-font-ui);
-}
-
-
-/* Os mesmos tokens no :root. Necessário porque Dialog/DropdownMenu renderizam
- * em portal, direto no <body>, fora do container que carrega
- * data-cf2-theme — sem isto o modal abre sem cor e sem fonte (armadilha já
- * documentada no handoff do CRM 2.0). Inócuo pro resto do CRM: nenhuma tela
- * antiga usa variável --cf2-*. */
+/* Os mesmos tokens no :root: Dialog/DropdownMenu renderizam em portal, direto
+ * no <body>, fora do container que carrega data-cf2-theme — sem isto o modal
+ * abre sem cor e sem fonte. Inócuo pro resto do CRM: nenhuma tela antiga usa
+ * variável --cf2-*. */
 :root {
   --cf2-bg-page: #fafafa;
   --cf2-bg-canvas: #f8fafc;
@@ -333,9 +277,6 @@
   --cf2-font-heading: var(--font-cf2-heading), system-ui, sans-serif;
   --cf2-font-nav: var(--font-cf2-nav), system-ui, sans-serif;
   --cf2-font-ui: var(--font-cf2-ui), system-ui, sans-serif;
-  background: var(--cf2-bg-page);
-  color: var(--cf2-text-primary);
-  font-family: var(--cf2-font-ui);
   --cf2-chrome-bg: #1c1f26;
   --cf2-chrome-bg-alt: #16171c;
   --cf2-chrome-surface-active: #1a1d24;
@@ -373,9 +314,6 @@
   --cf2-home-serie-mrr: #a6e635;
   --cf2-home-serie-novo: #1c1f26;
   --cf2-home-grid-line: #e5e5e5;
-  Achado da auditoria: a paleta `--cf2-home-*` tinha vazado pra 13
-  --cf2-success-fill, --cf2-home-positive, --cf2-home-positive-alt).
-  --cf2-home-* seguem existindo como apelido, então nada quebra. */
   --cf2-brand: var(--seaweed-500);
   --cf2-brand-ink: var(--seaweed-950);
   --cf2-brand-vivid: var(--seaweed-400);
@@ -407,22 +345,38 @@
   --cf2-serie-4: #9b7ef0;
   --cf2-serie-5: #f2708a;
   --cf2-grid-line: #e5e5e5;
-  --background: var(--cf2-bg-surface);
-  --foreground: var(--cf2-text-primary);
-  --primary: var(--cf2-accent);
-  --primary-foreground: var(--cf2-text-on-accent);
-  --secondary: var(--cf2-bg-surface-muted);
-  --secondary-foreground: var(--cf2-text-primary);
-  --muted: var(--cf2-bg-surface-muted);
-  --muted-foreground: var(--cf2-text-secondary);
-  --accent: var(--cf2-bg-surface-muted);
-  --accent-foreground: var(--cf2-text-primary);
-  --destructive: var(--cf2-danger-text);
-  --card: var(--cf2-bg-surface);
-  --card-foreground: var(--cf2-text-primary);
-  --popover: var(--cf2-bg-surface);
-  --popover-foreground: var(--cf2-text-primary);
-  --border: var(--cf2-border-default);
-  --input: var(--cf2-border-default);
-  --ring: var(--cf2-accent-border);
+}
+
+/* Paleta e fontes referenciadas pelos tokens acima. Sem elas o var() fica
+ * vazio e invalida a declaração inteira (não cai no fallback) — armadilha já
+ * documentada no handoff do CRM 2.0. */
+:root {
+  --accent-lima: #c8ff00;
+  --bg-card: #121212;
+  --bg-card-hover: #181818;
+  --bg-elevated: #1A1A1A;
+  --bg-primary: #0A0A0A;
+  --bg-sidebar: #0F0F0F;
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --danger: #EF4444;
+  --seaweed-200: #b8e0cf;
+  --seaweed-300: #94d1b7;
+  --seaweed-400: #70c29e;
+  --seaweed-50: #edf7f3;
+  --seaweed-500: #4db386;
+  --seaweed-600: #3d8f6b;
+  --seaweed-700: #2e6b51;
+  --seaweed-800: #1f4736;
+  --seaweed-950: #0b1913;
+  --success: #10B981;
+  --text-primary: #F5F5F5;
+  --warning: #F59E0B;
+}
+
+/* Fontes: no CRM 2.0 vêm do next/font no layout dele. Aqui caem na stack do
+ * sistema — o CRM de produção já carrega as suas próprias famílias. */
+:root {
+  --font-cf2-ui: var(--font-body, system-ui, -apple-system, "Segoe UI", sans-serif);
+  --font-cf2-nav: var(--font-body, system-ui, -apple-system, "Segoe UI", sans-serif);
+  --font-cf2-heading: var(--font-heading, system-ui, -apple-system, "Segoe UI", sans-serif);
 }
