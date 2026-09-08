@@ -33,11 +33,15 @@ export default async function CrmLayout({
   const session = await resolveSession();
   if (!session?.user) redirect("/login");
 
+  // Pós-venda canônico: flag lida no servidor, a cada request. Deixa o
+  // rollback do menu ser "editar .env + restart", sem rebuild de imagem.
+  const posVendaAtivo = (process.env.POSVENDA_CANONICO || "").toLowerCase() === "on";
+
   return (
     <Providers session={session}>
       <ViewAsBanner />
       <div className="flex h-dvh overflow-hidden" style={{ background: 'var(--bg-primary)' }}>
-        <CrmSidebar />
+        <CrmSidebar posVendaAtivo={posVendaAtivo} />
         <main className="flex-1 overflow-hidden min-h-0 pt-12 lg:pt-0">{children}</main>
       </div>
     </Providers>

@@ -49,20 +49,15 @@ const messagingNav = [
   // { name: "Inbox Lemlist", href: "/inbox", countKey: null, icon: Inbox, color: "#8e27ef", colorLight: "rgba(142, 39, 239, 0.15)" },
 ];
 
-// Pós-venda canônico (08/09) — atrás de flag. `NEXT_PUBLIC_` porque isto é
-// client component: o Next inlina no build, então ligar/desligar o menu exige
-// rebuild do app (a criação do pós-venda em si é `POSVENDA_CANONICO`, lida em
-// runtime pela API). Enquanto a flag estiver off, o menu fica idêntico ao de
-// hoje e as rotas /pos-venda ficam inacessíveis pelo menu.
-const POS_VENDA_ON = (process.env.NEXT_PUBLIC_POSVENDA_CANONICO || "").toLowerCase() === "on";
-
-const posVendaNav = POS_VENDA_ON
-  ? [
-      { name: "Onboarding", href: "/pos-venda/onboarding", icon: Rocket, countKey: null },
-      { name: "Implantação", href: "/pos-venda/implantacao", icon: Wrench, countKey: null },
-      { name: "White Label", href: "/pos-venda/white-label", icon: Boxes, countKey: null },
-    ]
-  : [];
+// Pós-venda canônico (08/09) — atrás da flag POSVENDA_CANONICO, resolvida no
+// SERVIDOR (layout) e recebida por prop. De propósito não é `NEXT_PUBLIC_`:
+// essa o Next inlina no build, e ligar/desligar passaria a exigir rebuild da
+// imagem. Como prop, é runtime puro — o rollback é editar o .env e reiniciar.
+const posVendaNav = [
+  { name: "Onboarding", href: "/pos-venda/onboarding", icon: Rocket, countKey: null },
+  { name: "Implantação", href: "/pos-venda/implantacao", icon: Wrench, countKey: null },
+  { name: "White Label", href: "/pos-venda/white-label", icon: Boxes, countKey: null },
+];
 
 const navigation = [
   { name: "Meu Dia", href: "/dashboard", icon: Home, countKey: null },
@@ -72,7 +67,6 @@ const navigation = [
   { name: "Pré-vendas", href: "/pre-vendas", icon: Filter, countKey: null },
   { name: "Pipeline", href: "/pipeline", icon: Kanban, countKey: "pipeline" as const },
   { name: "Propostas", href: "/propostas", icon: ClipboardList, countKey: "propostas" as const },
-  ...posVendaNav,
   // Oculto a pedido do Scott (não usar agora). Código/página mantidos — reativar é só descomentar.
   // { name: "Onboarding", href: "/onboarding", icon: Rocket, countKey: null, adminOnly: true },
   { name: "Carteira", href: "/carteira", icon: Briefcase, countKey: "carteira" as const },
@@ -85,7 +79,7 @@ const navigation = [
   { name: "Configurações", href: "/configuracoes", icon: Settings, countKey: null, adminOnly: true },
 ];
 
-export function CrmSidebar() {
+export function CrmSidebar({ posVendaAtivo = false }: { posVendaAtivo?: boolean }) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
@@ -405,7 +399,12 @@ export function CrmSidebar() {
           {visibleMessaging.length > 0 && <div className="border-t border-white/[0.06] !my-2" />}
 
           {/* Main nav */}
-          {navigation
+          {(posVendaAtivo
+            ? // entra logo depois de Propostas, na ordem da jornada do cliente
+              navigation.flatMap((item) =>
+                item.href === "/propostas" ? [item, ...posVendaNav] : [item],
+              )
+            : navigation)
             .filter((item) => !(item as { adminOnly?: boolean }).adminOnly || effectiveIsAdmin)
             .filter((item) => canSee(item.href, effectiveRole))
             .map((item) => {
