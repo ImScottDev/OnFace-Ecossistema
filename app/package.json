@@ -13,7 +13,8 @@
     "db:studio": "drizzle-kit studio",
     "db:seed": "tsx src/lib/db/seed.ts",
     "db:seed-servicos": "tsx src/lib/db/seed-servicos.ts",
-    "db:cleanup-seed": "tsx src/lib/db/cleanup-seed.ts"
+    "db:cleanup-seed": "tsx src/lib/db/cleanup-seed.ts",
+    "posvenda:reprocessar": "tsx --env-file=.env src/scripts/reprocessar-pos-venda.ts"
   },
   "dependencies": {
     "@azure/msal-node": "^5.0.6",

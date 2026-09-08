@@ -35,6 +35,8 @@ import {
   Eye,
   CalendarClock,
   ListChecks,
+  Wrench,
+  Boxes,
 } from "lucide-react";
 
 const COLLAPSED_W = 64;
@@ -47,6 +49,21 @@ const messagingNav = [
   // { name: "Inbox Lemlist", href: "/inbox", countKey: null, icon: Inbox, color: "#8e27ef", colorLight: "rgba(142, 39, 239, 0.15)" },
 ];
 
+// Pós-venda canônico (08/09) — atrás de flag. `NEXT_PUBLIC_` porque isto é
+// client component: o Next inlina no build, então ligar/desligar o menu exige
+// rebuild do app (a criação do pós-venda em si é `POSVENDA_CANONICO`, lida em
+// runtime pela API). Enquanto a flag estiver off, o menu fica idêntico ao de
+// hoje e as rotas /pos-venda ficam inacessíveis pelo menu.
+const POS_VENDA_ON = (process.env.NEXT_PUBLIC_POSVENDA_CANONICO || "").toLowerCase() === "on";
+
+const posVendaNav = POS_VENDA_ON
+  ? [
+      { name: "Onboarding", href: "/pos-venda/onboarding", icon: Rocket, countKey: null },
+      { name: "Implantação", href: "/pos-venda/implantacao", icon: Wrench, countKey: null },
+      { name: "White Label", href: "/pos-venda/white-label", icon: Boxes, countKey: null },
+    ]
+  : [];
+
 const navigation = [
   { name: "Meu Dia", href: "/dashboard", icon: Home, countKey: null },
   { name: "Tarefas", href: "/tarefas", icon: ListChecks, countKey: null },
@@ -55,6 +72,7 @@ const navigation = [
   { name: "Pré-vendas", href: "/pre-vendas", icon: Filter, countKey: null },
   { name: "Pipeline", href: "/pipeline", icon: Kanban, countKey: "pipeline" as const },
   { name: "Propostas", href: "/propostas", icon: ClipboardList, countKey: "propostas" as const },
+  ...posVendaNav,
   // Oculto a pedido do Scott (não usar agora). Código/página mantidos — reativar é só descomentar.
   // { name: "Onboarding", href: "/onboarding", icon: Rocket, countKey: null, adminOnly: true },
   { name: "Carteira", href: "/carteira", icon: Briefcase, countKey: "carteira" as const },

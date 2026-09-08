@@ -258,6 +258,19 @@ export async function PATCH(
     .where(and(eq(negocios.id, id), eq(negocios.organizacaoId, ctx.organizacaoId)))
     .returning();
 
+  // Pós-venda canônico (flag POSVENDA_CANONICO): roteia pra Onboarding
+  // (Callface AI), Implantação PABX ou Implantação White Label. Fica DEPOIS
+  // do update de propósito — neste caminho o negócio só vira ganho aqui, e a
+  // função recusa negócio que não esteja com status='ganho' persistido.
+  // Nunca aguardado: se falhar, o negócio continua ganho e
+  // `npm run posvenda:reprocessar -- <id>` refaz.
+  if (parsed.data.status === "ganho") {
+    const { criarPosVendaDoNegocio } = await import("@/lib/crm/pos-venda");
+    void criarPosVendaDoNegocio(id).catch((e) =>
+      console.error("[pos-venda] falha (negócio segue ganho):", id, e)
+    );
+  }
+
   return NextResponse.json(updated);
 }
 

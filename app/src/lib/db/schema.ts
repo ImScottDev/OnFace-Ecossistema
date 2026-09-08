@@ -1522,3 +1522,177 @@ export const outreachCampanhas = pgTable("outreach_campanhas", {
 }, (table) => [
   index("idx_outreach_campanhas_org").on(table.organizacaoId),
 ]);
+
+// ═══════════════════════════════════════════════════════════════
+// PÓS-VENDA CANÔNICO (08/09) — Won → Serviço → Onboarding/Implantação.
+//
+// Definições portadas sem renomear nada do CRM 2.0 (branch dev), pra que a
+// subida do CRM2 completo encontre estas tabelas já povoadas em produção em
+// vez de precisar migrar de novo. Ver lib/crm/pos-venda.ts.
+//
+// `servicos_canonicos` JÁ EXISTIA no banco de produção (413 linhas da
+// reconciliação de agosto/2026) mas nunca esteve no schema.ts — a declaração
+// abaixo apenas expõe ao Drizzle o que já está lá, sem alterar a tabela.
+// ═══════════════════════════════════════════════════════════════
+
+export const servicosCanonicos = pgTable(
+  "servicos_canonicos",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+    empresaId: uuid("empresa_id").references(() => empresas.id, { onDelete: "set null" }),
+    leadId: uuid("lead_id").references(() => leads.id, { onDelete: "set null" }),
+    contratoId: uuid("contrato_id").references(() => contratos.id, { onDelete: "set null" }),
+    canonicalKey: text("canonical_key").notNull(),
+    serviceFamily: text("service_family").notNull(), // PABX | CALLFACE_AI | WHITE_LABEL | UNKNOWN
+    canonicalProduct: text("canonical_product"),
+    revenueNature: text("revenue_nature").notNull(), // MRR | SETUP | PROJECT | ONE_TIME | USAGE | HARDWARE | UNKNOWN
+    billingSource: text("billing_source").notNull(),
+    commercialLifecycle: text("commercial_lifecycle").notNull(), // ACTIVE | CHURNED | SUPERSEDED
+    billingStatus: text("billing_status").notNull(),
+    // Fonte da verdade do current MRR — nunca recalcular por SUM(contratos.mrr).
+    currentRecurringValue: decimal("current_recurring_value", { precision: 14, scale: 2 }).default("0").notNull(),
+    currentSubscriptionId: text("current_subscription_id"),
+    asOfDate: date("as_of_date"),
+    portfolioIncluded: boolean("portfolio_included").default(false).notNull(),
+    confidence: text("confidence").notNull(), // CONFIRMED | PROBABLE | AMBIGUOUS | UNRESOLVED
+    evidence: jsonb("evidence").default({}).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("idx_servicos_canonicos_org_key").on(table.organizacaoId, table.canonicalKey),
+    index("idx_servicos_canonicos_portfolio").on(table.organizacaoId, table.portfolioIncluded, table.serviceFamily),
+  ],
+);
+
+export const fulfillments = pgTable(
+  "fulfillments",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+    servicoCanonicoId: uuid("servico_canonico_id").references(() => servicosCanonicos.id, { onDelete: "cascade" }).notNull(),
+    serviceFamily: text("service_family").notNull(), // denormalizado, pra filtrar sem join
+    // Estado MACRO — nunca 1 status por etapa do checklist (isso vive em
+    // fulfillment_itens). NOT_STARTED|IN_PROGRESS|WAITING_CUSTOMER|
+    // BLOCKED_CUSTOMER|BLOCKED_INTERNAL|BLOCKED_PROVIDER|
+    // READY_FOR_VALIDATION|COMPLETED|CANCELED
+    status: text("status").default("NOT_STARTED").notNull(),
+    responsavelId: uuid("responsavel_id").references(() => usuarios.id),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    targetAt: timestamp("target_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    escopoVendidoSnapshot: jsonb("escopo_vendido_snapshot"),
+    // Token opaco pra página pública de coleta de informações do cliente
+    // (formulário de implantação PABX) — nunca ID sequencial/previsível.
+    publicToken: uuid("public_token").defaultRandom().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("idx_fulfillments_servico").on(table.servicoCanonicoId),
+    uniqueIndex("idx_fulfillments_public_token").on(table.publicToken),
+    index("idx_fulfillments_org").on(table.organizacaoId),
+    index("idx_fulfillments_status").on(table.organizacaoId, table.status),
+  ],
+);
+
+export const fulfillmentItens = pgTable(
+  "fulfillment_itens",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+    fulfillmentId: uuid("fulfillment_id").references(() => fulfillments.id, { onDelete: "cascade" }).notNull(),
+    // Workstream é texto livre, não enum de banco — cresce conforme o
+    // processo real. Nunca decidir a lista definitiva em código.
+    workstream: text("workstream").notNull(),
+    titulo: text("titulo").notNull(),
+    // PENDING|IN_PROGRESS|BLOCKED|VALIDATION|DONE
+    status: text("status").default("PENDING").notNull(),
+    blockerType: text("blocker_type"), // CUSTOMER | INTERNAL | PROVIDER
+    blockerReason: text("blocker_reason"),
+    ordem: integer("ordem").default(0).notNull(),
+    metadata: jsonb("metadata"),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    completedBy: uuid("completed_by").references(() => usuarios.id),
+    responsavelId: uuid("responsavel_id").references(() => usuarios.id),
+    dueDate: timestamp("due_date", { withTimezone: true }),
+    priority: text("priority"), // alta | media | baixa
+    blockedAt: timestamp("blocked_at", { withTimezone: true }),
+    blockerImpact: text("blocker_impact"), // alto | medio | baixo
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_fulfillment_itens_fulfillment").on(table.fulfillmentId),
+    index("idx_fulfillment_itens_org").on(table.organizacaoId),
+  ],
+);
+
+export const fulfillmentFormularios = pgTable(
+  "fulfillment_formularios",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+    fulfillmentId: uuid("fulfillment_id").references(() => fulfillments.id, { onDelete: "cascade" }).notNull(),
+    status: text("status").default("NOT_SENT").notNull(), // NOT_SENT|SENT|IN_PROGRESS|SUBMITTED|IN_REVIEW|CORRECTION_REQUIRED|APPROVED
+    respostas: jsonb("respostas").default({}).notNull(),
+    enviadoEm: timestamp("enviado_em", { withTimezone: true }),
+    submetidoEm: timestamp("submetido_em", { withTimezone: true }),
+    revisadoPor: uuid("revisado_por").references(() => usuarios.id),
+    revisadoEm: timestamp("revisado_em", { withTimezone: true }),
+    notaRevisao: text("nota_revisao"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_fulfillment_formularios_fulfillment").on(table.fulfillmentId),
+    index("idx_fulfillment_formularios_org").on(table.organizacaoId),
+  ],
+);
+
+export const fulfillmentRamais = pgTable(
+  "fulfillment_ramais",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+    fulfillmentId: uuid("fulfillment_id").references(() => fulfillments.id, { onDelete: "cascade" }).notNull(),
+    departamento: text("departamento"),
+    numeroExterno: text("numero_externo"),
+    ramal: text("ramal"),
+    usuario: text("usuario"),
+    email: text("email"),
+    celular: text("celular"),
+    modeloAparelho: text("modelo_aparelho"),
+    usaAparelhoFisico: boolean("usa_aparelho_fisico").default(false).notNull(),
+    gravacao: boolean("gravacao").default(false).notNull(),
+    ligacoesInternacionais: boolean("ligacoes_internacionais").default(false).notNull(),
+    paisesPermitidos: text("paises_permitidos").array(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_fulfillment_ramais_fulfillment").on(table.fulfillmentId),
+    index("idx_fulfillment_ramais_org").on(table.organizacaoId),
+  ],
+);
+
+export const fulfillmentLinhasPortabilidade = pgTable(
+  "fulfillment_linhas_portabilidade",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+    fulfillmentId: uuid("fulfillment_id").references(() => fulfillments.id, { onDelete: "cascade" }).notNull(),
+    ddd: text("ddd"),
+    numero: text("numero"),
+    tipo: text("tipo").notNull(), // portabilidade | nova_linha
+    operadoraAtual: text("operadora_atual"),
+    titular: text("titular"),
+    anexoUrl: text("anexo_url"),
+    anexoId: text("anexo_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_fulfillment_linhas_portabilidade_fulfillment").on(table.fulfillmentId),
+    index("idx_fulfillment_linhas_portabilidade_org").on(table.organizacaoId),
+  ],
+);

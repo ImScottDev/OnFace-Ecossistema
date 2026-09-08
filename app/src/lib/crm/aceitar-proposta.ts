@@ -217,5 +217,20 @@ export async function marcarPropostaAceita(opts: {
   const [pAtual] = await db.select({ negocioId: propostas.negocioId }).from(propostas).where(eq(propostas.id, proposta.id)).limit(1);
   if (pAtual?.negocioId) await notificarNegocioGanho(pAtual.negocioId);
 
+  // Pós-venda canônico (flag POSVENDA_CANONICO): roteia pra Onboarding
+  // (Callface AI), Implantação PABX ou Implantação White Label. Este é o
+  // caminho que fecha a MAIORIA das vendas e até hoje não gerava nada de
+  // pós-venda. Vale pros dois branches — com negócio pré-existente e com
+  // negócio criado no fechamento — porque `pAtual` já resolveu qual é.
+  // Nunca aguardado: se falhar, o negócio continua ganho e
+  // `npm run posvenda:reprocessar -- <id>` refaz.
+  if (pAtual?.negocioId) {
+    const negocioGanhoId = pAtual.negocioId;
+    const { criarPosVendaDoNegocio } = await import("@/lib/crm/pos-venda");
+    void criarPosVendaDoNegocio(negocioGanhoId).catch((e) =>
+      console.error("[pos-venda] falha (negócio segue ganho):", negocioGanhoId, e)
+    );
+  }
+
   return { contratoId: contrato.id };
 }

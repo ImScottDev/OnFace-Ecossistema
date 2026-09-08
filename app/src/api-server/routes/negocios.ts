@@ -508,6 +508,16 @@ app.patch("/negocios/:id", async (c) => {
       const { notificarNegocioGanho } = await import("@/lib/crm/notificar");
       await notificarNegocioGanho(id);
 
+      // Pós-venda canônico (flag POSVENDA_CANONICO): roteia pra Onboarding
+      // (Callface AI), Implantação PABX ou Implantação White Label. Só depois
+      // do negócio já estar persistido como ganho, e NUNCA aguardado: se
+      // falhar, o negócio continua ganho e `npm run posvenda:reprocessar --
+      // <id>` refaz. Idempotente, chamar duas vezes não duplica.
+      const { criarPosVendaDoNegocio } = await import("@/lib/crm/pos-venda");
+      void criarPosVendaDoNegocio(id).catch((e) =>
+        console.error("[pos-venda] falha (negócio segue ganho):", id, e)
+      );
+
       // Contract is now created above — carteira reads from contratos table directly
     }
 
