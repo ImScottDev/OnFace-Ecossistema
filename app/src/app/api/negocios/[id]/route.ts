@@ -266,9 +266,12 @@ export async function PATCH(
   // `npm run posvenda:reprocessar -- <id>` refaz.
   if (parsed.data.status === "ganho") {
     const { criarPosVendaDoNegocio } = await import("@/lib/crm/pos-venda");
-    void criarPosVendaDoNegocio(id).catch((e) =>
-      console.error("[pos-venda] falha (negócio segue ganho):", id, e)
-    );
+    void criarPosVendaDoNegocio(id)
+      .then((r) => {
+        if (r.criado) console.log(`[pos-venda] ${id} -> ${r.trilha} (${r.itensChecklist} itens)`);
+        else console.warn(`[pos-venda] ${id} não criou: ${r.motivo}`);
+      })
+      .catch((e) => console.error("[pos-venda] falha (negócio segue ganho):", id, e));
   }
 
   return NextResponse.json(updated);

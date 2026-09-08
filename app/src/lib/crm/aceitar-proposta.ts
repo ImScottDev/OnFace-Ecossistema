@@ -227,9 +227,12 @@ export async function marcarPropostaAceita(opts: {
   if (pAtual?.negocioId) {
     const negocioGanhoId = pAtual.negocioId;
     const { criarPosVendaDoNegocio } = await import("@/lib/crm/pos-venda");
-    void criarPosVendaDoNegocio(negocioGanhoId).catch((e) =>
-      console.error("[pos-venda] falha (negócio segue ganho):", negocioGanhoId, e)
-    );
+    void criarPosVendaDoNegocio(negocioGanhoId)
+      .then((r) => {
+        if (r.criado) console.log(`[pos-venda] ${negocioGanhoId} -> ${r.trilha} (${r.itensChecklist} itens)`);
+        else console.warn(`[pos-venda] ${negocioGanhoId} não criou: ${r.motivo}`);
+      })
+      .catch((e) => console.error("[pos-venda] falha (negócio segue ganho):", negocioGanhoId, e));
   }
 
   return { contratoId: contrato.id };

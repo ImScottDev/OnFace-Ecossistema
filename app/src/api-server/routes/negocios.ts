@@ -508,16 +508,6 @@ app.patch("/negocios/:id", async (c) => {
       const { notificarNegocioGanho } = await import("@/lib/crm/notificar");
       await notificarNegocioGanho(id);
 
-      // Pós-venda canônico (flag POSVENDA_CANONICO): roteia pra Onboarding
-      // (Callface AI), Implantação PABX ou Implantação White Label. Só depois
-      // do negócio já estar persistido como ganho, e NUNCA aguardado: se
-      // falhar, o negócio continua ganho e `npm run posvenda:reprocessar --
-      // <id>` refaz. Idempotente, chamar duas vezes não duplica.
-      const { criarPosVendaDoNegocio } = await import("@/lib/crm/pos-venda");
-      void criarPosVendaDoNegocio(id).catch((e) =>
-        console.error("[pos-venda] falha (negócio segue ganho):", id, e)
-      );
-
       // Contract is now created above — carteira reads from contratos table directly
     }
 
@@ -568,6 +558,26 @@ app.patch("/negocios/:id", async (c) => {
     .set(updateData)
     .where(and(eq(negocios.id, id), eq(negocios.organizacaoId, ctx.organizacaoId)))
     .returning();
+
+  // Pós-venda canônico (flag POSVENDA_CANONICO): roteia pra Onboarding
+  // (Callface AI), Implantação PABX ou Implantação White Label.
+  //
+  // Fica DEPOIS do update, não dentro do bloco de transição acima: é aqui que
+  // o status 'ganho' vira linha no banco, e a função recusa (silenciosamente,
+  // por design) negócio que ainda não esteja persistido como ganho. Chamar
+  // antes daqui é no-op — foi um bug real, custou um ciclo de teste.
+  //
+  // Nunca aguardado: se falhar, o negócio continua ganho e
+  // `npm run posvenda:reprocessar -- <id>` refaz. Idempotente.
+  if (parsed.data.status === "ganho") {
+    const { criarPosVendaDoNegocio } = await import("@/lib/crm/pos-venda");
+    void criarPosVendaDoNegocio(id)
+      .then((r) => {
+        if (r.criado) console.log(`[pos-venda] ${id} -> ${r.trilha} (${r.itensChecklist} itens)`);
+        else console.warn(`[pos-venda] ${id} não criou: ${r.motivo}`);
+      })
+      .catch((e) => console.error("[pos-venda] falha (negócio segue ganho):", id, e));
+  }
 
   return c.json(updated);
 });
