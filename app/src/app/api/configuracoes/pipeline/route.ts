@@ -65,6 +65,7 @@ export async function PUT(req: NextRequest) {
     stages: body.stages || current.stages,
     closedStages: body.closedStages || current.closedStages,
     lossReasons: body.lossReasons || current.lossReasons,
+    disqualifyReasons: body.disqualifyReasons || current.disqualifyReasons,
     setores: body.setores || current.setores,
     origens: body.origens || current.origens,
     servicos: body.servicos || current.servicos,

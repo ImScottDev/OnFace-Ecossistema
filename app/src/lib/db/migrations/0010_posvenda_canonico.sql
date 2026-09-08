@@ -143,3 +143,40 @@ CREATE TABLE IF NOT EXISTS fulfillment_linhas_portabilidade (
 );
 CREATE INDEX IF NOT EXISTS idx_fulfillment_linhas_port_fulfillment ON fulfillment_linhas_portabilidade(fulfillment_id);
 CREATE INDEX IF NOT EXISTS idx_fulfillment_linhas_port_org         ON fulfillment_linhas_portabilidade(organizacao_id);
+
+-- Anexos de negócio/nota. Usado pela aba Documentos da tela de entrega, portada
+-- do CRM 2.0. `anexos_legado` já existe em produção (veio da reconciliação de
+-- agosto) e por isso não aparece aqui.
+CREATE TABLE IF NOT EXISTS anexos (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  organizacao_id uuid NOT NULL REFERENCES organizacoes(id),
+  negocio_id uuid REFERENCES negocios(id) ON DELETE CASCADE,
+  nota_id uuid REFERENCES notas(id) ON DELETE CASCADE,
+  nome_arquivo text NOT NULL,
+  url text NOT NULL,
+  tipo_mime text,
+  tamanho_bytes integer,
+  criado_por_id uuid REFERENCES usuarios(id),
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_anexos_negocio ON anexos(negocio_id);
+CREATE INDEX IF NOT EXISTS idx_anexos_nota    ON anexos(nota_id);
+CREATE INDEX IF NOT EXISTS idx_anexos_org     ON anexos(organizacao_id);
+
+-- Trilha de auditoria. Usada por lib/crm/owner.ts (troca de responsável da
+-- entrega), portado do CRM 2.0 junto com as telas. Não existia em produção.
+CREATE TABLE IF NOT EXISTS audit_log (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  organizacao_id uuid NOT NULL REFERENCES organizacoes(id),
+  actor_id uuid REFERENCES usuarios(id),
+  action text NOT NULL,
+  entity_type text NOT NULL,
+  entity_id uuid,
+  before jsonb,
+  after jsonb,
+  source text NOT NULL DEFAULT 'api',
+  ip text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_audit_log_org    ON audit_log(organizacao_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_log_entity ON audit_log(entity_type, entity_id);

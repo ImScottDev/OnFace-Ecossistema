@@ -1,11 +1,5 @@
-import { FilaPosVenda } from "@/components/crm/FilaPosVenda";
+import { Cf2OnboardingWorkspace } from "@/components/crm2/clientes/OnboardingWorkspace";
 
-export default function OnboardingPosVendaPage() {
-  return (
-    <FilaPosVenda
-      trilha="onboarding"
-      titulo="Onboarding"
-      subtitulo="Callface AI — treinamento e ativação do cliente, do acesso ao primeiro valor."
-    />
-  );
+export default function OnboardingPage() {
+  return <Cf2OnboardingWorkspace />;
 }

@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   pgTable,
   uuid,
@@ -1696,3 +1697,74 @@ export const fulfillmentLinhasPortabilidade = pgTable(
     index("idx_fulfillment_linhas_portabilidade_org").on(table.organizacaoId),
   ],
 );
+
+// ─── ANEXOS (documentos de negócio e da entrega) ──────────
+// Portados do CRM 2.0 junto com as telas de pós-venda. `anexos_legado` JÁ
+// existe no banco de produção (veio da reconciliação); `anexos` é criada pela
+// migration 0010.
+export const anexosLegado = pgTable("anexos_legado", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+  entidadeTipo: text("entidade_tipo").notNull(),
+  entidadeId: uuid("entidade_id"),
+  categoria: text("categoria").default("anexo_generico").notNull(),
+  zohoId: text("zoho_id"),
+  nomeArquivo: text("nome_arquivo").notNull(),
+  tamanhoBytes: integer("tamanho_bytes"),
+  criadoEmOriginal: timestamp("criado_em_original", { withTimezone: true }),
+  storagePath: text("storage_path"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  checksumSha256: text("checksum_sha256"),
+}, (table) => [
+  index("idx_anexos_legado_entidade").on(table.entidadeTipo, table.entidadeId),
+  index("idx_anexos_legado_org").on(table.organizacaoId),
+  uniqueIndex("idx_anexos_legado_zoho_dedup").on(table.organizacaoId, table.zohoId).where(sql`zoho_id IS NOT NULL`),
+]);
+
+// ─── ANEXOS (upload real, 25/08) ────────────────────────────
+// Diferente de `anexosLegado` (histórico Zoho, read-only, arquivo físico
+// pode não existir neste ambiente): estes são uploads REAIS feitos pelo
+// time direto no CRM (nota, negócio, etc.), salvos em `UPLOADS_DIR` —
+// mesmo mecanismo já usado pra avatar de perfil (`api-server/routes/perfil.ts`).
+export const anexos = pgTable(
+  "anexos",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+    negocioId: uuid("negocio_id").references(() => negocios.id, { onDelete: "cascade" }),
+    notaId: uuid("nota_id").references(() => notas.id, { onDelete: "cascade" }),
+    nomeArquivo: text("nome_arquivo").notNull(),
+    url: text("url").notNull(),
+    tipoMime: text("tipo_mime"),
+    tamanhoBytes: integer("tamanho_bytes"),
+    criadoPorId: uuid("criado_por_id").references(() => usuarios.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_anexos_negocio").on(table.negocioId),
+    index("idx_anexos_nota").on(table.notaId),
+    index("idx_anexos_org").on(table.organizacaoId),
+  ]
+);
+
+// ─── AUDIT LOG ───
+// Usado por lib/crm/owner.ts (troca de responsável da entrega). Criada pela
+// migration 0010 — não existia em produção.
+export const auditLog = pgTable("audit_log", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+  actorId: uuid("actor_id").references(() => usuarios.id), // null = sistema/job/worker
+  action: text("action").notNull(), // ex: "impersonate", "org_switch", "deal.win", "lead.enrich_bulk"
+  entityType: text("entity_type").notNull(), // ex: "negocio", "usuario", "organizacao"
+  entityId: uuid("entity_id"),
+  before: jsonb("before"),
+  after: jsonb("after"),
+  source: text("source").notNull().default("api"), // api | worker | admin | webhook
+  ip: text("ip"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("idx_audit_log_org").on(table.organizacaoId),
+  index("idx_audit_log_actor").on(table.actorId),
+  index("idx_audit_log_entity").on(table.entityType, table.entityId),
+  index("idx_audit_log_created").on(table.createdAt),
+]);

@@ -9,7 +9,7 @@
  */
 import { db } from "@/lib/db";
 import { and, eq, inArray, like, sql } from "drizzle-orm";
-import { organizacoes, leads, negocios, propostas, propostaItens, servicosCanonicos, fulfillments, fulfillmentItens, tarefas } from "@/lib/db/schema";
+import { organizacoes, leads, negocios, propostas, propostaItens, servicosCanonicos, fulfillments, fulfillmentItens, tarefas, contratos, statusChanges, atividades } from "@/lib/db/schema";
 
 const TAG = "[TESTE]";
 
@@ -36,6 +36,11 @@ async function limpar(orgId: string) {
   const nIds = negs.map((n) => n.id);
   if (nIds.length) {
     await db.delete(tarefas).where(inArray(tarefas.negocioId, nIds));
+    // O Won cria contrato e registra histórico — sem apagar isso, o delete do
+    // negócio bate em FK (achado real na 2ª rodada de teste).
+    await db.delete(contratos).where(inArray(contratos.negocioId, nIds));
+    await db.delete(statusChanges).where(inArray(statusChanges.negocioId, nIds));
+    await db.delete(atividades).where(inArray(atividades.negocioId, nIds));
     const props = await db.select({ id: propostas.id }).from(propostas).where(inArray(propostas.negocioId, nIds));
     if (props.length) {
       await db.delete(propostaItens).where(inArray(propostaItens.propostaId, props.map((p) => p.id)));

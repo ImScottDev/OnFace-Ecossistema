@@ -1,11 +1,5 @@
-import { FilaPosVenda } from "@/components/crm/FilaPosVenda";
+import { Cf2EntregaWorkspace } from "@/components/crm2/clientes/EntregaWorkspace";
 
 export default function ImplantacaoWhiteLabelPage() {
-  return (
-    <FilaPosVenda
-      trilha="implantacao_white_label"
-      titulo="Implantação White Label"
-      subtitulo="White Label — acesso, branding, domínio, ambiente e treinamento do parceiro."
-    />
-  );
+  return <Cf2EntregaWorkspace familiaFixa="WHITE_LABEL" />;
 }

@@ -1,0 +1,428 @@
+/* Tokens do design system cf2, extraídos do globals.css do CRM 2.0 (branch dev).
+ * Arquivo separado de propósito: o globals.css de produção não é tocado, e as
+ * telas de pós-venda importam só isto + cf2-design-system.css. Precisa ser global
+ * (não module) porque portais de Dialog/Dropdown renderizam fora da árvore. */
+
+[data-cf2-theme="light"] {
+  --cf2-bg-page: #fafafa;
+  --cf2-bg-canvas: #f8fafc;
+  --cf2-bg-surface: #ffffff;
+  --cf2-bg-surface-muted: #f3f4f6;
+  --cf2-bg-surface-subtle: #f8fafc;
+  --cf2-bg-inverse: #111827;
+  --cf2-border-default: #e5e7eb;
+  --cf2-border-grid: rgba(217, 222, 229, 0.4);
+  --cf2-border-control: #767e8c;
+  --cf2-text-primary: #111827;
+  --cf2-text-secondary: #4b5563;
+  --cf2-text-tertiary: #6b7280;
+  --cf2-text-on-accent: #ffffff;
+  --cf2-text-on-inverse: #ffffff;
+  --cf2-accent: var(--seaweed-600);
+  --cf2-accent-border: var(--seaweed-700);
+  --cf2-accent-bg-subtle: #f3f4f6;
+  --cf2-success-text: #15803d;
+  --cf2-success-bg: #dcfce7;
+  --cf2-success-fill: #09ba2a;
+  --cf2-warning-text: #f59e0b;
+  --cf2-warning-bg: #fffbeb;
+  --cf2-warning-border: #fef3c7;
+  --cf2-danger-text: #d92d33;
+  --cf2-danger-border: #d92d33;
+  --cf2-avatar-1: #aaff00;
+  --cf2-avatar-2: #34d399;
+  --cf2-avatar-3: #ff6b8a;
+  --cf2-avatar-4: #f59e0b;
+  --cf2-avatar-5: #60a5fa;
+  --cf2-avatar-6: #a78bfa;
+  --cf2-avatar-7: #2dd4bf;
+  --cf2-avatar-8: #fb923c;
+  --cf2-avatar-9: #f87171;
+  --cf2-avatar-10: #38bdf8;
+  --cf2-avatar-11: #818cf8;
+  --cf2-avatar-12: #fb7185;
+  --cf2-shadow-shell: -4px 0px 16px 0px rgba(0, 0, 0, 0.08);
+  --cf2-shadow-card-sm: 0px 4px 8px 0px rgba(0, 0, 0, 0.04);
+  --cf2-shadow-card-md: 0px 4px 16px 0px rgba(0, 0, 0, 0.04);
+  --cf2-radius-sm: 8px;
+  --cf2-radius-md: 12px;
+  --cf2-radius-lg: 16px;
+  --cf2-radius-xl: 24px;
+  --cf2-radius-full: 9999px;
+  --cf2-font-heading: var(--font-cf2-heading), system-ui, sans-serif;
+  --cf2-font-nav: var(--font-cf2-nav), system-ui, sans-serif;
+  --cf2-font-ui: var(--font-cf2-ui), system-ui, sans-serif;
+  background: var(--cf2-bg-page);
+  color: var(--cf2-text-primary);
+  font-family: var(--cf2-font-ui);
+  --cf2-chrome-bg: #1c1f26;
+  --cf2-chrome-bg-alt: #16171c;
+  --cf2-chrome-surface-active: #1a1d24;
+  --cf2-chrome-border: rgba(255, 255, 255, 0.17);
+  --cf2-chrome-border-subtle: #22252a;
+  --cf2-chrome-text-primary: #ffffff;
+  --cf2-chrome-text-secondary: #9ca3af;
+  --cf2-home-hero-bg: #121316;
+  --cf2-home-kpi-bg: #1e1f24;
+  --cf2-home-ws-bg: #16181c;
+  --cf2-home-ws-icon-bg: #1d2025;
+  --cf2-home-dark-overlay: rgba(255, 255, 255, 0.08);
+  --cf2-home-text-strong: #f4f5f6;
+  --cf2-home-text-muted: #9ca0a9;
+  --cf2-home-lime: #a6e635;
+  --cf2-home-lime-soft: #b6f04a;
+  --cf2-home-lime-ink: #15230a;
+  --cf2-home-lime-bg: #eef8d9;
+  --cf2-home-lime-deep: #46600f;
+  --cf2-home-positive: #16a34a;
+  --cf2-home-positive-alt: #009966;
+  --cf2-home-danger: #e5484d;
+  --cf2-home-danger-bg: #fceded;
+  --cf2-home-warning: #f59e0b;
+  --cf2-home-warning-bg: #fdf1dd;
+  --cf2-home-info: #4667e6;
+  --cf2-home-info-bg: #eaeffe;
+  --cf2-home-ws-danger: #f06a6f;
+  --cf2-home-ws-warning: #f5b638;
+  --cf2-home-panel-border: #edeef1;
+  --cf2-home-neutral-surface: #f5f6f8;
+  --cf2-home-ink: #15161a;
+  --cf2-home-ink-soft: #62656e;
+  --cf2-home-ink-faint: #9a9da6;
+  --cf2-home-serie-mrr: #a6e635;
+  --cf2-home-serie-novo: #1c1f26;
+  --cf2-home-grid-line: #e5e5e5;
+  Achado da auditoria: a paleta `--cf2-home-*` tinha vazado pra 13
+  --cf2-success-fill, --cf2-home-positive, --cf2-home-positive-alt).
+  --cf2-home-* seguem existindo como apelido, então nada quebra. */
+  --cf2-brand: var(--seaweed-500);
+  --cf2-brand-ink: var(--seaweed-950);
+  --cf2-brand-vivid: var(--seaweed-400);
+  --cf2-brand-bg: var(--seaweed-50);
+  --cf2-brand-deep: var(--seaweed-700);
+  --cf2-positivo: var(--seaweed-500);
+  --cf2-positivo-bg: var(--seaweed-50);
+  --cf2-positivo-fg: var(--seaweed-800);
+  --cf2-positivo-solido: var(--seaweed-700);
+  --cf2-negativo: #d92d33;
+  --cf2-negativo-bg: #fceded;
+  --cf2-negativo-fg: #a11d21;
+  --cf2-atencao: #f59e0b;
+  --cf2-atencao-bg: #fdf1dd;
+  --cf2-atencao-fg: #8a5a06;
+  --cf2-atencao-ink: #422006;
+  --cf2-informativo: #4667e6;
+  --cf2-informativo-bg: #eaeffe;
+  --cf2-informativo-fg: #2542a8;
+  --cf2-positivo-weak: var(--seaweed-200);
+  --cf2-negativo-weak: #f5c2c4;
+  --cf2-atencao-weak: #f7dfb0;
+  --cf2-informativo-weak: #c3d1f8;
+  --cf2-brand-weak: var(--seaweed-200);
+  --cf2-hero-bg: #121316;
+  --cf2-serie-1: var(--seaweed-500);
+  --cf2-serie-2: #5b8def;
+  --cf2-serie-3: #f5a623;
+  --cf2-serie-4: #9b7ef0;
+  --cf2-serie-5: #f2708a;
+  --cf2-grid-line: #e5e5e5;
+  --background: var(--cf2-bg-surface);
+  --foreground: var(--cf2-text-primary);
+  --primary: var(--cf2-accent);
+  --primary-foreground: var(--cf2-text-on-accent);
+  --secondary: var(--cf2-bg-surface-muted);
+  --secondary-foreground: var(--cf2-text-primary);
+  --muted: var(--cf2-bg-surface-muted);
+  --muted-foreground: var(--cf2-text-secondary);
+  --accent: var(--cf2-bg-surface-muted);
+  --accent-foreground: var(--cf2-text-primary);
+  --destructive: var(--cf2-danger-text);
+  --card: var(--cf2-bg-surface);
+  --card-foreground: var(--cf2-text-primary);
+  --popover: var(--cf2-bg-surface);
+  --popover-foreground: var(--cf2-text-primary);
+  --border: var(--cf2-border-default);
+  --input: var(--cf2-border-default);
+  --ring: var(--cf2-accent-border);
+}
+
+/* Tema escuro real do CRM 2.0 (25/08) — exatamente o bloco que o comentário
+   acima já previa ("quando dark for implementado, é só adicionar um bloco
+   [data-cf2-theme=\"dark\"]... zero componente muda"). Usa os tokens de marca
+   Callface já definidos em :root (bg-primary/bg-card/accent-lima) como base
+   — não inventa paleta nova. Aplicado por componente via `data-cf2-theme=
+   "dark"` no wrapper (ex.: painel de contexto do Atendimento), não no app
+   inteiro — mesmo escopo local que "builder" já usa. */
+[data-cf2-theme="dark"] {
+  --cf2-bg-page: var(--bg-primary);
+  --cf2-bg-canvas: var(--bg-sidebar);
+  --cf2-bg-surface: var(--bg-card);
+  --cf2-bg-surface-muted: var(--bg-card-hover);
+  --cf2-bg-surface-subtle: var(--bg-elevated);
+  --cf2-bg-inverse: var(--text-primary);
+  --cf2-border-default: var(--border-subtle);
+  --cf2-border-grid: var(--border-subtle);
+  --cf2-text-primary: #ffffff;
+  --cf2-text-secondary: rgba(255, 255, 255, 0.82);
+  --cf2-text-tertiary: rgba(255, 255, 255, 0.55);
+  --cf2-text-on-accent: #0f172a;
+  --cf2-text-on-inverse: var(--bg-primary);
+  --cf2-accent: var(--accent-lima);
+  --cf2-accent-border: #a6d600;
+  --cf2-accent-bg-subtle: rgba(200, 255, 0, 0.12);
+  --cf2-success-text: #4ade80;
+  --cf2-success-bg: rgba(16, 185, 129, 0.16);
+  --cf2-success-fill: var(--success);
+  --cf2-warning-text: var(--warning);
+  --cf2-warning-bg: rgba(245, 158, 11, 0.14);
+  --cf2-warning-border: rgba(245, 158, 11, 0.3);
+  --cf2-danger-text: #f87171;
+  --cf2-danger-border: var(--danger);
+  --cf2-avatar-1: var(--accent-lima);
+  --cf2-avatar-2: #4ade80;
+  --cf2-avatar-3: #ff6b8a;
+  --cf2-avatar-4: var(--warning);
+  --cf2-avatar-5: #60a5fa;
+  --cf2-avatar-6: #a78bfa;
+  --cf2-avatar-7: #2dd4bf;
+  --cf2-avatar-8: #fb923c;
+  --cf2-avatar-9: #f87171;
+  --cf2-avatar-10: #38bdf8;
+  --cf2-avatar-11: #818cf8;
+  --cf2-avatar-12: #fb7185;
+  --cf2-brand: var(--seaweed-400);
+  --cf2-brand-ink: var(--seaweed-950);
+  --cf2-brand-vivid: var(--seaweed-300);
+  --cf2-positivo-solido: var(--seaweed-400);
+  --cf2-brand-bg: rgba(77, 179, 134, 0.14);
+  --cf2-brand-deep: var(--seaweed-300);
+  --cf2-positivo: var(--seaweed-400);
+  --cf2-positivo-bg: rgba(77, 179, 134, 0.14);
+  --cf2-positivo-fg: var(--seaweed-300);
+  --cf2-negativo: #f87171;
+  --cf2-negativo-bg: rgba(248, 113, 113, 0.14);
+  --cf2-negativo-fg: #fca5a5;
+  --cf2-atencao: #fbbf24;
+  --cf2-atencao-bg: rgba(251, 191, 36, 0.14);
+  --cf2-atencao-fg: #fcd34d;
+  --cf2-informativo: #60a5fa;
+  --cf2-informativo-bg: rgba(96, 165, 250, 0.14);
+  --cf2-informativo-fg: #93c5fd;
+  --cf2-positivo-weak: rgba(74, 222, 128, 0.3);
+  --cf2-negativo-weak: rgba(248, 113, 113, 0.3);
+  --cf2-atencao-weak: rgba(251, 191, 36, 0.3);
+  --cf2-informativo-weak: rgba(96, 165, 250, 0.3);
+  --cf2-brand-weak: rgba(200, 255, 0, 0.3);
+  --cf2-hero-bg: #16171c;
+  --cf2-serie-1: var(--seaweed-400);
+  --cf2-serie-2: #7fa8f5;
+  --cf2-serie-3: #fbbf24;
+  --cf2-serie-4: #b39cf5;
+  --cf2-serie-5: #f58fa4;
+  --cf2-grid-line: rgba(255, 255, 255, 0.1);
+  --cf2-shadow-shell: -4px 0px 16px 0px rgba(0, 0, 0, 0.5);
+  --cf2-shadow-card-sm: 0px 4px 10px 0px rgba(0, 0, 0, 0.35);
+  --cf2-shadow-card-md: 0px 8px 24px 0px rgba(0, 0, 0, 0.45);
+  background: var(--cf2-bg-page);
+  color: var(--cf2-text-primary);
+  font-family: var(--cf2-font-ui);
+}
+
+/* Editor de automações: o canvas é uma ferramenta de trabalho contínuo,
+   não um card de configuração. Mantém a linguagem Callface (lima + chrome)
+   e dá ao grafo o contraste necessário para leitura de arestas e nós. */
+[data-cf2-theme="builder"] {
+  --cf2-bg-page: #171812;
+  --cf2-bg-canvas: #151611;
+  --cf2-bg-surface: #20211b;
+  --cf2-bg-surface-muted: #292a23;
+  --cf2-bg-surface-subtle: #1b1c17;
+  --cf2-bg-inverse: #f4f6ed;
+  --cf2-border-default: #383a30;
+  --cf2-border-grid: rgba(181, 190, 168, 0.17);
+  --cf2-text-primary: #f5f7ef;
+  --cf2-text-secondary: #aeb3a4;
+  --cf2-text-tertiary: #747a6c;
+  --cf2-text-on-accent: #12150c;
+  --cf2-text-on-inverse: #171812;
+  --cf2-accent: #b5ff16;
+  --cf2-accent-border: #8ac400;
+  --cf2-accent-bg-subtle: #313b1d;
+  --cf2-success-text: #9fe870;
+  --cf2-success-bg: #26351e;
+  --cf2-success-fill: #9fe870;
+  --cf2-warning-text: #f3b75f;
+  --cf2-warning-bg: #332d1b;
+  --cf2-warning-border: #554626;
+  --cf2-danger-text: #ff8e83;
+  --cf2-danger-border: #b8544e;
+  --cf2-shadow-card-sm: 0 14px 35px rgba(0, 0, 0, 0.22);
+  --cf2-shadow-card-md: 0 20px 55px rgba(0, 0, 0, 0.3);
+  background: var(--cf2-bg-page);
+  color: var(--cf2-text-primary);
+  font-family: var(--cf2-font-ui);
+}
+
+/* BUG RAIZ (31/08): `body` fixava `color: var(--text-primary)` = #F5F5F5, o
+   branco do tema escuro LEGADO. Componentes que só pintam o fundo e deixam o
+   texto herdar (DialogContent tem `bg-background` mas nenhum `text-*`) ficavam
+   BRANCO SOBRE BRANCO. Sintoma que o Kauã viu: título do modal e o botão
+   "Cancelar" quase invisíveis, enquanto a descrição — que usa
+   `text-muted-foreground` explícito — aparecia normal.
+   O `Cf2ThemeRoot` põe o atributo no <html>, então isto cobre inclusive o que
+   é renderizado em portal (dropdown, modal, tooltip, sheet) fora da árvore
+   do layout. */
+[data-cf2-theme="light"] body {
+  background: var(--cf2-bg-page);
+  color: var(--cf2-text-primary);
+  font-family: var(--cf2-font-ui);
+}
+
+
+/* Os mesmos tokens no :root. Necessário porque Dialog/DropdownMenu renderizam
+ * em portal, direto no <body>, fora do container que carrega
+ * data-cf2-theme — sem isto o modal abre sem cor e sem fonte (armadilha já
+ * documentada no handoff do CRM 2.0). Inócuo pro resto do CRM: nenhuma tela
+ * antiga usa variável --cf2-*. */
+:root {
+  --cf2-bg-page: #fafafa;
+  --cf2-bg-canvas: #f8fafc;
+  --cf2-bg-surface: #ffffff;
+  --cf2-bg-surface-muted: #f3f4f6;
+  --cf2-bg-surface-subtle: #f8fafc;
+  --cf2-bg-inverse: #111827;
+  --cf2-border-default: #e5e7eb;
+  --cf2-border-grid: rgba(217, 222, 229, 0.4);
+  --cf2-border-control: #767e8c;
+  --cf2-text-primary: #111827;
+  --cf2-text-secondary: #4b5563;
+  --cf2-text-tertiary: #6b7280;
+  --cf2-text-on-accent: #ffffff;
+  --cf2-text-on-inverse: #ffffff;
+  --cf2-accent: var(--seaweed-600);
+  --cf2-accent-border: var(--seaweed-700);
+  --cf2-accent-bg-subtle: #f3f4f6;
+  --cf2-success-text: #15803d;
+  --cf2-success-bg: #dcfce7;
+  --cf2-success-fill: #09ba2a;
+  --cf2-warning-text: #f59e0b;
+  --cf2-warning-bg: #fffbeb;
+  --cf2-warning-border: #fef3c7;
+  --cf2-danger-text: #d92d33;
+  --cf2-danger-border: #d92d33;
+  --cf2-avatar-1: #aaff00;
+  --cf2-avatar-2: #34d399;
+  --cf2-avatar-3: #ff6b8a;
+  --cf2-avatar-4: #f59e0b;
+  --cf2-avatar-5: #60a5fa;
+  --cf2-avatar-6: #a78bfa;
+  --cf2-avatar-7: #2dd4bf;
+  --cf2-avatar-8: #fb923c;
+  --cf2-avatar-9: #f87171;
+  --cf2-avatar-10: #38bdf8;
+  --cf2-avatar-11: #818cf8;
+  --cf2-avatar-12: #fb7185;
+  --cf2-shadow-shell: -4px 0px 16px 0px rgba(0, 0, 0, 0.08);
+  --cf2-shadow-card-sm: 0px 4px 8px 0px rgba(0, 0, 0, 0.04);
+  --cf2-shadow-card-md: 0px 4px 16px 0px rgba(0, 0, 0, 0.04);
+  --cf2-radius-sm: 8px;
+  --cf2-radius-md: 12px;
+  --cf2-radius-lg: 16px;
+  --cf2-radius-xl: 24px;
+  --cf2-radius-full: 9999px;
+  --cf2-font-heading: var(--font-cf2-heading), system-ui, sans-serif;
+  --cf2-font-nav: var(--font-cf2-nav), system-ui, sans-serif;
+  --cf2-font-ui: var(--font-cf2-ui), system-ui, sans-serif;
+  background: var(--cf2-bg-page);
+  color: var(--cf2-text-primary);
+  font-family: var(--cf2-font-ui);
+  --cf2-chrome-bg: #1c1f26;
+  --cf2-chrome-bg-alt: #16171c;
+  --cf2-chrome-surface-active: #1a1d24;
+  --cf2-chrome-border: rgba(255, 255, 255, 0.17);
+  --cf2-chrome-border-subtle: #22252a;
+  --cf2-chrome-text-primary: #ffffff;
+  --cf2-chrome-text-secondary: #9ca3af;
+  --cf2-home-hero-bg: #121316;
+  --cf2-home-kpi-bg: #1e1f24;
+  --cf2-home-ws-bg: #16181c;
+  --cf2-home-ws-icon-bg: #1d2025;
+  --cf2-home-dark-overlay: rgba(255, 255, 255, 0.08);
+  --cf2-home-text-strong: #f4f5f6;
+  --cf2-home-text-muted: #9ca0a9;
+  --cf2-home-lime: #a6e635;
+  --cf2-home-lime-soft: #b6f04a;
+  --cf2-home-lime-ink: #15230a;
+  --cf2-home-lime-bg: #eef8d9;
+  --cf2-home-lime-deep: #46600f;
+  --cf2-home-positive: #16a34a;
+  --cf2-home-positive-alt: #009966;
+  --cf2-home-danger: #e5484d;
+  --cf2-home-danger-bg: #fceded;
+  --cf2-home-warning: #f59e0b;
+  --cf2-home-warning-bg: #fdf1dd;
+  --cf2-home-info: #4667e6;
+  --cf2-home-info-bg: #eaeffe;
+  --cf2-home-ws-danger: #f06a6f;
+  --cf2-home-ws-warning: #f5b638;
+  --cf2-home-panel-border: #edeef1;
+  --cf2-home-neutral-surface: #f5f6f8;
+  --cf2-home-ink: #15161a;
+  --cf2-home-ink-soft: #62656e;
+  --cf2-home-ink-faint: #9a9da6;
+  --cf2-home-serie-mrr: #a6e635;
+  --cf2-home-serie-novo: #1c1f26;
+  --cf2-home-grid-line: #e5e5e5;
+  Achado da auditoria: a paleta `--cf2-home-*` tinha vazado pra 13
+  --cf2-success-fill, --cf2-home-positive, --cf2-home-positive-alt).
+  --cf2-home-* seguem existindo como apelido, então nada quebra. */
+  --cf2-brand: var(--seaweed-500);
+  --cf2-brand-ink: var(--seaweed-950);
+  --cf2-brand-vivid: var(--seaweed-400);
+  --cf2-brand-bg: var(--seaweed-50);
+  --cf2-brand-deep: var(--seaweed-700);
+  --cf2-positivo: var(--seaweed-500);
+  --cf2-positivo-bg: var(--seaweed-50);
+  --cf2-positivo-fg: var(--seaweed-800);
+  --cf2-positivo-solido: var(--seaweed-700);
+  --cf2-negativo: #d92d33;
+  --cf2-negativo-bg: #fceded;
+  --cf2-negativo-fg: #a11d21;
+  --cf2-atencao: #f59e0b;
+  --cf2-atencao-bg: #fdf1dd;
+  --cf2-atencao-fg: #8a5a06;
+  --cf2-atencao-ink: #422006;
+  --cf2-informativo: #4667e6;
+  --cf2-informativo-bg: #eaeffe;
+  --cf2-informativo-fg: #2542a8;
+  --cf2-positivo-weak: var(--seaweed-200);
+  --cf2-negativo-weak: #f5c2c4;
+  --cf2-atencao-weak: #f7dfb0;
+  --cf2-informativo-weak: #c3d1f8;
+  --cf2-brand-weak: var(--seaweed-200);
+  --cf2-hero-bg: #121316;
+  --cf2-serie-1: var(--seaweed-500);
+  --cf2-serie-2: #5b8def;
+  --cf2-serie-3: #f5a623;
+  --cf2-serie-4: #9b7ef0;
+  --cf2-serie-5: #f2708a;
+  --cf2-grid-line: #e5e5e5;
+  --background: var(--cf2-bg-surface);
+  --foreground: var(--cf2-text-primary);
+  --primary: var(--cf2-accent);
+  --primary-foreground: var(--cf2-text-on-accent);
+  --secondary: var(--cf2-bg-surface-muted);
+  --secondary-foreground: var(--cf2-text-primary);
+  --muted: var(--cf2-bg-surface-muted);
+  --muted-foreground: var(--cf2-text-secondary);
+  --accent: var(--cf2-bg-surface-muted);
+  --accent-foreground: var(--cf2-text-primary);
+  --destructive: var(--cf2-danger-text);
+  --card: var(--cf2-bg-surface);
+  --card-foreground: var(--cf2-text-primary);
+  --popover: var(--cf2-bg-surface);
+  --popover-foreground: var(--cf2-text-primary);
+  --border: var(--cf2-border-default);
+  --input: var(--cf2-border-default);
+  --ring: var(--cf2-accent-border);
+}
