@@ -4,6 +4,7 @@ import { reunioes, usuarios } from "@/lib/db/schema";
 import { eq, and, desc } from "drizzle-orm";
 import { z } from "zod";
 import { getTenantContext, unauthorizedResponse } from "@/lib/auth/tenant";
+import { criarEventoOutlookParaReuniao } from "@/lib/crm/outlook-evento";
 
 const createSchema = z.object({
   negocioId: z.string().uuid().optional().nullable(),
@@ -17,6 +18,8 @@ const createSchema = z.object({
   notas: z.string().optional().nullable(),
   transcript: z.string().optional().nullable(),
   resumoTranscript: z.string().optional().nullable(),
+  /** Ver `api-server/routes/reunioes.ts`: o campo era descartado em silêncio. */
+  attendeeEmail: z.string().email().optional().nullable(),
 });
 
 // GET /api/reunioes
@@ -87,7 +90,27 @@ export async function POST(request: NextRequest) {
       })
       .returning();
 
-    return NextResponse.json(reuniao, { status: 201 });
+    // Espelho do Hono (`api-server/routes/reunioes.ts`): a reunião só está
+    // agendada de verdade quando entra na agenda de quem conduz e o cliente
+    // recebe convite.
+    const attendee = data.attendeeEmail
+      || (Array.isArray(data.participantes) ? data.participantes.find((p) => p.includes("@")) : null)
+      || null;
+
+    const outlook = await criarEventoOutlookParaReuniao({
+      reuniaoId: reuniao.id,
+      usuarioId: ctx.userId,
+      attendeeEmail: attendee,
+      origem: "Reunioes",
+    });
+
+    const [atualizada] = await db
+      .select()
+      .from(reunioes)
+      .where(eq(reunioes.id, reuniao.id))
+      .limit(1);
+
+    return NextResponse.json({ ...(atualizada || reuniao), outlook }, { status: 201 });
   } catch (err) {
     if (err instanceof z.ZodError) {
       return NextResponse.json({ error: err.issues[0].message }, { status: 400 });

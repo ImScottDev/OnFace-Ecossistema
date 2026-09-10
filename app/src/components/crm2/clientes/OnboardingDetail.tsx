@@ -174,6 +174,18 @@ const alvoExterno = (canal: "whatsapp" | "email" | "ligacao", telefone?: string 
 const secLabel = { color: "var(--cf2-text-tertiary)" };
 
 /**
+ * Por que a reunião não entrou na agenda. Duplicado (curto) do
+ * `lib/crm/outlook-evento.ts` de propósito: aquele módulo é server-side (puxa
+ * `db`) e não pode ser importado por componente cliente.
+ */
+const MOTIVO_OUTLOOK: Record<string, string> = {
+  sem_outlook: "Reunião criada, mas NÃO entrou na agenda: conecte sua conta Microsoft em Configurações > E-mail.",
+  lead_sem_email: "Reunião na agenda, mas o cliente NÃO foi convidado: lead sem e-mail cadastrado.",
+  token_expirado: "Reunião criada, mas NÃO entrou na agenda: conexão com a Microsoft expirou. Reconecte em Configurações > E-mail.",
+  erro_graph: "Reunião criada, mas NÃO entrou na agenda do Outlook (falha ao falar com a Microsoft).",
+};
+
+/**
  * Detalhe DEDICADO de Onboarding (Callface AI) — 3ª reconstrução, 25/08.
  * A 2ª versão ainda usava divs cruas com style inline em vez do design
  * system real do CRM2 (Cf2Card/Cf2Button/Cf2Badge/Cf2Dialog), era
@@ -291,7 +303,19 @@ export function Cf2OnboardingDetail({ fulfillmentId }: { fulfillmentId: string }
       if (!r.ok) throw new Error("Falha ao agendar reunião");
       return r.json();
     },
-    onSuccess: () => { setReuniaoAberta(false); invalidate(); toastDark.success("Reunião agendada"); },
+    /**
+     * "Reunião agendada" sozinho mentia: o evento pode não ter entrado na
+     * agenda do Outlook (sem conta conectada, token expirado, lead sem
+     * e-mail) e o cliente não receber convite nenhum. O backend devolve
+     * `outlook.motivo` justamente pra isso aparecer aqui.
+     */
+    onSuccess: (resp: { outlook?: { criado: boolean; motivo: string | null } }) => {
+      setReuniaoAberta(false);
+      invalidate();
+      const motivo = resp?.outlook?.motivo;
+      if (!motivo) { toastDark.success("Reunião agendada e convite enviado pelo Outlook"); return; }
+      toastDark.error(MOTIVO_OUTLOOK[motivo] ?? "Reunião criada no CRM, mas não entrou na agenda do Outlook.");
+    },
     onError: () => toastDark.error("Não foi possível agendar a reunião"),
   });
 

@@ -5,6 +5,7 @@ import { eq, and, desc } from "drizzle-orm";
 import { z } from "zod";
 import { getCtx } from "../compat.js";
 import { deleteOutlookEvent } from "@/lib/email/microsoft";
+import { criarEventoOutlookParaReuniao } from "@/lib/crm/outlook-evento";
 
 const app = new Hono();
 
@@ -41,6 +42,13 @@ const createSchema = z.object({
   notas: z.string().optional().nullable(),
   transcript: z.string().optional().nullable(),
   resumoTranscript: z.string().optional().nullable(),
+  /**
+   * E-mail do cliente a convidar. O Onboarding já mandava este campo desde
+   * sempre, mas ele não existia aqui — e como o Zod não é `.strict()`, era
+   * descartado em silêncio: a reunião nascia só na tabela, sem evento no
+   * Outlook e sem convite pro cliente, com a UI dizendo "agendada".
+   */
+  attendeeEmail: z.string().email().optional().nullable(),
 });
 
 const updateSchema = z.object({
@@ -120,7 +128,27 @@ app.post("/reunioes", async (c) => {
       })
       .returning();
 
-    return c.json(reuniao, 201);
+    // A reunião só existe de verdade quando está na agenda de quem vai
+    // conduzi-la e o cliente recebeu convite. `outlook` volta pra UI poder
+    // dizer a verdade quando isso não acontecer.
+    const attendee = data.attendeeEmail
+      || (Array.isArray(data.participantes) ? data.participantes.find((p) => p.includes("@")) : null)
+      || null;
+
+    const outlook = await criarEventoOutlookParaReuniao({
+      reuniaoId: reuniao.id,
+      usuarioId: ctx.userId,
+      attendeeEmail: attendee,
+      origem: "Reunioes",
+    });
+
+    const [atualizada] = await db
+      .select()
+      .from(reunioes)
+      .where(eq(reunioes.id, reuniao.id))
+      .limit(1);
+
+    return c.json({ ...(atualizada || reuniao), outlook }, 201);
   } catch (err) {
     if (err instanceof z.ZodError) {
       return c.json({ error: err.issues[0].message }, 400);

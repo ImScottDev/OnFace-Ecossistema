@@ -255,40 +255,54 @@ export default function WhatsAppPage() {
   // conversa — nesse caso volta uma conversa "lead-only" pronta pro 1º envio.
   const deepLinkKey = preselectedContato || preselectedLeadId || preselectedTelefone;
   const deepLinkResolvido = useRef(false);
+  /**
+   * Depende SÓ dos params da URL — nunca de `allConversations` (10/09/2026).
+   *
+   * Bug real: com a lista nas dependências, o efeito re-rodava assim que o
+   * inbox terminava de carregar. O cleanup do render anterior marcava
+   * `cancelado = true` e matava o fetch em andamento; na re-execução o
+   * `deepLinkResolvido` já estava `true` e retornava na primeira linha. O
+   * resultado era a tela presa em "Abrindo conversa…" pra sempre — e como o
+   * efeito nunca falhava, também não havia erro pra mostrar.
+   *
+   * Não há mais atalho pela lista carregada: resolver sempre no servidor é
+   * uma requisição barata e cobre o caso que a lista não cobre (conversa de
+   * outra página, de outra view, ou cliente que nunca conversou).
+   */
   useEffect(() => {
     if (!deepLinkKey || deepLinkResolvido.current) return;
-
-    // Já está na lista carregada (caso comum: conversa recente do usuário).
-    const naLista = allConversations.find(
-      (c) => c.id === preselectedContato || (preselectedLeadId && c.leadId === preselectedLeadId)
-    );
-    if (naLista) {
-      deepLinkResolvido.current = true;
-      setSelectedContatoId(naLista.id);
-      return;
-    }
-
     deepLinkResolvido.current = true;
-    let cancelado = false;
+
+    let vivo = true;
     (async () => {
-      const params = new URLSearchParams();
-      if (preselectedContato) params.set("contatoId", preselectedContato);
-      if (preselectedLeadId) params.set("leadId", preselectedLeadId);
-      if (preselectedTelefone) params.set("telefone", preselectedTelefone);
-      const res = await fetch(`/api/whatsapp/conversations/resolve?${params}`);
-      if (cancelado) return;
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        setLinkErro(body?.error || "Não foi possível abrir a conversa desse contato.");
-        return;
+      try {
+        const params = new URLSearchParams();
+        if (preselectedContato) params.set("contatoId", preselectedContato);
+        if (preselectedLeadId) params.set("leadId", preselectedLeadId);
+        if (preselectedTelefone) params.set("telefone", preselectedTelefone);
+
+        const res = await fetch(`/api/whatsapp/conversations/resolve?${params}`);
+        if (!vivo) return;
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          setLinkErro(body?.error || "Não foi possível abrir a conversa desse contato.");
+          return;
+        }
+        const { conversation } = await res.json();
+        if (!vivo) return;
+        if (!conversation) {
+          setLinkErro("Não foi possível abrir a conversa desse contato.");
+          return;
+        }
+        setLinkedContato(conversation);
+        setSelectedContatoId(conversation.id);
+      } catch {
+        // Sem isto a tela fica em "Abrindo conversa…" indefinidamente.
+        if (vivo) setLinkErro("Falha de rede ao abrir a conversa. Recarregue a página.");
       }
-      const { conversation } = await res.json();
-      if (cancelado || !conversation) return;
-      setLinkedContato(conversation);
-      setSelectedContatoId(conversation.id);
     })();
-    return () => { cancelado = true; };
-  }, [deepLinkKey, preselectedContato, preselectedLeadId, preselectedTelefone, allConversations]);
+    return () => { vivo = false; };
+  }, [deepLinkKey, preselectedContato, preselectedLeadId, preselectedTelefone]);
 
   // Infinite scroll
   const handleScroll = useCallback(() => {
