@@ -98,6 +98,29 @@ const RESPOSTAS_VAZIAS: Respostas = {
   outrasInformacoes: "",
 };
 
+const linhaTemDado = (l: LinhaPortabilidade) => !!(l.ddd || l.numero || l.novaLinha || l.anexoUrl);
+const ramalTemDado = (r: RamalItem) => !!(
+  r.ramal || r.nome || r.departamento || r.numeroExterno || r.modeloAparelho || r.email
+  || r.celular || r.paises || r.utilizaAparelhoMesa || r.notificacaoLigacoesPerdidas
+  || r.gravarLigacao || r.acessoGestor || r.ligacoesInternacionais
+);
+
+/**
+ * Índice (1-based) do último item com algum dado preenchido, ou 0 se nenhum.
+ *
+ * Achado real (10/09/2026, reclamação de cliente em produção): "+ Adicionar
+ * linha/ramal" empurrava um item VAZIO pro array, mas a lista visível filtrava
+ * exatamente os itens vazios — a linha nova nascia escondida e o clique
+ * parecia não fazer nada. A visibilidade agora é por CONTAGEM revelada
+ * (`linhasReveladas`/`ramaisRevelados`, abaixo), não por "tem conteúdo": o
+ * botão sempre soma +1 à contagem, então a linha nova aparece sempre.
+ */
+function contarPreenchidos<T>(itens: T[], temDado: (item: T) => boolean): number {
+  let ultimo = 0;
+  itens.forEach((item, i) => { if (temDado(item)) ultimo = i + 1; });
+  return ultimo;
+}
+
 interface FormularioData {
   fulfillment: { serviceFamily: string; status: string };
   formulario: {
@@ -572,16 +595,28 @@ function ResumoValidacao({ respostas, ramaisPreenchidos }: { respostas: Resposta
 
 function AnexoCelula({ token, linha, onChange }: { token: string; linha: LinhaPortabilidade; onChange: (patch: Partial<LinhaPortabilidade>) => void }) {
   const [enviando, setEnviando] = useState(false);
-  const upload = async (file: File) => {
+  // Achado real (10/09/2026): falha de upload (arquivo grande, formato
+  // errado, rede) não dava NENHUM retorno — o rótulo voltava pra "Anexar
+  // fatura/documento" como se nada tivesse acontecido, e a mesma tela de
+  // erro se repetia porque o <input> não era limpo (navegador não dispara
+  // onChange de novo pro MESMO arquivo escolhido duas vezes seguidas).
+  const [erro, setErro] = useState<string | null>(null);
+
+  const upload = async (file: File, input: HTMLInputElement) => {
     setEnviando(true);
+    setErro(null);
     try {
       const fd = new FormData();
       fd.append("file", file);
       const r = await fetch(`/api/fulfillment-formulario/${token}/upload`, { method: "POST", body: fd });
-      const body = await r.json();
+      const body = await r.json().catch(() => ({}));
       if (r.ok) onChange({ anexoUrl: body.url, anexoNome: body.nomeOriginal });
+      else setErro(body.error || "Falha ao enviar o arquivo");
+    } catch {
+      setErro("Falha ao enviar o arquivo — confira sua conexão e tente de novo");
     } finally {
       setEnviando(false);
+      input.value = "";
     }
   };
 
@@ -594,10 +629,16 @@ function AnexoCelula({ token, linha, onChange }: { token: string; linha: LinhaPo
     );
   }
   return (
-    <label className="public-pabx-upload-trigger" style={{ color: enviando ? "#9497ab" : CARMIM, cursor: enviando ? "wait" : "pointer" }}>
-      {enviando ? "Enviando..." : "Anexar fatura/documento"}
-      <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; if (f) upload(f); }} />
-    </label>
+    <div>
+      <label className="public-pabx-upload-trigger" style={{ color: enviando ? "#9497ab" : CARMIM, cursor: enviando ? "wait" : "pointer" }}>
+        {enviando ? "Enviando..." : "Anexar fatura/documento"}
+        <input
+          type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" style={{ display: "none" }}
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) upload(f, e.target); }}
+        />
+      </label>
+      {erro && <p style={{ margin: "6px 0 0", color: CARMIM, fontSize: 11, fontWeight: 600 }}>{erro}</p>}
+    </div>
   );
 }
 
@@ -607,6 +648,9 @@ export function FormularioImplantacaoPabx({ token }: { token: string }) {
   const [editando, setEditando] = useState(false);
   const [enviado, setEnviado] = useState(false);
   const [passo, setPasso] = useState(0);
+  // Quantas linhas/ramais aparecem na tela — ver comentário em `contarPreenchidos`.
+  const [linhasReveladas, setLinhasReveladas] = useState(1);
+  const [ramaisRevelados, setRamaisRevelados] = useState(1);
 
   const { data, isLoading, error } = useQuery<FormularioData>({
     queryKey: ["fulfillment-formulario-publico", token],
@@ -621,17 +665,23 @@ export function FormularioImplantacaoPabx({ token }: { token: string }) {
   useEffect(() => {
     if (data && !carregado) {
       const rp = data.formulario.respostas || {};
+      const linhasCarregadas = rp.portabilidade?.linhas?.length ? rp.portabilidade.linhas : PORTABILIDADE_VAZIA.linhas;
+      const ramaisCarregados = rp.ramais?.length ? rp.ramais : RESPOSTAS_VAZIAS.ramais;
       setRespostas({
         ...RESPOSTAS_VAZIAS,
         ...rp,
         portabilidade: {
           ...PORTABILIDADE_VAZIA,
           ...rp.portabilidade,
-          linhas: rp.portabilidade?.linhas?.length ? rp.portabilidade.linhas : PORTABILIDADE_VAZIA.linhas,
+          linhas: linhasCarregadas,
         },
-        ramais: rp.ramais?.length ? rp.ramais : RESPOSTAS_VAZIAS.ramais,
+        ramais: ramaisCarregados,
         ura: { ...URA_VAZIA, ...rp.ura },
       });
+      // Revela até a última linha/ramal com dado salvo, mais uma em branco pra
+      // continuar preenchendo — nunca menos que 1, mesmo num formulário zerado.
+      setLinhasReveladas(Math.max(1, contarPreenchidos(linhasCarregadas, linhaTemDado) + 1));
+      setRamaisRevelados(Math.max(1, contarPreenchidos(ramaisCarregados, ramalTemDado) + 1));
       setCarregado(true);
     }
   }, [data, carregado]);
@@ -705,15 +755,16 @@ export function FormularioImplantacaoPabx({ token }: { token: string }) {
   const PASSOS = ["Dados iniciais", "Portabilidade", "Ramais e usuários", "URA e atendimentos", "Revisão e envio"];
   const p = respostas.portabilidade;
   const u = respostas.ura;
-  const ramaisPreenchidos = respostas.ramais.filter((r) => r.ramal || r.departamento || r.nome);
+  // Antes filtrava por "tem conteúdo" — o item recém-adicionado (vazio, por
+  // definição) nunca aparecia. Agora é um corte simples nos primeiros N itens
+  // do array, e N só muda por clique explícito em "+ Adicionar"/"Remover".
+  const ramaisPreenchidos = respostas.ramais.filter(ramalTemDado);
   const ramaisVisiveis = respostas.ramais
-    .map((ramal, index) => ({ ramal, index }))
-    .filter(({ ramal }) => ramal.ramal || ramal.nome || ramal.departamento || ramal.numeroExterno || ramal.modeloAparelho || ramal.email || ramal.celular || ramal.paises || ramal.utilizaAparelhoMesa || ramal.notificacaoLigacoesPerdidas || ramal.gravarLigacao || ramal.acessoGestor || ramal.ligacoesInternacionais);
-  if (ramaisVisiveis.length === 0) ramaisVisiveis.push({ ramal: respostas.ramais[0] || RAMAL_VAZIO(), index: 0 });
+    .slice(0, Math.min(ramaisRevelados, respostas.ramais.length))
+    .map((ramal, index) => ({ ramal, index }));
   const linhasVisiveis = p.linhas
-    .map((linha, index) => ({ linha, index }))
-    .filter(({ linha }) => linha.ddd || linha.numero || linha.novaLinha || linha.anexoUrl);
-  if (linhasVisiveis.length === 0) linhasVisiveis.push({ linha: p.linhas[0] || LINHA_VAZIA(), index: 0 });
+    .slice(0, Math.min(linhasReveladas, p.linhas.length))
+    .map((linha, index) => ({ linha, index }));
   const numerosDisponiveis = p.linhas.filter((l) => l.ddd && (l.numero || l.novaLinha)).map((l) => (l.novaLinha ? `${l.ddd} (linha nova)` : `${l.ddd} ${l.numero}`));
 
   const atualizarPortabilidade = (patch: Partial<Portabilidade>) => setRespostas((r) => ({ ...r, portabilidade: { ...r.portabilidade, ...patch } }));
@@ -797,7 +848,7 @@ export function FormularioImplantacaoPabx({ token }: { token: string }) {
               <div key={linhaIndex} className="public-pabx-portabilidade-card">
                 <div className="public-pabx-portabilidade-card-header">
                   <strong style={{ color: TEXTO, fontSize: 14 }}>Linha {linhaIndex + 1}{linha.ddd ? `, DDD ${linha.ddd}` : ""}</strong>
-                  <button type="button" onClick={() => atualizarPortabilidade({ linhas: p.linhas.filter((_, idx) => idx !== linhaIndex) })} style={{ border: "none", background: "transparent", color: "#9497ab", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>Remover linha</button>
+                  <button type="button" onClick={() => { atualizarPortabilidade({ linhas: p.linhas.filter((_, idx) => idx !== linhaIndex) }); setLinhasReveladas((n) => Math.max(1, n - 1)); }} style={{ border: "none", background: "transparent", color: "#9497ab", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>Remover linha</button>
                 </div>
                 <div className="public-pabx-portabilidade-fields">
                   <Field label="DDD" value={linha.ddd} onChange={(v) => atualizarLinha(linhaIndex, { ddd: v })} placeholder="15" />
@@ -814,7 +865,17 @@ export function FormularioImplantacaoPabx({ token }: { token: string }) {
               </div>
             ))}
           </div>
-          <button type="button" onClick={() => atualizarPortabilidade({ linhas: [...p.linhas, LINHA_VAZIA()] })} style={{ padding: "8px 14px", borderRadius: 10, border: `1px solid ${CARMIM}`, background: "#fff", color: CARMIM, fontWeight: 600, fontSize: 13, cursor: "pointer", marginBottom: 16 }}>
+          <button
+            type="button"
+            onClick={() => {
+              // Só estende o array se a próxima posição ainda não existir —
+              // os 8 slots pré-alocados cobrem o caso comum sem crescer o
+              // payload à toa.
+              if (linhasReveladas >= p.linhas.length) atualizarPortabilidade({ linhas: [...p.linhas, LINHA_VAZIA()] });
+              setLinhasReveladas((n) => n + 1);
+            }}
+            style={{ padding: "8px 14px", borderRadius: 10, border: `1px solid ${CARMIM}`, background: "#fff", color: CARMIM, fontWeight: 600, fontSize: 13, cursor: "pointer", marginBottom: 16 }}
+          >
             + Adicionar linha
           </button>
 
@@ -842,7 +903,7 @@ export function FormularioImplantacaoPabx({ token }: { token: string }) {
               <div key={ramalIndex} className="public-pabx-ramal-card">
                 <div className="public-pabx-ramal-card-header">
                   <strong style={{ color: TEXTO, fontSize: 14 }}>Ramal {ramal.ramal || `#${ramalIndex + 1}`}</strong>
-                  <button type="button" onClick={() => setRespostas((r) => ({ ...r, ramais: r.ramais.filter((_, idx) => idx !== ramalIndex) }))} style={{ border: "none", background: "transparent", color: "#9497ab", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>Remover ramal</button>
+                  <button type="button" onClick={() => { setRespostas((r) => ({ ...r, ramais: r.ramais.filter((_, idx) => idx !== ramalIndex) })); setRamaisRevelados((n) => Math.max(1, n - 1)); }} style={{ border: "none", background: "transparent", color: "#9497ab", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>Remover ramal</button>
                 </div>
                 <p style={{ ...sectionTitleStyle, marginBottom: 10 }}>Dados do usuário</p>
                 <div className="public-pabx-ramal-fields">
@@ -866,8 +927,17 @@ export function FormularioImplantacaoPabx({ token }: { token: string }) {
               </div>
             ))}
           </div>
-          <button type="button" onClick={() => setRespostas((r) => ({ ...r, ramais: [...r.ramais, RAMAL_VAZIO()] }))} style={{ padding: "8px 14px", borderRadius: 10, border: `1px solid ${CARMIM}`, background: "#fff", color: CARMIM, fontWeight: 600, fontSize: 13, cursor: "pointer" }}>
-            + Adicionar linha
+          <button
+            type="button"
+            onClick={() => {
+              if (ramaisRevelados >= respostas.ramais.length) setRespostas((r) => ({ ...r, ramais: [...r.ramais, RAMAL_VAZIO()] }));
+              setRamaisRevelados((n) => n + 1);
+            }}
+            style={{ padding: "8px 14px", borderRadius: 10, border: `1px solid ${CARMIM}`, background: "#fff", color: CARMIM, fontWeight: 600, fontSize: 13, cursor: "pointer" }}
+          >
+            {/* Rótulo corrigido junto: dizia "+ Adicionar linha" numa seção
+                que é de ramais, não de linhas de portabilidade. */}
+            + Adicionar ramal
           </button>
           <NavegacaoPasso podeVoltar onVoltar={() => setPasso(1)} onAvancar={() => setPasso(3)} textoAvancar="Continuar" />
         </Card>
