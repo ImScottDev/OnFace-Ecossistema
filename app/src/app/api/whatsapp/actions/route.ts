@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { whatsappSessao, whatsappMensagens } from "@/lib/db/schema";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, sql, or, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { getTenantContext, unauthorizedResponse } from "@/lib/auth/tenant";
+import { veTodasAsConversas } from "@/lib/whatsapp/acesso";
 import { reactToMessage, markRead, setPresence, deleteMessage, sessionToConfig } from "@/lib/whatsapp/client";
 
 const actionSchema = z.discriminatedUnion("action", [
@@ -48,21 +49,25 @@ export async function POST(request: NextRequest) {
   const data = parsed.data;
 
   // Resolve session config
+  // A sessão precisa ser do próprio usuário: reagir, apagar ou marcar lido
+  // roda no WhatsApp pessoal de alguém. Antes, sem sessaoId, isto pegava a
+  // PRIMEIRA sessão da organização — o número de outra pessoa.
   const sessaoId = "sessaoId" in data ? data.sessaoId : undefined;
+  const escopoSessao = veTodasAsConversas(ctx)
+    ? []
+    : [or(eq(whatsappSessao.usuarioId, ctx.userId), isNull(whatsappSessao.usuarioId))!];
+
   let config = undefined;
-  if (sessaoId) {
-    const [sessao] = await db.select({ apiToken: whatsappSessao.apiToken })
-      .from(whatsappSessao)
-      .where(and(eq(whatsappSessao.id, sessaoId), eq(whatsappSessao.organizacaoId, ctx.organizacaoId)))
-      .limit(1);
-    if (sessao) config = sessionToConfig(sessao);
-  } else {
-    const [sessao] = await db.select({ apiToken: whatsappSessao.apiToken })
-      .from(whatsappSessao)
-      .where(eq(whatsappSessao.organizacaoId, ctx.organizacaoId))
-      .limit(1);
-    if (sessao) config = sessionToConfig(sessao);
-  }
+  const [sessao] = await db.select({ apiToken: whatsappSessao.apiToken })
+    .from(whatsappSessao)
+    .where(and(
+      eq(whatsappSessao.organizacaoId, ctx.organizacaoId),
+      ...(sessaoId ? [eq(whatsappSessao.id, sessaoId)] : []),
+      ...escopoSessao,
+    ))
+    .limit(1);
+  if (sessao) config = sessionToConfig(sessao);
+  if (!config) return NextResponse.json({ error: "Sessao de WhatsApp nao disponivel" }, { status: 403 });
 
   try {
     switch (data.action) {

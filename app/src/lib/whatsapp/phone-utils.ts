@@ -3,6 +3,21 @@
  * Handles Brazilian (+55) and international numbers.
  */
 
+/**
+ * Placeholders que o WuzAPI/whatsmeow devolve em `Info.PushName` quando não
+ * resolve o nome real do contato (ex: número nunca salvou nome no WhatsApp).
+ * Não é traduzido pelo Callface — vem cru do binário Go. Sem esse filtro, o
+ * CRM salva o placeholder como se fosse o nome do cliente.
+ */
+const PUSHNAME_PLACEHOLDERS = /^(utente sconosciuto|unknown|unknown user|desconhecido)$/i;
+
+/** Nome de contato usável, ou `null` se `pushName` for placeholder de terceiro. */
+export function sanitizePushName(pushName?: string | null): string | null {
+  const trimmed = pushName?.trim();
+  if (!trimmed || PUSHNAME_PLACEHOLDERS.test(trimmed)) return null;
+  return trimmed;
+}
+
 /** Strip to digits only, add country code 55 only for Brazilian numbers */
 export function normalizePhone(raw: string): string {
   const trimmed = raw.trim();

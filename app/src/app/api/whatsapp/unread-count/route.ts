@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { contatos } from "@/lib/db/schema";
 import { sql, eq, and } from "drizzle-orm";
 import { getTenantContext, unauthorizedResponse } from "@/lib/auth/tenant";
+import { veTodasAsConversas } from "@/lib/whatsapp/acesso";
 
 // GET /api/whatsapp/unread-count — total unread WhatsApp messages for the current user
 export async function GET(request: NextRequest) {
@@ -10,7 +11,8 @@ export async function GET(request: NextRequest) {
   if (!ctx) return unauthorizedResponse();
 
   const viewAs = request.nextUrl.searchParams.get("viewAs");
-  const isAdmin = ctx.userRole === "admin" || ctx.userRole === "super_admin";
+  // Só super_admin: mesma regra do inbox (sessões são WhatsApps pessoais).
+  const isAdmin = veTodasAsConversas(ctx);
 
   // Determine which user's unread to count
   const targetUserId = (viewAs && isAdmin) ? viewAs : ctx.userId;

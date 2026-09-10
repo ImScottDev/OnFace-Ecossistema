@@ -10,6 +10,7 @@ import { z } from "zod";
 import { getCtx, parseBody } from "../compat.js";
 import { whatsappIncomingQueue, whatsappOutgoingQueue } from "@/lib/queue";
 import { normalizePhone } from "@/lib/whatsapp/phone-utils";
+import { veTodasAsConversas, checarAcessoContato } from "@/lib/whatsapp/acesso";
 import {
   reactToMessage, markRead, setPresence, deleteMessage, sessionToConfig,
   getStatus, createSession, disconnectSession, downloadAndSaveAvatar,
@@ -151,6 +152,9 @@ app.post("/whatsapp/send", async (c) => {
       .limit(1);
 
     if (!contato) return c.json({ error: "Contato nao encontrado" }, 404);
+    // Enviar por conversa alheia = falar pelo WhatsApp pessoal de outra pessoa.
+    const acesso = await checarAcessoContato(ctx, contatoId);
+    if (!acesso.ok) return c.json({ error: "Conversa nao encontrada" }, 404);
     if (!contato.telefone) return c.json({ error: "Contato nao possui telefone cadastrado" }, 400);
 
     resolvedPhone = contato.telefone;
@@ -178,15 +182,39 @@ app.post("/whatsapp/send", async (c) => {
     leadEmpresa = lead.empresa;
     resolvedNegocioAtivoId = lead.negocioAtivoId;
 
+    // Só reaproveita contato acessível — senão a mensagem ficaria pendurada na
+    // conversa de outra pessoa. Sem contato seu, o envio cria conversa nova na
+    // SUA sessão.
     const [linkedContato] = await db
       .select({ id: contatos.id })
       .from(contatos)
-      .where(and(eq(contatos.leadId, leadId), eq(contatos.canal, "whatsapp")))
+      .where(and(
+        eq(contatos.leadId, leadId),
+        eq(contatos.canal, "whatsapp"),
+        ...(veTodasAsConversas(ctx)
+          ? []
+          : [or(eq(contatos.responsavelId, ctx.userId), isNull(contatos.responsavelId))!]),
+      ))
       .limit(1);
     if (linkedContato) resolvedContatoId = linkedContato.id;
   }
 
   let resolvedSessaoId = sessaoId;
+
+  if (!resolvedSessaoId) {
+    // Sessão CONECTADA do próprio usuário: a mensagem sai pelo WhatsApp de quem
+    // clicou. Vem antes da "default" porque default desconectada não envia.
+    const [userConnected] = await db.select({ id: whatsappSessao.id })
+      .from(whatsappSessao)
+      .where(and(
+        eq(whatsappSessao.organizacaoId, ctx.organizacaoId),
+        eq(whatsappSessao.usuarioId, ctx.userId),
+        eq(whatsappSessao.status, "connected"),
+      ))
+      .orderBy(desc(whatsappSessao.isDefault))
+      .limit(1);
+    resolvedSessaoId = userConnected?.id;
+  }
 
   if (!resolvedSessaoId) {
     const [userDefault] = await db.select({ id: whatsappSessao.id })
@@ -232,6 +260,14 @@ app.post("/whatsapp/send", async (c) => {
       ))
       .limit(1);
     resolvedSessaoId = sharedAny?.id;
+  }
+
+  // Sem sessão não há por onde enviar: antes gravava com sessaoId null e a
+  // mensagem morria na fila, parecendo enviada.
+  if (!resolvedSessaoId) {
+    return c.json({
+      error: "Voce nao tem uma sessao de WhatsApp conectada. Conecte seu numero em WhatsApp > Sessoes para enviar.",
+    }, 400);
   }
 
   let finalText = conteudo || "";
@@ -364,6 +400,156 @@ app.post("/whatsapp/send", async (c) => {
 
 // ─── Conversations ──────────────────────────────────────────────────────────
 
+// ─── Resolve UMA conversa (deep link de outras telas) ───────────────────────
+//
+// Telas fora do inbox (pós-venda, negócio, cliente) precisam abrir o WhatsApp
+// já na conversa certa. A lista do inbox é paginada e filtrada por view, então
+// não serve pra isso. Aqui a busca é direta — respeitando a autorização: só
+// devolve conversa que o usuário pode abrir.
+//
+// Quando o cliente é atendido por OUTRA pessoa (ou nunca conversou), cai no
+// caminho "lead-only" de propósito: quem clicou fala pelo próprio WhatsApp,
+// numa conversa dele, sem herdar o histórico alheio.
+app.get("/whatsapp/conversations/resolve", async (c) => {
+  const ctx = await getCtx(c);
+
+  const leadId = c.req.query("leadId");
+  const contatoId = c.req.query("contatoId");
+  const telefone = c.req.query("telefone");
+
+  if (!leadId && !contatoId && !telefone) {
+    return c.json({ error: "leadId, contatoId ou telefone obrigatorio" }, 400);
+  }
+
+  const escopo = veTodasAsConversas(ctx)
+    ? []
+    : [or(eq(contatos.responsavelId, ctx.userId), isNull(contatos.responsavelId))!];
+
+  const buscarContato = (cond: SQL) =>
+    db
+      .select({
+        id: contatos.id,
+        nome: contatos.nome,
+        telefone: contatos.telefone,
+        email: contatos.email,
+        canal: contatos.canal,
+        avatarUrl: contatos.avatarUrl,
+        leadId: contatos.leadId,
+        ultimaMsg: contatos.ultimaMsg,
+        ultimaMsgAt: contatos.ultimaMsgAt,
+        naoLidas: contatos.naoLidas,
+        responsavelId: contatos.responsavelId,
+        createdAt: contatos.createdAt,
+        leadNome: leads.nome,
+        leadStatus: leads.status,
+        empresaId: leads.empresaId,
+        negocioAtivoId: leads.negocioAtivoId,
+        empresaNome: empresas.nome,
+        negocioTitulo: negocios.titulo,
+        negocioStatus: negocios.status,
+      })
+      .from(contatos)
+      .leftJoin(leads, eq(contatos.leadId, leads.id))
+      .leftJoin(empresas, eq(leads.empresaId, empresas.id))
+      .leftJoin(negocios, eq(leads.negocioAtivoId, negocios.id))
+      .where(and(cond, ...escopo)!)
+      .orderBy(desc(contatos.ultimaMsgAt))
+      .limit(1);
+
+  type ContatoRow = Awaited<ReturnType<typeof buscarContato>>[number];
+  let row: ContatoRow | undefined;
+
+  if (contatoId) {
+    [row] = await buscarContato(and(eq(contatos.id, contatoId), eq(contatos.organizacaoId, ctx.organizacaoId))!);
+  }
+  if (!row && leadId) {
+    [row] = await buscarContato(and(
+      eq(contatos.organizacaoId, ctx.organizacaoId),
+      eq(contatos.leadId, leadId),
+      eq(contatos.canal, "whatsapp"),
+    )!);
+  }
+  if (!row && telefone) {
+    const normalizado = normalizePhone(telefone);
+    if (normalizado) {
+      [row] = await buscarContato(and(
+        eq(contatos.organizacaoId, ctx.organizacaoId),
+        eq(contatos.canal, "whatsapp"),
+        eq(contatos.telefone, normalizado),
+      )!);
+    }
+  }
+
+  if (row) {
+    return c.json({
+      conversation: {
+        ...row,
+        leadNome: row.leadNome ?? null,
+        leadStatus: row.leadStatus ?? null,
+        empresaId: row.empresaId ?? null,
+        empresaNome: row.empresaNome ?? null,
+        negocioAtivoId: row.negocioAtivoId ?? null,
+        negocioTitulo: row.negocioTitulo ?? null,
+        negocioStatus: row.negocioStatus ?? null,
+        naoLidas: row.naoLidas ?? 0,
+        leadOnly: false,
+      },
+    });
+  }
+
+  if (leadId) {
+    const [lead] = await db
+      .select({
+        id: leads.id,
+        nome: leads.nome,
+        telefone: leads.telefone,
+        email: leads.email,
+        status: leads.status,
+        empresaId: leads.empresaId,
+        negocioAtivoId: leads.negocioAtivoId,
+        createdAt: leads.createdAt,
+        empresaNome: empresas.nome,
+        negocioTitulo: negocios.titulo,
+        negocioStatus: negocios.status,
+      })
+      .from(leads)
+      .leftJoin(empresas, eq(leads.empresaId, empresas.id))
+      .leftJoin(negocios, eq(leads.negocioAtivoId, negocios.id))
+      .where(and(eq(leads.id, leadId), eq(leads.organizacaoId, ctx.organizacaoId)))
+      .limit(1);
+
+    if (!lead) return c.json({ error: "Lead nao encontrado" }, 404);
+    if (!lead.telefone) return c.json({ error: "Lead nao possui telefone cadastrado" }, 400);
+
+    return c.json({
+      conversation: {
+        id: lead.id, // ChatPanel e /whatsapp/messages/:id aceitam leadId
+        nome: lead.nome,
+        telefone: lead.telefone,
+        email: lead.email ?? null,
+        canal: "whatsapp",
+        avatarUrl: null,
+        leadId: lead.id,
+        leadNome: lead.nome,
+        leadStatus: lead.status ?? null,
+        empresaId: lead.empresaId ?? null,
+        empresaNome: lead.empresaNome ?? null,
+        negocioAtivoId: lead.negocioAtivoId ?? null,
+        negocioTitulo: lead.negocioTitulo ?? null,
+        negocioStatus: lead.negocioStatus ?? null,
+        ultimaMsg: null,
+        ultimaMsgAt: null,
+        naoLidas: 0,
+        responsavelId: null,
+        createdAt: lead.createdAt,
+        leadOnly: true,
+      },
+    });
+  }
+
+  return c.json({ error: "Conversa nao encontrada" }, 404);
+});
+
 app.get("/whatsapp/conversations", async (c) => {
   const ctx = await getCtx(c);
 
@@ -375,7 +561,8 @@ app.get("/whatsapp/conversations", async (c) => {
   const view = c.req.query("view") || "meus";
   const viewAs = c.req.query("viewAs") ?? null;
 
-  const isAdmin = ctx.userRole === "admin" || ctx.userRole === "super_admin";
+  // Só super_admin vê conversa alheia: as sessões são WhatsApps pessoais.
+  const isAdmin = veTodasAsConversas(ctx);
   const effectiveUserId = (isAdmin && viewAs) ? viewAs : ctx.userId;
 
   const conditions: SQL[] = [
@@ -553,6 +740,9 @@ app.get("/whatsapp/messages/:leadId", async (c) => {
     .limit(1);
 
   if (contatoRow) {
+    // Org sozinha não autoriza: o time inteiro vive na mesma organização.
+    const acesso = await checarAcessoContato(ctx, contatoRow.id);
+    if (!acesso.ok) return c.json({ error: "Conversa nao encontrada" }, 404);
     contatoId = contatoRow.id;
     leadId = contatoRow.leadId;
   } else {
@@ -571,12 +761,28 @@ app.get("/whatsapp/messages/:leadId", async (c) => {
   const page = parseInt(c.req.query("page") || "1");
   const limit = parseInt(c.req.query("limit") || "50");
 
+  // Abrir por lead agrega os contatos de TODAS as sessões ligadas a ele — o que
+  // atravessa o WhatsApp de pessoas diferentes. Quem não vê tudo só recebe os
+  // contatos que são seus (ou sem dono).
+  const contatosDoLead = veTodasAsConversas(ctx)
+    ? sql`SELECT id FROM contatos WHERE lead_id = ${leadId}`
+    : sql`SELECT id FROM contatos WHERE lead_id = ${leadId} AND (responsavel_id = ${ctx.userId} OR responsavel_id IS NULL)`;
+
   const whereCondition = contatoId
     ? eq(whatsappMensagens.contatoId, contatoId)
     : leadId
       ? or(
-          eq(whatsappMensagens.leadId, leadId),
-          sql`${whatsappMensagens.contatoId} IN (SELECT id FROM contatos WHERE lead_id = ${leadId})`
+          and(
+            eq(whatsappMensagens.leadId, leadId),
+            // Mensagens legadas (sem contato) seguem o dono do lead.
+            veTodasAsConversas(ctx)
+              ? undefined
+              : sql`(${whatsappMensagens.contatoId} IN (${contatosDoLead})
+                     OR (${whatsappMensagens.contatoId} IS NULL
+                         AND EXISTS (SELECT 1 FROM leads l WHERE l.id = ${leadId}
+                                     AND (l.responsavel_id = ${ctx.userId} OR l.responsavel_id IS NULL))))`,
+          )!,
+          sql`${whatsappMensagens.contatoId} IN (${contatosDoLead})`
         )!
       : eq(whatsappMensagens.leadId, idParam);
 
@@ -705,21 +911,25 @@ app.post("/whatsapp/actions", async (c) => {
 
   const data = parsed.data;
 
+  // A sessão precisa ser do próprio usuário: reagir/apagar/marcar lido roda no
+  // WhatsApp pessoal de alguém. Sem sessaoId, isto pegava a PRIMEIRA sessão da
+  // organização — o número de outra pessoa.
   const sessaoId = "sessaoId" in data ? data.sessaoId : undefined;
+  const escopoSessao = veTodasAsConversas(ctx)
+    ? []
+    : [or(eq(whatsappSessao.usuarioId, ctx.userId), isNull(whatsappSessao.usuarioId))!];
+
   let config = undefined;
-  if (sessaoId) {
-    const [sessao] = await db.select({ apiToken: whatsappSessao.apiToken })
-      .from(whatsappSessao)
-      .where(and(eq(whatsappSessao.id, sessaoId), eq(whatsappSessao.organizacaoId, ctx.organizacaoId)))
-      .limit(1);
-    if (sessao) config = sessionToConfig(sessao);
-  } else {
-    const [sessao] = await db.select({ apiToken: whatsappSessao.apiToken })
-      .from(whatsappSessao)
-      .where(eq(whatsappSessao.organizacaoId, ctx.organizacaoId))
-      .limit(1);
-    if (sessao) config = sessionToConfig(sessao);
-  }
+  const [sessao] = await db.select({ apiToken: whatsappSessao.apiToken })
+    .from(whatsappSessao)
+    .where(and(
+      eq(whatsappSessao.organizacaoId, ctx.organizacaoId),
+      ...(sessaoId ? [eq(whatsappSessao.id, sessaoId)] : []),
+      ...escopoSessao,
+    ))
+    .limit(1);
+  if (sessao) config = sessionToConfig(sessao);
+  if (!config) return c.json({ error: "Sessao de WhatsApp nao disponivel" }, 403);
 
   try {
     switch (data.action) {
@@ -826,12 +1036,25 @@ app.post("/whatsapp/mark-all-read", async (c) => {
     db
       .update(leads)
       .set({ whatsappNaoLidas: 0, updatedAt: new Date() })
-      .where(and(eq(leads.organizacaoId, ctx.organizacaoId), gte(leads.whatsappNaoLidas, 1)))
+      .where(and(
+        eq(leads.organizacaoId, ctx.organizacaoId),
+        gte(leads.whatsappNaoLidas, 1),
+        ...(veTodasAsConversas(ctx)
+          ? []
+          : [or(eq(leads.responsavelId, ctx.userId), isNull(leads.responsavelId))!]),
+      ))
       .returning({ id: leads.id }),
     db
       .update(contatos)
       .set({ naoLidas: 0, updatedAt: new Date() })
-      .where(and(eq(contatos.organizacaoId, ctx.organizacaoId), gte(contatos.naoLidas, 1)))
+      // Escopo do próprio usuário: antes zerava o "não lido" da empresa inteira.
+      .where(and(
+        eq(contatos.organizacaoId, ctx.organizacaoId),
+        gte(contatos.naoLidas, 1),
+        ...(veTodasAsConversas(ctx)
+          ? []
+          : [or(eq(contatos.responsavelId, ctx.userId), isNull(contatos.responsavelId))!]),
+      ))
       .returning({ id: contatos.id }),
   ]);
 
@@ -846,7 +1069,7 @@ app.get("/whatsapp/status", async (c) => {
   const sessionId = c.req.query("sessionId") ?? null;
   const viewAs = c.req.query("viewAs") ?? null;
 
-  const isAdmin = ctx.userRole === "admin" || ctx.userRole === "super_admin";
+  const isAdmin = veTodasAsConversas(ctx);
   let effectiveUserId: string | null = null;
 
   if (viewAs && isAdmin) {
@@ -1130,7 +1353,7 @@ app.get("/whatsapp/unread-count", async (c) => {
   const ctx = await getCtx(c);
 
   const viewAs = c.req.query("viewAs") ?? null;
-  const isAdmin = ctx.userRole === "admin" || ctx.userRole === "super_admin";
+  const isAdmin = veTodasAsConversas(ctx);
   const targetUserId = (viewAs && isAdmin) ? viewAs : ctx.userId;
 
   const [result] = await db

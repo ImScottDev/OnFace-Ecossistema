@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { leads, contatos, whatsappMensagens, whatsappTemplates, whatsappSessao } from "@/lib/db/schema";
-import { eq, and, isNull } from "drizzle-orm";
+import { eq, and, isNull, or, desc } from "drizzle-orm";
 import { z } from "zod";
 import { getTenantContext, unauthorizedResponse } from "@/lib/auth/tenant";
+import { checarAcessoContato, respostaSemAcesso, veTodasAsConversas } from "@/lib/whatsapp/acesso";
 import { whatsappOutgoingQueue } from "@/lib/queue";
 import { normalizePhone } from "@/lib/whatsapp/phone-utils";
 
@@ -64,6 +65,10 @@ export async function POST(request: NextRequest) {
       .limit(1);
 
     if (!contato) return NextResponse.json({ error: "Contato nao encontrado" }, { status: 404 });
+    // Não basta ser da mesma org: enviar por conversa alheia é falar pelo
+    // WhatsApp pessoal de outra pessoa.
+    const acesso = await checarAcessoContato(ctx, contatoId);
+    if (!acesso.ok) return respostaSemAcesso();
     if (!contato.telefone) return NextResponse.json({ error: "Contato nao possui telefone cadastrado" }, { status: 400 });
 
     resolvedPhone = contato.telefone;
@@ -92,10 +97,19 @@ export async function POST(request: NextRequest) {
     leadEmpresa = lead.empresa;
 
     // Try to find associated contato
+    // Só reaproveita o contato se ele for acessível — senão a mensagem sairia
+    // pendurada na conversa de outra pessoa. Sem contato acessível, o envio
+    // segue pelo lead e cria a conversa na sessão de quem está enviando.
     const [linkedContato] = await db
       .select({ id: contatos.id })
       .from(contatos)
-      .where(and(eq(contatos.leadId, leadId), eq(contatos.canal, "whatsapp")))
+      .where(and(
+        eq(contatos.leadId, leadId),
+        eq(contatos.canal, "whatsapp"),
+        ...(veTodasAsConversas(ctx)
+          ? []
+          : [or(eq(contatos.responsavelId, ctx.userId), isNull(contatos.responsavelId))!]),
+      ))
       .limit(1);
     if (linkedContato) resolvedContatoId = linkedContato.id;
   }
@@ -107,6 +121,22 @@ export async function POST(request: NextRequest) {
   // 4. Shared default session (usuario_id IS NULL AND is_default = true)
   // 5. Any shared session (usuario_id IS NULL)
   let resolvedSessaoId = sessaoId;
+
+  if (!resolvedSessaoId) {
+    // Step 1.5: sessão CONECTADA do próprio usuário — a mensagem sai pelo
+    // WhatsApp de quem clicou. Vem antes da "default" porque uma default
+    // desconectada não envia nada (a mensagem ficava enfileirada em silêncio).
+    const [userConnected] = await db.select({ id: whatsappSessao.id })
+      .from(whatsappSessao)
+      .where(and(
+        eq(whatsappSessao.organizacaoId, ctx.organizacaoId),
+        eq(whatsappSessao.usuarioId, ctx.userId),
+        eq(whatsappSessao.status, "connected"),
+      ))
+      .orderBy(desc(whatsappSessao.isDefault))
+      .limit(1);
+    resolvedSessaoId = userConnected?.id;
+  }
 
   if (!resolvedSessaoId) {
     // Step 2: user's default session
@@ -156,6 +186,14 @@ export async function POST(request: NextRequest) {
       ))
       .limit(1);
     resolvedSessaoId = sharedAny?.id;
+  }
+
+  // Sem sessão não há por onde enviar: antes a mensagem era gravada com
+  // sessaoId null e morria na fila, dando a impressão de que foi enviada.
+  if (!resolvedSessaoId) {
+    return NextResponse.json({
+      error: "Voce nao tem uma sessao de WhatsApp conectada. Conecte seu numero em WhatsApp > Sessoes para enviar.",
+    }, { status: 400 });
   }
 
   let finalText = conteudo || "";

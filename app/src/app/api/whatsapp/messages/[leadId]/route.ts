@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { leads, contatos, whatsappMensagens, whatsappSessao, usuarios, leadUserUnread } from "@/lib/db/schema";
 import { eq, desc, count, and, inArray, sql, or } from "drizzle-orm";
 import { getTenantContext, unauthorizedResponse } from "@/lib/auth/tenant";
+import { checarAcessoContato, respostaSemAcesso, veTodasAsConversas } from "@/lib/whatsapp/acesso";
 
 // GET /api/whatsapp/messages/:id — list messages for a contato OR lead
 // The :id param can be either a contatoId or a leadId (backward compat)
@@ -26,6 +27,10 @@ export async function GET(
     .limit(1);
 
   if (contatoRow) {
+    // Conversa é dado pessoal: org sozinha não autoriza nada — o time inteiro
+    // está na mesma organização.
+    const acesso = await checarAcessoContato(ctx, contatoRow.id);
+    if (!acesso.ok) return respostaSemAcesso();
     contatoId = contatoRow.id;
     leadId = contatoRow.leadId;
   } else {
@@ -48,13 +53,29 @@ export async function GET(
 
   // Build where condition: by contatoId if available, otherwise by leadId
   // If we have a leadId (from lead detail page), fetch ALL messages from all contatos linked to this lead
+  // Abrindo por lead, o histórico agrega TODOS os contatos ligados a ele — o que
+  // atravessa sessões de pessoas diferentes. Quem não vê tudo só recebe os
+  // contatos que são seus (ou sem dono).
+  const contatosDoLead = veTodasAsConversas(ctx)
+    ? sql`SELECT id FROM contatos WHERE lead_id = ${leadId}`
+    : sql`SELECT id FROM contatos WHERE lead_id = ${leadId} AND (responsavel_id = ${ctx.userId} OR responsavel_id IS NULL)`;
+
   const whereCondition = contatoId
     ? eq(whatsappMensagens.contatoId, contatoId)
     : leadId
       ? or(
-          eq(whatsappMensagens.leadId, leadId),
-          // Also include messages from contatos linked to this lead
-          sql`${whatsappMensagens.contatoId} IN (SELECT id FROM contatos WHERE lead_id = ${leadId})`
+          and(
+            eq(whatsappMensagens.leadId, leadId),
+            // Mensagens legadas (sem contato) não têm responsável próprio —
+            // seguem o dono do lead.
+            veTodasAsConversas(ctx)
+              ? undefined
+              : sql`(${whatsappMensagens.contatoId} IN (${contatosDoLead})
+                     OR (${whatsappMensagens.contatoId} IS NULL
+                         AND EXISTS (SELECT 1 FROM leads l WHERE l.id = ${leadId}
+                                     AND (l.responsavel_id = ${ctx.userId} OR l.responsavel_id IS NULL))))`,
+          )!,
+          sql`${whatsappMensagens.contatoId} IN (${contatosDoLead})`
         )!
       : eq(whatsappMensagens.leadId, idParam); // shouldn't happen
 

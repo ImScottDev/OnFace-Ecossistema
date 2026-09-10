@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { whatsappSessao, whatsappMensagens } from "@/lib/db/schema";
 import { eq, and, or, isNull } from "drizzle-orm";
 import { getTenantContext, unauthorizedResponse } from "@/lib/auth/tenant";
+import { veTodasAsConversas } from "@/lib/whatsapp/acesso";
 import { getStatus, createSession, disconnectSession, sessionToConfig, wuzapiCreateUser, wuzapiDeleteUser, wuzapiFindUser } from "@/lib/whatsapp/client";
 import { randomBytes } from "crypto";
 
@@ -15,7 +16,8 @@ export async function GET(request: NextRequest) {
   const viewAs = request.nextUrl.searchParams.get("viewAs");
 
   // Determine the effective user ID for filtering
-  const isAdmin = ctx.userRole === "admin" || ctx.userRole === "super_admin";
+  // Só super_admin: mesma regra do inbox (sessões são WhatsApps pessoais).
+  const isAdmin = veTodasAsConversas(ctx);
   let effectiveUserId: string | null = null;
 
   if (viewAs && isAdmin) {

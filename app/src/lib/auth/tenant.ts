@@ -7,7 +7,9 @@ import { eq } from "drizzle-orm";
 
 const ORG_OVERRIDE_COOKIE = "mcrm-org-override";
 const VIEW_AS_COOKIE = "mcrm-view-as";
-const VIEW_AS_ADMIN_ROLES = ["admin", "gerente", "super_admin"];
+// "Ver como" assume a identidade de outra pessoa (inclusive o papel dela),
+// então é acesso a dado alheio: exclusivo do super_admin.
+const VIEW_AS_ADMIN_ROLES = ["super_admin"];
 
 /**
  * Get the authenticated user's tenant context.

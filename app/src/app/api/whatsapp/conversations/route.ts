@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { contatos, leads, empresas, negocios, leadLabels } from "@/lib/db/schema";
 import { eq, and, sql, isNull, ilike, or, inArray, SQL } from "drizzle-orm";
 import { getTenantContext, unauthorizedResponse } from "@/lib/auth/tenant";
+import { veTodasAsConversas } from "@/lib/whatsapp/acesso";
 
 /**
  * GET /api/whatsapp/conversations
@@ -32,7 +33,9 @@ export async function GET(request: NextRequest) {
   const view = searchParams.get("view") || "meus";
   const viewAs = searchParams.get("viewAs");
 
-  const isAdmin = ctx.userRole === "admin" || ctx.userRole === "super_admin";
+  // Só super_admin vê conversa alheia: as sessões são WhatsApps pessoais do
+  // time. Admin/gerente ficam com a própria caixa, como closer e sdr.
+  const isAdmin = veTodasAsConversas(ctx);
   const effectiveUserId = (isAdmin && viewAs) ? viewAs : ctx.userId;
 
   // --- Build conditions ---

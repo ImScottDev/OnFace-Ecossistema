@@ -36,6 +36,8 @@ interface ContatoConversation {
   ultimaMsgAt: string | null;
   naoLidas: number;
   createdAt: string;
+  /** true quando o lead ainda não tem contato de WhatsApp (conversa nova) */
+  leadOnly?: boolean;
 }
 
 interface ConversationsPage {
@@ -123,9 +125,13 @@ export default function WhatsAppPage() {
   const { data: session } = useSession();
   const preselectedContato = searchParams.get("contato");
   const preselectedLeadId = searchParams.get("lead") || searchParams.get("leadId");
+  const preselectedTelefone = searchParams.get("telefone");
+  const textoPronto = searchParams.get("texto") || undefined;
   const listRef = useRef<HTMLDivElement>(null);
 
-  const isAdmin = session?.user?.role === "admin" || session?.user?.role === "super_admin";
+  // Só super_admin enxerga conversa alheia — a aba "Todos" e o "ver como" são
+  // dele. O backend aplica a mesma regra; isto aqui é só a UI acompanhando.
+  const isAdmin = session?.user?.role === "super_admin";
   const currentUserId = (session?.user as { id?: string })?.id || "";
 
   const [selectedContatoId, setSelectedContatoId] = useState<string | null>(preselectedContato);
@@ -144,6 +150,11 @@ export default function WhatsAppPage() {
   const [viewAsUserId, setViewAsUserId] = useState<string | null>(null);
   const [inboxView, setInboxView] = useState<InboxView>("meus");
   const [showInfoSidebar, setShowInfoSidebar] = useState(false);
+  // Conversa resolvida por deep link (pós-venda, negócio, cliente). Fica fora
+  // da lista porque o inbox é paginado e filtrado por view — o contato pode
+  // não estar carregado, estar em outra aba, ou nem existir ainda.
+  const [linkedContato, setLinkedContato] = useState<ContatoConversation | null>(null);
+  const [linkErro, setLinkErro] = useState<string | null>(null);
 
   const readOnly = !!viewAsUserId;
 
@@ -235,15 +246,49 @@ export default function WhatsAppPage() {
     return true;
   });
 
-  const selectedContato = allConversations.find((c) => c.id === selectedContatoId);
+  const selectedContato =
+    allConversations.find((c) => c.id === selectedContatoId) ||
+    (linkedContato && linkedContato.id === selectedContatoId ? linkedContato : undefined);
 
-  // Resolve leadId → contatoId when coming from lead/negocio drawer
+  // Deep link (?leadId= / ?contato= / ?telefone=): resolve no servidor, sem
+  // depender da lista carregada. Cobre também o cliente que ainda não tem
+  // conversa — nesse caso volta uma conversa "lead-only" pronta pro 1º envio.
+  const deepLinkKey = preselectedContato || preselectedLeadId || preselectedTelefone;
+  const deepLinkResolvido = useRef(false);
   useEffect(() => {
-    if (preselectedLeadId && !selectedContatoId && allConversations.length > 0) {
-      const match = allConversations.find((c) => c.leadId === preselectedLeadId);
-      if (match) setSelectedContatoId(match.id);
+    if (!deepLinkKey || deepLinkResolvido.current) return;
+
+    // Já está na lista carregada (caso comum: conversa recente do usuário).
+    const naLista = allConversations.find(
+      (c) => c.id === preselectedContato || (preselectedLeadId && c.leadId === preselectedLeadId)
+    );
+    if (naLista) {
+      deepLinkResolvido.current = true;
+      setSelectedContatoId(naLista.id);
+      return;
     }
-  }, [preselectedLeadId, selectedContatoId, allConversations]);
+
+    deepLinkResolvido.current = true;
+    let cancelado = false;
+    (async () => {
+      const params = new URLSearchParams();
+      if (preselectedContato) params.set("contatoId", preselectedContato);
+      if (preselectedLeadId) params.set("leadId", preselectedLeadId);
+      if (preselectedTelefone) params.set("telefone", preselectedTelefone);
+      const res = await fetch(`/api/whatsapp/conversations/resolve?${params}`);
+      if (cancelado) return;
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setLinkErro(body?.error || "Não foi possível abrir a conversa desse contato.");
+        return;
+      }
+      const { conversation } = await res.json();
+      if (cancelado || !conversation) return;
+      setLinkedContato(conversation);
+      setSelectedContatoId(conversation.id);
+    })();
+    return () => { cancelado = true; };
+  }, [deepLinkKey, preselectedContato, preselectedLeadId, preselectedTelefone, allConversations]);
 
   // Infinite scroll
   const handleScroll = useCallback(() => {
@@ -418,7 +463,7 @@ export default function WhatsAppPage() {
               </button>
             ))}
           </div>
-          <p className="text-[10px] text-white/25">Meus: suas conversas. Abertos: não atribuídos. Todos: visão geral (admin).</p>
+          <p className="text-[10px] text-white/25">Meus: suas conversas. Abertos: não atribuídos.{isAdmin ? " Todos: visão geral (super admin)." : ""}</p>
 
           {/* Search */}
           <div className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.05)" }}>
@@ -563,7 +608,8 @@ export default function WhatsAppPage() {
               <div className="flex-1 min-w-0">
                 <ChatPanel
                   leadId={selectedContato.id}
-                  contatoId={selectedContato.id}
+                  contatoId={selectedContato.leadOnly ? undefined : selectedContato.id}
+                  initialText={textoPronto}
                   leadNome={selectedContato.nome}
                   leadTelefone={selectedContato.telefone || ""}
                   leadStatus={selectedContato.negocioStatus || selectedContato.leadStatus || "novo"}
@@ -595,7 +641,9 @@ export default function WhatsAppPage() {
           <div className="flex-1 flex items-center justify-center">
             <div className="text-center">
               <MessageCircle className="w-12 h-12 text-white/10 mx-auto mb-3" />
-              <p className="text-white/30 text-sm">Selecione uma conversa para começar</p>
+              <p className="text-white/30 text-sm">
+                {linkErro || (deepLinkKey ? "Abrindo conversa…" : "Selecione uma conversa para começar")}
+              </p>
             </div>
           </div>
         )}

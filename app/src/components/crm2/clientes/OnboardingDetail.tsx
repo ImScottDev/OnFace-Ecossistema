@@ -128,11 +128,18 @@ function diasDesde(iso: string | null) {
   if (!iso) return null;
   return Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 86400000));
 }
+/**
+ * Deep link pro canal certo. WhatsApp vai pro inbox do CRM já na conversa do
+ * cliente (com a mensagem pronta no compositor, quando houver template); os
+ * outros canais continuam na página do contato, que é onde vivem em produção.
+ * O /atendimento do CRM2 não existe aqui.
+ */
 function atendimentoHref(leadId: string, canal: "whatsapp" | "email" | "ligacao", telefone?: string | null, texto?: string) {
-  const params = new URLSearchParams({ leadId, canal });
+  if (canal !== "whatsapp") return `/contatos/${leadId}`;
+  const params = new URLSearchParams({ leadId });
   if (telefone) params.set("telefone", telefone);
   if (texto) params.set("texto", texto);
-  return `/contatos/${leadId}`; // /atendimento é do CRM2; em produção o canal fica na página do contato
+  return `/whatsapp?${params}`;
 }
 
 const secLabel = { color: "var(--cf2-text-tertiary)" };

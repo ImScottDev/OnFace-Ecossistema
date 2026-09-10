@@ -135,8 +135,10 @@ async function findOrCreateContato(data: {
   sessaoId: string | null;
   pushName?: string;
 }) {
-  const { normalized, last8, organizacaoId, sessaoId, pushName } = data;
+  const { normalized, last8, organizacaoId, sessaoId, pushName: pushNameRaw } = data;
   const { contatos, whatsappSessao: waSessaoT, usuarios } = await import("../lib/db/schema");
+  const { sanitizePushName } = await import("../lib/whatsapp/phone-utils");
+  const pushName = sanitizePushName(pushNameRaw);
 
   // Find existing contato by sessão + phone
   if (sessaoId) {
@@ -281,7 +283,7 @@ async function crossSaveInterSession(opts: {
 }) {
   const { senderSessaoId, recipientPhone, organizacaoId, message, localMediaUrl, timestamp } = opts;
   const { whatsappSessao, contatos, whatsappMensagens, leads } = await import("../lib/db/schema");
-  const { normalizePhone, phoneLastDigits } = await import("../lib/whatsapp/phone-utils");
+  const { normalizePhone, phoneLastDigits, sanitizePushName } = await import("../lib/whatsapp/phone-utils");
 
   const recipientLast8 = phoneLastDigits(recipientPhone);
 
@@ -330,7 +332,7 @@ async function crossSaveInterSession(opts: {
     const [newContato] = await db.insert(contatos).values({
       organizacaoId,
       canal: "whatsapp",
-      nome: message.pushName || senderPhone,
+      nome: sanitizePushName(message.pushName) || senderPhone,
       telefone: senderPhone,
       sessaoId: recipientSession.id,
     }).returning({ id: contatos.id, leadId: contatos.leadId });
