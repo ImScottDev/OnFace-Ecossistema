@@ -74,11 +74,17 @@ export default function EmailPage() {
 
   const [selectedEmailId, setSelectedEmailId] = useState<string | null>(null);
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(searchParams.get("leadId"));
+  // Deep link de outra tela (onboarding, negócio, cliente): `?novo=1&para=` já
+  // abre o compositor com o destinatário preenchido. Antes só `leadId` chegava
+  // aqui, e ele sozinho não abre nada — a pessoa caía na lista de e-mails e
+  // tinha que procurar o cliente na mão.
+  const paraPreenchido = searchParams.get("para") || "";
+  const abrirNovo = searchParams.get("novo") === "1";
   const [searchQuery, setSearchQuery] = useState("");
   const [filterUnread, setFilterUnread] = useState(false);
   const [filterLeads, setFilterLeads] = useState(false);
   const [viewMode, setViewMode] = useState<"emails" | "contatos">("emails");
-  const [showNewEmail, setShowNewEmail] = useState(false);
+  const [showNewEmail, setShowNewEmail] = useState(abrirNovo);
   const [selectedContaId, setSelectedContaId] = useState<string>("");
   const [viewAsUserId, setViewAsUserId] = useState<string | null>(null);
 
@@ -419,6 +425,8 @@ export default function EmailPage() {
             <div className="flex-1 overflow-y-auto">
               <EmailComposer
                 contaId={selectedContaId}
+                leadId={selectedLeadId || undefined}
+                to={paraPreenchido || undefined}
                 assinatura={selectedConta?.assinatura || undefined}
                 onSent={() => { setShowNewEmail(false); queryClient.invalidateQueries({ queryKey: ["email-inbox"] }); }}
                 onCancel={() => setShowNewEmail(false)}
