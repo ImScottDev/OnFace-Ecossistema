@@ -4,6 +4,7 @@ import { negocios, leads, propostas, propostaItens, contratos, atividades, statu
 import { eq, desc, and, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { getTenantContext, unauthorizedResponse } from "@/lib/auth/tenant";
+import { checarVinculosFinanceiros, limparVinculosNegocio } from "@/lib/crm/delete-negocio";
 
 const updateNegocioSchema = z.object({
   titulo: z.string().min(1).optional(),
@@ -297,16 +298,13 @@ export async function DELETE(
     return NextResponse.json({ error: "Negócio não encontrado" }, { status: 404 });
   }
 
-  // Clear negocioAtivoId reference on leads
-  await db.update(leads).set({ negocioAtivoId: null, updatedAt: new Date() }).where(eq(leads.negocioAtivoId, id));
-  // Clean up related records that don't cascade
-  await db.delete(statusChanges).where(eq(statusChanges.negocioId, id));
-  await db.delete(atividades).where(eq(atividades.negocioId, id));
-  await db.delete(propostas).where(eq(propostas.negocioId, id));
-  await db.delete(contratos).where(eq(contratos.negocioId, id));
-  await db.delete(reunioes).where(eq(reunioes.negocioId, id));
-  // negocioLeads, negocioLabels, notas cascade automatically
-  await db.delete(negocios).where(eq(negocios.id, id));
+  const bloqueio = await checarVinculosFinanceiros(id);
+  if (bloqueio) return NextResponse.json({ error: bloqueio }, { status: 409 });
+
+  await db.transaction(async (tx) => {
+    await limparVinculosNegocio(tx, id);
+    await tx.delete(negocios).where(eq(negocios.id, id));
+  });
 
   return NextResponse.json({ ok: true });
 }

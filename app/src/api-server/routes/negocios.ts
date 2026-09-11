@@ -6,6 +6,7 @@ import { z } from "zod";
 import { resolveFollowupOwnerId } from "@/lib/crm/sdr-escalation";
 import { syncNegocioValoresFromPropostas } from "@/lib/crm/sync-negocio-valores";
 import { getCtx } from "../compat.js";
+import { checarVinculosFinanceiros, limparVinculosNegocio } from "@/lib/crm/delete-negocio";
 
 const app = new Hono();
 
@@ -598,16 +599,13 @@ app.delete("/negocios/:id", async (c) => {
     return c.json({ error: "Negócio não encontrado" }, 404);
   }
 
-  // Clear negocioAtivoId reference on leads
-  await db.update(leads).set({ negocioAtivoId: null, updatedAt: new Date() }).where(eq(leads.negocioAtivoId, id));
-  // Clean up related records that don't cascade
-  await db.delete(statusChanges).where(eq(statusChanges.negocioId, id));
-  await db.delete(atividades).where(eq(atividades.negocioId, id));
-  await db.delete(propostas).where(eq(propostas.negocioId, id));
-  await db.delete(contratos).where(eq(contratos.negocioId, id));
-  await db.delete(reunioes).where(eq(reunioes.negocioId, id));
-  // negocioLeads, negocioLabels, notas cascade automatically
-  await db.delete(negocios).where(eq(negocios.id, id));
+  const bloqueio = await checarVinculosFinanceiros(id);
+  if (bloqueio) return c.json({ error: bloqueio }, 409);
+
+  await db.transaction(async (tx) => {
+    await limparVinculosNegocio(tx, id);
+    await tx.delete(negocios).where(eq(negocios.id, id));
+  });
 
   return c.json({ ok: true });
 });
