@@ -18,9 +18,9 @@ type EmailMsg = {
   lido: boolean;
 };
 
-export function Cf2EmailThread({ conversa, contexto }: { conversa: ConversaItem; contexto: Contexto | null }) {
+export function Cf2EmailThread({ conversa, contexto, textoInicial }: { conversa: ConversaItem; contexto: Contexto | null; textoInicial?: string }) {
   const queryClient = useQueryClient();
-  const [texto, setTexto] = useState("");
+  const [texto, setTexto] = useState(textoInicial ?? "");
 
   const param = conversa.emailThreadId ? `threadId=${conversa.emailThreadId}` : `emailId=${conversa.id}`;
 
@@ -118,7 +118,7 @@ export function Cf2EmailThread({ conversa, contexto }: { conversa: ConversaItem;
             <input
               value={texto}
               onChange={(e) => setTexto(e.target.value)}
-              placeholder="Responder por e-mail…"
+              placeholder="Responder por e-mail…" aria-label="Responder por e-mail"
               className="flex-1 min-w-0 bg-transparent outline-none text-[13.5px]"
               style={{ color: "var(--cf2-text-primary)" }}
             />

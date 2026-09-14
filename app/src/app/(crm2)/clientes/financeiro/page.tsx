@@ -4,7 +4,8 @@ import { eq } from "drizzle-orm";
 import { getTenantContext } from "@/lib/auth/tenant";
 import { redirect } from "next/navigation";
 import { Cf2Topbar } from "@/components/crm2/Topbar";
-import { FinanceiroWorkspace } from "@/components/crm2/clientes/FinanceiroWorkspace";
+import { Suspense } from "react";
+import { FinanceiroCentral } from "@/components/crm2/financeiro/Workspace";
 
 export default async function ClientesFinanceiroPage() {
   const ctx = await getTenantContext();
@@ -26,12 +27,14 @@ export default async function ClientesFinanceiroPage() {
           orgNome={org?.nome || "Callface"}
           variant="light"
           title="Clientes"
-          subtitle="Financeiro operacional — Services, billing e conciliação"
-          compactTitle
+          subtitle="MRR, cobrança, assinaturas, churn e conciliação"
+          compactTitle actions={null}
         />
       </div>
       <div className="pt-6">
-        <FinanceiroWorkspace />
+        <Suspense fallback={null}>
+          <FinanceiroCentral />
+        </Suspense>
       </div>
     </div>
   );

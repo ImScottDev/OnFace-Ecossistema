@@ -3,12 +3,17 @@ import crypto from "crypto";
 import { syncStripe } from "@/lib/integrations/stripe-sync";
 import { db } from "@/lib/db";
 import { propostas, leads, empresas, checkouts, notificacoes, usuarios, assinaturas, faturas, stripeWebhookEvents, organizacoes, auditLog } from "@/lib/db/schema";
-import { eq, and, isNull, or, sql } from "drizzle-orm";
+import { eq, and, isNull, or, sql, desc } from "drizzle-orm";
 import { buscarCheckoutPorSessionId } from "@/lib/crm/checkout";
 import { concluirGrupo, marcarPagamentoFalhouNoGrupo } from "@/lib/crm/grupo-comercial";
 import { registrarEvidencia, marcarNegocioGanhoSeAindaNao } from "@/lib/crm/won-evidence";
+import { registrarPagamentoDoGrupo } from "@/lib/crm/grupo-comercial";
+import { resolverFamiliaDoGrupo, trilhaPosGanho } from "@/lib/crm/politica-familia";
+import { quitarPendenciaFinanceira } from "@/lib/crm/pendencia-financeira";
+import { notificarPagamentoConfirmado } from "@/lib/crm/notificar";
 import { publicarEvento } from "@/lib/events/outbox";
 import { dispararAutomacoesFinanceiras } from "@/lib/crm/automacao-engine";
+import { isStripeMockMode } from "@/lib/integrations/stripe-checkout";
 
 /**
  * Pagamento CONFIRMADO (payment_status === "paid") — Commercial Core v2
@@ -23,20 +28,37 @@ import { dispararAutomacoesFinanceiras } from "@/lib/crm/automacao-engine";
  * Idempotente: checkout.status='pago' já setado é um no-op (Stripe reenvia
  * o mesmo evento por retry/duplicidade).
  */
-async function handlePaymentConfirmed(session: Record<string, unknown>): Promise<string> {
+async function handlePaymentConfirmed(session: Record<string, unknown>, checkoutOverride?: typeof checkouts.$inferSelect): Promise<string> {
   const stripeSessionId = typeof session.id === "string" ? session.id : null;
   if (!stripeSessionId) return "session sem id";
 
-  const checkout = await buscarCheckoutPorSessionId(stripeSessionId);
+  const checkout = checkoutOverride || await buscarCheckoutPorSessionId(stripeSessionId);
   if (!checkout) return `checkout não rastreado pra session ${stripeSessionId} — fora do fluxo atual, ignorado`;
   if (checkout.status === "pago") return "checkout já estava pago (idempotente)";
 
   const stripeCustomer = typeof session.customer === "string" ? session.customer : null;
   const stripeSubscription = typeof session.subscription === "string" ? session.subscription : null;
 
+  const pagoEm = new Date();
+  const stripeInvoice = typeof session.invoice === "string" ? session.invoice : null;
+  const stripePaymentIntent = typeof session.payment_intent === "string" ? session.payment_intent : null;
+
   await db.update(checkouts).set({
-    status: "pago", completadoEm: new Date(), stripeSubscriptionId: stripeSubscription,
+    status: "pago", completadoEm: pagoEm, stripeSubscriptionId: stripeSubscription,
+    // Frente 2C.1 — o que a 2C.2 vai precisar ler sem reabrir o payload bruto.
+    stripeCustomerId: stripeCustomer, stripeInvoiceId: stripeInvoice, stripePaymentIntentId: stripePaymentIntent,
+    paymentStatus: "confirmado", paidAt: pagoEm,
   }).where(eq(checkouts.id, checkout.id));
+
+  // Frente 2C.1 — a família do grupo é o que decide a política de evidência
+  // aplicável. Sem essa dica o gate cai no produto legado do negócio, que não
+  // tem política nenhuma configurada.
+  let familia: string | null = null;
+  if (checkout.grupoComercialId) {
+    familia = await resolverFamiliaDoGrupo(checkout.grupoComercialId).catch(() => null);
+    await registrarPagamentoDoGrupo(checkout.grupoComercialId, "confirmado", { confirmadoEm: pagoEm });
+    await quitarPendenciaFinanceira(checkout.grupoComercialId, pagoEm);
+  }
 
   if (checkout.negocioId) {
     await registrarEvidencia({
@@ -45,13 +67,20 @@ async function handlePaymentConfirmed(session: Record<string, unknown>): Promise
       tipo: stripeSubscription ? "stripe_subscription" : "stripe_payment",
       sourceRef: stripeSessionId,
       grupoComercialId: checkout.grupoComercialId,
-      metadata: { checkoutId: checkout.id },
+      metadata: { checkoutId: checkout.id, stripeInvoiceId: stripeInvoice, stripePaymentIntentId: stripePaymentIntent },
     });
-    await marcarNegocioGanhoSeAindaNao(checkout.negocioId, checkout.organizacaoId);
+    await marcarNegocioGanhoSeAindaNao(checkout.negocioId, checkout.organizacaoId, { familiaHint: familia });
+    await notificarPagamentoConfirmado({ negocioId: checkout.negocioId, valor: null }).catch(() => {});
   }
 
   if (checkout.grupoComercialId) {
     await concluirGrupo(checkout.grupoComercialId);
+    const trilha = trilhaPosGanho(familia);
+    await publicarEvento({
+      organizacaoId: checkout.organizacaoId, eventType: "FulfillmentCreated", aggregateType: "grupo_comercial", aggregateId: checkout.grupoComercialId,
+      payload: { checkoutId: checkout.id, negocioId: checkout.negocioId, serviceFamily: familia, trilha, origem: "pagamento_confirmado" },
+      idempotencyKey: `fulfillment-created:${checkout.grupoComercialId}`,
+    });
   }
 
   // Espelho de billing / dados fiscais (igual antes, agora resolvido via checkout->proposta).
@@ -79,6 +108,67 @@ async function handlePaymentConfirmed(session: Record<string, unknown>): Promise
   });
 
   return `checkout ${checkout.id} pago, grupo ${checkout.grupoComercialId ?? "—"} concluído`;
+}
+
+async function findCheckoutForBillingObject(object: Record<string, unknown>) {
+  const invoiceId = typeof object.id === "string" && typeof object.subscription !== "undefined" ? object.id : null;
+  const subscriptionId = typeof object.subscription === "string"
+    ? object.subscription
+    : typeof object.parent === "object" && object.parent && typeof (object.parent as Record<string, unknown>).subscription_details === "object"
+      ? ((object.parent as Record<string, unknown>).subscription_details as Record<string, unknown>)?.subscription
+      : null;
+  const customerId = typeof object.customer === "string" ? object.customer : null;
+
+  if (invoiceId) {
+    const [byInvoice] = await db.select().from(checkouts).where(eq(checkouts.stripeInvoiceId, invoiceId)).limit(1);
+    if (byInvoice) return byInvoice;
+  }
+  if (typeof subscriptionId === "string") {
+    const [bySubscription] = await db.select().from(checkouts).where(eq(checkouts.stripeSubscriptionId, subscriptionId)).limit(1);
+    if (bySubscription) return bySubscription;
+  }
+  const metadata = object.metadata as Record<string, unknown> | undefined;
+  const groupId = typeof metadata?.crm_group_id === "string" ? metadata.crm_group_id : null;
+  if (groupId) {
+    const [byGroup] = await db.select().from(checkouts).where(eq(checkouts.grupoComercialId, groupId)).orderBy(desc(checkouts.criadoEm)).limit(1);
+    if (byGroup) return byGroup;
+  }
+  if (customerId) {
+    const [byCustomer] = await db.select().from(checkouts).where(eq(checkouts.stripeCustomerId, customerId)).orderBy(desc(checkouts.criadoEm)).limit(1);
+    if (byCustomer) return byCustomer;
+  }
+  return null;
+}
+
+async function handleInvoicePaid(invoice: Record<string, unknown>): Promise<string> {
+  const checkout = await findCheckoutForBillingObject(invoice);
+  if (!checkout) return "invoice.paid sem checkout rastreado (fica pro sync)";
+  const session: Record<string, unknown> = {
+    id: checkout.stripeSessionId || `invoice_${String(invoice.id || "unknown")}`,
+    customer: invoice.customer,
+    subscription: typeof invoice.subscription === "string" ? invoice.subscription : null,
+    invoice: typeof invoice.id === "string" ? invoice.id : null,
+    payment_intent: typeof invoice.payment_intent === "string" ? invoice.payment_intent : null,
+    payment_status: "paid",
+  };
+  return handlePaymentConfirmed(session, checkout);
+}
+
+async function handleSubscriptionLink(subscription: Record<string, unknown>): Promise<string> {
+  const metadata = subscription.metadata as Record<string, unknown> | undefined;
+  const checkout = await findCheckoutForBillingObject(subscription);
+  const checkoutByMetadata = typeof metadata?.crm_group_id === "string"
+    ? (await db.select().from(checkouts).where(eq(checkouts.grupoComercialId, metadata.crm_group_id)).orderBy(desc(checkouts.criadoEm)).limit(1))[0]
+    : null;
+  const target = checkout || checkoutByMetadata;
+  if (!target) return "subscription sem checkout rastreado (fica pro sync)";
+  const subscriptionId = typeof subscription.id === "string" ? subscription.id : null;
+  const customerId = typeof subscription.customer === "string" ? subscription.customer : null;
+  await db.update(checkouts).set({
+    stripeSubscriptionId: subscriptionId || target.stripeSubscriptionId,
+    stripeCustomerId: customerId || target.stripeCustomerId,
+  }).where(eq(checkouts.id, target.id));
+  return `subscription vinculada ao checkout ${target.id}`;
 }
 
 /** checkout.session.expired — não configurado no Stripe Dashboard ainda (confirmar assinatura do webhook antes de depender disso em produção). */
@@ -235,6 +325,23 @@ async function handleAsyncPaymentFailed(session: Record<string, unknown>): Promi
  * HUMANA agir em paralelo enquanto o atraso é recente e recuperável.
  */
 async function handleInvoicePaymentFailed(invoice: Record<string, unknown>): Promise<string> {
+  const checkout = await findCheckoutForBillingObject(invoice);
+  if (checkout && checkout.status !== "pago" && checkout.status !== "concluido") {
+    await db.update(checkouts).set({
+      status: "falhou",
+      paymentStatus: "falhou",
+      stripeInvoiceId: typeof invoice.id === "string" ? invoice.id : checkout.stripeInvoiceId,
+    }).where(eq(checkouts.id, checkout.id));
+    if (checkout.grupoComercialId) await marcarPagamentoFalhouNoGrupo(checkout.grupoComercialId);
+    await publicarEvento({
+      organizacaoId: checkout.organizacaoId,
+      eventType: "PaymentFailed",
+      aggregateType: "checkout",
+      aggregateId: checkout.id,
+      payload: { propostaId: checkout.propostaId, grupoComercialId: checkout.grupoComercialId, motivo: "invoice_payment_failed" },
+      idempotencyKey: `payment-failed:${checkout.id}:${String(invoice.id || "invoice")}`,
+    });
+  }
   const customer = typeof invoice.customer === "string" ? invoice.customer : null;
   if (!customer) return "invoice sem customer";
 
@@ -463,6 +570,14 @@ export async function POST(request: NextRequest) {
     }
   };
 
+  let checkoutMockMode = false;
+  try {
+    checkoutMockMode = isStripeMockMode();
+  } catch (e) {
+    await finishInboxEvent("failed", String(e));
+    return NextResponse.json({ error: "stripe checkout mode blocked" }, { status: 500 });
+  }
+
   // checkout.session.completed dispara quando o cliente TERMINA o checkout, não quando
   // ele PAGA — pra métodos assíncronos (boleto), a sessão fica "complete" com
   // payment_status "unpaid" até o boleto compensar. Só marcar aceita se payment_status
@@ -515,6 +630,35 @@ export async function POST(request: NextRequest) {
       // o sync abaixo mantém o dado consistente de qualquer jeito.
       console.error("[StripeWebhook] erro ao notificar pagamento falho:", e);
     }
+  }
+
+  if (type === "invoice.paid") {
+    try {
+      const invoice = event.data?.object || {};
+      const r = await handleInvoicePaid(invoice);
+      console.log(`[StripeWebhook] ${type} -> ${r}`);
+    } catch (e) {
+      console.error("[StripeWebhook] erro ao tratar invoice.paid:", e);
+      await finishInboxEvent("failed", String(e));
+      return NextResponse.json({ error: "invoice paid handling failed, retry" }, { status: 500 });
+    }
+  }
+
+  if (type.startsWith("customer.subscription.")) {
+    try {
+      const subscription = event.data?.object || {};
+      const r = await handleSubscriptionLink(subscription);
+      console.log(`[StripeWebhook] ${type} -> ${r}`);
+    } catch (e) {
+      console.error("[StripeWebhook] erro ao vincular subscription:", e);
+      await finishInboxEvent("failed", String(e));
+      return NextResponse.json({ error: "subscription handling failed, retry" }, { status: 500 });
+    }
+  }
+
+  if (checkoutMockMode) {
+    await finishInboxEvent("processed");
+    return NextResponse.json({ received: true, type, mode: "mock" });
   }
 
   // Sync incremental (idempotente: upsert por stripe id). Reconcilia assinaturas/faturas/churn.

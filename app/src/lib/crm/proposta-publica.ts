@@ -17,10 +17,8 @@ import { publicarEvento } from "@/lib/events/outbox";
 import { notificarPropostaRespondida } from "@/lib/crm/notificar-proposta";
 import { syncNegocioValoresFromPropostas } from "@/lib/crm/sync-negocio-valores";
 import { processarAceiteDaProposta, type ResultadoGrupoAceite } from "@/lib/crm/proposta-aceite";
-import { marcarContratoAssinadoNoGrupo } from "@/lib/crm/grupo-comercial";
-import { registrarEvidencia } from "@/lib/crm/won-evidence";
 import { getSignatureProvider } from "@/lib/crm/signature";
-import { criarCheckoutParaGrupo } from "@/lib/crm/checkout";
+import { processarContratoAssinado } from "@/lib/crm/pos-assinatura";
 
 type PropostaRow = typeof propostas.$inferSelect;
 
@@ -52,10 +50,10 @@ export async function registrarVisualizacao(proposta: PropostaRow): Promise<void
   }
 }
 
-export async function aceitarPropostaPublica(proposta: PropostaRow): Promise<
+export async function aceitarPropostaPublica(proposta: PropostaRow, contexto: { ip?: string | null; userAgent?: string | null } = {}): Promise<
   { ok: true; grupos: ResultadoGrupoAceite[] } | { ok: false; error: string }
 > {
-  return processarAceiteDaProposta({ propostaId: proposta.id, organizacaoId: proposta.organizacaoId, origem: "publico" });
+  return processarAceiteDaProposta({ propostaId: proposta.id, organizacaoId: proposta.organizacaoId, origem: "publico", ...contexto });
 }
 
 export async function recusarPropostaPublica(proposta: PropostaRow, motivo?: string): Promise<{ ok: true } | { ok: false; error: string }> {
@@ -127,8 +125,14 @@ export async function solicitarAjustePropostaPublica(proposta: PropostaRow, mens
 
 /**
  * Aceite eletrônico simples via SignatureProvider ativo — assina UM contrato
- * específico. A assinatura registra SIGNED_CONTRACT e abre a cobrança; Won
- * só é avaliado depois de PAYMENT_CONFIRMED.
+ * específico.
+ *
+ * Frente 2C.1: as consequências da assinatura saíram daqui e foram pro motor
+ * único (`pos-assinatura.ts`), compartilhado com o webhook do Documenso — não
+ * existem mais dois caminhos divergentes de "contrato assinado". O que a
+ * assinatura fecha depende da FAMÍLIA: PABX/White Label viram ganho aqui
+ * mesmo (contrato assinado é a evidência); Callface AI continua esperando o
+ * pagamento.
  */
 export async function assinarContratoPublico(contratoId: string, nomeCompleto: string, ip: string): Promise<{ ok: true; checkoutUrl?: string | null } | { ok: false; error: string }> {
   const [contrato] = await db.select().from(contratos).where(eq(contratos.id, contratoId)).limit(1);
@@ -162,34 +166,12 @@ export async function assinarContratoPublico(contratoId: string, nomeCompleto: s
     idempotencyKey: `contract-signed:${contrato.id}`,
   });
 
-  await marcarContratoAssinadoNoGrupo(contrato.grupoComercialId);
-
-  if (contrato.negocioId) {
-    await registrarEvidencia({
-      negocioId: contrato.negocioId, organizacaoId: contrato.organizacaoId, tipo: "signed_contract",
-      sourceRef: contrato.id, grupoComercialId: contrato.grupoComercialId, metadata: { assinaturaSimples: true },
-    });
-    // Assinatura libera a evidência SIGNED_CONTRACT e o próximo passo de
-    // cobrança, mas não fecha a oportunidade. Won só pode nascer depois de
-    // PAYMENT_CONFIRMED, materializado pelo webhook de pagamento.
-    await syncNegocioValoresFromPropostas(contrato.negocioId);
-  }
-
-  // Seção 10 do briefing: PABX/White Label também faturam via Stripe agora
-  // (não mais só cobrança manual) — tenta gerar o checkout automaticamente;
-  // se falhar (catálogo sem stripeProductId configurado, etc), o grupo fica
-  // em aguardando_checkout e o vendedor pode gerar manualmente depois.
-  let checkoutUrl: string | null = null;
-  const checkoutResult = await criarCheckoutParaGrupo({ grupoId: contrato.grupoComercialId, origem: "automatico_pos_aceite" });
-  if (checkoutResult.ok) {
-    checkoutUrl = checkoutResult.url;
-    await publicarEvento({
-      organizacaoId: contrato.organizacaoId, eventType: "PaymentStarted", aggregateType: "checkout", aggregateId: checkoutResult.checkoutId,
-      payload: { negocioId: contrato.negocioId, grupoComercialId: contrato.grupoComercialId, checkoutUrl },
-    });
-  } else {
-    console.error(`[proposta-publica] checkout automático pós-assinatura falhou pro grupo ${contrato.grupoComercialId}: ${checkoutResult.error}`);
-  }
+  const resultado = await processarContratoAssinado({
+    contrato,
+    provider: provider.nome,
+    metadata: { assinaturaSimples: true, nomeSignatario: nomeCompleto, ip },
+  });
+  const checkoutUrl = resultado.checkoutUrl;
 
   return { ok: true, checkoutUrl };
 }

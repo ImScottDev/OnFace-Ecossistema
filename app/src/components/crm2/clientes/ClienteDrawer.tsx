@@ -52,7 +52,7 @@ interface ClienteDetalhe {
   contratos: ContratoCliente[];
 }
 
-const FAMILIA_LABEL: Record<string, string> = { CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label", UNKNOWN: "Não classificado" };
+const FAMILIA_LABEL: Record<string, string> = { CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label", UNKNOWN: "Produto em revisão" };
 const STATUS_LABEL: Record<string, string> = { ativo: "Ativo", inadimplente: "Inadimplente", churned: "Churned" };
 const STATUS_COLOR: Record<string, string> = { ativo: "var(--cf2-success-text)", inadimplente: "var(--cf2-danger-text)", churned: "var(--cf2-text-tertiary)" };
 const CANAL_LABEL: Record<string, string> = {
@@ -267,11 +267,11 @@ export function Cf2ClienteDrawer({ empresaId, open, onClose }: { empresaId: stri
                   <Campo label="Faturas atrasadas" valor={String(data.faturasAtrasadas)} tone={data.faturasAtrasadas > 0 ? "var(--cf2-danger-text)" : undefined} />
                 </div>
                 <div>
-                  <p className="text-[11px] font-bold uppercase mb-2" style={{ color: "var(--cf2-text-tertiary)" }}>MRR mensal (mrr_movimentos — só produtos AI/Stripe-sync)</p>
+                  <p className="text-[11px] font-bold uppercase mb-2" style={{ color: "var(--cf2-text-tertiary)" }}>MRR mês a mês</p>
                   {mrrMensal.length > 0 ? (
                     <Cf2MrrMensalChart dados={mrrMensal} />
                   ) : (
-                    <p className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>Sem série de MRR (cliente sem produto no ledger AI/Stripe-sync — não fabricado).</p>
+                    <p className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>Sem histórico mensal importado para este cliente.</p>
                   )}
                 </div>
               </>

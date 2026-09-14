@@ -10,6 +10,13 @@ import { ArrowUpRight } from "lucide-react";
  * O Figma fixa a largura de algumas etapas (125/107/156px) — aqui todas são
  * `flex-1`, porque a faixa precisa acompanhar a largura real da tela e o
  * valor fixo era artefato do frame de 1276px do desenho.
+ *
+ * Abaixo de xl a faixa linear não cabe. A versão anterior virava scroll
+ * horizontal com a barra escondida (`cf2-hide-scrollbar`): em 834px o card
+ * "Clientes ativos" ficava cortado na borda sem nenhuma pista de que dava pra
+ * rolar, e as setas encostavam nos números. Agora as etapas viram grade — as
+ * setas e o divisor saem, porque só fazem sentido na leitura linear, e a
+ * fronteira comercial → pós-venda vira um rótulo de seção.
  */
 
 export interface EtapaJornada {
@@ -58,16 +65,16 @@ export function Cf2JornadaOperacao({ comercial, posVenda }: { comercial: EtapaJo
           <ArrowUpRight className="w-3.5 h-3.5" style={{ color: "var(--cf2-home-ink-soft)" }} />
         </span>
         <p className="text-[15px] font-semibold" style={{ color: "var(--cf2-home-ink)", letterSpacing: "-0.61px" }}>Jornada da operação</p>
-        <p className="text-[12px] truncate" style={{ color: "var(--cf2-home-ink-faint)" }}>· Da aquisição ao cliente ativo · clique em cada etapa</p>
+        <p className="hidden sm:block text-[12px] truncate" style={{ color: "var(--cf2-home-ink-faint)" }}>· Da aquisição ao cliente ativo · clique em cada etapa</p>
       </div>
 
-      {/* Abaixo de xl a faixa não cabe inteira (são 7 etapas + divisor): vira
-          scroll horizontal em vez de espremer/sobrepor os rótulos. */}
+      {/* ── xl+: a faixa linear do desenho ── */}
       <div
-        className="p-3 rounded-[28px] overflow-x-auto cf2-hide-scrollbar"
+        className="hidden xl:block p-3 rounded-[28px]"
+        data-cf2-superficie="escura"
         style={{ background: "var(--cf2-home-hero-bg)", boxShadow: "0px 1px 1px rgba(17,19,24,0.03), 0px 6px 10px rgba(17,19,24,0.08)" }}
       >
-        <div className="flex items-center min-w-[900px] xl:min-w-0">
+        <div className="flex items-center">
           {comercial.map((e, i) => (
             <div key={e.label} className="flex items-center flex-1 min-w-0">
               <Etapa etapa={e} />
@@ -96,6 +103,33 @@ export function Cf2JornadaOperacao({ comercial, posVenda }: { comercial: EtapaJo
           ))}
         </div>
       </div>
+
+      {/* ── < xl: mesma informação em grade, sem scroll escondido ── */}
+      <div
+        className="xl:hidden flex flex-col gap-3 p-3 rounded-[28px]"
+        data-cf2-superficie="escura"
+        style={{ background: "var(--cf2-home-hero-bg)", boxShadow: "0px 1px 1px rgba(17,19,24,0.03), 0px 6px 10px rgba(17,19,24,0.08)" }}
+      >
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1">
+          {comercial.map((e) => <Etapa key={e.label} etapa={e} />)}
+        </div>
+
+        <div className="flex items-center gap-2.5 px-1">
+          <span className="h-[1.5px] flex-1 rounded-sm" style={{ background: "var(--cf2-home-lime)", opacity: 0.35 }} />
+          <span
+            className="text-[9px] font-medium uppercase py-1 px-2 rounded-md shrink-0"
+            style={{ background: "var(--cf2-home-lime)", color: "#000000", letterSpacing: "0.5px" }}
+          >
+            Pós-venda
+          </span>
+          <span className="h-[1.5px] flex-1 rounded-sm" style={{ background: "var(--cf2-home-lime)", opacity: 0.35 }} />
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-1">
+          {posVenda.map((e) => <Etapa key={e.label} etapa={e} claro />)}
+        </div>
+      </div>
+
     </section>
   );
 }

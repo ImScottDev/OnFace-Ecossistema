@@ -30,7 +30,10 @@ import { resolverCommercialModelPadraoPorCatalogoIds, resolverCommercialModelDoI
 
 export type StatusGrupoComercial =
   | "aguardando_aceite" | "aguardando_contrato" | "contrato_enviado_assinatura" | "contrato_assinado"
-  | "aguardando_checkout" | "checkout_gerado" | "pagamento_pendente" | "pago" | "concluido" | "falhou";
+  | "aguardando_checkout" | "checkout_gerado" | "pagamento_pendente" | "pago" | "concluido" | "falhou"
+  // Frente 2C.1 — família sem regra clara de fechamento: aceita, mas nunca
+  // ganha automaticamente. Alguém do time valida na mão.
+  | "aguardando_validacao_manual";
 
 export interface GrupoComercialRow {
   id: string;
@@ -146,8 +149,80 @@ export async function vincularContratoPreparadoAoGrupo(grupoId: string, contrato
  * caller (aceitar-proposta/proposta-publica), não este módulo.
  */
 export async function marcarContratoAssinadoNoGrupo(grupoId: string): Promise<void> {
-  await atualizarStatusGrupo(grupoId, "contrato_assinado");
+  // `contrato_assinado_em` (Frente 2C.1) é o que preserva o FATO da
+  // assinatura depois que o status avança pra aguardando_checkout — sem ele
+  // não havia como distinguir "aguardando pagamento porque nunca precisou de
+  // contrato" de "aguardando pagamento com contrato já assinado", que são
+  // regras de ganho opostas.
+  await atualizarStatusGrupo(grupoId, "contrato_assinado", { contratoAssinadoEm: new Date() });
   await atualizarStatusGrupo(grupoId, "aguardando_checkout");
+}
+
+/**
+ * Frente 2C.1 — família sem regra clara de fechamento (UNKNOWN / produto
+ * novo sem configuração). O grupo fica parado num estado explícito em vez de
+ * seguir por um caminho chutado.
+ */
+export async function marcarAguardandoValidacaoManual(grupoId: string, motivo: string): Promise<void> {
+  const [grupo] = await db.select().from(propostaGrupoComercial).where(eq(propostaGrupoComercial.id, grupoId)).limit(1);
+  if (!grupo || grupo.status === "aguardando_validacao_manual") return;
+  await atualizarStatusGrupo(grupoId, "aguardando_validacao_manual");
+  await publicarEvento({
+    organizacaoId: grupo.organizacaoId,
+    eventType: "ManualValidationRequired",
+    aggregateType: "grupo_comercial",
+    aggregateId: grupoId,
+    payload: { propostaId: grupo.propostaId, negocioId: grupo.negocioId, commercialModel: grupo.commercialModel, serviceFamily: grupo.serviceFamily, motivo },
+    idempotencyKey: `manual-validation-required:${grupoId}`,
+  });
+}
+
+/**
+ * Frente 2C.1 — LIBERA A ENTREGA de um grupo sem exigir pagamento.
+ *
+ * Existe porque PABX e White Label fecham na ASSINATURA: o serviço tem que
+ * ser materializado e a implantação começar mesmo com a cobrança em aberto.
+ * Antes desta frente, a materialização só acontecia dentro de `concluirGrupo`
+ * (caminho de pagamento) — na prática, PABX/White Label nunca chegavam a
+ * gerar serviço canônico nem fulfillment sem passar pelo Stripe.
+ *
+ * Publica o MESMO `FulfillmentGroupCompleted` com a MESMA idempotencyKey de
+ * `concluirGrupo`, de propósito: quem chegar primeiro (assinatura ou
+ * pagamento) materializa, o outro é no-op real. Nunca dois serviços.
+ *
+ * O status do grupo NÃO vira `concluido` aqui — concluído continua
+ * significando "ciclo comercial inteiro fechado, pagamento incluído". O que
+ * marca a liberação é `entrega_liberada_em/por`.
+ */
+export async function liberarEntregaDoGrupo(grupoId: string, opts: { por: "contrato_assinado" | "pagamento_confirmado" | "manual" }): Promise<{ liberado: boolean }> {
+  const [grupo] = await db.select().from(propostaGrupoComercial).where(eq(propostaGrupoComercial.id, grupoId)).limit(1);
+  if (!grupo) return { liberado: false };
+  if (grupo.entregaLiberadaEm) return { liberado: false }; // idempotente
+
+  await db.transaction(async (tx) => {
+    await tx.update(propostaGrupoComercial)
+      .set({ entregaLiberadaEm: new Date(), entregaLiberadaPor: opts.por, updatedAt: new Date() })
+      .where(eq(propostaGrupoComercial.id, grupoId));
+    await publicarEvento({
+      organizacaoId: grupo.organizacaoId,
+      eventType: "FulfillmentGroupCompleted",
+      aggregateType: "grupo_comercial",
+      aggregateId: grupoId,
+      payload: { propostaId: grupo.propostaId, negocioId: grupo.negocioId, commercialModel: grupo.commercialModel, serviceFamily: grupo.serviceFamily, liberadoPor: opts.por },
+      idempotencyKey: `fulfillment-group-completed:${grupoId}`,
+    }, tx);
+  });
+  return { liberado: true };
+}
+
+/** Frente 2C.1 — estado do pagamento do grupo, independente do status de fulfillment. */
+export async function registrarPagamentoDoGrupo(grupoId: string, status: "pendente" | "confirmado" | "falhou", opts: { venceEm?: Date | null; confirmadoEm?: Date | null } = {}): Promise<void> {
+  await db.update(propostaGrupoComercial).set({
+    pagamentoStatus: status,
+    ...(opts.venceEm !== undefined ? { pagamentoVenceEm: opts.venceEm } : {}),
+    ...(status === "confirmado" ? { pagamentoConfirmadoEm: opts.confirmadoEm ?? new Date() } : {}),
+    updatedAt: new Date(),
+  }).where(eq(propostaGrupoComercial.id, grupoId));
 }
 
 export async function vincularCheckoutAoGrupo(grupoId: string, checkoutId: string): Promise<void> {
@@ -155,11 +230,11 @@ export async function vincularCheckoutAoGrupo(grupoId: string, checkoutId: strin
 }
 
 export async function marcarPagamentoPendenteNoGrupo(grupoId: string): Promise<void> {
-  await atualizarStatusGrupo(grupoId, "pagamento_pendente");
+  await atualizarStatusGrupo(grupoId, "pagamento_pendente", { pagamentoStatus: "pendente" });
 }
 
 export async function marcarPagamentoFalhouNoGrupo(grupoId: string): Promise<void> {
-  await atualizarStatusGrupo(grupoId, "falhou");
+  await atualizarStatusGrupo(grupoId, "falhou", { pagamentoStatus: "falhou" });
 }
 
 /**
@@ -173,14 +248,27 @@ export async function concluirGrupo(grupoId: string): Promise<void> {
   const [grupo] = await db.select().from(propostaGrupoComercial).where(eq(propostaGrupoComercial.id, grupoId)).limit(1);
   if (!grupo || grupo.status === "concluido") return; // idempotente — retry não duplica evento
 
+  const agora = new Date();
   await db.transaction(async (tx) => {
-    await tx.update(propostaGrupoComercial).set({ status: "concluido", concluidoEm: new Date(), updatedAt: new Date() }).where(eq(propostaGrupoComercial.id, grupoId));
+    await tx.update(propostaGrupoComercial).set({
+      status: "concluido",
+      concluidoEm: agora,
+      // Frente 2C.1: pagamento confirmado é o que conclui o grupo, e conclusão
+      // implica entrega liberada. `entregaLiberadaEm` só é setado se ainda não
+      // existia (num PABX ela foi liberada antes, na assinatura — não
+      // sobrescreve a data real do fato anterior).
+      pagamentoStatus: "confirmado",
+      pagamentoConfirmadoEm: grupo.pagamentoConfirmadoEm ?? agora,
+      entregaLiberadaEm: grupo.entregaLiberadaEm ?? agora,
+      entregaLiberadaPor: grupo.entregaLiberadaPor ?? "pagamento_confirmado",
+      updatedAt: agora,
+    }).where(eq(propostaGrupoComercial.id, grupoId));
     await publicarEvento({
       organizacaoId: grupo.organizacaoId,
       eventType: "FulfillmentGroupCompleted",
       aggregateType: "grupo_comercial",
       aggregateId: grupoId,
-      payload: { propostaId: grupo.propostaId, negocioId: grupo.negocioId, commercialModel: grupo.commercialModel },
+      payload: { propostaId: grupo.propostaId, negocioId: grupo.negocioId, commercialModel: grupo.commercialModel, serviceFamily: grupo.serviceFamily, liberadoPor: grupo.entregaLiberadaPor ?? "pagamento_confirmado" },
       idempotencyKey: `fulfillment-group-completed:${grupoId}`,
     }, tx);
   });

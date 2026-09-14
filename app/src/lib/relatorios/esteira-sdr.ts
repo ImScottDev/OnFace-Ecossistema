@@ -52,6 +52,11 @@ export async function getEsteiraSdr(orgId: string, since: Date, until: Date): Pr
     const s = l.sdrStatus || "pending";
     if (s === "disqualified") return "desqualificado";
     if (comNegocio.has(l.id)) return "qualificado";
+    // SQL sem oportunidade (01/09): a SDR pode marcar Qualificado (SQL) sem
+    // agendar reunião nem criar negócio. Sem esta linha o lead caía no
+    // fallback e era contado como "Novo" no funil — subnotificando
+    // qualificação e inflando a entrada.
+    if (s === "qualified") return "qualificado";
     if (STAGNATION.includes(s)) return "estagnados";
     if (s === "contacted") return "emContato";
     if (s === "qualifying") return "qualificando";

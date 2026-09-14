@@ -118,14 +118,14 @@ export function Cf2EntregaWorkspace({ familiaFixa }: { familiaFixa?: "PABX" | "C
 
   return (
     <div className="flex flex-col gap-5 h-full min-h-0">
-      <div className="flex items-center justify-between shrink-0">
+      <div className="flex flex-col items-stretch justify-between gap-3 shrink-0 lg:flex-row lg:items-center">
         <div>
           <p className="text-[24px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>{familiaFixa ? FAMILIA_LABEL[familiaFixa] : "Entrega"}</p>
           <p className="text-[13px]" style={{ color: "var(--cf2-text-secondary)" }}>
             {familiaFixa === "CALLFACE_AI" ? "Onboarding Callface AI em andamento — nasce automaticamente após o Won." : "Implantação/onboarding em andamento — nasce automaticamente após o Won, checklist real por família."}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {!familiaFixa && (
             <select
               value={familia}
@@ -142,7 +142,7 @@ export function Cf2EntregaWorkspace({ familiaFixa }: { familiaFixa?: "PABX" | "C
           <select
             value={responsavelId}
             onChange={(e) => setResponsavelId(e.target.value)}
-            className="text-[12px] rounded-lg px-3 py-2 outline-none"
+            className="min-w-0 flex-1 text-[12px] rounded-lg px-3 py-2 outline-none lg:flex-none"
             style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-secondary)" }}
           >
             <option value="">Todos os responsáveis</option>
@@ -156,19 +156,20 @@ export function Cf2EntregaWorkspace({ familiaFixa }: { familiaFixa?: "PABX" | "C
         </div>
       </div>
 
-      <div className="grid grid-cols-4 gap-3 shrink-0">
+      <section aria-label="Pulso de entrega" className="grid grid-cols-2 overflow-hidden rounded-[var(--radius-card)] shrink-0 lg:grid-cols-[1.5fr_repeat(3,minmax(0,1fr))]" style={{ background: "var(--cf2-bg-inverse)" }}>
         {[
-          { label: "EM ANDAMENTO", valor: lista.filter((f) => f.status !== "COMPLETED").length, alerta: false },
-          { label: "AGUARDANDO CLIENTE", valor: aguardandoCliente, alerta: false },
-          { label: "COM BLOQUEIO", valor: comBloqueio, alerta: true },
-          { label: "CONCLUÍDOS (visão atual)", valor: lista.filter((f) => f.status === "COMPLETED").length, alerta: false },
-        ].map((k) => (
-          <div key={k.label} className="flex flex-col gap-1.5 p-3.5 rounded-2xl" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
-            <p className="text-[10px] font-bold" style={{ color: "var(--cf2-text-tertiary)" }}>{k.label}</p>
-            <p className="text-[22px] font-bold" style={{ color: k.alerta && k.valor > 0 ? "var(--cf2-danger-text)" : "var(--cf2-text-primary)" }}>{k.valor}</p>
+          { label: "Em andamento", valor: lista.filter((f) => f.status !== "COMPLETED").length, sub: "entregas ativas", alerta: false },
+          { label: "Aguardando cliente", valor: aguardandoCliente, sub: "espera externa", alerta: false },
+          { label: "Com bloqueio", valor: comBloqueio, sub: "ação interna", alerta: true },
+          { label: "Concluídos", valor: lista.filter((f) => f.status === "COMPLETED").length, sub: "visão atual", alerta: false },
+        ].map((k, index) => (
+          <div key={k.label} className={`min-w-0 px-5 py-4 border-white/15 ${index > 0 ? "border-l" : ""} ${index >= 2 ? "border-t lg:border-t-0" : ""}`}>
+            <p className="text-[10px] font-bold uppercase tracking-[0.08em]" style={{ color: "color-mix(in srgb, var(--cf2-text-on-inverse) 58%, transparent)" }}>{k.label}</p>
+            <p className={`${index === 0 ? "mt-3 text-[32px]" : "mt-3 text-[21px]"} font-bold leading-none tabular-nums`} style={{ color: k.alerta && k.valor > 0 ? "var(--cf2-danger-text)" : index === 0 ? "var(--cf2-accent)" : "var(--cf2-text-on-inverse)" }}>{k.valor}</p>
+            <p className="mt-2 text-[11px]" style={{ color: "color-mix(in srgb, var(--cf2-text-on-inverse) 62%, transparent)" }}>{k.sub}</p>
           </div>
         ))}
-      </div>
+      </section>
 
       <div className="flex-1 min-h-0 overflow-y-auto rounded-3xl" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
         {isLoading ? (
@@ -188,7 +189,7 @@ export function Cf2EntregaWorkspace({ familiaFixa }: { familiaFixa?: "PABX" | "C
               {lista.map((f) => {
                 const cor = STATUS_COLOR[f.status] || STATUS_COLOR.NOT_STARTED;
                 return (
-                  <tr key={f.id} className="cursor-pointer" style={{ borderTop: "1px solid var(--cf2-border-default)" }} onClick={() => router.push(`/clientes/entrega/${f.id}`)}>
+                  <tr key={f.id} className="cursor-pointer transition-colors hover:bg-[var(--cf2-bg-surface-muted)]" style={{ borderTop: "1px solid var(--cf2-border-default)" }} onClick={() => router.push(`/clientes/entrega/${f.id}`)}>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2.5">
                         <div className="flex items-center justify-center rounded-lg shrink-0 w-8 h-8" style={{ background: "var(--cf2-bg-inverse)" }}>
@@ -297,18 +298,24 @@ function KanbanImplantacaoPabx({
         </select>
       </div>
 
-      <div className="grid grid-cols-6 gap-3 shrink-0">
-        {KPIS.map((k) => (
-          <div key={k.label} className="flex flex-col gap-1.5 p-3.5 rounded-2xl" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
-            <div className="flex items-center justify-between">
-              <p className="text-[9px] font-bold truncate" style={{ color: "var(--cf2-text-tertiary)" }}>{k.label}</p>
-              <k.icon className="w-3.5 h-3.5 shrink-0" style={{ color: k.tone }} />
+      <section aria-label="Pulso da implantação PABX" className="grid grid-cols-2 overflow-hidden rounded-[var(--radius-card)] shrink-0 md:grid-cols-3 xl:grid-cols-[1.45fr_repeat(5,minmax(0,1fr))]" style={{ background: "var(--cf2-bg-inverse)" }}>
+        {KPIS.map((k, index) => {
+          const principal = index === 0;
+          return (
+            <div
+              key={k.label}
+              className={`min-w-0 px-4 py-4 sm:px-5 border-white/15 ${index === 1 || index === 3 || index === 5 ? "border-l" : ""} ${index === 2 || index === 4 ? "md:border-l" : ""} ${index === 3 ? "md:border-l-0" : ""} ${index > 0 ? "xl:border-l" : ""} ${index >= 2 ? "border-t" : ""} ${index >= 3 ? "md:border-t" : "md:border-t-0"} xl:border-t-0`}
+            >
+              <div className="flex items-center gap-2">
+                <k.icon className="h-3.5 w-3.5 shrink-0" style={{ color: principal ? "var(--cf2-accent)" : k.tone }} />
+                <p className="text-[10px] font-bold uppercase tracking-[0.08em] truncate" style={{ color: "color-mix(in srgb, var(--cf2-text-on-inverse) 58%, transparent)" }}>{k.label}</p>
+              </div>
+              <p className={`${principal ? "mt-3 text-[30px] sm:text-[36px]" : "mt-3 text-[20px]"} font-bold leading-none tabular-nums`} style={{ color: principal ? "var(--cf2-accent)" : "var(--cf2-text-on-inverse)" }}>{k.valor}</p>
+              {k.sub && <p className="mt-2 text-[11px] truncate" style={{ color: "color-mix(in srgb, var(--cf2-text-on-inverse) 62%, transparent)" }}>{k.sub}</p>}
             </div>
-            <p className="text-[20px] font-bold" style={{ color: k.tone }}>{k.valor}</p>
-            {k.sub && <p className="text-[10px] truncate" style={{ color: "var(--cf2-text-tertiary)" }}>{k.sub}</p>}
-          </div>
-        ))}
-      </div>
+          );
+        })}
+      </section>
 
       {isLoading ? (
         <p className="text-[13px]" style={{ color: "var(--cf2-text-tertiary)" }}>Carregando...</p>

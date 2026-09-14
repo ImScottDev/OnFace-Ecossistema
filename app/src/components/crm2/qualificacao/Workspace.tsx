@@ -33,8 +33,7 @@ import { DarkFilterSelect, DarkItem } from "@/components/crm2/shared/DarkFilterS
 import {
   type Lead, type KanbanCol, stageAge, sdrBoardColumn, resolveDisplayStage,
   NOVO_COL, EM_CONTATO_COL, QUALIFICACAO_COL, QUALIFICADO_SQL_COL, AGENDA_CONFIRMADA_COL, OPEN_COLS_QUALIFICACAO,
-  SEM_RESPOSTA_COL, NUTRICAO_MERGED_COL, DESQUALIFICADO_ESTAGNADOS_COL,
-} from "./shared";
+  SEM_RESPOSTA_COL, NUTRICAO_MERGED_COL, DESQUALIFICADO_ESTAGNADOS_COL, porRecenciaDesc } from "@/lib/crm/qualificacao-colunas";
 import { Cf2LeadDrawer } from "./LeadDrawerCf2";
 import { Cf2NovoLeadModal } from "./NovoLeadModal";
 import { ImportModal } from "@/components/crm2/prospeccao/ImportModal";
@@ -238,11 +237,27 @@ export function Cf2QualificacaoWorkspace() {
 
   const [agendarLead, setAgendarLead] = useState<Lead | null>(null);
 
+  /**
+   * Mover etapa do board. Duas intenções DIFERENTES chegam aqui e não podem
+   * ser confundidas (01/09, spec do Kauã):
+   *
+   *  - `qualified`    = "Marcar como Qualificado SQL". NÃO abre modal de
+   *                     reunião, NÃO cria oportunidade. Só grava o
+   *                     `sdr_status`, que é o que mantém o lead contado como
+   *                     qualificado nos relatórios.
+   *  - `m_qualified`  = "Agenda confirmada". Precisa de compromisso marcado,
+   *                     então abre o modal de reunião, que é quem cria a
+   *                     oportunidade (`converter-oportunidade`).
+   *
+   * Antes desta data as duas chaves caíam no mesmo `if` e QUALQUER tentativa
+   * de qualificar abria o modal de reunião — não existia caminho pra marcar
+   * SQL sem agendar.
+   */
   const handleMove = (leadId: string, targetStatus: string) => {
     const lead = allLeads.find((l) => l.id === leadId);
     if (!lead) return;
     const isNoShowRecovery = lead.negocioPrincipal?.status === "no_show";
-    if ((targetStatus === "qualified" || targetStatus === "m_qualified") && (!lead.negocioCount || isNoShowRecovery)) {
+    if (targetStatus === "m_qualified" && (!lead.negocioCount || isNoShowRecovery)) {
       setAgendarLead(lead);
       return;
     }
@@ -268,7 +283,7 @@ export function Cf2QualificacaoWorkspace() {
             <input
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Buscar lead, empresa, campanha..."
+              placeholder="Buscar lead, empresa, campanha..." aria-label="Buscar lead, empresa, campanha"
               className="w-56 sm:w-80 pl-8 pr-7 py-1.5 rounded-lg text-[12px] outline-none"
               style={{ background: "rgba(255,255,255,0.06)", border: "1px solid var(--cf2-chrome-border-subtle)", color: "var(--cf2-chrome-text-primary)" }}
             />
@@ -283,24 +298,24 @@ export function Cf2QualificacaoWorkspace() {
               25/08 (5 selects de largura variável quebravam linha de forma
               desalinhada). */}
           <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto cf2-hide-scrollbar">
-            <DarkFilterSelect value={respFilter} onChange={setRespFilter} label="Responsável" placeholder="Todos">
+            <DarkFilterSelect value={respFilter} onChange={setRespFilter} label="Responsável" placeholder="Todos" aria-label="Todos">
               <DarkItem value="todos">Todos</DarkItem>
               {currentUserId && <DarkItem value="meu">Meus (eu)</DarkItem>}
               <DarkItem value="sem">Sem responsável</DarkItem>
               {usuarios.map((u) => <DarkItem key={u.id} value={u.id}>{u.nome}</DarkItem>)}
             </DarkFilterSelect>
 
-            <DarkFilterSelect value={origemFilter} onChange={setOrigemFilter} label="Origem" placeholder="Todas">
+            <DarkFilterSelect value={origemFilter} onChange={setOrigemFilter} label="Origem" placeholder="Todas" aria-label="Todas">
               <DarkItem value="todos">Todas</DarkItem>
               {origemOptions.map((o) => <DarkItem key={o.value} value={o.value}>{o.label} ({o.count})</DarkItem>)}
             </DarkFilterSelect>
 
-            <DarkFilterSelect value={statusFilter} onChange={setStatusFilter} label="Status" placeholder="Todos">
+            <DarkFilterSelect value={statusFilter} onChange={setStatusFilter} label="Status" placeholder="Todos" aria-label="Todos">
               <DarkItem value="todos">Todos</DarkItem>
               {statusColumns.map((c) => <DarkItem key={c.key} value={c.key}>{c.label}</DarkItem>)}
             </DarkFilterSelect>
 
-            <DarkFilterSelect value={slaFilter} onChange={(v) => setSlaFilter(v as typeof slaFilter)} label="SLA" placeholder="Todos">
+            <DarkFilterSelect value={slaFilter} onChange={(v) => setSlaFilter(v as typeof slaFilter)} label="SLA" placeholder="Todos" aria-label="Todos">
               <DarkItem value="todos">Todos</DarkItem>
               <DarkItem value="dentro">Dentro do SLA</DarkItem>
               <DarkItem value="fora">Fora do SLA</DarkItem>
@@ -326,13 +341,17 @@ export function Cf2QualificacaoWorkspace() {
         {isLoading ? (
           <p className="text-[13px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Carregando...</p>
         ) : layout === "lista" ? (
-          <SdrListView
-            leads={filteredLeads}
-            usuariosById={usuariosById}
-            usuarios={usuarios}
-            onOpenLead={(id) => setDrawerLeadId(id)}
-            onAssignOwner={(leadId, userId) => assignOwner.mutate({ leadId, responsavelId: userId })}
-          />
+          // Caixa rolável própria (01/09): a página agora tem altura fechada,
+          // então a lista precisa rolar aqui dentro em vez de esticar a tela.
+          <div className="h-full min-h-0 overflow-y-auto">
+            <SdrListView
+              leads={filteredLeads}
+              usuariosById={usuariosById}
+              usuarios={usuarios}
+              onOpenLead={(id) => setDrawerLeadId(id)}
+              onAssignOwner={(leadId, userId) => assignOwner.mutate({ leadId, responsavelId: userId })}
+            />
+          </div>
         ) : (
           <SdrKanbanView
             leads={filteredLeads}
@@ -401,7 +420,7 @@ const EXPORT_COLUNAS: { key: string; label: string; color: string; match: (l: Le
   { key: QUALIFICADO_SQL_COL.key, label: QUALIFICADO_SQL_COL.label, color: QUALIFICADO_SQL_COL.color, match: (l) => QUALIFICADO_SQL_COL.keys.includes(sdrBoardColumn(l)) && !l.temReuniaoAgendada },
   { key: AGENDA_CONFIRMADA_COL.key, label: AGENDA_CONFIRMADA_COL.label, color: AGENDA_CONFIRMADA_COL.color, match: (l) => AGENDA_CONFIRMADA_COL.keys.includes(sdrBoardColumn(l)) && !!l.temReuniaoAgendada },
   { key: "sdr_sem_retorno", label: SEM_RESPOSTA_COL.label, color: SEM_RESPOSTA_COL.color, match: (l) => (l.sdrStatus || "pending") === "sdr_sem_retorno" },
-  { key: "no_show", label: "No-show", color: "#f59e0b", match: (l) => l.negocioPrincipal?.status === "no_show" },
+  { key: "no_show", label: "No-show", color: "var(--cf2-warning-text)", match: (l) => l.negocioPrincipal?.status === "no_show" },
   { key: "nutricao", label: NUTRICAO_MERGED_COL.label, color: NUTRICAO_MERGED_COL.color, match: (l) => ["sdr_sem_interesse", "sdr_retomar_depois"].includes(l.sdrStatus || "") },
   { key: "disqualified", label: DESQUALIFICADO_ESTAGNADOS_COL.label, color: DESQUALIFICADO_ESTAGNADOS_COL.color, match: (l) => (l.sdrStatus || "pending") === "disqualified" },
 ];
@@ -418,7 +437,7 @@ function ExportLeadsModal({ leads, usuarios, onClose, onExport }: { leads: Lead[
   });
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(15,23,42,0.45)" }} onClick={onClose}>
+    <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(15,23,42,0.45)" }} onClick={onClose}>
       <div className="w-full max-w-md rounded-2xl p-6" style={{ background: "var(--cf2-chrome-surface-active)", border: "1px solid var(--cf2-chrome-border-subtle)" }} onClick={(e) => e.stopPropagation()}>
         <p className="font-bold text-[15px] mb-1" style={{ color: "var(--cf2-chrome-text-primary)" }}>Exportar leads</p>
         <p className="text-[11px] mb-4" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Escolha o responsável e as etapas que quer puxar.</p>
@@ -598,7 +617,7 @@ function SdrKanbanView({ leads, usuariosById, usuarios, onDrop, onOpenLead, onOp
   // agora são a ÚNICA forma de ver leads estagnados, sempre visíveis aqui.
   const estagnadosBuckets: { key: string; label: string; color: string; dropTarget: string | null; leads: Lead[] }[] = [
     { key: "sdr_sem_retorno", label: "Sem resposta", color: SEM_RESPOSTA_COL.color, dropTarget: SEM_RESPOSTA_COL.dropTarget, leads: leads.filter((l) => (l.sdrStatus || "pending") === "sdr_sem_retorno") },
-    { key: "no_show", label: "No-show", color: "#f59e0b", dropTarget: null, leads: leads.filter((l) => l.negocioPrincipal?.status === "no_show") },
+    { key: "no_show", label: "No-show", color: "var(--cf2-warning-text)", dropTarget: null, leads: leads.filter((l) => l.negocioPrincipal?.status === "no_show") },
     { key: "nutricao", label: "Nutrição / Retomar", color: NUTRICAO_MERGED_COL.color, dropTarget: NUTRICAO_MERGED_COL.dropTarget, leads: leads.filter((l) => ["sdr_sem_interesse", "sdr_retomar_depois"].includes(l.sdrStatus || "")) },
     { key: "disqualified", label: "Desqualificado", color: DESQUALIFICADO_ESTAGNADOS_COL.color, dropTarget: DESQUALIFICADO_ESTAGNADOS_COL.dropTarget, leads: leads.filter((l) => (l.sdrStatus || "pending") === "disqualified") },
   ];
@@ -610,7 +629,12 @@ function SdrKanbanView({ leads, usuariosById, usuarios, onDrop, onOpenLead, onOp
     return leads
       .filter((l) => matchKeys.includes(sdrBoardColumn(l)))
       .filter((l) => (stage.filter ? stage.filter(l) : true))
-      .sort((a, b) => Number(b.negocioPrincipal?.status === "no_show") - Number(a.negocioPrincipal?.status === "no_show"))
+      // No-show continua com prioridade (pedido anterior do Kauã), e DENTRO
+      // de cada grupo o mais recente fica em cima (01/09).
+      .sort((a, b) =>
+        (Number(b.negocioPrincipal?.status === "no_show") - Number(a.negocioPrincipal?.status === "no_show"))
+        || porRecenciaDesc(a, b)
+      )
       .map((lead) => (
         <LeadCard
           key={lead.id} lead={lead} readOnly={mirror}

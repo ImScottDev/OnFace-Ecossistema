@@ -2263,6 +2263,29 @@ const whatsappIncomingWorker = new Worker(
       statusAt: new Date(timestamp * 1000),
     }).returning({ id: whatsappMensagens.id });
 
+    // O canal atualiza o estado das cadências antes de qualquer resposta da IA.
+    // Se houver um grafo publicado para mensagem recebida, ele assume o turno;
+    // caso contrário o runtime direto/legado abaixo continua funcionando.
+    let roteadoPorAutomacao = false;
+    try {
+      const recebidaEm = new Date(timestamp * 1000);
+      const [{ registrarRespostaEmCadencias }, { publicarEvento }, { dispatchAutomationEvent }, { eventOutbox }] = await Promise.all([
+        import("../lib/cadencia/cadence-engine"), import("../lib/events/outbox"), import("../lib/automations/event-dispatcher"), import("../lib/db/schema"),
+      ]);
+      await registrarRespostaEmCadencias({ organizacaoId, contatoId: contato.id, leadId: contato.leadId, recebidaEm });
+      const eventId = await publicarEvento({
+        organizacaoId, eventType: "ConversationMessageReceived", aggregateType: "contato", aggregateId: contato.id,
+        payload: { contatoId: contato.id, leadId: contato.leadId ?? null, messageId: inboundMsgRow.id, channel: "whatsapp", messageType: msgType },
+        idempotencyKey: `whatsapp:${inboundMsgRow.id}:received`,
+      });
+      if (eventId) {
+        const [event] = await db.select().from(eventOutbox).where(eq(eventOutbox.id, eventId)).limit(1);
+        if (event) roteadoPorAutomacao = (await dispatchAutomationEvent(event)).matched > 0;
+      }
+    } catch (err) {
+      console.error("[Automation] falha ao rotear mensagem recebida; usando runtime direto:", err);
+    }
+
     // F2/dual-write (Communication Intelligence) — best-effort, nunca
     // bloqueia o processamento real da mensagem recebida.
     try {
@@ -2353,7 +2376,7 @@ const whatsappIncomingWorker = new Worker(
     // Respond to text messages and media with captions; for media without text,
     // describe the type so the AI can acknowledge it
     const aiSdrTypes = ["text", "image", "audio", "video", "document", "sticker", "location", "contact"];
-    if (aiSdrTypes.includes(msgType)) {
+    if (!roteadoPorAutomacao && aiSdrTypes.includes(msgType)) {
       const tipoLabel: Record<string, string> = {
         image: "Imagem recebida", audio: "Audio recebido", video: "Video recebido",
         document: "Documento recebido", sticker: "Sticker recebido",
@@ -2868,6 +2891,21 @@ const slaWorker = new Worker(
         criadas++;
       }
       console.log(`[FollowUp] ${criadas} follow-ups notificados (${staleDeals.length} propostas paradas)`);
+    }
+
+    // CS sweep (08/09) — marcos vencidos viram tarefa, riscos são
+    // reavaliados contra o dado real, janelas de renovação abrem. Tudo
+    // idempotente: rodar de hora em hora produz o mesmo estado que rodar
+    // uma vez. Ver lib/cs/sweep.ts.
+    if (job.name === "cs-sweep") {
+      const { rodarSweepCsTodasOrgs } = await import("../lib/cs/sweep");
+      const resultados = await rodarSweepCsTodasOrgs();
+      for (const r of resultados) {
+        const mexeu = r.tarefasDeMarco + r.tarefasDeRisco + r.tarefasDeRenovacao + r.riscosAbertos + r.riscosResolvidos + r.renovacoesCriadas;
+        if (mexeu > 0) {
+          console.log(`[cs-sweep] org ${r.organizacaoId}: ${r.tarefasDeMarco} tarefa(s) de marco, ${r.tarefasDeRisco} de risco, ${r.tarefasDeRenovacao} de renovação; riscos +${r.riscosAbertos}/~${r.riscosAtualizados}/-${r.riscosResolvidos}; renovações +${r.renovacoesCriadas} (${r.renovacoesAbertas} abertas)`);
+        }
+      }
     }
 
     if (job.name === "alerta-renovacao") {
@@ -3724,6 +3762,7 @@ async function setupScheduledJobs() {
   await scheduledQueue.upsertJobScheduler("rd-criativo-sync", { every: 6 * 60 * 60 * 1000 }, { name: "rd-criativo-sync" });
   await scheduledQueue.upsertJobScheduler("outlook-reuniao-sync", { every: 15 * 60 * 1000 }, { name: "outlook-reuniao-sync" });
   await scheduledQueue.upsertJobScheduler("follow-up-proposta", { every: 60 * 60 * 1000 }, { name: "follow-up-proposta" });
+  await scheduledQueue.upsertJobScheduler("cs-sweep", { every: 60 * 60 * 1000 }, { name: "cs-sweep" });
   await scheduledQueue.upsertJobScheduler("alerta-renovacao", { every: 24 * 60 * 60 * 1000 }, { name: "alerta-renovacao" });
   await scheduledQueue.upsertJobScheduler("reativar-lead-perdido", { every: 24 * 60 * 60 * 1000 }, { name: "reativar-lead-perdido" });
   await scheduledQueue.upsertJobScheduler("check-whatsapp-connection", { every: 5 * 60 * 1000 }, { name: "check-whatsapp-connection" });

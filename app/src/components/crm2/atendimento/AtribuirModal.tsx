@@ -24,11 +24,11 @@ export function Cf2AtribuirModal({ onClose, onConfirmar }: { onClose: () => void
   const usuarios = (data ?? []).filter((u) => u.ativo);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.4)" }}>
+    <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.4)" }}>
       <div className="w-[340px] rounded-2xl p-5 flex flex-col gap-3" style={{ background: "var(--cf2-bg-surface)" }}>
         <div className="flex items-center justify-between">
           <p className="text-[16px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Atribuir atendimento</p>
-          <button onClick={onClose}><X className="w-4 h-4" style={{ color: "var(--cf2-text-secondary)" }} /></button>
+          <button onClick={onClose} aria-label="Fechar"><X className="w-4 h-4" style={{ color: "var(--cf2-text-secondary)" }} /></button>
         </div>
         <div className="flex flex-col gap-1 max-h-[280px] overflow-y-auto">
           {usuarios.map((u) => (

@@ -1,6 +1,6 @@
 import { Hono, type Context } from "hono";
 import { db } from "@/lib/db";
-import { propostas, propostaItens, leads, negocios, usuarios, contratos, atividades, statusChanges, propostaGrupoComercial, propostaGrupoComercialItens, checkouts } from "@/lib/db/schema";
+import { propostas, propostaItens, leads, negocios, usuarios, contratos, atividades, statusChanges, propostaGrupoComercial, propostaGrupoComercialItens, checkouts, catalogoPrecos, servicosCatalogo } from "@/lib/db/schema";
 import { eq, and, or, desc, asc, sql, ilike, inArray, count, gte } from "drizzle-orm";
 import { z } from "zod";
 import { getCtx } from "../compat.js";
@@ -47,7 +47,40 @@ const itemSchema = z.object({
   // negociação (ex: Callface AI com fidelidade em troca de desconto). Sem
   // override, herda o default do catálogo.
   commercialModel: z.enum(["PAGAMENTO_DIRETO", "CONTRATO_OBRIGATORIO", "CONTRATO_FIDELIDADE_OPCIONAL"]).optional(),
+  // Catálogo Oficial Stripe (02/09) — id do PRICE escolhido. O servidor lê
+  // família/natureza/SKU/preço de tabela do banco a partir daqui; o cliente
+  // não tem como injetar esses valores.
+  catalogoPrecoId: z.string().uuid().optional().nullable(),
 });
+
+/**
+ * Catálogo Oficial Stripe (02/09) — lê os prices oficiais escolhidos. Mesma
+ * função de `proposta-criacao.ts`, duplicada aqui de propósito: a rota tem o
+ * próprio caminho de escrita (PATCH regrava itens) e importar de lá criaria
+ * dependência circular entre a rota e o núcleo de criação.
+ */
+async function carregarPrecosOficiaisDaRota(ids: (string | null | undefined)[]) {
+  const unicos = [...new Set(ids.filter((v): v is string => !!v))];
+  if (unicos.length === 0) return new Map<string, {
+    id: string; stripePriceId: string; stripeProductId: string | null; sku: string | null;
+    variacao: string; valor: string; serviceFamily: string; revenueNature: string;
+  }>();
+  const rows = await db
+    .select({
+      id: catalogoPrecos.id,
+      stripePriceId: catalogoPrecos.stripePriceId,
+      sku: catalogoPrecos.sku,
+      variacao: catalogoPrecos.variacao,
+      valor: catalogoPrecos.valor,
+      revenueNature: catalogoPrecos.revenueNature,
+      stripeProductId: servicosCatalogo.stripeProductId,
+      serviceFamily: servicosCatalogo.serviceFamily,
+    })
+    .from(catalogoPrecos)
+    .innerJoin(servicosCatalogo, eq(servicosCatalogo.id, catalogoPrecos.servicoCatalogoId))
+    .where(inArray(catalogoPrecos.id, unicos));
+  return new Map(rows.map((r) => [r.id, r]));
+}
 
 const createSchema = z.object({
   leadId: z.string().uuid().optional(),
@@ -232,12 +265,23 @@ app.get("/propostas/kpis", async (c) => {
   const [linhas] = await db
     .select({
       totalPropostas: sql<number>`count(*)::int`,
-      emElaboracao: sql<number>`count(*) filter (where ${propostas.status} = 'rascunho')::int`,
-      enviadas: sql<number>`count(*) filter (where ${propostas.status} = 'enviada')::int`,
+      // Legado (5 linhas reais, achado 18/08 em shared.ts) dobrado no bucket
+      // de tradução óbvia — sem isso ficavam invisíveis nos 4 baldes da
+      // distribuição, com `totalPropostas` sempre 5 maior que a soma deles.
+      emElaboracao: sql<number>`count(*) filter (where ${propostas.status} in ('rascunho', 'Em Construção'))::int`,
+      enviadas: sql<number>`count(*) filter (where ${propostas.status} in ('enviada', 'Negotiation'))::int`,
       visualizadas: sql<number>`count(*) filter (where ${propostas.status} = 'enviada' and ${propostas.visualizacoes} > 0)::int`,
-      aceitas: sql<number>`count(*) filter (where ${propostas.status} = 'aceita')::int`,
+      ajusteSolicitado: sql<number>`count(*) filter (where ${propostas.status} = 'ajuste_solicitado')::int`,
+      aceitas: sql<number>`count(*) filter (where ${propostas.status} in ('aceita', 'Proposta Ganha'))::int`,
       recusadasExpiradas: sql<number>`count(*) filter (where ${propostas.status} in ('recusada', 'expirada'))::int`,
-      aguardandoAcao: sql<number>`count(*) filter (where ${propostas.status} = 'enviada' and ${propostas.clienteRespondeuEm} is null)::int`,
+      // Aguardando ação = bola está com a Callface: enviada sem resposta, ou
+      // o cliente pediu ajuste explicitamente (ambos exigem que ALGUÉM aqui
+      // mexa; a diferença antiga esquecia `ajuste_solicitado` por inteiro).
+      aguardandoAcao: sql<number>`count(*) filter (where (${propostas.status} = 'enviada' and ${propostas.clienteRespondeuEm} is null) or ${propostas.status} = 'ajuste_solicitado')::int`,
+      valorAguardandoAcao: sql<string>`coalesce(sum(${propostas.totalGeral}) filter (where (${propostas.status} = 'enviada' and ${propostas.clienteRespondeuEm} is null) or ${propostas.status} = 'ajuste_solicitado'), 0)`,
+      // Maior espera em dias entre as travadas — sinal de urgência do
+      // dominante ("a mais antiga está parada há Xd"), não é média.
+      diasEsperaMax: sql<number | null>`max(extract(epoch from now() - ${propostas.enviadaEm}) / 86400) filter (where (${propostas.status} = 'enviada' and ${propostas.clienteRespondeuEm} is null) or ${propostas.status} = 'ajuste_solicitado')`,
       valorTotalAtivo: sql<string>`coalesce(sum(${propostas.totalGeral}) filter (where ${propostas.status} not in ('recusada', 'expirada')), 0)`,
       // Taxa de aceite = aceitas / decididas (aceita+recusada+expirada), mesmo
       // critério do winRate real de negócios (ver lib/relatorios/comercial.ts).
@@ -305,7 +349,14 @@ app.get("/propostas/kpis", async (c) => {
     aceitas: pctDelta(mesAtual.aceitas, mesAnterior.aceitas),
   };
 
-  return c.json({ ...linhas, taxaAceite, tempoMedioAceiteDias: linhas.tempoMedioAceiteDias != null ? Math.round(Number(linhas.tempoMedioAceiteDias) * 10) / 10 : null, serieMensal, tendencia });
+  return c.json({
+    ...linhas,
+    taxaAceite,
+    tempoMedioAceiteDias: linhas.tempoMedioAceiteDias != null ? Math.round(Number(linhas.tempoMedioAceiteDias) * 10) / 10 : null,
+    diasEsperaMax: linhas.diasEsperaMax != null ? Math.floor(Number(linhas.diasEsperaMax)) : null,
+    serieMensal,
+    tendencia,
+  });
 });
 
 // GET /propostas/count — open proposals count for sidebar badge
@@ -479,7 +530,9 @@ app.get("/propostas/:id/publica", async (c) => {
   if (!proposta) return c.json({ error: "Proposta não encontrada" }, 404);
 
   const [lead] = await db
-    .select({ nome: leads.nome, empresa: leads.empresa })
+    // CNPJ e cargo (01/09, 2B): a página pública é a visão do CLIENTE — ele
+    // precisa se reconhecer no documento. Faltavam os dois.
+    .select({ nome: leads.nome, empresa: leads.empresa, empresaCnpj: leads.empresaCnpj, cargo: leads.cargo })
     .from(leads)
     .where(eq(leads.id, proposta.leadId))
     .limit(1);
@@ -567,7 +620,13 @@ app.get("/propostas/:id/publica", async (c) => {
     motivoRecusa: proposta.motivoRecusa,
     clienteRespondeuEm: proposta.clienteRespondeuEm,
     clienteNome: lead?.nome ?? null,
+    clienteCargo: lead?.cargo ?? null,
     empresa: lead?.empresa ?? null,
+    empresaCnpj: lead?.empresaCnpj ?? null,
+    // Condição de pagamento estruturada — o texto livre `condicoesPagamento`
+    // já ia; o tipo/parcelas não, então o cliente não via "parcelado em 6x".
+    condicaoPagamentoTipo: proposta.condicaoPagamentoTipo ?? null,
+    parcelas: proposta.parcelas ?? null,
     negocioTitulo: negocio?.titulo ?? null,
     itens,
     grupos, // [] antes do aceite — a página pública mostra os itens crus e o botão de aceitar
@@ -580,7 +639,9 @@ app.post("/propostas/:id/aceitar-publico", async (c) => {
   const [proposta] = await db.select().from(propostas).where(eq(propostas.id, id)).limit(1);
   if (!proposta) return c.json({ error: "Proposta não encontrada" }, 404);
 
-  const result = await aceitarPropostaPublica(proposta);
+  const ip = c.req.header("x-forwarded-for")?.split(",")[0]?.trim() || c.req.header("x-real-ip") || null;
+  const userAgent = c.req.header("user-agent") || null;
+  const result = await aceitarPropostaPublica(proposta, { ip, userAgent });
   if (!result.ok) return c.json({ error: result.error }, 400);
   return c.json(result);
 });
@@ -844,24 +905,37 @@ app.patch("/propostas/:id", async (c) => {
 
     const familyMap = await resolverServiceFamiliesPorCatalogoIds(itensWithCalc.map((i) => i.servicoCatalogoId));
     const commercialModelMap = await resolverCommercialModelPadraoPorCatalogoIds(itensWithCalc.map((i) => i.servicoCatalogoId));
+    // Catálogo Oficial Stripe (02/09) — editar a proposta (inclusive aplicar
+    // desconto) não pode perder o vínculo com o price oficial. Os campos
+    // oficiais são relidos do banco pelo id do price, nunca do payload.
+    const precosOficiais = await carregarPrecosOficiaisDaRota(itensWithCalc.map((i) => i.catalogoPrecoId));
     await db.insert(propostaItens).values(
-      itensWithCalc.map((item) => ({
-        propostaId: id,
-        servicoCatalogoId: item.servicoCatalogoId || undefined,
-        nome: item.nome,
-        descricao: item.descricao,
-        tipo: item.tipo,
-        moeda,
-        quantidade: item.quantidade.toString(),
-        valorUnitario: item.valorUnitario.toFixed(2),
-        desconto: item.desconto.toFixed(2),
-        descontoTipo: item.descontoTipo,
-        subtotal: item.subtotal.toFixed(2),
-        ordem: item.ordem,
-        serviceFamily: item.servicoCatalogoId ? familyMap.get(item.servicoCatalogoId) || "UNKNOWN" : "UNKNOWN",
-        revenueNature: mapTipoParaRevenueNature(item.tipo),
-        commercialModel: resolverCommercialModelDoItem({ overrideExplicito: item.commercialModel, servicoCatalogoId: item.servicoCatalogoId, catalogoDefaultMap: commercialModelMap }),
-      }))
+      itensWithCalc.map((item) => {
+        const preco = item.catalogoPrecoId ? precosOficiais.get(item.catalogoPrecoId) : undefined;
+        return {
+          propostaId: id,
+          servicoCatalogoId: item.servicoCatalogoId || undefined,
+          nome: item.nome,
+          descricao: item.descricao,
+          tipo: item.tipo,
+          moeda,
+          quantidade: item.quantidade.toString(),
+          valorUnitario: item.valorUnitario.toFixed(2),
+          desconto: item.desconto.toFixed(2),
+          descontoTipo: item.descontoTipo,
+          subtotal: item.subtotal.toFixed(2),
+          ordem: item.ordem,
+          serviceFamily: preco?.serviceFamily || (item.servicoCatalogoId ? familyMap.get(item.servicoCatalogoId) || "UNKNOWN" : "UNKNOWN"),
+          revenueNature: preco?.revenueNature || mapTipoParaRevenueNature(item.tipo),
+          commercialModel: resolverCommercialModelDoItem({ overrideExplicito: item.commercialModel, servicoCatalogoId: item.servicoCatalogoId, catalogoDefaultMap: commercialModelMap }),
+          catalogoPrecoId: preco?.id,
+          stripeProductId: preco?.stripeProductId,
+          stripePriceId: preco?.stripePriceId,
+          skuPreco: preco?.sku,
+          variacao: preco?.variacao,
+          valorTabela: preco?.valor,
+        };
+      })
     );
 
     updateData.totalRecorrente = totalRecorrente.toFixed(2);
@@ -1036,6 +1110,14 @@ app.post("/propostas/:id/nova-versao", async (c) => {
         serviceFamily: item.serviceFamily,
         revenueNature: item.revenueNature,
         commercialModel: item.commercialModel,
+        // Nova versão herda o vínculo oficial do original — renegociar preço
+        // numa v2 não muda qual price do Stripe está sendo vendido.
+        catalogoPrecoId: item.catalogoPrecoId,
+        stripeProductId: item.stripeProductId,
+        stripePriceId: item.stripePriceId,
+        skuPreco: item.skuPreco,
+        variacao: item.variacao,
+        valorTabela: item.valorTabela,
       }))
     );
   }

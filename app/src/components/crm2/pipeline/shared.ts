@@ -88,6 +88,10 @@ export function resolvePropostaDisplay(p: PropostaResumo): { label: string; tom:
   const hoje = new Date().toISOString().split("T")[0];
   if (p.status === "aceita") return { label: "Aceita", tom: "success" };
   if (p.status === "recusada") return { label: "Recusada", tom: "danger" };
+  // Ajuste solicitado (01/09, 2B): faltava — caía no fallback "Em elaboração",
+  // que é o oposto do sinal real (o cliente respondeu e está esperando o
+  // vendedor). É pendência do time, não rascunho.
+  if (p.status === "ajuste_solicitado") return { label: "Ajuste solicitado", tom: "warning" };
   if (p.dataValidade && p.dataValidade < hoje && p.status === "enviada") return { label: "Expirada", tom: "danger" };
   if (p.status === "expirada") return { label: "Expirada", tom: "danger" };
   if (p.status === "enviada" && p.primeiraVisualizacaoEm && !p.clienteRespondeuEm) return { label: "Aberta pelo cliente", tom: "warning" };
@@ -112,6 +116,8 @@ export interface NegocioBoard {
   pagamentoPendente: boolean;
   proximaAcao: { titulo: string; dataVencimento: string | null } | null;
   oportunidadesRelacionadas: number;
+  /** Tags da oportunidade (01/09) — vêm batch do `/pipeline-crm2/board`. */
+  labels?: { id: string; nome: string; cor: string }[];
 }
 
 export function negocioValor(n: NegocioBoard): number {

@@ -487,6 +487,8 @@ export const negocios = pgTable(
     pipelineId: uuid("pipeline_id").references(() => pipelines.id),
     contratoTipo: text("contrato_tipo"),
     negocioOrigemId: uuid("negocio_origem_id"), // link to the original "ganho" deal
+    /** Expansão nasceu de qual serviço (commercialMotion = 'EXPANSION'). */
+    servicoOrigemId: uuid("servico_origem_id").references((): AnyPgColumn => servicosCanonicos.id, { onDelete: "set null" }),
     camposCustom: jsonb("campos_custom").default({}),
     // ─── CIPA Analysis (Scott Studio) ───
     lpUrl: text("lp_url"),
@@ -579,9 +581,10 @@ export const atividades = pgTable(
   {
     id: uuid("id").defaultRandom().primaryKey(),
     organizacaoId: uuid("organizacao_id").references(() => organizacoes.id),
-    leadId: uuid("lead_id")
-      .references(() => leads.id)
-      .notNull(),
+    // Nullable desde 08/09: interação de CS acontece com a EMPRESA. Todo
+    // registro antigo continua tendo lead — só deixou de ser obrigatório.
+    leadId: uuid("lead_id").references(() => leads.id),
+    empresaId: uuid("empresa_id").references(() => empresas.id, { onDelete: "cascade" }),
     negocioId: uuid("negocio_id").references(() => negocios.id),
     usuarioId: uuid("usuario_id").references(() => usuarios.id),
     tipo: text("tipo").notNull(),
@@ -685,6 +688,11 @@ export const contratos = pgTable(
     // do provider atual (aceite eletrônico simples); signature_status é o
     // que qualquer provider futuro (DocuSign/Clicksign) também preenche.
     signatureProviderRef: text("signature_provider_ref"),
+    // Frente 2C.1 — preparo pro provider externo (Autentique/Documenso, 2C.3).
+    // Nenhuma integração nova é ligada aqui; é só onde o dado vai morar.
+    signatureProvider: text("signature_provider"), // simple_electronic | documenso | autentique
+    signatureEnviadoEm: timestamp("signature_enviado_em", { withTimezone: true }),
+    signaturePublicUrl: text("signature_public_url"),
     signatureStatus: text("signature_status"), // contract_created|sent_for_signature|opened|signed|declined|expired|canceled
     // Lista estruturada congelada no momento da geração. O provider externo
     // pode ter sua própria tabela de recipients, mas o CRM preserva a cópia
@@ -805,7 +813,14 @@ export const faturas = pgTable(
     empresaId: uuid("empresa_id").references(() => empresas.id),
     assinaturaId: uuid("assinatura_id").references(() => assinaturas.id),
     contratoId: uuid("contrato_id").references(() => contratos.id),
-    origem: text("origem").notNull(), // stripe | pabx
+    // Frente 2C.1 — de onde a pendência nasceu. Reusar `faturas` pra
+    // pendência de pagamento pós-contrato faz o recebível aparecer no
+    // Financeiro e na Carteira sem tela nova; faltava só a rastreabilidade
+    // de volta pro negócio/grupo que a originou.
+    negocioId: uuid("negocio_id").references(() => negocios.id),
+    grupoComercialId: uuid("grupo_comercial_id").references((): AnyPgColumn => propostaGrupoComercial.id),
+    servicoCanonicoId: uuid("servico_canonico_id").references((): AnyPgColumn => servicosCanonicos.id),
+    origem: text("origem").notNull(), // stripe | pabx | crm2_comercial
     externalId: text("external_id"), // stripe invoice id | chave planilha Wevy
     valor: decimal("valor", { precision: 12, scale: 2 }).notNull(),
     moeda: text("moeda").default("BRL").notNull(),
@@ -881,12 +896,18 @@ export const npsRespostas = pgTable(
   {
     id: uuid("id").defaultRandom().primaryKey(),
     organizacaoId: uuid("organizacao_id").references(() => organizacoes.id),
-    leadId: uuid("lead_id")
-      .references(() => leads.id)
-      .notNull(),
+    // Nullable desde 08/09: health check pertence à EMPRESA — cliente sem
+    // lead cadastrado também responde.
+    leadId: uuid("lead_id").references(() => leads.id),
+    empresaId: uuid("empresa_id").references(() => empresas.id, { onDelete: "cascade" }),
     contratoId: uuid("contrato_id").references(() => contratos.id),
     score: integer("score"),
     comentario: text("comentario"),
+    /** Questionário completo do health check — ver QUESTIONARIO_HEALTH_CHECK. */
+    respostas: jsonb("respostas"),
+    /** Checkpoint em que o health check foi colhido, quando veio de um. */
+    marcoId: uuid("marco_id"),
+    registradoPor: uuid("registrado_por").references(() => usuarios.id),
     tipo: text("tipo").notNull(),
     token: text("token").unique(),
     enviadoEm: timestamp("enviado_em", { withTimezone: true }),
@@ -917,6 +938,15 @@ export const tarefas = pgTable(
     venceEm: timestamp("vence_em", { withTimezone: true }),
     concluida: boolean("concluida").default(false).notNull(),
     concluidaEm: timestamp("concluida_em", { withTimezone: true }),
+    // Eixo pós-venda (08/09) — lead/negócio são objetos de aquisição; o CS
+    // trabalha por empresa e, quando faz sentido, por serviço.
+    empresaId: uuid("empresa_id").references(() => empresas.id, { onDelete: "cascade" }),
+    servicoCanonicoId: uuid("servico_canonico_id").references(() => servicosCanonicos.id, { onDelete: "set null" }),
+    // MANUAL | PLAYBOOK | BILLING | ONBOARDING | IMPLANTACAO | RENOVACAO | RISCO | EXPANSAO | AUTOMACAO
+    origem: text("origem").default("MANUAL").notNull(),
+    motivo: text("motivo"),
+    /** Trava das tarefas automáticas: o sweep pode rodar N vezes, a tarefa nasce uma. */
+    chaveIdempotencia: text("chave_idempotencia"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
@@ -1278,6 +1308,16 @@ export const servicosCatalogo = pgTable(
     // a sugestão/default do catálogo.
     // PAGAMENTO_DIRETO | CONTRATO_OBRIGATORIO | CONTRATO_FIDELIDADE_OPCIONAL
     commercialModelPadrao: text("commercial_model_padrao").default("PAGAMENTO_DIRETO").notNull(),
+    // Catálogo Oficial Stripe (02/09) — separa o catálogo oficial das 218
+    // linhas históricas do Zoho sem tocar em nenhuma delas: o default
+    // 'legado' já descreve corretamente o que estava no banco.
+    origemCatalogo: text("origem_catalogo").default("legado").notNull(), // oficial_stripe | legado
+    skuProduto: text("sku_produto"),
+    descricaoExtrato: text("descricao_extrato"), // como aparece na fatura do cartão
+    etiquetaUnidade: text("etiqueta_unidade"), // "usuário", "licença ativa", "ramal"
+    destinoPosVenda: text("destino_pos_venda"), // onboarding_callface_ai | implantacao_pabx | implantacao_white_label
+    observacaoOperacional: text("observacao_operacional"),
+    catalogoSincronizadoEm: timestamp("catalogo_sincronizado_em", { withTimezone: true }),
     ativo: boolean("ativo").default(true).notNull(),
     ordem: integer("ordem").default(0).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -1289,6 +1329,56 @@ export const servicosCatalogo = pgTable(
 );
 
 // ─── PROPOSTAS ─────────────────────────────────────────────
+/**
+ * Catálogo Oficial Stripe (02/09) — PRICE / VARIAÇÃO de um produto.
+ *
+ * Um produto tem N prices de verdade: Callface AI Starter é mensal + anual,
+ * PABX Hardware tem 45 variações, White Label Setup e Licença têm 4 faixas
+ * cada. Espremer isso em `servicos_catalogo.valor_sugerido` obrigaria a criar
+ * 213 "produtos" no CRM — exatamente o que a regra do catálogo proíbe (um
+ * produto Stripe = um produto CRM).
+ *
+ * `revenueNature` vive AQUI, não só no produto, porque varia entre prices do
+ * MESMO produto: PABX Hardware tem 11 prices avulsos e 34 recorrentes.
+ */
+export const catalogoPrecos = pgTable("catalogo_precos", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+  servicoCatalogoId: uuid("servico_catalogo_id").references(() => servicosCatalogo.id, { onDelete: "cascade" }).notNull(),
+
+  stripePriceId: text("stripe_price_id").notNull(),
+  sku: text("sku"),
+  lookupKey: text("lookup_key"), // CHAVE_DE_PESQUISA_PRICE — busca no builder e no Stripe
+
+  variacao: text("variacao").notNull(), // "Mensal", "Faixa 1 — 1 a 99 licenças", "Telefone Fanvil X3"
+  descricao: text("descricao"),
+  valor: decimal("valor", { precision: 12, scale: 2 }).notNull(),
+  moeda: text("moeda").default("BRL").notNull(),
+
+  tipo: text("tipo").notNull(), // recorrente | avulso | setup (mesmo enum de proposta_itens)
+  recorrente: boolean("recorrente").default(false).notNull(),
+  periodo: text("periodo"), // mensal | anual | unico
+  revenueNature: text("revenue_nature").notNull(), // MRR | SETUP | ONE_TIME | USAGE | HARDWARE
+  modeloCobranca: text("modelo_cobranca"), // recorrencia_mensal | recorrencia_anual | avulso | avulso_ou_parcelavel
+  modeloPrecoStripe: text("modelo_preco_stripe"), // Tarifa fixa | Tarifa fixa por unidade
+
+  // Exigência de contrato POR PRICE. Regra explícita do briefing: White Label
+  // Licença vendida isoladamente pra quem já é White Label NÃO exige
+  // contrato; o Setup exige. A planilha declara os dois.
+  exigeContrato: boolean("exige_contrato").default(false).notNull(),
+
+  observacao: text("observacao"),
+  ativo: boolean("ativo").default(true).notNull(),
+  ordem: integer("ordem").default(0).notNull(),
+
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("idx_catalogo_precos_stripe_price").on(table.organizacaoId, table.stripePriceId),
+  index("idx_catalogo_precos_produto").on(table.servicoCatalogoId, table.ordem),
+  index("idx_catalogo_precos_lookup").on(table.organizacaoId, table.lookupKey),
+]);
+
 export const propostas = pgTable(
   "propostas",
   {
@@ -1390,6 +1480,17 @@ export const propostaItens = pgTable(
     // MESMA família (ex: Callface AI) ter itens com modelos diferentes na
     // mesma proposta.
     commercialModel: text("commercial_model").notNull().default("PAGAMENTO_DIRETO"),
+    // Catálogo Oficial Stripe (02/09) — o item guarda AO MESMO TEMPO a
+    // referência oficial (imutável) e o que foi negociado. Desconto/valor
+    // negociado nunca cria produto nem price novo: mexe em `valorUnitario`
+    // e `desconto`, e `valorTabela` preserva o preço oficial do momento da
+    // venda pra auditar o desconto concedido depois.
+    catalogoPrecoId: uuid("catalogo_preco_id").references((): AnyPgColumn => catalogoPrecos.id),
+    stripeProductId: text("stripe_product_id"),
+    stripePriceId: text("stripe_price_id"),
+    skuPreco: text("sku_preco"),
+    variacao: text("variacao"),
+    valorTabela: decimal("valor_tabela", { precision: 12, scale: 2 }),
   },
   (table) => [
     index("idx_proposta_itens_proposta").on(table.propostaId),
@@ -1427,6 +1528,26 @@ export const leadLabels = pgTable(
     // negocios.ts (auto-tag "No-show") era um no-op — mesmo bug da spam de
     // notificações de SLA, escala bem menor aqui (1 duplicata real achada).
     uniqueIndex("idx_lead_labels_dedup").on(table.leadId, table.labelId),
+  ]
+);
+
+// Tags can also belong to the other CRM2 entities. `lead_labels` and
+// `contato_labels` stay as compatibility bridges while screens migrate.
+export const entityLabels = pgTable(
+  "entity_labels",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizacaoId: uuid("organizacao_id").references(() => organizacoes.id, { onDelete: "cascade" }).notNull(),
+    entityType: text("entity_type").notNull(), // lead | negocio | oportunidade | cliente | empresa | contato
+    entityId: uuid("entity_id").notNull(),
+    labelId: uuid("label_id").references(() => labels.id, { onDelete: "cascade" }).notNull(),
+    createdById: uuid("created_by_id").references(() => usuarios.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("uq_entity_labels_entity_label").on(table.organizacaoId, table.entityType, table.entityId, table.labelId),
+    index("idx_entity_labels_entity").on(table.organizacaoId, table.entityType, table.entityId),
+    index("idx_entity_labels_label").on(table.labelId),
   ]
 );
 
@@ -2927,7 +3048,7 @@ export const billingIdentities = pgTable("billing_identities", {
 ]);
 
 export const catalogoMapeamentosLegacy = pgTable("catalogo_mapeamentos_legacy", {
-  id: uuid("id").primaryKey(),
+  id: uuid("id").defaultRandom().primaryKey(),
   organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
   legacyProductId: text("legacy_product_id").notNull(),
   legacyName: text("legacy_name").notNull(),
@@ -2937,11 +3058,33 @@ export const catalogoMapeamentosLegacy = pgTable("catalogo_mapeamentos_legacy", 
   defaultRevenueNature: text("default_revenue_nature").notNull(),
   activeSelectable: boolean("active_selectable").default(false).notNull(),
   historicalOnly: boolean("historical_only").default(true).notNull(),
-  confidence: text("confidence").notNull(),
+  confidence: text("confidence").notNull(), // CONFIRMED | PROBABLE | AMBIGUOUS | UNRESOLVED
   evidence: text("evidence"),
+  // Classificação do legado (02/09) — campos que faltavam pra essa camada
+  // servir de fato a relatório/Cliente 360/financeiro. Nenhuma tabela nova:
+  // a camada de mapeamento já existia, só estava mal preenchida (53% das
+  // linhas UNKNOWN, e 100% delas marcadas como CONFIRMED).
+  legacySource: text("legacy_source"), // onde o nome aparece no histórico
+  categoriaCrm: text("categoria_crm"), // plano | setup | hardware | ... | ajuste_financeiro
+  ruleSource: text("rule_source"), // planilha_oficial | regra_ajuste | regra_nome | generico_ambiguo | sem_evidencia
+  reviewedStatus: text("reviewed_status").default("pendente").notNull(), // pendente | revisado | ignorado
+  revisadoPor: uuid("revisado_por").references(() => usuarios.id),
+  revisadoEm: timestamp("revisado_em", { withTimezone: true }),
+  notes: text("notes"),
+  ocorrencias: integer("ocorrencias").default(0).notNull(),
+  classificadoEm: timestamp("classificado_em", { withTimezone: true }),
+  // Coluna GERADA no banco (sempre coerente com legacy_name). Existe pra
+  // casar o histórico (`contrato_itens.nome`, `fatura_itens.nome`) com a
+  // classificação por um índice, em vez de repetir translate+regexp em cada
+  // relatório. `legacy_product_id` não serve pra isso: nas 193 linhas antigas
+  // ele é o id do produto no Zoho.
+  nomeNormalizado: text("nome_normalizado").generatedAlwaysAs(sql`btrim(regexp_replace(lower(translate(legacy_name, 'ÁÀÃÂÄÉÈÊËÍÌÎÏÓÒÕÔÖÚÙÛÜÇáàãâäéèêëíìîïóòõôöúùûüç', 'AAAAAEEEEIIIIOOOOOUUUUCaaaaaeeeeiiiiooooouuuuc')), '[^a-z0-9]+', ' ', 'g'))`),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   uniqueIndex("idx_catalogo_mapeamentos_legacy_dedup").on(table.organizacaoId, table.legacyProductId),
+  index("idx_catalogo_mapeamentos_legacy_familia").on(table.organizacaoId, table.serviceFamily, table.confidence),
+  index("idx_catalogo_mapeamentos_legacy_revisao").on(table.organizacaoId, table.reviewedStatus, table.confidence),
 ]);
 
 export const contratoItens = pgTable("contrato_itens", {
@@ -3225,6 +3368,12 @@ export const oportunidadeItens = pgTable("oportunidade_itens", {
   // de fulfillment são formados), null em rascunho.
   commercialModel: text("commercial_model"),
   grupoComercialId: uuid("grupo_comercial_id").references((): AnyPgColumn => propostaGrupoComercial.id),
+  // Catálogo Oficial Stripe (02/09) — é `oportunidade_itens` que vira serviço
+  // canônico, e é dele que a 2C.2 vai ler o price pra montar a assinatura.
+  catalogoPrecoId: uuid("catalogo_preco_id").references((): AnyPgColumn => catalogoPrecos.id),
+  stripeProductId: text("stripe_product_id"),
+  stripePriceId: text("stripe_price_id"),
+  skuPreco: text("sku_preco"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
@@ -3250,6 +3399,19 @@ export const clientes = pgTable("clientes", {
   // distinto do responsável comercial (negocios.responsavelId, quem vendeu)
   // e do responsável de entrega (fulfillments.responsavelId, quem implanta).
   responsavelId: uuid("responsavel_id").references(() => usuarios.id),
+  // Contexto de CS (08/09) — entrada na carteira é a data real do serviço
+  // mais antigo, não a data em que a linha foi criada; `jornadaIniciadaEm`
+  // marca que os marcos de relacionamento já foram semeados (ver lib/cs/jornada.ts).
+  entrouCarteiraEm: timestamp("entrou_carteira_em", { withTimezone: true }),
+  observacoesCs: text("observacoes_cs"),
+  /**
+   * Sem nenhuma evidência real de quando virou cliente (nem Won, nem início
+   * de contrato, nem primeira fatura) — 91 das 299 contas. A data de entrada
+   * dessas é a da reconciliação de agosto/2026, e a jornada delas parte daí.
+   * Sinalizado em vez de escondido: é um gap de dado, não um cliente novo.
+   */
+  csSemEvidencia: boolean("cs_sem_evidencia").default(false).notNull(),
+  jornadaIniciadaEm: timestamp("jornada_iniciada_em", { withTimezone: true }),
   leadIdLegado: uuid("lead_id_legado").references(() => leads.id),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
@@ -3325,6 +3487,10 @@ export const cadenceEnrollments = pgTable("cadence_enrollments", {
   cadenceVersionId: uuid("cadence_version_id").references(() => cadenceVersions.id, { onDelete: "restrict" }),
   entityType: text("entity_type").notNull(),
   entityId: uuid("entity_id").notNull(),
+  // Evento que originou esta execução. A chave abaixo impede replay do mesmo
+  // evento na mesma definição, mesmo com mais de um worker.
+  sourceEventId: uuid("source_event_id").references(() => eventOutbox.id, { onDelete: "set null" }),
+  idempotencyKey: text("idempotency_key"),
   currentStepId: text("current_step_id"), // null antes do 1º step
   currentNodeId: text("current_node_id"),
   status: text("status").notNull().default("active"), // active | waiting | completed | cancelled | failed
@@ -3345,6 +3511,7 @@ export const cadenceEnrollments = pgTable("cadence_enrollments", {
   index("idx_cadence_enrollments_due").on(table.status, table.nextEvalAt, table.claimedUntil),
   index("idx_cadence_enrollments_entity").on(table.entityType, table.entityId),
   index("idx_cadence_enrollments_org").on(table.organizacaoId),
+  uniqueIndex("uq_cadence_enrollments_idempotency").on(table.idempotencyKey),
 ]);
 
 export const cadenceEnrollmentEvents = pgTable("cadence_enrollment_events", {
@@ -3354,9 +3521,11 @@ export const cadenceEnrollmentEvents = pgTable("cadence_enrollment_events", {
   status: text("status").notNull(), // executado | erro | condicao_nao_atendida | retry_agendado | cancelado
   resultado: jsonb("resultado"),
   attempt: integer("attempt").default(0).notNull(),
+  idempotencyKey: text("idempotency_key"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   index("idx_cadence_enrollment_events_enrollment").on(table.enrollmentId),
+  uniqueIndex("uq_cadence_enrollment_events_idempotency").on(table.idempotencyKey),
 ]);
 
 // ═══════════════════════════════════════════════════════════════
@@ -3510,6 +3679,16 @@ export const checkouts = pgTable("checkouts", {
   stripeSubscriptionId: text("stripe_subscription_id"),
   stripeCheckoutUrl: text("stripe_checkout_url"),
   status: text("status").default("criado").notNull(), // criado | aberto | pago | falhou | expirado | cancelado
+  // Frente 2C.1 — campos que a 2C.2 (Stripe de verdade) preenche. Nenhuma
+  // integração nova escreve neles agora: existem pra que o motor interno
+  // já tenha onde receber o dado sem migration na hora da integração.
+  stripeCustomerId: text("stripe_customer_id"),
+  stripeInvoiceId: text("stripe_invoice_id"),
+  stripePaymentIntentId: text("stripe_payment_intent_id"),
+  paymentStatus: text("payment_status"), // pendente | confirmado | falhou
+  nextPaymentDueAt: timestamp("next_payment_due_at", { withTimezone: true }),
+  paidAt: timestamp("paid_at", { withTimezone: true }),
+  metadata: jsonb("metadata"),
   criadoEm: timestamp("criado_em", { withTimezone: true }).defaultNow().notNull(),
   aberturaEm: timestamp("abertura_em", { withTimezone: true }),
   completadoEm: timestamp("completado_em", { withTimezone: true }),
@@ -3538,6 +3717,20 @@ export const propostaGrupoComercial = pgTable("proposta_grupo_comercial", {
   contratoId: uuid("contrato_id").references(() => contratos.id),
   checkoutId: uuid("checkout_id").references(() => checkouts.id),
   concluidoEm: timestamp("concluido_em", { withTimezone: true }),
+  // Frente 2C.1 — a família comercial do grupo, denormalizada dos itens no
+  // momento do aceite. É ela que decide QUAL evidência fecha a venda
+  // (Callface AI = pagamento; PABX/White Label = contrato assinado) e pra
+  // qual trilha de entrega o cliente vai. Ver lib/crm/politica-familia.ts.
+  serviceFamily: text("service_family"), // PABX | CALLFACE_AI | WHITE_LABEL | UNKNOWN
+  contratoAssinadoEm: timestamp("contrato_assinado_em", { withTimezone: true }),
+  // Entrega liberada != pagamento confirmado. Em PABX/White Label a
+  // assinatura já libera a materialização do serviço e a implantação,
+  // enquanto o pagamento segue rastreado como pendente.
+  entregaLiberadaEm: timestamp("entrega_liberada_em", { withTimezone: true }),
+  entregaLiberadaPor: text("entrega_liberada_por"), // contrato_assinado | pagamento_confirmado | manual
+  pagamentoStatus: text("pagamento_status"), // pendente | confirmado | falhou
+  pagamentoVenceEm: timestamp("pagamento_vence_em", { withTimezone: true }),
+  pagamentoConfirmadoEm: timestamp("pagamento_confirmado_em", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
@@ -3562,6 +3755,7 @@ export const contratoTemplates = pgTable("contrato_templates", {
   nome: text("nome").notNull(),
   versao: integer("versao").default(1).notNull(),
   commercialModel: text("commercial_model"), // null = genérico, aplica a qualquer modelo
+  serviceFamily: text("service_family"), // null = qualquer família; PABX/WHITE_LABEL/CALLFACE_AI para texto específico
   corpoTemplate: text("corpo_template").notNull(), // texto com {{variavel}} — substituição simples
   ativo: boolean("ativo").default(true).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -3660,3 +3854,154 @@ export const callfaceAiReconciliationCandidates = pgTable(
     index("idx_callface_ai_recon_status").on(table.status),
   ]
 );
+
+// ═══════════════════════════════════════════════════════════════
+// CS — camada operacional de Customer Success (08/09/2026)
+//
+// Consome o que já é canônico (servicos_canonicos = serviço/MRR,
+// fulfillments = entrega, contratos/assinaturas/faturas = billing,
+// nps_respostas = health check) e adiciona só o que não existia: jornada,
+// risco explicável, renovação e churn como PROCESSO.
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * Marcos da jornada de relacionamento (D0/D7/D30/3M/6M/9M/Renovação).
+ *
+ * Não confundir com `fulfillments`: aquilo é a entrega do que foi vendido e
+ * termina; isto é o acompanhamento e não termina. A tarefa só é criada
+ * quando o marco vence — semear 7 tarefas no dia 1 entupiria a fila do CS
+ * com trabalho de daqui a 9 meses.
+ */
+export const csMarcos = pgTable("cs_marcos", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+  empresaId: uuid("empresa_id").references(() => empresas.id, { onDelete: "cascade" }).notNull(),
+  /** Só o marco de RENOVACAO é por serviço — vigência é do contrato, não da conta. */
+  servicoCanonicoId: uuid("servico_canonico_id").references(() => servicosCanonicos.id, { onDelete: "cascade" }),
+  codigo: text("codigo").notNull(), // D0 | D7 | D30 | M3 | M6 | M9 | RENOVACAO
+  ciclo: integer("ciclo").default(1).notNull(),
+  titulo: text("titulo").notNull(),
+  objetivo: text("objetivo"),
+  dueDate: date("due_date").notNull(),
+  status: text("status").default("PENDENTE").notNull(), // PENDENTE | CONCLUIDO | PULADO
+  tarefaId: uuid("tarefa_id").references(() => tarefas.id, { onDelete: "set null" }),
+  tarefaGeradaEm: timestamp("tarefa_gerada_em", { withTimezone: true }),
+  /** Respostas do checklist do marco + notas do CS. */
+  resultado: jsonb("resultado"),
+  concluidoEm: timestamp("concluido_em", { withTimezone: true }),
+  concluidoPor: uuid("concluido_por").references(() => usuarios.id),
+  chaveIdempotencia: text("chave_idempotencia").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex("cs_marcos_organizacao_id_chave_idempotencia_key").on(t.organizacaoId, t.chaveIdempotencia),
+  index("idx_cs_marcos_empresa").on(t.empresaId, t.status),
+  index("idx_cs_marcos_due").on(t.organizacaoId, t.status, t.dueDate),
+]);
+
+/**
+ * Sinais de risco. Regra fechada do projeto: risco tem motivo e fonte
+ * verificáveis — nunca um score 0-100 fabricado com pesos inventados.
+ * Sinal que some é RESOLVIDO, não apagado: o histórico é o que permite
+ * dizer depois "esse cliente já esteve em risco 3 vezes por cobrança".
+ */
+export const csRiscos = pgTable("cs_riscos", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+  empresaId: uuid("empresa_id").references(() => empresas.id, { onDelete: "cascade" }).notNull(),
+  servicoCanonicoId: uuid("servico_canonico_id").references(() => servicosCanonicos.id, { onDelete: "set null" }),
+  tipo: text("tipo").notNull(),
+  severidade: text("severidade").notNull(), // ATENCAO | EM_RISCO | CRITICO
+  origem: text("origem").notNull(),         // AUTOMATICO | MANUAL
+  motivo: text("motivo").notNull(),
+  /** Tabela/serviço de onde o sinal veio — permite auditar a afirmação. */
+  fonte: text("fonte").notNull(),
+  detalhe: jsonb("detalhe"),
+  status: text("status").default("ABERTO").notNull(), // ABERTO | RESOLVIDO
+  responsavelId: uuid("responsavel_id").references(() => usuarios.id),
+  abertoEm: timestamp("aberto_em", { withTimezone: true }).defaultNow().notNull(),
+  abertoPor: uuid("aberto_por").references(() => usuarios.id),
+  resolvidoEm: timestamp("resolvido_em", { withTimezone: true }),
+  resolvidoPor: uuid("resolvido_por").references(() => usuarios.id),
+  resolucao: text("resolucao"),
+  tarefaId: uuid("tarefa_id").references(() => tarefas.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  index("idx_cs_riscos_org").on(t.organizacaoId, t.status, t.severidade),
+]);
+
+/**
+ * Renovação como processo. Por SERVIÇO, com a vigência real do contrato.
+ * Serviço sem contrato com prazo não ganha renovação — assinatura Stripe
+ * sem termo renova sozinha, e inventar "12 meses" encheria a fila do CS de
+ * renovação que não existe.
+ */
+export const csRenovacoes = pgTable("cs_renovacoes", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+  empresaId: uuid("empresa_id").references(() => empresas.id, { onDelete: "cascade" }).notNull(),
+  servicoCanonicoId: uuid("servico_canonico_id").references(() => servicosCanonicos.id, { onDelete: "cascade" }).notNull(),
+  contratoId: uuid("contrato_id").references(() => contratos.id, { onDelete: "set null" }),
+  ciclo: integer("ciclo").default(1).notNull(),
+  vencimento: date("vencimento").notNull(),
+  status: text("status").default("FUTURA").notNull(), // FUTURA | ABERTA | EM_NEGOCIACAO | RENOVADA | NAO_RENOVADA
+  janelaAbertaEm: timestamp("janela_aberta_em", { withTimezone: true }),
+  valorAtual: decimal("valor_atual", { precision: 14, scale: 2 }),
+  valorProposto: decimal("valor_proposto", { precision: 14, scale: 2 }),
+  novoVencimento: date("novo_vencimento"),
+  novoPrazoMeses: integer("novo_prazo_meses"),
+  responsavelId: uuid("responsavel_id").references(() => usuarios.id),
+  negocioId: uuid("negocio_id").references(() => negocios.id, { onDelete: "set null" }),
+  observacoes: text("observacoes"),
+  decididoEm: timestamp("decidido_em", { withTimezone: true }),
+  decididoPor: uuid("decidido_por").references(() => usuarios.id),
+  motivoNaoRenovacao: text("motivo_nao_renovacao"),
+  chaveIdempotencia: text("chave_idempotencia").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex("cs_renovacoes_organizacao_id_chave_idempotencia_key").on(t.organizacaoId, t.chaveIdempotencia),
+  index("idx_cs_renovacoes_empresa").on(t.empresaId, t.status),
+  index("idx_cs_renovacoes_janela").on(t.organizacaoId, t.status, t.vencimento),
+]);
+
+/**
+ * Churn como processo. Cliente nunca é apagado e serviço não vira CHURNED
+ * por mudança de status solta: o pedido abre um processo com checagens
+ * (contrato, multa, financeiro, equipamento), tentativa de retenção e
+ * decisão registrada. Só ao EFETIVAR o serviço é encerrado.
+ */
+export const csCancelamentos = pgTable("cs_cancelamentos", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+  empresaId: uuid("empresa_id").references(() => empresas.id, { onDelete: "cascade" }).notNull(),
+  servicoCanonicoId: uuid("servico_canonico_id").references(() => servicosCanonicos.id, { onDelete: "set null" }),
+  contratoId: uuid("contrato_id").references(() => contratos.id, { onDelete: "set null" }),
+  status: text("status").default("SOLICITADO").notNull(), // SOLICITADO | EM_RETENCAO | RETIDO | APROVADO | EFETIVADO
+  motivo: text("motivo").notNull(),
+  motivoDetalhe: text("motivo_detalhe"),
+  canal: text("canal"),
+  solicitadoEm: timestamp("solicitado_em", { withTimezone: true }).defaultNow().notNull(),
+  solicitadoPor: uuid("solicitado_por").references(() => usuarios.id),
+  dataDesejada: date("data_desejada"),
+  /** null = ainda não verificado. Falso e "não verificado" são coisas diferentes. */
+  contratoVigente: boolean("contrato_vigente"),
+  multaAplicavel: boolean("multa_aplicavel"),
+  multaValor: decimal("multa_valor", { precision: 14, scale: 2 }),
+  pendenciaFinanceira: decimal("pendencia_financeira", { precision: 14, scale: 2 }),
+  equipamentosPendentes: text("equipamentos_pendentes"),
+  tentativaRetencao: text("tentativa_retencao"),
+  ofertaRetencao: text("oferta_retencao"),
+  decisao: text("decisao"), // RETIDO | CANCELADO
+  decididoEm: timestamp("decidido_em", { withTimezone: true }),
+  decididoPor: uuid("decidido_por").references(() => usuarios.id),
+  dataEfetiva: date("data_efetiva"),
+  motivoFinal: text("motivo_final"),
+  motivoFinalDetalhe: text("motivo_final_detalhe"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  index("idx_cs_cancelamentos_empresa").on(t.empresaId, t.status),
+  index("idx_cs_cancelamentos_org").on(t.organizacaoId, t.status),
+]);

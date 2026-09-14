@@ -7,8 +7,10 @@
  * pode só ter Urgência + Resumo). O painel nativo da Callface (app.callface.ai)
  * mostra ainda um bloco "Performance da Call" com pontuação por categoria
  * (Estrutura/Descoberta/Objeções/Próximos Passos) — esse dado NÃO vem no
- * webhook (nenhum payload capturado até 22/07/2026 o inclui), então não é
- * parseado nem exibido aqui pra não inventar número que a IA não nos deu.
+ * webhook (11 de 2.752 resumos citam "performance", nenhum com a pontuação
+ * estruturada), então não é parseado nem exibido aqui pra não inventar número
+ * que a IA não nos deu. A "Chance de Fechar Negócio", essa sim, vem — e desde
+ * 09/09/2026 é devolvida em `chanceFechamento` em vez de ser descartada.
  *
  * Parsing é por POSIÇÃO dos marcadores no texto (não por linha fixa), então
  * lida bem com seções ausentes/fora de ordem. Campos que não são
@@ -24,6 +26,13 @@ export interface ResumoCallfaceParsed {
   interesses: string | null;
   problemas: string | null;
   urgencia: "low" | "medium" | "high" | null;
+  /**
+   * "🤝 Chance de Fechar Negócio: 40%." — probabilidade que a IA atribui ao
+   * fechamento, 0 a 100. O marcador já era recortado do texto e depois
+   * DESCARTADO: 348 das 2.752 ligações com resumo traziam o número e nenhuma
+   * tela do CRM o mostrava (achado de 09/09/2026).
+   */
+  chanceFechamento: number | null;
   objecoes: string | null;
   resumoNarrativo: string | null;
   /** só isso é seguro dividir em tags — vem separado por vírgula no texto real */
@@ -78,6 +87,12 @@ export function parseResumoCallface(resumo: string | null | undefined): ResumoCa
   const contatoMatch = resumo.match(/👤\s*(.+?)(?:\n|$)/);
   const emailMatch = resumo.match(/📧\s*(.+?)(?:\n|$)/);
 
+  // Só aceita 0-100: se a IA mudar o formato, é melhor não mostrar nada do
+  // que mostrar um número que não é probabilidade.
+  const chanceMatch = (secoes.chance || "").match(/(\d{1,3})\s*%/);
+  const chanceBruta = chanceMatch ? Number(chanceMatch[1]) : null;
+  const chanceFechamento = chanceBruta != null && chanceBruta >= 0 && chanceBruta <= 100 ? chanceBruta : null;
+
   const urgenciaRaw = (secoes.urgencia || "").toLowerCase();
   const urgencia = (["low", "medium", "high"] as const).find((u) => urgenciaRaw.includes(u)) || null;
 
@@ -98,6 +113,7 @@ export function parseResumoCallface(resumo: string | null | undefined): ResumoCa
     interesses: secoes.interesses || null,
     problemas: secoes.problemas || null,
     urgencia,
+    chanceFechamento,
     objecoes: secoes.objecoes || null,
     resumoNarrativo: secoes.resumo ? secoes.resumo.replace(/^Callface Resume:\s*/i, "") : null,
     palavrasChave,
@@ -105,9 +121,16 @@ export function parseResumoCallface(resumo: string | null | undefined): ResumoCa
   };
 }
 
+/**
+ * Cor do rótulo de urgência. Os valores eram do tema escuro do CRM 1: "Baixa"
+ * saía em `rgba(255,255,255,0.35)` — branco translúcido, literalmente
+ * invisível no card claro do Atendimento — e "Alta"/"Média" usavam vermelho e
+ * âmbar puros, que como TEXTO dão 3.8:1 e 2.2:1. Agora usa os tokens
+ * semânticos, que já passam no contraste mínimo.
+ */
 export function urgenciaInfo(u: "low" | "medium" | "high" | null): { label: string; color: string } {
-  if (u === "high") return { label: "Alta", color: "#ef4444" };
-  if (u === "medium") return { label: "Média", color: "#f59e0b" };
-  if (u === "low") return { label: "Baixa", color: "rgba(255,255,255,0.35)" };
-  return { label: "—", color: "rgba(255,255,255,0.25)" };
+  if (u === "high") return { label: "Alta", color: "var(--cf2-danger-text)" };
+  if (u === "medium") return { label: "Média", color: "var(--cf2-warning-text)" };
+  if (u === "low") return { label: "Baixa", color: "var(--cf2-text-secondary)" };
+  return { label: "—", color: "var(--cf2-text-tertiary)" };
 }

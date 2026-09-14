@@ -1,84 +1,135 @@
 /**
- * Stripe Checkout — geração de link de pagamento a partir de uma proposta.
+ * Stripe Checkout da 2C.2.
  *
- * Modelo: ASSINATURA MENSAL (subscription). A Callface vende MRR, então o
- * checkout cobra recorrente todo mês. Usa os itens `tipo='recorrente'` da
- * proposta (fallback: total_recorrente como linha única).
- *
- * Segue o padrão do `stripe-sync.ts`: API REST do Stripe via fetch (sem SDK),
- * `Authorization: Bearer ${STRIPE_API_KEY}`.
- *
- * ⚠️ A STRIPE_API_KEY hoje é restrita (rk_live, read-only p/ sync). Pra criar
- * checkout ela precisa de permissão de escrita em "Checkout Sessions". Se não
- * tiver, `createSubscriptionCheckout` lança erro com a mensagem do Stripe.
+ * O CRM envia somente Prices oficiais do catálogo. Desconto negociado é
+ * aplicado como Coupon de uso único na sessão, nunca como Product/Price novo.
+ * Em desenvolvimento, sem chave de teste, o módulo entra em mock explícito e
+ * não faz nenhuma chamada externa.
  */
 
 const STRIPE_API = "https://api.stripe.com/v1";
+const STRIPE_API_VERSION = process.env.STRIPE_API_VERSION || "2026-08-26.dahlia";
+
+export type StripeCheckoutMode = "mock" | "test" | "live";
+
+function keyFromEnv(): string | null {
+  return process.env.STRIPE_SECRET_KEY || process.env.STRIPE_API_KEY || null;
+}
+
+export function getStripeCheckoutMode(): StripeCheckoutMode {
+  const explicit = process.env.STRIPE_CHECKOUT_MODE;
+  const key = keyFromEnv();
+
+  if (explicit === "mock") return "mock";
+  if (explicit === "live") {
+    if (process.env.NODE_ENV !== "production" || process.env.ALLOW_STRIPE_LIVE_CHECKOUT !== "true") {
+      throw new Error("Checkout live bloqueado: exige produção e ALLOW_STRIPE_LIVE_CHECKOUT=true.");
+    }
+    return "live";
+  }
+
+  if (!key) return "mock";
+  if (key.includes("_live_")) throw new Error("Chave Stripe live detectada fora do checkout live explicitamente habilitado.");
+  if (!key.includes("_test_")) throw new Error("A chave Stripe precisa ser uma chave test para Checkout local.");
+  return "test";
+}
+
+export function isStripeMockMode(): boolean {
+  return getStripeCheckoutMode() === "mock";
+}
+
+function stripeKey(): string {
+  const key = keyFromEnv();
+  if (!key) throw new Error("STRIPE_SECRET_KEY ou STRIPE_API_KEY não configurada");
+  return key;
+}
+
+function stableIdempotencyKey(prefix: string): string {
+  return prefix.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 255);
+}
+
+function randomSuffix(): string {
+  const letters = "abcdefghijklmnopqrstuvwxyz";
+  let suffix = "";
+  for (let i = 0; i < 8; i++) suffix += letters[Math.floor(Math.random() * letters.length)];
+  return suffix;
+}
+
+async function stripePost<T>(path: string, form: URLSearchParams, opts: { idempotencyKey?: string } = {}): Promise<T> {
+  const response = await fetch(`${STRIPE_API}/${path}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${stripeKey()}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+      "Stripe-Version": STRIPE_API_VERSION,
+      ...(opts.idempotencyKey ? { "Idempotency-Key": opts.idempotencyKey } : {}),
+    },
+    body: form.toString(),
+  });
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Stripe ${path}: HTTP ${response.status} ${body.slice(0, 400)}`);
+  }
+  return response.json() as Promise<T>;
+}
+
+async function stripeGet<T>(path: string): Promise<T> {
+  const response = await fetch(`${STRIPE_API}/${path}`, {
+    headers: { Authorization: `Bearer ${stripeKey()}`, "Stripe-Version": STRIPE_API_VERSION },
+  });
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Stripe ${path}: HTTP ${response.status} ${body.slice(0, 400)}`);
+  }
+  return response.json() as Promise<T>;
+}
+
+export interface StripeCustomerParams {
+  customerId?: string | null;
+  name: string;
+  email?: string | null;
+  phone?: string | null;
+  address?: { line1?: string | null; city?: string | null; state?: string | null; postalCode?: string | null; country?: string | null };
+  metadata: Record<string, string>;
+}
+
+export async function createStripeCustomer(params: StripeCustomerParams): Promise<{ id: string; mocked: boolean }> {
+  const mode = getStripeCheckoutMode();
+  if (params.customerId) return { id: params.customerId, mocked: mode === "mock" };
+  if (mode === "mock") {
+    return { id: `cus_mock_${params.metadata.crm_company_id || params.metadata.crm_lead_id || "billing"}`.replace(/[^a-zA-Z0-9_]/g, "").slice(0, 80), mocked: true };
+  }
+
+  const form = new URLSearchParams();
+  form.append("name", params.name.slice(0, 250));
+  if (params.email) form.append("email", params.email);
+  if (params.phone) form.append("phone", params.phone);
+  if (params.address?.line1) form.append("address[line1]", params.address.line1);
+  if (params.address?.city) form.append("address[city]", params.address.city);
+  if (params.address?.state) form.append("address[state]", params.address.state);
+  if (params.address?.postalCode) form.append("address[postal_code]", params.address.postalCode);
+  if (params.address?.country) form.append("address[country]", params.address.country);
+  for (const [key, value] of Object.entries(params.metadata)) form.append(`metadata[${key}]`, value.slice(0, 500));
+  const customer = await stripePost<{ id: string }>("customers", form, { idempotencyKey: stableIdempotencyKey(`crm-customer-${params.metadata.crm_company_id || params.metadata.crm_lead_id || "billing"}`) });
+  return { id: customer.id, mocked: false };
+}
 
 export interface CheckoutItem {
   nome: string;
-  /** valor unitário em reais (ex.: 499.90) */
-  valorUnitario: number;
   quantidade: number;
-  /** produto real do Stripe associado (do catálogo CRM); se ausente, cria ad-hoc pelo nome */
+  /** Valor final negociado por unidade, já sem desconto percentual/nominal. */
+  valorUnitario: number;
+  /** Valor oficial de tabela por unidade. */
+  valorTabela: number;
+  stripePriceId: string;
   stripeProductId?: string | null;
+  moeda: string;
 }
 
-export interface CreateCheckoutParams {
-  propostaId: string;
-  negocioId?: string | null;
-  organizacaoId: string;
-  moeda: string; // BRL, USD...
-  itens: CheckoutItem[];
-  /** fallback quando não há itens recorrentes detalhados */
-  totalRecorrente?: number;
-  customerEmail?: string | null;
-  successUrl: string;
-  cancelUrl: string;
-}
-
+/** Compatibilidade com os providers legados de billing. */
 export interface CheckoutResult {
   sessionId: string;
   url: string;
-}
-
-/**
- * Expira uma checkout session no Stripe (mata o link antes que o cliente pague).
- * Usado quando uma proposta já enviada é editada ou reenviada: a sessão antiga
- * fica com valores desatualizados e não pode continuar aberta. Só funciona em
- * sessões "open" — se já expirou ou foi paga, o Stripe retorna erro (ignorado
- * pelos chamadores, é best-effort).
- */
-export async function expireCheckoutSession(sessionId: string): Promise<void> {
-  const key = process.env.STRIPE_API_KEY;
-  if (!key) throw new Error("STRIPE_API_KEY não configurada no .env");
-
-  const res = await fetch(`${STRIPE_API}/checkout/sessions/${sessionId}/expire`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${key}` },
-  });
-
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Stripe expire session: HTTP ${res.status} ${text.slice(0, 300)}`);
-  }
-}
-
-/**
- * Codifica params aninhados no formato form-encoded que o Stripe espera
- * (ex.: line_items[0][price_data][product_data][name]=...).
- */
-function appendNested(form: URLSearchParams, key: string, value: unknown): void {
-  if (value === null || value === undefined) return;
-  if (Array.isArray(value)) {
-    value.forEach((v, i) => appendNested(form, `${key}[${i}]`, v));
-  } else if (typeof value === "object") {
-    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-      appendNested(form, `${key}[${k}]`, v);
-    }
-  } else {
-    form.append(key, String(value));
-  }
 }
 
 export interface CreateGroupCheckoutParams {
@@ -88,204 +139,119 @@ export interface CreateGroupCheckoutParams {
   organizacaoId: string;
   moeda: string;
   itensRecorrentes: CheckoutItem[];
-  itensAvulsos: CheckoutItem[]; // setup/one-time — cobrados uma vez, na mesma sessão
-  customerEmail?: string | null;
+  itensAvulsos: CheckoutItem[];
+  customerId: string;
   successUrl: string;
   cancelUrl: string;
-  /** Condição de pagamento estruturada da proposta (25/08) — ver applyCondicaoPagamento */
-  condicaoPagamentoTipo?: string | null;
-  vencimentoDias?: number | null;
+  metadata: Record<string, string>;
+  /** Identifica uma nova tentativa depois que a sessão anterior foi expirada. */
+  attemptKey?: string;
 }
 
-/**
- * Aplica a condição de pagamento estruturada da proposta na sessão de
- * checkout. Sem valor (proposta antiga, ou "outro"): não seta
- * `payment_method_types` — Stripe decide pelos métodos habilitados na
- * conta, MESMO comportamento de antes (zero regressão). Com "cartao"/
- * "boleto"/"boleto_parcelado": restringe o método explicitamente. O
- * vencimento do boleto (`expires_after_days`) só existe no Checkout Session
- * pra QUANDO o boleto é gerado — não modela parcelamento de verdade (N
- * boletos futuros); isso é o próximo passo, via Invoice API pós-contrato
- * (ver stripe-invoice.ts), não dentro da sessão de checkout.
- */
-function applyCondicaoPagamento(form: URLSearchParams, tipo: string | null | undefined, vencimentoDias: number | null | undefined): void {
-  if (tipo === "cartao") {
-    appendNested(form, "payment_method_types", ["card"]);
-  } else if (tipo === "boleto" || tipo === "boleto_parcelado") {
-    appendNested(form, "payment_method_types", ["boleto"]);
-    appendNested(form, "payment_method_options", { boleto: { expires_after_days: Math.max(1, Math.min(60, vencimentoDias || 3)) } });
+function appendNested(form: URLSearchParams, key: string, value: unknown): void {
+  if (value === null || value === undefined) return;
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => appendNested(form, `${key}[${index}]`, item));
+    return;
   }
-  // "outro" ou ausente: não restringe — comportamento atual da conta.
+  if (typeof value === "object") {
+    for (const [childKey, childValue] of Object.entries(value as Record<string, unknown>)) appendNested(form, `${key}[${childKey}]`, childValue);
+    return;
+  }
+  form.append(key, String(value));
 }
 
-/**
- * Checkout de um GRUPO COMERCIAL (Commercial Core v2, ADR-EXEC-021) — cobre
- * recorrente + avulso (ex: White Label licença MRR + setup) na MESMA sessão
- * quando ambos existem no grupo. Stripe suporta linha one-time dentro de uma
- * sessão mode=subscription (cobrada uma vez, no ato) — só cai pra
- * mode=payment se o grupo não tiver NENHUM item recorrente (Stripe rejeita
- * subscription sem linha recorrente).
- */
-export async function createGroupCheckout(params: CreateGroupCheckoutParams): Promise<CheckoutResult> {
-  const key = process.env.STRIPE_API_KEY;
-  if (!key) throw new Error("STRIPE_API_KEY não configurada no .env");
+function appendMetadata(form: URLSearchParams, metadata: Record<string, string>): void {
+  for (const [key, value] of Object.entries(metadata)) form.append(`metadata[${key}]`, String(value).slice(0, 500));
+}
 
-  const currency = (params.moeda || "BRL").toLowerCase();
-  const recorrentes = params.itensRecorrentes.filter((i) => i.valorUnitario > 0);
-  const avulsos = params.itensAvulsos.filter((i) => i.valorUnitario > 0);
+function amountInCents(value: number): number {
+  return Math.max(0, Math.round(value * 100));
+}
 
-  if (recorrentes.length === 0 && avulsos.length === 0) {
-    throw new Error("Grupo comercial sem itens com valor para gerar checkout");
-  }
+function discountTotal(items: CheckoutItem[]): number {
+  return items.reduce((total, item) => {
+    const quantity = Math.max(1, Math.round(item.quantidade || 1));
+    return total + Math.max(0, item.valorTabela * quantity - item.valorUnitario * quantity);
+  }, 0);
+}
 
-  const mode = recorrentes.length > 0 ? "subscription" : "payment";
-
+async function createOneTimeCoupon(amount: number, currency: string, metadata: Record<string, string>): Promise<string | null> {
+  if (amount <= 0) return null;
   const form = new URLSearchParams();
-  form.append("mode", mode);
-  form.append("success_url", params.successUrl);
-  form.append("cancel_url", params.cancelUrl);
-  if (params.customerEmail) form.append("customer_email", params.customerEmail);
-
-  appendNested(form, "phone_number_collection", { enabled: true });
-  form.append("billing_address_collection", "required");
-  appendNested(form, "custom_fields", [
-    { key: "cpfcnpj", label: { type: "custom", custom: "CPF ou CNPJ" }, type: "text", optional: false },
-  ]);
-  applyCondicaoPagamento(form, params.condicaoPagamentoTipo, params.vencimentoDias);
-
-  let idx = 0;
-  for (const item of recorrentes) {
-    const priceData: Record<string, unknown> = {
-      currency, unit_amount: Math.round(item.valorUnitario * 100), recurring: { interval: "month" },
-    };
-    if (item.stripeProductId) priceData.product = item.stripeProductId;
-    else priceData.product_data = { name: item.nome };
-    appendNested(form, `line_items[${idx}]`, { quantity: Math.max(1, Math.round(item.quantidade || 1)), price_data: priceData });
-    idx++;
-  }
-  for (const item of avulsos) {
-    const priceData: Record<string, unknown> = { currency, unit_amount: Math.round(item.valorUnitario * 100) };
-    if (item.stripeProductId) priceData.product = item.stripeProductId;
-    else priceData.product_data = { name: item.nome };
-    appendNested(form, `line_items[${idx}]`, { quantity: Math.max(1, Math.round(item.quantidade || 1)), price_data: priceData });
-    idx++;
-  }
-
-  appendNested(form, "metadata", {
-    propostaId: params.propostaId,
-    negocioId: params.negocioId || "",
-    grupoComercialId: params.grupoComercialId,
-    organizacaoId: params.organizacaoId,
-    origem: "callface-crm-grupo-comercial",
-  });
-  if (mode === "subscription") {
-    appendNested(form, "subscription_data[metadata]", {
-      propostaId: params.propostaId,
-      negocioId: params.negocioId || "",
-      grupoComercialId: params.grupoComercialId,
-      organizacaoId: params.organizacaoId,
-    });
-  }
-
-  const res = await fetch(`${STRIPE_API}/checkout/sessions`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/x-www-form-urlencoded" },
-    body: form.toString(),
-  });
-
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Stripe checkout (grupo): HTTP ${res.status} ${text.slice(0, 300)}`);
-  }
-
-  const session = (await res.json()) as { id: string; url: string };
-  return { sessionId: session.id, url: session.url };
+  form.append("amount_off", String(amountInCents(amount)));
+  form.append("currency", currency.toLowerCase());
+  form.append("duration", "once");
+  appendMetadata(form, { ...metadata, crm_discount_type: "proposal_negotiated_discount" });
+  const coupon = await stripePost<{ id: string }>("coupons", form, { idempotencyKey: stableIdempotencyKey(`crm-coupon-${metadata.crm_group_id || "group"}`) });
+  return coupon.id;
 }
 
-export async function createSubscriptionCheckout(params: CreateCheckoutParams): Promise<CheckoutResult> {
-  const key = process.env.STRIPE_API_KEY;
-  if (!key) throw new Error("STRIPE_API_KEY não configurada no .env");
+function appendOfficialLineItem(form: URLSearchParams, index: number, item: CheckoutItem): void {
+  if (!item.stripePriceId) throw new Error(`Item '${item.nome}' não tem stripe_price_id oficial.`);
+  form.append(`line_items[${index}][price]`, item.stripePriceId);
+  form.append(`line_items[${index}][quantity]`, String(Math.max(1, Math.round(item.quantidade || 1))));
+}
 
-  const currency = (params.moeda || "BRL").toLowerCase();
+export async function createGroupCheckout(params: CreateGroupCheckoutParams): Promise<{ sessionId: string; url: string; mocked: boolean }> {
+  const mode = getStripeCheckoutMode();
+  const recorrentes = params.itensRecorrentes.filter((item) => item.valorUnitario > 0);
+  const avulsos = params.itensAvulsos.filter((item) => item.valorUnitario > 0);
+  const allItems = [...recorrentes, ...avulsos];
+  if (allItems.length === 0) throw new Error("Grupo comercial sem itens com valor para gerar checkout");
+  if (allItems.some((item) => item.moeda.toUpperCase() !== params.moeda.toUpperCase())) throw new Error("A moeda de um Price oficial não coincide com a moeda da proposta.");
 
-  // Monta as linhas recorrentes. Se não vier nenhum item, usa o total recorrente.
-  let itens = params.itens.filter((i) => i.valorUnitario > 0);
-  if (itens.length === 0 && params.totalRecorrente && params.totalRecorrente > 0) {
-    itens = [{ nome: "Plano Callface (mensal)", valorUnitario: params.totalRecorrente, quantidade: 1 }];
-  }
-  if (itens.length === 0) {
-    throw new Error("Proposta sem valor recorrente para gerar assinatura");
+  const stripeMode = recorrentes.length > 0 ? "subscription" : "payment";
+  const metadata = {
+    ...params.metadata,
+    crm_proposal_id: params.propostaId,
+    crm_group_id: params.grupoComercialId,
+    // `crm_opportunity_id` é o ID da oportunidade v2 quando o helper já o
+    // resolveu. O negócio legado só é fallback, nunca substituição silenciosa.
+    crm_opportunity_id: params.metadata.crm_opportunity_id || params.negocioId || "",
+  };
+  const discount = discountTotal(allItems);
+
+  if (mode === "mock") {
+    return { sessionId: `cs_test_mock_${params.grupoComercialId.replace(/-/g, "")}`, url: `mock://stripe-checkout/${params.grupoComercialId}`, mocked: true };
   }
 
   const form = new URLSearchParams();
-  form.append("mode", "subscription");
+  form.append("mode", stripeMode);
+  form.append("customer", params.customerId);
   form.append("success_url", params.successUrl);
   form.append("cancel_url", params.cancelUrl);
-  if (params.customerEmail) form.append("customer_email", params.customerEmail);
-  // payment_method_collection padrão; cartão habilitado pela conta Stripe.
-
-  // Coleta obrigatória de dados de faturamento — sem isso a NF sai incompleta
-  // (CNPJ/CPF e endereço ficam de fora) e vira risco de cancelamento pela
-  // Receita. Padrão restaurado do checkout antigo (pré-CRM).
-  appendNested(form, "phone_number_collection", { enabled: true });
   form.append("billing_address_collection", "required");
-  appendNested(form, "name_collection", { business: { enabled: true } });
-  appendNested(form, "custom_fields", [
-    {
-      key: "cpfcnpj",
-      label: { type: "custom", custom: "CPF ou CNPJ" },
-      type: "text",
-      optional: false,
-    },
-  ]);
+  appendNested(form, "phone_number_collection", { enabled: true });
+  appendNested(form, "tax_id_collection", { enabled: true });
+  appendNested(form, "name_collection", { business: { enabled: true }, individual: { enabled: true } });
+  appendNested(form, "customer_update", { name: "auto", address: "auto", phone: "auto" });
+  appendNested(form, "custom_fields", [{ key: "cpfcnpj", label: { type: "custom", custom: "CPF ou CNPJ" }, type: "text", optional: false }]);
+  appendMetadata(form, metadata);
+  form.append("integration_identifier", `callface_crm_${randomSuffix()}`);
 
-  itens.forEach((item, idx) => {
-    // Se o item tem produto real do Stripe (via catálogo CRM), usa o PRODUTO real
-    // com preço customizado (valor da proposta, já com desconto). Senão, ad-hoc pelo nome.
-    const priceData: Record<string, unknown> = {
-      currency,
-      unit_amount: Math.round(item.valorUnitario * 100), // centavos
-      recurring: { interval: "month" },
-    };
-    if (item.stripeProductId) {
-      priceData.product = item.stripeProductId;
-    } else {
-      priceData.product_data = { name: item.nome };
-    }
-    appendNested(form, `line_items[${idx}]`, {
-      quantity: Math.max(1, Math.round(item.quantidade || 1)),
-      price_data: priceData,
-    });
-  });
+  let index = 0;
+  for (const item of recorrentes) appendOfficialLineItem(form, index++, item);
+  for (const item of avulsos) appendOfficialLineItem(form, index++, item);
 
-  // Metadata pra o webhook reconciliar o pagamento com a proposta/negócio.
-  appendNested(form, "metadata", {
-    propostaId: params.propostaId,
-    negocioId: params.negocioId || "",
-    organizacaoId: params.organizacaoId,
-    origem: "callface-crm-proposta",
-  });
-  // Propaga a metadata pra subscription criada (útil no sync/reconciliação).
-  appendNested(form, "subscription_data[metadata]", {
-    propostaId: params.propostaId,
-    negocioId: params.negocioId || "",
-    organizacaoId: params.organizacaoId,
-  });
-
-  const res = await fetch(`${STRIPE_API}/checkout/sessions`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${key}`,
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: form.toString(),
-  });
-
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Stripe checkout: HTTP ${res.status} ${text.slice(0, 300)}`);
+  const couponId = await createOneTimeCoupon(discount, params.moeda, metadata);
+  if (couponId) appendNested(form, "discounts", [{ coupon: couponId }]);
+  if (stripeMode === "subscription") appendNested(form, "subscription_data", { metadata });
+  if (stripeMode === "payment") {
+    appendNested(form, "payment_intent_data", { metadata });
+    appendNested(form, "invoice_creation", { enabled: true, invoice_data: { metadata } });
   }
 
-  const session = (await res.json()) as { id: string; url: string };
-  return { sessionId: session.id, url: session.url };
+  const session = await stripePost<{ id: string; url: string }>("checkout/sessions", form, { idempotencyKey: stableIdempotencyKey(`crm-session-${params.grupoComercialId}-${params.attemptKey || "initial"}`) });
+  return { sessionId: session.id, url: session.url, mocked: false };
+}
+
+export async function expireCheckoutSession(sessionId: string): Promise<void> {
+  if (getStripeCheckoutMode() === "mock") return;
+  await stripePost(`checkout/sessions/${sessionId}/expire`, new URLSearchParams());
+}
+
+export async function retrieveCheckoutSession(sessionId: string): Promise<{ id: string; status?: string; payment_status?: string; customer?: string | null } | null> {
+  if (getStripeCheckoutMode() === "mock") return { id: sessionId, status: "open", payment_status: "unpaid" };
+  return stripeGet(`checkout/sessions/${sessionId}`);
 }

@@ -1,9 +1,8 @@
 import { db } from "@/lib/db";
 import { contratos, leads } from "@/lib/db/schema";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { contratoPdfHtml, renderContratoPdf } from "@/lib/crm/contrato-pdf";
 import type {
-  ConfirmarAssinaturaOpts,
   ConfirmarAssinaturaResult,
   EnviarParaAssinaturaOpts,
   EnviarParaAssinaturaResult,
@@ -19,7 +18,7 @@ function baseUrl(): string {
 }
 
 function apiKey(): string {
-  return process.env.DOCUMENSO_API_KEY || "";
+  return process.env.DOCUMENSO_API_TOKEN || process.env.DOCUMENSO_API_KEY || "";
 }
 
 function recipientsFrom(value: unknown): SignatureRecipient[] {
@@ -124,13 +123,15 @@ export class DocumensoSignatureProvider implements SignatureProvider {
     return "opened";
   }
 
-  async confirmarAssinatura(_opts: ConfirmarAssinaturaOpts): Promise<ConfirmarAssinaturaResult> {
+  async confirmarAssinatura(): Promise<ConfirmarAssinaturaResult> {
     throw new Error("Documenso confirma assinaturas pelo webhook DOCUMENT_SIGNED/DOCUMENT_COMPLETED");
   }
 }
 
 export function isDocumensoConfigured(): boolean {
-  return Boolean(process.env.DOCUMENSO_API_KEY && (process.env.DOCUMENSO_API_URL || "https://app.documenso.com/api/v2"));
+  // A Callface usa somente a instância self-hosted. Exigir a URL explícita
+  // evita que um token seja enviado por engano para o Documenso Cloud.
+  return Boolean(apiKey() && process.env.DOCUMENSO_API_URL);
 }
 
 /** Baixa o PDF assinado somente depois que o envelope foi concluído. */

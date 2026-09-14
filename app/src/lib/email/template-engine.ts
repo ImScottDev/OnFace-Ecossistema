@@ -9,6 +9,7 @@ export interface TemplateData {
   empresa?: string;
   cargo?: string;
   status?: string;
+  link_implantacao?: string;
   [key: string]: string | undefined;
 }
 

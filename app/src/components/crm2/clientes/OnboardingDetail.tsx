@@ -91,7 +91,7 @@ const MARCO_POR_WORKSTREAM: Record<string, string> = {
 
 const ITEM_STATUS_INFO: Record<string, { label: string; color: string; icon: typeof CheckCircle2 }> = {
   DONE: { label: "Concluído", color: "var(--cf2-success-text)", icon: CheckCircle2 },
-  IN_PROGRESS: { label: "Em andamento", color: "#3b82f6", icon: Clock },
+  IN_PROGRESS: { label: "Em andamento", color: "var(--cf2-informativo-fg)", icon: Clock },
   VALIDATION: { label: "Validação", color: "#8b5cf6", icon: Clock },
   BLOCKED: { label: "Bloqueado", color: "var(--cf2-danger-text)", icon: AlertTriangle },
   PENDING: { label: "Não iniciado", color: "var(--cf2-text-tertiary)", icon: Circle },
@@ -497,7 +497,7 @@ export function Cf2OnboardingDetail({ fulfillmentId }: { fulfillmentId: string }
                             {!concluidoOuNA && item.status !== "BLOCKED" && (
                               <Cf2DropdownMenu>
                                 <Cf2DropdownMenuTrigger asChild>
-                                  <button className="shrink-0 p-1"><MoreHorizontal className="w-3.5 h-3.5" style={secLabel} /></button>
+                                  <button className="shrink-0 p-1" aria-label="Mais ações"><MoreHorizontal className="w-3.5 h-3.5" style={secLabel} /></button>
                                 </Cf2DropdownMenuTrigger>
                                 <Cf2DropdownMenuContent align="end">
                                   <Cf2DropdownMenuItem onSelect={() => patchItem.mutate({ itemId: item.id, status: "NOT_APPLICABLE" })}>Marcar não aplicável</Cf2DropdownMenuItem>
@@ -615,7 +615,7 @@ export function Cf2OnboardingDetail({ fulfillmentId }: { fulfillmentId: string }
               <Cf2Button key={tipo} variant="secondary" size="sm" onClick={() => blockerAberto && patchItem.mutate({ itemId: blockerAberto.id, status: "BLOCKED", blockerType: tipo, blockerReason: blockerReasonInput || null }, { onSuccess: () => setBlockerAberto(null) })}>{BLOCKER_LABEL[tipo]}</Cf2Button>
             ))}
           </div>
-          <Cf2Textarea value={blockerReasonInput} onChange={(e) => setBlockerReasonInput(e.target.value)} placeholder="Motivo (opcional)" rows={3} />
+          <Cf2Textarea value={blockerReasonInput} onChange={(e) => setBlockerReasonInput(e.target.value)} placeholder="Motivo (opcional)" aria-label="Motivo (opcional)" rows={3} />
           {blockerAberto?.status === "BLOCKED" && (
             <Cf2DialogFooter>
               <Cf2Button variant="ghost" size="sm" onClick={() => patchItem.mutate({ itemId: blockerAberto.id, status: "PENDING" }, { onSuccess: () => setBlockerAberto(null) })}>Remover bloqueio</Cf2Button>
@@ -639,7 +639,7 @@ export function Cf2OnboardingDetail({ fulfillmentId }: { fulfillmentId: string }
         <Cf2DialogContent>
           <Cf2DialogHeader><Cf2DialogTitle>Agendar reunião de onboarding</Cf2DialogTitle></Cf2DialogHeader>
           <div className="grid grid-cols-2 gap-3 mb-3">
-            <div><Cf2Label>Data</Cf2Label><Cf2Input type="date" value={reuniaoData} onChange={(e) => setReuniaoData(e.target.value)} className="mt-1.5" /></div>
+            <div><Cf2Label>Data</Cf2Label><Cf2Input type="date" aria-label="Data" value={reuniaoData} onChange={(e) => setReuniaoData(e.target.value)} className="mt-1.5" /></div>
             <div><Cf2Label>Hora</Cf2Label><Cf2Input type="time" value={reuniaoHora} onChange={(e) => setReuniaoHora(e.target.value)} className="mt-1.5" /></div>
           </div>
           <Cf2Label>Duração</Cf2Label>

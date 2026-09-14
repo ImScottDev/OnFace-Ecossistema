@@ -1,0 +1,235 @@
+# Ambiente de desenvolvimento do CRM 2.0 — dev.crm.callface.io
+#
+# Isolado de produção e de homologação de propósito:
+#   - todos os containers usam o prefixo callface-crm2-dev-
+#   - rede propria crm2dev-network, NAO usa database-network (onde vive o banco de produção)
+#   - volumes proprios
+#   - wuzapi proprio, com WHATSAPP_ALLOWLIST travando a saida no numero do Kaua
+#
+# Subir:  docker compose -p crm2-dev up -d
+# Buildar: um servico por vez, a EC2 tem 2 vCPU e produção roda na mesma maquina.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: callface-crm2-dev-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: callface_crm
+      POSTGRES_USER: callface
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    # Somente 127.0.0.1: permite tunel SSH para migration e debug, sem expor o banco na internet.
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    networks:
+      - crm2dev-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U callface -d callface_crm"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+
+  redis:
+    image: redis:7-alpine
+    container_name: callface-crm2-dev-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    networks:
+      - crm2dev-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+  wuzapi:
+    image: asternic/wuzapi:latest
+    container_name: callface-crm2-dev-wuzapi
+    restart: unless-stopped
+    environment:
+      - WUZAPI_ADMIN_TOKEN=${WUZAPI_ADMIN_TOKEN}
+      - WUZAPI_GLOBAL_ENCRYPTION_KEY=${WUZAPI_GLOBAL_ENCRYPTION_KEY}
+      - WUZAPI_GLOBAL_HMAC_KEY=${WUZAPI_GLOBAL_HMAC_KEY}
+      - DB_HOST=callface-crm2-dev-postgres
+      - DB_PORT=5432
+      - DB_USER=callface
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=callface_wuzapi
+      - TZ=America/Sao_Paulo
+    networks:
+      - crm2dev-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 192M
+
+  app:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    image: crm2-dev-app
+    container_name: callface-crm2-dev-app
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - NODE_OPTIONS=--max-old-space-size=448
+      - DB_POOL_SIZE=10
+    volumes:
+      - ./uploads:/app/public/uploads
+    labels:
+      - "traefik.enable=true"
+      # Webhook de terceiro (Stripe, Documenso, wuzapi) entra sem basic auth, senao o 401 mata a entrega
+      - "traefik.http.routers.crm2dev-webhooks.rule=Host(`dev.crm.callface.io`) && PathPrefix(`/api/webhooks`)"
+      - "traefik.http.routers.crm2dev-webhooks.entrypoints=websecure"
+      - "traefik.http.routers.crm2dev-webhooks.tls.certresolver=cloudflare"
+      - "traefik.http.routers.crm2dev-webhooks.priority=200"
+      - "traefik.http.routers.crm2dev-webhooks.service=crm2dev-app"
+      # Frontend: tudo que nao e /api, mais as rotas de API que vivem no Next
+      - "traefik.http.routers.crm2dev-app.rule=Host(`dev.crm.callface.io`) && (!PathPrefix(`/api`) || PathPrefix(`/api/auth`) || PathPrefix(`/api/financeiro`) || PathPrefix(`/api/onboarding`) || PathPrefix(`/api/campanhas`))"
+      - "traefik.http.routers.crm2dev-app.entrypoints=websecure"
+      - "traefik.http.routers.crm2dev-app.tls.certresolver=cloudflare"
+      - "traefik.http.routers.crm2dev-app.middlewares=security-headers@file,crm2dev-auth@file"
+      - "traefik.http.routers.crm2dev-app.priority=50"
+      - "traefik.http.services.crm2dev-app.loadbalancer.server.port=3000"
+    networks:
+      - proxy-network
+      - crm2dev-network
+    depends_on:
+      api:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 640M
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "--timeout=10", "http://127.0.0.1:3000/api/auth/session"]
+      interval: 15s
+      timeout: 12s
+      retries: 3
+      start_period: 40s
+
+  api:
+    build:
+      context: ./app
+      dockerfile: Dockerfile.api
+    image: crm2-dev-api
+    container_name: callface-crm2-dev-api
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - API_PORT=3001
+      - NODE_OPTIONS=--max-old-space-size=320
+    volumes:
+      - ./uploads:/app/public/uploads
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.crm2dev-api.rule=Host(`dev.crm.callface.io`) && PathPrefix(`/api`) && !PathPrefix(`/api/auth`) && !PathPrefix(`/api/webhooks`) && !PathPrefix(`/api/financeiro`) && !PathPrefix(`/api/onboarding`) && !PathPrefix(`/api/campanhas`)"
+      - "traefik.http.routers.crm2dev-api.entrypoints=websecure"
+      - "traefik.http.routers.crm2dev-api.tls.certresolver=cloudflare"
+      - "traefik.http.routers.crm2dev-api.middlewares=security-headers@file,crm2dev-auth@file"
+      - "traefik.http.routers.crm2dev-api.priority=100"
+      - "traefik.http.services.crm2dev-api.loadbalancer.server.port=3001"
+    networks:
+      - proxy-network
+      - crm2dev-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 448M
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3001/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  worker:
+    build:
+      context: ./app
+      dockerfile: Dockerfile.worker
+    image: crm2-dev-worker
+    container_name: callface-crm2-dev-worker
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - NODE_OPTIONS=--max-old-space-size=320
+      - PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
+    volumes:
+      - ./uploads:/app/public/uploads
+    networks:
+      - crm2dev-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
+      - /dev/shm:size=192m
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:3002/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 448M
+
+volumes:
+  pg_data:
+    name: callface-crm2-dev-pg-data
+  redis_data:
+    name: callface-crm2-dev-redis-data
+
+networks:
+  proxy-network:
+    external: true
+    name: proxy-network
+  crm2dev-network:
+    name: crm2dev-network

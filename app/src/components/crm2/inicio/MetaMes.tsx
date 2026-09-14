@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Clock, CircleDollarSign } from "lucide-react";
+import { Clock, CircleDollarSign, Target } from "lucide-react";
 import type { MetaProdutoLinha } from "@/lib/analytics/inicio";
 
 /**
@@ -62,6 +62,12 @@ export function Cf2MetaMes({
 
   const produtoAtivo = produtos.find((p) => p.familia === ativo) ?? null;
 
+  // Sem meta cadastrada E sem nada ganho no mês, os 60 ticks ficam todos
+  // cinza em volta de um R$ 0,00: 380px de altura pra dizer "não há dado".
+  // Nesse caso o card encolhe e explica o que falta, em vez de desenhar um
+  // velocímetro sem escala.
+  const semDado = meta <= 0 && produtos.length === 0;
+
   // Arredondar é obrigatório, não cosmético: `Math.cos/sin` devolve a última
   // casa decimal diferente no Node e no browser (28.658096754170145 vs
   // ...16), e o React acusa hydration mismatch em cada uma das 60 linhas.
@@ -103,6 +109,17 @@ export function Cf2MetaMes({
         )}
       </div>
 
+      {semDado ? (
+        <div className="flex flex-1 flex-col items-center justify-center text-center gap-2 px-6 py-10">
+          <span className="flex items-center justify-center w-10 h-10 rounded-full" style={{ background: "#f5f5f5" }}>
+            <Target className="w-[18px] h-[18px]" style={{ color: "#737373" }} />
+          </span>
+          <p className="text-[13px] font-medium" style={{ color: "var(--cf2-home-ink)" }}>Nenhuma meta definida</p>
+          <p className="text-[12px] max-w-[260px]" style={{ color: "#737373" }}>
+            Nenhum negócio ganho neste mês. Com a meta cadastrada, o progresso por produto aparece aqui.
+          </p>
+        </div>
+      ) : (
       <div className="flex flex-col justify-between flex-1 px-5 sm:px-6 pb-6">
         <div className="flex justify-center py-2">
           <div className="relative w-[200px] h-[200px]">
@@ -170,6 +187,7 @@ export function Cf2MetaMes({
           )}
         </div>
       </div>
+      )}
     </div>
   );
 }

@@ -22,7 +22,7 @@ const GRUPOS: { key: AgendaGrupo; label: string; cor: string }[] = [
 export function Cf2OperacaoHoje({ itens }: { itens: AgendaItem[] }) {
   return (
     <div
-      className="flex flex-col rounded-[28px] overflow-hidden h-full"
+      className="flex flex-col rounded-[28px] overflow-hidden self-start w-full"
       style={{ background: "#ffffff", boxShadow: "0px 1px 1px rgba(17,19,24,0.03), 0px 6px 10px rgba(17,19,24,0.08)" }}
     >
       <div className="flex items-center justify-between gap-3 pt-4 px-5 pb-2">
@@ -36,9 +36,17 @@ export function Cf2OperacaoHoje({ itens }: { itens: AgendaItem[] }) {
       </div>
 
       {itens.length === 0 ? (
-        <p className="flex-1 flex items-center justify-center text-[13px] py-10" style={{ color: "var(--cf2-home-ink-faint)" }}>
-          Nada agendado para hoje.
-        </p>
+        // Sem `flex-1`: o vazio não estica o card pra acompanhar a altura do
+        // vizinho — eram ~400px de branco pra uma frase.
+        <div className="flex flex-col items-center text-center gap-1.5 px-6 py-9">
+          <span className="flex items-center justify-center w-9 h-9 rounded-full" style={{ background: "var(--cf2-home-neutral-surface)" }}>
+            <CalendarDays className="w-4 h-4" style={{ color: "var(--cf2-home-ink-soft)" }} />
+          </span>
+          <p className="text-[13px] font-medium" style={{ color: "var(--cf2-home-ink)" }}>Nada agendado para hoje</p>
+          <p className="text-[11.5px] max-w-[240px]" style={{ color: "var(--cf2-home-ink-faint)" }}>
+            Reuniões e tarefas com data de hoje aparecem aqui.
+          </p>
+        </div>
       ) : (
         <div className="flex flex-col gap-1 p-2.5">
           {GRUPOS.map((g) => {

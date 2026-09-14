@@ -149,7 +149,7 @@ const stepsComRegraDeTipo = z.array(stepSchema).min(1).superRefine((steps, ctx) 
 });
 const definitionSchema = z.object({
   nome: z.string().min(1).max(120),
-  entityType: z.enum(["lead", "negocio", "contato"]),
+  entityType: z.enum(["lead", "negocio", "contato", "oportunidade", "cliente", "empresa", "servico"]),
   steps: stepsComRegraDeTipo.optional(),
   graph: followupGraphSchema.optional(),
   triggerConfig: z.record(z.string(), z.unknown()).default({}),
@@ -162,12 +162,18 @@ function graphFromInput(input: { graph?: FollowupGraph; steps?: z.infer<typeof s
   return createEmptyFollowupGraph();
 }
 
+function triggerConfigFor(graph: FollowupGraph, explicit?: Record<string, unknown>) {
+  const trigger = graph.nodes.find((node) => node.type === "trigger");
+  return { ...(explicit ?? {}), event: trigger?.config.event ?? "manual", filters: trigger?.config.filters ?? {} };
+}
+
 app.post("/automacoes/cadencias", async (c) => {
   const ctx = await getCtx(c);
   const parsed = definitionSchema.safeParse(await c.req.json());
   if (!parsed.success) return c.json({ error: "Cadencia invalida", details: parsed.error.flatten() }, 400);
   const graph = graphFromInput(parsed.data);
   const compiled = compileFollowupGraph(graph);
+  const triggerConfig = triggerConfigFor(graph, parsed.data.triggerConfig);
   const result = await db.transaction(async (tx) => {
     const [cadencia] = await tx.insert(cadenceDefinitions).values({
       organizacaoId: ctx.organizacaoId,
@@ -175,7 +181,7 @@ app.post("/automacoes/cadencias", async (c) => {
       entityType: parsed.data.entityType,
       steps: compiled,
       draftSteps: compiled,
-      triggerConfig: parsed.data.triggerConfig,
+      triggerConfig,
       handoffPolicy: parsed.data.handoffPolicy,
       status: "draft",
       ativo: false,
@@ -187,7 +193,7 @@ app.post("/automacoes/cadencias", async (c) => {
       status: "draft",
       graph,
       compiledSteps: compiled,
-      triggerConfig: parsed.data.triggerConfig,
+      triggerConfig,
       handoffPolicy: parsed.data.handoffPolicy,
       createdById: ctx.userId,
     }).returning();
@@ -219,11 +225,12 @@ app.patch("/automacoes/cadencias/:id", async (c) => {
     if (!parsed.data.graph && !parsed.data.steps) return c.json({ error: "Rascunho sem grafo" }, 400);
     const graph = graphFromInput(parsed.data);
     const compiled = compileFollowupGraph(graph);
+    const triggerConfig = triggerConfigFor(graph, parsed.data.triggerConfig ?? current.triggerConfig as Record<string, unknown>);
     const result = await db.transaction(async (tx) => {
       const [updated] = await tx.update(cadenceDefinitions).set({
         ...(parsed.data.nome ? { nome: parsed.data.nome } : {}),
         ...(parsed.data.entityType ? { entityType: parsed.data.entityType } : {}),
-        ...(parsed.data.triggerConfig ? { triggerConfig: parsed.data.triggerConfig } : {}),
+        triggerConfig,
         ...(parsed.data.handoffPolicy ? { handoffPolicy: parsed.data.handoffPolicy } : {}),
         draftSteps: compiled,
         updatedAt: new Date(),
@@ -232,7 +239,7 @@ app.patch("/automacoes/cadencias/:id", async (c) => {
         const [version] = await tx.update(cadenceVersions).set({
           graph,
           compiledSteps: compiled,
-          triggerConfig: parsed.data.triggerConfig ?? current.triggerConfig,
+          triggerConfig,
           handoffPolicy: parsed.data.handoffPolicy ?? current.handoffPolicy,
         }).where(and(eq(cadenceVersions.id, pointer.draftVersionId), eq(cadenceVersions.status, "draft"))).returning();
         if (version) return { cadencia: updated, version };
@@ -240,7 +247,7 @@ app.patch("/automacoes/cadencias/:id", async (c) => {
       const [last] = await tx.select({ versionNumber: cadenceVersions.versionNumber }).from(cadenceVersions).where(eq(cadenceVersions.cadenceDefinitionId, id)).orderBy(desc(cadenceVersions.versionNumber)).limit(1);
       const [version] = await tx.insert(cadenceVersions).values({
         organizacaoId: ctx.organizacaoId, cadenceDefinitionId: id, versionNumber: (last?.versionNumber ?? 0) + 1, status: "draft", graph, compiledSteps: compiled,
-        triggerConfig: parsed.data.triggerConfig ?? current.triggerConfig, handoffPolicy: parsed.data.handoffPolicy ?? current.handoffPolicy, createdById: ctx.userId,
+        triggerConfig, handoffPolicy: parsed.data.handoffPolicy ?? current.handoffPolicy, createdById: ctx.userId,
       }).returning();
       await tx.insert(cadenceDefinitionPointers).values({ organizacaoId: ctx.organizacaoId, cadenceDefinitionId: id, draftVersionId: version.id, publishedVersionId: pointer?.publishedVersionId ?? null })
         .onConflictDoUpdate({ target: cadenceDefinitionPointers.cadenceDefinitionId, set: { draftVersionId: version.id, updatedAt: new Date() } });
@@ -264,7 +271,7 @@ app.patch("/automacoes/cadencias/:id", async (c) => {
     const [updated] = await db.transaction(async (tx) => {
       await tx.insert(cadenceDefinitionPointers).values({ organizacaoId: ctx.organizacaoId, cadenceDefinitionId: id, draftVersionId: pointer?.draftVersionId ?? null, publishedVersionId: version.id })
         .onConflictDoUpdate({ target: cadenceDefinitionPointers.cadenceDefinitionId, set: { publishedVersionId: version.id, updatedAt: new Date() } });
-      return tx.update(cadenceDefinitions).set({ steps: version.compiledSteps, ativo: true, status: "published", versao: version.versionNumber, publishedAt: new Date(), updatedAt: new Date() }).where(eq(cadenceDefinitions.id, id)).returning();
+      return tx.update(cadenceDefinitions).set({ steps: version.compiledSteps, triggerConfig: version.triggerConfig, handoffPolicy: version.handoffPolicy, ativo: true, status: "published", versao: version.versionNumber, publishedAt: new Date(), updatedAt: new Date() }).where(eq(cadenceDefinitions.id, id)).returning();
     });
     return c.json({ cadencia: updated, publishedVersion: version });
   }
@@ -286,7 +293,7 @@ app.patch("/automacoes/cadencias/:id", async (c) => {
       triggerConfig: draftVersion.triggerConfig, handoffPolicy: draftVersion.handoffPolicy, createdById: ctx.userId,
     }).returning();
     await tx.update(cadenceDefinitionPointers).set({ draftVersionId: nextDraft.id, publishedVersionId: publishedVersion.id, updatedAt: publishedAt }).where(eq(cadenceDefinitionPointers.cadenceDefinitionId, id));
-    const [cadencia] = await tx.update(cadenceDefinitions).set({ steps: compiled, draftSteps: compiled, ativo: true, status: "published", versao: publishedVersion.versionNumber, publishedAt, updatedAt: publishedAt }).where(eq(cadenceDefinitions.id, id)).returning();
+    const [cadencia] = await tx.update(cadenceDefinitions).set({ steps: compiled, draftSteps: compiled, triggerConfig: publishedVersion.triggerConfig, handoffPolicy: publishedVersion.handoffPolicy, ativo: true, status: "published", versao: publishedVersion.versionNumber, publishedAt, updatedAt: publishedAt }).where(eq(cadenceDefinitions.id, id)).returning();
     return { cadencia, publishedVersion, draftVersion: nextDraft };
   });
   return c.json(result);

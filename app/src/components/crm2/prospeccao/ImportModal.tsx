@@ -205,7 +205,7 @@ export function ImportModal({
     if (!nome) return;
     const existing = labels.find((l) => l.nome.toLowerCase() === nome.toLowerCase());
     if (existing) { setTagIds((prev) => new Set(prev).add(existing.id)); setNewTagInput(""); return; }
-    const r = await fetch("/api/labels", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ nome, cor: "#e23752" }) });
+    const r = await fetch("/api/labels", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ nome, cor: "var(--cf2-accent)" }) });
     if (r.ok) {
       const novo = await r.json();
       qc.invalidateQueries({ queryKey: ["labels"] });
@@ -241,11 +241,11 @@ export function ImportModal({
   const STEPS = ["Upload", "Mapeamento", "Validação", "Configuração", "Preview"];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(15,23,42,0.5)" }} onClick={handleClose}>
+    <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(15,23,42,0.5)" }} onClick={handleClose}>
       <div className="w-full max-w-2xl rounded-2xl p-6 flex flex-col gap-5 max-h-[90vh] overflow-y-auto" style={{ background: "var(--cf2-bg-surface)" }} onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between">
           <p className="text-lg font-bold" style={{ color: "var(--cf2-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>{title}</p>
-          <button onClick={handleClose}><X className="w-4 h-4" style={{ color: "var(--cf2-text-tertiary)" }} /></button>
+          <button onClick={handleClose} aria-label="Fechar"><X className="w-4 h-4" style={{ color: "var(--cf2-text-tertiary)" }} /></button>
         </div>
 
         <div className="flex items-center gap-2 text-[12px]">
@@ -342,7 +342,7 @@ export function ImportModal({
                     {listas.map((l) => <option key={l.id} value={l.id}>{l.nome}</option>)}
                   </select>
                 ) : (
-                  <input value={listaNomeNovo} onChange={(e) => setListaNomeNovo(e.target.value)} placeholder="Nome da nova lista" className="flex-1 px-3 py-1.5 rounded-lg text-[13px] outline-none" style={{ background: "var(--cf2-bg-canvas)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }} />
+                  <input value={listaNomeNovo} onChange={(e) => setListaNomeNovo(e.target.value)} placeholder="Nome da nova lista" aria-label="Nome da nova lista" className="flex-1 px-3 py-1.5 rounded-lg text-[13px] outline-none" style={{ background: "var(--cf2-bg-canvas)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }} />
                 )}
               </div>
             </div>
@@ -372,7 +372,7 @@ export function ImportModal({
                   value={newTagInput}
                   onChange={(e) => setNewTagInput(e.target.value)}
                   onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); createTag(); } }}
-                  placeholder="Adicionar tag..."
+                  placeholder="Adicionar tag..." aria-label="Adicionar tag"
                   className="px-2 py-1 rounded-full text-[12px] outline-none w-32"
                   style={{ background: "var(--cf2-bg-canvas)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }}
                 />

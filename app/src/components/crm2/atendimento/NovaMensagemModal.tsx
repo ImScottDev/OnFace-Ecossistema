@@ -40,11 +40,11 @@ export function Cf2NovaMensagemModal({ onClose, onEnviado }: { onClose: () => vo
   });
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.4)" }}>
+    <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.4)" }}>
       <div className="w-[420px] rounded-2xl p-5 flex flex-col gap-3" style={{ background: "var(--cf2-bg-surface)" }}>
         <div className="flex items-center justify-between">
           <p className="text-[16px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Nova Mensagem</p>
-          <button onClick={onClose}><X className="w-4 h-4" style={{ color: "var(--cf2-text-secondary)" }} /></button>
+          <button onClick={onClose} aria-label="Fechar"><X className="w-4 h-4" style={{ color: "var(--cf2-text-secondary)" }} /></button>
         </div>
 
         {!leadSelecionado ? (
@@ -55,7 +55,7 @@ export function Cf2NovaMensagemModal({ onClose, onEnviado }: { onClose: () => vo
                 autoFocus
                 value={busca}
                 onChange={(e) => setBusca(e.target.value)}
-                placeholder="Buscar lead por nome..."
+                placeholder="Buscar lead por nome..." aria-label="Buscar lead por nome"
                 className="flex-1 bg-transparent outline-none text-[13px]"
                 style={{ color: "var(--cf2-text-primary)" }}
               />
@@ -90,7 +90,7 @@ export function Cf2NovaMensagemModal({ onClose, onEnviado }: { onClose: () => vo
               autoFocus
               value={texto}
               onChange={(e) => setTexto(e.target.value)}
-              placeholder="Escreva sua mensagem..."
+              placeholder="Escreva sua mensagem..." aria-label="Escreva sua mensagem"
               rows={4}
               className="px-3 py-2 rounded-lg text-[13px] outline-none resize-none"
               style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }}

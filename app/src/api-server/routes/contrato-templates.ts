@@ -16,6 +16,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const createSchema = z.object({
   nome: z.string().min(1),
   commercialModel: z.enum(["PAGAMENTO_DIRETO", "CONTRATO_OBRIGATORIO", "CONTRATO_FIDELIDADE_OPCIONAL"]).nullable().optional(),
+  serviceFamily: z.enum(["CALLFACE_AI", "PABX", "WHITE_LABEL"]).nullable().optional(),
   corpoTemplate: z.string().min(1),
 });
 const updateSchema = createSchema.partial();

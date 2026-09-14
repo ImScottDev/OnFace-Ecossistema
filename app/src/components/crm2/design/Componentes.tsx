@@ -175,11 +175,11 @@ export function CatalogoComponentes() {
             <div className="flex flex-col gap-3">
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="d-nome" className="text-apoio">Nome do lead</Label>
-                <Input id="d-nome" placeholder="Ex.: Contabilix" className="rounded-control" />
+                <Input id="d-nome" placeholder="Ex.: Contabilix" aria-label="Ex.: Contabilix" className="rounded-control" />
               </div>
               <div className="relative">
                 <Search className="size-4 absolute left-3 top-1/2 -translate-y-1/2 text-tinta-fraca pointer-events-none" />
-                <Input placeholder="Buscar…" className="rounded-control pl-9" />
+                <Input placeholder="Buscar…" aria-label="Buscar" className="rounded-control pl-9" />
               </div>
             </div>
           </Amostra>
@@ -287,7 +287,7 @@ export function CatalogoComponentes() {
               >
                 <div className="relative">
                   <Search className="size-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-tinta-fraca pointer-events-none" />
-                  <Input placeholder="Buscar lead…" className="h-8 rounded-control pl-8 text-corpo w-56 max-w-full" />
+                  <Input placeholder="Buscar lead…" aria-label="Buscar lead" className="h-8 rounded-control pl-8 text-corpo w-56 max-w-full" />
                 </div>
               </Cf2TabelaToolbar>
             )}

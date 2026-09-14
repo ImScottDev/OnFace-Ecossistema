@@ -1,13 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+import crypto from "node:crypto";
 import { and, eq, ne } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { contratos } from "@/lib/db/schema";
 import { publicarEvento } from "@/lib/events/outbox";
-import { registrarEvidencia } from "@/lib/crm/won-evidence";
-import { marcarContratoAssinadoNoGrupo } from "@/lib/crm/grupo-comercial";
-import { criarCheckoutParaGrupo } from "@/lib/crm/checkout";
-import { syncNegocioValoresFromPropostas } from "@/lib/crm/sync-negocio-valores";
 import { enviarEmailFinalContrato } from "@/lib/crm/contrato-email-final";
+import { processarContratoAssinado } from "@/lib/crm/pos-assinatura";
 
 type Recipient = {
   email?: string;
@@ -50,7 +48,12 @@ export async function POST(request: NextRequest) {
   const configuredSecret = process.env.DOCUMENSO_WEBHOOK_SECRET;
   const receivedSecret = request.headers.get("x-documenso-secret");
   if (!configuredSecret) return NextResponse.json({ error: "webhook secret not configured" }, { status: 500 });
-  if (!receivedSecret || receivedSecret !== configuredSecret) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  if (!receivedSecret) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const recebido = Buffer.from(receivedSecret);
+  const esperado = Buffer.from(configuredSecret);
+  if (recebido.length !== esperado.length || !crypto.timingSafeEqual(recebido, esperado)) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
 
   let body: DocumensoPayload;
   try {
@@ -59,17 +62,26 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "invalid payload" }, { status: 400 });
   }
 
-  const event = String(body.event || "").toUpperCase();
+  const event = String(body.event || "").trim().toUpperCase().replace(/[.-]/g, "_");
   const payload = body.payload;
-  const providerRef = payload?.envelopeId || (payload?.externalId || "").replace(/^callface-contrato-/, "");
-  if (!providerRef) return NextResponse.json({ received: true, ignored: "missing envelope id" });
+  const providerRef = payload?.envelopeId
+    || (typeof payload?.id === "string" && payload.id.startsWith("envelope_") ? payload.id : undefined);
+  const externalContractId = payload?.externalId?.replace(/^callface-contrato-/, "") || undefined;
+  if (!providerRef && !externalContractId) {
+    return NextResponse.json({ received: true, ignored: "missing envelope and external ids" });
+  }
 
-  const [contract] = await db.select().from(contratos).where(eq(contratos.signatureProviderRef, providerRef)).limit(1);
+  const [contract] = await db.select().from(contratos).where(
+    providerRef
+      ? eq(contratos.signatureProviderRef, providerRef)
+      : eq(contratos.id, externalContractId!),
+  ).limit(1);
   if (!contract) return NextResponse.json({ received: true, unresolved: true }, { status: 202 });
 
   const recipients = payload?.recipients || [];
-  const eventKey = `documenso:${event}:${providerRef}:${body.createdAt || payload?.completedAt || "event"}`;
-  const commonPayload = { provider: "documenso", providerRef, event, recipients, raw: body };
+  const resolvedProviderRef = providerRef || contract.signatureProviderRef || externalContractId!;
+  const eventKey = `documenso:${event}:${resolvedProviderRef}:${body.createdAt || payload?.completedAt || "event"}`;
+  const commonPayload = { provider: "documenso", providerRef: resolvedProviderRef, event, recipients, raw: body };
 
   if (event === "DOCUMENT_OPENED") {
     await db.update(contratos).set({ signatureStatus: "opened", updatedAt: new Date() }).where(and(eq(contratos.id, contract.id), ne(contratos.signatureStatus, "signed")));
@@ -97,15 +109,18 @@ export async function POST(request: NextRequest) {
 
     await publicarEvento({ organizacaoId: contract.organizacaoId, eventType: "ContractCompleted", aggregateType: "contrato", aggregateId: contract.id, payload: commonPayload, idempotencyKey: `contract-completed:${contract.id}` });
     await publicarEvento({ organizacaoId: contract.organizacaoId, eventType: "FinalDocumentGenerated", aggregateType: "contrato", aggregateId: contract.id, payload: { ...commonPayload, documentoFinalUrl: finalDocumentUrl(contract.id, payload || {}) }, idempotencyKey: `contract-final-document:${contract.id}` });
-    if (contract.negocioId) {
-      await registrarEvidencia({ negocioId: contract.negocioId, organizacaoId: contract.organizacaoId, tipo: "signed_contract", sourceRef: contract.id, grupoComercialId: contract.grupoComercialId, metadata: { provider: "documenso", recipients } });
-      await syncNegocioValoresFromPropostas(contract.negocioId);
-    }
-    if (contract.grupoComercialId) {
-      await marcarContratoAssinadoNoGrupo(contract.grupoComercialId);
-      const checkout = await criarCheckoutParaGrupo({ grupoId: contract.grupoComercialId, origem: "automatico_pos_aceite" });
-      if (checkout.ok) await publicarEvento({ organizacaoId: contract.organizacaoId, eventType: "PaymentStarted", aggregateType: "checkout", aggregateId: checkout.checkoutId, payload: { contratoId: contract.id, grupoComercialId: contract.grupoComercialId, checkoutUrl: checkout.url }, idempotencyKey: `payment-started-contract:${contract.id}` });
-    }
+    // Frente 2C.1 — motor único das consequências da assinatura, o MESMO
+    // usado pela assinatura eletrônica simples (lib/crm/pos-assinatura.ts).
+    // Antes daqui esse bloco era uma cópia divergente que nunca marcava ganho:
+    // PABX/White Label ficavam presos esperando pagamento pra virar cliente.
+    // `contract` é a linha ANTES do update — relê pra passar o estado assinado.
+    const [contratoAssinado] = await db.select().from(contratos).where(eq(contratos.id, contract.id)).limit(1);
+    const resultado = await processarContratoAssinado({
+      contrato: contratoAssinado ?? contract,
+      provider: "documenso",
+      metadata: { recipients },
+    });
+    console.log(`[DocumensoWebhook] contrato ${contract.id} assinado — familia=${resultado.familia} ganho=${resultado.ganhoLiberado} entrega=${resultado.entregaLiberada} pendencia=${resultado.pendenciaFinanceiraId ?? "—"}`);
     const base = process.env.NEXTAUTH_URL || "https://crm.callface.io";
     await enviarEmailFinalContrato({
       contrato: contract,

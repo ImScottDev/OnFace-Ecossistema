@@ -2,11 +2,16 @@
 
 type Variant = "success" | "warning" | "danger" | "neutral" | "accent";
 
+// As variantes claras trazem o texto em hex, não pelo token: o par
+// fundo-claro/texto-escuro tem que andar junto mesmo quando o badge está
+// aninhado numa ilha `[data-cf2-superficie="escura"]`, onde os tokens
+// semânticos são reescritos pros tons de alto brilho. Sem isto, "Ganho"
+// saía verde-claro sobre verde-claro (1.6:1) no header de /negocios.
 const VARIANT_STYLE: Record<Variant, { bg: string; text: string }> = {
-  success: { bg: "var(--cf2-success-bg)", text: "var(--cf2-success-text)" },
-  warning: { bg: "var(--cf2-warning-bg)", text: "var(--cf2-warning-text)" },
-  danger: { bg: "#fde8e8", text: "var(--cf2-danger-text)" },
-  neutral: { bg: "var(--cf2-bg-surface-muted)", text: "var(--cf2-text-secondary)" },
+  success: { bg: "var(--cf2-success-bg)", text: "#15803d" },
+  warning: { bg: "var(--cf2-warning-bg)", text: "#b45309" },
+  danger: { bg: "#fde8e8", text: "#b91c1c" },
+  neutral: { bg: "var(--cf2-bg-surface-muted)", text: "#4b5563" },
   accent: { bg: "var(--cf2-accent)", text: "var(--cf2-text-on-accent)" },
 };
 

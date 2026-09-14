@@ -55,7 +55,7 @@ export function Cf2Dialer({ numeroInicial }: { numeroInicial?: string } = {}) {
           value={numero}
           onChange={(e) => setNumero(e.target.value.replace(/[^\d*#]/g, ""))}
           onKeyDown={(e) => { if (e.key === "Enter" && podeLigar) ligar(numero); }}
-          placeholder="DDD + número"
+          placeholder="DDD + número" aria-label="DDD + número"
           className="w-60 text-center px-4 py-3 rounded-xl text-[22px] font-semibold tracking-wide outline-none"
           style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }}
         />
@@ -107,7 +107,7 @@ export function Cf2Dialer({ numeroInicial }: { numeroInicial?: string } = {}) {
           <input
             value={busca}
             onChange={(e) => setBusca(e.target.value)}
-            placeholder="Nome do lead..."
+            placeholder="Nome do lead..." aria-label="Nome do lead"
             className="flex-1 bg-transparent outline-none text-[13px]"
             style={{ color: "var(--cf2-text-primary)" }}
           />

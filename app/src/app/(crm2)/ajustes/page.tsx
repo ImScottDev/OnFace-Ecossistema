@@ -4,12 +4,12 @@ import { organizacoes } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { getTenantContext } from "@/lib/auth/tenant";
 import { redirect } from "next/navigation";
-import { Cf2Topbar } from "@/components/crm2/Topbar";
 import { Cf2Badge } from "@/components/crm2/ui/Badge";
 import {
   UserCog,
   Users,
   Shield,
+  ShieldCheck,
   GitBranch,
   SlidersHorizontal,
   Package,
@@ -66,13 +66,13 @@ const BLOCOS: AjusteBloco[] = [
       {
         titulo: "Usuários & Organização",
         descricao: "Dados da organização (nome, slug, domínio) e lista de usuários do CRM.",
-        href: "/configuracoes",
+        href: "/ajustes/geral",
         icon: UserCog,
       },
       {
-        titulo: "Equipe & Papéis",
-        descricao: "Membros da organização e o papel de cada um (admin, gerente, vendedor).",
-        href: "/configuracoes/membros",
+        titulo: "Equipe, papéis e metas",
+        descricao: "Quem tem acesso, o papel de cada pessoa e a meta mensal — é aqui que se define a meta que a Home cobra.",
+        href: "/ajustes/membros",
         icon: Users,
       },
       {
@@ -88,7 +88,7 @@ const BLOCOS: AjusteBloco[] = [
       {
         titulo: "Pipeline & Etapas",
         descricao: "Etapas do funil de vendas, etapas de fechamento e motivos de perda do negócio.",
-        href: "/configuracoes/pipeline",
+        href: "/ajustes/pipeline",
         icon: GitBranch,
       },
       {
@@ -99,7 +99,7 @@ const BLOCOS: AjusteBloco[] = [
       {
         titulo: "Campos customizados",
         descricao: "Campos extras nos formulários de lead e negócio.",
-        href: "/configuracoes/campos-custom",
+        href: "/ajustes/campos-custom",
         icon: SlidersHorizontal,
       },
       {
@@ -111,7 +111,7 @@ const BLOCOS: AjusteBloco[] = [
       {
         titulo: "Classificação de Leads",
         descricao: "Setores e origens usados para classificar leads.",
-        href: "/configuracoes/leads",
+        href: "/ajustes/leads",
         icon: Tags,
       },
       {
@@ -128,19 +128,19 @@ const BLOCOS: AjusteBloco[] = [
       {
         titulo: "Contas de E-mail",
         descricao: "Conexão e sincronização das caixas de e-mail da equipe.",
-        href: "/configuracoes/email",
+        href: "/ajustes/email",
         icon: Inbox,
       },
       {
         titulo: "Templates de E-mail",
         descricao: "Modelos de e-mail usados em disparos e follow-ups.",
-        href: "/configuracoes/email/templates",
+        href: "/ajustes/email/templates",
         icon: Mail,
       },
       {
         titulo: "WhatsApp",
         descricao: "Sessões de WhatsApp conectadas ao CRM.",
-        href: "/configuracoes/whatsapp",
+        href: "/ajustes/whatsapp",
         icon: MessageSquare,
       },
       {
@@ -156,7 +156,7 @@ const BLOCOS: AjusteBloco[] = [
       {
         titulo: "AI SDR",
         descricao: "SDR virtual (Groq) que qualifica leads automaticamente.",
-        href: "/configuracoes/ai-sdr",
+        href: "/ajustes/ai-sdr",
         icon: Bot,
       },
       {
@@ -167,25 +167,25 @@ const BLOCOS: AjusteBloco[] = [
       {
         titulo: "ICP",
         descricao: "Perfil de Cliente Ideal usado para qualificação e priorização de leads.",
-        href: "/configuracoes/icp",
+        href: "/ajustes/icp",
         icon: Target,
       },
       {
         titulo: "Enriquecimento Automático",
         descricao: "Enriquecimento automático de dados de leads.",
-        href: "/configuracoes/enriquecimento",
+        href: "/ajustes/enriquecimento",
         icon: Sparkles,
       },
       {
         titulo: "Handover",
         descricao: "O que acontece automaticamente quando um negócio é ganho.",
-        href: "/configuracoes/handover",
+        href: "/ajustes/handover",
         icon: Handshake,
       },
       {
         titulo: "Tracking & Conversões",
         descricao: "Pixels e conversões offline (Meta CAPI, Google Ads).",
-        href: "/configuracoes/tracking",
+        href: "/ajustes/tracking",
         icon: LineChart,
       },
     ],
@@ -196,7 +196,7 @@ const BLOCOS: AjusteBloco[] = [
       {
         titulo: "Apollo.io",
         descricao: "Chave de API do Apollo.io, usada em enriquecimento e prospecção.",
-        href: "/configuracoes/integracoes",
+        href: "/ajustes/integracoes",
         icon: Key,
       },
       {
@@ -212,13 +212,19 @@ const BLOCOS: AjusteBloco[] = [
       {
         titulo: "Notificações",
         descricao: "Regras de notificação (SLA, alertas, resumo diário).",
-        href: "/configuracoes/notificacoes",
+        href: "/ajustes/notificacoes",
         icon: Bell,
       },
       {
         titulo: "Tags",
         descricao: "Etiquetas genéricas aplicadas a qualquer registro — diferente da Classificação de Leads (setor/origem).",
         icon: Tag,
+      },
+      {
+        titulo: "Qualidade de dados",
+        descricao: "Dez verificações só-leitura contra o banco real, mais o relatório de duplicidade de contratos.",
+        href: "/ajustes/qualidade-dados",
+        icon: ShieldCheck,
       },
       {
         titulo: "Elementos Globais",
@@ -281,14 +287,6 @@ export default async function AjustesPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <Cf2Topbar
-        orgNome={org?.nome || "Callface"}
-        variant="light"
-        title="Ajustes"
-        subtitle="Organização, comercial, comunicação e integrações — tudo num só lugar"
-        compactTitle
-      />
-
       <div className="flex flex-col gap-8">
         {BLOCOS.map((bloco) => (
           <section key={bloco.titulo} className="flex flex-col gap-3">

@@ -75,7 +75,7 @@ export function WhatsappTemplatesModal({ onClose }: { onClose: () => void }) {
   });
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.5)" }} onClick={onClose}>
+    <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.5)" }} onClick={onClose}>
       <div
         className="w-full max-w-xl max-h-[80vh] flex flex-col rounded-2xl overflow-hidden"
         style={{ background: "var(--cf2-bg-surface)" }}
@@ -83,7 +83,7 @@ export function WhatsappTemplatesModal({ onClose }: { onClose: () => void }) {
       >
         <div className="flex items-center justify-between p-4 shrink-0" style={{ borderBottom: "1px solid var(--cf2-border-default)" }}>
           <p className="text-[15px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Templates de WhatsApp</p>
-          <button onClick={onClose}><X className="w-4 h-4" style={{ color: "var(--cf2-text-tertiary)" }} /></button>
+          <button onClick={onClose} aria-label="Fechar"><X className="w-4 h-4" style={{ color: "var(--cf2-text-tertiary)" }} /></button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-2">
@@ -153,7 +153,7 @@ function TemplateForm({
       <input
         value={nome}
         onChange={(e) => setNome(e.target.value)}
-        placeholder="Nome do template"
+        placeholder="Nome do template" aria-label="Nome do template"
         className="px-3 py-2 rounded-lg text-[13px] outline-none"
         style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }}
       />

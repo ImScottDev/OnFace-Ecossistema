@@ -41,7 +41,7 @@ export function CheckoutPublico({ id }: { id: string }) {
   });
 
   useEffect(() => {
-    if (data?.stripeCheckoutUrl && data.status !== "pago" && data.status !== "expirado") {
+    if (data?.stripeCheckoutUrl && !data.stripeCheckoutUrl.startsWith("mock://") && data.status !== "pago" && data.status !== "expirado") {
       const t = setTimeout(() => { window.location.href = data.stripeCheckoutUrl!; }, 1200);
       return () => clearTimeout(t);
     }
@@ -52,6 +52,9 @@ export function CheckoutPublico({ id }: { id: string }) {
 
   if (data.status === "pago") return <Shell><p style={{ color: "#0f9d58", fontSize: 15, fontWeight: 700 }}>Pagamento já confirmado — obrigado!</p></Shell>;
   if (data.status === "expirado") return <Shell><p style={{ color: CARMIM, fontSize: 14 }}>Este link de pagamento expirou. Fale com quem te enviou a proposta pra gerar um novo.</p></Shell>;
+  if (data.stripeCheckoutUrl?.startsWith("mock://")) {
+    return <Shell><p style={{ fontSize: 14, color: "#4b4d63", maxWidth: 420 }}>Checkout local em modo mock. Nenhuma chamada ou cobrança foi feita no Stripe. Valide a confirmação usando um evento de teste assinado no webhook.</p></Shell>;
+  }
 
   return (
     <Shell>

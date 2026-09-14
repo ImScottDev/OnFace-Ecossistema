@@ -4,9 +4,10 @@ import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { Cf2DesqualificarModal } from "./DesqualificarModal";
 import {
   Phone, MessageCircle, Mail, Plus, Calendar, ChevronDown, Send, Briefcase,
-  X, AlertTriangle, ClipboardCheck,
+  X, AlertTriangle, ClipboardCheck, CheckCircle2, XCircle,
 } from "lucide-react";
 import { DetailDrawer } from "@/components/crm/DetailDrawer";
 import { QualificacaoSdrSection } from "@/components/crm/QualificacaoSdrSection";
@@ -15,7 +16,7 @@ import { TarefaFormModal } from "@/components/crm/tarefas/TarefaFormModal";
 import { digitsForDialer } from "@/lib/utils/callface-call";
 import { usePipelineConfig } from "@/hooks/usePipelineConfig";
 import { SDR_STAGES } from "@/lib/crm/pipeline";
-import { stageAge, resolveDisplayStage, resolveContextoCliente, type Lead as KanbanLead } from "./shared";
+import { stageAge, resolveDisplayStage, resolveContextoCliente, type Lead as KanbanLead } from "@/lib/crm/qualificacao-colunas";
 import type { OrgUsuario } from "@/components/crm/BoardFilters";
 import { AssignOwnerControl } from "@/components/crm2/shared/AssignOwnerControl";
 
@@ -35,7 +36,11 @@ interface LeadDetail extends KanbanLead {
   utmCampaign?: string | null;
   camposCustom?: Record<string, unknown> | null;
   createdAt: string;
+  /** `GET /leads/:id` já devolvia isso; o drawer só nunca leu. */
+  labels?: Array<{ id: string; nome: string; cor: string }>;
 }
+
+interface LabelDisponivel { id: string; nome: string; cor: string }
 
 const TABS = ["Tudo", "Ligações", "WhatsApp", "E-mails", "Notas", "Tarefas"] as const;
 type Tab = (typeof TABS)[number];
@@ -81,7 +86,7 @@ function formatQuando(iso: string): string {
 function callStatusInfo(status?: string | null): { label: string; color: string } {
   const s = String(status || "").toUpperCase();
   if (["FINISHED", "ANSWERED", "COMPLETED"].includes(s)) return { label: "Ligação atendida", color: "#4ade80" };
-  if (["MISSED", "NOT_ANSWERED", "NO_ANSWER"].includes(s)) return { label: "Ligação não atendida", color: "#f59e0b" };
+  if (["MISSED", "NOT_ANSWERED", "NO_ANSWER"].includes(s)) return { label: "Ligação não atendida", color: "var(--cf2-warning-text)" };
   if (["NOT_COMPLETED", "FAILED", "BUSY"].includes(s)) return { label: "Ligação não completada", color: "#f87171" };
   return { label: "Ligação registrada", color: "var(--cf2-chrome-text-secondary)" };
 }
@@ -145,6 +150,8 @@ export function Cf2LeadDrawer({
   const [tab, setTab] = useState<Tab>("Tudo");
   const [tarefaModalOpen, setTarefaModalOpen] = useState(false);
   const [moveMenuOpen, setMoveMenuOpen] = useState(false);
+  const [qualificarMenuOpen, setQualificarMenuOpen] = useState(false);
+  const [desqualificarOpen, setDesqualificarOpen] = useState(false);
   const [noteText, setNoteText] = useState("");
   const [noteOpen, setNoteOpen] = useState(false);
   const noteRef = useRef<HTMLTextAreaElement>(null);
@@ -175,6 +182,51 @@ export function Cf2LeadDrawer({
       return r.json();
     },
     enabled: !!leadId && open,
+  });
+
+  // ── Tags (01/09) ───────────────────────────────────────────────────────
+  // A Página Completa já fazia isso desde sempre; o drawer nunca teve. Mesmos
+  // dois endpoints (`/api/labels`, `/api/leads/:id/labels`), mesma query key
+  // ["labels"], então o cache é compartilhado entre as duas telas.
+  const [tagPopoverOpen, setTagPopoverOpen] = useState(false);
+
+  const { data: labelsDisponiveis = [] } = useQuery<LabelDisponivel[]>({
+    queryKey: ["labels"],
+    queryFn: async () => {
+      const r = await fetch("/api/labels");
+      if (!r.ok) return [];
+      return r.json();
+    },
+    enabled: tagPopoverOpen,
+  });
+
+  const invalidarLead = () => {
+    qc.invalidateQueries({ queryKey: ["lead", leadId] });
+    qc.invalidateQueries({ queryKey: ["leads"] });
+  };
+
+  const addTag = useMutation({
+    mutationFn: async (labelId: string) => {
+      const r = await fetch(`/api/leads/${leadId}/labels`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ labelId }),
+      });
+      if (!r.ok) throw new Error("falha");
+    },
+    onSuccess: invalidarLead,
+    onError: () => toast.error("Não foi possível adicionar a tag"),
+  });
+
+  const removeTag = useMutation({
+    mutationFn: async (labelId: string) => {
+      const r = await fetch(`/api/leads/${leadId}/labels`, {
+        method: "DELETE", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ labelId }),
+      });
+      if (!r.ok) throw new Error("falha");
+    },
+    onSuccess: invalidarLead,
+    onError: () => toast.error("Não foi possível remover a tag"),
   });
 
   // Mesma fonte real da LigacoesSection (`/api/ligacoes`) — só usada aqui pra
@@ -281,26 +333,79 @@ export function Cf2LeadDrawer({
         )
       ) : (
         <>
-          <button onClick={() => onMove(leadId!, "qualified")} className="flex items-center justify-center gap-2 h-11 rounded-xl text-[13px] font-bold" style={{ background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" }}>
-            <Calendar className="w-4 h-4" /> Agendar reunião
-          </button>
+          {/* Botão PRINCIPAL: qualificar. As duas saídas de qualificação ficam
+              aqui dentro e são coisas diferentes — SQL não abre reunião,
+              Agenda confirmada abre. Até 01/09 o primário era "Agendar
+              reunião" e o secundário chamado "Qualificar" abria uma lista de
+              MOVER ETAPA, o que confundia as duas ações. */}
           <div className="relative">
-            <button onClick={() => setMoveMenuOpen((v) => !v)} className="w-full flex items-center justify-center gap-2 h-10 rounded-xl text-[13px] font-semibold" style={{ border: `1px solid ${T.border}`, color: T.textPrimary }}>
-              Qualificar <ChevronDown className="w-3.5 h-3.5" />
+            <button
+              onClick={() => { setQualificarMenuOpen((v) => !v); setMoveMenuOpen(false); }}
+              aria-expanded={qualificarMenuOpen}
+              className="w-full flex items-center justify-center gap-2 h-11 rounded-xl text-[13px] font-bold"
+              style={{ background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" }}
+            >
+              <CheckCircle2 className="w-4 h-4" /> Qualificar lead <ChevronDown className="w-3.5 h-3.5" />
+            </button>
+            {qualificarMenuOpen && (
+              <div className="absolute bottom-12 left-0 right-0 rounded-xl py-1 z-10" style={{ background: T.surface, border: `1px solid ${T.border}`, boxShadow: "0 8px 16px rgba(0,0,0,0.35)" }}>
+                <button
+                  onClick={() => { onMove(leadId!, "qualified"); setQualificarMenuOpen(false); }}
+                  className="w-full text-left px-3 py-2 text-[13px] flex items-start gap-2"
+                  style={{ color: T.textPrimary }}
+                >
+                  <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0" style={{ color: T.success }} />
+                  <span>
+                    Marcar como Qualificado SQL
+                    <span className="block text-[11px]" style={{ color: T.textSecondary }}>Sem agendar reunião</span>
+                  </span>
+                </button>
+                <button
+                  onClick={() => { onMove(leadId!, "m_qualified"); setQualificarMenuOpen(false); }}
+                  className="w-full text-left px-3 py-2 text-[13px] flex items-start gap-2"
+                  style={{ color: T.textPrimary }}
+                >
+                  <Calendar className="w-4 h-4 mt-0.5 shrink-0" style={{ color: T.success }} />
+                  <span>
+                    Agendar reunião
+                    <span className="block text-[11px]" style={{ color: T.textSecondary }}>Vai para Agenda confirmada</span>
+                  </span>
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Botão SECUNDÁRIO: mover etapa. Só as etapas do funil de
+              pré-vendas — qualificar não está aqui de propósito. */}
+          <div className="relative">
+            <button
+              onClick={() => { setMoveMenuOpen((v) => !v); setQualificarMenuOpen(false); }}
+              aria-expanded={moveMenuOpen}
+              className="w-full flex items-center justify-center gap-2 h-10 rounded-xl text-[13px] font-semibold"
+              style={{ border: `1px solid ${T.border}`, color: T.textPrimary }}
+            >
+              Mover etapa <ChevronDown className="w-3.5 h-3.5" />
             </button>
             {moveMenuOpen && (
               <div className="absolute bottom-11 left-0 right-0 rounded-xl py-1 z-10" style={{ background: T.surface, border: `1px solid ${T.border}`, boxShadow: "0 8px 16px rgba(0,0,0,0.35)" }}>
-                <div className="px-3 py-1 text-[9px] uppercase tracking-wide" style={{ color: T.textSecondary }}>Mover etapa</div>
                 {SDR_STAGES.filter((s) => s.key !== (lead.sdrStatus || "pending")).map((s) => (
                   <button key={s.key} onClick={() => { onMove(leadId!, s.key); setMoveMenuOpen(false); }} className="w-full text-left px-3 py-1.5 text-[13px] flex items-center gap-2" style={{ color: T.textPrimary }}>
                     <span className="w-2 h-2 rounded-full shrink-0" style={{ background: s.color }} /> {s.label}
                   </button>
                 ))}
-                <div className="my-1 h-px" style={{ background: T.border }} />
-                <button onClick={() => { onMove(leadId!, "disqualified"); setMoveMenuOpen(false); }} className="w-full text-left px-3 py-1.5 text-[13px] font-bold" style={{ color: T.danger }}>Desqualificar</button>
               </div>
             )}
           </div>
+
+          {/* Desqualificar agora abre modal de motivo/tags/observação/retomada
+              em vez de gravar `disqualified` num clique seco. */}
+          <button
+            onClick={() => { setDesqualificarOpen(true); setMoveMenuOpen(false); setQualificarMenuOpen(false); }}
+            className="w-full flex items-center justify-center gap-2 h-9 rounded-xl text-[12px] font-semibold"
+            style={{ color: T.danger }}
+          >
+            <XCircle className="w-3.5 h-3.5" /> Desqualificar
+          </button>
         </>
       )}
     </div>
@@ -334,7 +439,7 @@ export function Cf2LeadDrawer({
                 {contextoCliente && <span className="text-[11px]" style={{ color: T.textSecondary }}>Lead histórico: {stage.label}</span>}
                 {age && !contextoCliente && <span className="text-[11px]" style={{ color: T.textSecondary }}>Tempo na etapa: {age.text}{age.breached ? " · SLA vencido" : ""}</span>}
               </div>
-              <button onClick={onClose} className="p-1 rounded shrink-0" style={{ color: T.textSecondary }}>
+              <button onClick={onClose} className="p-1 rounded shrink-0" style={{ color: T.textSecondary }} aria-label="Fechar">
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -363,6 +468,58 @@ export function Cf2LeadDrawer({
             <QuickPill icon={Phone} label="Ligar" href={lead.telefone ? atendimentoHref("ligacao") : undefined}  T={T} />
             <QuickPill icon={MessageCircle} label="WhatsApp" href={lead.telefone || lead.whatsapp ? atendimentoHref("whatsapp") : undefined}  T={T} />
             <QuickPill icon={Mail} label="E-mail" href={lead.email ? atendimentoHref("email") : undefined}  T={T} />
+          </div>
+
+          {/* Tags (01/09) — contexto, NUNCA substituto de etapa. Etapa é
+              status operacional e vive no footer; tag é segmentação e
+              serve de gatilho pra automação/cadência/agente. */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            {(lead.labels || []).map((l) => (
+              <span
+                key={l.id}
+                className="group inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold"
+                style={{ background: `${l.cor}22`, color: l.cor, border: `1px solid ${l.cor}55` }}
+              >
+                {l.nome}
+                <button
+                  onClick={() => removeTag.mutate(l.id)}
+                  aria-label={`Remover tag ${l.nome}`}
+                  className="opacity-50 hover:opacity-100"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            ))}
+            <div className="relative">
+              <button
+                onClick={() => setTagPopoverOpen((v) => !v)}
+                aria-expanded={tagPopoverOpen}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold"
+                style={{ border: `1px dashed ${T.border}`, color: T.textSecondary }}
+              >
+                <Plus className="w-3 h-3" /> Tag
+              </button>
+              {tagPopoverOpen && (
+                <div className="absolute z-20 mt-1 left-0 w-56 max-h-64 overflow-y-auto rounded-xl py-1" style={{ background: T.surface, border: `1px solid ${T.border}`, boxShadow: "0 8px 16px rgba(0,0,0,0.35)" }}>
+                  {labelsDisponiveis.filter((l) => !(lead.labels || []).some((x) => x.id === l.id)).length === 0 ? (
+                    <p className="px-3 py-2 text-[12px]" style={{ color: T.textSecondary }}>Nenhuma tag disponível.</p>
+                  ) : (
+                    labelsDisponiveis
+                      .filter((l) => !(lead.labels || []).some((x) => x.id === l.id))
+                      .map((l) => (
+                        <button
+                          key={l.id}
+                          onClick={() => { addTag.mutate(l.id); setTagPopoverOpen(false); }}
+                          className="w-full text-left px-3 py-1.5 text-[12px] flex items-center gap-2"
+                          style={{ color: T.textPrimary }}
+                        >
+                          <span className="w-2 h-2 rounded-full shrink-0" style={{ background: l.cor }} /> {l.nome}
+                        </button>
+                      ))
+                  )}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* próxima ação + responsável SDR */}
@@ -428,7 +585,7 @@ export function Cf2LeadDrawer({
             )}
             {(qualProgress.tomadorDecisao === "" || qualProgress.tomadorDecisao === "nao_identificado") && (
               <div className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background: T.warningBg }}>
-                <AlertTriangle className="w-3.5 h-3.5 shrink-0" style={{ color: "#f59e0b" }} />
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--cf2-warning-text)" }} />
                 <p className="text-[11px]" style={{ color: T.warningText }}>Tomador de decisão: Não identificado</p>
               </div>
             )}
@@ -530,7 +687,7 @@ export function Cf2LeadDrawer({
                   <div className="pt-1">
                     {noteOpen ? (
                       <div className="flex flex-col gap-1.5">
-                        <textarea ref={noteRef} value={noteText} onChange={(ev) => setNoteText(ev.target.value)} placeholder="Escreva uma nota..." rows={3}
+                        <textarea ref={noteRef} value={noteText} onChange={(ev) => setNoteText(ev.target.value)} placeholder="Escreva uma nota..." aria-label="Escreva uma nota" rows={3}
                           className="w-full text-[13px] rounded-lg px-3 py-2 outline-none resize-y" style={{ background: T.bgAlt, border: `1px solid ${T.border}`, color: T.textPrimary }}
                           onKeyDown={(ev) => { if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey) && noteText.trim()) addNota.mutate(noteText.trim()); if (ev.key === "Escape") { setNoteOpen(false); setNoteText(""); } }} />
                         <div className="flex justify-end gap-2">
@@ -552,7 +709,16 @@ export function Cf2LeadDrawer({
       )}
     </DetailDrawer>
     {leadId && (
+      <>
       <TarefaFormModal open={tarefaModalOpen} onClose={() => setTarefaModalOpen(false)} defaultLeadId={leadId} defaultLeadLabel={fullName || null} invalidateKeys={[["lead", leadId], ["tarefas"]]} />
+      <Cf2DesqualificarModal
+        leadId={leadId}
+        leadNome={fullName || null}
+        open={desqualificarOpen}
+        onClose={() => setDesqualificarOpen(false)}
+        onDone={onClose}
+      />
+      </>
     )}
     </>
   );

@@ -2,12 +2,12 @@ import { Hono } from "hono";
 import { db } from "@/lib/db";
 import {
   contatos, emails, emailContas, ligacoes, leads, empresas, negocios, negocioLeads,
-  propostas, reunioes, tarefas, aiSdrContatoState, contatoLabels, labels, leadLabels, usuarios,
+  propostas, reunioes, tarefas, aiSdrContatoState, contatoLabels, labels, leadLabels, usuarios, entityLabels,
 } from "@/lib/db/schema";
 import { eq, and, or, desc, asc, isNull, ilike, inArray, gte, sql, type SQL } from "drizzle-orm";
 // Mesma taxonomia de estágio do board real de Pré-vendas (Kanban), não uma
 // etiqueta inventada pro widget do discador — ver shared.ts pra contexto.
-import { NOVO_COL, EM_CONTATO_COL, QUALIFICACAO_COL, SEM_RESPOSTA_COL, NUTRICAO_MERGED_COL, DESQUALIFICADO_ESTAGNADOS_COL } from "@/components/crm2/qualificacao/shared";
+import { NOVO_COL, EM_CONTATO_COL, QUALIFICACAO_COL, SEM_RESPOSTA_COL, NUTRICAO_MERGED_COL, DESQUALIFICADO_ESTAGNADOS_COL } from "@/lib/crm/qualificacao-colunas";
 import { z } from "zod";
 import { getCtx, parseBody } from "../compat.js";
 import { publicarEvento } from "@/lib/events/outbox";
@@ -337,6 +337,8 @@ app.post("/atendimento/conversas/:id/tags", async (c) => {
   )).limit(1);
   if (!contato) return c.json({ error: "Conversa nao encontrada" }, 404);
   await db.insert(contatoLabels).values({ contatoId: contato.id, labelId: label.id }).onConflictDoNothing();
+  const [contatoAssignment] = await db.insert(entityLabels).values({ organizacaoId: ctx.organizacaoId, entityType: "contato", entityId: contato.id, labelId: label.id, createdById: ctx.userId }).onConflictDoNothing().returning({ id: entityLabels.id });
+  if (contatoAssignment) await publicarEvento({ organizacaoId: ctx.organizacaoId, eventType: "TagAdded", aggregateType: "contato", aggregateId: contato.id, payload: { entityType: "contato", entityId: contato.id, labelId: label.id, tag: label.nome }, idempotencyKey: `tag:add:${contatoAssignment.id}` });
 
   // Achado real 24/08 (Kauã: "essa tag precisa ser associada ao lead e/ou
   // negócio, vai ser usada pra ativar automações depois") — tag de
@@ -358,6 +360,8 @@ app.post("/atendimento/conversas/:id/tags", async (c) => {
       const [jaTem] = await db.select({ leadId: leadLabels.leadId }).from(leadLabels).where(and(eq(leadLabels.leadId, leadIdResolvido), eq(leadLabels.labelId, label.id))).limit(1);
       if (!jaTem) {
         await db.insert(leadLabels).values({ leadId: leadIdResolvido, labelId: label.id }).onConflictDoNothing();
+        const [leadAssignment] = await db.insert(entityLabels).values({ organizacaoId: ctx.organizacaoId, entityType: "lead", entityId: leadIdResolvido, labelId: label.id, createdById: ctx.userId }).onConflictDoNothing().returning({ id: entityLabels.id });
+        if (leadAssignment) await publicarEvento({ organizacaoId: ctx.organizacaoId, eventType: "TagAdded", aggregateType: "lead", aggregateId: leadIdResolvido, payload: { entityType: "lead", entityId: leadIdResolvido, labelId: label.id, tag: label.nome }, idempotencyKey: `tag:add:${leadAssignment.id}` });
         await dispararAutomacoes("tag_adicionada", {
           entityType: "lead",
           entityId: leadIdResolvido,
@@ -384,6 +388,8 @@ app.delete("/atendimento/conversas/:id/tags/:labelId", async (c) => {
   await db.delete(contatoLabels).where(and(
     eq(contatoLabels.contatoId, contato.id), eq(contatoLabels.labelId, c.req.param("labelId")),
   ));
+  const [removed] = await db.delete(entityLabels).where(and(eq(entityLabels.organizacaoId, ctx.organizacaoId), eq(entityLabels.entityType, "contato"), eq(entityLabels.entityId, contato.id), eq(entityLabels.labelId, c.req.param("labelId")))).returning({ id: entityLabels.id });
+  if (removed) await publicarEvento({ organizacaoId: ctx.organizacaoId, eventType: "TagRemoved", aggregateType: "contato", aggregateId: contato.id, payload: { entityType: "contato", entityId: contato.id, labelId: c.req.param("labelId") }, idempotencyKey: `tag:remove:${removed.id}` });
   return c.json({ ok: true });
 });
 

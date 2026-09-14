@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Download, ExternalLink, Clock, CalendarCheck, Target, AlertTriangle, ShieldAlert, Tag as TagIcon, Sparkles } from "lucide-react";
 import { ConversaItem, iniciais } from "./types";
 import { parseResumoCallface, urgenciaInfo } from "@/lib/utils/parse-resumo-callface";
+import { Cf2Gauge } from "@/components/crm2/ui/Gauge";
 
 type LigacaoCompleta = {
   id: string;
@@ -111,6 +112,9 @@ export function Cf2CallDetail({ conversa }: { conversa: ConversaItem }) {
   const st = statusInfo(detalhe?.callStatus ?? conversa.callStatus);
   const parsed = detalhe?.resumo ? parseResumoCallface(detalhe.resumo) : null;
   const urg = parsed ? urgenciaInfo(parsed.urgencia) : null;
+  // A coluna `closure_percentage` é a fonte canônica (365 ligações); o texto do
+  // resumo traz o mesmo número em 348 delas e serve só de rede.
+  const chance = detalhe?.closurePercentage ?? parsed?.chanceFechamento ?? null;
   const combinado = detalhe?.scheduling?.items?.find((i) => String(i?.status || "").toLowerCase() === "combinado");
   const semSecoesReconhecidas = !!parsed && !parsed.interesses && !parsed.problemas && !parsed.objecoes && !parsed.resumoNarrativo && parsed.palavrasChave.length === 0;
 
@@ -154,18 +158,27 @@ export function Cf2CallDetail({ conversa }: { conversa: ConversaItem }) {
 
         {detalhe && (
           <>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="rounded-xl p-3.5" style={{ background: "var(--cf2-bg-surface-muted)" }}>
                 <p className="text-[11px] font-bold uppercase" style={{ color: "var(--cf2-text-tertiary)" }}>Chance de fechar</p>
-                <div className="flex items-end justify-between mt-1">
-                  <p className="text-2xl font-extrabold" style={{ color: "var(--cf2-text-primary)" }}>
-                    {detalhe.closurePercentage != null ? detalhe.closurePercentage : "—"}
-                    {detalhe.closurePercentage != null && <span className="text-sm" style={{ color: "var(--cf2-text-tertiary)" }}>%</span>}
-                  </p>
+                <div className="flex items-center justify-between gap-3 mt-2">
+                  {chance != null ? (
+                    <Cf2Gauge
+                      pct={chance}
+                      size={64}
+                      variante="clara"
+                      label={`${chance}%`}
+                      cor={chance >= 60 ? "var(--cf2-success-fill)" : chance >= 30 ? "#f59e0b" : "#ef4444"}
+                    />
+                  ) : (
+                    <p className="text-2xl font-extrabold" style={{ color: "var(--cf2-text-tertiary)" }}>—</p>
+                  )}
                   {serie.length >= 2 && (
                     <div className="text-right">
                       <ClosureSparkline serie={serie} />
-                      <p className="text-[9px] mt-0.5" style={{ color: "var(--cf2-text-tertiary)" }}>{serie.length} ligações</p>
+                      <p className="text-[9px] mt-0.5" style={{ color: "var(--cf2-text-tertiary)" }}>
+                        últimas {serie.length} ligações
+                      </p>
                     </div>
                   )}
                 </div>

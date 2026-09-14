@@ -60,21 +60,21 @@ export function WhatsAppSessionManager() {
   };
 
   return (
-    <div className="bg-[rgba(255,255,255,0.03)] rounded-xl p-6 border border-white/[0.06]">
+    <div className="bg-[rgba(255,255,255,0.03)] rounded-xl p-6 border border-[var(--cf2-border-default)]">
       <div className="flex items-center justify-between mb-5">
         <div>
-          <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-            <MessageCircle className="w-5 h-5 text-emerald-400" />
+          <h2 className="text-lg font-semibold text-[var(--cf2-text-primary)] flex items-center gap-2">
+            <MessageCircle className="w-5 h-5 text-[var(--cf2-success-text)]" />
             WhatsApp
-            <span className="text-xs text-white/30 font-normal ml-1">
+            <span className="text-xs text-[var(--cf2-text-tertiary)] font-normal ml-1">
               {connectedCount}/{sessions.length} conectadas
             </span>
           </h2>
-          <p className="text-[10px] text-white/25 mt-0.5">Cada sessão representa um número de WhatsApp conectado ao CRM.</p>
+          <p className="text-[10px] text-[var(--cf2-text-tertiary)] mt-0.5">Cada sessão representa um número de WhatsApp conectado ao CRM.</p>
         </div>
         <button
           onClick={() => refetch()}
-          className="p-1.5 text-white/40 hover:text-white hover:bg-white/[0.06] rounded-lg transition-colors"
+          className="p-1.5 text-[var(--cf2-text-secondary)] hover:text-[var(--cf2-text-primary)] hover:bg-[var(--cf2-bg-surface-muted)] rounded-lg transition-colors"
           title="Atualizar status"
         >
           <RefreshCw className={`w-4 h-4 ${isLoading ? "animate-spin" : ""}`} />
@@ -84,23 +84,23 @@ export function WhatsAppSessionManager() {
       {/* Sessions list */}
       <div className="space-y-3">
         {sessions.map(sess => (
-          <div key={sess.id} className="rounded-lg border border-white/[0.06] overflow-hidden">
+          <div key={sess.id} className="rounded-lg border border-[var(--cf2-border-default)] overflow-hidden">
             {/* Session header */}
             <div className="flex items-center gap-3 p-3">
               {sess.status === "connected"
-                ? <Wifi className="w-4 h-4 text-emerald-400 shrink-0" />
+                ? <Wifi className="w-4 h-4 text-[var(--cf2-success-text)] shrink-0" />
                 : sess.status === "waiting_qr"
-                ? <QrCode className="w-4 h-4 text-amber-400 shrink-0 animate-pulse" />
-                : <WifiOff className="w-4 h-4 text-red-400 shrink-0" />
+                ? <QrCode className="w-4 h-4 text-[var(--cf2-warning-text)] shrink-0 animate-pulse" />
+                : <WifiOff className="w-4 h-4 text-[var(--cf2-danger-text)] shrink-0" />
               }
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  <p className="text-sm font-medium text-white truncate">{sess.label || sess.sessionName}</p>
+                  <p className="text-sm font-medium text-[var(--cf2-text-primary)] truncate">{sess.label || sess.sessionName}</p>
                   {sess.isDefault && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400">padrão</span>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-[var(--cf2-warning-text)]">padrão</span>
                   )}
                 </div>
-                <p className="text-xs text-white/40">
+                <p className="text-xs text-[var(--cf2-text-secondary)]">
                   {sess.phoneNumber || sess.sessionName}
                   {sess.status === "connected" && " — conectado"}
                   {sess.status === "waiting_qr" && " — aguardando QR"}
@@ -113,7 +113,7 @@ export function WhatsAppSessionManager() {
                   <button
                     onClick={() => action("connect", sess.id)}
                     disabled={loading === sess.id}
-                    className="px-3 py-1.5 text-xs rounded-lg bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 transition-colors disabled:opacity-50"
+                    className="px-3 py-1.5 text-xs rounded-lg bg-emerald-500/15 text-[var(--cf2-success-text)] hover:bg-emerald-500/25 transition-colors disabled:opacity-50"
                   >
                     {loading === sess.id ? "Conectando..." : "Conectar"}
                   </button>
@@ -121,7 +121,7 @@ export function WhatsAppSessionManager() {
                   <button
                     onClick={() => action("disconnect", sess.id)}
                     disabled={loading === sess.id}
-                    className="px-3 py-1.5 text-xs rounded-lg bg-white/[0.06] text-white/50 hover:bg-white/[0.1] hover:text-white transition-colors disabled:opacity-50"
+                    className="px-3 py-1.5 text-xs rounded-lg bg-[var(--cf2-bg-surface-muted)] text-[var(--cf2-text-secondary)] hover:bg-[var(--cf2-bg-surface-muted)] hover:text-[var(--cf2-text-primary)] transition-colors disabled:opacity-50"
                   >
                     Desconectar
                   </button>
@@ -129,7 +129,7 @@ export function WhatsAppSessionManager() {
                 {!sess.isDefault && (
                   <button
                     onClick={() => action("set-default", sess.id)}
-                    className="p-1.5 text-amber-400/50 hover:text-amber-400 hover:bg-amber-500/10 rounded-lg transition-colors"
+                    className="p-1.5 text-[var(--cf2-warning-text)]/50 hover:text-[var(--cf2-warning-text)] hover:bg-amber-500/10 rounded-lg transition-colors"
                     title="Sessão usada para envios automáticos e notificações"
                   >
                     <Star className="w-3.5 h-3.5" />
@@ -141,7 +141,7 @@ export function WhatsAppSessionManager() {
                       action("delete", sess.id);
                     }
                   }}
-                  className="p-1.5 text-red-400/40 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                  className="p-1.5 text-[var(--cf2-danger-text)]/40 hover:text-[var(--cf2-danger-text)] hover:bg-red-500/10 rounded-lg transition-colors"
                   title="Excluir sessão e histórico"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
@@ -151,8 +151,8 @@ export function WhatsAppSessionManager() {
 
             {/* QR Code area — shown when disconnected and QR available */}
             {sess.status !== "connected" && sess.qrCode && (
-              <div className="border-t border-white/[0.06] p-4 bg-white/[0.02] flex flex-col items-center gap-2">
-                <div className="flex items-center gap-2 text-xs text-white/40">
+              <div className="border-t border-[var(--cf2-border-default)] p-4 bg-[var(--cf2-bg-surface)] flex flex-col items-center gap-2">
+                <div className="flex items-center gap-2 text-xs text-[var(--cf2-text-secondary)]">
                   <QrCode className="w-3.5 h-3.5" />
                   Escaneie o QR Code com o WhatsApp
                 </div>
@@ -170,20 +170,20 @@ export function WhatsAppSessionManager() {
 
       {/* Empty state */}
       {sessions.length === 0 && !isLoading && (
-        <div className="text-center py-6 text-white/30">
+        <div className="text-center py-6 text-[var(--cf2-text-tertiary)]">
           <MessageCircle className="w-8 h-8 mx-auto mb-2 opacity-30" />
           <p className="text-sm">Nenhuma sessão WhatsApp configurada</p>
           <p className="text-xs mt-1">Adicione uma sessão abaixo para começar</p>
-          <p className="text-[10px] text-white/25 mt-1">Cada sessão é vinculada a um número de WhatsApp. Escaneie o QR Code pelo app do celular.</p>
+          <p className="text-[10px] text-[var(--cf2-text-tertiary)] mt-1">Cada sessão é vinculada a um número de WhatsApp. Escaneie o QR Code pelo app do celular.</p>
         </div>
       )}
 
       {/* Add new session */}
-      <div className="mt-4 pt-4 border-t border-white/[0.06]">
-        <p className="text-xs text-white/40 mb-2">Adicionar nova sessão</p>
+      <div className="mt-4 pt-4 border-t border-[var(--cf2-border-default)]">
+        <p className="text-xs text-[var(--cf2-text-secondary)] mb-2">Adicionar nova sessão</p>
         <div className="flex gap-2">
           <input
-            className="flex-1 bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-purple-500/50"
+            className="flex-1 bg-[var(--cf2-bg-surface-muted)] border border-[var(--cf2-border-default)] rounded-lg px-3 py-2 text-sm text-[var(--cf2-text-primary)] placeholder:text-[var(--cf2-text-tertiary)] focus:outline-none focus:border-purple-500/50"
             placeholder="Nome da sessão (ex: Comercial, Suporte...)"
             value={newSessionName}
             onChange={e => setNewSessionName(e.target.value)}
@@ -207,7 +207,7 @@ export function WhatsAppSessionManager() {
               setNewSessionName("");
             }}
             disabled={!newSessionName.trim() || loading === "new"}
-            className="px-4 py-2 text-sm rounded-lg bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 transition-colors disabled:opacity-40 flex items-center gap-2"
+            className="px-4 py-2 text-sm font-semibold rounded-lg bg-[var(--cf2-accent)] text-[var(--cf2-text-on-accent)] transition-opacity hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--cf2-accent)]"
           >
             <Plus className="w-4 h-4" />
             Adicionar

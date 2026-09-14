@@ -19,8 +19,25 @@ export const TIPO_TAREFA_OPTIONS: { value: string; label: string }[] = [
   { value: "gerada_callface", label: "Gerada pela Callface" },
 ];
 
+/**
+ * Tipos criados pelos motores (CS e pós-venda), fora do catálogo escolhível
+ * no formulário — ninguém cria "cs_marco" na mão. Ficam só na tradução, pra
+ * que a tela não exiba a chave crua.
+ */
+const TIPOS_GERADOS: Record<string, string> = {
+  cs_marco: "Checkpoint de CS",
+  cs_risco: "Tratativa de risco",
+  cs_billing: "Cobrança",
+  cs_renovacao: "Renovação",
+  cs_retencao: "Retenção",
+  cs_followup: "Follow-up de CS",
+  onboarding_agendar_reuniao: "Agendar onboarding",
+};
+
 export function tipoLabel(tipo: string): string {
-  return TIPO_TAREFA_OPTIONS.find((t) => t.value === tipo)?.label ?? tipo;
+  return TIPO_TAREFA_OPTIONS.find((t) => t.value === tipo)?.label
+    ?? TIPOS_GERADOS[tipo]
+    ?? tipo;
 }
 
 export interface Tarefa {
@@ -91,11 +108,11 @@ function LeadPicker({
 
   if (leadId && leadLabel) {
     return (
-      <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.08] text-xs text-white/70">
-        <UserRound className="w-3 h-3 text-white/40 shrink-0" />
+      <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.08] text-xs text-[var(--cf2-text-secondary)]">
+        <UserRound className="w-3 h-3 text-[var(--cf2-text-tertiary)] shrink-0" />
         <span className="truncate flex-1">{leadLabel}</span>
         {!locked && (
-          <button onClick={() => onChange(null, null)} className="text-white/30 hover:text-white/60 shrink-0">
+          <button onClick={() => onChange(null, null)} className="text-[var(--cf2-text-tertiary)] hover:text-[var(--cf2-text-primary)] shrink-0">
             <X className="w-3 h-3" />
           </button>
         )}
@@ -105,14 +122,14 @@ function LeadPicker({
 
   return (
     <div className="relative">
-      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-white/25" />
+      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-[var(--cf2-text-tertiary)]" />
       <input
         value={query}
         onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
         onFocus={() => setOpen(true)}
         onBlur={() => setTimeout(() => setOpen(false), 150)}
         placeholder="Vincular a um lead (opcional)"
-        className="w-full pl-7 pr-2.5 py-2 text-xs bg-white/[0.03] border border-white/[0.08] rounded-lg text-white/70 placeholder:text-white/25 outline-none focus:border-[#e23752]/30"
+        className="w-full pl-7 pr-2.5 py-2 text-xs bg-white/[0.03] border border-white/[0.08] rounded-lg text-[var(--cf2-text-secondary)] placeholder:text-[var(--cf2-text-tertiary)] outline-none focus:border-[#e23752]/30"
       />
       {open && results.length > 0 && (
         <div className="absolute z-10 mt-1 w-full rounded-lg overflow-hidden shadow-xl max-h-44 overflow-y-auto" style={{ background: "var(--bg-elevated)", border: "1px solid rgba(255,255,255,0.1)" }}>
@@ -120,10 +137,10 @@ function LeadPicker({
             <button
               key={l.id}
               onMouseDown={() => { onChange(l.id, l.empresa ? `${l.nome} · ${l.empresa}` : l.nome); setQuery(""); setResults([]); }}
-              className="w-full text-left px-3 py-1.5 text-[11px] text-white/70 hover:bg-white/[0.06] flex items-center gap-1.5"
+              className="w-full text-left px-3 py-1.5 text-[11px] text-[var(--cf2-text-secondary)] hover:bg-white/[0.06] flex items-center gap-1.5"
             >
               <span className="truncate">{l.nome}</span>
-              {l.empresa && <span className="text-white/30 truncate">· {l.empresa}</span>}
+              {l.empresa && <span className="text-[var(--cf2-text-tertiary)] truncate">· {l.empresa}</span>}
             </button>
           ))}
         </div>
@@ -171,11 +188,11 @@ function NegocioPicker({
 
   if (negocioId && negocioLabel) {
     return (
-      <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.08] text-xs text-white/70">
-        <Building2 className="w-3 h-3 text-white/40 shrink-0" />
+      <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.08] text-xs text-[var(--cf2-text-secondary)]">
+        <Building2 className="w-3 h-3 text-[var(--cf2-text-tertiary)] shrink-0" />
         <span className="truncate flex-1">{negocioLabel}</span>
         {!locked && (
-          <button onClick={() => onChange(null, null)} className="text-white/30 hover:text-white/60 shrink-0">
+          <button onClick={() => onChange(null, null)} className="text-[var(--cf2-text-tertiary)] hover:text-[var(--cf2-text-primary)] shrink-0">
             <X className="w-3 h-3" />
           </button>
         )}
@@ -185,14 +202,14 @@ function NegocioPicker({
 
   return (
     <div className="relative">
-      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-white/25" />
+      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-[var(--cf2-text-tertiary)]" />
       <input
         value={query}
         onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
         onFocus={() => setOpen(true)}
         onBlur={() => setTimeout(() => setOpen(false), 150)}
         placeholder="Vincular a um negócio (opcional)"
-        className="w-full pl-7 pr-2.5 py-2 text-xs bg-white/[0.03] border border-white/[0.08] rounded-lg text-white/70 placeholder:text-white/25 outline-none focus:border-[#e23752]/30"
+        className="w-full pl-7 pr-2.5 py-2 text-xs bg-white/[0.03] border border-white/[0.08] rounded-lg text-[var(--cf2-text-secondary)] placeholder:text-[var(--cf2-text-tertiary)] outline-none focus:border-[#e23752]/30"
       />
       {open && results.length > 0 && (
         <div className="absolute z-10 mt-1 w-full rounded-lg overflow-hidden shadow-xl max-h-44 overflow-y-auto" style={{ background: "var(--bg-elevated)", border: "1px solid rgba(255,255,255,0.1)" }}>
@@ -200,10 +217,10 @@ function NegocioPicker({
             <button
               key={n.id}
               onMouseDown={() => { onChange(n.id, n.leadNome ? `${n.titulo} · ${n.leadNome}` : n.titulo); setQuery(""); setResults([]); }}
-              className="w-full text-left px-3 py-1.5 text-[11px] text-white/70 hover:bg-white/[0.06] flex items-center gap-1.5"
+              className="w-full text-left px-3 py-1.5 text-[11px] text-[var(--cf2-text-secondary)] hover:bg-white/[0.06] flex items-center gap-1.5"
             >
               <span className="truncate">{n.titulo}</span>
-              {n.leadNome && <span className="text-white/30 truncate">· {n.leadNome}</span>}
+              {n.leadNome && <span className="text-[var(--cf2-text-tertiary)] truncate">· {n.leadNome}</span>}
             </button>
           ))}
         </div>
@@ -311,18 +328,31 @@ export function TarefaFormModal({
   });
 
   if (!open) return null;
-  const inputCls = "w-full text-xs bg-white/[0.03] border border-white/[0.08] rounded-lg px-3 py-2 text-white/70 placeholder:text-white/20 outline-none focus:border-[#e23752]/30";
+  const inputCls = "w-full text-xs rounded-lg px-3 py-2 outline-none bg-[var(--cf2-bg-surface)] border border-[var(--cf2-border-default)] text-[var(--cf2-text-primary)] placeholder:text-[var(--cf2-text-tertiary)] focus:border-[var(--cf2-accent)]";
 
   return createPortal(
-    <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/60 p-4" onMouseDown={onClose}>
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={editando ? "Editar tarefa" : "Nova tarefa"}
+      className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/50 p-4"
+      onMouseDown={onClose}
+    >
       <div
         onMouseDown={(e) => e.stopPropagation()}
-        className="w-full max-w-md rounded-xl p-4 space-y-2.5"
-        style={{ background: "var(--bg-elevated)", border: "1px solid rgba(255,255,255,0.1)" }}
+        className="w-full max-w-md rounded-2xl p-4 space-y-2.5"
+        style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)", boxShadow: "0 24px 48px -12px rgba(17,19,24,0.25)" }}
       >
         <div className="flex items-center justify-between mb-1">
-          <h3 className="text-sm font-medium text-white/80">{editando ? "Editar tarefa" : "Nova tarefa"}</h3>
-          <button onClick={onClose} className="text-white/30 hover:text-white/60"><X className="w-4 h-4" /></button>
+          <h3 className="text-sm font-semibold text-[var(--cf2-text-primary)]">{editando ? "Editar tarefa" : "Nova tarefa"}</h3>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Fechar"
+            className="p-1.5 -m-1.5 rounded-lg text-[var(--cf2-text-tertiary)] hover:text-[var(--cf2-text-primary)] hover:bg-[var(--cf2-bg-surface-muted)]"
+          >
+            <X className="w-4 h-4" aria-hidden />
+          </button>
         </div>
 
         <input value={titulo} onChange={(e) => setTitulo(e.target.value)} placeholder="Título (ex: Follow-up com o cliente)" className={inputCls} autoFocus />
@@ -344,7 +374,7 @@ export function TarefaFormModal({
         </div>
 
         <div className="grid grid-cols-2 gap-1.5">
-          <input type="date" value={data} onChange={(e) => setData(e.target.value)} className={inputCls} />
+          <input type="date" aria-label="Data" value={data} onChange={(e) => setData(e.target.value)} className={inputCls} />
           <input type="time" value={hora} onChange={(e) => setHora(e.target.value)} className={inputCls} />
         </div>
 
@@ -355,12 +385,13 @@ export function TarefaFormModal({
         </select>
 
         <div className="flex justify-end gap-1.5 pt-1">
-          <button onClick={onClose} className="text-[11px] text-white/40 hover:text-white/60 px-3 py-1.5">Cancelar</button>
+          <button type="button" onClick={onClose} className="text-[11px] font-medium px-3 py-1.5 rounded-lg text-[var(--cf2-text-secondary)] hover:text-[var(--cf2-text-primary)] hover:bg-[var(--cf2-bg-surface-muted)]">Cancelar</button>
           <button
+            type="button"
             onClick={() => titulo.trim() && salvar.mutate()}
             disabled={!titulo.trim() || salvar.isPending}
-            className="text-[11px] text-white px-3 py-1.5 rounded-lg disabled:opacity-30"
-            style={{ background: "#e23752" }}
+            className="text-[11px] font-semibold px-3 py-1.5 rounded-lg transition-opacity hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+            style={{ background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" }}
           >
             {salvar.isPending ? "Salvando..." : editando ? "Salvar" : "Criar tarefa"}
           </button>

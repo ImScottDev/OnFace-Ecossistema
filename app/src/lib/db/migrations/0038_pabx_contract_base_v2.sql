@@ -1,0 +1,176 @@
+-- Base fornecida pelo Kauã em 08/09/2026: Contrato PABX - V2 (1).docx.
+-- O texto permanece editável em Ajustes > Contratos. Campos ainda não
+-- cadastrados no CRM recebem valores operacionais explícitos na geração.
+UPDATE contrato_templates
+SET nome = 'Contrato PABX base V2',
+    versao = versao + 1,
+    corpo_template = $pabx$
+CONTRATO DE PRESTAÇÃO DE SERVIÇOS
+CLOUD PABX | TELEFONIA EM NUVEM
+
+CONTRATADA
+Razão Social
+CALLFACE SOFTWARE E SERVIÇOS LTDA.
+CNPJ 
+39.764.520/0001-06
+Endereço
+Avenida Pierre Simon de Laplace nº 740, sala 4, Bairro Techno Park, Campinas – SP, CEP: 13.069-320
+
+CONTRATANTE
+Contratante
+{{empresa_nome}}
+CNPJ 
+{{empresa_cnpj}}
+Endereço
+{{empresa_endereco}}
+
+Pelo presente instrumento particular, de um lado, CALLFACE SOFTWARE E SERVIÇOS LTDA., pessoa jurídica de direito privado, inscrita no CNPJ sob nº 39.764.520/0001-06, com sede em Avenida Pierre Simon de Laplace nº 740, sala 4, Bairro Techno Park, Campinas – SP, CEP 13.069-320, neste ato representada por {{callface_representante_nome}}, {{callface_representante_cargo}}, doravante denominada CONTRATADA; e, de outro lado, {{empresa_nome}}, inscrita no CNPJ sob nº {{empresa_cnpj}}, com sede em {{empresa_endereco}}, neste ato representada por {{pessoa_nome}}, {{pessoa_cargo}}, CPF nº {{pessoa_cpf}}, doravante denominada CONTRATANTE, resolvem celebrar o presente Contrato de Prestação de Serviços de Cloud PABX, conforme as cláusulas e condições abaixo.
+
+1. Objeto
+1.1. A CALLFACE prestará à CONTRATANTE serviços de Cloud PABX e telefonia em nuvem, incluindo disponibilização da plataforma, configuração, ativação, operação assistida e suporte dos recursos contratados.
+1.2. O escopo contratado compreende exclusivamente os itens descritos na Cláusula 2 e no Quadro Comercial deste contrato, observados os limites técnicos, comerciais e operacionais aqui previstos.
+1.3. Qualquer funcionalidade, integração, equipamento, número, canal, ramal, pacote de minutos, customização ou serviço profissional não expressamente contratado dependerá de aprovação comercial específica, podendo ser objeto de aditivo.
+
+2. Serviços contratados
+2.1. A solução poderá contemplar, conforme contratação, recursos de ramais, linhas, canais simultâneos, URA, filas, grupos de atendimento, gravação, bilhetagem, relatórios, transferência, conferência, tela de supervisor, correio de voz, integração com CRM, campanhas de discagem e demais módulos contratados.
+2.2. Os itens contratados, suas quantidades, recorrência, valores unitários, descontos e totais constam do Quadro Comercial abaixo.
+
+ITENS RECORRENTES E AVULSOS
+Nome | Descrição | Quantidade | Valor unitário | Total
+{{itens_recorrentes}}
+
+Total mensal recorrente (MRR): {{mrr_total}}
+
+3. Implantação, ativação e setup
+3.1. A implantação compreende as atividades necessárias à configuração inicial do ambiente contratado, podendo incluir parametrização de ramais, filas, URA, regras de atendimento, gravações, roteamento, portabilidade, treinamento inicial e validação operacional, conforme escopo contratado.
+3.2. O valor de setup, quando contratado, corresponde à preparação, configuração, implantação e/ou serviços profissionais iniciais. Salvo condição comercial diversa descrita neste contrato, o setup será devido após a assinatura deste instrumento ou conforme marco de entrega definido entre as PARTES.
+ITENS DE SETUP
+Nome | Descrição | Quantidade | Valor unitário | Total
+{{itens_setup}}
+
+Total de setup: {{setup_total}}
+
+4. Premissas técnicas
+4.1. A CONTRATANTE deverá disponibilizar infraestrutura mínima adequada, incluindo conexão de internet estável, rede interna, energia elétrica, dispositivos compatíveis e permissões necessárias para funcionamento da solução.
+4.2. Cabe à CONTRATANTE garantir a liberação de firewall, roteadores, DNS, VLANs, cabeamento, switches, Wi-Fi e demais elementos de rede sob sua responsabilidade, quando necessários à ativação ou estabilidade dos serviços.
+4.3. Serviços de cabeamento físico, infraestrutura predial, aquisição de links de internet, adequação elétrica, substituição de equipamentos de terceiros e configuração de aparelhos não fornecidos pela CALLFACE não estão incluídos, salvo contratação expressa.
+4.4. A portabilidade de números depende de informações corretas, disponibilidade das operadoras envolvidas e regras regulatórias aplicáveis. Prazos de portabilidade podem variar por motivos alheios à vontade da CALLFACE.
+4.5. Quando houver operação ativa de telemarketing, cobrança, prospecção massiva ou hipóteses legalmente sujeitas a numeração específica, a CONTRATANTE será responsável por observar as regras aplicáveis, incluindo eventual necessidade de numeração 0303 ou equivalente.
+
+5. Gravações, dados e armazenamento
+5.1. As gravações de chamadas, quando contratadas, serão disponibilizadas conforme recursos do plano e limites de armazenamento descritos neste contrato ou na política comercial vigente.
+5.2. Salvo condição diversa, o armazenamento de gravações observará o limite de {{limite_armazenamento_gravacoes}}, podendo haver contratação de espaço adicional.
+5.3. A CONTRATANTE reconhece que é responsável por informar seus usuários, colaboradores, clientes e terceiros acerca de gravações, monitoramentos e tratamentos de dados realizados em sua operação, quando exigido pela legislação aplicável.
+
+6. Suporte e níveis de atendimento
+6.1. A CALLFACE prestará suporte aos serviços contratados pelos canais oficiais informados, observado o horário de cobertura e a criticidade do chamado.
+
+Criticidade
+Descrição resumida
+Resposta inicial
+Horário
+Crítico
+Paralisação total do serviço contratado
+Até {{sla_critico_resposta}}
+{{sla_critico_cobertura}}
+Alto
+Degradação severa com impacto relevante
+Até {{sla_alto_resposta}}
+{{sla_alto_cobertura}}
+Médio
+Falha parcial com alternativa operacional
+Até {{sla_medio_resposta}}
+{{sla_medio_cobertura}}
+Baixo
+Dúvida, solicitação ou melhoria sem impacto crítico
+Até {{sla_baixo_resposta}}
+{{sla_baixo_cobertura}}
+
+6.2. O SLA não se aplica a indisponibilidades causadas por infraestrutura da CONTRATANTE, operadoras, provedores de internet, equipamentos de terceiros, mau uso, caso fortuito, força maior ou chamados que estejam aguardando informações da CONTRATANTE.
+
+7. Preço, faturamento e pagamento
+7.1. Pela prestação dos serviços, a CONTRATANTE pagará à CONTRATADA os valores recorrentes, setup, equipamentos, serviços avulsos e demais encargos descritos neste contrato.
+7.2. A mensalidade recorrente será cobrada a partir de {{data_inicio_cobranca}}, com vencimento todo dia {{dia_vencimento}} de cada mês, salvo condição diversa expressamente pactuada.
+7.3. Em caso de atraso no pagamento, incidirão multa de {{percentual_multa}} sobre o valor em aberto, juros de {{juros_mora}} ao mês pro rata die e correção monetária, sem prejuízo da suspensão dos serviços após aviso prévio.
+7.4. Tributos, encargos financeiros, taxas de boleto, custos bancários, deslocamentos, viagens, estadias, estacionamento, alimentação e despesas extraordinárias não estão incluídos, salvo previsão expressa no Quadro Comercial.
+7.5. Valores recorrentes não incluem, salvo expressamente contratado, minutos excedentes, serviços internacionais, números especiais, hardware, integrações customizadas, treinamentos adicionais ou consultoria.
+
+8. Prazo, vigência e renovação
+8.1. O presente contrato vigorará pelo prazo inicial de {{prazo_meses}} meses, contado de {{data_inicio_vigencia}}, podendo ser renovado por acordo entre as PARTES ou conforme continuidade de uso e faturamento.
+8.2. Os valores poderão ser reajustados anualmente pelo índice {{indice_reajuste}} ou, na sua ausência, por índice legalmente admitido que melhor reflita a variação dos custos do período.
+8.3. Alterações de escopo, quantidade, plano, módulos, canais, ramais, linhas, equipamentos, integrações ou condições comerciais deverão ser formalizadas por aditivo ou novo instrumento equivalente.
+
+9. Equipamentos e dispositivos
+9.1. Equipamentos fornecidos pela CALLFACE em comodato, locação ou condição equivalente permanecerão de propriedade da CALLFACE, salvo venda expressa descrita no Quadro Comercial.
+9.2. A CONTRATANTE deverá conservar, proteger e devolver os equipamentos fornecidos pela CALLFACE em até {{prazo_devolucao_equipamentos}} dias após encerramento do contrato, em bom estado de uso, ressalvado desgaste natural.
+9.3. Perda, dano, extravio, mau uso ou não devolução dos equipamentos poderá gerar cobrança de reposição, manutenção, multa ou indenização correspondente.
+
+10. Obrigações da CONTRATADA
+10.1. São obrigações da CONTRATADA: (i) disponibilizar a plataforma contratada; (ii) executar a implantação conforme escopo; (iii) prestar suporte nos termos deste contrato; (iv) manter registros técnicos razoáveis da prestação dos serviços; e (v) tratar dados pessoais conforme a legislação aplicável.
+10.2. A CONTRATADA não se responsabiliza por falhas decorrentes de infraestrutura da CONTRATANTE, serviços de terceiros, operadoras, provedores, equipamentos externos, uso indevido, informações incorretas ou descumprimento das premissas técnicas.
+
+11. Obrigações da CONTRATANTE
+11.1. São obrigações da CONTRATANTE: (i) fornecer informações corretas e completas; (ii) manter sua infraestrutura apta; (iii) pagar pontualmente os valores contratados; (iv) usar os serviços de forma lícita; (v) zelar por usuários, senhas e permissões; e (vi) cumprir normas legais e regulatórias aplicáveis à sua operação.
+11.2. A CONTRATANTE é responsável pelo conteúdo, finalidade, base legal, abordagem comercial, listas de contatos, gravações, monitoramentos, consentimentos e demais aspectos de sua operação de atendimento, vendas, cobrança ou prospecção.
+
+12. Uso aceitável e limites de responsabilidade
+12.1. É vedado à CONTRATANTE utilizar os serviços para prática ilícita, abusiva, fraudulenta, discriminatória, ofensiva, contrária à legislação, a normas de telecomunicações ou a políticas razoáveis de uso da plataforma.
+12.2. A responsabilidade total da CONTRATADA, por qualquer motivo relacionado a este contrato, ficará limitada ao valor efetivamente pago pela CONTRATANTE nos últimos {{limite_responsabilidade_meses}} meses, exceto em hipóteses em que a legislação não admita limitação.
+12.3. Em nenhuma hipótese a CONTRATADA será responsável por lucros cessantes, perda de receita, perda de oportunidade, dano indireto, dano reflexo, dano moral coletivo, interrupção causada por terceiros ou falhas imputáveis à CONTRATANTE.
+
+13. Confidencialidade
+13.1. As PARTES obrigam-se a manter sigilo sobre informações técnicas, comerciais, estratégicas, financeiras, operacionais, contratuais e quaisquer dados confidenciais a que tiverem acesso em razão deste contrato.
+13.2. A obrigação de confidencialidade permanecerá vigente por {{prazo_confidencialidade_anos}} anos após o encerramento deste contrato, salvo quando prazo maior decorrer de lei, segredo industrial ou acordo específico.
+
+14. Proteção de dados pessoais
+14.1. As PARTES declaram que cumprirão a Lei Geral de Proteção de Dados Pessoais - LGPD e demais normas aplicáveis ao tratamento de dados pessoais realizado em razão deste contrato.
+14.2. A CONTRATANTE será, em regra, controladora dos dados pessoais de seus clientes, colaboradores, leads, contatos e usuários finais, competindo-lhe definir finalidades, bases legais, avisos, consentimentos e direitos dos titulares.
+14.3. A CONTRATADA atuará como operadora ou suboperadora quando tratar dados pessoais em nome da CONTRATANTE para execução dos serviços contratados, observadas as instruções documentadas e medidas razoáveis de segurança.
+
+15. Rescisão, suspensão e multa
+15.1. O contrato poderá ser rescindido por qualquer das PARTES em caso de descumprimento material não sanado no prazo de {{prazo_cura_inadimplemento}} dias contados de notificação escrita.
+15.2. A inadimplência poderá ensejar suspensão dos serviços, bloqueio de funcionalidades e posterior rescisão, observados os avisos e prazos razoáveis, sem prejuízo da cobrança dos valores vencidos e vincendos.
+15.3. Em caso de rescisão imotivada pela CONTRATANTE antes do término do prazo inicial, poderá ser devida multa rescisória equivalente a {{regra_multa_rescisoria}}, além de valores vencidos, equipamentos não devolvidos e serviços já prestados.
+15.4. O encerramento do contrato não desobriga a CONTRATANTE do pagamento de valores proporcionais, excedentes, equipamentos, setup, multas, encargos ou demais quantias devidas até a data de encerramento efetivo.
+
+16. Assinatura eletrônica
+16.1. As PARTES reconhecem como válida, eficaz e vinculante a assinatura eletrônica deste contrato, inclusive por plataforma de assinatura digital ou eletrônica, nos termos da legislação aplicável.
+16.2. O certificado de assinatura, trilha de auditoria, endereço IP, e-mail, data, horário, autenticação, logs e demais evidências técnicas geradas pela plataforma de assinatura integrarão este contrato para todos os fins.
+
+17. Disposições gerais
+17.1. A tolerância de qualquer das PARTES quanto ao descumprimento de obrigação contratual não constituirá renúncia, novação ou alteração deste contrato.
+17.2. Caso qualquer cláusula seja considerada inválida ou inexequível, as demais permanecerão válidas, devendo as PARTES substituírem a disposição afetada por outra que preserve, tanto quanto possível, sua finalidade econômica e jurídica.
+17.3. Este contrato substitui entendimentos anteriores sobre o mesmo objeto, inclusive propostas, mensagens, apresentações e negociações, exceto quando expressamente incorporados por aditivo ou cláusula específica.
+
+18. Foro
+18.1. As PARTES elegem o foro da Comarca de Campinas do Estado de São Paulo, com renúncia a qualquer outro, por mais privilegiado que seja, para dirimir controvérsias decorrentes deste contrato, salvo disposição legal obrigatória em sentido diverso.
+
+{{cidade_uf}}, {{data_assinatura_extenso}}.
+
+________________________________________
+CONTRATADA
+CALLFACE SOFTWARE E SERVIÇOS LTDA.
+Representante: {{callface_representante_nome}} | CPF: {{callface_representante_cpf}}
+
+
+________________________________________
+CONTRATANTE
+{{empresa_nome}}
+Representante: {{pessoa_nome}} | CPF: {{pessoa_cpf}}
+
+
+________________________________________
+TESTEMUNHA 1
+{{testemunha_1_nome}}
+CPF: {{testemunha_1_cpf}}
+
+
+________________________________________
+TESTEMUNHA 2
+{{testemunha_2_nome}}
+CPF: {{testemunha_2_cpf}}
+Assinatura eletrônica: as evidências técnicas da plataforma de assinatura integram este instrumento, incluindo autenticação, e-mail, IP, data, hora e certificado de conclusão.
+$pabx$
+WHERE service_family = 'PABX'
+  AND commercial_model = 'CONTRATO_OBRIGATORIO'
+  AND ativo = true;

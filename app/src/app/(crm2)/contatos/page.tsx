@@ -16,7 +16,7 @@ export default async function ContatosPage() {
   return (
     <div className="flex flex-col gap-6">
       <div className="-m-6 mb-0 relative flex flex-col px-6 py-3.5 rounded-tl-2xl border-b" style={{ background: "var(--cf2-bg-surface)", borderColor: "var(--cf2-border-default)" }}>
-        <Cf2Topbar orgNome={orgNome} variant="light" title="Vendas" subtitle="Diretório unificado de pessoas e empresas da base comercial" compactTitle />
+        <Cf2Topbar orgNome={orgNome} variant="light" title="Contatos" subtitle="Diretório unificado de pessoas e empresas da base comercial" compactTitle actions={null} />
       </div>
 
       <div className="pt-6">

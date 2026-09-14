@@ -127,6 +127,15 @@ export async function syncOportunidadeItensFromProposta(propostaId: string): Pro
         precoUnitario: item.valorUnitario,
         desconto: item.desconto ?? "0",
         valorTotal: item.subtotal,
+        // Catálogo Oficial Stripe (02/09) — propaga o vínculo com o price pro
+        // modelo de domínio v2. É `oportunidade_itens` que vira serviço
+        // canônico, e é daqui que a 2C.2 vai ler o price pra montar a
+        // assinatura no Stripe: sem isso o vínculo se perderia exatamente no
+        // ponto onde a cobrança nasce.
+        catalogoPrecoId: item.catalogoPrecoId,
+        stripeProductId: item.stripeProductId,
+        stripePriceId: item.stripePriceId,
+        skuPreco: item.skuPreco,
         updatedAt: new Date(),
       };
 

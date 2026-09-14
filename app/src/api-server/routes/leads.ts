@@ -32,6 +32,7 @@ import {
   pipelines,
   emailContas,
   auditLog,
+  entityLabels,
 } from "@/lib/db/schema";
 import {
   desc,
@@ -116,6 +117,10 @@ const createLeadSchema = z.object({
   lpUrl: z.string().url().or(z.literal("")).optional().nullable(),
   organizacaoId: z.string().uuid().optional(),
   org: z.string().optional(),
+  // Observação inicial do intake manual (01/09) — não é coluna de `leads`,
+  // vira a primeira `notas` do lead, com autoria e data. Fica fora do
+  // `insertData` por isso (desestruturado junto de empresaId/semNegocio).
+  observacaoInicial: z.string().max(4000).optional().nullable(),
 });
 
 const updateLeadSchema = z.object({
@@ -497,7 +502,7 @@ app.post(
       null;
     const userAgent = c.req.header("user-agent") || null;
 
-    const { organizacaoId: _orgId, org: _orgSlug, empresaId: bodyEmpresaId, semNegocio, criarNegocio, ...insertData } = parsed.data;
+    const { organizacaoId: _orgId, org: _orgSlug, empresaId: bodyEmpresaId, semNegocio, criarNegocio, observacaoInicial, ...insertData } = parsed.data;
 
     // Resolve a EMPRESA como entidade real (não só texto): vincula a existente
     // (empresaId) OU acha por CNPJ/nome na org OU cria uma nova. Assim o lead
@@ -595,6 +600,45 @@ app.post(
       deStatus: null,
       paraStatus: "novo",
     });
+
+    // ── Evento de ENTRADA na timeline (01/09) ──────────────────────────────
+    // Antes disso, um lead novo não tinha nenhum registro legível de como
+    // entrou: `status_changes` grava "novo" sem contexto, e origem/UTM ficavam
+    // só como coluna, sem virar linha de timeline. Quem abria o lead três
+    // semanas depois não sabia de onde ele veio.
+    //
+    // Autoria: quando a chamada vem de dentro do CRM (SDR criando na mão)
+    // existe usuário logado; webhook de RD/Meta/site não tem usuário, e aí o
+    // registro fica sem autor em vez de atribuir a alguém que não agiu.
+    const ctxIntake = await getTenantFromRequest(c).catch(() => null);
+    const autorIntakeId = ctxIntake && ctxIntake.organizacaoId === orgId ? ctxIntake.userId : null;
+
+    const partesOrigem: string[] = [];
+    if (insertData.origem) partesOrigem.push(`Origem: ${insertData.origem}`);
+    if (insertData.utmCampaign) partesOrigem.push(`Campanha: ${insertData.utmCampaign}`);
+    if (insertData.utmSource) partesOrigem.push(`Fonte: ${insertData.utmSource}`);
+    if (insertData.utmContent) partesOrigem.push(`Criativo: ${insertData.utmContent}`);
+    if (insertData.landingPage) partesOrigem.push(`Página: ${insertData.landingPage}`);
+
+    await db.insert(atividades).values({
+      leadId: newLead.id,
+      organizacaoId: orgId,
+      usuarioId: autorIntakeId,
+      tipo: "nota",
+      titulo: "Lead recebido",
+      descricao: partesOrigem.length > 0 ? partesOrigem.join(" · ") : "Entrada sem origem informada",
+    });
+
+    // Observação inicial → primeira nota do lead (não é atividade: nota é
+    // conteúdo escrito por pessoa, atividade é evento do sistema).
+    if (observacaoInicial?.trim()) {
+      await db.insert(notas).values({
+        leadId: newLead.id,
+        organizacaoId: orgId,
+        autorId: autorIntakeId,
+        conteudo: observacaoInicial.trim(),
+      });
+    }
 
     // Queue lead scoring
     await leadScoringQueue.add("score", { leadId: newLead.id });
@@ -968,6 +1012,39 @@ app.patch("/leads/:id", async (c) => {
         leadId: id, negocioId: noShowNeg.id,
         deStatus: "no_show", paraStatus: "reuniao_agendada",
         usuarioId: ctx.userId, motivo: "SDR recuperou o no-show (reagendado)",
+      });
+    }
+  }
+
+  // ── Quem qualificou (01/09) ───────────────────────────────────────────────
+  // Não existe coluna `qualificado_por` no schema e não criamos uma: a
+  // autoria já cabe em `status_changes.usuario_id`, que é indexado por lead e
+  // sobrevive a mudança de etapa posterior. Agente (AI SDR) não tem linha em
+  // `usuarios`, então `usuario_id` fica nulo e a autoria vai no `motivo` —
+  // ler sempre os dois campos juntos ao exibir.
+  if (parsed.data.sdrStatus === "qualified" || parsed.data.sdrStatus === "m_qualified") {
+    const [curQualif] = await db
+      .select({ sdrStatus: leads.sdrStatus })
+      .from(leads)
+      .where(and(eq(leads.id, id), eq(leads.organizacaoId, ctx.organizacaoId)))
+      .limit(1);
+    // Só na TRANSIÇÃO — requalificar um lead já qualificado não duplica registro.
+    if (curQualif && (curQualif.sdrStatus || "pending") !== parsed.data.sdrStatus) {
+      const autor = ctx.userName?.trim() || "Usuário do CRM";
+      await db.insert(statusChanges).values({
+        leadId: id,
+        deStatus: curQualif.sdrStatus || "pending",
+        paraStatus: parsed.data.sdrStatus,
+        usuarioId: ctx.userId,
+        motivo: `Qualificado por ${autor}`,
+      });
+      await db.insert(atividades).values({
+        leadId: id,
+        organizacaoId: ctx.organizacaoId,
+        usuarioId: ctx.userId,
+        tipo: "nota",
+        titulo: parsed.data.sdrStatus === "qualified" ? "Lead qualificado (SQL)" : "Agenda confirmada",
+        descricao: `Qualificado por ${autor}`,
       });
     }
   }
@@ -1552,6 +1629,12 @@ app.post("/leads/:id/labels", async (c) => {
       .insert(leadLabels)
       .values({ leadId, labelId })
       .returning();
+    const [entityAssignment] = await db.insert(entityLabels).values({ organizacaoId: ctx.organizacaoId, entityType: "lead", entityId: leadId, labelId, createdById: ctx.userId }).onConflictDoNothing().returning({ id: entityLabels.id });
+
+    if (entityAssignment) await publicarEvento({
+      organizacaoId: ctx.organizacaoId, eventType: "TagAdded", aggregateType: "lead", aggregateId: leadId,
+      payload: { entityType: "lead", entityId: leadId, labelId, tag: label.nome }, idempotencyKey: `tag:add:${entityAssignment.id}`,
+    });
 
     // F5/Automation: dispara automações do gatilho "tag_adicionada" — best-effort.
     // ctx.campos.tag é o nome real da tag, pra permitir condição por tag
@@ -1605,6 +1688,11 @@ app.delete("/leads/:id/labels", async (c) => {
     if (!deleted) {
       return c.json({ error: "Atribuição não encontrada" }, 404);
     }
+    const [entityAssignment] = await db.delete(entityLabels).where(and(eq(entityLabels.organizacaoId, ctx.organizacaoId), eq(entityLabels.entityType, "lead"), eq(entityLabels.entityId, leadId), eq(entityLabels.labelId, labelId))).returning({ id: entityLabels.id });
+    if (entityAssignment) await publicarEvento({
+      organizacaoId: ctx.organizacaoId, eventType: "TagRemoved", aggregateType: "lead", aggregateId: leadId,
+      payload: { entityType: "lead", entityId: leadId, labelId, tag: label?.nome ?? null }, idempotencyKey: `tag:remove:${entityAssignment.id}`,
+    });
 
     // Timeline semântica (25/08) — mesmo critério do add (ver POST acima).
     if (label) {

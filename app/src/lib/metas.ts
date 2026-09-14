@@ -1,14 +1,28 @@
 import { db } from "@/lib/db";
 import { metas, negocios, leads, reunioes, contratos, usuarios, statusChanges } from "@/lib/db/schema";
 import { and, eq, gte, lt, count, sql, isNotNull, inArray } from "drizzle-orm";
-import { monthRange, metaTipoPorPapel, type MetaTipo } from "@/lib/metas-shared";
+import { monthRange, metaTipoPorPapel, type MetaTipo, PAPEIS_QUE_SOMAM_NA_META } from "@/lib/metas-shared";
 
 // Reexporta a parte pura pra quem importa de "@/lib/metas" no servidor.
 export { META_TIPOS, metaTipoPorPapel, monthRange } from "@/lib/metas-shared";
 export type { MetaTipo } from "@/lib/metas-shared";
 
+/**
+ * Valor fechado de um negócio: mensalidade + setup.
+ *
+ * NÃO usa `valor_total`, que diverge da composição em 174 dos 309 negócios
+ * ganhos (tem linha com total preenchido e componentes zerados, total zerado
+ * com MRR preenchido, e até total negativo). A soma dos componentes é a única
+ * leitura que se sustenta.
+ *
+ * `valor_projeto` fica de fora de propósito: é cópia literal de `valor_setup`
+ * (175 de 175 linhas idênticas) — somar os dois contaria o setup duas vezes.
+ */
+const VALOR_FECHADO = sql<string>`COALESCE(SUM(COALESCE(mrr_fechado,0)::numeric + COALESCE(valor_setup,0)::numeric), 0)`;
+
 // Papéis considerados "closer" (fechamento) pra meta comercial agregada.
-const CLOSER_ROLES = ["closer", "vendedor"];
+// Fonte única com a UI de metas — ver `metas-shared.ts`.
+const CLOSER_ROLES = PAPEIS_QUE_SOMAM_NA_META;
 
 /**
  * Metas do mês corrente de todos os vendedores ativos (closer/sdr) da org.
@@ -59,19 +73,24 @@ export async function getMetaComercialAgregada(organizacaoId: string, periodo: s
   const ids = closers.map((c) => c.id);
   if (ids.length === 0) return { valorAlvo: 0, realizado: 0, closers: 0 };
 
+  // Soma as metas de faturamento do mês. Meses anteriores a 09/09/2026 só têm
+  // metas do tipo antigo (`mrr_fechado`): sem o fallback, o histórico da Home
+  // passaria a exibir "nenhuma meta definida" retroativamente.
   const metaRows = await db
-    .select({ v: metas.valorAlvo })
+    .select({ v: metas.valorAlvo, tipo: metas.tipo })
     .from(metas)
     .where(and(
       eq(metas.organizacaoId, organizacaoId),
       eq(metas.periodo, primeiroDia),
-      eq(metas.tipo, "mrr_fechado"),
+      inArray(metas.tipo, ["faturamento_fechado", "mrr_fechado"]),
       inArray(metas.usuarioId, ids),
     ));
-  const valorAlvo = metaRows.reduce((s, r) => s + (parseFloat(String(r.v)) || 0), 0);
+  const doTipoNovo = metaRows.filter((r) => r.tipo === "faturamento_fechado");
+  const usadas = doTipoNovo.length > 0 ? doTipoNovo : metaRows;
+  const valorAlvo = usadas.reduce((s, r) => s + (parseFloat(String(r.v)) || 0), 0);
 
   const [r] = await db
-    .select({ total: sql<string>`COALESCE(SUM(mrr_fechado::numeric), 0)` })
+    .select({ total: VALOR_FECHADO })
     .from(negocios)
     .where(and(
       eq(negocios.organizacaoId, organizacaoId),
@@ -99,7 +118,8 @@ export async function getMetasDoUsuario(organizacaoId: string, usuarioId: string
 /**
  * Realizado de uma meta no mês. Usa as mesmas fontes que o dashboard:
  * - reunioes_agendadas: reuniões do usuário (responsavel) com data no mês.
- * - mrr_fechado: SUM(mrr_fechado) de negócios "ganho" do usuário no mês (card "Fechado mês").
+ * - faturamento_fechado: mensalidade + setup dos negócios "ganho" do usuário no mês.
+ * - mrr_fechado (legado): só a mensalidade — mantido pra ler metas antigas.
  * - leads_qualificados: leads do usuário (responsavel) que viraram negócio no mês.
  * - contratos_fechados: contratos criados no mês cujo negócio é do usuário.
  */
@@ -150,6 +170,21 @@ export async function getRealizadoMeta(
         lt(statusChanges.createdAt, fim),
       ));
     return Number(r?.c ?? 0);
+  }
+
+  if (tipo === "faturamento_fechado") {
+    // Tudo que a pessoa fechou no mês: mensalidade + setup/avulso.
+    const [r] = await db
+      .select({ total: VALOR_FECHADO })
+      .from(negocios)
+      .where(and(
+        eq(negocios.organizacaoId, organizacaoId),
+        eq(negocios.responsavelId, usuarioId),
+        eq(negocios.status, "ganho"),
+        gte(negocios.ganhoAt, inicio),
+        lt(negocios.ganhoAt, fim),
+      ));
+    return parseFloat(r?.total ?? "0") || 0;
   }
 
   if (tipo === "mrr_fechado") {

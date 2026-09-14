@@ -20,7 +20,7 @@ import { digitsForDialer } from "@/lib/utils/callface-call";
 import { usePipelineConfig } from "@/hooks/usePipelineConfig";
 import { useOrgUsuarios } from "@/components/crm/BoardFilters";
 import { SDR_STAGES, SDR_MIRROR_KEYS, SDR_SLA_HOURS, getSdrStatusInfo } from "@/lib/crm/pipeline";
-import { stageAge, resolveDisplayStage, resolveContextoCliente, sdrBoardColumn, type Lead as KanbanLead } from "@/components/crm2/qualificacao/shared";
+import { stageAge, resolveDisplayStage, resolveContextoCliente, sdrBoardColumn, type Lead as KanbanLead } from "@/lib/crm/qualificacao-colunas";
 import { AssignOwnerControl } from "@/components/crm2/shared/AssignOwnerControl";
 import { statusDisplay as propostaStatusDisplay, resolveEtapaNegocio, brl as brlProposta } from "@/components/crm2/propostas/shared";
 
@@ -69,7 +69,7 @@ const TIMELINE_FILTROS = ["Tudo", "Ligações", "WhatsApp", "E-mails", "Reuniõe
 type TimelineFiltro = (typeof TIMELINE_FILTROS)[number];
 // Paleta pra tag nova — cor aleatória dentre estas, editável depois em
 // Ajustes se quiser trocar (mesma tabela `labels` de sempre).
-const TAG_CORES = ["#f59e0b", "#3B82F6", "#8e27ef", "#22C55E", "#EF4444", "#06B6D4", "#EC4899"];
+const TAG_CORES = ["#f59e0b", "#3B82F6", "#8e27ef", "#22C55E", "var(--cf2-danger-text)", "#06B6D4", "#EC4899"];
 const CATEGORIA_POR_TIPO: Record<string, TimelineFiltro> = {
   ligacao: "Ligações", whatsapp: "WhatsApp", email: "E-mails", reuniao: "Reuniões", nota: "Notas",
   tag_adicionada: "Tags", tag_removida: "Tags", cadencia_iniciada: "Cadências",
@@ -398,8 +398,11 @@ export function Cf2LeadPaginaCompleta({ leadId }: { leadId: string }) {
   return (
     <>
       <div className="-m-6 mb-0 flex flex-col">
-        <div className="rounded-tl-2xl px-8 pt-7 pb-5" style={{ background: "var(--cf2-bg-canvas)" }}>
-          <Cf2Topbar orgNome="Callface" variant="light" title="Vendas" subtitle="Gestão de pré-vendas, qualificação e distribuição de leads" />
+        <div className="rounded-tl-2xl px-8 py-3.5" style={{ background: "var(--cf2-bg-surface)", borderBottom: "1px solid var(--cf2-border-default)" }}>
+        {/* Topo no PADRÃO do sistema (01/09): branco, compacto, sem título
+            grande e sem CTA — a página de detalhe já tem o próprio heading
+            logo abaixo. Mesma correção aplicada na página da oportunidade. */}
+          <Cf2Topbar orgNome="Callface" variant="light" compact actions={null} />
         </div>
 
         <div className="px-8 py-6 flex flex-col gap-5" style={{ background: "var(--cf2-chrome-bg-alt)" }}>
@@ -450,7 +453,7 @@ export function Cf2LeadPaginaCompleta({ leadId }: { leadId: string }) {
                   </Cf2DropdownMenuTrigger>
                   <Cf2DropdownMenuContent align="start" className="min-w-[220px] p-2" style={{ background: "#1c1f26", border: "1px solid var(--cf2-chrome-border-subtle)" }}>
                     <input
-                      value={tagBusca} onChange={(e) => setTagBusca(e.target.value)} placeholder="Buscar ou criar tag..." autoFocus
+                      value={tagBusca} onChange={(e) => setTagBusca(e.target.value)} placeholder="Buscar ou criar tag..." aria-label="Buscar ou criar tag" autoFocus
                       className="w-full text-[12px] px-2.5 py-1.5 rounded-lg outline-none mb-1.5"
                       style={{ background: "rgba(255,255,255,0.06)", border: "1px solid var(--cf2-chrome-border-subtle)", color: "var(--cf2-chrome-text-primary)" }}
                     />
@@ -811,7 +814,7 @@ export function Cf2LeadPaginaCompleta({ leadId }: { leadId: string }) {
 
           <Card title="Notas internas">
             <div ref={notasCardRef} />
-            <textarea ref={noteRef} value={sidebarNoteText} onChange={(e) => setSidebarNoteText(e.target.value)} placeholder="Digite uma nova anotação interna..." rows={2}
+            <textarea ref={noteRef} value={sidebarNoteText} onChange={(e) => setSidebarNoteText(e.target.value)} placeholder="Digite uma nova anotação interna..." aria-label="Digite uma nova anotação interna" rows={2}
               className="w-full text-[13px] rounded-lg px-3 py-2 outline-none resize-y mb-2" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }}
               onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && sidebarNoteText.trim()) addNota.mutate(sidebarNoteText.trim()); }} />
             <div className="flex items-center justify-between mb-2">

@@ -7,6 +7,15 @@ import { X, Upload } from "lucide-react";
 
 interface Usuario { id: string; nome: string }
 
+// Produto/interesse = famílias canônicas do domínio (single-family, ver mapa
+// mestre). Mesmos valores de `FAMILY_LABEL` do Pipeline, deliberadamente sem
+// UNKNOWN: "não identificado" aqui é o campo vazio, não uma família.
+const PRODUTO_INTERESSE_OPTIONS = [
+  { value: "CALLFACE_AI", label: "Callface AI" },
+  { value: "PABX", label: "PABX" },
+  { value: "WHITE_LABEL", label: "White Label" },
+];
+
 const ORIGEM_TEMPLATES = [
   { value: "site", label: "Site" },
   { value: "indicacao", label: "Indicação" },
@@ -63,6 +72,9 @@ export function Cf2NovoLeadModal({
   const [empresa, setEmpresa] = useState("");
   const [empresaCnpj, setEmpresaCnpj] = useState("");
   const [responsavelId, setResponsavelId] = useState("");
+  const [cargo, setCargo] = useState("");
+  const [produtoInteresse, setProdutoInteresse] = useState("");
+  const [observacao, setObservacao] = useState("");
 
   const origemFinal = motion === "outbound" ? "outbound" : origem === "outro" ? origemOutraTexto.trim() : origem;
 
@@ -79,6 +91,13 @@ export function Cf2NovoLeadModal({
           empresaCnpj: empresaCnpj.replace(/\D/g, "") || undefined,
           origem: origemFinal || undefined,
           responsavelId: responsavelId || undefined,
+          cargo: cargo.trim() || undefined,
+          // Produto/interesse usa `servicos_interesse` (text[]), coluna que já
+          // existia e estava 100% vazia no banco real. O vocabulário é o das
+          // famílias canônicas do domínio (single-family), não texto livre —
+          // assim o dado nasce classificado e serve pro relatório depois.
+          servicosInteresse: produtoInteresse ? [produtoInteresse] : undefined,
+          observacaoInicial: observacao.trim() || undefined,
           semNegocio: true,
         }),
       });
@@ -97,6 +116,7 @@ export function Cf2NovoLeadModal({
   function reset() {
     setNome(""); setTelefone(""); setEmail(""); setMotion(""); setOrigem(""); setOrigemOutraTexto("");
     setEmpresa(""); setEmpresaCnpj(""); setResponsavelId("");
+    setCargo(""); setProdutoInteresse(""); setObservacao("");
   }
   function handleClose() { reset(); onClose(); }
 
@@ -105,16 +125,17 @@ export function Cf2NovoLeadModal({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(15,23,42,0.5)" }} onClick={handleClose}>
+    <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(15,23,42,0.5)" }} onClick={handleClose}>
       <div className="w-full max-w-md rounded-2xl p-6 flex flex-col gap-4 max-h-[90vh] overflow-y-auto" style={{ background: "var(--cf2-bg-surface)" }} onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between">
           <p className="text-lg font-bold" style={{ color: "var(--cf2-text-primary)" }}>Novo lead</p>
-          <button onClick={handleClose}><X className="w-4 h-4" style={{ color: "var(--cf2-text-tertiary)" }} /></button>
+          <button onClick={handleClose} aria-label="Fechar"><X className="w-4 h-4" style={{ color: "var(--cf2-text-tertiary)" }} /></button>
         </div>
 
-        <Field label="Nome *" value={nome} onChange={setNome} placeholder="Nome do lead" />
-        <Field label="Telefone *" value={formatarTelefone(telefone)} onChange={(v) => setTelefone(v.replace(/\D/g, ""))} placeholder="(11) 99999-9999" />
-        <Field label="E-mail" value={email} onChange={setEmail} placeholder="email@empresa.com" />
+        <Field label="Nome *" value={nome} onChange={setNome} placeholder="Nome do lead" aria-label="Nome do lead" />
+        <Field label="Telefone *" value={formatarTelefone(telefone)} onChange={(v) => setTelefone(v.replace(/\D/g, ""))} placeholder="(11) 99999-9999" aria-label="(11) 99999-9999" />
+        <Field label="E-mail" value={email} onChange={setEmail} placeholder="email@empresa.com" aria-label="email@empresa.com" />
+        <Field label="Cargo" value={cargo} onChange={setCargo} placeholder="Cargo do contato (opcional)" aria-label="Cargo do contato (opcional)" />
 
         <div className="flex flex-col gap-1.5">
           <span className="text-[13px] font-semibold" style={{ color: "var(--cf2-text-primary)" }}>Inbound ou outbound? *</span>
@@ -142,13 +163,13 @@ export function Cf2NovoLeadModal({
               {ORIGEM_TEMPLATES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
             {origem === "outro" && (
-              <input value={origemOutraTexto} onChange={(e) => setOrigemOutraTexto(e.target.value)} placeholder="Descreva a origem" className="px-3 py-2 rounded-lg text-[13px] outline-none" style={{ background: "var(--cf2-bg-canvas)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }} />
+              <input value={origemOutraTexto} onChange={(e) => setOrigemOutraTexto(e.target.value)} placeholder="Descreva a origem" aria-label="Descreva a origem" className="px-3 py-2 rounded-lg text-[13px] outline-none" style={{ background: "var(--cf2-bg-canvas)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }} />
             )}
           </div>
         )}
 
-        <Field label="Empresa" value={empresa} onChange={setEmpresa} placeholder="Nome da empresa (opcional)" />
-        <Field label="CNPJ" value={formatarCnpj(empresaCnpj)} onChange={(v) => setEmpresaCnpj(v.replace(/\D/g, ""))} placeholder="00.000.000/0000-00 (opcional)" />
+        <Field label="Empresa" value={empresa} onChange={setEmpresa} placeholder="Nome da empresa (opcional)" aria-label="Nome da empresa (opcional)" />
+        <Field label="CNPJ" value={formatarCnpj(empresaCnpj)} onChange={(v) => setEmpresaCnpj(v.replace(/\D/g, ""))} placeholder="00.000.000/0000-00 (opcional)" aria-label="00.000.000/0000-00 (opcional)" />
 
         <div className="flex flex-col gap-1.5">
           <span className="text-[13px] font-semibold" style={{ color: "var(--cf2-text-primary)" }}>Responsável</span>
@@ -156,6 +177,27 @@ export function Cf2NovoLeadModal({
             <option value="">Sem responsável definido</option>
             {usuarios.map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}
           </select>
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[13px] font-semibold" style={{ color: "var(--cf2-text-primary)" }}>Produto / interesse</span>
+          <select value={produtoInteresse} onChange={(e) => setProdutoInteresse(e.target.value)} className="px-3 py-2 rounded-lg text-[13px] outline-none" style={{ background: "var(--cf2-bg-canvas)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }}>
+            <option value="">Ainda não identificado</option>
+            {PRODUTO_INTERESSE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[13px] font-semibold" style={{ color: "var(--cf2-text-primary)" }}>Observação inicial</span>
+          <textarea
+            value={observacao}
+            onChange={(e) => setObservacao(e.target.value)}
+            rows={3}
+            placeholder="Contexto de entrada: o que a pessoa pediu, onde veio, o que já foi combinado"
+            className="px-3 py-2 rounded-lg text-[13px] outline-none resize-y"
+            style={{ background: "var(--cf2-bg-canvas)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }}
+          />
+          <p className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>Vira a primeira nota do lead, com autoria e data.</p>
         </div>
 
         <button

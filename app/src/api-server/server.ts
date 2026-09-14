@@ -52,12 +52,14 @@ import { contatosCrm2Routes } from "./routes/contatos-crm2.js";
 import { fulfillmentsRoutes } from "./routes/fulfillments.js";
 import { fulfillmentFormularioPublicoRoutes } from "./routes/fulfillment-formulario-publico.js";
 import { clientesCrm2Routes } from "./routes/clientes-crm2.js";
+import { csRoutes } from "./routes/cs.js";
 import { clientesFinanceiroRoutes } from "./routes/clientes-financeiro.js";
 import { scriptsAtendimentoRoutes } from "./routes/scripts-atendimento.js";
 import { documentosAtendimentoRoutes } from "./routes/documentos-atendimento.js";
 import { automacoesCadenciasRoutes } from "./routes/automacoes-cadencias.js";
 import { automacoesExecucoesRoutes } from "./routes/automacoes-execucoes.js";
 import { automacoesAgentesRoutes } from "./routes/automacoes-agentes.js";
+import { automacoesTagsRoutes } from "./routes/automacoes-tags.js";
 import { aiPlatformRoutes } from "./routes/ai-platform.js";
 import { contratoTemplatesRoutes } from "./routes/contrato-templates.js";
 import { pipelineCrm2Routes } from "./routes/pipeline-crm2.js";
@@ -107,12 +109,14 @@ app.route("/api", cadenciaRoutes);
 app.route("/api", fulfillmentsRoutes);
 app.route("/api", fulfillmentFormularioPublicoRoutes);
 app.route("/api", clientesCrm2Routes);
+app.route("/api", csRoutes);
 app.route("/api", clientesFinanceiroRoutes);
 app.route("/api", scriptsAtendimentoRoutes);
 app.route("/api", documentosAtendimentoRoutes);
 app.route("/api", automacoesCadenciasRoutes);
 app.route("/api", automacoesExecucoesRoutes);
 app.route("/api", automacoesAgentesRoutes);
+app.route("/api", automacoesTagsRoutes);
 app.route("/api", aiPlatformRoutes);
 app.route("/api", contratoTemplatesRoutes);
 app.route("/api", anexosLegadoRoutes);
@@ -138,6 +142,9 @@ app.route("/api/metas", metasRoutes);
 app.route("/api/me", meRoutes);
 // Montado em /api/conta (NÃO /api/auth* — esse prefixo o Traefik manda pro next-auth).
 app.route("/api/conta", authFlowRoutes);
+
+/** Exportado pro teste de aceite montar requisições sem subir porta (app.request). */
+export { app };
 
 export function startServer() {
   const port = parseInt(process.env.API_PORT || "3002");

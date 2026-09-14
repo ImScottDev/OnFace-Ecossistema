@@ -1,7 +1,7 @@
 "use client";
 
 import { UserRound } from "lucide-react";
-import { corAvatarEmpresa, iniciaisEmpresa } from "@/components/crm2/shared/avatar";
+import { corAvatarEmpresa, iniciaisEmpresa, TEXTO_SOBRE_AVATAR } from "@/components/crm2/shared/avatar";
 import {
   Cf2DropdownMenu, Cf2DropdownMenuContent, Cf2DropdownMenuItem, Cf2DropdownMenuTrigger,
 } from "@/components/crm2/ui/DropdownMenu";
@@ -34,7 +34,7 @@ export function OwnerPicker({
           {ownerId ? (
             <span
               className="flex items-center justify-center rounded-full font-bold"
-              style={{ width: size, height: size, fontSize: size * 0.42, background: corAvatarEmpresa(ownerId), color: "var(--cf2-text-on-accent)" }}
+              style={{ width: size, height: size, fontSize: Math.max(10, size * 0.42), background: corAvatarEmpresa(ownerId), color: TEXTO_SOBRE_AVATAR }}
             >
               {iniciaisEmpresa(ownerName || "?")}
             </span>
@@ -57,7 +57,7 @@ export function OwnerPicker({
           <Cf2DropdownMenuItem key={usuario.id} onClick={() => onAssign(usuario.id)}>
             <span
               className="flex items-center justify-center rounded-full font-bold shrink-0 size-5 text-[9px]"
-              style={{ background: corAvatarEmpresa(usuario.id), color: "var(--cf2-text-on-accent)" }}
+              style={{ background: corAvatarEmpresa(usuario.id), color: TEXTO_SOBRE_AVATAR }}
             >
               {iniciaisEmpresa(usuario.nome)}
             </span>

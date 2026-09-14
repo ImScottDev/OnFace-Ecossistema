@@ -11,11 +11,13 @@ import {
   empresas, servicosCanonicos, contratos, contratoItens, leads, pessoas as pessoasTable, pontosContato, fulfillments, fulfillmentItens, notas, usuarios,
   clientes, faturas, assinaturas, propostas, tarefas, mrrMovimentos, atividades,
   negocios, negocioLeads, callfaceAiExternalIdentities, npsRespostas, oportunidades,
+  labels, entityLabels,
 } from "@/lib/db/schema";
 import { eq, and, or, inArray, sql, desc, asc, isNotNull } from "drizzle-orm";
 import { z } from "zod";
 import { getCtx } from "../compat.js";
 import { registrarMudancaResponsavel } from "@/lib/crm/owner";
+import { publicarEvento } from "@/lib/events/outbox";
 
 // CS — Health Check (24/08, achado real: NPS já existe como infra (tabela
 // `nps_respostas`, rota pública de resposta em nps.ts) mas NUNCA é
@@ -143,7 +145,7 @@ app.get("/clientes-crm2/resumo", async (c) => {
         EXISTS (SELECT 1 FROM faturas_atrasadas fa WHERE fa.empresa_id = u.empresa_id AND fa.n > 0) AS em_risco,
         EXISTS (
           SELECT 1 FROM servicos_canonicos sc JOIN fulfillments f ON f.servico_canonico_id = sc.id
-          WHERE sc.empresa_id = u.empresa_id AND sc.portfolio_included = true AND sc.service_family = 'PABX'
+          WHERE sc.empresa_id = u.empresa_id AND sc.portfolio_included = true AND sc.service_family IN ('PABX', 'WHITE_LABEL')
             AND f.status NOT IN ('COMPLETED', 'CANCELED')
         ) AS implantacao,
         EXISTS (
@@ -315,7 +317,7 @@ app.get("/clientes-crm2", async (c) => {
         ) AS em_risco_calc,
         EXISTS (
           SELECT 1 FROM servicos_canonicos sc JOIN fulfillments f ON f.servico_canonico_id = sc.id
-          WHERE sc.empresa_id = e.id AND sc.portfolio_included = true AND sc.service_family = 'PABX' AND f.status NOT IN ('COMPLETED', 'CANCELED')
+          WHERE sc.empresa_id = e.id AND sc.portfolio_included = true AND sc.service_family IN ('PABX', 'WHITE_LABEL') AND f.status NOT IN ('COMPLETED', 'CANCELED')
         ) AS implantacao_calc,
         EXISTS (
           SELECT 1 FROM servicos_canonicos sc JOIN fulfillments f ON f.servico_canonico_id = sc.id
@@ -404,11 +406,14 @@ app.get("/clientes-crm2", async (c) => {
     -- (NOT IN COMPLETED/CANCELED) de serviço no portfólio, mesma fonte já
     -- usada em fulfillment_agg acima, só separada por família porque
     -- Implantação e Onboarding são 2 módulos/páginas distintos no produto
-    -- (Cf2EntregaWorkspace, PABX vs CALLFACE_AI), nunca a mesma coisa.
+    -- (Cf2EntregaWorkspace), nunca a mesma coisa. Frente 2C.1: White Label
+    -- entrou em Implantação (trilha própria dele, ver lib/crm/politica-familia.ts)
+    -- — antes não estava em bucket NENHUM e o cliente ficava invisível na
+    -- barra de status da Carteira.
     implantacao_agg AS (
       SELECT DISTINCT sc.empresa_id
       FROM servicos_canonicos sc JOIN fulfillments f ON f.servico_canonico_id = sc.id
-      WHERE sc.portfolio_included = true AND sc.service_family = 'PABX' AND f.status NOT IN ('COMPLETED', 'CANCELED')
+      WHERE sc.portfolio_included = true AND sc.service_family IN ('PABX', 'WHITE_LABEL') AND f.status NOT IN ('COMPLETED', 'CANCELED')
     ),
     onboarding_agg AS (
       SELECT DISTINCT sc.empresa_id
@@ -423,7 +428,19 @@ app.get("/clientes-crm2", async (c) => {
       COALESCE(fa.entregas_em_andamento, 0) AS entregas_em_andamento,
       COALESCE(fat.n_atrasadas, 0) AS faturas_atrasadas,
       fat.venceu_em AS fatura_venceu_em,
-      COALESCE(cli.status_financeiro, 'indefinido') AS status_financeiro,
+      -- clientes.status_financeiro está nulo em 301 dos 309 registros: a
+      -- coluna existe desde a reconciliação mas nunca foi populada, e a tabela
+      -- mostrava "Indefinido" em 97% das linhas. O status de COBRANÇA, porém,
+      -- é derivável do mesmo material que já alimenta os cards — daí o
+      -- fallback abaixo, que nunca inventa 'inadimplente' (esse continua sendo
+      -- decisão de negócio registrada à mão, e é o que o card INADIMPLENTES
+      -- conta; fatura vencida é 'em_atraso', o balde de EM RISCO).
+      CASE
+        WHEN cli.status_financeiro IS NOT NULL THEN cli.status_financeiro
+        WHEN sa.empresa_id IS NULL                THEN 'churned'
+        WHEN COALESCE(fat.n_atrasadas, 0) > 0     THEN 'em_atraso'
+        ELSE 'ativo'
+      END AS status_financeiro,
       ua.tipo AS ultima_atividade_tipo,
       ua.ultima AS ultima_atividade_em,
       pta.titulo AS proxima_acao_titulo,
@@ -538,11 +555,26 @@ app.patch("/clientes-crm2/:empresaId/tags", async (c) => {
   }
   const tags = [...new Set(body.tags.map((t) => t.trim()).filter(Boolean))];
 
-  const [empresa] = await db.select({ id: empresas.id }).from(empresas)
+  const [empresa] = await db.select({ id: empresas.id, tags: empresas.tags }).from(empresas)
     .where(and(eq(empresas.id, empresaId), eq(empresas.organizacaoId, ctx.organizacaoId))).limit(1);
   if (!empresa) return c.json({ error: "Empresa não encontrada" }, 404);
 
   await db.update(empresas).set({ tags, updatedAt: new Date() }).where(eq(empresas.id, empresaId));
+
+  const anteriores = new Set(empresa.tags ?? []);
+  const atuais = new Set(tags);
+  for (const nome of tags.filter((tag) => !anteriores.has(tag))) {
+    let [label] = await db.select({ id: labels.id }).from(labels).where(and(eq(labels.organizacaoId, ctx.organizacaoId), eq(labels.nome, nome))).limit(1);
+    if (!label) [label] = await db.insert(labels).values({ organizacaoId: ctx.organizacaoId, nome }).returning({ id: labels.id });
+    const [assignment] = await db.insert(entityLabels).values({ organizacaoId: ctx.organizacaoId, entityType: "empresa", entityId: empresaId, labelId: label.id, createdById: ctx.userId }).onConflictDoNothing().returning({ id: entityLabels.id });
+    if (assignment) await publicarEvento({ organizacaoId: ctx.organizacaoId, eventType: "TagAdded", aggregateType: "empresa", aggregateId: empresaId, payload: { entityType: "empresa", entityId: empresaId, labelId: label.id, tag: nome }, idempotencyKey: `tag:add:${assignment.id}` });
+  }
+  for (const nome of [...anteriores].filter((tag) => !atuais.has(tag))) {
+    const [label] = await db.select({ id: labels.id }).from(labels).where(and(eq(labels.organizacaoId, ctx.organizacaoId), eq(labels.nome, nome))).limit(1);
+    if (!label) continue;
+    const [removed] = await db.delete(entityLabels).where(and(eq(entityLabels.organizacaoId, ctx.organizacaoId), eq(entityLabels.entityType, "empresa"), eq(entityLabels.entityId, empresaId), eq(entityLabels.labelId, label.id))).returning({ id: entityLabels.id });
+    if (removed) await publicarEvento({ organizacaoId: ctx.organizacaoId, eventType: "TagRemoved", aggregateType: "empresa", aggregateId: empresaId, payload: { entityType: "empresa", entityId: empresaId, labelId: label.id, tag: nome }, idempotencyKey: `tag:remove:${removed.id}` });
+  }
 
   return c.json({ ok: true, tags });
 });
@@ -1054,12 +1086,19 @@ app.get("/clientes-crm2/:empresaId", async (c) => {
   // Últimas atividades reais (18/08, referência de UX do drawer da
   // Carteira) — mesma fonte de `atividades` via leadIds já resolvidos
   // acima, nunca uma segunda query pra achar os leads da empresa.
-  const atividadesRecentes = leadIds.length > 0
+  // 08/09: passou a incluir também as atividades escritas direto na empresa
+  // (interações de CS, que não têm lead obrigatório). O INNER JOIN em `leads`
+  // virou LEFT — mantê-lo excluiria justamente o registro novo, e o Cliente
+  // 360 mostraria uma timeline sem o que o CS acabou de escrever nela.
+  const atividadesRecentes = (leadIds.length > 0 || empresaId)
     ? await db.select({ id: atividades.id, tipo: atividades.tipo, titulo: atividades.titulo, createdAt: atividades.createdAt, autorNome: usuarios.nome, pessoaNome: leads.nome })
         .from(atividades)
         .leftJoin(usuarios, eq(usuarios.id, atividades.usuarioId))
-        .innerJoin(leads, eq(leads.id, atividades.leadId))
-        .where(inArray(atividades.leadId, leadIds))
+        .leftJoin(leads, eq(leads.id, atividades.leadId))
+        .where(or(
+          eq(atividades.empresaId, empresaId),
+          leadIds.length > 0 ? inArray(atividades.leadId, leadIds) : undefined,
+        ))
         .orderBy(desc(atividades.createdAt))
         .limit(40)
     : [];
@@ -1076,20 +1115,55 @@ app.get("/clientes-crm2/:empresaId", async (c) => {
         .orderBy(asc(tarefas.venceEm)).limit(10)
     : [];
 
-  // Desempenho — MRR mensal real (mrr_movimentos), NÃO Health Score (regra
-  // fechada: nunca inventar essa métrica). Hoje o ledger só cobre produto
-  // AI (PABX ainda não flui por Stripe-sync) — cliente PABX-only aparece
-  // sem série, honesto, não fabricado.
-  const movimentos = leadIds.length > 0
-    ? await db.select({ ocorridoEm: mrrMovimentos.ocorridoEm, mrrDepois: mrrMovimentos.mrrDepois })
-        .from(mrrMovimentos).where(inArray(mrrMovimentos.leadId, leadIds)).orderBy(asc(mrrMovimentos.ocorridoEm))
-    : [];
-  const mrrPorMes = new Map<string, number>();
-  for (const m of movimentos) {
-    const mes = new Date(m.ocorridoEm).toLocaleDateString("pt-BR", { month: "short", year: "2-digit" });
-    mrrPorMes.set(mes, parseFloat(m.mrrDepois));
-  }
-  const mrrMensal = Array.from(mrrPorMes.entries()).map(([mes, valor]) => ({ mes, valor }));
+  // Desempenho mensal: usa a projeção histórica materializada a partir do
+  // faturamento real do cliente. Current MRR continua vindo de
+  // servicos_canonicos; esta série responde "quanto este cliente pagou por
+  // mês", desde 2021 quando há histórico importado.
+  const receitaMensalRows = await db.execute<{
+    competencia: string;
+    mes: string;
+    valor: string;
+    lancamentos: number;
+  }>(sql`
+    SELECT competencia::text,
+      to_char(competencia, 'YYYY-MM') AS mes,
+      COALESCE(SUM(valor), 0)::numeric AS valor,
+      COALESCE(SUM(quantidade_lancamentos), 0)::int AS lancamentos
+    FROM cliente_receita_mensal
+    WHERE organizacao_id = ${ctx.organizacaoId}
+      AND empresa_id = ${empresaId}
+      AND revenue_nature IN ('MRR', 'UNKNOWN')
+    GROUP BY competencia
+    ORDER BY competencia
+  `);
+  const mrrMensal = receitaMensalRows.map((row) => ({
+    mes: new Date(`${row.competencia}T12:00:00`).toLocaleDateString("pt-BR", { month: "short", year: "2-digit" }),
+    valor: parseFloat(row.valor || "0"),
+    competencia: row.competencia,
+    lancamentos: row.lancamentos,
+  }));
+
+  const receitaMensalProdutos = await db.execute<{
+    competencia: string;
+    service_family: string;
+    canonical_product: string | null;
+    confidence: string;
+    valor: string;
+    lancamentos: number;
+  }>(sql`
+    SELECT competencia::text, service_family,
+      COALESCE(canonical_product, NULLIF(service_family, 'UNKNOWN'), 'Produto em revisão') AS canonical_product,
+      confidence,
+      COALESCE(SUM(valor), 0)::numeric AS valor,
+      COALESCE(SUM(quantidade_lancamentos), 0)::int AS lancamentos
+    FROM cliente_receita_mensal
+    WHERE organizacao_id = ${ctx.organizacaoId}
+      AND empresa_id = ${empresaId}
+      AND revenue_nature IN ('MRR', 'UNKNOWN')
+    GROUP BY competencia, service_family, canonical_product, confidence
+    ORDER BY competencia DESC, valor DESC
+    LIMIT 240
+  `);
 
   // Aba "Comercial" (reestruturação 20/08): histórico REAL de negócios desta
   // empresa (leads/oportunidades/vendedor/fechamento) — não existia painel
@@ -1099,7 +1173,8 @@ app.get("/clientes-crm2/:empresaId", async (c) => {
   // responsavelId = vendedor/closer) — gap de produto, não fabricado.
   const negociosEmpresa = await db.select({
     id: negocios.id, titulo: negocios.titulo, status: negocios.status, temperatura: negocios.temperatura,
-    valorTotal: negocios.valorTotal, commercialMotion: negocios.commercialMotion,
+    valorTotal: negocios.valorTotal, mrrFechado: negocios.mrrFechado, leadId: negocios.leadId,
+    commercialMotion: negocios.commercialMotion,
     responsavelId: negocios.responsavelId, createdAt: negocios.createdAt, ganhoAt: negocios.ganhoAt,
   }).from(negocios).where(eq(negocios.empresaId, empresaId)).orderBy(desc(negocios.createdAt));
 
@@ -1109,7 +1184,41 @@ app.get("/clientes-crm2/:empresaId", async (c) => {
     : [];
   const nomeResponsavelPorId = new Map(responsaveisNegocios.map((r) => [r.id, r.nome]));
   const emailResponsavelPorId = new Map(responsaveisNegocios.map((r) => [r.id, r.email]));
-  const negociosComVendedor = negociosEmpresa.map((n) => ({ ...n, vendedorNome: n.responsavelId ? nomeResponsavelPorId.get(n.responsavelId) ?? null : null }));
+  const negocioIdsEmpresa = negociosEmpresa.map((n) => n.id);
+  const vinculosNegocio = negocioIdsEmpresa.length > 0
+    ? await db.execute<{ negocio_id: string; contratos: number; propostas: number }>(sql`
+        SELECT n.id AS negocio_id,
+          COUNT(DISTINCT c.id)::int AS contratos,
+          COUNT(DISTINCT p.id)::int AS propostas
+        FROM negocios n
+        LEFT JOIN contratos c ON c.negocio_id = n.id
+        LEFT JOIN propostas p ON p.negocio_id = n.id
+        WHERE n.id IN ${sql.raw(`(${negocioIdsEmpresa.map((id) => `'${id.replace(/'/g, "''")}'`).join(",")})`)}
+        GROUP BY n.id
+      `)
+    : [];
+  const vinculoPorNegocioId = new Map(vinculosNegocio.map((v) => [v.negocio_id, v]));
+  const negociosComVendedorBruto = negociosEmpresa.map((n) => ({
+    ...n,
+    vendedorNome: n.responsavelId ? nomeResponsavelPorId.get(n.responsavelId) ?? null : null,
+    contratosVinculados: vinculoPorNegocioId.get(n.id)?.contratos ?? 0,
+    propostasVinculadas: vinculoPorNegocioId.get(n.id)?.propostas ?? 0,
+  }));
+  const scoreNegocio = (n: typeof negociosComVendedorBruto[number]) =>
+    (n.status === "ganho" ? 64 : 0) +
+    ((n.propostasVinculadas ?? 0) > 0 ? 32 : 0) +
+    ((n.contratosVinculados ?? 0) > 0 ? 16 : 0) +
+    (n.ganhoAt ? 8 : 0) +
+    (n.responsavelId ? 4 : 0);
+  const negociosPorChave = new Map<string, typeof negociosComVendedorBruto[number]>();
+  for (const negocio of negociosComVendedorBruto) {
+    const tituloNormalizado = (negocio.titulo ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+    const valorChave = Number(negocio.mrrFechado ?? negocio.valorTotal ?? 0).toFixed(2);
+    const chave = `${negocio.leadId ?? "sem-lead"}:${tituloNormalizado}:${valorChave}`;
+    const atual = negociosPorChave.get(chave);
+    if (!atual || scoreNegocio(negocio) > scoreNegocio(atual)) negociosPorChave.set(chave, negocio);
+  }
+  const negociosComVendedor = [...negociosPorChave.values()].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
   // "Executivo" do header (mockup 20/08, distinto do CS Owner que já existe
   // em `clientes.responsavel_id`) — decisão fechada: vendedor/closer
@@ -1246,7 +1355,7 @@ app.get("/clientes-crm2/:empresaId", async (c) => {
     return Math.round((vencUTC - hojeUTC) / 86400000);
   }
 
-  const contratosParaResposta = todosContratos.map((c) => {
+  const contratosParaRespostaBruta = todosContratos.map((c) => {
     const propostasDoNegocio = c.negocioId ? propostasAceitasPorNegocio.filter((p) => p.negocioId === c.negocioId) : [];
     const referenciaAssinatura = c.assinadoEm ?? c.createdAt;
     let propostaOrigem: { id: string; numero: number } | null = null;
@@ -1280,6 +1389,25 @@ app.get("/clientes-crm2/:empresaId", async (c) => {
       itens: itensPorContrato.get(c.id) ?? [],
     };
   }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+  // Contratos podem ter um registro comercial e um espelho de assinatura para
+  // a mesma subscription. Para o Cliente 360 isso é um único vínculo; mantém o
+  // registro mais rico (negócio/proposta/itens/documento) e só cai no espelho
+  // se ele for a única evidência.
+  const contratosPorChave = new Map<string, typeof contratosParaRespostaBruta[number]>();
+  const scoreContrato = (ct: typeof contratosParaRespostaBruta[number]) =>
+    (ct.propostaOrigem ? 32 : 0) +
+    (ct.negocioId ? 16 : 0) +
+    ((ct.itens?.length ?? 0) > 0 ? 8 : 0) +
+    (ct.temCorpoGerado ? 4 : 0) +
+    (ct.zohoId ? 2 : 0) +
+    (ct.stripeSubscriptionId ? 1 : 0);
+  for (const contrato of contratosParaRespostaBruta) {
+    const chave = contrato.stripeSubscriptionId ? `stripe:${contrato.stripeSubscriptionId}` : `contrato:${contrato.id}`;
+    const atual = contratosPorChave.get(chave);
+    if (!atual || scoreContrato(contrato) > scoreContrato(atual)) contratosPorChave.set(chave, contrato);
+  }
+  const contratosParaResposta = [...contratosPorChave.values()].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
   // Alerta agregado do header (90/60/30 dias) — só considera contrato ATIVO
   // com vencimento futuro dentro da janela; contrato já vencido ou sem
@@ -1474,6 +1602,7 @@ app.get("/clientes-crm2/:empresaId", async (c) => {
     proximasAcoes,
     atividadesRecentes,
     mrrMensal,
+    receitaMensalProdutos,
     negocios: negociosComVendedor,
     timelineEventos,
     origemAquisicao,

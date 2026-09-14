@@ -25,7 +25,9 @@ interface PropostaPublicaData {
   dataValidade: string | null; condicoesPagamento: string | null;
   totalRecorrente: string; totalAvulso: string; totalGeral: string;
   motivoRecusa: string | null; clienteRespondeuEm: string | null;
-  clienteNome: string | null; empresa: string | null; negocioTitulo: string | null;
+  clienteNome: string | null; clienteCargo: string | null;
+  empresa: string | null; empresaCnpj: string | null; negocioTitulo: string | null;
+  condicaoPagamentoTipo: string | null; parcelas: number | null; prazoContratoMeses: number | null;
   itens: Item[]; grupos: Grupo[];
 }
 
@@ -33,6 +35,20 @@ const brl = (v: string | number) =>
   Number(v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
 const TIPO_LABEL: Record<string, string> = { recorrente: "Mensal", avulso: "Avulso", setup: "Setup" };
+
+const CONDICAO_LABEL: Record<string, string> = {
+  cartao: "Cartão",
+  boleto: "Boleto à vista",
+  boleto_parcelado: "Parcelado",
+  outro: "A combinar",
+};
+
+/** CNPJ só é formatado quando tem os 14 dígitos; senão vai como veio. */
+function formatarCnpj(v: string): string {
+  const d = v.replace(/\D/g, "");
+  if (d.length !== 14) return v;
+  return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12)}`;
+}
 // Ícone + cor por status de grupo comercial (24/08, pedido do Kauã: "algo
 // foda mesmo, contextualizando tudo") — cada etapa do pós-aceite (contrato/
 // assinatura/pagamento) agora tem um sinal visual próprio, não só texto.
@@ -50,7 +66,7 @@ const GRUPO_STATUS_INFO: Record<string, { texto: string; cor: string; bg: string
 
 function Shell({ children }: { children: React.ReactNode }) {
   return (
-    <div style={{ minHeight: "100vh", background: "#f6f5fa", fontFamily: FONT_BODY }}>
+    <div style={{ minHeight: "100vh", background: "#f6f5fa", fontFamily: FONT_BODY, colorScheme: "light" }}>
       <div style={{ height: 6, background: GRADIENTE }} />
       <div style={{ display: "flex", justifyContent: "center", padding: "48px 16px 64px" }}>
         <div style={{ width: "100%", maxWidth: 620 }}>
@@ -113,6 +129,7 @@ function GrupoCard({ grupo, id, onAssinado }: { grupo: Grupo; id: string; onAssi
   });
 
   return (
+    <div id={`grupo-${grupo.id}`}>
     <Card>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 16 }}>
         <p style={{ fontSize: 15, fontWeight: 700, color: "#181a32", margin: 0, fontFamily: FONT_HEADING }}>{titulo}</p>
@@ -190,6 +207,7 @@ function GrupoCard({ grupo, id, onAssinado }: { grupo: Grupo; id: string; onAssi
         <p style={{ fontSize: 13, color: CARMIM, margin: 0 }}>Não conseguimos confirmar o pagamento. Fale com quem te enviou a proposta pra gerar um novo link.</p>
       )}
     </Card>
+    </div>
   );
 }
 
@@ -221,7 +239,19 @@ export function PropostaPublica({ id }: { id: string }) {
       if (!r.ok) throw new Error(body.error || "Falha ao aceitar");
       return body;
     },
-    onSuccess: invalidar,
+    onSuccess: (body) => {
+      const primeiroPagamento = body?.grupos?.find((grupo: { checkoutId?: string; proximoPasso?: string }) => grupo.checkoutId);
+      const primeiroContrato = body?.grupos?.find((grupo: { grupoId?: string; proximoPasso?: string; proximoUrl?: string }) => grupo.proximoPasso === "contrato");
+      if (primeiroPagamento?.checkoutId) {
+        window.location.assign(`/checkout/${primeiroPagamento.checkoutId}`);
+        return;
+      }
+      if (primeiroContrato?.grupoId) {
+        window.location.assign(primeiroContrato.proximoUrl || `/p/${id}#grupo-${primeiroContrato.grupoId}`);
+        return;
+      }
+      invalidar();
+    },
   });
 
   const recusar = useMutation({
@@ -254,6 +284,15 @@ export function PropostaPublica({ id }: { id: string }) {
   }
 
   const numeroFmt = `#P-${String(data.numero).padStart(3, "0")}-v${data.versao}`;
+  // Condição de pagamento legível pro cliente (01/09, 2B): junta o tipo
+  // estruturado com o nº de parcelas. "Não especificar" (tipo nulo) não vira
+  // texto nenhum — nesse caso o cliente escolhe no próprio checkout.
+  const condicaoPagamentoTexto = data.condicaoPagamentoTipo
+    ? data.condicaoPagamentoTipo === "boleto_parcelado" && data.parcelas && data.parcelas > 1
+      ? `Parcelado em ${data.parcelas}x`
+      : CONDICAO_LABEL[data.condicaoPagamentoTipo] || data.condicaoPagamentoTipo
+    : null;
+
   const validadeVencida = data.dataValidade ? new Date(data.dataValidade) < new Date(new Date().toDateString()) : false;
 
   if (data.status === "expirada" || (["enviada", "ajuste_solicitado"].includes(data.status) && validadeVencida)) {
@@ -289,6 +328,16 @@ export function PropostaPublica({ id }: { id: string }) {
           <h1 style={{ fontSize: 24, fontWeight: 800, color: "#181a32", margin: "0 0 6px", fontFamily: FONT_HEADING, letterSpacing: -0.3 }}>
             {data.empresa || data.clienteNome || "Cliente"}
           </h1>
+          {/* CNPJ e interlocutor (01/09, 2B): o cliente precisa se reconhecer
+              no documento. Só aparecem quando existem — nunca "—" ou vazio. */}
+          {data.empresaCnpj && (
+            <p style={{ fontSize: 12.5, color: "#9497ab", margin: "0 0 6px" }}>CNPJ {formatarCnpj(data.empresaCnpj)}</p>
+          )}
+          {data.clienteNome && data.empresa && (
+            <p style={{ fontSize: 13.5, color: "#6b7280", margin: "0 0 4px" }}>
+              {data.clienteNome}{data.clienteCargo ? ` · ${data.clienteCargo}` : ""}
+            </p>
+          )}
           {data.negocioTitulo && <p style={{ fontSize: 13.5, color: "#6b7280", margin: 0 }}>{data.negocioTitulo}</p>}
           {data.dataValidade && aindaNaoAceitou && (
             <p style={{ fontSize: 12, color: validadeVencida ? CARMIM : "#9497ab", margin: "10px 0 0" }}>
@@ -329,8 +378,11 @@ export function PropostaPublica({ id }: { id: string }) {
             <span style={{ fontSize: 22, fontWeight: 800, color: "#181a32", fontFamily: FONT_HEADING }}>{brl(data.totalGeral)}</span>
           </div>
         </div>
-        {data.condicoesPagamento && (
-          <p style={{ fontSize: 12, color: "#9497ab", marginTop: 14 }}>Condições: {data.condicoesPagamento}</p>
+        {(condicaoPagamentoTexto || data.condicoesPagamento) && (
+          <p style={{ fontSize: 12, color: "#9497ab", marginTop: 14 }}>
+            {condicaoPagamentoTexto ? <>Pagamento: <strong style={{ color: "#4b4d63" }}>{condicaoPagamentoTexto}</strong>{data.condicoesPagamento ? " · " : ""}</> : null}
+            {data.condicoesPagamento}
+          </p>
         )}
       </Card>
 
@@ -363,7 +415,7 @@ export function PropostaPublica({ id }: { id: string }) {
                 <textarea
                   value={ajusteMsg} onChange={(e) => setAjusteMsg(e.target.value)}
                   placeholder="O que você gostaria de ajustar?" rows={3}
-                  style={{ width: "100%", padding: "11px 14px", borderRadius: 10, border: "1px solid #dcdce6", fontSize: 14, marginBottom: 10, boxSizing: "border-box", resize: "vertical", fontFamily: FONT_BODY }}
+                  style={{ width: "100%", padding: "11px 14px", borderRadius: 10, border: "1px solid #dcdce6", fontSize: 14, marginBottom: 10, boxSizing: "border-box", resize: "vertical", fontFamily: FONT_BODY, background: "#fff", color: "#2b2d42", colorScheme: "light" }}
                 />
                 <div style={{ display: "flex", gap: 8 }}>
                   <button onClick={() => setAjusteAberto(false)} style={{ flex: 1, padding: "10px", borderRadius: 10, border: "1px solid #ececf2", background: "#fff", color: "#4b4d63", fontSize: 13, cursor: "pointer" }}>Voltar</button>
@@ -381,7 +433,7 @@ export function PropostaPublica({ id }: { id: string }) {
               <textarea
                 value={recusaMotivo} onChange={(e) => setRecusaMotivo(e.target.value)}
                 placeholder="Motivo (opcional)" rows={3}
-                style={{ width: "100%", padding: "11px 14px", borderRadius: 10, border: "1px solid #dcdce6", fontSize: 14, marginBottom: 10, boxSizing: "border-box", resize: "vertical", fontFamily: FONT_BODY }}
+                style={{ width: "100%", padding: "11px 14px", borderRadius: 10, border: "1px solid #dcdce6", fontSize: 14, marginBottom: 10, boxSizing: "border-box", resize: "vertical", fontFamily: FONT_BODY, background: "#fff", color: "#2b2d42", colorScheme: "light" }}
               />
               <div style={{ display: "flex", gap: 8 }}>
                 <button onClick={() => setRecusaAberta(false)} style={{ flex: 1, padding: "10px", borderRadius: 10, border: "1px solid #ececf2", background: "#fff", color: "#4b4d63", fontSize: 13, cursor: "pointer" }}>Voltar</button>

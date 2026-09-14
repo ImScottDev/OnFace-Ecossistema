@@ -102,16 +102,22 @@ export function Cf2CalendarioWorkspace({ isAdmin }: { isAdmin: boolean }) {
             <button onClick={() => setReferencia(navegar(view, referencia, -1))} className="p-1.5 rounded-lg" style={{ background: "var(--cf2-bg-surface-muted)" }}><ChevronLeft className="w-4 h-4" style={{ color: "var(--cf2-text-secondary)" }} /></button>
             <button onClick={() => setReferencia(navegar(view, referencia, 1))} className="p-1.5 rounded-lg" style={{ background: "var(--cf2-bg-surface-muted)" }}><ChevronRight className="w-4 h-4" style={{ color: "var(--cf2-text-secondary)" }} /></button>
           </div>
-          <p className="text-[14px] font-semibold capitalize" style={{ color: "var(--cf2-text-primary)" }}>{formatarPeriodo(view, referencia)}</p>
+          <p className="text-[14px] font-semibold first-letter:uppercase" style={{ color: "var(--cf2-text-primary)" }}>{formatarPeriodo(view, referencia)}</p>
           <button
             onClick={() => setNovoEventoAberto(true)}
             className="flex items-center gap-1.5 px-4 py-1.5 rounded-full text-[13px] font-bold"
             style={{ background: "var(--cf2-accent)", border: "1px solid var(--cf2-accent-border)", color: "var(--cf2-text-on-accent)" }}
           >
-            <Plus className="w-3.5 h-3.5" /> Novo Evento
+            <Plus className="w-3.5 h-3.5" aria-hidden /> Novo Evento
           </button>
-          <a href="/calendario/configuracoes" className="p-2 rounded-lg" style={{ background: "var(--cf2-bg-surface-muted)" }} title="Configurações">
-            <Settings className="w-4 h-4" style={{ color: "var(--cf2-text-secondary)" }} />
+          <a
+            href="/calendario/configuracoes"
+            aria-label="Configurações do calendário"
+            title="Configurações do calendário"
+            className="flex items-center justify-center w-9 h-9 rounded-lg transition-colors hover:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2"
+            style={{ background: "var(--cf2-bg-surface-muted)", outlineColor: "var(--cf2-accent)" }}
+          >
+            <Settings className="w-4 h-4" style={{ color: "var(--cf2-text-secondary)" }} aria-hidden />
           </a>
         </div>
       </div>

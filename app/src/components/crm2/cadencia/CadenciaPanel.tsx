@@ -105,7 +105,7 @@ export function Cf2CadenciaPanel({ leadId }: { leadId: string }) {
       {!data.temSessaoWhatsapp && (
         <div className="flex items-start gap-2 px-3 py-2 rounded-lg text-[12px]" style={{ background: "var(--cf2-warning-bg)" }}>
           <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" style={{ color: "var(--cf2-warning-text)" }} />
-          <span style={{ color: "var(--cf2-warning-text)" }}>Conecte seu WhatsApp em <a href="/configuracoes" className="underline">Configurações</a> pra enviar pelos seus toques.</span>
+          <span style={{ color: "var(--cf2-warning-text)" }}>Conecte seu WhatsApp em <a href="/ajustes/whatsapp" className="underline">Ajustes · WhatsApp</a> pra enviar pelos seus toques.</span>
         </div>
       )}
 
@@ -163,7 +163,7 @@ export function Cf2CadenciaPanel({ leadId }: { leadId: string }) {
                     <>
                       {t.canal === "email" && (
                         <input
-                          type="text" value={getAssunto(t)} onChange={(e) => setAssunto(t.ordem, e.target.value)} placeholder="Assunto"
+                          type="text" value={getAssunto(t)} onChange={(e) => setAssunto(t.ordem, e.target.value)} placeholder="Assunto" aria-label="Assunto"
                           className="w-full text-[13px] px-3 py-2 rounded-lg outline-none" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }}
                         />
                       )}

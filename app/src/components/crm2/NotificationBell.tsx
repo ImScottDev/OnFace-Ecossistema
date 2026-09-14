@@ -77,13 +77,18 @@ export function Cf2NotificationBell({ variant = "light" }: { variant?: "light" |
   return (
     <div className="relative" ref={ref}>
       <button
+        type="button"
         onClick={() => setOpen(!open)}
-        className="relative flex items-center justify-center rounded-full w-9 h-9 transition-colors"
-        style={{ background: open ? hoverBg : "transparent" }}
+        aria-label={unreadCount > 0 ? `Notificações (${unreadCount} não lidas)` : "Notificações"}
+        aria-expanded={open}
+        aria-haspopup="menu"
+        className="relative flex h-9 w-9 items-center justify-center rounded-[var(--radius-control)] focus-visible:outline-2 focus-visible:outline-offset-2 cf2-transicao"
+        style={{ background: open ? hoverBg : "transparent", outlineColor: "var(--cf2-accent)" }}
       >
-        <Bell className="w-4 h-4" style={{ color: textSecondary }} />
+        <Bell className="w-4 h-4" style={{ color: textSecondary }} aria-hidden />
         {unreadCount > 0 && (
           <span
+            aria-hidden
             className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full"
             style={{ background: "var(--cf2-success-fill)" }}
           />
@@ -92,20 +97,22 @@ export function Cf2NotificationBell({ variant = "light" }: { variant?: "light" |
 
       {open && (
         <div
-          className="absolute top-full mt-2 right-0 w-80 rounded-2xl z-50 overflow-hidden"
+          className="absolute right-0 top-full z-50 mt-2 w-80 overflow-hidden rounded-[var(--radius-card)]"
           style={{
             background: bg,
             border: `1px solid ${border}`,
-            boxShadow: "var(--cf2-shadow-card-md)",
+            boxShadow: "var(--shadow-flutuante)",
           }}
         >
           <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: `1px solid ${border}` }}>
             <span className="text-sm font-semibold" style={{ color: textPrimary }}>Notificações</span>
             {unreadCount > 0 && (
               <button
+                type="button"
                 onClick={() => markAllRead.mutate()}
-                className="text-[11px] flex items-center gap-1"
-                style={{ color: "#4ade80" }}
+                disabled={markAllRead.isPending}
+                className="flex items-center gap-1 text-[11px] disabled:cursor-not-allowed disabled:opacity-60"
+                style={{ color: dark ? "var(--cf2-success-fill)" : "var(--cf2-success-text)" }}
               >
                 <Check className="w-3 h-3" /> Marcar todas como lidas
               </button>
@@ -121,8 +128,8 @@ export function Cf2NotificationBell({ variant = "light" }: { variant?: "light" |
               notifications.slice(0, 20).map((notif) => {
                 const content = (
                   <div
-                    className="flex items-start gap-3 px-4 py-3 cursor-pointer transition-colors hover:bg-white/[0.04]"
-                    style={{ opacity: notif.lida ? 0.5 : 1 }}
+                    className="flex cursor-pointer items-start gap-3 px-4 py-3 cf2-transicao hover:bg-[var(--cf2-notification-hover)]"
+                    style={{ opacity: notif.lida ? 0.5 : 1, "--cf2-notification-hover": hoverBg } as React.CSSProperties}
                     onClick={() => { if (!notif.lida) markRead.mutate(notif.id); setOpen(false); }}
                   >
                     <div className="flex-1 min-w-0">
@@ -130,7 +137,7 @@ export function Cf2NotificationBell({ variant = "light" }: { variant?: "light" |
                       {notif.mensagem && <p className="text-xs truncate mt-0.5" style={{ color: textSecondary }}>{notif.mensagem}</p>}
                       <p className="text-[10px] mt-1" style={{ color: textSecondary }}>{timeAgo(notif.createdAt)}</p>
                     </div>
-                    {!notif.lida && <span className="w-2 h-2 rounded-full shrink-0 mt-2" style={{ background: "#4ade80" }} />}
+                    {!notif.lida && <span className="mt-2 h-2 w-2 shrink-0 rounded-full" style={{ background: "var(--cf2-success-fill)" }} />}
                   </div>
                 );
                 return notif.link ? <Link key={notif.id} href={notif.link}>{content}</Link> : <div key={notif.id}>{content}</div>;

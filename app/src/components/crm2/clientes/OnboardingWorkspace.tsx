@@ -47,8 +47,8 @@ const ABAS: { key: string; label: string }[] = [
 const ESTADO_BADGE: Record<string, { label: string; color: string; bg: string }> = {
   aguardando_contato: { label: "Aguardando contato", color: "var(--cf2-text-secondary)", bg: "var(--cf2-bg-surface-muted)" },
   reuniao_agendada: { label: "Reunião agendada", color: "#8e27ef", bg: "#8e27ef18" },
-  em_andamento: { label: "Em andamento", color: "#3b82f6", bg: "#3b82f618" },
-  aguardando_cliente: { label: "Aguardando cliente", color: "#f59e0b", bg: "#f59e0b18" },
+  em_andamento: { label: "Em andamento", color: "var(--cf2-informativo-fg)", bg: "#3b82f618" },
+  aguardando_cliente: { label: "Aguardando cliente", color: "var(--cf2-warning-text)", bg: "#f59e0b18" },
   bloqueado: { label: "Bloqueado", color: "var(--cf2-danger-text)", bg: "#ef444418" },
   concluido: { label: "Concluído", color: "var(--cf2-success-text)", bg: "var(--cf2-success-bg)" },
 };
@@ -143,7 +143,7 @@ export function Cf2OnboardingWorkspace() {
 
   const KPIS = [
     { label: "TOTAL EM ONBOARDING", valor: resumo?.ativas ?? 0, sub: "clientes ativos", icon: Activity, tone: "var(--cf2-success-text)" },
-    { label: "AGUARDANDO PRIMEIRO CONTATO", valor: resumo?.aguardandoContato ?? 0, sub: "requer ação", icon: Clock3, tone: "#f59e0b" },
+    { label: "AGUARDANDO PRIMEIRO CONTATO", valor: resumo?.aguardandoContato ?? 0, sub: "requer ação", icon: Clock3, tone: "var(--cf2-warning-text)" },
     { label: "REUNIÕES AGENDADAS", valor: resumo?.reunioesAgendadas ?? 0, sub: "próximos dias", icon: CalendarClock, tone: "#8e27ef" },
     { label: "EM ANDAMENTO", valor: resumo?.emAndamento ?? 0, sub: "em reunião/execução", icon: Zap, tone: "#3b82f6" },
     { label: "PRIMEIRO VALOR ATINGIDO", valor: resumo?.primeiroValorAtingido ?? 0, sub: "concluídos (marco)", icon: CheckCircle2, tone: "var(--cf2-success-text)" },
@@ -151,15 +151,15 @@ export function Cf2OnboardingWorkspace() {
 
   return (
     <div className="flex flex-col gap-5 h-full min-h-0">
-      <div className="flex items-center justify-between shrink-0 gap-3">
+      <div className="flex flex-col items-stretch justify-between gap-3 shrink-0 lg:flex-row lg:items-center">
         <div>
           <p className="text-[24px] font-bold flex items-center gap-2" style={{ color: "var(--cf2-text-primary)" }}><Sparkles className="w-5 h-5" style={{ color: "var(--cf2-accent-border)" }} /> Onboarding</p>
           <p className="text-[13px]" style={{ color: "var(--cf2-text-secondary)" }}>Gerencie todos os clientes em processo de onboarding e acompanhe a jornada até o primeiro valor.</p>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="relative">
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="relative flex-1 lg:flex-none">
             <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: "var(--cf2-text-tertiary)" }} />
-            <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar empresa ou contato..." className="text-[12px] rounded-lg pl-8 pr-3 py-2 outline-none w-56" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }} />
+            <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar empresa ou contato..." aria-label="Buscar empresa ou contato" className="w-full text-[12px] rounded-lg pl-8 pr-3 py-2 outline-none lg:w-56" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }} />
           </div>
           <select value={responsavelId} onChange={(e) => setResponsavelId(e.target.value)} className="text-[12px] rounded-lg px-3 py-2 outline-none" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-secondary)" }}>
             <option value="">Todos os responsáveis</option>
@@ -168,18 +168,24 @@ export function Cf2OnboardingWorkspace() {
         </div>
       </div>
 
-      <div className="grid grid-cols-5 gap-3 shrink-0">
-        {KPIS.map((k) => (
-          <div key={k.label} className="flex flex-col gap-1.5 p-3.5 rounded-2xl" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
-            <div className="flex items-center justify-between">
-              <p className="text-[9px] font-bold truncate" style={{ color: "var(--cf2-text-tertiary)" }}>{k.label}</p>
-              <k.icon className="w-3.5 h-3.5 shrink-0" style={{ color: k.tone }} />
+      <section aria-label="Pulso do onboarding" className="grid grid-cols-2 overflow-hidden rounded-[var(--radius-card)] shrink-0 lg:grid-cols-[1.5fr_repeat(4,minmax(0,1fr))]" style={{ background: "var(--cf2-bg-inverse)" }}>
+        {KPIS.map((k, index) => {
+          const principal = index === 0;
+          return (
+            <div
+              key={k.label}
+              className={`min-w-0 px-4 py-4 sm:px-5 ${index > 0 ? "border-l border-white/15" : ""} ${index >= 2 ? "border-t border-white/15 lg:border-t-0" : ""}`}
+            >
+              <div className="flex items-center gap-2">
+                <k.icon className="h-3.5 w-3.5 shrink-0" style={{ color: principal ? "var(--cf2-accent)" : k.tone }} />
+                <p className="text-[10px] font-bold uppercase tracking-[0.08em] truncate" style={{ color: "color-mix(in srgb, var(--cf2-text-on-inverse) 58%, transparent)" }}>{k.label}</p>
+              </div>
+              <p className={`${principal ? "mt-3 text-[30px] sm:text-[36px]" : "mt-3 text-[20px]"} font-bold leading-none tabular-nums`} style={{ color: principal ? "var(--cf2-accent)" : "var(--cf2-text-on-inverse)" }}>{k.valor}</p>
+              <p className="mt-2 text-[11px] truncate" style={{ color: "color-mix(in srgb, var(--cf2-text-on-inverse) 62%, transparent)" }}>{k.sub}</p>
             </div>
-            <p className="text-[20px] font-bold" style={{ color: k.tone }}>{k.valor}</p>
-            <p className="text-[10px] truncate" style={{ color: "var(--cf2-text-tertiary)" }}>{k.sub}</p>
-          </div>
-        ))}
-      </div>
+          );
+        })}
+      </section>
 
       <div className="flex items-center gap-1.5 shrink-0 overflow-x-auto">
         {ABAS.map((a) => {
@@ -193,7 +199,7 @@ export function Cf2OnboardingWorkspace() {
         })}
       </div>
 
-      <div className="flex-1 min-h-0 grid grid-cols-[1fr_280px] gap-4 overflow-hidden">
+      <div className="grid flex-1 min-h-0 grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_280px] xl:overflow-hidden">
         <div className="rounded-2xl flex flex-col overflow-hidden" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
           <div className="flex-1 overflow-y-auto">
             {isLoading ? (
@@ -238,7 +244,7 @@ export function Cf2OnboardingWorkspace() {
           </div>
         </div>
 
-        <div className="flex flex-col gap-3 overflow-y-auto shrink-0">
+        <div className="flex flex-col gap-3 shrink-0 xl:overflow-y-auto">
           <div className="rounded-2xl p-3.5" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
             <p className="text-[11px] font-bold mb-2" style={{ color: "var(--cf2-text-primary)" }}>Minhas tarefas {minhasTarefas?.length ? `(${minhasTarefas.length})` : ""}</p>
             {(minhasTarefas ?? []).length === 0 ? (

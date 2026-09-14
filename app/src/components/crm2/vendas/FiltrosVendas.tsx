@@ -62,6 +62,7 @@ function Dropdown({
         onClick={() => setAberto((v) => !v)}
         aria-expanded={aberto}
         aria-label={rotulo}
+        data-cf2-superficie={variante === "claro" ? undefined : "escura"}
         className="flex items-center gap-2 h-10 px-4 rounded-full text-[13.5px] font-medium transition-opacity hover:opacity-90 cursor-pointer whitespace-nowrap"
         style={variante === "claro"
           ? { background: "var(--cf2-bg-surface)", color: "var(--cf2-home-ink)" }

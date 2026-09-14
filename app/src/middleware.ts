@@ -29,12 +29,12 @@ export default auth((req) => {
     if (vaRole) effectiveRole = vaRole;
   }
 
-  // Admin routes require super_admin role
-  if (pathname.startsWith("/admin") && req.auth) {
-    if (effectiveRole !== "super_admin") {
-      return NextResponse.redirect(new URL("/inicio", req.url));
-    }
-  }
+  // `/admin/*` não é mais uma área: desde 09/09/2026 é só um redirect pras
+  // telas migradas em `/ajustes`. O gate de super_admin que existia aqui
+  // mandava qualquer admin comum pra `/inicio` ANTES do redirect rodar, então
+  // um favorito de `/admin/usuarios` caía na Home em vez de chegar em
+  // Ajustes → Equipe, que admin comum pode ver. Quem checa papel agora é cada
+  // tela de destino (`/ajustes/organizacoes` segue exigindo super_admin).
 
   // Telas de gestão (Configurações, Financeiro, Relatórios, Onboarding, Campanhas):
   // só admin/gerente/super_admin. Vendedor/closer não acessa (vê os números dele no

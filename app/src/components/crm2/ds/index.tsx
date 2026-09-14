@@ -99,6 +99,18 @@ const TOM_BG = {
   positivo: "var(--cf2-home-lime-bg)",
 } as const;
 
+/* Texto das pílulas coloridas. Vem em hex fixo, e não das variáveis de `TOM`,
+   porque a pílula é uma ilha de fundo CLARO que pode estar dentro de um card
+   escuro — onde `[data-cf2-superficie="escura"]` reescreve os tokens pros
+   tons de alto brilho. Sem isto, o KPI de Vendas mostrava vermelho claro
+   sobre rosa claro, 2.6:1. O fundo já é fixo pelo mesmo motivo. */
+const TOM_FG_EM_PILULA = {
+  danger: "#b91c1c",
+  warning: "#b45309",
+  info: "#2542a8",
+  positivo: "#15803d",
+} as const;
+
 export const AVATAR_CORES = [
   "var(--cf2-avatar-1)", "var(--cf2-avatar-2)", "var(--cf2-avatar-3)",
   "var(--cf2-avatar-4)", "var(--cf2-avatar-5)",
@@ -113,6 +125,7 @@ export function Cf2Faixa({
   return (
     <section
       className={`flex flex-col ${ESPACO.secao} ${ESPACO.faixa} ${hero ? RAIO.hero : RAIO.card} ${className}`}
+      data-cf2-superficie="escura"
       style={{ background: "var(--cf2-home-hero-bg)" }}
       {...props}
     >
@@ -250,11 +263,29 @@ export function Cf2Pilula({
   escuro?: boolean;
 }) {
   const fundo = tom ? TOM_BG[tom] : escuro ? "var(--cf2-home-dark-overlay)" : "var(--cf2-home-neutral-surface)";
-  const cor = tom ? TOM[tom] : escuro ? "var(--cf2-home-text-muted)" : "var(--cf2-home-ink-soft)";
+  const cor = tom ? TOM_FG_EM_PILULA[tom] : escuro ? "var(--cf2-home-text-muted)" : "var(--cf2-home-ink-soft)";
+
+  // Uma pílula com `tom` tem fundo de pastilha CLARA e pode estar dentro de um
+  // card escuro, onde `[data-cf2-superficie="escura"]` reescreveu os tokens
+  // pros tons de alto brilho. Ela reabre o contexto claro pra si e pra quem
+  // vier dentro — o `Cf2Tendencia` aninhado saía em vermelho claro sobre rosa
+  // claro (2.6:1) nos KPIs de Vendas. Vai como custom property inline, e não
+  // como regra CSS de escopo, porque o build descarta seletores de atributo
+  // que só declaram variáveis.
+  const escopoClaro: React.CSSProperties = tom
+    ? ({
+        "--cf2-home-danger": "#b91c1c",
+        "--cf2-home-warning": "#b45309",
+        "--cf2-home-positive": "#15803d",
+        "--cf2-home-positive-alt": "#047857",
+        "--cf2-home-info": "#2542a8",
+      } as React.CSSProperties)
+    : {};
+
   return (
     <span
       className={`flex items-center gap-1.5 py-1 px-2.5 ${RAIO.pilula} text-[12px] font-medium shrink-0 whitespace-nowrap`}
-      style={{ background: fundo, color: cor }}
+      style={{ ...escopoClaro, background: fundo, color: cor }}
     >
       {children}
     </span>
@@ -327,8 +358,8 @@ export function Cf2Kpi({
   const estilo = { background: "var(--cf2-home-kpi-bg)" };
 
   return href
-    ? <Link href={href} className={classe} style={estilo}>{conteudo}</Link>
-    : <div className={classe} style={estilo}>{conteudo}</div>;
+    ? <Link href={href} className={classe} style={estilo} data-cf2-superficie="escura">{conteudo}</Link>
+    : <div className={classe} style={estilo} data-cf2-superficie="escura">{conteudo}</div>;
 }
 
 /** Célula de métrica dentro de card claro (bordered, raio de linha). */

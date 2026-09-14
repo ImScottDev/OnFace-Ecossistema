@@ -4,8 +4,12 @@ import {
   aiAlerts, aiCases, aiContactFieldProposals, aiKnowledgeChunks, aiKnowledgeVersions, aiMemoryEntries, aiMemoryPointers, aiMemoryVersions,
   aiSdrContatoState, aiSkillActivations, aiSkillPointers, aiSkillVersions, aiUsageBudgets, aiAgentRuns,
   cadenceDefinitions, cadenceEnrollments, contatos, leads, negocios, tarefas, usuarios, whatsappMensagens,
+  entityLabels, labels, leadLabels, atividades,
 } from "@/lib/db/schema";
 import type { ModelTool } from "../runtime/provider-gateway";
+import { converterLeadEmOportunidade } from "@/lib/crm/converter-oportunidade";
+import { enviarParaDiscagem } from "@/lib/integrations/callface";
+import { publicarEvento } from "@/lib/events/outbox";
 
 export type AgentToolContext = {
   organizacaoId: string;
@@ -14,6 +18,7 @@ export type AgentToolContext = {
   contatoId?: string | null;
   leadId?: string | null;
   mode: "test" | "live";
+  autonomy: "suggest" | "approval" | "autonomous";
 };
 
 export type AgentToolResult = { ok: boolean; data?: unknown; error?: string; handoff?: boolean };
@@ -33,7 +38,7 @@ const objectSchema = (properties: Record<string, unknown> = {}, required: string
 const stringProp = (description: string) => ({ type: "string", description });
 
 function preview(ctx: AgentToolContext, operation: string, input: Record<string, unknown>): AgentToolResult | null {
-  return ctx.mode === "test" ? { ok: true, data: { preview: true, operation, input } } : null;
+  return ctx.mode === "test" || ctx.autonomy !== "autonomous" ? { ok: true, data: { preview: true, approvalRequired: ctx.mode === "live" && ctx.autonomy === "approval", operation, input } } : null;
 }
 
 async function contactContext(ctx: AgentToolContext) {
@@ -141,12 +146,15 @@ export const AGENT_TOOLS: AgentToolRegistration[] = [
     },
   },
   {
-    id: "lead.qualify", name: "lead_qualify", description: "Atualiza dados comerciais não sensíveis extraídos da conversa.", category: "crm", mutates: true,
-    parameters: objectSchema({ empresa: stringProp("Empresa"), cargo: stringProp("Cargo"), setor: stringProp("Setor"), porte: stringProp("Porte") }),
+    id: "lead.qualify", name: "lead_qualify", description: "Registra empresa, CNPJ, cargo, dor, tomador, fit e próxima ação extraídos da conversa.", category: "crm", mutates: true,
+    parameters: objectSchema({ empresa: stringProp("Empresa"), cnpj: stringProp("CNPJ"), cargo: stringProp("Cargo"), setor: stringProp("Setor"), porte: stringProp("Porte"), dor: stringProp("Dor principal"), tomador: stringProp("Tomador de decisão"), fit: { type: "string", enum: ["alto", "medio", "baixo", "sem_fit"] }, proxima_acao: stringProp("Próxima ação combinada") }),
     execute: async (ctx, input) => {
       const simulated = preview(ctx, "lead.qualify", input); if (simulated) return simulated;
       if (!ctx.leadId) return { ok: false, error: "lead ausente" };
-      const [lead] = await db.update(leads).set({ ...(input.empresa ? { empresa: String(input.empresa) } : {}), ...(input.cargo ? { cargo: String(input.cargo) } : {}), ...(input.setor ? { empresaSetor: String(input.setor) } : {}), ...(input.porte ? { empresaPorte: String(input.porte) } : {}), updatedAt: new Date() }).where(and(eq(leads.id, ctx.leadId), eq(leads.organizacaoId, ctx.organizacaoId))).returning({ id: leads.id });
+      const [current] = await db.select({ camposCustom: leads.camposCustom }).from(leads).where(and(eq(leads.id, ctx.leadId), eq(leads.organizacaoId, ctx.organizacaoId))).limit(1);
+      if (!current) return { ok: false, error: "lead não encontrado" };
+      const qual = Object.fromEntries(Object.entries({ dor: input.dor, tomador_decisao: input.tomador, fit: input.fit, proxima_acao: input.proxima_acao }).filter(([, value]) => value != null && String(value).trim()));
+      const [lead] = await db.update(leads).set({ ...(input.empresa ? { empresa: String(input.empresa) } : {}), ...(input.cnpj ? { empresaCnpj: String(input.cnpj) } : {}), ...(input.cargo ? { cargo: String(input.cargo) } : {}), ...(input.setor ? { empresaSetor: String(input.setor) } : {}), ...(input.porte ? { empresaPorte: String(input.porte) } : {}), camposCustom: { ...((current.camposCustom as Record<string, unknown>) ?? {}), qualificacao: { ...((((current.camposCustom as Record<string, unknown>)?.qualificacao as Record<string, unknown>) ?? {})), ...qual } }, updatedAt: new Date() }).where(and(eq(leads.id, ctx.leadId), eq(leads.organizacaoId, ctx.organizacaoId))).returning({ id: leads.id });
       return lead ? { ok: true, data: lead } : { ok: false, error: "lead não encontrado" };
     },
   },
@@ -155,8 +163,63 @@ export const AGENT_TOOLS: AgentToolRegistration[] = [
     parameters: objectSchema({ negocio_id: stringProp("UUID do negócio"), status: stringProp("Novo estágio") }, ["negocio_id", "status"]),
     execute: async (ctx, input) => {
       const simulated = preview(ctx, "deal.advance", input); if (simulated) return simulated;
+      if (["ganho", "won", "closed_won"].includes(String(input.status).toLowerCase())) return { ok: false, error: "Won exige evidência validada pelo gate comercial" };
       const [deal] = await db.update(negocios).set({ status: String(input.status), updatedAt: new Date() }).where(and(eq(negocios.id, String(input.negocio_id)), eq(negocios.organizacaoId, ctx.organizacaoId))).returning({ id: negocios.id, status: negocios.status });
       return deal ? { ok: true, data: deal } : { ok: false, error: "negócio não encontrado" };
+    },
+  },
+  {
+    id: "lead.tag", name: "lead_tag", description: "Adiciona ou remove uma tag do lead e publica o evento para outras automações.", category: "crm", mutates: true,
+    parameters: objectSchema({ acao: { type: "string", enum: ["adicionar", "remover"] }, tag: stringProp("Nome exato da tag") }, ["acao", "tag"]),
+    execute: async (ctx, input) => {
+      const simulated = preview(ctx, "lead.tag", input); if (simulated) return simulated;
+      if (!ctx.leadId) return { ok: false, error: "lead ausente" };
+      const nome = String(input.tag ?? "").trim(); if (!nome) return { ok: false, error: "tag vazia" };
+      let [label] = await db.select({ id: labels.id }).from(labels).where(and(eq(labels.organizacaoId, ctx.organizacaoId), sql`lower(${labels.nome}) = lower(${nome})`)).limit(1);
+      if (!label) [label] = await db.insert(labels).values({ organizacaoId: ctx.organizacaoId, nome }).returning({ id: labels.id });
+      if (input.acao === "remover") {
+        const [removed] = await db.delete(entityLabels).where(and(eq(entityLabels.organizacaoId, ctx.organizacaoId), eq(entityLabels.entityType, "lead"), eq(entityLabels.entityId, ctx.leadId), eq(entityLabels.labelId, label.id))).returning({ id: entityLabels.id });
+        await db.delete(leadLabels).where(and(eq(leadLabels.leadId, ctx.leadId), eq(leadLabels.labelId, label.id)));
+        if (removed) await publicarEvento({ organizacaoId: ctx.organizacaoId, eventType: "TagRemoved", aggregateType: "lead", aggregateId: ctx.leadId, payload: { leadId: ctx.leadId, tag: nome, labelId: label.id }, idempotencyKey: `tag:remove:${removed.id}` });
+        return { ok: true, data: { removed: Boolean(removed), labelId: label.id } };
+      }
+      await db.insert(leadLabels).values({ leadId: ctx.leadId, labelId: label.id }).onConflictDoNothing();
+      const [assignment] = await db.insert(entityLabels).values({ organizacaoId: ctx.organizacaoId, entityType: "lead", entityId: ctx.leadId, labelId: label.id }).onConflictDoNothing().returning({ id: entityLabels.id });
+      if (assignment) await publicarEvento({ organizacaoId: ctx.organizacaoId, eventType: "TagAdded", aggregateType: "lead", aggregateId: ctx.leadId, payload: { leadId: ctx.leadId, tag: nome, labelId: label.id }, idempotencyKey: `tag:add:${assignment.id}` });
+      return { ok: true, data: { assignmentId: assignment?.id ?? null, deduplicated: !assignment, labelId: label.id } };
+    },
+  },
+  {
+    id: "activity.note", name: "activity_note", description: "Registra uma nota auditável na timeline do lead.", category: "crm", mutates: true,
+    parameters: objectSchema({ titulo: stringProp("Título"), descricao: stringProp("Descrição") }, ["titulo"]),
+    execute: async (ctx, input) => {
+      const simulated = preview(ctx, "activity.note", input); if (simulated) return simulated;
+      if (!ctx.leadId) return { ok: false, error: "lead ausente" };
+      const [row] = await db.insert(atividades).values({ organizacaoId: ctx.organizacaoId, leadId: ctx.leadId, tipo: "nota_agente", titulo: String(input.titulo), descricao: input.descricao ? String(input.descricao) : null, dados: { aiRunId: ctx.runId, agentId: ctx.agentId } }).returning({ id: atividades.id });
+      return { ok: true, data: row };
+    },
+  },
+  {
+    id: "meeting.schedule", name: "meeting_schedule", description: "Converte o lead em oportunidade e agenda uma reunião real no CRM para a data confirmada pelo contato.", category: "operation", mutates: true,
+    parameters: objectSchema({ data: stringProp("Data/hora ISO confirmada"), titulo: stringProp("Título"), duracao: { type: "integer", minimum: 15, maximum: 180 }, closer_id: stringProp("UUID do closer, opcional"), notas: stringProp("Contexto para o closer") }, ["data"]),
+    execute: async (ctx, input) => {
+      const simulated = preview(ctx, "meeting.schedule", input); if (simulated) return simulated;
+      if (!ctx.leadId) return { ok: false, error: "lead ausente" };
+      const data = new Date(String(input.data));
+      if (Number.isNaN(data.getTime()) || data.getTime() < Date.now() + 5 * 60_000) return { ok: false, error: "data inválida ou já passada" };
+      const result = await converterLeadEmOportunidade(db, { organizacaoId: ctx.organizacaoId, leadId: ctx.leadId, usuarioId: null, closerId: input.closer_id ? String(input.closer_id) : null, reuniao: { data, titulo: input.titulo ? String(input.titulo) : undefined, duracao: Number(input.duracao ?? 30), notas: input.notas ? String(input.notas) : undefined, tipo: "video" } });
+      return "error" in result ? { ok: false, error: result.error } : { ok: true, data: result };
+    },
+  },
+  {
+    id: "callface.call", name: "callface_call", description: "Envia o lead atual para a fila de ligação da Callface AI.", category: "communication", mutates: true, parameters: objectSchema(),
+    execute: async (ctx, input) => {
+      const simulated = preview(ctx, "callface.call", input); if (simulated) return simulated;
+      if (!ctx.leadId) return { ok: false, error: "lead ausente" };
+      const [lead] = await db.select({ nome: leads.nome, telefone: leads.telefone }).from(leads).where(and(eq(leads.id, ctx.leadId), eq(leads.organizacaoId, ctx.organizacaoId))).limit(1);
+      if (!lead?.telefone) return { ok: false, error: "lead sem telefone" };
+      const result = await enviarParaDiscagem({ nome: lead.nome, telefone: lead.telefone });
+      return result.ok ? { ok: true, data: result } : { ok: false, error: result.detalhe };
     },
   },
   {
@@ -248,7 +311,7 @@ const byId = new Map(AGENT_TOOLS.map((tool) => [tool.id, tool]));
 const byName = new Map(AGENT_TOOLS.map((tool) => [tool.name, tool]));
 
 export function agentToolCatalog() {
-  return AGENT_TOOLS.map(({ execute: _execute, ...tool }) => tool);
+  return AGENT_TOOLS.map((tool) => ({ id: tool.id, name: tool.name, description: tool.description, category: tool.category, mutates: tool.mutates, parameters: tool.parameters }));
 }
 
 export function modelToolsForIds(ids: string[]): ModelTool[] {

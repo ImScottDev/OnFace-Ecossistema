@@ -145,7 +145,7 @@ function Cf2TagsSection({ conversaId }: { conversaId: string }) {
                 if (e.key === "Enter") confirmar();
                 if (e.key === "Escape") { setAberto(false); setBusca(""); }
               }}
-              placeholder="Nova tag..."
+              placeholder="Nova tag..." aria-label="Nova tag"
               className="flex-1 rounded-lg px-2.5 py-1.5 text-[12px] outline-none"
               style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }}
             />
@@ -235,7 +235,7 @@ export function Cf2ContextPanel({ conversa, contexto, loading }: { conversa: Con
   return (
     <div
       data-cf2-theme="dark"
-      className="flex flex-col gap-3 h-full shrink-0 w-[336px] rounded-2xl overflow-y-auto p-4"
+      className="flex flex-col gap-3 h-full w-full rounded-2xl overflow-y-auto p-4"
       style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}
     >
       {loading && <p className="text-[13px]" style={{ color: "var(--cf2-text-tertiary)" }}>Carregando contexto…</p>}
@@ -266,7 +266,7 @@ export function Cf2ContextPanel({ conversa, contexto, loading }: { conversa: Con
           <div className="flex flex-col gap-3.5 rounded-xl p-3.5" style={{ background: "var(--cf2-bg-surface-muted)" }}>
             <div className="flex items-center justify-between">
               <p className="text-[11px] font-bold tracking-wide" style={{ color: "var(--cf2-text-tertiary)" }}>PESSOA</p>
-              <Cf2Badge variant={contexto.isCliente ? "success" : "neutral"}>{contexto.isCliente ? "Cliente" : "Lead"}</Cf2Badge>
+              <Cf2Badge variant={contexto.isCliente ? "success" : "neutral"} dark>{contexto.isCliente ? "Cliente" : "Lead"}</Cf2Badge>
             </div>
             <div className="flex gap-3 items-center">
               <div className="flex items-center justify-center rounded-full shrink-0 w-10 h-10" style={{ background: "var(--cf2-accent)" }}>

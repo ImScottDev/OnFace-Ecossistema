@@ -113,17 +113,22 @@ async function simularPagamentoConfirmado(checkoutId: string, negocioId: string,
 async function main() {
   const [org] = await db.select().from(organizacoes).limit(1);
   const [user] = await db.select().from(usuarios).where(eq(usuarios.organizacaoId, org.id)).limit(1);
-  const cat = async (categoria: string, tipo: string, nomeExato?: string) => {
-    const clauses = [eq(servicosCatalogo.organizacaoId, org.id), eq(servicosCatalogo.categoria, categoria), eq(servicosCatalogo.tipo, tipo)];
-    if (nomeExato) clauses.push(eq(servicosCatalogo.nome, nomeExato));
+  const cat = async (serviceFamily: string, tipo: string, categoria?: string) => {
+    const clauses = [
+      eq(servicosCatalogo.organizacaoId, org.id),
+      eq(servicosCatalogo.serviceFamily, serviceFamily),
+      eq(servicosCatalogo.tipo, tipo),
+      eq(servicosCatalogo.ativo, true),
+    ];
+    if (categoria) clauses.push(eq(servicosCatalogo.categoria, categoria));
     const [row] = await db.select().from(servicosCatalogo).where(and(...clauses)).limit(1);
-    if (!row) throw new Error(`catálogo ${categoria}/${tipo}${nomeExato ? `/${nomeExato}` : ""} não encontrado`);
+    if (!row) throw new Error(`catálogo ${serviceFamily}/${tipo}${categoria ? `/${categoria}` : ""} não encontrado`);
     return row;
   };
-  const catAi = await cat("callface_ai", "recorrente", "Callface AI - Starter");
-  const catPabx = await cat("pabx", "recorrente", "PABX Starter (Compartilhado)");
-  const catWlMrr = await cat("white_label", "recorrente", "White Label - Licença Mensal");
-  const catWlSetup = await cat("white_label", "setup", "White Label - Setup Inicial");
+  const catAi = await cat("CALLFACE_AI", "recorrente", "plano");
+  const catPabx = await cat("PABX", "recorrente", "plano");
+  const catWlMrr = await cat("WHITE_LABEL", "recorrente", "licenca");
+  const catWlSetup = await cat("WHITE_LABEL", "setup", "setup");
 
   // ── Limpeza de resíduo (idempotência entre rodadas) ──
   await db.execute(sql`delete from event_outbox where aggregate_id in (select id from proposta_grupo_comercial where negocio_id in (select id from negocios where titulo like '[E2E]%'))`);

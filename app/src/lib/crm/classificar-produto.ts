@@ -34,9 +34,69 @@ const REGRAS: { familia: Exclude<FamiliaServico, "UNKNOWN">; termos: string[] }[
       "fanvil", "aparelho ip", "telefone", "media gateway", "portabilidade",
       "canais", "minutagem", "minutos", "min adicionais", "linha adicional",
       "ligações", "ligacoes", "discador", "tronco", "ura",
+      // Ampliação 02/09 (classificação do legado): termos medidos nos nomes
+      // que ficavam UNKNOWN de fato no histórico — hardware de telefonia,
+      // linhas 400x, módulos e serviços de telefonia. A cobertura do
+      // classificador nos 334 nomes distintos do histórico era 57,5%.
+      "headset", "gateway", "nobreak", "no-break", "ata ", "atas", "openbox",
+      "linha 4003", "linha 4004", "linha 3003", "4003", "4004",
+      "sip", "voip", "bina", "softswitch", "siproute", "e1 ", "fxo", "fxs",
+      "pesquisa de satisfacao", "pesquisa de satisfação", "controle de pausa",
+      "web api", "gravacao", "gravação", "transcricao", "transcrição",
+      "dashboard", "relatorio personalizado", "relatório personalizado",
+      "voz ilimitad", "telefonia", "telecom", "upgrade disco", "vpn",
+      "integracao teams", "integração teams", "microsoft teams", "qr code",
+      "bitrix", "multidados", "assistencia em telecom", "suporte e manutencao",
+      "suporte e manutenção", "callface em nuvem", "aparelho wifi",
     ],
   },
 ];
+
+/**
+ * Itens que NÃO são produto vendável: ajuste financeiro, crédito, reajuste,
+ * cortesia, multa, frete. Vinham do Zoho como se fossem linha de produto e
+ * poluíam qualquer contagem por família — classificar como PABX ou Callface AI
+ * seria pior que não classificar, porque entrariam no portfólio.
+ *
+ * Testado ANTES das famílias de propósito: "DESCONTO EXECUTIVO - MENSAL" tem
+ * "mensal" e "REAJUSTES ANUAIS" tem "anuais", mas nenhum dos dois é produto.
+ */
+const TERMOS_AJUSTE = [
+  "reajuste", "desconto", "credito", "crédito", "retroativ", "poc",
+  "carencia", "carência", "multa", "frete", "diferenca", "diferença",
+  "acerto", "aditivo", "cortesia", "bonific", "estorno", "abatimento",
+  "cancelamento", "ajuste",
+];
+
+/**
+ * É um ajuste/lançamento financeiro em vez de produto vendável?
+ * Usado pela camada de classificação do legado — não muda o comportamento de
+ * `classificarProdutoPorNome`, que continua devolvendo só família.
+ */
+export function ehAjusteFinanceiro(nome: string | null | undefined): boolean {
+  if (!nome) return false;
+  const n = nome.toLowerCase().trim();
+  return TERMOS_AJUSTE.some((t) => n.includes(t));
+}
+
+/**
+ * Nomes genéricos que existem em QUALQUER família e por isso não podem ser
+ * classificados pelo nome sozinho ("SETUP", "TOTAL", "INTEGRAÇÃO"). Já era o
+ * espírito do comentário de `classificarProdutoPorNome`; agora é explícito,
+ * pra a camada de legado marcar AMBIGUOUS em vez de UNRESOLVED — a diferença
+ * importa: ambíguo precisa de contexto, não-resolvido precisa de gente.
+ */
+const NOMES_GENERICOS = [
+  "setup", "total", "integracao", "integração", "servico", "serviço",
+  "mensalidade", "assinatura", "plano", "pacote", "licenca", "licença",
+  "implantacao", "implantação", "adicional", "outros", "diversos",
+];
+
+export function ehNomeGenerico(nome: string | null | undefined): boolean {
+  if (!nome) return false;
+  const n = nome.toLowerCase().trim().replace(/\s+/g, " ");
+  return NOMES_GENERICOS.includes(n) || NOMES_GENERICOS.some((g) => n === `${g}s`);
+}
 
 /**
  * Classifica UM item pelo nome. Devolve UNKNOWN pra nomes genéricos que

@@ -81,7 +81,7 @@ const FAMILY_LABEL: Record<string, string> = {
   CALLFACE_AI: "Callface AI",
   PABX: "PABX",
   WHITE_LABEL: "White Label",
-  UNKNOWN: "Não classificado",
+  UNKNOWN: "Produto em revisão",
 };
 
 const STATUS_LABEL: Record<string, string> = {
@@ -286,14 +286,14 @@ export function FinanceiroWorkspace() {
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard icon={CircleDollarSign} title="MRR canônico" value={money(data.mrr.atual)} detail="Services incluídos no portfolio" color="var(--cf2-success-text)" />
         <MetricCard icon={Server} title="Services ativos" value={String(data.mrr.activeServices)} detail={`${data.mrr.services} Services cadastrados`} color="var(--cf2-text-primary)" />
-        <MetricCard icon={RefreshCw} title="Em implantação" value={String(data.mrr.implementingServices)} detail="Fulfillments não concluídos" color="#3b82f6" />
-        <MetricCard icon={Database} title="Último ledger" value={batch ? money(batch.imported_total) : "—"} detail={batch ? `${competence(batch.competence)} · ${batch.row_count} linhas` : "Nenhum lote importado"} color="#8e27ef" />
+        <MetricCard icon={RefreshCw} title="Em implantação" value={String(data.mrr.implementingServices)} detail="Fulfillments não concluídos" color="var(--cf2-text-primary)" />
+        <MetricCard icon={Database} title="Último ledger" value={batch ? money(batch.imported_total) : "—"} detail={batch ? `${competence(batch.competence)} · ${batch.row_count} linhas` : "Nenhum lote importado"} color="var(--cf2-text-primary)" />
       </div>
 
       <div className="flex items-start gap-3 rounded-2xl p-4" style={{ background: "color-mix(in srgb, var(--cf2-warning-text) 8%, transparent)", border: "1px solid color-mix(in srgb, var(--cf2-warning-text) 24%, transparent)" }}>
         <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" style={{ color: "var(--cf2-warning-text)" }} />
         <p className="text-xs leading-5" style={{ color: "var(--cf2-text-secondary)" }}>
-          <strong style={{ color: "var(--cf2-text-primary)" }}>Fontes separadas:</strong> billing Stripe não é o mesmo que faturamento legado. Uma fatura autorizada não é automaticamente pagamento confirmado, e past_due não transforma o Service em churn.
+          <strong style={{ color: "var(--cf2-text-primary)" }}>Fontes separadas:</strong> billing Stripe não é o mesmo que faturamento mensal conciliado. Uma fatura autorizada não é automaticamente pagamento confirmado, e past_due não transforma o serviço em churn.
         </p>
       </div>
 

@@ -53,7 +53,7 @@ export function Cf2ConversationList({
 }) {
   return (
     <div
-      className="flex flex-col h-full shrink-0 w-[336px] rounded-2xl overflow-hidden"
+      className="flex flex-col h-full w-full rounded-2xl overflow-hidden"
       style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}
     >
       <div className="flex flex-col gap-4 p-5 pb-4" style={{ borderBottom: "1px solid var(--cf2-border-default)" }}>
@@ -79,7 +79,10 @@ export function Cf2ConversationList({
               <button
                 key={t.key}
                 onClick={() => onCanalChange(t.key)}
+                type="button"
                 title={t.label}
+                aria-label={mostrarContagem ? `${t.label} (${n})` : t.label}
+                aria-pressed={ativo}
                 className="flex flex-1 items-center justify-center gap-1.5 h-9 rounded-[9px] text-[12px] font-semibold transition-all min-w-0"
                 style={{
                   background: ativo ? "var(--cf2-bg-surface)" : "transparent",
@@ -114,6 +117,8 @@ export function Cf2ConversationList({
               value={search}
               onChange={(e) => onSearchChange(e.target.value)}
               placeholder="Buscar conversa ou pessoa"
+              aria-label="Buscar conversa ou pessoa"
+              type="search"
               className="flex-1 min-w-0 bg-transparent outline-none text-[13px]"
               style={{ color: "var(--cf2-text-primary)" }}
             />
@@ -122,7 +127,8 @@ export function Cf2ConversationList({
             <select
               value={view}
               onChange={(e) => onViewChange(e.target.value)}
-              className="appearance-none h-9 rounded-lg pl-3 pr-8 text-[12px] font-medium outline-none cursor-pointer"
+              aria-label="Filtrar conversas por responsável"
+              className="cf2-select-custom appearance-none h-9 rounded-lg pl-3 pr-8 text-[12px] font-medium outline-none cursor-pointer"
               style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-secondary)" }}
             >
               {VIEW_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}

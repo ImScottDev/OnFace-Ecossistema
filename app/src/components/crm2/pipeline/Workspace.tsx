@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Search, X, Clock, FileText, FileWarning, CreditCard, Link2, Beaker, Download } from "lucide-react";
+import { Search, X, Clock, FileText, FileWarning, CreditCard, Link2, Beaker, Download, Tag as TagIcon, UserCog, ListChecks } from "lucide-react";
 import { useOrgUsuarios, matchesResponsavel, type OrgUsuario } from "@/components/crm/BoardFilters";
 import { DarkFilterSelect, DarkItem } from "@/components/crm2/shared/DarkFilterSelect";
 import { OwnerPicker } from "@/components/crm2/prospeccao/OwnerPicker";
@@ -14,6 +14,8 @@ import {
 } from "./shared";
 import { Cf2NegocioDrawer } from "./NegocioDrawer";
 import { NovaOportunidadeModal } from "./NovaOportunidadeModal";
+import { BulkTarefaModal } from "./BulkTarefaModal";
+import { Cf2SelectBox } from "@/components/crm2/shared/SelectBox";
 
 const brl = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 0, maximumFractionDigits: 0 });
 
@@ -42,7 +44,12 @@ export function Cf2PipelineWorkspace() {
   const [respFilter, setRespFilter] = useState("todos");
   const [familiaFilter, setFamiliaFilter] = useState("todas");
   const [origemFilter, setOrigemFilter] = useState("todas");
-  const [periodoFilter, setPeriodoFilter] = useState<"mes" | "tudo">("mes");
+  // Default "tudo" (01/09, pedido do Kauã). Era "mes", e como o corte é por
+  // DATA DE CRIAÇÃO o board abria VAZIO todo dia 1º do mês — bug real que ele
+  // viu em 01/09 com o banco de 30/08. Uma oportunidade aberta em julho e
+  // ainda em Negociação continua no pipeline hoje; o board é foto do estado
+  // atual, não relatório de período. Quem quiser o mês seleciona.
+  const [periodoFilter, setPeriodoFilter] = useState<"mes" | "tudo">("tudo");
   const [statusFilter, setStatusFilter] = useState<"abertas" | "todas">("abertas");
   const [dragOverCol, setDragOverCol] = useState<string | null>(null);
   // Ganho/Perdido eram botões que abriam um modal por cima do Kanban — agora
@@ -55,6 +62,12 @@ export function Cf2PipelineWorkspace() {
   const [drawerNegocioId, setDrawerNegocioId] = useState<string | null>(null);
   const [novaOpen, setNovaOpen] = useState(false);
   const [showExport, setShowExport] = useState(false);
+  // Seleção em massa (01/09, Frente 2A) — mesmo conceito já validado em
+  // Prospecção: Set de ids, barra de ações aparece quando há seleção.
+  // Deliberadamente SEM ação destrutiva em massa (pedido explícito do Kauã).
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const [bulkMenu, setBulkMenu] = useState<null | "responsavel" | "tag">(null);
+  const [bulkTarefaOpen, setBulkTarefaOpen] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ["pipeline-crm2-board"],
@@ -85,6 +98,66 @@ export function Cf2PipelineWorkspace() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["pipeline-crm2-board"] }); toast.success("Responsável atualizado."); },
     onError: () => toast.error("Não foi possível atribuir o responsável"),
   });
+
+  // ── AÇÕES EM MASSA (01/09, Frente 2A) ─────────────────────────────────────
+  // Tudo em cima de endpoints que JÁ existem, um request por oportunidade.
+  // Não criei rota /bulk de propósito: o volume por seleção é de dezenas, e
+  // uma rota nova exigiria decidir semântica de erro parcial no servidor.
+  // Aqui o erro parcial fica explícito no toast — o operador vê o que falhou.
+  // Nenhuma ação destrutiva em massa (pedido explícito do Kauã).
+  const aplicarEmLote = async (
+    ids: string[],
+    executar: (id: string) => Promise<Response>,
+    rotulo: string
+  ) => {
+    const oks = await Promise.all(ids.map(async (id) => {
+      try { return (await executar(id)).ok; } catch { return false; }
+    }));
+    const falhas = oks.filter((ok) => !ok).length;
+    qc.invalidateQueries({ queryKey: ["pipeline-crm2-board"] });
+    setSelected(new Set());
+    setBulkMenu(null);
+    if (falhas === 0) toast.success(`${rotulo} em ${ids.length} oportunidade${ids.length === 1 ? "" : "s"}.`);
+    else toast.error(`${rotulo}: ${ids.length - falhas} ok, ${falhas} falharam.`);
+  };
+
+  const bulkResponsavel = useMutation({
+    mutationFn: async (responsavelId: string | null) =>
+      aplicarEmLote(Array.from(selected), (id) => fetch(`/api/negocios/${id}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ responsavelId }),
+      }), "Responsável atribuído"),
+  });
+
+  const bulkTag = useMutation({
+    mutationFn: async (labelId: string) =>
+      aplicarEmLote(Array.from(selected), (id) => fetch(`/api/negocios/${id}/labels`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ labelId }),
+      }), "Tag adicionada"),
+  });
+
+  const { data: labelsDisponiveis = [] } = useQuery<{ id: string; nome: string; cor: string }[]>({
+    queryKey: ["labels"],
+    queryFn: async () => { const r = await fetch("/api/labels"); if (!r.ok) return []; return r.json(); },
+    enabled: bulkMenu === "tag",
+  });
+
+  const toggleSelecionado = (id: string) =>
+    setSelected((prev) => {
+      const proximo = new Set(prev);
+      if (proximo.has(id)) proximo.delete(id); else proximo.add(id);
+      return proximo;
+    });
+
+  /** Marca/desmarca a coluna inteira de uma vez. */
+  const toggleColuna = (ids: string[]) =>
+    setSelected((prev) => {
+      const proximo = new Set(prev);
+      const todosJaMarcados = ids.length > 0 && ids.every((id) => proximo.has(id));
+      for (const id of ids) { if (todosJaMarcados) proximo.delete(id); else proximo.add(id); }
+      return proximo;
+    });
 
   useEffect(() => {
     const abrir = () => setNovaOpen(true);
@@ -139,6 +212,7 @@ export function Cf2PipelineWorkspace() {
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: "var(--cf2-chrome-text-secondary)" }} />
           <input
             value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar oportunidade, empresa..."
+            aria-label="Buscar oportunidade ou empresa" type="search"
             className="w-56 sm:w-72 pl-8 pr-7 py-1.5 rounded-lg text-[12px] outline-none"
             style={{ background: "rgba(255,255,255,0.06)", border: "1px solid var(--cf2-chrome-border-subtle)", color: "var(--cf2-chrome-text-primary)" }}
           />
@@ -146,24 +220,24 @@ export function Cf2PipelineWorkspace() {
         </div>
 
         <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto cf2-hide-scrollbar">
-          <DarkFilterSelect value={respFilter} onChange={setRespFilter} label="Responsável" placeholder="Todos">
+          <DarkFilterSelect value={respFilter} onChange={setRespFilter} label="Responsável" placeholder="Todos" aria-label="Todos">
             <DarkItem value="todos">Todos</DarkItem>
             {currentUserId && <DarkItem value="meu">Meus (eu)</DarkItem>}
             {usuarios.map((u) => <DarkItem key={u.id} value={u.id}>{u.nome}</DarkItem>)}
           </DarkFilterSelect>
-          <DarkFilterSelect value={familiaFilter} onChange={setFamiliaFilter} label="Família" placeholder="Todas">
+          <DarkFilterSelect value={familiaFilter} onChange={setFamiliaFilter} label="Família" placeholder="Todas" aria-label="Todas">
             <DarkItem value="todas">Todas</DarkItem>
             {Object.entries(FAMILY_LABEL).map(([k, label]) => <DarkItem key={k} value={k}>{label}</DarkItem>)}
           </DarkFilterSelect>
-          <DarkFilterSelect value={origemFilter} onChange={setOrigemFilter} label="Origem" placeholder="Todas">
+          <DarkFilterSelect value={origemFilter} onChange={setOrigemFilter} label="Origem" placeholder="Todas" aria-label="Todas">
             <DarkItem value="todas">Todas</DarkItem>
             {origensReais.map((o) => <DarkItem key={o} value={o}>{o}</DarkItem>)}
           </DarkFilterSelect>
-          <DarkFilterSelect value={periodoFilter} onChange={(v) => setPeriodoFilter(v as "mes" | "tudo")} label="Período" placeholder="Este mês">
+          <DarkFilterSelect value={periodoFilter} onChange={(v) => setPeriodoFilter(v as "mes" | "tudo")} label="Período" placeholder="Todo o período" aria-label="Todo o período">
             <DarkItem value="mes">Este mês</DarkItem>
             <DarkItem value="tudo">Todo o período</DarkItem>
           </DarkFilterSelect>
-          <DarkFilterSelect value={statusFilter} onChange={(v) => setStatusFilter(v as "abertas" | "todas")} label="Status" placeholder="Abertas">
+          <DarkFilterSelect value={statusFilter} onChange={(v) => setStatusFilter(v as "abertas" | "todas")} label="Status" placeholder="Abertas" aria-label="Abertas">
             <DarkItem value="abertas">Abertas</DarkItem>
             <DarkItem value="todas">Todas</DarkItem>
           </DarkFilterSelect>
@@ -179,6 +253,58 @@ export function Cf2PipelineWorkspace() {
         </button>
       </div>
 
+      {/* Barra de ações em massa (01/09, Frente 2A) — só aparece com seleção,
+          mesmo comportamento de Prospecção. Fica FORA da área rolável do
+          board pra não sumir quando o operador rola as colunas. */}
+      {selected.size > 0 && (
+        <div className="shrink-0 flex flex-wrap items-center gap-2 px-3 py-2 rounded-xl" style={{ background: "rgba(255,255,255,0.06)", border: "1px solid var(--cf2-chrome-border-subtle)" }}>
+          <span className="text-[13px] font-bold" style={{ color: "var(--cf2-chrome-text-primary)" }}>
+            {selected.size} oportunidade{selected.size === 1 ? "" : "s"} selecionada{selected.size === 1 ? "" : "s"}
+          </span>
+
+          <div className="relative">
+            <button onClick={() => setBulkMenu((m) => (m === "responsavel" ? null : "responsavel"))} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[12px] font-semibold" style={{ background: "rgba(255,255,255,0.06)", border: "1px solid var(--cf2-chrome-border-subtle)", color: "var(--cf2-chrome-text-primary)" }}>
+              <UserCog className="w-3.5 h-3.5" /> Atribuir responsável
+            </button>
+            {bulkMenu === "responsavel" && (
+              <div className="absolute z-30 mt-1 left-0 w-56 max-h-64 overflow-y-auto rounded-xl py-1" style={{ background: "var(--cf2-chrome-surface-active)", border: "1px solid var(--cf2-chrome-border-subtle)", boxShadow: "0 8px 16px rgba(0,0,0,0.4)" }}>
+                <button onClick={() => bulkResponsavel.mutate(null)} className="w-full text-left px-3 py-1.5 text-[12px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Remover responsável</button>
+                {usuarios.map((u) => (
+                  <button key={u.id} onClick={() => bulkResponsavel.mutate(u.id)} className="w-full text-left px-3 py-1.5 text-[12px]" style={{ color: "var(--cf2-chrome-text-primary)" }}>{u.nome}</button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="relative">
+            <button onClick={() => setBulkMenu((m) => (m === "tag" ? null : "tag"))} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[12px] font-semibold" style={{ background: "rgba(255,255,255,0.06)", border: "1px solid var(--cf2-chrome-border-subtle)", color: "var(--cf2-chrome-text-primary)" }}>
+              <TagIcon className="w-3.5 h-3.5" /> Adicionar tag
+            </button>
+            {bulkMenu === "tag" && (
+              <div className="absolute z-30 mt-1 left-0 w-56 max-h-64 overflow-y-auto rounded-xl py-1" style={{ background: "var(--cf2-chrome-surface-active)", border: "1px solid var(--cf2-chrome-border-subtle)", boxShadow: "0 8px 16px rgba(0,0,0,0.4)" }}>
+                {labelsDisponiveis.length === 0 ? (
+                  <p className="px-3 py-2 text-[12px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Nenhuma tag cadastrada.</p>
+                ) : labelsDisponiveis.map((l) => (
+                  <button key={l.id} onClick={() => bulkTag.mutate(l.id)} className="w-full text-left px-3 py-1.5 text-[12px] flex items-center gap-2" style={{ color: "var(--cf2-chrome-text-primary)" }}>
+                    <span className="w-2 h-2 rounded-full shrink-0" style={{ background: l.cor }} /> {l.nome}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <button onClick={() => setBulkTarefaOpen(true)} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[12px] font-semibold" style={{ background: "rgba(255,255,255,0.06)", border: "1px solid var(--cf2-chrome-border-subtle)", color: "var(--cf2-chrome-text-primary)" }}>
+            <ListChecks className="w-3.5 h-3.5" /> Criar tarefa
+          </button>
+
+          <button onClick={() => setShowExport(true)} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[12px] font-semibold" style={{ background: "rgba(255,255,255,0.06)", border: "1px solid var(--cf2-chrome-border-subtle)", color: "var(--cf2-chrome-text-primary)" }}>
+            <Download className="w-3.5 h-3.5" /> Exportar
+          </button>
+
+          <button onClick={() => { setSelected(new Set()); setBulkMenu(null); }} className="ml-auto text-[12px] font-semibold" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Limpar seleção</button>
+        </div>
+      )}
+
       {isLoading ? (
         <p className="text-[13px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Carregando...</p>
       ) : (
@@ -191,7 +317,7 @@ export function Cf2PipelineWorkspace() {
               return (
                 <div
                   key={col.key}
-                  className="w-[300px] shrink-0 rounded-2xl flex flex-col"
+                  className="w-[300px] shrink-0 rounded-2xl flex flex-col max-h-full"
                   style={{ background: isDragOver ? `color-mix(in srgb, ${col.color} 10%, transparent)` : "var(--cf2-chrome-bg-alt)", border: isDragOver ? `2px dashed ${col.color}` : "1px solid var(--cf2-chrome-border-subtle)" }}
                   onDragOver={(e) => e.preventDefault()}
                   onDragEnter={(e) => { e.preventDefault(); setDragOverCol(col.key); }}
@@ -199,15 +325,25 @@ export function Cf2PipelineWorkspace() {
                   onDrop={(e) => { e.preventDefault(); setDragOverCol(null); const id = e.dataTransfer.getData("negocioId"); if (id) moveStage.mutate({ id, status: col.dropTarget }); }}
                 >
                   <div className="px-3 pt-3 pb-2 shrink-0 flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: col.color }} />
-                      <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: col.color }}>{col.label} ({negociosCol.length})</span>
+                    <div className="flex items-center gap-2 min-w-0">
+                      {/* Selecionar/desmarcar a coluna inteira. Só aparece
+                          quando há card — checkbox em coluna vazia é ruído. */}
+                      {negociosCol.length > 0 && (
+                        <Cf2SelectBox
+                          checked={negociosCol.every((n) => selected.has(n.id))}
+                          onChange={() => toggleColuna(negociosCol.map((n) => n.id))}
+                          label={`Selecionar todas as oportunidades de ${col.label}`}
+                          stopPropagation={false}
+                        />
+                      )}
+                      <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: col.color }} />
+                      <span className="text-[11px] font-semibold uppercase tracking-wider truncate" style={{ color: col.color }}>{col.label} ({negociosCol.length})</span>
                     </div>
-                    <span className="text-[12px] font-bold" style={{ color: "var(--cf2-chrome-text-primary)" }}>{brl(totalCol)}</span>
+                    <span className="text-[12px] font-bold shrink-0" style={{ color: "var(--cf2-chrome-text-primary)" }}>{brl(totalCol)}</span>
                   </div>
                   <div className="flex-1 p-2 space-y-2 min-h-[120px] overflow-y-auto">
                     {negociosCol.map((n) => (
-                      <NegocioCard key={n.id} n={n} usuarios={usuarios} onAssignOwner={(userId) => assignOwner.mutate({ negocioId: n.id, responsavelId: userId })} onOpen={() => setDrawerNegocioId(n.id)} onDragStart={(e) => e.dataTransfer.setData("negocioId", n.id)} />
+                      <NegocioCard key={n.id} n={n} usuarios={usuarios} selecionado={selected.has(n.id)} onToggleSelecionado={() => toggleSelecionado(n.id)} onAssignOwner={(userId) => assignOwner.mutate({ negocioId: n.id, responsavelId: userId })} onOpen={() => setDrawerNegocioId(n.id)} onDragStart={(e) => e.dataTransfer.setData("negocioId", n.id)} />
                     ))}
                     {negociosCol.length === 0 && <div className="flex h-16 items-center justify-center text-[11px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>vazio</div>}
                   </div>
@@ -233,6 +369,13 @@ export function Cf2PipelineWorkspace() {
           onExport={(lista) => { gerarCsvNegocios(lista); setShowExport(false); }}
         />
       )}
+
+      <BulkTarefaModal
+        open={bulkTarefaOpen}
+        negocioIds={Array.from(selected)}
+        onClose={() => setBulkTarefaOpen(false)}
+        onDone={() => { setSelected(new Set()); qc.invalidateQueries({ queryKey: ["pipeline-crm2-board"] }); }}
+      />
 
       <Cf2NegocioDrawer negocioId={drawerNegocioId} open={!!drawerNegocioId} onClose={() => setDrawerNegocioId(null)} onChanged={() => qc.invalidateQueries({ queryKey: ["pipeline-crm2-board"] })} />
       <NovaOportunidadeModal open={novaOpen} onClose={() => setNovaOpen(false)} usuarios={usuarios} onCreated={() => qc.invalidateQueries({ queryKey: ["pipeline-crm2-board"] })} />
@@ -293,7 +436,7 @@ function ExportNegociosModal({ negocios, usuarios, onClose, onExport }: { negoci
   });
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.55)" }} onClick={onClose}>
+    <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.55)" }} onClick={onClose}>
       <div className="w-full max-w-md rounded-2xl p-6" style={{ background: "var(--cf2-chrome-surface-active)", border: "1px solid var(--cf2-chrome-border-subtle)" }} onClick={(e) => e.stopPropagation()}>
         <p className="font-bold text-[15px] mb-1" style={{ color: "var(--cf2-chrome-text-primary)" }}>Exportar oportunidades</p>
         <p className="text-[11px] mb-4" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Escolha o responsável e as etapas que quer puxar.</p>
@@ -384,9 +527,12 @@ function BucketColumn({ label, color, negocios, expanded, onToggle, onOpen, show
   );
 }
 
-function NegocioCard({ n, usuarios, onAssignOwner, onOpen, onDragStart }: {
+function NegocioCard({ n, usuarios, onAssignOwner, onOpen, onDragStart, selecionado = false, onToggleSelecionado }: {
   n: NegocioBoard; usuarios: OrgUsuario[]; onAssignOwner: (negocioId: string, userId: string | null) => void;
   onOpen: () => void; onDragStart: (e: React.DragEvent) => void;
+  /** Seleção em massa (01/09). Opcional: os buckets Ganho/Perdido não selecionam. */
+  selecionado?: boolean;
+  onToggleSelecionado?: () => void;
 }) {
   const nomeLead = [n.leadNome, n.leadSobrenome].filter(Boolean).join(" ");
   const isTrial = n.status === "trial";
@@ -400,11 +546,33 @@ function NegocioCard({ n, usuarios, onAssignOwner, onOpen, onDragStart }: {
       draggable
       onDragStart={onDragStart}
       onClick={onOpen}
-      className="rounded-xl p-3 cursor-grab active:cursor-grabbing hover:-translate-y-0.5 transition-all duration-200"
-      style={{ background: "var(--cf2-chrome-surface-active)", border: "1px solid var(--cf2-chrome-border-subtle)", boxShadow: "0 1px 2px rgba(0,0,0,0.3)" }}
+      className="group rounded-xl p-3 cursor-grab active:cursor-grabbing hover:-translate-y-0.5 transition-all duration-200"
+      style={{
+        background: "var(--cf2-chrome-surface-active)",
+        border: `1px solid ${selecionado ? "var(--cf2-accent-border)" : "var(--cf2-chrome-border-subtle)"}`,
+        boxShadow: "0 1px 2px rgba(0,0,0,0.3)",
+      }}
     >
-      <p className="text-[13px] font-bold truncate" style={{ color: "var(--cf2-chrome-text-primary)" }}>{n.empresaNome || nomeLead || n.titulo}</p>
+      {/* Checkbox no canto superior DIREITO e SEMPRE VISÍVEL (01/09, correção
+          do Kauã: estava à esquerda, antes do título, e só no hover). Mesma
+          posição do card de Prospecção, que ele deu como referência. */}
+      <div className="flex items-start justify-between gap-2">
+        <p className="flex-1 min-w-0 text-[13px] font-bold truncate" style={{ color: "var(--cf2-chrome-text-primary)" }}>{n.empresaNome || nomeLead || n.titulo}</p>
+        {onToggleSelecionado && (
+          <Cf2SelectBox checked={selecionado} onChange={onToggleSelecionado} label="Selecionar oportunidade" className="mt-0.5" />
+        )}
+      </div>
       {(n.empresaNome || nomeLead) && <p className="text-[11px] truncate mt-0.5" style={{ color: "var(--cf2-chrome-text-secondary)" }}>{nomeLead}{n.serviceFamily ? ` · ${FAMILY_LABEL[n.serviceFamily] || n.serviceFamily}` : ""}</p>}
+
+      {/* Tags (01/09) — contexto, nunca substituto de etapa. Renderizadas
+          antes dos badges de estado pra não competir com eles. */}
+      {(n.labels || []).length > 0 && (
+        <div className="flex items-center gap-1 mt-2 flex-wrap">
+          {(n.labels || []).map((l) => (
+            <span key={l.id} className="px-1.5 py-0.5 rounded-full text-[10px] font-bold" style={{ background: `color-mix(in srgb, ${l.cor} 18%, transparent)`, color: l.cor }}>{l.nome}</span>
+          ))}
+        </div>
+      )}
 
       <div className="flex items-center gap-1 mt-2 flex-wrap">
         {/* Cores por SEMÂNTICA, não por badge (24/08, achado do Kauã: "cores
@@ -412,7 +580,7 @@ function NegocioCard({ n, usuarios, onAssignOwner, onOpen, onDragStart }: {
             sucesso/info (accent), atenção (warning), problema (danger),
             neutro. Nenhum hex solto novo, só as variantes dark-safe já
             estabelecidas em Pré-vendas. */}
-        {isTrial && <Badge icon={Beaker} label="Trial ativo" color="var(--cf2-accent-border)" />}
+        {isTrial && <Badge icon={Beaker} label="Trial ativo" color={SUCCESS_DARK} />}
         {isNoShow && <Badge label="No-show" color={WARNING_DARK} />}
         {propostaDisplay && <Badge icon={FileText} label={`Proposta #${n.proposta!.numero} · ${propostaDisplay.label}`} color={propostaDisplay.tom === "danger" ? "#f87171" : propostaDisplay.tom === "success" ? SUCCESS_DARK : propostaDisplay.tom === "warning" ? WARNING_DARK : "var(--cf2-chrome-text-secondary)"} />}
         {n.contratoPendente && <Badge icon={FileWarning} label="Contrato pendente" color={WARNING_DARK} />}

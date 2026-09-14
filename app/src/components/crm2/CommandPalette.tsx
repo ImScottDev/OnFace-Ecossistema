@@ -19,7 +19,7 @@ interface CommandItem {
 }
 
 // Navegação real do App Shell novo — mesmos destinos do Sidebar.tsx (algumas
-// ainda caem no legado até a tela ser migrada, o que é esperado).
+// todas apontam pra telas CRM2 desde a consolidação de 08/09/2026).
 const NAV: CommandItem[] = [
   { id: "nav-inicio", label: "Dashboard", href: "/inicio", icon: LayoutDashboard, group: "Navegar" },
   { id: "nav-atendimento", label: "Atendimento", href: "/atendimento", icon: Headset, group: "Navegar" },
@@ -29,10 +29,10 @@ const NAV: CommandItem[] = [
   { id: "nav-qualificacao", label: "Qualificação", href: "/pre-vendas", icon: Filter, group: "Navegar" },
   { id: "nav-pipeline", label: "Pipeline", href: "/pipeline", icon: GitBranch, group: "Navegar" },
   { id: "nav-negocios", label: "Negócios", href: "/pipeline", icon: Briefcase, group: "Navegar" },
-  { id: "nav-atividades", label: "Atividades", sublabel: "Tela legada", href: "/tarefas", icon: CheckCircle2, group: "Navegar" },
+  { id: "nav-atividades", label: "Tarefas", href: "/tarefas", icon: CheckCircle2, group: "Navegar" },
   { id: "nav-automacoes", label: "Automações", href: "/automacoes", icon: Zap, group: "Navegar" },
-  { id: "nav-indicadores", label: "Indicadores", sublabel: "Tela legada", href: "/relatorios", icon: TrendingUp, group: "Navegar" },
-  { id: "nav-config", label: "Ajustes", sublabel: "Tela legada", href: "/configuracoes", icon: Settings, group: "Navegar" },
+  { id: "nav-indicadores", label: "Insights", href: "/relatorios", icon: TrendingUp, group: "Navegar" },
+  { id: "nav-config", label: "Ajustes", href: "/ajustes", icon: Settings, group: "Navegar" },
 ];
 
 const ACOES: CommandItem[] = [
@@ -137,7 +137,7 @@ export function Cf2CommandPalette() {
           // Grupo "Clientes" (19/08) — Empresa com serviço ativo no
           // portfólio (carteira real), distinto de "Empresas" (diretório
           // genérico, inclui prospect/ex-cliente/nunca-cliente). Leva pro
-          // Customer 360 novo (/clientes/:id), não pro /empresas/:id legado.
+          // Customer 360 novo (/clientes/:id), não pra listagem antiga de empresas.
           ...(clientesData.clientes ?? []).slice(0, 5).map((cli: { id: string; nome: string; familias?: string[] | null }) => ({
             id: `cliente-${cli.id}`,
             label: cli.nome,
@@ -222,7 +222,7 @@ export function Cf2CommandPalette() {
 
   return (
     <>
-      <div className="fixed inset-0 z-[100]" style={{ background: "rgba(15,23,42,0.4)", backdropFilter: "blur(4px)" }} onClick={handleClose} />
+      <div role="dialog" aria-modal="true" className="fixed inset-0 z-[100]" style={{ background: "rgba(15,23,42,0.4)", backdropFilter: "blur(4px)" }} onClick={handleClose} />
       <div
         className="fixed z-[101] top-[16%] left-1/2 -translate-x-1/2 w-full max-w-[520px] mx-4 sm:mx-0 overflow-hidden rounded-2xl shadow-2xl"
         style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}
@@ -233,7 +233,7 @@ export function Cf2CommandPalette() {
             ref={inputRef}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Buscar pessoas, empresas, negócios, propostas, atividades..."
+            placeholder="Buscar pessoas, empresas, negócios, propostas, atividades..." aria-label="Buscar pessoas, empresas, negócios, propostas, atividades"
             className="flex-1 bg-transparent text-[14px] outline-none"
             style={{ color: "var(--cf2-text-primary)" }}
           />

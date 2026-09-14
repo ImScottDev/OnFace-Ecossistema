@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { db } from "@/lib/db";
-import { tarefas, leads, usuarios, negocios } from "@/lib/db/schema";
-import { desc, eq, and, lte, ilike, SQL, asc, isNull } from "drizzle-orm";
+import { tarefas, leads, usuarios, negocios, empresas } from "@/lib/db/schema";
+import { desc, eq, ne, and, lte, ilike, SQL, asc, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { getCtx } from "../compat.js";
 import { isPersonalView, isAdminView } from "@/lib/auth/roles";
@@ -112,6 +112,14 @@ app.get("/tarefas", async (c) => {
     conditions.push(eq(tarefas.tipo, tipo));
   }
 
+  const origem = c.req.query("origem");
+  if (origem === "automatica") conditions.push(ne(tarefas.origem, "MANUAL"));
+  else if (origem === "manual") conditions.push(eq(tarefas.origem, "MANUAL"));
+  else if (origem) conditions.push(eq(tarefas.origem, origem));
+
+  const empresaId = c.req.query("empresaId");
+  if (empresaId) conditions.push(eq(tarefas.empresaId, empresaId));
+
   if (data === "today") {
     const today = new Date().toISOString().split("T")[0];
     conditions.push(lte(tarefas.dataVencimento, today));
@@ -149,9 +157,19 @@ app.get("/tarefas", async (c) => {
       negocioTitulo: negocios.titulo,
       responsavelNome: usuarios.nome,
       responsavelAvatarUrl: usuarios.avatarUrl,
+      // Eixo pós-venda (08/09): sem estes campos a tela de Tarefas mostrava
+      // as tarefas de CS penduradas no LEAD — que é objeto de aquisição — ou
+      // sem contexto nenhum quando o cliente não tem lead. `origem` é o que
+      // distingue "eu criei" de "o sweep criou porque a fatura venceu".
+      empresaId: tarefas.empresaId,
+      empresaNome: empresas.nome,
+      servicoCanonicoId: tarefas.servicoCanonicoId,
+      origem: tarefas.origem,
+      motivo: tarefas.motivo,
     })
     .from(tarefas)
     .leftJoin(leads, eq(tarefas.leadId, leads.id))
+    .leftJoin(empresas, eq(tarefas.empresaId, empresas.id))
     .leftJoin(negocios, eq(tarefas.negocioId, negocios.id))
     .leftJoin(usuarios, eq(tarefas.usuarioId, usuarios.id))
     .where(where)

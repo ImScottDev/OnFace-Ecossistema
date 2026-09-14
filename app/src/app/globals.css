@@ -185,25 +185,44 @@
   /* Texto */
   --cf2-text-primary: #111827;
   --cf2-text-secondary: #4b5563;
-  /* #9ca3af dava 2.54:1 e reprovava em AA. #6b7280 dá 4.83:1. */
-  --cf2-text-tertiary: #6b7280;
+  /* #9ca3af dava 2.54:1 e reprovava em AA. #6b7280 levou a 4.83:1 sobre
+     branco — mas cai pra 4.39:1 sobre `--cf2-bg-surface-muted`, que é
+     justamente o fundo de cabeçalho de tabela, chip e filtro onde este tom
+     mais aparece. #666e7d sustenta 4.66:1 lá e 5.1:1 no branco. */
+  --cf2-text-tertiary: #666e7d;
   --cf2-text-on-accent: #ffffff;
   --cf2-text-on-inverse: #ffffff;
 
   /* Marca/accent (lima Figma — distinto do carmim do style guide antigo,
-     decisão explícita do Kauã: Figma é o contrato visual da V2) */
-  --cf2-accent: var(--seaweed-600);
+     decisão explícita do Kauã: Figma é o contrato visual da V2)
+
+     Desceu de seaweed-600 pra 700 (09/09): o accent é fundo de ~130 botões
+     com `--cf2-text-on-accent` branco por cima, e no 600 isso dava 3.93:1 —
+     abaixo do mínimo pra texto. O 700 leva a 6.3:1 sem sair da escala da
+     marca. A borda passa a ser o próprio tom: em botão sólido ela só marcava
+     a silhueta, e um tom ainda mais escuro criaria um contorno duro. */
+  --cf2-accent: var(--seaweed-700);
   --cf2-accent-border: var(--seaweed-700);
   --cf2-accent-bg-subtle: #f3f4f6;
 
-  /* Semânticas */
+  /* Semânticas.
+     `--cf2-warning-text` era #f59e0b (amber-500), o mesmo tom usado em
+     preenchimento. Como TEXTO sobre branco isso dá 2.15:1 — abaixo de
+     qualquer mínimo legível, e o token tem 28 usos como `color:` espalhados
+     pelo produto (auditoria de 09/09). Escurecido pro amber-700, que mantém
+     a identidade do alerta e chega a 5.0:1 sobre branco / 4.6:1 sobre a
+     superfície cinza. Os tokens `-bg`/`-border`/`-fill` NÃO mudam: como
+     fundo o âmbar claro está correto. */
   --cf2-success-text: #15803d;
   --cf2-success-bg: #dcfce7;
   --cf2-success-fill: #09ba2a;
-  --cf2-warning-text: #f59e0b;
+  --cf2-warning-text: #b45309;
   --cf2-warning-bg: #fffbeb;
   --cf2-warning-border: #fef3c7;
-  --cf2-danger-text: #d92d33;
+  /* #d92d33 passava sobre branco (4.8:1) mas caía pra 3.4:1 dentro dos
+     próprios badges de fundo avermelhado, que é justamente onde ele mais
+     aparece. O red-700 sustenta 6.5:1 no branco e 5.2:1 no badge. */
+  --cf2-danger-text: #b91c1c;
   --cf2-danger-border: #d92d33;
 
   /* Paleta de avatar (ciclo determinístico por índice, não semântico).
@@ -278,11 +297,11 @@
   --cf2-home-lime-ink: #15230a;
   --cf2-home-lime-bg: #eef8d9;
   --cf2-home-lime-deep: #46600f;
-  --cf2-home-positive: #16a34a;
-  --cf2-home-positive-alt: #009966;
-  --cf2-home-danger: #e5484d;
+  --cf2-home-positive: #15803d;  /* era #16a34a (3.3:1) */
+  --cf2-home-positive-alt: #047857;  /* era #009966 (3.65:1) */
+  --cf2-home-danger: #b91c1c;   /* era #e5484d (3.9:1); alinhado ao --cf2-danger-text do sistema */
   --cf2-home-danger-bg: #fceded;
-  --cf2-home-warning: #f59e0b;
+  --cf2-home-warning: #b45309;  /* era #f59e0b: 2.15:1 como texto (visto em /vendas, número de 20px) */
   --cf2-home-warning-bg: #fdf1dd;
   --cf2-home-info: #4667e6;
   --cf2-home-info-bg: #eaeffe;
@@ -292,7 +311,7 @@
   --cf2-home-neutral-surface: #f5f6f8;
   --cf2-home-ink: #15161a;
   --cf2-home-ink-soft: #62656e;
-  --cf2-home-ink-faint: #9a9da6;
+  --cf2-home-ink-faint: #6f737c;  /* era #9a9da6: 2.7:1 sobre branco, e é o tom de TODO texto de apoio da Home */
   --cf2-home-serie-mrr: #a6e635;
   --cf2-home-serie-novo: #1c1f26;
   --cf2-home-grid-line: #e5e5e5;
@@ -549,6 +568,190 @@
   display: none;
 }
 
+/* Área de trabalho do CRM2: uma superfície contínua dá calma para comparar
+   dados e evita que um grid ornamental concorra com tabelas, timelines e
+   kanbans. A barra de rolagem é discreta, mas permanece visível para revelar
+   extensão de conteúdo em listas operacionais longas. */
+.cf2-workspace {
+  scrollbar-color: var(--cf2-border-control) transparent;
+  scrollbar-gutter: stable;
+}
+
+.cf2-workspace::-webkit-scrollbar {
+  width: 10px;
+}
+
+.cf2-workspace::-webkit-scrollbar-thumb {
+  background: var(--cf2-border-control);
+  background-clip: content-box;
+  border: 3px solid transparent;
+  border-radius: 9999px;
+}
+
+.cf2-workspace-content {
+  animation: cf2-context-arrival var(--animate-duracao-lenta) var(--ease-padrao) both;
+}
+
+@keyframes cf2-context-arrival {
+  from { opacity: 0.96; transform: translateY(2px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cf2-workspace-content { animation: none; }
+}
+
+/* ── Ilhas escuras dentro do tema claro ──────────────────────────────────
+   Hero da Home, cards de KPI, faixas de destaque e cards de Workspace pintam
+   fundo escuro, mas o documento inteiro roda em `[data-cf2-theme="light"]`.
+   Componentes compartilhados (Cf2Tendencia, Cf2Pilula, textos de apoio) então
+   levavam pra dentro dessas ilhas os tons calibrados pra fundo branco: o
+   vermelho de queda dava 3.4:1 sobre #1e1f24 e "Indisponível" 3.8:1 sobre
+   #121316 — os tokens tinham sido escurecidos justamente pra funcionar no
+   claro, o que aqui joga contra.
+
+   Em vez de espalhar uma prop `escuro` por cada componente e cada chamada,
+   a superfície declara o contexto e os tons de ALERTA se reescrevem por
+   herança — mesmo mecanismo do `[data-cf2-theme]`. Os valores são os
+   `--cf2-home-ws-*` que já existiam pros cards escuros de Workspace.
+
+   O escopo é só a semântica de alerta, de propósito. Reescrever também os
+   tokens de texto (`--cf2-text-primary`, `--cf2-home-ink`) quebrava qualquer
+   elemento de fundo CLARO aninhado na ilha escura — um botão branco dentro do
+   hero de Vendas ficou com rótulo branco sobre branco. Texto dentro de área
+   escura já usa `--cf2-home-text-strong/muted` explicitamente e não depende
+   desta cascata. */
+[data-cf2-superficie="escura"] {
+  --cf2-home-danger: var(--cf2-home-ws-danger);
+  --cf2-home-warning: var(--cf2-home-ws-warning);
+  --cf2-home-positive: #4ade80;
+  --cf2-home-positive-alt: #4ade80;
+  --cf2-home-info: #7dd3fc;
+  --cf2-danger-text: var(--cf2-home-ws-danger);
+  --cf2-warning-text: var(--cf2-home-ws-warning);
+  --cf2-success-text: #4ade80;
+  /* O accent também vira texto (valor do negócio no header escuro de
+     /negocios e /empresas): o seaweed-700 dá 2.8:1 sobre #16171c. */
+  --cf2-accent: #6ee7a8;
+  --cf2-accent-border: #6ee7a8;
+  /* O par anda junto: com o accent claro, o texto POR CIMA dele tem que
+     escurecer, senão o botão primário fica branco sobre verde-claro. */
+  --cf2-text-on-accent: #05231a;
+  /* Só os tons de APOIO. `--cf2-text-primary` e `--cf2-home-ink` ficam de
+     fora de propósito: eles são usados como cor de texto em elementos de
+     fundo CLARO aninhados aqui dentro (o botão branco de "Filtros" no hero de
+     Vendas), e reescrevê-los pintava rótulo branco sobre fundo branco. */
+  --cf2-text-tertiary: #9ca3af;
+  --cf2-home-ink-faint: #9ca3af;
+  --cf2-home-ink-soft: #b6bac2;
+}
+
+/* Selects do CRM 2.0 — indicador de que é um campo de escolha.
+   São 96 no produto e quase nenhum tinha seta: os filtros de Tarefas, Clientes
+   e Pipeline apareciam como pílulas cinza inertes, sem nada dizendo que abrem
+   opções. O chevron entra como background-image (não como elemento) pra valer
+   em todos de uma vez, sem tocar em 96 arquivos.
+
+   `.cf2-select-custom` marca os poucos que já desenham o próprio chevron
+   sobreposto — neles a seta ficaria duplicada. */
+[data-cf2-theme] select:not([multiple]):not([size]):not(.cf2-select-custom) {
+  appearance: none;
+  -webkit-appearance: none;
+  /* `!important` porque quase todos esses selects trazem `background` inline
+     (o shorthand, que zera `background-image`) vindo dos tokens de superfície
+     — sem isto a seta era descartada e sobrava só o padding extra. */
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%236b7280%22%20stroke-width%3D%222.5%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22m6%209%206%206%206-6%22/%3E%3C/svg%3E") !important;
+  background-repeat: no-repeat !important;
+  background-position: right 0.5rem center !important;
+  background-size: 0.85em !important;
+  padding-right: 1.75rem;
+  cursor: pointer;
+}
+[data-cf2-theme] select:not([multiple]):not([size]):not(.cf2-select-custom):focus-visible {
+  outline: 2px solid var(--cf2-accent);
+  outline-offset: 1px;
+}
+
+/* ── Foco de teclado, global ─────────────────────────────────────────────
+   A auditoria de 09/09 encontrou de 20 a 215 elementos interativos POR TELA
+   sem nenhum indicador de foco: quem navega por Tab não fazia ideia de onde
+   estava. Um anel só, no accent da marca, para todo controle do CRM 2.0.
+
+   `:focus-visible` (e não `:focus`) porque o anel deve aparecer pra teclado e
+   não a cada clique de mouse. Vem antes das regras específicas na cascata,
+   então quem já declara o próprio anel continua mandando. */
+[data-cf2-theme] :is(button, a[href], [role="button"], [role="tab"], select, summary, [tabindex]:not([tabindex="-1"])):focus-visible {
+  outline: 2px solid var(--cf2-accent);
+  outline-offset: 2px;
+}
+[data-cf2-theme] :is(input, textarea):focus-visible {
+  outline: 2px solid var(--cf2-accent);
+  outline-offset: 0;
+}
+
+/* Sinal de que o elemento responde ao ponteiro, e transição pra que qualquer
+   mudança de estado (hover, ativo, desabilitado) aconteça suavemente em vez
+   de piscar. Só a transição é global — a COR do hover continua sendo decisão
+   de cada componente. */
+[data-cf2-theme] :is(button, a[href], [role="button"], [role="tab"], select):not(:disabled) {
+  cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease, opacity 150ms ease, box-shadow 150ms ease;
+}
+[data-cf2-theme] button:disabled,
+[data-cf2-theme] [aria-disabled="true"] {
+  cursor: not-allowed;
+}
+
+/* Telas de altura fixa (Atendimento, Pipeline, Calendário): o conteúdo tem
+   que caber na viewport e rolar por dentro das próprias colunas, não empurrar
+   a página.
+
+   O wrapper do shell é `min-h-full`, e min-height não estabelece altura
+   definida para um filho em `h-full` — então essas telas cresciam livremente:
+   a inbox virava uma página de 8595px onde a lista de conversas, a thread e a
+   própria topbar rolavam juntas, sem cabeçalho fixo. `100dvh` (e não `100vh`)
+   porque no mobile a barra de endereço entra na conta; `3rem` é o padding
+   vertical do shell (p-6). */
+.cf2-altura-tela {
+  height: calc(100dvh - 3rem);
+  min-height: 0;
+}
+
+/* Campos do login — foco e placeholder no vocabulário escuro da Home. O
+   placeholder precisa de tom próprio: o do browser sobre #1e1f24 fica em
+   torno de 2:1 e some. */
+.cf2-login-campo::placeholder {
+  color: var(--cf2-home-text-muted);
+  opacity: 1;
+}
+.cf2-login-campo:focus {
+  border-color: var(--cf2-home-lime);
+  box-shadow: 0 0 0 3px rgba(166, 230, 53, 0.18);
+}
+/* Autofill do Chrome pinta o campo de azul-claro com texto escuro e ignora
+   `background` — só o inset shadow vence. Sem isto, quem tem a senha salva
+   abre o login e vê dois campos azuis no meio do painel escuro. */
+.cf2-login-campo:-webkit-autofill,
+.cf2-login-campo:-webkit-autofill:hover,
+.cf2-login-campo:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--cf2-home-text-strong);
+  -webkit-box-shadow: 0 0 0 1000px var(--cf2-home-kpi-bg) inset;
+  caret-color: var(--cf2-home-text-strong);
+  transition: background-color 9999s ease-in-out 0s;
+}
+
+/* Cards de Workspace da Home: o card inteiro é o link, então o lime marca
+   qual frente está sob o cursor/foco em vez de pintar seis botões cheios. */
+.cf2-ws-card:hover .cf2-ws-cta,
+.cf2-ws-card:focus-visible .cf2-ws-cta {
+  color: var(--cf2-home-lime);
+}
+.cf2-ws-card:hover .cf2-ws-seta,
+.cf2-ws-card:focus-visible .cf2-ws-seta {
+  background: var(--cf2-home-lime);
+  color: var(--cf2-home-ws-bg);
+}
+
 /* Overscroll/rubber-band (24/08, achado real: "zuado" branco aparecendo em
    cima e embaixo ao passar do limite do scroll em qualquer página) — o
    elástico do trackpad revelava o branco padrão de `html` por trás de
@@ -652,6 +855,69 @@ body {
 .scrollbar-thin::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.15);
 }
+
+/**
+ * Campo de formulário do CRM2 (tema claro).
+ *
+ * Contraparte de `.dark-input`, que é do shell legado e usa `--bg-input` /
+ * `--text-primary` do tema escuro. As telas migradas pro CRM2 (Ajustes,
+ * 08/09/2026) precisam da mesma primitiva com os tokens cf2 — sem isso o
+ * campo fica branco sobre branco e o texto digitado some.
+ */
+.cf2-input {
+  background: var(--cf2-bg-surface);
+  border: 1px solid var(--cf2-border-default);
+  color: var(--cf2-text-primary);
+  border-radius: 10px;
+  padding: 8px 12px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.cf2-input:focus {
+  border-color: var(--cf2-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--cf2-accent) 18%, transparent);
+}
+
+.cf2-input::placeholder {
+  color: var(--cf2-text-tertiary);
+}
+
+select.cf2-input {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%236b7280' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10l-5 5z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  padding-right: 30px;
+}
+
+select.cf2-input option {
+  background-color: #fff;
+  color: #16181d;
+}
+
+/**
+ * Botão primário do CRM2. Contraparte de `.btn-primary`, que é do shell
+ * legado e usa o gradiente roxo do CRM 1 — a marca da Callface é o verde,
+ * e telas migradas herdavam roxo sem ninguém ter escolhido isso.
+ */
+.cf2-btn-primary {
+  background: var(--cf2-accent);
+  color: var(--cf2-text-on-accent);
+  border: 1px solid var(--cf2-accent-border, transparent);
+  border-radius: 12px;
+  padding: 10px 20px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: filter 0.15s, transform 0.1s;
+}
+.cf2-btn-primary:hover:not(:disabled) { filter: brightness(1.06); }
+.cf2-btn-primary:active:not(:disabled) { transform: scale(0.98); }
+.cf2-btn-primary:focus-visible {
+  outline: 2px solid var(--cf2-accent);
+  outline-offset: 2px;
+}
+.cf2-btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
 
 /* Dark input styling */
 .dark-input {

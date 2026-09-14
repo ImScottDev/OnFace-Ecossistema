@@ -8,10 +8,16 @@ import { LOGO_WHITE, LOGO_COLOR } from "./pdf-assets";
 function resolveChromePath(): string | undefined {
   const env = process.env.PUPPETEER_EXECUTABLE_PATH;
   if (env && existsSync(env)) return env;
-  for (const p of ["/usr/bin/chromium-browser", "/usr/bin/chromium", "/usr/lib/chromium/chrome"]) {
+  for (const p of [
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    "/Applications/Chromium.app/Contents/MacOS/Chromium",
+    "/usr/bin/chromium-browser",
+    "/usr/bin/chromium",
+    "/usr/lib/chromium/chrome",
+  ]) {
     if (existsSync(p)) return p;
   }
-  return env || undefined;
+  return undefined;
 }
 
 const CARMIM = "#e23752";

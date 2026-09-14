@@ -1,0 +1,19 @@
+Você está assumindo por handoff a execução da revisão completa de UI/UX do
+Callface CRM 2.0.
+
+Leia primeiro CLAUDE.md, PRODUCT.md, DESIGN.md, .agent-handoff-ui.md e o
+contexto relevante persistido no Vault. Entenda o diff existente e nunca
+reverta mudanças do Codex.
+
+Em seguida, configure explicitamente o objetivo persistente desta tarefa com
+/goal: concluir ponta a ponta o redesign do Callface CRM 2.0, percorrendo
+todas as superfícies restantes e transformando o MVP atual em um produto SaaS
+B2B premium, memorável, altamente utilizável e visualmente excepcional.
+Preserve domínio e funcionalidades; reconstrua radicalmente interface,
+composição, navegação e jornadas quando necessário. Continue até cobrir o
+escopo disponível.
+
+Não faça novo discovery geral. Não redesenhe páginas marcadas como concluídas
+sem uma razão concreta. Comece exatamente pela primeira superfície pendente
+registrada no handoff: Financeiro. Continue atualizando
+.agent-handoff-ui.md, o tracker Impeccable e o Vault durante o trabalho.

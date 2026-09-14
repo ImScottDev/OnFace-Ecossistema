@@ -15,10 +15,11 @@
  * código que fez a transição. Ver ADR-EXEC-016.
  */
 import { db } from "@/lib/db";
-import { eventOutbox, auditLog } from "@/lib/db/schema";
+import { eventOutbox, auditLog, faturas } from "@/lib/db/schema";
 import { eq, asc, and, or, lt, isNull } from "drizzle-orm";
 import { materializarServicosCanonicosDoGrupo } from "@/lib/crm/servico-canonico";
 import { criarFulfillmentsParaServicos } from "@/lib/crm/fulfillment";
+import { dispatchAutomationEvent } from "@/lib/automations/event-dispatcher";
 
 type EventoOutbox = typeof eventOutbox.$inferSelect;
 type Handler = (evento: EventoOutbox) => Promise<void>;
@@ -67,6 +68,7 @@ export async function processarEventosPendentes(limite = 50): Promise<{ processa
     try {
       const list = handlers.get(evento.eventType) || [];
       for (const handler of list) await handler(evento);
+      await dispatchAutomationEvent(evento);
       await db
         .update(eventOutbox)
         .set({ status: "processed", processedAt: new Date(), processingStartedAt: null })
@@ -113,8 +115,12 @@ for (const eventType of [
   // Commercial Core v2 (ADR-EXEC-021)
   "ProposalOpened", "ProposalAdjustmentRequested", "CheckoutCreated", "CheckoutOpened",
   "PaymentFailed", "CheckoutExpired", "FulfillmentGroupCompleted",
+  // Frente 2C.1 — fechamento por família comercial
+  "PaymentPending", "FulfillmentCreated", "ManualValidationRequired",
   "ConversationClaimed", "ConversationTransferred", "ConversationReleased",
   "ConversationSnoozed", "ConversationClosed", "ConversationReopened",
+  "ConversationMessageReceived",
+  "TagAdded", "TagRemoved",
 ]) {
   registrarConsumidorEvento(eventType, registrarNoAuditLog);
 }
@@ -136,4 +142,39 @@ registrarConsumidorEvento("FulfillmentGroupCompleted", async (evento) => {
     throw new Error(`materializarServicosCanonicosDoGrupo(${grupoComercialId}) não gerou nenhum serviço — grupo sem itens? investigar antes de aceitar como sucesso silencioso.`);
   }
   await criarFulfillmentsParaServicos(servicoIds, evento.organizacaoId);
+
+  // Frente 2C.1 — amarra a pendência financeira (se existir) ao serviço que
+  // acabou de nascer. Só dá pra fazer aqui: a pendência é criada na
+  // assinatura, quando o serviço canônico ainda não existe (materialização é
+  // assíncrona, via este consumer). Sem isso o Financeiro tem o recebível mas
+  // não sabe QUAL serviço está em aberto.
+  await db
+    .update(faturas)
+    .set({ servicoCanonicoId: servicoIds[0], updatedAt: new Date() })
+    .where(and(eq(faturas.grupoComercialId, grupoComercialId), isNull(faturas.servicoCanonicoId)))
+    .catch((err) => console.error(`[EventOutbox] falha ao vincular pendência ao serviço do grupo ${grupoComercialId} (best-effort):`, err));
+});
+
+/**
+ * Consumidor de CS (08/09/2026) — o handoff automático do Won pro CS.
+ *
+ * `CanonicalServiceActivated` é o gatilho certo, não `DealWon`: é quando o
+ * serviço existe de fato e a empresa passa a fazer parte da carteira. Won
+ * sem serviço materializado ainda não tem o que acompanhar.
+ *
+ * Idempotente por dois motivos independentes: o outbox só processa cada
+ * evento uma vez, e `iniciarJornadaCs` tem chave própria por marco.
+ */
+registrarConsumidorEvento("CanonicalServiceActivated", async (evento) => {
+  const { garantirContaCs } = await import("@/lib/cs/handoff");
+  await garantirContaCs(evento.organizacaoId, evento.aggregateId);
+});
+
+/**
+ * Falha de pagamento vira sinal de CS na hora, sem esperar o sweep — é o
+ * evento em que a diferença entre "agora" e "daqui a uma hora" importa.
+ */
+registrarConsumidorEvento("PaymentFailed", async (evento) => {
+  const { registrarFalhaPagamento } = await import("@/lib/cs/handoff");
+  await registrarFalhaPagamento(evento.organizacaoId, evento.payload as Record<string, unknown>);
 });
