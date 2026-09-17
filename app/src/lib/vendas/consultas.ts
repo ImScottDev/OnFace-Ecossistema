@@ -495,6 +495,14 @@ export async function listaProspeccao(organizacaoId: string, filtros: FiltrosPro
        AND l.prospeccao_estado IS NOT NULL
        AND (${filtros.estado ?? null}::text IS NULL OR l.prospeccao_estado = ${filtros.estado ?? null})
        AND (${filtros.responsavelId ?? null}::uuid IS NULL OR l.responsavel_id = ${filtros.responsavelId ?? null}::uuid)
+       AND (${filtros.lista ?? null}::text IS NULL OR EXISTS (
+         SELECT 1
+           FROM lead_labels ll_lista
+           JOIN labels lb_lista ON lb_lista.id = ll_lista.label_id
+          WHERE ll_lista.lead_id = l.id
+            AND lb_lista.organizacao_id = l.organizacao_id
+            AND lb_lista.nome = ${filtros.lista ?? null}
+       ))
        AND (${busca}::text IS NULL OR lower(COALESCE(e.nome, l.empresa, '')) LIKE ${busca}
             OR lower(concat_ws(' ', l.nome, l.sobrenome)) LIKE ${busca})
      ORDER BY l.updated_at DESC

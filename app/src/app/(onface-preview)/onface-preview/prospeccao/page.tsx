@@ -15,7 +15,7 @@ export const metadata = { title: "ONFACE — Prospecção" };
 export const dynamic = "force-dynamic";
 
 export default async function ProspeccaoPage({ searchParams }: {
-  searchParams: Promise<{ visao?: string; busca?: string; estado?: string; responsavel?: string }>;
+  searchParams: Promise<{ visao?: string; busca?: string; estado?: string; responsavel?: string; lista?: string }>;
 }) {
   const ctx = await getTenantContext();
   if (!ctx) redirect("/login");
@@ -25,9 +25,10 @@ export default async function ProspeccaoPage({ searchParams }: {
   const busca = params.busca?.trim() || "";
   const estado = (params.estado || null) as EstadoProspeccao | null;
   const responsavelId = params.responsavel || null;
+  const lista = params.lista?.trim() || null;
 
   const [dados, cadencias, responsaveis] = await Promise.all([
-    listaProspeccao(ctx.organizacaoId, { busca, estado, responsavelId }),
+    listaProspeccao(ctx.organizacaoId, { busca, estado, responsavelId, lista }),
     acaoCadencias(),
     acaoResponsaveis(),
   ]);
@@ -49,7 +50,7 @@ export default async function ProspeccaoPage({ searchParams }: {
       <OnfacePageSurface sobreposto>
         <Prospeccao
           dados={dados}
-          filtro={{ busca, estado, responsavelId }}
+          filtro={{ busca, estado, responsavelId, lista }}
           visao={visao}
           cadencias={cadencias}
           responsaveis={responsaveis}

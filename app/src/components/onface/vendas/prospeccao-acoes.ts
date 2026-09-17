@@ -8,6 +8,16 @@
  */
 export type OperacaoMassa = "responsavel" | "lista" | "cadencia" | "tag" | "enriquecer" | "pausar";
 
+/** Mantém os filtros na URL para que a próxima renderização consulte o servidor. */
+export function montarUrlProspeccao(href: string, mudancas: Record<string, string | null>): string {
+  const url = new URL(href);
+  for (const [chave, valor] of Object.entries(mudancas)) {
+    if (valor === null || valor === "") url.searchParams.delete(chave);
+    else url.searchParams.set(chave, valor);
+  }
+  return `${url.pathname}${url.search}`;
+}
+
 export function acoesEmMassaDisponiveis(): Array<{ chave: OperacaoMassa; rotulo: string }> {
   return [
     { chave: "responsavel", rotulo: "Atribuir responsável" },

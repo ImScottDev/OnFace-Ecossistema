@@ -15,7 +15,7 @@ export const metadata = { title: "ONFACE — Prospecção (dado real)" };
 export const dynamic = "force-dynamic";
 
 export default async function DesenhoProspeccao({ searchParams }: {
-  searchParams: Promise<{ visao?: string; busca?: string; estado?: string; responsavel?: string }>;
+  searchParams: Promise<{ visao?: string; busca?: string; estado?: string; responsavel?: string; lista?: string }>;
 }) {
   const [org] = await db.execute<{ id: string }>(sql`
     SELECT id::text FROM organizacoes ORDER BY created_at LIMIT 1
@@ -25,9 +25,10 @@ export default async function DesenhoProspeccao({ searchParams }: {
   const busca = params.busca?.trim() || "";
   const estado = (params.estado || null) as EstadoProspeccao | null;
   const responsavelId = params.responsavel || null;
+  const lista = params.lista?.trim() || null;
 
   const [dados, cadencias, responsaveis] = await Promise.all([
-    listaProspeccao(org.id, { busca, estado, responsavelId }),
+    listaProspeccao(org.id, { busca, estado, responsavelId, lista }),
     acaoCadencias(),
     acaoResponsaveis(),
   ]);
@@ -49,7 +50,7 @@ export default async function DesenhoProspeccao({ searchParams }: {
       <OnfacePageSurface sobreposto>
         <Prospeccao
           dados={dados}
-          filtro={{ busca, estado, responsavelId }}
+          filtro={{ busca, estado, responsavelId, lista }}
           visao={visao}
           cadencias={cadencias}
           responsaveis={responsaveis}

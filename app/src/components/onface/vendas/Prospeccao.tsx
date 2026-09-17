@@ -26,7 +26,7 @@ import type { Resultado } from "@/lib/vendas/resultado";
 import {
   Abas, AvisoBloqueio, Board, Busca, Coluna, ColunaVazia, Dialogo, Tag, dataCurta, useAcao,
 } from "./ui";
-import { acoesEmMassaDisponiveis, montarPayloadMassa, type OperacaoMassa } from "./prospeccao-acoes";
+import { acoesEmMassaDisponiveis, montarPayloadMassa, montarUrlProspeccao, type OperacaoMassa } from "./prospeccao-acoes";
 
 export interface AcoesProspeccao {
   adicionar: (e: EntradaProspect) => Promise<Resultado<{ leadId: string; jaExistia: boolean }>>;
@@ -61,7 +61,7 @@ export function Prospeccao({ dados, filtro, visao, cadencias, responsaveis, acoe
     resumo: Record<EstadoProspeccao, number>;
     filtros: { responsaveis: Array<{ id: string; nome: string }>; listas: string[] };
   };
-  filtro: { busca: string; estado: EstadoProspeccao | null; responsavelId: string | null };
+  filtro: { busca: string; estado: EstadoProspeccao | null; responsavelId: string | null; lista: string | null };
   visao: "lista" | "kanban";
   cadencias: Array<{ id: string; nome: string }>;
   responsaveis: Array<{ id: string; nome: string }>;
@@ -70,22 +70,16 @@ export function Prospeccao({ dados, filtro, visao, cadencias, responsaveis, acoe
   const router = useRouter();
   const [, iniciarNavegacao] = useTransition();
   const [busca, setBusca] = useState(filtro.busca);
-  const [lista, setLista] = useState("");
   const [selecionados, setSelecionados] = useState<string[]>([]);
   const [alvo, setAlvo] = useState<LinhaProspeccao | null>(null);
   const [modal, setModal] = useState<null | "novo" | "cadencia" | "oportunidade" | "descartar" | "massa">(null);
   const [operacaoMassa, setOperacaoMassa] = useState<OperacaoMassa | null>(null);
   const [sucesso, setSucesso] = useState<string | null>(null);
   const { pendente, bloqueio, limparBloqueio, executar } = useAcao();
-  const linhas = lista ? dados.linhas.filter((linha) => linha.lista === lista) : dados.linhas;
+  const linhas = dados.linhas;
 
   function navegar(mudancas: Record<string, string | null>) {
-    const url = new URL(window.location.href);
-    for (const [chave, valor] of Object.entries(mudancas)) {
-      if (valor === null || valor === "") url.searchParams.delete(chave);
-      else url.searchParams.set(chave, valor);
-    }
-    iniciarNavegacao(() => router.push(`${url.pathname}${url.search}`));
+    iniciarNavegacao(() => router.push(montarUrlProspeccao(window.location.href, mudancas)));
   }
 
   async function rodar(fn: () => Promise<Resultado<unknown>>, mensagem = "Alteração salva.") {
@@ -202,8 +196,8 @@ export function Prospeccao({ dados, filtro, visao, cadencias, responsaveis, acoe
           <option value="">Todos os responsáveis</option>
           {dados.filtros.responsaveis.map((r) => <option key={r.id} value={r.id}>{r.nome}</option>)}
         </select>
-        <select className="ov-select" value={lista} aria-label="Filtrar por lista"
-          onChange={(e) => { setLista(e.target.value); setSelecionados([]); }}>
+        <select className="ov-select" value={filtro.lista ?? ""} aria-label="Filtrar por lista"
+          onChange={(e) => { setSelecionados([]); navegar({ lista: e.target.value || null }); }}>
           <option value="">Todas as listas</option>
           {dados.filtros.listas.map((item) => <option key={item} value={item}>{item}</option>)}
         </select>
