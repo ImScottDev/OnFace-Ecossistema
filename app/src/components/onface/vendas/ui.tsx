@@ -128,8 +128,13 @@ export function ComPainel({ aberto, painel, children }: {
   );
 }
 
-export function Painel({ titulo, subtitulo, aoFechar, children }: {
-  titulo: string; subtitulo?: string | null; aoFechar: () => void; children: ReactNode;
+export function Painel({ titulo, subtitulo, aoFechar, acoesTopo, children }: {
+  titulo: string;
+  subtitulo?: ReactNode;
+  aoFechar: () => void;
+  /** Espaço para o link "abrir em tela cheia", ao lado do fechar. */
+  acoesTopo?: ReactNode;
+  children: ReactNode;
 }) {
   return (
     <aside className="ov-painel" aria-label={titulo}>
@@ -138,9 +143,12 @@ export function Painel({ titulo, subtitulo, aoFechar, children }: {
           <h2>{titulo}</h2>
           {subtitulo ? <p>{subtitulo}</p> : null}
         </div>
-        <button type="button" className="ov-painel-fechar" onClick={aoFechar} aria-label="Fechar painel">
-          <X aria-hidden />
-        </button>
+        <div className="ov-painel-topo-acoes">
+          {acoesTopo}
+          <button type="button" className="ov-painel-fechar" onClick={aoFechar} aria-label="Fechar painel">
+            <X aria-hidden />
+          </button>
+        </div>
       </div>
       {children}
     </aside>

@@ -178,6 +178,7 @@ export async function lerLinhaDoTempo(params: {
   leadId?: string;
   negocioId?: string;
   empresaId?: string;
+  pessoaId?: string;
   limite?: number;
 }): Promise<LinhaDoTempo[]> {
   const limite = params.limite ?? 100;
@@ -194,6 +195,7 @@ export async function lerLinhaDoTempo(params: {
          (${params.leadId ?? null}::uuid IS NOT NULL AND e.lead_id = ${params.leadId ?? null}::uuid)
          OR (${params.negocioId ?? null}::uuid IS NOT NULL AND e.negocio_id = ${params.negocioId ?? null}::uuid)
          OR (${params.empresaId ?? null}::uuid IS NOT NULL AND e.empresa_id = ${params.empresaId ?? null}::uuid)
+         OR (${params.pessoaId ?? null}::uuid IS NOT NULL AND e.pessoa_id = ${params.pessoaId ?? null}::uuid)
        )
      ORDER BY e.ocorrido_em DESC
      LIMIT ${limite}

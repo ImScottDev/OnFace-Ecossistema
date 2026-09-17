@@ -18,8 +18,7 @@ import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
-  ArrowRight, Building2, CalendarClock, CheckCircle2, Mail, MessageCircle,
-  Phone, Plus, Sparkles, UserPlus,
+  ArrowRight, Building2, CalendarClock, CheckCircle2, Mail, MessageCircle, Plus, Sparkles, UserPlus,
 } from "lucide-react";
 import type { BoardPreVendas, CardPreVendas, DetalheLead } from "@/lib/vendas/consultas";
 import type { LinhaDoTempo } from "@/lib/vendas/eventos";
@@ -32,6 +31,7 @@ import {
   Abas, AvisoBloqueio, Board, Busca, Campo, Coluna, ColunaVazia, ComPainel,
   Dialogo, Painel, Secao, Tag, dataCurta, dataHora, decorrido, useAcao,
 } from "./ui";
+import { AcoesContato } from "./pagina";
 
 type Aba = "ativos" | "nutricao" | "desqualificados";
 
@@ -77,6 +77,7 @@ export function PreVendas({ dados, aba, filtro, acoes }: {
   const [selecionado, setSelecionado] = useState<string | null>(null);
   const [detalhe, setDetalhe] = useState<{ lead: DetalheLead | null; timeline: LinhaDoTempo[] } | null>(null);
   const [modal, setModal] = useState<null | "qualificar" | "nutrir" | "desqualificar" | "oportunidade" | "novo" | "empresa">(null);
+  const [sucesso, setSucesso] = useState<string | null>(null);
   const { pendente, bloqueio, limparBloqueio, executar } = useAcao();
 
   function navegar(mudancas: Record<string, string | null>) {
@@ -102,14 +103,20 @@ export function PreVendas({ dados, aba, filtro, acoes }: {
     if (resultado.ok && resultado.dados) setDetalhe(resultado.dados);
   }
 
-  async function rodar(fn: () => Promise<Resultado<unknown>>, fecharModal = true) {
-    const ok = await executar(async () => (await fn()) as Resultado<unknown>);
-    if (ok !== null) {
+  async function rodar(fn: () => Promise<Resultado<unknown>>, fecharModal = true, mensagem = "Alteração salva.") {
+    let confirmou = false;
+    await executar(async () => {
+      const resultado = await fn();
+      confirmou = resultado.ok;
+      return resultado as Resultado<unknown>;
+    });
+    if (confirmou) {
       if (fecharModal) setModal(null);
+      setSucesso(mensagem);
       await recarregarDetalhe();
       router.refresh();
     }
-    return ok !== null;
+    return confirmou;
   }
 
   const lead = detalhe?.lead ?? null;
@@ -153,6 +160,7 @@ export function PreVendas({ dados, aba, filtro, acoes }: {
           <AvisoBloqueio bloqueio={bloqueio} />
         </div>
       ) : null}
+      {sucesso ? <p className="ov-nota" role="status">{sucesso}</p> : null}
 
       <ComPainel
         aberto={Boolean(selecionado)}
@@ -384,25 +392,12 @@ function PainelLead({ lead, timeline, pendente, bloqueio, responsaveis, aoFechar
       </Secao>
 
       <Secao titulo="Contato">
-        <div className="ov-acoes">
-          {lead.pessoa.whatsapp || lead.pessoa.telefone ? (
-            <a className="ov-botao" data-variante="contorno"
-               href={`https://wa.me/${(lead.pessoa.whatsapp ?? lead.pessoa.telefone ?? "").replace(/\D/g, "")}`}
-               target="_blank" rel="noreferrer">
-              <MessageCircle aria-hidden />WhatsApp
-            </a>
-          ) : null}
-          {lead.pessoa.email ? (
-            <a className="ov-botao" data-variante="contorno" href={`mailto:${lead.pessoa.email}`}>
-              <Mail aria-hidden />E-mail
-            </a>
-          ) : null}
-          {lead.pessoa.telefone ? (
-            <a className="ov-botao" data-variante="contorno" href={`tel:${lead.pessoa.telefone}`}>
-              <Phone aria-hidden />Ligar
-            </a>
-          ) : null}
-        </div>
+        <AcoesContato alvo={{
+          leadId: lead.id,
+          whatsapp: lead.pessoa.whatsapp,
+          telefone: lead.pessoa.telefone,
+          email: lead.pessoa.email,
+        }} />
       </Secao>
 
       <Secao titulo="Empresa">

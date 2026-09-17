@@ -6,14 +6,15 @@ import { Hero } from "@/components/onface/vendas/ui";
 import { moeda } from "@/components/onface/vendas/formato";
 import {
   acaoCatalogo, acaoCriar, acaoCriarRevisao, acaoDetalhe, acaoEnviar,
-  acaoExpirarVencidas, acaoListar, acaoOportunidadesAbertas,
+  acaoExpirarVencidas, acaoListar, acaoOportunidadesAbertas, acaoSalvarJuridicos,
 } from "./actions";
 
 export const metadata = { title: "ONFACE — Propostas" };
 export const dynamic = "force-dynamic";
 
-export default async function PropostasPage({ searchParams }: {
-  searchParams: Promise<{ status?: string; busca?: string; oportunidade?: string; proposta?: string }>;
+export async function PropostasPage({ searchParams, abrirComposer = false }: {
+  searchParams: Promise<{ status?: string; busca?: string; oportunidade?: string; proposta?: string; acao?: "enviar" | "juridicos" | "revisar" }>;
+  abrirComposer?: boolean;
 }) {
   const ctx = await getTenantContext();
   if (!ctx) redirect("/login");
@@ -46,14 +47,19 @@ export default async function PropostasPage({ searchParams }: {
           filtro={{ busca, status }}
           oportunidadeInicial={params.oportunidade ?? null}
           propostaInicial={params.proposta ?? null}
+          abrirComposer={abrirComposer}
+          acaoInicial={params.acao ?? null}
+          rotaBase="/onface-preview"
           acoes={{
             detalhe: acaoDetalhe, catalogo: acaoCatalogo,
             oportunidadesAbertas: acaoOportunidadesAbertas, criar: acaoCriar,
             enviar: acaoEnviar, criarRevisao: acaoCriarRevisao,
-            expirarVencidas: acaoExpirarVencidas,
+            expirarVencidas: acaoExpirarVencidas, salvarJuridicos: acaoSalvarJuridicos,
           }}
         />
       </OnfacePageSurface>
     </OnfacePage>
   );
 }
+
+export default PropostasPage;

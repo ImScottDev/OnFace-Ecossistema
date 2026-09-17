@@ -45,7 +45,13 @@ export function Cf2AtendimentoWorkspace() {
   // leadId só busca dentro do view atual, então "meus" apagava a conversa
   // certa da lista antes mesmo de tentar selecioná-la). Sem leadId, o
   // comportamento de sempre (fila do próprio usuário) continua o mesmo.
-  const [view, setView] = useState(leadIdParam ? "todos" : "meus");
+  // Deep link por TELEFONE sem lead (16/09): o Módulo Vendas passou a abrir
+  // Atendimento a partir de Empresa, Pessoa, Oportunidade e Proposta, e nem
+  // toda essas entidades têm lead de Pré-vendas por trás. Sem isto o clique
+  // caía no inbox genérico, que é o mesmo que não ter funcionado. A chave do
+  // deep link passa a ser "o lead, se houver; senão o telefone".
+  const chaveDeepLink = leadIdParam ?? (telefoneParam ? `tel:${telefoneParam}` : null);
+  const [view, setView] = useState(chaveDeepLink ? "todos" : "meus");
   const [search, setSearch] = useState("");
   const [selecionada, setSelecionada] = useState<ConversaItem | null>(null);
   const [novaMensagemAberta, setNovaMensagemAberta] = useState(false);
@@ -56,7 +62,7 @@ export function Cf2AtendimentoWorkspace() {
   // inacessível abaixo disso, notebook incluso. Vira drawer sob demanda
   // abaixo de `xl`, mesmo dado, sem duplicar o painel.
   const [contextoAberto, setContextoAberto] = useState(false);
-  const [leadIdAplicado, setLeadIdAplicado] = useState<string | null>(null);
+  const [deepLinkAplicado, setDeepLinkAplicado] = useState<string | null>(null);
 
   // Trocar de aba limpa a seleção — não faz sentido continuar mostrando uma
   // conversa de WhatsApp depois de clicar em "Ligar", por exemplo. Também é
@@ -72,7 +78,7 @@ export function Cf2AtendimentoWorkspace() {
   // (`leadIdAplicado === leadIdParam`), a busca volta a ser a lista normal;
   // `selecionada` já guarda a conversa certa independente do que a lista
   // retornar depois.
-  const leadIdParaFiltro = leadIdParam && leadIdParam !== leadIdAplicado ? leadIdParam : null;
+  const leadIdParaFiltro = leadIdParam && chaveDeepLink !== deepLinkAplicado ? leadIdParam : null;
 
   const { data, isLoading } = useQuery({
     queryKey: ["cf2-conversas", canal, view, search, leadIdParaFiltro],
@@ -103,10 +109,11 @@ export function Cf2AtendimentoWorkspace() {
   // lead, mesma normalização do discador). Sem match nos dois, não fabrica
   // seleção: cai no fallback normal da tela abaixo.
   const telefoneNormalizado = telefoneParam || null;
-  if (leadIdParam && leadIdParam !== leadIdAplicado && !isLoading) {
-    setLeadIdAplicado(leadIdParam);
+  if (chaveDeepLink && chaveDeepLink !== deepLinkAplicado && !isLoading) {
+    setDeepLinkAplicado(chaveDeepLink);
     const match = conversas.find((c) =>
-      c.leadId === leadIdParam || (!!telefoneNormalizado && !!c.telefone && digitsForDialer(c.telefone) === telefoneNormalizado)
+      (!!leadIdParam && c.leadId === leadIdParam)
+      || (!!telefoneNormalizado && !!c.telefone && digitsForDialer(c.telefone) === telefoneNormalizado)
     );
     if (match) setSelecionada(match);
   }
@@ -116,8 +123,8 @@ export function Cf2AtendimentoWorkspace() {
   // errada antes de trocar pra certa. E se já resolveu SEM achar nada,
   // também não cai nesse fallback (achado 24/08: caía numa conversa
   // qualquer, sem relação com o lead clicado — pior que mostrar vazio).
-  const deepLinkPendente = !!leadIdParam && leadIdParam !== leadIdAplicado;
-  const deepLinkSemMatch = !!leadIdParam && leadIdParam === leadIdAplicado && !selecionada;
+  const deepLinkPendente = !!chaveDeepLink && chaveDeepLink !== deepLinkAplicado;
+  const deepLinkSemMatch = !!chaveDeepLink && chaveDeepLink === deepLinkAplicado && !selecionada;
 
   // Mantém a seleção sincronizada (naoLidas atualiza sem perder o item aberto).
   // Aba Ligar não auto-seleciona a primeira ligação — só mostra detalhe se o
@@ -273,7 +280,9 @@ export function Cf2AtendimentoWorkspace() {
           style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}
         >
           <p className="text-[13px]" style={{ color: "var(--cf2-text-tertiary)" }}>
-            {deepLinkSemMatch ? "Esse lead ainda não tem conversa nesse canal." : "Nenhuma conversa por aqui ainda."}
+            {deepLinkSemMatch
+              ? (leadIdParam ? "Esse lead ainda não tem conversa nesse canal." : "Esse contato ainda não tem conversa nesse canal.")
+              : "Nenhuma conversa por aqui ainda."}
           </p>
         </div>
       )}

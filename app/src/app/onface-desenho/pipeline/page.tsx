@@ -51,6 +51,7 @@ export default async function DesenhoPipeline({ searchParams }: {
           aba={aba}
           filtro={{ busca, responsavelId, familia }}
           selecaoInicial={params.oportunidade ?? null}
+          rotaBase="/onface-desenho"
           acoes={{
             moverEtapa: acaoMoverEtapa, definirProximaAcao: acaoDefinirProximaAcao,
             marcarEstagnacao: acaoMarcarEstagnacao, alterarFamilia: acaoAlterarFamilia,

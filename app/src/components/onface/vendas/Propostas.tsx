@@ -17,7 +17,7 @@
  * E o aceite não é ganho: a tela diz o que ainda falta para fechar.
  */
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { FileText, Plus, Send, Trash2 } from "lucide-react";
@@ -29,11 +29,20 @@ import {
 import type { ItemCatalogo } from "@/lib/vendas/propostas";
 import type { Resultado } from "@/lib/vendas/resultado";
 import type { DetalheProposta, LinhaProposta } from "@/app/(onface-preview)/onface-preview/propostas/actions";
+import type { DadosJuridicos } from "@/lib/vendas/propostas";
 import {
-  Abas, AvisoBloqueio, Busca, Campo, ComPainel, Dialogo, Painel, Secao, Tag,
-  dataCurta, dataHora, moeda, moedaExata, useAcao,
+  Abas, AvisoBloqueio, Busca, ComPainel, Dialogo, Painel, Secao, Tag,
+  dataCurta, moeda, moedaExata, useAcao, type Bloqueio,
 } from "./ui";
-import { rotuloAtor, rotuloEvento } from "./PreVendas";
+import { AbrirEmPagina } from "./pagina";
+import { DialogoJuridicos } from "./juridicos";
+import {
+  AcoesProposta, ApoioProposta, CorpoProposta, TagsProposta, rotuloStatus, tomDoStatus,
+} from "./PropostaCorpo";
+import {
+  executarAcaoAposCarregamento, inicializarFluxoProposta, urlAposRevisao,
+  type AcaoInicialProposta,
+} from "./fluxoProposta";
 
 export interface AcoesPropostas {
   detalhe: (id: string) => Promise<Resultado<DetalheProposta | null>>;
@@ -49,22 +58,77 @@ export interface AcoesPropostas {
   enviar: (e: { propostaId: string; modoFechamento: ModoFechamento; validadeDias: number; tipoContratual?: TipoContratual | null }) => Promise<Resultado>;
   criarRevisao: (id: string) => Promise<Resultado<{ propostaId: string; versao: number }>>;
   expirarVencidas: () => Promise<Resultado<{ expiradas: number }>>;
+  salvarJuridicos: (empresaId: string, dados: DadosJuridicos) => Promise<Resultado<{ completo: boolean; faltando: string[] }>>;
 }
 
-export function Propostas({ linhas, filtro, oportunidadeInicial, propostaInicial, acoes }: {
+export function Propostas({ linhas, filtro, oportunidadeInicial, propostaInicial, abrirComposer = false, acaoInicial, rotaBase = "/onface-preview", acoes }: {
   linhas: LinhaProposta[];
   filtro: { busca: string; status: string | null };
   oportunidadeInicial?: string | null;
   propostaInicial?: string | null;
+  /** A rota estável /propostas/nova abre este mesmo compositor, não outro. */
+  abrirComposer?: boolean;
+  /** Intenção trazida da página completa; a proposta é carregada antes do diálogo. */
+  acaoInicial?: AcaoInicialProposta | null;
+  /** Mantém todos os links dentro da superfície ONFACE atual. */
+  rotaBase?: string;
   acoes: AcoesPropostas;
 }) {
   const router = useRouter();
   const [, iniciarNavegacao] = useTransition();
+  const fluxoInicial = inicializarFluxoProposta({ propostaId: propostaInicial, acao: acaoInicial, abrirComposer });
   const [busca, setBusca] = useState(filtro.busca);
-  const [selecionada, setSelecionada] = useState<string | null>(propostaInicial ?? null);
+  const [selecionada, setSelecionada] = useState<string | null>(fluxoInicial.propostaId);
   const [detalhe, setDetalhe] = useState<DetalheProposta | null>(null);
-  const [modal, setModal] = useState<null | "nova" | "enviar">(Boolean(oportunidadeInicial) ? "nova" : null);
+  const [modal, setModal] = useState<null | "nova" | "enviar" | "juridicos">(
+    oportunidadeInicial && !fluxoInicial.propostaId ? "nova" : fluxoInicial.modalInicial,
+  );
+  const propostaInicialCarregada = useRef<string | null>(null);
+  const revisaoInicialExecutada = useRef<string | null>(null);
   const { pendente, bloqueio, limparBloqueio, executar } = useAcao();
+
+  async function criarRevisao(propostaId: string, consumirIntencao = false) {
+    const revisao = await executar<{ propostaId: string; versao: number }>(() => acoes.criarRevisao(propostaId));
+    if (!revisao) return false;
+
+    setModal(null);
+    setSelecionada(revisao.propostaId);
+    const r = await acoes.detalhe(revisao.propostaId);
+    if (r.ok) setDetalhe(r.dados ?? null);
+
+    if (consumirIntencao) {
+      router.replace(urlAposRevisao(`${window.location.pathname}${window.location.search}`, revisao.propostaId));
+    } else {
+      router.refresh();
+    }
+    return true;
+  }
+
+  // A página completa volta para esta única jornada. Carregamos a proposta
+  // antes de abrir enviar/dados jurídicos ou de criar uma revisão.
+  useEffect(() => {
+    const fluxo = inicializarFluxoProposta({ propostaId: propostaInicial, acao: acaoInicial, abrirComposer });
+    if (!fluxo.propostaId || propostaInicialCarregada.current === fluxo.propostaId) return;
+    let ativa = true;
+    setSelecionada(fluxo.propostaId);
+    setDetalhe(null);
+    void acoes.detalhe(fluxo.propostaId).then(async (r) => {
+      if (!ativa || !r.ok || !r.dados) return;
+      propostaInicialCarregada.current = fluxo.propostaId;
+      setDetalhe(r.dados);
+      if (fluxo.acaoAposCarregamento === "enviar" || fluxo.acaoAposCarregamento === "juridicos") {
+        setModal(fluxo.acaoAposCarregamento);
+      }
+      if (fluxo.acaoAposCarregamento === "revisar" && revisaoInicialExecutada.current !== fluxo.propostaId) {
+        revisaoInicialExecutada.current = fluxo.propostaId;
+        await executarAcaoAposCarregamento({
+          acao: fluxo.acaoAposCarregamento,
+          criarRevisao: () => criarRevisao(fluxo.propostaId!, true),
+        });
+      }
+    });
+    return () => { ativa = false; };
+  }, [acaoInicial, abrirComposer, acoes, propostaInicial]);
 
   function navegar(mudancas: Record<string, string | null>) {
     const url = new URL(window.location.href);
@@ -134,15 +198,9 @@ export function Propostas({ linhas, filtro, oportunidadeInicial, propostaInicial
             bloqueio={bloqueio}
             aoFechar={() => { setSelecionada(null); setDetalhe(null); limparBloqueio(); }}
             aoEnviar={() => setModal("enviar")}
-            aoRevisar={() => rodar(async () => {
-              const r = await acoes.criarRevisao(detalhe!.id);
-              if (r.ok && r.dados) {
-                setSelecionada(r.dados.propostaId);
-                const d = await acoes.detalhe(r.dados.propostaId);
-                if (d.ok) setDetalhe(d.dados ?? null);
-              }
-              return r;
-            })}
+            aoCompletarJuridicos={() => { limparBloqueio(); setModal("juridicos"); }}
+            rotaBase={rotaBase}
+            aoRevisar={() => criarRevisao(detalhe!.id)}
           />
         }
       >
@@ -199,6 +257,18 @@ export function Propostas({ linhas, filtro, oportunidadeInicial, propostaInicial
         }}
       />
 
+      <DialogoJuridicos
+        aberto={modal === "juridicos"}
+        iniciais={detalhe?.juridicos && detalhe.empresa.id
+          ? { empresaId: detalhe.empresa.id, ...detalhe.juridicos }
+          : null}
+        faltando={detalhe?.empresa.faltando}
+        pendente={pendente}
+        bloqueio={bloqueio}
+        aoFechar={() => setModal(null)}
+        aoConfirmar={(dados) => rodar(() => acoes.salvarJuridicos(detalhe!.empresa.id!, dados))}
+      />
+
       <DialogoEnviar
         aberto={modal === "enviar"}
         proposta={detalhe}
@@ -214,154 +284,39 @@ export function Propostas({ linhas, filtro, oportunidadeInicial, propostaInicial
 
 /* ── Painel ────────────────────────────────────────────────────────────── */
 
-function PainelProposta({ proposta, pendente, bloqueio, aoFechar, aoEnviar, aoRevisar }: {
+function PainelProposta({ proposta, pendente, bloqueio, aoFechar, aoEnviar, aoRevisar, aoCompletarJuridicos, rotaBase }: {
   proposta: DetalheProposta | null;
   pendente: boolean;
-  bloqueio: { mensagem: string; acao?: { rotulo: string; tipo: string } } | null;
+  bloqueio: Bloqueio | null;
   aoFechar: () => void;
   aoEnviar: () => void;
   aoRevisar: () => Promise<boolean>;
+  aoCompletarJuridicos: () => void;
+  rotaBase: string;
 }) {
   if (!proposta) {
     return <Painel titulo="Carregando" aoFechar={aoFechar}><p className="ov-nota">Buscando a proposta…</p></Painel>;
   }
 
-  const rascunho = proposta.status === "rascunho";
-  const vigente = ["enviada", "visualizada", "ajuste_solicitado"].includes(proposta.status);
-  const aceita = proposta.status === "aceita";
+  const acoesCorpo = { enviar: aoEnviar, revisar: aoRevisar, completarJuridicos: aoCompletarJuridicos };
 
   return (
     <Painel
       titulo={`Proposta #${proposta.numero} · v${proposta.versao}`}
       subtitulo={proposta.empresa.nome ?? proposta.oportunidade.titulo}
+      acoesTopo={<AbrirEmPagina href={`${rotaBase}/propostas/${proposta.id}`} />}
       aoFechar={aoFechar}
     >
-      <div className="ov-card-meta">
-        <Tag tom={tomDoStatus(proposta.status)}>{rotuloStatus(proposta.status)}</Tag>
-        {proposta.oportunidade.familia ? (
-          <Tag>{ROTULO_FAMILIA[proposta.oportunidade.familia as keyof typeof ROTULO_FAMILIA] ?? proposta.oportunidade.familia}</Tag>
-        ) : null}
-        {proposta.modoFechamento ? <Tag tom="info">{ROTULO_MODO_FECHAMENTO[proposta.modoFechamento as ModoFechamento]}</Tag> : null}
-      </div>
-
-      {bloqueio ? <AvisoBloqueio bloqueio={bloqueio} /> : null}
-
-      {aceita ? (
-        <div className="ov-bloqueio" role="status">
-          <FileText aria-hidden />
-          <div>
-            Proposta aceita. A oportunidade continua aberta até a evidência de fechamento:{" "}
-            {proposta.modoFechamento === "CONTRACT" ? "contrato assinado" : "pagamento confirmado"}.
-            Aceite não é ganho.
-          </div>
-        </div>
-      ) : null}
-
-      {proposta.tracking.ajusteDescricao ? (
-        <Secao titulo="Ajuste pedido pelo cliente">
-          <p className="ov-nota">{proposta.tracking.ajusteDescricao}</p>
-          <p className="ov-nota">
-            O pedido não altera esta proposta. Crie uma revisão: a versão atual vira substituída e não pode mais ser aceita.
-          </p>
-        </Secao>
-      ) : null}
+      <div className="ov-card-meta"><TagsProposta proposta={proposta} /></div>
 
       <Secao titulo="Ações">
         <div className="ov-acoes">
-          {rascunho ? (
-            <button type="button" className="ov-botao" disabled={pendente} onClick={aoEnviar}>
-              <Send aria-hidden />Enviar proposta
-            </button>
-          ) : null}
-          {vigente || proposta.status === "recusada" || proposta.status === "expirada" ? (
-            <button type="button" className="ov-botao" data-variante="contorno" disabled={pendente} onClick={aoRevisar}>
-              Criar revisão
-            </button>
-          ) : null}
-          {proposta.oportunidade.id ? (
-            <Link className="ov-botao" data-variante="contorno" href={`/onface-preview/pipeline?oportunidade=${proposta.oportunidade.id}`}>
-              Abrir oportunidade
-            </Link>
-          ) : null}
+          <AcoesProposta proposta={proposta} pendente={pendente} acoes={acoesCorpo} rotaBase={rotaBase} />
         </div>
       </Secao>
 
-      {/* Bloco 03 §5: recorrente e não recorrente separados. Somar os dois num
-          total único engana, e a spec proíbe. */}
-      <Secao titulo="Composição financeira">
-        <div className="ov-composicao">
-          <div className="ov-composicao-item">
-            <dt>Recorrente / mês</dt>
-            <dd>{moedaExata(proposta.composicao.recorrenteMensal)}</dd>
-          </div>
-          <div className="ov-composicao-item">
-            <dt>Não recorrente</dt>
-            <dd>{moedaExata(proposta.composicao.naoRecorrente)}</dd>
-          </div>
-          {proposta.composicao.tcv !== null ? (
-            <div className="ov-composicao-item">
-              <dt>Contratado ({proposta.composicao.prazoMeses} meses)</dt>
-              <dd>{moedaExata(proposta.composicao.tcv)}</dd>
-            </div>
-          ) : null}
-        </div>
-        {proposta.composicao.tcv === null && proposta.composicao.recorrenteMensal > 0 ? (
-          <p className="ov-nota">Sem prazo contratual definido, o valor total do contrato não é calculado.</p>
-        ) : null}
-      </Secao>
-
-      <Secao titulo={`Itens (${proposta.itens.length})`}>
-        <dl style={{ margin: 0 }}>
-          {proposta.itens.map((i) => (
-            <Campo key={i.id} rotulo={`${i.nome}${i.quantidade > 1 ? ` · ${i.quantidade}x` : ""}`}>
-              {moedaExata(i.subtotal)}
-            </Campo>
-          ))}
-        </dl>
-      </Secao>
-
-      <Secao titulo="Empresa">
-        <dl style={{ margin: 0 }}>
-          <Campo rotulo="Nome">{proposta.empresa.nome}</Campo>
-          <Campo rotulo="Dados jurídicos">
-            {proposta.empresa.dadosJuridicosCompletos ? "Completos" : `Falta: ${proposta.empresa.faltando.join(", ")}`}
-          </Campo>
-        </dl>
-        {!proposta.empresa.dadosJuridicosCompletos && proposta.empresa.id ? (
-          <Link className="ov-botao" data-variante="contorno" href={`/onface-preview/contatos?empresa=${proposta.empresa.id}`}>
-            Completar dados da empresa
-          </Link>
-        ) : null}
-      </Secao>
-
-      <Secao titulo="Tracking">
-        <dl style={{ margin: 0 }}>
-          <Campo rotulo="Enviada">{dataHora(proposta.tracking.enviadaEm)}</Campo>
-          <Campo rotulo="Primeira visualização">{dataHora(proposta.tracking.primeiraVisualizacao)}</Campo>
-          <Campo rotulo="Validade">{dataCurta(proposta.dataValidade)}</Campo>
-          <Campo rotulo="Aceita">{dataHora(proposta.tracking.aceitaEm)}</Campo>
-          <Campo rotulo="Recusada">{dataHora(proposta.tracking.recusadaEm)}</Campo>
-        </dl>
-      </Secao>
-
-      {proposta.timeline.length > 0 ? (
-        <Secao titulo="Histórico">
-          <div className="ov-timeline">
-            {proposta.timeline.slice(0, 15).map((e) => (
-              <div className="ov-timeline-item" key={e.id}>
-                <span className="ov-timeline-marca" aria-hidden />
-                <div>
-                  <strong>{rotuloEvento(e.tipo)}</strong>
-                  <span>
-                    {dataHora(e.ocorridoEm)}
-                    {e.usuarioNome ? ` · ${e.usuarioNome}` : e.atorTipo !== "HUMAN" ? ` · ${rotuloAtor(e.atorTipo)}` : ""}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </Secao>
-      ) : null}
+      <CorpoProposta proposta={proposta} pendente={pendente} bloqueio={bloqueio} variante="painel" acoes={acoesCorpo} />
+      <ApoioProposta proposta={proposta} variante="painel" contato={proposta.contato} acoes={acoesCorpo} />
     </Painel>
   );
 }
@@ -656,22 +611,4 @@ function DialogoEnviar({ aberto, proposta, pendente, bloqueio, aoFechar, aoConfi
       </div>
     </Dialogo>
   );
-}
-
-/* ── Rótulos ───────────────────────────────────────────────────────────── */
-
-function rotuloStatus(status: string): string {
-  return (STATUS_PROPOSTA as readonly string[]).includes(status)
-    ? ROTULO_STATUS_PROPOSTA[status as keyof typeof ROTULO_STATUS_PROPOSTA]
-    : status;
-}
-
-function tomDoStatus(status: string): "coral" | "alerta" | "sucesso" | "info" | "neutro-escuro" | undefined {
-  switch (status) {
-    case "aceita": return "sucesso";
-    case "enviada": case "visualizada": return "coral";
-    case "ajuste_solicitado": return "alerta";
-    case "recusada": case "expirada": case "substituida": return "neutro-escuro";
-    default: return undefined;
-  }
 }

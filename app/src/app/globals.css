@@ -786,6 +786,22 @@ body {
   font-family: var(--cf2-font-ui);
 }
 
+/* MESMO BUG RAIZ, agora no ONFACE (16/09): o tema novo põe
+   `data-onface-theme` no <html>, mas ninguém corrigia o `color` do `body`.
+   Resultado idêntico ao de 31/08: tudo que renderiza em PORTAL (Dialog,
+   DropdownMenu, Tooltip, Sheet) nasce como filho direto de `body`, fora da
+   árvore do shell, e herdava o #F5F5F5 do tema escuro legado sobre o fundo
+   claro do próprio modal. Sintoma que o Kauã viu: "criação de proposta
+   quebrada" — o diálogo funcionava, mas o texto digitado, o título e a lista
+   de oportunidades eram brancos sobre branco.
+   A correção fica no `body` de propósito: cobre todo portal de uma vez, em
+   vez de caçar componente por componente. */
+html[data-onface-theme="light"] body {
+  background: var(--surface-page);
+  color: var(--text-body);
+  font-family: var(--font-onface-ui), system-ui, sans-serif;
+}
+
 /* Animations */
 @keyframes fadeUp {
   from { opacity: 0; transform: translateY(10px); }

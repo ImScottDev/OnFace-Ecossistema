@@ -85,6 +85,16 @@ export interface DetalheProposta {
   versao: number;
   status: string;
   empresa: { id: string | null; nome: string | null; dadosJuridicosCompletos: boolean; faltando: string[] };
+  /** Por quem se fala com o cliente. Alimenta o elo com o Atendimento: sem
+   *  telefone nem e-mail, a tela não oferece canal que não funciona. */
+  contato: { leadId: string | null; nome: string | null; telefone: string | null; email: string | null } | null;
+  /** Campos já preenchidos na Empresa, para o diálogo de dados jurídicos
+   *  abrir preenchido em vez de pedir tudo de novo. */
+  juridicos: {
+    razaoSocial: string | null; cnpj: string | null; logradouro: string | null;
+    numero: string | null; complemento: string | null; bairro: string | null;
+    cidade: string | null; estado: string | null; cep: string | null;
+  } | null;
   oportunidade: { id: string | null; titulo: string | null; familia: string | null; etapa: string | null };
   modoFechamento: string | null;
   validadeDias: number | null;
@@ -102,16 +112,26 @@ export async function acaoDetalhe(propostaId: string): Promise<Resultado<Detalhe
 
   return executar("carregar proposta", async () => {
     const [p] = await db.execute<{
-      id: string; numero: number; versao: number; status: string;
+      id: string; proposta_numero: number; versao: number; status: string;
       empresa_id: string | null; empresa: string | null; negocio_id: string | null;
       oportunidade: string | null; familia: string | null; etapa: string | null;
       modo: string | null; validade_dias: number | null; data_validade: string | null;
       tipo_contratual: string | null; enviada_em: string | null; primeira_vis: string | null;
       aceita_em: string | null; recusada_em: string | null;
       ajuste_em: string | null; ajuste_desc: string | null;
+      lead_id: string | null; contato_nome: string | null;
+      contato_telefone: string | null; contato_email: string | null;
+      razao_social: string | null; cnpj: string | null; logradouro: string | null;
+      endereco_numero: string | null; complemento: string | null; bairro: string | null;
+      cidade: string | null; estado: string | null; cep: string | null;
     }>(sql`
-      SELECT p.id::text, p.numero, p.versao, p.status,
+      SELECT p.id::text, p.numero AS proposta_numero, p.versao, p.status,
              n.empresa_id::text, e.nome AS empresa, p.negocio_id::text,
+             p.lead_id::text,
+             NULLIF(trim(concat_ws(' ', l.nome, l.sobrenome)), '') AS contato_nome,
+             COALESCE(l.whatsapp, l.telefone) AS contato_telefone, l.email AS contato_email,
+             e.razao_social, e.cnpj, e.logradouro, e.numero AS endereco_numero, e.complemento,
+             e.bairro, e.cidade, e.estado, e.cep,
              n.titulo AS oportunidade, COALESCE(p.service_family, n.service_family) AS familia, n.etapa,
              p.modo_fechamento AS modo, p.validade_dias, p.data_validade::text,
              p.tipo_contratual, p.enviada_em::text, p.primeira_visualizacao_em::text AS primeira_vis,
@@ -120,6 +140,7 @@ export async function acaoDetalhe(propostaId: string): Promise<Resultado<Detalhe
         FROM propostas p
         LEFT JOIN negocios n ON n.id = p.negocio_id
         LEFT JOIN empresas e ON e.id = n.empresa_id
+        LEFT JOIN leads l ON l.id = p.lead_id
        WHERE p.id = ${propostaId}::uuid AND p.organizacao_id = ${ctx.organizacaoId}::uuid
     `);
     if (!p) return null;
@@ -138,11 +159,20 @@ export async function acaoDetalhe(propostaId: string): Promise<Resultado<Detalhe
       : { completo: false, faltando: ["Empresa não vinculada"] };
 
     return {
-      id: p.id, numero: p.numero, versao: p.versao, status: p.status,
+      id: p.id, numero: p.proposta_numero, versao: p.versao, status: p.status,
       empresa: {
         id: p.empresa_id, nome: p.empresa,
         dadosJuridicosCompletos: juridicos.completo, faltando: juridicos.faltando,
       },
+      contato: p.lead_id ? {
+        leadId: p.lead_id, nome: p.contato_nome,
+        telefone: p.contato_telefone, email: p.contato_email,
+      } : null,
+      juridicos: p.empresa_id ? {
+        razaoSocial: p.razao_social, cnpj: p.cnpj, logradouro: p.logradouro,
+        numero: p.endereco_numero, complemento: p.complemento, bairro: p.bairro,
+        cidade: p.cidade, estado: p.estado, cep: p.cep,
+      } : null,
       oportunidade: { id: p.negocio_id, titulo: p.oportunidade, familia: p.familia, etapa: p.etapa },
       modoFechamento: p.modo,
       validadeDias: p.validade_dias,
@@ -312,5 +342,27 @@ export async function acaoExpirarVencidas(): Promise<Resultado<{ expiradas: numb
     const expiradas = await propostas.expirarPropostasVencidas(ctx.organizacaoId);
     revalidatePath(ROTA);
     return { expiradas };
+  });
+}
+
+/**
+ * Grava os dados jurídicos da Empresa sem sair da Proposta.
+ *
+ * O gate `dados_juridicos_incompletos` bloqueia o envio aqui, então a ação que
+ * o destrava tem de terminar aqui. Devolve o estado recalculado para a tela
+ * saber, na mesma resposta, se o envio já está liberado.
+ */
+export async function acaoSalvarJuridicos(
+  empresaId: string,
+  dados: propostas.DadosJuridicos,
+): Promise<Resultado<{ completo: boolean; faltando: string[] }>> {
+  const ctx = await contexto();
+  if (!ctx) return { ok: false, erro: "Sessão expirada." };
+  return executar("salvar dados jurídicos", async () => {
+    await propostas.salvarDadosJuridicos({
+      organizacaoId: ctx.organizacaoId, empresaId, dados, ator: ctx.ator,
+    });
+    revalidatePath(ROTA);
+    return propostas.conferirDadosJuridicos(ctx.organizacaoId, empresaId);
   });
 }

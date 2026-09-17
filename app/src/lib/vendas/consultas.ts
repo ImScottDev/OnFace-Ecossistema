@@ -696,6 +696,26 @@ export interface LinhaPessoa {
   empresa: string | null;
 }
 
+type LinhaPessoaDb = {
+  id: string; fonte: string; nome: string | null; cargo: string | null;
+  email: string | null; telefone: string | null; whatsapp: string | null;
+  empresa_id: string | null; empresa: string | null;
+};
+
+function mapearLinhaPessoa(linha: LinhaPessoaDb): LinhaPessoa {
+  return {
+    id: linha.id,
+    fonte: linha.fonte as "pessoa" | "lead",
+    nome: linha.nome ?? "Sem nome",
+    cargo: linha.cargo,
+    email: linha.email,
+    telefone: linha.telefone,
+    whatsapp: linha.whatsapp,
+    empresaId: linha.empresa_id,
+    empresa: linha.empresa,
+  };
+}
+
 /**
  * Diretório de pessoas.
  *
@@ -711,11 +731,7 @@ export async function diretorioPessoas(organizacaoId: string, filtros: {
 } = {}): Promise<LinhaPessoa[]> {
   const busca = filtros.busca?.trim() ? `%${filtros.busca.trim().toLowerCase()}%` : null;
 
-  const linhas = await db.execute<{
-    id: string; fonte: string; nome: string; cargo: string | null;
-    email: string | null; telefone: string | null; whatsapp: string | null;
-    empresa_id: string | null; empresa: string | null;
-  }>(sql`
+  const linhas = await db.execute<LinhaPessoaDb>(sql`
     SELECT p.id::text, 'pessoa' AS fonte,
            NULLIF(trim(concat_ws(' ', p.nome, p.sobrenome)), '') AS nome,
            p.cargo, p.email, p.telefone, p.whatsapp,
@@ -747,17 +763,33 @@ export async function diretorioPessoas(organizacaoId: string, filtros: {
      LIMIT ${filtros.limite ?? 200}
   `);
 
-  return linhas.map((l) => ({
-    id: l.id,
-    fonte: l.fonte as "pessoa" | "lead",
-    nome: l.nome ?? "Sem nome",
-    cargo: l.cargo,
-    email: l.email,
-    telefone: l.telefone,
-    whatsapp: l.whatsapp,
-    empresaId: l.empresa_id,
-    empresa: l.empresa,
-  }));
+  return linhas.map(mapearLinhaPessoa);
+}
+
+/** Carrega uma identidade sem depender do limite da listagem do diretório. */
+export async function pessoaPorId(organizacaoId: string, pessoaId: string): Promise<LinhaPessoa | null> {
+  const [linha] = await db.execute<LinhaPessoaDb>(sql`
+    SELECT p.id::text, 'pessoa' AS fonte,
+           NULLIF(trim(concat_ws(' ', p.nome, p.sobrenome)), '') AS nome,
+           p.cargo, p.email, p.telefone, p.whatsapp,
+           p.empresa_id::text, e.nome AS empresa
+      FROM pessoas p
+      LEFT JOIN empresas e ON e.id = p.empresa_id
+     WHERE p.id = ${pessoaId}::uuid AND p.organizacao_id = ${organizacaoId}::uuid
+
+    UNION ALL
+
+    SELECT l.id::text, 'lead' AS fonte,
+           NULLIF(trim(concat_ws(' ', l.nome, l.sobrenome)), '') AS nome,
+           l.cargo, l.email, l.telefone, l.whatsapp,
+           l.empresa_id::text, COALESCE(e.nome, l.empresa) AS empresa
+      FROM leads l
+      LEFT JOIN empresas e ON e.id = l.empresa_id
+     WHERE l.id = ${pessoaId}::uuid AND l.organizacao_id = ${organizacaoId}::uuid
+       AND NOT EXISTS (SELECT 1 FROM pessoas p WHERE p.lead_id_legado = l.id)
+     LIMIT 1
+  `);
+  return linha ? mapearLinhaPessoa(linha) : null;
 }
 
 /* ── Empresa 360 comercial (Bloco 05 §8) ───────────────────────────────── */
@@ -777,6 +809,9 @@ export interface Empresa360 {
   relacionamento: RelacionamentoEmpresa;
   relacionamentoRotulo: string;
   dadosJuridicosCompletos: boolean;
+  /** Rótulos dos campos que faltam, na mesma ordem do formulário. Existe para
+   *  a tela dizer o que falta em vez de só dizer que falta alguma coisa. */
+  dadosJuridicosFaltando: string[];
   pessoas: Array<{ id: string; fonte: "pessoa" | "lead"; nome: string; cargo: string | null; papel: string | null; email: string | null; telefone: string | null }>;
   leads: Array<{ id: string; etapa: string; etapaRotulo: string; origem: string | null; criadoEm: string }>;
   oportunidades: Array<{ id: string; titulo: string; etapa: string; etapaRotulo: string; familia: string | null; valor: number | null; responsavel: string | null }>;
@@ -853,7 +888,16 @@ export async function empresa360(organizacaoId: string, empresaId: string): Prom
      ORDER BY current_recurring_value DESC LIMIT 20
   `);
 
-  const juridicos = [e.razao_social, e.cnpj, e.logradouro, e.numero, e.bairro, e.cidade, e.estado, e.cep];
+  // Mesma fonte de verdade do gate de envio da proposta: se a lista mudar lá,
+  // a Empresa 360 acompanha sozinha.
+  const { CAMPOS_JURIDICOS } = await import("./propostas");
+  const valorJuridico: Record<string, string | null> = {
+    razao_social: e.razao_social, cnpj: e.cnpj, logradouro: e.logradouro,
+    numero: e.numero, bairro: e.bairro, cidade: e.cidade, estado: e.estado, cep: e.cep,
+  };
+  const juridicosFaltando = CAMPOS_JURIDICOS
+    .filter(({ coluna }) => !valorJuridico[coluna]?.toString().trim())
+    .map(({ rotulo }) => rotulo);
 
   return {
     id: e.id, nome: e.nome, razaoSocial: e.razao_social, cnpj: e.cnpj,
@@ -861,7 +905,8 @@ export async function empresa360(organizacaoId: string, empresaId: string): Prom
     website: e.website, dominio: e.dominio,
     endereco: { logradouro: e.logradouro, numero: e.numero, complemento: e.complemento, bairro: e.bairro, cep: e.cep },
     relacionamento, relacionamentoRotulo: ROTULO_RELACIONAMENTO[relacionamento],
-    dadosJuridicosCompletos: juridicos.every((v) => Boolean(v?.toString().trim())),
+    dadosJuridicosCompletos: juridicosFaltando.length === 0,
+    dadosJuridicosFaltando: juridicosFaltando,
     pessoas: pessoas.map((p) => ({
       id: p.id, fonte: p.fonte as "pessoa" | "lead", nome: p.nome ?? "Sem nome",
       cargo: p.cargo, papel: p.papel, email: p.email, telefone: p.telefone,
@@ -1038,6 +1083,7 @@ export interface DetalheOportunidade {
   previsaoFechamento: string | null;
   responsavel: { id: string | null; nome: string | null };
   empresa: { id: string | null; nome: string };
+  contato: { id: string; fonte: "pessoa" | "lead"; nome: string; cargo: string | null; email: string | null; telefone: string | null; whatsapp: string | null } | null;
   leadId: string | null;
   /** Qualificação herdada de Pré-vendas (Bloco 02 §25). */
   qualificacaoHerdada: Record<string, unknown> | null;
@@ -1059,6 +1105,7 @@ export async function detalheOportunidade(organizacaoId: string, negocioId: stri
     motion: string | null; source_process: string | null; valor: string | null;
     previsao: string | null; responsavel_id: string | null; responsavel: string | null;
     empresa_id: string | null; empresa: string | null; lead_id: string | null;
+    lead_nome: string | null; lead_cargo: string | null; lead_email: string | null; lead_telefone: string | null; lead_whatsapp: string | null;
     qualificacao: Record<string, unknown> | null; proxima_acao: string | null;
     proxima_acao_em: string | null; motivo_estagnacao: string | null;
     motivo_perda: string | null; no_show_em: string | null; no_show_contagem: number;
@@ -1068,6 +1115,8 @@ export async function detalheOportunidade(organizacaoId: string, negocioId: stri
            n.commercial_motion AS motion, n.source_process, n.valor_total::text AS valor,
            n.previsao_fechamento::text AS previsao, n.responsavel_id::text, u.nome AS responsavel,
            n.empresa_id::text, COALESCE(e.nome, l.empresa) AS empresa, n.lead_id::text,
+           NULLIF(trim(concat_ws(' ', l.nome, l.sobrenome)), '') AS lead_nome,
+           l.cargo AS lead_cargo, l.email AS lead_email, l.telefone AS lead_telefone, l.whatsapp AS lead_whatsapp,
            l.qualificacao, n.proxima_acao, n.proxima_acao_em::text,
            n.motivo_estagnacao, n.motivo_perda_chave AS motivo_perda,
            n.no_show_em::text, n.no_show_contagem, n.trial_iniciado_em::text,
@@ -1079,6 +1128,18 @@ export async function detalheOportunidade(organizacaoId: string, negocioId: stri
      WHERE n.id = ${negocioId}::uuid AND n.organizacao_id = ${organizacaoId}::uuid
   `);
   if (!n) return null;
+
+  const [pessoaContato] = await db.execute<{
+    id: string; nome: string | null; cargo: string | null; email: string | null; telefone: string | null; whatsapp: string | null;
+  }>(sql`
+    SELECT p.id::text, NULLIF(trim(concat_ws(' ', p.nome, p.sobrenome)), '') AS nome,
+           p.cargo, p.email, p.telefone, p.whatsapp
+      FROM pessoas p
+     WHERE p.organizacao_id = ${organizacaoId}::uuid
+       AND (p.lead_id_legado = ${n.lead_id}::uuid OR (p.empresa_id = ${n.empresa_id}::uuid AND ${n.empresa_id}::uuid IS NOT NULL))
+     ORDER BY CASE WHEN p.lead_id_legado = ${n.lead_id}::uuid THEN 0 ELSE 1 END, p.created_at ASC
+     LIMIT 1
+  `);
 
   const propostas = await db.execute<{
     id: string; numero: number; versao: number; status: string;
@@ -1123,6 +1184,13 @@ export async function detalheOportunidade(organizacaoId: string, negocioId: stri
     previsaoFechamento: n.previsao,
     responsavel: { id: n.responsavel_id, nome: n.responsavel },
     empresa: { id: n.empresa_id, nome: n.empresa?.trim() || "Empresa não informada" },
+    contato: pessoaContato ? {
+      id: pessoaContato.id, fonte: "pessoa", nome: pessoaContato.nome ?? "Sem nome", cargo: pessoaContato.cargo,
+      email: pessoaContato.email, telefone: pessoaContato.telefone, whatsapp: pessoaContato.whatsapp,
+    } : n.lead_id && n.lead_nome ? {
+      id: n.lead_id, fonte: "lead", nome: n.lead_nome, cargo: n.lead_cargo,
+      email: n.lead_email, telefone: n.lead_telefone, whatsapp: n.lead_whatsapp,
+    } : null,
     leadId: n.lead_id,
     qualificacaoHerdada: n.qualificacao,
     proximaAcao: { descricao: n.proxima_acao, quando: n.proxima_acao_em },

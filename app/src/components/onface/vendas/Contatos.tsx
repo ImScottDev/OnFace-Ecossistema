@@ -12,7 +12,7 @@
  * ações explícitas e separadas, como a spec exige.
  */
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Building2, Plus, UserPlus } from "lucide-react";
@@ -29,6 +29,7 @@ import {
   dataCurta, dataHora, moeda, useAcao,
 } from "./ui";
 import { rotuloAtor, rotuloEvento } from "./PreVendas";
+import { DialogoJuridicos } from "./juridicos";
 
 type Aba = "empresas" | "pessoas";
 
@@ -52,13 +53,15 @@ const RELACIONAMENTOS_FILTRO: Array<{ chave: RelacionamentoEmpresa | ""; rotulo:
   { chave: "cadastrada", rotulo: "Cadastrada" },
 ];
 
-export function Contatos({ aba, empresas, pessoas, filtro, responsaveis, selecaoInicial, acoes }: {
+export function Contatos({ aba, empresas, pessoas, filtro, responsaveis, selecaoInicial, pessoaInicial, rotaBase, acoes }: {
   aba: Aba;
   empresas: { linhas: LinhaEmpresa[]; total: number; porRelacionamento: Record<string, number> };
   pessoas: LinhaPessoa[];
   filtro: { busca: string; relacionamento: string | null; semEmpresa: boolean };
   responsaveis: Array<{ id: string; nome: string }>;
   selecaoInicial?: string | null;
+  pessoaInicial?: string | null;
+  rotaBase: "/onface-desenho" | "/onface-preview";
   acoes: AcoesContatos;
 }) {
   const router = useRouter();
@@ -86,6 +89,29 @@ export function Contatos({ aba, empresas, pessoas, filtro, responsaveis, selecao
     const r = await acoes.empresa360(id);
     if (r.ok && r.dados) setDetalhe(r.dados);
   }
+
+  // As ações "Gerenciar" voltam pela URL. A seleção precisa buscar o detalhe
+  // depois do mount, senão o painel abre sem conteúdo.
+  useEffect(() => {
+    if (!selecaoInicial) return;
+    let ativa = true;
+    setSelecionada(selecaoInicial);
+    setDetalhe(null);
+    void acoes.empresa360(selecaoInicial).then((resultado) => {
+      if (ativa && resultado.ok && resultado.dados) setDetalhe(resultado.dados);
+    });
+    return () => { ativa = false; };
+  }, [selecaoInicial]);
+
+  // Vínculo é uma ação explícita. Só a query `pessoa` abre este diálogo;
+  // clicar em uma linha continua levando à página completa da pessoa.
+  useEffect(() => {
+    if (!pessoaInicial) return;
+    const pessoa = pessoas.find((item) => item.id === pessoaInicial);
+    if (!pessoa) return;
+    setPessoaAlvo(pessoa);
+    setModal("vincular");
+  }, [pessoaInicial, pessoas]);
 
   async function rodar(fn: () => Promise<Resultado<unknown>>) {
     const ok = await executar(async () => (await fn()) as Resultado<unknown>);
@@ -147,6 +173,7 @@ export function Contatos({ aba, empresas, pessoas, filtro, responsaveis, selecao
             timeline={detalhe?.timeline ?? []}
             pendente={pendente}
             bloqueio={bloqueio}
+            rotaBase={rotaBase}
             aoFechar={() => { setSelecionada(null); setDetalhe(null); limparBloqueio(); }}
             aoAbrirModal={setModal}
           />
@@ -205,7 +232,7 @@ export function Contatos({ aba, empresas, pessoas, filtro, responsaveis, selecao
                 {pessoas.length === 0 ? (
                   <tr><td colSpan={4}><div className="ov-vazio"><strong>Nada encontrado</strong><p>Nenhuma pessoa com esses filtros.</p></div></td></tr>
                 ) : pessoas.map((p) => (
-                  <tr key={`${p.fonte}-${p.id}`} onClick={() => { setPessoaAlvo(p); setModal("vincular"); }}>
+                  <tr key={`${p.fonte}-${p.id}`} onClick={() => router.push(`${rotaBase}/contatos/pessoas/${p.id}`)}>
                     <td className="ov-tabela-principal">{p.nome}</td>
                     <td className="ov-tabela-apoio">{p.cargo ?? "—"}</td>
                     <td className="ov-tabela-apoio">{p.email ?? p.telefone ?? p.whatsapp ?? "—"}</td>
@@ -213,6 +240,10 @@ export function Contatos({ aba, empresas, pessoas, filtro, responsaveis, selecao
                       {p.empresa
                         ? <span className="ov-tabela-apoio">{p.empresa}</span>
                         : <Tag tom="alerta">Sem empresa</Tag>}
+                      <button type="button" className="ov-botao" data-variante="neutro"
+                        onClick={(evento) => { evento.stopPropagation(); setPessoaAlvo(p); setModal("vincular"); }}>
+                        Vincular
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -247,7 +278,16 @@ export function Contatos({ aba, empresas, pessoas, filtro, responsaveis, selecao
             expansao: empresa!.relacionamento === "cliente",
           }))} />
 
-      <DialogoJuridicos aberto={modal === "juridicos"} empresa={empresa} pendente={pendente} bloqueio={bloqueio}
+      <DialogoJuridicos
+        aberto={modal === "juridicos"}
+        iniciais={empresa ? {
+          empresaId: empresa.id, razaoSocial: empresa.razaoSocial, cnpj: empresa.cnpj,
+          logradouro: empresa.endereco.logradouro, numero: empresa.endereco.numero,
+          complemento: empresa.endereco.complemento, bairro: empresa.endereco.bairro,
+          cidade: empresa.cidade, estado: empresa.estado, cep: empresa.endereco.cep,
+        } : null}
+        faltando={empresa?.dadosJuridicosFaltando}
+        pendente={pendente} bloqueio={bloqueio}
         aoFechar={() => setModal(null)}
         aoConfirmar={(dados) => rodar(() => acoes.salvarDadosJuridicos(empresa!.id, dados))} />
     </>
@@ -256,11 +296,12 @@ export function Contatos({ aba, empresas, pessoas, filtro, responsaveis, selecao
 
 /* ── Painel Empresa 360 ────────────────────────────────────────────────── */
 
-function PainelEmpresa({ empresa, timeline, pendente, bloqueio, aoFechar, aoAbrirModal }: {
+function PainelEmpresa({ empresa, timeline, pendente, bloqueio, rotaBase, aoFechar, aoAbrirModal }: {
   empresa: Empresa360 | null;
   timeline: LinhaDoTempo[];
   pendente: boolean;
   bloqueio: { mensagem: string } | null;
+  rotaBase: "/onface-desenho" | "/onface-preview";
   aoFechar: () => void;
   aoAbrirModal: (m: "lead" | "oportunidade" | "juridicos") => void;
 }) {
@@ -281,6 +322,9 @@ function PainelEmpresa({ empresa, timeline, pendente, bloqueio, aoFechar, aoAbri
 
       <Secao titulo="Ações">
         <div className="ov-acoes">
+          <Link className="ov-botao" data-variante="contorno" href={`${rotaBase}/contatos/empresas/${empresa.id}`}>
+            Abrir empresa
+          </Link>
           <button type="button" className="ov-botao" disabled={pendente} onClick={() => aoAbrirModal("oportunidade")}>
             Nova oportunidade
           </button>
@@ -332,7 +376,7 @@ function PainelEmpresa({ empresa, timeline, pendente, bloqueio, aoFechar, aoAbri
       {empresa.leads.length > 0 ? (
         <Secao titulo="Pré-vendas">
           {empresa.leads.map((l) => (
-            <Link key={l.id} className="ov-botao" data-variante="contorno" href={`/onface-preview/pre-vendas?busca=${encodeURIComponent(empresa.nome)}`}>
+            <Link key={l.id} className="ov-botao" data-variante="contorno" href={`${rotaBase}/pre-vendas?busca=${encodeURIComponent(empresa.nome)}`}>
               {l.etapaRotulo} · {l.origem ?? "sem origem"} · {dataCurta(l.criadoEm)}
             </Link>
           ))}
@@ -342,7 +386,7 @@ function PainelEmpresa({ empresa, timeline, pendente, bloqueio, aoFechar, aoAbri
       {empresa.oportunidades.length > 0 ? (
         <Secao titulo="Oportunidades">
           {empresa.oportunidades.map((o) => (
-            <Link key={o.id} className="ov-botao" data-variante="contorno" href={`/onface-preview/pipeline?oportunidade=${o.id}`}>
+            <Link key={o.id} className="ov-botao" data-variante="contorno" href={`${rotaBase}/pipeline?oportunidade=${o.id}`}>
               {o.titulo} · {o.etapaRotulo} · {moeda(o.valor)}
             </Link>
           ))}
@@ -352,7 +396,7 @@ function PainelEmpresa({ empresa, timeline, pendente, bloqueio, aoFechar, aoAbri
       {empresa.propostas.length > 0 ? (
         <Secao titulo="Propostas">
           {empresa.propostas.map((p) => (
-            <Link key={p.id} className="ov-botao" data-variante="contorno" href={`/onface-preview/propostas?proposta=${p.id}`}>
+            <Link key={p.id} className="ov-botao" data-variante="contorno" href={`${rotaBase}/propostas?proposta=${p.id}`}>
               #{p.numero} v{p.versao} · {p.status} · {moeda(p.total)}
             </Link>
           ))}
@@ -638,57 +682,6 @@ function DialogoNovaOportunidade({ aberto, empresa, responsaveis, pendente, bloq
           <button type="button" className="ov-botao" data-variante="neutro" onClick={aoFechar}>Cancelar</button>
           <button type="button" className="ov-botao" disabled={pendente || familias.length === 0 || !responsavelId}
             onClick={() => aoConfirmar(familias, responsavelId)}>Criar</button>
-        </div>
-      </div>
-    </Dialogo>
-  );
-}
-
-function DialogoJuridicos({ aberto, empresa, pendente, bloqueio, aoFechar, aoConfirmar }: {
-  aberto: boolean; empresa: Empresa360 | null; pendente: boolean; bloqueio: { mensagem: string } | null;
-  aoFechar: () => void; aoConfirmar: (dados: DadosJuridicos) => Promise<boolean>;
-}) {
-  const [form, setForm] = useState<DadosJuridicos>({});
-  const [ultima, setUltima] = useState<string | null>(null);
-
-  // Trocar de empresa com o diálogo aberto precisa recarregar o formulário,
-  // senão os dados de uma empresa seriam gravados em outra.
-  if (aberto && empresa && empresa.id !== ultima) {
-    setUltima(empresa.id);
-    setForm({
-      razaoSocial: empresa.razaoSocial, cnpj: empresa.cnpj,
-      logradouro: empresa.endereco.logradouro, numero: empresa.endereco.numero,
-      complemento: empresa.endereco.complemento, bairro: empresa.endereco.bairro,
-      cidade: empresa.cidade, estado: empresa.estado, cep: empresa.endereco.cep,
-    });
-  }
-
-  const campo = (c: keyof DadosJuridicos) => ({
-    value: (form[c] as string) ?? "",
-    onChange: (e: React.ChangeEvent<HTMLInputElement>) => setForm((f) => ({ ...f, [c]: e.target.value })),
-  });
-
-  return (
-    <Dialogo aberto={aberto} aoFechar={aoFechar} titulo="Dados jurídicos e endereço"
-      descricao="Proposta contratual exige esses campos. Eles ficam na Empresa, disponíveis para as próximas propostas e contratos."
-      largura="larga">
-      <div className="ov-form">
-        {bloqueio ? <AvisoBloqueio bloqueio={bloqueio} /> : null}
-        <div className="ov-form-linha">
-          <label><span>Razão social *</span><input {...campo("razaoSocial")} /></label>
-          <label><span>CNPJ *</span><input {...campo("cnpj")} /></label>
-          <label><span>Rua *</span><input {...campo("logradouro")} /></label>
-          <label><span>Número *</span><input {...campo("numero")} /></label>
-          <label><span>Complemento</span><input {...campo("complemento")} /></label>
-          <label><span>Bairro *</span><input {...campo("bairro")} /></label>
-          <label><span>Cidade *</span><input {...campo("cidade")} /></label>
-          <label><span>Estado *</span><input {...campo("estado")} /></label>
-          <label><span>CEP *</span><input {...campo("cep")} /></label>
-        </div>
-        <div className="ov-form-rodape">
-          <button type="button" className="ov-botao" data-variante="neutro" onClick={aoFechar}>Cancelar</button>
-          <button type="button" className="ov-botao" disabled={pendente}
-            onClick={() => aoConfirmar(form)}>Salvar na empresa</button>
         </div>
       </div>
     </Dialogo>

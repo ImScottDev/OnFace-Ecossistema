@@ -12,7 +12,7 @@
  * aconteceu antes de o dinheiro ou o contrato existirem.
  */
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -53,11 +53,12 @@ export interface AcoesPipeline {
   detalhe: (id: string) => Promise<Resultado<{ oportunidade: DetalheOportunidade | null; timeline: LinhaDoTempo[] }>>;
 }
 
-export function Pipeline({ dados, aba, filtro, selecaoInicial, acoes }: {
+export function Pipeline({ dados, aba, filtro, selecaoInicial, rotaBase, acoes }: {
   dados: BoardPipeline;
   aba: Aba;
   filtro: { busca: string; responsavelId: string | null; familia: string | null };
   selecaoInicial?: string | null;
+  rotaBase: "/onface-desenho" | "/onface-preview";
   acoes: AcoesPipeline;
 }) {
   const router = useRouter();
@@ -86,6 +87,20 @@ export function Pipeline({ dados, aba, filtro, selecaoInicial, acoes }: {
     const r = await acoes.detalhe(id);
     if (r.ok && r.dados) setDetalhe(r.dados);
   }
+
+  // O CTA "Gerenciar" chega pela URL; carregar após o mount evita um painel
+  // vazio quando a rota já nasce com `?oportunidade=`.
+  useEffect(() => {
+    if (!selecaoInicial) return;
+    let ativa = true;
+    setSelecionado(selecaoInicial);
+    setDetalhe(null);
+    setResultadoGanho(null);
+    void acoes.detalhe(selecaoInicial).then((resultado) => {
+      if (ativa && resultado.ok && resultado.dados) setDetalhe(resultado.dados);
+    });
+    return () => { ativa = false; };
+  }, [selecaoInicial]);
 
   async function recarregar() {
     if (!selecionado) return;
@@ -159,8 +174,9 @@ export function Pipeline({ dados, aba, filtro, selecaoInicial, acoes }: {
             pendente={pendente}
             bloqueio={bloqueio}
             motivoGanhoPendente={resultadoGanho}
+            rotaBase={rotaBase}
             aoFechar={() => { setSelecionado(null); setDetalhe(null); limparBloqueio(); setResultadoGanho(null); }}
-            aoAgir={(tipo) => { if (tipo === "criar_proposta") router.push(`/onface-preview/propostas?oportunidade=${op?.id ?? ""}`); }}
+            aoAgir={(tipo) => { if (tipo === "criar_proposta") router.push(`${rotaBase}/propostas?oportunidade=${op?.id ?? ""}`); }}
             acoes={{
               mover: (para) => rodar(() => acoes.moverEtapa(op!.id, para), false),
               trial: (iniciar) => rodar(() => acoes.trial(op!.id, iniciar), false),
@@ -270,12 +286,13 @@ function CardOportunidade({ card, selecionado, aoAbrir }: {
 
 /* ── Painel ────────────────────────────────────────────────────────────── */
 
-function PainelOportunidade({ op, timeline, pendente, bloqueio, motivoGanhoPendente, aoFechar, aoAgir, acoes }: {
+function PainelOportunidade({ op, timeline, pendente, bloqueio, motivoGanhoPendente, rotaBase, aoFechar, aoAgir, acoes }: {
   op: DetalheOportunidade | null;
   timeline: LinhaDoTempo[];
   pendente: boolean;
   bloqueio: { mensagem: string; acao?: { rotulo: string; tipo: string } } | null;
   motivoGanhoPendente: string | null;
+  rotaBase: "/onface-desenho" | "/onface-preview";
   aoFechar: () => void;
   aoAgir: (tipo: string) => void;
   acoes: {
@@ -301,6 +318,11 @@ function PainelOportunidade({ op, timeline, pendente, bloqueio, motivoGanhoPende
         <Tag tom="coral">{op.etapaRotulo}</Tag>
         {op.motion ? <Tag>{op.motion === "EXPANSION" ? "Expansão" : "Novo negócio"}</Tag> : null}
         {op.badges.map((b) => <Tag key={b} tom="alerta">{b}</Tag>)}
+      </div>
+      <div className="ov-acoes">
+        <Link className="ov-botao" data-variante="contorno" href={`${rotaBase}/pipeline/${op.id}`}>
+          Abrir oportunidade
+        </Link>
       </div>
 
       {bloqueio ? <AvisoBloqueio bloqueio={bloqueio} aoAgir={aoAgir} /> : null}
@@ -407,14 +429,14 @@ function PainelOportunidade({ op, timeline, pendente, bloqueio, motivoGanhoPende
         {op.propostas.length === 0 ? (
           <>
             <p className="ov-nota">Nenhuma proposta vinculada.</p>
-            <Link className="ov-botao" href={`/onface-preview/propostas?oportunidade=${op.id}`}>
+            <Link className="ov-botao" href={`${rotaBase}/propostas?oportunidade=${op.id}`}>
               <FileText aria-hidden />Criar proposta
             </Link>
           </>
         ) : (
           op.propostas.map((p) => (
             <Link key={p.id} className="ov-botao" data-variante="contorno"
-              href={`/onface-preview/propostas?proposta=${p.id}`}>
+              href={`${rotaBase}/propostas?proposta=${p.id}`}>
               #{p.numero} v{p.versao} · {p.status} · {moeda(p.total)}
             </Link>
           ))
@@ -438,7 +460,7 @@ function PainelOportunidade({ op, timeline, pendente, bloqueio, motivoGanhoPende
         <Secao titulo="Oportunidades relacionadas">
           <p className="ov-nota">Mesma negociação, ciclos independentes.</p>
           {op.irmas.map((i) => (
-            <Link key={i.id} className="ov-botao" data-variante="contorno" href={`/onface-preview/pipeline?oportunidade=${i.id}`}>
+            <Link key={i.id} className="ov-botao" data-variante="contorno" href={`${rotaBase}/pipeline?oportunidade=${i.id}`}>
               <Users aria-hidden />{i.titulo}
             </Link>
           ))}

@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { diretorioEmpresas, diretorioPessoas } from "@/lib/vendas/consultas";
+import { diretorioEmpresas, diretorioPessoas, pessoaPorId } from "@/lib/vendas/consultas";
 import type { RelacionamentoEmpresa } from "@/lib/vendas/dominio";
 import { OnfacePage, OnfacePageBand, OnfacePageSurface } from "@/components/onface/shell/OnfacePage";
 import { Contatos } from "@/components/onface/vendas/Contatos";
@@ -19,22 +19,24 @@ export const dynamic = "force-dynamic";
  * Vendas, Atendimento, Onboarding, CS e Financeiro compartilham.
  */
 export default async function DesenhoContatos({ searchParams }: {
-  searchParams: Promise<{ aba?: string; busca?: string; relacao?: string; semEmpresa?: string; empresa?: string }>;
+  searchParams: Promise<{ aba?: string; busca?: string; relacao?: string; semEmpresa?: string; empresa?: string; pessoa?: string }>;
 }) {
   const [org] = await db.execute<{ id: string }>(sql`
     SELECT id::text FROM organizacoes ORDER BY created_at LIMIT 1
   `);
   const params = await searchParams;
-  const aba = params.aba === "pessoas" ? "pessoas" : "empresas";
+  const aba = params.aba === "pessoas" || params.pessoa ? "pessoas" : "empresas";
   const busca = params.busca?.trim() || "";
   const relacionamento = (params.relacao || null) as RelacionamentoEmpresa | null;
   const semEmpresa = params.semEmpresa === "1";
 
-  const [empresas, pessoas, responsaveis] = await Promise.all([
+  const [empresas, pessoas, pessoaInicial, responsaveis] = await Promise.all([
     diretorioEmpresas(org.id, { busca, relacionamento, limite: 200 }),
     aba === "pessoas" ? diretorioPessoas(org.id, { busca, semEmpresa, limite: 200 }) : Promise.resolve([]),
+    params.pessoa ? pessoaPorId(org.id, params.pessoa) : Promise.resolve(null),
     acaoResponsaveis(),
   ]);
+  const pessoasComAlvo = pessoaInicial && !pessoas.some((p) => p.id === pessoaInicial.id) ? [pessoaInicial, ...pessoas] : pessoas;
 
   return (
     <OnfacePage>
@@ -54,10 +56,12 @@ export default async function DesenhoContatos({ searchParams }: {
         <Contatos
           aba={aba}
           empresas={empresas}
-          pessoas={pessoas}
+          pessoas={pessoasComAlvo}
           filtro={{ busca, relacionamento, semEmpresa }}
           responsaveis={responsaveis}
           selecaoInicial={params.empresa ?? null}
+          pessoaInicial={params.pessoa ?? null}
+          rotaBase="/onface-desenho"
           acoes={{
             criarEmpresa: acaoCriarEmpresa,
             criarPessoa: acaoCriarPessoa,

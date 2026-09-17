@@ -50,6 +50,7 @@ export default async function PipelinePage({ searchParams }: {
           aba={aba}
           filtro={{ busca, responsavelId, familia }}
           selecaoInicial={params.oportunidade ?? null}
+          rotaBase="/onface-preview"
           acoes={{
             moverEtapa: acaoMoverEtapa, definirProximaAcao: acaoDefinirProximaAcao,
             marcarEstagnacao: acaoMarcarEstagnacao, alterarFamilia: acaoAlterarFamilia,
