@@ -26,7 +26,7 @@ import type { Resultado } from "@/lib/vendas/resultado";
 import {
   Abas, AvisoBloqueio, Board, Busca, Coluna, ColunaVazia, Dialogo, Tag, dataCurta, useAcao,
 } from "./ui";
-import { acoesEmMassaDisponiveis } from "./prospeccao-acoes";
+import { acoesEmMassaDisponiveis, montarPayloadMassa, type OperacaoMassa } from "./prospeccao-acoes";
 
 export interface AcoesProspeccao {
   adicionar: (e: EntradaProspect) => Promise<Resultado<{ leadId: string; jaExistia: boolean }>>;
@@ -54,7 +54,6 @@ export interface EntradaProspect {
 }
 
 const COLUNAS_OPERACIONAIS: EstadoProspeccao[] = ["novo", "em_cadencia", "respondeu"];
-type OperacaoMassa = "responsavel" | "lista" | "cadencia" | "tag" | "enriquecer" | "pausar";
 
 export function Prospeccao({ dados, filtro, visao, cadencias, responsaveis, acoes }: {
   dados: {
@@ -132,11 +131,18 @@ export function Prospeccao({ dados, filtro, visao, cadencias, responsaveis, acoe
     return criadaAgora ? { ok: true, dados: { id: criadaAgora.id } } : { ok: false, erro: "A tag foi criada, mas não pôde ser localizada." };
   }
 
-  async function adicionarTagEmMassa(nome: string): Promise<Resultado> {
-    const tag = await localizarOuCriarTag(nome.trim());
+  /**
+   * Lista e tag compartilham a mesma tabela `labels`: a lista exibida na
+   * Prospecção é a etiqueta do lead. Por isso os dois caminhos terminam aqui,
+   * cada um com o nome que o usuário digitou no seu próprio campo.
+   */
+  async function aplicarLabelEmMassa(nome: string): Promise<Resultado> {
+    const tag = await localizarOuCriarTag(nome);
     if (!tag.ok) return tag;
+    if (!tag.dados) return { ok: false, erro: "A tag foi criada, mas não pôde ser localizada." };
+    const labelId = tag.dados.id;
     const resultados = await Promise.all(selecionados.map((leadId) => resultadoApi(`/api/leads/${leadId}/labels`, {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ labelId: tag.dados.id }),
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ labelId }),
     })));
     const falha = resultados.find((resultado) => !resultado.ok);
     return falha ?? { ok: true };
@@ -144,21 +150,30 @@ export function Prospeccao({ dados, filtro, visao, cadencias, responsaveis, acoe
 
   async function executarEmMassa(valor: string | null): Promise<Resultado> {
     if (!operacaoMassa) return { ok: false, erro: "Escolha uma ação em massa." };
-    if (operacaoMassa === "responsavel") return acoes.atribuirEmMassa(selecionados, valor || null);
-    if (operacaoMassa === "cadencia") {
-      if (!valor) return { ok: false, erro: "Escolha a cadência." };
-      const resultados = await Promise.all(selecionados.map((leadId) => acoes.inscreverEmCadencia(leadId, valor)));
-      return resultados.find((resultado) => !resultado.ok) ?? { ok: true };
+    const payload = montarPayloadMassa(operacaoMassa, valor);
+    switch (payload.tipo) {
+      case "invalido":
+        return { ok: false, erro: payload.erro };
+      case "responsavel": {
+        const resultado = await acoes.atribuirEmMassa(selecionados, payload.responsavelId);
+        return resultado.ok ? { ok: true } : resultado;
+      }
+      case "cadencia": {
+        const resultados = await Promise.all(selecionados.map((leadId) => acoes.inscreverEmCadencia(leadId, payload.cadenceDefinitionId)));
+        return resultados.find((resultado) => !resultado.ok) ?? { ok: true };
+      }
+      case "pausar": {
+        const resultados = await Promise.all(selecionados.map((leadId) => acoes.pausarCadencia(leadId, "Pausado em massa")));
+        return resultados.find((resultado) => !resultado.ok) ?? { ok: true };
+      }
+      case "enriquecer":
+        return resultadoApi("/api/leads/enrich-bulk", {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ filter: "selected", ids: selecionados }),
+        });
+      case "lista":
+      case "tag":
+        return aplicarLabelEmMassa(payload.nome);
     }
-    if (operacaoMassa === "pausar") {
-      const resultados = await Promise.all(selecionados.map((leadId) => acoes.pausarCadencia(leadId, "Pausado em massa")));
-      return resultados.find((resultado) => !resultado.ok) ?? { ok: true };
-    }
-    if (operacaoMassa === "enriquecer") return resultadoApi("/api/leads/enrich-bulk", {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ filter: "selected", ids: selecionados }),
-    });
-    if (!valor?.trim()) return { ok: false, erro: operacaoMassa === "lista" ? "Informe a lista." : "Informe a tag." };
-    return adicionarTagEmMassa(valor);
   }
 
   function alternarSelecao(id: string) {
@@ -206,17 +221,9 @@ export function Prospeccao({ dados, filtro, visao, cadencias, responsaveis, acoe
         <div className="ov-controles" style={{ marginTop: "calc(-8 * var(--onface-u))" }}>
           <span className="ov-nota">{selecionados.length} selecionadas</span>
           {acoesEmMassaDisponiveis().map((acao) => (
-            <button key={acao} type="button" className="ov-botao" data-variante="contorno"
-              onClick={() => {
-                const operacoes: Record<string, OperacaoMassa> = {
-                  "Atribuir responsável": "responsavel", "Adicionar à lista": "lista",
-                  "Adicionar à cadência": "cadencia", "Adicionar tag": "tag",
-                  "Enriquecer": "enriquecer", "Pausar cadência": "pausar",
-                };
-                setOperacaoMassa(operacoes[acao]);
-                setModal("massa");
-              }}>
-              {acao === "Atribuir responsável" ? <Users aria-hidden /> : null}{acao}
+            <button key={acao.chave} type="button" className="ov-botao" data-variante="contorno"
+              onClick={() => { setOperacaoMassa(acao.chave); setModal("massa"); }}>
+              {acao.chave === "responsavel" ? <Users aria-hidden /> : null}{acao.rotulo}
             </button>
           ))}
           <button type="button" className="ov-botao" data-variante="neutro" onClick={() => setSelecionados([])}>
@@ -418,7 +425,10 @@ export function Prospeccao({ dados, filtro, visao, cadencias, responsaveis, acoe
         </div>
       </Dialogo>
 
+      {/* `key` pela operação: trocar de ação remonta o diálogo e descarta o
+          valor anterior, para que um id de responsável não vire nome de tag. */}
       <DialogoMassa
+        key={operacaoMassa ?? "nenhuma"}
         aberto={modal === "massa"} quantidade={selecionados.length} operacao={operacaoMassa} responsaveis={responsaveis}
         listas={dados.filtros.listas} cadencias={cadencias}
         pendente={pendente} bloqueio={bloqueio}
@@ -534,32 +544,102 @@ function DialogoOportunidadeDireta({ aberto, responsaveis, pendente, bloqueio, a
   );
 }
 
-function DialogoMassa({ aberto, quantidade, responsaveis, pendente, bloqueio, aoFechar, aoConfirmar }: {
+/** Título, texto de apoio e rótulo do botão de cada ação em massa. */
+const TEXTO_MASSA: Record<OperacaoMassa, { titulo: string; descricao: string; confirmar: string }> = {
+  responsavel: {
+    titulo: "Atribuir responsável",
+    descricao: "Cada atribuição registra seu próprio evento: uma ação em massa não apaga o histórico individual.",
+    confirmar: "Atribuir",
+  },
+  cadencia: {
+    titulo: "Adicionar à cadência",
+    descricao: "A Prospecção consome o motor de cadências; a configuração dos passos vive em Automações.",
+    confirmar: "Inscrever",
+  },
+  lista: {
+    titulo: "Adicionar à lista",
+    descricao: "Escolha uma lista existente para reaproveitar, ou digite um nome novo para criar.",
+    confirmar: "Adicionar",
+  },
+  tag: {
+    titulo: "Adicionar tag",
+    descricao: "A tag é criada se ainda não existir, e aplicada a todas as empresas selecionadas.",
+    confirmar: "Adicionar",
+  },
+  enriquecer: {
+    titulo: "Enriquecer empresas",
+    descricao: "O enriquecimento roda em segundo plano. Os dados aparecem conforme cada empresa é processada.",
+    confirmar: "Enfileirar",
+  },
+  pausar: {
+    titulo: "Pausar cadência",
+    descricao: "As empresas selecionadas saem da fila de envio. Os passos já executados permanecem no histórico.",
+    confirmar: "Pausar",
+  },
+};
+
+function DialogoMassa({ aberto, quantidade, operacao, responsaveis, listas, cadencias, pendente, bloqueio, aoFechar, aoConfirmar }: {
   aberto: boolean;
   quantidade: number;
+  operacao: OperacaoMassa | null;
   responsaveis: Array<{ id: string; nome: string }>;
+  listas: string[];
+  cadencias: Array<{ id: string; nome: string }>;
   pendente: boolean;
   bloqueio: { mensagem: string } | null;
   aoFechar: () => void;
-  aoConfirmar: (responsavelId: string | null) => Promise<boolean>;
+  aoConfirmar: (valor: string | null) => Promise<boolean>;
 }) {
-  const [responsavelId, setResponsavelId] = useState("");
+  const [valor, setValor] = useState("");
+  if (!operacao) return null;
+
+  const texto = TEXTO_MASSA[operacao];
+  const exigeValor = operacao === "cadencia" || operacao === "lista" || operacao === "tag";
+
   return (
-    <Dialogo aberto={aberto} aoFechar={aoFechar} titulo={`Atribuir ${quantidade} empresas`}
-      descricao="Cada atribuição registra seu próprio evento: uma ação em massa não apaga o histórico individual.">
+    <Dialogo aberto={aberto} aoFechar={aoFechar}
+      titulo={`${texto.titulo} · ${quantidade} ${quantidade === 1 ? "empresa" : "empresas"}`}
+      descricao={texto.descricao}>
       <div className="ov-form">
         {bloqueio ? <AvisoBloqueio bloqueio={bloqueio} /> : null}
-        <label>
-          <span>Responsável</span>
-          <select value={responsavelId} onChange={(e) => setResponsavelId(e.target.value)}>
-            <option value="">Sem responsável</option>
-            {responsaveis.map((r) => <option key={r.id} value={r.id}>{r.nome}</option>)}
-          </select>
-        </label>
+        {operacao === "responsavel" ? (
+          <label>
+            <span>Responsável</span>
+            <select value={valor} onChange={(e) => setValor(e.target.value)}>
+              <option value="">Sem responsável</option>
+              {responsaveis.map((r) => <option key={r.id} value={r.id}>{r.nome}</option>)}
+            </select>
+          </label>
+        ) : null}
+        {operacao === "cadencia" ? (
+          <label>
+            <span>Cadência</span>
+            <select value={valor} onChange={(e) => setValor(e.target.value)}>
+              <option value="">Escolha a cadência</option>
+              {cadencias.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
+            </select>
+          </label>
+        ) : null}
+        {operacao === "lista" ? (
+          <label>
+            <span>Lista</span>
+            <input list="listas-massa" value={valor} onChange={(e) => setValor(e.target.value)}
+              placeholder="Nome da lista" />
+            <datalist id="listas-massa">
+              {listas.map((l) => <option key={l} value={l} />)}
+            </datalist>
+          </label>
+        ) : null}
+        {operacao === "tag" ? (
+          <label>
+            <span>Tag</span>
+            <input value={valor} onChange={(e) => setValor(e.target.value)} placeholder="Nome da tag" />
+          </label>
+        ) : null}
         <div className="ov-form-rodape">
           <button type="button" className="ov-botao" data-variante="neutro" onClick={aoFechar}>Cancelar</button>
-          <button type="button" className="ov-botao" disabled={pendente}
-            onClick={() => aoConfirmar(responsavelId || null)}>Aplicar</button>
+          <button type="button" className="ov-botao" disabled={pendente || (exigeValor && !valor.trim())}
+            onClick={() => aoConfirmar(valor || null)}>{texto.confirmar}</button>
         </div>
       </div>
     </Dialogo>
