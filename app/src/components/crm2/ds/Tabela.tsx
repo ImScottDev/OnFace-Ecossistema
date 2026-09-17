@@ -186,7 +186,7 @@ export function Cf2Linha({
 export function Cf2TdAcoes({ className, children, ...props }: React.ComponentProps<"td">) {
   return (
     <td className={cn("px-2 w-px last:pr-3", className)} {...props}>
-      <div className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 cf2-transicao">
+      <div className="opacity-100 lg:opacity-0 lg:group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 group-focus-within:opacity-100 cf2-transicao">
         {children}
       </div>
     </td>

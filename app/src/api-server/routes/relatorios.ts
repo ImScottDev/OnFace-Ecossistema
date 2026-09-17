@@ -1317,6 +1317,59 @@ app.get("/midia-paga", async (c) => {
   });
 });
 
+// ─── Faturamento fechado por categoria ───────────────────────────
+// Pedido do Kauã (09/09/2026): a meta virou uma só ("faturamento fechado"),
+// mas o relatório precisa mostrar de QUE o time vendeu — mensalidade ou
+// setup/avulso — mês a mês e por pessoa.
+//
+// Mesma expressão da meta (`lib/metas.ts`): mensalidade + setup, nunca
+// `valor_total` (diverge da composição em 174 dos 309 ganhos) e nunca somando
+// `valor_projeto`, que é cópia literal de `valor_setup`.
+// GET /relatorios/faturamento-categoria?meses=12
+app.get("/faturamento-categoria", async (c) => {
+  const ctx = await getCtx(c);
+  const orgId = ctx.organizacaoId;
+  const meses = Math.min(parseInt(c.req.query("meses") || "12") || 12, 24);
+
+  const series = await db.execute(sql`
+    SELECT to_char(date_trunc('month', ganho_at), 'YYYY-MM')            AS mes,
+           COALESCE(SUM(COALESCE(mrr_fechado, 0)), 0)::float            AS mrr,
+           COALESCE(SUM(COALESCE(valor_setup, 0)), 0)::float            AS setup,
+           COUNT(*)::int                                                AS negocios
+      FROM negocios
+     WHERE organizacao_id = ${orgId} AND status = 'ganho' AND ganho_at IS NOT NULL
+       AND ganho_at >= GREATEST(date_trunc('month', now()) - make_interval(months => ${meses - 1}), ${GO_LIVE_ISO}::timestamptz)
+     GROUP BY 1, 2 ORDER BY 1`);
+
+  const porPessoa = await db.execute(sql`
+    SELECT COALESCE(u.nome, 'Sem responsável')                AS nome,
+           COALESCE(SUM(COALESCE(n.mrr_fechado, 0)), 0)::float AS mrr,
+           COALESCE(SUM(COALESCE(n.valor_setup, 0)), 0)::float AS setup,
+           COUNT(*)::int                                       AS negocios
+      FROM negocios n
+      LEFT JOIN usuarios u ON u.id = n.responsavel_id
+     WHERE n.organizacao_id = ${orgId} AND n.status = 'ganho' AND n.ganho_at IS NOT NULL
+       AND n.ganho_at >= GREATEST(date_trunc('month', now()) - make_interval(months => ${meses - 1}), ${GO_LIVE_ISO}::timestamptz)
+     GROUP BY 1
+     HAVING COALESCE(SUM(COALESCE(n.mrr_fechado, 0) + COALESCE(n.valor_setup, 0)), 0) > 0
+     ORDER BY 2 + 3 DESC`);
+
+  // Ganho sem valor nenhum não é erro de query: é cadastro incompleto, e o
+  // relatório diz quantos são em vez de deixar o total silenciosamente menor.
+  const [semValor] = await db.execute<{ qtd: string }>(sql`
+    SELECT COUNT(*)::text AS qtd FROM negocios
+     WHERE organizacao_id = ${orgId} AND status = 'ganho' AND ganho_at IS NOT NULL
+       AND ganho_at >= GREATEST(date_trunc('month', now()) - make_interval(months => ${meses - 1}), ${GO_LIVE_ISO}::timestamptz)
+       AND COALESCE(mrr_fechado, 0) + COALESCE(valor_setup, 0) <= 0`);
+
+  const comTotal = <T extends { mrr: number; setup: number }>(r: T) => ({ ...r, total: r.mrr + r.setup });
+  return c.json({
+    series: (series as unknown as { mrr: number; setup: number }[]).map(comTotal),
+    porPessoa: (porPessoa as unknown as { mrr: number; setup: number }[]).map(comTotal),
+    negociosSemValor: Number(semValor?.qtd ?? 0),
+  });
+});
+
 // ─── Fechado mês a mês (MRR fechado + ganhos × perdidos) ─────────
 // Usa datas REAIS: ganhos por ganho_at, MRR por contratos.inicio. Perdidos não têm
 // data de perda preservada da migração → usa created_at do negócio como proxy.

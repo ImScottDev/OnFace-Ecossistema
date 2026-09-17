@@ -55,3 +55,16 @@ export function corAvatarEmpresa(seed: string): string {
   }
   return PALETA_AVATAR[hash % PALETA_AVATAR.length];
 }
+
+/**
+ * Cor do texto sobre o avatar. A paleta inteira (`--cf2-avatar-1..12`) é de
+ * tons claros e saturados — #aaff00, #34d399, #f59e0b, #60a5fa… — então
+ * iniciais em branco davam de 2.1:1 a 2.9:1 (auditoria de 09/09, Pipeline).
+ * Um tom escuro passa com folga em todas as 12: a pior delas, o índigo
+ * #818cf8, chega a 5.5:1.
+ *
+ * É constante e não uma função de luminância porque a cor de fundo vem como
+ * `var(--cf2-avatar-N)` e não dá pra calcular sem resolver a variável — e
+ * toda a paleta cai do mesmo lado da linha.
+ */
+export const TEXTO_SOBRE_AVATAR = "#12150c";

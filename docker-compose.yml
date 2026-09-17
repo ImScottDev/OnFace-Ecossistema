@@ -87,7 +87,7 @@ services:
     labels:
       - "traefik.enable=true"
       # Frontend: todas as rotas EXCETO /api/* (mas /api/auth fica aqui pro NextAuth)
-      - "traefik.http.routers.callface-crm.rule=Host(`crm.callface.io`) && (!PathPrefix(`/api`) || PathPrefix(`/api/auth`) || PathPrefix(`/api/webhooks`) || PathPrefix(`/api/financeiro`) || PathPrefix(`/api/onboarding`) || PathPrefix(`/api/campanhas`))"
+      - "traefik.http.routers.callface-crm.rule=Host(`crm.callface.io`) && (!PathPrefix(`/api`) || PathPrefix(`/api/auth`) || PathPrefix(`/api/webhooks`) || PathPrefix(`/api/financeiro`) || PathPrefix(`/api/onboarding`) || PathPrefix(`/api/campanhas`) || PathPrefix(`/api/contratos-publicos`))"
       - "traefik.http.routers.callface-crm.entrypoints=websecure"
       - "traefik.http.routers.callface-crm.tls.certresolver=cloudflare"
       - "traefik.http.routers.callface-crm.middlewares=security-headers@file"
@@ -133,7 +133,7 @@ services:
     labels:
       - "traefik.enable=true"
       # API: rotas /api/* EXCETO /api/auth (NextAuth fica no Next.js)
-      - "traefik.http.routers.callface-crm-api.rule=Host(`crm.callface.io`) && PathPrefix(`/api`) && !PathPrefix(`/api/auth`) && !PathPrefix(`/api/webhooks`) && !PathPrefix(`/api/financeiro`) && !PathPrefix(`/api/onboarding`) && !PathPrefix(`/api/campanhas`)"
+      - "traefik.http.routers.callface-crm-api.rule=Host(`crm.callface.io`) && PathPrefix(`/api`) && !PathPrefix(`/api/auth`) && !PathPrefix(`/api/webhooks`) && !PathPrefix(`/api/financeiro`) && !PathPrefix(`/api/onboarding`) && !PathPrefix(`/api/campanhas`) && !PathPrefix(`/api/contratos-publicos`)"
       - "traefik.http.routers.callface-crm-api.entrypoints=websecure"
       - "traefik.http.routers.callface-crm-api.tls.certresolver=cloudflare"
       - "traefik.http.routers.callface-crm-api.middlewares=security-headers@file,rate-limit@file"
@@ -173,6 +173,8 @@ services:
     environment:
       - NODE_OPTIONS=--max-old-space-size=384
       - PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
+      # porta do healthcheck do worker — a mesma que o `test:` abaixo consulta
+      - WORKER_HEALTH_PORT=3002
     volumes:
       - ./uploads:/app/public/uploads
     networks:

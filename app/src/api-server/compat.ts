@@ -65,3 +65,24 @@ export function errorHandler(err: unknown, c: Context) {
   console.error("[API Error]", err);
   return c.json({ error: "Internal server error" }, 500);
 }
+
+/**
+ * Contexto com visão de GESTÃO, ou 403.
+ *
+ * `isAdminView` cobre admin, gerente, super_admin e os papéis de gestão da
+ * RBAC v2 (director, coordinator, operations). Closer, SDR e leitor não passam.
+ *
+ * Existe porque o gate de papel do CRM 1 se perdeu na migração (achado 14/09):
+ * o middleware ainda protegia `/financeiro` e `/configuracoes`, que viraram
+ * redirects, enquanto os destinos reais (`/clientes/financeiro`, `/ajustes`)
+ * ficaram abertos a qualquer papel autenticado — inclusive no backend, onde
+ * nenhuma rota financeira checava papel.
+ */
+export async function getGestaoCtx(c: Context): Promise<TenantContext> {
+  const ctx = await getCtx(c);
+  const { isAdminView } = await import("@/lib/auth/roles");
+  if (!isAdminView(ctx.userRole)) {
+    throw new HTTPException(403, { message: "Acesso restrito a admin, gerente ou direção." });
+  }
+  return ctx;
+}

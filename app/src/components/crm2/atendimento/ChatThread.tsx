@@ -335,8 +335,15 @@ export function Cf2ChatThread({
       className="flex-1 flex flex-col h-full min-w-0 rounded-2xl overflow-hidden"
       style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}
     >
+      {/* 10/09/2026, achado real em 390px: identidade e as até 5 ações
+          (assumir/devolver, atribuir, dono, adiar/fechar, "...") viviam na
+          MESMA linha sem quebra. `shrink-0` nas ações forçava o bloco de
+          nome/empresa a espremer pra largura ~0 (nome sumia atrás do
+          avatar) enquanto as próprias ações vazavam pela borda direita da
+          tela — o menu "..." nem aparecia. Agora quebra em duas linhas
+          abaixo de `sm`, ações em linha própria de largura cheia. */}
       <div
-        className="flex items-center justify-between gap-4 px-5 py-4 shrink-0"
+        className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4 px-4 sm:px-5 py-3 sm:py-4 shrink-0"
         style={{ background: "var(--cf2-bg-surface)", borderBottom: "1px solid var(--cf2-border-default)" }}
       >
         <div className="flex gap-3 items-center min-w-0">
@@ -358,7 +365,7 @@ export function Cf2ChatThread({
             </p>
           </div>
         </div>
-        <div className="flex gap-1.5 items-center shrink-0">
+        <div className="flex gap-1.5 items-center shrink-0 overflow-x-auto sm:overflow-visible">
           {conversa.tipo === "whatsapp" && conversa.handoffStatus !== "human_assigned" ? (
             <button
               onClick={() => toggleAiMutation.mutate(false)}

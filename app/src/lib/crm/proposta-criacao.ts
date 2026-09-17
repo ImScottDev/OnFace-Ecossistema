@@ -5,8 +5,8 @@
  * chama esta função N vezes (uma por negócio-irmão).
  */
 import { db } from "@/lib/db";
-import { eq, sql } from "drizzle-orm";
-import { propostas, propostaItens } from "@/lib/db/schema";
+import { eq, sql, inArray } from "drizzle-orm";
+import { propostas, propostaItens, catalogoPrecos, servicosCatalogo } from "@/lib/db/schema";
 import { syncNegocioValoresFromPropostas } from "@/lib/crm/sync-negocio-valores";
 import { syncOportunidadeItensFromProposta, resolverServiceFamiliesPorCatalogoIds, mapTipoParaRevenueNature } from "@/lib/crm/composicao-comercial";
 import { resolverCommercialModelPadraoPorCatalogoIds, resolverCommercialModelDoItem } from "@/lib/crm/commercial-model";
@@ -22,6 +22,42 @@ export interface ItemEntrada {
   descontoTipo: "percentual" | "valor";
   ordem?: number;
   commercialModel?: string;
+  /**
+   * Catálogo Oficial Stripe (02/09) — o PRICE oficial escolhido. O CRM lê o
+   * price direto do banco (nunca confia no valor/família que o cliente
+   * mandou): `valorUnitario` é o que foi NEGOCIADO, `valorTabela` vem do
+   * catálogo. É isso que faz desconto não virar produto/price novo.
+   */
+  catalogoPrecoId?: string | null;
+}
+
+/**
+ * Lê os prices oficiais escolhidos, com o produto pai. Fonte da verdade de
+ * família, natureza de receita, SKU e preço de tabela — o front manda apenas
+ * o id do price.
+ */
+async function carregarPrecosOficiais(ids: (string | null | undefined)[]) {
+  const unicos = [...new Set(ids.filter((v): v is string => !!v))];
+  if (unicos.length === 0) return new Map<string, {
+    id: string; stripePriceId: string; stripeProductId: string | null; sku: string | null;
+    variacao: string; valor: string; serviceFamily: string; revenueNature: string; exigeContrato: boolean;
+  }>();
+  const rows = await db
+    .select({
+      id: catalogoPrecos.id,
+      stripePriceId: catalogoPrecos.stripePriceId,
+      sku: catalogoPrecos.sku,
+      variacao: catalogoPrecos.variacao,
+      valor: catalogoPrecos.valor,
+      revenueNature: catalogoPrecos.revenueNature,
+      exigeContrato: catalogoPrecos.exigeContrato,
+      stripeProductId: servicosCatalogo.stripeProductId,
+      serviceFamily: servicosCatalogo.serviceFamily,
+    })
+    .from(catalogoPrecos)
+    .innerJoin(servicosCatalogo, eq(servicosCatalogo.id, catalogoPrecos.servicoCatalogoId))
+    .where(inArray(catalogoPrecos.id, unicos));
+  return new Map(rows.map((r) => [r.id, r]));
 }
 
 function calcSubtotal(qty: number, unit: number, desc: number, descTipo: string = "percentual") {
@@ -85,24 +121,40 @@ export async function criarPropostaComItens(opts: {
   if (itensWithCalc.length > 0) {
     const familyMap = await resolverServiceFamiliesPorCatalogoIds(itensWithCalc.map((i) => i.servicoCatalogoId));
     const commercialModelMap = await resolverCommercialModelPadraoPorCatalogoIds(itensWithCalc.map((i) => i.servicoCatalogoId));
+    // Catálogo Oficial Stripe (02/09) — carrega os prices escolhidos DO BANCO.
+    // Nunca confia no que o cliente mandou pra família/natureza/preço de
+    // tabela: o front manda só o `catalogoPrecoId`, o resto é lido aqui.
+    const precoMap = await carregarPrecosOficiais(itensWithCalc.map((i) => i.catalogoPrecoId));
     await db.insert(propostaItens).values(
-      itensWithCalc.map((item) => ({
-        propostaId: proposta.id,
-        servicoCatalogoId: item.servicoCatalogoId || undefined,
-        nome: item.nome,
-        descricao: item.descricao,
-        tipo: item.tipo,
-        moeda: opts.moeda,
-        quantidade: item.quantidade.toString(),
-        valorUnitario: item.valorUnitario.toFixed(2),
-        desconto: item.desconto.toFixed(2),
-        descontoTipo: item.descontoTipo,
-        subtotal: item.subtotal.toFixed(2),
-        ordem: item.ordem,
-        serviceFamily: item.servicoCatalogoId ? familyMap.get(item.servicoCatalogoId) || "UNKNOWN" : "UNKNOWN",
-        revenueNature: mapTipoParaRevenueNature(item.tipo),
-        commercialModel: resolverCommercialModelDoItem({ overrideExplicito: item.commercialModel, servicoCatalogoId: item.servicoCatalogoId, catalogoDefaultMap: commercialModelMap }),
-      }))
+      itensWithCalc.map((item) => {
+        const preco = item.catalogoPrecoId ? precoMap.get(item.catalogoPrecoId) : undefined;
+        return {
+          propostaId: proposta.id,
+          servicoCatalogoId: item.servicoCatalogoId || undefined,
+          nome: item.nome,
+          descricao: item.descricao,
+          tipo: item.tipo,
+          moeda: opts.moeda,
+          quantidade: item.quantidade.toString(),
+          valorUnitario: item.valorUnitario.toFixed(2),
+          desconto: item.desconto.toFixed(2),
+          descontoTipo: item.descontoTipo,
+          subtotal: item.subtotal.toFixed(2),
+          ordem: item.ordem,
+          // Família e natureza do PRICE oficial quando existe (é ele que
+          // declara), com o catálogo do produto como fallback pro legado.
+          serviceFamily: preco?.serviceFamily || (item.servicoCatalogoId ? familyMap.get(item.servicoCatalogoId) || "UNKNOWN" : "UNKNOWN"),
+          revenueNature: preco?.revenueNature || mapTipoParaRevenueNature(item.tipo),
+          commercialModel: resolverCommercialModelDoItem({ overrideExplicito: item.commercialModel, servicoCatalogoId: item.servicoCatalogoId, catalogoDefaultMap: commercialModelMap }),
+          // Rastreabilidade oficial: imutável, não sofre desconto.
+          catalogoPrecoId: preco?.id,
+          stripeProductId: preco?.stripeProductId,
+          stripePriceId: preco?.stripePriceId,
+          skuPreco: preco?.sku,
+          variacao: preco?.variacao,
+          valorTabela: preco?.valor,
+        };
+      })
     );
   }
 

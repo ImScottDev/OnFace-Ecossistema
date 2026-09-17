@@ -15,10 +15,11 @@
  * código que fez a transição. Ver ADR-EXEC-016.
  */
 import { db } from "@/lib/db";
-import { eventOutbox, auditLog } from "@/lib/db/schema";
-import { eq, asc, and, or, lt, isNull } from "drizzle-orm";
+import { eventOutbox, auditLog, faturas, notificacoes, usuarios } from "@/lib/db/schema";
+import { eq, asc, and, or, lt, isNull, desc, inArray, sql, count as drizzleCount } from "drizzle-orm";
 import { materializarServicosCanonicosDoGrupo } from "@/lib/crm/servico-canonico";
 import { criarFulfillmentsParaServicos } from "@/lib/crm/fulfillment";
+import { dispatchAutomationEvent } from "@/lib/automations/event-dispatcher";
 
 type EventoOutbox = typeof eventOutbox.$inferSelect;
 type Handler = (evento: EventoOutbox) => Promise<void>;
@@ -67,6 +68,7 @@ export async function processarEventosPendentes(limite = 50): Promise<{ processa
     try {
       const list = handlers.get(evento.eventType) || [];
       for (const handler of list) await handler(evento);
+      await dispatchAutomationEvent(evento);
       await db
         .update(eventOutbox)
         .set({ status: "processed", processedAt: new Date(), processingStartedAt: null })
@@ -113,8 +115,12 @@ for (const eventType of [
   // Commercial Core v2 (ADR-EXEC-021)
   "ProposalOpened", "ProposalAdjustmentRequested", "CheckoutCreated", "CheckoutOpened",
   "PaymentFailed", "CheckoutExpired", "FulfillmentGroupCompleted",
+  // Frente 2C.1 — fechamento por família comercial
+  "PaymentPending", "FulfillmentCreated", "ManualValidationRequired",
   "ConversationClaimed", "ConversationTransferred", "ConversationReleased",
   "ConversationSnoozed", "ConversationClosed", "ConversationReopened",
+  "ConversationMessageReceived",
+  "TagAdded", "TagRemoved",
 ]) {
   registrarConsumidorEvento(eventType, registrarNoAuditLog);
 }
@@ -136,4 +142,168 @@ registrarConsumidorEvento("FulfillmentGroupCompleted", async (evento) => {
     throw new Error(`materializarServicosCanonicosDoGrupo(${grupoComercialId}) não gerou nenhum serviço — grupo sem itens? investigar antes de aceitar como sucesso silencioso.`);
   }
   await criarFulfillmentsParaServicos(servicoIds, evento.organizacaoId);
+
+  // Frente 2C.1 — amarra a pendência financeira (se existir) ao serviço que
+  // acabou de nascer. Só dá pra fazer aqui: a pendência é criada na
+  // assinatura, quando o serviço canônico ainda não existe (materialização é
+  // assíncrona, via este consumer). Sem isso o Financeiro tem o recebível mas
+  // não sabe QUAL serviço está em aberto.
+  await db
+    .update(faturas)
+    .set({ servicoCanonicoId: servicoIds[0], updatedAt: new Date() })
+    .where(and(eq(faturas.grupoComercialId, grupoComercialId), isNull(faturas.servicoCanonicoId)))
+    .catch((err) => console.error(`[EventOutbox] falha ao vincular pendência ao serviço do grupo ${grupoComercialId} (best-effort):`, err));
 });
+
+/**
+ * Consumidor de CS (08/09/2026) — o handoff automático do Won pro CS.
+ *
+ * `CanonicalServiceActivated` é o gatilho certo, não `DealWon`: é quando o
+ * serviço existe de fato e a empresa passa a fazer parte da carteira. Won
+ * sem serviço materializado ainda não tem o que acompanhar.
+ *
+ * Idempotente por dois motivos independentes: o outbox só processa cada
+ * evento uma vez, e `iniciarJornadaCs` tem chave própria por marco.
+ */
+registrarConsumidorEvento("CanonicalServiceActivated", async (evento) => {
+  const { garantirContaCs } = await import("@/lib/cs/handoff");
+  await garantirContaCs(evento.organizacaoId, evento.aggregateId);
+});
+
+/**
+ * Falha de pagamento vira sinal de CS na hora, sem esperar o sweep — é o
+ * evento em que a diferença entre "agora" e "daqui a uma hora" importa.
+ */
+registrarConsumidorEvento("PaymentFailed", async (evento) => {
+  const { registrarFalhaPagamento } = await import("@/lib/cs/handoff");
+  await registrarFalhaPagamento(evento.organizacaoId, evento.payload as Record<string, unknown>);
+});
+
+// ─── Dead-letter: leitura e reprocessamento ──────────────────────────────────
+//
+// Antes desta rodada, um evento que estourava as 5 tentativas virava `failed` e
+// ficava lá pra sempre: não havia job, endpoint nem tela que o mostrasse. O
+// único jeito de descobrir era consultar o banco na mão — foi assim que se
+// achou, em 14/09, que TODO handoff de Won pro CS estava falhando por um
+// ON CONFLICT inválido, parado no dead-letter desde 08/09.
+
+export interface EventoFalhado {
+  id: string;
+  eventType: string;
+  aggregateType: string;
+  aggregateId: string;
+  attempts: number;
+  lastError: string | null;
+  createdAt: Date;
+}
+
+/** Eventos que estouraram o limite de tentativas, do mais recente pro mais antigo. */
+export async function listarEventosFalhados(organizacaoId: string, limite = 100): Promise<EventoFalhado[]> {
+  const linhas = await db
+    .select({
+      id: eventOutbox.id,
+      eventType: eventOutbox.eventType,
+      aggregateType: eventOutbox.aggregateType,
+      aggregateId: eventOutbox.aggregateId,
+      attempts: eventOutbox.attempts,
+      lastError: eventOutbox.lastError,
+      createdAt: eventOutbox.createdAt,
+    })
+    .from(eventOutbox)
+    .where(and(eq(eventOutbox.organizacaoId, organizacaoId), eq(eventOutbox.status, "failed")))
+    .orderBy(desc(eventOutbox.createdAt))
+    .limit(limite);
+  return linhas as EventoFalhado[];
+}
+
+/**
+ * Devolve eventos do dead-letter pra fila (`failed` → `pending`, tentativas
+ * zeradas). O próximo sweep tenta de novo.
+ *
+ * É explícito por decisão: reprocessar sozinho transformaria erro permanente
+ * (bug de código, dado inválido na origem) em loop infinito de retry. Quem
+ * reprocessa é quem já corrigiu a causa.
+ */
+export async function reprocessarEventosFalhados(opts: {
+  organizacaoId: string;
+  ids?: string[];
+  eventType?: string;
+  limite?: number;
+}): Promise<{ reenfileirados: number; ids: string[] }> {
+  const condicoes = [eq(eventOutbox.organizacaoId, opts.organizacaoId), eq(eventOutbox.status, "failed")];
+  if (opts.ids?.length) condicoes.push(inArray(eventOutbox.id, opts.ids));
+  if (opts.eventType) condicoes.push(eq(eventOutbox.eventType, opts.eventType));
+
+  const alvos = await db
+    .select({ id: eventOutbox.id })
+    .from(eventOutbox)
+    .where(and(...condicoes))
+    .limit(opts.limite ?? 200);
+
+  if (alvos.length === 0) return { reenfileirados: 0, ids: [] };
+
+  const ids = alvos.map((a) => a.id);
+  await db
+    .update(eventOutbox)
+    .set({ status: "pending", attempts: 0, lastError: null, processingStartedAt: null })
+    .where(inArray(eventOutbox.id, ids));
+
+  console.log(`[EventOutbox] ${ids.length} evento(s) do dead-letter reenfileirado(s) para o próximo sweep`);
+  return { reenfileirados: ids.length, ids };
+}
+
+/**
+ * Chamado pelo sweep: avisa (uma vez por dia, por organização) que existe
+ * evento parado no dead-letter. Sem isso o dead-letter é tão invisível quanto
+ * não existir — que era exatamente o estado anterior.
+ */
+export async function alertarDeadLetter(): Promise<void> {
+  const porOrg = await db
+    .select({ organizacaoId: eventOutbox.organizacaoId, total: drizzleCount() })
+    .from(eventOutbox)
+    .where(eq(eventOutbox.status, "failed"))
+    .groupBy(eventOutbox.organizacaoId);
+
+  for (const { organizacaoId, total } of porOrg) {
+    if (Number(total) === 0) continue;
+    // `audit_log.entity_id` é uuid, então a trava de repetição diária vive no
+    // payload (`after.dia`), não no id da entidade.
+    const dia = new Date().toISOString().slice(0, 10);
+    const [ja] = await db
+      .select({ id: auditLog.id })
+      .from(auditLog)
+      .where(and(
+        eq(auditLog.organizacaoId, organizacaoId),
+        eq(auditLog.action, "event_outbox.dead_letter_alerta"),
+        sql`${auditLog.after}->>'dia' = ${dia}`,
+      ))
+      .limit(1);
+    if (ja) continue;
+
+    console.error(`[EventOutbox] ALERTA: ${total} evento(s) em dead-letter na organização ${organizacaoId}`);
+    await db.insert(auditLog).values({
+      organizacaoId,
+      actorId: null,
+      action: "event_outbox.dead_letter_alerta",
+      entityType: "event_outbox",
+      entityId: null,
+      after: { dia, eventosFalhados: Number(total) },
+      source: "worker",
+    });
+
+    const admins = await db
+      .select({ id: usuarios.id })
+      .from(usuarios)
+      .where(and(eq(usuarios.organizacaoId, organizacaoId), eq(usuarios.ativo, true), inArray(usuarios.role, ["admin", "super_admin", "gerente"])));
+
+    for (const admin of admins) {
+      await db.insert(notificacoes).values({
+        usuarioId: admin.id,
+        tipo: "sistema",
+        titulo: `${total} evento(s) de domínio falharam`,
+        mensagem: "Eventos pararam no dead-letter do Event Outbox. Efeitos como handoff de CS, materialização de serviço e cobrança podem não ter acontecido.",
+        link: "/ajustes/qualidade-dados",
+      }).catch(() => {});
+    }
+  }
+}

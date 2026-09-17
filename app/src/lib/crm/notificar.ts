@@ -5,7 +5,7 @@
  * automático (proposta aceita via pagamento Stripe — marcarPropostaAceita).
  */
 import { db } from "@/lib/db";
-import { notificacoes, usuarios, negocios, leads, fulfillments, servicosCanonicos, empresas, atividades } from "@/lib/db/schema";
+import { notificacoes, usuarios, negocios, leads, fulfillments, servicosCanonicos, empresas, atividades, contratos } from "@/lib/db/schema";
 import { and, eq, inArray, desc } from "drizzle-orm";
 
 const brl = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -135,10 +135,14 @@ export async function notificarFormularioImplantacaoRecebido(fulfillmentId: stri
 }
 
 /**
- * Onboarding (Callface AI — White Label é Implantação, não Onboarding)
- * criado automaticamente após o Won (25/08, spec do Kauã: "nada disso deve
- * depender de alguém clicar em novo onboarding" — precisa gerar
+ * Entrega criada automaticamente após o Won (25/08, spec do Kauã: "nada disso
+ * deve depender de alguém clicar em novo onboarding" — precisa gerar
  * notificação pro responsável e registrar evento na timeline sozinho).
+ *
+ * Frente 2C.1: deixou de ser "onboarding" hardcoded e passou a usar a TRILHA
+ * real da família (`politica-familia.ts`) — Onboarding pra Callface AI,
+ * Implantação White Label pra White Label. O link e o texto seguem a trilha,
+ * não um rótulo fixo.
  * Mesmo padrão fire-and-forget e mesma busca de lead via `leads.empresaId`
  * de `notificarFormularioImplantacaoRecebido` — chamada por
  * `criarFulfillmentsParaServicos` (lib/crm/fulfillment.ts) assim que o
@@ -164,14 +168,22 @@ export async function notificarFulfillmentOnboardingCriado(fulfillmentId: string
     if (!f) return;
 
     const quem = f.empresaNome || "cliente sem nome cadastrado";
-    const link = `/clientes/onboarding/${f.id}`;
+    const { regraDaFamilia } = await import("@/lib/crm/politica-familia");
+    const regra = regraDaFamilia(f.serviceFamily);
+    // A tela de detalhe é a mesma pros dois (o workspace de entrega já
+    // resolve o checklist pela família) — o que muda é a lista de onde ele
+    // vem. Implantação White Label ainda não tem rota própria: cai na de
+    // entrega, que é genérica. Registrado como pendência de UI da 2C.1.
+    const link = regra.trilha === "onboarding" ? `/clientes/onboarding/${f.id}` : `/clientes/entrega/${f.id}`;
 
     if (f.responsavelId) {
       await db.insert(notificacoes).values({
         usuarioId: f.responsavelId,
-        tipo: "onboarding_criado",
-        titulo: `Novo onboarding atribuído a você — ${quem}`,
-        mensagem: "O Won gerou um novo onboarding. A primeira ação é agendar a reunião com o cliente.",
+        tipo: "fulfillment_criado",
+        titulo: `${regra.trilhaLabel} atribuída a você — ${quem}`,
+        mensagem: regra.tarefaInicial
+          ? `O fechamento gerou uma nova entrega. A primeira ação é: ${regra.tarefaInicial.toLowerCase()}.`
+          : "O fechamento gerou uma nova entrega. Confira o checklist e siga com o primeiro passo.",
         link,
       });
     }
@@ -184,15 +196,132 @@ export async function notificarFulfillmentOnboardingCriado(fulfillmentId: string
       await db.insert(atividades).values({
         organizacaoId: f.organizacaoId,
         leadId: leadIdParaAtividade,
-        tipo: "onboarding_criado",
-        titulo: "Onboarding criado",
-        descricao: "Onboarding de Callface AI criado automaticamente após o Won.",
-        dados: { fulfillmentId: f.id },
+        tipo: "fulfillment_criado",
+        titulo: `${regra.trilhaLabel} criada`,
+        descricao: `${regra.trilhaLabel} de ${f.serviceFamily} criada automaticamente após o fechamento da venda.`,
+        dados: { fulfillmentId: f.id, serviceFamily: f.serviceFamily, trilha: regra.trilha },
       });
     } else {
-      console.warn(`[notificar] fulfillment ${f.id}: sem lead vinculado, atividade de onboarding criado não registrada (gap real, não fabricado).`);
+      console.warn(`[notificar] fulfillment ${f.id}: sem lead vinculado, atividade de entrega criada não registrada (gap real, não fabricado).`);
     }
   } catch (e) {
     console.error("[notificar] falha ao notificar onboarding criado:", e);
+  }
+}
+
+/**
+ * Frente 2C.1 — destinatários padrão de um evento comercial: gestão ativa
+ * (admin/gerente/super_admin) + responsável do negócio. Mesma régua já usada
+ * em `notificarNegocioGanho`, extraída porque agora 3 avisos diferentes
+ * precisam dela.
+ */
+async function destinatariosDoNegocio(negocioId: string): Promise<{ ids: string[]; organizacaoId: string; titulo: string; quem: string; leadId: string | null }> {
+  const [neg] = await db
+    .select({ id: negocios.id, titulo: negocios.titulo, organizacaoId: negocios.organizacaoId, responsavelId: negocios.responsavelId, leadId: negocios.leadId })
+    .from(negocios).where(eq(negocios.id, negocioId)).limit(1);
+  if (!neg) return { ids: [], organizacaoId: "", titulo: "", quem: "", leadId: null };
+
+  const [lead] = neg.leadId
+    ? await db.select({ nome: leads.nome, empresa: leads.empresa }).from(leads).where(eq(leads.id, neg.leadId)).limit(1)
+    : [];
+
+  const gestores = await db.select({ id: usuarios.id }).from(usuarios).where(and(
+    eq(usuarios.organizacaoId, neg.organizacaoId),
+    inArray(usuarios.role, ["admin", "gerente", "super_admin"]),
+    eq(usuarios.ativo, true),
+  ));
+  const ids = new Set<string>(gestores.map((g) => g.id));
+  if (neg.responsavelId) ids.add(neg.responsavelId);
+  return { ids: [...ids], organizacaoId: neg.organizacaoId, titulo: neg.titulo, quem: lead?.empresa || lead?.nome || neg.titulo, leadId: neg.leadId };
+}
+
+/** Contrato assinado — aviso pro time comercial (fire-and-forget). */
+export async function notificarContratoAssinado(contratoId: string): Promise<void> {
+  try {
+    const [c] = await db
+      .select({ id: contratos.id, negocioId: contratos.negocioId, assinadoNome: contratos.assinadoNome, serviceFamily: contratos.serviceFamily })
+      .from(contratos).where(eq(contratos.id, contratoId)).limit(1);
+    if (!c?.negocioId) return;
+    const dest = await destinatariosDoNegocio(c.negocioId);
+    if (dest.ids.length === 0) return;
+
+    await db.insert(notificacoes).values(dest.ids.map((usuarioId) => ({
+      usuarioId,
+      tipo: "contrato_assinado",
+      titulo: `Contrato assinado — ${dest.quem}`,
+      mensagem: c.assinadoNome ? `Assinado por ${c.assinadoNome}.` : "O contrato foi assinado.",
+      link: `/negocios/${c.negocioId}`,
+    })));
+  } catch (e) {
+    console.error("[notificar] falha ao notificar contrato assinado:", e);
+  }
+}
+
+/**
+ * Pagamento pendente de uma venda JÁ ganha (PABX/White Label fechados por
+ * contrato). É o aviso que impede o cliente de entrar na carteira com
+ * dinheiro em aberto e ninguém saber.
+ */
+export async function notificarPagamentoPendente(opts: {
+  negocioId: string;
+  organizacaoId: string;
+  valor: number;
+  vencimento: Date | null;
+  serviceFamily: string;
+}): Promise<void> {
+  try {
+    const dest = await destinatariosDoNegocio(opts.negocioId);
+    if (dest.ids.length === 0) return;
+    const quando = opts.vencimento
+      ? `Vence em ${opts.vencimento.toLocaleDateString("pt-BR")}.`
+      : "Sem data de vencimento definida na condição de pagamento da proposta.";
+
+    await db.insert(notificacoes).values(dest.ids.map((usuarioId) => ({
+      usuarioId,
+      tipo: "pagamento_pendente",
+      titulo: `Pagamento pendente — ${dest.quem}`,
+      mensagem: `Venda fechada por contrato (${opts.serviceFamily}) com ${brl(opts.valor)} em aberto. ${quando}`,
+      link: `/clientes/financeiro`,
+    })));
+  } catch (e) {
+    console.error("[notificar] falha ao notificar pagamento pendente:", e);
+  }
+}
+
+/** Pagamento confirmado — fecha o ciclo do aviso de pendência. */
+export async function notificarPagamentoConfirmado(opts: { negocioId: string; valor: number | null }): Promise<void> {
+  try {
+    const dest = await destinatariosDoNegocio(opts.negocioId);
+    if (dest.ids.length === 0) return;
+    await db.insert(notificacoes).values(dest.ids.map((usuarioId) => ({
+      usuarioId,
+      tipo: "pagamento_confirmado",
+      titulo: `Pagamento confirmado — ${dest.quem}`,
+      mensagem: opts.valor ? `${brl(opts.valor)} confirmados.` : "O pagamento foi confirmado.",
+      link: `/negocios/${opts.negocioId}`,
+    })));
+  } catch (e) {
+    console.error("[notificar] falha ao notificar pagamento confirmado:", e);
+  }
+}
+
+/**
+ * Família sem regra clara de fechamento: a proposta foi aceita mas o sistema
+ * NÃO marca ganho sozinho. Alguém precisa validar na mão — por isso o aviso
+ * vai pra gestão, não fica só no status do grupo.
+ */
+export async function notificarValidacaoManualNecessaria(opts: { negocioId: string; motivo: string }): Promise<void> {
+  try {
+    const dest = await destinatariosDoNegocio(opts.negocioId);
+    if (dest.ids.length === 0) return;
+    await db.insert(notificacoes).values(dest.ids.map((usuarioId) => ({
+      usuarioId,
+      tipo: "validacao_manual_necessaria",
+      titulo: `Aceite precisa de validação — ${dest.quem}`,
+      mensagem: opts.motivo,
+      link: `/negocios/${opts.negocioId}`,
+    })));
+  } catch (e) {
+    console.error("[notificar] falha ao notificar validação manual necessária:", e);
   }
 }

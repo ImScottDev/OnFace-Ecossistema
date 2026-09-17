@@ -1,0 +1,135 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-10T00:00:00-03:00",
+  "title": "Design System: Callface CRM 2.0",
+  "extensions": {
+    "colorMeta": {
+      "seaweed-500": {
+        "role": "primary",
+        "displayName": "Seaweed Command Green",
+        "canonical": "#4db386",
+        "tonalRamp": ["#edf7f3", "#dbf0e7", "#b8e0cf", "#94d1b7", "#70c29e", "#4db386", "#3d8f6b", "#2e6b51", "#1f4736", "#0f241b", "#0b1913"]
+      },
+      "page-bg": {
+        "role": "neutral",
+        "displayName": "Workspace Paper",
+        "canonical": "#fafafa"
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Surface White",
+        "canonical": "#ffffff"
+      },
+      "chrome-bg": {
+        "role": "neutral",
+        "displayName": "Dark Chrome",
+        "canonical": "#1c1f26"
+      },
+      "warning": {
+        "role": "secondary",
+        "displayName": "Attention Amber",
+        "canonical": "#f59e0b"
+      },
+      "danger": {
+        "role": "secondary",
+        "displayName": "Exception Red",
+        "canonical": "#d92d33"
+      },
+      "info": {
+        "role": "secondary",
+        "displayName": "Operational Blue",
+        "canonical": "#4667e6"
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "One dominant hero number or control-room readout per screen."
+      },
+      "headline": {
+        "displayName": "Highlight",
+        "purpose": "Major KPI values and primary dashboard totals."
+      },
+      "title": {
+        "displayName": "Section Title",
+        "purpose": "Card and section titles in dense workspaces."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Default UI copy, table cells, drawer content, and operational descriptions."
+      },
+      "label": {
+        "displayName": "Micro Label",
+        "purpose": "Badges, KPI labels, compact labels, and uppercase metadata."
+      }
+    },
+    "shadows": [
+      {
+        "name": "repouso",
+        "value": "0px 4px 8px 0px rgba(0, 0, 0, 0.04)",
+        "purpose": "Default cards and resting raised panels."
+      },
+      {
+        "name": "flutuante",
+        "value": "0px 8px 24px -4px rgba(0, 0, 0, 0.10)",
+        "purpose": "Dropdowns, popovers, select menus, and hover cards."
+      },
+      {
+        "name": "modal",
+        "value": "0px 24px 48px -12px rgba(0, 0, 0, 0.18)",
+        "purpose": "Dialogs, sheets, drawers, and blocking overlays."
+      },
+      {
+        "name": "shell",
+        "value": "-4px 0px 16px 0px rgba(0, 0, 0, 0.08)",
+        "purpose": "Application shell and side-panel separation."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease-padrao",
+        "value": "cubic-bezier(0.2, 0, 0, 1)",
+        "purpose": "Default color, border, shadow, transform, and opacity transitions."
+      },
+      {
+        "name": "ease-saida",
+        "value": "cubic-bezier(0.4, 0, 1, 1)",
+        "purpose": "Fast exits and dismissals."
+      },
+      {
+        "name": "duracao-rapida",
+        "value": "120ms",
+        "purpose": "Small state feedback."
+      },
+      {
+        "name": "duracao-padrao",
+        "value": "200ms",
+        "purpose": "Default interaction transitions."
+      },
+      {
+        "name": "duracao-lenta",
+        "value": "320ms",
+        "purpose": "Larger entrance, panel, and composed transitions."
+      }
+    ],
+    "breakpoints": [
+      { "name": "movel", "value": "480px" },
+      { "name": "tablet", "value": "768px" },
+      { "name": "desktop", "value": "1024px" },
+      { "name": "amplo", "value": "1440px" }
+    ],
+    "rules": [
+      "One dominant element per screen.",
+      "Use color only when it carries operational meaning.",
+      "Write role tokens, not raw numbers.",
+      "Prefer drawers for long entity editing.",
+      "Do not install UI kits with competing theme systems.",
+      "Portal components must inherit CRM2 tokens from [data-cf2-theme]."
+    ],
+    "componentSnippets": {
+      "primaryButton": "<button class=\"inline-flex h-9 items-center justify-center rounded-[var(--cf2-radius-md)] px-3.5 text-[13px] font-medium\" style=\"background: var(--cf2-accent); color: var(--cf2-text-on-accent)\">Ação principal</button>",
+      "card": "<div class=\"rounded-card cf2-p-card\" style=\"background: var(--cf2-bg-surface); border: 1px solid var(--cf2-border-default); box-shadow: var(--shadow-repouso)\">...</div>",
+      "input": "<input class=\"rounded-[var(--cf2-radius-sm)] px-3 py-2 text-sm\" style=\"background: var(--cf2-bg-surface); color: var(--cf2-text-primary); border: 1px solid var(--cf2-border-control)\" />"
+    }
+  }
+}

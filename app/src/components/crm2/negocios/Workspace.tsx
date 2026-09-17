@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import Link from "next/link";
@@ -8,7 +9,7 @@ import {
   Plus, Phone, Mail, MessageCircle, FileText, ChevronRight, ChevronDown,
   Check, ShieldCheck, AlertTriangle, Beaker, Calendar, NotebookPen, Send, Download, Clock,
   MoreHorizontal, Pencil, TrendingUp, Target, CheckCircle2, Circle, User, Paperclip, Trash2,
-  Users, Package, Building2, Sparkles,
+  Users, Package, Building2, Sparkles, ClipboardCheck, Megaphone, Tag as TagIcon, X,
 } from "lucide-react";
 import { Cf2Card, Cf2SectionHeader, Cf2Eyebrow } from "@/components/crm2/ui/Card";
 import { Cf2Badge } from "@/components/crm2/ui/Badge";
@@ -19,11 +20,11 @@ import { Cf2Sheet, Cf2SheetContent } from "@/components/crm2/ui/Sheet";
 import { Cf2Dialog, Cf2DialogContent, Cf2DialogHeader, Cf2DialogTitle } from "@/components/crm2/ui/Dialog";
 import { OwnerPicker } from "@/components/crm2/prospeccao/OwnerPicker";
 import { Section, PropertyRow } from "@/components/crm2/shared/DrawerSection";
-import { Cf2NovaPropostaSlideOver } from "@/components/crm2/negocios/NovaPropostaSlideOver";
 import { Cf2Topbar } from "@/components/crm2/Topbar";
 import { TarefaFormModal, type Tarefa } from "@/components/crm/tarefas/TarefaFormModal";
 import { useOrgUsuarios } from "@/components/crm/BoardFilters";
 import { digitsForDialer } from "@/lib/utils/callface-call";
+import { derivarEstadoFechamento, ESTADO_FECHAMENTO_LABEL, ESTADO_FECHAMENTO_VARIANT } from "@/lib/crm/estado-fechamento";
 import { Cf2CallDetail } from "@/components/crm2/atendimento/CallDetail";
 import { iniciais, type ConversaItem } from "@/components/crm2/atendimento/types";
 import {
@@ -37,16 +38,6 @@ const FAMILY_LABEL: Record<string, string> = { CALLFACE_AI: "Callface AI", PABX:
 const NATURE_LABEL: Record<string, string> = { MRR: "Recorrente (MRR)", SETUP: "Setup", PROJECT: "Projeto", ONE_TIME: "Avulso", USAGE: "Uso", HARDWARE: "Hardware", UNKNOWN: "Não classificado" };
 const NATURE_VARIANT: Record<string, "success" | "warning" | "neutral"> = { MRR: "success", SETUP: "warning", PROJECT: "warning", ONE_TIME: "neutral", USAGE: "neutral", HARDWARE: "neutral", UNKNOWN: "neutral" };
 const MODEL_LABEL: Record<string, string> = { PAGAMENTO_DIRETO: "Pagamento direto", CONTRATO_OBRIGATORIO: "Contrato obrigatório", CONTRATO_FIDELIDADE_OPCIONAL: "Contrato com fidelidade" };
-const GRUPO_STATUS_LABEL: Record<string, string> = {
-  aguardando_aceite: "Aguardando aceite", aguardando_contrato: "Preparando contrato", contrato_enviado_assinatura: "Aguardando assinatura",
-  contrato_assinado: "Contrato assinado", aguardando_checkout: "Preparando pagamento", checkout_gerado: "Aguardando pagamento",
-  pagamento_pendente: "Pagamento em processamento", pago: "Pago", concluido: "Concluído", falhou: "Falhou",
-};
-const GRUPO_STATUS_VARIANT: Record<string, "success" | "warning" | "neutral" | "danger"> = {
-  aguardando_aceite: "neutral", aguardando_contrato: "neutral", contrato_enviado_assinatura: "warning",
-  contrato_assinado: "success", aguardando_checkout: "neutral", checkout_gerado: "warning",
-  pagamento_pendente: "warning", pago: "success", concluido: "success", falhou: "danger",
-};
 const PAPEL_LABEL: Record<string, string> = { contato: "Contato", decisor: "Decisor", influenciador: "Influenciador", tecnico: "Técnico" };
 const PAPEL_VARIANT: Record<string, "success" | "warning" | "neutral" | "accent"> = { contato: "neutral", decisor: "accent", influenciador: "warning", tecnico: "neutral" };
 const MOTION_LABEL: Record<string, string> = { NEW_BUSINESS: "Novo negócio", EXPANSION: "Expansão", RENEWAL: "Renovação", REACTIVATION: "Reativação" };
@@ -71,7 +62,18 @@ interface PropostaCompleta {
   itens?: PropostaItemDetalhe[];
 }
 interface Evidencia { id: string; tipo: string; sourceRef: string | null; verificadoEm: string; verificadoPor: string | null }
-interface GrupoComercial { id: string; commercialModel: string; status: string }
+interface GrupoComercial {
+  id: string; commercialModel: string; status: string;
+  // Frente 2C.1 — o que permite mostrar o estado REAL de fechamento (família
+  // decide a evidência; entrega liberada != pagamento confirmado).
+  serviceFamily?: string | null;
+  pagamentoStatus?: string | null;
+  pagamentoVenceEm?: string | null;
+  entregaLiberadaEm?: string | null;
+  entregaLiberadaPor?: string | null;
+  contratoAssinadoEm?: string | null;
+  contratoId?: string | null;
+}
 interface OportunidadeIrma { id: string; titulo: string; status: string; valorTotal: string | null; mrrFechado: string | null; mrrEstimado: string | null }
 interface Contrato { id: string; status: string; mrr: string | null; valorSetup: string | null; vencimento: string | null; produto: string | null }
 interface Atividade { id: string; leadId: string; negocioId?: string | null; tipo: string; titulo: string | null; descricao: string | null; createdAt: string; dados?: { ligacaoId?: string; audioUrl?: string | null } | null; duracaoSegundos?: number | null }
@@ -154,11 +156,24 @@ export function Cf2NegocioWorkspace({ negocioId }: { negocioId: string }) {
   const { usuarios, byId: usuariosById } = useOrgUsuarios();
   const [activeTab, setActiveTab] = useState("visao-geral");
   const [historicoFiltro, setHistoricoFiltro] = useState<HistoricoFiltro>("Tudo");
-  const [novaPropostaAberta, setNovaPropostaAberta] = useState(false);
+  const router = useRouter();
+  /**
+   * Nova proposta a partir da oportunidade (01/09, Frente 2A) — NAVEGA pra
+   * `/propostas/novo?negocioId=...` em vez de abrir slide-over.
+   *
+   * O slide-over anterior (`Cf2NovaPropostaSlideOver`, removido) embutia o
+   * `Cf2NovaPropostaWorkspace` inteiro — catálogo + carrinho + composição —
+   * dentro de um painel `max-w-2xl`, e ainda reescrevia a query string da
+   * página atual. Resultado: layout quebrado e contexto confuso. A tela de
+   * nova proposta já sabe ler `negocioId` da query e, depois de salvar, volta
+   * pra oportunidade de origem.
+   */
+  const irParaNovaProposta = () => router.push(`/propostas/novo?negocioId=${negocioId}`);
   const [moveMenuOpen, setMoveMenuOpen] = useState(false);
   const [perderMenuOpen, setPerderMenuOpen] = useState(false);
   const [motivoOutro, setMotivoOutro] = useState("");
   const [tarefaModalOpen, setTarefaModalOpen] = useState(false);
+  const [tagPopoverOpen, setTagPopoverOpen] = useState(false);
   const [tarefaEditando, setTarefaEditando] = useState<Tarefa | null>(null);
   const [editandoSobre, setEditandoSobre] = useState(false);
   const [sobreForm, setSobreForm] = useState({ titulo: "", descricao: "", responsavelId: "", previsaoFechamento: "" });
@@ -276,9 +291,35 @@ export function Cf2NegocioWorkspace({ negocioId }: { negocioId: string }) {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  // ── Tags da oportunidade (01/09, Frente 2A) ────────────────────────────
+  // Mesmos endpoints do drawer e do lead (`/api/labels`,
+  // `/api/negocios/:id/labels`), mesma query key ["labels"]. Zero sistema
+  // paralelo de tag. Declarados ANTES dos early returns — regra de hooks.
+  const { data: labelsNegocio = [], refetch: refetchLabels } = useQuery<{ id: string; nome: string; cor: string }[]>({
+    queryKey: ["negocio-labels", negocioId],
+    queryFn: async () => { const r = await fetch(`/api/negocios/${negocioId}/labels`); if (!r.ok) return []; return r.json(); },
+  });
+  const { data: labelsDisponiveis = [] } = useQuery<{ id: string; nome: string; cor: string }[]>({
+    queryKey: ["labels"],
+    queryFn: async () => { const r = await fetch("/api/labels"); if (!r.ok) return []; return r.json(); },
+    enabled: tagPopoverOpen,
+  });
+  const mudarTag = useMutation({
+    mutationFn: async ({ labelId, acao }: { labelId: string; acao: "add" | "remove" }) => {
+      const r = await fetch(`/api/negocios/${negocioId}/labels`, {
+        method: acao === "add" ? "POST" : "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ labelId }),
+      });
+      if (!r.ok) throw new Error("falha");
+    },
+    onSuccess: () => refetchLabels(),
+    onError: () => toast.error("Não foi possível atualizar a tag"),
+  });
+
   if (isLoading) {
     return (
-      <div className="page-scroll space-y-3">
+      <div className="space-y-3">
         <Cf2Skeleton className="h-10 w-64" />
         <Cf2Skeleton className="h-32 w-full" />
         <Cf2Skeleton className="h-48 w-full" />
@@ -288,13 +329,13 @@ export function Cf2NegocioWorkspace({ negocioId }: { negocioId: string }) {
 
   if (isError) {
     if ((error as { permissionDenied?: boolean })?.permissionDenied) {
-      return <div className="page-scroll"><Cf2PermissionDenied message="Você não tem permissão para ver este negócio." /></div>;
+      return <div className=""><Cf2PermissionDenied message="Você não tem permissão para ver este negócio." /></div>;
     }
-    return <div className="page-scroll"><Cf2ErrorState message={(error as Error).message} /></div>;
+    return <div className=""><Cf2ErrorState message={(error as Error).message} /></div>;
   }
 
   if (!data?.negocio) {
-    return <div className="page-scroll"><Cf2EmptyState title="Negócio não encontrado" description="Ele pode ter sido removido ou o link está errado." /></div>;
+    return <div className=""><Cf2EmptyState title="Negócio não encontrado" description="Ele pode ter sido removido ou o link está errado." /></div>;
   }
 
   const { negocio, lead, empresa, propostas, atividades, reunioes, statusChanges, notas, contratos, comercial } = data as {
@@ -304,7 +345,20 @@ export function Cf2NegocioWorkspace({ negocioId }: { negocioId: string }) {
       previsaoFechamento: string | null; responsavelId: string | null; commercialMotion: string; origemNegocio: string;
       createdAt: string; updatedAt: string;
     };
-    lead: { id: string; nome: string; email: string | null; telefone: string | null; cargo: string | null; empresaCnpj: string | null } | null;
+    // `GET /negocios/:id` faz `db.select().from(leads)` — devolve a LINHA
+    // INTEIRA. O tipo aqui estava estreito em 6 campos, então origem, UTM,
+    // criativo e a qualificação (`camposCustom`) existiam no payload e
+    // simplesmente nunca eram lidos. Ampliado em 01/09 (Frente 2A).
+    lead: {
+      id: string; nome: string; email: string | null; telefone: string | null;
+      cargo: string | null; empresaCnpj: string | null;
+      origem: string | null; utmSource: string | null; utmMedium: string | null;
+      utmCampaign: string | null; utmContent: string | null; utmTerm: string | null;
+      metaAdId: string | null; landingPage: string | null;
+      responsavelId: string | null; createdAt: string;
+      camposCustom: Record<string, unknown> | null;
+      sdrStatus: string | null;
+    } | null;
     empresa: { nome: string } | null;
     propostas: PropostaCompleta[];
     atividades: Atividade[];
@@ -327,6 +381,47 @@ export function Cf2NegocioWorkspace({ negocioId }: { negocioId: string }) {
   const evidencias: Evidencia[] = comercial?.evidencias ?? [];
   const grupos: GrupoComercial[] = comercial?.grupos ?? [];
   const oportunidadesIrmas: OportunidadeIrma[] = data.oportunidadesIrmas ?? [];
+  // ── Qualificação SDR herdada do lead (01/09, Frente 2A) ────────────────
+  // Os 4 campos oficiais vivem em `leads.camposCustom` (contrato fechado no
+  // mapa mestre: CNPJ, Cargo, Necessidade/Dor, Tomador de decisão). CNPJ e
+  // Cargo têm coluna própria no lead e ganham dela quando preenchida.
+  const qualif = (lead?.camposCustom || {}) as Record<string, unknown>;
+  const txt = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
+  const qualificacaoSdr = {
+    cnpj: lead?.empresaCnpj || txt(qualif.cnpj),
+    cargo: lead?.cargo || txt(qualif.cargo),
+    necessidadeDor: txt(qualif.necessidadeDor),
+    tomadorDecisao: txt(qualif.tomadorDecisao),
+  };
+  const TOMADOR_LABEL: Record<string, string> = { sim: "Sim", nao: "Não", nao_identificado: "Não identificado" };
+
+  /**
+   * Quem qualificou e quando — DERIVADO, sem migration.
+   *
+   * Não existe coluna `qualificado_por` no schema. O que existe é
+   * `status_changes` com `usuario_id` + `motivo`, gravado tanto pelo
+   * `converterLeadEmOportunidade` ("Convertido em oportunidade (handover SDR
+   * → vendas)" / "Qualificação direta sem reunião") quanto pelo PATCH de
+   * `sdr_status` ("Qualificado por X"). Pego a mudança MAIS ANTIGA que casa,
+   * porque é a primeira qualificação — requalificar depois não reescreve
+   * quem fez o trabalho. Agente de IA não tem linha em `usuarios`, então
+   * `usuario_id` vem nulo e o crédito fica no texto do motivo.
+   */
+  const MARCADORES_QUALIFICACAO = ["Qualificado por", "Convertido em oportunidade", "Qualificação direta"];
+  const mudancaQualificacao = [...(leadHistorico?.statusChanges || [])]
+    .filter((sc) => {
+      const motivo = sc.motivo || "";
+      return MARCADORES_QUALIFICACAO.some((m) => motivo.includes(m))
+        || ["qualified", "m_qualified"].includes(sc.paraStatus);
+    })
+    .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())[0] || null;
+  const qualificadorNome = mudancaQualificacao
+    ? (mudancaQualificacao.autorNome
+        || usuarios.find((u) => u.id === (mudancaQualificacao as unknown as { usuarioId?: string | null }).usuarioId)?.nome
+        || (mudancaQualificacao.motivo?.includes("Qualificado por") ? mudancaQualificacao.motivo.replace("Qualificado por", "").trim() : null)
+        || "Agente de IA ou autor não registrado")
+    : null;
+
   const jaGanho = negocio.status === "ganho";
   const jaPerdido = negocio.status === "perdido";
   const stage = PIPELINE_OPEN_COLS.find((c) => c.keys.includes(negocio.status));
@@ -450,13 +545,20 @@ export function Cf2NegocioWorkspace({ negocioId }: { negocioId: string }) {
 
   return (
     <>
-      {/* ── Header (dark chrome, mesmo padrão de Vendas/Prospecção) ── */}
+      {/* ── Header ────────────────────────────────────────────────────────────
+          Topo no PADRÃO do sistema (01/09, correção do Kauã): branco, altura
+          compacta, sem título grande e sem CTA. `compact` existe exatamente
+          pra tela de detalhe — a página já tem o nome da oportunidade como
+          heading logo abaixo, então repetir "Vendas" em 28px era ruído.
+          `actions={null}` remove o "Novo negócio", que não faz sentido dentro
+          de uma oportunidade aberta (a checagem no Topbar é por `undefined`,
+          então `null` de verdade apaga o CTA em vez de cair no default). */}
       <div className="-m-6 mb-0 flex flex-col">
-        <div className="rounded-tl-2xl px-8 pt-7 pb-5" style={{ background: "var(--cf2-bg-canvas)" }}>
-          <Cf2Topbar orgNome="Callface" variant="light" title="Vendas" subtitle="Pipeline comercial — oportunidades reais, do primeiro contato ao contrato" />
+        <div className="rounded-tl-2xl px-8 py-3.5" style={{ background: "var(--cf2-bg-surface)", borderBottom: "1px solid var(--cf2-border-default)" }}>
+          <Cf2Topbar orgNome="Callface" variant="light" compact actions={null} />
         </div>
 
-        <div className="px-8 py-6 flex flex-col gap-5" style={{ background: "var(--cf2-chrome-bg-alt)" }}>
+        <div data-cf2-superficie="escura" className="px-8 py-6 flex flex-col gap-5" style={{ background: "var(--cf2-chrome-bg-alt)" }}>
           <div className="flex items-center gap-1.5 text-[12px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>
             <Link href="/vendas" className="hover:underline">Vendas</Link>
             <ChevronRight className="w-3 h-3" />
@@ -488,13 +590,40 @@ export function Cf2NegocioWorkspace({ negocioId }: { negocioId: string }) {
               <HeaderAction icon={Pencil} label="Editar" onClick={() => { setActiveTab("visao-geral"); setSobreForm({ titulo: negocio.titulo, descricao: negocio.descricao || "", responsavelId: negocio.responsavelId || "", previsaoFechamento: negocio.previsaoFechamento || "" }); setEditandoSobre(true); }} />
               <Cf2DropdownMenu>
                 <Cf2DropdownMenuTrigger asChild>
-                  <button className="flex items-center justify-center h-10 w-10 rounded-xl shrink-0" style={{ background: "var(--cf2-bg-canvas)", color: "var(--cf2-chrome-text-primary)" }} aria-label="Mais ações"><MoreHorizontal className="w-4 h-4" /></button>
+                  <button className="flex items-center justify-center h-10 w-10 rounded-xl shrink-0" style={{ background: "var(--cf2-bg-surface)", color: "var(--cf2-text-primary)" }} aria-label="Mais ações"><MoreHorizontal className="w-4 h-4" /></button>
                 </Cf2DropdownMenuTrigger>
                 <Cf2DropdownMenuContent align="end">
-                  <Cf2DropdownMenuItem onClick={() => setNovaPropostaAberta(true)} className="gap-2"><FileText className="w-3.5 h-3.5" /> Nova proposta</Cf2DropdownMenuItem>
+                  <Cf2DropdownMenuItem onClick={() => irParaNovaProposta()} className="gap-2"><FileText className="w-3.5 h-3.5" /> Nova proposta</Cf2DropdownMenuItem>
                   {lead?.id && <Cf2DropdownMenuItem asChild className="gap-2"><Link href={`/contatos/${lead.id}`}><User className="w-3.5 h-3.5" /> Ver contato</Link></Cf2DropdownMenuItem>}
                 </Cf2DropdownMenuContent>
               </Cf2DropdownMenu>
+            </div>
+          </div>
+
+          {/* Tags (01/09, Frente 2A) — contexto/segmentação, nunca substituto
+              de etapa. Mesma estrutura `labels` já usada em lead e no drawer. */}
+          <div className="flex flex-wrap items-center gap-1.5 pt-1">
+            {labelsNegocio.map((l) => (
+              <span key={l.id} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold transition-colors hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--cf2-accent)]" style={{ background: `color-mix(in srgb, ${l.cor} 15%, transparent)`, color: l.cor, border: `1px solid color-mix(in srgb, ${l.cor} 35%, transparent)` }}>
+                {l.nome}
+                <button onClick={() => mudarTag.mutate({ labelId: l.id, acao: "remove" })} aria-label={`Remover tag ${l.nome}`} className="opacity-50 hover:opacity-100"><X className="w-3 h-3" /></button>
+              </span>
+            ))}
+            <div className="relative">
+              <button onClick={() => setTagPopoverOpen((v) => !v)} aria-expanded={tagPopoverOpen} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold" style={{ border: "1px dashed var(--cf2-chrome-border)", color: "var(--cf2-chrome-text-secondary)" }}>
+                <TagIcon className="w-3 h-3" /> Tag
+              </button>
+              {tagPopoverOpen && (
+                <div className="absolute z-30 mt-1 left-0 w-56 max-h-64 overflow-y-auto rounded-xl py-1" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)", boxShadow: "var(--cf2-shadow-shell)" }}>
+                  {labelsDisponiveis.filter((l) => !labelsNegocio.some((x) => x.id === l.id)).length === 0 ? (
+                    <p className="px-3 py-2 text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhuma tag disponível.</p>
+                  ) : labelsDisponiveis.filter((l) => !labelsNegocio.some((x) => x.id === l.id)).map((l) => (
+                    <button key={l.id} onClick={() => { mudarTag.mutate({ labelId: l.id, acao: "add" }); setTagPopoverOpen(false); }} className="w-full text-left px-3 py-1.5 text-[12px] flex items-center gap-2" style={{ color: "var(--cf2-text-primary)" }}>
+                      <span className="w-2 h-2 rounded-full shrink-0" style={{ background: l.cor }} /> {l.nome}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 
@@ -532,7 +661,7 @@ export function Cf2NegocioWorkspace({ negocioId }: { negocioId: string }) {
                   ))}
                   <div className="h-px my-1" style={{ background: "var(--cf2-border-default)" }} />
                   <div className="flex items-center gap-1.5 px-1 py-1">
-                    <input value={motivoOutro} onChange={(e) => setMotivoOutro(e.target.value)} placeholder="Outro motivo…" onClick={(e) => e.stopPropagation()} className="flex-1 px-2 py-1 rounded-lg text-[12px] outline-none focus-visible:ring-2 focus-visible:ring-[var(--cf2-accent-border)]" style={{ background: "var(--cf2-bg-canvas)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }} />
+                    <input value={motivoOutro} onChange={(e) => setMotivoOutro(e.target.value)} placeholder="Outro motivo…" aria-label="Outro motivo" onClick={(e) => e.stopPropagation()} className="flex-1 px-2 py-1 rounded-lg text-[12px] outline-none focus-visible:ring-2 focus-visible:ring-[var(--cf2-accent-border)]" style={{ background: "var(--cf2-bg-canvas)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }} />
                     <button onClick={(e) => { e.stopPropagation(); if (motivoOutro.trim()) patch.mutate({ status: "perdido", motivoPerda: motivoOutro.trim() }); }} disabled={!motivoOutro.trim()} className="text-[11px] font-bold px-2 py-1 rounded-lg disabled:opacity-40" style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-primary)" }}>OK</button>
                   </div>
                 </Cf2DropdownMenuContent>
@@ -620,6 +749,65 @@ export function Cf2NegocioWorkspace({ negocioId }: { negocioId: string }) {
                       </div>
                     </div>
                   )}
+                </Cf2Card>
+
+                {/* ── Qualificação SDR herdada do lead (01/09, Frente 2A) ──
+                    Vive AQUI e não no drawer, por regra explícita do Kauã:
+                    "drawer é resumo operacional, a qualificação completa
+                    aparece na página completa". Só leitura — quem edita é
+                    Pré-vendas, que é a dona do lead. */}
+                <Cf2Card>
+                  <CardTitulo icon={ClipboardCheck} tint="#8B5CF6" title="Qualificação SDR" subtitle="Herdada do lead de origem, editável em Pré-vendas" />
+                  <div className="mt-3 flex flex-col gap-1.5">
+                    <PropertyRow label="CNPJ" value={qualificacaoSdr.cnpj || "—"} />
+                    <PropertyRow label="Cargo" value={qualificacaoSdr.cargo || "—"} />
+                    <PropertyRow label="Necessidade / Dor" value={qualificacaoSdr.necessidadeDor || "—"} />
+                    <PropertyRow label="Tomador de decisão" value={qualificacaoSdr.tomadorDecisao ? (TOMADOR_LABEL[qualificacaoSdr.tomadorDecisao] || qualificacaoSdr.tomadorDecisao) : "—"} />
+                    <div className="pt-2" style={{ borderTop: "1px solid var(--cf2-border-default)" }}>
+                      <PropertyRow label="Qualificado por" value={qualificadorNome || "Sem registro"} />
+                      <PropertyRow
+                        label="Qualificado em"
+                        value={mudancaQualificacao ? new Date(mudancaQualificacao.createdAt).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }) : "—"}
+                      />
+                    </div>
+                    {!qualificacaoSdr.necessidadeDor && !qualificacaoSdr.tomadorDecisao && (
+                      <p className="text-[12px] pt-1" style={{ color: "var(--cf2-text-tertiary)" }}>
+                        Esta oportunidade não tem qualificação registrada no lead de origem.
+                      </p>
+                    )}
+                  </div>
+                </Cf2Card>
+
+                {/* ── Aquisição / origem (01/09, Frente 2A) ──────────────────
+                    Requisito do mapa mestre que estava furado: origem,
+                    campanha, UTM e criativo precisam persistir do lead até a
+                    oportunidade. Nada é copiado pra coluna nova — é o mesmo
+                    lead vinculado, exibido por join. Copiar viraria dado
+                    duplicado que desincroniza. */}
+                <Cf2Card>
+                  <CardTitulo icon={Megaphone} tint="var(--cf2-warning-text)" title="Aquisição" subtitle="Contexto comercial de origem, vindo do lead" />
+                  <div className="mt-3 flex flex-col gap-1.5">
+                    <PropertyRow label="Origem do lead" value={lead?.origem || "—"} />
+                    {/* SDR = responsável do LEAD (quem trabalhou a pré-venda),
+                        distinto do closer, que é o responsável do NEGÓCIO. */}
+                    <PropertyRow label="SDR responsável" value={usuarios.find((u) => u.id === lead?.responsavelId)?.nome || "—"} />
+                    <PropertyRow label="Campanha" value={lead?.utmCampaign || "—"} />
+                    <PropertyRow label="Fonte / meio" value={[lead?.utmSource, lead?.utmMedium].filter(Boolean).join(" · ") || "—"} />
+                    <PropertyRow label="Criativo" value={lead?.utmContent || lead?.metaAdId || "—"} />
+                    <PropertyRow label="Termo" value={lead?.utmTerm || "—"} />
+                    <PropertyRow label="Página de entrada" value={lead?.landingPage || "—"} />
+                    <div className="pt-2" style={{ borderTop: "1px solid var(--cf2-border-default)" }}>
+                      <div className="flex items-center justify-between gap-3 text-[13px]">
+                        <span style={{ color: "var(--cf2-text-tertiary)" }}>Lead de origem</span>
+                        {lead ? (
+                          <Link href={`/contatos/${lead.id}`} className="font-medium truncate max-w-[200px]" style={{ color: "var(--cf2-accent-border)" }}>{lead.nome} →</Link>
+                        ) : (
+                          <span style={{ color: "var(--cf2-text-tertiary)" }}>—</span>
+                        )}
+                      </div>
+                      <PropertyRow label="Lead criado em" value={lead?.createdAt ? new Date(lead.createdAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" }) : "—"} />
+                    </div>
+                  </div>
                 </Cf2Card>
 
                 {/* "Jornada comercial" removida (25/08) — pedido explícito
@@ -710,7 +898,7 @@ export function Cf2NegocioWorkspace({ negocioId }: { negocioId: string }) {
                 <Cf2Card>
                   <div className="flex items-center justify-between">
                     <CardTitulo icon={FileText} tint="var(--cf2-accent-border)" title="Propostas" />
-                    <button onClick={() => setNovaPropostaAberta(true)} className="text-[12px] font-semibold" style={{ color: "var(--cf2-success-text)" }}>+ Nova</button>
+                    <button onClick={() => irParaNovaProposta()} className="text-[12px] font-semibold" style={{ color: "var(--cf2-success-text)" }}>+ Nova</button>
                   </div>
                   <div className="mt-3 space-y-1.5">
                     {propostas.length === 0 && <Cf2EmptyState title="Nenhuma proposta ainda" />}
@@ -720,7 +908,7 @@ export function Cf2NegocioWorkspace({ negocioId }: { negocioId: string }) {
                 </Cf2Card>
 
                 <Cf2Card>
-                  <CardTitulo icon={FileText} tint="#F59E0B" title="Documentos" />
+                  <CardTitulo icon={FileText} tint="var(--cf2-warning-text)" title="Documentos" />
                   <div className="mt-3 space-y-1.5">
                     {propostas.length === 0 && anexosLegado.length === 0 && <Cf2EmptyState title="Nenhum documento ainda" />}
                     {propostas.slice(0, 2).map((p) => (
@@ -753,7 +941,7 @@ export function Cf2NegocioWorkspace({ negocioId }: { negocioId: string }) {
             <Cf2Card>
               <div className="flex items-center justify-between">
                 <Cf2SectionHeader title="Propostas desta oportunidade" />
-                <button onClick={() => setNovaPropostaAberta(true)} className="flex items-center gap-1.5 text-[12px] font-semibold px-3 py-1.5 rounded-lg" style={{ background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" }}><Plus className="w-3.5 h-3.5" /> Nova proposta</button>
+                <button onClick={() => irParaNovaProposta()} className="flex items-center gap-1.5 text-[12px] font-semibold px-3 py-1.5 rounded-lg" style={{ background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" }}><Plus className="w-3.5 h-3.5" /> Nova proposta</button>
               </div>
               <div className="mt-3 space-y-2">
                 {propostas.length === 0 && <Cf2EmptyState title="Nenhuma proposta ainda" description="Crie a primeira proposta pra esta oportunidade." />}
@@ -781,7 +969,7 @@ export function Cf2NegocioWorkspace({ negocioId }: { negocioId: string }) {
                   ) : itens.length === 0 ? (
                     <div className="flex flex-col items-center gap-2">
                       <Cf2EmptyState title="Sem composição comercial ainda" description="Crie ou aceite uma proposta pra definir o que está sendo vendido." />
-                      <button onClick={() => setNovaPropostaAberta(true)} className="text-[12px] font-semibold px-3 py-1.5 rounded-lg" style={{ background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" }}>Criar proposta</button>
+                      <button onClick={() => irParaNovaProposta()} className="text-[12px] font-semibold px-3 py-1.5 rounded-lg" style={{ background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" }}>Criar proposta</button>
                     </div>
                   ) : (
                     Object.entries(itensPorFamilia).map(([familia, itensDaFamilia]) => (
@@ -808,14 +996,34 @@ export function Cf2NegocioWorkspace({ negocioId }: { negocioId: string }) {
 
               {grupos.length > 0 && (
                 <Cf2Card>
-                  <Cf2SectionHeader title="Fulfillment" subtitle="Estado de cada composição comercial, independente entre si" />
+                  <Cf2SectionHeader title="Fechamento e entrega" subtitle="Estado de cada composição comercial, independente entre si" />
                   <div className="mt-3 space-y-1.5">
-                    {grupos.map((g) => (
-                      <div key={g.id} className="flex items-center justify-between p-2.5 rounded-lg" style={{ background: "var(--cf2-bg-surface-muted)" }}>
-                        <span className="text-[13px] font-medium" style={{ color: "var(--cf2-text-primary)" }}>{MODEL_LABEL[g.commercialModel] || g.commercialModel}</span>
-                        <Cf2Badge variant={GRUPO_STATUS_VARIANT[g.status] || "neutral"}>{GRUPO_STATUS_LABEL[g.status] || g.status}</Cf2Badge>
-                      </div>
-                    ))}
+                    {grupos.map((g) => {
+                      const estado = derivarEstadoFechamento(g);
+                      // Pagamento em aberto aparece como badge SEPARADA, nunca
+                      // substituindo o estado comercial: em PABX/White Label a
+                      // venda está ganha de verdade E o dinheiro está em
+                      // aberto — os dois fatos ao mesmo tempo.
+                      const pagamentoEmAberto = g.pagamentoStatus === "pendente" && !!g.entregaLiberadaEm;
+                      return (
+                        <div key={g.id} className="flex items-center justify-between gap-2 p-2.5 rounded-chip" style={{ background: "var(--cf2-bg-surface-muted)" }}>
+                          <div className="flex flex-col min-w-0">
+                            <span className="text-corpo font-medium truncate" style={{ color: "var(--cf2-text-primary)" }}>
+                              {g.serviceFamily && FAMILY_LABEL[g.serviceFamily] ? FAMILY_LABEL[g.serviceFamily] : MODEL_LABEL[g.commercialModel] || g.commercialModel}
+                            </span>
+                            <span className="text-micro" style={{ color: "var(--cf2-text-tertiary)" }}>{MODEL_LABEL[g.commercialModel] || g.commercialModel}</span>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {pagamentoEmAberto && (
+                              <Cf2Badge variant="warning">
+                                {g.pagamentoVenceEm ? `Pagamento pendente · vence ${new Date(g.pagamentoVenceEm).toLocaleDateString("pt-BR")}` : "Pagamento pendente"}
+                              </Cf2Badge>
+                            )}
+                            <Cf2Badge variant={ESTADO_FECHAMENTO_VARIANT[estado]}>{ESTADO_FECHAMENTO_LABEL[estado]}</Cf2Badge>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </Cf2Card>
               )}
@@ -870,7 +1078,7 @@ export function Cf2NegocioWorkspace({ negocioId }: { negocioId: string }) {
               </div>
               {noteOpen && (
                 <div className="mt-3 flex flex-col gap-1.5 pb-3" style={{ borderBottom: "1px solid var(--cf2-border-default)" }}>
-                  <textarea autoFocus value={noteText} onChange={(e) => setNoteText(e.target.value)} placeholder="Escreva uma nota…" rows={3} className="w-full text-[13px] rounded-lg px-3 py-2 outline-none resize-y focus-visible:ring-2 focus-visible:ring-[var(--cf2-accent-border)]" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }} onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && noteText.trim()) addNota.mutate({ conteudo: noteText.trim(), arquivos: noteArquivos }); if (e.key === "Escape") { setNoteOpen(false); setNoteText(""); setNoteArquivos([]); } }} />
+                  <textarea autoFocus value={noteText} onChange={(e) => setNoteText(e.target.value)} placeholder="Escreva uma nota…" aria-label="Escreva uma nota" rows={3} className="w-full text-[13px] rounded-lg px-3 py-2 outline-none resize-y focus-visible:ring-2 focus-visible:ring-[var(--cf2-accent-border)]" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }} onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && noteText.trim()) addNota.mutate({ conteudo: noteText.trim(), arquivos: noteArquivos }); if (e.key === "Escape") { setNoteOpen(false); setNoteText(""); setNoteArquivos([]); } }} />
                   {noteArquivos.length > 0 && (
                     <div className="flex flex-wrap gap-1.5">
                       {noteArquivos.map((f, i) => (
@@ -1041,9 +1249,6 @@ export function Cf2NegocioWorkspace({ negocioId }: { negocioId: string }) {
         </Cf2Tabs>
       </div>
 
-      {novaPropostaAberta && (
-        <Cf2NovaPropostaSlideOver negocioId={negocioId} onClose={() => { setNovaPropostaAberta(false); qc.invalidateQueries({ queryKey: ["negocio-detalhe", negocioId] }); }} />
-      )}
       <TarefaFormModal
         open={tarefaModalOpen}
         onClose={() => { setTarefaModalOpen(false); setTarefaEditando(null); }}
@@ -1212,7 +1417,7 @@ function InsightsNegocio({ propostasCount, interacoes, ultimoContato, semProxima
   // tom de fundo já usado no chrome escuro do header desta página
   // (`--cf2-chrome-bg-alt`), não é cor nova.
   return (
-    <div className="rounded-2xl p-5" style={{ background: "var(--cf2-chrome-bg-alt)", boxShadow: "var(--cf2-shadow-card-sm)" }}>
+    <div data-cf2-superficie="escura" className="rounded-2xl p-5" style={{ background: "var(--cf2-chrome-bg-alt)", boxShadow: "var(--cf2-shadow-card-sm)" }}>
       <CardTitulo icon={Sparkles} tint="var(--cf2-accent)" title="Insights do negócio" dark />
       <div className="mt-3 space-y-1.5">
         {items.map((it, i) => (

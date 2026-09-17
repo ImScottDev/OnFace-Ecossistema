@@ -455,4 +455,164 @@ app.post("/sdr-escalation-run", async (c) => {
   return c.json({ ok: true, ...res });
 });
 
+
+// ─── Event Outbox: dead-letter ───────────────────────────────────
+//
+// Antes desta rodada não existia NENHUMA superfície pro dead-letter: evento
+// que estourava as 5 tentativas sumia do radar. Foi assim que o handoff de
+// Won pro CS ficou quebrado 6 dias sem ninguém saber (achado 14/09).
+
+// GET /admin/event-outbox/falhas — o que está parado no dead-letter
+app.get("/event-outbox/falhas", async (c) => {
+  const ctx = await getCtx(c);
+  if (!["admin", "super_admin", "gerente"].includes(ctx.userRole)) {
+    return c.json({ error: "Forbidden" }, 403);
+  }
+  const { listarEventosFalhados } = await import("@/lib/events/consumer");
+  const eventos = await listarEventosFalhados(ctx.organizacaoId, 200);
+  return c.json({ total: eventos.length, eventos });
+});
+
+// POST /admin/event-outbox/reprocessar — devolve pro sweep o que já teve a causa corrigida
+app.post("/event-outbox/reprocessar", async (c) => {
+  const ctx = await getCtx(c);
+  if (!["admin", "super_admin"].includes(ctx.userRole)) {
+    return c.json({ error: "Forbidden" }, 403);
+  }
+  const body = await c.req.json().catch(() => ({}));
+  const ids = Array.isArray(body?.ids) ? (body.ids as string[]) : undefined;
+  const eventType = typeof body?.eventType === "string" ? body.eventType : undefined;
+
+  const { reprocessarEventosFalhados } = await import("@/lib/events/consumer");
+  const resultado = await reprocessarEventosFalhados({ organizacaoId: ctx.organizacaoId, ids, eventType });
+
+  await db.insert(auditLog).values({
+    organizacaoId: ctx.organizacaoId,
+    actorId: ctx.userId,
+    action: "event_outbox.reprocessado",
+    entityType: "event_outbox",
+    // entity_id é uuid: com vários eventos no lote, a lista vai no `after`.
+    entityId: resultado.ids.length === 1 ? resultado.ids[0] : null,
+    after: { reenfileirados: resultado.reenfileirados, ids: resultado.ids, eventType: eventType ?? null },
+    source: "api",
+  });
+
+  return c.json(resultado);
+});
+
+// ─── Stripe: inbox de webhook ────────────────────────────────────────────────
+//
+// `stripe_webhook_events` guarda todo evento recebido. Dois estados ficavam
+// invisíveis e sem saída (achado 14/09):
+//   - `unresolved`: o evento chegou antes de existir o vínculo que identifica a
+//     organização (assinatura/fatura/checkout ainda não gravados). O webhook
+//     responde 202 e o evento morre ali.
+//   - `failed`: o processamento estourou.
+// Não havia tela, job nem endpoint que mostrasse qualquer um dos dois.
+
+// GET /admin/stripe/inbox — o que chegou e não foi processado
+app.get("/stripe/inbox", async (c) => {
+  const ctx = await getCtx(c);
+  if (!["admin", "super_admin", "gerente"].includes(ctx.userRole)) {
+    return c.json({ error: "Forbidden" }, 403);
+  }
+  const { stripeWebhookEvents } = await import("@/lib/db/schema");
+  const { inArray, desc, or, isNull } = await import("drizzle-orm");
+
+  const eventos = await db
+    .select({
+      id: stripeWebhookEvents.id,
+      eventId: stripeWebhookEvents.eventId,
+      eventType: stripeWebhookEvents.eventType,
+      status: stripeWebhookEvents.status,
+      organizacaoId: stripeWebhookEvents.organizacaoId,
+      attempts: stripeWebhookEvents.attempts,
+      lastError: stripeWebhookEvents.lastError,
+      receivedAt: stripeWebhookEvents.receivedAt,
+    })
+    .from(stripeWebhookEvents)
+    .where(or(
+      inArray(stripeWebhookEvents.status, ["unresolved", "failed", "processing"]),
+      isNull(stripeWebhookEvents.organizacaoId),
+    ))
+    .orderBy(desc(stripeWebhookEvents.receivedAt))
+    .limit(200);
+
+  return c.json({ total: eventos.length, eventos });
+});
+
+// POST /admin/stripe/inbox/resolver — tenta identificar a organização dos
+// eventos `unresolved` agora que os vínculos existem, e devolve pro fluxo.
+app.post("/stripe/inbox/resolver", async (c) => {
+  const ctx = await getCtx(c);
+  if (!["admin", "super_admin"].includes(ctx.userRole)) {
+    return c.json({ error: "Forbidden" }, 403);
+  }
+  const { stripeWebhookEvents, assinaturas, faturas, checkouts } = await import("@/lib/db/schema");
+  const { eq, and } = await import("drizzle-orm");
+
+  const pendentes = await db
+    .select({ id: stripeWebhookEvents.id, eventId: stripeWebhookEvents.eventId, payload: stripeWebhookEvents.payload })
+    .from(stripeWebhookEvents)
+    .where(eq(stripeWebhookEvents.status, "unresolved"))
+    .limit(200);
+
+  let resolvidos = 0;
+  for (const ev of pendentes) {
+    const payload = (ev.payload ?? {}) as { type?: string; data?: { object?: Record<string, unknown> } };
+    const obj = payload.data?.object ?? {};
+    const customerId = typeof obj.customer === "string" ? obj.customer : null;
+    const subscriptionId = typeof obj.subscription === "string" ? obj.subscription
+      : typeof obj.id === "string" && payload.type?.startsWith("customer.subscription.") ? obj.id : null;
+    const invoiceId = typeof obj.id === "string" && payload.type?.startsWith("invoice.") ? obj.id : null;
+    const sessionId = typeof obj.id === "string" && payload.type?.startsWith("checkout.session.") ? obj.id : null;
+
+    const candidatas = new Set<string>();
+    if (customerId) {
+      const rows = await db.select({ organizacaoId: assinaturas.organizacaoId }).from(assinaturas).where(eq(assinaturas.stripeCustomerId, customerId)).limit(3);
+      rows.forEach((r) => candidatas.add(r.organizacaoId));
+    }
+    if (subscriptionId) {
+      const rows = await db.select({ organizacaoId: assinaturas.organizacaoId }).from(assinaturas).where(eq(assinaturas.stripeSubscriptionId, subscriptionId)).limit(3);
+      rows.forEach((r) => candidatas.add(r.organizacaoId));
+    }
+    if (invoiceId) {
+      const rows = await db.select({ organizacaoId: faturas.organizacaoId }).from(faturas).where(and(eq(faturas.origem, "stripe"), eq(faturas.externalId, invoiceId))).limit(3);
+      rows.forEach((r) => r.organizacaoId && candidatas.add(r.organizacaoId));
+    }
+    if (sessionId) {
+      const rows = await db.select({ organizacaoId: checkouts.organizacaoId }).from(checkouts).where(eq(checkouts.stripeSessionId, sessionId)).limit(3);
+      rows.forEach((r) => candidatas.add(r.organizacaoId));
+    }
+
+    if (candidatas.size !== 1) continue; // ambíguo continua unresolved, de propósito
+
+    await db.update(stripeWebhookEvents)
+      .set({ organizacaoId: [...candidatas][0], status: "pending", updatedAt: new Date() })
+      .where(eq(stripeWebhookEvents.id, ev.id));
+    resolvidos++;
+  }
+
+  await db.insert(auditLog).values({
+    organizacaoId: ctx.organizacaoId,
+    actorId: ctx.userId,
+    action: "stripe.inbox_resolvido",
+    entityType: "stripe_event",
+    // entity_id é uuid no schema: operação em lote não tem entidade única.
+    entityId: null,
+    after: { analisados: pendentes.length, resolvidos },
+    source: "api",
+  });
+
+  return c.json({
+    analisados: pendentes.length,
+    resolvidos,
+    // O processamento em si vive inline no handler POST do webhook e depende da
+    // assinatura HMAC do Stripe, que não dá pra reproduzir aqui. Evento que
+    // ficou `failed` se reprocessa reenviando pelo painel do Stripe
+    // ("Resend") — agora ele ao menos APARECE, que era o que faltava.
+    observacao: "eventos resolvidos voltaram para 'pending'; reenvie pelo painel do Stripe os que estiverem em 'failed'",
+  });
+});
+
 export const adminRoutes = app;

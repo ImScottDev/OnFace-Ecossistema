@@ -7,7 +7,7 @@
  * lista, enrollment de cadência, sdrStatus e oportunidade vinculada. Isso
  * mantém Prospect separado de Pré-vendas sem criar um segundo CRM.
  */
-import type { Lead } from "@/components/crm2/qualificacao/shared";
+import type { Lead } from "@/lib/crm/qualificacao-colunas";
 
 export interface CadenciaInfo {
   enrollmentId: string;
@@ -30,16 +30,29 @@ export interface ProspeccaoStatus {
   key: string;
   label: string;
   color: string;
+  /**
+   * `sdr_status` gravado ao ARRASTAR um card pra esta coluna (01/09). O status
+   * de Prospecção é DERIVADO (`resolveProspeccaoStatus`), não armazenado, então
+   * cada coluna precisa dizer qual escrita real a representa.
+   *
+   * `null` = coluna não aceita drop, e por motivos diferentes:
+   *  - `em_cadencia`: é consequência de um enrollment de cadência, não de um
+   *    status. Arrastar pra cá não inscreveria ninguém — o caminho real é a
+   *    ação "Adicionar à cadência".
+   *  - `qualificado`: exige ESCOLHA de destino (Pré-vendas ou criar
+   *    oportunidade), então abre diálogo em vez de gravar direto.
+   */
+  dropStatus?: string | null;
 }
 
 export const PROSPECCAO_STATUS: ProspeccaoStatus[] = [
-  { key: "novo", label: "Novo", color: "#64748B" },
-  { key: "selecionado", label: "Selecionado", color: "#2563EB" },
-  { key: "em_cadencia", label: "Em cadência", color: "#7C3AED" },
-  { key: "respondeu", label: "Respondeu", color: "#0EA5E9" },
-  { key: "qualificado", label: "Pré-vendas", color: "#16A34A" },
-  { key: "sem_resposta", label: "Sem resposta", color: "#8e27ef" },
-  { key: "desqualificado", label: "Desqualificado", color: "#dc2626" },
+  { key: "novo", label: "Novo", color: "#64748B", dropStatus: "pending" },
+  { key: "selecionado", label: "Selecionado", color: "#2563EB", dropStatus: "contacted" },
+  { key: "em_cadencia", label: "Em cadência", color: "#7C3AED", dropStatus: null },
+  { key: "respondeu", label: "Respondeu", color: "#0EA5E9", dropStatus: "qualifying" },
+  { key: "qualificado", label: "Qualificado", color: "#16A34A", dropStatus: null },
+  { key: "sem_resposta", label: "Sem resposta", color: "#8e27ef", dropStatus: "sdr_sem_retorno" },
+  { key: "desqualificado", label: "Desqualificado", color: "#dc2626", dropStatus: "disqualified" },
 ];
 
 const BY_KEY = new Map(PROSPECCAO_STATUS.map((s) => [s.key, s]));
@@ -55,7 +68,13 @@ const BY_KEY = new Map(PROSPECCAO_STATUS.map((s) => [s.key, s]));
 export function resolveProspeccaoStatus(lead: Lead & Partial<ProspeccaoLead>): ProspeccaoStatus {
   const s = lead.sdrStatus || "pending";
   if (s === "disqualified") return BY_KEY.get("desqualificado")!;
+  // Qualificado = prospect que passou do handoff, por QUALQUER um dos dois
+  // destinos (01/09, decisão do Kauã): oportunidade criada direto no Pipeline
+  // (negócio real) OU enviado pra Pré-vendas como SQL (`sdr_status`
+  // 'qualified', sem oportunidade). Antes só o 1º caminho existia, e a etapa
+  // era rotulada "Pré-vendas" — nome do destino, não do estado.
   if (lead.negocioPrincipal || (lead.negocioCount && lead.negocioCount > 0)) return BY_KEY.get("qualificado")!;
+  if (s === "qualified") return BY_KEY.get("qualificado")!;
   if (s === "sdr_sem_retorno") return BY_KEY.get("sem_resposta")!;
   if (s === "qualifying") return BY_KEY.get("respondeu")!;
   if (lead.cadencia && ["active", "waiting"].includes(lead.cadencia.status)) return BY_KEY.get("em_cadencia")!;

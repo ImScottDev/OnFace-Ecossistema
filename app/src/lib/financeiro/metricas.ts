@@ -5,14 +5,13 @@
  *  - Receita SEMPRE segmentável por produto (ai = Stripe, pabx = planilha Wevy).
  *  - MRR POR COMPONENTE (novo/expansão/churn/etc, ver `getComponentesMrr`)
  *    vem de `mrr_movimentos` — nunca recalculado de formas diferentes por aba.
- *  - MRR ATUAL/PONTUAL (`getMrrAtual`) é DIFERENTE: soma `contratos.mrr`
- *    (status='ativo'), de propósito — representa o total contratado no CRM,
- *    incluindo boleto/manual (fora do Stripe). Achado real 09/08: esse
- *    número (R$119.801,57) é maior que o MRR reconstruído via
- *    `mrr_movimentos`/espelho Stripe (R$48.844,50) — a MESMA lacuna
- *    "sem espelho de cobrança" já sinalizada no dashboard, não é bug. UI
- *    (`TabVisaoGeral.tsx`) rotulada como "MRR ativo (contratos no CRM)"
- *    exatamente pra não ser confundido com o MRR Stripe.
+ *  - MRR ATIVO tem UMA fonte canônica: `servicos_canonicos` (a carteira), a
+ *    mesma que o Início e o CS já usavam. Até 14/09 o Financeiro somava
+ *    `contratos.mrr` e a tela exibia a divergência ao usuário ("duas bases de
+ *    MRR divergem em R$ 6.365,96") — além de estar inflada em R$ 24.205,50 por
+ *    60 contratos duplicados pela mesma assinatura Stripe. `getMrrAtual().total`
+ *    agora é a fonte canônica; `totalContratado` fica como número de
+ *    conciliação, deduplicado por assinatura.
  *  - Dias em atraso são derivados de COALESCE(vencimento, emitida_em) — nunca coluna.
  *  - Churn voluntário × involuntário: prefixo de motivo_cancelamento
  *    ("payment_failed" = involuntário; "cancellation_requested" = voluntário).
@@ -33,21 +32,74 @@ export interface PeriodoFin {
 // ─── MRR atual e componentes ────────────────────────────────────────────────
 
 export interface MrrAtual {
+  /** MRR ativo pela FONTE CANÔNICA (carteira de serviços) — o número do produto. */
   total: number;
+  /** Conciliação: somatório dos contratos ativos, deduplicado por assinatura Stripe. */
+  totalContratado: number;
+  contratosAtivos: number;
   porProduto: { produto: string; mrr: number; contratos: number }[];
 }
 
-/** Total contratado no CRM (todos os `contratos.status='ativo'`, qualquer forma de cobrança) — NÃO é o mesmo que o MRR realmente cobrado via Stripe. Ver nota no topo do arquivo. */
+/**
+ * MRR ativo — FONTE CANÔNICA ÚNICA: a carteira de serviços canônicos.
+ *
+ * Até 14/09 conviviam duas bases e a tela dizia isso ao usuário: "Duas bases de
+ * MRR divergem em R$ 6.365,96". O Início e o CS somavam
+ * `servicos_canonicos`; o Financeiro somava `contratos.mrr`. Pior: a soma de
+ * contratos estava INFLADA em R$ 24.205,50 por 60 contratos ativos duplicados
+ * pela mesma assinatura Stripe (`npm run db:relatorio-duplicidade-contratos`).
+ *
+ * Decisão desta rodada: existe UMA fonte canônica de MRR — `servicos_canonicos`
+ * (portfolio_included + revenue_nature MRR + ciclo ACTIVE). É o que o Won
+ * materializa daqui pra frente, e é o que CS e Início já liam. `total` agora é
+ * essa fonte; quem exibe MRR ativo em qualquer tela do produto exibe o mesmo
+ * número.
+ *
+ * `totalContratado` continua existindo, mas como número de CONCILIAÇÃO, não
+ * como MRR do produto: é o somatório dos contratos ativos, agora **deduplicado
+ * por assinatura Stripe** — sem apagar contrato nenhum (saneamento do legado
+ * histórico está fora do escopo; o que não pode é somar a mesma assinatura duas
+ * vezes na leitura).
+ */
 export async function getMrrAtual(orgId: string): Promise<MrrAtual> {
-  const rows = (await db.execute(sql`
-    SELECT COALESCE(c.produto, 'ai') AS produto, COALESCE(sum(c.mrr), 0)::float AS mrr, count(*)::int AS contratos
-    FROM contratos c
-    WHERE ${orgFilter("c.organizacao_id", orgId)} AND c.status = 'ativo'
-    GROUP BY 1 ORDER BY 2 DESC
-  `)) as unknown as { produto: string; mrr: number; contratos: number }[];
+  const [canonico, contratado, porProduto] = await Promise.all([
+    db.execute<{ mrr: string }>(sql`
+      SELECT COALESCE(SUM(current_recurring_value), 0)::text AS mrr
+        FROM servicos_canonicos
+       WHERE organizacao_id = ${orgId}
+         AND portfolio_included = true
+         AND revenue_nature = 'MRR'
+         AND commercial_lifecycle = 'ACTIVE'`),
+    // DISTINCT ON pela assinatura: contrato duplicado pela mesma subscription
+    // entra uma vez só. Contrato sem assinatura (boleto/manual) cai no id.
+    db.execute<{ mrr: string; contratos: string }>(sql`
+      SELECT COALESCE(SUM(mrr), 0)::text AS mrr, COUNT(*)::text AS contratos
+        FROM (
+          SELECT DISTINCT ON (COALESCE(c.stripe_subscription_id, c.id::text)) c.mrr
+            FROM contratos c
+           WHERE ${orgFilter("c.organizacao_id", orgId)} AND c.status = 'ativo'
+           ORDER BY COALESCE(c.stripe_subscription_id, c.id::text), c.created_at DESC
+        ) unicos`),
+    db.execute<{ produto: string; mrr: string; contratos: string }>(sql`
+      SELECT COALESCE(produto, 'ai') AS produto, COALESCE(SUM(mrr), 0)::text AS mrr, COUNT(*)::text AS contratos
+        FROM (
+          SELECT DISTINCT ON (COALESCE(c.stripe_subscription_id, c.id::text)) c.produto, c.mrr
+            FROM contratos c
+           WHERE ${orgFilter("c.organizacao_id", orgId)} AND c.status = 'ativo'
+           ORDER BY COALESCE(c.stripe_subscription_id, c.id::text), c.created_at DESC
+        ) unicos
+       GROUP BY 1 ORDER BY 2 DESC`),
+  ]);
+
   return {
-    total: round2(rows.reduce((a, r) => a + r.mrr, 0)),
-    porProduto: rows.map((r) => ({ ...r, mrr: round2(r.mrr) })),
+    total: round2(Number(canonico[0]?.mrr ?? 0)),
+    totalContratado: round2(Number(contratado[0]?.mrr ?? 0)),
+    contratosAtivos: Number(contratado[0]?.contratos ?? 0),
+    porProduto: (porProduto as unknown as { produto: string; mrr: string; contratos: string }[]).map((r) => ({
+      produto: r.produto,
+      mrr: round2(Number(r.mrr)),
+      contratos: Number(r.contratos),
+    })),
   };
 }
 

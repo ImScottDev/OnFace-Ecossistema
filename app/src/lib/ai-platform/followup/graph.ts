@@ -9,7 +9,7 @@ const branchIdSchema = z.string().min(1).max(64).refine((id) => id !== "else", '
 export const followupCheckSchema = z.object({
   id: branchIdSchema.optional(),
   label: z.string().min(1).max(60).optional(),
-  field: z.enum(["lead_stage", "tag", "steps_taken", "last_outcome", "entity_type", "has_replied"]),
+  field: z.string().min(1).max(100),
   op: z.enum(["eq", "neq", "gte", "lte", "contains"]),
   value: z.union([z.string(), z.number(), z.boolean()]),
 }).strict();
@@ -59,6 +59,14 @@ const actionNodeSchema = z.object({
   config: z.discriminatedUnion("mode", [
     z.object({ mode: z.literal("ai_message"), prompt_hint: z.string().min(1).max(1000), agent_id: z.string().uuid().optional(), fallback_template_id: z.string().uuid().optional() }).strict(),
     z.object({ mode: z.literal("template"), template_id: z.string().uuid() }).strict(),
+    z.object({ mode: z.literal("create_task"), title: z.string().min(1).max(160), description: z.string().max(1000).optional(), priority: z.enum(["baixa", "media", "alta", "urgente"]).default("media"), due_minutes: z.number().int().min(0).max(525_600).default(1440), owner_id: z.string().uuid().optional() }).strict(),
+    z.object({ mode: z.literal("add_tag"), label_id: z.string().uuid() }).strict(),
+    z.object({ mode: z.literal("remove_tag"), label_id: z.string().uuid() }).strict(),
+    z.object({ mode: z.literal("update_stage"), stage: z.string().min(1).max(80) }).strict(),
+    z.object({ mode: z.literal("assign_owner"), owner_id: z.string().uuid() }).strict(),
+    z.object({ mode: z.literal("add_note"), title: z.string().min(1).max(160), description: z.string().max(4000).optional() }).strict(),
+    z.object({ mode: z.literal("email"), subject: z.string().min(1).max(160), message: z.string().min(1).max(10_000) }).strict(),
+    z.object({ mode: z.literal("callface_call") }).strict(),
   ]),
 }).strict();
 

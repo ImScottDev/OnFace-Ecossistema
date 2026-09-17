@@ -2,7 +2,8 @@ import { createHash } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
-import { getTenantContext, unauthorizedResponse } from "@/lib/auth/tenant";
+import { getTenantContext, unauthorizedResponse, forbiddenResponse } from "@/lib/auth/tenant";
+import { isAdminView } from "@/lib/auth/roles";
 
 export const runtime = "nodejs";
 
@@ -190,6 +191,7 @@ function validateCompetence(value: string): boolean {
 export async function GET() {
   const ctx = await getTenantContext();
   if (!ctx) return unauthorizedResponse();
+  if (!isAdminView(ctx.userRole)) return forbiddenResponse();
   const [latest] = await db.execute(sql`
     SELECT b.id, b.competence::text, b.version, b.source_file, b.source_sha256,
       b.expected_total, b.imported_total, b.row_count, b.status, b.imported_at, b.closed_at,
@@ -208,6 +210,7 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   const ctx = await getTenantContext();
   if (!ctx) return unauthorizedResponse();
+  if (!isAdminView(ctx.userRole)) return forbiddenResponse();
   const form = await request.formData().catch(() => null);
   const file = form?.get("file");
   const competencia = String(form?.get("competencia") || "");

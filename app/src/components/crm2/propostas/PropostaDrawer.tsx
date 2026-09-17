@@ -11,7 +11,6 @@ import {
 import { DetailDrawer } from "@/components/crm/DetailDrawer";
 import { Cf2Badge } from "../ui/Badge";
 import { Cf2Button } from "../ui/Button";
-import { Cf2ChromeCard } from "../shared/ChromeCard";
 import { Cf2Tabs, Cf2TabsList, Cf2TabsTrigger, Cf2TabsContent } from "../ui/Tabs";
 import {
   Cf2DropdownMenu, Cf2DropdownMenuContent, Cf2DropdownMenuItem, Cf2DropdownMenuTrigger,
@@ -40,15 +39,26 @@ function diasRestantes(iso: string): string {
   return `Em ${dias}d`;
 }
 
+/** Container claro padrão do drawer — substitui o `Cf2ChromeCard` escuro da versão anterior. */
+function Caixa({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+  return (
+    <div
+      className={`rounded-[var(--cf2-radius-lg)] p-4 ${className}`}
+      style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }}
+    >
+      {children}
+    </div>
+  );
+}
+
 /**
- * Drawer de proposta, versão 2 (25/08, referência visual do Kauã — dark,
- * tracking/ações rápidas/histórico/tabs). A versão anterior tinha sido
- * removida no mesmo dia em favor só da página `/propostas/[id]`; o Kauã
- * pediu o drawer DE VOLTA como preview rápido (Gmail-style lista+preview) —
- * a página continua existindo pra gestão completa (Aceitar com conversão em
- * cliente, Recusar com motivo, PDF, Excluir), o drawer cobre o caso comum
- * sem sair da lista. "Tempo médio"/"dispositivo" do mockup NÃO entraram —
- * não existe esse tracking no schema, não fabrico.
+ * Drawer de proposta — 10/09/2026, recolorido pra superfície clara. Toda
+ * outra ilha lateral do CRM2 (`ClienteDrawer`, `NegocioDrawer` de Vendas) usa
+ * `panelBg="var(--cf2-bg-surface)"`; este era o único ainda desenhado como
+ * painel dark, herança do mockup original que deu origem à página de
+ * Propostas inteira em chrome escuro. Preview rápido (Gmail-style
+ * lista+preview): gestão completa (Aceitar com conversão em cliente, Recusar
+ * com motivo, PDF, Excluir) mora em `/propostas/[id]` (`PropostaDetalhe.tsx`).
  */
 export function Cf2PropostaDrawer({ propostaId, open, onClose, onChanged }: { propostaId: string | null; open: boolean; onClose: () => void; onChanged: () => void }) {
   const router = useRouter();
@@ -121,59 +131,59 @@ export function Cf2PropostaDrawer({ propostaId, open, onClose, onChanged }: { pr
   ].sort((a, b) => new Date(a.data).getTime() - new Date(b.data).getTime()) : [];
 
   const footer = proposta && (
-    <div className="p-3 flex items-center gap-2" style={{ background: "var(--cf2-chrome-bg-alt)", borderTop: "1px solid var(--cf2-chrome-border-subtle)" }}>
+    <div className="p-3 flex items-center gap-2" style={{ background: "var(--cf2-bg-surface)", borderTop: "1px solid var(--cf2-border-default)" }}>
       {editavel && (
         <Cf2Button className="flex-1" onClick={() => router.push(`/propostas/novo?propostaId=${proposta.id}`)}>
           <Pencil className="w-3.5 h-3.5" /> Editar proposta
         </Cf2Button>
       )}
-      <Cf2Button variant="secondary" className={editavel ? "" : "flex-1"} style={{ border: "1px solid var(--cf2-chrome-border-subtle)", background: "transparent", color: "var(--cf2-chrome-text-primary)" }} onClick={() => router.push("/propostas/novo")}>
+      <Cf2Button variant="secondary" className={editavel ? "" : "flex-1"} onClick={() => router.push("/propostas/novo")}>
         <Plus className="w-3.5 h-3.5" /> Nova proposta
       </Cf2Button>
     </div>
   );
 
   return (
-    <DetailDrawer open={open && !!propostaId} onClose={onClose} bare panelBg="var(--cf2-chrome-bg-alt)" borderColor="var(--cf2-chrome-border-subtle)" width="w-full sm:w-[460px]" footer={footer}>
-      {isLoading && <div className="p-6 text-sm" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Carregando...</div>}
+    <DetailDrawer open={open && !!propostaId} onClose={onClose} bare panelBg="var(--cf2-bg-surface)" width="w-full sm:w-[460px]" footer={footer}>
+      {isLoading && <div className="p-6 text-sm" style={{ color: "var(--cf2-text-secondary)" }}>Carregando...</div>}
       {proposta && (
         <div className="flex flex-col gap-4 p-5">
           <div className="flex items-start justify-between gap-2">
             <div className="flex flex-col gap-1">
-              <p className="text-[16px] font-bold font-mono" style={{ color: "var(--cf2-chrome-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>#PROP-{String(proposta.numero).padStart(4, "0")}{proposta.versao > 1 ? ` v${proposta.versao}` : ""}</p>
-              <p className="text-[14px] font-semibold" style={{ color: "var(--cf2-chrome-text-primary)" }}>{proposta.leadEmpresa || proposta.leadNome || "—"}</p>
+              <p className="text-[16px] font-bold font-mono" style={{ color: "var(--cf2-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>#PROP-{String(proposta.numero).padStart(4, "0")}{proposta.versao > 1 ? ` v${proposta.versao}` : ""}</p>
+              <p className="text-[14px] font-semibold" style={{ color: "var(--cf2-text-primary)" }}>{proposta.leadEmpresa || proposta.leadNome || "—"}</p>
               <div className="flex items-center gap-2 flex-wrap">
-                <Cf2Badge dark variant={status!.tom}>{status!.label}</Cf2Badge>
+                <Cf2Badge variant={status!.tom}>{status!.label}</Cf2Badge>
                 {proposta.negocioId && (
-                  <Link href={`/negocios/${proposta.negocioId}`} className="text-[12px] font-medium hover:underline" style={{ color: "var(--cf2-chrome-text-secondary)" }}>{proposta.negocioTitulo || "ver negócio"} →</Link>
+                  <Link href={`/negocios/${proposta.negocioId}`} className="text-[12px] font-medium hover:underline" style={{ color: "var(--cf2-text-secondary)" }}>{proposta.negocioTitulo || "ver negócio"} →</Link>
                 )}
               </div>
             </div>
             <div className="flex items-center gap-1 shrink-0">
               <Cf2DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
                 <Cf2DropdownMenuTrigger asChild>
-                  <button className="p-1.5 rounded-md hover:bg-white/[0.06]" style={{ color: "var(--cf2-chrome-text-secondary)" }}><MoreHorizontal className="w-4 h-4" /></button>
+                  <button className="p-1.5 rounded-md hover:bg-[var(--cf2-bg-surface-muted)]" style={{ color: "var(--cf2-text-tertiary)" }} aria-label="Mais ações"><MoreHorizontal className="w-4 h-4" /></button>
                 </Cf2DropdownMenuTrigger>
-                <Cf2DropdownMenuContent align="end" className="min-w-[200px]" style={{ background: "#1c1f26", border: "1px solid var(--cf2-chrome-border-subtle)" }}>
-                  <Cf2DropdownMenuItem onClick={() => router.push(`/propostas/${proposta.id}`)} className="data-[highlighted]:bg-white/[0.06]" style={{ color: "var(--cf2-chrome-text-primary)" }}>Ver página completa</Cf2DropdownMenuItem>
+                <Cf2DropdownMenuContent align="end" className="min-w-[200px]">
+                  <Cf2DropdownMenuItem onClick={() => router.push(`/propostas/${proposta.id}`)}>Ver página completa</Cf2DropdownMenuItem>
                   {editavel && (
-                    <Cf2DropdownMenuItem onClick={() => reenviar.mutate()} className="data-[highlighted]:bg-white/[0.06]" style={{ color: "var(--cf2-chrome-text-primary)" }}>Reenviar ao cliente</Cf2DropdownMenuItem>
+                    <Cf2DropdownMenuItem onClick={() => reenviar.mutate()}>Reenviar ao cliente</Cf2DropdownMenuItem>
                   )}
                   {proposta.status !== "aceita" && (
                     confirmarExcluir ? (
-                      <Cf2DropdownMenuItem onClick={() => excluir.mutate()} className="data-[highlighted]:bg-white/[0.06]" style={{ color: "#f87171" }}>Confirmar exclusão</Cf2DropdownMenuItem>
+                      <Cf2DropdownMenuItem onClick={() => excluir.mutate()} destructive>Confirmar exclusão</Cf2DropdownMenuItem>
                     ) : (
-                      <Cf2DropdownMenuItem onClick={(e) => { e.preventDefault(); setConfirmarExcluir(true); }} className="data-[highlighted]:bg-white/[0.06]" style={{ color: "#f87171" }}>Excluir</Cf2DropdownMenuItem>
+                      <Cf2DropdownMenuItem onClick={(e) => { e.preventDefault(); setConfirmarExcluir(true); }} destructive>Excluir</Cf2DropdownMenuItem>
                     )
                   )}
                 </Cf2DropdownMenuContent>
               </Cf2DropdownMenu>
-              <button onClick={onClose} className="p-1.5 rounded-md hover:bg-white/[0.06]" style={{ color: "var(--cf2-chrome-text-secondary)" }}><X className="w-4 h-4" /></button>
+              <button onClick={onClose} className="p-1.5 rounded-md hover:bg-[var(--cf2-bg-surface-muted)]" style={{ color: "var(--cf2-text-tertiary)" }} aria-label="Fechar"><X className="w-4 h-4" /></button>
             </div>
           </div>
 
-          <Cf2ChromeCard>
-            <p className="text-[11px] font-bold uppercase tracking-wide mb-2.5" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Resumo</p>
+          <Caixa>
+            <p className="text-[11px] font-bold uppercase tracking-wide mb-2.5" style={{ color: "var(--cf2-text-tertiary)" }}>Resumo</p>
             <div className="flex flex-col gap-2">
               <KV label="Cliente" value={proposta.leadEmpresa || proposta.leadNome || "—"} />
               {proposta.negocioId && <KV label="Negócio" value={proposta.negocioTitulo || "—"} href={`/negocios/${proposta.negocioId}`} />}
@@ -181,37 +191,37 @@ export function Cf2PropostaDrawer({ propostaId, open, onClose, onChanged }: { pr
               <KV label="Responsável" value={proposta.criadoPorNome || "—"} />
               {proposta.condicoesPagamento && <KV label="Condições de pagamento" value={proposta.condicoesPagamento} />}
             </div>
-          </Cf2ChromeCard>
+          </Caixa>
 
           <div className="grid grid-cols-2 gap-3">
-            <Cf2ChromeCard>
-              <p className="text-[10px] font-bold uppercase tracking-wide" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Valor total</p>
-              <p className="text-[20px] font-bold mt-1" style={{ color: "var(--cf2-chrome-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>{brl(proposta.totalGeral)}</p>
-            </Cf2ChromeCard>
-            <Cf2ChromeCard>
-              <p className="text-[10px] font-bold uppercase tracking-wide" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Validade</p>
-              <p className="text-[16px] font-bold mt-1" style={{ color: "var(--cf2-chrome-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>{proposta.dataValidade ? new Date(proposta.dataValidade).toLocaleDateString("pt-BR") : "—"}</p>
-              {proposta.dataValidade && <p className="text-[11px] mt-0.5" style={{ color: "var(--cf2-chrome-text-secondary)" }}>{diasRestantes(proposta.dataValidade)}</p>}
-            </Cf2ChromeCard>
+            <Caixa>
+              <p className="text-[10px] font-bold uppercase tracking-wide" style={{ color: "var(--cf2-text-tertiary)" }}>Valor total</p>
+              <p className="text-[20px] font-bold mt-1" style={{ color: "var(--cf2-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>{brl(proposta.totalGeral)}</p>
+            </Caixa>
+            <Caixa>
+              <p className="text-[10px] font-bold uppercase tracking-wide" style={{ color: "var(--cf2-text-tertiary)" }}>Validade</p>
+              <p className="text-[16px] font-bold mt-1" style={{ color: "var(--cf2-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>{proposta.dataValidade ? new Date(proposta.dataValidade).toLocaleDateString("pt-BR") : "—"}</p>
+              {proposta.dataValidade && <p className="text-[11px] mt-0.5" style={{ color: "var(--cf2-text-secondary)" }}>{diasRestantes(proposta.dataValidade)}</p>}
+            </Caixa>
           </div>
 
-          <Cf2ChromeCard>
+          <Caixa>
             <div className="flex items-center justify-between mb-2.5">
-              <p className="text-[11px] font-bold uppercase tracking-wide" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Tracking da proposta</p>
-              <button onClick={() => router.push(`/propostas/${proposta.id}`)} className="text-[11px] font-medium flex items-center gap-1 hover:underline" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Ver detalhes →</button>
+              <p className="text-[11px] font-bold uppercase tracking-wide" style={{ color: "var(--cf2-text-tertiary)" }}>Tracking da proposta</p>
+              <button onClick={() => router.push(`/propostas/${proposta.id}`)} className="text-[11px] font-medium flex items-center gap-1 hover:underline" style={{ color: "var(--cf2-text-secondary)" }}>Ver detalhes →</button>
             </div>
             <div className="flex items-center gap-2">
-              {proposta.primeiraVisualizacaoEm ? <Eye className="w-4 h-4 shrink-0" style={{ color: "#4ade80" }} /> : <EyeOff className="w-4 h-4 shrink-0" style={{ color: "var(--cf2-chrome-text-secondary)" }} />}
-              <p className="text-[13px]" style={{ color: "var(--cf2-chrome-text-primary)" }}>
+              {proposta.primeiraVisualizacaoEm ? <Eye className="w-4 h-4 shrink-0" style={{ color: "var(--cf2-success-text)" }} /> : <EyeOff className="w-4 h-4 shrink-0" style={{ color: "var(--cf2-text-tertiary)" }} />}
+              <p className="text-[13px]" style={{ color: "var(--cf2-text-primary)" }}>
                 {proposta.primeiraVisualizacaoEm
                   ? `Visualizada pelo cliente · ${fmtDataHora(proposta.primeiraVisualizacaoEm)}${proposta.visualizacoes > 1 ? ` · ${proposta.visualizacoes}x` : ""}`
                   : proposta.enviadaEm ? "Enviada, ainda não aberta pelo cliente" : "Ainda não enviada"}
               </p>
             </div>
-          </Cf2ChromeCard>
+          </Caixa>
 
           <div className="flex flex-col gap-2">
-            <p className="text-[11px] font-bold uppercase tracking-wide" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Ações rápidas</p>
+            <p className="text-[11px] font-bold uppercase tracking-wide" style={{ color: "var(--cf2-text-tertiary)" }}>Ações rápidas</p>
             <div className="grid grid-cols-2 gap-2">
               <QuickAction icon={Send} label="Enviar novamente" onClick={editavel ? () => reenviar.mutate() : undefined} loading={reenviar.isPending} />
               <QuickAction icon={Download} label="Baixar PDF" onClick={proposta.itens.length > 0 ? () => window.open(`/api/propostas/${proposta.id}/pdf`, "_blank") : undefined} />
@@ -220,41 +230,41 @@ export function Cf2PropostaDrawer({ propostaId, open, onClose, onChanged }: { pr
             </div>
           </div>
 
-          <Cf2ChromeCard>
-            <p className="text-[11px] font-bold uppercase tracking-wide flex items-center gap-1.5 mb-2" style={{ color: "var(--cf2-chrome-text-secondary)" }}><Clock className="w-3.5 h-3.5" /> Histórico</p>
+          <Caixa>
+            <p className="text-[11px] font-bold uppercase tracking-wide flex items-center gap-1.5 mb-2" style={{ color: "var(--cf2-text-tertiary)" }}><Clock className="w-3.5 h-3.5" /> Histórico</p>
             <div className="flex flex-col gap-0">
               {historico.map((h, i) => (
                 <div key={i} className="flex gap-3">
                   <div className="flex flex-col items-center pt-1">
-                    <span className="w-2 h-2 rounded-full shrink-0" style={{ background: i === historico.length - 1 ? "var(--cf2-chrome-text-secondary)" : "var(--cf2-chrome-border-subtle)" }} />
-                    {i < historico.length - 1 && <span className="w-px flex-1 my-0.5" style={{ background: "var(--cf2-chrome-border-subtle)" }} />}
+                    <span className="w-2 h-2 rounded-full shrink-0" style={{ background: i === historico.length - 1 ? "var(--cf2-text-tertiary)" : "var(--cf2-border-default)" }} />
+                    {i < historico.length - 1 && <span className="w-px flex-1 my-0.5" style={{ background: "var(--cf2-border-default)" }} />}
                   </div>
                   <div className="flex-1 min-w-0 pb-3 flex items-center justify-between gap-3">
-                    <span className="text-[13px]" style={{ color: "var(--cf2-chrome-text-primary)" }}>{h.label}</span>
-                    <span className="text-[11px] shrink-0" style={{ color: "var(--cf2-chrome-text-secondary)" }}>{fmtDataHora(h.data)}</span>
+                    <span className="text-[13px]" style={{ color: "var(--cf2-text-primary)" }}>{h.label}</span>
+                    <span className="text-[11px] shrink-0" style={{ color: "var(--cf2-text-tertiary)" }}>{fmtDataHora(h.data)}</span>
                   </div>
                 </div>
               ))}
             </div>
-          </Cf2ChromeCard>
+          </Caixa>
 
           <Cf2Tabs defaultValue="produtos">
-            <Cf2TabsList style={{ background: "rgba(255,255,255,0.06)" }}>
-              <Cf2TabsTrigger value="produtos" className="data-[state=active]:bg-white/10 data-[state=active]:text-white" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Produtos e serviços</Cf2TabsTrigger>
-              <Cf2TabsTrigger value="observacoes" className="data-[state=active]:bg-white/10 data-[state=active]:text-white" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Observações</Cf2TabsTrigger>
+            <Cf2TabsList>
+              <Cf2TabsTrigger value="produtos">Produtos e serviços</Cf2TabsTrigger>
+              <Cf2TabsTrigger value="observacoes">Observações</Cf2TabsTrigger>
             </Cf2TabsList>
             <Cf2TabsContent value="produtos" className="flex flex-col gap-1 pt-2">
               {proposta.itens.length === 0 ? (
-                <p className="text-[12px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Sem itens.</p>
+                <p className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>Sem itens.</p>
               ) : proposta.itens.map((i) => (
-                <div key={i.id} className="flex items-center justify-between gap-3 py-1.5 border-b" style={{ borderColor: "var(--cf2-chrome-border-subtle)" }}>
-                  <span className="text-[13px] min-w-0 truncate" style={{ color: "var(--cf2-chrome-text-primary)" }}>{i.nome} <span style={{ color: "var(--cf2-chrome-text-secondary)" }}>· {i.quantidade}x</span></span>
-                  <span className="text-[13px] font-semibold shrink-0" style={{ color: "var(--cf2-chrome-text-primary)" }}>{brl(i.subtotal)}{i.tipo === "recorrente" ? "/mês" : ""}</span>
+                <div key={i.id} className="flex items-center justify-between gap-3 py-1.5 border-b" style={{ borderColor: "var(--cf2-border-default)" }}>
+                  <span className="text-[13px] min-w-0 truncate" style={{ color: "var(--cf2-text-primary)" }}>{i.nome} <span style={{ color: "var(--cf2-text-tertiary)" }}>· {i.quantidade}x</span></span>
+                  <span className="text-[13px] font-semibold shrink-0" style={{ color: "var(--cf2-text-primary)" }}>{brl(i.subtotal)}{i.tipo === "recorrente" ? "/mês" : ""}</span>
                 </div>
               ))}
             </Cf2TabsContent>
             <Cf2TabsContent value="observacoes" className="pt-2">
-              <p className="text-[13px] whitespace-pre-wrap" style={{ color: proposta.observacoes ? "var(--cf2-chrome-text-primary)" : "var(--cf2-chrome-text-secondary)" }}>{proposta.observacoes || "Sem observações."}</p>
+              <p className="text-[13px] whitespace-pre-wrap" style={{ color: proposta.observacoes ? "var(--cf2-text-primary)" : "var(--cf2-text-tertiary)" }}>{proposta.observacoes || "Sem observações."}</p>
             </Cf2TabsContent>
           </Cf2Tabs>
         </div>
@@ -263,15 +273,15 @@ export function Cf2PropostaDrawer({ propostaId, open, onClose, onChanged }: { pr
   );
 }
 
-function KV({ label, value, href, color }: { label: string; value: string; href?: string; color?: string }) {
+function KV({ label, value, href }: { label: string; value: string; href?: string }) {
   const valueEl = href ? (
-    <Link href={href} className="font-semibold hover:underline" style={{ color: color || "var(--cf2-chrome-text-primary)" }}>{value}</Link>
+    <Link href={href} className="font-semibold hover:underline" style={{ color: "var(--cf2-text-primary)" }}>{value}</Link>
   ) : (
-    <span className="font-semibold" style={{ color: color || "var(--cf2-chrome-text-primary)" }}>{value}</span>
+    <span className="font-semibold" style={{ color: "var(--cf2-text-primary)" }}>{value}</span>
   );
   return (
     <div className="flex items-center justify-between text-[13px]">
-      <span style={{ color: "var(--cf2-chrome-text-secondary)" }}>{label}</span>
+      <span style={{ color: "var(--cf2-text-secondary)" }}>{label}</span>
       {valueEl}
     </div>
   );
@@ -283,8 +293,8 @@ function QuickAction({ icon: Icon, label, onClick, loading }: { icon: typeof Sen
     <button
       onClick={onClick}
       disabled={disabled}
-      className="flex items-center gap-2 h-10 px-3 rounded-lg text-[12px] font-medium disabled:opacity-40 hover:bg-white/[0.06] transition-colors"
-      style={{ border: "1px solid var(--cf2-chrome-border-subtle)", color: "var(--cf2-chrome-text-primary)" }}
+      className="flex items-center gap-2 h-10 px-3 rounded-lg text-[12px] font-medium disabled:opacity-40 hover:bg-[var(--cf2-bg-surface-muted)] transition-colors"
+      style={{ border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }}
     >
       <Icon className="w-3.5 h-3.5 shrink-0" /> {label}
     </button>

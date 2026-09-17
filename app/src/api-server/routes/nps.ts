@@ -82,12 +82,16 @@ app.post("/:token", async (c) => {
     .where(eq(npsRespostas.token, token))
     .returning();
 
-  // Update lead npsScore
-  const [leadAtualizado] = await db
-    .update(leads)
-    .set({ npsScore: parsed.data.score })
-    .where(eq(leads.id, nps.leadId))
-    .returning({ id: leads.id, nome: leads.nome, email: leads.email, telefone: leads.telefone, organizacaoId: leads.organizacaoId });
+  // Update lead npsScore. `nps.leadId` virou nullable em 08/09 (health check
+  // é da empresa e pode não ter lead) — esta rota é a de survey por token,
+  // que sempre nasce com lead, mas o guard evita quebrar se um dia não vier.
+  const [leadAtualizado] = nps.leadId
+    ? await db
+        .update(leads)
+        .set({ npsScore: parsed.data.score })
+        .where(eq(leads.id, nps.leadId))
+        .returning({ id: leads.id, nome: leads.nome, email: leads.email, telefone: leads.telefone, organizacaoId: leads.organizacaoId })
+    : [];
 
   // F5/Automation: gatilho "nps_recebido" — best-effort, endpoint público
   // (sem sessão/ctx.organizacaoId), por isso resolve a org a partir do lead.

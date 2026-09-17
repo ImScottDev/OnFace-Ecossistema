@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { Hono } from "hono";
 import { db } from "@/lib/db";
 import { leads, empresas, atividades, buscasSalvas } from "@/lib/db/schema";
@@ -304,10 +305,26 @@ app.delete("/saved-searches", async (c) => {
 
 // ─── Webhook ─────────────────────────────────────────────────────
 
-// POST /apollo/webhook — receive waterfall enrichment results (phone/email)
-// No auth needed — this is a webhook endpoint called by Apollo
+// POST /apollo/webhook?token=<secret> — resultado do enriquecimento em cascata
+//
+// FAIL-CLOSED (14/09). Antes não havia verificação NENHUMA: qualquer POST com
+// `person.id` sobrescrevia telefone e e-mail de um lead real (reproduzido em
+// DEV: HTTP 200 sem credencial). O Apollo não assina o payload, então a
+// proteção é o token na URL do webhook — mesmo modelo já usado em rd-lead.
 app.post("/webhook", async (c) => {
   try {
+    const segredo = process.env.APOLLO_WEBHOOK_SECRET || "";
+    if (!segredo) {
+      console.error("[ApolloWebhook] APOLLO_WEBHOOK_SECRET não configurado — recusando evento (fail-closed)");
+      return c.json({ error: "webhook secret not configured" }, 503);
+    }
+    const recebido = c.req.query("token") || c.req.header("x-webhook-secret") || "";
+    const a = Buffer.from(recebido);
+    const b = Buffer.from(segredo);
+    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+      return c.json({ error: "unauthorized" }, 401);
+    }
+
     const body = await c.req.json();
     console.log("Apollo webhook received:", JSON.stringify(body).slice(0, 500));
 

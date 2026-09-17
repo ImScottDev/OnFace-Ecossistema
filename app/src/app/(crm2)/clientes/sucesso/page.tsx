@@ -1,26 +1,10 @@
-import { db } from "@/lib/db";
-import { organizacoes } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
-import { getTenantContext } from "@/lib/auth/tenant";
 import { redirect } from "next/navigation";
-import { Cf2Topbar } from "@/components/crm2/Topbar";
-import { Cf2SucessoWorkspace } from "@/components/crm2/clientes/SucessoWorkspace";
 
-export default async function ClientesSucessoPage() {
-  const ctx = await getTenantContext();
-  if (!ctx) redirect("/login");
-
-  const [org] = await db.select({ nome: organizacoes.nome }).from(organizacoes).where(eq(organizacoes.id, ctx.organizacaoId)).limit(1);
-  const orgNome = org?.nome || "Callface";
-
-  return (
-    <div className="flex flex-col gap-6">
-      <div className="-m-6 mb-0 relative flex flex-col px-6 py-3.5 rounded-tl-2xl border-b" style={{ background: "var(--cf2-bg-surface)", borderColor: "var(--cf2-border-default)" }}>
-        <Cf2Topbar orgNome={orgNome} variant="light" title="Clientes" subtitle="CS — contas que precisam de atenção agora" compactTitle />
-      </div>
-      <div className="pt-6">
-        <Cf2SucessoWorkspace />
-      </div>
-    </div>
-  );
+/**
+ * Alias de compatibilidade. O módulo se chama CS desde 08/09/2026 e mora em
+ * `/clientes/cs`; esta rota existia desde 19/08 e está em link antigo,
+ * favorito e histórico de navegador.
+ */
+export default function ClientesSucessoAlias() {
+  redirect("/clientes/cs");
 }

@@ -28,7 +28,10 @@ export function Cf2Topbar({
 }: {
   orgNome: string;
   variant?: "light" | "dark";
-  title?: string;
+  /** ReactNode (01/09) e não só string: o workspace Comercial passa o
+   * `Cf2AreaSelect` aqui, ocupando o lugar do título em vez de uma faixa de
+   * pílulas separada abaixo. Quem passa string continua igual. */
+  title?: React.ReactNode;
   subtitle?: string;
   ctaLabel?: string;
   ctaHref?: string;
@@ -67,16 +70,23 @@ export function Cf2Topbar({
   const kbdText = dark ? "var(--cf2-chrome-text-primary)" : "var(--cf2-text-secondary)";
 
   return (
-    <div className="flex items-center justify-between w-full gap-2">
+    <div className="flex items-center w-full gap-2">
       {/* Botão de abrir/fechar sidebar (30/08) — fora da barra, no canto
           superior esquerdo do topo (referência do Kauã). No mobile abre o
           Sheet; no desktop fixa/desfixa o modo expandido (o hover-to-peek
           continua funcionando independente disso). */}
       <Cf2SidebarTrigger className="shrink-0 hover:bg-[var(--cf2-bg-surface-muted)]" style={{ color: textPrimary }} />
       {!compact && compactTitle && (
-        <p className="text-[15px] font-semibold" style={{ color: textPrimary, fontFamily: "var(--cf2-font-heading)" }}>
-          {title ?? orgNome}
-        </p>
+        // `title` string = texto; `title` nó = controle próprio da página (ex:
+        // o grupo de botões de pipeline do Comercial). Renderizar um <div>
+        // dentro de <p> é HTML inválido, então o nó vai solto.
+        typeof title === "string" || title === undefined || title === null ? (
+          <p className="text-[15px] font-semibold" style={{ color: textPrimary, fontFamily: "var(--cf2-font-heading)" }}>
+            {title ?? orgNome}
+          </p>
+        ) : (
+          title
+        )
       )}
       {!compact && !compactTitle && <div className="flex flex-col gap-1">
         <p className={dark ? "text-[28px] font-bold" : "text-[28px] font-semibold"} style={{ color: textPrimary, fontFamily: "var(--cf2-font-heading)" }}>
@@ -86,17 +96,24 @@ export function Cf2Topbar({
           {subtitle ?? <>{dataCapitalizada}{dataCapitalizada ? " · " : ""}{orgNome}</>}
         </p>
       </div>}
-      {compact && <div className="flex-1" />}
 
-      <div className="flex items-center gap-4">
+      {/* `ml-auto` (01/09) em vez de `justify-between` no pai: com 3 filhos o
+          justify-between CENTRALIZAVA o do meio, então as abas de pipeline
+          flutuavam longe do trigger do sidebar. Agora o bloco da direita é o
+          único que empurra, e título/abas ficam colados na esquerda. */}
+      <div className="ml-auto flex items-center gap-2 sm:gap-4">
+        {/* Em telas estreitas a busca de 200px + sino + CTA não cabiam e o
+            botão de ação saía cortado pela borda. Abaixo de sm a busca vira
+            só o ícone (o atalho ⌘K não existe em celular mesmo). */}
         <button
           onClick={() => window.dispatchEvent(new CustomEvent("open-command-palette"))}
-          className="flex items-center gap-3 px-3.5 py-2 rounded-full w-[200px]"
+          aria-label="Buscar"
+          className="flex h-9 w-9 items-center justify-center gap-3 rounded-[var(--radius-control)] sm:h-auto sm:w-[200px] sm:justify-start sm:px-3.5 sm:py-2 cf2-transicao"
           style={{ border: `1px solid ${searchBorder}`, background: searchBg }}
         >
           <Search className="w-3.5 h-3.5 shrink-0" style={{ color: textSecondary }} />
-          <span className="text-[13px] flex-1 text-left" style={{ color: textSecondary }}>Buscar...</span>
-          <kbd className="text-[11px] px-1.5 py-0.5 rounded shrink-0" style={{ background: kbdBg, color: kbdText }}>
+          <span className="hidden sm:block text-[13px] flex-1 text-left" style={{ color: textSecondary }}>Buscar...</span>
+          <kbd className="hidden sm:block text-[11px] px-1.5 py-0.5 rounded shrink-0" style={{ background: kbdBg, color: kbdText }}>
             {"⌘"}K
           </kbd>
         </button>
@@ -111,10 +128,12 @@ export function Cf2Topbar({
         {actions !== undefined ? actions : (
           <Link
             href={ctaHref}
-            className="flex items-center gap-1.5 px-[18px] py-2.5 rounded-xl text-sm font-bold"
-            style={{ background: "var(--cf2-accent)", border: "1px solid var(--cf2-accent-border)", color: "var(--cf2-text-on-accent)" }}
+            aria-label={ctaLabel}
+            className="flex h-9 w-9 shrink-0 items-center justify-center gap-1.5 rounded-[var(--radius-control)] text-sm font-bold hover:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 sm:h-auto sm:w-auto sm:px-[18px] sm:py-2.5 cf2-transicao"
+            style={{ background: "var(--cf2-accent)", border: "1px solid var(--cf2-accent-border)", color: "var(--cf2-text-on-accent)", outlineColor: "var(--cf2-accent)" }}
           >
-            <Plus className="w-3.5 h-3.5" /> {ctaLabel}
+            <Plus className="w-3.5 h-3.5 shrink-0" aria-hidden />
+            <span className="hidden sm:inline">{ctaLabel}</span>
           </Link>
         )}
       </div>

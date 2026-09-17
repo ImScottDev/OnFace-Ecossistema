@@ -20,7 +20,10 @@ function LinhaEvento({ ev, onClick }: { ev: Evento; onClick: () => void }) {
 export function Cf2PainelResumo({ resumo, onSelecionarEvento }: { resumo: Resumo | null; onSelecionarEvento: (ev: Evento) => void }) {
   if (!resumo) return null;
   return (
-    <div className="flex flex-col gap-4 h-full shrink-0 w-[280px] overflow-y-auto">
+    <div
+      className="hidden lg:flex flex-col gap-4 h-full shrink-0 w-[280px] overflow-y-auto p-3 rounded-2xl"
+      style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}
+    >
       <div className="flex flex-col gap-1">
         <p className="text-[11px] font-bold uppercase px-2" style={{ color: "var(--cf2-text-tertiary)" }}>Próximos eventos</p>
         {resumo.proximos.length === 0 && <p className="text-[12px] px-2 py-2" style={{ color: "var(--cf2-text-tertiary)" }}>Nada nos próximos 7 dias.</p>}

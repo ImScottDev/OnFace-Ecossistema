@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
-import { getTenantContext, unauthorizedResponse } from "@/lib/auth/tenant";
+import { getTenantContext, unauthorizedResponse, forbiddenResponse } from "@/lib/auth/tenant";
+import { isAdminView } from "@/lib/auth/roles";
 
 /**
  * GET /api/financeiro/vendas?visao=cliente|fatura&produto=todos|pabx|ai&status=&q=
@@ -13,6 +14,7 @@ import { getTenantContext, unauthorizedResponse } from "@/lib/auth/tenant";
 export async function GET(request: NextRequest) {
   const ctx = await getTenantContext();
   if (!ctx) return unauthorizedResponse();
+  if (!isAdminView(ctx.userRole)) return forbiddenResponse();
   const orgId = ctx.organizacaoId;
   const sp = request.nextUrl.searchParams;
   const visao = sp.get("visao") || "cliente";

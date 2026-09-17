@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getTenantContext, unauthorizedResponse } from "@/lib/auth/tenant";
+import { getTenantContext, unauthorizedResponse, forbiddenResponse } from "@/lib/auth/tenant";
+import { isAdminView } from "@/lib/auth/roles";
 import { db } from "@/lib/db";
 import { faturas } from "@/lib/db/schema";
 import { and, eq } from "drizzle-orm";
@@ -14,6 +15,7 @@ import { and, eq } from "drizzle-orm";
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ faturaId: string }> }) {
   const ctx = await getTenantContext();
   if (!ctx) return unauthorizedResponse();
+  if (!isAdminView(ctx.userRole)) return forbiddenResponse();
 
   const { faturaId } = await params;
   const body = await request.json().catch(() => ({}));

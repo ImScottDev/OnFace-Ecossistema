@@ -65,17 +65,17 @@ export function NovoProspectModal({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(15,23,42,0.5)" }} onClick={handleClose}>
+    <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(15,23,42,0.5)" }} onClick={handleClose}>
       <div className="w-full max-w-md rounded-2xl p-6 flex flex-col gap-4" style={{ background: "var(--cf2-bg-surface)" }} onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between">
           <p className="text-lg font-bold" style={{ color: "var(--cf2-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>Novo prospect</p>
-          <button onClick={handleClose}><X className="w-4 h-4" style={{ color: "var(--cf2-text-tertiary)" }} /></button>
+          <button onClick={handleClose} aria-label="Fechar"><X className="w-4 h-4" style={{ color: "var(--cf2-text-tertiary)" }} /></button>
         </div>
-        <Field label="Nome *" value={nome} onChange={setNome} placeholder="Nome do prospect" />
-        <Field label="Empresa" value={empresa} onChange={setEmpresa} placeholder="Empresa" />
-        <Field label="Cargo" value={cargo} onChange={setCargo} placeholder="Cargo" />
-        <Field label="Telefone *" value={formatarTelefone(telefone)} onChange={(v) => setTelefone(v.replace(/\D/g, ""))} placeholder="(11) 99999-9999" />
-        <Field label="E-mail" value={email} onChange={setEmail} placeholder="email@empresa.com" />
+        <Field label="Nome *" value={nome} onChange={setNome} placeholder="Nome do prospect" aria-label="Nome do prospect" />
+        <Field label="Empresa" value={empresa} onChange={setEmpresa} placeholder="Empresa" aria-label="Empresa" />
+        <Field label="Cargo" value={cargo} onChange={setCargo} placeholder="Cargo" aria-label="Cargo" />
+        <Field label="Telefone *" value={formatarTelefone(telefone)} onChange={(v) => setTelefone(v.replace(/\D/g, ""))} placeholder="(11) 99999-9999" aria-label="(11) 99999-9999" />
+        <Field label="E-mail" value={email} onChange={setEmail} placeholder="email@empresa.com" aria-label="email@empresa.com" />
         <div className="flex flex-col gap-1.5">
           <span className="text-[13px] font-semibold" style={{ color: "var(--cf2-text-primary)" }}>Lista</span>
           <select value={listaId} onChange={(e) => setListaId(e.target.value)} className="px-3 py-2 rounded-lg text-[13px] outline-none" style={{ background: "var(--cf2-bg-canvas)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }}>

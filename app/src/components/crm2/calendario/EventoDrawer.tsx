@@ -58,7 +58,7 @@ export function Cf2EventoDrawer({ evento, onClose }: { evento: Evento; onClose: 
   });
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end" onClick={onClose}>
+    <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 flex justify-end" onClick={onClose}>
       <div className="absolute inset-0" style={{ background: "rgba(0,0,0,0.3)" }} />
       <div
         className="relative w-[420px] h-full overflow-y-auto flex flex-col"
@@ -73,7 +73,7 @@ export function Cf2EventoDrawer({ evento, onClose }: { evento: Evento; onClose: 
               <Cf2Badge variant={badge.variant}>{badge.label}</Cf2Badge>
             </div>
           </div>
-          <button onClick={onClose}><X className="w-5 h-5" style={{ color: "var(--cf2-text-secondary)" }} /></button>
+          <button onClick={onClose} aria-label="Fechar"><X className="w-5 h-5" style={{ color: "var(--cf2-text-secondary)" }} /></button>
         </div>
 
         <div className="p-6 flex flex-col gap-4 flex-1">
@@ -149,7 +149,7 @@ export function Cf2EventoDrawer({ evento, onClose }: { evento: Evento; onClose: 
               <input
                 value={novaNota}
                 onChange={(e) => setNovaNota(e.target.value)}
-                placeholder="Adicionar nota..."
+                placeholder="Adicionar nota..." aria-label="Adicionar nota"
                 className="flex-1 px-3 py-2 rounded-lg text-[13px] outline-none"
                 style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }}
               />

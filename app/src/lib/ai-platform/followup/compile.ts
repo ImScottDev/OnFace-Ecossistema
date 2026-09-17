@@ -48,7 +48,16 @@ export function compileFollowupGraph(graph: FollowupGraph): CadenceStep[] {
     if (node.type === "wait") return { id: node.id, tipo: "wait", esperaMinutos: Math.ceil((node.config.mode === "fixed" ? node.config.duration_ms : node.config.max_ms) / 60_000), config: node.config, branches };
     if (node.type === "condition") return { id: node.id, tipo: "condition", config: node.config, branches };
     if (node.type === "ai_classify") return { id: node.id, tipo: "action", adapter: "ai_classify", config: node.config, retry: { maxTentativas: 3, backoffMinutos: [1, 5, 15] }, branches };
-    if (node.type === "action") return { id: node.id, tipo: "action", adapter: node.config.mode === "ai_message" ? "ai_agent_message" : "whatsapp_template", config: node.config, retry: { maxTentativas: 3, backoffMinutos: [1, 5, 15] }, branches };
+    if (node.type === "action") {
+      const adapter = node.config.mode === "ai_message" ? "ai_agent_message"
+        : node.config.mode === "template" ? "whatsapp_template"
+        : node.config.mode === "email" ? "email"
+        : `crm_${node.config.mode}`;
+      const config = node.config.mode === "email"
+        ? { assunto: node.config.subject, mensagem: node.config.message }
+        : node.config;
+      return { id: node.id, tipo: "action", adapter, config, retry: { maxTentativas: 3, backoffMinutos: [1, 5, 15] }, branches };
+    }
     return { id: node.id, tipo: "action", adapter: "noop", config: node.config, branches: [{ condicao: null, proximoStepId: null }] };
   });
 }

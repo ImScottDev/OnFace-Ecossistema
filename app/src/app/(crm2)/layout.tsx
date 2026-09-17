@@ -4,6 +4,7 @@ import { Providers } from "@/components/crm/Providers";
 import { Cf2Sidebar } from "@/components/crm2/Sidebar";
 import { Cf2SidebarProvider } from "@/components/crm2/ui/Sidebar";
 import { Cf2ThemeRoot } from "@/components/crm2/ThemeRoot";
+import { Cf2CamadaModal } from "@/components/crm2/CamadaModal";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 export const dynamic = "force-dynamic";
@@ -45,6 +46,7 @@ export default async function Crm2Layout({ children }: { children: React.ReactNo
   return (
     <Providers session={session} variant="cf2">
       <Cf2ThemeRoot />
+      <Cf2CamadaModal />
       {/* background aqui (17/08) é o que faz o sidebar "abraçar" o canto
           arredondado de `main`: o corte do rounded-tl/bl-2xl revela o que
           está por trás de `main`, que é este container — se ficasse sem
@@ -61,11 +63,14 @@ export default async function Crm2Layout({ children }: { children: React.ReactNo
             costura visual no canto arredondado: um único corte real via
             clip nos 2 cantos da esquerda (topo e base), nunca desenhado
             duas vezes por elementos filhos. */}
-        <main className="flex-1 flex flex-col overflow-hidden rounded-tl-2xl rounded-bl-2xl" style={{ boxShadow: "var(--cf2-shadow-shell)" }}>
+        <main
+          className="flex-1 flex flex-col overflow-hidden rounded-tl-[var(--radius-card)] rounded-bl-[var(--radius-card)]"
+          style={{ boxShadow: "var(--cf2-shadow-shell)" }}
+        >
           {/* min-h-0 aqui é o que permite telas como /atendimento terem scroll
               interno próprio (lista/conversa) em vez de esticar a página. */}
           <div
-            className="flex-1 overflow-y-auto min-h-0 cf2-hide-scrollbar"
+            className="cf2-workspace flex-1 min-h-0 overflow-y-auto"
             style={{
               backgroundColor: "var(--cf2-bg-canvas)",
               // Achado real 24/08: passar do limite do scroll (trackpad)
@@ -73,10 +78,6 @@ export default async function Crm2Layout({ children }: { children: React.ReactNo
               // com chrome escuro (Pré-vendas, Atendimento) — `contain`
               // trava o elástico dentro desta caixa em vez de vazar.
               overscrollBehavior: "contain",
-              // Grid de fundo do Figma (bg-grid-effect): linhas a cada 60px, opacity 50%.
-              backgroundImage:
-                "repeating-linear-gradient(to right, var(--cf2-border-grid) 0 1px, transparent 1px 60px), repeating-linear-gradient(to bottom, var(--cf2-border-grid) 0 1px, transparent 1px 60px)",
-              backgroundSize: "60px 60px",
             }}
           >
             {/* min-h-full (não h-full, achado 30/08): com h-full, páginas com
@@ -85,7 +86,7 @@ export default async function Crm2Layout({ children }: { children: React.ReactNo
                 do conteúdo, então o último item ficava colado no rodapé sem
                 respiro nenhum. min-h-full preenche a tela em páginas curtas
                 e cresce com o conteúdo nas longas, preservando o padding real. */}
-            <div className="p-6 flex flex-col gap-5 relative min-h-full">{children}</div>
+            <div className="cf2-p-pagina cf2-workspace-content relative flex min-h-full flex-col gap-5">{children}</div>
           </div>
         </main>
       </Cf2SidebarProvider>

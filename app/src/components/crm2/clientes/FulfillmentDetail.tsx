@@ -43,6 +43,8 @@ const WORKSTREAM_LABEL: Record<string, string> = {
   validacao_contratacao: "Validação da contratação", acessos: "Acessos", explicar_demonstrar: "Explicar/Demonstrar",
   primeira_ligacao: "Primeira ligação", primeiro_valor: "Primeiro valor", primeiro_valor_confirmado: "Primeiro valor confirmado",
   proximos_passos: "Próximos passos", branding: "Branding", ativacao_capacidade: "Ativação de capacidade",
+  abertura: "Abertura", comunicacao: "Comunicação com o cliente", materiais: "Materiais e configuração",
+  ambiente: "Ambiente White Label", dominio: "Domínio e DNS", go_live: "Go-live", handoff: "Handoff",
 };
 
 interface Formulario {
@@ -55,6 +57,14 @@ interface Formulario {
     ramais?: Record<string, unknown>[];
     ura?: { numerosAtendidos?: string[]; diasHorarioAtendimento?: string; opcoes?: { rotulo?: string; destinos?: string[] }[]; vozSelecionada?: string };
     outrasInformacoes?: string;
+    whiteLabel?: {
+      dominio?: string;
+      tecnicoNome?: string;
+      tecnicoEmail?: string;
+      faturamentoEmail?: string;
+      logo?: { url?: string; nomeOriginal?: string } | null;
+      favicon?: { url?: string; nomeOriginal?: string } | null;
+    };
   };
 }
 interface ProximaAcao { id: string; titulo: string; venceEm: string | null; usuarioId: string | null; usuarioNome: string | null; }
@@ -104,6 +114,25 @@ const ATIVIDADE_TIPO_LABEL: Record<string, string> = {
   responsavel_alterado: "Responsável alterado", implantacao_concluida: "Implantação concluída", onboarding_concluido: "Onboarding concluído",
 };
 const FAMILIA_LABEL: Record<string, string> = { CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label" };
+
+const WHITE_LABEL_TASK_GUIDANCE: Record<string, string> = {
+  "Iniciar implantação e confirmar responsável interno": "Confirme quem conduz a implantação e registre a data de início.",
+  "Revisar o escopo vendido e os contatos do cliente": "Confirme o que foi contratado, o decisor, o contato técnico e o e-mail de faturamento antes de falar com o cliente.",
+  "Fazer o primeiro contato de boas-vindas": "Use a mensagem padrão no WhatsApp ou e-mail e apresente-se como responsável pela implantação.",
+  "Apresentar as etapas e o prazo estimado da implantação": "Explique que primeiro coletamos materiais, depois configuramos o ambiente, DNS e QA antes da reunião de onboarding.",
+  "Enviar o formulário de materiais e configuração": "Abra o canal de atendimento pelo botão abaixo; a mensagem já leva o link individual do formulário.",
+  "Acompanhar o preenchimento do formulário pelo cliente": "Faça um follow-up se o formulário não for enviado e registre qualquer bloqueio do cliente.",
+  "Receber e validar materiais e informações do cliente": "Confira domínio, contatos, identidade visual e faturamento; deixe em revisão quando chegar.",
+  "Solicitar correções ou complementos, quando necessário": "Liste objetivamente o que falta e reenvie o mesmo link para correção.",
+  "Configurar ambiente White Label e identidade da marca": "Aplique domínio, logotipo, favicon e cores aprovadas no ambiente.",
+  "Enviar instruções de DNS/CNAME e acompanhar a configuração": "Passe os registros necessários e acompanhe até o cliente concluir a publicação.",
+  "Validar DNS, TLS e domínio de e-mail (SPF/DKIM quando aplicável)": "Teste resolução, certificado e autenticação de e-mail somente se o domínio for usado para envio.",
+  "Executar QA interno do ambiente": "Valide marca, navegação, fluxos críticos e permissões antes de envolver o cliente.",
+  "Agendar e conduzir a reunião de onboarding do ambiente": "Só agende após o QA interno: apresente o ambiente pronto, explique os acessos e registre as dúvidas do cliente.",
+  "Validar ambiente com o cliente e liberar acesso administrativo": "Durante ou após a reunião, colete o aceite e libere os administradores indicados.",
+  "Confirmar go-live do ambiente White Label": "Registre a data de entrada em operação e eventuais pendências pós-lançamento.",
+  "Concluir implantação e realizar handoff para Customer Success": "Somente depois do go-live: transfira contexto, contatos, decisões e pendências para Customer Success.",
+};
 // 5 estados pedidos no redesign (26/08) — achatados a partir dos 7 reais do
 // banco (IN_REVIEW/CORRECTION_REQUIRED/APPROVED nunca são gravados hoje,
 // nenhuma rota de revisão grava isso ainda — mapeamento honesto, não uma
@@ -557,7 +586,7 @@ function PabxWorkspace({ fulfillmentId, data, documentosLegado }: { fulfillmentI
                 )}
               </Cf2Card>
               <Cf2Card>
-                <div className="flex items-center justify-between mb-1"><CardTitulo icon={ListChecks} tint="#F59E0B" title="Ramais e URA" subtitle={`${(ramaisMaterializados ?? []).length} ramal(is)`} /><button onClick={() => setRamaisOpen(true)} className="text-[11px] font-bold" style={{ color: "var(--cf2-accent-border)" }}>Ver tudo →</button></div>
+                <div className="flex items-center justify-between mb-1"><CardTitulo icon={ListChecks} tint="var(--cf2-warning-text)" title="Ramais e URA" subtitle={`${(ramaisMaterializados ?? []).length} ramal(is)`} /><button onClick={() => setRamaisOpen(true)} className="text-[11px] font-bold" style={{ color: "var(--cf2-accent-border)" }}>Ver tudo →</button></div>
                 <p className="text-[12px]" style={{ color: "var(--cf2-text-secondary)" }}>Horário: {formulario?.respostas?.ura?.diasHorarioAtendimento || "—"} · {formulario?.respostas?.ura?.opcoes?.length ?? 0} opção(ões) de URA</p>
               </Cf2Card>
             </div>
@@ -589,7 +618,7 @@ function PabxWorkspace({ fulfillmentId, data, documentosLegado }: { fulfillmentI
                         {row.item ? <AssignOwnerControl entityType="fulfillment_item" entityId={row.item.id} currentOwnerId={row.item.responsavelId ?? fulfillment.responsavelId} usuarios={usuarios} onChanged={invalidar} /> : <span style={{ color: "var(--cf2-text-secondary)" }}>{row.avulsa!.usuarioNome || "—"}</span>}
                       </td>
                       <td className="py-2 px-3">
-                        {row.item ? <input type="date" defaultValue={toDateInputValue(row.item.dueDate)} onBlur={(e) => patchItem.mutate({ itemId: row.item!.id, body: { dueDate: e.target.value || null } })} className="text-[11px] rounded px-1.5 py-1 outline-none" style={{ border: "1px solid var(--cf2-border-default)" }} /> : <span style={{ color: "var(--cf2-text-secondary)" }}>{row.avulsa!.venceEm ? new Date(row.avulsa!.venceEm!).toLocaleDateString("pt-BR") : "—"}</span>}
+                        {row.item ? <input type="date" aria-label="Data" defaultValue={toDateInputValue(row.item.dueDate)} onBlur={(e) => patchItem.mutate({ itemId: row.item!.id, body: { dueDate: e.target.value || null } })} className="text-[11px] rounded px-1.5 py-1 outline-none" style={{ border: "1px solid var(--cf2-border-default)" }} /> : <span style={{ color: "var(--cf2-text-secondary)" }}>{row.avulsa!.venceEm ? new Date(row.avulsa!.venceEm!).toLocaleDateString("pt-BR") : "—"}</span>}
                       </td>
                       <td className="py-2 px-3">
                         {row.item ? (
@@ -672,7 +701,7 @@ function PabxWorkspace({ fulfillmentId, data, documentosLegado }: { fulfillmentI
       <Cf2Dialog open={notaOpen} onOpenChange={setNotaOpen}>
         <Cf2DialogContent>
           <Cf2DialogHeader><Cf2DialogTitle>Nova nota</Cf2DialogTitle></Cf2DialogHeader>
-          <textarea autoFocus value={notaTexto} onChange={(e) => setNotaTexto(e.target.value)} rows={4} className="w-full text-[13px] rounded-lg px-3 py-2 outline-none resize-none" style={{ border: "1px solid var(--cf2-border-default)" }} placeholder="Escreva a nota..." />
+          <textarea autoFocus value={notaTexto} onChange={(e) => setNotaTexto(e.target.value)} rows={4} className="w-full text-[13px] rounded-lg px-3 py-2 outline-none resize-none" style={{ border: "1px solid var(--cf2-border-default)" }} placeholder="Escreva a nota..." aria-label="Escreva a nota" />
           <button onClick={() => criarNota.mutate()} disabled={!notaTexto.trim() || criarNota.isPending} className="mt-3 text-[12px] font-bold px-3 py-2 rounded-lg" style={{ background: "var(--cf2-bg-inverse)", color: "#fff" }}>Salvar nota</button>
         </Cf2DialogContent>
       </Cf2Dialog>
@@ -728,7 +757,7 @@ function PabxWorkspace({ fulfillmentId, data, documentosLegado }: { fulfillmentI
       </Cf2Dialog>
 
       {preview && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center p-6 bg-black/60" onClick={() => setPreview(null)}>
+        <div role="dialog" aria-modal="true" className="fixed inset-0 z-[80] flex items-center justify-center p-6 bg-black/60" onClick={() => setPreview(null)}>
           <div className="relative max-w-3xl w-full max-h-full rounded-2xl overflow-hidden flex flex-col" style={{ background: "var(--cf2-bg-surface)" }} onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between p-3" style={{ borderBottom: "1px solid var(--cf2-border-default)" }}>
               <p className="text-[13px] font-semibold truncate" style={{ color: "var(--cf2-text-primary)" }}>{preview.nome}</p>
@@ -861,7 +890,7 @@ function NovaTarefaDialog({ open, onClose, workstreams, usuarios, onCriarCheckli
       <Cf2DialogContent>
         <Cf2DialogHeader><Cf2DialogTitle>Nova tarefa</Cf2DialogTitle></Cf2DialogHeader>
         <div className="flex flex-col gap-3">
-          <input autoFocus value={titulo} onChange={(e) => setTitulo(e.target.value)} placeholder="Título da tarefa" className="text-[13px] rounded-lg px-3 py-2 outline-none" style={{ border: "1px solid var(--cf2-border-default)" }} />
+          <input autoFocus value={titulo} onChange={(e) => setTitulo(e.target.value)} placeholder="Título da tarefa" aria-label="Título da tarefa" className="text-[13px] rounded-lg px-3 py-2 outline-none" style={{ border: "1px solid var(--cf2-border-default)" }} />
           <div className="flex gap-2">
             <button onClick={() => setDestino("avulsa")} className="flex-1 text-[12px] font-bold py-1.5 rounded-lg" style={{ background: destino === "avulsa" ? "var(--cf2-bg-inverse)" : "var(--cf2-bg-surface-muted)", color: destino === "avulsa" ? "#fff" : "var(--cf2-text-secondary)" }}>Avulsa</button>
             <button onClick={() => setDestino("checklist")} className="flex-1 text-[12px] font-bold py-1.5 rounded-lg" style={{ background: destino === "checklist" ? "var(--cf2-bg-inverse)" : "var(--cf2-bg-surface-muted)", color: destino === "checklist" ? "#fff" : "var(--cf2-text-secondary)" }}>Numa etapa do checklist</button>
@@ -875,7 +904,7 @@ function NovaTarefaDialog({ open, onClose, workstreams, usuarios, onCriarCheckli
             <option value="">Sem responsável</option>{usuarios.map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}
           </select>
           <div className="grid grid-cols-2 gap-2">
-            <input type="date" value={prazo} onChange={(e) => setPrazo(e.target.value)} className="text-[12px] rounded-lg px-3 py-2 outline-none" style={{ border: "1px solid var(--cf2-border-default)" }} />
+            <input type="date" aria-label="Data" value={prazo} onChange={(e) => setPrazo(e.target.value)} className="text-[12px] rounded-lg px-3 py-2 outline-none" style={{ border: "1px solid var(--cf2-border-default)" }} />
             <select value={prioridade} onChange={(e) => setPrioridade(e.target.value)} className="text-[12px] rounded-lg px-3 py-2 outline-none" style={{ border: "1px solid var(--cf2-border-default)" }}>
               <option value="">Prioridade —</option>{Object.entries(PRIORIDADE_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
             </select>
@@ -933,7 +962,7 @@ function StatusPillSelect({ status, blockerType, onChange }: { status: string; b
           if (nova.startsWith("BLOCKED_")) onChange("BLOCKED", nova.replace("BLOCKED_", ""));
           else onChange(nova, null);
         }}
-        className="appearance-none text-[11px] font-bold pl-3 pr-6 py-1.5 rounded-full cursor-pointer outline-none"
+        className="cf2-select-custom appearance-none text-[11px] font-bold pl-3 pr-6 py-1.5 rounded-full cursor-pointer outline-none"
         style={{ background: cor.bg, color: cor.text }}
       >
         {Object.entries(STATUS_ETAPA_LABEL).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
@@ -967,11 +996,12 @@ function ChecklistLista({
             {isMilestone && <Star className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--cf2-accent)" }} />}
             <button onClick={() => setItemSelecionado(item)} className="flex-1 flex flex-col gap-1 text-left">
               <span className="text-[13px]" style={{ color: item.status === "DONE" ? "var(--cf2-text-tertiary)" : "var(--cf2-text-primary)", textDecoration: item.status === "DONE" ? "line-through" : "none" }}>{item.titulo}</span>
+              {WHITE_LABEL_TASK_GUIDANCE[item.titulo] && <span className="text-[11px] leading-relaxed" style={{ color: "var(--cf2-text-tertiary)" }}>{WHITE_LABEL_TASK_GUIDANCE[item.titulo]}</span>}
               {(estagios.length > 0 || isMilestone || isHandoff) && (
                 <div className="flex items-center gap-1 flex-wrap">
                   {estagios.map((e) => <span key={e} className="text-[9px] px-1.5 py-0.5 rounded font-bold" style={{ background: "var(--cf2-bg-surface)", color: "var(--cf2-text-secondary)", border: "1px solid var(--cf2-border-default)" }}>{ESTAGIO_LABEL[e] || e}</span>)}
                   {isMilestone && <span className="text-[9px] px-1.5 py-0.5 rounded font-bold" style={{ background: "#8e27ef18", color: "#8e27ef" }}>Primeiro valor · marco manual</span>}
-                  {isHandoff && <span className="text-[9px] px-1.5 py-0.5 rounded font-bold inline-flex items-center gap-1" style={{ background: "#3b82f618", color: "#3b82f6" }}><ArrowRightLeft className="w-2.5 h-2.5" /> Handoff CS</span>}
+                  {isHandoff && <span className="text-[9px] px-1.5 py-0.5 rounded font-bold inline-flex items-center gap-1" style={{ background: "var(--cf2-informativo-bg)", color: "var(--cf2-informativo-fg)" }}><ArrowRightLeft className="w-2.5 h-2.5" /> Handoff CS</span>}
                 </div>
               )}
             </button>
@@ -988,13 +1018,36 @@ function ChecklistLista({
   );
 }
 
+function TemplateContato({ titulo, texto, href, acao }: { titulo: string; texto: string; href: string | null; acao: string }) {
+  return <div className="rounded-xl p-3" style={{ background: "var(--cf2-bg-surface-muted)" }}>
+    <p className="text-[12px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>{titulo}</p>
+    <p className="mt-1.5 line-clamp-4 whitespace-pre-line text-[11px] leading-relaxed" style={{ color: "var(--cf2-text-secondary)" }}>{texto}</p>
+    {href ? <Link href={href} className="inline-flex mt-3 text-[11px] font-bold px-2.5 py-1.5 rounded-lg" style={{ background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" }}>{acao}</Link> : <p className="mt-3 text-[11px]" style={{ color: "var(--cf2-danger-text)" }}>O contato do cliente não está disponível para este canal.</p>}
+  </div>;
+}
+
 function OnboardingLegacyView({ fulfillmentId, data, documentosLegado }: { fulfillmentId: string; data: FulfillmentData; documentosLegado: AnexoLegado[] }) {
   const qc = useQueryClient();
   const [itemSelecionado, setItemSelecionado] = useState<Item | null>(null);
   const [aba, setAba] = useState<string>("visao-geral");
   const { byId: usuariosById } = useOrgUsuarios();
 
-  const { fulfillment, itens, empresaId, empresaNome, empresaLogoUrl, atividadesEmpresa } = data;
+  const { fulfillment, itens, empresaId, empresaNome, empresaLogoUrl, atividadesEmpresa, formulario, publicToken, leadId, leadTelefone, leadEmail } = data;
+  const isWhiteLabel = fulfillment.serviceFamily === "WHITE_LABEL";
+  const jornadaTitulo = isWhiteLabel ? "Implantação White Label" : "Onboarding";
+  const jornadaHref = isWhiteLabel ? "/clientes/implantacao?familia=WHITE_LABEL" : "/clientes/onboarding";
+  const linkFormulario = isWhiteLabel && publicToken ? `${typeof window !== "undefined" ? window.location.origin : ""}/impl-white-label/${publicToken}` : null;
+  const primeiroNome = (empresaNome || "").split(" ")[0] || "tudo bem";
+  const nomeResponsavel = fulfillment.responsavelNome || "[seu nome]";
+  const mensagemWhatsApp = linkFormulario ? `Olá, ${primeiroNome}! Tudo bem?\n\nEu sou ${nomeResponsavel}, da Callface, e vou acompanhar sua implantação White Label por aqui.\n\nPara começarmos, preciso que você preencha as informações de domínio, identidade visual, contato técnico e faturamento neste formulário: ${linkFormulario}\n\nDepois que recebermos os dados, validamos o material, configuramos o ambiente e te orientamos sobre DNS. No final, marcamos uma reunião para apresentar o ambiente pronto.\n\nQualquer dúvida, pode me chamar por aqui.` : "";
+  const mensagemEmail = linkFormulario ? `Olá, ${primeiroNome}.\n\nTudo bem? Eu sou ${nomeResponsavel}, da Callface, e serei o responsável por acompanhar sua implantação White Label.\n\nPara iniciarmos a configuração do ambiente, peço que preencha as informações de domínio, identidade visual, contato técnico e faturamento no formulário abaixo:\n\n${linkFormulario}\n\nDepois que recebermos os dados, validaremos o material, configuraremos o ambiente e enviaremos as orientações de DNS quando necessário. Ao final dessa etapa, agendaremos uma reunião para apresentar o ambiente pronto e liberar os acessos administrativos.\n\nFico à disposição caso precise de ajuda.\n\nAtenciosamente,\n${nomeResponsavel}\nCallface` : "";
+  const atendimentoHref = (canal: "whatsapp" | "email", texto: string) => {
+    if (!leadId) return null;
+    const params = new URLSearchParams({ leadId, canal, texto });
+    if (canal === "whatsapp" && leadTelefone) params.set("telefone", digitsForDialer(leadTelefone));
+    if (canal === "email" && leadEmail) params.set("email", leadEmail);
+    return `/atendimento?${params.toString()}`;
+  };
 
   const toggleItem = useMutation({
     mutationFn: async ({ itemId, status, blockerType }: { itemId: string; status: string; blockerType?: string | null }) => {
@@ -1027,12 +1080,12 @@ function OnboardingLegacyView({ fulfillmentId, data, documentosLegado }: { fulfi
   return (
     <div className="flex flex-col gap-5 pb-8">
       <div className="flex items-center gap-1.5 text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>
-        <Link href="/clientes/onboarding" className="hover:underline">Onboarding</Link>
+        <Link href={jornadaHref} className="hover:underline">{jornadaTitulo}</Link>
         <ChevronRight className="w-3 h-3" />
         <span style={{ color: "var(--cf2-text-primary)" }}>{empresaNome || "—"}</span>
       </div>
       <div className="flex items-center gap-3">
-        <h1 className="text-[22px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Onboarding</h1>
+        <h1 className="text-[22px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>{jornadaTitulo}</h1>
         <span className="px-2.5 py-1 rounded-full text-[11px] font-bold" style={{ background: fulfillment.status === "COMPLETED" ? "#effaf2" : fulfillment.status.startsWith("BLOCKED") ? "#fff1f2" : "#eef9e8", color: fulfillment.status === "COMPLETED" ? "var(--cf2-success-text)" : fulfillment.status.startsWith("BLOCKED") ? "#dc2626" : "#4d8a1d" }}>
           {STATUS_MACRO_LABEL[fulfillment.status] || fulfillment.status}
         </span>
@@ -1071,9 +1124,21 @@ function OnboardingLegacyView({ fulfillmentId, data, documentosLegado }: { fulfi
       </div>
 
       {aba === "visao-geral" && (
-        <div className="p-5 rounded-2xl" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
-          <p className="text-[14px] font-bold mb-3" style={{ color: "var(--cf2-text-primary)" }}>Checklist do onboarding</p>
-          <ChecklistLista itens={itens.slice(0, 8)} toggleItem={toggleItem} setItemSelecionado={setItemSelecionado} usuarios={Array.from(usuariosById.values())} fulfillmentResponsavelId={fulfillment.responsavelId} fulfillmentResponsavelNome={fulfillment.responsavelNome} onOwnerChanged={() => qc.invalidateQueries({ queryKey: ["cf2-fulfillment", fulfillmentId] })} />
+        <div className="flex flex-col gap-5">
+          {isWhiteLabel && <div className="p-5 rounded-2xl" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div><p className="text-[14px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Contato e formulário do cliente</p><p className="text-[12px] mt-1" style={{ color: "var(--cf2-text-secondary)" }}>Escolha o canal: a mensagem abre pronta no Atendimento para revisão antes do envio.</p></div>
+              <span className="text-[11px] font-bold px-2 py-1 rounded-full" style={{ background: formulario?.status === "SUBMITTED" ? "var(--cf2-success-bg)" : "var(--cf2-bg-surface-muted)", color: formulario?.status === "SUBMITTED" ? "var(--cf2-success-text)" : "var(--cf2-text-secondary)" }}>{formulario?.status === "SUBMITTED" ? "Formulário recebido" : "Aguardando envio do cliente"}</span>
+            </div>
+            {linkFormulario ? <>
+              <div className="mt-4 flex items-center gap-2 rounded-lg p-2.5" style={{ background: "var(--cf2-bg-surface-muted)" }}><span className="flex-1 truncate text-[12px]" style={{ color: "var(--cf2-text-secondary)" }}>{linkFormulario}</span><a href={linkFormulario} target="_blank" rel="noreferrer" className="text-[11px] font-bold px-2.5 py-1.5 rounded-lg shrink-0" style={{ background: "var(--cf2-bg-surface)", color: "var(--cf2-accent-border)", border: "1px solid var(--cf2-border-default)" }}>Abrir formulário</a></div>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2"><TemplateContato titulo="WhatsApp" texto={mensagemWhatsApp} href={atendimentoHref("whatsapp", mensagemWhatsApp)} acao="Enviar pelo WhatsApp" /><TemplateContato titulo="E-mail" texto={mensagemEmail} href={atendimentoHref("email", mensagemEmail)} acao="Enviar por e-mail" /></div>
+            </> : <p className="mt-4 text-[12px]" style={{ color: "var(--cf2-danger-text)" }}>O link público ainda não foi gerado para este projeto.</p>}
+          </div>}
+          <div className="p-5 rounded-2xl" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
+            <p className="text-[14px] font-bold mb-3" style={{ color: "var(--cf2-text-primary)" }}>{isWhiteLabel ? "Próximas etapas da implantação" : "Checklist do onboarding"}</p>
+            <ChecklistLista itens={itens.slice(0, 8)} toggleItem={toggleItem} setItemSelecionado={setItemSelecionado} usuarios={Array.from(usuariosById.values())} fulfillmentResponsavelId={fulfillment.responsavelId} fulfillmentResponsavelNome={fulfillment.responsavelNome} onOwnerChanged={() => qc.invalidateQueries({ queryKey: ["cf2-fulfillment", fulfillmentId] })} />
+          </div>
         </div>
       )}
 

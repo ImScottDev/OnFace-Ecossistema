@@ -44,7 +44,12 @@ const healthServer = http.createServer((req, res) => {
     res.writeHead(404).end();
   }
 });
-const healthPort = parseInt(process.env.WORKER_HEALTH_PORT || "3001");
+// 3002 é a porta que os três docker-compose (local, dev, prod) já testam no
+// healthcheck desde sempre. O default era 3001, então o container do worker
+// nascia unhealthy em todo deploy e a queda do processo nunca era detectável
+// (achado da auditoria de 14/09). Alinhado aqui e declarado explicitamente nos
+// composes, pra não depender de default nenhum.
+const healthPort = parseInt(process.env.WORKER_HEALTH_PORT || "3002");
 healthServer.listen(healthPort, "0.0.0.0", () => {
   console.log(`[Worker] Health check listening on :${healthPort}`);
 });
@@ -2263,6 +2268,29 @@ const whatsappIncomingWorker = new Worker(
       statusAt: new Date(timestamp * 1000),
     }).returning({ id: whatsappMensagens.id });
 
+    // O canal atualiza o estado das cadências antes de qualquer resposta da IA.
+    // Se houver um grafo publicado para mensagem recebida, ele assume o turno;
+    // caso contrário o runtime direto/legado abaixo continua funcionando.
+    let roteadoPorAutomacao = false;
+    try {
+      const recebidaEm = new Date(timestamp * 1000);
+      const [{ registrarRespostaEmCadencias }, { publicarEvento }, { dispatchAutomationEvent }, { eventOutbox }] = await Promise.all([
+        import("../lib/cadencia/cadence-engine"), import("../lib/events/outbox"), import("../lib/automations/event-dispatcher"), import("../lib/db/schema"),
+      ]);
+      await registrarRespostaEmCadencias({ organizacaoId, contatoId: contato.id, leadId: contato.leadId, recebidaEm });
+      const eventId = await publicarEvento({
+        organizacaoId, eventType: "ConversationMessageReceived", aggregateType: "contato", aggregateId: contato.id,
+        payload: { contatoId: contato.id, leadId: contato.leadId ?? null, messageId: inboundMsgRow.id, channel: "whatsapp", messageType: msgType },
+        idempotencyKey: `whatsapp:${inboundMsgRow.id}:received`,
+      });
+      if (eventId) {
+        const [event] = await db.select().from(eventOutbox).where(eq(eventOutbox.id, eventId)).limit(1);
+        if (event) roteadoPorAutomacao = (await dispatchAutomationEvent(event)).matched > 0;
+      }
+    } catch (err) {
+      console.error("[Automation] falha ao rotear mensagem recebida; usando runtime direto:", err);
+    }
+
     // F2/dual-write (Communication Intelligence) — best-effort, nunca
     // bloqueia o processamento real da mensagem recebida.
     try {
@@ -2353,7 +2381,7 @@ const whatsappIncomingWorker = new Worker(
     // Respond to text messages and media with captions; for media without text,
     // describe the type so the AI can acknowledge it
     const aiSdrTypes = ["text", "image", "audio", "video", "document", "sticker", "location", "contact"];
-    if (aiSdrTypes.includes(msgType)) {
+    if (!roteadoPorAutomacao && aiSdrTypes.includes(msgType)) {
       const tipoLabel: Record<string, string> = {
         image: "Imagem recebida", audio: "Audio recebido", video: "Video recebido",
         document: "Documento recebido", sticker: "Sticker recebido",
@@ -2870,6 +2898,21 @@ const slaWorker = new Worker(
       console.log(`[FollowUp] ${criadas} follow-ups notificados (${staleDeals.length} propostas paradas)`);
     }
 
+    // CS sweep (08/09) — marcos vencidos viram tarefa, riscos são
+    // reavaliados contra o dado real, janelas de renovação abrem. Tudo
+    // idempotente: rodar de hora em hora produz o mesmo estado que rodar
+    // uma vez. Ver lib/cs/sweep.ts.
+    if (job.name === "cs-sweep") {
+      const { rodarSweepCsTodasOrgs } = await import("../lib/cs/sweep");
+      const resultados = await rodarSweepCsTodasOrgs();
+      for (const r of resultados) {
+        const mexeu = r.tarefasDeMarco + r.tarefasDeRisco + r.tarefasDeRenovacao + r.riscosAbertos + r.riscosResolvidos + r.renovacoesCriadas;
+        if (mexeu > 0) {
+          console.log(`[cs-sweep] org ${r.organizacaoId}: ${r.tarefasDeMarco} tarefa(s) de marco, ${r.tarefasDeRisco} de risco, ${r.tarefasDeRenovacao} de renovação; riscos +${r.riscosAbertos}/~${r.riscosAtualizados}/-${r.riscosResolvidos}; renovações +${r.renovacoesCriadas} (${r.renovacoesAbertas} abertas)`);
+        }
+      }
+    }
+
     if (job.name === "alerta-renovacao") {
       console.log("[Renovacao] Checking contract renewals...");
       const { contratos } = await import("../lib/db/schema");
@@ -3051,11 +3094,15 @@ const slaWorker = new Worker(
       // Eventos/Event Outbox: F0 criou a tabela, mas nada publicava nem
       // consumia até 09/08 (achado da revisão externa). Este sweep é o lado
       // real do consumidor — ver lib/events/{outbox,consumer}.ts, ADR-EXEC-016.
-      const { processarEventosPendentes } = await import("../lib/events/consumer");
+      const { processarEventosPendentes, alertarDeadLetter } = await import("../lib/events/consumer");
       const { processados, falhados } = await processarEventosPendentes();
       if (processados > 0 || falhados > 0) {
         console.log(`[F0/event-outbox] ${processados} processados, ${falhados} falhados`);
       }
+      // Dead-letter deixa de ser invisível: alerta uma vez por dia por org
+      // (audit_log serve de trava de repetição). Nunca reprocessa sozinho —
+      // erro permanente viraria loop de retry.
+      await alertarDeadLetter().catch((e) => console.error("[F0/event-outbox] falha ao alertar dead-letter (best-effort):", e));
     }
   },
   { connection, concurrency: 1 }
@@ -3685,33 +3732,47 @@ const enrichmentWorker = new Worker(
   { connection, concurrency: 1 }
 );
 
-// Clean stale repeat/scheduler keys from Redis on startup
-async function cleanStaleRepeatKeys() {
-  const cleanQueue = new Queue("_cleanup", { connection });
-  const redis = await cleanQueue.client;
+/**
+ * Remove APENAS os schedulers que não existem mais nesta versão do worker.
+ *
+ * Substitui o `SCAN bull:*:repeat:* + DEL` que rodava no startup (achado da
+ * auditoria de 14/09): aquele varria as chaves de TODAS as filas e apagava
+ * também a chave do job repetido que estava em voo naquele instante — o job
+ * então falhava ao finalizar com "Missing key for job repeat:<id>.
+ * moveToFinished". Reproduzido em DEV: 1.723 chaves apagadas e o
+ * `email-sync-trigger` quebrando no mesmo startup.
+ *
+ * `upsertJobScheduler` já é idempotente na BullMQ 5, então não existe motivo
+ * pra limpar antes: só o que sobrou de uma versão anterior precisa sair, e
+ * isso se faz pela API oficial, depois dos upserts.
+ */
+async function removerSchedulersObsoletos(queue: Queue, chavesAtuais: string[]): Promise<void> {
   try {
-    let cursor = "0";
-    let deleted = 0;
-    do {
-      const result = await redis.scan(cursor, "MATCH", "bull:*:repeat:*", "COUNT", 500);
-      cursor = typeof result[0] === "string" ? result[0] : String(result[0]);
-      const keys = result[1] as string[];
-      if (keys.length > 0) {
-        await redis.del(...keys);
-        deleted += keys.length;
+    const existentes = await queue.getJobSchedulers(0, -1);
+    const atuais = new Set(chavesAtuais);
+    for (const s of existentes) {
+      if (s?.key && !atuais.has(s.key)) {
+        await queue.removeJobScheduler(s.key);
+        console.log(`[Worker] Scheduler obsoleto removido: ${queue.name}/${s.key}`);
       }
-    } while (cursor !== "0");
-    if (deleted > 0) console.log(`[Worker] Cleaned ${deleted} stale repeat keys from Redis`);
-  } finally {
-    await cleanQueue.close();
+    }
+  } catch (err) {
+    // Limpeza é higiene, não pode impedir o worker de subir.
+    console.error(`[Worker] falha ao limpar schedulers obsoletos de ${queue.name} (best-effort):`, err);
   }
 }
 
+/** Chaves dos schedulers da fila `scheduled-jobs` nesta versão — fonte da limpeza acima. */
+const SCHEDULERS_JOBS_AGENDADOS = [
+  "sla-check", "sdr-followup-escalation", "ai-sdr-outreach", "ai-sdr-retry",
+  "ai-sdr-meeting-confirmation", "stripe-sync", "reconcile-pagamentos", "expirar-propostas",
+  "rd-criativo-sync", "outlook-reuniao-sync", "follow-up-proposta", "cs-sweep",
+  "alerta-renovacao", "reativar-lead-perdido", "check-whatsapp-connection", "snapshot-diario",
+  "cadence-sweep", "event-outbox-sweep", "lembrete-reuniao-30min",
+];
+
 // Schedule recurring jobs
 async function setupScheduledJobs() {
-  // Clean stale keys first to prevent Redis memory bloat
-  await cleanStaleRepeatKeys();
-
   await scheduledQueue.upsertJobScheduler("sla-check", { every: 30 * 60 * 1000 }, { name: "check-sla" });
   await scheduledQueue.upsertJobScheduler("sdr-followup-escalation", { every: 15 * 60 * 1000 }, { name: "sdr-followup-escalation" });
   await scheduledQueue.upsertJobScheduler("ai-sdr-outreach", { every: 5 * 60 * 1000 }, { name: "ai-sdr-outreach" });
@@ -3724,6 +3785,7 @@ async function setupScheduledJobs() {
   await scheduledQueue.upsertJobScheduler("rd-criativo-sync", { every: 6 * 60 * 60 * 1000 }, { name: "rd-criativo-sync" });
   await scheduledQueue.upsertJobScheduler("outlook-reuniao-sync", { every: 15 * 60 * 1000 }, { name: "outlook-reuniao-sync" });
   await scheduledQueue.upsertJobScheduler("follow-up-proposta", { every: 60 * 60 * 1000 }, { name: "follow-up-proposta" });
+  await scheduledQueue.upsertJobScheduler("cs-sweep", { every: 60 * 60 * 1000 }, { name: "cs-sweep" });
   await scheduledQueue.upsertJobScheduler("alerta-renovacao", { every: 24 * 60 * 60 * 1000 }, { name: "alerta-renovacao" });
   await scheduledQueue.upsertJobScheduler("reativar-lead-perdido", { every: 24 * 60 * 60 * 1000 }, { name: "reativar-lead-perdido" });
   await scheduledQueue.upsertJobScheduler("check-whatsapp-connection", { every: 5 * 60 * 1000 }, { name: "check-whatsapp-connection" });
@@ -3736,8 +3798,14 @@ async function setupScheduledJobs() {
   // Email sequences: check every minute
   const seqQueue = new Queue("email-sequence", { connection });
   await seqQueue.upsertJobScheduler("check-sequences", { every: 60 * 1000 }, { name: "check-sequences" });
+
+  // Só DEPOIS de todos os upserts: tira o que sobrou de versões anteriores.
+  await removerSchedulersObsoletos(scheduledQueue, SCHEDULERS_JOBS_AGENDADOS);
+  await removerSchedulersObsoletos(emailSyncQueue, ["email-sync-trigger"]);
+  await removerSchedulersObsoletos(seqQueue, ["check-sequences"]);
+
   await seqQueue.close();
-  console.log("[Worker] Scheduled jobs configured (including email sync + sequences)");
+  console.log(`[Worker] Scheduled jobs configured (${SCHEDULERS_JOBS_AGENDADOS.length} em scheduled-jobs + email sync + sequences)`);
 }
 
 setupScheduledJobs().catch(console.error);

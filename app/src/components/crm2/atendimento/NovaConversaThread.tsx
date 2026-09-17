@@ -16,14 +16,15 @@ import { iniciais } from "./types";
  * não fabrica um `contatos` vazio por fora dessa regra.
  */
 export function Cf2NovaConversaThread({
-  leadId, leadNome, leadTelefone, onSent,
+  leadId, leadNome, leadTelefone, onSent, textoInicial,
 }: {
   leadId: string;
   leadNome: string;
   leadTelefone: string | null;
   onSent: (contatoId: string) => void;
+  textoInicial?: string;
 }) {
-  const [texto, setTexto] = useState("");
+  const [texto, setTexto] = useState(textoInicial ?? "");
 
   const enviar = useMutation({
     mutationFn: async () => {

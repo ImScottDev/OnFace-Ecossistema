@@ -135,8 +135,8 @@ export function Cf2PropostaDetalhe() {
     onError: () => toast.error("Erro ao excluir proposta"),
   });
 
-  if (isLoading) return <div className="page-scroll"><p className="text-sm" style={{ color: "var(--cf2-text-tertiary)" }}>Carregando proposta...</p></div>;
-  if (!proposta) return <div className="page-scroll"><p className="text-sm" style={{ color: "var(--cf2-danger-text)" }}>Proposta não encontrada.</p></div>;
+  if (isLoading) return <div className=""><p className="text-sm" style={{ color: "var(--cf2-text-tertiary)" }}>Carregando proposta...</p></div>;
+  if (!proposta) return <div className=""><p className="text-sm" style={{ color: "var(--cf2-danger-text)" }}>Proposta não encontrada.</p></div>;
 
   const moedaInfo = getMoedaInfo(proposta.moeda);
   const fmt = (v: string) => formatCurrencyValue(parseFloat(v || "0"), proposta.moeda);
@@ -152,7 +152,7 @@ export function Cf2PropostaDetalhe() {
   const cBadge = checkoutStatusBadge(proposta.checkoutStatus);
 
   return (
-    <div className="page-scroll space-y-5">
+    <div className="space-y-5">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-3">
           {/* Bug real corrigido 25/08: "voltar" sempre ia pra lista de

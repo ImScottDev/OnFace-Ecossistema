@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { db } from "@/lib/db";
-import { negocios, leads, empresas, usuarios, propostas, contratos, propostaGrupoComercial, tarefas } from "@/lib/db/schema";
+import { negocios, leads, empresas, usuarios, propostas, contratos, propostaGrupoComercial, tarefas, labels, negocioLabels } from "@/lib/db/schema";
 import { eq, and, sql, inArray, desc } from "drizzle-orm";
 import { getCtx } from "../compat.js";
 import { getPipelineAtual, getWinRate, getTicketMedio, PIPELINE_ATIVO_STATUSES } from "@/lib/relatorios/comercial";
@@ -61,7 +61,7 @@ app.get("/pipeline-crm2/board", async (c) => {
     .limit(3000);
 
   const negocioIds = rows.map((n) => n.id);
-  const [todasPropostas, todosContratos, todosGrupos, todasTarefas] = negocioIds.length === 0 ? [[], [], [], []] : await Promise.all([
+  const [todasPropostas, todosContratos, todosGrupos, todasTarefas, todasLabels] = negocioIds.length === 0 ? [[], [], [], [], []] : await Promise.all([
     db
       .select({ negocioId: propostas.negocioId, numero: propostas.numero, status: propostas.status, totalGeral: propostas.totalGeral, primeiraVisualizacaoEm: propostas.primeiraVisualizacaoEm, clienteRespondeuEm: propostas.clienteRespondeuEm, dataValidade: propostas.dataValidade, createdAt: propostas.createdAt })
       .from(propostas)
@@ -80,6 +80,14 @@ app.get("/pipeline-crm2/board", async (c) => {
       .from(tarefas)
       .where(and(inArray(tarefas.negocioId, negocioIds), eq(tarefas.concluida, false)))
       .orderBy(tarefas.dataVencimento),
+    // Tags (01/09, Frente 2A) — batch, mesmo padrão dos outros 4
+    // enriquecimentos: uma query pro lote todo, reduzida em JS. Sem isso o
+    // card e a ação em massa não têm como mostrar tag nenhuma.
+    db
+      .select({ negocioId: negocioLabels.negocioId, id: labels.id, nome: labels.nome, cor: labels.cor })
+      .from(negocioLabels)
+      .innerJoin(labels, eq(labels.id, negocioLabels.labelId))
+      .where(inArray(negocioLabels.negocioId, negocioIds)),
   ]);
 
   const propostaPorNegocio = new Map<string, typeof todasPropostas[number]>();
@@ -91,6 +99,13 @@ app.get("/pipeline-crm2/board", async (c) => {
   const proximaTarefaPorNegocio = new Map<string, typeof todasTarefas[number]>();
   for (const t of todasTarefas) {
     if (t.negocioId && !proximaTarefaPorNegocio.has(t.negocioId)) proximaTarefaPorNegocio.set(t.negocioId, t); // já ordenado por dataVencimento asc
+  }
+  const labelsPorNegocio = new Map<string, { id: string; nome: string; cor: string }[]>();
+  for (const l of todasLabels) {
+    if (!l.negocioId) continue;
+    const atual = labelsPorNegocio.get(l.negocioId) || [];
+    atual.push({ id: l.id, nome: l.nome, cor: l.cor });
+    labelsPorNegocio.set(l.negocioId, atual);
   }
   const bundleCount = new Map<string, number>();
   for (const n of rows) {
@@ -109,6 +124,7 @@ app.get("/pipeline-crm2/board", async (c) => {
         pagamentoPendente: pagamentoPendentePorNegocio.has(n.id),
         proximaAcao: proximaTarefa ? { titulo: proximaTarefa.titulo, dataVencimento: proximaTarefa.dataVencimento } : null,
         oportunidadesRelacionadas: n.bundleId ? (bundleCount.get(n.bundleId) || 1) - 1 : 0,
+        labels: labelsPorNegocio.get(n.id) || [],
       };
     }),
   });

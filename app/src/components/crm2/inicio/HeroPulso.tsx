@@ -3,7 +3,7 @@ import {
   Plus, Flag, CalendarDays, Inbox, Sparkles, ArrowUp, ArrowDown,
   Wallet, Layers, Building2, Rocket, Server,
 } from "lucide-react";
-import { iniciaisEmpresa, corAvatarEmpresa } from "@/components/crm2/shared/avatar";
+import { iniciaisEmpresa, corAvatarEmpresa, TEXTO_SOBRE_AVATAR } from "@/components/crm2/shared/avatar";
 
 /**
  * Hero da Home — saudação + "Pulso da operação" (Figma 559:2304).
@@ -31,7 +31,7 @@ const ICONES = {
   rocket: Rocket, server: Server, inbox: Inbox,
 } as const;
 
-const acaoBase = "flex items-center justify-center gap-2 h-10 rounded-full text-[14px] whitespace-nowrap";
+const acaoBase = "flex h-10 items-center justify-center gap-2 rounded-[var(--radius-control)] text-[14px] whitespace-nowrap cf2-transicao";
 
 export function Cf2HeroPulso({
   eyebrow, saudacao, subtitulo, kpiHero, kpis, equipe,
@@ -49,6 +49,7 @@ export function Cf2HeroPulso({
     <div className="relative">
       <div
         className="flex flex-col gap-4 px-4 sm:px-6 pt-5 sm:pt-6 pb-6"
+        data-cf2-superficie="escura"
         style={{ background: "var(--cf2-home-hero-bg)", borderRadius: "32px" }}
       >
         {/* ── Saudação + ações ── */}
@@ -115,28 +116,28 @@ export function Cf2HeroPulso({
             <Sparkles className="w-3.5 h-3.5" style={{ color: "var(--cf2-home-text-muted)" }} />
           </span>
           <p className="text-[15px]" style={{ color: "var(--cf2-home-text-strong)", letterSpacing: "-0.61px" }}>Pulso da operação</p>
-          <p className="text-[12px] truncate" style={{ color: "var(--cf2-home-text-muted)" }}>· Visão da empresa inteira · clique para abrir</p>
+          <p className="hidden sm:block text-[12px] truncate" style={{ color: "var(--cf2-home-text-muted)" }}>· Visão da empresa inteira · clique para abrir</p>
         </div>
 
-        {/* ── KPIs ── No desktop é a faixa única do desenho (hero fixo +
-            5 compactos); abaixo de xl vira grade, senão os 6 cards ficariam
-            espremidos a ponto de cortar os valores. ── */}
-        <div className="flex flex-col xl:flex-row items-stretch gap-3">
+        {/* A leitura financeira lidera. Os sinais restantes são um rail de
+            comparação, não seis mini-cards concorrendo pelo mesmo peso. */}
+        <div className="flex flex-col xl:flex-row xl:items-stretch">
           <Link
             href={kpiHero.href}
-            className="flex flex-col gap-1 shrink-0 w-full xl:w-[350px] pt-[15px] px-5 sm:px-6 pb-5 sm:pb-6 rounded-[28px] transition-transform hover:-translate-y-0.5"
-            style={{ background: "var(--cf2-home-kpi-bg)" }}
+            className="group flex w-full shrink-0 flex-col gap-1 px-1 pb-5 pt-2 sm:px-2 xl:w-[350px] xl:border-r xl:px-5 xl:pb-2 xl:pt-2 cf2-transicao"
+            data-cf2-superficie="escura"
+            style={{ borderColor: "var(--cf2-home-dark-overlay)" }}
           >
             <div className="flex items-center justify-between">
               <span
-                className="flex items-center justify-center w-9 h-9 rounded-[14px]"
+                className="flex h-9 w-9 items-center justify-center rounded-[var(--radius-control)]"
                 style={{ background: "var(--cf2-home-dark-overlay)" }}
               >
                 <IconeHero className="w-4 h-4" style={{ color: "var(--cf2-home-lime-soft)" }} />
               </span>
               {kpiHero.tendencia && (
                 <span
-                  className="flex items-center gap-1 py-1 px-2.5 rounded-[20px] text-[12px] font-medium"
+                  className="flex items-center gap-1 rounded-[var(--radius-chip)] px-2.5 py-1 text-[12px] font-medium"
                   style={{ background: "rgba(182,240,74,0.1)", color: "var(--cf2-home-lime-soft)" }}
                 >
                   {kpiHero.tendencia.direcao === "up" ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />}
@@ -147,7 +148,7 @@ export function Cf2HeroPulso({
             <div className="flex flex-col gap-1.5 mt-1">
               <p className="text-[10px] uppercase" style={{ color: "var(--cf2-home-text-muted)", letterSpacing: "0.62px" }}>{kpiHero.label}</p>
               <p
-                className="text-[38px] font-semibold leading-none"
+                className="text-[38px] font-semibold leading-none sm:text-[42px]"
                 style={{ color: "var(--cf2-home-text-strong)", letterSpacing: "-1.2px", fontFamily: "var(--cf2-font-heading)" }}
               >
                 {kpiHero.valor}
@@ -156,7 +157,7 @@ export function Cf2HeroPulso({
             </div>
           </Link>
 
-          <div className="grid grid-cols-2 md:grid-cols-3 xl:flex xl:flex-1 gap-3 min-w-0">
+          <div className="grid min-w-0 grid-cols-2 border-t pt-2 sm:grid-cols-3 xl:flex xl:flex-1 xl:border-t-0 xl:pt-0" style={{ borderColor: "var(--cf2-home-dark-overlay)" }}>
             {kpis.map((k) => {
               const Icone = ICONES[k.icone];
               const tomCor = k.tendencia?.tom === "negativo" ? "var(--cf2-home-danger)" : "var(--cf2-home-positive)";
@@ -164,12 +165,13 @@ export function Cf2HeroPulso({
                 <Link
                   key={k.label}
                   href={k.href}
-                  className="flex flex-col gap-2.5 xl:flex-1 min-w-0 p-4 rounded-[28px] transition-transform hover:-translate-y-0.5"
-                  style={{ background: "var(--cf2-home-kpi-bg)" }}
+                  className="group flex min-w-0 flex-col gap-2.5 border-b border-r px-3 py-4 last:border-r-0 odd:border-l-0 sm:px-4 xl:flex-1 xl:border-b-0 xl:py-3 cf2-transicao hover:bg-white/[0.06] focus-visible:bg-white/[0.06]"
+                  data-cf2-superficie="escura"
+                  style={{ borderColor: "var(--cf2-home-dark-overlay)" }}
                 >
                   <div className="flex items-center justify-between gap-2">
                     <span
-                      className="flex items-center justify-center w-7 h-7 rounded-[10px] shrink-0"
+                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[var(--radius-chip)]"
                       style={{ background: "var(--cf2-home-dark-overlay)" }}
                     >
                       <Icone className="w-3.5 h-3.5" style={{ color: "var(--cf2-home-text-muted)" }} />
@@ -184,7 +186,7 @@ export function Cf2HeroPulso({
                   <div className="flex flex-col gap-[3px] min-w-0">
                     <p className="text-[9.5px] uppercase" style={{ color: "var(--cf2-home-text-muted)", letterSpacing: "0.62px" }}>{k.label}</p>
                     <p
-                      className="text-[18px] sm:text-[20px] font-semibold leading-none"
+                      className="text-[18px] font-semibold leading-none sm:text-[20px]"
                       style={{ color: "var(--cf2-home-text-strong)", letterSpacing: "-0.7px", fontFamily: "var(--cf2-font-heading)" }}
                     >
                       {k.valor}
@@ -203,6 +205,7 @@ export function Cf2HeroPulso({
       {equipe.length > 0 && (
         <div
           className="absolute left-1/2 -translate-x-1/2 top-full flex items-center justify-center gap-2.5 h-[33px] px-4"
+          data-cf2-superficie="escura"
           style={{ background: "var(--cf2-home-hero-bg)", borderRadius: "0 0 20px 20px" }}
         >
           <span className="text-[12px] font-semibold" style={{ color: "#ffffff" }}>Equipe</span>
@@ -214,8 +217,8 @@ export function Cf2HeroPulso({
                 className="flex items-center justify-center w-7 h-7 rounded-full text-[10px] font-bold"
                 style={{
                   background: corAvatarEmpresa(u.id),
+                  color: TEXTO_SOBRE_AVATAR,
                   border: "2px solid #ffffff",
-                  color: "#0f172a",
                   marginRight: i < equipe.length - 1 ? -14 : 0,
                   zIndex: equipe.length - i,
                 }}

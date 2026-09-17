@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getTenantContext, unauthorizedResponse } from "@/lib/auth/tenant";
+import { getTenantContext, unauthorizedResponse, forbiddenResponse } from "@/lib/auth/tenant";
+import { isAdminView } from "@/lib/auth/roles";
 import { getAging, getFilaCobranca, getRecuperacao, getClientesRisco } from "@/lib/financeiro/metricas";
 
 /**
@@ -11,6 +12,7 @@ import { getAging, getFilaCobranca, getRecuperacao, getClientesRisco } from "@/l
 export async function GET(request: NextRequest) {
   const ctx = await getTenantContext();
   if (!ctx) return unauthorizedResponse();
+  if (!isAdminView(ctx.userRole)) return forbiddenResponse();
   const orgId = ctx.organizacaoId;
   const produtoParam = request.nextUrl.searchParams.get("produto") || "todos";
   const produto = produtoParam === "todos" ? undefined : produtoParam;

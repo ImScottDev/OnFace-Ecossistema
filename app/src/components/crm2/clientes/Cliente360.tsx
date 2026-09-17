@@ -6,6 +6,7 @@ import Link from "next/link";
 import { ChevronRight, Building2, FileText, Calendar, Download, Plus, ArrowUpRight, Tag, X, AlertTriangle, Plug, ChevronDown, RotateCw } from "lucide-react";
 import { Cf2Topbar } from "@/components/crm2/Topbar";
 import { Cf2Badge } from "@/components/crm2/ui/Badge";
+import { Cf2CsPanel } from "./CsPanel";
 import { useOrgUsuarios } from "@/components/crm/BoardFilters";
 import { NovaOportunidadeModal } from "@/components/crm2/pipeline/NovaOportunidadeModal";
 import { Cf2NovaPessoaModal } from "@/components/crm2/contatos/NovaPessoaModal";
@@ -40,7 +41,15 @@ interface Servico {
 interface Proposta { id: string; numero: number; valorTotal: string | null; status: string; createdAt: string }
 interface ProximaAcao { id: string; titulo: string; venceEm: string | null; usuarioNome: string | null }
 interface AtividadeRecente { id: string; tipo: string; titulo: string | null; createdAt: string; autorNome: string | null; pessoaNome: string | null }
-interface PontoMensal { mes: string; valor: number }
+interface PontoMensal { mes: string; valor: number; competencia?: string; lancamentos?: number }
+interface ReceitaMensalProduto {
+  competencia: string;
+  service_family: string;
+  canonical_product: string | null;
+  confidence: string;
+  valor: string;
+  lancamentos: number;
+}
 interface Pessoa {
   // `id` permanece compatível com links legados; `pessoaId` é a identidade
   // canônica e `leadId` é o contexto comercial usado por telas antigas.
@@ -115,6 +124,7 @@ interface Cliente360Data {
   proximasAcoes: ProximaAcao[];
   atividadesRecentes: AtividadeRecente[];
   mrrMensal: PontoMensal[];
+  receitaMensalProdutos: ReceitaMensalProduto[];
   negocios: NegocioComercial[];
   timelineEventos: EventoTimeline[];
   origemAquisicao: OrigemAquisicao | null;
@@ -135,7 +145,7 @@ interface AnexoLegado {
   arquivoDisponivel: boolean;
 }
 
-const FAMILIA_LABEL: Record<string, string> = { CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label", UNKNOWN: "Não classificado" };
+const FAMILIA_LABEL: Record<string, string> = { CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label", UNKNOWN: "Produto em revisão" };
 const LIFECYCLE_COLOR: Record<string, string> = { ACTIVE: "#059669", CHURNED: "#6B7280", SUPERSEDED: "#9497ab" };
 // Label do botão de entrega por família (mesma convenção de EntregaWorkspace.tsx/clientes-tabs.ts):
 // Callface AI = onboarding, PABX/White Label = implantação.
@@ -347,10 +357,6 @@ function ContratosConciliacao({ contratos, anexosLegado }: { contratos: Contrato
   const documentos = contratos.filter((c) =>
     c.temCorpoGerado || anexosLegado.some((a) => a.entidadeId === c.id || (c.negocioId && a.entidadeId === c.negocioId))
   ).length;
-  const legadoSemStripe = contratos.filter((c) => !c.stripeSubscriptionId && Boolean(c.zohoId)).length;
-  // Falta de Stripe em contrato migrado do Zoho é contexto histórico, não uma
-  // falha de conciliação. Só sinalizamos como pendência quando o contrato não
-  // possui vínculo comercial ou é um registro atual sem assinatura vinculada.
   const pendencias = contratos.filter((c) => (!c.propostaOrigem && !c.negocioId) || (!c.stripeSubscriptionId && !c.zohoId)).length;
   const metricas = [
     ["Comercial", comercial, contratos.length, "contrato → negócio/proposta"],
@@ -363,7 +369,7 @@ function ContratosConciliacao({ contratos, anexosLegado }: { contratos: Contrato
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <p className="text-[13px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Conciliação comercial e financeira</p>
-          <p className="text-[11px] mt-0.5" style={{ color: "var(--cf2-text-tertiary)" }}>Cada vínculo abaixo vem do banco: não confundimos contrato legado, proposta, assinatura Stripe e fatura.</p>
+          <p className="text-[11px] mt-0.5" style={{ color: "var(--cf2-text-tertiary)" }}>Cada vínculo abaixo vem do banco: comercial, assinatura, cobrança e documento aparecem conciliados sem duplicar o mesmo serviço.</p>
         </div>
         <ConciliacaoPill tone={pendencias === 0 ? "ok" : "warn"}>{pendencias === 0 ? "Tudo conciliado" : `${pendencias} com pendência`}</ConciliacaoPill>
       </div>
@@ -376,11 +382,6 @@ function ContratosConciliacao({ contratos, anexosLegado }: { contratos: Contrato
           </div>
         ))}
       </div>
-      {legadoSemStripe > 0 && (
-        <p className="text-[10px]" style={{ color: "var(--cf2-text-tertiary)" }}>
-          {legadoSemStripe} contrato(s) legado(s) sem Stripe foram mantidos como histórico, sem serem tratados como erro de cobrança.
-        </p>
-      )}
     </div>
   );
 }
@@ -577,7 +578,7 @@ export function Cf2Cliente360({ empresaId }: { empresaId: string }) {
     empresa, currentMrr, clienteDesde, proximaFatura, statusFinanceiro, responsavel, executivo,
     faturasAtrasadas, faturasAbertas, faturasAbertasValor,
     pessoas = [], servicos = [], propostas = [], proximasAcoes = [], atividadesRecentes = [],
-    mrrMensal = [], negocios = [], timelineEventos = [], origemAquisicao,
+    mrrMensal = [], receitaMensalProdutos = [], negocios = [], timelineEventos = [], origemAquisicao,
     contratos: contratosCliente = [], contratoVencendoEmBreve = null,
   } = cliente;
   const familias = [...new Set(servicos.filter((s) => s.portfolioIncluded).map((s) => s.serviceFamily))];
@@ -768,7 +769,7 @@ export function Cf2Cliente360({ empresaId }: { empresaId: string }) {
                     <input
                       value={novaTag}
                       onChange={(e) => setNovaTag(e.target.value)}
-                      placeholder="+ Adicionar tag"
+                      placeholder="+ Adicionar tag" aria-label="+ Adicionar tag"
                       className="text-[11px] px-2 py-0.5 rounded-full outline-none w-[110px]"
                       style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-secondary)", border: "1px dashed var(--cf2-border-default)" }}
                     />
@@ -796,42 +797,42 @@ export function Cf2Cliente360({ empresaId }: { empresaId: string }) {
             </div>
           </div>
 
-          {/* Cards inline (mockup 20/08, exatamente na ordem pedida):
-              Responsável CS · Executivo · MRR Atual · Risco financeiro ·
-              Próxima ação · Status. CS Owner e Executivo são PESSOAS
-              diferentes e reais: CS = clientes.responsavel_id (dono de
-              conta pós-venda); Executivo = vendedor/closer do negócio Won
-              mais antigo desta empresa (negocios.responsavel_id) — nunca a
-              mesma fonte, nunca confundir. "Risco financeiro" substitui o
-              "Health Score" do mockup (regra fechada: nunca inventar score
-              — ver docstring do componente). */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-            <div className="flex flex-col gap-1.5 p-4 rounded-2xl" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
-              <p className="text-[10px] font-bold" style={{ color: "var(--cf2-text-tertiary)" }}>RECEITA MENSAL</p>
-              <p className="text-[22px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>{brl(currentMrr)}</p>
-              <p className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>{proximaFatura ? `Próxima cobrança: ${data(proximaFatura.vencimento)}` : "Sem cobrança futura registrada"}</p>
+          <section className="grid overflow-hidden rounded-[var(--radius-card)] lg:grid-cols-[1.2fr_0.8fr]" style={{ background: "var(--cf2-bg-inverse)" }}>
+            <div className="p-5 sm:p-6" style={{ borderRight: "1px solid color-mix(in srgb, var(--cf2-text-on-inverse) 15%, transparent)" }}>
+              <p className="text-[10px] font-bold uppercase tracking-[0.1em]" style={{ color: "color-mix(in srgb, var(--cf2-text-on-inverse) 56%, transparent)" }}>Receita mensal da conta</p>
+              <p className="mt-3 text-[34px] font-bold leading-none tabular-nums sm:text-[42px]" style={{ color: "var(--cf2-accent)" }}>{brl(currentMrr)}</p>
+              <p className="mt-3 text-[12px]" style={{ color: "color-mix(in srgb, var(--cf2-text-on-inverse) 64%, transparent)" }}>{proximaFatura ? `Próxima cobrança em ${data(proximaFatura.vencimento)}` : "Sem cobrança futura registrada"}</p>
+              <div className="mt-6 grid grid-cols-2 border-t border-white/15 pt-4">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.08em]" style={{ color: "color-mix(in srgb, var(--cf2-text-on-inverse) 50%, transparent)" }}>Contratos ativos</p>
+                  <button onClick={() => setTab("Contratos")} className="mt-1 text-left text-[18px] font-bold" style={{ color: "var(--cf2-text-on-inverse)" }}>{contratosCliente.filter((c) => c.status === "ativo").length} <span className="text-[11px] font-semibold" style={{ color: "color-mix(in srgb, var(--cf2-text-on-inverse) 62%, transparent)" }}>ver contratos</span></button>
+                </div>
+                <div className="border-l border-white/15 pl-4">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.08em]" style={{ color: "color-mix(in srgb, var(--cf2-text-on-inverse) 50%, transparent)" }}>Implantação</p>
+                  <p className="mt-1 text-[18px] font-bold" style={{ color: "var(--cf2-text-on-inverse)" }}>{fulfillmentSaude && fulfillmentSaude.totalItens > 0 ? `${Math.round((fulfillmentSaude.itensConcluidos / fulfillmentSaude.totalItens) * 100)}%` : "Sem dados"}</p>
+                </div>
+              </div>
             </div>
-            <div className="flex flex-col gap-1.5 p-4 rounded-2xl" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
-              <p className="text-[10px] font-bold" style={{ color: "var(--cf2-text-tertiary)" }}>CONTRATOS ATIVOS</p>
-              <p className="text-[22px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>{contratosCliente.filter((c) => c.status === "ativo").length}</p>
-              <button onClick={() => setTab("Contratos")} className="text-left text-[11px] font-semibold" style={{ color: "var(--cf2-accent)" }}>Ver contratos →</button>
+            <div className="grid grid-rows-2">
+              <div className="p-5 sm:p-6" style={{ borderBottom: "1px solid color-mix(in srgb, var(--cf2-text-on-inverse) 15%, transparent)" }}>
+                <p className="text-[10px] font-bold uppercase tracking-[0.1em]" style={{ color: "color-mix(in srgb, var(--cf2-text-on-inverse) 56%, transparent)" }}>Próxima ação</p>
+                <p className="mt-3 text-[16px] font-bold leading-6" style={{ color: "var(--cf2-text-on-inverse)" }}>{proximaAcao?.titulo || "Nenhuma ação em aberto"}</p>
+                <p className="mt-2 text-[12px]" style={{ color: "color-mix(in srgb, var(--cf2-text-on-inverse) 64%, transparent)" }}>{proximaAcao?.venceEm ? `Prazo: ${data(proximaAcao.venceEm)}` : "Sem prazo definido"}</p>
+              </div>
+              <div className="grid grid-cols-2">
+                <div className="p-5 sm:p-6">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.08em]" style={{ color: "color-mix(in srgb, var(--cf2-text-on-inverse) 56%, transparent)" }}>Billing</p>
+                  <p className="mt-2 text-[16px] font-bold" style={{ color: risco === "alto" ? "var(--cf2-danger-text)" : "var(--cf2-accent)" }}>{risco === "alto" ? `${faturasAtrasadas} em atraso` : "Em dia"}</p>
+                  <p className="mt-1 text-[11px]" style={{ color: "color-mix(in srgb, var(--cf2-text-on-inverse) 62%, transparent)" }}>{faturasAbertas} fatura(s) em aberto</p>
+                </div>
+                <div className="border-l border-white/15 p-5 sm:p-6">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.08em]" style={{ color: "color-mix(in srgb, var(--cf2-text-on-inverse) 56%, transparent)" }}>Operação</p>
+                  <p className="mt-2 text-[16px] font-bold" style={{ color: "var(--cf2-text-on-inverse)" }}>{fulfillmentSaude ? (emAndamento(fulfillmentSaude) ? "Em andamento" : "Concluída") : "Sem implantação"}</p>
+                  <p className="mt-1 text-[11px]" style={{ color: "color-mix(in srgb, var(--cf2-text-on-inverse) 62%, transparent)" }}>Status do fulfillment</p>
+                </div>
+              </div>
             </div>
-            <div className="flex flex-col gap-1.5 p-4 rounded-2xl" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
-              <p className="text-[10px] font-bold" style={{ color: "var(--cf2-text-tertiary)" }}>IMPLANTAÇÃO</p>
-              <p className="text-[22px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>{fulfillmentSaude && fulfillmentSaude.totalItens > 0 ? `${Math.round((fulfillmentSaude.itensConcluidos / fulfillmentSaude.totalItens) * 100)}%` : "—"}</p>
-              <p className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>{fulfillmentSaude ? (emAndamento(fulfillmentSaude) ? "Em andamento" : "Concluído") : "Sem implantação vinculada"}</p>
-            </div>
-            <div className="flex flex-col gap-1.5 p-4 rounded-2xl" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
-              <p className="text-[10px] font-bold" style={{ color: "var(--cf2-text-tertiary)" }}>BILLING</p>
-              <Cf2Badge variant={risco === "alto" ? "danger" : "success"}>{risco === "alto" ? `${faturasAtrasadas} em atraso` : "Em dia"}</Cf2Badge>
-              <p className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>{faturasAbertas} fatura(s) em aberto</p>
-            </div>
-            <div className="flex flex-col gap-1.5 p-4 rounded-2xl" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
-              <p className="text-[10px] font-bold" style={{ color: "var(--cf2-text-tertiary)" }}>PRÓXIMA AÇÃO</p>
-              <p className="text-[13px] font-bold truncate" style={{ color: "var(--cf2-text-primary)" }}>{proximaAcao?.titulo || "Nenhuma ação em aberto"}</p>
-              <p className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>{proximaAcao?.venceEm ? data(proximaAcao.venceEm) : "Sem prazo"}</p>
-            </div>
-          </div>
+          </section>
         </div>
 
         {/* Tabs */}
@@ -934,8 +935,26 @@ export function Cf2Cliente360({ empresaId }: { empresaId: string }) {
 
             {mrrMensal.length > 0 && (
               <div className="p-5 rounded-2xl" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
-                <p className="text-[14px] font-bold mb-2" style={{ color: "var(--cf2-text-primary)" }}>Desempenho de MRR</p>
+                <div className="flex items-center justify-between gap-3 mb-2">
+                  <p className="text-[14px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>MRR mês a mês</p>
+                  <p className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>{mrrMensal.length} mês(es) com faturamento</p>
+                </div>
                 <Cf2MrrMensalChart dados={mrrMensal} />
+                {receitaMensalProdutos.length > 0 && (
+                  <div className="mt-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
+                    {receitaMensalProdutos.slice(0, 12).map((row, idx) => (
+                      <div key={`${row.competencia}-${row.service_family}-${row.canonical_product}-${idx}`} className="p-2.5 rounded-lg flex items-center justify-between gap-3" style={{ background: "var(--cf2-bg-surface-muted)" }}>
+                        <div className="min-w-0">
+                          <p className="text-[12px] font-semibold truncate" style={{ color: "var(--cf2-text-primary)" }}>{row.canonical_product || FAMILIA_LABEL[row.service_family] || "Produto em revisão"}</p>
+                          <p className="text-[10px]" style={{ color: "var(--cf2-text-tertiary)" }}>
+                            {new Date(`${row.competencia}T12:00:00`).toLocaleDateString("pt-BR", { month: "short", year: "numeric" })} · {row.confidence === "CONFIRMED" ? "confirmado" : row.confidence === "PROBABLE" ? "provável" : "em revisão"}
+                          </p>
+                        </div>
+                        <p className="text-[12px] font-bold shrink-0" style={{ color: "var(--cf2-text-primary)" }}>{brl(row.valor)}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
@@ -1232,7 +1251,7 @@ export function Cf2Cliente360({ empresaId }: { empresaId: string }) {
                   {ct.stripeSubscriptionId ? (
                     <ConciliacaoPill tone="ok">Stripe · {ct.billingStatus || "vinculado"}</ConciliacaoPill>
                   ) : ct.zohoId ? (
-                    <ConciliacaoPill tone="muted">Sem Stripe · legado/manual</ConciliacaoPill>
+                    <ConciliacaoPill tone="muted">Sem Stripe · histórico importado</ConciliacaoPill>
                   ) : (
                     <ConciliacaoPill tone="warn">Sem Stripe · revisar vínculo</ConciliacaoPill>
                   )}
@@ -1341,7 +1360,7 @@ export function Cf2Cliente360({ empresaId }: { empresaId: string }) {
                         {s.canonicalProduct || s.revenueNature}
                       </p>
                       <ConciliacaoPill tone={s.stripeSubscriptionId ? "ok" : "muted"}>
-                        {s.stripeSubscriptionId ? `Stripe · ${s.billingStatus}` : `CRM/legado · ${s.billingStatus}`}
+                        {s.stripeSubscriptionId ? `Stripe · ${s.billingStatus}` : `CRM · ${s.billingStatus}`}
                       </ConciliacaoPill>
                     </div>
                     {s.ledger && (
@@ -1480,21 +1499,14 @@ export function Cf2Cliente360({ empresaId }: { empresaId: string }) {
             ou está explicitamente "sem sinal de atenção" — nunca escondida
             por não estar na fila. */}
         {tab === "CS" && (
-          <div className="p-5 rounded-2xl flex flex-col gap-3" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
-            <p className="text-[14px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Sinal de sucesso/atenção</p>
-            {contaCsLoading ? (
-              <p className="text-[13px]" style={{ color: "var(--cf2-text-tertiary)" }}>Carregando...</p>
-            ) : (() => {
+          <div className="flex flex-col gap-4">
+            {/* Sinal resumido no topo: o mesmo critério da fila cross-cliente
+                (Cf2CsWorkspace), pra que a conta nunca conte uma história
+                diferente da que a fila conta sobre ela. */}
+            {!contaCsLoading && (() => {
               const conta = contaCs?.contas?.[0] ?? null;
               const razoes = conta ? motivosAtencao(conta) : [];
-              if (!conta || razoes.length === 0) {
-                return (
-                  <div className="flex items-center gap-2.5 p-3 rounded-xl" style={{ background: "var(--cf2-bg-surface-muted)" }}>
-                    <Cf2Badge variant="success">Sem sinal de atenção</Cf2Badge>
-                    <p className="text-[12px]" style={{ color: "var(--cf2-text-secondary)" }}>Nenhuma fatura atrasada, atividade recente e próxima ação registrada — mesmo critério da fila de Sucesso.</p>
-                  </div>
-                );
-              }
+              if (razoes.length === 0) return null;
               return (
                 <div className="flex items-center gap-2.5 p-3 rounded-xl" style={{ background: "#ef444412" }}>
                   <AlertTriangle className="w-4 h-4 shrink-0" style={{ color: "var(--cf2-danger-text)" }} />
@@ -1506,9 +1518,11 @@ export function Cf2Cliente360({ empresaId }: { empresaId: string }) {
                 </div>
               );
             })()}
-            <p className="text-[11px] pt-2" style={{ borderTop: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-tertiary)" }}>
-              Mesmos 3 sinais reais da fila de Sucesso (fatura atrasada, dias sem atividade, sem próxima ação) — sem score numérico fabricado.
-            </p>
+            <Cf2CsPanel
+              empresaId={empresaId}
+              empresaNome={empresa.nome}
+              servicos={servicos.map((s) => ({ id: s.id, serviceFamily: s.serviceFamily, canonicalProduct: s.canonicalProduct }))}
+            />
           </div>
         )}
 
@@ -1520,7 +1534,7 @@ export function Cf2Cliente360({ empresaId }: { empresaId: string }) {
 
         {tab === "Documentos" && (
           <div className="p-5 rounded-2xl flex flex-col gap-2" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
-            {/* Histórico Zoho (anexos_legado) + contratos com corpo gerado pela engine nova */}
+            {/* Documentos históricos importados + contratos com corpo gerado pela engine nova */}
             {servicos.filter((s) => s.contrato?.corpoGerado).map((s) => (
               <a key={`ct-${s.id}`} href={`/api/contratos/${s.contrato!.id}/pdf`} target="_blank" rel="noreferrer" className="flex items-center gap-3 p-3 rounded-xl hover:bg-[var(--cf2-bg-surface-muted)]" style={{ background: "var(--cf2-bg-surface-muted)" }}>
                 <FileText className="w-4 h-4 shrink-0" style={{ color: "var(--cf2-text-secondary)" }} />

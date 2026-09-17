@@ -15,7 +15,7 @@ export class SimpleElectronicSignatureProvider implements SignatureProvider {
 
   async enviarParaAssinatura(contratoId: string, opts?: EnviarParaAssinaturaOpts): Promise<EnviarParaAssinaturaResult> {
     if ((opts?.signatarios?.length || 0) > 1) {
-      throw new Error("Múltiplos signatários exigem um provider de assinatura configurado (DOCUMENSO_API_URL/DOCUMENSO_API_KEY).");
+      throw new Error("Múltiplos signatários exigem o Documenso self-hosted configurado (DOCUMENSO_API_URL/DOCUMENSO_API_TOKEN).");
     }
     // Não existe envio real (não há API externa) — o link público JÁ é a
     // "disponibilização pra assinatura". providerRef = o próprio contrato,

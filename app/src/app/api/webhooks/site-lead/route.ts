@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { leads, organizacoes, statusChanges } from "@/lib/db/schema";
+import { leads, organizacoes } from "@/lib/db/schema";
 import { and, eq } from "drizzle-orm";
 import { syncPessoaFromLead } from "@/lib/crm/sync-domain-model";
+import { criarLead } from "@/lib/vendas/pre-vendas";
+import { ATOR_SISTEMA } from "@/lib/vendas/dominio";
+import { dominioDoEmail } from "@/lib/vendas/identidade";
 
 /**
  * Webhook do FORMULÁRIO do site institucional (site.callface.io).
@@ -10,10 +13,16 @@ import { syncPessoaFromLead } from "@/lib/crm/sync-domain-model";
  * POST /api/webhooks/site-lead
  *   body: { nome, email, telefone, cargo, empresa, utm*?, landingPage?, website? (honeypot) }
  *
- * Cria o lead direto no board de pré-vendas (tipo='lead', status='novo',
- * sdrStatus='pending'), atribuído à Jenifer (SDR, porta de entrada). NÃO cria
- * negócio — a oportunidade só nasce quando a SDR qualifica (mesma regra do
- * rd-lead). origem='Site'. Dedup por email/telefone dentro da org.
+ * Entra pelo motor de Vendas (`lib/vendas/pre-vendas.criarLead`), que executa a
+ * entrada canônica da SpecDrive: resolve ou cria a Empresa, resolve ou cria a
+ * Pessoa, associa as duas, grava o ponto de contato com a origem e só então
+ * cria o Lead em NOVO.
+ *
+ * **Não cria oportunidade**, e isso é regra, não omissão: Bloco 01 §3 e §29 da
+ * SpecDrive proíbem formulário inbound abrir oportunidade automaticamente.
+ *
+ * Dedup por e-mail/telefone dentro da org continua valendo para não criar dois
+ * leads da mesma captura.
  *
  * É público (chamado do browser), então: CORS restrito ao site, honeypot
  * anti-bot e validação de campos. Sem segredo (estaria exposto no JS de qualquer
@@ -119,7 +128,7 @@ export async function POST(req: NextRequest) {
   const userAgent = req.headers.get("user-agent") || null;
   const landingPage = clean(body.landingPage) || req.headers.get("referer") || null;
 
-  // Dedup por email, depois telefone
+  // Dedup por email, depois telefone: a mesma captura não pode virar dois leads.
   let existing: { id: string; tipo: string } | undefined;
   if (email) {
     [existing] = await db
@@ -159,49 +168,36 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const [newLead] = await db
-    .insert(leads)
-    .values({
-      organizacaoId: org.id,
-      nome: primeiro,
-      sobrenome,
-      email,
-      telefone,
-      empresa,
-      cargo,
-      origem: "Site",
-      utmSource: clean(body.utmSource),
-      utmMedium: clean(body.utmMedium),
-      utmCampaign: clean(body.utmCampaign),
-      utmTerm: clean(body.utmTerm),
-      utmContent: clean(body.utmContent),
+  // O formulário publicado ainda não pergunta a empresa. Quando ela não vem, o
+  // domínio corporativo do e-mail é o único identificador confiável disponível;
+  // e-mail pessoal não identifica empresa nenhuma, então o lead entra sem ela e
+  // a tela pede a associação antes de qualquer passo que exija Empresa.
+  // Registrado como dependência em docs/reconstruction/MODULO-01-VENDAS.md.
+  const dominio = dominioDoEmail(email);
+  const nomeEmpresa = empresa ?? (dominio ? dominio.split(".")[0] : null);
+
+  const criado = await criarLead({
+    organizacaoId: org.id,
+    empresa: nomeEmpresa ? { nome: nomeEmpresa, dominio, email } : null,
+    pessoa: { nome: primeiro, sobrenome, email, telefone, cargo },
+    touchpoint: {
+      tipoOrigem: "organica",
+      source: clean(body.utmSource) ?? "site",
+      medium: clean(body.utmMedium),
+      campaign: clean(body.utmCampaign),
+      term: clean(body.utmTerm),
+      content: clean(body.utmContent),
       landingPage,
-      ipAddress,
-      userAgent,
-      tipo: "lead",
-      status: "novo",
-      sdrStatus: "pending",
-      responsavelId: null,
-    })
-    .returning({ id: leads.id });
-
-  await db.insert(statusChanges).values({
-    leadId: newLead.id,
-    negocioId: null,
-    deStatus: null,
-    paraStatus: "novo",
-    motivo: "Lead capturado pelo formulário do site",
-  });
-
-  await syncPessoaFromLead(newLead.id); // F1/dual-write, best-effort
+      raw: { ipAddress, userAgent },
+    },
+    origem: "Site",
+    // Lead inbound novo nasce SEM DONO (Scott, jul/26): as meninas pegam no
+    // "Novo" e movem para "Em contato".
+    responsavelId: null,
+  }, ATOR_SISTEMA);
 
   return NextResponse.json(
-    { ok: true, status: "created", leadId: newLead.id },
+    { ok: true, status: "created", leadId: criado.leadId, empresaId: criado.empresaId },
     { status: 201, headers: cors }
   );
-}
-
-// Healthcheck
-export async function GET() {
-  return NextResponse.json({ ok: true, endpoint: "site-lead webhook", method: "POST" });
 }

@@ -22,7 +22,7 @@
  * Ver ADR-EXEC-012 em ARCHITECTURE_DECISIONS.md.
  */
 import { db } from "@/lib/db";
-import { comercialEvidencia, wonEvidencePolicies, negocios, propostas, contratos, auditLog, leads, statusChanges, oportunidadeItens, oportunidades } from "@/lib/db/schema";
+import { comercialEvidencia, wonEvidencePolicies, negocios, propostas, contratos, auditLog, leads, statusChanges, oportunidadeItens, oportunidades, clientes, atividades } from "@/lib/db/schema";
 import { eq, and, or, isNull } from "drizzle-orm";
 import { publicarEvento } from "@/lib/events/outbox";
 
@@ -261,11 +261,25 @@ export async function getProdutoNegocio(negocioId: string): Promise<string | nul
  * FULFILLMENT dos demais grupos, rastreado à parte em
  * proposta_grupo_comercial.status, não no status do negócio). Idempotente.
  */
-export async function marcarNegocioGanhoSeAindaNao(negocioId: string, organizacaoId: string): Promise<void> {
+export async function marcarNegocioGanhoSeAindaNao(
+  negocioId: string,
+  organizacaoId: string,
+  /**
+   * Frente 2C.1 — família comercial já resolvida por quem disparou o Won (o
+   * grupo comercial que assinou/pagou). Necessário, não decorativo: medido no
+   * banco real, `getProdutoNegocio` NÃO consegue resolver família pra nenhum
+   * dos 1.425 negócios existentes (o dual-write de `oportunidade_itens` só
+   * cobriu 7), então sem esta dica toda avaliação cairia no produto legado
+   * (`ai`/`ai_pabx`), que não tem política de família nenhuma — e PABX/White
+   * Label voltariam a exigir pagamento pra fechar.
+   */
+  opts: { familiaHint?: string | null } = {},
+): Promise<void> {
   const [negocio] = await db.select().from(negocios).where(eq(negocios.id, negocioId)).limit(1);
   if (!negocio || negocio.status === "ganho") return;
 
-  const produto = await getProdutoNegocio(negocioId);
+  const familiaHint = opts.familiaHint && opts.familiaHint !== "UNKNOWN" ? opts.familiaHint : null;
+  const produto = familiaHint ?? (await getProdutoNegocio(negocioId));
   const evidencia = await avaliarEvidenciaWon(negocioId, organizacaoId, produto);
   if (!evidencia.permitido) return;
 
@@ -276,8 +290,98 @@ export async function marcarNegocioGanhoSeAindaNao(negocioId: string, organizaca
     leadId: negocio.leadId, negocioId, deStatus, paraStatus: "ganho", motivo: "Evidência comercial confirmada",
   });
 
+  await aplicarEfeitosPosGanho({
+    negocio,
+    organizacaoId,
+    produto,
+    familiaHint,
+    evidencias: evidencia.evidencias,
+    motivo: evidencia.motivo,
+  });
+}
+
+/**
+ * Tudo que acontece DEPOIS de um negócio virar ganho, num lugar só.
+ *
+ * Existe porque o Won tem dois gatilhos legítimos e eles divergiram (achado
+ * 14/09): o automático (`marcarNegocioGanhoSeAindaNao`, chamado por pagamento
+ * confirmado e por contrato assinado) e o manual (`PATCH /api/negocios/:id`
+ * com status "ganho", usado quando a venda fecha fora do fluxo de proposta).
+ * O manual promovia o lead e publicava os eventos, mas não registrava a
+ * atividade na timeline, não materializava Pessoa e — o mais grave — não
+ * colocava o cliente na carteira do CS. Um cliente fechado na mão
+ * simplesmente não existia pro pós-venda.
+ *
+ * Também corrige um defeito que os DOIS caminhos tinham: a linha em `clientes`
+ * nunca era criada aqui, só atualizada quando já existisse. Quem criava era
+ * `garantirContaCs`, acionado por `CanonicalServiceActivated` — que só nasce
+ * quando existe grupo comercial materializado. Venda manual não gera grupo, e
+ * portanto nunca gerava conta de CS.
+ *
+ * Idempotente e best-effort por etapa: nada aqui desfaz o ganho já registrado.
+ */
+export async function aplicarEfeitosPosGanho(opts: {
+  negocio: typeof negocios.$inferSelect;
+  organizacaoId: string;
+  produto: string | null;
+  familiaHint?: string | null;
+  evidencias: TipoEvidenciaComercial[] | string[];
+  motivo: string;
+  contratoId?: string | null;
+}): Promise<void> {
+  const { negocio, organizacaoId, produto, motivo } = opts;
+  const familiaHint = opts.familiaHint ?? null;
+  const negocioId = negocio.id;
+
+  // O ganho passa a existir na TIMELINE, não só em status_changes.
   if (negocio.leadId) {
+    await db.insert(atividades).values({
+      organizacaoId,
+      leadId: negocio.leadId,
+      negocioId,
+      tipo: "negocio_ganho",
+      titulo: "Negócio ganho",
+      descricao: `Fechamento confirmado: ${motivo}.`,
+      dados: { produto, familiaHint, evidencias: opts.evidencias, motivo, contratoId: opts.contratoId ?? null },
+    }).catch((e) => console.error("[won-evidence] falha ao registrar atividade de ganho (best-effort):", e));
+
     await db.update(leads).set({ tipo: "cliente", clienteDesde: new Date(), updatedAt: new Date() }).where(eq(leads.id, negocio.leadId));
+
+    try {
+      const { syncPessoaFromLead } = await import("@/lib/crm/sync-domain-model");
+      await syncPessoaFromLead(negocio.leadId);
+    } catch (err) {
+      console.error(`[won-evidence] falha ao materializar pessoa do lead ${negocio.leadId} (best-effort):`, err);
+    }
+  }
+
+  // Entrada na carteira do CS. Acontece no Won, com ou sem serviço canônico —
+  // o serviço, quando existir, reforça por CanonicalServiceActivated (idempotente).
+  if (negocio.empresaId) {
+    try {
+      const { garantirContaCsPorEmpresa } = await import("@/lib/cs/handoff");
+      const { criada } = await garantirContaCsPorEmpresa({
+        organizacaoId,
+        empresaId: negocio.empresaId,
+        leadId: negocio.leadId,
+        entrouEm: negocio.ganhoAt ?? new Date(),
+      });
+      if (criada) console.log(`[won-evidence] conta de CS criada para a empresa ${negocio.empresaId} (negócio ${negocioId})`);
+    } catch (err) {
+      console.error(`[won-evidence] falha ao criar conta de CS da empresa ${negocio.empresaId} (best-effort):`, err);
+    }
+  } else {
+    // Sem empresa não há conta de CS possível — e isso é um gap de dado real,
+    // não um caso de sucesso silencioso.
+    console.warn(`[won-evidence] negócio ${negocioId} ganho sem empresa vinculada — não entrou na carteira do CS`);
+  }
+
+  // Cache de leitura da Carteira, para contas que já existiam sem status.
+  if (negocio.empresaId || negocio.leadId) {
+    const filtro = negocio.empresaId ? eq(clientes.empresaId, negocio.empresaId) : eq(clientes.leadIdLegado, negocio.leadId!);
+    await db.update(clientes).set({ statusFinanceiro: "ativo", updatedAt: new Date() })
+      .where(and(filtro, isNull(clientes.statusFinanceiro)))
+      .catch((e) => console.error("[won-evidence] falha ao atualizar status financeiro (best-effort):", e));
   }
 
   const { notificarNegocioGanho } = await import("@/lib/crm/notificar");
@@ -285,9 +389,14 @@ export async function marcarNegocioGanhoSeAindaNao(negocioId: string, organizaca
 
   await publicarEvento({
     organizacaoId, eventType: "DealWon", aggregateType: "negocio", aggregateId: negocioId,
-    payload: { leadId: negocio.leadId, produto, evidencias: evidencia.evidencias },
+    payload: { leadId: negocio.leadId, empresaId: negocio.empresaId, contratoId: opts.contratoId ?? null, produto, familiaHint, evidencias: opts.evidencias, motivo },
+    idempotencyKey: `deal-won:${negocioId}`,
   });
   if (negocio.leadId) {
-    await publicarEvento({ organizacaoId, eventType: "CustomerCreated", aggregateType: "lead", aggregateId: negocio.leadId, payload: { negocioId } });
+    await publicarEvento({
+      organizacaoId, eventType: "CustomerCreated", aggregateType: "lead", aggregateId: negocio.leadId,
+      payload: { negocioId, empresaId: negocio.empresaId, contratoId: opts.contratoId ?? null },
+      idempotencyKey: `customer-created:${negocioId}`,
+    });
   }
 }

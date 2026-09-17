@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { db } from "@/lib/db";
-import { organizacoes } from "@/lib/db/schema";
+import { organizacoes, auditLog } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { getCtx } from "../compat.js";
 import { buildPipelineConfig, type PipelineConfig } from "@/lib/crm/pipeline";
@@ -130,6 +130,117 @@ app.put("/pipeline", async (c) => {
     .where(eq(organizacoes.id, ctx.organizacaoId));
 
   return c.json(updated);
+});
+
+
+// ─── Settings (ICP, enriquecimento, handover, notificações, tracking) ────────
+//
+// A coluna `organizacoes.settings` (jsonb) existe desde o schema original, com
+// o comentário certo em cima dela — mas o endpoint que a lê e escreve nunca
+// existiu. Cinco telas de Ajustes (ICP, Enriquecimento, Handover, Notificações
+// e Tracking) chamavam GET/PATCH `/api/configuracoes/settings` e tomavam 404:
+// carregavam sempre em branco e o botão Salvar sempre falhava (achado 14/09,
+// confirmado por HTTP e no console do navegador).
+
+/** Chaves aceitas. Sem allowlist, o PATCH viraria escrita arbitrária no jsonb. */
+const CHAVES_SETTINGS = ["icp", "enriquecimento", "handover", "notificacoes", "tracking"] as const;
+type ChaveSettings = (typeof CHAVES_SETTINGS)[number];
+
+/** Campos de `tracking` que são segredo e nunca voltam em claro pro browser. */
+const SEGREDOS_TRACKING = ["metaToken", "ga4Secret"] as const;
+const MASCARA = "••••••••";
+
+function mascarar(valor: unknown): string {
+  const s = typeof valor === "string" ? valor : "";
+  if (!s) return "";
+  return s.length <= 8 ? MASCARA : `${s.slice(0, 4)}${MASCARA}${s.slice(-4)}`;
+}
+
+function lerSettings(bruto: unknown): Record<string, unknown> {
+  return bruto && typeof bruto === "object" && !Array.isArray(bruto) ? { ...(bruto as Record<string, unknown>) } : {};
+}
+
+// GET /configuracoes/settings — configuração da organização, com segredo mascarado
+app.get("/settings", async (c) => {
+  const ctx = await getCtx(c);
+  if (!["admin", "gerente", "super_admin"].includes(ctx.userRole)) {
+    return c.json({ error: "Forbidden" }, 403);
+  }
+
+  const [org] = await db
+    .select({ settings: organizacoes.settings })
+    .from(organizacoes)
+    .where(eq(organizacoes.id, ctx.organizacaoId))
+    .limit(1);
+
+  const settings = lerSettings(org?.settings);
+
+  // Tracking guarda token da Meta e secret do GA4. A tela só precisa saber se
+  // existe valor gravado, nunca o valor.
+  const tracking = lerSettings(settings.tracking);
+  for (const campo of SEGREDOS_TRACKING) {
+    if (tracking[campo]) tracking[campo] = mascarar(tracking[campo]);
+  }
+  settings.tracking = tracking;
+
+  return c.json(settings);
+});
+
+// PATCH /configuracoes/settings — grava UMA chave: { key, value }
+app.patch("/settings", async (c) => {
+  const ctx = await getCtx(c);
+  if (!["admin", "gerente", "super_admin"].includes(ctx.userRole)) {
+    return c.json({ error: "Forbidden" }, 403);
+  }
+
+  const body = await c.req.json().catch(() => null) as { key?: string; value?: unknown } | null;
+  const key = body?.key;
+  if (!key || !CHAVES_SETTINGS.includes(key as ChaveSettings)) {
+    return c.json({ error: `key inválida. Aceitas: ${CHAVES_SETTINGS.join(", ")}` }, 400);
+  }
+  if (body?.value === undefined) {
+    return c.json({ error: "value é obrigatório" }, 400);
+  }
+
+  const [org] = await db
+    .select({ settings: organizacoes.settings })
+    .from(organizacoes)
+    .where(eq(organizacoes.id, ctx.organizacaoId))
+    .limit(1);
+  const atual = lerSettings(org?.settings);
+
+  let valor = body.value;
+
+  // Segredo mascarado que volta do browser significa "não mexi nisso" — nunca
+  // grava a máscara por cima do valor real.
+  if (key === "tracking") {
+    const anterior = lerSettings(atual.tracking);
+    const novo = lerSettings(valor);
+    for (const campo of SEGREDOS_TRACKING) {
+      const v = novo[campo];
+      if (typeof v === "string" && v.includes(MASCARA)) novo[campo] = anterior[campo] ?? "";
+    }
+    valor = novo;
+  }
+
+  const atualizado = { ...atual, [key]: valor };
+  await db
+    .update(organizacoes)
+    .set({ settings: atualizado, updatedAt: new Date() })
+    .where(eq(organizacoes.id, ctx.organizacaoId));
+
+  await db.insert(auditLog).values({
+    organizacaoId: ctx.organizacaoId,
+    actorId: ctx.userId,
+    action: "configuracoes.settings_atualizado",
+    entityType: "organizacao",
+    entityId: ctx.organizacaoId,
+    // Valor de tracking não entra no audit: carrega segredo.
+    after: key === "tracking" ? { key, campos: Object.keys(lerSettings(valor)) } : { key, value: valor },
+    source: "api",
+  });
+
+  return c.json({ ok: true });
 });
 
 export const configuracoesRoutes = app;

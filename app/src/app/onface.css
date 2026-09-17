@@ -1,0 +1,1251 @@
+/* ONFACE foundation.
+   Layers: brand primitives → scales → semantic roles → component contracts.
+   Values transcribed from the official ONFACE Design System token set
+   ("ONFACE - UI COMPONETS.fig" → tokens/brand.css, colors.css, typography.css,
+   spacing.css, radii.css, shadows.css, motion.css, breakpoints.css).
+   New ONFACE surfaces consume semantic/component variables only, never raw hex. */
+
+/* ── Brand primitives ─────────────────────────────────────────────────── */
+:root {
+  /* Coral is the single accent: action and signal, never decoration. */
+  --onface-coral: #fe4f2b;
+  --onface-coral-mark: #ff4d29;
+  --onface-coral-hover: #ff5a3c;
+  --onface-coral-subtle: rgba(254, 79, 43, 0.1);
+  --onface-coral-border: rgba(255, 77, 41, 0.2);
+
+  /* Ink & surface */
+  --onface-preto-logo: #12171d;
+  --onface-graphite: #090e14;
+  --onface-graphite-deep: #0b0f14;
+  --onface-graphite-surface: #161b22;
+  --onface-paper: #f6f6f3;
+  --onface-branco-logo: #eeeff3;
+  --onface-white: #ffffff;
+
+  /* Support greys */
+  --onface-cinza: #6d747e;
+  --onface-cinza-2: #616b78;
+  --onface-cinza-3: #484f58;
+  --onface-slate: #8b949e;
+  --onface-line: #dbdede;
+  --onface-line-dark: #30363d;
+
+  /* Dark-shell alpha steps. The shell is defined by hairlines, not shadows. */
+  --onface-alpha-hairline: rgba(255, 255, 255, 0.051);
+  --onface-alpha-divider: rgba(255, 255, 255, 0.102);
+  --onface-alpha-ring: rgba(255, 255, 255, 0.149);
+
+  /* ── Type ── */
+  --font-onface-ui: var(--font-cf2-ui);
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+  --weight-extrabold: 800;
+
+  --text-2xs: 0.625rem;
+  --text-xs: 0.6875rem;
+  --text-sm: 0.75rem;
+  --text-md: 0.8125rem;
+  --text-base: 0.875rem;
+  --text-lg: 1rem;
+
+  --display-label: 0.625rem;
+  --display-nav: 0.75rem;
+  --display-title: 1.125rem;
+  --display-kpi: 1.5625rem;
+  --display-section: 2rem;
+
+  --leading-tight: 1;
+  --leading-20: 1.25rem;
+  --leading-body: 1.6;
+  --tracking-caps: 0.0875em;
+  --tracking-wordmark: -0.05em;
+
+  /* ── Spacing (4px step) ── */
+  --space-2: 0.125rem;
+  --space-4: 0.25rem;
+  --space-6: 0.375rem;
+  --space-8: 0.5rem;
+  --space-10: 0.625rem;
+  --space-12: 0.75rem;
+  --space-16: 1rem;
+  --space-20: 1.25rem;
+  --space-24: 1.5rem;
+  --space-32: 2rem;
+  --space-40: 2.5rem;
+  --space-48: 3rem;
+
+  /* Control heights shared by every interactive primitive */
+  --control-xs: 1.5rem;
+  --control-sm: 1.75rem;
+  --control-md: 2rem;
+  --control-lg: 2.25rem;
+  --control-form: 2.5rem;
+  --control-cta: 2.75rem;
+
+  --avatar-sm: 1.5rem;
+  --avatar-md: 2rem;
+  --avatar-lg: 2.5rem;
+  --avatar-shell: 2.25rem;
+
+  --icon-xs: 0.75rem;
+  --icon-sm: 1rem;
+  --icon-md: 1.125rem;
+  --icon-lg: 1.25rem;
+
+  /* Shell geometry */
+  --shell-topbar-h: 4.5rem;
+  --shell-topbar-h-compact: 3.75rem;
+  --shell-topbar-px: 1.5rem;
+  --shell-nav-pill-h: 2.375rem;
+  --shell-utility-size: 2.375rem;
+
+  /* ── Radii ── */
+  --radius-xs: 0.25rem;
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-control: 0.625rem;
+  --radius-lg: 0.75rem;
+  --radius-card: 0.75rem;
+  --radius-card-lg: 1rem;
+  --radius-pill-nav: 1.25rem;
+  --radius-canvas: 2.5rem;
+  --radius-full: 9999px;
+
+  /* ── Elevation. Flat surfaces: definition comes from 1px hairlines and
+     inset rings, never from drop shadows. ── */
+  --ring-inset-hairline: inset 0 0 0 1px var(--onface-line);
+  --ring-inset-avatar: inset 0 0 0 1.5px var(--onface-alpha-ring);
+  --shadow-card: none;
+  --shadow-popover: 0 0.5rem 1.5rem rgba(9, 14, 20, 0.08);
+  --shadow-popover-shell: 0 0.75rem 2rem rgba(0, 0, 0, 0.32);
+
+  /* ── Motion. State changes are colour/opacity crossfades, never bounce. ── */
+  --motion-fast: 120ms;
+  --motion-base: 160ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0.2, 1);
+  --opacity-hover: 0.8;
+  --opacity-disabled: 0.5;
+
+  --touch-min: 2.75rem;
+  --gutter-mobile: 1rem;
+  --gutter-tablet: 1.25rem;
+  --gutter-desktop: 1.5rem;
+}
+
+/* ── Semantic roles + shadcn bridge.
+   Scoped to the ONFACE theme during the transition so legacy CRM surfaces
+   keep their certified visual contracts. ── */
+html[data-onface-theme="light"] {
+  /* Surfaces */
+  --surface-page: var(--onface-paper);
+  --surface-card: var(--onface-white);
+  --surface-sunken: var(--onface-branco-logo);
+  --surface-shell: var(--onface-preto-logo);
+  --surface-shell-raised: var(--onface-graphite-surface);
+  --surface-accent: var(--onface-coral);
+  --surface-accent-subtle: var(--onface-coral-subtle);
+
+  /* Text */
+  --text-strong: var(--onface-preto-logo);
+  --text-body: #1f252c;
+  --text-muted: var(--onface-cinza);
+  --text-subtle: var(--onface-slate);
+  --text-on-accent: var(--onface-white);
+  --text-on-shell: var(--onface-branco-logo);
+  /* The DS maps this role to --onface-cinza (#6D747E), which lands at 3.8:1 on
+     the graphite shell — under the 4.5:1 floor for the 12px nav and meta text
+     that use it. Slate is the next step in the same DS ramp and clears it. */
+  --text-on-shell-muted: var(--onface-slate);
+
+  /* Lines */
+  --line-hairline: var(--onface-line);
+  --line-on-shell: var(--onface-alpha-divider);
+
+  /* Status */
+  --status-success: #3fb950;
+  --status-success-strong: #137333;
+  --status-danger: #e7000b;
+  --status-danger-dark: #ff7f6e;
+  --status-attention: var(--onface-coral);
+
+  /* shadcn primitives: "primary" becomes coral so Button/Badge/Switch/Checkbox
+     render as ONFACE controls instead of the library's neutral default. */
+  --background: var(--surface-page);
+  --foreground: var(--text-strong);
+  --card: var(--surface-card);
+  --card-foreground: var(--text-strong);
+  --popover: var(--surface-card);
+  --popover-foreground: var(--text-strong);
+  --primary: var(--onface-coral);
+  --primary-foreground: var(--onface-white);
+  --secondary: var(--onface-branco-logo);
+  --secondary-foreground: var(--text-strong);
+  --muted: var(--onface-branco-logo);
+  --muted-foreground: var(--text-muted);
+  --accent: var(--onface-branco-logo);
+  --accent-foreground: var(--text-strong);
+  --destructive: var(--status-danger);
+  --destructive-foreground: var(--onface-white);
+  --border: var(--line-hairline);
+  --input: var(--line-hairline);
+  --ring: var(--onface-coral);
+  --radius: var(--radius-control);
+  --font-sans: var(--font-onface-ui), ui-sans-serif, system-ui, sans-serif;
+}
+
+
+/* ── Escala fluida do ONFACE ──────────────────────────────────────────────
+ *
+ * `--onface-u` é a unidade de desenho: 1u = 1px da prancheta de 1440.
+ * Como ela é definida em `vw`, o layout acompanha a largura da janela em vez
+ * de se prender ao pixel de CSS. Isso resolve duas coisas de uma vez:
+ *
+ * 1. Zoom do navegador. Ao dar zoom, a viewport encolhe em px de CSS, então
+ *    uma medida em `vw` encolhe junto e ocupa a mesma fração da tela física.
+ *    O layout para de quebrar a cada passo de zoom.
+ * 2. Monitores diferentes. A tela inteira cresce e diminui junto, em vez de
+ *    ficar minúscula em 27" e espremida em 1280.
+ *
+ * O clamp existe para a legibilidade não escapar nos extremos: abaixo dele o
+ * texto ficaria ilegível, acima ficaria absurdo. Dentro da faixa, a proporção
+ * é exata. Todo o shell e as telas ONFACE medem em múltiplos desta unidade,
+ * nunca em px solto.
+ * ──────────────────────────────────────────────────────────────────────── */
+html[data-onface-theme],
+.onface-app-shell {
+  /* 1u = 1px da prancheta de 1440. `0.0694vw` é 1440 dividido em 100 partes,
+     então a tela inteira é uma redução ou ampliação fiel do desenho: as mesmas
+     proporções em qualquer monitor e em qualquer zoom, sem nada quebrar de
+     lugar. Um MacBook de 13" e um de 15" mostram a mesma tela, em tamanhos
+     diferentes, e não duas telas diferentes.
+
+     Os limites existem só para os extremos absurdos (projetor e 4K sem zoom).
+     Entre 792px e 2088px de viewport a proporção é exata, o que cobre de 67% a
+     175% de zoom num monitor 1440. Nenhum tamanho de fonte da tela usa `vw`
+     solto ou `clamp` próprio: tudo mede em múltiplos desta unidade, senão o
+     texto cresce sem o container acompanhar e estoura. */
+  /* Um dial único para o tamanho aparente de todo o produto. 1 = fiel à
+     prancheta de 1440; abaixo disso a tela inteira fica mais compacta, sempre
+     nas mesmas proporções. Mexer aqui é a única forma de mudar a densidade,
+     nunca ajustar tamanho de componente solto. */
+  --onface-escala: 0.9;
+  --onface-u: clamp(0.5px, calc(0.0694vw * var(--onface-escala)), 1.3px);
+
+  /* Nada de rolagem lateral, em nenhuma largura. `clip` não cria contexto de
+     rolagem, então não quebra `position: sticky` do topbar. */
+  overflow-x: clip;
+
+  /* Espaçamento */
+  --space-2: calc(2 * var(--onface-u));
+  --space-4: calc(4 * var(--onface-u));
+  --space-6: calc(6 * var(--onface-u));
+  --space-8: calc(8 * var(--onface-u));
+  --space-10: calc(10 * var(--onface-u));
+  --space-12: calc(12 * var(--onface-u));
+  --space-16: calc(16 * var(--onface-u));
+  --space-20: calc(20 * var(--onface-u));
+  --space-24: calc(24 * var(--onface-u));
+  --space-32: calc(32 * var(--onface-u));
+  --space-40: calc(40 * var(--onface-u));
+  --space-48: calc(48 * var(--onface-u));
+
+  /* Tipografia */
+  --text-2xs: calc(10 * var(--onface-u));
+  --text-xs: calc(11 * var(--onface-u));
+  --text-sm: calc(12 * var(--onface-u));
+  --text-md: calc(13 * var(--onface-u));
+  --text-base: calc(14 * var(--onface-u));
+  --text-lg: calc(16 * var(--onface-u));
+  --display-label: calc(10 * var(--onface-u));
+  --display-nav: calc(12 * var(--onface-u));
+  --display-title: calc(18 * var(--onface-u));
+  --display-kpi: calc(25 * var(--onface-u));
+  --display-section: calc(32 * var(--onface-u));
+  --leading-20: calc(20 * var(--onface-u));
+
+  /* Controles e ícones */
+  --control-xs: calc(24 * var(--onface-u));
+  --control-sm: calc(28 * var(--onface-u));
+  --control-md: calc(32 * var(--onface-u));
+  --control-lg: calc(36 * var(--onface-u));
+  --control-form: calc(40 * var(--onface-u));
+  --control-cta: calc(44 * var(--onface-u));
+  --avatar-sm: calc(24 * var(--onface-u));
+  --avatar-md: calc(32 * var(--onface-u));
+  --avatar-lg: calc(40 * var(--onface-u));
+  --avatar-shell: calc(36 * var(--onface-u));
+  --icon-xs: calc(12 * var(--onface-u));
+  --icon-sm: calc(16 * var(--onface-u));
+  --icon-md: calc(18 * var(--onface-u));
+  --icon-lg: calc(20 * var(--onface-u));
+
+  /* Geometria do shell */
+  --shell-topbar-h: calc(72 * var(--onface-u));
+  --shell-topbar-h-compact: calc(60 * var(--onface-u));
+  --shell-topbar-px: calc(24 * var(--onface-u));
+  --shell-nav-pill-h: calc(38 * var(--onface-u));
+  --shell-utility-size: calc(38 * var(--onface-u));
+
+  /* Raios. `--radius-full` fica de fora: pílula é pílula em qualquer escala. */
+  --radius-xs: calc(4 * var(--onface-u));
+  --radius-sm: calc(6 * var(--onface-u));
+  --radius-md: calc(8 * var(--onface-u));
+  --radius-control: calc(10 * var(--onface-u));
+  --radius-lg: calc(12 * var(--onface-u));
+  --radius-card: calc(12 * var(--onface-u));
+  --radius-card-lg: calc(16 * var(--onface-u));
+  --radius-pill-nav: calc(20 * var(--onface-u));
+  --radius-canvas: calc(40 * var(--onface-u));
+
+  --gutter-mobile: calc(16 * var(--onface-u));
+  --gutter-tablet: calc(20 * var(--onface-u));
+  --gutter-desktop: calc(24 * var(--onface-u));
+}
+
+@media (max-width: 767px) {
+  html[data-onface-theme],
+  .onface-app-shell { --onface-u: clamp(0.8px, 0.2667vw, 1.25px); }
+}
+
+/* A marca e a navegação podem encolher antes de empurrar o topbar para fora.
+   Era daqui que vinha a rolagem lateral entre 1280 e 1024.
+   `overflow` fica fora daqui de propósito: recortar a nav esconde o submenu
+   ancorado, que é posicionado a partir dela. */
+.onface-topbar-inner > * { min-width: 0; }
+
+/* ── App shell ────────────────────────────────────────────────────────── */
+.onface-app-shell {
+  min-height: 100dvh;
+  background: var(--surface-page);
+  color: var(--text-body);
+  font-family: var(--font-onface-ui), ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Browser surfaces carry the design too. */
+html[data-onface-theme="light"] ::selection {
+  background: var(--onface-coral-subtle);
+  color: var(--text-strong);
+}
+.onface-topbar ::selection {
+  background: rgba(254, 79, 43, 0.3);
+  color: var(--onface-white);
+}
+html[data-onface-theme="light"] {
+  accent-color: var(--onface-coral);
+  caret-color: var(--onface-coral);
+}
+
+/* ── Topbar ───────────────────────────────────────────────────────────── */
+.onface-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  height: var(--shell-topbar-h);
+  background: var(--surface-shell);
+  border-bottom: 1px solid var(--onface-alpha-hairline);
+  color: var(--text-on-shell);
+}
+
+.onface-topbar-inner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-16);
+  height: 100%;
+  padding-inline: var(--shell-topbar-px);
+}
+
+/* Brand. The official negative lockup, not a hand-rebuilt wordmark. */
+.onface-brand {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: var(--space-12);
+  text-decoration: none;
+}
+/* Explicit box: `width: auto` on an SVG that has not decoded yet measures 0 and
+   the nav jumps sideways on first paint. 1346×233 at 18px tall is 104px. */
+.onface-brand-lockup {
+  display: block;
+  width: 6.5rem;
+  height: 1.125rem;
+}
+.onface-brand-rule {
+  width: 1px;
+  height: 1.25rem;
+  background: var(--line-on-shell);
+}
+.onface-brand-descriptor {
+  color: var(--text-on-shell-muted);
+  font-family: var(--font-onface-display), sans-serif;
+  font-size: 0.5rem;
+  font-weight: var(--weight-bold);
+  letter-spacing: var(--tracking-caps);
+  line-height: 1.3;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* Pill navigation. Width is content-driven: the DS never fixes it. */
+.onface-nav {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  height: var(--shell-nav-pill-h);
+  margin-inline: auto;
+  padding: 0;
+  border-radius: var(--radius-pill-nav);
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.079) 0%, rgba(0, 0, 0, 0.073) 100%);
+  /* The DS hairline (0.051) disappears against the shell and the pill stops
+     reading as one container; the divider step still sits far below the 0.25
+     border that made the items look detached from their own background. */
+  box-shadow: inset 0 0 0 1px var(--onface-alpha-divider);
+}
+
+/* Âncora do item com submenu: cobre o vão até o menu para o ponteiro não
+   escapar no caminho. */
+.onface-nav-anchor {
+  display: inline-flex;
+  position: relative;
+}
+/* O submenu é ancorado no item, não portalizado: ele se posiciona pelo próprio
+   contêiner e some junto com ele. */
+.onface-menu-ancorado {
+  position: absolute;
+  top: calc(100% + var(--space-6));
+  left: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  min-width: calc(210 * var(--onface-u));
+}
+.onface-menu-ancorado a {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  padding: var(--space-8) var(--space-10);
+  border-radius: var(--radius-md);
+  color: var(--text-on-shell);
+  font-family: var(--font-onface-display), sans-serif;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background 160ms var(--ease-standard), color 160ms var(--ease-standard);
+}
+.onface-menu-ancorado a svg { width: var(--icon-sm); height: var(--icon-sm); color: var(--text-on-shell-muted); }
+.onface-menu-ancorado a:hover { background: rgba(255, 255, 255, 0.07); }
+.onface-menu-ancorado a:hover svg,
+.onface-menu-ancorado a[aria-current="page"] svg { color: var(--onface-coral); }
+.onface-menu-ancorado a[aria-current="page"] { color: #fff; }
+
+/* Hierarquia dentro do painel.
+   A árvore oficial tem três níveis, e eles ficam no mesmo painel: o nível é
+   lido pela indentação e pelo peso do rótulo, não por um flyout que abre por
+   cima. Um ramo (item que tem filhos) é clicável como qualquer outro, porque
+   ele também é um destino. */
+.onface-menu-ramo {
+  display: flex;
+  flex-direction: column;
+}
+.onface-menu-ancorado a[data-nivel="1"] { padding-left: calc(var(--space-10) + var(--space-16)); }
+.onface-menu-ancorado a[data-nivel="2"] { padding-left: calc(var(--space-10) + var(--space-32)); }
+/* O título do ramo se distingue do que está dentro dele: é o mesmo item, mas
+   também é o cabeçalho do grupo. */
+.onface-menu-ancorado a[data-ramo="true"] {
+  color: var(--text-on-shell-muted);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+.onface-menu-ancorado a[data-ramo="true"]:hover,
+.onface-menu-ancorado a[data-ramo="true"][aria-current="page"] { color: var(--onface-white); }
+/* Um pouco de ar antes de cada grupo, para o painel não virar uma lista só. */
+.onface-menu-ramo { margin-top: var(--space-4); }
+
+/* Níveis na folha mobile: mesma leitura, sem menu sobre menu. */
+.onface-sheet-child[data-nivel="2"] { padding-left: var(--space-32); }
+.onface-sheet-child[data-nivel="3"] { padding-left: calc(var(--space-32) + var(--space-16)); }
+
+.onface-nav-anchor::after {
+  content: "";
+  position: absolute;
+  inset: 100% 0 auto 0;
+  height: 10px;
+}
+
+.onface-nav-item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8);
+  height: var(--shell-nav-pill-h);
+  padding-inline: var(--space-16);
+  border: 0;
+  /* One radius in every state: only the fill changes. */
+  border-radius: var(--radius-pill-nav);
+  background: transparent;
+  color: var(--text-on-shell-muted);
+  font-family: var(--font-onface-display), sans-serif;
+  font-size: var(--display-nav);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-tight);
+  white-space: nowrap;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background-color var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard);
+}
+.onface-nav-item:hover:not([data-active="true"]) {
+  background: var(--onface-alpha-hairline);
+  color: var(--text-on-shell);
+}
+.onface-nav-item[data-active="true"] {
+  background: var(--surface-accent);
+  color: var(--onface-white);
+}
+/* Icons inherit currentColor, so they track the active/hover state. */
+.onface-nav-icon {
+  flex-shrink: 0;
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+}
+.onface-nav-chevron {
+  flex-shrink: 0;
+  width: var(--icon-xs);
+  height: var(--icon-xs);
+  opacity: 0.65;
+  transition: transform var(--motion-fast) var(--ease-standard);
+}
+.onface-nav-item[data-state="open"] .onface-nav-chevron {
+  transform: rotate(180deg);
+}
+.onface-nav-item[data-state="open"]:not([data-active="true"]) {
+  background: var(--onface-alpha-hairline);
+  color: var(--text-on-shell);
+}
+
+/* ── Utilities ────────────────────────────────────────────────────────── */
+/* The pill nav claims the free space with `margin-inline: auto`, so the
+   actions need no auto margin of their own. */
+.onface-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+.onface-utility {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: var(--shell-utility-size);
+  height: var(--shell-utility-size);
+  border: 0;
+  border-radius: var(--radius-full);
+  background: var(--onface-alpha-hairline);
+  color: var(--text-on-shell);
+  cursor: pointer;
+  transition: background-color var(--motion-fast) var(--ease-standard);
+}
+.onface-utility:hover,
+.onface-utility[data-state="open"] {
+  background: var(--onface-alpha-divider);
+}
+.onface-utility svg {
+  width: var(--icon-md);
+  height: var(--icon-md);
+}
+
+/* The approved shell uses search as a compact command action. Its accessible
+   name remains on the button; the visible label lives in the command palette,
+   keeping the topbar aligned to the Figma reference. */
+.onface-search {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--shell-utility-size);
+  height: var(--shell-utility-size);
+  padding-inline: 0;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: var(--onface-alpha-hairline);
+  box-shadow: inset 0 0 0 1px transparent;
+  color: var(--text-on-shell-muted);
+  font-family: var(--font-onface-ui), sans-serif;
+  font-size: var(--text-md);
+  cursor: pointer;
+  transition:
+    background-color var(--motion-fast) var(--ease-standard),
+    box-shadow var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard);
+}
+.onface-search:hover {
+  background: var(--onface-alpha-divider);
+  box-shadow: inset 0 0 0 1px var(--onface-alpha-ring);
+  color: var(--text-on-shell);
+}
+.onface-search svg {
+  flex-shrink: 0;
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+}
+.onface-search-label,
+.onface-search-kbd {
+  display: none;
+}
+
+.onface-rule {
+  flex-shrink: 0;
+  width: 1px;
+  height: var(--space-16);
+  background: var(--line-on-shell);
+}
+
+/* Profile */
+.onface-profile {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-10);
+  padding: var(--space-4);
+  padding-right: var(--space-8);
+  border: 0;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--text-on-shell);
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color var(--motion-fast) var(--ease-standard);
+}
+.onface-profile:hover,
+.onface-profile[data-state="open"] {
+  background: var(--onface-alpha-hairline);
+}
+.onface-avatar {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: var(--avatar-shell);
+  height: var(--avatar-shell);
+  border-radius: var(--radius-full);
+  background: var(--surface-shell-raised);
+  box-shadow: var(--ring-inset-avatar);
+  color: var(--text-on-shell);
+  font-family: var(--font-onface-display), sans-serif;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.02em;
+}
+.onface-profile-meta {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.onface-profile-meta strong {
+  overflow: hidden;
+  max-width: 8rem;
+  color: var(--text-on-shell);
+  font-family: var(--font-onface-display), sans-serif;
+  font-size: var(--display-nav);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-tight);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.onface-profile-meta small {
+  color: var(--text-on-shell-muted);
+  font-family: var(--font-onface-display), sans-serif;
+  font-size: var(--display-label);
+  font-weight: var(--weight-medium);
+  line-height: var(--leading-tight);
+}
+
+/* ── Radix portals. These render outside the shell, so the dark surface is
+   defined on the portal itself, not inherited from a wrapper. ── */
+.onface-menu {
+  min-width: 13rem !important;
+  padding: var(--space-6) !important;
+  border: 1px solid var(--onface-alpha-divider) !important;
+  border-radius: var(--radius-card) !important;
+  background: var(--onface-preto-logo) !important;
+  color: var(--onface-branco-logo) !important;
+  box-shadow: var(--shadow-popover-shell) !important;
+}
+.onface-menu-label {
+  padding: var(--space-8) var(--space-10) var(--space-6);
+  color: var(--onface-cinza);
+  font-family: var(--font-onface-display), sans-serif;
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-extrabold);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+.onface-menu [data-slot="dropdown-menu-item"],
+.onface-menu [data-slot="dropdown-menu-sub-trigger"] {
+  min-height: var(--control-form);
+  padding-inline: var(--space-10);
+  border-radius: var(--radius-md);
+  color: var(--onface-branco-logo);
+  font-family: var(--font-onface-ui), sans-serif;
+  font-size: var(--text-md);
+  font-weight: var(--weight-medium);
+}
+.onface-menu [data-slot="dropdown-menu-item"]:is(:focus, [data-highlighted]),
+.onface-menu [data-slot="dropdown-menu-sub-trigger"]:is(:focus, [data-highlighted], [data-state="open"]) {
+  background: var(--onface-alpha-divider) !important;
+  color: var(--onface-white) !important;
+}
+.onface-menu [data-slot="dropdown-menu-item"] svg,
+.onface-menu [data-slot="dropdown-menu-sub-trigger"] svg {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+  color: var(--onface-cinza) !important;
+}
+.onface-menu [data-slot="dropdown-menu-item"]:is(:focus, [data-highlighted]) svg {
+  color: var(--onface-branco-logo) !important;
+}
+.onface-menu [data-slot="dropdown-menu-separator"] {
+  margin: var(--space-6) 0;
+  background: var(--onface-alpha-divider) !important;
+}
+.onface-menu [data-variant="destructive"] {
+  color: var(--status-danger-dark) !important;
+}
+.onface-menu [data-variant="destructive"]:is(:focus, [data-highlighted]) {
+  background: rgba(231, 0, 11, 0.16) !important;
+  color: var(--status-danger-dark) !important;
+}
+/* The active destination is marked, not just hovered. */
+.onface-menu [aria-current="page"] {
+  color: var(--onface-coral) !important;
+}
+.onface-menu [aria-current="page"] svg {
+  color: var(--onface-coral) !important;
+}
+
+.onface-menu-profile {
+  min-width: 15rem;
+}
+.onface-menu-profile-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-10);
+  padding: var(--space-8) var(--space-10) var(--space-12);
+}
+.onface-menu-profile-header > span:last-child {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.onface-menu-profile-header strong {
+  overflow: hidden;
+  color: var(--onface-branco-logo);
+  font-family: var(--font-onface-display), sans-serif;
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.onface-menu-profile-header small {
+  color: var(--onface-cinza);
+  font-size: var(--text-xs);
+}
+
+/* ── Notifications panel ──────────────────────────────────────────────── */
+/* PopoverContent ships its own Tailwind utilities (w-72, p-4, bg-popover,
+   rounded-md, shadow-md); the shell surface has to win over them. */
+.onface-notif {
+  display: flex;
+  flex-direction: column;
+  width: 23.5rem !important;
+  max-width: calc(100vw - 2rem);
+  max-height: min(32rem, calc(100dvh - 6rem));
+  padding: 0 !important;
+  overflow: hidden;
+  border: 1px solid var(--onface-alpha-divider) !important;
+  border-radius: var(--radius-card-lg) !important;
+  background: var(--onface-preto-logo) !important;
+  color: var(--onface-branco-logo) !important;
+  box-shadow: var(--shadow-popover-shell) !important;
+}
+.onface-notif-head {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+  padding: var(--space-16) var(--space-16) var(--space-12);
+  border-bottom: 1px solid var(--onface-alpha-hairline);
+}
+.onface-notif-title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8);
+  color: var(--onface-branco-logo);
+  font-family: var(--font-onface-display), sans-serif;
+  font-size: var(--text-base);
+  font-weight: var(--weight-semibold);
+}
+.onface-notif-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  padding-inline: var(--space-6);
+  border-radius: var(--radius-full);
+  background: var(--surface-accent);
+  color: var(--onface-white);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-bold);
+  font-variant-numeric: tabular-nums;
+}
+.onface-notif-action {
+  border: 0;
+  background: transparent;
+  color: var(--onface-cinza);
+  font-family: var(--font-onface-ui), sans-serif;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+  transition: color var(--motion-fast) var(--ease-standard);
+}
+.onface-notif-action:hover:not(:disabled) {
+  color: var(--onface-coral);
+}
+.onface-notif-action:disabled {
+  opacity: var(--opacity-disabled);
+  cursor: not-allowed;
+}
+
+.onface-notif-list {
+  flex: 1;
+  min-height: 0;
+  padding: var(--space-6);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--onface-alpha-ring) transparent;
+}
+.onface-notif-list::-webkit-scrollbar {
+  width: 0.5rem;
+}
+.onface-notif-list::-webkit-scrollbar-thumb {
+  border: 0.125rem solid transparent;
+  border-radius: var(--radius-full);
+  background: var(--onface-alpha-ring);
+  background-clip: padding-box;
+}
+
+.onface-notif-item {
+  display: flex;
+  gap: var(--space-12);
+  width: 100%;
+  padding: var(--space-10);
+  border: 0;
+  border-radius: var(--radius-lg);
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color var(--motion-fast) var(--ease-standard);
+}
+.onface-notif-item:hover {
+  background: var(--onface-alpha-hairline);
+}
+/* Read items recede without becoming unreadable: 0.5 opacity would drop the
+   secondary line below the contrast floor. */
+.onface-notif-item[data-read="true"] .onface-notif-item-title {
+  color: var(--onface-slate);
+  font-weight: var(--weight-medium);
+}
+
+.onface-notif-figure {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: var(--avatar-lg);
+  height: var(--avatar-lg);
+  border-radius: var(--radius-full);
+  background: var(--surface-shell-raised);
+  box-shadow: var(--ring-inset-avatar);
+  color: var(--onface-slate);
+}
+.onface-notif-figure svg {
+  width: var(--icon-md);
+  height: var(--icon-md);
+}
+.onface-notif-figure[data-tone="accent"] {
+  background: var(--onface-coral-subtle);
+  box-shadow: inset 0 0 0 1px var(--onface-coral-border);
+  color: var(--onface-coral);
+}
+.onface-notif-figure[data-tone="success"] {
+  background: rgba(63, 185, 80, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(63, 185, 80, 0.24);
+  color: var(--status-success);
+}
+.onface-notif-figure[data-tone="danger"] {
+  background: rgba(231, 0, 11, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(231, 0, 11, 0.24);
+  color: var(--status-danger-dark);
+}
+
+.onface-notif-body {
+  display: block;
+  flex: 1;
+  min-width: 0;
+}
+.onface-notif-item-title {
+  display: block;
+  margin: 0;
+  color: var(--onface-branco-logo);
+  font-family: var(--font-onface-ui), sans-serif;
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  line-height: 1.35;
+}
+.onface-notif-item-copy {
+  display: -webkit-box;
+  overflow: hidden;
+  margin: var(--space-2) 0 0;
+  color: var(--onface-slate);
+  font-size: var(--text-sm);
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.onface-notif-item-time {
+  display: block;
+  margin-top: var(--space-6);
+  color: var(--onface-cinza);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+/* Sits on the title's optical line, not floating in the row's vertical middle. */
+.onface-notif-dot {
+  flex-shrink: 0;
+  align-self: flex-start;
+  margin-top: 0.3125rem;
+  width: var(--space-8);
+  height: var(--space-8);
+  border-radius: var(--radius-full);
+  background: var(--surface-accent);
+}
+
+.onface-notif-empty {
+  display: grid;
+  gap: var(--space-8);
+  justify-items: center;
+  padding: var(--space-40) var(--space-24);
+  text-align: center;
+}
+.onface-notif-empty svg {
+  width: var(--icon-lg);
+  height: var(--icon-lg);
+  color: var(--onface-cinza-3);
+}
+.onface-notif-empty p {
+  margin: 0;
+  color: var(--onface-slate);
+  font-size: var(--text-md);
+}
+.onface-notif-empty small {
+  color: var(--onface-cinza);
+  font-size: var(--text-sm);
+}
+
+.onface-notif-dot-indicator[data-visivel="false"] { display: none; }
+.onface-notif-dot-indicator {
+  position: absolute;
+  top: 0.4375rem;
+  right: 0.4375rem;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: var(--radius-full);
+  background: var(--surface-accent);
+  box-shadow: 0 0 0 1.5px var(--surface-shell);
+}
+
+/* ── Mobile sheet ─────────────────────────────────────────────────────── */
+/* SheetContent ships w-3/4, sm:max-w-sm and bg-background of its own. */
+.onface-sheet {
+  display: flex;
+  flex-direction: column;
+  width: min(20rem, calc(100vw - 3rem)) !important;
+  max-width: none !important;
+  padding: 0 !important;
+  border-color: var(--onface-alpha-divider) !important;
+  background: var(--onface-preto-logo) !important;
+  color: var(--onface-branco-logo) !important;
+}
+.onface-sheet-head {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: var(--space-12);
+  padding: var(--space-20) var(--space-20) var(--space-16);
+  border-bottom: 1px solid var(--onface-alpha-hairline);
+}
+.onface-sheet-title {
+  margin: 0;
+  color: var(--onface-branco-logo);
+  font-family: var(--font-onface-display), sans-serif;
+  font-size: var(--text-base);
+  font-weight: var(--weight-semibold);
+}
+.onface-sheet-copy {
+  margin: var(--space-2) 0 0;
+  color: var(--onface-cinza);
+  font-size: var(--text-sm);
+}
+.onface-sheet-nav {
+  flex: 1;
+  min-height: 0;
+  padding: var(--space-12);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.onface-sheet-group + .onface-sheet-group {
+  margin-top: var(--space-4);
+}
+.onface-sheet-link {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  min-height: var(--touch-min);
+  padding-inline: var(--space-12);
+  border-radius: var(--radius-control);
+  color: var(--onface-branco-logo);
+  font-family: var(--font-onface-display), sans-serif;
+  font-size: var(--text-base);
+  font-weight: var(--weight-semibold);
+  text-decoration: none;
+}
+.onface-sheet-link svg {
+  flex-shrink: 0;
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+  color: var(--onface-cinza);
+}
+.onface-sheet-link:hover {
+  background: var(--onface-alpha-hairline);
+}
+.onface-sheet-link[data-active="true"] {
+  background: var(--surface-accent);
+  color: var(--onface-white);
+}
+.onface-sheet-link[data-active="true"] svg {
+  color: var(--onface-white);
+}
+.onface-sheet-child {
+  min-height: var(--touch-min);
+  padding-left: var(--space-40);
+  color: var(--onface-slate);
+  font-family: var(--font-onface-ui), sans-serif;
+  font-size: var(--text-md);
+  font-weight: var(--weight-medium);
+}
+.onface-sheet-child[data-active="true"] {
+  background: var(--onface-alpha-divider);
+  color: var(--onface-white);
+}
+.onface-sheet-foot {
+  flex-shrink: 0;
+  padding: var(--space-12) var(--space-20) var(--space-20);
+  border-top: 1px solid var(--onface-alpha-hairline);
+}
+
+/* ── Command palette ──────────────────────────────────────────────────── */
+.onface-command-palette {
+  top: clamp(4rem, 12vh, 7.5rem);
+  max-width: min(46rem, calc(100vw - 2rem));
+  border-radius: var(--radius-card-lg);
+}
+.onface-command-palette input::placeholder {
+  color: var(--onface-cinza);
+}
+
+/* ── Preview canvas (validation surface only) ─────────────────────────── */
+.onface-preview-canvas {
+  width: min(100% - 3rem, 80rem);
+  margin: var(--space-32) auto;
+  padding: clamp(1.5rem, 5vw, 3.5rem);
+  border: 1px solid var(--line-hairline);
+  border-radius: var(--radius-canvas);
+  background: var(--surface-card);
+}
+.onface-preview-title {
+  max-width: 24ch;
+  margin: 0 0 var(--space-16);
+  color: var(--text-strong);
+  font-family: var(--font-onface-display), sans-serif;
+  font-size: clamp(2rem, 5vw, 3.5rem);
+  font-weight: var(--weight-bold);
+  letter-spacing: var(--tracking-wordmark);
+  line-height: 1.02;
+  text-wrap: balance;
+}
+.onface-preview-copy {
+  max-width: 68ch;
+  color: var(--text-muted);
+  font-size: var(--text-lg);
+  line-height: var(--leading-body);
+}
+.onface-preview-note {
+  margin-top: var(--space-32);
+  padding-top: var(--space-16);
+  border-top: 1px solid var(--line-hairline);
+  color: var(--text-subtle);
+  font-size: var(--text-base);
+}
+
+/* ── Focus ────────────────────────────────────────────────────────────── */
+html[data-onface-theme="light"] :is(.onface-app-shell, .onface-menu, .onface-notif, .onface-sheet)
+  :is(button, a, [tabindex]):focus-visible {
+  outline: 2px solid var(--onface-coral);
+  outline-offset: 2px;
+}
+
+/* ── Responsive.
+   The DS keeps the pill nav on tablet and laptop: only the labels collapse.
+   The sheet takes over at phone width, never before. ── */
+.onface-burger {
+  display: none;
+}
+
+/* Sem breakpoint de laptop: a escala proporcional já reduz o topbar inteiro
+   junto com a tela, e trocar a aparência no meio do caminho faria o mesmo
+   produto parecer dois. Abaixo de 768 o shell vira mobile de verdade. */
+
+@media (max-width: 767px) {
+  html[data-onface-theme],
+  .onface-app-shell { --onface-u: clamp(0.8px, 0.2667vw, 1.25px); }
+}
+
+/* A marca e a navegação podem encolher antes de empurrar o topbar para fora.
+   Era daqui que vinha a rolagem lateral entre 1280 e 1024.
+   `overflow` fica fora daqui de propósito: recortar a nav esconde o submenu
+   ancorado, que é posicionado a partir dela. */
+.onface-topbar-inner > * { min-width: 0; }
+
+@media (max-width: 1023px) {
+  .onface-topbar-inner {
+    padding-inline: var(--gutter-tablet);
+  }
+  .onface-brand-rule,
+  .onface-brand-descriptor {
+    display: none;
+  }
+  .onface-profile-meta {
+    display: none;
+  }
+  .onface-profile {
+    padding-right: var(--space-4);
+  }
+}
+
+@media (max-width: 767px) {
+  .onface-topbar {
+    height: var(--shell-topbar-h-compact);
+  }
+  .onface-topbar-inner {
+    gap: var(--space-8);
+    padding-inline: var(--gutter-mobile);
+  }
+  .onface-nav {
+    display: none;
+  }
+  .onface-rule {
+    display: none;
+  }
+  .onface-burger {
+    display: inline-flex;
+  }
+  /* Settings lives in the sheet on phones; the topbar keeps search,
+     notifications and identity, which are the time-sensitive controls. */
+  .onface-utility[data-utility="settings"] {
+    display: none;
+  }
+  /* Touch targets stay at 44px even though the circle reads as 38px. */
+  .onface-utility,
+  .onface-search,
+  .onface-burger {
+    min-width: var(--touch-min);
+    min-height: var(--touch-min);
+  }
+  .onface-search {
+    width: var(--touch-min);
+  }
+  .onface-brand {
+    margin-right: auto;
+  }
+  .onface-notif {
+    width: calc(100vw - 2rem);
+    max-height: calc(100dvh - 5.5rem);
+  }
+  .onface-preview-canvas {
+    width: calc(100% - 2rem);
+    margin-block: var(--space-16);
+    padding: var(--space-20);
+    border-radius: var(--radius-card-lg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .onface-app-shell *,
+  .onface-app-shell *::before,
+  .onface-app-shell *::after,
+  .onface-menu *,
+  .onface-notif *,
+  .onface-sheet * {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}
+
+/* ── Enquadramento do quadro do Figma ──────────────────────────────────
+   `HomePageFigma` é a marcação do Figma e tem 1440px fixos.
+
+   Escalar com `calc(100vw / 1440px)` NÃO funciona: CSS não divide dois
+   comprimentos para produzir um número, e o valor inválido colapsa o quadro
+   inteiro. Sem JS, o caminho previsível é `zoom` em degraus por media query,
+   com rolagem horizontal cobrindo o que sobrar. */
+.onface-figma-frame {
+  width: 100%;
+  overflow-x: auto;
+  background: var(--surface-shell);
+}
+.onface-figma-frame > * {
+  margin-inline: auto;
+}
+
+/* The Figma frame was authored at 967px. On tall displays, keep its lower
+   workspace surface alive through the viewport instead of exposing a blank
+   page after the grid. */
+.onface-figma-frame > [data-name="HomePage"] {
+  height: max(967px, calc(100dvh - var(--shell-topbar-h))) !important;
+}
+.onface-figma-frame [data-name="LowerWorkspace"] {
+  height: calc(100% - 516px) !important;
+}
+.onface-figma-frame [data-name="LowerSurface"],
+.onface-figma-frame [data-name="BackgroundGridEffect"] {
+  height: calc(100% - 13px) !important;
+}
+
+/* The imported Figma classes contain editor-only family aliases such as
+   `Plus_Jakarta_Sans:Bold`. They resolve to a browser fallback, so the visual
+   reference loses its sans-serif hierarchy. Keep the Figma geometry intact
+   while binding every exported text node to the ONFACE display face. */
+.onface-figma-frame [data-node-id] {
+  font-family: var(--font-onface-display), ui-sans-serif, system-ui, sans-serif !important;
+}

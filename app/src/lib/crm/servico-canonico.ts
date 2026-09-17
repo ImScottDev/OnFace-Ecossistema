@@ -150,6 +150,17 @@ export async function materializarServicosCanonicosDoGrupo(grupoComercialId: str
   const [negocio] = await db.select({ empresaId: negocios.empresaId, leadId: negocios.leadId }).from(negocios).where(eq(negocios.id, grupo.negocioId)).limit(1);
   if (!negocio) return { servicoIds: [] };
 
+  // Frente 2C.1 — rede de segurança: garante família resolvida ANTES de
+  // materializar. Item UNKNOWN aqui virava serviço canônico UNKNOWN, que por
+  // sua vez gerava fulfillment sem checklist e fora de qualquer trilha de
+  // entrega. É o último ponto onde ainda dá pra corrigir sem dado errado no
+  // portfólio.
+  const { calcularFamiliaDoGrupo, propagarFamiliaNosItensDoGrupo } = await import("@/lib/crm/politica-familia");
+  const familiaGrupo = grupo.serviceFamily && grupo.serviceFamily !== "UNKNOWN"
+    ? (grupo.serviceFamily as "PABX" | "CALLFACE_AI" | "WHITE_LABEL")
+    : await calcularFamiliaDoGrupo(grupoComercialId);
+  await propagarFamiliaNosItensDoGrupo(grupoComercialId, familiaGrupo);
+
   const itens = await db.select().from(oportunidadeItens).where(eq(oportunidadeItens.grupoComercialId, grupoComercialId));
   if (itens.length === 0) return { servicoIds: [] };
 

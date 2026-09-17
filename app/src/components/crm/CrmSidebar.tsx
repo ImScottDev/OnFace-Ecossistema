@@ -427,10 +427,13 @@ export function CrmSidebar() {
               <div className="border-t border-white/[0.06] !my-2" />
               {isOpen && <p className="px-3 text-[10px] text-white/20 uppercase tracking-wider mb-1">Admin</p>}
               {[
-                { name: "Organizações", href: "/admin/organizacoes", icon: Building2 },
-                { name: "Usuários", href: "/admin/usuarios", icon: ShieldCheck },
-                { name: "Qualidade de Dados", href: "/admin/qualidade-dados", icon: ShieldAlert },
-                { name: "Duplicidade de Contratos", href: "/admin/duplicidade-contratos", icon: Wallet },
+                // 09/09/2026: as quatro telas migraram pro CRM2 (`/ajustes/*`).
+                // Os itens aqui apontam direto pro destino novo — `/admin/*`
+                // sobrevive só como redirect pra link antigo.
+                { name: "Organizações", href: "/ajustes/organizacoes", icon: Building2 },
+                { name: "Equipe e metas", href: "/ajustes/membros", icon: ShieldCheck },
+                { name: "Qualidade de Dados", href: "/ajustes/qualidade-dados", icon: ShieldAlert },
+                { name: "Duplicidade de Contratos", href: "/ajustes/qualidade-dados/duplicidade", icon: Wallet },
               ].map((item) => {
                 const isActive = pathname.startsWith(item.href);
                 return (

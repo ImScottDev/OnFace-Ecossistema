@@ -2,13 +2,13 @@ import { createHash, randomUUID } from "node:crypto";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
-  aiAgentRuns, aiAgentRunSteps, aiAgentVersions, aiAgents, aiAlerts, aiModels, aiProviderCredentials, aiSendLedger, aiUsageBudgets,
+  aiAgentRuns, aiAgentRunSteps, aiAgentVersions, aiAgents, aiAlerts, aiCases, aiModels, aiProviderCredentials, aiSendLedger, aiUsageBudgets,
   contatos, whatsappMensagens,
 } from "@/lib/db/schema";
 import { whatsappOutgoingQueue } from "@/lib/queue";
 import { decryptCredential } from "../security/credentials";
 import { executeRegisteredTool, modelToolsForIds } from "../tools/registry";
-import { runModelCall, type AgentMessage, type AiProvider, type ModelToolCall } from "./provider-gateway";
+import { runModelCall, type AgentMessage, type AiProvider } from "./provider-gateway";
 
 export type ExecuteAgentInput = {
   organizacaoId: string;
@@ -178,6 +178,9 @@ export async function executeAgent(input: ExecuteAgentInput): Promise<ExecuteAge
   let handoff = false;
   const trace: Array<Record<string, unknown>> = [{ type: "selected", agentId: selected.agent.id, versionId: selected.version.id, provider, model: selected.version.modelo }];
   try {
+    const guardrails = selected.version.guardrailConfig && typeof selected.version.guardrailConfig === "object" ? selected.version.guardrailConfig as Record<string, unknown> : {};
+    const autonomy = (["suggest", "approval", "autonomous"] as const).includes(guardrails.autonomy as "suggest") ? guardrails.autonomy as "suggest" | "approval" | "autonomous" : "suggest";
+    trace.push({ type: "autonomy", mode: autonomy });
     await assertBudget(run.id, input, selected.agent.id);
     const { apiKey, baseUrl } = await resolveApiKey(selected.version);
     const toolIds = Array.isArray(selected.version.tools) ? selected.version.tools.filter((value): value is string => typeof value === "string") : [];
@@ -206,9 +209,15 @@ export async function executeAgent(input: ExecuteAgentInput): Promise<ExecuteAge
         if (!allowedNames.has(call.name)) result = { ok: false, error: `tool fora da allowlist: ${call.name}` };
         else {
           const startedTool = Date.now();
-          try { result = await executeRegisteredTool(call.name, { organizacaoId: input.organizacaoId, agentId: selected.agent.id, runId: run.id, contatoId: input.contatoId, leadId: input.leadId, mode: input.mode }, call.input); }
+          try { result = await executeRegisteredTool(call.name, { organizacaoId: input.organizacaoId, agentId: selected.agent.id, runId: run.id, contatoId: input.contatoId, leadId: input.leadId, mode: input.mode, autonomy }, call.input); }
           catch (error) { result = { ok: false, error: error instanceof Error ? error.message : String(error) }; }
           await persistStep({ organizacaoId: input.organizacaoId, runId: run.id, sequence: sequence++, kind: "tool_call", name: call.name, status: result.ok ? "completed" : "failed", input: call.input, output: result, latencyMs: Date.now() - startedTool, errorCode: result.ok ? undefined : "tool_failed", errorMessage: result.error });
+        }
+        const previewData = result.data && typeof result.data === "object" ? result.data as Record<string, unknown> : null;
+        if (input.mode === "live" && autonomy === "approval" && previewData?.approvalRequired) {
+          await db.insert(aiAlerts).values({ organizacaoId: input.organizacaoId, kind: "approval_required", severity: "warning", title: `Aprovação necessária: ${call.name}`, body: JSON.stringify(call.input).slice(0, 2000), refKind: "run", refId: run.id });
+          if (input.contatoId) await db.insert(aiCases).values({ organizacaoId: input.organizacaoId, contatoId: input.contatoId, leadId: input.leadId ?? null, agentId: selected.agent.id, runId: run.id, title: `Aprovar ação: ${call.name}`, summary: "O agente preparou uma ação e aguarda decisão humana.", blocker: "A versão está configurada no modo pedir aprovação.", source: "tool_approval", contextSnapshot: { kind: "tool_approval", toolName: call.name, toolInput: call.input } });
+          handoff = true;
         }
         if (call.name === "message_prepare" && result.ok && result.data && typeof result.data === "object") {
           const list = (result.data as { messages?: unknown }).messages;
@@ -223,7 +232,7 @@ export async function executeAgent(input: ExecuteAgentInput): Promise<ExecuteAge
 
     const outgoing = responseMessages(finalText, prepared);
     await persistStep({ organizacaoId: input.organizacaoId, runId: run.id, sequence: sequence++, kind: "guardrail", name: "before_send", status: "completed", input: { count: outgoing.length }, output: { sanitized: true } });
-    const sentMessageIds = await sendMessages(input, run.id, outgoing);
+    const sentMessageIds = await sendMessages({ ...input, suppressEgress: input.suppressEgress || autonomy !== "autonomous" }, run.id, outgoing);
     if (sentMessageIds.length) await persistStep({ organizacaoId: input.organizacaoId, runId: run.id, sequence: sequence++, kind: "egress", name: "whatsapp", status: "completed", output: { messageIds: sentMessageIds } });
     const status = handoff ? "handed_off" : "completed";
     await db.update(aiAgentRuns).set({ status, trace, tokens: tokensInput + tokensOutput, tokensInput, tokensOutput, custo: String(cost), stepsCount: sequence, completedAt: new Date() }).where(eq(aiAgentRuns.id, run.id));

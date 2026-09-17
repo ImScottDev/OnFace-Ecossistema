@@ -29,7 +29,52 @@ export function sessionToConfig(sessao: { apiToken?: string | null }): WuzapiSes
   };
 }
 
+/**
+ * Allowlist de destinatários. Existe para ambientes que não são produção:
+ * com WHATSAPP_ALLOWLIST preenchida, o CRM só consegue enviar para os números
+ * listados e qualquer outro destino falha antes de sair da aplicação.
+ * Sem a variável, o comportamento é o de sempre e produção não muda.
+ */
+const ALLOWLIST = (process.env.WHATSAPP_ALLOWLIST || "")
+  .split(",")
+  .map(n => n.replace(/\D/g, ""))
+  .filter(Boolean);
+
+/** Últimos 8 dígitos: ignora DDI e o nono dígito, que variam na mesma linha. */
+function nucleoDoNumero(phone: string): string {
+  return phone.replace(/\D/g, "").slice(-8);
+}
+
+export function destinatarioPermitido(phone: string): boolean {
+  if (ALLOWLIST.length === 0) return true;
+  const alvo = nucleoDoNumero(phone);
+  return alvo.length >= 8 && ALLOWLIST.some(p => nucleoDoNumero(p) === alvo);
+}
+
+/** Rotas do wuzapi que produzem efeito visível para o destinatário. */
+const ROTAS_DE_SAIDA = ["/chat/send/", "/chat/react", "/chat/presence", "/chat/delete"];
+
+function checarAllowlist(path: string, options: RequestInit): void {
+  if (ALLOWLIST.length === 0) return;
+  if (!ROTAS_DE_SAIDA.some(r => path.startsWith(r))) return;
+
+  let phone = "";
+  try {
+    const body = typeof options.body === "string" ? JSON.parse(options.body) : null;
+    phone = body?.Phone || body?.ChatPhone || "";
+  } catch {
+    // corpo ilegível em rota de saída: bloqueia, porque não dá para provar o destino
+  }
+
+  if (!destinatarioPermitido(phone)) {
+    throw new Error(
+      `WhatsApp bloqueado pela allowlist do ambiente: ${phone || "destino desconhecido"} nao esta em WHATSAPP_ALLOWLIST`,
+    );
+  }
+}
+
 async function wuzapiFetch(path: string, options: RequestInit = {}, config = DEFAULT_CONFIG): Promise<Response> {
+  checarAllowlist(path, options);
   const url = `${config.baseUrl}${path}`;
   const res = await fetch(url, {
     ...options,

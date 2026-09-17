@@ -234,7 +234,11 @@ export default async function VendasVisaoGeralPage({
       </div>
 
       {/* ── Hero escuro: saudação + ações + Pulso comercial ── */}
-      <section className="flex flex-col gap-4 px-4 sm:px-6 pt-5 sm:pt-6 pb-6 rounded-[32px]" style={{ background: "var(--cf2-home-hero-bg)" }}>
+      <section
+        data-cf2-superficie="escura"
+        className="flex flex-col gap-4 px-4 sm:px-6 pt-5 sm:pt-6 pb-6 rounded-[32px]"
+        style={{ background: "var(--cf2-home-hero-bg)" }}
+      >
         <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
           <div className="flex flex-col gap-1 min-w-0">
             <p className="text-[11px] font-semibold tracking-wide" style={{ color: "var(--cf2-home-text-muted)" }}>

@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { ChevronLeft, Info } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { digitsForDialer } from "@/lib/utils/callface-call";
+import { DetailDrawer } from "@/components/crm/DetailDrawer";
 import { ConversaItem, Contexto } from "./types";
 import { Cf2ConversationList } from "./ConversationList";
 import { Cf2ChatThread } from "./ChatThread";
@@ -48,6 +50,12 @@ export function Cf2AtendimentoWorkspace() {
   const [selecionada, setSelecionada] = useState<ConversaItem | null>(null);
   const [novaMensagemAberta, setNovaMensagemAberta] = useState(false);
   const [atribuirAberta, setAtribuirAberta] = useState(false);
+  // Painel de contexto (pessoa, empresa, negócio ativo, cadências) só existia
+  // fixo a partir de `xl` (1280px) — decisão deliberada pra não espremer a
+  // conversa em telas médias, mas isso deixava o contexto TOTALMENTE
+  // inacessível abaixo disso, notebook incluso. Vira drawer sob demanda
+  // abaixo de `xl`, mesmo dado, sem duplicar o painel.
+  const [contextoAberto, setContextoAberto] = useState(false);
   const [leadIdAplicado, setLeadIdAplicado] = useState<string | null>(null);
 
   // Trocar de aba limpa a seleção — não faz sentido continuar mostrando uma
@@ -159,6 +167,10 @@ export function Cf2AtendimentoWorkspace() {
     if (criado) { setSelecionada(criado); setPendingContatoId(null); }
   }
 
+  // Abaixo de lg a tela mostra a lista OU a conversa, nunca as duas.
+  // O discador conta como "conversa": ocupa a coluna da direita do mesmo jeito.
+  const temConversa = Boolean(conversaAtual || draftConversa || canal === "ligacao");
+
   const atribuirMutation = useMutation({
     mutationFn: async ({ contatoId, usuarioId }: { contatoId: string; usuarioId: string }) => {
       const res = await fetch(`/api/contatos/${contatoId}/atribuir`, {
@@ -173,7 +185,37 @@ export function Cf2AtendimentoWorkspace() {
 
   return (
     <div className="flex flex-col gap-3 h-full min-h-0">
+      {temConversa && (
+        <div className="flex items-center justify-between gap-2 -mb-1">
+          <button
+            type="button"
+            onClick={() => { setSelecionada(null); if (canal === "ligacao") setCanal("todos"); }}
+            className="lg:hidden flex items-center gap-1.5 self-start px-3 py-2 rounded-lg text-[13px] font-medium transition-colors"
+            style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-secondary)" }}
+          >
+            <ChevronLeft className="w-4 h-4" aria-hidden /> Todas as conversas
+          </button>
+          {(conversaAtual || draftConversa) && (
+            <button
+              type="button"
+              onClick={() => setContextoAberto(true)}
+              className="xl:hidden flex items-center gap-1.5 self-start px-3 py-2 rounded-lg text-[13px] font-medium transition-colors"
+              style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-secondary)" }}
+            >
+              <Info className="w-4 h-4" aria-hidden /> Detalhes
+            </button>
+          )}
+        </div>
+      )}
+
       <div className="flex gap-4 flex-1 min-h-0">
+      {/* Três colunas de largura fixa não cabem abaixo de 1280px: em 834px a
+          conversa — o conteúdo principal da tela — ficava espremida em ~40px
+          entre a lista e o painel de contexto. Agora a lista e o contexto têm
+          largura fixa só a partir do ponto em que ela cabe, o contexto some
+          antes disso (é o apoio, não o assunto), e no tablet/celular a tela
+          alterna entre lista e conversa como qualquer inbox. */}
+      <div className={`${temConversa ? "hidden lg:block" : "block"} w-full lg:w-[336px] lg:shrink-0 h-full min-h-0`}>
       <Cf2ConversationList
         conversas={conversas}
         loading={isLoading}
@@ -188,6 +230,7 @@ export function Cf2AtendimentoWorkspace() {
         onNovaMensagem={() => setNovaMensagemAberta(true)}
         contagens={contagens}
       />
+      </div>
 
       {conversaAtual ? (
         <>
@@ -199,10 +242,12 @@ export function Cf2AtendimentoWorkspace() {
               textoInicial={textoParam || undefined}
             />
           )}
-          {conversaAtual.tipo === "email" && <Cf2EmailThread conversa={conversaAtual} contexto={contexto ?? null} />}
+          {conversaAtual.tipo === "email" && <Cf2EmailThread conversa={conversaAtual} contexto={contexto ?? null} textoInicial={textoParam || undefined} />}
           {conversaAtual.tipo === "ligacao" && <Cf2CallDetail conversa={conversaAtual} />}
 
-          <Cf2ContextPanel conversa={conversaAtual} contexto={contexto ?? null} loading={carregandoContexto} />
+          <div className="hidden xl:block w-[336px] shrink-0 h-full min-h-0">
+            <Cf2ContextPanel conversa={conversaAtual} contexto={contexto ?? null} loading={carregandoContexto} />
+          </div>
         </>
       ) : draftConversa ? (
         <>
@@ -210,18 +255,21 @@ export function Cf2AtendimentoWorkspace() {
             leadId={leadIdParam!}
             leadNome={draftConversa.nome}
             leadTelefone={draftConversa.telefone}
+            textoInicial={textoParam || undefined}
             onSent={(contatoId) => {
               setPendingContatoId(contatoId);
               queryClient.invalidateQueries({ queryKey: ["cf2-conversas"] });
             }}
           />
-          <Cf2ContextPanel conversa={draftConversa} contexto={contexto ?? null} loading={carregandoContexto} />
+          <div className="hidden xl:block w-[336px] shrink-0 h-full min-h-0">
+            <Cf2ContextPanel conversa={draftConversa} contexto={contexto ?? null} loading={carregandoContexto} />
+          </div>
         </>
       ) : canal === "ligacao" ? (
         <Cf2Dialer numeroInicial={telefoneParam || undefined} />
       ) : (
         <div
-          className="flex-1 flex items-center justify-center rounded-2xl"
+          className="hidden lg:flex flex-1 items-center justify-center rounded-2xl"
           style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}
         >
           <p className="text-[13px]" style={{ color: "var(--cf2-text-tertiary)" }}>
@@ -250,6 +298,12 @@ export function Cf2AtendimentoWorkspace() {
           }}
         />
       )}
+
+      <DetailDrawer open={contextoAberto && !!(conversaAtual ?? draftConversa)} onClose={() => setContextoAberto(false)} bare panelBg="var(--cf2-bg-surface)" width="w-full sm:w-[380px]">
+        {(conversaAtual ?? draftConversa) && (
+          <Cf2ContextPanel conversa={(conversaAtual ?? draftConversa)!} contexto={contexto ?? null} loading={carregandoContexto} />
+        )}
+      </DetailDrawer>
     </div>
   );
 }

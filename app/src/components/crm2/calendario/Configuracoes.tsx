@@ -132,7 +132,7 @@ export function Cf2CalendarioConfiguracoes() {
         <div className="flex gap-3 max-w-sm">
           <div className="flex-1">
             <p className="text-[11px] font-bold uppercase mb-1.5" style={{ color: "var(--cf2-text-tertiary)" }}>Início</p>
-            <input type="time" value={horario.inicio} onChange={(e) => { setHorario((h) => ({ ...h, inicio: e.target.value })); marcarDirty(); }}
+            <input type="time" aria-label="Hora" value={horario.inicio} onChange={(e) => { setHorario((h) => ({ ...h, inicio: e.target.value })); marcarDirty(); }}
               className="w-full px-3 py-2 rounded-lg text-[13px] outline-none" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }} />
           </div>
           <div className="flex-1">
@@ -153,7 +153,7 @@ export function Cf2CalendarioConfiguracoes() {
           <div className="flex gap-3 max-w-sm">
             <div className="flex-1">
               <p className="text-[11px] font-bold uppercase mb-1.5" style={{ color: "var(--cf2-text-tertiary)" }}>Início</p>
-              <input type="time" value={almoco.inicio} onChange={(e) => { setAlmoco((a) => ({ ...a, inicio: e.target.value })); marcarDirty(); }}
+              <input type="time" aria-label="Hora" value={almoco.inicio} onChange={(e) => { setAlmoco((a) => ({ ...a, inicio: e.target.value })); marcarDirty(); }}
                 className="w-full px-3 py-2 rounded-lg text-[13px] outline-none" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }} />
             </div>
             <div className="flex-1">

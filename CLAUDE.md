@@ -82,3 +82,11 @@ Segredo sempre vem do `.env`, nunca literal no código/script.
 - Worker: `app/src/worker/index.ts`
 - API (Hono): `app/src/api-server/`
 - Scripts de infra: `scripts/` (raiz do repo — dev.sh, refresh-dev-db.sh)
+- Integração Stripe: `app/src/lib/integrations/stripe-*.ts` — antes de
+  mexer nisso (checkout, invoice, sync de assinatura, criar produto/preço),
+  ler `docs/reconstruction/STRIPE-AGENT-REFERENCE.md` (índice de docs
+  oficiais da Stripe + boas práticas pra agente de IA: sempre Checkout
+  Sessions API, nunca Charges/Sources/Tokens deprecados, conferir versão
+  do pacote `stripe` no npm antes de fixar). Isso é só documentação, não dá
+  acesso à conta real — acesso de escrita real ainda depende de MCP/chave
+  configurados na sessão.

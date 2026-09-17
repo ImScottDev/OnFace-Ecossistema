@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useOrgUsuarios } from "@/components/crm/BoardFilters";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -23,7 +25,6 @@ import {
 } from "@/components/crm2/ui/DropdownMenu";
 
 const brl = (v: string | null) => (parseFloat(v || "0") || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
-import { Cf2NovaPropostaSlideOver } from "@/components/crm2/negocios/NovaPropostaSlideOver";
 
 // Chrome escuro não tem variante própria de success/warning legível em
 // fundo escuro (mesmo achado já documentado em pipeline/Workspace.tsx) —
@@ -72,7 +73,16 @@ export function Cf2NegocioDrawer({ negocioId, open, onClose, onChanged }: { nego
   const [perderMenuOpen, setPerderMenuOpen] = useState(false);
   const [motivoOutro, setMotivoOutro] = useState("");
   const [tarefaModalOpen, setTarefaModalOpen] = useState(false);
-  const [novaPropostaOpen, setNovaPropostaOpen] = useState(false);
+  const router = useRouter();
+  const { usuarios: usuariosOrg } = useOrgUsuarios();
+  // Tags da oportunidade (01/09, Frente 2A) — mesmos endpoints já usados no
+  // lead (`/api/labels`, `/api/negocios/:id/labels`), mesma query key
+  // ["labels"], cache compartilhado. Nenhum sistema paralelo de tag.
+  const [tagPopoverOpen, setTagPopoverOpen] = useState(false);
+  // Nova proposta = NAVEGAÇÃO, não slide-over (01/09, Frente 2A). Ver
+  // comentário longo em `negocios/Workspace.tsx`: o painel antigo espremia a
+  // tela inteira de composição de proposta num `max-w-2xl` e quebrava.
+  const irParaNovaProposta = () => router.push(`/propostas/novo?negocioId=${negocioId}`);
   const [acoesMenuOpen, setAcoesMenuOpen] = useState(false);
   const [noteOpen, setNoteOpen] = useState(false);
   const [noteText, setNoteText] = useState("");
@@ -177,6 +187,31 @@ export function Cf2NegocioDrawer({ negocioId, open, onClose, onChanged }: { nego
     onError: () => toast.error("Não foi possível salvar a nota"),
   });
 
+  const { data: labelsNegocio = [], refetch: refetchLabels } = useQuery<{ id: string; nome: string; cor: string }[]>({
+    queryKey: ["negocio-labels", negocioId],
+    queryFn: async () => { const r = await fetch(`/api/negocios/${negocioId}/labels`); if (!r.ok) return []; return r.json(); },
+    enabled: !!negocioId && open,
+  });
+
+  const { data: labelsDisponiveis = [] } = useQuery<{ id: string; nome: string; cor: string }[]>({
+    queryKey: ["labels"],
+    queryFn: async () => { const r = await fetch("/api/labels"); if (!r.ok) return []; return r.json(); },
+    enabled: tagPopoverOpen,
+  });
+
+  const mudarTag = useMutation({
+    mutationFn: async ({ labelId, acao }: { labelId: string; acao: "add" | "remove" }) => {
+      const r = await fetch(`/api/negocios/${negocioId}/labels`, {
+        method: acao === "add" ? "POST" : "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ labelId }),
+      });
+      if (!r.ok) throw new Error("falha");
+    },
+    onSuccess: () => { refetchLabels(); onChanged(); },
+    onError: () => toast.error("Não foi possível atualizar a tag"),
+  });
+
   const negocio = data?.negocio;
   if (!negocio && !isLoading) return null;
 
@@ -226,7 +261,7 @@ export function Cf2NegocioDrawer({ negocioId, open, onClose, onChanged }: { nego
             ))}
             <div className="h-px my-1" style={{ background: "var(--cf2-chrome-border-subtle)" }} />
             <div className="flex items-center gap-1.5 px-1 py-1">
-              <input value={motivoOutro} onChange={(e) => setMotivoOutro(e.target.value)} onClick={(e) => e.stopPropagation()} placeholder="Outro motivo..." className="flex-1 px-2 py-1 rounded-lg text-[12px] outline-none" style={{ background: "var(--cf2-chrome-bg-alt)", border: "1px solid var(--cf2-chrome-border-subtle)", color: "var(--cf2-chrome-text-primary)" }} />
+              <input value={motivoOutro} onChange={(e) => setMotivoOutro(e.target.value)} onClick={(e) => e.stopPropagation()} placeholder="Outro motivo..." aria-label="Outro motivo" className="flex-1 px-2 py-1 rounded-lg text-[12px] outline-none" style={{ background: "var(--cf2-chrome-bg-alt)", border: "1px solid var(--cf2-chrome-border-subtle)", color: "var(--cf2-chrome-text-primary)" }} />
               <button onClick={() => motivoOutro.trim() && patch.mutate({ status: "perdido", motivoPerda: motivoOutro.trim() })} disabled={!motivoOutro.trim()} className="text-[11px] font-bold px-2 py-1 rounded-lg disabled:opacity-40" style={{ background: "rgba(255,255,255,0.08)", color: "var(--cf2-chrome-text-primary)" }}>OK</button>
             </div>
           </Cf2DropdownMenuContent>
@@ -275,9 +310,50 @@ export function Cf2NegocioDrawer({ negocioId, open, onClose, onChanged }: { nego
               {negocio.serviceFamily && <span className="text-[12px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>· {FAMILY_LABEL[negocio.serviceFamily] || negocio.serviceFamily}</span>}
               <span className="text-[12px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>· {tempoNaEtapa(negocio.updatedAt)} na etapa</span>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
               <span className="text-[15px] font-semibold" style={{ color: "var(--cf2-chrome-text-primary)" }}>{brl(negocio.mrrFechado || negocio.mrrEstimado || negocio.valorTotal)}</span>
               <Link href={`/negocios/${negocioId}`} className="text-[12px] font-medium" style={{ color: SUCCESS_DARK }}>Abrir oportunidade completa →</Link>
+            </div>
+
+            {/* Responsável e próxima ação (01/09, Frente 2A): eram os dois
+                dados que o closer precisava e o drawer não mostrava — ficavam
+                só no card do board ou na página completa. */}
+            <div className="flex flex-col gap-1 text-[12px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>
+              <span>Responsável: <strong style={{ color: "var(--cf2-chrome-text-primary)" }}>{usuariosOrg.find((u) => u.id === negocio.responsavelId)?.nome || "sem closer"}</strong></span>
+              <span>
+                Próxima ação:{" "}
+                <strong style={{ color: proximaTarefa ? SUCCESS_DARK : "var(--cf2-chrome-text-secondary)" }}>
+                  {proximaTarefa
+                    ? `${proximaTarefa.titulo}${proximaTarefa.dataVencimento ? ` · ${new Date(proximaTarefa.dataVencimento).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}` : ""}`
+                    : "nenhuma agendada"}
+                </strong>
+              </span>
+            </div>
+
+            {/* Tags — contexto, nunca substituto de etapa. */}
+            <div className="flex flex-wrap items-center gap-1.5">
+              {labelsNegocio.map((l) => (
+                <span key={l.id} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold" style={{ background: `color-mix(in srgb, ${l.cor} 18%, transparent)`, color: l.cor, border: `1px solid color-mix(in srgb, ${l.cor} 40%, transparent)` }}>
+                  {l.nome}
+                  <button onClick={() => mudarTag.mutate({ labelId: l.id, acao: "remove" })} aria-label={`Remover tag ${l.nome}`} className="opacity-50 hover:opacity-100"><X className="w-3 h-3" /></button>
+                </span>
+              ))}
+              <div className="relative">
+                <button onClick={() => setTagPopoverOpen((v) => !v)} aria-expanded={tagPopoverOpen} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold" style={{ border: "1px dashed var(--cf2-chrome-border-subtle)", color: "var(--cf2-chrome-text-secondary)" }}>
+                  <Plus className="w-3 h-3" /> Tag
+                </button>
+                {tagPopoverOpen && (
+                  <div className="absolute z-30 mt-1 left-0 w-56 max-h-64 overflow-y-auto rounded-xl py-1" style={{ background: "#1c1f26", border: "1px solid var(--cf2-chrome-border-subtle)", boxShadow: "0 8px 16px rgba(0,0,0,0.4)" }}>
+                    {labelsDisponiveis.filter((l) => !labelsNegocio.some((x) => x.id === l.id)).length === 0 ? (
+                      <p className="px-3 py-2 text-[12px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Nenhuma tag disponível.</p>
+                    ) : labelsDisponiveis.filter((l) => !labelsNegocio.some((x) => x.id === l.id)).map((l) => (
+                      <button key={l.id} onClick={() => { mudarTag.mutate({ labelId: l.id, acao: "add" }); setTagPopoverOpen(false); }} className="w-full text-left px-3 py-1.5 text-[12px] flex items-center gap-2" style={{ color: "var(--cf2-chrome-text-primary)" }}>
+                        <span className="w-2 h-2 rounded-full shrink-0" style={{ background: l.cor }} /> {l.nome}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
@@ -300,6 +376,10 @@ export function Cf2NegocioDrawer({ negocioId, open, onClose, onChanged }: { nego
                   <Cf2DropdownMenuItem onClick={() => setTarefaModalOpen(true)} className="gap-2 data-[highlighted]:bg-white/[0.06]" style={{ color: "var(--cf2-chrome-text-primary)" }}><Calendar className="w-3.5 h-3.5" /> Agendar</Cf2DropdownMenuItem>
                   <Cf2DropdownMenuItem onClick={() => setTarefaModalOpen(true)} className="gap-2 data-[highlighted]:bg-white/[0.06]" style={{ color: "var(--cf2-chrome-text-primary)" }}><Plus className="w-3.5 h-3.5" /> Tarefa</Cf2DropdownMenuItem>
                   <Cf2DropdownMenuItem onClick={() => { setTab("Notas"); setNoteOpen(true); }} className="gap-2 data-[highlighted]:bg-white/[0.06]" style={{ color: "var(--cf2-chrome-text-primary)" }}><NotebookPen className="w-3.5 h-3.5" /> Nota</Cf2DropdownMenuItem>
+                  {/* Nova proposta SEMPRE disponível (01/09): antes só aparecia
+                      na seção Proposta e apenas quando não existia proposta
+                      nenhuma — não dava pra criar uma 2ª a partir do drawer. */}
+                  <Cf2DropdownMenuItem onClick={irParaNovaProposta} className="gap-2 data-[highlighted]:bg-white/[0.06]" style={{ color: "var(--cf2-chrome-text-primary)" }}><FileText className="w-3.5 h-3.5" /> Nova proposta</Cf2DropdownMenuItem>
                   {(stripeCustomerId || stripeSubscriptionId || propostaParcelavel) && (
                     <div className="my-1 h-px" style={{ background: "var(--cf2-chrome-border-subtle)" }} />
                   )}
@@ -363,7 +443,7 @@ export function Cf2NegocioDrawer({ negocioId, open, onClose, onChanged }: { nego
             <Section
               title="Proposta"
               dark
-              action={!ultimaProposta ? { label: "+ Criar proposta", onClick: () => setNovaPropostaOpen(true) } : undefined}
+              action={!ultimaProposta ? { label: "+ Criar proposta", onClick: irParaNovaProposta } : undefined}
             >
               {ultimaProposta ? (
                 <PropostaResumo proposta={ultimaProposta} />
@@ -424,7 +504,7 @@ export function Cf2NegocioDrawer({ negocioId, open, onClose, onChanged }: { nego
                           ref={noteRef}
                           value={noteText}
                           onChange={(ev) => setNoteText(ev.target.value)}
-                          placeholder="Escreva uma nota..."
+                          placeholder="Escreva uma nota..." aria-label="Escreva uma nota"
                           rows={3}
                           className="w-full text-[13px] rounded-[var(--cf2-radius-sm)] px-3 py-2 outline-none resize-y"
                           style={{ background: "var(--cf2-chrome-bg-alt)", border: "1px solid var(--cf2-chrome-border-subtle)", color: "var(--cf2-chrome-text-primary)" }}
@@ -458,9 +538,8 @@ export function Cf2NegocioDrawer({ negocioId, open, onClose, onChanged }: { nego
       )}
     </DetailDrawer>
     {negocioId && <TarefaFormModal open={tarefaModalOpen} onClose={() => setTarefaModalOpen(false)} defaultNegocioId={negocioId} defaultNegocioLabel={negocio?.titulo || null} defaultTipo="diagnostico" invalidateKeys={[["tarefas", "negocio", negocioId], ["pipeline-crm2-board"]]} />}
-    {negocioId && novaPropostaOpen && <Cf2NovaPropostaSlideOver negocioId={negocioId} onClose={() => { setNovaPropostaOpen(false); qc.invalidateQueries({ queryKey: ["negocio-detalhe", negocioId] }); onChanged(); }} />}
     {cobrancaOpen && (
-      <div className="fixed inset-0 z-[80] flex items-center justify-center p-4" style={{ background: "rgba(15,23,42,0.5)" }} onClick={() => setCobrancaOpen(false)}>
+      <div role="dialog" aria-modal="true" className="fixed inset-0 z-[80] flex items-center justify-center p-4" style={{ background: "rgba(15,23,42,0.5)" }} onClick={() => setCobrancaOpen(false)}>
         <div className="w-full max-w-sm rounded-2xl p-6 flex flex-col gap-3" style={{ background: "var(--cf2-bg-surface)" }} onClick={(e) => e.stopPropagation()}>
           <div className="flex items-center justify-between">
             <p className="text-[15px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Cobrança avulsa</p>

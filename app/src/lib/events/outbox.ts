@@ -16,6 +16,7 @@
  */
 import { db } from "@/lib/db";
 import { eventOutbox } from "@/lib/db/schema";
+import { eq } from "drizzle-orm";
 
 /** `db` ou um client de transação (`db.transaction(async (tx) => ...)`) — o insert funciona igual nos dois. */
 type DbClient = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -56,17 +57,28 @@ export type EventoDominio =
   | "PaymentFailed"
   | "CheckoutExpired"
   | "FulfillmentGroupCompleted"
+  // Frente 2C.1 — motor interno de fechamento por família comercial.
+  // `PaymentPending` é o pagamento em aberto de um grupo cuja entrega já foi
+  // liberada por contrato assinado (PABX/White Label). `FulfillmentCreated`
+  // carrega a TRILHA no payload (onboarding | implantacao_pabx |
+  // implantacao_white_label) em vez de virar 3 tipos de evento diferentes.
+  | "PaymentPending"
+  | "FulfillmentCreated"
+  | "ManualValidationRequired"
   | "ConversationClaimed"
   | "ConversationTransferred"
   | "ConversationReleased"
   | "ConversationSnoozed"
   | "ConversationClosed"
-  | "ConversationReopened";
+  | "ConversationReopened"
+  | "ConversationMessageReceived"
+  | "TagAdded"
+  | "TagRemoved";
 
 export interface PublicarEventoOpts {
   organizacaoId: string;
   eventType: EventoDominio;
-  aggregateType: "lead" | "negocio" | "contrato" | "proposta" | "servico" | "checkout" | "grupo_comercial" | "contato";
+  aggregateType: "lead" | "negocio" | "oportunidade" | "cliente" | "empresa" | "contrato" | "proposta" | "servico" | "checkout" | "grupo_comercial" | "contato";
   aggregateId: string;
   payload: Record<string, unknown>;
   correlationId?: string;
@@ -81,9 +93,9 @@ export interface PublicarEventoOpts {
  * materialização): se a transação falhar/reverter, nem o status muda nem o
  * evento é publicado — nunca um sem o outro.
  */
-export async function publicarEvento(opts: PublicarEventoOpts, dbClient: DbClient = db): Promise<void> {
+export async function publicarEvento(opts: PublicarEventoOpts, dbClient: DbClient = db): Promise<string | null> {
   try {
-    await dbClient.insert(eventOutbox).values({
+    const [inserted] = await dbClient.insert(eventOutbox).values({
       organizacaoId: opts.organizacaoId,
       eventType: opts.eventType,
       aggregateType: opts.aggregateType,
@@ -91,8 +103,15 @@ export async function publicarEvento(opts: PublicarEventoOpts, dbClient: DbClien
       payload: opts.payload,
       correlationId: opts.correlationId || null,
       idempotencyKey: opts.idempotencyKey || null,
-    }).onConflictDoNothing();
+    }).onConflictDoNothing().returning({ id: eventOutbox.id });
+    if (inserted) return inserted.id;
+    if (opts.idempotencyKey) {
+      const [existing] = await dbClient.select({ id: eventOutbox.id }).from(eventOutbox).where(eq(eventOutbox.idempotencyKey, opts.idempotencyKey)).limit(1);
+      return existing?.id ?? null;
+    }
+    return null;
   } catch (err) {
     console.error(`[EventOutbox] falha ao publicar ${opts.eventType} (${opts.aggregateType}/${opts.aggregateId}):`, err);
+    return null;
   }
 }

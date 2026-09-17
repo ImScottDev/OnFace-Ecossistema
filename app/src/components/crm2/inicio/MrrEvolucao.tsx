@@ -33,15 +33,26 @@ const SERIES: Cf2ChartSerie[] = [
   { key: "novo", label: "Novo MRR", color: "var(--cf2-home-serie-novo)" },
 ];
 
+const ROTULO_JANELA: Record<Janela, string> = {
+  "7D": "nos últimos 7 dias",
+  "30D": "nos últimos 30 dias",
+  "90D": "nos últimos 90 dias",
+  "12M": "nos últimos 12 meses",
+};
+
 export function Cf2MrrEvolucao({
-  series, totalFaturamento, variacaoPct,
+  series, variacaoPct,
 }: {
   series: MrrSeries;
-  totalFaturamento: number;
   variacaoPct: number | null;
 }) {
   const [janela, setJanela] = useState<Janela>("12M");
   const dados: PontoSerie[] = useMemo(() => series[janela] ?? [], [series, janela]);
+
+  // O total acompanha a janela escolhida. Antes vinha fixo do mês corrente,
+  // então em 12M o gráfico mostrava um ano de barras com o total de setembro
+  // embaixo — e no dia 8 do mês esse total era R$ 0,00 sob barras cheias.
+  const totalJanela = useMemo(() => dados.reduce((soma, p) => soma + (p.mrr ?? 0), 0), [dados]);
 
   // Em janelas longas o eixo X não cabe todo — mostra 1 a cada N.
   const intervaloEixo = dados.length > 24 ? Math.ceil(dados.length / 12) - 1 : 0;
@@ -71,7 +82,7 @@ export function Cf2MrrEvolucao({
             >
               {positivo ? "+" : ""}{variacaoPct.toFixed(1)}%
             </span>
-            <span className="text-[11px] hidden sm:inline" style={{ color: "#737373" }}>vs último mês</span>
+            <span className="text-[11px] hidden sm:inline" style={{ color: "#737373" }}>vs mesmo período do mês passado</span>
           </div>
         )}
       </div>
@@ -79,12 +90,12 @@ export function Cf2MrrEvolucao({
       <div className="flex flex-col gap-4 p-5 sm:p-6">
         <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
           <div className="flex flex-col gap-0.5">
-            <p className="text-[11px]" style={{ color: "#737373" }}>Total de faturamento:</p>
+            <p className="text-[11px]" style={{ color: "#737373" }}>MRR fechado {ROTULO_JANELA[janela]}</p>
             <p
               className="text-[20px] font-semibold leading-none"
               style={{ color: "#0a0a0a", letterSpacing: "-0.7px", fontFamily: "var(--cf2-font-heading)" }}
             >
-              {brl(totalFaturamento)}
+              {brl(totalJanela)}
             </p>
           </div>
 

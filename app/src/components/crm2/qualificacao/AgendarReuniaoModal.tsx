@@ -161,7 +161,7 @@ export function Cf2AgendarReuniaoModal({
   };
 
   return createPortal(
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" style={{ background: "rgba(15,23,42,0.45)", backdropFilter: "blur(4px)" }} onClick={onClose}>
+    <div role="dialog" aria-modal="true" className="fixed inset-0 z-[100] flex items-center justify-center p-4" style={{ background: "rgba(15,23,42,0.45)", backdropFilter: "blur(4px)" }} onClick={onClose}>
       <div className="w-full max-w-[460px] rounded-2xl shadow-2xl overflow-hidden" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }} onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start justify-between gap-3 px-5 pt-5 pb-4" style={{ borderBottom: "1px solid var(--cf2-border-default)" }}>
           <div className="flex items-center gap-3 min-w-0">
@@ -173,7 +173,7 @@ export function Cf2AgendarReuniaoModal({
               <p className="text-[11px] truncate" style={{ color: "var(--cf2-text-tertiary)" }}>Qualificando {leadEmpresa ? `${leadNome} · ${leadEmpresa}` : leadNome}</p>
             </div>
           </div>
-          <button onClick={onClose} className="shrink-0"><X className="w-4 h-4" style={{ color: "var(--cf2-text-tertiary)" }} /></button>
+          <button onClick={onClose} className="shrink-0" aria-label="Fechar"><X className="w-4 h-4" style={{ color: "var(--cf2-text-tertiary)" }} /></button>
         </div>
 
         <div className="px-5 py-4 space-y-4 max-h-[60vh] overflow-y-auto">
@@ -181,7 +181,7 @@ export function Cf2AgendarReuniaoModal({
             <label className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider mb-1.5" style={labelStyle}>
               <Mail className="w-3 h-3" /> E-mail do lead <span className="normal-case font-normal">(convidado do evento)</span>
             </label>
-            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="email@empresa.com.br" className="w-full px-3 py-2 rounded-lg text-[13px] outline-none" style={inputStyle} />
+            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="email@empresa.com.br" aria-label="email@empresa.com.br" className="w-full px-3 py-2 rounded-lg text-[13px] outline-none" style={inputStyle} />
             {!email.trim() && <p className="mt-1 text-[10px]" style={{ color: "var(--cf2-warning-text)" }}>Sem e-mail, o evento é criado sem convite pro lead.</p>}
           </div>
 
@@ -349,7 +349,7 @@ export function Cf2AgendarReuniaoModal({
 
           <div>
             <label className="block text-[11px] font-semibold uppercase tracking-wider mb-1.5" style={labelStyle}>Notas pro closer <span className="normal-case font-normal">(opcional)</span></label>
-            <textarea value={notas} onChange={(e) => setNotas(e.target.value)} rows={2} placeholder="Contexto da qualificação, dores, expectativa…" className="w-full px-3 py-2 rounded-lg text-[13px] outline-none resize-none" style={inputStyle} />
+            <textarea value={notas} onChange={(e) => setNotas(e.target.value)} rows={2} placeholder="Contexto da qualificação, dores, expectativa…" aria-label="Contexto da qualificação, dores, expectativa" className="w-full px-3 py-2 rounded-lg text-[13px] outline-none resize-none" style={inputStyle} />
           </div>
 
           <div>

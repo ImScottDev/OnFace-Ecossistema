@@ -60,3 +60,10 @@ forge-session.mjs
 # Uploads de runtime (dado real de usuario, nunca versionar)
 app/public/uploads/
 uploads/
+infra/documenso/.env
+infra/documenso/certs/*.p12
+infra/documenso/certs/*.pem
+
+# Artefatos de sessão de agente (transitórios)
+.agent-*.pid
+.agent-*-prompt.txt

@@ -10,7 +10,7 @@ import { QualificacaoSdrSection } from "@/components/crm/QualificacaoSdrSection"
 import { LigacoesSection } from "@/components/crm/LigacoesSection";
 import { TarefaFormModal } from "@/components/crm/tarefas/TarefaFormModal";
 import { digitsForDialer } from "@/lib/utils/callface-call";
-import { corAvatarEmpresa, iniciaisEmpresa } from "@/components/crm2/shared/avatar";
+import { corAvatarEmpresa, iniciaisEmpresa, TEXTO_SOBRE_AVATAR } from "@/components/crm2/shared/avatar";
 import { OwnerPicker } from "./OwnerPicker";
 import { Cf2Button } from "@/components/crm2/ui/Button";
 import { Cf2Tabs, Cf2TabsList, Cf2TabsTrigger } from "@/components/crm2/ui/Tabs";
@@ -118,14 +118,36 @@ export function ProspeccaoDrawer({
     onError: () => toast.error("Não foi possível atualizar"),
   });
 
+  /**
+   * Qualificar prospect (01/09, spec do Kauã) — o handoff outbound tem DOIS
+   * destinos possíveis e é o usuário que escolhe, não o sistema:
+   *
+   *  - `pre_vendas`: vira SQL em Pré-vendas (`sdr_status='qualified'`), SEM
+   *    criar oportunidade. Alguém ainda vai trabalhar a qualificação.
+   *  - `oportunidade`: vai direto pro Pipeline via `converter-oportunidade`,
+   *    pulando Pré-vendas — o trabalho de pré-venda já aconteceu aqui dentro.
+   *
+   * Antes desta data só o 2º caminho existia: o botão dizia "Enviar para
+   * Pré-vendas" mas na prática criava oportunidade direto no Pipeline.
+   */
   const qualificar = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (destino: "pre_vendas" | "oportunidade") => {
+      if (destino === "pre_vendas") {
+        const r = await fetch(`/api/leads/${leadId}`, {
+          method: "PATCH", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sdrStatus: "qualified" }),
+        });
+        if (!r.ok) { const err = await r.json().catch(() => ({})); throw new Error(err.error || "falha"); }
+        return { destino };
+      }
       const r = await fetch(`/api/leads/${leadId}/converter-oportunidade`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ semReuniao: true }) });
       if (!r.ok) { const err = await r.json().catch(() => ({})); throw new Error(err.error || "falha"); }
-      return r.json();
+      return { destino };
     },
-    onSuccess: () => {
-      toast.success("Prospect enviado para Qualificado em Pré-vendas.");
+    onSuccess: (res) => {
+      toast.success(res.destino === "pre_vendas"
+        ? "Prospect enviado para Qualificado (SQL) em Pré-vendas."
+        : "Oportunidade criada no Pipeline.");
       qc.invalidateQueries({ queryKey: ["lead", leadId] });
       onChanged();
       onClose();
@@ -225,14 +247,29 @@ export function ProspeccaoDrawer({
           Desqualificar
         </Cf2Button>
       </div>
-      <Cf2Button
-        variant="primary"
-        onClick={() => criteriosFaltando.length > 0 ? toast.error(`Faltam: ${criteriosFaltando.join(", ")}`) : qualificar.mutate()}
-        loading={qualificar.isPending}
-        className="gap-2"
-      >
-        <Check className="w-4 h-4" /> Enviar para Pré-vendas
-      </Cf2Button>
+      <Cf2DropdownMenu>
+        <Cf2DropdownMenuTrigger asChild>
+          <Cf2Button variant="primary" loading={qualificar.isPending} className="gap-2">
+            <Check className="w-4 h-4" /> Qualificar
+          </Cf2Button>
+        </Cf2DropdownMenuTrigger>
+        <Cf2DropdownMenuContent align="end">
+          <Cf2DropdownMenuItem
+            onClick={() => criteriosFaltando.length > 0
+              ? toast.error(`Faltam: ${criteriosFaltando.join(", ")}`)
+              : qualificar.mutate("pre_vendas")}
+          >
+            Enviar para Pré-vendas
+          </Cf2DropdownMenuItem>
+          <Cf2DropdownMenuItem
+            onClick={() => criteriosFaltando.length > 0
+              ? toast.error(`Faltam: ${criteriosFaltando.join(", ")}`)
+              : qualificar.mutate("oportunidade")}
+          >
+            Criar oportunidade
+          </Cf2DropdownMenuItem>
+        </Cf2DropdownMenuContent>
+      </Cf2DropdownMenu>
     </div>
   );
 
@@ -362,7 +399,7 @@ export function ProspeccaoDrawer({
                   {feedFiltrado.map((e) => (
                     <div key={e.id} className="flex flex-col gap-1.5 py-3 border-b" style={{ borderColor: "var(--cf2-border-default)" }}>
                       <div className="flex items-center gap-2.5">
-                        <span className="flex items-center justify-center rounded-full text-[10px] font-bold shrink-0" style={{ width: 22, height: 22, background: corAvatarEmpresa(e.usuarioNome || e.id), color: "var(--cf2-text-on-accent)" }}>{iniciaisEmpresa(e.usuarioNome || "?")}</span>
+                        <span className="flex items-center justify-center rounded-full text-[10px] font-bold shrink-0" style={{ width: 22, height: 22, background: corAvatarEmpresa(e.usuarioNome || e.id), color: TEXTO_SOBRE_AVATAR }}>{iniciaisEmpresa(e.usuarioNome || "?")}</span>
                         <p className="flex-1 min-w-0 text-[12px] font-medium" style={{ color: "var(--cf2-text-primary)" }}>{timeAgoShort(e.createdAt)} atrás</p>
                         <span className="text-[11px] font-medium shrink-0" style={{ color: "var(--cf2-text-tertiary)" }}>{TIPO_LABEL[e.tipo] || e.tipo}</span>
                       </div>
@@ -373,7 +410,7 @@ export function ProspeccaoDrawer({
                     <div className="pt-3">
                       {noteOpen ? (
                         <div className="flex flex-col gap-1.5">
-                          <textarea ref={noteRef} value={noteText} onChange={(ev) => setNoteText(ev.target.value)} placeholder="Escreva uma nota..." rows={3} className="w-full text-[13px] rounded-[var(--cf2-radius-sm)] px-3 py-2 outline-none resize-y" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }} onKeyDown={(ev) => { if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey) && noteText.trim()) addNota.mutate(noteText.trim()); if (ev.key === "Escape") { setNoteOpen(false); setNoteText(""); } }} />
+                          <textarea ref={noteRef} value={noteText} onChange={(ev) => setNoteText(ev.target.value)} placeholder="Escreva uma nota..." aria-label="Escreva uma nota" rows={3} className="w-full text-[13px] rounded-[var(--cf2-radius-sm)] px-3 py-2 outline-none resize-y" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }} onKeyDown={(ev) => { if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey) && noteText.trim()) addNota.mutate(noteText.trim()); if (ev.key === "Escape") { setNoteOpen(false); setNoteText(""); } }} />
                           <div className="flex justify-end gap-2">
                             <button onClick={() => { setNoteOpen(false); setNoteText(""); }} className="text-[12px] px-2 py-1" style={{ color: "var(--cf2-text-tertiary)" }}>Cancelar</button>
                             <button onClick={() => noteText.trim() && addNota.mutate(noteText.trim())} disabled={!noteText.trim() || addNota.isPending} className="text-[12px] px-2 py-1 flex items-center gap-1 font-semibold disabled:opacity-40" style={{ color: "var(--cf2-success-text)" }}><Send className="w-3 h-3" /> Salvar</button>

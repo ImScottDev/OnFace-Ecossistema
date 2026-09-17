@@ -10,6 +10,7 @@ interface Template {
   nome: string;
   versao: number;
   commercialModel: string | null;
+  serviceFamily: string | null;
   corpoTemplate: string;
   ativo: boolean;
 }
@@ -19,6 +20,13 @@ const MODELOS = [
   { value: "PAGAMENTO_DIRETO", label: "Pagamento direto" },
   { value: "CONTRATO_OBRIGATORIO", label: "Contrato obrigatório" },
   { value: "CONTRATO_FIDELIDADE_OPCIONAL", label: "Contrato com fidelidade opcional" },
+];
+
+const FAMILIAS = [
+  { value: "", label: "Genérico (qualquer família)" },
+  { value: "CALLFACE_AI", label: "Callface AI" },
+  { value: "PABX", label: "PABX" },
+  { value: "WHITE_LABEL", label: "White Label" },
 ];
 
 // Dados fictícios pro preview — mesmas chaves reais que
@@ -62,9 +70,9 @@ export function Cf2ContratoTemplatesWorkspace() {
   const templates = data?.templates ?? [];
 
   const salvar = useMutation({
-    mutationFn: async (t: { id?: string; nome: string; commercialModel: string | null; corpoTemplate: string }) => {
+    mutationFn: async (t: { id?: string; nome: string; commercialModel: string | null; serviceFamily: string | null; corpoTemplate: string }) => {
       const url = t.id ? `/api/contrato-templates/${t.id}` : "/api/contrato-templates";
-      const r = await fetch(url, { method: t.id ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ nome: t.nome, commercialModel: t.commercialModel, corpoTemplate: t.corpoTemplate }) });
+      const r = await fetch(url, { method: t.id ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ nome: t.nome, commercialModel: t.commercialModel, serviceFamily: t.serviceFamily, corpoTemplate: t.corpoTemplate }) });
       if (!r.ok) throw new Error("falha");
       return r.json();
     },
@@ -103,19 +111,19 @@ export function Cf2ContratoTemplatesWorkspace() {
                 <p className="text-[14px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>{t.nome}</p>
                 <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-tertiary)" }}>v{t.versao}</span>
               </div>
-              <p className="text-[12px] mt-0.5" style={{ color: "var(--cf2-text-secondary)" }}>{MODELOS.find((m) => m.value === (t.commercialModel || ""))?.label}</p>
+              <p className="text-[12px] mt-0.5" style={{ color: "var(--cf2-text-secondary)" }}>{FAMILIAS.find((f) => f.value === (t.serviceFamily || ""))?.label} · {MODELOS.find((m) => m.value === (t.commercialModel || ""))?.label}</p>
             </div>
             <div className="flex gap-2 shrink-0">
-              <button onClick={() => setPreview(t)} className="p-2 rounded-lg" style={{ background: "var(--cf2-bg-surface-muted)" }}><Eye className="w-3.5 h-3.5" style={{ color: "var(--cf2-text-secondary)" }} /></button>
-              <button onClick={() => setEditando(t)} className="p-2 rounded-lg" style={{ background: "var(--cf2-bg-surface-muted)" }}><Pencil className="w-3.5 h-3.5" style={{ color: "var(--cf2-text-secondary)" }} /></button>
-              <button onClick={() => remover.mutate(t.id)} className="p-2 rounded-lg" style={{ background: "var(--cf2-bg-surface-muted)" }}><Trash2 className="w-3.5 h-3.5" style={{ color: "var(--cf2-danger-text)" }} /></button>
+              <button type="button" onClick={() => setPreview(t)} aria-label={`Pré-visualizar ${t.nome}`} title="Pré-visualizar" className="flex items-center justify-center w-8 h-8 rounded-lg transition-colors hover:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-1" style={{ background: "var(--cf2-bg-surface-muted)", outlineColor: "var(--cf2-accent)" }}><Eye className="w-3.5 h-3.5" style={{ color: "var(--cf2-text-secondary)" }} /></button>
+              <button type="button" onClick={() => setEditando(t)} aria-label={`Editar ${t.nome}`} title="Editar" className="flex items-center justify-center w-8 h-8 rounded-lg transition-colors hover:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-1" style={{ background: "var(--cf2-bg-surface-muted)", outlineColor: "var(--cf2-accent)" }}><Pencil className="w-3.5 h-3.5" style={{ color: "var(--cf2-text-secondary)" }} /></button>
+              <button type="button" onClick={() => remover.mutate(t.id)} aria-label={`Excluir ${t.nome}`} title="Excluir" className="flex items-center justify-center w-8 h-8 rounded-lg transition-colors hover:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-1" style={{ background: "var(--cf2-bg-surface-muted)", outlineColor: "var(--cf2-accent)" }}><Trash2 className="w-3.5 h-3.5" style={{ color: "var(--cf2-danger-text)" }} /></button>
             </div>
           </div>
         ))}
       </div>
 
       {preview && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-6" style={{ background: "rgba(0,0,0,0.5)" }} onClick={() => setPreview(null)}>
+        <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 flex items-center justify-center p-6" style={{ background: "rgba(0,0,0,0.5)" }} onClick={() => setPreview(null)}>
           <div className="w-full max-w-lg max-h-[80vh] overflow-y-auto rounded-2xl p-6" style={{ background: "var(--cf2-bg-surface)" }} onClick={(e) => e.stopPropagation()}>
             <p className="text-[11px] font-bold mb-3 px-2 py-1 rounded w-fit" style={{ background: "var(--cf2-warning-bg)", color: "var(--cf2-warning-text)" }}>PREVIEW — dados fictícios de exemplo</p>
             <p className="text-[13px] whitespace-pre-wrap" style={{ color: "var(--cf2-text-primary)" }}>{renderizarPreview(preview.corpoTemplate)}</p>
@@ -126,14 +134,18 @@ export function Cf2ContratoTemplatesWorkspace() {
   );
 }
 
-function TemplateForm({ inicial, onSalvar, onCancelar, salvando }: { inicial: Template | null; onSalvar: (t: { nome: string; commercialModel: string | null; corpoTemplate: string }) => void; onCancelar: () => void; salvando: boolean }) {
+function TemplateForm({ inicial, onSalvar, onCancelar, salvando }: { inicial: Template | null; onSalvar: (t: { nome: string; commercialModel: string | null; serviceFamily: string | null; corpoTemplate: string }) => void; onCancelar: () => void; salvando: boolean }) {
   const [nome, setNome] = useState(inicial?.nome || "");
   const [commercialModel, setCommercialModel] = useState(inicial?.commercialModel || "");
+  const [serviceFamily, setServiceFamily] = useState(inicial?.serviceFamily || "");
   const [corpoTemplate, setCorpoTemplate] = useState(inicial?.corpoTemplate || "");
 
   return (
     <div className="p-4 rounded-2xl flex flex-col gap-2" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
-      <input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Nome do template" className="px-3 py-2 rounded-lg text-[13px] outline-none" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }} />
+      <input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Nome do template" aria-label="Nome do template" className="px-3 py-2 rounded-lg text-[13px] outline-none" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }} />
+      <select value={serviceFamily} onChange={(e) => setServiceFamily(e.target.value)} className="px-3 py-2 rounded-lg text-[13px] outline-none" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }}>
+        {FAMILIAS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+      </select>
       <select value={commercialModel} onChange={(e) => setCommercialModel(e.target.value)} className="px-3 py-2 rounded-lg text-[13px] outline-none" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }}>
         {MODELOS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
       </select>
@@ -148,7 +160,7 @@ function TemplateForm({ inicial, onSalvar, onCancelar, salvando }: { inicial: Te
       <div className="flex gap-2 justify-end">
         <button onClick={onCancelar} className="px-3 py-1.5 rounded-lg text-[12px] font-semibold" style={{ color: "var(--cf2-text-secondary)" }}>Cancelar</button>
         <button
-          onClick={() => nome.trim() && corpoTemplate.trim() && onSalvar({ nome: nome.trim(), commercialModel: commercialModel || null, corpoTemplate: corpoTemplate.trim() })}
+          onClick={() => nome.trim() && corpoTemplate.trim() && onSalvar({ nome: nome.trim(), commercialModel: commercialModel || null, serviceFamily: serviceFamily || null, corpoTemplate: corpoTemplate.trim() })}
           disabled={salvando || !nome.trim() || !corpoTemplate.trim()}
           className="px-3 py-1.5 rounded-lg text-[12px] font-semibold disabled:opacity-50"
           style={{ background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" }}

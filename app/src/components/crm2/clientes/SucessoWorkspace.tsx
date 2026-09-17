@@ -151,11 +151,11 @@ function HealthCheckModal({ conta, onClose, onSaved }: { conta: Conta; onClose: 
   });
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(15,23,42,0.45)" }} onClick={onClose}>
+    <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(15,23,42,0.45)" }} onClick={onClose}>
       <div className="w-full max-w-md rounded-2xl p-5" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }} onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-1">
           <p className="text-[15px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Health Check — {conta.nome}</p>
-          <button onClick={onClose} style={{ color: "var(--cf2-text-tertiary)" }}><X className="w-4 h-4" /></button>
+          <button onClick={onClose} style={{ color: "var(--cf2-text-tertiary)" }} aria-label="Fechar"><X className="w-4 h-4" /></button>
         </div>
         <p className="text-[12px] mb-4" style={{ color: "var(--cf2-text-secondary)" }}>&quot;Em uma escala de 0 a 10, quanto você indicaria a Callface hoje?&quot;</p>
 
@@ -180,7 +180,7 @@ function HealthCheckModal({ conta, onClose, onSaved }: { conta: Conta; onClose: 
           value={comentario} onChange={(e) => setComentario(e.target.value)} rows={3}
           className="w-full text-sm px-3 py-2 rounded-lg outline-none resize-y mb-4"
           style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }}
-          placeholder="Dores, contexto da conversa..."
+          placeholder="Dores, contexto da conversa..." aria-label="Dores, contexto da conversa"
         />
 
         <div className="flex gap-2 justify-end">

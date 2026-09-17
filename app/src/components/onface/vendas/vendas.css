@@ -1,0 +1,579 @@
+/* ONFACE — Módulo Vendas.
+ *
+ * Todas as medidas em múltiplos de `--onface-u`, a unidade de desenho do
+ * ONFACE: a tela inteira encolhe e cresce junto, em qualquer monitor e em
+ * qualquer zoom. Nenhum `px` solto e nenhum `clamp` de fonte — foi daí que
+ * vieram os textos cortados da primeira leva de telas.
+ */
+
+/* ── Cabeçalho do módulo ───────────────────────────────────────────────── */
+
+.ov-hero {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: calc(24 * var(--onface-u));
+  flex-wrap: wrap;
+}
+.ov-hero h1 {
+  margin: 0;
+  font-family: var(--font-onface-display), sans-serif;
+  font-size: calc(30 * var(--onface-u));
+  font-weight: var(--weight-bold);
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+.ov-hero p {
+  margin: calc(6 * var(--onface-u)) 0 0;
+  color: var(--text-on-shell-muted);
+  font-size: calc(13 * var(--onface-u));
+}
+
+/* Cartões de resumo. São poucos de propósito: a spec chama isto de workspace
+   operacional e proíbe transformar o topo num painel de indicadores. */
+.ov-resumo {
+  display: flex;
+  gap: calc(10 * var(--onface-u));
+  flex-wrap: wrap;
+}
+.ov-resumo-item {
+  display: flex;
+  flex-direction: column;
+  gap: calc(2 * var(--onface-u));
+  min-width: calc(108 * var(--onface-u));
+  padding: calc(10 * var(--onface-u)) calc(14 * var(--onface-u));
+  border-radius: calc(14 * var(--onface-u));
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: inset 0 0 0 1px var(--onface-alpha-divider);
+}
+.ov-resumo-item strong {
+  font-family: var(--font-onface-display), sans-serif;
+  font-size: calc(21 * var(--onface-u));
+  font-weight: var(--weight-bold);
+  line-height: 1;
+}
+.ov-resumo-item span {
+  color: var(--text-on-shell-muted);
+  font-size: calc(10.5 * var(--onface-u));
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+.ov-resumo-item[data-alerta="true"] strong { color: var(--onface-coral); }
+
+/* ── Barra de controle ─────────────────────────────────────────────────── */
+
+.ov-controles {
+  display: flex;
+  align-items: center;
+  gap: calc(10 * var(--onface-u));
+  flex-wrap: wrap;
+  margin-bottom: calc(18 * var(--onface-u));
+}
+.ov-abas {
+  display: inline-flex;
+  gap: calc(2 * var(--onface-u));
+  padding: calc(3 * var(--onface-u));
+  border-radius: calc(999 * var(--onface-u));
+  background: var(--surface-subtle, #f1f2f5);
+}
+.ov-abas button {
+  padding: calc(6 * var(--onface-u)) calc(14 * var(--onface-u));
+  border: 0;
+  border-radius: calc(999 * var(--onface-u));
+  background: transparent;
+  color: var(--text-muted, #666e7d);
+  font-family: var(--font-onface-display), sans-serif;
+  font-size: calc(12 * var(--onface-u));
+  font-weight: var(--weight-semibold);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ov-abas button[data-ativa="true"] {
+  background: var(--onface-white);
+  color: var(--onface-preto-logo);
+  box-shadow: 0 1px calc(3 * var(--onface-u)) rgba(0, 0, 0, 0.1);
+}
+
+.ov-busca {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(8 * var(--onface-u));
+  flex: 1 1 calc(220 * var(--onface-u));
+  min-width: calc(180 * var(--onface-u));
+  height: calc(34 * var(--onface-u));
+  padding-inline: calc(12 * var(--onface-u));
+  border-radius: calc(999 * var(--onface-u));
+  background: var(--surface-subtle, #f1f2f5);
+}
+.ov-busca svg { width: calc(14 * var(--onface-u)); height: calc(14 * var(--onface-u)); color: var(--text-muted, #666e7d); }
+.ov-busca input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: calc(12.5 * var(--onface-u));
+  outline: none;
+}
+
+.ov-select {
+  height: calc(34 * var(--onface-u));
+  padding-inline: calc(12 * var(--onface-u));
+  border: 0;
+  border-radius: calc(999 * var(--onface-u));
+  background: var(--surface-subtle, #f1f2f5);
+  color: inherit;
+  font-family: var(--font-onface-ui), sans-serif;
+  font-size: calc(12.5 * var(--onface-u));
+  cursor: pointer;
+}
+
+.ov-botao {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(6 * var(--onface-u));
+  height: calc(34 * var(--onface-u));
+  padding-inline: calc(16 * var(--onface-u));
+  border: 0;
+  border-radius: calc(999 * var(--onface-u));
+  background: var(--onface-coral);
+  color: var(--onface-white);
+  font-family: var(--font-onface-display), sans-serif;
+  font-size: calc(12.5 * var(--onface-u));
+  font-weight: var(--weight-semibold);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ov-botao svg { width: calc(14 * var(--onface-u)); height: calc(14 * var(--onface-u)); }
+.ov-botao:hover { background: var(--onface-coral-hover); }
+.ov-botao[data-variante="neutro"] {
+  background: var(--surface-subtle, #f1f2f5);
+  color: var(--onface-preto-logo);
+}
+.ov-botao[data-variante="contorno"] {
+  background: transparent;
+  color: var(--onface-preto-logo);
+  box-shadow: inset 0 0 0 1px var(--line-subtle, #e5e7eb);
+}
+.ov-botao[data-variante="perigo"] { background: transparent; color: #dc2626; box-shadow: inset 0 0 0 1px #fecaca; }
+.ov-botao:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ── Board ─────────────────────────────────────────────────────────────── */
+
+/* Rolagem lateral existe no board, nunca dentro da coluna: a coluna rola no
+   eixo vertical e os cartões nunca ficam mais largos que ela. */
+.ov-board {
+  display: flex;
+  gap: calc(12 * var(--onface-u));
+  align-items: flex-start;
+  overflow-x: auto;
+  padding-bottom: calc(10 * var(--onface-u));
+  scrollbar-width: thin;
+}
+.ov-coluna {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 calc(262 * var(--onface-u));
+  min-width: 0;
+  max-height: calc(100dvh - var(--shell-topbar-h) - calc(260 * var(--onface-u)));
+  border-radius: calc(16 * var(--onface-u));
+  background: var(--surface-subtle, #f6f7f9);
+}
+.ov-coluna-cabecalho {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(8 * var(--onface-u));
+  padding: calc(12 * var(--onface-u)) calc(14 * var(--onface-u)) calc(8 * var(--onface-u));
+}
+.ov-coluna-cabecalho h2 {
+  margin: 0;
+  font-family: var(--font-onface-display), sans-serif;
+  font-size: calc(12.5 * var(--onface-u));
+  font-weight: var(--weight-bold);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+.ov-coluna-contagem {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(6 * var(--onface-u));
+  color: var(--text-muted, #666e7d);
+  font-size: calc(11 * var(--onface-u));
+  font-variant-numeric: tabular-nums;
+}
+.ov-coluna-lista {
+  display: flex;
+  flex-direction: column;
+  gap: calc(8 * var(--onface-u));
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0 calc(10 * var(--onface-u)) calc(12 * var(--onface-u));
+}
+.ov-coluna-vazia {
+  padding: calc(18 * var(--onface-u)) calc(14 * var(--onface-u));
+  color: var(--text-muted, #98a0ad);
+  font-size: calc(11.5 * var(--onface-u));
+  text-align: center;
+}
+
+/* ── Card ──────────────────────────────────────────────────────────────── */
+
+.ov-card {
+  display: flex;
+  flex-direction: column;
+  gap: calc(8 * var(--onface-u));
+  width: 100%;
+  min-width: 0;
+  padding: calc(12 * var(--onface-u));
+  border: 0;
+  border-radius: calc(12 * var(--onface-u));
+  background: var(--onface-white);
+  box-shadow: 0 1px calc(2 * var(--onface-u)) rgba(15, 23, 42, 0.06),
+              inset 0 0 0 1px var(--line-subtle, #e9ebef);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.ov-card:hover { box-shadow: 0 calc(3 * var(--onface-u)) calc(10 * var(--onface-u)) rgba(15, 23, 42, 0.1), inset 0 0 0 1px var(--onface-coral-border); }
+.ov-card[data-selecionado="true"] { box-shadow: inset 0 0 0 calc(1.5 * var(--onface-u)) var(--onface-coral); }
+
+/* Empresa é protagonista; a pessoa é o contato através do qual se trabalha. */
+.ov-card-empresa {
+  font-family: var(--font-onface-display), sans-serif;
+  font-size: calc(13.5 * var(--onface-u));
+  font-weight: var(--weight-bold);
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+.ov-card-pessoa {
+  color: var(--text-muted, #666e7d);
+  font-size: calc(11.5 * var(--onface-u));
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.ov-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(4 * var(--onface-u));
+}
+.ov-card-rodape {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(8 * var(--onface-u));
+  padding-top: calc(8 * var(--onface-u));
+  border-top: 1px solid var(--line-subtle, #eef0f3);
+  color: var(--text-muted, #666e7d);
+  font-size: calc(11 * var(--onface-u));
+}
+.ov-card-valor {
+  font-family: var(--font-onface-display), sans-serif;
+  font-size: calc(14 * var(--onface-u));
+  font-weight: var(--weight-bold);
+  font-variant-numeric: tabular-nums;
+}
+.ov-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: calc(22 * var(--onface-u));
+  height: calc(22 * var(--onface-u));
+  border-radius: 50%;
+  background: var(--surface-subtle, #eef0f3);
+  font-size: calc(9.5 * var(--onface-u));
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.02em;
+}
+
+/* ── Tags ──────────────────────────────────────────────────────────────── */
+
+.ov-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(4 * var(--onface-u));
+  padding: calc(2.5 * var(--onface-u)) calc(8 * var(--onface-u));
+  border-radius: calc(999 * var(--onface-u));
+  background: var(--surface-subtle, #f1f2f5);
+  color: var(--text-muted, #556);
+  font-size: calc(10 * var(--onface-u));
+  font-weight: var(--weight-semibold);
+  white-space: nowrap;
+}
+.ov-tag svg { width: calc(10 * var(--onface-u)); height: calc(10 * var(--onface-u)); }
+.ov-tag[data-tom="coral"] { background: var(--onface-coral-subtle); color: #b7301a; }
+.ov-tag[data-tom="alerta"] { background: #fef3c7; color: #92400e; }
+.ov-tag[data-tom="sucesso"] { background: #dcfce7; color: #166534; }
+.ov-tag[data-tom="info"] { background: #dbeafe; color: #1d4ed8; }
+.ov-tag[data-tom="neutro-escuro"] { background: #e8eaee; color: #303643; }
+
+/* ── Tabela ────────────────────────────────────────────────────────────── */
+
+/* Nunca rolagem horizontal: as colunas de apoio somem antes disso. */
+.ov-tabela-wrap { width: 100%; overflow: hidden; }
+.ov-tabela {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: calc(12.5 * var(--onface-u));
+}
+.ov-tabela th {
+  padding: calc(8 * var(--onface-u)) calc(10 * var(--onface-u));
+  border-bottom: 1px solid var(--line-subtle, #e9ebef);
+  color: var(--text-muted, #666e7d);
+  font-size: calc(10.5 * var(--onface-u));
+  font-weight: var(--weight-bold);
+  letter-spacing: var(--tracking-caps);
+  text-align: left;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.ov-tabela td {
+  padding: calc(10 * var(--onface-u));
+  border-bottom: 1px solid var(--line-subtle, #f1f2f5);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.ov-tabela tbody tr { cursor: pointer; }
+.ov-tabela tbody tr:hover { background: var(--surface-subtle, #f8f9fb); }
+.ov-tabela tbody tr[data-selecionada="true"] { background: var(--onface-coral-subtle); }
+.ov-tabela-principal { font-weight: var(--weight-semibold); }
+.ov-tabela-apoio { color: var(--text-muted, #666e7d); font-size: calc(11 * var(--onface-u)); }
+.ov-num { font-variant-numeric: tabular-nums; text-align: right; }
+
+/* ── Painel lateral ────────────────────────────────────────────────────── */
+
+.ov-com-painel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: calc(16 * var(--onface-u));
+  align-items: start;
+}
+.ov-com-painel[data-aberto="true"] { grid-template-columns: minmax(0, 1fr) calc(360 * var(--onface-u)); }
+
+.ov-painel {
+  position: sticky;
+  top: calc(var(--shell-topbar-h) + 16 * var(--onface-u));
+  display: flex;
+  flex-direction: column;
+  gap: calc(14 * var(--onface-u));
+  min-width: 0;
+  max-height: calc(100dvh - var(--shell-topbar-h) - 60 * var(--onface-u));
+  overflow-y: auto;
+  padding: calc(16 * var(--onface-u));
+  border-radius: calc(16 * var(--onface-u));
+  background: var(--surface-subtle, #f8f9fb);
+  box-shadow: inset 0 0 0 1px var(--line-subtle, #e9ebef);
+}
+.ov-painel-topo {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: calc(10 * var(--onface-u));
+}
+.ov-painel-topo h2 {
+  margin: 0;
+  font-family: var(--font-onface-display), sans-serif;
+  font-size: calc(15.5 * var(--onface-u));
+  font-weight: var(--weight-bold);
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+.ov-painel-topo p {
+  margin: calc(3 * var(--onface-u)) 0 0;
+  color: var(--text-muted, #666e7d);
+  font-size: calc(11.5 * var(--onface-u));
+}
+.ov-painel-fechar {
+  flex-shrink: 0;
+  width: calc(26 * var(--onface-u));
+  height: calc(26 * var(--onface-u));
+  border: 0;
+  border-radius: 50%;
+  background: var(--onface-white);
+  color: var(--text-muted, #666e7d);
+  cursor: pointer;
+}
+.ov-painel-fechar svg { width: calc(13 * var(--onface-u)); height: calc(13 * var(--onface-u)); }
+
+.ov-secao { display: flex; flex-direction: column; gap: calc(7 * var(--onface-u)); }
+.ov-secao > h3 {
+  margin: 0;
+  color: var(--text-muted, #7a8290);
+  font-size: calc(10 * var(--onface-u));
+  font-weight: var(--weight-bold);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+.ov-campo {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: calc(10 * var(--onface-u));
+  font-size: calc(12 * var(--onface-u));
+}
+.ov-campo dt { color: var(--text-muted, #7a8290); font-size: calc(10.5 * var(--onface-u)); }
+.ov-campo dd { margin: 0; font-weight: var(--weight-semibold); text-align: right; overflow-wrap: anywhere; }
+.ov-acoes { display: flex; flex-wrap: wrap; gap: calc(6 * var(--onface-u)); }
+.ov-acoes .ov-botao { height: calc(30 * var(--onface-u)); font-size: calc(11.5 * var(--onface-u)); padding-inline: calc(12 * var(--onface-u)); }
+
+/* Linha do tempo: o evento e quem o executou, sem virar parede de texto. */
+.ov-timeline { display: flex; flex-direction: column; gap: calc(9 * var(--onface-u)); }
+.ov-timeline-item {
+  display: flex;
+  gap: calc(8 * var(--onface-u));
+  font-size: calc(11.5 * var(--onface-u));
+}
+.ov-timeline-marca {
+  flex-shrink: 0;
+  width: calc(6 * var(--onface-u));
+  height: calc(6 * var(--onface-u));
+  margin-top: calc(5 * var(--onface-u));
+  border-radius: 50%;
+  background: var(--onface-coral);
+}
+.ov-timeline-item strong { font-weight: var(--weight-semibold); }
+.ov-timeline-item span { display: block; color: var(--text-muted, #7a8290); font-size: calc(10.5 * var(--onface-u)); }
+
+/* ── Bloqueio de regra de negócio ──────────────────────────────────────── */
+
+/* O gate da spec não é validação de formulário: ele explica o requisito e
+   oferece a ação que destrava. */
+.ov-bloqueio {
+  display: flex;
+  align-items: flex-start;
+  gap: calc(10 * var(--onface-u));
+  padding: calc(12 * var(--onface-u)) calc(14 * var(--onface-u));
+  border-radius: calc(12 * var(--onface-u));
+  background: #fff7ed;
+  box-shadow: inset 0 0 0 1px #fed7aa;
+  color: #9a3412;
+  font-size: calc(12 * var(--onface-u));
+  line-height: 1.45;
+}
+.ov-bloqueio svg { flex-shrink: 0; width: calc(15 * var(--onface-u)); height: calc(15 * var(--onface-u)); margin-top: calc(1 * var(--onface-u)); }
+.ov-bloqueio button {
+  margin-top: calc(8 * var(--onface-u));
+  padding: calc(5 * var(--onface-u)) calc(12 * var(--onface-u));
+  border: 0;
+  border-radius: calc(999 * var(--onface-u));
+  background: #9a3412;
+  color: #fff;
+  font-size: calc(11.5 * var(--onface-u));
+  font-weight: var(--weight-semibold);
+  cursor: pointer;
+}
+
+/* ── Formulários e diálogos ────────────────────────────────────────────── */
+
+.ov-form { display: flex; flex-direction: column; gap: calc(12 * var(--onface-u)); }
+.ov-form-linha { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: calc(10 * var(--onface-u)); }
+.ov-form label { display: flex; flex-direction: column; gap: calc(4 * var(--onface-u)); min-width: 0; }
+.ov-form label > span {
+  color: var(--text-muted, #666e7d);
+  font-size: calc(10.5 * var(--onface-u));
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+.ov-form input,
+.ov-form select,
+.ov-form textarea {
+  width: 100%;
+  min-width: 0;
+  padding: calc(8 * var(--onface-u)) calc(10 * var(--onface-u));
+  border: 1px solid var(--line-subtle, #e0e3e8);
+  border-radius: calc(9 * var(--onface-u));
+  background: var(--onface-white);
+  color: inherit;
+  font-family: var(--font-onface-ui), sans-serif;
+  font-size: calc(12.5 * var(--onface-u));
+  outline: none;
+}
+.ov-form input:focus,
+.ov-form select:focus,
+.ov-form textarea:focus { border-color: var(--onface-coral); }
+.ov-form textarea { min-height: calc(70 * var(--onface-u)); resize: vertical; }
+.ov-form-rodape { display: flex; justify-content: flex-end; gap: calc(8 * var(--onface-u)); }
+.ov-form-erro { color: #b91c1c; font-size: calc(11.5 * var(--onface-u)); }
+
+/* Escolha múltipla de família: a spec exige uma família por oportunidade, e
+   marcar duas significa duas oportunidades irmãs — o texto abaixo do grupo diz
+   isso na hora, não depois. */
+.ov-familias { display: flex; flex-wrap: wrap; gap: calc(6 * var(--onface-u)); }
+.ov-familia {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(6 * var(--onface-u));
+  padding: calc(7 * var(--onface-u)) calc(13 * var(--onface-u));
+  border: 1px solid var(--line-subtle, #e0e3e8);
+  border-radius: calc(999 * var(--onface-u));
+  background: var(--onface-white);
+  font-size: calc(12 * var(--onface-u));
+  font-weight: var(--weight-semibold);
+  cursor: pointer;
+}
+.ov-familia[data-marcada="true"] {
+  border-color: var(--onface-coral);
+  background: var(--onface-coral-subtle);
+  color: #b7301a;
+}
+.ov-nota {
+  color: var(--text-muted, #7a8290);
+  font-size: calc(11 * var(--onface-u));
+  line-height: 1.45;
+}
+
+/* ── Composição financeira (Bloco 03 §5) ───────────────────────────────── */
+
+/* Recorrente e não recorrente ficam separados de propósito: somar os dois num
+   "total" único engana, e a spec proíbe. */
+.ov-composicao {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(calc(130 * var(--onface-u)), 1fr));
+  gap: calc(8 * var(--onface-u));
+}
+.ov-composicao-item {
+  padding: calc(10 * var(--onface-u)) calc(12 * var(--onface-u));
+  border-radius: calc(11 * var(--onface-u));
+  background: var(--onface-white);
+  box-shadow: inset 0 0 0 1px var(--line-subtle, #e9ebef);
+}
+.ov-composicao-item dt {
+  color: var(--text-muted, #7a8290);
+  font-size: calc(10 * var(--onface-u));
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+.ov-composicao-item dd {
+  margin: calc(3 * var(--onface-u)) 0 0;
+  font-family: var(--font-onface-display), sans-serif;
+  font-size: calc(16 * var(--onface-u));
+  font-weight: var(--weight-bold);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Estado vazio ──────────────────────────────────────────────────────── */
+
+.ov-vazio {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(6 * var(--onface-u));
+  padding: calc(44 * var(--onface-u)) calc(20 * var(--onface-u));
+  color: var(--text-muted, #7a8290);
+  text-align: center;
+}
+.ov-vazio strong { color: var(--onface-preto-logo); font-size: calc(14 * var(--onface-u)); }
+.ov-vazio p { margin: 0; font-size: calc(12 * var(--onface-u)); max-width: calc(380 * var(--onface-u)); }
+
+/* ── Mobile ────────────────────────────────────────────────────────────── */
+
+@media (max-width: 820px) {
+  .ov-com-painel[data-aberto="true"] { grid-template-columns: minmax(0, 1fr); }
+  .ov-painel { position: static; max-height: none; }
+  .ov-coluna { flex-basis: calc(250 * var(--onface-u)); }
+  .ov-form-linha { grid-template-columns: minmax(0, 1fr); }
+}

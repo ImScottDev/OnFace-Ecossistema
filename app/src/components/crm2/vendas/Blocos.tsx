@@ -583,6 +583,7 @@ export function Cf2PerformanceTime({ linhas }: { linhas: LinhaPerformance[] }) {
             <div
               key={l.id}
               className={`flex flex-col lg:flex-row lg:items-center gap-4 p-4 ${RAIO.linha}`}
+              data-cf2-superficie="escura"
               style={{ background: "var(--cf2-home-kpi-bg)" }}
             >
               <div className="flex items-center gap-2.5 min-w-0 lg:w-[210px] shrink-0">

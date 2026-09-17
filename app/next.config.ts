@@ -14,7 +14,7 @@ const nextConfig: NextConfig = {
     };
 
     // CRM 2.0 / Fase 0: em produção o Traefik manda /api/* (exceto auth/webhooks/
-    // financeiro/onboarding/campanhas) direto pro container Hono (:3002), então as
+    // financeiro/onboarding/campanhas/contratos-publicos) direto pro container Hono, então as
     // rotas Next.js equivalentes (app/src/app/api/*) nunca recebem tráfego real —
     // são código morto em prod. Só que em `next dev` (:3000) não existe Traefik, e o
     // frontend chama `fetch("/api/...")` relativo: sem este rewrite, essas chamadas
@@ -28,7 +28,7 @@ const nextConfig: NextConfig = {
         beforeFiles: [
           uploadsCompat,
           {
-            source: "/api/:path((?!auth|webhooks|financeiro|onboarding|campanhas).*)",
+            source: "/api/:path((?!auth|webhooks|financeiro|onboarding|campanhas|contratos-publicos).*)",
             destination: `http://localhost:${apiPort}/api/:path*`,
           },
         ],

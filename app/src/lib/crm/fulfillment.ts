@@ -20,8 +20,9 @@
  */
 import { db } from "@/lib/db";
 import { eq } from "drizzle-orm";
-import { fulfillments, fulfillmentItens, servicosCanonicos, contratos, negocios, tarefas } from "@/lib/db/schema";
+import { fulfillments, fulfillmentItens, servicosCanonicos, contratos, negocios, tarefas, oportunidadeItens, oportunidades } from "@/lib/db/schema";
 import { notificarFulfillmentOnboardingCriado } from "@/lib/crm/notificar";
+import { regraDaFamilia, FAMILIAS_POR_TRILHA } from "@/lib/crm/politica-familia";
 
 // Estágio pedagógico do "Guia de Treinamento e Onboarding de Clientes
 // Callface" (base do checklist CALLFACE_AI, 19/08): EXPLICAR → DEMONSTRAR →
@@ -306,18 +307,22 @@ export const AI_CHECKLIST_BASE: ChecklistSeed = [
 ];
 
 export const WHITE_LABEL_CHECKLIST: ChecklistSeed = [
-  { workstream: "acesso", titulo: "Enviar convite e provisionar acesso do cliente" },
-  { workstream: "acesso", titulo: "Confirmar primeiro acesso" },
-  { workstream: "branding", titulo: "Coletar e validar logo e identidade visual" },
-  { workstream: "dominio", titulo: "Definir domínio white label" },
-  { workstream: "dominio", titulo: "Configurar e validar DNS" },
-  { workstream: "ambiente", titulo: "Configurar ambiente white label" },
-  { workstream: "capacidade", titulo: "Registrar capacidade contratada" },
-  { workstream: "qualidade", titulo: "Executar testes internos" },
-  { workstream: "treinamento", titulo: "Realizar treinamento" },
-  { workstream: "ativacao", titulo: "Confirmar primeiro uso e primeiro valor", metadata: { milestone: "FIRST_VALUE", marcacaoManual: true } },
-  { workstream: "ativacao", titulo: "Confirmar ativação do ambiente" },
-  { workstream: "handoff", titulo: "Preparar handoff para Customer Success", metadata: { handoffCs: true } },
+  { workstream: "abertura", titulo: "Iniciar implantação e confirmar responsável interno" },
+  { workstream: "abertura", titulo: "Revisar o escopo vendido e os contatos do cliente" },
+  { workstream: "comunicacao", titulo: "Fazer o primeiro contato de boas-vindas" },
+  { workstream: "comunicacao", titulo: "Apresentar as etapas e o prazo estimado da implantação" },
+  { workstream: "materiais", titulo: "Enviar o formulário de materiais e configuração" },
+  { workstream: "materiais", titulo: "Acompanhar o preenchimento do formulário pelo cliente" },
+  { workstream: "materiais", titulo: "Receber e validar materiais e informações do cliente" },
+  { workstream: "materiais", titulo: "Solicitar correções ou complementos, quando necessário" },
+  { workstream: "ambiente", titulo: "Configurar ambiente White Label e identidade da marca" },
+  { workstream: "dominio", titulo: "Enviar instruções de DNS/CNAME e acompanhar a configuração" },
+  { workstream: "dominio", titulo: "Validar DNS, TLS e domínio de e-mail (SPF/DKIM quando aplicável)" },
+  { workstream: "qa_interno", titulo: "Executar QA interno do ambiente" },
+  { workstream: "onboarding", titulo: "Agendar e conduzir a reunião de onboarding do ambiente" },
+  { workstream: "onboarding", titulo: "Validar ambiente com o cliente e liberar acesso administrativo" },
+  { workstream: "go_live", titulo: "Confirmar go-live do ambiente White Label" },
+  { workstream: "conclusao", titulo: "Concluir implantação e realizar handoff para Customer Success", metadata: { handoffCs: true } },
 ];
 
 // Fase do Kanban de Implantação PABX (referência de UX, 19/08) — agrupamento
@@ -402,7 +407,26 @@ function checklistParaFamilia(serviceFamily: string): ChecklistSeed {
 // Usado aqui pra decidir responsável automático + 1ª tarefa + notificação,
 // e reusado pelas rotas/telas de Onboarding pra filtrar a família certa
 // sem duplicar a regra em mais de um lugar.
-export const FAMILIAS_ONBOARDING = ["CALLFACE_AI", "WHITE_LABEL"] as const;
+/**
+ * Frente 2C.1 — a divisão por trilha passou a viver em UM lugar
+ * (`lib/crm/politica-familia.ts`). Esta constante continua exportada porque
+ * as rotas de Onboarding e a Home a usam como filtro, mas agora é DERIVADA da
+ * política, não uma segunda lista que pode divergir.
+ *
+ * Divergência real que isso corrige (medida no código antes da mudança): este
+ * arquivo dizia Onboarding = AI + White Label; `analytics/inicio.ts` dizia
+ * Onboarding = só AI e Implantação = PABX + White Label; a página
+ * `/clientes/implantacao` era `familiaFixa="PABX"`; e a Carteira
+ * (`clientes-crm2.ts`) só contava PABX em implantação e AI em onboarding.
+ * Resultado: um fulfillment de White Label não aparecia em bucket nenhum.
+ *
+ * Regra vigente (2C.1, explícita do Kauã): Callface AI → Onboarding; PABX →
+ * Implantação PABX; White Label → Implantação White Label (trilha própria,
+ * não igual à do PABX).
+ */
+export const FAMILIAS_ONBOARDING = FAMILIAS_POR_TRILHA.onboarding;
+export const FAMILIAS_IMPLANTACAO_PABX = FAMILIAS_POR_TRILHA.implantacao_pabx;
+export const FAMILIAS_IMPLANTACAO_WHITE_LABEL = FAMILIAS_POR_TRILHA.implantacao_white_label;
 
 /**
  * Cria o Fulfillment + checklist inicial pra cada serviço canônico
@@ -434,17 +458,41 @@ export async function criarFulfillmentsParaServicos(servicoIds: string[], organi
         .from(servicosCanonicos).where(eq(servicosCanonicos.id, servicoId)).limit(1);
       if (!servico) continue;
 
-      const ehOnboarding = (FAMILIAS_ONBOARDING as readonly string[]).includes(servico.serviceFamily);
+      // Frente 2C.1 — a automação inicial (responsável + 1ª tarefa +
+      // notificação) é uma propriedade da FAMÍLIA, não do rótulo "onboarding".
+      // PABX segue sem ela de propósito: Implantação PABX já tem o fluxo
+      // próprio (formulário de implantação) e não deve ganhar uma tarefa
+      // genérica de reunião em cima.
+      const regra = regraDaFamilia(servico.serviceFamily);
+      const ehOnboarding = regra.automacaoInicial;
 
       let responsavelId: string | null = null;
-      if (ehOnboarding && servico.contratoId) {
-        const [comercial] = await db
-          .select({ responsavelId: negocios.responsavelId })
-          .from(contratos)
-          .innerJoin(negocios, eq(negocios.id, contratos.negocioId))
-          .where(eq(contratos.id, servico.contratoId))
-          .limit(1);
-        responsavelId = comercial?.responsavelId ?? null;
+      if (ehOnboarding) {
+        // Caminho original: pelo contrato do serviço.
+        if (servico.contratoId) {
+          const [comercial] = await db
+            .select({ responsavelId: negocios.responsavelId })
+            .from(contratos)
+            .innerJoin(negocios, eq(negocios.id, contratos.negocioId))
+            .where(eq(contratos.id, servico.contratoId))
+            .limit(1);
+          responsavelId = comercial?.responsavelId ?? null;
+        }
+        // Frente 2C.1 — venda SEM contrato (Callface AI pago no checkout) não
+        // tinha como resolver responsável: caía em null, e sem responsável a
+        // notificação de onboarding também não era enviada (achado real na
+        // simulação: o onboarding de Callface AI nascia órfão). Resolve pelo
+        // negócio da oportunidade que gerou o serviço.
+        if (!responsavelId) {
+          const [viaOportunidade] = await db
+            .select({ responsavelId: negocios.responsavelId })
+            .from(oportunidadeItens)
+            .innerJoin(oportunidades, eq(oportunidades.id, oportunidadeItens.oportunidadeId))
+            .innerJoin(negocios, eq(negocios.id, oportunidades.negocioIdLegado))
+            .where(eq(oportunidadeItens.servicoCanonicoId, servicoId))
+            .limit(1);
+          responsavelId = viaOportunidade?.responsavelId ?? null;
+        }
       }
 
       const checklist = checklistParaFamilia(servico.serviceFamily);
@@ -476,7 +524,7 @@ export async function criarFulfillmentsParaServicos(servicoIds: string[], organi
             organizacaoId,
             leadId: servico.leadId,
             usuarioId: responsavelId,
-            titulo: "Agendar reunião de onboarding com o cliente",
+            titulo: regra.tarefaInicial ?? "Agendar reunião de kickoff com o cliente",
             tipo: "onboarding_agendar_reuniao",
             prioridade: "alta",
             venceEm: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000),

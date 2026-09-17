@@ -63,7 +63,7 @@ export function nodeSubtitle(node: FollowupNode): string {
   if (node.type === "wait") return node.config.mode === "fixed" ? `${Math.round(node.config.duration_ms / 60_000)} min` : `${Math.round(node.config.min_ms / 60_000)}–${Math.round(node.config.max_ms / 60_000)} min (IA decide)`;
   if (node.type === "condition") return node.config.branching === "per_check" ? `${node.config.checks.length} regra(s), 1 saída cada` : `${node.config.checks.length} regra(s) combinadas (${node.config.combinator === "and" ? "E" : "OU"})`;
   if (node.type === "ai_classify") return `${node.config.classes.length} classe(s) · ${node.config.target === "summary" ? "resumo" : "última resposta"}`;
-  if (node.type === "action") return node.config.mode === "ai_message" ? "Mensagem gerada por IA" : "Template WhatsApp";
+  if (node.type === "action") return ({ ai_message: "Mensagem gerada por IA", template: "Template WhatsApp", create_task: "Criar tarefa", add_tag: "Adicionar tag", remove_tag: "Remover tag", update_stage: "Atualizar etapa", assign_owner: "Atribuir responsável", add_note: "Registrar nota", email: "Enviar e-mail", callface_call: "Ligação Callface AI" } as Record<string, string>)[node.config.mode] ?? node.config.mode;
   if (node.type === "end") return node.config.outcome === "converted" ? "Convertido" : node.config.outcome === "custom" ? (node.config.note || "Personalizado") : "Esgotado";
   return EVENT_CATALOG.find((e) => e.id === node.config.event)?.nome ?? node.config.event;
 }

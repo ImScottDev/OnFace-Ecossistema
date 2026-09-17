@@ -10,6 +10,7 @@ import {
 } from "@/lib/db/schema";
 import { decryptCredential, encryptCredential, maskCredential } from "@/lib/ai-platform/security/credentials";
 import { runModelCall, type AiProvider } from "@/lib/ai-platform/runtime/provider-gateway";
+import { executeRegisteredTool } from "@/lib/ai-platform/tools/registry";
 import { getCtx } from "../compat.js";
 
 const app = new Hono();
@@ -187,7 +188,30 @@ app.post("/automacoes/ai/skills", async (c) => {
 
 app.get("/automacoes/ai/cases", async (c) => { const ctx = await getCtx(c); return c.json({ cases: await db.select().from(aiCases).where(eq(aiCases.organizacaoId, ctx.organizacaoId)).orderBy(desc(aiCases.updatedAt)).limit(250) }); });
 app.get("/automacoes/ai/cases/:id/events", async (c) => { const ctx = await getCtx(c); const [caseRow] = await db.select().from(aiCases).where(and(eq(aiCases.id, c.req.param("id")), eq(aiCases.organizacaoId, ctx.organizacaoId))).limit(1); if (!caseRow) return c.json({ error: "Caso nao encontrado" }, 404); return c.json({ case: caseRow, events: await db.select().from(aiCaseEvents).where(and(eq(aiCaseEvents.caseId, caseRow.id), eq(aiCaseEvents.organizacaoId, ctx.organizacaoId))).orderBy(aiCaseEvents.createdAt) }); });
-app.post("/automacoes/ai/cases/:id/action", async (c) => { const ctx = await getCtx(c); const parsed = z.object({ action: z.enum(["reply", "resolve", "escalate", "cancel"]), body: z.string().optional() }).safeParse(await c.req.json()); if (!parsed.success) return c.json({ error: "Acao invalida" }, 400); const status = { reply: "awaiting_contact", resolve: "resolved", escalate: "escalated", cancel: "cancelled" }[parsed.data.action]; const [caseRow] = await db.update(aiCases).set({ status, ...(status === "resolved" || status === "cancelled" ? { closedAt: new Date() } : {}), updatedAt: new Date() }).where(and(eq(aiCases.id, c.req.param("id")), eq(aiCases.organizacaoId, ctx.organizacaoId))).returning(); if (!caseRow) return c.json({ error: "Caso nao encontrado" }, 404); await db.insert(aiCaseEvents).values({ organizacaoId: ctx.organizacaoId, caseId: caseRow.id, kind: parsed.data.action === "reply" ? "human_replied" : parsed.data.action, actorKind: "human", actorUserId: ctx.userId, humanAction: parsed.data.action, body: parsed.data.body ?? null }); return c.json(caseRow); });
+app.post("/automacoes/ai/cases/:id/action", async (c) => {
+  const ctx = await getCtx(c);
+  const parsed = z.object({ action: z.enum(["reply", "resolve", "escalate", "cancel", "approve"]), body: z.string().optional() }).safeParse(await c.req.json());
+  if (!parsed.success) return c.json({ error: "Acao invalida" }, 400);
+  const [current] = await db.select().from(aiCases).where(and(eq(aiCases.id, c.req.param("id")), eq(aiCases.organizacaoId, ctx.organizacaoId))).limit(1);
+  if (!current) return c.json({ error: "Caso nao encontrado" }, 404);
+  let execution: Awaited<ReturnType<typeof executeRegisteredTool>> | null = null;
+  if (parsed.data.action === "approve") {
+    const snapshot = current.contextSnapshot && typeof current.contextSnapshot === "object" ? current.contextSnapshot as Record<string, unknown> : {};
+    if (current.source !== "tool_approval" || current.status !== "awaiting_human" || typeof snapshot.toolName !== "string" || !snapshot.toolInput || typeof snapshot.toolInput !== "object") return c.json({ error: "Caso não possui ação pendente aprovável" }, 409);
+    if (!current.agentId || !current.runId) return c.json({ error: "Caso sem rastreabilidade do agente" }, 409);
+    execution = await executeRegisteredTool(snapshot.toolName, { organizacaoId: ctx.organizacaoId, agentId: current.agentId, runId: current.runId, contatoId: current.contatoId, leadId: current.leadId, mode: "live", autonomy: "autonomous" }, snapshot.toolInput as Record<string, unknown>);
+    if (!execution.ok) {
+      await db.update(aiCases).set({ status: "escalated", updatedAt: new Date() }).where(eq(aiCases.id, current.id));
+      await db.insert(aiCaseEvents).values({ organizacaoId: ctx.organizacaoId, caseId: current.id, kind: "approval_failed", actorKind: "human", actorUserId: ctx.userId, humanAction: "approve", body: execution.error ?? "Falha ao executar ação aprovada", metadata: { execution } });
+      return c.json({ error: execution.error ?? "Ação aprovada falhou", execution }, 422);
+    }
+  }
+  const status = parsed.data.action === "approve" ? "resolved" : { reply: "awaiting_contact", resolve: "resolved", escalate: "escalated", cancel: "cancelled" }[parsed.data.action];
+  const [caseRow] = await db.update(aiCases).set({ status, ...(status === "resolved" || status === "cancelled" ? { closedAt: new Date() } : {}), updatedAt: new Date() }).where(eq(aiCases.id, current.id)).returning();
+  await db.insert(aiCaseEvents).values({ organizacaoId: ctx.organizacaoId, caseId: caseRow.id, kind: parsed.data.action === "reply" ? "human_replied" : parsed.data.action, actorKind: "human", actorUserId: ctx.userId, humanAction: parsed.data.action, body: parsed.data.body ?? null, metadata: execution ? { execution } : {} });
+  await audit(ctx, `ai.case.${parsed.data.action}`, "ai_case", caseRow.id, execution ?? { status });
+  return c.json({ case: caseRow, execution });
+});
 
 app.get("/automacoes/ai/alerts", async (c) => { const ctx = await getCtx(c); return c.json({ alerts: await db.select().from(aiAlerts).where(eq(aiAlerts.organizacaoId, ctx.organizacaoId)).orderBy(desc(aiAlerts.createdAt)).limit(250) }); });
 app.patch("/automacoes/ai/alerts/:id", async (c) => { const ctx = await getCtx(c); const parsed = z.object({ status: z.enum(["open", "acknowledged", "resolved"]) }).safeParse(await c.req.json()); if (!parsed.success) return c.json({ error: "Status invalido" }, 400); const [alert] = await db.update(aiAlerts).set({ status: parsed.data.status, ...(parsed.data.status === "acknowledged" ? { acknowledgedById: ctx.userId, acknowledgedAt: new Date() } : {}), ...(parsed.data.status === "resolved" ? { resolvedAt: new Date() } : {}) }).where(and(eq(aiAlerts.id, c.req.param("id")), eq(aiAlerts.organizacaoId, ctx.organizacaoId))).returning(); return alert ? c.json(alert) : c.json({ error: "Alerta nao encontrado" }, 404); });

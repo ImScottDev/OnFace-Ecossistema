@@ -5,12 +5,13 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import {
-  LayoutDashboard, Briefcase, Headphones, Calendar, Users, Zap, BarChart2,
+  LayoutDashboard, Briefcase, Headphones, Calendar, Users, Zap, BarChart2, HeartPulse, Megaphone,
   Settings,
-  Palette, Sparkles, ChevronDown, ChevronRight, FileText, Bot, ListChecks,
+  Palette, PhoneCall, ChevronDown, ChevronRight, FileText, Bot, ListChecks,
   Building2, SlidersHorizontal,
 } from "lucide-react";
 import { VENDAS_TABS } from "@/components/crm2/vendas-tabs";
+import { isComercialRoute } from "@/components/crm2/comercial-tabs";
 import {
   Cf2Sidebar as Shell, Cf2SidebarHeader, Cf2SidebarContent, Cf2SidebarFooter,
   Cf2SidebarGroup, Cf2SidebarMenu, Cf2SidebarMenuItem, Cf2SidebarMenuButton,
@@ -47,7 +48,7 @@ const MACRO: MacroItem[] = [
       { label: "Visão geral", href: "/clientes", icon: Users },
       { label: "Implantação", href: "/clientes/implantacao", icon: ListChecks },
       { label: "Onboarding", href: "/clientes/onboarding", icon: Building2 },
-      { label: "Sucesso", href: "/clientes/sucesso", icon: BarChart2 },
+      { label: "CS", href: "/clientes/cs", icon: HeartPulse },
       { label: "Financeiro", href: "/clientes/financeiro", icon: FileText },
     ],
   },
@@ -57,10 +58,11 @@ const MACRO: MacroItem[] = [
       { label: "Visão geral", href: "/automacoes", icon: Zap },
       { label: "Follow-ups", href: "/automacoes/cadencias", icon: ListChecks },
       { label: "Agentes IA", href: "/automacoes/agentes", icon: Bot },
+      { label: "Campanhas", href: "/automacoes/campanhas", icon: Megaphone },
       { label: "Execuções", href: "/automacoes/execucoes", icon: BarChart2 },
     ],
   },
-  { key: "insights", label: "Insights", href: "/relatorios", icon: BarChart2, legado: true },
+  { key: "insights", label: "Insights", href: "/relatorios", icon: BarChart2 },
   {
     key: "ajustes", label: "Ajustes", href: "/ajustes", icon: Settings,
     children: [
@@ -72,6 +74,11 @@ const MACRO: MacroItem[] = [
   },
 ];
 
+// Vendas não cai na regra genérica de `startsWith(href)`: ela agrupa rotas que
+// não compartilham prefixo com o próprio href (aponta pra /vendas mas cobre
+// /pre-vendas, /prospeccao, /pipeline, /propostas e /contatos). Responde pela
+// sua própria lista — a mesma que o accordion renderiza, então destaque e
+// conteúdo nunca divergem.
 function isMacroActive(item: MacroItem, pathname: string, isVendasRoute: boolean) {
   if (item.key === "vendas") return isVendasRoute;
   return pathname === item.href || (item.href !== "/inicio" && pathname.startsWith(item.href));
@@ -96,7 +103,8 @@ export function Cf2Sidebar() {
 
   const userName = session?.user?.name || "Usuário";
   const initials = userName.split(" ").slice(0, 2).map((w) => w[0]).join("").toUpperCase();
-  const isVendasRoute = VENDAS_TABS.some((tab) => pathname === tab.href || pathname.startsWith(`${tab.href}/`));
+  const isVendasRoute = isComercialRoute(pathname)
+    || VENDAS_TABS.some((tab) => pathname === tab.href || pathname.startsWith(`${tab.href}/`));
   const activeKey = MACRO.find((item) => isMacroActive(item, pathname, isVendasRoute))?.key ?? MACRO[0].key;
   const isExpanded = (key: string) => manualOverride.get(key) ?? key === activeKey;
 
@@ -110,16 +118,21 @@ export function Cf2Sidebar() {
     <Shell>
       <Cf2SidebarHeader>
         <div className="flex items-center gap-2">
-          <div className="flex size-6 shrink-0 items-center justify-center rounded-md" style={{ background: "var(--cf2-accent)" }}>
-            <Sparkles className="h-3.5 w-3.5" style={{ color: "var(--cf2-text-on-accent)" }} />
+          <div className="flex size-7 shrink-0 items-center justify-center rounded-[var(--radius-chip)]" style={{ background: "var(--cf2-accent)" }}>
+            <PhoneCall className="h-3.5 w-3.5" style={{ color: "var(--cf2-text-on-accent)" }} aria-hidden />
           </div>
           {!colapsado && (
-            <p
-              className="min-w-0 flex-1 truncate text-[13px] font-semibold"
+            <div className="min-w-0 flex-1 leading-none">
+              <p
+                className="truncate text-[13px] font-semibold tracking-[0.08em]"
               style={{ color: "var(--cf2-chrome-text-primary)", fontFamily: "var(--cf2-font-heading)" }}
-            >
-              callface
-            </p>
+              >
+                CALLFACE
+              </p>
+              <p className="mt-1 truncate text-[10px] font-medium" style={{ color: "var(--cf2-chrome-text-secondary)" }}>
+                CRM 2.0
+              </p>
+            </div>
           )}
         </div>
       </Cf2SidebarHeader>
@@ -144,6 +157,7 @@ export function Cf2Sidebar() {
                       <Link
                         href={item.href}
                         onClick={aoNavegar}
+                        aria-current={active && !temFilhos ? "page" : undefined}
                         title={item.legado ? `${item.label} — área legada, abre fora do CRM2` : item.label}
                       >
                         <span className="relative flex shrink-0 items-center justify-center">
@@ -181,7 +195,7 @@ export function Cf2Sidebar() {
                         return (
                           <li key={sub.href}>
                             <Cf2SidebarMenuSubButton asChild isActive={subActive}>
-                              <Link href={sub.href} onClick={aoNavegar}>
+                              <Link href={sub.href} onClick={aoNavegar} aria-current={subActive ? "page" : undefined}>
                                 <span className="truncate flex-1">{sub.label}</span>
                                 {subActive && (
                                   <span className="size-1.5 shrink-0 rounded-full" style={{ background: "var(--cf2-accent-border)" }} />

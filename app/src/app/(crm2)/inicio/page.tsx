@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import { getMetaComercialAgregada } from "@/lib/metas";
 import { getPipelineAtual, getFechadoPeriodo } from "@/lib/relatorios/comercial";
 import {
-  getMrrComparativo, getFunilLeads, getAquisicaoPeriodo,
+  getMrrAtivo, getMrrComparativo, getFunilLeads, getAquisicaoPeriodo,
   getAtendimentoResumo, getCsResumo, getFinanceiroResumo,
 } from "@/lib/analytics/command-center";
 import {
@@ -64,13 +64,14 @@ export default async function InicioPage() {
   const fimMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 1);
 
   const [
-    org, metaMes, pipelineAtivo, mrrComparativo, funilLeads, aquisicao,
+    org, metaMes, pipelineAtivo, mrrAtivo, mrrComparativo, funilLeads, aquisicao,
     atendimento, cs, financeiro, onboarding, implantacao, metaProdutos, mrrSeries,
     precisaAtencao, agendaHoje, equipe, fechadoMes, clientesAtivos,
   ] = await Promise.all([
     db.select({ nome: organizacoes.nome }).from(organizacoes).where(eq(organizacoes.id, ctx.organizacaoId)).limit(1),
     getMetaComercialAgregada(ctx.organizacaoId, hoje),
     getPipelineAtual(ctx.organizacaoId),
+    getMrrAtivo(ctx.organizacaoId),
     getMrrComparativo(ctx.organizacaoId, hoje),
     getFunilLeads(ctx.organizacaoId, hoje),
     getAquisicaoPeriodo(ctx.organizacaoId, hoje),
@@ -103,15 +104,15 @@ export default async function InicioPage() {
 
   const kpiHero: KpiCard = {
     label: "MRR ativo",
-    valor: brl0(mrrComparativo.atual),
+    valor: brl0(mrrAtivo.atual),
     rodape: `${clientesAtivos} ${clientesAtivos === 1 ? "cliente ativo" : "clientes ativos"}`,
     icone: "wallet",
     href: "/clientes/financeiro",
-    tendencia: mrrComparativo.deltaPct !== null
+    tendencia: mrrAtivo.deltaPct !== null
       ? {
-          texto: `${mrrComparativo.deltaPct >= 0 ? "+" : ""}${mrrComparativo.deltaPct.toFixed(1)}%`,
-          direcao: mrrComparativo.deltaPct >= 0 ? "up" : "down",
-          tom: mrrComparativo.deltaPct >= 0 ? "positivo" : "negativo",
+          texto: `${mrrAtivo.deltaPct >= 0 ? "+" : ""}${mrrAtivo.deltaPct.toFixed(1)}%`,
+          direcao: mrrAtivo.deltaPct >= 0 ? "up" : "down",
+          tom: mrrAtivo.deltaPct >= 0 ? "positivo" : "negativo",
         }
       : undefined,
   };
@@ -178,7 +179,7 @@ export default async function InicioPage() {
     {
       key: "cs", titulo: "Customer Success", href: "/clientes/sucesso", cta: "Abrir CS",
       metricas: [
-        { label: "Ações pendentes", valor: String(cs.tarefasAtrasadas) },
+        { label: "Ações pendentes", valor: String(cs.tarefasAbertas), tom: cs.tarefasAtrasadas > 0 ? "warning" : "neutro" },
         { label: "Renovações próximas", valor: String(cs.renovacoesProximas30d), tom: cs.renovacoesProximas30d > 0 ? "warning" : "neutro" },
         { label: "Sinais de risco", valor: String(cs.clientesEmRisco), tom: cs.clientesEmRisco > 0 ? "danger" : "neutro" },
       ],
@@ -186,7 +187,7 @@ export default async function InicioPage() {
     {
       key: "financeiro", titulo: "Financeiro", href: "/clientes/financeiro", cta: "Abrir Financeiro",
       metricas: [
-        { label: "MRR atual", valor: brlK(mrrComparativo.atual) },
+        { label: "MRR ativo", valor: brlK(mrrAtivo.atual) },
         { label: "Valor vencido", valor: brlK(financeiro.atrasadoValor), tom: financeiro.atrasadoValor > 0 ? "danger" : "neutro" },
         { label: "Cobranças vencidas", valor: String(financeiro.atrasadoCount), tom: financeiro.atrasadoCount > 0 ? "warning" : "neutro" },
       ],
@@ -223,17 +224,13 @@ export default async function InicioPage() {
           posVenda={[
             { label: "Ativação", valor: String(onboarding.ativas), apoio: "em andamento", href: "/clientes/onboarding" },
             { label: "Clientes ativos", valor: String(clientesAtivos), apoio: "base ativa", href: "/clientes" },
-            { label: "CS", valor: String(cs.tarefasAtrasadas), apoio: "ações pendentes", href: "/clientes/sucesso" },
+            { label: "CS", valor: String(cs.tarefasAbertas), apoio: "ações pendentes", href: "/clientes/sucesso" },
           ]}
         />
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-[1.4fr_1fr] gap-4">
-        <Cf2MrrEvolucao
-          series={mrrSeries}
-          totalFaturamento={mrrComparativo.atual}
-          variacaoPct={mrrComparativo.deltaPct}
-        />
+        <Cf2MrrEvolucao series={mrrSeries} variacaoPct={mrrComparativo.deltaPct} />
         <Cf2MetaMes realizado={realizadoMes} meta={metaMes.valorAlvo} produtos={metaProdutos} />
       </div>
 

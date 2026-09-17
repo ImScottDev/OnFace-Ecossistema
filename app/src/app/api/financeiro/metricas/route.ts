@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getTenantContext, unauthorizedResponse } from "@/lib/auth/tenant";
+import { getTenantContext, unauthorizedResponse, forbiddenResponse } from "@/lib/auth/tenant";
+import { isAdminView } from "@/lib/auth/roles";
 import {
   getMrrAtual,
   getComponentesMrr,
@@ -11,6 +12,7 @@ import {
   getFluxoMes,
 } from "@/lib/financeiro/metricas";
 import { getMetricasPorCampanha, agregarFunil } from "@/lib/relatorios/midia-paga";
+import { getMrrAtivo } from "@/lib/analytics/command-center";
 
 /**
  * GET /api/financeiro/metricas?inicio=YYYY-MM-DD&fim=YYYY-MM-DD
@@ -22,6 +24,7 @@ import { getMetricasPorCampanha, agregarFunil } from "@/lib/relatorios/midia-pag
 export async function GET(request: NextRequest) {
   const ctx = await getTenantContext();
   if (!ctx) return unauthorizedResponse();
+  if (!isAdminView(ctx.userRole)) return forbiddenResponse();
   const orgId = ctx.organizacaoId;
   const sp = request.nextUrl.searchParams;
 
@@ -42,7 +45,7 @@ export async function GET(request: NextRequest) {
     console.error("[FinMetricas] CAC indisponível (Meta):", e);
   }
 
-  const [mrr, componentes, mrrInicio, churn, unitEconomics, forecast, renovacoes, fluxoAi, fluxoPabx] = await Promise.all([
+  const [mrr, componentes, mrrInicio, churn, unitEconomics, forecast, renovacoes, fluxoAi, fluxoPabx, canonico] = await Promise.all([
     getMrrAtual(orgId),
     getComponentesMrr(orgId, p),
     getMrrNoInicio(orgId, inicio),
@@ -52,6 +55,12 @@ export async function GET(request: NextRequest) {
     getCalendarioRenovacao(orgId, 90),
     getFluxoMes(orgId, "ai"),
     getFluxoMes(orgId, "pabx"),
+    // 14/09: a escolha foi feita. `getMrrAtual().total` passou a ler a MESMA
+    // fonte canônica que esta função (servicos_canonicos), então os dois
+    // números são o mesmo por construção — não há mais o que divergir. Mantida
+    // a chamada como verificação cruzada: se um dia voltarem a discordar, a
+    // tela avisa em vez de esconder.
+    getMrrAtivo(orgId).catch(() => null),
   ]);
 
   return NextResponse.json({
@@ -62,6 +71,12 @@ export async function GET(request: NextRequest) {
       arr: Math.round(mrr.total * 12 * 100) / 100,
       porProduto: mrr.porProduto,
       componentes,
+      canonico: canonico ? canonico.atual : null,
+      // Conciliação: soma dos contratos ativos, deduplicada por assinatura
+      // Stripe. Fica visível porque a diferença pra carteira canônica é um
+      // sinal de qualidade de dado, não o MRR do produto.
+      contratado: mrr.totalContratado,
+      contratosAtivos: mrr.contratosAtivos,
     },
     churn,
     unitEconomics,

@@ -19,13 +19,14 @@
  * e está provado". Fica registrado como possível evolução futura.
  */
 import { db } from "@/lib/db";
-import { eq, and, asc } from "drizzle-orm";
+import { eq, asc } from "drizzle-orm";
 import {
-  checkouts, propostas, propostaGrupoComercial, propostaGrupoComercialItens, propostaItens, servicosCatalogo, leads,
+  checkouts, propostas, propostaGrupoComercial, propostaGrupoComercialItens, propostaItens, servicosCatalogo, catalogoPrecos, leads, empresas,
 } from "@/lib/db/schema";
-import { createGroupCheckout, expireCheckoutSession, type CheckoutItem } from "@/lib/integrations/stripe-checkout";
+import { createGroupCheckout, createStripeCustomer, expireCheckoutSession, getStripeCheckoutMode, type CheckoutItem } from "@/lib/integrations/stripe-checkout";
 import { publicarEvento } from "@/lib/events/outbox";
 import { vincularCheckoutAoGrupo } from "@/lib/crm/grupo-comercial";
+import { montarMetadataComercial } from "@/lib/crm/metadata-comercial";
 
 export type CriarCheckoutResult =
   | { ok: true; checkoutId: string; url: string }
@@ -54,30 +55,97 @@ export async function criarCheckoutParaGrupo(opts: {
     .select({
       nome: propostaItens.nome, tipo: propostaItens.tipo, quantidade: propostaItens.quantidade,
       subtotal: propostaItens.subtotal, servicoCatalogoId: propostaItens.servicoCatalogoId,
+      stripePriceId: catalogoPrecos.stripePriceId,
       stripeProductId: servicosCatalogo.stripeProductId,
+      valorTabela: catalogoPrecos.valor,
+      moeda: catalogoPrecos.moeda,
+      recorrente: catalogoPrecos.recorrente,
+      precoAtivo: catalogoPrecos.ativo,
+      produtoAtivo: servicosCatalogo.ativo,
+      origemCatalogo: servicosCatalogo.origemCatalogo,
     })
     .from(propostaGrupoComercialItens)
     .innerJoin(propostaItens, eq(propostaGrupoComercialItens.propostaItemId, propostaItens.id))
     .leftJoin(servicosCatalogo, eq(propostaItens.servicoCatalogoId, servicosCatalogo.id))
+    .leftJoin(catalogoPrecos, eq(propostaItens.catalogoPrecoId, catalogoPrecos.id))
     .where(eq(propostaGrupoComercialItens.grupoId, opts.grupoId))
     .orderBy(asc(propostaItens.ordem));
 
   if (itensDoGrupo.length === 0) return { ok: false, error: "Grupo comercial sem itens" };
 
-  const [lead] = await db.select({ email: leads.email }).from(leads).where(eq(leads.id, proposta.leadId)).limit(1);
+  const [lead] = await db.select({
+    id: leads.id, nome: leads.nome, sobrenome: leads.sobrenome, email: leads.email, telefone: leads.telefone,
+    empresa: leads.empresa, empresaId: leads.empresaId, empresaCnpj: leads.empresaCnpj, stripeCustomerId: leads.stripeCustomerId,
+  }).from(leads).where(eq(leads.id, proposta.leadId)).limit(1);
+  const [empresa] = lead?.empresaId
+    ? await db.select({ id: empresas.id, nome: empresas.nome, cnpj: empresas.cnpj, telefone: empresas.telefone, endereco: empresas.endereco, cep: empresas.cep, cidade: empresas.cidade, estado: empresas.estado, pais: empresas.pais, stripeCustomerId: empresas.stripeCustomerId })
+      .from(empresas).where(eq(empresas.id, lead.empresaId)).limit(1)
+    : [undefined];
+
+  let modoStripe: ReturnType<typeof getStripeCheckoutMode>;
+  try {
+    modoStripe = getStripeCheckoutMode();
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
+  const customerIdsBrutos = [empresa?.stripeCustomerId, lead?.stripeCustomerId].filter((id): id is string => !!id);
+  const customerIds = customerIdsBrutos.filter((id) => {
+    if (modoStripe === "mock") return id.startsWith("cus_mock_");
+    if (modoStripe === "test") return id.startsWith("cus_test_");
+    return !id.startsWith("cus_test_") && !id.startsWith("cus_mock_");
+  });
+  if (new Set(customerIds).size > 1) return { ok: false, error: "Empresa e contato possuem Stripe Customers diferentes. Resolva o vínculo manualmente antes de cobrar." };
+
+  const metadata = await montarMetadataComercial(opts.grupoId);
+  if (!metadata) return { ok: false, error: "Não foi possível montar a metadata comercial do grupo." };
+  let customerId: string;
+  try {
+    const customer = await createStripeCustomer({
+      customerId: customerIds[0] || null,
+      name: empresa?.nome || [lead?.nome, lead?.sobrenome].filter(Boolean).join(" ") || lead?.empresa || "Cliente Callface",
+      email: lead?.email,
+      phone: empresa?.telefone || lead?.telefone,
+      address: {
+        line1: empresa?.endereco,
+        city: empresa?.cidade,
+        state: empresa?.estado,
+        postalCode: empresa?.cep,
+        country: empresa?.pais || "BR",
+      },
+      metadata,
+    });
+    customerId = customer.id;
+    if (!empresa?.stripeCustomerId && empresa?.id) await db.update(empresas).set({ stripeCustomerId: customerId, updatedAt: new Date() }).where(eq(empresas.id, empresa.id));
+    if (!lead?.stripeCustomerId && lead?.id) await db.update(leads).set({ stripeCustomerId: customerId, updatedAt: new Date() }).where(eq(leads.id, lead.id));
+  } catch (err) {
+    return { ok: false, error: `Falha ao preparar Stripe Customer: ${String(err)}` };
+  }
 
   const mapItem = (i: (typeof itensDoGrupo)[number]): CheckoutItem => {
     const quantidade = Math.max(1, Math.round(parseFloat(i.quantidade || "1") || 1));
     const subtotal = parseFloat(i.subtotal || "0");
-    return { nome: i.nome, valorUnitario: quantidade > 0 ? subtotal / quantidade : subtotal, quantidade, stripeProductId: i.stripeProductId };
+    if (!i.stripePriceId || !i.stripeProductId || !i.moeda || i.valorTabela == null || !i.precoAtivo || !i.produtoAtivo || i.origemCatalogo !== "oficial_stripe") {
+      throw new Error(`O item '${i.nome}' não está vinculado a um Price oficial ativo do catálogo.`);
+    }
+    const valorUnitario = quantidade > 0 ? subtotal / quantidade : subtotal;
+    if (valorUnitario > parseFloat(i.valorTabela) + 0.01) throw new Error(`O valor negociado do item '${i.nome}' excede o Price oficial; revise a proposta.`);
+    const esperadoRecorrente = i.tipo === "recorrente";
+    if (Boolean(i.recorrente) !== esperadoRecorrente) throw new Error(`O Price oficial do item '${i.nome}' não corresponde ao tipo ${i.tipo}.`);
+    return { nome: i.nome, valorUnitario, valorTabela: parseFloat(i.valorTabela), quantidade, stripePriceId: i.stripePriceId, stripeProductId: i.stripeProductId, moeda: i.moeda };
   };
-  const itensRecorrentes = itensDoGrupo.filter((i) => i.tipo === "recorrente").map(mapItem);
-  const itensAvulsos = itensDoGrupo.filter((i) => i.tipo !== "recorrente").map(mapItem);
+  let itensRecorrentes: CheckoutItem[];
+  let itensAvulsos: CheckoutItem[];
+  try {
+    itensRecorrentes = itensDoGrupo.filter((i) => i.tipo === "recorrente").map(mapItem);
+    itensAvulsos = itensDoGrupo.filter((i) => i.tipo !== "recorrente").map(mapItem);
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
 
-  // Re-geração: expira o checkout anterior desse grupo (valores podem ter mudado).
+  // Re-geração: expira qualquer sessão ainda aberta desse grupo (valores podem ter mudado).
   if (grupo.checkoutId) {
     const [checkoutAnterior] = await db.select().from(checkouts).where(eq(checkouts.id, grupo.checkoutId)).limit(1);
-    if (checkoutAnterior?.stripeSessionId && checkoutAnterior.status === "criado") {
+    if (checkoutAnterior?.stripeSessionId && ["criado", "aberto"].includes(checkoutAnterior.status)) {
       await expireCheckoutSession(checkoutAnterior.stripeSessionId).catch((e) => console.error(`[checkout] falha ao expirar sessão anterior do grupo ${opts.grupoId}:`, e));
     }
   }
@@ -87,10 +155,10 @@ export async function criarCheckoutParaGrupo(opts: {
   try {
     const session = await createGroupCheckout({
       propostaId: proposta.id, negocioId: proposta.negocioId, grupoComercialId: opts.grupoId, organizacaoId: proposta.organizacaoId,
-      moeda: proposta.moeda || "BRL", itensRecorrentes, itensAvulsos, customerEmail: lead?.email || undefined,
-      condicaoPagamentoTipo: proposta.condicaoPagamentoTipo, vencimentoDias: proposta.vencimentoDias,
-      successUrl: process.env.CHECKOUT_SUCCESS_URL || `${base}/obrigado`,
-      cancelUrl: process.env.CHECKOUT_CANCEL_URL || base,
+      moeda: proposta.moeda || "BRL", itensRecorrentes, itensAvulsos, customerId, metadata,
+      attemptKey: grupo.checkoutId || "initial",
+      successUrl: process.env.CHECKOUT_SUCCESS_URL || `${base}/p/${proposta.id}?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
+      cancelUrl: process.env.CHECKOUT_CANCEL_URL || `${base}/p/${proposta.id}?checkout=cancelled`,
     });
     sessionId = session.sessionId;
     url = session.url;
@@ -107,10 +175,23 @@ export async function criarCheckoutParaGrupo(opts: {
     criadoPorId: opts.criadoPorId ?? null,
     stripeSessionId: sessionId,
     stripeCheckoutUrl: url,
+    stripeCustomerId: customerId,
     status: "criado",
+    paymentStatus: "pendente",
+    metadata,
+    expiraEm: new Date(Date.now() + 24 * 60 * 60 * 1000),
   }).returning();
 
   await vincularCheckoutAoGrupo(opts.grupoId, checkout.id);
+
+  // Compatibilidade de leitura: propostas antigas e telas que ainda olham o
+  // campo raiz passam a apontar para a bridge desta tentativa. O valor real
+  // do Stripe continua em checkouts.stripeCheckoutUrl.
+  await db.update(propostas).set({
+    checkoutUrl: `${base}/checkout/${checkout.id}`,
+    stripeSessionId: sessionId,
+    updatedAt: new Date(),
+  }).where(eq(propostas.id, proposta.id));
 
   await publicarEvento({
     organizacaoId: proposta.organizacaoId,

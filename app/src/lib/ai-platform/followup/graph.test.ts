@@ -50,3 +50,24 @@ test("compilador preserva IDs estáveis de ramos", () => {
   assert.equal(condition?.branches[0]?.proximoStepId, "yes");
   assert.equal(condition?.branches[1]?.proximoStepId, "no");
 });
+
+test("compilador transforma ações operacionais nos adapters duráveis", () => {
+  const graph: FollowupGraph = {
+    schema_version: 2,
+    nodes: [
+      { id: "trigger", type: "trigger", label: "Início", position: { x: 0, y: 0 }, config: { event: "LeadCreated", filters: {} } },
+      { id: "task", type: "action", label: "Criar tarefa", position: { x: 0, y: 100 }, config: { mode: "create_task", title: "Contatar lead", priority: "alta", due_minutes: 30 } },
+      { id: "stage", type: "action", label: "Mover etapa", position: { x: 0, y: 200 }, config: { mode: "update_stage", stage: "em_contato" } },
+      { id: "end", type: "end", label: "Fim", position: { x: 0, y: 300 }, config: { outcome: "custom" } },
+    ],
+    edges: [
+      { id: "a", source: "trigger", target: "task", priority: 0, condition: { type: "always" } },
+      { id: "b", source: "task", target: "stage", priority: 0, condition: { type: "always" } },
+      { id: "c", source: "stage", target: "end", priority: 0, condition: { type: "always" } },
+    ],
+  };
+  assert.equal(followupGraphSchema.safeParse(graph).success, true);
+  const compiled = compileFollowupGraph(graph);
+  assert.equal(compiled.find((step) => step.id === "task")?.adapter, "crm_create_task");
+  assert.equal(compiled.find((step) => step.id === "stage")?.adapter, "crm_update_stage");
+});

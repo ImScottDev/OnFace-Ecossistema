@@ -361,7 +361,7 @@ export function Cf2AutomacoesWorkspace() {
   const inputStyle = { background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" };
 
   return (
-    <div className="page-scroll space-y-4">
+    <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold" style={{ color: "var(--cf2-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>Automações</h1>
@@ -449,7 +449,7 @@ export function Cf2AutomacoesWorkspace() {
       )}
 
       {showForm && (
-        <div className="fixed inset-0 flex items-center justify-center z-50 p-4" style={{ background: "rgba(15,23,42,0.45)" }} onClick={closeForm}>
+        <div role="dialog" aria-modal="true" className="fixed inset-0 flex items-center justify-center z-50 p-4" style={{ background: "rgba(15,23,42,0.45)" }} onClick={closeForm}>
           <div
             className="w-full max-w-lg max-h-[88vh] overflow-y-auto rounded-2xl p-5"
             style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}
@@ -457,20 +457,20 @@ export function Cf2AutomacoesWorkspace() {
           >
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-[16px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>{editingId ? "Editar Automação" : "Nova Automação"}</h2>
-              <button onClick={closeForm} style={{ color: "var(--cf2-text-tertiary)" }}><X className="w-4 h-4" /></button>
+              <button onClick={closeForm} style={{ color: "var(--cf2-text-tertiary)" }} aria-label="Fechar"><X className="w-4 h-4" /></button>
             </div>
 
             <div className="space-y-4">
               <div>
                 <label className="text-[12px] font-medium mb-1 block" style={{ color: "var(--cf2-text-secondary)" }}>Nome *</label>
-                <input value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} className="w-full text-sm px-3 py-2 rounded-lg outline-none" style={inputStyle} placeholder="Ex: Notificar gestor quando negócio for ganho" />
+                <input value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} className="w-full text-sm px-3 py-2 rounded-lg outline-none" style={inputStyle} placeholder="Ex: Notificar gestor quando negócio for ganho" aria-label="Ex: Notificar gestor quando negócio for ganho" />
               </div>
 
               {/* Fluxo visual: gatilho → condição (opcional) → ação, ligados por
                   conectores verticais — mesma linguagem do card de referência,
                   simplificada pro que o motor real suporta (1 condição + 1 ação). */}
               <div className="flex flex-col gap-0">
-                <FlowStep icone={<Zap className="w-4 h-4" />} eyebrow="Quando (gatilho)" titulo={gatilhoLabel(form.gatilho)} cor="#e23752" />
+                <FlowStep icone={<Zap className="w-4 h-4" />} eyebrow="Quando (gatilho)" titulo={gatilhoLabel(form.gatilho)} cor="var(--cf2-accent)" />
                 <select value={form.gatilho} onChange={(e) => setForm({ ...form, gatilho: e.target.value })} className="text-[12px] px-3 py-1.5 rounded-lg outline-none mt-1.5" style={inputStyle}>
                   {GATILHO_OPTIONS.map((g) => <option key={g.value} value={g.value}>{g.label}</option>)}
                 </select>
@@ -484,11 +484,11 @@ export function Cf2AutomacoesWorkspace() {
                   </label>
                   {form.temCondicao && (
                     <div className="grid grid-cols-3 gap-2">
-                      <input value={form.condicaoCampo} onChange={(e) => setForm({ ...form, condicaoCampo: e.target.value })} className="text-[12px] px-2.5 py-1.5 rounded-lg outline-none" style={inputStyle} placeholder="campo (ex: status)" />
+                      <input value={form.condicaoCampo} onChange={(e) => setForm({ ...form, condicaoCampo: e.target.value })} className="text-[12px] px-2.5 py-1.5 rounded-lg outline-none" style={inputStyle} placeholder="campo (ex: status)" aria-label="campo (ex: status)" />
                       <select value={form.condicaoOperador} onChange={(e) => setForm({ ...form, condicaoOperador: e.target.value as NonNullable<Condicao["operador"]> })} className="text-[12px] px-2.5 py-1.5 rounded-lg outline-none" style={inputStyle}>
                         {OPERADOR_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                       </select>
-                      <input value={form.condicaoValor} onChange={(e) => setForm({ ...form, condicaoValor: e.target.value })} className="text-[12px] px-2.5 py-1.5 rounded-lg outline-none" style={inputStyle} placeholder="valor (ex: ganho)" />
+                      <input value={form.condicaoValor} onChange={(e) => setForm({ ...form, condicaoValor: e.target.value })} className="text-[12px] px-2.5 py-1.5 rounded-lg outline-none" style={inputStyle} placeholder="valor (ex: ganho)" aria-label="valor (ex: ganho)" />
                     </div>
                   )}
                 </div>
@@ -505,7 +505,7 @@ export function Cf2AutomacoesWorkspace() {
               <div className="space-y-2">
                 {form.acao === "criar_tarefa" && (
                   <>
-                    <input value={form.tituloTarefa} onChange={(e) => setForm({ ...form, tituloTarefa: e.target.value })} className="w-full text-sm px-3 py-2 rounded-lg outline-none" style={inputStyle} placeholder="Título da tarefa" />
+                    <input value={form.tituloTarefa} onChange={(e) => setForm({ ...form, tituloTarefa: e.target.value })} className="w-full text-sm px-3 py-2 rounded-lg outline-none" style={inputStyle} placeholder="Título da tarefa" aria-label="Título da tarefa" />
                     <select value={form.prioridade} onChange={(e) => setForm({ ...form, prioridade: e.target.value as NonNullable<AcaoConfig["prioridade"]> })} className="w-full text-sm px-3 py-2 rounded-lg outline-none" style={inputStyle}>
                       <option value="baixa">Prioridade baixa</option>
                       <option value="media">Prioridade média</option>
@@ -520,10 +520,10 @@ export function Cf2AutomacoesWorkspace() {
                   </select>
                 )}
                 {form.acao === "mudar_status" && (
-                  <input value={form.novoStatus} onChange={(e) => setForm({ ...form, novoStatus: e.target.value })} className="w-full text-sm px-3 py-2 rounded-lg outline-none" style={inputStyle} placeholder="Novo status (ex: qualifying, reuniao_agendada)" />
+                  <input value={form.novoStatus} onChange={(e) => setForm({ ...form, novoStatus: e.target.value })} className="w-full text-sm px-3 py-2 rounded-lg outline-none" style={inputStyle} placeholder="Novo status (ex: qualifying, reuniao_agendada)" aria-label="Novo status (ex: qualifying, reuniao_agendada)" />
                 )}
                 {(form.acao === "adicionar_tag_empresa" || form.acao === "remover_tag_empresa") && (
-                  <input value={form.tag} onChange={(e) => setForm({ ...form, tag: e.target.value })} className="w-full text-sm px-3 py-2 rounded-lg outline-none" style={inputStyle} placeholder="Tag (ex: financeiro_em_aberto)" />
+                  <input value={form.tag} onChange={(e) => setForm({ ...form, tag: e.target.value })} className="w-full text-sm px-3 py-2 rounded-lg outline-none" style={inputStyle} placeholder="Tag (ex: financeiro_em_aberto)" aria-label="Tag (ex: financeiro_em_aberto)" />
                 )}
                 {form.acao === "iniciar_cadencia" && (
                   <select value={form.cadenceDefinitionId} onChange={(e) => setForm({ ...form, cadenceDefinitionId: e.target.value })} className="w-full text-sm px-3 py-2 rounded-lg outline-none" style={inputStyle}>
@@ -532,7 +532,7 @@ export function Cf2AutomacoesWorkspace() {
                   </select>
                 )}
                 {(form.acao === "notificar_usuario" || form.acao === "enviar_email" || form.acao === "enviar_whatsapp") && (
-                  <textarea value={form.mensagem} onChange={(e) => setForm({ ...form, mensagem: e.target.value })} className="w-full text-sm px-3 py-2 rounded-lg outline-none resize-y" style={inputStyle} rows={3} placeholder="Mensagem" />
+                  <textarea value={form.mensagem} onChange={(e) => setForm({ ...form, mensagem: e.target.value })} className="w-full text-sm px-3 py-2 rounded-lg outline-none resize-y" style={inputStyle} rows={3} placeholder="Mensagem" aria-label="Mensagem" />
                 )}
               </div>
 

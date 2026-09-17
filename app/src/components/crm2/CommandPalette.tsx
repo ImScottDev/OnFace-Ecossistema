@@ -19,7 +19,7 @@ interface CommandItem {
 }
 
 // Navegação real do App Shell novo — mesmos destinos do Sidebar.tsx (algumas
-// ainda caem no legado até a tela ser migrada, o que é esperado).
+// todas apontam pra telas CRM2 desde a consolidação de 08/09/2026).
 const NAV: CommandItem[] = [
   { id: "nav-inicio", label: "Dashboard", href: "/inicio", icon: LayoutDashboard, group: "Navegar" },
   { id: "nav-atendimento", label: "Atendimento", href: "/atendimento", icon: Headset, group: "Navegar" },
@@ -29,10 +29,10 @@ const NAV: CommandItem[] = [
   { id: "nav-qualificacao", label: "Qualificação", href: "/pre-vendas", icon: Filter, group: "Navegar" },
   { id: "nav-pipeline", label: "Pipeline", href: "/pipeline", icon: GitBranch, group: "Navegar" },
   { id: "nav-negocios", label: "Negócios", href: "/pipeline", icon: Briefcase, group: "Navegar" },
-  { id: "nav-atividades", label: "Atividades", sublabel: "Tela legada", href: "/tarefas", icon: CheckCircle2, group: "Navegar" },
+  { id: "nav-atividades", label: "Tarefas", href: "/tarefas", icon: CheckCircle2, group: "Navegar" },
   { id: "nav-automacoes", label: "Automações", href: "/automacoes", icon: Zap, group: "Navegar" },
-  { id: "nav-indicadores", label: "Indicadores", sublabel: "Tela legada", href: "/relatorios", icon: TrendingUp, group: "Navegar" },
-  { id: "nav-config", label: "Ajustes", sublabel: "Tela legada", href: "/configuracoes", icon: Settings, group: "Navegar" },
+  { id: "nav-indicadores", label: "Insights", href: "/relatorios", icon: TrendingUp, group: "Navegar" },
+  { id: "nav-config", label: "Ajustes", href: "/ajustes", icon: Settings, group: "Navegar" },
 ];
 
 const ACOES: CommandItem[] = [
@@ -41,7 +41,31 @@ const ACOES: CommandItem[] = [
 
 const ESTATICOS = [...ACOES, ...NAV];
 
-export function Cf2CommandPalette() {
+export function Cf2CommandPalette({ variant = "cf2" }: { variant?: "cf2" | "onface" }) {
+  const onface = variant === "onface";
+  const palette = onface
+    ? {
+      overlay: "rgba(18,23,29,0.74)",
+      background: "var(--onface-chrome)",
+      border: "rgba(255,255,255,0.14)",
+      mutedBackground: "rgba(255,255,255,0.07)",
+      selectedBackground: "rgba(255,255,255,0.11)",
+      primary: "var(--onface-chrome-foreground)",
+      secondary: "rgba(238,239,235,0.66)",
+      accent: "var(--onface-action)",
+      accentForeground: "var(--onface-action-foreground)",
+    }
+    : {
+      overlay: "rgba(15,23,42,0.4)",
+      background: "var(--cf2-bg-surface)",
+      border: "var(--cf2-border-default)",
+      mutedBackground: "var(--cf2-bg-surface-muted)",
+      selectedBackground: "var(--cf2-bg-surface-muted)",
+      primary: "var(--cf2-text-primary)",
+      secondary: "var(--cf2-text-tertiary)",
+      accent: "var(--cf2-accent)",
+      accentForeground: "var(--cf2-text-on-accent)",
+    };
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -137,7 +161,7 @@ export function Cf2CommandPalette() {
           // Grupo "Clientes" (19/08) — Empresa com serviço ativo no
           // portfólio (carteira real), distinto de "Empresas" (diretório
           // genérico, inclui prospect/ex-cliente/nunca-cliente). Leva pro
-          // Customer 360 novo (/clientes/:id), não pro /empresas/:id legado.
+          // Customer 360 novo (/clientes/:id), não pra listagem antiga de empresas.
           ...(clientesData.clientes ?? []).slice(0, 5).map((cli: { id: string; nome: string; familias?: string[] | null }) => ({
             id: `cliente-${cli.id}`,
             label: cli.nome,
@@ -222,27 +246,30 @@ export function Cf2CommandPalette() {
 
   return (
     <>
-      <div className="fixed inset-0 z-[100]" style={{ background: "rgba(15,23,42,0.4)", backdropFilter: "blur(4px)" }} onClick={handleClose} />
+      <div role="presentation" className="fixed inset-0 z-[100]" style={{ background: palette.overlay, backdropFilter: onface ? "blur(10px)" : "blur(4px)" }} onClick={handleClose} />
       <div
-        className="fixed z-[101] top-[16%] left-1/2 -translate-x-1/2 w-full max-w-[520px] mx-4 sm:mx-0 overflow-hidden rounded-2xl shadow-2xl"
-        style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Busca global"
+        className={`fixed z-[101] top-[16%] left-1/2 -translate-x-1/2 w-full max-w-[520px] mx-4 sm:mx-0 overflow-hidden rounded-2xl shadow-2xl${onface ? " onface-command-palette" : ""}`}
+        style={{ background: palette.background, border: `1px solid ${palette.border}` }}
       >
-        <div className="flex items-center gap-3 px-4 py-3" style={{ borderBottom: "1px solid var(--cf2-border-default)" }}>
-          {searching ? <Loader2 className="w-4 h-4 shrink-0 animate-spin" style={{ color: "var(--cf2-text-tertiary)" }} /> : <Search className="w-4 h-4 shrink-0" style={{ color: "var(--cf2-text-tertiary)" }} />}
+        <div className="flex items-center gap-3 px-4 py-3" style={{ borderBottom: `1px solid ${palette.border}` }}>
+          {searching ? <Loader2 className="w-4 h-4 shrink-0 animate-spin" style={{ color: palette.secondary }} /> : <Search className="w-4 h-4 shrink-0" style={{ color: palette.secondary }} />}
           <input
             ref={inputRef}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Buscar pessoas, empresas, negócios, propostas, atividades..."
+            placeholder="Buscar pessoas, empresas, negócios, propostas, atividades..." aria-label="Buscar pessoas, empresas, negócios, propostas, atividades"
             className="flex-1 bg-transparent text-[14px] outline-none"
-            style={{ color: "var(--cf2-text-primary)" }}
+            style={{ color: palette.primary }}
           />
-          <kbd className="text-[10px] px-1.5 py-0.5 rounded shrink-0" style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-tertiary)" }}>ESC</kbd>
+          <kbd className="text-[10px] px-1.5 py-0.5 rounded shrink-0" style={{ background: palette.mutedBackground, color: palette.secondary }}>ESC</kbd>
         </div>
 
         <div ref={listRef} className="max-h-[360px] overflow-y-auto py-2 px-2">
           {filtered.length === 0 ? (
-            <p className="py-8 text-center text-[13px]" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhum resultado encontrado</p>
+            <p className="py-8 text-center text-[13px]" style={{ color: palette.secondary }}>Nenhum resultado encontrado</p>
           ) : (
             filtered.map((cmd, i) => {
               const Icon = cmd.icon;
@@ -251,19 +278,19 @@ export function Cf2CommandPalette() {
               const showGroupHeader = cmd.group && cmd.group !== prevGroup;
               return (
                 <div key={cmd.id}>
-                  {showGroupHeader && <p className="px-3 pt-2 pb-1 text-[10px] font-bold uppercase" style={{ color: "var(--cf2-text-tertiary)" }}>{cmd.group}</p>}
+                  {showGroupHeader && <p className="px-3 pt-2 pb-1 text-[10px] font-bold uppercase" style={{ color: palette.secondary }}>{cmd.group}</p>}
                   <button
                     onClick={() => navigate(cmd.href)}
                     onMouseEnter={() => setSelectedIndex(i)}
                     className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left"
-                    style={{ background: isSelected ? "var(--cf2-bg-surface-muted)" : "transparent" }}
+                    style={{ background: isSelected ? palette.selectedBackground : "transparent" }}
                   >
-                    <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: isSelected ? "var(--cf2-accent)" : "var(--cf2-bg-surface-muted)" }}>
-                      <Icon className="w-4 h-4" style={{ color: isSelected ? "var(--cf2-text-on-accent)" : "var(--cf2-text-secondary)" }} />
+                    <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: isSelected ? palette.accent : palette.mutedBackground }}>
+                      <Icon className="w-4 h-4" style={{ color: isSelected ? palette.accentForeground : palette.secondary }} />
                     </div>
-                    <span className="flex-1 text-[13px] truncate" style={{ color: "var(--cf2-text-primary)" }}>
+                    <span className="flex-1 text-[13px] truncate" style={{ color: palette.primary }}>
                       {cmd.label}
-                      {cmd.sublabel && <span style={{ color: "var(--cf2-text-tertiary)" }}> · {cmd.sublabel}</span>}
+                      {cmd.sublabel && <span style={{ color: palette.secondary }}> · {cmd.sublabel}</span>}
                     </span>
                   </button>
                 </div>
@@ -272,7 +299,7 @@ export function Cf2CommandPalette() {
           )}
         </div>
 
-        <div className="flex items-center justify-center gap-4 px-4 py-2 text-[10px]" style={{ borderTop: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-tertiary)" }}>
+        <div className="flex items-center justify-center gap-4 px-4 py-2 text-[10px]" style={{ borderTop: `1px solid ${palette.border}`, color: palette.secondary }}>
           <span>↑↓ navegar</span>
           <span>Enter abrir</span>
           <span>ESC fechar</span>

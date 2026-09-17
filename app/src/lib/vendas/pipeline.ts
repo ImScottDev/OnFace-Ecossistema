@@ -1,0 +1,783 @@
+/**
+ * Motor do Pipeline / Oportunidades (Bloco 02).
+ *
+ * Oportunidade é um processo comercial real aberto com uma Empresa para vender
+ * UMA família de serviço. Ela mora na tabela `negocios`, que continua sendo
+ * lida por financeiro, contratos e relatórios; o vocabulário novo vive na
+ * coluna `etapa` e a tradução para `status` é feita aqui, num lugar só.
+ *
+ * As regras que este arquivo existe para garantir, todas da spec:
+ *   - Empresa e Família são obrigatórias na criação (§1, §5);
+ *   - duas famílias criam duas oportunidades irmãs, nunca uma genérica (§2-3);
+ *   - reunião, trial e no-show são eventos, nunca etapa (§10-12);
+ *   - Proposta e Negociação têm gate de proposta vinculada (§10);
+ *   - Ganho nunca é drag: é consequência de evidência (§19-20).
+ */
+import { sql } from "drizzle-orm";
+import { db } from "@/lib/db";
+import { registrarEvento, registrarMudancaDeEtapa } from "./eventos";
+import { voltarParaQualificado } from "./pre-vendas";
+import {
+  ehFamiliaValida, RegraDeNegocio, ROTULO_FAMILIA, STATUS_LEGADO_DA_ETAPA,
+  type Ator, type EtapaPipeline, type EtapaPipelineAberta, type Familia,
+  type Motion, type MotivoEstagnacao, type MotivoPerda, type ProcessoOrigem,
+} from "./dominio";
+
+/* ── Leitura de apoio ──────────────────────────────────────────────────── */
+
+interface OportunidadeInterna extends Record<string, unknown> {
+  id: string;
+  organizacao_id: string;
+  titulo: string;
+  etapa: EtapaPipeline | null;
+  status: string;
+  empresa_id: string | null;
+  lead_id: string | null;
+  service_family: string | null;
+  responsavel_id: string | null;
+  bundle_id: string | null;
+  propostas_vinculadas: number;
+}
+
+async function carregarOportunidade(organizacaoId: string, negocioId: string): Promise<OportunidadeInterna> {
+  const [op] = await db.execute<OportunidadeInterna>(sql`
+    SELECT n.id::text, n.organizacao_id::text, n.titulo, n.etapa, n.status,
+           n.empresa_id::text, n.lead_id::text, n.service_family,
+           n.responsavel_id::text, n.bundle_id::text,
+           (SELECT count(*)::int FROM propostas p WHERE p.negocio_id = n.id) AS propostas_vinculadas
+      FROM negocios n
+     WHERE n.id = ${negocioId}::uuid AND n.organizacao_id = ${organizacaoId}::uuid
+  `);
+  if (!op) throw new RegraDeNegocio("oportunidade_nao_encontrada", "Oportunidade não encontrada.");
+  return op;
+}
+
+/* ── Criação (Bloco 02 §5-8) ───────────────────────────────────────────── */
+
+export interface CriarOportunidade {
+  organizacaoId: string;
+  /** Obrigatória. Bloco 02 §29: oportunidade sem Empresa é proibida. */
+  empresaId: string;
+  /** Uma ou mais. Duas ou mais criam oportunidades irmãs no mesmo bundle. */
+  familias: Familia[];
+  responsavelId: string;
+  sourceProcess: ProcessoOrigem;
+  leadId?: string | null;
+  pessoaId?: string | null;
+  motion?: Motion;
+  titulo?: string | null;
+  valorEstimado?: string | null;
+  previsaoFechamento?: string | null;
+  proximaAcao?: string | null;
+  proximaAcaoEm?: string | null;
+  /** Agendar reunião junto. Bloco 02 §6: reunião NÃO é requisito. */
+  reuniao?: { data: string; duracao?: number; tipo?: "call" | "presencial" | "video"; titulo?: string; notas?: string } | null;
+  servicoOrigemId?: string | null;
+}
+
+export interface OportunidadeCriada {
+  oportunidades: Array<{ id: string; familia: Familia; titulo: string }>;
+  bundleId: string | null;
+  reuniaoId: string | null;
+}
+
+/**
+ * Cria a oportunidade (ou as oportunidades irmãs).
+ *
+ * Bloco 02 §2-3: uma oportunidade pertence a exatamente uma família. Duas
+ * famílias selecionadas viram DUAS oportunidades com o mesmo `bundleId`,
+ * compartilhando empresa, contato e origem, mas com ciclo comercial e
+ * fechamento independentes. Criar uma única oportunidade "genérica" para as
+ * duas está na lista de proibições.
+ *
+ * Nasce sempre em `entrada`, com ou sem reunião. Bloco 02 §10: "Entrada não
+ * significa reunião agendada" — e era exatamente isso que o conversor antigo
+ * gravava, ao pôr `reuniao_agendada` mesmo no caminho sem reunião.
+ */
+export async function criarOportunidade(entrada: CriarOportunidade, ator: Ator): Promise<OportunidadeCriada> {
+  if (!entrada.empresaId) {
+    throw new RegraDeNegocio("oportunidade_exige_empresa", "Toda oportunidade precisa de uma Empresa.");
+  }
+  const familias = [...new Set(entrada.familias)];
+  if (familias.length === 0) {
+    throw new RegraDeNegocio("oportunidade_exige_familia", "Escolha pelo menos uma família de serviço.");
+  }
+  for (const familia of familias) {
+    if (!ehFamiliaValida(familia)) {
+      throw new RegraDeNegocio("familia_invalida", `Família inválida: ${familia}.`);
+    }
+  }
+  if (!entrada.responsavelId) {
+    throw new RegraDeNegocio("oportunidade_exige_responsavel", "Escolha o responsável comercial.");
+  }
+
+  const [empresa] = await db.execute<{ id: string; nome: string }>(sql`
+    SELECT id::text, nome FROM empresas
+     WHERE id = ${entrada.empresaId}::uuid AND organizacao_id = ${entrada.organizacaoId}::uuid
+  `);
+  if (!empresa) throw new RegraDeNegocio("empresa_nao_encontrada", "Empresa não encontrada.");
+
+  // Bundle só existe quando há irmãs de verdade. Bundle de uma oportunidade
+  // só seria ruído: ele agrega, não é status nem container.
+  let bundleId: string | null = null;
+  if (familias.length > 1) {
+    const [bundle] = await db.execute<{ id: string }>(sql`
+      INSERT INTO oportunidade_bundle (organizacao_id, nome, lead_id, empresa_id)
+      VALUES (${entrada.organizacaoId}::uuid, ${`${empresa.nome} — Nova venda`},
+              ${entrada.leadId ?? null}::uuid, ${entrada.empresaId}::uuid)
+      RETURNING id::text
+    `);
+    bundleId = bundle.id;
+  }
+
+  const [pipelinePadrao] = await db.execute<{ id: string }>(sql`
+    SELECT id::text FROM pipelines
+     WHERE organizacao_id = ${entrada.organizacaoId}::uuid AND ativo = true
+     ORDER BY is_default DESC LIMIT 1
+  `);
+
+  const motion: Motion = entrada.motion
+    ?? (entrada.sourceProcess === "EXPANSION" ? "EXPANSION" : "NEW_BUSINESS");
+
+  const criadas: Array<{ id: string; familia: Familia; titulo: string }> = [];
+
+  for (const familia of familias) {
+    // Bloco 02 §8: nome gerado como {Empresa} — {Família}. Só respeita um
+    // título manual quando há uma família só; com irmãs, um título único para
+    // as duas faria os cards ficarem indistinguíveis no board.
+    const titulo = familias.length === 1 && entrada.titulo?.trim()
+      ? entrada.titulo.trim()
+      : `${empresa.nome} — ${ROTULO_FAMILIA[familia]}`;
+
+    const [negocio] = await db.execute<{ id: string }>(sql`
+      INSERT INTO negocios (
+        organizacao_id, lead_id, empresa_id, titulo, service_family,
+        etapa, etapa_desde, status, source_process, commercial_motion,
+        responsavel_id, pipeline_id, bundle_id, valor_total,
+        previsao_fechamento, proxima_acao, proxima_acao_em, proxima_acao_responsavel_id,
+        origem_negocio, origem_qualificacao, servico_origem_id
+      ) VALUES (
+        ${entrada.organizacaoId}::uuid,
+        ${entrada.leadId ?? null}::uuid,
+        ${entrada.empresaId}::uuid,
+        ${titulo},
+        ${familia},
+        'entrada', now(), ${STATUS_LEGADO_DA_ETAPA.entrada},
+        ${entrada.sourceProcess},
+        ${motion},
+        ${entrada.responsavelId}::uuid,
+        ${pipelinePadrao?.id ?? null}::uuid,
+        ${bundleId}::uuid,
+        ${entrada.valorEstimado ?? null},
+        ${entrada.previsaoFechamento ?? null}::date,
+        ${entrada.proximaAcao ?? null},
+        ${entrada.proximaAcaoEm ?? null}::timestamptz,
+        ${entrada.proximaAcao ? entrada.responsavelId : null}::uuid,
+        ${entrada.sourceProcess === "EXPANSION" ? "carteira" : "novo"},
+        ${entrada.reuniao ? "reuniao" : "direta"},
+        ${entrada.servicoOrigemId ?? null}::uuid
+      )
+      RETURNING id::text
+    `);
+
+    if (entrada.leadId) {
+      await db.execute(sql`
+        INSERT INTO negocio_leads (negocio_id, lead_id, papel)
+        VALUES (${negocio.id}::uuid, ${entrada.leadId}::uuid, 'contato')
+        ON CONFLICT DO NOTHING
+      `);
+    }
+
+    await registrarMudancaDeEtapa({
+      organizacaoId: entrada.organizacaoId, ator, negocioId: negocio.id,
+      leadId: entrada.leadId ?? null, de: null, para: "entrada",
+      tipo: "OpportunityStageChanged", motivo: "Oportunidade criada",
+    });
+
+    await registrarEvento({
+      organizacaoId: entrada.organizacaoId,
+      tipo: entrada.sourceProcess === "OUTBOUND_DIRECT" ? "OpportunityCreatedFromProspecting" : "OpportunityCreated",
+      ator, negocioId: negocio.id, leadId: entrada.leadId ?? null,
+      empresaId: entrada.empresaId, pessoaId: entrada.pessoaId ?? null,
+      contexto: { familia, motion, sourceProcess: entrada.sourceProcess, bundleId, titulo },
+      timeline: { tipo: "nota", titulo: "Oportunidade criada", descricao: titulo },
+    });
+
+    criadas.push({ id: negocio.id, familia, titulo });
+  }
+
+  // A reunião é agendada na PRIMEIRA oportunidade quando há irmãs: uma reunião
+  // única não deve ser duplicada só porque a venda tem duas linhas.
+  let reuniaoId: string | null = null;
+  if (entrada.reuniao?.data) {
+    const resultado = await agendarReuniao({
+      organizacaoId: entrada.organizacaoId,
+      negocioId: criadas[0].id,
+      leadId: entrada.leadId ?? null,
+      data: entrada.reuniao.data,
+      duracao: entrada.reuniao.duracao,
+      tipo: entrada.reuniao.tipo,
+      titulo: entrada.reuniao.titulo,
+      notas: entrada.reuniao.notas,
+      responsavelId: entrada.responsavelId,
+      ator,
+    });
+    reuniaoId = resultado.reuniaoId;
+  }
+
+  // Bloco 01 §11-12: o Lead conclui o handoff e passa a espelhar o Pipeline.
+  //
+  // Só no caminho de Pré-vendas. Quando a oportunidade nasce do outbound
+  // direto, do Pipeline ou da carteira, o registro é vinculado para não perder
+  // a origem — mas empurrá-lo para a etapa "Oportunidade" de Pré-vendas seria
+  // fingir uma passagem que não houve, que é o que Bloco 04 §13 proíbe.
+  if (entrada.leadId && entrada.sourceProcess === "PRE_SALES") {
+    await db.execute(sql`
+      UPDATE leads SET
+        estagio_pre_vendas = 'oportunidade',
+        negocio_ativo_id = ${criadas[0].id}::uuid,
+        convertido_at = COALESCE(convertido_at, now()),
+        sdr_status = 'qualified',
+        updated_at = now()
+       WHERE id = ${entrada.leadId}::uuid
+    `);
+    await registrarMudancaDeEtapa({
+      organizacaoId: entrada.organizacaoId, ator, leadId: entrada.leadId,
+      negocioId: criadas[0].id, de: "qualificado", para: "oportunidade",
+      tipo: "StageChanged", motivo: "Handoff de Pré-vendas concluído",
+    });
+  }
+
+  // O vínculo operacional vale para qualquer origem: é o que leva do registro
+  // para a oportunidade sem depender da etapa de Pré-vendas.
+  if (entrada.leadId && entrada.sourceProcess !== "PRE_SALES") {
+    await db.execute(sql`
+      UPDATE leads SET negocio_ativo_id = ${criadas[0].id}::uuid, updated_at = now()
+       WHERE id = ${entrada.leadId}::uuid
+    `);
+  }
+
+  await espelharNoDominioV2(criadas.map((c) => c.id));
+
+  return { oportunidades: criadas, bundleId, reuniaoId };
+}
+
+/**
+ * Cria a oportunidade a partir de um Lead qualificado.
+ *
+ * Bloco 01 §9-11: Qualificado não cria oportunidade sozinho; é preciso o
+ * comando. E o comando exige família, que o Lead não tem obrigação de saber —
+ * por isso ela vem do modal, não de adivinhação sobre `servicos_interesse`.
+ */
+export async function criarOportunidadeDoLead(params: {
+  organizacaoId: string;
+  leadId: string;
+  familias: Familia[];
+  responsavelId: string;
+  titulo?: string | null;
+  valorEstimado?: string | null;
+  reuniao?: CriarOportunidade["reuniao"];
+  ator: Ator;
+}): Promise<OportunidadeCriada> {
+  const [lead] = await db.execute<{
+    id: string; empresa_id: string | null; empresa: string | null; qualificado: boolean;
+    estagio_pre_vendas: string | null; nome: string; email: string | null;
+    telefone: string | null; cargo: string | null; sobrenome: string | null;
+  }>(sql`
+    SELECT id::text, empresa_id::text, empresa, qualificado, estagio_pre_vendas,
+           nome, sobrenome, email, telefone, cargo
+      FROM leads WHERE id = ${params.leadId}::uuid AND organizacao_id = ${params.organizacaoId}::uuid
+  `);
+  if (!lead) throw new RegraDeNegocio("lead_nao_encontrado", "Lead não encontrado.");
+
+  // Empresa é obrigatória e o Lead legado pode ter só o nome dela em texto.
+  // Resolver aqui é o que impede a oportunidade de nascer órfã.
+  let empresaId = lead.empresa_id;
+  if (!empresaId) {
+    if (!lead.empresa?.trim()) {
+      throw new RegraDeNegocio(
+        "lead_sem_empresa",
+        "Este lead não tem empresa. Associe ou crie a empresa antes de abrir a oportunidade.",
+        { rotulo: "Associar empresa", tipo: "associar_empresa" },
+      );
+    }
+    const { resolverEmpresa } = await import("./identidade");
+    const resolvida = await resolverEmpresa(params.organizacaoId, {
+      nome: lead.empresa, email: lead.email,
+    }, params.ator);
+    empresaId = resolvida.empresaId;
+    await db.execute(sql`UPDATE leads SET empresa_id = ${empresaId}::uuid WHERE id = ${lead.id}::uuid`);
+  }
+
+  return criarOportunidade({
+    organizacaoId: params.organizacaoId,
+    empresaId,
+    familias: params.familias,
+    responsavelId: params.responsavelId,
+    sourceProcess: "PRE_SALES",
+    leadId: lead.id,
+    titulo: params.titulo,
+    valorEstimado: params.valorEstimado,
+    reuniao: params.reuniao,
+  }, params.ator);
+}
+
+/* ── Etapas e gates (Bloco 02 §9-10, §16, §19) ─────────────────────────── */
+
+/**
+ * Move a oportunidade de etapa.
+ *
+ * Os gates não são validação de formulário: são a regra comercial. Mover para
+ * Proposta ou Negociação sem proposta vinculada é bloqueado, com a mensagem e
+ * o CTA que a spec escreve literalmente. Ganho não é alcançável por aqui em
+ * hipótese alguma.
+ */
+export async function moverEtapa(params: {
+  organizacaoId: string;
+  negocioId: string;
+  para: EtapaPipelineAberta;
+  ator: Ator;
+  motivo?: string | null;
+  /** Usado pelo envio de proposta, que move automaticamente (Bloco 03 §9). */
+  ignorarGateDeProposta?: boolean;
+}): Promise<void> {
+  const op = await carregarOportunidade(params.organizacaoId, params.negocioId);
+
+  if (op.etapa === "ganho") {
+    throw new RegraDeNegocio("oportunidade_ganha", "Esta oportunidade já foi ganha.");
+  }
+  if (op.etapa === params.para) return;
+
+  const exigeProposta = params.para === "proposta" || params.para === "negociacao";
+  if (exigeProposta && !params.ignorarGateDeProposta && op.propostas_vinculadas === 0) {
+    throw new RegraDeNegocio(
+      "etapa_exige_proposta",
+      params.para === "proposta"
+        ? "Crie uma proposta para mover esta oportunidade para Proposta."
+        : "Negociação é negociação sobre uma oferta real. Crie uma proposta primeiro.",
+      { rotulo: "Criar proposta", tipo: "criar_proposta" },
+    );
+  }
+
+  await aplicarEtapa(op, params.para, params.ator, params.motivo ?? null);
+}
+
+/** Escrita da etapa: coluna nova, status legado e histórico, sempre juntos. */
+async function aplicarEtapa(
+  op: OportunidadeInterna,
+  para: EtapaPipeline,
+  ator: Ator,
+  motivo: string | null,
+): Promise<void> {
+  await db.execute(sql`
+    UPDATE negocios SET
+      etapa = ${para},
+      etapa_desde = now(),
+      status = ${STATUS_LEGADO_DA_ETAPA[para]},
+      -- Sair da etapa limpa a estagnação: ela descrevia a parada anterior.
+      motivo_estagnacao = NULL,
+      estagnado_em = NULL,
+      updated_at = now()
+     WHERE id = ${op.id}::uuid
+  `);
+
+  await registrarMudancaDeEtapa({
+    organizacaoId: op.organizacao_id, ator, negocioId: op.id, leadId: op.lead_id,
+    de: op.etapa, para, tipo: "OpportunityStageChanged", motivo,
+  });
+
+  await espelharNoDominioV2([op.id]);
+}
+
+/** Bloco 02 §13: oportunidade sem próxima ação é sinal, e o sinal precisa de
+ *  um lugar onde morar. */
+export async function definirProximaAcao(params: {
+  organizacaoId: string;
+  negocioId: string;
+  descricao: string | null;
+  quando: string | null;
+  responsavelId?: string | null;
+  ator: Ator;
+}): Promise<void> {
+  const op = await carregarOportunidade(params.organizacaoId, params.negocioId);
+  await db.execute(sql`
+    UPDATE negocios SET
+      proxima_acao = ${params.descricao},
+      proxima_acao_em = ${params.quando ?? null}::timestamptz,
+      proxima_acao_responsavel_id = ${params.responsavelId ?? op.responsavel_id ?? null}::uuid,
+      updated_at = now()
+     WHERE id = ${params.negocioId}::uuid
+  `);
+  await registrarEvento({
+    organizacaoId: params.organizacaoId, tipo: "NextActionSet", ator: params.ator,
+    negocioId: params.negocioId,
+    contexto: { descricao: params.descricao, quando: params.quando },
+  });
+}
+
+/** Bloco 02 §17: motivo de estagnação é contexto do card, não etapa nova. */
+export async function marcarEstagnacao(params: {
+  organizacaoId: string;
+  negocioId: string;
+  motivo: MotivoEstagnacao | null;
+  ator: Ator;
+}): Promise<void> {
+  await carregarOportunidade(params.organizacaoId, params.negocioId);
+  await db.execute(sql`
+    UPDATE negocios SET
+      motivo_estagnacao = ${params.motivo},
+      estagnado_em = ${params.motivo ? sql`now()` : sql`NULL`},
+      updated_at = now()
+     WHERE id = ${params.negocioId}::uuid
+  `);
+  await registrarEvento({
+    organizacaoId: params.organizacaoId, tipo: "OpportunityStalled", ator: params.ator,
+    negocioId: params.negocioId, contexto: { motivo: params.motivo },
+  });
+}
+
+/** Bloco 02 §4: a família é editável enquanto a oportunidade está aberta, e a
+ *  troca gera evento estruturado. */
+export async function alterarFamilia(params: {
+  organizacaoId: string;
+  negocioId: string;
+  familia: Familia;
+  motivo?: string | null;
+  ator: Ator;
+}): Promise<{ propostasIncompativeis: number }> {
+  if (!ehFamiliaValida(params.familia)) {
+    throw new RegraDeNegocio("familia_invalida", "Família inválida.");
+  }
+  const op = await carregarOportunidade(params.organizacaoId, params.negocioId);
+  if (op.etapa === "ganho" || op.etapa === "perdido") {
+    throw new RegraDeNegocio("oportunidade_fechada", "Oportunidade fechada não muda de família.");
+  }
+  if (op.service_family === params.familia) return { propostasIncompativeis: 0 };
+
+  // Bloco 02 §4: a alteração não pode deixar proposta e oportunidade
+  // inconsistentes em silêncio. Propostas vigentes da família antiga são
+  // contadas e devolvidas para que a interface avise — sem reescrever
+  // proposta histórica, que a spec proíbe.
+  const [incompativeis] = await db.execute<{ n: number }>(sql`
+    SELECT count(*)::int AS n FROM propostas
+     WHERE negocio_id = ${params.negocioId}::uuid
+       AND status IN ('enviada','visualizada','ajuste_solicitado')
+       AND COALESCE(service_family, ${op.service_family ?? ""}) <> ${params.familia}
+  `);
+
+  await db.execute(sql`
+    UPDATE negocios SET service_family = ${params.familia}, updated_at = now()
+     WHERE id = ${params.negocioId}::uuid
+  `);
+
+  await registrarEvento({
+    organizacaoId: params.organizacaoId, tipo: "OpportunityFamilyChanged", ator: params.ator,
+    negocioId: params.negocioId,
+    contexto: { de: op.service_family, para: params.familia, motivo: params.motivo ?? null },
+    timeline: {
+      tipo: "nota", titulo: "Família alterada",
+      descricao: `${op.service_family ?? "não classificada"} → ${ROTULO_FAMILIA[params.familia]}`,
+    },
+  });
+
+  await espelharNoDominioV2([params.negocioId]);
+  return { propostasIncompativeis: incompativeis?.n ?? 0 };
+}
+
+/* ── Fechamento ────────────────────────────────────────────────────────── */
+
+/** Bloco 02 §17: perder exige motivo estruturado, e o registro precisa
+ *  sustentar relatório de motivo de perda depois. */
+export async function perder(params: {
+  organizacaoId: string;
+  negocioId: string;
+  motivo: MotivoPerda;
+  detalhe?: string | null;
+  ator: Ator;
+}): Promise<void> {
+  if (!params.motivo) {
+    throw new RegraDeNegocio("perda_exige_motivo", "Escolha o motivo da perda.");
+  }
+  const op = await carregarOportunidade(params.organizacaoId, params.negocioId);
+  if (op.etapa === "ganho") {
+    throw new RegraDeNegocio("oportunidade_ganha", "Oportunidade ganha não pode ser marcada como perdida.");
+  }
+
+  await db.execute(sql`
+    UPDATE negocios SET
+      etapa = 'perdido', etapa_desde = now(), status = 'perdido',
+      motivo_perda_chave = ${params.motivo},
+      motivo_perda = ${params.motivo},
+      motivo_perda_detalhe = ${params.detalhe ?? null},
+      updated_at = now()
+     WHERE id = ${params.negocioId}::uuid
+  `);
+
+  await registrarMudancaDeEtapa({
+    organizacaoId: params.organizacaoId, ator: params.ator, negocioId: params.negocioId,
+    leadId: op.lead_id, de: op.etapa, para: "perdido",
+    tipo: "OpportunityStageChanged", motivo: params.motivo,
+  });
+
+  await registrarEvento({
+    organizacaoId: params.organizacaoId, tipo: "OpportunityLost", ator: params.ator,
+    negocioId: params.negocioId, empresaId: op.empresa_id,
+    contexto: { motivo: params.motivo, detalhe: params.detalhe ?? null, etapaAnterior: op.etapa },
+    timeline: { tipo: "nota", titulo: "Oportunidade perdida", descricao: params.detalhe ?? params.motivo },
+  });
+
+  await espelharNoDominioV2([params.negocioId]);
+}
+
+/**
+ * Tenta fechar como Ganho.
+ *
+ * Bloco 02 §19-20: Won não é um movimento, é consequência de evidência válida
+ * para a família e o modo comercial. O gate já existe no projeto
+ * (`won-evidence.ts`, com políticas por produto e evidência tipada) e é ele
+ * quem decide — este comando só o aciona e mantém a etapa nova coerente.
+ *
+ * Se a evidência não bastar, a oportunidade continua aberta e a função diz por
+ * quê. Não existe caminho que force o ganho.
+ */
+export async function tentarGanhar(params: {
+  organizacaoId: string;
+  negocioId: string;
+  ator: Ator;
+}): Promise<{ ganhou: boolean; motivo: string }> {
+  const op = await carregarOportunidade(params.organizacaoId, params.negocioId);
+  if (op.etapa === "ganho") return { ganhou: true, motivo: "Já estava ganha." };
+
+  const { marcarNegocioGanhoSeAindaNao, avaliarEvidenciaWon, getProdutoNegocio } =
+    await import("@/lib/crm/won-evidence");
+
+  const familia = op.service_family && op.service_family !== "UNKNOWN" ? op.service_family : null;
+  await marcarNegocioGanhoSeAindaNao(params.negocioId, params.organizacaoId, { familiaHint: familia });
+
+  const [depois] = await db.execute<{ status: string }>(sql`
+    SELECT status FROM negocios WHERE id = ${params.negocioId}::uuid
+  `);
+
+  if (depois?.status !== "ganho") {
+    const avaliacao = await avaliarEvidenciaWon(
+      params.negocioId, params.organizacaoId, familia ?? (await getProdutoNegocio(params.negocioId)),
+    );
+    return { ganhou: false, motivo: avaliacao.motivo };
+  }
+
+  // `marcarNegocioGanhoSeAindaNao` escreve o status legado e dispara Cliente,
+  // CS e os eventos de pós-venda; a etapa canônica é responsabilidade daqui.
+  await db.execute(sql`
+    UPDATE negocios SET etapa = 'ganho', etapa_desde = now(), motivo_estagnacao = NULL
+     WHERE id = ${params.negocioId}::uuid
+  `);
+
+  await registrarEvento({
+    organizacaoId: params.organizacaoId, tipo: "OpportunityWon", ator: params.ator,
+    negocioId: params.negocioId, empresaId: op.empresa_id, leadId: op.lead_id,
+    contexto: { familia, etapaAnterior: op.etapa },
+  });
+
+  await espelharNoDominioV2([params.negocioId]);
+  return { ganhou: true, motivo: "Evidência comercial confirmada." };
+}
+
+/* ── Reuniões e no-show (Bloco 02 §11-12) ──────────────────────────────── */
+
+export async function agendarReuniao(params: {
+  organizacaoId: string;
+  negocioId: string;
+  leadId?: string | null;
+  data: string;
+  duracao?: number;
+  tipo?: "call" | "presencial" | "video";
+  titulo?: string;
+  notas?: string;
+  link?: string;
+  responsavelId?: string | null;
+  ator: Ator;
+}): Promise<{ reuniaoId: string }> {
+  const data = new Date(params.data);
+  if (Number.isNaN(data.getTime())) {
+    throw new RegraDeNegocio("reuniao_data_invalida", "Data da reunião inválida.");
+  }
+  const op = await carregarOportunidade(params.organizacaoId, params.negocioId);
+
+  const [reuniao] = await db.execute<{ id: string }>(sql`
+    INSERT INTO reunioes (organizacao_id, negocio_id, lead_id, titulo, data, duracao, tipo, status, notas, link, responsavel_id)
+    VALUES (
+      ${params.organizacaoId}::uuid, ${params.negocioId}::uuid,
+      ${params.leadId ?? op.lead_id ?? null}::uuid,
+      ${params.titulo?.trim() || `Reunião · ${op.titulo}`},
+      ${data.toISOString()}::timestamptz,
+      ${params.duracao ?? 30}, ${params.tipo ?? "call"}, 'agendada',
+      ${params.notas ?? null}, ${params.link ?? null},
+      ${params.responsavelId ?? op.responsavel_id ?? null}::uuid
+    )
+    RETURNING id::text
+  `);
+
+  await registrarEvento({
+    organizacaoId: params.organizacaoId, tipo: "MeetingScheduled", ator: params.ator,
+    negocioId: params.negocioId, leadId: params.leadId ?? op.lead_id, reuniaoId: reuniao.id,
+    contexto: { data: data.toISOString(), tipo: params.tipo ?? "call" },
+    timeline: {
+      tipo: "reuniao", titulo: "Reunião agendada",
+      descricao: data.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }),
+    },
+  });
+
+  return { reuniaoId: reuniao.id };
+}
+
+/**
+ * Registra no-show.
+ *
+ * Bloco 01 §15 e Bloco 02 §12: no-show é evento. A MESMA oportunidade é
+ * preservada, o card ganha contexto, e o Lead volta para QUALIFICADO para ser
+ * retrabalhado. Criar uma segunda oportunidade por causa de no-show está entre
+ * as proibições explícitas da spec.
+ */
+export async function registrarNoShow(params: {
+  organizacaoId: string;
+  negocioId: string;
+  reuniaoId?: string | null;
+  ator: Ator;
+}): Promise<void> {
+  const op = await carregarOportunidade(params.organizacaoId, params.negocioId);
+
+  await db.execute(sql`
+    UPDATE negocios SET
+      no_show_em = now(),
+      no_show_contagem = no_show_contagem + 1,
+      updated_at = now()
+     WHERE id = ${params.negocioId}::uuid
+  `);
+
+  if (params.reuniaoId) {
+    await db.execute(sql`
+      UPDATE reunioes SET status = 'no_show', updated_at = now()
+       WHERE id = ${params.reuniaoId}::uuid AND negocio_id = ${params.negocioId}::uuid
+    `);
+  }
+
+  await registrarEvento({
+    organizacaoId: params.organizacaoId, tipo: "MeetingNoShow", ator: params.ator,
+    negocioId: params.negocioId, leadId: op.lead_id, reuniaoId: params.reuniaoId ?? null,
+    contexto: { etapa: op.etapa },
+    timeline: { tipo: "reuniao", titulo: "No-show", descricao: "Cliente não compareceu à reunião." },
+  });
+
+  if (op.lead_id) {
+    await voltarParaQualificado({
+      organizacaoId: params.organizacaoId, leadId: op.lead_id,
+      motivo: "No-show: lead volta para retrabalho", ator: params.ator,
+    });
+  }
+}
+
+/**
+ * Reagenda depois de um no-show.
+ *
+ * Reutiliza a MESMA oportunidade (Bloco 02 §12) e devolve o Lead para
+ * Oportunidade, porque o handoff continua válido — o que falhou foi a reunião,
+ * não a passagem de Pré-vendas.
+ */
+export async function reagendarAposNoShow(params: {
+  organizacaoId: string;
+  negocioId: string;
+  data: string;
+  duracao?: number;
+  tipo?: "call" | "presencial" | "video";
+  ator: Ator;
+}): Promise<{ reuniaoId: string }> {
+  const op = await carregarOportunidade(params.organizacaoId, params.negocioId);
+
+  const reuniao = await agendarReuniao({
+    organizacaoId: params.organizacaoId, negocioId: params.negocioId,
+    data: params.data, duracao: params.duracao, tipo: params.tipo, ator: params.ator,
+  });
+
+  await db.execute(sql`
+    UPDATE negocios SET no_show_em = NULL, updated_at = now()
+     WHERE id = ${params.negocioId}::uuid
+  `);
+
+  if (op.lead_id) {
+    await db.execute(sql`
+      UPDATE leads SET estagio_pre_vendas = 'oportunidade', updated_at = now()
+       WHERE id = ${op.lead_id}::uuid
+    `);
+  }
+
+  await registrarEvento({
+    organizacaoId: params.organizacaoId, tipo: "MeetingRescheduled", ator: params.ator,
+    negocioId: params.negocioId, leadId: op.lead_id, reuniaoId: reuniao.reuniaoId,
+    contexto: { reutilizouOportunidade: true },
+  });
+
+  return reuniao;
+}
+
+/* ── Trial (Bloco 02 §10) ──────────────────────────────────────────────── */
+
+export async function iniciarTrial(params: {
+  organizacaoId: string; negocioId: string; ator: Ator;
+}): Promise<void> {
+  await carregarOportunidade(params.organizacaoId, params.negocioId);
+  await db.execute(sql`
+    UPDATE negocios SET trial_iniciado_em = now(), trial_encerrado_em = NULL, updated_at = now()
+     WHERE id = ${params.negocioId}::uuid
+  `);
+  await registrarEvento({
+    organizacaoId: params.organizacaoId, tipo: "TrialStarted",
+    ator: params.ator, negocioId: params.negocioId,
+    timeline: { tipo: "nota", titulo: "Trial iniciado" },
+  });
+}
+
+export async function encerrarTrial(params: {
+  organizacaoId: string; negocioId: string; ator: Ator;
+}): Promise<void> {
+  await carregarOportunidade(params.organizacaoId, params.negocioId);
+  await db.execute(sql`
+    UPDATE negocios SET trial_encerrado_em = now(), updated_at = now()
+     WHERE id = ${params.negocioId}::uuid
+  `);
+  await registrarEvento({
+    organizacaoId: params.organizacaoId, tipo: "TrialEnded",
+    ator: params.ator, negocioId: params.negocioId,
+  });
+}
+
+/* ── Espelho no Domain Model v2 ────────────────────────────────────────── */
+
+/**
+ * Mantém `oportunidades` (modelo v2) coerente com `negocios`.
+ *
+ * O projeto já tinha `syncOportunidadeFromNegocio`; aqui só se acrescentam os
+ * campos que o módulo novo criou. Best-effort de propósito: uma falha no
+ * espelho não pode desfazer a venda que já aconteceu.
+ */
+async function espelharNoDominioV2(negocioIds: string[]): Promise<void> {
+  for (const negocioId of negocioIds) {
+    try {
+      const { syncOportunidadeFromNegocio } = await import("@/lib/crm/sync-domain-model");
+      await syncOportunidadeFromNegocio(negocioId);
+      await db.execute(sql`
+        UPDATE oportunidades o SET
+          titulo = n.titulo,
+          service_family = n.service_family,
+          etapa = n.etapa,
+          commercial_motion = n.commercial_motion,
+          source_process = n.source_process,
+          lead_id = n.lead_id,
+          updated_at = now()
+        FROM negocios n
+        WHERE o.negocio_id_legado = n.id AND n.id = ${negocioId}::uuid
+      `);
+    } catch (erro) {
+      console.error(`[vendas] falha ao espelhar oportunidade ${negocioId} no domain model v2:`, erro);
+    }
+  }
+}

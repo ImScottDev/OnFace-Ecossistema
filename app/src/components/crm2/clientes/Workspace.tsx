@@ -2,10 +2,10 @@
 
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Search, Wallet, Users, AlertTriangle, Truck, Sparkles, ShieldAlert } from "lucide-react";
+import { Search, AlertTriangle } from "lucide-react";
 import { useOrgUsuarios } from "@/components/crm/BoardFilters";
 import { AssignOwnerControl } from "@/components/crm2/shared/AssignOwnerControl";
-import { iniciaisEmpresa, corAvatarEmpresa } from "@/components/crm2/shared/avatar";
+import { iniciaisEmpresa, corAvatarEmpresa, TEXTO_SOBRE_AVATAR } from "@/components/crm2/shared/avatar";
 import { Cf2ClienteDrawer } from "./ClienteDrawer";
 
 type StatusGeral = "ativo" | "em_risco" | "implantacao" | "onboarding" | "inadimplente" | "cancelado";
@@ -20,7 +20,7 @@ interface ClienteLinha {
   entregas_em_andamento: number;
   faturas_atrasadas: number;
   fatura_venceu_em: string | null;
-  status_financeiro: "ativo" | "inadimplente" | "churned" | "indefinido";
+  status_financeiro: "ativo" | "em_atraso" | "inadimplente" | "churned" | "indefinido";
   ultima_atividade_tipo: string | null;
   ultima_atividade_em: string | null;
   proxima_acao_titulo: string | null;
@@ -46,18 +46,38 @@ const FAMILIA_LABEL: Record<string, string> = {
   CALLFACE_AI: "Callface AI",
   PABX: "PABX",
   WHITE_LABEL: "White Label",
-  UNKNOWN: "Não classificado",
+  UNKNOWN: "Produto em revisão",
 };
 
+/**
+ * Colunas da carteira em ordem de prioridade. Num celular a tabela inteira não
+ * cabe, e antes só sobrava a coluna "Cliente" com o resto atrás de um scroll
+ * horizontal que ninguém descobre. Cada coluna declara a partir de que largura
+ * aparece: nome, MRR e situação ficam sempre; o apoio entra conforme a tela
+ * cresce. A classe é aplicada no `th` e na `td` correspondente.
+ */
+const COLUNAS = [
+  { label: "Cliente", visivel: "" },
+  { label: "Serviços", visivel: "hidden md:table-cell" },
+  { label: "MRR", visivel: "" },
+  { label: "Status Geral", visivel: "" },
+  { label: "Financeiro", visivel: "hidden lg:table-cell" },
+  { label: "Responsável CS", visivel: "hidden lg:table-cell" },
+  { label: "Última Atividade", visivel: "hidden xl:table-cell" },
+  { label: "Próxima Ação", visivel: "hidden xl:table-cell" },
+] as const;
+
 const STATUS_LABEL: Record<string, string> = {
-  ativo: "Ativo",
+  ativo: "Em dia",
+  em_atraso: "Em atraso",
   inadimplente: "Inadimplente",
-  churned: "Churned",
+  churned: "Encerrado",
   indefinido: "Indefinido",
 };
 
 const STATUS_COLOR: Record<string, string> = {
   ativo: "var(--cf2-success-text)",
+  em_atraso: "var(--cf2-warning-text)",
   inadimplente: "var(--cf2-danger-text)",
   churned: "var(--cf2-text-tertiary)",
   indefinido: "var(--cf2-text-tertiary)",
@@ -85,8 +105,8 @@ const STATUS_GERAL_COLOR: Record<StatusGeral, string> = {
   cancelado: "var(--cf2-text-tertiary)",
   inadimplente: "var(--cf2-danger-text)",
   em_risco: "var(--cf2-warning-text)",
-  implantacao: "#3b82f6",
-  onboarding: "#8e27ef",
+  implantacao: "var(--cf2-informativo-fg)",
+  onboarding: "#6d28d9",
   ativo: "var(--cf2-success-text)",
 };
 
@@ -95,7 +115,11 @@ const STATUS_GERAL_COLOR: Record<StatusGeral, string> = {
 // nunca uma fórmula nova. "" = Todos (sem filtro de aba).
 const ABAS: { key: string; label: string; contagemKey: keyof AbaCounts }[] = [
   { key: "", label: "Todos", contagemKey: "todos" },
-  { key: "ativos", label: "Ativos", contagemKey: "ativos" },
+  // "Sem pendência" e não "Ativos": a aba filtra quem NÃO tem onboarding,
+  // implantação, risco, inadimplência nem cancelamento em aberto. Chamada de
+  // "Ativos" ela contradizia o card "CLIENTES ATIVOS: 299" logo acima — dois
+  // sentidos de "ativo" na mesma tela, um deles marcando zero.
+  { key: "ativos", label: "Sem pendência", contagemKey: "ativos" },
   { key: "onboarding", label: "Onboarding", contagemKey: "onboarding" },
   { key: "implantacao", label: "Implantação", contagemKey: "implantacao" },
   { key: "risco", label: "Em Risco", contagemKey: "emRisco" },
@@ -142,6 +166,11 @@ function formatarQuando(iso: string | null): string {
 
 function brl(v: string | number) {
   return `R$ ${Number(v || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+/** Sem centavos — pro KPI, onde "R$ 425.919,86" não cabe e virava reticências. */
+function brl0(v: string | number) {
+  return `R$ ${Number(v || 0).toLocaleString("pt-BR", { maximumFractionDigits: 0 })}`;
 }
 
 /**
@@ -205,73 +234,98 @@ export function Cf2ClientesWorkspace() {
   const mrrBase = resumo ? Number(resumo.mrrTotal) - mrrDelta : 0;
   const mrrDeltaPct = mrrBase > 0 ? (mrrDelta / mrrBase) * 100 : null;
 
-  // 6 cards (mockup do Kauã: MRR Total/Clientes Ativos/Em Implantação/
-  // Onboarding/Em Risco/Inadimplentes). Contagens INDEPENDENTES entre si —
-  // mesmo padrão que já existia entre "Clientes Ativos"/"Em Risco": cada
-  // card responde sua própria pergunta, uma empresa pode acender mais de
-  // um ao mesmo tempo (ex.: em risco E em onboarding simultaneamente).
-  const CARDS = [
+  // Os sinais são independentes: uma empresa pode estar em onboarding e em
+  // risco ao mesmo tempo. A faixa evita a falsa sensação de etapas exclusivas.
+  const SINAIS = [
     {
-      label: "MRR ATUAL (TOTAL)", valor: resumo ? brl(resumo.mrrTotal) : "—", icon: Wallet, tone: "var(--cf2-success-text)",
+      label: "MRR atual", valor: resumo ? brl0(resumo.mrrTotal) : "Dados carregando",
+      titulo: resumo ? brl(resumo.mrrTotal) : undefined,
       sub: mrrDeltaPct !== null ? `${mrrDeltaPct >= 0 ? "+" : ""}${mrrDeltaPct.toFixed(1)}% vs 30 dias atrás` : null,
     },
     {
-      label: "CLIENTES ATIVOS", valor: resumo ? resumo.clientesAtivos.toLocaleString("pt-BR") : "—", icon: Users, tone: "var(--cf2-text-primary)",
+      label: "Clientes ativos", valor: resumo ? resumo.clientesAtivos.toLocaleString("pt-BR") : "Dados carregando",
       sub: resumo ? `+${resumo.clientesNovos30d} novos (30d)` : null,
     },
     {
-      label: "EM IMPLANTAÇÃO", valor: resumo ? resumo.emImplantacao.toLocaleString("pt-BR") : "—", icon: Truck, tone: "#3b82f6",
+      label: "Em implantação", valor: resumo ? resumo.emImplantacao.toLocaleString("pt-BR") : "Dados carregando",
       sub: "PABX pós-Won",
     },
     {
-      label: "ONBOARDING", valor: resumo ? resumo.onboarding.toLocaleString("pt-BR") : "—", icon: Sparkles, tone: "#8e27ef",
+      label: "Onboarding", valor: resumo ? resumo.onboarding.toLocaleString("pt-BR") : "Dados carregando",
       sub: "Callface AI pós-Won",
     },
-    { label: "EM RISCO", valor: resumo ? resumo.emRisco.toLocaleString("pt-BR") : "—", icon: AlertTriangle, tone: "var(--cf2-warning-text)", sub: "fatura em atraso" },
-    { label: "INADIMPLENTES", valor: resumo ? resumo.inadimplentes.toLocaleString("pt-BR") : "—", icon: ShieldAlert, tone: "var(--cf2-danger-text)", sub: "status financeiro" },
+    { label: "Em risco", valor: resumo ? resumo.emRisco.toLocaleString("pt-BR") : "Dados carregando", sub: "fatura em atraso", tone: "warning" },
+    { label: "Inadimplentes", valor: resumo ? resumo.inadimplentes.toLocaleString("pt-BR") : "Dados carregando", sub: "status financeiro", tone: "danger" },
   ];
 
   return (
     <div className="flex flex-col gap-5 h-full min-h-0">
-      <div className="grid grid-cols-3 lg:grid-cols-6 gap-3 shrink-0">
-        {CARDS.map((k) => (
-          <div key={k.label} className="flex items-center justify-between gap-2 p-3.5 rounded-2xl" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
-            <div className="flex flex-col gap-1.5 min-w-0">
-              <p className="text-[10px] font-bold truncate" style={{ color: "var(--cf2-text-tertiary)" }}>{k.label}</p>
-              <p className="text-[20px] font-bold truncate" style={{ color: k.tone }}>{k.valor}</p>
-              {k.sub && <p className="text-[11px] truncate" style={{ color: "var(--cf2-text-tertiary)" }}>{k.sub}</p>}
+      <section
+        aria-label="Sinais da carteira"
+        className="grid grid-cols-2 overflow-hidden rounded-[var(--radius-card)] shrink-0 md:grid-cols-3 xl:grid-cols-[1.55fr_repeat(5,minmax(0,1fr))]"
+        style={{ background: "var(--cf2-bg-inverse)", border: "1px solid var(--cf2-bg-inverse)" }}
+      >
+        {SINAIS.map((sinal, index) => {
+          const isMrr = index === 0;
+          const valueColor = sinal.tone === "warning"
+            ? "var(--cf2-warning-text)"
+            : sinal.tone === "danger"
+              ? "var(--cf2-danger-text)"
+              : isMrr
+                ? "var(--cf2-accent)"
+                : "var(--cf2-text-on-inverse)";
+          return (
+            <div
+              key={sinal.label}
+              className={`min-w-0 px-4 py-4 sm:px-5 border-white/15 ${index === 1 || index === 3 || index === 5 ? "border-l" : ""} ${index === 2 || index === 4 ? "md:border-l" : ""} ${index === 3 ? "md:border-l-0" : ""} ${index > 0 ? "xl:border-l" : ""} ${index >= 2 ? "border-t" : ""} ${index >= 3 ? "md:border-t" : "md:border-t-0"} xl:border-t-0`}
+            >
+              <p className="text-[10px] font-bold uppercase tracking-[0.08em]" style={{ color: "color-mix(in srgb, var(--cf2-text-on-inverse) 58%, transparent)" }}>{sinal.label}</p>
+              <p className={`${isMrr ? "mt-2 text-[25px] sm:text-[30px]" : "mt-2 text-[20px]"} font-bold leading-none tabular-nums truncate`} style={{ color: valueColor }} title={sinal.titulo}>{sinal.valor}</p>
+              {sinal.sub && <p className="mt-2 text-[11px] truncate" style={{ color: "color-mix(in srgb, var(--cf2-text-on-inverse) 62%, transparent)" }}>{sinal.sub}</p>}
             </div>
-            <div className="flex items-center justify-center rounded-xl shrink-0 w-9 h-9" style={{ background: "var(--cf2-bg-surface-muted)" }}>
-              <k.icon className="w-4 h-4" style={{ color: k.tone }} />
-            </div>
-          </div>
-        ))}
-      </div>
+          );
+        })}
+      </section>
 
-      <div className="flex-1 min-h-0 flex flex-col rounded-3xl overflow-hidden" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
-        <div className="p-4 shrink-0 flex flex-col gap-3" style={{ borderBottom: "1px solid var(--cf2-border-default)" }}>
-          {/* Barra de abas por status (20/08) — filtra a lista real, não é
-              o mesmo pill nav de navegação entre Carteira/Implantação/
-              Onboarding/Sucesso/Financeiro (esse continua no nível acima,
-              fora deste componente). */}
-          <div className="flex items-center gap-1 overflow-x-auto pb-0.5">
+      <div className="grid flex-1 min-h-0 gap-4 xl:grid-cols-[248px_minmax(0,1fr)]">
+        <aside className="flex flex-col gap-5 rounded-[var(--radius-card)] p-5 xl:sticky xl:top-0 xl:self-start" style={{ background: "var(--cf2-bg-inverse)", color: "var(--cf2-text-on-inverse)" }}>
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-[0.1em]" style={{ color: "color-mix(in srgb, var(--cf2-text-on-inverse) 55%, transparent)" }}>Triagem da carteira</p>
+            <p className="mt-2 text-[17px] font-bold">Onde agir agora</p>
+            <p className="mt-1 text-[12px] leading-5" style={{ color: "color-mix(in srgb, var(--cf2-text-on-inverse) 64%, transparent)" }}>Use o recorte para encontrar contas que pedem acompanhamento.</p>
+          </div>
+          <nav aria-label="Filtrar carteira por estado" className="grid grid-cols-2 gap-1 xl:grid-cols-1">
             {ABAS.map((a) => {
               const ativo = aba === a.key;
               const n = abaCounts ? abaCounts[a.contagemKey] : null;
               return (
                 <button
                   key={a.key || "todos"}
+                  type="button"
+                  aria-pressed={ativo}
                   onClick={() => { setAba(a.key); setPagina(1); }}
-                  className="shrink-0 px-3 py-1.5 rounded-lg text-[12px] font-semibold whitespace-nowrap transition-colors"
-                  style={{
-                    background: ativo ? "var(--cf2-accent)" : "transparent",
-                    color: ativo ? "var(--cf2-text-on-accent)" : "var(--cf2-text-secondary)",
-                  }}
+                  className="flex items-center justify-between gap-3 rounded-[var(--radius-control)] px-3 py-2 text-left text-[12px] font-semibold transition-colors"
+                  style={{ background: ativo ? "var(--cf2-accent)" : "transparent", color: ativo ? "var(--cf2-text-on-accent)" : "var(--cf2-text-on-inverse)" }}
                 >
-                  {a.label}{n !== null ? ` (${n.toLocaleString("pt-BR")})` : ""}
+                  <span>{a.label}</span>
+                  <span className="tabular-nums" style={{ color: ativo ? "inherit" : "color-mix(in srgb, var(--cf2-text-on-inverse) 55%, transparent)" }}>{n?.toLocaleString("pt-BR") ?? "..."}</span>
                 </button>
               );
             })}
+          </nav>
+          <div className="mt-auto border-t border-white/15 pt-4">
+            <p className="text-[11px] leading-5" style={{ color: "color-mix(in srgb, var(--cf2-text-on-inverse) 58%, transparent)" }}>As contagens são independentes. Uma conta pode exigir atenção em mais de um ponto.</p>
+          </div>
+        </aside>
+
+        <div className="min-h-0 flex flex-col overflow-hidden rounded-[var(--radius-card)]" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
+        <div className="p-4 shrink-0 flex flex-col gap-3" style={{ borderBottom: "1px solid var(--cf2-border-default)" }}>
+          <div className="flex items-end justify-between gap-4">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.08em]" style={{ color: "var(--cf2-text-tertiary)" }}>Worklist</p>
+              <h2 className="mt-1 text-[18px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>{aba ? ABAS.find((item) => item.key === aba)?.label : "Toda a carteira"}</h2>
+            </div>
+            <p className="hidden text-[12px] sm:block" style={{ color: "var(--cf2-text-secondary)" }}>{data ? `${data.total.toLocaleString("pt-BR")} contas neste recorte` : "Atualizando recorte"}</p>
           </div>
 
           <div className="flex items-center gap-2 px-3 py-2 rounded-xl" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }}>
@@ -279,7 +333,7 @@ export function Cf2ClientesWorkspace() {
             <input
               value={busca}
               onChange={(e) => { setBusca(e.target.value); setPagina(1); }}
-              placeholder="Buscar cliente..."
+              placeholder="Buscar cliente..." aria-label="Buscar cliente"
               className="flex-1 bg-transparent outline-none text-[13px]"
               style={{ color: "var(--cf2-text-primary)" }}
             />
@@ -333,10 +387,18 @@ export function Cf2ClientesWorkspace() {
             <p className="p-6 text-[13px]" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhum cliente encontrado com esses filtros.</p>
           ) : (
             <table className="w-full text-left">
-              <thead>
+              {/* Cabeçalho fixo: a carteira tem 302 linhas e, ao rolar, não dava
+                  mais pra saber que coluna era qual. */}
+              <thead className="sticky top-0 z-10">
                 <tr style={{ background: "var(--cf2-bg-surface-muted)" }}>
-                  {["Cliente", "Serviços", "MRR", "Status Geral", "Financeiro", "Responsável CS", "Última Atividade", "Próxima Ação"].map((h) => (
-                    <th key={h} className="px-4 py-2.5 text-[11px] font-bold" style={{ color: "var(--cf2-text-tertiary)" }}>{h}</th>
+                  {COLUNAS.map((col) => (
+                    <th
+                      key={col.label}
+                      className={`px-3 sm:px-4 py-2.5 text-[11px] font-bold whitespace-nowrap ${col.visivel}`}
+                      style={{ color: "var(--cf2-text-tertiary)", background: "var(--cf2-bg-surface-muted)", boxShadow: "inset 0 -1px 0 var(--cf2-border-default)" }}
+                    >
+                      {col.label}
+                    </th>
                   ))}
                 </tr>
               </thead>
@@ -347,20 +409,20 @@ export function Cf2ClientesWorkspace() {
                   return (
                   <tr
                     key={cl.id}
-                    className="cursor-pointer"
+                    className="cursor-pointer transition-colors hover:bg-[var(--cf2-bg-surface-muted)]"
                     style={{ borderTop: "1px solid var(--cf2-border-default)", background: naoResolvida ? "var(--cf2-warning-bg, rgba(234,179,8,0.08))" : undefined }}
                     onClick={() => setDrawerEmpresaId(cl.id)}
                   >
-                    <td className="px-4 py-3">
+                    <td className="px-3 sm:px-4 py-3 max-w-[190px] sm:max-w-none">
                       <div className="flex items-center gap-2.5">
                         <div
                           className="flex items-center justify-center rounded-lg shrink-0 w-8 h-8"
-                          style={{ background: naoResolvida ? "var(--cf2-warning-text)" : corAvatarEmpresa(cl.id) }}
+                          style={{ background: naoResolvida ? "var(--cf2-warning-text)" : corAvatarEmpresa(cl.id), color: TEXTO_SOBRE_AVATAR }}
                         >
                           {naoResolvida ? (
                             <AlertTriangle className="w-4 h-4 text-white" />
                           ) : (
-                            <span className="text-[11px] font-extrabold" style={{ color: "var(--cf2-text-on-accent)" }}>{iniciais || "—"}</span>
+                            <span className="text-[11px] font-extrabold">{iniciais || "—"}</span>
                           )}
                         </div>
                         <div className="min-w-0">
@@ -371,8 +433,8 @@ export function Cf2ClientesWorkspace() {
                         </div>
                       </div>
                     </td>
-                    <td className="px-4 py-3">
-                      <p className="text-[12px] font-semibold mb-1" style={{ color: "var(--cf2-text-primary)" }}>
+                    <td className="hidden md:table-cell px-3 sm:px-4 py-3">
+                      <p className="text-[12px] font-semibold mb-1 whitespace-nowrap" style={{ color: "var(--cf2-text-primary)" }}>
                         {cl.total_servicos} {cl.total_servicos === 1 ? "serviço" : "serviços"}
                       </p>
                       <div className="flex gap-1 flex-wrap">
@@ -381,22 +443,22 @@ export function Cf2ClientesWorkspace() {
                         ))}
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-[13px] font-bold" style={{ color: "var(--cf2-success-text)" }}>{brl(cl.current_mrr)}</td>
-                    <td className="px-4 py-3">
-                      <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold" style={{ color: STATUS_GERAL_COLOR[cl.status_geral] }}>
+                    <td className="px-3 sm:px-4 py-3 text-[13px] font-bold whitespace-nowrap tabular-nums" style={{ color: "var(--cf2-success-text)" }}>{brl(cl.current_mrr)}</td>
+                    <td className="px-3 sm:px-4 py-3">
+                      <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold whitespace-nowrap" style={{ color: STATUS_GERAL_COLOR[cl.status_geral] }}>
                         <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: "currentColor" }} />
                         {STATUS_GERAL_LABEL[cl.status_geral]}
                       </span>
                     </td>
-                    <td className="px-4 py-3">
-                      <span className="text-[11px] font-semibold" style={{ color: STATUS_COLOR[cl.status_financeiro] }}>
+                    <td className="hidden lg:table-cell px-3 sm:px-4 py-3">
+                      <span className="text-[11px] font-semibold whitespace-nowrap" style={{ color: STATUS_COLOR[cl.status_financeiro] }}>
                         {STATUS_LABEL[cl.status_financeiro] || cl.status_financeiro}
                       </span>
                       {cl.faturas_atrasadas > 0 && (
                         <p className="text-[11px] font-semibold" style={{ color: "var(--cf2-danger-text)" }}>Atrasado · {diasAtraso(cl.fatura_venceu_em)}d</p>
                       )}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="hidden lg:table-cell px-3 sm:px-4 py-3">
                       <AssignOwnerControl
                         entityType="cliente"
                         entityId={cl.id}
@@ -405,7 +467,7 @@ export function Cf2ClientesWorkspace() {
                         onChanged={() => qc.invalidateQueries({ queryKey: ["cf2-clientes"] })}
                       />
                     </td>
-                    <td className="px-4 py-3 text-[12px]" style={{ color: "var(--cf2-text-secondary)" }}>
+                    <td className="hidden xl:table-cell px-3 sm:px-4 py-3 text-[12px]" style={{ color: "var(--cf2-text-secondary)" }}>
                       {cl.ultima_atividade_em ? (
                         <>
                           <span className="font-semibold" style={{ color: "var(--cf2-text-primary)" }}>
@@ -414,10 +476,10 @@ export function Cf2ClientesWorkspace() {
                           {" · "}{formatarQuando(cl.ultima_atividade_em)}
                         </>
                       ) : (
-                        <span style={{ color: "var(--cf2-text-tertiary)" }}>—</span>
+                        <span style={{ color: "var(--cf2-text-tertiary)" }}>Sem atividade registrada</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-[12px] max-w-[200px]" style={{ color: "var(--cf2-text-secondary)" }}>
+                    <td className="hidden xl:table-cell px-3 sm:px-4 py-3 text-[12px] max-w-[200px]" style={{ color: "var(--cf2-text-secondary)" }}>
                       {cl.proxima_acao_titulo ? (
                         <>
                           <p className="font-semibold truncate" style={{ color: "var(--cf2-text-primary)" }}>{cl.proxima_acao_titulo}</p>
@@ -426,7 +488,7 @@ export function Cf2ClientesWorkspace() {
                           </p>
                         </>
                       ) : (
-                        <span style={{ color: "var(--cf2-text-tertiary)" }}>—</span>
+                        <span style={{ color: "var(--cf2-text-tertiary)" }}>Sem próxima ação</span>
                       )}
                     </td>
                   </tr>
@@ -445,6 +507,7 @@ export function Cf2ClientesWorkspace() {
             <button onClick={() => setPagina((p) => Math.max(1, p - 1))} disabled={pagina <= 1} className="px-3 py-1.5 rounded-lg text-[12px] font-semibold disabled:opacity-40" style={{ border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-secondary)" }}>Anterior</button>
             <button onClick={() => setPagina((p) => (data && p < data.totalPages ? p + 1 : p))} disabled={!data || pagina >= data.totalPages} className="px-3 py-1.5 rounded-lg text-[12px] font-semibold disabled:opacity-40" style={{ border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-secondary)" }}>Próximo</button>
           </div>
+        </div>
         </div>
       </div>
 

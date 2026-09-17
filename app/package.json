@@ -18,11 +18,19 @@
     "db:relatorio-duplicidade-contratos": "tsx --env-file=.env src/lib/db/relatorio-duplicidade-contratos.ts",
     "db:relatorio-data-quality": "tsx --env-file=.env src/lib/db/relatorio-data-quality.ts",
     "check:relatorios": "tsx --env-file=.env src/scripts/checar-invariantes-relatorios.ts",
-    "test:ai-platform": "tsx --test src/lib/ai-platform/**/*.test.ts",
+    "test": "node --import tsx --env-file-if-exists=.env --test \"src/**/*.test.ts\"",
+    "test:ai-platform": "node --import tsx --test \"src/lib/ai-platform/**/*.test.ts\" \"src/lib/automations/**/*.test.ts\"",
     "ds:check": "node scripts/verificar-design-system.mjs",
     "ds:strict": "node scripts/verificar-design-system.mjs --strict",
     "ds:contraste": "node scripts/verificar-contraste.mjs",
-    "ds:all": "node scripts/verificar-contraste.mjs --strict && node scripts/verificar-design-system.mjs"
+    "ds:all": "node scripts/verificar-contraste.mjs --strict && node scripts/verificar-design-system.mjs",
+    "aceite:won-cs": "tsx --env-file=.env src/scripts/aceite-won-cs.ts",
+    "check:env": "tsx src/scripts/checar-env.ts",
+    "db:migrar": "tsx --env-file=.env src/lib/db/migrar.ts",
+    "db:migrar:check": "tsx --env-file=.env src/lib/db/migrar.ts --check",
+    "aceite:contrato": "tsx --env-file=.env src/scripts/aceite-contrato-assinado.ts",
+    "aceite:vendas": "tsx --env-file=.env src/scripts/aceite-vendas.ts",
+    "check:vendas": "tsx --env-file=.env src/scripts/checar-vendas-dominio.ts && tsx --env-file=.env src/scripts/checar-vendas-consultas.ts"
   },
   "dependencies": {
     "@azure/msal-node": "^5.0.6",

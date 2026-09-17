@@ -25,7 +25,6 @@ const app = new Hono();
 const WEBHOOK_SECRET = process.env.UAZAPI_WEBHOOK_SECRET || "";
 
 function verifySignature(body: string, signature: string): boolean {
-  if (!WEBHOOK_SECRET) return true;
   const hmac = crypto.createHmac("sha256", WEBHOOK_SECRET).update(body).digest("hex");
   try {
     return crypto.timingSafeEqual(Buffer.from(hmac, "hex"), Buffer.from(signature, "hex"));
@@ -38,8 +37,19 @@ app.post("/whatsapp/webhook", async (c) => {
   try {
     const rawBody = await c.req.text();
 
+    // FAIL-CLOSED, mesmo padrão dos webhooks de Stripe e Callface.
+    //
+    // Antes: `if (WEBHOOK_SECRET && signature && !verify)` — a validação só
+    // rodava quando o header CHEGAVA. Um POST sem `x-hmac-signature` passava
+    // direto (reproduzido em DEV: HTTP 200 com payload forjado), e mensagem de
+    // WhatsApp injetada dispara automação, AI SDR e escrita em `contatos`.
+    // Sem secret configurado, o endpoint inteiro ficava aberto.
+    if (!WEBHOOK_SECRET) {
+      console.error("[WhatsAppWebhook] UAZAPI_WEBHOOK_SECRET não configurado — recusando evento (fail-closed)");
+      return c.json({ error: "webhook secret not configured" }, 503);
+    }
     const signature = c.req.header("x-hmac-signature") || "";
-    if (WEBHOOK_SECRET && signature && !verifySignature(rawBody, signature)) {
+    if (!signature || !verifySignature(rawBody, signature)) {
       return c.json({ error: "Invalid signature" }, 401);
     }
 

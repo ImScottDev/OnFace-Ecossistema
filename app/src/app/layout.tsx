@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Noto_Sans, Poppins, Manrope, Geist, Inter } from "next/font/google";
+import { Noto_Sans, Poppins, Manrope, Geist, Inter, Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 
 // Noto Sans (UI/body) + Poppins (display/headings — decisão Scott 18/jun, no lugar do Kanit).
@@ -36,6 +36,14 @@ const inter = Inter({
   weight: ["400", "500", "600", "700"],
 });
 
+const plusJakarta = Plus_Jakarta_Sans({
+  variable: "--font-onface-display",
+  subsets: ["latin"],
+  // 400 entra para o corpo das telas ONFACE: a referência usa a mesma família
+  // em título e texto de apoio, e sem o regular o navegador sintetizava o peso.
+  weight: ["400", "500", "600", "700", "800"],
+});
+
 export const metadata: Metadata = {
   title: "Callface | CRM",
   description: "CRM + SDR inteligente para inteligência comercial via voz",
@@ -70,7 +78,7 @@ export default function RootLayout({
     // versão já quebrada vinda do html.
     <html
       lang="pt-BR"
-      className={`${notoSans.variable} ${poppins.variable} ${manrope.variable} ${geist.variable} ${inter.variable}`}
+      className={`${notoSans.variable} ${poppins.variable} ${manrope.variable} ${geist.variable} ${inter.variable} ${plusJakarta.variable}`}
     >
       <body
         className={`antialiased`}

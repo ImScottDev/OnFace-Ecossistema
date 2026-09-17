@@ -44,9 +44,9 @@ const NEGOCIO_STATUS_LABEL: Record<string, string> = { ganho: "Ganho", perdido: 
 function statusNegocioInfo(status: string): { label: string; color: string } {
   const stage = PIPELINE_OPEN_COLS.find((c) => c.keys.includes(status));
   if (stage) return { label: stage.label, color: stage.color };
-  if (status === "ganho") return { label: "Ganho", color: "#22c55e" };
-  if (MOTIVO_PERDA_ESTRUTURADO[status]) return { label: "Perdido", color: "#ef4444" };
-  if (status === "perdido") return { label: "Perdido", color: "#ef4444" };
+  if (status === "ganho") return { label: "Ganho", color: "var(--cf2-success-text)" };
+  if (MOTIVO_PERDA_ESTRUTURADO[status]) return { label: "Perdido", color: "var(--cf2-danger-text)" };
+  if (status === "perdido") return { label: "Perdido", color: "var(--cf2-danger-text)" };
   return { label: status, color: "var(--cf2-text-tertiary)" };
 }
 
@@ -155,15 +155,15 @@ export function Cf2EmpresaWorkspace({ empresaId }: { empresaId: string }) {
 
   if (isLoading) {
     return (
-      <div className="page-scroll space-y-3">
+      <div className="space-y-3">
         <Cf2Skeleton className="h-10 w-64" />
         <Cf2Skeleton className="h-32 w-full" />
         <Cf2Skeleton className="h-48 w-full" />
       </div>
     );
   }
-  if (isError) return <div className="page-scroll"><Cf2ErrorState message={(error as Error).message} /></div>;
-  if (!data?.empresa) return <div className="page-scroll"><Cf2EmptyState title="Empresa não encontrada" /></div>;
+  if (isError) return <div className=""><Cf2ErrorState message={(error as Error).message} /></div>;
+  if (!data?.empresa) return <div className=""><Cf2EmptyState title="Empresa não encontrada" /></div>;
 
   const { empresa, leads, negocios, notas, contratos } = data;
   const negociosAbertos = negocios.filter((n) => n.status !== "ganho" && !MOTIVO_PERDA_ESTRUTURADO[n.status] && n.status !== "perdido");
@@ -180,10 +180,13 @@ export function Cf2EmpresaWorkspace({ empresaId }: { empresaId: string }) {
   return (
     <>
       <div className="-m-6 mb-0 flex flex-col">
-        <div className="rounded-tl-2xl px-8 pt-7 pb-5" style={{ background: "var(--cf2-bg-canvas)" }}>
-          <Cf2Topbar orgNome="Callface" variant="light" title="Contatos & Empresas" subtitle="Registro de empresa — leads, negócios, contratos e histórico" />
+        <div className="rounded-tl-2xl px-8 py-3.5" style={{ background: "var(--cf2-bg-surface)", borderBottom: "1px solid var(--cf2-border-default)" }}>
+        {/* Topo no PADRÃO do sistema (01/09): branco, compacto, sem título
+            grande e sem CTA — a página de detalhe já tem o próprio heading
+            logo abaixo. Mesma correção aplicada na página da oportunidade. */}
+          <Cf2Topbar orgNome="Callface" variant="light" compact actions={null} />
         </div>
-        <div className="px-8 py-6 flex flex-col gap-5" style={{ background: "var(--cf2-chrome-bg-alt)" }}>
+        <div data-cf2-superficie="escura" className="px-8 py-6 flex flex-col gap-5" style={{ background: "var(--cf2-chrome-bg-alt)" }}>
           <div className="flex items-center gap-1.5 text-[12px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>
             <Link href="/contatos" className="hover:underline">Contatos & Empresas</Link>
             <ChevronRight className="w-3 h-3" />
@@ -209,8 +212,8 @@ export function Cf2EmpresaWorkspace({ empresaId }: { empresaId: string }) {
             </div>
             <div className="flex items-center gap-2 flex-wrap">
               <button onClick={() => setNovaOportunidadeAberta(true)} className="flex items-center gap-1.5 h-10 px-3.5 rounded-xl text-[13px] font-semibold" style={{ background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" }}><Plus className="w-3.5 h-3.5" /> Nova oportunidade</button>
-              <button onClick={() => { setActiveTab("notas"); setNoteOpen(true); }} className="flex items-center gap-1.5 h-10 px-3 rounded-xl text-[13px] font-semibold" style={{ background: "var(--cf2-bg-canvas)", color: "var(--cf2-chrome-text-primary)" }}><NotebookPen className="w-3.5 h-3.5" /> Nota</button>
-              <button onClick={() => { setForm({ nome: empresa.nome, cnpj: empresa.cnpj || "", setor: empresa.setor || "", porte: empresa.porte || "", cidade: empresa.cidade || "", estado: empresa.estado || "", website: empresa.website || "", observacoes: empresa.observacoes || "" }); setEditando(true); setActiveTab("visao-geral"); }} className="flex items-center gap-1.5 h-10 px-3 rounded-xl text-[13px] font-semibold" style={{ background: "var(--cf2-bg-canvas)", color: "var(--cf2-chrome-text-primary)" }}><Pencil className="w-3.5 h-3.5" /> Editar</button>
+              <button onClick={() => { setActiveTab("notas"); setNoteOpen(true); }} className="flex items-center gap-1.5 h-10 px-3 rounded-xl text-[13px] font-semibold transition-colors hover:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--cf2-accent)]" style={{ background: "var(--cf2-bg-surface)", color: "var(--cf2-text-primary)" }}><NotebookPen className="w-3.5 h-3.5" /> Nota</button>
+              <button onClick={() => { setForm({ nome: empresa.nome, cnpj: empresa.cnpj || "", setor: empresa.setor || "", porte: empresa.porte || "", cidade: empresa.cidade || "", estado: empresa.estado || "", website: empresa.website || "", observacoes: empresa.observacoes || "" }); setEditando(true); setActiveTab("visao-geral"); }} className="flex items-center gap-1.5 h-10 px-3 rounded-xl text-[13px] font-semibold transition-colors hover:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--cf2-accent)]" style={{ background: "var(--cf2-bg-surface)", color: "var(--cf2-text-primary)" }}><Pencil className="w-3.5 h-3.5" /> Editar</button>
             </div>
           </div>
 
@@ -246,18 +249,18 @@ export function Cf2EmpresaWorkspace({ empresaId }: { empresaId: string }) {
                   </div>
                   {editando ? (
                     <div className="mt-3 flex flex-col gap-2.5">
-                      <input value={form.nome} onChange={(e) => setForm((f) => ({ ...f, nome: e.target.value }))} placeholder="Nome da empresa" className="w-full text-[13px] px-2.5 py-2 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-[var(--cf2-accent-border)]" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }} />
+                      <input value={form.nome} onChange={(e) => setForm((f) => ({ ...f, nome: e.target.value }))} placeholder="Nome da empresa" aria-label="Nome da empresa" className="w-full text-[13px] px-2.5 py-2 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-[var(--cf2-accent-border)]" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }} />
                       <div className="flex gap-2">
-                        <input value={form.cnpj} onChange={(e) => setForm((f) => ({ ...f, cnpj: e.target.value }))} placeholder="CNPJ" className="flex-1 text-[13px] px-2.5 py-2 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-[var(--cf2-accent-border)]" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }} />
-                        <input value={form.setor} onChange={(e) => setForm((f) => ({ ...f, setor: e.target.value }))} placeholder="Setor" className="flex-1 text-[13px] px-2.5 py-2 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-[var(--cf2-accent-border)]" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }} />
-                        <input value={form.porte} onChange={(e) => setForm((f) => ({ ...f, porte: e.target.value }))} placeholder="Porte" className="flex-1 text-[13px] px-2.5 py-2 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-[var(--cf2-accent-border)]" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }} />
+                        <input value={form.cnpj} onChange={(e) => setForm((f) => ({ ...f, cnpj: e.target.value }))} placeholder="CNPJ" aria-label="CNPJ" className="flex-1 text-[13px] px-2.5 py-2 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-[var(--cf2-accent-border)]" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }} />
+                        <input value={form.setor} onChange={(e) => setForm((f) => ({ ...f, setor: e.target.value }))} placeholder="Setor" aria-label="Setor" className="flex-1 text-[13px] px-2.5 py-2 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-[var(--cf2-accent-border)]" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }} />
+                        <input value={form.porte} onChange={(e) => setForm((f) => ({ ...f, porte: e.target.value }))} placeholder="Porte" aria-label="Porte" className="flex-1 text-[13px] px-2.5 py-2 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-[var(--cf2-accent-border)]" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }} />
                       </div>
                       <div className="flex gap-2">
-                        <input value={form.cidade} onChange={(e) => setForm((f) => ({ ...f, cidade: e.target.value }))} placeholder="Cidade" className="flex-1 text-[13px] px-2.5 py-2 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-[var(--cf2-accent-border)]" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }} />
+                        <input value={form.cidade} onChange={(e) => setForm((f) => ({ ...f, cidade: e.target.value }))} placeholder="Cidade" aria-label="Cidade" className="flex-1 text-[13px] px-2.5 py-2 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-[var(--cf2-accent-border)]" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }} />
                         <input value={form.estado} onChange={(e) => setForm((f) => ({ ...f, estado: e.target.value }))} placeholder="UF" className="w-20 text-[13px] px-2.5 py-2 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-[var(--cf2-accent-border)]" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }} />
-                        <input value={form.website} onChange={(e) => setForm((f) => ({ ...f, website: e.target.value }))} placeholder="Website" className="flex-1 text-[13px] px-2.5 py-2 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-[var(--cf2-accent-border)]" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }} />
+                        <input value={form.website} onChange={(e) => setForm((f) => ({ ...f, website: e.target.value }))} placeholder="Website" aria-label="Website" className="flex-1 text-[13px] px-2.5 py-2 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-[var(--cf2-accent-border)]" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }} />
                       </div>
-                      <textarea value={form.observacoes} onChange={(e) => setForm((f) => ({ ...f, observacoes: e.target.value }))} placeholder="Observações" rows={3} className="w-full text-[13px] px-2.5 py-2 rounded-lg outline-none resize-none focus-visible:ring-2 focus-visible:ring-[var(--cf2-accent-border)]" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }} />
+                      <textarea value={form.observacoes} onChange={(e) => setForm((f) => ({ ...f, observacoes: e.target.value }))} placeholder="Observações" aria-label="Observações" rows={3} className="w-full text-[13px] px-2.5 py-2 rounded-lg outline-none resize-none focus-visible:ring-2 focus-visible:ring-[var(--cf2-accent-border)]" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }} />
                       <div className="flex justify-end gap-2">
                         <button onClick={() => setEditando(false)} className="text-[12px] px-3 py-1.5" style={{ color: "var(--cf2-text-secondary)" }}>Cancelar</button>
                         <button onClick={() => patch.mutate({ nome: form.nome, cnpj: form.cnpj || null, setor: form.setor || null, porte: form.porte || null, cidade: form.cidade || null, estado: form.estado || null, website: form.website || null, observacoes: form.observacoes || null })} disabled={patch.isPending || !form.nome.trim()} className="text-[12px] px-3 py-1.5 rounded-lg font-semibold" style={{ background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" }}>Salvar</button>
@@ -342,7 +345,7 @@ export function Cf2EmpresaWorkspace({ empresaId }: { empresaId: string }) {
                 </Cf2Card>
 
                 <Cf2Card>
-                  <CardTitulo icon={NotebookPen} tint="#F59E0B" title="Última nota" />
+                  <CardTitulo icon={NotebookPen} tint="var(--cf2-warning-text)" title="Última nota" />
                   <div className="mt-3">
                     {notaMaisRecente ? (
                       <div className="p-2.5 rounded-lg" style={{ background: "var(--cf2-bg-surface-muted)" }}>
@@ -465,7 +468,7 @@ export function Cf2EmpresaWorkspace({ empresaId }: { empresaId: string }) {
               </div>
               {noteOpen && (
                 <div className="mt-3 flex flex-col gap-1.5 pb-3" style={{ borderBottom: "1px solid var(--cf2-border-default)" }}>
-                  <textarea autoFocus value={noteText} onChange={(e) => setNoteText(e.target.value)} placeholder="Escreva uma nota…" rows={3} className="w-full text-[13px] rounded-lg px-3 py-2 outline-none resize-y focus-visible:ring-2 focus-visible:ring-[var(--cf2-accent-border)]" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }} onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && noteText.trim()) addNota.mutate(noteText.trim()); if (e.key === "Escape") { setNoteOpen(false); setNoteText(""); } }} />
+                  <textarea autoFocus value={noteText} onChange={(e) => setNoteText(e.target.value)} placeholder="Escreva uma nota…" aria-label="Escreva uma nota" rows={3} className="w-full text-[13px] rounded-lg px-3 py-2 outline-none resize-y focus-visible:ring-2 focus-visible:ring-[var(--cf2-accent-border)]" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }} onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && noteText.trim()) addNota.mutate(noteText.trim()); if (e.key === "Escape") { setNoteOpen(false); setNoteText(""); } }} />
                   <div className="flex justify-end gap-2">
                     <button onClick={() => { setNoteOpen(false); setNoteText(""); }} className="text-[12px] px-2 py-1" style={{ color: "var(--cf2-text-secondary)" }}>Cancelar</button>
                     <button onClick={() => noteText.trim() && addNota.mutate(noteText.trim())} disabled={!noteText.trim() || addNota.isPending} className="text-[12px] px-2 py-1 flex items-center gap-1 font-semibold disabled:opacity-40" style={{ color: "var(--cf2-success-text)" }}><Send className="w-3 h-3" /> {addNota.isPending ? "Salvando…" : "Salvar"}</button>

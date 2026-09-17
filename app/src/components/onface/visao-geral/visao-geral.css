@@ -1,0 +1,1433 @@
+/* ONFACE — Visão Geral.
+ *
+ * Escrita à mão a partir da referência aprovada, não exportada do Figma: o
+ * dump do plugin trazia o frame inteiro em posicionamento absoluto com largura
+ * fixa de 1440px, que não sobrevive a nenhuma outra viewport.
+ *
+ * Camadas: primitivas da tela → hero → assistente → faixa → painel.
+ * Onde a referência diverge de um token do design system, o valor da
+ * referência prevalece e a divergência fica anotada no comentário. */
+
+.ovg,
+.ovg-janela {
+  --ovg-shell: #12171d;
+  --ovg-raised: #161b22;
+  --ovg-line: #30363d;
+  --ovg-line-soft: rgba(255, 255, 255, 0.06);
+  --ovg-ink-invert: #ffffff;
+  --ovg-ink-muted: #8b949e;
+  --ovg-ink-faint: #6d747e;
+  --ovg-coral: #fe4f2b;
+  --ovg-coral-hover: #ff5f3e;
+  --ovg-green: #3fb950;
+  --ovg-green-soft: rgba(63, 185, 80, 0.13);
+  --ovg-paper: #ffffff;
+  --ovg-paper-line: #e8eaec;
+  --ovg-paper-sunken: #f4f5f4;
+  --ovg-ink: #12171d;
+  --ovg-ink-body: #454c55;
+  --ovg-gap: calc(16 * var(--onface-u));
+  --ovg-radius-card: calc(20 * var(--onface-u));
+  --ovg-radius-inner: calc(12 * var(--onface-u));
+  --ovg-ease: cubic-bezier(0.2, 0, 0.2, 1);
+
+  font-family: var(--font-onface-display), ui-sans-serif, system-ui, sans-serif;
+  color: var(--ovg-ink);
+}
+
+.ovg *,
+.ovg *::before,
+.ovg *::after,
+.ovg-janela,
+.ovg-janela *,
+.ovg-janela *::before,
+.ovg-janela *::after { box-sizing: border-box; }
+
+/* Entrada: um único fade-up escalonado. Estado, não espetáculo. */
+@keyframes ovg-rise {
+  from { opacity: 0; transform: translateY(calc(10 * var(--onface-u))); }
+  to { opacity: 1; transform: none; }
+}
+.ovg [data-rise] {
+  animation: ovg-rise 420ms var(--ovg-ease) both;
+  animation-delay: calc(var(--ovg-delay, 0) * 60ms);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ovg [data-rise] { animation: none; }
+  .ovg * { transition-duration: 1ms !important; }
+}
+
+/* ── Hero ─────────────────────────────────────────────────────────────── */
+/* Geometria (padding, gutter) vem de `.onface-page-band`; aqui só a pintura. */
+.ovg-hero {
+  position: relative;
+  background:
+    radial-gradient(120% 120% at 82% 12%, rgba(255, 255, 255, 0.05) 0%, transparent 55%),
+    radial-gradient(90% 90% at 8% 0%, rgba(254, 79, 43, 0.07) 0%, transparent 50%),
+    var(--ovg-shell);
+  overflow: hidden;
+}
+
+.ovg-hero-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) calc(368 * var(--onface-u));
+  gap: var(--ovg-gap);
+  align-items: stretch;
+}
+
+.ovg-hero-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ovg-gap);
+  min-width: 0;
+}
+
+.ovg-hero-top {
+  display: grid;
+  grid-template-columns: calc(256 * var(--onface-u)) repeat(4, minmax(0, 1fr));
+  gap: calc(12 * var(--onface-u));
+}
+
+/* Saudação */
+.ovg-greeting {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: calc(18 * var(--onface-u));
+  padding-right: calc(8 * var(--onface-u));
+}
+.ovg-greeting-title {
+  margin: 0;
+  font-size: calc(29 * var(--onface-u));
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  line-height: 1.1;
+  text-wrap: balance;
+}
+.ovg-greeting-date {
+  margin: calc(6 * var(--onface-u)) 0 0;
+  color: var(--ovg-ink-muted);
+  font-size: calc(13 * var(--onface-u));
+  font-weight: 400;
+}
+.ovg-greeting-actions {
+  display: flex;
+  align-items: center;
+  gap: calc(12 * var(--onface-u));
+  flex-wrap: wrap;
+}
+.ovg-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(8 * var(--onface-u));
+  height: calc(40 * var(--onface-u));
+  padding-inline: calc(18 * var(--onface-u));
+  border: 0;
+  border-radius: 999px;
+  background: var(--ovg-coral);
+  color: #fff;
+  font-family: inherit;
+  font-size: calc(13 * var(--onface-u));
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 160ms var(--ovg-ease), transform 160ms var(--ovg-ease);
+}
+.ovg-cta:hover { background: var(--ovg-coral-hover); transform: translateY(-1px); }
+.ovg-cta:active { transform: none; }
+.ovg-tagline {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--ovg-ink-muted);
+  font-size: calc(9 * var(--onface-u));
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.25;
+}
+
+/* Cartões de métrica */
+.ovg-metric {
+  display: flex;
+  flex-direction: column;
+  gap: calc(10 * var(--onface-u));
+  min-height: calc(166 * var(--onface-u));
+  padding: calc(18 * var(--onface-u));
+  border: 1px solid var(--ovg-line);
+  border-radius: var(--ovg-radius-card);
+  background: var(--ovg-raised);
+  transition: border-color 160ms var(--ovg-ease), background 160ms var(--ovg-ease);
+}
+.ovg-metric:hover { border-color: #414a54; background: #191f27; }
+.ovg-metric-icon { color: #c9d1d9; }
+.ovg-metric-label {
+  margin: 0;
+  color: var(--ovg-ink-muted);
+  font-size: calc(12 * var(--onface-u));
+  font-weight: 400;
+}
+.ovg-metric-value {
+  margin: 2px 0 0;
+  font-size: calc(20 * var(--onface-u));
+  font-weight: 800;
+  /* Valor monetário não quebra linha nem encolhe com reticências: ou cabe
+     inteiro, ou o cartão está errado. */
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+.ovg-metric-foot { margin-top: auto; display: flex; flex-direction: column; gap: calc(10 * var(--onface-u)); align-items: flex-start; }
+.ovg-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: calc(3 * var(--onface-u)) calc(8 * var(--onface-u));
+  border-radius: calc(6 * var(--onface-u));
+  background: var(--ovg-green-soft);
+  color: var(--ovg-green);
+  font-size: calc(11 * var(--onface-u));
+  font-weight: 700;
+}
+.ovg-badge[data-tendencia="baixa"] { background: rgba(231, 0, 11, 0.13); color: #ff7f6e; }
+.ovg-badge[data-tendencia="neutra"] { background: rgba(255, 255, 255, 0.07); color: var(--ovg-ink-muted); }
+.ovg-metric-apoio {
+  margin: 0;
+  color: var(--ovg-ink-faint);
+  font-size: calc(12 * var(--onface-u));
+  font-weight: 400;
+}
+
+/* Linha 2 do hero */
+.ovg-hero-bottom {
+  display: grid;
+  grid-template-columns: minmax(0, 1.32fr) minmax(0, 1fr);
+  gap: calc(12 * var(--onface-u));
+  flex: 1;
+}
+
+.ovg-panel {
+  padding: calc(22 * var(--onface-u));
+  border: 1px solid var(--ovg-line);
+  border-radius: var(--ovg-radius-card);
+  background: var(--ovg-raised);
+}
+.ovg-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: calc(16 * var(--onface-u));
+}
+.ovg-panel-title {
+  margin: 0;
+  font-size: calc(18 * var(--onface-u));
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.ovg-panel-sub {
+  margin: calc(4 * var(--onface-u)) 0 0;
+  color: var(--ovg-ink-muted);
+  font-size: calc(13 * var(--onface-u));
+  font-weight: 400;
+}
+.ovg-panel-link {
+  flex-shrink: 0;
+  color: var(--ovg-ink-muted);
+  font-size: calc(12 * var(--onface-u));
+  font-weight: 500;
+  text-decoration: none;
+  transition: color 160ms var(--ovg-ease);
+}
+.ovg-panel-link:hover { color: #fff; }
+
+/* Gráfico. A barra coral à esquerda é o eixo do card, não um elemento do
+   gráfico: ela marca a seção no desenho. */
+.ovg-chart-card { position: relative; display: flex; flex-direction: column; overflow: hidden; }
+.ovg-chart-card::before {
+  content: "";
+  position: absolute;
+  inset: calc(18 * var(--onface-u)) auto calc(18 * var(--onface-u)) 0;
+  width: calc(3 * var(--onface-u));
+  border-radius: 0 calc(3 * var(--onface-u)) calc(3 * var(--onface-u)) 0;
+  background: var(--ovg-coral);
+}
+.ovg-chart-legend { display: flex; align-items: center; gap: calc(16 * var(--onface-u)); flex-shrink: 0; }
+.ovg-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(6 * var(--onface-u));
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ovg-ink-invert);
+  font-family: inherit;
+  font-size: calc(12 * var(--onface-u));
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity 160ms var(--ovg-ease);
+}
+.ovg-legend-item[data-off="true"] { opacity: 0.35; }
+.ovg-legend-dot { width: calc(8 * var(--onface-u)); height: calc(8 * var(--onface-u)); border-radius: 999px; }
+.ovg-legend-dot[data-cor="coral"] { background: var(--ovg-coral); }
+.ovg-legend-dot[data-cor="azul"] { background: #3b82f6; }
+.ovg-legend-dot[data-cor="cinza"] { background: #8b949e; }
+
+.ovg-chart { position: relative; flex: 1; min-height: calc(190 * var(--onface-u)); margin-top: calc(20 * var(--onface-u)); }
+.ovg-chart svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.ovg-chart-grid line { stroke: rgba(255, 255, 255, 0.07); stroke-width: 1; }
+.ovg-chart-line { fill: none; stroke-width: 2.25; stroke-linecap: round; stroke-linejoin: round; }
+@keyframes ovg-draw { from { stroke-dashoffset: var(--len); } to { stroke-dashoffset: 0; } }
+.ovg-chart-line[data-anim="true"] {
+  stroke-dasharray: var(--len);
+  animation: ovg-draw 900ms var(--ovg-ease) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ovg-chart-line[data-anim="true"] { animation: none; stroke-dasharray: none; }
+}
+.ovg-chart-axis {
+  position: relative;
+  height: calc(16 * var(--onface-u));
+  margin-top: calc(14 * var(--onface-u));
+  color: var(--ovg-ink-faint);
+  font-size: calc(12 * var(--onface-u));
+  font-weight: 400;
+}
+.ovg-chart-axis span {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  transition: color 160ms var(--ovg-ease);
+}
+/* O primeiro e o último encostam na borda do card se ficarem centrados. */
+.ovg-chart-axis span:first-child { transform: none; }
+.ovg-chart-axis span:last-child { transform: translateX(-100%); }
+.ovg-chart-axis span[data-ativo="true"] { color: var(--ovg-ink-invert); font-weight: 600; }
+.ovg-chart-hit { position: absolute; inset: 0; }
+.ovg-chart-hit button {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.ovg-chart-cursor {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.22);
+  pointer-events: none;
+}
+.ovg-chart-tooltip {
+  position: absolute;
+  top: 0;
+  z-index: 2;
+  min-width: calc(132 * var(--onface-u));
+  padding: calc(10 * var(--onface-u)) calc(12 * var(--onface-u));
+  border: 1px solid var(--ovg-line);
+  border-radius: calc(10 * var(--onface-u));
+  background: #0d1218;
+  box-shadow: 0 calc(12 * var(--onface-u)) calc(28 * var(--onface-u)) rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+}
+.ovg-chart-tooltip strong { display: block; margin-bottom: calc(6 * var(--onface-u)); font-size: calc(11 * var(--onface-u)); color: var(--ovg-ink-muted); font-weight: 600; }
+.ovg-chart-tooltip li { display: flex; align-items: center; gap: calc(6 * var(--onface-u)); font-size: calc(12 * var(--onface-u)); }
+.ovg-chart-tooltip ul { margin: 0; padding: 0; list-style: none; display: grid; gap: calc(4 * var(--onface-u)); }
+.ovg-chart-tooltip li span:last-child { margin-left: auto; font-weight: 700; }
+
+/* Áreas em destaque */
+.ovg-areas-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: calc(12 * var(--onface-u));
+  margin-top: calc(20 * var(--onface-u));
+}
+.ovg-area {
+  display: flex;
+  flex-direction: column;
+  gap: calc(24 * var(--onface-u));
+  min-height: calc(96 * var(--onface-u));
+  padding: calc(16 * var(--onface-u));
+  border: 1px solid var(--ovg-line);
+  border-radius: var(--ovg-radius-inner);
+  background: var(--ovg-shell);
+  color: inherit;
+  text-decoration: none;
+  transition: transform 160ms var(--ovg-ease), border-color 160ms var(--ovg-ease), background 160ms var(--ovg-ease);
+}
+.ovg-area:hover { transform: translateY(-2px); border-color: rgba(254, 79, 43, 0.45); background: #1a212a; }
+.ovg-area-icon { color: var(--ovg-coral); }
+.ovg-area-label { margin: 0; font-size: calc(15 * var(--onface-u)); font-weight: 700; }
+.ovg-area-state { margin: 2px 0 0; color: var(--ovg-ink-muted); font-size: calc(12 * var(--onface-u)); font-weight: 400; }
+.ovg-area[data-destaque="true"] {
+  border-color: transparent;
+  background: var(--ovg-coral);
+}
+.ovg-area[data-destaque="true"]:hover { background: var(--ovg-coral-hover); }
+.ovg-area[data-destaque="true"] .ovg-area-icon,
+.ovg-area[data-destaque="true"] .ovg-area-state { color: #fff; }
+.ovg-area[data-destaque="true"] .ovg-area-state { opacity: 0.86; }
+
+/* ── Assistente ────────────────────────────────────────────────────────── */
+/* Card fechado: termina nas duas ações, sem área de conversa. */
+.ovg-assistant {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: calc(24 * var(--onface-u));
+  border: 1px solid var(--ovg-line);
+  border-radius: calc(24 * var(--onface-u));
+  background: var(--ovg-raised);
+  overflow: hidden;
+}
+/* O mascote integra o card: entra pela direita, escurecido para virar parte da
+   superfície, e é cortado pelas bordas. */
+.ovg-assistant-mascote {
+  position: absolute;
+  right: -11%;
+  top: calc(8 * var(--onface-u));
+  height: 74%;
+  width: auto;
+  filter: brightness(0.42) saturate(0.65) contrast(1.05);
+  pointer-events: none;
+  user-select: none;
+  mask-image: linear-gradient(to bottom, #000 58%, transparent 94%);
+  -webkit-mask-image: linear-gradient(to bottom, #000 58%, transparent 94%);
+}
+.ovg-assistant::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, var(--ovg-raised) 34%, rgba(22, 27, 34, 0.72) 56%, transparent 78%);
+  pointer-events: none;
+}
+/* Tudo que não é o mascote fica acima do véu. */
+.ovg-assistant > *:not(.ovg-assistant-mascote) { position: relative; z-index: 1; }
+.ovg-assistant-head { position: relative; z-index: 1; display: flex; align-items: center; gap: calc(12 * var(--onface-u)); }
+.ovg-assistant-avatar { position: relative; flex-shrink: 0; }
+.ovg-assistant-avatar img { display: block; width: calc(46 * var(--onface-u)); height: calc(46 * var(--onface-u)); border-radius: 999px; }
+.ovg-assistant-online {
+  position: absolute;
+  right: 1px;
+  bottom: 2px;
+  width: calc(12 * var(--onface-u));
+  height: calc(12 * var(--onface-u));
+  border: 2px solid var(--ovg-raised);
+  border-radius: 999px;
+  background: #22c55e;
+}
+.ovg-assistant-name { margin: 0; font-size: calc(17 * var(--onface-u)); font-weight: 800; letter-spacing: -0.01em; }
+.ovg-assistant-sign { margin: 1px 0 0; color: var(--ovg-ink-muted); font-size: calc(13 * var(--onface-u)); font-weight: 400; }
+.ovg-assistant-config {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: calc(34 * var(--onface-u));
+  height: calc(34 * var(--onface-u));
+  margin-left: auto;
+  flex-shrink: 0;
+  border: 0;
+  border-radius: 999px;
+  background: var(--ovg-coral);
+  color: #fff;
+  cursor: pointer;
+  transition: background 160ms var(--ovg-ease), transform 200ms var(--ovg-ease);
+}
+.ovg-assistant-config:hover { background: var(--ovg-coral-hover); transform: rotate(45deg); }
+.ovg-assistant-greeting {
+  position: relative;
+  z-index: 1;
+  margin: calc(34 * var(--onface-u)) 0 0;
+  font-size: calc(24 * var(--onface-u));
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+.ovg-assistant-highlight {
+  position: relative;
+  z-index: 1;
+  margin: calc(8 * var(--onface-u)) 0 0;
+  max-width: 15em;
+  font-size: calc(17 * var(--onface-u));
+  font-weight: 500;
+  line-height: 1.35;
+}
+.ovg-assistant-highlight b { color: var(--ovg-coral); font-weight: 800; }
+.ovg-assistant-cta {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  margin-top: auto;
+  padding: calc(16 * var(--onface-u)) calc(20 * var(--onface-u));
+  border: 0;
+  border-radius: calc(14 * var(--onface-u));
+  background: var(--ovg-coral);
+  color: #fff;
+  font-family: inherit;
+  font-size: calc(15 * var(--onface-u));
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 160ms var(--ovg-ease);
+}
+.ovg-assistant-cta:hover { background: var(--ovg-coral-hover); }
+.ovg-assistant-cta svg { transition: transform 160ms var(--ovg-ease); }
+.ovg-assistant-cta:hover svg { transform: translateX(calc(3 * var(--onface-u))); }
+.ovg-assistant-actions { position: relative; display: grid; grid-template-columns: 1fr 1fr; gap: calc(12 * var(--onface-u)); margin-top: calc(12 * var(--onface-u)); }
+.ovg-assistant-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: calc(8 * var(--onface-u));
+  padding: calc(13 * var(--onface-u)) calc(8 * var(--onface-u));
+  border: 0;
+  border-radius: calc(14 * var(--onface-u));
+  background: #f2f3f2;
+  color: #1f252c;
+  font-family: inherit;
+  font-size: calc(13 * var(--onface-u));
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 160ms var(--ovg-ease);
+}
+.ovg-assistant-action:hover { background: #fff; }
+
+/* ── Faixa de filtros ─────────────────────────────────────────────────── */
+.ovg-filters-wrap {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  justify-content: center;
+  margin-top: calc(-84 * var(--onface-u));
+  pointer-events: none;
+}
+.ovg-filters {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(4 * var(--onface-u));
+  padding: calc(8 * var(--onface-u));
+  border-radius: 999px;
+  background: var(--ovg-shell);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  pointer-events: auto;
+}
+.ovg-filter {
+  height: calc(36 * var(--onface-u));
+  padding-inline: calc(20 * var(--onface-u));
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ovg-ink-muted);
+  font-family: inherit;
+  font-size: calc(13 * var(--onface-u));
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 160ms var(--ovg-ease), color 160ms var(--ovg-ease);
+}
+.ovg-filter:hover { color: #fff; }
+.ovg-filter[data-active="true"] { background: var(--ovg-coral); color: #fff; }
+
+/* ── Painel claro ─────────────────────────────────────────────────────── */
+/* Geometria vem de `.onface-page-surface`; aqui entram a grade de fundo do
+   desenho e a folga inferior. */
+.ovg-board {
+  position: relative;
+  padding-bottom: calc(32 * var(--onface-u));
+  /* A grade é textura, não informação: precisa ficar no limiar do perceptível.
+     Com a cor de linha cheia ela competia com o conteúdo. */
+  background:
+    repeating-linear-gradient(90deg, rgba(18, 23, 29, 0.035) 0 1px, transparent 1px calc(74 * var(--onface-u))),
+    repeating-linear-gradient(0deg, rgba(18, 23, 29, 0.035) 0 1px, transparent 1px calc(74 * var(--onface-u))),
+    var(--ovg-paper);
+}
+.ovg-board-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 0.95fr) minmax(0, 1.25fr);
+  gap: calc(16 * var(--onface-u));
+}
+
+/* Detalhes da operação */
+.ovg-detail {
+  display: flex;
+  flex-direction: column;
+  gap: calc(18 * var(--onface-u));
+  padding: calc(22 * var(--onface-u));
+  border-radius: calc(24 * var(--onface-u));
+  background: var(--ovg-shell);
+  color: var(--ovg-ink-invert);
+}
+.ovg-detail-head { display: flex; align-items: flex-start; justify-content: space-between; gap: calc(16 * var(--onface-u)); }
+.ovg-ghost-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(6 * var(--onface-u));
+  flex-shrink: 0;
+  height: calc(34 * var(--onface-u));
+  padding-inline: calc(14 * var(--onface-u));
+  border: 1px solid var(--ovg-line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ovg-ink-invert);
+  font-family: inherit;
+  font-size: calc(12 * var(--onface-u));
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 160ms var(--ovg-ease), border-color 160ms var(--ovg-ease);
+}
+.ovg-ghost-btn:hover { background: var(--ovg-raised); border-color: #454e58; }
+
+.ovg-detail-company { display: flex; align-items: center; justify-content: space-between; gap: calc(16 * var(--onface-u)); flex-wrap: wrap; }
+.ovg-detail-company-name { margin: 0; font-size: calc(20 * var(--onface-u)); font-weight: 800; letter-spacing: -0.015em; }
+.ovg-detail-company-sub { margin: 2px 0 0; color: var(--ovg-ink-muted); font-size: calc(12 * var(--onface-u)); font-weight: 400; }
+.ovg-owner { display: flex; align-items: center; gap: calc(10 * var(--onface-u)); }
+.ovg-owner-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: calc(34 * var(--onface-u));
+  height: calc(34 * var(--onface-u));
+  border-radius: 999px;
+  background: var(--ovg-coral);
+  color: #fff;
+  font-size: calc(12 * var(--onface-u));
+  font-weight: 700;
+}
+.ovg-owner-label { margin: 0; color: var(--ovg-ink-faint); font-size: calc(10 * var(--onface-u)); font-weight: 400; }
+.ovg-owner-name { margin: 0; font-size: calc(13 * var(--onface-u)); font-weight: 700; }
+.ovg-owner-role { margin: 0; color: var(--ovg-ink-muted); font-size: calc(11 * var(--onface-u)); font-weight: 400; }
+
+.ovg-progresso { display: flex; flex-direction: column; gap: calc(10 * var(--onface-u)); }
+.ovg-progresso-titulo { margin: 0; color: var(--ovg-ink-muted); font-size: calc(12 * var(--onface-u)); font-weight: 500; }
+.ovg-step-estado {
+  display: flex;
+  align-items: center;
+  gap: calc(7 * var(--onface-u));
+  margin: calc(6 * var(--onface-u)) 0 0;
+  font-size: calc(13 * var(--onface-u));
+  font-weight: 600;
+  line-height: 1.3;
+}
+.ovg-step-dot { width: calc(7 * var(--onface-u)); height: calc(7 * var(--onface-u)); flex-shrink: 0; border-radius: 999px; background: #6d747e; }
+.ovg-step[data-tom="ok"] .ovg-step-dot { background: var(--ovg-green); }
+.ovg-step[data-tom="andamento"] .ovg-step-dot { background: #f0883e; }
+.ovg-step[data-tom="bloqueado"] .ovg-step-dot { background: var(--ovg-coral); }
+.ovg-step[data-tom="bloqueado"] { border-color: rgba(254, 79, 43, 0.45); }
+.ovg-step[data-tom="pendente"] .ovg-step-estado { color: var(--ovg-ink-muted); }
+
+/* Selo do tipo de registro, ao lado do nome da empresa. */
+.ovg-detail-company-line { display: flex; align-items: center; gap: calc(10 * var(--onface-u)); flex-wrap: wrap; }
+.ovg-tipo {
+  padding: calc(3 * var(--onface-u)) calc(9 * var(--onface-u));
+  border: 1px solid var(--ovg-line);
+  border-radius: 999px;
+  color: var(--ovg-ink-muted);
+  font-size: calc(11 * var(--onface-u));
+  font-weight: 600;
+}
+
+/* Sem sinal também é informação: some a faixa de alerta, fica a linha calma. */
+.ovg-sem-sinal {
+  margin: 0;
+  padding: calc(12 * var(--onface-u)) calc(14 * var(--onface-u));
+  border: 1px dashed var(--ovg-line);
+  border-radius: var(--ovg-radius-inner);
+  color: var(--ovg-ink-faint);
+  font-size: calc(12 * var(--onface-u));
+}
+
+.ovg-steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: calc(10 * var(--onface-u)); }
+.ovg-step {
+  display: flex;
+  flex-direction: column;
+  gap: calc(10 * var(--onface-u));
+  padding: calc(12 * var(--onface-u));
+  border: 1px solid var(--ovg-line);
+  border-radius: var(--ovg-radius-inner);
+  background: var(--ovg-raised);
+}
+.ovg-step-label { margin: 0; color: var(--ovg-ink-muted); font-size: calc(11 * var(--onface-u)); font-weight: 400; }
+.ovg-step-value { margin: 0; font-size: calc(18 * var(--onface-u)); font-weight: 800; letter-spacing: -0.01em; }
+.ovg-step-track { height: calc(4 * var(--onface-u)); border-radius: 999px; background: #2b323a; overflow: hidden; }
+.ovg-step-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--ovg-coral);
+  transform-origin: left center;
+  transition: width 520ms var(--ovg-ease);
+}
+
+.ovg-insight {
+  display: flex;
+  align-items: center;
+  gap: calc(12 * var(--onface-u));
+  padding: calc(12 * var(--onface-u)) calc(14 * var(--onface-u));
+  border: 1px solid var(--ovg-line);
+  border-radius: var(--ovg-radius-inner);
+  background: var(--ovg-raised);
+}
+.ovg-marca-nexo {
+  width: calc(30 * var(--onface-u));
+  height: calc(30 * var(--onface-u));
+  flex-shrink: 0;
+  border-radius: 999px;
+  object-fit: cover;
+}
+.ovg-marca-nexo[data-tamanho="sm"] { width: calc(22 * var(--onface-u)); height: calc(22 * var(--onface-u)); }
+.ovg-insight-title { margin: 0; color: var(--ovg-coral); font-size: calc(12 * var(--onface-u)); font-weight: 700; }
+.ovg-insight-text { margin: 2px 0 0; color: var(--ovg-ink-muted); font-size: calc(11 * var(--onface-u)); font-weight: 400; line-height: 1.4; }
+.ovg-insight-link {
+  margin-left: auto;
+  flex-shrink: 0;
+  color: var(--ovg-ink-muted);
+  font-size: calc(11 * var(--onface-u));
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: color 160ms var(--ovg-ease);
+}
+.ovg-insight-link:hover { color: #fff; }
+
+.ovg-detail-foot { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; margin-top: auto; }
+.ovg-detail-foot > div { padding-inline: calc(14 * var(--onface-u)); min-width: 0; }
+.ovg-detail-foot > div:first-child { padding-left: 0; }
+.ovg-detail-foot > div + div { border-left: 1px solid var(--ovg-line-soft); }
+.ovg-foot-label { margin: 0; color: var(--ovg-ink-faint); font-size: calc(10 * var(--onface-u)); font-weight: 400; }
+.ovg-foot-value {
+  margin: calc(6 * var(--onface-u)) 0 0;
+  font-size: calc(15 * var(--onface-u));
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  /* Duas linhas é melhor que texto cortado: o rodapé tem quatro colunas e
+     rótulos como "Reunião técnica" não cabem em uma só nesta largura. */
+  line-height: 1.25;
+}
+.ovg-foot-value[data-tom="positivo"] { color: var(--ovg-green); }
+.ovg-foot-value[data-tom="negativo"] { color: #ff7f6e; }
+.ovg-foot-apoio { margin: calc(3 * var(--onface-u)) 0 0; color: var(--ovg-ink-faint); font-size: calc(10 * var(--onface-u)); font-weight: 400; }
+
+/* Cards claros */
+.ovg-card {
+  display: flex;
+  flex-direction: column;
+  padding: calc(22 * var(--onface-u));
+  border: 1px solid var(--ovg-paper-line);
+  border-radius: calc(24 * var(--onface-u));
+  background: var(--ovg-paper);
+}
+.ovg-card-title { margin: 0; font-size: calc(18 * var(--onface-u)); font-weight: 700; letter-spacing: -0.01em; }
+.ovg-card-sub { margin: calc(4 * var(--onface-u)) 0 0; color: #7b828b; font-size: calc(13 * var(--onface-u)); font-weight: 400; }
+
+/* Resumo */
+.ovg-summary { margin: calc(18 * var(--onface-u)) 0 0; display: flex; flex-direction: column; }
+.ovg-summary-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(16 * var(--onface-u));
+  padding: calc(11 * var(--onface-u)) 0;
+  border-bottom: 1px solid #f0f0ee;
+}
+.ovg-summary-row:last-child { border-bottom: 0; }
+.ovg-summary-label { color: #7b828b; font-size: calc(13 * var(--onface-u)); font-weight: 400; }
+.ovg-summary-value { color: var(--ovg-ink); font-size: calc(13 * var(--onface-u)); font-weight: 700; text-align: right; }
+.ovg-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(6 * var(--onface-u));
+  padding: calc(4 * var(--onface-u)) calc(10 * var(--onface-u));
+  border: 1px solid var(--ovg-paper-line);
+  border-radius: 999px;
+  font-size: calc(12 * var(--onface-u));
+  font-weight: 600;
+}
+.ovg-chip::before { content: ""; width: calc(6 * var(--onface-u)); height: calc(6 * var(--onface-u)); border-radius: 999px; background: var(--ovg-coral); }
+.ovg-chip[data-selo="neutro"]::before { background: #b6bcc3; }
+.ovg-tags { display: flex; flex-wrap: wrap; gap: calc(8 * var(--onface-u)); justify-content: flex-end; }
+.ovg-tag {
+  padding: calc(4 * var(--onface-u)) calc(10 * var(--onface-u));
+  border: 1px solid var(--ovg-paper-line);
+  border-radius: calc(8 * var(--onface-u));
+  color: #6f757d;
+  font-size: calc(11 * var(--onface-u));
+  font-weight: 500;
+}
+
+/* Operações prioritárias */
+.ovg-table {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+  margin-top: calc(18 * var(--onface-u));
+  /* O respiro lateral do destaque da linha vale para a tabela inteira, senão
+     o cabeçalho e as linhas caem em eixos diferentes. */
+  margin-inline: calc(-10 * var(--onface-u));
+  padding-inline: calc(10 * var(--onface-u));
+}
+/* A lista rola dentro do card: a coluna não pode crescer sem fim, e o rodapé
+   com "ver todas" precisa continuar visível. */
+.ovg-rows {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: calc(336 * var(--onface-u));
+  overflow-y: auto;
+  overflow-x: clip;
+  scrollbar-width: thin;
+  scrollbar-color: #d6d9dc transparent;
+}
+.ovg-rows::-webkit-scrollbar { width: calc(6 * var(--onface-u)); }
+.ovg-rows::-webkit-scrollbar-thumb { border-radius: 999px; background: #d6d9dc; }
+.ovg-table-foot {
+  padding-inline: calc(10 * var(--onface-u));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(12 * var(--onface-u));
+  margin-top: calc(14 * var(--onface-u));
+  padding-top: calc(14 * var(--onface-u));
+  border-top: 1px solid #f0f0ee;
+}
+.ovg-table-contagem { color: #868d95; font-size: calc(12 * var(--onface-u)); }
+.ovg-table-link {
+  color: var(--ovg-ink);
+  font-size: calc(12 * var(--onface-u));
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: color 160ms var(--ovg-ease);
+}
+.ovg-table-link:hover { color: var(--ovg-coral); }
+.ovg-table-head,
+.ovg-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) calc(142 * var(--onface-u)) calc(124 * var(--onface-u)) calc(14 * var(--onface-u));
+  align-items: center;
+  gap: calc(10 * var(--onface-u));
+}
+.ovg-table-head {
+  padding-inline: calc(10 * var(--onface-u));
+  padding-bottom: calc(12 * var(--onface-u));
+  border-bottom: 1px solid #f0f0ee;
+  color: var(--ovg-ink);
+  font-size: calc(14 * var(--onface-u));
+  font-weight: 600;
+}
+.ovg-row {
+  width: 100%;
+  padding: calc(12 * var(--onface-u)) calc(10 * var(--onface-u));
+  border: 0;
+  border-radius: calc(12 * var(--onface-u));
+  background: transparent;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 160ms var(--ovg-ease);
+}
+.ovg-row + .ovg-row { box-shadow: 0 -1px 0 #f4f4f2; }
+.ovg-row:hover { background: var(--ovg-paper-sunken); }
+.ovg-row[data-selected="true"] { background: var(--ovg-paper-sunken); }
+.ovg-row-company { margin: 0; font-size: calc(13.6 * var(--onface-u)); font-weight: 700; }
+.ovg-row-chevron { color: #b6bcc3; transition: transform 160ms var(--ovg-ease); }
+.ovg-row:hover .ovg-row-chevron { transform: translateX(2px); color: #7b828b; }
+/* ── Selo ──────────────────────────────────────────────────────────────
+ * Um único formato para etapa e jornada: mesma altura, mesmo raio, mesmo
+ * espaçamento, ícone à esquerda. O que muda é a cor, e cor aqui é semântica:
+ * coral é alerta, verde é concluído, cinza é o resto. */
+.ovg-selo {
+  display: inline-flex;
+  justify-self: start;
+  align-items: center;
+  gap: calc(6 * var(--onface-u));
+  height: calc(28 * var(--onface-u));
+  padding-inline: calc(10 * var(--onface-u));
+  border: 1px solid var(--ovg-paper-line);
+  border-radius: calc(8 * var(--onface-u));
+  background: #fff;
+  color: var(--ovg-ink);
+  font-size: calc(12 * var(--onface-u));
+  font-weight: 600;
+  white-space: nowrap;
+}
+.ovg-selo-icone { flex-shrink: 0; }
+.ovg-selo[data-estado="andamento"] .ovg-selo-icone { color: #3b82f6; }
+.ovg-selo[data-estado="aguardando"] .ovg-selo-icone { color: #f0883e; }
+.ovg-selo[data-estado="concluida"] .ovg-selo-icone { color: var(--ovg-green); }
+.ovg-selo[data-estado="alerta"] {
+  border-color: transparent;
+  background: var(--ovg-coral);
+  color: #fff;
+}
+.ovg-selo[data-variante="jornada"] {
+  border-color: transparent;
+  background: var(--ovg-paper-sunken);
+  color: #4b525a;
+  font-weight: 500;
+}
+.ovg-selo[data-variante="jornada"] .ovg-selo-icone { color: #868d95; }
+
+.ovg-empty { padding: calc(28 * var(--onface-u)) 0; color: #868d95; font-size: calc(13 * var(--onface-u)); text-align: center; }
+
+/* ── Responsivo ───────────────────────────────────────────────────────── */
+/* Um único ponto de virada: o desenho de desktop vale até 768, sempre nas
+   mesmas proporções. Abaixo disso entra o desenho de celular, que tem
+   prancheta própria (375) e empilha de verdade. */
+@media (max-width: 767px) {
+  .ovg-hero-grid { grid-template-columns: minmax(0, 1fr); }
+  .ovg-hero-top { grid-template-columns: minmax(0, 1fr); }
+  .ovg-greeting { padding-right: 0; }
+  .ovg-hero-bottom { grid-template-columns: minmax(0, 1fr); }
+  .ovg-areas-grid { grid-template-columns: minmax(0, 1fr); }
+  .ovg-assistant { min-height: 0; }
+  .ovg-assistant-mascote { right: 3%; height: 92%; }
+  .ovg-board-grid { grid-template-columns: minmax(0, 1fr); }
+  .ovg-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ovg-detail-foot { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: calc(16 * var(--onface-u)); }
+  .ovg-detail-foot > div:nth-child(3) { padding-left: 0; border-left: 0; }
+  .ovg-filters { flex-wrap: wrap; justify-content: center; }
+  .ovg-metric { min-height: 0; }
+  .ovg-metric-foot { flex-direction: row; align-items: center; gap: calc(10 * var(--onface-u)); }
+  .ovg-rows { max-height: none; }
+  .ovg-table-head,
+  .ovg-row { grid-template-columns: minmax(0, 1fr) max-content; row-gap: calc(8 * var(--onface-u)); }
+  .ovg-table-head span:nth-child(2),
+  .ovg-table-head span:nth-child(3) { display: none; }
+  .ovg-row-chevron { display: none; }
+}
+
+
+/* Foco visível em toda superfície interativa. */
+.ovg :focus-visible {
+  outline: 2px solid var(--ovg-coral);
+  outline-offset: 2px;
+  border-radius: calc(8 * var(--onface-u));
+}
+
+/* ═══ Agenda ═════════════════════════════════════════════════════════════
+   Espelho do calendário do Microsoft 365. */
+.ovg-agenda {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) calc(340 * var(--onface-u));
+  gap: calc(16 * var(--onface-u));
+}
+.ovg-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: calc(16 * var(--onface-u)); }
+.ovg-agenda-lista { min-width: 0; }
+.ovg-agenda-blocos { display: flex; flex-direction: column; gap: calc(20 * var(--onface-u)); margin-top: calc(18 * var(--onface-u)); }
+.ovg-agenda-dia {
+  display: flex;
+  align-items: baseline;
+  gap: calc(10 * var(--onface-u));
+  margin: 0 0 calc(10 * var(--onface-u));
+  font-size: calc(13 * var(--onface-u));
+  font-weight: 700;
+}
+.ovg-agenda-dia span { color: #868d95; font-size: calc(11 * var(--onface-u)); font-weight: 400; }
+.ovg-compromisso {
+  display: grid;
+  grid-template-columns: calc(58 * var(--onface-u)) minmax(0, 1fr) max-content calc(96 * var(--onface-u));
+  align-items: center;
+  gap: calc(12 * var(--onface-u));
+  padding: calc(11 * var(--onface-u)) calc(10 * var(--onface-u));
+  border-radius: calc(12 * var(--onface-u));
+  transition: background 160ms var(--ovg-ease);
+}
+.ovg-compromisso + .ovg-compromisso { box-shadow: 0 -1px 0 #f4f4f2; }
+.ovg-compromisso:hover { background: var(--ovg-paper-sunken); }
+.ovg-compromisso-hora { display: flex; flex-direction: column; }
+.ovg-compromisso-hora strong { font-size: calc(14 * var(--onface-u)); font-weight: 700; }
+.ovg-compromisso-hora small { color: #868d95; font-size: calc(10.5 * var(--onface-u)); }
+.ovg-compromisso-corpo { display: flex; flex-direction: column; gap: calc(2 * var(--onface-u)); min-width: 0; }
+.ovg-compromisso-titulo { font-size: calc(13 * var(--onface-u)); font-weight: 600; }
+.ovg-compromisso-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(5 * var(--onface-u));
+  color: #868d95;
+  font-size: calc(11 * var(--onface-u));
+}
+.ovg-compromisso-gente { display: inline-flex; gap: calc(4 * var(--onface-u)); }
+.ovg-avatar-mini {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: calc(22 * var(--onface-u));
+  height: calc(22 * var(--onface-u));
+  border-radius: 999px;
+  background: var(--ovg-paper-sunken);
+  color: #4b525a;
+  font-size: calc(9.5 * var(--onface-u));
+  font-weight: 700;
+}
+.ovg-agenda-lado { display: flex; flex-direction: column; gap: calc(16 * var(--onface-u)); }
+.ovg-proximo { gap: calc(6 * var(--onface-u)); }
+.ovg-proximo-rotulo {
+  margin: 0;
+  color: var(--ovg-coral);
+  font-size: calc(11 * var(--onface-u));
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.ovg-proximo-titulo { margin: calc(6 * var(--onface-u)) 0 0; font-size: calc(18 * var(--onface-u)); font-weight: 800; letter-spacing: -0.015em; }
+.ovg-proximo-cliente { margin: calc(2 * var(--onface-u)) 0 0; color: var(--ovg-ink-muted); font-size: calc(13 * var(--onface-u)); }
+.ovg-proximo-quando {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(7 * var(--onface-u));
+  margin: calc(14 * var(--onface-u)) 0 0;
+  font-size: calc(13 * var(--onface-u));
+  font-weight: 600;
+}
+.ovg-proximo-gente { display: flex; flex-wrap: wrap; gap: calc(6 * var(--onface-u)); margin-top: calc(12 * var(--onface-u)); }
+.ovg-proximo-gente span {
+  padding: calc(4 * var(--onface-u)) calc(9 * var(--onface-u));
+  border: 1px solid var(--ovg-line);
+  border-radius: 999px;
+  color: var(--ovg-ink-muted);
+  font-size: calc(11 * var(--onface-u));
+}
+.ovg-proximo-cta { margin-top: auto; text-decoration: none; }
+.ovg-summary-value[data-tom="negativo"] { color: #e7000b; }
+
+/* ═══ Pendências ═════════════════════════════════════════════════════════
+   Tabela cheia por padrão; ao selecionar, ela cede espaço para o resumo da
+   atividade em vez de abrir outra página. */
+.ovg-pendencias {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: calc(16 * var(--onface-u));
+  transition: grid-template-columns 220ms var(--ovg-ease);
+}
+.ovg-pendencias[data-aberto="true"] { grid-template-columns: minmax(0, 1fr) calc(372 * var(--onface-u)); }
+.ovg-pend-tabela { min-width: 0; }
+.ovg-contador {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: calc(24 * var(--onface-u));
+  height: calc(24 * var(--onface-u));
+  padding-inline: calc(7 * var(--onface-u));
+  border-radius: 999px;
+  background: var(--ovg-coral);
+  color: #fff;
+  font-size: calc(11.5 * var(--onface-u));
+  font-weight: 700;
+}
+.ovg-pend-head,
+.ovg-pend-abrir {
+  display: grid;
+  grid-template-columns:
+    calc(104 * var(--onface-u)) calc(118 * var(--onface-u)) minmax(0, 1.5fr)
+    minmax(0, 0.9fr) calc(128 * var(--onface-u)) minmax(0, 1fr);
+  align-items: center;
+  gap: calc(10 * var(--onface-u));
+}
+/* O cabeçalho tem uma coluna a mais que a linha clicável: a da ação, que fica
+   fora do botão para não virar clique duplo. */
+.ovg-pend-head { grid-template-columns:
+  calc(104 * var(--onface-u)) calc(118 * var(--onface-u)) minmax(0, 1.5fr)
+  minmax(0, 0.9fr) calc(128 * var(--onface-u)) minmax(0, 1fr)
+  calc(112 * var(--onface-u)); }
+.ovg-pend-head {
+  padding: 0 calc(10 * var(--onface-u)) calc(10 * var(--onface-u));
+  margin-top: calc(18 * var(--onface-u));
+  border-bottom: 1px solid #f0f0ee;
+  color: #868d95;
+  font-size: calc(10.5 * var(--onface-u));
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.ovg-pend-head span:last-child { text-align: right; }
+.ovg-pend-linhas { display: flex; flex-direction: column; }
+.ovg-pend-linha {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) calc(112 * var(--onface-u));
+  align-items: center;
+  gap: calc(10 * var(--onface-u));
+  padding: calc(4 * var(--onface-u)) calc(10 * var(--onface-u));
+  border-radius: calc(12 * var(--onface-u));
+  transition: background 160ms var(--ovg-ease);
+}
+.ovg-pend-linha + .ovg-pend-linha { box-shadow: 0 -1px 0 #f4f4f2; }
+.ovg-pend-linha:hover,
+.ovg-pend-linha[data-selected="true"] { background: var(--ovg-paper-sunken); }
+.ovg-pend-abrir {
+  padding: calc(10 * var(--onface-u)) 0;
+  border: 0;
+  background: none;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.ovg-nivel {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  gap: calc(6 * var(--onface-u));
+  height: calc(26 * var(--onface-u));
+  padding-inline: calc(10 * var(--onface-u));
+  border-radius: calc(8 * var(--onface-u));
+  font-size: calc(11.5 * var(--onface-u));
+  font-weight: 600;
+}
+.ovg-nivel-dot { width: calc(7 * var(--onface-u)); height: calc(7 * var(--onface-u)); border-radius: 999px; }
+.ovg-nivel[data-nivel="critico"] { background: rgba(231, 0, 11, 0.1); color: #c1121f; }
+.ovg-nivel[data-nivel="critico"] .ovg-nivel-dot { background: #e7000b; }
+.ovg-nivel[data-nivel="alto"] { background: rgba(254, 79, 43, 0.12); color: #c23a17; }
+.ovg-nivel[data-nivel="alto"] .ovg-nivel-dot { background: var(--ovg-coral); }
+.ovg-nivel[data-nivel="moderado"] { background: rgba(59, 130, 246, 0.12); color: #1d4ed8; }
+.ovg-nivel[data-nivel="moderado"] .ovg-nivel-dot { background: #3b82f6; }
+.ovg-pend-area {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(7 * var(--onface-u));
+  color: #4b525a;
+  font-size: calc(12 * var(--onface-u));
+  font-weight: 500;
+}
+.ovg-pend-area svg { color: #868d95; }
+.ovg-pend-item { display: flex; flex-direction: column; gap: calc(2 * var(--onface-u)); min-width: 0; }
+.ovg-pend-titulo { font-size: calc(13 * var(--onface-u)); font-weight: 700; }
+.ovg-pend-desc {
+  color: #868d95;
+  font-size: calc(11 * var(--onface-u));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ovg-pend-cliente { font-size: calc(12.5 * var(--onface-u)); font-weight: 600; }
+.ovg-pend-prazo {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(5 * var(--onface-u));
+  font-size: calc(11.5 * var(--onface-u));
+  font-weight: 600;
+}
+.ovg-pend-prazo[data-tom="atrasado"] { color: #e7000b; }
+.ovg-pend-prazo[data-tom="hoje"] { color: var(--ovg-coral); }
+.ovg-pend-prazo[data-tom="proximo"] { color: #b45309; }
+.ovg-pend-prazo[data-tom="neutro"] { color: #868d95; }
+.ovg-pend-dono {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(7 * var(--onface-u));
+  color: #4b525a;
+  font-size: calc(12 * var(--onface-u));
+  min-width: 0;
+}
+.ovg-sem-dono { color: #9aa1a8; font-style: italic; }
+.ovg-pend-acao { display: inline-flex; align-items: center; justify-content: flex-end; gap: calc(6 * var(--onface-u)); }
+.ovg-acao-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: calc(30 * var(--onface-u));
+  padding-inline: calc(14 * var(--onface-u));
+  border-radius: calc(8 * var(--onface-u));
+  background: var(--ovg-coral);
+  color: #fff;
+  font-size: calc(12 * var(--onface-u));
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background 160ms var(--ovg-ease);
+}
+.ovg-acao-btn:hover { background: var(--ovg-coral-hover); }
+.ovg-acao-mais { display: inline-flex; color: #b6bcc3; }
+.ovg-pend-nexo {
+  display: flex;
+  align-items: center;
+  gap: calc(10 * var(--onface-u));
+  margin-top: calc(14 * var(--onface-u));
+  padding: calc(11 * var(--onface-u)) calc(12 * var(--onface-u));
+  border: 1px solid rgba(254, 79, 43, 0.25);
+  border-radius: calc(12 * var(--onface-u));
+  background: rgba(254, 79, 43, 0.05);
+}
+.ovg-pend-nexo p { margin: 0; font-size: calc(12 * var(--onface-u)); font-weight: 500; }
+.ovg-pend-nexo svg { margin-left: auto; color: var(--ovg-coral); }
+
+
+/* Resumo da atividade */
+.ovg-atividade { gap: calc(14 * var(--onface-u)); min-width: 0; }
+.ovg-atividade-head { display: flex; align-items: flex-start; justify-content: space-between; gap: calc(12 * var(--onface-u)); }
+.ovg-atividade-titulo { margin: calc(4 * var(--onface-u)) 0 0; font-size: calc(18 * var(--onface-u)); font-weight: 800; letter-spacing: -0.015em; }
+.ovg-fechar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: calc(28 * var(--onface-u));
+  height: calc(28 * var(--onface-u));
+  flex-shrink: 0;
+  border: 1px solid var(--ovg-line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ovg-ink-muted);
+  cursor: pointer;
+  transition: background 160ms var(--ovg-ease), color 160ms var(--ovg-ease);
+}
+.ovg-fechar:hover { background: var(--ovg-raised); color: #fff; }
+.ovg-atividade-desc { margin: 0; color: var(--ovg-ink-muted); font-size: calc(12.5 * var(--onface-u)); line-height: 1.45; }
+.ovg-vinculo {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: calc(2 * var(--onface-u)) calc(10 * var(--onface-u));
+  padding: calc(12 * var(--onface-u)) calc(14 * var(--onface-u));
+  border: 1px solid var(--ovg-line);
+  border-radius: calc(12 * var(--onface-u));
+  background: var(--ovg-raised);
+  color: inherit;
+  text-decoration: none;
+  transition: border-color 160ms var(--ovg-ease), background 160ms var(--ovg-ease);
+}
+.ovg-vinculo:hover { border-color: rgba(254, 79, 43, 0.5); background: #1a212a; }
+.ovg-vinculo-tipo {
+  color: var(--ovg-coral);
+  font-size: calc(10 * var(--onface-u));
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.ovg-vinculo-nome { grid-column: 1; font-size: calc(15 * var(--onface-u)); font-weight: 700; }
+.ovg-vinculo-apoio { grid-column: 1; color: var(--ovg-ink-muted); font-size: calc(11.5 * var(--onface-u)); }
+.ovg-vinculo-seta { grid-row: 1 / span 3; grid-column: 2; align-self: center; color: var(--ovg-ink-muted); }
+.ovg-atividade-campos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: calc(12 * var(--onface-u)); }
+.ovg-atividade-bloco { display: flex; flex-direction: column; gap: calc(8 * var(--onface-u)); }
+.ovg-historico { display: flex; flex-direction: column; gap: calc(9 * var(--onface-u)); margin: 0; padding: 0; list-style: none; }
+.ovg-historico li { display: flex; flex-direction: column; gap: calc(1 * var(--onface-u)); padding-left: calc(14 * var(--onface-u)); position: relative; }
+.ovg-historico li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: calc(5 * var(--onface-u));
+  width: calc(6 * var(--onface-u));
+  height: calc(6 * var(--onface-u));
+  border-radius: 999px;
+  background: #454f5a;
+}
+.ovg-historico-quando { color: var(--ovg-ink-faint); font-size: calc(10.5 * var(--onface-u)); }
+.ovg-historico-texto { color: var(--ovg-ink-muted); font-size: calc(12 * var(--onface-u)); line-height: 1.4; }
+.ovg-atividade-rodape { margin: 0; color: var(--ovg-ink-faint); font-size: calc(10.5 * var(--onface-u)); line-height: 1.5; }
+.ovg-atividade-acoes { display: flex; align-items: center; gap: calc(8 * var(--onface-u)); margin-top: auto; flex-wrap: wrap; }
+
+@media (max-width: 767px) {
+  .ovg-agenda,
+  .ovg-pendencias,
+  .ovg-pendencias[data-aberto="true"] { grid-template-columns: minmax(0, 1fr); }
+  .ovg-compromisso { grid-template-columns: calc(52 * var(--onface-u)) minmax(0, 1fr); row-gap: calc(6 * var(--onface-u)); }
+  .ovg-compromisso-gente,
+  .ovg-pend-head { display: none; }
+  .ovg-pend-abrir {
+    grid-template-columns: max-content minmax(0, 1fr);
+    row-gap: calc(6 * var(--onface-u));
+  }
+  .ovg-atividade-campos { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ═══ Janela do compromisso ══════════════════════════════════════════════
+   Controle remoto do evento que vive no calendário do Microsoft 365. */
+.ovg-janela.ovg-janela {
+  display: flex;
+  flex-direction: column;
+  gap: calc(16 * var(--onface-u));
+  width: min(calc(560 * var(--onface-u)), calc(100vw - 32px));
+  max-width: none;
+  padding: calc(22 * var(--onface-u));
+  border: 1px solid var(--ovg-line);
+  border-radius: calc(22 * var(--onface-u));
+  background: var(--ovg-shell);
+  color: var(--ovg-ink-invert);
+  font-family: var(--font-onface-display), ui-sans-serif, system-ui, sans-serif;
+}
+.ovg-janela .ovg-janela-head {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: calc(14 * var(--onface-u));
+  text-align: left;
+}
+.ovg-janela-titulo { margin: calc(10 * var(--onface-u)) 0 0; font-size: calc(20 * var(--onface-u)); font-weight: 800; letter-spacing: -0.015em; }
+.ovg-janela-sub { margin: calc(3 * var(--onface-u)) 0 0; color: var(--ovg-ink-muted); font-size: calc(12.5 * var(--onface-u)); }
+.ovg-janela-desc { margin: 0; color: var(--ovg-ink-muted); font-size: calc(13 * var(--onface-u)); line-height: 1.5; }
+.ovg-janela-cancelado {
+  margin: 0;
+  padding: calc(10 * var(--onface-u)) calc(12 * var(--onface-u));
+  border: 1px solid rgba(254, 79, 43, 0.35);
+  border-radius: calc(10 * var(--onface-u));
+  background: rgba(254, 79, 43, 0.08);
+  color: var(--ovg-coral);
+  font-size: calc(12 * var(--onface-u));
+  font-weight: 600;
+}
+.ovg-janela-participantes .ovg-progresso-titulo { display: flex; align-items: center; gap: calc(8 * var(--onface-u)); }
+.ovg-janela-participantes .ovg-progresso-titulo span {
+  padding: calc(1 * var(--onface-u)) calc(7 * var(--onface-u));
+  border-radius: 999px;
+  background: var(--ovg-raised);
+  font-size: calc(10.5 * var(--onface-u));
+}
+.ovg-janela-participantes ul { display: flex; flex-direction: column; gap: calc(6 * var(--onface-u)); margin: calc(10 * var(--onface-u)) 0 0; padding: 0; list-style: none; }
+.ovg-janela-participantes li {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content max-content;
+  align-items: center;
+  gap: calc(10 * var(--onface-u));
+  padding: calc(8 * var(--onface-u)) calc(10 * var(--onface-u));
+  border: 1px solid var(--ovg-line);
+  border-radius: calc(10 * var(--onface-u));
+  background: var(--ovg-raised);
+}
+.ovg-janela .ovg-avatar-mini { background: #2b323a; color: #e6e9ec; }
+.ovg-part-nome { display: flex; flex-direction: column; min-width: 0; font-size: calc(12.5 * var(--onface-u)); font-weight: 600; }
+.ovg-part-nome small { color: var(--ovg-ink-faint); font-size: calc(10.5 * var(--onface-u)); font-weight: 400; overflow: hidden; text-overflow: ellipsis; }
+.ovg-part-tag {
+  padding: calc(3 * var(--onface-u)) calc(8 * var(--onface-u));
+  border-radius: 999px;
+  background: #2b323a;
+  color: var(--ovg-ink-muted);
+  font-size: calc(10 * var(--onface-u));
+  font-weight: 600;
+}
+.ovg-part-tag[data-externo="true"] { background: rgba(254, 79, 43, 0.14); color: var(--ovg-coral); }
+.ovg-part-status { color: var(--ovg-ink-faint); font-size: calc(10.5 * var(--onface-u)); white-space: nowrap; }
+.ovg-part-status[data-ok="true"] { color: var(--ovg-green); }
+.ovg-janela-link {
+  display: flex;
+  align-items: center;
+  gap: calc(10 * var(--onface-u));
+  padding: calc(9 * var(--onface-u)) calc(9 * var(--onface-u)) calc(9 * var(--onface-u)) calc(12 * var(--onface-u));
+  border: 1px solid var(--ovg-line);
+  border-radius: calc(10 * var(--onface-u));
+  background: var(--ovg-raised);
+}
+.ovg-janela-link span {
+  flex: 1;
+  min-width: 0;
+  color: var(--ovg-ink-muted);
+  font-size: calc(11.5 * var(--onface-u));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ovg-janela-link button {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(6 * var(--onface-u));
+  flex-shrink: 0;
+  height: calc(28 * var(--onface-u));
+  padding-inline: calc(11 * var(--onface-u));
+  border: 1px solid var(--ovg-line);
+  border-radius: calc(8 * var(--onface-u));
+  background: transparent;
+  color: var(--ovg-ink-invert);
+  font-family: inherit;
+  font-size: calc(11.5 * var(--onface-u));
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 160ms var(--ovg-ease);
+}
+.ovg-janela-link button:hover { background: #222a33; }
+.ovg-janela-acoes { display: flex; flex-wrap: wrap; align-items: center; gap: calc(8 * var(--onface-u)); }
+.ovg-janela-acoes .ovg-acao-btn,
+.ovg-janela-acoes .ovg-ghost-btn { gap: calc(7 * var(--onface-u)); height: calc(34 * var(--onface-u)); }
+.ovg-janela-acoes .ovg-ghost-btn[disabled] { opacity: 0.4; cursor: not-allowed; }
+.ovg-btn-perigo { border-color: rgba(231, 0, 11, 0.4); color: #ff8f80; }
+.ovg-btn-perigo:hover:not([disabled]) { background: rgba(231, 0, 11, 0.12); }
+.ovg-btn-perigo-cheio { background: #c1121f; }
+.ovg-btn-perigo-cheio:hover { background: #d81e2b; }
+.ovg-janela-form { display: flex; flex-direction: column; gap: calc(12 * var(--onface-u)); }
+.ovg-janela-form label { display: flex; flex-direction: column; gap: calc(6 * var(--onface-u)); color: var(--ovg-ink-muted); font-size: calc(11.5 * var(--onface-u)); font-weight: 500; }
+.ovg-janela-form input[type="text"],
+.ovg-janela-form input[type="email"],
+.ovg-janela-form input[type="date"],
+.ovg-janela-form input[type="time"],
+.ovg-janela-form input:not([type]) {
+  height: calc(38 * var(--onface-u));
+  padding-inline: calc(12 * var(--onface-u));
+  border: 1px solid var(--ovg-line);
+  border-radius: calc(10 * var(--onface-u));
+  background: var(--ovg-raised);
+  color: var(--ovg-ink-invert);
+  font-family: inherit;
+  font-size: calc(13 * var(--onface-u));
+  outline: none;
+}
+.ovg-janela-form input:focus { border-color: var(--ovg-coral); }
+.ovg-janela-nota { margin: 0; color: var(--ovg-ink-faint); font-size: calc(11.5 * var(--onface-u)); line-height: 1.5; }
+.ovg-janela-preview {
+  margin: 0;
+  padding: calc(12 * var(--onface-u));
+  border: 1px solid var(--ovg-line);
+  border-radius: calc(10 * var(--onface-u));
+  background: var(--ovg-raised);
+  color: var(--ovg-ink-invert);
+  font-size: calc(12.5 * var(--onface-u));
+  line-height: 1.5;
+}
+.ovg-janela-escolha { display: flex; flex-direction: column; gap: calc(8 * var(--onface-u)); margin: 0; padding: 0; border: 0; }
+.ovg-janela-escolha legend { padding: 0 0 calc(8 * var(--onface-u)); color: var(--ovg-ink-muted); font-size: calc(11.5 * var(--onface-u)); font-weight: 500; }
+.ovg-janela-escolha label {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: calc(2 * var(--onface-u)) calc(10 * var(--onface-u));
+  padding: calc(11 * var(--onface-u)) calc(12 * var(--onface-u));
+  border: 1px solid var(--ovg-line);
+  border-radius: calc(10 * var(--onface-u));
+  background: var(--ovg-raised);
+  color: var(--ovg-ink-invert);
+  font-size: calc(13 * var(--onface-u));
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 160ms var(--ovg-ease);
+}
+.ovg-janela-escolha label[data-marcado="true"] { border-color: var(--ovg-coral); }
+.ovg-janela-escolha label small { grid-column: 2; color: var(--ovg-ink-faint); font-size: calc(11 * var(--onface-u)); font-weight: 400; }
+.ovg-janela-escolha input { accent-color: var(--ovg-coral); }
+.ovg-janela-aviso {
+  margin: 0;
+  padding: calc(10 * var(--onface-u)) calc(12 * var(--onface-u));
+  border-radius: calc(10 * var(--onface-u));
+  background: rgba(63, 185, 80, 0.12);
+  color: #6ee787;
+  font-size: calc(12 * var(--onface-u));
+  font-weight: 500;
+}
+.ovg-janela .ovg-sem-sinal { color: var(--ovg-ink-faint); }
+
+/* O compromisso agora é clicável: vira botão, mas continua parecendo linha. */
+.ovg-compromisso {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.ovg-compromisso[data-encerrado="true"] .ovg-compromisso-titulo { color: #9aa1a8; text-decoration: line-through; }
+
+/* Meta do mês, no rodapé do gráfico. */
+.ovg-meta {
+  margin-top: calc(16 * var(--onface-u));
+  padding-top: calc(14 * var(--onface-u));
+  border-top: 1px solid var(--ovg-line-soft);
+}
+.ovg-meta-topo { display: flex; align-items: baseline; gap: calc(10 * var(--onface-u)); }
+.ovg-meta-titulo { color: var(--ovg-ink-muted); font-size: calc(12 * var(--onface-u)); font-weight: 500; }
+.ovg-meta-valor { font-size: calc(14 * var(--onface-u)); font-weight: 700; }
+.ovg-meta-pct { margin-left: auto; color: var(--ovg-coral); font-size: calc(12 * var(--onface-u)); font-weight: 700; }
+.ovg-meta-track {
+  height: calc(6 * var(--onface-u));
+  margin-top: calc(9 * var(--onface-u));
+  border-radius: 999px;
+  background: #2b323a;
+  overflow: hidden;
+}
+.ovg-meta-fill { height: 100%; border-radius: 999px; background: var(--ovg-coral); transition: width 520ms var(--ovg-ease); }
+.ovg-meta-apoio { margin: calc(8 * var(--onface-u)) 0 0; color: var(--ovg-ink-faint); font-size: calc(11 * var(--onface-u)); }

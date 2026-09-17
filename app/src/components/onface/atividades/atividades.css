@@ -1,0 +1,695 @@
+/* ONFACE — Atividades.
+ *
+ * Só o que é próprio desta tela. Moldura, cartões, selos, tabela com painel
+ * lateral e janela vêm do CSS da Visão Geral: é o mesmo produto, e repetir
+ * estilo seria o começo de duas linguagens diferentes. */
+
+.atv-hero { padding-bottom: calc(104 * var(--onface-u)); }
+
+.atv-cabecalho {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: calc(20 * var(--onface-u));
+  flex-wrap: wrap;
+}
+.atv-acoes-topo { display: flex; align-items: center; gap: calc(10 * var(--onface-u)); }
+.atv-acoes-topo .ovg-ghost-btn { height: calc(40 * var(--onface-u)); border-radius: 999px; }
+
+.atv-eyebrow {
+  margin: 0 0 calc(6 * var(--onface-u));
+  color: var(--ovg-ink-faint);
+  font-size: calc(11 * var(--onface-u));
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+/* Cor só onde ela quer dizer alguma coisa. */
+.atv-cartao[data-tom="alerta"] .ovg-metric-icon,
+.atv-cartao[data-tom="alerta"] .ovg-metric-value { color: #ff7f6e; }
+.atv-cartao[data-tom="coral"] .ovg-metric-icon,
+.atv-cartao[data-tom="coral"] .ovg-metric-value { color: var(--ovg-coral); }
+.atv-cartao[data-tom="ok"] .ovg-metric-icon { color: var(--ovg-green); }
+
+/* Cartões do topo: ícone em caixa, número, rótulo e uma linha de contexto.
+   Cor só onde ela informa. */
+.atv-cartoes {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: calc(10 * var(--onface-u));
+  margin-top: calc(18 * var(--onface-u));
+}
+.atv-cartao {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: center;
+  gap: calc(1 * var(--onface-u)) calc(11 * var(--onface-u));
+  padding: calc(13 * var(--onface-u)) calc(15 * var(--onface-u));
+  border: 1px solid var(--ovg-line);
+  border-radius: calc(14 * var(--onface-u));
+  background: var(--ovg-raised);
+}
+.atv-cartao-icone {
+  grid-row: 1 / span 3;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: calc(34 * var(--onface-u));
+  height: calc(34 * var(--onface-u));
+  border-radius: calc(10 * var(--onface-u));
+  background: rgba(255, 255, 255, 0.05);
+  color: #9aa4af;
+}
+.atv-cartao-valor {
+  margin: 0;
+  font-size: calc(21 * var(--onface-u));
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+}
+.atv-cartao-label { margin: 0; font-size: calc(11.5 * var(--onface-u)); font-weight: 600; }
+.atv-cartao-apoio { margin: 0; color: var(--ovg-ink-faint); font-size: calc(10 * var(--onface-u)); }
+.atv-cartao[data-tom="alerta"] .atv-cartao-icone { background: rgba(231, 0, 11, 0.12); color: #ff8f80; }
+.atv-cartao[data-tom="alerta"] .atv-cartao-valor { color: #ff8f80; }
+.atv-cartao[data-tom="coral"] .atv-cartao-icone { background: rgba(254, 79, 43, 0.14); color: var(--ovg-coral); }
+.atv-cartao[data-tom="coral"] .atv-cartao-valor { color: var(--ovg-coral); }
+.atv-cartao[data-tom="ok"] .atv-cartao-icone { background: rgba(63, 185, 80, 0.12); color: var(--ovg-green); }
+
+/* ── Filtros ───────────────────────────────────────────────────────────── */
+.atv-filtros {
+  display: flex;
+  align-items: center;
+  gap: calc(10 * var(--onface-u));
+  margin-bottom: calc(18 * var(--onface-u));
+  flex-wrap: wrap;
+}
+.atv-campo-busca {
+  display: flex;
+  align-items: center;
+  gap: calc(9 * var(--onface-u));
+  flex: 1;
+  min-width: calc(240 * var(--onface-u));
+  height: calc(38 * var(--onface-u));
+  padding-inline: calc(13 * var(--onface-u));
+  border: 1px solid var(--ovg-paper-line);
+  border-radius: calc(10 * var(--onface-u));
+  background: #fff;
+  color: #868d95;
+  transition: border-color 160ms var(--ovg-ease);
+}
+.atv-campo-busca:focus-within { border-color: var(--ovg-coral); }
+.atv-campo-busca input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ovg-ink);
+  font-family: inherit;
+  font-size: calc(13 * var(--onface-u));
+  outline: none;
+}
+.atv-select {
+  display: flex;
+  flex-direction: column;
+  gap: calc(3 * var(--onface-u));
+}
+.atv-select span {
+  color: #868d95;
+  font-size: calc(10 * var(--onface-u));
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.atv-select select,
+.atv-janela select {
+  height: calc(30 * var(--onface-u));
+  padding-inline: calc(10 * var(--onface-u));
+  border: 1px solid var(--ovg-paper-line);
+  border-radius: calc(8 * var(--onface-u));
+  background: #fff;
+  color: var(--ovg-ink);
+  font-family: inherit;
+  font-size: calc(12.5 * var(--onface-u));
+  font-weight: 600;
+  cursor: pointer;
+}
+.atv-visao {
+  display: inline-flex;
+  gap: calc(2 * var(--onface-u));
+  margin-left: auto;
+  padding: calc(3 * var(--onface-u));
+  border: 1px solid var(--ovg-paper-line);
+  border-radius: calc(10 * var(--onface-u));
+  background: #fff;
+}
+.atv-visao button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: calc(32 * var(--onface-u));
+  height: calc(30 * var(--onface-u));
+  border: 0;
+  border-radius: calc(7 * var(--onface-u));
+  background: transparent;
+  color: #868d95;
+  cursor: pointer;
+  transition: background 160ms var(--ovg-ease), color 160ms var(--ovg-ease);
+}
+.atv-visao button[data-ativo="true"] { background: var(--ovg-coral); color: #fff; }
+
+/* Vínculo: ícone em caixa e duas linhas. O nome da conta é o que se procura
+   na varredura; o tipo fica embaixo, menor. */
+.atv-vinculo {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: center;
+  gap: calc(9 * var(--onface-u));
+  min-width: 0;
+}
+.atv-vinculo-icone {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: calc(28 * var(--onface-u));
+  height: calc(28 * var(--onface-u));
+  flex-shrink: 0;
+  border: 1px solid var(--ovg-paper-line);
+  border-radius: calc(8 * var(--onface-u));
+  background: #fff;
+  color: #7b828b;
+}
+.atv-vinculo-texto { display: flex; flex-direction: column; min-width: 0; }
+.atv-vinculo-nome {
+  font-size: calc(12.5 * var(--onface-u));
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.atv-vinculo-apoio {
+  color: #9aa1a8;
+  font-size: calc(10.5 * var(--onface-u));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Tabela ────────────────────────────────────────────────────────────── */
+.atv-head,
+.atv-linha {
+  display: grid;
+  grid-template-columns:
+    minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, 0.9fr) calc(150 * var(--onface-u));
+  align-items: center;
+  gap: calc(10 * var(--onface-u));
+}
+.atv-head { grid-template-columns:
+  minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, 0.9fr)
+  calc(150 * var(--onface-u)) calc(158 * var(--onface-u)); }
+.atv-board .ovg-pend-linha { grid-template-columns: minmax(0, 1fr) calc(158 * var(--onface-u)); }
+
+/* Grupos de prazo. O cabeçalho é discreto: ele organiza a leitura, não compete
+   com as atividades. */
+.atv-grupo + .atv-grupo { margin-top: calc(18 * var(--onface-u)); }
+.atv-grupo-head {
+  display: flex;
+  align-items: center;
+  gap: calc(8 * var(--onface-u));
+  width: 100%;
+  padding: calc(10 * var(--onface-u));
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  border: 0;
+  border-radius: calc(10 * var(--onface-u));
+  background: #fff;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 160ms var(--ovg-ease);
+}
+.atv-grupo-head:hover { background: var(--ovg-paper-sunken); }
+.atv-grupo-seta {
+  color: #9aa1a8;
+  transition: transform 160ms var(--ovg-ease);
+}
+.atv-grupo[data-aberto="true"] .atv-grupo-seta { transform: rotate(90deg); }
+.atv-grupo-titulo { font-size: calc(12.5 * var(--onface-u)); font-weight: 700; }
+.atv-grupo-contador {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: calc(20 * var(--onface-u));
+  height: calc(18 * var(--onface-u));
+  padding-inline: calc(6 * var(--onface-u));
+  border-radius: 999px;
+  background: var(--ovg-paper-sunken);
+  color: #4b525a;
+  font-size: calc(10 * var(--onface-u));
+  font-weight: 700;
+}
+.atv-grupo-apoio { color: #9aa1a8; font-size: calc(10.5 * var(--onface-u)); }
+.atv-grupo[data-grupo="atrasada"] .atv-grupo-titulo { color: #c1121f; }
+.atv-grupo[data-grupo="atrasada"] .atv-grupo-contador { background: rgba(231, 0, 11, 0.1); color: #c1121f; }
+.atv-grupo[data-grupo="hoje"] .atv-grupo-titulo { color: var(--ovg-coral); }
+.atv-grupo[data-grupo="hoje"] .atv-grupo-contador { background: rgba(254, 79, 43, 0.12); color: #c23a17; }
+
+/* Seletor de status: é a ação mais frequente da tela, então vive na linha. */
+/* Chip de status: ícone à esquerda, rótulo editável. O select é transparente
+   por dentro do chip, então mudar o estado é um clique na própria linha. */
+.atv-status {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(6 * var(--onface-u));
+  justify-self: end;
+  height: calc(28 * var(--onface-u));
+  padding-inline: calc(9 * var(--onface-u));
+  border: 1px solid var(--ovg-paper-line);
+  border-radius: calc(999 * var(--onface-u));
+  background: #fff;
+  color: #4b525a;
+  transition: border-color 160ms var(--ovg-ease);
+}
+.atv-status:hover { border-color: #c9ced3; }
+.atv-status-icone { flex-shrink: 0; color: #9aa1a8; }
+.atv-status select {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  font-size: calc(11.5 * var(--onface-u));
+  font-weight: 600;
+  cursor: pointer;
+  outline: none;
+  appearance: none;
+  padding-right: calc(2 * var(--onface-u));
+}
+.atv-status[data-compacto="true"] select { width: 100%; }
+.atv-status[data-compacto="true"] { width: 100%; justify-self: stretch; }
+.atv-status[data-status="em_andamento"] { border-color: rgba(59, 130, 246, 0.4); color: #1d4ed8; }
+.atv-status[data-status="em_andamento"] .atv-status-icone { color: #3b82f6; }
+.atv-status[data-status="aguardando"] { border-color: rgba(240, 136, 62, 0.45); color: #b45309; }
+.atv-status[data-status="aguardando"] .atv-status-icone { color: #f0883e; }
+.atv-status[data-status="concluida"] { border-color: rgba(63, 185, 80, 0.4); color: #137333; }
+.atv-status[data-status="concluida"] .atv-status-icone { color: var(--ovg-green); }
+.atv-status[data-status="declinada"] { color: #9aa1a8; }
+.atv-status-linha {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(12 * var(--onface-u));
+  padding: calc(10 * var(--onface-u)) calc(12 * var(--onface-u));
+  border: 1px solid var(--ovg-line);
+  border-radius: calc(10 * var(--onface-u));
+  background: var(--ovg-raised);
+}
+
+.atv-head {
+  padding: 0 calc(10 * var(--onface-u)) calc(10 * var(--onface-u));
+  border-bottom: 1px solid #f0f0ee;
+  color: #868d95;
+  font-size: calc(10.5 * var(--onface-u));
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.atv-linha {
+  width: 100%;
+  padding: calc(11 * var(--onface-u)) 0;
+  border: 0;
+  background: none;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.ovg-pend-titulo[data-concluida="true"] { color: #9aa1a8; text-decoration: line-through; }
+.atv-prazo {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(5 * var(--onface-u));
+  font-size: calc(11.5 * var(--onface-u));
+  font-weight: 600;
+  white-space: nowrap;
+}
+.atv-prazo[data-tom="atrasado"] { color: #e7000b; }
+.atv-prazo[data-tom="hoje"] { color: var(--ovg-coral); }
+.atv-prazo[data-tom="proximo"] { color: #b45309; }
+.atv-prazo[data-tom="neutro"] { color: #868d95; }
+/* Trezentas atividades não podem esticar a página até o infinito: a lista rola
+   dentro do card e o rodapé com a contagem continua visível. */
+.atv-board .ovg-pend-linhas {
+  max-height: calc(560 * var(--onface-u));
+  overflow-y: auto;
+  overflow-x: clip;
+  scrollbar-width: thin;
+  scrollbar-color: #d6d9dc transparent;
+}
+.atv-board .ovg-pend-linhas::-webkit-scrollbar { width: 6px; }
+.atv-board .ovg-pend-linhas::-webkit-scrollbar-thumb { border-radius: 999px; background: #d6d9dc; }
+.atv-coluna-corpo {
+  max-height: calc(520 * var(--onface-u));
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #d6d9dc transparent;
+}
+
+/* ── Kanban ────────────────────────────────────────────────────────────── */
+/* O quadro rola lateralmente quando as cinco colunas não cabem. Dentro da
+   coluna, nunca: conteúdo que estoura a coluna é conteúdo que precisa quebrar. */
+.atv-kanban {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(calc(236 * var(--onface-u)), 1fr);
+  gap: calc(12 * var(--onface-u));
+  align-items: start;
+  overflow-x: auto;
+  padding-bottom: calc(8 * var(--onface-u));
+  scrollbar-width: thin;
+  scrollbar-color: #d6d9dc transparent;
+}
+.atv-kanban::-webkit-scrollbar { height: 8px; }
+.atv-kanban::-webkit-scrollbar-thumb { border-radius: 999px; background: #d6d9dc; }
+.atv-coluna {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: calc(200 * var(--onface-u));
+  padding: calc(14 * var(--onface-u));
+  border: 1px solid var(--ovg-paper-line);
+  border-radius: calc(18 * var(--onface-u));
+  background: var(--ovg-paper-sunken);
+  overflow-x: clip;
+}
+.atv-coluna-head {
+  display: flex;
+  align-items: center;
+  gap: calc(8 * var(--onface-u));
+  margin-bottom: calc(12 * var(--onface-u));
+}
+/* Uma marca de cor por coluna, fina. O fundo inteiro colorido virava semáforo. */
+.atv-coluna-marca {
+  width: calc(4 * var(--onface-u));
+  height: calc(14 * var(--onface-u));
+  border-radius: 999px;
+  background: #b6bcc3;
+}
+.atv-coluna[data-coluna="em_andamento"] .atv-coluna-marca { background: #3b82f6; }
+.atv-coluna[data-coluna="aguardando"] .atv-coluna-marca { background: #f0883e; }
+.atv-coluna[data-coluna="concluida"] .atv-coluna-marca { background: var(--ovg-green); }
+.atv-coluna[data-coluna="declinada"] .atv-coluna-marca { background: #c9ced3; }
+.atv-coluna-titulo { font-size: calc(13 * var(--onface-u)); font-weight: 700; }
+.atv-coluna-contador {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: calc(22 * var(--onface-u));
+  height: calc(20 * var(--onface-u));
+  padding-inline: calc(6 * var(--onface-u));
+  border-radius: 999px;
+  background: #fff;
+  color: #4b525a;
+  font-size: calc(10.5 * var(--onface-u));
+  font-weight: 700;
+}
+.atv-coluna-contador { margin-left: auto; }
+.atv-coluna-corpo { display: flex; flex-direction: column; gap: calc(8 * var(--onface-u)); }
+.atv-coluna-vazia { margin: calc(8 * var(--onface-u)) 0; color: #9aa1a8; font-size: calc(11.5 * var(--onface-u)); }
+.atv-cartao-kanban {
+  display: flex;
+  flex-direction: column;
+  gap: calc(9 * var(--onface-u));
+  min-width: 0;
+  padding: calc(12 * var(--onface-u));
+  border: 1px solid var(--ovg-paper-line);
+  border-left: calc(3 * var(--onface-u)) solid #d6d9dc;
+  border-radius: calc(12 * var(--onface-u));
+  background: #fff;
+  transition: box-shadow 160ms var(--ovg-ease), border-color 160ms var(--ovg-ease);
+}
+.atv-cartao-kanban:hover { border-color: #c9ced3; box-shadow: 0 calc(4 * var(--onface-u)) calc(12 * var(--onface-u)) rgba(9, 14, 20, 0.06); }
+.atv-cartao-kanban[data-prioridade="alta"] { border-left-color: var(--ovg-coral); }
+.atv-cartao-abrir {
+  display: flex;
+  flex-direction: column;
+  gap: calc(4 * var(--onface-u));
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.atv-cartao-titulo {
+  font-size: calc(12.5 * var(--onface-u));
+  font-weight: 700;
+  line-height: 1.35;
+  /* Título longo quebra em até três linhas; nunca empurra a coluna. */
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.atv-cartao-vinculo {
+  color: #868d95;
+  font-size: calc(11 * var(--onface-u));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.atv-cartao-rodape {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(8 * var(--onface-u));
+  min-width: 0;
+}
+.atv-cartao-rodape .atv-prazo { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+
+/* No kanban o resumo abre ao lado, como na tabela. O quadro continua rolando
+   na horizontal dentro do espaço que sobrou. */
+.atv-kanban-wrap {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: calc(16 * var(--onface-u));
+  transition: grid-template-columns 220ms var(--ovg-ease);
+}
+.atv-kanban-wrap[data-aberto="true"] { grid-template-columns: minmax(0, 1fr) calc(372 * var(--onface-u)); }
+.atv-kanban-wrap > .atv-resumo { align-self: start; }
+
+/* ── Janela de criação ─────────────────────────────────────────────────── */
+.atv-janela.atv-janela { width: min(calc(620 * var(--onface-u)), calc(100vw - 32px)); }
+.atv-busca-empresa { display: flex; flex-direction: column; gap: calc(12 * var(--onface-u)); }
+.atv-janela .atv-campo-busca {
+  border-color: var(--ovg-line);
+  background: var(--ovg-raised);
+  color: var(--ovg-ink-muted);
+}
+.atv-janela .atv-campo-busca input { color: var(--ovg-ink-invert); }
+.atv-lista-empresas {
+  display: flex;
+  flex-direction: column;
+  gap: calc(6 * var(--onface-u));
+  max-height: calc(320 * var(--onface-u));
+  overflow-y: auto;
+}
+.atv-opcao {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: calc(10 * var(--onface-u));
+  padding: calc(10 * var(--onface-u)) calc(12 * var(--onface-u));
+  border: 1px solid var(--ovg-line);
+  border-radius: calc(10 * var(--onface-u));
+  background: var(--ovg-raised);
+  color: var(--ovg-ink-invert);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 160ms var(--ovg-ease), background 160ms var(--ovg-ease);
+}
+.atv-opcao:hover { border-color: rgba(254, 79, 43, 0.5); background: #1a212a; }
+.atv-opcao-corpo { display: flex; flex-direction: column; min-width: 0; }
+.atv-opcao-nome { font-size: calc(13 * var(--onface-u)); font-weight: 700; }
+.atv-opcao-apoio { color: var(--ovg-ink-faint); font-size: calc(11 * var(--onface-u)); }
+.atv-empresa-escolhida {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  gap: calc(2 * var(--onface-u)) calc(12 * var(--onface-u));
+  padding: calc(12 * var(--onface-u)) calc(14 * var(--onface-u));
+  border: 1px solid var(--ovg-line);
+  border-radius: calc(12 * var(--onface-u));
+  background: var(--ovg-raised);
+}
+.atv-empresa-escolhida .ovg-ghost-btn { grid-row: 1 / span 2; grid-column: 2; align-self: center; }
+.atv-form-linha { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: calc(12 * var(--onface-u)); }
+.atv-janela select {
+  height: calc(38 * var(--onface-u));
+  border-color: var(--ovg-line);
+  background: var(--ovg-raised);
+  color: var(--ovg-ink-invert);
+  font-weight: 500;
+}
+.atv-erro {
+  margin: 0;
+  padding: calc(10 * var(--onface-u)) calc(12 * var(--onface-u));
+  border-radius: calc(10 * var(--onface-u));
+  background: rgba(231, 0, 11, 0.12);
+  color: #ff8f80;
+  font-size: calc(12 * var(--onface-u));
+}
+
+@media (max-width: 767px) {
+  .atv-cartoes { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .atv-filtros { flex-direction: column; align-items: stretch; }
+  .atv-visao { margin-left: 0; align-self: flex-start; }
+  .atv-head { display: none; }
+  .atv-linha { grid-template-columns: minmax(0, 1fr); row-gap: calc(8 * var(--onface-u)); }
+  .atv-kanban { grid-auto-columns: minmax(calc(230 * var(--onface-u)), 82vw); }
+  .atv-kanban-wrap,
+  .atv-kanban-wrap[data-aberto="true"] { grid-template-columns: minmax(0, 1fr); }
+  .atv-form-linha { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ═══ Resumo da atividade ════════════════════════════════════════════════
+   Painel de decisão, não de leitura: hierarquia curta, nada em corpo de
+   manchete, e o que muda com mais frequência (status) logo no topo. */
+.atv-resumo {
+  display: flex;
+  flex-direction: column;
+  gap: calc(14 * var(--onface-u));
+  align-self: start;
+  padding: calc(18 * var(--onface-u));
+  border: 1px solid var(--ovg-line);
+  border-radius: calc(18 * var(--onface-u));
+  background: var(--ovg-shell);
+  color: var(--ovg-ink-invert);
+}
+.atv-resumo-head { display: flex; align-items: center; justify-content: space-between; gap: calc(10 * var(--onface-u)); }
+.atv-resumo-eyebrow {
+  color: var(--ovg-ink-faint);
+  font-size: calc(10 * var(--onface-u));
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.atv-resumo-fechar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: calc(26 * var(--onface-u));
+  height: calc(26 * var(--onface-u));
+  border: 1px solid var(--ovg-line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ovg-ink-muted);
+  cursor: pointer;
+  transition: background 160ms var(--ovg-ease), color 160ms var(--ovg-ease);
+}
+.atv-resumo-fechar:hover { background: var(--ovg-raised); color: #fff; }
+.atv-resumo-titulo {
+  margin: 0;
+  font-size: calc(15.5 * var(--onface-u));
+  font-weight: 700;
+  line-height: 1.35;
+  letter-spacing: -0.008em;
+}
+.atv-resumo-desc { margin: 0; color: var(--ovg-ink-muted); font-size: calc(12 * var(--onface-u)); line-height: 1.5; }
+.atv-resumo-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(12 * var(--onface-u));
+}
+.atv-resumo-rotulo { color: var(--ovg-ink-muted); font-size: calc(11 * var(--onface-u)); font-weight: 500; }
+.atv-resumo .atv-status { border-color: var(--ovg-line); background: var(--ovg-raised); color: var(--ovg-ink-invert); }
+.atv-resumo .atv-status[data-status="concluida"] { color: #6ee787; }
+.atv-resumo-vinculo {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: calc(10 * var(--onface-u));
+  padding: calc(11 * var(--onface-u)) calc(12 * var(--onface-u));
+  border: 1px solid var(--ovg-line);
+  border-radius: calc(12 * var(--onface-u));
+  background: var(--ovg-raised);
+  color: inherit;
+  text-decoration: none;
+  transition: border-color 160ms var(--ovg-ease);
+}
+.atv-resumo-vinculo:hover { border-color: rgba(254, 79, 43, 0.45); }
+.atv-resumo-vinculo .atv-vinculo-icone { border-color: var(--ovg-line); background: var(--ovg-shell); color: var(--ovg-ink-muted); }
+.atv-resumo-vinculo-texto { display: flex; flex-direction: column; min-width: 0; }
+.atv-resumo-vinculo-tipo {
+  color: var(--ovg-coral);
+  font-size: calc(9.5 * var(--onface-u));
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+.atv-resumo-vinculo-nome {
+  font-size: calc(13 * var(--onface-u));
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.atv-resumo-vinculo-apoio { color: var(--ovg-ink-faint); font-size: calc(10.5 * var(--onface-u)); }
+.atv-resumo-vinculo svg:last-child { color: var(--ovg-ink-muted); }
+.atv-resumo-campos {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: calc(12 * var(--onface-u)) calc(14 * var(--onface-u));
+  margin: 0;
+}
+.atv-resumo-campos dt {
+  display: flex;
+  align-items: center;
+  gap: calc(5 * var(--onface-u));
+  color: var(--ovg-ink-faint);
+  font-size: calc(10 * var(--onface-u));
+}
+.atv-resumo-campos dd {
+  margin: calc(3 * var(--onface-u)) 0 0;
+  font-size: calc(12.5 * var(--onface-u));
+  font-weight: 600;
+  line-height: 1.35;
+}
+.atv-resumo-campos dd[data-tom="atrasado"] { color: #ff8f80; }
+.atv-resumo-campos dd[data-tom="hoje"] { color: var(--ovg-coral); }
+.atv-resumo-acoes { display: flex; flex-wrap: wrap; gap: calc(8 * var(--onface-u)); }
+.atv-btn-principal,
+.atv-btn-secundario {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: calc(6 * var(--onface-u));
+  height: calc(34 * var(--onface-u));
+  padding-inline: calc(14 * var(--onface-u));
+  border-radius: calc(9 * var(--onface-u));
+  font-family: inherit;
+  font-size: calc(12 * var(--onface-u));
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 160ms var(--ovg-ease), border-color 160ms var(--ovg-ease);
+}
+.atv-btn-principal { flex: 1; border: 0; background: var(--ovg-coral); color: #fff; }
+.atv-btn-principal:hover:not([disabled]) { background: var(--ovg-coral-hover); }
+.atv-btn-principal[disabled] { opacity: 0.55; cursor: not-allowed; }
+.atv-btn-secundario { border: 1px solid var(--ovg-line); background: transparent; color: var(--ovg-ink-invert); }
+.atv-btn-secundario:hover { background: var(--ovg-raised); }
+.atv-resumo-rodape { margin: 0; color: var(--ovg-ink-faint); font-size: calc(10 * var(--onface-u)); line-height: 1.5; }
+
+/* Com o resumo aberto a tabela perde largura: as colunas de apoio saem antes
+   de qualquer coisa espremer ou quebrar. */
+.ovg-pendencias[data-aberto="true"] .atv-head,
+.ovg-pendencias[data-aberto="true"] .atv-linha {
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) calc(140 * var(--onface-u));
+}
+.ovg-pendencias[data-aberto="true"] .atv-head { grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) calc(140 * var(--onface-u)) calc(150 * var(--onface-u)); }
+.ovg-pendencias[data-aberto="true"] .atv-linha .ovg-pend-dono { display: none; }
+.ovg-pendencias[data-aberto="true"] .atv-head span:nth-child(3) { display: none; }
+.ovg-pendencias[data-aberto="true"] .atv-board .ovg-pend-linha,
+.atv-board .ovg-pendencias[data-aberto="true"] .ovg-pend-linha { grid-template-columns: minmax(0, 1fr) calc(150 * var(--onface-u)); }

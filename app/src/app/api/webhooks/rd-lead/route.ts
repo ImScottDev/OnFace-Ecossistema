@@ -49,7 +49,11 @@ async function buscarMetaIdsStaging(
  */
 
 const ORG_SLUG = "scott-studio"; // slug interno da org Callface
-const SECRET = process.env.RD_WEBHOOK_SECRET || "callface-rd-2026";
+// FAIL-CLOSED (14/09): o default era um secret literal escrito neste
+// arquivo — público pra quem tem o repositório, ou seja, sem proteção
+// nenhuma quando a variável não estava setada. Mesmo padrão do webhook
+// de Stripe e do de Callface: sem segredo configurado, não processa.
+const SECRET = process.env.RD_WEBHOOK_SECRET || "";
 
 interface RdPayloadLead {
   email?: string;
@@ -61,7 +65,11 @@ export async function POST(req: NextRequest) {
   const token =
     req.nextUrl.searchParams.get("token") ||
     req.headers.get("x-webhook-secret");
-  if (SECRET && token !== SECRET) {
+  if (!SECRET) {
+    console.error("[RdLeadWebhook] RD_WEBHOOK_SECRET não configurado — recusando evento (fail-closed)");
+    return NextResponse.json({ ok: false, error: "webhook secret not configured" }, { status: 503 });
+  }
+  if (token !== SECRET) {
     return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
   }
 

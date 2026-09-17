@@ -29,8 +29,9 @@ export function Providers({
 }: {
   children: React.ReactNode;
   session: Session;
-  /** "cf2" evita o Toaster escuro e o Command K do tema antigo vazarem pro App Shell novo. */
-  variant?: "legacy" | "cf2";
+  /** "cf2" evita o Toaster escuro e o Command K do tema antigo vazarem pro App Shell novo.
+   * "onface" mantém a mesma busca e dados, apenas com a superfície ONFACE. */
+  variant?: "legacy" | "cf2" | "onface";
 }) {
   const [queryClient] = useState(
     () =>
@@ -76,20 +77,24 @@ export function Providers({
     <SessionProvider session={session}>
       <QueryClientProvider client={queryClient}>
         {children}
-        {variant === "cf2" ? (
+        {variant === "cf2" || variant === "onface" ? (
           <>
             <Toaster
               theme="light"
               position="top-right"
               toastOptions={{
-                style: {
+                style: variant === "onface" ? {
+                  background: "var(--onface-chrome)",
+                  border: "1px solid rgba(255,255,255,0.14)",
+                  color: "var(--onface-chrome-foreground)",
+                } : {
                   background: "var(--cf2-bg-surface)",
                   border: "1px solid var(--cf2-border-default)",
                   color: "var(--cf2-text-primary)",
                 },
               }}
             />
-            <Cf2CommandPalette />
+            <Cf2CommandPalette variant={variant === "onface" ? "onface" : "cf2"} />
           </>
         ) : (
           <>

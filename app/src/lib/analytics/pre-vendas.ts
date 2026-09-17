@@ -1,12 +1,21 @@
 /**
  * Cálculos reais do módulo Vendas → Pré-vendas (Figma node 211:4, 17/08).
- * Toda métrica opera sobre `crm2_pre_vendas_stage` (taxonomia nova, backfill
- * de 17/08 — ver scripts/migrate-pre-vendas-crm2.ts), nunca sobre `sdr_status`
- * bruto. Mesma disciplina das outras telas do CRM2: métrica sem fonte
- * confiável não entra aqui, fica pendência documentada no relatório.
+ * CORREÇÃO 01/09 — antes as métricas liam `crm2_pre_vendas_stage`, que é um
+ * SNAPSHOT do backfill de 17/08 e NUNCA é reescrito quando o lead se move no
+ * board. Dois efeitos reais: (1) a coluna está NULL em 2.368 dos 3.651 leads
+ * do banco de dev, (2) qualquer qualificação feita depois de 17/08 era
+ * invisível aqui. O board (`qualificacao/shared.ts`) já derivava a etapa ao
+ * vivo e documentava explicitamente "nunca usar a coluna pra isso" — este
+ * arquivo era o último lugar que ainda lia o snapshot, então KPI e board
+ * divergiam na mesma organização.
+ *
+ * Agora as duas fontes são a MESMA: `sdr_status` + existência de oportunidade,
+ * exatamente o critério de `sdrBoardColumn`. Mesma disciplina das outras telas
+ * do CRM2: métrica sem fonte confiável não entra aqui, fica pendência
+ * documentada no relatório.
  */
 import { db } from "@/lib/db";
-import { leads, negocios, negocioLeads } from "@/lib/db/schema";
+import { leads } from "@/lib/db/schema";
 import { eq, and, gte, lt, sql, isNull, isNotNull } from "drizzle-orm";
 
 export interface PulsoPreVendas {
@@ -32,11 +41,19 @@ export async function getPulsoPreVendas(orgId: string, inicio: Date, fim: Date):
     db.select({ total: sql<number>`count(*)` }).from(leads)
       .where(and(eq(leads.organizacaoId, orgId), eq(leads.tipo, "lead"), gte(leads.createdAt, inicio), lt(leads.createdAt, fim))),
     db.select({ total: sql<number>`count(*)` }).from(leads)
-      .where(and(eq(leads.organizacaoId, orgId), eq(leads.tipo, "lead"), eq(leads.crm2PreVendasStage, "qualificacao"))),
+      .where(and(eq(leads.organizacaoId, orgId), eq(leads.tipo, "lead"), eq(leads.sdrStatus, "qualifying"))),
     db.select({ total: sql<number>`count(*)` }).from(leads)
-      .where(and(eq(leads.organizacaoId, orgId), eq(leads.tipo, "lead"), eq(leads.crm2PreVendasStage, "qualificado"), gte(leads.createdAt, inicio), lt(leads.createdAt, fim))),
+      .where(and(
+        eq(leads.organizacaoId, orgId), eq(leads.tipo, "lead"),
+        // Os DOIS caminhos de qualificação contam: marcado 'qualified' pela SDR
+        // (SQL sem reunião, 01/09) ou já com oportunidade viva no closer.
+        sql`(${leads.sdrStatus} = 'qualified' OR EXISTS (SELECT 1 FROM negocio_leads nl JOIN negocios n ON n.id = nl.negocio_id WHERE nl.lead_id = ${leads.id} AND n.status NOT IN ('perdido','churned')))`,
+        gte(leads.createdAt, inicio), lt(leads.createdAt, fim))),
     db.select({ total: sql<number>`count(*)` }).from(leads)
-      .where(and(eq(leads.organizacaoId, orgId), eq(leads.tipo, "lead"), eq(leads.crm2PreVendasStage, "novo"), isNull(leads.lastContactAt), gte(leads.createdAt, inicio), lt(leads.createdAt, fim))),
+      .where(and(
+        eq(leads.organizacaoId, orgId), eq(leads.tipo, "lead"),
+        sql`COALESCE(${leads.sdrStatus}, 'pending') = 'pending'`,
+        isNull(leads.lastContactAt), gte(leads.createdAt, inicio), lt(leads.createdAt, fim))),
     db.execute(sql`
       SELECT avg(EXTRACT(epoch FROM (primeiro_negocio.created_at - l.created_at)) / 86400) AS media_dias
       FROM leads l
@@ -44,7 +61,7 @@ export async function getPulsoPreVendas(orgId: string, inicio: Date, fim: Date):
         SELECT n.created_at FROM negocio_leads nl JOIN negocios n ON n.id = nl.negocio_id
         WHERE nl.lead_id = l.id ORDER BY n.created_at ASC LIMIT 1
       ) primeiro_negocio ON true
-      WHERE l.organizacao_id = ${orgId} AND l.tipo = 'lead' AND l.crm2_pre_vendas_stage = 'qualificado'
+      WHERE l.organizacao_id = ${orgId} AND l.tipo = 'lead' AND COALESCE(l.sdr_status, 'pending') = 'qualified'
         AND l.created_at >= ${inicio.toISOString()} AND l.created_at < ${fim.toISOString()}
     `),
     // outreachStartedAt existe no schema mas está 100% nulo nos dados reais
@@ -95,17 +112,39 @@ export const CRM2_STAGE_LABELS: Record<string, string> = {
   desqualificado: "Desqualificado", sem_resposta: "Sem resposta", nutricao_retomar: "Nutrição/Retomar depois",
 };
 
+/**
+ * Distribuição por etapa — derivada ao vivo (01/09), mesma ordem de decisão de
+ * `sdrBoardColumn`: desqualificado > oportunidade viva > SQL > buckets de
+ * estagnação > qualificação > em contato > novo. Antes agrupava pela coluna
+ * snapshot, o que produzia um bucket "sem_stage" com 2.368 leads (65% da base)
+ * que não significava nada operacionalmente.
+ */
 export async function getDistribuicaoPorStatus(orgId: string): Promise<DistribuicaoItem[]> {
-  const rows = await db
-    .select({ stage: leads.crm2PreVendasStage, total: sql<number>`count(*)` })
-    .from(leads)
-    .where(and(eq(leads.organizacaoId, orgId), eq(leads.tipo, "lead")))
-    .groupBy(leads.crm2PreVendasStage)
-    .orderBy(sql`count(*) desc`);
-  return rows.map((r) => {
-    const key = r.stage || "sem_stage";
-    return { key, label: CRM2_STAGE_LABELS[key] || key, total: Number(r.total) };
-  });
+  const rows = await db.execute(sql`
+    SELECT etapa, count(*)::int AS total
+    FROM (
+      SELECT CASE
+        WHEN COALESCE(l.sdr_status, 'pending') = 'disqualified' THEN 'desqualificado'
+        WHEN EXISTS (SELECT 1 FROM negocio_leads nl JOIN negocios n ON n.id = nl.negocio_id
+                     WHERE nl.lead_id = l.id AND n.status NOT IN ('perdido','churned')) THEN 'qualificado'
+        WHEN COALESCE(l.sdr_status, 'pending') = 'qualified' THEN 'qualificado'
+        WHEN COALESCE(l.sdr_status, 'pending') = 'sdr_sem_retorno' THEN 'sem_resposta'
+        WHEN COALESCE(l.sdr_status, 'pending') IN ('sdr_sem_interesse','sdr_retomar_depois') THEN 'nutricao_retomar'
+        WHEN COALESCE(l.sdr_status, 'pending') = 'qualifying' THEN 'qualificacao'
+        WHEN COALESCE(l.sdr_status, 'pending') = 'contacted' THEN 'em_contato'
+        ELSE 'novo'
+      END AS etapa
+      FROM leads l
+      WHERE l.organizacao_id = ${orgId} AND l.tipo = 'lead'
+    ) t
+    GROUP BY etapa
+    ORDER BY total DESC
+  `);
+  return (rows as unknown as { etapa: string; total: number }[]).map((r) => ({
+    key: r.etapa,
+    label: CRM2_STAGE_LABELS[r.etapa] || r.etapa,
+    total: Number(r.total),
+  }));
 }
 
 /** Fatos históricos preservados no De/Para (crm2_reuniao_realizada_em/crm2_cliente_convertido_em/crm2_no_show_em) — usado só pra badge informativa no card do lead, nunca pra recalcular a etapa atual. */

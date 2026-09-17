@@ -7,8 +7,8 @@
 // URL, nunca por ID sequencial.
 import { Hono } from "hono";
 import { db } from "@/lib/db";
-import { fulfillments, fulfillmentFormularios, fulfillmentLinhasPortabilidade, fulfillmentRamais } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { fulfillments, fulfillmentFormularios, fulfillmentItens, fulfillmentLinhasPortabilidade, fulfillmentRamais } from "@/lib/db/schema";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import fs from "fs";
 import path from "path";
@@ -140,6 +140,7 @@ const respostasSchema = z
     filas: z.string().optional(),
     regrasAtendimento: z.string().optional(),
     telefonesIp: z.array(z.record(z.string(), z.any())).optional(),
+    whiteLabel: z.record(z.string(), z.any()).optional(),
   })
   .catchall(z.any()); // permissivo: campo novo do processo real não deve ser rejeitado
 
@@ -246,6 +247,17 @@ app.post("/fulfillment-formulario/:publicToken", async (c) => {
     await materializarLinhasERamais(fulfillment.id, fulfillment.organizacaoId, parsed.data.respostas);
   } catch (err) {
     console.error(`[fulfillment-formulario] falha ao materializar linhas/ramais do fulfillment ${fulfillment.id}:`, err);
+  }
+
+  // White Label não é concluído pelo envio do formulário: ele apenas passa
+  // para revisão interna, no item que representa a validação dos materiais.
+  if (fulfillment.serviceFamily === "WHITE_LABEL") {
+    await db.update(fulfillmentItens)
+      .set({ status: "VALIDATION", updatedAt: new Date() })
+      .where(and(
+        eq(fulfillmentItens.fulfillmentId, fulfillment.id),
+        eq(fulfillmentItens.titulo, "Receber e validar materiais e informações do cliente"),
+      ));
   }
 
   // Notificação real ao responsável + atividade (fire-and-forget, nunca

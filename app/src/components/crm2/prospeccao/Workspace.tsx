@@ -4,9 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import {
-  AlertTriangle, ArrowUpRight, Building2, CheckCircle2, ChevronDown,
-  ExternalLink, KanbanSquare, List, ListFilter, MessageSquareReply,
-  Search, Sparkles, UsersRound, X,
+  AlertTriangle, Building2, ChevronDown,
+  ExternalLink, KanbanSquare, List, ListFilter,
+  Search, X,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -16,22 +16,18 @@ import {
   BULK_ACTIONS, PROSPECCAO_STATUS, resolveProspeccaoStatus,
   type BulkActionKey, type ProspeccaoLead,
 } from "./shared";
+import { porRecenciaDesc } from "@/lib/crm/qualificacao-colunas";
 import { ImportModal } from "./ImportModal";
 import { NovoProspectModal } from "./NovoProspectModal";
 import { ProspeccaoDrawer } from "./ProspeccaoDrawer";
 import { OwnerPicker } from "./OwnerPicker";
-import { corAvatarEmpresa, iniciaisEmpresa } from "@/components/crm2/shared/avatar";
-import { Cf2Card } from "@/components/crm2/ui/Card";
+import { corAvatarEmpresa, iniciaisEmpresa, TEXTO_SOBRE_AVATAR } from "@/components/crm2/shared/avatar";
 import { Cf2Button } from "@/components/crm2/ui/Button";
-import { Cf2Input } from "@/components/crm2/ui/Input";
-import { Cf2Tabs, Cf2TabsList, Cf2TabsTrigger } from "@/components/crm2/ui/Tabs";
+import { DarkFilterSelect, DarkItem } from "@/components/crm2/shared/DarkFilterSelect";
+import { Cf2SelectBox } from "@/components/crm2/shared/SelectBox";
 import {
   Cf2Select, Cf2SelectContent, Cf2SelectItem, Cf2SelectTrigger, Cf2SelectValue,
 } from "@/components/crm2/ui/Select";
-import {
-  Cf2Table, Cf2TableBody, Cf2TableCell, Cf2TableHead, Cf2TableHeader, Cf2TableRow,
-} from "@/components/crm2/ui/Table";
-
 interface Lista { id: string; nome: string; cor: string; count: number }
 interface CadenciaDef { id: string; nome: string; totalSteps: number }
 interface LabelDef { id: string; nome: string; cor: string }
@@ -49,11 +45,6 @@ interface BoardResponse {
   cadenciasPerformance: CadenciaPerformance[];
 }
 
-const EMPTY_KPIS: BoardResponse["kpis"] = {
-  ativos: 0, emCadencia: 0, aguardandoResposta: 0, responderam: 0,
-  qualificados: 0, conversaoPct: 0, semContato: 0, semCadencia: 0,
-  errosCadencia: 0,
-};
 const DATE_OPTIONS: { value: DateFilter; label: string }[] = [
   { value: "all", label: "Todo o período" },
   { value: "today", label: "Hoje" },
@@ -73,6 +64,9 @@ export function Cf2ProspeccaoWorkspace() {
   const [dateFilter, setDateFilter] = useState<DateFilter>("all");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [drawerLeadId, setDrawerLeadId] = useState<string | null>(null);
+  // Prospect arrastado pra coluna Qualificado: precisa escolher destino antes
+  // de gravar (Pré-vendas vs criar oportunidade), então fica em espera aqui.
+  const [qualificarProspectId, setQualificarProspectId] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [novoOpen, setNovoOpen] = useState(false);
   const [bulkMenu, setBulkMenu] = useState<BulkActionKey | null>(null);
@@ -111,10 +105,6 @@ export function Cf2ProspeccaoWorkspace() {
   });
 
   const allLeads = useMemo(() => data?.leads ?? [], [data?.leads]);
-  // Compatível com uma API local que ainda esteja reiniciando sobre o
-  // contrato anterior: nunca deixa `undefined` vazar para a interface.
-  const kpis = { ...EMPTY_KPIS, ...(data?.kpis ?? {}) };
-
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
     return allLeads.filter((lead) => {
@@ -158,6 +148,57 @@ export function Cf2ProspeccaoWorkspace() {
     onSuccess: () => { invalidate(); toast.success("Responsável atualizado."); },
     onError: () => toast.error("Não foi possível atribuir o responsável"),
   });
+
+  const moverEtapa = useMutation({
+    mutationFn: async ({ leadId, sdrStatus }: { leadId: string; sdrStatus: string }) => {
+      const response = await fetch(`/api/leads/${leadId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sdrStatus }),
+      });
+      if (!response.ok) throw new Error("Não foi possível mover o prospect");
+    },
+    onSuccess: () => invalidate(),
+    onError: (error) => toast.error(error instanceof Error ? error.message : "Não foi possível mover"),
+  });
+
+  /**
+   * Qualificar prospect pelo board (01/09) — mesmas duas rotas do
+   * `ProspeccaoDrawer`, sem duplicar regra: Pré-vendas grava
+   * `sdr_status='qualified'`; oportunidade chama `converter-oportunidade`.
+   */
+  const qualificarProspect = useMutation({
+    mutationFn: async ({ leadId, destino }: { leadId: string; destino: "pre_vendas" | "oportunidade" }) => {
+      const url = destino === "pre_vendas" ? `/api/leads/${leadId}` : `/api/leads/${leadId}/converter-oportunidade`;
+      const init: RequestInit = destino === "pre_vendas"
+        ? { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sdrStatus: "qualified" }) }
+        : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ semReuniao: true }) };
+      const response = await fetch(url, init);
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err?.error || "Não foi possível qualificar");
+      }
+      return destino;
+    },
+    onSuccess: (destino) => {
+      toast.success(destino === "pre_vendas" ? "Enviado para Qualificado (SQL) em Pré-vendas." : "Oportunidade criada no Pipeline.");
+      setQualificarProspectId(null);
+      invalidate();
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : "Não foi possível qualificar"),
+  });
+
+  /** Drop de card numa coluna do Kanban. */
+  const handleDropProspect = (leadId: string, statusKey: string) => {
+    const status = PROSPECCAO_STATUS.find((item) => item.key === statusKey);
+    if (!status) return;
+    if (statusKey === "qualificado") { setQualificarProspectId(leadId); return; }
+    if (status.dropStatus == null) {
+      toast.info("Em cadência não é etapa manual — use \"Adicionar à cadência\".");
+      return;
+    }
+    moverEtapa.mutate({ leadId, sdrStatus: status.dropStatus });
+  };
 
   useEffect(() => {
     const abrirNovo = () => setNovoOpen(true);
@@ -268,143 +309,98 @@ export function Cf2ProspeccaoWorkspace() {
   });
 
   return (
-    <div className="flex flex-col gap-5 pb-6">
-      {/* Conteúdo de DASHBOARD (números, comparativo) usa o vocabulário do
-          shadcndashboard — cards elevados com selo de ícone colorido —,
-          não o vocabulário de LISTA do Circle (linhas achatadas). São
-          referências diferentes pra tipos de conteúdo diferentes; ver
-          decisão registrada no mapa mestre CRM2. */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-        <Metric icon={UsersRound} label="Prospects na máquina" value={kpis.ativos} detail={`${listas.length} lista${listas.length === 1 ? "" : "s"}`} />
-        <Metric icon={Sparkles} label="Em follow-up" value={kpis.emCadencia} detail={`${kpis.aguardandoResposta} aguardando resposta`} />
-        <Metric icon={MessageSquareReply} label="Responderam" value={kpis.responderam} detail="Precisam de decisão" tone="attention" />
-        <Metric icon={CheckCircle2} label="Qualificados" value={kpis.qualificados} detail="Enviados para Pré-vendas" tone="success" />
-        <Metric icon={ArrowUpRight} label="Conversão outbound" value={`${kpis.conversaoPct}%`} detail="Base → Pré-vendas" accent />
-      </div>
-
-      {/* Um único painel "Operação agora" em vez de 2 blocos desbalanceados
-          lado a lado — evita o buraco de espaço em branco quando não há
-          follow-up com dado (era o problema real do layout anterior). */}
-      <div className="rounded-[var(--cf2-radius-lg)] border overflow-hidden" style={{ borderColor: "var(--cf2-border-default)", background: "var(--cf2-bg-surface)" }}>
-        <div className="grid lg:grid-cols-[minmax(0,1.7fr)_minmax(260px,1fr)]">
-          <div className="p-4 lg:border-r" style={{ borderColor: "var(--cf2-border-default)" }}>
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <h2 className="text-[13px] font-semibold" style={{ color: "var(--cf2-text-primary)" }}>Follow-ups em execução</h2>
-              <Link href="/automacoes/cadencias" className="flex items-center gap-1 text-[12px] font-medium shrink-0 transition-opacity hover:opacity-70" style={{ color: "var(--cf2-success-text)" }}>
-                Gerenciar <ArrowUpRight className="h-3.5 w-3.5" />
-              </Link>
-            </div>
-            {data?.cadenciasPerformance?.length ? (
-              <Cf2Table className="min-w-[560px]">
-                <Cf2TableHeader>
-                  <Cf2TableRow className="hover:bg-transparent">
-                    <Cf2TableHead>Follow-up</Cf2TableHead>
-                    <Cf2TableHead>Inscritos</Cf2TableHead>
-                    <Cf2TableHead>Ativos</Cf2TableHead>
-                    <Cf2TableHead>Respostas</Cf2TableHead>
-                    <Cf2TableHead>Pré-vendas</Cf2TableHead>
-                  </Cf2TableRow>
-                </Cf2TableHeader>
-                <Cf2TableBody>
-                  {data.cadenciasPerformance.slice(0, 5).map((cadence) => (
-                    <Cf2TableRow key={cadence.id} className="hover:bg-transparent">
-                      <Cf2TableCell className="font-semibold">{cadence.nome}</Cf2TableCell>
-                      <Cf2TableCell className="tabular-nums">{cadence.matriculados}</Cf2TableCell>
-                      <Cf2TableCell className="tabular-nums">{cadence.ativos}</Cf2TableCell>
-                      <Cf2TableCell className="tabular-nums">{cadence.responderam}</Cf2TableCell>
-                      <Cf2TableCell className="font-semibold tabular-nums" style={{ color: "var(--cf2-success-text)" }}>{cadence.qualificados}</Cf2TableCell>
-                    </Cf2TableRow>
-                  ))}
-                </Cf2TableBody>
-              </Cf2Table>
-            ) : (
-              <div className="flex items-center justify-between gap-3 rounded-[var(--cf2-radius-md)] p-3" style={{ background: "var(--cf2-bg-surface-muted)" }}>
-                <p className="text-[12.5px]" style={{ color: "var(--cf2-text-secondary)" }}>Nenhum follow-up com prospects inscritos ainda.</p>
-                <Cf2Button size="sm" variant="secondary" asChild>
-                  <Link href="/automacoes/cadencias">Criar follow-up</Link>
-                </Cf2Button>
-              </div>
+    <div className="h-full flex flex-col gap-4 min-h-0">
+      {/* Dashboard REMOVIDO em 01/09 por decisão do Kauã. Tinha 5 cards de
+          KPI + painel "Follow-ups em execução" + "Atenção agora". Motivo dele:
+          Pré-vendas é o padrão do módulo e mostra SÓ o board (kanban ou
+          tabela) com filtros — Prospecção mostrava um dashboard antes do
+          board, então trocar de pipeline mudava a natureza da tela.
+          O endpoint continua devolvendo `kpis` (contrato intacto, nada
+          quebrado pra quem consome), mas a tela não lê mais. Análise de
+          outbound é assunto de Insights, não do workspace operacional. */
+      }
+      {/* MESMO cabeçalho de filtros de Pré-vendas (01/09): busca escura +
+          faixa rolável de DarkFilterSelect + alternador Kanban/Tabela.
+          Antes era `Cf2Card` no tema CLARO com `Cf2Input`/`FilterSelect`, e
+          por isso trocar de pipeline mudava cor, altura e fonte dos controles.
+          `DarkFilterSelect` já era compartilhado entre Pré-vendas e Pipeline —
+          Prospecção era a única fora do padrão. */}
+      <div className="flex flex-col gap-3 shrink-0">
+        <div className="flex items-center gap-2">
+          <div className="relative shrink-0">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none" style={{ color: "var(--cf2-chrome-text-secondary)" }} />
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Buscar prospect, empresa, cargo..."
+              aria-label="Buscar prospects"
+              className="w-56 sm:w-80 pl-8 pr-7 py-1.5 rounded-lg text-[12px] outline-none"
+              style={{ background: "rgba(255,255,255,0.06)", border: "1px solid var(--cf2-chrome-border-subtle)", color: "var(--cf2-chrome-text-primary)" }}
+            />
+            {search && (
+              <button onClick={() => setSearch("")} aria-label="Limpar busca" className="absolute right-2 top-1/2 -translate-y-1/2" style={{ color: "var(--cf2-chrome-text-secondary)" }}>
+                <X className="w-3 h-3" />
+              </button>
             )}
           </div>
 
-          <div className="p-4 flex flex-col gap-1" style={{ background: "var(--cf2-bg-surface-subtle)" }}>
-            <h2 className="text-[13px] font-semibold mb-1.5" style={{ color: "var(--cf2-text-primary)" }}>Atenção agora</h2>
-            <AlertChip value={kpis.semCadencia} label="prospects sem follow-up" onClick={() => setCadenciaFilter("sem")} />
-            <AlertChip value={kpis.semContato} label="sem telefone e e-mail" />
-            <AlertChip value={kpis.responderam} label="respostas aguardando decisão" onClick={() => setStatusFilter("respondeu")} />
-            <AlertChip value={kpis.errosCadencia} label="follow-ups com falha" />
+          <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto cf2-hide-scrollbar">
+            <DarkFilterSelect value={listaFilter} onChange={setListaFilter} label="Lista" placeholder="Todas" aria-label="Todas">
+              <DarkItem value="todas">Todas</DarkItem>
+              {listas.map((lista) => <DarkItem key={lista.id} value={lista.id}>{lista.nome} ({lista.count})</DarkItem>)}
+            </DarkFilterSelect>
+            <DarkFilterSelect value={statusFilter} onChange={setStatusFilter} label="Status" placeholder="Todos" aria-label="Todos">
+              <DarkItem value="todos">Todos</DarkItem>
+              {PROSPECCAO_STATUS.map((status) => <DarkItem key={status.key} value={status.key}>{status.label}</DarkItem>)}
+            </DarkFilterSelect>
+            <DarkFilterSelect value={cadenciaFilter} onChange={(value) => setCadenciaFilter(value as typeof cadenciaFilter)} label="Follow-up" placeholder="Todos" aria-label="Todos">
+              <DarkItem value="todas">Todos</DarkItem>
+              <DarkItem value="ativas">Ativos</DarkItem>
+              <DarkItem value="sem">Sem follow-up</DarkItem>
+            </DarkFilterSelect>
+            <DarkFilterSelect value={respFilter} onChange={setRespFilter} label="Responsável" placeholder="Todos" aria-label="Todos">
+              <DarkItem value="todos">Todos</DarkItem>
+              {currentUserId && <DarkItem value="meu">Meus prospects</DarkItem>}
+              {usuarios.map((usuario) => <DarkItem key={usuario.id} value={usuario.id}>{usuario.nome}</DarkItem>)}
+            </DarkFilterSelect>
+            <DarkFilterSelect value={dateFilter} onChange={(value) => setDateFilter(value as DateFilter)} label="Período" placeholder="Todo o período" aria-label="Todo o período">
+              {DATE_OPTIONS.map((option) => <DarkItem key={option.value} value={option.value}>{option.label}</DarkItem>)}
+            </DarkFilterSelect>
+          </div>
+
+          <span className="shrink-0 text-[12px] tabular-nums" style={{ color: "var(--cf2-chrome-text-secondary)" }}>{filtered.length} de {allLeads.length}</span>
+
+          <Link href="/prospeccao/apollo" title="Buscar contatos no Apollo" className="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[12px] font-medium" style={{ background: "rgba(255,255,255,0.06)", border: "1px solid var(--cf2-chrome-border-subtle)", color: "var(--cf2-chrome-text-secondary)" }}>
+            Apollo <ExternalLink className="w-3.5 h-3.5" />
+          </Link>
+
+          {/* Alternador idêntico ao de Pré-vendas: dois ícones num trilho,
+              sem rótulo de texto. */}
+          <div className="flex gap-0.5 p-0.5 rounded-lg shrink-0" style={{ background: "rgba(255,255,255,0.06)" }}>
+            <button onClick={() => setView("kanban")} title="Visualização em quadro" aria-label="Visualização em quadro" className="p-1.5 rounded-md" style={{ background: view === "kanban" ? "var(--cf2-chrome-surface-active)" : "transparent", color: view === "kanban" ? "var(--cf2-chrome-text-primary)" : "var(--cf2-chrome-text-secondary)" }}>
+              <KanbanSquare className="w-3.5 h-3.5" />
+            </button>
+            <button onClick={() => setView("table")} title="Visualização em tabela" aria-label="Visualização em tabela" className="p-1.5 rounded-md" style={{ background: view === "table" ? "var(--cf2-chrome-surface-active)" : "transparent", color: view === "table" ? "var(--cf2-chrome-text-primary)" : "var(--cf2-chrome-text-secondary)" }}>
+              <List className="w-3.5 h-3.5" />
+            </button>
           </div>
         </div>
       </div>
 
-      <Cf2Card padding="0px" className="overflow-hidden">
-        <div className="flex flex-col gap-2.5 border-b p-3.5" style={{ borderColor: "var(--cf2-border-default)" }}>
-          <div className="relative w-full sm:max-w-[360px]">
-            <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 pointer-events-none" style={{ color: "var(--cf2-text-tertiary)" }} />
-            <Cf2Input
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Buscar pessoa, empresa, cargo ou contato"
-              aria-label="Buscar prospects"
-              className="h-9 pl-9"
-            />
-          </div>
-
-          <div className="flex items-center justify-between gap-3">
-          {/* Filtros em faixa rolável — evita o wrap desalinhado de 5
-              selects de largura variável (achado real 25/08, print do
-              Kauã: o 5º item ("Todo o período") sobrava sozinho numa 2ª
-              linha). Mesmo espírito do Circle: filtros não competem com o
-              resto do header por espaço, ficam na própria faixa. */}
-          <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto cf2-hide-scrollbar">
-            <FilterSelect value={listaFilter} onChange={setListaFilter} label="Lista" placeholder="Todas">
-              <Cf2SelectItem value="todas">Todas</Cf2SelectItem>
-              {listas.map((lista) => <Cf2SelectItem key={lista.id} value={lista.id}>{lista.nome} ({lista.count})</Cf2SelectItem>)}
-            </FilterSelect>
-            <FilterSelect value={statusFilter} onChange={setStatusFilter} label="Status" placeholder="Todos">
-              <Cf2SelectItem value="todos">Todos</Cf2SelectItem>
-              {PROSPECCAO_STATUS.map((status) => <Cf2SelectItem key={status.key} value={status.key}>{status.label}</Cf2SelectItem>)}
-            </FilterSelect>
-            <FilterSelect value={cadenciaFilter} onChange={(value) => setCadenciaFilter(value as typeof cadenciaFilter)} label="Follow-up" placeholder="Todos">
-              <Cf2SelectItem value="todas">Todos</Cf2SelectItem>
-              <Cf2SelectItem value="ativas">Ativos</Cf2SelectItem>
-              <Cf2SelectItem value="sem">Sem follow-up</Cf2SelectItem>
-            </FilterSelect>
-            <FilterSelect value={respFilter} onChange={setRespFilter} label="Responsável" placeholder="Todos">
-              <Cf2SelectItem value="todos">Todos</Cf2SelectItem>
-              {currentUserId && <Cf2SelectItem value="meu">Meus prospects</Cf2SelectItem>}
-              {usuarios.map((usuario) => <Cf2SelectItem key={usuario.id} value={usuario.id}>{usuario.nome}</Cf2SelectItem>)}
-            </FilterSelect>
-            <FilterSelect value={dateFilter} onChange={(value) => setDateFilter(value as DateFilter)} label="Período" placeholder="Todo o período">
-              {DATE_OPTIONS.map((option) => <Cf2SelectItem key={option.value} value={option.value}>{option.label}</Cf2SelectItem>)}
-            </FilterSelect>
-          </div>
-
-          <div className="flex items-center justify-between gap-2 xl:justify-end">
-            <span className="text-[12px] tabular-nums" style={{ color: "var(--cf2-text-tertiary)" }}>{filtered.length} de {allLeads.length}</span>
-            <Cf2Tabs value={view} onValueChange={(value) => setView(value as typeof view)}>
-              <Cf2TabsList>
-                <Cf2TabsTrigger value="table" className="gap-1.5"><List className="h-3.5 w-3.5" />Tabela</Cf2TabsTrigger>
-                <Cf2TabsTrigger value="kanban" className="gap-1.5"><KanbanSquare className="h-3.5 w-3.5" />Kanban</Cf2TabsTrigger>
-              </Cf2TabsList>
-            </Cf2Tabs>
-            <Link href="/prospeccao-legado" title="Busca Apollo disponível no módulo legado" className="flex h-9 items-center gap-1.5 rounded-[var(--cf2-radius-sm)] border px-3 text-[12px] font-semibold transition-colors hover:bg-[var(--cf2-bg-surface-muted)]" style={{ borderColor: "var(--cf2-border-default)", color: "var(--cf2-text-secondary)" }}>
-              Apollo <ExternalLink className="h-3.5 w-3.5" />
-            </Link>
-          </div>
-          </div>
-        </div>
-
+      {/* `flex flex-col` + `min-h-0` (01/09): a faixa de ações em massa fica
+          fixa e SÓ a área da view rola. No Kanban o scroll é por coluna; na
+          tabela é esta caixa que rola — a página em si não estica mais. */}
+      <div className="flex-1 min-h-0 flex flex-col">
         {selected.size > 0 && (
-          <div className="flex flex-col gap-2 border-b px-3.5 py-2.5 lg:flex-row lg:items-center lg:justify-between" style={{ borderColor: "var(--cf2-border-default)", background: "var(--cf2-bg-surface-muted)" }}>
-            <p className="text-[13px] font-semibold" style={{ color: "var(--cf2-text-primary)" }}>
+          <div className="flex flex-col gap-2 border-b px-3.5 py-2.5 lg:flex-row lg:items-center lg:justify-between" style={{ borderColor: "var(--cf2-chrome-border-subtle)", background: "rgba(255,255,255,0.06)" }}>
+            <p className="text-[13px] font-semibold" style={{ color: "var(--cf2-chrome-text-primary)" }}>
               {selected.size} prospect{selected.size === 1 ? "" : "s"} selecionado{selected.size === 1 ? "" : "s"}
             </p>
             <div className="flex flex-wrap items-center gap-1.5">
               {BULK_ACTIONS.map((action) => (
                 <BulkButton key={action.key} label={action.label} active={bulkMenu === action.key} onClick={() => setBulkMenu(bulkMenu === action.key ? null : action.key)} />
               ))}
-              <button onClick={() => setSelected(new Set())} aria-label="Limpar seleção" className="rounded-[var(--cf2-radius-sm)] p-2 transition-colors hover:bg-[var(--cf2-bg-surface)]" style={{ color: "var(--cf2-text-tertiary)" }}>
+              <button onClick={() => setSelected(new Set())} aria-label="Limpar seleção" className="rounded-[var(--cf2-radius-sm)] p-2 transition-colors hover:bg-[var(--cf2-chrome-surface-active)]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>
                 <X className="h-3.5 w-3.5" />
               </button>
             </div>
@@ -429,23 +425,55 @@ export function Cf2ProspeccaoWorkspace() {
           <div className="flex flex-col items-center gap-3 px-6 py-14 text-center">
             <AlertTriangle className="h-5 w-5" style={{ color: "var(--cf2-danger-text)" }} />
             <div>
-              <p className="text-[13px] font-semibold" style={{ color: "var(--cf2-text-primary)" }}>A operação outbound não carregou</p>
-              <p className="mt-1 text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>Verifique a API e tente novamente.</p>
+              <p className="text-[13px] font-semibold" style={{ color: "var(--cf2-chrome-text-primary)" }}>A operação outbound não carregou</p>
+              <p className="mt-1 text-[12px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Verifique a API e tente novamente.</p>
             </div>
             <Cf2Button variant="secondary" size="sm" onClick={() => refetch()}>Tentar novamente</Cf2Button>
           </div>
         ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center gap-2 px-6 py-14 text-center">
-            <ListFilter className="h-5 w-5" style={{ color: "var(--cf2-text-tertiary)" }} />
-            <p className="text-[13px] font-semibold" style={{ color: "var(--cf2-text-primary)" }}>Nenhum prospect neste recorte</p>
-            <p className="max-w-sm text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>Ajuste os filtros ou importe uma lista para alimentar a operação outbound.</p>
+            <ListFilter className="h-5 w-5" style={{ color: "var(--cf2-chrome-text-secondary)" }} />
+            <p className="text-[13px] font-semibold" style={{ color: "var(--cf2-chrome-text-primary)" }}>Nenhum prospect neste recorte</p>
+            <p className="max-w-sm text-[12px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Ajuste os filtros ou importe uma lista para alimentar a operação outbound.</p>
           </div>
         ) : view === "table" ? (
+          <div className="flex-1 min-h-0 overflow-auto">
           <ProspectsTable leads={filtered} selected={selected} allSelected={allSelected} usuariosById={usuariosById} usuarios={usuarios} onToggleAll={toggleAll} onToggle={toggleOne} onOpen={setDrawerLeadId} onAssignOwner={(leadId, responsavelId) => assignOwner.mutate({ leadId, responsavelId })} />
+          </div>
         ) : (
-          <ProspectsKanban leads={filtered} selected={selected} usuariosById={usuariosById} usuarios={usuarios} onToggle={toggleOne} onOpen={setDrawerLeadId} onAssignOwner={(leadId, responsavelId) => assignOwner.mutate({ leadId, responsavelId })} />
+          <ProspectsKanban leads={filtered} selected={selected} usuariosById={usuariosById} usuarios={usuarios} onToggle={toggleOne} onOpen={setDrawerLeadId} onAssignOwner={(leadId, responsavelId) => assignOwner.mutate({ leadId, responsavelId })} onDrop={handleDropProspect} />
         )}
-      </Cf2Card>
+      </div>
+
+      {qualificarProspectId && (
+        <div role="dialog" aria-modal="true" className="fixed inset-0 z-[60] flex items-center justify-center p-4" style={{ background: "rgba(15,23,42,0.5)" }} onClick={() => setQualificarProspectId(null)}>
+          <div className="w-full max-w-sm rounded-2xl p-6 flex flex-col gap-4" style={{ background: "var(--cf2-bg-surface)" }} onClick={(event) => event.stopPropagation()}>
+            <div>
+              <p className="text-lg font-bold" style={{ color: "var(--cf2-text-primary)" }}>Qualificar prospect</p>
+              <p className="text-[13px] mt-1" style={{ color: "var(--cf2-text-secondary)" }}>Para onde ele vai agora?</p>
+            </div>
+            <button
+              onClick={() => qualificarProspect.mutate({ leadId: qualificarProspectId, destino: "pre_vendas" })}
+              disabled={qualificarProspect.isPending}
+              className="text-left px-3.5 py-3 rounded-xl disabled:opacity-40"
+              style={{ background: "var(--cf2-bg-canvas)", border: "1px solid var(--cf2-border-default)" }}
+            >
+              <span className="block text-[13px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Enviar para Pré-vendas</span>
+              <span className="block text-[12px]" style={{ color: "var(--cf2-text-secondary)" }}>Entra como Qualificado (SQL), sem criar oportunidade.</span>
+            </button>
+            <button
+              onClick={() => qualificarProspect.mutate({ leadId: qualificarProspectId, destino: "oportunidade" })}
+              disabled={qualificarProspect.isPending}
+              className="text-left px-3.5 py-3 rounded-xl disabled:opacity-40"
+              style={{ background: "var(--cf2-bg-canvas)", border: "1px solid var(--cf2-border-default)" }}
+            >
+              <span className="block text-[13px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Criar oportunidade</span>
+              <span className="block text-[12px]" style={{ color: "var(--cf2-text-secondary)" }}>Vai direto pro Pipeline, pulando Pré-vendas.</span>
+            </button>
+            <button onClick={() => setQualificarProspectId(null)} className="text-[13px] font-semibold self-end" style={{ color: "var(--cf2-text-secondary)" }}>Cancelar</button>
+          </div>
+        </div>
+      )}
 
       <ProspeccaoDrawer leadId={drawerLeadId} open={!!drawerLeadId} onClose={() => setDrawerLeadId(null)} usuariosById={usuariosById} cadencias={cadencias} onChanged={invalidate} />
       <ImportModal open={importOpen} onClose={() => setImportOpen(false)} listas={listas} usuarios={usuarios} cadencias={cadencias} onImported={() => { invalidate(); qc.invalidateQueries({ queryKey: ["contato-listas"] }); }} />
@@ -454,72 +482,11 @@ export function Cf2ProspeccaoWorkspace() {
   );
 }
 
-function Metric({ icon: Icon, label, value, detail, accent, tone }: {
-  icon: typeof UsersRound; label: string; value: string | number; detail: string; accent?: boolean; tone?: "attention" | "success";
-}) {
-  const tint = accent ? "var(--cf2-success-text)" : tone === "attention" ? "var(--cf2-warning-text)" : tone === "success" ? "var(--cf2-success-text)" : "var(--cf2-accent-border)";
-  return (
-    <div
-      className="flex min-h-[108px] flex-col justify-between gap-3 rounded-[var(--cf2-radius-lg)] border p-4"
-      style={{ borderColor: "var(--cf2-border-default)", background: "var(--cf2-bg-surface)", boxShadow: "var(--cf2-shadow-card-sm)" }}
-    >
-      <div className="flex items-center justify-center rounded-full size-8" style={{ background: `color-mix(in srgb, ${tint} 15%, transparent)` }}>
-        <Icon className="h-4 w-4" style={{ color: tint }} />
-      </div>
-      <div>
-        <p className="text-2xl font-semibold tabular-nums" style={{ color: "var(--cf2-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>{value}</p>
-        <p className="mt-0.5 text-[12px] font-medium" style={{ color: "var(--cf2-text-secondary)" }}>{label}</p>
-        <p className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>{detail}</p>
-      </div>
-    </div>
-  );
-}
-
-// Chip com barra de acento à esquerda (não linha de texto plana) — dá peso
-// visual a item acionável de dashboard, na mesma lógica dos cards de KPI
-// acima (ícone/cor com significado), em vez de uma lista neutra de números.
-function AlertChip({ value, label, onClick }: { value: number; label: string; onClick?: () => void }) {
-  const active = value > 0;
-  const Comp = onClick ? "button" : "div";
-  return (
-    <Comp
-      onClick={onClick}
-      className="flex items-center gap-2.5 rounded-[var(--cf2-radius-sm)] px-2 py-2 text-left transition-colors"
-      style={{
-        background: active ? "color-mix(in srgb, var(--cf2-warning-text) 8%, transparent)" : "transparent",
-        cursor: onClick ? "pointer" : "default",
-      }}
-    >
-      <span className="w-1 self-stretch rounded-full shrink-0" style={{ background: active ? "var(--cf2-warning-text)" : "var(--cf2-border-default)" }} />
-      <span className="text-[15px] font-semibold tabular-nums shrink-0" style={{ color: active ? "var(--cf2-text-primary)" : "var(--cf2-text-tertiary)" }}>{value}</span>
-      <span className="flex-1 text-[12.5px]" style={{ color: "var(--cf2-text-secondary)" }}>{label}</span>
-      {onClick && <ArrowUpRight className="h-3.5 w-3.5 shrink-0" style={{ color: "var(--cf2-text-tertiary)" }} />}
-    </Comp>
-  );
-}
-
-// Rótulo dentro do próprio trigger ("Lista: Todas" em vez de só "Todas")
-// — sem isso, 3 selects mostrando "Todos" ao mesmo tempo ficam ambíguos
-// (achado real 25/08, print do Kauã).
-function FilterSelect({ value, onChange, label, placeholder, children }: {
-  value: string; onChange: (value: string) => void; label: string; placeholder: string; children: React.ReactNode;
-}) {
-  return (
-    <Cf2Select value={value} onValueChange={onChange}>
-      <Cf2SelectTrigger aria-label={label} className="h-9 shrink-0 w-auto max-w-none">
-        <span style={{ color: "var(--cf2-text-tertiary)" }}>{label}:</span>
-        <Cf2SelectValue placeholder={placeholder} />
-      </Cf2SelectTrigger>
-      <Cf2SelectContent>{children}</Cf2SelectContent>
-    </Cf2Select>
-  );
-}
-
 function Avatar({ seed, name, size = 22 }: { seed: string; name?: string | null; size?: number }) {
   return (
     <span
       className="flex shrink-0 items-center justify-center rounded-full font-bold"
-      style={{ width: size, height: size, fontSize: size * 0.42, background: corAvatarEmpresa(seed), color: "var(--cf2-text-on-accent)" }}
+      style={{ width: size, height: size, fontSize: Math.max(10, size * 0.42), background: corAvatarEmpresa(seed), color: TEXTO_SOBRE_AVATAR }}
     >
       {iniciaisEmpresa(name || "?")}
     </span>
@@ -542,16 +509,16 @@ function ProspectsTable({ leads, selected, allSelected, usuariosById, usuarios, 
 
   return (
     <div className="flex flex-col">
-      <div className="flex items-center gap-3 px-6 h-9 shrink-0" style={{ borderBottom: "1px solid var(--cf2-border-default)" }}>
-        <input aria-label="Selecionar todos os prospects visíveis" type="checkbox" checked={allSelected} onChange={onToggleAll} />
-        <span className="text-[11px] font-semibold" style={{ color: "var(--cf2-text-tertiary)" }}>Selecionar todos</span>
+      <div className="flex items-center gap-3 px-6 h-9 shrink-0" style={{ borderBottom: "1px solid var(--cf2-chrome-border-subtle)" }}>
+        <Cf2SelectBox checked={allSelected} onChange={onToggleAll} label="Selecionar todos os prospects visíveis" stopPropagation={false} />
+        <span className="text-[11px] font-semibold" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Selecionar todos</span>
       </div>
       {groups.map((group) => (
         <div key={group.status.key}>
-          <div className="flex items-center gap-2 px-6 h-9" style={{ background: "var(--cf2-bg-surface-muted)" }}>
+          <div className="flex items-center gap-2 px-6 h-9" style={{ background: "rgba(255,255,255,0.06)" }}>
             <span className="h-2 w-2 rounded-full shrink-0" style={{ background: group.status.color }} />
-            <h3 className="text-[12px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>{group.status.label}</h3>
-            <span className="text-[11px] tabular-nums" style={{ color: "var(--cf2-text-tertiary)" }}>{group.leads.length}</span>
+            <h3 className="text-[12px] font-bold" style={{ color: "var(--cf2-chrome-text-primary)" }}>{group.status.label}</h3>
+            <span className="text-[11px] tabular-nums" style={{ color: "var(--cf2-chrome-text-secondary)" }}>{group.leads.length}</span>
           </div>
           {group.leads.map((lead) => (
             <ProspectRow
@@ -582,76 +549,100 @@ function ProspectRow({ lead, owner, usuarios, selected, onToggle, onOpen, onAssi
       tabIndex={0}
       onClick={onOpen}
       onKeyDown={(event) => { if (event.key === "Enter") onOpen(); }}
-      className="group flex w-full items-center gap-3 h-11 px-6 cursor-pointer outline-none hover:bg-[var(--cf2-bg-surface-muted)]"
-      style={{ borderBottom: "1px solid var(--cf2-border-default)" }}
+      className="group flex w-full items-center gap-3 h-11 px-6 cursor-pointer outline-none hover:bg-[rgba(255,255,255,0.06)]"
+      style={{ borderBottom: "1px solid var(--cf2-chrome-border-subtle)" }}
     >
-      <input
-        aria-label={`Selecionar ${lead.nome}`}
-        type="checkbox"
-        checked={selected}
-        onClick={(event) => event.stopPropagation()}
-        onChange={onToggle}
-        className="shrink-0"
-      />
+      <Cf2SelectBox checked={selected} onChange={onToggle} label={`Selecionar ${lead.nome}`} />
       <Avatar seed={lead.id} name={fullName} size={22} />
       <div className="flex min-w-0 items-baseline gap-2 shrink-0 w-[190px]">
-        <span className="truncate text-[13px] font-semibold" style={{ color: "var(--cf2-text-primary)" }}>{fullName}</span>
+        <span className="truncate text-[13px] font-semibold" style={{ color: "var(--cf2-chrome-text-primary)" }}>{fullName}</span>
       </div>
-      <span className="hidden sm:block truncate text-[12px] w-[150px] shrink-0" style={{ color: "var(--cf2-text-tertiary)" }}>{lead.empresa || lead.cargo || "—"}</span>
+      <span className="hidden sm:block truncate text-[12px] w-[150px] shrink-0" style={{ color: "var(--cf2-chrome-text-secondary)" }}>{lead.empresa || lead.cargo || "—"}</span>
       <div className="min-w-0 flex-1 hidden md:block">
         <CadenceCell lead={lead} compact />
       </div>
       <div className="flex items-center gap-3 shrink-0 ml-auto">
-        {lead.listaNome && <span className="hidden lg:inline-block text-[11px] rounded-full px-2 py-0.5 font-medium" style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-secondary)" }}>{lead.listaNome}</span>}
-        <span className="hidden lg:inline-block text-[11px] tabular-nums w-10 text-right" style={{ color: "var(--cf2-text-tertiary)" }}>{lead.updatedAt ? relTime(lead.updatedAt) : "—"}</span>
-        <span className="hidden xl:inline-block text-[11px] tabular-nums w-[92px] text-right" style={{ color: "var(--cf2-text-tertiary)" }}>{formatNextAction(lead)}</span>
+        {lead.listaNome && <span className="hidden lg:inline-block text-[11px] rounded-full px-2 py-0.5 font-medium" style={{ background: "rgba(255,255,255,0.06)", color: "var(--cf2-chrome-text-secondary)" }}>{lead.listaNome}</span>}
+        <span className="hidden lg:inline-block text-[11px] tabular-nums w-10 text-right" style={{ color: "var(--cf2-chrome-text-secondary)" }}>{lead.updatedAt ? relTime(lead.updatedAt) : "—"}</span>
+        <span className="hidden xl:inline-block text-[11px] tabular-nums w-[92px] text-right" style={{ color: "var(--cf2-chrome-text-secondary)" }}>{formatNextAction(lead)}</span>
         <OwnerPicker ownerId={lead.responsavelId} ownerName={owner?.nome} usuarios={usuarios} onAssign={onAssignOwner} size={22} />
       </div>
     </div>
   );
 }
 
-function ProspectsKanban({ leads, selected, usuariosById, usuarios, onToggle, onOpen, onAssignOwner }: {
+/**
+ * Kanban de prospects — reescrito em 01/09 pro MESMO padrão do board de
+ * Pré-vendas (regra do Kauã: "pré-vendas é a nossa base"). Três diferenças
+ * concretas em relação à versão anterior:
+ *  1. coluna com `max-h-full` + área de cards `flex-1 overflow-y-auto min-h-0`
+ *     → o scroll vertical é DENTRO da coluna, a página não estica;
+ *  2. fundo/borda com os mesmos tokens de Pré-vendas (era `--cf2-chrome-bg`,
+ *     que sumia contra o fundo da página);
+ *  3. drag & drop real pra mover etapa, que simplesmente não existia aqui.
+ */
+function ProspectsKanban({ leads, selected, usuariosById, usuarios, onToggle, onOpen, onAssignOwner, onDrop }: {
   leads: ProspeccaoLead[]; selected: Set<string>; usuariosById: Map<string, { nome: string }>;
   usuarios: { id: string; nome: string }[];
   onToggle: (id: string) => void; onOpen: (id: string) => void; onAssignOwner: (leadId: string, userId: string | null) => void;
+  onDrop: (leadId: string, statusKey: string) => void;
 }) {
+  const [dragOver, setDragOver] = useState<string | null>(null);
+
   return (
-    <div className="overflow-x-auto p-3.5">
-      <div className="flex min-w-max gap-3">
-        {PROSPECCAO_STATUS.map((status) => {
-          const columnLeads = leads.filter((lead) => resolveProspeccaoStatus(lead).key === status.key);
-          return (
-            <section key={status.key} className="flex w-[272px] flex-col rounded-[var(--cf2-radius-lg)] border" style={{ borderColor: "var(--cf2-border-default)", background: "var(--cf2-bg-canvas)" }}>
-              <header className="flex items-center justify-between border-b px-3 py-2.5" style={{ borderColor: "var(--cf2-border-default)" }}>
-                <div className="flex items-center gap-2">
-                  <span className="h-2 w-2 rounded-full" style={{ background: status.color }} />
-                  <h3 className="text-[13px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>{status.label}</h3>
-                </div>
-                <span className="rounded-[var(--cf2-radius-sm)] px-1.5 py-0.5 text-[11px] font-bold tabular-nums" style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-tertiary)" }}>{columnLeads.length}</span>
-              </header>
-              <div className="flex min-h-[176px] flex-col gap-2 p-2">
-                {columnLeads.length === 0 && (
-                  <p className="px-2 py-5 text-center text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhum prospect</p>
-                )}
-                {columnLeads.map((lead) => (
-                  <ProspectCard
-                    key={lead.id}
-                    lead={lead}
-                    selected={selected.has(lead.id)}
-                    owner={lead.responsavelId ? usuariosById.get(lead.responsavelId)?.nome : undefined}
-                    ownerId={lead.responsavelId}
-                    usuarios={usuarios}
-                    onToggle={() => onToggle(lead.id)}
-                    onOpen={() => onOpen(lead.id)}
-                    onAssignOwner={(userId) => onAssignOwner(lead.id, userId)}
-                  />
-                ))}
+    <div className="h-full flex gap-3 min-h-0 overflow-x-auto pb-1">
+      {PROSPECCAO_STATUS.map((status) => {
+        const columnLeads = leads
+          .filter((lead) => resolveProspeccaoStatus(lead).key === status.key)
+          .sort(porRecenciaDesc);
+        const aceitaDrop = status.dropStatus !== null;
+        const isDragOver = dragOver === status.key;
+        return (
+          <section
+            key={status.key}
+            className="w-[300px] shrink-0 rounded-2xl flex flex-col max-h-full"
+            style={{
+              background: isDragOver ? `${status.color}10` : "var(--cf2-chrome-bg-alt)",
+              border: isDragOver ? `2px dashed ${status.color}` : "1px solid var(--cf2-chrome-border-subtle)",
+            }}
+            onDragOver={(e) => { if (aceitaDrop) e.preventDefault(); }}
+            onDragEnter={(e) => { if (aceitaDrop) { e.preventDefault(); setDragOver(status.key); } }}
+            onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOver(null); }}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDragOver(null);
+              const leadId = e.dataTransfer.getData("leadId");
+              if (leadId) onDrop(leadId, status.key);
+            }}
+          >
+            <div className="px-3 pt-3 pb-2 shrink-0 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: status.color }} />
+                <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: status.color }}>{status.label}</span>
               </div>
-            </section>
-          );
-        })}
-      </div>
+              <span className="text-[11px] font-bold px-2 py-0.5 rounded-full" style={{ background: "var(--cf2-chrome-surface-active)", border: "1px solid var(--cf2-chrome-border-subtle)", color: "var(--cf2-chrome-text-primary)" }}>{columnLeads.length}</span>
+            </div>
+            <div className="flex-1 p-2 space-y-2 overflow-y-auto min-h-0">
+              {columnLeads.map((lead) => (
+                <ProspectCard
+                  key={lead.id}
+                  lead={lead}
+                  selected={selected.has(lead.id)}
+                  owner={lead.responsavelId ? usuariosById.get(lead.responsavelId)?.nome : undefined}
+                  ownerId={lead.responsavelId}
+                  usuarios={usuarios}
+                  onToggle={() => onToggle(lead.id)}
+                  onOpen={() => onOpen(lead.id)}
+                  onAssignOwner={(userId) => onAssignOwner(lead.id, userId)}
+                />
+              ))}
+              {columnLeads.length === 0 && (
+                <div className="flex h-16 items-center justify-center text-[11px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Vazio</div>
+              )}
+            </div>
+          </section>
+        );
+      })}
     </div>
   );
 }
@@ -667,17 +658,21 @@ function ProspectCard({ lead, owner, ownerId, usuarios, selected, onToggle, onOp
       tabIndex={0}
       onClick={onOpen}
       onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") onOpen(); }}
-      className="flex flex-col gap-2 rounded-[var(--cf2-radius-md)] border p-2.5 cursor-pointer outline-none transition-colors hover:bg-[var(--cf2-bg-surface-muted)]"
-      style={{ background: "var(--cf2-bg-surface)", borderColor: selected ? "var(--cf2-accent-border)" : "var(--cf2-border-default)" }}
+      // Arraste pra mover etapa (01/09) — mesmo contrato do card de
+      // Pré-vendas: a coluna lê `leadId` do dataTransfer no onDrop.
+      draggable
+      onDragStart={(event) => event.dataTransfer.setData("leadId", lead.id)}
+      className="flex flex-col gap-2 rounded-[var(--cf2-radius-md)] border p-2.5 cursor-pointer outline-none transition-colors hover:bg-[rgba(255,255,255,0.06)]"
+      style={{ background: "var(--cf2-chrome-surface-active)", borderColor: selected ? "var(--cf2-accent-border)" : "var(--cf2-chrome-border-subtle)" }}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
           <Avatar seed={lead.id} name={fullName} size={20} />
-          <h4 className="truncate text-[13px] font-semibold" style={{ color: "var(--cf2-text-primary)" }}>{fullName}</h4>
+          <h4 className="truncate text-[13px] font-semibold" style={{ color: "var(--cf2-chrome-text-primary)" }}>{fullName}</h4>
         </div>
-        <input aria-label={`Selecionar ${lead.nome}`} type="checkbox" checked={selected} onClick={(event) => event.stopPropagation()} onChange={onToggle} className="shrink-0" />
+        <Cf2SelectBox checked={selected} onChange={onToggle} label={`Selecionar ${lead.nome}`} />
       </div>
-      <div className="flex items-center gap-1.5 text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>
+      <div className="flex items-center gap-1.5 text-[12px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>
         <Building2 className="h-3 w-3 shrink-0" />
         <span className="truncate">{lead.empresa || lead.cargo || "—"}</span>
       </div>
@@ -688,7 +683,7 @@ function ProspectCard({ lead, owner, ownerId, usuarios, selected, onToggle, onOp
         </div>
       )}
       <CadenceCell lead={lead} compact />
-      <div className="flex items-center justify-between text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>
+      <div className="flex items-center justify-between text-[11px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>
         <span>{lead.updatedAt ? relTime(lead.updatedAt) : "—"}</span>
         <OwnerPicker ownerId={ownerId} ownerName={owner} usuarios={usuarios} onAssign={onAssignOwner} size={18} />
       </div>
@@ -697,15 +692,15 @@ function ProspectCard({ lead, owner, ownerId, usuarios, selected, onToggle, onOp
 }
 
 function CadenceCell({ lead, compact = false }: { lead: ProspeccaoLead; compact?: boolean }) {
-  if (!lead.cadencia) return <span className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>Sem follow-up</span>;
+  if (!lead.cadencia) return <span className="text-[12px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Sem follow-up</span>;
   return (
     <div className="min-w-[118px]">
-      <p className={`${compact ? "text-[12px]" : "text-[13px]"} truncate font-semibold`} style={{ color: "var(--cf2-text-secondary)" }}>{lead.cadencia.definitionNome}</p>
+      <p className={`${compact ? "text-[12px]" : "text-[13px]"} truncate font-semibold`} style={{ color: "var(--cf2-chrome-text-secondary)" }}>{lead.cadencia.definitionNome}</p>
       <div className="mt-1 flex items-center gap-2">
-        <div className="h-1 flex-1 overflow-hidden rounded-full" style={{ background: "var(--cf2-bg-surface-muted)" }}>
+        <div className="h-1 flex-1 overflow-hidden rounded-full" style={{ background: "rgba(255,255,255,0.06)" }}>
           <div className="h-full rounded-full" style={{ width: `${Math.min(100, lead.cadencia.totalSteps ? (lead.cadencia.stepIndex / lead.cadencia.totalSteps) * 100 : 0)}%`, background: "var(--cf2-accent-border)" }} />
         </div>
-        <span className="text-[11px] tabular-nums" style={{ color: "var(--cf2-text-tertiary)" }}>{lead.cadencia.stepIndex}/{lead.cadencia.totalSteps}</span>
+        <span className="text-[11px] tabular-nums" style={{ color: "var(--cf2-chrome-text-secondary)" }}>{lead.cadencia.stepIndex}/{lead.cadencia.totalSteps}</span>
       </div>
     </div>
   );
@@ -713,13 +708,13 @@ function CadenceCell({ lead, compact = false }: { lead: ProspeccaoLead; compact?
 
 
 function MiniTag({ children }: { children: React.ReactNode }) {
-  return <span className="max-w-[118px] truncate rounded-[var(--cf2-radius-sm)] px-1.5 py-0.5 text-[10px] font-semibold" style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-secondary)" }}>{children}</span>;
+  return <span className="max-w-[118px] truncate rounded-[var(--cf2-radius-sm)] px-1.5 py-0.5 text-[10px] font-semibold" style={{ background: "rgba(255,255,255,0.06)", color: "var(--cf2-chrome-text-secondary)" }}>{children}</span>;
 }
 
 function LoadingState() {
   return (
     <div className="space-y-2 p-4" aria-label="Carregando prospects">
-      {Array.from({ length: 6 }).map((_, index) => <div key={index} className="h-11 animate-pulse rounded-[var(--cf2-radius-sm)]" style={{ background: "var(--cf2-bg-surface-muted)" }} />)}
+      {Array.from({ length: 6 }).map((_, index) => <div key={index} className="h-11 animate-pulse rounded-[var(--cf2-radius-sm)]" style={{ background: "rgba(255,255,255,0.06)" }} />)}
     </div>
   );
 }
@@ -762,16 +757,16 @@ function BulkActionPanel({ action, usuarios, listas, cadencias, labels, pending,
           : [];
 
   return (
-    <div className="flex flex-col gap-2 border-b px-3.5 py-3 sm:flex-row sm:items-center" style={{ borderColor: "var(--cf2-border-default)" }}>
+    <div className="flex flex-col gap-2 border-b px-3.5 py-3 sm:flex-row sm:items-center" style={{ borderColor: "var(--cf2-chrome-border-subtle)" }}>
       {destructive ? (
-        <p className="flex-1 text-[13px]" style={{ color: "var(--cf2-text-secondary)" }}>
+        <p className="flex-1 text-[13px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>
           {action === "pausar" ? "Pausar as cadências ativas dos prospects selecionados?" : "Desqualificar e retirar estes prospects da operação ativa?"}
         </p>
       ) : (
         <Cf2Select value={value} onValueChange={setValue}>
-          <Cf2SelectTrigger className="h-9 min-w-[240px]"><Cf2SelectValue placeholder="Selecione uma opção" /></Cf2SelectTrigger>
+          <Cf2SelectTrigger className="h-9 min-w-[240px]"><Cf2SelectValue placeholder="Selecione uma opção" aria-label="Selecione uma opção" /></Cf2SelectTrigger>
           <Cf2SelectContent>
-            {options.length === 0 && <div className="px-2 py-1.5 text-[13px]" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhuma opção cadastrada</div>}
+            {options.length === 0 && <div className="px-2 py-1.5 text-[13px]" style={{ color: "var(--cf2-chrome-text-secondary)" }}>Nenhuma opção cadastrada</div>}
             {options.map((option) => <Cf2SelectItem key={option.value} value={option.value}>{option.label}</Cf2SelectItem>)}
           </Cf2SelectContent>
         </Cf2Select>

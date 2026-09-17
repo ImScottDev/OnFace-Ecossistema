@@ -7,7 +7,7 @@ import { resolveFollowupOwnerId } from "@/lib/crm/sdr-escalation";
 import { syncNegocioValoresFromPropostas } from "@/lib/crm/sync-negocio-valores";
 import { syncOportunidadeFromNegocio } from "@/lib/crm/sync-domain-model";
 import { dispararAutomacoes } from "@/lib/crm/automacao-engine";
-import { avaliarEvidenciaWon, registrarEvidenciaManual } from "@/lib/crm/won-evidence";
+import { avaliarEvidenciaWon, registrarEvidenciaManual, aplicarEfeitosPosGanho } from "@/lib/crm/won-evidence";
 import { publicarEvento } from "@/lib/events/outbox";
 import { garantirItemComercialManual } from "@/lib/crm/composicao-comercial";
 import { listarOportunidadesIrmas } from "@/lib/crm/oportunidade-bundle";
@@ -673,45 +673,20 @@ app.patch("/negocios/:id", async (c) => {
         contratoId = novoContrato?.id;
       }
 
-      // Promote lead to cliente
-      if (currentNegocio.leadId) {
-        await db.update(leads).set({
-          tipo: "cliente",
-          clienteDesde: new Date(),
-          updatedAt: new Date(),
-        }).where(eq(leads.id, currentNegocio.leadId));
-      }
-
-      // Sino: avisa gestão + responsável que o negócio fechou (link pro card)
-      const { notificarNegocioGanho } = await import("@/lib/crm/notificar");
-      await notificarNegocioGanho(id);
-
-      // Eventos/Event Outbox: "DealWon" é o evento de maior valor do domínio
-      // (dispara CS/Onboarding, Financeiro, Analytics, Business Hub no
-      // blueprint — nenhum consumidor real desses ainda existe, mas o
-      // evento passa a existir de verdade a partir de agora) — best-effort.
-      await publicarEvento({
+      // Efeitos do ganho: PONTO ÚNICO, o mesmo que o Won automático usa
+      // (lib/crm/won-evidence.ts::aplicarEfeitosPosGanho). Antes, este bloco
+      // era uma cópia divergente: promovia o lead e publicava os eventos, mas
+      // não registrava a atividade na timeline, não materializava Pessoa e não
+      // colocava o cliente na carteira do CS — venda fechada na mão não
+      // existia pro pós-venda (achado 14/09).
+      await aplicarEfeitosPosGanho({
+        negocio: { ...currentNegocio, ganhoAt: updateData.ganhoAt as Date },
         organizacaoId: ctx.organizacaoId,
-        eventType: "DealWon",
-        aggregateType: "negocio",
-        aggregateId: id,
-        payload: {
-          leadId: currentNegocio.leadId,
-          contratoId: contratoId || null,
-          produto: typeof produtoNegocio === "string" ? produtoNegocio : null,
-          evidencias: evidencia.evidencias,
-          mrr: parsed.data.mrrFechado || currentNegocio.mrrEstimado,
-        },
+        produto: typeof produtoNegocio === "string" ? produtoNegocio : null,
+        evidencias: evidencia.evidencias,
+        motivo: evidencia.motivo,
+        contratoId: contratoId ?? null,
       });
-      if (currentNegocio.leadId) {
-        await publicarEvento({
-          organizacaoId: ctx.organizacaoId,
-          eventType: "CustomerCreated",
-          aggregateType: "lead",
-          aggregateId: currentNegocio.leadId,
-          payload: { negocioId: id, contratoId: contratoId || null },
-        });
-      }
 
       // Contract is now created above — carteira reads from contratos table directly
       contratoIdGanhoManual = contratoId ?? null;

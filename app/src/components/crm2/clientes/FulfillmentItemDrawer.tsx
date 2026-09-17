@@ -107,7 +107,7 @@ export function Cf2FulfillmentItemDrawer({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end">
+    <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 flex justify-end">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
       <div className="relative w-full sm:w-[440px] max-w-[92vw] h-full flex flex-col animate-slide-in-right" style={{ background: "var(--cf2-bg-canvas)", borderLeft: "1px solid var(--cf2-border-default)" }}>
         <div className="flex items-center justify-between px-5 py-3.5 shrink-0" style={{ borderBottom: "1px solid var(--cf2-border-default)", background: "var(--cf2-bg-surface)" }}>
@@ -158,7 +158,7 @@ export function Cf2FulfillmentItemDrawer({
               <div className="flex flex-col gap-2">
                 <input
                   autoFocus value={novoTitulo} onChange={(e) => setNovoTitulo(e.target.value)}
-                  placeholder="Título da tarefa" className="text-[12px] rounded-lg px-2.5 py-1.5 outline-none"
+                  placeholder="Título da tarefa" aria-label="Título da tarefa" className="text-[12px] rounded-lg px-2.5 py-1.5 outline-none"
                   style={{ border: "1px solid var(--cf2-border-default)", background: "var(--cf2-bg-surface)" }}
                 />
                 <div className="flex gap-2">
@@ -249,7 +249,7 @@ function ItemEditor({
           <textarea
             value={blockerReason} onChange={(e) => setBlockerReason(e.target.value)} onBlur={() => onPatch({ blockerReason: blockerReason || null })}
             rows={2} className="text-[11px] rounded-lg px-2 py-1.5 outline-none resize-none" style={{ border: "1px solid var(--cf2-border-default)", background: "var(--cf2-bg-surface)" }}
-            placeholder="Motivo do bloqueio"
+            placeholder="Motivo do bloqueio" aria-label="Motivo do bloqueio"
           />
           {item.blockedAt && <p className="text-[10px]" style={{ color: "var(--cf2-text-tertiary)" }}>Bloqueado desde {new Date(item.blockedAt).toLocaleDateString("pt-BR")}</p>}
         </div>

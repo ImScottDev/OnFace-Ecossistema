@@ -37,19 +37,65 @@ function monthBounds(ref: Date) {
 }
 
 /**
- * MRR fechado no mês atual x mês anterior (mesma fonte de `getFechadoPeriodo`
- * — ganho_at + mrr_fechado, já validada/corrigida nesta reconstrução).
- * Delta% = (atual - anterior) / anterior. anterior=0 → delta null (evita
- * divisão por zero / "infinito%" sem sentido).
+ * MRR ATIVO da carteira — soma dos serviços canônicos recorrentes que estão
+ * no portfólio e vivos. Mesma fonte que `lib/cs/metricas.ts` usa como MRR
+ * atual, pra que o herói da home e o módulo de CS nunca divirjam.
+ *
+ * O delta é reconstruído de `mrr_movimentos` na janela (MRR de 30 dias atrás
+ * = atual - movimento líquido do período), e não de uma foto histórica — a
+ * base não guarda snapshot diário de MRR. Sem movimento na janela o delta é
+ * `null`, nunca 0%: "não houve mexida" e "não sei" são coisas diferentes.
+ */
+export async function getMrrAtivo(orgId: string, janelaDias = 30) {
+  const [[ativo], [mov]] = await Promise.all([
+    db.execute<{ mrr: string }>(sql`
+      SELECT COALESCE(SUM(current_recurring_value), 0)::text AS mrr
+        FROM servicos_canonicos
+       WHERE organizacao_id = ${orgId}
+         AND portfolio_included = true
+         AND revenue_nature = 'MRR'
+         AND commercial_lifecycle = 'ACTIVE'`),
+    db.execute<{ liquido: string; qtd: string }>(sql`
+      SELECT COALESCE(SUM(delta), 0)::text AS liquido,
+             COUNT(*)::text                AS qtd
+        FROM mrr_movimentos
+       WHERE organizacao_id = ${orgId}
+         AND ocorrido_em >= now() - (${janelaDias} || ' days')::interval`),
+  ]);
+
+  const atual = Number(ativo?.mrr ?? 0);
+  const liquido = Number(mov?.liquido ?? 0);
+  const anterior = atual - liquido;
+  const temMovimento = Number(mov?.qtd ?? 0) > 0;
+  const deltaPct = temMovimento && anterior > 0 ? (liquido / anterior) * 100 : null;
+
+  return { atual, anterior, deltaPct, janelaDias };
+}
+
+/**
+ * MRR fechado no mês atual x MESMO PERÍODO do mês anterior (mesma fonte de
+ * `getFechadoPeriodo` — ganho_at + mrr_fechado, já validada/corrigida nesta
+ * reconstrução). Delta% = (atual - anterior) / anterior. anterior=0 → delta
+ * null (evita divisão por zero / "infinito%" sem sentido).
  */
 export async function getMrrComparativo(orgId: string, hoje = new Date()) {
   const atual = monthBounds(hoje);
   const mesAnteriorRef = new Date(hoje.getFullYear(), hoje.getMonth() - 1, 1);
   const anterior = monthBounds(mesAnteriorRef);
 
+  // Mês em curso é parcial: comparar os 8 dias já corridos contra os 30 do mês
+  // anterior produz uma queda que não existe (o dia 8 marcava -100%). O
+  // recorte do mês anterior para no mesmo dia do mês, então os dois lados
+  // cobrem a mesma fatia de calendário. `Math.min` cuida do mês curto — dia 31
+  // comparado contra fevereiro vira o fim de fevereiro, não o mês seguinte.
+  const diasNoMesAnterior = new Date(mesAnteriorRef.getFullYear(), mesAnteriorRef.getMonth() + 1, 0).getDate();
+  const diaCorte = Math.min(hoje.getDate(), diasNoMesAnterior);
+  const fimAnteriorParcial = new Date(mesAnteriorRef.getFullYear(), mesAnteriorRef.getMonth(), diaCorte);
+  fimAnteriorParcial.setHours(23, 59, 59, 999);
+
   const [fechadoAtual, fechadoAnterior] = await Promise.all([
     getFechadoPeriodo(orgId, atual.inicio, atual.fim),
-    getFechadoPeriodo(orgId, anterior.inicio, anterior.fim),
+    getFechadoPeriodo(orgId, anterior.inicio, fimAnteriorParcial),
   ]);
 
   const deltaPct = fechadoAnterior.recorrente > 0
@@ -515,6 +561,7 @@ export async function getImplantacaoResumo(orgId: string): Promise<ImplantacaoRe
 
 export interface CsResumo {
   clientesEmRisco: number;
+  tarefasAbertas: number;
   tarefasAtrasadas: number;
   renovacoesProximas30d: number;
 }
@@ -539,37 +586,50 @@ export interface CsResumo {
  * janela mais curta que o alerta geral do calendário.
  */
 export async function getCsResumo(orgId: string): Promise<CsResumo> {
-  const [row] = await db.execute<{ em_risco: number; tarefas_atrasadas: number }>(sql`
-    WITH clientes_ativos AS (
+  // Fonte canônica é o próprio módulo de CS (`cs_riscos` + tarefas com
+  // `empresa_id`), não uma releitura de faturas. Dois defeitos que isto
+  // corrige:
+  //
+  // 1. o JOIN antigo era `leads l ON l.id = t.lead_id`, e tarefa de CS nasce
+  //    no eixo empresa com `lead_id` nulo — a home mostrava 0 ações pendentes
+  //    com a fila de CS cheia. O COALESCE é resolvido numa CTE, nunca com OR
+  //    na condição de join (isso já travou o Postgres aqui uma vez).
+  // 2. "sinais de risco" contava fatura atrasada. Agora conta risco aberto de
+  //    severidade acionável: ATENCAO é ruído de fundo (SEM_INTERACAO pega 200+
+  //    contas por design) e não entra na fila, então também não vira alerta.
+  const [row] = await db.execute<{ em_risco: number; tarefas_abertas: number; tarefas_atrasadas: number }>(sql`
+    WITH carteira AS (
       SELECT DISTINCT sc.empresa_id
-      FROM servicos_canonicos sc
-      JOIN empresas e ON e.id = sc.empresa_id AND e.organizacao_id = ${orgId}
-      WHERE sc.portfolio_included = true AND sc.empresa_id IS NOT NULL
+        FROM servicos_canonicos sc
+        JOIN empresas e ON e.id = sc.empresa_id AND e.organizacao_id = ${orgId}
+       WHERE sc.portfolio_included = true AND sc.empresa_id IS NOT NULL
     ),
-    faturas_atrasadas AS (
-      SELECT COALESCE(f.empresa_id, a.empresa_id) AS empresa_id, COUNT(*)::int AS n
-      FROM faturas f
-      LEFT JOIN assinaturas a ON a.id = f.assinatura_id
-      WHERE f.status = 'aberta' AND COALESCE(f.vencimento, f.emitida_em) < now()
-      GROUP BY 1
+    tarefa_empresa AS (
+      SELECT COALESCE(t.empresa_id, l.empresa_id) AS empresa_id, t.vence_em
+        FROM tarefas t
+        LEFT JOIN leads l ON l.id = t.lead_id
+       WHERE t.organizacao_id = ${orgId} AND t.concluida = false
     )
     SELECT
-      (SELECT COUNT(*)::int
-        FROM clientes_ativos ca
-        JOIN faturas_atrasadas fa ON fa.empresa_id = ca.empresa_id
-        WHERE fa.n > 0
+      (SELECT COUNT(DISTINCT r.empresa_id)::int
+         FROM cs_riscos r
+         JOIN carteira c ON c.empresa_id = r.empresa_id
+        WHERE r.organizacao_id = ${orgId} AND r.status = 'ABERTO'
+          AND r.severidade IN ('CRITICO', 'EM_RISCO')
       ) AS em_risco,
-      (SELECT COUNT(*)::int
-        FROM tarefas t
-        JOIN leads l ON l.id = t.lead_id
-        WHERE l.empresa_id IN (SELECT empresa_id FROM clientes_ativos)
-          AND t.concluida = false AND t.vence_em IS NOT NULL AND t.vence_em < now()
+      (SELECT COUNT(*)::int FROM tarefa_empresa te
+         JOIN carteira c ON c.empresa_id = te.empresa_id
+      ) AS tarefas_abertas,
+      (SELECT COUNT(*)::int FROM tarefa_empresa te
+         JOIN carteira c ON c.empresa_id = te.empresa_id
+        WHERE te.vence_em IS NOT NULL AND te.vence_em < now()
       ) AS tarefas_atrasadas
   `);
 
   const renovacoes = await getCalendarioRenovacao(orgId, 30);
   return {
     clientesEmRisco: Number(row?.em_risco || 0),
+    tarefasAbertas: Number(row?.tarefas_abertas || 0),
     tarefasAtrasadas: Number(row?.tarefas_atrasadas || 0),
     renovacoesProximas30d: renovacoes.length,
   };

@@ -46,7 +46,7 @@ export function Cf2NovaPessoaModal({ onClose, onCriada, empresaId, empresaNome }
   });
 
   return (
-    <div className="fixed inset-0 flex items-center justify-center z-50 p-4" style={{ background: "rgba(15,23,42,0.45)" }} onClick={onClose}>
+    <div role="dialog" aria-modal="true" className="fixed inset-0 flex items-center justify-center z-50 p-4" style={{ background: "rgba(15,23,42,0.45)" }} onClick={onClose}>
       <div
         className="w-full max-w-md rounded-2xl p-5"
         style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}
@@ -54,26 +54,26 @@ export function Cf2NovaPessoaModal({ onClose, onCriada, empresaId, empresaNome }
       >
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-[16px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Nova Pessoa</h2>
-          <button onClick={onClose} style={{ color: "var(--cf2-text-tertiary)" }}><X className="w-4 h-4" /></button>
+          <button onClick={onClose} style={{ color: "var(--cf2-text-tertiary)" }} aria-label="Fechar"><X className="w-4 h-4" /></button>
         </div>
 
         <div className="space-y-2.5">
           <div className="grid grid-cols-2 gap-2.5">
-            <input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Nome *" autoFocus className="text-sm px-3 py-2 rounded-lg outline-none" style={inputStyle} />
-            <input value={sobrenome} onChange={(e) => setSobrenome(e.target.value)} placeholder="Sobrenome" className="text-sm px-3 py-2 rounded-lg outline-none" style={inputStyle} />
+            <input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Nome *" aria-label="Nome *" autoFocus className="text-sm px-3 py-2 rounded-lg outline-none" style={inputStyle} />
+            <input value={sobrenome} onChange={(e) => setSobrenome(e.target.value)} placeholder="Sobrenome" aria-label="Sobrenome" className="text-sm px-3 py-2 rounded-lg outline-none" style={inputStyle} />
           </div>
-          <input value={telefone} onChange={(e) => setTelefone(e.target.value)} placeholder="Telefone *" className="w-full text-sm px-3 py-2 rounded-lg outline-none" style={inputStyle} />
-          <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="E-mail" className="w-full text-sm px-3 py-2 rounded-lg outline-none" style={inputStyle} />
+          <input value={telefone} onChange={(e) => setTelefone(e.target.value)} placeholder="Telefone *" aria-label="Telefone *" className="w-full text-sm px-3 py-2 rounded-lg outline-none" style={inputStyle} />
+          <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="E-mail" aria-label="E-mail" className="w-full text-sm px-3 py-2 rounded-lg outline-none" style={inputStyle} />
           <div className="grid grid-cols-2 gap-2.5">
             <input
               value={empresaId ? (empresaNome ?? "") : empresa}
               onChange={(e) => { if (!empresaId) setEmpresa(e.target.value); }}
               readOnly={!!empresaId}
-              placeholder="Empresa"
+              placeholder="Empresa" aria-label="Empresa"
               className="text-sm px-3 py-2 rounded-lg outline-none disabled:opacity-70"
               style={inputStyle}
             />
-            <input value={cargo} onChange={(e) => setCargo(e.target.value)} placeholder="Cargo" className="text-sm px-3 py-2 rounded-lg outline-none" style={inputStyle} />
+            <input value={cargo} onChange={(e) => setCargo(e.target.value)} placeholder="Cargo" aria-label="Cargo" className="text-sm px-3 py-2 rounded-lg outline-none" style={inputStyle} />
           </div>
 
           {criarMutation.isError && <p className="text-[12px]" style={{ color: "var(--cf2-danger-text)" }}>{(criarMutation.error as Error).message}</p>}

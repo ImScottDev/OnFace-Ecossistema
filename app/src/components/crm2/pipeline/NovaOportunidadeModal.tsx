@@ -87,16 +87,16 @@ export function NovaOportunidadeModal({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(15,23,42,0.5)" }} onClick={handleClose}>
+    <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(15,23,42,0.5)" }} onClick={handleClose}>
       <div className="w-full max-w-md rounded-2xl p-6 flex flex-col gap-4" style={{ background: "var(--cf2-bg-surface)" }} onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between">
           <p className="text-lg font-bold" style={{ color: "var(--cf2-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>Nova oportunidade</p>
-          <button onClick={handleClose}><X className="w-4 h-4" style={{ color: "var(--cf2-text-tertiary)" }} /></button>
+          <button onClick={handleClose} aria-label="Fechar"><X className="w-4 h-4" style={{ color: "var(--cf2-text-tertiary)" }} /></button>
         </div>
 
         <div className="flex flex-col gap-1.5">
           <span className="text-[13px] font-semibold" style={{ color: "var(--cf2-text-primary)" }}>Nome da oportunidade *</span>
-          <input value={titulo} onChange={(e) => setTitulo(e.target.value)} placeholder="Ex: ACME — Callface AI" className="px-3 py-2 rounded-lg text-[13px] outline-none" style={{ background: "var(--cf2-bg-canvas)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }} />
+          <input value={titulo} onChange={(e) => setTitulo(e.target.value)} placeholder="Ex: ACME — Callface AI" aria-label="Ex: ACME — Callface AI" className="px-3 py-2 rounded-lg text-[13px] outline-none" style={{ background: "var(--cf2-bg-canvas)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }} />
         </div>
 
         <div className="flex flex-col gap-1.5">
@@ -112,7 +112,7 @@ export function NovaOportunidadeModal({
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: "var(--cf2-text-tertiary)" }} />
               <input
                 value={query} onChange={(e) => { setQuery(e.target.value); setSearchOpen(true); }} onFocus={() => setSearchOpen(true)} onBlur={() => setTimeout(() => setSearchOpen(false), 150)}
-                placeholder="Buscar lead pelo nome..." className="w-full pl-8 pr-3 py-2 rounded-lg text-[13px] outline-none" style={{ background: "var(--cf2-bg-canvas)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }}
+                placeholder="Buscar lead pelo nome..." aria-label="Buscar lead pelo nome" className="w-full pl-8 pr-3 py-2 rounded-lg text-[13px] outline-none" style={{ background: "var(--cf2-bg-canvas)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }}
               />
               {searchOpen && results.length > 0 && (
                 <div className="absolute z-10 mt-1 w-full rounded-lg overflow-hidden max-h-44 overflow-y-auto" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)", boxShadow: "0 8px 16px rgba(15,23,42,0.12)" }}>

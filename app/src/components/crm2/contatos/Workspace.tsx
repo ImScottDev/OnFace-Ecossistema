@@ -76,8 +76,8 @@ export function Cf2ContatosWorkspace() {
   const kpiCards = kpis
     ? [
         { label: "TOTAL DE PESSOAS", valor: kpis.totalPessoas, cor: "var(--cf2-text-primary)" },
-        { label: "LEADS", valor: kpis.leads, cor: "var(--cf2-warning-text)" },
-        { label: "CONTATOS", valor: kpis.contatos, cor: "#1e40af" },
+        { label: "LEADS", valor: kpis.leads, cor: "var(--cf2-text-primary)" },
+        { label: "CONTATOS", valor: kpis.contatos, cor: "var(--cf2-text-primary)" },
         { label: "CLIENTES", valor: kpis.clientes, cor: "var(--cf2-success-text)" },
         { label: "EMPRESAS", valor: kpis.empresas, cor: "var(--cf2-text-primary)" },
       ]
@@ -246,7 +246,7 @@ function TabelaEmpresas({ linhas, onAbrir }: { linhas: EmpresaLinha[]; onAbrir: 
         {linhas.map((e) => {
           const badge = RELACIONAMENTO_BADGE[e.relacionamento] || RELACIONAMENTO_BADGE.lead;
           return (
-            <tr key={e.id} className="cursor-pointer" style={{ borderTop: "1px solid var(--cf2-border-default)" }} onClick={() => onAbrir(e.id)}>
+            <tr key={e.id} className="cursor-pointer transition-colors hover:bg-[var(--cf2-bg-surface-muted)]" style={{ borderTop: "1px solid var(--cf2-border-default)" }} onClick={() => onAbrir(e.id)}>
               <td className="px-4 py-3">
                 <div className="flex items-center gap-2.5">
                   <div className="flex items-center justify-center rounded-lg shrink-0 w-8 h-8" style={{ background: "var(--cf2-bg-inverse)" }}>
@@ -291,7 +291,7 @@ function TabelaPessoas({ linhas, onAbrir }: { linhas: PessoaLinha[]; onAbrir: (i
         {linhas.map((p) => {
           const badge = STATUS_COMERCIAL_BADGE[p.status_comercial] || STATUS_COMERCIAL_BADGE.contato;
           return (
-            <tr key={p.id} className="cursor-pointer" style={{ borderTop: "1px solid var(--cf2-border-default)" }} onClick={() => onAbrir(p.id)}>
+            <tr key={p.id} className="cursor-pointer transition-colors hover:bg-[var(--cf2-bg-surface-muted)]" style={{ borderTop: "1px solid var(--cf2-border-default)" }} onClick={() => onAbrir(p.id)}>
               <td className="px-4 py-3">
                 <div className="flex items-center gap-2.5">
                   <div className="flex items-center justify-center rounded-full shrink-0 w-8 h-8" style={{ background: "var(--cf2-bg-surface-muted)" }}>
