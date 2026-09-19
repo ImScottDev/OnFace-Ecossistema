@@ -375,6 +375,15 @@ async function main() {
       criadoPorId: usuario.id,
     });
     const propostaId = proposta.id as string;
+    const [itemPersistido] = await db.execute<{ servico_catalogo_id: string | null; catalogo_preco_id: string | null }>(sql`
+      SELECT servico_catalogo_id::text, catalogo_preco_id::text
+        FROM proposta_itens
+       WHERE proposta_id = ${propostaId}::uuid
+       LIMIT 1
+    `);
+    ok("Proposta criada por Price oficial preserva o produto pai para checkout",
+      itemPersistido?.catalogo_preco_id === itemAi.catalogoPrecoId
+      && itemPersistido?.servico_catalogo_id === itemAi.servicoCatalogoId);
 
     // Bloco 03 §17: contrato sem dados jurídicos da empresa não envia.
     await esperaBloqueio(
@@ -632,6 +641,10 @@ async function limpar(sufixo: string): Promise<void> {
   const grupos = sql`(SELECT id FROM proposta_grupo_comercial WHERE proposta_id IN ${propostas})`;
   await db.execute(sql`DELETE FROM proposta_grupo_comercial_itens WHERE grupo_id IN ${grupos}
      OR proposta_item_id IN (SELECT id FROM proposta_itens WHERE proposta_id IN ${propostas})`);
+  // O checkout só pode sair depois de soltar a referência reversa do grupo.
+  // Antes do reparo do catálogo o aceite nunca chegava a gerar checkout e
+  // esta dependência real ficava escondida.
+  await db.execute(sql`UPDATE proposta_grupo_comercial SET checkout_id = NULL WHERE id IN ${grupos}`);
   await db.execute(sql`DELETE FROM checkouts WHERE proposta_id IN ${propostas}`);
   await db.execute(sql`UPDATE propostas SET contrato_id = NULL WHERE id IN ${propostas}`);
   // `contratos` se liga ao negócio e ao lead, não à proposta — é `propostas`

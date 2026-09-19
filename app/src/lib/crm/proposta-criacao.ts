@@ -40,12 +40,13 @@ export interface ItemEntrada {
 async function carregarPrecosOficiais(ids: (string | null | undefined)[]) {
   const unicos = [...new Set(ids.filter((v): v is string => !!v))];
   if (unicos.length === 0) return new Map<string, {
-    id: string; stripePriceId: string; stripeProductId: string | null; sku: string | null;
+    id: string; servicoCatalogoId: string; stripePriceId: string; stripeProductId: string | null; sku: string | null;
     variacao: string; valor: string; serviceFamily: string; revenueNature: string; exigeContrato: boolean;
   }>();
   const rows = await db
     .select({
       id: catalogoPrecos.id,
+      servicoCatalogoId: catalogoPrecos.servicoCatalogoId,
       stripePriceId: catalogoPrecos.stripePriceId,
       sku: catalogoPrecos.sku,
       variacao: catalogoPrecos.variacao,
@@ -140,18 +141,26 @@ export async function criarPropostaComItens(opts: {
   }).returning();
 
   if (itensWithCalc.length > 0) {
-    const familyMap = await resolverServiceFamiliesPorCatalogoIds(itensWithCalc.map((i) => i.servicoCatalogoId));
-    const commercialModelMap = await resolverCommercialModelPadraoPorCatalogoIds(itensWithCalc.map((i) => i.servicoCatalogoId));
     // Catálogo Oficial Stripe (02/09) — carrega os prices escolhidos DO BANCO.
     // Nunca confia no que o cliente mandou pra família/natureza/preço de
     // tabela: o front manda só o `catalogoPrecoId`, o resto é lido aqui.
     const precoMap = await carregarPrecosOficiais(itensWithCalc.map((i) => i.catalogoPrecoId));
+    // Um price oficial também é a fonte do produto pai. Sem isso a proposta
+    // fica com o price, mas sem `servico_catalogo_id`; o checkout posterior
+    // não consegue carregar o Stripe Product e falha no fim da venda.
+    const servicosCatalogoIds = itensWithCalc.map((item) =>
+      (item.catalogoPrecoId ? precoMap.get(item.catalogoPrecoId)?.servicoCatalogoId : undefined)
+      ?? item.servicoCatalogoId,
+    );
+    const familyMap = await resolverServiceFamiliesPorCatalogoIds(servicosCatalogoIds);
+    const commercialModelMap = await resolverCommercialModelPadraoPorCatalogoIds(servicosCatalogoIds);
     await db.insert(propostaItens).values(
       itensWithCalc.map((item) => {
         const preco = item.catalogoPrecoId ? precoMap.get(item.catalogoPrecoId) : undefined;
+        const servicoCatalogoId = preco?.servicoCatalogoId ?? item.servicoCatalogoId;
         return {
           propostaId: proposta.id,
-          servicoCatalogoId: item.servicoCatalogoId || undefined,
+          servicoCatalogoId: servicoCatalogoId || undefined,
           nome: item.nome,
           descricao: item.descricao,
           tipo: item.tipo,
@@ -164,9 +173,9 @@ export async function criarPropostaComItens(opts: {
           ordem: item.ordem,
           // Família e natureza do PRICE oficial quando existe (é ele que
           // declara), com o catálogo do produto como fallback pro legado.
-          serviceFamily: preco?.serviceFamily || (item.servicoCatalogoId ? familyMap.get(item.servicoCatalogoId) || "UNKNOWN" : "UNKNOWN"),
+          serviceFamily: preco?.serviceFamily || (servicoCatalogoId ? familyMap.get(servicoCatalogoId) || "UNKNOWN" : "UNKNOWN"),
           revenueNature: preco?.revenueNature || mapTipoParaRevenueNature(item.tipo),
-          commercialModel: resolverCommercialModelDoItem({ overrideExplicito: item.commercialModel, servicoCatalogoId: item.servicoCatalogoId, catalogoDefaultMap: commercialModelMap }),
+          commercialModel: resolverCommercialModelDoItem({ overrideExplicito: item.commercialModel, servicoCatalogoId, catalogoDefaultMap: commercialModelMap }),
           // Rastreabilidade oficial: imutável, não sofre desconto.
           catalogoPrecoId: preco?.id,
           stripeProductId: preco?.stripeProductId,
