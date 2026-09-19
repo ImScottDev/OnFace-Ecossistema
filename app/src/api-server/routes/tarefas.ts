@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { db } from "@/lib/db";
 import { tarefas, leads, usuarios, negocios, empresas } from "@/lib/db/schema";
-import { desc, eq, ne, and, lte, ilike, SQL, asc, isNull } from "drizzle-orm";
+import { desc, eq, ne, and, or, lte, ilike, SQL, asc, isNull, isNotNull } from "drizzle-orm";
 import { z } from "zod";
 import { getCtx } from "../compat.js";
 import { isPersonalView, isAdminView } from "@/lib/auth/roles";
@@ -59,6 +59,7 @@ app.get("/tarefas", async (c) => {
   const data = c.req.query("data") || "all";
   const responsavelId = c.req.query("responsavelId") ?? null; // filtro explícito (aba Tarefas)
   const escopo = c.req.query("escopo") ?? null; // "org" = aba Tarefas (lista da organização); default = pessoal
+  const contexto = c.req.query("contexto") ?? null; // "comercial" = trabalho que nasceu de lead ou oportunidade
   const search = c.req.query("search") ?? null; // busca global (Command K) — ignora o filtro padrão de pendente
 
   const hasResponsavelFilter = responsavelId === "sem" || (!!responsavelId && UUID_RE.test(responsavelId));
@@ -93,6 +94,14 @@ app.get("/tarefas", async (c) => {
 
   if (negocioId) {
     conditions.push(eq(tarefas.negocioId, negocioId));
+  }
+
+  // A Central Comercial não é uma segunda lista de tarefas: ela é o mesmo
+  // trabalho operacional, recortado por vínculo comercial. Inbound ligado ao
+  // lead e follow-up ligado à oportunidade aparecem juntos; cobrança e CS
+  // que só pertencem à empresa ficam na Central de Operação.
+  if (contexto === "comercial") {
+    conditions.push(or(isNotNull(tarefas.leadId), isNotNull(tarefas.negocioId))!);
   }
 
   if (!search) {

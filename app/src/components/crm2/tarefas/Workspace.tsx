@@ -104,7 +104,7 @@ function prazoTexto(t: Tarefa): string {
   return comHora ? `${dia} · ${d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}` : dia;
 }
 
-export function Cf2TarefasWorkspace() {
+export function Cf2TarefasWorkspace({ foco = "operacao" }: { foco?: "operacao" | "comercial" }) {
   const router = useRouter();
   const qc = useQueryClient();
   const { usuarios, currentUserId } = useOrgUsuarios();
@@ -124,9 +124,10 @@ export function Cf2TarefasWorkspace() {
   const responsavelId = resp === "todos" ? null : resp === "meu" ? currentUserId : resp;
 
   const { data, isLoading } = useQuery<{ tarefas: Tarefa[] }>({
-    queryKey: ["cf2-tarefas", responsavelId, status, tipo, origem],
+    queryKey: ["cf2-tarefas", foco, responsavelId, status, tipo, origem],
     queryFn: async () => {
       const params = new URLSearchParams({ escopo: "org" });
+      if (foco === "comercial") params.set("contexto", "comercial");
       if (responsavelId) params.set("responsavelId", responsavelId);
       if (status !== "todas") params.set("concluida", String(status === "concluida"));
       if (tipo !== "todos") params.set("tipo", tipo);
@@ -214,10 +215,10 @@ export function Cf2TarefasWorkspace() {
         <div className="flex items-center gap-6 flex-wrap">
           <div>
             <p className="text-[10px] font-semibold uppercase" style={{ color: "var(--cf2-home-text-muted)", letterSpacing: "1.6px", fontFamily: "var(--cf2-font-heading)" }}>
-              Operação
+              {foco === "comercial" ? "Vendas" : "Operação"}
             </p>
             <h1 className="text-[20px] font-semibold leading-tight" style={{ color: "var(--cf2-home-text-strong)", fontFamily: "var(--cf2-font-heading)", letterSpacing: "-0.32px" }}>
-              Tarefas
+              {foco === "comercial" ? "Central de trabalho" : "Tarefas"}
             </h1>
           </div>
           <div className="flex items-center gap-5">
@@ -245,7 +246,7 @@ export function Cf2TarefasWorkspace() {
           className="flex items-center gap-1.5 px-4 h-9 rounded-full text-[13px] font-semibold shrink-0"
           style={{ background: "var(--cf2-home-lime)", color: "var(--cf2-home-lime-ink)" }}
         >
-          <Plus className="w-4 h-4" /> Nova tarefa
+          <Plus className="w-4 h-4" /> Nova atividade
         </button>
       </div>
 
