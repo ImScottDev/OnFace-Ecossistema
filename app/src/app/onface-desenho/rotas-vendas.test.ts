@@ -6,24 +6,46 @@ import test from "node:test";
 
 const app = import.meta.dirname;
 
-test("rotas de entidade de Vendas renderizam detalhes, não redirects para a quick view", () => {
-  const detalhes = [
-    { rota: ["pipeline", "[id]", "page.tsx"], componente: "DetalheOportunidadePagina" },
-    { rota: ["contatos", "empresas", "[id]", "page.tsx"], componente: "DetalheEmpresaPagina" },
-    { rota: ["contatos", "pessoas", "[id]", "page.tsx"], componente: "DetalhePessoaPagina" },
-  ];
+const DETALHES_DE_VENDAS = [
+  { rota: ["pipeline", "[id]", "page.tsx"], componente: "DetalheOportunidadePagina", destino: "/pipeline" },
+  { rota: ["contatos", "empresas", "[id]", "page.tsx"], componente: "DetalheEmpresaPagina", destino: "/contatos/empresas" },
+  { rota: ["contatos", "pessoas", "[id]", "page.tsx"], componente: "DetalhePessoaPagina", destino: "/contatos/pessoas" },
+];
 
-  const superficies = [
-    { nome: "desenho", raiz: app },
-    { nome: "preview", raiz: path.join(app, "..", "(onface-preview)", "onface-preview") },
-  ];
+const PREVIEW = path.join(app, "..", "(onface-preview)", "onface-preview");
 
-  for (const superficie of superficies) for (const { rota, componente } of detalhes) {
-    const arquivo = path.join(superficie.raiz, ...rota);
-    assert.equal(existsSync(arquivo), true, `${superficie.nome}/${rota.join("/")}`);
+test("no espelho de desenho, a rota de entidade renderiza o detalhe e não redireciona", () => {
+  // O espelho `/onface-desenho` é congelado e autossuficiente: existe para
+  // olhar a tela sem depender do produto, então renderiza de verdade.
+  for (const { rota, componente } of DETALHES_DE_VENDAS) {
+    const arquivo = path.join(app, ...rota);
+    assert.equal(existsSync(arquivo), true, `desenho/${rota.join("/")}`);
     const fonte = readFileSync(arquivo, "utf8");
-    assert.equal(fonte.includes("redirect("), false, `${superficie.nome}/${rota.join("/")} não pode redirecionar`);
-    assert.equal(fonte.includes(componente), true, `${superficie.nome}/${rota.join("/")} deve renderizar ${componente}`);
+    assert.equal(fonte.includes("redirect("), false, `desenho/${rota.join("/")} não pode redirecionar`);
+    assert.equal(fonte.includes(componente), true, `desenho/${rota.join("/")} deve renderizar ${componente}`);
+  }
+});
+
+test("no preview, a rota de entidade é atalho para a rota real do produto", () => {
+  // Semântica decidida em 19/09, depois de o QA achar estes deep links mortos.
+  // Desde que o detalhe passou a morar só na rota oficial (F1, lote 2), o
+  // preview não tem cópia — ele aponta para lá. Guardar uma segunda
+  // implementação aqui recriaria a superfície paralela que a virada matou.
+  // O que não pode é o link morrer, e é isso que este teste protege: a rota
+  // existe, redireciona, e vai para o destino certo.
+  for (const { rota, destino, componente } of DETALHES_DE_VENDAS) {
+    const arquivo = path.join(PREVIEW, ...rota);
+    assert.equal(existsSync(arquivo), true, `preview/${rota.join("/")} deve existir`);
+    const fonte = readFileSync(arquivo, "utf8");
+    assert.match(fonte, /redirect\(/, `preview/${rota.join("/")} deve redirecionar`);
+    assert.ok(
+      fonte.includes(`redirect(\`${destino}/\${`),
+      `preview/${rota.join("/")} deve apontar para ${destino}/:id`,
+    );
+    assert.equal(
+      fonte.includes(`<${componente}`), false,
+      `preview/${rota.join("/")} não pode reimplementar ${componente}`,
+    );
   }
 });
 
@@ -47,16 +69,25 @@ test("CTAs de gerenciamento carregam a entidade alvo e preservam a superfície O
   const desenhoPipeline = readFileSync(path.join(app, "pipeline", "page.tsx"), "utf8");
   const previewPipeline = readFileSync(path.join(app, "..", "(onface-preview)", "onface-preview", "pipeline", "page.tsx"), "utf8");
   const desenhoContatos = readFileSync(path.join(app, "contatos", "page.tsx"), "utf8");
-  const previewContatos = readFileSync(path.join(app, "..", "(onface-preview)", "onface-preview", "contatos", "page.tsx"), "utf8");
+  // Quem monta Contatos para o produto E para o preview é a página OFICIAL: o
+  // preview delega para ela desde 18/09. É nela que `pessoaInicial` tem de
+  // estar — exigir o mesmo do espelho seria exigir que ele reimplementasse a
+  // tela, exatamente o que se quis evitar.
+  const oficialContatos = readFileSync(path.join(app, "..", "(crm2)", "contatos", "page.tsx"), "utf8");
 
   assert.match(pipeline, /useEffect/);
   assert.match(pipeline, /acoes\.detalhe\(selecaoInicial\)/);
   assert.match(contatos, /pessoaInicial/);
   assert.match(contatos, /setModal\("vincular"\)/);
-  assert.match(desenhoPipeline, /rotaBase="\/onface-desenho"/);
-  assert.match(previewPipeline, /rotaBase="\/onface-preview"/);
+  // A superfície precisa ser declarada, mas a FORMA é indiferente: o desenho
+  // monta a tela e passa `rotaBase` como atributo JSX; o preview, desde 18/09,
+  // é um espelho fino que chama a página oficial e passa a mesma informação
+  // como propriedade. Casar só com a sintaxe JSX reprovava o espelho por
+  // escrever a coisa certa de outro jeito.
+  assert.match(desenhoPipeline, /rotaBase[=:]\s*"\/onface-desenho"/);
+  assert.match(previewPipeline, /rotaBase[=:]\s*"\/onface-preview"/);
   assert.match(desenhoContatos, /pessoaInicial=\{params\.pessoa/);
-  assert.match(previewContatos, /pessoaInicial=\{params\.pessoa/);
+  assert.match(oficialContatos, /pessoaInicial=\{params\.pessoa/);
 });
 
 test("detalhes individuais não vazam timeline da empresa nem fazem busca truncada", () => {
