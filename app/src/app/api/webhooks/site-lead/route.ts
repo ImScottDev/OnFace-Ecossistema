@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { leads, organizacoes } from "@/lib/db/schema";
 import { and, eq } from "drizzle-orm";
 import { syncPessoaFromLead } from "@/lib/crm/sync-domain-model";
-import { criarLead } from "@/lib/vendas/pre-vendas";
+import { criarLead, garantirAtividadePrimeiroContato, resolverResponsavelInbound } from "@/lib/vendas/pre-vendas";
 import { ATOR_SISTEMA } from "@/lib/vendas/dominio";
 import { dominioDoEmail } from "@/lib/vendas/identidade";
 
@@ -119,8 +119,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "org not found" }, { status: 500, headers: cors });
   }
 
-  // Lead inbound novo nasce SEM DONO (Scott, jul/26). As meninas pegam no "Novo"
-  // e movem pra "Em Contato"; a Jenifer só assume quando o lead entra em "Follow up".
+  // A política de Pré-vendas escolhe quem recebe a fila. Sem configuração,
+  // o lead continua na fila sem dono, mas jamais sem atividade de contato.
+  const responsavelInboundId = await resolverResponsavelInbound(org.id);
   const ipAddress =
     req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
     req.headers.get("x-real-ip") ||
@@ -129,17 +130,17 @@ export async function POST(req: NextRequest) {
   const landingPage = clean(body.landingPage) || req.headers.get("referer") || null;
 
   // Dedup por email, depois telefone: a mesma captura não pode virar dois leads.
-  let existing: { id: string; tipo: string } | undefined;
+  let existing: { id: string; tipo: string; responsavelId: string | null; empresaId: string | null } | undefined;
   if (email) {
     [existing] = await db
-      .select({ id: leads.id, tipo: leads.tipo })
+      .select({ id: leads.id, tipo: leads.tipo, responsavelId: leads.responsavelId, empresaId: leads.empresaId })
       .from(leads)
       .where(and(eq(leads.organizacaoId, org.id), eq(leads.email, email)))
       .limit(1);
   }
   if (!existing && telefone) {
     [existing] = await db
-      .select({ id: leads.id, tipo: leads.tipo })
+      .select({ id: leads.id, tipo: leads.tipo, responsavelId: leads.responsavelId, empresaId: leads.empresaId })
       .from(leads)
       .where(and(eq(leads.organizacaoId, org.id), eq(leads.telefone, telefone)))
       .limit(1);
@@ -162,6 +163,12 @@ export async function POST(req: NextRequest) {
       })
       .where(eq(leads.id, existing.id));
     await syncPessoaFromLead(existing.id); // F1/dual-write, best-effort
+    await garantirAtividadePrimeiroContato({
+      organizacaoId: org.id,
+      leadId: existing.id,
+      empresaId: existing.empresaId,
+      responsavelId: existing.responsavelId ?? responsavelInboundId,
+    });
     return NextResponse.json(
       { ok: true, status: "updated", leadId: existing.id },
       { status: 200, headers: cors }
@@ -191,8 +198,8 @@ export async function POST(req: NextRequest) {
       raw: { ipAddress, userAgent },
     },
     origem: "Site",
-    // Lead inbound novo nasce SEM DONO (Scott, jul/26): as meninas pegam no
-    // "Novo" e movem para "Em contato".
+    // A política é resolvida dentro do motor, que também cria a atividade de
+    // primeiro contato ligada ao responsável escolhido.
     responsavelId: null,
   }, ATOR_SISTEMA);
 

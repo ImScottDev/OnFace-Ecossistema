@@ -110,6 +110,13 @@ async function main() {
       SELECT count(*)::int AS n FROM negocios WHERE lead_id = ${lead.leadId}::uuid
     `);
     ok("Inbound NÃO criou oportunidade automaticamente", (oportunidadesDoLead?.n ?? 0) === 0);
+    const [atividadeInbound] = await db.execute<{ n: number }>(sql`
+      SELECT count(*)::int AS n FROM tarefas
+       WHERE lead_id = ${lead.leadId}::uuid
+         AND motivo = 'primeiro_contato_inbound'
+         AND status = 'a_fazer'
+    `);
+    ok("Inbound gera atividade de primeiro contato", (atividadeInbound?.n ?? 0) === 1);
 
     // Deduplicação: mesma empresa e mesma pessoa, segundo lead.
     const lead2 = await preVendas.criarLead({
@@ -130,6 +137,14 @@ async function main() {
     `);
     ok("Primeiro contato registrado e Lead em Em contato",
       Boolean(aposContato?.pc) && aposContato?.etapa === "em_contato", aposContato?.etapa);
+    const [atividadeConcluida] = await db.execute<{ n: number }>(sql`
+      SELECT count(*)::int AS n FROM tarefas
+       WHERE lead_id = ${lead.leadId}::uuid
+         AND motivo = 'primeiro_contato_inbound'
+         AND status = 'concluida'
+         AND concluida = true
+    `);
+    ok("Primeiro contato conclui a atividade de entrada", (atividadeConcluida?.n ?? 0) === 1);
 
     await preVendas.moverEtapa({ organizacaoId: org.id, leadId: lead.leadId, para: "qualificacao", ator });
     await preVendas.salvarQualificacao({

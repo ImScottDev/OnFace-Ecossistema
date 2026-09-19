@@ -143,7 +143,7 @@ app.put("/pipeline", async (c) => {
 // confirmado por HTTP e no console do navegador).
 
 /** Chaves aceitas. Sem allowlist, o PATCH viraria escrita arbitrária no jsonb. */
-const CHAVES_SETTINGS = ["icp", "enriquecimento", "handover", "notificacoes", "tracking"] as const;
+const CHAVES_SETTINGS = ["icp", "enriquecimento", "handover", "notificacoes", "tracking", "preVendas"] as const;
 type ChaveSettings = (typeof CHAVES_SETTINGS)[number];
 
 /** Campos de `tracking` que são segredo e nunca voltam em claro pro browser. */

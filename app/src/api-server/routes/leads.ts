@@ -67,6 +67,7 @@ import { getSdrStatusInfo } from "@/lib/crm/pipeline";
 import { converterLeadEmOportunidade } from "@/lib/crm/converter-oportunidade";
 import { createOutlookEvent } from "@/lib/email/microsoft";
 import { resolveFollowupOwnerId } from "@/lib/crm/sdr-escalation";
+import { concluirAtividadePrimeiroContato } from "@/lib/vendas/pre-vendas";
 
 const app = new Hono();
 
@@ -1118,6 +1119,10 @@ app.patch("/leads/:id", async (c) => {
     return c.json({ error: "Lead nao encontrado" }, 404);
   }
 
+  if (updated.primeiroContatoAt) {
+    await concluirAtividadePrimeiroContato({ organizacaoId: ctx.organizacaoId, leadId: id });
+  }
+
   // AssignOwner (19/08) — mesma regra central de owner.ts (ver negocios.ts).
   if (parsed.data.responsavelId !== undefined) {
     await registrarMudancaResponsavel({
@@ -1186,6 +1191,7 @@ app.post("/leads/:id", async (c) => {
         .update(leads)
         .set({ primeiroContatoAt: new Date(), updatedAt: new Date() })
         .where(eq(leads.id, id));
+      await concluirAtividadePrimeiroContato({ organizacaoId: ctx.organizacaoId, leadId: id });
     }
   }
 

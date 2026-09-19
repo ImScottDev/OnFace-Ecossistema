@@ -8,6 +8,7 @@ import {
   type ParsedRdLead,
 } from "@/lib/integrations/rd-station";
 import { syncPessoaFromLead } from "@/lib/crm/sync-domain-model";
+import { garantirAtividadePrimeiroContato, resolverResponsavelInbound } from "@/lib/vendas/pre-vendas";
 
 /**
  * Busca IDs reais da Meta deixados em staging pelo webhook /api/webhooks/meta-lead-ids
@@ -109,9 +110,9 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Porta de entrada da pré-vendas: lead inbound novo nasce SEM DONO (Scott, jul/26).
-  // As meninas pegam o lead no board "Novo" e movem pra "Em Contato". A atribuição
-  // à Jenifer só acontece quando o lead entra em "Follow up".
+  // O dono vem da política da organização; não existe nome de pessoa gravado
+  // no webhook. Sem política válida o lead continua visível na fila sem dono.
+  const responsavelInboundId = await resolverResponsavelInbound(org.id);
   const ipAddress =
     req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
     req.headers.get("x-real-ip") ||
@@ -151,11 +152,11 @@ export async function POST(req: NextRequest) {
 
       // Dedup por email (depois telefone) dentro da org
       let existing:
-        | { id: string; tipo: string; camposCustom: unknown }
+        | { id: string; tipo: string; camposCustom: unknown; responsavelId: string | null; empresaId: string | null }
         | undefined;
       if (p.email) {
         [existing] = await db
-          .select({ id: leads.id, tipo: leads.tipo, camposCustom: leads.camposCustom })
+          .select({ id: leads.id, tipo: leads.tipo, camposCustom: leads.camposCustom, responsavelId: leads.responsavelId, empresaId: leads.empresaId })
           .from(leads)
           .where(
             and(eq(leads.organizacaoId, org.id), eq(leads.email, p.email))
@@ -167,7 +168,7 @@ export async function POST(req: NextRequest) {
       }
       if (!existing && p.telefone) {
         [existing] = await db
-          .select({ id: leads.id, tipo: leads.tipo, camposCustom: leads.camposCustom })
+          .select({ id: leads.id, tipo: leads.tipo, camposCustom: leads.camposCustom, responsavelId: leads.responsavelId, empresaId: leads.empresaId })
           .from(leads)
           .where(
             and(
@@ -216,6 +217,12 @@ export async function POST(req: NextRequest) {
           });
         }
         await syncPessoaFromLead(existing.id); // F1/dual-write, best-effort
+        await garantirAtividadePrimeiroContato({
+          organizacaoId: org.id,
+          leadId: existing.id,
+          empresaId: existing.empresaId,
+          responsavelId: existing.responsavelId ?? responsavelInboundId,
+        });
         results.push({ status: "updated", leadId: existing.id, email: p.email });
         continue;
       }
@@ -253,7 +260,7 @@ export async function POST(req: NextRequest) {
           tipo: "lead",
           status: "novo",
           sdrStatus: "pending",
-          responsavelId: null,
+          responsavelId: responsavelInboundId,
         })
         .returning({ id: leads.id });
 
@@ -263,6 +270,13 @@ export async function POST(req: NextRequest) {
         negocioId: null,
         deStatus: null,
         paraStatus: "novo",
+      });
+
+      await garantirAtividadePrimeiroContato({
+        organizacaoId: org.id,
+        leadId: newLead.id,
+        empresaId: null,
+        responsavelId: responsavelInboundId,
       });
 
       // Nota com o que foi preenchido no form (sempre visível na ficha).

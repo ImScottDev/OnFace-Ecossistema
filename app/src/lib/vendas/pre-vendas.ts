@@ -63,6 +63,82 @@ export interface LeadCriado {
   pessoaJaExistia: boolean;
 }
 
+type SettingsOrganizacao = { preVendas?: { responsavelInboundId?: unknown } };
+
+function eEntradaInbound(tipoOrigem: string): boolean {
+  return ["campanha", "organica", "formulario", "site"].includes(tipoOrigem);
+}
+
+/**
+ * O dono da fila de inbound é uma política da organização, não um nome
+ * gravado no código. Sem configuração válida, devolve `null`: um lead pode
+ * entrar, mas nunca é falsamente atribuído a alguém que não existe mais.
+ */
+export async function resolverResponsavelInbound(organizacaoId: string): Promise<string | null> {
+  const [org] = await db.execute<{ settings: SettingsOrganizacao | null }>(sql`
+    SELECT settings FROM organizacoes WHERE id = ${organizacaoId}::uuid
+  `);
+  const candidato = org?.settings?.preVendas?.responsavelInboundId ?? null;
+  if (typeof candidato !== "string") return null;
+
+  const [usuario] = await db.execute<{ id: string }>(sql`
+    SELECT id::text FROM usuarios
+     WHERE id = ${candidato}::uuid
+       AND organizacao_id = ${organizacaoId}::uuid
+       AND ativo = true
+  `);
+  return usuario?.id ?? null;
+}
+
+/** Cria a pendência operacional que impede o inbound de ficar invisível. */
+export async function garantirAtividadePrimeiroContato(params: {
+  organizacaoId: string;
+  leadId: string;
+  empresaId: string | null;
+  responsavelId: string | null;
+}): Promise<void> {
+  await db.execute(sql`
+    WITH bloqueio AS MATERIALIZED (
+      SELECT pg_advisory_xact_lock(hashtext(${`primeiro_contato_inbound:${params.organizacaoId}:${params.leadId}`}))
+    ), lead_sem_contato AS (
+      SELECT id FROM leads
+       WHERE id = ${params.leadId}::uuid
+         AND organizacao_id = ${params.organizacaoId}::uuid
+         AND primeiro_contato_at IS NULL
+    )
+    INSERT INTO tarefas (
+      organizacao_id, lead_id, empresa_id, usuario_id,
+      titulo, descricao, tipo, prioridade, origem, motivo, status
+    )
+    SELECT
+      ${params.organizacaoId}::uuid, ${params.leadId}::uuid, ${params.empresaId}::uuid, ${params.responsavelId}::uuid,
+      'Fazer primeiro contato', 'Lead inbound aguardando primeira tentativa de contato.',
+      'follow_up', 'alta', 'AUTOMACAO', 'primeiro_contato_inbound', 'a_fazer'
+      FROM bloqueio, lead_sem_contato
+     WHERE NOT EXISTS (
+      SELECT 1 FROM tarefas
+       WHERE organizacao_id = ${params.organizacaoId}::uuid
+         AND lead_id = ${params.leadId}::uuid
+         AND motivo = 'primeiro_contato_inbound'
+         AND status NOT IN ('concluida', 'declinada')
+    )
+  `);
+}
+
+export async function concluirAtividadePrimeiroContato(params: {
+  organizacaoId: string;
+  leadId: string;
+}): Promise<void> {
+  await db.execute(sql`
+    UPDATE tarefas
+       SET status = 'concluida', concluida = true, concluida_em = now()
+     WHERE organizacao_id = ${params.organizacaoId}::uuid
+       AND lead_id = ${params.leadId}::uuid
+       AND motivo = 'primeiro_contato_inbound'
+       AND status NOT IN ('concluida', 'declinada')
+  `);
+}
+
 /**
  * Cria o Lead seguindo a entrada canônica da spec:
  * Empresa → Pessoa → vínculo → touchpoint → Lead → NOVO.
@@ -76,6 +152,11 @@ export interface LeadCriado {
  */
 export async function criarLead(entrada: EntradaDeLead, ator: Ator): Promise<LeadCriado> {
   const { organizacaoId } = entrada;
+
+  const responsavelId = entrada.responsavelId
+    ?? (eEntradaInbound(entrada.touchpoint.tipoOrigem)
+      ? await resolverResponsavelInbound(organizacaoId)
+      : null);
 
   const empresa = entrada.empresa
     ? await resolverEmpresa(organizacaoId, entrada.empresa, ator)
@@ -107,7 +188,7 @@ export async function criarLead(entrada: EntradaDeLead, ator: Ator): Promise<Lea
       ${entrada.empresa?.nome ?? null},
       ${entrada.origem ?? entrada.touchpoint.source ?? null},
       ${entrada.servicosInteresse ?? null},
-      ${entrada.responsavelId ?? null}::uuid,
+      ${responsavelId}::uuid,
       'lead', 'novo', 'pending', 'novo',
       ${entrada.preQualificado ?? false},
       ${entrada.preQualificado ? new Date().toISOString() : null}::timestamptz,
@@ -156,10 +237,19 @@ export async function criarLead(entrada: EntradaDeLead, ator: Ator): Promise<Lea
     },
   });
 
-  if (entrada.responsavelId) {
+  if (responsavelId) {
     await registrarEvento({
       organizacaoId, tipo: "LeadAssigned", ator, leadId: lead.id,
-      contexto: { responsavelId: entrada.responsavelId, origemAtribuicao: "manual" },
+      contexto: {
+        responsavelId,
+        origemAtribuicao: entrada.responsavelId ? "manual" : "politica_inbound",
+      },
+    });
+  }
+
+  if (eEntradaInbound(entrada.touchpoint.tipoOrigem)) {
+    await garantirAtividadePrimeiroContato({
+      organizacaoId, leadId: lead.id, empresaId: empresa?.empresaId ?? null, responsavelId,
     });
   }
 
@@ -256,6 +346,7 @@ export async function registrarPrimeiroContato(params: {
       leadId: params.leadId, contexto: { canal: params.canal },
       timeline: { tipo: params.canal, titulo: "Primeiro contato realizado", descricao: `Canal: ${params.canal}` },
     });
+    await concluirAtividadePrimeiroContato(params);
   } else {
     await db.execute(sql`UPDATE leads SET last_contact_at = now(), updated_at = now() WHERE id = ${params.leadId}::uuid`);
   }
