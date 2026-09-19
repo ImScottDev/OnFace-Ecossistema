@@ -122,6 +122,19 @@ test("a criação de proposta mantém rotas estáveis nas duas superfícies", ()
     const rota = path.join(superficie.raiz, "propostas", "nova", "page.tsx");
     assert.equal(existsSync(rota), true, `${superficie.nome}/propostas/nova deve existir`);
   }
+
+  // O atalho do preview redireciona, e redirect que descarta a query descarta
+  // a INTENÇÃO: `?proposta=X&acao=revisar` abriria o compositor em branco.
+  // O contrato de cada intenção está em fluxoProposta.test.ts; aqui se trava o
+  // elo que faltava — a rota precisa de fato delegar para ele, em vez de
+  // redirecionar seco. Bloqueio achado pelo QA na revisão final da F1.
+  const atalho = readFileSync(path.join(PREVIEW, "propostas", "nova", "page.tsx"), "utf8");
+  assert.match(atalho, /destinoDoCompositor/, "o atalho deve preservar a query via destinoDoCompositor");
+  assert.equal(
+    /redirect\(\s*["'`]\/propostas\/nova["'`]\s*\)/.test(atalho), false,
+    "o atalho não pode redirecionar para /propostas/nova sem levar a query",
+  );
+  assert.match(atalho, /searchParams/, "o atalho precisa ler searchParams para ter o que repassar");
 });
 
 test("a inicialização do fluxo de proposta preserva cada intenção e consome revisão na URL", async () => {
