@@ -21,7 +21,7 @@
 import { db } from "@/lib/db";
 import { eq, asc } from "drizzle-orm";
 import {
-  checkouts, propostas, propostaGrupoComercial, propostaGrupoComercialItens, propostaItens, servicosCatalogo, catalogoPrecos, leads, empresas,
+  checkouts, propostas, propostaGrupoComercial, propostaGrupoComercialItens, propostaItens, servicosCatalogo, catalogoPrecos, leads, empresas, negocios,
 } from "@/lib/db/schema";
 import { createGroupCheckout, createStripeCustomer, expireCheckoutSession, getStripeCheckoutMode, type CheckoutItem } from "@/lib/integrations/stripe-checkout";
 import { publicarEvento } from "@/lib/events/outbox";
@@ -31,6 +31,20 @@ import { montarMetadataComercial } from "@/lib/crm/metadata-comercial";
 export type CriarCheckoutResult =
   | { ok: true; checkoutId: string; url: string }
   | { ok: false; error: string };
+
+/**
+ * Checkout em modo subscription sempre cria uma assinatura nova no Stripe.
+ * Portanto ele serve para aquisição; expansão recorrente precisa alterar a
+ * assinatura existente de forma explícita, com a política de proration e
+ * cobrança aprovada. Nunca usamos o checkout de aquisição como atalho.
+ */
+export function bloqueioNovoCheckoutDeAssinatura(
+  commercialMotion: string | null | undefined,
+  temItemRecorrente: boolean,
+): string | null {
+  if (!temItemRecorrente || !commercialMotion || commercialMotion === "NEW_BUSINESS") return null;
+  return "Esta venda altera uma assinatura existente. O checkout de nova assinatura foi bloqueado para evitar cobrança duplicada; conclua pela alteração de assinatura aprovada.";
+}
 
 /**
  * Cria (ou re-gera, expirando o anterior) um checkout Stripe pro grupo
@@ -50,6 +64,9 @@ export async function criarCheckoutParaGrupo(opts: {
 
   const [proposta] = await db.select().from(propostas).where(eq(propostas.id, grupo.propostaId)).limit(1);
   if (!proposta) return { ok: false, error: "Proposta não encontrada" };
+  const [negocio] = proposta.negocioId
+    ? await db.select({ commercialMotion: negocios.commercialMotion }).from(negocios).where(eq(negocios.id, proposta.negocioId)).limit(1)
+    : [undefined];
 
   const itensDoGrupo = await db
     .select({
@@ -72,6 +89,11 @@ export async function criarCheckoutParaGrupo(opts: {
     .orderBy(asc(propostaItens.ordem));
 
   if (itensDoGrupo.length === 0) return { ok: false, error: "Grupo comercial sem itens" };
+  const bloqueioAssinatura = bloqueioNovoCheckoutDeAssinatura(
+    negocio?.commercialMotion,
+    itensDoGrupo.some((item) => item.tipo === "recorrente"),
+  );
+  if (bloqueioAssinatura) return { ok: false, error: bloqueioAssinatura };
 
   const [lead] = await db.select({
     id: leads.id, nome: leads.nome, sobrenome: leads.sobrenome, email: leads.email, telefone: leads.telefone,

@@ -23,6 +23,7 @@ import { criarPropostaComItens } from "@/lib/crm/proposta-criacao";
 // roda em produção quando o cliente responde.
 import { solicitarAjustePropostaPublica } from "@/lib/crm/proposta-publica";
 import { processarAceiteDaProposta } from "@/lib/crm/proposta-aceite";
+import { bloqueioNovoCheckoutDeAssinatura } from "@/lib/crm/checkout";
 import { propostas as tabelaPropostas } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { diretorioPessoas, empresa360 } from "@/lib/vendas/consultas";
@@ -484,6 +485,10 @@ async function main() {
     ok("Composição separa recorrente de não recorrente",
       composicao.recorrenteMensal >= 0 && composicao.naoRecorrente >= 0);
     ok("Sem prazo contratual, não se inventa TCV", composicao.tcv === null || composicao.prazoMeses !== null);
+    ok("Expansão recorrente não abre uma segunda assinatura Stripe",
+      Boolean(bloqueioNovoCheckoutDeAssinatura("EXPANSION", true)));
+    ok("Expansão avulsa pode cobrar sem criar assinatura",
+      bloqueioNovoCheckoutDeAssinatura("EXPANSION", false) === null);
 
     /* ── Prospecção (Bloco 04) ────────────────────────────────────────── */
     console.log("\n── Prospecção: duas saídas distintas");
