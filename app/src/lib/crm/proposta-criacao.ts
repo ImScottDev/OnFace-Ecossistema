@@ -10,6 +10,7 @@ import { propostas, propostaItens, catalogoPrecos, servicosCatalogo } from "@/li
 import { syncNegocioValoresFromPropostas } from "@/lib/crm/sync-negocio-valores";
 import { syncOportunidadeItensFromProposta, resolverServiceFamiliesPorCatalogoIds, mapTipoParaRevenueNature } from "@/lib/crm/composicao-comercial";
 import { resolverCommercialModelPadraoPorCatalogoIds, resolverCommercialModelDoItem } from "@/lib/crm/commercial-model";
+import { ehFamiliaValida, RegraDeNegocio } from "@/lib/vendas/dominio";
 
 export interface ItemEntrada {
   servicoCatalogoId?: string | null;
@@ -81,6 +82,26 @@ export async function criarPropostaComItens(opts: {
   itens: ItemEntrada[];
   criadoPorId: string;
 }) {
+  // Esta é a última fronteira antes de persistir uma proposta. A UI e o
+  // pipeline já orientam o usuário, mas outros chamadores deste núcleo não
+  // podem criar uma proposta para uma oportunidade ainda sem família.
+  const [negocio] = await db.execute<{ service_family: string | null }>(sql`
+    SELECT service_family
+      FROM negocios
+     WHERE id = ${opts.negocioId}::uuid
+       AND organizacao_id = ${opts.organizacaoId}::uuid
+  `);
+  if (!negocio) {
+    throw new RegraDeNegocio("oportunidade_nao_encontrada", "Oportunidade não encontrada.");
+  }
+  if (!ehFamiliaValida(negocio.service_family)) {
+    throw new RegraDeNegocio(
+      "proposta_exige_familia",
+      "Defina a família comercial antes de criar uma proposta.",
+      { rotulo: "Definir família", tipo: "alterar_familia" },
+    );
+  }
+
   const [{ maxNum }] = await db
     .select({ maxNum: sql<number>`COALESCE(MAX(${propostas.numero}), 0)` })
     .from(propostas)

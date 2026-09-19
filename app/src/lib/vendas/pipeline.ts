@@ -7,7 +7,8 @@
  * coluna `etapa` e a tradução para `status` é feita aqui, num lugar só.
  *
  * As regras que este arquivo existe para garantir, todas da spec:
- *   - Empresa e Família são obrigatórias na criação (§1, §5);
+ *   - Empresa é obrigatória; Família pode começar como "a definir" em Entrada,
+ *     mas é obrigatória antes de proposta, contrato, checkout ou ganho (§1, §5);
  *   - duas famílias criam duas oportunidades irmãs, nunca uma genérica (§2-3);
  *   - reunião, trial e no-show são eventos, nunca etapa (§10-12);
  *   - Proposta e Negociação têm gate de proposta vinculada (§10);
@@ -58,7 +59,7 @@ export interface CriarOportunidade {
   organizacaoId: string;
   /** Obrigatória. Bloco 02 §29: oportunidade sem Empresa é proibida. */
   empresaId: string;
-  /** Uma ou mais. Duas ou mais criam oportunidades irmãs no mesmo bundle. */
+  /** Vazia significa "Família a definir". Duas ou mais criam irmãs no mesmo bundle. */
   familias: Familia[];
   responsavelId: string;
   sourceProcess: ProcessoOrigem;
@@ -76,7 +77,7 @@ export interface CriarOportunidade {
 }
 
 export interface OportunidadeCriada {
-  oportunidades: Array<{ id: string; familia: Familia; titulo: string }>;
+  oportunidades: Array<{ id: string; familia: Familia | null; titulo: string }>;
   bundleId: string | null;
   reuniaoId: string | null;
 }
@@ -99,9 +100,6 @@ export async function criarOportunidade(entrada: CriarOportunidade, ator: Ator):
     throw new RegraDeNegocio("oportunidade_exige_empresa", "Toda oportunidade precisa de uma Empresa.");
   }
   const familias = [...new Set(entrada.familias)];
-  if (familias.length === 0) {
-    throw new RegraDeNegocio("oportunidade_exige_familia", "Escolha pelo menos uma família de serviço.");
-  }
   for (const familia of familias) {
     if (!ehFamiliaValida(familia)) {
       throw new RegraDeNegocio("familia_invalida", `Família inválida: ${familia}.`);
@@ -139,15 +137,16 @@ export async function criarOportunidade(entrada: CriarOportunidade, ator: Ator):
   const motion: Motion = entrada.motion
     ?? (entrada.sourceProcess === "EXPANSION" ? "EXPANSION" : "NEW_BUSINESS");
 
-  const criadas: Array<{ id: string; familia: Familia; titulo: string }> = [];
+  const familiasParaCriar: Array<Familia | null> = familias.length > 0 ? familias : [null];
+  const criadas: Array<{ id: string; familia: Familia | null; titulo: string }> = [];
 
-  for (const familia of familias) {
+  for (const familia of familiasParaCriar) {
     // Bloco 02 §8: nome gerado como {Empresa} — {Família}. Só respeita um
     // título manual quando há uma família só; com irmãs, um título único para
     // as duas faria os cards ficarem indistinguíveis no board.
     const titulo = familias.length === 1 && entrada.titulo?.trim()
       ? entrada.titulo.trim()
-      : `${empresa.nome} — ${ROTULO_FAMILIA[familia]}`;
+      : `${empresa.nome} — ${familia ? ROTULO_FAMILIA[familia] : "Família a definir"}`;
 
     const [negocio] = await db.execute<{ id: string }>(sql`
       INSERT INTO negocios (
@@ -266,8 +265,8 @@ export async function criarOportunidade(entrada: CriarOportunidade, ator: Ator):
  * Cria a oportunidade a partir de um Lead qualificado.
  *
  * Bloco 01 §9-11: Qualificado não cria oportunidade sozinho; é preciso o
- * comando. E o comando exige família, que o Lead não tem obrigação de saber —
- * por isso ela vem do modal, não de adivinhação sobre `servicos_interesse`.
+ * comando. A família pode ficar "a definir" neste momento; o Lead não tem
+ * obrigação de sabê-la e o sistema nunca a adivinha por `servicos_interesse`.
  */
 export async function criarOportunidadeDoLead(params: {
   organizacaoId: string;
@@ -328,7 +327,7 @@ export async function criarOportunidadeDoLead(params: {
  * Move a oportunidade de etapa.
  *
  * Os gates não são validação de formulário: são a regra comercial. Mover para
- * Proposta ou Negociação sem proposta vinculada é bloqueado, com a mensagem e
+ * Proposta ou Negociação exigem Família e proposta vinculada, com a mensagem e
  * o CTA que a spec escreve literalmente. Ganho não é alcançável por aqui em
  * hipótese alguma.
  */
@@ -349,6 +348,13 @@ export async function moverEtapa(params: {
   if (op.etapa === params.para) return;
 
   const exigeProposta = params.para === "proposta" || params.para === "negociacao";
+  if (exigeProposta && !ehFamiliaValida(op.service_family)) {
+    throw new RegraDeNegocio(
+      "etapa_exige_familia",
+      "Defina a família comercial antes de avançar para Proposta.",
+      { rotulo: "Definir família", tipo: "alterar_familia" },
+    );
+  }
   if (exigeProposta && !params.ignorarGateDeProposta && op.propostas_vinculadas === 0) {
     throw new RegraDeNegocio(
       "etapa_exige_proposta",
@@ -548,10 +554,18 @@ export async function tentarGanhar(params: {
   const op = await carregarOportunidade(params.organizacaoId, params.negocioId);
   if (op.etapa === "ganho") return { ganhou: true, motivo: "Já estava ganha." };
 
+  if (!ehFamiliaValida(op.service_family)) {
+    throw new RegraDeNegocio(
+      "ganho_exige_familia",
+      "Defina a família comercial antes de concluir a oportunidade como ganha.",
+      { rotulo: "Definir família", tipo: "alterar_familia" },
+    );
+  }
+
   const { marcarNegocioGanhoSeAindaNao, avaliarEvidenciaWon, getProdutoNegocio } =
     await import("@/lib/crm/won-evidence");
 
-  const familia = op.service_family && op.service_family !== "UNKNOWN" ? op.service_family : null;
+  const familia = op.service_family;
   await marcarNegocioGanhoSeAindaNao(params.negocioId, params.organizacaoId, { familiaHint: familia });
 
   const [depois] = await db.execute<{ status: string }>(sql`

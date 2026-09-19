@@ -345,7 +345,7 @@ export async function criarOportunidadeDireta(params: {
   familias: Familia[];
   responsavelId: string;
   ator: Ator;
-}): Promise<{ oportunidades: Array<{ id: string; familia: Familia; titulo: string }>; bundleId: string | null }> {
+}): Promise<{ oportunidades: Array<{ id: string; familia: Familia | null; titulo: string }>; bundleId: string | null }> {
   const prospect = await carregarProspect(params.organizacaoId, params.leadId);
   if (!prospect.empresa_id) {
     throw new RegraDeNegocio("prospect_sem_empresa", "Oportunidade exige Empresa.");

@@ -161,13 +161,35 @@ async function main() {
     ok("Qualificado NÃO criou oportunidade automaticamente", (semOportunidade?.n ?? 0) === 0);
 
     /* ── Criação de oportunidade ──────────────────────────────────────── */
-    console.log("\n── Oportunidade: família obrigatória, sem reunião, etapa Entrada");
+    console.log("\n── Oportunidade: família pode ser definida depois, sem reunião, etapa Entrada");
 
+    const semFamilia = await pipeline.criarOportunidade({
+      organizacaoId: org.id, empresaId: lead.empresaId, familias: [],
+      responsavelId: usuario.id, sourceProcess: "MANUAL",
+    }, ator);
+    const [opSemFamilia] = await db.execute<{ etapa: string; familia: string | null }>(sql`
+      SELECT etapa, service_family AS familia FROM negocios WHERE id = ${semFamilia.oportunidades[0].id}::uuid
+    `);
+    ok("Oportunidade pode nascer sem família em Entrada",
+      opSemFamilia?.etapa === "entrada" && opSemFamilia?.familia === null,
+      `${opSemFamilia?.etapa ?? "sem etapa"} / ${opSemFamilia?.familia ?? "sem família"}`);
     await esperaBloqueio(
-      "Oportunidade sem família é bloqueada", "oportunidade_exige_familia",
-      () => pipeline.criarOportunidadeDoLead({
-        organizacaoId: org.id, leadId: lead.leadId, familias: [],
-        responsavelId: usuario.id, ator,
+      "Oportunidade sem família não entra em Proposta", "etapa_exige_familia",
+      () => pipeline.moverEtapa({
+        organizacaoId: org.id, negocioId: semFamilia.oportunidades[0].id, para: "proposta", ator,
+      }),
+    );
+    await esperaBloqueio(
+      "Oportunidade sem família não cria proposta por chamada direta", "proposta_exige_familia",
+      () => criarPropostaComItens({
+        organizacaoId: org.id, leadId: lead.leadId, negocioId: semFamilia.oportunidades[0].id,
+        moeda: "BRL", itens: [], criadoPorId: usuario.id,
+      }),
+    );
+    await esperaBloqueio(
+      "Oportunidade sem família não pode ser ganha", "ganho_exige_familia",
+      () => pipeline.tentarGanhar({
+        organizacaoId: org.id, negocioId: semFamilia.oportunidades[0].id, ator,
       }),
     );
 

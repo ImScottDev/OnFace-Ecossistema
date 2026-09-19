@@ -668,7 +668,7 @@ function DialogoOportunidade({ aberto, lead, responsaveis, pendente, bloqueio, a
     setFamilias((atual) => atual.includes(familia) ? atual.filter((f) => f !== familia) : [...atual, familia]);
   }
 
-  const pronto = familias.length > 0 && Boolean(responsavelId) && (!comReuniao || Boolean(dataReuniao));
+  const pronto = Boolean(responsavelId) && (!comReuniao || Boolean(dataReuniao));
 
   return (
     <Dialogo
@@ -692,9 +692,11 @@ function DialogoOportunidade({ aberto, lead, responsaveis, pendente, bloqueio, a
             ))}
           </div>
           <p className="ov-nota" style={{ marginTop: "calc(6 * var(--onface-u))" }}>
-            {familias.length > 1
-              ? `Serão criadas ${familias.length} oportunidades irmãs, uma por família, com fechamento independente e o mesmo bundle.`
-              : "Cada oportunidade pertence a exatamente uma família. Marcar mais de uma cria oportunidades irmãs."}
+            {familias.length === 0
+              ? "A oportunidade entra em Entrada com família a definir. Será obrigatório escolher uma antes de criar proposta, contrato, checkout ou concluir como ganha."
+              : familias.length > 1
+                ? `Serão criadas ${familias.length} oportunidades irmãs, uma por família, com fechamento independente e o mesmo bundle.`
+                : "Cada oportunidade pertence a exatamente uma família. Marcar mais de uma cria oportunidades irmãs."}
           </p>
         </div>
 

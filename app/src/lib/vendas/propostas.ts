@@ -18,7 +18,7 @@ import { db } from "@/lib/db";
 import { registrarEvento } from "./eventos";
 import { moverEtapa } from "./pipeline";
 import {
-  RegraDeNegocio, ROTULO_FAMILIA, VALIDADES_PROPOSTA, TIPOS_CONTRATUAIS_COM_BASE,
+  ehFamiliaValida, RegraDeNegocio, ROTULO_FAMILIA, VALIDADES_PROPOSTA, TIPOS_CONTRATUAIS_COM_BASE,
   type Ator, type Familia, type ModoFechamento, type NaturezaReceita,
   type StatusProposta, type TipoContratual,
 } from "./dominio";
@@ -221,6 +221,13 @@ export async function enviarProposta(envio: EnvioDeProposta): Promise<{ proposta
   }
   if (!proposta.negocio_id) {
     throw new RegraDeNegocio("proposta_sem_oportunidade", "Proposta precisa estar vinculada a uma oportunidade.");
+  }
+  if (!ehFamiliaValida(proposta.familia_oportunidade)) {
+    throw new RegraDeNegocio(
+      "proposta_exige_familia",
+      "Defina a família comercial antes de enviar uma proposta.",
+      { rotulo: "Definir família", tipo: "alterar_familia" },
+    );
   }
 
   const [temItens] = await db.execute<{ n: number }>(sql`
