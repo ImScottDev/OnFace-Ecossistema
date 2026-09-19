@@ -115,8 +115,8 @@ export function Contatos({ aba, empresas, pessoas, filtro, responsaveis, selecao
   }, [pessoaInicial, pessoas]);
 
   async function rodar(fn: () => Promise<Resultado<unknown>>) {
-    const ok = await executar(async () => (await fn()) as Resultado<unknown>);
-    if (ok !== null) {
+    const desfecho = await executar(async () => (await fn()) as Resultado<unknown>);
+    if (desfecho.ok) {
       setModal(null);
       if (selecionada) {
         const r = await acoes.empresa360(selecionada);
@@ -124,7 +124,7 @@ export function Contatos({ aba, empresas, pessoas, filtro, responsaveis, selecao
       }
       router.refresh();
     }
-    return ok !== null;
+    return desfecho.ok;
   }
 
   const empresa = detalhe?.empresa ?? null;

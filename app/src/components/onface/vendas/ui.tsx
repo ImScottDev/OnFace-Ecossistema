@@ -269,20 +269,46 @@ export { moeda, moedaExata, dataCurta, dataHora, decorrido } from "./formato";
  * corre, ele fica desabilitado; quando a regra de negócio recusa, a mensagem
  * aparece na própria superfície em vez de sumir num toast.
  */
+/** Desfecho de uma execução. O sucesso é uma BANDEIRA, não a presença de dado.
+ *
+ * A versão anterior devolvia `dados ?? null` e nada mais, o que fazia sucesso
+ * sem retorno e falha caírem no MESMO valor: `null`. Metade das ações do
+ * módulo não devolve dado (mover etapa, perder, vincular, enviar proposta), e
+ * os chamadores testavam `ok !== null` — então uma ação que deu certo era
+ * tratada como recusada: o modal não fechava, a tela não recarregava e a
+ * função reportava falso. O contrário também: quem lia o `null` como falha
+ * podia engolir um erro real sem mostrar nada.
+ *
+ * Separar o "deu certo" do "veio dado junto" é o que impede as duas leituras
+ * erradas. Achado em 19/09, investigando o bug da tag silenciosa. */
+export type Desfecho<T> = { ok: true; dados: T | null } | { ok: false };
+
+/** Mensagem para quando a falha não é regra de negócio, e sim o mundo caindo. */
+export const FALHA_DE_COMUNICACAO = "Não foi possível falar com o CRM. A ação não foi aplicada.";
+
 export function useAcao() {
   const [pendente, setPendente] = useState(false);
   const [bloqueio, setBloqueio] = useState<Bloqueio | null>(null);
 
-  async function executar<T>(fn: () => Promise<{ ok: true; dados?: T } | { ok: false; erro: string; acao?: { rotulo: string; tipo: string } }>) {
+  async function executar<T>(
+    fn: () => Promise<{ ok: true; dados?: T } | { ok: false; erro: string; acao?: { rotulo: string; tipo: string } }>,
+  ): Promise<Desfecho<T>> {
     setPendente(true);
     setBloqueio(null);
     try {
       const resultado = await fn();
       if (!resultado.ok) {
         setBloqueio({ mensagem: resultado.erro, acao: resultado.acao });
-        return null;
+        return { ok: false };
       }
-      return (resultado.dados ?? null) as T | null;
+      return { ok: true, dados: (resultado.dados ?? null) as T | null };
+    } catch {
+      // Sem este catch, rede caída ou `fetch` que estoura escapava de todo o
+      // fluxo: nenhum bloqueio era escrito, nenhuma mensagem aparecia, e a
+      // tela só ficava parada. Silêncio é o pior desfecho possível — a pessoa
+      // conclui que funcionou. Foi assim que a tag em massa "sumiu".
+      setBloqueio({ mensagem: FALHA_DE_COMUNICACAO });
+      return { ok: false };
     } finally {
       setPendente(false);
     }

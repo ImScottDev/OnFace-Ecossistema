@@ -110,19 +110,21 @@ export function Pipeline({ dados, aba, filtro, selecaoInicial, rotaBase, acoes }
   }
 
   async function rodar(fn: () => Promise<Resultado<unknown>>, fecharModal = true) {
-    const ok = await executar(async () => (await fn()) as Resultado<unknown>);
-    if (ok !== null) {
+    const desfecho = await executar(async () => (await fn()) as Resultado<unknown>);
+    if (desfecho.ok) {
       if (fecharModal) setModal(null);
       await recarregar();
       router.refresh();
     }
-    return ok !== null;
+    return desfecho.ok;
   }
 
   async function tentarGanhar() {
-    const resultado = await executar(async () => acoes.tentarGanhar(selecionado!));
-    if (resultado) {
-      setResultadoGanho(resultado.ganhou ? null : resultado.motivo);
+    const desfecho = await executar(async () => acoes.tentarGanhar(selecionado!));
+    // Esta ação SEMPRE devolve dado (ganhou/motivo); `dados` nulo aqui seria
+    // contrato quebrado, não "deu certo sem resposta".
+    if (desfecho.ok && desfecho.dados) {
+      setResultadoGanho(desfecho.dados.ganhou ? null : desfecho.dados.motivo);
       await recarregar();
       router.refresh();
     }

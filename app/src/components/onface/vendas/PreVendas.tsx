@@ -107,12 +107,11 @@ export function PreVendas({ dados, aba, filtro, acoes, rotaBase = "" }: {
   }
 
   async function rodar(fn: () => Promise<Resultado<unknown>>, fecharModal = true, mensagem = "Alteração salva.") {
-    let confirmou = false;
-    await executar(async () => {
-      const resultado = await fn();
-      confirmou = resultado.ok;
-      return resultado as Resultado<unknown>;
-    });
+    // O desfecho vem do próprio `executar` desde 19/09: antes a confirmação
+    // era capturada numa variável por efeito colateral dentro do callback,
+    // porque o retorno não distinguia sucesso sem dado de falha.
+    const desfecho = await executar(async () => (await fn()) as Resultado<unknown>);
+    const confirmou = desfecho.ok;
     if (confirmou) {
       if (fecharModal) setModal(null);
       setSucesso(mensagem);

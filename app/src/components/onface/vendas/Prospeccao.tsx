@@ -26,7 +26,10 @@ import type { Resultado } from "@/lib/vendas/resultado";
 import {
   Abas, AvisoBloqueio, Board, Busca, Coluna, ColunaVazia, Dialogo, Tag, dataCurta, useAcao,
 } from "./ui";
-import { acoesEmMassaDisponiveis, montarPayloadMassa, montarUrlProspeccao, type OperacaoMassa } from "./prospeccao-acoes";
+import {
+  acoesEmMassaDisponiveis, montarPayloadMassa, montarUrlProspeccao,
+  resumirExecucaoEmMassa, type OperacaoMassa,
+} from "./prospeccao-acoes";
 
 export interface AcoesProspeccao {
   adicionar: (e: EntradaProspect) => Promise<Resultado<{ leadId: string; jaExistia: boolean }>>;
@@ -83,12 +86,11 @@ export function Prospeccao({ dados, filtro, visao, cadencias, responsaveis, acoe
   }
 
   async function rodar(fn: () => Promise<Resultado<unknown>>, mensagem = "Alteração salva.") {
-    let confirmou = false;
-    await executar(async () => {
-      const resultado = await fn();
-      confirmou = resultado.ok;
-      return resultado as Resultado<unknown>;
-    });
+    // O desfecho vem do próprio `executar` desde 19/09: antes a confirmação
+    // era capturada numa variável por efeito colateral dentro do callback,
+    // porque o retorno não distinguia sucesso sem dado de falha.
+    const desfecho = await executar(async () => (await fn()) as Resultado<unknown>);
+    const confirmou = desfecho.ok;
     if (confirmou) {
       setModal(null);
       setAlvo(null);
@@ -138,8 +140,8 @@ export function Prospeccao({ dados, filtro, visao, cadencias, responsaveis, acoe
     const resultados = await Promise.all(selecionados.map((leadId) => resultadoApi(`/api/leads/${leadId}/labels`, {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ labelId }),
     })));
-    const falha = resultados.find((resultado) => !resultado.ok);
-    return falha ?? { ok: true };
+    const resumo = resumirExecucaoEmMassa(resultados);
+    return resumo.ok ? { ok: true } : { ok: false, erro: resumo.mensagem };
   }
 
   async function executarEmMassa(valor: string | null): Promise<Resultado> {
@@ -154,11 +156,13 @@ export function Prospeccao({ dados, filtro, visao, cadencias, responsaveis, acoe
       }
       case "cadencia": {
         const resultados = await Promise.all(selecionados.map((leadId) => acoes.inscreverEmCadencia(leadId, payload.cadenceDefinitionId)));
-        return resultados.find((resultado) => !resultado.ok) ?? { ok: true };
+        const resumo = resumirExecucaoEmMassa(resultados);
+        return resumo.ok ? { ok: true } : { ok: false, erro: resumo.mensagem };
       }
       case "pausar": {
         const resultados = await Promise.all(selecionados.map((leadId) => acoes.pausarCadencia(leadId, "Pausado em massa")));
-        return resultados.find((resultado) => !resultado.ok) ?? { ok: true };
+        const resumo = resumirExecucaoEmMassa(resultados);
+        return resumo.ok ? { ok: true } : { ok: false, erro: resumo.mensagem };
       }
       case "enriquecer":
         return resultadoApi("/api/leads/enrich-bulk", {

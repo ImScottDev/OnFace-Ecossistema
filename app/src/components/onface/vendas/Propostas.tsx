@@ -88,8 +88,11 @@ export function Propostas({ linhas, filtro, oportunidadeInicial, propostaInicial
   const { pendente, bloqueio, limparBloqueio, executar } = useAcao();
 
   async function criarRevisao(propostaId: string, consumirIntencao = false) {
-    const revisao = await executar<{ propostaId: string; versao: number }>(() => acoes.criarRevisao(propostaId));
-    if (!revisao) return false;
+    const desfecho = await executar<{ propostaId: string; versao: number }>(() => acoes.criarRevisao(propostaId));
+    // Criar revisão SEMPRE devolve a proposta nova; sem o id não há para onde
+    // navegar, então dado ausente aqui é falha, não sucesso sem retorno.
+    if (!desfecho.ok || !desfecho.dados) return false;
+    const revisao = desfecho.dados;
 
     setModal(null);
     setSelecionada(revisao.propostaId);
@@ -148,8 +151,8 @@ export function Propostas({ linhas, filtro, oportunidadeInicial, propostaInicial
   }
 
   async function rodar(fn: () => Promise<Resultado<unknown>>) {
-    const ok = await executar(async () => (await fn()) as Resultado<unknown>);
-    if (ok !== null) {
+    const desfecho = await executar(async () => (await fn()) as Resultado<unknown>);
+    if (desfecho.ok) {
       setModal(null);
       if (selecionada) {
         const r = await acoes.detalhe(selecionada);
@@ -157,7 +160,7 @@ export function Propostas({ linhas, filtro, oportunidadeInicial, propostaInicial
       }
       router.refresh();
     }
-    return ok !== null;
+    return desfecho.ok;
   }
 
   return (

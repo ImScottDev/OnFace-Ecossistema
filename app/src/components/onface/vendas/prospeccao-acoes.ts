@@ -64,3 +64,39 @@ export function montarPayloadMassa(operacao: OperacaoMassa, valor: string | null
       return { tipo: "pausar" };
   }
 }
+
+/** Resultado de uma ação aplicada item a item, somado com honestidade.
+ *
+ * Ação em massa é N chamadas independentes: parte pode gravar e parte pode
+ * falhar. Reportar só a PRIMEIRA falha — que é o que a tela fazia — esconde o
+ * tamanho do estrago; reportar "pronto" porque alguma deu certo é pior ainda.
+ * A pessoa precisa saber em quantos de quantos a coisa não pegou, para decidir
+ * se refaz tudo ou só o que ficou para trás.
+ *
+ * `parcial` existe porque é o caso mais perigoso: alguns gravaram. Repetir a
+ * ação inteira nesse estado pode duplicar efeito no que já deu certo, então a
+ * mensagem precisa dizer que o resultado está pela metade em vez de sugerir
+ * um "tente de novo" cego.
+ */
+export function resumirExecucaoEmMassa(
+  resultados: Array<{ ok: boolean; erro?: string }>,
+): { ok: boolean; total: number; falhas: number; parcial: boolean; mensagem: string } {
+  const total = resultados.length;
+  const comFalha = resultados.filter((r) => !r.ok);
+  const falhas = comFalha.length;
+
+  if (falhas === 0) return { ok: true, total, falhas: 0, parcial: false, mensagem: "" };
+
+  // O motivo vem da primeira falha porque, quando o erro é o mesmo para todas
+  // (API fora, sessão expirada), repetir N vezes a mesma frase não informa —
+  // o que informa é o CONTADOR ao lado dela.
+  const motivo = comFalha.find((r) => r.erro)?.erro ?? "A operação não pôde ser concluída.";
+  const parcial = falhas < total;
+  const escopo = parcial
+    ? `Falhou em ${falhas} de ${total}; as outras ${total - falhas} foram aplicadas.`
+    : total === 1
+      ? "A ação não foi aplicada."
+      : `Nenhuma das ${total} foi aplicada.`;
+
+  return { ok: false, total, falhas, parcial, mensagem: `${motivo} ${escopo}` };
+}
