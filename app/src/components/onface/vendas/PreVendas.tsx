@@ -30,6 +30,7 @@ import type { Resultado } from "@/lib/vendas/resultado";
 import {
   Abas, AvisoBloqueio, Board, Busca, Campo, Coluna, ColunaVazia, ComPainel,
   Dialogo, Painel, Secao, Tag, dataCurta, dataHora, decorrido, useAcao,
+  type RotaBaseVendas,
 } from "./ui";
 import { AcoesContato } from "./pagina";
 
@@ -65,11 +66,13 @@ export interface AcoesPreVendas {
   detalhe: (leadId: string) => Promise<Resultado<{ lead: DetalheLead | null; timeline: LinhaDoTempo[] }>>;
 }
 
-export function PreVendas({ dados, aba, filtro, acoes }: {
+export function PreVendas({ dados, aba, filtro, acoes, rotaBase = "" }: {
   dados: BoardPreVendas;
   aba: Aba;
   filtro: { busca: string; responsavelId: string | null };
   acoes: AcoesPreVendas;
+  /** Prefixo das rotas irmãs do módulo. Vazio = rota oficial do produto. */
+  rotaBase?: RotaBaseVendas;
 }) {
   const router = useRouter();
   const [, iniciarNavegacao] = useTransition();
@@ -166,6 +169,7 @@ export function PreVendas({ dados, aba, filtro, acoes }: {
         aberto={Boolean(selecionado)}
         painel={
           <PainelLead
+            rotaBase={rotaBase}
             lead={lead}
             timeline={detalhe?.timeline ?? []}
             pendente={pendente}
@@ -319,7 +323,7 @@ function CardLead({ card, selecionado, aoAbrir }: {
 
 /* ── Painel ────────────────────────────────────────────────────────────── */
 
-function PainelLead({ lead, timeline, pendente, bloqueio, responsaveis, aoFechar, aoAgir, acoes }: {
+function PainelLead({ lead, timeline, pendente, bloqueio, responsaveis, aoFechar, aoAgir, acoes, rotaBase }: {
   lead: DetalheLead | null;
   timeline: LinhaDoTempo[];
   pendente: boolean;
@@ -334,6 +338,7 @@ function PainelLead({ lead, timeline, pendente, bloqueio, responsaveis, aoFechar
     reativar: () => Promise<boolean>;
     abrirModal: (m: "qualificar" | "nutrir" | "desqualificar" | "oportunidade") => void;
   };
+  rotaBase: RotaBaseVendas;
 }) {
   if (!lead) {
     return <Painel titulo="Carregando" aoFechar={aoFechar}><p className="ov-nota">Buscando o lead…</p></Painel>;
@@ -408,7 +413,7 @@ function PainelLead({ lead, timeline, pendente, bloqueio, responsaveis, aoFechar
           <Campo rotulo="CNPJ">{lead.empresa.cnpj}</Campo>
         </dl>
         {lead.empresa.id ? (
-          <Link className="ov-botao" data-variante="contorno" href={`/onface-preview/contatos?empresa=${lead.empresa.id}`}>
+          <Link className="ov-botao" data-variante="contorno" href={`${rotaBase}/contatos?empresa=${lead.empresa.id}`}>
             <Building2 aria-hidden />Abrir empresa
           </Link>
         ) : (
@@ -460,7 +465,7 @@ function PainelLead({ lead, timeline, pendente, bloqueio, responsaveis, aoFechar
       {lead.oportunidades.length > 0 ? (
         <Secao titulo="Oportunidades">
           {lead.oportunidades.map((o) => (
-            <Link key={o.id} className="ov-botao" data-variante="contorno" href={`/onface-preview/pipeline?oportunidade=${o.id}`}>
+            <Link key={o.id} className="ov-botao" data-variante="contorno" href={`${rotaBase}/pipeline?oportunidade=${o.id}`}>
               {o.titulo} · {o.etapaRotulo}
             </Link>
           ))}

@@ -9,7 +9,7 @@ import {
   acaoAdicionarProspect, acaoAtribuirEmMassa, acaoCadencias, acaoDescartar,
   acaoInscreverEmCadencia, acaoMarcarSemResposta, acaoOportunidadeDireta,
   acaoPausarCadencia, acaoPreQualificar, acaoRegistrarResposta, acaoResponsaveis,
-} from "@/app/(onface-preview)/onface-preview/prospeccao/actions";
+} from "@/app/(crm2)/prospeccao/actions";
 
 export const metadata = { title: "ONFACE — Prospecção (dado real)" };
 export const dynamic = "force-dynamic";

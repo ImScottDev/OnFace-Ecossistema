@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { OnfacePage, OnfacePageSurface } from "@/components/onface/shell/OnfacePage";
 import { DetalheEmpresaPagina } from "@/components/onface/vendas/pagina";
-import { acaoEmpresa360 } from "@/app/(onface-preview)/onface-preview/contatos/actions";
+import { acaoEmpresa360 } from "@/app/(crm2)/contatos/actions";
 
 export default async function EmpresaPorId({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;

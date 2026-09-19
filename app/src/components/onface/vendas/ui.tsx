@@ -7,6 +7,17 @@ import {
 } from "@/components/ui/dialog";
 import "./vendas.css";
 
+/** Prefixo das rotas do módulo Vendas.
+ *
+ * A mesma tela atende três lugares: a rota OFICIAL do produto (`""`, ex.
+ * `/pipeline`), o espelho congelado de desenho e o preview. O prefixo vem de
+ * fora porque só a rota sabe onde está — um link fixo aqui faria a tela
+ * oficial cuspir o usuário de volta no preview.
+ *
+ * `""` é o valor do produto e o padrão em toda prop nova: a rota oficial é o
+ * caso normal desde 18/09, o resto é espelho. */
+export type RotaBaseVendas = "" | "/onface-desenho" | "/onface-preview";
+
 /* ── Blocos de layout ──────────────────────────────────────────────────── */
 
 export function Hero({ titulo, descricao, resumo, acoes }: {

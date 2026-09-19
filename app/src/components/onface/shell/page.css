@@ -14,8 +14,26 @@
  * O padding do canvas desconta a moldura, então as colunas de uma faixa escura
  * caem exatamente sobre as colunas do canvas. */
 
+/* Tela que traz a própria moldura não quer a caixa de conteúdo do CRM 2.0.
+ *
+ * O layout do `(crm2)` embrulha toda tela em `.cf2-workspace-content` com
+ * `cf2-p-pagina` (32px) e `gap-5` — certo para as ~70 telas que só trazem
+ * conteúdo, errado para as que trazem `.onface-page`, que já tem gutter,
+ * moldura e fundo grafite próprios. Sem isto a tela ONFACE ganha padding duas
+ * vezes e a faixa escura para de sangrar até a borda da viewport.
+ *
+ * `:has()` em vez de uma classe no layout porque quem sabe se a tela traz
+ * moldura é a TELA, não a casca — e assim vale para as que a F2 for
+ * convertendo, sem tocar no layout de novo a cada uma. */
+.cf2-workspace-content:has(> .onface-page) {
+  padding: 0;
+  gap: 0;
+}
+
 .onface-page {
-  --onface-gutter: calc(28 * var(--onface-u));
+  /* 24u alinha o conteúdo da página com o padding-inline do topbar (decisão do
+     Scott 18/09; antes 28u deixava um degrau de 4u entre topbar e canvas). */
+  --onface-gutter: calc(24 * var(--onface-u));
   --onface-moldura: calc(12 * var(--onface-u));
 
   display: flex;
@@ -42,6 +60,20 @@
   border-radius: calc(28 * var(--onface-u));
   background: var(--onface-white);
   color: var(--onface-preto-logo);
+}
+
+/* Canvas escuro.
+   O canvas claro é o padrão porque a maior parte do produto é leitura densa de
+   dado, e papel branco é onde tabela e formulário funcionam melhor. Mas a
+   moldura não obriga: tela de monitoramento, painel de parede, apresentação e
+   telão pedem o inverso. O tom é escolha da tela, não do sistema — o que o
+   sistema garante é que os dois existam com a mesma geometria.
+   Os tokens semânticos de dentro são reapontados em `ds/ds.css`, então
+   componente que já respeita token continua legível sem alteração. */
+.onface-page-surface[data-tom="escuro"] {
+  background: var(--onface-graphite-surface);
+  color: var(--onface-branco-logo);
+  box-shadow: inset 0 0 0 1px var(--onface-alpha-hairline);
 }
 
 /* Quando o canvas sobe por baixo da faixa escura, o topo ganha o respiro que

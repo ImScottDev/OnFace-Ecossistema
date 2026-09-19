@@ -28,7 +28,7 @@ import {
 } from "@/lib/vendas/dominio";
 import type { ItemCatalogo } from "@/lib/vendas/propostas";
 import type { Resultado } from "@/lib/vendas/resultado";
-import type { DetalheProposta, LinhaProposta } from "@/app/(onface-preview)/onface-preview/propostas/actions";
+import type { DetalheProposta, LinhaProposta } from "@/app/(crm2)/propostas/actions";
 import type { DadosJuridicos } from "@/lib/vendas/propostas";
 import {
   Abas, AvisoBloqueio, Busca, ComPainel, Dialogo, Painel, Secao, Tag,

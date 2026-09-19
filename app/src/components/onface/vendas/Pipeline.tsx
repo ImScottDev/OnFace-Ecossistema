@@ -29,6 +29,7 @@ import type { Resultado } from "@/lib/vendas/resultado";
 import {
   Abas, AvisoBloqueio, Board, Busca, Campo, Coluna, ColunaVazia, ComPainel,
   Dialogo, Painel, Secao, Tag, dataCurta, dataHora, moeda, moedaExata, useAcao,
+  type RotaBaseVendas,
 } from "./ui";
 import { rotuloAtor, rotuloEvento } from "./PreVendas";
 
@@ -58,7 +59,7 @@ export function Pipeline({ dados, aba, filtro, selecaoInicial, rotaBase, acoes }
   aba: Aba;
   filtro: { busca: string; responsavelId: string | null; familia: string | null };
   selecaoInicial?: string | null;
-  rotaBase: "/onface-desenho" | "/onface-preview";
+  rotaBase: RotaBaseVendas;
   acoes: AcoesPipeline;
 }) {
   const router = useRouter();
@@ -292,7 +293,7 @@ function PainelOportunidade({ op, timeline, pendente, bloqueio, motivoGanhoPende
   pendente: boolean;
   bloqueio: { mensagem: string; acao?: { rotulo: string; tipo: string } } | null;
   motivoGanhoPendente: string | null;
-  rotaBase: "/onface-desenho" | "/onface-preview";
+  rotaBase: RotaBaseVendas;
   aoFechar: () => void;
   aoAgir: (tipo: string) => void;
   acoes: {

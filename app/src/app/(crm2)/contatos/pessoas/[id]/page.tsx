@@ -14,5 +14,5 @@ export default async function PessoaPorId({ params }: { params: Promise<{ id: st
   const timeline = pessoa.fonte === "lead"
     ? await lerLinhaDoTempo({ organizacaoId: ctx.organizacaoId, leadId: pessoa.id, limite: 40 })
     : await lerLinhaDoTempo({ organizacaoId: ctx.organizacaoId, pessoaId: pessoa.id, limite: 40 });
-  return <OnfacePage><OnfacePageSurface><DetalhePessoaPagina pessoa={pessoa} timeline={timeline} voltar="/onface-preview/contatos" /></OnfacePageSurface></OnfacePage>;
+  return <OnfacePage><OnfacePageSurface><DetalhePessoaPagina pessoa={pessoa} timeline={timeline} voltar="/contatos" /></OnfacePageSurface></OnfacePage>;
 }

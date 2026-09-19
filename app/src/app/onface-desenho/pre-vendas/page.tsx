@@ -8,7 +8,7 @@ import {
   acaoAssociarEmpresa, acaoAtribuir, acaoCriarLead, acaoCriarOportunidade,
   acaoDesqualificar, acaoDetalhe, acaoMoverEtapa, acaoNutrir, acaoQualificar,
   acaoReativar, acaoRegistrarContato, acaoSalvarQualificacao,
-} from "@/app/(onface-preview)/onface-preview/pre-vendas/actions";
+} from "@/app/(crm2)/pre-vendas/actions";
 
 export const metadata = { title: "ONFACE — Pré-vendas (dado real)" };
 export const dynamic = "force-dynamic";

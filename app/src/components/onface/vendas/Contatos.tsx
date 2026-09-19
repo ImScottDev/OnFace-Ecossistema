@@ -27,6 +27,7 @@ import type { Resultado } from "@/lib/vendas/resultado";
 import {
   Abas, AvisoBloqueio, Busca, Campo, ComPainel, Dialogo, Painel, Secao, Tag,
   dataCurta, dataHora, moeda, useAcao,
+  type RotaBaseVendas,
 } from "./ui";
 import { rotuloAtor, rotuloEvento } from "./PreVendas";
 import { DialogoJuridicos } from "./juridicos";
@@ -61,7 +62,7 @@ export function Contatos({ aba, empresas, pessoas, filtro, responsaveis, selecao
   responsaveis: Array<{ id: string; nome: string }>;
   selecaoInicial?: string | null;
   pessoaInicial?: string | null;
-  rotaBase: "/onface-desenho" | "/onface-preview";
+  rotaBase: RotaBaseVendas;
   acoes: AcoesContatos;
 }) {
   const router = useRouter();
@@ -301,7 +302,7 @@ function PainelEmpresa({ empresa, timeline, pendente, bloqueio, rotaBase, aoFech
   timeline: LinhaDoTempo[];
   pendente: boolean;
   bloqueio: { mensagem: string } | null;
-  rotaBase: "/onface-desenho" | "/onface-preview";
+  rotaBase: RotaBaseVendas;
   aoFechar: () => void;
   aoAbrirModal: (m: "lead" | "oportunidade" | "juridicos") => void;
 }) {

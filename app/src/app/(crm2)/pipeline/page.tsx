@@ -1,49 +1,73 @@
-import { db } from "@/lib/db";
-import { organizacoes } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
-import { getTenantContext } from "@/lib/auth/tenant";
 import { redirect } from "next/navigation";
-import { Cf2Topbar } from "@/components/crm2/Topbar";
-import { Cf2PipelineWorkspace } from "@/components/crm2/pipeline/Workspace";
-import { PipelineTopbarActions } from "@/components/crm2/pipeline/TopbarActions";
-import { Cf2AreaTabs } from "@/components/crm2/AreaTabs";
-import { COMERCIAL_TABS } from "@/components/crm2/comercial-tabs";
+import { getTenantContext } from "@/lib/auth/tenant";
+import { boardPipeline } from "@/lib/vendas/consultas";
+import { OnfacePage, OnfacePageBand, OnfacePageSurface } from "@/components/onface/shell/OnfacePage";
+import { Pipeline } from "@/components/onface/vendas/Pipeline";
+import { Hero, type RotaBaseVendas } from "@/components/onface/vendas/ui";
+import { moeda } from "@/components/onface/vendas/formato";
+import {
+  acaoAgendarReuniao, acaoAlterarFamilia, acaoBuscarEmpresas, acaoCriarOportunidade,
+  acaoDefinirProximaAcao, acaoDetalhe, acaoMarcarEstagnacao, acaoMoverEtapa,
+  acaoNoShow, acaoPerder, acaoReagendar, acaoTentarGanhar, acaoTrial,
+} from "./actions";
 
-export default async function PipelinePage() {
+export const metadata = { title: "Pipeline | Callface" };
+export const dynamic = "force-dynamic";
+
+type Aba = "abertas" | "ganhas" | "perdidas";
+
+/** Rota OFICIAL do produto. A implementação mudou de casa em 18/09 (F1, lote 2):
+ * morava em `/onface-preview/pipeline` e agora é daqui. O preview virou um espelho
+ * fino que chama esta mesma função com outro `rotaBase` — sem ele, um clique
+ * numa tela irmã devolvia o usuário para dentro do preview. */
+export async function PipelinePage({ searchParams, rotaBase = "" }: {
+  searchParams: Promise<{ aba?: string; busca?: string; responsavel?: string; familia?: string; oportunidade?: string }>;
+  rotaBase?: RotaBaseVendas;
+}) {
   const ctx = await getTenantContext();
   if (!ctx) redirect("/login");
 
-  const org = await db.select({ nome: organizacoes.nome }).from(organizacoes).where(eq(organizacoes.id, ctx.organizacaoId)).limit(1);
-  const orgNome = org[0]?.nome || "Callface";
+  const params = await searchParams;
+  const aba: Aba = params.aba === "ganhas" || params.aba === "perdidas" ? params.aba : "abertas";
+  const busca = params.busca?.trim() || "";
+  const responsavelId = params.responsavel || null;
+  const familia = params.familia || null;
+
+  const dados = await boardPipeline(ctx.organizacaoId, { aba, busca, responsavelId, familia });
 
   return (
-    <div className="-m-6 h-[100dvh] flex flex-col min-h-0 overflow-hidden">
-      {/* ALTURA FECHADA (01/09, pedido do Kauã: "a página fixa e eu faço o
-          scroll conforme cada coluna do Kanban"). `-m-6` cancela o padding do
-          layout e `h-[100dvh]` casa exatamente com o scroller do shell
-          (`ui/Sidebar` provider é `h-dvh`, `main` e o scroller são `flex-1`).
-          Com altura DEFINIDA aqui, o `max-h-full` das colunas passa a ter
-          referência e o scroll vertical acontece dentro de cada coluna em vez
-          de esticar a página inteira. `h-[calc(100%+3rem)]` não resolvia: o
-          container do layout é `min-h-full`, ou seja altura auto, e
-          porcentagem contra altura auto é indefinida — o filho voltava pra
-          auto e a página crescia. */}
-      <header className="shrink-0 flex flex-col px-6 py-3.5" style={{ background: "var(--cf2-bg-surface)", borderBottom: "1px solid var(--cf2-border-default)" }}>
-        <Cf2Topbar orgNome={orgNome} variant="light" title={<Cf2AreaTabs items={COMERCIAL_TABS} />} subtitle="Pré-vendas, prospecção e oportunidades numa única operação" actions={<PipelineTopbarActions />} compactTitle />
-      </header>
-
-      {/* A área de trabalho destas telas é escura, mas o documento roda no tema
-          claro: sem declarar a superfície, os tons semânticos (âmbar e vermelho
-          escurecidos pro contraste em branco) chegavam aqui pesados demais. */}
-      <div
-        data-cf2-superficie="escura"
-        className="flex flex-1 flex-col gap-4 px-6 pb-6 pt-5 min-h-0"
-        style={{ background: "var(--cf2-chrome-bg-alt)" }}
-      >
-        <div className="flex-1 min-h-0">
-          <Cf2PipelineWorkspace />
-        </div>
-      </div>
-    </div>
+    <OnfacePage>
+      <OnfacePageBand>
+        <Hero
+          titulo="Pipeline"
+          descricao="Oportunidades comerciais reais. Uma família por oportunidade; reunião, trial e no-show são eventos, não colunas."
+          resumo={[
+            { rotulo: "Em aberto", valor: dados.resumo.abertas },
+            { rotulo: "Valor em aberto", valor: moeda(dados.resumo.valorEmAberto) },
+            { rotulo: "Sem próxima ação", valor: dados.resumo.semProximaAcao, alerta: dados.resumo.semProximaAcao > 0 },
+            { rotulo: "Ganhas", valor: dados.resumo.ganhas },
+          ]}
+        />
+      </OnfacePageBand>
+      <OnfacePageSurface sobreposto>
+        <Pipeline
+          dados={dados}
+          aba={aba}
+          filtro={{ busca, responsavelId, familia }}
+          selecaoInicial={params.oportunidade ?? null}
+          rotaBase={rotaBase}
+          acoes={{
+            moverEtapa: acaoMoverEtapa, definirProximaAcao: acaoDefinirProximaAcao,
+            marcarEstagnacao: acaoMarcarEstagnacao, alterarFamilia: acaoAlterarFamilia,
+            perder: acaoPerder, tentarGanhar: acaoTentarGanhar,
+            agendarReuniao: acaoAgendarReuniao, noShow: acaoNoShow, reagendar: acaoReagendar,
+            trial: acaoTrial, criarOportunidade: acaoCriarOportunidade,
+            buscarEmpresas: acaoBuscarEmpresas, detalhe: acaoDetalhe,
+          }}
+        />
+      </OnfacePageSurface>
+    </OnfacePage>
   );
 }
+
+export default PipelinePage;

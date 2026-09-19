@@ -1,55 +1,79 @@
-import { db } from "@/lib/db";
-import { organizacoes } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
-import { getTenantContext } from "@/lib/auth/tenant";
 import { redirect } from "next/navigation";
-import { Cf2Topbar } from "@/components/crm2/Topbar";
-import { Cf2ProspeccaoWorkspace } from "@/components/crm2/prospeccao/Workspace";
-import { ProspeccaoTopbarActions } from "@/components/crm2/prospeccao/TopbarActions";
-import { Cf2AreaTabs } from "@/components/crm2/AreaTabs";
-import { COMERCIAL_TABS } from "@/components/crm2/comercial-tabs";
+import { getTenantContext } from "@/lib/auth/tenant";
+import { listaProspeccao } from "@/lib/vendas/consultas";
+import type { EstadoProspeccao } from "@/lib/vendas/dominio";
+import { OnfacePage, OnfacePageBand, OnfacePageSurface } from "@/components/onface/shell/OnfacePage";
+import { Prospeccao } from "@/components/onface/vendas/Prospeccao";
+import { Hero, type RotaBaseVendas } from "@/components/onface/vendas/ui";
+import {
+  acaoAdicionarProspect, acaoAtribuirEmMassa, acaoCadencias, acaoDescartar,
+  acaoInscreverEmCadencia, acaoMarcarSemResposta, acaoOportunidadeDireta,
+  acaoPausarCadencia, acaoPreQualificar, acaoRegistrarResposta, acaoResponsaveis,
+} from "./actions";
 
-export default async function ProspeccaoPage() {
+export const metadata = { title: "Prospecção | Callface" };
+export const dynamic = "force-dynamic";
+
+/** Rota OFICIAL do produto. A implementação mudou de casa em 18/09 (F1, lote 2):
+ * morava em `/onface-preview/prospeccao` e agora é daqui. O preview virou um espelho
+ * fino que chama esta mesma função com outro `rotaBase` — sem ele, um clique
+ * numa tela irmã devolvia o usuário para dentro do preview. */
+export async function ProspeccaoPage({ searchParams, rotaBase = "" }: {
+  searchParams: Promise<{ visao?: string; busca?: string; estado?: string; responsavel?: string; lista?: string }>;
+  rotaBase?: RotaBaseVendas;
+}) {
   const ctx = await getTenantContext();
   if (!ctx) redirect("/login");
 
-  const org = await db.select({ nome: organizacoes.nome }).from(organizacoes).where(eq(organizacoes.id, ctx.organizacaoId)).limit(1);
-  const orgNome = org[0]?.nome || "Callface";
+  const params = await searchParams;
+  const visao = params.visao === "kanban" ? "kanban" : "lista";
+  const busca = params.busca?.trim() || "";
+  const estado = (params.estado || null) as EstadoProspeccao | null;
+  const responsavelId = params.responsavel || null;
+  const lista = params.lista?.trim() || null;
+
+  const [dados, cadencias, responsaveis] = await Promise.all([
+    listaProspeccao(ctx.organizacaoId, { busca, estado, responsavelId, lista }),
+    acaoCadencias(),
+    acaoResponsaveis(),
+  ]);
 
   return (
-    <div className="-m-6 h-[100dvh] flex flex-col min-h-0 overflow-hidden">
-      {/* ALTURA FECHADA (01/09, pedido do Kauã: "a página fixa e eu faço o
-          scroll conforme cada coluna do Kanban"). `-m-6` cancela o padding do
-          layout e `h-[100dvh]` casa exatamente com o scroller do shell
-          (`ui/Sidebar` provider é `h-dvh`, `main` e o scroller são `flex-1`).
-          Com altura DEFINIDA aqui, o `max-h-full` das colunas passa a ter
-          referência e o scroll vertical acontece dentro de cada coluna em vez
-          de esticar a página inteira. `h-[calc(100%+3rem)]` não resolvia: o
-          container do layout é `min-h-full`, ou seja altura auto, e
-          porcentagem contra altura auto é indefinida — o filho voltava pra
-          auto e a página crescia. */}
-      {/* TOPO PADRÃO DO SISTEMA (01/09, regra do Kauã): sempre BRANCO, mesma
-          altura e mesmos elementos em toda página — trigger do sidebar, título
-          (aqui as abas de pipeline), busca ⌘K e notificações. O que muda por
-          página são só os botões de ação da direita (`actions`). */}
-      <header className="flex flex-col px-6 py-3.5" style={{ background: "var(--cf2-bg-surface)", borderBottom: "1px solid var(--cf2-border-default)" }}>
-        <Cf2Topbar orgNome={orgNome} variant="light" title={<Cf2AreaTabs items={COMERCIAL_TABS} />} subtitle="Pré-vendas, prospecção e oportunidades numa única operação" actions={<ProspeccaoTopbarActions />} compactTitle />
-      </header>
-
-      {/* Mesmo container escuro de Pré-vendas: o board é a própria grade de
-          trabalho, então o fundo fica contínuo e não compete com as colunas. */}
-      {/* A área de trabalho destas telas é escura, mas o documento roda no tema
-          claro: sem declarar a superfície, os tons semânticos (âmbar e vermelho
-          escurecidos pro contraste em branco) chegavam aqui pesados demais. */}
-      <div
-        data-cf2-superficie="escura"
-        className="flex flex-1 flex-col gap-4 px-6 pb-6 pt-5 min-h-0"
-        style={{ background: "var(--cf2-chrome-bg-alt)" }}
-      >
-        <div className="flex-1 min-h-0 min-w-0">
-          <Cf2ProspeccaoWorkspace />
-        </div>
-      </div>
-    </div>
+    <OnfacePage>
+      <OnfacePageBand>
+        <Hero
+          titulo="Prospecção"
+          descricao="Operação outbound. Duas saídas: pré-qualificar entrega a empresa a Pré-vendas; criar oportunidade vai direto ao Pipeline."
+          resumo={[
+            { rotulo: "Novos", valor: dados.resumo.novo },
+            { rotulo: "Em cadência", valor: dados.resumo.em_cadencia },
+            { rotulo: "Responderam", valor: dados.resumo.respondeu },
+            { rotulo: "Pré-qualificados", valor: dados.resumo.pre_qualificado },
+          ]}
+        />
+      </OnfacePageBand>
+      <OnfacePageSurface sobreposto>
+        <Prospeccao
+          dados={dados}
+          filtro={{ busca, estado, responsavelId, lista }}
+          visao={visao}
+          cadencias={cadencias}
+          responsaveis={responsaveis}
+          acoes={{
+            adicionar: acaoAdicionarProspect,
+            inscreverEmCadencia: acaoInscreverEmCadencia,
+            pausarCadencia: acaoPausarCadencia,
+            registrarResposta: acaoRegistrarResposta,
+            marcarSemResposta: acaoMarcarSemResposta,
+            preQualificar: acaoPreQualificar,
+            oportunidadeDireta: acaoOportunidadeDireta,
+            descartar: acaoDescartar,
+            atribuirEmMassa: acaoAtribuirEmMassa,
+          }}
+        />
+      </OnfacePageSurface>
+    </OnfacePage>
   );
 }
+
+export default ProspeccaoPage;

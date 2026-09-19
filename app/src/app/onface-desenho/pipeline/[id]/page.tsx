@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { OnfacePage, OnfacePageSurface } from "@/components/onface/shell/OnfacePage";
 import { DetalheOportunidadePagina } from "@/components/onface/vendas/pagina";
-import { acaoDetalhe } from "@/app/(onface-preview)/onface-preview/pipeline/actions";
+import { acaoDetalhe } from "@/app/(crm2)/pipeline/actions";
 
 export default async function OportunidadePorId({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;

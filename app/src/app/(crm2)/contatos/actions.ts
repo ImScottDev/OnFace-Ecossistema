@@ -13,7 +13,7 @@ import { salvarDadosJuridicos, conferirDadosJuridicos, type DadosJuridicos } fro
 import { empresa360, type Empresa360 } from "@/lib/vendas/consultas";
 import { lerLinhaDoTempo, type LinhaDoTempo } from "@/lib/vendas/eventos";
 
-const ROTA = "/onface-preview/contatos";
+const ROTA = "/contatos";
 
 async function contexto() {
   const ctx = await getTenantContext();
@@ -118,7 +118,7 @@ export async function acaoCriarLeadDaEmpresa(entrada: {
       responsavelId: entrada.responsavelId ?? null,
     }, ctx.ator);
     revalidatePath(ROTA);
-    revalidatePath("/onface-preview/pre-vendas");
+    revalidatePath("/pre-vendas");
     return { leadId: criado.leadId };
   });
 }
@@ -139,7 +139,7 @@ export async function acaoNovaOportunidade(entrada: {
       motion: entrada.expansao ? "EXPANSION" : "NEW_BUSINESS",
     }, ctx.ator);
     revalidatePath(ROTA);
-    revalidatePath("/onface-preview/pipeline");
+    revalidatePath("/pipeline");
     return { ids: r.oportunidades.map((o) => o.id) };
   });
 }

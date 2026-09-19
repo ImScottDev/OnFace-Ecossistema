@@ -10,7 +10,7 @@ import {
   acaoAgendarReuniao, acaoAlterarFamilia, acaoBuscarEmpresas, acaoCriarOportunidade,
   acaoDefinirProximaAcao, acaoDetalhe, acaoMarcarEstagnacao, acaoMoverEtapa,
   acaoNoShow, acaoPerder, acaoReagendar, acaoTentarGanhar, acaoTrial,
-} from "@/app/(onface-preview)/onface-preview/pipeline/actions";
+} from "@/app/(crm2)/pipeline/actions";
 
 export const metadata = { title: "ONFACE — Pipeline (dado real)" };
 export const dynamic = "force-dynamic";

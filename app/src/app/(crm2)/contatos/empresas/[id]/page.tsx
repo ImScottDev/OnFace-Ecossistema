@@ -7,5 +7,5 @@ export default async function EmpresaPorId({ params }: { params: Promise<{ id: s
   const { id } = await params;
   const resultado = await acaoEmpresa360(id);
   if (!resultado.ok || !resultado.dados?.empresa) notFound();
-  return <OnfacePage><OnfacePageSurface><DetalheEmpresaPagina empresa={resultado.dados.empresa} timeline={resultado.dados.timeline} voltar="/onface-preview/contatos" /></OnfacePageSurface></OnfacePage>;
+  return <OnfacePage><OnfacePageSurface><DetalheEmpresaPagina empresa={resultado.dados.empresa} timeline={resultado.dados.timeline} voltar="/contatos" /></OnfacePageSurface></OnfacePage>;
 }

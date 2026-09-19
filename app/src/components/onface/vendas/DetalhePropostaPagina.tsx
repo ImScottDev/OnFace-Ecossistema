@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import type { DetalheProposta } from "@/app/(onface-preview)/onface-preview/propostas/actions";
+import type { DetalheProposta } from "@/app/(crm2)/propostas/actions";
 import { AcoesProposta, ApoioProposta, CorpoProposta, TagsProposta } from "./PropostaCorpo";
 import { Bloco, PaginaColunas, PaginaEntidade } from "./pagina";
 import { type AcaoInicialProposta, urlDoFluxoProposta } from "./fluxoProposta";

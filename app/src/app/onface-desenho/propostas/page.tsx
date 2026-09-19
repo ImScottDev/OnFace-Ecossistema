@@ -6,7 +6,7 @@ import { moeda } from "@/components/onface/vendas/formato";
 import {
   acaoCatalogo, acaoCriar, acaoCriarRevisao, acaoDetalhe, acaoEnviar,
   acaoExpirarVencidas, acaoListar, acaoOportunidadesAbertas, acaoSalvarJuridicos,
-} from "@/app/(onface-preview)/onface-preview/propostas/actions";
+} from "@/app/(crm2)/propostas/actions";
 
 export const metadata = { title: "ONFACE — Propostas (dado real)" };
 export const dynamic = "force-dynamic";

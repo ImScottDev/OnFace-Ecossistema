@@ -229,8 +229,10 @@ html[data-onface-theme],
   /* Um dial único para o tamanho aparente de todo o produto. 1 = fiel à
      prancheta de 1440; abaixo disso a tela inteira fica mais compacta, sempre
      nas mesmas proporções. Mexer aqui é a única forma de mudar a densidade,
-     nunca ajustar tamanho de componente solto. */
-  --onface-escala: 0.9;
+     nunca ajustar tamanho de componente solto.
+     Decisão do Scott 18/09: 1. Com 0.9, todo texto abaixo de --text-md
+     entregava menos de 11px e reprovava o piso de legibilidade. */
+  --onface-escala: 1;
   --onface-u: clamp(0.5px, calc(0.0694vw * var(--onface-escala)), 1.3px);
 
   /* Nada de rolagem lateral, em nenhuma largura. `clip` não cria contexto de
@@ -317,6 +319,9 @@ html[data-onface-theme],
 
 /* ── App shell ────────────────────────────────────────────────────────── */
 .onface-app-shell {
+  /* O topbar é fixo, então some do fluxo: a casca devolve a altura dele aqui.
+     Uma conta só, no lugar onde a altura já é token. */
+  padding-top: var(--shell-topbar-h);
   min-height: 100dvh;
   background: var(--surface-page);
   color: var(--text-body);
@@ -338,9 +343,18 @@ html[data-onface-theme="light"] {
 }
 
 /* ── Topbar ───────────────────────────────────────────────────────────── */
+/* Fixo, não sticky.
+   `sticky` depende da rolagem do body existir. Todo overlay modal do Radix
+   (Select, Dropdown, Dialog, Sheet, Drawer) trava essa rolagem via
+   react-remove-scroll, e no instante em que ela some o sticky volta para a
+   posição estática: com a página rolada, o topbar sumia da tela toda vez que
+   alguém abria um seletor ou uma gaveta. Fixo não tem esse acoplamento, em
+   nenhum navegador. A altura volta para o fluxo no `padding-top` da casca,
+   logo abaixo. */
 .onface-topbar {
-  position: sticky;
+  position: fixed;
   top: 0;
+  inset-inline: 0;
   z-index: 40;
   height: var(--shell-topbar-h);
   background: var(--surface-shell);
@@ -354,6 +368,30 @@ html[data-onface-theme="light"] {
   gap: var(--space-16);
   height: 100%;
   padding-inline: var(--shell-topbar-px);
+}
+
+/* Abrir overlay não pode mexer na casca.
+   O react-remove-scroll, que todo overlay modal do Radix usa, trava a rolagem
+   e estreita o body pela largura da barra de rolagem para "compensar" o
+   sumiço dela. O topbar é fixo e não encolhe junto, então cada abertura de
+   gaveta, seletor ou menu refluía a página inteira alguns pixels e a
+   desalinhava do topbar, o que na tela aparece como o fundo pulando. Com a
+   calha reservada de forma estável, a barra nunca some e essa compensação
+   vira só regressão: zeramos. Quem usa barra sobreposta (padrão do macOS)
+   não sente diferença, porque ali a compensação já era zero.
+   O `@supports` não é decoração: só faz sentido desligar a compensação da
+   biblioteca onde a calha realmente fica reservada. Em navegador sem
+   `scrollbar-gutter`, a compensação dela continua valendo, que é o
+   comportamento menos ruim dos dois. */
+html[data-onface-theme] {
+  scrollbar-gutter: stable;
+}
+
+@supports (scrollbar-gutter: stable) {
+  html[data-onface-theme] body[data-scroll-locked] {
+    margin-right: 0 !important;
+    padding-right: 0 !important;
+  }
 }
 
 /* Brand. The official negative lockup, not a hand-rebuilt wordmark. */
@@ -1157,6 +1195,10 @@ html[data-onface-theme="light"] :is(.onface-app-shell, .onface-menu, .onface-not
   .onface-topbar {
     height: var(--shell-topbar-h-compact);
   }
+  /* A casca devolve a altura certa do topbar no telefone. */
+  .onface-app-shell {
+    padding-top: var(--shell-topbar-h-compact);
+  }
   .onface-topbar-inner {
     gap: var(--space-8);
     padding-inline: var(--gutter-mobile);
@@ -1248,4 +1290,190 @@ html[data-onface-theme="light"] :is(.onface-app-shell, .onface-menu, .onface-not
    while binding every exported text node to the ONFACE display face. */
 .onface-figma-frame [data-node-id] {
   font-family: var(--font-onface-display), ui-sans-serif, system-ui, sans-serif !important;
+}
+
+/* ═══ Ponte cf2 → ONFACE (promovida do laboratório em 18/09) ═══════════════
+ *
+ * Os componentes de `components/ui` (shadcn) usam utilitários Tailwind que
+ * apontam para `--cf2-*` (aliases em `cf2-design-system.css`). Sob a casca
+ * ONFACE esses tokens não existiam e caíam no fallback escuro do `:root`:
+ * Button, Select, Table e companhia saíam do tema errado. Reapontando os
+ * `--cf2-*` aqui, os 39 componentes do CLI falam ONFACE sem editar um único
+ * arquivo de componente. É o que evita um segundo design system.
+ *
+ * Nasceu em `components/onface/ds/ds.css` valendo só na rota do laboratório;
+ * decisão do Scott em 18/09 promoveu para cá, valendo em toda tela sob
+ * `data-onface-theme`. A fonte dos valores segue sendo os tokens acima. */
+html[data-onface-theme="light"] {
+  /* Coral com texto branco em cima reprova contraste: #fff sobre #fe4f2b dá
+     3.30:1, abaixo do piso de 4.5:1 para texto. Este é o mesmo coral um grau
+     mais fundo, para preenchimento que carrega rótulo (botão primário, badge
+     cheio, chip ativo). O coral da marca continua intacto para fill sem texto,
+     borda, ícone, foco e série de gráfico. */
+  --onface-coral-deep: #d93c1a;
+
+  /* Marca. Decisão do Scott 18/09: o preenchimento de marca usa o coral
+     profundo, porque `bg-marca` sempre carrega texto ou glifo por cima
+     (botão primário, passo corrente). Borda/ícone/série seguem no coral puro
+     via tokens `--onface-coral*`. */
+  --cf2-brand: var(--onface-coral-deep);
+  --cf2-brand-ink: var(--onface-white);
+  --cf2-brand-bg: var(--onface-coral-subtle);
+  --cf2-brand-weak: var(--onface-coral-border);
+  --cf2-brand-vivid: var(--onface-coral-hover);
+
+  /* Texto */
+  --cf2-text-primary: var(--text-strong);
+  --cf2-text-secondary: var(--text-muted);
+  --cf2-text-tertiary: var(--text-subtle);
+
+  /* Superfícies e linhas */
+  --cf2-bg-page: var(--surface-page);
+  --cf2-bg-surface: var(--surface-card);
+  --cf2-bg-surface-muted: var(--surface-sunken);
+  --cf2-border-default: var(--line-hairline);
+  --cf2-border-control: var(--line-hairline);
+
+  /* Status */
+  --cf2-positivo: var(--status-success-strong);
+  --cf2-positivo-solido: var(--status-success);
+  --cf2-positivo-bg: rgba(63, 185, 80, 0.12);
+  --cf2-positivo-fg: var(--status-success-strong);
+  --cf2-positivo-weak: rgba(63, 185, 80, 0.28);
+  --cf2-negativo: var(--status-danger);
+  --cf2-negativo-bg: rgba(231, 0, 11, 0.1);
+  --cf2-negativo-fg: var(--status-danger);
+  --cf2-negativo-weak: rgba(231, 0, 11, 0.24);
+  /* Atenção preenchida carrega texto branco (botão warning): mesmo caso do
+     brand, mesmo coral profundo. O tom sutil/texto continua no par bg/fg. */
+  --cf2-atencao: var(--onface-coral-deep);
+  --cf2-atencao-bg: var(--onface-coral-subtle);
+  --cf2-atencao-fg: #c23b1d;
+  --cf2-atencao-ink: var(--onface-white);
+  --cf2-atencao-weak: var(--onface-coral-border);
+  --cf2-informativo: var(--onface-cinza-2);
+  --cf2-informativo-bg: var(--onface-branco-logo);
+  --cf2-informativo-fg: var(--text-strong);
+  --cf2-informativo-weak: var(--onface-line);
+
+  /* Chrome escuro. `--onface-chrome` é consumido pelo Toaster e pelo Command
+     Palette (components/crm/Providers.tsx, crm2/CommandPalette.tsx). */
+  --cf2-chrome-bg: var(--surface-shell);
+  --cf2-chrome-bg-alt: var(--surface-shell-raised);
+  --cf2-chrome-text-primary: var(--text-on-shell);
+  --cf2-chrome-text-secondary: var(--text-on-shell-muted);
+  --onface-chrome: var(--surface-shell);
+  --onface-chrome-alt: var(--surface-shell-raised);
+  --onface-chrome-foreground: var(--text-on-shell);
+
+  /* Séries de gráfico. Coral é a série principal; o resto é apoio, senão o
+     dashboard inteiro vira um borrão laranja. `--chart-1..5` é o nome que a
+     documentação do shadcn usa; sem esse alias a série caía no tema escuro
+     legado e saía branca sobre papel branco. */
+  --cf2-serie-1: var(--onface-coral);
+  --cf2-serie-2: #ff8a6e;
+  --cf2-serie-3: var(--onface-slate);
+  --cf2-serie-4: var(--onface-line);
+  --cf2-serie-5: var(--status-success);
+  --chart-1: var(--cf2-serie-1);
+  --chart-2: var(--cf2-serie-2);
+  --chart-3: var(--cf2-serie-3);
+  --chart-4: var(--cf2-serie-4);
+  --chart-5: var(--cf2-serie-5);
+
+  /* ── Acento e lima da Home (18/09, F1 · Casca Única) ──────────────────
+   *
+   * A ponte acima nasceu mirando os 39 componentes shadcn e cobria 22 dos
+   * 106 tokens `--cf2-*` que as 75 telas do CRM 2.0 realmente leem. Com a
+   * casca ONFACE montada mas estes de fora, o resultado media: topbar
+   * grafite e coral por cima, e dentro da tela o verde continuava no botão
+   * primário, nos badges de variação, na pílula de etapa e na série de MRR
+   * do gráfico da Home. Os outros ~70 não cobertos são neutros, estado,
+   * raio, sombra e cor de avatar — não carregam marca e seguem no valor do
+   * CRM 2.0 de propósito.
+   *
+   * Mapeamento por PAPEL, não por cor: preenchimento que carrega texto ou
+   * glifo usa o coral profundo (branco sobre `--onface-coral` puro dá
+   * 3,30:1 e reprova); traço, ícone e fio usam o coral da marca; variante
+   * suave desce para `subtle`/`border`, na mesma gradação que
+   * `--cf2-brand-bg`/`-weak` já usam. */
+  --cf2-accent: var(--onface-coral-deep);
+  --cf2-accent-border: var(--onface-coral);
+  --cf2-accent-bg: var(--onface-coral-subtle);
+  --cf2-accent-bg-subtle: var(--onface-coral-subtle);
+  --cf2-accent-soft: var(--onface-coral-border);
+  --cf2-accent-subtle: var(--onface-coral-border);
+  --cf2-accent-text: var(--onface-coral-deep);
+  --cf2-text-on-accent: var(--onface-white);
+
+  /* O lima da Home morre aqui. Cada token vai para o papel que exercia:
+   * `lime` era o destaque cheio (pílula de etapa, badge de variação) e
+   * sempre carrega rótulo, então vai no profundo; `ink` era a tinta que
+   * ficava POR CIMA desse destaque e passa a ser branca; `bg` era o fundo
+   * lavado; `deep` era texto/ícone sobre esse fundo lavado e precisa
+   * continuar escuro o bastante para ler. */
+  --cf2-home-lime: var(--onface-coral-deep);
+  --cf2-home-lime-soft: var(--onface-coral-hover);
+  --cf2-home-lime-bg: var(--onface-coral-subtle);
+  --cf2-home-lime-deep: var(--onface-coral-deep);
+  --cf2-home-lime-ink: var(--onface-white);
+  --cf2-home-serie-mrr: var(--cf2-serie-1);
+}
+
+/* ── Superfície escura ─────────────────────────────────────────────────────
+   O canvas claro é o padrão, não a regra: tela de monitoramento, painel de
+   parede, apresentação e momento de decisão pedem grafite. O escuro é um
+   ESCOPO: a camada semântica inteira é reapontada para a subárvore, e todo
+   componente que já respeita token continua legível sem tocar em nada.
+
+   Vale para `.onface-page-surface[data-tom="escuro"]` (canvas inteiro) e para
+   qualquer bloco marcado com `data-onface-superficie="escura"`. Coral não
+   muda: é o mesmo sinal nos dois tons. */
+.onface-page-surface[data-tom="escuro"],
+[data-onface-superficie="escura"] {
+  --surface-page: var(--onface-graphite-deep);
+  --surface-card: var(--onface-graphite-surface);
+  --surface-sunken: var(--onface-graphite-deep);
+  --surface-shell: var(--onface-preto-logo);
+
+  --text-strong: var(--onface-white);
+  --text-body: var(--onface-branco-logo);
+  --text-muted: var(--onface-slate);
+  --text-subtle: var(--onface-cinza);
+
+  --line-hairline: var(--onface-alpha-divider);
+
+  /* Ponte cf2 → shadcn dentro do escuro. */
+  --cf2-bg-page: var(--onface-graphite-deep);
+  --cf2-bg-surface: var(--onface-graphite-surface);
+  --cf2-bg-surface-muted: var(--onface-preto-logo);
+  --cf2-text-primary: var(--onface-white);
+  --cf2-text-secondary: var(--onface-slate);
+  --cf2-text-tertiary: var(--onface-cinza);
+  --cf2-border-default: var(--onface-alpha-divider);
+  --cf2-border-control: var(--onface-alpha-ring);
+  --cf2-informativo-bg: var(--onface-alpha-hairline);
+  --cf2-informativo-fg: var(--onface-branco-logo);
+
+  /* Primitivas do shadcn que leem direto de --background/--card/... */
+  --background: var(--onface-graphite-deep);
+  --foreground: var(--onface-white);
+  --card: var(--onface-graphite-surface);
+  --card-foreground: var(--onface-white);
+  --popover: var(--onface-preto-logo);
+  --popover-foreground: var(--onface-branco-logo);
+  --secondary: var(--onface-alpha-hairline);
+  --secondary-foreground: var(--onface-branco-logo);
+  --muted: var(--onface-alpha-hairline);
+  --muted-foreground: var(--onface-slate);
+  --accent: var(--onface-alpha-divider);
+  --accent-foreground: var(--onface-white);
+  --border: var(--onface-alpha-divider);
+  --input: var(--onface-alpha-ring);
+
+  /* No escuro o status precisa de mais luz para manter contraste. */
+  --status-success-strong: #7ee08a;
+  --status-danger: var(--status-danger-dark);
+
+  color: var(--text-body);
 }

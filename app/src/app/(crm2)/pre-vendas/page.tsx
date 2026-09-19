@@ -1,53 +1,89 @@
-import { db } from "@/lib/db";
-import { organizacoes } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
-import { getTenantContext } from "@/lib/auth/tenant";
 import { redirect } from "next/navigation";
-import { Cf2Topbar } from "@/components/crm2/Topbar";
-import { Cf2QualificacaoWorkspace } from "@/components/crm2/qualificacao/Workspace";
-import { PreVendasTopbarActions } from "@/components/crm2/qualificacao/PreVendasTopbarActions";
-import { Cf2AreaTabs } from "@/components/crm2/AreaTabs";
-import { COMERCIAL_TABS } from "@/components/crm2/comercial-tabs";
+import { getTenantContext } from "@/lib/auth/tenant";
+import { boardPreVendas } from "@/lib/vendas/consultas";
+import { OnfacePage, OnfacePageBand, OnfacePageSurface } from "@/components/onface/shell/OnfacePage";
+import { PreVendas } from "@/components/onface/vendas/PreVendas";
+import { Hero, type RotaBaseVendas } from "@/components/onface/vendas/ui";
+import {
+  acaoAssociarEmpresa, acaoAtribuir, acaoCriarLead, acaoCriarOportunidade,
+  acaoDesqualificar, acaoDetalhe, acaoMoverEtapa, acaoNutrir, acaoQualificar,
+  acaoReativar, acaoRegistrarContato, acaoSalvarQualificacao,
+} from "./actions";
 
-export default async function PreVendasPage() {
+export const metadata = { title: "Pré-vendas | Callface" };
+export const dynamic = "force-dynamic";
+
+type Aba = "ativos" | "nutricao" | "desqualificados";
+
+/**
+ * Pré-vendas — rota OFICIAL do produto (`/pre-vendas`).
+ *
+ * A leitura vem de `boardPreVendas`; a escrita, das server actions ao lado,
+ * que entram no motor em `lib/vendas`. A página só amarra as duas pontas.
+ *
+ * Mudou de casa em 18/09 (F1, lote 2): a implementação morava em
+ * `/onface-preview/pre-vendas` e a rota oficial servia a tela antiga do CRM
+ * 2.0. Agora é o contrário — aqui é a fonte, e o preview é um espelho fino
+ * que chama esta mesma função com outro `rotaBase`. Era o preview que
+ * segurava o produto; inverter foi o ponto todo de matar o rascunho.
+ *
+ * `rotaBase` existe porque a tela linka para as irmãs do módulo (abrir a
+ * empresa em Contatos, a oportunidade no Pipeline). Sem ele, um clique na
+ * rota oficial devolvia o usuário para dentro do preview.
+ */
+export async function PreVendasPage({ searchParams, rotaBase = "" }: {
+  searchParams: Promise<{ aba?: string; busca?: string; responsavel?: string }>;
+  rotaBase?: RotaBaseVendas;
+}) {
   const ctx = await getTenantContext();
   if (!ctx) redirect("/login");
 
-  const [org] = await db.select({ nome: organizacoes.nome }).from(organizacoes).where(eq(organizacoes.id, ctx.organizacaoId)).limit(1);
+  const params = await searchParams;
+  const aba: Aba = params.aba === "nutricao" || params.aba === "desqualificados" ? params.aba : "ativos";
+  const busca = params.busca?.trim() || "";
+  const responsavelId = params.responsavel || null;
 
-  const orgNome = org?.nome || "Callface";
+  const dados = await boardPreVendas(ctx.organizacaoId, { aba, busca, responsavelId });
+
   return (
-    <div className="-m-6 h-[100dvh] flex flex-col min-h-0 overflow-hidden">
-      {/* ALTURA FECHADA (01/09, pedido do Kauã: "a página fixa e eu faço o
-          scroll conforme cada coluna do Kanban"). `-m-6` cancela o padding do
-          layout e `h-[100dvh]` casa exatamente com o scroller do shell
-          (`ui/Sidebar` provider é `h-dvh`, `main` e o scroller são `flex-1`).
-          Com altura DEFINIDA aqui, o `max-h-full` das colunas passa a ter
-          referência e o scroll vertical acontece dentro de cada coluna em vez
-          de esticar a página inteira. `h-[calc(100%+3rem)]` não resolvia: o
-          container do layout é `min-h-full`, ou seja altura auto, e
-          porcentagem contra altura auto é indefinida — o filho voltava pra
-          auto e a página crescia. */}
-      {/* TOPO PADRÃO DO SISTEMA (01/09, regra do Kauã): sempre BRANCO, mesma
-          altura e mesmos elementos em toda página — trigger do sidebar, título
-          (aqui as abas de pipeline), busca ⌘K e notificações. O que muda por
-          página são só os botões de ação da direita (`actions`). */}
-      <header className="flex flex-col px-6 py-3.5" style={{ background: "var(--cf2-bg-surface)", borderBottom: "1px solid var(--cf2-border-default)" }}>
-        <Cf2Topbar orgNome={orgNome} variant="light" title={<Cf2AreaTabs items={COMERCIAL_TABS} />} subtitle="Pré-vendas, prospecção e oportunidades numa única operação" actions={<PreVendasTopbarActions />} compactTitle />
-      </header>
+    <OnfacePage>
+      <OnfacePageBand>
+        <Hero
+          titulo="Pré-vendas"
+          descricao="Empresas em qualificação. A empresa é o objeto de trabalho; a pessoa é o contato através do qual ela é trabalhada."
+          resumo={[
+            { rotulo: "Em jogo", valor: dados.resumo.ativos },
+            { rotulo: "Sem responsável", valor: dados.resumo.semResponsavel, alerta: dados.resumo.semResponsavel > 0 },
+            { rotulo: "Sem 1º contato", valor: dados.resumo.semPrimeiroContato, alerta: dados.resumo.semPrimeiroContato > 0 },
+            { rotulo: "Em nutrição", valor: dados.resumo.nutricao },
+          ]}
+        />
+      </OnfacePageBand>
 
-      {/* A área de trabalho destas telas é escura, mas o documento roda no tema
-          claro: sem declarar a superfície, os tons semânticos (âmbar e vermelho
-          escurecidos pro contraste em branco) chegavam aqui pesados demais. */}
-      <div
-        data-cf2-superficie="escura"
-        className="flex flex-1 flex-col gap-4 px-6 pb-6 pt-5 min-h-0"
-        style={{ background: "var(--cf2-chrome-bg-alt)" }}
-      >
-        <div className="flex-1 min-h-0 min-w-0">
-          <Cf2QualificacaoWorkspace />
-        </div>
-      </div>
-    </div>
+      <OnfacePageSurface sobreposto>
+        <PreVendas
+          rotaBase={rotaBase}
+          dados={dados}
+          aba={aba}
+          filtro={{ busca, responsavelId }}
+          acoes={{
+            moverEtapa: acaoMoverEtapa,
+            qualificar: acaoQualificar,
+            salvarQualificacao: acaoSalvarQualificacao,
+            nutrir: acaoNutrir,
+            desqualificar: acaoDesqualificar,
+            reativar: acaoReativar,
+            registrarContato: acaoRegistrarContato,
+            atribuir: acaoAtribuir,
+            criarOportunidade: acaoCriarOportunidade,
+            criarLead: acaoCriarLead,
+            associarEmpresa: acaoAssociarEmpresa,
+            detalhe: acaoDetalhe,
+          }}
+        />
+      </OnfacePageSurface>
+    </OnfacePage>
   );
 }
+
+export default PreVendasPage;

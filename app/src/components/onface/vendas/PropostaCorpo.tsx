@@ -14,7 +14,7 @@ import {
   ROTULO_FAMILIA, ROTULO_MODO_FECHAMENTO, ROTULO_STATUS_PROPOSTA,
   type ModoFechamento,
 } from "@/lib/vendas/dominio";
-import type { DetalheProposta } from "@/app/(onface-preview)/onface-preview/propostas/actions";
+import type { DetalheProposta } from "@/app/(crm2)/propostas/actions";
 import { AvisoBloqueio, Campo, Secao, Tag, dataCurta, dataHora, moedaExata, type Bloqueio } from "./ui";
 import { Bloco } from "./pagina";
 import { AcoesContato } from "./pagina";

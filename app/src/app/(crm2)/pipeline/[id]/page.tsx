@@ -7,5 +7,5 @@ export default async function OportunidadePorId({ params }: { params: Promise<{ 
   const { id } = await params;
   const resultado = await acaoDetalhe(id);
   if (!resultado.ok || !resultado.dados?.oportunidade) notFound();
-  return <OnfacePage><OnfacePageSurface><DetalheOportunidadePagina oportunidade={resultado.dados.oportunidade} timeline={resultado.dados.timeline} voltar="/onface-preview/pipeline" /></OnfacePageSurface></OnfacePage>;
+  return <OnfacePage><OnfacePageSurface><DetalheOportunidadePagina oportunidade={resultado.dados.oportunidade} timeline={resultado.dados.timeline} voltar="/pipeline" /></OnfacePageSurface></OnfacePage>;
 }

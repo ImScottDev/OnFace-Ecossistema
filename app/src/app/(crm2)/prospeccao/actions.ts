@@ -8,7 +8,7 @@ import { atorHumano, type Familia, type MotivoDescarte } from "@/lib/vendas/domi
 import { executar, type Resultado } from "@/lib/vendas/resultado";
 import * as prospeccao from "@/lib/vendas/prospeccao";
 
-const ROTA = "/onface-preview/prospeccao";
+const ROTA = "/prospeccao";
 
 async function contexto() {
   const ctx = await getTenantContext();
@@ -94,7 +94,7 @@ export async function acaoPreQualificar(leadId: string): Promise<Resultado> {
   return executar("pré-qualificar", async () => {
     await prospeccao.preQualificar({ organizacaoId: ctx.organizacaoId, leadId, ator: ctx.ator });
     revalidatePath(ROTA);
-    revalidatePath("/onface-preview/pre-vendas");
+    revalidatePath("/pre-vendas");
   });
 }
 
@@ -109,7 +109,7 @@ export async function acaoOportunidadeDireta(
       organizacaoId: ctx.organizacaoId, leadId, familias, responsavelId, ator: ctx.ator,
     });
     revalidatePath(ROTA);
-    revalidatePath("/onface-preview/pipeline");
+    revalidatePath("/pipeline");
     return { ids: r.oportunidades.map((o) => o.id) };
   });
 }

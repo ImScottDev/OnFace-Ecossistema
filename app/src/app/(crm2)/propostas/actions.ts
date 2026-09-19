@@ -12,7 +12,7 @@ import * as propostas from "@/lib/vendas/propostas";
 import { criarPropostaComItens, type ItemEntrada } from "@/lib/crm/proposta-criacao";
 import { lerLinhaDoTempo, registrarEvento, type LinhaDoTempo } from "@/lib/vendas/eventos";
 
-const ROTA = "/onface-preview/propostas";
+const ROTA = "/propostas";
 
 async function contexto() {
   const ctx = await getTenantContext();
@@ -321,7 +321,7 @@ export async function acaoEnviar(entrada: {
       ator: ctx.ator,
     });
     revalidatePath(ROTA);
-    revalidatePath("/onface-preview/pipeline");
+    revalidatePath("/pipeline");
   });
 }
 

@@ -9,7 +9,7 @@ import {
   acaoBuscarEmpresas, acaoCriarEmpresa, acaoCriarLeadDaEmpresa, acaoCriarPessoa,
   acaoEmpresa360, acaoNovaOportunidade, acaoResponsaveis, acaoSalvarDadosJuridicos,
   acaoVincularPessoa,
-} from "@/app/(onface-preview)/onface-preview/contatos/actions";
+} from "@/app/(crm2)/contatos/actions";
 
 export const metadata = { title: "ONFACE — Contatos (dado real)" };
 export const dynamic = "force-dynamic";

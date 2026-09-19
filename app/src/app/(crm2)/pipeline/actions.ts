@@ -13,7 +13,7 @@ import * as pipeline from "@/lib/vendas/pipeline";
 import { detalheOportunidade, type DetalheOportunidade } from "@/lib/vendas/consultas";
 import { lerLinhaDoTempo, type LinhaDoTempo } from "@/lib/vendas/eventos";
 
-const ROTA = "/onface-preview/pipeline";
+const ROTA = "/pipeline";
 
 async function contexto() {
   const ctx = await getTenantContext();
@@ -114,7 +114,7 @@ export async function acaoNoShow(negocioId: string, reuniaoId: string | null): P
   return executar("registrar no-show", async () => {
     await pipeline.registrarNoShow({ organizacaoId: ctx.organizacaoId, negocioId, reuniaoId, ator: ctx.ator });
     revalidatePath(ROTA);
-    revalidatePath("/onface-preview/pre-vendas");
+    revalidatePath("/pre-vendas");
   });
 }
 

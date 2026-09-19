@@ -1,46 +1,70 @@
-import { db } from "@/lib/db";
-import { organizacoes } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
-import { getTenantContext } from "@/lib/auth/tenant";
 import { redirect } from "next/navigation";
-import { Cf2Topbar } from "@/components/crm2/Topbar";
-import { Cf2PropostasWorkspace } from "@/components/crm2/propostas/Workspace";
+import { getTenantContext } from "@/lib/auth/tenant";
+import { OnfacePage, OnfacePageBand, OnfacePageSurface } from "@/components/onface/shell/OnfacePage";
+import { Propostas } from "@/components/onface/vendas/Propostas";
+import { Hero, type RotaBaseVendas } from "@/components/onface/vendas/ui";
+import { moeda } from "@/components/onface/vendas/formato";
+import {
+  acaoCatalogo, acaoCriar, acaoCriarRevisao, acaoDetalhe, acaoEnviar,
+  acaoExpirarVencidas, acaoListar, acaoOportunidadesAbertas, acaoSalvarJuridicos,
+} from "./actions";
 
-/**
- * 10/09/2026 — a página desenhava o próprio header dentro de uma superfície
- * dark que cobria a tela inteira, sem usar `Cf2Topbar` (o único módulo do
- * CRM2 nessa situação). Agora segue o mesmo contrato de Clientes/Financeiro:
- * topo claro do app shell + workspace com pulso escuro só como faixa.
- */
-export default async function PropostasPage() {
+export const metadata = { title: "Propostas | Callface" };
+export const dynamic = "force-dynamic";
+
+/** Rota OFICIAL do produto. A implementação mudou de casa em 18/09 (F1, lote 2):
+ * morava em `/onface-preview/propostas` e agora é daqui. O preview virou um espelho
+ * fino que chama esta mesma função com outro `rotaBase` — sem ele, um clique
+ * numa tela irmã devolvia o usuário para dentro do preview. */
+export async function PropostasPage({ searchParams, abrirComposer = false, rotaBase = "" }: {
+  searchParams: Promise<{ status?: string; busca?: string; oportunidade?: string; proposta?: string; acao?: "enviar" | "juridicos" | "revisar" }>;
+  rotaBase?: RotaBaseVendas;
+  abrirComposer?: boolean;
+}) {
   const ctx = await getTenantContext();
   if (!ctx) redirect("/login");
 
-  const [org] = await db
-    .select({ nome: organizacoes.nome })
-    .from(organizacoes)
-    .where(eq(organizacoes.id, ctx.organizacaoId))
-    .limit(1);
+  const params = await searchParams;
+  const status = params.status || null;
+  const busca = params.busca?.trim() || "";
+  const linhas = await acaoListar({ status, busca });
+
+  const vigentes = linhas.filter((p) => ["enviada", "visualizada", "ajuste_solicitado"].includes(p.status));
+  const aceitas = linhas.filter((p) => p.status === "aceita");
 
   return (
-    <div className="flex flex-col gap-6">
-      <div
-        className="-m-6 mb-0 relative flex flex-col px-6 py-3.5 rounded-tl-2xl border-b"
-        style={{ background: "var(--cf2-bg-surface)", borderColor: "var(--cf2-border-default)" }}
-      >
-        <Cf2Topbar
-          orgNome={org?.nome || "Callface"}
-          variant="light"
-          title="Propostas"
-          subtitle="Gerencie, acompanhe e converta suas propostas comerciais."
-          compactTitle
-          ctaLabel="Nova proposta"
-          ctaHref="/propostas/novo"
+    <OnfacePage>
+      <OnfacePageBand>
+        <Hero
+          titulo="Propostas"
+          descricao="Uma oportunidade tem várias propostas históricas e uma vigente por vez. Catálogo filtrado pela família; aceite não é ganho."
+          resumo={[
+            { rotulo: "Abertas", valor: vigentes.length },
+            { rotulo: "Em aberto", valor: moeda(vigentes.reduce((s, p) => s + (p.total ?? 0), 0)) },
+            { rotulo: "Aceitas", valor: aceitas.length },
+            { rotulo: "Ajuste pedido", valor: linhas.filter((p) => p.status === "ajuste_solicitado").length, alerta: linhas.some((p) => p.status === "ajuste_solicitado") },
+          ]}
         />
-      </div>
-      <div className="pt-6">
-        <Cf2PropostasWorkspace />
-      </div>
-    </div>
+      </OnfacePageBand>
+      <OnfacePageSurface sobreposto>
+        <Propostas
+          linhas={linhas}
+          filtro={{ busca, status }}
+          oportunidadeInicial={params.oportunidade ?? null}
+          propostaInicial={params.proposta ?? null}
+          abrirComposer={abrirComposer}
+          acaoInicial={params.acao ?? null}
+          rotaBase={rotaBase}
+          acoes={{
+            detalhe: acaoDetalhe, catalogo: acaoCatalogo,
+            oportunidadesAbertas: acaoOportunidadesAbertas, criar: acaoCriar,
+            enviar: acaoEnviar, criarRevisao: acaoCriarRevisao,
+            expirarVencidas: acaoExpirarVencidas, salvarJuridicos: acaoSalvarJuridicos,
+          }}
+        />
+      </OnfacePageSurface>
+    </OnfacePage>
   );
 }
+
+export default PropostasPage;
