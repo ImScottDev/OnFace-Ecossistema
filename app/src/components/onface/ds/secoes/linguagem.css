@@ -1,0 +1,448 @@
+/* Seção Linguagem visual.
+ *
+ * Só amostras. O que é componente de verdade mora em `marca.tsx`/`marca.css`;
+ * o que está aqui existe para o argumento ficar visível na tela em vez de
+ * virar parágrafo. Toda medida sai de token ou de `calc(N * var(--onface-u))`,
+ * e toda cor sai da paleta que já existe — inclusive as cores "erradas" dos
+ * anti-padrões, que são derivadas por `color-mix` da própria marca. */
+
+.lng-escopo {
+  /* Coral puro sobre papel dá ~3,4:1 e reprova em texto pequeno. Mesma cor da
+     marca puxada para o grafite, que é o que o resto do sistema já faz para
+     rótulo coral em superfície clara. Contraste estético não substitui o
+     funcional. */
+  --lng-coral-texto: color-mix(in srgb, var(--onface-coral) 72%, var(--onface-graphite));
+}
+
+/* Palco: qualquer superfície que receba FundoGrafico.
+   O fundo é `position: absolute; z-index: 0`, então um irmão não posicionado
+   seria pintado ANTES dele e sumiria por baixo. Todo filho que não é o fundo
+   sobe para o z-index 1 — o fundo continua no dele. */
+.lng-palco { position: relative; overflow: hidden; isolation: isolate; }
+.lng-palco > :not(.ds-fundo) { position: relative; z-index: 1; }
+
+/* ── 1. Princípios de contraste ─────────────────────────────────────────── */
+.lng-provas { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-20); }
+.lng-prova { display: flex; flex-direction: column; gap: var(--space-10); min-width: 0; }
+.lng-prova-rotulo {
+  display: inline-flex; align-items: center; gap: var(--space-6); margin: 0;
+  font-size: var(--text-2xs); font-weight: var(--weight-extrabold);
+  letter-spacing: var(--tracking-caps); text-transform: uppercase;
+}
+.lng-prova-rotulo svg { width: var(--icon-xs); height: var(--icon-xs); flex-shrink: 0; }
+.lng-prova-rotulo[data-tom="nao"] { color: var(--status-danger); }
+.lng-prova-rotulo[data-tom="sim"] { color: var(--lng-coral-texto); }
+.lng-prova-nota { margin: 0; color: var(--text-muted); font-size: var(--text-xs); line-height: 1.45; }
+
+/* Blur test: desfoca só o palco, nunca o rótulo — perder a referência de qual
+   lado é qual mataria o teste. `filter` é propriedade de composição; nada de
+   largura/altura animando. */
+.lng-palco-blur { transition: filter var(--duration-slow) var(--ease-standard); }
+.lng-palco-blur[data-desfocado="true"] { filter: blur(calc(4 * var(--onface-u))); }
+
+/* Versão lavada: o erro, reproduzido de propósito. Borda que quase não existe,
+   quatro caixas idênticas, rótulo e valor com o mesmo tamanho, o mesmo peso e
+   a mesma cor. É exatamente isso que vira uma mancha só no blur. */
+.lng-lavada { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-10); }
+.lng-lavada-item {
+  padding: var(--space-16);
+  border: 1px solid var(--surface-sunken);
+  border-radius: var(--radius-card);
+  background: var(--surface-card);
+}
+.lng-lavada-item span,
+.lng-lavada-item strong {
+  display: block;
+  color: var(--text-muted);
+  font-size: var(--text-md);
+  font-weight: var(--weight-medium);
+  line-height: 1.5;
+}
+
+/* Versão ONFACE: a métrica que decide muda de superfície, de escala e de peso.
+   O apoio divide UMA superfície com separador e alinhamento — três cards
+   pequenos empatariam o peso de novo. */
+.lng-certa { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: var(--space-12); }
+.lng-foco {
+  display: flex; flex-direction: column; justify-content: space-between; gap: var(--space-24);
+  padding: var(--space-16);
+  border-radius: var(--radius-card);
+  background: var(--surface-shell);
+  color: var(--text-on-shell);
+}
+.lng-foco-rotulo {
+  margin: 0; color: var(--onface-slate);
+  font-size: var(--text-2xs); font-weight: var(--weight-extrabold);
+  letter-spacing: var(--tracking-caps); text-transform: uppercase;
+}
+.lng-foco-valor {
+  display: block; color: var(--onface-white);
+  font-family: var(--font-onface-display), sans-serif;
+  font-size: calc(40 * var(--onface-u)); font-weight: var(--weight-bold);
+  line-height: 1; letter-spacing: -0.03em; font-variant-numeric: tabular-nums;
+}
+.lng-foco-delta {
+  display: inline-flex; align-items: center; gap: var(--space-4); margin-top: var(--space-8);
+  color: var(--onface-coral); font-size: var(--text-sm); font-weight: var(--weight-semibold);
+}
+.lng-foco-delta svg { width: var(--icon-xs); height: var(--icon-xs); }
+
+.lng-apoio {
+  display: flex; flex-direction: column;
+  padding-inline: var(--space-16);
+  border: 1px solid var(--line-hairline);
+  border-radius: var(--radius-card);
+  background: var(--surface-card);
+}
+.lng-apoio-linha {
+  display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-12);
+  padding-block: var(--space-12);
+  border-bottom: 1px solid var(--line-hairline);
+}
+.lng-apoio-linha:last-child { border-bottom: 0; }
+.lng-apoio-linha span { color: var(--text-muted); font-size: var(--text-xs); }
+.lng-apoio-linha b {
+  color: var(--text-strong); font-size: var(--text-base); font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+
+/* ── 1b. Regra de sinal ─────────────────────────────────────────────────────
+   Virou regra do sistema porque o bento tinha duas pílulas com a MESMA seta em
+   cores diferentes na mesma linha: verde "+18,4% vs. mês anterior" ao lado de
+   coral "+12% na semana". Isso não é escolha de estilo, é a mesma forma
+   dizendo duas coisas — e quando a forma empata, a cor vira decoração.
+
+   verde  = resultado consumado e positivo (ganho, meta batida, delta bom)
+   coral  = exige atenção ou ação agora (atrasado, parado, risco, ação principal)
+   cinza  = neutro, informativo, sem consequência */
+.lng-sinais { display: grid; grid-template-columns: repeat(auto-fit, minmax(calc(200 * var(--onface-u)), 1fr)); gap: var(--space-12); }
+.lng-sinal-caso {
+  display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-8);
+  padding: var(--space-16);
+  border-radius: var(--radius-card);
+  background: var(--surface-card);
+  box-shadow: var(--ring-inset-hairline);
+}
+.lng-sinal-caso strong { color: var(--text-strong); font-size: var(--text-sm); font-weight: var(--weight-semibold); }
+.lng-sinal-caso p { margin: 0; color: var(--text-muted); font-size: var(--text-xs); line-height: 1.45; }
+
+.lng-pilula {
+  display: inline-flex; align-items: center; gap: var(--space-4);
+  height: calc(22 * var(--onface-u)); padding-inline: var(--space-8);
+  border-radius: var(--radius-full);
+  font-size: var(--text-2xs); font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.lng-pilula svg { width: var(--icon-xs); height: var(--icon-xs); flex-shrink: 0; }
+/* Verde: mesmo par superfície/texto do chip de tendência do produto.
+   #137333 sobre o fundo verde a 12% dá 5,36:1 no cartão branco. */
+.lng-pilula[data-sinal="ok"] { background: var(--cf2-positivo-bg); color: var(--cf2-positivo-fg); }
+/* Coral: preenchimento com rótulo por cima, então coral FUNDO (4,55:1 com
+   branco). Com `--onface-coral` daria 3,30:1 e reprovaria. */
+.lng-pilula[data-sinal="acao"] { background: var(--onface-coral-deep); color: var(--onface-white); }
+/* Cinza: `--text-muted` sobre afundado dá 4,11:1 e não passa em texto deste
+   tamanho; `--text-body` sobre o mesmo fundo dá 13,45:1. */
+.lng-pilula[data-sinal="neutro"] { background: var(--surface-sunken); color: var(--text-body); }
+
+/* A linha do erro: dois KPIs lado a lado, como saem no bento. */
+.lng-sinal-linha {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-12);
+}
+.lng-sinal-kpi {
+  display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-6);
+  padding: var(--space-16);
+  border-radius: var(--radius-card);
+  background: var(--surface-card);
+  box-shadow: var(--ring-inset-hairline);
+}
+.lng-sinal-kpi small {
+  color: var(--text-muted); font-size: var(--text-2xs); font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-caps); text-transform: uppercase;
+}
+.lng-sinal-kpi b {
+  color: var(--text-strong); font-family: var(--font-onface-display), sans-serif;
+  font-size: var(--display-kpi); font-weight: var(--weight-bold); line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── 2. Hierarquia de superfície ────────────────────────────────────────── */
+/* As caixas usam `.ds-plano` (marca.css) para geometria; aqui entra só o papel
+   de cada plano, que é o que muda entre eles. */
+.lng-plano[data-plano="casca"] { background: var(--surface-shell); color: var(--text-on-shell); }
+.lng-plano[data-plano="casca"] small { color: var(--onface-slate); opacity: 1; }
+.lng-plano[data-plano="casca"] strong { color: var(--onface-white); }
+.lng-plano[data-plano="pagina"] { background: var(--surface-page); color: var(--text-body); box-shadow: var(--ring-inset-hairline); }
+.lng-plano[data-plano="canvas"] { background: var(--surface-card); color: var(--text-body); box-shadow: var(--ring-inset-hairline); }
+.lng-plano[data-plano="afundada"] { background: var(--surface-sunken); color: var(--text-body); }
+.lng-plano[data-plano="pagina"] strong,
+.lng-plano[data-plano="canvas"] strong,
+.lng-plano[data-plano="afundada"] strong { color: var(--text-strong); }
+
+/* ── 3. Profundidade ────────────────────────────────────────────────────── */
+.lng-profundidade { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-12); }
+.lng-prof { display: flex; flex-direction: column; gap: var(--space-10); min-width: 0; }
+.lng-prof-palco {
+  display: grid; place-items: center;
+  height: calc(104 * var(--onface-u));
+  padding: var(--space-16);
+  border-radius: var(--radius-card);
+  background: var(--surface-sunken);
+}
+.lng-prof-palco[data-fundo="escuro"] { background: var(--surface-shell); }
+.lng-prof strong { color: var(--text-strong); font-size: var(--text-md); font-weight: var(--weight-semibold); }
+.lng-prof code {
+  display: block; margin-top: var(--space-2);
+  color: var(--text-subtle);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--text-2xs); overflow-wrap: anywhere;
+}
+.lng-prof p { margin: var(--space-4) 0 0; color: var(--text-muted); font-size: var(--text-xs); line-height: 1.45; }
+
+.lng-cartao-raso {
+  width: 100%; padding: var(--space-12);
+  border: 1px solid var(--line-hairline); border-radius: var(--radius-lg);
+  background: var(--surface-card);
+  /* `--shadow-card` é `none` de propósito: o card comum não flutua. */
+  box-shadow: var(--shadow-card);
+}
+.lng-cartao-raso b { display: block; color: var(--text-strong); font-size: var(--text-sm); }
+.lng-cartao-raso span { display: block; margin-top: var(--space-2); color: var(--text-muted); font-size: var(--text-xs); }
+
+.lng-anel-amostra { display: flex; align-items: center; gap: var(--space-8); }
+.lng-anel-avatar {
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+  width: var(--avatar-lg); height: var(--avatar-lg); border-radius: var(--radius-full);
+  background: var(--surface-shell-raised); box-shadow: var(--ring-inset-avatar);
+  color: var(--text-on-shell);
+  font-family: var(--font-onface-display), sans-serif; font-size: var(--text-xs); font-weight: var(--weight-bold);
+}
+.lng-anel-pilula {
+  display: inline-flex; align-items: center;
+  height: var(--control-sm); padding-inline: var(--space-10);
+  border-radius: var(--radius-full);
+  background: var(--surface-card); box-shadow: var(--ring-inset-hairline);
+  color: var(--text-body); font-size: var(--text-xs); font-weight: var(--weight-medium);
+}
+
+.lng-popover {
+  width: 100%; padding: var(--space-6);
+  border: 1px solid var(--line-hairline); border-radius: var(--radius-lg);
+  background: var(--surface-card); box-shadow: var(--shadow-popover);
+}
+.lng-popover-shell {
+  width: 100%; padding: var(--space-6);
+  border: 1px solid var(--onface-alpha-divider); border-radius: var(--radius-lg);
+  background: var(--onface-preto-logo); color: var(--text-on-shell);
+  box-shadow: var(--shadow-popover-shell);
+}
+.lng-popover-item {
+  display: flex; align-items: center; gap: var(--space-8);
+  padding: var(--space-6) var(--space-8);
+  border-radius: var(--radius-md);
+  color: var(--text-muted); font-size: var(--text-xs);
+}
+.lng-popover-item[data-ativo="true"] { background: var(--surface-sunken); color: var(--text-strong); }
+.lng-popover-shell .lng-popover-item { color: var(--onface-slate); }
+.lng-popover-shell .lng-popover-item[data-ativo="true"] { background: var(--onface-alpha-divider); color: var(--onface-white); }
+
+/* ── 4. Elementos gráficos ──────────────────────────────────────────────── */
+.lng-graficos { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-12); }
+.lng-gr { display: flex; flex-direction: column; gap: var(--space-10); min-width: 0; }
+.lng-gr-amostra { height: calc(112 * var(--onface-u)); border-radius: var(--radius-card); background: var(--surface-shell); }
+.lng-gr strong { color: var(--text-strong); font-size: var(--text-md); font-weight: var(--weight-semibold); }
+.lng-gr-uso { display: grid; gap: var(--space-6); margin-top: var(--space-6); }
+.lng-gr-uso span { display: grid; grid-template-columns: calc(30 * var(--onface-u)) minmax(0, 1fr); gap: var(--space-6); color: var(--text-muted); font-size: var(--text-xs); line-height: 1.4; }
+.lng-gr-uso span b { font-weight: var(--weight-extrabold); letter-spacing: var(--tracking-caps); font-size: var(--text-2xs); text-transform: uppercase; }
+.lng-gr-uso span[data-tom="sim"] b { color: var(--status-success-strong); }
+.lng-gr-uso span[data-tom="nao"] b { color: var(--status-danger); }
+
+.lng-halo { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-12); margin-top: var(--space-20); }
+.lng-halo-amostra {
+  display: flex; flex-direction: column; justify-content: flex-end; gap: var(--space-4);
+  height: calc(128 * var(--onface-u)); padding: var(--space-16);
+  border-radius: var(--radius-card);
+  background: var(--surface-shell); color: var(--text-on-shell);
+}
+.lng-halo-amostra b { color: var(--onface-white); font-family: var(--font-onface-display), sans-serif; font-size: var(--text-base); font-weight: var(--weight-semibold); }
+.lng-halo-amostra p { margin: 0; color: var(--onface-slate); font-size: var(--text-xs); line-height: 1.45; }
+
+/* ── 5. Campo do NEXO ───────────────────────────────────────────────────── */
+/* Segmentado de verdade: botão nativo, `aria-pressed`, foco visível. */
+.lng-seg {
+  display: inline-flex; flex-wrap: wrap; gap: var(--space-4);
+  padding: var(--space-4); border-radius: var(--radius-control);
+  background: var(--surface-card); box-shadow: var(--ring-inset-hairline);
+}
+.lng-seg button {
+  height: var(--control-md); padding-inline: var(--space-10);
+  border: 0; border-radius: var(--radius-md);
+  background: transparent; color: var(--text-muted);
+  font: inherit; font-size: var(--text-sm); font-weight: var(--weight-medium);
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+.lng-seg button:hover { background: var(--surface-sunken); color: var(--text-strong); }
+/* Segmento ativo é preenchimento coral QUE CARREGA RÓTULO: branco sobre
+   `--onface-coral` dá 3,30:1 e reprova texto. `--onface-coral-deep` é o mesmo
+   coral um grau mais fundo e sobe para 4,55:1. O coral da marca continua no
+   foco e no resto do sistema, onde não há texto por cima. */
+.lng-seg button[aria-pressed="true"] { background: var(--onface-coral-deep); color: var(--onface-white); font-weight: var(--weight-semibold); }
+.lng-seg button:focus-visible { outline: 2px solid var(--onface-coral); outline-offset: 2px; }
+
+/* Legenda viva do estágio: fica entre o seletor e os painéis porque é ela que
+   explica o que mudou no desenho. */
+.lng-nexo-atual { margin: var(--space-10) 0 var(--space-16); color: var(--text-muted); font-size: var(--text-xs); line-height: 1.45; }
+.lng-nexo-atual strong { color: var(--text-strong); font-weight: var(--weight-semibold); }
+
+.lng-nexo-par { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-12); }
+.lng-nexo-painel { display: grid; gap: var(--space-12); padding: var(--space-16); border-radius: var(--radius-card); }
+.lng-nexo-painel[data-superficie="escura"] { background: var(--surface-shell); color: var(--text-on-shell); }
+.lng-nexo-painel[data-superficie="clara"] { background: var(--surface-card); box-shadow: var(--ring-inset-hairline); color: var(--text-body); }
+.lng-nexo-painel small { font-size: var(--text-2xs); font-weight: var(--weight-extrabold); letter-spacing: var(--tracking-caps); text-transform: uppercase; }
+.lng-nexo-painel[data-superficie="escura"] small { color: var(--onface-slate); }
+.lng-nexo-painel[data-superficie="clara"] small { color: var(--text-subtle); }
+.lng-nexo-legenda { margin: 0; font-size: var(--text-xs); line-height: 1.45; }
+.lng-nexo-painel[data-superficie="escura"] .lng-nexo-legenda { color: var(--onface-slate); }
+.lng-nexo-painel[data-superficie="clara"] .lng-nexo-legenda { color: var(--text-muted); }
+
+/* ── 6. Momentos expressivos ────────────────────────────────────────────── */
+/* O Bloco desta demo é `plano` (sem padding próprio) para o momento poder
+   encostar na borda se um dia precisar; o respiro entra aqui. */
+.lng-momentos { display: grid; gap: var(--space-16); padding: var(--space-20); }
+.lng-momento-numeros { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-32); margin-top: var(--space-20); }
+.lng-momento-apoio-num { display: grid; gap: var(--space-4); }
+.lng-momento-apoio-num b {
+  color: var(--onface-white); font-family: var(--font-onface-display), sans-serif;
+  font-size: var(--text-lg); font-weight: var(--weight-bold); line-height: 1; font-variant-numeric: tabular-nums;
+}
+.lng-momento-apoio-num span {
+  color: var(--onface-slate); font-size: var(--text-2xs); font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-caps); text-transform: uppercase;
+}
+/* Ação secundária dentro do grafite: `ghost` do shadcn é escrito para papel e
+   sumiria aqui. Mesma régua de controle, superfície alfa da casca. */
+.lng-acao-clara {
+  display: inline-flex; align-items: center; gap: var(--space-6);
+  height: var(--control-lg); padding-inline: var(--space-12);
+  border: 0; border-radius: var(--radius-control);
+  background: var(--onface-alpha-hairline); color: var(--text-on-shell);
+  font: inherit; font-size: var(--text-sm); font-weight: var(--weight-semibold);
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+.lng-acao-clara:hover { background: var(--onface-alpha-divider); }
+.lng-acao-clara:focus-visible { outline: 2px solid var(--onface-coral); outline-offset: 2px; }
+
+/* ── 7. Assinaturas visuais ─────────────────────────────────────────────── */
+.lng-assi-casca { display: flex; align-items: center; gap: var(--space-6); height: 100%; padding: var(--space-10); background: var(--surface-shell); }
+.lng-assi-marca { color: var(--onface-white); font-family: var(--font-onface-display), sans-serif; font-size: var(--text-xs); font-weight: var(--weight-extrabold); letter-spacing: var(--tracking-wordmark); }
+.lng-assi-pilula {
+  display: inline-flex; align-items: center;
+  height: calc(20 * var(--onface-u)); padding-inline: var(--space-8);
+  border-radius: var(--radius-full);
+  background: var(--onface-alpha-hairline); color: var(--onface-slate);
+  font-size: var(--text-2xs); font-weight: var(--weight-semibold);
+}
+/* Mesmo motivo do segmento: pílula cheia com rótulo dentro usa o coral fundo
+   (4,55:1), não o coral da marca (3,30:1). */
+.lng-assi-pilula[data-ativo="true"] { background: var(--onface-coral-deep); color: var(--onface-white); }
+
+.lng-assi-foco { display: flex; align-items: center; justify-content: center; gap: var(--space-8); height: 100%; background: var(--surface-sunken); }
+.lng-assi-ponto { width: var(--space-10); height: var(--space-10); border-radius: var(--radius-full); background: var(--onface-line); }
+.lng-assi-ponto[data-foco="true"] { width: var(--space-16); height: var(--space-16); background: var(--onface-coral); }
+
+.lng-assi-hairline { display: grid; align-content: center; gap: var(--space-6); height: 100%; padding: var(--space-10); background: var(--surface-sunken); }
+.lng-assi-hairline i { display: block; height: calc(18 * var(--onface-u)); border: 1px solid var(--line-hairline); border-radius: var(--radius-md); background: var(--surface-card); }
+
+.lng-assi-numero {
+  display: grid; place-items: center; height: 100%;
+  background: var(--surface-card); box-shadow: var(--ring-inset-hairline);
+  color: var(--text-strong); font-family: var(--font-onface-display), sans-serif;
+  font-size: calc(26 * var(--onface-u)); font-weight: var(--weight-bold);
+  letter-spacing: -0.03em; font-variant-numeric: tabular-nums;
+}
+.lng-assi-malha { height: 100%; background: var(--surface-shell); }
+/* Nome de token citado no meio da frase: monoespaçado e um degrau abaixo do
+   corpo, sem virar caixinha cinza dentro do parágrafo. */
+.lng-escopo p code {
+  color: var(--text-body);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.92em;
+  overflow-wrap: anywhere;
+}
+
+/* ── 8. Anti-padrões ────────────────────────────────────────────────────── */
+.lng-antis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-12); }
+.lng-anti {
+  display: flex; flex-direction: column; gap: var(--space-8);
+  padding: var(--space-12);
+  border: 1px solid color-mix(in srgb, var(--status-danger) 22%, transparent);
+  border-radius: var(--radius-card);
+  background: color-mix(in srgb, var(--status-danger) 4%, var(--surface-card));
+}
+.lng-anti-amostra {
+  display: grid; place-items: center;
+  height: calc(84 * var(--onface-u));
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+  overflow: hidden;
+}
+.lng-anti strong { display: flex; align-items: center; gap: var(--space-6); color: var(--text-strong); font-size: var(--text-sm); font-weight: var(--weight-semibold); }
+.lng-anti strong svg { flex-shrink: 0; width: var(--icon-xs); height: var(--icon-xs); color: var(--status-danger); }
+.lng-anti p { margin: 0; color: var(--text-muted); font-size: var(--text-xs); line-height: 1.45; }
+
+/* As amostras do errado. Cores vêm da própria paleta por `color-mix`: a ideia é
+   provar que mesmo com a cor certa a decisão continua errada. */
+.lng-err-gradiente { width: 100%; height: 100%; background: linear-gradient(135deg, var(--onface-coral), var(--onface-graphite-surface)); }
+.lng-err-glow {
+  width: calc(52 * var(--onface-u)); height: calc(52 * var(--onface-u));
+  border-radius: var(--radius-lg); background: var(--onface-coral);
+  box-shadow: 0 0 calc(26 * var(--onface-u)) var(--onface-coral);
+}
+.lng-err-glass { display: grid; place-items: center; width: 100%; height: 100%; background: linear-gradient(135deg, var(--onface-coral), var(--onface-graphite)); }
+.lng-err-glass i {
+  width: 68%; height: 54%;
+  border: 1px solid color-mix(in srgb, var(--onface-white) 40%, transparent);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--onface-white) 18%, transparent);
+  backdrop-filter: blur(calc(6 * var(--onface-u)));
+}
+.lng-err-raio { width: 80%; height: 62%; border: 1px solid var(--line-hairline); border-radius: var(--radius-full); background: var(--surface-card); }
+.lng-err-ilustracao {
+  display: grid; place-items: center;
+  width: calc(58 * var(--onface-u)); height: calc(58 * var(--onface-u));
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--onface-coral) 18%, var(--onface-white));
+  color: color-mix(in srgb, var(--onface-coral) 65%, var(--onface-white));
+}
+.lng-err-ilustracao svg { width: var(--icon-lg); height: var(--icon-lg); }
+.lng-err-aninhado {
+  display: grid; gap: var(--space-8); width: 84%;
+  padding: var(--space-10);
+  border: 1px solid var(--line-hairline); border-radius: var(--radius-lg);
+  background: var(--surface-card);
+}
+.lng-err-aninhado i { display: block; height: calc(18 * var(--onface-u)); border: 1px solid var(--line-hairline); border-radius: var(--radius-md); background: var(--surface-sunken); }
+.lng-err-coral { display: grid; gap: var(--space-6); width: 84%; padding: var(--space-12); border-radius: var(--radius-lg); background: var(--onface-coral); }
+.lng-err-coral i { display: block; height: calc(10 * var(--onface-u)); border-radius: var(--radius-xs); background: color-mix(in srgb, var(--onface-white) 75%, transparent); }
+.lng-err-coral i:last-child { width: 55%; }
+.lng-err-operacional { width: 100%; height: 100%; background: var(--surface-card); }
+.lng-err-linhas { display: grid; align-content: center; gap: var(--space-8); height: 100%; padding: var(--space-12); }
+.lng-err-linhas i { display: block; height: calc(8 * var(--onface-u)); border-radius: var(--radius-xs); background: var(--onface-line); }
+.lng-err-linhas i:nth-child(2) { width: 72%; }
+.lng-err-linhas i:nth-child(3) { width: 86%; }
+
+/* ── Responsivo ─────────────────────────────────────────────────────────── */
+@media (max-width: 1100px) {
+  .lng-profundidade, .lng-graficos, .lng-antis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .lng-provas { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 760px) {
+  .lng-profundidade, .lng-graficos, .lng-antis,
+  .lng-certa, .lng-lavada, .lng-nexo-par, .lng-halo { grid-template-columns: minmax(0, 1fr); }
+  /* No telefone os dois KPIs da regra de sinal empilham: lado a lado eles
+     ficariam estreitos demais e a pílula quebraria linha, que é justamente o
+     que a comparação não pode fazer. */
+  .lng-sinal-linha { grid-template-columns: minmax(0, 1fr); }
+}

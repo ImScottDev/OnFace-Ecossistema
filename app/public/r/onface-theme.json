@@ -1,0 +1,77 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "onface-theme",
+  "title": "ONFACE Theme",
+  "description": "Tema ONFACE da Callface sobre shadcn/ui: coral como única cor de ação, casca grafite, papel claro no conteúdo, Inter para UI e Plus Jakarta Sans para display. Fonte de verdade: app/src/app/onface.css.",
+  "dependencies": [
+    "lucide-react",
+    "recharts"
+  ],
+  "registryDependencies": [
+    "button",
+    "card",
+    "table",
+    "badge",
+    "input",
+    "select",
+    "tabs",
+    "dialog",
+    "drawer",
+    "sheet",
+    "dropdown-menu",
+    "command",
+    "chart",
+    "skeleton",
+    "sonner"
+  ],
+  "cssVars": {
+    "theme": {
+      "font-sans": "Inter, ui-sans-serif, system-ui, sans-serif",
+      "font-display": "Plus Jakarta Sans, ui-sans-serif, system-ui, sans-serif"
+    },
+    "light": {
+      "background": "#f6f6f3",
+      "foreground": "#12171d",
+      "card": "#ffffff",
+      "card-foreground": "#12171d",
+      "popover": "#ffffff",
+      "popover-foreground": "#12171d",
+      "primary": "#fe4f2b",
+      "primary-foreground": "#ffffff",
+      "secondary": "#eeeff3",
+      "secondary-foreground": "#12171d",
+      "muted": "#eeeff3",
+      "muted-foreground": "#6d747e",
+      "accent": "#eeeff3",
+      "accent-foreground": "#12171d",
+      "destructive": "#e7000b",
+      "destructive-foreground": "#ffffff",
+      "border": "#dbdede",
+      "input": "#dbdede",
+      "ring": "#fe4f2b",
+      "radius": "0.625rem",
+      "chart-1": "#fe4f2b",
+      "chart-2": "#ff8a6e",
+      "chart-3": "#8b949e",
+      "chart-4": "#dbdede",
+      "chart-5": "#3fb950",
+      "onface-shell": "#12171d",
+      "onface-shell-raised": "#161b22",
+      "onface-on-shell": "#eeeff3",
+      "onface-on-shell-muted": "#8b949e",
+      "onface-success": "#3fb950",
+      "onface-attention": "#fe4f2b"
+    }
+  },
+  "css": {
+    "@layer base": {
+      "body": {
+        "font-family": "var(--font-sans)"
+      },
+      "h1, h2, h3, h4": {
+        "font-family": "var(--font-display)"
+      }
+    }
+  },
+  "type": "registry:style"
+}

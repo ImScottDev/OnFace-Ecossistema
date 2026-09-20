@@ -1,0 +1,490 @@
+/* Gráficos do ONFACE — só o que não existe em ds.css.
+ *
+ * Duas coisas justificam este arquivo:
+ *   1. O ChartContainer do repo nasce com `aspect-video` e `text-xs` do
+ *      Tailwind. Como este CSS é importado fora de `@layer`, ele ganha da
+ *      camada de utilitários sem precisar de `!important` nem de fork do
+ *      componente. A altura vira múltiplo de --onface-u e escala junto com
+ *      o resto do produto.
+ *   2. Funil, meta e esqueleto não são recharts: são marcação nossa.
+ *
+ * Cor de série sai só de --cf2-serie-1..5 (ds.css). Os --chart-* do
+ * globals.css são do tema escuro legado (branco com alfa) e sumiriam no
+ * papel claro do ONFACE. */
+
+/* ═══ Moldura comum ═════════════════════════════════════════════════════ */
+.of-g {
+  width: 100%;
+  aspect-ratio: auto;
+  height: calc(240 * var(--onface-u));
+  font-size: var(--text-xs);
+}
+.of-g[data-forma="rosca"] { height: calc(216 * var(--onface-u)); }
+.of-g[data-forma="mini"] { height: calc(36 * var(--onface-u)); }
+
+/* Vazio e carregando ocupam a mesma caixa do gráfico: a página não pula de
+   altura quando o dado chega. */
+.of-g-moldura {
+  display: grid;
+  align-content: center;
+  min-height: calc(240 * var(--onface-u));
+}
+.of-g-moldura[data-forma="rosca"] { min-height: calc(216 * var(--onface-u)); }
+.of-g-moldura[data-forma="mini"] { min-height: calc(36 * var(--onface-u)); }
+.of-g-moldura[data-forma="lista"] { min-height: calc(160 * var(--onface-u)); }
+
+.of-g-titulo {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-12);
+  margin-bottom: var(--space-12);
+}
+.of-g-titulo strong {
+  color: var(--text-strong);
+  font-size: var(--text-base);
+  font-weight: var(--weight-semibold);
+}
+.of-g-titulo span {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ═══ Contraste do plano de fundo do gráfico ════════════════════════════
+   O gráfico vive em card branco. Se a grade e o eixo têm o mesmo cinza da
+   série de apoio, tudo vira uma mancha clara. Aqui o eixo desce um degrau de
+   cinza (fica legível de verdade) e a grade sobe um degrau de leveza, para o
+   traço coral ser a coisa mais escura da composição. */
+.of-g .recharts-cartesian-axis-tick text {
+  fill: var(--onface-cinza-2);
+  font-weight: var(--weight-medium);
+}
+.of-g .recharts-cartesian-grid line { stroke: var(--onface-line); }
+.of-g .recharts-legend-wrapper { color: var(--text-body); font-size: var(--text-sm); }
+
+/* ═══ Tooltip ═══════════════════════════════════════════════════════════ */
+/* Tooltip é superfície temporária: pode ter profundidade, e aqui ela é a
+   superfície mais forte da composição. O padrão do container (papel + borda a
+   50%) desaparecia em cima do card branco; em grafite o dado sob o cursor
+   nunca se confunde com o gráfico. As duas classes utilitárias abaixo são as
+   que o `ChartTooltipContent` aplica no texto — sem elas o valor sairia preto
+   sobre grafite. */
+.of-g .recharts-tooltip-wrapper > div {
+  border-color: var(--line-on-shell);
+  background: var(--surface-shell);
+  color: var(--text-on-shell);
+  box-shadow: var(--shadow-popover-shell);
+}
+.of-g .recharts-tooltip-wrapper .text-foreground { color: var(--onface-white); }
+.of-g .recharts-tooltip-wrapper .text-muted-foreground { color: var(--onface-slate); }
+.of-g .recharts-tooltip-wrapper .of-g-tt-nome { color: var(--onface-slate); }
+.of-g .recharts-tooltip-wrapper .of-g-tt-valor {
+  color: var(--onface-white);
+  font-size: var(--text-md);
+}
+
+/* O ChartTooltipContent só sabe formatar número cru (`toLocaleString`).
+   Valor de funil é dinheiro: sem "R$" muda de sentido. Quem passa
+   `formatter` assume a linha inteira, inclusive o ponto da série. */
+.of-g-tt-ponto {
+  flex-shrink: 0;
+  width: var(--space-8);
+  height: var(--space-8);
+  margin-top: calc(3 * var(--onface-u));
+  border-radius: var(--radius-xs);
+}
+.of-g-tt-nome { flex: 1; color: var(--text-muted); }
+.of-g-tt-valor {
+  color: var(--text-strong);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+.of-g-tt-duplo {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: var(--space-4) var(--space-12);
+  width: 100%;
+}
+
+/* ═══ Rosca ═════════════════════════════════════════════════════════════ */
+.of-g-rosca { position: relative; }
+/* O centro é marcação, não <Label> do recharts: assim ele usa a tipografia do
+   DS em vez de texto SVG com tamanho em px. */
+.of-g-rosca-centro {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  text-align: center;
+  pointer-events: none;
+}
+.of-g-rosca-valor {
+  color: var(--text-strong);
+  font-family: var(--font-onface-display), sans-serif;
+  font-size: var(--display-kpi);
+  font-weight: var(--weight-bold);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.of-g-rosca-rotulo {
+  margin-top: var(--space-4);
+  max-width: calc(96 * var(--onface-u));
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+/* A opacidade da fatia inativa vem do componente (atributo SVG); aqui só a
+   transição, para o realce não piscar. */
+.of-g-fatia { transition: opacity var(--duration-base) var(--ease-standard); }
+
+.of-g-legenda {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.of-g-legenda-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  width: 100%;
+  min-height: var(--control-md);
+  padding-inline: var(--space-8);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-body);
+  font: inherit;
+  font-size: var(--text-md);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+.of-g-legenda-item:hover,
+.of-g-legenda-item[data-ativa="true"] { background: var(--surface-sunken); }
+.of-g-legenda-marca {
+  flex-shrink: 0;
+  width: var(--space-8);
+  height: var(--space-8);
+  border-radius: var(--radius-xs);
+}
+.of-g-legenda-nome { flex: 1; min-width: 0; }
+.of-g-legenda-valor { color: var(--text-strong); font-weight: var(--weight-semibold); font-variant-numeric: tabular-nums; }
+/* A origem líder é a resposta da rosca: ela ganha peso na legenda também,
+   senão as quatro linhas ficam com o mesmo valor visual e o coral da fatia
+   não tem eco nenhum na lista. */
+.of-g-legenda-item[data-principal="true"] .of-g-legenda-nome { color: var(--text-strong); font-weight: var(--weight-semibold); }
+.of-g-legenda-item[data-principal="true"] .of-g-legenda-valor { font-size: var(--text-base); }
+
+.of-g-duo {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) calc(196 * var(--onface-u));
+  align-items: center;
+  gap: var(--space-16);
+}
+
+/* ═══ Funil ═════════════════════════════════════════════════════════════ */
+.of-g-funil { display: flex; flex-direction: column; }
+.of-g-funil-etapa {
+  display: block;
+  width: 100%;
+  padding: var(--space-8);
+  border: 1px solid transparent;
+  border-radius: var(--radius-lg);
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-standard),
+    background-color var(--duration-fast) var(--ease-standard);
+}
+.of-g-funil-etapa:hover { background: var(--surface-sunken); }
+.of-g-funil-etapa[aria-pressed="true"] {
+  border-color: var(--onface-coral-border);
+  background: var(--onface-coral-subtle);
+}
+.of-g-funil-cabeca {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-12);
+  margin-bottom: var(--space-6);
+}
+.of-g-funil-nome { color: var(--text-strong); font-size: var(--text-md); font-weight: var(--weight-semibold); }
+.of-g-funil-meta { color: var(--text-muted); font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
+/* Barra proporcional à quantidade da etapa. Uma série só, uma cor só: o que
+   varia é a força do coral (opacidade vem do componente, junto da animação),
+   e ela cresce conforme o negócio chega perto do fechamento. */
+.of-g-funil-barra {
+  display: block;
+  height: calc(28 * var(--onface-u));
+  min-width: calc(24 * var(--onface-u));
+  border-radius: var(--radius-sm);
+  background: var(--cf2-serie-1);
+  /* A largura é layout (vem da proporção da etapa); a entrada é transform.
+     Escalar a partir da esquerda mantém a barra ancorada no eixo. */
+  transform-origin: left center;
+}
+.of-g-funil-passagem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  padding: var(--space-4) var(--space-8);
+  /* A taxa de passagem é dado, não legenda: `--text-subtle` sobre card branco
+     dá 3,08:1 e reprova para texto. `--text-muted` sobe para 4,72:1. */
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+.of-g-funil-passagem svg { width: var(--icon-xs); height: var(--icon-xs); }
+.of-g-funil-passagem[data-alerta="true"] { color: var(--status-danger); font-weight: var(--weight-medium); }
+.of-g-funil-detalhe {
+  display: block;
+  margin: var(--space-6) 0 0;
+  color: var(--text-body);
+  font-size: var(--text-sm);
+  line-height: 1.45;
+}
+
+/* ═══ Meta por responsável ══════════════════════════════════════════════ */
+.of-g-meta { display: flex; flex-direction: column; gap: var(--space-16); }
+.of-g-meta-linha { display: grid; gap: var(--space-6); }
+.of-g-meta-cabeca { display: flex; align-items: center; gap: var(--space-8); }
+.of-g-meta-iniciais {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: var(--avatar-sm);
+  height: var(--avatar-sm);
+  border-radius: var(--radius-full);
+  background: var(--surface-sunken);
+  /* `--text-muted` sobre superfície afundada dá 4,11:1 e reprova. `--onface-cinza-3`
+     leva o monograma a 7,21:1 e ainda fica um degrau abaixo do nome ao lado,
+     que é `--text-strong`: contraste resolvido sem inverter a hierarquia. */
+  color: var(--onface-cinza-3);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-bold);
+}
+.of-g-meta-nome { flex: 1; min-width: 0; color: var(--text-strong); font-size: var(--text-md); font-weight: var(--weight-medium); }
+.of-g-meta-num { color: var(--text-muted); font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
+.of-g-meta-num b { color: var(--text-strong); font-weight: var(--weight-semibold); }
+.of-g-meta-trilho {
+  position: relative;
+  height: calc(10 * var(--onface-u));
+  border-radius: var(--radius-full);
+  background: var(--surface-sunken);
+  overflow: hidden;
+}
+/* O preenchimento é um retângulo de largura cheia escalado no eixo X, não uma
+   largura animada: `width` custa layout a cada quadro e é o que a fundação de
+   movimento proíbe. O trilho já recorta (overflow + raio), então a ponta
+   esquerda sai arredondada por ele e a direita fica reta, que é a leitura
+   certa de um medidor. A proporção entra por `--of-g-meta-p`. */
+.of-g-meta-preenche {
+  height: 100%;
+  background: var(--cf2-serie-1);
+  transform: scaleX(var(--of-g-meta-p, 0));
+  transform-origin: left center;
+  transition: transform var(--duration-slow) var(--ease-standard),
+    background-color var(--duration-base) var(--ease-standard);
+}
+/* Regra de sinal: coral é quem precisa de ação hoje, então quem está ABAIXO do
+   ritmo é que fica coral (padrão acima). Estar no ritmo é informação neutra e
+   vai para o cinza. Estava invertido: a barra em dia puxava a atenção e a
+   atrasada desaparecia. */
+.of-g-meta-preenche[data-ritmo="no-ritmo"] { background: var(--cf2-serie-3); }
+/* A marca do ritmo é a régua que dá sentido ao resto da barra. A 1px de
+   `--text-subtle` ela sumia dentro do preenchimento: vira traço preto de
+   2 unidades, que é o que se enxerga sem procurar. */
+.of-g-meta-marca {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: calc(2 * var(--onface-u));
+  background: var(--text-strong);
+}
+
+/* ═══ Esqueleto ═════════════════════════════════════════════════════════ */
+/* O esqueleto tem a forma do gráfico que vem depois. Bloco genérico avisa
+   "carregando" mas não prepara o olho para o que vai aparecer. */
+.of-g-esq-area { display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: var(--space-8); height: 100%; }
+.of-g-esq-bloco { height: 100%; border-radius: var(--radius-lg); }
+.of-g-esq-eixo { display: flex; justify-content: space-between; gap: var(--space-8); }
+.of-g-esq-tick { width: calc(32 * var(--onface-u)); height: calc(8 * var(--onface-u)); border-radius: var(--radius-xs); }
+.of-g-esq-barras { display: flex; align-items: flex-end; gap: var(--space-12); height: 100%; }
+.of-g-esq-barra { flex: 1; border-radius: var(--radius-sm) var(--radius-sm) 0 0; }
+.of-g-esq-funil { display: flex; flex-direction: column; gap: var(--space-12); }
+.of-g-esq-faixa { height: calc(28 * var(--onface-u)); border-radius: var(--radius-sm); }
+.of-g-esq-rotulo { width: 45%; height: calc(12 * var(--onface-u)); border-radius: var(--radius-xs); }
+.of-g-esq-trilho { height: calc(10 * var(--onface-u)); border-radius: var(--radius-full); }
+.of-g-esq-mini { height: calc(36 * var(--onface-u)); border-radius: var(--radius-sm); }
+.of-g-esq-rosca {
+  display: grid;
+  place-items: center;
+  width: calc(150 * var(--onface-u));
+  height: calc(150 * var(--onface-u));
+  margin-inline: auto;
+  border-radius: var(--radius-full);
+}
+.of-g-esq-furo {
+  width: calc(92 * var(--onface-u));
+  height: calc(92 * var(--onface-u));
+  border-radius: var(--radius-full);
+  background: var(--surface-card);
+}
+.of-g-esq-lista { display: flex; flex-direction: column; gap: var(--space-16); }
+.of-g-esq-par { display: grid; gap: var(--space-6); }
+
+/* Sparkline vazia não vira caixa vazia: o KPI ao lado continua legível, só a
+   tendência é que não existe ainda. */
+.of-g-mini-vazio {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  margin: 0;
+  border-top: 1px dashed var(--line-hairline);
+  /* Mensagem de vazio precisa ser lida: `--text-subtle` sobre card dá 3,08:1. */
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+/* O título já vem com respiro do container da lista de metas. */
+.of-g-meta > .of-g-titulo { margin-bottom: 0; }
+
+/* ═══ Abertura da seção: métrica herói ══════════════════════════════════
+   Seis gráficos em sequência plana não têm ponto de entrada: tudo tem o mesmo
+   tamanho e o olho escolhe sozinho. A seção passa a abrir por um número
+   grande em grafite — a superfície de decisão do ONFACE — e o resto vem denso
+   embaixo, em papel. É o contraste entre as duas superfícies que dá
+   hierarquia; sem ele, "minimalista" vira mancha cinza.
+
+   O fundo é malha porque este é o painel de comando do time comercial, não
+   enfeite: o mesmo vocabulário gráfico da marca, na única faixa da seção que
+   pede peso. */
+.of-g-hero {
+  position: relative;
+  overflow: hidden;
+  padding: var(--space-32);
+  border-radius: var(--radius-card-lg);
+  background: var(--surface-shell);
+  color: var(--text-on-shell);
+  isolation: isolate;
+}
+.of-g-hero-conteudo {
+  display: grid;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+  align-items: end;
+  gap: var(--space-40);
+}
+.of-g-hero-rotulo {
+  margin: 0;
+  color: var(--onface-slate);
+  font-family: var(--font-onface-display), sans-serif;
+  font-size: var(--display-label);
+  font-weight: var(--weight-extrabold);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+.of-g-hero-numero {
+  margin: var(--space-10) 0 0;
+  color: var(--onface-white);
+  font-family: var(--font-onface-display), sans-serif;
+  font-size: calc(56 * var(--onface-u));
+  font-weight: var(--weight-bold);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.035em;
+  line-height: 1;
+}
+/* `--onface-cinza` sobre a casca grafite dá 3,82:1 e reprova para texto
+   normal. `--text-on-shell-muted` é o cinza de apoio da própria casca: 5,86:1. */
+.of-g-hero-apoio { margin: var(--space-8) 0 0; color: var(--text-on-shell-muted); font-size: var(--text-md); }
+.of-g-hero-tendencia { display: grid; gap: var(--space-8); min-width: 0; }
+.of-g-hero-legenda {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-12);
+  color: var(--onface-slate);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+/* Regra de sinal do ONFACE aplicada ao pé da letra: verde é resultado
+   consumado e positivo, coral é o que pede ação agora. A variação do
+   trimestre é o sinal mais forte da faixa, então ela troca de cor conforme o
+   sentido em vez de sair sempre coral — delta positivo em coral era bug de
+   semântica, não de estilo.
+   Contraste medido: queda = branco sobre coral rebaixado, 4,55:1 (o coral da
+   marca dava 3,30:1 e reprovava); alta = tinta da casca sobre verde, 7,09:1
+   (branco sobre o mesmo verde daria 2,54:1). */
+.of-g-hero-delta {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-8);
+  border-radius: var(--radius-full);
+  background: var(--onface-coral-deep);
+  color: var(--onface-white);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.of-g-hero-delta[data-sentido="alta"] {
+  background: var(--status-success);
+  color: var(--text-strong);
+}
+.of-g-hero-delta svg { width: var(--icon-xs); height: var(--icon-xs); }
+/* A sparkline do herói é maior que a de dentro de KPI: aqui ela é a prova do
+   número, não um apêndice. O esqueleto e o vazio herdam a mesma altura, senão
+   a faixa encolhe no meio do carregamento. */
+.of-g-hero .of-g[data-forma="mini"],
+.of-g-hero .of-g-moldura[data-forma="mini"],
+.of-g-hero .of-g-esq-mini { height: calc(88 * var(--onface-u)); }
+.of-g-hero .of-g-moldura[data-forma="mini"] { min-height: calc(88 * var(--onface-u)); }
+/* Sem histórico, a linha pontilhada do vazio trocava de cor de referência:
+   em grafite ela precisa da hairline da casca, não da do papel. */
+.of-g-hero .of-g-mini-vazio { border-top-color: var(--line-on-shell); color: var(--onface-slate); }
+
+/* ═══ Playground da documentação ══════════════════════════════════════════
+   Espelha o bloco de `datagrid.css`: cada seção do lab carrega só o próprio
+   CSS, e o playground precisa ler igual nas duas. Ele é meta-controle da
+   documentação, não chrome do produto — por isso contorno tracejado e rótulo
+   em vez da mesma caixa cinza cheia que a barra de filtros usa. */
+.ds-play-meta { display: grid; gap: var(--space-6); }
+.ds-play-meta > span {
+  color: var(--onface-cinza-2);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+.ds-play-meta .ds-playground { border-style: dashed; background: transparent; }
+
+/* Dois gráficos que se leem juntos dividem a linha. Sequência de blocos de
+   largura cheia vira rolagem sem ritmo. */
+.of-g-par {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: var(--space-32);
+}
+
+/* ═══ Responsivo ════════════════════════════════════════════════════════ */
+@media (max-width: 1100px) {
+  .of-g-par { grid-template-columns: minmax(0, 1fr); }
+  .of-g-hero-conteudo { grid-template-columns: minmax(0, 1fr); gap: var(--space-24); }
+}
+@media (max-width: 760px) {
+  /* A rosca e a legenda empilham: lado a lado em 360px a legenda espremeria
+     o nome da origem até virar reticência. */
+  .of-g-duo { grid-template-columns: minmax(0, 1fr); }
+  .of-g { height: calc(220 * var(--onface-u)); }
+  .of-g-hero { padding: var(--space-20); }
+  .of-g-hero-numero { font-size: calc(44 * var(--onface-u)); }
+}

@@ -1,0 +1,527 @@
+/* Estilos exclusivos da seção Movimento.
+ *
+ * Tudo que é geral mora em ds.css. Aqui só existe o que é laboratório de
+ * motion: pistas de comparação, palcos de microinteração e o farol de
+ * `prefers-reduced-motion`. Nenhum valor cru: medida em múltiplos de
+ * `--onface-u`, cor só de token. */
+
+/* ═══ Palco grafite ═════════════════════════════════════════════════════ */
+/* As pistas acontecem sobre a casca, não sobre o branco. Uma bolha coral em
+   pista clara sobre cartão claro some no primeiro relance: o percurso precisa
+   de fundo para existir. É o único bloco escuro da seção, de propósito. */
+.ds-mov-palco-escuro {
+  position: relative;
+  overflow: hidden;
+  padding: var(--space-24);
+  background: var(--surface-shell);
+  isolation: isolate;
+
+  /* Ponte de tinta: dentro da casca, "texto primário" e "superfície alt" são
+     os da casca. Assim o Button ghost do shadcn continua sendo o mesmo
+     componente, sem variante nova e sem estilo por cima do rótulo. */
+  --cf2-text-primary: var(--onface-branco-logo);
+  --cf2-bg-surface-muted: var(--onface-alpha-divider);
+}
+.ds-mov-pistas { position: relative; z-index: 1; display: grid; gap: var(--space-24); }
+
+/* ═══ Pistas de token (duração e curva) ═════════════════════════════════ */
+.ds-mov-pista { display: grid; gap: var(--space-10); }
+
+/* Rótulo | pista | uso | gatilho. A coluna de uso some antes da pista porque
+   ela é apoio de leitura, e a pista é a prova. */
+.ds-mov-linha {
+  display: grid;
+  grid-template-columns:
+    calc(104 * var(--onface-u))
+    minmax(calc(160 * var(--onface-u)), 1fr)
+    calc(210 * var(--onface-u))
+    auto;
+  align-items: center;
+  gap: var(--space-12);
+}
+.ds-mov-nome {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  color: var(--onface-white);
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+}
+/* O valor do token (180ms, a bezier) é o que a pessoa vem aqui copiar: 10u
+   entregaria 9px com a escala em 0.9, abaixo do piso de leitura. */
+.ds-mov-nome small {
+  color: var(--onface-slate);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+/* Selo de padrão. Oito trilhos idênticos não dizem qual é o default, e o
+   default é a única informação que alguém leva embora daqui: na dúvida, base.
+   Coral profundo porque é preenchimento coral carregando rótulo (4,55:1). */
+.ds-mov-padrao {
+  display: inline-flex;
+  align-items: center;
+  height: var(--control-xs);
+  padding-inline: var(--space-6);
+  border-radius: var(--radius-full);
+  background: var(--onface-coral-deep);
+  color: var(--onface-white);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-extrabold);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+.ds-mov-nome-topo { display: flex; align-items: center; gap: var(--space-8); }
+/* A linha padrão também ganha borda cheia no trilho: quem varre a pista de
+   relance acha o default sem ler rótulo nenhum. */
+.ds-mov-linha[data-padrao="true"] :is(.ds-mov-trilho, .ds-mov-mola-trilho) {
+  border-style: solid;
+  border-color: var(--onface-coral);
+}
+.ds-mov-uso { color: var(--onface-slate); font-size: var(--text-xs); line-height: 1.4; }
+
+/* A pista é um botão: clicar em qualquer ponto dela toca, e o foco do teclado
+   cai no mesmo alvo que o mouse usa.
+   `container-type` existe por causa da bolha: é o que permite medir o fim do
+   percurso em unidade da própria pista sem sair do transform. */
+.ds-mov-trilho {
+  position: relative;
+  container-type: inline-size;
+  width: 100%;
+  height: calc(26 * var(--onface-u));
+  padding: 0;
+  border: 1px dashed var(--onface-alpha-ring);
+  border-radius: var(--radius-full);
+  background: var(--onface-alpha-hairline);
+  overflow: hidden;
+  cursor: pointer;
+}
+/* Anima `transform`, e o destino ainda nasce do layout: `100cqi` é a largura
+   da própria pista. Animar `left` funcionava, mas passa por layout a cada
+   quadro — é o que a própria seção proíbe duas telas abaixo. */
+.ds-mov-bolha {
+  position: absolute;
+  top: calc(4 * var(--onface-u));
+  left: calc(4 * var(--onface-u));
+  width: calc(18 * var(--onface-u));
+  height: calc(18 * var(--onface-u));
+  border-radius: var(--radius-full);
+  background: var(--onface-coral);
+  transition: transform var(--ds-mov-duracao, var(--duration-base))
+    var(--ds-mov-curva, var(--ease-standard));
+}
+.ds-mov-bolha[data-fim="true"] { transform: translateX(calc(100cqi - 26 * var(--onface-u))); }
+/* Marca do fim do percurso: o alvo passa a ter para onde ir, e a pista deixa de
+   ser um retângulo vazio com uma bolinha dentro. É o que dá palco ao movimento
+   — sem destino desenhado, 120ms e 280ms parecem o mesmo borrão. */
+.ds-mov-trilho::after {
+  content: "";
+  position: absolute;
+  top: calc(4 * var(--onface-u));
+  right: calc(4 * var(--onface-u));
+  width: calc(18 * var(--onface-u));
+  height: calc(18 * var(--onface-u));
+  border-radius: var(--radius-full);
+  box-shadow: inset 0 0 0 1px var(--onface-alpha-ring);
+}
+
+/* ═══ Molas ═════════════════════════════════════════════════════════════ */
+/* O alvo troca de ponta trocando o alinhamento do contêiner: a mola do
+   motion mede as duas posições reais, sem distância escrita à mão. */
+.ds-mov-mola-trilho {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  width: 100%;
+  height: calc(26 * var(--onface-u));
+  padding-inline: calc(4 * var(--onface-u));
+  border: 1px dashed var(--onface-alpha-ring);
+  border-radius: var(--radius-full);
+  background: var(--onface-alpha-hairline);
+  cursor: pointer;
+}
+.ds-mov-mola-trilho[data-fim="true"] { justify-content: flex-end; }
+.ds-mov-alvo {
+  width: calc(18 * var(--onface-u));
+  height: calc(18 * var(--onface-u));
+  border-radius: var(--radius-full);
+  background: var(--onface-coral);
+}
+
+/* ═══ Galeria de microinterações ════════════════════════════════════════ */
+/* Uma superfície dividida por fio de 1px (o vão do grid), não oito cartões
+   com borda própria. Oito molduras iguais empatam a página inteira numa
+   mancha só; o alinhamento separa melhor e não cobra atenção. */
+.ds-mov-galeria {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  /* Fio por célula (e não fundo do contêiner): com um número ímpar de demos a
+     última linha fica com a superfície do painel, não com um vão cinza. */
+  margin: -1px;
+}
+.ds-mov-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-10);
+  padding: var(--space-16);
+  background: var(--surface-card);
+  box-shadow: 0 0 0 1px var(--line-hairline);
+}
+.ds-mov-item-topo {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-8);
+}
+.ds-mov-item-topo strong {
+  color: var(--text-strong);
+  font-family: var(--font-onface-display), sans-serif;
+  font-size: var(--text-base);
+  font-weight: var(--weight-semibold);
+}
+/* A técnica ("layoutId", "AnimatePresence") é o que alguém vem buscar aqui
+   para ir procurar no código: sobre branco o `--text-subtle` dá 3,08:1. */
+.ds-mov-item-topo small {
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+/* Altura mínima igual em todos os palcos: o card não pula quando a demo troca
+   de conteúdo, que seria o oposto do que a seção prega.
+   O fundo rebaixado é o palco: sem ele a demo flutua no branco do painel e o
+   movimento acontece contra nada. */
+.ds-mov-palco {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-10);
+  justify-content: center;
+  min-height: calc(104 * var(--onface-u));
+  padding: var(--space-16);
+  border-radius: var(--radius-lg);
+  background: var(--surface-sunken);
+  /* Anel de hairline: o palco vira um plano com limite em vez de uma mancha
+     cinza que escorre para dentro do cartão. É o mesmo limite que define
+     qualquer superfície do ONFACE. */
+  box-shadow: var(--ring-inset-hairline);
+
+  /* Tinta de apoio do palco. Sobre `--surface-sunken` (#eeeff3) o
+     `--text-muted` entrega 4,11:1, abaixo do piso de 4,5:1; `--onface-cinza-2`
+     é o degrau seguinte da mesma rampa e mede 4,71:1. Quem está dentro de um
+     cartão branco POR CIMA do palco continua em `--text-muted` (4,72:1 lá). */
+  --ds-mov-apoio: var(--onface-cinza-2);
+}
+.ds-mov-nota { color: var(--text-muted); font-size: var(--text-xs); line-height: 1.45; }
+
+/* Duas superfícies no mesmo lugar do grid: a saída e a entrada se cruzam sem
+   colapsar a caixa. É o que evita o pulo entre esqueleto e conteúdo. */
+.ds-mov-troca { display: grid; }
+.ds-mov-troca > * { grid-area: 1 / 1; }
+.ds-mov-troca[data-centro="true"] { place-items: center; }
+.ds-mov-rotulo {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-6);
+  white-space: nowrap;
+}
+
+/* Abas com indicador compartilhado */
+.ds-mov-abas {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  border-bottom: 1px solid var(--line-hairline);
+}
+.ds-mov-aba {
+  position: relative;
+  padding: var(--space-8) var(--space-10) var(--space-10);
+  border: 0;
+  background: transparent;
+  color: var(--ds-mov-apoio, var(--text-muted));
+  font: inherit;
+  font-size: var(--text-md);
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-standard);
+}
+.ds-mov-aba:hover { color: var(--text-strong); }
+.ds-mov-aba[aria-selected="true"] { color: var(--text-strong); font-weight: var(--weight-semibold); }
+.ds-mov-aba-marca {
+  position: absolute;
+  right: var(--space-8);
+  bottom: calc(-1 * var(--onface-u));
+  left: var(--space-8);
+  height: calc(2 * var(--onface-u));
+  border-radius: var(--radius-full);
+  background: var(--onface-coral);
+}
+.ds-mov-painel {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-8);
+  color: var(--ds-mov-apoio, var(--text-muted));
+  font-size: var(--text-sm);
+}
+.ds-mov-painel strong {
+  color: var(--text-strong);
+  font-family: var(--font-onface-display), sans-serif;
+  font-size: var(--display-title);
+  font-weight: var(--weight-bold);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Segmented control. Sobre o palco rebaixado o trilho precisa de limite
+   próprio, senão ele e o palco viram a mesma mancha. */
+.ds-mov-seg {
+  display: inline-flex;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border-radius: var(--radius-control);
+  background: var(--surface-sunken);
+  box-shadow: var(--ring-inset-hairline);
+}
+/* O trilho é rebaixado (a pílula branca precisa de fundo para se descolar),
+   então o rótulo não selecionado herda a tinta de apoio do palco: sobre
+   #eeeff3 o `--text-muted` reprova em 4,11:1. */
+.ds-mov-seg-botao {
+  position: relative;
+  height: var(--control-sm);
+  padding-inline: var(--space-12);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--ds-mov-apoio, var(--text-muted));
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+}
+.ds-mov-seg-botao[aria-pressed="true"] { color: var(--text-strong); font-weight: var(--weight-semibold); }
+.ds-mov-seg-pilula {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
+  box-shadow: var(--ring-inset-hairline);
+}
+.ds-mov-seg-rotulo { position: relative; }
+
+/* Cartão interativo. A elevação do hover é geométrica, não sombra: o ONFACE
+   define superfície por fio de 1px, e sombra colorida é proibida. */
+.ds-mov-cartao {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-10);
+  width: 100%;
+  padding: var(--space-10) var(--space-12);
+  border: 1px solid var(--line-hairline);
+  border-radius: var(--radius-lg);
+  background: var(--surface-card);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    transform var(--duration-base) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard),
+    background-color var(--duration-fast) var(--ease-standard);
+}
+.ds-mov-cartao:hover { transform: translateY(calc(-2 * var(--onface-u))); }
+.ds-mov-cartao[aria-pressed="true"] {
+  border-color: var(--onface-coral-border);
+  background: var(--onface-coral-subtle);
+}
+.ds-mov-cartao strong {
+  display: block;
+  color: var(--text-strong);
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+}
+.ds-mov-cartao small { display: block; color: var(--text-muted); font-size: var(--text-xs); }
+.ds-mov-cartao-marca {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: var(--avatar-sm);
+  height: var(--avatar-sm);
+  border-radius: var(--radius-full);
+  background: var(--onface-coral);
+  color: var(--text-on-accent);
+}
+.ds-mov-cartao-marca svg { width: var(--icon-xs); height: var(--icon-xs); }
+
+/* Sanfona: só alinhar o componente do shadcn ao tipo do ONFACE. */
+.ds-mov-sanfona [data-slot="accordion-trigger"] {
+  padding-block: var(--space-10);
+  color: var(--text-strong);
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+}
+.ds-mov-sanfona-corpo {
+  display: grid;
+  gap: var(--space-4);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+.ds-mov-sanfona-corpo b { color: var(--text-strong); font-variant-numeric: tabular-nums; }
+
+/* Contador */
+.ds-mov-contador {
+  color: var(--text-strong);
+  font-family: var(--font-onface-display), sans-serif;
+  font-size: var(--display-kpi);
+  font-weight: var(--weight-bold);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+/* Esqueleto → conteúdo */
+.ds-mov-conversa { display: flex; align-items: center; gap: var(--space-10); }
+.ds-mov-conversa-avatar {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: var(--avatar-md);
+  height: var(--avatar-md);
+  border-radius: var(--radius-full);
+  background: var(--surface-card);
+  box-shadow: var(--ring-inset-hairline);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+}
+.ds-mov-conversa-corpo { min-width: 0; }
+.ds-mov-conversa-corpo strong {
+  display: block;
+  color: var(--text-strong);
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+}
+.ds-mov-conversa-corpo small {
+  display: block;
+  overflow: hidden;
+  /* A conversa fica direto no palco rebaixado, não dentro de um cartão. */
+  color: var(--ds-mov-apoio, var(--text-muted));
+  font-size: var(--text-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ds-mov-esqueleto { display: flex; align-items: center; gap: var(--space-10); }
+/* O Skeleton do shadcn pinta com `bg-accent`, que é o mesmo cinza do palco
+   rebaixado: sobre ele o esqueleto simplesmente não aparece. Um degrau
+   acima resolve sem tocar no componente. */
+.ds-mov-esqueleto [data-slot="skeleton"] { background: var(--onface-line); }
+.ds-mov-esqueleto-linhas { display: grid; gap: var(--space-6); flex: 1; min-width: 0; }
+/* O esqueleto copia a geometria do conteúdo em unidade do sistema, não em
+   utilitário do Tailwind: é a igualdade de altura que impede o pulo. */
+.ds-mov-esqueleto-avatar {
+  width: var(--avatar-md);
+  height: var(--avatar-md);
+  border-radius: var(--radius-full);
+}
+.ds-mov-esqueleto-linha { height: calc(11 * var(--onface-u)); border-radius: var(--radius-xs); }
+.ds-mov-esqueleto-linha[data-largura="curta"] { width: calc(120 * var(--onface-u)); }
+.ds-mov-esqueleto-linha[data-largura="longa"] { width: calc(200 * var(--onface-u)); }
+
+/* Cascata */
+.ds-mov-cascata { display: grid; gap: var(--space-6); margin: 0; padding: 0; list-style: none; }
+.ds-mov-cascata li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  overflow: hidden;
+  padding: var(--space-8) var(--space-10);
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
+  box-shadow: var(--ring-inset-hairline);
+  color: var(--text-body);
+  font-size: var(--text-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ds-mov-cascata i {
+  flex-shrink: 0;
+  width: calc(5 * var(--onface-u));
+  height: calc(5 * var(--onface-u));
+  border-radius: var(--radius-full);
+  background: var(--onface-coral);
+}
+
+/* ═══ Farol de prefers-reduced-motion ═══════════════════════════════════ */
+.ds-mov-farol {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8);
+  height: var(--control-lg);
+  padding-inline: var(--space-12);
+  border-radius: var(--radius-full);
+  background: var(--surface-sunken);
+  color: var(--text-strong);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+}
+.ds-mov-farol svg { width: var(--icon-sm); height: var(--icon-sm); color: var(--text-muted); }
+.ds-mov-farol[data-ligado="true"] {
+  background: var(--onface-coral-subtle);
+  box-shadow: inset 0 0 0 1px var(--onface-coral-border);
+  color: var(--cf2-atencao-fg);
+}
+.ds-mov-farol[data-ligado="true"] svg { color: var(--cf2-atencao-fg); }
+.ds-mov-consequencias { display: grid; gap: var(--space-8); margin: 0; padding: 0; list-style: none; }
+.ds-mov-consequencias li {
+  display: grid;
+  grid-template-columns: var(--icon-sm) minmax(0, 1fr);
+  gap: var(--space-8);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+.ds-mov-consequencias svg { width: var(--icon-sm); height: var(--icon-sm); color: var(--text-subtle); }
+.ds-mov-consequencias b { color: var(--text-strong); font-weight: var(--weight-semibold); }
+
+/* ═══ Reduced motion ════════════════════════════════════════════════════ */
+/* A regra global de onface.css mira `.onface-app-shell *`, e o zeramento dos
+   `--duration-*` de ds.css cobre tudo que anima por token. Esta cobertura local
+   existe para o que sai da casca por portal do Radix (Dialog, Popover, Tooltip,
+   Command) e para o que aqui anima por `layout` do motion — o JS já troca a
+   transição em `useReducedMotion`, e o CSS trava a outra metade. */
+@media (prefers-reduced-motion: reduce) {
+  .ds-mov-bolha,
+  .ds-mov-cartao,
+  .ds-mov-aba,
+  .ds-mov-cartao-marca,
+  .ds-mov-conversa,
+  .ds-mov-esqueleto {
+    transition: none;
+  }
+  .ds-mov-cartao:hover { transform: none; }
+}
+
+/* ═══ Responsivo ════════════════════════════════════════════════════════ */
+@media (max-width: 1100px) {
+  /* O uso vira legenda abaixo da pista em vez de ser descartado: "quando esta
+     duração é a certa" é a única coisa que a pista sozinha não consegue dizer,
+     e some junto com a coluna se a gente esconder. */
+  .ds-mov-linha { grid-template-columns: calc(104 * var(--onface-u)) minmax(0, 1fr) auto; }
+  /* Posição explícita: com o uso saindo para a linha de baixo, deixar o gatilho
+     no fluxo automático o jogaria para uma terceira linha sozinho. */
+  .ds-mov-nome { grid-area: 1 / 1 / 2 / 2; }
+  .ds-mov-trilho,
+  .ds-mov-mola-trilho { grid-area: 1 / 2 / 2 / 3; }
+  .ds-mov-linha > :last-child { grid-area: 1 / 3 / 2 / 4; }
+  .ds-mov-uso { grid-area: 2 / 1 / 3 / 4; }
+  .ds-mov-galeria { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 760px) {
+  .ds-mov-linha { grid-template-columns: minmax(0, 1fr) auto; }
+  .ds-mov-nome { grid-area: 1 / 1 / 2 / 3; flex-direction: row; align-items: baseline; gap: var(--space-8); }
+  .ds-mov-trilho,
+  .ds-mov-mola-trilho { grid-area: 2 / 1 / 3 / 2; }
+  .ds-mov-linha > :last-child { grid-area: 2 / 2 / 3 / 3; }
+  .ds-mov-uso { grid-area: 3 / 1 / 4 / 3; }
+  .ds-mov-palco-escuro { padding: var(--space-16); }
+}

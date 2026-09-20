@@ -1,0 +1,277 @@
+/* Medidores segmentados.
+   Uma variável de trilha, um par de projeções e os cartões que as usam. Nada de
+   cor nova: a série vem de --chart-*, a trilha vem da superfície rebaixada. */
+
+.med-painel,
+.med-cartao {
+  /* Trilha = célula apagada. Fica aqui e não em cada componente porque no
+     escopo escuro (`data-onface-superficie="escura"`) --surface-sunken já vira
+     grafite e a trilha acompanha sem nenhuma regra extra. */
+  --med-trilha: var(--surface-sunken);
+  display: grid;
+  gap: var(--space-16);
+  padding: var(--space-20);
+  border: 1px solid var(--line-hairline);
+  border-radius: var(--radius-card);
+  background: var(--surface-card);
+}
+
+.med-par {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-16);
+}
+
+/* ── Base: barra segmentada ───────────────────────────────────────────── */
+.med-barra {
+  display: flex;
+  align-items: stretch;
+  gap: calc(2 * var(--onface-u));
+  height: calc(28 * var(--onface-u));
+}
+.med-barra i {
+  flex: 1;
+  min-width: calc(2 * var(--onface-u));
+  border-radius: var(--radius-xs);
+  transition: opacity var(--duration-base) var(--ease-standard),
+    background-color var(--duration-base) var(--ease-standard);
+}
+.med-barra i[data-atenuado="true"],
+.med-arco line[data-atenuado="true"] { opacity: 0.28; }
+
+/* ── Base: arco segmentado ────────────────────────────────────────────── */
+.med-arco { width: 100%; height: auto; display: block; }
+.med-arco line { transition: stroke var(--duration-base) var(--ease-standard), opacity var(--duration-base) var(--ease-standard); }
+
+/* Acender segmento por segmento em vez de tudo de uma vez: o olho lê a
+   direção do preenchimento, que é a informação. `--i` vem do componente.
+   Só transform/opacity, e só quando o sistema não pediu movimento reduzido. */
+.med-barra[data-animar="true"] i {
+  animation: med-acender var(--duration-base) var(--ease-standard) backwards;
+  animation-delay: calc(var(--i) * 12ms);
+}
+/* No arco a mesma cascata anima SÓ opacidade: `transform` num <line> depende
+   de `transform-box`, e a origem de um traço quase vertical é degenerada —
+   o segmento do meio escalaria a partir de outro ponto que os vizinhos. */
+.med-arco[data-animar="true"] line {
+  animation: med-surgir var(--duration-base) var(--ease-standard) backwards;
+  animation-delay: calc(var(--i) * 12ms);
+}
+@keyframes med-acender {
+  from { opacity: 0; transform: scale(0.72); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes med-surgir {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .med-barra[data-animar="true"] i,
+  .med-arco[data-animar="true"] line { animation: none; }
+}
+
+/* ── Painel de arco ───────────────────────────────────────────────────── */
+.med-painel-topo {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-12);
+}
+.med-painel-topo h4 {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+.med-arco-caixa { position: relative; }
+.med-arco-centro {
+  position: absolute;
+  inset-inline: 0;
+  /* O arco ocupa 112/200 do quadro; o número senta logo acima da base dele. */
+  bottom: calc(6 * var(--onface-u));
+  display: grid;
+  justify-items: center;
+  gap: var(--space-2);
+}
+.med-arco-centro strong {
+  display: flex;
+  align-items: baseline;
+  color: var(--text-strong);
+  font-family: var(--font-onface-display), sans-serif;
+  font-size: var(--display-section);
+  font-weight: var(--weight-bold);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--leading-tight);
+}
+.med-arco-centro strong i {
+  font-size: var(--display-title);
+  font-style: normal;
+  color: var(--text-muted);
+}
+.med-arco-centro span {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+}
+.med-painel-apoio {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--leading-body);
+  /* Duas linhas de altura fixa: a frase muda quando a pessoa troca de avatar e
+     o cartão não pode pular de tamanho a cada clique. */
+  min-height: calc(2 * var(--leading-20));
+}
+
+/* ── Pilha de avatares ────────────────────────────────────────────────── */
+.med-pilha { display: flex; }
+.med-pilha-item {
+  margin-left: calc(-8 * var(--onface-u));
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: transparent;
+  cursor: pointer;
+  transition: transform var(--duration-fast) var(--ease-standard);
+}
+.med-pilha-item:first-child { margin-left: 0; }
+/* Anel na cor do cartão: é ele que separa um avatar do outro na sobreposição. */
+.med-pilha-item [data-slot="avatar"] { box-shadow: 0 0 0 calc(2 * var(--onface-u)) var(--surface-card); }
+.med-pilha-item:hover { transform: translateY(calc(-2 * var(--onface-u))); }
+.med-pilha-item[aria-pressed="true"] { transform: translateY(calc(-2 * var(--onface-u))); }
+.med-pilha-item[aria-pressed="true"] [data-slot="avatar"] {
+  box-shadow: 0 0 0 calc(2 * var(--onface-u)) var(--onface-coral);
+}
+.med-pilha-item:focus-visible { outline: 2px solid var(--onface-coral); outline-offset: 2px; }
+
+/* ── Cartão de distribuição ───────────────────────────────────────────── */
+.med-cartao-topo {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-16);
+  flex-wrap: wrap;
+}
+.med-cartao-topo h4 {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+.med-cartao-total {
+  margin: var(--space-6) 0 0;
+  color: var(--text-strong);
+  font-family: var(--font-onface-display), sans-serif;
+  font-size: var(--display-kpi);
+  font-weight: var(--weight-bold);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--leading-tight);
+}
+.med-cartao-apoio { margin: var(--space-4) 0 0; color: var(--text-muted); font-size: var(--text-sm); }
+
+.med-abas {
+  display: inline-flex;
+  padding: calc(3 * var(--onface-u));
+  border: 1px solid var(--line-hairline);
+  border-radius: var(--radius-full);
+  background: var(--surface-sunken);
+}
+.med-aba {
+  height: var(--control-sm);
+  padding-inline: var(--space-12);
+  border: 0;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+.med-aba[aria-selected="true"] { background: var(--surface-card); color: var(--text-strong); box-shadow: var(--ring-inset-hairline); }
+.med-aba:focus-visible { outline: 2px solid var(--onface-coral); outline-offset: 2px; }
+.med-seletor { font-size: var(--text-sm); }
+
+/* ── Legenda ──────────────────────────────────────────────────────────── */
+.med-legenda { display: grid; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
+.med-legenda-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--space-10);
+  width: 100%;
+  padding: var(--space-6) var(--space-8);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+.med-legenda-item:hover { background: var(--surface-sunken); }
+.med-legenda-item[aria-pressed="true"] { background: var(--surface-sunken); }
+.med-legenda-item:focus-visible { outline: 2px solid var(--onface-coral); outline-offset: -2px; }
+.med-legenda-item i { width: var(--space-10); height: var(--space-10); border-radius: var(--radius-xs); }
+.med-legenda-rotulo { color: var(--text-body); font-size: var(--text-sm); }
+.med-legenda-valor { color: var(--text-strong); font-size: var(--text-sm); font-variant-numeric: tabular-nums; }
+.med-legenda-parte {
+  min-width: calc(34 * var(--onface-u));
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* ── Lista de renovações ──────────────────────────────────────────────── */
+.med-expirando { display: grid; gap: var(--space-8); padding-top: var(--space-12); border-top: 1px solid var(--line-hairline); }
+.med-expirando-titulo {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+.med-expirando-titulo svg { width: var(--icon-xs); height: var(--icon-xs); }
+.med-expirando-filtro { color: var(--onface-coral-deep); letter-spacing: 0; text-transform: none; }
+.med-expirando-lista { display: grid; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
+.med-expirando-lista li {
+  display: grid;
+  grid-template-columns: calc(52 * var(--onface-u)) minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--space-12);
+  padding: var(--space-6) 0;
+}
+.med-expirando-data {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--weight-semibold);
+}
+/* Contrato em risco marcado no coral fundo, que é o único coral que passa
+   contraste como texto. */
+.med-expirando-data[data-risco="true"] { color: var(--onface-coral-deep); }
+.med-expirando-empresa { display: grid; color: var(--text-strong); font-size: var(--text-sm); }
+.med-expirando-empresa i { color: var(--text-muted); font-size: var(--text-xs); font-style: normal; }
+.med-expirando-mrr { color: var(--text-body); font-size: var(--text-sm); font-variant-numeric: tabular-nums; }
+.med-expirando-vazio { display: block; color: var(--text-muted); font-size: var(--text-sm); padding: var(--space-8) 0; }
+
+@media (max-width: 860px) {
+  .med-par { grid-template-columns: minmax(0, 1fr); }
+  .med-cartao-topo { flex-direction: column; }
+  /* Sem MRR e sem botão o item ainda responde "o que vence e quando", que é a
+     pergunta do telefone. */
+  .med-expirando-lista li { grid-template-columns: calc(52 * var(--onface-u)) minmax(0, 1fr) auto; }
+  .med-expirando-lista li > button { grid-column: 1 / -1; justify-self: start; }
+}

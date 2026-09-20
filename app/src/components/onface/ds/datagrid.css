@@ -1,0 +1,471 @@
+/* DataGrid — só o que `ds.css` ainda não cobre.
+ *
+ * A estrutura da tabela (wrap, barra, rolagem, th/td, densidade, ações em
+ * massa, chip de filtro) já vive em `ds.css` e NÃO é redefinida aqui. Este
+ * arquivo trata das células tipadas, dos controles da barra, do esqueleto de
+ * carregamento e do estado de erro.
+ *
+ * Nenhum valor cru: só token e múltiplo de `--onface-u`. A exceção é o `1px`
+ * da hairline, que é a convenção do ONFACE (linha de 1 pixel de dispositivo,
+ * não uma medida de layout). */
+
+/* ═══ Busca ═══════════════════════════════════════════════════════════════ */
+.ds-grid-busca {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+.ds-grid-busca > svg {
+  position: absolute;
+  left: var(--space-10);
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+  color: var(--text-subtle);
+  pointer-events: none;
+}
+.ds-grid-busca input {
+  width: calc(230 * var(--onface-u));
+  height: var(--control-md);
+  padding-left: calc(var(--space-10) + var(--icon-sm) + var(--space-8));
+  border-radius: var(--radius-md);
+  font-size: var(--text-md);
+}
+/* O X nativo do `type=search` no WebKit não segue o token de cor nem o alvo
+   de toque; o chip e o botão Limpar cobrem a mesma função. */
+.ds-grid-busca input::-webkit-search-cancel-button { display: none; }
+
+/* ═══ Faceta ══════════════════════════════════════════════════════════════ */
+.ds-grid-pop {
+  width: calc(240 * var(--onface-u));
+  padding: 0;
+}
+.ds-grid-faceta-marca {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+  border: 1px solid var(--line-hairline);
+  border-radius: var(--radius-xs);
+  color: transparent;
+}
+.ds-grid-faceta-marca > svg { width: var(--icon-xs); height: var(--icon-xs); }
+/* Preenchimento que carrega marca branca em cima usa o coral rebaixado: o
+   coral da marca dá 3,30:1 com #fff e o traço fino do check some. Medido:
+   4,55:1 com `--onface-coral-deep`. */
+.ds-grid-faceta-marca[data-marcado="true"] {
+  border-color: var(--onface-coral-deep);
+  background: var(--onface-coral-deep);
+  color: var(--onface-white);
+}
+.ds-grid-faceta-contagem {
+  margin-left: auto;
+  color: var(--text-subtle);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+/* Rótulo do chip: diz de qual faceta o valor veio sem repetir o nome inteiro. */
+.ds-grid-chip-rotulo { color: var(--text-subtle); font-weight: var(--weight-medium); }
+.ds-grid-chip-contagem {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--space-16);
+  height: var(--space-16);
+  padding-inline: var(--space-4);
+  border-radius: var(--radius-full);
+  /* Badge com número em cima: branco sobre o coral da marca reprova (3,30:1).
+     Coral rebaixado leva o par para 4,55:1 sem mudar a leitura de cor. */
+  background: var(--onface-coral-deep);
+  color: var(--onface-white);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-bold);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ═══ Células tipadas ═════════════════════════════════════════════════════ */
+.ds-grid-principal-texto { min-width: 0; }
+
+/* A inicial da entidade usa coral rebaixado: é identidade da linha, não ação.
+   O coral cheio fica reservado para botão, chip ativo e sinal de urgência. */
+.ds-grid-avatar-marca {
+  background: var(--onface-coral-subtle);
+  color: var(--cf2-atencao-fg);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+}
+
+.ds-grid-etapa[data-tom="acento"] { background: var(--cf2-atencao-bg); color: var(--cf2-atencao-fg); }
+.ds-grid-etapa[data-tom="ok"] { background: var(--cf2-positivo-bg); color: var(--cf2-positivo-fg); }
+.ds-grid-etapa[data-tom="risco"] { background: var(--cf2-negativo-bg); color: var(--cf2-negativo-fg); }
+
+.ds-grid-resp {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8);
+  color: var(--text-body);
+  font-size: var(--text-md);
+  white-space: nowrap;
+}
+.ds-grid-resp [data-slot="avatar-fallback"] {
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+}
+
+.ds-grid-situacao {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8);
+  color: var(--text-body);
+  font-size: var(--text-md);
+  white-space: nowrap;
+}
+.ds-grid-situacao > i {
+  flex-shrink: 0;
+  width: var(--space-8);
+  height: var(--space-8);
+  border-radius: var(--radius-full);
+  background: var(--onface-line);
+}
+.ds-grid-situacao[data-situacao="atrasado"] { color: var(--cf2-negativo-fg); font-weight: var(--weight-medium); }
+.ds-grid-situacao[data-situacao="atrasado"] > i { background: var(--status-danger); }
+.ds-grid-situacao[data-situacao="hoje"] { color: var(--cf2-atencao-fg); font-weight: var(--weight-medium); }
+.ds-grid-situacao[data-situacao="hoje"] > i { background: var(--onface-coral); }
+.ds-grid-situacao[data-situacao="no-prazo"] > i { background: var(--status-success); }
+.ds-grid-situacao[data-situacao="sem-tarefa"] { color: var(--text-subtle); }
+.ds-grid-situacao[data-situacao="sem-tarefa"] > i {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--onface-line);
+}
+
+/* Moeda alinhada à direita: a vírgula decimal empilha e o olho compara valor
+   sem ler número por número. O seletor é composto para vencer o
+   `text-align: left` do `th` em `ds.css`. */
+.ds-grid-tabela th.ds-grid-cel-num,
+.ds-grid-tabela td.ds-grid-cel-num { text-align: right; }
+
+/* Colunas utilitárias não roubam largura da informação. */
+.ds-grid-tabela th[data-utilitaria="true"],
+.ds-grid-tabela td[data-utilitaria="true"] { width: calc(1 * var(--onface-u)); white-space: nowrap; }
+
+/* ═══ Expandir ════════════════════════════════════════════════════════════ */
+.ds-grid-expandir {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-sm);
+  height: var(--control-sm);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+.ds-grid-expandir:hover { background: var(--surface-sunken); color: var(--text-strong); }
+.ds-grid-expandir > svg {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+  transition: transform var(--duration-base) var(--ease-standard);
+}
+.ds-grid-expandir[data-aberta="true"] > svg { transform: rotate(90deg); }
+.ds-grid-expandir[data-aberta="true"] { color: var(--onface-coral); }
+
+.ds-grid-linha-detalhe > td { padding: 0; }
+
+/* ═══ Contraste da grade ══════════════════════════════════════════════════
+   A grade é área de trabalho: densidade é a regra e o contraste vem de peso,
+   alinhamento, superfície e sinal, nunca de cor nova. As regras abaixo vencem
+   as de `ds.css` por especificidade (`.ds-grid-wrap` a mais) e não por ordem
+   de import: ordem de CSS em bundler não é contrato.
+
+   Zebra continua proibida. O que diferencia linha é hover, foco e seleção. */
+
+/* Cabeçalho: banda própria. Era branco sobre branco, então o `th` fixo colava
+   no corpo e no scroll as linhas pareciam passar por cima dele. Agora a
+   separação existe por superfície + linha, e o rótulo é micro-caixa-alta:
+   contraste de peso e escala contra o texto da linha, não mais cinza. */
+.ds-grid-wrap .ds-grid-tabela th {
+  background: var(--surface-sunken);
+  color: var(--text-body);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-extrabold);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+/* Coluna ordenada é a única do cabeçalho em preto cheio: a seta sozinha, a
+   60% de opacidade, não dizia por onde a tabela está ordenada. */
+.ds-grid-wrap .ds-grid-tabela th[aria-sort] { color: var(--text-strong); }
+.ds-grid-wrap .ds-grid-tabela th[aria-sort] button svg { opacity: 1; }
+
+/* Coluna principal: é o que a pessoa procura na varredura vertical. Sobe um
+   degrau de escala e o subtítulo desce, para o par não ter o mesmo peso. */
+.ds-grid-wrap .ds-grid-celula-principal strong {
+  font-size: var(--text-base);
+  font-weight: var(--weight-semibold);
+  letter-spacing: -0.01em;
+}
+.ds-grid-wrap .ds-grid-celula-principal small { color: var(--text-subtle); }
+
+/* Dinheiro decide a leitura da linha: tipografia de display, tabular e um
+   degrau acima do texto comum. Alinhado à direita, os valores viram coluna
+   comparável de relance. */
+.ds-grid-wrap .ds-grid-num {
+  font-family: var(--font-onface-display), sans-serif;
+  font-size: var(--text-base);
+  letter-spacing: -0.01em;
+}
+
+/* Estado tem borda: badge sem contorno em superfície clara vira só texto com
+   fundo, e a coluna inteira some no teste do desfoque. */
+.ds-grid-etapa {
+  border-color: var(--onface-line);
+  font-weight: var(--weight-semibold);
+}
+.ds-grid-etapa[data-tom="acento"] { border-color: var(--onface-coral-border); }
+.ds-grid-etapa[data-tom="ok"] { border-color: var(--cf2-positivo-weak); }
+.ds-grid-etapa[data-tom="risco"] { border-color: var(--cf2-negativo-weak); }
+
+/* Hover: cinza de superfície tokenizado. Seleção: coral rebaixado no fundo
+   MAIS um trilho coral cheio na primeira célula — fundo a 10% sozinho não
+   sobrevive ao desfoque nem a monitor ruim. */
+.ds-grid-wrap .ds-grid-tabela tbody tr:hover > td { background: var(--surface-sunken); }
+.ds-grid-wrap .ds-grid-tabela tbody tr[data-selecionada="true"] > td {
+  background: var(--onface-coral-subtle);
+}
+.ds-grid-wrap .ds-grid-tabela tbody tr[data-selecionada="true"] > td:first-child {
+  box-shadow: inset calc(3 * var(--onface-u)) 0 0 var(--onface-coral);
+}
+/* Linha ativa do teclado continua marcada enquanto o foco está num botão
+   dentro dela (menu de ações aberto, por exemplo). */
+.ds-grid-wrap .ds-grid-tabela tbody tr[data-ativa="true"] > td { background: var(--surface-sunken); }
+.ds-grid-wrap .ds-grid-tabela tbody tr[data-ativa="true"][data-selecionada="true"] > td {
+  background: var(--onface-coral-subtle);
+}
+/* Foco da linha por dentro: o anel global do shell tem offset positivo e era
+   cortado pelo cabeçalho fixo e pela borda do container rolável. */
+.ds-grid-wrap .ds-grid-tabela tbody tr[tabindex]:focus-visible {
+  outline: calc(2 * var(--onface-u)) solid var(--onface-coral);
+  outline-offset: calc(-2 * var(--onface-u));
+}
+
+/* ═══ Filtro aplicado ═════════════════════════════════════════════════════
+   Filtro ligado precisa ser óbvio sem reler a barra inteira. Dois sinais:
+   a barra troca de superfície e cada valor escolhido vira ficha grafite.
+   Chip coral claro sobre barra branca era cinza sobre cinza; grafite dá o
+   contraste sem gastar o coral, que fica reservado para ação. */
+.ds-grid-barra[data-filtrado="true"] { background: var(--surface-sunken); }
+.ds-chip-filtro[data-aplicado="true"] {
+  border-style: solid;
+  border-color: transparent;
+  background: var(--surface-shell);
+  color: var(--onface-white);
+  font-weight: var(--weight-semibold);
+}
+.ds-chip-filtro[data-aplicado="true"]:hover { background: var(--surface-shell-raised); }
+.ds-chip-filtro[data-aplicado="true"] .ds-grid-chip-rotulo {
+  color: var(--onface-slate);
+  font-weight: var(--weight-medium);
+}
+.ds-chip-filtro[data-aplicado="true"] svg { color: var(--onface-slate); }
+.ds-chip-filtro[data-aplicado="true"]:hover svg { color: var(--onface-white); }
+
+/* ═══ Playground da documentação ══════════════════════════════════════════
+   O playground é meta-controle do laboratório; a barra de filtros é chrome do
+   produto. Empilhados, os dois liam como o mesmo objeto — dois retângulos
+   cinza com controles dentro, e pior ainda com filtro aplicado, quando a
+   barra também vira `--surface-sunken`. Aqui o playground perde o
+   preenchimento e fica em contorno tracejado com rótulo: vocabulário de
+   andaime, não de interface. Nenhuma cor nova, só estilo de borda e
+   superfície. */
+.ds-play-meta { display: grid; gap: var(--space-6); }
+/* `--text-muted` reprova sobre papel (4,36:1) e sobre superfície afundada
+   (4,11:1). `--onface-cinza-2` é o mesmo degrau de cinza do eixo dos gráficos
+   e passa nas três superfícies do lab (5,4:1 em card, 5,1:1 em papel). */
+.ds-play-meta > span {
+  color: var(--onface-cinza-2);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+.ds-play-meta .ds-playground { border-style: dashed; background: transparent; }
+
+/* ═══ Ações em massa ══════════════════════════════════════════════════════ */
+.ds-grid-massa-contagem {
+  margin-right: var(--space-4);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--weight-semibold);
+}
+
+/* ═══ Rodapé ══════════════════════════════════════════════════════════════ */
+/* O rodapé estava solto no fim da última linha: a paginação parecia mais uma
+   linha da tabela. Uma hairline resolve, sem card novo. */
+.ds-grid-wrap .ds-grid-rodape { border-top: 1px solid var(--line-hairline); }
+.ds-grid-rodape-info {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.ds-grid-rodape-info b { color: var(--text-strong); font-weight: var(--weight-semibold); }
+
+/* ═══ Resumo do conjunto ══════════════════════════════════════════════════
+   Ponto focal da seção de dados: uma métrica manda na composição e o resto
+   fica pequeno ao lado dela. Tudo divide a MESMA superfície — separador e
+   alinhamento no lugar de três cards iguais — e o único coral é o sinal, que
+   também é a única ação. */
+.ds-grid-resumo {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--space-24);
+  padding: var(--space-20) var(--space-24);
+  border: 1px solid var(--line-hairline);
+  border-radius: var(--radius-card);
+  background: var(--surface-card);
+}
+.ds-grid-resumo-rotulo {
+  margin: 0;
+  color: var(--text-subtle);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-extrabold);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+.ds-grid-resumo-numero {
+  margin: var(--space-6) 0 0;
+  color: var(--text-strong);
+  font-family: var(--font-onface-display), sans-serif;
+  font-size: calc(40 * var(--onface-u));
+  font-weight: var(--weight-bold);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+.ds-grid-resumo-apoio { margin: var(--space-6) 0 0; color: var(--text-muted); font-size: var(--text-sm); }
+.ds-grid-resumo-fatos {
+  display: flex;
+  gap: var(--space-32);
+  margin: 0;
+  padding-left: var(--space-24);
+  border-left: 1px solid var(--line-hairline);
+}
+.ds-grid-resumo-fato dt {
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+.ds-grid-resumo-fato dd {
+  margin: var(--space-4) 0 0;
+  color: var(--text-strong);
+  font-size: var(--display-title);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.ds-grid-resumo-sinal {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-10) var(--space-12);
+  border: 1px solid var(--onface-coral-border);
+  border-radius: var(--radius-md);
+  background: var(--onface-coral-subtle);
+  color: var(--cf2-atencao-fg);
+  font: inherit;
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+.ds-grid-resumo-sinal span { display: inline-flex; align-items: center; gap: var(--space-6); }
+.ds-grid-resumo-sinal svg { width: var(--icon-sm); height: var(--icon-sm); }
+.ds-grid-resumo-sinal small { font-size: var(--text-2xs); font-weight: var(--weight-medium); opacity: 0.85; }
+.ds-grid-resumo-sinal:hover { background: var(--onface-coral-border); }
+/* Ligado, o filtro vira coral cheio: é o estado que muda o que a tabela
+   abaixo mostra, então ele carrega o único foco forte da composição. O
+   preenchimento é o coral rebaixado porque carrega rótulo branco — o coral da
+   marca dá 3,30:1 e reprova para texto; medido, aqui dá 4,55:1. */
+.ds-grid-resumo-sinal[aria-pressed="true"] {
+  border-color: var(--onface-coral-deep);
+  background: var(--onface-coral-deep);
+  color: var(--onface-white);
+}
+
+/* ═══ Vazio e erro ════════════════════════════════════════════════════════ */
+.ds-grid-vazio-acoes { justify-content: center; }
+
+.ds-grid-erro {
+  display: grid;
+  place-items: center;
+  gap: var(--space-8);
+  padding: var(--space-40) var(--space-24);
+  text-align: center;
+}
+.ds-grid-erro strong {
+  color: var(--text-strong);
+  font-family: var(--font-onface-display), sans-serif;
+  font-size: var(--text-base);
+}
+.ds-grid-erro p {
+  margin: 0;
+  max-width: 48ch;
+  color: var(--text-muted);
+  font-size: var(--text-md);
+  line-height: 1.5;
+}
+.ds-vazio-figura[data-tom="risco"] { background: var(--cf2-negativo-bg); color: var(--cf2-negativo-fg); }
+
+/* ═══ Esqueleto ═══════════════════════════════════════════════════════════ */
+.ds-grid-esq-caixa { width: var(--icon-sm); height: var(--icon-sm); border-radius: var(--radius-xs); }
+.ds-grid-esq-icone { width: var(--icon-sm); height: var(--icon-sm); border-radius: var(--radius-full); }
+.ds-grid-esq-avatar { width: var(--avatar-md); height: var(--avatar-md); border-radius: var(--radius-full); flex-shrink: 0; }
+.ds-grid-esq-pilha { display: grid; gap: var(--space-6); width: 100%; }
+.ds-grid-esq-linha { height: var(--space-10); border-radius: var(--radius-xs); }
+.ds-grid-esq-linha[data-largura="cheia"] { width: calc(180 * var(--onface-u)); }
+.ds-grid-esq-linha[data-largura="media"] { width: calc(90 * var(--onface-u)); }
+.ds-grid-esq-linha[data-largura="curta"] { width: calc(110 * var(--onface-u)); }
+
+/* ═══ Detalhe expandido ═══════════════════════════════════════════════════ */
+.ds-grid-detalhe-grade {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-16);
+}
+.ds-grid-detalhe-item { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
+.ds-grid-detalhe-item dt {
+  color: var(--text-subtle);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+.ds-grid-detalhe-item dd {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: var(--text-md);
+  font-weight: var(--weight-medium);
+}
+
+@media (max-width: 1100px) {
+  .ds-grid-detalhe-grade { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  /* O resumo empilha antes de espremer o número herói: ele é o ponto focal,
+     não pode virar a menor coisa da tela em laptop pequeno. */
+  .ds-grid-resumo { grid-template-columns: minmax(0, 1fr); }
+  .ds-grid-resumo-fatos { padding-left: 0; border-left: 0; }
+  .ds-grid-resumo-sinal { align-self: start; }
+}
+@media (max-width: 760px) {
+  .ds-grid-busca input { width: 100%; }
+  .ds-grid-detalhe-grade { grid-template-columns: minmax(0, 1fr); }
+}
