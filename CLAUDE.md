@@ -1,5 +1,11 @@
 # CRM Callface — Instruções pro Claude / agentes
 
+> **Frente ONFACE? Leia [`ONFACE-PROTOCOLO.md`](./ONFACE-PROTOCOLO.md) antes de
+> escrever a primeira linha.** Ele tem as quatro leis (adaptar nunca criar, DS
+> como fonte única, quem faz não fecha, o gate é o navegador), a ordem
+> obrigatória de trabalho, a definição de pronto em dois níveis e o protocolo
+> de revisão.
+
 > **Trabalhando na branch `dev` (CRM 2.0)? Leia [`HANDOFF.md`](./HANDOFF.md)
 > primeiro.** Ele tem o estado atual da reconstrução, a definição de pronto,
 > as armadilhas já conhecidas, as pendências abertas e as dívidas técnicas.
