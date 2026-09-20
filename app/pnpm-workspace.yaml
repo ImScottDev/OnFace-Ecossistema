@@ -1,6 +1,11 @@
+# Scripts de build de dependência: decisão explícita, senão o pnpm 11 falha o
+# `pnpm install` implícito e derruba qualquer `pnpm exec` (tsc, next, lint).
+# esbuild e unrs-resolver precisam do script para baixar o binário da plataforma.
+# sharp e puppeteer ficam de fora: o projeto não usa nenhum dos dois em runtime
+# e o postinstall do puppeteer baixa um Chromium inteiro.
 allowBuilds:
-  esbuild: set this to true or false
-  msgpackr-extract: set this to true or false
-  puppeteer: set this to true or false
-  sharp: set this to true or false
-  unrs-resolver: set this to true or false
+  esbuild: true
+  msgpackr-extract: false
+  puppeteer: false
+  sharp: false
+  unrs-resolver: true

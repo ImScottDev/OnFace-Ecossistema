@@ -11,14 +11,19 @@ export function OnfacePageBand({ children, className }: { children: React.ReactN
   return <section className={className ? `onface-page-band ${className}` : "onface-page-band"}>{children}</section>;
 }
 
-/** Canvas claro, superfície de conteúdo da página.
- * `sobreposto` sobe o canvas por baixo da faixa escura. */
+/** Canvas, superfície de conteúdo da página.
+ *
+ * `sobreposto` sobe o canvas por baixo da faixa escura.
+ * `tom` escolhe papel (padrão) ou grafite. Escuro não é "dark mode": é a tela
+ * que pede escuro — monitoramento, parede, apresentação. A geometria, o gutter
+ * e o raio são os mesmos nos dois. */
 export function OnfacePageSurface({
-  children, className, sobreposto = false, id,
+  children, className, sobreposto = false, tom = "claro", id,
 }: {
   children: React.ReactNode;
   className?: string;
   sobreposto?: boolean;
+  tom?: "claro" | "escuro";
   id?: string;
 }) {
   return (
@@ -26,6 +31,7 @@ export function OnfacePageSurface({
       id={id}
       className={className ? `onface-page-surface ${className}` : "onface-page-surface"}
       data-sobreposto={sobreposto}
+      data-tom={tom === "escuro" ? "escuro" : undefined}
     >
       {children}
     </section>

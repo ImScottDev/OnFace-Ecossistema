@@ -53,7 +53,13 @@ function SelectTrigger({
 function SelectContent({
   className,
   children,
-  position = "item-aligned",
+  /* "popper" em vez de "item-aligned".
+     O padrão do Radix é o comportamento nativo antigo: a lista abre POR CIMA do
+     gatilho, com o item selecionado colado no texto dele. Além de parecer de
+     outro produto, o texto do gatilho aparece por baixo do primeiro item. Popper
+     abre abaixo do campo, alinhado à largura dele, que é o que o resto do
+     sistema faz (Popover, Dropdown, Command). */
+  position = "popper",
   align = "center",
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Content>) {

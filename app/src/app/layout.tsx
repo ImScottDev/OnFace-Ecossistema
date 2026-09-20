@@ -76,8 +76,15 @@ export default function RootLayout({
     // declaração inteira virava inválida — o browser caía no SERIF padrão.
     // Aparecia só em portal (drawer/dropdown/modal), que herda do body a
     // versão já quebrada vinda do html.
+    // `suppressHydrationWarning` no <html>: as cascas marcam o tema no próprio
+    // elemento antes da hidratação (`data-onface-theme` via script inline no
+    // layout do ONFACE, `data-cf2-theme` via efeito no CRM 2.0). O servidor não
+    // emite esses atributos, então o React acusa divergência de árvore num
+    // atributo que é intencionalmente definido no cliente. Suprimir aqui é o
+    // padrão para theming, e só vale para o <html>.
     <html
       lang="pt-BR"
+      suppressHydrationWarning
       className={`${notoSans.variable} ${poppins.variable} ${manrope.variable} ${geist.variable} ${inter.variable} ${plusJakarta.variable}`}
     >
       <body
