@@ -22,6 +22,7 @@
  *   npm run db:migrar            # aplica o que falta
  *   npm run db:migrar -- --check # só relata, não aplica (serve em CI/pré-deploy)
  *   npm run db:migrar -- --baseline  # marca tudo como aplicado, sem executar
+ *   npm run db:migrar -- --ate=0012  # para a cadeia depois do número informado
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -57,9 +58,12 @@ export interface ResultadoMigracao {
   alteradas: { nome: string; hashRegistrado: string; hashAtual: string }[];
 }
 
-export async function migrar(opts: { url: string; check?: boolean; baseline?: boolean; dir?: string }): Promise<ResultadoMigracao> {
+export async function migrar(opts: { url: string; check?: boolean; baseline?: boolean; dir?: string; ate?: string }): Promise<ResultadoMigracao> {
   const sql = postgres(opts.url, { max: 1, fetch_types: false, onnotice: () => {} });
-  const migrations = listarMigrations(opts.dir);
+  // `ate` para a cadeia num ponto: usado pela carga da virada, que precisa
+  // aplicar um patch de drift entre duas migrations sem inserir arquivo no meio
+  // (o número de 4 dígitos tem que continuar único — ver migrar.test.ts).
+  const migrations = listarMigrations(opts.dir).filter((m) => !opts.ate || m.nome.slice(0, 4) <= opts.ate);
   const resultado: ResultadoMigracao = { aplicadas: [], pendentes: [], alteradas: [] };
 
   try {
@@ -133,8 +137,9 @@ if (ehCli) {
   }
   const check = process.argv.includes("--check");
   const baseline = process.argv.includes("--baseline");
+  const ate = process.argv.find((a) => a.startsWith("--ate="))?.slice("--ate=".length);
 
-  migrar({ url, check, baseline })
+  migrar({ url, check, baseline, ate })
     .then((r) => {
       if (r.alteradas.length > 0) {
         console.error("✘ migration já aplicada foi ALTERADA desde então:");

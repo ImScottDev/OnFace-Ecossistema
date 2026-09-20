@@ -38,6 +38,16 @@ test("nomes de migration não colidem por prefixo numérico", () => {
   assert.deepEqual([...new Set(repetidos)], [], "dois arquivos com o mesmo número aplicam em ordem ambígua entre ambientes");
 });
 
+test("--ate corta a cadeia no número informado", () => {
+  // A carga da virada aplica um patch de drift entre 0012 e 0033; sem esse
+  // corte, 0033 e 0039 leem coluna que nenhuma migration cria.
+  const todas = listarMigrations(DIR).map((m) => m.nome);
+  const ate0012 = todas.filter((n) => n.slice(0, 4) <= "0012");
+  assert.ok(ate0012.length > 0 && ate0012.length < todas.length, "o corte precisa deixar migration de fora");
+  assert.equal(ate0012.at(-1)?.slice(0, 4), "0012", "o último aplicado tem que ser o 0012");
+  assert.ok(todas.slice(ate0012.length).every((n) => n.slice(0, 4) > "0012"), "nada <= 0012 pode sobrar para depois");
+});
+
 test("o deploy aplica migration antes de trocar container", () => {
   const deploy = fs.readFileSync(path.join(RAIZ, "deploy.sh"), "utf8");
   assert.ok(deploy.includes("migrar.ts"), "deploy.sh não chama o runner de migrations");
