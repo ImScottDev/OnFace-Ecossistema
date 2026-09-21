@@ -130,3 +130,35 @@ test("o pipeline canônico tem paridade com o legado, e a diferença é um caso 
     `divergência de ${diferencaTotal} linhas com apenas ${semOportunidade.n} caso(s) registrado(s): ${totalDivergente}`,
   );
 });
+
+test("contrato sem processo comercial ainda resolve dono, e o que sobra vira caso", async (t) => {
+  if (!DB_URL) return t.skip("DATABASE_URL não definida");
+  const { db } = await import("@/lib/db");
+  const { sql } = await import("drizzle-orm");
+
+  // 406 dos 742 contratos não têm negócio nem oportunidade — e 271 deles estão
+  // ATIVOS. A cadeia antiga (contrato → negócio → responsável) resolvia ZERO
+  // deles, e sem responsável o onboarding nasce órfão e a notificação não sai.
+  const [r] = await db.execute<{ orfaos: number; resolvem: number; casos: number }>(sql`
+    SELECT
+      (SELECT count(*)::int FROM contratos
+        WHERE negocio_id IS NULL AND oportunidade_id IS NULL) AS orfaos,
+      (SELECT count(*)::int FROM contratos c
+        WHERE c.negocio_id IS NULL AND c.oportunidade_id IS NULL
+          AND EXISTS (SELECT 1 FROM aquisicoes a
+                       WHERE a.lead_legado_id = c.lead_id AND a.responsavel_id IS NOT NULL)) AS resolvem,
+      (SELECT count(*)::int FROM reconciliacao_casos
+        WHERE tipo = 'CONTRATO_SEM_PROCESSO_COMERCIAL') AS casos`);
+
+  if (r.orfaos === 0) return; // base sem o problema: nada a provar
+
+  assert.equal(
+    r.casos, r.orfaos,
+    `${r.orfaos} contratos sem processo comercial e ${r.casos} casos registrados: ` +
+    "contrato que não se liga a venda nenhuma tem que estar registrado, não escondido",
+  );
+  assert.ok(
+    r.resolvem > 0,
+    "nenhum contrato órfão resolve dono pela identidade: a cadeia de responsável regrediu",
+  );
+});

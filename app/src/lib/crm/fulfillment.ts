@@ -29,8 +29,8 @@
  *    NEGÓCIO, sem depender de grupo comercial (que não existe naquele banco).
  */
 import { db } from "@/lib/db";
-import { eq } from "drizzle-orm";
-import { fulfillments, fulfillmentItens, servicosCanonicos, contratos, negocios, tarefas, oportunidadeItens, oportunidades } from "@/lib/db/schema";
+import { eq, sql } from "drizzle-orm";
+import { fulfillments, fulfillmentItens, servicosCanonicos, tarefas } from "@/lib/db/schema";
 import { notificarFulfillmentOnboardingCriado } from "@/lib/crm/notificar";
 import { regraDaFamilia, FAMILIAS_POR_TRILHA } from "@/lib/crm/politica-familia";
 import { PABX_CHECKLIST, AI_CHECKLIST_BASE, WHITE_LABEL_CHECKLIST, type ChecklistSeed } from "@/lib/crm/pos-venda-checklists";
@@ -155,10 +155,10 @@ export const FAMILIAS_IMPLANTACAO_WHITE_LABEL: string[] = FAMILIAS_POR_TRILHA.im
  * Pra famílias de Onboarding (CALLFACE_AI/WHITE_LABEL — 25/08, spec do
  * Kauã "nada disso deve depender de alguém clicar em novo onboarding"),
  * além do fulfillment+checklist isso também: (1) atribui responsável —
- * regra real reaproveitada, não inventada: mesmo responsável do negócio que
- * gerou a venda (`contratos.negocioId → negocios.responsavelId`), já que
- * ainda não existe um time/regra dedicada de "responsável de onboarding"
- * separado do comercial; (2) cria a 1ª tarefa real ("Agendar reunião de
+ * regra real reaproveitada, não inventada: o mesmo responsável da venda,
+ * buscado em cadeia do canônico para o legado (oportunidade, contrato,
+ * negócio, aquisição), já que ainda não existe um time/regra dedicada de
+ * "responsável de onboarding" separado do comercial; (2) cria a 1ª tarefa real ("Agendar reunião de
  * onboarding com o cliente" — o guia real confirma que quase tudo acontece
  * numa reunião só, então essa é literalmente a primeira ação que precisa
  * existir); (3) notifica o responsável e registra o evento na timeline
@@ -186,42 +186,59 @@ export async function criarFulfillmentsParaServicos(servicoIds: string[], organi
 
       let responsavelId: string | null = null;
       if (ehOnboarding) {
-        // Caminho original: pelo contrato do serviço.
-        if (servico.contratoId) {
-          const [comercial] = await db
-            .select({ responsavelId: negocios.responsavelId })
-            .from(contratos)
-            .innerJoin(negocios, eq(negocios.id, contratos.negocioId))
-            .where(eq(contratos.id, servico.contratoId))
-            .limit(1);
-          responsavelId = comercial?.responsavelId ?? null;
-        }
-        // Frente 2C.1 — venda SEM contrato (Callface AI pago no checkout) não
-        // tinha como resolver responsável: caía em null, e sem responsável a
-        // notificação de onboarding também não era enviada (achado real na
-        // simulação: o onboarding de Callface AI nascia órfão). Resolve pelo
-        // negócio da oportunidade que gerou o serviço.
-        if (!responsavelId) {
-          const [viaOportunidade] = await db
-            .select({ responsavelId: negocios.responsavelId })
-            .from(oportunidadeItens)
-            .innerJoin(oportunidades, eq(oportunidades.id, oportunidadeItens.oportunidadeId))
-            .innerJoin(negocios, eq(negocios.id, oportunidades.negocioIdLegado))
-            .where(eq(oportunidadeItens.servicoCanonicoId, servicoId))
-            .limit(1);
-          responsavelId = viaOportunidade?.responsavelId ?? null;
-        }
+        // A cadeia vai do canônico para o legado, nesta ordem, e cada elo
+        // existe porque o anterior FALHA para uma parte real da base:
+        //
+        //   1. oportunidade do serviço  — o dono canônico da venda;
+        //   2. contrato -> oportunidade — contrato assinado sem item de
+        //      oportunidade registrado;
+        //   3. contrato -> negócio      — o caminho antigo, que resolve nada
+        //      para 406 dos 742 contratos (271 deles ATIVOS), porque metade da
+        //      base de contratos nunca teve negócio de origem;
+        //   4. aquisição do lead        — último recurso: quem trabalhou a
+        //      entrada. Sem isto, o onboarding nasce órfão e a notificação
+        //      nunca sai, que foi o achado da simulação 2C.1.
+        const donos = await db.execute<{ responsavel_id: string | null }>(sql`
+          SELECT COALESCE(
+            (SELECT o.responsavel_id FROM oportunidade_itens oi
+               JOIN oportunidades o ON o.id = oi.oportunidade_id
+              WHERE oi.servico_canonico_id = ${servicoId}::uuid AND o.responsavel_id IS NOT NULL
+              LIMIT 1),
+            (SELECT o.responsavel_id FROM contratos c
+               JOIN oportunidades o ON o.id = c.oportunidade_id
+              WHERE c.id = ${servico.contratoId ?? null}::uuid AND o.responsavel_id IS NOT NULL
+              LIMIT 1),
+            (SELECT n.responsavel_id FROM contratos c
+               JOIN negocios n ON n.id = c.negocio_id
+              WHERE c.id = ${servico.contratoId ?? null}::uuid AND n.responsavel_id IS NOT NULL
+              LIMIT 1),
+            (SELECT a.responsavel_id FROM contratos c
+               JOIN aquisicoes a ON a.lead_legado_id = c.lead_id
+              WHERE c.id = ${servico.contratoId ?? null}::uuid AND a.responsavel_id IS NOT NULL
+              LIMIT 1)
+          )::text AS responsavel_id`);
+        responsavelId = donos[0]?.responsavel_id ?? null;
       }
 
       const checklist = checklistParaFamilia(servico.serviceFamily);
+      // `tipo` e `cycleNumber` são obrigatórios desde a migration 0066: a
+      // unicidade é (servico, tipo, ciclo). Com `tipo` NULO o índice não
+      // colide nunca — NULL não é igual a NULL — e este caminho passaria a
+      // criar jornada duplicada em silêncio a cada execução.
       const [fulfillment] = await db.insert(fulfillments).values({
         organizacaoId,
         servicoCanonicoId: servicoId,
         serviceFamily: servico.serviceFamily,
+        tipo: ehOnboarding ? "ONBOARDING" : "IMPLEMENTATION",
+        cycleNumber: 1,
         status: "NOT_STARTED",
         startedAt: new Date(),
         responsavelId,
+      }).onConflictDoNothing({
+        target: [fulfillments.servicoCanonicoId, fulfillments.tipo, fulfillments.cycleNumber],
+        where: sql`servico_canonico_id IS NOT NULL`,
       }).returning({ id: fulfillments.id });
+      if (!fulfillment) continue; // jornada já existia para este serviço e ciclo
 
       if (checklist.length > 0) {
         await db.insert(fulfillmentItens).values(

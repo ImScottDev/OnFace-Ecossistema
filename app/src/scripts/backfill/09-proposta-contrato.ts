@@ -65,11 +65,37 @@ async function main() {
       (SELECT count(*)::text FROM contratos WHERE negocio_id IS NOT NULL AND oportunidade_id IS NULL) AS cont_sem_op,
       (SELECT count(*)::text FROM propostas WHERE negocio_id IS NULL) AS prop_sem_negocio,
       (SELECT count(*)::text FROM contratos WHERE negocio_id IS NULL) AS cont_sem_negocio`);
+  // Contrato sem processo comercial vira CASO, não nota de rodapé.
+  //
+  // São 406 de 742, e 271 deles estão ATIVOS: cliente com contrato vivo que não
+  // se liga a oportunidade nenhuma. Toda leitura que passa por negócio —
+  // carteira, metas, geração de jornada de pós-venda — os descarta em silêncio.
+  // Ligá-los por proximidade seria inventar de qual venda vieram; o que se pode
+  // fazer é parar de escondê-los.
+  if (APLICAR) {
+    await db.execute(sql`
+      INSERT INTO reconciliacao_casos (organizacao_id, fase, tipo, entidade_alvo, origens, evidencia, sugestao)
+      SELECT c.organizacao_id, '09', 'CONTRATO_SEM_PROCESSO_COMERCIAL', 'contrato:' || c.id::text,
+             jsonb_build_object('tabela','contratos','id',c.id::text,'status',c.status,
+                                'tipo',c.tipo,'lead_id',c.lead_id::text,
+                                'criado_em',c.created_at::date::text),
+             jsonb_build_object('fato','contrato sem negocio e sem oportunidade de origem',
+               'por_que_nao_foi_criado','nao ha evidencia de qual venda originou o contrato; ligar por proximidade seria inventar',
+               'impacto','invisivel para carteira, metas e geracao de jornada de pos-venda'),
+             jsonb_build_object('acao','identificar a venda de origem ou declarar o contrato como entrada direta, sem processo comercial')
+        FROM contratos c
+       WHERE c.negocio_id IS NULL AND c.oportunidade_id IS NULL
+      ON CONFLICT DO NOTHING`);
+    const [casos] = await db.execute<{ n: number }>(sql`
+      SELECT count(*)::int AS n FROM reconciliacao_casos WHERE tipo = 'CONTRATO_SEM_PROCESSO_COMERCIAL'`);
+    console.log(`\n  casos abertos (contrato sem processo)      ${casos.n}`);
+  }
+
   console.log(`\n  RECONCILIAÇÃO`);
   console.log(`    propostas com negócio e sem oportunidade  ${órfãos[0].prop_sem_op}`);
   console.log(`    contratos com negócio e sem oportunidade  ${órfãos[0].cont_sem_op}`);
   console.log(`    propostas sem negócio de origem           ${órfãos[0].prop_sem_negocio}  (nunca tiveram: não é perda)`);
-  console.log(`    contratos sem negócio de origem           ${órfãos[0].cont_sem_negocio}\n`);
+  console.log(`    contratos sem negócio de origem           ${órfãos[0].cont_sem_negocio}  (viraram caso: 271 estão ATIVOS)\n`);
   if (!APLICAR) console.log("  Nada foi gravado.\n");
   process.exit(0);
 }
