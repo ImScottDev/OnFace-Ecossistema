@@ -388,6 +388,8 @@ export async function registrarTouchpoint(params: {
   pessoaId?: string | null;
   empresaId?: string | null;
   leadIdLegado?: string | null;
+  /** Quando o chamador já tem a aquisição em mãos; senão é resolvida aqui. */
+  aquisicaoId?: string | null;
   touchpoint: Touchpoint;
 }, tx: ExecutorDb = db): Promise<void> {
   const { organizacaoId, pessoaId, empresaId, touchpoint } = params;
@@ -412,11 +414,20 @@ export async function registrarTouchpoint(params: {
        )
   `);
 
+  // O vínculo com a AQUISIÇÃO é o que a SPEC §8.3 pede, e faltava: o ponto de
+  // contato nascia com pessoa, empresa e lead legado, e sem aquisicao_id.
+  //
+  // O backfill tinha preenchido os 1.583 existentes, então medir o banco não
+  // acusava nada — só criar um lead pela tela e reler a atribuição mostrava o
+  // buraco. É o mesmo padrão que já apareceu três vezes nesta refatoração.
+  //
+  // Resolvido aqui dentro, a partir do lead legado, para valer em todo chamador
+  // em vez de virar um parâmetro que cada um lembra (ou esquece) de passar.
   await tx.execute(sql`
     INSERT INTO pontos_contato (
       organizacao_id, pessoa_id, empresa_id, source, medium, campaign, term, content,
       landing_page, referrer, campaign_id, source_id, tipo_origem,
-      is_first_touch, is_last_touch, raw, lead_id_legado
+      is_first_touch, is_last_touch, raw, lead_id_legado, aquisicao_id
     ) VALUES (
       ${organizacaoId}::uuid, ${pessoaId ?? null}::uuid, ${empresaId ?? null}::uuid,
       ${touchpoint.source ?? null}, ${touchpoint.medium ?? null}, ${touchpoint.campaign ?? null},
@@ -424,7 +435,20 @@ export async function registrarTouchpoint(params: {
       ${touchpoint.referrer ?? null}, ${touchpoint.campaignId ?? null}, ${touchpoint.sourceId ?? null},
       ${touchpoint.tipoOrigem}, ${ehPrimeiro}, true,
       ${touchpoint.raw ? JSON.stringify(touchpoint.raw) : null}::jsonb,
-      ${params.leadIdLegado ?? null}::uuid
+      ${params.leadIdLegado ?? null}::uuid,
+      COALESCE(
+        ${params.aquisicaoId ?? null}::uuid,
+        (SELECT a.id FROM aquisicoes a
+          WHERE a.organizacao_id = ${organizacaoId}::uuid
+            AND ${params.leadIdLegado ?? null}::uuid IS NOT NULL
+            AND a.lead_legado_id = ${params.leadIdLegado ?? null}::uuid
+          LIMIT 1),
+        (SELECT a.id FROM aquisicoes a
+          WHERE a.organizacao_id = ${organizacaoId}::uuid AND a.closed_at IS NULL
+            AND (${pessoaId ?? null}::uuid IS NOT NULL AND a.pessoa_id = ${pessoaId ?? null}::uuid
+                 OR ${empresaId ?? null}::uuid IS NOT NULL AND a.empresa_id = ${empresaId ?? null}::uuid)
+          ORDER BY a.created_at DESC LIMIT 1)
+      )
     )
   `);
 }

@@ -14,6 +14,13 @@ import type { EmailContaConfig } from "@/lib/email/types";
 import {
   CADENCIA_SDR_INBOUND, getToque, resolveCadenciaPlaceholders,
 } from "@/lib/cadencia/sdr-inbound";
+import { registrarPrimeiroContato } from "@/lib/vendas/pre-vendas";
+import { atorHumano } from "@/lib/vendas/dominio";
+
+/** O vocabulário de canal da cadência para o da porta canônica. */
+const CANAL_CANONICO: Record<string, "whatsapp" | "email" | "ligacao" | "outro"> = {
+  whatsapp: "whatsapp", email: "email", ligacao: "ligacao", telefone: "ligacao",
+};
 
 const app = new Hono();
 
@@ -301,7 +308,22 @@ app.post("/cadencia/:leadId/enviar", async (c) => {
     dados: { ordem, canal: toque.canal, rotulo: toque.rotulo },
   });
 
-  // ── Atualiza contato/sdrStatus do lead ───────────────────────────────────────
+  // CUTOVER DE ESCRITA (fase 25). O toque de cadência é um CONTATO, e contato
+  // tem porta canônica: `registrarPrimeiroContato` grava o fato, publica o
+  // evento, conclui a tarefa de primeiro contato e move a aquisição para Em
+  // contato.
+  //
+  // Antes daqui a cadência escrevia `leads.last_contact_at` e mais nada. O lead
+  // era tocado por e-mail ou ligação e o card continuava em Novo no board, que
+  // lê o canônico. Nenhum erro, nenhum jeito de reportar.
+  //
+  // `sdr_status` continua sendo escrito: é o board SDR legado, que ainda lê dele.
+  await registrarPrimeiroContato({
+    organizacaoId: ctx.organizacaoId, leadId: lead.id,
+    canal: CANAL_CANONICO[toque.canal] ?? "outro",
+    ator: atorHumano(ctx.userId),
+  }).catch((e) => console.warn("[cadencia] contato não chegou ao canônico:", e));
+
   await db.update(leads).set({
     lastContactAt: now,
     updatedAt: now,
@@ -365,6 +387,22 @@ app.post("/cadencia/:leadId/ligacao", async (c) => {
     descricao: "Ligação registrada",
     dados: { ordem, canal: "ligacao", rotulo: toque.rotulo },
   });
+
+  // CUTOVER DE ESCRITA (fase 25). O toque de cadência é um CONTATO, e contato
+  // tem porta canônica: `registrarPrimeiroContato` grava o fato, publica o
+  // evento, conclui a tarefa de primeiro contato e move a aquisição para Em
+  // contato.
+  //
+  // Antes daqui a cadência escrevia `leads.last_contact_at` e mais nada. O lead
+  // era tocado por e-mail ou ligação e o card continuava em Novo no board, que
+  // lê o canônico. Nenhum erro, nenhum jeito de reportar.
+  //
+  // `sdr_status` continua sendo escrito: é o board SDR legado, que ainda lê dele.
+  await registrarPrimeiroContato({
+    organizacaoId: ctx.organizacaoId, leadId: lead.id,
+    canal: CANAL_CANONICO["ligacao"] ?? "outro",
+    ator: atorHumano(ctx.userId),
+  }).catch((e) => console.warn("[cadencia] contato não chegou ao canônico:", e));
 
   await db.update(leads).set({
     lastContactAt: now,

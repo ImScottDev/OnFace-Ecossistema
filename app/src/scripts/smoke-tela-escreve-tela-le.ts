@@ -13,7 +13,7 @@
  */
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
-import { criarLead, moverEtapa, nutrir, qualificar } from "@/lib/vendas/pre-vendas";
+import { criarLead, moverEtapa, nutrir, qualificar, registrarPrimeiroContato } from "@/lib/vendas/pre-vendas";
 import { criarOportunidadeDoLead, definirProximaAcao, iniciarTrial, encerrarTrial, marcarEstagnacao } from "@/lib/vendas/pipeline";
 import { boardPreVendas, detalheLead, detalheOportunidade } from "@/lib/vendas/consultas";
 import { atorHumano } from "@/lib/vendas/dominio";
@@ -29,42 +29,48 @@ const PREFIXO = "smoke-duas-verdades-%";
 const marca = `smoke-duas-verdades-${Date.now()}`;
 let leadId: string | null = null;
 let negocioId: string | null = null;
+let leadCadencia: string | null = null;
 
 async function limpar() {
-  if (!leadId) return;
-  // A ordem é a das chaves estrangeiras: quem aponta morre antes de quem é
-  // apontado. Uma rodada que falhava no meio deixava ponto de contato preso na
-  // pessoa, a pessoa presa na empresa, e a limpeza seguinte não via nada disso
-  // porque filtrava pela marca da rodada, não pelo prefixo.
-  const dasMinhas = sql`(SELECT id FROM pessoas WHERE nome LIKE ${PREFIXO})`;
-  const empresasMinhas = sql`(SELECT id FROM empresas WHERE nome LIKE ${PREFIXO})`;
+  // Apaga por PREFIXO, nunca pelos ids desta rodada. Uma rodada que morre no
+  // meio deixa lead, empresa e pessoa para trás; limpar pelos ids da rodada
+  // seguinte não alcança o que sobrou da anterior, e o resíduo se acumula até
+  // alguém reparar. A ordem é a das chaves estrangeiras: quem aponta morre
+  // antes de quem é apontado.
+  const meusLeads = sql`(SELECT id FROM leads WHERE nome LIKE ${PREFIXO})`;
+  const minhasPessoas = sql`(SELECT id FROM pessoas WHERE nome LIKE ${PREFIXO})`;
+  const minhasEmpresas = sql`(SELECT id FROM empresas WHERE nome LIKE ${PREFIXO})`;
+  const meusNegocios = sql`(SELECT id FROM negocios WHERE lead_id IN ${meusLeads} OR empresa_id IN ${minhasEmpresas})`;
+
   for (const q of [
-    sql`DELETE FROM reunioes WHERE negocio_id = ${negocioId ?? null}::uuid OR titulo LIKE ${PREFIXO}`,
-    sql`DELETE FROM tarefas WHERE lead_id = ${leadId}::uuid OR negocio_id = ${negocioId ?? null}::uuid`,
-    sql`DELETE FROM comercial_evidencia WHERE negocio_id = ${negocioId ?? null}::uuid`,
-    sql`DELETE FROM vendas_eventos WHERE lead_id = ${leadId}::uuid OR negocio_id = ${negocioId ?? null}::uuid`,
-    sql`DELETE FROM atividades WHERE lead_id = ${leadId}::uuid OR negocio_id = ${negocioId ?? null}::uuid`,
-    sql`DELETE FROM status_changes WHERE lead_id = ${leadId}::uuid`,
-    sql`DELETE FROM timeline_events WHERE aquisicao_id IN (SELECT id FROM aquisicoes WHERE lead_legado_id = ${leadId}::uuid)
-         OR pessoa_id IN ${dasMinhas} OR empresa_id IN ${empresasMinhas}`,
-    sql`DELETE FROM pontos_contato WHERE lead_id_legado = ${leadId}::uuid
-         OR pessoa_id IN ${dasMinhas} OR empresa_id IN ${empresasMinhas}`,
-    sql`DELETE FROM oportunidades WHERE negocio_id_legado = ${negocioId ?? null}::uuid
-         OR lead_id = ${leadId}::uuid OR empresa_id IN ${empresasMinhas}`,
-    sql`DELETE FROM negocios WHERE id = ${negocioId ?? null}::uuid OR lead_id = ${leadId}::uuid
-         OR empresa_id IN ${empresasMinhas}`,
-    sql`DELETE FROM aquisicoes WHERE lead_legado_id = ${leadId}::uuid
-         OR pessoa_id IN ${dasMinhas} OR empresa_id IN ${empresasMinhas}`,
-    sql`DELETE FROM event_outbox WHERE payload ->> 'lead_legado_id' = ${leadId}`,
-    sql`DELETE FROM domain_events WHERE payload ->> 'lead_legado_id' = ${leadId}`,
-    sql`DELETE FROM pessoa_empresa_vinculos WHERE pessoa_id IN ${dasMinhas} OR empresa_id IN ${empresasMinhas}`,
-    sql`DELETE FROM pessoas WHERE lead_id_legado = ${leadId}::uuid OR nome LIKE ${PREFIXO}`,
-    sql`DELETE FROM leads WHERE id = ${leadId}::uuid OR nome LIKE ${PREFIXO}`,
+    sql`DELETE FROM atividades WHERE lead_id IN ${meusLeads} OR negocio_id IN ${meusNegocios}`,
+    sql`DELETE FROM tarefas WHERE lead_id IN ${meusLeads} OR negocio_id IN ${meusNegocios}`,
+    sql`DELETE FROM status_changes WHERE lead_id IN ${meusLeads}`,
+    sql`DELETE FROM vendas_eventos WHERE lead_id IN ${meusLeads} OR negocio_id IN ${meusNegocios}`,
+    sql`DELETE FROM reunioes WHERE lead_id IN ${meusLeads} OR negocio_id IN ${meusNegocios} OR titulo LIKE ${PREFIXO}`,
+    sql`DELETE FROM comercial_evidencia WHERE negocio_id IN ${meusNegocios}`,
+    sql`DELETE FROM timeline_events WHERE aquisicao_id IN (SELECT id FROM aquisicoes WHERE lead_legado_id IN ${meusLeads})
+         OR pessoa_id IN ${minhasPessoas} OR empresa_id IN ${minhasEmpresas}`,
+    sql`DELETE FROM pontos_contato WHERE lead_id_legado IN ${meusLeads}
+         OR pessoa_id IN ${minhasPessoas} OR empresa_id IN ${minhasEmpresas}`,
+    sql`DELETE FROM oportunidades WHERE lead_id IN ${meusLeads} OR negocio_id_legado IN ${meusNegocios}
+         OR empresa_id IN ${minhasEmpresas}`,
+    sql`DELETE FROM negocios WHERE lead_id IN ${meusLeads} OR empresa_id IN ${minhasEmpresas}`,
+    sql`DELETE FROM aquisicoes WHERE lead_legado_id IN ${meusLeads}
+         OR pessoa_id IN ${minhasPessoas} OR empresa_id IN ${minhasEmpresas}`,
+    sql`DELETE FROM event_outbox WHERE payload ->> 'lead_legado_id' IN (SELECT id::text FROM leads WHERE nome LIKE ${PREFIXO})`,
+    sql`DELETE FROM domain_events WHERE payload ->> 'lead_legado_id' IN (SELECT id::text FROM leads WHERE nome LIKE ${PREFIXO})`,
+    sql`DELETE FROM pessoa_empresa_vinculos WHERE pessoa_id IN ${minhasPessoas} OR empresa_id IN ${minhasEmpresas}`,
+    sql`DELETE FROM pessoas WHERE nome LIKE ${PREFIXO}`,
+    sql`DELETE FROM leads WHERE nome LIKE ${PREFIXO}`,
+    sql`UPDATE leads SET empresa_id = NULL WHERE empresa_id IN ${minhasEmpresas}`,
     sql`DELETE FROM empresas WHERE nome LIKE ${PREFIXO}`,
-  ]) await db.execute(q).catch(() => undefined);
+  ]) await db.execute(q).catch((e) => console.warn("  limpeza:", String(e).slice(0, 120)));
+
+  // Rede de segurança: proveniência de runtime não pode sobrar apontando para
+  // aquisição que já não existe.
   await db.execute(sql`
-    DELETE FROM backfill_provenance bp WHERE bp.metodo = 'PONTE_CUTOVER'
-      AND bp.entidade_canonica = 'aquisicao'
+    DELETE FROM backfill_provenance bp WHERE bp.entidade_canonica = 'aquisicao'
       AND NOT EXISTS (SELECT 1 FROM aquisicoes a WHERE a.id = bp.id_canonico)`).catch(() => undefined);
 }
 
@@ -224,6 +230,38 @@ async function main() {
     ok(canon?.motivo === "sem_retorno", `a estagnação chega ao canônico ("${canon?.motivo}")`);
     const det = await detalheOportunidade(org.id, negocioId);
     ok(det?.motivoEstagnacao === "sem_retorno", `e o detalhe mostra ("${det?.motivoEstagnacao}")`);
+  }
+
+
+  console.log("\n═══ cadência: o toque chega ao board ═══");
+  {
+    const outro = await criarLead({
+      organizacaoId: org.id,
+      empresa: { nome: `${marca} Cadencia Ltda` },
+      pessoa: { nome: `${marca} cadencia`, email: `${marca}-cad@teste.local` },
+      touchpoint: { tipoOrigem: "organica", source: "smoke", campaign: "smoke-campanha" },
+      origem: "site", responsavelId: u.id,
+    } as never, { tipo: "HUMAN", usuarioId: u.id });
+    leadCadencia = outro.leadId;
+
+    const naColuna = async () => {
+      const b = await boardPreVendas(org.id, { aba: "ativos" });
+      return Object.values(b.colunas).flatMap((c) => c.cards).find((c) => c.leadId === leadCadencia)?.etapa ?? null;
+    };
+    ok(await naColuna() === "novo", "o lead da cadência nasce em Novo");
+
+    // O que a cadência faz hoje, pela porta canônica.
+    await registrarPrimeiroContato({
+      organizacaoId: org.id, leadId: leadCadencia, canal: "email", ator,
+    });
+    const depois = await naColuna();
+    ok(depois === "em_contato", `o toque de cadência move o card (board diz "${depois}")`);
+
+    // Atribuição vem de pontos_contato (SPEC §8.3), não mais só de leads.
+    await db.execute(sql`UPDATE leads SET utm_campaign = NULL WHERE id = ${leadCadencia}::uuid`);
+    const det = await detalheLead(org.id, leadCadencia);
+    ok(det?.atribuicao.campanha === "smoke-campanha",
+       `a campanha sobrevive ao legado vazio ("${det?.atribuicao.campanha}")`);
   }
 
   await limpar();

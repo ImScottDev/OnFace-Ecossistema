@@ -1062,17 +1062,41 @@ export async function detalheLead(organizacaoId: string, leadId: string): Promis
            l.nome, l.sobrenome, l.cargo, l.email, l.telefone, l.whatsapp,
            l.estagio_pre_vendas AS etapa, l.qualificado, l.qualificado_em::text,
            qu.nome AS qualificado_por, l.qualificado_por_tipo, l.pre_qualificado,
-           l.qualificacao, l.origem, l.utm_campaign, l.utm_medium, l.utm_content, l.utm_term,
-           l.landing_page, l.servicos_interesse AS servicos,
+           l.qualificacao, COALESCE(a.origem, l.origem) AS origem,
+           -- Atribuição é canônica em pontos_contato (SPEC §8.3): nenhuma
+           -- verdade de atribuição continua enterrada só na tabela leads. O legado
+           -- fica como fallback, e medir os dois lados campo a campo deu
+           -- paridade exata (campaign 1.428, medium 1.490, content 1.278,
+           -- term 1.251, zero só de um lado).
+           COALESCE(pc.campaign, l.utm_campaign) AS utm_campaign,
+           COALESCE(pc.medium, l.utm_medium) AS utm_medium,
+           COALESCE(pc.content, l.utm_content) AS utm_content,
+           COALESCE(pc.term, l.utm_term) AS utm_term,
+           COALESCE(pc.landing_page, l.landing_page) AS landing_page,
+           l.servicos_interesse AS servicos,
            l.responsavel_id::text, u.nome AS responsavel,
            l.primeiro_contato_at::text, l.created_at::text AS criado_em,
-           l.nutricao_motivo, l.nutricao_retomar_em::text, l.nutricao_observacao,
-           l.desqualificacao_motivo AS desq_motivo, l.desqualificacao_detalhe AS desq_detalhe,
+           -- Nutrição e desqualificação: o canônico guarda o estado
+           -- (nutricao_status, retomar_em, motivo_desqualificacao); o
+           -- legado guarda o texto livre que ainda não tem casa (observação,
+           -- detalhe, etapa de origem).
+           COALESCE(NULLIF(a.nutricao_status, 'em_nutricao'), l.nutricao_motivo) AS nutricao_motivo,
+           COALESCE(a.retomar_em, l.nutricao_retomar_em)::text AS nutricao_retomar_em,
+           l.nutricao_observacao,
+           COALESCE(a.motivo_desqualificacao, l.desqualificacao_motivo) AS desq_motivo,
+           l.desqualificacao_detalhe AS desq_detalhe,
            l.desqualificado_de_etapa AS desq_de_etapa
       FROM leads l
       LEFT JOIN empresas e ON e.id = l.empresa_id
       LEFT JOIN usuarios u ON u.id = l.responsavel_id
       LEFT JOIN usuarios qu ON qu.id = l.qualificado_por
+      LEFT JOIN aquisicoes a ON a.lead_legado_id = l.id
+      LEFT JOIN LATERAL (
+        SELECT campaign, medium, content, term, landing_page
+          FROM pontos_contato t
+         WHERE t.aquisicao_id = a.id
+         ORDER BY t.is_first_touch DESC, t.ocorrido_em ASC LIMIT 1
+      ) pc ON TRUE
      WHERE l.id = ${leadId}::uuid AND l.organizacao_id = ${organizacaoId}::uuid
   `);
   if (!l) return null;
