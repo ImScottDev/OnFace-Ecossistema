@@ -1,0 +1,11 @@
+{
+  "name": "@onface/integrations-callface-ai",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./index.ts",
+  "types": "./index.ts",
+  "dependencies": {
+    "postgres": "^3.4.9"
+  }
+}

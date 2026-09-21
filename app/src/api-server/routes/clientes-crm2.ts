@@ -15,6 +15,7 @@ import {
 } from "@/lib/db/schema";
 import { eq, and, or, inArray, sql, desc, asc, isNotNull } from "drizzle-orm";
 import { z } from "zod";
+import { lerUsoCallfaceAi } from "@/lib/integrations/callface-ai/leitura-dominio";
 import { getCtx, getGestaoCtx } from "../compat.js";
 import { registrarMudancaResponsavel } from "@/lib/crm/owner";
 import { publicarEvento } from "@/lib/events/outbox";
@@ -1545,12 +1546,11 @@ app.get("/clientes-crm2/:empresaId", async (c) => {
   // aba Serviços quando/se a decisão de acesso ao SaaS for tomada e um job
   // de sync popular dado real. Hoje sempre retorna [], sem fabricar nada:
   // o frontend mostra o estado vazio explícito citando a decisão pendente.
-  const servicoIdsCallfaceAi = servicos.filter((s) => s.serviceFamily === "CALLFACE_AI").map((s) => s.id);
-  const callfaceAiIdentities = servicoIdsCallfaceAi.length > 0
-    ? await db.select().from(callfaceAiExternalIdentities)
-        .where(and(eq(callfaceAiExternalIdentities.entityType, "servico_canonico"), inArray(callfaceAiExternalIdentities.entityId, servicoIdsCallfaceAi)))
-    : [];
-  const callfaceAiIdentityPorServico = new Map(callfaceAiIdentities.map((i) => [i.entityId, i]));
+  // A identidade é da EMPRESA, não do serviço: são 231 serviços CALLFACE_AI
+  // para 174 empresas (uma empresa tem 42), e a organization do SaaS é uma só.
+  // Os serviços da empresa herdam a leitura.
+  const temCallfaceAi = servicos.some((s) => s.serviceFamily === "CALLFACE_AI");
+  const callfaceAi = temCallfaceAi ? await lerUsoCallfaceAi(empresaId) : null;
 
   return c.json({
     empresa,
@@ -1563,12 +1563,10 @@ app.get("/clientes-crm2/:empresaId", async (c) => {
         ?? (s.contratoId ? assinaturaPorServicoContrato.get(s.contratoId) : undefined);
       const stripeBillingStatus = assinatura?.billingStatus || assinatura?.status || null;
       const ledger = ledgerPorServico.get(s.id);
-      const callfaceAiIntegracao = s.serviceFamily === "CALLFACE_AI" ? (() => {
-        const identidade = callfaceAiIdentityPorServico.get(s.id) ?? null;
-        return identidade
-          ? { conectado: true as const, organizationId: identidade.externalId, confidence: identidade.confidence, source: identidade.source, verifiedAt: isoServer(identidade.verifiedAt) }
-          : { conectado: false as const, organizationId: null, confidence: null, source: null, verifiedAt: null };
-      })() : null;
+      const callfaceAiIntegracao = s.serviceFamily === "CALLFACE_AI" ? (callfaceAi ?? {
+        conectado: false as const, organizationId: null, confidence: null,
+        source: null, verifiedAt: null, uso: null, coletadoEm: null, syncStatus: null,
+      }) : null;
       return {
         ...s,
         stripeSubscriptionId: assinatura?.stripeSubscriptionId ?? s.currentSubscriptionId ?? null,

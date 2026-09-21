@@ -4144,10 +4144,55 @@ export const callfaceAiTenantSnapshots = pgTable(
     minutosUso: decimal("minutos_uso", { precision: 14, scale: 2 }),
     agentesProntos: integer("agentes_prontos"),
     integracaoWhatsappConectada: boolean("integracao_whatsapp_conectada"),
+    /** A janela que os contadores de uso cobrem. Sem ela o número não é métrica. */
+    janelaDias: integer("janela_dias").default(30).notNull(),
+    /** Chamadas que PODEM ser desta org e não entraram no total (cadeias divergem). */
+    chamadasAmbiguas: integer("chamadas_ambiguas"),
+    chamadasSemAtribuicao: integer("chamadas_sem_atribuicao"),
+    sessoesCopilot: integer("sessoes_copilot"),
+    contatosBase: integer("contatos_base"),
+    usuariosComAtividade: integer("usuarios_com_atividade"),
+    reunioes: integer("reunioes"),
+    appsAtivos: integer("apps_ativos"),
+    webhooksAtivos: integer("webhooks_ativos"),
+    ultimaAtividadeEm: timestamp("ultima_atividade_em", { withTimezone: true }),
+    coletadoEm: timestamp("coletado_em", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
     index("idx_callface_ai_snapshots_identity").on(table.externalIdentityId, table.snapshotAt),
+    uniqueIndex("uq_callface_ai_snapshot_janela").on(table.externalIdentityId, table.snapshotAt, table.janelaDias),
+  ]
+);
+
+/**
+ * Estado de sincronização de integração externa (migration 0086).
+ *
+ * Uma linha por (organização, provedor, recurso). É o que torna o sync
+ * incremental, retry-safe e observável: sem ela a próxima execução não sabe
+ * onde a anterior parou, e uma indisponibilidade do provedor vira silêncio.
+ */
+export const integracaoSyncEstado = pgTable(
+  "integracao_sync_estado",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+    provider: text("provider").notNull(),
+    recurso: text("recurso").notNull(),
+    cursor: text("cursor"),
+    ultimoSyncEm: timestamp("ultimo_sync_em", { withTimezone: true }),
+    ultimoSucessoEm: timestamp("ultimo_sucesso_em", { withTimezone: true }),
+    status: text("status").default("nunca_rodou").notNull(),
+    erro: text("erro"),
+    tentativas: integer("tentativas").default(0).notNull(),
+    itensUltimoSync: integer("itens_ultimo_sync"),
+    duracaoMs: integer("duracao_ms"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("uq_integracao_sync_estado").on(table.organizacaoId, table.provider, table.recurso),
+    index("idx_integracao_sync_status").on(table.provider, table.status, table.ultimoSyncEm),
   ]
 );
 
