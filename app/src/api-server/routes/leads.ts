@@ -237,10 +237,21 @@ app.get("/leads", async (c) => {
   const hasActiveOpp = sql`EXISTS (SELECT 1 FROM ${negocioLeads} nl JOIN ${negocios} n ON n.id = nl.negocio_id WHERE nl.lead_id = ${leads.id} AND n.status NOT IN ('perdido','churned'))`;
   // Qualificado = tem oportunidade viva no closer OU já saiu do pré-vendas como Qualificado (sdr_status).
   const isQualif = sql`(${hasActiveOpp} OR ${leads.sdrStatus} = 'qualified')`;
+  // Cliente é DERIVADO (SPEC §16.3: "Do not model one absolute empresa.status =
+  // CLIENTE"). A marca `leads.tipo` só é atualizada quando alguém mexe num
+  // contrato por esta rota, então ela envelhece: medido em 21/09, 111 marcados
+  // como cliente não tinham contrato ativo e 124 com contrato ativo não estavam
+  // marcados. O filtro "Clientes" perdia 124 clientes de verdade.
+  //
+  // A regra não é nova: é a MESMA que contratos.ts aplica ao gravar a marca.
+  // O que muda é aplicá-la sempre, em vez de só no evento que a criou. A marca
+  // continua sendo escrita — é ponte, não segunda verdade.
+  const temContratoAtivo = sql`EXISTS (
+    SELECT 1 FROM contratos c WHERE c.lead_id = ${leads.id} AND c.status = 'ativo')`;
   const segPredicate = (seg: string | null): SQL[] => {
-    if (seg === "lead") return [eq(leads.tipo, "lead"), sql`NOT ${isQualif}`];
-    if (seg === "qualificado") return [eq(leads.tipo, "lead"), isQualif];
-    if (seg === "cliente") return [eq(leads.tipo, "cliente")];
+    if (seg === "lead") return [sql`NOT ${temContratoAtivo}`, eq(leads.tipo, "lead"), sql`NOT ${isQualif}`];
+    if (seg === "qualificado") return [sql`NOT ${temContratoAtivo}`, eq(leads.tipo, "lead"), isQualif];
+    if (seg === "cliente") return [sql`(${temContratoAtivo} OR ${leads.tipo} = 'cliente')`];
     return [];
   };
 

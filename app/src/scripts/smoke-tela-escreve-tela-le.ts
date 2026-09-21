@@ -18,6 +18,7 @@ import { criarOportunidadeDoLead, definirProximaAcao, iniciarTrial, encerrarTria
 import { boardPreVendas, detalheLead, detalheOportunidade } from "@/lib/vendas/consultas";
 import { atorHumano } from "@/lib/vendas/dominio";
 import { negociosRoutes } from "@/api-server/routes/negocios";
+import { leadsRoutes } from "@/api-server/routes/leads";
 import { sessaoDeSmoke } from "./_sessao-de-smoke";
 
 const ok = (cond: unknown, msg: string) => {
@@ -43,6 +44,7 @@ async function limpar() {
   const meusNegocios = sql`(SELECT id FROM negocios WHERE lead_id IN ${meusLeads} OR empresa_id IN ${minhasEmpresas})`;
 
   for (const q of [
+    sql`DELETE FROM contratos WHERE lead_id IN ${meusLeads}`,
     sql`DELETE FROM atividades WHERE lead_id IN ${meusLeads} OR negocio_id IN ${meusNegocios}`,
     sql`DELETE FROM tarefas WHERE lead_id IN ${meusLeads} OR negocio_id IN ${meusNegocios}`,
     sql`DELETE FROM status_changes WHERE lead_id IN ${meusLeads}`,
@@ -262,6 +264,27 @@ async function main() {
     const det = await detalheLead(org.id, leadCadencia);
     ok(det?.atribuicao.campanha === "smoke-campanha",
        `a campanha sobrevive ao legado vazio ("${det?.atribuicao.campanha}")`);
+  }
+
+
+  console.log("\n═══ cliente é derivado, não uma marca que envelhece ═══");
+  if (leadCadencia) {
+    const sessao = await sessaoDeSmoke();
+    // O lead continua marcado como "lead"; o que muda é ter contrato ativo.
+    await db.execute(sql`
+      INSERT INTO contratos (organizacao_id, lead_id, tipo, moeda, status, assinatura_status)
+      VALUES (${org.id}::uuid, ${leadCadencia}::uuid, 'recorrente', 'BRL', 'ativo', 'pendente')`);
+
+    const resp = await leadsRoutes.request("http://local/leads?segmento=cliente&limit=500", {
+      headers: { cookie: sessao.cookie },
+    });
+    const corpo = await resp.json().catch(() => ({})) as { leads?: Array<{ id: string }> };
+    const lista = corpo.leads ?? [];
+    ok(resp.status === 200, `a listagem responde (HTTP ${resp.status})`);
+    ok(lista.some((l) => l.id === leadCadencia),
+       `o lead com contrato ativo aparece em Clientes mesmo sem a marca (${lista.length} na lista)`);
+
+    await db.execute(sql`DELETE FROM contratos WHERE lead_id = ${leadCadencia}::uuid`);
   }
 
   await limpar();
