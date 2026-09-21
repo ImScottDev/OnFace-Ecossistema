@@ -1609,3 +1609,27 @@ pelo bundle real do worker (`esbuild`, exit 0).
 
 **Validação:** tsc limpo, **261 testes, 0 falhas**, build do Next exit 0, bundle do
 worker exit 0.
+
+---
+
+## 2026-09-21 — Cutover crítico, parte 11: o detalhe da oportunidade também escondia a família
+
+Mesma correção do board, agora na porta de leitura canônica. `detalheOportunidade` lia
+`negocios.service_family`, que é NULL em 475 das 1.561 oportunidades, e mostrava "sem
+família" para um negócio cujo produto o canônico conhece.
+
+Passou a completar pelo canônico, com o legado tendo precedência onde tem valor, porque
+editar ganha de deduzir. `source_process` foi junto, pelo mesmo motivo.
+
+A verificação entrou em `smoke-leituras-canonicas` e não é genérica: ela busca no banco
+um negócio que tem família SÓ no canônico e confere que a tela mostra. Com o dado
+sincronizado dos dois lados, um teste genérico passaria sem provar nada.
+
+Este é um pedaço da leitura de detalhe migrando, e é o pedaço que dava para migrar sem a
+escrita: os campos onde o canônico é melhor e a propagação já está fechada. O resto do
+`detalheLead` e do `detalheOportunidade` lê campos que **não existem** no modelo
+canônico (`qualificacao` em JSON, UTMs, nutrição, desqualificação, próxima ação, no-show,
+trial), e esses migram junto com a escrita na fase 25.
+
+**Validação:** tsc limpo, **261 testes, 0 falhas**, build exit 0, smokes de leitura e de
+sincronização verdes.

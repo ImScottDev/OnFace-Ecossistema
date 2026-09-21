@@ -103,6 +103,19 @@ async function main() {
   ok(dl !== null, "o detalhe do lead monta");
   ok(dop !== null, "o detalhe da oportunidade monta");
 
+  // O detalhe lia `negocios.service_family`, NULL em 475 das 1.561, e mostrava
+  // "sem família" para negócio cujo produto o canônico conhece. Este bloco pega
+  // justamente um desses e confere que a tela passou a mostrar.
+  const [semFamiliaNoLegado] = await db.execute<{ id: string; familia: string }>(sql`
+    SELECT n.id::text, o.service_family AS familia
+      FROM negocios n JOIN oportunidades o ON o.negocio_id_legado = n.id
+     WHERE n.service_family IS NULL AND o.service_family IS NOT NULL LIMIT 1`);
+  if (semFamiliaNoLegado) {
+    const d = await detalheOportunidade(org.id, semFamiliaNoLegado.id);
+    ok(d?.familia === semFamiliaNoLegado.familia,
+       `o detalhe mostra a família que só o canônico tem (${d?.familia ?? "vazia"})`);
+  }
+
   console.log(process.exitCode ? "\nsmoke de leituras: FALHOU\n" : "\nsmoke de leituras: ok\n");
 }
 

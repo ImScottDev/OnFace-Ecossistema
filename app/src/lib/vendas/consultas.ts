@@ -1162,8 +1162,21 @@ export async function detalheOportunidade(organizacaoId: string, negocioId: stri
     motivo_perda: string | null; no_show_em: string | null; no_show_contagem: number;
     trial_iniciado_em: string | null; trial_encerrado_em: string | null; bundle_id: string | null;
   }>(sql`
-    SELECT n.id::text, n.titulo, n.etapa, n.service_family AS familia,
-           n.commercial_motion AS motion, n.source_process, n.valor_total::text AS valor,
+    SELECT n.id::text, n.titulo, n.etapa,
+           -- Familia e origem vem do canonico quando o legado nao tem.
+           --
+           -- negocios.service_family e NULL em 475 das 1.561 oportunidades, e
+           -- nessas a oportunidade canonica SABE a familia, deduzida no backfill
+           -- por cadeia de evidencias. Esta tela mostrava "sem familia" para um
+           -- negocio cujo produto o sistema conhece, e e a mesma correcao ja
+           -- feita no board (/pipeline-crm2/board).
+           --
+           -- Nesta ordem: onde o legado tem valor, foi alguem que editou, e
+           -- editar ganha de deduzir.
+           COALESCE(n.service_family, o.service_family) AS familia,
+           n.commercial_motion AS motion,
+           COALESCE(n.source_process, o.source_process) AS source_process,
+           n.valor_total::text AS valor,
            n.previsao_fechamento::text AS previsao, n.responsavel_id::text, u.nome AS responsavel,
            n.empresa_id::text, COALESCE(e.nome, l.empresa) AS empresa, n.lead_id::text,
            NULLIF(trim(concat_ws(' ', l.nome, l.sobrenome)), '') AS lead_nome,
@@ -1176,6 +1189,7 @@ export async function detalheOportunidade(organizacaoId: string, negocioId: stri
       LEFT JOIN empresas e ON e.id = n.empresa_id
       LEFT JOIN leads l ON l.id = n.lead_id
       LEFT JOIN usuarios u ON u.id = n.responsavel_id
+      LEFT JOIN oportunidades o ON o.negocio_id_legado = n.id
      WHERE n.id = ${negocioId}::uuid AND n.organizacao_id = ${organizacaoId}::uuid
   `);
   if (!n) return null;
