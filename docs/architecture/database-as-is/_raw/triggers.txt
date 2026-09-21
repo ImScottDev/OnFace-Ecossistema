@@ -1,0 +1,4 @@
+service_ledger_entries|trg_closed_service_ledger_entries_immutable|BEFORE|DELETE
+service_ledger_entries|trg_closed_service_ledger_entries_immutable|BEFORE|UPDATE
+tarefas|trg_tarefas_sincronizar_status|BEFORE|INSERT
+tarefas|trg_tarefas_sincronizar_status|BEFORE|UPDATE

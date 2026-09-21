@@ -3217,8 +3217,11 @@ export const billingCustomerAliases = pgTable("billing_customer_aliases", {
   id: uuid("id").defaultRandom().primaryKey(),
   billingIdentityId: uuid("billing_identity_id").references(() => billingIdentities.id).notNull(),
   stripeCustomerId: text("stripe_customer_id").notNull(),
-  origem: text("origem"),
+  isCanonical: boolean("is_canonical").default(false).notNull(),
+  resolutionSource: text("resolution_source").notNull(),
+  evidence: jsonb("evidence").default({}).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   uniqueIndex("uq_billing_alias_customer").on(table.stripeCustomerId),
 ]);
