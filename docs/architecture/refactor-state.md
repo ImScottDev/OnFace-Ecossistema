@@ -7,9 +7,9 @@
 
 ## Fase atual
 
-**14 e 15 — Separação de tarefa/reunião/nota e eventos + timeline** (próximas)
+**16 — Migração dos escritores de runtime** (em andamento)
 
-Fases 01 a 13 concluídas.
+Fases 01 a 15 concluídas. Fase 16: 2 de 6 webhooks migrados.
 
 ## Último commit
 
@@ -91,6 +91,7 @@ Pacote vazio não afeta o build: `tsc` limpo e 111 testes passando com o workspa
 | 11 fulfillment | migration 0066 | 25 jornadas | ciclos habilitados | 1 |
 | 12 financeiro | `12-financeiro.ts` | 951 faturas | **536 pagamentos**, soma confere | 2 |
 | 13 comunicações | `13-comunicacoes.ts` | 34.761 linhas | **33.005 comms**, 5.249 conversas | 2 |
+| 14-15 eventos | `14-15-eventos-timeline.ts` | 13.044 atividades | **14.078 timeline**, 2.016 eventos | 0 |
 
 ### Panorama do modelo canônico
 
@@ -137,12 +138,29 @@ Nenhum ainda. O cutover de leitura é a fase 17.
 | Pacote | O que tem | Testes |
 |---|---|---|
 | `@onface/catalog` | `avaliarGanho`, `podeCriarProposta`, `jornadasPosVenda` — a política comercial da oferta | 8 de domínio |
+| `@onface/identity` | resolução determinística de pessoa e empresa | 10 de domínio |
+| `@onface/acquisition` | `registrarEntrada` — porta única de dado externo | 9 de domínio |
+| `@onface/platform-events` | evento + outbox transacionais | 4, inclui rollback |
+| `@onface/platform-database` | repositórios Postgres dos contratos acima | — |
 
 Os demais 37 pacotes seguem vazios, recebendo código conforme as fases avançam.
 
 ## Writers migrados
 
-Nenhum. Inventário de partida em `database-as-is/04-escritores.md`.
+| Escritor | Estado | Porta canônica |
+|---|---|---|
+| `app/api/webhooks/rd-lead` | **migrado** (dual-write) | `garantirEntradaCanonica` |
+| `app/api/webhooks/site-lead` | **migrado** (dual-write) | `garantirEntradaCanonica` |
+| demais 4 webhooks | pendente | — |
+| rotas Hono (`leads`, `negocios`, `contatos`, `apollo`, `prospeccao`) | pendente | — |
+| worker | pendente | — |
+
+Inventário completo em `database-as-is/04-escritores.md`. Medição atual:
+`leads` 45 escritores, `negocios` 30, `atividades` 23, `tarefas` 14.
+
+**O dual-write é temporário e datado.** `src/lib/vendas/ponte-canonica.ts` diz no
+topo que existe para morrer na fase 25. As telas ainda leem `leads`; escrever só no
+canônico hoje faria o lead sumir da tela de pré-vendas no mesmo instante.
 
 ## Estruturas legadas ainda em uso (todas, neste ponto)
 

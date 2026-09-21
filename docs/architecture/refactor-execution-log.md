@@ -292,3 +292,35 @@ WhatsApp e ligações: zero não migradas. 27.131 comunicações sem pessoa reso
 registradas assim mesmo e com caso aberto.
 
 **Testes:** 134 passando, `tsc` limpo.
+
+---
+
+## 2026-09-21 — Fases 14 a 16 (parcial) — eventos, timeline e primeiros writers
+
+**14 e 15.** `atividades` (13.044 linhas) drenada: 14.078 itens de timeline e 2.016
+eventos de domínio. Zero descartadas. A timeline também recebeu os marcos de ganho e
+perda, senão contaria a história sem o desfecho.
+
+**Eventos transacionais.** `packages/platform/events`: estado, `domain_event` e
+outbox na mesma transação. Teste força rollback no meio e prova que evento e fila não
+sobrevivem. É o que impede o cenário medido no AS-IS: 569 ganhos, 33 eventos.
+
+**16 (parcial).** Portas canônicas criadas (`identity`, `acquisition`) e dois webhooks
+migrados. `rd-lead` era o pior caso: inseria direto em `leads`, `status_changes` e
+`notas`, e criava a tarefa por fora.
+
+**Dois bugs reais encontrados, ambos por verificação e não por acaso:**
+
+1. **Busca de pessoa por telefone usava `LIKE '%numero'`**, então um celular de 9
+   dígitos casava dentro de um de 11 e duas pessoas viravam uma. Passou a comparar os
+   últimos 10 dígitos exatos. Encontrado pelo smoke contra o banco real.
+2. **O smoke apagava dado real na limpeza.** Apagava por id sem checar origem; quando
+   a entrada reusou uma aquisição existente, apagou uma real — sobraram 3.988 de
+   3.989. Pego pelo teste de reconciliação da fase 06, que existe exatamente para
+   isso. Reparado com o backfill idempotente e a limpeza passou a só apagar o que o
+   próprio smoke criou.
+
+**Smoke da ponte:** 7 de 7 verificações. Pessoa, empresa, aquisição, touchpoint,
+evento e outbox aparecem juntos, e a reentrega do mesmo fato não duplica nada.
+
+**Testes:** 157 passando.
