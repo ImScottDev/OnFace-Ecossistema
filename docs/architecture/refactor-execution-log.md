@@ -778,3 +778,26 @@ nenhum dos 275 clientes tem dono. Cobrar isso do código seria cobrar uma decis�
 operação.
 
 **Commit:** `64d94e8`.
+
+---
+
+## 2026-09-21 — Fase 17 (final) · Dois gaps entre o SPEC e a expansão
+
+Encontrados ao tentar migrar o relatório por pessoa para `oportunidades`.
+
+**Faltavam campos que o SPEC §11.1 define.** O canônico tinha `valor` e `mrr`; o SPEC
+define também `setup_estimado`, `servico_catalogo_id` e `etapa_id`. Migrar o relatório
+sem o campo de setup teria juntado receita recorrente com receita de implantação, que
+são decisões diferentes. Migration 0073, com 212 de 212 setups migrados.
+
+**`pipeline_etapas` foi semeada do pipeline errado.** O backfill 07 a preencheu de
+`pipelines.stages`, a configuração do CRM 1, enquanto o módulo Vendas usa outro
+vocabulário. Resultado: 1.561 oportunidades e **zero** com `etapa_id`, e isso não
+aparecia em teste nenhum porque nada lia `etapa_id` ainda. Migration 0074 semeia as
+seis etapas em uso e liga as 1.561; as antigas ficam, porque apagar aqui seria
+contrair antes da hora.
+
+O relatório migrou com **paridade exata**: R$ 497.904,42 de MRR e R$ 76.628,87 de
+setup, 603 ganhos dos dois lados.
+
+**Commit:** `ffdb614`.

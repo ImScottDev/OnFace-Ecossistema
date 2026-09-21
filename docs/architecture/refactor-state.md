@@ -25,7 +25,7 @@ Fases 01 a 16 concluídas.
 
 ## Último commit
 
-`64d94e8` — refactor(24): validação de paridade, e R$ 16.751,30 de receita que voltou
+`ffdb614` — refactor(17): a tabela canônica de etapas descrevia um pipeline que ninguém usa
 
 Branch de trabalho: `refactor/arquitetura-canonica`, criada a partir de `98940fe`.
 
@@ -102,6 +102,8 @@ Os três não verificáveis estão nomeados, e "não verificável" **não é OK*
 | 0070 | `rbac_papeis_e_vinculos` | 8 papéis, o mapa papel→permissão e os 16 vínculos de usuário | sim, DELETE documentado |
 | 0071 | `nexo_e_hermes` | os dois agentes do SPEC §19, em `draft`, com versão 1 | sim, DELETE documentado |
 | 0072 | `api_tokens` | token da API pública (hash, escopos, expiração) e registro de uso | sim, DROP TABLE |
+| 0073 | `oportunidade_campos_spec` | `setup_estimado`, `servico_catalogo_id`, `etapa_id` — campos do SPEC §11.1 que faltavam | sim, DROP COLUMN |
+| 0074 | `pipeline_etapas_em_uso` | semeia as 6 etapas que o produto usa e liga as 1.561 oportunidades | sim, documentado |
 
 ## Credenciais que faltam para rodar, não para construir
 
@@ -192,6 +194,9 @@ lead e de oportunidade). Migrá-la migrou as telas de uma vez.
 | `detalheLead` — oportunidades | `oportunidades` | — |
 | `detalheOportunidade` — irmãs | `oportunidades` | — |
 | `lerLinhaDoTempo` | `timeline_events` + `communications` | **0 → 40 eventos** por pessoa |
+| `relatorios` — por pessoa | `oportunidades` | paridade exata: R$ 497.904,42 MRR, R$ 76.628,87 setup |
+| `relatorios` — mídia paga | cadeia de atribuição | **+R$ 21.537,90** de MRR ativo visível |
+| fila de cobrança e renovação | LEFT + empresa | deixa de depender de lead legado |
 | responsável do onboarding | cadeia canônica → legado | **0 → 305** contratos órfãos com dono |
 
 **O sumiço, medido.** A consulta anterior filtrava `estagio_pre_vendas = ANY(...)` e
@@ -309,7 +314,7 @@ canônico hoje faria o lead sumir da tela de pré-vendas no mesmo instante.
 
 ## Testes executados
 
-Estado atual: `tsc --noEmit` limpo, **build de produção passando**, **212 testes, 0
+Estado atual: `tsc --noEmit` limpo, **build de produção passando**, **214 testes, 0
 falhas**, mais **oito smokes** contra o banco real:
 
 - `smoke-ponte-canonica` — entrada externa chega inteira ao canônico e não duplica;
