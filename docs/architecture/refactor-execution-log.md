@@ -324,3 +324,19 @@ migrados. `rd-lead` era o pior caso: inseria direto em `leads`, `status_changes`
 evento e outbox aparecem juntos, e a reentrega do mesmo fato não duplica nada.
 
 **Testes:** 157 passando.
+
+---
+
+## 2026-09-21 — Fase 16 (continuação) · Seis criadores de identidade migrados
+
+`POST /leads` (a maior porta de escrita do sistema, 10 escritas em `leads`),
+`contatos`, `prospeccao` e `apollo` passaram a chamar a porta canônica, somando-se aos
+dois webhooks da rodada anterior.
+
+**Teste de inventário vivo.** `arquitetura/escritores-migrados.test.ts` transforma o
+inventário do SPEC em contrato executável: porta nova sem ligação falha a suíte. Além
+disso verifica que a ponte declara ser temporária e em que fase sai — dual-write sem
+data de morte vira permanente — e que ninguém removeu a escrita legada cedo demais,
+porque as telas ainda leem `leads` e o registro sumiria na hora.
+
+**Testes:** 161 passando. **Smoke:** 7 de 7.

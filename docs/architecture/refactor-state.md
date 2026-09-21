@@ -9,7 +9,7 @@
 
 **16 — Migração dos escritores de runtime** (em andamento)
 
-Fases 01 a 15 concluídas. Fase 16: 2 de 6 webhooks migrados.
+Fases 01 a 15 concluídas. Fase 16 em andamento: **6 criadores de identidade migrados**.
 
 ## Último commit
 
@@ -149,11 +149,20 @@ Os demais 37 pacotes seguem vazios, recebendo código conforme as fases avançam
 
 | Escritor | Estado | Porta canônica |
 |---|---|---|
-| `app/api/webhooks/rd-lead` | **migrado** (dual-write) | `garantirEntradaCanonica` |
-| `app/api/webhooks/site-lead` | **migrado** (dual-write) | `garantirEntradaCanonica` |
-| demais 4 webhooks | pendente | — |
-| rotas Hono (`leads`, `negocios`, `contatos`, `apollo`, `prospeccao`) | pendente | — |
-| worker | pendente | — |
+| `app/api/webhooks/rd-lead` | **migrado** | `garantirEntradaCanonica` |
+| `app/api/webhooks/site-lead` | **migrado** | `garantirEntradaCanonica` |
+| `api-server/routes/leads.ts` (POST /leads) | **migrado** | idem |
+| `api-server/routes/contatos.ts` | **migrado** | idem |
+| `api-server/routes/prospeccao.ts` | **migrado** | idem |
+| `api-server/routes/apollo.ts` | **migrado** | idem |
+| `api-server/routes/contatos-unified.ts` | pendente | — |
+| `api-server/routes/{email,whatsapp,contratos,cadencia}.ts` | pendente (atualizam, não criam) | — |
+| `worker/index.ts` | pendente | — |
+| escrita de `negocios` (30 caminhos) | pendente — fase 16e | — |
+
+Um teste de inventário (`arquitetura/escritores-migrados.test.ts`) trava isso: porta
+nova sem ligação à canônica falha a suíte. Ele também verifica que a ponte declara ser
+temporária e que ninguém removeu a escrita legada antes da migração de leitura.
 
 Inventário completo em `database-as-is/04-escritores.md`. Medição atual:
 `leads` 45 escritores, `negocios` 30, `atividades` 23, `tarefas` 14.
