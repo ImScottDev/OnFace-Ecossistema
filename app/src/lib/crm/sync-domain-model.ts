@@ -207,7 +207,15 @@ export async function syncOportunidadeFromNegocio(negocioId: string): Promise<vo
       perdidoAt = ultimaMudanca?.createdAt || negocio.updatedAt;
     }
 
-    const [existente] = await db.select({ id: oportunidades.id }).from(oportunidades).where(eq(oportunidades.negocioIdLegado, negocioId)).limit(1);
+    const [existente] = await db
+      .select({
+        id: oportunidades.id,
+        // Lidos para NÃO serem apagados logo abaixo. Ver o comentário em
+        // `serviceFamily`: o legado é nulo onde o backfill deduziu.
+        serviceFamily: oportunidades.serviceFamily,
+        sourceProcess: oportunidades.sourceProcess,
+      })
+      .from(oportunidades).where(eq(oportunidades.negocioIdLegado, negocioId)).limit(1);
 
     const valores = {
       organizacaoId: negocio.organizacaoId,
@@ -229,7 +237,23 @@ export async function syncOportunidadeFromNegocio(negocioId: string): Promise<vo
                      LIMIT 1)` as never,
       setupEstimado: negocio.valorSetup,
       titulo: negocio.titulo,
-      serviceFamily: negocio.serviceFamily,
+      // O legado PREENCHE, nunca apaga.
+      //
+      // Esta linha era `negocio.serviceFamily` cru, e `negocios.service_family`
+      // é NULL em 475 das 1.561 oportunidades — justamente aquelas em que o
+      // backfill deduziu a família por cadeia de evidências (negócio, item de
+      // proposta, catálogo, item de contrato, serviço canônico). Como esta
+      // sincronização roda em toda alteração de negócio, a dedução era apagada
+      // no primeiro toque.
+      //
+      // Apagar a família desliga a política de Ganho: sem ela, PABX e White
+      // Label não geram jornada de implantação e o produto engole a etapa sem
+      // erro. `source_process` tem o mesmo problema, em 63 oportunidades.
+      //
+      // Os demais campos continuam cópia direta: título, etapa, responsável e
+      // valores são editados no legado, e ali esvaziar é intenção do usuário.
+      serviceFamily: negocio.serviceFamily ?? existente?.serviceFamily ?? null,
+      sourceProcess: negocio.sourceProcess ?? existente?.sourceProcess ?? null,
       commercialMotion: negocio.commercialMotion,
       responsavelId: negocio.responsavelId,
       valor: negocio.valorTotal,

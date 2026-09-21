@@ -33,7 +33,22 @@ app.get("/pipeline-crm2/board", async (c) => {
       valorTotal: negocios.valorTotal,
       mrrEstimado: negocios.mrrEstimado,
       mrrFechado: negocios.mrrFechado,
-      serviceFamily: negocios.serviceFamily,
+      // O canônico completa o que o legado não tem.
+      //
+      // `negocios.service_family` é NULL em 526 dos 527 negócios abertos, e em
+      // 125 deles a oportunidade canônica SABE a família, deduzida no backfill
+      // por cadeia de evidências. O board mostrava "sem família" em cards cujo
+      // produto o sistema conhece.
+      //
+      // COALESCE nesta ordem, e não o contrário: quando o legado tem valor ele
+      // é o que a pessoa editou na tela, e editar tem que ganhar de deduzir.
+      //
+      // Subconsulta em vez de JOIN de propósito: a relação é 1:1 hoje, mas um
+      // bundle cria oportunidades irmãs do mesmo negócio, e aí um JOIN
+      // duplicaria o card no board.
+      serviceFamily: sql<string | null>`COALESCE(${negocios.serviceFamily},
+        (SELECT o.service_family FROM oportunidades o
+          WHERE o.negocio_id_legado = ${negocios.id} LIMIT 1))`,
       responsavelId: negocios.responsavelId,
       responsavelNome: usuarios.nome,
       leadId: negocios.leadId,

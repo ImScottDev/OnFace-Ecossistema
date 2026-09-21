@@ -778,13 +778,29 @@ async function espelharNoDominioV2(negocioIds: string[]): Promise<void> {
     try {
       const { syncOportunidadeFromNegocio } = await import("@/lib/crm/sync-domain-model");
       await syncOportunidadeFromNegocio(negocioId);
+      // COALESCE nos dois campos derivados, e não no resto.
+      //
+      // O espelho copiava `service_family` e `source_process` sem condição, e o
+      // legado é NULL neles em 475 e 63 oportunidades. O backfill tinha deduzido
+      // esses valores de uma cadeia de evidências (negócio, item de proposta,
+      // catálogo, item de contrato, serviço canônico); o espelho os apagava a
+      // cada edição do negócio. Medido: um PABX real vira NULL depois de um
+      // UPDATE destes.
+      //
+      // Apagar a família não é perda cosmética: é a política de Ganho que dorme
+      // atrás dela. Sem família, PABX e White Label não geram jornada de
+      // implantação, e o produto engole a etapa sem erro nenhum.
+      //
+      // Os outros campos seguem cópia direta de propósito: título, etapa,
+      // `commercial_motion` e `lead_id` são editados no legado, e ali o usuário
+      // esvaziar o campo é uma intenção, não uma ausência de evidência.
       await db.execute(sql`
         UPDATE oportunidades o SET
           titulo = n.titulo,
-          service_family = n.service_family,
+          service_family = COALESCE(n.service_family, o.service_family),
           etapa = n.etapa,
           commercial_motion = n.commercial_motion,
-          source_process = n.source_process,
+          source_process = COALESCE(n.source_process, o.source_process),
           lead_id = n.lead_id,
           updated_at = now()
         FROM negocios n

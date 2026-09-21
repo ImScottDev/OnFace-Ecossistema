@@ -140,3 +140,43 @@ test("o motor de regras não tem implementação própria das ações do motor d
     "o motor de regras voltou a escrever direto no que o adapter governa",
   );
 });
+
+test("a sincronização com o legado PREENCHE o canônico, nunca apaga a dedução", () => {
+  // `negocios.service_family` é NULL em 475 das 1.561 oportunidades, e
+  // `source_process` em 63. Nessas, o valor veio do backfill, deduzido de uma
+  // cadeia de cinco evidências. Copiar o legado cru por cima apaga a dedução em
+  // toda alteração de negócio — medido: um PABX real virava NULL depois de
+  // mover etapa.
+  //
+  // Apagar a família desliga a política de Ganho. Sem família, PABX e White
+  // Label não geram jornada de implantação e o produto engole a etapa sem erro
+  // nenhum, que é o pior tipo de bug porque ninguém consegue reportar.
+  //
+  // Prova executada: `src/scripts/smoke-espelho-nao-apaga.ts`, pelo caminho real
+  // (`moverEtapa`). Esta trava é estrutural e existe para a regra não ser
+  // desfeita por uma linha aparentemente inofensiva.
+  const sync = ler("lib/crm/sync-domain-model.ts");
+  assert.match(
+    sync, /serviceFamily:\s*negocio\.serviceFamily\s*\?\?\s*existente\?\.serviceFamily/,
+    "sync-domain-model não pode copiar service_family cru por cima do canônico",
+  );
+  assert.match(
+    sync, /sourceProcess:\s*negocio\.sourceProcess\s*\?\?\s*existente\?\.sourceProcess/,
+    "nem source_process",
+  );
+
+  const pipeline = ler("lib/vendas/pipeline.ts");
+  assert.match(
+    pipeline, /service_family = COALESCE\(n\.service_family, o\.service_family\)/,
+    "o espelho do pipeline também precisa preencher sem apagar",
+  );
+  assert.match(
+    pipeline, /source_process = COALESCE\(n\.source_process, o\.source_process\)/,
+    "idem para source_process",
+  );
+
+  // E o que NÃO é dedução continua cópia direta: esvaziar título ou etapa no
+  // legado é intenção do usuário, e proteger isso esconderia edição legítima.
+  assert.match(pipeline, /titulo = n\.titulo/, "título segue o legado");
+  assert.match(pipeline, /etapa = n\.etapa/, "etapa segue o legado");
+});

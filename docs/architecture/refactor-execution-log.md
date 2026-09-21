@@ -1139,3 +1139,69 @@ carregado com produção, mais o smoke da API pública.
 
 **Pendente e NÃO removido do escopo:** a tela de gestão de tokens (`/ajustes/api-tokens`)
 da fase 23. O backend está completo e validado; falta a interface.
+
+---
+
+## 2026-09-21 — Cutover crítico, parte 1: o espelho estava apagando o canônico
+
+Prioridade reordenada a pedido do Kauã: primeiro o que impede o produto funcionar em
+produção. Comecei medindo divergência entre canônico e legado par a par, em vez de
+confiar no documento.
+
+**Quase tudo está em paridade.** 3.989 leads pareados com 3.989 aquisições, zero sem
+par, responsável e qualificação idênticos. 1.561 negócios pareados com oportunidades,
+`stage`, `titulo` e `empresa_id` sem nenhuma divergência.
+
+**Menos um campo: `service_family`, divergente em 475 de 1.561.** E a divergência é
+unidirecional: o canônico TEM o valor, o legado é NULL. Não é dado sujo, é o backfill
+tendo deduzido a família por cadeia de cinco evidências onde o negócio nunca teve. 299
+desses estão ganhos. `source_process` tem o mesmo padrão, em 63.
+
+**E o espelho apagava exatamente isso.** `espelharNoDominioV2` e
+`syncOportunidadeFromNegocio` copiavam os dois campos do legado sem condição. Como a
+segunda roda em toda alteração de negócio, a dedução morria no primeiro toque. Provei
+numa transação com rollback antes de mexer: um PABX real vira NULL depois do UPDATE.
+
+Apagar a família não é perda cosmética. A política de Ganho decide jornada de pós-venda
+por ela: sem família, PABX e White Label não geram implantação e o produto engole a
+etapa sem erro nenhum.
+
+**O smoke pegou o que eu não tinha visto.** Corrigi o espelho do pipeline primeiro e
+rodei pelo caminho real (`moverEtapa`): `source_process` sobreviveu e `service_family`
+continuou sendo apagada. Havia um SEGUNDO escritor, `sync-domain-model.ts`, chamado
+antes. Se eu tivesse validado com SQL escrito à mão em vez do caminho real, teria
+fechado o commit com o bug intacto.
+
+Os dois agora preenchem sem apagar. O que não é dedução segue cópia direta de propósito:
+título, etapa, `commercial_motion` e responsável são editados no legado, e ali esvaziar
+é intenção do usuário, não ausência de evidência.
+
+Trava em `escritores-migrados.test.ts`, verificada falhando com a correção removida, e
+smoke `smoke-espelho-nao-apaga.ts` pelo caminho real.
+
+**O board do CRM2 escondia família que o sistema conhece.** `/api/pipeline-crm2/board`
+lia só `negocios.service_family`, NULL em 526 dos 527 cards abertos. Em 125 deles a
+oportunidade sabe a família. A consulta passou a completar pelo canônico, com o legado
+tendo precedência onde tem valor, porque editar tem que ganhar de deduzir. Medido pela
+consulta da rota: **1 → 126 cards com família**.
+
+Subconsulta em vez de JOIN: hoje a relação é 1:1, mas bundle cria oportunidades irmãs do
+mesmo negócio e um JOIN duplicaria o card.
+
+**Não migrei `cs/expansoes`**, que também lê a família do legado: medi e o impacto é
+zero (nenhum negócio de expansão sem família). Está registrado como leitura legada
+restante, não como resolvido.
+
+**Duas coisas medidas e deliberadamente NÃO "corrigidas",** porque corrigir seria
+inventar:
+
+- 574 das 603 oportunidades ganhas não têm serviço canônico ligado, e o backfill 10
+  declarou isso com 0 casos abertos. Ligar por proximidade seria fabricar de qual venda
+  veio cada serviço.
+- Zero fulfillments de IMPLEMENTATION no banco, contra 126 ganhos PABX/White Label.
+  Criar jornada retroativa para cliente implantado há um ano é inventar trabalho
+  operacional. A regra vale daqui pra frente e já tem prova: `smoke-ganho-oportunidade`
+  gera as duas jornadas para PABX.
+
+**Validação:** tsc limpo, **256 testes, 0 falhas**, build exit 0, smokes do espelho,
+do board, do acervo, de tokens e de ganho.
