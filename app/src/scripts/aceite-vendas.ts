@@ -762,6 +762,33 @@ async function limpar(sufixo: string): Promise<void> {
   await db.execute(sql`DELETE FROM labels WHERE nome LIKE ${marca}`);
   await db.execute(sql`DELETE FROM leads WHERE empresa_id IN ${empresas}`);
   await db.execute(sql`DELETE FROM empresas WHERE nome LIKE ${marca}`);
+
+  // Fila e registro de eventos.
+  //
+  // O aceite gera evento de dominio a cada acao, e a limpeza nao os conhecia:
+  // sobravam quatro linhas pendentes no outbox apontando para agregado que ja
+  // nao existe. Fila com evento orfao e ruim de duas formas — o consumidor
+  // tenta entregar o que nao da, e o contador de pendentes deixa de significar
+  // "tem trabalho a fazer".
+  //
+  // Por agregado inexistente, e nao por marca: o evento guarda o id, nao o nome.
+  await db.execute(sql`
+    DELETE FROM event_outbox o
+     WHERE o.aggregate_id IS NOT NULL
+       AND NOT EXISTS (SELECT 1 FROM leads l WHERE l.id = o.aggregate_id)
+       AND NOT EXISTS (SELECT 1 FROM negocios n WHERE n.id = o.aggregate_id)
+       AND NOT EXISTS (SELECT 1 FROM aquisicoes a WHERE a.id = o.aggregate_id)
+       AND NOT EXISTS (SELECT 1 FROM oportunidades op WHERE op.id = o.aggregate_id)
+       AND NOT EXISTS (SELECT 1 FROM empresas e WHERE e.id = o.aggregate_id)`);
+  await db.execute(sql`
+    DELETE FROM domain_events d
+     WHERE d.aggregate_id IS NOT NULL
+       AND NOT EXISTS (SELECT 1 FROM timeline_events t WHERE t.domain_event_id = d.id)
+       AND NOT EXISTS (SELECT 1 FROM leads l WHERE l.id = d.aggregate_id)
+       AND NOT EXISTS (SELECT 1 FROM negocios n WHERE n.id = d.aggregate_id)
+       AND NOT EXISTS (SELECT 1 FROM aquisicoes a WHERE a.id = d.aggregate_id)
+       AND NOT EXISTS (SELECT 1 FROM oportunidades op WHERE op.id = d.aggregate_id)
+       AND NOT EXISTS (SELECT 1 FROM empresas e WHERE e.id = d.aggregate_id)`);
 }
 
 main().catch((erro) => {
