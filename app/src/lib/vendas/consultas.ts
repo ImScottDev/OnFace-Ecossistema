@@ -20,9 +20,8 @@ import {
   type EstadoProspeccao, type EstagioPreVendas, type EtapaPipeline,
   type RelacionamentoEmpresa,
 } from "./dominio";
-import {
-  boardDeAquisicoes, type EstagioAquisicao,
-} from "@onface/acquisition";
+import { boardDeAquisicoes, type EstagioAquisicao } from "@onface/acquisition";
+import { boardDeOportunidades } from "@onface/sales";
 
 const LIMITE_PADRAO = 400;
 
@@ -281,90 +280,88 @@ export async function boardPipeline(organizacaoId: string, filtros: FiltrosPipel
   const etapas: EtapaPipeline[] = aba === "abertas" ? [...ETAPAS_PIPELINE] : aba === "ganhas" ? ["ganho"] : ["perdido"];
   const busca = filtros.busca?.trim() ? `%${filtros.busca.trim().toLowerCase()}%` : null;
 
-  const linhas = await db.execute<{
-    id: string; empresa: string | null; empresa_id: string | null; titulo: string;
-    familia: string | null; etapa: string; valor: string | null;
-    responsavel: string | null; proxima_acao: string | null; proxima_acao_em: string | null;
-    etapa_desde: string | null; no_show_em: string | null; trial_iniciado_em: string | null;
-    trial_encerrado_em: string | null; motivo_estagnacao: string | null;
-    lead_id: string | null; bundle_id: string | null; propostas: number;
-    proposta_aberta: number; proposta_aceita: number; motivo_perda: string | null;
-  }>(sql`
-    SELECT n.id::text, COALESCE(e.nome, l.empresa) AS empresa, n.empresa_id::text,
-           n.titulo, n.service_family AS familia, n.etapa,
-           n.valor_total::text AS valor, u.nome AS responsavel,
-           n.proxima_acao, n.proxima_acao_em::text, n.etapa_desde::text,
-           n.no_show_em::text, n.trial_iniciado_em::text, n.trial_encerrado_em::text,
-           n.motivo_estagnacao, n.lead_id::text, n.bundle_id::text,
-           (SELECT count(*)::int FROM propostas p WHERE p.negocio_id = n.id) AS propostas,
-           (SELECT count(*)::int FROM propostas p WHERE p.negocio_id = n.id
-             AND p.status IN ('enviada','visualizada','ajuste_solicitado')) AS proposta_aberta,
-           (SELECT count(*)::int FROM propostas p WHERE p.negocio_id = n.id AND p.status = 'aceita') AS proposta_aceita,
-           n.motivo_perda_chave AS motivo_perda
-      FROM negocios n
-      LEFT JOIN empresas e ON e.id = n.empresa_id
-      LEFT JOIN leads l ON l.id = n.lead_id
-      LEFT JOIN usuarios u ON u.id = n.responsavel_id
-     WHERE n.organizacao_id = ${organizacaoId}::uuid
-       AND n.etapa = ANY(${literalDeArray(etapas)}::text[])
-       AND (${filtros.responsavelId ?? null}::uuid IS NULL OR n.responsavel_id = ${filtros.responsavelId ?? null}::uuid)
-       AND (${filtros.familia ?? null}::text IS NULL OR n.service_family = ${filtros.familia ?? null})
-       AND (${filtros.motion ?? null}::text IS NULL OR n.commercial_motion = ${filtros.motion ?? null})
-       AND (${busca}::text IS NULL OR lower(n.titulo) LIKE ${busca} OR lower(COALESCE(e.nome, '')) LIKE ${busca})
-     ORDER BY n.etapa_desde DESC NULLS LAST
-     LIMIT ${LIMITE_PADRAO}
-  `);
+  // CUTOVER DE LEITURA (fase 17). A fonte passou a ser `oportunidades`.
+  //
+  // As duas tabelas contam a mesma história hoje — 527 abertas dos dois lados
+  // e R$ 1.100 de diferença, que é um único negócio sem identidade, já virado
+  // caso de reconciliação. Mas só uma delas é o modelo final, e enquanto a tela
+  // ler a legada, a legada não morre.
+  const board = await boardDeOportunidades(db as never, sql as never, organizacaoId, {
+    etapas: etapas as string[],
+    responsavelId: filtros.responsavelId ?? null,
+    familia: filtros.familia ?? null,
+    motion: filtros.motion ?? null,
+    busca: filtros.busca ?? null,
+    limite: LIMITE_PADRAO,
+  });
+
+  // Enriquecimento legado — TEMPORÁRIO, sai na fase 26. São os sinais de
+  // condução da venda que ainda não têm dono no canônico: próxima ação,
+  // no-show, trial, estagnação e contagem de propostas.
+  const negocioIds = board.cards.map((c) => c.negocioId).filter((id): id is string => Boolean(id));
+  const legado = new Map<string, {
+    proxima_acao: string | null; proxima_acao_em: string | null; etapa_desde: string | null;
+    no_show_em: string | null; trial_iniciado_em: string | null; trial_encerrado_em: string | null;
+    motivo_estagnacao: string | null; lead_id: string | null;
+    propostas: number; proposta_aberta: number; proposta_aceita: number;
+  }>();
+  if (negocioIds.length > 0) {
+    const linhas = await db.execute<{
+      id: string; proxima_acao: string | null; proxima_acao_em: string | null;
+      etapa_desde: string | null; no_show_em: string | null; trial_iniciado_em: string | null;
+      trial_encerrado_em: string | null; motivo_estagnacao: string | null; lead_id: string | null;
+      propostas: number; proposta_aberta: number; proposta_aceita: number;
+    }>(sql`
+      SELECT n.id::text, n.proxima_acao, n.proxima_acao_em::text, n.etapa_desde::text,
+             n.no_show_em::text, n.trial_iniciado_em::text, n.trial_encerrado_em::text,
+             n.motivo_estagnacao, n.lead_id::text,
+             (SELECT count(*)::int FROM propostas p WHERE p.negocio_id = n.id) AS propostas,
+             (SELECT count(*)::int FROM propostas p WHERE p.negocio_id = n.id
+               AND p.status IN ('enviada','visualizada','ajuste_solicitado')) AS proposta_aberta,
+             (SELECT count(*)::int FROM propostas p WHERE p.negocio_id = n.id AND p.status = 'aceita') AS proposta_aceita
+        FROM negocios n WHERE n.id = ANY(${literalDeArray(negocioIds)}::uuid[])`);
+    for (const l of linhas) legado.set(l.id, l);
+  }
 
   const agora = Date.now();
-  const cards: CardPipeline[] = linhas.map((l) => {
+  const cards: CardPipeline[] = board.cards.map((c) => {
+    const l = c.negocioId ? legado.get(c.negocioId) : undefined;
     const badges: string[] = [];
-    if (l.no_show_em) badges.push("No-show");
-    if (l.trial_iniciado_em && !l.trial_encerrado_em) badges.push("Trial ativo");
-    if (l.proposta_aceita > 0) badges.push("Proposta aceita");
-    else if (l.proposta_aberta > 0) badges.push("Proposta aberta");
-    if (l.motivo_estagnacao) badges.push(rotuloEstagnacao(l.motivo_estagnacao));
-    if (!l.proxima_acao && l.etapa !== "ganho" && l.etapa !== "perdido") badges.push("Sem próxima ação");
-    else if (l.proxima_acao_em && new Date(l.proxima_acao_em).getTime() < agora) badges.push("Atrasado");
+    if (l?.no_show_em) badges.push("No-show");
+    if (l?.trial_iniciado_em && !l.trial_encerrado_em) badges.push("Trial ativo");
+    if ((l?.proposta_aceita ?? 0) > 0) badges.push("Proposta aceita");
+    else if ((l?.proposta_aberta ?? 0) > 0) badges.push("Proposta aberta");
+    if (l?.motivo_estagnacao) badges.push(rotuloEstagnacao(l.motivo_estagnacao));
+    if (!l?.proxima_acao && !c.ganho && !c.perdido) badges.push("Sem próxima ação");
+    else if (l?.proxima_acao_em && new Date(l.proxima_acao_em).getTime() < agora) badges.push("Atrasado");
 
     return {
-      id: l.id,
-      empresa: l.empresa?.trim() || "Empresa não informada",
-      empresaId: l.empresa_id,
-      titulo: l.titulo,
-      familia: l.familia,
-      familiaRotulo: ROTULO_FAMILIA[(l.familia ?? "UNKNOWN") as keyof typeof ROTULO_FAMILIA] ?? l.familia ?? "Não classificada",
-      etapa: l.etapa as EtapaPipeline,
-      valor: l.valor === null ? null : Number(l.valor),
-      responsavel: l.responsavel,
-      responsavelIniciais: iniciais(l.responsavel),
-      proximaAcao: l.proxima_acao,
-      proximaAcaoEm: l.proxima_acao_em,
-      diasNaEtapa: l.etapa_desde
+      // O id continua sendo o do negócio: é por ele que a tela abre o detalhe e
+      // move a etapa. A escrita migra na fase 25, depois da leitura.
+      id: c.negocioId ?? c.oportunidadeId,
+      empresa: c.empresa?.trim() || "Empresa não informada",
+      empresaId: c.empresaId,
+      titulo: c.titulo,
+      familia: c.familia,
+      familiaRotulo: ROTULO_FAMILIA[(c.familia ?? "UNKNOWN") as keyof typeof ROTULO_FAMILIA] ?? c.familia ?? "Não classificada",
+      etapa: c.etapa as EtapaPipeline,
+      valor: c.valor,
+      responsavel: c.responsavel,
+      responsavelIniciais: iniciais(c.responsavel),
+      proximaAcao: l?.proxima_acao ?? null,
+      proximaAcaoEm: l?.proxima_acao_em ?? null,
+      diasNaEtapa: l?.etapa_desde
         ? Math.max(0, Math.floor((agora - new Date(l.etapa_desde).getTime()) / 86_400_000))
         : null,
       badges,
-      leadId: l.lead_id,
-      bundleId: l.bundle_id,
-      propostas: l.propostas,
-      motivoPerda: l.motivo_perda,
+      leadId: l?.lead_id ?? null,
+      bundleId: c.bundleId,
+      propostas: l?.propostas ?? 0,
+      motivoPerda: c.motivoPerda,
     };
   });
 
-  // Mesma regra do board de Pré-vendas: total e valor da coluna vêm do banco.
-  // Somar só os cards carregados subestimaria o pipeline inteiro.
-  const totaisPorEtapa = await db.execute<{ etapa: string; n: number; valor: string | null }>(sql`
-    SELECT n.etapa, count(*)::int AS n, COALESCE(SUM(n.valor_total), 0)::text AS valor
-      FROM negocios n
-      LEFT JOIN empresas e ON e.id = n.empresa_id
-     WHERE n.organizacao_id = ${organizacaoId}::uuid
-       AND n.etapa = ANY(${literalDeArray(etapas)}::text[])
-       AND (${filtros.responsavelId ?? null}::uuid IS NULL OR n.responsavel_id = ${filtros.responsavelId ?? null}::uuid)
-       AND (${filtros.familia ?? null}::text IS NULL OR n.service_family = ${filtros.familia ?? null})
-       AND (${filtros.motion ?? null}::text IS NULL OR n.commercial_motion = ${filtros.motion ?? null})
-       AND (${busca}::text IS NULL OR lower(n.titulo) LIKE ${busca} OR lower(COALESCE(e.nome, '')) LIKE ${busca})
-     GROUP BY 1
-  `);
-  const totalDaEtapa = new Map(totaisPorEtapa.map((t) => [t.etapa, { n: t.n, valor: Number(t.valor ?? 0) }]));
+  const totalDaEtapa = new Map(Object.entries(board.totaisPorEtapa));
 
   const colunas = etapas.map((chave) => {
     const daColuna = cards.filter((c) => c.etapa === chave);
@@ -381,12 +378,16 @@ export async function boardPipeline(organizacaoId: string, filtros: FiltrosPipel
     abertas: number; ganhas: number; perdidas: number; sem_proxima: number; valor_aberto: string | null;
   }>(sql`
     SELECT
-      count(*) FILTER (WHERE etapa IN ('entrada','diagnostico','proposta','negociacao'))::int AS abertas,
-      count(*) FILTER (WHERE etapa = 'ganho')::int AS ganhas,
-      count(*) FILTER (WHERE etapa = 'perdido')::int AS perdidas,
-      count(*) FILTER (WHERE etapa IN ('entrada','diagnostico','proposta','negociacao') AND proxima_acao IS NULL)::int AS sem_proxima,
-      COALESCE(SUM(valor_total) FILTER (WHERE etapa IN ('entrada','diagnostico','proposta','negociacao')), 0)::text AS valor_aberto
-      FROM negocios WHERE organizacao_id = ${organizacaoId}::uuid
+      count(*) FILTER (WHERE o.etapa IN ('entrada','diagnostico','proposta','negociacao'))::int AS abertas,
+      count(*) FILTER (WHERE o.etapa = 'ganho')::int AS ganhas,
+      count(*) FILTER (WHERE o.etapa = 'perdido')::int AS perdidas,
+      -- Próxima ação ainda mora no legado; o join sai na fase 26.
+      count(*) FILTER (WHERE o.etapa IN ('entrada','diagnostico','proposta','negociacao')
+                         AND n.proxima_acao IS NULL)::int AS sem_proxima,
+      COALESCE(SUM(o.valor) FILTER (WHERE o.etapa IN ('entrada','diagnostico','proposta','negociacao')), 0)::text AS valor_aberto
+      FROM oportunidades o
+      LEFT JOIN negocios n ON n.id = o.negocio_id_legado
+     WHERE o.organizacao_id = ${organizacaoId}::uuid
   `);
 
   const responsaveis = await db.execute<{ id: string; nome: string }>(sql`
@@ -394,7 +395,7 @@ export async function boardPipeline(organizacaoId: string, filtros: FiltrosPipel
      WHERE organizacao_id = ${organizacaoId}::uuid AND ativo = true ORDER BY nome
   `);
   const familias = await db.execute<{ familia: string }>(sql`
-    SELECT DISTINCT service_family AS familia FROM negocios
+    SELECT DISTINCT service_family AS familia FROM oportunidades
      WHERE organizacao_id = ${organizacaoId}::uuid AND service_family IS NOT NULL ORDER BY 1
   `);
 

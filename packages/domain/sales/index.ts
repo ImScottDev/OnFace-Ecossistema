@@ -11,3 +11,9 @@ export {
   type StatusOportunidade,
   type Resultado,
 } from "./commands/oportunidade";
+
+export {
+  boardDeOportunidades,
+  type CardOportunidade,
+  type FiltrosPipeline,
+} from "./queries/board-pipeline";

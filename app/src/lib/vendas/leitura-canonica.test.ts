@@ -73,3 +73,60 @@ test("o card leva identidade suficiente para abrir o registro", async (t) => {
   const semEmpresa = cards.filter((c) => !c.empresa);
   assert.deepEqual(semEmpresa, [], "o card é empresa-first: rótulo vazio quebra a leitura");
 });
+
+test("o pipeline canônico tem paridade com o legado, e a diferença é um caso registrado", async (t) => {
+  if (!DB_URL) return t.skip("DATABASE_URL não definida");
+  const { db } = await import("@/lib/db");
+  const { sql } = await import("drizzle-orm");
+  const { boardPipeline } = await import("./consultas.js");
+
+  const [org] = await db.execute<{ id: string }>(sql`SELECT id FROM organizacoes LIMIT 1`);
+
+  // Contagem pelo caminho LEGADO, direto na tabela que a tela lia antes.
+  const legado = await db.execute<{ etapa: string; n: number }>(sql`
+    SELECT etapa, count(*)::int AS n FROM negocios
+     WHERE organizacao_id = ${org.id}::uuid AND etapa IS NOT NULL GROUP BY etapa`);
+  const porEtapaLegado = new Map(legado.map((l) => [l.etapa, l.n]));
+
+  const abas = [
+    ["abertas", ["entrada", "diagnostico", "proposta", "negociacao"]],
+    ["ganhas", ["ganho"]],
+    ["perdidas", ["perdido"]],
+  ] as const;
+
+  const divergencias: string[] = [];
+  for (const [aba, etapas] of abas) {
+    const board = await boardPipeline(org.id, { aba });
+    for (const etapa of etapas) {
+      const canonico = board.colunas.find((c) => c.chave === etapa)?.total ?? 0;
+      const doLegado = porEtapaLegado.get(etapa) ?? 0;
+      if (canonico !== doLegado) divergencias.push(`${etapa}: canônico ${canonico}, legado ${doLegado}`);
+    }
+  }
+
+  // Toda divergência precisa estar explicada por um caso de reconciliação. Não
+  // é sobre os números serem iguais — é sobre nenhuma linha sumir sem registro.
+  const [casos] = await db.execute<{ n: number }>(sql`
+    SELECT count(*)::int AS n FROM reconciliacao_casos
+     WHERE tipo = 'OPORTUNIDADE_SEM_IDENTIDADE'`);
+  const [semOportunidade] = await db.execute<{ n: number }>(sql`
+    SELECT count(*)::int AS n FROM negocios n
+     WHERE n.organizacao_id = ${org.id}::uuid
+       AND NOT EXISTS (SELECT 1 FROM oportunidades o WHERE o.negocio_id_legado = n.id)`);
+
+  assert.equal(
+    semOportunidade.n, casos.n,
+    `${semOportunidade.n} negócios sem oportunidade e ${casos.n} casos registrados: ` +
+    "negócio que não virou oportunidade tem que virar caso, nunca sumir",
+  );
+
+  const totalDivergente = divergencias.length ? divergencias.join("; ") : "";
+  const diferencaTotal = divergencias.reduce((soma, d) => {
+    const [, c, l] = d.match(/canônico (\d+), legado (\d+)/) ?? [];
+    return soma + Math.abs(Number(l ?? 0) - Number(c ?? 0));
+  }, 0);
+  assert.ok(
+    diferencaTotal <= semOportunidade.n,
+    `divergência de ${diferencaTotal} linhas com apenas ${semOportunidade.n} caso(s) registrado(s): ${totalDivergente}`,
+  );
+});

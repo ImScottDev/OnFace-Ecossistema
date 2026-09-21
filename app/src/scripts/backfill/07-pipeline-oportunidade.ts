@@ -112,8 +112,15 @@ async function main() {
   const porMetodo = new Map<string, number>();
   const porFechamento = new Map<string, number>();
 
+  const semIdentidadeIds: string[] = [];
   for (const n of negocios) {
-    if (!n.pessoa_id && !n.empresa_id) { semIdentidade++; continue; }
+    if (!n.pessoa_id && !n.empresa_id) {
+      // Não vira oportunidade e NÃO some: sem pessoa nem empresa, criar uma
+      // oportunidade seria inventar de quem é a venda. Vira caso aberto no fim,
+      // porque contar num total e não registrar em lugar nenhum é o mesmo que
+      // esconder.
+      semIdentidade++; semIdentidadeIds.push(n.id); continue;
+    }
 
     porMetodo.set(n.metodo_familia, (porMetodo.get(n.metodo_familia) ?? 0) + 1);
     const fech = fechamentoDe(n.status);
@@ -168,11 +175,29 @@ async function main() {
     }
   }
 
+  // Negócio sem identidade vira caso aberto, um por linha. É a regra do SPEC
+  // §50: linha ambígua é reportada, nunca descartada em silêncio.
+  if (APLICAR && semIdentidadeIds.length > 0) {
+    for (const id of semIdentidadeIds) {
+      await db.execute(sql`
+        INSERT INTO reconciliacao_casos (organizacao_id, fase, tipo, entidade_alvo, origens, evidencia, sugestao)
+        SELECT n.organizacao_id, '07', 'OPORTUNIDADE_SEM_IDENTIDADE', ${`negocio:${id}`},
+               jsonb_build_object('tabela','negocios','id',n.id::text,'titulo',n.titulo,
+                                  'status',n.status,'valor',n.valor_total),
+               jsonb_build_object('fato','negócio sem lead, sem pessoa e sem empresa',
+                 'por_que_nao_foi_criado','sem identidade não há de quem é a venda; atribuir uma seria inventar o cliente'),
+               jsonb_build_object('acao','identificar o cliente na origem do negócio ou arquivar o registro')
+          FROM negocios n WHERE n.id = ${id}::uuid
+        ON CONFLICT DO NOTHING`);
+    }
+    casos += semIdentidadeIds.length;
+  }
+
   console.log("RELATÓRIO DE RECONCILIAÇÃO — fase 07, oportunidade\n");
   console.log(`  linhas de origem (negocios)   ${negocios.length}`);
   console.log(`  oportunidades criadas         ${criadas}`);
   console.log(`  já existiam                   ${jaExistiam}`);
-  console.log(`  sem identidade                ${semIdentidade}`);
+  console.log(`  sem identidade                ${semIdentidade}  (viraram caso aberto, não sumiram)`);
   console.log(`\n  família resolvida por:`);
   for (const [k, v] of [...porMetodo].sort((a, b) => b[1] - a[1])) console.log(`    ${k.padEnd(20)}${v}`);
   console.log(`\n  fechamento:`);
