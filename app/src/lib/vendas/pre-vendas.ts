@@ -203,6 +203,33 @@ export async function criarLead(entrada: EntradaDeLead, ator: Ator): Promise<Lea
     RETURNING id::text
   `);
 
+  // A aquisição canônica nasce AQUI, não em cada chamador.
+  //
+  // O board de pré-vendas lê `aquisicoes`. Sem esta chamada, lead criado pela
+  // tela de pré-vendas ou pela página da empresa não tinha aquisição e **não
+  // aparecia no board onde acabara de ser criado** — o pior formato de bug,
+  // porque quem cria não consegue nem reportar.
+  //
+  // Só a rota HTTP (`POST /leads`) e o webhook do site chamavam a porta. As
+  // duas server actions do CRM2 não chamavam. Pôr a chamada dentro de
+  // `criarLead` serve os quatro caminhos de uma vez, que é a regra que este
+  // refactor vem aplicando: guarda na função compartilhada, não em cada
+  // chamador.
+  //
+  // `garantirEntradaCanonica` reaproveita aquisição aberta da mesma pessoa em
+  // vez de criar uma segunda, então chamar de novo no webhook não duplica.
+  const { garantirEntradaCanonica } = await import("./ponte-canonica");
+  await garantirEntradaCanonica({
+    organizacaoId,
+    // `tipo_origem` do touchpoint distingue prospecção de entrada espontânea.
+    tipo: entrada.touchpoint?.tipoOrigem === "outbound" ? "OUTBOUND" : "INBOUND",
+    origem: entrada.origem ?? null,
+    pessoa: entrada.pessoa,
+    empresa: entrada.empresa,
+    responsavelId: entrada.responsavelId ?? null,
+    idempotencyKey: `lead:${lead.id}`,
+  } as never, lead.id);
+
   await registrarTouchpoint({
     organizacaoId,
     pessoaId: pessoa.pessoaId,

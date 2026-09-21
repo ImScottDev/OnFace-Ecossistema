@@ -1744,3 +1744,54 @@ Stripe. Em `--dry-run`: criaria 17 produtos e 213 preços, atualizaria 4, sem to
 vigente é decisão do Kauã, não conclusão derivável do código. Fica nomeado no estado com
 o comando pronto, e a consequência dita: enquanto não rodar, os critérios de aceite do
 Módulo 01 a partir daquele passo não são verificáveis.
+
+---
+
+## 2026-09-21 — Cutover crítico, parte 15: lead criado na tela não tinha aquisição
+
+Rodar `aceite-vendas.ts` de ponta a ponta (depois de fazê-lo pular o bloco do catálogo
+em vez de morrer nele) destravou o achado mais grave desta rodada.
+
+**`preVendas.criarLead` não criava a aquisição canônica.** Só a rota HTTP `POST /leads` e
+o webhook do site chamavam `garantirEntradaCanonica`. As duas server actions do CRM2 —
+criar lead na tela de pré-vendas e criar lead a partir da empresa — não chamavam.
+
+O board de pré-vendas lê `aquisicoes`. Ou seja: **lead criado pela tela não aparecia no
+board onde acabou de ser criado.** É o pior formato de bug, porque quem cria não
+consegue nem reportar: o registro existe, a tela está certa, e o dado não se encontram.
+
+A chamada entrou dentro de `criarLead`, que é a função por onde os quatro caminhos
+passam. Guarda na função compartilhada, não em cada chamador, que é a regra que este
+refactor vem aplicando.
+
+**Em cadeia, dois defeitos estruturais apareceram junto:**
+
+1. **A porta canônica não gravava `lead_legado_id` na aquisição**, só na proveniência. A
+   leitura canônica do board devolve esse campo como o id do card, e
+   `sincronizarAquisicaoDoLead` casa os dois modelos por ele. Aquisição criada em runtime
+   nascia órfã: o card não abriria e nada do lead voltaria a propagar para ela. O campo
+   entrou no contrato do domínio e no INSERT do repositório.
+
+2. **`criarOportunidadeDoLead` vinculava empresa ao lead com SQL direto**, sem passar por
+   `registrarEvento`, que é quem dispara a sincronização. O lead ganhava empresa e não
+   aparecia na conta dele na Empresa 360. Agora sincroniza no ponto, com `await`: a
+   sincronização geral é best-effort e disparada com `void`, o que serve para propagação
+   de fundo, mas aqui é parte do comando que o usuário acabou de executar.
+
+E `sincronizarAquisicaoDoLead` passou a copiar `empresa_id` (com COALESCE: o legado
+preenche, nunca apaga).
+
+**Por que nada disso apareceu medindo o banco:** os 3.989 leads e as 3.989 aquisições
+vieram do backfill, já pareados. Divergência zero. Só criando um lead do zero, como o
+aceite faz, o buraco aparece.
+
+**Resíduo encontrado e limpo:** duas aquisições e 27 linhas de proveniência de execuções
+anteriores que morreram no meio. A limpeza do aceite ganhou rede de segurança: aquisição
+apontando para lead inexistente é sempre resíduo, independente da marca da execução.
+
+`aceite-vendas` saiu de **interrompido com 12 verificações** para **72 passaram, 0
+falharam, 3 não verificados** — os três dependem do catálogo oficial, que é decisão de
+operação, e o placar diz isso em vez de contá-los como aprovados.
+
+**Validação:** tsc limpo, **262 testes, 0 falhas**, build exit 0, bundle do worker exit 0,
+21 de 21 smokes verdes, `leads` = `aquisicoes` = 3.989, zero resíduo.

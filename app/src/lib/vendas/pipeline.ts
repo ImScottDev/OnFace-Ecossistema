@@ -324,6 +324,22 @@ export async function criarOportunidadeDoLead(params: {
     }, params.ator);
     empresaId = resolvida.empresaId;
     await db.execute(sql`UPDATE leads SET empresa_id = ${empresaId}::uuid WHERE id = ${lead.id}::uuid`);
+
+    // A aquisição canônica precisa saber da empresa AGORA, e não por acaso.
+    //
+    // A Empresa 360 lista os leads da conta por `aquisicoes.empresa_id`. Este
+    // UPDATE é SQL direto e não passa por `registrarEvento`, que é quem dispara
+    // a sincronização — então o lead ganhava empresa e não aparecia na conta
+    // dele. Achado pelo aceite de vendas, que monta lead e empresa do zero;
+    // com o dado de produção já sincronizado pelo backfill, medir o banco não
+    // acusava nada.
+    //
+    // `await` de propósito: a sincronização geral é best-effort e disparada com
+    // `void`, o que serve para propagação de fundo. Aqui ela é parte do comando
+    // que o usuário acabou de executar, e quem recarregar a tela em seguida tem
+    // que ver o resultado.
+    const { sincronizarAquisicaoDoLead } = await import("./sincronizar-aquisicao");
+    await sincronizarAquisicaoDoLead(lead.id);
   }
 
   return criarOportunidade({

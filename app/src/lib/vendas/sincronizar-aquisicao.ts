@@ -40,6 +40,16 @@ export async function sincronizarAquisicaoDoLead(leadId: string): Promise<void> 
              END,
              retomar_em = CASE WHEN l.estagio_pre_vendas = 'nutricao' THEN l.nutricao_retomar_em END,
              responsavel_id = l.responsavel_id,
+             -- A empresa do lead faltava aqui, e a Empresa 360 lista os leads
+             -- da conta por aquisicoes.empresa_id. Vincular uma empresa a um
+             -- lead depois da criacao nao chegava no canonico, entao o lead nao
+             -- aparecia na conta dele. Achado pelo aceite de vendas, que monta
+             -- lead e empresa do zero: com o dado de producao ja sincronizado
+             -- pelo backfill, medir o banco nao acusava nada.
+             --
+             -- COALESCE: o legado preenche, nunca apaga. Desvincular empresa no
+             -- lead e raro e nao deveria orfanar a aquisicao em silencio.
+             empresa_id = COALESCE(l.empresa_id, a.empresa_id),
              last_touch_at = GREATEST(
                COALESCE(l.last_contact_at, a.last_touch_at, l.created_at),
                COALESCE(a.first_touch_at, l.created_at)

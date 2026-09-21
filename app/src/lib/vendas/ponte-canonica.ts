@@ -44,7 +44,11 @@ export async function garantirEntradaCanonica(
   try {
     const resultado = await db.transaction(async (tx) => {
       const repo = criarRepositorioAquisicao(tx as never, sql as never);
-      const r = await registrarEntrada(repo, entrada);
+      // O vínculo com o lead entra na PRÓPRIA aquisição, e não só na
+      // proveniência: a leitura canônica do board devolve `lead_legado_id` como
+      // o id do card, e `sincronizarAquisicaoDoLead` casa os dois modelos por
+      // ele. Sem isso, aquisição criada em runtime nasce órfã.
+      const r = await registrarEntrada(repo, { ...entrada, leadLegadoId: leadLegadoId ?? entrada.leadLegadoId ?? null });
       if (!r.ok) return { ok: false, erro: r.erro };
 
       if (r.criada) {

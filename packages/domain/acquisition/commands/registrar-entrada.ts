@@ -44,6 +44,15 @@ export interface EntradaAquisicao {
    *  aquisição: é o mesmo lead chegando de novo. */
   idempotencyKey?: string | null;
   ocorridoEm?: Date | null;
+  /**
+   * Lead legado que originou esta entrada, quando existe.
+   *
+   * Não é decoração de migração: a leitura canônica do board devolve este id
+   * como o identificador do card, e `sincronizarAquisicaoDoLead` casa os dois
+   * modelos por ele. Aquisição criada em runtime sem este vínculo nasce órfã —
+   * o card não abre e nada do lead volta a propagar para ela.
+   */
+  leadLegadoId?: string | null;
 }
 
 export interface RepositorioAquisicao extends RepositorioIdentidade {

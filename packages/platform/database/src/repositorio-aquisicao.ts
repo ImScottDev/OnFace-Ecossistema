@@ -89,9 +89,10 @@ export function criarRepositorioAquisicao(db: Executor, sql: SqlTag): Repositori
     async criarAquisicao(e) {
       const r = await um<{ id: string }>(sql`
         INSERT INTO aquisicoes (organizacao_id, empresa_id, pessoa_id, tipo, origem, source_provider,
-                                responsavel_id, first_touch_at, last_touch_at)
+                                responsavel_id, lead_legado_id, first_touch_at, last_touch_at)
         VALUES (${e.organizacaoId}::uuid, ${e.empresaId}::uuid, ${e.pessoaId}::uuid,
                 ${e.tipo}, ${e.origem ?? null}, ${e.provider ?? null}, ${e.responsavelId ?? null}::uuid,
+                ${e.leadLegadoId ?? null}::uuid,
                 coalesce(${e.ocorridoEm ?? null}::timestamptz, now()),
                 coalesce(${e.ocorridoEm ?? null}::timestamptz, now()))
         RETURNING id`);

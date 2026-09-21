@@ -33,6 +33,20 @@ const MARCA = "[ACEITE-VENDAS]";
 let passou = 0;
 let falhou = 0;
 
+let pulados = 0;
+
+/**
+ * Passo que não pôde ser verificado, com o motivo.
+ *
+ * Existe para o aceite NÃO morrer no primeiro pré-requisito de dado ausente e
+ * deixar tudo o que vem depois sem resposta. Pulado conta separado de passou:
+ * misturar os dois transformaria "não deu para conferir" em "está certo".
+ */
+function pular(titulo: string, porque: string) {
+  pulados += 1;
+  console.log(`  ⊘ ${titulo} — NÃO VERIFICADO: ${porque}`);
+}
+
 function ok(titulo: string, condicao: boolean, detalhe?: string) {
   if (condicao) {
     passou += 1;
@@ -361,6 +375,20 @@ async function main() {
 
     const catalogoAi = await propostasMotor.catalogoDaFamilia(org.id, "CALLFACE_AI");
     const catalogoPabx = await propostasMotor.catalogoDaFamilia(org.id, "PABX");
+
+    // Sem catálogo oficial não há o que montar, e o aceite inteiro morria aqui,
+    // levando junto Prospecção e Diretório, que não dependem dele.
+    //
+    // `catalogo_precos` tem 0 linhas neste banco e nenhum `servicos_catalogo`
+    // tem `origem_catalogo = 'oficial_stripe'`. O importador existe e lê um
+    // snapshot commitado; rodá-lo é decisão de operação porque grava preço.
+    const SEM_CATALOGO = catalogoAi.length === 0 || catalogoPabx.length === 0;
+    if (SEM_CATALOGO) {
+      pular("Catálogo por família e todo o bloco de Propostas",
+        "catalogo_precos está vazio; rode src/scripts/importar-catalogo-oficial.ts");
+    }
+
+    if (!SEM_CATALOGO) {
     ok("Catálogo de Callface AI só traz itens de Callface AI",
       catalogoAi.length > 0 && catalogoAi.every((i) => i.familia === "CALLFACE_AI"));
     ok("Catálogo de PABX é diferente do de Callface AI",
@@ -489,6 +517,7 @@ async function main() {
       Boolean(bloqueioNovoCheckoutDeAssinatura("EXPANSION", true)));
     ok("Expansão avulsa pode cobrar sem criar assinatura",
       bloqueioNovoCheckoutDeAssinatura("EXPANSION", false) === null);
+    }
 
     /* ── Prospecção (Bloco 04) ────────────────────────────────────────── */
     console.log("\n── Prospecção: duas saídas distintas");
@@ -572,9 +601,17 @@ async function main() {
       visao?.relacionamento === "em_oportunidade", visao?.relacionamento);
     ok("Empresa mostra seus leads e oportunidades",
       (visao?.leads.length ?? 0) > 0 && (visao?.oportunidades.length ?? 0) > 0);
-    ok("Empresa mostra as propostas da oportunidade", (visao?.propostas.length ?? 0) >= 2);
-    ok("Dados jurídicos aparecem completos depois do preenchimento",
-      visao?.dadosJuridicosCompletos === true);
+    // Estes dois dependem das propostas criadas no bloco acima. Sem catálogo,
+    // não há proposta, e reportá-los como FALHA culparia a Empresa 360 por um
+    // pré-requisito ausente.
+    if (SEM_CATALOGO) {
+      pular("Empresa mostra as propostas da oportunidade", "depende do bloco de Propostas");
+      pular("Dados jurídicos aparecem completos depois do preenchimento", "idem");
+    } else {
+      ok("Empresa mostra as propostas da oportunidade", (visao?.propostas.length ?? 0) >= 2);
+      ok("Dados jurídicos aparecem completos depois do preenchimento",
+        visao?.dadosJuridicosCompletos === true);
+    }
 
     // Bloco 05 §3: Pessoa pode existir sem Empresa.
     const { resolverPessoa } = await import("@/lib/vendas/identidade");
@@ -611,7 +648,15 @@ async function main() {
     await limpar(sufixo);
   }
 
-  console.log(`\n${falhou === 0 ? "✔" : "✘"} ${passou} passaram, ${falhou} falharam`);
+  console.log(
+    `\n${falhou === 0 ? "✔" : "✘"} ${passou} passaram, ${falhou} falharam` +
+    (pulados > 0 ? `, ${pulados} NÃO VERIFICADOS` : ""),
+  );
+  if (pulados > 0) {
+    // Pulado não é aprovado. Dizer isso aqui evita que o placar vire "tudo
+    // certo" num relatório colado sem contexto.
+    console.log("  Pulado não é o mesmo que passou: veja o motivo de cada um acima.");
+  }
   process.exit(falhou === 0 ? 0 : 1);
 }
 
@@ -683,6 +728,28 @@ async function limpar(sufixo: string): Promise<void> {
   await db.execute(sql`DELETE FROM oportunidade_bundle WHERE empresa_id IN ${empresas}`);
 
   // Identidade.
+  //
+  // `aquisicoes` entrou aqui quando `criarLead` passou a criar a aquisição
+  // canônica (21/09). Antes disso o aceite não gerava nenhuma; agora gera uma
+  // por lead, e sem este DELETE a limpeza quebra na FK de `pessoas` e o aceite
+  // deixa resíduo num banco carregado com produção.
+  await db.execute(sql`DELETE FROM aquisicoes WHERE empresa_id IN ${empresas} OR pessoa_id IN ${pessoas} OR lead_legado_id IN ${leads}`);
+  // Rede de segurança: execução anterior que morreu no meio deixa aquisição
+  // cujo lead já não existe, e o filtro por marca não a alcança porque o sufixo
+  // era outro. Aquisição apontando para lead inexistente é sempre resíduo.
+  await db.execute(sql`
+    DELETE FROM pontos_contato WHERE aquisicao_id IN (
+      SELECT a.id FROM aquisicoes a
+       WHERE a.lead_legado_id IS NOT NULL
+         AND NOT EXISTS (SELECT 1 FROM leads l WHERE l.id = a.lead_legado_id))`);
+  await db.execute(sql`
+    DELETE FROM aquisicoes a
+     WHERE a.lead_legado_id IS NOT NULL
+       AND NOT EXISTS (SELECT 1 FROM leads l WHERE l.id = a.lead_legado_id)`);
+  await db.execute(sql`
+    DELETE FROM backfill_provenance bp
+     WHERE bp.metodo = 'PONTE_CUTOVER'
+       AND NOT EXISTS (SELECT 1 FROM aquisicoes a WHERE a.id = bp.id_canonico)`);
   await db.execute(sql`DELETE FROM pontos_contato WHERE empresa_id IN ${empresas} OR pessoa_id IN ${pessoas} OR lead_id_legado IN ${leads}`);
   await db.execute(sql`DELETE FROM pessoa_empresa_vinculos WHERE empresa_id IN ${empresas} OR pessoa_id IN ${pessoas}`);
   await db.execute(sql`DELETE FROM pessoas WHERE empresa_id IN ${empresas} OR nome LIKE ${marcaLarga}`);
