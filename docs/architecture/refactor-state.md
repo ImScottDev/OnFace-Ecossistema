@@ -25,7 +25,7 @@ Fases 01 a 16 concluídas.
 
 ## Último commit
 
-`40018f6` — fix(05): identidade canônica estava sem o whatsapp e sem o sobrenome
+`c90b9f5` — fix(16): o worker tem conexão própria e eu quase abri uma segunda
 
 Branch de trabalho: `refactor/arquitetura-canonica`, criada a partir de `98940fe`.
 
@@ -483,7 +483,7 @@ canônico hoje faria o lead sumir da tela de pré-vendas no mesmo instante.
 
 ## Testes executados
 
-Estado atual: `tsc --noEmit` limpo, **build de produção passando**, **260 testes, 0
+Estado atual: `tsc --noEmit` limpo, **build de produção passando**, **261 testes, 0
 falhas**, e **23 de 23 smokes** verdes contra o banco real (conferidos por código de
 saída, não por texto: procurar "FALHA" na saída dava falso positivo em `falhados=0`):
 
@@ -582,6 +582,26 @@ DATABASE_URL="postgres://...prod..." pnpm --filter app check:pre-deploy
 Ele conta as linhas que impediriam cada `ALTER TABLE`, mostra a consulta para encontrar
 cada uma, e lista quais migrations aquele banco já tem. Sai com código 1 quando não está
 pronto. No clone local: **nenhum impedimento, 8 de 8 marcos aplicados**.
+
+### Achado operacional: o worker mantém dois pools de conexão
+
+Medido ao revisar uma mudança minha. `sdr-escalation` declara no topo que recebe `db`
+por parâmetro porque o worker cria a própria instância, e eu tinha introduzido um import
+que furava isso. Corrigido naquele módulo.
+
+Ao varrer o resto: **10 dos 31 módulos que o worker importa também importam
+`@/lib/db`**, então o padrão é anterior a este refactor e vale hoje em produção.
+
+| Processo | Pool próprio | Pool da aplicação | Total |
+|---|---|---|---|
+| worker | 5 | 15 | **20** |
+| web | — | 15 | 15 |
+| api | — | 15 | 15 |
+
+`max_connections` do Postgres é 100. Com um container de cada, são 50. Não é bloqueio, e
+não mexi: consolidar os 10 módulos é refatoração própria, e trocar o pool do worker pela
+instância da aplicação muda o comportamento de conexão de um processo que roda sozinho a
+noite inteira. Fica medido e nomeado para decisão.
 
 ## Bloqueios reais
 
