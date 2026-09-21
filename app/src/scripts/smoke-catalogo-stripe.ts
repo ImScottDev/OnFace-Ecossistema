@@ -60,7 +60,8 @@ async function main() {
   for (const p of r.pendencias) console.log(`    ${p.produto}: ${p.oQueFalta}`);
   console.log();
 
-  ok(r.produtosCriados + r.produtosAtualizados === 15, "os 15 produtos do catálogo entram");
+  ok(r.produtosCriados + r.produtosAtualizados === fixture.produtos.length,
+     `os ${fixture.produtos.length} produtos do fixture entram`);
   ok(r.precosCriados + r.precosAtualizados === 55, "os 55 preços entram");
   ok(r.pendencias.length === 0, `nenhuma pendência de metadata restante (${r.pendencias.length})`);
 
@@ -105,7 +106,11 @@ async function main() {
   const [totalDepois] = await db.execute<{ n: number }>(sql`
     SELECT count(*)::int AS n FROM servicos_catalogo WHERE organizacao_id = ${org.id}::uuid`);
 
-  ok(oficiais.n === 15, `os 15 produtos do Stripe estão no catálogo oficial (${oficiais.n})`);
+  // >= e não ==: num banco que já sincronizou com o Stripe de verdade o
+  // catálogo tem os produtos do fixture MAIS os que existem lá hoje. Fixar o
+  // número fazia o smoke falhar porque o Stripe cresceu, não porque quebrou.
+  ok(oficiais.n >= fixture.produtos.length,
+     `os ${fixture.produtos.length} produtos do fixture estão no catálogo oficial (${oficiais.n} no total)`);
   ok(totalDepois.n === total.n,
      `sincronizar de novo não cria linha: ${total.n} antes, ${totalDepois.n} depois`);
   ok(total.n >= 220,

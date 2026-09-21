@@ -27,7 +27,7 @@ Fases 01 a 26 concluídas.
 
 ## Último commit
 
-`239a787` — Fase 26.3: cliente é derivado, não uma marca que envelhece
+`3da2c23` — Integração Callface AI: fundação read-only, identidade e primeiro sync real
 
 Branch de trabalho: `refactor/arquitetura-canonica`, criada a partir de `98940fe`.
 
@@ -73,18 +73,23 @@ Pacote vazio não afeta o build: `tsc` limpo e 111 testes passando com o workspa
 ## Prontidão para virada (SPEC §24)
 
 `pnpm tsx src/scripts/validacao-paridade.ts` percorre os 14 cenários e responde, um
-por um, se dá para virar. **12 passam, 0 falham, 2 não verificáveis.**
+por um, se dá para virar. **13 passam, 0 falham, 1 não verificável** — medido em
+21/09/2026 tanto no banco de dev quanto no banco reconstruído do dump fresco de
+produção, com o mesmo resultado.
 
-Os dois não verificáveis estão nomeados, e "não verificável" **não é OK**:
+O único não verificável está nomeado, e "não verificável" **não é OK**:
 
 | # | Cenário | O que falta |
 |---|---|---|
-| 8 | Carteira de CS tem dono | a capacidade existe na rota; nenhum dos 275 clientes tem responsável. Atribuir é decisão de operação |
 | 12 | NEXO consulta e age | os dois agentes existem em `draft` com teto de permissão, e o gate está provado em smoke. Falta **credencial de provedor de modelo** para rodar de verdade: zero ativas |
 
-O cenário 13 saiu de "não verificável" quando as credenciais chegaram: a cadeia
-fato → outbox → worker → Meta está provada ponta a ponta, com dois fatos idênticos
-dos quais só o que veio da Meta é devolvido.
+Dois cenários saíram de "não verificável" desde a primeira medição. O 13 saiu
+quando as credenciais da Meta chegaram: a cadeia fato → outbox → worker → Meta
+está provada ponta a ponta, com dois fatos idênticos dos quais só o que veio da
+Meta é devolvido. O 8 (carteira de CS) saiu quando a atribuição passou a ser
+exercitada em `smoke-cs-responsavel` — a capacidade está provada; distribuir os
+275 clientes continua sendo decisão de operação, e isso é item aberto, não
+lacuna de código.
 
 ## Migrations aplicadas neste refactor
 
@@ -825,6 +830,50 @@ Ao varrer o resto: **10 dos 31 módulos que o worker importa também importam
 não mexi: consolidar os 10 módulos é refatoração própria, e trocar o pool do worker pela
 instância da aplicação muda o comportamento de conexão de um processo que roda sozinho a
 noite inteira. Fica medido e nomeado para decisão.
+
+## Ensaio da virada com dump fresco — 21/09/2026
+
+Um dump de produção das 12:31 foi restaurado num banco rascunho e a receita
+inteira aplicada, para responder uma pergunta só: **uma produção virgem chega ao
+mesmo estado do banco de dev?** Chega — depois de duas correções que o ensaio
+expôs e que o banco de dev nunca teria acusado.
+
+**1. Quatro migrations materializavam contra tabela vazia.** 0069, 0081, 0084 e
+0085 carregam um UPDATE junto da mudança de schema. Em dev funcionou porque o
+canônico já estava populado; numa produção virgem elas rodam antes dos backfills
+e tocam zero linhas.
+
+| Medido antes da correção | |
+|---|---|
+| aquisições sem vínculo com o lead | 3.991 de 3.991 |
+| aquisições sem etapa canônica | 3.991 |
+| estagnações canônicas | 0, contra 229 no legado |
+| trials canônicos | 0, contra 17 no legado |
+
+A correção não apaga o fallback de leitura: entra como
+`backfill/16-materializacao-canonica.ts`, que roda **depois** dos backfills, é
+idempotente (só toca linha cujo destino ainda está NULL) e independe da ordem em
+que o banco foi construído. Segunda execução encontra zero.
+
+**2. O backfill de comunicações descartava 790 mensagens de WhatsApp.** Um
+`JOIN contatos` interno: as 790 têm `contato_id` nulo e **todas as 790 têm
+`lead_id`**, então a organização era resolvível. O banco de dev não acusava
+porque a escrita de runtime as inseria por outro caminho — duas regras para o
+mesmo fato, que é o defeito que este refactor existe para acabar. Virou LEFT
+JOIN com a organização vindo do contato ou do lead. Depois: 25.696 de 25.696.
+
+Os 1.807 e-mails que ficam de fora **não** são o mesmo caso: são
+`message_id` repetidos (1.185 duplicados em 2.941 linhas), e `communications`
+tem UNIQUE por canal e id externo justamente para isso.
+
+### Resultado do ensaio
+
+`tsc` limpo · **25 de 25 smokes** · aceite **97/0** · paridade **13/14** —
+os mesmos números do banco de dev. As contagens ficam levemente acima (leads
+3.991 contra 3.989) porque o dump é de hoje: é produção andando.
+
+O procedimento de virada unificado está em `entrega-final.md`, seção 8.
+`scripts/ensaio-carga.sh` faz a carga e `scripts/rodar-backfills.sh` os backfills.
 
 ## Bloqueios reais
 

@@ -38,20 +38,27 @@ async function main() {
     const cWa = await db.execute<{ n: string }>(sql`
       WITH ins AS (
         INSERT INTO conversas (organizacao_id, pessoa_id, empresa_id, canal, external_thread_id, last_message_at, metadata)
-        SELECT DISTINCT ON (ct.organizacao_id, w.telefone)
-               ct.organizacao_id, bp.id_canonico::uuid, l.empresa_id, 'whatsapp', w.telefone,
+        SELECT DISTINCT ON (coalesce(ct.organizacao_id, l.organizacao_id), w.telefone)
+               coalesce(ct.organizacao_id, l.organizacao_id), bp.id_canonico::uuid, l.empresa_id, 'whatsapp', w.telefone,
                max(w.created_at) OVER (PARTITION BY ct.organizacao_id, w.telefone),
                jsonb_build_object('backfill', jsonb_build_object('fase','13','origem','whatsapp_mensagens'))
         FROM whatsapp_mensagens w
         -- 24.380 de 25.363 mensagens NAO tem lead_id, so contato_id. Um JOIN
         -- interno em leads descartaria 96% do historico de WhatsApp. A
         -- identidade e a organizacao vem do contato quando o lead falta.
-        JOIN contatos ct ON ct.id = w.contato_id
+        --
+        -- E o contrario tambem: LEFT JOIN em contatos, nao INNER. Medido no
+        -- ensaio com dump fresco de 21/09, 790 mensagens tem contato_id NULO e
+        -- TODAS as 790 tem lead_id. Um JOIN interno em contatos as descartava,
+        -- e o banco de dev nao acusava porque a escrita de runtime as inseria
+        -- por outro caminho: duas regras para o mesmo fato.
+        LEFT JOIN contatos ct ON ct.id = w.contato_id
         LEFT JOIN leads l ON l.id = coalesce(w.lead_id, ct.lead_id)
         LEFT JOIN backfill_provenance bp ON bp.entidade_canonica='pessoa' AND bp.tabela_origem='leads'
                                         AND bp.id_origem = coalesce(w.lead_id, ct.lead_id)::text
         WHERE w.telefone IS NOT NULL AND trim(w.telefone) <> ''
-        ORDER BY ct.organizacao_id, w.telefone, w.created_at DESC
+          AND coalesce(ct.organizacao_id, l.organizacao_id) IS NOT NULL
+        ORDER BY coalesce(ct.organizacao_id, l.organizacao_id), w.telefone, w.created_at DESC
         ON CONFLICT DO NOTHING
         RETURNING 1) SELECT count(*)::text AS n FROM ins`);
     // E-mail: a thread é a conversa.
@@ -77,17 +84,21 @@ async function main() {
         INSERT INTO communications (organizacao_id, conversa_id, pessoa_id, empresa_id, canal, tipo, direcao,
                                     conteudo, external_id, provider, status, ocorrido_em,
                                     origem_legado_id, origem_tabela, metadata)
-        SELECT ct.organizacao_id, cv.id, bp.id_canonico::uuid, l.empresa_id, 'whatsapp', coalesce(w.tipo,'texto'),
+        SELECT coalesce(ct.organizacao_id, l.organizacao_id), cv.id, bp.id_canonico::uuid, l.empresa_id, 'whatsapp', coalesce(w.tipo,'texto'),
                coalesce(w.direcao,'desconhecida'), w.conteudo, w.uazapi_message_id, 'wuzapi', w.status, w.created_at,
                w.id, 'whatsapp_mensagens',
                jsonb_build_object('media_url', w.media_url, 'media_type', w.media_type, 'contato_id', ct.id)
         FROM whatsapp_mensagens w
-        JOIN contatos ct ON ct.id = w.contato_id
+        -- LEFT, pelo mesmo motivo do bloco de conversas acima.
+        LEFT JOIN contatos ct ON ct.id = w.contato_id
         LEFT JOIN leads l ON l.id = coalesce(w.lead_id, ct.lead_id)
         LEFT JOIN backfill_provenance bp ON bp.entidade_canonica='pessoa' AND bp.tabela_origem='leads'
                                         AND bp.id_origem = coalesce(w.lead_id, ct.lead_id)::text
-        LEFT JOIN conversas cv ON cv.canal='whatsapp' AND cv.organizacao_id = ct.organizacao_id AND cv.external_thread_id = w.telefone
-        WHERE NOT EXISTS (SELECT 1 FROM communications c WHERE c.origem_tabela='whatsapp_mensagens' AND c.origem_legado_id = w.id)
+        LEFT JOIN conversas cv ON cv.canal='whatsapp'
+                              AND cv.organizacao_id = coalesce(ct.organizacao_id, l.organizacao_id)
+                              AND cv.external_thread_id = w.telefone
+        WHERE coalesce(ct.organizacao_id, l.organizacao_id) IS NOT NULL
+          AND NOT EXISTS (SELECT 1 FROM communications c WHERE c.origem_tabela='whatsapp_mensagens' AND c.origem_legado_id = w.id)
         RETURNING 1) SELECT count(*)::text AS n FROM ins`);
     const mLig = await db.execute<{ n: string }>(sql`
       WITH ins AS (

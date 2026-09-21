@@ -1,5 +1,15 @@
 # Plano de carga da virada ONFACE
 
+> **ATENÇÃO — este documento é de ANTES do refactor canônico.**
+>
+> A receita de carga (fases 1 e 2, corte em 0012) continua válida e é a que o
+> `scripts/ensaio-carga.sh` executa. O que falta aqui são os **backfills** e o
+> passo 16 de materialização, que vieram depois.
+>
+> **O procedimento de virada completo e unificado está em
+> `docs/architecture/entrega-final.md`, seção 8.** Use aquele. Este fica como
+> registro de como a carga foi levantada e do que se perde, medido linha a linha.
+
 > **Estado:** pronto para revisão (QA). Tarefa F0.1 do `PLANO-VIRADA.md`.
 > **Data do levantamento:** 18/09/2026. Dump de produção usado no ensaio:
 > `pg_dump` de `callface-crm-postgres` em 18/09, 17 MB.

@@ -72,16 +72,18 @@ apaga coluna ou tabela: a contração é a fase 27 e não foi executada.
 
 ## 4. Reconciliação
 
-**1.531 casos abertos.** Cada um é uma linha que o dado não permitiu decidir, e
-nenhum foi resolvido por palpite.
+**1.529 casos abertos**, recontados em 21/09/2026 no banco reconstruído do dump
+fresco — que é a contagem que produção terá. Cada um é uma linha que o dado não
+permitiu decidir, e nenhum foi resolvido por palpite.
 
 | Tipo | Quantidade | O que é |
 |---|---|---|
-| `FAMILIA_NAO_RESOLVIDA` | 1.084 | oportunidade sem família de produto dedutível |
+| `FAMILIA_NAO_RESOLVIDA` | 1.085 | oportunidade sem família de produto dedutível |
 | `CONTRATO_SEM_PROCESSO_COMERCIAL` | 406 | contrato sem negócio nem oportunidade; **271 ativos** |
 | `FATURA_PAGA_SEM_EMPRESA` | 28 | fatura paga sem empresa alcançável |
 | `IDENTIDADE_MULTIPLA_EMPRESA` | 8 | pessoa ligada a mais de uma empresa, nenhuma principal |
-| outros | 5 | agregados: fatura paga sem data, comunicação sem pessoa, e-mail duplicado, serviço ativo sem jornada, fatura sem empresa |
+| `FATURA_PAGA_SEM_DATA` | 1 | pagamento sem data: sem fato datado, não entra em competência |
+| `OPORTUNIDADE_SEM_IDENTIDADE` | 1 | negócio sem pessoa nem empresa alcançável |
 
 Abertos nas fases 25 e 26, nomeados no `refactor-state.md`: **455 propostas
 ligadas só a um lead (81 aceitas)**, **111 leads marcados `cliente` sem contrato
@@ -158,34 +160,87 @@ Cada uma foi verificada **falhando de propósito** antes de entrar.
 
 **Nada disto foi executado. A virada é decisão do Kauã.**
 
-1. **Backup.** `pg_dump` de produção, verificado com `pg_restore --list`. Existe
-   `pre-refactor-20260920.dump` (17 MB) do estado anterior ao refactor.
+> Esta seção e o `docs/virada/PLANO-DE-CARGA.md` diziam coisas diferentes, e a
+> diferença não era estilo. Aqui dizia "aplicar as migrations 0056 a 0085 em
+> produção". Produção **não tem** `oportunidades`, `aquisicoes`,
+> `proposta_grupo_comercial`, `roles`, `api_tokens` nem `_migracoes_aplicadas`:
+> ela é um banco anterior ao refactor, e a cadeia não começa em 0056.
+>
+> A receita abaixo é a única, e foi **executada ponta a ponta em 21/09/2026**
+> contra um dump fresco de produção, chegando ao mesmo estado do banco de dev.
+> `./scripts/ensaio-carga.sh` faz os passos 3 a 6 e `./scripts/rodar-backfills.sh`
+> faz o 7.
+
+1. **Backup.** `pg_dump` de produção, verificado com `pg_restore --list`.
 2. **Conferir que produção aceita as migrations, ANTES de migrar:**
 
    ```bash
    DATABASE_URL="postgres://...prod..." pnpm --filter app check:pre-deploy
    ```
 
-   Somente leitura, roda com a aplicação no ar. A migration 0056 aperta
-   `organizacao_id` para NOT NULL em quatro tabelas financeiras e cria três
-   chaves estrangeiras: uma linha nula ou uma referência órfã derruba o deploy
-   no meio. O clone local é de 20/09 e não é prova sobre produção.
+   Somente leitura, roda com a aplicação no ar. A 0056 aperta `organizacao_id`
+   para NOT NULL em quatro tabelas financeiras e cria três chaves estrangeiras:
+   uma linha nula ou uma referência órfã derruba o deploy no meio.
 
-3. **Aplicar as migrations 0056 a 0085 em produção, em ordem.** Todas são
-   EXPAND ou correção de dado: nenhuma apaga estrutura, e produção continua
-   funcionando com o código antigo depois delas.
-4. **Rodar os backfills**, na ordem 05 a 15. São idempotentes por
-   `backfill_provenance`: rodar duas vezes não duplica.
-5. **Conferir a reconciliação** de cada fase contra os números deste documento.
-   Divergência aqui para a virada.
-6. **Subir o código.** A leitura é canônica e a escrita **passa pela porta de
-   domínio**, com a coluna legada mantida como ponte. É o estado atual da branch
-   depois das fases 25 e 26.
-7. **Rodar a validação de paridade e o aceite de vendas contra produção.** 0
-   falhas para seguir.
-8. **Decidir sobre o catálogo oficial** (seção 10): sem ele o construtor de
-   proposta abre vazio.
-9. **Observar por um ciclo comercial** antes das fases 27 e 28.
+3. **Carga, fase 1** — `app/src/lib/db/carga/1-antes-da-cadeia/*.sql`. Reconcilia
+   o que produção tem fora do padrão antes de qualquer migration.
+
+4. **Baseline da 0000 e cadeia até 0012.** A 0000 é a única migration não
+   idempotente e já está aplicada em qualquer banco vindo de produção: marcá-la
+   como baseline evita reexecutá-la. A cadeia **para em 0012**.
+
+5. **Carga, fase 2** — `app/src/lib/db/carga/2-depois-de-0012/*.sql`. O drift de
+   dev não versionado entra aqui, antes de 0033/0039, que leem colunas que
+   nenhuma migration cria.
+
+6. **Resto da cadeia, 0013 a 0086.**
+
+7. **Backfills, na ordem, com `./scripts/rodar-backfills.sh`:** 05 identidade,
+   06 aquisição, 07 pipeline, 08 oferta, 09 proposta/contrato, 10 cliente/serviço,
+   12 financeiro, 13 comunicações, 14-15 eventos/timeline, **16 materialização
+   canônica**. Todos idempotentes por `backfill_provenance`.
+
+   > **O passo 16 existe por causa de um erro de ordem que o ensaio expôs.**
+   > As migrations 0069, 0081, 0084 e 0085 carregam um UPDATE de materialização
+   > junto da mudança de schema. No banco de dev funcionou, porque lá o canônico
+   > já estava populado. Numa produção virgem elas rodam com `aquisicoes` e
+   > `oportunidades` VAZIAS e tocam zero linhas. Medido antes da correção:
+   > 3.991 aquisições sem vínculo com o lead, 3.991 sem etapa, 0 estagnações
+   > canônicas contra 229 no legado e 0 trials contra 17. O passo 16 roda depois
+   > dos backfills e é independente da ordem de construção do banco.
+
+8. **Sincronizar o catálogo com o Stripe** (`pnpm --filter app catalogo:sync`).
+   Sem isso o construtor de proposta abre vazio e o aceite fica em 72/0/3 não
+   verificados em vez de 97/0.
+
+9. **Rodar a validação de paridade, o aceite de vendas e os smokes contra o
+   banco carregado.** 0 falhas para seguir.
+
+10. **Subir o código novo e provar no navegador.**
+
+11. **Observar por um ciclo comercial** antes das fases 27 e 28.
+
+### O ensaio de 21/09/2026, com dump fresco
+
+Dump de produção das 12:31, restaurado num banco rascunho, receita inteira
+aplicada. O resultado é o critério de aceite da virada:
+
+| Verificação | Resultado |
+|---|---|
+| Checks de sanidade da carga | 5 de 5, schema idêntico ao de dev, zero FK órfã |
+| Perda de linha | nenhuma (só a de `lead_labels`, declarada) |
+| Backfills 05 a 16 | todos, com reconciliação fechada |
+| Vínculo lead↔aquisição | 3.991 de 3.991 |
+| Etapa canônica | 3.991 (2.919 novo, 539 oportunidade, 533 em contato) |
+| Estagnações / trials | 229 e 17, iguais ao legado |
+| Comunicações de WhatsApp | 25.696 de 25.696 |
+| Smokes | **25 de 25** |
+| Aceite do Módulo 01 | **97 passaram, 0 falharam** |
+| Paridade | **13 passam, 0 falham, 1 não verificável** (NEXO) |
+
+As contagens do banco reconstruído ficam ligeiramente acima das do banco de dev
+(leads 3.991 contra 3.989, negócios 1.563 contra 1.562) porque o dump é de hoje
+e o de dev é de 20/09. É produção andando, não diferença de receita.
 
 ## 9. Rollback
 
