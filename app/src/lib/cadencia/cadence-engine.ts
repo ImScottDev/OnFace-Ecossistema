@@ -28,6 +28,8 @@
 import { createHash } from "node:crypto";
 import { db } from "@/lib/db";
 import { registrarMudancaResponsavel } from "@/lib/crm/owner";
+import { moverEtapa as moverEtapaPreVendas } from "@/lib/vendas/pre-vendas";
+import { ETAPAS_PRE_VENDAS, type EtapaPreVendas } from "@/lib/vendas/dominio";
 import { cadenceDefinitions, cadenceDefinitionPointers, cadenceVersions, cadenceEnrollments, cadenceEnrollmentEvents, leads, contatos, negocios, oportunidades, clientes, servicosCanonicos, whatsappTemplates, whatsappMensagens, whatsappSessao, atividades, tarefas, entityLabels, labels, leadLabels, contatoLabels } from "@/lib/db/schema";
 import { eq, and, lte, inArray, desc, or, isNull, lt, sql } from "drizzle-orm";
 import { avaliarCondicao, type Condicao } from "@/lib/crm/condicao";
@@ -413,14 +415,74 @@ async function mutateTag(ctx: CadenceActionContext, remove: boolean): Promise<Ca
 registrarAdapter("crm_add_tag", (ctx) => mutateTag(ctx, false));
 registrarAdapter("crm_remove_tag", (ctx) => mutateTag(ctx, true));
 
+/**
+ * Mover etapa pela automação usa as MESMAS portas da tela.
+ *
+ * Antes esta ação escrevia na tabela por conta própria, e para lead escrevia em
+ * `leads.crm2_pre_vendas_stage` — uma coluna com **zero linhas preenchidas em
+ * todo o banco**, que nenhuma leitura consulta. A automação movia a etapa,
+ * reportava sucesso e nada acontecia no produto. Para negócio escrevia
+ * `negocios.status` sem chamar o espelho, então o board de pipeline, que lê
+ * `oportunidades`, continuava na etapa antiga.
+ *
+ * Hoje não há automação ativa, então isso nunca queimou ninguém. Queimaria na
+ * primeira que alguém ligasse, e em silêncio, que é o pior formato.
+ *
+ * O SPEC §16 diz a regra direto: automação chama comando de domínio, não
+ * escreve no banco. As portas já validam a transição, registram o evento e
+ * propagam para o canônico; duplicar isso aqui é como o campo morto apareceu.
+ */
 registrarAdapter("crm_update_stage", async (ctx) => {
   const stage = String(ctx.step.config?.stage ?? "").trim();
   if (!stage) return { sucesso: false, erro: "nova etapa não informada" };
   if (["ganho", "won", "closed_won"].includes(stage.toLowerCase())) return { sucesso: false, erro: "Won exige o gate comercial de pagamento/assinatura" };
-  if (ctx.entityType === "lead") await db.update(leads).set({ crm2PreVendasStage: stage, updatedAt: new Date() }).where(and(eq(leads.id, ctx.entityId), eq(leads.organizacaoId, ctx.organizacaoId)));
-  else if (ctx.entityType === "negocio") await db.update(negocios).set({ status: stage, updatedAt: new Date() }).where(and(eq(negocios.id, ctx.entityId), eq(negocios.organizacaoId, ctx.organizacaoId)));
-  else if (ctx.entityType === "oportunidade") await db.update(oportunidades).set({ stage, updatedAt: new Date() }).where(and(eq(oportunidades.id, ctx.entityId), eq(oportunidades.organizacaoId, ctx.organizacaoId)));
-  else return { sucesso: false, erro: "esta entidade não possui etapa comercial editável" };
+
+  // Automação age como sistema: não há pessoa por trás da regra.
+  const ator = { tipo: "SYSTEM" as const, usuarioId: null, ref: `automacao:${ctx.entityType}` };
+
+  try {
+    if (ctx.entityType === "lead") {
+      if (!ETAPAS_PRE_VENDAS.includes(stage as EtapaPreVendas)) {
+        return { sucesso: false, erro: `etapa de pré-vendas desconhecida: ${stage}` };
+      }
+      await moverEtapaPreVendas({
+        organizacaoId: ctx.organizacaoId, leadId: ctx.entityId,
+        para: stage as EtapaPreVendas, ator,
+      });
+    } else if (ctx.entityType === "negocio") {
+      // `negocios.status` e `negocios.etapa` são campos DIFERENTES, com
+      // vocabulários diferentes: `status` é o estado comercial legado
+      // (reuniao_agendada, proposta_apresentada, negociacao...) e `etapa` é a
+      // coluna do board CRM2 (entrada, diagnostico, proposta, negociacao).
+      //
+      // Cheguei a rotear isto para a porta de `etapa` e quebrei o smoke do
+      // motor, que é exatamente o trabalho dele: a automação mexe em `status`,
+      // e trocar o campo mudaria o significado da ação para quem já a usa.
+      //
+      // O defeito real aqui nunca foi o campo, foi a falta de propagação: o
+      // board de pipeline lê `oportunidades`, e escrever só no legado deixava a
+      // etapa antiga na tela.
+      await db.update(negocios).set({ status: stage, updatedAt: new Date() })
+        .where(and(eq(negocios.id, ctx.entityId), eq(negocios.organizacaoId, ctx.organizacaoId)));
+      const { syncOportunidadeFromNegocio } = await import("@/lib/crm/sync-domain-model");
+      await syncOportunidadeFromNegocio(ctx.entityId);
+    } else if (ctx.entityType === "oportunidade") {
+      // A oportunidade canônica ainda não tem porta própria de etapa: a etapa
+      // vive no processo comercial legado (fase 25). Escrever direto aqui é o
+      // que existe hoje, e está dito em vez de parecer desenho.
+      await db.update(oportunidades).set({ stage, updatedAt: new Date() })
+        .where(and(eq(oportunidades.id, ctx.entityId), eq(oportunidades.organizacaoId, ctx.organizacaoId)));
+    } else {
+      return { sucesso: false, erro: "esta entidade não possui etapa comercial editável" };
+    }
+  } catch (e) {
+    // A porta recusa transição inválida com regra de negócio nomeada. Devolver
+    // a mensagem dela é melhor do que "falhou": quem montou a automação precisa
+    // saber que a etapa exige um comando próprio, não que houve erro.
+    const msg = e instanceof Error ? e.message : String(e);
+    return { sucesso: false, erro: msg };
+  }
+
   await publicarEvento({ organizacaoId: ctx.organizacaoId, eventType: "StageChanged", aggregateType: ctx.entityType as "lead", aggregateId: ctx.entityId, payload: { entityType: ctx.entityType, entityId: ctx.entityId, toStage: stage }, idempotencyKey: `${actionKey(ctx)}:stage` });
   return { sucesso: true, varsAtualizadas: { stage, lead_stage: stage }, resultado: { stage } };
 });

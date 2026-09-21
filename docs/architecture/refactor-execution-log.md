@@ -1291,3 +1291,47 @@ porque chama a porta, os outros dois porque as colunas que escrevem (`tipo`,
 
 **Validação:** tsc limpo, **257 testes, 0 falhas**, build exit 0, `smoke-dono-propaga`
 e `smoke-motor-unico` verdes.
+
+---
+
+## 2026-09-21 — Cutover crítico, parte 4: a automação movia etapa para uma coluna morta
+
+`crm_update_stage` escrevia na tabela por conta própria. Para lead, escrevia em
+`leads.crm2_pre_vendas_stage`: **zero linhas preenchidas em todo o banco**, nenhuma
+leitura consulta. A automação movia a etapa, devolvia sucesso, e nada acontecia no
+produto. Para negócio, escrevia `negocios.status` sem propagar, e o board de pipeline,
+que lê `oportunidades`, ficava na etapa antiga.
+
+Não há automação ativa hoje (0 em `automacoes`), então isso nunca queimou ninguém.
+Queimaria na primeira que alguém ligasse, em silêncio.
+
+O lead passou a usar `lib/vendas/pre-vendas::moverEtapa`, que é a porta da tela: valida
+a transição, grava na coluna certa, registra o evento e sincroniza a aquisição. Duas
+recusas vieram de graça e são corretas: qualificar deixou de ser possível por "mover
+etapa" (qualificação é um fato, não posição no board) e etapa inexistente é recusada em
+vez de gravada.
+
+**Um erro meu, pego pelo smoke que já existia.** Roteei também o negócio para a porta de
+`etapa`, e quebrei `smoke-motor-unico`. `negocios.status` e `negocios.etapa` são campos
+diferentes com vocabulários diferentes: `status` é o estado comercial legado
+(`reuniao_agendada`, `negociacao_iniciada`, ...) e `etapa` é a coluna do board CRM2
+(`entrada`, `diagnostico`, ...). A automação sempre mexeu em `status`, e trocar o campo
+mudaria o significado da ação para quem já a usa. O defeito real nunca foi o campo, era
+a falta de propagação. Revertido o campo, mantida a propagação via
+`syncOportunidadeFromNegocio`.
+
+Vale registrar como o erro apareceu: o smoke do motor falhou em três verificações de uma
+vez. Sem ele, o commit teria trocado a semântica de uma ação de automação sem ninguém
+perceber.
+
+**A propagação nova criou uma filha que a limpeza antiga não conhecia.** `smoke-motor-unico`
+passou a deixar `oportunidades` órfã e quebrava no próprio DELETE. Corrigido nos dois
+pontos de limpeza, e o resíduo de duas linhas foi removido do banco.
+
+`smoke-automacao-etapa.ts`, 11 verificações, prova o caminho inteiro pela ação de
+verdade: lead vai para a coluna que o produto lê e NÃO para a morta, a aquisição
+sincroniza, qualificação e etapa inexistente são recusadas, o negócio propaga para a
+oportunidade, e Ganho continua exigindo o gate comercial.
+
+**Validação:** tsc limpo, **257 testes, 0 falhas**, build exit 0,
+`smoke-automacao-etapa` e `smoke-motor-unico` verdes.

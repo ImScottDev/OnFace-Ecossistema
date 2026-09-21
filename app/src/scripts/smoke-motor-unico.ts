@@ -129,6 +129,9 @@ async function main() {
        WHERE event_type = 'StageChanged'
          AND payload ->> 'entityId' IN (${negocio.id}, ${n2.id})`);
     console.log(`  5. dois negócios movidos      → ${eventos.n} eventos StageChanged publicados`);
+    // A ação de etapa agora propaga para `oportunidades` (21/09), então o
+    // negócio tem uma filha canônica. Apagar o pai primeiro quebra a FK.
+    await db.execute(sql`DELETE FROM oportunidades WHERE negocio_id_legado = ${n2.id}::uuid`);
     await db.execute(sql`DELETE FROM negocios WHERE id = ${n2.id}::uuid`);
 
     // 6. o fato entra no REGISTRO, não só na fila
@@ -192,6 +195,7 @@ async function main() {
       DELETE FROM domain_events
        WHERE event_type IN ('StageChanged','TagAdded','TagRemoved')
          AND payload ->> 'entityId' IN (${negocio.id}, ${empresa.id})`);
+    await db.execute(sql`DELETE FROM oportunidades WHERE negocio_id_legado = ${negocio.id}::uuid`);
     await db.execute(sql`DELETE FROM negocios WHERE id = ${negocio.id}::uuid`);
   } finally {
     for (const id of criadas) {
