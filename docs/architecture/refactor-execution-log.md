@@ -2475,3 +2475,20 @@ Corrigir a biblioteca e esquecer quem a chama é o defeito recorrente deste repo
 pelo avesso.
 
 **Validação:** tsc limpo, **322 testes 0 falhas**, **29/29 smokes**.
+
+## 2026-09-21 — CP23: o Insight Engine existia inteiro e nunca foi ligado
+
+77 exports de lib sem chamador. A maioria não é buraco; a filtragem foi por
+"tem dado no banco esperando", e sobraram duas metades da mesma feature:
+`gerarInsights` e `getMetasPorVendedor` encaixam campo a campo e tinham zero
+chamadores as duas.
+
+Ligadas, geravam zero. A agregada de metas devolvia R$ 50.000,00 e a
+por-vendedor devolvia zero para as MESMAS duas closers: as 9 metas cadastradas
+são do tipo aposentado `mrr_fechado`, e só a agregada tinha o fallback de tipo
+legado — com comentário explicando por que ele existia.
+
+Mesmo padrão do CP22: a correção foi aplicada numa leitura e não na irmã.
+
+**Validação:** tsc limpo, **324 testes 0 falhas**, **29/29 smokes**, tela
+conferida no navegador.

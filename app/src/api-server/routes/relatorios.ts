@@ -592,6 +592,29 @@ app.get("/comercial", async (c) => {
     ? await getMetaComercialAgregada(orgId, since)
     : null;
 
+  // INSIGHTS DE META. `getMetasPorVendedor` devolve exatamente o
+  // `VendedorMetaInput` que `gerarInsights` pede — as duas metades foram
+  // escritas para encaixar e ficaram sem ninguém encaixando: as duas tinham
+  // ZERO chamadores até 21/09, enquanto o banco guarda 13 metas de 4
+  // vendedores. O provider é heurístico (meta menos realizado), sem IA e sem
+  // credencial.
+  //
+  // Só para quem vê a equipe: o insight nomeia pessoas, e closer em visão
+  // pessoal enxerga apenas a si mesmo (mesma regra do bloco de equipe acima).
+  let insights: import("@/lib/insights").Insight[] = [];
+  if (isAdminView(ctx.userRole)) {
+    try {
+      const [{ getMetasPorVendedor }, { gerarInsights }] = await Promise.all([
+        import("@/lib/metas"), import("@/lib/insights"),
+      ]);
+      const vendedores = await getMetasPorVendedor(orgId);
+      insights = gerarInsights({ vendedores });
+    } catch (e) {
+      // Insight é leitura acessória: falhar aqui não derruba o relatório.
+      console.error("[Relatorios] insights de meta indisponíveis:", e);
+    }
+  }
+
   // Histórico do que foi de fato fechado no período (drill-down: abre o negócio ganho).
   const ganhosList = await db
     .select({
@@ -628,6 +651,7 @@ app.get("/comercial", async (c) => {
     pipelineEsfriando: esfriando, // [{id,titulo,status,valor,diasParado}]
     leadsQualificados,     // nº de leads que passaram pré-vendas + call agendada (período, escopo do papel)
     metaComercial,         // { valorAlvo, realizado, closers } | null  (soma das closers; só admin/gerente)
+    insights,              // Insight[] — heurística sobre meta por vendedor; [] fora da visão de gestão
     forecast: pipeline.ponderado,
     // ─── compat com o TabComercial atual (até o front ser refatorado) ───
     pipelineMrr: pipeline.etapas.map((e) => ({ status: e.status, mrrTotal: e.recorrente, projetoTotal: e.avulso, total: e.count })),

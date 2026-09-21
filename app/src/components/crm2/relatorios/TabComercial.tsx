@@ -91,6 +91,8 @@ interface ComercialData {
   leadsQualificados: number;
   metaComercial: { valorAlvo: number; realizado: number; closers: number } | null;
   pipelineEsfriando: { id: string; titulo: string; status: string; valor: number; diasParado: number }[];
+  /** Heurística sobre meta por vendedor; vazio fora da visão de gestão. */
+  insights?: { id: string; texto: string; tom: string }[];
   coberturaValor: { status: string; total: number; comValor: number; pct: number }[];
   safra: "todos" | "legado" | "nativo";
   // compat ainda presentes no payload
@@ -182,6 +184,26 @@ export default function TabComercial({ periodo }: TabComercialProps) {
     <div className="space-y-4">
       {/* O que fazer agora */}
       <AlertasCard alertas={alertas} loading={loadingComercial} />
+
+      {/* INSIGHTS DE META. Heurística sobre meta por vendedor (meta menos
+          realizado), sem IA e sem credencial. As duas metades — o gerador e a
+          leitura de metas — existiam prontas e sem ninguém ligando até 21/09. */}
+      {Array.isArray(comercial?.insights) && comercial.insights.length > 0 ? (
+        <div className="flex flex-col gap-2">
+          {(comercial.insights as Array<{ id: string; texto: string; tom: string }>).map((i) => (
+            <div
+              key={i.id}
+              className="flex items-start gap-2 rounded-xl px-4 py-3"
+              style={{
+                background: "var(--cf2-bg-surface)",
+                border: `1px solid ${i.tom === "destaque" ? "var(--cf2-success-text)" : "var(--cf2-warning-text)"}`,
+              }}
+            >
+              <span className="text-[13px]" style={{ color: "var(--cf2-text-primary)" }}>{i.texto}</span>
+            </div>
+          ))}
+        </div>
+      ) : null}
 
       {/* Row 0: Meta comercial do mês = soma das metas das closers (visão de gestão) */}
       {metaCom && metaCom.valorAlvo > 0 ? (

@@ -49,7 +49,13 @@ export async function getMetasPorVendedor(organizacaoId: string) {
       getMetasDoUsuario(organizacaoId, u.id, periodo),
       getRealizadoMeta(organizacaoId, u.id, periodo, tipo),
     ]);
-    const metaRow = metasUsuario.find((m) => m.tipo === tipo);
+    // MESMO fallback de tipo legado que `getMetaComercialAgregada` já faz.
+    // Sem ele esta leitura zerava: as 9 metas cadastradas são do tipo
+    // aposentado `mrr_fechado`, e `metaTipoPorPapel("closer")` devolve
+    // `faturamento_fechado`. Medido em 21/09: a agregada mostrava
+    // R$ 50.000,00 e esta devolvia 0 para as MESMAS duas closers.
+    const metaRow = metasUsuario.find((m) => m.tipo === tipo)
+      ?? (tipo === "faturamento_fechado" ? metasUsuario.find((m) => m.tipo === "mrr_fechado") : undefined);
     const valorAlvo = metaRow ? parseFloat(String(metaRow.valorAlvo)) || 0 : 0;
     const pct = valorAlvo > 0 ? Math.round((realizado / valorAlvo) * 100) : 0;
     return { id: u.id, nome: u.nome, role: u.role, tipo, valorAlvo, realizado, pct };

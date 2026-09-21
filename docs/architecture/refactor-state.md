@@ -1689,6 +1689,46 @@ continua: são dois caminhos diferentes, e só o SDR usa Groq.
 
 **Validação:** tsc limpo, **322 testes 0 falhas**, **29/29 smokes**.
 
+### CP23 — O Insight Engine existia inteiro e nunca foi ligado
+
+Varredura de exports sem chamador nas libs: **77**. A maioria não é buraco (a
+própria memória do projeto avisa que sem-caller nem sempre é defeito), então a
+filtragem foi por "tem dado no banco esperando". Dois saltaram:
+`gerarInsights` e `getMetasPorVendedor`.
+
+**As duas são metades da mesma feature, e encaixam exatamente.**
+`getMetasPorVendedor` devolve `{ id, nome, valorAlvo, realizado, pct }`, que é
+literalmente o `VendedorMetaInput` que `gerarInsights` pede. Foram escritas
+para se encaixar e ficaram as duas com zero chamadores. O comentário do módulo
+de insights chega a falar da *"UI que consome gerarInsights()"*, e nenhuma UI
+consumia.
+
+**E havia um defeito embaixo.** Ligadas, geravam zero insights. A causa:
+
+| leitura | mesma tabela, mesmo mês | resultado |
+|---|---|---|
+| `getMetaComercialAgregada` | 2 closers | **R$ 50.000,00** |
+| `getMetasPorVendedor` | as mesmas 2 closers | **zero** |
+
+`metaTipoPorPapel("closer")` devolve `faturamento_fechado`, e as 9 metas
+cadastradas são do tipo aposentado `mrr_fechado`. A agregada já tinha o
+fallback de tipo legado, **com comentário explicando por que ele existe**; a
+irmã não. Correção aplicada numa leitura e não na outra — o mesmo padrão do
+CP22, onde a biblioteca foi corrigida e os chamadores ficaram para trás.
+
+Com o fallback propagado, o dado real aparece: Mayra Schincariol com alvo de
+R$ 20.000 e 79% atingido, Mayara Anjos com R$ 30.000 e 3%. E o insight sai
+conferindo com a conta: *"Mayra Schincariol precisa de R$ 4.121 para atingir a
+meta mensal"* — 20.000 menos 15.879,10.
+
+O provider é heurístico (meta menos realizado), **sem IA e sem credencial**, e
+a troca para IA é uma linha quando houver decisão. Os insights entram na aba
+Comercial, que já mostrava a meta agregada, e só na visão de gestão: o texto
+nomeia pessoas.
+
+**Validação:** tsc limpo, **324 testes 0 falhas**, **29/29 smokes**, e a tela
+conferida no navegador mostrando o insight junto dos 33% da meta do mês.
+
 ### Auditoria de CS Health (histórico da decisão)
 
 Menor do que o gap analysis inicial dizia:
