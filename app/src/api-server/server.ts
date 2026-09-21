@@ -36,6 +36,7 @@ import { perfilRoutes } from "./routes/perfil.js";
 import { agendaRoutes } from "./routes/agenda.js";
 import { automacoesRoutes } from "./routes/automacoes.js";
 import { uploadsRoutes } from "./routes/uploads.js";
+import { v1Routes } from "./v1/index.js";
 import { customFieldsRoutes } from "./routes/custom-fields.js";
 import { servicosCatalogoRoutes } from "./routes/servicos-catalogo.js";
 import { enrichmentRoutes } from "./routes/enrichment.js";
@@ -82,6 +83,11 @@ app.use("*", cors({
 }));
 
 // Mount all routes under /api
+// Superfície pública versionada (SPEC §23, §30.2). Autenticação por token, não
+// por cookie: cookie não tem escopo, não se revoga sozinho e não diz quem
+// consumiu o quê.
+app.route("/api", v1Routes);
+
 app.route("/api", healthRoutes);
 app.route("/api", leadsRoutes);
 app.route("/api", negociosRoutes);

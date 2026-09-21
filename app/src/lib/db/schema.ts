@@ -4684,3 +4684,47 @@ export const backfillProvenance = pgTable("backfill_provenance", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
+
+// ─── API PÚBLICA (SPEC §23, §30.2) ──────────────────────────────────────────
+//
+// Autenticação por token, não por cookie: cookie não tem escopo, não se revoga
+// sozinho e não diz quem consumiu o quê. O token NUNCA é guardado em claro —
+// guarda-se o SHA-256, como senha, para que um dump do banco não vire acesso.
+export const apiTokens = pgTable(
+  "api_tokens",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizacaoId: uuid("organizacao_id").references(() => organizacoes.id, { onDelete: "cascade" }).notNull(),
+    nome: text("nome").notNull(),
+    /** Primeiros caracteres, para reconhecer o token na tela sem expor o segredo. */
+    prefixo: text("prefixo").notNull(),
+    tokenSha256: text("token_sha256").notNull(),
+    /** Escopos são permissões do RBAC: o token nunca pode mais que elas. */
+    escopos: text("escopos").array().notNull(),
+    criadoPorId: uuid("criado_por_id").references(() => usuarios.id),
+    expiraEm: timestamp("expira_em", { withTimezone: true }),
+    ultimoUsoEm: timestamp("ultimo_uso_em", { withTimezone: true }),
+    revogadoEm: timestamp("revogado_em", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("uq_api_tokens_hash").on(table.tokenSha256),
+    index("idx_api_tokens_org").on(table.organizacaoId),
+  ],
+);
+
+/** Sem isto não há resposta para "quem puxou esses dados e quando". */
+export const apiTokenUsos = pgTable(
+  "api_token_usos",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    tokenId: uuid("token_id").references(() => apiTokens.id, { onDelete: "cascade" }).notNull(),
+    organizacaoId: uuid("organizacao_id").references(() => organizacoes.id, { onDelete: "cascade" }).notNull(),
+    metodo: text("metodo").notNull(),
+    caminho: text("caminho").notNull(),
+    status: integer("status").notNull(),
+    ip: inet("ip"),
+    ocorridoEm: timestamp("ocorrido_em", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index("idx_api_token_usos_token").on(table.tokenId, table.ocorridoEm)],
+);
