@@ -253,3 +253,36 @@ test("módulo usado pelo worker não força a conexão da aplicação", () => {
   assert.match(owner, /const db = opts\.db \?\? dbPadrao/, "e usa a da aplicação só como padrão");
 });
 
+test("ninguém lê a família do produto só do legado", () => {
+  // `negocios.service_family` é NULL em 475 das 1.561 oportunidades, e nessas o
+  // canônico SABE a família, deduzida no backfill por cadeia de evidências.
+  //
+  // Sete leitores olhavam só o legado. Cinco escondiam o dado na tela; os
+  // outros dois BLOQUEAVAM operação: enviar proposta (43 em rascunho paradas) e
+  // avançar de etapa (125 negócios abertos presos).
+  //
+  // A cadeia certa é do mais específico para o mais geral, e onde o legado tem
+  // valor ele manda, porque editar ganha de deduzir.
+  const ARQUIVOS = [
+    "api-server/routes/pipeline-crm2.ts",
+    "api-server/routes/cs.ts",
+    "app/(crm2)/propostas/actions.ts",
+    "lib/vendas/consultas.ts",
+    "lib/vendas/propostas.ts",
+    "lib/vendas/pipeline.ts",
+  ];
+  const crus: string[] = [];
+  for (const arq of ARQUIVOS) {
+    const src = ler(arq);
+    // Uso do campo legado que NÃO está dentro de um COALESCE e não é o valor
+    // próprio que `alterarFamilia` precisa comparar.
+    for (const linha of src.split("\n")) {
+      const usa = /n\.service_family|negocios\.serviceFamily/.test(linha);
+      const protegido = /COALESCE|service_family_proprio|--/.test(linha);
+      if (usa && !protegido) crus.push(`${arq}: ${linha.trim().slice(0, 70)}`);
+    }
+  }
+  assert.deepEqual(crus, [],
+    `estes leem a família só do legado e escondem o que o canônico sabe:\n${crus.join("\n")}`);
+});
+

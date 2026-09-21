@@ -1695,3 +1695,26 @@ avança para Proposta, e o estado original é restaurado nos dois modelos.
 
 **Validação:** tsc limpo, **261 testes, 0 falhas**, build exit 0, cinco smokes que tocam
 o pipeline verdes, zero resíduo.
+
+---
+
+## 2026-09-21 — Cutover crítico, parte 14: a classe fechada e travada
+
+Último leitor da família fora da cadeia: `cs.ts`, a lista de expansões. Medi antes e o
+impacto é **zero** — nenhum negócio de expansão está sem família no legado. Corrigi
+assim mesmo, porque deixar um leitor fora do padrão faz o próximo a copiá-lo repetir o
+buraco que os outros seis tinham.
+
+Subconsulta em vez de `JOIN` aqui também: bundle cria oportunidades irmãs do mesmo
+negócio, e um `JOIN` duplicaria a linha.
+
+A trava em `escritores-migrados.test.ts` varre os seis arquivos linha a linha e acusa
+qualquer uso de `negocios.service_family` que não esteja dentro de um `COALESCE` nem
+seja o valor próprio que `alterarFamilia` precisa comparar. Verificada falhando com o
+`COALESCE` removido de um deles.
+
+**O placar da classe, fechada:** 7 leitores, 5 escondiam dado na tela, 2 bloqueavam
+operação. 43 propostas em rascunho destravadas, 125 negócios abertos liberados para
+avançar de etapa, 467 propostas e 125 cards passando a mostrar o produto.
+
+**Validação:** tsc limpo, **262 testes, 0 falhas**, build exit 0.

@@ -535,7 +535,17 @@ app.get("/cs/expansoes", async (c) => {
     id: negocios.id, titulo: negocios.titulo, status: negocios.status,
     valorTotal: negocios.valorTotal, createdAt: negocios.createdAt,
     empresaId: negocios.empresaId, empresaNome: empresas.nome,
-    familia: negocios.serviceFamily, responsavelNome: usuarios.nome,
+    // Mesma cadeia do resto do produto: o legado manda onde tem valor, e o
+    // canônico completa onde ele é nulo. Hoje nenhum negócio de expansão está
+    // nesse caso (medido), mas deixar este leitor fora da cadeia faria o
+    // próximo a copiá-lo repetir o buraco que os outros seis tinham.
+    //
+    // Subconsulta em vez de JOIN: bundle cria oportunidades irmãs do mesmo
+    // negócio, e um JOIN duplicaria a linha da expansão.
+    familia: sql<string | null>`COALESCE(${negocios.serviceFamily},
+      (SELECT o.service_family FROM oportunidades o
+        WHERE o.negocio_id_legado = ${negocios.id} LIMIT 1))`,
+    responsavelNome: usuarios.nome,
   })
     .from(negocios)
     .innerJoin(empresas, eq(empresas.id, negocios.empresaId))
