@@ -25,7 +25,7 @@ Fases 01 a 16 concluídas.
 
 ## Último commit
 
-`(rotas públicas nomeadas)` — test(22): as 11 rotas públicas saíram do balde
+`7207b18` — test(22): as 11 rotas públicas saíram do balde de "166 sem gate"
 
 Branch de trabalho: `refactor/arquitetura-canonica`, criada a partir de `98940fe`.
 

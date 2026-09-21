@@ -91,10 +91,14 @@ Preservadas: `anexos`, `status_changes`, `vendas_eventos`, `cadencia_execucoes`,
 
 - `tsc --noEmit` limpo;
 - **build de produção passando** (estava quebrado por quatro causas anteriores);
-- **212 testes, 0 falhas**;
-- **8 smokes** contra o banco real com dado de produção;
-- **validação de paridade: 11 dos 14 cenários passam, 0 falham, 3 não
-  verificáveis e nomeados**.
+- **bundle do worker** (esbuild) passando;
+- **264 testes, 0 falhas**;
+- **22 smokes** contra o banco real com dado de produção;
+- **aceite do Módulo 01: 72 passaram, 0 falharam, 3 não verificados** — os três
+  dependem do catálogo oficial, que é decisão de operação (ver seção 10);
+- **validação de paridade: 13 dos 14 cenários passam, 0 falham, 1 não
+  verificável** — o restante é o NEXO, bloqueado por credencial de provedor de
+  modelo.
 
 ### Travas permanentes
 
@@ -115,6 +119,10 @@ Cada uma foi verificada **falhando de propósito** antes de entrar.
 | `v1/api-publica.test.ts` | rota pública sem escopo; token em claro |
 | `ai-platform/agentes.test.ts` | ferramenta de IA escrevendo direto |
 | `api-server/webhooks-fail-closed.test.ts` | webhook sem segredo configurado |
+| `api-server/rotas-configuracao-protegidas.test.ts` | rota de configuração aberta; rota de escrita sem sessão e sem declaração de qual é o gate dela |
+| `arquitetura/gravacao-de-arquivo.test.ts` | rota gravando binário no disco; object storage virando dependência de deploy |
+| `auth/teto-de-token.test.ts` | token de API nascendo com escopo acima de quem o cria |
+| `db/array-postgres.test.ts` e os acima | (já listados) |
 
 ## 8. Procedimento de virada
 
@@ -122,17 +130,31 @@ Cada uma foi verificada **falhando de propósito** antes de entrar.
 
 1. **Backup.** `pg_dump` de produção, verificado com `pg_restore --list`. Existe
    `pre-refactor-20260920.dump` (17 MB) do estado anterior ao refactor.
-2. **Aplicar as migrations 0056 a 0072 em produção, em ordem.** Todas são
-   EXPAND: nenhuma apaga nada, e produção continua funcionando com o código
-   antigo depois delas.
-3. **Rodar os backfills**, na ordem 05 a 15. São idempotentes por
+2. **Conferir que produção aceita as migrations, ANTES de migrar:**
+
+   ```bash
+   DATABASE_URL="postgres://...prod..." pnpm --filter app check:pre-deploy
+   ```
+
+   Somente leitura, roda com a aplicação no ar. A migration 0056 aperta
+   `organizacao_id` para NOT NULL em quatro tabelas financeiras e cria três
+   chaves estrangeiras: uma linha nula ou uma referência órfã derruba o deploy
+   no meio. O clone local é de 20/09 e não é prova sobre produção.
+
+3. **Aplicar as migrations 0056 a 0080 em produção, em ordem.** Todas são
+   EXPAND ou correção de dado: nenhuma apaga estrutura, e produção continua
+   funcionando com o código antigo depois delas.
+4. **Rodar os backfills**, na ordem 05 a 15. São idempotentes por
    `backfill_provenance`: rodar duas vezes não duplica.
-4. **Conferir a reconciliação** de cada fase contra os números deste documento.
+5. **Conferir a reconciliação** de cada fase contra os números deste documento.
    Divergência aqui para a virada.
-5. **Subir o código.** A leitura passa a ser canônica e a escrita continua
+6. **Subir o código.** A leitura passa a ser canônica e a escrita continua
    legada, com propagação. É o estado atual da branch.
-6. **Rodar a validação de paridade contra produção.** 0 falhas para seguir.
-7. **Observar por um ciclo comercial** antes das fases 25 a 27.
+7. **Rodar a validação de paridade e o aceite de vendas contra produção.** 0
+   falhas para seguir.
+8. **Decidir sobre o catálogo oficial** (seção 10): sem ele o construtor de
+   proposta abre vazio.
+9. **Observar por um ciclo comercial** antes das fases 25 a 28.
 
 ## 9. Rollback
 
@@ -156,7 +178,9 @@ Cada uma foi verificada **falhando de propósito** antes de entrar.
 | 118 faturas pagas sem data | sem data não há fato datado; inventar corrompe receita por competência |
 | Quem aprova desconto | alçada não existe hoje; ficou só com admin, que é o padrão restritivo |
 | Credenciais de Meta e de object storage | código pronto, falha dizendo que é configuração ausente |
-| Dono das 275 contas de CS | a capacidade existe na rota; atribuir é decisão de operação |
+| Dono das 275 contas de CS | a capacidade está **provada** em `smoke-cs-responsavel`; distribuir a carteira é decisão de operação |
+| **Catálogo oficial não importado** | `catalogo_precos` com 0 linhas faz o construtor de proposta abrir vazio. O importador existe, lê snapshot commitado em 02/09 (21 produtos, 213 preços) e não chama o Stripe. Não executado porque **grava preço comercial**: dizer que aquele snapshot é a tabela vigente é decisão do Kauã |
+| Dois pools de conexão no worker | 10 dos 31 módulos que ele importa abrem a conexão da aplicação além da própria (5 + 15 = 20 por processo, limite 100). Anterior ao refactor; consolidar é refatoração própria |
 
 ## 11. Documentação
 
