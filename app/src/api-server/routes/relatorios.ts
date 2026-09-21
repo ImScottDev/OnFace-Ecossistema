@@ -1123,6 +1123,12 @@ app.get("/tracking", async (c) => {
         SELECT ld.chave,
           count(DISTINCT n.id) AS oportunidades,
           count(DISTINCT n.id) FILTER (WHERE n.status = 'ganho') AS ganhos
+        -- LIMITACAO MEDIDA, nao bug: este relatorio e dimensionado por E-MAIL do
+        -- lead, entao 159 dos 1.562 negocios ficam de fora — 64 sem lead nenhum
+        -- e 95 cujo lead nao tem e-mail. Tentei resolver pela pessoa canonica e
+        -- o ganho foi ZERO: quem tem e-mail no lead tem na pessoa, e quem nao
+        -- tem, nao tem nos dois. Dimensionar por empresa em vez de e-mail e
+        -- outro relatorio, nao um ajuste deste.
         FROM negocios n
         JOIN leads cont ON cont.id = n.lead_id AND cont.email IS NOT NULL
         JOIN lead_dim ld ON ld.email = lower(cont.email)
@@ -1173,10 +1179,32 @@ app.get("/tracking", async (c) => {
   // "unknown" etc. não são campanha (auditoria itens 8/10). Sem Meta configurada,
   // degrada pro critério antigo (qualquer utm_campaign não-vazio).
   // Linhas por assinatura ativa (calculado depois do bloco Meta, que dá as chaves pagas).
+  // A atribuicao vem em cadeia, e o JOIN em leads deixou de ser obrigatorio.
+  //
+  // Medido no banco: das 355 assinaturas, 72 nao tem lead, e 47 delas estao
+  // ATIVAS. O JOIN interno as descartava, entao este relatorio calculava CAC e
+  // ROAS sobre R$ 40.231,65 de um MRR ativo de R$ 61.769,55 — **35% da receita
+  // fora da conta que decide quanto investir em midia**.
+  //
+  // As 47 tem empresa. A campanha delas vem do primeiro ponto de contato
+  // canonico, que e onde a atribuicao mora desde o backfill da fase 06.
   const assinaturasAtivas = (await db.execute(sql`
-    SELECT a.lead_id, l.utm_campaign, a.mrr
-    FROM assinaturas a JOIN leads l ON l.id = a.lead_id
-    WHERE a.organizacao_id = ${org} AND a.status IN ('active','trialing','past_due')
+    SELECT a.lead_id,
+           COALESCE(l.utm_campaign, pc_lead.campaign, pc_empresa.campaign) AS utm_campaign,
+           a.mrr
+      FROM assinaturas a
+      LEFT JOIN leads l ON l.id = a.lead_id
+      LEFT JOIN LATERAL (
+        SELECT t.campaign FROM pontos_contato t
+         WHERE t.lead_id_legado = a.lead_id AND t.campaign IS NOT NULL
+         ORDER BY t.is_first_touch DESC, t.ocorrido_em ASC LIMIT 1
+      ) pc_lead ON TRUE
+      LEFT JOIN LATERAL (
+        SELECT t.campaign FROM pontos_contato t
+         WHERE t.empresa_id = a.empresa_id AND t.campaign IS NOT NULL
+         ORDER BY t.is_first_touch DESC, t.ocorrido_em ASC LIMIT 1
+      ) pc_empresa ON TRUE
+     WHERE a.organizacao_id = ${org} AND a.status IN ('active','trialing','past_due')
   `)) as unknown as { lead_id: string; utm_campaign: string | null; mrr: unknown }[];
 
   // ── Meta Ads: gasto/CPL/CAC/ROAS por campanha (cruza por nome normalizado) ──
