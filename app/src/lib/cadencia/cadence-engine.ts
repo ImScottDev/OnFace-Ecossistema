@@ -90,6 +90,40 @@ export function registrarAdapter(nome: string, fn: CadenceAdapter): void {
   adapters.set(nome, fn);
 }
 
+/**
+ * Executa UMA ação pelo adapter, fora de um fluxo (SPEC §18, motor único).
+ *
+ * Existe porque uma regra de automação simples — gatilho, condição, uma ação —
+ * é um fluxo de um passo só. Sem isto, o motor de regras precisaria de
+ * implementação própria de cada ação, e passaria a existir dois lugares que
+ * sabem criar tarefa, mover etapa e mandar mensagem. Foi exatamente o que
+ * aconteceu: `crm/automacao-engine.ts` tinha a segunda cópia.
+ *
+ * Quem precisa de espera, ramificação ou estado usa `iniciarCadencia`; quem
+ * precisa de uma ação usa isto. Os adapters são os mesmos.
+ */
+export async function executarAcaoAvulsa(
+  adapterNome: string,
+  ctx: Omit<CadenceActionContext, "step" | "enrollmentId" | "attempt"> & { config?: Record<string, unknown> },
+): Promise<CadenceActionResult> {
+  const adapter = adapters.get(adapterNome);
+  if (!adapter) return { sucesso: false, erro: `adapter "${adapterNome}" não registrado` };
+  return adapter({
+    organizacaoId: ctx.organizacaoId,
+    entityType: ctx.entityType,
+    entityId: ctx.entityId,
+    vars: ctx.vars,
+    step: { id: `avulso:${adapterNome}`, tipo: "action", adapter: adapterNome, config: ctx.config ?? {}, branches: [] },
+    enrollmentId: "",
+    attempt: 0,
+  });
+}
+
+/** Nomes de adapter registrados — usado por testes e pela tela de automação. */
+export function adaptersRegistrados(): string[] {
+  return [...adapters.keys()].sort();
+}
+
 /** Adapter builtin — não faz nada, só existe pra steps de espera pura sem ação (equivalente a um "no-op" explícito). */
 registrarAdapter("noop", async () => ({ sucesso: true }));
 

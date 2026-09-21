@@ -100,3 +100,37 @@ test("a ponte de Ganho não duplica a regra de decisão", () => {
   );
   assert.match(ponte, /fase 25/, "e diz em que fase sai");
 });
+
+test("o motor de regras não tem implementação própria das ações do motor de fluxo", () => {
+  // SPEC §18: um motor só. Havia dois, e eles já tinham divergido de um jeito
+  // perigoso — o adapter do motor de fluxo recusa mover para Ganho ("Won exige
+  // o gate comercial"), e a cópia do motor de regras fazia
+  // `update negocios set status` direto. Uma regra de automação podia fechar
+  // venda por fora da política da oferta.
+  const motor = ler("lib/crm/automacao-engine.ts");
+
+  const DELEGADAS: Array<[string, string]> = [
+    ["criar_tarefa", "crm_create_task"],
+    ["mudar_status", "crm_update_stage"],
+    ["atribuir_responsavel", "crm_assign_owner"],
+    ["enviar_email", '"email"'],
+    ["enviar_whatsapp", '"whatsapp"'],
+  ];
+  const semDelegar = DELEGADAS.filter(([, adapter]) => !motor.includes(adapter));
+  assert.deepEqual(
+    semDelegar.map(([acao]) => acao), [],
+    "estas ações deveriam delegar ao adapter do motor de fluxo",
+  );
+
+  // Escrita direta nas tabelas que os adapters governam é o sintoma do motor
+  // voltando a existir em dois lugares.
+  const escritasProibidas = [
+    /db\s*\.\s*insert\(tarefas\)/,
+    /db\s*\.\s*update\(negocios\)/,
+    /update negocios set/i,
+  ].filter((re) => re.test(motor));
+  assert.deepEqual(
+    escritasProibidas.map(String), [],
+    "o motor de regras voltou a escrever direto no que o adapter governa",
+  );
+});

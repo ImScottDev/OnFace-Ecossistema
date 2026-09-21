@@ -12,12 +12,12 @@
  * do mesmo padrão: sincronizar no ponto real de escrita, best-effort).
  */
 import { db } from "@/lib/db";
-import { automacoes, automacaoExecucoes, tarefas, notificacoes, negocios, leads, empresas, assinaturas, faturas, auditLog } from "@/lib/db/schema";
+import { automacoes, automacaoExecucoes, notificacoes, leads, empresas, assinaturas, faturas, auditLog } from "@/lib/db/schema";
 import { eq, and, or, sql } from "drizzle-orm";
 import { sendResendEmail, isResendConfigured } from "@/lib/email/resend";
 import { whatsappOutgoingQueue } from "@/lib/queue";
 import { avaliarCondicao } from "@/lib/crm/condicao";
-import { iniciarCadencia } from "@/lib/cadencia/cadence-engine";
+import { iniciarCadencia, executarAcaoAvulsa, type CadenceActionResult } from "@/lib/cadencia/cadence-engine";
 
 export type GatilhoAutomacao =
   | "novo_lead" | "mudanca_status" | "novo_negocio" | "lead_inativo"
@@ -54,21 +54,43 @@ interface AcaoConfig {
   cadenceDefinitionId?: string;
 }
 
+/**
+ * Ponte para o motor de fluxo (SPEC §18 — um motor só).
+ *
+ * Uma regra de automação é um fluxo de um passo: gatilho, condição, uma ação.
+ * Não precisa de motor próprio — precisa dos mesmos adapters. Antes desta
+ * ponte existiam DUAS implementações de criar tarefa, mover etapa, atribuir
+ * responsável e mandar mensagem, e elas já tinham divergido: a daqui movia
+ * para "ganho" sem gate nenhum.
+ */
+async function delegar(
+  adapter: string, ctx: ContextoGatilho, config: Record<string, unknown>,
+): Promise<CadenceActionResult> {
+  return executarAcaoAvulsa(adapter, {
+    organizacaoId: ctx.organizacaoId,
+    entityType: ctx.entityType,
+    entityId: ctx.entityId,
+    vars: {
+      email: ctx.email ?? null, telefone: ctx.telefone ?? null, nome: ctx.nome ?? null,
+      lead_id: ctx.leadId ?? null, empresa_id: ctx.empresaId ?? null, servico_id: ctx.servicoId ?? null,
+    },
+    config,
+  });
+}
+
 async function executarAcao(acao: string, config: AcaoConfig | null, ctx: ContextoGatilho): Promise<Record<string, unknown>> {
   const cfg = config || {};
   switch (acao) {
-    case "criar_tarefa": {
-      const [t] = await db.insert(tarefas).values({
-        organizacaoId: ctx.organizacaoId,
-        leadId: ctx.entityType === "lead" ? ctx.entityId : (ctx.leadId || undefined),
-        negocioId: ctx.entityType === "negocio" ? ctx.entityId : undefined,
-        usuarioId: cfg.usuarioId || null,
-        titulo: cfg.tituloTarefa || "Tarefa gerada por automação",
-        tipo: cfg.tipoTarefa || "automacao",
-        prioridade: cfg.prioridade || "media",
-      }).returning({ id: tarefas.id });
-      return { tarefaId: t.id };
-    }
+    case "criar_tarefa":
+      // Delegado ao adapter do motor de fluxo: ele resolve os vínculos
+      // (lead, negócio, empresa, serviço) e tem chave de idempotência, que
+      // esta implementação não tinha — automação disparada duas vezes criava
+      // duas tarefas iguais.
+      return (await delegar("crm_create_task", ctx, {
+        title: cfg.tituloTarefa || "Tarefa gerada por automação",
+        priority: cfg.prioridade || "media",
+        owner_id: cfg.usuarioId || undefined,
+      })).resultado ?? {};
     case "notificar_usuario": {
       if (!cfg.usuarioId) throw new Error("acaoConfig.usuarioId obrigatório pra notificar_usuario");
       const [n] = await db.insert(notificacoes).values({
@@ -79,24 +101,17 @@ async function executarAcao(acao: string, config: AcaoConfig | null, ctx: Contex
       }).returning({ id: notificacoes.id });
       return { notificacaoId: n.id };
     }
-    case "mudar_status": {
-      if (!cfg.novoStatus) throw new Error("acaoConfig.novoStatus obrigatório pra mudar_status");
-      if (ctx.entityType === "negocio") {
-        await db.update(negocios).set({ status: cfg.novoStatus, updatedAt: new Date() }).where(eq(negocios.id, ctx.entityId));
-      } else if (ctx.entityType === "lead") {
-        await db.update(leads).set({ sdrStatus: cfg.novoStatus, updatedAt: new Date() }).where(eq(leads.id, ctx.entityId));
-      }
-      return { novoStatus: cfg.novoStatus };
-    }
-    case "atribuir_responsavel": {
-      if (!cfg.usuarioId) throw new Error("acaoConfig.usuarioId obrigatório pra atribuir_responsavel");
-      if (ctx.entityType === "negocio") {
-        await db.update(negocios).set({ responsavelId: cfg.usuarioId, updatedAt: new Date() }).where(eq(negocios.id, ctx.entityId));
-      } else if (ctx.entityType === "lead") {
-        await db.update(leads).set({ responsavelId: cfg.usuarioId, updatedAt: new Date() }).where(eq(leads.id, ctx.entityId));
-      }
-      return { responsavelId: cfg.usuarioId };
-    }
+    case "mudar_status":
+      // Delegado: o adapter RECUSA mover para Ganho ("Won exige o gate
+      // comercial de pagamento/assinatura") e publica StageChanged. Esta
+      // implementação fazia `set({ status })` direto, o que permitia a uma
+      // regra de automação marcar venda como ganha furando a política da
+      // oferta inteira.
+      return (await delegar("crm_update_stage", ctx, { stage: cfg.novoStatus })).resultado
+        ?? { novoStatus: cfg.novoStatus };
+    case "atribuir_responsavel":
+      return (await delegar("crm_assign_owner", ctx, { owner_id: cfg.usuarioId })).resultado
+        ?? { responsavelId: cfg.usuarioId };
     case "adicionar_tag_empresa":
     case "remover_tag_empresa": {
       if (!ctx.empresaId && ctx.entityType !== "empresa") throw new Error("empresaId ausente no contexto financeiro");
@@ -130,25 +145,12 @@ async function executarAcao(acao: string, config: AcaoConfig | null, ctx: Contex
       return { empresaId, tag: cfg.tag.trim(), tags, operacao: acao === "adicionar_tag_empresa" ? "adicionada" : "removida" };
     }
     case "enviar_email": {
-      // sendResendEmail já faz no-op gracioso sem RESEND_API_KEY configurada
-      // — não é preciso checar isResendConfigured() antes, mas reportamos
-      // no resultado pra deixar claro no histórico de execução.
-      if (!ctx.email) return { enviado: false, motivo: "sem e-mail resolvido no contexto" };
-      const resultado = await sendResendEmail({
-        to: ctx.email,
-        subject: "Callface",
-        html: cfg.mensagem || "Mensagem automática.",
-      });
-      return { enviado: resultado.sent, resendConfigurado: isResendConfigured(), ...resultado };
+      const r = await delegar("email", ctx, { mensagem: cfg.mensagem, assunto: cfg.tituloTarefa });
+      return r.sucesso ? (r.resultado ?? { enviado: true }) : { enviado: false, motivo: r.erro };
     }
     case "enviar_whatsapp": {
-      if (!ctx.telefone) return { enviado: false, motivo: "sem telefone resolvido no contexto" };
-      const job = await whatsappOutgoingQueue.add("send", {
-        phone: ctx.telefone,
-        conteudo: cfg.mensagem || "Mensagem automática.",
-        tipo: "text",
-      });
-      return { enviado: true, jobId: job.id };
+      const r = await delegar("whatsapp", ctx, { mensagem: cfg.mensagem });
+      return r.sucesso ? (r.resultado ?? { enviado: true }) : { enviado: false, motivo: r.erro };
     }
     case "iniciar_cadencia": {
       if (!cfg.cadenceDefinitionId) throw new Error("acaoConfig.cadenceDefinitionId obrigatório pra iniciar_cadencia");
