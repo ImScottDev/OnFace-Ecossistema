@@ -83,7 +83,7 @@ export interface EventoVendas {
 export async function registrarEvento(evento: EventoVendas, tx: ExecutorDb = db): Promise<void> {
   const ocorridoEm = evento.ocorridoEm ?? new Date();
 
-  await tx.execute(sql`
+  const inserido = await tx.execute<{ id: string }>(sql`
     INSERT INTO vendas_eventos (
       organizacao_id, tipo, lead_id, negocio_id, empresa_id, pessoa_id,
       proposta_id, reuniao_id, usuario_id, ator_tipo, ator_ref, contexto, ocorrido_em
@@ -102,7 +102,9 @@ export async function registrarEvento(evento: EventoVendas, tx: ExecutorDb = db)
       ${evento.contexto ? JSON.stringify(evento.contexto) : null}::jsonb,
       ${ocorridoEm.toISOString()}::timestamptz
     )
+    RETURNING id
   `);
+  const idLegado = (inserido as unknown as Array<{ id: string }>)[0]?.id ?? null;
 
   if (evento.timeline && (evento.leadId || evento.negocioId || evento.empresaId)) {
     await tx.execute(sql`
@@ -119,6 +121,39 @@ export async function registrarEvento(evento: EventoVendas, tx: ExecutorDb = db)
         ${JSON.stringify({ evento: evento.tipo, ator: evento.ator.tipo, ...(evento.contexto ?? {}) })}::jsonb
       )
     `);
+  }
+
+  // EVENTO CANÔNICO (fase 24). O mesmo fato no modelo que alimenta o resto.
+  //
+  // Havia dois modelos de evento: este, rico e que só alimenta a linha do
+  // tempo, e `domain_events`, que alimenta o outbox, a automação e a entrega de
+  // conversão à Meta. Qualificar um lead escrevia só aqui — e o evento MAIS
+  // importante para otimização de campanha, `AcquisitionQualified`, nunca saía.
+  //
+  // Vai na MESMA transação de propósito: os dois descrevem um fato só, e um
+  // sobrevivendo ao rollback do outro passaria a descrever algo que não
+  // aconteceu.
+  try {
+    const { publicarEquivalenteCanonico } = await import("./ponte-evento-canonico");
+    await publicarEquivalenteCanonico(tx, {
+      organizacaoId: evento.organizacaoId,
+      tipo: evento.tipo,
+      leadId: evento.leadId ?? null,
+      negocioId: evento.negocioId ?? null,
+      empresaId: evento.empresaId ?? null,
+      pessoaId: evento.pessoaId ?? null,
+      propostaId: evento.propostaId ?? null,
+      atorTipo: evento.ator.tipo,
+      contexto: evento.contexto ?? null,
+      ocorridoEm,
+      origemId: idLegado,
+    });
+  } catch (e) {
+    // Best-effort: o fato comercial já foi gravado, e falhar a publicação
+    // canônica atrasa a consequência, não desfaz o fato. Fora da transação
+    // isso seria mentira; aqui dentro, o catch existe para que um evento
+    // canônico mal formado não derrube uma qualificação legítima.
+    console.error("[vendas/eventos] equivalente canônico não publicado:", e);
   }
 
   // CUTOVER DE LEITURA (fase 17). O board de pré-vendas lê `aquisicoes`, e as

@@ -25,6 +25,7 @@
  *
  * Ver ADR-EXEC-013.
  */
+import { createHash } from "node:crypto";
 import { db } from "@/lib/db";
 import { cadenceDefinitions, cadenceDefinitionPointers, cadenceVersions, cadenceEnrollments, cadenceEnrollmentEvents, leads, contatos, negocios, oportunidades, clientes, servicosCanonicos, whatsappTemplates, whatsappMensagens, whatsappSessao, atividades, tarefas, entityLabels, labels, leadLabels, contatoLabels } from "@/lib/db/schema";
 import { eq, and, lte, inArray, desc, or, isNull, lt } from "drizzle-orm";
@@ -108,13 +109,33 @@ export async function executarAcaoAvulsa(
 ): Promise<CadenceActionResult> {
   const adapter = adapters.get(adapterNome);
   if (!adapter) return { sucesso: false, erro: `adapter "${adapterNome}" não registrado` };
+
+  // O identificador da execução avulsa precisa carregar QUAL entidade e QUAL
+  // configuração — senão a chave de idempotência dos adapters fica igual para
+  // todo mundo.
+  //
+  // O bug que isto conserta, encontrado ao auditar o outbox: com
+  // `enrollmentId` vazio, `actionKey` produzia `cadence::avulso:crm_update_stage:0`
+  // para TODA automação que movesse etapa, de qualquer negócio. O evento
+  // `StageChanged` é publicado com `ON CONFLICT DO NOTHING` nessa chave, então
+  // **só a primeira mudança de etapa do sistema inteiro publicava evento**. A
+  // automação funcionava (a etapa mudava) e nada a jusante reagia.
+  //
+  // Com entidade e config na chave: repetir a MESMA ação na MESMA entidade é
+  // idempotente, que é o desejado; ações diferentes, ou na mesma entidade com
+  // configuração diferente, são fatos diferentes e cada uma publica o seu.
+  const assinatura = createHash("sha256")
+    .update(JSON.stringify({ e: ctx.entityType, i: ctx.entityId, c: ctx.config ?? {} }))
+    .digest("hex")
+    .slice(0, 16);
+
   return adapter({
     organizacaoId: ctx.organizacaoId,
     entityType: ctx.entityType,
     entityId: ctx.entityId,
     vars: ctx.vars,
     step: { id: `avulso:${adapterNome}`, tipo: "action", adapter: adapterNome, config: ctx.config ?? {}, branches: [] },
-    enrollmentId: "",
+    enrollmentId: `avulso:${assinatura}`,
     attempt: 0,
   });
 }

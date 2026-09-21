@@ -77,6 +77,17 @@ async function main() {
     const aindaEmAtivos = await colunaDoCard("ativos");
     console.log(`  4. desqualificar              → board (aba desq.): ${aposDesq}, ainda em ativos: ${aindaEmAtivos}`);
 
+    // 5. o fato comercial virou evento canônico e chegou ao outbox
+    const canonico = await um<{ dominio: number; outbox: number; tipos: string }>(sql`
+      SELECT (SELECT count(*)::int FROM domain_events d
+                WHERE d.payload ->> 'lead_legado_id' = ${leadId}) AS dominio,
+             (SELECT count(*)::int FROM event_outbox o
+                WHERE o.payload ->> 'lead_legado_id' = ${leadId}) AS outbox,
+             (SELECT COALESCE(string_agg(DISTINCT d.event_type, ', '), '') FROM domain_events d
+                WHERE d.payload ->> 'lead_legado_id' = ${leadId}) AS tipos`);
+    console.log(`  5. eventos canônicos gerados  → ${canonico.dominio} em domain_events, ${canonico.outbox} no outbox`);
+    console.log(`     tipos: ${canonico.tipos || "(nenhum)"}`);
+
     console.log("\n  RESULTADO");
     const checagens: [string, boolean, string][] = [
       ["dono propaga", Boolean(dono.r), "atribuir responsável aparece na aquisição"],
@@ -84,6 +95,8 @@ async function main() {
       ["nutrir move", aposNutrir === "nutricao", "o card aparece na aba de nutrição"],
       ["desqualificar move", aposDesq === "desqualificado", "o card aparece na aba de desqualificados"],
       ["sai de ativos", aindaEmAtivos === null, "lead desqualificado não fica no board ativo"],
+      ["evento canônico", canonico.dominio > 0, "o fato comercial alimenta automação e integração, não só a linha do tempo"],
+      ["qualificação sai", canonico.tipos.includes("AcquisitionQualified"), "AcquisitionQualified é o que vira QualifiedLead na Meta — sem ele, otimiza-se por volume de formulário"],
     ];
     let ok = true;
     for (const [nome, passou, desc] of checagens) {
@@ -105,8 +118,11 @@ async function main() {
         await db.execute(sql`DELETE FROM pessoas WHERE id = ${pessoaId}::uuid`);
       }
       await db.execute(sql`DELETE FROM pessoas WHERE lead_id_legado = ${leadId}::uuid`);
-      await db.execute(sql`DELETE FROM domain_events WHERE idempotency_key LIKE ${marca + "%"}`);
-      await db.execute(sql`DELETE FROM event_outbox WHERE idempotency_key LIKE ${marca + "%"}`);
+      await db.execute(sql`
+        DELETE FROM meta_capi_entregas WHERE outbox_id IN
+          (SELECT id FROM event_outbox WHERE payload ->> 'lead_legado_id' = ${leadId})`);
+      await db.execute(sql`DELETE FROM event_outbox WHERE payload ->> 'lead_legado_id' = ${leadId} OR idempotency_key LIKE ${marca + "%"}`);
+      await db.execute(sql`DELETE FROM domain_events WHERE payload ->> 'lead_legado_id' = ${leadId} OR idempotency_key LIKE ${marca + "%"}`);
       await db.execute(sql`DELETE FROM leads WHERE id = ${leadId}::uuid`);
     }
     console.log("  banco limpo (só o que este smoke criou).\n");
