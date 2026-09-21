@@ -1532,3 +1532,30 @@ equivalente: `ganho_at` continua nulo, `perdido_at` intacto, e o banco inteiro s
 zero oportunidades ganhas e perdidas.
 
 **Validação:** tsc limpo, **260 testes, 0 falhas**, build exit 0.
+
+---
+
+## 2026-09-21 — Cutover crítico, parte 10: identidade completa
+
+Fechando as divergências pequenas que a varredura campo a campo nomeou entre `leads` e
+`pessoas`.
+
+**As 23 de `whatsapp` não eram ruído: eram todas as que existem.** Só 23 leads têm
+WhatsApp preenchido no banco inteiro, e `pessoas.whatsapp` estava vazio nos 23. O
+backfill de identidade não copiou esse campo em nenhum caso. A tela da pessoa lê
+`pessoas.whatsapp` e mostrava vazio enquanto o número estava no lead o tempo todo.
+
+Migration 0080 copia, sem normalizar e sem inventar: a sincronização de identidade já
+trata o lead como fonte deste campo e copia cru a cada alteração; a migration só
+antecipa para quem ninguém editou desde a carga, em vez de esperar um acaso. Normalizar
+aqui mudaria o dado sem ninguém ter decidido qual é o formato certo.
+
+**`sobrenome` nunca propagava.** Faltava na lista de campos de perfil da sincronização
+de identidade, então editá-lo no lead não chegava na pessoa canônica. Uma linha.
+
+Divergência de identidade depois das duas correções: **zero em `whatsapp`**, e seguem
+nomeadas as 4 de `empresa_id`, 3 de `telefone` e 2 de `cargo`, que são casos de dado
+real, não de propagação faltando.
+
+**Validação:** tsc limpo, **260 testes, 0 falhas**, build exit 0, smoke de propagação
+verde.

@@ -85,6 +85,10 @@ export async function syncPessoaFromLead(leadId: string): Promise<string | null>
         .set({
           empresaId: lead.empresaId,
           nome: lead.nome,
+          // `sobrenome` faltava nesta lista, então editá-lo no lead nunca
+          // chegava na identidade canônica. Um campo de perfil que a tela da
+          // pessoa mostra e que ficava parado no valor da carga.
+          sobrenome: lead.sobrenome,
           email: lead.email,
           telefone: lead.telefone,
           whatsapp: lead.whatsapp,
