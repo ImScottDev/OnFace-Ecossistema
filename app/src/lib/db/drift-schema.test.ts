@@ -25,6 +25,18 @@ const SCHEMA = path.resolve(import.meta.dirname, "schema.ts");
 /** Tabelas de controle interno, deliberadamente fora do Drizzle. */
 const FORA_DO_DRIZZLE = new Set(["_migracoes_aplicadas", "_carga_contagem_antes"]);
 
+/**
+ * Colunas GERADAS pelo banco, que a aplicação nunca escreve.
+ *
+ * Declará-las no Drizzle mentiria duas vezes: sobre o tipo (não existe
+ * `tsvector` no Drizzle) e sobre a escrita (o ORM as exporia como campo
+ * gravável, e gravar nelas é erro do Postgres).
+ *
+ * A exceção é nomeada uma a uma de propósito: uma regra genérica do tipo
+ * "ignore colunas de índice" deixaria passar drift de verdade.
+ */
+const GERADAS_PELO_BANCO = new Set(["ai_knowledge_chunks.busca"]);
+
 interface Declarada { tabela: string; colunas: Set<string> }
 
 function lerSchema(): Map<string, Declarada> {
@@ -90,7 +102,10 @@ test("toda coluna existe dos dois lados", async (t) => {
       const reais = porTabela.get(tabela);
       if (!reais) continue; // coberto pelo teste de tabelas
       for (const c of d.colunas) if (!reais.has(c)) faltaNoBanco.push(`${tabela}.${c}`);
-      for (const c of reais) if (!d.colunas.has(c)) faltaNoDrizzle.push(`${tabela}.${c}`);
+      for (const c of reais) {
+        if (d.colunas.has(c) || GERADAS_PELO_BANCO.has(`${tabela}.${c}`)) continue;
+        faltaNoDrizzle.push(`${tabela}.${c}`);
+      }
     }
 
     assert.deepEqual(

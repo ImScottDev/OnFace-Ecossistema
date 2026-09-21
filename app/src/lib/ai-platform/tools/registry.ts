@@ -97,15 +97,40 @@ export const AGENT_TOOLS: AgentToolRegistration[] = [
     id: "knowledge.search", name: "knowledge_search", description: "Busca trechos relevantes na base de conhecimento publicada da organização.", category: "context", mutates: false,
     parameters: objectSchema({ query: stringProp("Pergunta ou termos para buscar"), limit: { type: "integer", minimum: 1, maximum: 8 } }, ["query"]),
     execute: async (ctx, input) => {
-      const query = String(input.query ?? "").trim().toLowerCase();
+      const query = String(input.query ?? "").trim();
       if (!query) return { ok: false, error: "query vazia" };
-      const terms = [...new Set(query.split(/\W+/).filter((term) => term.length > 2))].slice(0, 12);
-      const rows = await db.select({ id: aiKnowledgeChunks.id, content: aiKnowledgeChunks.content, versionId: aiKnowledgeChunks.versionId })
-        .from(aiKnowledgeChunks).innerJoin(aiKnowledgeVersions, eq(aiKnowledgeVersions.id, aiKnowledgeChunks.versionId))
-        .where(and(eq(aiKnowledgeChunks.organizacaoId, ctx.organizacaoId), eq(aiKnowledgeVersions.status, "published"))).limit(500);
-      const ranked = rows.map((row) => ({ ...row, score: terms.reduce((score, term) => score + (row.content.toLowerCase().includes(term) ? 1 : 0), 0) / Math.max(terms.length, 1) }))
-        .filter((row) => row.score > 0).sort((a, b) => b.score - a.score).slice(0, Math.min(8, Number(input.limit ?? 5)));
-      return { ok: true, data: ranked };
+      const limite = Math.min(8, Math.max(1, Number(input.limit ?? 5)));
+
+      // A busca acontece no BANCO, com índice (migration 0075).
+      //
+      // A versão anterior carregava 500 chunks para a memória e pontuava por
+      // substring. Com mais de 500 publicados, o trecho relevante podia nem
+      // estar entre os carregados — o agente responderia "não encontrei"
+      // sobre algo que existe, que é o pior jeito de um assistente errar.
+      //
+      // `ts_rank` ordena por relevância de verdade, e `ts_headline` devolve o
+      // pedaço que casou: o agente precisa do trecho, não do documento.
+      const linhas = await db.execute<{
+        id: string; content: string; version_id: string; score: number; trecho: string;
+      }>(sql`
+        SELECT c.id::text, c.content, c.version_id::text,
+               ts_rank(c.busca, onface_query_busca(${query}))::float AS score,
+               ts_headline('pt_unaccent', c.content, onface_query_busca(${query}),
+                           'MaxWords=40, MinWords=15, ShortWord=3') AS trecho
+          FROM ai_knowledge_chunks c
+          JOIN ai_knowledge_versions v ON v.id = c.version_id AND v.status = 'published'
+         WHERE c.organizacao_id = ${ctx.organizacaoId}::uuid
+           AND c.busca @@ onface_query_busca(${query})
+         ORDER BY score DESC
+         LIMIT ${limite}`);
+
+      return {
+        ok: true,
+        data: linhas.map((l) => ({
+          id: l.id, versionId: l.version_id, score: l.score,
+          trecho: l.trecho, content: l.content,
+        })),
+      };
     },
   },
   {
