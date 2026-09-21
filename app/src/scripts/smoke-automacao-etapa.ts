@@ -36,6 +36,7 @@ async function limpar() {
     ["atividades", "lead_id", lead], ["atividades", "negocio_id", neg],
     ["tarefas", "lead_id", lead], ["tarefas", "negocio_id", neg],
     ["aquisicoes", "lead_legado_id", lead],
+    ["timeline_events", "pessoa_id", criados.find(([t]) => t === "pessoas")?.[1]],
     ["oportunidades", "negocio_id_legado", neg],
   ] as Array<[string, string, string | undefined]>) {
     if (!alvo) continue;
@@ -136,6 +137,33 @@ async function main() {
     config: { stage: "ganho" }, vars: {},
   } as never);
   ok(!r5.sucesso, "Ganho continua exigindo o gate comercial, não a automação");
+
+  // ── Nota: tem que aparecer para quem lê a conta ─────────────────────────
+  const r6 = await executarAcaoAvulsa("crm_add_note", {
+    organizacaoId: org.id, entityType: "lead", entityId: lead.id,
+    config: { title: `${marca} nota`, description: "escrita por regra" }, vars: {},
+  } as never);
+  ok(r6.sucesso, `nota por automação (${r6.sucesso ? "ok" : r6.erro})`);
+
+  const [fato] = await db.execute<{ n: number }>(sql`
+    SELECT count(*)::int AS n FROM domain_events
+     WHERE event_type = 'NoteAdded' AND aggregate_id = ${lead.id}::uuid`);
+  ok(fato.n === 1, `a nota vira FATO no registro (${fato.n})`);
+
+  const [naFila] = await db.execute<{ n: number }>(sql`
+    SELECT count(*)::int AS n FROM event_outbox
+     WHERE event_type = 'NoteAdded' AND aggregate_id = ${lead.id}::uuid`);
+  ok(naFila.n === 1, `e entra na fila para o consumidor projetar (${naFila.n})`);
+
+  // A projeção é quem põe na linha do tempo, e ela roda no consumidor.
+  const { processarEventosPendentes } = await import("@/lib/events/consumer");
+  await processarEventosPendentes(50);
+
+  const [naTimeline] = await db.execute<{ n: number; titulo: string | null }>(sql`
+    SELECT count(*)::int AS n, max(titulo) AS titulo FROM timeline_events
+     WHERE tipo = 'nota' AND pessoa_id = ${pessoa.id}::uuid`);
+  ok(naTimeline.n === 1,
+     `e APARECE na linha do tempo da pessoa (${naTimeline.n}: "${naTimeline.titulo ?? ""}")`);
 
   await limpar();
   const [resto] = await db.execute<{ n: number }>(sql`

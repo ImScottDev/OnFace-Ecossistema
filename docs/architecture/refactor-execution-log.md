@@ -1335,3 +1335,44 @@ oportunidade, e Ganho continua exigindo o gate comercial.
 
 **Validação:** tsc limpo, **257 testes, 0 falhas**, build exit 0,
 `smoke-automacao-etapa` e `smoke-motor-unico` verdes.
+
+---
+
+## 2026-09-21 — Cutover crítico, parte 5: a projeção descartava 100% do que recebia
+
+Varredura dos adapters do motor: quais escrevem direto e quais passam por porta. Três
+sem porta. Dois são inofensivos (`crm_callface_call` escreve estado interno do motor,
+`email` escreve em `contatos`). O terceiro não era.
+
+**`crm_add_note` gravava a nota só em `atividades`.** A linha do tempo canônica lê
+`timeline_events` e `communications`, então a nota existia no banco e não aparecia na
+tela da pessoa. Escrita invisível, o formato de bug que este refactor mais encontrou.
+
+A nota passou a publicar `NoteAdded`, e a projeção ganhou a regra de como ela aparece.
+O evento sai DEPOIS do insert: se a nota não foi gravada, não há fato a anunciar.
+
+**E aí o smoke mostrou o problema de verdade.** O fato entrava no registro, entrava na
+fila, e a linha do tempo continuava vazia.
+
+`projetarEventoNaTimeline` exigia `empresa_id`, `pessoa_id`, `aquisicao_id` ou
+`oportunidade_id` DENTRO do payload. O publicador legado, que tem 20 chamadores, põe
+`entityId` (id de lead ou negócio) e não o id canônico. Medido: **2.016 de 2.016 eventos
+de domínio não carregam nenhum id canônico**, e 659 são de tipo projetável.
+
+Ou seja: a projeção que liguei na rodada anterior **descartava tudo o que recebia**, e
+em silêncio, porque descartar evento sem vínculo é o comportamento correto para evento
+que não tem onde aparecer. Teste verde, caller ligado, e nenhuma linha nova.
+
+A correção é na projeção, não nos publicadores: ela passou a resolver o vínculo a partir
+do agregado (`lead` → aquisição e pessoa, `negocio` → oportunidade, empresa e pessoa),
+porque pedir a 20 chamadores que carreguem ids canônicos é o tipo de contrato que se
+cumpre em 19.
+
+**A história não precisou de reprojeção, e isso foi medido antes de mexer:** as 2.016
+linhas de timeline com `domain_event_id` correspondem exatamente aos 2.016 eventos, e os
+659 `ProposalSent` já estão todos ligados. O backfill 14-15 fez esse trabalho. O buraco
+era só daqui pra frente, que é onde ele foi fechado.
+
+**Validação:** tsc limpo, **257 testes, 0 falhas**, build exit 0, `smoke-automacao-etapa`
+(15 verificações), `smoke-motor-unico`, `smoke-outbox` e `smoke-capi-outbox` verdes, e
+zero resíduo de smoke no banco.

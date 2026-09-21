@@ -537,11 +537,36 @@ registrarAdapter("crm_assign_owner", async (ctx) => {
   return { sucesso: true, varsAtualizadas: { owner_id: ownerId }, resultado: { ownerId } };
 });
 
+/**
+ * Nota por automação, que agora aparece para quem lê a conta.
+ *
+ * A nota era gravada só em `atividades`. A linha do tempo canônica lê
+ * `timeline_events` e `communications`, então a nota existia no banco e não
+ * aparecia na tela da pessoa: escrita invisível, que é o formato de bug que este
+ * refactor mais encontrou.
+ *
+ * O evento é publicado DEPOIS do insert: se a nota não foi gravada, não há fato
+ * a anunciar. A projeção é quem decide como ela aparece (`projecao-timeline`),
+ * e não este adapter, para o vocabulário da tela viver num lugar só.
+ */
 registrarAdapter("crm_add_note", async (ctx) => {
   const config = ctx.step.config as { title?: string; description?: string };
   if (!config.title?.trim()) return { sucesso: false, erro: "nota sem título" };
   const links = await entityLinks(ctx);
   const [row] = await db.insert(atividades).values({ organizacaoId: ctx.organizacaoId, leadId: links.leadId, negocioId: links.negocioId, empresaId: links.empresaId, tipo: "nota_automacao", titulo: config.title.trim(), descricao: config.description ?? null, dados: { cadenceEnrollmentId: ctx.enrollmentId, stepId: ctx.step.id } }).returning({ id: atividades.id });
+
+  await publicarEvento({
+    organizacaoId: ctx.organizacaoId,
+    eventType: "NoteAdded",
+    aggregateType: ctx.entityType as "lead",
+    aggregateId: ctx.entityId,
+    payload: {
+      titulo: config.title.trim(), descricao: config.description ?? null,
+      atividadeId: row.id, entityType: ctx.entityType, entityId: ctx.entityId,
+    },
+    idempotencyKey: `${actionKey(ctx)}:nota`,
+  });
+
   return { sucesso: true, resultado: { atividadeId: row.id } };
 });
 

@@ -73,7 +73,10 @@ export type EventoDominio =
   | "ConversationReopened"
   | "ConversationMessageReceived"
   | "TagAdded"
-  | "TagRemoved";
+  | "TagRemoved"
+  // Nota escrita por automação. É conteúdo que alguém lê na conta, e por isso
+  // vira linha do tempo (ver `projecao-timeline`), não só linha em `atividades`.
+  | "NoteAdded";
 
 export interface PublicarEventoOpts {
   organizacaoId: string;
