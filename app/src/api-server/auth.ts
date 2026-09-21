@@ -10,7 +10,9 @@ import { isPersonalView } from "@/lib/auth/roles";
 const NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET || process.env.AUTH_SECRET || "";
 const ORG_OVERRIDE_COOKIE = "mcrm-org-override";
 const VIEW_AS_COOKIE = "mcrm-view-as";
-const ADMIN_ROLES = ["admin", "gerente", "super_admin"];
+// "Ver como" assume a identidade de outra pessoa (inclusive o papel dela),
+// então é acesso a dado alheio: exclusivo do super_admin.
+const ADMIN_ROLES = ["super_admin"];
 
 // NextAuth v5 derives a chave de criptografia via HKDF usando o NOME DO
 // COOKIE como salt/info — e o nome do cookie muda com o protocolo:

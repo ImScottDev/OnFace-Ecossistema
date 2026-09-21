@@ -15,7 +15,9 @@ import { ehFamiliaValida, RegraDeNegocio } from "@/lib/vendas/dominio";
 export interface ItemEntrada {
   servicoCatalogoId?: string | null;
   nome: string;
-  descricao?: string;
+  /** Item nunca preenchido volta do banco como null — o PATCH manda esse null
+   *  de volta e ele precisa atravessar (fix de produção 85102d8). */
+  descricao?: string | null;
   tipo: "recorrente" | "avulso" | "setup";
   quantidade: number;
   valorUnitario: number;

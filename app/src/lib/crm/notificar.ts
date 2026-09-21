@@ -79,6 +79,7 @@ export async function notificarNegocioGanho(negocioId: string): Promise<void> {
  * HOSPITAL CARE, sem negócio/lead formal no CRM), a atividade é pulada
  * honestamente — não inventa um leadId falso só pra satisfazer o NOT NULL.
  */
+
 export async function notificarFormularioImplantacaoRecebido(fulfillmentId: string): Promise<void> {
   try {
     const [f] = await db
@@ -97,6 +98,8 @@ export async function notificarFormularioImplantacaoRecebido(fulfillmentId: stri
     if (!f) return;
 
     const quem = f.empresaNome || "cliente sem nome cadastrado";
+    // Os dois shells existem (/pos-venda legado e /clientes no CRM2). A
+    // notificacao aponta para o CRM2, que e o destino da virada ONFACE.
     const link = `/clientes/entrega/${f.id}`;
 
     if (f.responsavelId) {

@@ -126,6 +126,21 @@ export interface CheckoutItem {
   moeda: string;
 }
 
+/**
+ * Converte a data de validade da proposta (ex.: "2026-09-25") em dias a partir
+ * de hoje pro boleto vencer junto — em vez do default fixo de 3 dias da Stripe.
+ * Retorna undefined se a data já passou ou for inválida (deixa a Stripe usar o
+ * default em vez de mandar um valor sem sentido tipo 0 ou negativo).
+ */
+export function boletoExpiresAfterDaysFromValidade(dataValidade?: string | null): number | undefined {
+  if (!dataValidade) return undefined;
+  const validade = new Date(`${dataValidade}T23:59:59-03:00`);
+  if (Number.isNaN(validade.getTime())) return undefined;
+  const dias = Math.ceil((validade.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+  if (dias <= 0) return undefined;
+  return Math.min(dias, 60);
+}
+
 /** Compatibilidade com os providers legados de billing. */
 export interface CheckoutResult {
   sessionId: string;
@@ -146,6 +161,12 @@ export interface CreateGroupCheckoutParams {
   metadata: Record<string, string>;
   /** Identifica uma nova tentativa depois que a sessão anterior foi expirada. */
   attemptKey?: string;
+  /**
+   * Vencimento do boleto em dias a partir de hoje (payment_method_options.boleto.
+   * expires_after_days). Sem isso a Stripe usa o default da conta — 3 dias —
+   * independente da "Validade" escolhida na proposta. Range aceito pela Stripe: 0–60.
+   */
+  boletoExpiresAfterDays?: number;
 }
 
 function appendNested(form: URLSearchParams, key: string, value: unknown): void {
@@ -227,6 +248,12 @@ export async function createGroupCheckout(params: CreateGroupCheckoutParams): Pr
   appendNested(form, "name_collection", { business: { enabled: true }, individual: { enabled: true } });
   appendNested(form, "customer_update", { name: "auto", address: "auto", phone: "auto" });
   appendNested(form, "custom_fields", [{ key: "cpfcnpj", label: { type: "custom", custom: "CPF ou CNPJ" }, type: "text", optional: false }]);
+  // Sem isso a Stripe usa o default da conta pro boleto (3 dias) e ignora a
+  // "Validade" da proposta — fix de produção a4ef701. Vale pra assinatura e
+  // pra pagamento único.
+  if (params.boletoExpiresAfterDays) {
+    appendNested(form, "payment_method_options", { boleto: { expires_after_days: params.boletoExpiresAfterDays } });
+  }
   appendMetadata(form, metadata);
   form.append("integration_identifier", `callface_crm_${randomSuffix()}`);
 

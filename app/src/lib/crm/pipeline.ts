@@ -21,6 +21,7 @@ export interface PipelineConfig {
   stages: PipelineStage[];          // pipeline stages (e.g. novo → contatado → proposta)
   closedStages: PipelineStage[];    // won/lost/active stages (always appended)
   lossReasons: { key: string; label: string }[];
+  disqualifyReasons: { key: string; label: string }[];
   setores: { key: string; label: string }[];
   origens: { key: string; label: string }[];
   servicos: { key: string; label: string }[];
@@ -68,6 +69,23 @@ export const DEFAULT_LOSS_REASONS = [
   { key: "outro", label: "Outro" },
 ];
 
+// ─── MOTIVOS DE DESQUALIFICAÇÃO (board Pré-vendas) ───────
+// Separado de DEFAULT_LOSS_REASONS de propósito: perder um NEGÓCIO ("preço
+// alto", "escolheu concorrente") é uma coisa; desqualificar um LEAD antes de
+// virar oportunidade é outra. Misturar os dois inutiliza os dois relatórios.
+// Editável por org em Configurações → Pipeline, igual aos motivos de perda.
+export const DEFAULT_DISQUALIFY_REASONS = [
+  { key: "fora_icp", label: "Fora do ICP" },
+  { key: "porte_incompativel", label: "Porte incompatível" },
+  { key: "sem_budget", label: "Sem orçamento" },
+  { key: "sem_interesse", label: "Sem interesse" },
+  { key: "ja_usa_concorrente", label: "Já usa concorrente" },
+  { key: "contato_invalido", label: "Contato inválido (telefone/e-mail)" },
+  { key: "duplicado", label: "Lead duplicado" },
+  { key: "nao_respondeu", label: "Não respondeu após tentativas" },
+  { key: "outro", label: "Outro" },
+];
+
 export const DEFAULT_SETORES = [
   { key: "imobiliario", label: "Imobiliário" },
   { key: "saude", label: "Saúde / Clínicas" },
@@ -107,6 +125,7 @@ export function buildPipelineConfig(dbConfig: Partial<PipelineConfig> | null | u
     stages: dbConfig?.stages?.length ? dbConfig.stages : DEFAULT_STAGES,
     closedStages: dbConfig?.closedStages?.length ? dbConfig.closedStages : DEFAULT_CLOSED_STAGES,
     lossReasons: dbConfig?.lossReasons?.length ? dbConfig.lossReasons : DEFAULT_LOSS_REASONS,
+    disqualifyReasons: dbConfig?.disqualifyReasons?.length ? dbConfig.disqualifyReasons : DEFAULT_DISQUALIFY_REASONS,
     setores: dbConfig?.setores?.length ? dbConfig.setores : DEFAULT_SETORES,
     origens: dbConfig?.origens?.length ? dbConfig.origens : DEFAULT_ORIGENS,
     servicos: dbConfig?.servicos?.length ? dbConfig.servicos : DEFAULT_SERVICOS,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Cf2Avatar } from "@/components/crm2/ds/Avatar";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -73,6 +73,10 @@ function formatarDataHora(iso: string | null) {
  */
 export function Cf2OnboardingWorkspace() {
   const router = useRouter();
+  // Esta tela é montada por dois shells: /clientes/onboarding (CRM2) e
+  // /pos-venda/onboarding (produção). O destino do clique segue o shell
+  // em que ela está — hardcodar um dos dois quebrava o outro.
+  const base = usePathname().startsWith("/pos-venda") ? "/pos-venda" : "/clientes";
   const { data: session } = useSession();
   const meuId = (session?.user as { id?: string } | undefined)?.id ?? null;
   const [aba, setAba] = useState("todos");
@@ -213,7 +217,7 @@ export function Cf2OnboardingWorkspace() {
                 return (
                   <div
                     key={f.id}
-                    onClick={() => router.push(`/clientes/onboarding/${f.id}`)}
+                    onClick={() => router.push(`${base}/onboarding/${f.id}`)}
                     className="flex items-center gap-3 px-4 py-3 cursor-pointer"
                     style={{ borderBottom: "1px solid var(--cf2-border-default)" }}
                   >

@@ -128,6 +128,9 @@ app.post("/fulfillment-formulario/:publicToken/upload", async (c) => {
 // removido pelo strip default do Zod (aconteceu com a versão anterior).
 const respostasSchema = z
   .object({
+    // White Label: identidade, domínio e faturamento. O jsonb continua como
+    // fonte de verdade, permitindo evoluir a coleta sem migration a cada campo.
+    whiteLabel: z.record(z.string(), z.any()).optional(),
     portabilidade: z.record(z.string(), z.any()).optional(),
     ramais: z.array(z.record(z.string(), z.any())).optional(),
     ura: z.record(z.string(), z.any()).optional(),
@@ -140,7 +143,6 @@ const respostasSchema = z
     filas: z.string().optional(),
     regrasAtendimento: z.string().optional(),
     telefonesIp: z.array(z.record(z.string(), z.any())).optional(),
-    whiteLabel: z.record(z.string(), z.any()).optional(),
   })
   .catchall(z.any()); // permissivo: campo novo do processo real não deve ser rejeitado
 
@@ -240,17 +242,10 @@ app.post("/fulfillment-formulario/:publicToken", async (c) => {
     .where(eq(fulfillmentFormularios.id, formulario.id))
     .returning();
 
-  // Materialização relacional — best-effort: uma falha aqui não pode
-  // derrubar a submissão (o jsonb acima já é a fonte de verdade/backup e
-  // já foi salvo com sucesso).
-  try {
-    await materializarLinhasERamais(fulfillment.id, fulfillment.organizacaoId, parsed.data.respostas);
-  } catch (err) {
-    console.error(`[fulfillment-formulario] falha ao materializar linhas/ramais do fulfillment ${fulfillment.id}:`, err);
-  }
-
   // White Label não é concluído pelo envio do formulário: ele apenas passa
-  // para revisão interna, no item que representa a validação dos materiais.
+  // para revisão interna (validação humana), no item que representa a
+  // validação dos materiais — não conclui a implantação nem mexe nas demais
+  // etapas do checklist.
   if (fulfillment.serviceFamily === "WHITE_LABEL") {
     await db.update(fulfillmentItens)
       .set({ status: "VALIDATION", updatedAt: new Date() })
@@ -258,6 +253,15 @@ app.post("/fulfillment-formulario/:publicToken", async (c) => {
         eq(fulfillmentItens.fulfillmentId, fulfillment.id),
         eq(fulfillmentItens.titulo, "Receber e validar materiais e informações do cliente"),
       ));
+  }
+
+  // Materialização relacional — best-effort: uma falha aqui não pode
+  // derrubar a submissão (o jsonb acima já é a fonte de verdade/backup e
+  // já foi salvo com sucesso).
+  try {
+    await materializarLinhasERamais(fulfillment.id, fulfillment.organizacaoId, parsed.data.respostas);
+  } catch (err) {
+    console.error(`[fulfillment-formulario] falha ao materializar linhas/ramais do fulfillment ${fulfillment.id}:`, err);
   }
 
   // Notificação real ao responsável + atividade (fire-and-forget, nunca

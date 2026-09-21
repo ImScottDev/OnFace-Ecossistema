@@ -40,13 +40,13 @@ async function main() {
     // ── 1/2. Fechado por responsável × total (mesma janela ganho_at, mesma regra) ──
     const [tot] = await sql`
       SELECT count(*)::int AS ganhos,
-        COALESCE(sum(CASE WHEN tipo_receita='avulso' THEN valor_total ELSE mrr_fechado END),0)::numeric(14,2) AS receita
+        COALESCE(sum(CASE WHEN tipo_receita IN ('avulso','projeto') THEN valor_total ELSE mrr_fechado END),0)::numeric(14,2) AS receita
       FROM negocios
       WHERE organizacao_id = ${org.id} AND status='ganho'
         AND ganho_at >= ${since}::date AND ganho_at < (${until}::date + 1)`;
     const porResp = await sql`
       SELECT coalesce(responsavel_id::text,'(sem responsável)') AS resp, count(*)::int AS ganhos,
-        COALESCE(sum(CASE WHEN tipo_receita='avulso' THEN valor_total ELSE mrr_fechado END),0)::numeric(14,2) AS receita
+        COALESCE(sum(CASE WHEN tipo_receita IN ('avulso','projeto') THEN valor_total ELSE mrr_fechado END),0)::numeric(14,2) AS receita
       FROM negocios
       WHERE organizacao_id = ${org.id} AND status='ganho'
         AND ganho_at >= ${since}::date AND ganho_at < (${until}::date + 1)

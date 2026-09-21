@@ -356,7 +356,10 @@ app.get("/fulfillments/:id", async (c) => {
   const [assinatura] = await db
     .select({ status: assinaturas.status, mrr: assinaturas.mrr, moeda: assinaturas.moeda, currentPeriodEnd: assinaturas.currentPeriodEnd, stripeSubscriptionId: assinaturas.stripeSubscriptionId, canceladaEm: assinaturas.canceladaEm })
     .from(assinaturas)
-    .where(eq(assinaturas.servicoId, carregado.fulfillment.servicoCanonicoId))
+    // Produção não tem `assinaturas.servico_id` (coluna que só existe no
+    // schema do CRM2, ver schema.ts:814) — referenciá-la aqui quebra em prod.
+    // A ligação que existe nos dois bancos é pelo CONTRATO do serviço canônico.
+    .where(sql`${assinaturas.contratoId} = (select contrato_id from servicos_canonicos where id = ${carregado.fulfillment.servicoCanonicoId})`)
     .orderBy(desc(assinaturas.createdAt))
     .limit(1);
 

@@ -56,6 +56,14 @@ export default function PeriodSelector({ value, onChange }: PeriodSelectorProps)
           Mês atual
         </button>
         <button
+          onClick={() => { setOpen(false); onChange("mes_passado"); }}
+          className={`${segBase} ${value === "mes_passado" ? "" : segInativo}`}
+          style={value === "mes_passado" ? segAtivo : undefined}
+          title="Mês anterior completo — ex.: julho/2026 quando hoje é agosto"
+        >
+          Mês passado
+        </button>
+        <button
           onClick={() => { setOpen(false); onChange("7d"); }}
           className={`${segBase} ${value === "7d" ? "" : segInativo}`}
           style={value === "7d" ? segAtivo : undefined}

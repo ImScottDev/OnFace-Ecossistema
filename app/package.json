@@ -30,7 +30,8 @@
     "db:migrar:check": "tsx --env-file=.env src/lib/db/migrar.ts --check",
     "aceite:contrato": "tsx --env-file=.env src/scripts/aceite-contrato-assinado.ts",
     "aceite:vendas": "tsx --env-file=.env src/scripts/aceite-vendas.ts",
-    "check:vendas": "tsx --env-file=.env src/scripts/checar-vendas-dominio.ts && tsx --env-file=.env src/scripts/checar-vendas-consultas.ts"
+    "check:vendas": "tsx --env-file=.env src/scripts/checar-vendas-dominio.ts && tsx --env-file=.env src/scripts/checar-vendas-consultas.ts",
+    "posvenda:reprocessar": "tsx --env-file=.env src/scripts/reprocessar-pos-venda.ts"
   },
   "dependencies": {
     "@auth/core": "0.41.3",
@@ -60,6 +61,7 @@
     "cmdk": "^1.1.1",
     "date-fns": "^4.4.0",
     "drizzle-orm": "^0.45.1",
+    "exceljs": "^4.4.0",
     "framer-motion": "^12.35.1",
     "googleapis": "^171.4.0",
     "hono": "^4.12.8",

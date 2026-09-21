@@ -36,6 +36,8 @@ import {
   CalendarClock,
   ListChecks,
   ShieldAlert,
+  Wrench,
+  Boxes,
 } from "lucide-react";
 
 const COLLAPSED_W = 64;
@@ -46,6 +48,16 @@ const messagingNav = [
   { name: "Email", href: "/email", countKey: "email" as const, icon: Mail, color: "#3B82F6", colorLight: "rgba(59, 130, 246, 0.15)" },
   // Oculto a pedido do Scott (não usar agora). Código/página mantidos — reativar é só descomentar.
   // { name: "Inbox Lemlist", href: "/inbox", countKey: null, icon: Inbox, color: "#8e27ef", colorLight: "rgba(142, 39, 239, 0.15)" },
+];
+
+// Pós-venda canônico (08/09) — atrás da flag POSVENDA_CANONICO, resolvida no
+// SERVIDOR (layout) e recebida por prop. De propósito não é `NEXT_PUBLIC_`:
+// essa o Next inlina no build, e ligar/desligar passaria a exigir rebuild da
+// imagem. Como prop, é runtime puro — o rollback é editar o .env e reiniciar.
+const posVendaNav = [
+  { name: "Onboarding", href: "/pos-venda/onboarding", icon: Rocket, countKey: null },
+  { name: "Implantação", href: "/pos-venda/implantacao", icon: Wrench, countKey: null },
+  { name: "White Label", href: "/pos-venda/white-label", icon: Boxes, countKey: null },
 ];
 
 const navigation = [
@@ -68,7 +80,7 @@ const navigation = [
   { name: "Configurações", href: "/configuracoes", icon: Settings, countKey: null, adminOnly: true },
 ];
 
-export function CrmSidebar() {
+export function CrmSidebar({ posVendaAtivo = false }: { posVendaAtivo?: boolean }) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
@@ -388,7 +400,12 @@ export function CrmSidebar() {
           {visibleMessaging.length > 0 && <div className="border-t border-white/[0.06] !my-2" />}
 
           {/* Main nav */}
-          {navigation
+          {(posVendaAtivo
+            ? // entra logo depois de Propostas, na ordem da jornada do cliente
+              navigation.flatMap((item) =>
+                item.href === "/propostas" ? [item, ...posVendaNav] : [item],
+              )
+            : navigation)
             .filter((item) => !(item as { adminOnly?: boolean }).adminOnly || effectiveIsAdmin)
             .filter((item) => canSee(item.href, effectiveRole))
             .map((item) => {

@@ -112,6 +112,42 @@ const notificationWorker = new Worker(
   { connection, concurrency: 1 }
 );
 
+// Conversion Sync Worker
+const conversionSyncWorker = new Worker(
+  "conversion-sync",
+  async (job) => {
+    const { platform, events } = job.data;
+    console.log(`[ConversionSync] Syncing ${events?.length || 0} events to ${platform}`);
+  },
+  { connection, concurrency: 1 }
+);
+
+// Stripe webhook: the HTTP route already persisted the payload by Stripe event
+// ID. The worker replays that record idempotently; 30-minute polling remains
+// a safety reconciliation, never the primary path.
+const stripeWebhookEventsWorker = new Worker(
+  "stripe-webhook-events",
+  async (job) => {
+    const { stripeEventId } = job.data as { stripeEventId: string };
+    const { processStoredStripeWebhookEvent } = await import("../lib/integrations/stripe-webhook-events");
+    const result = await processStoredStripeWebhookEvent(stripeEventId);
+    console.log(`[StripeWebhookWorker] ${stripeEventId}: ${result.type}${result.skipped ? " (already processed)" : ""}`);
+    return result;
+  },
+  { connection, concurrency: 1 },
+);
+trackRedisConnection(stripeWebhookEventsWorker);
+
+// Follow-up Worker
+const followUpWorker = new Worker(
+  "follow-up",
+  async (job) => {
+    const { leadId, action } = job.data;
+    console.log(`[FollowUp] Lead ${leadId}: ${action}`);
+  },
+  { connection, concurrency: 1 }
+);
+
 // ─── Helper: Find or create contato for a WhatsApp session + phone ─────
 async function findOrCreateContato(data: {
   phone: string;
@@ -121,8 +157,10 @@ async function findOrCreateContato(data: {
   sessaoId: string | null;
   pushName?: string;
 }) {
-  const { normalized, last8, organizacaoId, sessaoId, pushName } = data;
+  const { normalized, last8, organizacaoId, sessaoId, pushName: pushNameRaw } = data;
   const { contatos, whatsappSessao: waSessaoT, usuarios } = await import("../lib/db/schema");
+  const { sanitizePushName } = await import("../lib/whatsapp/phone-utils");
+  const pushName = sanitizePushName(pushNameRaw);
 
   // Find existing contato by sessão + phone
   if (sessaoId) {
@@ -267,7 +305,7 @@ async function crossSaveInterSession(opts: {
 }) {
   const { senderSessaoId, recipientPhone, organizacaoId, message, localMediaUrl, timestamp } = opts;
   const { whatsappSessao, contatos, whatsappMensagens, leads } = await import("../lib/db/schema");
-  const { normalizePhone, phoneLastDigits } = await import("../lib/whatsapp/phone-utils");
+  const { normalizePhone, phoneLastDigits, sanitizePushName } = await import("../lib/whatsapp/phone-utils");
 
   const recipientLast8 = phoneLastDigits(recipientPhone);
 
@@ -316,7 +354,7 @@ async function crossSaveInterSession(opts: {
     const [newContato] = await db.insert(contatos).values({
       organizacaoId,
       canal: "whatsapp",
-      nome: message.pushName || senderPhone,
+      nome: sanitizePushName(message.pushName) || senderPhone,
       telefone: senderPhone,
       sessaoId: recipientSession.id,
     }).returning({ id: contatos.id, leadId: contatos.leadId });
@@ -2988,13 +3026,24 @@ const slaWorker = new Worker(
             if (sessao.lastConnectedAt < tenMinutesAgo) {
               const [admin] = await db.select({ id: usuarios.id }).from(usuarios).where(and(eq(usuarios.role, "admin"), eq(usuarios.organizacaoId, sessao.organizacaoId))).limit(1);
               if (admin) {
-                await db.insert(notificacoes).values({
-                  usuarioId: admin.id,
-                  titulo: `WhatsApp desconectado: ${sessao.label || sessao.sessionName}`,
-                  mensagem: `A sessão "${sessao.label || sessao.sessionName}" está desconectada há mais de 10 minutos.`,
-                  tipo: "sistema",
-                  link: "/whatsapp",
-                });
+                // Dedupe (mesmo padrão de sla_alerta/follow-up-proposta, ver ca6c633):
+                // roda a cada 5min sem isso — achado real 13/08, 17k+ notificações
+                // duplicadas (uma sessão desconectada por dias gera uma por ciclo,
+                // pra sempre). Título já é específico por sessão (link é fixo
+                // "/whatsapp" pra todas, não serve de chave de dedupe aqui).
+                const titulo = `WhatsApp desconectado: ${sessao.label || sessao.sessionName}`;
+                const [jaAvisou] = await db.select({ id: notificacoes.id }).from(notificacoes)
+                  .where(and(eq(notificacoes.tipo, "sistema"), eq(notificacoes.titulo, titulo), eq(notificacoes.lida, false)))
+                  .limit(1);
+                if (!jaAvisou) {
+                  await db.insert(notificacoes).values({
+                    usuarioId: admin.id,
+                    titulo,
+                    mensagem: `A sessão "${sessao.label || sessao.sessionName}" está desconectada há mais de 10 minutos.`,
+                    tipo: "sistema",
+                    link: "/whatsapp",
+                  });
+                }
               }
             }
           }

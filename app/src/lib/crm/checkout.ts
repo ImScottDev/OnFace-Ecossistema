@@ -23,7 +23,7 @@ import { eq, asc } from "drizzle-orm";
 import {
   checkouts, propostas, propostaGrupoComercial, propostaGrupoComercialItens, propostaItens, servicosCatalogo, catalogoPrecos, leads, empresas, negocios,
 } from "@/lib/db/schema";
-import { createGroupCheckout, createStripeCustomer, expireCheckoutSession, getStripeCheckoutMode, type CheckoutItem } from "@/lib/integrations/stripe-checkout";
+import { boletoExpiresAfterDaysFromValidade, createGroupCheckout, createStripeCustomer, expireCheckoutSession, getStripeCheckoutMode, type CheckoutItem } from "@/lib/integrations/stripe-checkout";
 import { publicarEvento } from "@/lib/events/outbox";
 import { vincularCheckoutAoGrupo } from "@/lib/crm/grupo-comercial";
 import { montarMetadataComercial } from "@/lib/crm/metadata-comercial";
@@ -179,6 +179,9 @@ export async function criarCheckoutParaGrupo(opts: {
       propostaId: proposta.id, negocioId: proposta.negocioId, grupoComercialId: opts.grupoId, organizacaoId: proposta.organizacaoId,
       moeda: proposta.moeda || "BRL", itensRecorrentes, itensAvulsos, customerId, metadata,
       attemptKey: grupo.checkoutId || "initial",
+      // Boleto vence junto com a Validade da proposta; sem isso a Stripe usa
+      // o default da conta (3 dias). Fix de produção a4ef701.
+      boletoExpiresAfterDays: boletoExpiresAfterDaysFromValidade(proposta.dataValidade),
       successUrl: process.env.CHECKOUT_SUCCESS_URL || `${base}/p/${proposta.id}?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
       cancelUrl: process.env.CHECKOUT_CANCEL_URL || `${base}/p/${proposta.id}?checkout=cancelled`,
     });

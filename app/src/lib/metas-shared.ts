@@ -40,6 +40,13 @@ export const META_TIPOS_MOEDA: MetaTipo[] = ["faturamento_fechado", "mrr_fechado
  */
 export const PAPEIS_QUE_SOMAM_NA_META: string[] = ["closer", "vendedor"];
 
+/** Usuários que fecham negócio de verdade mas o `role` não é closer/vendedor
+ * (reorg interno mudou o cargo, mas a atividade comercial continuou). Kauã
+ * confirmou (31/08/2026): Jenifer Matos (role "gerente") vende de verdade e
+ * deve contar nos agregados/relatórios de closer mesmo assim — pontual, por
+ * ID, NÃO amplia o bucket de role (outros "gerente" da org não vendem). */
+export const CLOSER_EXTRA_IDS: string[] = ["6418d02b-d45c-4d49-8b29-b96f8f136795"]; // Jenifer Matos
+
 /**
  * Meta north-star por papel (pré-seleciona o tipo na UI e nos dashboards).
  *

@@ -54,6 +54,8 @@ export function buildPropostaEmail(p: PropostaEmailParams): { subject: string; h
   const saudacao = primeiroNome(p.clienteNome) || "Olá";
 
   const recorrentes = p.itens.filter((i) => i.tipo === "recorrente");
+  const temRecorrente = recorrentes.length > 0 && p.totalRecorrente > 0;
+  const totalExibido = temRecorrente ? p.totalRecorrente : (p.totalAvulso ?? 0);
   const linhasItens = (recorrentes.length ? recorrentes : p.itens)
     .map(
       (i) => `
@@ -86,7 +88,7 @@ export function buildPropostaEmail(p: PropostaEmailParams): { subject: string; h
         <tr><td style="padding:32px;font-family:'Segoe UI',Arial,sans-serif;color:${BRAND.text};">
           <p style="margin:0 0 6px;font-size:16px;">Olá ${escapeHtml(saudacao)},</p>
           <p style="margin:0 0 24px;font-size:14px;line-height:22px;color:${BRAND.muted};">
-            Preparamos a proposta da Callface${p.empresa ? ` para a ${escapeHtml(p.empresa)}` : ""}. Abaixo o resumo dos itens. Para começar, é só finalizar a assinatura no botão.
+            Preparamos a proposta da Callface${p.empresa ? ` para a ${escapeHtml(p.empresa)}` : ""}. Abaixo o resumo dos itens. Para começar, é só finalizar ${temRecorrente ? "a assinatura" : "o pagamento"} no botão.
           </p>
 
           <!-- Resumo -->
@@ -94,8 +96,8 @@ export function buildPropostaEmail(p: PropostaEmailParams): { subject: string; h
             <tr><td style="padding-top:8px;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#9ca3af;">Proposta ${escapeHtml(numeroFmt)}</td></tr>
             ${linhasItens}
             <tr>
-              <td style="padding:16px 0 12px;color:${BRAND.text};font-size:15px;font-weight:700;">Total mensal</td>
-              <td style="padding:16px 0 12px;color:${BRAND.carmim};font-size:18px;font-weight:800;text-align:right;white-space:nowrap;">${money(p.totalRecorrente, moeda)}<span style="color:#9ca3af;font-size:13px;font-weight:600;">/mês</span></td>
+              <td style="padding:16px 0 12px;color:${BRAND.text};font-size:15px;font-weight:700;">${temRecorrente ? "Total mensal" : "Total"}</td>
+              <td style="padding:16px 0 12px;color:${BRAND.carmim};font-size:18px;font-weight:800;text-align:right;white-space:nowrap;">${money(totalExibido, moeda)}${temRecorrente ? '<span style="color:#9ca3af;font-size:13px;font-weight:600;">/mês</span>' : ""}</td>
             </tr>
           </table>
 
@@ -104,7 +106,7 @@ export function buildPropostaEmail(p: PropostaEmailParams): { subject: string; h
             <tr><td align="center">
               <a href="${escapeAttr(p.checkoutUrl)}" target="_blank"
                  style="display:inline-block;background:${BRAND.carmim};color:#ffffff;text-decoration:none;font-family:'Segoe UI',Arial,sans-serif;font-size:15px;font-weight:700;padding:14px 40px;border-radius:10px;">
-                Assinar e ativar agora
+                ${temRecorrente ? "Assinar e ativar agora" : "Pagar e ativar agora"}
               </a>
             </td></tr>
           </table>

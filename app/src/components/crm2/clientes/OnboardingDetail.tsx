@@ -7,6 +7,7 @@ import {
   CheckCircle2, Circle, Clock, AlertTriangle, CalendarClock, Activity, Video,
   Lock, ChevronDown, ChevronRight, MoreHorizontal, FileText, ExternalLink,
 } from "lucide-react";
+import { callfaceCallUrl } from "@/lib/utils/callface-call";
 import { AssignOwnerControl } from "@/components/crm2/shared/AssignOwnerControl";
 import { toastDark } from "@/components/crm2/shared/toast-dark";
 import { useOrgUsuarios } from "@/components/crm/BoardFilters";
@@ -128,14 +129,61 @@ function diasDesde(iso: string | null) {
   if (!iso) return null;
   return Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 86400000));
 }
-function atendimentoHref(leadId: string, canal: "whatsapp" | "email" | "ligacao", telefone?: string | null, texto?: string) {
-  const params = new URLSearchParams({ leadId, canal });
+/**
+ * Deep link pro canal certo. Em dev tudo cai num `/atendimento` unificado, que
+ * NÃO existe em produção — aqui cada canal tem a sua tela, então o destino é
+ * resolvido por canal:
+ *
+ * - ligacao:  webphone da Callface já discando (mesmo padrão do LeadDrawer,
+ *             NegocioDrawer e /contatos/[id]) — abre em nova aba.
+ * - whatsapp: inbox do CRM já na conversa do cliente, com a mensagem do
+ *             template pronta no compositor quando houver.
+ * - email:    inbox de e-mail com o compositor JÁ ABERTO e o destinatário
+ *             preenchido (`novo=1&para=`) — sem isso a tela só abria a lista.
+ *
+ * Cai em `/contatos/:id` só quando falta o dado que o canal exige (lead sem
+ * telefone, sem e-mail): é a tela onde a pessoa consegue cadastrar o que
+ * falta, em vez de um link que não faz nada.
+ */
+function atendimentoHref(
+  leadId: string,
+  canal: "whatsapp" | "email" | "ligacao",
+  telefone?: string | null,
+  texto?: string,
+  email?: string | null,
+) {
+  if (canal === "ligacao") {
+    return telefone ? callfaceCallUrl(telefone) : `/contatos/${leadId}`;
+  }
+  if (canal === "email") {
+    if (!email) return `/contatos/${leadId}`;
+    return `/email?${new URLSearchParams({ leadId, para: email, novo: "1" })}`;
+  }
+  const params = new URLSearchParams({ leadId });
   if (telefone) params.set("telefone", telefone);
   if (texto) params.set("texto", texto);
-  return `/atendimento?${params.toString()}`;
+  return `/whatsapp?${params}`;
 }
 
+/** Ligação sai pro webphone da Callface, fora do CRM: nova aba, como nas outras telas. */
+const alvoExterno = (canal: "whatsapp" | "email" | "ligacao", telefone?: string | null) =>
+  canal === "ligacao" && telefone
+    ? { target: "_blank", rel: "noopener noreferrer" as const }
+    : {};
+
 const secLabel = { color: "var(--cf2-text-tertiary)" };
+
+/**
+ * Por que a reunião não entrou na agenda. Duplicado (curto) do
+ * `lib/crm/outlook-evento.ts` de propósito: aquele módulo é server-side (puxa
+ * `db`) e não pode ser importado por componente cliente.
+ */
+const MOTIVO_OUTLOOK: Record<string, string> = {
+  sem_outlook: "Reunião criada, mas NÃO entrou na agenda: conecte sua conta Microsoft em Configurações > E-mail.",
+  lead_sem_email: "Reunião na agenda, mas o cliente NÃO foi convidado: lead sem e-mail cadastrado.",
+  token_expirado: "Reunião criada, mas NÃO entrou na agenda: conexão com a Microsoft expirou. Reconecte em Configurações > E-mail.",
+  erro_graph: "Reunião criada, mas NÃO entrou na agenda do Outlook (falha ao falar com a Microsoft).",
+};
 
 /**
  * Detalhe DEDICADO de Onboarding (Callface AI) — 3ª reconstrução, 25/08.
@@ -255,7 +303,19 @@ export function Cf2OnboardingDetail({ fulfillmentId }: { fulfillmentId: string }
       if (!r.ok) throw new Error("Falha ao agendar reunião");
       return r.json();
     },
-    onSuccess: () => { setReuniaoAberta(false); invalidate(); toastDark.success("Reunião agendada"); },
+    /**
+     * "Reunião agendada" sozinho mentia: o evento pode não ter entrado na
+     * agenda do Outlook (sem conta conectada, token expirado, lead sem
+     * e-mail) e o cliente não receber convite nenhum. O backend devolve
+     * `outlook.motivo` justamente pra isso aparecer aqui.
+     */
+    onSuccess: (resp: { outlook?: { criado: boolean; motivo: string | null } }) => {
+      setReuniaoAberta(false);
+      invalidate();
+      const motivo = resp?.outlook?.motivo;
+      if (!motivo) { toastDark.success("Reunião agendada e convite enviado pelo Outlook"); return; }
+      toastDark.error(MOTIVO_OUTLOOK[motivo] ?? "Reunião criada no CRM, mas não entrou na agenda do Outlook.");
+    },
     onError: () => toastDark.error("Não foi possível agendar a reunião"),
   });
 
@@ -338,9 +398,9 @@ export function Cf2OnboardingDetail({ fulfillmentId }: { fulfillmentId: string }
               {data.propostaId && <>· Proposta: <a href={`/propostas/${data.propostaId}`} className="font-semibold" style={{ color: "var(--cf2-accent-border)" }}>{data.propostaNumero ? `#P-${data.propostaNumero}` : "ver"}</a></>}
             </div>
             <div className="flex items-center gap-2 mt-3">
-              {data.leadId && <Cf2Button asChild variant="secondary" size="sm"><a href={atendimentoHref(data.leadId, "ligacao", data.leadTelefone)}><Phone className="w-3.5 h-3.5" /> Ligar</a></Cf2Button>}
+              {data.leadId && <Cf2Button asChild variant="secondary" size="sm"><a href={atendimentoHref(data.leadId, "ligacao", data.leadTelefone)} {...alvoExterno("ligacao", data.leadTelefone)}><Phone className="w-3.5 h-3.5" /> Ligar</a></Cf2Button>}
               {data.leadId && <Cf2Button asChild variant="secondary" size="sm"><a href={atendimentoHref(data.leadId, "whatsapp", data.leadTelefone)}><MessageCircle className="w-3.5 h-3.5" /> WhatsApp</a></Cf2Button>}
-              {data.leadId && data.leadEmail && <Cf2Button asChild variant="secondary" size="sm"><a href={atendimentoHref(data.leadId, "email")}><Mail className="w-3.5 h-3.5" /> E-mail</a></Cf2Button>}
+              {data.leadId && data.leadEmail && <Cf2Button asChild variant="secondary" size="sm"><a href={atendimentoHref(data.leadId, "email", null, undefined, data.leadEmail)}><Mail className="w-3.5 h-3.5" /> E-mail</a></Cf2Button>}
             </div>
           </div>
         </div>
@@ -562,7 +622,7 @@ export function Cf2OnboardingDetail({ fulfillmentId }: { fulfillmentId: string }
                   <p className="text-[10px]" style={secLabel}>{PAPEL_LABEL[p.papel ?? "contato"] ?? p.papel}{p.cargo ? ` · ${p.cargo}` : ""}</p>
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
-                  {p.telefone && <a href={atendimentoHref(p.leadId, "ligacao", p.telefone)}><Phone className="w-3 h-3" style={secLabel} /></a>}
+                  {p.telefone && <a href={atendimentoHref(p.leadId, "ligacao", p.telefone)} {...alvoExterno("ligacao", p.telefone)} title="Ligar pelo webphone da Callface" aria-label="Ligar pelo webphone da Callface"><Phone className="w-3 h-3" style={secLabel} /></a>}
                   {p.email && <a href={`mailto:${p.email}`}><Mail className="w-3 h-3" style={secLabel} /></a>}
                 </div>
               </div>

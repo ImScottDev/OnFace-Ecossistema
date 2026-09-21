@@ -34,6 +34,14 @@ export function parsePeriodo(periodo: string): { since: Date; until: Date } {
   if (periodo === "mes_atual") {
     return { since: clampDesdeGoLive(new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0)), until: now };
   }
+  // Mês passado (20/08, Fechamento Comercial — Financeiro fechando julho/2026):
+  // dia 1 do mês anterior 00:00 até dia 1 do mês atual 00:00 (mês anterior
+  // completo). Mesmo clamp do go-live dos outros presets.
+  if (periodo === "mes_passado") {
+    const inicioMesAtual = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+    const inicioMesPassado = new Date(now.getFullYear(), now.getMonth() - 1, 1, 0, 0, 0, 0);
+    return { since: clampDesdeGoLive(inicioMesPassado), until: inicioMesAtual };
+  }
   const days = periodo === "12m" ? 365 : parseInt(periodo.replace(/\D/g, "")) || 30;
   return { since: clampDesdeGoLive(new Date(now.getTime() - days * 86400000)), until: now };
 }

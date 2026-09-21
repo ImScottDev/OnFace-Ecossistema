@@ -75,6 +75,10 @@ export async function enviarPropostaComCheckout(opts: {
     .where(eq(propostaItens.propostaId, propostaId))
     .orderBy(asc(propostaItens.ordem));
 
+  if (itens.length === 0) {
+    return { ok: false, status: 400, error: "Proposta sem itens. Adicione ao menos um item antes de salvar/enviar." };
+  }
+
   const propostaExigeContrato = itens.some((item) => item.commercialModel !== "PAGAMENTO_DIRETO");
   const signatarios = Array.isArray(proposta.signatarios) ? proposta.signatarios : [];
   if (propostaExigeContrato && signatarios.length === 0) {
@@ -99,6 +103,11 @@ export async function enviarPropostaComCheckout(opts: {
   }
 
   const totalRecorrente = parseFloat(proposta.totalRecorrente || "0");
+  // Proposta 100% avulso/setup (ex.: WHITE LABEL só com setup fee) tem total
+  // mensal zero — o valor real está no avulso. Email e timeline precisam dele
+  // pra não anunciar "Total R$ 0,00" pro cliente (fix de produção 5730112).
+  const totalAvulso = parseFloat(proposta.totalAvulso || "0");
+  const temRecorrente = itens.some((i) => i.tipo === "recorrente") || totalRecorrente > 0;
   // O PDF/email histórico já informava "10 dias após o recebimento" quando
   // o vendedor não preenchia uma data. Materializamos essa regra no registro
   // no momento do envio para que exibição, worker e aceite usem a mesma data.
@@ -119,12 +128,17 @@ export async function enviarPropostaComCheckout(opts: {
       moeda: proposta.moeda || "BRL",
       itens: itens.map((i) => ({ nome: i.nome, tipo: i.tipo, subtotal: parseFloat(i.subtotal || "0") })),
       totalRecorrente,
+      totalAvulso,
       checkoutUrl: linkPublico,
       validade: dataValidadeEfetiva,
       remetenteNome: userName ?? null,
     });
     emailResult = await sendResendEmail({ to: lead.email, subject, html });
   }
+
+  const valorTimeline = temRecorrente
+    ? `valor mensal: R$ ${totalRecorrente.toLocaleString("pt-BR")}`
+    : `valor: R$ ${totalAvulso.toLocaleString("pt-BR")}`;
 
   const today = new Date().toISOString().split("T")[0];
   const [updated] = await db
@@ -151,8 +165,8 @@ export async function enviarPropostaComCheckout(opts: {
     tipo: "proposta_enviada",
     titulo: `Proposta #P-${String(proposta.numero).padStart(3, "0")}-v${proposta.versao} ${skipEmail ? "ativada (link gerado)" : "enviada por email"}`,
     descricao: skipEmail
-      ? "Link público gerado. Email não disparado (Salvar)."
-      : `Enviada para ${lead?.email}. Cliente decide o próximo passo na página pública.`,
+      ? `Link público gerado (${valorTimeline}). Email não disparado (Salvar).`
+      : `Enviada para ${lead?.email} (${valorTimeline}). Cliente decide o próximo passo na página pública.`,
     dados: { propostaId: proposta.id, linkPublico, emailId: emailResult.id ?? null },
   });
 

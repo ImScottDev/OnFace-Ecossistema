@@ -78,6 +78,8 @@ interface ChatPanelProps {
   headerActions?: React.ReactNode;
   /** Called when clicking on the contact name (e.g., to open info sidebar) */
   onNameClick?: () => void;
+  /** Texto pré-preenchido no compositor (ex.: template vindo do pós-venda) */
+  initialText?: string;
 }
 
 // ─── Constants ───────────────────────────────────────────
@@ -378,9 +380,10 @@ export function ChatPanel({
   onStatusChange,
   headerActions,
   onNameClick,
+  initialText,
 }: ChatPanelProps) {
   // State
-  const [text, setText] = useState("");
+  const [text, setText] = useState(initialText ?? "");
   const [showTemplates, setShowTemplates] = useState(false);
   const [showActions, setShowActions] = useState(false);
   const [showAttachMenu, setShowAttachMenu] = useState(false);
@@ -411,6 +414,15 @@ export function ChatPanel({
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const queryClient = useQueryClient();
+
+  // Template vindo de outra tela: só preenche o compositor se ele estiver
+  // vazio — nunca sobrescreve o que o usuário já digitou.
+  const lastInitialTextRef = useRef<string | undefined>(initialText);
+  useEffect(() => {
+    if (initialText === lastInitialTextRef.current) return;
+    lastInitialTextRef.current = initialText;
+    if (initialText) setText((atual) => (atual.trim() ? atual : initialText));
+  }, [initialText]);
 
   // ─── Queries ─────────────────────────────────────────
 

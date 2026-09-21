@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { getCtx, parseBody } from "../compat.js";
 import { getTenantFromRequest } from "../auth.js";
+import { resolverEmpresaId, dominioCorporativo } from "@/lib/crm/resolver-empresa";
 import { db } from "@/lib/db";
 import {
   leads,
@@ -33,6 +34,8 @@ import {
   emailContas,
   auditLog,
   entityLabels,
+  ligacoes,
+  cadenciaExecucoes,
 } from "@/lib/db/schema";
 import {
   desc,
@@ -508,38 +511,17 @@ app.post(
     // Resolve a EMPRESA como entidade real (não só texto): vincula a existente
     // (empresaId) OU acha por CNPJ/nome na org OU cria uma nova. Assim o lead
     // fica com empresa_id de verdade (aparece na lista de empresas, dá pra reusar).
-    let resolvedEmpresaId: string | null = bodyEmpresaId || null;
-    if (!resolvedEmpresaId && insertData.empresa?.trim()) {
-      const nomeEmp = insertData.empresa.trim();
-      const cnpj = insertData.empresaCnpj?.replace(/\D/g, "") || null;
-      const [existing] = await db
-        .select({ id: empresas.id })
-        .from(empresas)
-        .where(
-          and(
-            eq(empresas.organizacaoId, orgId),
-            cnpj && cnpj.length === 14 ? eq(empresas.cnpj, cnpj) : ilike(empresas.nome, nomeEmp)
-          )
-        )
-        .limit(1);
-      if (existing) {
-        resolvedEmpresaId = existing.id;
-      } else {
-        const [novaEmp] = await db
-          .insert(empresas)
-          .values({
-            organizacaoId: orgId,
-            nome: nomeEmp,
-            cnpj: cnpj && cnpj.length === 14 ? cnpj : null,
-            setor: insertData.empresaSetor || null,
-            porte: insertData.empresaPorte || null,
-            cidade: insertData.empresaCidade || null,
-            estado: insertData.empresaEstado || null,
-          })
-          .returning({ id: empresas.id });
-        resolvedEmpresaId = novaEmp.id;
-      }
-    }
+    const resolvedEmpresaId = await resolverEmpresaId({
+      organizacaoId: orgId,
+      empresaId: bodyEmpresaId,
+      nome: insertData.empresa,
+      cnpj: insertData.empresaCnpj,
+      setor: insertData.empresaSetor,
+      porte: insertData.empresaPorte,
+      cidade: insertData.empresaCidade,
+      estado: insertData.empresaEstado,
+      website: dominioCorporativo(insertData.email),
+    });
 
     const [newLead] = await db
       .insert(leads)
@@ -1108,6 +1090,25 @@ app.patch("/leads/:id", async (c) => {
   const previousResponsavel = parsed.data.responsavelId !== undefined
     ? (await db.select({ responsavelId: leads.responsavelId }).from(leads).where(eq(leads.id, id)).limit(1))[0]?.responsavelId ?? null
     : null;
+  // Digitar a empresa na ficha gravava só o texto, e o lead continuava aparecendo
+  // como "Sem cadastro — clique pra criar e vincular". Resolve como entidade.
+  if (parsed.data.empresaId === undefined && typeof parsed.data.empresa === "string" && parsed.data.empresa.trim()) {
+    let emailParaDominio = parsed.data.email;
+    if (!emailParaDominio) {
+      const [atual] = await db
+        .select({ email: leads.email })
+        .from(leads)
+        .where(and(eq(leads.id, id), eq(leads.organizacaoId, ctx.organizacaoId)))
+        .limit(1);
+      emailParaDominio = atual?.email ?? undefined;
+    }
+    const resolvida = await resolverEmpresaId({
+      organizacaoId: ctx.organizacaoId,
+      nome: parsed.data.empresa,
+      website: dominioCorporativo(emailParaDominio),
+    });
+    if (resolvida) updateData.empresaId = resolvida;
+  }
 
   const [updated] = await db
     .update(leads)
@@ -1243,6 +1244,16 @@ app.delete("/leads/:id", async (c) => {
   }
 
   // Delete in dependency order
+  // Ligações são histórico real de telefonia (áudio/transcrição/billing) — nunca
+  // deletar, só órfã (mesmo padrão de "ligação sem lead casado" já usado no
+  // schema). Sem isso, a FK ligacoes.negocio_id/lead_id trava o delete abaixo
+  // pra qualquer lead que já recebeu uma ligação de verdade.
+  const negocioIds = leadNegocios.map((n) => n.id);
+  if (negocioIds.length > 0) {
+    await db.update(ligacoes).set({ negocioId: null }).where(inArray(ligacoes.negocioId, negocioIds));
+  }
+  await db.update(ligacoes).set({ leadId: null }).where(eq(ligacoes.leadId, id));
+
   // First delete negocio-related data
   for (const n of leadNegocios) {
     // proposta_itens cascade from propostas, but delete propostas first
@@ -1284,6 +1295,7 @@ app.delete("/leads/:id", async (c) => {
   await db.delete(reunioes).where(eq(reunioes.leadId, id));
   await db.delete(leadUserUnread).where(eq(leadUserUnread.leadId, id));
   await db.delete(emailSequenciaExecucoes).where(eq(emailSequenciaExecucoes.leadId, id));
+  await db.delete(cadenciaExecucoes).where(eq(cadenciaExecucoes.leadId, id));
   await db.delete(contatos).where(eq(contatos.leadId, id));
 
   // Finally delete the lead

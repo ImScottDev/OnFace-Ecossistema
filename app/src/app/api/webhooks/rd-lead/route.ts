@@ -9,6 +9,8 @@ import {
 } from "@/lib/integrations/rd-station";
 import { syncPessoaFromLead } from "@/lib/crm/sync-domain-model";
 import { garantirAtividadePrimeiroContato, resolverResponsavelInbound } from "@/lib/vendas/pre-vendas";
+import { telefoneUsavel } from "@/lib/whatsapp/phone-utils";
+import { resolverEmpresaId, dominioCorporativo } from "@/lib/crm/resolver-empresa";
 
 /**
  * Busca IDs reais da Meta deixados em staging pelo webhook /api/webhooks/meta-lead-ids
@@ -19,7 +21,7 @@ import { garantirAtividadePrimeiroContato, resolverResponsavelInbound } from "@/
 async function buscarMetaIdsStaging(
   email: string | undefined,
   telefone: string | undefined
-): Promise<{ adId?: string; adsetId?: string; campaignId?: string } | null> {
+): Promise<{ adId?: string; adsetId?: string; campaignId?: string; telefone?: string } | null> {
   if (!email && !telefone) return null;
   const condicoes = [];
   if (email) condicoes.push(eq(metaLeadStaging.email, email));
@@ -32,7 +34,13 @@ async function buscarMetaIdsStaging(
     .limit(1);
   if (!row) return null;
   await db.update(metaLeadStaging).set({ usado: true }).where(eq(metaLeadStaging.id, row.id));
-  return { adId: row.adId ?? undefined, adsetId: row.adsetId ?? undefined, campaignId: row.campaignId ?? undefined };
+  return {
+    adId: row.adId ?? undefined,
+    adsetId: row.adsetId ?? undefined,
+    campaignId: row.campaignId ?? undefined,
+    // A Meta manda o telefone certo aqui. O RD nem sempre (ver backfill abaixo).
+    telefone: telefoneUsavel(row.telefone) ?? undefined,
+  };
 }
 
 /**
@@ -131,6 +139,14 @@ export async function POST(req: NextRequest) {
       const p: ParsedRdLead = parseRdLead(rd);
       const metaIds = await buscarMetaIdsStaging(p.email, p.telefone);
 
+      // Telefone: a fonte boa é a Meta, não o RD. A ponte Meta→RD lê o campo do
+      // formulário pelo nome e, quando o form usa outro nome, grava lixo na
+      // conversão ("undefined", e num caso real "Brazil" — leu o campo de país).
+      // O mesmo lead chega íntegro no meta_lead_staging, então quando o RD não
+      // trouxe telefone usável a gente pega o da Meta. Isso roda ANTES do dedup
+      // de propósito: com o número certo o lead casa com quem ele é de verdade.
+      if (!p.telefone && metaIds?.telefone) p.telefone = metaIds.telefone;
+
       // Campos do formulário que não têm coluna própria vão pro camposCustom
       // (Tipo de negócio e Tamanho da base vêm nas tags do RD).
       const formCampos: Record<string, unknown> = {};
@@ -180,6 +196,14 @@ export async function POST(req: NextRequest) {
           .limit(1);
       }
 
+      // Empresa como entidade, não só texto: sem isso o lead cai no drawer como
+      // "Sem cadastro — clique pra criar e vincular" e alguém tem que vincular à mão.
+      const empresaIdResolvida = await resolverEmpresaId({
+        organizacaoId: org.id,
+        nome: p.empresa,
+        website: dominioCorporativo(p.email),
+      });
+
       // Já existe como lead/prospect no pipeline (não-cliente): atualiza, não duplica.
       if (existing && existing.tipo !== "cliente") {
         // Mescla camposCustom pra não apagar qualificação/custom já preenchidos.
@@ -194,6 +218,10 @@ export async function POST(req: NextRequest) {
           .update(leads)
           .set({
             empresa: p.empresa,
+            // Não rouba o vínculo já feito (inclusive o manual, no drawer): só preenche se estiver vazio.
+            ...(empresaIdResolvida
+              ? { empresaId: sql`COALESCE(${leads.empresaId}, ${empresaIdResolvida}::uuid)` }
+              : {}),
             cargo: p.cargo,
             origem: sql`COALESCE(NULLIF(${leads.origem}, ''), ${p.origem ?? null})`,
             utmSource: sql`COALESCE(NULLIF(${leads.utmSource}, ''), ${p.utmSource ?? null})`,
@@ -243,6 +271,7 @@ export async function POST(req: NextRequest) {
           email: p.email,
           telefone: p.telefone,
           empresa: p.empresa,
+          empresaId: empresaIdResolvida,
           cargo: p.cargo,
           origem: p.origem,
           utmSource: p.utmSource,

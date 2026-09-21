@@ -1,6 +1,6 @@
 import { Hono, type Context } from "hono";
 import { db } from "@/lib/db";
-import { propostas, propostaItens, leads, negocios, usuarios, contratos, atividades, statusChanges, propostaGrupoComercial, propostaGrupoComercialItens, checkouts, catalogoPrecos, servicosCatalogo } from "@/lib/db/schema";
+import { propostas, propostaItens, leads, negocios, usuarios, contratos, atividades, statusChanges, pipelines, propostaGrupoComercial, propostaGrupoComercialItens, checkouts, catalogoPrecos, servicosCatalogo } from "@/lib/db/schema";
 import { eq, and, or, desc, asc, sql, ilike, inArray, count, gte } from "drizzle-orm";
 import { z } from "zod";
 import { getCtx } from "../compat.js";
@@ -35,7 +35,7 @@ const app = new Hono();
 const itemSchema = z.object({
   servicoCatalogoId: z.string().uuid().optional().nullable(),
   nome: z.string().min(1),
-  descricao: z.string().optional(),
+  descricao: z.string().optional().nullable(),
   tipo: z.enum(["recorrente", "avulso", "setup"]),
   quantidade: z.number().positive().default(1),
   valorUnitario: z.number().min(0).default(0),
@@ -797,6 +797,15 @@ app.post("/propostas", async (c) => {
   // vincula. Assim, ao fechar, é ESSE negócio que vira ganho — meta e relatório
   // batem, e não sobra proposta solta sem negócio.
   if (!resolvedNegocioId) {
+    // Sem pipelineId o negócio nasce órfão e NÃO aparece no board (o filtro do
+    // pipeline é por pipeline_id). Era o caso desde sempre aqui: o comentário
+    // acima dizia "cria um negócio no pipeline" e o campo nunca era preenchido.
+    const [pipelinePadrao] = await db
+      .select({ id: pipelines.id })
+      .from(pipelines)
+      .where(and(eq(pipelines.organizacaoId, ctx.organizacaoId), eq(pipelines.ativo, true)))
+      .orderBy(desc(pipelines.isDefault), asc(pipelines.ordem))
+      .limit(1);
     const [novoNeg] = await db
       .insert(negocios)
       .values({
@@ -805,6 +814,7 @@ app.post("/propostas", async (c) => {
         empresaId: lead.empresaId ?? null,
         titulo: `${lead.empresa || lead.nome || "Proposta"} - Negócio`,
         status: "proposta_apresentada",
+        pipelineId: pipelinePadrao?.id ?? null,
         responsavelId: lead.responsavelId ?? ctx.userId,
         origemNegocio: "novo",
         origemQualificacao: "direta", // proposta direto do lead, sem fluxo de reunião

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Truck, Activity, Hourglass, UserRound, Lock, CheckCircle2, CalendarClock } from "lucide-react";
 import { useOrgUsuarios } from "@/components/crm/BoardFilters";
 
@@ -74,6 +74,9 @@ const STATUS_COLOR: Record<string, { bg: string; text: string }> = {
  */
 export function Cf2EntregaWorkspace({ familiaFixa }: { familiaFixa?: "PABX" | "CALLFACE_AI" | "WHITE_LABEL" } = {}) {
   const router = useRouter();
+  // Montado por dois shells: /clientes/* (CRM2) e /pos-venda/* (produção).
+  // A base do link segue o shell atual em vez de ser hardcodada.
+  const base = usePathname().startsWith("/pos-venda") ? "/pos-venda" : "/clientes";
   const [mostrarTodos, setMostrarTodos] = useState(false);
   const [familia, setFamilia] = useState(familiaFixa ?? "");
   const [responsavelId, setResponsavelId] = useState("");
@@ -189,7 +192,7 @@ export function Cf2EntregaWorkspace({ familiaFixa }: { familiaFixa?: "PABX" | "C
               {lista.map((f) => {
                 const cor = STATUS_COLOR[f.status] || STATUS_COLOR.NOT_STARTED;
                 return (
-                  <tr key={f.id} className="cursor-pointer transition-colors hover:bg-[var(--cf2-bg-surface-muted)]" style={{ borderTop: "1px solid var(--cf2-border-default)" }} onClick={() => router.push(`/clientes/entrega/${f.id}`)}>
+                  <tr key={f.id} className="cursor-pointer transition-colors hover:bg-[var(--cf2-bg-surface-muted)]" style={{ borderTop: "1px solid var(--cf2-border-default)" }} onClick={() => router.push(`${base}/entrega/${f.id}`)}>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2.5">
                         <div className="flex items-center justify-center rounded-lg shrink-0 w-8 h-8" style={{ background: "var(--cf2-bg-inverse)" }}>
@@ -229,7 +232,7 @@ function formatarData(iso: string | null) {
  * Kanban de Implantação PABX (referência de UX, 19/08) — 5 fases derivadas
  * do checklist real (ver FASE_PABX_POR_WORKSTREAM), nunca um campo/state
  * machine novo. Card abre o mesmo drawer/página de detalhe que já existe
- * (`/clientes/entrega/:id`) — não há "arrastar card" porque a fase não é
+ * (`/clientes/entrega/:id` ou `/pos-venda/entrega/:id`, conforme o shell) — não há "arrastar card" porque a fase não é
  * gravável direto, ela reflete qual item do checklist ainda não foi
  * concluído (mudar de fase = concluir o item lá dentro).
  *
@@ -251,6 +254,9 @@ function KanbanImplantacaoPabx({
   setResponsavelId: (v: string) => void;
   usuarios: { id: string; nome: string }[];
 }) {
+  // Montado por dois shells: /clientes/* (CRM2) e /pos-venda/* (produção).
+  // A base do link segue o shell atual em vez de ser hardcodada.
+  const base = usePathname().startsWith("/pos-venda") ? "/pos-venda" : "/clientes";
   const concluidasDeltaPct = resumo && resumo.concluidasMesAnterior > 0
     ? Math.round(((resumo.concluidasMes - resumo.concluidasMesAnterior) / resumo.concluidasMesAnterior) * 100)
     : null;
@@ -338,7 +344,7 @@ function KanbanImplantacaoPabx({
                     return (
                       <div
                         key={f.id}
-                        onClick={() => router.push(`/clientes/entrega/${f.id}`)}
+                        onClick={() => router.push(`${base}/entrega/${f.id}`)}
                         className="cursor-pointer flex flex-col gap-2 p-3 rounded-xl"
                         style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}
                       >
@@ -402,7 +408,7 @@ function KanbanImplantacaoPabx({
           <p className="text-[12px] font-bold mb-3" style={{ color: "var(--cf2-text-primary)" }}>Próximos vencimentos</p>
           <div className="flex flex-col gap-2">
             {proximosVencimentos.map((f) => (
-              <div key={f.id} className="flex items-center gap-2 cursor-pointer" onClick={() => router.push(`/clientes/entrega/${f.id}`)}>
+              <div key={f.id} className="flex items-center gap-2 cursor-pointer" onClick={() => router.push(`${base}/entrega/${f.id}`)}>
                 <span className="text-[11px] font-semibold w-10 shrink-0" style={{ color: "var(--cf2-text-tertiary)" }}>{formatarData(f.target_at)}</span>
                 <span className="text-[11px] flex-1 truncate" style={{ color: "var(--cf2-text-secondary)" }}>{f.empresa_nome || f.lead_nome || "—"}</span>
                 <span className="text-[10px]" style={{ color: "var(--cf2-text-tertiary)" }}>{FASE_COLUNAS.find((c) => c.key === f.fase)?.label ?? "—"}</span>

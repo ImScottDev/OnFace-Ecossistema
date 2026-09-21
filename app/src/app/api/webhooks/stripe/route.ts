@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
-import { syncStripe } from "@/lib/integrations/stripe-sync";
 import { db } from "@/lib/db";
+import { syncStripe } from "@/lib/integrations/stripe-sync";
 import { propostas, leads, empresas, checkouts, notificacoes, usuarios, assinaturas, faturas, stripeWebhookEvents, organizacoes, auditLog } from "@/lib/db/schema";
 import { eq, and, isNull, or, sql, desc } from "drizzle-orm";
 import { buscarCheckoutPorSessionId } from "@/lib/crm/checkout";
@@ -197,6 +197,9 @@ async function handleCheckoutExpired(session: Record<string, unknown>): Promise<
  * (`user_cpf`/`user_cnpj`, mesmo padrão já usado nos clientes antigos).
  */
 async function gravarDocumentoFiscalNoCustomer(session: Record<string, unknown>, customerId: string): Promise<string> {
+  // A auditoria e o lote CRM-only não podem alterar Stripe. Metadata writeback
+  // passa a ser opt-in explícito no ambiente, depois de aprovação do plano.
+  if (process.env.STRIPE_WRITEBACK_ENABLED !== "true") return "writeback Stripe desabilitado";
   const customFields = (session.custom_fields as Array<{ key?: string; text?: { value?: string } }> | undefined) || [];
   const campo = customFields.find((f) => f.key === "cpfcnpj");
   const valor = campo?.text?.value;
@@ -403,9 +406,15 @@ const RELEVANT = new Set([
   "invoice.payment_failed",
   "invoice.finalized",
   "invoice.updated",
+  "invoice.voided",
+  "invoice.marked_uncollectible",
   "customer.subscription.created",
   "customer.subscription.updated",
   "customer.subscription.deleted",
+  "customer.subscription.paused",
+  "customer.subscription.resumed",
+  "customer.subscription.pending_update_applied",
+  "customer.subscription.pending_update_expired",
   "checkout.session.completed",
   "checkout.session.async_payment_succeeded",
   "checkout.session.async_payment_failed",
@@ -521,7 +530,9 @@ export async function POST(request: NextRequest) {
   }
 
   const organizacaoId = await resolveWebhookOrganization(event);
-  const [inboxEvent] = await db.insert(stripeWebhookEvents).values({
+  const [inserido] = await db.insert(stripeWebhookEvents).values({
+    // `event_id` é a coluna canônica convergida no merge de 20/09 (o banco
+    // carregado de produção só tem essa; `stripe_event_id` não existe lá).
     eventId: event.id,
     organizacaoId,
     eventType: type,
@@ -533,10 +544,23 @@ export async function POST(request: NextRequest) {
     updatedAt: new Date(),
   }).onConflictDoNothing({ target: stripeWebhookEvents.eventId }).returning({ id: stripeWebhookEvents.id });
 
-  // Stripe reenvia eventos por timeout/erro. O event_id é a chave idempotente
-  // externa; se já existe, não repetimos aceite, notificação ou sync.
+  // ORDEM IMPORTA. A reentrega do Stripe NÃO pode parar aqui: o inbox é trilha
+  // de auditoria/reprocesso, nunca trava. Quando a 1ª entrega morreu no meio
+  // (sync fora do ar, 500), o retry é a única chance do pagamento virar aceite,
+  // e os handlers abaixo são idempotentes (checkout já pago sai na hora, claim
+  // atômico no grupo/proposta). Era o contrário até 17/09/2026 e isso travou
+  // vendas PAGAS: o `return duplicate` vinha antes do tratamento de negócio.
+  let inboxEvent = inserido;
   if (!inboxEvent) {
-    return NextResponse.json({ received: true, duplicate: true, eventId: event.id });
+    [inboxEvent] = await db
+      .select({ id: stripeWebhookEvents.id })
+      .from(stripeWebhookEvents)
+      .where(eq(stripeWebhookEvents.eventId, event.id))
+      .limit(1);
+  }
+  if (!inboxEvent) {
+    // Nem inseriu nem achou: o inbox está inacessível. 500 pra o Stripe reenviar.
+    return NextResponse.json({ error: "webhook inbox unavailable" }, { status: 500 });
   }
 
   if (!organizacaoId) {

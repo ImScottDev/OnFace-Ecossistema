@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { leads, organizacoes } from "@/lib/db/schema";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { syncPessoaFromLead } from "@/lib/crm/sync-domain-model";
 import { criarLead, garantirAtividadePrimeiroContato, resolverResponsavelInbound } from "@/lib/vendas/pre-vendas";
 import { ATOR_SISTEMA } from "@/lib/vendas/dominio";
 import { dominioDoEmail } from "@/lib/vendas/identidade";
+import { telefoneUsavel } from "@/lib/whatsapp/phone-utils";
+import { resolverEmpresaId, dominioCorporativo } from "@/lib/crm/resolver-empresa";
 
 /**
  * Webhook do FORMULÁRIO do site institucional (site.callface.io).
@@ -74,7 +76,8 @@ export async function POST(req: NextRequest) {
 
   const nome = clean(body.nome);
   const email = clean(body.email)?.toLowerCase() ?? null;
-  const telefone = clean(body.telefone);
+  // Mesmo lixo do RD pode chegar por aqui (bug de template no form manda "undefined").
+  const telefone = telefoneUsavel(clean(body.telefone));
   const cargo = clean(body.cargo);
   const empresa = clean(body.empresa);
 
@@ -146,6 +149,13 @@ export async function POST(req: NextRequest) {
       .limit(1);
   }
 
+  // Empresa como entidade, não só texto (senão o lead entra sem vínculo no drawer).
+  const empresaIdResolvida = await resolverEmpresaId({
+    organizacaoId: org.id,
+    nome: empresa,
+    website: dominioCorporativo(email),
+  });
+
   if (existing) {
     if (existing.tipo === "cliente") {
       return NextResponse.json(
@@ -157,6 +167,10 @@ export async function POST(req: NextRequest) {
       .update(leads)
       .set({
         empresa: empresa ?? undefined,
+        // Não sobrescreve vínculo já existente.
+        ...(empresaIdResolvida
+          ? { empresaId: sql`COALESCE(${leads.empresaId}, ${empresaIdResolvida}::uuid)` }
+          : {}),
         cargo: cargo ?? undefined,
         telefone: telefone ?? undefined,
         updatedAt: new Date(),

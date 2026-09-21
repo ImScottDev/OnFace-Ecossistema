@@ -104,8 +104,14 @@ const createSchema = z.object({
   // (default é quem tá criando) e o e-mail de quem convidar, se não vier
   // de um lead vinculado.
   responsavelId: z.string().uuid().optional().nullable(),
-  attendeeEmail: z.string().email().optional().nullable(),
   criarNoOutlook: z.boolean().optional(),
+  /**
+   * E-mail do cliente a convidar. O Onboarding já mandava este campo desde
+   * sempre, mas ele não existia aqui — e como o Zod não é `.strict()`, era
+   * descartado em silêncio: a reunião nascia só na tabela, sem evento no
+   * Outlook e sem convite pro cliente, com a UI dizendo "agendada".
+   */
+  attendeeEmail: z.string().email().optional().nullable(),
 });
 
 const updateSchema = z.object({
@@ -193,7 +199,12 @@ app.post("/reunioes", async (c) => {
     let outlook: OutlookResultado = { criado: false, motivo: null };
     let reuniaoFinal = reuniao;
     if (data.criarNoOutlook !== false) {
-      outlook = await criarEventoOutlookSeConectado(reuniao.id, responsavelId, data.attendeeEmail || null);
+      // Fallback vindo de produção: quando o chamador não manda attendeeEmail,
+      // procura um e-mail na lista de participantes antes de desistir.
+      const attendee = data.attendeeEmail
+        || (Array.isArray(data.participantes) ? data.participantes.find((p: string) => p.includes("@")) : null)
+        || null;
+      outlook = await criarEventoOutlookSeConectado(reuniao.id, responsavelId, attendee);
       if (outlook.criado) {
         const [atualizada] = await db.select().from(reunioes).where(eq(reunioes.id, reuniao.id)).limit(1);
         if (atualizada) reuniaoFinal = atualizada;

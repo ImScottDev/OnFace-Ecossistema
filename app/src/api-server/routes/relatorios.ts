@@ -16,10 +16,13 @@ import { getEsteiraSdr } from "@/lib/relatorios/esteira-sdr";
 import { getVisoesSdr, ESTAGNADO_DIAS } from "@/lib/relatorios/sdr-visoes";
 import { getLeadsPorCanal } from "@/lib/relatorios/canais";
 import { getMetaComercialAgregada } from "@/lib/metas";
+import { CLOSER_EXTRA_IDS } from "@/lib/metas-shared";
 import {
   getMetricasPorCampanha, getMetricasPorCriativo, getMetricasPorConjunto, agregarFunil, gerarAlertas, rankingPorRoas,
   getStatusAtualLeadsPagos, getReceitaAtribuida, getRoasCiclo, getPipelineAbertoPago,
 } from "@/lib/relatorios/midia-paga";
+import { listarVendasFechadas, listarAgendasRealizadas, listarVendasAtribuidasSdr } from "@/lib/relatorios/fechamento-comercial";
+import ExcelJS from "exceljs";
 
 const app = new Hono();
 
@@ -263,7 +266,7 @@ app.get("/equipe", async (c) => {
     .from(usuarios)
     .where(and(
       eq(usuarios.organizacaoId, orgId),
-      inArray(usuarios.role, ["closer", "vendedor"]),
+      or(inArray(usuarios.role, ["closer", "vendedor"]), inArray(usuarios.id, CLOSER_EXTRA_IDS)),
       eq(usuarios.ativo, true),
       soEu ? eq(usuarios.id, soEu) : undefined,
     ));
@@ -693,7 +696,7 @@ app.get("/growth", async (c) => {
   const closers = await db
     .select({ id: usuarios.id, nome: usuarios.nome })
     .from(usuarios)
-    .where(and(eq(usuarios.organizacaoId, orgId), inArray(usuarios.role, ["closer", "vendedor"]), eq(usuarios.ativo, true)));
+    .where(and(eq(usuarios.organizacaoId, orgId), or(inArray(usuarios.role, ["closer", "vendedor"]), inArray(usuarios.id, CLOSER_EXTRA_IDS)), eq(usuarios.ativo, true)));
   // Fonte única por responsável (ganho_at + regra de receita do fechado) — os MESMOS
   // números da tabela "Desempenho por Vendedor" da aba Comercial. Antes cada aba
   // calculava diferente (created_at aqui, valor_total lá) e a mesma closer aparecia
@@ -1520,6 +1523,228 @@ app.get("/sdr-esteira", async (c) => {
     sla: visoes.sla,
     origem: visoes.origem,
     baseParada: soEuSdr ? null : visoes.baseParada,
+  });
+});
+
+// ─── Fechamento Comercial (20/08, URGENTE — Financeiro fechando julho/2026) ──
+// Read-only/reporting: nunca escreve em `negocios`/`leads`/`contratos`/etc.
+// Ver lib/relatorios/fechamento-comercial.ts pra regras e achados de auditoria.
+// admin/gerente/leitor apenas — mesmo gate de acesso das outras abas de gestão.
+app.get("/fechamento-comercial", async (c) => {
+  const ctx = await getCtx(c);
+  if (!isAdminView(ctx.userRole) && ctx.userRole !== "leitor") return c.json({ error: "Sem acesso" }, 403);
+
+  const periodo = c.req.query("periodo") ?? "mes_passado";
+  const { since, until } = parsePeriodo(periodo);
+  const orgId = ctx.organizacaoId;
+
+  // Filtros (pedido explícito: Período/Closer/SDR/Família/Empresa). Aplicados
+  // em memória sobre o resultado do período — volume mensal é baixo (dezenas/
+  // centenas de linhas), não vale complicar as 3 funções com N params opcionais
+  // cada. "Status" não é filtro aqui de propósito: Bloco 1 é definicionalmente
+  // Won (`status='ganho'`), filtrar por outro status contradiria a premissa.
+  const closerId = c.req.query("closerId") || null;
+  const sdrId = c.req.query("sdrId") || null;
+  const familia = c.req.query("familia") || null;
+  const empresaId = c.req.query("empresaId") || null;
+
+  const [vendasTodas, agendasTodas, atribuidasTodas] = await Promise.all([
+    listarVendasFechadas(orgId, since, until),
+    listarAgendasRealizadas(orgId, since, until),
+    listarVendasAtribuidasSdr(orgId, since, until),
+  ]);
+
+  // Opções reais pros dropdowns — derivadas do próprio período (nunca lista
+  // fixa; se alguém não vendeu no mês, não aparece no filtro daquele mês).
+  const closersDisponiveis = [...new Map(vendasTodas.filter((v) => v.closerId).map((v) => [v.closerId!, v.closerNome ?? "—"])).entries()];
+  const sdrsDisponiveis = [...new Map(agendasTodas.map((a) => [a.sdrId ?? "ia", a.sdrNome ?? "—"])).entries()];
+  const familiasDisponiveis = [...new Set(vendasTodas.map((v) => v.serviceFamily).filter((f): f is string => !!f))];
+  const empresasDisponiveis = [...new Map(vendasTodas.filter((v) => v.empresaId).map((v) => [v.empresaId!, v.empresaNome ?? "—"])).entries()];
+
+  const filtros = { closerId, sdrId, familia, empresaId };
+  const vendas = aplicarFiltrosFechamento(vendasTodas, filtros);
+  const agendas = aplicarFiltrosFechamento(agendasTodas, filtros, { sdrComoAgendaKey: true });
+  const atribuidas = aplicarFiltrosFechamento(atribuidasTodas, filtros);
+
+  const totalVendido = vendas.reduce((s, v) => s + ((v.tipoReceita === "avulso" || v.tipoReceita === "projeto") ? v.valorTotal : v.mrrFechado), 0);
+  const porCloser = new Map<string, { nome: string; total: number; qtd: number }>();
+  for (const v of vendas) {
+    if (!v.closerId) continue;
+    const cur = porCloser.get(v.closerId) ?? { nome: v.closerNome ?? "—", total: 0, qtd: 0 };
+    cur.total += (v.tipoReceita === "avulso" || v.tipoReceita === "projeto") ? v.valorTotal : v.mrrFechado;
+    cur.qtd += 1;
+    porCloser.set(v.closerId, cur);
+  }
+  const porSdr = new Map<string, { nome: string; agendadas: number; realizadas: number }>();
+  for (const a of agendas) {
+    const key = a.sdrId ?? "ia";
+    const cur = porSdr.get(key) ?? { nome: a.sdrNome ?? "—", agendadas: 0, realizadas: 0 };
+    cur.agendadas += 1;
+    if (a.realizadaEm) cur.realizadas += 1;
+    porSdr.set(key, cur);
+  }
+
+  return c.json({
+    periodo: { since: since.toISOString(), until: until.toISOString() },
+    filtrosAplicados: { closerId, sdrId, familia, empresaId },
+    opcoes: {
+      closers: closersDisponiveis.map(([id, nome]) => ({ id, nome })),
+      sdrs: sdrsDisponiveis.map(([id, nome]) => ({ id, nome })),
+      familias: familiasDisponiveis,
+      empresas: empresasDisponiveis.map(([id, nome]) => ({ id, nome })),
+    },
+    resumo: {
+      totalVendido,
+      quantidadeVendas: vendas.length,
+      porCloser: [...porCloser.entries()].map(([id, v]) => ({ closerId: id, ...v })),
+      porSdr: [...porSdr.entries()].map(([id, v]) => ({ sdrId: id, ...v })),
+      vendasComSdrIdentificavel: vendas.filter((v) => v.sdrId).length,
+      vendasComStripe: vendas.filter((v) => v.stripeSubscriptionId || v.stripeCustomerId || v.faturaHostedUrl || v.contratoZohoId).length,
+      vendasComComprovante: vendas.filter((v) => v.faturaHostedUrl).length,
+      vendasComContrato: vendas.filter((v) => v.contratoId).length,
+      vendasComEmpresa: vendas.filter((v) => v.empresaId || v.empresaNome).length,
+      vendasComInformacaoIncompleta: vendas.filter((v) => !v.sdrId || (!v.stripeSubscriptionId && !v.stripeCustomerId && !v.faturaHostedUrl && !v.contratoZohoId)).length,
+    },
+    vendas,
+    agendas,
+    atribuidas,
+  });
+});
+
+// Filtro compartilhado entre a tela e a exportação — ÚNICO lugar que decide
+// "essa linha entra ou não" pros 3 blocos, pra nunca divergir (pedido
+// explícito: exportação não pode vir de query diferente da tela).
+function aplicarFiltrosFechamento<T extends { closerId?: string | null; sdrId: string | null; serviceFamily?: string | null; empresaId?: string | null }>(
+  itens: T[],
+  filtros: { closerId: string | null; sdrId: string | null; familia: string | null; empresaId: string | null },
+  opts?: { sdrComoAgendaKey?: boolean },
+): T[] {
+  return itens.filter((v) => {
+    if (filtros.closerId && v.closerId !== filtros.closerId) return false;
+    if (filtros.familia && v.serviceFamily !== filtros.familia) return false;
+    if (filtros.empresaId && v.empresaId !== filtros.empresaId) return false;
+    if (filtros.sdrId) {
+      // Bloco 2 (agendas): "ia" é inequívoco (usuario_id null ali só pode ser
+      // IA, já que sempre houve evento). Fora daí, `sdrId: null` também
+      // cobre "sem evento encontrado" — ambíguo com IA, então "ia" nesses
+      // blocos honestamente não bate com nada (0 resultados), nunca
+      // devolve tudo por engano.
+      const chave = opts?.sdrComoAgendaKey ? (v.sdrId ?? "ia") : v.sdrId;
+      if (chave !== filtros.sdrId) return false;
+    }
+    return true;
+  });
+}
+
+// Achado real do time comercial (20/08): das vendas de julho sem
+// evidência Stripe, várias nunca passaram por Stripe de propósito --
+// foram lançadas como Sales Order no Zoho (fluxo legado). contrato_zoho_id
+// passa a contar como evidência real de pagamento, não só Stripe.
+const ZOHO_ORG_URL = "https://one.zoho.com/zohoone/callface40/home/cxapp/crm/org830405635/tab/SalesOrders";
+
+function linkComprovante(v: { faturaHostedUrl: string | null; stripeSubscriptionId: string | null; stripeCustomerId: string | null; contratoZohoId: string | null }): string {
+  if (v.faturaHostedUrl) return v.faturaHostedUrl;
+  if (v.stripeSubscriptionId) return `https://dashboard.stripe.com/subscriptions/${v.stripeSubscriptionId}`;
+  if (v.stripeCustomerId) return `https://dashboard.stripe.com/customers/${v.stripeCustomerId}`;
+  if (v.contratoZohoId) return `${ZOHO_ORG_URL}/${v.contratoZohoId}`;
+  return "Não disponível";
+}
+
+function autoWidth(sheet: ExcelJS.Worksheet) {
+  sheet.columns.forEach((col) => {
+    let max = 10;
+    col.eachCell?.({ includeEmpty: true }, (cell) => {
+      const len = cell.value ? String(cell.value).length : 0;
+      if (len > max) max = len;
+    });
+    col.width = Math.min(max + 2, 60);
+  });
+}
+
+function addSheet(wb: ExcelJS.Workbook, nome: string, headers: string[], rows: (string | number | null)[][]) {
+  const sheet = wb.addWorksheet(nome);
+  sheet.addRow(headers).font = { bold: true };
+  for (const r of rows) sheet.addRow(r);
+  sheet.views = [{ state: "frozen", ySplit: 1 }];
+  autoWidth(sheet);
+  return sheet;
+}
+
+// GET /relatorios/fechamento-comercial/export?periodo=mes_passado&closerId=...
+// Um único .xlsx com as 3 abas (Vendas Fechadas / Agendas Realizadas /
+// Atribuídas a SDR), sempre com o link do comprovante Stripe — pedido
+// explícito do Kauã (18/08): "a planilha que eu exporto já tem que exportar
+// todas as abas... organizado... e com o link do stripe também". Mesma fonte
+// de dado da tela (listarVendasFechadas/listarAgendasRealizadas/
+// listarVendasAtribuidasSdr) — nunca uma query paralela, pra exportação e tela
+// nunca divergirem (pedido explícito anterior, ainda válido).
+app.get("/fechamento-comercial/export", async (c) => {
+  const ctx = await getCtx(c);
+  if (!isAdminView(ctx.userRole) && ctx.userRole !== "leitor") return c.json({ error: "Sem acesso" }, 403);
+
+  const periodo = c.req.query("periodo") ?? "mes_passado";
+  const { since, until } = parsePeriodo(periodo);
+  const orgId = ctx.organizacaoId;
+  // Mesmos filtros da tela — nunca uma exportação com escopo diferente do
+  // que o Financeiro está vendo (pedido explícito).
+  const filtros = {
+    closerId: c.req.query("closerId") || null,
+    sdrId: c.req.query("sdrId") || null,
+    familia: c.req.query("familia") || null,
+    empresaId: c.req.query("empresaId") || null,
+  };
+
+  const [vendasTodas, agendasTodas, atribuidasTodas] = await Promise.all([
+    listarVendasFechadas(orgId, since, until),
+    listarAgendasRealizadas(orgId, since, until),
+    listarVendasAtribuidasSdr(orgId, since, until),
+  ]);
+  const vendas = aplicarFiltrosFechamento(vendasTodas, filtros);
+  const agendas = aplicarFiltrosFechamento(agendasTodas, filtros, { sdrComoAgendaKey: true });
+  const atribuidas = aplicarFiltrosFechamento(atribuidasTodas, filtros);
+
+  const wb = new ExcelJS.Workbook();
+  wb.creator = "Callface CRM — Fechamento Comercial";
+  wb.created = since;
+
+  addSheet(
+    wb,
+    "Vendas Fechadas",
+    [
+      "negocio_id", "ganho_em", "empresa", "contato", "contato_email", "closer", "sdr", "sdr_evidencia",
+      "origem", "familia", "produtos", "tipo_receita", "mrr_fechado", "valor_total", "valor_setup", "status",
+      "proposta_numero", "proposta_status", "contrato_id", "contrato_status", "contrato_zoho_id",
+      "stripe_subscription_id", "stripe_customer_id", "link_comprovante_pagamento",
+    ],
+    vendas.map((v) => [
+      v.negocioId, v.ganhoAt, v.empresaNome ?? "Não disponível", v.contatoNome, v.contatoEmail, v.closerNome, v.sdrNome ?? "Não disponível", v.sdrEvidencia,
+      v.origem, v.serviceFamily, v.produtos.join(", "), v.tipoReceita, v.mrrFechado, v.valorTotal, v.valorSetup, v.status,
+      v.propostaNumero, v.propostaStatus, v.contratoId ?? "Não disponível", v.contratoStatus, v.contratoZohoId ?? "Não disponível",
+      v.stripeSubscriptionId ?? "Não disponível", v.stripeCustomerId ?? "Não disponível", linkComprovante(v),
+    ]),
+  );
+
+  addSheet(
+    wb,
+    "Agendas Realizadas",
+    ["lead_id", "lead_nome", "empresa", "sdr", "agendada_em", "realizada_em", "tipo_evento", "negocio_id", "negocio_titulo", "closer", "resultado_atual", "venda_relacionada"],
+    agendas.map((a) => [a.leadId, a.leadNome, a.empresaNome ?? "Não disponível", a.sdrNome, a.agendadaEm, a.realizadaEm, a.tipoEvento, a.negocioId, a.negocioTitulo, a.closerNome, a.resultadoAtual, a.vendaRelacionada ? "sim" : "não"]),
+  );
+
+  addSheet(
+    wb,
+    "Atribuídas a SDR",
+    ["negocio_id", "sdr", "closer", "empresa", "ganho_em", "valor", "familia", "evidencia_atribuicao"],
+    atribuidas.map((v) => [v.negocioId, v.sdrNome, v.closerNome, v.empresaNome ?? "Não disponível", v.ganhoAt, v.valor, v.serviceFamily, v.origemAtribuicao]),
+  );
+
+  const buffer = await wb.xlsx.writeBuffer();
+  const sufixoFiltro = Object.values(filtros).some((v) => v) ? "-filtrado" : "";
+  return new Response(buffer, {
+    headers: {
+      "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "Content-Disposition": `attachment; filename="fechamento-comercial-${periodo}${sufixoFiltro}.xlsx"`,
+    },
   });
 });
 

@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   pgTable,
   uuid,
@@ -13,7 +14,6 @@ import {
   date,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
-import { sql } from "drizzle-orm";
 
 // ─── ORGANIZACOES (TENANTS) ──────────────────────────────────
 export const organizacoes = pgTable("organizacoes", {
@@ -870,6 +870,50 @@ export const assinaturaItens = pgTable(
     index("idx_assinatura_itens_assinatura").on(table.assinaturaId),
     index("idx_assinatura_itens_org").on(table.organizacaoId),
   ]
+);
+
+// ─── BILLING IDENTITIES (customer Stripe canônico + aliases históricos) ────
+// Uma empresa pode ter Customers Stripe legados sem que isso autorize mesclar
+// cobranças. O vínculo é CRM-only e preserva cada ID histórico para auditoria.
+//
+// CONVERGIDA no merge de 20/09: os dois lados guardavam o ID do evento Stripe
+// em colunas diferentes — `stripe_event_id` (produção) e `event_id` (dev). O
+// PLANO-DE-CARGA já decidiu e o script de carga já executou: `event_id` é a
+// canônica, e `status` é minúsculo. O banco carregado de produção confirma:
+// existe só `event_id`, default 'pending', sem CHECK de maiúsculas.
+// `lib/integrations/stripe-webhook-events.ts` foi ajustado junto.
+export const stripeWebhookEvents = pgTable(
+  "stripe_webhook_events",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    eventId: text("event_id").notNull(),
+    // ── só no dev ──
+    organizacaoId: uuid("organizacao_id").references(() => organizacoes.id),
+    apiVersion: text("api_version"),
+    livemode: boolean("livemode"),
+    // ── comuns aos dois lados ──
+    eventType: text("event_type").notNull(),
+    payload: jsonb("payload").notNull(),
+    status: text("status").default("pending").notNull(), // pending|processing|processed|failed|unresolved
+    attempts: integer("attempts").default(0).notNull(),
+    lastError: text("last_error"),
+    receivedAt: timestamp("received_at", { withTimezone: true }).defaultNow().notNull(),
+    // ── só em produção ──
+    processingStartedAt: timestamp("processing_started_at", { withTimezone: true }),
+    processedAt: timestamp("processed_at", { withTimezone: true }),
+    // ── só no dev ──
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("uq_stripe_webhook_events_event_id").on(table.eventId),
+    // Mantido o índice de produção: (status, receivedAt). O do dev tinha o
+    // MESMO nome cobrindo só (status) — prefixo desta composta, então é
+    // coberto por ela; não dá pra declarar os dois com o mesmo nome.
+    index("idx_stripe_webhook_events_status").on(table.status, table.receivedAt),
+    index("idx_stripe_webhook_events_org").on(table.organizacaoId),
+    index("idx_stripe_webhook_events_received").on(table.receivedAt),
+  ],
 );
 
 // ─── FATURAS (cobranças: Stripe invoices + faturamento PABX/Wevy) ─────────
@@ -2736,6 +2780,15 @@ export const auditLog = pgTable("audit_log", {
 // ARCHITECTURE_DECISIONS.md. Escopo: só o que tem dado válido pra reconciliar
 // (histórico Zoho, contratos/anexos, carteira canônica) — NÃO inclui o
 // módulo CS (revertido, 0 linhas) nem nada específico do CRM2.0 inacabado.
+// PÓS-VENDA CANÔNICO (08/09) — Won → Serviço → Onboarding/Implantação.
+//
+// Definições portadas sem renomear nada do CRM 2.0 (branch dev), pra que a
+// subida do CRM2 completo encontre estas tabelas já povoadas em produção em
+// vez de precisar migrar de novo. Ver lib/crm/pos-venda.ts.
+//
+// `servicos_canonicos` JÁ EXISTIA no banco de produção (413 linhas da
+// reconciliação de agosto/2026) mas nunca esteve no schema.ts — a declaração
+// abaixo apenas expõe ao Drizzle o que já está lá, sem alterar a tabela.
 // ═══════════════════════════════════════════════════════════════
 
 export const servicosCanonicos = pgTable(
@@ -3065,6 +3118,10 @@ export const reconciliationChanges = pgTable(
 
 // ─── Recuperação legado Zoho (histórico, anexos, provenance) ───────────────
 
+// ─── ANEXOS (documentos de negócio e da entrega) ──────────
+// Portados do CRM 2.0 junto com as telas de pós-venda. `anexos_legado` JÁ
+// existe no banco de produção (veio da reconciliação); `anexos` é criada pela
+// migration 0010.
 export const anexosLegado = pgTable("anexos_legado", {
   id: uuid("id").defaultRandom().primaryKey(),
   organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
@@ -3125,6 +3182,13 @@ export const legacyProvenance = pgTable("legacy_provenance", {
   uniqueIndex("idx_legacy_provenance_zoho_dedup").on(table.organizacaoId, table.entidadeTipo, table.zohoId),
 ]);
 
+// ─── BILLING IDENTITIES ───────────────────────────────────────
+// CONVERGIDA no merge de 20/09. Os dois lados modelavam a mesma tabela de
+// formas diferentes e o banco carregado de produção tem as colunas dos DOIS:
+//   dev  -> canonical_empresa_id/canonical_lead_id + provider + external_customer_id
+//   prod -> empresa_id/lead_id + canonical_stripe_customer_id + cnpj/email normalizados
+// A declaração abaixo espelha o banco coluna a coluna, com a nullability real.
+// Unificar os dois modelos num só é decisão de produto, ainda em aberto.
 export const billingIdentities = pgTable("billing_identities", {
   id: uuid("id").primaryKey(),
   organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
@@ -3137,8 +3201,26 @@ export const billingIdentities = pgTable("billing_identities", {
   confidence: text("confidence").notNull(),
   evidence: jsonb("evidence").default({}).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  // ── vindas de produção ──
+  empresaId: uuid("empresa_id").references(() => empresas.id, { onDelete: "set null" }),
+  leadId: uuid("lead_id").references(() => leads.id, { onDelete: "set null" }),
+  canonicalStripeCustomerId: text("canonical_stripe_customer_id"),
+  cnpjNormalized: text("cnpj_normalized"),
+  primaryEmailNormalized: text("primary_email_normalized"),
+  status: text("status"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   uniqueIndex("idx_billing_identities_dedup").on(table.organizacaoId, table.provider, table.externalCustomerId, table.canonicalLeadId),
+]);
+
+export const billingCustomerAliases = pgTable("billing_customer_aliases", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  billingIdentityId: uuid("billing_identity_id").references(() => billingIdentities.id).notNull(),
+  stripeCustomerId: text("stripe_customer_id").notNull(),
+  origem: text("origem"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("uq_billing_alias_customer").on(table.stripeCustomerId),
 ]);
 
 export const catalogoMapeamentosLegacy = pgTable("catalogo_mapeamentos_legacy", {
@@ -3740,32 +3822,6 @@ export const eventOutbox = pgTable("event_outbox", {
   index("idx_event_outbox_status").on(table.status),
   index("idx_event_outbox_org").on(table.organizacaoId),
   index("idx_event_outbox_aggregate").on(table.aggregateType, table.aggregateId),
-]);
-
-// Inbox de eventos externos Stripe. O evento é persistido depois da verificação
-// de assinatura e antes de qualquer materialização de billing. `organizacaoId`
-// pode ser nulo enquanto o Customer/Subscription ainda não foi reconciliado;
-// nesse caso o webhook não deve promover estado comercial silenciosamente.
-export const stripeWebhookEvents = pgTable("stripe_webhook_events", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  eventId: text("event_id").notNull(),
-  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id),
-  eventType: text("event_type").notNull(),
-  apiVersion: text("api_version"),
-  livemode: boolean("livemode"),
-  status: text("status").notNull().default("pending"), // pending | processing | processed | failed | unresolved
-  attempts: integer("attempts").notNull().default(0),
-  payload: jsonb("payload").notNull(),
-  lastError: text("last_error"),
-  receivedAt: timestamp("received_at", { withTimezone: true }).defaultNow().notNull(),
-  processedAt: timestamp("processed_at", { withTimezone: true }),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
-}, (table) => [
-  uniqueIndex("uq_stripe_webhook_events_event_id").on(table.eventId),
-  index("idx_stripe_webhook_events_status").on(table.status),
-  index("idx_stripe_webhook_events_org").on(table.organizacaoId),
-  index("idx_stripe_webhook_events_received").on(table.receivedAt),
 ]);
 
 // ═══════════════════════════════════════════════════════════════

@@ -146,7 +146,7 @@ async function coortePorDimensao(
       count(DISTINCT prop.negocio_id) AS propostas,
       count(DISTINCT neg.negocio_id) FILTER (WHERE neg.status = 'ganho') AS vendas,
       COALESCE(sum(
-        CASE WHEN neg.status = 'ganho' AND neg.tipo_receita = 'avulso' THEN neg.valor_total
+        CASE WHEN neg.status = 'ganho' AND neg.tipo_receita IN ('avulso','projeto') THEN neg.valor_total
              WHEN neg.status = 'ganho' THEN neg.mrr_fechado
              ELSE 0 END
       ), 0) AS receita,
@@ -547,7 +547,7 @@ export async function getReceitaAtribuida(orgId: string, since: Date, until: Dat
       ) AS chave,
       bool_or(${LEAD_PAGO_SQL}) AS pago,
       count(DISTINCT n.id)::int AS vendas,
-      COALESCE(sum(CASE WHEN n.tipo_receita = 'avulso' THEN n.valor_total ELSE n.mrr_fechado END), 0) AS receita
+      COALESCE(sum(CASE WHEN n.tipo_receita IN ('avulso','projeto') THEN n.valor_total ELSE n.mrr_fechado END), 0) AS receita
     FROM negocios n
     JOIN leads l ON l.id = n.lead_id
     WHERE n.organizacao_id = ${orgId} AND n.status = 'ganho'
@@ -602,7 +602,7 @@ export async function getRoasCiclo(orgId: string): Promise<RoasCicloLinha[]> {
   // receita ALL-TIME por utm_campaign (regra canônica do fechado)
   const rows = await db.execute(sql`
     SELECT l.utm_campaign AS chave, count(DISTINCT n.id)::int AS vendas,
-      COALESCE(sum(CASE WHEN n.tipo_receita = 'avulso' THEN n.valor_total ELSE n.mrr_fechado END), 0) AS receita
+      COALESCE(sum(CASE WHEN n.tipo_receita IN ('avulso','projeto') THEN n.valor_total ELSE n.mrr_fechado END), 0) AS receita
     FROM negocios n JOIN leads l ON l.id = n.lead_id
     WHERE n.organizacao_id = ${orgId} AND n.status = 'ganho'
       AND l.utm_campaign IS NOT NULL AND l.utm_campaign <> ''

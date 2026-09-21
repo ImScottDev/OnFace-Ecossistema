@@ -4,6 +4,7 @@ import { leads, contatos, contatoListas, leadListas, empresas, atividades } from
 import { eq, and, or, ilike, desc, sql, inArray } from "drizzle-orm";
 import { getCtx, parseBody } from "../compat.js";
 import { syncPessoaFromLead } from "@/lib/crm/sync-domain-model";
+import { resolverEmpresaId, dominioCorporativo } from "@/lib/crm/resolver-empresa";
 
 const app = new Hono();
 
@@ -140,6 +141,15 @@ app.post("/contatos-unified", async (c) => {
 
   if (!nome) return c.json({ error: "Nome obrigatório" }, 400);
 
+  // Empresa como entidade, não só texto (senão entra sem vínculo no drawer).
+  const empresaIdResolvida = await resolverEmpresaId({
+    organizacaoId: ctx.organizacaoId,
+    empresaId: body.empresaId,
+    nome: empresa,
+    cnpj: body.empresaCnpj,
+    website: dominioCorporativo(email),
+  });
+
   const [newLead] = await db
     .insert(leads)
     .values({
@@ -148,6 +158,7 @@ app.post("/contatos-unified", async (c) => {
       email: email || null,
       telefone: telefone || "",
       empresa: empresa || null,
+      empresaId: empresaIdResolvida,
       cargo: cargo || null,
       origem: origem || "manual",
       status: "novo",
@@ -176,6 +187,18 @@ app.patch("/contatos-unified/:id", async (c) => {
   const updates: Record<string, unknown> = { updatedAt: new Date() };
   for (const key of allowed) {
     if (body[key] !== undefined) updates[key] = body[key];
+  }
+
+  // Editar "Empresa" aqui gravava texto solto e o contato ficava sem vínculo.
+  if (body.empresaId !== undefined) {
+    updates.empresaId = body.empresaId;
+  } else if (typeof body.empresa === "string" && body.empresa.trim()) {
+    const resolvida = await resolverEmpresaId({
+      organizacaoId: ctx.organizacaoId,
+      nome: body.empresa,
+      website: dominioCorporativo(body.email),
+    });
+    if (resolvida) updates.empresaId = resolvida;
   }
 
   const [updated] = await db

@@ -17,6 +17,7 @@ import { registrarMudancaResponsavel } from "@/lib/crm/owner";
 import { resolverCorpoContrato } from "@/lib/crm/contrato-template";
 import { criarFulfillmentsParaServicos } from "@/lib/crm/fulfillment";
 import { getCtx } from "../compat.js";
+import { checarVinculosFinanceiros, limparVinculosNegocio } from "@/lib/crm/delete-negocio";
 
 const app = new Hono();
 
@@ -122,7 +123,22 @@ app.get("/negocios", async (c) => {
     }
   }
   if (pipelineId) {
-    conditions.push(eq(negocios.pipelineId, pipelineId));
+    // Negócio com pipeline_id NULL não casa com filtro nenhum e SOME do board.
+    // Não é caso raro: vários caminhos de criação não preenchem o campo (proposta
+    // direta do lead, conversão de contato, criação pelo lead). Em vez de perder
+    // o card, o pipeline PADRÃO também recolhe os órfãos; de lá dá pra mover pro
+    // certo. Ver decisões/2026-09-17-crm-negocio-sem-pipeline-some-do-board.
+    const [pipelinePadrao] = await db
+      .select({ id: pipelines.id })
+      .from(pipelines)
+      .where(and(eq(pipelines.organizacaoId, ctx.organizacaoId), eq(pipelines.ativo, true)))
+      .orderBy(desc(pipelines.isDefault), asc(pipelines.ordem))
+      .limit(1);
+    conditions.push(
+      pipelinePadrao?.id === pipelineId
+        ? or(eq(negocios.pipelineId, pipelineId), isNull(negocios.pipelineId))!
+        : eq(negocios.pipelineId, pipelineId)
+    );
   }
   if (origemNegocio && origemNegocio !== "todos") {
     conditions.push(eq(negocios.origemNegocio, origemNegocio));
@@ -774,6 +790,26 @@ app.patch("/negocios/:id", async (c) => {
     await criarFulfillmentsParaServicos(servicoIds, ctx.organizacaoId);
   }
 
+  // Pós-venda canônico (flag POSVENDA_CANONICO): roteia pra Onboarding
+  // (Callface AI), Implantação PABX ou Implantação White Label.
+  //
+  // Fica DEPOIS do update, não dentro do bloco de transição acima: é aqui que
+  // o status 'ganho' vira linha no banco, e a função recusa (silenciosamente,
+  // por design) negócio que ainda não esteja persistido como ganho. Chamar
+  // antes daqui é no-op — foi um bug real, custou um ciclo de teste.
+  //
+  // Nunca aguardado: se falhar, o negócio continua ganho e
+  // `npm run posvenda:reprocessar -- <id>` refaz. Idempotente.
+  if (parsed.data.status === "ganho") {
+    const { criarPosVendaDoNegocio } = await import("@/lib/crm/pos-venda");
+    void criarPosVendaDoNegocio(id)
+      .then((r) => {
+        if (r.criado) console.log(`[pos-venda] ${id} -> ${r.trilha} (${r.itensChecklist} itens)`);
+        else console.warn(`[pos-venda] ${id} não criou: ${r.motivo}`);
+      })
+      .catch((e) => console.error("[pos-venda] falha (negócio segue ganho):", id, e));
+  }
+
   return c.json(updated);
 });
 
@@ -899,16 +935,13 @@ app.delete("/negocios/:id", async (c) => {
     return c.json({ error: "Negócio não encontrado" }, 404);
   }
 
-  // Clear negocioAtivoId reference on leads
-  await db.update(leads).set({ negocioAtivoId: null, updatedAt: new Date() }).where(eq(leads.negocioAtivoId, id));
-  // Clean up related records that don't cascade
-  await db.delete(statusChanges).where(eq(statusChanges.negocioId, id));
-  await db.delete(atividades).where(eq(atividades.negocioId, id));
-  await db.delete(propostas).where(eq(propostas.negocioId, id));
-  await db.delete(contratos).where(eq(contratos.negocioId, id));
-  await db.delete(reunioes).where(eq(reunioes.negocioId, id));
-  // negocioLeads, negocioLabels, notas cascade automatically
-  await db.delete(negocios).where(eq(negocios.id, id));
+  const bloqueio = await checarVinculosFinanceiros(id);
+  if (bloqueio) return c.json({ error: bloqueio }, 409);
+
+  await db.transaction(async (tx) => {
+    await limparVinculosNegocio(tx, id);
+    await tx.delete(negocios).where(eq(negocios.id, id));
+  });
 
   return c.json({ ok: true });
 });

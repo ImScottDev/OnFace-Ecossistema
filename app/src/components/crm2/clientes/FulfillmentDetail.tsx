@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import {
   ChevronRight, Truck, Check, Star, ArrowRightLeft, FileText, Download, AlertTriangle,
   Phone, MessageCircle, Mail, Plus, ExternalLink, Users, Rocket, ListChecks, Building2, ShieldAlert, History, Paperclip, X,
@@ -45,6 +46,10 @@ const WORKSTREAM_LABEL: Record<string, string> = {
   proximos_passos: "Próximos passos", branding: "Branding", ativacao_capacidade: "Ativação de capacidade",
   abertura: "Abertura", comunicacao: "Comunicação com o cliente", materiais: "Materiais e configuração",
   ambiente: "Ambiente White Label", dominio: "Domínio e DNS", go_live: "Go-live", handoff: "Handoff",
+  onboarding: "Onboarding do ambiente", conclusao: "Conclusão",
+  // Chaves do checklist White Label de produção (gerações anteriores do seed
+  // ainda têm itens gravados com elas): sem rótulo a etapa vira slug cru.
+  coleta: "Coleta e validação", configuracao: "Configuração", qualidade: "Qualidade",
 };
 
 interface Formulario {
@@ -59,8 +64,12 @@ interface Formulario {
     outrasInformacoes?: string;
     whiteLabel?: {
       dominio?: string;
+      // O formulário público de produção grava `contatoTecnico*`/`fechamentoDia`;
+      // as chaves curtas são de respostas antigas ainda no jsonb.
       tecnicoNome?: string;
       tecnicoEmail?: string;
+      contatoTecnicoNome?: string;
+      contatoTecnicoEmail?: string;
       faturamentoEmail?: string;
       logo?: { url?: string; nomeOriginal?: string } | null;
       favicon?: { url?: string; nomeOriginal?: string } | null;
@@ -247,6 +256,11 @@ interface Macroetapa { key: string; label: string; itens: Item[]; status: "block
 interface PreviewArquivo { nome: string; url: string; tipoMime?: string | null; }
 
 function PabxWorkspace({ fulfillmentId, data, documentosLegado }: { fulfillmentId: string; data: FulfillmentData; documentosLegado: AnexoLegado[] }) {
+  // Esta tela é montada por dois shells com rotas próprias: /clientes/* (CRM2)
+  // e /pos-venda/* (produção). Cada destino abaixo segue o shell atual em vez
+  // de ser hardcodado — hardcodar um lado quebrava o outro.
+  const emPosVenda = usePathname().startsWith("/pos-venda");
+  const base = emPosVenda ? "/pos-venda" : "/clientes";
   const qc = useQueryClient();
   const { byId: usuariosById } = useOrgUsuarios();
   const usuarios = Array.from(usuariosById.values());
@@ -413,13 +427,15 @@ function PabxWorkspace({ fulfillmentId, data, documentosLegado }: { fulfillmentI
     if (!leadId) return undefined;
     const params = new URLSearchParams({ leadId, canal });
     if (leadTelefone) params.set("telefone", digitsForDialer(leadTelefone));
-    return `/atendimento?${params.toString()}`;
+    // /atendimento (inbox unificado) só existe no shell CRM2; no shell de
+    // produção o canal fica na página do contato.
+    return emPosVenda ? `/contatos/${leadId}` : `/atendimento?${params.toString()}`;
   };
 
   return (
     <div className="flex flex-col gap-5 pb-8">
       <div className="flex items-center gap-1.5 text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>
-        <Link href="/clientes/implantacao" className="hover:underline">Implantação</Link>
+        <Link href={`${base}/implantacao`} className="hover:underline">Implantação</Link>
         <ChevronRight className="w-3 h-3" />
         <span style={{ color: "var(--cf2-text-primary)" }}>{empresaNome || "—"}</span>
       </div>
@@ -450,7 +466,7 @@ function PabxWorkspace({ fulfillmentId, data, documentosLegado }: { fulfillmentI
             <AcaoHeader href={acaoAtendimento("email")} icon={Mail} label="E-mail" />
             <button onClick={() => setNovaTarefaOpen(true)} className="flex items-center gap-1.5 text-[12px] font-semibold px-3 py-1.5 rounded-lg" style={{ background: "var(--cf2-chrome-surface-active)", color: "var(--cf2-chrome-text-primary)" }}><Plus className="w-3.5 h-3.5" />Tarefa</button>
             <button onClick={() => setNotaOpen(true)} className="flex items-center gap-1.5 text-[12px] font-semibold px-3 py-1.5 rounded-lg" style={{ background: "var(--cf2-chrome-surface-active)", color: "var(--cf2-chrome-text-primary)" }}><FileText className="w-3.5 h-3.5" />Nota</button>
-            {empresaId && <Link href={`/clientes/${empresaId}`} className="flex items-center gap-1.5 text-[12px] font-semibold px-3 py-1.5 rounded-lg" style={{ background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" }}><ExternalLink className="w-3.5 h-3.5" />Cliente 360</Link>}
+            {empresaId && <Link href={emPosVenda ? `/empresas/${empresaId}` : `/clientes/${empresaId}`} className="flex items-center gap-1.5 text-[12px] font-semibold px-3 py-1.5 rounded-lg" style={{ background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" }}><ExternalLink className="w-3.5 h-3.5" />Cliente 360</Link>}
           </div>
         </div>
 
@@ -1027,6 +1043,9 @@ function TemplateContato({ titulo, texto, href, acao }: { titulo: string; texto:
 }
 
 function OnboardingLegacyView({ fulfillmentId, data, documentosLegado }: { fulfillmentId: string; data: FulfillmentData; documentosLegado: AnexoLegado[] }) {
+  // Dois shells montam esta tela (/clientes/* do CRM2 e /pos-venda/* de
+  // produção) e cada um tem a sua fila de jornada e o seu canal de mensagem.
+  const emPosVenda = usePathname().startsWith("/pos-venda");
   const qc = useQueryClient();
   const [itemSelecionado, setItemSelecionado] = useState<Item | null>(null);
   const [aba, setAba] = useState<string>("visao-geral");
@@ -1035,18 +1054,23 @@ function OnboardingLegacyView({ fulfillmentId, data, documentosLegado }: { fulfi
   const { fulfillment, itens, empresaId, empresaNome, empresaLogoUrl, atividadesEmpresa, formulario, publicToken, leadId, leadTelefone, leadEmail } = data;
   const isWhiteLabel = fulfillment.serviceFamily === "WHITE_LABEL";
   const jornadaTitulo = isWhiteLabel ? "Implantação White Label" : "Onboarding";
-  const jornadaHref = isWhiteLabel ? "/clientes/implantacao?familia=WHITE_LABEL" : "/clientes/onboarding";
+  // A fila de White Label tem rota própria em cada shell: /pos-venda/white-label
+  // em produção, /clientes/implantacao?familia=WHITE_LABEL no CRM2.
+  const jornadaHref = emPosVenda
+    ? (isWhiteLabel ? "/pos-venda/white-label" : "/pos-venda/onboarding")
+    : (isWhiteLabel ? "/clientes/implantacao?familia=WHITE_LABEL" : "/clientes/onboarding");
   const linkFormulario = isWhiteLabel && publicToken ? `${typeof window !== "undefined" ? window.location.origin : ""}/impl-white-label/${publicToken}` : null;
   const primeiroNome = (empresaNome || "").split(" ")[0] || "tudo bem";
   const nomeResponsavel = fulfillment.responsavelNome || "[seu nome]";
-  const mensagemWhatsApp = linkFormulario ? `Olá, ${primeiroNome}! Tudo bem?\n\nEu sou ${nomeResponsavel}, da Callface, e vou acompanhar sua implantação White Label por aqui.\n\nPara começarmos, preciso que você preencha as informações de domínio, identidade visual, contato técnico e faturamento neste formulário: ${linkFormulario}\n\nDepois que recebermos os dados, validamos o material, configuramos o ambiente e te orientamos sobre DNS. No final, marcamos uma reunião para apresentar o ambiente pronto.\n\nQualquer dúvida, pode me chamar por aqui.` : "";
-  const mensagemEmail = linkFormulario ? `Olá, ${primeiroNome}.\n\nTudo bem? Eu sou ${nomeResponsavel}, da Callface, e serei o responsável por acompanhar sua implantação White Label.\n\nPara iniciarmos a configuração do ambiente, peço que preencha as informações de domínio, identidade visual, contato técnico e faturamento no formulário abaixo:\n\n${linkFormulario}\n\nDepois que recebermos os dados, validaremos o material, configuraremos o ambiente e enviaremos as orientações de DNS quando necessário. Ao final dessa etapa, agendaremos uma reunião para apresentar o ambiente pronto e liberar os acessos administrativos.\n\nFico à disposição caso precise de ajuda.\n\nAtenciosamente,\n${nomeResponsavel}\nCallface` : "";
+  // Sem link gerado o template ainda é legível (placeholder), como em produção.
+  const mensagemWhatsApp = `Olá, ${primeiroNome}! Tudo bem?\n\nEu sou ${nomeResponsavel}, da Callface, e vou acompanhar sua implantação White Label por aqui.\n\nPara começarmos, preciso que você preencha as informações de domínio, identidade visual, contato técnico e faturamento neste formulário: ${linkFormulario || "{{link_implantacao}}"}\n\nDepois que recebermos os dados, validamos o material, configuramos o ambiente e te orientamos sobre DNS. No final, marcamos uma reunião para apresentar o ambiente pronto.\n\nQualquer dúvida, pode me chamar por aqui.`;
+  const mensagemEmail = `Olá, ${primeiroNome}.\n\nTudo bem? Eu sou ${nomeResponsavel}, da Callface, e serei o responsável por acompanhar sua implantação White Label.\n\nPara iniciarmos a configuração do ambiente, peço que preencha as informações de domínio, identidade visual, contato técnico e faturamento no formulário abaixo:\n\n${linkFormulario || "{{link_implantacao}}"}\n\nDepois que recebermos os dados, validaremos o material, configuraremos o ambiente e enviaremos as orientações de DNS quando necessário. Ao final dessa etapa, agendaremos uma reunião para apresentar o ambiente pronto e liberar os acessos administrativos.\n\nFico à disposição caso precise de ajuda.\n\nAtenciosamente,\n${nomeResponsavel}\nCallface`;
   const atendimentoHref = (canal: "whatsapp" | "email", texto: string) => {
     if (!leadId) return null;
     const params = new URLSearchParams({ leadId, canal, texto });
     if (canal === "whatsapp" && leadTelefone) params.set("telefone", digitsForDialer(leadTelefone));
     if (canal === "email" && leadEmail) params.set("email", leadEmail);
-    return `/atendimento?${params.toString()}`;
+    return emPosVenda ? `/${canal}?${params.toString()}` : `/atendimento?${params.toString()}`;
   };
 
   const toggleItem = useMutation({
@@ -1097,7 +1121,7 @@ function OnboardingLegacyView({ fulfillmentId, data, documentosLegado }: { fulfi
             {empresaLogoUrl ? <img src={empresaLogoUrl} alt="" className="w-full h-full object-cover" /> : <Truck className="w-5 h-5 text-white" />}
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-[17px] font-bold truncate" style={{ color: "var(--cf2-text-primary)" }}>{empresaId ? <Link href={`/clientes/${empresaId}`} className="hover:underline">{empresaNome}</Link> : empresaNome || "—"}</p>
+            <p className="text-[17px] font-bold truncate" style={{ color: "var(--cf2-text-primary)" }}>{empresaId ? <Link href={emPosVenda ? `/empresas/${empresaId}` : `/clientes/${empresaId}`} className="hover:underline">{empresaNome}</Link> : empresaNome || "—"}</p>
             <div className="grid grid-cols-2 gap-x-4 gap-y-1 mt-2">
               <div className="min-w-0">
                 <p className="text-[10px]" style={{ color: "var(--cf2-text-tertiary)" }}>Responsável interno</p>
