@@ -32,6 +32,8 @@ export interface OfertaComercial {
   paymentTrigger: GatilhoPagamento;
   onboardingRequired: boolean;
   implementationRequired: boolean;
+  /** A oferta admite período de teste? (SPEC §12.2, migration 0083) */
+  permiteTrial: boolean;
 }
 
 /** O que se sabe hoje sobre a oportunidade, já lido de onde quer que seja. */
@@ -93,6 +95,22 @@ export function podeCriarProposta(oferta: OfertaComercial, estado: Pick<EstadoOp
     ganha: false,
     motivo: "proposta exige empresa: associe uma existente ou crie uma nova",
     falta: ["empresa vinculada à oportunidade"],
+  };
+}
+
+/**
+ * Trial é capacidade da OFERTA, não botão livre na oportunidade.
+ *
+ * Antes disto qualquer oportunidade entrava em trial — inclusive PABX e White
+ * Label, que são venda por contrato com implantação. Um trial ali não é um
+ * período de teste, é um compromisso operacional que ninguém combinou.
+ */
+export function podeIniciarTrial(oferta: OfertaComercial): Decisao {
+  if (oferta.permiteTrial) return { ganha: true, motivo: `oferta ${oferta.codigo} admite trial` };
+  return {
+    ganha: false,
+    motivo: `a oferta ${oferta.codigo} não admite período de teste`,
+    falta: ["oferta comercial que permita trial"],
   };
 }
 

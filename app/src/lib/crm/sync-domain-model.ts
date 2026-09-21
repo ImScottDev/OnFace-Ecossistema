@@ -279,6 +279,13 @@ export async function syncOportunidadeFromNegocio(negocioId: string): Promise<vo
       ganhoAt: negocio.status === "ganho" ? negocio.ganhoAt : null,
       perdidoAt: negocio.status === "perdido" ? perdidoAt : null,
       motivoPerda: negocio.status === "perdido" ? negocio.motivoPerda : null,
+      // Estagnação é do mesmo tipo dos campos acima: editada no legado, e ali
+      // esvaziar é intenção — `aplicarEtapa` limpa de propósito ao mudar de
+      // etapa, porque o motivo descrevia a parada anterior. Cópia direta.
+      motivoEstagnacao: negocio.motivoEstagnacao,
+      estagnadoEm: negocio.estagnadoEm,
+      trialIniciadoEm: negocio.trialIniciadoEm,
+      trialEncerradoEm: negocio.trialEncerradoEm,
       // Commercial Core v3 (ADR-EXEC-022) — espelha o bundle (oportunidades irmãs da mesma negociação).
       bundleId: negocio.bundleId,
       updatedAt: new Date(),

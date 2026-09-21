@@ -337,12 +337,19 @@ export async function boardPipeline(organizacaoId: string, filtros: FiltrosPipel
              -- como fallback dos 4 casos históricos que a 0082 não moveu sem
              -- palpite; quem manda é a reunião.
              COALESCE(r.faltou_em, n.no_show_em)::text AS no_show_em,
-             n.trial_iniciado_em::text, n.trial_encerrado_em::text,
-             n.motivo_estagnacao, n.lead_id::text,
-             (SELECT count(*)::int FROM propostas p WHERE p.negocio_id = n.id) AS propostas,
-             (SELECT count(*)::int FROM propostas p WHERE p.negocio_id = n.id
-               AND p.status IN ('enviada','visualizada','ajuste_solicitado')) AS proposta_aberta,
-             (SELECT count(*)::int FROM propostas p WHERE p.negocio_id = n.id AND p.status = 'aceita') AS proposta_aceita
+             COALESCE(oc.trial_iniciado_em, n.trial_iniciado_em)::text AS trial_iniciado_em,
+             COALESCE(oc.trial_encerrado_em, n.trial_encerrado_em)::text AS trial_encerrado_em,
+             COALESCE(oc.motivo_estagnacao, n.motivo_estagnacao) AS motivo_estagnacao,
+             n.lead_id::text,
+             -- Proposta é canônica (SPEC §13.1); o vínculo é que tem duas portas.
+             (SELECT count(*)::int FROM propostas p
+               WHERE p.negocio_id = n.id OR p.oportunidade_id = oc.id) AS propostas,
+             (SELECT count(*)::int FROM propostas p
+               WHERE (p.negocio_id = n.id OR p.oportunidade_id = oc.id)
+                 AND p.status IN ('enviada','visualizada','ajuste_solicitado')) AS proposta_aberta,
+             (SELECT count(*)::int FROM propostas p
+               WHERE (p.negocio_id = n.id OR p.oportunidade_id = oc.id)
+                 AND p.status = 'aceita') AS proposta_aceita
         FROM negocios n
         LEFT JOIN LATERAL (
           SELECT titulo, COALESCE(vence_em, data_vencimento) AS vence_em
@@ -354,6 +361,7 @@ export async function boardPipeline(organizacaoId: string, filtros: FiltrosPipel
           SELECT max(data) AS faltou_em FROM reunioes
            WHERE negocio_id = n.id AND status = 'no_show'
         ) r ON TRUE
+        LEFT JOIN oportunidades oc ON oc.negocio_id_legado = n.id
        WHERE n.id = ANY(${literalDeArray(negocioIds)}::uuid[])`);
     for (const l of linhas) legado.set(l.id, l);
   }
@@ -1202,9 +1210,14 @@ export async function detalheOportunidade(organizacaoId: string, negocioId: stri
            NULLIF(trim(concat_ws(' ', l.nome, l.sobrenome)), '') AS lead_nome,
            l.cargo AS lead_cargo, l.email AS lead_email, l.telefone AS lead_telefone, l.whatsapp AS lead_whatsapp,
            l.qualificacao, n.proxima_acao, n.proxima_acao_em::text,
-           n.motivo_estagnacao, n.motivo_perda_chave AS motivo_perda,
-           n.no_show_em::text, n.no_show_contagem, n.trial_iniciado_em::text,
-           n.trial_encerrado_em::text, n.bundle_id::text
+           -- Estagnação mora no canônico desde a 0084; o legado é fallback.
+           COALESCE(o.motivo_estagnacao, n.motivo_estagnacao) AS motivo_estagnacao,
+           n.motivo_perda_chave AS motivo_perda,
+           n.no_show_em::text, n.no_show_contagem,
+           -- Trial mora no canônico desde a 0085; o legado é fallback.
+           COALESCE(o.trial_iniciado_em, n.trial_iniciado_em)::text AS trial_iniciado_em,
+           COALESCE(o.trial_encerrado_em, n.trial_encerrado_em)::text AS trial_encerrado_em,
+           n.bundle_id::text
       FROM negocios n
       LEFT JOIN empresas e ON e.id = n.empresa_id
       LEFT JOIN leads l ON l.id = n.lead_id
@@ -1230,9 +1243,17 @@ export async function detalheOportunidade(organizacaoId: string, negocioId: stri
     id: string; numero: number; versao: number; status: string;
     total: string | null; enviada_em: string | null; modo: string | null;
   }>(sql`
-    SELECT id::text, numero, versao, status, total_geral::text AS total,
-           enviada_em::text, modo_fechamento AS modo
-      FROM propostas WHERE negocio_id = ${negocioId}::uuid ORDER BY versao DESC, created_at DESC
+    -- Proposta é canônica (SPEC §13.1); o vínculo é que ainda tem duas portas.
+    -- Casar pela oportunidade primeiro e cair no negócio depois evita perder a
+    -- proposta cujo vínculo legado ficou para trás, sem atribuir a esta
+    -- oportunidade nenhuma das 455 propostas que só apontam para um lead — essas
+    -- são caso de reconciliação, não de palpite.
+    SELECT p.id::text, p.numero, p.versao, p.status, p.total_geral::text AS total,
+           p.enviada_em::text, p.modo_fechamento AS modo
+      FROM propostas p
+     WHERE p.negocio_id = ${negocioId}::uuid
+        OR p.oportunidade_id = (SELECT id FROM oportunidades WHERE negocio_id_legado = ${negocioId}::uuid)
+     ORDER BY p.versao DESC, p.created_at DESC
   `);
 
   // Próxima ação É tarefa (SPEC §23). A coluna `negocios.proxima_acao` está

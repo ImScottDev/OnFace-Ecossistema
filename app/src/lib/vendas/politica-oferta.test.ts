@@ -8,12 +8,13 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   avaliarGanho, podeCriarProposta, jornadasPosVenda, type OfertaComercial,
+  podeIniciarTrial,
 } from "@onface/catalog";
 
 const oferta = (p: Partial<OfertaComercial>): OfertaComercial => ({
   id: "of-1", codigo: "X", requiresCompanyBeforeProposal: true, requiresContract: false,
   winCondition: "PAYMENT_CONFIRMED", paymentTrigger: "ON_PROPOSAL_ACCEPTED",
-  onboardingRequired: true, implementationRequired: false, ...p,
+  onboardingRequired: true, implementationRequired: false, permiteTrial: false, ...p,
 });
 const estado = (p: Partial<Parameters<typeof avaliarGanho>[1]> = {}) => ({
   temEmpresa: true, propostaAceita: false, contratoAssinadoPorCompleto: false,
@@ -74,4 +75,13 @@ test("toda oferta ganha cria pelo menos onboarding", () => {
     const js = jornadasPosVenda(oferta({ onboardingRequired: true, implementationRequired: impl }));
     assert.ok(js.includes("ONBOARDING"), "SPEC §18: todo serviço ganho passa por onboarding");
   }
+});
+
+test("trial depende da capacidade da oferta, não da vontade de quem clica", () => {
+  assert.equal(podeIniciarTrial(oferta({ permiteTrial: true })).ganha, true);
+  const negada = podeIniciarTrial(oferta({ permiteTrial: false }));
+  assert.equal(negada.ganha, false);
+  // A mensagem precisa dizer o que falta: "não pode" sem motivo vira ticket.
+  assert.ok(negada.motivo.includes("não admite"), negada.motivo);
+  assert.deepEqual(negada.falta, ["oferta comercial que permita trial"]);
 });

@@ -510,6 +510,11 @@ export async function marcarEstagnacao(params: {
       updated_at = now()
      WHERE id = ${params.negocioId}::uuid
   `);
+  // O espelho leva a estagnação para `oportunidades` (migration 0084). Sem
+  // esta chamada a escrita ficava só no legado, e o canônico só descobria a
+  // estagnação se alguém por acaso mudasse a etapa depois.
+  await espelharNoDominioV2([params.negocioId]);
+
   await registrarEvento({
     organizacaoId: params.organizacaoId, tipo: "OpportunityStalled", ator: params.ator,
     negocioId: params.negocioId, contexto: { motivo: params.motivo },
@@ -815,10 +820,26 @@ export async function iniciarTrial(params: {
   organizacaoId: string; negocioId: string; ator: Ator;
 }): Promise<void> {
   await carregarOportunidade(params.organizacaoId, params.negocioId);
+
+  // Trial é capacidade da OFERTA (SPEC §12.2). Antes disto o botão gravava
+  // `trial_iniciado_em` sem gate nenhum: PABX e White Label — venda por
+  // contrato, com implantação — podiam entrar em "trial" como qualquer outra.
+  const { verificarTrialExigeOferta } = await import("./trial-exige-oferta");
+  const bloqueio = await verificarTrialExigeOferta(params.organizacaoId, params.negocioId);
+  if (bloqueio) {
+    throw new RegraDeNegocio("trial_exige_oferta", bloqueio.erro,
+      bloqueio.falta.includes("família comercial da oportunidade")
+        ? { rotulo: "Definir família", tipo: "alterar_familia" } : undefined);
+  }
+
   await db.execute(sql`
     UPDATE negocios SET trial_iniciado_em = now(), trial_encerrado_em = NULL, updated_at = now()
      WHERE id = ${params.negocioId}::uuid
   `);
+  // Sem o espelho a data ficava só no legado (migration 0085) — o mesmo
+  // buraco que a estagnação tinha.
+  await espelharNoDominioV2([params.negocioId]);
+
   await registrarEvento({
     organizacaoId: params.organizacaoId, tipo: "TrialStarted",
     ator: params.ator, negocioId: params.negocioId,
@@ -834,6 +855,10 @@ export async function encerrarTrial(params: {
     UPDATE negocios SET trial_encerrado_em = now(), updated_at = now()
      WHERE id = ${params.negocioId}::uuid
   `);
+  // Sem o espelho a data ficava só no legado (migration 0085) — o mesmo
+  // buraco que a estagnação tinha.
+  await espelharNoDominioV2([params.negocioId]);
+
   await registrarEvento({
     organizacaoId: params.organizacaoId, tipo: "TrialEnded",
     ator: params.ator, negocioId: params.negocioId,

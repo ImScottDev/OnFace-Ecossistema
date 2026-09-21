@@ -100,7 +100,7 @@ export async function verificarPodeCriarProposta(
     const d = podeCriarProposta(
       oferta ?? { id: "", codigo: "", requiresCompanyBeforeProposal: true, requiresContract: false,
                   winCondition: "MANUAL_APPROVAL", paymentTrigger: "MANUAL",
-                  onboardingRequired: true, implementationRequired: false },
+                  onboardingRequired: true, implementationRequired: false, permiteTrial: false },
       { temEmpresa: false },
     );
     return { ok: false, erro: d.ganha ? "empresa ausente" : d.motivo, codigo: "EMPRESA_OBRIGATORIA", falta: d.ganha ? undefined : d.falta };

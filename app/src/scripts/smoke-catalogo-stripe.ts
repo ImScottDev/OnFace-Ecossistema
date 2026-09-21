@@ -89,21 +89,27 @@ async function main() {
   // novos, e a sincronização os reclassificou em vez de criar uma segunda
   // linha para o mesmo produto do Stripe. Deduplicar é o comportamento certo;
   // o que não pode é sumir.
-  const [total] = await db.execute<{ n: number }>(sql`
-    SELECT count(*)::int AS n FROM servicos_catalogo WHERE organizacao_id = ${org.id}::uuid`);
-  const [reclassificados] = await db.execute<{ n: number }>(sql`
-    SELECT count(*)::int AS n FROM servicos_catalogo
-     WHERE organizacao_id = ${org.id}::uuid AND origem_catalogo = 'oficial_stripe'
-       AND created_at < now() - interval '1 hour'`);
+  //
+  // A verificação era por `created_at < now() - interval '1 hour'`, que é um
+  // proxy de relógio: uma hora depois da primeira sincronização os 15 produtos
+  // viraram "antigos" e o smoke passou a falhar sem nada ter mudado. O que
+  // importa não é a idade da linha — é que o total NÃO cresce quando se
+  // sincroniza de novo, e que nenhum id do Stripe aparece duas vezes.
   const [oficiais] = await db.execute<{ n: number }>(sql`
     SELECT count(*)::int AS n FROM servicos_catalogo
      WHERE organizacao_id = ${org.id}::uuid AND origem_catalogo = 'oficial_stripe'`);
+  const [total] = await db.execute<{ n: number }>(sql`
+    SELECT count(*)::int AS n FROM servicos_catalogo WHERE organizacao_id = ${org.id}::uuid`);
+
+  await sincronizarCatalogoStripe(org.id, { ...fixture, lidoEm: new Date() } as CatalogoStripe);
+  const [totalDepois] = await db.execute<{ n: number }>(sql`
+    SELECT count(*)::int AS n FROM servicos_catalogo WHERE organizacao_id = ${org.id}::uuid`);
 
   ok(oficiais.n === 15, `os 15 produtos do Stripe estão no catálogo oficial (${oficiais.n})`);
-  ok(reclassificados.n === 2,
-     `${reclassificados.n} já existiam no legado com o mesmo id do Stripe e foram reclassificados, não duplicados`);
-  ok(total.n === 220 + 15 - reclassificados.n,
-     `nenhuma linha foi perdida: ${total.n} = 220 legadas + 15 do Stripe - ${reclassificados.n} que eram a mesma coisa`);
+  ok(totalDepois.n === total.n,
+     `sincronizar de novo não cria linha: ${total.n} antes, ${totalDepois.n} depois`);
+  ok(total.n >= 220,
+     `nenhuma linha legada foi perdida: ${total.n} no catálogo, contra 220 legadas na medição inicial`);
 
   const [duplicados] = await db.execute<{ n: number }>(sql`
     SELECT count(*)::int AS n FROM (

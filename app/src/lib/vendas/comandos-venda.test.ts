@@ -14,7 +14,7 @@ import type { OfertaComercial, EstadoOportunidade } from "@onface/catalog";
 const OFERTA_CONTRATO: OfertaComercial = {
   id: "of-pabx", codigo: "PABX_CONTRACT", requiresCompanyBeforeProposal: true,
   requiresContract: true, winCondition: "CONTRACT_FULLY_SIGNED", paymentTrigger: "ON_CONTRACT_SIGNED",
-  onboardingRequired: true, implementationRequired: true,
+  onboardingRequired: true, implementationRequired: true, permiteTrial: false,
 };
 const OFERTA_DIRETA: OfertaComercial = { ...OFERTA_CONTRATO, id: "of-ai", codigo: "CALLFACE_AI_DIRECT",
   requiresContract: false, winCondition: "PAYMENT_CONFIRMED", paymentTrigger: "ON_PROPOSAL_ACCEPTED", implementationRequired: false };

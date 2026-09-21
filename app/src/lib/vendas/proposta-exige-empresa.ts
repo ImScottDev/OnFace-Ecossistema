@@ -58,6 +58,7 @@ export async function verificarPropostaExigeEmpresa(
     winCondition: "PAYMENT_CONFIRMED" as const,
     paymentTrigger: "ON_WIN" as const,
     onboardingRequired: true,
+    permiteTrial: false,
     implementationRequired: false,
   };
 

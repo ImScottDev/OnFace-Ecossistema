@@ -3640,6 +3640,12 @@ export const oportunidades = pgTable("oportunidades", {
   ganhoAt: timestamp("ganho_at", { withTimezone: true }),
   perdidoAt: timestamp("perdido_at", { withTimezone: true }),
   motivoPerda: text("motivo_perda"),
+    /** Estagnação: motivo registrado por quem opera (SPEC §11.1, migration 0084). */
+    motivoEstagnacao: text("motivo_estagnacao"),
+    estagnadoEm: timestamp("estagnado_em", { withTimezone: true }),
+    /** Período de trial (SPEC §11.1, migration 0085). */
+    trialIniciadoEm: timestamp("trial_iniciado_em", { withTimezone: true }),
+    trialEncerradoEm: timestamp("trial_encerrado_em", { withTimezone: true }),
   // Bridge de migração/dual-write — mesma lógica de pessoas.leadIdLegado.
   negocioIdLegado: uuid("negocio_id_legado").references(() => negocios.id),
   // Commercial Core v3 (ADR-EXEC-022) — espelha negocios.bundleId (dual-write).
@@ -4457,6 +4463,8 @@ export const ofertasComerciais = pgTable("ofertas_comerciais", {
   createsSubscription: boolean("creates_subscription").default(false).notNull(),
   billingModel: text("billing_model"),
   onboardingRequired: boolean("onboarding_required").default(true).notNull(),
+  /** A oferta admite período de teste? (SPEC §12.2, migration 0083) */
+  permiteTrial: boolean("permite_trial").default(false).notNull(),
   implementationRequired: boolean("implementation_required").default(false).notNull(),
   contratoTemplateId: uuid("contrato_template_id").references(() => contratoTemplates.id, { onDelete: "set null" }),
   checkoutProvider: text("checkout_provider"),

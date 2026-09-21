@@ -6,6 +6,7 @@
 export {
   avaliarGanho,
   podeCriarProposta,
+  podeIniciarTrial,
   jornadasPosVenda,
   type OfertaComercial,
   type EstadoOportunidade,

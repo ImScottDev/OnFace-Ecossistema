@@ -44,7 +44,8 @@ export function criarRepositorioVendas(db: Executor, sql: SqlTag): RepositorioVe
     async buscarOferta(id) {
       const r = await um<Record<string, unknown>>(sql`
         SELECT id, codigo, requires_company_before_proposal, requires_contract,
-               win_condition, payment_trigger, onboarding_required, implementation_required
+               win_condition, payment_trigger, onboarding_required, implementation_required,
+               permite_trial
         FROM ofertas_comerciais WHERE id = ${id}::uuid AND ativo`);
       if (!r) return null;
       return {
@@ -55,6 +56,7 @@ export function criarRepositorioVendas(db: Executor, sql: SqlTag): RepositorioVe
         paymentTrigger: r.payment_trigger as OfertaComercial["paymentTrigger"],
         onboardingRequired: Boolean(r.onboarding_required),
         implementationRequired: Boolean(r.implementation_required),
+        permiteTrial: Boolean(r.permite_trial),
       };
     },
 

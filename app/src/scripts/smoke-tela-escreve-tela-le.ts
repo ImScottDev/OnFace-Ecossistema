@@ -14,7 +14,7 @@
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
 import { criarLead, moverEtapa, nutrir, qualificar } from "@/lib/vendas/pre-vendas";
-import { criarOportunidadeDoLead, definirProximaAcao } from "@/lib/vendas/pipeline";
+import { criarOportunidadeDoLead, definirProximaAcao, iniciarTrial, encerrarTrial, marcarEstagnacao } from "@/lib/vendas/pipeline";
 import { boardPreVendas, detalheLead, detalheOportunidade } from "@/lib/vendas/consultas";
 import { atorHumano } from "@/lib/vendas/dominio";
 import { negociosRoutes } from "@/api-server/routes/negocios";
@@ -43,7 +43,7 @@ async function limpar() {
     sql`DELETE FROM tarefas WHERE lead_id = ${leadId}::uuid OR negocio_id = ${negocioId ?? null}::uuid`,
     sql`DELETE FROM comercial_evidencia WHERE negocio_id = ${negocioId ?? null}::uuid`,
     sql`DELETE FROM vendas_eventos WHERE lead_id = ${leadId}::uuid OR negocio_id = ${negocioId ?? null}::uuid`,
-    sql`DELETE FROM atividades WHERE lead_id = ${leadId}::uuid`,
+    sql`DELETE FROM atividades WHERE lead_id = ${leadId}::uuid OR negocio_id = ${negocioId ?? null}::uuid`,
     sql`DELETE FROM status_changes WHERE lead_id = ${leadId}::uuid`,
     sql`DELETE FROM timeline_events WHERE aquisicao_id IN (SELECT id FROM aquisicoes WHERE lead_legado_id = ${leadId}::uuid)
          OR pessoa_id IN ${dasMinhas} OR empresa_id IN ${empresasMinhas}`,
@@ -181,6 +181,49 @@ async function main() {
     const det = await detalheOportunidade(org.id, negocioId);
     ok(det?.badges.includes("No-show"), `o detalhe mostra o selo No-show (${det?.badges.join(", ") || "nenhum"})`);
     ok(Boolean(det?.noShow.em), "e a data do no-show vem da reunião");
+  }
+
+
+  console.log("\n═══ trial: capacidade da oferta, não botão livre ═══");
+  if (negocioId) {
+    // A oportunidade nasceu CALLFACE_AI, cuja oferta admite trial.
+    await iniciarTrial({ organizacaoId: org.id, negocioId, ator });
+    const comTrial = await detalheOportunidade(org.id, negocioId);
+    ok(comTrial?.badges.includes("Trial ativo"), `Callface AI entra em trial (${comTrial?.badges.join(", ")})`);
+    const [canon] = await db.execute<{ n: number }>(sql`
+      SELECT count(*)::int AS n FROM oportunidades
+       WHERE negocio_id_legado = ${negocioId}::uuid AND trial_iniciado_em IS NOT NULL`);
+    ok(canon.n === 1, `e o trial chega ao canônico (${canon.n})`);
+
+    await encerrarTrial({ organizacaoId: org.id, negocioId, ator });
+    const semTrial = await detalheOportunidade(org.id, negocioId);
+    ok(!semTrial?.badges.includes("Trial ativo"), "encerrar tira o selo");
+
+    // PABX é venda por contrato com implantação: a oferta não admite trial.
+    await db.execute(sql`UPDATE negocios SET service_family = 'PABX' WHERE id = ${negocioId}::uuid`);
+    await db.execute(sql`UPDATE oportunidades SET service_family = 'PABX', oferta_comercial_id = NULL
+                          WHERE negocio_id_legado = ${negocioId}::uuid`);
+    let recusou = "";
+    await iniciarTrial({ organizacaoId: org.id, negocioId, ator })
+      .catch((e: { message?: string }) => { recusou = e?.message ?? "erro"; });
+    ok(recusou.includes("não admite"), `PABX é recusado ("${recusou || "aceitou"}")`);
+
+    await db.execute(sql`UPDATE negocios SET service_family = NULL WHERE id = ${negocioId}::uuid`);
+    await db.execute(sql`UPDATE oportunidades SET service_family = NULL WHERE negocio_id_legado = ${negocioId}::uuid`);
+    let semFamilia = "";
+    await iniciarTrial({ organizacaoId: org.id, negocioId, ator })
+      .catch((e: { message?: string }) => { semFamilia = e?.message ?? "erro"; });
+    ok(semFamilia.includes("família"), `sem família é recusado ("${semFamilia || "aceitou"}")`);
+  }
+
+  console.log("\n═══ estagnação: o canônico também sabe ═══");
+  if (negocioId) {
+    await marcarEstagnacao({ organizacaoId: org.id, negocioId, motivo: "sem_retorno", ator });
+    const [canon] = await db.execute<{ motivo: string | null }>(sql`
+      SELECT motivo_estagnacao AS motivo FROM oportunidades WHERE negocio_id_legado = ${negocioId}::uuid`);
+    ok(canon?.motivo === "sem_retorno", `a estagnação chega ao canônico ("${canon?.motivo}")`);
+    const det = await detalheOportunidade(org.id, negocioId);
+    ok(det?.motivoEstagnacao === "sem_retorno", `e o detalhe mostra ("${det?.motivoEstagnacao}")`);
   }
 
   await limpar();
