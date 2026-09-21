@@ -7,15 +7,14 @@
 
 ## Fase atual
 
-**16 — Migração dos escritores de runtime** (em andamento)
+**17 — Migração dos leitores** (a iniciar)
 
-Fases 01 a 15 concluídas. Fase 16: **6 criadores de identidade migrados** e o
-caminho de Ganho provado ponta a ponta contra o banco real (16e). Falta
-`contatos-unified`, o worker e os 30 caminhos de escrita de `negocios`.
+Fases 01 a **16 concluídas**. Todo caminho de escrita de identidade comercial e
+todo caminho de Ganho passam por porta canônica.
 
 ## Último commit
 
-`92327d0` — fix(16e): ON CONFLICT de fulfillment aponta pro índice que existe
+`016426c` — refactor(16): todo caminho de Ganho passa pela política da oferta
 
 Branch de trabalho: `refactor/arquitetura-canonica`, criada a partir de `98940fe`.
 
@@ -162,12 +161,21 @@ Os demais 37 pacotes seguem vazios, recebendo código conforme as fases avançam
 | `api-server/routes/contatos.ts` | **migrado** | idem |
 | `api-server/routes/prospeccao.ts` | **migrado** | idem |
 | `api-server/routes/apollo.ts` | **migrado** | idem |
-| `api-server/routes/contatos-unified.ts` | pendente | — |
-| Ganho de oportunidade (caminho canônico) | **provado em 16e** | `avaliarCondicaoDeGanho` |
-| `lib/crm/pos-venda.ts` (adaptador legado) | ainda em uso por `negocios.ts:804`, morre na fase 17 | — |
+| `api-server/routes/contatos-unified.ts` | **migrado** | idem |
+| `worker/index.ts` (3 criadores de contato) | **migrado** | `garantirPessoaDeContato` |
+| escrita de `negocios` — **todo caminho de Ganho** (30) | **migrado** | `decidirGanhoPelaOferta` + `propagarGanhoCanonico` |
 | `api-server/routes/{email,whatsapp,contratos,cadencia}.ts` | pendente (atualizam, não criam) | — |
-| `worker/index.ts` | pendente | — |
-| escrita de `negocios` (30 caminhos) | pendente — fase 16e | — |
+| `lib/crm/pos-venda.ts` (adaptador legado) | ainda em uso por `negocios.ts:804`, morre na fase 17 | — |
+
+**Como os 30 caminhos de `negocios` foram fechados de uma vez.** Todos passam por
+`avaliarEvidenciaWon` e `aplicarEfeitosPosGanho` em `lib/crm/won-evidence.ts` — rota,
+webhook do Stripe, webhook do Documenso, worker e scripts. A ponte entrou nesses dois
+pontos. Guarda na função compartilhada, não em cada chamador.
+
+`lib/vendas/ponte-ganho.ts` **não reimplementa a regra**: a decisão vem de
+`avaliarGanho`, a mesma função do caminho canônico. Um teste garante que ninguém
+reescreva a decisão lá dentro — dois modelos com a mesma regra escrita duas vezes
+divergem em silêncio, que é o bug que este refactor existe para acabar.
 
 Um teste de inventário (`arquitetura/escritores-migrados.test.ts`) trava isso: porta
 nova sem ligação à canônica falha a suíte. Ele também verifica que a ponte declara ser
@@ -187,10 +195,20 @@ canônico hoje faria o lead sumir da tela de pré-vendas no mesmo instante.
 
 ## Testes executados
 
-Estado atual (16e): `tsc --noEmit` limpo, **170 testes passando, 0 falhas**, mais
-dois smokes contra o banco real — `smoke-ponte-canonica` (entrada externa chega
-inteira ao canônico) e `smoke-ganho-oportunidade` 5/5 (a política da oferta decide
-o Ganho, PABX gera as duas jornadas, retry não duplica).
+Estado atual (fim da fase 16): `tsc --noEmit` limpo, **173 testes passando, 0 falhas**,
+mais três smokes contra o banco real:
+
+- `smoke-ponte-canonica` — entrada externa chega inteira ao canônico e não duplica;
+- `smoke-ganho-oportunidade` 5/5 — a política da oferta decide, PABX gera as duas
+  jornadas, retry não duplica;
+- `smoke-ponte-ganho` 5/5 — o caminho **legado** obedece à oferta, e a mesma prova
+  (contrato assinado, sem pagamento) produz decisões **opostas** para PABX e para
+  Callface AI direto. É a demonstração do risco financeiro fechado.
+
+Contagens conferidas depois dos smokes: oportunidades 1.561, negócios 1.562, serviços
+438, aquisições 3.989 — idênticas ao registrado. Os smokes passaram a limpar em
+`finally` depois que 5 oportunidades de teste sobreviveram a uma quebra no meio da
+depuração da migration 0068.
 
 Após a fase 04: `tsc --noEmit` limpo (0 erros), **111 testes passando**, 0 falhas.
 

@@ -383,3 +383,42 @@ quebra; os repositórios passaram a serializar com `toISOString()`.
 ponte canônica verde.
 
 **Commits:** `refactor(16e)` e `92327d0` (fix do ON CONFLICT).
+
+---
+
+## 2026-09-21 — Fase 16 fechada · A política da oferta alcança o caminho legado
+
+**O problema que isto resolve.** A fase 16e provou a regra no caminho canônico, mas
+quem roda em produção hoje é o legado: `lib/crm/won-evidence.ts`, lendo
+`won_evidence_policies`, indexada por FAMÍLIA. Provar a regra no caminho que ninguém
+usa ainda não muda o risco.
+
+**A ligação.** `lib/vendas/ponte-ganho.ts` entra nos dois pontos por onde todos os 30
+escritores de `negocios` passam: `avaliarEvidenciaWon` (decisão) e
+`aplicarEfeitosPosGanho` (propagação). Rota de negócios, webhook do Stripe, webhook do
+Documenso, worker e scripts — um lugar, todos os chamadores.
+
+A ponte **não reimplementa a regra**: chama `avaliarGanho`, a mesma função do domínio.
+Um teste de arquitetura barra qualquer reescrita da decisão lá dentro. Quando o negócio
+ainda não tem oportunidade com oferta, a ponte devolve "não aplicável" e o legado
+responde — o que é honesto, não permissivo: as 1.084 oportunidades sem oferta não podem
+ser ganhas pelo canônico justamente porque a política está ausente.
+
+**Mais dois escritores fechados:** `contatos-unified` (POST) pela porta de aquisição, e
+os três criadores de contato do worker por `garantirPessoaDeContato` — identidade sem
+aquisição. Contato de WhatsApp não é processo comercial: abrir aquisição em cada um
+encheria o funil com 25.363 processos que ninguém vendeu. A pessoa precisa existir para
+a conversa ligar na timeline (SPEC §6, §22); o processo, não.
+
+**Higiene de dado encontrada e corrigida.** 5 oportunidades de teste sobreviveram no
+banco às execuções que quebraram no meio durante a depuração da migration 0068 — a
+limpeza vinha depois do ponto de falha. Removidas em transação, com inspeção antes do
+DELETE, e os smokes passaram a limpar em `finally`. Contagens reconferidas contra o
+estado registrado: oportunidades 1.561, negócios 1.562, serviços 438, contratos 742,
+aquisições 3.989. Todas batem.
+
+**Validação:** `tsc` limpo, **173 testes, 0 falhas** (3 novos de inventário vivo) e
+três smokes verdes. O `smoke-ponte-ganho` é o que importa: mesma prova, decisões
+opostas — PABX ganha com contrato assinado, Callface AI direto não ganha sem pagamento.
+
+**Commit:** `016426c`.
