@@ -7,9 +7,16 @@
 
 ## Fase atual
 
-**25 e 26 concluídas** — 27 e 28 aguardam aprovação do Kauã (são destrutivas).
+**Refactor arquitetural: fases 01 a 26 concluídas.** 27 e 28 aguardam aprovação
+do Kauã (são destrutivas).
 
-Fases 01 a 26 concluídas.
+**Conclusão do produto (Documento Mestre v0.13): CP1 a CP13 concluídos.** Essa é
+a etapa em que o ONFACE parou de ser fundação e virou produto utilizável: as
+jornadas operacionais estão fechadas e os números das telas foram acertados
+contra o dado real.
+
+A próxima etapa NÃO é mais código: é **QA do Kauã na tela**, e depois a virada
+(fases 27 e 28), que é destrutiva e depende de autorização explícita.
 
 | Fase | Estado |
 |---|---|
@@ -27,7 +34,7 @@ Fases 01 a 26 concluídas.
 
 ## Último commit
 
-`3da2c23` — Integração Callface AI: fundação read-only, identidade e primeiro sync real
+`d3ca6c2` — CP13, autoverificação: a fila de loops estava sem tela
 
 Branch de trabalho: `refactor/arquitetura-canonica`, criada a partir de `98940fe`.
 
@@ -1384,7 +1391,21 @@ materialização, ligados no sweep que já roda.
 
 ## Bloqueios reais
 
-Nenhum.
+Nenhum deles impede outro trabalho: são itens que dependem de credencial, dado
+externo ou decisão do Kauã.
+
+| # | bloqueio | efeito enquanto durar |
+|---|---|---|
+| 1 | Credencial de IA. NEXO e Hermes apontam para `anthropic`, e o ambiente só tem `GROQ_API_KEY` | os dois agentes não executam. O gate de publicação agora recusa e explica, em vez de deixar o contato sem resposta |
+| 2 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google Agenda fica "não configurada" no hub; Microsoft 365 cobre a operação atual |
+| 3 | Planilha mensal da Holding (PABX) | faturado e recebido de PABX seguem zerados. Agora é zero por dado ausente, e não por filtro quebrado |
+| 4 | 1.084 oportunidades sem `service_family` | trava o filtro por produto nos relatórios, que por isso não foi construído |
+| 5 | 4 prices do Stripe sem nome | catálogo sincroniza, esses quatro ficam sem rótulo legível |
+| 6 | 275 contas de CS sem responsável | a fila de CS não consegue atribuir dono a elas |
+
+**Achado aberto, não tocado:** Meta Conversions API está configurada e com zero
+entregas. Token existe, smoke passa, nenhuma conversão entregue de verdade.
+Visível no hub de integrações desde o CP12.
 
 ## Nota de auditoria — inconsistência levantada pelo Kauã em 21/09
 
