@@ -1338,6 +1338,35 @@ entregue de verdade. Não mexi: agora está na tela para quem decide olhar.
 **Validação:** tsc limpo, **306 testes 0 falhas**, build exit 0, **29/29
 smokes**, `/ajustes/integracoes` respondendo 200 contra build de produção.
 
+### CP13 — Autoverificação: eu tinha produzido o defeito que estava caçando
+
+Ao fechar os checkpoints, varri o que criei nesta rodada perguntando o que o
+repo me ensinou a perguntar: **isso tem chamador de verdade?**
+
+Dez dos onze módulos tinham. `lib/vendas/loops-abertos` não: eu havia ligado na
+tela apenas o FILTRO do board, e a fila em si só era chamada pelo smoke. Ou
+seja, produzi "peça pronta sem caller" exatamente no checkpoint em que estava
+caçando esse defeito.
+
+A fila é mais rica que o filtro. O filtro recorta "sem próxima ação"; a fila
+mostra também proposta sem resposta há 61 dias, oportunidade parada há mais de
+14 dias e oportunidade sem dono, ordenadas por valor.
+
+O recorte passou a mostrar a fila junto: *"527 oportunidades com loop aberto ·
+R$ 477.192 parados · 527 sem próxima ação · 74 proposta sem resposta · 324
+paradas há mais de 14 dias · 3 sem responsável"*, conferido na rota real. O
+resumo só é consultado quando o recorte está ativo, porque é uma pergunta a
+mais no banco.
+
+**Nota sobre o método.** A varredura por texto errou duas vezes nesta sessão,
+nas duas por import relativo: primeiro me fez concluir que `executeAgent` não
+tinha chamador (tinha, no worker), depois que `checklist-fechamento` não tinha
+(tem, em `consultas.ts`). Grep de caller precisa casar o **nome do módulo**, não
+o caminho completo, senão o import relativo escapa.
+
+**Validação:** tsc limpo, **308 testes 0 falhas**, build exit 0, **29/29
+smokes**, `/pipeline?loop=sem-proxima-acao` conferida contra build de produção.
+
 ### Auditoria de CS Health (histórico da decisão)
 
 Menor do que o gap analysis inicial dizia:

@@ -54,13 +54,15 @@ export interface AcoesPipeline {
   detalhe: (id: string) => Promise<Resultado<{ oportunidade: DetalheOportunidade | null; timeline: LinhaDoTempo[] }>>;
 }
 
-export function Pipeline({ dados, filtro, loop = false, selecaoInicial, rotaBase, acoes }: {
+export function Pipeline({ dados, filtro, loop = false, loops = null, selecaoInicial, rotaBase, acoes }: {
   dados: BoardPipeline;
   /** Só para link antigo salvo; o board padrão é o único, sem aba. */
   aba?: Aba;
   filtro: { busca: string; responsavelId: string | null; familia: string | null };
   /** O board está recortado nos loops abertos? */
   loop?: boolean;
+  /** Resumo da fila de loops, só quando o recorte está ativo. */
+  loops?: import("@/lib/vendas/loops-abertos").ResumoLoops | null;
   selecaoInicial?: string | null;
   rotaBase: RotaBaseVendas;
   acoes: AcoesPipeline;
@@ -182,6 +184,26 @@ export function Pipeline({ dados, filtro, loop = false, selecaoInicial, rotaBase
           <Plus aria-hidden />Nova oportunidade
         </button>
       </div>
+
+      {/* O recorte não é só um filtro: é a fila de trabalho. Os quatro motivos
+          e o dinheiro parado dizem por onde começar, e a ordenação do board
+          já vem por valor. */}
+      {loop && loops ? (
+        <div className="ov-faixa-loops" role="status">
+          <strong>{loops.oportunidades}</strong> oportunidades com loop aberto
+          {loops.valorParado > 0 ? <> · <strong>{moeda(loops.valorParado)}</strong> parados</> : null}
+          <span className="ov-faixa-loops-motivos">
+            {([
+              ["SEM_PROXIMA_ACAO", "sem próxima ação"],
+              ["PROPOSTA_SEM_DESFECHO", "proposta sem resposta"],
+              ["PARADA", "paradas há mais de 14 dias"],
+              ["SEM_RESPONSAVEL", "sem responsável"],
+            ] as const)
+              .filter(([k]) => loops.porMotivo[k] > 0)
+              .map(([k, rotulo]) => <span key={k}>{loops.porMotivo[k]} {rotulo}</span>)}
+          </span>
+        </div>
+      ) : null}
 
       {bloqueio && !modal ? (
         <div style={{ marginBottom: "calc(14 * var(--onface-u))" }}><AvisoBloqueio bloqueio={bloqueio} /></div>

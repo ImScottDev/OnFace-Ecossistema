@@ -41,6 +41,11 @@ export async function PipelinePage({ searchParams, rotaBase = "" }: {
 
   const dados = await boardPipeline(ctx.organizacaoId, { aba, busca, responsavelId, familia, semProximaAcao });
 
+  // Só quando o recorte está ativo: a fila é uma pergunta a mais no banco, e
+  // não faz sentido pagá-la para quem está olhando o board inteiro.
+  const { resumoDeLoops } = await import("@/lib/vendas/loops-abertos");
+  const loops = semProximaAcao ? await resumoDeLoops(ctx.organizacaoId, responsavelId) : null;
+
   return (
     <OnfacePage>
       <OnfacePageBand>
@@ -61,6 +66,7 @@ export async function PipelinePage({ searchParams, rotaBase = "" }: {
           aba={aba ?? undefined}
           filtro={{ busca, responsavelId, familia }}
           loop={semProximaAcao}
+          loops={loops}
           selecaoInicial={params.oportunidade ?? null}
           rotaBase={rotaBase}
           acoes={{

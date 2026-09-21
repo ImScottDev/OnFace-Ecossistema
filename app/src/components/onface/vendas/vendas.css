@@ -762,3 +762,19 @@ details.ov-coluna[data-colapsada]:not([open]) > summary h2 {
   border-color: var(--alerta, #e08700);
   color: var(--alerta-texto, #8a5200);
 }
+
+/* Faixa da fila de loops: aparece só com o recorte ativo. */
+.ov-faixa-loops {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: calc(6 * var(--onface-u)) calc(10 * var(--onface-u));
+  margin-bottom: calc(14 * var(--onface-u));
+  padding: calc(10 * var(--onface-u)) calc(14 * var(--onface-u));
+  border: 1px solid var(--alerta, #e08700);
+  border-radius: calc(12 * var(--onface-u));
+  background: var(--alerta-suave, #fff4e5);
+  color: var(--alerta-texto, #8a5200);
+  font-size: calc(13 * var(--onface-u));
+}
+.ov-faixa-loops-motivos { display: flex; flex-wrap: wrap; gap: calc(12 * var(--onface-u)); opacity: 0.85; }
