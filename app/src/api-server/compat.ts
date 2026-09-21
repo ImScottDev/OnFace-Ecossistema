@@ -4,6 +4,7 @@
  */
 import { Context } from "hono";
 import { HTTPException } from "hono/http-exception";
+import type { CodigoPermissao } from "@/lib/auth/permissoes";
 import { getTenantFromRequest, TenantContext } from "./auth.js";
 
 // Get tenant context or throw (returns 401 via error handler)
@@ -83,6 +84,34 @@ export async function getGestaoCtx(c: Context): Promise<TenantContext> {
   const { isAdminView } = await import("@/lib/auth/roles");
   if (!isAdminView(ctx.userRole)) {
     throw new HTTPException(403, { message: "Acesso restrito a admin, gerente ou direção." });
+  }
+  return ctx;
+}
+
+/**
+ * Gate por PERMISSÃO, não por cargo (SPEC §31).
+ *
+ * `getGestaoCtx` responde "é gestão?", que é a pergunta grossa: quem passa por
+ * ela pode tudo. Aqui a pergunta é a que o SPEC exige — *pode fazer ISTO?* — e
+ * é o que permite dizer "move oportunidade mas não aprova desconto", e o que
+ * permite o agente de IA agir com permissão delegada sem exceder a delegação.
+ *
+ * O cutover é seguro porque foi provado: `auth/permissoes.test.ts` compara,
+ * usuário real por usuário real e permissão por permissão, o que o RBAC
+ * responde contra o que o gate legado responderia. Zero divergências.
+ */
+export async function exigirCtx(c: Context, permissao: CodigoPermissao): Promise<TenantContext> {
+  const ctx = await getCtx(c);
+  const { temPermissao } = await import("@/lib/auth/permissoes");
+  const pode = await temPermissao(
+    { usuarioId: ctx.userId, organizacaoId: ctx.organizacaoId, role: ctx.userRole, tipo: "HUMAN" },
+    permissao,
+  );
+  if (!pode) {
+    // A mensagem diz qual permissão falta: quem recebe 403 precisa saber o que
+    // pedir, e "acesso negado" manda a pessoa para o suporte em vez de para o
+    // administrador dela.
+    throw new HTTPException(403, { message: `Sem permissão: ${permissao}` });
   }
   return ctx;
 }

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getTenantContext, unauthorizedResponse, forbiddenResponse } from "@/lib/auth/tenant";
-import { isAdminView } from "@/lib/auth/roles";
+import { temPermissao } from "@/lib/auth/permissoes";
 import {
   getMrrAtual,
   getComponentesMrr,
@@ -24,7 +24,12 @@ import { getMrrAtivo } from "@/lib/analytics/command-center";
 export async function GET(request: NextRequest) {
   const ctx = await getTenantContext();
   if (!ctx) return unauthorizedResponse();
-  if (!isAdminView(ctx.userRole)) return forbiddenResponse();
+  // Gate por PERMISSÃO, não por cargo (SPEC §31). `isAdminView` responde
+  // "é gestão?"; esta pergunta é "pode fazer isto?", que é o que permite
+  // separar leitura de escrita e delegar para agente sem dar tudo.
+  if (!(await temPermissao({ usuarioId: ctx.userId, organizacaoId: ctx.organizacaoId, role: ctx.userRole, tipo: "HUMAN" }, "finance.read"))) {
+    return forbiddenResponse();
+  }
   const orgId = ctx.organizacaoId;
   const sp = request.nextUrl.searchParams;
 

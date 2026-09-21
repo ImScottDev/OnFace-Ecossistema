@@ -94,3 +94,44 @@ test("agente de IA não excede a permissão delegada na execução", async (t) =
     "o agente excedeu a delegação: com o usuário certo por trás, a IA poderia tudo",
   );
 });
+
+test("as rotas financeiras separam leitura de escrita", async (t) => {
+  if (!DB_URL) return t.skip("DATABASE_URL não definida");
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+  const APP = path.resolve(import.meta.dirname, "../../..");
+
+  // `isAdminView` responde "é gestão?" e quem passa pode tudo. Separar leitura
+  // de escrita é o que permite um perfil ver receita sem poder importar
+  // lançamento — e é o que o SPEC §31 pede para poder delegar a um agente.
+  const LEITURA = [
+    "src/app/api/financeiro/metricas/route.ts",
+    "src/app/api/financeiro/churn/route.ts",
+    "src/app/api/financeiro/cobranca/route.ts",
+    "src/app/api/financeiro/inadimplencia/route.ts",
+    "src/app/api/financeiro/vendas/route.ts",
+  ];
+  const ESCRITA = ["src/app/api/financeiro/pabx-import/route.ts"];
+
+  const semLeitura = LEITURA.filter(
+    (f) => !fs.readFileSync(path.join(APP, f), "utf8").includes('"finance.read"'),
+  );
+  assert.deepEqual(semLeitura, [], "rota de leitura financeira sem finance.read");
+
+  const semEscrita = ESCRITA.filter(
+    (f) => !fs.readFileSync(path.join(APP, f), "utf8").includes('"finance.manage"'),
+  );
+  assert.deepEqual(semEscrita, [], "rota que importa dado financeiro sem finance.manage");
+
+  // A separação só vale se os dois escopos forem de fato diferentes para
+  // alguém. Se todo mundo tivesse os dois, isto seria teatro.
+  const { db } = await import("@/lib/db");
+  const { sql } = await import("drizzle-orm");
+  const [r] = await db.execute<{ so_leitura: number }>(sql`
+    SELECT count(*)::int AS so_leitura FROM roles r
+     WHERE EXISTS (SELECT 1 FROM role_permissions rp JOIN permissions p ON p.id = rp.permission_id
+                    WHERE rp.role_id = r.id AND p.codigo = 'finance.read')
+       AND NOT EXISTS (SELECT 1 FROM role_permissions rp JOIN permissions p ON p.id = rp.permission_id
+                        WHERE rp.role_id = r.id AND p.codigo = 'finance.manage')`);
+  assert.ok(r.so_leitura > 0, "nenhum papel tem só leitura financeira: a separação não separa nada");
+});

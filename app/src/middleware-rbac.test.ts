@@ -84,17 +84,26 @@ test("o gate usa isAdminView (inclui os papéis de gestão da RBAC v2)", () => {
 });
 
 test("as rotas financeiras do backend checam papel", () => {
+  // O gate aceito é por PAPEL (legado) ou por PERMISSÃO (SPEC §31). A migração
+  // é rota a rota, então as duas formas convivem — o que não pode conviver é
+  // rota financeira SEM gate nenhum.
   const alvos = [
-    { arquivo: "src/api-server/routes/clientes-financeiro.ts", marca: "getGestaoCtx" },
-    { arquivo: "src/api-server/routes/clientes-crm2.ts", marca: "getGestaoCtx" },
-    { arquivo: "src/app/api/financeiro/metricas/route.ts", marca: "isAdminView" },
-    { arquivo: "src/app/api/financeiro/churn/route.ts", marca: "isAdminView" },
-    { arquivo: "src/app/api/financeiro/cobranca/route.ts", marca: "isAdminView" },
-    { arquivo: "src/app/api/financeiro/inadimplencia/route.ts", marca: "isAdminView" },
-    { arquivo: "src/app/api/financeiro/vendas/route.ts", marca: "isAdminView" },
-    { arquivo: "src/app/api/financeiro/pabx-import/route.ts", marca: "isAdminView" },
+    "src/api-server/routes/clientes-financeiro.ts",
+    "src/api-server/routes/clientes-crm2.ts",
+    "src/app/api/financeiro/metricas/route.ts",
+    "src/app/api/financeiro/churn/route.ts",
+    "src/app/api/financeiro/cobranca/route.ts",
+    "src/app/api/financeiro/inadimplencia/route.ts",
+    "src/app/api/financeiro/vendas/route.ts",
+    "src/app/api/financeiro/pabx-import/route.ts",
   ];
-  const semGate = alvos.filter(({ arquivo, marca }) => !fs.readFileSync(path.join(APP, arquivo), "utf8").includes(marca));
+  const MARCAS = ["getGestaoCtx", "isAdminView", "exigirCtx", "temPermissao"];
+  const semGate = alvos
+    .filter((arquivo) => {
+      const src = fs.readFileSync(path.join(APP, arquivo), "utf8");
+      return !MARCAS.some((m) => src.includes(m));
+    })
+    .map((arquivo) => ({ arquivo }));
   assert.deepEqual(
     semGate.map((a) => a.arquivo), [],
     "rota financeira sem gate de papel — o middleware é navegação, o backend é a barreira real"

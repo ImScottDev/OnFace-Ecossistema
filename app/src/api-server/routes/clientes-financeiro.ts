@@ -17,14 +17,14 @@
 import { Hono } from "hono";
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { getGestaoCtx } from "../compat.js";
+import { exigirCtx } from "../compat.js";
 
 const app = new Hono();
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // GET /clientes-crm2/:empresaId/financeiro
 app.get("/clientes-crm2/:empresaId/financeiro", async (c) => {
-  const ctx = await getGestaoCtx(c);
+  const ctx = await exigirCtx(c, "finance.read");
   const empresaId = c.req.param("empresaId");
   if (!UUID_RE.test(empresaId)) return c.json({ error: "ID inválido" }, 400);
 

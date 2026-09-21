@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
 import { getTenantContext, unauthorizedResponse, forbiddenResponse } from "@/lib/auth/tenant";
-import { isAdminView } from "@/lib/auth/roles";
+import { temPermissao } from "@/lib/auth/permissoes";
 
 export const runtime = "nodejs";
 
@@ -191,7 +191,12 @@ function validateCompetence(value: string): boolean {
 export async function GET() {
   const ctx = await getTenantContext();
   if (!ctx) return unauthorizedResponse();
-  if (!isAdminView(ctx.userRole)) return forbiddenResponse();
+  // Gate por PERMISSÃO, não por cargo (SPEC §31). `isAdminView` responde
+  // "é gestão?"; esta pergunta é "pode fazer isto?", que é o que permite
+  // separar leitura de escrita e delegar para agente sem dar tudo.
+  if (!(await temPermissao({ usuarioId: ctx.userId, organizacaoId: ctx.organizacaoId, role: ctx.userRole, tipo: "HUMAN" }, "finance.manage"))) {
+    return forbiddenResponse();
+  }
   const [latest] = await db.execute(sql`
     SELECT b.id, b.competence::text, b.version, b.source_file, b.source_sha256,
       b.expected_total, b.imported_total, b.row_count, b.status, b.imported_at, b.closed_at,
@@ -210,7 +215,10 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   const ctx = await getTenantContext();
   if (!ctx) return unauthorizedResponse();
-  if (!isAdminView(ctx.userRole)) return forbiddenResponse();
+  // POST importa dado financeiro: é escrita, e escrita exige finance.manage.
+  if (!(await temPermissao({ usuarioId: ctx.userId, organizacaoId: ctx.organizacaoId, role: ctx.userRole, tipo: "HUMAN" }, "finance.manage"))) {
+    return forbiddenResponse();
+  }
   const form = await request.formData().catch(() => null);
   const file = form?.get("file");
   const competencia = String(form?.get("competencia") || "");
