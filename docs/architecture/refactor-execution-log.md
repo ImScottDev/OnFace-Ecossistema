@@ -1584,3 +1584,28 @@ coisa que aquela migration realmente produz.
 No clone local: nenhum impedimento, 8 de 8 marcos aplicados.
 
 **Validação:** tsc limpo, **260 testes, 0 falhas**.
+
+---
+
+## 2026-09-21 — O worker tem conexão própria, e eu quase abri uma segunda
+
+Ao revisar o que tinha mudado no worker, li o comentário no topo de
+`sdr-escalation.ts`: ele recebe `db` por parâmetro de propósito, porque o worker cria a
+PRÓPRIA instância (`drizzle(pgSql)` na linha 22 de `worker/index.ts`) e nunca importa a
+da aplicação.
+
+Minha correção de propagação de dono importava `registrarMudancaResponsavel`, e essa
+função importava `@/lib/db`. O bundle resolve o alias (esbuild com `--alias:@=./src`),
+então nada quebraria no build nem em teste: o processo do worker simplesmente abriria um
+**segundo pool de conexões** na primeira escalação de SDR. Aparece como conexão esgotada
+no Postgres, longe da causa.
+
+A porta de dono passou a aceitar a instância do chamador, com a da aplicação como
+padrão. Quem chama de dentro do worker passa a sua.
+
+Trava em `escritores-migrados.test.ts`: `sdr-escalation` não pode importar a conexão da
+aplicação, tem que repassar a que recebeu, e a porta tem que aceitar. Verificado também
+pelo bundle real do worker (`esbuild`, exit 0).
+
+**Validação:** tsc limpo, **261 testes, 0 falhas**, build do Next exit 0, bundle do
+worker exit 0.

@@ -236,3 +236,20 @@ test("a sincronização não copia estado fechado contraditório do legado", () 
     "motivo de perda acompanha a perda");
 });
 
+test("módulo usado pelo worker não força a conexão da aplicação", () => {
+  // O worker cria a PRÓPRIA instância de banco (`drizzle(pgSql)` no topo de
+  // `worker/index.ts`) e por isso `sdr-escalation` recebe `db` por parâmetro em
+  // vez de importar. Um módulo que ele chama e que importa a instância da
+  // aplicação abre um SEGUNDO pool dentro do processo do worker: não aparece em
+  // teste, aparece como conexão esgotada no Postgres.
+  const escalacao = ler("lib/crm/sdr-escalation.ts");
+  assert.doesNotMatch(escalacao, /from "@\/lib\/db"/,
+    "sdr-escalation não pode importar a conexão da aplicação");
+  assert.match(escalacao, /db,\s*\n\s*\}\);/,
+    "e tem que repassar a instância que recebeu para quem ela chama");
+
+  const owner = ler("lib/crm/owner.ts");
+  assert.match(owner, /db\?: ExecutorDb/, "a porta de dono aceita a instância do chamador");
+  assert.match(owner, /const db = opts\.db \?\? dbPadrao/, "e usa a da aplicação só como padrão");
+});
+

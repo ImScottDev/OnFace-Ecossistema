@@ -24,9 +24,20 @@
  * da carga. Por isso a prova é `smoke-dono-propaga.ts`, que provoca uma troca
  * pela rota de verdade em vez de medir o que já está lá.
  */
-import { db } from "@/lib/db";
+import { db as dbPadrao } from "@/lib/db";
 import { sql } from "drizzle-orm";
 import { auditLog } from "@/lib/db/schema";
+
+/**
+ * Instância de banco a usar.
+ *
+ * O worker cria a PRÓPRIA conexão (`drizzle(pgSql)` no topo de `worker/index.ts`)
+ * e por isso `sdr-escalation` recebe `db` por parâmetro em vez de importar. Se
+ * esta função importasse a instância da aplicação e fosse chamada de lá, o
+ * processo do worker abriria um segundo pool — o tipo de coisa que não aparece
+ * em teste e aparece como conexão esgotada no Postgres.
+ */
+type ExecutorDb = typeof dbPadrao;
 
 export type OwnerEntityType = "lead" | "negocio" | "pessoa" | "fulfillment" | "cliente" | "fulfillment_item";
 
@@ -51,7 +62,10 @@ export async function registrarMudancaResponsavel(opts: {
   actorId: string | null;
   /** De onde veio a troca. "api" é o default histórico das rotas. */
   source?: "api" | "automation" | "system";
+  /** Quem chama de dentro do worker passa a instância dele. Ver `ExecutorDb`. */
+  db?: ExecutorDb;
 }): Promise<void> {
+  const db = opts.db ?? dbPadrao;
   if (opts.previousOwnerId === opts.newOwnerId) return; // sem mudança real, sem ruído no audit
 
   // O canônico primeiro: se o processo morrer entre as duas escritas, é melhor

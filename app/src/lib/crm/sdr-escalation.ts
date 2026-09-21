@@ -79,6 +79,9 @@ export async function runSdrFollowupEscalation(db: any): Promise<{ moved: number
         newOwnerId: owner,
         actorId: null,
         source: "automation",
+        // A instância que este módulo recebeu, não a da aplicação: o worker tem
+        // a própria conexão, e é por isso que `db` chega aqui por parâmetro.
+        db,
       });
     }
 
