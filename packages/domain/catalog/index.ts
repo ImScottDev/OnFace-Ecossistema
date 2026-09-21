@@ -1,9 +1,15 @@
-// @onface/domain-catalog — ponto de entrada público do pacote.
+// @onface/catalog — catálogo de produtos e política comercial da oferta.
 //
-// Nada fora deste arquivo deve ser importado de fora do pacote. A fronteira é
-// verificada por `pnpm arq:fronteiras` (src/scripts/checar-fronteiras.ts).
-//
-// Vazio por enquanto: o código chega quando a fase correspondente do refactor
-// migrar este domínio. Ver docs/architecture/refactor-state.md.
+// Porta de entrada pública. Nada fora deste arquivo deve ser importado de fora
+// do pacote; a fronteira é verificada pelos testes de arquitetura.
 
-export {};
+export {
+  avaliarGanho,
+  podeCriarProposta,
+  jornadasPosVenda,
+  type OfertaComercial,
+  type EstadoOportunidade,
+  type CondicaoGanho,
+  type GatilhoPagamento,
+  type Decisao,
+} from "./policies/politica-oferta.js";
