@@ -4575,3 +4575,39 @@ export const fileLinks = pgTable("file_links", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
+
+// ═══ RECONCILIAÇÃO E PROVENANCE DO BACKFILL (fase 05, migration 0060) ═══
+// `reconciliacao_casos` é onde a ambiguidade fica visível em vez de virar
+// palpite. `backfill_provenance` guarda de qual linha legada cada registro
+// canônico nasceu, e é o que torna todo backfill idempotente e auditável.
+
+export const reconciliacaoCasos = pgTable("reconciliacao_casos", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+  fase: text("fase").notNull(),
+  tipo: text("tipo").notNull(),
+  entidadeAlvo: text("entidade_alvo").notNull(),
+  origens: jsonb("origens").default([]).notNull(),
+  evidencia: jsonb("evidencia").default({}).notNull(),
+  sugestao: jsonb("sugestao").default({}).notNull(),
+  status: text("status").default("OPEN").notNull(),
+  resolvidoPorId: uuid("resolvido_por_id").references(() => usuarios.id, { onDelete: "set null" }),
+  resolvidoEm: timestamp("resolvido_em", { withTimezone: true }),
+  resolucao: jsonb("resolucao"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const backfillProvenance = pgTable("backfill_provenance", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+  fase: text("fase").notNull(),
+  entidadeCanonica: text("entidade_canonica").notNull(),
+  idCanonico: uuid("id_canonico").notNull(),
+  tabelaOrigem: text("tabela_origem").notNull(),
+  idOrigem: text("id_origem").notNull(),
+  chaveIdentidade: text("chave_identidade"),
+  metodo: text("metodo").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
