@@ -19,12 +19,13 @@ Fases 01 a 16 concluídas.
 | 22 RBAC | papéis, mapa e vínculos semeados, com paridade provada. Falta as rotas usarem `exigirPermissao` |
 | 20 Meta | entrada direta e CAPI **construídos e testados**; falta credencial para enviar de verdade |
 | 21 storage | serviço construído e testado; adapter S3/R2 espera credencial. Migrar os pontos de upload vem junto, porque trocá-los agora só muda um disco local por outro |
-| 23, 24 | não iniciadas |
+| 23 API pública | `/api/v1` com 9 recursos, token com escopo, uso registrado. Falta a tela de gestão de tokens |
+| 24 paridade | não iniciada |
 | 25 a 28 | dependem de 17 completa; 28 precisa de aprovação do Kauã |
 
 ## Último commit
 
-`8609ff1` — refactor(21): arquivo sai do disco da máquina
+`be5e84a` — refactor(23): API pública v1, onde o escopo do token é teto e não sugestão
 
 Branch de trabalho: `refactor/arquitetura-canonica`, criada a partir de `98940fe`.
 
@@ -87,6 +88,7 @@ Pacote vazio não afeta o build: `tsc` limpo e 111 testes passando com o workspa
 | 0069 | `aquisicao_lead_legado` | `aquisicoes.lead_legado_id` + índice único parcial; 3.989 de 3.989 ligadas | sim, DROP COLUMN |
 | 0070 | `rbac_papeis_e_vinculos` | 8 papéis, o mapa papel→permissão e os 16 vínculos de usuário | sim, DELETE documentado |
 | 0071 | `nexo_e_hermes` | os dois agentes do SPEC §19, em `draft`, com versão 1 | sim, DELETE documentado |
+| 0072 | `api_tokens` | token da API pública (hash, escopos, expiração) e registro de uso | sim, DROP TABLE |
 
 ## Credenciais que faltam para rodar, não para construir
 
@@ -294,8 +296,8 @@ canônico hoje faria o lead sumir da tela de pré-vendas no mesmo instante.
 
 ## Testes executados
 
-Estado atual: `tsc --noEmit` limpo, **build de produção passando**, **207 testes, 0
-falhas**, mais **sete smokes** contra o banco real:
+Estado atual: `tsc --noEmit` limpo, **build de produção passando**, **212 testes, 0
+falhas**, mais **oito smokes** contra o banco real:
 
 - `smoke-ponte-canonica` — entrada externa chega inteira ao canônico e não duplica;
 - `smoke-ganho-oportunidade` 5/5 — a política da oferta decide, PABX gera as duas
@@ -321,6 +323,8 @@ falhas**, mais **sete smokes** contra o banco real:
 | `arquitetura/escritores-migrados.test.ts` | porta de escrita nova sem ligação canônica |
 | `vendas/leitura-canonica.test.ts` | registro sumindo da leitura; divergência sem caso |
 | `arquitetura/escritores-migrados.test.ts` | motor de regras com implementação própria de ação |
+| `db/array-postgres.test.ts` | array do Postgres projetado cru (o driver devolve string) |
+| `v1/api-publica.test.ts` | rota pública sem escopo; nome de tabela na URL; token em claro |
 | `ai-platform/agentes.test.ts` | ferramenta de IA escrevendo direto; agente citando ferramenta inexistente |
 | `auth/permissoes.test.ts` | cutover de autorização mudando o acesso de alguém |
 

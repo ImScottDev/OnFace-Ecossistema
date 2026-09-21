@@ -723,3 +723,27 @@ pontos de upload existentes vem junto com elas, porque trocá-los agora só muda
 disco local por outro.
 
 **Commit:** `8609ff1`.
+
+---
+
+## 2026-09-21 — Fase 23 · API pública v1
+
+Superfície versionada com os nove recursos canônicos e o pipeline do SPEC:
+autenticação, tenant vindo do token, escopo por rota, consulta de domínio, resposta.
+Nenhuma rota expõe tabela, e um teste barra nome de tabela interna na URL — API
+pública é contrato, e expor tabela transforma cada refactor interno em quebra de
+integração.
+
+Token em vez de cookie, porque cookie não tem escopo, não se revoga sozinho e não diz
+quem consumiu o quê. O token é guardado só como SHA-256; revogado, expirado e
+inexistente respondem igual; a comparação é em tempo constante; e todo uso fica
+registrado.
+
+**Uma trava nova para um bug que apareceu duas vezes no mesmo dia.** O driver devolve
+`text[]` do Postgres como a string `"{a,b}"`, e construir um Set a partir dela itera
+caractere por caractere. Aconteceu nas ferramentas do agente e de novo nos escopos da
+API — as duas vezes parecendo bug de permissão. O teste varre toda coluna de array do
+banco projetada crua, e foi verificado pegando o caso real, inclusive o primeiro
+falso positivo (`AS servicos`, que é alias e não coluna).
+
+**Commit:** `be5e84a`.
