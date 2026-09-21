@@ -20,12 +20,15 @@ import { HeroBand, Stat, Secao, BarraLinha } from "./kit";
 import { FaturamentoCategoria } from "./FaturamentoCategoria";
 import { Wallet, Receipt, Percent, Clock, Filter, Briefcase, Layers } from "lucide-react";
 
+// As MESMAS quatro etapas de `STAGE_PROB` em lib/relatorios/comercial.ts.
+// Não dá para importar de lá (aquele módulo puxa `db` e isto é Client
+// Component), então um teste arquitetural trava a divergência: rótulo que não
+// casa com a chave faz a barra do funil aparecer com o nome cru da etapa.
 const STAGE_LABELS: Record<string, string> = {
-  reuniao_agendada: "Reunião Agendada",
-  reuniao_realizada: "Reunião Realizada",
-  trial: "Trial",
-  proposta_apresentada: "Proposta",
-  negociacao_iniciada: "Negociação",
+  entrada: "Entrada",
+  diagnostico: "Diagnóstico",
+  proposta: "Proposta",
+  negociacao: "Negociação",
 };
 
 interface TabComercialProps {

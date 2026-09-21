@@ -1241,6 +1241,63 @@ ambiente que o gate consulta e as que o runtime realmente usa.
 agentes para Groq, que é decisão de produto), NEXO e Hermes não executam. O
 que dependia de credencial parou aqui; o que não dependia está feito.
 
+### CP11 — Relatórios: a liderança via 22% do pipeline
+
+Mesma medição do CP7, aplicada aos relatórios: o número que o relatório mostra
+bate com o que a tela mostra?
+
+Não batia. `getPipelineAtual` dizia **116 negócios abertos e R$ 160.789,35**; o
+board dizia **527 e R$ 477.191,68**.
+
+A causa: o relatório contava `negocios.status` filtrando pelos 5 estágios de
+`DEFAULT_STAGES`, e negócio aberto tem **11** status distintos no banco. Os 6
+de fora:
+
+| status | negócios | valor |
+|---|---|---|
+| `outra_data` | 153 | 67.726,11 |
+| `ativo` | 146 | 188.527,84 |
+| `sem_retorno` | 54 | 9.275,10 |
+| `no_show` | 38 | (sem valor) |
+| `trava_negociacao` | 17 | 50.693,38 |
+| `trava_assinatura` | 3 | 179,90 |
+| **total** | **411** | **316.402,33** |
+
+R$ 316.402,33 de pipeline aberto fora do relatório que a liderança usa para
+decidir, sem nada na tela indicando o recorte. O bloco maior é `ativo`
+(R$ 188.527,84) e o mais sensível é `trava_negociacao` (R$ 50.693,38), que é
+literalmente negócio travado na etapa final.
+
+Duas correções, nenhuma delas um número novo inventado:
+
+1. `getPipelineAtual` passou a ler `oportunidades`, a MESMA fonte do board, e
+   agrupar pelas 4 etapas canônicas. Os dois lados batem por construção, não
+   por coincidência. O forecast ponderado subiu de R$ 102.620,88 para
+   R$ 185.296,90. As probabilidades vieram das etapas legadas equivalentes;
+   `trial` saiu porque no canônico trial é estado, não etapa.
+2. `PIPELINE_ATIVO_STATUSES` passou a cobrir todo negócio aberto. Ela tinha
+   mais **dois** consumidores com o mesmo defeito (`pipeline-crm2.ts` e
+   `analytics/vendas.ts`), então o conserto na constante arruma os três. Por
+   exclusão e não por enumeração: status novo entra como aberto, porque
+   enumerar foi o que fez os 6 sumirem em silêncio.
+
+`no_show` conta como aberto, coerente com a Fase 26 (no-show é estado da
+reunião, não perda). É o que faz os dois lados fecharem em 527 exato.
+
+**O que NÃO foi feito.** O filtro por produto dos relatórios está pela metade
+em três camadas: `produtoCondNegocios`/`produtoCondContratos` sem chamador (e o
+segundo aponta para uma coluna onde `pabx` nunca aparece), `KpiBar.tsx` sem
+chamador, e a rota `/relatorios/resumo` aceita `?produto=` e ignora. **Não
+existe seletor de produto na interface**, então nada mente hoje para o usuário;
+é funcionalidade ausente, não defeito. Construir só o backend seria backend sem
+jornada. Fica registrado, e a fonte certa quando for feito é
+`oportunidades.service_family` (PABX 139, CALLFACE_AI 327, WHITE_LABEL 11,
+**1.084 sem família** — o bloqueio que já depende do Kauã).
+
+**Validação:** tsc limpo, **303 testes 0 falhas**, build exit 0, **29/29
+smokes**, e `/relatorios/comercial` conferida na rota real devolvendo 527 e
+R$ 477.191,68, iguais ao board.
+
 ### Auditoria de CS Health (histórico da decisão)
 
 Menor do que o gap analysis inicial dizia:

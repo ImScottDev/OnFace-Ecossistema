@@ -5,6 +5,13 @@
  *
  * Regras (decisões Scott 30/jun):
  * - Pipeline = snapshot da operação AGORA (negócios abertos). NÃO reage ao filtro de período.
+ *   A FONTE é `oportunidades`, a mesma do board de Pipeline. Até 21/09 esta
+ *   função lia `negocios.status` filtrando pelos 5 estágios de
+ *   `DEFAULT_STAGES` — e negócio aberto tem ELEVEN status distintos no banco.
+ *   Os 6 de fora somavam 411 negócios e R$ 316.402,33, entre eles
+ *   R$ 188.527,84 em `ativo` e R$ 50.693,38 em `trava_negociacao`. O relatório
+ *   que a liderança usa mostrava R$ 160.789,35 de um pipeline de
+ *   R$ 477.191,68: 22% do real, sem nada indicando o recorte.
  * - Win rate, fechado, motivos, ciclo = respeitam o período selecionado.
  * - Valor = `valorTotal` (atual). Recorrente/avulso = `tipoReceita`. (mrr_estimado/valor_projeto são legacy.)
  * - Produto: só Callface (sem dimensão de produto).
@@ -15,18 +22,49 @@ import { negocios, leads } from "@/lib/db/schema";
 import { and, eq, not, inArray, gte, lt, count, sum, sql, isNotNull, isNull, asc, type SQL } from "drizzle-orm";
 import { DEFAULT_STAGES } from "@/lib/crm/pipeline";
 
-// Etapas ATIVAS do pipeline (negócio aberto, em andamento). Estagnados e fechados ficam fora.
-export const PIPELINE_ATIVO_STATUSES = DEFAULT_STAGES.map((s) => s.key);
+/**
+ * Status de negócio ABERTO, por EXCLUSÃO dos fechados.
+ *
+ * Era `DEFAULT_STAGES.map(...)`, os 5 estágios configuráveis do pipeline. Só
+ * que negócio aberto tem 11 status distintos no banco, e os 6 de fora somavam
+ * **411 negócios e R$ 316.402,33** — R$ 188.527,84 em `ativo`, R$ 67.726,11 em
+ * `outra_data`, R$ 50.693,38 em `trava_negociacao`. Três leituras contavam por
+ * essa lista (relatório comercial, board do CRM2, analytics de vendas) e as
+ * três mostravam uma fração do pipeline sem nada indicando o recorte.
+ *
+ * Por exclusão e não por enumeração de propósito: status novo que apareça
+ * entra como aberto, que é o padrão seguro. Enumerar faz o status novo sumir
+ * do relatório em silêncio, que foi exatamente o que aconteceu.
+ *
+ * `no_show` conta como ABERTO. É a decisão da Fase 26: no-show é estado da
+ * reunião, não perda do negócio. O canônico (`oportunidades`) já contava assim,
+ * e é o que faz os dois lados fecharem em 527.
+ */
+export const STATUS_FECHADOS = ["ganho", "perdido"] as const;
+export const PIPELINE_ATIVO_STATUSES = [
+  ...DEFAULT_STAGES.map((s) => s.key),
+  "ativo", "outra_data", "sem_retorno", "no_show", "trava_negociacao", "trava_assinatura",
+];
 
 // Probabilidade de fechamento por etapa — usada no forecast ponderado.
 // Defaults; ajustável depois com o head comercial.
+// As probabilidades vieram das etapas legadas equivalentes, sem número novo
+// inventado: `trial` sumiu porque no modelo canônico trial é ESTADO da
+// oportunidade, não etapa do funil.
 export const STAGE_PROB: Record<string, number> = {
-  reuniao_agendada: 0.1,
-  reuniao_realizada: 0.25,
-  trial: 0.4,
-  proposta_apresentada: 0.5,
-  negociacao_iniciada: 0.7,
+  entrada: 0.1,
+  diagnostico: 0.25,
+  proposta: 0.5,
+  negociacao: 0.7,
 };
+
+/** Ordem do funil, e o rótulo que a tela mostra. */
+export const ETAPAS_DO_FUNIL = [
+  { key: "entrada", label: "Entrada" },
+  { key: "diagnostico", label: "Diagnóstico" },
+  { key: "proposta", label: "Proposta" },
+  { key: "negociacao", label: "Negociação" },
+] as const;
 
 const num = (v: unknown): number => Number(v ?? 0) || 0;
 
@@ -73,28 +111,28 @@ export interface PipelineAtual {
  * Retorna todas as etapas ativas (inclui as zeradas, na ordem do funil).
  */
 export async function getPipelineAtual(orgId: string, responsavelId?: string | null, safra?: Safra): Promise<PipelineAtual> {
-  const rows = await db
-    .select({
-      status: negocios.status,
-      tipoReceita: negocios.tipoReceita,
-      total: count(),
-      valor: sum(negocios.valorTotal),
-    })
-    .from(negocios)
-    .where(and(
-      eq(negocios.organizacaoId, orgId),
-      inArray(negocios.status, PIPELINE_ATIVO_STATUSES),
-      scopeResp(responsavelId),
-      scopeSafra(safra),
-    ))
-    .groupBy(negocios.status, negocios.tipoReceita);
+  // MESMA fonte do board (`oportunidades`), para que os dois não possam
+  // divergir. Agrupar por `negocios.status` significava escolher quais status
+  // contam, e a escolha deixava 411 negócios abertos de fora.
+  const linhas = await db.execute<{ etapa: string; tipo_receita: string | null; n: string; valor: string }>(sql`
+    SELECT o.etapa, n.tipo_receita,
+           count(*)::text AS n,
+           COALESCE(sum(o.valor), 0)::text AS valor
+      FROM oportunidades o
+      LEFT JOIN negocios n ON n.id = o.negocio_id_legado
+     WHERE o.organizacao_id = ${orgId}::uuid
+       AND o.ganho_at IS NULL AND o.perdido_at IS NULL
+       ${responsavelId ? sql`AND o.responsavel_id = ${responsavelId}::uuid` : sql``}
+       ${safra === "legado" ? sql`AND n.zoho_id IS NOT NULL`
+         : safra === "nativo" ? sql`AND n.zoho_id IS NULL` : sql``}
+     GROUP BY o.etapa, n.tipo_receita`);
 
-  const etapas: EtapaPipeline[] = PIPELINE_ATIVO_STATUSES.map((st) => {
-    const recRows = rows.filter((r) => r.status === st);
-    const recorrente = recRows.filter((r) => r.tipoReceita !== "avulso").reduce((s, r) => s + num(r.valor), 0);
-    const avulso = recRows.filter((r) => r.tipoReceita === "avulso").reduce((s, r) => s + num(r.valor), 0);
-    const c = recRows.reduce((s, r) => s + num(r.total), 0);
-    return { status: st, count: c, recorrente, avulso, valor: recorrente + avulso };
+  const etapas: EtapaPipeline[] = ETAPAS_DO_FUNIL.map(({ key }) => {
+    const doGrupo = linhas.filter((r) => r.etapa === key);
+    const recorrente = doGrupo.filter((r) => r.tipo_receita !== "avulso").reduce((s, r) => s + Number(r.valor), 0);
+    const avulso = doGrupo.filter((r) => r.tipo_receita === "avulso").reduce((s, r) => s + Number(r.valor), 0);
+    const c = doGrupo.reduce((s, r) => s + Number(r.n), 0);
+    return { status: key, count: c, recorrente, avulso, valor: recorrente + avulso };
   });
 
   const total = etapas.reduce((s, e) => s + e.valor, 0);
