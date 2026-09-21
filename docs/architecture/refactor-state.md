@@ -84,11 +84,26 @@ Nenhum. Inventário de partida em `database-as-is/04-escritores.md`.
 Após a fase 03: `tsc --noEmit` limpo (0 erros), **111 testes passando**, 0 falhas
 (104 herdados + 7 novos de arquitetura).
 
-## Auditoria independente
+## Protocolo de revisão de checkpoint
 
-Codex rodando sobre o checkpoint de banco/modelagem (fase 01):
-`task-muao0p8s-9qo76s`. Findings serão verificados um a um, classificados como
-válidos ou falso positivo, e registrados aqui antes de qualquer correção.
+**Decisão do Kauã em 21/09: revisão externa (Codex) está desligada.** Não usar
+`/codex:review`, `/codex:adversarial-review` nem qualquer revisor externo sem pedido
+explícito dele.
+
+A revisão de cada checkpoint é feita internamente, e um checkpoint só fecha com:
+
+1. `git diff` lido criticamente, linha a linha, do que mudou;
+2. `tsc --noEmit` sem erro;
+3. suíte de testes unitários passando;
+4. testes de arquitetura passando;
+5. verificação de migration (`db:migrar --check` e conferência contra o banco);
+6. contagens de reconciliação, quando a fase migra dado;
+7. build, quando a fase toca empacotamento;
+8. smoke test, quando a fase toca caminho executável.
+
+A auditoria Codex da fase 01 (`task-muao0p8s-9qo76s`) concluiu sozinha antes do
+cancelamento. O resultado não foi incorporado; a fase 01 foi revisada pelo processo
+interno acima.
 
 ## Bugs reais corrigidos durante a fase 01
 
