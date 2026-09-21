@@ -165,14 +165,31 @@ export async function registrarMudancaDeEtapa(params: {
 
 export interface LinhaDoTempo {
   id: string;
-  tipo: TipoEventoVendas;
+  tipo: TipoEventoVendas | string;
+  /** Título já pronto, quando a fonte canônica traz um. Vence o rótulo do tipo. */
+  titulo?: string | null;
   atorTipo: string;
   usuarioNome: string | null;
   contexto: Record<string, unknown> | null;
   ocorridoEm: string;
 }
 
-/** Linha do tempo comercial de uma entidade, do mais recente para o mais antigo. */
+/**
+ * Linha do tempo de uma entidade, do mais recente para o mais antigo.
+ *
+ * Lê TRÊS fontes e ordena por tempo:
+ *
+ *   `timeline_events`  — a projeção canônica (SPEC §24.3), 14.078 linhas;
+ *   `communications`   — conversa, que é o que mais acontece, 33.005 linhas;
+ *   `vendas_eventos`   — o legado.
+ *
+ * O legado está VAZIO: zero linhas. Esta consulta lia só ele, então a timeline
+ * da tela de pessoa aparecia sempre vazia enquanto 47 mil registros existiam na
+ * mesa ao lado. Era o dado carregado pelo backfill e nenhum leitor.
+ *
+ * `vendas_eventos` continua no UNION porque ainda recebe escrita do runtime; ele
+ * sai na fase 26, quando a escrita também for canônica.
+ */
 export async function lerLinhaDoTempo(params: {
   organizacaoId: string;
   leadId?: string;
@@ -182,28 +199,94 @@ export async function lerLinhaDoTempo(params: {
   limite?: number;
 }): Promise<LinhaDoTempo[]> {
   const limite = params.limite ?? 100;
+  const leadId = params.leadId ?? null;
+  const negocioId = params.negocioId ?? null;
+  const empresaId = params.empresaId ?? null;
+  const pessoaId = params.pessoaId ?? null;
+
   const linhas = await db.execute<{
-    id: string; tipo: string; ator_tipo: string; usuario_nome: string | null;
-    contexto: Record<string, unknown> | null; ocorrido_em: string;
+    id: string; tipo: string; titulo: string | null; ator_tipo: string;
+    usuario_nome: string | null; contexto: Record<string, unknown> | null; ocorrido_em: string;
   }>(sql`
-    SELECT e.id::text, e.tipo, e.ator_tipo, u.nome AS usuario_nome, e.contexto,
-           e.ocorrido_em::text
-      FROM vendas_eventos e
-      LEFT JOIN usuarios u ON u.id = e.usuario_id
-     WHERE e.organizacao_id = ${params.organizacaoId}::uuid
-       AND (
-         (${params.leadId ?? null}::uuid IS NOT NULL AND e.lead_id = ${params.leadId ?? null}::uuid)
-         OR (${params.negocioId ?? null}::uuid IS NOT NULL AND e.negocio_id = ${params.negocioId ?? null}::uuid)
-         OR (${params.empresaId ?? null}::uuid IS NOT NULL AND e.empresa_id = ${params.empresaId ?? null}::uuid)
-         OR (${params.pessoaId ?? null}::uuid IS NOT NULL AND e.pessoa_id = ${params.pessoaId ?? null}::uuid)
-       )
-     ORDER BY e.ocorrido_em DESC
-     LIMIT ${limite}
+    (
+      SELECT t.id::text, t.tipo, t.titulo, COALESCE(t.actor_type, 'SYSTEM') AS ator_tipo,
+             u.nome AS usuario_nome, t.metadata AS contexto, t.occurred_at::text AS ocorrido_em
+        FROM timeline_events t
+        LEFT JOIN usuarios u ON u.id = t.actor_id
+       WHERE t.organizacao_id = ${params.organizacaoId}::uuid
+         AND (
+           (${pessoaId}::uuid IS NOT NULL AND t.pessoa_id = ${pessoaId}::uuid)
+           OR (${empresaId}::uuid IS NOT NULL AND t.empresa_id = ${empresaId}::uuid)
+           OR (${negocioId}::uuid IS NOT NULL AND t.oportunidade_id IN
+                 (SELECT id FROM oportunidades WHERE negocio_id_legado = ${negocioId}::uuid))
+           OR (${leadId}::uuid IS NOT NULL AND (
+                 t.pessoa_id IN (SELECT id FROM pessoas WHERE lead_id_legado = ${leadId}::uuid)
+                 OR t.aquisicao_id IN (SELECT id FROM aquisicoes WHERE lead_legado_id = ${leadId}::uuid)))
+         )
+       ORDER BY t.occurred_at DESC LIMIT ${limite}
+    )
+    UNION ALL
+    (
+      SELECT c.id::text, 'comunicacao_' || c.canal AS tipo,
+             CASE c.canal
+               WHEN 'whatsapp' THEN 'WhatsApp'
+               WHEN 'email' THEN COALESCE(NULLIF(c.subject, ''), 'E-mail')
+               WHEN 'ligacao' THEN 'Ligação'
+               ELSE initcap(c.canal)
+             END || CASE c.direcao WHEN 'in' THEN ' recebido' WHEN 'out' THEN ' enviado' ELSE '' END AS titulo,
+             'HUMAN' AS ator_tipo, u.nome AS usuario_nome,
+             jsonb_build_object('canal', c.canal, 'direcao', c.direcao,
+                                'resumo', left(COALESCE(c.summary, c.conteudo, ''), 180)) AS contexto,
+             c.ocorrido_em::text
+        FROM communications c
+        LEFT JOIN usuarios u ON u.id = c.usuario_id
+       WHERE c.organizacao_id = ${params.organizacaoId}::uuid
+         -- Dedup contra a projeção: as duas fontes descrevem o MESMO fato por
+         -- caminhos diferentes. A ligação vira atividade (e daí evento de
+         -- timeline) e também vira comunicação, então aparecia duas vezes na
+         -- tela, com dois títulos diferentes, no mesmo minuto.
+         --
+         -- Filtrar o canal inteiro seria mais simples e perderia 983 ligações
+         -- reais que nunca viraram atividade. A correspondência por pessoa,
+         -- tipo e dois minutos mantém as duas coisas: sem repetição e sem
+         -- perda.
+         AND NOT EXISTS (
+           SELECT 1 FROM timeline_events t
+            WHERE t.pessoa_id = c.pessoa_id AND t.tipo = c.canal
+              AND abs(extract(epoch FROM (t.occurred_at - c.ocorrido_em))) < 120)
+         AND (
+           (${pessoaId}::uuid IS NOT NULL AND c.pessoa_id = ${pessoaId}::uuid)
+           OR (${empresaId}::uuid IS NOT NULL AND c.empresa_id = ${empresaId}::uuid)
+           OR (${negocioId}::uuid IS NOT NULL AND c.oportunidade_id IN
+                 (SELECT id FROM oportunidades WHERE negocio_id_legado = ${negocioId}::uuid))
+           OR (${leadId}::uuid IS NOT NULL AND c.pessoa_id IN
+                 (SELECT id FROM pessoas WHERE lead_id_legado = ${leadId}::uuid))
+         )
+       ORDER BY c.ocorrido_em DESC LIMIT ${limite}
+    )
+    UNION ALL
+    (
+      SELECT e.id::text, e.tipo, NULL AS titulo, e.ator_tipo,
+             u.nome AS usuario_nome, e.contexto, e.ocorrido_em::text
+        FROM vendas_eventos e
+        LEFT JOIN usuarios u ON u.id = e.usuario_id
+       WHERE e.organizacao_id = ${params.organizacaoId}::uuid
+         AND (
+           (${leadId}::uuid IS NOT NULL AND e.lead_id = ${leadId}::uuid)
+           OR (${negocioId}::uuid IS NOT NULL AND e.negocio_id = ${negocioId}::uuid)
+           OR (${empresaId}::uuid IS NOT NULL AND e.empresa_id = ${empresaId}::uuid)
+           OR (${pessoaId}::uuid IS NOT NULL AND e.pessoa_id = ${pessoaId}::uuid)
+         )
+       ORDER BY e.ocorrido_em DESC LIMIT ${limite}
+    )
+    ORDER BY ocorrido_em DESC
+    LIMIT ${limite}
   `);
 
   return linhas.map((l) => ({
     id: l.id,
     tipo: l.tipo as TipoEventoVendas,
+    titulo: l.titulo,
     atorTipo: l.ator_tipo,
     usuarioNome: l.usuario_nome,
     contexto: l.contexto,

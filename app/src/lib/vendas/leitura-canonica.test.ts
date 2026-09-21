@@ -162,3 +162,40 @@ test("contrato sem processo comercial ainda resolve dono, e o que sobra vira cas
     "nenhum contrato órfão resolve dono pela identidade: a cadeia de responsável regrediu",
   );
 });
+
+test("a linha do tempo lê as fontes que têm dado, e não repete o mesmo fato", async (t) => {
+  if (!DB_URL) return t.skip("DATABASE_URL não definida");
+  const { db } = await import("@/lib/db");
+  const { sql } = await import("drizzle-orm");
+  const { lerLinhaDoTempo } = await import("./eventos.js");
+
+  const [org] = await db.execute<{ id: string }>(sql`SELECT id FROM organizacoes LIMIT 1`);
+
+  // `vendas_eventos` está vazia e a consulta lia só ela: a timeline aparecia
+  // vazia enquanto 47 mil registros existiam em timeline_events e
+  // communications. O teste não fixa número — fixa a propriedade: pessoa com
+  // histórico no banco tem histórico na tela.
+  const [p] = await db.execute<{ id: string; n: number }>(sql`
+    SELECT p.id::text, count(*)::int AS n FROM pessoas p
+      JOIN communications c ON c.pessoa_id = p.id
+     GROUP BY 1 ORDER BY 2 DESC LIMIT 1`);
+  if (!p) return; // base sem comunicação: nada a provar
+
+  const tl = await lerLinhaDoTempo({ organizacaoId: org.id, pessoaId: p.id, limite: 40 });
+  assert.ok(
+    tl.length > 0,
+    `a pessoa tem ${p.n} comunicações no banco e a linha do tempo veio vazia`,
+  );
+
+  // Mesmo fato por dois caminhos (atividade projetada + comunicação) aparecia
+  // duas vezes, com títulos diferentes, no mesmo minuto.
+  const porMinuto = new Map<string, number>();
+  for (const e of tl) {
+    const chave = `${e.ocorridoEm.slice(0, 16)}|${String(e.titulo ?? e.tipo).slice(0, 8)}`;
+    porMinuto.set(chave, (porMinuto.get(chave) ?? 0) + 1);
+  }
+  const ligacoesRepetidas = [...porMinuto.entries()].filter(
+    ([chave, n]) => n > 1 && chave.toLowerCase().includes("liga"),
+  );
+  assert.deepEqual(ligacoesRepetidas, [], "a mesma ligação aparece duas vezes na linha do tempo");
+});

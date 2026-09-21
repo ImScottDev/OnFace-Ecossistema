@@ -133,7 +133,7 @@ function Historico({ timeline }: { timeline: LinhaDoTempo[] }) {
         <div className="ov-timeline-item" key={evento.id}>
           <span className="ov-timeline-marca" aria-hidden />
           <div>
-            <strong>{rotuloEvento(evento.tipo)}</strong>
+            <strong>{evento.titulo || rotuloEvento(evento.tipo)}</strong>
             <span>
               {dataHora(evento.ocorridoEm)}
               {evento.usuarioNome ? ` · ${evento.usuarioNome}` : evento.atorTipo !== "HUMAN" ? ` · ${rotuloAtor(evento.atorTipo)}` : ""}
