@@ -81,3 +81,44 @@ test("ambiguidade virou caso aberto, não palpite", async (t) => {
     WHERE NOT EXISTS (SELECT 1 FROM reconciliacao_casos c WHERE c.fase = '05' AND c.tipo = 'IDENTIDADE_MULTIPLA_EMPRESA')`);
   assert.equal(semCaso, 0, `${semCaso} pessoas com vínculo ambíguo e nenhum caso aberto`);
 });
+
+const fase06Rodou = async () =>
+  (await conta(sql`SELECT count(*) AS n FROM backfill_provenance WHERE fase = '06'`)) > 0;
+
+test("fase 06: todo lead virou aquisição", async (t) => {
+  if (!(await fase06Rodou())) return t.skip("backfill da fase 06 ainda não rodou");
+  const perdidos = await conta(sql`
+    SELECT count(*) AS n FROM leads l
+    WHERE NOT EXISTS (SELECT 1 FROM backfill_provenance b
+                      WHERE b.entidade_canonica = 'aquisicao' AND b.tabela_origem = 'leads' AND b.id_origem = l.id::text)`);
+  assert.equal(perdidos, 0, `${perdidos} leads sem aquisição correspondente`);
+});
+
+test("fase 06: nenhuma aquisição sem empresa nem pessoa", async (t) => {
+  if (!(await fase06Rodou())) return t.skip("backfill da fase 06 ainda não rodou");
+  const invalidas = await conta(sql`SELECT count(*) AS n FROM aquisicoes WHERE empresa_id IS NULL AND pessoa_id IS NULL`);
+  assert.equal(invalidas, 0, `${invalidas} aquisições sem identidade (a constraint deveria ter barrado)`);
+});
+
+test("fase 06: touchpoint aponta para aquisição existente", async (t) => {
+  if (!(await fase06Rodou())) return t.skip("backfill da fase 06 ainda não rodou");
+  const orfaos = await conta(sql`
+    SELECT count(*) AS n FROM pontos_contato p
+    WHERE p.aquisicao_id IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM aquisicoes a WHERE a.id = p.aquisicao_id)`);
+  assert.equal(orfaos, 0, `${orfaos} touchpoints órfãos`);
+});
+
+test("fase 06: atribuição não foi inventada", async (t) => {
+  if (!(await fase06Rodou())) return t.skip("backfill da fase 06 ainda não rodou");
+  // Todo touchpoint criado pelo backfill tem que ter pelo menos um sinal real
+  // vindo do lead de origem. Linha de atribuição vazia é ruído que polui
+  // relatório de campanha.
+  const vazios = await conta(sql`
+    SELECT count(*) AS n FROM pontos_contato
+    WHERE lead_id_legado IS NOT NULL
+      AND coalesce(source,'') = '' AND coalesce(medium,'') = '' AND coalesce(campaign,'') = ''
+      AND coalesce(landing_page,'') = '' AND gclid IS NULL AND fbclid IS NULL
+      AND campaign_id IS NULL AND ad_id IS NULL`);
+  assert.equal(vazios, 0, `${vazios} touchpoints sem nenhum sinal de atribuição`);
+});
