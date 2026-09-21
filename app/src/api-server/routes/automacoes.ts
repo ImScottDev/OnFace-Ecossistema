@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { automacoes, automacaoExecucoes } from "@/lib/db/schema";
 import { eq, and, desc, sql } from "drizzle-orm";
 import { z } from "zod";
-import { getCtx } from "../compat.js";
+import { getCtx, exigirCtx } from "../compat.js";
 
 const createAutomacaoSchema = z.object({
   nome: z.string().min(1).max(100),
@@ -112,7 +112,7 @@ app.get("/", async (c) => {
 
 // POST /automacoes — create a new automation
 app.post("/", async (c) => {
-  const ctx = await getCtx(c);
+  const ctx = await exigirCtx(c, "automation.manage");
 
   try {
     const body = await c.req.json();
@@ -205,7 +205,7 @@ app.get("/:id/execucoes", async (c) => {
 
 // PATCH /automacoes/:id — update an automation
 app.patch("/:id", async (c) => {
-  const ctx = await getCtx(c);
+  const ctx = await exigirCtx(c, "automation.manage");
   const id = c.req.param("id");
 
   try {
@@ -234,7 +234,7 @@ app.patch("/:id", async (c) => {
 
 // DELETE /automacoes/:id
 app.delete("/:id", async (c) => {
-  const ctx = await getCtx(c);
+  const ctx = await exigirCtx(c, "automation.manage");
   const id = c.req.param("id");
 
   const [deleted] = await db

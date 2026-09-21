@@ -9,7 +9,7 @@ import { Hono } from "hono";
 import { db } from "@/lib/db";
 import { aiAgents, aiAgentVersions, aiAgentRuns } from "@/lib/db/schema";
 import { eq, and, count, desc, inArray } from "drizzle-orm";
-import { getCtx } from "../compat.js";
+import { getCtx, exigirCtx } from "../compat.js";
 import { z } from "zod";
 import {
   AGENT_EVENT_CATALOG,
@@ -123,7 +123,7 @@ function normalizarVersao(version: z.infer<typeof versionSchema>) {
 }
 
 app.post("/automacoes/agentes", async (c) => {
-  const ctx = await getCtx(c);
+  const ctx = await exigirCtx(c, "ai.configure");
   const parsed = agentSchema.safeParse(await c.req.json());
   if (!parsed.success) return c.json({ error: "Agente invalido", details: parsed.error.flatten() }, 400);
   const [agent] = await db.insert(aiAgents).values({
@@ -156,7 +156,7 @@ const dispatchDryRunSchema = z.object({
 });
 
 app.post("/automacoes/agentes/dispatch-dry-run", async (c) => {
-  const ctx = await getCtx(c);
+  const ctx = await exigirCtx(c, "ai.use");
   const parsed = dispatchDryRunSchema.safeParse(await c.req.json());
   if (!parsed.success) return c.json({ error: "Evento inválido", details: parsed.error.flatten() }, 400);
 
@@ -235,7 +235,7 @@ app.get("/automacoes/agentes/:id", async (c) => {
 });
 
 app.patch("/automacoes/agentes/:id", async (c) => {
-  const ctx = await getCtx(c);
+  const ctx = await exigirCtx(c, "ai.configure");
   const parsed = agentSchema.partial({ versao: true }).safeParse(await c.req.json());
   if (!parsed.success) return c.json({ error: "Agente invalido", details: parsed.error.flatten() }, 400);
   const [updated] = await db.update(aiAgents).set({
@@ -251,7 +251,7 @@ app.patch("/automacoes/agentes/:id", async (c) => {
 });
 
 app.post("/automacoes/agentes/:id/versions", async (c) => {
-  const ctx = await getCtx(c);
+  const ctx = await exigirCtx(c, "ai.configure");
   const [agent] = await db.select().from(aiAgents).where(and(eq(aiAgents.id, c.req.param("id")), eq(aiAgents.organizacaoId, ctx.organizacaoId))).limit(1);
   if (!agent) return c.json({ error: "Agente nao encontrado" }, 404);
   const parsed = versionSchema.safeParse(await c.req.json());
@@ -262,7 +262,7 @@ app.post("/automacoes/agentes/:id/versions", async (c) => {
 });
 
 app.patch("/automacoes/agentes/:id/versions/:versionId", async (c) => {
-  const ctx = await getCtx(c);
+  const ctx = await exigirCtx(c, "ai.configure");
   const [agent] = await db.select({ id: aiAgents.id }).from(aiAgents)
     .where(and(eq(aiAgents.id, c.req.param("id")), eq(aiAgents.organizacaoId, ctx.organizacaoId))).limit(1);
   if (!agent) return c.json({ error: "Agente nao encontrado" }, 404);
@@ -279,7 +279,7 @@ app.patch("/automacoes/agentes/:id/versions/:versionId", async (c) => {
 });
 
 app.post("/automacoes/agentes/:id/versions/:versionId/publish", async (c) => {
-  const ctx = await getCtx(c);
+  const ctx = await exigirCtx(c, "ai.configure");
   const [agent] = await db.select({ id: aiAgents.id }).from(aiAgents).where(and(eq(aiAgents.id, c.req.param("id")), eq(aiAgents.organizacaoId, ctx.organizacaoId))).limit(1);
   if (!agent) return c.json({ error: "Agente nao encontrado" }, 404);
   const [version] = await db.select().from(aiAgentVersions).where(and(eq(aiAgentVersions.id, c.req.param("versionId")), eq(aiAgentVersions.agentId, agent.id))).limit(1);
@@ -300,7 +300,7 @@ app.post("/automacoes/agentes/:id/versions/:versionId/publish", async (c) => {
 });
 
 app.post("/automacoes/agentes/:id/test", async (c) => {
-  const ctx = await getCtx(c);
+  const ctx = await exigirCtx(c, "ai.use");
   const [agent] = await db.select().from(aiAgents).where(and(eq(aiAgents.id, c.req.param("id")), eq(aiAgents.organizacaoId, ctx.organizacaoId))).limit(1);
   if (!agent) return c.json({ error: "Agente nao encontrado" }, 404);
   const parsed = z.object({

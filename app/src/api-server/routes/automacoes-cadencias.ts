@@ -10,7 +10,7 @@ import { Hono } from "hono";
 import { db } from "@/lib/db";
 import { cadenceDefinitions, cadenceDefinitionPointers, cadenceVersions, cadenceEnrollments, cadenceEnrollmentEvents, contatos, leads, negocios } from "@/lib/db/schema";
 import { eq, sql, and, desc, inArray } from "drizzle-orm";
-import { getCtx } from "../compat.js";
+import { getCtx, exigirCtx } from "../compat.js";
 import { z } from "zod";
 import { cancelarCadencia } from "@/lib/cadencia/cadence-engine";
 import type { CadenceStep } from "@/lib/cadencia/cadence-engine";
@@ -168,7 +168,7 @@ function triggerConfigFor(graph: FollowupGraph, explicit?: Record<string, unknow
 }
 
 app.post("/automacoes/cadencias", async (c) => {
-  const ctx = await getCtx(c);
+  const ctx = await exigirCtx(c, "automation.manage");
   const parsed = definitionSchema.safeParse(await c.req.json());
   if (!parsed.success) return c.json({ error: "Cadencia invalida", details: parsed.error.flatten() }, 400);
   const graph = graphFromInput(parsed.data);
@@ -204,7 +204,7 @@ app.post("/automacoes/cadencias", async (c) => {
 });
 
 app.patch("/automacoes/cadencias/:id", async (c) => {
-  const ctx = await getCtx(c);
+  const ctx = await exigirCtx(c, "automation.manage");
   const id = c.req.param("id");
   const body = await c.req.json();
   const action = z.object({ action: z.enum(["save_draft", "publish", "pause", "rollback"]) }).safeParse(body);
@@ -332,7 +332,7 @@ app.get("/automacoes/cadencias/enrollments/:id/events", async (c) => {
 });
 
 app.post("/automacoes/cadencias/enrollments/:id/action", async (c) => {
-  const ctx = await getCtx(c);
+  const ctx = await exigirCtx(c, "automation.manage");
   const id = c.req.param("id");
   const parsed = z.object({ action: z.enum(["pause", "resume", "cancel"]) }).safeParse(await c.req.json());
   if (!parsed.success) return c.json({ error: "Acao invalida" }, 400);

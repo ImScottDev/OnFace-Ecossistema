@@ -135,3 +135,48 @@ test("as rotas financeiras separam leitura de escrita", async (t) => {
                         WHERE rp.role_id = r.id AND p.codigo = 'finance.manage')`);
   assert.ok(r.so_leitura > 0, "nenhum papel tem só leitura financeira: a separação não separa nada");
 });
+
+test("criar automação e configurar agente exigem permissão", async () => {
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+  const ROTAS = path.resolve(import.meta.dirname, "../../api-server/routes");
+
+  // Estas rotas estavam SEM gate nenhum: qualquer usuário autenticado podia
+  // criar automação e editar a versão de um agente.
+  //
+  // Por que isso é grave e não um detalhe de permissão:
+  //
+  //   uma automação move etapa, cria tarefa e manda mensagem — um SDR criaria
+  //   uma regra que faz o que o papel dele não permite fazer direto;
+  //
+  //   a versão do agente guarda o TETO DE PERMISSÃO dele (guardrail_config).
+  //   Sem gate aqui, qualquer um se dá permissão via agente, e o RBAC inteiro
+  //   cai por um caminho que ninguém olha.
+  const ESPERADO: Array<[string, string]> = [
+    ["automacoes.ts", "automation.manage"],
+    ["automacoes-cadencias.ts", "automation.manage"],
+    ["automacoes-agentes.ts", "ai.configure"],
+    ["automacoes-tags.ts", "acquisition.manage"],
+  ];
+
+  const semGate: string[] = [];
+  for (const [arquivo, permissao] of ESPERADO) {
+    const src = fs.readFileSync(path.join(ROTAS, arquivo), "utf8");
+    if (!src.includes(`exigirCtx(c, "${permissao}")`)) semGate.push(`${arquivo} → ${permissao}`);
+  }
+  assert.deepEqual(semGate, [], "rota de escrita de automação/agente sem permissão exigida");
+
+  // E nenhuma rota de ESCRITA nesses arquivos pode ficar só com getCtx.
+  for (const [arquivo] of ESPERADO) {
+    const src = fs.readFileSync(path.join(ROTAS, arquivo), "utf8");
+    const escritas = [...src.matchAll(/app\.(post|patch|put|delete)\("([^"]+)"/g)];
+    for (const m of escritas) {
+      const corpo = src.slice(m.index, m.index + 600);
+      const temGate = /exigirCtx\(c, "/.test(corpo);
+      assert.ok(
+        temGate,
+        `${arquivo}: ${m[1].toUpperCase()} ${m[2]} não exige permissão`,
+      );
+    }
+  }
+});

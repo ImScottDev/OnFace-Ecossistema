@@ -4,7 +4,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { clientes, contatos, contatoLabels, empresas, entityLabels, labels, leadLabels, leads, negocios, oportunidades, servicosCanonicos } from "@/lib/db/schema";
 import { publicarEvento } from "@/lib/events/outbox";
-import { getCtx } from "../compat.js";
+import { getCtx, exigirCtx } from "../compat.js";
 
 const app = new Hono();
 const entityTypeSchema = z.enum(["lead", "negocio", "oportunidade", "cliente", "empresa", "contato", "servico"]);
@@ -33,7 +33,7 @@ app.get("/automacoes/tags/:entityType/:entityId", async (c) => {
 });
 
 app.post("/automacoes/tags/:entityType/:entityId", async (c) => {
-  const ctx = await getCtx(c);
+  const ctx = await exigirCtx(c, "acquisition.manage");
   const parsedType = entityTypeSchema.safeParse(c.req.param("entityType"));
   const parsedBody = z.object({ labelId: z.string().uuid() }).safeParse(await c.req.json());
   if (!parsedType.success || !parsedBody.success) return c.json({ error: "Dados inválidos" }, 400);
@@ -49,7 +49,7 @@ app.post("/automacoes/tags/:entityType/:entityId", async (c) => {
 });
 
 app.delete("/automacoes/tags/:entityType/:entityId/:labelId", async (c) => {
-  const ctx = await getCtx(c);
+  const ctx = await exigirCtx(c, "acquisition.manage");
   const parsedType = entityTypeSchema.safeParse(c.req.param("entityType"));
   if (!parsedType.success) return c.json({ error: "Tipo de entidade inválido" }, 400);
   const entityId = c.req.param("entityId"); const labelId = c.req.param("labelId");
