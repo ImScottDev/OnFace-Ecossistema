@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { garantirEntradaCanonica } from "../../lib/vendas/ponte-canonica.js";
 import { Hono } from "hono";
 import { db } from "@/lib/db";
 import { leads, empresas, atividades, buscasSalvas } from "@/lib/db/schema";
@@ -206,6 +207,22 @@ app.post("/import", async (c) => {
           apolloLikelyEngage: p.is_likely_to_engage || null,
         })
         .returning({ id: leads.id });
+
+      // CUTOVER (fase 16): enriquecimento do Apollo também passa pela porta
+      // canônica. Nasce como `contato`, não como lead comercial: quem decide
+      // abrir aquisição é a ação do usuário, não a importação.
+      void garantirEntradaCanonica({
+        organizacaoId: ctx.organizacaoId,
+        tipo: "OUTBOUND",
+        origem: origem || "apollo",
+        provider: "apollo",
+        pessoa: {
+          nome, email: p.email || null,
+          telefone: p.phone_numbers?.[0]?.raw_number || null,
+          cargo: p.title || null,
+        },
+        empresa: orgName ? { nome: orgName } : null,
+      }, newLead.id);
 
       // Log activity
       await db.insert(atividades).values({

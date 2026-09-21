@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { garantirEntradaCanonica } from "../../lib/vendas/ponte-canonica.js";
 import { db } from "@/lib/db";
 import { contatos, usuarios, leads, negocios, whatsappSessao } from "@/lib/db/schema";
 import { eq, and, isNull, ne, like } from "drizzle-orm";
@@ -229,6 +230,15 @@ app.post("/contatos/:id/criar-lead", async (c) => {
       avatarUrl,
     })
     .returning();
+
+  // CUTOVER (fase 16): mesmo fato no modelo canônico. Sai na fase 25.
+  void garantirEntradaCanonica({
+    organizacaoId: ctx.organizacaoId,
+    tipo: "INBOUND",
+    origem: contato.canal === "whatsapp" ? "whatsapp" : "email",
+    provider: contato.canal ?? "contato",
+    pessoa: { nome: contato.nome, email: contato.email, telefone: contato.telefone },
+  }, newLead.id);
 
   // Link this contato to the new lead (and save avatar if fetched)
   await db

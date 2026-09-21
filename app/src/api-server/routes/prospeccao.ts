@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { garantirEntradaCanonica } from "../../lib/vendas/ponte-canonica.js";
 import { db } from "@/lib/db";
 import { leads, usuarios, empresas, negocios, negocioLeads, contatoListas, leadListas, labels, leadLabels, cadenceDefinitions, cadenceEnrollments } from "@/lib/db/schema";
 import { eq, and, inArray, sql, desc } from "drizzle-orm";
@@ -391,6 +392,22 @@ app.post("/prospeccao/import", async (c) => {
       })
       .returning({ id: leads.id });
     inseridos.push(novoLead.id);
+
+    // CUTOVER (fase 16): a importação de lista também passa pela porta
+    // canônica. Era um dos caminhos que escrevia direto, sem regra nenhuma.
+    // Sai na fase 25, junto com a escrita legada acima.
+    void garantirEntradaCanonica({
+      organizacaoId: ctx.organizacaoId,
+      tipo: "IMPORT",
+      origem: config.origem || "outbound",
+      provider: "prospeccao",
+      pessoa: {
+        nome: row.nome?.trim(), email: row.email?.trim(),
+        telefone: row.telefone?.trim(), cargo: row.cargo?.trim(),
+      },
+      empresa: row.empresa?.trim() ? { nome: row.empresa.trim() } : null,
+      responsavelId: config.responsavelId || null,
+    }, novoLead.id);
   }
 
   if (listaId && inseridos.length > 0) {

@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { garantirEntradaCanonica } from "../../lib/vendas/ponte-canonica.js";
 import { cors } from "hono/cors";
 import { getCtx, parseBody } from "../compat.js";
 import { getTenantFromRequest } from "../auth.js";
@@ -534,6 +535,30 @@ app.post(
         userAgent,
       })
       .returning();
+
+    // CUTOVER (fase 16): o mesmo fato entra no modelo canônico. Esta rota é a
+    // maior porta de escrita de lead do sistema (10 escritas em leads). A
+    // escrita legada acima segue porque as telas leem `leads`; as duas saem
+    // juntas na fase 25. Best-effort: falha aqui não derruba a criação.
+    void garantirEntradaCanonica({
+      organizacaoId: orgId,
+      tipo: "MANUAL",
+      origem: insertData.origem ?? "CRM",
+      provider: "crm-api",
+      pessoa: {
+        nome: insertData.nome, sobrenome: insertData.sobrenome,
+        email: insertData.email, telefone: insertData.telefone, cargo: insertData.cargo,
+      },
+      empresa: insertData.empresa
+        ? { nome: insertData.empresa, cnpj: insertData.empresaCnpj, website: dominioCorporativo(insertData.email) }
+        : null,
+      atribuicao: {
+        utmSource: insertData.utmSource, utmMedium: insertData.utmMedium,
+        utmCampaign: insertData.utmCampaign, utmTerm: insertData.utmTerm,
+        utmContent: insertData.utmContent, landingPage: insertData.landingPage,
+      },
+      responsavelId: insertData.responsavelId ?? null,
+    }, newLead.id);
 
     // Negócio: cria automaticamente para leads de LP/form; OU quando o closer pede
     // explicitamente (criarNegocio) pra já abrir a oportunidade no pipeline.
