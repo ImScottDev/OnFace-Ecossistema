@@ -2923,6 +2923,7 @@ const slaWorker = new Worker(
           .limit(1);
         if (!tarefaAberta) {
           await db.insert(tarefas).values({
+            organizacaoId: lead.organizacaoId,
             leadId: deal.leadId,
             usuarioId: alvo,
             titulo: `Follow-up proposta: ${quem}`,
@@ -2969,6 +2970,7 @@ const slaWorker = new Worker(
         const [admin] = await db.select({ id: usuarios.id }).from(usuarios).where(and(eq(usuarios.role, "admin"), eq(usuarios.organizacaoId, lead.organizacaoId))).limit(1);
         if (lead && !lead.renovacaoAlertada && admin) {
           await db.insert(tarefas).values({
+            organizacaoId: lead.organizacaoId,
             leadId: lead.id,
             usuarioId: admin.id,
             titulo: `Renovação de contrato: ${lead.nome}`,
@@ -3082,6 +3084,7 @@ const slaWorker = new Worker(
 
             if (existing.length === 0) {
               await db.insert(tarefas).values({
+                organizacaoId: deal.leadOrgId,
                 leadId: deal.leadId,
                 usuarioId: admin.id,
                 titulo: `Recontato: ${deal.leadEmpresa || deal.leadNome || deal.titulo} (perdido por ${motivo} há ${days}d)`,

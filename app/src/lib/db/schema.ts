@@ -1039,7 +1039,7 @@ export const tarefas = pgTable(
   "tarefas",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    organizacaoId: uuid("organizacao_id").references(() => organizacoes.id),
+    organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
     leadId: uuid("lead_id").references(() => leads.id),
     negocioId: uuid("negocio_id").references(() => negocios.id),
     usuarioId: uuid("usuario_id").references(() => usuarios.id),
@@ -2180,7 +2180,7 @@ export const aiPurposeBindings = pgTable("ai_purpose_bindings", {
 
 export const aiAgentVersions = pgTable("ai_agent_versions", {
   id: uuid("id").defaultRandom().primaryKey(),
-  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id, { onDelete: "cascade" }),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id, { onDelete: "cascade" }).notNull(),
   agentId: uuid("agent_id").references(() => aiAgents.id, { onDelete: "cascade" }).notNull(),
   versao: integer("versao").notNull(),
   status: text("status").default("draft").notNull(), // draft | published | superseded
@@ -3226,6 +3226,80 @@ export const billingCustomerAliases = pgTable("billing_customer_aliases", {
   uniqueIndex("uq_billing_alias_customer").on(table.stripeCustomerId),
 ]);
 
+// ─── BILLING AUDIT (auditoria de identidade de faturamento) ───────────────────
+// Existiam no banco e não no schema desde a criação em produção. Declaradas na
+// fase 01 do refactor para fechar o drift medido no levantamento AS-IS.
+export const billingAuditRuns = pgTable("billing_audit_runs", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id, { onDelete: "set null" }),
+  scope: jsonb("scope").default({}).notNull(),
+  status: text("status").default("RUNNING").notNull(),
+  summary: jsonb("summary").default({}).notNull(),
+  artifactPath: text("artifact_path"),
+  startedAt: timestamp("started_at", { withTimezone: true }).defaultNow().notNull(),
+  finishedAt: timestamp("finished_at", { withTimezone: true }),
+});
+
+export const billingResolutionCases = pgTable("billing_resolution_cases", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  auditRunId: uuid("audit_run_id").references(() => billingAuditRuns.id, { onDelete: "set null" }),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id, { onDelete: "set null" }),
+  queue: text("queue").notNull(),
+  stripeCustomerId: text("stripe_customer_id"),
+  stripeSubscriptionId: text("stripe_subscription_id"),
+  crmEntityType: text("crm_entity_type"),
+  crmEntityId: uuid("crm_entity_id"),
+  evidence: jsonb("evidence").default({}).notNull(),
+  recommendedAction: jsonb("recommended_action").default({}).notNull(),
+  status: text("status").default("OPEN").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+});
+
+export const billingCorrectionLedger = pgTable("billing_correction_ledger", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  auditRunId: uuid("audit_run_id").references(() => billingAuditRuns.id, { onDelete: "set null" }),
+  billingIdentityId: uuid("billing_identity_id").references(() => billingIdentities.id, { onDelete: "set null" }),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id, { onDelete: "set null" }),
+  entityType: text("entity_type").notNull(),
+  entityId: uuid("entity_id"),
+  action: text("action").notNull(),
+  before: jsonb("before").default({}).notNull(),
+  after: jsonb("after").default({}).notNull(),
+  evidence: jsonb("evidence").default({}).notNull(),
+  ruleApplied: text("rule_applied").notNull(),
+  operator: text("operator").notNull(),
+  reversible: boolean("reversible").default(true).notNull(),
+  revertedAt: timestamp("reverted_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+// SPEC §21.5: esta tabela deve virar projeção derivada de relatório, não fonte de
+// verdade mantida à mão. Declarada aqui para fechar o drift; a conversão em
+// projeção acontece na fase de finanças.
+export const clienteReceitaMensal = pgTable("cliente_receita_mensal", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+  empresaId: uuid("empresa_id").references(() => empresas.id, { onDelete: "set null" }),
+  customerKey: text("customer_key").notNull(),
+  clienteNome: text("cliente_nome").notNull(),
+  documento: text("documento"),
+  competencia: date("competencia").notNull(),
+  valor: decimal("valor", { precision: 14, scale: 2 }).default("0").notNull(),
+  quantidadeLancamentos: integer("quantidade_lancamentos").default(1).notNull(),
+  serviceFamily: text("service_family").default("UNKNOWN").notNull(),
+  revenueNature: text("revenue_nature").default("UNKNOWN").notNull(),
+  canonicalProduct: text("canonical_product"),
+  confidence: text("confidence").default("UNRESOLVED").notNull(),
+  source: text("source").notNull(),
+  sourceFile: text("source_file"),
+  sourceRow: text("source_row"),
+  evidence: jsonb("evidence").default({}).notNull(),
+  sourceHash: text("source_hash").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
 export const catalogoMapeamentosLegacy = pgTable("catalogo_mapeamentos_legacy", {
   id: uuid("id").defaultRandom().primaryKey(),
   organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
@@ -3378,6 +3452,9 @@ export const correctionChangeLog = pgTable("correction_change_log", {
   oldValue: text("old_value"),
   newValue: text("new_value"),
   changedAt: timestamp("changed_at", { withTimezone: true }).defaultNow().notNull(),
+  confidence: text("confidence"),
+  evidence: jsonb("evidence"),
+  source: text("source"),
 });
 
 // ═══════════════════════════════════════════════════════════════
