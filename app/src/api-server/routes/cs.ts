@@ -329,6 +329,18 @@ app.get("/cs/metricas", async (c) => {
 
 // ─── Risco ──────────────────────────────────────────────────────
 
+// GET /cs/riscos — a carteira inteira, para a tela de Risco / Churn.
+// Existia só a versão por empresa; a visão de cima não tinha rota, e por isso
+// a tela era um placeholder.
+app.get("/cs/riscos", async (c) => {
+  const ctx = await getCtx(c);
+  const { carteiraEmRisco } = await import("@/lib/cs/carteira-em-risco");
+  // Closer/CS vê a própria carteira; gestão vê tudo. Mesma regra das outras
+  // leituras do módulo.
+  const responsavelId = c.req.query("meus") === "1" ? ctx.userId : null;
+  return c.json(await carteiraEmRisco(ctx.organizacaoId, responsavelId));
+});
+
 app.get("/cs/clientes/:empresaId/riscos", async (c) => {
   const ctx = await getCtx(c);
   const empresaId = c.req.param("empresaId");

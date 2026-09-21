@@ -1547,6 +1547,54 @@ mudavam o que a operação vê na tela.
 
 Cada um ganhou trava verificada por reintrodução do defeito.
 
+### CP20 — Risco / Churn deixou de ser placeholder
+
+Varredura das telas do menu marcadas `pendente: true`: **onze**. O prompt de
+execução proíbe contar placeholder como implementação, então cada uma vale uma
+pergunta: a dependência que trava a tela ainda existe?
+
+Em `/clientes/risco`, o placeholder era honesto e listava duas:
+
+> "Definir o que conta como sinal de risco (uso, inadimplência, chamado, silêncio)"
+> "66% do churn hoje é pagamento recusado, não churn voluntário: a tela precisa separar os dois"
+
+**As duas já estavam resolvidas.** `lib/cs/riscos` calcula 12 tipos e mantinha
+**491 riscos abertos** no banco; o tipo do risco já separa cobrança de
+relacionamento. Faltava a leitura agregada e a tela. Mesmo defeito do CP8 e do
+CP13: peça pronta, ninguém ligando.
+
+`lib/cs/carteira-em-risco.ts` agrupa `cs_riscos` por conta, sem motor novo. A
+decisão que dá sentido à tela é separar por **quem resolve**:
+
+| natureza | tipos | quem age |
+|---|---|---|
+| cobrança | fatura vencida, assinatura irregular, pagamento falhou | Financeiro |
+| relacionamento | silêncio, sem próxima ação, renovação sem contato | CS, ligando |
+| entrega | entrega parada | Implantação |
+
+Numa lista única o time ataca as 249 contas de "sem próxima ação" e não vê as
+**15 críticas** prestes a cair por cobrança.
+
+O que a tela mostra, medido:
+
+| | contas | MRR |
+|---|---|---|
+| crítico | 15 | R$ 22.915,90 |
+| em risco | 9 | R$ 2.068,80 |
+| atenção | 249 | R$ 400.634,69 |
+
+**O MRR vem quebrado por severidade, nunca somado.** Um "MRR exposto" único
+daria R$ 425.619,39, a carteira inteira, porque quase toda conta tem algum
+risco de atenção aberto. Número que assusta e não orienta é o mesmo defeito
+que o CP7 e o CP11 corrigiram noutras telas.
+
+A tela também diz o que ninguém queria ver: **273 de 273 contas em risco estão
+sem responsável**. É o bloqueio já conhecido, agora visível onde importa.
+
+**Validação:** tsc limpo, **319 testes 0 falhas**, **29/29 smokes**, e a tela
+conferida no navegador com o ambiente completo: os cartões de severidade
+filtram, e o recorte por natureza leva de 273 para 24 contas.
+
 ### Auditoria de CS Health (histórico da decisão)
 
 Menor do que o gap analysis inicial dizia:

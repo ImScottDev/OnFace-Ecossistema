@@ -90,7 +90,7 @@ export const MENU_ONFACE: OnfaceNavItem[] = [
       { label: "Carteira", href: "/clientes/carteira", icon: Wallet, pendente: true },
       { label: "Customer Success", href: "/clientes/cs", icon: HeartPulse },
       { label: "Expansão & Renovação", href: "/clientes/expansao", icon: TrendingUp, pendente: true },
-      { label: "Risco / Churn", href: "/clientes/risco", icon: ShieldAlert, pendente: true },
+      { label: "Risco / Churn", href: "/clientes/risco", icon: ShieldAlert },
     ],
   },
   {

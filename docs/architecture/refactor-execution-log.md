@@ -2420,3 +2420,23 @@ backfill e não desse caminho. Zero de divergência hoje não absolve defeito
 latente: ele aparece em produção, no primeiro formulário preenchido.
 
 **Validação:** tsc limpo, **313 testes 0 falhas**, **29/29 smokes**.
+
+## 2026-09-21 — CP20: Risco / Churn, a tela que esperava uma dependência já resolvida
+
+Onze telas do menu estão marcadas `pendente: true`. Cada uma vale a pergunta: a
+dependência que trava ainda existe?
+
+Em Risco / Churn não existia mais. O placeholder pedia "definir o que conta como
+sinal de risco" e "separar churn involuntário do voluntário", e as duas coisas
+estavam prontas havia dias: 491 riscos abertos calculados por `lib/cs/riscos`, e
+o tipo do risco já separando as naturezas.
+
+A tela agrupa por quem resolve, não só por gravidade. Numa lista única o time
+ataca as 249 contas de "sem próxima ação" e não vê as 15 críticas com
+R$ 22.915,90 prestes a cair por cobrança.
+
+O MRR vem quebrado por severidade de propósito: somar tudo daria a carteira
+inteira, porque quase toda conta tem algum risco de atenção aberto.
+
+**Validação:** tsc limpo, **319 testes 0 falhas**, **29/29 smokes**, tela
+conferida no navegador com filtro funcionando (273 → 24 no recorte de cobrança).
