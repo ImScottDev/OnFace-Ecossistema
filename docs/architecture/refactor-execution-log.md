@@ -1795,3 +1795,44 @@ operação, e o placar diz isso em vez de contá-los como aprovados.
 
 **Validação:** tsc limpo, **262 testes, 0 falhas**, build exit 0, bundle do worker exit 0,
 21 de 21 smokes verdes, `leads` = `aquisicoes` = 3.989, zero resíduo.
+
+---
+
+## 2026-09-21 — Cutover crítico, parte 16: a linha do tempo não mostrava atividade
+
+A mesma lente que achou o lead invisível, aplicada às server actions: quais escrevem
+direto no banco sem passar por porta. As de Atividades escrevem em `tarefas`, que é a
+casa canônica da atividade, então não cruzam fronteira nenhuma. Mas não publicam evento.
+
+**A linha do tempo tem 346 eventos de tarefa, todos do backfill, e o mais recente é de
+10/08.** Existem 463 tarefas, 119 criadas nos últimos 30 dias. Nenhuma aparecia na conta
+da pessoa.
+
+São **dez lugares** que criam tarefa, sem porta compartilhada. Pedir evento a dez
+chamadores é refatoração própria, e não é o que o cutover crítico precisa agora. A
+leitura passou a somar `tarefas` como QUARTA fonte da linha do tempo, pelo mesmo desenho
+que já valia para `communications`.
+
+Conferido contra duplicação, e a conferência ensinou algo: os eventos `tarefa_legado`
+vieram de `atividades`, que é outra tabela. Num lead com 5 desses eventos e 2 tarefas, os
+títulos não se repetem — "Oportunidade Vencida" contra "Recontato" e "Renovação de
+contrato". São fatos diferentes, e o dedup por título e dois minutos fica como seguro.
+
+Medido depois: **5 de 5 tarefas do lead aparecem na linha do tempo**, com título legível.
+
+**Um erro meu, e a trava que o pegou.** Ao limpar proveniência órfã eu rodei um DELETE
+sem filtrar `entidade_canonica`, e um id de pessoa nunca casa com um id de aquisição:
+apaguei linhas de proveniência de `pessoa`. A trava de reconciliação acusou na hora — "4
+pessoas sem provenance: apareceram do nada e ninguém sabe de onde".
+
+Eram as quatro do meu smoke novo, não dado de produção: o smoke apagava pessoa só por
+`lead_id_legado`, e pessoa criada pela porta canônica pode não carregar esse campo.
+Corrigidos os dois: o filtro por entidade nas duas redes de segurança, e a limpeza do
+smoke por nome também.
+
+**Nona vez com a crase em comentário de SQL**, desta vez no comentário que acabei de
+escrever sobre o filtro por entidade. `tsc` chegou antes da trava.
+
+**Validação:** tsc limpo, **262 testes, 0 falhas**, build exit 0, **22 de 22 smokes**,
+aceite 72/0/3, e integridade conferida: `leads` = `aquisicoes` = 3.989, 3.950 pessoas,
+zero sem proveniência.

@@ -749,6 +749,11 @@ async function limpar(sufixo: string): Promise<void> {
   await db.execute(sql`
     DELETE FROM backfill_provenance bp
      WHERE bp.metodo = 'PONTE_CUTOVER'
+       -- Filtrar por ENTIDADE e obrigatorio: sem isso, linha de proveniencia de
+       -- pessoa some porque um id de pessoa nunca casa com um id de aquisicao.
+       -- Foi o que aconteceu numa limpeza minha, e a trava de reconciliacao
+       -- acusou 4 pessoas "que apareceram do nada".
+       AND bp.entidade_canonica = 'aquisicao'
        AND NOT EXISTS (SELECT 1 FROM aquisicoes a WHERE a.id = bp.id_canonico)`);
   await db.execute(sql`DELETE FROM pontos_contato WHERE empresa_id IN ${empresas} OR pessoa_id IN ${pessoas} OR lead_id_legado IN ${leads}`);
   await db.execute(sql`DELETE FROM pessoa_empresa_vinculos WHERE empresa_id IN ${empresas} OR pessoa_id IN ${pessoas}`);

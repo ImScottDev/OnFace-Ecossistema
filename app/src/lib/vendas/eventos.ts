@@ -328,6 +328,45 @@ export async function lerLinhaDoTempo(params: {
          )
        ORDER BY e.ocorrido_em DESC LIMIT ${limite}
     )
+    UNION ALL
+    (
+      -- Quarta fonte: as ATIVIDADES.
+      --
+      -- A timeline tem 346 eventos de tarefa, todos do backfill, e o mais
+      -- recente e de 10/08. Existem 463 tarefas, 119 criadas nos ultimos 30
+      -- dias. Nenhuma delas aparecia na conta da pessoa.
+      --
+      -- A causa: criar tarefa nao publica evento de dominio, e sao DEZ
+      -- lugares que criam tarefa, sem porta compartilhada entre eles. Pedir
+      -- evento a dez chamadores e refatoracao propria; ler a tabela aqui
+      -- entrega a linha do tempo completa agora, pelo mesmo desenho que ja
+      -- vale para comunicacoes.
+      --
+      -- Dedup contra a projecao pelo mesmo criterio das comunicacoes: as 346
+      -- do backfill descrevem tarefas que esta consulta tambem alcanca.
+      SELECT tf.id::text, 'tarefa' AS tipo, tf.titulo,
+             CASE WHEN tf.origem = 'AUTOMACAO' THEN 'SYSTEM' ELSE 'HUMAN' END AS ator_tipo,
+             u.nome AS usuario_nome,
+             jsonb_build_object('status', tf.status, 'prioridade', tf.prioridade,
+                                'tipo_tarefa', tf.tipo, 'vence_em', tf.data_vencimento) AS contexto,
+             tf.created_at::text AS ocorrido_em
+        FROM tarefas tf
+        LEFT JOIN usuarios u ON u.id = tf.usuario_id
+       WHERE tf.organizacao_id = ${params.organizacaoId}::uuid
+         AND NOT EXISTS (
+           SELECT 1 FROM timeline_events t
+            WHERE t.tipo = 'tarefa_legado'
+              AND abs(extract(epoch FROM (t.occurred_at - tf.created_at))) < 120
+              AND t.titulo IS NOT DISTINCT FROM tf.titulo)
+         AND (
+           (${leadId}::uuid IS NOT NULL AND tf.lead_id = ${leadId}::uuid)
+           OR (${negocioId}::uuid IS NOT NULL AND tf.negocio_id = ${negocioId}::uuid)
+           OR (${empresaId}::uuid IS NOT NULL AND tf.empresa_id = ${empresaId}::uuid)
+           OR (${pessoaId}::uuid IS NOT NULL AND tf.lead_id IN
+                 (SELECT lead_id_legado FROM pessoas WHERE id = ${pessoaId}::uuid))
+         )
+       ORDER BY tf.created_at DESC LIMIT ${limite}
+    )
     ORDER BY ocorrido_em DESC
     LIMIT ${limite}
   `);

@@ -39,7 +39,9 @@ async function limpar() {
     sql`DELETE FROM event_outbox WHERE payload ->> 'lead_legado_id' = ${leadId}`,
     sql`DELETE FROM domain_events WHERE payload ->> 'lead_legado_id' = ${leadId}`,
     sql`DELETE FROM pessoa_empresa_vinculos WHERE pessoa_id IN (SELECT id FROM pessoas WHERE lead_id_legado = ${leadId}::uuid)`,
-    sql`DELETE FROM pessoas WHERE lead_id_legado = ${leadId}::uuid`,
+    // Por NOME também: a pessoa criada pela porta canônica pode não carregar
+    // `lead_id_legado`, e apagar só por ele deixava pessoa órfã no banco.
+    sql`DELETE FROM pessoas WHERE lead_id_legado = ${leadId}::uuid OR nome LIKE ${marca + "%"}`,
     sql`DELETE FROM leads WHERE id = ${leadId}::uuid`,
     sql`DELETE FROM empresas WHERE nome LIKE ${marca + "%"}`,
   ]) await db.execute(q).catch(() => undefined);
@@ -48,6 +50,7 @@ async function limpar() {
   // para aquisição que já não existe.
   await db.execute(sql`
     DELETE FROM backfill_provenance bp WHERE bp.metodo = 'PONTE_CUTOVER'
+      AND bp.entidade_canonica = 'aquisicao'
       AND NOT EXISTS (SELECT 1 FROM aquisicoes a WHERE a.id = bp.id_canonico)`).catch(() => undefined);
 }
 

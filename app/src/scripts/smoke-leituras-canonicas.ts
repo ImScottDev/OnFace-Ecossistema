@@ -116,6 +116,23 @@ async function main() {
        `o detalhe mostra a família que só o canônico tem (${d?.familia ?? "vazia"})`);
   }
 
+  // A linha do tempo tem que mostrar ATIVIDADE, não só o que o backfill projetou.
+  //
+  // Existem 463 tarefas e a projeção parou em 10/08 com 346 eventos: criar
+  // tarefa não publica evento, e são dez lugares que criam tarefa. A leitura
+  // passou a somar `tarefas` como quarta fonte, do mesmo jeito que já soma
+  // comunicações.
+  const [comTarefas] = await db.execute<{ lead: string; n: number }>(sql`
+    SELECT t.lead_id::text AS lead, count(*)::int AS n FROM tarefas t
+     WHERE t.lead_id IS NOT NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 1`);
+  if (comTarefas) {
+    const tl = await lerLinhaDoTempo({ organizacaoId: org.id, leadId: comTarefas.lead, limite: 100 });
+    const tarefas = tl.filter((e) => e.tipo === "tarefa");
+    ok(tarefas.length > 0,
+       `a linha do tempo do lead mostra atividades (${tarefas.length} de ${comTarefas.n} tarefas)`);
+    ok(tarefas.every((t) => Boolean(t.titulo)), "e cada uma com título legível");
+  }
+
   console.log(process.exitCode ? "\nsmoke de leituras: FALHOU\n" : "\nsmoke de leituras: ok\n");
 }
 
