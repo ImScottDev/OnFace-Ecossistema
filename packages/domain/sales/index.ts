@@ -1,9 +1,13 @@
-// @onface/domain-sales — ponto de entrada público do pacote.
+// @onface/sales — oportunidade como venda de UM produto (SPEC §11, §15).
 //
-// Nada fora deste arquivo deve ser importado de fora do pacote. A fronteira é
-// verificada por `pnpm arq:fronteiras` (src/scripts/checar-fronteiras.ts).
-//
-// Vazio por enquanto: o código chega quando a fase correspondente do refactor
-// migrar este domínio. Ver docs/architecture/refactor-state.md.
+// Caminho único para ganho: nenhuma rota, webhook ou tela decide por conta.
 
-export {};
+export {
+  avaliarCondicaoDeGanho,
+  verificarPodeCriarProposta,
+  marcarPerdida,
+  type Oportunidade,
+  type RepositorioVendas,
+  type StatusOportunidade,
+  type Resultado,
+} from "./commands/oportunidade.js";
