@@ -25,7 +25,7 @@ Fases 01 a 16 concluídas.
 
 ## Último commit
 
-`fcac78d` — fix(17): avançar de etapa também estava travado pela família do legado
+`2d880d3` — fix(17): último leitor de família fora da cadeia, e trava para a classe
 
 Branch de trabalho: `refactor/arquitetura-canonica`, criada a partir de `98940fe`.
 
@@ -508,7 +508,7 @@ canônico hoje faria o lead sumir da tela de pré-vendas no mesmo instante.
 
 ## Testes executados
 
-Estado atual: `tsc --noEmit` limpo, **build de produção passando**, **261 testes, 0
+Estado atual: `tsc --noEmit` limpo, **build de produção passando**, **262 testes, 0
 falhas**, e **21 de 21 smokes** verdes contra o banco real (conferidos por código de
 saída, não por texto: procurar "FALHA" na saída dava falso positivo em `falhados=0`):
 
