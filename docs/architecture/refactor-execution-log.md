@@ -131,3 +131,41 @@ inválido bloqueia e `AI_AGENT` passa; idempotency_key duplicada bloqueia;
 **Dados não resolvidos:** nenhum. Nenhum dado foi tocado nesta fase.
 
 **Commit:** `635377f`
+
+---
+
+## 2026-09-21 — Fases 05 e 06 · Backfill de identidade e aquisição — CONCLUÍDAS
+
+**Migrations:** 0060 (reconciliação e provenance), 0061 (campos de vínculo),
+0062 (atribuição em `pontos_contato`).
+
+**Fase 05 — identidade.** 3.989 leads → 3.950 pessoas. Resolução determinística:
+e-mail normalizado (3.496), telefone com 10+ dígitos (344), origem única (110).
+Colapso de 39 linhas que eram a mesma pessoa. 2.324 vínculos pessoa-empresa.
+8 casos de reconciliação: identidades com mais de uma empresa ganharam vínculo para
+cada uma, nenhum principal, decisão adiada para humano.
+
+**Fase 06 — aquisição.** 3.989 aquisições e 1.583 touchpoints. Tipos: INBOUND 1.907,
+IMPORT 1.279, MANUAL 656, OUTBOUND 100, REFERRAL 47.
+
+**Três erros próprios, encontrados antes de causar dano:**
+
+1. O script da fase 05 usou `cargo` numa tabela que só tinha `papel`. Falhou na
+   primeira linha, antes de gravar em massa. A 0061 adicionou a coluna.
+2. O mapeamento de origem da fase 06 comparava com acento e não reconhecia
+   "Mídia Paga" (1.536 linhas) nem "Orgânico"; e tratava "ZohoDesk" e "stripe"
+   como canal em vez de carga de sistema antigo. MANUAL caiu de 2.481 para 656.
+3. O teste "atribuição não foi inventada" acusou 87 touchpoints vazios. Investigado:
+   os 87 têm `utm_term` e `utm_content`, que são sinais legítimos. O teste olhava 8
+   dos 13 campos. O backfill estava certo, o teste errado.
+
+**Dado ausente declarado:** as colunas de qualificação de `leads` estão vazias em
+3.989 de 3.989 linhas no banco de produção.
+
+**Validação:** pessoas sem provenance 0; leads não mapeados 0; e-mail sem origem 0;
+origem para dois destinos 0; vínculos órfãos 0; aquisições sem identidade 0;
+touchpoints órfãos 0; touchpoints sem sinal 0.
+
+**Testes:** 121 passando, 0 falhas. 10 testes de reconciliação (SPEC §50.2).
+
+**Commits:** `145f475`, `69568cd` e o fix do teste.

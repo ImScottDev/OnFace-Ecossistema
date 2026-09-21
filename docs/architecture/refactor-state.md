@@ -7,13 +7,13 @@
 
 ## Fase atual
 
-**05 — Backfill de identidade: empresas, pessoas, vínculos** (próxima)
+**07 — Backfill de oportunidade e pipeline** (próxima)
 
-Fases 01 a 04 concluídas.
+Fases 01 a 06 concluídas.
 
 ## Último commit
 
-`635377f` — refactor(04): expansao do modelo canonico, 17 tabelas novas
+`69568cd` + fix — refactor(06): backfill de aquisicao e atribuicao
 
 Branch de trabalho: `refactor/arquitetura-canonica`, criada a partir de `98940fe`.
 
@@ -64,6 +64,9 @@ Pacote vazio não afeta o build: `tsc` limpo e 111 testes passando com o workspa
 | 0057 | `expansao_dominio_canonico` | cria `pipeline_etapas`, `aquisicoes`, `ofertas_comerciais`, `pagamentos`, `conversas`, `domain_events`, `timeline_events`, `cs_health_snapshots` | sim, EXPAND puro (DROP TABLE reverte) |
 | 0058 | `expansao_plataforma` | cria automação versionada, RBAC normalizado e arquivos; adiciona colunas nuláveis em `automacoes` e `automacao_execucoes` | sim, EXPAND puro |
 | 0059 | `corrige_unicidade_inscricao` | troca constraint composta por índice parcial em `automacao_inscricoes` | sim |
+| 0060 | `reconciliacao_casos` | cria `reconciliacao_casos` e `backfill_provenance` | sim |
+| 0061 | `vinculo_pessoa_empresa_campos` | `cargo` e `updated_at` em `pessoa_empresa_vinculos` + índice único | sim |
+| 0062 | `pontos_contato_atribuicao` | 10 colunas de atribuição e `aquisicao_id` em `pontos_contato` | sim |
 
 ### Tabelas canônicas criadas (vazias até o backfill)
 
@@ -76,7 +79,26 @@ Pacote vazio não afeta o build: `tsc` limpo e 111 testes passando com o workspa
 
 ## Backfills executados
 
-Nenhum.
+| Fase | Script | Origem | Resultado | Casos abertos |
+|---|---|---|---|---|
+| 05 identidade | `src/scripts/backfill/05-identidade.ts` | 3.989 leads | **3.950 pessoas**, 2.324 vínculos | 8 |
+| 06 aquisição | `src/scripts/backfill/06-aquisicao.ts` | 3.989 leads | **3.989 aquisições**, 1.583 touchpoints | 0 |
+
+Os dois são idempotentes por `backfill_provenance` e só inserem.
+
+### Dado ausente na origem, declarado e não mascarado
+
+`qualificado`, `qualificado_em` e `desqualificado_em` estão vazios em **3.989 de
+3.989** leads no banco de produção. `estagio_pre_vendas` só tem `novo` (1.597) ou
+NULL (2.392), sem progressão. Por isso toda aquisição nasce `aberta`, exceto as 287
+de quem virou cliente, que nascem `encerrada`. Isso é o que o dado diz; o backfill
+não inventou estado.
+
+### Casos de reconciliação abertos
+
+8 identidades aparecem ligadas a mais de uma empresa. Ganharam vínculo para cada
+empresa, **nenhum marcado principal**, e um caso em `reconciliacao_casos`. A decisão
+é humana e posterior.
 
 ## Readers migrados
 
