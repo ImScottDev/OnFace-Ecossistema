@@ -5,6 +5,7 @@ import { eq, and, desc } from "drizzle-orm";
 import { z } from "zod";
 import { getCtx } from "../compat.js";
 import { deleteOutlookEvent, createOutlookEvent } from "@/lib/email/microsoft";
+import { atualizarNaAgenda, cancelarNaAgenda } from "@/lib/calendario/sincronizar";
 
 type OutlookResultado = { criado: boolean; motivo: string | null };
 
@@ -270,11 +271,22 @@ app.patch("/reunioes/:id", async (c) => {
       return c.json({ error: "Reunião não encontrada" }, 404);
     }
 
+    // CalendarProvider (Módulo 09): create, update E cancel sincronizam.
+    //
+    // O update é o que faltava. Antes, mudar a data aqui alterava só a linha
+    // do ONFACE e o cliente ficava com o convite antigo na agenda, sem
+    // ninguém ser avisado. Agora reagendar, renomear e mudar duração chegam
+    // no provedor — e quando não chegam, a tela recebe o motivo.
+    let avisoAgenda: string | null = null;
     if (data.status === "cancelada") {
-      await cancelarEventoOutlookSeExistir(id);
+      const r = await cancelarNaAgenda(ctx.organizacaoId, id);
+      avisoAgenda = r.aviso ?? null;
+    } else if (data.data !== undefined || data.titulo !== undefined || data.duracao !== undefined) {
+      const r = await atualizarNaAgenda(ctx.organizacaoId, id);
+      avisoAgenda = r.aviso ?? null;
     }
 
-    return c.json(updated);
+    return c.json({ ...updated, avisoAgenda });
   } catch (err) {
     if (err instanceof z.ZodError) {
       return c.json({ error: err.issues[0].message }, 400);

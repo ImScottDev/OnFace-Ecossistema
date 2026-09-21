@@ -1845,7 +1845,14 @@ export const reunioes = pgTable(
     status: text("status").default("agendada"), // agendada, realizada, cancelada, no_show
     participantes: text("participantes").array(),
     link: text("link"), // URL da reunião (Outlook/Meet/Zoom) — colada pela SDR, ou o joinUrl/webLink devolvido ao criar o evento de verdade no Outlook do closer
-    outlookEventId: text("outlook_event_id"), // id do evento no Outlook do closer (Graph), pra permitir cancelar/atualizar depois
+    outlookEventId: text("outlook_event_id"),
+    /** CalendarProvider (migration 0089): microsoft | google. */
+    calendarProvider: text("calendar_provider"),
+    calendarEventId: text("calendar_event_id"),
+    /** pendente | ok | falhou | sem_provedor — falha visível e reprocessável. */
+    calendarSyncStatus: text("calendar_sync_status"),
+    calendarSyncErro: text("calendar_sync_erro"),
+    calendarSyncEm: timestamp("calendar_sync_em", { withTimezone: true }), // id do evento no Outlook do closer (Graph), pra permitir cancelar/atualizar depois
     notas: text("notas"),
     transcript: text("transcript"),
     resumoTranscript: text("resumo_transcript"),

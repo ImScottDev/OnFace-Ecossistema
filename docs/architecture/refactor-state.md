@@ -977,6 +977,40 @@ aquisição existente E cria pessoa nova. Uma pessoa ficou para trás e o teste 
 reconciliação a pegou como "apareceu do nada". A limpeza passou a decidir a
 pessoa por contagem própria, com rede de segurança para pessoa sem proveniência.
 
+### CP4 — CalendarProvider: reagendar chega na agenda
+
+O gap era conhecido e foi confirmado no código antes de escrever: existia criar
+(`criarEventoOutlookParaReuniao`) e existia ler de volta (`syncOutlookReunioes`).
+**Não existia atualizar** — o cliente Graph tinha create, get e delete e mais
+nada. `PATCH /reunioes/:id` mudava a data no ONFACE e só avisava o provedor
+quando o status virava "cancelada": reagendar deixava o convite antigo de pé na
+agenda do cliente, sem ninguém ser avisado.
+
+| Peça | Estado |
+|---|---|
+| `CalendarProvider` | criado — create, update e cancel, com falha classificada |
+| Adapter Microsoft | **reusa** o cliente Graph existente; ganhou o `updateOutlookEvent` que faltava |
+| Adapter Google | implementado (REST puro, sem SDK). **Sem credencial neste ambiente** |
+| Rota | `PATCH /reunioes/:id` chama o provider ao mudar data, título ou duração |
+| Falha | vira `calendar_sync_status` com o erro, e a tela recebe frase em português |
+| Reprocessamento | job `calendar-sync-retry` a cada 10 min |
+
+**Cinco caminhos chamavam o Graph direto, não dois.** A trava encontrou
+`reunioes.ts`, `leads.ts`, `agenda.ts`, `callface.ts` e o helper
+`outlook-evento.ts` — este último **sem nenhum chamador**, o defeito recorrente
+de peça pronta sem caller. O helper passou a delegar ao provider; os quatro
+restantes continuam e são cobertos pela ponte.
+
+**A ponte que impede convite duplicado.** As rotas antigas gravam só
+`outlook_event_id`. O provider lê
+`COALESCE(calendar_event_id, outlook_event_id)`: sem isso, reagendar uma reunião
+criada por elas acharia que nunca houve evento externo e criaria um SEGUNDO
+convite na agenda do cliente.
+
+Bloqueio real registrado: **Google Calendar não tem credencial de aplicação**
+(`GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`). O adapter existe inteiro e
+responde `nao_configurado`; o CRM segue funcionando.
+
 ### Auditoria de CS Health (histórico da decisão)
 
 Menor do que o gap analysis inicial dizia:

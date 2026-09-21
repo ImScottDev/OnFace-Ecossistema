@@ -372,6 +372,46 @@ export async function createOutlookEvent(params: CriarEventoParams): Promise<Eve
   };
 }
 
+/**
+ * Atualiza um evento existente no Outlook — a peça que faltava.
+ *
+ * O cliente tinha create, get e delete. Sem update, reagendar uma reunião no
+ * ONFACE mudava a data aqui e deixava o convite antigo de pé na agenda do
+ * cliente, sem ninguém ser avisado.
+ *
+ * PATCH parcial de propósito: mandar o corpo inteiro sobrescreveria campos que
+ * o usuário mexeu direto no Outlook (anotação, participante extra).
+ */
+export async function updateOutlookEvent(params: {
+  contaId: string;
+  eventId: string;
+  titulo?: string | null;
+  inicioISO?: string | null;
+  fimISO?: string | null;
+  corpo?: string | null;
+}): Promise<{ atualizado: boolean; naoExiste?: boolean }> {
+  const accessToken = await getValidAccessToken(params.contaId);
+  const body: Record<string, unknown> = {};
+  if (params.titulo) body.subject = params.titulo;
+  if (params.inicioISO) body.start = { dateTime: params.inicioISO, timeZone: "UTC" };
+  if (params.fimISO) body.end = { dateTime: params.fimISO, timeZone: "UTC" };
+  if (params.corpo) body.body = { contentType: "text", content: params.corpo };
+  if (Object.keys(body).length === 0) return { atualizado: false };
+
+  const res = await fetch(`https://graph.microsoft.com/v1.0/me/events/${params.eventId}`, {
+    method: "PATCH",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  // 404 é evento apagado do lado do Outlook: não é erro de integração, é
+  // estado. Quem chama decide se recria.
+  if (res.status === 404) return { atualizado: false, naoExiste: true };
+  if (!res.ok) {
+    throw new Error(`Graph PATCH event ${params.eventId}: HTTP ${res.status} ${(await res.text()).slice(0, 200)}`);
+  }
+  return { atualizado: true };
+}
+
 export interface EventoOutlook {
   existe: boolean;
   cancelado: boolean;

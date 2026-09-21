@@ -2998,6 +2998,24 @@ const slaWorker = new Worker(
     // reavaliados contra o dado real, janelas de renovação abrem. Tudo
     // idempotente: rodar de hora em hora produz o mesmo estado que rodar
     // uma vez. Ver lib/cs/sweep.ts.
+    if (job.name === "calendar-sync-retry") {
+      // "Falha de sync é visível e reprocessável" (Módulo 09). Sem isto, uma
+      // falha de rede de ontem vira convite perdido para sempre.
+      try {
+        const { reprocessarSyncPendente } = await import("../lib/calendario/sincronizar");
+        const orgs = await db.execute<{ id: string }>(rawSql`SELECT id::text FROM organizacoes`);
+        for (const org of orgs) {
+          const r = await reprocessarSyncPendente(org.id);
+          if (r.tentadas > 0) {
+            console.log(`[calendar-sync] ${r.resolvidas} de ${r.tentadas} reunião(ões) ressincronizada(s)`);
+          }
+        }
+      } catch (e) {
+        console.error("[calendar-sync] erro:", e instanceof Error ? e.message : e);
+      }
+      return;
+    }
+
     if (job.name === "cs-sweep") {
       const { rodarSweepCsTodasOrgs } = await import("../lib/cs/sweep");
       const resultados = await rodarSweepCsTodasOrgs();
@@ -3875,7 +3893,7 @@ async function removerSchedulersObsoletos(queue: Queue, chavesAtuais: string[]):
 const SCHEDULERS_JOBS_AGENDADOS = [
   "sla-check", "sdr-followup-escalation", "ai-sdr-outreach", "ai-sdr-retry",
   "ai-sdr-meeting-confirmation", "stripe-sync", "reconcile-pagamentos", "expirar-propostas",
-  "rd-criativo-sync", "outlook-reuniao-sync", "follow-up-proposta", "cs-sweep",
+  "rd-criativo-sync", "outlook-reuniao-sync", "follow-up-proposta", "cs-sweep", "calendar-sync-retry",
   "alerta-renovacao", "reativar-lead-perdido", "check-whatsapp-connection", "snapshot-diario",
   "cadence-sweep", "event-outbox-sweep", "lembrete-reuniao-30min",
   "catalogo-stripe-sync",
@@ -3896,6 +3914,9 @@ async function setupScheduledJobs() {
   await scheduledQueue.upsertJobScheduler("outlook-reuniao-sync", { every: 15 * 60 * 1000 }, { name: "outlook-reuniao-sync" });
   await scheduledQueue.upsertJobScheduler("follow-up-proposta", { every: 60 * 60 * 1000 }, { name: "follow-up-proposta" });
   await scheduledQueue.upsertJobScheduler("cs-sweep", { every: 60 * 60 * 1000 }, { name: "cs-sweep" });
+  // A cada 10 min: falha de calendário é quase sempre transitória, e o
+  // convite atrasado perde valor rápido.
+  await scheduledQueue.upsertJobScheduler("calendar-sync-retry", { every: 10 * 60 * 1000 }, { name: "calendar-sync-retry" });
   await scheduledQueue.upsertJobScheduler("alerta-renovacao", { every: 24 * 60 * 60 * 1000 }, { name: "alerta-renovacao" });
   await scheduledQueue.upsertJobScheduler("reativar-lead-perdido", { every: 24 * 60 * 60 * 1000 }, { name: "reativar-lead-perdido" });
   await scheduledQueue.upsertJobScheduler("check-whatsapp-connection", { every: 5 * 60 * 1000 }, { name: "check-whatsapp-connection" });

@@ -47,60 +47,35 @@ export async function criarEventoOutlookParaReuniao(opts: {
   attendeeEmail?: string | null;
   /** Contexto pro log quando falhar (ex: "Onboarding", "NegocioDrawer"). */
   origem?: string;
+  /** Organização dona da reunião. */
+  organizacaoId?: string;
 }): Promise<ResultadoOutlook> {
-  const { reuniaoId, usuarioId, attendeeEmail, origem = "Reuniao" } = opts;
+  // DELEGA ao CalendarProvider (Módulo 09).
+  //
+  // Esta função foi escrita para deduplicar três call sites que chamavam o
+  // Graph direto, e terminou sem NENHUM chamador — o defeito recorrente de
+  // peça pronta sem caller. Em vez de apagá-la ou de manter uma quarta cópia
+  // da lógica, ela virou a ponte: quem a chamar entra no provider, que grava
+  // provider, event id e estado de sincronização.
+  const { criarNaAgenda } = await import("@/lib/calendario/sincronizar");
 
-  const [conta] = await db
-    .select({ id: emailContas.id })
-    .from(emailContas)
-    .where(and(
-      eq(emailContas.usuarioId, usuarioId),
-      eq(emailContas.tipo, "microsoft"),
-      eq(emailContas.syncStatus, "active"),
-    ))
-    .limit(1);
-
-  if (!conta) return { criado: false, motivo: "sem_outlook" };
-
-  try {
-    const [reuniao] = await db
-      .select({ titulo: reunioes.titulo, data: reunioes.data, duracao: reunioes.duracao, notas: reunioes.notas })
-      .from(reunioes)
-      .where(eq(reunioes.id, reuniaoId))
-      .limit(1);
-
-    if (!reuniao) return { criado: false, motivo: "erro_graph" };
-
-    const inicio = new Date(reuniao.data);
-    const fim = new Date(inicio.getTime() + (reuniao.duracao || 30) * 60000);
-    const attendee = attendeeEmail || null;
-
-    const evento = await createOutlookEvent({
-      contaId: conta.id,
-      titulo: reuniao.titulo,
-      inicioISO: inicio.toISOString(),
-      fimISO: fim.toISOString(),
-      attendeeEmail: attendee,
-      corpo: reuniao.notas || null,
-    });
-
-    await db
-      .update(reunioes)
-      .set({
-        link: evento.joinUrl || evento.webLink,
-        outlookEventId: evento.eventId,
-        participantes: attendee ? [attendee] : undefined,
-        updatedAt: new Date(),
-      })
-      .where(eq(reunioes.id, reuniaoId));
-
-    return { criado: true, motivo: attendee ? null : "lead_sem_email" };
-  } catch (e) {
-    const msg = String(e);
-    console.error(`[${origem}] falha ao criar evento no Outlook (usuário ${usuarioId}, reunião ${reuniaoId}):`, e);
-    return {
-      criado: false,
-      motivo: /401|invalid_grant|token|expirad/i.test(msg) ? "token_expirado" : "erro_graph",
-    };
+  let organizacaoId = opts.organizacaoId ?? null;
+  if (!organizacaoId) {
+    const [r] = await db.select({ organizacaoId: reunioes.organizacaoId })
+      .from(reunioes).where(eq(reunioes.id, opts.reuniaoId)).limit(1);
+    organizacaoId = r?.organizacaoId ?? null;
   }
+  if (!organizacaoId) return { criado: false, motivo: "erro_graph" };
+
+  const res = await criarNaAgenda(organizacaoId, opts.reuniaoId);
+  if (res.sincronizado) return { criado: true, motivo: opts.attendeeEmail ? null : "lead_sem_email" };
+
+  // Traduz o motivo do provider para o vocabulário que esta função já
+  // devolvia, para nenhum chamador quebrar.
+  const aviso = res.aviso ?? "";
+  const motivo: MotivoOutlook = /não tem calendário conectado/i.test(aviso) ? "sem_outlook"
+    : /expirou/i.test(aviso) ? "token_expirado"
+    : "erro_graph";
+  console.warn(`[${opts.origem ?? "Reuniao"}] evento não entrou na agenda (${motivo}): ${aviso}`);
+  return { criado: false, motivo };
 }
