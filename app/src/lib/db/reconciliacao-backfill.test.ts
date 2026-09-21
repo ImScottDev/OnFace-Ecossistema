@@ -114,11 +114,17 @@ test("fase 06: atribuição não foi inventada", async (t) => {
   // Todo touchpoint criado pelo backfill tem que ter pelo menos um sinal real
   // vindo do lead de origem. Linha de atribuição vazia é ruído que polui
   // relatório de campanha.
+  // A lista tem que cobrir TODOS os sinais que o backfill considera, senão o
+  // teste acusa touchpoint legítimo. Foi o que aconteceu na primeira versão:
+  // 87 linhas com utm_term e utm_content foram marcadas como vazias porque o
+  // teste só olhava oito dos treze campos.
   const vazios = await conta(sql`
     SELECT count(*) AS n FROM pontos_contato
     WHERE lead_id_legado IS NOT NULL
       AND coalesce(source,'') = '' AND coalesce(medium,'') = '' AND coalesce(campaign,'') = ''
-      AND coalesce(landing_page,'') = '' AND gclid IS NULL AND fbclid IS NULL
-      AND campaign_id IS NULL AND ad_id IS NULL`);
+      AND coalesce(term,'') = '' AND coalesce(content,'') = ''
+      AND coalesce(landing_page,'') = '' AND coalesce(referrer,'') = ''
+      AND gclid IS NULL AND fbclid IS NULL AND fbc IS NULL AND fbp IS NULL
+      AND campaign_id IS NULL AND adset_id IS NULL AND ad_id IS NULL`);
   assert.equal(vazios, 0, `${vazios} touchpoints sem nenhum sinal de atribuição`);
 });
