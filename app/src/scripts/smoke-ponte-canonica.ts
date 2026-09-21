@@ -54,16 +54,30 @@ async function main() {
   }
   console.log(`\n  ${tudoOk ? "SMOKE PASSOU: entrada externa chega inteira ao modelo canônico e não duplica na reentrega" : "SMOKE FALHOU"}\n`);
 
-  // Limpeza: o banco é o de trabalho, não pode ficar com lixo de teste.
-  await db.execute(sql`DELETE FROM event_outbox WHERE idempotency_key = ${entrada.idempotencyKey}`);
-  await db.execute(sql`DELETE FROM domain_events WHERE idempotency_key = ${entrada.idempotencyKey}`);
-  await db.execute(sql`DELETE FROM pontos_contato WHERE aquisicao_id = ${a.aquisicaoId}::uuid`);
-  await db.execute(sql`DELETE FROM backfill_provenance WHERE id_canonico = ${a.aquisicaoId}::uuid`);
-  await db.execute(sql`DELETE FROM aquisicoes WHERE id = ${a.aquisicaoId}::uuid`);
-  await db.execute(sql`DELETE FROM pessoa_empresa_vinculos WHERE pessoa_id = ${a.pessoaId}::uuid`);
+  // LIMPEZA — só apaga o que ESTE smoke criou.
+  //
+  // A primeira versão apagava por id sem checar origem. Quando a entrada
+  // reusou uma aquisição já existente (criada=false), a limpeza apagou uma
+  // aquisição REAL: sobraram 3.988 de 3.989 e o teste de reconciliação da
+  // fase 06 pegou. Reparado rodando o backfill idempotente.
+  //
+  // A regra agora: se não foi criado aqui, não se apaga. E a identificação é
+  // pela marca única do smoke, nunca por id solto.
+  if (a.criada && a.aquisicaoId) {
+    await db.execute(sql`DELETE FROM event_outbox WHERE idempotency_key = ${entrada.idempotencyKey}`);
+    await db.execute(sql`DELETE FROM domain_events WHERE idempotency_key = ${entrada.idempotencyKey}`);
+    await db.execute(sql`DELETE FROM pontos_contato WHERE aquisicao_id = ${a.aquisicaoId}::uuid`);
+    await db.execute(sql`DELETE FROM backfill_provenance WHERE id_canonico = ${a.aquisicaoId}::uuid AND fase = 'runtime'`);
+    await db.execute(sql`DELETE FROM aquisicoes WHERE id = ${a.aquisicaoId}::uuid`);
+  } else {
+    console.log("  aviso: a entrada reusou registro existente; NADA foi apagado.");
+  }
+  // Pessoa e empresa são identificadas pela marca do smoke, que é única por
+  // execução: não há como casar com dado real.
+  await db.execute(sql`DELETE FROM pessoa_empresa_vinculos WHERE pessoa_id IN (SELECT id FROM pessoas WHERE email = ${email})`);
   await db.execute(sql`DELETE FROM pessoas WHERE email = ${email}`);
-  await db.execute(sql`DELETE FROM empresas WHERE website = 'empresa-de-teste-smoke.com.br'`);
-  console.log("  banco limpo.\n");
+  await db.execute(sql`DELETE FROM empresas WHERE website = 'empresa-de-teste-smoke.com.br' AND nome = 'Empresa de Teste Smoke'`);
+  console.log("  banco limpo (só o que este smoke criou).\n");
   process.exit(tudoOk ? 0 : 1);
 }
 main().catch((e) => { console.error(e); process.exit(1); });
