@@ -1718,3 +1718,29 @@ operação. 43 propostas em rascunho destravadas, 125 negócios abertos liberado
 avançar de etapa, 467 propostas e 125 cards passando a mostrar o produto.
 
 **Validação:** tsc limpo, **262 testes, 0 falhas**, build exit 0.
+
+---
+
+## 2026-09-21 — O construtor de proposta abre sem catálogo
+
+Rodei `aceite-vendas.ts`, que exercita os critérios de aceite do Módulo 01 contra o banco
+real. Ele passa doze verificações e **interrompe no passo do catálogo**.
+
+A causa não é o refactor: `catalogo_precos` tem **0 linhas** e nenhum dos 220
+`servicos_catalogo` tem `origem_catalogo = 'oficial_stripe'`. `GET /api/catalogo-oficial`
+faz `INNER JOIN` com a primeira e filtra pela segunda, então devolve zero itens.
+`NovaProposta.tsx`, a tela de montar proposta, abre com o catálogo vazio.
+
+Os itens de proposta continuam sendo criados (105 em setembro, 75 deles ligados a
+serviço de catálogo), então existe outro caminho em uso — o catálogo legado, não o
+oficial.
+
+**Não é defeito de código nem bloqueio externo.** O importador existe, lê um snapshot
+commitado no repo em 02/09 (21 produtos, 213 preços, ids reais do Stripe) e não chama o
+Stripe. Em `--dry-run`: criaria 17 produtos e 213 preços, atualizaria 4, sem tocar nas
+220 linhas do catálogo legado.
+
+**Não executei.** Isso grava preço comercial, e decidir que aquele snapshot é a tabela
+vigente é decisão do Kauã, não conclusão derivável do código. Fica nomeado no estado com
+o comando pronto, e a consequência dita: enquanto não rodar, os critérios de aceite do
+Módulo 01 a partir daquele passo não são verificáveis.

@@ -589,6 +589,41 @@ follow-up de proposta parada, renovação de contrato e recontato de negócio pe
 A organização já estava disponível e validada no escopo dos três. Foram expostos pelo
 `.notNull()` adicionado ao Drizzle, não por teste.
 
+## O construtor de proposta está sem catálogo, e é passo de operação
+
+Medido ao rodar `aceite-vendas.ts`, que interrompe no passo do catálogo.
+
+`GET /api/catalogo-oficial` faz `INNER JOIN` com `catalogo_precos` e filtra
+`origem_catalogo = 'oficial_stripe'`. No banco carregado com produção:
+
+| O quê | Quantidade |
+|---|---|
+| `catalogo_precos` | **0** |
+| `servicos_catalogo` com `origem_catalogo = 'oficial_stripe'` | **0** |
+| `servicos_catalogo` com `origem_catalogo = 'legado'` | 220 (10 ativos) |
+| itens que o construtor devolve | **0** |
+
+`NovaProposta.tsx` é a tela que consome esse endpoint. Ela abre com o catálogo vazio, e
+não há o que escolher.
+
+**Não é defeito de código e não é bloqueio externo.** O importador existe
+(`importar-catalogo-oficial.ts`), lê um snapshot commitado no repo em 02/09 (21 produtos,
+213 preços, com os ids reais do Stripe) e **não chama o Stripe**. Rodei em `--dry-run`:
+criaria 17 produtos e 213 preços, atualizaria 4, sem tocar nas 220 linhas do catálogo
+legado.
+
+**Não executei, e o motivo é deliberado:** isso grava PREÇO COMERCIAL. Decidir que
+aquele snapshot de 02/09 é a tabela de preços vigente é decisão do Kauã, não conclusão
+derivável do código. O comando está pronto:
+
+```bash
+pnpm tsx --env-file=.env src/scripts/importar-catalogo-oficial.ts --dry-run   # confere
+pnpm tsx --env-file=.env src/scripts/importar-catalogo-oficial.ts            # aplica
+```
+
+Enquanto não roda, `aceite-vendas.ts` interrompe nesse passo e os critérios de aceite do
+Módulo 01 a partir dele não são verificáveis. Os passos anteriores passam.
+
 ## Antes do deploy: a verificação que substitui o palpite
 
 As 23 migrations do refactor (0056 a 0080) nunca rodaram em produção, e a 0056 aperta
