@@ -32,6 +32,17 @@ export interface CreateCheckoutParams {
   itens: CheckoutItem[];
   /** fallback quando não há itens recorrentes detalhados */
   totalRecorrente?: number;
+  /**
+   * Chave de idempotência do envio da proposta. Evita que duplo clique/retry
+   * crie duas Checkout Sessions (e, quando ainda não há vínculo, dois Customers).
+   */
+  idempotencyKey?: string;
+  /**
+   * Customer canônico já vinculado ao lead/empresa no CRM. Quando existe, ele
+   * TEM precedência sobre customerEmail: passar só o e-mail faz o Checkout
+   * criar outro Customer e fragmenta assinaturas, faturas e meios de pagamento.
+   */
+  customerId?: string | null;
   customerEmail?: string | null;
   successUrl: string;
   cancelUrl: string;
@@ -121,7 +132,10 @@ export async function createSubscriptionCheckout(params: CreateCheckoutParams): 
   form.append("mode", "subscription");
   form.append("success_url", params.successUrl);
   form.append("cancel_url", params.cancelUrl);
-  if (params.customerEmail) form.append("customer_email", params.customerEmail);
+  // `customer` e `customer_email` são mutuamente exclusivos. Reutilizar o
+  // Customer é obrigatório para toda venda posterior do mesmo cliente.
+  if (params.customerId) form.append("customer", params.customerId);
+  else if (params.customerEmail) form.append("customer_email", params.customerEmail);
   // payment_method_collection padrão; cartão habilitado pela conta Stripe.
 
   // Coleta obrigatória de dados de faturamento — sem isso a NF sai incompleta
@@ -180,6 +194,7 @@ export async function createSubscriptionCheckout(params: CreateCheckoutParams): 
     headers: {
       Authorization: `Bearer ${key}`,
       "Content-Type": "application/x-www-form-urlencoded",
+      ...(params.idempotencyKey ? { "Idempotency-Key": params.idempotencyKey } : {}),
     },
     body: form.toString(),
   });
@@ -214,10 +229,14 @@ export async function createOneTimeCheckout(params: CreateCheckoutParams): Promi
   form.append("mode", "payment");
   form.append("success_url", params.successUrl);
   form.append("cancel_url", params.cancelUrl);
-  if (params.customerEmail) form.append("customer_email", params.customerEmail);
+  // Também vale para cobranças avulsas: customer_creation=always com apenas
+  // e-mail cria um Customer novo; com `customer` ela fica no cadastro canônico.
+  if (params.customerId) form.append("customer", params.customerId);
+  else if (params.customerEmail) form.append("customer_email", params.customerEmail);
   // mode=payment não cria Customer sozinho (diferente de subscription) — sem isso
   // não teria stripeCustomerId pra ligar no lead nem pra gravar CPF/CNPJ da NF.
-  form.append("customer_creation", "always");
+  // A Stripe não aceita customer_creation junto com um Customer explícito.
+  if (!params.customerId) form.append("customer_creation", "always");
 
   appendNested(form, "phone_number_collection", { enabled: true });
   form.append("billing_address_collection", "required");
@@ -262,6 +281,7 @@ export async function createOneTimeCheckout(params: CreateCheckoutParams): Promi
     headers: {
       Authorization: `Bearer ${key}`,
       "Content-Type": "application/x-www-form-urlencoded",
+      ...(params.idempotencyKey ? { "Idempotency-Key": params.idempotencyKey } : {}),
     },
     body: form.toString(),
   });

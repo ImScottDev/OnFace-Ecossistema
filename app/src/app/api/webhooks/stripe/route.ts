@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
-import { syncStripe } from "@/lib/integrations/stripe-sync";
 import { db } from "@/lib/db";
-import { propostas, leads, empresas, contratos, notificacoes, usuarios } from "@/lib/db/schema";
+import { propostas, leads, empresas, contratos, notificacoes, usuarios, stripeWebhookEvents } from "@/lib/db/schema";
 import { eq, and, inArray, isNull, or } from "drizzle-orm";
 import { marcarPropostaAceita } from "@/lib/crm/aceitar-proposta";
+import { stripeWebhookEventsQueue } from "@/lib/queue";
 
 /**
  * Pagamento CONFIRMADO (payment_status === "paid"): acha a proposta pela metadata
@@ -115,6 +115,9 @@ async function handlePaymentConfirmed(session: Record<string, unknown>): Promise
  * (`user_cpf`/`user_cnpj`, mesmo padrão já usado nos clientes antigos).
  */
 async function gravarDocumentoFiscalNoCustomer(session: Record<string, unknown>, customerId: string): Promise<string> {
+  // A auditoria e o lote CRM-only não podem alterar Stripe. Metadata writeback
+  // passa a ser opt-in explícito no ambiente, depois de aprovação do plano.
+  if (process.env.STRIPE_WRITEBACK_ENABLED !== "true") return "writeback Stripe desabilitado";
   const customFields = (session.custom_fields as Array<{ key?: string; text?: { value?: string } }> | undefined) || [];
   const campo = customFields.find((f) => f.key === "cpfcnpj");
   const valor = campo?.text?.value;
@@ -292,9 +295,16 @@ const RELEVANT = new Set([
   "invoice.paid",
   "invoice.payment_failed",
   "invoice.finalized",
+  "invoice.updated",
+  "invoice.voided",
+  "invoice.marked_uncollectible",
   "customer.subscription.created",
   "customer.subscription.updated",
   "customer.subscription.deleted",
+  "customer.subscription.paused",
+  "customer.subscription.resumed",
+  "customer.subscription.pending_update_applied",
+  "customer.subscription.pending_update_expired",
   "checkout.session.completed",
   "checkout.session.async_payment_succeeded",
   "checkout.session.async_payment_failed",
@@ -342,7 +352,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "invalid signature" }, { status: 400 });
   }
 
-  let event: { type?: string; id?: string };
+  let event: { type?: string; id?: string; data?: { object?: Record<string, unknown> } };
   try {
     event = JSON.parse(payload);
   } catch {
@@ -353,6 +363,26 @@ export async function POST(request: NextRequest) {
   if (!RELEVANT.has(type)) {
     return NextResponse.json({ received: true, ignored: type });
   }
+
+  if (!event.id) return NextResponse.json({ error: "stripe event missing id" }, { status: 400 });
+
+  // Durable inbox before any side effect. A Stripe retry therefore cannot make
+  // a second payment acceptance/notification merely because HTTP timed out.
+  const [stored] = await db.insert(stripeWebhookEvents).values({
+    stripeEventId: event.id,
+    eventType: type,
+    payload: event as Record<string, unknown>,
+  }).onConflictDoNothing().returning({ id: stripeWebhookEvents.id });
+
+  try {
+    await stripeWebhookEventsQueue.add("stripe-event", { stripeEventId: event.id }, { jobId: `stripe-event:${event.id}` });
+  } catch (error) {
+    // Keep the durable inbox pending and request a Stripe retry. The retry will
+    // enqueue the same deterministic job ID; no financial action was taken yet.
+    console.error("[StripeWebhook] evento salvo, mas fila indisponível:", error);
+    return NextResponse.json({ error: "event stored; queue unavailable" }, { status: 503 });
+  }
+  if (!stored) return NextResponse.json({ received: true, type, duplicate: true });
 
   // checkout.session.completed dispara quando o cliente TERMINA o checkout, não quando
   // ele PAGA — pra métodos assíncronos (boleto), a sessão fica "complete" com
@@ -397,14 +427,5 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // Sync incremental (idempotente: upsert por stripe id). Reconcilia assinaturas/faturas/churn.
-  try {
-    const r = await syncStripe();
-    console.log(`[StripeWebhook] ${type} -> sync: ${r.subs} subs, ${r.faturas} faturas, ${r.churns} churns`);
-    return NextResponse.json({ received: true, type, synced: r });
-  } catch (e) {
-    console.error("[StripeWebhook] erro no sync:", e);
-    // 200 mesmo assim p/ o Stripe não ficar reenviando; o polling de 30min cobre.
-    return NextResponse.json({ received: true, type, syncError: String(e) });
-  }
+  return NextResponse.json({ received: true, type, queued: true });
 }

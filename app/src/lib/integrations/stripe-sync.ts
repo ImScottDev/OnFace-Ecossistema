@@ -24,6 +24,7 @@
 import { db } from "../db";
 import { assinaturas, contratos, faturas, leads, mrrMovimentos, organizacoes, notificacoes, usuarios } from "../db/schema";
 import { eq, sql, and, inArray } from "drizzle-orm";
+import { resolveBillingCustomer, type BillingResolution } from "./billing-identity";
 
 const STRIPE_API = "https://api.stripe.com/v1";
 
@@ -89,7 +90,7 @@ function mrrOf(sub: StripeSubscription): number {
 
 interface StripeSubscription {
   id: string;
-  customer: string | { id: string; email?: string | null; name?: string | null };
+  customer: string | { id: string; email?: string | null; name?: string | null; metadata?: Record<string, string> | null };
   status: string;
   start_date?: number;
   canceled_at?: number | null;
@@ -187,16 +188,18 @@ export async function syncStripe(): Promise<{ subs: number; faturas: number; chu
     .select({ id: leads.id, stripeCustomerId: leads.stripeCustomerId, empresaId: leads.empresaId })
     .from(leads)
     .where(sql`${leads.stripeCustomerId} IS NOT NULL`);
-  const leadByCustomer = new Map(leadRows.map((l) => [l.stripeCustomerId as string, l]));
-
-  // Fallback por e-mail: cliente Stripe cujo customer_id nunca foi vinculado ao
-  // lead (2ª compra com customer novo, importação antiga, etc.) — sem isso a
-  // assinatura fica invisível pro sync pra sempre (achado real 04/08, 47 casos).
-  const leadEmailRows = await db
-    .select({ id: leads.id, email: leads.email, stripeCustomerId: leads.stripeCustomerId, empresaId: leads.empresaId })
-    .from(leads)
-    .where(sql`${leads.email} IS NOT NULL`);
-  const leadByEmail = new Map(leadEmailRows.map((l) => [(l.email as string).toLowerCase(), l]));
+  // Um customer pode estar errado em mais de um lead legado. Nunca use Map
+  // simples aqui: ele escolheria silenciosamente a última linha retornada.
+  const customerLeadCandidates = new Map<string, typeof leadRows>();
+  for (const row of leadRows) {
+    const id = row.stripeCustomerId as string;
+    customerLeadCandidates.set(id, [...(customerLeadCandidates.get(id) || []), row]);
+  }
+  const leadByCustomer = new Map<string, (typeof leadRows)[number]>();
+  for (const [customerId, candidates] of customerLeadCandidates) {
+    if (candidates.length === 1) leadByCustomer.set(customerId, candidates[0]);
+  }
+  const resolutionCache = new Map<string, BillingResolution>();
 
   // ── FASE 2: WRITE (transação única, serializada por advisory lock) ────────
 
@@ -215,16 +218,29 @@ export async function syncStripe(): Promise<{ subs: number; faturas: number; chu
       let lead = leadByCustomer.get(sCustId);
       let precisaVincularCustomerId = false;
       if (!lead) {
-        const email = custEmail(s.customer);
-        if (email) {
-          lead = leadByEmail.get(email.toLowerCase());
-          if (lead && !lead.stripeCustomerId) precisaVincularCustomerId = true;
+        const customer = typeof s.customer === "string"
+          ? { id: s.customer }
+          : { id: s.customer.id, email: s.customer.email, metadata: s.customer.metadata };
+        let resolution = resolutionCache.get(sCustId);
+        if (!resolution) {
+          resolution = await resolveBillingCustomer(org.id, customer);
+          resolutionCache.set(sCustId, resolution);
+        }
+        if (resolution.kind === "CONFIRMED" && resolution.leadId) {
+          lead = { id: resolution.leadId, empresaId: resolution.empresaId || null, stripeCustomerId: null };
+          // Alias, CRM metadata and CNPJ prove a durable customer link. E-mail
+          // único é intentionally read-only: it may mirror the subscription,
+          // but cannot mutate the CRM relationship by itself.
+          precisaVincularCustomerId = resolution.source !== "UNIQUE_EMAIL";
         }
       }
       if (lead && precisaVincularCustomerId) {
         await tx.update(leads).set({ stripeCustomerId: sCustId, updatedAt: sql`updated_at` }).where(eq(leads.id, lead.id));
-        leadByCustomer.set(sCustId, lead); // próxima assinatura do mesmo customer já acha direto
       }
+      // O mapa é só deste ciclo de reconciliação. Mesmo o fallback de e-mail
+      // único pode trazer suas invoices para o espelho sem criar um vínculo
+      // permanente em leads.stripe_customer_id.
+      if (lead) leadByCustomer.set(sCustId, lead);
       const mrr = mrrOf(s);
       const canceladaEm = s.canceled_at ? new Date(s.canceled_at * 1000) : null;
       const motivo = motivoCancelamento(s);
