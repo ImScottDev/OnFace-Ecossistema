@@ -95,10 +95,10 @@ function baseAberta(f: FiltrosLoop) {
 
 const SELECAO = sql`
     SELECT o.id::text AS oportunidade_id, o.negocio_id_legado::text AS negocio_id,
-           coalesce(n.titulo, e.nome, l.empresa, l.nome, 'Oportunidade') AS titulo,
+           coalesce(NULLIF(trim(n.titulo), ''), NULLIF(trim(e.nome), ''), NULLIF(trim(l.empresa), ''), NULLIF(trim(l.nome), ''), 'Oportunidade') AS titulo,
            -- 284 das 527 abertas não têm empresa canônica; sem cair no lead a
            -- fila entregaria linha sem nome, e linha sem nome não é acionável.
-           coalesce(e.nome, l.empresa, l.nome) AS empresa_nome, o.valor::text AS valor, n.etapa AS etapa,
+           coalesce(NULLIF(trim(e.nome), ''), NULLIF(trim(l.empresa), ''), NULLIF(trim(l.nome), '')) AS empresa_nome, o.valor::text AS valor, n.etapa AS etapa,
            o.responsavel_id::text AS responsavel_id, u.nome AS responsavel_nome`;
 
 export async function filaDeLoops(f: FiltrosLoop): Promise<ItemLoop[]> {

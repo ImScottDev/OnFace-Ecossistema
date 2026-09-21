@@ -133,7 +133,7 @@ export function PreVendas({ dados, aba, filtro, acoes, rotaBase = "" }: {
 
             O que era navegação virou informação — o resumo continua dizendo
             quantos há em cada situação, sem esconder nenhuma. */}
-        <div className="ov-resumo-inline" aria-label="Resumo da operação">
+        <div className="ds-resumo-faixa" aria-label="Resumo da operação">
           <span><strong>{dados.resumo.ativos}</strong> ativos</span>
           <span><strong>{dados.resumo.nutricao}</strong> em nutrição</span>
           <span><strong>{dados.resumo.desqualificados}</strong> desqualificados</span>

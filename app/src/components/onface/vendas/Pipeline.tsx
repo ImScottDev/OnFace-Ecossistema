@@ -147,7 +147,7 @@ export function Pipeline({ dados, filtro, loop = false, loops = null, selecaoIni
 
             O que era navegação virou informação — o resumo continua dizendo
             quanto há em cada desfecho, sem esconder nenhum. */}
-        <div className="ov-resumo-inline" aria-label="Resumo do funil">
+        <div className="ds-resumo-faixa" aria-label="Resumo do funil">
           <span><strong>{dados.resumo.abertas}</strong> abertas</span>
           <span><strong>{dados.resumo.ganhas}</strong> ganhas</span>
           <span><strong>{dados.resumo.perdidas}</strong> perdidas</span>
@@ -157,12 +157,13 @@ export function Pipeline({ dados, filtro, loop = false, loops = null, selecaoIni
           {dados.resumo.semProximaAcao > 0 ? (
             <button
               type="button"
-              className="ov-resumo-loop"
+              className="ds-grid-resumo-sinal"
               data-ativo={loop}
               aria-pressed={loop}
               onClick={() => navegar({ loop: loop ? null : "sem-proxima-acao" })}
             >
-              <strong>{dados.resumo.semProximaAcao}</strong> sem próxima ação
+              <span>{dados.resumo.semProximaAcao} sem próxima ação</span>
+              <small>{loop ? "mostrando só estas" : "clique para ver só estas"}</small>
             </button>
           ) : null}
         </div>

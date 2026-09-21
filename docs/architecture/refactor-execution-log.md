@@ -2342,3 +2342,28 @@ confere que some.
 **Validação:** tsc limpo, **300 testes 0 falhas**, build exit 0, **29/29
 smokes**, e QA das 19 rotas do módulo contra build de produção: todas 200, com
 o único 307 sendo o redirect documentado de `/negocios` para `/pipeline`.
+
+## 2026-09-21 — CP14: auditoria das portas, e o SPEC que não existe
+
+Duas descobertas antes do trabalho.
+
+**O `ONFACE-ARCHITECTURE-SPEC.md` não existe.** O `refactor-state.md` o citava
+como fonte normativa do TO-BE; ele não está no repositório nem no vault. A ordem
+vigente é a do HUB do ONFACE no vault. Drift corrigido no cabeçalho do estado.
+
+**O menu não está errado.** A suspeita de que apontar para `/onface-preview/*`
+fosse defeito não se sustentou: o HUB registra que `/onface-preview` **é** o
+produto e `(crm2)` é onde a tela mora. Cinco dessas rotas são espelhos com par
+oficial; duas (`atividades`, `visao-geral`) são a implementação real. Verificar
+antes evitou "consertar" na direção errada.
+
+**O defeito real era um bump.** `rd-criativo` preenchia UTM e resetava
+`updated_at` junto. Como o board de Pré-vendas ordena por esse campo, rodar a
+rotina jogaria 2.006 leads parados para o topo. É a terceira aparição desse
+defeito no projeto.
+
+A trava criada não proíbe bumpar, exige justificativa: `callface.ts` (ligação
+atendida) e `stripe-sync.ts` (muda status junto) estão na lista e continuam
+bumpando, porque neles é fato real.
+
+**Validação:** tsc limpo, **310 testes 0 falhas**, **29/29 smokes**.

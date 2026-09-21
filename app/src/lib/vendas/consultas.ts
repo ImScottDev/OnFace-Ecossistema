@@ -1049,7 +1049,13 @@ export async function empresa360(organizacaoId: string, empresaId: string): Prom
 
 function iniciais(nome: string | null): string | null {
   if (!nome) return null;
-  return nome.split(" ").filter(Boolean).slice(0, 2).map((p) => p[0]).join("").toUpperCase();
+  /* Só pedaços que COMEÇAM com letra viram inicial. A versão anterior pegava o
+     primeiro caractere das duas primeiras palavras, fosse ele qual fosse:
+     "Growth (Mídia Paga)" saía como "G(" no avatar dos cartões de Pré-vendas.
+     Parêntese, hífen e marcador de lista são comuns em nome de fila e de time. */
+  const partes = nome.split(/\s+/).filter((p) => /^\p{L}/u.test(p));
+  if (partes.length === 0) return null;
+  return partes.slice(0, 2).map((p) => p[0]).join("").toUpperCase();
 }
 
 /* ── Detalhe do Lead (Bloco 01 §23) ────────────────────────────────────── */

@@ -68,7 +68,10 @@ export async function boardDeOportunidades(
         AND (${filtros.familia ?? null}::text IS NULL OR o.service_family = ${filtros.familia ?? null})
         AND (${filtros.motion ?? null}::text IS NULL OR o.commercial_motion = ${filtros.motion ?? null})
         AND (${busca}::text IS NULL OR lower(COALESCE(o.titulo,'')) LIKE ${busca}
-             OR lower(COALESCE(e.nome, '')) LIKE ${busca})
+             OR lower(COALESCE(e.nome, '')) LIKE ${busca}
+             -- Buscar pelo nome que o cartão EXIBE: sem isto, procurar a
+             -- empresa que está escrita no cartão não acha nada.
+             OR lower(COALESCE(l.empresa, l.nome, '')) LIKE ${busca})
         AND (${filtros.semProximaAcao ? true : null}::boolean IS NULL
              OR NOT EXISTS (SELECT 1 FROM negocios nx
                              WHERE nx.id = o.negocio_id_legado
@@ -81,7 +84,15 @@ export async function boardDeOportunidades(
   const linhas = await db.execute<Record<string, unknown>>(sql`
     WITH base AS (
       SELECT o.id::text AS oportunidade_id, o.negocio_id_legado::text AS negocio_id,
-             e.nome AS empresa, o.empresa_id::text, o.titulo, o.service_family AS familia,
+             -- NULLIF antes do COALESCE: a coluna empresa do lead guarda string VAZIA,
+             -- não NULL, e COALESCE não pula vazio. Sem isso um cartão com
+             -- lead sem empresa continua anônimo.
+             -- 284 das 527 oportunidades abertas não têm empresa canônica, e
+             -- TODAS as 284 têm nome pelo lead. Sem o fallback o board mostra
+             -- "Empresa não informada" em mais da metade dos cartões, e um
+             -- cartão que não se identifica não é acionável.
+             COALESCE(NULLIF(trim(e.nome), ''), NULLIF(trim(l.empresa), ''), NULLIF(trim(l.nome), '')) AS empresa,
+             o.empresa_id::text, o.titulo, o.service_family AS familia,
              o.etapa, o.valor::text, o.mrr::text,
              u.nome AS responsavel, o.responsavel_id::text,
              o.bundle_id::text,
@@ -91,6 +102,8 @@ export async function boardDeOportunidades(
              o.updated_at AS ordenacao
         FROM oportunidades o
         LEFT JOIN empresas e ON e.id = o.empresa_id
+        LEFT JOIN negocios nb ON nb.id = o.negocio_id_legado
+        LEFT JOIN leads l ON l.id = nb.lead_id
         LEFT JOIN usuarios u ON u.id = o.responsavel_id
        WHERE o.organizacao_id = ${organizacaoId}::uuid
          AND (${listaEtapas}::text[] IS NULL OR o.etapa = ANY(${listaEtapas}::text[]))
@@ -128,6 +141,11 @@ export async function boardDeOportunidades(
     SELECT o.etapa, count(*)::int AS n, COALESCE(SUM(o.valor), 0)::text AS valor
       FROM oportunidades o
       LEFT JOIN empresas e ON e.id = o.empresa_id
+      -- Os MESMOS joins da query de cartoes: as condicoes sao compartilhadas
+      -- e referenciam o lead. Sem este join aqui, a busca derruba os totais com
+      -- "missing FROM-clause entry for table l", e o tsc não pega.
+      LEFT JOIN negocios nb ON nb.id = o.negocio_id_legado
+      LEFT JOIN leads l ON l.id = nb.lead_id
      WHERE o.organizacao_id = ${organizacaoId}::uuid
        AND (${listaEtapas}::text[] IS NULL OR o.etapa = ANY(${listaEtapas}::text[]))
        ${condicoes}

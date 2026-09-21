@@ -293,3 +293,88 @@
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-popover);
 }
+
+/* ── Coluna fechada (saída de funil) ─────────────────────────────────────
+   Ganho e Perdido são SAÍDA, não etapa de trabalho: ninguém arrasta um
+   negócio de volta de "Ganho". O `Quadro` deste DS resolve isso deixando as
+   duas fora das colunas; o Documento Mestre v0.13 (§02.2) pede que elas fiquem
+   na mesma linha, fechadas, para que o board seja um só.
+
+   As duas leituras concordam no essencial (saída não é etapa) e divergem no
+   lugar. Este padrão existe para a segunda: faixa estreita, título de pé,
+   números empilhados. Sem ele, o que acontece é o que aconteceu em 21/09 na
+   tela de Vendas: a contagem continua horizontal dentro de uma faixa de 56
+   unidades e vaza por cima da coluna vizinha. */
+.ds-coluna-fechada > summary {
+  display: flex;
+  cursor: pointer;
+  list-style: none;
+}
+.ds-coluna-fechada > summary::-webkit-details-marker { display: none; }
+.ds-coluna-fechada > summary:focus-visible {
+  outline: 2px solid var(--onface-coral-border);
+  outline-offset: 2px;
+}
+
+.ds-coluna-fechada:not([open]) {
+  flex: 0 0 calc(52 * var(--onface-u));
+  align-self: flex-start;
+}
+.ds-coluna-fechada:not([open]) > summary {
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-12);
+  padding: var(--space-12) var(--space-4);
+}
+/* De pé, para caber sem truncar. */
+.ds-coluna-fechada:not([open]) > summary h2 {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  white-space: nowrap;
+  margin: 0;
+}
+/* A CORREÇÃO que faltava: na faixa estreita a contagem empilha e quebra.
+   Horizontal com `nowrap`, ela sai da coluna e cobre a vizinha. */
+.ds-coluna-fechada:not([open]) .ds-coluna-fechada-numeros {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  text-align: center;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+/* Aberta, volta a ser uma coluna comum. */
+.ds-coluna-fechada[open] { flex: 0 0 calc(262 * var(--onface-u)); }
+.ds-coluna-fechada[open] .ds-coluna-fechada-numeros {
+  display: inline-flex;
+  gap: var(--space-6);
+}
+
+/* ── Faixa de resumo do board ────────────────────────────────────────────
+   Os números que descrevem o board inteiro, acima dele. Existe porque as
+   telas de Vendas usavam uma classe `ov-resumo-inline` que NUNCA teve CSS:
+   os spans saíam colados e a faixa lia "527 abertas603 ganhas431 perdidas". */
+.ds-resumo-faixa {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-4) var(--space-20);
+  color: var(--text-muted);
+  font-size: var(--text-md);
+}
+.ds-resumo-faixa > span {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-6);
+  white-space: nowrap;
+}
+.ds-resumo-faixa strong {
+  color: var(--text-strong);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--weight-semibold);
+}

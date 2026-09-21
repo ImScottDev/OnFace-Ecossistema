@@ -6,6 +6,21 @@
  * vieram os textos cortados da primeira leva de telas.
  */
 
+/* O Design System, de onde vêm as classes `ds-*` que estas telas usam.
+ *
+ * Sem isto elas ficavam sem estilo nenhum: o JSX escreve `ds-resumo-faixa` e
+ * `ds-grid-resumo-sinal`, mas as regras moram em `ds/quadro.css` e
+ * `ds/datagrid.css`, que só carregavam quando alguém importava `ds/Quadro.tsx`
+ * ou `ds/DataGrid.tsx` — e nenhuma tela importa. Resultado medido em 21/09 na
+ * /onface-preview/pre-vendas: a faixa de resumo lia "3702 ativos0 em
+ * nutrição0 desqualificados", com os números colados no texto seguinte.
+ *
+ * O comentário de `ds/quadro.css` registra que o MESMO bug já tinha acontecido
+ * antes com `ov-resumo-inline`. Foi corrigido escrevendo a regra no DS — e o
+ * DS continuou não chegando aqui. Esta é a metade que faltava. */
+@import "../ds/quadro.css";
+@import "../ds/datagrid.css";
+
 /* ── Cabeçalho do módulo ───────────────────────────────────────────────── */
 
 .ov-hero {
@@ -704,30 +719,9 @@
   .ov-pagina-colunas { grid-template-columns: minmax(0, 1fr); }
 }
 
-/* Colunas fechadas (Ganho, Perdido) moram na mesma linha do board, estreitas,
-   e abrem sob clique. Documento Mestre v0.13, §02.1: "Ganho e Perdido não são
-   outra tela — são o fim da mesma esteira." */
-details.ov-coluna[data-colapsada] > summary {
-  cursor: pointer;
-  list-style: none;
-}
-details.ov-coluna[data-colapsada] > summary::-webkit-details-marker { display: none; }
-details.ov-coluna[data-colapsada]:not([open]) {
-  flex: 0 0 calc(56 * var(--onface-u));
-  max-height: calc(220 * var(--onface-u));
-}
-details.ov-coluna[data-colapsada]:not([open]) > summary {
-  flex-direction: column;
-  gap: calc(10 * var(--onface-u));
-  height: 100%;
-  padding-block: calc(14 * var(--onface-u));
-}
-/* Na faixa estreita o título vira vertical: cabe sem truncar. */
-details.ov-coluna[data-colapsada]:not([open]) > summary h2 {
-  writing-mode: vertical-rl;
-  text-orientation: mixed;
-  white-space: nowrap;
-}
+/* As colunas fechadas usam `.ds-coluna-fechada`, do Design System
+   (ds/quadro.css). O CSS que morava aqui era ad-hoc e não tratava a contagem
+   na faixa estreita, que por isso vazava por cima da coluna vizinha. */
 
 /* Checklist de fechamento do drawer (v0.13, §02.4). */
 .ov-checklist { list-style: none; margin: 0; padding: 0; display: grid; gap: calc(6 * var(--onface-u)); }
@@ -743,25 +737,9 @@ details.ov-coluna[data-colapsada]:not([open]) > summary h2 {
 .ov-checklist li[data-estado="nao_se_aplica"] { opacity: 0.6; }
 .ov-checklist-detalhe { color: var(--text-muted, #6b7280); }
 
-/* O contador de loop aberto é um filtro, e precisa parecer um. */
-.ov-resumo-loop {
-  display: inline-flex;
-  align-items: baseline;
-  gap: calc(4 * var(--onface-u));
-  padding: calc(2 * var(--onface-u)) calc(8 * var(--onface-u));
-  border: 1px solid transparent;
-  border-radius: calc(999 * var(--onface-u));
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-}
-.ov-resumo-loop:hover { border-color: var(--border-default, #d8dbe0); }
-.ov-resumo-loop[data-ativo="true"] {
-  background: var(--alerta-suave, #fff4e5);
-  border-color: var(--alerta, #e08700);
-  color: var(--alerta-texto, #8a5200);
-}
+/* O contador de loop usa `.ds-grid-resumo-sinal`, do Design System: é
+   literalmente o padrão de "filtro que acende em coral quando ligado". O CSS
+   ad-hoc que estava aqui reinventava isso, pior. */
 
 /* Faixa da fila de loops: aparece só com o recorte ativo. */
 .ov-faixa-loops {

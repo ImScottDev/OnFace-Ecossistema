@@ -110,7 +110,16 @@ export async function enriquecerCriativosRd(diasAtras = 3): Promise<ResultadoEnr
             utmContent: criativo.anuncio.substring(0, 250),
             // não sobrescreve utm_term se já veio de outra fonte
             ...(criativo.conjunto ? { utmTerm: sql`COALESCE(NULLIF(${leads.utmTerm}, ''), ${criativo.conjunto.substring(0, 250)})` } : {}),
-            updatedAt: new Date(),
+            // NÃO toca `updatedAt`. Descobrir de qual anúncio o lead veio não é
+            // trabalho feito no lead: ninguém ligou, ninguém respondeu, nada
+            // mudou na negociação.
+            //
+            // O board de Pré-vendas ordena por `l.updated_at DESC` e o badge de
+            // tempo na etapa sai dele. Medido em 21/09: esta rotina alcança
+            // 2.253 leads, e 2.006 deles estão parados há mais de 14 dias — todos
+            // saltariam para o topo do board como se tivessem acabado de ser
+            // trabalhados. Já aconteceu antes, com 216 leads, e o board passou a
+            // mostrar "17min" em tudo.
           })
           .where(and(eq(leads.id, lead.id), or(isNull(leads.utmContent), eq(leads.utmContent, ""))));
         resultado.preenchidos++;

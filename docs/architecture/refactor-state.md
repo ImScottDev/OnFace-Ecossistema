@@ -2,7 +2,10 @@
 
 > Documento de continuidade. Sempre reflete o estado **atual**, não o histórico.
 > O histórico fica em `refactor-execution-log.md`.
-> Fonte normativa do TO-BE: `ONFACE-ARCHITECTURE-SPEC.md`.
+> Fonte normativa do TO-BE: **o arquivo `ONFACE-ARCHITECTURE-SPEC.md` não existe**
+> neste repositório nem no vault (conferido em 21/09). A ordem vigente é a do
+> HUB do ONFACE no vault (`02_PROJETOS/Callface/ONFACE/HUB.md`), que define as
+> frentes e a dívida arquitetural central.
 > Fonte factual do AS-IS: `docs/architecture/database-as-is/`.
 
 ## Fase atual
@@ -1373,6 +1376,46 @@ o caminho completo, senão o import relativo escapa.
 
 **Validação:** tsc limpo, **308 testes 0 falhas**, build exit 0, **29/29
 smokes**, `/pipeline?loop=sem-proxima-acao` conferida contra build de produção.
+
+### CP14 — Auditoria das portas de escrita, e um bump que envenenava o board
+
+A dívida central registrada no HUB é a porta de escrita: em 20/09 eram **39
+lugares escrevendo em `leads` com 3 passando pela regra**, 26 em `negocios` com
+1, e 13 em `tarefas` com 1.
+
+Medição de 21/09, pelo mesmo critério de arquivo:
+
+| entidade | arquivos que escrevem | em `lib/vendas` ou `lib/crm` |
+|---|---|---|
+| `leads` | 26 | 8 |
+| `negocios` | 12 | 4 |
+| `tarefas` | 11 | 4 |
+
+Os 18 arquivos que escrevem em `leads` por fora foram abertos um a um, e a
+maioria **não fura regra nenhuma**: `email.ts` e `whatsapp.ts` mexem em
+contadores de não lidas, `notas.ts` toca a data, `cleanup-seed` é limpeza de
+seed. Contador de leitura não é fato comercial.
+
+**O defeito real estava em outro lugar.** `lib/integrations/rd-criativo.ts`
+preenchia `utm_content`/`utm_term` a partir do RD Station e bumpava
+`updatedAt` junto. Só que `leads.updated_at` não é "quando a linha mudou": o
+board de Pré-vendas ordena por ele e o badge "Xd na etapa" sai dele. Na
+prática é **quando alguém trabalhou este lead**.
+
+Medido: a rotina alcança **2.253 leads**, e **2.006 deles estão parados há mais
+de 14 dias**. Rodar o enriquecimento jogaria os 2.006 para o topo do board de
+uma vez, como se tivessem acabado de ser trabalhados. O mesmo defeito já tinha
+acontecido com 216 leads, quando o board passou a mostrar "17min" em tudo.
+
+Os outros dois pontos que bumpam foram conferidos e estão **certos**:
+`callface.ts` bumpa depois de ligação atendida (atividade real, e o comentário
+já dizia isso) e `stripe-sync.ts` bumpa junto com mudança de status.
+
+A trava não proíbe bumpar: exige justificativa registrada. Integração nova que
+bumpe sem entrar na lista quebra o teste, e a lista obriga a escrever qual fato
+justifica.
+
+**Validação:** tsc limpo, **310 testes 0 falhas**, **29/29 smokes**.
 
 ### Auditoria de CS Health (histórico da decisão)
 

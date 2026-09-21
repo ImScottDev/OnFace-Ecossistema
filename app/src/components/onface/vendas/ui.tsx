@@ -5,6 +5,11 @@ import { AlertTriangle, Search, X } from "lucide-react";
 import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
+// Padrões do Design System usados por estas telas: coluna fechada do quadro,
+// faixa de resumo e o botão-sinal de filtro. Eles moram no DS de propósito —
+// as versões ad-hoc que viviam no `vendas.css` estavam quebradas na tela.
+import "@/components/onface/ds/quadro.css";
+import "@/components/onface/ds/datagrid.css";
 import "./vendas.css";
 
 /** Prefixo das rotas do módulo Vendas.
@@ -110,10 +115,13 @@ export function Coluna({ titulo, total, carregados, extra, colapsada, children }
   children: ReactNode;
 }) {
   const contagem = (
-    <span className="ov-coluna-contagem">
+    // `ds-coluna-fechada-numeros` é do Design System: na faixa estreita ele
+    // empilha os números. Sem essa classe a contagem fica horizontal dentro de
+    // 52 unidades e vaza por cima da coluna vizinha.
+    <span className="ov-coluna-contagem ds-coluna-fechada-numeros">
       {/* Quando a coluna tem mais do que a página carregou, a contagem diz
           as duas coisas: senão o número vira uma mentira discreta. */}
-      {carregados < total ? `${carregados} de ${total}` : total}
+      <span>{carregados < total ? `${carregados} de ${total}` : total}</span>
       {extra}
     </span>
   );
@@ -122,7 +130,7 @@ export function Coluna({ titulo, total, carregados, extra, colapsada, children }
   // e o leitor de tela vêm de graça.
   if (colapsada) {
     return (
-      <details className="ov-coluna" data-colapsada aria-label={titulo}>
+      <details className="ov-coluna ds-coluna-fechada" data-colapsada aria-label={titulo}>
         <summary className="ov-coluna-cabecalho">
           <h2>{titulo}</h2>
           {contagem}

@@ -45,11 +45,18 @@
 
 /* Faixa escura no topo da página (hero, filtros, cabeçalho de módulo).
  *
- * O padding inferior não é respiro puro: a pílula de filtros sobe calc(84 * var(--onface-u)) para
- * pousar sobre a borda do canvas, e come esse mesmo padding. O respiro que se
- * vê entre o último cartão da faixa e a pílula é `padding - 84`. */
+ * O padding inferior reserva o que a sobreposição do canvas come (30u) mais o
+ * respiro visível de grafite entre o último cartão da faixa e a borda do
+ * canvas (~34u).
+ *
+ * Era 132u, dimensionado para uma pílula de filtros que subiria 84u e pousaria
+ * sobre a costura. Essa subida nunca existiu: `.ov-controles` não tem margem
+ * negativa nenhuma. Medido em 21/09 na /onface-preview/pre-vendas: sobravam
+ * 183px mortos entre o último KPI e o primeiro controle, 107 de grafite vazio
+ * e 76 de papel vazio. Se um dia a pílula subir de verdade, este número volta
+ * a crescer junto com ela — e não antes. */
 .onface-page-band {
-  padding: var(--onface-gutter) var(--onface-gutter) calc(132 * var(--onface-u));
+  padding: var(--onface-gutter) var(--onface-gutter) calc(64 * var(--onface-u));
   color: var(--onface-white);
 }
 
@@ -80,10 +87,10 @@
    a sobreposição consome. */
 .onface-page-surface[data-sobreposto="true"] {
   margin-top: calc(-30 * var(--onface-u));
-  padding-top: calc(76 * var(--onface-u));
+  padding-top: calc(32 * var(--onface-u));
 }
 
 @media (max-width: 820px) {
   .onface-page { --onface-gutter: calc(16 * var(--onface-u)); --onface-moldura: calc(8 * var(--onface-u)); }
-  .onface-page-band { padding: calc(16 * var(--onface-u)) calc(16 * var(--onface-u)) calc(124 * var(--onface-u)); }
+  .onface-page-band { padding: calc(16 * var(--onface-u)) calc(16 * var(--onface-u)) calc(56 * var(--onface-u)); }
 }
