@@ -11,7 +11,7 @@ import {
 import { decryptCredential, encryptCredential, maskCredential } from "@/lib/ai-platform/security/credentials";
 import { runModelCall, type AiProvider } from "@/lib/ai-platform/runtime/provider-gateway";
 import { executeRegisteredTool } from "@/lib/ai-platform/tools/registry";
-import { getCtx } from "../compat.js";
+import { getCtx, exigirCtx } from "../compat.js";
 
 const app = new Hono();
 const providers = ["groq", "openai", "anthropic", "google"] as const;
@@ -30,7 +30,7 @@ app.get("/automacoes/ai/providers", async (c) => {
 });
 
 app.put("/automacoes/ai/providers/bindings/:purpose", async (c) => {
-  const ctx = await getCtx(c);
+  const ctx = await exigirCtx(c, "ai.configure");
   const parsed = z.object({ provider: z.enum(providers), credentialId: z.string().uuid().nullable().optional(), modelId: z.string().min(1), baseUrl: z.string().url().nullable().optional(), ativo: z.boolean().default(true) }).safeParse(await c.req.json());
   if (!parsed.success) return c.json({ error: "Binding invalido", details: parsed.error.flatten() }, 400);
   const purpose = c.req.param("purpose");
@@ -48,7 +48,7 @@ app.get("/automacoes/ai/credentials", async (c) => {
 });
 
 app.post("/automacoes/ai/credentials", async (c) => {
-  const ctx = await getCtx(c);
+  const ctx = await exigirCtx(c, "ai.configure");
   const parsed = z.object({ provider: z.enum(providers), label: z.string().min(1).max(80), apiKey: z.string().min(8) }).safeParse(await c.req.json());
   if (!parsed.success) return c.json({ error: "Credencial invalida", details: parsed.error.flatten() }, 400);
   const encrypted = encryptCredential(parsed.data.apiKey);
@@ -58,7 +58,7 @@ app.post("/automacoes/ai/credentials", async (c) => {
 });
 
 app.patch("/automacoes/ai/credentials/:id", async (c) => {
-  const ctx = await getCtx(c);
+  const ctx = await exigirCtx(c, "ai.configure");
   const parsed = z.object({ label: z.string().min(1).max(80).optional(), ativo: z.boolean().optional(), apiKey: z.string().min(8).optional() }).safeParse(await c.req.json());
   if (!parsed.success) return c.json({ error: "Atualizacao invalida" }, 400);
   const encrypted = parsed.data.apiKey ? encryptCredential(parsed.data.apiKey) : null;
@@ -70,7 +70,7 @@ app.patch("/automacoes/ai/credentials/:id", async (c) => {
 });
 
 app.post("/automacoes/ai/credentials/:id/validate", async (c) => {
-  const ctx = await getCtx(c);
+  const ctx = await exigirCtx(c, "ai.configure");
   const [credential] = await db.select().from(aiProviderCredentials).where(and(eq(aiProviderCredentials.id, c.req.param("id")), eq(aiProviderCredentials.organizacaoId, ctx.organizacaoId))).limit(1);
   if (!credential) return c.json({ error: "Credencial nao encontrada" }, 404);
   const [model] = await db.select().from(aiModels).where(and(eq(aiModels.provider, credential.provider), eq(aiModels.isDefaultForProvider, true))).limit(1);
@@ -95,7 +95,7 @@ app.get("/automacoes/ai/routers", async (c) => {
 });
 
 app.post("/automacoes/ai/routers", async (c) => {
-  const ctx = await getCtx(c); const parsed = routerSchema.safeParse(await c.req.json());
+  const ctx = await exigirCtx(c, "ai.configure"); const parsed = routerSchema.safeParse(await c.req.json());
   if (!parsed.success) return c.json({ error: "Roteador invalido", details: parsed.error.flatten() }, 400);
   const result = await db.transaction(async (tx) => {
     const [router] = await tx.insert(aiRouters).values({ organizacaoId: ctx.organizacaoId, nome: parsed.data.nome, channelSessionId: parsed.data.channelSessionId, ativo: parsed.data.ativo, config: parsed.data.config, fallbackAgentId: parsed.data.fallbackAgentId ?? null, createdById: ctx.userId }).returning();
@@ -107,7 +107,7 @@ app.post("/automacoes/ai/routers", async (c) => {
 });
 
 app.put("/automacoes/ai/routers/:id", async (c) => {
-  const ctx = await getCtx(c); const parsed = routerSchema.safeParse(await c.req.json());
+  const ctx = await exigirCtx(c, "ai.configure"); const parsed = routerSchema.safeParse(await c.req.json());
   if (!parsed.success) return c.json({ error: "Roteador invalido", details: parsed.error.flatten() }, 400);
   const result = await db.transaction(async (tx) => {
     const [router] = await tx.update(aiRouters).set({ nome: parsed.data.nome, channelSessionId: parsed.data.channelSessionId, ativo: parsed.data.ativo, config: parsed.data.config, fallbackAgentId: parsed.data.fallbackAgentId ?? null, updatedAt: new Date() }).where(and(eq(aiRouters.id, c.req.param("id")), eq(aiRouters.organizacaoId, ctx.organizacaoId))).returning();
@@ -129,7 +129,7 @@ app.get("/automacoes/ai/knowledge", async (c) => {
 });
 
 app.post("/automacoes/ai/knowledge", async (c) => {
-  const ctx = await getCtx(c); const parsed = z.object({ nome: z.string().min(1), sourceType: z.enum(["text", "url", "file", "faq"]), sourceUri: z.string().nullable().optional(), content: z.string().min(1).optional() }).safeParse(await c.req.json());
+  const ctx = await exigirCtx(c, "ai.configure"); const parsed = z.object({ nome: z.string().min(1), sourceType: z.enum(["text", "url", "file", "faq"]), sourceUri: z.string().nullable().optional(), content: z.string().min(1).optional() }).safeParse(await c.req.json());
   if (!parsed.success) return c.json({ error: "Fonte invalida", details: parsed.error.flatten() }, 400);
   const [source] = await db.insert(aiKnowledgeSources).values({ organizacaoId: ctx.organizacaoId, nome: parsed.data.nome, sourceType: parsed.data.sourceType, sourceUri: parsed.data.sourceUri ?? null, status: parsed.data.content ? "indexing" : "pending", createdById: ctx.userId }).returning();
   if (parsed.data.content) await indexKnowledge(ctx.organizacaoId, source.id, parsed.data.content);
@@ -153,7 +153,7 @@ async function indexKnowledge(organizacaoId: string, sourceId: string, content: 
 }
 
 app.post("/automacoes/ai/knowledge/:id/reindex", async (c) => {
-  const ctx = await getCtx(c); const parsed = z.object({ content: z.string().min(1).optional() }).safeParse(await c.req.json()); if (!parsed.success) return c.json({ error: "Conteudo invalido" }, 400);
+  const ctx = await exigirCtx(c, "ai.configure"); const parsed = z.object({ content: z.string().min(1).optional() }).safeParse(await c.req.json()); if (!parsed.success) return c.json({ error: "Conteudo invalido" }, 400);
   const [source] = await db.select().from(aiKnowledgeSources).where(and(eq(aiKnowledgeSources.id, c.req.param("id")), eq(aiKnowledgeSources.organizacaoId, ctx.organizacaoId))).limit(1); if (!source) return c.json({ error: "Fonte nao encontrada" }, 404);
   let content = parsed.data.content;
   if (!content && source.sourceType === "url" && source.sourceUri) { const response = await fetch(source.sourceUri); if (!response.ok) return c.json({ error: `URL respondeu ${response.status}` }, 422); content = await response.text(); }
@@ -167,13 +167,13 @@ app.get("/automacoes/ai/memory", async (c) => {
 });
 
 app.put("/automacoes/ai/memory", async (c) => {
-  const ctx = await getCtx(c); const parsed = z.object({ content: z.string().min(1) }).safeParse(await c.req.json()); if (!parsed.success) return c.json({ error: "Memoria invalida" }, 400);
+  const ctx = await exigirCtx(c, "ai.configure"); const parsed = z.object({ content: z.string().min(1) }).safeParse(await c.req.json()); if (!parsed.success) return c.json({ error: "Memoria invalida" }, 400);
   const result = await db.transaction(async (tx) => { const [last] = await tx.select({ versionNumber: aiMemoryVersions.versionNumber }).from(aiMemoryVersions).where(eq(aiMemoryVersions.organizacaoId, ctx.organizacaoId)).orderBy(desc(aiMemoryVersions.versionNumber)).limit(1); const [version] = await tx.insert(aiMemoryVersions).values({ organizacaoId: ctx.organizacaoId, versionNumber: (last?.versionNumber ?? 0) + 1, content: parsed.data.content, createdById: ctx.userId }).returning(); await tx.insert(aiMemoryPointers).values({ organizacaoId: ctx.organizacaoId, versionId: version.id }).onConflictDoUpdate({ target: aiMemoryPointers.organizacaoId, set: { versionId: version.id, updatedAt: new Date() } }); return version; });
   return c.json(result);
 });
 
 app.post("/automacoes/ai/memory/entries", async (c) => {
-  const ctx = await getCtx(c); const parsed = z.object({ title: z.string().min(1), body: z.string().min(1), status: z.enum(["proposed", "active", "archived"]).default("active") }).safeParse(await c.req.json()); if (!parsed.success) return c.json({ error: "Entrada invalida" }, 400);
+  const ctx = await exigirCtx(c, "ai.use"); const parsed = z.object({ title: z.string().min(1), body: z.string().min(1), status: z.enum(["proposed", "active", "archived"]).default("active") }).safeParse(await c.req.json()); if (!parsed.success) return c.json({ error: "Entrada invalida" }, 400);
   const [entry] = await db.insert(aiMemoryEntries).values({ organizacaoId: ctx.organizacaoId, title: parsed.data.title, body: parsed.data.body, source: "manual", status: parsed.data.status, createdById: ctx.userId }).returning(); return c.json(entry, 201);
 });
 
@@ -182,14 +182,14 @@ app.get("/automacoes/ai/skills", async (c) => {
 });
 
 app.post("/automacoes/ai/skills", async (c) => {
-  const ctx = await getCtx(c); const parsed = z.object({ name: z.string().min(1), description: z.string().optional(), instructions: z.string().min(1), manifest: z.array(z.unknown()).default([]) }).safeParse(await c.req.json()); if (!parsed.success) return c.json({ error: "Skill invalida" }, 400);
+  const ctx = await exigirCtx(c, "ai.configure"); const parsed = z.object({ name: z.string().min(1), description: z.string().optional(), instructions: z.string().min(1), manifest: z.array(z.unknown()).default([]) }).safeParse(await c.req.json()); if (!parsed.success) return c.json({ error: "Skill invalida" }, 400);
   const result = await db.transaction(async (tx) => { const [last] = await tx.select({ versionNumber: aiSkillVersions.versionNumber }).from(aiSkillVersions).where(and(eq(aiSkillVersions.organizacaoId, ctx.organizacaoId), eq(aiSkillVersions.name, parsed.data.name))).orderBy(desc(aiSkillVersions.versionNumber)).limit(1); const [version] = await tx.insert(aiSkillVersions).values({ organizacaoId: ctx.organizacaoId, name: parsed.data.name, versionNumber: (last?.versionNumber ?? 0) + 1, description: parsed.data.description ?? null, instructions: parsed.data.instructions, manifest: parsed.data.manifest, createdById: ctx.userId }).returning(); await tx.insert(aiSkillPointers).values({ organizacaoId: ctx.organizacaoId, name: version.name, versionId: version.id }).onConflictDoUpdate({ target: [aiSkillPointers.organizacaoId, aiSkillPointers.name], set: { versionId: version.id, ativo: true, updatedAt: new Date() } }); return version; }); return c.json(result, 201);
 });
 
 app.get("/automacoes/ai/cases", async (c) => { const ctx = await getCtx(c); return c.json({ cases: await db.select().from(aiCases).where(eq(aiCases.organizacaoId, ctx.organizacaoId)).orderBy(desc(aiCases.updatedAt)).limit(250) }); });
 app.get("/automacoes/ai/cases/:id/events", async (c) => { const ctx = await getCtx(c); const [caseRow] = await db.select().from(aiCases).where(and(eq(aiCases.id, c.req.param("id")), eq(aiCases.organizacaoId, ctx.organizacaoId))).limit(1); if (!caseRow) return c.json({ error: "Caso nao encontrado" }, 404); return c.json({ case: caseRow, events: await db.select().from(aiCaseEvents).where(and(eq(aiCaseEvents.caseId, caseRow.id), eq(aiCaseEvents.organizacaoId, ctx.organizacaoId))).orderBy(aiCaseEvents.createdAt) }); });
 app.post("/automacoes/ai/cases/:id/action", async (c) => {
-  const ctx = await getCtx(c);
+  const ctx = await exigirCtx(c, "ai.use");
   const parsed = z.object({ action: z.enum(["reply", "resolve", "escalate", "cancel", "approve"]), body: z.string().optional() }).safeParse(await c.req.json());
   if (!parsed.success) return c.json({ error: "Acao invalida" }, 400);
   const [current] = await db.select().from(aiCases).where(and(eq(aiCases.id, c.req.param("id")), eq(aiCases.organizacaoId, ctx.organizacaoId))).limit(1);
@@ -214,15 +214,15 @@ app.post("/automacoes/ai/cases/:id/action", async (c) => {
 });
 
 app.get("/automacoes/ai/alerts", async (c) => { const ctx = await getCtx(c); return c.json({ alerts: await db.select().from(aiAlerts).where(eq(aiAlerts.organizacaoId, ctx.organizacaoId)).orderBy(desc(aiAlerts.createdAt)).limit(250) }); });
-app.patch("/automacoes/ai/alerts/:id", async (c) => { const ctx = await getCtx(c); const parsed = z.object({ status: z.enum(["open", "acknowledged", "resolved"]) }).safeParse(await c.req.json()); if (!parsed.success) return c.json({ error: "Status invalido" }, 400); const [alert] = await db.update(aiAlerts).set({ status: parsed.data.status, ...(parsed.data.status === "acknowledged" ? { acknowledgedById: ctx.userId, acknowledgedAt: new Date() } : {}), ...(parsed.data.status === "resolved" ? { resolvedAt: new Date() } : {}) }).where(and(eq(aiAlerts.id, c.req.param("id")), eq(aiAlerts.organizacaoId, ctx.organizacaoId))).returning(); return alert ? c.json(alert) : c.json({ error: "Alerta nao encontrado" }, 404); });
+app.patch("/automacoes/ai/alerts/:id", async (c) => { const ctx = await exigirCtx(c, "ai.use"); const parsed = z.object({ status: z.enum(["open", "acknowledged", "resolved"]) }).safeParse(await c.req.json()); if (!parsed.success) return c.json({ error: "Status invalido" }, 400); const [alert] = await db.update(aiAlerts).set({ status: parsed.data.status, ...(parsed.data.status === "acknowledged" ? { acknowledgedById: ctx.userId, acknowledgedAt: new Date() } : {}), ...(parsed.data.status === "resolved" ? { resolvedAt: new Date() } : {}) }).where(and(eq(aiAlerts.id, c.req.param("id")), eq(aiAlerts.organizacaoId, ctx.organizacaoId))).returning(); return alert ? c.json(alert) : c.json({ error: "Alerta nao encontrado" }, 404); });
 
 app.get("/automacoes/ai/proposals", async (c) => { const ctx = await getCtx(c); const [fields, improvements] = await Promise.all([db.select().from(aiContactFieldProposals).where(eq(aiContactFieldProposals.organizacaoId, ctx.organizacaoId)).orderBy(desc(aiContactFieldProposals.proposedAt)), db.select().from(aiImprovementProposals).where(eq(aiImprovementProposals.organizacaoId, ctx.organizacaoId)).orderBy(desc(aiImprovementProposals.createdAt))]); return c.json({ fieldProposals: fields, improvementProposals: improvements }); });
-app.post("/automacoes/ai/proposals/fields/:id/decision", async (c) => { const ctx = await getCtx(c); const parsed = z.object({ decision: z.enum(["accept", "dismiss"]), reason: z.string().optional() }).safeParse(await c.req.json()); if (!parsed.success) return c.json({ error: "Decisao invalida" }, 400); const [proposal] = await db.select().from(aiContactFieldProposals).where(and(eq(aiContactFieldProposals.id, c.req.param("id")), eq(aiContactFieldProposals.organizacaoId, ctx.organizacaoId), eq(aiContactFieldProposals.status, "pending"))).limit(1); if (!proposal) return c.json({ error: "Proposta pendente nao encontrada" }, 404); await db.transaction(async (tx) => { if (parsed.data.decision === "accept") { const patch = proposal.campo === "nome" ? { nome: proposal.valorProposto } : proposal.campo === "email" ? { email: proposal.valorProposto } : { telefone: proposal.valorProposto }; await tx.update(contatos).set({ ...patch, updatedAt: new Date() }).where(and(eq(contatos.id, proposal.contatoId), eq(contatos.organizacaoId, ctx.organizacaoId))); } await tx.update(aiContactFieldProposals).set({ status: parsed.data.decision === "accept" ? "accepted" : "dismissed", decidedAt: new Date(), decidedByUserId: ctx.userId, motivoRecusa: parsed.data.decision === "dismiss" ? parsed.data.reason ?? null : null, updatedAt: new Date() }).where(eq(aiContactFieldProposals.id, proposal.id)); }); return c.json({ ok: true }); });
+app.post("/automacoes/ai/proposals/fields/:id/decision", async (c) => { const ctx = await exigirCtx(c, "ai.use"); const parsed = z.object({ decision: z.enum(["accept", "dismiss"]), reason: z.string().optional() }).safeParse(await c.req.json()); if (!parsed.success) return c.json({ error: "Decisao invalida" }, 400); const [proposal] = await db.select().from(aiContactFieldProposals).where(and(eq(aiContactFieldProposals.id, c.req.param("id")), eq(aiContactFieldProposals.organizacaoId, ctx.organizacaoId), eq(aiContactFieldProposals.status, "pending"))).limit(1); if (!proposal) return c.json({ error: "Proposta pendente nao encontrada" }, 404); await db.transaction(async (tx) => { if (parsed.data.decision === "accept") { const patch = proposal.campo === "nome" ? { nome: proposal.valorProposto } : proposal.campo === "email" ? { email: proposal.valorProposto } : { telefone: proposal.valorProposto }; await tx.update(contatos).set({ ...patch, updatedAt: new Date() }).where(and(eq(contatos.id, proposal.contatoId), eq(contatos.organizacaoId, ctx.organizacaoId))); } await tx.update(aiContactFieldProposals).set({ status: parsed.data.decision === "accept" ? "accepted" : "dismissed", decidedAt: new Date(), decidedByUserId: ctx.userId, motivoRecusa: parsed.data.decision === "dismiss" ? parsed.data.reason ?? null : null, updatedAt: new Date() }).where(eq(aiContactFieldProposals.id, proposal.id)); }); return c.json({ ok: true }); });
 
 app.get("/automacoes/ai/runs", async (c) => { const ctx = await getCtx(c); const runs = await db.select().from(aiAgentRuns).where(eq(aiAgentRuns.organizacaoId, ctx.organizacaoId)).orderBy(desc(aiAgentRuns.startedAt)).limit(250); return c.json({ runs }); });
 app.get("/automacoes/ai/runs/:id/steps", async (c) => { const ctx = await getCtx(c); const [run] = await db.select({ id: aiAgentRuns.id }).from(aiAgentRuns).where(and(eq(aiAgentRuns.id, c.req.param("id")), eq(aiAgentRuns.organizacaoId, ctx.organizacaoId))).limit(1); if (!run) return c.json({ error: "Run nao encontrado" }, 404); return c.json({ steps: await db.select().from(aiAgentRunSteps).where(and(eq(aiAgentRunSteps.runId, run.id), eq(aiAgentRunSteps.organizacaoId, ctx.organizacaoId))).orderBy(aiAgentRunSteps.sequence) }); });
 
 app.get("/automacoes/ai/usage", async (c) => { const ctx = await getCtx(c); const [summary, byAgent, budgets] = await Promise.all([db.select({ runs: sql<number>`count(*)::int`, tokensInput: sql<number>`coalesce(sum(${aiAgentRuns.tokensInput}),0)::int`, tokensOutput: sql<number>`coalesce(sum(${aiAgentRuns.tokensOutput}),0)::int`, cost: sql<string>`coalesce(sum(${aiAgentRuns.custo}),0)` }).from(aiAgentRuns).where(and(eq(aiAgentRuns.organizacaoId, ctx.organizacaoId), sql`${aiAgentRuns.startedAt} >= date_trunc('month', now())`)).then((rows) => rows[0]), db.select({ agentId: aiAgentRuns.agentId, runs: sql<number>`count(*)::int`, tokens: sql<number>`coalesce(sum(${aiAgentRuns.tokensInput} + ${aiAgentRuns.tokensOutput}),0)::int`, cost: sql<string>`coalesce(sum(${aiAgentRuns.custo}),0)` }).from(aiAgentRuns).where(and(eq(aiAgentRuns.organizacaoId, ctx.organizacaoId), sql`${aiAgentRuns.startedAt} >= date_trunc('month', now())`)).groupBy(aiAgentRuns.agentId), db.select().from(aiUsageBudgets).where(eq(aiUsageBudgets.organizacaoId, ctx.organizacaoId))]); return c.json({ period: "month", summary, byAgent, budgets }); });
-app.put("/automacoes/ai/usage/budgets", async (c) => { const ctx = await getCtx(c); const parsed = z.object({ agentId: z.string().uuid().nullable().optional(), provider: z.string().nullable().optional(), period: z.enum(["daily", "monthly"]).default("monthly"), tokenLimit: z.number().int().positive().nullable().optional(), costLimit: z.number().positive().nullable().optional(), warningPercent: z.number().int().min(1).max(100).default(80), hardStop: z.boolean().default(true), ativo: z.boolean().default(true) }).safeParse(await c.req.json()); if (!parsed.success) return c.json({ error: "Orcamento invalido" }, 400); const [budget] = await db.insert(aiUsageBudgets).values({ organizacaoId: ctx.organizacaoId, agentId: parsed.data.agentId ?? null, provider: parsed.data.provider ?? null, period: parsed.data.period, tokenLimit: parsed.data.tokenLimit ?? null, costLimit: parsed.data.costLimit == null ? null : String(parsed.data.costLimit), warningPercent: parsed.data.warningPercent, hardStop: parsed.data.hardStop, ativo: parsed.data.ativo }).returning(); return c.json(budget, 201); });
+app.put("/automacoes/ai/usage/budgets", async (c) => { const ctx = await exigirCtx(c, "ai.configure"); const parsed = z.object({ agentId: z.string().uuid().nullable().optional(), provider: z.string().nullable().optional(), period: z.enum(["daily", "monthly"]).default("monthly"), tokenLimit: z.number().int().positive().nullable().optional(), costLimit: z.number().positive().nullable().optional(), warningPercent: z.number().int().min(1).max(100).default(80), hardStop: z.boolean().default(true), ativo: z.boolean().default(true) }).safeParse(await c.req.json()); if (!parsed.success) return c.json({ error: "Orcamento invalido" }, 400); const [budget] = await db.insert(aiUsageBudgets).values({ organizacaoId: ctx.organizacaoId, agentId: parsed.data.agentId ?? null, provider: parsed.data.provider ?? null, period: parsed.data.period, tokenLimit: parsed.data.tokenLimit ?? null, costLimit: parsed.data.costLimit == null ? null : String(parsed.data.costLimit), warningPercent: parsed.data.warningPercent, hardStop: parsed.data.hardStop, ativo: parsed.data.ativo }).returning(); return c.json(budget, 201); });
 
 export const aiPlatformRoutes = app;
