@@ -40,6 +40,37 @@ const dryRun = process.argv.includes("--dry-run");
 const desativarAusentes = process.argv.includes("--desativar-ausentes");
 
 /**
+ * APOSENTADO em 21/09/2026. Use `sincronizar-catalogo-stripe.ts`.
+ *
+ * Este script importa `catalogo-oficial.json`, um snapshot gerado de planilha
+ * em 02/09. Em 21/09 foi medido contra a conta live: **171 dos 213 preços do
+ * snapshot já não existiam no Stripe**, e 13 preços reais tinham sido criados
+ * depois e não estão nele.
+ *
+ * Rodá-lo hoje criaria 171 preços fantasmas no catálogo comercial e esconderia
+ * 13 reais. Por isso ele recusa rodar em vez de só avisar: aviso em log some,
+ * e o estrago aqui é preço errado numa proposta.
+ *
+ * O arquivo fica no repositório como registro do que foi a planilha, não como
+ * caminho de execução.
+ */
+if (!process.argv.includes("--eu-sei-que-esta-desatualizado")) {
+  console.error(`
+  ESTE IMPORTADOR ESTÁ APOSENTADO.
+
+  Ele lê um snapshot de planilha de 02/09. Medido em 21/09 contra o Stripe
+  live: 171 dos 213 preços do snapshot NÃO EXISTEM MAIS, e 13 preços reais
+  foram criados depois e não estão nele.
+
+  Rodar isto criaria 171 preços fantasmas no catálogo comercial.
+
+  Use:  pnpm tsx --env-file=.env src/scripts/sincronizar-catalogo-stripe.ts --dry-run
+        pnpm tsx --env-file=.env src/scripts/sincronizar-catalogo-stripe.ts
+`);
+  process.exit(1);
+}
+
+/**
  * `commercial_model_padrao` do produto = o modelo mais exigente entre os
  * prices dele. Um produto cujo Setup exige contrato mas cuja Licença não
  * (White Label) nasce como CONTRATO_FIDELIDADE_OPCIONAL no nível do produto,

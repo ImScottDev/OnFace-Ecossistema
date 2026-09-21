@@ -1901,3 +1901,68 @@ nome na lista que não existe mais — declaração obsoleta faz a próxima pess
 algo está coberto. Verificada com uma rota de escrita sem gate acrescentada de propósito.
 
 **Validação:** tsc limpo, **264 testes, 0 falhas**, build exit 0.
+
+---
+
+## 2026-09-21 — O catálogo passou a falar com o Stripe
+
+O Kauã mandou a planilha de catálogo e disse para não confiar nela: "depois dessa
+planilha fiz alguns ajustes e tem coisas aí que saiu, ou alterei". E depois, o ponto que
+mudou o desenho: "o catálogo pode ser algo que fala diretamente com o Stripe também né,
+pq se não pode ser que em algum momento altere lá e não reflita no ONFACE".
+
+Ele está certo, e o número prova.
+
+**A medição.** Li a conta live pelo conector do Stripe e comparei com o snapshot
+commitado (que é a planilha de 02/09), 19 dias depois:
+
+| | |
+|---|---|
+| preços no snapshot | 213 |
+| preços vivos no Stripe | **55** |
+| coincidem | 42 |
+| **no snapshot e já não existem no Stripe** | **171** |
+| no Stripe e ausentes do snapshot | 13 |
+
+Rodar o importador que eu tinha deixado "pronto, aguardando decisão" teria criado **171
+preços fantasmas** e escondido 13 reais. A decisão que eu tinha devolvido ao Kauã era a
+pergunta errada: não era "aprovar esses preços?", era "por que o catálogo é um arquivo?".
+
+**O desenho.** `stripe-catalogo.ts` lê a API (paginada, incluindo inativos, porque preço
+desativado lá precisa ser desativado aqui). `sincronizar-stripe.ts` faz o upsert por id
+do Stripe. A divisão de responsabilidade é o coração: o Stripe manda no que ele cobra,
+o CRM manda em ordem, comportamento de quantidade e observação operacional. O `DO UPDATE`
+não toca nas colunas do CRM, e há teste que lê o SQL para garantir isso.
+
+**O recorte** é o prefixo do nome, regra dada pelo Kauã. Os outros 41 produtos ativos do
+Stripe são históricos e faturam sem ser catálogo. White Label é classificado ANTES de
+Callface AI: o nome dele começa igual, e a ordem trocada classificaria todo White Label
+como CALLFACE_AI — e a política de Ganho dele, que exige implantação, nunca dispararia.
+
+**Não inventa classificação.** A família vem da metadata ou do prefixo (regra explícita).
+A categoria não tem regra equivalente: sem metadata, vira pendência nomeada. Dois
+produtos caem aí, e os dois são dado no Stripe, não no código: `Callface AI - Starter`
+sem `familia` nem `categoria_crm`, e `Callface AI - Business` com a metadata preenchida
+em colunas deslocadas (`categoria_crm="Mensal"`, `sku_interno="nao"`,
+`exige_contrato="plano"`).
+
+**Resultado medido:** 15 produtos, 55 preços. O construtor de proposta saiu de **0 para
+55 itens**. O aceite do Módulo 01 saiu de **72 passaram com 3 não verificados** para
+**97 passaram, 0 falharam, 0 não verificados** — o catálogo destravou 25 critérios.
+
+Dois produtos já existiam no legado com o mesmo `stripe_product_id` e foram
+reclassificados em vez de duplicados; as 220 linhas legadas não perderam nenhuma.
+
+**Roda de hora em hora no worker.** Sem chave configurada, o job sai em silêncio:
+ambiente sem Stripe não é integração quebrada.
+
+**O importador antigo foi desarmado**, não só documentado: ele recusa rodar e aponta o
+comando novo. Aviso em log some; o estrago aqui seria preço errado numa proposta.
+
+**Dois gotchas conhecidos apareceram e foram evitados:** `ON CONFLICT` contra
+`idx_servicos_catalogo_stripe_product`, que é índice PARCIAL e exige repetir o predicado;
+e array interpolado no template do postgres.js, que vira `record` e falha com 42846 —
+resolvido passando JSON e expandindo com `jsonb_array_elements_text`.
+
+**Validação:** tsc limpo, **273 testes, 0 falhas**, build exit 0, bundle do worker exit 0,
+**23 de 23 smokes**, aceite 97/0, paridade 13/14.

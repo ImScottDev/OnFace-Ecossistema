@@ -2677,6 +2677,37 @@ const slaWorker = new Worker(
   async (job) => {
     const { leads, negocios, tarefas, notificacoes, usuarios, statusChanges } = await import("../lib/db/schema");
 
+    if (job.name === "catalogo-stripe-sync") {
+      // Sem chave configurada isto não é erro de integração, é ambiente sem
+      // Stripe. Falhar alto aqui encheria o log de um sistema que nunca foi
+      // configurado para vender pelo Stripe.
+      if (!process.env.STRIPE_SECRET_KEY && !process.env.STRIPE_API_KEY) return;
+      try {
+        const { lerCatalogoDoStripe } = await import("../lib/integrations/stripe-catalogo");
+        const { sincronizarCatalogoStripe } = await import("../lib/catalogo/sincronizar-stripe");
+        const catalogo = await lerCatalogoDoStripe();
+        const orgs = await db.execute<{ id: string }>(rawSql`SELECT id::text FROM organizacoes`);
+        for (const org of orgs) {
+          const r = await sincronizarCatalogoStripe(org.id, catalogo);
+          const mexeu = r.produtosCriados + r.precosCriados + r.precosDesativados;
+          if (mexeu > 0) {
+            console.log(
+              `[Catalogo] ${r.produtosCriados} produto(s) novo(s), ${r.precosCriados} preço(s) novo(s), ` +
+              `${r.precosDesativados} desativado(s)`,
+            );
+          }
+          // Pendência de metadata some do log quando ninguém age; repetir de
+          // hora em hora vira ruído. Aparece só quando há produto novo.
+          if (r.produtosCriados > 0 && r.pendencias.length) {
+            for (const pd of r.pendencias) console.log(`[Catalogo] pendente: ${pd.produto} — ${pd.oQueFalta}`);
+          }
+        }
+      } catch (e) {
+        console.error("[Catalogo] sync falhou:", e instanceof Error ? e.message : e);
+      }
+      return;
+    }
+
     if (job.name === "sdr-followup-escalation") {
       // Board Pré-vendas: leads parados em "Em Contato" há 48h+ (2 dias) sobem pra
       // "Follow up" e a Jenifer assume. Base do relógio = leads.contato_desde_at.
@@ -3847,6 +3878,7 @@ const SCHEDULERS_JOBS_AGENDADOS = [
   "rd-criativo-sync", "outlook-reuniao-sync", "follow-up-proposta", "cs-sweep",
   "alerta-renovacao", "reativar-lead-perdido", "check-whatsapp-connection", "snapshot-diario",
   "cadence-sweep", "event-outbox-sweep", "lembrete-reuniao-30min",
+  "catalogo-stripe-sync",
 ];
 
 // Schedule recurring jobs
@@ -3871,6 +3903,11 @@ async function setupScheduledJobs() {
   await scheduledQueue.upsertJobScheduler("cadence-sweep", { every: 5 * 60 * 1000 }, { name: "cadence-sweep" });
   await scheduledQueue.upsertJobScheduler("event-outbox-sweep", { every: 60 * 1000 }, { name: "event-outbox-sweep" });
   await scheduledQueue.upsertJobScheduler("lembrete-reuniao-30min", { every: 5 * 60 * 1000 }, { name: "lembrete-reuniao-30min" });
+  // Catálogo comercial: o Stripe é onde o preço é decidido, então o CRM
+  // sincroniza em vez de guardar cópia. De hora em hora porque preço muda por
+  // decisão humana, não por evento: ninguém altera tabela de preço a cada
+  // minuto, e ler a API de graça a cada minuto é desperdício com rate limit.
+  await scheduledQueue.upsertJobScheduler("catalogo-stripe-sync", { every: 60 * 60 * 1000 }, { name: "catalogo-stripe-sync" });
   // Email sync: trigger every 5 min
   await emailSyncQueue.upsertJobScheduler("email-sync-trigger", { every: 5 * 60 * 1000 }, { name: "sync-trigger" });
   // Email sequences: check every minute

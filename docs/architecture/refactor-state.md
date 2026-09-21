@@ -25,7 +25,7 @@ Fases 01 a 16 concluídas.
 
 ## Último commit
 
-`7207b18` — test(22): as 11 rotas públicas saíram do balde de "166 sem gate"
+`(catálogo do Stripe)` — feat(23): o catálogo sincroniza com o Stripe em vez de copiar planilha
 
 Branch de trabalho: `refactor/arquitetura-canonica`, criada a partir de `98940fe`.
 
@@ -537,8 +537,8 @@ canônico hoje faria o lead sumir da tela de pré-vendas no mesmo instante.
 
 ## Testes executados
 
-Estado atual: `tsc --noEmit` limpo, **build de produção passando**, **264 testes, 0
-falhas**, e **22 de 22 smokes** verdes, mais o aceite de vendas em **72 passaram, 0 falharam, 3 não verificados** contra o banco real (conferidos por código de
+Estado atual: `tsc --noEmit` limpo, **build de produção passando**, **273 testes, 0
+falhas**, e **23 de 23 smokes** verdes, mais o aceite de vendas em **97 passaram, 0 falharam** contra o banco real (conferidos por código de
 saída, não por texto: procurar "FALHA" na saída dava falso positivo em `falhados=0`):
 
 - `smoke-ponte-canonica` — entrada externa chega inteira ao canônico e não duplica;
@@ -618,40 +618,74 @@ follow-up de proposta parada, renovação de contrato e recontato de negócio pe
 A organização já estava disponível e validada no escopo dos três. Foram expostos pelo
 `.notNull()` adicionado ao Drizzle, não por teste.
 
-## O construtor de proposta está sem catálogo, e é passo de operação
+## Catálogo: o CRM sincroniza com o Stripe, não copia uma vez
 
-Medido ao rodar `aceite-vendas.ts`, que interrompe no passo do catálogo.
+**RESOLVIDO em 21/09.** O que estava registrado aqui como decisão pendente virou
+outra coisa quando fui ao Stripe em vez de confiar na planilha.
 
-`GET /api/catalogo-oficial` faz `INNER JOIN` com `catalogo_precos` e filtra
-`origem_catalogo = 'oficial_stripe'`. No banco carregado com produção:
+**A medição que mudou o desenho.** O snapshot commitado veio de uma planilha de 02/09.
+Comparado com a conta live 19 dias depois:
 
-| O quê | Quantidade |
+| | |
 |---|---|
-| `catalogo_precos` | **0** |
-| `servicos_catalogo` com `origem_catalogo = 'oficial_stripe'` | **0** |
-| `servicos_catalogo` com `origem_catalogo = 'legado'` | 220 (10 ativos) |
-| itens que o construtor devolve | **0** |
+| preços no snapshot | 213 |
+| preços vivos no Stripe | **55** |
+| coincidem | 42 |
+| **no snapshot e já não existem no Stripe** | **171** |
+| no Stripe e não estão no snapshot | 13 |
 
-`NovaProposta.tsx` é a tela que consome esse endpoint. Ela abre com o catálogo vazio, e
-não há o que escolher.
+Rodar aquele importador teria criado **171 preços fantasmas** no catálogo comercial e
+escondido 13 reais. Ele foi desarmado: recusa rodar e aponta para o comando novo.
 
-**Não é defeito de código e não é bloqueio externo.** O importador existe
-(`importar-catalogo-oficial.ts`), lê um snapshot commitado no repo em 02/09 (21 produtos,
-213 preços, com os ids reais do Stripe) e **não chama o Stripe**. Rodei em `--dry-run`:
-criaria 17 produtos e 213 preços, atualizaria 4, sem tocar nas 220 linhas do catálogo
-legado.
+**O desenho certo é sincronizar.** O Stripe é onde o preço é decidido e cobrado; o CRM
+lê de lá. A divisão de responsabilidade é o coração disso:
 
-**Não executei, e o motivo é deliberado:** isso grava PREÇO COMERCIAL. Decidir que
-aquele snapshot de 02/09 é a tabela de preços vigente é decisão do Kauã, não conclusão
-derivável do código. O comando está pronto:
+| Quem manda | Em quê | Por quê |
+|---|---|---|
+| **Stripe** | nome, descrição, valor, moeda, recorrência, situação | divergir dele é cobrar diferente do que a tela promete |
+| **CRM** | ordem de exibição, comportamento de quantidade, observação operacional | são escolhas de COMO VENDER, que o Stripe não conhece |
+
+A sincronização nunca sobrescreve a coluna do CRM: senão o ajuste de quem organizou a
+tela sumiria no ciclo seguinte.
+
+**O recorte** é o prefixo do nome, regra do Kauã: `Callface AI - `,
+`Callface AI White Label - `, `PABX - `. Os outros 41 produtos ativos do Stripe são
+históricos (cobrança pontual, contrato antigo, negociação específica): faturam e não são
+catálogo vendável. White Label é testado ANTES de Callface AI, porque o nome dele começa
+igual.
+
+**Resultado, medido:** 15 produtos e 55 preços no catálogo oficial. O construtor de
+proposta saiu de **0 para 55 itens**, e o aceite do Módulo 01 saiu de **72 passaram com
+3 não verificados** para **97 passaram, 0 falharam, 0 não verificados**.
+
+Dois produtos já existiam no catálogo legado com o MESMO `stripe_product_id`
+(`Callface AI - Full` e `Starter`): foram reclassificados, não duplicados. Nenhuma das
+220 linhas legadas foi perdida.
+
+**Roda sozinho**, de hora em hora, no worker (`catalogo-stripe-sync`). Sem chave
+configurada o job sai em silêncio: ambiente sem Stripe não é integração quebrada.
 
 ```bash
-pnpm tsx --env-file=.env src/scripts/importar-catalogo-oficial.ts --dry-run   # confere
-pnpm tsx --env-file=.env src/scripts/importar-catalogo-oficial.ts            # aplica
+pnpm --filter app catalogo:sync:dry   # lê o Stripe e mostra o que mudaria
+pnpm --filter app catalogo:sync       # aplica
 ```
 
-Enquanto não roda, `aceite-vendas.ts` interrompe nesse passo e os critérios de aceite do
-Módulo 01 a partir dele não são verificáveis. Os passos anteriores passam.
+### Duas pendências de metadata NO STRIPE, não no código
+
+A sincronização não inventa classificação. Dois produtos entram com pendência nomeada:
+
+| Produto | O que falta no Stripe |
+|---|---|
+| `Callface AI - Starter` | sem `familia` nem `categoria_crm` (só tem `SKU_INTERNO`, em maiúsculo) |
+| `Callface AI - Business` | `categoria_crm` com valor de período (`"Mensal"`), `sku_interno="nao"`, `exige_contrato="plano"` — campos preenchidos deslocados |
+
+A família dos dois é resolvida pelo prefixo do nome, então eles aparecem no catálogo. A
+categoria ausente é que os deixa fora do agrupamento da tela. Corrigir é editar a
+metadata no Stripe, e a sincronização seguinte já reflete.
+
+Também medido: **27 dos 55 preços não têm metadata nenhuma** e **8 não têm apelido nem
+`lookup_key`**. Nenhum dos dois impede a sincronização (o preço herda do produto, e a
+variação cai para o período), mas preencher no Stripe melhora o que o vendedor lê.
 
 ## Antes do deploy: a verificação que substitui o palpite
 
