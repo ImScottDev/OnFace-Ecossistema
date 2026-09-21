@@ -18,6 +18,10 @@ import { Cf2Badge } from "@/components/crm2/ui/Badge";
 import { Cf2Dialog, Cf2DialogContent, Cf2DialogHeader, Cf2DialogTitle, Cf2DialogFooter } from "@/components/crm2/ui/Dialog";
 import { Cf2Input, Cf2Textarea, Cf2Label } from "@/components/crm2/ui/Input";
 
+// Do módulo puro: a cópia que morava aqui era idêntica, o que é pior do que
+// divergente — parece segura até alguém editar um lado só.
+import { MARCOS_AI, MARCO_AI_POR_WORKSTREAM as MARCO_POR_WORKSTREAM } from "@/lib/crm/pos-venda-checklists";
+
 interface Item {
   id: string;
   workstream: string;
@@ -65,31 +69,6 @@ interface FulfillmentDetalhe {
 
 // Duplicado de lib/crm/fulfillment.ts (não pode importar aqui — aquele
 // módulo carrega o driver do Postgres, quebraria o bundle do client).
-const MARCOS_AI = [
-  { key: "abertura_validacao", label: "Abertura e validação" },
-  { key: "acessos_integracao", label: "Acessos e integração" },
-  { key: "usuarios_times", label: "Usuários e times" },
-  { key: "primeira_ligacao", label: "Primeira ligação" },
-  { key: "scorecard_insights", label: "Scorecard e Insights" },
-  { key: "campanhas", label: "Tarefas, relatórios e campanhas" },
-  { key: "agente_ia", label: "Agente de IA" },
-  { key: "first_message_testes", label: "First Message e testes" },
-  { key: "sla_canais", label: "SLA e canais" },
-  { key: "validacao_final", label: "Validação final" },
-] as const;
-const MARCO_POR_WORKSTREAM: Record<string, string> = {
-  abertura: "abertura_validacao", dados_empresa: "abertura_validacao",
-  crm_integracao: "acessos_integracao", acessos: "acessos_integracao",
-  usuarios_times: "usuarios_times",
-  primeira_ligacao: "primeira_ligacao",
-  scorecard_insights: "scorecard_insights", proximos_passos: "scorecard_insights", relatorios: "scorecard_insights",
-  reunioes_online: "campanhas", campanhas: "campanhas",
-  agente_prompt: "agente_ia", agente_config: "agente_ia",
-  first_message: "first_message_testes", bateria_testes: "first_message_testes",
-  sla_canais: "sla_canais",
-  validacao_final: "validacao_final",
-};
-
 const ITEM_STATUS_INFO: Record<string, { label: string; color: string; icon: typeof CheckCircle2 }> = {
   DONE: { label: "Concluído", color: "var(--cf2-success-text)", icon: CheckCircle2 },
   IN_PROGRESS: { label: "Em andamento", color: "var(--cf2-informativo-fg)", icon: Clock },

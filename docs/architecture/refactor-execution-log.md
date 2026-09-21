@@ -2269,3 +2269,33 @@ construir em cima.
 
 **Validação:** tsc limpo, **293 testes 0 falhas**, build exit 0, **29/29
 smokes**, as duas rotas conferidas nos três produtos contra build de produção.
+
+## 2026-09-21 — CP8: auditar primeiro salvou a entrega de ser reescrita
+
+O plano dizia "board universal + 6 fases". A auditoria mostrou que o módulo já
+tinha 5 tabelas, 25 fulfillments reais, 1.659 itens e checklists derivados de
+processos reais — e que as "6 fases universais" seriam um erro já cometido.
+
+O próprio código registra: a primeira versão comprimiu a jornada de Callface AI
+em 4 fases genéricas e o Kauã reprovou como "muito simplório"; o guia real tem
+10 marcos. Universalizar o vocabulário repetiria isso. O que virou universal foi
+o board; cada card responde na língua do processo dele.
+
+Os três buracos reais eram ligações que faltavam:
+
+- **White Label voltava fase e etapa nulas** com um comentário dizendo que não
+  havia registro real — havia, com checklist preenchido. Os itens dele nem eram
+  carregados na rota.
+- **O board das três famílias não tinha chamador.** O comentário no componente
+  dizia "uso interno, não mais linkado nos tabs do módulo". Peça pronta sem
+  caller, de novo, custando ver a entrega do produto errado.
+- **O mapa de marcos estava duplicado na tela**, porque o original mora num
+  arquivo que importa `db` e Client Component não pode importá-lo. Movido para o
+  módulo puro.
+
+O teste de cobertura mapa × checklist achou um defeito próprio na primeira
+execução: `conclusao` ficou sem fase, e uma entrega esperando só o handoff do CS
+apareceria em "Planejamento".
+
+**Validação:** tsc limpo, **297 testes 0 falhas**, build exit 0, **29/29
+smokes**, rota conferida com dado real.

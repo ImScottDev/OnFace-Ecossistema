@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { usePathname, useRouter } from "next/navigation";
 import { Truck, Activity, Hourglass, UserRound, Lock, CheckCircle2, CalendarClock } from "lucide-react";
 import { useOrgUsuarios } from "@/components/crm/BoardFilters";
+import { MARCOS_AI } from "@/lib/crm/pos-venda-checklists";
 
 interface FulfillmentLinha {
   id: string;
@@ -39,6 +40,18 @@ const FASE_COLUNAS: { key: "planejamento" | "preparacao" | "execucao" | "validac
   { key: "validacao", label: "Validação", sub: "Testes e aprovação" },
   { key: "concluida", label: "Concluída", sub: "Implantação finalizada" },
 ];
+
+
+/** Onde a entrega está, no vocabulário da PRÓPRIA família.
+ *
+ * PABX e White Label falam em fase; Callface AI fala nos 10 marcos do guia
+ * (comprimir isso em fases genéricas já foi reprovado). O board é universal, o
+ * rótulo não precisa ser: cada card responde na língua do seu processo. */
+function ondeEsta(f: { fase?: string | null; marco?: string | null; etapa_atual?: string | null }): string {
+  if (f.fase) return FASE_COLUNAS.find((c) => c.key === f.fase)?.label ?? f.fase;
+  if (f.marco) return MARCOS_AI.find((m) => m.key === f.marco)?.label ?? f.marco;
+  return f.etapa_atual ?? "—";
+}
 
 const FAMILIA_LABEL: Record<string, string> = { CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label" };
 const STATUS_LABEL: Record<string, string> = {
@@ -411,7 +424,7 @@ function KanbanImplantacaoPabx({
               <div key={f.id} className="flex items-center gap-2 cursor-pointer" onClick={() => router.push(`${base}/entrega/${f.id}`)}>
                 <span className="text-[11px] font-semibold w-10 shrink-0" style={{ color: "var(--cf2-text-tertiary)" }}>{formatarData(f.target_at)}</span>
                 <span className="text-[11px] flex-1 truncate" style={{ color: "var(--cf2-text-secondary)" }}>{f.empresa_nome || f.lead_nome || "—"}</span>
-                <span className="text-[10px]" style={{ color: "var(--cf2-text-tertiary)" }}>{FASE_COLUNAS.find((c) => c.key === f.fase)?.label ?? "—"}</span>
+                <span className="text-[10px]" style={{ color: "var(--cf2-text-tertiary)" }}>{ondeEsta(f)}</span>
               </div>
             ))}
             {proximosVencimentos.length === 0 && <p className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>Sem dado.</p>}

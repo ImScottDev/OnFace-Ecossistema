@@ -311,3 +311,110 @@ export const WHITE_LABEL_CHECKLIST: ChecklistSeed = [
   { workstream: "go_live", titulo: "Confirmar go-live do ambiente White Label" },
   { workstream: "conclusao", titulo: "Concluir implantação e realizar handoff para Customer Success", metadata: { handoffCs: true } },
 ];
+
+
+/* ── Vocabulário de fase, por família ──────────────────────────────────────
+ *
+ * Mora AQUI, e não em `fulfillment.ts`, por um motivo mecânico: aquele arquivo
+ * importa `db`, e Client Component que o importasse quebraria o build. Era por
+ * isso que `OnboardingDetail.tsx` mantinha uma CÓPIA deste mapa — idêntica hoje,
+ * divergente no dia em que alguém mexer num lado só.
+ *
+ * Os dois vocabulários são DIFERENTES de propósito. A primeira versão do board
+ * comprimia a jornada de Callface AI em 4 fases genéricas e o Kauã reprovou
+ * ("muito simplório"): o guia real tem 10 marcos. Unificar os dois num enum de
+ * seis fases repetiria esse erro. O que é universal é o BOARD — ver a entrega
+ * de qualquer família num lugar só; o vocabulário de cada uma continua sendo o
+ * do processo real dela.
+ */
+// Fase do Kanban de Implantação PABX (referência de UX, 19/08) — agrupamento
+// honesto dos workstreams reais do Delivery PABX em 5 fases visuais
+// (Planejamento/Preparação/Execução/Validação/Concluída). Não é um campo
+// novo no banco: é derivado do primeiro item NÃO concluído do checklist real,
+// na ordem real do processo — nunca fabricado, sempre reflete o passo atual.
+// Só existe pra PABX porque é o vocabulário do processo real recebido; AI
+// tem progressão pedagógica própria (EstagioPedagogico) e não deve ser
+// forçado nesse rótulo.
+export const FASE_PABX_POR_WORKSTREAM: Record<string, "planejamento" | "preparacao" | "execucao" | "validacao"> = {
+  levantamento: "planejamento",
+  portabilidade: "preparacao",
+  softswitch: "preparacao",
+  infraestrutura: "preparacao",
+  licenciamento: "preparacao",
+  configuracao_pbx: "execucao",
+  qa_interno: "validacao",
+  validacao_cliente: "validacao",
+};
+
+// Os 10 marcos da "Jornada do onboarding" (25/08, 2ª correção — a 1ª
+// versão desta nota comprimia o guia real em 4 fases genéricas, achado do
+// Kauã como "muito simplório"). Nomes e ordem batem exatamente com o
+// stepper de referência que ele mandou: Abertura e validação → Acessos e
+// integração → Usuários e times → Primeira ligação → Scorecard e insights
+// → Campanhas → Agente de IA → First Message e testes → SLA e canais →
+// Validação final. Cada marco agrupa os workstreams reais do guia que
+// pertencem ao mesmo tópico/tema — não um campo novo no banco, é derivado
+// do checklist real (AI_CHECKLIST_BASE), igual o padrão já usado pro PABX.
+export const MARCOS_AI = [
+  { key: "abertura_validacao", label: "Abertura e validação" },
+  { key: "acessos_integracao", label: "Acessos e integração" },
+  { key: "usuarios_times", label: "Usuários e times" },
+  { key: "primeira_ligacao", label: "Primeira ligação" },
+  { key: "scorecard_insights", label: "Scorecard e insights" },
+  { key: "campanhas", label: "Campanhas" },
+  { key: "agente_ia", label: "Agente de IA" },
+  { key: "first_message_testes", label: "First Message e testes" },
+  { key: "sla_canais", label: "SLA e canais" },
+  { key: "validacao_final", label: "Validação final" },
+] as const;
+export type MarcoAI = (typeof MARCOS_AI)[number]["key"];
+
+export const MARCO_AI_POR_WORKSTREAM: Record<string, MarcoAI> = {
+  abertura: "abertura_validacao",
+  dados_empresa: "abertura_validacao",
+  crm_integracao: "acessos_integracao",
+  acessos: "acessos_integracao",
+  usuarios_times: "usuarios_times",
+  primeira_ligacao: "primeira_ligacao",
+  scorecard_insights: "scorecard_insights",
+  proximos_passos: "scorecard_insights",
+  relatorios: "scorecard_insights",
+  // Reuniões online cai no marco "Campanhas" — o stepper de referência não
+  // tem nó próprio pra reuniões, e as duas são features de crescimento
+  // condicionais ao plano/módulo contratado (ver nota no checklist acima).
+  reunioes_online: "campanhas",
+  campanhas: "campanhas",
+  agente_prompt: "agente_ia",
+  agente_config: "agente_ia",
+  first_message: "first_message_testes",
+  bateria_testes: "first_message_testes",
+  sla_canais: "sla_canais",
+  validacao_final: "validacao_final",
+};
+
+/** Fase do White Label, derivada da ORDEM do `WHITE_LABEL_CHECKLIST` acima.
+ *
+ *  Não é vocabulário novo: são as mesmas cinco colunas do PABX, porque as duas
+ *  são implantação e o board é o mesmo. O que muda é o trabalho dentro de cada
+ *  uma, que continua sendo o checklist real de cada família.
+ *
+ *  Até 21/09 o White Label voltava `fase: null` E `etapa_atual: null` — o
+ *  comentário na rota dizia "zero registro real hoje", e já havia registro com
+ *  checklist preenchido. Quem abria a tela via a entrega existir e não via onde
+ *  ela estava. */
+export const FASE_WHITE_LABEL_POR_WORKSTREAM: Record<string, "planejamento" | "preparacao" | "execucao" | "validacao"> = {
+  abertura: "planejamento",       // iniciar implantação, revisar escopo
+  comunicacao: "planejamento",    // boas-vindas, apresentar etapas e prazo
+  materiais: "preparacao",        // formulário, coleta e validação do que o cliente manda
+  ambiente: "execucao",           // configurar ambiente e identidade da marca
+  dominio: "execucao",            // DNS/CNAME, TLS, SPF/DKIM
+  qa_interno: "validacao",
+  onboarding: "validacao",        // reunião de onboarding do ambiente
+  validacao_cliente: "validacao",
+  go_live: "validacao",           // go-live ainda é validação: o cliente ainda pode reprovar
+  // Handoff para o CS. Fica em validação, e NÃO fora do mapa: enquanto esse
+  // item estiver pendente o fulfillment não está COMPLETED, e sem fase ele
+  // cairia no fallback — uma entrega quase pronta aparecendo em Planejamento.
+  conclusao: "validacao",
+};
+

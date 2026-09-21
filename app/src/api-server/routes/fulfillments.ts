@@ -7,7 +7,7 @@ import { eq, and, sql, inArray, desc } from "drizzle-orm";
 import { z } from "zod";
 import { getCtx } from "../compat.js";
 import { registrarMudancaResponsavel } from "@/lib/crm/owner";
-import { PABX_CHECKLIST, AI_CHECKLIST_BASE, WHITE_LABEL_CHECKLIST, FASE_PABX_POR_WORKSTREAM, MARCO_AI_POR_WORKSTREAM, MARCOS_AI, FAMILIAS_ONBOARDING } from "@/lib/crm/fulfillment";
+import { PABX_CHECKLIST, AI_CHECKLIST_BASE, WHITE_LABEL_CHECKLIST, FASE_PABX_POR_WORKSTREAM, FASE_WHITE_LABEL_POR_WORKSTREAM, MARCO_AI_POR_WORKSTREAM, MARCOS_AI, FAMILIAS_ONBOARDING } from "@/lib/crm/fulfillment";
 
 const app = new Hono();
 
@@ -144,9 +144,10 @@ app.get("/fulfillments", async (c) => {
   // cada fulfillment, na ordem real do checklist. Só CALLFACE_AI tem mapa
   // de marco hoje (White Label ainda não tem nenhum registro real e o
   // checklist dele é outro vocabulário — ver MARCO_AI_POR_WORKSTREAM).
-  const idsComMarco = rows.filter((r) => r.service_family === "CALLFACE_AI").map((r) => r.id);
-  const idsComFasePabx = rows.filter((r) => r.service_family === "PABX").map((r) => r.id);
-  const todosIds = [...idsComMarco, ...idsComFasePabx];
+  // TODAS as famílias carregam itens. Até 21/09 o White Label ficava de fora e
+  // voltava fase e etapa nulas: a entrega aparecia na lista sem dizer onde
+  // estava, apesar do checklist dele estar preenchido no banco.
+  const todosIds = rows.map((r) => r.id);
   const itensPorFulfillment = new Map<string, { workstream: string; status: string; titulo: string }[]>();
   if (todosIds.length > 0) {
     const itensRows = await db
@@ -196,10 +197,21 @@ app.get("/fulfillments", async (c) => {
       const primeiroPendente = itens.find(naoConcluidos);
       return { ...r, fase, marco: null, etapa_atual: primeiroPendente?.titulo ?? null, estado_operacional: null };
     }
-    // White Label: sem mapa de marco/fase ainda (zero registro real hoje) —
-    // honesto null em vez de inventar agrupamento sem dado pra validar.
+    if (r.service_family === "WHITE_LABEL") {
+      const fase = r.status === "COMPLETED" ? "concluida" : (() => {
+        const primeiroPendente = itens.find(naoConcluidos);
+        return primeiroPendente ? FASE_WHITE_LABEL_POR_WORKSTREAM[primeiroPendente.workstream] ?? "planejamento" : "validacao";
+      })();
+      const primeiroPendente = itens.find(naoConcluidos);
+      return {
+        ...r, fase, marco: null, etapa_atual: primeiroPendente?.titulo ?? null,
+        estado_operacional: estadoOperacionalOnboarding(r.status, !!r.proxima_reuniao_em),
+      };
+    }
+    // Família sem mapa: honesto null em vez de inventar agrupamento.
+    const primeiroPendente = itens.find(naoConcluidos);
     return {
-      ...r, marco: null, fase: null, etapa_atual: null,
+      ...r, marco: null, fase: null, etapa_atual: primeiroPendente?.titulo ?? null,
       estado_operacional: estadoOperacionalOnboarding(r.status, !!r.proxima_reuniao_em),
     };
   });

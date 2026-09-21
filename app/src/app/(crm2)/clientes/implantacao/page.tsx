@@ -18,7 +18,13 @@ import { Cf2EntregaWorkspace } from "@/components/crm2/clientes/EntregaWorkspace
 // inteiro apesar de já existirem 12 fulfillments reais de White Label no
 // banco. O seletor é link puro (sem JS) — o workspace já aceita `familiaFixa`,
 // só faltava alguém passar White Label pra ele.
+// 21/09: "Todas" entrou como padrão. O board sem família fixa já existia e
+// cobria as três famílias — e não tinha um único link apontando para ele
+// ("uso interno", dizia o comentário). Quem abria Implantação precisava saber
+// de antemão qual produto procurar, e uma entrega de família errada ficava
+// invisível pela tarde inteira.
 const TRILHAS = [
+  { familia: null, label: "Todas", subtitle: "Implantação — todas as famílias" },
   { familia: "PABX" as const, label: "PABX", subtitle: "Implantação PABX — pós-fechamento" },
   { familia: "WHITE_LABEL" as const, label: "White Label", subtitle: "Implantação White Label — pós-fechamento" },
 ];
@@ -44,8 +50,8 @@ export default async function ClientesImplantacaoPage({ searchParams }: { search
             const ativo = t.familia === trilha.familia;
             return (
               <Link
-                key={t.familia}
-                href={`/clientes/implantacao?familia=${t.familia}`}
+                key={t.label}
+                href={t.familia ? `/clientes/implantacao?familia=${t.familia}` : "/clientes/implantacao"}
                 className="px-3 py-1.5 rounded-chip text-apoio font-semibold transition-colors"
                 style={{
                   background: ativo ? "var(--cf2-accent)" : "transparent",
@@ -57,7 +63,7 @@ export default async function ClientesImplantacaoPage({ searchParams }: { search
             );
           })}
         </div>
-        <Cf2EntregaWorkspace familiaFixa={trilha.familia} />
+        <Cf2EntregaWorkspace familiaFixa={trilha.familia ?? undefined} />
       </div>
     </div>
   );

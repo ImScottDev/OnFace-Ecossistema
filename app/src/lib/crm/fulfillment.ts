@@ -38,70 +38,13 @@ import { PABX_CHECKLIST, AI_CHECKLIST_BASE, WHITE_LABEL_CHECKLIST, type Checklis
 export { PABX_CHECKLIST, AI_CHECKLIST_BASE, WHITE_LABEL_CHECKLIST };
 export type { ChecklistSeed, ChecklistItemMetadata, EstagioPedagogico } from "@/lib/crm/pos-venda-checklists";
 
-// Fase do Kanban de Implantação PABX (referência de UX, 19/08) — agrupamento
-// honesto dos workstreams reais do Delivery PABX em 5 fases visuais
-// (Planejamento/Preparação/Execução/Validação/Concluída). Não é um campo
-// novo no banco: é derivado do primeiro item NÃO concluído do checklist real,
-// na ordem real do processo — nunca fabricado, sempre reflete o passo atual.
-// Só existe pra PABX porque é o vocabulário do processo real recebido; AI
-// tem progressão pedagógica própria (EstagioPedagogico) e não deve ser
-// forçado nesse rótulo.
-export const FASE_PABX_POR_WORKSTREAM: Record<string, "planejamento" | "preparacao" | "execucao" | "validacao"> = {
-  levantamento: "planejamento",
-  portabilidade: "preparacao",
-  softswitch: "preparacao",
-  infraestrutura: "preparacao",
-  licenciamento: "preparacao",
-  configuracao_pbx: "execucao",
-  qa_interno: "validacao",
-  validacao_cliente: "validacao",
-};
-
-// Os 10 marcos da "Jornada do onboarding" (25/08, 2ª correção — a 1ª
-// versão desta nota comprimia o guia real em 4 fases genéricas, achado do
-// Kauã como "muito simplório"). Nomes e ordem batem exatamente com o
-// stepper de referência que ele mandou: Abertura e validação → Acessos e
-// integração → Usuários e times → Primeira ligação → Scorecard e insights
-// → Campanhas → Agente de IA → First Message e testes → SLA e canais →
-// Validação final. Cada marco agrupa os workstreams reais do guia que
-// pertencem ao mesmo tópico/tema — não um campo novo no banco, é derivado
-// do checklist real (AI_CHECKLIST_BASE), igual o padrão já usado pro PABX.
-export const MARCOS_AI = [
-  { key: "abertura_validacao", label: "Abertura e validação" },
-  { key: "acessos_integracao", label: "Acessos e integração" },
-  { key: "usuarios_times", label: "Usuários e times" },
-  { key: "primeira_ligacao", label: "Primeira ligação" },
-  { key: "scorecard_insights", label: "Scorecard e insights" },
-  { key: "campanhas", label: "Campanhas" },
-  { key: "agente_ia", label: "Agente de IA" },
-  { key: "first_message_testes", label: "First Message e testes" },
-  { key: "sla_canais", label: "SLA e canais" },
-  { key: "validacao_final", label: "Validação final" },
-] as const;
-export type MarcoAI = (typeof MARCOS_AI)[number]["key"];
-
-export const MARCO_AI_POR_WORKSTREAM: Record<string, MarcoAI> = {
-  abertura: "abertura_validacao",
-  dados_empresa: "abertura_validacao",
-  crm_integracao: "acessos_integracao",
-  acessos: "acessos_integracao",
-  usuarios_times: "usuarios_times",
-  primeira_ligacao: "primeira_ligacao",
-  scorecard_insights: "scorecard_insights",
-  proximos_passos: "scorecard_insights",
-  relatorios: "scorecard_insights",
-  // Reuniões online cai no marco "Campanhas" — o stepper de referência não
-  // tem nó próprio pra reuniões, e as duas são features de crescimento
-  // condicionais ao plano/módulo contratado (ver nota no checklist acima).
-  reunioes_online: "campanhas",
-  campanhas: "campanhas",
-  agente_prompt: "agente_ia",
-  agente_config: "agente_ia",
-  first_message: "first_message_testes",
-  bateria_testes: "first_message_testes",
-  sla_canais: "sla_canais",
-  validacao_final: "validacao_final",
-};
+// Vocabulário de fase: mora em `pos-venda-checklists.ts` (módulo puro), para
+// que as telas possam importá-lo sem arrastar `db` junto. Reexportado aqui
+// porque sete chamadores já o pegam deste caminho.
+export {
+  FASE_PABX_POR_WORKSTREAM, FASE_WHITE_LABEL_POR_WORKSTREAM,
+  MARCOS_AI, MARCO_AI_POR_WORKSTREAM, type MarcoAI,
+} from "@/lib/crm/pos-venda-checklists";
 
 function checklistParaFamilia(serviceFamily: string): ChecklistSeed {
   if (serviceFamily === "PABX") return PABX_CHECKLIST;

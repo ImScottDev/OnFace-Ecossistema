@@ -1124,6 +1124,51 @@ ser o mesmo número das métricas `recebido`/`faturado` do catálogo.
 smokes**, `/api/financeiro/metricas` e `/api/financeiro/inadimplencia` (nos três
 produtos) conferidas contra build de produção com dado real.
 
+### CP8 — Onboarding e Implantação: o board universal já existia e ninguém o abria
+
+Auditoria antes de construir. O módulo tem 5 tabelas, 25 fulfillments reais,
+1.659 itens de checklist, telas de board e de detalhe, checklists por família
+derivados de processos reais. Não faltava jornada. Faltavam três ligações.
+
+**1. White Label era invisível no próprio board.** A rota devolvia
+`fase: null` **e** `etapa_atual: null` para ele, com um comentário dizendo
+"zero registro real hoje" — e havia registro, com checklist preenchido. Pior:
+os itens do White Label nem eram carregados (`todosIds` filtrava só
+CALLFACE_AI e PABX). Quem abria a tela via a entrega existir e não via onde ela
+estava. Agora tem `FASE_WHITE_LABEL_POR_WORKSTREAM`, derivada da ordem do
+próprio `WHITE_LABEL_CHECKLIST`, e a entrega real saiu de `null` para
+`fase = validacao`.
+
+**2. O board que cobre as três famílias não tinha um único link.** O
+comentário no componente dizia o quanto: *"sem `familiaFixa`, mostra o seletor
+e cobre as 3 famílias juntas (uso interno, não mais linkado nos tabs do
+módulo)"*. É o defeito recorrente deste repo — peça pronta, sem chamador — e
+aqui custava ver a entrega do produto errado. Entrou como aba "Todas", e é o
+padrão da página.
+
+**3. O mapa de marcos estava escrito duas vezes.** `OnboardingDetail.tsx`
+mantinha uma cópia de `MARCO_AI_POR_WORKSTREAM` — idêntica hoje, o que é pior
+que divergente: parece segura até alguém editar um lado só. A causa era
+mecânica: o mapa morava em `lib/crm/fulfillment.ts`, que importa `db`, e Client
+Component que o importasse quebraria o build. O vocabulário mudou para
+`pos-venda-checklists.ts`, que é puro, e `fulfillment.ts` reexporta.
+
+**O que NÃO foi feito, de propósito.** O plano falava em "6 fases universais".
+O código registra que a primeira versão do board comprimiu a jornada de
+Callface AI em 4 fases genéricas e o Kauã reprovou — *"muito simplório"* — e o
+guia real tem 10 marcos. Forçar um enum de seis fases repetiria o erro. O que
+virou universal foi o **board**; o vocabulário de cada família continua sendo o
+do processo real dela, e o card responde na língua do seu produto.
+
+**O teste achou um defeito na hora de rodar.** A cobertura mapa × checklist
+acusou `conclusao` (o handoff para o CS, último passo do White Label) sem fase:
+enquanto esse item estivesse pendente o fulfillment não é COMPLETED, então
+cairia no fallback e uma entrega quase pronta apareceria em "Planejamento".
+
+**Validação:** tsc limpo, **297 testes 0 falhas**, build exit 0, **29/29
+smokes**, `/api/fulfillments` conferida com dado real (25 entregas, todas com
+fase ou marco) e `/clientes/implantacao` renderizando a aba Todas.
+
 ### Auditoria de CS Health (histórico da decisão)
 
 Menor do que o gap analysis inicial dizia:
