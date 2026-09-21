@@ -99,3 +99,35 @@ detectado na conferência, removido e refeito em Python antes de qualquer commit
 **Testes:** `tsc` 0 erros; 111 testes, 0 falhas.
 
 **Commit:** `9c79729`
+
+---
+
+## 2026-09-21 — Fase 04 · Expansão do modelo canônico — CONCLUÍDA
+
+**Migrations:** `0057_expansao_dominio_canonico`, `0058_expansao_plataforma`,
+`0059_corrige_unicidade_inscricao`.
+
+**17 tabelas criadas**, todas vazias e todas com `organizacao_id NOT NULL` + FK.
+EXPAND puro: nenhuma alteração incompatível, nenhuma remoção, nenhum dado movido.
+
+**Erro próprio encontrado na revisão e corrigido:** a 0058 declarou
+`UNIQUE (automacao_id, entity_type, entity_id, status)` em `automacao_inscricoes`.
+Com o status dentro da chave, duas inscrições **canceladas** da mesma entidade
+colidiam, e isso é histórico legítimo. Provado em transação revertida: o segundo
+`INSERT` com `CANCELLED` falhava. A 0059 troca por índice único parcial sobre
+`ACTIVE`/`PAUSED`. Reteste nos dois sentidos: duas canceladas passam, duas ativas
+são bloqueadas.
+
+**Constraints exercitadas (10):** aquisição sem empresa nem pessoa bloqueia; só com
+empresa passa; tipo inválido bloqueia; score 150 bloqueia e 72 passa; `actor_type`
+inválido bloqueia e `AI_AGENT` passa; idempotency_key duplicada bloqueia;
+`win_condition` inválido bloqueia; `entity_type` de arquivo inválido bloqueia.
+
+**Conferência de schema:** as 17 tabelas comparadas coluna a coluna com o banco,
+17/17 idênticas. Drift de tabela permanece 0.
+
+**Testes:** `tsc` 0 erros; 111 testes, 0 falhas.
+
+**Dados não resolvidos:** nenhum. Nenhum dado foi tocado nesta fase.
+
+**Commit:** `635377f`

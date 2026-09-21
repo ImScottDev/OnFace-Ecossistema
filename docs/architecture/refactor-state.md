@@ -7,13 +7,13 @@
 
 ## Fase atual
 
-**04 — Migrations de expansão do modelo alvo** (próxima)
+**05 — Backfill de identidade: empresas, pessoas, vínculos** (próxima)
 
-Fases 01, 02 e 03 concluídas.
+Fases 01 a 04 concluídas.
 
 ## Último commit
 
-`9c79729` — refactor(02,03): arquitetura fisica do repositorio e fronteiras de pacote
+`635377f` — refactor(04): expansao do modelo canonico, 17 tabelas novas
 
 Branch de trabalho: `refactor/arquitetura-canonica`, criada a partir de `98940fe`.
 
@@ -61,6 +61,18 @@ Pacote vazio não afeta o build: `tsc` limpo e 111 testes passando com o workspa
 | # | Nome | O que faz | Reversível |
 |---|---|---|---|
 | 0056 | `reconciliacao_baseline_refactor` | `organizacao_id` NOT NULL em 4 tabelas financeiras; 3 FKs que faltavam | sim, inverso documentado no arquivo |
+| 0057 | `expansao_dominio_canonico` | cria `pipeline_etapas`, `aquisicoes`, `ofertas_comerciais`, `pagamentos`, `conversas`, `domain_events`, `timeline_events`, `cs_health_snapshots` | sim, EXPAND puro (DROP TABLE reverte) |
+| 0058 | `expansao_plataforma` | cria automação versionada, RBAC normalizado e arquivos; adiciona colunas nuláveis em `automacoes` e `automacao_execucoes` | sim, EXPAND puro |
+| 0059 | `corrige_unicidade_inscricao` | troca constraint composta por índice parcial em `automacao_inscricoes` | sim |
+
+### Tabelas canônicas criadas (vazias até o backfill)
+
+`pipeline_etapas` · `aquisicoes` · `ofertas_comerciais` · `pagamentos` · `conversas` ·
+`domain_events` · `timeline_events` · `cs_health_snapshots` · `automacao_versoes` ·
+`automacao_passos_execucao` · `automacao_inscricoes` · `roles` · `permissions` ·
+`role_permissions` · `user_roles` · `file_objects` · `file_links`
+
+`permissions` já nasce com as 16 permissões do SPEC §31 semeadas.
 
 ## Backfills executados
 
@@ -81,8 +93,15 @@ Nenhum. Inventário de partida em `database-as-is/04-escritores.md`.
 
 ## Testes executados
 
-Após a fase 03: `tsc --noEmit` limpo (0 erros), **111 testes passando**, 0 falhas
-(104 herdados + 7 novos de arquitetura).
+Após a fase 04: `tsc --noEmit` limpo (0 erros), **111 testes passando**, 0 falhas.
+
+Revisão interna da fase 04 (protocolo abaixo):
+- 10 constraints exercitadas uma a uma em transação revertida, nos dois sentidos
+  (o que deve bloquear bloqueia, o que deve passar passa);
+- as 17 tabelas conferidas **coluna a coluna** contra o banco: 17/17 idênticas;
+- drift de tabela: 0 (as duas fora do Drizzle são de controle interno);
+- um erro próprio encontrado e corrigido: a trava de inscrição em automação
+  impedia histórico legítimo. Ver migration 0059.
 
 ## Protocolo de revisão de checkpoint
 
