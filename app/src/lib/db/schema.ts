@@ -775,6 +775,11 @@ export const contratos = pgTable(
     // nunca é persistido e expira, permitindo reenvio seguro da cópia final.
     documentoPublicoTokenHash: text("documento_publico_token_hash"),
     documentoPublicoExpiraEm: timestamp("documento_publico_expira_em", { withTimezone: true }),
+    // Vínculo canônico (migrations 0063 a 0066). Declarado aqui porque
+    // coluna que existe no banco e não no Drizzle é invisível para o código.
+    ofertaComercialId: uuid("oferta_comercial_id"),
+    oportunidadeId: uuid("oportunidade_id"),
+    empresaId: uuid("empresa_id"),
   },
   (table) => [
     index("idx_contratos_lead_id").on(table.leadId),
@@ -1120,6 +1125,10 @@ export const automacoes = pgTable("automacoes", {
   acaoConfig: jsonb("acao_config"),
   ativo: boolean("ativo").default(true).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  tipo: text("tipo"),
+  currentVersionId: uuid("current_version_id"),
+  createdById: uuid("created_by_id"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
 // ─── WHATSAPP MENSAGENS ────────────────────────────────────
@@ -1491,6 +1500,7 @@ export const catalogoPrecos = pgTable("catalogo_precos", {
 
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  ofertaComercialId: uuid("oferta_comercial_id"),
 }, (table) => [
   uniqueIndex("idx_catalogo_precos_stripe_price").on(table.organizacaoId, table.stripePriceId),
   index("idx_catalogo_precos_produto").on(table.servicoCatalogoId, table.ordem),
@@ -1576,6 +1586,11 @@ export const propostas = pgTable(
     serviceFamily: text("service_family"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    // Vínculo canônico (migrations 0063 a 0066). Declarado aqui porque
+    // coluna que existe no banco e não no Drizzle é invisível para o código.
+    ofertaComercialId: uuid("oferta_comercial_id"),
+    oportunidadeId: uuid("oportunidade_id"),
+    empresaId: uuid("empresa_id"),
   },
   (table) => [
     index("idx_propostas_org").on(table.organizacaoId),
@@ -2678,6 +2693,17 @@ export const communications = pgTable("communications", {
   origemLegadoId: uuid("origem_legado_id"),
   raw: jsonb("raw"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  conversaId: uuid("conversa_id"),
+  empresaId: uuid("empresa_id"),
+  oportunidadeId: uuid("oportunidade_id"),
+  tipo: text("tipo"),
+  provider: text("provider"),
+  subject: text("subject"),
+  summary: text("summary"),
+  transcript: text("transcript"),
+  createdByUserId: uuid("created_by_user_id"),
+  metadata: jsonb("metadata").default({}).notNull(),
+  origemTabela: text("origem_tabela"),
 }, (table) => [
   index("idx_communications_org").on(table.organizacaoId),
   index("idx_communications_pessoa").on(table.pessoaId),
@@ -2729,6 +2755,10 @@ export const automacaoExecucoes = pgTable("automacao_execucoes", {
   resultado: jsonb("resultado"),
   erro: text("erro"),
   executedAt: timestamp("executed_at", { withTimezone: true }).defaultNow().notNull(),
+  versionId: uuid("version_id"),
+  triggerEventId: uuid("trigger_event_id"),
+  startedAt: timestamp("started_at", { withTimezone: true }),
+  finishedAt: timestamp("finished_at", { withTimezone: true }),
 }, (table) => [
   index("idx_automacao_execucoes_automacao").on(table.automacaoId),
   index("idx_automacao_execucoes_org").on(table.organizacaoId),
@@ -2816,6 +2846,10 @@ export const servicosCanonicos = pgTable(
     evidence: jsonb("evidence").default({}).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    // Vínculo canônico (migrations 0063 a 0066). Declarado aqui porque
+    // coluna que existe no banco e não no Drizzle é invisível para o código.
+    oportunidadeOrigemId: uuid("oportunidade_origem_id"),
+    ofertaComercialId: uuid("oferta_comercial_id"),
   },
   (table) => [
     uniqueIndex("idx_servicos_canonicos_org_key").on(table.organizacaoId, table.canonicalKey),
@@ -2866,6 +2900,10 @@ export const fulfillments = pgTable(
     cycleNumber: integer("cycle_number").default(1).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    // Vínculo canônico (migrations 0063 a 0066). Declarado aqui porque
+    // coluna que existe no banco e não no Drizzle é invisível para o código.
+    dueAt: timestamp("due_at", { withTimezone: true }),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
   },
   (table) => [
     // NÃO é único desde a migration 0068: a exclusividade por serviço sozinho
@@ -3542,6 +3580,16 @@ export const pontosContato = pgTable("pontos_contato", {
   // Bridge de migração/dual-write (backfill de recuperação legado, 2026-08-16)
   // — mesma lógica de pessoas.leadIdLegado.
   leadIdLegado: uuid("lead_id_legado").references(() => leads.id),
+  aquisicaoId: uuid("aquisicao_id"),
+  gclid: text("gclid"),
+  fbclid: text("fbclid"),
+  fbc: text("fbc"),
+  fbp: text("fbp"),
+  metaLeadId: text("meta_lead_id"),
+  adsetId: text("adset_id"),
+  adId: text("ad_id"),
+  provider: text("provider"),
+  metadata: jsonb("metadata").default({}).notNull(),
 }, (table) => [
   index("idx_pontos_contato_org").on(table.organizacaoId),
   index("idx_pontos_contato_pessoa").on(table.pessoaId),
@@ -3602,6 +3650,7 @@ export const oportunidades = pgTable("oportunidades", {
   leadId: uuid("lead_id").references(() => leads.id),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  ofertaComercialId: uuid("oferta_comercial_id"),
 }, (table) => [
   index("idx_oportunidades_org").on(table.organizacaoId),
   index("idx_oportunidades_pessoa").on(table.pessoaId),
@@ -3693,6 +3742,11 @@ export const clientes = pgTable("clientes", {
   leadIdLegado: uuid("lead_id_legado").references(() => leads.id),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  responsavelCsId: uuid("responsavel_cs_id"),
+  lifecycleStatus: text("lifecycle_status"),
+  ultimoContatoEm: timestamp("ultimo_contato_em", { withTimezone: true }),
+  proximaRevisaoEm: timestamp("proxima_revisao_em", { withTimezone: true }),
+  healthAtual: integer("health_atual"),
 }, (table) => [
   index("idx_clientes_org").on(table.organizacaoId),
   index("idx_clientes_empresa").on(table.empresaId),
@@ -4325,6 +4379,8 @@ export const pessoaEmpresaVinculos = pgTable("pessoa_empresa_vinculos", {
   iniciadoEm: timestamp("iniciado_em", { withTimezone: true }).defaultNow().notNull(),
   encerradoEm: timestamp("encerrado_em", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  cargo: text("cargo"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   uniqueIndex("idx_pessoa_empresa_vinculo_ativo").on(table.pessoaId, table.empresaId).where(sql`encerrado_em IS NULL`),
   index("idx_pessoa_empresa_vinculo_empresa").on(table.empresaId),
