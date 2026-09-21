@@ -16,7 +16,7 @@
  */
 import { db } from "@/lib/db";
 import { eventOutbox } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 
 /** `db` ou um client de transação (`db.transaction(async (tx) => ...)`) — o insert funciona igual nos dois. */
 type DbClient = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -104,7 +104,26 @@ export async function publicarEvento(opts: PublicarEventoOpts, dbClient: DbClien
       correlationId: opts.correlationId || null,
       idempotencyKey: opts.idempotencyKey || null,
     }).onConflictDoNothing().returning({ id: eventOutbox.id });
-    if (inserted) return inserted.id;
+
+    // REGISTRO DE DOMÍNIO (SPEC §24.1), além da fila.
+    //
+    // Havia dois publicadores no sistema: este, que grava só a MENSAGEM no
+    // outbox, e `@onface/platform-events`, que grava o FATO em `domain_events`
+    // e a mensagem no outbox. Vinte arquivos usam este, quatro usam aquele.
+    //
+    // A diferença não é de estilo. `event_outbox` é fila: a linha existe para
+    // ser entregue e some de vista depois de processada. `domain_events` é o
+    // registro do que aconteceu — é dele que sai a timeline, e é nele que se
+    // olha para responder "o que houve com esta empresa em agosto".
+    //
+    // Com vinte chamadores publicando só na fila, a maior parte dos fatos do
+    // sistema não existia no registro. Publicar aqui, na mesma transação do
+    // chamador, resolve sem tocar em nenhum dos vinte.
+    if (inserted) {
+      await registrarFatoDeDominio(opts, dbClient);
+      return inserted.id;
+    }
+
     if (opts.idempotencyKey) {
       const [existing] = await dbClient.select({ id: eventOutbox.id }).from(eventOutbox).where(eq(eventOutbox.idempotencyKey, opts.idempotencyKey)).limit(1);
       return existing?.id ?? null;
@@ -113,5 +132,30 @@ export async function publicarEvento(opts: PublicarEventoOpts, dbClient: DbClien
   } catch (err) {
     console.error(`[EventOutbox] falha ao publicar ${opts.eventType} (${opts.aggregateType}/${opts.aggregateId}):`, err);
     return null;
+  }
+}
+
+/**
+ * Grava o fato em `domain_events`.
+ *
+ * Usa a MESMA chave de idempotência do outbox: os dois descrevem o mesmo fato,
+ * e o `ON CONFLICT DO NOTHING` garante que um replay não crie um segundo
+ * registro nem em um nem em outro.
+ *
+ * Falha aqui não derruba a publicação: a mensagem já está na fila e a
+ * consequência vai acontecer. Perder o registro é ruim; perder a entrega, pior.
+ */
+async function registrarFatoDeDominio(opts: PublicarEventoOpts, dbClient: DbClient): Promise<void> {
+  try {
+    await dbClient.execute(sql`
+      INSERT INTO domain_events (organizacao_id, event_type, aggregate_type, aggregate_id,
+                                 actor_type, source, idempotency_key, correlation_id, payload)
+      VALUES (${opts.organizacaoId}::uuid, ${opts.eventType}, ${opts.aggregateType},
+              ${opts.aggregateId}::uuid, 'SYSTEM', 'runtime',
+              ${opts.idempotencyKey ?? null}, ${opts.correlationId ?? null}::uuid,
+              ${JSON.stringify(opts.payload)}::jsonb)
+      ON CONFLICT DO NOTHING`);
+  } catch (err) {
+    console.error(`[EventOutbox] fato ${opts.eventType} foi para a fila mas não para o registro:`, err);
   }
 }

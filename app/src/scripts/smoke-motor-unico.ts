@@ -131,6 +131,20 @@ async function main() {
     console.log(`  5. dois negócios movidos      → ${eventos.n} eventos StageChanged publicados`);
     await db.execute(sql`DELETE FROM negocios WHERE id = ${n2.id}::uuid`);
 
+    // 6. o fato entra no REGISTRO, não só na fila
+    //
+    // `event_outbox` é fila: a linha existe para ser entregue. `domain_events`
+    // é o registro do que aconteceu — é dele que sai a timeline e é nele que
+    // se olha para responder "o que houve com esta empresa em agosto".
+    const registro = await um<{ na_fila: number; no_registro: number }>(sql`
+      SELECT (SELECT count(*)::int FROM event_outbox
+               WHERE event_type = 'StageChanged'
+                 AND payload ->> 'entityId' IN (${negocio.id}, ${n2.id})) AS na_fila,
+             (SELECT count(*)::int FROM domain_events
+               WHERE event_type = 'StageChanged'
+                 AND payload ->> 'entityId' IN (${negocio.id}, ${n2.id})) AS no_registro`);
+    console.log(`  6. fila x registro            → ${registro.na_fila} na fila, ${registro.no_registro} no registro`);
+
     console.log("\n  RESULTADO");
     const checagens: [string, boolean, string][] = [
       ["gate do ganho", aposGanho.status !== "ganho", "regra de automação não fecha venda por fora da política"],
@@ -139,6 +153,7 @@ async function main() {
       ["rastreável", t.origem === "AUTOMACAO" && t.com_chave === 1, "a tarefa diz que veio de automação"],
       ["tag no lugar certo", tag.no_modelo_usado === 1 && tag.no_array_legado === 0, "a tag da automação aparece junto com as outras, não num array que ninguém lê"],
       ["evento por entidade", eventos.n === 2, "duas entidades movidas publicam dois eventos; com chave igual, só a primeira publicaria"],
+      ["fato registrado", registro.no_registro === registro.na_fila && registro.no_registro > 0, "o fato existe no registro, não só na fila que some depois de processada"],
     ];
     let ok = true;
     for (const [nome, passou, desc] of checagens) {
@@ -171,6 +186,12 @@ async function main() {
     await db.execute(sql`
       DELETE FROM domain_events
        WHERE idempotency_key LIKE 'cadence:avulso:%' OR idempotency_key LIKE 'cadence::avulso:%'`);
+    // O fato agora tambem entra no registro; limpar so a fila deixaria o
+    // registro crescendo a cada execucao do smoke.
+    await db.execute(sql`
+      DELETE FROM domain_events
+       WHERE event_type IN ('StageChanged','TagAdded','TagRemoved')
+         AND payload ->> 'entityId' IN (${negocio.id}, ${empresa.id})`);
     await db.execute(sql`DELETE FROM negocios WHERE id = ${negocio.id}::uuid`);
   } finally {
     for (const id of criadas) {
