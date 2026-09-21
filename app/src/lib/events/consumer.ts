@@ -70,6 +70,21 @@ export async function processarEventosPendentes(limite = 50): Promise<{ processa
       for (const handler of list) await handler(evento);
       await dispatchAutomationEvent(evento);
 
+      // PROJEÇÃO NA TIMELINE (SPEC §24.3).
+      //
+      // `timeline_events` tinha 14.078 linhas, TODAS do backfill:
+      // `projetarTimeline` existia e só era chamada em teste. A timeline
+      // mostrava a história até o dia da carga e parava ali.
+      //
+      // Roda aqui, a partir do registro, porque a projeção é DERIVADA: se
+      // falhar, o fato continua existindo e a linha pode ser reprojetada.
+      try {
+        const { projetarEventoNaTimeline } = await import("./projecao-timeline");
+        await projetarEventoNaTimeline(evento as never);
+      } catch (e) {
+        console.error(`[outbox] projeção na timeline falhou para ${evento.eventType} (best-effort):`, e);
+      }
+
       // ENTREGA À META (SPEC §20). O adapter da CAPI existia desde a primeira
       // rodada da fase 20 e NADA em runtime o chamava: a integração parecia
       // pronta e nenhum evento saía daqui.

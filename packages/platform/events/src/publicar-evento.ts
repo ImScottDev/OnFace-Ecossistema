@@ -129,6 +129,14 @@ export async function projetarTimeline(
     metadata?: Record<string, unknown>;
   },
 ): Promise<string | null> {
+  // postgres.js quebra com `Date` cru dentro do template: ele tenta medir o
+  // byteLength do objeto e estoura com "The string argument must be of type
+  // string". Gotcha conhecido deste projeto, e a proteção mora aqui para que
+  // nenhum chamador precise lembrar.
+  const ocorridoEm = item.ocorridoEm instanceof Date
+    ? item.ocorridoEm.toISOString()
+    : item.ocorridoEm ?? null;
+
   const r = await tx.execute<{ id: string }>(sqlTag`
     INSERT INTO timeline_events (
       organizacao_id, domain_event_id, empresa_id, pessoa_id, aquisicao_id,
@@ -140,7 +148,7 @@ export async function projetarTimeline(
             ${item.oportunidadeId ?? null}::uuid, ${item.servicoCanonicoId ?? null}::uuid,
             ${item.tipo}, ${item.titulo}, ${item.descricao ?? null},
             ${item.actorType ?? "SYSTEM"}, ${item.actorId ?? null}::uuid,
-            coalesce(${item.ocorridoEm ?? null}::timestamptz, now()),
+            coalesce(${ocorridoEm}::timestamptz, now()),
             ${JSON.stringify(item.metadata ?? {})}::jsonb)
     RETURNING id
   `);

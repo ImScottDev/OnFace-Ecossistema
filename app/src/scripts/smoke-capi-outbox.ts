@@ -123,6 +123,15 @@ async function main() {
        WHERE o.idempotency_key = ${marca + ":outbound"} AND e.entregue`);
     console.log(`  4. o fato SEM touchpoint Meta          entregue=${outboundEntregue.n > 0}`);
 
+    // A projeção na timeline: o fato vira linha que alguém lê.
+    const timeline = await um<{ n: number; titulos: string }>(sql`
+      SELECT count(*)::int AS n,
+             COALESCE(string_agg(t.titulo, ' | '), '') AS titulos
+        FROM timeline_events t
+       WHERE t.pessoa_id IN (SELECT id FROM pessoas WHERE nome LIKE ${marca + "%"})`);
+    console.log(`  5. projetado na timeline               ${timeline.n} linha(s)`);
+    if (timeline.titulos) console.log(`     "${timeline.titulos}"`);
+
     console.log("\n  RESULTADO");
     const checagens: [string, boolean, string][] = [
       ["a cadeia fecha", entregas.entregues === 1, "o fato virou conversão na Meta, passando pelo worker"],
@@ -130,6 +139,7 @@ async function main() {
       ["auditado", entregas.total >= 1, "existe resposta para 'esse evento chegou na Meta?'"],
       ["id determinístico", entregas.event_ids.includes("onface:Lead:"), "o event_id sai do evento de domínio, e a Meta deduplica por ele"],
       ["worker não travou", proc.falhados === 0, "a entrega à Meta não derruba o processamento do evento"],
+      ["timeline viva", timeline.n >= 1, "o fato de runtime vira linha que alguém lê, não só registro"],
     ];
     let ok = true;
     for (const [nome, passou, desc] of checagens) {
@@ -146,6 +156,9 @@ async function main() {
     await db.execute(sql`DELETE FROM domain_events WHERE idempotency_key LIKE ${marca + "%"}`);
     // A ordem é a inversa da criação, e cada passo tolera o registro parcial de
     // uma execução que morreu no meio.
+    await db.execute(sql`
+      DELETE FROM timeline_events WHERE pessoa_id IN
+        (SELECT id FROM pessoas WHERE nome LIKE ${marca + "%"})`);
     for (const c of criados) {
       if (c.touchpoint) await db.execute(sql`DELETE FROM pontos_contato WHERE id = ${c.touchpoint}::uuid`);
       if (c.aquisicao) await db.execute(sql`DELETE FROM aquisicoes WHERE id = ${c.aquisicao}::uuid`);
