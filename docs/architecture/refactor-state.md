@@ -7,16 +7,23 @@
 
 ## Fase atual
 
-**17 e 18** (em andamento)
+**17, 18, 19 e 22** (em andamento)
 
-Fases 01 a 16 concluídas. **17**: as telas de vendas leem o canônico; faltam as
-rotas de API (`leads.ts` 26 leituras, `relatorios.ts` 15, `negocios.ts` 15) e as libs
-de analytics e CS. **18**: os dois motores de automação convergiram nos mesmos
-adapters; falta a tag de empresa, que usa modelo diferente.
+Fases 01 a 16 concluídas.
+
+| Fase | Estado |
+|---|---|
+| 17 leitores | telas de vendas no canônico; faltam as rotas de API (`leads.ts` 26 leituras, `relatorios.ts` 15, `negocios.ts` 15) e as libs de analytics e CS |
+| 18 motor único | os dois motores usam os mesmos adapters; falta a tag de empresa, que usa outro modelo |
+| 19 IA | NEXO e Hermes criados em `draft`; a IA não escreve mais direto no banco. Falta RAG e o runtime passar permissão delegada |
+| 22 RBAC | papéis, mapa e vínculos semeados, com paridade provada. Falta as rotas usarem `exigirPermissao` |
+| 20 Meta | **bloqueado**: precisa de token com `leads_retrieval`, que não está disponível aqui |
+| 21, 23, 24 | não iniciadas |
+| 25 a 28 | dependem de 17 completa; 28 precisa de aprovação do Kauã |
 
 ## Último commit
 
-`f309686` — refactor(18): motor único — regra de automação não fecha mais venda por fora
+`7bfa83d` — refactor(19): NEXO e Hermes existem, e a IA deixa de escrever no banco
 
 Branch de trabalho: `refactor/arquitetura-canonica`, criada a partir de `98940fe`.
 
@@ -77,6 +84,8 @@ Pacote vazio não afeta o build: `tsc` limpo e 111 testes passando com o workspa
 | 0067 | `comunicacoes_canonicas` | `communications` e `conversas` canônicas | sim, EXPAND puro |
 | 0068 | `fulfillment_indice_antigo` | remove a exclusividade de `idx_fulfillments_servico`, que anulava a 0066 | sim, recriar como UNIQUE |
 | 0069 | `aquisicao_lead_legado` | `aquisicoes.lead_legado_id` + índice único parcial; 3.989 de 3.989 ligadas | sim, DROP COLUMN |
+| 0070 | `rbac_papeis_e_vinculos` | 8 papéis, o mapa papel→permissão e os 16 vínculos de usuário | sim, DELETE documentado |
+| 0071 | `nexo_e_hermes` | os dois agentes do SPEC §19, em `draft`, com versão 1 | sim, DELETE documentado |
 
 ### Tabelas canônicas criadas (vazias até o backfill)
 
@@ -244,7 +253,7 @@ canônico hoje faria o lead sumir da tela de pré-vendas no mesmo instante.
 
 ## Testes executados
 
-Estado atual: `tsc --noEmit` limpo, **build de produção passando**, **183 testes, 0
+Estado atual: `tsc --noEmit` limpo, **build de produção passando**, **188 testes, 0
 falhas**, mais cinco smokes contra o banco real:
 
 - `smoke-ponte-canonica` — entrada externa chega inteira ao canônico e não duplica;
@@ -271,6 +280,8 @@ falhas**, mais cinco smokes contra o banco real:
 | `arquitetura/escritores-migrados.test.ts` | porta de escrita nova sem ligação canônica |
 | `vendas/leitura-canonica.test.ts` | registro sumindo da leitura; divergência sem caso |
 | `arquitetura/escritores-migrados.test.ts` | motor de regras com implementação própria de ação |
+| `ai-platform/agentes.test.ts` | ferramenta de IA escrevendo direto; agente citando ferramenta inexistente |
+| `auth/permissoes.test.ts` | cutover de autorização mudando o acesso de alguém |
 
 Cada uma foi verificada **falhando de propósito** antes de entrar. Teste que não pega
 nada é teatro.

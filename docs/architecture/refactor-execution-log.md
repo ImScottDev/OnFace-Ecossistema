@@ -575,3 +575,39 @@ motor de fluxo, disparado pelo outbox, já tinha sido começada em
 **Validação:** `tsc` limpo, build passando, **183 testes**, 5 smokes verdes.
 
 **Commit:** `f309686`.
+
+---
+
+## 2026-09-21 — Fases 22 e 19 · Autorização granular e os dois agentes
+
+**RBAC: o mapa não inventa política.** As 16 permissões estavam semeadas desde a
+0058, mas `roles`, `role_permissions` e `user_roles` estavam vazias — a autorização
+continuava sendo a string `usuarios.role` lida por funções booleanas grossas. O mapa
+traduz o que o sistema já faz; a única permissão não derivável é
+`sales.approve_discount`, porque alçada de desconto não existe hoje. Ficou só com
+admin, o padrão restritivo, e quem aprova desconto é decisão do Kauã.
+
+A peça que importa é o teste de paridade. Autorização é a mudança em que errar é mais
+caro: quem perde acesso descobre no meio do expediente, e quem ganha acesso indevido
+ninguém descobre. O teste compara, usuário real por usuário real e permissão por
+permissão, o que o RBAC responde contra o que o gate legado responderia — **16 × 16,
+zero divergências**.
+
+Um terceiro teste prova a regra do SPEC para agente: o MESMO usuário admin, agindo
+por um agente que recebeu só `sales.read`, não consegue `finance.manage`. Sem isso a
+IA herdaria o poder de quem está por trás dela.
+
+**NEXO e Hermes existiam no desenho e não no banco.** 30 tabelas de plataforma de IA,
+zero agentes. Criados em `draft`, com autonomia de sugestão — agente que nasce
+executando sozinho em base de produção é feature sem revisão.
+
+**A IA parou de escrever direto.** `task.create`, `lead.update_status` e
+`deal.advance` faziam `db.insert`/`db.update`, o que o SPEC proíbe por escrito. Agora
+chamam os mesmos adapters. `deal.advance` já barrava o Ganho por conta própria, e um
+"não" repetido em cada chamador é um "não" que uma das cópias esquece.
+
+**Nota de processo:** caí pela terceira vez na sessão no gotcha da crase dentro de
+template de SQL. Desta vez a trava criada hoje pegou, apontando arquivo e linha. É o
+argumento a favor de escrever a trava na primeira vez, não na terceira.
+
+**Commits:** `955cb07`, `7bfa83d`.
