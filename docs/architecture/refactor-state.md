@@ -25,7 +25,7 @@ Fases 01 a 16 concluídas.
 
 ## Último commit
 
-`(catálogo do Stripe)` — feat(23): o catálogo sincroniza com o Stripe em vez de copiar planilha
+`ebae527` — feat(23): o catálogo sincroniza com o Stripe em vez de copiar planilha
 
 Branch de trabalho: `refactor/arquitetura-canonica`, criada a partir de `98940fe`.
 
