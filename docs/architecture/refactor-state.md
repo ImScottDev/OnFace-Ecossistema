@@ -7,11 +7,13 @@
 
 ## Fase atual
 
-**01 — Freeze baseline + backup + reconciliar drift Drizzle ↔ PostgreSQL**
+**02 — Criar arquitetura física do repositório** (próxima)
+
+Fase 01 concluída.
 
 ## Último commit
 
-`98940fe` (baseline do refactor)
+`3a47d94` — refactor(01): reconcilia baseline Drizzle <-> PostgreSQL
 
 Branch de trabalho: `refactor/arquitetura-canonica`, criada a partir de `98940fe`.
 
@@ -22,11 +24,28 @@ Branch de trabalho: `refactor/arquitetura-canonica`, criada a partir de `98940fe
 - [x] 01.3 backups confirmados
 - [x] 01.4 backup fresco pré-refactor: `_prod-snapshot-20260920/pre-refactor-20260920.dump` (17 MB)
 - [x] 01.5 branch dedicada criada
-- [ ] 01.6 reconciliação de drift Drizzle ↔ banco — EM ANDAMENTO
+- [x] 01.6 reconciliação de drift Drizzle ↔ banco — CONCLUÍDA
+
+### Resultado da fase 01
+
+| Medida | Antes | Depois |
+|---|---|---|
+| Tabelas no Drizzle / no banco | 145 / 151 | 149 / 151 |
+| Tabelas só no banco | 6 | 2 (só controle interno) |
+| Tabelas só no Drizzle | 0 | 0 |
+| Colunas do banco ausentes no Drizzle | 7 | 0 |
+| Colunas do Drizzle ausentes no banco | 1 | 0 |
+| Divergências de nullability em `organizacao_id` | 26 | 0 |
+| FKs do Drizzle sem par no banco | 3 | 0 |
+
+As duas tabelas fora do Drizzle são `_migracoes_aplicadas` e `_carga_contagem_antes`,
+ambas de controle interno e deliberadamente não declaradas.
 
 ## Migrations aplicadas neste refactor
 
-Nenhuma.
+| # | Nome | O que faz | Reversível |
+|---|---|---|---|
+| 0056 | `reconciliacao_baseline_refactor` | `organizacao_id` NOT NULL em 4 tabelas financeiras; 3 FKs que faltavam | sim, inverso documentado no arquivo |
 
 ## Backfills executados
 
@@ -47,7 +66,15 @@ Nenhum. Inventário de partida em `database-as-is/04-escritores.md`.
 
 ## Testes executados
 
-Baseline herdado de `98940fe`: `tsc --noEmit` limpo, 104 + 11 testes passando.
+Após a fase 01: `tsc --noEmit` limpo (0 erros), 104 testes passando, 0 falhas.
+
+## Bugs reais corrigidos durante a fase 01
+
+Três `INSERT` em `tarefas` no `worker/index.ts` omitiam `organizacao_id`. Como a coluna
+é NOT NULL no banco desde a migration 0050, esses caminhos falhavam em runtime:
+follow-up de proposta parada, renovação de contrato e recontato de negócio perdido.
+A organização já estava disponível e validada no escopo dos três. Foram expostos pelo
+`.notNull()` adicionado ao Drizzle, não por teste.
 
 ## Bloqueios reais
 

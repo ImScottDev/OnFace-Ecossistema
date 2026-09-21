@@ -30,3 +30,41 @@ branch; o diff da branch é zero porque nada novo foi escrito nela ainda. Detalh
 `refactor-state.md`.
 
 **Commit:** `98940fe` (baseline, sem commit novo nesta entrada).
+
+---
+
+## 2026-09-21 — Fase 01 · Reconciliação de drift — CONCLUÍDA
+
+**Migration aplicada:** `0056_reconciliacao_baseline_refactor.sql`
+
+Verificações feitas **antes** de aplicar, todas com resultado zero:
+- nulos em `organizacao_id` nas 4 tabelas financeiras: `contratos` 0, `assinaturas` 0,
+  `faturas` 0, `mrr_movimentos` 0;
+- órfãos nas 3 relações a criar: `leads.canonical_lead_id` 0,
+  `mrr_movimentos.evento_comercial_id` 0, `proposta_grupo_comercial.oportunidade_id` 0.
+
+**Schema:** 4 tabelas declaradas, 3 colunas adicionadas, 26 `.notNull()` aplicados.
+
+**Reconciliação de drift:**
+
+```text
+tabelas só no banco      6 → 2 (ambas de controle interno)
+tabelas só no Drizzle    0 → 0
+colunas divergentes      8 → 0
+nullability divergente  26 → 0
+FKs sem par              3 → 0
+```
+
+**Bugs encontrados e corrigidos:** 3 `INSERT` em `tarefas` no worker sem
+`organizacao_id`, que falhavam em runtime desde a migration 0050. Corrigidos usando a
+organização já resolvida e validada no escopo de cada um.
+
+**Nota de método:** a primeira tentativa de aplicar `.notNull()` por script inseriu a
+chamada dentro do `references()`, porque o parser contava chaves e não parênteses.
+Quebrou 25 declarações, foi detectado pelo `tsc` e revertido antes de qualquer commit.
+
+**Testes:** `tsc --noEmit` 0 erros; 104 testes, 0 falhas.
+
+**Dados não resolvidos:** nenhum.
+
+**Commit:** `3a47d94`
