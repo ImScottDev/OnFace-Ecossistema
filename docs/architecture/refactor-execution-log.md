@@ -542,3 +542,36 @@ agosto, mas ninguém tinha provado a cadeia contra dado real. `smoke-outbox.ts` 
 órfão**. Evento publicado de uma escrita que não aconteceu é pior que evento nenhum.
 
 **Commit:** `89e9715`.
+
+---
+
+## 2026-09-21 — Fase 18 · Os dois motores de automação convergiram
+
+**Eram dois, e a divergência era perigosa.** `cadencia/cadence-engine.ts` executa
+fluxo (espera, ramificação, retry, estado) e seus adapters recusam mover para Ganho:
+"Won exige o gate comercial de pagamento/assinatura". `crm/automacao-engine.ts`
+executava regra simples com implementação própria de cada ação, e a dele fazia
+`update negocios set status` direto — uma regra de automação podia marcar venda como
+ganha furando a política da oferta, o mesmo risco financeiro que a fase 16 fechou.
+
+Uma regra é um fluxo de um passo: não precisa de motor próprio, precisa dos mesmos
+adapters. `executarAcaoAvulsa` expõe o executor do motor de fluxo, e cinco ações
+passaram a delegar. O que veio junto, porque o adapter é melhor que a cópia:
+idempotência (a cópia criava duas tarefas iguais em disparo repetido), vínculo
+completo, `origem = AUTOMACAO` e publicação de `StageChanged`.
+
+**O que NÃO foi convergido, e está dito no código:** tag de empresa. O motor de fluxo
+usa `labels`/`entity_labels`, o de regras usa array de texto em `empresas.tags`. São
+modelos diferentes, e unificá-los é escopo próprio.
+
+**Levantamento que mudou o desenho da fase.** Existem três gerações de tabela de
+automação e **todas estão vazias** — `automacoes`, `cadence_definitions`,
+`email_sequencias`. A única com dado é `cadencia_execucoes` (1.273), que é log de
+passo SDR, não máquina de estado. Não havia comportamento de produção para preservar,
+o que reduziu muito o risco desta fase. A convergência para grafo → compilador →
+motor de fluxo, disparado pelo outbox, já tinha sido começada em
+`ai-platform/followup/` e `automations/event-dispatcher.ts`.
+
+**Validação:** `tsc` limpo, build passando, **183 testes**, 5 smokes verdes.
+
+**Commit:** `f309686`.

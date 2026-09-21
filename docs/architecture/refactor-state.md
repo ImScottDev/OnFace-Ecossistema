@@ -7,15 +7,16 @@
 
 ## Fase atual
 
-**17 — Migração dos leitores** (em andamento)
+**17 e 18** (em andamento)
 
-Fases 01 a 16 concluídas. Fase 17: **as telas de vendas leem o canônico**. Falta
-migrar as rotas de API (`leads.ts` 26 leituras, `relatorios.ts` 15, `negocios.ts` 15)
-e as libs de analytics e CS.
+Fases 01 a 16 concluídas. **17**: as telas de vendas leem o canônico; faltam as
+rotas de API (`leads.ts` 26 leituras, `relatorios.ts` 15, `negocios.ts` 15) e as libs
+de analytics e CS. **18**: os dois motores de automação convergiram nos mesmos
+adapters; falta a tag de empresa, que usa modelo diferente.
 
 ## Último commit
 
-`89e9715` — fix(24): 50 colunas invisíveis para o código, e duas travas contra voltar
+`f309686` — refactor(18): motor único — regra de automação não fecha mais venda por fora
 
 Branch de trabalho: `refactor/arquitetura-canonica`, criada a partir de `98940fe`.
 
@@ -243,8 +244,8 @@ canônico hoje faria o lead sumir da tela de pré-vendas no mesmo instante.
 
 ## Testes executados
 
-Estado atual: `tsc --noEmit` limpo, **build de produção passando**, **182 testes, 0
-falhas**, mais quatro smokes contra o banco real:
+Estado atual: `tsc --noEmit` limpo, **build de produção passando**, **183 testes, 0
+falhas**, mais cinco smokes contra o banco real:
 
 - `smoke-ponte-canonica` — entrada externa chega inteira ao canônico e não duplica;
 - `smoke-ganho-oportunidade` 5/5 — a política da oferta decide, PABX gera as duas
@@ -254,7 +255,10 @@ falhas**, mais quatro smokes contra o banco real:
   Callface AI direto. É a demonstração do risco financeiro fechado;
 - `smoke-outbox` 5/5 — evento e outbox na mesma transação, nascem pendentes, não
   duplicam na reentrega, **somem juntos quando a transação falha**, e o consumidor
-  tira da fila.
+  tira da fila;
+- `smoke-motor-unico` 4/4 — a regra de automação que tenta mover para Ganho **não
+  move**, a etapa legítima passa, o disparo repetido não duplica a tarefa e a tarefa
+  diz que veio de automação.
 
 ### Travas permanentes contra regressão
 
@@ -266,6 +270,7 @@ falhas**, mais quatro smokes contra o banco real:
 | `arquitetura/fronteiras.test.ts` | domínio importando ORM, SDK ou framework |
 | `arquitetura/escritores-migrados.test.ts` | porta de escrita nova sem ligação canônica |
 | `vendas/leitura-canonica.test.ts` | registro sumindo da leitura; divergência sem caso |
+| `arquitetura/escritores-migrados.test.ts` | motor de regras com implementação própria de ação |
 
 Cada uma foi verificada **falhando de propósito** antes de entrar. Teste que não pega
 nada é teatro.
