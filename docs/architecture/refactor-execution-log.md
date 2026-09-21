@@ -1559,3 +1559,28 @@ real, não de propagação faltando.
 
 **Validação:** tsc limpo, **260 testes, 0 falhas**, build exit 0, smoke de propagação
 verde.
+
+---
+
+## 2026-09-21 — Verificador pré-deploy
+
+O checkpoint nomeou um único bloqueio de deploy, e era de procedimento: as 23 migrations
+nunca rodaram em produção, e a 0056 aperta `organizacao_id` para NOT NULL em quatro
+tabelas financeiras e cria três chaves estrangeiras. Uma linha nula ou uma referência
+órfã derruba a migration no meio do deploy.
+
+Dizer "no clone local está limpo" não responde: o clone é de 20/09, e um dia de operação
+cria linha nova. `checar-pre-deploy.ts` roda apontando para o banco de produção, com a
+aplicação no ar, e é **somente leitura**. Conta as linhas que impediriam cada
+`ALTER TABLE`, mostra a consulta para encontrar cada uma, e lista quais migrations
+aquele banco já tem.
+
+Um detalhe que o próprio script me corrigiu: a primeira versão checava existência de
+tabela para todos os marcos, e reportou 0075 e 0077 como pendentes quando elas já
+haviam rodado. Nem toda migration cria tabela — a 0075 cria uma configuração de busca
+(`pt_unaccent`) e a 0077 só altera `guardrail_config`. Cada marco passou a checar a
+coisa que aquela migration realmente produz.
+
+No clone local: nenhum impedimento, 8 de 8 marcos aplicados.
+
+**Validação:** tsc limpo, **260 testes, 0 falhas**.

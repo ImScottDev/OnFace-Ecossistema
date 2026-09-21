@@ -18,6 +18,7 @@
     "db:relatorio-duplicidade-contratos": "tsx --env-file=.env src/lib/db/relatorio-duplicidade-contratos.ts",
     "db:relatorio-data-quality": "tsx --env-file=.env src/lib/db/relatorio-data-quality.ts",
     "check:relatorios": "tsx --env-file=.env src/scripts/checar-invariantes-relatorios.ts",
+    "check:pre-deploy": "tsx src/scripts/checar-pre-deploy.ts",
     "test": "node --import tsx --env-file-if-exists=.env --test \"src/**/*.test.ts\"",
     "test:ai-platform": "node --import tsx --test \"src/lib/ai-platform/**/*.test.ts\" \"src/lib/automations/**/*.test.ts\"",
     "ds:check": "node scripts/verificar-design-system.mjs",

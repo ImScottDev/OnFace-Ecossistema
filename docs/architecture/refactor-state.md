@@ -25,7 +25,7 @@ Fases 01 a 16 concluídas.
 
 ## Último commit
 
-`257c4e9` — test(17): as 10 leituras canônicas executadas contra o banco de produção
+`40018f6` — fix(05): identidade canônica estava sem o whatsapp e sem o sobrenome
 
 Branch de trabalho: `refactor/arquitetura-canonica`, criada a partir de `98940fe`.
 
@@ -483,8 +483,8 @@ canônico hoje faria o lead sumir da tela de pré-vendas no mesmo instante.
 
 ## Testes executados
 
-Estado atual: `tsc --noEmit` limpo, **build de produção passando**, **257 testes, 0
-falhas**, e **22 de 22 smokes** verdes contra o banco real (conferidos por código de
+Estado atual: `tsc --noEmit` limpo, **build de produção passando**, **260 testes, 0
+falhas**, e **23 de 23 smokes** verdes contra o banco real (conferidos por código de
 saída, não por texto: procurar "FALHA" na saída dava falso positivo em `falhados=0`):
 
 - `smoke-ponte-canonica` — entrada externa chega inteira ao canônico e não duplica;
@@ -563,6 +563,25 @@ Três `INSERT` em `tarefas` no `worker/index.ts` omitiam `organizacao_id`. Como 
 follow-up de proposta parada, renovação de contrato e recontato de negócio perdido.
 A organização já estava disponível e validada no escopo dos três. Foram expostos pelo
 `.notNull()` adicionado ao Drizzle, não por teste.
+
+## Antes do deploy: a verificação que substitui o palpite
+
+As 23 migrations do refactor (0056 a 0080) nunca rodaram em produção, e a 0056 aperta
+`organizacao_id` para NOT NULL em quatro tabelas financeiras e cria três chaves
+estrangeiras. Uma linha nula ou uma referência órfã faz a migration falhar no meio do
+deploy.
+
+O clone local é de 20/09 e **não é prova sobre produção**: um dia de operação cria linha
+nova. Por isso existe um verificador que roda apontando para o banco de produção, com a
+aplicação no ar, e é somente leitura:
+
+```bash
+DATABASE_URL="postgres://...prod..." pnpm --filter app check:pre-deploy
+```
+
+Ele conta as linhas que impediriam cada `ALTER TABLE`, mostra a consulta para encontrar
+cada uma, e lista quais migrations aquele banco já tem. Sai com código 1 quando não está
+pronto. No clone local: **nenhum impedimento, 8 de 8 marcos aplicados**.
 
 ## Bloqueios reais
 
