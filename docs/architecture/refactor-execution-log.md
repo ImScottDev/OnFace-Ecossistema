@@ -801,3 +801,50 @@ O relatório migrou com **paridade exata**: R$ 497.904,42 de MRR e R$ 76.628,87 
 setup, 603 ganhos dos dois lados.
 
 **Commit:** `ffdb614`.
+
+---
+
+## 2026-09-21 — Fase 20 revisada com credencial real
+
+Com as credenciais em mãos, a revisão mostrou que a fase **não estava pronta**, e os
+dois problemas maiores só aparecem quando existe credencial para testar.
+
+**O adapter da CAPI não tinha caller.** `montarEventoCapi` e `enviarParaCapi`
+existiam com teste passando, e nada em runtime os chamava: a integração parecia
+pronta e nenhum evento saía. A cadeia agora fecha pelo outbox, que é onde moram
+retry, idempotência e ordem. Um teste barra a regressão, e ele existe por causa deste
+erro.
+
+**O webhook assumia dados que a Meta não manda.** O webhook de leadgen avisa que um
+lead existe e entrega o `leadgen_id`; os dados só vêm de `/{leadgen_id}`. Assumir
+`field_data` funciona com o integrador que já buscou por nós e falha em silêncio
+quando a Meta chama direto.
+
+### Três coisas medidas contra a Meta, não presumidas
+
+1. **v26.0 é a versão atual** — v26 valida o caminho, v27+ respondem "Unknown path
+   components". Estava `v21.0` em dois lugares;
+2. **o token da CAPI não serve para Ads Insights** — escopo único
+   `read_ads_dataset_quality`, e a Meta responde erro 200 ao tentar ler insights;
+3. **Pixel e Dataset são o mesmo ID e o mesmo endpoint** — uma variável só.
+
+### A política de eventos
+
+`QualifiedLead` é o evento que mais importa: otimizar por `Lead` é otimizar por
+volume de formulário. `CompleteRegistration` **não** é apelido de venda ganha — ela
+significa cadastro concluído, e usá-la assim ensina a Meta a otimizar por outra
+coisa. Só `Purchase` e `OpportunityWon` levam valor.
+
+**Só volta o que veio:** outbound puro não é devolvido como conversão, porque isso faz
+o algoritmo otimizar para um público que a Meta nunca trouxe.
+
+### Validado enviando de verdade
+
+Os oito eventos do ciclo de vida foram aceitos em modo Test Events
+(`events_received: 8`), incluindo os cinco customizados, e o reenvio do mesmo
+`Purchase` foi deduplicado por `event_id`.
+
+**Bloqueio externo isolado:** `META_LEADS_ACCESS_TOKEN` depende da aprovação do
+CRM/App na aba CRMs do Business Manager. Tudo que não depende disso está pronto.
+
+**Commit:** `a6f2b6d`.

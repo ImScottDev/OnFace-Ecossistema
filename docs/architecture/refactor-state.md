@@ -17,7 +17,7 @@ Fases 01 a 16 concluídas.
 | 18 motor único | os dois motores usam os mesmos adapters; falta a tag de empresa, que usa outro modelo |
 | 19 IA | NEXO e Hermes criados em `draft`; a IA não escreve mais direto no banco. Falta RAG e o runtime passar permissão delegada |
 | 22 RBAC | papéis, mapa e vínculos semeados, com paridade provada. Falta as rotas usarem `exigirPermissao` |
-| 20 Meta | entrada direta e CAPI **construídos e testados**; falta credencial para enviar de verdade |
+| 20 Meta | **CAPI validada contra a Meta real** (8 eventos aceitos em Test Events). Inbound implementado e testável; ativação real bloqueada só pela permissão da Página |
 | 21 storage | serviço construído e testado; adapter S3/R2 espera credencial. Migrar os pontos de upload vem junto, porque trocá-los agora só muda um disco local por outro |
 | 23 API pública | `/api/v1` com 9 recursos, token com escopo, uso registrado. Falta a tela de gestão de tokens |
 | 24 paridade | **11 dos 14 cenários passam, 0 falham, 3 não verificáveis e nomeados** |
@@ -25,7 +25,7 @@ Fases 01 a 16 concluídas.
 
 ## Último commit
 
-`ffdb614` — refactor(17): a tabela canônica de etapas descrevia um pipeline que ninguém usa
+`a6f2b6d` — refactor(20): Meta revisada inteira, o adapter existia e ninguém chamava
 
 Branch de trabalho: `refactor/arquitetura-canonica`, criada a partir de `98940fe`.
 
@@ -104,15 +104,45 @@ Os três não verificáveis estão nomeados, e "não verificável" **não é OK*
 | 0072 | `api_tokens` | token da API pública (hash, escopos, expiração) e registro de uso | sim, DROP TABLE |
 | 0073 | `oportunidade_campos_spec` | `setup_estimado`, `servico_catalogo_id`, `etapa_id` — campos do SPEC §11.1 que faltavam | sim, DROP COLUMN |
 | 0074 | `pipeline_etapas_em_uso` | semeia as 6 etapas que o produto usa e liga as 1.561 oportunidades | sim, documentado |
+| 0075 | `busca_conhecimento` | full-text em português com `unaccent` e índice GIN | sim, DROP COLUMN |
+| 0076 | `meta_capi_entregas` | auditoria da entrega de conversão à Meta | sim, DROP TABLE |
 
-## Credenciais que faltam para rodar, não para construir
+## Credenciais: o que está configurado e o que falta
 
-| O quê | Para quê | Estado |
+Configurado em 21/09/2026 (valores no `.env` local, fora do Git):
+
+| Variável | Para quê | Validado |
 |---|---|---|
-| `META_APP_SECRET` | validar a assinatura do webhook de Lead Ads | ausente |
-| `META_WEBHOOK_VERIFY_TOKEN` | handshake de assinatura do webhook | ausente |
-| Token do CAPI + pixel | devolver qualificação, ganho e pagamento para a Meta | ausente |
-| `STORAGE_ENDPOINT` + bucket + chaves | tirar os arquivos do disco da máquina | ausente |
+| `META_CAPI_ACCESS_TOKEN` + `META_PIXEL_ID` | devolver conversão | **sim** — 8 eventos aceitos |
+| `META_APP_ID` / `META_APP_SECRET` | assinatura do webhook | sim, pelo próprio fluxo |
+| `META_WEBHOOK_VERIFY_TOKEN` | handshake do webhook | gerado com 384 bits |
+| `META_PAGE_ID` | página dona do formulário | sim, id recebido |
+| `META_AD_ACCOUNT_ID` | Ads Insights | id recebido |
+
+### Meta Lead Ads: bloqueio externo, isolado e nomeado
+
+> **Meta Lead Ads inbound implementado e testável; ativação real bloqueada somente
+> por `META_LEADS_ACCESS_TOKEN` e pela aprovação do CRM/App na aba CRMs do Business
+> Manager (Leads Access da página em modo personalizado, 6 usuários atribuídos).**
+
+O que já funciona sem essa aprovação: o webhook valida assinatura, o retrieval está
+implementado e testado, a normalização cobre os três formatos, a idempotência é por
+`leadgen_id` e a entrada passa pela porta canônica. O que a falta do token muda: a
+Graph API não devolve os dados do lead, e o log diz exatamente isso, sem inventar
+fallback.
+
+Medido: o token da CAPI **não** alcança a página (erro 100, "Object does not exist,
+cannot be loaded due to missing permission"). São credenciais separadas, como
+esperado.
+
+### Ainda ausentes
+
+| O quê | Para quê |
+|---|---|
+| `META_LEADS_ACCESS_TOKEN` | ler o lead do formulário — depende da aprovação acima |
+| `META_ADS_ACCESS_TOKEN` | Ads Insights. O token da CAPI **não serve**: medido, erro 200, falta `ads_read` |
+| `META_CAPI_TEST_EVENT_CODE` | opcional, manda para a aba Test Events |
+| `STORAGE_ENDPOINT` + bucket + chaves | tirar os arquivos do disco da máquina |
 
 O código está pronto e falha com mensagem de **configuração ausente**, não de
 integração quebrada — tratar as duas como a mesma faz o alerta disparar em ambiente
@@ -314,8 +344,8 @@ canônico hoje faria o lead sumir da tela de pré-vendas no mesmo instante.
 
 ## Testes executados
 
-Estado atual: `tsc --noEmit` limpo, **build de produção passando**, **214 testes, 0
-falhas**, mais **oito smokes** contra o banco real:
+Estado atual: `tsc --noEmit` limpo, **build de produção passando**, **235 testes, 0
+falhas**, mais **dez smokes** contra o banco real:
 
 - `smoke-ponte-canonica` — entrada externa chega inteira ao canônico e não duplica;
 - `smoke-ganho-oportunidade` 5/5 — a política da oferta decide, PABX gera as duas
