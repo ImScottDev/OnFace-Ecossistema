@@ -19,7 +19,7 @@
 import {
   resolverPessoa, resolverEmpresa, normalizarEmail, normalizarTelefone,
   type RepositorioIdentidade, type DadosPessoa, type DadosEmpresa,
-} from "../../identity/commands/resolver-identidade.js";
+} from "../../identity/commands/resolver-identidade";
 
 export type TipoAquisicao = "INBOUND" | "OUTBOUND" | "REFERRAL" | "IMPORT" | "MANUAL";
 

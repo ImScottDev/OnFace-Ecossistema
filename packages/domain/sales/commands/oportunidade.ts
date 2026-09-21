@@ -16,7 +16,7 @@
  *
  * Pacote de domínio: sem SDK, sem framework, sem ORM.
  */
-import { avaliarGanho, podeCriarProposta, jornadasPosVenda, type OfertaComercial, type EstadoOportunidade } from "../../catalog/policies/politica-oferta.js";
+import { avaliarGanho, podeCriarProposta, jornadasPosVenda, type OfertaComercial, type EstadoOportunidade } from "../../catalog/policies/politica-oferta";
 
 export type StatusOportunidade = "OPEN" | "WON" | "LOST";
 

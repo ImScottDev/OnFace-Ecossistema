@@ -6,8 +6,8 @@
  * vem de uma prova no banco, nunca de um campo de status que alguém escreveu
  * à mão.
  */
-import type { RepositorioVendas, Oportunidade } from "../../../domain/sales/commands/oportunidade.js";
-import type { OfertaComercial, EstadoOportunidade } from "../../../domain/catalog/policies/politica-oferta.js";
+import type { RepositorioVendas, Oportunidade } from "../../../domain/sales/commands/oportunidade";
+import type { OfertaComercial, EstadoOportunidade } from "../../../domain/catalog/policies/politica-oferta";
 
 export interface Executor {
   execute<T = unknown>(query: unknown): Promise<T[]>;

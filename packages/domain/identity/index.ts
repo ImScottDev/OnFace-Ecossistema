@@ -14,4 +14,4 @@ export {
   type RepositorioIdentidade,
   type ResolucaoPessoa,
   type ResolucaoEmpresa,
-} from "./commands/resolver-identidade.js";
+} from "./commands/resolver-identidade";

@@ -9,7 +9,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
-import { publicarEvento, projetarTimeline } from "../../../../packages/platform/events/src/publicar-evento.js";
+import { publicarEvento, projetarTimeline } from "@onface/platform-events";
 
 const org = async () => (await db.execute<{ id: string }>(sql`SELECT id FROM organizacoes LIMIT 1`))[0]?.id;
 const algumaEmpresa = async () => (await db.execute<{ id: string }>(sql`SELECT id FROM empresas LIMIT 1`))[0]?.id;

@@ -7,7 +7,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { registrarEntrada, type RepositorioAquisicao } from "../../../../packages/domain/acquisition/commands/registrar-entrada.js";
+import { registrarEntrada, type RepositorioAquisicao } from "@onface/acquisition";
 
 function repoFake(over: Partial<RepositorioAquisicao> = {}) {
   const chamadas = { criouPessoa: 0, criouEmpresa: 0, criouAquisicao: 0, touchpoints: 0, vinculos: 0 };

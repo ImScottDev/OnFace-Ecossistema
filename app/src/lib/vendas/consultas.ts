@@ -20,6 +20,9 @@ import {
   type EstadoProspeccao, type EstagioPreVendas, type EtapaPipeline,
   type RelacionamentoEmpresa,
 } from "./dominio";
+import {
+  boardDeAquisicoes, type EstagioAquisicao,
+} from "@onface/acquisition";
 
 const LIMITE_PADRAO = 400;
 
@@ -90,121 +93,116 @@ export async function boardPreVendas(organizacaoId: string, filtros: FiltrosPreV
     ? [...ETAPAS_PRE_VENDAS]
     : aba === "nutricao" ? ["nutricao"] : ["desqualificado"];
 
-  const busca = filtros.busca?.trim() ? `%${filtros.busca.trim().toLowerCase()}%` : null;
+  // CUTOVER DE LEITURA (fase 17). A fonte passou a ser `aquisicoes`.
+  //
+  // O que isto conserta: a consulta anterior filtrava
+  // `WHERE estagio_pre_vendas = ANY(...)`, e 2.392 dos 3.989 leads têm esse
+  // campo NULO. Eles existiam no banco, com dono e origem, e não apareciam em
+  // tela nenhuma. No canônico não há registro sem estado: aquisição aberta e
+  // não qualificada é "novo", que é um estado, não um vazio.
+  const board = await boardDeAquisicoes(db as never, sql as never, organizacaoId, {
+    etapas: etapasDaAba as EstagioAquisicao[],
+    responsavelId: filtros.responsavelId ?? null,
+    origem: filtros.origem ?? null,
+    busca: filtros.busca ?? null,
+    campanha: filtros.campanha ?? null,
+    desde: filtros.desde ?? null,
+    incluirEncerradas: aba !== "ativos",
+    limite: LIMITE_PADRAO,
+  });
 
-  const linhas = await db.execute<{
-    lead_id: string; empresa: string | null; empresa_id: string | null;
-    pessoa: string | null; cargo: string | null; etapa: string;
-    origem: string | null; campanha: string | null; servicos: string[] | null;
-    responsavel: string | null; qualificado: boolean; pre_qualificado: boolean;
-    whatsapp: string | null; email: string | null; telefone: string | null;
-    ultima_interacao: string | null; etapa_desde: string | null; criado_em: string;
-    nutricao_retomar_em: string | null; desqualificacao_motivo: string | null;
-    oportunidade_id: string | null;
-  }>(sql`
-    SELECT l.id::text AS lead_id,
-           COALESCE(e.nome, l.empresa) AS empresa,
-           l.empresa_id::text,
-           NULLIF(trim(concat_ws(' ', l.nome, l.sobrenome)), '') AS pessoa,
-           l.cargo, l.estagio_pre_vendas AS etapa,
-           l.origem, l.utm_campaign AS campanha, l.servicos_interesse AS servicos,
-           u.nome AS responsavel, l.qualificado, l.pre_qualificado,
-           l.whatsapp, l.email, l.telefone,
-           GREATEST(COALESCE(l.last_contact_at, l.created_at), l.created_at)::text AS ultima_interacao,
-           COALESCE(l.contato_desde_at, l.created_at)::text AS etapa_desde,
-           l.created_at::text AS criado_em,
-           l.nutricao_retomar_em::text,
-           l.desqualificacao_motivo,
-           l.negocio_ativo_id::text AS oportunidade_id
-      FROM leads l
-      LEFT JOIN empresas e ON e.id = l.empresa_id
-      LEFT JOIN usuarios u ON u.id = l.responsavel_id
-     WHERE l.organizacao_id = ${organizacaoId}::uuid
-       AND l.estagio_pre_vendas = ANY(${literalDeArray(etapasDaAba)}::text[])
-       AND (${filtros.responsavelId ?? null}::uuid IS NULL OR l.responsavel_id = ${filtros.responsavelId ?? null}::uuid)
-       AND (${filtros.origem ?? null}::text IS NULL OR l.origem = ${filtros.origem ?? null})
-       AND (${filtros.campanha ?? null}::text IS NULL OR l.utm_campaign = ${filtros.campanha ?? null})
-       AND (${filtros.servico ?? null}::text IS NULL OR ${filtros.servico ?? null} = ANY(l.servicos_interesse))
-       AND (${filtros.desde ?? null}::date IS NULL OR l.created_at >= ${filtros.desde ?? null}::date)
-       AND (${busca}::text IS NULL OR
-            lower(COALESCE(e.nome, l.empresa, '')) LIKE ${busca} OR
-            lower(concat_ws(' ', l.nome, l.sobrenome)) LIKE ${busca} OR
-            lower(COALESCE(l.email, '')) LIKE ${busca})
-     ORDER BY l.updated_at DESC
-     LIMIT ${LIMITE_PADRAO}
-  `);
+  // Enriquecimento legado — TEMPORÁRIO, sai na fase 26 junto com as leituras
+  // de fallback. São os campos que ainda não têm dono no modelo canônico:
+  // interesse declarado, campanha, pré-qualificação e o negócio em aberto.
+  const leadIds = board.cards.map((c) => c.leadId).filter((id): id is string => Boolean(id));
+  const legado = new Map<string, {
+    estagio: string | null; servicos: string[] | null;
+    pre_qualificado: boolean; whatsapp: string | null; etapa_desde: string | null;
+    negocio_ativo_id: string | null;
+  }>();
+  if (leadIds.length > 0) {
+    const linhas = await db.execute<{
+      id: string; estagio: string | null; servicos: string[] | null;
+      pre_qualificado: boolean; whatsapp: string | null; etapa_desde: string | null;
+      negocio_ativo_id: string | null;
+    }>(sql`
+      SELECT id::text, estagio_pre_vendas AS estagio,
+             servicos_interesse AS servicos, pre_qualificado, whatsapp,
+             COALESCE(contato_desde_at, created_at)::text AS etapa_desde,
+             negocio_ativo_id::text
+        FROM leads WHERE id = ANY(${literalDeArray(leadIds)}::uuid[])`);
+    for (const l of linhas) legado.set(l.id, l);
+  }
 
   const agora = Date.now();
   const horasDesde = (iso: string | null) =>
     iso ? Math.max(0, Math.floor((agora - new Date(iso).getTime()) / 3_600_000)) : null;
 
-  const cards: CardPreVendas[] = linhas.map((l) => ({
-    leadId: l.lead_id,
-    empresa: l.empresa?.trim() || "Empresa não informada",
-    empresaId: l.empresa_id,
-    pessoa: l.pessoa,
-    cargo: l.cargo,
-    etapa: l.etapa as EstagioPreVendas,
-    origem: l.origem,
-    campanha: l.campanha,
-    servicos: l.servicos,
-    responsavel: l.responsavel,
-    responsavelIniciais: iniciais(l.responsavel),
-    qualificado: l.qualificado,
-    preQualificado: l.pre_qualificado,
-    temWhatsapp: Boolean(l.whatsapp || l.telefone),
-    temEmail: Boolean(l.email),
-    temTelefone: Boolean(l.telefone),
-    horasSemInteracao: horasDesde(l.ultima_interacao),
-    horasNaEtapa: horasDesde(l.etapa_desde),
-    criadoEm: l.criado_em,
-    nutricaoRetomarEm: l.nutricao_retomar_em,
-    desqualificacaoMotivo: l.desqualificacao_motivo,
-    oportunidadeId: l.oportunidade_id,
-  }));
-
-  // O total de cada coluna vem do banco, não do array carregado: com o limite
-  // de 400 cards, contar a página faria a coluna dizer 17 onde há 200.
-  const totaisPorEtapa = await db.execute<{ etapa: string; n: number }>(sql`
-    SELECT estagio_pre_vendas AS etapa, count(*)::int AS n FROM leads l
-      LEFT JOIN empresas e ON e.id = l.empresa_id
-     WHERE l.organizacao_id = ${organizacaoId}::uuid
-       AND l.estagio_pre_vendas = ANY(${literalDeArray(etapasDaAba)}::text[])
-       AND (${filtros.responsavelId ?? null}::uuid IS NULL OR l.responsavel_id = ${filtros.responsavelId ?? null}::uuid)
-       AND (${filtros.origem ?? null}::text IS NULL OR l.origem = ${filtros.origem ?? null})
-       AND (${filtros.campanha ?? null}::text IS NULL OR l.utm_campaign = ${filtros.campanha ?? null})
-       AND (${filtros.servico ?? null}::text IS NULL OR ${filtros.servico ?? null} = ANY(l.servicos_interesse))
-       AND (${filtros.desde ?? null}::date IS NULL OR l.created_at >= ${filtros.desde ?? null}::date)
-       AND (${busca}::text IS NULL OR
-            lower(COALESCE(e.nome, l.empresa, '')) LIKE ${busca} OR
-            lower(concat_ws(' ', l.nome, l.sobrenome)) LIKE ${busca} OR
-            lower(COALESCE(l.email, '')) LIKE ${busca})
-     GROUP BY 1
-  `);
-  const totalDaEtapa = new Map(totaisPorEtapa.map((t) => [t.etapa, t.n]));
+  const cards: CardPreVendas[] = board.cards
+    .map((c) => {
+      const l = c.leadId ? legado.get(c.leadId) : undefined;
+      // O legado só refina onde ele sabe algo que o canônico NÃO deriva:
+      // "qualificacao", um estado intermediário que não tem prova própria.
+      //
+      // Para o resto o canônico manda, e a razão é factual: `estagio_pre_vendas`
+      // é um campo que alguém precisa lembrar de atualizar, e 2.392 leads
+      // provam que ninguém lembra. Deixar o legado sobrescrever punha o card em
+      // "Novo" enquanto o contador do canônico dizia "Em contato 531" — total e
+      // cards discordando dentro da mesma tela.
+      const etapa = (l?.estagio === "qualificacao" ? "qualificacao" : c.etapa) as EstagioPreVendas;
+      return {
+        leadId: c.leadId ?? c.aquisicaoId,
+        empresa: c.empresa?.trim() || "Empresa não informada",
+        empresaId: c.empresaId,
+        pessoa: c.pessoa,
+        cargo: c.cargo,
+        etapa,
+        origem: c.origem,
+        campanha: c.campanha,
+        servicos: l?.servicos ?? null,
+        responsavel: c.responsavel,
+        responsavelIniciais: iniciais(c.responsavel),
+        qualificado: c.qualificado,
+        preQualificado: Boolean(l?.pre_qualificado),
+        temWhatsapp: Boolean(l?.whatsapp || c.telefone),
+        temEmail: Boolean(c.email),
+        temTelefone: Boolean(c.telefone),
+        horasSemInteracao: horasDesde(c.ultimoToque ?? c.criadoEm),
+        horasNaEtapa: horasDesde(l?.etapa_desde ?? c.criadoEm),
+        criadoEm: c.criadoEm,
+        nutricaoRetomarEm: c.retomarEm,
+        desqualificacaoMotivo: c.motivoDesqualificacao,
+        oportunidadeId: l?.negocio_ativo_id ?? null,
+      };
+    })
+    .filter((c) => etapasDaAba.includes(c.etapa))
+    .filter((c) => !filtros.servico || (c.servicos ?? []).includes(filtros.servico));
 
   const colunas = (aba === "ativos" ? [...ETAPAS_PRE_VENDAS] : etapasDaAba).map((chave) => {
     const daColuna = cards.filter((c) => c.etapa === chave);
     return {
       chave, rotulo: ROTULO_ETAPA_PRE_VENDAS[chave],
-      total: totalDaEtapa.get(chave) ?? daColuna.length,
+      // O total vem de count() sobre a tabela inteira, nunca do array: com
+      // limite de 400 cards, contar a página faria a coluna dizer 400 onde há
+      // 2.756.
+      total: board.totaisPorEtapa[chave] ?? daColuna.length,
       cards: daColuna,
     };
   });
 
-  // Resumo sobre a tabela inteira: um contador calculado da página carregada
-  // mente assim que a lista passa do limite.
+  // Resumo sobre o universo canônico inteiro.
   const [resumo] = await db.execute<{
     ativos: number; nutricao: number; desqualificados: number;
     sem_responsavel: number; sem_primeiro_contato: number;
   }>(sql`
     SELECT
-      count(*) FILTER (WHERE estagio_pre_vendas IN ('novo','em_contato','qualificacao','qualificado','oportunidade'))::int AS ativos,
-      count(*) FILTER (WHERE estagio_pre_vendas = 'nutricao')::int AS nutricao,
-      count(*) FILTER (WHERE estagio_pre_vendas = 'desqualificado')::int AS desqualificados,
-      count(*) FILTER (WHERE estagio_pre_vendas IN ('novo','em_contato','qualificacao','qualificado') AND responsavel_id IS NULL)::int AS sem_responsavel,
-      count(*) FILTER (WHERE estagio_pre_vendas IN ('novo','em_contato') AND primeiro_contato_at IS NULL)::int AS sem_primeiro_contato
-      FROM leads WHERE organizacao_id = ${organizacaoId}::uuid AND estagio_pre_vendas IS NOT NULL
+      count(*) FILTER (WHERE closed_at IS NULL AND desqualificado_em IS NULL
+                         AND COALESCE(nutricao_status,'') = '')::int AS ativos,
+      count(*) FILTER (WHERE COALESCE(nutricao_status,'') <> '')::int AS nutricao,
+      count(*) FILTER (WHERE desqualificado_em IS NOT NULL)::int AS desqualificados,
+      count(*) FILTER (WHERE closed_at IS NULL AND responsavel_id IS NULL)::int AS sem_responsavel,
+      count(*) FILTER (WHERE closed_at IS NULL AND last_touch_at IS NULL)::int AS sem_primeiro_contato
+      FROM aquisicoes WHERE organizacao_id = ${organizacaoId}::uuid
   `);
 
   const responsaveis = await db.execute<{ id: string; nome: string }>(sql`
@@ -212,14 +210,14 @@ export async function boardPreVendas(organizacaoId: string, filtros: FiltrosPreV
      WHERE u.organizacao_id = ${organizacaoId}::uuid AND u.ativo = true ORDER BY u.nome
   `);
   const origens = await db.execute<{ origem: string }>(sql`
-    SELECT DISTINCT origem FROM leads
-     WHERE organizacao_id = ${organizacaoId}::uuid AND estagio_pre_vendas IS NOT NULL AND origem IS NOT NULL
+    SELECT DISTINCT origem FROM aquisicoes
+     WHERE organizacao_id = ${organizacaoId}::uuid AND origem IS NOT NULL
      ORDER BY origem LIMIT 40
   `);
   const campanhas = await db.execute<{ campanha: string }>(sql`
-    SELECT DISTINCT utm_campaign AS campanha FROM leads
-     WHERE organizacao_id = ${organizacaoId}::uuid AND estagio_pre_vendas IS NOT NULL AND utm_campaign IS NOT NULL
-     ORDER BY utm_campaign LIMIT 40
+    SELECT DISTINCT campaign AS campanha FROM pontos_contato
+     WHERE organizacao_id = ${organizacaoId}::uuid AND campaign IS NOT NULL
+     ORDER BY campaign LIMIT 40
   `);
 
   return {

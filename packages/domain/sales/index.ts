@@ -10,4 +10,4 @@ export {
   type RepositorioVendas,
   type StatusOportunidade,
   type Resultado,
-} from "./commands/oportunidade.js";
+} from "./commands/oportunidade";

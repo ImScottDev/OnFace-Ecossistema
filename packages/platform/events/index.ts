@@ -9,4 +9,4 @@ export {
   type ResultadoPublicacao,
   type ExecutorSql,
   type TipoAtor,
-} from "./src/publicar-evento.js";
+} from "./src/publicar-evento";

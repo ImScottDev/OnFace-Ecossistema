@@ -19,9 +19,9 @@
  */
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
-import { avaliarGanho } from "../../../../packages/domain/catalog/policies/politica-oferta.js";
-import { avaliarCondicaoDeGanho } from "../../../../packages/domain/sales/commands/oportunidade.js";
-import { criarRepositorioVendas } from "../../../../packages/platform/database/src/repositorio-vendas.js";
+import { avaliarGanho } from "@onface/catalog";
+import { avaliarCondicaoDeGanho } from "@onface/sales";
+import { criarRepositorioVendas } from "@onface/platform-database";
 
 /** Oportunidade canônica do negócio legado, quando já existe. */
 async function oportunidadeDoNegocio(negocioId: string): Promise<string | null> {

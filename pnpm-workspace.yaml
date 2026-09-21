@@ -23,4 +23,4 @@ allowBuilds:
   msgpackr-extract: false
   puppeteer: false
   sharp: false
-  unrs-resolver: set this to true or false
+  unrs-resolver: true

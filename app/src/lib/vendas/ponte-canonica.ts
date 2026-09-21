@@ -16,10 +16,10 @@
  */
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
-import { registrarEntrada, type EntradaAquisicao } from "../../../../packages/domain/acquisition/commands/registrar-entrada.js";
-import { resolverPessoa } from "../../../../packages/domain/identity/commands/resolver-identidade.js";
-import { criarRepositorioAquisicao } from "../../../../packages/platform/database/src/repositorio-aquisicao.js";
-import { publicarEvento } from "../../../../packages/platform/events/src/publicar-evento.js";
+import { registrarEntrada, type EntradaAquisicao } from "@onface/acquisition";
+import { resolverPessoa } from "@onface/identity";
+import { criarRepositorioAquisicao } from "@onface/platform-database";
+import { publicarEvento } from "@onface/platform-events";
 
 export interface ResultadoPonte {
   ok: boolean;

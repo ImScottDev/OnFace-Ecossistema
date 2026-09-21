@@ -8,8 +8,8 @@ import assert from "node:assert/strict";
 import {
   avaliarCondicaoDeGanho, verificarPodeCriarProposta, marcarPerdida,
   type RepositorioVendas, type Oportunidade,
-} from "../../../../packages/domain/sales/commands/oportunidade.js";
-import type { OfertaComercial, EstadoOportunidade } from "../../../../packages/domain/catalog/policies/politica-oferta.js";
+} from "@onface/sales";
+import type { OfertaComercial, EstadoOportunidade } from "@onface/catalog";
 
 const OFERTA_CONTRATO: OfertaComercial = {
   id: "of-pabx", codigo: "PABX_CONTRACT", requiresCompanyBeforeProposal: true,

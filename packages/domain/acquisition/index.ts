@@ -9,4 +9,11 @@ export {
   type ResultadoEntrada,
   type TipoAquisicao,
   type Atribuicao,
-} from "./commands/registrar-entrada.js";
+} from "./commands/registrar-entrada";
+
+export {
+  boardDeAquisicoes,
+  type CardAquisicao,
+  type EstagioAquisicao,
+  type FiltrosBoard,
+} from "./queries/board-pre-vendas";

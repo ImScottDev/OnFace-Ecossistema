@@ -37,6 +37,24 @@ importers:
       '@microsoft/microsoft-graph-client':
         specifier: ^3.0.7
         version: 3.0.7(buffer@5.7.1)
+      '@onface/acquisition':
+        specifier: workspace:*
+        version: link:../packages/domain/acquisition
+      '@onface/catalog':
+        specifier: workspace:*
+        version: link:../packages/domain/catalog
+      '@onface/identity':
+        specifier: workspace:*
+        version: link:../packages/domain/identity
+      '@onface/platform-database':
+        specifier: workspace:*
+        version: link:../packages/platform/database
+      '@onface/platform-events':
+        specifier: workspace:*
+        version: link:../packages/platform/events
+      '@onface/sales':
+        specifier: workspace:*
+        version: link:../packages/domain/sales
       '@radix-ui/react-dialog':
         specifier: ^1.1.23
         version: 1.1.23(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)

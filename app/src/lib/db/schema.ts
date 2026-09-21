@@ -4369,6 +4369,10 @@ export const aquisicoes = pgTable("aquisicoes", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   closedAt: timestamp("closed_at", { withTimezone: true }),
+  // Ponte de leitura do cutover (migration 0069), igual a
+  // `oportunidades.negocio_id_legado`. Nulável de propósito: aquisição criada
+  // pelo caminho canônico não tem lead legado, e esse é o estado final.
+  leadLegadoId: uuid("lead_legado_id"),
 });
 
 export const ofertasComerciais = pgTable("ofertas_comerciais", {

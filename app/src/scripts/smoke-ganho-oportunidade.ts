@@ -7,8 +7,8 @@
  */
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
-import { avaliarCondicaoDeGanho } from "../../../packages/domain/sales/commands/oportunidade.js";
-import { criarRepositorioVendas } from "../../../packages/platform/database/src/repositorio-vendas.js";
+import { avaliarCondicaoDeGanho } from "@onface/sales";
+import { criarRepositorioVendas } from "@onface/platform-database";
 
 async function main() {
   let saida = 1;

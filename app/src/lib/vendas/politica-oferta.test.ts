@@ -8,7 +8,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   avaliarGanho, podeCriarProposta, jornadasPosVenda, type OfertaComercial,
-} from "../../../../packages/domain/catalog/policies/politica-oferta.js";
+} from "@onface/catalog";
 
 const oferta = (p: Partial<OfertaComercial>): OfertaComercial => ({
   id: "of-1", codigo: "X", requiresCompanyBeforeProposal: true, requiresContract: false,

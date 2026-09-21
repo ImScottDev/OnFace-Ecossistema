@@ -2,6 +2,13 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  // Os pacotes de domínio e plataforma são TypeScript puro, sem build próprio
+  // (SPEC §34). O bundler precisa transpilá-los junto com a aplicação — sem
+  // isto o build quebra com "module not found" nos imports de `@onface/*`.
+  transpilePackages: [
+    "@onface/acquisition", "@onface/catalog", "@onface/identity", "@onface/sales",
+    "@onface/platform-database", "@onface/platform-events",
+  ],
   typescript: { ignoreBuildErrors: true },
   images: {
     unoptimized: true,

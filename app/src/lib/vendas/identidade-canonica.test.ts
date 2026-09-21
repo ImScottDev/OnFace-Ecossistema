@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import {
   resolverPessoa, resolverEmpresa, normalizarEmail, normalizarTelefone,
   normalizarCnpj, dominioCorporativo, type RepositorioIdentidade,
-} from "../../../../packages/domain/identity/commands/resolver-identidade.js";
+} from "@onface/identity";
 
 const repoVazio: RepositorioIdentidade = {
   acharPessoaPorEmail: async () => null, acharPessoaPorTelefone: async () => null,

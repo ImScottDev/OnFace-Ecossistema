@@ -12,4 +12,4 @@ export {
   type CondicaoGanho,
   type GatilhoPagamento,
   type Decisao,
-} from "./policies/politica-oferta.js";
+} from "./policies/politica-oferta";

@@ -8,8 +8,8 @@
  * Recebe o executor por parâmetro: quando vier a transação em curso, tudo
  * acontece no mesmo BEGIN do evento de domínio.
  */
-import type { RepositorioAquisicao, EntradaAquisicao } from "../../../domain/acquisition/commands/registrar-entrada.js";
-import { normalizarEmail, normalizarTelefone, normalizarCnpj, dominioCorporativo } from "../../../domain/identity/commands/resolver-identidade.js";
+import type { RepositorioAquisicao, EntradaAquisicao } from "../../../domain/acquisition/commands/registrar-entrada";
+import { normalizarEmail, normalizarTelefone, normalizarCnpj, dominioCorporativo } from "../../../domain/identity/commands/resolver-identidade";
 
 export interface Executor {
   execute<T = unknown>(query: unknown): Promise<T[]>;
