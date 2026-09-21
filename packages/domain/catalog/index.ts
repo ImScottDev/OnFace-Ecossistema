@@ -8,6 +8,8 @@ export {
   podeCriarProposta,
   podeIniciarTrial,
   jornadasPosVenda,
+  jornadasNoGanho,
+  exigeImplantacao,
   type OfertaComercial,
   type EstadoOportunidade,
   type CondicaoGanho,

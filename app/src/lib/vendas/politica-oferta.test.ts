@@ -9,6 +9,7 @@ import assert from "node:assert/strict";
 import {
   avaliarGanho, podeCriarProposta, jornadasPosVenda, type OfertaComercial,
   podeIniciarTrial,
+  jornadasNoGanho,
 } from "@onface/catalog";
 
 const oferta = (p: Partial<OfertaComercial>): OfertaComercial => ({
@@ -84,4 +85,17 @@ test("trial depende da capacidade da oferta, não da vontade de quem clica", () 
   // A mensagem precisa dizer o que falta: "não pode" sem motivo vira ticket.
   assert.ok(negada.motivo.includes("não admite"), negada.motivo);
   assert.deepEqual(negada.falta, ["oferta comercial que permita trial"]);
+});
+
+test("o ganho cria onboarding; a implantação é handoff (v0.13 §06.1)", () => {
+  const pabx = oferta({ onboardingRequired: true, implementationRequired: true });
+  // O contrato da oferta continua exigindo as duas jornadas...
+  assert.deepEqual(jornadasPosVenda(pabx), ["ONBOARDING", "IMPLEMENTATION"]);
+  // ...mas o fechamento só cria a primeira. A implantação nasce depois do
+  // kickoff, do material e do implantador — criá-la aqui a deixava órfã.
+  assert.deepEqual(jornadasNoGanho(pabx), ["ONBOARDING"]);
+
+  const ai = oferta({ onboardingRequired: true, implementationRequired: false });
+  assert.deepEqual(jornadasNoGanho(ai), ["ONBOARDING"]);
+  assert.deepEqual(jornadasPosVenda(ai), ["ONBOARDING"]);
 });

@@ -714,6 +714,34 @@ const concluirFulfillmentSchema = z.object({ acao: z.literal("concluir_onboardin
 // tela de Implantação PABX — mesma regra: "checklist 100%" ≠ "concluída",
 // precisa do clique explícito). Só permitido quando todo item já está
 // DONE/NA (READY_FOR_VALIDATION) — nunca fecha sozinho.
+/**
+ * Handoff do Onboarding para a Implantação (Documento Mestre v0.13 §05/§06).
+ *
+ * GET devolve o que falta para o gate — a tela usa para explicar o botão
+ * desabilitado em vez de só escondê-lo.
+ */
+app.get("/fulfillments/:id/handoff-implantacao", async (c) => {
+  const ctx = await getCtx(c);
+  const id = c.req.param("id");
+  if (!UUID_RE.test(id)) return c.json({ error: "ID inválido" }, 400);
+  const { verificarHandoff } = await import("@/lib/pos-venda/handoff-implantacao");
+  return c.json(await verificarHandoff(ctx.organizacaoId, id));
+});
+
+app.post("/fulfillments/:id/handoff-implantacao", async (c) => {
+  const ctx = await getCtx(c);
+  const id = c.req.param("id");
+  if (!UUID_RE.test(id)) return c.json({ error: "ID inválido" }, 400);
+  const corpo = await c.req.json().catch(() => ({})) as { implantadorId?: string | null };
+  const { entregarParaImplantacao } = await import("@/lib/pos-venda/handoff-implantacao");
+  const r = await entregarParaImplantacao({
+    organizacaoId: ctx.organizacaoId, fulfillmentId: id,
+    implantadorId: corpo.implantadorId ?? null, atorId: ctx.userId,
+  });
+  if (!r.ok) return c.json({ error: r.erro, codigo: r.codigo, falta: r.falta }, 400);
+  return c.json({ implantacaoId: r.implantacaoId, jaExistia: Boolean(r.jaExistia) });
+});
+
 app.patch("/fulfillments/:id/concluir", async (c) => {
   const ctx = await getCtx(c);
   const id = c.req.param("id");

@@ -51,12 +51,20 @@ test("contrato não assinado NÃO ganha, e diz o que falta", async () => {
   assert.equal(chamadas.ganhou, 0, "nenhum caminho marca ganho por conta própria");
 });
 
-test("contrato assinado ganha e dispara onboarding E implantação", async () => {
+test("contrato assinado ganha e dispara SÓ o onboarding", async () => {
+  // Mudou em 21/09/2026: o Won criava onboarding E implantação no mesmo
+  // instante. O Documento Mestre v0.13 §06.1 é explícito — "Implantação não
+  // nasce automaticamente no Won" — e o Módulo 05 exige kickoff, material
+  // enviado e implantador definido antes dela. Criada no ganho, a jornada
+  // técnica nascia sem nenhum dos três.
+  //
+  // A implantação continua sendo exigida pela oferta (implementation_required),
+  // e nasce no handoff: lib/pos-venda/handoff-implantacao.ts.
   const { r, chamadas } = repo({ estado: { contratoAssinadoPorCompleto: true } });
   const res = await avaliarCondicaoDeGanho(r, "op-1");
   assert.equal(res.ok, true);
   assert.equal(chamadas.ganhou, 1);
-  assert.equal(chamadas.jornadas, 2, "SPEC §18: PABX leva implantação além do onboarding");
+  assert.equal(chamadas.jornadas, 1, "v0.13 §06.1: o ganho cria onboarding; implantação é handoff");
 });
 
 test("oferta direta ignora contrato e exige pagamento", async () => {

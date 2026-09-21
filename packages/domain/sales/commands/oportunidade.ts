@@ -16,7 +16,7 @@
  *
  * Pacote de domínio: sem SDK, sem framework, sem ORM.
  */
-import { avaliarGanho, podeCriarProposta, jornadasPosVenda, type OfertaComercial, type EstadoOportunidade } from "../../catalog/policies/politica-oferta";
+import { avaliarGanho, podeCriarProposta, jornadasNoGanho, type OfertaComercial, type EstadoOportunidade } from "../../catalog/policies/politica-oferta";
 
 export type StatusOportunidade = "OPEN" | "WON" | "LOST";
 
@@ -80,9 +80,11 @@ export async function avaliarCondicaoDeGanho(
   }
 
   await repo.marcarGanha(oportunidadeId, agora, decisao.motivo);
-  // SPEC §18: todo serviço ganho passa por onboarding; PABX e White Label
-  // levam implantação junto.
-  const pos = await repo.criarServicoEJornadas(oportunidadeId, jornadasPosVenda(oferta));
+  // O Won cria SOMENTE o onboarding (Documento Mestre v0.13 §06.1). A
+  // implantação de PABX e White Label nasce no handoff do onboarding, depois
+  // do kickoff — criá-la aqui produzia jornada técnica sem implantador, sem
+  // material e sem reunião de abertura.
+  const pos = await repo.criarServicoEJornadas(oportunidadeId, jornadasNoGanho(oferta));
   return { ok: true, dados: { ganhou: true, motivo: decisao.motivo, servicoId: pos.servicoId, jornadas: pos.jornadas } };
 }
 

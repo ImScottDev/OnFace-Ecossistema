@@ -114,10 +114,37 @@ export function podeIniciarTrial(oferta: OfertaComercial): Decisao {
   };
 }
 
-/** Quais jornadas de pós-venda a oferta cria ao ser ganha (SPEC §18). */
+/**
+ * Todas as jornadas que a oferta EXIGE ao longo do pós-venda (SPEC §18).
+ *
+ * Isto é o contrato da oferta, não o que nasce no fechamento. Para saber o que
+ * o Won cria, use `jornadasNoGanho`.
+ */
 export function jornadasPosVenda(oferta: OfertaComercial): ("ONBOARDING" | "IMPLEMENTATION")[] {
   const js: ("ONBOARDING" | "IMPLEMENTATION")[] = [];
   if (oferta.onboardingRequired) js.push("ONBOARDING");
   if (oferta.implementationRequired) js.push("IMPLEMENTATION");
   return js;
+}
+
+/**
+ * O que o GANHO cria. Só onboarding.
+ *
+ * Documento Mestre v0.13, Módulo 06 §1: "Implantação não nasce automaticamente
+ * no Won. WON → ONBOARDING → HandoffToImplementation → IMPLEMENTATION. A Oferta
+ * Comercial pode declarar implementation_required = true, mas isso significa
+ * que a jornada deve existir APÓS o handoff, não que ela deva nascer
+ * imediatamente no fechamento."
+ *
+ * Antes disto o comando canônico criava as duas no mesmo instante, e a
+ * implantação nascia sem kickoff, sem material enviado e sem implantador —
+ * exatamente o estado que o Módulo 05 exige como porta de entrada dela.
+ */
+export function jornadasNoGanho(oferta: OfertaComercial): ("ONBOARDING" | "IMPLEMENTATION")[] {
+  return oferta.onboardingRequired ? ["ONBOARDING"] : [];
+}
+
+/** A oferta exige implantação depois do handoff do onboarding? */
+export function exigeImplantacao(oferta: OfertaComercial): boolean {
+  return oferta.implementationRequired;
 }
