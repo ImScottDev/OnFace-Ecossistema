@@ -920,3 +920,28 @@ permissões diferentes de propósito.
 O teste de levantamento **não exige fechar as 166 restantes** — exige que o número não
 cresça em silêncio. Fechá-las às cegas quebraria operação legítima; deixá-las sem
 medida deixaria a próxima entrar sem ninguém ver.
+
+---
+
+## 2026-09-21 — Fase 24 · A cadeia até a Meta, provada na junta
+
+Os outros smokes provam as peças; este prova a junta: o fato acontece, o evento nasce
+na mesma transação, o worker pega e a conversão chega na Meta com auditoria. É a
+diferença entre "o adapter funciona" e "a integração funciona" — a mesma que a revisão
+da fase 20 encontrou como defeito.
+
+**Dois fatos idênticos, um só entregue.** O smoke cria duas aquisições iguais, uma com
+touchpoint da Meta e outra sem. Só a primeira vira conversão.
+
+**Validação de paridade: 11 → 12 dos 14, 0 falhas.** O cenário 13 dizia "enviar exige
+pixel e token" — afirmação que ficou desatualizada quando as credenciais chegaram. O
+cenário 12 ficou mais honesto: separa o que dá para verificar sem modelo (agentes com
+teto, gate provado) do que falta (credencial de provedor; zero ativas).
+
+**Um erro meu, pego pela própria trava.** A primeira execução do smoke morreu numa
+constraint depois de criar pessoa e aquisição, e o registro para limpeza só acontecia
+no fim da função — os dois ficaram órfãos. Os testes de reconciliação acusaram na
+rodada seguinte. É a segunda vez na sessão, e a causa é sempre a mesma: limpeza que
+depende do caminho feliz não limpa o caminho que falhou.
+
+**Commit:** `daa4310`.

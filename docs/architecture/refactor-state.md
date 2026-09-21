@@ -20,12 +20,12 @@ Fases 01 a 16 concluídas.
 | 20 Meta | **CAPI validada contra a Meta real** (8 eventos aceitos em Test Events). Inbound implementado e testável; ativação real bloqueada só pela permissão da Página |
 | 21 storage | serviço construído e testado; adapter S3/R2 espera credencial. Migrar os pontos de upload vem junto, porque trocá-los agora só muda um disco local por outro |
 | 23 API pública | `/api/v1` com 9 recursos, token com escopo, uso registrado. Falta a tela de gestão de tokens |
-| 24 paridade | **11 dos 14 cenários passam, 0 falham, 3 não verificáveis e nomeados** |
+| 24 paridade | **12 dos 14 cenários passam, 0 falham, 2 não verificáveis e nomeados** |
 | 25 a 28 | dependem de 17 completa; 28 precisa de aprovação do Kauã |
 
 ## Último commit
 
-`(este)` — fix(22): criar credencial de provedor de IA não exigia nada
+`daa4310` — refactor(24): a cadeia até a Meta provada ponta a ponta
 
 Branch de trabalho: `refactor/arquitetura-canonica`, criada a partir de `98940fe`.
 
@@ -71,15 +71,18 @@ Pacote vazio não afeta o build: `tsc` limpo e 111 testes passando com o workspa
 ## Prontidão para virada (SPEC §24)
 
 `pnpm tsx src/scripts/validacao-paridade.ts` percorre os 14 cenários e responde, um
-por um, se dá para virar. **11 passam, 0 falham, 3 não verificáveis.**
+por um, se dá para virar. **12 passam, 0 falham, 2 não verificáveis.**
 
-Os três não verificáveis estão nomeados, e "não verificável" **não é OK**:
+Os dois não verificáveis estão nomeados, e "não verificável" **não é OK**:
 
 | # | Cenário | O que falta |
 |---|---|---|
 | 8 | Carteira de CS tem dono | a capacidade existe na rota; nenhum dos 275 clientes tem responsável. Atribuir é decisão de operação |
-| 12 | NEXO consulta e age | os dois agentes existem em `draft`; publicar e exercitar com modelo real é decisão de quem opera |
-| 13 | Meta CAPI | montagem e hash provados em teste; enviar exige pixel e token |
+| 12 | NEXO consulta e age | os dois agentes existem em `draft` com teto de permissão, e o gate está provado em smoke. Falta **credencial de provedor de modelo** para rodar de verdade: zero ativas |
+
+O cenário 13 saiu de "não verificável" quando as credenciais chegaram: a cadeia
+fato → outbox → worker → Meta está provada ponta a ponta, com dois fatos idênticos
+dos quais só o que veio da Meta é devolvido.
 
 ## Migrations aplicadas neste refactor
 
@@ -346,7 +349,7 @@ canônico hoje faria o lead sumir da tela de pré-vendas no mesmo instante.
 ## Testes executados
 
 Estado atual: `tsc --noEmit` limpo, **build de produção passando**, **242 testes, 0
-falhas**, mais **onze smokes** contra o banco real:
+falhas**, mais **doze smokes** contra o banco real:
 
 - `smoke-ponte-canonica` — entrada externa chega inteira ao canônico e não duplica;
 - `smoke-ganho-oportunidade` 5/5 — a política da oferta decide, PABX gera as duas
