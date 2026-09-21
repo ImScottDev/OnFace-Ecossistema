@@ -1836,3 +1836,33 @@ escrever sobre o filtro por entidade. `tsc` chegou antes da trava.
 **Validação:** tsc limpo, **262 testes, 0 falhas**, build exit 0, **22 de 22 smokes**,
 aceite 72/0/3, e integridade conferida: `leads` = `aquisicoes` = 3.989, 3.950 pessoas,
 zero sem proveniência.
+
+---
+
+## 2026-09-21 — Fase 23 fechada: a gestão de tokens ganhou tela
+
+O backend ficou pronto e validado antes, e API pública sem forma de criar credencial é
+API que não existe para quem a usaria: `api_tokens` tinha 0 linhas e só era escrita por
+script.
+
+`/ajustes/api-tokens` lista, cria e revoga. As três regras do produto aparecem na tela,
+não só no servidor:
+
+- **o valor aparece uma vez**, com o aviso dito na interface, porque quem fecha sem
+  copiar precisa saber que o caminho é revogar e criar outro, não procurar em algum lugar;
+- **a recusa do teto é mostrada como veio**, nomeando a permissão que falta. Trocar por
+  "erro ao criar" mandaria a pessoa para o suporte em vez do administrador dela;
+- **o revogado continua na lista**, em cinza, com quem criou e quando foi usado. Sumir
+  com a linha resolveria o acesso e destruiria a resposta para "o que essa credencial
+  andou puxando".
+
+Dois detalhes de leitura que valem: "nunca usado" é informação útil, porque token que
+ninguém chama pode ser revogado sem dó; e a lista vazia explica a consequência ("sem
+token, a API pública não responde a ninguém") em vez de só dizer que está vazia.
+
+Trava estrutural liga a tela às três rotas nos dois sentidos, para nenhum dos lados
+ficar órfão sem ninguém perceber. O comportamento das regras continua provado em
+`smoke-gestao-tokens` e `teto-de-token.test.ts`.
+
+**Validação:** tsc limpo, **263 testes, 0 falhas**, build exit 0 com a rota
+`/ajustes/api-tokens` registrada, smoke de tokens verde.

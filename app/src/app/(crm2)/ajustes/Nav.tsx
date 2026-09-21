@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import {
-  ArrowLeft, Bell, Bot, Building2, FileText, Handshake, Key, Kanban, LineChart,
+  ArrowLeft, Bell, Bot, Building2, FileText, Handshake, Key, KeyRound, Kanban, LineChart,
   Mail, MessageCircle, Package, Settings, ShieldCheck, SlidersHorizontal, Sparkles, Target,
   UserCog, Users,
 } from "lucide-react";
@@ -71,6 +71,7 @@ export const GRUPOS: { titulo: string; itens: ItemAjuste[] }[] = [
       { label: "Enriquecimento", href: "/ajustes/enriquecimento", icon: Sparkles },
       { label: "Tracking", href: "/ajustes/tracking", icon: LineChart },
       { label: "Integrações", href: "/ajustes/integracoes", icon: Key },
+      { label: "Tokens da API", href: "/ajustes/api-tokens", icon: KeyRound },
     ],
   },
   {

@@ -104,3 +104,30 @@ test("o levantamento de rotas abertas continua visível", () => {
     "automação, agente e plataforma de IA). Se cresceu, uma rota nova entrou aberta.",
   );
 });
+
+test("a tela de tokens existe e fala com as rotas certas", () => {
+  // O backend de tokens ficou pronto e validado antes da tela, e API pública
+  // sem forma de criar credencial é API que não existe para quem a usaria:
+  // `api_tokens` tinha 0 linhas e só era escrita por script.
+  //
+  // Esta trava é estrutural: garante que a tela não fique órfã do backend
+  // (endpoint renomeado, rota removida) sem ninguém perceber. O comportamento
+  // das regras é provado em `smoke-gestao-tokens` e `teto-de-token.test.ts`.
+  const tela = fs.readFileSync(
+    path.join(ROTAS, "..", "..", "app", "(crm2)", "ajustes", "api-tokens", "page.tsx"), "utf8");
+
+  assert.match(tela, /\/api\/configuracoes\/api-tokens/, "a tela tem que chamar a rota de tokens");
+  assert.match(tela, /method: "DELETE"/, "e ter como revogar");
+
+  // As três regras do produto, visíveis na tela e não só no servidor.
+  assert.match(tela, /não aparece de novo/, "tem que avisar que o valor aparece uma vez só");
+  assert.match(tela, /corpo\?\.error/, "e mostrar a mensagem do servidor, que nomeia a permissão que falta");
+  assert.match(tela, /revogado em/, "token revogado continua na lista, com a data");
+
+  // O caminho inverso: a rota precisa existir para a tela não quebrar.
+  const rota = fs.readFileSync(path.join(ROTAS, "api-tokens.ts"), "utf8");
+  assert.match(rota, /app\.get\("\/configuracoes\/api-tokens"/, "listar");
+  assert.match(rota, /app\.post\("\/configuracoes\/api-tokens"/, "criar");
+  assert.match(rota, /app\.delete\("\/configuracoes\/api-tokens\/:id"/, "revogar");
+});
+
