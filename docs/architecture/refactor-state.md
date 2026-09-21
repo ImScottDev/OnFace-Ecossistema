@@ -1508,6 +1508,45 @@ chamada — os dois testes falham sem ela.
 
 **Validação:** tsc limpo, **313 testes 0 falhas**, **29/29 smokes**.
 
+### CP18 — `tarefas` auditada: saudável, sem pendência
+
+Última das três entidades da dívida central. Onze arquivos escrevem em
+`tarefas`, e o que importa mede bem:
+
+- **Isolamento por organização: 11 de 11.** Nenhuma escrita sem tenant.
+- **Idempotência onde importa:** das tarefas criadas por código, 36 de origem
+  `BILLING` e 1 de `AUTOMACAO` têm todas chave de idempotência. As 426 sem
+  chave são `MANUAL`, onde exigir chave impediria alguém de criar duas tarefas
+  parecidas de propósito.
+- **Duplicatas reais: 5 grupos, 5 linhas a mais**, e as cinco são `MANUAL`.
+  Pessoa criando duas vezes não é defeito de sistema.
+
+Dois dos onze escritores moram em `app/onface-desenho/`, que é referência
+congelada e não roda no produto.
+
+Nenhuma correção necessária. Registrado porque "auditado e está certo" é
+resultado, e sem registro alguém audita de novo daqui a um mês.
+
+### Fechamento da auditoria da dívida central
+
+O HUB registra a medição de 20/09: 39 lugares escrevendo em `leads` com 3
+passando pela regra, 26 em `negocios` com 1, 13 em `tarefas` com 1.
+
+Resultado de 21/09, entidade por entidade:
+
+| entidade | veredito | o que foi achado |
+|---|---|---|
+| `leads` | 1 defeito | `rd-criativo` resetava o relógio de 2.006 leads parados |
+| `oportunidades` | 1 defeito | backfill 08 apagava o histórico de 477 na virada; dado restaurado, fila de loops 324 → 392 |
+| `negocios` | 1 defeito | worker não propagava a etapa do formulário do site para o canônico |
+| `tarefas` | saudável | isolamento 11/11, idempotência onde importa |
+
+Os três defeitos eram da mesma família: **escrita que funciona e leitura que
+não acompanha**. Nenhum aparecia como erro, nenhum quebrava teste, e os três
+mudavam o que a operação vê na tela.
+
+Cada um ganhou trava verificada por reintrodução do defeito.
+
 ### Auditoria de CS Health (histórico da decisão)
 
 Menor do que o gap analysis inicial dizia:
