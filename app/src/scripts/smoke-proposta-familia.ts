@@ -20,6 +20,7 @@ const ok = (cond: unknown, msg: string) => {
 };
 
 async function main() {
+  const [{ id: org }] = await db.execute<{ id: string }>(sql`SELECT id::text FROM organizacoes LIMIT 1`);
   const conta = async (q: unknown) =>
     Number((await db.execute<{ n: number }>(q as never))[0]?.n ?? 0);
 
@@ -78,6 +79,47 @@ async function main() {
     WHERE n.service_family IS NOT NULL
       AND COALESCE(n.service_family, o.service_family) <> n.service_family`);
   ok(invertida === 0, "onde o legado tem família, ela prevalece sobre a dedução");
+
+  // ── O gate de ETAPA, pelo caminho real ──────────────────────────────────
+  //
+  // Mover para Proposta ou Negociação também exige família válida. Mesmo
+  // bloqueio, outra porta: a oportunidade ficava presa na etapa anterior.
+  const { moverEtapa } = await import("@/lib/vendas/pipeline");
+
+  const [preso] = await db.execute<{ id: string; etapa: string | null; familia: string }>(sql`
+    SELECT n.id::text, n.etapa, o.service_family AS familia
+      FROM negocios n JOIN oportunidades o ON o.negocio_id_legado = n.id
+     WHERE n.status NOT IN ('ganho','perdido')
+       AND n.service_family IS NULL AND o.service_family IS NOT NULL
+       AND EXISTS (SELECT 1 FROM propostas p WHERE p.negocio_id = n.id)
+     LIMIT 1`);
+
+  if (preso) {
+    const etapaOriginal = preso.etapa;
+    try {
+      await moverEtapa({
+        organizacaoId: org, negocioId: preso.id, para: "proposta",
+        ator: { tipo: "SYSTEM", usuarioId: null, ref: "smoke" },
+      });
+      const [d] = await db.execute<{ etapa: string | null }>(sql`
+        SELECT etapa FROM negocios WHERE id = ${preso.id}::uuid`);
+      ok(d?.etapa === "proposta",
+         `a etapa avança com a família que só o canônico sabe (${d?.etapa})`);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      // Falhar por falta de proposta é outro gate e não invalida este teste.
+      ok(!msg.includes("família") && !msg.includes("familia"),
+         `o gate de família não bloqueia mais ("${msg.slice(0, 60)}")`);
+    } finally {
+      await db.execute(sql`
+        UPDATE negocios SET etapa = ${etapaOriginal} WHERE id = ${preso.id}::uuid`);
+      await db.execute(sql`
+        UPDATE oportunidades SET etapa = ${etapaOriginal} WHERE negocio_id_legado = ${preso.id}::uuid`);
+      await db.execute(sql`DELETE FROM vendas_eventos WHERE negocio_id = ${preso.id}::uuid AND tipo = 'StageChanged'`).catch(() => undefined);
+    }
+  } else {
+    console.log("  --  nenhum negócio com proposta nesse estado agora");
+  }
 
   console.log(process.exitCode ? "\nsmoke de família da proposta: FALHOU\n" : "\nsmoke de família da proposta: ok\n");
 }

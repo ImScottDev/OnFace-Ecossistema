@@ -34,7 +34,16 @@ interface OportunidadeInterna extends Record<string, unknown> {
   status: string;
   empresa_id: string | null;
   lead_id: string | null;
+  /** Família RESOLVIDA: legado quando existe, canônica quando o legado é nulo. */
   service_family: string | null;
+  /**
+   * Família gravada no negócio legado, sem a dedução.
+   *
+   * Existe porque `alterarFamilia` compara para decidir se há o que mudar. Se
+   * comparasse contra a resolvida, escolher a família que o canônico já deduziu
+   * viraria um no-op silencioso e o legado ficaria nulo para sempre.
+   */
+  service_family_proprio: string | null;
   responsavel_id: string | null;
   bundle_id: string | null;
   propostas_vinculadas: number;
@@ -43,10 +52,19 @@ interface OportunidadeInterna extends Record<string, unknown> {
 async function carregarOportunidade(organizacaoId: string, negocioId: string): Promise<OportunidadeInterna> {
   const [op] = await db.execute<OportunidadeInterna>(sql`
     SELECT n.id::text, n.organizacao_id::text, n.titulo, n.etapa, n.status,
-           n.empresa_id::text, n.lead_id::text, n.service_family,
+           n.empresa_id::text, n.lead_id::text,
+           -- A familia resolvida alimenta os GATES, e isso nao e cosmetico.
+           --
+           -- Mover para Proposta ou Negociacao exige familia valida, e
+           -- negocios.service_family e NULL em 526 dos negocios abertos. Em 125
+           -- deles a oportunidade canonica sabe qual e, deduzida no backfill: a
+           -- etapa ficava bloqueada por um dado que o sistema tem.
+           COALESCE(n.service_family, o.service_family) AS service_family,
+           n.service_family AS service_family_proprio,
            n.responsavel_id::text, n.bundle_id::text,
            (SELECT count(*)::int FROM propostas p WHERE p.negocio_id = n.id) AS propostas_vinculadas
       FROM negocios n
+      LEFT JOIN oportunidades o ON o.negocio_id_legado = n.id
      WHERE n.id = ${negocioId}::uuid AND n.organizacao_id = ${organizacaoId}::uuid
   `);
   if (!op) throw new RegraDeNegocio("oportunidade_nao_encontrada", "Oportunidade não encontrada.");
@@ -458,7 +476,9 @@ export async function alterarFamilia(params: {
   if (op.etapa === "ganho" || op.etapa === "perdido") {
     throw new RegraDeNegocio("oportunidade_fechada", "Oportunidade fechada não muda de família.");
   }
-  if (op.service_family === params.familia) return { propostasIncompativeis: 0 };
+  // Compara com o valor do LEGADO, não com o resolvido: escolher a família que
+  // o canônico já deduziu precisa gravar no negócio, e não virar no-op.
+  if (op.service_family_proprio === params.familia) return { propostasIncompativeis: 0 };
 
   // Bloco 02 §4: a alteração não pode deixar proposta e oportunidade
   // inconsistentes em silêncio. Propostas vigentes da família antiga são

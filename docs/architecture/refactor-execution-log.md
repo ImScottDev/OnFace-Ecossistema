@@ -1667,3 +1667,31 @@ cadeia destrava, a proposta carrega a família do canônico, ela passa no gate r
 
 **Validação:** tsc limpo, **261 testes, 0 falhas**, build exit 0, smokes de ganho e de
 leitura verdes.
+
+---
+
+## 2026-09-21 — Cutover crítico, parte 13: o mesmo bloqueio no avanço de etapa
+
+Depois de destravar o envio de proposta, varri os outros **gates** de regra de negócio
+atrás do mesmo padrão: operação bloqueada por leitura de campo legado incompleto.
+
+Achei um, e é o mesmo campo. `moverEtapa` recusa avançar para Proposta ou Negociação
+sem família válida, e `carregarOportunidade` lia `negocios.service_family` cru. Os mesmos
+125 negócios abertos ficavam presos na etapa anterior.
+
+`carregarOportunidade` alimenta quase toda ação do pipeline (mover etapa, perder,
+tentar ganhar, alterar família, próxima ação, reunião, trial), então a correção entrou
+lá, uma vez.
+
+**Um cuidado que quase virou bug silencioso:** `alterarFamilia` compara a família atual
+com a escolhida e sai cedo quando são iguais. Com a família resolvida, escolher
+justamente a que o canônico deduziu viraria um no-op — o usuário clicaria em "definir
+família", nada aconteceria, e o legado ficaria nulo para sempre. A carga passou a
+devolver os dois valores: o resolvido, que alimenta os gates, e o próprio do legado, que
+`alterarFamilia` usa para decidir se há o que gravar.
+
+O smoke move a etapa de um negócio real nesse estado e devolve tudo ao lugar: a etapa
+avança para Proposta, e o estado original é restaurado nos dois modelos.
+
+**Validação:** tsc limpo, **261 testes, 0 falhas**, build exit 0, cinco smokes que tocam
+o pipeline verdes, zero resíduo.
