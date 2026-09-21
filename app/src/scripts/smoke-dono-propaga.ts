@@ -1,5 +1,5 @@
 /**
- * Trocar o responsável tem que chegar no canônico (SPEC §16).
+ * O que se escreve pelo legado tem que chegar no canônico (SPEC §5, §16).
  *
  * O board de pré-vendas conta "sem responsável" a partir de
  * `aquisicoes.responsavel_id`, e a Empresa 360 mostra o dono da oportunidade a
@@ -109,6 +109,39 @@ async function main() {
     await db.execute(sql`
       DELETE FROM audit_log WHERE action = 'negocio.responsavel_alterado'
         AND entity_id = ${neg.id}::uuid`);
+  }
+
+  // ── Identidade: editar o lead tem que chegar na pessoa canônica ─────────
+  //
+  // `pessoas` é a identidade canônica (SPEC §5) e a tela de pessoa lê de lá.
+  // Se editar o contato no lead não propagar, passam a existir dois nomes para
+  // a mesma pessoa e ninguém sabe qual está certo.
+  const [alvoId] = await db.execute<{ id: string; nome: string; email: string | null }>(sql`
+    SELECT l.id::text, l.nome, l.email
+      FROM leads l JOIN pessoas p ON p.lead_id_legado = l.id
+     WHERE l.organizacao_id = ${s.organizacaoId}::uuid LIMIT 1`);
+  const nomeOriginal = alvoId.nome;
+  const emailOriginal = alvoId.email;
+  const nomeNovo = `${nomeOriginal} ${Date.now() % 100000}`;
+
+  try {
+    const res = await leadsRoutes.request(`http://local/leads/${alvoId.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie: s.cookie },
+      body: JSON.stringify({ nome: nomeNovo }),
+    });
+    ok(res.status === 200, `editar o nome do lead devolve 200 (status ${res.status})`);
+
+    const [pessoa] = await db.execute<{ nome: string }>(sql`
+      SELECT nome FROM pessoas WHERE lead_id_legado = ${alvoId.id}::uuid`);
+    ok(pessoa?.nome === nomeNovo,
+       `a PESSOA canônica acompanhou (${pessoa?.nome === nomeNovo ? "sim" : `não: "${pessoa?.nome}"`})`);
+  } finally {
+    await db.execute(sql`
+      UPDATE leads SET nome = ${nomeOriginal}, email = ${emailOriginal}
+       WHERE id = ${alvoId.id}::uuid`);
+    await db.execute(sql`
+      UPDATE pessoas SET nome = ${nomeOriginal} WHERE lead_id_legado = ${alvoId.id}::uuid`);
   }
 
   // Estado restaurado: isto roda sobre dado real.
