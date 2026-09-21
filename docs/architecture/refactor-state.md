@@ -259,18 +259,63 @@ caso `CONTRATO_SEM_PROCESSO_COMERCIAL`.
   Deixá-lo sobrescrever punha o card em "Novo" enquanto o contador do canônico dizia
   outra coisa — total e cards discordando na mesma tela.
 
-### Três peças que existiam e ninguém chamava
+### Peça pronta, teste verde, produção sem caller
 
-O mesmo defeito, em três lugares, todos encontrados indo olhar — nenhum quebrava nada:
+Três apareceram indo olhar. Depois de a terceira aparecer, o padrão virou varredura:
+cruzar tudo que os pacotes canônicos exportam contra quem chama em runtime.
 
 | Peça | Sintoma |
 |---|---|
 | adapter da CAPI | escrito e testado; **nada em runtime chamava**, nenhum evento saía |
 | `projetarTimeline` | 14.078 linhas, todas do backfill; a timeline parava no dia da carga |
 | `publicarEvento` canônico | 4 chamadores contra 20 do legado, que só escrevia na fila |
+| acervo de arquivos (§32) | serviço, adaptadores, repositório e tabelas prontos; **três rotas gravando `fs.writeFileSync` em disco** |
+
+**A varredura, em números.** 39 funções exportadas pelos pacotes, 13 sem caller
+aparente. Seis eram falso positivo do próprio método — chamadas dentro do pacote,
+que o grep sobre `app/src` não vê. Das sete restantes:
+
+| Situação | Quais | O que se fez |
+|---|---|---|
+| gap real | acervo de arquivos: `guardarArquivo`, `entregarArquivo`, `escolherAdaptador`, `adaptadorLocal`, `configS3DoAmbiente` | ligado (SPEC §32) |
+| andaime da fase 25 | `verificarPodeCriarProposta`, `marcarPerdida` | mantido; o caminho legado já cumpre a regra hoje |
+| ferramenta de diagnóstico | `diagnosticoMeta` | mantido, só em script mesmo |
+
+Os dois andaimes foram medidos antes de virarem "sem caller é dívida": a regra da
+proposta roda por `verificarPropostaExigeEmpresa`, que chama a mesma política do
+domínio e ainda resolve empresa em cadeia (oportunidade → negócio → pessoa), coisa
+que o comando canônico não faz; e a perda está íntegra dos dois lados — 431
+oportunidades perdidas, 431 com motivo, contra 432 negócios perdidos no legado.
+**Função sem caller nem sempre é buraco; às vezes é duplicata pior do que o que já
+roda.** A diferença só aparece medindo.
+
+Um landmine saiu junto: `RepositorioVendas.moverEtapa` era `SET updated_at = now()`
+e nada mais. Não movia etapa e marcava a oportunidade como recém-alterada — o mesmo
+efeito que já encheu o board de "17min" uma vez. Agora falha alto até a fase 25
+decidir onde a etapa canônica mora (`oportunidades.etapa_id`: 0 de 1.561 linhas).
 
 É o padrão a vigiar no resto do refactor: peça pronta, teste verde, produção sem
-caller.
+caller. A trava contra a quinta é `lib/arquitetura/gravacao-de-arquivo.test.ts`, que
+pegou a terceira rota de upload já na primeira execução.
+
+### Arquivos: o que mudou ao ligar o acervo
+
+| Antes | Depois |
+|---|---|
+| `fs.writeFileSync` em `UPLOADS_DIR` | binário pelo adaptador, metadado em `file_objects` |
+| nome aleatório, sem checksum | chave `<organizacao>/<ab>/<sha256>.<ext>` |
+| mesmo arquivo duas vezes = duas cópias | deduplicação por conteúdo, um binário e dois vínculos |
+| `/api/uploads/<caminho>`, qualquer sessão servia | `/api/arquivos/<id>`, organização é parâmetro da busca |
+| anexo do formulário público aberto por prefixo | aberto por vínculo em `file_links` |
+
+Dois defeitos apareceram só ao ligar, nenhum visível em teste de unidade: a união
+`EntidadeVinculada` declarava `cliente` e `comunicacao`, que o CHECK do banco recusa,
+e omitia `servico_canonico` e `aquisicao`, que ele aceita; e `application/zip` era
+aceito pela rota e recusado pelo pacote.
+
+**Disco local em produção** virou permissão nominal — `STORAGE_ALLOW_LOCAL`. O
+adaptador S3 continua bloqueado por credencial externa; apagar essa variável é a
+virada, e é uma linha de ambiente, não de código.
 
 ### Dois modelos de evento, convergidos
 

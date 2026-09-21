@@ -989,3 +989,82 @@ dentro da função do pacote, para nenhum chamador precisar lembrar) e o id da f
 a FK espera o id do registro.
 
 **Commits:** `55822d9`, `374d726`.
+
+---
+
+## 2026-09-21 — Fase 32: o acervo de arquivos, e a varredura que o encontrou
+
+Depois de o mesmo defeito aparecer três vezes seguidas — peça pronta, teste verde,
+produção sem caller — parei de esperar tropeçar na quarta e varri: tudo que os pacotes
+canônicos exportam, cruzado com quem chama fora de teste.
+
+**39 funções exportadas, 13 sem caller aparente, 1 gap real.** Seis das treze eram
+falso positivo do método (chamada dentro do próprio pacote, invisível a um grep sobre
+`app/src`). Das sete restantes, duas são andaime da fase 25 e uma é ferramenta de
+diagnóstico. Sobrou o acervo de arquivos.
+
+**O acervo estava inteiro e desligado.** Serviço, adaptador local, adaptador S3 por
+injeção, repositório Postgres, `file_objects` e `file_links` migradas, testes passando.
+Nenhum caller: `anexos.ts`, `perfil.ts` e `fulfillment-formulario-publico.ts` seguiam
+chamando `fs.writeFileSync` num diretório da máquina. Em container isso é anexo que
+morre no próximo deploy e não existe para a segunda réplica — que é exatamente a frase
+que o §32 usa para justificar o pacote.
+
+`file_objects`: 0 linhas. `file_links`: 0 linhas.
+
+**Medido antes de ligar, para não inventar buraco.** Os dois andaimes da fase 25
+pareciam gaps e não são: a exigência de empresa na proposta roda por
+`verificarPropostaExigeEmpresa`, que chama a mesma política do domínio e ainda resolve
+empresa em cadeia (oportunidade → negócio → pessoa), coisa que o comando canônico não
+faz; e a perda está íntegra dos dois lados — 431 oportunidades perdidas, 431 com
+motivo, contra 432 negócios perdidos. Função sem caller nem sempre é buraco.
+
+Também conferi e descartei duas suspeitas minhas: `anexos` com 0 linhas ao lado de
+`anexos_legado` com 1.980 **não** é rename que órfãou dado (são tabelas distintas, a
+segunda é o histórico Zoho da 0012); e o guard de `marcarPerdida` comparando com `WON`
+funciona, porque o repositório traduz `ganho_at`/`perdido_at` para o vocabulário do
+domínio.
+
+**O que foi ligado.** As três rotas gravam pelo acervo. A entrega ganhou endereço pelo
+id do metadado (`/api/arquivos/:id`), não pela chave de armazenamento, para a troca de
+provedor não tocar em tela. O formulário público ganhou entrega própria autorizada por
+vínculo em `file_links` — quem preenche é o cliente, não tem sessão, e o que autoriza
+passou a ser o vínculo que o upload criou, não um prefixo de caminho. A autorização de
+`/api/uploads/*` passou a comparar a organização que está dentro da chave.
+
+Servir lendo o disco teria deixado `entregarArquivo` sem caller — repetir, no mesmo
+commit, o defeito que o commit existe para corrigir.
+
+**Dois defeitos só apareceram com dado real:** a união `EntidadeVinculada` declarava
+`cliente` e `comunicacao`, que o CHECK `ck_file_links_entity` recusa, e omitia
+`servico_canonico` e `aquisicao`, que ele aceita — tipo que compila e viola constraint;
+e `application/zip`, aceito pela rota de anexos em produção, era recusado pelo
+allowlist do pacote. Alinhei o pacote ao produto, não o contrário.
+
+**A trava pegou algo na primeira execução.** `gravacao-de-arquivo.test.ts` acusou
+`fulfillment-formulario-publico.ts`, rota que eu não tinha visto ao levantar os
+caminhos de upload.
+
+**Landmine removido de passagem:** `RepositorioVendas.moverEtapa` era
+`SET updated_at = now()` e nada mais — não movia etapa e marcava a oportunidade como
+recém-alterada, o efeito que já encheu o board de "17min". Agora falha alto até a fase
+25 decidir onde vive a etapa canônica (`oportunidades.etapa_id`: 0 de 1.561).
+
+**Bloqueio externo registrado:** sem credencial de object storage, o provedor continua
+disco local. `escolherAdaptador` recusa isso em produção, e a recusa foi mantida —
+ligada a uma permissão nominal, `STORAGE_ALLOW_LOCAL`, porque desligá-la hoje derrubaria
+upload em produção por uma credencial que ainda não chegou. Apagar a variável é a
+virada, e é ambiente, não código.
+
+**Migration:** `0078_anexos_no_acervo_canonico` (`anexos.file_object_id`, nullable —
+anexo antigo não tem acervo e não se inventa checksum de arquivo que não se leu).
+
+**Validação:** tsc limpo; 246 testes (era 242); build exit 0; smoke do acervo com 18
+verificações no banco carregado com produção — guarda, deduplica, vincula, entrega,
+isola por organização, recusa vazio e tipo fora da lista, e não deixa resíduo.
+
+**Contagens:** `file_objects` 0 → 0 (o smoke limpa o que cria), `anexos` 0,
+`anexos_legado` 1.980 (intocada), `timeline_events` 14.078, `domain_events` 2.016,
+`event_outbox` 0.
+
+**Commit:** `d0948f4`.
