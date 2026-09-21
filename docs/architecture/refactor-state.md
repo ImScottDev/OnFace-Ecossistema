@@ -7,7 +7,7 @@
 
 ## Fase atual
 
-**17, 18, 19 e 22** (em andamento)
+**17 a 22** (em andamento)
 
 Fases 01 a 16 concluídas.
 
@@ -17,13 +17,13 @@ Fases 01 a 16 concluídas.
 | 18 motor único | os dois motores usam os mesmos adapters; falta a tag de empresa, que usa outro modelo |
 | 19 IA | NEXO e Hermes criados em `draft`; a IA não escreve mais direto no banco. Falta RAG e o runtime passar permissão delegada |
 | 22 RBAC | papéis, mapa e vínculos semeados, com paridade provada. Falta as rotas usarem `exigirPermissao` |
-| 20 Meta | **bloqueado**: precisa de token com `leads_retrieval`, que não está disponível aqui |
+| 20 Meta | entrada direta e CAPI **construídos e testados**; falta credencial para enviar de verdade |
 | 21, 23, 24 | não iniciadas |
 | 25 a 28 | dependem de 17 completa; 28 precisa de aprovação do Kauã |
 
 ## Último commit
 
-`7bfa83d` — refactor(19): NEXO e Hermes existem, e a IA deixa de escrever no banco
+`f066ea3` — refactor(20): Meta entra direto, e o sinal de qualidade volta pra ela
 
 Branch de trabalho: `refactor/arquitetura-canonica`, criada a partir de `98940fe`.
 
@@ -86,6 +86,18 @@ Pacote vazio não afeta o build: `tsc` limpo e 111 testes passando com o workspa
 | 0069 | `aquisicao_lead_legado` | `aquisicoes.lead_legado_id` + índice único parcial; 3.989 de 3.989 ligadas | sim, DROP COLUMN |
 | 0070 | `rbac_papeis_e_vinculos` | 8 papéis, o mapa papel→permissão e os 16 vínculos de usuário | sim, DELETE documentado |
 | 0071 | `nexo_e_hermes` | os dois agentes do SPEC §19, em `draft`, com versão 1 | sim, DELETE documentado |
+
+## Credenciais que faltam para rodar, não para construir
+
+| O quê | Para quê | Estado |
+|---|---|---|
+| `META_APP_SECRET` | validar a assinatura do webhook de Lead Ads | ausente |
+| `META_WEBHOOK_VERIFY_TOKEN` | handshake de assinatura do webhook | ausente |
+| Token do CAPI + pixel | devolver qualificação, ganho e pagamento para a Meta | ausente |
+
+O código está pronto e falha com mensagem de **configuração ausente**, não de
+integração quebrada — tratar as duas como a mesma faz o alerta disparar em ambiente
+que nunca foi configurado.
 
 ### Tabelas canônicas criadas (vazias até o backfill)
 
@@ -253,7 +265,7 @@ canônico hoje faria o lead sumir da tela de pré-vendas no mesmo instante.
 
 ## Testes executados
 
-Estado atual: `tsc --noEmit` limpo, **build de produção passando**, **188 testes, 0
+Estado atual: `tsc --noEmit` limpo, **build de produção passando**, **196 testes, 0
 falhas**, mais cinco smokes contra o banco real:
 
 - `smoke-ponte-canonica` — entrada externa chega inteira ao canônico e não duplica;

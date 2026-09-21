@@ -611,3 +611,38 @@ template de SQL. Desta vez a trava criada hoje pegou, apontando arquivo e linha.
 argumento a favor de escrever a trava na primeira vez, não na terceira.
 
 **Commits:** `955cb07`, `7bfa83d`.
+
+---
+
+## 2026-09-21 — Fase 20 · A Meta entra direto
+
+**O caminho antigo tinha dois webhooks para o mesmo lead**, chegando fora de ordem,
+com uma tabela de staging existindo só para segurar o que chegou antes do lead
+existir. E um ponto único de falha fora de casa: em julho o token do n8n expirou e
+125 leads pagos ficaram presos, descobertos dias depois.
+
+Agora a pessoa e o anúncio chegam no mesmo fato, pela porta canônica de aquisição.
+RD Station deixa de ser trânsito obrigatório e continua disponível como destino.
+
+O normalizador cobre os três formatos que aparecem na prática: `field_data` nativo,
+integrador achatado e formulário personalizado. O que não é identidade vira resposta
+e **não é descartado** — a pergunta do cliente é o que mais vale no formulário e não
+tem campo padrão.
+
+**Conversions API.** A Meta só sabe que o formulário foi preenchido; não sabe quem
+qualificou, quem virou venda e quem pagou. Otimizar por volume de formulário é
+otimizar pelo evento errado, e o levantamento mostrou isso: 1.536 entradas de Mídia
+Paga e nenhum retorno de qualidade. Dado pessoal vai em SHA-256, e o teste verifica
+procurando o e-mail e o telefone no corpo serializado.
+
+**Um bug real, pego pelo teste:** `first_name` estava na lista de sinônimos de nome,
+então "João Pereira" virava "João". Metade do nome tratada como o nome inteiro.
+
+**Duas travas do repositório funcionaram nesta rodada:** a de webhook fail-closed
+exigiu registrar o webhook novo com a env do segredo, e a da crase em template de SQL
+pegou meu próprio erro apontando arquivo e linha.
+
+**Pendência declarada:** enviar de verdade exige `META_APP_SECRET`,
+`META_WEBHOOK_VERIFY_TOKEN` e o token do CAPI, indisponíveis aqui.
+
+**Commit:** `f066ea3`.
