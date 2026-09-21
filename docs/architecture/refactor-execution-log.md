@@ -340,3 +340,46 @@ data de morte vira permanente — e que ninguém removeu a escrita legada cedo d
 porque as telas ainda leem `leads` e o registro sumiria na hora.
 
 **Testes:** 161 passando. **Smoke:** 7 de 7.
+
+---
+
+## 2026-09-21 — Fase 16e · O caminho de Ganho, provado contra o banco real
+
+**Mudança:** `packages/platform/database/src/repositorio-vendas.ts` implementa o
+contrato `RepositorioVendas` em Postgres, e `src/scripts/smoke-ganho-oportunidade.ts`
+percorre o caminho inteiro num negócio criado e destruído pelo próprio smoke.
+
+**A regra que isso fecha.** Oportunidade sem oferta não pode ser ganha (`SEM_OFERTA`),
+e quem decide o Ganho é a política da OFERTA, não a família do produto. Era o risco
+financeiro aberto desde a auditoria: `won_evidence_policies` deixava PABX e White
+Label ganharem com contrato assinado e nenhum pagamento, contradizendo
+`won-evidence.ts:19`. Agora a mesma família com duas ofertas tem regras opostas, e o
+teste de domínio prova isso.
+
+**Migrations:** 0066 (`tipo` e `cycle_number` em `fulfillments`, com
+`uq_fulfillment_ciclo`), 0067 (comunicações canônicas), 0068.
+
+**Dois bugs encontrados pela validação, não pelo compilador:**
+
+1. **A 0066 não removeu o índice antigo.** `idx_fulfillments_servico` continuava
+   UNIQUE em `servico_canonico_id` sozinho, então o índice velho mandava e o serviço
+   aceitava onboarding OU implantação, nunca os dois: PABX criou 1 jornada em vez de
+   2. Pego pelo smoke. Migration 0068 devolve o índice como não único.
+2. **O ON CONFLICT do caminho legado ficou órfão.** Com a exclusividade removida,
+   `lib/crm/pos-venda.ts:375` passou a apontar para um índice que não existe mais — e
+   Postgres recusa a query inteira, então todo Ganho que passa por `negocios.ts:804`
+   iria pro chão em runtime. Pego pelo `on-conflict.test.ts`, que varre todo
+   ON CONFLICT do repo contra os índices reais do banco. Mesma classe do bug de 14/09
+   no handoff de CS — a razão do teste existir.
+
+No caminho, três pontos de drift Drizzle × Postgres fechados: `tipo` e `cycle_number`
+nunca tinham sido declarados, e `uq_fulfillment_ciclo` também não.
+
+**Gotcha de runtime registrado:** `Date` cru dentro de template `sql` do postgres.js
+quebra; os repositórios passaram a serializar com `toISOString()`.
+
+**Validação:** `tsc` limpo, **170 testes passando, 0 falhas**, smoke do Ganho 5/5
+(1 serviço, 2 jornadas, timeline, bloqueio funciona, retry idempotente) e smoke da
+ponte canônica verde.
+
+**Commits:** `refactor(16e)` e `92327d0` (fix do ON CONFLICT).

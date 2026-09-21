@@ -9,11 +9,13 @@
 
 **16 — Migração dos escritores de runtime** (em andamento)
 
-Fases 01 a 15 concluídas. Fase 16 em andamento: **6 criadores de identidade migrados**.
+Fases 01 a 15 concluídas. Fase 16: **6 criadores de identidade migrados** e o
+caminho de Ganho provado ponta a ponta contra o banco real (16e). Falta
+`contatos-unified`, o worker e os 30 caminhos de escrita de `negocios`.
 
 ## Último commit
 
-`refactor(13)` — comunicacoes canonicas, 33.005 de 34.761 linhas
+`92327d0` — fix(16e): ON CONFLICT de fulfillment aponta pro índice que existe
 
 Branch de trabalho: `refactor/arquitetura-canonica`, criada a partir de `98940fe`.
 
@@ -68,6 +70,11 @@ Pacote vazio não afeta o build: `tsc` limpo e 111 testes passando com o workspa
 | 0061 | `vinculo_pessoa_empresa_campos` | `cargo` e `updated_at` em `pessoa_empresa_vinculos` + índice único | sim |
 | 0062 | `pontos_contato_atribuicao` | 10 colunas de atribuição e `aquisicao_id` em `pontos_contato` | sim |
 | 0063 | `ofertas_comerciais_seed` | as 4 ofertas do SPEC §12.3 + `oferta_comercial_id` em oportunidade, proposta, contrato e preço | sim |
+| 0064 | `proposta_contrato_canonico` | vínculo canônico de proposta e contrato à oportunidade/oferta | sim |
+| 0065 | `cliente_servico_canonico` | vínculo de cliente e serviço canônico à oportunidade | sim |
+| 0066 | `fulfillment_ciclos` | `tipo` e `cycle_number` em `fulfillments` + `uq_fulfillment_ciclo` — habilita onboarding E implantação no mesmo serviço | sim |
+| 0067 | `comunicacoes_canonicas` | `communications` e `conversas` canônicas | sim, EXPAND puro |
+| 0068 | `fulfillment_indice_antigo` | remove a exclusividade de `idx_fulfillments_servico`, que anulava a 0066 | sim, recriar como UNIQUE |
 
 ### Tabelas canônicas criadas (vazias até o backfill)
 
@@ -156,6 +163,8 @@ Os demais 37 pacotes seguem vazios, recebendo código conforme as fases avançam
 | `api-server/routes/prospeccao.ts` | **migrado** | idem |
 | `api-server/routes/apollo.ts` | **migrado** | idem |
 | `api-server/routes/contatos-unified.ts` | pendente | — |
+| Ganho de oportunidade (caminho canônico) | **provado em 16e** | `avaliarCondicaoDeGanho` |
+| `lib/crm/pos-venda.ts` (adaptador legado) | ainda em uso por `negocios.ts:804`, morre na fase 17 | — |
 | `api-server/routes/{email,whatsapp,contratos,cadencia}.ts` | pendente (atualizam, não criam) | — |
 | `worker/index.ts` | pendente | — |
 | escrita de `negocios` (30 caminhos) | pendente — fase 16e | — |
@@ -177,6 +186,11 @@ canônico hoje faria o lead sumir da tela de pré-vendas no mesmo instante.
 `ligacoes` (4.938), `emails` (4.460), `atividades` (13.044), `cadencia_execucoes` (1.273).
 
 ## Testes executados
+
+Estado atual (16e): `tsc --noEmit` limpo, **170 testes passando, 0 falhas**, mais
+dois smokes contra o banco real — `smoke-ponte-canonica` (entrada externa chega
+inteira ao canônico) e `smoke-ganho-oportunidade` 5/5 (a política da oferta decide
+o Ganho, PABX gera as duas jornadas, retry não duplica).
 
 Após a fase 04: `tsc --noEmit` limpo (0 erros), **111 testes passando**, 0 falhas.
 
