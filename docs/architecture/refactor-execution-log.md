@@ -1415,3 +1415,44 @@ de manhã justamente para isso.
 
 **Validação:** tsc limpo, **257 testes, 0 falhas**, build exit 0,
 `smoke-prevendas-leitura` verde com o cartão em 3.060.
+
+---
+
+## 2026-09-21 — Cutover crítico, parte 7: toda leitura canônica executada contra produção
+
+`lib/vendas/consultas.ts` é a porta de leitura de 20 telas, e até agora cada correção
+provava uma leitura por vez. `tsc` prova que as consultas compilam e `pnpm build` prova
+que as páginas montam; nenhum dos dois executa uma query contra dado real.
+
+`smoke-leituras-canonicas.ts` chama as nove leituras exportadas mais a linha do tempo,
+com ids reais, e confere conteúdo, não só ausência de exceção: board vazio é o bug que
+este refactor mais encontrou, e "não explodiu" teria passado em todos eles.
+
+| Leitura | Tempo | Conteúdo |
+|---|---|---|
+| `boardPreVendas` | 75ms | 201 cards, 3.702 ativos |
+| `boardPipeline` | 21ms | 290 cards, 603 ganhas |
+| `listaProspeccao` | 7ms | 78 linhas |
+| `diretorioEmpresas` | 461ms | 200 linhas |
+| `diretorioPessoas` | 15ms | 200 linhas |
+| `pessoaPorId` | 2ms | encontrada |
+| `empresa360` | 38ms | monta, com oportunidades |
+| `detalheLead` | 3ms | monta |
+| `detalheOportunidade` | 3ms | monta |
+| `lerLinhaDoTempo` | 3ms | 50 eventos na pessoa com mais histórico |
+
+O smoke falha se alguma passar de um segundo: consulta de board lenta é problema de
+produto, não de teste. `diretorioEmpresas` é a mais próxima do limite e fica registrada.
+
+Duas verificações também conferem que correções anteriores continuam de pé: o board de
+pré-vendas traz cards (era o sumiço dos 2.392 leads) e a linha do tempo traz eventos
+(era a tabela vazia).
+
+**Outras conferências desta rodada, todas batendo:** os quatro cartões restantes do
+board de pré-vendas contra caminho independente; o resumo do pipeline, onde
+`o.etapa = 'ganho'` parecia impossível e não é (603 e 431 conferem com `ganho_at` e
+`perdido_at`); identidade entre `leads` e `pessoas` (3.950 vinculadas, 0 divergência de
+nome e e-mail, 3 de telefone por normalização); e empresa entre `leads` e `aquisicoes`
+(2.348 dos dois lados, 0 divergência).
+
+**Validação:** tsc limpo, **257 testes, 0 falhas**, smoke de leituras verde.
