@@ -215,6 +215,15 @@ export async function syncOportunidadeFromNegocio(negocioId: string): Promise<vo
       empresaId: negocio.empresaId,
       pipelineId: negocio.pipelineId,
       stage: negocio.status,
+      // `etapa`, `titulo` e `service_family` entraram aqui na fase 17, quando o
+      // board de pipeline passou a LER `oportunidades`. Sem eles, mover um card
+      // atualizava `negocios.etapa` e a oportunidade ficava na etapa antiga: o
+      // card voltava para a coluna anterior no próximo carregamento. Leitura
+      // canônica exige que a sincronização cubra TUDO que a leitura usa.
+      etapa: negocio.etapa,
+      titulo: negocio.titulo,
+      serviceFamily: negocio.serviceFamily,
+      commercialMotion: negocio.commercialMotion,
       responsavelId: negocio.responsavelId,
       valor: negocio.valorTotal,
       mrr: negocio.mrrFechado || negocio.mrrEstimado,
