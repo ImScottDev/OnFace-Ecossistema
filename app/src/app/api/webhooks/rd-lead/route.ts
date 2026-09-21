@@ -8,6 +8,7 @@ import {
   type ParsedRdLead,
 } from "@/lib/integrations/rd-station";
 import { telefoneUsavel } from "@/lib/whatsapp/phone-utils";
+import { resolverEmpresaId, dominioCorporativo } from "@/lib/crm/resolver-empresa";
 
 /**
  * Busca IDs reais da Meta deixados em staging pelo webhook /api/webhooks/meta-lead-ids
@@ -185,6 +186,14 @@ export async function POST(req: NextRequest) {
           .limit(1);
       }
 
+      // Empresa como entidade, não só texto: sem isso o lead cai no drawer como
+      // "Sem cadastro — clique pra criar e vincular" e alguém tem que vincular à mão.
+      const empresaIdResolvida = await resolverEmpresaId({
+        organizacaoId: org.id,
+        nome: p.empresa,
+        website: dominioCorporativo(p.email),
+      });
+
       // Já existe como lead/prospect no pipeline (não-cliente): atualiza, não duplica.
       if (existing && existing.tipo !== "cliente") {
         // Mescla camposCustom pra não apagar qualificação/custom já preenchidos.
@@ -199,6 +208,10 @@ export async function POST(req: NextRequest) {
           .update(leads)
           .set({
             empresa: p.empresa,
+            // Não rouba o vínculo já feito (inclusive o manual, no drawer): só preenche se estiver vazio.
+            ...(empresaIdResolvida
+              ? { empresaId: sql`COALESCE(${leads.empresaId}, ${empresaIdResolvida}::uuid)` }
+              : {}),
             cargo: p.cargo,
             origem: sql`COALESCE(NULLIF(${leads.origem}, ''), ${p.origem ?? null})`,
             utmSource: sql`COALESCE(NULLIF(${leads.utmSource}, ''), ${p.utmSource ?? null})`,
@@ -241,6 +254,7 @@ export async function POST(req: NextRequest) {
           email: p.email,
           telefone: p.telefone,
           empresa: p.empresa,
+          empresaId: empresaIdResolvida,
           cargo: p.cargo,
           origem: p.origem,
           utmSource: p.utmSource,

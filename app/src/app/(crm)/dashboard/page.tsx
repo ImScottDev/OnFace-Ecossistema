@@ -5,7 +5,7 @@ import { getPipelineConfig } from "@/lib/crm/getPipelineConfig";
 import { getTenantContext } from "@/lib/auth/tenant";
 import { isAdminView, isPersonalView, isReader } from "@/lib/auth/roles";
 import { getMetasDoUsuario, getRealizadoMeta, getMetaComercialAgregada, metaTipoPorPapel, type MetaTipo } from "@/lib/metas";
-import { META_LABELS } from "@/lib/metas-shared";
+import { META_LABELS, CLOSER_EXTRA_IDS } from "@/lib/metas-shared";
 import { MetaProgress } from "@/app/(crm)/relatorios/components/MetaProgress";
 import Link from "next/link";
 import { MeuDiaClient } from "@/components/crm/MeuDiaClient";
@@ -301,7 +301,7 @@ async function getMetasPorVendedor(organizacaoId: string) {
     .where(and(
       eq(usuarios.organizacaoId, organizacaoId),
       eq(usuarios.ativo, true),
-      inArray(usuarios.role, ["closer", "sdr", "vendedor"]),
+      or(inArray(usuarios.role, ["closer", "sdr", "vendedor"]), inArray(usuarios.id, CLOSER_EXTRA_IDS)),
     ))
     .orderBy(usuarios.nome);
 

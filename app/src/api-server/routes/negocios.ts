@@ -104,7 +104,22 @@ app.get("/negocios", async (c) => {
     }
   }
   if (pipelineId) {
-    conditions.push(eq(negocios.pipelineId, pipelineId));
+    // Negócio com pipeline_id NULL não casa com filtro nenhum e SOME do board.
+    // Não é caso raro: vários caminhos de criação não preenchem o campo (proposta
+    // direta do lead, conversão de contato, criação pelo lead). Em vez de perder
+    // o card, o pipeline PADRÃO também recolhe os órfãos; de lá dá pra mover pro
+    // certo. Ver decisões/2026-09-17-crm-negocio-sem-pipeline-some-do-board.
+    const [pipelinePadrao] = await db
+      .select({ id: pipelines.id })
+      .from(pipelines)
+      .where(and(eq(pipelines.organizacaoId, ctx.organizacaoId), eq(pipelines.ativo, true)))
+      .orderBy(desc(pipelines.isDefault), asc(pipelines.ordem))
+      .limit(1);
+    conditions.push(
+      pipelinePadrao?.id === pipelineId
+        ? or(eq(negocios.pipelineId, pipelineId), isNull(negocios.pipelineId))!
+        : eq(negocios.pipelineId, pipelineId)
+    );
   }
   if (origemNegocio && origemNegocio !== "todos") {
     conditions.push(eq(negocios.origemNegocio, origemNegocio));

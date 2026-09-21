@@ -374,15 +374,12 @@ export async function POST(request: NextRequest) {
     payload: event as Record<string, unknown>,
   }).onConflictDoNothing().returning({ id: stripeWebhookEvents.id });
 
-  try {
-    await stripeWebhookEventsQueue.add("stripe-event", { stripeEventId: event.id }, { jobId: `stripe-event:${event.id}` });
-  } catch (error) {
-    // Keep the durable inbox pending and request a Stripe retry. The retry will
-    // enqueue the same deterministic job ID; no financial action was taken yet.
-    console.error("[StripeWebhook] evento salvo, mas fila indisponível:", error);
-    return NextResponse.json({ error: "event stored; queue unavailable" }, { status: 503 });
-  }
-  if (!stored) return NextResponse.json({ received: true, type, duplicate: true });
+  // ORDEM IMPORTA. Os handlers de negócio abaixo rodam ANTES de enfileirar e NÃO são
+  // pulados quando o evento já existe (retry do Stripe). São idempotentes: o aceite
+  // faz claim atômico na proposta ('enviada|expirada|recusada' -> 'aceita').
+  // Até 17/09/2026 era o contrário e isso travou vendas PAGAS: a 1ª entrega morria no
+  // 503 da fila antes de chegar aqui, e o retry caía num `return duplicate` que também
+  // vinha antes. Ninguém nunca marcava a proposta como aceita.
 
   // checkout.session.completed dispara quando o cliente TERMINA o checkout, não quando
   // ele PAGA — pra métodos assíncronos (boleto), a sessão fica "complete" com
@@ -427,5 +424,17 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  return NextResponse.json({ received: true, type, queued: true });
+  // A fila só dispara o syncStripe (espelho de assinaturas/faturas), que também roda
+  // agendado a cada 30 min. Por isso ela vem DEPOIS do tratamento de negócio, e falha
+  // aqui não devolve 503: o aceite já aconteceu, pedir retry só duplicaria entrega.
+  let queued = true;
+  try {
+    // jobId NAO pode conter ":" — o BullMQ recusa ("Custom Id cannot contain :").
+    await stripeWebhookEventsQueue.add("stripe-event", { stripeEventId: event.id }, { jobId: `stripe-event-${event.id}` });
+  } catch (error) {
+    console.error("[StripeWebhook] evento tratado, mas fila indisponível:", error);
+    queued = false;
+  }
+
+  return NextResponse.json({ received: true, type, queued, duplicate: !stored });
 }

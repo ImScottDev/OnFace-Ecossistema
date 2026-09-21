@@ -23,7 +23,7 @@
  */
 import { db } from "../db";
 import { assinaturas, contratos, faturas, leads, mrrMovimentos, organizacoes, notificacoes, usuarios } from "../db/schema";
-import { eq, sql, and, inArray } from "drizzle-orm";
+import { eq, sql, and, inArray, gt } from "drizzle-orm";
 import { resolveBillingCustomer, type BillingResolution } from "./billing-identity";
 
 const STRIPE_API = "https://api.stripe.com/v1";
@@ -436,7 +436,7 @@ export async function syncStripe(): Promise<{ subs: number; faturas: number; chu
     const [jaAvisado] = await db
       .select({ id: notificacoes.id })
       .from(notificacoes)
-      .where(and(eq(notificacoes.tipo, "stripe_sem_lead"), sql`${notificacoes.createdAt} > ${umDiaAtras}`))
+      .where(and(eq(notificacoes.tipo, "stripe_sem_lead"), gt(notificacoes.createdAt, umDiaAtras)))
       .limit(1);
     if (!jaAvisado) {
       const mrrSemLead = semLead.reduce((a, s) => a + s.mrr, 0);

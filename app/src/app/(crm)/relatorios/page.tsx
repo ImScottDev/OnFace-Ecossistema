@@ -8,11 +8,13 @@ import TabComercialCloser from "./components/TabComercialCloser";
 import TabSdr from "./components/TabSdr";
 import TabGrowth from "./components/TabGrowth";
 import TabAtividadeTime from "./components/TabAtividadeTime";
+import TabFechamentoComercial from "./components/TabFechamentoComercial";
 import PeriodSelector from "./components/PeriodSelector";
 import { useMe } from "@/lib/useMe";
 import { isAdminView } from "@/lib/auth/roles";
 
 const TABS = [
+  { key: "fechamento-comercial", label: "Financeiro · Fechamento Comercial" },
   { key: "sdr", label: "Pré-vendas (SDR)" },
   { key: "comercial", label: "Comercial" },
   { key: "atividade-time", label: "Atividade do Time" },
@@ -99,6 +101,7 @@ export default function RelatoriosPage() {
                 </button>
               ))}
             </div>
+            {tab === "fechamento-comercial" && <TabFechamentoComercial periodo={periodo} />}
             {tab === "sdr" && <TabSdr periodo={periodo} />}
             {tab === "comercial" && <TabComercial periodo={periodo} />}
             {tab === "atividade-time" && <TabAtividadeTime />}

@@ -265,9 +265,10 @@ export async function getFechadoPeriodo(
     .groupBy(negocios.tipoReceita);
 
   // recorrente = MRR (mensalidade) dos ganhos, NÃO valor_total (que é o total do
-  // contrato e inflava). avulso continua sendo o valor cheio do projeto/one-time.
-  const recorrente = rows.filter((r) => r.tipoReceita !== "avulso").reduce((s, r) => s + num(r.mrr), 0);
-  const avulso = rows.filter((r) => r.tipoReceita === "avulso").reduce((s, r) => s + num(r.valor), 0);
+  // contrato e inflava). avulso/projeto (sem MRR) usa o valor cheio do projeto/one-time
+  // — senão negócio 100% avulso ("projeto") nunca contava em lugar nenhum.
+  const recorrente = rows.filter((r) => r.tipoReceita !== "avulso" && r.tipoReceita !== "projeto").reduce((s, r) => s + num(r.mrr), 0);
+  const avulso = rows.filter((r) => r.tipoReceita === "avulso" || r.tipoReceita === "projeto").reduce((s, r) => s + num(r.valor), 0);
   const ganhos = rows.reduce((s, r) => s + num(r.total), 0);
   return { ganhos, receita: recorrente + avulso, recorrente, avulso };
 }
@@ -275,7 +276,7 @@ export async function getFechadoPeriodo(
 export interface FechadoResponsavel {
   responsavelId: string;
   ganhos: number;
-  receita: number; // MESMA regra do total (recorrente = mrr_fechado; avulso = valor_total)
+  receita: number; // MESMA regra do total (recorrente = mrr_fechado; avulso/projeto = valor_total)
   recorrente: number;
   avulso: number;
   cicloMedio: number | null;
@@ -318,7 +319,7 @@ export async function getFechadoPorResponsavel(
     const cur = map.get(id) ?? { responsavelId: id, ganhos: 0, receita: 0, recorrente: 0, avulso: 0, cicloMedio: null };
     const n = num(r.total);
     cur.ganhos += n;
-    if (r.tipoReceita === "avulso") cur.avulso += num(r.valor);
+    if (r.tipoReceita === "avulso" || r.tipoReceita === "projeto") cur.avulso += num(r.valor);
     else cur.recorrente += num(r.mrr);
     cur.receita = cur.recorrente + cur.avulso;
     // média ponderada do ciclo entre os grupos (recorrente/avulso) do mesmo responsável

@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { metas, negocios, leads, reunioes, contratos, usuarios, statusChanges } from "@/lib/db/schema";
-import { and, eq, gte, lt, count, sql, isNotNull, inArray } from "drizzle-orm";
-import { monthRange, type MetaTipo } from "@/lib/metas-shared";
+import { and, eq, gte, lt, count, sql, isNotNull, inArray, or } from "drizzle-orm";
+import { monthRange, type MetaTipo, CLOSER_EXTRA_IDS } from "@/lib/metas-shared";
 
 // Reexporta a parte pura pra quem importa de "@/lib/metas" no servidor.
 export { META_TIPOS, metaTipoPorPapel, monthRange } from "@/lib/metas-shared";
@@ -21,7 +21,7 @@ export async function getMetaComercialAgregada(organizacaoId: string, periodo: s
     .from(usuarios)
     .where(and(
       eq(usuarios.organizacaoId, organizacaoId),
-      inArray(usuarios.role, CLOSER_ROLES),
+      or(inArray(usuarios.role, CLOSER_ROLES), inArray(usuarios.id, CLOSER_EXTRA_IDS)),
       eq(usuarios.ativo, true),
     ));
   const ids = closers.map((c) => c.id);
@@ -39,7 +39,7 @@ export async function getMetaComercialAgregada(organizacaoId: string, periodo: s
   const valorAlvo = metaRows.reduce((s, r) => s + (parseFloat(String(r.v)) || 0), 0);
 
   const [r] = await db
-    .select({ total: sql<string>`COALESCE(SUM(mrr_fechado::numeric), 0)` })
+    .select({ total: sql<string>`COALESCE(SUM(CASE WHEN tipo_receita IN ('avulso','projeto') THEN valor_total ELSE mrr_fechado END::numeric), 0)` })
     .from(negocios)
     .where(and(
       eq(negocios.organizacaoId, organizacaoId),
@@ -121,11 +121,12 @@ export async function getRealizadoMeta(
   }
 
   if (tipo === "mrr_fechado") {
-    // MRR (mensalidade) novo fechado no mês. Soma mrr_fechado — NÃO valor_total,
-    // que é o valor total do contrato (pode ser anual/setup) e inflava a meta.
+    // MRR (mensalidade) novo fechado no mês. Recorrente/híbrido soma mrr_fechado
+    // (NÃO valor_total, que é o total do contrato e inflava a meta). Projeto/avulso
+    // (sem MRR) soma valor_total, senão venda 100% avulsa nunca contava pra ninguém.
     // Bate exatamente com o card "Fechado (mês)" do dashboard.
     const [r] = await db
-      .select({ total: sql<string>`COALESCE(SUM(mrr_fechado::numeric), 0)` })
+      .select({ total: sql<string>`COALESCE(SUM(CASE WHEN tipo_receita IN ('avulso','projeto') THEN valor_total ELSE mrr_fechado END::numeric), 0)` })
       .from(negocios)
       .where(and(
         eq(negocios.organizacaoId, organizacaoId),

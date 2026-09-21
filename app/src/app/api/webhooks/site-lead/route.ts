@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { telefoneUsavel } from "@/lib/whatsapp/phone-utils";
 import { leads, organizacoes, statusChanges } from "@/lib/db/schema";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
+import { resolverEmpresaId, dominioCorporativo } from "@/lib/crm/resolver-empresa";
 
 /**
  * Webhook do FORMULÁRIO do site institucional (site.callface.io).
@@ -137,6 +138,13 @@ export async function POST(req: NextRequest) {
       .limit(1);
   }
 
+  // Empresa como entidade, não só texto (senão o lead entra sem vínculo no drawer).
+  const empresaIdResolvida = await resolverEmpresaId({
+    organizacaoId: org.id,
+    nome: empresa,
+    website: dominioCorporativo(email),
+  });
+
   if (existing) {
     if (existing.tipo === "cliente") {
       return NextResponse.json(
@@ -148,6 +156,10 @@ export async function POST(req: NextRequest) {
       .update(leads)
       .set({
         empresa: empresa ?? undefined,
+        // Não sobrescreve vínculo já existente.
+        ...(empresaIdResolvida
+          ? { empresaId: sql`COALESCE(${leads.empresaId}, ${empresaIdResolvida}::uuid)` }
+          : {}),
         cargo: cargo ?? undefined,
         telefone: telefone ?? undefined,
         updatedAt: new Date(),
@@ -168,6 +180,7 @@ export async function POST(req: NextRequest) {
       email,
       telefone,
       empresa,
+      empresaId: empresaIdResolvida,
       cargo,
       origem: "Site",
       utmSource: clean(body.utmSource),

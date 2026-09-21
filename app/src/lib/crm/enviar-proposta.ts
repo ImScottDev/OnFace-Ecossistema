@@ -6,7 +6,7 @@
  * Compartilhado entre a rota Next (local) e a rota Hono (prod) pra manter paridade.
  */
 import { db } from "@/lib/db";
-import { propostas, propostaItens, leads, empresas, atividades, servicosCatalogo } from "@/lib/db/schema";
+import { propostas, propostaItens, leads, atividades, servicosCatalogo } from "@/lib/db/schema";
 import { eq, and, asc } from "drizzle-orm";
 import { createSubscriptionCheckout, createOneTimeCheckout, boletoExpiresAfterDaysFromValidade } from "@/lib/integrations/stripe-checkout";
 import { sendResendEmail } from "@/lib/email/resend";
@@ -46,16 +46,8 @@ export async function enviarPropostaComCheckout(opts: {
   }
 
   const [lead] = await db
-    .select({
-      nome: leads.nome,
-      sobrenome: leads.sobrenome,
-      empresa: leads.empresa,
-      email: leads.email,
-      stripeCustomerId: leads.stripeCustomerId,
-      empresaStripeCustomerId: empresas.stripeCustomerId,
-    })
+    .select({ nome: leads.nome, sobrenome: leads.sobrenome, empresa: leads.empresa, email: leads.email })
     .from(leads)
-    .leftJoin(empresas, eq(leads.empresaId, empresas.id))
     .where(eq(leads.id, proposta.leadId))
     .limit(1);
 
@@ -110,14 +102,6 @@ export async function enviarPropostaComCheckout(opts: {
 
   const base = process.env.NEXTAUTH_URL || "https://crm.callface.io";
   const clienteNome = [lead.nome, lead.sobrenome].filter(Boolean).join(" ") || lead.nome;
-  // O vínculo pode estar no lead (fluxo atual) ou na empresa (cadastro antigo).
-  // Nunca faça fallback por nome/e-mail aqui: match ambíguo cria cobrança no
-  // Customer errado. O sync é responsável por sugerir/reconciliar esses casos.
-  const customerId = lead?.stripeCustomerId || lead?.empresaStripeCustomerId || undefined;
-  // Enquanto a mesma sessão está sendo criada, retries e duplo clique precisam
-  // receber a MESMA resposta da Stripe. Ao reenviar uma proposta que já tem
-  // sessão, a chave muda para permitir o novo checkout depois de expirar o antigo.
-  const idempotencyKey = `callface-checkout:${proposta.id}:${proposta.stripeSessionId || "initial"}`;
 
   // 1) Checkout Stripe (assinatura) com email do cliente + metadata
   // Boleto vence junto com a "Validade" da proposta — sem isso a Stripe usa o
@@ -134,8 +118,6 @@ export async function enviarPropostaComCheckout(opts: {
           moeda: proposta.moeda || "BRL",
           itens: checkoutItens,
           totalRecorrente,
-          idempotencyKey,
-          customerId,
           customerEmail: lead?.email || undefined,
           successUrl: process.env.CHECKOUT_SUCCESS_URL || `${base}/obrigado`,
           cancelUrl: process.env.CHECKOUT_CANCEL_URL || base,
@@ -147,8 +129,6 @@ export async function enviarPropostaComCheckout(opts: {
           organizacaoId,
           moeda: proposta.moeda || "BRL",
           itens: oneTimeItens,
-          idempotencyKey,
-          customerId,
           customerEmail: lead?.email || undefined,
           successUrl: process.env.CHECKOUT_SUCCESS_URL || `${base}/obrigado`,
           cancelUrl: process.env.CHECKOUT_CANCEL_URL || base,
