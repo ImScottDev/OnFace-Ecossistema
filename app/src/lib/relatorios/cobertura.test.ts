@@ -95,3 +95,56 @@ test("todo contrato ativo pode entrar na régua de renovação", async (t) => {
     `${r.ativos - r.alcancaveis} contratos ativos sem lead nem empresa: renovação que ninguém trabalha`,
   );
 });
+
+test("o relatório por pessoa conta o mesmo no canônico e no legado", async (t) => {
+  if (!DB_URL) return t.skip("DATABASE_URL não definida");
+  const { db } = await import("@/lib/db");
+  const { sql } = await import("drizzle-orm");
+
+  // O relatório separa MRR de setup, e o canônico só ganhou `setup_estimado`
+  // na migration 0073. Sem o campo, migrar a leitura teria juntado receita
+  // recorrente com receita de implantação — que são decisões diferentes.
+  const [r] = await db.execute<{
+    mrr_legado: string; mrr_canonico: string;
+    setup_legado: string; setup_canonico: string;
+    n_legado: number; n_canonico: number;
+  }>(sql`
+    SELECT
+      (SELECT COALESCE(sum(COALESCE(mrr_fechado,0)),0)::text FROM negocios
+        WHERE status='ganho' AND ganho_at IS NOT NULL) AS mrr_legado,
+      (SELECT COALESCE(sum(COALESCE(mrr,0)),0)::text FROM oportunidades
+        WHERE ganho_at IS NOT NULL) AS mrr_canonico,
+      (SELECT COALESCE(sum(COALESCE(valor_setup,0)),0)::text FROM negocios
+        WHERE status='ganho' AND ganho_at IS NOT NULL) AS setup_legado,
+      (SELECT COALESCE(sum(COALESCE(setup_estimado,0)),0)::text FROM oportunidades
+        WHERE ganho_at IS NOT NULL) AS setup_canonico,
+      (SELECT count(*)::int FROM negocios WHERE status='ganho' AND ganho_at IS NOT NULL) AS n_legado,
+      (SELECT count(*)::int FROM oportunidades WHERE ganho_at IS NOT NULL) AS n_canonico`);
+
+  assert.equal(Number(r.mrr_canonico).toFixed(2), Number(r.mrr_legado).toFixed(2), "o MRR ganho divergiu");
+  assert.equal(Number(r.setup_canonico).toFixed(2), Number(r.setup_legado).toFixed(2), "o setup ganho divergiu");
+  assert.equal(r.n_canonico, r.n_legado, "a contagem de ganhos divergiu");
+});
+
+test("toda oportunidade aponta para uma etapa que existe", async (t) => {
+  if (!DB_URL) return t.skip("DATABASE_URL não definida");
+  const { db } = await import("@/lib/db");
+  const { sql } = await import("drizzle-orm");
+
+  // `pipeline_etapas` foi semeada do CRM 1 (reuniao_agendada, trial…) e o
+  // módulo Vendas usa outro vocabulário (entrada, diagnostico…). Resultado:
+  // 1.561 oportunidades e ZERO com etapa_id — a tabela canônica de etapas
+  // descrevia um pipeline que ninguém usa.
+  const [r] = await db.execute<{ total: number; com_etapa: number; orfas: number }>(sql`
+    SELECT count(*)::int AS total,
+           count(etapa_id)::int AS com_etapa,
+           count(*) FILTER (WHERE etapa_id IS NOT NULL AND NOT EXISTS (
+             SELECT 1 FROM pipeline_etapas pe WHERE pe.id = o.etapa_id))::int AS orfas
+      FROM oportunidades o`);
+
+  assert.equal(r.orfas, 0, "oportunidade apontando para etapa inexistente");
+  assert.equal(
+    r.com_etapa, r.total,
+    `${r.total - r.com_etapa} oportunidades sem etapa canônica: o vocabulário de etapa divergiu de novo`,
+  );
+});

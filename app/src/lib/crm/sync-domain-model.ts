@@ -221,6 +221,13 @@ export async function syncOportunidadeFromNegocio(negocioId: string): Promise<vo
       // card voltava para a coluna anterior no próximo carregamento. Leitura
       // canônica exige que a sincronização cubra TUDO que a leitura usa.
       etapa: negocio.etapa,
+      // A etapa também como referência (migration 0073). O texto continua, e a
+      // referência é o que a contração vai usar.
+      etapaId: sql`(SELECT pe.id FROM pipeline_etapas pe
+                     WHERE pe.codigo = ${negocio.etapa}
+                       AND pe.organizacao_id = ${negocio.organizacaoId}
+                     LIMIT 1)` as never,
+      setupEstimado: negocio.valorSetup,
       titulo: negocio.titulo,
       serviceFamily: negocio.serviceFamily,
       commercialMotion: negocio.commercialMotion,

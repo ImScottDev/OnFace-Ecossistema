@@ -1373,16 +1373,22 @@ app.get("/faturamento-categoria", async (c) => {
      GROUP BY 1, 2 ORDER BY 1`);
 
   const porPessoa = await db.execute(sql`
-    SELECT COALESCE(u.nome, 'Sem responsável')                AS nome,
-           COALESCE(SUM(COALESCE(n.mrr_fechado, 0)), 0)::float AS mrr,
-           COALESCE(SUM(COALESCE(n.valor_setup, 0)), 0)::float AS setup,
-           COUNT(*)::int                                       AS negocios
-      FROM negocios n
-      LEFT JOIN usuarios u ON u.id = n.responsavel_id
-     WHERE n.organizacao_id = ${orgId} AND n.status = 'ganho' AND n.ganho_at IS NOT NULL
-       AND n.ganho_at >= GREATEST(date_trunc('month', now()) - make_interval(months => ${meses - 1}), ${GO_LIVE_ISO}::timestamptz)
+    -- CUTOVER DE LEITURA (fase 17): a fonte passou a ser oportunidades.
+    --
+    -- So foi possivel depois da migration 0073 criar a coluna de setup: o
+    -- canonico tinha valor e mrr juntos, e migrar sem o campo perderia a
+    -- distincao entre receita recorrente e de implantacao, que sao coisas
+    -- diferentes para quem decide onde investir.
+    SELECT COALESCE(u.nome, 'Sem responsável')                     AS nome,
+           COALESCE(SUM(COALESCE(o.mrr, 0)), 0)::float             AS mrr,
+           COALESCE(SUM(COALESCE(o.setup_estimado, 0)), 0)::float  AS setup,
+           COUNT(*)::int                                           AS negocios
+      FROM oportunidades o
+      LEFT JOIN usuarios u ON u.id = o.responsavel_id
+     WHERE o.organizacao_id = ${orgId} AND o.ganho_at IS NOT NULL
+       AND o.ganho_at >= GREATEST(date_trunc('month', now()) - make_interval(months => ${meses - 1}), ${GO_LIVE_ISO}::timestamptz)
      GROUP BY 1
-     HAVING COALESCE(SUM(COALESCE(n.mrr_fechado, 0) + COALESCE(n.valor_setup, 0)), 0) > 0
+     HAVING COALESCE(SUM(COALESCE(o.mrr, 0) + COALESCE(o.setup_estimado, 0)), 0) > 0
      ORDER BY 2 + 3 DESC`);
 
   // Ganho sem valor nenhum não é erro de query: é cadastro incompleto, e o

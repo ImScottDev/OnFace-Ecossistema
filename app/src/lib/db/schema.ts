@@ -3651,6 +3651,14 @@ export const oportunidades = pgTable("oportunidades", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   ofertaComercialId: uuid("oferta_comercial_id"),
+  // Campos que o SPEC §11.1 define e a expansão da fase 04 não criou
+  // (migration 0073). `setup_estimado` separa receita de implantação do
+  // recorrente: são coisas diferentes para quem decide, e juntá-las em `valor`
+  // fazia o relatório perder a distinção.
+  setupEstimado: decimal("setup_estimado", { precision: 12, scale: 2 }),
+  servicoCatalogoId: uuid("servico_catalogo_id").references(() => servicosCatalogo.id),
+  /** A etapa como REFERÊNCIA. O texto em `etapa` fica até a contração. */
+  etapaId: uuid("etapa_id").references(() => pipelineEtapas.id),
 }, (table) => [
   index("idx_oportunidades_org").on(table.organizacaoId),
   index("idx_oportunidades_pessoa").on(table.pessoaId),
