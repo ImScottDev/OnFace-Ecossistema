@@ -17,6 +17,7 @@
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
 import { registrarEntrada, type EntradaAquisicao } from "../../../../packages/domain/acquisition/commands/registrar-entrada.js";
+import { resolverPessoa } from "../../../../packages/domain/identity/commands/resolver-identidade.js";
 import { criarRepositorioAquisicao } from "../../../../packages/platform/database/src/repositorio-aquisicao.js";
 import { publicarEvento } from "../../../../packages/platform/events/src/publicar-evento.js";
 
@@ -79,6 +80,42 @@ export async function garantirEntradaCanonica(
   } catch (e) {
     // Best-effort de propósito: ver o comentário do topo.
     console.error("[ponte-canonica] falhou; a entrada legada seguiu normalmente:", e);
+    return { ok: false, erro: String(e) };
+  }
+}
+
+/**
+ * Garante só a IDENTIDADE canônica de um contato, sem abrir aquisição.
+ *
+ * Um contato de WhatsApp que aparece não é, por si, um processo de aquisição:
+ * pode ser cliente ativo mandando mensagem, cobrança respondendo, suporte. Se
+ * cada mensagem abrisse aquisição, o funil inflaria com 25.363 processos que
+ * ninguém vendeu — exatamente o tipo de dado sujo que este refactor existe
+ * para acabar.
+ *
+ * Mas a PESSOA precisa existir no canônico: é o que liga a conversa à timeline
+ * (SPEC §6 e §22). Então aqui se resolve a identidade e nada mais. Quem abre
+ * aquisição é o momento em que o contato vira lead — e aquele caminho já passa
+ * por `garantirEntradaCanonica`.
+ *
+ * Também é best-effort: falhar aqui não pode derrubar o recebimento da
+ * mensagem.
+ */
+export async function garantirPessoaDeContato(
+  organizacaoId: string,
+  dados: { nome?: string | null; email?: string | null; telefone?: string | null },
+): Promise<{ ok: boolean; pessoaId?: string; criada?: boolean; erro?: string }> {
+  try {
+    return await db.transaction(async (tx) => {
+      const repo = criarRepositorioAquisicao(tx as never, sql as never);
+      const r = await resolverPessoa(repo, organizacaoId, dados);
+      if (r.achou) return { ok: true, pessoaId: r.pessoaId, criada: false };
+      if (r.motivo === "SEM_IDENTIFICADOR") return { ok: false, erro: "SEM_IDENTIFICADOR" };
+      const pessoaId = await repo.criarPessoa(organizacaoId, dados, null);
+      return { ok: true, pessoaId, criada: true };
+    });
+  } catch (e) {
+    console.error("[ponte-canonica] identidade de contato falhou; a mensagem seguiu:", e);
     return { ok: false, erro: String(e) };
   }
 }

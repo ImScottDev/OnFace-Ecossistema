@@ -22,6 +22,7 @@
  * Ver ADR-EXEC-012 em ARCHITECTURE_DECISIONS.md.
  */
 import { db } from "@/lib/db";
+import { decidirGanhoPelaOferta, propagarGanhoCanonico } from "@/lib/vendas/ponte-ganho";
 import { comercialEvidencia, wonEvidencePolicies, negocios, propostas, contratos, auditLog, leads, statusChanges, oportunidadeItens, oportunidades, clientes, atividades } from "@/lib/db/schema";
 import { eq, and, or, isNull } from "drizzle-orm";
 import { publicarEvento } from "@/lib/events/outbox";
@@ -102,6 +103,23 @@ async function getPolicyAplicavel(organizacaoId: string, produto: string | null)
  * precisar de script de backfill em massa).
  */
 export async function avaliarEvidenciaWon(negocioId: string, organizacaoId: string, produto: string | null): Promise<{ permitido: boolean; evidencias: TipoEvidenciaComercial[]; motivo: string }> {
+  // CUTOVER (fase 16): quando o negócio já tem oportunidade canônica com
+  // oferta, quem decide é a política da OFERTA, não a família do produto. Este
+  // é o ponto único por onde todos os caminhos de Ganho passam — rota, webhook
+  // do Stripe, webhook do Documenso, worker e script. Ver `ponte-ganho.ts`.
+  const pelaOferta = await decidirGanhoPelaOferta(negocioId);
+  if (pelaOferta.aplicavel) {
+    const evidenciasDaOferta = await db
+      .select({ tipo: comercialEvidencia.tipo })
+      .from(comercialEvidencia)
+      .where(eq(comercialEvidencia.negocioId, negocioId));
+    return {
+      permitido: Boolean(pelaOferta.permitido),
+      evidencias: evidenciasDaOferta.map((e) => e.tipo as TipoEvidenciaComercial),
+      motivo: pelaOferta.motivo ?? "política da oferta",
+    };
+  }
+
   const { tiposAceitos, requiredCombinations, isDefault } = await getPolicyAplicavel(organizacaoId, produto);
 
   const evidenciasExistentes = await db
@@ -332,6 +350,11 @@ export async function aplicarEfeitosPosGanho(opts: {
   const { negocio, organizacaoId, produto, motivo } = opts;
   const familiaHint = opts.familiaHint ?? null;
   const negocioId = negocio.id;
+
+  // CUTOVER (fase 16): o mesmo Ganho no modelo canônico — marca a
+  // oportunidade, publica o evento de domínio e cria serviço e jornadas pela
+  // oferta. Best-effort: o legado já fechou a venda.
+  void propagarGanhoCanonico(negocioId);
 
   // O ganho passa a existir na TIMELINE, não só em status_changes.
   if (negocio.leadId) {

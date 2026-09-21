@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { garantirEntradaCanonica } from "../../lib/vendas/ponte-canonica.js";
 import { db } from "@/lib/db";
 import { leads, contatos, contatoListas, leadListas, empresas, atividades } from "@/lib/db/schema";
 import { eq, and, or, ilike, desc, sql, inArray } from "drizzle-orm";
@@ -167,6 +168,17 @@ app.post("/contatos-unified", async (c) => {
       responsavelId: ctx.userId,
     })
     .returning();
+
+  // CUTOVER (fase 16): mesmo fato no modelo canônico. Sai na fase 25.
+  void garantirEntradaCanonica({
+    organizacaoId: ctx.organizacaoId,
+    tipo: "MANUAL",
+    origem: origem || "manual",
+    provider: "contatos-unified",
+    pessoa: { nome, email: email || null, telefone: telefone || null, cargo: cargo || null },
+    empresa: (empresa || body.empresaCnpj) ? { nome: empresa || null, cnpj: body.empresaCnpj || null } : null,
+    responsavelId: ctx.userId,
+  }, newLead.id);
 
   // F1/dual-write: contato manual novo — best-effort.
   await syncPessoaFromLead(newLead.id);

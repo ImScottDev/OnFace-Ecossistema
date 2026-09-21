@@ -24,7 +24,11 @@ const MIGRADOS = [
   "api-server/routes/contatos.ts",
   "api-server/routes/prospeccao.ts",
   "api-server/routes/apollo.ts",
+  "api-server/routes/contatos-unified.ts",
 ];
+
+/** Caminhos que criam CONTATO (identidade sem processo de aquisição). */
+const IDENTIDADE_SEM_AQUISICAO = ["worker/index.ts"];
 
 test("todo criador de identidade migrado chama a porta canônica", () => {
   const faltando = MIGRADOS.filter((p) => !ler(p).includes("garantirEntradaCanonica"));
@@ -63,4 +67,36 @@ test("a porta canônica nunca é chamada com await que bloqueie a resposta", () 
     return chamadas.length === 0;
   });
   assert.deepEqual(comAwaitDireto, [], `sem chamada reconhecível da porta:\n${comAwaitDireto.join("\n")}`);
+});
+
+test("o worker resolve identidade canônica ao criar contato", () => {
+  // Contato de WhatsApp não abre aquisição — 25.363 mensagens virariam 25.363
+  // processos que ninguém vendeu. Mas a PESSOA tem que existir no canônico,
+  // senão a conversa não liga na timeline (SPEC §6, §22).
+  const faltando = IDENTIDADE_SEM_AQUISICAO.filter(
+    (p) => !ler(p).includes("garantirPessoaDeContato"),
+  );
+  assert.deepEqual(faltando, [], `criam contato sem resolver identidade:\n${faltando.join("\n")}`);
+});
+
+test("a decisão de Ganho passa pela política da oferta, não pela família", () => {
+  // O risco financeiro do AS-IS: `won_evidence_policies` é indexada por família
+  // e liberava PABX/White Label com contrato assinado e zero pagamento,
+  // contradizendo o que o próprio arquivo diz por escrito na linha 19.
+  const won = ler("lib/crm/won-evidence.ts");
+  assert.match(won, /decidirGanhoPelaOferta/, "a avaliação tem que perguntar à oferta primeiro");
+  assert.match(won, /propagarGanhoCanonico/, "e o ganho tem que chegar ao modelo canônico");
+});
+
+test("a ponte de Ganho não duplica a regra de decisão", () => {
+  // A decisão vem de `avaliarGanho`, a MESMA função do caminho canônico. Se
+  // alguém reescrever a regra aqui, os dois modelos divergem em silêncio — que
+  // é exatamente o bug que este refactor existe para acabar.
+  const ponte = ler("lib/vendas/ponte-ganho.ts");
+  assert.match(ponte, /avaliarGanho/, "a ponte usa a política de domínio");
+  assert.ok(
+    !/winCondition\s*===|PAYMENT_CONFIRMED"\s*\?/.test(ponte),
+    "a ponte não pode reimplementar a decisão de ganho",
+  );
+  assert.match(ponte, /fase 25/, "e diz em que fase sai");
 });

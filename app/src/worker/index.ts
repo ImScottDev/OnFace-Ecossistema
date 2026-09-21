@@ -21,6 +21,24 @@ const connection = {
 const pgSql = postgres(process.env.DATABASE_URL!, { max: 5 });
 const db = drizzle(pgSql);
 
+/**
+ * Identidade canônica de contato (CUTOVER, fase 16).
+ *
+ * Import dinâmico como o resto do worker faz, e best-effort de propósito:
+ * falhar aqui não pode derrubar o recebimento da mensagem. Só resolve a
+ * PESSOA — contato de WhatsApp não abre aquisição, senão o funil inflaria com
+ * 25 mil processos que ninguém vendeu.
+ */
+function identidadeCanonicaDeContato(
+  organizacaoId: string,
+  dados: { nome?: string | null; email?: string | null; telefone?: string | null },
+): void {
+  void import("../lib/vendas/ponte-canonica")
+    .then((m) => m.garantirPessoaDeContato(organizacaoId, dados))
+    .catch((e) => console.error("[worker] identidade canonica de contato falhou:", e));
+}
+
+
 // Catch unhandled errors to prevent silent crashes
 process.on("unhandledRejection", (err) => {
   console.error("[Worker] Unhandled rejection:", err);
@@ -273,6 +291,8 @@ async function findOrCreateContato(data: {
 
   console.log(`[WA] Created contato ${newContato.id} (${contatoName}) responsavel=${responsavelId || 'unassigned'}`);
 
+  identidadeCanonicaDeContato(organizacaoId, { nome: contatoName, telefone: normalized });
+
   // Fire-and-forget: download WhatsApp avatar for new contato
   if (sessaoId) {
     (async () => {
@@ -361,6 +381,9 @@ async function crossSaveInterSession(opts: {
     contatoId = newContato.id;
     contatoLeadId = newContato.leadId;
     console.log(`[WA-CrossSave] Created contato ${contatoId} on session ${recipientSession.id} for ${senderPhone}`);
+    identidadeCanonicaDeContato(organizacaoId, {
+      nome: sanitizePushName(message.pushName) || senderPhone, telefone: senderPhone,
+    });
   }
 
   // Dedup: check if this message was already saved (by uazapiMessageId)
@@ -1631,6 +1654,9 @@ async function runAiSdrFirstContactSweep(): Promise<{ iniciados: number }> {
             responsavelId: aiUserId,
           }).returning({ id: contatosT.id });
           contatoId = novo.id;
+          identidadeCanonicaDeContato(config.organizacaoId, {
+            nome: lead.nome, email: lead.email, telefone: normalized,
+          });
         }
 
         await db.insert(stateT).values({ contatoId, organizacaoId: config.organizacaoId, aiAtivo: true })

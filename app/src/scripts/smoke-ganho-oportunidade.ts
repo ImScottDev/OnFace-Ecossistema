@@ -11,6 +11,7 @@ import { avaliarCondicaoDeGanho } from "../../../packages/domain/sales/commands/
 import { criarRepositorioVendas } from "../../../packages/platform/database/src/repositorio-vendas.js";
 
 async function main() {
+  let saida = 1;
   const repo = criarRepositorioVendas(db as never, sql as never);
   const [org] = await db.execute<{ id: string }>(sql`SELECT id FROM organizacoes LIMIT 1`);
   const [emp] = await db.execute<{ id: string }>(sql`SELECT id FROM empresas LIMIT 1`);
@@ -24,6 +25,12 @@ async function main() {
 
   console.log(`\n  oportunidade de teste: PABX por contrato\n`);
 
+  // A limpeza roda no finally: quando este smoke quebrava no meio (foi assim
+  // que a migration 0068 apareceu), a oportunidade de teste ficava no banco e
+  // contaminava a contagem de reconciliação da fase seguinte.
+  let ct: { id: string } | undefined;
+  try {
+
   const semNada = await avaliarCondicaoDeGanho(repo, op.id);
   console.log(`  1. sem contrato assinado      ok=${semNada.ok}  ${!semNada.ok ? `(${semNada.codigo}: falta ${JSON.stringify((semNada as { falta?: string[] }).falta)})` : ""}`);
 
@@ -31,7 +38,7 @@ async function main() {
   // só saem na contração. Pega-se um lead qualquer da empresa para satisfazer
   // a restrição sem inventar vínculo.
   const [algumLead] = await db.execute<{ id: string }>(sql`SELECT id FROM leads WHERE empresa_id = ${emp.id}::uuid LIMIT 1`);
-  const [ct] = await db.execute<{ id: string }>(sql`
+  [ct] = await db.execute<{ id: string }>(sql`
     INSERT INTO contratos (organizacao_id, oportunidade_id, empresa_id, lead_id, tipo, status)
     VALUES (${org.id}::uuid, ${op.id}::uuid, ${emp.id}::uuid, ${algumLead.id}::uuid, 'smoke', 'fully_signed')
     RETURNING id`);
@@ -62,13 +69,15 @@ async function main() {
   console.log(`    ${"idempotente".padEnd(12)} ${idem ? "ok" : "FALHOU"}  (retry não duplica serviço nem jornada)`);
   ok = ok && bloqueou && idem;
   console.log(`\n  ${ok ? "SMOKE PASSOU: a política da oferta decide o ganho, e só ela" : "SMOKE FALHOU"}\n`);
-
-  await db.execute(sql`DELETE FROM fulfillments WHERE servico_canonico_id IN (SELECT id FROM servicos_canonicos WHERE oportunidade_origem_id = ${op.id}::uuid)`);
-  await db.execute(sql`DELETE FROM servicos_canonicos WHERE oportunidade_origem_id = ${op.id}::uuid`);
-  await db.execute(sql`DELETE FROM timeline_events WHERE oportunidade_id = ${op.id}::uuid`);
-  await db.execute(sql`DELETE FROM contratos WHERE id = ${ct.id}::uuid`);
-  await db.execute(sql`DELETE FROM oportunidades WHERE id = ${op.id}::uuid`);
-  console.log("  banco limpo.\n");
-  process.exit(ok ? 0 : 1);
+  saida = ok ? 0 : 1;
+  } finally {
+    await db.execute(sql`DELETE FROM fulfillments WHERE servico_canonico_id IN (SELECT id FROM servicos_canonicos WHERE oportunidade_origem_id = ${op.id}::uuid)`);
+    await db.execute(sql`DELETE FROM servicos_canonicos WHERE oportunidade_origem_id = ${op.id}::uuid`);
+    await db.execute(sql`DELETE FROM timeline_events WHERE oportunidade_id = ${op.id}::uuid`);
+    if (ct) await db.execute(sql`DELETE FROM contratos WHERE id = ${ct.id}::uuid`);
+    await db.execute(sql`DELETE FROM oportunidades WHERE id = ${op.id}::uuid`);
+    console.log("  banco limpo.\n");
+  }
+  process.exit(saida);
 }
 main().catch((e) => { console.error(e); process.exit(1); });
