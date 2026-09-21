@@ -266,12 +266,18 @@ app.post("/style/analyze", async (c) => {
     .where(eq(aiSdrConfig.organizacaoId, orgId))
     .limit(1);
 
-  let apiKey = process.env.OPENAI_API_KEY;
+  // GROQ, como o resto do SDR. Esta rota chamava api.openai.com e mesmo assim
+  // aceitava `config.groqApiKey` como fonte da chave: uma credencial Groq
+  // enviada para a OpenAI volta 401. O provedor do produto é Groq
+  // (`lib/ai/sdr` chama api.groq.com, o modelo padrão do `ai_sdr_config` é
+  // `llama-3.3-70b-versatile`, e o ambiente tem GROQ_API_KEY), então o caminho
+  // certo é consolidar aqui em vez de manter dois provedores.
+  let apiKey = process.env.GROQ_API_KEY || process.env.OPENAI_API_KEY;
   if (config?.groqApiKey) {
     try { apiKey = decrypt(config.groqApiKey); } catch { /* use env fallback */ }
   }
 
-  if (!apiKey) return c.json({ error: "OpenAI API key não configurada" }, 400);
+  if (!apiKey) return c.json({ error: "Nenhuma chave de IA configurada (GROQ_API_KEY ou chave própria da organização)" }, 400);
 
   try {
     const sampledMsgs = humanMsgs
@@ -279,14 +285,16 @@ app.post("/style/analyze", async (c) => {
       .map((m) => m.conteudo)
       .join("\n---\n");
 
-    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: config?.modelo || "gpt-4o-mini",
+        // `gpt-4o-mini` não existe na Groq. O padrão vem do mesmo lugar que o
+        // schema do `ai_sdr_config` já usa.
+        model: config?.modelo || "llama-3.3-70b-versatile",
         max_tokens: 2000,
         messages: [
           {

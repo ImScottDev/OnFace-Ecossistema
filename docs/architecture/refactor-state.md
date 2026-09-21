@@ -1645,6 +1645,50 @@ bloqueio permanente.
 **Validação:** tsc limpo, **319 testes 0 falhas**, build exit 0, **29/29
 smokes**, as três rotas conferidas no navegador.
 
+### CP22 — O SDR de IA estava desligado por nome de variável
+
+A frente F3 do HUB aponta "chave errada" em cinco pontos. A auditoria de 09/08
+já tinha pego o defeito e corrigido **a biblioteca**: o cabeçalho de
+`lib/ai/sdr.ts` registra que ela chamava `api.openai.com` com nome de modelo
+Groq, sem `OPENAI_API_KEY` documentada em lugar nenhum, e passou a chamar
+`api.groq.com` com ADR própria.
+
+**Os quatro chamadores ficaram para trás.** É o defeito recorrente deste repo
+pelo avesso: corrigiram a peça e esqueceram quem a usa.
+
+**Três gates em `worker/index.ts`:**
+
+```
+let apiKey = process.env.OPENAI_API_KEY;        // variável que não existe aqui
+if (!apiKey) { console.warn("Sem OPENAI_API_KEY, pulando envio"); continue; }
+...
+groqApiKey: apiKey,                             // passado adiante como chave Groq
+```
+
+O próprio código prova a intenção: entrega o valor como `groqApiKey` para uma
+lib que chama `api.groq.com`. Estado do ambiente: `OPENAI_API_KEY` **ausente**,
+`GROQ_API_KEY` **presente**, `ai_sdr_config` com **0 registros**. Os três
+caminhos do SDR eram pulados com a chave certa ali do lado.
+
+**Uma rota em `routes/ai-sdr.ts`** (extrair guia de estilo de mensagens reais)
+chamava `api.openai.com` e, ao mesmo tempo, aceitava `config.groqApiKey` como
+fonte da credencial — chave Groq enviada para a OpenAI volta 401. O modelo
+padrão era `gpt-4o-mini`, que não existe na Groq.
+
+Consolidado no provedor do produto, que é Groq: endpoint `api.groq.com`,
+modelo padrão `llama-3.3-70b-versatile` (o mesmo default do schema de
+`ai_sdr_config`), e `GROQ_API_KEY` com `OPENAI_API_KEY` só como fallback para
+quem já a tivesse.
+
+A trava distingue o SDR (provedor único) da plataforma do NEXO
+(`lib/ai-platform/`, multi-provider por desenho, onde ler `OPENAI_API_KEY` para
+o provider "openai" é correto). Verificada por reintrodução.
+
+**Isto NÃO destrava o NEXO.** O bloqueio de credencial Anthropic do CP10
+continua: são dois caminhos diferentes, e só o SDR usa Groq.
+
+**Validação:** tsc limpo, **322 testes 0 falhas**, **29/29 smokes**.
+
 ### Auditoria de CS Health (histórico da decisão)
 
 Menor do que o gap analysis inicial dizia:

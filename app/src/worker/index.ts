@@ -934,7 +934,12 @@ async function handleAiSdrResponse(params: {
   }
 
   // 3. Decrypt API key
-  let apiKey = process.env.OPENAI_API_KEY;
+  // GROQ primeiro: este valor é passado adiante como `groqApiKey` para
+  // `lib/ai/sdr`, que chama api.groq.com. Até 21/09 os três gates do SDR liam
+  // só `OPENAI_API_KEY`, que NÃO existe neste ambiente — o SDR era pulado com
+  // "Sem OPENAI_API_KEY" enquanto a chave Groq estava lá, e a lib sabia usá-la.
+  // `OPENAI_API_KEY` fica como fallback para quem já a tivesse definida.
+  let apiKey = process.env.GROQ_API_KEY || process.env.OPENAI_API_KEY;
   if (config.groqApiKey) {
     try {
       const { decrypt } = await import("../lib/email/encryption");
@@ -1684,14 +1689,14 @@ async function runAiSdrFirstContactSweep(): Promise<{ iniciados: number }> {
           descricao: "Novo → Em Contato (Agente SDR, automático)",
         });
 
-        let apiKey = process.env.OPENAI_API_KEY;
+        let apiKey = process.env.GROQ_API_KEY || process.env.OPENAI_API_KEY;
         if (config.groqApiKey) {
           try {
             const { decrypt } = await import("../lib/email/encryption");
             apiKey = decrypt(config.groqApiKey);
           } catch { /* env fallback */ }
         }
-        if (!apiKey) { console.warn("[AI-SDR-Outreach] Sem OPENAI_API_KEY, pulando envio"); continue; }
+        if (!apiKey) { console.warn("[AI-SDR-Outreach] Sem GROQ_API_KEY nem chave no ai_sdr_config, pulando envio"); continue; }
 
         const [org] = await db.select({ nome: orgsT.nome }).from(orgsT).where(eq(orgsT.id, config.organizacaoId)).limit(1);
         const servicos = await db.select({
@@ -1851,7 +1856,7 @@ async function runAiSdrRetrySweep(): Promise<{ enviados: number }> {
         continue;
       }
 
-      let apiKey = process.env.OPENAI_API_KEY;
+      let apiKey = process.env.GROQ_API_KEY || process.env.OPENAI_API_KEY;
       if (config.groqApiKey) {
         try {
           const { decrypt } = await import("../lib/email/encryption");

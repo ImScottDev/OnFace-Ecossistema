@@ -2458,3 +2458,20 @@ Restam 7 telas pendentes, e as 7 esperam decisão de produto, não trabalho
 técnico.
 
 **Validação:** tsc limpo, **319 testes 0 falhas**, build exit 0, **29/29 smokes**.
+
+## 2026-09-21 — CP22: o SDR estava desligado por nome de variável
+
+A auditoria de 09/08 pegou este defeito e corrigiu a biblioteca, com ADR. Os
+quatro chamadores ficaram para trás por mais de um mês.
+
+Três gates no worker liam `OPENAI_API_KEY`, ausente neste ambiente, e passavam
+o valor adiante como `groqApiKey` para uma lib que chama api.groq.com. O SDR era
+pulado com "Sem OPENAI_API_KEY" enquanto a chave Groq estava no ambiente.
+
+Uma rota chamava api.openai.com aceitando a chave Groq como credencial, o que
+volta 401, com modelo padrão `gpt-4o-mini` que não existe na Groq.
+
+Corrigir a biblioteca e esquecer quem a chama é o defeito recorrente deste repo
+pelo avesso.
+
+**Validação:** tsc limpo, **322 testes 0 falhas**, **29/29 smokes**.
