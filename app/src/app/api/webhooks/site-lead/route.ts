@@ -7,6 +7,7 @@ import { criarLead, garantirAtividadePrimeiroContato, resolverResponsavelInbound
 import { ATOR_SISTEMA } from "@/lib/vendas/dominio";
 import { dominioDoEmail } from "@/lib/vendas/identidade";
 import { telefoneUsavel } from "@/lib/whatsapp/phone-utils";
+import { garantirEntradaCanonica } from "@/lib/vendas/ponte-canonica";
 import { resolverEmpresaId, dominioCorporativo } from "@/lib/crm/resolver-empresa";
 
 /**
@@ -216,6 +217,24 @@ export async function POST(req: NextRequest) {
     // primeiro contato ligada ao responsável escolhido.
     responsavelId: null,
   }, ATOR_SISTEMA);
+
+  // CUTOVER (fase 16): o mesmo fato no modelo canônico. `criarLead` acima já é
+  // o motor canônico do CRM atual; esta chamada acrescenta aquisição, touchpoint
+  // e evento de domínio, que ele não produz. Sai na fase 25.
+  await garantirEntradaCanonica({
+    organizacaoId: org.id,
+    tipo: "INBOUND",
+    origem: "Site",
+    provider: "site",
+    pessoa: { nome: primeiro, sobrenome, email, telefone, cargo },
+    empresa: nomeEmpresa ? { nome: nomeEmpresa, dominio } : null,
+    atribuicao: {
+      utmSource: clean(body.utmSource), utmMedium: clean(body.utmMedium),
+      utmCampaign: clean(body.utmCampaign), utmTerm: clean(body.utmTerm),
+      utmContent: clean(body.utmContent), landingPage,
+    },
+    idempotencyKey: email ? `site:${org.id}:${email}` : null,
+  }, criado.leadId);
 
   return NextResponse.json(
     { ok: true, status: "created", leadId: criado.leadId, empresaId: criado.empresaId },

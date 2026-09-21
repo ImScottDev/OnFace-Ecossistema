@@ -10,6 +10,7 @@ import {
 import { syncPessoaFromLead } from "@/lib/crm/sync-domain-model";
 import { garantirAtividadePrimeiroContato, resolverResponsavelInbound } from "@/lib/vendas/pre-vendas";
 import { telefoneUsavel } from "@/lib/whatsapp/phone-utils";
+import { garantirEntradaCanonica } from "@/lib/vendas/ponte-canonica";
 import { resolverEmpresaId, dominioCorporativo } from "@/lib/crm/resolver-empresa";
 
 /**
@@ -292,6 +293,26 @@ export async function POST(req: NextRequest) {
           responsavelId: responsavelInboundId,
         })
         .returning({ id: leads.id });
+
+      // CUTOVER (fase 16): o mesmo fato entra no modelo canônico. A escrita
+      // legada acima continua porque as telas ainda leem `leads`; esta chamada
+      // sai na fase 25, junto com ela. Best-effort: falha aqui não derruba a
+      // captação de um lead de campanha paga.
+      await garantirEntradaCanonica({
+        organizacaoId: org.id,
+        tipo: "INBOUND",
+        origem: p.origem ?? "RD Station",
+        provider: "rd-station",
+        pessoa: { nome: p.nome, sobrenome: p.sobrenome, email: p.email, telefone: p.telefone, cargo: p.cargo },
+        empresa: p.empresa ? { nome: p.empresa } : null,
+        atribuicao: {
+          utmSource: p.utmSource, utmMedium: p.utmMedium, utmCampaign: p.utmCampaign,
+          utmTerm: p.utmTerm, utmContent: p.utmContent, landingPage: p.landingPage,
+          campaignId: metaIds?.campaignId, adsetId: metaIds?.adsetId, adId: metaIds?.adId,
+        },
+        responsavelId: responsavelInboundId ?? null,
+        idempotencyKey: p.email ? `rd:${org.id}:${p.email}` : null,
+      }, newLead.id);
 
       // Timeline inicial (sem negócio vinculado)
       await db.insert(statusChanges).values({

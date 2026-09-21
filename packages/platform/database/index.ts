@@ -1,9 +1,6 @@
-// @onface/platform-database — ponto de entrada público do pacote.
+// @onface/platform-database — implementação Postgres dos repositórios de domínio.
 //
-// Nada fora deste arquivo deve ser importado de fora do pacote. A fronteira é
-// verificada por `pnpm arq:fronteiras` (src/scripts/checar-fronteiras.ts).
-//
-// Vazio por enquanto: o código chega quando a fase correspondente do refactor
-// migrar este domínio. Ver docs/architecture/refactor-state.md.
+// O domínio define o contrato; a persistência vive aqui. É o que permite testar
+// a regra sem banco e trocar a implementação sem tocar na regra.
 
-export {};
+export { criarRepositorioAquisicao, type Executor } from "./src/repositorio-aquisicao.js";
