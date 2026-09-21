@@ -46,6 +46,7 @@
     "@onface/acquisition": "workspace:*",
     "@onface/catalog": "workspace:*",
     "@onface/identity": "workspace:*",
+    "@onface/integrations-meta": "workspace:*",
     "@onface/platform-database": "workspace:*",
     "@onface/platform-events": "workspace:*",
     "@onface/sales": "workspace:*",

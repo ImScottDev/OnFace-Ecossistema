@@ -42,6 +42,9 @@ const WEBHOOKS: Webhook[] = [
   { nome: "Documenso", arquivo: "app/api/webhooks/documenso/route.ts", envVar: "DOCUMENSO_WEBHOOK_SECRET" },
   { nome: "RD Station", arquivo: "app/api/webhooks/rd-lead/route.ts", envVar: "RD_WEBHOOK_SECRET" },
   { nome: "Meta lead ids", arquivo: "app/api/webhooks/meta-lead-ids/route.ts", envVar: "META_LEADIDS_WEBHOOK_SECRET" },
+  // Entrada direta de Lead Ads (SPEC §20). Assinatura HMAC da própria Meta em
+  // `X-Hub-Signature-256`, verificada com o app secret.
+  { nome: "Meta Lead Ads", arquivo: "app/api/webhooks/meta-leads/route.ts", envVar: "META_APP_SECRET" },
   { nome: "WhatsApp (wuzapi)", arquivo: "api-server/routes/whatsapp.ts", envVar: "UAZAPI_WEBHOOK_SECRET" },
   { nome: "Apollo", arquivo: "api-server/routes/apollo.ts", envVar: "APOLLO_WEBHOOK_SECRET" },
 ];

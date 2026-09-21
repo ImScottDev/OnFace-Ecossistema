@@ -46,6 +46,9 @@ importers:
       '@onface/identity':
         specifier: workspace:*
         version: link:../packages/domain/identity
+      '@onface/integrations-meta':
+        specifier: workspace:*
+        version: link:../packages/integrations/meta
       '@onface/platform-database':
         specifier: workspace:*
         version: link:../packages/platform/database
