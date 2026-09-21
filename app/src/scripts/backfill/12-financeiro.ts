@@ -37,14 +37,28 @@ async function main() {
         INSERT INTO pagamentos (organizacao_id, fatura_id, empresa_id, servico_canonico_id,
                                 provider, external_payment_id, amount, currency, status, paid_at,
                                 idempotency_key, metadata, created_at)
-        SELECT f.organizacao_id, f.id, f.empresa_id, f.servico_canonico_id,
+        -- A empresa vem em CADEIA, nao so da coluna da fatura.
+        --
+        -- Medido na rodada de validacao de paridade: exigir empresa_id na propria
+        -- fatura deixava 71 pagas sem pagamento canonico, R$ 27.541,40. Delas,
+        -- 43 tem empresa pela assinatura. O resto vira caso.
+        SELECT f.organizacao_id, f.id,
+               COALESCE(f.empresa_id,
+                        (SELECT l.empresa_id FROM leads l WHERE l.id = f.lead_id),
+                        (SELECT pe.empresa_id FROM pessoas pe WHERE pe.lead_id_legado = f.lead_id),
+                        (SELECT a.empresa_id FROM assinaturas a WHERE a.id = f.assinatura_id)),
+               f.servico_canonico_id,
                coalesce(f.origem, 'desconhecido'), f.external_id, f.valor, coalesce(f.moeda, 'BRL'),
                'PAID', f.paga_em,
                'backfill-12:' || f.id::text,
                jsonb_build_object('backfill', jsonb_build_object('fase','12','fatura', f.id, 'status_origem', f.status)),
                f.paga_em
         FROM faturas f
-        WHERE f.status = 'paga' AND f.paga_em IS NOT NULL AND f.empresa_id IS NOT NULL
+        WHERE f.status = 'paga' AND f.paga_em IS NOT NULL
+          AND COALESCE(f.empresa_id,
+                       (SELECT l.empresa_id FROM leads l WHERE l.id = f.lead_id),
+                       (SELECT pe.empresa_id FROM pessoas pe WHERE pe.lead_id_legado = f.lead_id),
+                       (SELECT a.empresa_id FROM assinaturas a WHERE a.id = f.assinatura_id)) IS NOT NULL
           AND NOT EXISTS (SELECT 1 FROM pagamentos pg WHERE pg.fatura_id = f.id)
         RETURNING 1) SELECT count(*)::text AS n FROM ins`);
     console.log(`  pagamentos criados de fatura paga         ${p[0].n}`);
@@ -60,6 +74,26 @@ async function main() {
              jsonb_build_object('acao','buscar a data no provedor de origem ou marcar como não conciliável')
       WHERE EXISTS (SELECT 1 FROM faturas WHERE status='paga' AND paga_em IS NULL)
       ON CONFLICT (fase, tipo, entidade_alvo, status) DO NOTHING`);
+
+    // Fatura paga COM data e sem empresa alcancavel: caso por linha, nao
+    // agregado. Agregado diz que o problema existe; por linha diz qual fatura
+    // conferir, que e o que alguem precisa para resolver.
+    await db.execute(sql`
+      INSERT INTO reconciliacao_casos (organizacao_id, fase, tipo, entidade_alvo, origens, evidencia, sugestao)
+      SELECT f.organizacao_id, '12', 'FATURA_PAGA_SEM_EMPRESA', 'fatura:' || f.id::text,
+             jsonb_build_object('tabela','faturas','id',f.id::text,'valor',f.valor,
+                                'paga_em',f.paga_em::date::text,'origem',f.origem),
+             jsonb_build_object('fato','fatura paga sem empresa alcancavel por lead, pessoa ou assinatura',
+               'por_que_nao_foi_criado','pagamento sem empresa nao entra em nenhuma carteira nem em nenhum relatorio por cliente',
+               'impacto','receita reconhecida na fatura e invisivel no modelo canonico'),
+             jsonb_build_object('acao','vincular a fatura a empresa no provedor de origem')
+        FROM faturas f
+       WHERE f.status = 'paga' AND f.paga_em IS NOT NULL
+         AND COALESCE(f.empresa_id,
+                      (SELECT l.empresa_id FROM leads l WHERE l.id = f.lead_id),
+                      (SELECT pe.empresa_id FROM pessoas pe WHERE pe.lead_id_legado = f.lead_id),
+                      (SELECT a.empresa_id FROM assinaturas a WHERE a.id = f.assinatura_id)) IS NULL
+      ON CONFLICT DO NOTHING`);
   }
 
   const r = await db.execute<Record<string, string>>(sql`
@@ -69,7 +103,17 @@ async function main() {
            (SELECT count(*)::text FROM faturas WHERE status='paga' AND paga_em IS NULL) AS pagas_sem_data,
            (SELECT count(*)::text FROM pagamentos) AS pagamentos,
            (SELECT coalesce(sum(amount),0)::text FROM pagamentos) AS soma_paga,
-           (SELECT coalesce(sum(valor),0)::text FROM faturas WHERE status='paga' AND paga_em IS NOT NULL AND empresa_id IS NOT NULL) AS soma_origem`);
+           -- A origem tem que usar a MESMA cadeia da criacao, senao a
+           -- conferencia compara dois universos e acusa divergencia que nao
+           -- existe. Foi o que aconteceu ao ampliar a cadeia.
+           (SELECT coalesce(sum(f.valor),0)::text FROM faturas f
+             WHERE f.status='paga' AND f.paga_em IS NOT NULL
+               AND COALESCE(f.empresa_id,
+                            (SELECT l.empresa_id FROM leads l WHERE l.id = f.lead_id),
+                            (SELECT pe.empresa_id FROM pessoas pe WHERE pe.lead_id_legado = f.lead_id),
+                            (SELECT a.empresa_id FROM assinaturas a WHERE a.id = f.assinatura_id)) IS NOT NULL
+           ) AS soma_origem,
+           (SELECT count(*)::text FROM reconciliacao_casos WHERE tipo='FATURA_PAGA_SEM_EMPRESA') AS casos_sem_empresa`);
   console.log(`\n  RECONCILIAÇÃO`);
   console.log(`    faturas                         ${r[0].faturas}`);
   console.log(`    sem empresa (SPEC exige NOT NULL) ${r[0].sem_empresa}`);
@@ -78,6 +122,7 @@ async function main() {
   console.log(`    pagamentos criados              ${r[0].pagamentos}`);
   console.log(`    soma dos pagamentos             ${Number(r[0].soma_paga).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}`);
   console.log(`    soma das faturas de origem      ${Number(r[0].soma_origem).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}`);
+  console.log(`    pagas sem empresa (caso aberto) ${r[0].casos_sem_empresa}`);
   const bate = Math.abs(Number(r[0].soma_paga) - Number(r[0].soma_origem)) < 0.01;
   console.log(`    valores conferem                ${bate ? "sim" : "NÃO — investigar"}\n`);
   if (!APLICAR) console.log("  Nada foi gravado.\n");

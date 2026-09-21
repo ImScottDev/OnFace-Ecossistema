@@ -11,6 +11,7 @@ import { enviarPropostaComCheckout } from "@/lib/crm/enviar-proposta";
 import { getCheckoutSessionStatus } from "@/lib/integrations/stripe-sync";
 import { propostaPdfHtml, renderPropostaPdf } from "@/lib/propostas/proposta-pdf";
 import { syncOportunidadeFromNegocio } from "@/lib/crm/sync-domain-model";
+import { verificarPropostaExigeEmpresa } from "@/lib/vendas/proposta-exige-empresa";
 import { publicarEvento } from "@/lib/events/outbox";
 import { criarCheckoutParaGrupo } from "@/lib/crm/checkout";
 import {
@@ -751,6 +752,20 @@ app.post("/propostas", async (c) => {
   if (!resolvedLeadId) {
     return c.json({ error: "leadId ou negocioId é obrigatório" }, 400);
   }
+
+  // REGRA DE DOMÍNIO (SPEC §11.1): pessoa sem empresa entra no pipeline, mas
+  // criar proposta exige empresa.
+  //
+  // A regra existia em `podeCriarProposta` e NÃO estava ligada em lugar nenhum:
+  // a validação de paridade encontrou 285 propostas de oportunidade sem
+  // empresa, 59 delas deste mês. Regra que mora só no domínio e não é chamada
+  // por ninguém é documentação, não regra.
+  //
+  // Por que importa: proposta é documento comercial endereçado a uma pessoa
+  // jurídica. Sem empresa não há CNPJ, não há contrato depois, e o registro
+  // fica sem para quem cobrar.
+  const bloqueio = await verificarPropostaExigeEmpresa(ctx.organizacaoId, resolvedNegocioId ?? null, resolvedLeadId);
+  if (bloqueio) return c.json({ error: bloqueio.erro, falta: bloqueio.falta }, 422);
 
   // Verify lead belongs to org
   const [lead] = await db

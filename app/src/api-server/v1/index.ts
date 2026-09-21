@@ -179,8 +179,8 @@ app.get("/v1/invoices", rota("finance.read", async (c, ator) => {
 app.get("/v1/payments", rota("finance.read", async (c, ator) => {
   const { limite, offset } = paginacao(c);
   const linhas = await db.execute<Record<string, unknown>>(sql`
-    SELECT pg.id::text, pg.status, pg.valor::float AS amount, pg.metodo AS method,
-           pg.fatura_id::text AS "invoiceId", pg.pago_em::text AS "paidAt",
+    SELECT pg.id::text, pg.status, pg.amount::float AS amount, pg.payment_method AS method,
+           pg.fatura_id::text AS "invoiceId", pg.paid_at::text AS "paidAt",
            pg.created_at::text AS "createdAt"
       FROM pagamentos pg
      WHERE pg.organizacao_id = ${ator.organizacaoId}::uuid
