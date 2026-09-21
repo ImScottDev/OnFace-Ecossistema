@@ -484,7 +484,7 @@ canônico hoje faria o lead sumir da tela de pré-vendas no mesmo instante.
 ## Testes executados
 
 Estado atual: `tsc --noEmit` limpo, **build de produção passando**, **261 testes, 0
-falhas**, e **23 de 23 smokes** verdes contra o banco real (conferidos por código de
+falhas**, e **20 de 20 smokes** verdes contra o banco real (conferidos por código de
 saída, não por texto: procurar "FALHA" na saída dava falso positivo em `falhados=0`):
 
 - `smoke-ponte-canonica` — entrada externa chega inteira ao canônico e não duplica;
