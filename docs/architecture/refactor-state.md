@@ -25,7 +25,7 @@ Fases 01 a 16 concluídas.
 
 ## Último commit
 
-`c90b9f5` — fix(16): o worker tem conexão própria e eu quase abri uma segunda
+`fcac78d` — fix(17): avançar de etapa também estava travado pela família do legado
 
 Branch de trabalho: `refactor/arquitetura-canonica`, criada a partir de `98940fe`.
 
@@ -278,6 +278,31 @@ todos eles.
 O smoke falha acima de um segundo: consulta de board lenta é problema de produto, não
 de teste.
 
+### A família do produto: de campo vazio na tela a operação travada
+
+`negocios.service_family` é NULL em 475 das 1.561 oportunidades, e nessas o canônico
+**sabe** a família, deduzida no backfill por cadeia de cinco evidências. Cada leitor que
+olhava só o legado escondia isso, e os últimos dois não escondiam: bloqueavam.
+
+| Onde | O que acontecia | Medida |
+|---|---|---|
+| `/pipeline-crm2/board` | card sem família | **1 → 126** cards com família |
+| `detalheOportunidade` | "sem família" no detalhe | negócio com família só no canônico passa a mostrar |
+| telas de proposta (3 consultas) | proposta sem família | **2 → 469** propostas com família resolvível |
+| **`enviarProposta`** | **"Defina a família comercial antes de enviar"** | **43 propostas em rascunho paradas** |
+| **`moverEtapa`** | **não avança para Proposta nem Negociação** | **125 negócios abertos presos** |
+
+A cadeia é sempre do mais específico para o mais geral: proposta, negócio, oportunidade
+canônica. Onde o legado tem valor, foi alguém que editou, e editar ganha de deduzir.
+
+`carregarOportunidade` devolve os DOIS valores, o resolvido e o próprio do legado.
+`alterarFamilia` compara com o próprio: se comparasse com o resolvido, escolher a
+família que o canônico já deduziu viraria no-op silencioso e o legado ficaria nulo para
+sempre.
+
+O Ganho **não** mudou: a decisão vem da oferta comercial, não da família, e as jornadas
+de pós-venda também. Conferido antes de commitar.
+
 ### Propagação: o que a tela não via depois de escrito
 
 Três defeitos da mesma família, todos encontrados provocando a ação pela rota em vez de
@@ -484,7 +509,7 @@ canônico hoje faria o lead sumir da tela de pré-vendas no mesmo instante.
 ## Testes executados
 
 Estado atual: `tsc --noEmit` limpo, **build de produção passando**, **261 testes, 0
-falhas**, e **20 de 20 smokes** verdes contra o banco real (conferidos por código de
+falhas**, e **21 de 21 smokes** verdes contra o banco real (conferidos por código de
 saída, não por texto: procurar "FALHA" na saída dava falso positivo em `falhados=0`):
 
 - `smoke-ponte-canonica` — entrada externa chega inteira ao canônico e não duplica;
