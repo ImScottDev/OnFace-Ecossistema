@@ -1417,6 +1417,44 @@ justifica.
 
 **Validação:** tsc limpo, **310 testes 0 falhas**, **29/29 smokes**.
 
+### CP15 — O backfill da virada apagava o histórico de trabalho do board
+
+Continuação do CP14, com a mesma lente sobre `oportunidades`. A porta está
+fechada: só `lib/vendas/pipeline.ts` e o repositório escrevem lá fora de
+scripts. O problema estava nos **backfills, que rodam na virada**.
+
+Quatro bumpam `updated_at`. Três deles tocam `contratos`, `propostas`,
+`clientes`, `servicos_canonicos` e `faturas` — nenhuma governa board, então são
+inofensivos. O **08-oferta-comercial** toca `oportunidades`, e essa governa.
+
+**A prova, medida neste banco:**
+
+| oportunidades abertas | quantas | `updated_at` |
+|---|---|---|
+| **sem** família | 401 | espalhado de 09/02 a 21/09 |
+| **com** família | 126 | **todas em 21/09** |
+
+As 126 com família são exatamente as que o backfill vinculou hoje. Perderam a
+data de quando alguém as trabalhou. Em produção, na virada, isso atingiria
+**477 de uma vez**, e a operação abriria o board no primeiro dia com tudo
+parecendo recém-tocado.
+
+**O dano já estava feito neste banco, e foi revertido.** A oportunidade nasce do
+negócio legado, e `negocios.updated_at` não foi contaminado: 125 das 126
+divergiam. Restaurada a data de origem, sem inventar nada. O efeito na fila de
+loops abertos do CP9:
+
+**paradas há mais de 14 dias: 324 → 392.** Havia 68 oportunidades paradas
+escondidas pelo bump, e a fila as mostrava como recém-trabalhadas.
+
+A trava do CP14 ganhou um terceiro teste, para as tabelas cujo `updated_at`
+significa "quando alguém trabalhou isto": `oportunidades`, `leads`, `negocios`,
+`aquisicoes`. Verificada por reintrodução do defeito: falha com ele, passa sem.
+
+**Validação:** tsc limpo, **311 testes 0 falhas**, **29/29 smokes**. A trava de
+crase em comentário SQL que já existia no repo pegou o meu comentário novo na
+primeira rodada, e funcionou como devia.
+
 ### Auditoria de CS Health (histórico da decisão)
 
 Menor do que o gap analysis inicial dizia:

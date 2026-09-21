@@ -49,7 +49,19 @@ async function main() {
   if (APLICAR) {
     const r = await db.execute<{ n: string }>(sql`
       WITH vinculo AS (
-        UPDATE oportunidades o SET oferta_comercial_id = oc.id, updated_at = now()
+        -- NAO bumpa updated_at. Vincular a oferta comercial e enriquecimento:
+        -- ninguém trabalhou a oportunidade, só descobrimos qual é a política
+        -- de ganho dela.
+        --
+        -- A coluna updated_at da oportunidade governa a ordem do board e a metrica de
+        -- "parada há X dias" da fila de loops abertos. Medido em 21/09 neste
+        -- banco de dev: as 401 oportunidades abertas SEM família têm datas
+        -- espalhadas de 09/02 a 21/09, e as 126 COM família têm todas a mesma
+        -- data — a do dia em que este backfill rodou. Elas perderam o histórico.
+        --
+        -- Na virada isso atingiria as 477 de uma vez, e a operação abriria o
+        -- board no primeiro dia com tudo parecendo recém-trabalhado.
+        UPDATE oportunidades o SET oferta_comercial_id = oc.id
         FROM ofertas_comerciais oc
         WHERE o.oferta_comercial_id IS NULL
           AND o.service_family IS NOT NULL

@@ -2367,3 +2367,22 @@ atendida) e `stripe-sync.ts` (muda status junto) estão na lista e continuam
 bumpando, porque neles é fato real.
 
 **Validação:** tsc limpo, **310 testes 0 falhas**, **29/29 smokes**.
+
+## 2026-09-21 — CP15: o backfill da virada apagava o histórico do board
+
+Mesma lente do CP14, agora em `oportunidades`. A porta de escrita está fechada;
+o problema estava nos backfills, que rodam na virada sobre a base inteira.
+
+A prova ficou visível ao comparar dois grupos no mesmo banco: as 401
+oportunidades abertas sem família têm `updated_at` espalhado de 09/02 a 21/09; as
+126 com família têm todas a mesma data, a de hoje, que é quando o backfill 08
+rodou. Em produção seriam 477 de uma vez.
+
+Revertido a partir de `negocios.updated_at`, que não foi contaminado (125 das
+126 divergiam). Efeito medido na fila de loops: **324 → 392 paradas há mais de
+14 dias**. Havia 68 escondidas.
+
+A trava foi verificada por reintrodução: com o defeito de volta ela falha, sem
+ele passa. Teste que não falha com o defeito não é teste.
+
+**Validação:** tsc limpo, **311 testes 0 falhas**, **29/29 smokes**.

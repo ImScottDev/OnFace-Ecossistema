@@ -61,3 +61,29 @@ test("o enriquecimento de criativo RD continua sem bumpar", () => {
   assert.match(txt, /NÃO toca .updatedAt./,
     "a nota que explica o porquê sumiu, e sem ela alguém devolve o bump achando que é bug");
 });
+
+/** Tabelas cujo `updated_at` significa "quando alguém trabalhou isto" — o board
+ *  ordena por elas e o badge de dias na etapa sai delas. Bumpar em backfill
+ *  apaga o histórico de toda a base de uma vez. */
+const RELOGIO_DE_TRABALHO = ["oportunidades", "leads", "negocios", "aquisicoes"];
+
+test("nenhum backfill reseta o relógio de trabalho", () => {
+  // Backfill roda na VIRADA, sobre a base inteira. Medido em 21/09: o
+  // backfill 08 deixou as 126 oportunidades abertas com família todas com a
+  // mesma data, enquanto as 401 sem família mantêm datas de 09/02 a 21/09.
+  // Em produção isso atingiria 477 de uma vez.
+  const dir = path.join(SRC, "scripts", "backfill");
+  const infratores: string[] = [];
+  for (const nome of fs.readdirSync(dir).filter((f) => /\.ts$/.test(f))) {
+    const txt = fs.readFileSync(path.join(dir, nome), "utf8");
+    for (const tabela of RELOGIO_DE_TRABALHO) {
+      // `UPDATE <tabela> ... updated_at = now()` na mesma instrução.
+      const re = new RegExp(`UPDATE\\s+${tabela}\\b[\\s\\S]{0,400}?updated_at\\s*=\\s*now\\(\\)`, "i");
+      if (re.test(txt)) infratores.push(`${nome} → ${tabela}`);
+    }
+  }
+  assert.deepEqual(infratores, [],
+    `backfill resetando o relógio de trabalho: ${infratores.join(", ")}. ` +
+    `Use o valor de origem (ex.: \`updated_at = a.updated_at\`) em vez de now().`);
+});
+
