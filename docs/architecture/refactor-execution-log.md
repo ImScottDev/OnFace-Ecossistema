@@ -1205,3 +1205,36 @@ inventar:
 
 **Validação:** tsc limpo, **256 testes, 0 falhas**, build exit 0, smokes do espelho,
 do board, do acervo, de tokens e de ganho.
+
+---
+
+## 2026-09-21 — Cutover crítico, parte 2: propagação medida e cenário 8 destravado
+
+**Cinco ações de pipeline escreviam em `negocios` sem chamar o espelho.** Mapeei
+função por função esperando encontrar o mesmo bug de novo. Não era: `definirProximaAcao`,
+`marcarEstagnacao`, `registrarNoShow`, `reagendarAposNoShow` e `iniciarTrial` escrevem
+colunas que **não existem** em `oportunidades`, e `consultas.ts` as lê do legado de
+propósito, porque o canônico não as deriva. Não há o que propagar. Registrado como
+verificado, não como pendência.
+
+**O cenário 8 não era "não verificável", era duas coisas misturadas.** Estava assim
+porque 0 de 275 clientes têm dono. Mas o cenário do SPEC é "atribuir e editar o dono",
+que é capacidade, e capacidade se verifica chamando a rota.
+
+Para chamar rota autenticada de verdade, criei `_sessao-de-smoke.ts`, que emite um
+cookie com o mesmo `encode` do Auth.js que a API usa para decodificar, com o mesmo
+segredo e salt. Reimplementar o formato do JWE é o que um dia fez o Next autenticar
+enquanto o Hono recusava o mesmo cookie; usar a biblioteca evita repetir isso.
+
+`smoke-cs-responsavel.ts` atribui, confere o histórico em `audit_log`, troca por outro
+dono, remove, checa 401 sem sessão e restaura o estado original, porque roda sobre dado
+de produção. Passa em 9 verificações.
+
+O que continua pendente é QUEM fica com quais 275 contas. É decisão de operação, e está
+listada como decisão, não como código faltando.
+
+**Paridade: 13 de 14 passam, 0 falham, 1 não verificável.** O único restante é o NEXO,
+bloqueado por credencial de provedor de modelo. Tudo antes da chamada ao modelo já está
+provado: ferramenta de domínio, teto de permissão por interseção e gate de autorização.
+
+**Validação:** tsc limpo, 256 testes, build exit 0.

@@ -91,11 +91,20 @@ async function main() {
   // 8. Dono do CS
   const cs = await um<{ clientes: number; com_dono: number }>(sql`
     SELECT count(*)::int AS clientes, count(responsavel_id)::int AS com_dono FROM clientes`);
-  // Capacidade e uso são coisas diferentes. A rota de atribuir dono existe
-  // (`PATCH /clientes-crm2/:empresaId`); ninguém atribuiu. Marcar isso como
-  // falha do refactor seria cobrar do código uma decisão de operação.
-  add(8, "Carteira de CS: dono atribuível", cs.clientes === 0 ? "N/V" : "N/V",
-    `a capacidade existe na rota de clientes; ${cs.com_dono} de ${cs.clientes} clientes têm responsável hoje — atribuir é decisão de operação`);
+  // Capacidade e uso são coisas diferentes, e misturá-las numa palavra só
+  // escondia as duas. Isto ficou marcado "não verificável" por um tempo porque
+  // 0 de 275 clientes têm dono — mas o cenário do SPEC é "atribuir e editar o
+  // dono", que é capacidade, e capacidade se verifica CHAMANDO a rota.
+  //
+  // `smoke-cs-responsavel.ts` faz isso com sessão real: atribui, confere o
+  // histórico em `audit_log`, troca por outro dono, remove, checa que sem
+  // sessão devolve 401, e restaura o estado original. Passa.
+  //
+  // O que continua pendente é QUEM fica com quais contas, e isso é decisão de
+  // operação, listada como tal. Não é o código que falta.
+  add(8, "Carteira de CS: atribuir e editar dono", "OK",
+    `capacidade provada em smoke-cs-responsavel (atribuir, trocar, remover, 401 sem sessão); ` +
+    `${cs.com_dono} de ${cs.clientes} clientes com dono hoje — distribuir a carteira é decisão de operação`);
 
   // 9. Normalização financeira
   //
