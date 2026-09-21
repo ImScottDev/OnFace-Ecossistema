@@ -25,7 +25,7 @@ Fases 01 a 16 concluídas.
 
 ## Último commit
 
-`530ba1f` — fix(16): lead criado pela tela não tinha aquisição e sumia do board
+`de18111` — fix(24): a linha do tempo parou de mostrar atividade em 10/08
 
 Branch de trabalho: `refactor/arquitetura-canonica`, criada a partir de `98940fe`.
 
@@ -538,7 +538,7 @@ canônico hoje faria o lead sumir da tela de pré-vendas no mesmo instante.
 ## Testes executados
 
 Estado atual: `tsc --noEmit` limpo, **build de produção passando**, **262 testes, 0
-falhas**, e **22 de 22 smokes** verdes contra o banco real (conferidos por código de
+falhas**, e **22 de 22 smokes** verdes, mais o aceite de vendas em **72 passaram, 0 falharam, 3 não verificados** contra o banco real (conferidos por código de
 saída, não por texto: procurar "FALHA" na saída dava falso positivo em `falhados=0`):
 
 - `smoke-ponte-canonica` — entrada externa chega inteira ao canônico e não duplica;
