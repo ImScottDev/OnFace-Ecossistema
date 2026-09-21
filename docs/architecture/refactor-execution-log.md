@@ -894,3 +894,29 @@ Não havia dado para migrar; havia código para convergir. A resolução nome→
 acontece na ponte, porque quem escreve uma regra sabe o nome da tag e não o uuid dela.
 
 Com isto os dois motores não têm mais nenhuma implementação própria de ação.
+
+---
+
+## 2026-09-21 — Fase 22 · Duas portas abertas na configuração
+
+**As rotas de automação e de agente não tinham gate nenhum**, só `getCtx`, que
+autentica e não autoriza. Isso invalidava a delegação de permissão do commit
+anterior: o teto do agente mora em `guardrail_config`, e `PATCH .../versions/:id`
+gravava ali sem verificar nada — bastava editar a versão do agente para se dar
+qualquer permissão.
+
+A varredura seguinte encontrou **181 de 210 rotas de escrita sem autorização**. O
+critério para separar ficou escrito no teste: operação (quem está no CRM trabalha),
+pública por desenho (o cliente não tem login) e **configuração**, que não pode ficar
+aberta porque é o caminho mais curto para contornar todo o resto.
+
+As 15 rotas de `ai-platform.ts` eram configuração e estavam abertas. A pior: criar
+credencial de provedor de IA sem gate deixa qualquer usuário ligar um modelo por
+conta da empresa.
+
+`ai.configure` (mexer no que a IA pode fazer) e `ai.use` (trabalhar a fila dela) são
+permissões diferentes de propósito.
+
+O teste de levantamento **não exige fechar as 166 restantes** — exige que o número não
+cresça em silêncio. Fechá-las às cegas quebraria operação legítima; deixá-las sem
+medida deixaria a próxima entrar sem ninguém ver.

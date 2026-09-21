@@ -16,7 +16,7 @@ Fases 01 a 16 concluídas.
 | 17 leitores | telas de vendas no canônico **com a propagação fechada**; leituras que descartavam dinheiro corrigidas. Falta a leitura de detalhe/edição, que migra junto com a escrita na fase 25 |
 | 18 motor único | **concluída** — os dois motores não têm mais nenhuma implementação própria de ação |
 | 19 IA | NEXO e Hermes em `draft`, a IA não escreve direto no banco, busca de conhecimento no banco com índice, e **permissão delegada com teto por interseção**. Publicar os agentes é decisão de quem opera |
-| 22 RBAC | papéis, mapa e vínculos semeados, com paridade provada. Falta as rotas usarem `exigirPermissao` |
+| 22 RBAC | papéis, mapa, vínculos e **paridade provada**. Rotas financeiras, de automação, de agente e de plataforma de IA já exigem permissão. Restam 166 rotas de operação, com o número travado contra crescimento |
 | 20 Meta | **CAPI validada contra a Meta real** (8 eventos aceitos em Test Events). Inbound implementado e testável; ativação real bloqueada só pela permissão da Página |
 | 21 storage | serviço construído e testado; adapter S3/R2 espera credencial. Migrar os pontos de upload vem junto, porque trocá-los agora só muda um disco local por outro |
 | 23 API pública | `/api/v1` com 9 recursos, token com escopo, uso registrado. Falta a tela de gestão de tokens |
@@ -25,7 +25,7 @@ Fases 01 a 16 concluídas.
 
 ## Último commit
 
-`(este)` — refactor(18): a tag posta por automação ia para um array que ninguém lê
+`(este)` — fix(22): criar credencial de provedor de IA não exigia nada
 
 Branch de trabalho: `refactor/arquitetura-canonica`, criada a partir de `98940fe`.
 
@@ -345,7 +345,7 @@ canônico hoje faria o lead sumir da tela de pré-vendas no mesmo instante.
 
 ## Testes executados
 
-Estado atual: `tsc --noEmit` limpo, **build de produção passando**, **238 testes, 0
+Estado atual: `tsc --noEmit` limpo, **build de produção passando**, **242 testes, 0
 falhas**, mais **onze smokes** contra o banco real:
 
 - `smoke-ponte-canonica` — entrada externa chega inteira ao canônico e não duplica;
@@ -374,6 +374,7 @@ falhas**, mais **onze smokes** contra o banco real:
 | `arquitetura/escritores-migrados.test.ts` | motor de regras com implementação própria de ação |
 | `db/array-postgres.test.ts` | array do Postgres projetado cru (o driver devolve string) |
 | `v1/api-publica.test.ts` | rota pública sem escopo; nome de tabela na URL; token em claro |
+| `api-server/rotas-configuracao-protegidas.test.ts` | rota de configuração sem autorização; crescimento silencioso de rota aberta |
 | `ai-platform/agentes.test.ts` | ferramenta de IA escrevendo direto; agente citando ferramenta inexistente; ferramenta de escrita sem permissão exigida |
 | `auth/permissoes.test.ts` | cutover de autorização mudando o acesso de alguém |
 
