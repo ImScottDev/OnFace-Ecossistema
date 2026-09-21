@@ -60,12 +60,36 @@ test("a entrega de arquivo não presume disco local", () => {
   assert.match(src, /\/arquivos\/:id/, "e endereçar pelo id do metadado, não pela chave");
 });
 
-test("disco local em produção é permissão escrita, não omissão", () => {
-  // `escolherAdaptador` recusa disco local em produção. A tolerância existe só
-  // porque a credencial de object storage ainda não chegou, e precisa ser
-  // nominal: apagar a variável é a virada.
+test("o anexo público é autorizado pelo token do formulário, não por um par de ids", () => {
+  // Vínculo entre arquivo e fulfillment prova PARENTESCO, não permissão. Uma
+  // rota que recebe `fulfillmentId` + `fileObjectId` e só confere o vínculo
+  // abre o documento para quem juntar dois identificadores que circulam por
+  // caminhos diferentes do produto. Quem autoriza é o `publicToken`, a mesma
+  // credencial que abre o formulário inteiro.
+  const src = fs.readFileSync(path.join(SRC, "api-server/routes/uploads.ts"), "utf8");
+  assert.match(src, /\/arquivos\/publico\/:publicToken\/:id/,
+    "a rota pública tem que receber o publicToken");
+  assert.doesNotMatch(src, /\/arquivos\/publico\/:fulfillmentId/,
+    "endereçar por fulfillmentId não autoriza ninguém");
+  assert.match(src, /eq\(fulfillments\.publicToken, publicToken\)/,
+    "o fulfillment tem que ser resolvido PELO token");
+
+  // E o upload precisa devolver a URL que essa rota aceita, senão o cliente
+  // grava um endereço que não abre.
+  const up = fs.readFileSync(path.join(SRC, "api-server/routes/fulfillment-formulario-publico.ts"), "utf8");
+  assert.match(up, /arquivos\/publico\/\$\{publicToken\}/,
+    "o upload tem que devolver a URL com o token");
+});
+
+test("object storage não é dependência para o deploy subir", () => {
+  // Sem STORAGE_* o serviço usa disco local, como o produto já fazia. Exigir
+  // credencial que ainda não existe trocaria um problema de arquitetura por uma
+  // queda de produção no próximo deploy.
   const src = fs.readFileSync(path.join(SRC, "lib/arquivos/servico.ts"), "utf8");
-  assert.match(src, /STORAGE_ALLOW_LOCAL/, "a tolerância tem que ter nome");
-  assert.match(src, /producao:\s*process\.env\.NODE_ENV === "production"/,
-    "e não pode desligar a recusa de produção por completo");
+  assert.doesNotMatch(src, /producao:\s*process\.env\.NODE_ENV === "production"/,
+    "NODE_ENV não pode decidir isto: hoje produção roda sem object storage");
+  assert.match(src, /producao:\s*process\.env\.STORAGE_REQUIRE_OBJECT_STORAGE === "true"/,
+    "a exigência tem que ser opt-in explícito, ligado no dia da virada");
+  assert.match(src, /Como será a virada para object storage/,
+    "e o caminho da virada tem que estar escrito onde quem for fazer vai ler");
 });

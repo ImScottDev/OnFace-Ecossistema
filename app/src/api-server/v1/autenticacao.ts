@@ -9,7 +9,7 @@
  * pedido escolher a organização; checar permissão antes do tenant checaria
  * contra a organização errada.
  */
-import { createHash, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import type { Context } from "hono";
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
@@ -108,10 +108,14 @@ export async function registrarUso(
 
 /** Gera um token novo. O valor em claro só existe neste retorno. */
 export function gerarToken(): { valor: string; prefixo: string; hash: string } {
-  const aleatorio = createHash("sha256")
-    .update(`${Date.now()}:${Math.random()}:${process.pid}`)
-    .digest("base64url")
-    .slice(0, 40);
-  const valor = `onf_${aleatorio}`;
+  // `randomBytes`, não `Math.random()`.
+  //
+  // A versão anterior derivava o token de `Date.now()`, `Math.random()` e
+  // `process.pid`. Os três são adivinháveis: o relógio tem alcance pequeno, o
+  // pid é um inteiro curto, e o gerador do V8 é xorshift128+, cujo estado
+  // interno se recupera a partir de algumas saídas. Passar isso por sha256 não
+  // acrescenta entropia — só embaralha a pouca que havia. Um token de API dá
+  // acesso a dado de cliente e precisa de aleatoriedade criptográfica.
+  const valor = `onf_${randomBytes(32).toString("base64url")}`;
   return { valor, prefixo: valor.slice(0, 12), hash: sha256(valor) };
 }

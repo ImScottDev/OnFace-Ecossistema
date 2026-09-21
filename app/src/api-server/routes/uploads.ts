@@ -122,39 +122,54 @@ async function entregar(c: Context, id: string, organizacaoId: string): Promise<
 }
 
 /**
- * GET /api/arquivos/publico/:fulfillmentId/:id — anexo do formulário de
+ * GET /api/arquivos/publico/:publicToken/:id — anexo do formulário de
  * implantação, aberto por quem preencheu (SPEC §32).
  *
  * Sem sessão POR DESENHO, como o upload que o alimenta: quem preenche é o
  * CLIENTE, não tem conta no CRM, e reabre o comprovante que acabou de anexar.
- * O que autoriza não é "estar logado", é o arquivo estar VINCULADO àquele
- * fulfillment em `file_links` — o mesmo vínculo que o upload criou. Sem isso, o
- * id de um arquivo qualquer somado a um fulfillment qualquer abriria documento
- * de outro cliente.
+ *
+ * **O que autoriza é o `publicToken` do formulário**, a mesma credencial que
+ * abre o formulário inteiro e que já dá acesso a todas as respostas dele. Um
+ * anexo daquele formulário não é mais sensível que o formulário.
+ *
+ * A primeira versão desta rota recebia `fulfillmentId` + `fileObjectId` e
+ * checava só que os dois estavam vinculados. Isso não autoriza nada: os dois
+ * valores viajam em lugares diferentes do produto, e quem juntasse um par
+ * válido abriria o documento sem nunca ter tido o link do formulário. Vínculo
+ * prova PARENTESCO, não permissão.
+ *
+ * O vínculo continua sendo checado, agora no papel certo: impede que um token
+ * válido abra arquivo de outro fulfillment.
  */
-app.get("/arquivos/publico/:fulfillmentId/:id", async (c) => {
-  const fulfillmentId = c.req.param("fulfillmentId");
+app.get("/arquivos/publico/:publicToken/:id", async (c) => {
+  const publicToken = c.req.param("publicToken");
   const id = c.req.param("id");
-  if (!/^[0-9a-f-]{36}$/i.test(fulfillmentId) || !/^[0-9a-f-]{36}$/i.test(id)) {
+  if (!/^[0-9a-f-]{36}$/i.test(publicToken) || !/^[0-9a-f-]{36}$/i.test(id)) {
     return c.json({ error: "Not found" }, 404);
   }
 
+  // O token resolve o fulfillment. Sem token válido não há o que consultar.
+  const [f] = await db
+    .select({ id: fulfillments.id, organizacaoId: fulfillments.organizacaoId })
+    .from(fulfillments)
+    .where(eq(fulfillments.publicToken, publicToken))
+    .limit(1);
+  if (!f) return c.json({ error: "Not found" }, 404);
+
+  // E o arquivo tem que ser DAQUELE fulfillment, senão um token legítimo viraria
+  // chave para qualquer arquivo da mesma organização.
   const [vinculo] = await db
-    .select({ organizacaoId: fileLinks.organizacaoId })
+    .select({ id: fileLinks.id })
     .from(fileLinks)
     .where(and(
       eq(fileLinks.fileObjectId, id),
       eq(fileLinks.entityType, "fulfillment"),
-      eq(fileLinks.entityId, fulfillmentId),
+      eq(fileLinks.entityId, f.id),
     ))
     .limit(1);
   if (!vinculo) return c.json({ error: "Not found" }, 404);
 
-  const [f] = await db.select({ id: fulfillments.id }).from(fulfillments)
-    .where(eq(fulfillments.id, fulfillmentId)).limit(1);
-  if (!f) return c.json({ error: "Not found" }, 404);
-
-  return entregar(c, id, vinculo.organizacaoId);
+  return entregar(c, id, f.organizacaoId);
 });
 
 /**

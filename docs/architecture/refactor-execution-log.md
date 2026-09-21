@@ -1068,3 +1068,74 @@ isola por organização, recusa vazio e tipo fora da lista, e não deixa resídu
 `event_outbox` 0.
 
 **Commit:** `d0948f4`.
+
+---
+
+## 2026-09-21 — Correções exigidas antes de fechar o batch de Storage
+
+Dois pontos levantados pelo Kauã na revisão, os dois procedentes.
+
+**1. A leitura pública do anexo não estava autorizada.** A rota recebia
+`fulfillmentId` + `fileObjectId` e conferia só que os dois estavam vinculados em
+`file_links`. Isso prova PARENTESCO, não permissão: os dois identificadores circulam
+por caminhos diferentes do produto, e quem juntasse um par válido abriria o documento
+sem nunca ter tido o link do formulário. Agora quem autoriza é o `publicToken`, a mesma
+credencial que abre o formulário inteiro e todas as respostas dele; o vínculo continua
+sendo checado, no papel certo, para um token legítimo não virar chave de arquivo de
+outro fulfillment.
+
+Provado por chamada real à rota, não por grep: token certo abre (200), token errado não
+(404), id do fulfillment no lugar do token não (404), token válido não alcança arquivo
+de outro fulfillment (404), e a rota autenticada segue exigindo sessão (401). As duas
+primeiras execuções do smoke falharam por caminho de mount errado, o que é a prova de
+que o teste estava medindo alguma coisa: os casos negativos "passavam" enquanto tudo
+devolvia 404.
+
+**2. Object storage tinha virado dependência para o deploy subir.** A versão anterior
+exigia `STORAGE_ALLOW_LOCAL=true` para não lançar em produção, e produção não tem essa
+variável: o próximo deploy derrubaria upload, avatar, anexo e formulário público por
+causa de credencial que ainda não existe. Trocaria um problema de arquitetura por uma
+queda.
+
+Corrigido invertendo o default. Sem `STORAGE_*` o serviço usa disco local, como o
+produto já fazia, sem variável nova nenhuma. A exigência virou opt-in
+(`STORAGE_REQUIRE_OBJECT_STORAGE`), que é o passo da virada e não um requisito de hoje.
+O caminho completo da virada ficou escrito no topo de `lib/arquivos/servico.ts`, onde
+quem for executá-la vai ler.
+
+Também ficou explícito um silêncio que teria enganado: o adaptador S3/R2 ainda não foi
+implementado, então configurar as quatro variáveis hoje não liga nada. O serviço avisa
+alto nesse caso em vez de deixar quem configurou achando que ligou.
+
+**Ainda neste batch, a gestão de tokens da API pública.** A API tinha nove recursos,
+autenticação por token, escopo e registro de uso, e nenhuma forma de criar um token:
+`api_tokens` só era escrita pelo smoke, com 0 linhas. Na prática a API inteira era
+inacessível sem `INSERT` manual. Entraram as rotas de criar, listar e revogar, com três
+regras: o token aparece uma vez e só o sha256 fica guardado; ninguém cria token acima de
+si; revogar não apaga, para não destruir a resposta sobre o que a credencial andou
+puxando.
+
+**Uma vulnerabilidade real no caminho:** `gerarToken` derivava a credencial de
+`Date.now()`, `Math.random()` e `process.pid`. Os três são adivinháveis e passar por
+sha256 não acrescenta entropia. Agora é `randomBytes(32)`. Varri o resto do código
+atrás da mesma classe: o único outro uso é sufixo de chave de idempotência do Stripe,
+que não é fronteira de segurança.
+
+**Um teste ruim pego por mutação.** A primeira trava do teto de escopo procurava o nome
+da função no arquivo da rota. Removi a regra de propósito para conferir, e o teste
+passou. A regra saiu para `lib/auth/teto-de-token.ts` e ganhou teste que a EXECUTA (7
+casos); a trava estrutural ficou, sabendo que é estrutural, só para impedir uma segunda
+cópia da regra dentro da rota.
+
+Disso saiu uma correção de fundo: `permissoesEfetivas` em `lib/auth/permissoes.ts`
+passou a ser a decisão única. O teto usava o RBAC cru e ignorava o fallback de papel
+legado, então um admin sem papel vinculado não conseguiria criar token nenhum. O teste
+de paridade de permissões continua passando, o que prova que centralizar não mudou quem
+pode o quê.
+
+**Validação:** tsc limpo, **255 testes, 0 falhas**, build de produção exit 0, smoke do
+acervo (23 verificações) e smoke de gestão de tokens (12 verificações) no banco
+carregado com produção, mais o smoke da API pública.
+
+**Pendente e NÃO removido do escopo:** a tela de gestão de tokens (`/ajustes/api-tokens`)
+da fase 23. O backend está completo e validado; falta a interface.

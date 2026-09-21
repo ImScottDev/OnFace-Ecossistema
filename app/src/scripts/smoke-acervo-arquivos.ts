@@ -12,6 +12,7 @@
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
 import { guardarNoAcervo, entregarDoAcervo, removerDoAcervo, adaptadorDeArquivos } from "@/lib/arquivos/servico";
+import { uploadsRoutes } from "@/api-server/routes/uploads";
 
 const ok = (cond: unknown, msg: string) => {
   console.log(`${cond ? "  ok  " : "  FALHA  "}${msg}`);
@@ -105,6 +106,57 @@ async function main() {
   const ORG_INEXISTENTE = "00000000-0000-4000-8000-000000000000";
   const alheio = await entregarDoAcervo(a.arquivo.id, ORG_INEXISTENTE);
   ok(!alheio.ok, "outra organização não encontra o arquivo");
+
+  // 5b. Autorização da leitura pública, pela ROTA de verdade.
+  //
+  // Verificar isto com grep no arquivo não vale: a versão anterior desta rota
+  // conferia só o vínculo entre arquivo e fulfillment, e um grep procurando
+  // "file_links" teria aprovado exatamente o desenho errado.
+  const [alvo] = await db.execute<{ id: string; token: string }>(sql`
+    SELECT id::text, public_token::text AS token FROM fulfillments
+     WHERE organizacao_id = ${org.id}::uuid AND public_token IS NOT NULL LIMIT 1`);
+
+  if (alvo) {
+    const anexo = await guardarNoAcervo({
+      organizacaoId: org.id, nomeOriginal: "smoke-acervo-publico.txt", mimeType: "text/plain",
+      conteudo: new TextEncoder().encode(`publico ${alvo.id}`),
+      vinculos: [{ tipo: "fulfillment", id: alvo.id, papel: "formulario_implantacao" }],
+    });
+    ok(anexo.ok, "guarda anexo de formulário público");
+
+    if (anexo.ok) {
+      paraLimpar.push(anexo.arquivo.id);
+      // Sem o prefixo `/api`: ele pertence ao mount em `server.ts`, não ao
+      // sub-app. Com o prefixo tudo devolve 404, e os casos negativos passariam
+      // pelo motivo errado.
+      const chamar = (caminho: string) => uploadsRoutes.request(`http://local${caminho}`);
+
+      const comToken = await chamar(`/arquivos/publico/${alvo.token}/${anexo.arquivo.id}`);
+      ok(comToken.status === 200,
+         `o token do formulário abre o anexo (status ${comToken.status})`);
+
+      const TOKEN_FALSO = "11111111-1111-4111-8111-111111111111";
+      const semToken = await chamar(`/arquivos/publico/${TOKEN_FALSO}/${anexo.arquivo.id}`);
+      ok(semToken.status === 404,
+         `token errado não abre, mesmo com o id certo do arquivo (status ${semToken.status})`);
+
+      // O caso que motivou a correção: conhecer o id do fulfillment não basta.
+      const porId = await chamar(`/arquivos/publico/${alvo.id}/${anexo.arquivo.id}`);
+      ok(porId.status === 404,
+         `o id do fulfillment no lugar do token não abre (status ${porId.status})`);
+
+      // Token legítimo não vira chave-mestra da organização.
+      const outroArquivo = await chamar(`/arquivos/publico/${alvo.token}/${a.arquivo.id}`);
+      ok(outroArquivo.status === 404,
+         `token válido não abre arquivo de outro fulfillment (status ${outroArquivo.status})`);
+
+      const semSessao = await chamar(`/arquivos/${anexo.arquivo.id}`);
+      ok(semSessao.status === 401,
+         `a rota autenticada continua exigindo sessão (status ${semSessao.status})`);
+    }
+  } else {
+    console.log("  --  sem fulfillment com publicToken, autorização pública não verificada");
+  }
 
   // 6. Recusas do domínio
   const vazio = await guardarNoAcervo({

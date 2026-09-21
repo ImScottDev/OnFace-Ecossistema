@@ -114,8 +114,12 @@ app.post("/fulfillment-formulario/:publicToken/upload", async (c) => {
   });
   if (!guardado.ok) return c.json({ error: guardado.erro }, 400);
 
+  // A URL carrega o `publicToken`, não o id do fulfillment: quem pode reabrir o
+  // anexo é quem tem o link do formulário, que é a mesma credencial usada para
+  // enviá-lo. Endereçar por id deixaria o documento aberto a quem juntasse dois
+  // identificadores que circulam por caminhos diferentes do produto.
   return c.json({
-    url: `/api/arquivos/publico/${fulfillment.id}/${guardado.arquivo.id}`,
+    url: `/api/arquivos/publico/${publicToken}/${guardado.arquivo.id}`,
     nomeOriginal: file.name,
   });
 });

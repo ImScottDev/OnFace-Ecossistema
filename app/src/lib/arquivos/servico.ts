@@ -17,15 +17,34 @@
  * - **Metadado transacional.** Tamanho, MIME e autor viram coluna, não inferência
  *   a partir do nome do arquivo no disco.
  *
- * ## Por que o disco local ainda é permitido aqui
+ * ## Disco local continua funcionando sem configurar nada
  *
- * `escolherAdaptador` recusa disco local em produção, e está certo. Mas a
- * produção de hoje roda sem `STORAGE_*` e grava anexo em disco: ligar a recusa
- * agora derrubaria upload em produção por causa de uma credencial que ainda não
- * chegou. Então a permissão é explícita e nominal — `STORAGE_ALLOW_LOCAL` — e
- * **apagar essa variável é a virada**, feita quando o object storage existir.
- * Um default silencioso é como o produto chegou até aqui; uma variável que
- * alguém precisa escrever aparece na revisão.
+ * Object storage **não é dependência para rodar**. Sem `STORAGE_*` o serviço usa
+ * disco local, exatamente como o produto já fazia, e upload, avatar, anexo e
+ * formulário público seguem funcionando no deploy atual sem infraestrutura nova.
+ * Trocar `fs.writeFileSync` por "explode se faltar credencial" teria sido
+ * substituir um problema arquitetural por uma queda.
+ *
+ * ## Como será a virada para object storage
+ *
+ * Em três passos, nenhum deles mexendo em tela ou em URL gravada:
+ *
+ * 1. **Implementar o adaptador S3/R2** e passá-lo em `criarS3` aqui. É a única
+ *    peça de código que falta; o resto do caminho já é agnóstico de provedor.
+ * 2. **Configurar** `STORAGE_ENDPOINT`, `STORAGE_BUCKET`, `STORAGE_ACCESS_KEY_ID`
+ *    e `STORAGE_SECRET_ACCESS_KEY`. Com os quatro presentes e o adaptador
+ *    existindo, `escolherAdaptador` passa a escolher object storage sozinho.
+ * 3. **Ligar** `STORAGE_REQUIRE_OBJECT_STORAGE=true`, que faz a falta de
+ *    configuração virar erro em vez de voltar em silêncio para o disco. É o
+ *    passo que transforma "deveria estar no S3" em algo que a revisão vê.
+ *
+ * Os arquivos já gravados continuam válidos: a `storage_key` é a mesma nos dois
+ * provedores, e `file_objects.storage_provider` registra onde cada binário está,
+ * então a migração dos antigos é uma cópia, não uma reescrita de endereço.
+ *
+ * Enquanto o passo 1 não acontece, configurar só as variáveis NÃO liga nada —
+ * e por isso este módulo avisa alto nesse caso, em vez de deixar quem configurou
+ * achando que ligou.
  */
 import path from "node:path";
 import { db } from "@/lib/db";
@@ -45,11 +64,31 @@ let adaptadorMemo: AdaptadorArmazenamento | null = null;
 /** O adaptador é resolvido uma vez: senão o aviso de disco local sai a cada upload. */
 export function adaptadorDeArquivos(): AdaptadorArmazenamento {
   if (adaptadorMemo) return adaptadorMemo;
-  const toleraLocal = process.env.STORAGE_ALLOW_LOCAL === "true";
+
+  const config = configS3DoAmbiente();
+  // O adaptador S3/R2 ainda não existe. Enquanto não existir, `criarS3` fica
+  // indefinido e `escolherAdaptador` ignora a configuração — o que seria um
+  // silêncio perigoso para quem acabou de preencher as credenciais achando que
+  // ligou object storage. Por isso o aviso é explícito.
+  const criarS3 = undefined;
+  if (config && !criarS3) {
+    console.warn(
+      "[storage] STORAGE_* configurado, mas o adaptador S3/R2 ainda não foi " +
+      "implementado: os arquivos continuam em disco local. Configurar as " +
+      "variáveis não liga object storage sozinho.",
+    );
+  }
+
   adaptadorMemo = escolherAdaptador({
-    config: configS3DoAmbiente(),
+    config,
     raizLocal: RAIZ_LOCAL,
-    producao: process.env.NODE_ENV === "production" && !toleraLocal,
+    criarS3,
+    // NÃO é `NODE_ENV === "production"`. Object storage não pode ser requisito
+    // para o deploy de hoje subir: sem as credenciais, disco local é o caminho
+    // que já funcionava. Esta variável é o passo 3 da virada, ligado de
+    // propósito quando o object storage existir, e é o que faz a falta de
+    // configuração virar erro em vez de voltar para o disco em silêncio.
+    producao: process.env.STORAGE_REQUIRE_OBJECT_STORAGE === "true",
   });
   return adaptadorMemo;
 }

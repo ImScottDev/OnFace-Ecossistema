@@ -18,14 +18,14 @@ Fases 01 a 16 concluídas.
 | 19 IA | NEXO e Hermes em `draft`, a IA não escreve direto no banco, busca de conhecimento no banco com índice, e **permissão delegada com teto por interseção**. Publicar os agentes é decisão de quem opera |
 | 22 RBAC | papéis, mapa, vínculos e **paridade provada**. Rotas financeiras, de automação, de agente e de plataforma de IA já exigem permissão. Restam 166 rotas de operação, com o número travado contra crescimento |
 | 20 Meta | **CAPI validada contra a Meta real** (8 eventos aceitos em Test Events). Inbound implementado e testável; ativação real bloqueada só pela permissão da Página |
-| 21 storage | serviço construído e testado; adapter S3/R2 espera credencial. Migrar os pontos de upload vem junto, porque trocá-los agora só muda um disco local por outro |
-| 23 API pública | `/api/v1` com 9 recursos, token com escopo, uso registrado. Falta a tela de gestão de tokens |
+| 21 storage | **pontos de upload migrados** (anexo, avatar, formulário público): checksum, deduplicação, organização na chave, entrega independente de provedor. O adapter S3/R2 espera credencial, e só isso. A justificativa anterior para adiar ("só troca um disco local por outro") estava errada: o que mudou não foi o disco, foi metadado, dedup, isolamento e endereçamento |
+| 23 API pública | `/api/v1` com 9 recursos, token com escopo, uso registrado. **Criar/listar/revogar token existe como rota**, com teto de escopo testado e gerador de credencial corrigido. Falta só a TELA de gestão |
 | 24 paridade | **12 dos 14 cenários passam, 0 falham, 2 não verificáveis e nomeados** |
 | 25 a 28 | dependem de 17 completa; 28 precisa de aprovação do Kauã |
 
 ## Último commit
 
-`374d726` — refactor(24): a timeline parou no dia da carga e ninguém percebeu
+`d0948f4` — refactor(32): o acervo de arquivos existia inteiro e ninguém chamava
 
 Branch de trabalho: `refactor/arquitetura-canonica`, criada a partir de `98940fe`.
 
@@ -313,9 +313,36 @@ Dois defeitos apareceram só ao ligar, nenhum visível em teste de unidade: a un
 e omitia `servico_canonico` e `aquisicao`, que ele aceita; e `application/zip` era
 aceito pela rota e recusado pelo pacote.
 
-**Disco local em produção** virou permissão nominal — `STORAGE_ALLOW_LOCAL`. O
-adaptador S3 continua bloqueado por credencial externa; apagar essa variável é a
-virada, e é uma linha de ambiente, não de código.
+**Object storage não é dependência para o deploy subir.** Sem `STORAGE_*`, o serviço
+usa disco local exatamente como o produto já fazia: upload, avatar, anexo e formulário
+público continuam funcionando sem infraestrutura nova. Uma versão intermediária deste
+trabalho exigia uma variável (`STORAGE_ALLOW_LOCAL`) para não explodir em produção, o
+que teria derrubado upload no próximo deploy; corrigido antes do commit.
+
+**A virada para object storage, em três passos**, nenhum mexendo em tela ou em URL já
+gravada:
+
+| Passo | O quê | Estado |
+|---|---|---|
+| 1 | implementar o adaptador S3/R2 e passá-lo em `criarS3` | **única peça de código que falta** |
+| 2 | configurar `STORAGE_ENDPOINT`, `STORAGE_BUCKET`, `STORAGE_ACCESS_KEY_ID`, `STORAGE_SECRET_ACCESS_KEY` | bloqueado por credencial externa |
+| 3 | ligar `STORAGE_REQUIRE_OBJECT_STORAGE=true`, que faz a falta de configuração virar erro em vez de voltar ao disco em silêncio | depende do 1 e do 2 |
+
+Arquivo já gravado continua válido: a `storage_key` é a mesma nos dois provedores e
+`file_objects.storage_provider` registra onde cada binário está, então migrar os antigos
+é cópia, não reescrita de endereço. Enquanto o passo 1 não acontecer, configurar só as
+variáveis não liga nada, e o serviço avisa alto nesse caso em vez de deixar quem
+configurou achando que ligou.
+
+**A autorização do anexo público é o `publicToken`, não um par de ids.** A primeira
+versão da rota recebia `fulfillmentId` + `fileObjectId` e conferia só que os dois
+estavam vinculados. Vínculo prova parentesco, não permissão: os dois identificadores
+circulam por caminhos diferentes do produto, e quem juntasse um par válido abriria o
+documento sem nunca ter tido o link do formulário. Agora o token resolve o fulfillment,
+e o vínculo fica com o papel certo, impedir que um token legítimo vire chave para
+arquivo de outro fulfillment. Provado por chamada real à rota nos quatro casos: token
+certo abre, token errado não, id do fulfillment no lugar do token não, e token válido
+não alcança arquivo de outro fulfillment.
 
 ### Dois modelos de evento, convergidos
 
@@ -416,8 +443,8 @@ canônico hoje faria o lead sumir da tela de pré-vendas no mesmo instante.
 
 ## Testes executados
 
-Estado atual: `tsc --noEmit` limpo, **build de produção passando**, **242 testes, 0
-falhas**, mais **doze smokes** contra o banco real:
+Estado atual: `tsc --noEmit` limpo, **build de produção passando**, **255 testes, 0
+falhas**, mais **catorze smokes** contra o banco real:
 
 - `smoke-ponte-canonica` — entrada externa chega inteira ao canônico e não duplica;
 - `smoke-ganho-oportunidade` 5/5 — a política da oferta decide, PABX gera as duas

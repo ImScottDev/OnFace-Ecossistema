@@ -33,6 +33,7 @@ const SO_CONFIGURACAO = [
   "automacoes-agentes.ts",
   "automacoes-tags.ts",
   "ai-platform.ts",
+  "api-tokens.ts",
 ];
 
 const GATES = /exigirCtx\(c,|getGestaoCtx\(c\)|getSuperCtx\(c\)|isAdminView/;
@@ -67,6 +68,18 @@ test("configurar a IA e usar a IA são permissões diferentes", () => {
     credenciais.slice(0, 400), /exigirCtx\(c, "ai\.configure"\)/,
     "criar credencial de provedor de IA sem gate deixa qualquer um ligar um modelo por conta da empresa",
   );
+});
+
+test("a rota de token chama o teto em vez de decidir sozinha", () => {
+  // Esta verificação é ESTRUTURAL de propósito, e sabe que é: a versão anterior
+  // dela tentava provar a regra procurando texto, e passou com a regra apagada.
+  // Quem prova o comportamento é `lib/auth/teto-de-token.test.ts`, que executa a
+  // decisão. Aqui só se garante que a rota não tenha uma segunda cópia da regra.
+  const src = fs.readFileSync(path.join(ROTAS, "api-tokens.ts"), "utf8");
+  assert.match(src, /aplicarTetoDeToken\(/, "a rota tem que delegar a decisão à regra testada");
+  assert.doesNotMatch(src, /escopos\.filter\(/, "e não reimplementar o filtro de escopo aqui");
+  assert.doesNotMatch(src, /token_sha256[^;]*AS|AS[^;]*token_sha256/,
+    "a listagem não pode devolver o hash do token");
 });
 
 test("o levantamento de rotas abertas continua visível", () => {

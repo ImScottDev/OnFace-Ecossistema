@@ -77,21 +77,47 @@ export function permissaoPeloPapelLegado(role: string | null | undefined, codigo
  * Ordem: delegação da IA primeiro (teto, nunca piso), depois RBAC, depois o
  * gate legado como rede durante o cutover.
  */
-export async function temPermissao(ator: Ator, codigo: CodigoPermissao): Promise<boolean> {
-  if (!ator.usuarioId) return false;
+export const TODAS_PERMISSOES: CodigoPermissao[] = [
+  "companies.read", "companies.write",
+  "acquisition.read", "acquisition.manage",
+  "sales.read", "sales.manage", "sales.approve_discount",
+  "finance.read", "finance.manage",
+  "cs.read", "cs.manage",
+  "automation.manage",
+  "ai.use", "ai.configure",
+  "integrations.manage", "admin.manage_users",
+];
 
-  // Agente de IA não pode exceder o que lhe foi delegado NAQUELA execução, mesmo
-  // que o usuário por trás possa mais (SPEC §31).
-  if (ator.tipo === "AI") {
-    if (!ator.permissoesDelegadas?.includes(codigo)) return false;
-  }
+/**
+ * TUDO que este ator pode, resolvido de uma vez.
+ *
+ * Existe porque duas perguntas diferentes precisam da MESMA resposta: "pode
+ * fazer isto?" (o gate) e "o que ele pode delegar?" (o teto de um token de API).
+ * Quando cada uma resolvia por conta própria, o teto usava só o RBAC e ignorava
+ * o fallback de papel legado — um admin sem papel vinculado não conseguiria
+ * criar token nenhum, e a causa ficaria invisível.
+ */
+export async function permissoesEfetivas(ator: Ator): Promise<Set<CodigoPermissao>> {
+  if (!ator.usuarioId) return new Set();
 
   const doRbac = await permissoesDoUsuario(ator.usuarioId, ator.organizacaoId);
-  if (doRbac.size > 0) return doRbac.has(codigo);
-
   // Sem papel vinculado ainda: o gate antigo responde. Some quando todo usuário
   // tiver papel — hoje são 16 de 16, mas usuário novo entra sem.
-  return permissaoPeloPapelLegado(ator.role, codigo);
+  const base = doRbac.size > 0
+    ? doRbac
+    : new Set(TODAS_PERMISSOES.filter((c) => permissaoPeloPapelLegado(ator.role, c)));
+
+  // Agente de IA não pode exceder o que lhe foi delegado NAQUELA execução, mesmo
+  // que o usuário por trás possa mais (SPEC §31). Interseção, nunca união.
+  if (ator.tipo === "AI") {
+    const delegadas = new Set(ator.permissoesDelegadas ?? []);
+    return new Set([...base].filter((c) => delegadas.has(c)));
+  }
+  return base;
+}
+
+export async function temPermissao(ator: Ator, codigo: CodigoPermissao): Promise<boolean> {
+  return (await permissoesEfetivas(ator)).has(codigo);
 }
 
 /** Versão que lança, para usar no início de uma rota ou comando. */
