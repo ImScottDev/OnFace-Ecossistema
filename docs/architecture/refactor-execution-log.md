@@ -2440,3 +2440,21 @@ inteira, porque quase toda conta tem algum risco de atenção aberto.
 
 **Validação:** tsc limpo, **319 testes 0 falhas**, **29/29 smokes**, tela
 conferida no navegador com filtro funcionando (273 → 24 no recorte de cobrança).
+
+## 2026-09-21 — CP21: implantação por família, consolidada em vez de triplicada
+
+As três rotas traziam a mesma dependência: "falta definir as etapas próprias
+dessa família". As três foram definidas no CP8.
+
+Não viraram tela nova. O board já aceita `familiaFixa` e já desenha a fase de
+cada família; três telas seriam o terceiro caminho que a arquitetura manda
+evitar.
+
+O par CP20/CP21 deixou um aprendizado: das quatro telas destravadas, todas as
+quatro listavam dependência já resolvida por outro checkpoint, dias antes. A
+dependência escrita num placeholder envelhece, e ninguém volta para reler.
+
+Restam 7 telas pendentes, e as 7 esperam decisão de produto, não trabalho
+técnico.
+
+**Validação:** tsc limpo, **319 testes 0 falhas**, build exit 0, **29/29 smokes**.

@@ -74,9 +74,9 @@ export const MENU_ONFACE: OnfaceNavItem[] = [
           {
             label: "Implantação", href: "/clientes/implantacao", icon: Server,
             children: [
-              { label: "PABX", href: "/clientes/implantacao/pabx", icon: Server, pendente: true },
-              { label: "White Label", href: "/clientes/implantacao/white-label", icon: Building2, pendente: true },
-              { label: "Callface AI", href: "/clientes/implantacao/callface-ai", icon: Bot, pendente: true },
+              { label: "PABX", href: "/clientes/implantacao/pabx", icon: Server },
+              { label: "White Label", href: "/clientes/implantacao/white-label", icon: Building2 },
+              { label: "Callface AI", href: "/clientes/implantacao/callface-ai", icon: Bot },
             ],
           },
         ],

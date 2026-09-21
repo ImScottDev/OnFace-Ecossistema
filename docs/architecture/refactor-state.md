@@ -1595,6 +1595,56 @@ sem responsável**. É o bloqueio já conhecido, agora visível onde importa.
 conferida no navegador com o ambiente completo: os cartões de severidade
 filtram, e o recorte por natureza leva de 273 para 24 contas.
 
+### CP21 — As três telas de implantação por família, consolidadas
+
+Mesma pergunta do CP20 nas três rotas de implantação. As três traziam a mesma
+dependência:
+
+> "`service_family = 'X'` já existe nas entregas; falta definir as etapas
+> próprias dessa família"
+
+**As três foram definidas no CP8.** PABX tem `FASE_PABX_POR_WORKSTREAM`,
+White Label ganhou `FASE_WHITE_LABEL_POR_WORKSTREAM` derivada da ordem do
+próprio checklist, e Callface AI tem os 10 marcos de `MARCOS_AI`.
+
+**Não viraram tela nova.** O board de entregas já aceita `familiaFixa` e já
+sabe desenhar a fase de cada família; construir três telas seria criar o
+terceiro caminho que a arquitetura manda evitar. As rotas existem porque o menu
+aponta para elas, e entregam o mesmo board com o filtro travado.
+
+Conferido no navegador: `/clientes/implantacao/callface-ai` mostra as 4
+entregas em andamento, com progresso, responsável e status. O "0 de 70 etapas"
+que aparece nas quatro foi verificado contra o banco e **está certo** — são
+`NOT_STARTED` com 280 itens e nenhum concluído; os itens feitos estão nas 18
+entregas COMPLETED, que ficam atrás de "Ver todos".
+
+### Telas pendentes: de 11 para 7, e as 7 são decisão sua
+
+| tela | bloqueio |
+|---|---|
+| Carteira | definir o critério de segmentação da carteira |
+| Expansão & Renovação | não existe pipeline de expansão no domínio |
+| Risco / Churn | **resolvida no CP20** |
+| PABX / White Label / Callface AI | **resolvidas no CP21** |
+| Chamados | definir a origem dos chamados e o que é um chamado fechado |
+| Pós-vendas | decidir se é tela própria ou só agrupamento no menu |
+| Fluxos | decidir se o fluxo é editado aqui ou continua no n8n |
+| Relatórios (biblioteca) | definir quais relatórios entram e quem salva |
+| Performance | definir as métricas antes de montar a tela |
+
+As sete restantes não são trabalho técnico parado: cada uma espera uma decisão
+que muda o que a tela é. A de Performance diz o motivo melhor do que eu diria:
+*"número de performance errado vira decisão errada sobre gente"*.
+
+**Um aprendizado do par CP20/CP21:** a dependência escrita num placeholder
+envelhece. Das quatro telas destravadas, **todas as quatro** listavam
+dependências que já tinham sido resolvidas por outro checkpoint, dias antes.
+Vale reler as sete restantes quando o domínio mudar, em vez de tratá-las como
+bloqueio permanente.
+
+**Validação:** tsc limpo, **319 testes 0 falhas**, build exit 0, **29/29
+smokes**, as três rotas conferidas no navegador.
+
 ### Auditoria de CS Health (histórico da decisão)
 
 Menor do que o gap analysis inicial dizia:
