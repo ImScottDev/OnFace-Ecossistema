@@ -945,3 +945,23 @@ rodada seguinte. É a segunda vez na sessão, e a causa é sempre a mesma: limpe
 depende do caminho feliz não limpa o caminho que falhou.
 
 **Commit:** `daa4310`.
+
+---
+
+## 2026-09-21 — Fase 24 · Dois eventos que não saíam
+
+**Qualificar um lead não gerava evento de domínio.** Dois modelos conviviam:
+`vendas_eventos`, que alimenta só a linha do tempo, e `domain_events`, que alimenta
+outbox, automação e Meta. A qualificação escrevia só no primeiro, então
+`AcquisitionQualified` — o evento que vira `QualifiedLead` e é o mais importante para
+otimização — nunca era publicado. A Meta seguia otimizando por volume de formulário.
+
+**Só a primeira mudança de etapa do sistema publicava evento.** `actionKey` usa
+`enrollmentId`, vazio na execução avulsa, então toda automação que movia etapa gerava
+a mesma chave. Com `ON CONFLICT DO NOTHING`, a segunda em diante não publicava nada: a
+automação funcionava, a etapa mudava, e nada a jusante reagia.
+
+Verificado revertendo a correção de propósito: dois negócios movidos publicam um
+evento sem ela, dois com ela.
+
+**Commit:** `8917613`.

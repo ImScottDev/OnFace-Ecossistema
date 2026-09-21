@@ -25,7 +25,7 @@ Fases 01 a 16 concluídas.
 
 ## Último commit
 
-`daa4310` — refactor(24): a cadeia até a Meta provada ponta a ponta
+`8917613` — fix(24): só a PRIMEIRA mudança de etapa do sistema publicava evento
 
 Branch de trabalho: `refactor/arquitetura-canonica`, criada a partir de `98940fe`.
 
@@ -258,6 +258,16 @@ caso `CONTRATO_SEM_PROCESSO_COMERCIAL`.
 - o legado só refina onde sabe algo que o canônico não deriva (`qualificacao`).
   Deixá-lo sobrescrever punha o card em "Novo" enquanto o contador do canônico dizia
   outra coisa — total e cards discordando na mesma tela.
+
+### Dois modelos de evento, convergidos
+
+`vendas_eventos` é rico e alimenta só a linha do tempo; `domain_events` alimenta o
+outbox, a automação e a Meta. Qualificar um lead escrevia só no primeiro, então
+**`AcquisitionQualified` nunca era publicado** — o evento que mais importa para
+otimização de campanha. A ponte entra em `registrarEvento`, na mesma transação.
+
+Os vocabulários também divergiam (`LeadQualified` contra `AcquisitionQualified`), e a
+tradução ficou num lugar só.
 
 ### A regra que faltava, e que custou duas regressões
 
