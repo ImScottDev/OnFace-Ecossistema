@@ -1,9 +1,17 @@
-// @onface/domain-identity — ponto de entrada público do pacote.
+// @onface/identity — identidade canônica: empresa, pessoa e vínculo.
 //
-// Nada fora deste arquivo deve ser importado de fora do pacote. A fronteira é
-// verificada por `pnpm arq:fronteiras` (src/scripts/checar-fronteiras.ts).
-//
-// Vazio por enquanto: o código chega quando a fase correspondente do refactor
-// migrar este domínio. Ver docs/architecture/refactor-state.md.
+// Porta única por onde identidade nasce ou é reencontrada (SPEC §6, §40).
 
-export {};
+export {
+  resolverPessoa,
+  resolverEmpresa,
+  normalizarEmail,
+  normalizarTelefone,
+  normalizarCnpj,
+  dominioCorporativo,
+  type DadosPessoa,
+  type DadosEmpresa,
+  type RepositorioIdentidade,
+  type ResolucaoPessoa,
+  type ResolucaoEmpresa,
+} from "./commands/resolver-identidade.js";
