@@ -860,29 +860,51 @@ export async function empresa360(organizacaoId: string, empresaId: string): Prom
      ORDER BY nome
   `);
 
+  // Aquisições da empresa. Era `leads ... AND estagio_pre_vendas IS NOT NULL`,
+  // o mesmo filtro que escondia 2.392 registros no board: aqui ele fazia a
+  // empresa parecer não ter histórico de entrada nenhum.
   const leads = await db.execute<{ id: string; etapa: string | null; origem: string | null; criado_em: string }>(sql`
-    SELECT id::text, estagio_pre_vendas AS etapa, origem, created_at::text AS criado_em
-      FROM leads WHERE empresa_id = ${empresaId}::uuid AND estagio_pre_vendas IS NOT NULL
-     ORDER BY created_at DESC LIMIT 20
+    SELECT COALESCE(a.lead_legado_id, a.id)::text AS id,
+           CASE
+             WHEN a.desqualificado_em IS NOT NULL THEN 'desqualificado'
+             WHEN a.nutricao_status IS NOT NULL AND a.nutricao_status <> '' THEN 'nutricao'
+             WHEN a.qualificado THEN 'qualificado'
+             ELSE 'novo'
+           END AS etapa,
+           a.origem, a.created_at::text AS criado_em
+      FROM aquisicoes a WHERE a.empresa_id = ${empresaId}::uuid
+     ORDER BY a.created_at DESC LIMIT 20
   `);
 
   const oportunidades = await db.execute<{
     id: string; titulo: string; etapa: string | null; familia: string | null;
     valor: string | null; responsavel: string | null;
   }>(sql`
-    SELECT n.id::text, n.titulo, n.etapa, n.service_family AS familia,
-           n.valor_total::text AS valor, u.nome AS responsavel
-      FROM negocios n LEFT JOIN usuarios u ON u.id = n.responsavel_id
-     WHERE n.empresa_id = ${empresaId}::uuid
-     ORDER BY n.created_at DESC LIMIT 20
+    SELECT COALESCE(o.negocio_id_legado, o.id)::text AS id, o.titulo, o.etapa,
+           o.service_family AS familia, o.valor::text AS valor, u.nome AS responsavel
+      FROM oportunidades o LEFT JOIN usuarios u ON u.id = o.responsavel_id
+     WHERE o.empresa_id = ${empresaId}::uuid
+     ORDER BY o.created_at DESC LIMIT 20
   `);
 
   const propostas = await db.execute<{
     id: string; numero: number; versao: number; status: string; total: string | null; enviada_em: string | null;
   }>(sql`
+    -- Duas rotas até a empresa, de propósito.
+    --
+    -- A consulta anterior exigia JOIN em negocios, e 455 das 1.550 propostas do
+    -- banco não têm negócio nenhum: são propostas antigas (2024 em diante)
+    -- feitas direto para um lead, antes de existir o modelo de negócio. Elas
+    -- nunca apareceram nesta tela. Pela identidade canônica, 446 delas chegam
+    -- à empresa — a pessoa sabe de quem é a proposta mesmo quando o processo
+    -- comercial não foi registrado.
     SELECT p.id::text, p.numero, p.versao, p.status, p.total_geral::text AS total, p.enviada_em::text
-      FROM propostas p JOIN negocios n ON n.id = p.negocio_id
-     WHERE n.empresa_id = ${empresaId}::uuid
+      FROM propostas p
+     WHERE EXISTS (SELECT 1 FROM oportunidades o
+                    WHERE o.id = p.oportunidade_id AND o.empresa_id = ${empresaId}::uuid)
+        OR (p.oportunidade_id IS NULL AND EXISTS (
+              SELECT 1 FROM aquisicoes a
+               WHERE a.lead_legado_id = p.lead_id AND a.empresa_id = ${empresaId}::uuid))
      ORDER BY p.created_at DESC LIMIT 20
   `);
 
@@ -1025,8 +1047,15 @@ export async function detalheLead(organizacaoId: string, leadId: string): Promis
   const oportunidades = await db.execute<{
     id: string; titulo: string; etapa: string | null; familia: string | null;
   }>(sql`
-    SELECT id::text, titulo, etapa, service_family AS familia
-      FROM negocios WHERE lead_id = ${leadId}::uuid ORDER BY created_at DESC
+    -- Oportunidades do canônico. O cabeçalho do lead acima ainda vem da tabela
+    -- leads: nutrição, desqualificação e interesse declarado não têm dono no
+    -- modelo canônico até a fase 26. O que é informação de VENDA já migrou.
+    SELECT COALESCE(o.negocio_id_legado, o.id)::text AS id, o.titulo, o.etapa,
+           o.service_family AS familia
+      FROM oportunidades o
+     WHERE o.lead_id = ${leadId}::uuid
+        OR o.negocio_id_legado IN (SELECT id FROM negocios WHERE lead_id = ${leadId}::uuid)
+     ORDER BY o.created_at DESC
   `);
 
   const [tarefa] = await db.execute<{ titulo: string; vence_em: string | null }>(sql`
@@ -1165,8 +1194,11 @@ export async function detalheOportunidade(organizacaoId: string, negocioId: stri
   const irmas = n.bundle_id ? await db.execute<{
     id: string; titulo: string; etapa: string | null; familia: string | null;
   }>(sql`
-    SELECT id::text, titulo, etapa, service_family AS familia FROM negocios
-     WHERE bundle_id = ${n.bundle_id}::uuid AND id <> ${negocioId}::uuid
+    SELECT COALESCE(o.negocio_id_legado, o.id)::text AS id, o.titulo, o.etapa,
+           o.service_family AS familia
+      FROM oportunidades o
+     WHERE o.bundle_id = ${n.bundle_id}::uuid
+       AND COALESCE(o.negocio_id_legado::text, o.id::text) <> ${negocioId}
   `) : [];
 
   const evidencias = await db.execute<{ tipo: string; em: string }>(sql`
