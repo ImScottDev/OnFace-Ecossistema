@@ -1,6 +1,7 @@
 import { eq, and, lte, isNotNull } from "drizzle-orm";
 import { leads, statusChanges, atividades, usuarios } from "../db/schema";
 import { SDR_CONTATO_ESCALATION_HOURS } from "./pipeline";
+import { registrarMudancaResponsavel } from "./owner";
 
 // Import relativo (não "@/") de propósito: este módulo é usado pelo worker, que
 // roda SEM o alias de path. Recebe `db` como parâmetro pra funcionar tanto com a
@@ -33,7 +34,7 @@ export async function runSdrFollowupEscalation(db: any): Promise<{ moved: number
   const threshold = new Date(Date.now() - SDR_CONTATO_ESCALATION_HOURS * 60 * 60 * 1000);
 
   const pend = await db
-    .select({ id: leads.id, organizacaoId: leads.organizacaoId })
+    .select({ id: leads.id, organizacaoId: leads.organizacaoId, responsavelId: leads.responsavelId })
     .from(leads)
     .where(and(
       eq(leads.sdrStatus, "contacted"),
@@ -61,6 +62,25 @@ export async function runSdrFollowupEscalation(db: any): Promise<{ moved: number
         updatedAt: new Date(),
       })
       .where(eq(leads.id, l.id));
+
+    // A reatribuição em lote passa pela mesma porta da tela (21/09).
+    //
+    // Escrever só em `leads` deixava a aquisição canônica com o dono antigo, e
+    // o board de pré-vendas conta "sem responsável" a partir dela: a escalação
+    // dava um dono ao lead e a tela continuava dizendo que não tinha. Sem
+    // rastro, também não havia como responder por que aquele lead apareceu na
+    // carteira de alguém.
+    if (owner && owner !== l.responsavelId) {
+      await registrarMudancaResponsavel({
+        organizacaoId: l.organizacaoId,
+        entityType: "lead",
+        entityId: l.id,
+        previousOwnerId: l.responsavelId ?? null,
+        newOwnerId: owner,
+        actorId: null,
+        source: "automation",
+      });
+    }
 
     await db.insert(statusChanges).values({
       leadId: l.id,

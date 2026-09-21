@@ -1238,3 +1238,56 @@ bloqueado por credencial de provedor de modelo. Tudo antes da chamada ao modelo 
 provado: ferramenta de domínio, teto de permissão por interseção e gate de autorização.
 
 **Validação:** tsc limpo, 256 testes, build exit 0.
+
+---
+
+## 2026-09-21 — Cutover crítico, parte 3: trocar o dono não chegava no canônico
+
+Auditoria de escritores por coluna: para cada arquivo que escreve em `leads` ou
+`negocios`, quais colunas toca, se elas existem no canônico e se ele propaga. Oito
+suspeitos, um falso positivo (`won-evidence.ts`, que usa `propagarGanhoCanonico` e o
+meu detector não conhecia).
+
+**O padrão real era um só: `responsavel_id`.**
+
+Provei pela rota, não pela tabela. O board de pré-vendas conta "sem responsável" a
+partir de `aquisicoes.responsavel_id` e a Empresa 360 lê o dono de
+`oportunidades.responsavel_id`. `PATCH /negocios/:id` propagava; `PATCH /leads/:id`
+**não**. A pessoa reatribuía o lead, recarregava, e a tela continuava mostrando o dono
+antigo.
+
+**A divergência no banco era ZERO, e era isso que escondia o defeito.** O backfill
+sincronizou os dois lados, então medir o estado atual não acusava nada: o problema só
+apareceria na primeira reatribuição depois da carga. Por isso o smoke provoca a troca
+pela rota de verdade em vez de medir o que já está lá. Na primeira execução ele falhou,
+como esperado, e nomeou qual dos dois lados estava parado.
+
+**A correção foi na porta, não nos chamadores.** `registrarMudancaResponsavel` já era o
+ponto por onde toda troca de dono passa, com cinco chamadores, mas só gravava auditoria.
+Passou a propagar também, com um mapa entidade → tabela canônica. `pessoa`, `cliente` e
+os `fulfillment*` ficam de fora sem exceção escrita à mão, porque já são canônicos.
+
+Ordem deliberada: canônico primeiro, auditoria depois. Se o processo morrer entre as
+duas escritas, é melhor ter o dono certo sem a linha de auditoria do que a auditoria de
+uma troca que a tela não mostra.
+
+**Dois caminhos trocavam dono sem passar pela porta**, e agora passam:
+
+- `crm_assign_owner` do motor de automação. Além de não propagar, não deixava rastro:
+  a pergunta "quem colocou isso na minha carteira" não tinha resposta quando a resposta
+  era "uma regra".
+- a escalação do SDR, que reatribui lead em lote depois de N horas em Em Contato.
+
+A porta ganhou `actorId` nulável e `source`, para separar na auditoria o que uma pessoa
+fez do que uma regra fez. Sem isso, automação teria que inventar um usuário.
+
+Trava em `escritores-migrados.test.ts`, verificada falhando com a propagação removida,
+varrendo sete arquivos que escrevem responsável.
+
+**Também medido e descartado:** `contatos-crm2.ts`, `contratos.ts` e
+`pre-vendas/actions.ts` apareceram na varredura mas já estavam cobertos, o primeiro
+porque chama a porta, os outros dois porque as colunas que escrevem (`tipo`,
+`empresa_id`) seguem caminho próprio já migrado.
+
+**Validação:** tsc limpo, **257 testes, 0 falhas**, build exit 0, `smoke-dono-propaga`
+e `smoke-motor-unico` verdes.

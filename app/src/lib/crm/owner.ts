@@ -9,11 +9,37 @@
  * Esta função é o ÚNICO lugar que registra a troca — não recria a lógica
  * de update por entidade (cada tabela continua com seu próprio PATCH), só
  * centraliza o rastro de auditoria pra não duplicar isso em N endpoints.
+ *
+ * **E também propaga o dono para o modelo canônico (21/09).** O update de cada
+ * tabela continua onde estava; o que passou a morar aqui é a consequência dele
+ * no canônico, porque é aqui que TODA troca de dono passa.
+ *
+ * O motivo é concreto e foi medido: o board de pré-vendas conta "sem
+ * responsável" a partir de `aquisicoes.responsavel_id`, e trocar o dono de um
+ * lead escrevia só em `leads`. A pessoa reatribuía, recarregava, e a tela
+ * continuava mostrando o dono antigo.
+ *
+ * A divergência era ZERO no banco, porque o backfill sincronizou os dois lados,
+ * e isso escondia o defeito: ele só apareceria na primeira reatribuição depois
+ * da carga. Por isso a prova é `smoke-dono-propaga.ts`, que provoca uma troca
+ * pela rota de verdade em vez de medir o que já está lá.
  */
 import { db } from "@/lib/db";
+import { sql } from "drizzle-orm";
 import { auditLog } from "@/lib/db/schema";
 
 export type OwnerEntityType = "lead" | "negocio" | "pessoa" | "fulfillment" | "cliente" | "fulfillment_item";
+
+/**
+ * Onde o dono daquela entidade vive no canônico.
+ *
+ * `pessoa`, `cliente` e os `fulfillment*` já SÃO canônicos: o update deles não
+ * tem para onde propagar, e ficam de fora sem exceção escrita à mão.
+ */
+const DESTINO_CANONICO: Partial<Record<OwnerEntityType, { tabela: string; chave: string }>> = {
+  lead: { tabela: "aquisicoes", chave: "lead_legado_id" },
+  negocio: { tabela: "oportunidades", chave: "negocio_id_legado" },
+};
 
 export async function registrarMudancaResponsavel(opts: {
   organizacaoId: string;
@@ -21,9 +47,25 @@ export async function registrarMudancaResponsavel(opts: {
   entityId: string;
   previousOwnerId: string | null;
   newOwnerId: string | null;
-  actorId: string;
+  /** Null quando quem trocou foi automação ou o sistema, não uma pessoa. */
+  actorId: string | null;
+  /** De onde veio a troca. "api" é o default histórico das rotas. */
+  source?: "api" | "automation" | "system";
 }): Promise<void> {
   if (opts.previousOwnerId === opts.newOwnerId) return; // sem mudança real, sem ruído no audit
+
+  // O canônico primeiro: se o processo morrer entre as duas escritas, é melhor
+  // ter o dono certo sem linha de auditoria do que a auditoria de uma troca que
+  // a tela não mostra.
+  const destino = DESTINO_CANONICO[opts.entityType];
+  if (destino) {
+    await db.execute(sql`
+      UPDATE ${sql.raw(destino.tabela)}
+         SET responsavel_id = ${opts.newOwnerId}::uuid, updated_at = now()
+       WHERE ${sql.raw(destino.chave)} = ${opts.entityId}::uuid
+         AND organizacao_id = ${opts.organizacaoId}::uuid`);
+  }
+
   await db.insert(auditLog).values({
     organizacaoId: opts.organizacaoId,
     actorId: opts.actorId,
@@ -32,6 +74,6 @@ export async function registrarMudancaResponsavel(opts: {
     entityId: opts.entityId,
     before: { responsavelId: opts.previousOwnerId },
     after: { responsavelId: opts.newOwnerId },
-    source: "api",
+    source: opts.source ?? "api",
   });
 }

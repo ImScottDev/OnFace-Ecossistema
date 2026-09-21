@@ -180,3 +180,38 @@ test("a sincronização com o legado PREENCHE o canônico, nunca apaga a deduç�
   assert.match(pipeline, /titulo = n\.titulo/, "título segue o legado");
   assert.match(pipeline, /etapa = n\.etapa/, "etapa segue o legado");
 });
+
+test("trocar responsável passa pela porta, senão o canônico fica para trás", () => {
+  // O board de pré-vendas conta "sem responsável" a partir de
+  // `aquisicoes.responsavel_id`, e a Empresa 360 lê o dono de
+  // `oportunidades.responsavel_id`. Escrever só no legado faz a pessoa
+  // reatribuir, recarregar e ver o dono antigo.
+  //
+  // A divergência no banco era ZERO, porque o backfill sincronizou os dois
+  // lados, e era isso que escondia o defeito: ele só apareceria na primeira
+  // reatribuição depois da carga. `registrarMudancaResponsavel` virou a porta
+  // que propaga E audita; prova executada em `smoke-dono-propaga.ts`.
+  const porta = ler("lib/crm/owner.ts");
+  assert.match(porta, /UPDATE \$\{sql\.raw\(destino\.tabela\)\}/,
+    "a porta tem que propagar para a tabela canônica");
+  assert.match(porta, /lead:\s*\{ tabela: "aquisicoes"/, "lead vai para aquisicoes");
+  assert.match(porta, /negocio:\s*\{ tabela: "oportunidades"/, "negócio vai para oportunidades");
+
+  // Quem escreve responsável fora da porta volta a criar o buraco.
+  const SUSPEITOS = [
+    "lib/cadencia/cadence-engine.ts",
+    "lib/crm/sdr-escalation.ts",
+    "api-server/routes/leads.ts",
+    "api-server/routes/negocios.ts",
+    "api-server/routes/contatos-crm2.ts",
+    "api-server/routes/clientes-crm2.ts",
+    "api-server/routes/cs.ts",
+  ];
+  const fora = SUSPEITOS.filter((f) => {
+    const src = ler(f);
+    const escreve = /responsavelId:\s*\w+|responsavel_id\s*=\s*\$\{/.test(src);
+    return escreve && !src.includes("registrarMudancaResponsavel");
+  });
+  assert.deepEqual(fora, [],
+    `estes trocam responsável sem passar pela porta e deixam o canônico para trás:\n${fora.join("\n")}`);
+});

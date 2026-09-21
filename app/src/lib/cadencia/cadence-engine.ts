@@ -27,8 +27,9 @@
  */
 import { createHash } from "node:crypto";
 import { db } from "@/lib/db";
+import { registrarMudancaResponsavel } from "@/lib/crm/owner";
 import { cadenceDefinitions, cadenceDefinitionPointers, cadenceVersions, cadenceEnrollments, cadenceEnrollmentEvents, leads, contatos, negocios, oportunidades, clientes, servicosCanonicos, whatsappTemplates, whatsappMensagens, whatsappSessao, atividades, tarefas, entityLabels, labels, leadLabels, contatoLabels } from "@/lib/db/schema";
-import { eq, and, lte, inArray, desc, or, isNull, lt } from "drizzle-orm";
+import { eq, and, lte, inArray, desc, or, isNull, lt, sql } from "drizzle-orm";
 import { avaliarCondicao, type Condicao } from "@/lib/crm/condicao";
 import { whatsappOutgoingQueue } from "@/lib/queue";
 import { executeAgent } from "@/lib/ai-platform/runtime/execute-agent";
@@ -424,14 +425,53 @@ registrarAdapter("crm_update_stage", async (ctx) => {
   return { sucesso: true, varsAtualizadas: { stage, lead_stage: stage }, resultado: { stage } };
 });
 
+/**
+ * Atribuir responsável pela automação passa pela MESMA porta da tela.
+ *
+ * Antes esta ação escrevia direto na tabela. Duas consequências, as duas
+ * medidas: a aquisição canônica não acompanhava, então o board de pré-vendas
+ * continuava contando o lead como "sem responsável" depois de a automação ter
+ * dado um dono a ele; e a troca não deixava rastro nenhum, então a pergunta
+ * "quem colocou isso na minha carteira" não tinha resposta quando a resposta
+ * era "uma regra".
+ *
+ * `actorId` vai nulo de propósito: não foi pessoa. `source: "automation"` é o
+ * que separa, na auditoria, o que alguém fez do que uma regra fez.
+ */
 registrarAdapter("crm_assign_owner", async (ctx) => {
   const ownerId = String(ctx.step.config?.owner_id ?? "");
   if (!ownerId) return { sucesso: false, erro: "responsável não informado" };
+
+  const donoAtual = async (): Promise<string | null> => {
+    const [r] = await db.execute<{ id: string | null }>(sql`
+      SELECT responsavel_id::text AS id FROM ${sql.raw(
+        ctx.entityType === "lead" ? "leads"
+          : ctx.entityType === "negocio" ? "negocios"
+          : ctx.entityType === "oportunidade" ? "oportunidades" : "clientes")}
+       WHERE id = ${ctx.entityId}::uuid`);
+    return r?.id ?? null;
+  };
+
+  if (!["lead", "negocio", "oportunidade", "cliente"].includes(ctx.entityType)) {
+    return { sucesso: false, erro: "esta entidade não aceita responsável" };
+  }
+  const anterior = await donoAtual();
+
   if (ctx.entityType === "lead") await db.update(leads).set({ responsavelId: ownerId, updatedAt: new Date() }).where(and(eq(leads.id, ctx.entityId), eq(leads.organizacaoId, ctx.organizacaoId)));
   else if (ctx.entityType === "negocio") await db.update(negocios).set({ responsavelId: ownerId, updatedAt: new Date() }).where(and(eq(negocios.id, ctx.entityId), eq(negocios.organizacaoId, ctx.organizacaoId)));
   else if (ctx.entityType === "oportunidade") await db.update(oportunidades).set({ responsavelId: ownerId, updatedAt: new Date() }).where(and(eq(oportunidades.id, ctx.entityId), eq(oportunidades.organizacaoId, ctx.organizacaoId)));
-  else if (ctx.entityType === "cliente") await db.update(clientes).set({ responsavelId: ownerId, updatedAt: new Date() }).where(and(eq(clientes.id, ctx.entityId), eq(clientes.organizacaoId, ctx.organizacaoId)));
-  else return { sucesso: false, erro: "esta entidade não aceita responsável" };
+  else await db.update(clientes).set({ responsavelId: ownerId, updatedAt: new Date() }).where(and(eq(clientes.id, ctx.entityId), eq(clientes.organizacaoId, ctx.organizacaoId)));
+
+  await registrarMudancaResponsavel({
+    organizacaoId: ctx.organizacaoId,
+    entityType: ctx.entityType as "lead" | "negocio" | "cliente",
+    entityId: ctx.entityId,
+    previousOwnerId: anterior,
+    newOwnerId: ownerId,
+    actorId: null,
+    source: "automation",
+  });
+
   return { sucesso: true, varsAtualizadas: { owner_id: ownerId }, resultado: { ownerId } };
 });
 
