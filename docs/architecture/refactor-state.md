@@ -18,12 +18,13 @@ Fases 01 a 16 concluídas.
 | 19 IA | NEXO e Hermes criados em `draft`; a IA não escreve mais direto no banco. Falta RAG e o runtime passar permissão delegada |
 | 22 RBAC | papéis, mapa e vínculos semeados, com paridade provada. Falta as rotas usarem `exigirPermissao` |
 | 20 Meta | entrada direta e CAPI **construídos e testados**; falta credencial para enviar de verdade |
-| 21, 23, 24 | não iniciadas |
+| 21 storage | serviço construído e testado; adapter S3/R2 espera credencial. Migrar os pontos de upload vem junto, porque trocá-los agora só muda um disco local por outro |
+| 23, 24 | não iniciadas |
 | 25 a 28 | dependem de 17 completa; 28 precisa de aprovação do Kauã |
 
 ## Último commit
 
-`377bc02` — fix(17): qualificar um lead não movia o card, oito ações, mesma causa
+`8609ff1` — refactor(21): arquivo sai do disco da máquina
 
 Branch de trabalho: `refactor/arquitetura-canonica`, criada a partir de `98940fe`.
 
@@ -94,6 +95,7 @@ Pacote vazio não afeta o build: `tsc` limpo e 111 testes passando com o workspa
 | `META_APP_SECRET` | validar a assinatura do webhook de Lead Ads | ausente |
 | `META_WEBHOOK_VERIFY_TOKEN` | handshake de assinatura do webhook | ausente |
 | Token do CAPI + pixel | devolver qualificação, ganho e pagamento para a Meta | ausente |
+| `STORAGE_ENDPOINT` + bucket + chaves | tirar os arquivos do disco da máquina | ausente |
 
 O código está pronto e falha com mensagem de **configuração ausente**, não de
 integração quebrada — tratar as duas como a mesma faz o alerta disparar em ambiente
@@ -292,7 +294,7 @@ canônico hoje faria o lead sumir da tela de pré-vendas no mesmo instante.
 
 ## Testes executados
 
-Estado atual: `tsc --noEmit` limpo, **build de produção passando**, **200 testes, 0
+Estado atual: `tsc --noEmit` limpo, **build de produção passando**, **207 testes, 0
 falhas**, mais **sete smokes** contra o banco real:
 
 - `smoke-ponte-canonica` — entrada externa chega inteira ao canônico e não duplica;

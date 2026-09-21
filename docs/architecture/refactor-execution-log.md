@@ -694,3 +694,32 @@ backfill preenche). Removida, e a limpeza passou a usar o id que a porta devolve
 contagens idênticas ao registrado.
 
 **Commits:** `b322c17`, `f0aa196`, `24d2bae`, `377bc02`.
+
+---
+
+## 2026-09-21 — Fase 21 · Arquivo sai do disco da máquina
+
+O SPEC diz a frase certa: "local personal-Mac storage is not production
+architecture". O problema não é elegância. `fs.writeFileSync` significa que o arquivo
+morre com a máquina, não existe para um segundo container, e não tem checksum,
+retenção nem verificação de permissão na hora de servir.
+
+`@onface/platform-storage` implementa metadado no Postgres e binário no object
+storage, com o provedor como adapter. As tabelas existiam vazias desde a 0058.
+
+O que a implementação anterior não tinha: limite de tamanho, lista de tipos
+**permitidos** (a de bloqueio está sempre uma extensão atrás), checksum com
+deduplicação, isolamento de tenant **no caminho do arquivo** e não só na consulta,
+travessia de caminho barrada, e remoção lógica que preserva a prova de que o arquivo
+existiu.
+
+Duas decisões que ficaram no código com o motivo: **produção sem object storage
+falha** em vez de cair no disco local, porque cair em silêncio é exatamente como o
+produto chegou aqui; e o disco local **devolve null em vez de URL assinada**, porque
+um adapter que fingisse assinar transformaria arquivo privado em público.
+
+**Pendência declarada:** o adapter S3/R2 precisa das credenciais de bucket. Migrar os
+pontos de upload existentes vem junto com elas, porque trocá-los agora só mudaria um
+disco local por outro.
+
+**Commit:** `8609ff1`.
