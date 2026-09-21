@@ -271,7 +271,7 @@ e o de dev é de 20/09. É produção andando, não diferença de receita.
 | Catálogo oficial | **resolvido em 21/09**: o CRM passou a sincronizar com o Stripe em vez de copiar planilha. 15 produtos, 55 preços, idempotente por id do Stripe. Sobram **4 preços sem apelido** que precisam de decisão comercial — dois avulsos Starter de R$ 89,90 e dois Pacote 500 Minutos (R$ 105,00 e R$ 99,90); sem nome, cada par aparece na tela com o mesmo rótulo e preços diferentes |
 | 455 propostas ligadas só a um lead | **81 aceitas**. Atribuí-las a uma oportunidade específica seria inventar de qual venda vieram |
 | 111 leads marcados `cliente` sem contrato ativo | a marca pode estar certa por um fato que o contrato não registra; o filtro passou a derivar em UNIÃO com a marca, então ninguém some da tela |
-| Dois pools de conexão no worker | 10 dos 31 módulos que ele importa abrem a conexão da aplicação além da própria (5 + 15 = 20 por processo, limite 100). Anterior ao refactor; consolidar é refatoração própria |
+| Dois pools de conexão no worker | **Risco menor do que estava escrito aqui.** Medido em 21/09 com app e api no ar: **3 conexões em uso** de um limite de 100. `postgres.js` abre sob demanda, e 15 e 5 são TETOS, não consumo. Continua valendo que dois pools no mesmo processo é um a mais do que precisa, e uma trava passou a impedir que um terceiro nasça sem registro. Quem for consolidar tem o caminho fácil: o worker não usa `db.query.<tabela>` em lugar nenhum, então é troca de import e não reescrita |
 
 ## 11. Documentação
 
