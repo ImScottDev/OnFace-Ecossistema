@@ -20,12 +20,12 @@ Fases 01 a 16 concluídas.
 | 20 Meta | **CAPI validada contra a Meta real** (8 eventos aceitos em Test Events). Inbound implementado e testável; ativação real bloqueada só pela permissão da Página |
 | 21 storage | **pontos de upload migrados** (anexo, avatar, formulário público): checksum, deduplicação, organização na chave, entrega independente de provedor. O adapter S3/R2 espera credencial, e só isso. A justificativa anterior para adiar ("só troca um disco local por outro") estava errada: o que mudou não foi o disco, foi metadado, dedup, isolamento e endereçamento |
 | 23 API pública | `/api/v1` com 9 recursos, token com escopo, uso registrado. **Criar/listar/revogar token existe como rota**, com teto de escopo testado e gerador de credencial corrigido. Falta só a TELA de gestão |
-| 24 paridade | **12 dos 14 cenários passam, 0 falham, 2 não verificáveis e nomeados** |
+| 24 paridade | **13 dos 14 cenários passam, 0 falham**. O único não verificável é o NEXO, por falta de credencial de provedor de modelo |
 | 25 a 28 | dependem de 17 completa; 28 precisa de aprovação do Kauã |
 
 ## Último commit
 
-`d0948f4` — refactor(32): o acervo de arquivos existia inteiro e ninguém chamava
+`dd0521c` — feat(24): cenário 8 deixa de ser "não verificável", com sessão real no smoke
 
 Branch de trabalho: `refactor/arquitetura-canonica`, criada a partir de `98940fe`.
 
@@ -443,8 +443,9 @@ canônico hoje faria o lead sumir da tela de pré-vendas no mesmo instante.
 
 ## Testes executados
 
-Estado atual: `tsc --noEmit` limpo, **build de produção passando**, **255 testes, 0
-falhas**, mais **catorze smokes** contra o banco real:
+Estado atual: `tsc --noEmit` limpo, **build de produção passando**, **256 testes, 0
+falhas**, e **17 de 17 smokes** verdes contra o banco real (conferidos por código de
+saída, não por texto: procurar "FALHA" na saída dava falso positivo em `falhados=0`):
 
 - `smoke-ponte-canonica` — entrada externa chega inteira ao canônico e não duplica;
 - `smoke-ganho-oportunidade` 5/5 — a política da oferta decide, PABX gera as duas
