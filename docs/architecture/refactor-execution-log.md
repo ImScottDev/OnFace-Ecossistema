@@ -2241,3 +2241,31 @@ de código que já estava certo.
 **Validação:** tsc limpo, **291 testes 0 falhas**, build exit 0, **29/29
 smokes**, rotas `/pipeline` e `/pipeline/<id>` conferidas contra build de
 produção com dado real.
+
+## 2026-09-21 — CP7: o Financeiro estava somando quatro coisas diferentes
+
+O módulo não faltava. Estava errado de um jeito que nenhum teste perguntava.
+
+A medição que abriu o caso foi simples: comparar as quatro métricas canônicas do
+catálogo (CP2) com o que as leituras do Financeiro devolviam. `mrr_atual` batia.
+`recebido` divergia em R$ 2.308,80. Puxando o fio:
+
+- **R$ 368.049,69 de PABX reportados como Callface AI.** O filtro de produto
+  olhava `contratos.produto`, coluna que é NULL em 263 dos 598 contratos ativos
+  e **nunca** vale `'pabx'`. A aba PABX mostrava zero em tudo; a aba AI mostrava
+  a empresa inteira. A quebra real mora em `servicos_canonicos.service_family`.
+- **R$ 2.308,80 de caixa que nunca entrou.** Dez faturas do Stripe marcadas
+  `paga`, sem pagamento nenhum e sem `amount_paid`/`charge` no `raw`. Somar o
+  valor de face de fatura paga não é caixa: é billing quitado.
+- **Denominador de inadimplência errado.** 7,3% na aba de Callface AI porque
+  dividia pelos 598 contratos da empresa. O número real do segmento é 16,4%.
+
+Nenhum desses casos de reconciliação foi resolvido por palpite. As 10 faturas
+continuam como estão, agora visíveis na tela em campo próprio.
+
+A quarta cópia das definições, em `api/financeiro/inadimplencia`, foi apagada em
+favor de `getFluxoMes`. Mesmo movimento do CP5 com a tag: consolidar antes de
+construir em cima.
+
+**Validação:** tsc limpo, **293 testes 0 falhas**, build exit 0, **29/29
+smokes**, as duas rotas conferidas nos três produtos contra build de produção.

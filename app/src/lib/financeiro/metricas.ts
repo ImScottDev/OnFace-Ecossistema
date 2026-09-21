@@ -24,6 +24,27 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
 // Filtro de org no padrão do módulo (dados de sync antigos têm organizacao_id NULL)
 const orgFilter = (col: string, orgId: string) => sql`(${sql.raw(col)} = ${orgId} OR ${sql.raw(col)} IS NULL)`;
 
+/** `service_family` do serviço canônico → produto da tela.
+ *
+ *  WHITE_LABEL fatura pelo Stripe junto com o Callface AI, então soma em `ai`.
+ *  Família nova que aparecer cai em `ai` por ser o caminho do Stripe — e o
+ *  smoke de paridade acusa se o total deixar de bater com o MRR canônico. */
+const PRODUTO_DA_FAMILIA = (familia: string | null) => (familia === "PABX" ? "pabx" : "ai");
+
+/** Soma as famílias canônicas nos dois produtos da tela. */
+function agruparPorProduto(
+  linhas: { familia: string | null; mrr: string; contratos: string }[],
+): { produto: string; mrr: number; contratos: number }[] {
+  const acc = new Map<string, { mrr: number; contratos: number }>();
+  for (const l of linhas) {
+    const k = PRODUTO_DA_FAMILIA(l.familia);
+    const a = acc.get(k) ?? { mrr: 0, contratos: 0 };
+    acc.set(k, { mrr: a.mrr + Number(l.mrr), contratos: a.contratos + Number(l.contratos) });
+  }
+  return [...acc].map(([produto, v]) => ({ produto, mrr: round2(v.mrr), contratos: v.contratos }))
+    .sort((a, b) => b.mrr - a.mrr);
+}
+
 export interface PeriodoFin {
   inicio: Date;
   fim: Date;
@@ -80,14 +101,19 @@ export async function getMrrAtual(orgId: string): Promise<MrrAtual> {
            WHERE ${orgFilter("c.organizacao_id", orgId)} AND c.status = 'ativo'
            ORDER BY COALESCE(c.stripe_subscription_id, c.id::text), c.created_at DESC
         ) unicos`),
-    db.execute<{ produto: string; mrr: string; contratos: string }>(sql`
-      SELECT COALESCE(produto, 'ai') AS produto, COALESCE(SUM(mrr), 0)::text AS mrr, COUNT(*)::text AS contratos
-        FROM (
-          SELECT DISTINCT ON (COALESCE(c.stripe_subscription_id, c.id::text)) c.produto, c.mrr
-            FROM contratos c
-           WHERE ${orgFilter("c.organizacao_id", orgId)} AND c.status = 'ativo'
-           ORDER BY COALESCE(c.stripe_subscription_id, c.id::text), c.created_at DESC
-        ) unicos
+    // Por produto vem da MESMA fonte canônica do total, e não de
+    // `contratos.produto`: essa coluna é NULL em 263 dos 598 contratos ativos e
+    // NUNCA vale 'pabx', então o `COALESCE(produto,'ai')` que estava aqui
+    // reportava os R$ 368.049,69 de PABX como receita de Callface AI e deixava
+    // a aba PABX zerada. A quebra real está em `service_family`.
+    db.execute<{ familia: string | null; mrr: string; contratos: string }>(sql`
+      SELECT service_family AS familia, COALESCE(SUM(current_recurring_value), 0)::text AS mrr,
+             COUNT(*)::text AS contratos
+        FROM servicos_canonicos
+       WHERE organizacao_id = ${orgId}
+         AND portfolio_included = true
+         AND revenue_nature = 'MRR'
+         AND commercial_lifecycle = 'ACTIVE'
        GROUP BY 1 ORDER BY 2 DESC`),
   ]);
 
@@ -95,11 +121,9 @@ export async function getMrrAtual(orgId: string): Promise<MrrAtual> {
     total: round2(Number(canonico[0]?.mrr ?? 0)),
     totalContratado: round2(Number(contratado[0]?.mrr ?? 0)),
     contratosAtivos: Number(contratado[0]?.contratos ?? 0),
-    porProduto: (porProduto as unknown as { produto: string; mrr: string; contratos: string }[]).map((r) => ({
-      produto: r.produto,
-      mrr: round2(Number(r.mrr)),
-      contratos: Number(r.contratos),
-    })),
+    porProduto: agruparPorProduto(
+      porProduto as unknown as { familia: string | null; mrr: string; contratos: string }[],
+    ),
   };
 }
 
@@ -499,23 +523,96 @@ export async function getClientesRisco(orgId: string): Promise<ClienteRisco[]> {
 // ─── Receita recebida/prevista (mantém paridade com a visão atual) ──────────
 
 export interface FluxoMes {
+  /** MRR — contrato recorrente ativo. Não é caixa nem faturamento. */
   receitaPrevista: number;
+  /** Quantas assinaturas ativas compõem esse MRR. Conta o MESMO que ele soma. */
+  assinaturasAtivas: number;
+  /** BILLING — valor EMITIDO no mês. Competência, não caixa. */
+  faturadoMes: number;
+  /** CASH — dinheiro que ENTROU, pela data do pagamento. */
   recebidoMes: number;
+  /** BILLING em aberto — emitido e ainda não quitado. */
   emAberto: number;
+  /** Fatura marcada paga sem pagamento que prove a entrada. Não entra no caixa. */
+  reconciliar: { faturas: number; valor: number };
 }
 
+
+/**
+ * Os quatro números do mês, SEPARADOS (Documento Mestre v0.13, Módulo 06).
+ *
+ * Booking, Billing, Cash e MRR respondem perguntas diferentes e não podem
+ * virar um número só. Até 21/09 esta função misturava três coisas:
+ *
+ *  1. `receitaPrevista` somava `contratos.mrr` — a base que o cabeçalho deste
+ *     arquivo já declarava NÃO canônica desde 14/09 (inflada por contrato
+ *     duplicado pela mesma assinatura Stripe).
+ *  2. Pior: o filtro de produto era `COALESCE(c.produto,'ai')`, e **nenhum**
+ *     contrato tem `produto = 'pabx'` (263 dos 598 ativos têm produto NULL).
+ *     Resultado medido: a aba PABX mostrava zero em tudo e a aba Callface AI
+ *     mostrava R$ 428.122,03 — os R$ 368.049,69 de MRR de PABX reportados como
+ *     receita de Callface AI. O arquivo prometia "receita SEMPRE segmentável
+ *     por produto" e entregava o oposto.
+ *  3. `recebidoMes` somava o valor de face das faturas com `status = 'paga'`.
+ *     Isso é billing quitado, não caixa: 10 faturas do Stripe estavam marcadas
+ *     pagas sem NENHUM pagamento registrado, e os R$ 2.308,80 delas entravam
+ *     como dinheiro recebido. Agora saem para `reconciliar`, onde dá para ver.
+ *
+ * A segmentação passou a sair de `servicos_canonicos.service_family`, que é
+ * onde o produto realmente está gravado, e não de uma coluna vazia.
+ */
 export async function getFluxoMes(orgId: string, produto?: string): Promise<FluxoMes> {
-  const prodFat = produto === "pabx" ? sql` AND f.origem = 'pabx'` : produto === "ai" ? sql` AND f.origem = 'stripe'` : sql``;
-  const prodCtr = produto ? sql` AND COALESCE(c.produto, 'ai') = ${produto}` : sql``;
-  const [row] = (await db.execute(sql`
-    SELECT
-      (SELECT COALESCE(sum(c.mrr), 0) FROM contratos c WHERE ${orgFilter("c.organizacao_id", orgId)} AND c.status = 'ativo'${prodCtr})::float AS prevista,
-      (SELECT COALESCE(sum(f.valor), 0) FROM faturas f WHERE ${orgFilter("f.organizacao_id", orgId)} AND f.status = 'paga' AND f.paga_em >= date_trunc('month', now())${prodFat})::float AS recebido,
-      (SELECT COALESCE(sum(f.valor), 0) FROM faturas f WHERE ${orgFilter("f.organizacao_id", orgId)} AND f.status IN ('aberta', 'uncollectible')${prodFat})::float AS aberto
-  `)) as unknown as { prevista: number; recebido: number; aberto: number }[];
+  // Faturas já sabem o produto pela origem; pagamento herda o da fatura.
+  const prodFat = produto === "pabx" ? sql` AND f.origem = 'pabx'` : produto === "ai" ? sql` AND f.origem <> 'pabx'` : sql``;
+
+  const [mrrPorFamilia, row] = await Promise.all([
+    // MRR pela FONTE CANÔNICA, a mesma de `getMrrAtual`. Somar contrato aqui
+    // reabriria a divergência que o refactor de 14/09 fechou.
+    db.execute<{ familia: string | null; mrr: string; n: string }>(sql`
+      SELECT service_family AS familia, COALESCE(SUM(current_recurring_value), 0)::text AS mrr,
+             COUNT(*)::text AS n
+        FROM servicos_canonicos
+       WHERE organizacao_id = ${orgId}
+         AND portfolio_included = true
+         AND revenue_nature = 'MRR'
+         AND commercial_lifecycle = 'ACTIVE'
+       GROUP BY 1`),
+    db.execute<{ faturado: string; recebido: string; aberto: string; rec_n: string; rec_valor: string }>(sql`
+      SELECT
+        (SELECT COALESCE(sum(f.valor), 0) FROM faturas f
+          WHERE ${orgFilter("f.organizacao_id", orgId)}
+            AND COALESCE(f.emitida_em, f.created_at) >= date_trunc('month', now())${prodFat})::text AS faturado,
+        -- CAIXA: o pagamento é quem prova que o dinheiro entrou.
+        (SELECT COALESCE(sum(pg.amount), 0) FROM pagamentos pg
+           JOIN faturas f ON f.id = pg.fatura_id
+          WHERE ${orgFilter("f.organizacao_id", orgId)}
+            AND upper(pg.status) IN ('PAGO','PAID','SUCCEEDED')
+            AND pg.paid_at >= date_trunc('month', now())${prodFat})::text AS recebido,
+        (SELECT COALESCE(sum(f.valor), 0) FROM faturas f
+          WHERE ${orgFilter("f.organizacao_id", orgId)}
+            AND f.status IN ('aberta', 'uncollectible')${prodFat})::text AS aberto,
+        (SELECT count(*) FROM faturas f
+          WHERE ${orgFilter("f.organizacao_id", orgId)}
+            AND f.status = 'paga' AND f.paga_em >= date_trunc('month', now())${prodFat}
+            AND NOT EXISTS (SELECT 1 FROM pagamentos pg WHERE pg.fatura_id = f.id))::text AS rec_n,
+        (SELECT COALESCE(sum(f.valor), 0) FROM faturas f
+          WHERE ${orgFilter("f.organizacao_id", orgId)}
+            AND f.status = 'paga' AND f.paga_em >= date_trunc('month', now())${prodFat}
+            AND NOT EXISTS (SELECT 1 FROM pagamentos pg WHERE pg.fatura_id = f.id))::text AS rec_valor`),
+  ]);
+
+  const doSegmento = mrrPorFamilia.filter((r) => !produto || PRODUTO_DA_FAMILIA(r.familia) === produto);
+  const mrr = doSegmento.reduce((soma, r) => soma + Number(r.mrr), 0);
+
+  const r = row[0];
   return {
-    receitaPrevista: round2(row?.prevista || 0),
-    recebidoMes: round2(row?.recebido || 0),
-    emAberto: round2(row?.aberto || 0),
+    receitaPrevista: round2(mrr),
+    // Contar contrato aqui daria 598 no total e 0 em PABX — é a mesma coluna
+    // vazia que quebrava o MRR. A contagem acompanha o número que ela explica.
+    assinaturasAtivas: doSegmento.reduce((n, r) => n + Number(r.n), 0),
+    faturadoMes: round2(Number(r?.faturado ?? 0)),
+    recebidoMes: round2(Number(r?.recebido ?? 0)),
+    emAberto: round2(Number(r?.aberto ?? 0)),
+    reconciliar: { faturas: Number(r?.rec_n ?? 0), valor: round2(Number(r?.rec_valor ?? 0)) },
   };
 }

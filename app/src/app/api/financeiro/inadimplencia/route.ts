@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
 import { getTenantContext, unauthorizedResponse, forbiddenResponse } from "@/lib/auth/tenant";
 import { temPermissao } from "@/lib/auth/permissoes";
+import { getFluxoMes } from "@/lib/financeiro/metricas";
 
 /**
  * GET /api/financeiro/inadimplencia?produto=todos|pabx|ai
@@ -33,6 +34,9 @@ export async function GET(request: NextRequest) {
   const prodFat = produto === "pabx" ? sql` AND f.origem = 'pabx'`
     : produto === "ai" ? sql` AND f.origem = 'stripe'` : sql``;
 
+  // MRR e caixa pela porta única; o resto dos KPIs é específico desta tela.
+  const fluxo = await getFluxoMes(orgId, produto === "todos" ? undefined : produto);
+
   // KPIs (faturas = fonte de atraso; contratos = base ativa)
   const kpis = (await db.execute(sql`
     SELECT
@@ -42,12 +46,10 @@ export async function GET(request: NextRequest) {
       (SELECT COALESCE(sum(f.valor), 0) FROM faturas f WHERE (f.organizacao_id = ${orgId} OR f.organizacao_id IS NULL) AND f.status IN ('aberta', 'uncollectible') AND f.emitida_em < date_trunc('month', now())${prodFat})::float AS nao_cobrado,
       (SELECT count(DISTINCT f.lead_id) FROM faturas f WHERE (f.organizacao_id = ${orgId} OR f.organizacao_id IS NULL) AND f.status IN ('aberta', 'uncollectible') AND f.emitida_em >= date_trunc('month', now())${prodFat})::int AS clientes_atraso,
       (SELECT count(*) FROM contratos c WHERE (c.organizacao_id = ${orgId} OR c.organizacao_id IS NULL) AND c.status = 'churned' AND c.finalizado_at >= date_trunc('month', now())${prodCtr})::int AS churns_mes,
-      (SELECT COALESCE(sum(c.mrr), 0) FROM contratos c WHERE (c.organizacao_id = ${orgId} OR c.organizacao_id IS NULL) AND c.status = 'ativo'${prodCtr})::float AS receita_prevista,
-      (SELECT COALESCE(sum(f.valor), 0) FROM faturas f WHERE (f.organizacao_id = ${orgId} OR f.organizacao_id IS NULL) AND f.status = 'paga' AND f.paga_em >= date_trunc('month', now())${prodFat})::float AS recebido_mes,
       (SELECT COALESCE(sum(f.valor), 0) FROM faturas f WHERE (f.organizacao_id = ${orgId} OR f.organizacao_id IS NULL) AND f.status = 'emitida' AND f.competencia >= (date_trunc('month', now()) - interval '1 month')${prodFat})::float AS em_aberto_wevy
   `)) as unknown as {
     ativos: number; total: number; valor_atraso: number; nao_cobrado: number; clientes_atraso: number; churns_mes: number;
-    receita_prevista: number; recebido_mes: number; em_aberto_wevy: number;
+    em_aberto_wevy: number;
   }[];
 
   // UMA LINHA POR CONTRATO
@@ -129,15 +131,26 @@ export async function GET(request: NextRequest) {
   const k = kpis[0];
   return NextResponse.json({
     kpis: {
-      contratosAtivos: k?.ativos ?? 0,
+      contratosAtivos: fluxo.assinaturasAtivas,
       contratosTotal: k?.total ?? 0,
       valorEmAtraso: k?.valor_atraso ?? 0,
       naoCobradoHistorico: k?.nao_cobrado ?? 0,
       clientesEmAtraso: k?.clientes_atraso ?? 0,
-      taxaInadimplencia: k?.ativos ? Math.round(((k.clientes_atraso as number) / (k.ativos as number)) * 1000) / 10 : 0,
+      // Denominador precisa ser do MESMO segmento que o numerador: com a
+      // contagem de contratos, a aba PABX dividia por zero e a aba AI
+      // dividia pelos 598 contratos da empresa inteira.
+      taxaInadimplencia: fluxo.assinaturasAtivas
+        ? Math.round(((k.clientes_atraso as number) / fluxo.assinaturasAtivas) * 1000) / 10
+        : 0,
       churnsMes: k?.churns_mes ?? 0,
-      receitaPrevista: k?.receita_prevista ?? 0,
-      recebidoMes: k?.recebido_mes ?? 0,
+      // MRR e caixa vêm da porta única (`getFluxoMes`). Até 21/09 estavam
+      // reescritos aqui: `contratos.mrr` (base não canônica, e com o filtro de
+      // produto que nunca casa 'pabx') e valor de face de fatura paga (que
+      // conta como caixa 10 faturas sem pagamento nenhum).
+      receitaPrevista: fluxo.receitaPrevista,
+      recebidoMes: fluxo.recebidoMes,
+      faturadoMes: fluxo.faturadoMes,
+      reconciliar: fluxo.reconciliar,
       emAbertoWevy: k?.em_aberto_wevy ?? 0,
     },
     contratos: linhas,

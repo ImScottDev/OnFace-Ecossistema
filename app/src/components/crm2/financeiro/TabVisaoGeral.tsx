@@ -215,13 +215,18 @@ export function TabVisaoGeral() {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
+        {/* Os quatro números são DIFERENTES e a tabela os mostra separados
+            (v0.13, Módulo 06). MRR é contrato recorrente ativo; Faturado é o
+            que foi emitido no mês; Recebido é dinheiro que entrou. Juntar
+            qualquer par deles responde a pergunta errada. */}
         <FinPainel titulo="Fluxo por linha de receita" dica="mês corrente" corpoClassName="overflow-x-auto">
-          <Cf2Table className="min-w-[420px]">
+          <Cf2Table className="min-w-[520px]">
             <Cf2TableHeader>
               <Cf2TableRow>
                 <Cf2TableHead>Linha</Cf2TableHead>
-                <Cf2TableHead className="text-right">Prevista</Cf2TableHead>
-                <Cf2TableHead className="text-right">Recebida</Cf2TableHead>
+                <Cf2TableHead className="text-right">MRR ativo</Cf2TableHead>
+                <Cf2TableHead className="text-right">Faturado</Cf2TableHead>
+                <Cf2TableHead className="text-right">Recebido</Cf2TableHead>
                 <Cf2TableHead className="text-right">Em aberto</Cf2TableHead>
               </Cf2TableRow>
             </Cf2TableHeader>
@@ -235,6 +240,9 @@ export function TabVisaoGeral() {
                     </Cf2TableCell>
                     <Cf2TableCell className="text-right text-[12.5px] tabular-nums whitespace-nowrap" style={{ color: "var(--cf2-text-secondary)" }}>
                       {fmt(f.receitaPrevista)}
+                    </Cf2TableCell>
+                    <Cf2TableCell className="text-right text-[12.5px] tabular-nums whitespace-nowrap" style={{ color: "var(--cf2-text-secondary)" }}>
+                      {fmt(f.faturadoMes)}
                     </Cf2TableCell>
                     <Cf2TableCell className="text-right text-[12.5px] tabular-nums whitespace-nowrap font-medium" style={{ color: "var(--cf2-success-text)" }}>
                       {fmt(f.recebidoMes)}
@@ -250,6 +258,18 @@ export function TabVisaoGeral() {
               })}
             </Cf2TableBody>
           </Cf2Table>
+          {/* Fatura marcada paga sem pagamento não é caixa. Aparece aqui em vez
+              de entrar no "Recebido" e inflar o mês em silêncio. */}
+          {(["ai", "pabx"] as const).some((l) => (data.fluxo[l]?.reconciliar?.faturas ?? 0) > 0) ? (
+            <p className="mt-3 text-[11.5px]" style={{ color: "var(--cf2-text-tertiary)" }}>
+              {(["ai", "pabx"] as const)
+                .filter((l) => (data.fluxo[l]?.reconciliar?.faturas ?? 0) > 0)
+                .map((l) => `${data.fluxo[l].reconciliar.faturas} fatura(s) de ${l === "ai" ? "Callface AI" : "PABX"} (${fmt(data.fluxo[l].reconciliar.valor)})`)
+                .join(" e ")}{" "}
+              estão marcadas como pagas sem pagamento registrado. Não entram no
+              recebido: é caso de reconciliação.
+            </p>
+          ) : null}
         </FinPainel>
 
         <FinPainel

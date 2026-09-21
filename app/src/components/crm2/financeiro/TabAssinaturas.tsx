@@ -60,18 +60,23 @@ export function TabAssinaturas({
 
   return (
     <div className="flex flex-col gap-4">
+      {/* MRR ativo, não "receita prevista": são coisas diferentes, e o
+          Documento Mestre (§06) proíbe encostar uma na outra. */}
       {pulso && (
       <FinPulso
-        label="Receita prevista no mês"
+        label="MRR ativo"
         valor={isLoading ? "…" : fmt(k?.receitaPrevista)}
         sub={isLoading
           ? "Carregando a carteira de assinaturas."
           : `${k?.contratosAtivos ?? 0} assinaturas ativas de ${k?.contratosTotal ?? "—"} contratos registrados.`}
       >
+        {/* Caixa sobre FATURADO é taxa de cobrança e quer dizer alguma coisa.
+            Caixa sobre MRR, que é o que estava aqui, mistura dois conceitos e
+            dá um percentual que não responde pergunta nenhuma. */}
         <FinStat
           label="Recebido no mês" valor={isLoading ? "…" : fmt(k?.recebidoMes)} tom="ok"
-          sub={!isLoading && Number(k?.receitaPrevista) > 0
-            ? `${Math.round((Number(k?.recebidoMes) / Number(k.receitaPrevista)) * 100)}% do previsto`
+          sub={!isLoading && Number(k?.faturadoMes) > 0
+            ? `${Math.round((Number(k?.recebidoMes) / Number(k.faturadoMes)) * 100)}% do faturado no mês`
             : undefined}
         />
         <FinStat

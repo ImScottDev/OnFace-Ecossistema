@@ -1070,6 +1070,60 @@ smokes**. `/pipeline` devolve as seis colunas com duas colapsadas e
 conferido contra build de produção, porque o servidor em pé estava servindo
 chunk antigo e a primeira medição deu falso negativo.
 
+### CP7 — Financeiro: Booking, Billing, Cash e MRR deixaram de ser um número só
+
+O módulo Financeiro já era grande — camada de métricas, seis abas, rotas de API,
+importador PABX. O gap não era ausência: era **conflação**, e ela estava
+medida errada em três lugares.
+
+**1. A aba PABX mostrava zero e a aba Callface AI mostrava a empresa inteira.**
+O filtro de produto era `COALESCE(c.produto,'ai')` e **nenhum** dos 598
+contratos ativos tem `produto = 'pabx'` (263 têm produto NULL). Resultado: PABX
+com R$ 0,00 em tudo, e os **R$ 368.049,69** de MRR de PABX reportados como
+receita de Callface AI. O cabeçalho do arquivo prometia "receita SEMPRE
+segmentável por produto" e entregava o oposto.
+
+A quebra real está em `servicos_canonicos.service_family` — PABX 182 serviços /
+R$ 368.049,69, CALLFACE_AI 142 / R$ 53.505,10, WHITE_LABEL 4 / R$ 4.064,60.
+A segmentação passou a sair daí.
+
+**2. "Recebido" somava valor de face de fatura, não pagamento.** Dez faturas do
+Stripe estavam marcadas `paga` sem **nenhum** pagamento registrado (nem
+`amount_paid` nem `charge` no `raw`), e os **R$ 2.308,80** delas entravam como
+caixa. Agora saem para `reconciliar`, visível na tela: fatura marcada paga sem
+pagamento é caso de reconciliação, não dinheiro que entrou.
+
+**3. `receitaPrevista` somava `contratos.mrr`**, a base que o próprio arquivo
+declarava não canônica desde 14/09 — R$ 428.122,03 contra os R$ 425.619,39
+canônicos.
+
+Além disso a contagem que acompanha o MRR contava contrato: a aba dizia
+"R$ 57.569,70 de **598** assinaturas ativas". Passou a contar o que o número
+soma (146), e a taxa de inadimplência de Callface AI passou de 7,3% (dividida
+pelos 598 da empresa) para os **16,4%** reais do segmento.
+
+Uma quarta cópia das mesmas duas definições vivia em
+`api/financeiro/inadimplencia/route.ts`. Foi removida: a rota passou a chamar
+`getFluxoMes`.
+
+| | MRR | Faturado | Recebido | Reconciliar |
+|---|---|---|---|---|
+| Callface AI | 57.569,70 | 41.394,71 | 26.282,21 | 10 / 2.308,80 |
+| PABX | 368.049,69 | 0 | 0 | 0 |
+| **total** | **425.619,39** | 41.394,71 | 26.282,21 | 10 / 2.308,80 |
+
+PABX zerado em faturado e caixa é **honesto**: a planilha mensal da Holding
+ainda não foi importada. Antes o zero vinha de filtro quebrado; agora vem de
+dado ausente, e é possível distinguir os dois.
+
+Dois testes travam o que foi consertado: os segmentos precisam somar o MRR
+canônico (com PABX > 0, que é o sintoma), e `recebidoMes`/`faturadoMes` precisam
+ser o mesmo número das métricas `recebido`/`faturado` do catálogo.
+
+**Validação:** tsc limpo, **293 testes 0 falhas**, build exit 0, **29/29
+smokes**, `/api/financeiro/metricas` e `/api/financeiro/inadimplencia` (nos três
+produtos) conferidas contra build de produção com dado real.
+
 ### Auditoria de CS Health (histórico da decisão)
 
 Menor do que o gap analysis inicial dizia:
