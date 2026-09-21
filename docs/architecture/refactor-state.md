@@ -7,13 +7,13 @@
 
 ## Fase atual
 
-**02 — Criar arquitetura física do repositório** (próxima)
+**04 — Migrations de expansão do modelo alvo** (próxima)
 
-Fase 01 concluída.
+Fases 01, 02 e 03 concluídas.
 
 ## Último commit
 
-`3a47d94` — refactor(01): reconcilia baseline Drizzle <-> PostgreSQL
+`9c79729` — refactor(02,03): arquitetura fisica do repositorio e fronteiras de pacote
 
 Branch de trabalho: `refactor/arquitetura-canonica`, criada a partir de `98940fe`.
 
@@ -41,6 +41,21 @@ Branch de trabalho: `refactor/arquitetura-canonica`, criada a partir de `98940fe
 As duas tabelas fora do Drizzle são `_migracoes_aplicadas` e `_carga_contagem_antes`,
 ambas de controle interno e deliberadamente não declaradas.
 
+### Resultado das fases 02 e 03
+
+- 38 pacotes criados com `package.json` e `index.ts` como única porta de entrada:
+  14 de domínio (cada um com `commands`, `queries`, `policies`, `repositories`,
+  `events`, `types`, `errors`), 10 de integração, 9 de platform, 5 de shared;
+- `apps/{web,api,worker}` preparados;
+- workspace pnpm movido para a raiz, listando `app`, `apps/*` e os quatro grupos de
+  `packages/`. O pacote `app` continua sendo a aplicação que roda;
+- **7 testes de arquitetura** (SPEC §35 e §50.1) barrando: domínio importando SDK de
+  provedor, framework de entrega, implementação de integração ou cliente de banco;
+  integração importando aplicação; ferramenta de IA tocando banco; pacote sem porta
+  de entrada. A barreira entra antes do código.
+
+Pacote vazio não afeta o build: `tsc` limpo e 111 testes passando com o workspace novo.
+
 ## Migrations aplicadas neste refactor
 
 | # | Nome | O que faz | Reversível |
@@ -66,7 +81,14 @@ Nenhum. Inventário de partida em `database-as-is/04-escritores.md`.
 
 ## Testes executados
 
-Após a fase 01: `tsc --noEmit` limpo (0 erros), 104 testes passando, 0 falhas.
+Após a fase 03: `tsc --noEmit` limpo (0 erros), **111 testes passando**, 0 falhas
+(104 herdados + 7 novos de arquitetura).
+
+## Auditoria independente
+
+Codex rodando sobre o checkpoint de banco/modelagem (fase 01):
+`task-muao0p8s-9qo76s`. Findings serão verificados um a um, classificados como
+válidos ou falso positivo, e registrados aqui antes de qualquer correção.
 
 ## Bugs reais corrigidos durante a fase 01
 

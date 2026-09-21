@@ -68,3 +68,34 @@ Quebrou 25 declarações, foi detectado pelo `tsc` e revertido antes de qualquer
 **Dados não resolvidos:** nenhum.
 
 **Commit:** `3a47d94`
+
+---
+
+## 2026-09-21 — Fases 02 e 03 · Arquitetura física e fronteiras — CONCLUÍDAS
+
+**Mudanças:** estrutura de `packages/` e `apps/` criada conforme SPEC §34; workspace
+pnpm movido para a raiz; 7 testes de arquitetura adicionados.
+
+**Pacotes:** 38 (14 domínio, 10 integrações, 9 platform, 5 shared), cada um com
+`package.json` e `index.ts`. Os diretórios de domínio seguem a anatomia do SPEC §36.
+
+**Decisão de método registrada:** os pacotes nascem vazios e o código migra domínio a
+domínio, nas fases seguintes. O pacote `app` continua sendo a aplicação que roda. Isso
+evita um big bang de 781 arquivos e mantém o sistema verificável a cada passo, que é o
+que o SPEC pede ao exigir checkpoint por bloco.
+
+**Testes de arquitetura (SPEC §35, §50.1):** domínio não importa SDK de provedor,
+framework de entrega, implementação de integração nem cliente de banco; integração não
+importa aplicação; ferramenta de IA não toca banco; todo pacote tem porta de entrada.
+Passam trivialmente enquanto os pacotes estão vazios, e é de propósito: a regra precisa
+valer antes do código chegar.
+
+**Percalço registrado:** a primeira criação da árvore usou `for x in $VAR` em zsh, que
+não faz word splitting como bash, e gerou um diretório único com o nome inteiro. Foi
+detectado na conferência, removido e refeito em Python antes de qualquer commit.
+
+**Migrations:** nenhuma nesta fase.
+
+**Testes:** `tsc` 0 erros; 111 testes, 0 falhas.
+
+**Commit:** `9c79729`
