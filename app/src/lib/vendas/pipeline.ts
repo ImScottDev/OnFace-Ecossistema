@@ -429,8 +429,22 @@ async function aplicarEtapa(
   await espelharNoDominioV2([op.id]);
 }
 
-/** Bloco 02 §13: oportunidade sem próxima ação é sinal, e o sinal precisa de
- *  um lugar onde morar. */
+/**
+ * Próxima ação É uma tarefa (SPEC §23), e não um campo do negócio.
+ *
+ * Antes isto escrevia `negocios.proxima_acao`, uma coluna que a base inteira
+ * tem VAZIA: 0 de 1.562. O efeito visível era o selo "Sem próxima ação"
+ * aparecendo em todo card aberto do pipeline, inclusive nos que tinham tarefa
+ * marcada — porque o selo olhava a coluna e a fila do vendedor olhava
+ * `tarefas`. Dois lugares para o mesmo compromisso, e nenhum deles completo.
+ *
+ * A tarefa é a canônica. `chave_idempotencia` garante UMA por oportunidade:
+ * redefinir a próxima ação substitui, não empilha. `origem = 'MANUAL'` é o
+ * mesmo que a tela de CS já usa para a próxima ação dela.
+ *
+ * A coluna legada continua sendo escrita enquanto houver leitor — ponte, não
+ * segunda verdade: quem decide é a tarefa.
+ */
 export async function definirProximaAcao(params: {
   organizacaoId: string;
   negocioId: string;
@@ -440,11 +454,37 @@ export async function definirProximaAcao(params: {
   ator: Ator;
 }): Promise<void> {
   const op = await carregarOportunidade(params.organizacaoId, params.negocioId);
+  const dono = params.responsavelId ?? op.responsavel_id ?? null;
+  const chave = `proxima-acao:${params.negocioId}`;
+
+  if (params.descricao?.trim()) {
+    await db.execute(sql`
+      INSERT INTO tarefas (organizacao_id, lead_id, negocio_id, usuario_id, titulo,
+                           tipo, prioridade, origem, status, vence_em, data_vencimento,
+                           chave_idempotencia)
+      VALUES (${params.organizacaoId}::uuid, ${op.lead_id ?? null}::uuid, ${params.negocioId}::uuid,
+              ${dono}::uuid, ${params.descricao.trim()}, 'follow_up', 'media', 'MANUAL', 'a_fazer',
+              ${params.quando ?? null}::timestamptz, ${params.quando ?? null}::timestamptz,
+              ${chave})
+      ON CONFLICT (organizacao_id, chave_idempotencia) WHERE chave_idempotencia IS NOT NULL
+      DO UPDATE SET titulo = EXCLUDED.titulo, usuario_id = EXCLUDED.usuario_id,
+                    vence_em = EXCLUDED.vence_em, data_vencimento = EXCLUDED.data_vencimento,
+                    status = 'a_fazer', concluida = false, concluida_em = NULL`);
+  } else {
+    // Limpar a próxima ação não apaga a tarefa: declina, que é o que preserva
+    // o rastro de que alguém combinou algo e depois desmarcou.
+    await db.execute(sql`
+      UPDATE tarefas SET status = 'declinada', concluida = false
+       WHERE organizacao_id = ${params.organizacaoId}::uuid AND chave_idempotencia = ${chave}
+         AND status NOT IN ('concluida', 'declinada')`);
+  }
+
+  // Ponte com o legado: escrita mantida enquanto houver leitor da coluna.
   await db.execute(sql`
     UPDATE negocios SET
       proxima_acao = ${params.descricao},
       proxima_acao_em = ${params.quando ?? null}::timestamptz,
-      proxima_acao_responsavel_id = ${params.responsavelId ?? op.responsavel_id ?? null}::uuid,
+      proxima_acao_responsavel_id = ${dono}::uuid,
       updated_at = now()
      WHERE id = ${params.negocioId}::uuid
   `);

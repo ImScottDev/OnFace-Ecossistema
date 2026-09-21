@@ -327,14 +327,34 @@ export async function boardPipeline(organizacaoId: string, filtros: FiltrosPipel
       trial_encerrado_em: string | null; motivo_estagnacao: string | null; lead_id: string | null;
       propostas: number; proposta_aberta: number; proposta_aceita: number;
     }>(sql`
-      SELECT n.id::text, n.proxima_acao, n.proxima_acao_em::text, n.etapa_desde::text,
-             n.no_show_em::text, n.trial_iniciado_em::text, n.trial_encerrado_em::text,
+      SELECT n.id::text,
+             -- Próxima ação É tarefa (SPEC §23). A coluna legada fica como
+             -- fallback, e não como segunda verdade: quem manda é a tarefa.
+             COALESCE(t.titulo, n.proxima_acao) AS proxima_acao,
+             COALESCE(t.vence_em, n.proxima_acao_em)::text AS proxima_acao_em,
+             n.etapa_desde::text,
+             -- No-show é estado da reunião (SPEC §23). A coluna legada fica
+             -- como fallback dos 4 casos históricos que a 0082 não moveu sem
+             -- palpite; quem manda é a reunião.
+             COALESCE(r.faltou_em, n.no_show_em)::text AS no_show_em,
+             n.trial_iniciado_em::text, n.trial_encerrado_em::text,
              n.motivo_estagnacao, n.lead_id::text,
              (SELECT count(*)::int FROM propostas p WHERE p.negocio_id = n.id) AS propostas,
              (SELECT count(*)::int FROM propostas p WHERE p.negocio_id = n.id
                AND p.status IN ('enviada','visualizada','ajuste_solicitado')) AS proposta_aberta,
              (SELECT count(*)::int FROM propostas p WHERE p.negocio_id = n.id AND p.status = 'aceita') AS proposta_aceita
-        FROM negocios n WHERE n.id = ANY(${literalDeArray(negocioIds)}::uuid[])`);
+        FROM negocios n
+        LEFT JOIN LATERAL (
+          SELECT titulo, COALESCE(vence_em, data_vencimento) AS vence_em
+            FROM tarefas
+           WHERE negocio_id = n.id AND status IN ('a_fazer','em_andamento','aguardando')
+           ORDER BY COALESCE(vence_em, data_vencimento) NULLS LAST LIMIT 1
+        ) t ON TRUE
+        LEFT JOIN LATERAL (
+          SELECT max(data) AS faltou_em FROM reunioes
+           WHERE negocio_id = n.id AND status = 'no_show'
+        ) r ON TRUE
+       WHERE n.id = ANY(${literalDeArray(negocioIds)}::uuid[])`);
     for (const l of linhas) legado.set(l.id, l);
   }
 
@@ -1215,6 +1235,19 @@ export async function detalheOportunidade(organizacaoId: string, negocioId: stri
       FROM propostas WHERE negocio_id = ${negocioId}::uuid ORDER BY versao DESC, created_at DESC
   `);
 
+  // Próxima ação É tarefa (SPEC §23). A coluna `negocios.proxima_acao` está
+  // vazia em 1.562 de 1.562 registros da base: ler dela fazia o selo "Sem
+  // próxima ação" aparecer em todo card aberto, inclusive nos que tinham
+  // compromisso marcado. A coluna segue como fallback para o que for escrito
+  // por caminho ainda não migrado.
+  const [tarefaAberta] = await db.execute<{ titulo: string; vence_em: string | null }>(sql`
+    SELECT titulo, COALESCE(vence_em, data_vencimento)::text AS vence_em
+      FROM tarefas
+     WHERE negocio_id = ${negocioId}::uuid
+       AND status IN ('a_fazer','em_andamento','aguardando')
+     ORDER BY COALESCE(vence_em, data_vencimento) NULLS LAST LIMIT 1
+  `);
+
   const reunioes = await db.execute<{ id: string; titulo: string; data: string; status: string }>(sql`
     SELECT id::text, titulo, data::text, status FROM reunioes
      WHERE negocio_id = ${negocioId}::uuid ORDER BY data DESC LIMIT 10
@@ -1235,12 +1268,22 @@ export async function detalheOportunidade(organizacaoId: string, negocioId: stri
      WHERE negocio_id = ${negocioId}::uuid ORDER BY verificado_em DESC
   `);
 
+  // No-show é estado da reunião (SPEC §23). A coluna `negocios.no_show_em` é
+  // fallback: cobre os 4 casos históricos que a 0082 não pôde mover sem
+  // palpite (negócio sem reunião, negócio com duas, reunião já cancelada).
+  const faltas = reunioes.filter((r) => r.status === "no_show");
+  const noShowEm = faltas[0]?.data ?? n.no_show_em;
+  const noShowContagem = faltas.length || n.no_show_contagem;
+
   const etapa = (n.etapa ?? "entrada") as EtapaPipeline;
   const badges: string[] = [];
-  if (n.no_show_em) badges.push("No-show");
+  if (noShowEm) badges.push("No-show");
   if (n.trial_iniciado_em && !n.trial_encerrado_em) badges.push("Trial ativo");
   if (propostas.some((p) => p.status === "aceita")) badges.push("Proposta aceita");
-  if (!n.proxima_acao && etapa !== "ganho" && etapa !== "perdido") badges.push("Sem próxima ação");
+  const proximaAcao = tarefaAberta
+    ? { descricao: tarefaAberta.titulo, quando: tarefaAberta.vence_em }
+    : { descricao: n.proxima_acao, quando: n.proxima_acao_em };
+  if (!proximaAcao.descricao && etapa !== "ganho" && etapa !== "perdido") badges.push("Sem próxima ação");
 
   return {
     id: n.id, titulo: n.titulo, etapa,
@@ -1261,11 +1304,11 @@ export async function detalheOportunidade(organizacaoId: string, negocioId: stri
     } : null,
     leadId: n.lead_id,
     qualificacaoHerdada: n.qualificacao,
-    proximaAcao: { descricao: n.proxima_acao, quando: n.proxima_acao_em },
+    proximaAcao,
     badges,
     motivoEstagnacao: n.motivo_estagnacao,
     motivoPerda: n.motivo_perda,
-    noShow: { em: n.no_show_em, contagem: n.no_show_contagem },
+    noShow: { em: noShowEm, contagem: noShowContagem },
     trial: { iniciadoEm: n.trial_iniciado_em, encerradoEm: n.trial_encerrado_em },
     propostas: propostas.map((p) => ({
       id: p.id, numero: p.numero, versao: p.versao, status: p.status,

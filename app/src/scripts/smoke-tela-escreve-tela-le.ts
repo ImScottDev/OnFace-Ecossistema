@@ -17,6 +17,8 @@ import { criarLead, moverEtapa, nutrir, qualificar } from "@/lib/vendas/pre-vend
 import { criarOportunidadeDoLead, definirProximaAcao } from "@/lib/vendas/pipeline";
 import { boardPreVendas, detalheLead, detalheOportunidade } from "@/lib/vendas/consultas";
 import { atorHumano } from "@/lib/vendas/dominio";
+import { negociosRoutes } from "@/api-server/routes/negocios";
+import { sessaoDeSmoke } from "./_sessao-de-smoke";
 
 const ok = (cond: unknown, msg: string) => {
   console.log(`${cond ? "  ok    " : "  FALHA "}${msg}`);
@@ -37,6 +39,7 @@ async function limpar() {
   const dasMinhas = sql`(SELECT id FROM pessoas WHERE nome LIKE ${PREFIXO})`;
   const empresasMinhas = sql`(SELECT id FROM empresas WHERE nome LIKE ${PREFIXO})`;
   for (const q of [
+    sql`DELETE FROM reunioes WHERE negocio_id = ${negocioId ?? null}::uuid OR titulo LIKE ${PREFIXO}`,
     sql`DELETE FROM tarefas WHERE lead_id = ${leadId}::uuid OR negocio_id = ${negocioId ?? null}::uuid`,
     sql`DELETE FROM comercial_evidencia WHERE negocio_id = ${negocioId ?? null}::uuid`,
     sql`DELETE FROM vendas_eventos WHERE lead_id = ${leadId}::uuid OR negocio_id = ${negocioId ?? null}::uuid`,
@@ -145,6 +148,39 @@ async function main() {
       SELECT count(*)::int AS n FROM tarefas
        WHERE negocio_id = ${negocioId}::uuid AND status IN ('a_fazer','em_andamento','aguardando')`);
     ok(t.n === 1, `a próxima ação existe como tarefa canônica (${t.n})`);
+  }
+
+
+  console.log("\n═══ no-show: estado da reunião, não perda do negócio ═══");
+  if (negocioId) {
+    const sessao = await sessaoDeSmoke();
+    const [r] = await db.execute<{ id: string }>(sql`
+      INSERT INTO reunioes (organizacao_id, negocio_id, lead_id, titulo, data, status, responsavel_id)
+      VALUES (${org.id}::uuid, ${negocioId}::uuid, ${leadId}::uuid, ${marca + " reunião"},
+              now() - interval '1 hour', 'agendada', ${u.id}::uuid)
+      RETURNING id::text`);
+
+    const resp = await negociosRoutes.request(`http://local/negocios/${negocioId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie: sessao.cookie },
+      body: JSON.stringify({ status: "no_show" }),
+    });
+    ok(resp.status === 200, `a rota aceita o no-show (HTTP ${resp.status})`);
+
+    const [depois] = await db.execute<{ status: string }>(sql`
+      SELECT status FROM reunioes WHERE id = ${r.id}::uuid`);
+    ok(depois?.status === "no_show", `a reunião passa a no-show (status "${depois?.status}")`);
+
+    const [neg] = await db.execute<{ etapa: string; perdido: string | null }>(sql`
+      SELECT n.etapa, o.perdido_at::text AS perdido FROM negocios n
+        LEFT JOIN oportunidades o ON o.negocio_id_legado = n.id
+       WHERE n.id = ${negocioId}::uuid`);
+    ok(neg?.etapa !== "perdido" && !neg?.perdido,
+       `e o negócio NÃO vira perdido (etapa "${neg?.etapa}")`);
+
+    const det = await detalheOportunidade(org.id, negocioId);
+    ok(det?.badges.includes("No-show"), `o detalhe mostra o selo No-show (${det?.badges.join(", ") || "nenhum"})`);
+    ok(Boolean(det?.noShow.em), "e a data do no-show vem da reunião");
   }
 
   await limpar();

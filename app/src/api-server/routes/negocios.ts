@@ -712,6 +712,23 @@ app.patch("/negocios/:id", async (c) => {
     //   o lead vinculado volta pro board SDR em "Follow up" (qualifying) + tag "No-show".
     //   Quando a SDR recuperar (converter-oportunidade), o negócio volta a reuniao_agendada.
     if (parsed.data.status === "no_show" && currentNegocio.leadId) {
+      // No-show é ESTADO DA REUNIÃO (SPEC §23), e não um campo do negócio.
+      // Antes disto a reunião a que o cliente faltou continuava "agendada" para
+      // sempre — o fato existia só no negócio, e o relatório de comparecimento
+      // teve de ser reescrito sobre eventos porque `reunioes.status` nunca
+      // mudava. Marcar aqui é o que faz a reunião contar a própria história.
+      //
+      // A mais recente já começada e ainda agendada: é a que não aconteceu.
+      // Não vira Perdido — a decisão do domínio é que no-show mantém o negócio
+      // na coluna e devolve o lead para pré-vendas, que é o que o bloco abaixo
+      // já faz.
+      await db.execute(sql`
+        UPDATE reunioes SET status = 'no_show', updated_at = now()
+         WHERE id = (
+           SELECT id FROM reunioes
+            WHERE negocio_id = ${id}::uuid AND status = 'agendada' AND data <= now()
+            ORDER BY data DESC LIMIT 1)`);
+
       const [ldLead] = await db.select({ responsavelId: leads.responsavelId, nome: leads.nome, empresa: leads.empresa })
         .from(leads).where(eq(leads.id, currentNegocio.leadId)).limit(1);
       // lead volta pro board SDR em "Follow up" (decisão Kauã 22/07); como em toda
