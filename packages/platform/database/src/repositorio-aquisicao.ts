@@ -16,6 +16,19 @@ export interface Executor {
 }
 type SqlTag = (strings: TemplateStringsArray, ...values: unknown[]) => unknown;
 
+/**
+ * O domínio fala em `Date`; o driver, não. Um Date entregue cru a um parâmetro
+ * do postgres.js estoura em `Buffer.byteLength` ("Received an instance of
+ * Date") no momento do Bind, e a transação inteira volta atrás — foi o que
+ * derrubava 100% da entrada direta de Lead Ads, porque `normalizarLeadAds`
+ * devolve `ocorridoEm` como Date. A conversão mora aqui, na fronteira do SQL,
+ * e não em cada chamador.
+ */
+function instante(v: Date | string | null | undefined): string | null {
+  if (!v) return null;
+  return v instanceof Date ? (Number.isNaN(v.getTime()) ? null : v.toISOString()) : v;
+}
+
 export function criarRepositorioAquisicao(db: Executor, sql: SqlTag): RepositorioAquisicao {
   const um = async <T>(q: unknown): Promise<T | null> => ((await db.execute<T>(q))[0] ?? null);
 
@@ -93,16 +106,17 @@ export function criarRepositorioAquisicao(db: Executor, sql: SqlTag): Repositori
         VALUES (${e.organizacaoId}::uuid, ${e.empresaId}::uuid, ${e.pessoaId}::uuid,
                 ${e.tipo}, ${e.origem ?? null}, ${e.provider ?? null}, ${e.responsavelId ?? null}::uuid,
                 ${e.leadLegadoId ?? null}::uuid,
-                coalesce(${e.ocorridoEm ?? null}::timestamptz, now()),
-                coalesce(${e.ocorridoEm ?? null}::timestamptz, now()))
+                coalesce(${instante(e.ocorridoEm)}::timestamptz, now()),
+                coalesce(${instante(e.ocorridoEm)}::timestamptz, now()))
         RETURNING id`);
-      if (e.idempotencyKey) {
-        await db.execute(sql`
-          INSERT INTO backfill_provenance (organizacao_id, fase, entidade_canonica, id_canonico, tabela_origem, id_origem, chave_identidade, metodo)
-          VALUES (${e.organizacaoId}::uuid, 'runtime', 'aquisicao', ${r!.id}::uuid, ${e.provider ?? "externo"}, ${e.idempotencyKey}, ${e.idempotencyKey}, 'IDEMPOTENCIA')
-          ON CONFLICT (entidade_canonica, tabela_origem, id_origem) DO NOTHING`);
-      }
       return r!.id;
+    },
+    async registrarChave(aquisicaoId, e) {
+      if (!e.idempotencyKey) return;
+      await db.execute(sql`
+        INSERT INTO backfill_provenance (organizacao_id, fase, entidade_canonica, id_canonico, tabela_origem, id_origem, chave_identidade, metodo)
+        VALUES (${e.organizacaoId}::uuid, 'runtime', 'aquisicao', ${aquisicaoId}::uuid, ${e.provider ?? "externo"}, ${e.idempotencyKey}, ${e.idempotencyKey}, 'IDEMPOTENCIA')
+        ON CONFLICT (entidade_canonica, tabela_origem, id_origem) DO NOTHING`);
     },
     async registrarTouchpoint(aquisicaoId, e) {
       const a = e.atribuicao;
@@ -120,7 +134,7 @@ export function criarRepositorioAquisicao(db: Executor, sql: SqlTag): Repositori
                 ${a!.utmTerm ?? null}, ${a!.utmContent ?? null}, ${a!.landingPage ?? null}, ${a!.referrer ?? null},
                 ${a!.gclid ?? null}, ${a!.fbclid ?? null}, ${a!.fbc ?? null}, ${a!.fbp ?? null},
                 ${a!.metaLeadId ?? null}, ${a!.campaignId ?? null}, ${a!.adsetId ?? null}, ${a!.adId ?? null},
-                ${e.provider ?? null}, false, true, coalesce(${e.ocorridoEm ?? null}::timestamptz, now()))`);
+                ${e.provider ?? null}, false, true, coalesce(${instante(e.ocorridoEm)}::timestamptz, now()))`);
     },
     async donoDaFilaInbound(organizacaoId) {
       const r = await um<{ id: string }>(sql`

@@ -121,32 +121,66 @@ Configurado em 21/09/2026 (valores no `.env` local, fora do Git):
 | `META_APP_ID` / `META_APP_SECRET` | assinatura do webhook | sim, pelo próprio fluxo |
 | `META_WEBHOOK_VERIFY_TOKEN` | handshake do webhook | gerado com 384 bits |
 | `META_PAGE_ID` | página dona do formulário | sim, id recebido |
-| `META_AD_ACCOUNT_ID` | Ads Insights | id recebido |
+| `META_AD_ACCOUNT_ID` | Ads Insights | **sim** — Insights lidos com o System User token |
+| `META_LEADS_ACCESS_TOKEN` | ler o lead do formulário | **sim** — lead real lido, 21/09/2026 |
+| `META_ADS_ACCESS_TOKEN` | Ads Insights | **sim** — mesmo System User token (`ads_read`) |
 
-### Meta Lead Ads: bloqueio externo, isolado e nomeado
+### Meta Lead Ads: bloqueio externo RESOLVIDO em 21/09/2026
 
-> **Meta Lead Ads inbound implementado e testável; ativação real bloqueada somente
-> por `META_LEADS_ACCESS_TOKEN` e pela aprovação do CRM/App na aba CRMs do Business
-> Manager (Leads Access da página em modo personalizado, 6 usuários atribuídos).**
+O System User token chegou e foi validado contra a Graph API v26.0. O bloqueio
+externo da fase Meta **acabou**: não sobrou nenhuma credencial Meta pendente.
 
-O que já funciona sem essa aprovação: o webhook valida assinatura, o retrieval está
-implementado e testado, a normalização cobre os três formatos, a idempotência é por
-`leadgen_id` e a entrada passa pela porta canônica. O que a falta do token muda: a
-Graph API não devolve os dados do lead, e o log diz exatamente isso, sem inventar
-fallback.
+| O que foi medido | Resultado |
+|---|---|
+| Tipo do token | `SYSTEM_USER` "WB Callface auth" (122135313609010870), app MerencIA, **sem expiração** |
+| Escopos | 44, incluindo `leads_retrieval`, `ads_read`, `pages_show_list`, `pages_manage_ads`, `business_management` |
+| Alcance da Página | chega na Página "Callface" (170052822855677) |
+| Formulários | 9 formulários, **865 leads** (747 / 100 / 13 / 5 nos quatro ativos) |
+| Retrieval real | `leadgen_id 1079510644459965` lido com os 7 campos do formulário, `ad_id`, `campaign_id`, `platform` |
+| Ads Insights | o MESMO token lê `act_1979606826185515` — `META_ADS_ACCESS_TOKEN` passou a ser ele |
 
-Medido: o token da CAPI **não** alcança a página (erro 100, "Object does not exist,
-cannot be loaded due to missing permission"). São credenciais separadas, como
-esperado.
+Detalhe que custou tempo e fica registrado: **listar** formulários exige Page Access
+Token (`(#190) This method must be called with a Page Access Token`), mas **ler** o
+lead não. O System User troca por um Page token na hora
+(`/{page-id}?fields=access_token`), então a integração não precisa guardar nenhum
+token de página. Diagnóstico reprodutível em `src/scripts/checar-token-meta.ts`,
+que nunca imprime o valor do token.
+
+O token vive **somente** em `app/.env` (que é gitignored e não rastreado). Não foi
+para produção, para o Business Manager nem para documentação.
+
+#### O que o token destravou, e os dois defeitos que ele revelou
+
+Com a credencial real deu para rodar a cadeia inteira pela rota de verdade —
+`src/scripts/smoke-meta-lead-ads.ts`, 14 verificações — entregando o envelope que a
+Meta realmente posta: `leadgen_id`, `page_id`, `form_id` e **nada mais**. Foi o que
+expôs dois defeitos que nenhum teste pegava, porque nenhum teste chegava até o banco
+com dado real:
+
+1. **A entrada direta de Lead Ads falhava 100% das vezes.** `normalizarLeadAds`
+   devolve `ocorridoEm` como `Date`, e `Date` entregue cru a um parâmetro do
+   postgres.js estoura no Bind (`Buffer.byteLength` recebendo um Date). O INSERT de
+   `pontos_contato` morria e levava a transação inteira junto. Corrigido na fronteira
+   do SQL (`repositorio-aquisicao.ts`), onde os três bindings passam.
+2. **A idempotência por `leadgen_id` só valia quando a aquisição nascia.** A chave era
+   gravada dentro de `criarAquisicao`; quando a entrada caía numa aquisição **já
+   aberta** — o caso comum, porque essas pessoas já existem na base vindas do RD —
+   nada registrava a chave, e cada reentrega da Meta somava um ponto de contato novo.
+   A gravação subiu para o comando de domínio (`registrarEntrada`), que agora a chama
+   nos dois caminhos.
+
+Medido depois da correção: reentrega do mesmo `leadgen_id` mantém 1 aquisição e **1**
+ponto de contato (antes: 2), com a chave registrada. `leadgen_id` que a Graph não
+conhece continua recusado por falta de identificador, sem inventar e-mail nem
+telefone.
 
 ### Ainda ausentes
 
 | O quê | Para quê |
 |---|---|
-| `META_LEADS_ACCESS_TOKEN` | ler o lead do formulário — depende da aprovação acima |
-| `META_ADS_ACCESS_TOKEN` | Ads Insights. O token da CAPI **não serve**: medido, erro 200, falta `ads_read` |
 | `META_CAPI_TEST_EVENT_CODE` | opcional, manda para a aba Test Events |
 | `STORAGE_ENDPOINT` + bucket + chaves | tirar os arquivos do disco da máquina |
+| credencial de provedor de IA | única lacuna de paridade restante (NEXO) |
 
 O código está pronto e falha com mensagem de **configuração ausente**, não de
 integração quebrada — tratar as duas como a mesma faz o alerta disparar em ambiente
@@ -537,8 +571,8 @@ canônico hoje faria o lead sumir da tela de pré-vendas no mesmo instante.
 
 ## Testes executados
 
-Estado atual: `tsc --noEmit` limpo, **build de produção passando**, **273 testes, 0
-falhas**, e **23 de 23 smokes** verdes, mais o aceite de vendas em **97 passaram, 0 falharam** contra o banco real (conferidos por código de
+Estado atual: `tsc --noEmit` limpo, **build de produção passando**, **275 testes, 0
+falhas**, e **24 de 24 smokes** verdes, mais o aceite de vendas em **97 passaram, 0 falharam** contra o banco real (conferidos por código de
 saída, não por texto: procurar "FALHA" na saída dava falso positivo em `falhados=0`):
 
 - `smoke-ponte-canonica` — entrada externa chega inteira ao canônico e não duplica;

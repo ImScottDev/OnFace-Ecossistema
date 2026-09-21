@@ -64,6 +64,14 @@ export interface RepositorioAquisicao extends RepositorioIdentidade {
    *  do tempo, mas duas abertas ao mesmo tempo são a mesma coisa duplicada. */
   acharAquisicaoAberta(organizacaoId: string, pessoaId: string | null, empresaId: string | null): Promise<{ id: string } | null>;
   criarAquisicao(entrada: EntradaAquisicao & { pessoaId: string | null; empresaId: string | null }): Promise<string>;
+  /**
+   * Grava a chave do fato externo APONTANDO para a aquisição que o recebeu.
+   * Existia só dentro de `criarAquisicao`, então quando a entrada caía numa
+   * aquisição já aberta a chave nunca era registrada e a reentrega do mesmo
+   * `leadgen_id` voltava a abrir ponto de contato. A Meta reentrega sempre que
+   * não recebe 200 rápido.
+   */
+  registrarChave(aquisicaoId: string, entrada: EntradaAquisicao): Promise<void>;
   registrarTouchpoint(aquisicaoId: string, entrada: EntradaAquisicao & { pessoaId: string | null; empresaId: string | null }): Promise<void>;
   /** Política de dono da fila de inbound. Devolve null quando não configurada,
    *  e aí a aquisição nasce sem dono, o que é um fato a reportar, não um erro
@@ -122,12 +130,14 @@ export async function registrarEntrada(
   const aberta = await repo.acharAquisicaoAberta(entrada.organizacaoId, pessoaId, empresaId);
   if (aberta) {
     await repo.registrarTouchpoint(aberta.id, { ...entrada, pessoaId, empresaId });
+    if (entrada.idempotencyKey) await repo.registrarChave(aberta.id, entrada);
     return { ok: true, aquisicaoId: aberta.id, pessoaId, empresaId, criada: false, semDono: false };
   }
 
   const responsavelId = entrada.responsavelId ?? (await repo.donoDaFilaInbound(entrada.organizacaoId));
   const aquisicaoId = await repo.criarAquisicao({ ...entrada, pessoaId, empresaId, responsavelId });
   await repo.registrarTouchpoint(aquisicaoId, { ...entrada, pessoaId, empresaId });
+  if (entrada.idempotencyKey) await repo.registrarChave(aquisicaoId, entrada);
 
   return { ok: true, aquisicaoId, pessoaId, empresaId, criada: true, semDono: !responsavelId };
 }

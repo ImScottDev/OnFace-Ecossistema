@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import { registrarEntrada, type RepositorioAquisicao } from "@onface/acquisition";
 
 function repoFake(over: Partial<RepositorioAquisicao> = {}) {
-  const chamadas = { criouPessoa: 0, criouEmpresa: 0, criouAquisicao: 0, touchpoints: 0, vinculos: 0 };
+  const chamadas = { criouPessoa: 0, criouEmpresa: 0, criouAquisicao: 0, touchpoints: 0, vinculos: 0 , chaves: 0};
   const repo: RepositorioAquisicao = {
     acharPessoaPorEmail: async () => null,
     acharPessoaPorTelefone: async () => null,
@@ -23,6 +23,7 @@ function repoFake(over: Partial<RepositorioAquisicao> = {}) {
     acharAquisicaoAberta: async () => null,
     criarAquisicao: async () => { chamadas.criouAquisicao++; return "aquisicao-nova"; },
     registrarTouchpoint: async () => { chamadas.touchpoints++; },
+    registrarChave: async () => { chamadas.chaves++; },
     donoDaFilaInbound: async () => null,
     ...over,
   };
@@ -93,4 +94,19 @@ test("toda entrada criada registra o touchpoint de atribuição", async () => {
   const { repo, chamadas } = repoFake();
   await registrarEntrada(repo, { ...base, atribuicao: { utmSource: "meta", fbclid: "abc" } });
   assert.equal(chamadas.touchpoints, 1, "sem isso a atribuição fica presa dentro do lead, como hoje");
+});
+
+test("chave do fato externo é registrada mesmo caindo em aquisição já aberta", async () => {
+  // Sem isto a chave só existia quando a aquisição nascia, e a reentrega do
+  // mesmo leadgen_id voltava a abrir ponto de contato na aquisição existente.
+  const { repo, chamadas } = repoFake({ acharAquisicaoAberta: async () => ({ id: "aquisicao-aberta" }) });
+  const r = await registrarEntrada(repo, { ...base, idempotencyKey: "meta:leadgen:123" });
+  assert.equal(r.ok && r.aquisicaoId, "aquisicao-aberta");
+  assert.equal(chamadas.chaves, 1, "reentrega da Meta precisa achar a chave para não duplicar o toque");
+});
+
+test("entrada sem chave externa não grava proveniência de idempotência", async () => {
+  const { repo, chamadas } = repoFake();
+  await registrarEntrada(repo, base);
+  assert.equal(chamadas.chaves, 0);
 });
