@@ -2857,11 +2857,24 @@ export const fulfillments = pgTable(
     // (formulário de implantação PABX, seção 33-36 do briefing) — nunca ID
     // sequencial/previsível, sem exigir login do cliente.
     publicToken: uuid("public_token").defaultRandom().notNull(),
+    // Qual JORNADA este fulfillment é (migration 0066): ONBOARDING|IMPLEMENTATION.
+    // Um serviço pode ter as duas ao mesmo tempo — PABX e White Label exigem
+    // implantação ALÉM do onboarding (SPEC 18.1).
+    tipo: text("tipo"),
+    // Ciclo da jornada. Reonboarding/reimplantação do MESMO serviço incrementa,
+    // em vez de sobrescrever a jornada anterior.
+    cycleNumber: integer("cycle_number").default(1).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    uniqueIndex("idx_fulfillments_servico").on(table.servicoCanonicoId),
+    // NÃO é único desde a migration 0068: a exclusividade por serviço sozinho
+    // impedia PABX de ter onboarding E implantação. Quem garante unicidade
+    // agora é `uq_fulfillment_ciclo`, abaixo.
+    index("idx_fulfillments_servico").on(table.servicoCanonicoId),
+    uniqueIndex("uq_fulfillment_ciclo")
+      .on(table.servicoCanonicoId, table.tipo, table.cycleNumber)
+      .where(sql`servico_canonico_id IS NOT NULL`),
     uniqueIndex("idx_fulfillments_public_token").on(table.publicToken),
     index("idx_fulfillments_org").on(table.organizacaoId),
     index("idx_fulfillments_status").on(table.organizacaoId, table.status),

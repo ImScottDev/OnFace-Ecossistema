@@ -361,25 +361,43 @@ export async function criarPosVendaDoNegocio(
       if (!servicoId) return { criado: false, motivo: "falha ao materializar serviço canônico" };
     }
 
-    // Camada 3: UNIQUE em servico_canonico_id.
+    // Camada 3: UNIQUE em (servico_canonico_id, tipo, cycle_number).
+    //
+    // Era UNIQUE em servico_canonico_id sozinho até a migration 0068, que
+    // removeu a exclusividade porque ela impedia PABX/White Label de ter
+    // onboarding E implantação no mesmo serviço (SPEC 18.1). Este caminho
+    // legado continua criando SÓ a jornada de onboarding — quem cria as duas
+    // é `avaliarCondicaoDeGanho`, pela política da oferta. Este adaptador
+    // morre na fase 17, quando `negocios.ts` passar pelo canônico.
     const [fulfillment] = await db
       .insert(fulfillments)
       .values({
         organizacaoId: negocio.organizacaoId,
         servicoCanonicoId: servicoId,
         serviceFamily: familia,
+        tipo: "ONBOARDING",
+        cycleNumber: 1,
         status: "NOT_STARTED",
         startedAt: new Date(),
         responsavelId: regra.automacaoInicial ? negocio.responsavelId : null,
       })
-      .onConflictDoNothing({ target: fulfillments.servicoCanonicoId })
+      .onConflictDoNothing({
+        target: [fulfillments.servicoCanonicoId, fulfillments.tipo, fulfillments.cycleNumber],
+        where: sql`servico_canonico_id IS NOT NULL`,
+      })
       .returning({ id: fulfillments.id });
 
     if (!fulfillment) {
       const [existente] = await db
         .select({ id: fulfillments.id })
         .from(fulfillments)
-        .where(eq(fulfillments.servicoCanonicoId, servicoId))
+        .where(
+          and(
+            eq(fulfillments.servicoCanonicoId, servicoId),
+            eq(fulfillments.tipo, "ONBOARDING"),
+            eq(fulfillments.cycleNumber, 1),
+          ),
+        )
         .limit(1);
       return {
         criado: false,
