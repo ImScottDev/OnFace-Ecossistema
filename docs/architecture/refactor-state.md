@@ -25,7 +25,7 @@ Fases 01 a 16 concluídas.
 
 ## Último commit
 
-`dd0521c` — feat(24): cenário 8 deixa de ser "não verificável", com sessão real no smoke
+`5fae4be` — fix(24): a projeção da linha do tempo descartava 100% dos eventos
 
 Branch de trabalho: `refactor/arquitetura-canonica`, criada a partir de `98940fe`.
 
@@ -259,6 +259,23 @@ caso `CONTRATO_SEM_PROCESSO_COMERCIAL`.
   Deixá-lo sobrescrever punha o card em "Novo" enquanto o contador do canônico dizia
   outra coisa — total e cards discordando na mesma tela.
 
+### Propagação: o que a tela não via depois de escrito
+
+Três defeitos da mesma família, todos encontrados provocando a ação pela rota em vez de
+medir o banco. A divergência medida era ZERO nos três, porque o backfill sincronizou os
+dois lados, e era isso que os escondia: só apareceriam no primeiro uso depois da carga.
+
+| O que quebrava | Medida | Onde foi corrigido |
+|---|---|---|
+| trocar dono de lead não chegava em `aquisicoes` | board conta "sem responsável" do canônico | `registrarMudancaResponsavel`, a porta que os 7 caminhos já usavam |
+| automação movia etapa de lead para `crm2_pre_vendas_stage` | **0 linhas preenchidas** nessa coluna em todo o banco | porta de pré-vendas |
+| projeção da linha do tempo descartava todo evento | **2.016 de 2.016** eventos sem id canônico no payload | a projeção resolve o vínculo pelo agregado |
+
+O terceiro é o mais instrutivo: a projeção tinha teste verde e caller ligado desde a
+rodada anterior, e mesmo assim **nunca criou uma linha**, porque descartar evento sem
+vínculo é o comportamento correto para evento que não tem onde aparecer. Peça ligada
+também pode não fazer nada.
+
 ### Peça pronta, teste verde, produção sem caller
 
 Três apareceram indo olhar. Depois de a terceira aparecer, o padrão virou varredura:
@@ -413,6 +430,8 @@ Os demais 37 pacotes seguem vazios, recebendo código conforme as fases avançam
 | `worker/index.ts` (3 criadores de contato) | **migrado** | `garantirPessoaDeContato` |
 | escrita de `negocios` — **todo caminho de Ganho** (30) | **migrado** | `decidirGanhoPelaOferta` + `propagarGanhoCanonico` |
 | `api-server/routes/{email,whatsapp,contratos,cadencia}.ts` | pendente (atualizam, não criam) | — |
+| troca de responsável (7 caminhos) | **migrada** | `registrarMudancaResponsavel`, que propaga e audita |
+| `crm_update_stage` / `crm_assign_owner` / `crm_add_note` do motor | **migrados** | portas de pré-vendas e de dono; nota publica evento |
 | `lib/crm/pos-venda.ts` (adaptador legado) | ainda em uso por `negocios.ts:804`, morre na fase 17 | — |
 
 **Como os 30 caminhos de `negocios` foram fechados de uma vez.** Todos passam por
@@ -443,8 +462,8 @@ canônico hoje faria o lead sumir da tela de pré-vendas no mesmo instante.
 
 ## Testes executados
 
-Estado atual: `tsc --noEmit` limpo, **build de produção passando**, **256 testes, 0
-falhas**, e **17 de 17 smokes** verdes contra o banco real (conferidos por código de
+Estado atual: `tsc --noEmit` limpo, **build de produção passando**, **257 testes, 0
+falhas**, e **19 de 19 smokes** verdes contra o banco real (conferidos por código de
 saída, não por texto: procurar "FALHA" na saída dava falso positivo em `falhados=0`):
 
 - `smoke-ponte-canonica` — entrada externa chega inteira ao canônico e não duplica;
