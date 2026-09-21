@@ -1011,6 +1011,65 @@ Bloqueio real registrado: **Google Calendar não tem credencial de aplicação**
 (`GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`). O adapter existe inteiro e
 responde `nao_configurado`; o CRM segue funcionando.
 
+### CP5 — Pré-vendas: kanban único, tag com porta e ação em massa que não mente
+
+**CP5.1 — o board deixou de ter abas.** As abas Ativos/Nutrição/Desqualificados
+escondiam três terços da operação um do outro. As sete situações passaram a
+viver no mesmo kanban, e o que era navegação virou informação: o resumo continua
+dizendo quantos há em cada situação, sem esconder nenhuma.
+
+**CP5.2 — a porta de tag e as ações em massa.** `adicionar/removerTag` estava
+escrito DUAS vezes (`cadence-engine` e `ai-platform/tools/registry`), e as duas
+cópias mexiam em três tabelas e publicavam o evento. Escrever a ação em massa
+por fora faria a terceira. Consolidado em `lib/crm/tags.ts`.
+
+As cinco ações em massa (`lib/vendas/acoes-em-massa.ts`) devolvem desfecho **por
+registro**, não por lote: 40 enviados com 10 ignorados por telefone inválido é
+um resultado útil; "falhou" não é. Teto de 500 por lote, isolamento por
+organização dentro do `carregarAlvos`, e cada ação entra pela porta que já
+existe em vez de reimplementar regra.
+
+### CP6 — Pipeline: board único e o checklist que explica o fechamento
+
+**O board.** Mesma doença das abas de Pré-vendas, do outro lado do funil:
+Abertas/Ganhas/Perdidas eram três telas. Ganho e Perdido não são outra tela —
+são o fim da mesma esteira. As seis colunas passaram a viver na mesma linha,
+com as duas fechadas **colapsadas** (`<details>` nativo, sem estado novo) e
+marcadas `aceitaDrop: false`: Ganho nunca é alcançado arrastando (§04) e perda
+exige motivo.
+
+A `expressaoDeEtapa` já era compartilhada entre cards e totais; agora a lista de
+colunas também nasce de um lugar só — `aba === null` devolve as seis, e a aba
+sobrevive apenas para link antigo salvo.
+
+**O checklist de fechamento** (`lib/vendas/checklist-fechamento.ts`) responde a
+pergunta que sobra no drawer — *o que ainda falta para esta venda fechar?* —
+sem virar um botão de "tentar fechar como ganho": Won acontece sozinho quando a
+evidência exigida pela oferta chega.
+
+NADA nele decide ganho. Estado dos itens e lista do que falta vêm de
+`avaliarGanho`, no domínio. Reimplementar o critério ali criaria a segunda regra
+de Won, que é exatamente o que o Módulo 04 proíbe.
+
+Três detalhes que o dado real cobrou:
+
+- Oferta que não exige contrato mostra `—`, não "pendente": pendente sugere que
+  falta algo, e não falta.
+- Ganho na assinatura com pagamento em aberto é estado **normal** — o checklist
+  diz "esta oferta fecha na assinatura, e a cobrança segue no Financeiro" em vez
+  de parecer um erro.
+- As 1.085 oportunidades sem oferta vinculada **não ganham uma regra suposta**:
+  o checklist diz que a regra de fechamento delas não está definida.
+
+O componente do checklist vive em `vendas/ui.tsx` e serve o drawer e a página de
+detalhe. Duas cópias divergiriam, e uma delas acabaria decidindo ganho sozinha.
+
+**Validação:** tsc limpo, **291 testes 0 falhas**, build exit 0, **29/29
+smokes**. `/pipeline` devolve as seis colunas com duas colapsadas e
+`/pipeline/<id>` mostra o checklist com a regra da oferta em português —
+conferido contra build de produção, porque o servidor em pé estava servindo
+chunk antigo e a primeira medição deu falso negativo.
+
 ### Auditoria de CS Health (histórico da decisão)
 
 Menor do que o gap analysis inicial dizia:

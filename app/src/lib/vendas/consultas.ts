@@ -16,7 +16,7 @@ import { db } from "@/lib/db";
 import {
   ROTULO_ETAPA_PIPELINE, ROTULO_ETAPA_PRE_VENDAS, ROTULO_FAMILIA,
   ROTULO_ESTADO_PROSPECCAO, ROTULO_RELACIONAMENTO,
-  ETAPAS_PIPELINE, ETAPAS_PRE_VENDAS,
+  ETAPAS_PIPELINE, ETAPAS_FECHADAS, ETAPAS_PRE_VENDAS,
   SAIDAS_PRE_VENDAS, ESTADOS_PROSPECCAO,
   type EstadoProspeccao, type EstagioPreVendas, type EtapaPipeline,
   type RelacionamentoEmpresa,
@@ -296,19 +296,35 @@ export interface FiltrosPipeline {
   busca?: string | null;
   responsavelId?: string | null;
   familia?: string | null;
-  aba?: "abertas" | "ganhas" | "perdidas";
+  /** Ausente (ou null) = board ÚNICO, com as seis colunas. */
+  aba?: "abertas" | "ganhas" | "perdidas" | null;
   motion?: string | null;
 }
 
 export interface BoardPipeline {
-  colunas: Array<{ chave: EtapaPipeline; rotulo: string; total: number; valorTotal: number; cards: CardPipeline[] }>;
+  colunas: Array<{
+    chave: EtapaPipeline; rotulo: string; total: number; valorTotal: number; cards: CardPipeline[];
+    /** Ganho e Perdido moram na mesma linha, mas fechadas — abrem sob clique. */
+    colapsada: boolean;
+    /** Ganho nunca é alcançado arrastando (§04), e perda exige motivo. */
+    aceitaDrop: boolean;
+  }>;
   resumo: { abertas: number; ganhas: number; perdidas: number; semProximaAcao: number; valorEmAberto: number };
   filtros: { responsaveis: Array<{ id: string; nome: string }>; familias: string[] };
 }
 
 export async function boardPipeline(organizacaoId: string, filtros: FiltrosPipeline = {}): Promise<BoardPipeline> {
-  const aba = filtros.aba ?? "abertas";
-  const etapas: EtapaPipeline[] = aba === "abertas" ? [...ETAPAS_PIPELINE] : aba === "ganhas" ? ["ganho"] : ["perdido"];
+  const aba = filtros.aba ?? null;
+  // BOARD ÚNICO (v0.13 §02.2): "Ganho e Perdido ficam na mesma linha do
+  // Kanban, colapsados por padrão" e são buckets de consulta, não etapas
+  // livres de drag.
+  //
+  // `aba` continua aceito para o board legado do CRM2 não quebrar antes da
+  // substituição; sem ela, as seis colunas vêm juntas.
+  const etapas: EtapaPipeline[] = aba === null
+    ? [...ETAPAS_PIPELINE, ...ETAPAS_FECHADAS]
+    : aba === "abertas" ? [...ETAPAS_PIPELINE]
+    : aba === "ganhas" ? ["ganho"] : ["perdido"];
   const busca = filtros.busca?.trim() ? `%${filtros.busca.trim().toLowerCase()}%` : null;
 
   // CUTOVER DE LEITURA (fase 17). A fonte passou a ser `oportunidades`.
@@ -425,11 +441,17 @@ export async function boardPipeline(organizacaoId: string, filtros: FiltrosPipel
   const colunas = etapas.map((chave) => {
     const daColuna = cards.filter((c) => c.etapa === chave);
     const agregado = totalDaEtapa.get(chave);
+    const fechada = (ETAPAS_FECHADAS as readonly string[]).includes(chave);
     return {
       chave, rotulo: ROTULO_ETAPA_PIPELINE[chave],
       total: agregado?.n ?? daColuna.length,
       valorTotal: agregado?.valor ?? daColuna.reduce((soma, c) => soma + (c.valor ?? 0), 0),
       cards: daColuna,
+      // Ganho e Perdido nascem colapsados e NÃO aceitam drop: são buckets de
+      // consulta. Ganho nunca é alcançado arrastando (v0.13 §02.3) e perda
+      // exige motivo estruturado, que é um fluxo, não um drop.
+      colapsada: fechada,
+      aceitaDrop: !fechada,
     };
   });
 
@@ -1213,6 +1235,8 @@ export interface DetalheOportunidade {
   noShow: { em: string | null; contagem: number };
   trial: { iniciadoEm: string | null; encerradoEm: string | null };
   propostas: Array<{ id: string; numero: number; versao: number; status: string; total: number | null; enviadaEm: string | null; modoFechamento: string | null }>;
+  /** Checklist de fechamento (v0.13 §02.4). Nulo quando não há oportunidade canônica. */
+  fechamento: import("./checklist-fechamento").ChecklistFechamento | null;
   reunioes: Array<{ id: string; titulo: string; data: string; status: string }>;
   irmas: Array<{ id: string; titulo: string; etapa: string; familia: string | null }>;
   evidencias: Array<{ tipo: string; em: string }>;
@@ -1336,6 +1360,11 @@ export async function detalheOportunidade(organizacaoId: string, negocioId: stri
   const noShowEm = faltas[0]?.data ?? n.no_show_em;
   const noShowContagem = faltas.length || n.no_show_contagem;
 
+  // O checklist explica o que falta para fechar, sem virar botão: o Won
+  // acontece pela evidência, não pelo clique (v0.13 §02.4).
+  const { checklistDeFechamento } = await import("./checklist-fechamento");
+  const fechamento = await checklistDeFechamento(organizacaoId, negocioId);
+
   const etapa = (n.etapa ?? "entrada") as EtapaPipeline;
   const badges: string[] = [];
   if (noShowEm) badges.push("No-show");
@@ -1371,6 +1400,7 @@ export async function detalheOportunidade(organizacaoId: string, negocioId: stri
     motivoPerda: n.motivo_perda,
     noShow: { em: noShowEm, contagem: noShowContagem },
     trial: { iniciadoEm: n.trial_iniciado_em, encerradoEm: n.trial_encerrado_em },
+    fechamento,
     propostas: propostas.map((p) => ({
       id: p.id, numero: p.numero, versao: p.versao, status: p.status,
       total: p.total === null ? null : Number(p.total), enviadaEm: p.enviada_em,

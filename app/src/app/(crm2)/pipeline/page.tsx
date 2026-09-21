@@ -28,7 +28,10 @@ export async function PipelinePage({ searchParams, rotaBase = "" }: {
   if (!ctx) redirect("/login");
 
   const params = await searchParams;
-  const aba: Aba = params.aba === "ganhas" || params.aba === "perdidas" ? params.aba : "abertas";
+  // Sem aba na URL o board é ÚNICO: as seis colunas na mesma linha, com
+  // Ganho e Perdido fechadas. A aba só sobrevive para link antigo salvo.
+  const aba: Aba | null =
+    params.aba === "ganhas" || params.aba === "perdidas" || params.aba === "abertas" ? params.aba : null;
   const busca = params.busca?.trim() || "";
   const responsavelId = params.responsavel || null;
   const familia = params.familia || null;
@@ -52,7 +55,7 @@ export async function PipelinePage({ searchParams, rotaBase = "" }: {
       <OnfacePageSurface sobreposto>
         <Pipeline
           dados={dados}
-          aba={aba}
+          aba={aba ?? undefined}
           filtro={{ busca, responsavelId, familia }}
           selecaoInicial={params.oportunidade ?? null}
           rotaBase={rotaBase}

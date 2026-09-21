@@ -99,23 +99,44 @@ export function Board({ children }: { children: ReactNode }) {
   return <div className="ov-board">{children}</div>;
 }
 
-export function Coluna({ titulo, total, carregados, extra, children }: {
+export function Coluna({ titulo, total, carregados, extra, colapsada, children }: {
   titulo: string;
   total: number;
   carregados: number;
   extra?: ReactNode;
+  /** Coluna fechada (Ganho, Perdido): fica na MESMA linha, em faixa estreita,
+      e abre sob clique. Some da linha só quando o filtro a exclui. */
+  colapsada?: boolean;
   children: ReactNode;
 }) {
+  const contagem = (
+    <span className="ov-coluna-contagem">
+      {/* Quando a coluna tem mais do que a página carregou, a contagem diz
+          as duas coisas: senão o número vira uma mentira discreta. */}
+      {carregados < total ? `${carregados} de ${total}` : total}
+      {extra}
+    </span>
+  );
+
+  // `details` em vez de estado: o navegador já sabe abrir e fechar, e o teclado
+  // e o leitor de tela vêm de graça.
+  if (colapsada) {
+    return (
+      <details className="ov-coluna" data-colapsada aria-label={titulo}>
+        <summary className="ov-coluna-cabecalho">
+          <h2>{titulo}</h2>
+          {contagem}
+        </summary>
+        <div className="ov-coluna-lista">{children}</div>
+      </details>
+    );
+  }
+
   return (
     <section className="ov-coluna" aria-label={titulo}>
       <header className="ov-coluna-cabecalho">
         <h2>{titulo}</h2>
-        <span className="ov-coluna-contagem">
-          {/* Quando a coluna tem mais do que a página carregou, a contagem diz
-              as duas coisas: senão o número vira uma mentira discreta. */}
-          {carregados < total ? `${carregados} de ${total}` : total}
-          {extra}
-        </span>
+        {contagem}
       </header>
       <div className="ov-coluna-lista">{children}</div>
     </section>
@@ -124,6 +145,48 @@ export function Coluna({ titulo, total, carregados, extra, children }: {
 
 export function ColunaVazia({ children }: { children: ReactNode }) {
   return <p className="ov-coluna-vazia">{children}</p>;
+}
+
+
+/* ── Checklist de fechamento ───────────────────────────────────────────── */
+
+/** O que falta para esta venda fechar (v0.13, §02.4).
+ *
+ * Vive aqui, e não na tela, porque o drawer do board e a página de detalhe
+ * mostram a MESMA coisa — duas cópias divergiriam, e uma delas acabaria
+ * decidindo ganho por conta própria.
+ *
+ * NADA AQUI DECIDE GANHO. Estado e pendências vêm de `avaliarGanho`, no
+ * domínio; esta função só desenha. */
+export function ChecklistFechamento({ fechamento }: {
+  fechamento: {
+    regra: string; ofertaCodigo: string | null; ganha: boolean;
+    falta: string[];
+    itens: Array<{ codigo: string; rotulo: string; estado: string; detalhe: string }>;
+  };
+}) {
+  return (
+    <>
+      <ul className="ov-checklist">
+        {fechamento.itens.map((item) => (
+          <li key={item.codigo} data-estado={item.estado}>
+            <span className="ov-checklist-marca" aria-hidden>
+              {item.estado === "ok" ? "✓" : item.estado === "nao_se_aplica" ? "—" : "○"}
+            </span>
+            <span className="ov-checklist-rotulo">{item.rotulo}</span>
+            <span className="ov-checklist-detalhe">{item.detalhe}</span>
+          </li>
+        ))}
+      </ul>
+      <p className="ov-nota">
+        {fechamento.regra}
+        {fechamento.ofertaCodigo ? ` (${fechamento.ofertaCodigo}).` : "."}
+        {!fechamento.ganha && fechamento.falta.length > 0
+          ? ` Falta: ${fechamento.falta.join(", ")}.`
+          : null}
+      </p>
+    </>
+  );
 }
 
 /* ── Painel lateral ────────────────────────────────────────────────────── */

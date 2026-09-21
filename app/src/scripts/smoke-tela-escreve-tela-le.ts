@@ -287,6 +287,38 @@ async function main() {
     await db.execute(sql`DELETE FROM contratos WHERE lead_id = ${leadCadencia}::uuid`);
   }
 
+
+  console.log("\n═══ pipeline: board único e checklist de fechamento ═══");
+  {
+    const { boardPipeline } = await import("@/lib/vendas/consultas");
+    const b = await boardPipeline(org.id, {});
+    const chaves = b.colunas.map((c) => c.chave);
+    const esperadas = ["entrada", "diagnostico", "proposta", "negociacao", "ganho", "perdido"];
+    ok(chaves.length === 6 && esperadas.every((e, i) => chaves[i] === e),
+       `seis colunas na mesma linha (${chaves.join(", ")})`);
+
+    const fechadas = b.colunas.filter((c) => c.chave === "ganho" || c.chave === "perdido");
+    ok(fechadas.every((c) => c.colapsada), "Ganho e Perdido nascem colapsados");
+    ok(fechadas.every((c) => !c.aceitaDrop),
+       "e não aceitam drop — Ganho nunca é alcançado arrastando, perda exige motivo");
+    ok(b.colunas.filter((c) => c.aceitaDrop).length === 4, "as quatro abertas aceitam drag & drop");
+
+    // O checklist explica o fechamento sem virar botão.
+    if (negocioId) {
+      const det = await detalheOportunidade(org.id, negocioId);
+      const f = det?.fechamento ?? null;
+      ok(f !== null, "o drawer carrega o checklist de fechamento");
+      ok((f?.itens.length ?? 0) === 3, `com proposta, contrato e pagamento (${f?.itens.length})`);
+      ok(Boolean(f?.regra) && f!.regra.length > 20, `e a regra da oferta em português: "${f?.regra.slice(0, 54)}..."`);
+      // Sem oferta vinculada, o checklist NÃO inventa política de ganho.
+      const semOferta = f?.ofertaCodigo === null;
+      if (semOferta) {
+        ok(f!.falta.includes("oferta comercial vinculada"),
+           "sem oferta vinculada, o checklist diz isso em vez de supor uma regra");
+      }
+    }
+  }
+
   await limpar();
   const [resto] = await db.execute<{ n: number }>(sql`
     SELECT ((SELECT count(*) FROM leads WHERE nome LIKE 'smoke-duas-verdades-%')

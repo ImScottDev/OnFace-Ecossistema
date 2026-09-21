@@ -18,7 +18,7 @@ import type { LinhaDoTempo } from "@/lib/vendas/eventos";
 import { ROTULO_FAMILIA } from "@/lib/vendas/dominio";
 import { rotuloProcesso } from "./Pipeline";
 import { canaisDisponiveis, urlAtendimento, type AlvoDeContato, type CanalAtendimento } from "./atendimento";
-import { Campo, Tag, dataCurta, dataHora, moeda, moedaExata } from "./ui";
+import { Campo, ChecklistFechamento, Tag, dataCurta, dataHora, moeda, moedaExata } from "./ui";
 import { rotuloAtor, rotuloEvento } from "./PreVendas";
 
 /* ── Moldura ───────────────────────────────────────────────────────────── */
@@ -177,6 +177,13 @@ export function DetalheOportunidadePagina({ oportunidade, timeline, voltar }: {
               <Campo rotulo="Próxima ação">{oportunidade.proximaAcao.descricao}{oportunidade.proximaAcao.quando ? ` · ${dataCurta(oportunidade.proximaAcao.quando)}` : ""}</Campo>
             </dl>
           </Bloco>
+          {/* O mesmo checklist do drawer: aqui a pergunta é idêntica, e a
+              resposta precisa ser também. */}
+          {oportunidade.fechamento ? (
+            <Bloco titulo={oportunidade.fechamento.ganha ? "Como esta venda fechou" : "Para fechar"}>
+              <ChecklistFechamento fechamento={oportunidade.fechamento} />
+            </Bloco>
+          ) : null}
           {oportunidade.qualificacaoHerdada ? <Bloco titulo="Qualificação herdada"><pre className="ov-nota" style={{ whiteSpace: "pre-wrap" }}>{JSON.stringify(oportunidade.qualificacaoHerdada, null, 2)}</pre></Bloco> : null}
           <Bloco titulo="Propostas">
             {oportunidade.propostas.length === 0 ? <p className="ov-nota">Ainda não há proposta vinculada.</p> : oportunidade.propostas.map((proposta) => (

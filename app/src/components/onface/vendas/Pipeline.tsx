@@ -27,7 +27,7 @@ import {
 } from "@/lib/vendas/dominio";
 import type { Resultado } from "@/lib/vendas/resultado";
 import {
-  Abas, AvisoBloqueio, Board, Busca, Campo, Coluna, ColunaVazia, ComPainel,
+   AvisoBloqueio, Board, Busca, Campo, ChecklistFechamento, Coluna, ColunaVazia, ComPainel,
   Dialogo, Painel, Secao, Tag, dataCurta, dataHora, moeda, moedaExata, useAcao,
   type RotaBaseVendas,
 } from "./ui";
@@ -54,9 +54,10 @@ export interface AcoesPipeline {
   detalhe: (id: string) => Promise<Resultado<{ oportunidade: DetalheOportunidade | null; timeline: LinhaDoTempo[] }>>;
 }
 
-export function Pipeline({ dados, aba, filtro, selecaoInicial, rotaBase, acoes }: {
+export function Pipeline({ dados, filtro, selecaoInicial, rotaBase, acoes }: {
   dados: BoardPipeline;
-  aba: Aba;
+  /** Só para link antigo salvo; o board padrão é o único, sem aba. */
+  aba?: Aba;
   filtro: { busca: string; responsavelId: string | null; familia: string | null };
   selecaoInicial?: string | null;
   rotaBase: RotaBaseVendas;
@@ -136,15 +137,17 @@ export function Pipeline({ dados, aba, filtro, selecaoInicial, rotaBase, acoes }
   return (
     <>
       <div className="ov-controles">
-        <Abas<Aba>
-          ativa={aba}
-          aoTrocar={(nova) => navegar({ aba: nova === "abertas" ? null : nova })}
-          abas={[
-            { chave: "abertas", rotulo: "Abertas", contagem: dados.resumo.abertas },
-            { chave: "ganhas", rotulo: "Ganhas", contagem: dados.resumo.ganhas },
-            { chave: "perdidas", rotulo: "Perdidas", contagem: dados.resumo.perdidas },
-          ]}
-        />
+        {/* BOARD ÚNICO (v0.13, Módulo 02 §1). As abas Abertas/Ganhas/Perdidas
+            saíram: Ganho e Perdido não são outra tela, são o fim da mesma
+            esteira, e viram colunas fechadas na mesma linha.
+
+            O que era navegação virou informação — o resumo continua dizendo
+            quanto há em cada desfecho, sem esconder nenhum. */}
+        <div className="ov-resumo-inline" aria-label="Resumo do funil">
+          <span><strong>{dados.resumo.abertas}</strong> abertas</span>
+          <span><strong>{dados.resumo.ganhas}</strong> ganhas</span>
+          <span><strong>{dados.resumo.perdidas}</strong> perdidas</span>
+        </div>
         <Busca valor={busca} aoMudar={setBusca} placeholder="Buscar empresa ou oportunidade" />
         <button type="button" className="ov-botao" data-variante="neutro" onClick={() => navegar({ busca })}>Buscar</button>
         <select className="ov-select" value={filtro.familia ?? ""} aria-label="Filtrar por família"
@@ -198,6 +201,7 @@ export function Pipeline({ dados, aba, filtro, selecaoInicial, rotaBase, acoes }
               titulo={coluna.rotulo}
               total={coluna.total}
               carregados={coluna.cards.length}
+              colapsada={!coluna.aceitaDrop}
               extra={coluna.valorTotal > 0 ? <span> · {moeda(coluna.valorTotal)}</span> : null}
             >
               {coluna.cards.length === 0 ? (
@@ -348,6 +352,18 @@ function PainelOportunidade({ op, timeline, pendente, bloqueio, motivoGanhoPende
           <Campo rotulo="Origem">{rotuloProcesso(op.sourceProcess)}</Campo>
         </dl>
       </Secao>
+
+      {/* FECHAMENTO (v0.13, §02.4). Responde "o que falta para esta venda
+          fechar?" sem virar um botão de "tentar fechar como ganho": Won
+          acontece sozinho quando a evidência exigida pela oferta chega.
+
+          NADA AQUI DECIDE GANHO. O estado de cada item e o que falta vêm de
+          `avaliarGanho`, no domínio; esta seção só mostra. */}
+      {op.fechamento ? (
+        <Secao titulo={op.fechamento.ganha ? "Como esta venda fechou" : "Para fechar"}>
+          <ChecklistFechamento fechamento={op.fechamento} />
+        </Secao>
+      ) : null}
 
       {aberta ? (
         <Secao titulo="Mover para">

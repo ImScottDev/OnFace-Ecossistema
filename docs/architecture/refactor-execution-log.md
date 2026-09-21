@@ -2184,3 +2184,60 @@ própria, com rede de segurança para pessoa sem proveniência.
 
 **Validação:** tsc limpo, **286 testes 0 falhas**, build exit 0, **27/27 smokes**,
 zero resíduo no banco.
+
+## 2026-09-21 — Conclusão do ONFACE: CP4 a CP6
+
+### CP4 — o convite que ficava de pé
+
+Criar e cancelar evento externo existiam. **Atualizar nunca existiu.** Reagendar
+uma reunião mudava a data no ONFACE e deixava o convite antigo na agenda do
+cliente, sem aviso. Cinco caminhos chamavam o Graph direto, e o helper que
+existia para deduplicar três deles terminou **sem nenhum chamador** — o defeito
+recorrente deste repo em uma frase.
+
+`CalendarProvider` abstrai Microsoft Graph e Google Calendar atrás de
+create/update/cancel. A ponte `COALESCE(r.calendar_event_id,
+r.outlook_event_id)` impede que reagendar uma reunião criada pelas rotas antigas
+crie um **segundo** convite. Quatro rotas antigas continuam chamando o Graph
+direto: são conhecidas, funcionam, e converter é trabalho da substituição. O
+teste arquitetural impede o **quinto** aparecer.
+
+### CP5 — a terceira cópia da regra de tag que não nasceu
+
+`adicionar/removerTag` estava escrito duas vezes. Escrever a ação em massa por
+fora faria a terceira, e duas cópias da mesma regra divergem em silêncio.
+Consolidado em `lib/crm/tags.ts` antes de construir qualquer coisa em cima.
+
+As ações em massa devolvem desfecho por registro. A regra que decidiu o desenho
+inteiro está no §9.5: "nunca falhar silenciosamente por causa de um registro sem
+telefone válido". Reaplicar uma tag reporta 0 aplicados e 3 ignorados — não
+mente que trabalhou, e não publica evento em no-op (senão a automação dispara de
+novo a cada reexecução de cadência).
+
+### CP6 — Ganho e Perdido voltaram para a mesma linha
+
+O board do Pipeline tinha a mesma doença das abas de Pré-vendas, do outro lado
+do funil. As seis colunas passaram a viver juntas, com as fechadas colapsadas
+via `<details>` nativo — o navegador já sabe abrir e fechar, e teclado e leitor
+de tela vêm de graça.
+
+Colunas fechadas nascem com `aceitaDrop: false`. Não é detalhe de UI: Ganho
+nunca é alcançado arrastando, e perda exige motivo.
+
+O checklist de fechamento explica a regra da oferta sem decidir nada. A decisão
+continua em `avaliarGanho`. O caso que prova a diferença: das 4 oportunidades
+ganhas com `CALLFACE_AI_CONTRACT`, todas mostram "Pagamento: pendente — esta
+oferta fecha na assinatura, e a cobrança segue no Financeiro". Uma tela que
+decidisse sozinha teria chamado isso de erro.
+
+### Falso negativo próprio
+
+A primeira medição de `/pipeline/<id>` disse que o checklist não renderizava,
+com o dado presente no payload RSC. Não era o código: o servidor em pé servia
+chunk antigo. Rebuild e nova medição mostraram as três linhas. Registrado porque
+a conclusão errada seria "o componente não funciona" e o conserto seria em cima
+de código que já estava certo.
+
+**Validação:** tsc limpo, **291 testes 0 falhas**, build exit 0, **29/29
+smokes**, rotas `/pipeline` e `/pipeline/<id>` conferidas contra build de
+produção com dado real.
