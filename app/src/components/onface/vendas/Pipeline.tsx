@@ -722,7 +722,15 @@ function DialogoNovaOportunidade({ aberto, responsaveis, pendente, bloqueio, bus
 
 /* ── Rótulos ───────────────────────────────────────────────────────────── */
 
-function rotuloProcesso(processo: string | null): string {
+/**
+ * Rótulo de origem do processo comercial.
+ *
+ * Exportado porque a página da oportunidade mostrava `sourceProcess` cru, e o
+ * banco chegou a guardar `BACKFILL_07` nessa coluna: lia-se "Origem:
+ * BACKFILL_07" na tela. O dado foi corrigido na migration 0079, e o valor cru
+ * deixou de aparecer em tela para o próximo valor inesperado não vazar também.
+ */
+export function rotuloProcesso(processo: string | null): string {
   switch (processo) {
     case "PRE_SALES": return "Pré-vendas";
     case "OUTBOUND_DIRECT": return "Prospecção direta";

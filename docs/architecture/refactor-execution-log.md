@@ -1456,3 +1456,49 @@ nome e e-mail, 3 de telefone por normalização); e empresa entre `leads` e `aqu
 (2.348 dos dois lados, 0 divergência).
 
 **Validação:** tsc limpo, **257 testes, 0 falhas**, smoke de leituras verde.
+
+---
+
+## 2026-09-21 — Cutover crítico, parte 8: varredura campo a campo, e um marcador de carga na tela
+
+Em vez de continuar adivinhando quais campos divergem, varri: para cada par
+canônico/legado ligado por `*_legado_id`, comparei **todo campo que existe nos dois**.
+
+| Par | Campos em comum | Divergências |
+|---|---|---|
+| `aquisicoes` x `leads` | 7 | `tipo` 100% (vocabulários diferentes, já verificado) |
+| `oportunidades` x `negocios` | 13 | `source_process` **100%**, `service_family` 30%, `ganho_at` 2, `motivo_perda` 2 |
+| `pessoas` x `leads` | 7 | `whatsapp` 23, `empresa_id` 4, `telefone` 3, `cargo` 2, `sobrenome` 1 |
+
+**`source_process` divergia em 100% porque o backfill gravou o próprio nome nela.**
+1.560 de 1.561 oportunidades tinham a string `BACKFILL_07` numa coluna de NEGÓCIO: ela
+diz de onde a oportunidade veio (PRE_SALES, OUTBOUND_DIRECT, MANUAL, EXPANSION) e
+aparece na tela como "Origem".
+
+O efeito era visível de dois jeitos diferentes: no card do pipeline o rótulo caía no
+default e mostrava "—"; na página da oportunidade o valor era exibido cru, e lia-se
+"Origem: BACKFILL_07". E 1.497 dessas tinham a origem de verdade guardada no negócio
+legado o tempo todo.
+
+Migration 0079 devolve a origem do legado onde ela existe (**1.498 passam a mostrar
+"Pré-vendas"**) e grava NULL nas 63 sem evidência, em vez de um palpite. A proveniência
+não se perde: `backfill_provenance` já tinha as 1.561 linhas da fase 07, que é o lugar
+próprio dela.
+
+A página da oportunidade passou a usar o mesmo `rotuloProcesso` do card, que foi
+exportado para os dois. Valor cru em tela é como este marcador apareceu para o usuário;
+com o rótulo compartilhado, o próximo valor inesperado não vaza.
+
+Duas travas em `reconciliacao-backfill.test.ts`, e elas são um par: uma proíbe marcador
+de carga em coluna de negócio, a outra exige que a proveniência continue registrada. Só
+a primeira seria satisfeita apagando o rastro. Verificada falhando com o marcador
+recolocado numa linha.
+
+**As divergências pequenas de identidade ficam nomeadas e não foram tocadas**: 23
+`whatsapp`, 4 `empresa_id`, 3 `telefone`, 2 `cargo`, 1 `sobrenome` entre `leads` e
+`pessoas`, e 2 `ganho_at` e 2 `motivo_perda` entre `negocios` e `oportunidades`.
+Escolher qual lado está certo em cada uma é decisão sobre dado real, não regra
+derivável.
+
+**Validação:** tsc limpo, **259 testes, 0 falhas**, build exit 0, smoke de leituras
+verde.

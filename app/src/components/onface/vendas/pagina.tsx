@@ -16,6 +16,7 @@ import type { ReactNode } from "react";
 import type { DetalheOportunidade, Empresa360, LinhaPessoa } from "@/lib/vendas/consultas";
 import type { LinhaDoTempo } from "@/lib/vendas/eventos";
 import { ROTULO_FAMILIA } from "@/lib/vendas/dominio";
+import { rotuloProcesso } from "./Pipeline";
 import { canaisDisponiveis, urlAtendimento, type AlvoDeContato, type CanalAtendimento } from "./atendimento";
 import { Campo, Tag, dataCurta, dataHora, moeda, moedaExata } from "./ui";
 import { rotuloAtor, rotuloEvento } from "./PreVendas";
@@ -188,7 +189,7 @@ export function DetalheOportunidadePagina({ oportunidade, timeline, voltar }: {
         </>}
         lateral={<>
           <Bloco titulo="Empresa">
-            <dl style={{ margin: 0 }}><Campo rotulo="Conta">{oportunidade.empresa.nome}</Campo><Campo rotulo="Origem">{oportunidade.sourceProcess ?? "—"}</Campo></dl>
+            <dl style={{ margin: 0 }}><Campo rotulo="Conta">{oportunidade.empresa.nome}</Campo><Campo rotulo="Origem">{rotuloProcesso(oportunidade.sourceProcess)}</Campo></dl>
             {oportunidade.empresa.id ? <Link className="ov-botao" data-variante="contorno" href={`${contatos}/empresas/${oportunidade.empresa.id}`}>Abrir empresa</Link> : null}
           </Bloco>
           <Bloco titulo="Contato associado">

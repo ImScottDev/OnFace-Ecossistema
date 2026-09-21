@@ -173,3 +173,34 @@ test("fase 07: ganho e perda não coexistem na mesma oportunidade", async (t) =>
   const ambas = await conta(sql`SELECT count(*) AS n FROM oportunidades WHERE ganho_at IS NOT NULL AND perdido_at IS NOT NULL`);
   assert.equal(ambas, 0, `${ambas} oportunidades marcadas como ganhas E perdidas`);
 });
+
+test("coluna de negócio não guarda marcador de carga", async () => {
+  // O backfill 07 gravou 'BACKFILL_07' em `oportunidades.source_process`, que é
+  // a coluna que a tela mostra como "Origem". No card o rótulo caía no default
+  // e mostrava "—"; na página da oportunidade o valor era exibido cru, então
+  // lia-se "Origem: BACKFILL_07" em 1.560 de 1.561 registros — enquanto 1.497
+  // delas tinham a origem de verdade (PRE_SALES) no negócio legado.
+  //
+  // Proveniência tem tabela própria (`backfill_provenance`, com as 1.561
+  // linhas da fase 07). Marcador de carga em coluna de produto é processo
+  // interno ocupando campo de negócio.
+  const [r] = await db.execute<{ n: number }>(sql`
+    SELECT (
+      (SELECT count(*) FROM oportunidades WHERE source_process LIKE 'BACKFILL%')
+    + (SELECT count(*) FROM oportunidades WHERE service_family LIKE 'BACKFILL%')
+    + (SELECT count(*) FROM aquisicoes WHERE origem LIKE 'BACKFILL%')
+    + (SELECT count(*) FROM aquisicoes WHERE tipo LIKE 'BACKFILL%'))::int AS n`);
+  assert.equal(r?.n ?? 0, 0,
+    "coluna de negócio com marcador de backfill: a proveniência vai em backfill_provenance");
+});
+
+test("a proveniência do backfill continua registrada", async () => {
+  // O contraponto do teste acima: tirar o marcador da coluna de negócio não
+  // pode significar perder de onde o registro veio.
+  const [r] = await db.execute<{ n: number }>(sql`
+    SELECT count(*)::int AS n FROM backfill_provenance
+     WHERE fase = '07' AND entidade_canonica = 'oportunidade'`);
+  assert.ok((r?.n ?? 0) > 1500,
+    `a proveniência da fase 07 deveria cobrir as oportunidades migradas (tem ${r?.n})`);
+});
+
