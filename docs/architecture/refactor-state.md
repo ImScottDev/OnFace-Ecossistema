@@ -25,7 +25,7 @@ Fases 01 a 16 concluídas.
 
 ## Último commit
 
-`5fae4be` — fix(24): a projeção da linha do tempo descartava 100% dos eventos
+`257c4e9` — test(17): as 10 leituras canônicas executadas contra o banco de produção
 
 Branch de trabalho: `refactor/arquitetura-canonica`, criada a partir de `98940fe`.
 
@@ -259,6 +259,25 @@ caso `CONTRATO_SEM_PROCESSO_COMERCIAL`.
   Deixá-lo sobrescrever punha o card em "Novo" enquanto o contador do canônico dizia
   outra coisa — total e cards discordando na mesma tela.
 
+### Toda leitura canônica, executada contra produção
+
+`smoke-leituras-canonicas` chama as nove leituras exportadas de `consultas.ts` mais a
+linha do tempo, com ids reais, e confere **conteúdo**, não ausência de exceção. Board
+vazio é o defeito que este refactor mais encontrou, e "não explodiu" teria passado em
+todos eles.
+
+| Leitura | Tempo | Conteúdo |
+|---|---|---|
+| `boardPreVendas` | 75ms | 201 cards, 3.702 ativos |
+| `boardPipeline` | 21ms | 290 cards, 603 ganhas |
+| `diretorioEmpresas` | **461ms** | 200 linhas (a mais lenta) |
+| `empresa360` | 38ms | monta com oportunidades |
+| `detalheLead` / `detalheOportunidade` | 3ms | montam |
+| `lerLinhaDoTempo` | 3ms | 50 eventos |
+
+O smoke falha acima de um segundo: consulta de board lenta é problema de produto, não
+de teste.
+
 ### Propagação: o que a tela não via depois de escrito
 
 Três defeitos da mesma família, todos encontrados provocando a ação pela rota em vez de
@@ -270,6 +289,8 @@ dois lados, e era isso que os escondia: só apareceriam no primeiro uso depois d
 | trocar dono de lead não chegava em `aquisicoes` | board conta "sem responsável" do canônico | `registrarMudancaResponsavel`, a porta que os 7 caminhos já usavam |
 | automação movia etapa de lead para `crm2_pre_vendas_stage` | **0 linhas preenchidas** nessa coluna em todo o banco | porta de pré-vendas |
 | projeção da linha do tempo descartava todo evento | **2.016 de 2.016** eventos sem id canônico no payload | a projeção resolve o vínculo pelo agregado |
+| nota escrita por automação não aparecia na conta | só existia em `atividades` | publica `NoteAdded`, e a projeção a exibe |
+| cartão "Sem 1º contato" mostrava zero para sempre | **0 de 3.989** aquisições com `last_touch_at` nulo; o número real é **3.060** | a condição virou "sem toque depois da chegada" |
 
 O terceiro é o mais instrutivo: a projeção tinha teste verde e caller ligado desde a
 rodada anterior, e mesmo assim **nunca criou uma linha**, porque descartar evento sem
@@ -463,7 +484,7 @@ canônico hoje faria o lead sumir da tela de pré-vendas no mesmo instante.
 ## Testes executados
 
 Estado atual: `tsc --noEmit` limpo, **build de produção passando**, **257 testes, 0
-falhas**, e **19 de 19 smokes** verdes contra o banco real (conferidos por código de
+falhas**, e **22 de 22 smokes** verdes contra o banco real (conferidos por código de
 saída, não por texto: procurar "FALHA" na saída dava falso positivo em `falhados=0`):
 
 - `smoke-ponte-canonica` — entrada externa chega inteira ao canônico e não duplica;
