@@ -519,3 +519,26 @@ fabricar pros outros 44%" — continua correto.
 **Validação:** `tsc` limpo, build passando, **180 testes, 0 falhas**.
 
 **Commits:** `714d92e`, `b7d737e`.
+
+---
+
+## 2026-09-21 — Itens da Definition of Done fechados com prova
+
+**50 colunas eram invisíveis para o código.** As migrations 0062 a 0069 criaram
+colunas que ninguém declarou no Drizzle: `contratos.oportunidade_id`,
+`propostas.oferta_comercial_id`, `communications.conversa_id`, as 10 de atribuição de
+`pontos_contato`, e por aí. O backfill escreveu nelas por SQL cru e nenhuma rota
+conseguia lê-las pelo ORM. A fase 01 tinha reconciliado o drift à mão, e nada impedia
+que voltasse.
+
+Declaradas todas, e um teste passou a varrer as duas direções. Na primeira execução
+ele acusou `leads.ip_address` e `eventos.ip_address` — e estava errado: faltava `inet`
+na lista de tipos do próprio teste. Mesma classe do teste de atribuição que checava 8
+dos 13 sinais e reprovava 87 touchpoints válidos. O teste estava errado, não o código.
+
+**`event_outbox` provado ponta a ponta.** A tabela tem consumidor no worker desde
+agosto, mas ninguém tinha provado a cadeia contra dado real. `smoke-outbox.ts` prova
+5 de 5, e o caso que mais importa é o terceiro: **transação que falha não deixa evento
+órfão**. Evento publicado de uma escrita que não aconteceu é pior que evento nenhum.
+
+**Commit:** `89e9715`.

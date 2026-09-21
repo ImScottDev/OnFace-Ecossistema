@@ -15,7 +15,7 @@ e as libs de analytics e CS.
 
 ## Último commit
 
-`b7d737e` — fix(17): a linha do tempo lia uma tabela vazia com 47 mil registros ao lado
+`89e9715` — fix(24): 50 colunas invisíveis para o código, e duas travas contra voltar
 
 Branch de trabalho: `refactor/arquitetura-canonica`, criada a partir de `98940fe`.
 
@@ -243,15 +243,32 @@ canônico hoje faria o lead sumir da tela de pré-vendas no mesmo instante.
 
 ## Testes executados
 
-Estado atual: `tsc --noEmit` limpo, **build de produção passando**, **180 testes, 0
-falhas**, mais três smokes contra o banco real:
+Estado atual: `tsc --noEmit` limpo, **build de produção passando**, **182 testes, 0
+falhas**, mais quatro smokes contra o banco real:
 
 - `smoke-ponte-canonica` — entrada externa chega inteira ao canônico e não duplica;
 - `smoke-ganho-oportunidade` 5/5 — a política da oferta decide, PABX gera as duas
   jornadas, retry não duplica;
 - `smoke-ponte-ganho` 5/5 — o caminho **legado** obedece à oferta, e a mesma prova
   (contrato assinado, sem pagamento) produz decisões **opostas** para PABX e para
-  Callface AI direto. É a demonstração do risco financeiro fechado.
+  Callface AI direto. É a demonstração do risco financeiro fechado;
+- `smoke-outbox` 5/5 — evento e outbox na mesma transação, nascem pendentes, não
+  duplicam na reentrega, **somem juntos quando a transação falha**, e o consumidor
+  tira da fila.
+
+### Travas permanentes contra regressão
+
+| Teste | Impede |
+|---|---|
+| `db/drift-schema.test.ts` | coluna no banco e não no Drizzle (ou o contrário) |
+| `db/on-conflict.test.ts` | ON CONFLICT apontando para índice que não existe |
+| `db/sql-template.test.ts` | crase em comentário de SQL, que fecha o template |
+| `arquitetura/fronteiras.test.ts` | domínio importando ORM, SDK ou framework |
+| `arquitetura/escritores-migrados.test.ts` | porta de escrita nova sem ligação canônica |
+| `vendas/leitura-canonica.test.ts` | registro sumindo da leitura; divergência sem caso |
+
+Cada uma foi verificada **falhando de propósito** antes de entrar. Teste que não pega
+nada é teatro.
 
 Contagens conferidas depois dos smokes: oportunidades 1.561, negócios 1.562, serviços
 438, aquisições 3.989 — idênticas ao registrado. Os smokes passaram a limpar em
