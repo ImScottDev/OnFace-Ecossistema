@@ -319,6 +319,58 @@ async function main() {
     }
   }
 
+
+  console.log("\n═══ loop aberto: o número vira fila, e fechar o loop some dela ═══");
+  if (negocioId) {
+    const { filaDeLoops, resumoDeLoops } = await import("@/lib/vendas/loops-abertos");
+    const { boardPipeline } = await import("@/lib/vendas/consultas");
+
+    // Um bloco anterior já definiu próxima ação nesta oportunidade, então ela
+    // chega aqui com o loop FECHADO. Limpar primeiro é o que deixa o teste
+    // medir o ciclo inteiro: abre o loop, confere que aparece, fecha, confere
+    // que some.
+    await definirProximaAcao({
+      organizacaoId: org.id, negocioId, descricao: null, quando: null,
+      ator: { tipo: "HUMAN", usuarioId: u.id },
+    });
+
+    const antes = await resumoDeLoops(org.id);
+    const boardAntes = await boardPipeline(org.id, { semProximaAcao: true });
+    const abertasSemProxima = (b: Awaited<ReturnType<typeof boardPipeline>>) =>
+      b.colunas.filter((c) => c.aceitaDrop).reduce((n, c) => n + c.total, 0);
+
+    ok(antes.total > 0, `a fila de loops tem itens reais (${antes.total} loops em ${antes.oportunidades} oportunidades)`);
+    ok(antes.valorParado > 0, `e diz quanto dinheiro está parado (R$ ${antes.valorParado})`);
+    const naFila = (await filaDeLoops({ organizacaoId: org.id })).some((i) => i.negocioId === negocioId);
+    ok(naFila, "a oportunidade do smoke, sem próxima ação, aparece na fila");
+
+    // Fecha o loop pela PORTA. Se a leitura não enxergar, a fila é decorativa.
+    await definirProximaAcao({
+      organizacaoId: org.id, negocioId,
+      descricao: "smoke: ligar para o cliente",
+      quando: new Date(Date.now() + 864e5).toISOString(),
+      ator: { tipo: "HUMAN", usuarioId: u.id },
+    });
+
+    const depois = await resumoDeLoops(org.id);
+    ok(depois.porMotivo.SEM_PROXIMA_ACAO === antes.porMotivo.SEM_PROXIMA_ACAO - 1,
+       `fechar o loop tira a oportunidade da fila (${antes.porMotivo.SEM_PROXIMA_ACAO} → ${depois.porMotivo.SEM_PROXIMA_ACAO})`);
+
+    const boardDepois = await boardPipeline(org.id, { semProximaAcao: true });
+    ok(abertasSemProxima(boardDepois) === abertasSemProxima(boardAntes) - 1,
+       `e o board filtrado enxerga a mesma coisa (${abertasSemProxima(boardAntes)} → ${abertasSemProxima(boardDepois)})`);
+
+    const semFiltro = await boardPipeline(org.id, {});
+    ok(abertasSemProxima(semFiltro) > abertasSemProxima(boardDepois),
+       `o board sem filtro continua mostrando todas (${abertasSemProxima(semFiltro)})`);
+
+    // Desfaz: a próxima ação do smoke não pode virar tarefa de verdade.
+    await definirProximaAcao({
+      organizacaoId: org.id, negocioId, descricao: null, quando: null,
+      ator: { tipo: "HUMAN", usuarioId: u.id },
+    });
+  }
+
   await limpar();
   const [resto] = await db.execute<{ n: number }>(sql`
     SELECT ((SELECT count(*) FROM leads WHERE nome LIKE 'smoke-duas-verdades-%')

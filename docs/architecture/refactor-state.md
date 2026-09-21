@@ -1169,6 +1169,43 @@ cairia no fallback e uma entrega quase pronta apareceria em "Planejamento".
 smokes**, `/api/fulfillments` conferida com dado real (25 entregas, todas com
 fase ou marco) e `/clientes/implantacao` renderizando a aba Todas.
 
+### CP9 — Loops abertos: o Next Step Invariant virou fila
+
+O contador já existia. `boardPipeline` devolvia `semProximaAcao` e a tela
+mostrava "527 sem próxima ação" no topo. **Não havia filtro, rota nem lista**,
+então o operador via o problema e não tinha para onde ir.
+
+Medição em dado real: **527 de 527** oportunidades abertas sem próximo passo.
+Não é atraso do time, é mecanismo que nunca disparou (`definirProximaAcao` é
+recente e só roda quando alguém abre o modal).
+
+`lib/vendas/loops-abertos.ts` monta a fila derivada de sinal real, mesma
+decisão de `lib/cs/fila` (uma "tabela de loops" estaria dessincronizada no
+minuto seguinte). Quatro motivos, todos medidos:
+
+| motivo | quantos |
+|---|---|
+| sem próxima ação | 527 |
+| parada há +14 dias | 324 |
+| proposta enviada há +7 dias sem desfecho | 74 |
+| sem responsável | 3 |
+
+**928 loops em 527 oportunidades, R$ 477.191,68 parados.** O item no topo é uma
+proposta de R$ 33.930,00 enviada há 11 dias sem resposta; outra de R$ 9.251,80
+está esperando há 61.
+
+**NADA cria próxima ação.** As 527 ficam como estão: inventar um follow-up para
+cada uma seria fabricar combinado que ninguém fez. A fila mostra, e quem resolve
+é o dono por `definirProximaAcao`, que continua sendo a porta única.
+
+Duas correções de caminho vieram junto:
+
+- `boardDeOportunidades` escrevia as condições de filtro **duas vezes** (cards e
+  totais). Filtro aplicado num lado só faz a coluna mostrar N cards enquanto o
+  cabeçalho dela anuncia outro número. Unificadas antes de acrescentar a nova.
+- 284 das 527 oportunidades abertas não têm empresa canônica. Sem cair no lead,
+  a fila entregaria linha sem nome, e linha sem nome não é acionável.
+
 ### Auditoria de CS Health (histórico da decisão)
 
 Menor do que o gap analysis inicial dizia:

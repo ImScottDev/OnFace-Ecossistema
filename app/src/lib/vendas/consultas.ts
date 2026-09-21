@@ -299,6 +299,8 @@ export interface FiltrosPipeline {
   /** Ausente (ou null) = board ÚNICO, com as seis colunas. */
   aba?: "abertas" | "ganhas" | "perdidas" | null;
   motion?: string | null;
+  /** Next Step Invariant: só as oportunidades sem próximo passo combinado. */
+  semProximaAcao?: boolean;
 }
 
 export interface BoardPipeline {
@@ -339,6 +341,7 @@ export async function boardPipeline(organizacaoId: string, filtros: FiltrosPipel
     familia: filtros.familia ?? null,
     motion: filtros.motion ?? null,
     busca: filtros.busca ?? null,
+    semProximaAcao: filtros.semProximaAcao ?? false,
     limite: LIMITE_PADRAO,
   });
 

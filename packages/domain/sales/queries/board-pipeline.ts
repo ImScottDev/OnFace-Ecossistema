@@ -40,6 +40,8 @@ export interface FiltrosPipeline {
   familia?: string | null;
   motion?: string | null;
   busca?: string | null;
+  /** Só as que estão sem próximo passo combinado — o Next Step Invariant. */
+  semProximaAcao?: boolean;
   limite?: number;
 }
 
@@ -57,6 +59,20 @@ export async function boardDeOportunidades(
   const etapas = filtros.etapas?.length ? filtros.etapas : null;
   const listaEtapas = etapas ? `{${etapas.join(",")}}` : null;
   const busca = filtros.busca?.trim() ? `%${filtros.busca.trim().toLowerCase()}%` : null;
+
+  // As MESMAS condições nas duas queries (cards e totais). Estavam escritas
+  // duas vezes, e filtro aplicado num lado só faz a coluna mostrar N cards
+  // enquanto o cabeçalho dela anuncia outro número.
+  const condicoes = sql`
+        AND (${filtros.responsavelId ?? null}::uuid IS NULL OR o.responsavel_id = ${filtros.responsavelId ?? null}::uuid)
+        AND (${filtros.familia ?? null}::text IS NULL OR o.service_family = ${filtros.familia ?? null})
+        AND (${filtros.motion ?? null}::text IS NULL OR o.commercial_motion = ${filtros.motion ?? null})
+        AND (${busca}::text IS NULL OR lower(COALESCE(o.titulo,'')) LIKE ${busca}
+             OR lower(COALESCE(e.nome, '')) LIKE ${busca})
+        AND (${filtros.semProximaAcao ? true : null}::boolean IS NULL
+             OR NOT EXISTS (SELECT 1 FROM negocios nx
+                             WHERE nx.id = o.negocio_id_legado
+                               AND nx.proxima_acao IS NOT NULL))`;
   const limite = filtros.limite ?? 400;
   // Limite POR COLUNA: com limite global as vagas vão todas para a etapa mais
   // cheia e as outras aparecem vazias mesmo tendo total.
@@ -78,11 +94,7 @@ export async function boardDeOportunidades(
         LEFT JOIN usuarios u ON u.id = o.responsavel_id
        WHERE o.organizacao_id = ${organizacaoId}::uuid
          AND (${listaEtapas}::text[] IS NULL OR o.etapa = ANY(${listaEtapas}::text[]))
-         AND (${filtros.responsavelId ?? null}::uuid IS NULL OR o.responsavel_id = ${filtros.responsavelId ?? null}::uuid)
-         AND (${filtros.familia ?? null}::text IS NULL OR o.service_family = ${filtros.familia ?? null})
-         AND (${filtros.motion ?? null}::text IS NULL OR o.commercial_motion = ${filtros.motion ?? null})
-         AND (${busca}::text IS NULL OR lower(COALESCE(o.titulo,'')) LIKE ${busca}
-              OR lower(COALESCE(e.nome, '')) LIKE ${busca})
+         ${condicoes}
     )
     SELECT * FROM (
       SELECT base.*, row_number() OVER (PARTITION BY etapa ORDER BY ordenacao DESC) AS pos
@@ -118,11 +130,7 @@ export async function boardDeOportunidades(
       LEFT JOIN empresas e ON e.id = o.empresa_id
      WHERE o.organizacao_id = ${organizacaoId}::uuid
        AND (${listaEtapas}::text[] IS NULL OR o.etapa = ANY(${listaEtapas}::text[]))
-       AND (${filtros.responsavelId ?? null}::uuid IS NULL OR o.responsavel_id = ${filtros.responsavelId ?? null}::uuid)
-       AND (${filtros.familia ?? null}::text IS NULL OR o.service_family = ${filtros.familia ?? null})
-       AND (${filtros.motion ?? null}::text IS NULL OR o.commercial_motion = ${filtros.motion ?? null})
-       AND (${busca}::text IS NULL OR lower(COALESCE(o.titulo,'')) LIKE ${busca}
-            OR lower(COALESCE(e.nome, '')) LIKE ${busca})
+       ${condicoes}
      GROUP BY o.etapa`);
 
   const totaisPorEtapa: Record<string, { n: number; valor: number }> = {};

@@ -54,11 +54,13 @@ export interface AcoesPipeline {
   detalhe: (id: string) => Promise<Resultado<{ oportunidade: DetalheOportunidade | null; timeline: LinhaDoTempo[] }>>;
 }
 
-export function Pipeline({ dados, filtro, selecaoInicial, rotaBase, acoes }: {
+export function Pipeline({ dados, filtro, loop = false, selecaoInicial, rotaBase, acoes }: {
   dados: BoardPipeline;
   /** Só para link antigo salvo; o board padrão é o único, sem aba. */
   aba?: Aba;
   filtro: { busca: string; responsavelId: string | null; familia: string | null };
+  /** O board está recortado nos loops abertos? */
+  loop?: boolean;
   selecaoInicial?: string | null;
   rotaBase: RotaBaseVendas;
   acoes: AcoesPipeline;
@@ -147,6 +149,20 @@ export function Pipeline({ dados, filtro, selecaoInicial, rotaBase, acoes }: {
           <span><strong>{dados.resumo.abertas}</strong> abertas</span>
           <span><strong>{dados.resumo.ganhas}</strong> ganhas</span>
           <span><strong>{dados.resumo.perdidas}</strong> perdidas</span>
+          {/* LOOP ABERTO (Next Step Invariant). O contador já existia e não
+              levava a lugar nenhum: o operador via "527 sem próxima ação" e
+              não tinha como olhar quais. Agora recorta o board. */}
+          {dados.resumo.semProximaAcao > 0 ? (
+            <button
+              type="button"
+              className="ov-resumo-loop"
+              data-ativo={loop}
+              aria-pressed={loop}
+              onClick={() => navegar({ loop: loop ? null : "sem-proxima-acao" })}
+            >
+              <strong>{dados.resumo.semProximaAcao}</strong> sem próxima ação
+            </button>
+          ) : null}
         </div>
         <Busca valor={busca} aoMudar={setBusca} placeholder="Buscar empresa ou oportunidade" />
         <button type="button" className="ov-botao" data-variante="neutro" onClick={() => navegar({ busca })}>Buscar</button>

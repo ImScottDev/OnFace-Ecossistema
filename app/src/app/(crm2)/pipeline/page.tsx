@@ -21,7 +21,7 @@ type Aba = "abertas" | "ganhas" | "perdidas";
  * fino que chama esta mesma função com outro `rotaBase` — sem ele, um clique
  * numa tela irmã devolvia o usuário para dentro do preview. */
 export async function PipelinePage({ searchParams, rotaBase = "" }: {
-  searchParams: Promise<{ aba?: string; busca?: string; responsavel?: string; familia?: string; oportunidade?: string }>;
+  searchParams: Promise<{ aba?: string; busca?: string; responsavel?: string; familia?: string; oportunidade?: string; loop?: string }>;
   rotaBase?: RotaBaseVendas;
 }) {
   const ctx = await getTenantContext();
@@ -35,8 +35,11 @@ export async function PipelinePage({ searchParams, rotaBase = "" }: {
   const busca = params.busca?.trim() || "";
   const responsavelId = params.responsavel || null;
   const familia = params.familia || null;
+  // Next Step Invariant: o número de "sem próxima ação" deixou de ser enfeite
+  // no topo e virou um recorte do board.
+  const semProximaAcao = params.loop === "sem-proxima-acao";
 
-  const dados = await boardPipeline(ctx.organizacaoId, { aba, busca, responsavelId, familia });
+  const dados = await boardPipeline(ctx.organizacaoId, { aba, busca, responsavelId, familia, semProximaAcao });
 
   return (
     <OnfacePage>
@@ -57,6 +60,7 @@ export async function PipelinePage({ searchParams, rotaBase = "" }: {
           dados={dados}
           aba={aba ?? undefined}
           filtro={{ busca, responsavelId, familia }}
+          loop={semProximaAcao}
           selecaoInicial={params.oportunidade ?? null}
           rotaBase={rotaBase}
           acoes={{

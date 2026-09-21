@@ -742,3 +742,23 @@ details.ov-coluna[data-colapsada]:not([open]) > summary h2 {
 .ov-checklist li[data-estado="ok"] .ov-checklist-marca { color: var(--onface-verde, #1f9d55); }
 .ov-checklist li[data-estado="nao_se_aplica"] { opacity: 0.6; }
 .ov-checklist-detalhe { color: var(--text-muted, #6b7280); }
+
+/* O contador de loop aberto é um filtro, e precisa parecer um. */
+.ov-resumo-loop {
+  display: inline-flex;
+  align-items: baseline;
+  gap: calc(4 * var(--onface-u));
+  padding: calc(2 * var(--onface-u)) calc(8 * var(--onface-u));
+  border: 1px solid transparent;
+  border-radius: calc(999 * var(--onface-u));
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.ov-resumo-loop:hover { border-color: var(--border-default, #d8dbe0); }
+.ov-resumo-loop[data-ativo="true"] {
+  background: var(--alerta-suave, #fff4e5);
+  border-color: var(--alerta, #e08700);
+  color: var(--alerta-texto, #8a5200);
+}
