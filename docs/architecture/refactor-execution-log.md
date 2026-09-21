@@ -2299,3 +2299,46 @@ apareceria em "Planejamento".
 
 **Validação:** tsc limpo, **297 testes 0 falhas**, build exit 0, **29/29
 smokes**, rota conferida com dado real.
+
+## 2026-09-21 — CP9 e CP10, com QA de rotas
+
+### CP9 — o contador que não levava a lugar nenhum
+
+`boardPipeline` já devolvia `semProximaAcao` e a tela já mostrava "527 sem
+próxima ação". Não havia filtro, rota nem lista: o operador via o problema e
+não tinha para onde ir.
+
+527 de 527 oportunidades abertas estão sem próximo passo. Não é atraso do time,
+é mecanismo que nunca disparou. A fila derivada soma 928 loops em 527
+oportunidades e R$ 477.191,68 parados, com uma proposta de R$ 33.930,00
+esperando resposta há 11 dias e outra de R$ 9.251,80 há 61.
+
+Nada cria próxima ação: inventar follow-up para 527 oportunidades seria fabricar
+combinado que ninguém fez.
+
+Junto veio a mesma duplicação do CP6, noutro lugar: as condições de filtro do
+board estavam escritas duas vezes (cards e totais), e filtro aplicado num lado
+só faz a coluna mostrar N cards enquanto o cabeçalho anuncia outro número.
+
+### CP10 — uma conclusão minha corrigida pela auditoria
+
+Eu tinha concluído que `executeAgent` não tinha chamador. Tem: o worker o chama
+por import dinâmico relativo dentro de `handleAiSdrResponse`, e uma varredura
+textual não acha porque o caminho do import é o mesmo texto que se filtra.
+
+O defeito real era outro e pior: o gate de publicação não conferia credencial.
+Publicar o NEXO passaria nas quatro checagens e falharia na primeira mensagem
+do cliente, sem cair no legado (cair duplicaria a resposta). O contato
+escreveria e ninguém responderia.
+
+### Um erro próprio, no teste e não no código
+
+O primeiro bloco de smoke do CP9 acusou três falhas. Não era o filtro: um bloco
+anterior do mesmo smoke já define próxima ação naquela oportunidade, então ela
+chegava com o loop fechado. A premissa do teste estava errada, e corrigi-la
+deixou o teste melhor — agora ele abre o loop, confere que aparece, fecha e
+confere que some.
+
+**Validação:** tsc limpo, **300 testes 0 falhas**, build exit 0, **29/29
+smokes**, e QA das 19 rotas do módulo contra build de produção: todas 200, com
+o único 307 sendo o redirect documentado de `/negocios` para `/pipeline`.
