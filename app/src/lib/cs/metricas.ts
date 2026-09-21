@@ -17,6 +17,7 @@
  */
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
+import { medir } from "@/lib/metricas/catalogo";
 
 export interface Metrica {
   chave: string;
@@ -55,12 +56,9 @@ export async function metricasCs(organizacaoId: string, janelaDias = JANELA_PADR
   const temMovimento = Number(mov?.linhas ?? 0) > 0;
 
   // MRR base do início da janela: o atual menos tudo que se moveu nela.
-  const [atual] = await db.execute<{ mrr: string }>(sql`
-    SELECT COALESCE(SUM(current_recurring_value), 0)::text AS mrr
-      FROM servicos_canonicos
-     WHERE organizacao_id = ${organizacaoId}
-       AND portfolio_included = true AND revenue_nature = 'MRR' AND commercial_lifecycle = 'ACTIVE'`);
-  const mrrAtual = Number(atual?.mrr ?? 0);
+  // O MRR global vem do Metric Catalog (Módulo 12): uma métrica, uma
+  // definição. Esta era uma das oito expressões de MRR do repositório.
+  const mrrAtual = (await medir(organizacaoId, "mrr_atual")).valor;
   const mrrInicial = mrrAtual - (Number(mov?.novo ?? 0) + expansao + reativacao - churn - contracao);
 
   const baseValida = temMovimento && mrrInicial > 0;

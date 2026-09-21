@@ -4172,6 +4172,34 @@ export const callfaceAiTenantSnapshots = pgTable(
  * incremental, retry-safe e observável: sem ela a próxima execução não sabe
  * onde a anterior parou, e uma indisponibilidade do provedor vira silêncio.
  */
+/**
+ * Metric Catalog (migration 0087, Módulo 12) — o REGISTRO das definições.
+ *
+ * O cálculo mora em código versionado (lib/metricas/catalogo.ts); esta tabela
+ * é o espelho, para descoberta, drill-down e para o NEXO consultar a definição
+ * oficial em vez de inventar uma.
+ */
+export const metricCatalog = pgTable(
+  "metric_catalog",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    codigo: text("codigo").notNull(),
+    nome: text("nome").notNull(),
+    /** EVENT | SNAPSHOT | COHORT — misturar os três produz conversão por razão de snapshots. */
+    tipo: text("tipo").notNull(),
+    unidade: text("unidade").notNull(),
+    descricao: text("descricao").notNull(),
+    fonte: text("fonte").notNull(),
+    /** O que a métrica deliberadamente NÃO inclui. */
+    naoInclui: text("nao_inclui"),
+    versao: integer("versao").default(1).notNull(),
+    temDrilldown: boolean("tem_drilldown").default(true).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [uniqueIndex("uq_metric_catalog_codigo").on(table.codigo)]
+);
+
 export const integracaoSyncEstado = pgTable(
   "integracao_sync_estado",
   {

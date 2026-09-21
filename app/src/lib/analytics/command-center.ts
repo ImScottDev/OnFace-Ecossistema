@@ -11,6 +11,7 @@ import { leads, negocios, ligacoes, whatsappMensagens, emails, contatos, usuario
 import { eq, and, gte, lt, sql, inArray, isNotNull, isNull, or, desc } from "drizzle-orm";
 import { getFechadoPeriodo, PIPELINE_ATIVO_STATUSES } from "@/lib/relatorios/comercial";
 import { getFluxoMes, getCalendarioRenovacao } from "@/lib/financeiro/metricas";
+import { medir } from "@/lib/metricas/catalogo";
 
 /**
  * Dias úteis (seg-sex) restantes no mês a partir de `hoje`, incluindo hoje
@@ -48,13 +49,10 @@ function monthBounds(ref: Date) {
  */
 export async function getMrrAtivo(orgId: string, janelaDias = 30) {
   const [[ativo], [mov]] = await Promise.all([
-    db.execute<{ mrr: string }>(sql`
-      SELECT COALESCE(SUM(current_recurring_value), 0)::text AS mrr
-        FROM servicos_canonicos
-       WHERE organizacao_id = ${orgId}
-         AND portfolio_included = true
-         AND revenue_nature = 'MRR'
-         AND commercial_lifecycle = 'ACTIVE'`),
+    // O número vem do Metric Catalog (Módulo 12): uma métrica, uma definição.
+    // Esta query era uma das CINCO expressões de MRR no repositório, e as
+    // cinco davam números diferentes — de R$ 61 mil a R$ 497 mil.
+    medir(orgId, "mrr_atual").then((m) => [{ mrr: String(m.valor) }]),
     db.execute<{ liquido: string; qtd: string }>(sql`
       SELECT COALESCE(SUM(delta), 0)::text AS liquido,
              COUNT(*)::text                AS qtd

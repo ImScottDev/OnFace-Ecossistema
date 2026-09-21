@@ -57,9 +57,13 @@ export async function painelCs(organizacaoId: string, responsavelId?: string | n
   const conta = sql`
     conta AS (
       SELECT cli.empresa_id, cli.responsavel_id, e.nome AS empresa_nome, u.nome AS owner_nome,
+             -- Mesmos filtros da métrica canônica mrr_atual, só que por
+             -- empresa: ACTIVE + MRR + portfólio. O ciclo de vida faltava, e
+             -- sem ele um serviço CHURNED somava no MRR da conta.
              COALESCE((SELECT SUM(sc.current_recurring_value) FROM servicos_canonicos sc
                         WHERE sc.empresa_id = cli.empresa_id AND sc.portfolio_included = true
-                          AND sc.revenue_nature = 'MRR'), 0)::text AS mrr
+                          AND sc.revenue_nature = 'MRR'
+                          AND sc.commercial_lifecycle = 'ACTIVE'), 0)::text AS mrr
         FROM clientes cli
         JOIN empresas e ON e.id = cli.empresa_id
         LEFT JOIN usuarios u ON u.id = cli.responsavel_id

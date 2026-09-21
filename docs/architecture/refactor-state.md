@@ -875,6 +875,83 @@ os mesmos números do banco de dev. As contagens ficam levemente acima (leads
 O procedimento de virada unificado está em `entrega-final.md`, seção 8.
 `scripts/ensaio-carga.sh` faz a carga e `scripts/rodar-backfills.sh` os backfills.
 
+## Conclusão do ONFACE (Documento Mestre v0.13) — checkpoints
+
+Plano por dependência, não pela ordem dos módulos. O que já entrou:
+
+### CP1 — a implantação nasce no handoff, não no Won
+
+Auditado antes de construir, como pedido. "0 fulfillments IMPLEMENTATION" não
+era ausência de código: o runtime cria a jornada e o smoke prova. Os 200
+serviços PABX/White Label sem implantação são históricos do backfill e nunca
+passaram pelo Won canônico.
+
+A auditoria achou outra coisa: o comando canônico criava ONBOARDING E
+IMPLEMENTATION no mesmo instante do ganho, e o v0.13 §06.1 é literal —
+"Implantação não nasce automaticamente no Won". Criada ali, a jornada técnica
+nascia sem kickoff, sem material e sem implantador, que são justamente o gate
+do Módulo 05.
+
+`jornadasNoGanho` separa o que o fechamento cria do que a oferta exige;
+`lib/pos-venda/handoff-implantacao.ts` é o comando do handoff, com o gate
+lendo fatos (reunião realizada ou item de kickoff concluído, arquivo vinculado
+ou material concluído, responsável definido). Rotas GET/POST — o GET devolve o
+que falta, para a tela explicar o botão em vez de escondê-lo.
+
+### CP2 — Metric Catalog mínimo
+
+O Módulo 12 exige "uma métrica = uma definição oficial". Medido: a palavra MRR
+saía de **oito** expressões no repositório, com números que variavam oito vezes.
+
+| fonte | valor |
+|---|---|
+| `negocios.mrr_fechado` (ganhos) | R$ 497.904,42 |
+| `servicos_canonicos.current_recurring_value` | R$ 426.619,39 |
+| `assinaturas.mrr` | R$ 61.769,55 |
+| `mrr_movimentos` (deltas) | R$ 81.308,35 |
+
+Não eram erros de soma: são conceitos diferentes com o mesmo nome. O primeiro é
+booking acumulado desde sempre, o segundo o recorrente atual, o terceiro só o
+que está no Stripe (o PABX legado não está), o quarto o livro de movimentos.
+
+Seis métricas, mínimo de propósito: as quatro que o Módulo 11 manda separar
+(`mrr_atual`, `booking_ganho`, `faturado`, `recebido`) mais `clientes_ativos` e
+`oportunidades_abertas`. Cada uma declara tipo (EVENT/SNAPSHOT/COHORT), fonte em
+português, **o que não inclui** e drill-down até os registros reais.
+
+A definição mora em código versionado; `metric_catalog` é o espelho para
+descoberta e para o NEXO consultar em vez de inventar.
+
+**Convergência feita, não declarada.** O KPI global de MRR do Command Center e
+o de `lib/cs/metricas.ts` passaram a chamar `medir(org, "mrr_atual")`. As
+agregações por empresa de `lib/cs/agenda.ts` e `painel.ts` são outra
+granularidade e continuam, mas ganharam o filtro de ciclo de vida que faltava —
+sem ele, serviço CHURNED somava no MRR da conta.
+
+A definição canônica adotou `portfolio_included`, que a tela operacional já
+usava: a diferença de R$ 1.000 entre as duas era **um** serviço de família
+UNKNOWN marcado fora do portfólio. Adotar a decisão registrada no dado é
+diferente de inventar uma terceira.
+
+Trava: `arquitetura/metrica-definicao-unica.test.ts` proíbe soma global de
+recorrente fora do catálogo, exige `naoInclui` e drill-down em toda métrica, e
+exige que os quatro conceitos financeiros existam com o tipo certo.
+
+### Auditoria de CS Health (feita, implementação pendente)
+
+Menor do que o gap analysis inicial dizia:
+
+| Perna | Estado |
+|---|---|
+| cálculo de risco | **existe** — `reavaliarRiscos`, 514 riscos reais |
+| scheduler | **existe** — job `cs-sweep` no worker |
+| painel/UI | **existe** — `painelCs`, `lib/cs` com 3.353 linhas |
+| score de health | **não existe** |
+| materialização | **não existe** — `cs_health_snapshots` com zero escritores |
+
+`health-check.ts` é a pesquisa de NPS, conceito diferente. Falta o score e a
+materialização, ligados no sweep que já roda.
+
 ## Bloqueios reais
 
 Nenhum.
