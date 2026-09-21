@@ -200,7 +200,22 @@ export async function boardPreVendas(organizacaoId: string, filtros: FiltrosPreV
       count(*) FILTER (WHERE COALESCE(nutricao_status,'') <> '')::int AS nutricao,
       count(*) FILTER (WHERE desqualificado_em IS NOT NULL)::int AS desqualificados,
       count(*) FILTER (WHERE closed_at IS NULL AND responsavel_id IS NULL)::int AS sem_responsavel,
-      count(*) FILTER (WHERE closed_at IS NULL AND last_touch_at IS NULL)::int AS sem_primeiro_contato
+      -- "Sem 1o contato" e NAO ter havido toque DEPOIS da chegada, e nao
+      -- last_touch_at nulo.
+      --
+      -- first_touch_at e a chegada do lead, e isso e um toque de verdade: ele
+      -- veio ate nos. last_touch_at cai para a mesma data quando ninguem o
+      -- contatou depois. Entao a condicao antiga nunca era verdadeira: ZERO de
+      -- 3.989 aquisicoes tem last_touch_at nulo, e o cartao mostrava zero com
+      -- alerta desligado enquanto 3.060 leads abertos jamais foram contatados.
+      -- Um KPI que so sabe dizer "esta tudo bem".
+      --
+      -- Conferido por um segundo caminho, independente do canonico: leads
+      -- abertos com last_contact_at nulo dao exatamente os mesmos 3.060.
+      count(*) FILTER (
+        WHERE closed_at IS NULL
+          AND (last_touch_at IS NULL OR last_touch_at <= first_touch_at)
+      )::int AS sem_primeiro_contato
       FROM aquisicoes WHERE organizacao_id = ${organizacaoId}::uuid
   `);
 

@@ -105,6 +105,31 @@ async function main() {
     }
     console.log(`\n  ${ok ? "SMOKE PASSOU: cada ação de pré-vendas move o card de verdade" : "SMOKE FALHOU"}\n`);
     saida = ok ? 0 : 1;
+    // O cartao "Sem 1o contato" do board, que mostrava zero para sempre.
+    //
+    // A condicao era `last_touch_at IS NULL`, e nenhuma aquisicao tem esse
+    // campo nulo: o backfill grava a chegada do lead como ultimo toque quando
+    // ninguem o contatou depois. O numero correto e quantas nao tiveram toque
+    // DEPOIS da chegada, conferido por um caminho independente (leads abertos
+    // sem last_contact_at).
+    {
+      const b = await boardPreVendas(org.id, { aba: "ativos" });
+      const conferencia = await um<{ n: number }>(sql`
+        SELECT count(*)::int AS n FROM aquisicoes a JOIN leads l ON l.id = a.lead_legado_id
+         WHERE a.closed_at IS NULL AND l.last_contact_at IS NULL`);
+      const mostrado = b.resumo.semPrimeiroContato;
+      console.log(`\n  Sem 1o contato: board diz ${mostrado}, conferencia independente diz ${conferencia.n}`);
+      if (mostrado !== conferencia.n) {
+        console.log(`  FALHA  o cartao do board nao bate com a conferencia`);
+        saida = 1;
+      } else if (mostrado === 0) {
+        console.log(`  FALHA  zero de novo: o contador voltou a nunca ser verdadeiro`);
+        saida = 1;
+      } else {
+        console.log(`  ok  o cartao conta leads que ninguem contatou (${mostrado})`);
+      }
+    }
+
   } finally {
     if (leadId) {
       await db.execute(sql`DELETE FROM vendas_eventos WHERE lead_id = ${leadId}::uuid`);

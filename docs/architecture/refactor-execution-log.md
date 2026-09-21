@@ -1376,3 +1376,42 @@ era só daqui pra frente, que é onde ele foi fechado.
 **Validação:** tsc limpo, **257 testes, 0 falhas**, build exit 0, `smoke-automacao-etapa`
 (15 verificações), `smoke-motor-unico`, `smoke-outbox` e `smoke-capi-outbox` verdes, e
 zero resíduo de smoke no banco.
+
+---
+
+## 2026-09-21 — Cutover crítico, parte 6: o cartão "Sem 1º contato" mostrava zero para sempre
+
+Auditoria dos quatro escritores que o inventário classificava como "atualizam, não
+criam". Três confirmados inofensivos: `email.ts` e `whatsapp.ts` escrevem contadores de
+caixa de entrada que não existem no canônico, e o `tipo` que `contratos.ts` escreve em
+`leads` (cliente, contato, lead) não tem relação com `aquisicoes.tipo` (INBOUND,
+OUTBOUND), apesar do nome igual. Colisão de nome, não de significado.
+
+O quarto levou a outro lugar. `cadencia.ts` escreve `leads.last_contact_at`, e foi
+puxando esse fio que apareceu um KPI quebrado na tela.
+
+**O board de pré-vendas mostra "Sem 1º contato" com alerta, e o número é sempre zero.**
+A condição era `last_touch_at IS NULL`, e **nenhuma das 3.989 aquisições tem esse campo
+nulo**: o backfill grava a chegada do lead como último toque quando ninguém o contatou
+depois. A condição nunca podia ser verdadeira. Um indicador que só sabe dizer "está tudo
+bem".
+
+O backfill não estava errado, e por isso não mexi nele: `first_touch_at = created_at`
+é defensável, o lead chegando É um toque, ele veio até nós. O erro estava na LEITURA.
+
+"Sem 1º contato" significa não ter havido toque DEPOIS da chegada. Com essa condição, o
+número é **3.060 de 3.702 aquisições abertas**, e ele bate exatamente com uma
+conferência por caminho independente do canônico: leads abertos com `last_contact_at`
+nulo. Duas contas separadas chegando no mesmo número é o que me deixou publicar isso
+como correção e não como palpite.
+
+A verificação entrou em `smoke-prevendas-leitura`, consultando o BOARD e comparando com
+a conferência independente, e falha também se o número voltar a ser zero.
+
+**Sétima vez com a crase.** Escrevi `` `last_touch_at` `` dentro de um comentário no
+template `sql` e o literal fechou no meio. O erro sai como `TS1005` numa coluna
+arbitrária, sem nenhuma menção a SQL. A trava `sql-template.test.ts` existe desde hoje
+de manhã justamente para isso.
+
+**Validação:** tsc limpo, **257 testes, 0 falhas**, build exit 0,
+`smoke-prevendas-leitura` verde com o cartão em 3.060.
