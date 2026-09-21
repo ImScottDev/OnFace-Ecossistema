@@ -15,7 +15,7 @@ Fases 01 a 16 concluídas.
 |---|---|
 | 17 leitores | telas de vendas no canônico **com a propagação fechada**; leituras que descartavam dinheiro corrigidas. Falta a leitura de detalhe/edição, que migra junto com a escrita na fase 25 |
 | 18 motor único | os dois motores usam os mesmos adapters; falta a tag de empresa, que usa outro modelo |
-| 19 IA | NEXO e Hermes criados em `draft`; a IA não escreve mais direto no banco. Falta RAG e o runtime passar permissão delegada |
+| 19 IA | NEXO e Hermes em `draft`, a IA não escreve direto no banco, busca de conhecimento no banco com índice, e **permissão delegada com teto por interseção**. Publicar os agentes é decisão de quem opera |
 | 22 RBAC | papéis, mapa e vínculos semeados, com paridade provada. Falta as rotas usarem `exigirPermissao` |
 | 20 Meta | **CAPI validada contra a Meta real** (8 eventos aceitos em Test Events). Inbound implementado e testável; ativação real bloqueada só pela permissão da Página |
 | 21 storage | serviço construído e testado; adapter S3/R2 espera credencial. Migrar os pontos de upload vem junto, porque trocá-los agora só muda um disco local por outro |
@@ -25,7 +25,7 @@ Fases 01 a 16 concluídas.
 
 ## Último commit
 
-`a6f2b6d` — refactor(20): Meta revisada inteira, o adapter existia e ninguém chamava
+`64eb8a9` — refactor(19): pedir ao agente deixa de contornar a permissão de quem pediu
 
 Branch de trabalho: `refactor/arquitetura-canonica`, criada a partir de `98940fe`.
 
@@ -106,6 +106,7 @@ Os três não verificáveis estão nomeados, e "não verificável" **não é OK*
 | 0074 | `pipeline_etapas_em_uso` | semeia as 6 etapas que o produto usa e liga as 1.561 oportunidades | sim, documentado |
 | 0075 | `busca_conhecimento` | full-text em português com `unaccent` e índice GIN | sim, DROP COLUMN |
 | 0076 | `meta_capi_entregas` | auditoria da entrega de conversão à Meta | sim, DROP TABLE |
+| 0077 | `permissao_delegada_agentes` | teto de permissão do NEXO (7) e do Hermes (5) | sim, remove a chave do jsonb |
 
 ## Credenciais: o que está configurado e o que falta
 
@@ -344,8 +345,8 @@ canônico hoje faria o lead sumir da tela de pré-vendas no mesmo instante.
 
 ## Testes executados
 
-Estado atual: `tsc --noEmit` limpo, **build de produção passando**, **235 testes, 0
-falhas**, mais **dez smokes** contra o banco real:
+Estado atual: `tsc --noEmit` limpo, **build de produção passando**, **238 testes, 0
+falhas**, mais **onze smokes** contra o banco real:
 
 - `smoke-ponte-canonica` — entrada externa chega inteira ao canônico e não duplica;
 - `smoke-ganho-oportunidade` 5/5 — a política da oferta decide, PABX gera as duas
@@ -373,7 +374,7 @@ falhas**, mais **dez smokes** contra o banco real:
 | `arquitetura/escritores-migrados.test.ts` | motor de regras com implementação própria de ação |
 | `db/array-postgres.test.ts` | array do Postgres projetado cru (o driver devolve string) |
 | `v1/api-publica.test.ts` | rota pública sem escopo; nome de tabela na URL; token em claro |
-| `ai-platform/agentes.test.ts` | ferramenta de IA escrevendo direto; agente citando ferramenta inexistente |
+| `ai-platform/agentes.test.ts` | ferramenta de IA escrevendo direto; agente citando ferramenta inexistente; ferramenta de escrita sem permissão exigida |
 | `auth/permissoes.test.ts` | cutover de autorização mudando o acesso de alguém |
 
 Cada uma foi verificada **falhando de propósito** antes de entrar. Teste que não pega

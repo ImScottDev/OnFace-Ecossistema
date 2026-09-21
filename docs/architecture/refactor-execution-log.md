@@ -848,3 +848,34 @@ Os oito eventos do ciclo de vida foram aceitos em modo Test Events
 CRM/App na aba CRMs do Business Manager. Tudo que não depende disso está pronto.
 
 **Commit:** `a6f2b6d`.
+
+---
+
+## 2026-09-21 — Fase 19 · Permissão delegada ao agente
+
+O SPEC §31 é literal: NEXO e Hermes *"cannot exceed the permissions delegated to the
+run"*. As ferramentas já passavam pelos adapters de domínio, o que impede a IA de
+escrever direto no banco, mas **nenhuma verificava permissão**.
+
+O risco concreto: NEXO é operado por conversa. Um SDR pede ao agente uma ação que o
+papel dele não permite, o agente executa, e o RBAC vira decoração — basta pedir ao
+robô.
+
+**O teto é a interseção**, não a união: o agente não pode mais que a versão dele nem
+mais que quem o acionou. Provado com um papel que tem MENOS que o agente — o NEXO tem
+7 permissões e, acionado por um leitor, fica sem nenhuma de escrita. Testar com closer
+ou admin não provaria nada, porque eles já têm tudo que o agente tem.
+
+Os tetos são diferentes de propósito: Hermes roda sem humano por trás e é o mais
+apertado. **Nenhum dos dois mexe em automação, financeiro ou usuários** — mudar fluxo
+por conversa é como se perde o controle de um sistema.
+
+O gate roda no `executeRegisteredTool`, por onde toda ferramenta passa: verificar
+dentro de cada uma seriam catorze lugares para esquecer um.
+
+**Uma trava pegou o que eu tinha esquecido:** o teste de inventário acusou
+`alert.create`, fora do meu mapeamento. Entrou como exceção junto com
+`handoff.request` e `case.open`, todas da mesma família — é o que o agente faz quando
+NÃO pode agir, e negá-las o deixaria travado em silêncio.
+
+**Commit:** `64eb8a9`.
