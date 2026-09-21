@@ -198,15 +198,32 @@ async function main() {
     // que já existia, apagá-la levaria junto histórico que não é meu.
     if (Number(contaAgora.n) > Number(antes.aquisicoes)) {
       await db.execute(sql`DELETE FROM aquisicoes WHERE id = ${aquisicaoId}::uuid`);
-      if (alvo?.pessoa_id) {
-        const [sobrou] = await db.execute<{ n: string }>(sql`
-          SELECT count(*) AS n FROM pessoas WHERE organizacao_id = ${orgId}::uuid`);
-        if (Number(sobrou.n) > Number(antes.pessoas)) {
-          await db.execute(sql`DELETE FROM pessoa_empresa WHERE pessoa_id = ${alvo.pessoa_id}::uuid`);
-          await db.execute(sql`DELETE FROM pessoas WHERE id = ${alvo.pessoa_id}::uuid`);
-        }
-      }
     }
+
+    // A PESSOA é decidida à parte, e por contagem própria.
+    //
+    // A versão anterior aninhava esta limpeza dentro do if da aquisição, e o
+    // caso comum é justamente o outro: o lead da Meta cai numa aquisição que
+    // já existia E cria uma pessoa nova. A pessoa ficava para trás, e o teste
+    // de reconciliação a encontrou como "apareceu do nada".
+    const [sobrouPessoa] = await db.execute<{ n: string }>(sql`
+      SELECT count(*) AS n FROM pessoas WHERE organizacao_id = ${orgId}::uuid`);
+    if (alvo?.pessoa_id && Number(sobrouPessoa.n) > Number(antes.pessoas)) {
+      await db.execute(sql`DELETE FROM pessoa_empresa_vinculos WHERE pessoa_id = ${alvo.pessoa_id}::uuid`).catch(() => undefined);
+      await db.execute(sql`DELETE FROM pontos_contato WHERE pessoa_id = ${alvo.pessoa_id}::uuid`).catch(() => undefined);
+      await db.execute(sql`DELETE FROM pessoas WHERE id = ${alvo.pessoa_id}::uuid`).catch(() => undefined);
+    }
+
+    // Rede de segurança: pessoa sem proveniência é exatamente o que o teste de
+    // reconciliação proíbe, e resíduo de smoke não pode virar dado fantasma.
+    await db.execute(sql`
+      DELETE FROM pessoas p
+       WHERE p.organizacao_id = ${orgId}::uuid
+         AND p.created_at > now() - interval '2 hours'
+         AND NOT EXISTS (SELECT 1 FROM backfill_provenance bp
+                          WHERE bp.entidade_canonica = 'pessoa' AND bp.id_canonico = p.id)
+         AND NOT EXISTS (SELECT 1 FROM aquisicoes a WHERE a.pessoa_id = p.id)
+         AND NOT EXISTS (SELECT 1 FROM oportunidades o WHERE o.pessoa_id = p.id)`).catch(() => undefined);
   }
   const [final] = await db.execute<{ aquisicoes: string; pontos: string; pessoas: string }>(sql`
     SELECT (SELECT count(*) FROM aquisicoes WHERE organizacao_id = ${orgId}::uuid) AS aquisicoes,

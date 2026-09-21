@@ -16,6 +16,7 @@ import {
 import { eq, and, or, inArray, sql, desc, asc, isNotNull } from "drizzle-orm";
 import { z } from "zod";
 import { lerUsoCallfaceAi } from "@/lib/integrations/callface-ai/leitura-dominio";
+import { healthDaEmpresa } from "@/lib/cs/health";
 import { getCtx, getGestaoCtx } from "../compat.js";
 import { registrarMudancaResponsavel } from "@/lib/crm/owner";
 import { publicarEvento } from "@/lib/events/outbox";
@@ -1552,7 +1553,13 @@ app.get("/clientes-crm2/:empresaId", async (c) => {
   const temCallfaceAi = servicos.some((s) => s.serviceFamily === "CALLFACE_AI");
   const callfaceAi = temCallfaceAi ? await lerUsoCallfaceAi(empresaId) : null;
 
+  // Health da conta (Módulo 07): versionado, explicável e com a cobertura à
+  // vista. Nulo quando o sweep ainda não avaliou esta conta — o Cliente 360
+  // mostra "ainda não avaliado" em vez de inventar um score neutro.
+  const health = await healthDaEmpresa(ctx.organizacaoId, empresaId);
+
   return c.json({
+    health,
     empresa,
     pessoas,
     servicos: servicos.map((s) => {

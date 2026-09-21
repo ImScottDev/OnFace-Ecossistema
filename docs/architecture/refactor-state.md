@@ -937,7 +937,47 @@ Trava: `arquitetura/metrica-definicao-unica.test.ts` proíbe soma global de
 recorrente fora do catálogo, exige `naoInclui` e drill-down em toda métrica, e
 exige que os quatro conceitos financeiros existam com o tipo certo.
 
-### Auditoria de CS Health (feita, implementação pendente)
+### CP3 — CS Health calculado, explicável e materializado
+
+A auditoria tinha mostrado que o motor estava vivo e faltava só o score:
+
+| Perna | Estado antes |
+|---|---|
+| cálculo de risco | **existia** — `reavaliarRiscos`, 514 riscos reais |
+| scheduler | **existia** — job `cs-sweep` no worker |
+| painel/UI | **existia** — `painelCs`, `lib/cs` com 3.353 linhas |
+| score de health | não existia |
+| materialização | não existia — `cs_health_snapshots` com zero escritores |
+
+`lib/cs/health.ts` entra com sete fatores observáveis: riscos abertos por
+severidade, faturas vencidas, dias sem interação, jornada de entrega parada há
+mais de 45 dias e uso real do Callface AI. Cada fator devolve estado, a
+**evidência numérica** que o produziu e quanto tirou de 100 — o `factors` do
+snapshot é o que a tela mostra, então "por que esta conta está em risco?" tem
+resposta sem abrir código.
+
+**Dado ausente não vira nota.** Fator sem dado fica `desconhecido` e NÃO tira
+ponto; a cobertura do score fica visível. Contar ausência como problema faria
+toda conta sem integração parecer doente, e contar como saúde faria o oposto.
+
+Ligado no sweep que já rodava, depois dos riscos — ele lê os riscos abertos
+como fator, e rodar antes daria a foto de ontem.
+
+Medido contra o banco real: **275 contas — 254 saudáveis, 14 em atenção, 7 em
+risco**, cobertura média 76%. Idempotente por (empresa, dia, versão): reexecutar
+atualiza, não empilha. O Cliente 360 passou a expor o health com os fatores.
+
+Efeito de integração entre módulos: a conta de pior score tem entre os fatores
+"Uso do Callface AI: 35 dias sem atividade" — o Product Data alimentando CS,
+que é o que o Módulo 13 pede.
+
+**Resíduo corrigido junto:** `smoke-meta-lead-ads` aninhava a limpeza da pessoa
+dentro do if da aquisição, e o caso comum é o outro — o lead da Meta cai numa
+aquisição existente E cria pessoa nova. Uma pessoa ficou para trás e o teste de
+reconciliação a pegou como "apareceu do nada". A limpeza passou a decidir a
+pessoa por contagem própria, com rede de segurança para pessoa sem proveniência.
+
+### Auditoria de CS Health (histórico da decisão)
 
 Menor do que o gap analysis inicial dizia:
 

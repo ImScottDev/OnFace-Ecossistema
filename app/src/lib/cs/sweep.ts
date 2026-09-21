@@ -12,6 +12,7 @@ import { db } from "@/lib/db";
 import { organizacoes } from "@/lib/db/schema";
 import { processarMarcosVencidos } from "./jornada";
 import { reavaliarRiscos, gerarTarefasDeRisco } from "./riscos";
+import { calcularHealth } from "./health";
 import { sincronizarRenovacoes, gerarTarefasDeRenovacao } from "./renovacao";
 
 export interface ResultadoSweep {
@@ -25,6 +26,9 @@ export interface ResultadoSweep {
   riscosAtualizados: number;
   riscosResolvidos: number;
   tarefasDeRisco: number;
+  healthContas: number;
+  healthEmRisco: number;
+  healthCobertura: number;
 }
 
 export async function rodarSweepCs(organizacaoId: string): Promise<ResultadoSweep> {
@@ -33,6 +37,9 @@ export async function rodarSweepCs(organizacaoId: string): Promise<ResultadoSwee
   const marcos = await processarMarcosVencidos(organizacaoId);
   const tarefasRisco = await gerarTarefasDeRisco(organizacaoId);
   const tarefasRenov = await gerarTarefasDeRenovacao(organizacaoId);
+  // O health entra DEPOIS dos riscos: ele lê os riscos abertos como fator, e
+  // rodar antes daria a foto de ontem.
+  const health = await calcularHealth(organizacaoId);
 
   return {
     organizacaoId,
@@ -43,6 +50,9 @@ export async function rodarSweepCs(organizacaoId: string): Promise<ResultadoSwee
     tarefasDeRenovacao: tarefasRenov,
     riscosAbertos: risco.abertos,
     riscosAtualizados: risco.atualizados,
+    healthContas: health.contas,
+    healthEmRisco: health.emRisco,
+    healthCobertura: health.coberturaMedia,
     riscosResolvidos: risco.resolvidos,
     tarefasDeRisco: tarefasRisco,
   };

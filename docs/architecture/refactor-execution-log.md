@@ -2125,3 +2125,62 @@ Trocado pela invariante real: sincronizar de novo não cria linha.
 **Validação:** tsc limpo, **276 testes 0 falhas**, build exit 0, **25/25 smokes**,
 aceite de vendas **97/0**, paridade **13/14** (NEXO, credencial de provedor), migrations
 em dia, zero resíduo de smoke no banco.
+
+---
+
+## 2026-09-21 — Conclusão do ONFACE: CP1 a CP3
+
+Começou o trabalho de convergir o produto ao Documento Mestre v0.13. A regra que
+o Kauã impôs e que mudou o tamanho de dois checkpoints: **auditar antes de
+construir**. Os dois casos em que ela valeu:
+
+**Implantação.** "0 fulfillments IMPLEMENTATION" parecia ausência de jornada.
+Não era: o runtime cria e o smoke prova. Os 200 serviços PABX/White Label sem
+implantação são históricos do backfill, que nunca passaram pelo Won canônico. O
+que a auditoria achou foi outra coisa, e mais séria: o comando canônico criava
+ONBOARDING e IMPLEMENTATION no mesmo instante do ganho, contra o §06.1
+("Implantação não nasce automaticamente no Won"). Criada ali, a jornada técnica
+nascia sem kickoff, sem material e sem implantador — os três que o Módulo 05
+exige como porta de entrada dela.
+
+**CS Health.** `cs_health_snapshots = 0` parecia motor inexistente. O motor
+estava vivo: 514 riscos reais calculados, job `cs-sweep` agendado, painel
+lendo, 3.353 linhas em `lib/cs`. Faltava só o score e a materialização. O
+checkpoint encolheu de "construir CS Health" para "calcular e gravar no sweep
+que já roda".
+
+### O que o Metric Catalog encontrou
+
+A palavra MRR saía de **oito** expressões no repositório. Quatro fontes
+distintas, medidas no banco real:
+
+    negocios.mrr_fechado (ganhos) ................ R$ 497.904,42
+    servicos_canonicos.current_recurring_value ... R$ 426.619,39
+    assinaturas.mrr .............................. R$  61.769,55
+    mrr_movimentos (deltas) ...................... R$  81.308,35
+
+Oito vezes de diferença entre a maior e a menor. Não eram erros de soma: eram
+conceitos diferentes com o mesmo nome — booking acumulado, recorrente atual, o
+que está no Stripe (o PABX legado não está) e o livro de movimentos.
+
+A convergência não foi declarada, foi feita: o KPI global do Command Center e o
+de `lib/cs/metricas.ts` passaram a chamar `medir(org, "mrr_atual")`. As
+agregações por empresa continuam — é outra granularidade — mas ganharam o filtro
+de ciclo de vida que faltava, sem o qual um serviço CHURNED somava no MRR da
+conta.
+
+A definição canônica adotou `portfolio_included`, que a tela operacional já
+usava. A diferença de R$ 1.000 entre as duas era UM serviço de família UNKNOWN
+marcado fora do portfólio. Adotar a decisão já registrada no dado é diferente de
+inventar uma terceira definição.
+
+### Erro próprio, corrigido
+
+O `smoke-meta-lead-ads` aninhava a limpeza da pessoa dentro do if da aquisição.
+O caso comum é o outro: o lead da Meta cai numa aquisição que já existe E cria
+pessoa nova. Uma pessoa ficou para trás e o teste de reconciliação a encontrou
+como "apareceu do nada". A limpeza passou a decidir a pessoa por contagem
+própria, com rede de segurança para pessoa sem proveniência.
+
+**Validação:** tsc limpo, **286 testes 0 falhas**, build exit 0, **27/27 smokes**,
+zero resíduo no banco.
