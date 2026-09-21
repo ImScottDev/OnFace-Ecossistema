@@ -16,7 +16,8 @@ import { db } from "@/lib/db";
 import {
   ROTULO_ETAPA_PIPELINE, ROTULO_ETAPA_PRE_VENDAS, ROTULO_FAMILIA,
   ROTULO_ESTADO_PROSPECCAO, ROTULO_RELACIONAMENTO,
-  ETAPAS_PIPELINE, ETAPAS_PRE_VENDAS, ESTADOS_PROSPECCAO,
+  ETAPAS_PIPELINE, ETAPAS_PRE_VENDAS,
+  SAIDAS_PRE_VENDAS, ESTADOS_PROSPECCAO,
   type EstadoProspeccao, type EstagioPreVendas, type EtapaPipeline,
   type RelacionamentoEmpresa,
 } from "./dominio";
@@ -87,9 +88,20 @@ export interface BoardPreVendas {
 }
 
 export async function boardPreVendas(organizacaoId: string, filtros: FiltrosPreVendas = {}): Promise<BoardPreVendas> {
-  const aba = filtros.aba ?? "ativos";
-  const etapasDaAba: EstagioPreVendas[] = aba === "ativos"
-    ? [...ETAPAS_PRE_VENDAS]
+  // KANBAN ÚNICO (Documento Mestre v0.13, Módulo 01 §2).
+  //
+  // "Pré-vendas passa a ter um único Kanban operacional, com todas as
+  // situações visíveis no mesmo espaço", com SETE colunas — Nutrição e
+  // Desqualificado deixam de ser abas separadas.
+  //
+  // `aba` continua aceito e continua filtrando: as telas legadas do CRM2 ainda
+  // chamam com ela, e removê-la agora quebraria o board antigo antes da
+  // substituição. Sem `aba`, o board é o único.
+  const aba = filtros.aba ?? null;
+  const TODAS: EstagioPreVendas[] = [...ETAPAS_PRE_VENDAS, ...SAIDAS_PRE_VENDAS];
+  const etapasDaAba: EstagioPreVendas[] = aba === null
+    ? TODAS
+    : aba === "ativos" ? [...ETAPAS_PRE_VENDAS]
     : aba === "nutricao" ? ["nutricao"] : ["desqualificado"];
 
   // CUTOVER DE LEITURA (fase 17). A fonte passou a ser `aquisicoes`.
@@ -106,6 +118,8 @@ export async function boardPreVendas(organizacaoId: string, filtros: FiltrosPreV
     busca: filtros.busca ?? null,
     campanha: filtros.campanha ?? null,
     desde: filtros.desde ?? null,
+    // Nutrição e desqualificado vivem em aquisição encerrada: o Kanban único
+    // precisa delas, e a aba "ativos" continua sem.
     incluirEncerradas: aba !== "ativos",
     limite: LIMITE_PADRAO,
   });
@@ -178,6 +192,8 @@ export async function boardPreVendas(organizacaoId: string, filtros: FiltrosPreV
     .filter((c) => !filtros.servico || (c.servicos ?? []).includes(filtros.servico));
 
   const colunas = (aba === "ativos" ? [...ETAPAS_PRE_VENDAS] : etapasDaAba).map((chave) => {
+    // A ordem é a do fluxo, e as duas saídas ficam no fim: novo, em contato,
+    // qualificação, qualificado, oportunidade, nutrição, desqualificado.
     const daColuna = cards.filter((c) => c.etapa === chave);
     return {
       chave, rotulo: ROTULO_ETAPA_PRE_VENDAS[chave],

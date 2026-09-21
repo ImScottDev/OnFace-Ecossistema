@@ -39,7 +39,10 @@ export async function PreVendasPage({ searchParams, rotaBase = "" }: {
   if (!ctx) redirect("/login");
 
   const params = await searchParams;
-  const aba: Aba = params.aba === "nutricao" || params.aba === "desqualificados" ? params.aba : "ativos";
+  // Kanban único (v0.13 §01.2): sem aba, o board devolve as sete colunas.
+  // O parâmetro continua sendo lido para não quebrar link antigo salvo por
+  // alguém, mas o padrão é o board inteiro.
+  const aba = params.aba === "nutricao" || params.aba === "desqualificados" ? params.aba : undefined;
   const busca = params.busca?.trim() || "";
   const responsavelId = params.responsavel || null;
 

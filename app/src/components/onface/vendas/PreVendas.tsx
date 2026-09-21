@@ -68,7 +68,8 @@ export interface AcoesPreVendas {
 
 export function PreVendas({ dados, aba, filtro, acoes, rotaBase = "" }: {
   dados: BoardPreVendas;
-  aba: Aba;
+  /** Só para link antigo salvo; o board padrão é o único, sem aba. */
+  aba?: Aba;
   filtro: { busca: string; responsavelId: string | null };
   acoes: AcoesPreVendas;
   /** Prefixo das rotas irmãs do módulo. Vazio = rota oficial do produto. */
@@ -126,15 +127,17 @@ export function PreVendas({ dados, aba, filtro, acoes, rotaBase = "" }: {
   return (
     <>
       <div className="ov-controles">
-        <Abas<Aba>
-          ativa={aba}
-          aoTrocar={(nova) => navegar({ aba: nova === "ativos" ? null : nova })}
-          abas={[
-            { chave: "ativos", rotulo: "Ativos", contagem: dados.resumo.ativos },
-            { chave: "nutricao", rotulo: "Nutrição", contagem: dados.resumo.nutricao },
-            { chave: "desqualificados", rotulo: "Desqualificados", contagem: dados.resumo.desqualificados },
-          ]}
-        />
+        {/* KANBAN ÚNICO (v0.13, Módulo 01 §2). As abas Ativos/Nutrição/
+            Desqualificados saíram: as sete situações vivem no mesmo board, e
+            Nutrição e Desqualificado são colunas como as outras.
+
+            O que era navegação virou informação — o resumo continua dizendo
+            quantos há em cada situação, sem esconder nenhuma. */}
+        <div className="ov-resumo-inline" aria-label="Resumo da operação">
+          <span><strong>{dados.resumo.ativos}</strong> ativos</span>
+          <span><strong>{dados.resumo.nutricao}</strong> em nutrição</span>
+          <span><strong>{dados.resumo.desqualificados}</strong> desqualificados</span>
+        </div>
         <Busca
           valor={busca}
           aoMudar={setBusca}

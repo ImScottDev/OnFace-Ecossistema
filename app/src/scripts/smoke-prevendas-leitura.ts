@@ -112,6 +112,35 @@ async function main() {
     // ninguem o contatou depois. O numero correto e quantas nao tiveram toque
     // DEPOIS da chegada, conferido por um caminho independente (leads abertos
     // sem last_contact_at).
+    // ── Kanban único: sete colunas num board só (v0.13 §01.2) ─────────────
+    {
+      const unico = await boardPreVendas(org.id, {});
+      const esperadas = ["novo", "em_contato", "qualificacao", "qualificado",
+                         "oportunidade", "nutricao", "desqualificado"];
+      const chaves = unico.colunas.map((c) => c.chave);
+      const bate = esperadas.length === chaves.length && esperadas.every((e, i) => chaves[i] === e);
+      console.log(`\n  Kanban único: ${chaves.length} colunas — ${chaves.join(", ")}`);
+      if (!bate) {
+        console.log(`  FALHA  esperava as 7 na ordem do fluxo: ${esperadas.join(", ")}`);
+        saida = 1;
+      } else {
+        console.log(`  ok  as sete situações vivem no mesmo board, sem aba`);
+      }
+      // Nutrição e desqualificado precisam TRAZER card, não só existir como
+      // coluna vazia: eram abas separadas justamente porque vivem em aquisição
+      // encerrada, e esquecer `incluirEncerradas` deixaria as duas a zero.
+      const totalSaidas = unico.colunas
+        .filter((c) => c.chave === "nutricao" || c.chave === "desqualificado")
+        .reduce((s, c) => s + c.total, 0);
+      const esperadoSaidas = unico.resumo.nutricao + unico.resumo.desqualificados;
+      if (totalSaidas !== esperadoSaidas) {
+        console.log(`  FALHA  as colunas de saída somam ${totalSaidas} e o resumo diz ${esperadoSaidas}`);
+        saida = 1;
+      } else {
+        console.log(`  ok  nutrição e desqualificado trazem os cards (${totalSaidas})`);
+      }
+    }
+
     {
       const b = await boardPreVendas(org.id, { aba: "ativos" });
       const conferencia = await um<{ n: number }>(sql`
