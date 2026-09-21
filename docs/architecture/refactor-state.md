@@ -15,7 +15,7 @@ e as libs de analytics e CS.
 
 ## Último commit
 
-`58c115e` — refactor(17): empresa 360 e telas de detalhe no canônico
+`b7d737e` — fix(17): a linha do tempo lia uma tabela vazia com 47 mil registros ao lado
 
 Branch de trabalho: `refactor/arquitetura-canonica`, criada a partir de `98940fe`.
 
@@ -152,12 +152,26 @@ lead e de oportunidade). Migrá-la migrou as telas de uma vez.
 | `empresa360` — propostas | `oportunidades` + identidade | **+446 propostas** antes invisíveis |
 | `detalheLead` — oportunidades | `oportunidades` | — |
 | `detalheOportunidade` — irmãs | `oportunidades` | — |
+| `lerLinhaDoTempo` | `timeline_events` + `communications` | **0 → 40 eventos** por pessoa |
+| responsável do onboarding | cadeia canônica → legado | **0 → 305** contratos órfãos com dono |
 
 **O sumiço, medido.** A consulta anterior filtrava `estagio_pre_vendas = ANY(...)` e
 2.392 dos 3.989 leads têm esse campo nulo. No canônico não existe registro sem
 estado: aquisição aberta e não qualificada é "novo", que é um estado, não um vazio.
 O board saiu de 1.597 para 3.702, distribuídos em colunas reais (novo 2.756, em
 contato 531, oportunidade 415).
+
+**A linha do tempo lia uma tabela vazia.** `lerLinhaDoTempo` consultava só
+`vendas_eventos`, que tem zero linhas, enquanto `timeline_events` tinha 14.078 e
+`communications` 33.005 — o dado dos backfills 13, 14 e 15 sem nenhum leitor. Agora
+lê as três em UNION, com dedup por correspondência (pessoa + tipo + dois minutos),
+porque a mesma ligação chega pelos dois caminhos. Filtrar por canal seria mais
+simples e perderia 983 ligações que nunca viraram atividade.
+
+**406 contratos eram invisíveis.** Não têm negócio nem oportunidade, e 271 estão
+ATIVOS. A cadeia de responsável do onboarding ia contrato → negócio → responsável e
+resolvia zero deles; agora vai do canônico ao legado e resolve 305. Os 406 viraram
+caso `CONTRATO_SEM_PROCESSO_COMERCIAL`.
 
 **Duas correções de leitura que não eram de fonte:**
 
@@ -229,7 +243,7 @@ canônico hoje faria o lead sumir da tela de pré-vendas no mesmo instante.
 
 ## Testes executados
 
-Estado atual: `tsc --noEmit` limpo, **build de produção passando**, **178 testes, 0
+Estado atual: `tsc --noEmit` limpo, **build de produção passando**, **180 testes, 0
 falhas**, mais três smokes contra o banco real:
 
 - `smoke-ponte-canonica` — entrada externa chega inteira ao canônico e não duplica;

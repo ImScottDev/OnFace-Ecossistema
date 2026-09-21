@@ -479,3 +479,43 @@ neste refactor. Agora há teste, verificado falhando de propósito antes de entr
 três smokes verdes.
 
 **Commits:** `0af6655`, `a318530`, `58c115e`.
+
+---
+
+## 2026-09-21 — Fase 17 (continuação) · Três buracos de leitura, medidos
+
+**A linha do tempo lia uma tabela vazia.** `lerLinhaDoTempo` consultava só
+`vendas_eventos`, que tem ZERO linhas. A tela de detalhe da pessoa dizia "Nenhum
+evento registrado" enquanto `timeline_events` tinha 14.078 e `communications`
+33.005 — exatamente o item da Definition of Done: "communications canonical table
+is empty/unread". Agora lê as três em UNION: 0 eventos antes, 40 depois, em 8ms
+numa pessoa real.
+
+O dedup é por **correspondência**, não por canal. As duas fontes descrevem o mesmo
+fato por caminhos diferentes: a ligação vira atividade (e daí evento de timeline) e
+também vira comunicação. Filtrar o canal inteiro seria uma linha e perderia 983
+ligações que nunca viraram atividade.
+
+**406 contratos invisíveis, 271 deles ativos.** Não têm negócio nem oportunidade.
+Toda leitura que passa por negócio os descarta: carteira, metas, geração de jornada.
+A cadeia de responsável do onboarding resolvia ZERO deles; agora vai do canônico ao
+legado (oportunidade, contrato→oportunidade, contrato→negócio, aquisição) e resolve
+305. Sem responsável, o onboarding nasce órfão e a notificação não sai.
+
+Os 406 viraram caso `CONTRATO_SEM_PROCESSO_COMERCIAL` no backfill 09. Ligá-los por
+proximidade seria inventar de qual venda vieram; o que dá para fazer é parar de
+escondê-los.
+
+**Jornada duplicada em silêncio.** `lib/crm/fulfillment.ts` inseria em `fulfillments`
+sem `tipo`, obrigatório desde a 0066. A unicidade é (serviço, tipo, ciclo) e com
+`tipo` NULO o índice nunca colide, porque NULL não é igual a NULL: este caminho
+criaria uma jornada nova a cada execução. Nenhuma duplicata no banco hoje.
+
+**Medido e descartado:** `atividades.empresa_id` está 100% vazia e o canônico não
+amplia a cobertura de empresa nas atividades de `clientes-crm2` (1.575 nos dois
+caminhos). O comentário que já estava no código — "cobertura real de 152/272, não
+fabricar pros outros 44%" — continua correto.
+
+**Validação:** `tsc` limpo, build passando, **180 testes, 0 falhas**.
+
+**Commits:** `714d92e`, `b7d737e`.
