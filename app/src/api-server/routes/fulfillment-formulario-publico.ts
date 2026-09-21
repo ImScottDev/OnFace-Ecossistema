@@ -10,14 +10,12 @@ import { db } from "@/lib/db";
 import { fulfillments, fulfillmentFormularios, fulfillmentItens, fulfillmentLinhasPortabilidade, fulfillmentRamais } from "@/lib/db/schema";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
-import fs from "fs";
-import path from "path";
 import { notificarFormularioImplantacaoRecebido } from "@/lib/crm/notificar";
+import { guardarNoAcervo } from "@/lib/arquivos/servico";
 
 const app = new Hono();
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(process.cwd(), "public", "uploads");
 const TIPOS_PERMITIDOS = ["application/pdf", "image/jpeg", "image/png", "image/webp"];
 const TAMANHO_MAXIMO = 10 * 1024 * 1024; // 10MB — fatura/documento com foto
 
@@ -89,8 +87,9 @@ app.get("/fulfillment-formulario/:publicToken", async (c) => {
 // documento do titular da linha, pedido explícito do Kauã: "a pessoa tem
 // que colocar lá, já anexar o arquivo", nada de "envie por e-mail depois").
 // Sem sessão (rota pública), autenticado só pelo publicToken — mesmo padrão
-// de segurança do restante deste arquivo. Reaproveita o mesmo mecanismo de
-// disco de `routes/uploads.ts`/`routes/perfil.ts` (fs local, sem storage novo).
+// de segurança do restante deste arquivo. O binário vai pro acervo canônico
+// (SPEC §32) como o de qualquer outra rota: o fato de quem envia não ter conta
+// no CRM muda a AUTORIZAÇÃO, não o lugar onde o arquivo mora.
 app.post("/fulfillment-formulario/:publicToken/upload", async (c) => {
   const publicToken = c.req.param("publicToken");
   if (!UUID_RE.test(publicToken)) return c.json({ error: "Link inválido" }, 404);
@@ -104,16 +103,19 @@ app.post("/fulfillment-formulario/:publicToken/upload", async (c) => {
   if (!TIPOS_PERMITIDOS.includes(file.type)) return c.json({ error: "Formato inválido. Use PDF, JPG, PNG ou WebP" }, 400);
   if (file.size > TAMANHO_MAXIMO) return c.json({ error: "Arquivo muito grande. Máximo 10MB" }, 400);
 
-  const ext = (file.name.split(".").pop() || "pdf").toLowerCase();
-  const dir = path.join(UPLOADS_DIR, "fulfillment-formularios", fulfillment.id);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-
-  const nomeArquivo = `${crypto.randomUUID()}.${ext}`;
-  const buffer = Buffer.from(await file.arrayBuffer());
-  fs.writeFileSync(path.join(dir, nomeArquivo), buffer);
+  const guardado = await guardarNoAcervo({
+    organizacaoId: fulfillment.organizacaoId,
+    nomeOriginal: file.name,
+    mimeType: file.type,
+    conteudo: new Uint8Array(await file.arrayBuffer()),
+    // O vínculo não é decoração: é ele que autoriza a leitura pública depois.
+    vinculos: [{ tipo: "fulfillment", id: fulfillment.id, papel: "formulario_implantacao" }],
+    metadata: { origem: "formulario_publico" },
+  });
+  if (!guardado.ok) return c.json({ error: guardado.erro }, 400);
 
   return c.json({
-    url: `/api/uploads/fulfillment-formularios/${fulfillment.id}/${nomeArquivo}`,
+    url: `/api/arquivos/publico/${fulfillment.id}/${guardado.arquivo.id}`,
     nomeOriginal: file.name,
   });
 });

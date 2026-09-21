@@ -3210,6 +3210,8 @@ export const anexos = pgTable(
     tipoMime: text("tipo_mime"),
     tamanhoBytes: integer("tamanho_bytes"),
     criadoPorId: uuid("criado_por_id").references(() => usuarios.id),
+    /** Acervo canônico do binário (SPEC §32). NULL = anexo de antes da virada. */
+    fileObjectId: uuid("file_object_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [

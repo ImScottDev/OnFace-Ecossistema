@@ -120,7 +120,21 @@ export function criarRepositorioVendas(db: Executor, sql: SqlTag): RepositorioVe
     },
 
     async moverEtapa(id, etapaId) {
-      await db.execute(sql`UPDATE oportunidades SET updated_at = now() WHERE id = ${id}::uuid AND ${etapaId} IS NOT NULL`);
+      // Isto NÃO move etapa nenhuma, e por isso falha alto em vez de fingir.
+      //
+      // A etapa canônica não existe como dado: `oportunidades.etapa_id` tem
+      // zero linhas preenchidas em 1.561 oportunidades, e quem move etapa de
+      // verdade é `lib/vendas/pipeline`. A versão anterior deste método só
+      // rodava `SET updated_at = now()` — silenciosamente não movia e ainda
+      // marcava a oportunidade como recém-alterada, que é como o board já
+      // mostrou "17min" em tudo uma vez.
+      //
+      // Some quando a fase 25 decidir onde a etapa canônica mora.
+      void id; void etapaId;
+      throw new Error(
+        "moverEtapa canônico não implementado: a etapa vive em lib/vendas/pipeline " +
+        "e oportunidades.etapa_id não tem dado (fase 25)",
+      );
     },
 
     async criarServicoEJornadas(oportunidadeId, jornadas) {

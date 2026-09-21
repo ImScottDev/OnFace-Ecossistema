@@ -4,8 +4,9 @@ import fs from "fs";
 import path from "path";
 import { eq, and } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { negocios, fulfillments } from "@/lib/db/schema";
+import { negocios, fulfillments, fileLinks } from "@/lib/db/schema";
 import { getTenantFromRequest } from "../auth.js";
+import { entregarDoAcervo } from "@/lib/arquivos/servico";
 
 const app = new Hono();
 
@@ -78,9 +79,104 @@ async function autorizar(c: Context, caminho: string): Promise<{ ok: true } | { 
     return n ? { ok: true } : { ok: false, status: 403 };
   }
 
-  // 4. Avatar de usuário e mídia de WhatsApp ficam na raiz: sessão basta.
+  // 4. Chave do acervo canônico: `<organizacao>/<ab>/<checksum>.<ext>`. A
+  // organização está no CAMINHO, então a comparação é exata e não depende de
+  // consulta nenhuma — é o motivo de a chave ter sido desenhada assim.
+  const primeiro = caminho.split("/")[0];
+  if (/^[0-9a-f-]{36}$/i.test(primeiro)) {
+    return primeiro.toLowerCase() === ctx.organizacaoId.toLowerCase()
+      ? { ok: true }
+      : { ok: false, status: 403 };
+  }
+
+  // 5. Avatar de usuário e mídia de WhatsApp de ANTES da virada ficam na raiz:
+  // sessão basta. Arquivo novo não cai mais aqui — nasce com organização na
+  // chave, no caso 4.
   return { ok: true };
 }
+
+/**
+ * Entrega o arquivo depois de a rota ter decidido que pode.
+ *
+ * As duas rotas de arquivo autorizam de formas diferentes — sessão e vínculo —
+ * e entregam igual. Separar as duas coisas é o que permite a segunda rota
+ * existir sem afrouxar a primeira.
+ */
+async function entregar(c: Context, id: string, organizacaoId: string): Promise<Response> {
+  const r = await entregarDoAcervo(id, organizacaoId);
+  if (!r.ok) return c.json({ error: "Not found" }, 404);
+  // Provedor que assina devolve URL e o binário nunca passa pela aplicação.
+  if ("url" in r) return c.redirect(r.url, 302);
+
+  // `Response` recusa um Uint8Array que possa estar sobre SharedArrayBuffer.
+  const corpo = new Uint8Array(r.conteudo);
+  return new Response(corpo, {
+    headers: {
+      "Content-Type": r.mimeType,
+      "Content-Length": String(corpo.byteLength),
+      "Content-Disposition": `inline; filename*=UTF-8''${encodeURIComponent(r.nomeOriginal)}`,
+      // `private`: conteúdo de UMA organização, nunca em cache compartilhado.
+      "Cache-Control": "private, max-age=3600",
+    },
+  });
+}
+
+/**
+ * GET /api/arquivos/publico/:fulfillmentId/:id — anexo do formulário de
+ * implantação, aberto por quem preencheu (SPEC §32).
+ *
+ * Sem sessão POR DESENHO, como o upload que o alimenta: quem preenche é o
+ * CLIENTE, não tem conta no CRM, e reabre o comprovante que acabou de anexar.
+ * O que autoriza não é "estar logado", é o arquivo estar VINCULADO àquele
+ * fulfillment em `file_links` — o mesmo vínculo que o upload criou. Sem isso, o
+ * id de um arquivo qualquer somado a um fulfillment qualquer abriria documento
+ * de outro cliente.
+ */
+app.get("/arquivos/publico/:fulfillmentId/:id", async (c) => {
+  const fulfillmentId = c.req.param("fulfillmentId");
+  const id = c.req.param("id");
+  if (!/^[0-9a-f-]{36}$/i.test(fulfillmentId) || !/^[0-9a-f-]{36}$/i.test(id)) {
+    return c.json({ error: "Not found" }, 404);
+  }
+
+  const [vinculo] = await db
+    .select({ organizacaoId: fileLinks.organizacaoId })
+    .from(fileLinks)
+    .where(and(
+      eq(fileLinks.fileObjectId, id),
+      eq(fileLinks.entityType, "fulfillment"),
+      eq(fileLinks.entityId, fulfillmentId),
+    ))
+    .limit(1);
+  if (!vinculo) return c.json({ error: "Not found" }, 404);
+
+  const [f] = await db.select({ id: fulfillments.id }).from(fulfillments)
+    .where(eq(fulfillments.id, fulfillmentId)).limit(1);
+  if (!f) return c.json({ error: "Not found" }, 404);
+
+  return entregar(c, id, vinculo.organizacaoId);
+});
+
+/**
+ * GET /api/arquivos/:id — entrega do acervo canônico (SPEC §32).
+ *
+ * Esta rota é o caller que faltava para `entregarArquivo`. A diferença para
+ * `/api/uploads/*` não é cosmética: aqui o endereço é o **id do metadado**, e
+ * quem decide onde o binário está é o adaptador. Com S3 configurado a mesma URL
+ * passa a devolver redirecionamento assinado sem que a tela mude uma linha;
+ * enquanto for disco local, o arquivo vem no corpo.
+ */
+app.get("/arquivos/:id", async (c) => {
+  const id = c.req.param("id");
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return c.json({ error: "Not found" }, 404);
+
+  const ctx = await getTenantFromRequest(c);
+  if (!ctx) return c.json({ error: "Unauthorized" }, 401);
+
+  // A organização é parâmetro da busca, não filtro aplicado depois: arquivo de
+  // outro cliente não é "encontrado e negado", é inexistente.
+  return entregar(c, id, ctx.organizacaoId);
+});
 
 // GET /api/uploads/* — serve arquivo enviado, com autorização
 app.get("/uploads/*", async (c) => {

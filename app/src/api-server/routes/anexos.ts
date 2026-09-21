@@ -1,20 +1,21 @@
 // Anexos com upload real (25/08, pedido do Kauã: anexar arquivo/imagem em
-// nota e em negócio/documentos, sem depender de link externo). Mesmo
-// mecanismo já provado de src/api-server/routes/perfil.ts (upload de
-// avatar) — formData + fs.writeFileSync em UPLOADS_DIR, servido de volta
-// via /api/uploads/*. Diferente de anexos_legado (histórico Zoho, read-only).
+// nota e em negócio/documentos, sem depender de link externo). Diferente de
+// anexos_legado (histórico Zoho, read-only).
+//
+// O binário NÃO é mais gravado aqui: passa pelo acervo canônico (SPEC §32,
+// `lib/arquivos/servico`), que calcula checksum, deduplica, põe a organização
+// na chave e registra o metadado em `file_objects`. O que esta rota mantém é a
+// linha de `anexos`, que é o que a tela lê.
 import { Hono } from "hono";
 import { db } from "@/lib/db";
-import { anexos, negocios } from "@/lib/db/schema";
-import { eq, and, desc } from "drizzle-orm";
-import fs from "fs";
-import path from "path";
+import { anexos, negocios, oportunidades } from "@/lib/db/schema";
+import { eq, and, desc, ne } from "drizzle-orm";
 import { getCtx } from "../compat.js";
+import { guardarNoAcervo, removerDoAcervo } from "@/lib/arquivos/servico";
 
 const app = new Hono();
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(process.cwd(), "public", "uploads");
 const MAX_ANEXO_SIZE = 20 * 1024 * 1024; // 20MB
 const ALLOWED_TYPES = new Set([
   "image/jpeg", "image/png", "image/webp", "image/gif",
@@ -57,15 +58,35 @@ app.post("/anexos", async (c) => {
   const [negocio] = await db.select({ id: negocios.id }).from(negocios).where(and(eq(negocios.id, negocioId), eq(negocios.organizacaoId, ctx.organizacaoId))).limit(1);
   if (!negocio) return c.json({ error: "Negócio não encontrado" }, 404);
 
-  const anexosDir = path.join(UPLOADS_DIR, "anexos", negocioId);
-  if (!fs.existsSync(anexosDir)) fs.mkdirSync(anexosDir, { recursive: true });
+  // O vínculo canônico é com a OPORTUNIDADE, não com o negócio legado: é ela
+  // que sobrevive à fase CONTRACT. Quando a oportunidade ainda não existe, o
+  // arquivo entra sem vínculo em vez de inventar um — a linha de `anexos`
+  // continua guardando o negócio.
+  const [op] = await db
+    .select({ id: oportunidades.id })
+    .from(oportunidades)
+    .where(eq(oportunidades.negocioIdLegado, negocioId))
+    .limit(1);
 
-  const ext = file.name.split(".").pop()?.toLowerCase() || "bin";
-  const filename = `${crypto.randomUUID()}.${ext}`;
-  const buffer = Buffer.from(await file.arrayBuffer());
-  fs.writeFileSync(path.join(anexosDir, filename), buffer);
+  const guardado = await guardarNoAcervo({
+    organizacaoId: ctx.organizacaoId,
+    nomeOriginal: file.name,
+    mimeType: file.type,
+    conteudo: new Uint8Array(await file.arrayBuffer()),
+    enviadoPorId: ctx.userId,
+    vinculos: op ? [{ tipo: "oportunidade", id: op.id, papel: "anexo" }] : [],
+    metadata: { negocioId, notaId },
+  });
 
-  const url = `/api/uploads/anexos/${negocioId}/${filename}`;
+  if (!guardado.ok) {
+    // O domínio recusa por tamanho, tipo ou arquivo vazio. Devolver a mensagem
+    // dele evita que a rota e o pacote discordem sobre o que é aceito.
+    return c.json({ error: guardado.erro }, 400);
+  }
+
+  // Endereço pelo ID do metadado, não pela chave de armazenamento: quando o
+  // provedor virar S3 a URL continua a mesma e a tela não muda.
+  const url = `/api/arquivos/${guardado.arquivo.id}`;
   const [anexo] = await db.insert(anexos).values({
     organizacaoId: ctx.organizacaoId,
     negocioId,
@@ -73,8 +94,9 @@ app.post("/anexos", async (c) => {
     nomeArquivo: file.name,
     url,
     tipoMime: file.type,
-    tamanhoBytes: file.size,
+    tamanhoBytes: guardado.arquivo.tamanhoBytes,
     criadoPorId: ctx.userId,
+    fileObjectId: guardado.arquivo.id,
   }).returning();
 
   return c.json(anexo, 201);
@@ -89,9 +111,20 @@ app.delete("/anexos/:id", async (c) => {
   const [anexo] = await db.select().from(anexos).where(and(eq(anexos.id, id), eq(anexos.organizacaoId, ctx.organizacaoId))).limit(1);
   if (!anexo) return c.json({ error: "Anexo não encontrado" }, 404);
 
-  const filePath = path.join(UPLOADS_DIR, anexo.url.replace(/^\/api\/uploads\//, ""));
-  if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
   await db.delete(anexos).where(eq(anexos.id, id));
+
+  // O binário só some quando nenhum outro anexo aponta para ele. Com
+  // deduplicação por checksum dois anexos dividem o mesmo arquivo, e apagar o
+  // de um cegaria o outro — que é exatamente o tipo de perda silenciosa que só
+  // aparece quando alguém vai abrir o documento.
+  if (anexo.fileObjectId) {
+    const [outro] = await db
+      .select({ id: anexos.id })
+      .from(anexos)
+      .where(and(eq(anexos.fileObjectId, anexo.fileObjectId), ne(anexos.id, id)))
+      .limit(1);
+    if (!outro) await removerDoAcervo(anexo.fileObjectId, ctx.organizacaoId);
+  }
 
   return c.json({ success: true });
 });

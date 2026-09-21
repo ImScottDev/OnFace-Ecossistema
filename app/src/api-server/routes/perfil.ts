@@ -3,13 +3,12 @@ import { db } from "@/lib/db";
 import { usuarios, organizacoes } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import bcrypt from "bcryptjs";
-import fs from "fs";
-import path from "path";
 import { getCtx } from "../compat.js";
+import { guardarNoAcervo } from "@/lib/arquivos/servico";
 
 const app = new Hono();
 
-const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(process.cwd(), "public", "uploads");
+
 const MAX_AVATAR_SIZE = 5 * 1024 * 1024; // 5MB
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 
@@ -117,25 +116,23 @@ app.post("/", async (c) => {
     return c.json({ error: "Arquivo muito grande. Máximo 5MB" }, 400);
   }
 
-  // Save file
-  const ext = file.name.split(".").pop()?.toLowerCase() || "jpg";
-  const filename = `avatars/${ctx.userId}.${ext}`;
-  const avatarsDir = path.join(UPLOADS_DIR, "avatars");
+  // Vai pro acervo canônico (SPEC §32), como o anexo. Sem vínculo em
+  // `file_links`: o CHECK do banco lista entidades de negócio, e usuário não é
+  // uma delas — o dono do avatar já fica em `enviado_por_id`.
+  const guardado = await guardarNoAcervo({
+    organizacaoId: ctx.organizacaoId,
+    nomeOriginal: file.name,
+    mimeType: file.type,
+    conteudo: new Uint8Array(await file.arrayBuffer()),
+    enviadoPorId: ctx.userId,
+    metadata: { papel: "avatar", usuarioId: ctx.userId },
+  });
+  if (!guardado.ok) return c.json({ error: guardado.erro }, 400);
 
-  if (!fs.existsSync(avatarsDir)) {
-    fs.mkdirSync(avatarsDir, { recursive: true });
-  }
-
-  // Delete old avatar if different extension
-  const oldFiles = fs.readdirSync(avatarsDir).filter(f => f.startsWith(ctx.userId));
-  for (const old of oldFiles) {
-    fs.unlinkSync(path.join(avatarsDir, old));
-  }
-
-  const buffer = Buffer.from(await file.arrayBuffer());
-  fs.writeFileSync(path.join(UPLOADS_DIR, filename), buffer);
-
-  const avatarUrl = `/api/uploads/${filename}`;
+  // O avatar antigo NÃO é apagado: com chave por conteúdo, o mesmo arquivo pode
+  // estar sendo usado por outro registro. Binário órfão é lixo barato; binário
+  // apagado embaixo de quem ainda aponta pra ele é imagem quebrada.
+  const avatarUrl = `/api/arquivos/${guardado.arquivo.id}`;
 
   await db
     .update(usuarios)

@@ -18,8 +18,15 @@
 export type ProvedorArmazenamento = "s3" | "r2" | "local";
 
 export interface EntidadeVinculada {
+  /**
+   * Os valores são os do CHECK `ck_file_links_entity` no banco, não uma lista
+   * parecida. A união estava com `cliente` e `comunicacao`, que o banco recusa,
+   * e sem `servico_canonico` e `aquisicao`, que ele aceita: tipo que compila e
+   * viola constraint é pior que tipo ausente, porque só falha com dado real.
+   */
   tipo: "empresa" | "pessoa" | "oportunidade" | "proposta" | "contrato"
-      | "cliente" | "fulfillment" | "comunicacao" | "reuniao";
+      | "servico_canonico" | "fulfillment" | "communication" | "reuniao"
+      | "aquisicao";
   id: string;
   /** Para que serve o arquivo nesta entidade: "contrato_assinado", "anexo". */
   papel?: string | null;
@@ -94,6 +101,7 @@ export const MIME_PERMITIDOS = new Set([
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   "application/vnd.ms-excel", "application/msword",
+  "application/zip",
 ]);
 
 export type ResultadoGuardar =
