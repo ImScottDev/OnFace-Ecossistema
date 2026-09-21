@@ -7,14 +7,15 @@
 
 ## Fase atual
 
-**17 — Migração dos leitores** (a iniciar)
+**17 — Migração dos leitores** (em andamento)
 
-Fases 01 a **16 concluídas**. Todo caminho de escrita de identidade comercial e
-todo caminho de Ganho passam por porta canônica.
+Fases 01 a 16 concluídas. Fase 17: **as telas de vendas leem o canônico**. Falta
+migrar as rotas de API (`leads.ts` 26 leituras, `relatorios.ts` 15, `negocios.ts` 15)
+e as libs de analytics e CS.
 
 ## Último commit
 
-`016426c` — refactor(16): todo caminho de Ganho passa pela política da oferta
+`58c115e` — refactor(17): empresa 360 e telas de detalhe no canônico
 
 Branch de trabalho: `refactor/arquitetura-canonica`, criada a partir de `98940fe`.
 
@@ -74,6 +75,7 @@ Pacote vazio não afeta o build: `tsc` limpo e 111 testes passando com o workspa
 | 0066 | `fulfillment_ciclos` | `tipo` e `cycle_number` em `fulfillments` + `uq_fulfillment_ciclo` — habilita onboarding E implantação no mesmo serviço | sim |
 | 0067 | `comunicacoes_canonicas` | `communications` e `conversas` canônicas | sim, EXPAND puro |
 | 0068 | `fulfillment_indice_antigo` | remove a exclusividade de `idx_fulfillments_servico`, que anulava a 0066 | sim, recriar como UNIQUE |
+| 0069 | `aquisicao_lead_legado` | `aquisicoes.lead_legado_id` + índice único parcial; 3.989 de 3.989 ligadas | sim, DROP COLUMN |
 
 ### Tabelas canônicas criadas (vazias até o backfill)
 
@@ -90,7 +92,7 @@ Pacote vazio não afeta o build: `tsc` limpo e 111 testes passando com o workspa
 |---|---|---|---|---|
 | 05 identidade | `src/scripts/backfill/05-identidade.ts` | 3.989 leads | **3.950 pessoas**, 2.324 vínculos | 8 |
 | 06 aquisição | `src/scripts/backfill/06-aquisicao.ts` | 3.989 leads | **3.989 aquisições**, 1.583 touchpoints | 0 |
-| 07 oportunidade | `src/scripts/backfill/07-pipeline-oportunidade.ts` | 1.562 negócios | **1.561 oportunidades**, 10 etapas | **1.084** |
+| 07 oportunidade | `src/scripts/backfill/07-pipeline-oportunidade.ts` | 1.562 negócios | **1.561 oportunidades**, 10 etapas | **1.085** |
 | 08 oferta | `src/scripts/backfill/08-oferta-comercial.ts` | 477 c/ família | **477 vinculadas** a 4 ofertas | 0 |
 | 09 proposta/contrato | `09-proposta-contrato.ts` | 1.095 + 336 | **1.094 + 336** vinculados | 0 |
 | 10 cliente/serviço | `10-cliente-servico.ts` | 438 serviços | 29 ligados à oportunidade | 0 |
@@ -137,7 +139,39 @@ empresa, **nenhum marcado principal**, e um caso em `reconciliacao_casos`. A dec
 
 ## Readers migrados
 
-Nenhum ainda. O cutover de leitura é a fase 17.
+`src/lib/vendas/consultas.ts` é a porta de leitura das telas de vendas — 20 arquivos
+consomem dela (pré-vendas, pipeline, contatos, prospecção, Empresa 360, detalhe de
+lead e de oportunidade). Migrá-la migrou as telas de uma vez.
+
+| Leitura | Fonte agora | O que mudou de fato |
+|---|---|---|
+| `boardPreVendas` | `aquisicoes` | **1.597 → 3.702 registros visíveis** |
+| `boardPipeline` | `oportunidades` | paridade exata; a única divergência virou caso |
+| `empresa360` — aquisições | `aquisicoes` | some o filtro que escondia lead sem estágio |
+| `empresa360` — oportunidades | `oportunidades` | — |
+| `empresa360` — propostas | `oportunidades` + identidade | **+446 propostas** antes invisíveis |
+| `detalheLead` — oportunidades | `oportunidades` | — |
+| `detalheOportunidade` — irmãs | `oportunidades` | — |
+
+**O sumiço, medido.** A consulta anterior filtrava `estagio_pre_vendas = ANY(...)` e
+2.392 dos 3.989 leads têm esse campo nulo. No canônico não existe registro sem
+estado: aquisição aberta e não qualificada é "novo", que é um estado, não um vazio.
+O board saiu de 1.597 para 3.702, distribuídos em colunas reais (novo 2.756, em
+contato 531, oportunidade 415).
+
+**Duas correções de leitura que não eram de fonte:**
+
+- o limite passou a ser **por coluna**. Com limite global, as 400 vagas iam todas
+  para a coluna mais cheia e o board anunciava "Em contato 531" com zero cards;
+- o legado só refina onde sabe algo que o canônico não deriva (`qualificacao`).
+  Deixá-lo sobrescrever punha o card em "Novo" enquanto o contador do canônico dizia
+  outra coisa — total e cards discordando na mesma tela.
+
+### Ainda no legado, e dito no código
+
+Cabeçalho do lead (nutrição, desqualificação, interesse declarado), condução da venda
+(próxima ação, no-show, trial, estagnação) e contagem de propostas. Não têm dono no
+modelo canônico até a fase 26.
 
 ## Código de domínio migrado para `packages/`
 
@@ -195,8 +229,8 @@ canônico hoje faria o lead sumir da tela de pré-vendas no mesmo instante.
 
 ## Testes executados
 
-Estado atual (fim da fase 16): `tsc --noEmit` limpo, **173 testes passando, 0 falhas**,
-mais três smokes contra o banco real:
+Estado atual: `tsc --noEmit` limpo, **build de produção passando**, **178 testes, 0
+falhas**, mais três smokes contra o banco real:
 
 - `smoke-ponte-canonica` — entrada externa chega inteira ao canônico e não duplica;
 - `smoke-ganho-oportunidade` 5/5 — a política da oferta decide, PABX gera as duas

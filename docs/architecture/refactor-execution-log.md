@@ -422,3 +422,60 @@ três smokes verdes. O `smoke-ponte-ganho` é o que importa: mesma prova, decis�
 opostas — PABX ganha com contrato assinado, Callface AI direto não ganha sem pagamento.
 
 **Commit:** `016426c`.
+
+---
+
+## 2026-09-21 — Fase 17 · Cutover de leitura das telas de vendas
+
+**O sintoma que abriu este refactor, resolvido.** 2.392 dos 3.989 leads não apareciam
+em tela nenhuma porque a consulta filtrava `estagio_pre_vendas = ANY(...)` e o campo
+está nulo neles. Existiam, com dono e origem, e eram invisíveis. O board passou a ler
+`aquisicoes`, onde não há registro sem estado, e saiu de **1.597 para 3.702**
+registros, distribuídos em colunas reais.
+
+**Porta única de leitura.** `lib/vendas/consultas.ts` é consumida por 20 arquivos de
+tela. Migrá-la migrou pré-vendas, pipeline, contatos, prospecção, Empresa 360 e os
+dois detalhes de uma vez — mesmo princípio que fechou os 30 escritores de `negocios`
+pelo `won-evidence.ts`.
+
+**446 propostas voltaram.** A lista da Empresa 360 exigia JOIN em `negocios`, e 455
+das 1.550 propostas não têm negócio: são antigas, feitas direto para um lead, antes de
+existir o modelo de negócio. Pela identidade canônica, 446 chegam à empresa. Medido
+numa empresa real: 8 antes, 17 depois.
+
+**Um negócio sumia sem registro.** O backfill da fase 07 pulava negócio sem pessoa e
+sem empresa — certo, criar oportunidade sem identidade seria inventar de quem é a
+venda — mas só somava num contador. Era 1 de 1.562, e explicava a diferença de R$
+1.100 no total do pipeline. Virou caso `OPORTUNIDADE_SEM_IDENTIDADE` com evidência.
+
+**Migration 0069:** `aquisicoes.lead_legado_id`, o análogo de
+`oportunidades.negocio_id_legado`. A ligação só existia em `backfill_provenance`, que
+é auditoria do backfill; usar auditoria em JOIN de runtime mistura as duas coisas.
+
+### O build estava quebrado, e `tsc` não via
+
+Quatro causas, todas anteriores a esta rodada:
+
+1. **os imports de `packages/*`** por caminho relativo com extensão `.js` não
+   resolviam no bundler. O app não declarava os pacotes como dependência e o tsconfig
+   não tinha path. Agora importa por nome (`@onface/*`, SPEC §34), com
+   `transpilePackages` e workspace declarado;
+2. **`app/pnpm-workspace.yaml` órfão** fazia o pnpm tratar `app` como raiz própria e
+   não achar os pacotes. A raiz ainda tinha `unrs-resolver: set this to true or false`
+   — o texto da instrução copiado literalmente no lugar do valor;
+3. **`/contatos/[id]` duplicada** em `(crm)` e `(crm2)`, duas rotas paralelas para o
+   mesmo caminho. Todas as outras rotas do CRM 1 foram renomeadas com sufixo
+   `-legado`; essa ficou para trás no espelhamento de produção de 20/09;
+4. **cinco páginas autenticadas** eram prerenderizadas estaticamente e quebravam em
+   `useSession()` undefined.
+
+É a demonstração de que `tsc` limpo não é build passando — e o SPEC §53 pede build.
+
+**Gotcha travado:** crase dentro de template de SQL fecha o template, e o erro sai
+como sintaxe TypeScript em coluna arbitrária, sem menção a SQL. Custou três rodadas
+neste refactor. Agora há teste, verificado falhando de propósito antes de entrar.
+
+**Validação:** `tsc` limpo, **build de produção passando**, **178 testes, 0 falhas**,
+três smokes verdes.
+
+**Commits:** `0af6655`, `a318530`, `58c115e`.
