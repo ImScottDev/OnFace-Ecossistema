@@ -169,3 +169,45 @@ touchpoints órfãos 0; touchpoints sem sinal 0.
 **Testes:** 121 passando, 0 falhas. 10 testes de reconciliação (SPEC §50.2).
 
 **Commits:** `145f475`, `69568cd` e o fix do teste.
+
+---
+
+## 2026-09-21 — Fase 07 · Pipeline e oportunidade — CONCLUÍDA
+
+**Etapas:** 10 saíram do JSON de `pipelines.stages` para `pipeline_etapas`, com
+`tipo_fechamento` explícito. `outra_data`, `sem_retorno` e `no_show` mapeiam para
+`OPEN`: são tentativa, não fechamento. Tratá-los como perda inflaria a taxa de perda
+em 246 linhas.
+
+**Oportunidades:** 1.562 negócios → 1.561 oportunidades. Um não foi migrado por não
+ter pessoa nem empresa, e está declarado em vez de forçado.
+
+**Família de produto, a regra difícil desta fase.** O SPEC §42 diz que
+`service_family` ausente "must not be blindly filled with guesses". Cadeia de
+evidência aplicada em ordem de confiança:
+
+```text
+o próprio negócio                  2
+item de proposta                   0
+catálogo do item da proposta     256
+item de contrato                 142
+serviço canônico do lead          77
+────────────────────────────────────
+resolvidas                       477
+NÃO resolvidas                 1.084  → caso de reconciliação, família NULA
+```
+
+Nenhuma foi chutada. `NULL` não virou `'UNKNOWN'`: um teste garante a distinção.
+
+**Erro próprio corrigido antes de gravar:** o script referenciou `n.valor` e `n.mrr`,
+que não existem. As colunas reais são `valor_total`/`valor_projeto` e
+`mrr_fechado`/`mrr_estimado`, e `negocios` não tem `perdido_at`. Falhou no primeiro
+insert, antes de qualquer gravação em massa.
+
+**Validação:** negócios não migrados 1 (declarado); família `UNKNOWN` gravada 0; sem
+família e sem caso 0; sem identidade 0; família sem evidência 0; ganho e perda
+coexistindo 0.
+
+**Testes:** 126 passando, 0 falhas. 15 de reconciliação.
+
+**Commit:** `f96c163`

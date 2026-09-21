@@ -7,13 +7,13 @@
 
 ## Fase atual
 
-**07 — Backfill de oportunidade e pipeline** (próxima)
+**08 — Catálogo e política de oferta comercial** (próxima)
 
-Fases 01 a 06 concluídas.
+Fases 01 a 07 concluídas.
 
 ## Último commit
 
-`69568cd` + fix — refactor(06): backfill de aquisicao e atribuicao
+`f96c163` — refactor(07): pipeline normalizado e 1.561 oportunidades
 
 Branch de trabalho: `refactor/arquitetura-canonica`, criada a partir de `98940fe`.
 
@@ -83,6 +83,7 @@ Pacote vazio não afeta o build: `tsc` limpo e 111 testes passando com o workspa
 |---|---|---|---|---|
 | 05 identidade | `src/scripts/backfill/05-identidade.ts` | 3.989 leads | **3.950 pessoas**, 2.324 vínculos | 8 |
 | 06 aquisição | `src/scripts/backfill/06-aquisicao.ts` | 3.989 leads | **3.989 aquisições**, 1.583 touchpoints | 0 |
+| 07 oportunidade | `src/scripts/backfill/07-pipeline-oportunidade.ts` | 1.562 negócios | **1.561 oportunidades**, 10 etapas | **1.084** |
 
 Os dois são idempotentes por `backfill_provenance` e só inserem.
 
@@ -95,6 +96,16 @@ de quem virou cliente, que nascem `encerrada`. Isso é o que o dado diz; o backf
 não inventou estado.
 
 ### Casos de reconciliação abertos
+
+**1.084 oportunidades sem família de produto.** O SPEC §42 proíbe preencher
+`service_family` por palpite. A família foi buscada numa cadeia de cinco evidências
+(o próprio negócio, item de proposta, catálogo do item, item de contrato, serviço
+canônico do lead) e resolveu **477 de 1.561**. As outras 1.084 ficaram com família
+**NULA** e um caso cada em `reconciliacao_casos`. `NULL` não virou `'UNKNOWN'`
+disfarçado: são coisas diferentes e o teste garante isso.
+
+Essas 1.084 precisam de decisão humana sobre o que foi de fato vendido. Nenhuma
+evidência no banco permite deduzir.
 
 8 identidades aparecem ligadas a mais de uma empresa. Ganharam vínculo para cada
 empresa, **nenhum marcado principal**, e um caso em `reconciliacao_casos`. A decisão
