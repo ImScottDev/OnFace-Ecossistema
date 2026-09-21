@@ -128,3 +128,48 @@ test("fase 06: atribuição não foi inventada", async (t) => {
       AND campaign_id IS NULL AND adset_id IS NULL AND ad_id IS NULL`);
   assert.equal(vazios, 0, `${vazios} touchpoints sem nenhum sinal de atribuição`);
 });
+
+const fase07Rodou = async () =>
+  (await conta(sql`SELECT count(*) AS n FROM backfill_provenance WHERE fase = '07'`)) > 0;
+
+test("fase 07: família nunca foi chutada", async (t) => {
+  if (!(await fase07Rodou())) return t.skip("backfill da fase 07 ainda não rodou");
+  // Toda oportunidade COM família tem que ter um método de evidência no
+  // provenance. Se aparecer família com método NAO_RESOLVIDO, alguém preencheu
+  // por palpite, que é o que o SPEC §42 proíbe.
+  const chutes = await conta(sql`
+    SELECT count(*) AS n FROM oportunidades o
+    JOIN backfill_provenance b ON b.entidade_canonica = 'oportunidade' AND b.id_canonico = o.id
+    WHERE o.service_family IS NOT NULL AND b.metodo = 'NAO_RESOLVIDO'`);
+  assert.equal(chutes, 0, `${chutes} oportunidades com família preenchida sem evidência`);
+});
+
+test("fase 07: toda oportunidade sem família tem caso de reconciliação", async (t) => {
+  if (!(await fase07Rodou())) return t.skip("backfill da fase 07 ainda não rodou");
+  const semCaso = await conta(sql`
+    SELECT count(*) AS n FROM oportunidades o
+    WHERE o.service_family IS NULL
+      AND NOT EXISTS (SELECT 1 FROM reconciliacao_casos c
+                      WHERE c.fase = '07' AND c.entidade_alvo = 'oportunidade:' || o.id)`);
+  assert.equal(semCaso, 0, `${semCaso} oportunidades sem família e sem caso: ambiguidade escondida`);
+});
+
+test("fase 07: nenhuma oportunidade guarda UNKNOWN como se fosse família", async (t) => {
+  if (!(await fase07Rodou())) return t.skip("backfill da fase 07 ainda não rodou");
+  const unknown = await conta(sql`SELECT count(*) AS n FROM oportunidades WHERE service_family = 'UNKNOWN'`);
+  assert.equal(unknown, 0, `${unknown} oportunidades com 'UNKNOWN' gravado: NULL e UNKNOWN não são a mesma coisa`);
+});
+
+test("fase 07: etapa de pipeline tem fechamento declarado", async (t) => {
+  if (!(await fase07Rodou())) return t.skip("backfill da fase 07 ainda não rodou");
+  const invalidas = await conta(sql`
+    SELECT count(*) AS n FROM pipeline_etapas
+    WHERE tipo_fechamento NOT IN ('OPEN','WON','LOST','DISQUALIFIED')`);
+  assert.equal(invalidas, 0, `${invalidas} etapas com fechamento fora do vocabulário`);
+});
+
+test("fase 07: ganho e perda não coexistem na mesma oportunidade", async (t) => {
+  if (!(await fase07Rodou())) return t.skip("backfill da fase 07 ainda não rodou");
+  const ambas = await conta(sql`SELECT count(*) AS n FROM oportunidades WHERE ganho_at IS NOT NULL AND perdido_at IS NOT NULL`);
+  assert.equal(ambas, 0, `${ambas} oportunidades marcadas como ganhas E perdidas`);
+});
