@@ -12,7 +12,7 @@
  * do mesmo padrão: sincronizar no ponto real de escrita, best-effort).
  */
 import { db } from "@/lib/db";
-import { automacoes, automacaoExecucoes, notificacoes, leads, empresas, assinaturas, faturas, auditLog } from "@/lib/db/schema";
+import { automacoes, automacaoExecucoes, notificacoes, leads, labels, assinaturas, faturas, auditLog } from "@/lib/db/schema";
 import { eq, and, or, sql } from "drizzle-orm";
 import { sendResendEmail, isResendConfigured } from "@/lib/email/resend";
 import { whatsappOutgoingQueue } from "@/lib/queue";
@@ -114,20 +114,46 @@ async function executarAcao(acao: string, config: AcaoConfig | null, ctx: Contex
         ?? { responsavelId: cfg.usuarioId };
     case "adicionar_tag_empresa":
     case "remover_tag_empresa": {
+      // Delegado ao adapter do motor de fluxo, com o modelo de tag que o
+      // produto de fato usa.
+      //
+      // Havia DOIS modelos de tag convivendo: `empresas.tags`, um array de
+      // texto, e `labels`/`entity_labels`, com tabela própria. Medido no banco:
+      // o array está VAZIO em todas as empresas, e a tabela tem 161 vínculos.
+      // O motor de regras escrevia no modelo que ninguém usa, então a tag posta
+      // por automação não aparecia junto com as outras.
+      //
+      // Não há dado para migrar; havia código para convergir.
       if (!ctx.empresaId && ctx.entityType !== "empresa") throw new Error("empresaId ausente no contexto financeiro");
-      if (!cfg.tag?.trim()) throw new Error("acaoConfig.tag obrigatório para ação de tag");
+      const nome = cfg.tag?.trim();
+      if (!nome) throw new Error("acaoConfig.tag obrigatório para ação de tag");
       const empresaId = ctx.empresaId || ctx.entityId;
-      const [empresa] = await db.select({ tags: empresas.tags })
-        .from(empresas)
-        .where(and(eq(empresas.id, empresaId), eq(empresas.organizacaoId, ctx.organizacaoId)))
+
+      // O adapter trabalha por id de label; a regra é escrita com o NOME dela,
+      // porque é isso que quem configura a automação sabe. Resolver aqui evita
+      // obrigar a pessoa a descobrir um uuid.
+      const [existente] = await db
+        .select({ id: labels.id })
+        .from(labels)
+        .where(and(eq(labels.organizacaoId, ctx.organizacaoId), sql`lower(${labels.nome}) = lower(${nome})`))
         .limit(1);
-      if (!empresa) throw new Error("empresa não encontrada no tenant");
-      const tagsAtuais = empresa.tags || [];
-      const tags = acao === "adicionar_tag_empresa"
-        ? Array.from(new Set([...tagsAtuais, cfg.tag.trim()]))
-        : tagsAtuais.filter((tag) => tag !== cfg.tag?.trim());
-      await db.update(empresas).set({ tags, updatedAt: new Date() })
-        .where(and(eq(empresas.id, empresaId), eq(empresas.organizacaoId, ctx.organizacaoId)));
+      const label = existente ?? (await db.insert(labels)
+        .values({ organizacaoId: ctx.organizacaoId, nome })
+        .returning({ id: labels.id }))[0];
+
+      const adapter = acao === "adicionar_tag_empresa" ? "crm_add_tag" : "crm_remove_tag";
+      const r = await executarAcaoAvulsa(adapter, {
+        organizacaoId: ctx.organizacaoId,
+        entityType: "empresa",
+        entityId: empresaId,
+        vars: {},
+        config: { label_id: label.id },
+      });
+      if (!r.sucesso) throw new Error(r.erro ?? "falha ao aplicar a tag");
+
+      // A auditoria continua: o adapter publica evento de domínio, e o audit_log
+      // é outra coisa — quem responde "quem mudou isso e quando" para um
+      // humano olhando a empresa.
       try {
         await db.insert(auditLog).values({
           organizacaoId: ctx.organizacaoId,
@@ -135,14 +161,14 @@ async function executarAcao(acao: string, config: AcaoConfig | null, ctx: Contex
           action: acao === "adicionar_tag_empresa" ? "empresa.tag_adicionada" : "empresa.tag_removida",
           entityType: "empresa",
           entityId: empresaId,
-          before: { tags: tagsAtuais, origem: "automacao_financeira" },
-          after: { tags, origem: "automacao_financeira" },
+          before: { origem: "automacao" },
+          after: { tag: nome, labelId: label.id, origem: "automacao" },
           source: "worker",
         });
       } catch (auditError) {
-        console.error("[automacao] tag financeira aplicada, mas auditoria falhou", auditError);
+        console.error("[automacao] tag aplicada, mas auditoria falhou", auditError);
       }
-      return { empresaId, tag: cfg.tag.trim(), tags, operacao: acao === "adicionar_tag_empresa" ? "adicionada" : "removida" };
+      return { empresaId, tag: nome, labelId: label.id, operacao: acao === "adicionar_tag_empresa" ? "adicionada" : "removida", ...(r.resultado ?? {}) };
     }
     case "enviar_email": {
       const r = await delegar("email", ctx, { mensagem: cfg.mensagem, assunto: cfg.tituloTarefa });

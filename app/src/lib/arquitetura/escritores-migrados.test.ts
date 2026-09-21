@@ -115,6 +115,8 @@ test("o motor de regras não tem implementação própria das ações do motor d
     ["atribuir_responsavel", "crm_assign_owner"],
     ["enviar_email", '"email"'],
     ["enviar_whatsapp", '"whatsapp"'],
+    ["adicionar_tag_empresa", "crm_add_tag"],
+    ["remover_tag_empresa", "crm_remove_tag"],
   ];
   const semDelegar = DELEGADAS.filter(([, adapter]) => !motor.includes(adapter));
   assert.deepEqual(
@@ -128,6 +130,10 @@ test("o motor de regras não tem implementação própria das ações do motor d
     /db\s*\.\s*insert\(tarefas\)/,
     /db\s*\.\s*update\(negocios\)/,
     /update negocios set/i,
+    // `empresas.tags` é o modelo de tag que o produto NÃO usa: medido, o array
+    // está vazio em todas as empresas e a tabela `labels` tem 161 vínculos.
+    // Escrever ali põe a tag da automação num lugar onde ninguém a vê.
+    /db\s*\.\s*update\(empresas\)/,
   ].filter((re) => re.test(motor));
   assert.deepEqual(
     escritasProibidas.map(String), [],

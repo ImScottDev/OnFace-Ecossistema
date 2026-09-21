@@ -85,12 +85,36 @@ async function main() {
         FROM tarefas WHERE titulo = ${marca}`);
     console.log(`  3. regra disparada 2x criou ${t.n} tarefa(s), origem=${t.origem}, com chave=${t.com_chave}`);
 
+    // 4. a tag da automação cai no MESMO lugar que as outras
+    const empresa = await um<{ id: string }>(sql`SELECT id FROM empresas LIMIT 1`);
+    const regraTag = await um<{ id: string }>(sql`
+      INSERT INTO automacoes (organizacao_id, nome, gatilho, acao, acao_config, ativo)
+      VALUES (${org.id}::uuid, ${marca + "-tag"}, 'fatura_atrasada', 'adicionar_tag_empresa',
+              ${JSON.stringify({ tag: marca })}::jsonb, true)
+      RETURNING id`);
+    criadas.push(regraTag.id);
+
+    await dispararAutomacoes("fatura_atrasada", {
+      entityType: "empresa", entityId: empresa.id, organizacaoId: org.id,
+      empresaId: empresa.id, campos: {},
+    });
+
+    const tag = await um<{ no_modelo_usado: number; no_array_legado: number }>(sql`
+      SELECT
+        (SELECT count(*)::int FROM entity_labels el
+           JOIN labels l ON l.id = el.label_id
+          WHERE el.entity_id = ${empresa.id}::uuid AND l.nome = ${marca}) AS no_modelo_usado,
+        (SELECT count(*)::int FROM empresas e
+          WHERE e.id = ${empresa.id}::uuid AND ${marca} = ANY(COALESCE(e.tags, '{}'))) AS no_array_legado`);
+    console.log(`  4. tag por automação          → modelo em uso: ${tag.no_modelo_usado}, array legado: ${tag.no_array_legado}`);
+
     console.log("\n  RESULTADO");
     const checagens: [string, boolean, string][] = [
       ["gate do ganho", aposGanho.status !== "ganho", "regra de automação não fecha venda por fora da política"],
       ["etapa legítima", aposEtapa.status === "negociacao", "o que é permitido continua passando"],
       ["idempotente", t.n === 1, "disparo repetido não duplica a tarefa"],
       ["rastreável", t.origem === "AUTOMACAO" && t.com_chave === 1, "a tarefa diz que veio de automação"],
+      ["tag no lugar certo", tag.no_modelo_usado === 1 && tag.no_array_legado === 0, "a tag da automação aparece junto com as outras, não num array que ninguém lê"],
     ];
     let ok = true;
     for (const [nome, passou, desc] of checagens) {
@@ -101,6 +125,8 @@ async function main() {
     saida = ok ? 0 : 1;
 
     await db.execute(sql`DELETE FROM tarefas WHERE titulo = ${marca}`);
+    await db.execute(sql`DELETE FROM entity_labels WHERE label_id IN (SELECT id FROM labels WHERE nome = ${marca})`);
+    await db.execute(sql`DELETE FROM labels WHERE nome = ${marca}`);
     await db.execute(sql`DELETE FROM negocios WHERE id = ${negocio.id}::uuid`);
   } finally {
     for (const id of criadas) {
