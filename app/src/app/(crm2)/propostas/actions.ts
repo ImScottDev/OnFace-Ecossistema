@@ -53,7 +53,17 @@ export async function acaoListar(filtros: { status?: string | null; busca?: stri
   }>(sql`
     SELECT p.id::text, p.numero, p.versao, p.status,
            COALESCE(e.nome, l.empresa) AS empresa, n.titulo AS oportunidade, p.negocio_id::text,
-           COALESCE(p.service_family, n.service_family) AS familia, p.modo_fechamento AS modo,
+           -- Cadeia de familia: proposta, negocio, oportunidade canonica.
+           --
+           -- 1.548 das 1.550 propostas nao tem familia propria nem no negocio,
+           -- e em 467 delas a oportunidade canonica SABE qual e, deduzida no
+           -- backfill. A tela mostrava vazio para proposta de produto conhecido.
+           --
+           -- A ordem e do mais especifico para o mais geral: o que foi decidido
+           -- na proposta manda, depois o que foi decidido no negocio, e a
+           -- deducao entra so quando ninguem decidiu.
+           COALESCE(p.service_family, n.service_family, o.service_family) AS familia,
+           p.modo_fechamento AS modo,
            p.total_geral::text AS total, p.total_recorrente::text,
            p.enviada_em::text, p.data_validade::text AS validade,
            p.ajuste_solicitado_descricao AS ajuste
@@ -61,6 +71,7 @@ export async function acaoListar(filtros: { status?: string | null; busca?: stri
       LEFT JOIN negocios n ON n.id = p.negocio_id
       LEFT JOIN empresas e ON e.id = n.empresa_id
       LEFT JOIN leads l ON l.id = p.lead_id
+      LEFT JOIN oportunidades o ON o.negocio_id_legado = n.id
      WHERE p.organizacao_id = ${ctx.organizacaoId}::uuid
        AND (${filtros.status ?? null}::text IS NULL OR p.status = ${filtros.status ?? null})
        AND (${busca}::text IS NULL OR lower(COALESCE(e.nome, l.empresa, '')) LIKE ${busca}
@@ -132,7 +143,8 @@ export async function acaoDetalhe(propostaId: string): Promise<Resultado<Detalhe
              COALESCE(l.whatsapp, l.telefone) AS contato_telefone, l.email AS contato_email,
              e.razao_social, e.cnpj, e.logradouro, e.numero AS endereco_numero, e.complemento,
              e.bairro, e.cidade, e.estado, e.cep,
-             n.titulo AS oportunidade, COALESCE(p.service_family, n.service_family) AS familia, n.etapa,
+             n.titulo AS oportunidade,
+             COALESCE(p.service_family, n.service_family, o.service_family) AS familia, n.etapa,
              p.modo_fechamento AS modo, p.validade_dias, p.data_validade::text,
              p.tipo_contratual, p.enviada_em::text, p.primeira_visualizacao_em::text AS primeira_vis,
              p.aceita_em::text, p.recusada_em::text,
@@ -141,6 +153,7 @@ export async function acaoDetalhe(propostaId: string): Promise<Resultado<Detalhe
         LEFT JOIN negocios n ON n.id = p.negocio_id
         LEFT JOIN empresas e ON e.id = n.empresa_id
         LEFT JOIN leads l ON l.id = p.lead_id
+        LEFT JOIN oportunidades o ON o.negocio_id_legado = n.id
        WHERE p.id = ${propostaId}::uuid AND p.organizacao_id = ${ctx.organizacaoId}::uuid
     `);
     if (!p) return null;
@@ -209,8 +222,11 @@ export async function acaoOportunidadesAbertas(termo: string): Promise<Array<{
   if (!ctx) return [];
   const busca = termo.trim() ? `%${termo.trim().toLowerCase()}%` : null;
   const linhas = await db.execute<{ id: string; titulo: string; familia: string | null; empresa: string | null }>(sql`
-    SELECT n.id::text, n.titulo, n.service_family AS familia, e.nome AS empresa
-      FROM negocios n LEFT JOIN empresas e ON e.id = n.empresa_id
+    SELECT n.id::text, n.titulo,
+           COALESCE(n.service_family, o.service_family) AS familia, e.nome AS empresa
+      FROM negocios n
+      LEFT JOIN empresas e ON e.id = n.empresa_id
+      LEFT JOIN oportunidades o ON o.negocio_id_legado = n.id
      WHERE n.organizacao_id = ${ctx.organizacaoId}::uuid
        AND n.etapa IN ('entrada','diagnostico','proposta','negociacao')
        AND (${busca}::text IS NULL OR lower(n.titulo) LIKE ${busca} OR lower(COALESCE(e.nome, '')) LIKE ${busca})

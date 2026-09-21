@@ -173,9 +173,18 @@ async function carregarProposta(organizacaoId: string, propostaId: string): Prom
     SELECT p.id::text, p.organizacao_id::text, p.negocio_id::text, p.lead_id::text,
            n.empresa_id::text AS empresa_id, p.numero, p.versao, p.status,
            p.modo_fechamento, p.service_family,
-           n.etapa AS etapa_oportunidade, n.service_family AS familia_oportunidade
+           n.etapa AS etapa_oportunidade,
+           -- A familia vem do canonico quando o legado nao tem, e aqui isso
+           -- nao e cosmetico: sem familia valida, ENVIAR PROPOSTA e recusado
+           -- com "Defina a familia comercial antes de enviar".
+           --
+           -- Medido: 526 negocios abertos sem familia no legado, e em 125 deles
+           -- a oportunidade canonica sabe qual e. Ha 43 propostas em rascunho
+           -- nesses negocios, paradas por um dado que o sistema tem.
+           COALESCE(n.service_family, o.service_family) AS familia_oportunidade
       FROM propostas p
       LEFT JOIN negocios n ON n.id = p.negocio_id
+      LEFT JOIN oportunidades o ON o.negocio_id_legado = n.id
      WHERE p.id = ${propostaId}::uuid AND p.organizacao_id = ${organizacaoId}::uuid
   `);
   if (!p) throw new RegraDeNegocio("proposta_nao_encontrada", "Proposta não encontrada.");

@@ -1633,3 +1633,37 @@ trial), e esses migram junto com a escrita na fase 25.
 
 **Validação:** tsc limpo, **261 testes, 0 falhas**, build exit 0, smokes de leitura e de
 sincronização verdes.
+
+---
+
+## 2026-09-21 — Cutover crítico, parte 12: 43 propostas paradas por um dado que o sistema tem
+
+Continuando a varredura de leitores de `service_family`, cheguei nas telas de proposta. O
+que parecia mais do mesmo virou o achado mais sério do dia.
+
+`enviarProposta` recusa com "Defina a família comercial antes de enviar uma proposta"
+quando a oportunidade não tem família. A leitura que alimenta esse gate
+(`carregarProposta`) olhava só `negocios.service_family`.
+
+**Isso não é exibição, é a operação comercial travada.** 526 negócios abertos sem
+família no legado, e em **125 deles a oportunidade canônica sabe qual é**. Há **43
+propostas em rascunho** nesses negócios, que ninguém conseguia enviar por um dado que o
+sistema já tinha deduzido no backfill.
+
+A cadeia de família virou proposta → negócio → oportunidade canônica, do mais específico
+para o mais geral: o que foi decidido na proposta manda, depois o que foi decidido no
+negócio, e a dedução entra só quando ninguém decidiu. Nas três consultas da tela de
+propostas e na leitura do gate.
+
+Medido pela mesma condição do gate: **propostas com família resolvível de 2 para 469**.
+1.548 das 1.550 propostas não têm família própria nem no negócio.
+
+O `LEFT JOIN` foi conferido contra duplicação antes de entrar: 1.550 propostas dos dois
+lados.
+
+`smoke-proposta-familia.ts` prova os quatro lados: existem negócios nesse estado, a
+cadeia destrava, a proposta carrega a família do canônico, ela passa no gate real
+(`ehFamiliaValida`), e a precedência não inverte — onde o legado tem valor, ele manda.
+
+**Validação:** tsc limpo, **261 testes, 0 falhas**, build exit 0, smokes de ganho e de
+leitura verdes.
