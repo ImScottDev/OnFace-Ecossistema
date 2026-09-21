@@ -9,6 +9,15 @@ const app = new Hono();
 
 // ─── Integracoes ─────────────────────────────────────────────────
 
+// GET /configuracoes/integracoes/inventario — o que existe, e o estado real de
+// cada uma. A tela listava três cartões, dois deles marcados "placeholder" no
+// próprio código, enquanto cinco integrações rodavam em produção sem aparecer.
+app.get("/integracoes/inventario", async (c) => {
+  await getCtx(c);
+  const { inventarioDeIntegracoes } = await import("@/lib/integrations/inventario");
+  return c.json({ integracoes: await inventarioDeIntegracoes() });
+});
+
 // GET /configuracoes/integracoes — return integration config (key masked)
 app.get("/integracoes", async (c) => {
   const ctx = await getCtx(c);

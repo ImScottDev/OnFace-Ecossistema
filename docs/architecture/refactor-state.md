@@ -1298,6 +1298,46 @@ jornada. Fica registrado, e a fonte certa quando for feito é
 smokes**, e `/relatorios/comercial` conferida na rota real devolvendo 527 e
 R$ 477.191,68, iguais ao board.
 
+### CP12 — Integration Hub: a tela mostrava uma integração e escondia cinco
+
+A tela de Integrações listava TRÊS cartões: Apollo, e dois com a palavra
+`(placeholder)` escrita no próprio código (Meta Conversions API e Google Ads).
+Enquanto isso, rodando em produção e invisíveis na tela:
+
+| integração | sinal real | último |
+|---|---|---|
+| Callface (discador) | 4.918 ligações | 18/09 |
+| Stripe | 828 faturas | 20/09 |
+| Meta Lead Ads | 797 leads | 18/09 |
+| Callface AI (dados do produto) | 208 snapshots | 20/09 |
+| Microsoft 365 (agenda) | 58 reuniões | 18/09 |
+
+Quem abria a tela concluía que o produto tinha **uma** integração configurada.
+
+`lib/integrations/inventario.ts` deriva o estado de cada uma de sinal no banco,
+nunca de lista declarada: "em uso" exige volume e data; "configurada" é a
+credencial existir; "não configurada" vem com o que falta, em português. É a
+mesma pergunta do CP10 (`ai-platform/prontidao`) e a mesma disciplina: pergunta
+se a credencial existe, nunca lê o valor.
+
+**Um defeito meu, que a conferência pegou.** A primeira versão tinha
+`.catch(() => [{ n: 0 }])` em volta da consulta. Duas consultas estavam erradas
+(`event_outbox.destino` e `cliente_receita_mensal.calculated_at`, colunas que
+não existem) e o catch as transformou em "integração sem uso". Zero por falha e
+zero por ausência de dado são coisas diferentes, e confundir as duas é
+exatamente o defeito que este refactor inteiro existe para acabar. O catch
+saiu: agora a falha aparece na linha da integração, com a mensagem.
+
+Três travas: consulta quebrada não pode devolver estado falso; "em uso" sem
+volume ou sem data é erro; e a tela não pode voltar a ter cartão de placeholder.
+
+**Achado que ficou visível:** Meta Conversions API está **configurada e com
+zero entregas**. O token existe, o smoke passa, e nenhuma conversão foi
+entregue de verdade. Não mexi: agora está na tela para quem decide olhar.
+
+**Validação:** tsc limpo, **306 testes 0 falhas**, build exit 0, **29/29
+smokes**, `/ajustes/integracoes` respondendo 200 contra build de produção.
+
 ### Auditoria de CS Health (histórico da decisão)
 
 Menor do que o gap analysis inicial dizia:

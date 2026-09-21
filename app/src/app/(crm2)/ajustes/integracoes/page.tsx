@@ -149,17 +149,79 @@ export default function IntegracoesPage() {
         )}
       </div>
 
-      {/* Meta CAPI (placeholder) */}
-      <div className="bg-[var(--cf2-bg-surface)] rounded-xl p-6 border border-[var(--cf2-border-default)]">
-        <h2 className="text-lg font-semibold text-[var(--cf2-text-primary)] mb-2">Meta Conversions API</h2>
-        <p className="text-sm text-[var(--cf2-text-tertiary)]">Em breve — configuração do Pixel ID e Access Token.</p>
-      </div>
+      {/* O QUE EXISTE DE VERDADE.
+          Aqui havia dois cartões com "(placeholder)" no próprio código — Meta
+          Conversions API e Google Ads Offline Conversions — enquanto cinco
+          integrações rodavam em produção sem aparecer em lugar nenhum:
+          discador Callface (4.918 ligações), Stripe (828 faturas), Meta Lead
+          Ads (797 leads), Callface AI (208 snapshots) e Microsoft 365 (58
+          reuniões). Quem abria esta tela concluía que o produto tinha uma
+          integração configurada.
 
-      {/* Google Ads (placeholder) */}
-      <div className="bg-[var(--cf2-bg-surface)] rounded-xl p-6 border border-[var(--cf2-border-default)]">
-        <h2 className="text-lg font-semibold text-[var(--cf2-text-primary)] mb-2">Google Ads Offline Conversions</h2>
-        <p className="text-sm text-[var(--cf2-text-tertiary)]">Em breve — configuração do Customer ID e Conversion Action.</p>
-      </div>
+          O estado de cada linha é DERIVADO de sinal no banco, não declarado. */}
+      <Inventario />
+    </div>
+  );
+}
+
+
+const ESTADO = {
+  em_uso: { rotulo: "Em uso", cor: "var(--cf2-success-text)" },
+  configurada: { rotulo: "Configurada, sem uso ainda", cor: "var(--cf2-text-secondary)" },
+  nao_configurada: { rotulo: "Não configurada", cor: "var(--cf2-warning-text)" },
+} as const;
+
+interface LinhaIntegracao {
+  chave: string; nome: string; paraQue: string;
+  estado: keyof typeof ESTADO;
+  volume: number | null; rotuloVolume: string | null;
+  ultimoSinal: string | null; pendencia: string | null;
+}
+
+function Inventario() {
+  const { data, isLoading } = useQuery({
+    queryKey: ["integracoes-inventario"],
+    queryFn: async () => {
+      const res = await fetch("/api/configuracoes/integracoes/inventario");
+      if (!res.ok) throw new Error("Falha ao carregar as integrações");
+      return res.json() as Promise<{ integracoes: LinhaIntegracao[] }>;
+    },
+  });
+
+  return (
+    <div className="bg-[var(--cf2-bg-surface)] rounded-xl p-6 border border-[var(--cf2-border-default)]">
+      <h2 className="text-lg font-semibold text-[var(--cf2-text-primary)] mb-1">Integrações do sistema</h2>
+      <p className="text-xs text-[var(--cf2-text-tertiary)] mb-4">
+        O estado de cada uma vem do que ela produziu no banco, não de uma lista fixa.
+      </p>
+      {isLoading ? (
+        <p className="text-sm text-[var(--cf2-text-tertiary)]">Carregando…</p>
+      ) : (
+        <div className="flex flex-col divide-y divide-[var(--cf2-border-default)]">
+          {(data?.integracoes ?? []).map((i) => (
+            <div key={i.chave} className="flex flex-col gap-1 py-3 first:pt-0 last:pb-0">
+              <div className="flex items-baseline gap-2 flex-wrap">
+                <span className="text-sm font-semibold text-[var(--cf2-text-primary)]">{i.nome}</span>
+                <span className="text-[11px] font-medium" style={{ color: ESTADO[i.estado].cor }}>
+                  {ESTADO[i.estado].rotulo}
+                </span>
+                {/* Volume e data juntos: "828 faturas" sem data não diz se
+                    parou ontem ou há seis meses. */}
+                {i.volume !== null && i.volume > 0 && (
+                  <span className="text-[11px] text-[var(--cf2-text-tertiary)] ml-auto tabular-nums">
+                    {i.volume.toLocaleString("pt-BR")} {i.rotuloVolume}
+                    {i.ultimoSinal ? ` · último em ${new Date(i.ultimoSinal + "T00:00:00").toLocaleDateString("pt-BR")}` : ""}
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-[var(--cf2-text-tertiary)]">{i.paraQue}</p>
+              {i.pendencia && (
+                <p className="text-xs" style={{ color: "var(--cf2-warning-text)" }}>{i.pendencia}</p>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
