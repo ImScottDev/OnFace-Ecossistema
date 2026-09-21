@@ -13,7 +13,7 @@ Fases 01 a 16 concluídas.
 
 | Fase | Estado |
 |---|---|
-| 17 leitores | telas de vendas no canônico; faltam as rotas de API (`leads.ts` 26 leituras, `relatorios.ts` 15, `negocios.ts` 15) e as libs de analytics e CS |
+| 17 leitores | telas de vendas no canônico **com a propagação fechada**; leituras que descartavam dinheiro corrigidas. Falta a leitura de detalhe/edição, que migra junto com a escrita na fase 25 |
 | 18 motor único | os dois motores usam os mesmos adapters; falta a tag de empresa, que usa outro modelo |
 | 19 IA | NEXO e Hermes criados em `draft`; a IA não escreve mais direto no banco. Falta RAG e o runtime passar permissão delegada |
 | 22 RBAC | papéis, mapa e vínculos semeados, com paridade provada. Falta as rotas usarem `exigirPermissao` |
@@ -23,7 +23,7 @@ Fases 01 a 16 concluídas.
 
 ## Último commit
 
-`f066ea3` — refactor(20): Meta entra direto, e o sinal de qualidade volta pra ela
+`377bc02` — fix(17): qualificar um lead não movia o card, oito ações, mesma causa
 
 Branch de trabalho: `refactor/arquitetura-canonica`, criada a partir de `98940fe`.
 
@@ -203,6 +203,33 @@ caso `CONTRATO_SEM_PROCESSO_COMERCIAL`.
   Deixá-lo sobrescrever punha o card em "Novo" enquanto o contador do canônico dizia
   outra coisa — total e cards discordando na mesma tela.
 
+### A regra que faltava, e que custou duas regressões
+
+**Leitura canônica exige que a sincronização cubra TUDO que a leitura usa.**
+
+Migrar a fonte sem conferir a propagação é trocar a leitura e torcer. Aconteceu duas
+vezes nesta fase, e as duas foram encontradas auditando a própria mudança:
+
+| Onde | O que quebrava | Correção |
+|---|---|---|
+| Pipeline | `syncOportunidadeFromNegocio` propagava `stage` e não `etapa`, `titulo`, `service_family` | os quatro campos entraram na sincronização |
+| Pré-vendas | **nada** propagava lead → aquisição; as 8 ações do módulo eram invisíveis na tela | ponte em `registrarEvento`, por onde todas passam |
+
+O sintoma é o mesmo nos dois: o usuário age, salva, e o card volta para onde estava.
+Sem erro. O produto parece ter engolido a ação, que é o pior tipo de bug porque
+ninguém consegue reportar.
+
+Os dois têm smoke que consulta **o board de verdade**, e os dois foram verificados
+falhando de propósito antes de entrar.
+
+### Por que a leitura de detalhe/edição não migrou
+
+Ler o canônico e escrever no legado cria janela de inconsistência visível numa tela
+de edição: o usuário salva e não vê a mudança. Para board e relatório, que são
+agregados e tolerantes, a propagação resolve. Para detalhe e edição, a leitura migra
+**junto com a escrita**, na fase 25. Não é escopo reduzido: é a ordem que não quebra
+a tela no meio do caminho.
+
 ### Ainda no legado, e dito no código
 
 Cabeçalho do lead (nutrição, desqualificação, interesse declarado), condução da venda
@@ -265,8 +292,8 @@ canônico hoje faria o lead sumir da tela de pré-vendas no mesmo instante.
 
 ## Testes executados
 
-Estado atual: `tsc --noEmit` limpo, **build de produção passando**, **196 testes, 0
-falhas**, mais cinco smokes contra o banco real:
+Estado atual: `tsc --noEmit` limpo, **build de produção passando**, **200 testes, 0
+falhas**, mais **sete smokes** contra o banco real:
 
 - `smoke-ponte-canonica` — entrada externa chega inteira ao canônico e não duplica;
 - `smoke-ganho-oportunidade` 5/5 — a política da oferta decide, PABX gera as duas

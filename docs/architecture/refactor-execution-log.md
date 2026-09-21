@@ -646,3 +646,51 @@ pegou meu próprio erro apontando arquivo e linha.
 `META_WEBHOOK_VERIFY_TOKEN` e o token do CAPI, indisponíveis aqui.
 
 **Commit:** `f066ea3`.
+
+---
+
+## 2026-09-21 — Fase 17 (continuação) · Dinheiro invisível e duas regressões minhas
+
+**O relatório de mídia paga decidia investimento sobre 65% da receita.** `JOIN
+assinaturas ... leads` interno descartava toda assinatura sem lead legado: 72 das 355,
+e 47 delas ATIVAS. CAC e ROAS calculados sobre R$ 40.231,65 de um MRR ativo de
+R$ 61.769,55. Não quebra nada visivelmente; devolve um CAC otimista e ninguém
+questiona. A atribuição virou cadeia (lead, touchpoint do lead, touchpoint da
+empresa) e o relatório passou a ver os R$ 61.769,55 inteiros.
+
+**Revertido na mesma rodada:** tinha trocado o JOIN do relatório de tracking para
+resolver e-mail pela pessoa canônica. Medi depois e o ganho foi ZERO — quem tem
+e-mail no lead tem na pessoa. Dois JOINs que não mudam número nenhum saíram, e a
+limitação (159 de 1.562 negócios fora, por o relatório ser dimensionado por e-mail)
+ficou escrita com o número medido e um teste travando a cobertura.
+
+**Fila de cobrança e régua de renovação** dependiam de lead legado por JOIN interno.
+Hoje não há perda, mas 72 assinaturas não têm lead e a próxima fatura aberta vinda de
+uma delas cairia fora em silêncio. Viraram LEFT com a empresa como segunda via.
+
+### Duas regressões que eu mesmo criei, e a regra que faltava
+
+Auditando a própria fase 17, achei que migrar a leitura sem conferir a propagação
+quebra o produto de um jeito silencioso:
+
+1. **o card voltava para a coluna anterior.** O board de pipeline lê
+   `oportunidades.etapa`, e `syncOportunidadeFromNegocio` propagava `stage` e não
+   `etapa`, `titulo`, `service_family`, `commercial_motion`;
+2. **qualificar um lead não movia o card.** O board de pré-vendas lê `aquisicoes` e
+   as oito ações escrevem em `leads`. Nada propagava.
+
+A regra ficou escrita: **leitura canônica exige que a sincronização cubra tudo que a
+leitura usa.** A ponte de pré-vendas entrou em `registrarEvento`, por onde todas as
+ações passam — um lugar, oito ações.
+
+Os dois smokes consultam o board de verdade e foram verificados falhando de propósito
+antes de entrar.
+
+**Higiene:** o teste de reconciliação da fase 05 pegou uma pessoa órfã que o meu
+próprio smoke deixou (a porta canônica cria pessoa sem `lead_id_legado`, que só o
+backfill preenche). Removida, e a limpeza passou a usar o id que a porta devolve.
+
+**Validação:** `tsc` limpo, build passando, **200 testes**, 7 smokes verdes,
+contagens idênticas ao registrado.
+
+**Commits:** `b322c17`, `f0aa196`, `24d2bae`, `377bc02`.
