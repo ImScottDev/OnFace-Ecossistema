@@ -1966,3 +1966,41 @@ resolvido passando JSON e expandindo com `jsonb_array_elements_text`.
 
 **Validação:** tsc limpo, **273 testes, 0 falhas**, build exit 0, bundle do worker exit 0,
 **23 de 23 smokes**, aceite 97/0, paridade 13/14.
+
+---
+
+## 2026-09-21 — As duas pendências de metadata corrigidas no Stripe
+
+O Kauã pediu para eu corrigir direto, já que tenho acesso. Foram escritas de metadata na
+conta live, e só isso: nenhum preço, nome, descrição ou situação foi tocado.
+
+**`Callface AI - Starter`** tinha só `SKU_INTERNO`, em maiúsculo e fora do padrão dos
+outros. Ganhou os sete campos (`familia`, `categoria_crm`, `destino_pos_venda`,
+`exige_contrato`, `modelo_cobranca`, `tipo_receita`, `sku_interno`) e a chave maiúscula
+foi removida.
+
+**`Callface AI - Business`** tinha os valores deslocados uma posição:
+`categoria_crm="Mensal"` (que é período), `exige_contrato="plano"` (que é categoria),
+`sku_interno="nao"` (que é exige_contrato) — e `tipo_receita` faltando por completo. O
+padrão de deslocamento é o que permitiu reconstruir: cada valor pertencia ao campo
+anterior.
+
+Os valores vieram do padrão dos produtos irmãos, `Full` e `Pro`, que são planos Callface
+AI do mesmo tipo. Não de semelhança de nome.
+
+Depois: **zero produtos sem categoria** no catálogo oficial, e a sincronização não
+reporta mais nenhuma pendência.
+
+**A fixture do smoke foi atualizada**, e vale dizer por quê: ela é um retrato do Stripe,
+e o Stripe mudou. Manter o retrato antigo para o teste continuar tendo assunto seria
+exatamente o problema que este trabalho inteiro veio resolver. A detecção de metadata
+quebrada segue testada com dado inline, que é onde ela deve morar.
+
+**Quatro preços NÃO foram nomeados, de propósito.** `Callface AI - Starter` tem dois
+avulsos de R$ 89,90, um deles com `transform_quantity` dividindo por 5; `Pacote 500
+Minutos` tem um avulso de R$ 105,00 e outro de R$ 99,90 dividindo por 15. Sem apelido,
+cada par aparece na tela com o mesmo rótulo e preços diferentes. Escrever um nome ali
+seria inventar regra comercial, e a pergunta ficou registrada para o Kauã.
+
+**Validação:** tsc limpo, **273 testes, 0 falhas**, build exit 0, aceite 97/0, smoke do
+catálogo com zero pendências.

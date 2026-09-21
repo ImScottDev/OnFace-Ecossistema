@@ -670,18 +670,36 @@ pnpm --filter app catalogo:sync:dry   # lê o Stripe e mostra o que mudaria
 pnpm --filter app catalogo:sync       # aplica
 ```
 
-### Duas pendências de metadata NO STRIPE, não no código
+### As duas pendências de metadata foram corrigidas no Stripe
 
-A sincronização não inventa classificação. Dois produtos entram com pendência nomeada:
+A sincronização não inventa classificação, e por isso dois produtos entraram como
+pendência nomeada. **Os dois foram corrigidos na conta live em 21/09, a pedido do Kauã**,
+escrevendo só metadata — nada de preço, nome ou cobrança:
 
-| Produto | O que falta no Stripe |
-|---|---|
-| `Callface AI - Starter` | sem `familia` nem `categoria_crm` (só tem `SKU_INTERNO`, em maiúsculo) |
-| `Callface AI - Business` | `categoria_crm` com valor de período (`"Mensal"`), `sku_interno="nao"`, `exige_contrato="plano"` — campos preenchidos deslocados |
+| Produto | Estava | Ficou |
+|---|---|---|
+| `Callface AI - Starter` | só `SKU_INTERNO` (maiúsculo), sem família nem categoria | os 7 campos do padrão, e a chave maiúscula removida |
+| `Callface AI - Business` | `categoria_crm="Mensal"`, `exige_contrato="plano"`, `sku_interno="nao"` — valores deslocados uma posição | `categoria_crm="plano"`, `exige_contrato="nao"`, `sku_interno="callface_ai_business_mensal"`, e `tipo_receita` que faltava |
 
-A família dos dois é resolvida pelo prefixo do nome, então eles aparecem no catálogo. A
-categoria ausente é que os deixa fora do agrupamento da tela. Corrigir é editar a
-metadata no Stripe, e a sincronização seguinte já reflete.
+Os valores vieram do padrão dos produtos irmãos (`Full` e `Pro`, que são planos Callface
+AI iguais), não de palpite. Depois da correção: **zero produtos sem categoria** no
+catálogo oficial.
+
+A detecção de metadata quebrada continua testada com dado inline em
+`sincronizar-stripe.test.ts`, para não depender de o Stripe seguir errado para o teste
+ter assunto.
+
+### O que ainda depende de decisão do Kauã no catálogo
+
+Quatro preços cujo significado não é derivável, e por isso não foram nomeados:
+
+| Produto | Preços | A pergunta |
+|---|---|---|
+| `Callface AI - Starter` | dois avulsos de R$ 89,90, um deles com `transform_quantity` dividindo por **5** | o que distingue os dois, e o que "a cada 5" significa comercialmente |
+| `Callface AI - Pacote 500 Minutos` | um avulso de R$ 105,00 e outro de R$ 99,90, este dividindo por **15** | idem |
+
+Sem apelido, os dois pares aparecem na tela com o mesmo rótulo e preços diferentes, e o
+vendedor não tem como escolher. Escrever um nome ali seria inventar regra comercial.
 
 Também medido: **27 dos 55 preços não têm metadata nenhuma** e **8 não têm apelido nem
 `lookup_key`**. Nenhum dos dois impede a sincronização (o preço herda do produto, e a

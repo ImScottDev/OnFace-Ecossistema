@@ -34,15 +34,20 @@ async function main() {
   ok(familiaPeloNome("PABX - Ramal") === "PABX", "PABX pelo prefixo");
   ok(familiaPeloNome("SETUP") === null, "produto legado nao entra no catálogo novo");
 
-  // Os dois produtos com metadata quebrada no Stripe têm que virar PENDÊNCIA.
+  // Starter e Business tinham metadata quebrada no Stripe e foram CORRIGIDOS lá
+  // em 21/09 (Starter sem família nem categoria, Business com os valores em
+  // colunas deslocadas). A fixture reflete o Stripe depois da correção, que é
+  // o ponto deste desenho: a fonte é o Stripe, e o arquivo acompanha.
+  //
+  // A detecção de metadata quebrada continua testada em
+  // `sincronizar-stripe.test.ts`, com dado inline, para não depender de o
+  // Stripe seguir errado para o teste ter assunto.
   const starter = fixture.produtos.find((p) => p.nome === "Callface AI - Starter")!;
   const business = fixture.produtos.find((p) => p.nome === "Callface AI - Business")!;
   const cs = classificarProduto(starter as never);
   const cb = classificarProduto(business as never);
-  ok(cs.familia === "CALLFACE_AI", "Starter ganha família pelo nome, mesmo sem metadata");
-  ok(cs.faltando.length > 0, `e é reportado como pendente (${cs.faltando.length} item(ns))`);
-  ok(cb.faltando.some((f) => f.includes("período")),
-     "Business acusa categoria com valor de período (metadata deslocada)");
+  ok(cs.familia === "CALLFACE_AI" && cs.faltando.length === 0, "Starter está classificado e sem pendência");
+  ok(cb.categoria === "plano" && cb.faltando.length === 0, "Business também, com a categoria certa");
 
   const antes = await db.execute<{ n: number }>(sql`
     SELECT count(*)::int AS n FROM catalogo_precos WHERE organizacao_id = ${org.id}::uuid`);
@@ -57,7 +62,7 @@ async function main() {
 
   ok(r.produtosCriados + r.produtosAtualizados === 15, "os 15 produtos do catálogo entram");
   ok(r.precosCriados + r.precosAtualizados === 55, "os 55 preços entram");
-  ok(r.pendencias.length === 2, `exatamente os 2 produtos com metadata quebrada (${r.pendencias.length})`);
+  ok(r.pendencias.length === 0, `nenhuma pendência de metadata restante (${r.pendencias.length})`);
 
   // O que o construtor de proposta enxerga é a pergunta que importa.
   const [visivel] = await db.execute<{ n: number }>(sql`

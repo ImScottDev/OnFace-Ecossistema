@@ -42,6 +42,12 @@
       "etiquetaUnidade": "usuário",
       "ativo": true,
       "metadata": {
+        "familia": "callface_ai",
+        "categoria_crm": "plano",
+        "destino_pos_venda": "onboarding_callface_ai",
+        "exige_contrato": "nao",
+        "modelo_cobranca": "recorrencia_mensal",
+        "tipo_receita": "recorrente",
         "sku_interno": "callface_ai_starter_mensal"
       }
     },
@@ -54,11 +60,12 @@
       "ativo": true,
       "metadata": {
         "familia": "callface_ai",
-        "categoria_crm": "Mensal",
-        "sku_interno": "nao",
+        "categoria_crm": "plano",
         "destino_pos_venda": "onboarding_callface_ai",
-        "exige_contrato": "plano",
-        "modelo_cobranca": "recorrencia_mensal"
+        "exige_contrato": "nao",
+        "modelo_cobranca": "recorrencia_mensal",
+        "tipo_receita": "recorrente",
+        "sku_interno": "callface_ai_business_mensal"
       }
     },
     {
