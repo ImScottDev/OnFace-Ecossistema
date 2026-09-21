@@ -258,9 +258,23 @@ export async function syncOportunidadeFromNegocio(negocioId: string): Promise<vo
       responsavelId: negocio.responsavelId,
       valor: negocio.valorTotal,
       mrr: negocio.mrrFechado || negocio.mrrEstimado,
-      ganhoAt: negocio.ganhoAt,
-      perdidoAt,
-      motivoPerda: negocio.motivoPerda,
+      // Ganho e perda são EXCLUSIVOS, e o status do negócio decide qual vale.
+      //
+      // O legado não tem essa invariante e carrega quatro contradições reais:
+      // dois negócios com `status = 'perdido'` e `ganho_at` preenchido, e dois
+      // com `status = 'ganho'` e `motivo_perda` preenchido. Copiar cru levava a
+      // contradição para o canônico, onde existe uma invariante testada de que
+      // `ganho_at` e `perdido_at` não coexistem.
+      //
+      // Provado em transação com rollback: o sync sobre esses dois negócios
+      // produz duas oportunidades ganhas E perdidas ao mesmo tempo, e o teste
+      // de reconciliação passa a falhar. Bastava alguém editar aquele negócio.
+      //
+      // Não é escolha arbitrária: um negócio perdido não está ganho. A data que
+      // sobra é resíduo de um ganho desfeito que ninguém limpou.
+      ganhoAt: negocio.status === "ganho" ? negocio.ganhoAt : null,
+      perdidoAt: negocio.status === "perdido" ? perdidoAt : null,
+      motivoPerda: negocio.status === "perdido" ? negocio.motivoPerda : null,
       // Commercial Core v3 (ADR-EXEC-022) — espelha o bundle (oportunidades irmãs da mesma negociação).
       bundleId: negocio.bundleId,
       updatedAt: new Date(),

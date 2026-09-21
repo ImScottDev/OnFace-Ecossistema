@@ -215,3 +215,24 @@ test("trocar responsável passa pela porta, senão o canônico fica para trás",
   assert.deepEqual(fora, [],
     `estes trocam responsável sem passar pela porta e deixam o canônico para trás:\n${fora.join("\n")}`);
 });
+
+test("a sincronização não copia estado fechado contraditório do legado", () => {
+  // O legado não tem invariante de estado fechado e carrega quatro
+  // contradições reais: dois negócios com `status = 'perdido'` e `ganho_at`
+  // preenchido, e dois com `status = 'ganho'` e `motivo_perda` preenchido.
+  //
+  // O canônico TEM essa invariante, testada em `reconciliacao-backfill`. Copiar
+  // cru levava a contradição para lá, e bastava alguém editar aquele negócio
+  // para o banco passar a ter oportunidade ganha E perdida ao mesmo tempo.
+  //
+  // Provado em transação com rollback antes da correção, e pelo sync de verdade
+  // sobre o negócio contraditório real depois dela.
+  const sync = ler("lib/crm/sync-domain-model.ts");
+  assert.match(sync, /ganhoAt:\s*negocio\.status === "ganho" \? negocio\.ganhoAt : null/,
+    "ganho_at só vale quando o negócio está ganho");
+  assert.match(sync, /perdidoAt:\s*negocio\.status === "perdido" \? perdidoAt : null/,
+    "perdido_at só vale quando o negócio está perdido");
+  assert.match(sync, /motivoPerda:\s*negocio\.status === "perdido"/,
+    "motivo de perda acompanha a perda");
+});
+

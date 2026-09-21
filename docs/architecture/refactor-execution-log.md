@@ -1502,3 +1502,33 @@ derivável.
 
 **Validação:** tsc limpo, **259 testes, 0 falhas**, build exit 0, smoke de leituras
 verde.
+
+---
+
+## 2026-09-21 — Cutover crítico, parte 9: o legado podia contaminar a invariante do canônico
+
+As divergências pequenas da varredura anterior (`ganho_at` 2, `motivo_perda` 2) pareciam
+ruído e não eram.
+
+São **contradições de estado no legado**: dois negócios com `status = 'perdido'` e
+`ganho_at` preenchido, e dois com `status = 'ganho'` e `motivo_perda` preenchido. O
+canônico estava certo nos quatro casos, porque o backfill não copiou a contradição.
+
+Mas `syncOportunidadeFromNegocio` copiava `ganhoAt`, `perdidoAt` e `motivoPerda` crus, e
+o canônico TEM uma invariante testada de que ganho e perda não coexistem. Provei em
+transação com rollback: rodar o sync sobre esses dois negócios produz duas oportunidades
+ganhas E perdidas ao mesmo tempo, e a suíte passa a falhar.
+
+**Bastava alguém editar aquele negócio.** Qualquer edição dispara o sync.
+
+A regra que entrou não é arbitrária: um negócio perdido não está ganho, e o `status` é
+quem decide qual das duas datas vale. A data que sobra é resíduo de um ganho desfeito
+que ninguém limpou. Alcance medido antes de escrever a regra: 603 dos 605 `ganho_at` já
+têm `status = 'ganho'`, e nenhum negócio ganho está sem data. A regra toca exatamente as
+4 linhas contraditórias.
+
+Provado depois pelo sync de verdade sobre o negócio contraditório real, não por SQL
+equivalente: `ganho_at` continua nulo, `perdido_at` intacto, e o banco inteiro segue com
+zero oportunidades ganhas e perdidas.
+
+**Validação:** tsc limpo, **260 testes, 0 falhas**, build exit 0.
