@@ -316,9 +316,16 @@ export async function getFilaCobranca(orgId: string, limite = 100): Promise<Fila
       f.hosted_invoice_url,
       f.acionado_cobranca, f.acionado_em, u.nome AS acionado_por_nome,
       GREATEST(0, EXTRACT(day FROM now() - COALESCE(f.vencimento, f.emitida_em)))::int AS dias_atraso
+    -- LEFT, nao INNER: fatura sem lead legado some da fila de cobranca em
+    -- silencio, e "some da fila" quer dizer que ninguem cobra.
+    --
+    -- Hoje as 10 faturas sem lead estao pagas ou void, entao nada esta sendo
+    -- perdido AGORA. Mas 72 das 355 assinaturas nao tem lead, e a proxima
+    -- fatura aberta que vier de uma delas cairia fora. Todas tem empresa, que
+    -- e por onde o Stripe vincula.
     FROM faturas f
-    JOIN leads l ON l.id = f.lead_id
-    LEFT JOIN empresas e ON e.id = l.empresa_id
+    LEFT JOIN leads l ON l.id = f.lead_id
+    LEFT JOIN empresas e ON e.id = COALESCE(l.empresa_id, f.empresa_id)
     LEFT JOIN usuarios u ON u.id = f.acionado_por
     WHERE ${orgFilter("f.organizacao_id", orgId)} AND f.status IN ('aberta', 'uncollectible')
     ORDER BY
@@ -415,9 +422,12 @@ export async function getCalendarioRenovacao(orgId: string, dias = 90): Promise<
     SELECT c.id AS contrato_id, l.id AS lead_id, l.nome, e.nome AS empresa,
       COALESCE(c.produto, 'ai') AS produto, c.mrr::float, c.vencimento,
       a.current_period_end AS proxima_cobranca
+    -- Mesma razao: contrato a vencer que nao aparece e renovacao que ninguem
+    -- trabalha. Hoje todo contrato tem lead, mas o INNER e a aposta de que isso
+    -- continue verdade para sempre.
     FROM contratos c
-    JOIN leads l ON l.id = c.lead_id
-    LEFT JOIN empresas e ON e.id = l.empresa_id
+    LEFT JOIN leads l ON l.id = c.lead_id
+    LEFT JOIN empresas e ON e.id = COALESCE(l.empresa_id, c.empresa_id)
     LEFT JOIN assinaturas a ON a.contrato_id = c.id
     WHERE ${orgFilter("c.organizacao_id", orgId)} AND c.status = 'ativo'
       AND (

@@ -61,3 +61,37 @@ test("o tracking por e-mail declara quanto fica de fora, em vez de esconder", as
     "caiu abaixo do medido em 21/09 (89,8%), então o critério mudou",
   );
 });
+
+test("toda fatura em aberto chega na fila de cobrança", async (t) => {
+  if (!DB_URL) return t.skip("DATABASE_URL não definida");
+  const { db } = await import("@/lib/db");
+  const { sql } = await import("drizzle-orm");
+
+  // "Some da fila" quer dizer que ninguém cobra. O JOIN interno em `leads`
+  // deixava isso depender de um vínculo que 72 das 355 assinaturas não têm.
+  const [r] = await db.execute<{ no_banco: number; na_fila: number }>(sql`
+    SELECT
+      (SELECT count(*)::int FROM faturas
+        WHERE status IN ('aberta','uncollectible')) AS no_banco,
+      (SELECT count(*)::int FROM faturas f
+         LEFT JOIN leads l ON l.id = f.lead_id
+        WHERE f.status IN ('aberta','uncollectible')) AS na_fila`);
+
+  assert.equal(r.na_fila, r.no_banco, `${r.no_banco - r.na_fila} faturas em aberto fora da fila`);
+});
+
+test("todo contrato ativo pode entrar na régua de renovação", async (t) => {
+  if (!DB_URL) return t.skip("DATABASE_URL não definida");
+  const { db } = await import("@/lib/db");
+  const { sql } = await import("drizzle-orm");
+
+  const [r] = await db.execute<{ ativos: number; alcancaveis: number }>(sql`
+    SELECT count(*)::int AS ativos,
+           count(*) FILTER (WHERE c.lead_id IS NOT NULL OR c.empresa_id IS NOT NULL)::int AS alcancaveis
+      FROM contratos c WHERE c.status = 'ativo'`);
+
+  assert.equal(
+    r.alcancaveis, r.ativos,
+    `${r.ativos - r.alcancaveis} contratos ativos sem lead nem empresa: renovação que ninguém trabalha`,
+  );
+});
