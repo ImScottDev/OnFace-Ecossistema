@@ -70,7 +70,10 @@ async function main() {
 
   const r = await db.execute(sql`
     UPDATE negocios
-       SET mrr_fechado = valor_total, updated_at = now()
+       -- Nao bumpa updated_at: preencher mrr_fechado e enriquecimento, ninguem
+       -- trabalhou o negocio. Aqui o risco e menor (so toca status = ganho, que
+       -- nao aparece no board de trabalho), mas a regra e a mesma do backfill 08.
+       SET mrr_fechado = valor_total
      WHERE status = 'ganho'
        AND tipo_receita = 'recorrente'
        AND mrr_fechado IS NULL

@@ -2386,3 +2386,22 @@ A trava foi verificada por reintrodução: com o defeito de volta ela falha, sem
 ele passa. Teste que não falha com o defeito não é teste.
 
 **Validação:** tsc limpo, **311 testes 0 falhas**, **29/29 smokes**.
+
+## 2026-09-21 — CP16: fechando a varredura do relógio de trabalho
+
+25 arquivos bumpam `updated_at` nas quatro tabelas que governam board. Abrir um
+a um mostrou que a maioria está certa: mover etapa, processar mensagem,
+registrar toque, ligação atendida. São fatos reais.
+
+Dois que pareciam defeito não eram. O scoring bumpa, mas só roda depois de
+criação ou edição real do lead, então o relógio já tinha sido resetado pelo fato
+de verdade. O bundle muda id e título juntos, o que é alguém agrupando.
+
+Um era, de impacto baixo, e foi corrigido pela regra e não pelo risco:
+`backfill-valor-negocios` bumpava ao preencher `mrr_fechado`.
+
+Ele expôs um buraco na própria trava do CP15, que olhava só a pasta
+`scripts/backfill/`. Agora cobre backfill solto em `scripts/` também, verificado
+por reintrodução nos dois lugares.
+
+**Validação:** tsc limpo, **311 testes 0 falhas**, **29/29 smokes**.

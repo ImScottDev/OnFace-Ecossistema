@@ -72,10 +72,23 @@ test("nenhum backfill reseta o relógio de trabalho", () => {
   // backfill 08 deixou as 126 oportunidades abertas com família todas com a
   // mesma data, enquanto as 401 sem família mantêm datas de 09/02 a 21/09.
   // Em produção isso atingiria 477 de uma vez.
-  const dir = path.join(SRC, "scripts", "backfill");
+  // Todo backfill, esteja na pasta ou solto em `scripts/` com o nome no
+  // arquivo. `backfill-valor-negocios.ts` mora fora da pasta e escapou da
+  // primeira versão desta trava.
+  const alvos: string[] = [];
+  const raiz = path.join(SRC, "scripts");
+  for (const e of fs.readdirSync(raiz, { withFileTypes: true })) {
+    if (e.isDirectory() && e.name === "backfill") {
+      alvos.push(...fs.readdirSync(path.join(raiz, "backfill"))
+        .filter((f) => /\.ts$/.test(f)).map((f) => path.join(raiz, "backfill", f)));
+    } else if (e.isFile() && /backfill.*\.ts$/.test(e.name)) {
+      alvos.push(path.join(raiz, e.name));
+    }
+  }
   const infratores: string[] = [];
-  for (const nome of fs.readdirSync(dir).filter((f) => /\.ts$/.test(f))) {
-    const txt = fs.readFileSync(path.join(dir, nome), "utf8");
+  for (const arq of alvos) {
+    const nome = path.relative(raiz, arq);
+    const txt = fs.readFileSync(arq, "utf8");
     for (const tabela of RELOGIO_DE_TRABALHO) {
       // `UPDATE <tabela> ... updated_at = now()` na mesma instrução.
       const re = new RegExp(`UPDATE\\s+${tabela}\\b[\\s\\S]{0,400}?updated_at\\s*=\\s*now\\(\\)`, "i");

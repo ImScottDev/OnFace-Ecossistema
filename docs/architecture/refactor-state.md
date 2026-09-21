@@ -1455,6 +1455,33 @@ significa "quando alguém trabalhou isto": `oportunidades`, `leads`, `negocios`,
 crase em comentário SQL que já existia no repo pegou o meu comentário novo na
 primeira rodada, e funcionou como devia.
 
+### CP16 — Varredura fechada: quem pode bumpar o relógio, e por quê
+
+Varredura de todo o `src` atrás de escrita em `updated_at` nas quatro tabelas
+cujo relógio significa trabalho feito (`leads`, `negocios`, `oportunidades`,
+`aquisicoes`): **25 arquivos**. A maioria é fato real e deve bumpar mesmo —
+mover etapa, processar mensagem, registrar toque de cadência, ligação atendida.
+
+Dois candidatos foram abertos e **não eram defeito**, o que só se descobre
+olhando:
+
+- `lead-scoring.ts` bumpa ao recalcular o score, mas o score só é enfileirado
+  **depois** de criação ou edição real do lead. O `updated_at` já foi bumpado
+  pelo fato que veio antes; o do scoring é redundante, não danoso.
+- `oportunidade-bundle.ts` muda `bundle_id` e título juntos, o que é ação de
+  alguém agrupando negócios.
+
+Um era, com impacto baixo: `backfill-valor-negocios.ts` preenchia
+`mrr_fechado` e bumpava junto. Ele não roda na virada, é manual, e só toca
+`status = 'ganho'`, que não aparece no board de trabalho. Corrigido pela regra,
+não pelo risco.
+
+Esse último expôs um buraco na trava do CP15: ela olhava só
+`src/scripts/backfill/`, e esse arquivo mora solto em `src/scripts/`. A trava
+passou a cobrir os dois, e foi verificada por reintrodução nos dois lugares.
+
+**Validação:** tsc limpo, **311 testes 0 falhas**, **29/29 smokes**.
+
 ### Auditoria de CS Health (histórico da decisão)
 
 Menor do que o gap analysis inicial dizia:
