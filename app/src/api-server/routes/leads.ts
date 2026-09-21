@@ -738,6 +738,59 @@ app.post(
 // POST /leads/enrich-bulk — enqueue bulk lead enrichment
 // NOTE: Must be BEFORE /leads/:id to avoid matching "enrich-bulk" as :id
 // ---------------------------------------------------------------------------
+/**
+ * Ações em massa de Pré-vendas (v0.13 §01.9).
+ *
+ * Devolve o desfecho POR REGISTRO. "Nunca falhar silenciosamente por causa de
+ * um registro sem telefone válido" — 40 enviados com 10 ignorados é resultado
+ * útil; um 500 genérico não é.
+ */
+app.post("/leads/acoes-em-massa", async (c) => {
+  const ctx = await getCtx(c);
+  const corpo = await c.req.json().catch(() => ({})) as {
+    acao?: string; leadIds?: string[]; valor?: string | null;
+  };
+  const acoes = ["atribuir_responsavel", "adicionar_tag", "remover_tag", "incluir_em_cadencia", "enviar_para_discador"];
+  if (!corpo.acao || !acoes.includes(corpo.acao)) {
+    return c.json({ error: `ação inválida. Aceitas: ${acoes.join(", ")}` }, 400);
+  }
+  if (!Array.isArray(corpo.leadIds) || corpo.leadIds.length === 0) {
+    return c.json({ error: "nenhum registro selecionado" }, 400);
+  }
+  // Teto por lote: sem ele, um clique em "selecionar tudo" com 3.991 cards
+  // vira 3.991 chamadas ao discador numa requisição só.
+  if (corpo.leadIds.length > 500) {
+    return c.json({ error: "seleção acima de 500 registros: refine o filtro ou faça em lotes" }, 400);
+  }
+
+  const { executarEmMassa } = await import("@/lib/vendas/acoes-em-massa");
+  const r = await executarEmMassa({
+    organizacaoId: ctx.organizacaoId,
+    acao: corpo.acao as never,
+    leadIds: corpo.leadIds,
+    valor: corpo.valor ?? null,
+    atorId: ctx.userId,
+  });
+  return c.json(r);
+});
+
+/** Exportação do recorte escolhido (§01.9.1), não de uma listagem genérica. */
+app.post("/leads/exportar", async (c) => {
+  const ctx = await getCtx(c);
+  const corpo = await c.req.json().catch(() => ({})) as { leadIds?: string[] };
+  if (!Array.isArray(corpo.leadIds) || corpo.leadIds.length === 0) {
+    return c.json({ error: "nenhum registro selecionado" }, 400);
+  }
+  const { exportarLeads } = await import("@/lib/vendas/acoes-em-massa");
+  const csv = await exportarLeads(ctx.organizacaoId, corpo.leadIds.slice(0, 5000));
+  return new Response(csv, {
+    headers: {
+      "content-type": "text/csv; charset=utf-8",
+      "content-disposition": `attachment; filename="pre-vendas-${new Date().toISOString().slice(0, 10)}.csv"`,
+    },
+  });
+});
+
 app.post("/leads/enrich-bulk", async (c) => {
   const ctx = await getCtx(c);
 
