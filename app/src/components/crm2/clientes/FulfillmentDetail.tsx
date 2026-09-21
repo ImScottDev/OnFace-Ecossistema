@@ -43,6 +43,8 @@ const WORKSTREAM_LABEL: Record<string, string> = {
   validacao_contratacao: "Validação da contratação", acessos: "Acessos", explicar_demonstrar: "Explicar/Demonstrar",
   primeira_ligacao: "Primeira ligação", primeiro_valor: "Primeiro valor", primeiro_valor_confirmado: "Primeiro valor confirmado",
   proximos_passos: "Próximos passos", branding: "Branding", ativacao_capacidade: "Ativação de capacidade",
+  abertura: "Abertura", comunicacao: "Comunicação", coleta: "Coleta e validação", configuracao: "Configuração",
+  dominio: "Domínio", qualidade: "Qualidade", go_live: "Go-live", handoff: "Handoff",
 };
 
 interface Formulario {
@@ -994,7 +996,22 @@ function OnboardingLegacyView({ fulfillmentId, data, documentosLegado }: { fulfi
   const [aba, setAba] = useState<string>("visao-geral");
   const { byId: usuariosById } = useOrgUsuarios();
 
-  const { fulfillment, itens, empresaId, empresaNome, empresaLogoUrl, atividadesEmpresa } = data;
+  const { fulfillment, itens, empresaId, empresaNome, empresaLogoUrl, atividadesEmpresa, publicToken, formulario, leadId, leadTelefone, leadEmail } = data;
+  const isWhiteLabel = fulfillment.serviceFamily === "WHITE_LABEL";
+  const tituloJornada = isWhiteLabel ? "Implantação White Label" : "Onboarding";
+  const linkJornada = isWhiteLabel ? "/pos-venda/white-label" : "/pos-venda/onboarding";
+  const linkFormulario = isWhiteLabel && publicToken ? `${typeof window !== "undefined" ? window.location.origin : ""}/impl-white-label/${publicToken}` : null;
+  const primeiroNome = (empresaNome || "").split(" ")[0] || "tudo bem";
+  const nomeResponsavel = fulfillment.responsavelNome || "[seu nome]";
+  const templateWhatsapp = `Olá, ${primeiroNome}! Tudo bem?\n\nEu sou ${nomeResponsavel}, da Callface, e vou acompanhar sua implantação White Label por aqui.\n\nPara começarmos, preciso que você preencha as informações de domínio, identidade visual, contato técnico e faturamento neste formulário: ${linkFormulario || "{{link_implantacao}}"}\n\nDepois que recebermos os dados, validamos o material, configuramos o ambiente e te orientamos sobre DNS. No final, marcamos uma reunião para apresentar o ambiente pronto.\n\nQualquer dúvida, pode me chamar por aqui.`;
+  const templateEmail = `Olá, ${primeiroNome}.\n\nTudo bem? Eu sou ${nomeResponsavel}, da Callface, e serei o responsável por acompanhar sua implantação White Label.\n\nPara iniciarmos a configuração do ambiente, peço que preencha as informações de domínio, identidade visual, contato técnico e faturamento no formulário abaixo:\n\n${linkFormulario || "{{link_implantacao}}"}\n\nDepois que recebermos os dados, validaremos o material, configuraremos o ambiente e enviaremos as orientações de DNS quando necessário. Ao final dessa etapa, agendaremos uma reunião para apresentar o ambiente pronto e liberar os acessos administrativos.\n\nFico à disposição caso precise de ajuda.\n\nAtenciosamente,\n${nomeResponsavel}\nCallface`;
+  const atendimentoHref = (canal: "whatsapp" | "email", texto: string) => {
+    if (!leadId) return null;
+    const params = new URLSearchParams({ leadId, canal, texto });
+    if (canal === "whatsapp" && leadTelefone) params.set("telefone", digitsForDialer(leadTelefone));
+    if (canal === "email" && leadEmail) params.set("email", leadEmail);
+    return `/${canal === "whatsapp" ? "whatsapp" : "email"}?${params.toString()}`;
+  };
 
   const toggleItem = useMutation({
     mutationFn: async ({ itemId, status, blockerType }: { itemId: string; status: string; blockerType?: string | null }) => {
@@ -1027,12 +1044,12 @@ function OnboardingLegacyView({ fulfillmentId, data, documentosLegado }: { fulfi
   return (
     <div className="flex flex-col gap-5 pb-8">
       <div className="flex items-center gap-1.5 text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>
-        <Link href="/pos-venda/onboarding" className="hover:underline">Onboarding</Link>
+        <Link href={linkJornada} className="hover:underline">{tituloJornada}</Link>
         <ChevronRight className="w-3 h-3" />
         <span style={{ color: "var(--cf2-text-primary)" }}>{empresaNome || "—"}</span>
       </div>
       <div className="flex items-center gap-3">
-        <h1 className="text-[22px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Onboarding</h1>
+        <h1 className="text-[22px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>{tituloJornada}</h1>
         <span className="px-2.5 py-1 rounded-full text-[11px] font-bold" style={{ background: fulfillment.status === "COMPLETED" ? "#effaf2" : fulfillment.status.startsWith("BLOCKED") ? "#fff1f2" : "#eef9e8", color: fulfillment.status === "COMPLETED" ? "var(--cf2-success-text)" : fulfillment.status.startsWith("BLOCKED") ? "#dc2626" : "#4d8a1d" }}>
           {STATUS_MACRO_LABEL[fulfillment.status] || fulfillment.status}
         </span>
@@ -1072,7 +1089,11 @@ function OnboardingLegacyView({ fulfillmentId, data, documentosLegado }: { fulfi
 
       {aba === "visao-geral" && (
         <div className="p-5 rounded-2xl" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
-          <p className="text-[14px] font-bold mb-3" style={{ color: "var(--cf2-text-primary)" }}>Checklist do onboarding</p>
+          {isWhiteLabel && <div className="mb-4 p-3 rounded-xl flex flex-col gap-2" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }}>
+            <div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-[13px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Materiais e comunicação</p><p className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>O envio é manual: revise a mensagem antes de falar com o cliente.</p></div><span className="text-[11px] font-semibold" style={{ color: formulario?.status === "SUBMITTED" ? "var(--cf2-success-text)" : "var(--cf2-text-secondary)" }}>{formulario?.status === "SUBMITTED" ? "Formulário recebido" : "Aguardando envio"}</span></div>
+            <div className="flex flex-wrap gap-2">{linkFormulario && <a href={linkFormulario} target="_blank" rel="noreferrer" className="px-2.5 py-1.5 rounded-lg text-[11px] font-bold" style={{ background: "var(--cf2-bg-surface)", color: "var(--cf2-text-primary)", border: "1px solid var(--cf2-border-default)" }}>Abrir formulário</a>}{atendimentoHref("whatsapp", templateWhatsapp) ? <Link href={atendimentoHref("whatsapp", templateWhatsapp)!} className="px-2.5 py-1.5 rounded-lg text-[11px] font-bold" style={{ background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" }}>Enviar pelo WhatsApp</Link> : <span className="text-[11px]" style={{ color: "var(--cf2-danger-text)" }}>Sem contato de WhatsApp</span>}{atendimentoHref("email", templateEmail) ? <Link href={atendimentoHref("email", templateEmail)!} className="px-2.5 py-1.5 rounded-lg text-[11px] font-bold" style={{ background: "var(--cf2-bg-surface)", color: "var(--cf2-text-primary)", border: "1px solid var(--cf2-border-default)" }}>Enviar por e-mail</Link> : <span className="text-[11px]" style={{ color: "var(--cf2-danger-text)" }}>Sem contato de e-mail</span>}</div>
+          </div>}
+          <p className="text-[14px] font-bold mb-3" style={{ color: "var(--cf2-text-primary)" }}>Checklist da {isWhiteLabel ? "implantação" : "jornada"}</p>
           <ChecklistLista itens={itens.slice(0, 8)} toggleItem={toggleItem} setItemSelecionado={setItemSelecionado} usuarios={Array.from(usuariosById.values())} fulfillmentResponsavelId={fulfillment.responsavelId} fulfillmentResponsavelNome={fulfillment.responsavelNome} onOwnerChanged={() => qc.invalidateQueries({ queryKey: ["cf2-fulfillment", fulfillmentId] })} />
         </div>
       )}

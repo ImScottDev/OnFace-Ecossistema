@@ -83,8 +83,10 @@ const REGRAS: Record<FamiliaServico, RegraFamilia> = {
     trilha: "implantacao_white_label",
     trilhaLabel: "Implantação White Label",
     checklist: WHITE_LABEL_CHECKLIST,
-    automacaoInicial: true,
-    tarefaInicial: "Agendar reunião de implantação White Label com o cliente",
+    // A fila recebe White Label sem dono. O time define o responsável antes
+    // de iniciar, em vez de herdar automaticamente o comercial.
+    automacaoInicial: false,
+    tarefaInicial: null,
   },
   // Sem sinal nenhum de família = ninguém adivinha. Vai pra fila de
   // validação manual, sem checklist, esperando uma pessoa dizer o que é.
@@ -412,7 +414,7 @@ export async function criarPosVendaDoNegocio(
         negocioId,
         usuarioId: negocio.responsavelId,
         titulo: regra.tarefaInicial,
-        tipo: "onboarding_agendar_reuniao",
+        tipo: familia === "WHITE_LABEL" ? "implantacao_white_label_contato" : "onboarding_agendar_reuniao",
         prioridade: "alta",
         venceEm: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000),
       });

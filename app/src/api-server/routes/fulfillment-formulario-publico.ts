@@ -7,8 +7,8 @@
 // URL, nunca por ID sequencial.
 import { Hono } from "hono";
 import { db } from "@/lib/db";
-import { fulfillments, fulfillmentFormularios, fulfillmentLinhasPortabilidade, fulfillmentRamais } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { fulfillments, fulfillmentFormularios, fulfillmentLinhasPortabilidade, fulfillmentRamais, fulfillmentItens } from "@/lib/db/schema";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import fs from "fs";
 import path from "path";
@@ -128,6 +128,9 @@ app.post("/fulfillment-formulario/:publicToken/upload", async (c) => {
 // removido pelo strip default do Zod (aconteceu com a versão anterior).
 const respostasSchema = z
   .object({
+    // White Label: identidade, domínio e faturamento. O jsonb continua como
+    // fonte de verdade, permitindo evoluir a coleta sem migration a cada campo.
+    whiteLabel: z.record(z.string(), z.any()).optional(),
     portabilidade: z.record(z.string(), z.any()).optional(),
     ramais: z.array(z.record(z.string(), z.any())).optional(),
     ura: z.record(z.string(), z.any()).optional(),
@@ -238,6 +241,17 @@ app.post("/fulfillment-formulario/:publicToken", async (c) => {
     })
     .where(eq(fulfillmentFormularios.id, formulario.id))
     .returning();
+
+  // A entrega do formulário White Label aguarda validação humana; ela não
+  // conclui a implantação nem altera as demais etapas do checklist.
+  if (fulfillment.serviceFamily === "WHITE_LABEL") {
+    await db.update(fulfillmentItens)
+      .set({ status: "VALIDATION", updatedAt: new Date() })
+      .where(and(
+        eq(fulfillmentItens.fulfillmentId, fulfillment.id),
+        eq(fulfillmentItens.titulo, "Receber e validar materiais e informações do cliente"),
+      ));
+  }
 
   // Materialização relacional — best-effort: uma falha aqui não pode
   // derrubar a submissão (o jsonb acima já é a fonte de verdade/backup e
