@@ -211,3 +211,44 @@ coexistindo 0.
 **Testes:** 126 passando, 0 falhas. 15 de reconciliação.
 
 **Commit:** `f96c163`
+
+---
+
+## 2026-09-21 — Fase 08 · Política comercial por oferta — CONCLUÍDA
+
+**Migration 0063.** Cria as quatro ofertas do SPEC §12.3 e adiciona
+`oferta_comercial_id` em `oportunidades`, `propostas`, `contratos` e
+`catalogo_precos`.
+
+**O risco que esta fase fecha.** Confirmado no banco de produção:
+`won_evidence_policies` libera Won para PABX e White Label com `signed_contract`
+isolado, sem prova de pagamento, enquanto `won-evidence.ts:19` documenta o
+contrário. Código e banco discordam, e em runtime o banco vence. A causa raiz é a
+política ser indexada por família: o mesmo produto vendido de duas formas precisa de
+duas regras, e com uma regra por família uma delas está errada por construção.
+
+`won_evidence_policies` **fica intacta**. A troca de leitor é cutover (fase 16).
+
+**Vínculo por evidência, nunca por default:**
+
+```text
+CALLFACE_AI_DIRECT     189   (negócio sem contrato)
+CALLFACE_AI_CONTRACT   138   (negócio com contrato)
+PABX_CONTRACT          139
+WHITE_LABEL_CONTRACT    11
+──────────────────────────
+vinculadas             477   sem oferta correspondente: 0
+```
+
+**Primeiro pacote de domínio com código real:** `packages/domain/catalog`. Sem SDK
+de provedor, sem framework de entrega, sem banco — recebe o estado já lido e devolve
+decisão com o que falta, no mesmo contrato de `lib/vendas/resultado.ts`. Os testes de
+arquitetura da fase 03 garantem a fronteira.
+
+**8 testes de domínio (SPEC §50.3)** cobrindo o caso que originou o risco: PABX com
+contrato assinado e sem pagamento; a mesma família com regras opostas; pessoa sem
+empresa bloqueada na proposta.
+
+**Testes:** 134 passando, 0 falhas.
+
+**Commit:** `484b1bb`

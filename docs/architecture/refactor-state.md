@@ -7,13 +7,13 @@
 
 ## Fase atual
 
-**08 — Catálogo e política de oferta comercial** (próxima)
+**09 — Proposta e contrato com referência canônica** (próxima)
 
-Fases 01 a 07 concluídas.
+Fases 01 a 08 concluídas.
 
 ## Último commit
 
-`f96c163` — refactor(07): pipeline normalizado e 1.561 oportunidades
+`484b1bb` — refactor(08): politica comercial por oferta
 
 Branch de trabalho: `refactor/arquitetura-canonica`, criada a partir de `98940fe`.
 
@@ -67,6 +67,7 @@ Pacote vazio não afeta o build: `tsc` limpo e 111 testes passando com o workspa
 | 0060 | `reconciliacao_casos` | cria `reconciliacao_casos` e `backfill_provenance` | sim |
 | 0061 | `vinculo_pessoa_empresa_campos` | `cargo` e `updated_at` em `pessoa_empresa_vinculos` + índice único | sim |
 | 0062 | `pontos_contato_atribuicao` | 10 colunas de atribuição e `aquisicao_id` em `pontos_contato` | sim |
+| 0063 | `ofertas_comerciais_seed` | as 4 ofertas do SPEC §12.3 + `oferta_comercial_id` em oportunidade, proposta, contrato e preço | sim |
 
 ### Tabelas canônicas criadas (vazias até o backfill)
 
@@ -84,6 +85,7 @@ Pacote vazio não afeta o build: `tsc` limpo e 111 testes passando com o workspa
 | 05 identidade | `src/scripts/backfill/05-identidade.ts` | 3.989 leads | **3.950 pessoas**, 2.324 vínculos | 8 |
 | 06 aquisição | `src/scripts/backfill/06-aquisicao.ts` | 3.989 leads | **3.989 aquisições**, 1.583 touchpoints | 0 |
 | 07 oportunidade | `src/scripts/backfill/07-pipeline-oportunidade.ts` | 1.562 negócios | **1.561 oportunidades**, 10 etapas | **1.084** |
+| 08 oferta | `src/scripts/backfill/08-oferta-comercial.ts` | 477 c/ família | **477 vinculadas** a 4 ofertas | 0 |
 
 Os dois são idempotentes por `backfill_provenance` e só inserem.
 
@@ -113,7 +115,15 @@ empresa, **nenhum marcado principal**, e um caso em `reconciliacao_casos`. A dec
 
 ## Readers migrados
 
-Nenhum.
+Nenhum ainda. O cutover de leitura é a fase 17.
+
+## Código de domínio migrado para `packages/`
+
+| Pacote | O que tem | Testes |
+|---|---|---|
+| `@onface/catalog` | `avaliarGanho`, `podeCriarProposta`, `jornadasPosVenda` — a política comercial da oferta | 8 de domínio |
+
+Os demais 37 pacotes seguem vazios, recebendo código conforme as fases avançam.
 
 ## Writers migrados
 
