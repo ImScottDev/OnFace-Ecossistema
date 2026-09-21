@@ -879,3 +879,18 @@ dentro de cada uma seriam catorze lugares para esquecer um.
 NÃO pode agir, e negá-las o deixaria travado em silêncio.
 
 **Commit:** `64eb8a9`.
+
+---
+
+## 2026-09-21 — Fase 18 concluída · A tag ia para um array vazio
+
+Última duplicação do motor. Havia dois modelos de tag: `empresas.tags`, um array de
+texto, e `labels`/`entity_labels`, com tabela dedicada e evento de domínio. Medido: o
+array está **vazio em todas as empresas** e a tabela tem 161 vínculos. O motor de
+regras escrevia no modelo que ninguém usa — a tag posta por automação existia no banco
+e não aparecia junto com as outras na tela.
+
+Não havia dado para migrar; havia código para convergir. A resolução nome→label
+acontece na ponte, porque quem escreve uma regra sabe o nome da tag e não o uuid dela.
+
+Com isto os dois motores não têm mais nenhuma implementação própria de ação.

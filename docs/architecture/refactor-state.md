@@ -14,7 +14,7 @@ Fases 01 a 16 concluídas.
 | Fase | Estado |
 |---|---|
 | 17 leitores | telas de vendas no canônico **com a propagação fechada**; leituras que descartavam dinheiro corrigidas. Falta a leitura de detalhe/edição, que migra junto com a escrita na fase 25 |
-| 18 motor único | os dois motores usam os mesmos adapters; falta a tag de empresa, que usa outro modelo |
+| 18 motor único | **concluída** — os dois motores não têm mais nenhuma implementação própria de ação |
 | 19 IA | NEXO e Hermes em `draft`, a IA não escreve direto no banco, busca de conhecimento no banco com índice, e **permissão delegada com teto por interseção**. Publicar os agentes é decisão de quem opera |
 | 22 RBAC | papéis, mapa e vínculos semeados, com paridade provada. Falta as rotas usarem `exigirPermissao` |
 | 20 Meta | **CAPI validada contra a Meta real** (8 eventos aceitos em Test Events). Inbound implementado e testável; ativação real bloqueada só pela permissão da Página |
@@ -25,7 +25,7 @@ Fases 01 a 16 concluídas.
 
 ## Último commit
 
-`64eb8a9` — refactor(19): pedir ao agente deixa de contornar a permissão de quem pediu
+`(este)` — refactor(18): a tag posta por automação ia para um array que ninguém lê
 
 Branch de trabalho: `refactor/arquitetura-canonica`, criada a partir de `98940fe`.
 
