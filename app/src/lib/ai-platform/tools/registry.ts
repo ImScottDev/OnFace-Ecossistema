@@ -10,6 +10,7 @@ import type { ModelTool } from "../runtime/provider-gateway";
 import { converterLeadEmOportunidade } from "@/lib/crm/converter-oportunidade";
 import { enviarParaDiscagem } from "@/lib/integrations/callface";
 import { publicarEvento } from "@/lib/events/outbox";
+import { executarAcaoAvulsa } from "@/lib/cadencia/cadence-engine";
 
 export type AgentToolContext = {
   organizacaoId: string;
@@ -47,6 +48,22 @@ async function contactContext(ctx: AgentToolContext) {
   return contact ?? null;
 }
 
+/**
+ * Ferramentas do agente (SPEC §19).
+ *
+ * A regra é uma só: **ferramenta de IA é embrulho sobre ação de domínio, nunca
+ * escrita própria.** O SPEC proíbe por escrito `AI → direct SQL` e
+ * `AI → direct db.update()`.
+ *
+ * O motivo não é purismo. Escrita própria pula tudo que a ação de domínio faz
+ * junto: o gate comercial, o evento, a projeção na timeline e a chave de
+ * idempotência. As ferramentas que mudam estado comercial — criar tarefa, mover
+ * etapa de lead e de negócio — passaram a chamar os MESMOS adapters do motor de
+ * automação. Um lugar que sabe mover etapa, e ele recusa mover para Ganho.
+ *
+ * Leitura continua consultando direto: ler não tem efeito colateral a
+ * coordenar.
+ */
 export const AGENT_TOOLS: AgentToolRegistration[] = [
   {
     id: "context.read_contact", name: "context_read_contact", description: "Consulta identidade, canal e vínculo CRM do contato atual.", category: "context", mutates: false, parameters: objectSchema(),
@@ -131,8 +148,22 @@ export const AGENT_TOOLS: AgentToolRegistration[] = [
       const simulated = preview(ctx, "task.create", input); if (simulated) return simulated;
       const contact = await contactContext(ctx);
       const [admin] = await db.select({ id: usuarios.id }).from(usuarios).where(and(eq(usuarios.organizacaoId, ctx.organizacaoId), eq(usuarios.ativo, true), inArray(usuarios.role, ["admin", "gerente"]))).limit(1);
-      const [task] = await db.insert(tarefas).values({ organizacaoId: ctx.organizacaoId, leadId: ctx.leadId ?? contact?.leadId ?? null, usuarioId: contact?.responsavelId ?? admin?.id ?? null, titulo: String(input.titulo), descricao: input.descricao ? String(input.descricao) : null, tipo: "follow_up", prioridade: String(input.prioridade ?? "media"), venceEm: input.vence_em ? new Date(String(input.vence_em)) : null }).returning();
-      return { ok: true, data: task };
+      const leadId = ctx.leadId ?? contact?.leadId ?? null;
+      if (!leadId) return { ok: false, error: "sem lead vinculado para a tarefa" };
+      const venceMin = input.vence_em
+        ? Math.max(0, Math.round((new Date(String(input.vence_em)).getTime() - Date.now()) / 60_000))
+        : undefined;
+      const r = await executarAcaoAvulsa("crm_create_task", {
+        organizacaoId: ctx.organizacaoId, entityType: "lead", entityId: leadId, vars: {},
+        config: {
+          title: String(input.titulo),
+          description: input.descricao ? String(input.descricao) : undefined,
+          priority: String(input.prioridade ?? "media"),
+          owner_id: contact?.responsavelId ?? admin?.id ?? undefined,
+          due_minutes: venceMin,
+        },
+      });
+      return r.sucesso ? { ok: true, data: r.resultado } : { ok: false, error: r.erro };
     },
   },
   {
@@ -141,8 +172,11 @@ export const AGENT_TOOLS: AgentToolRegistration[] = [
     execute: async (ctx, input) => {
       const simulated = preview(ctx, "lead.update_status", input); if (simulated) return simulated;
       if (!ctx.leadId) return { ok: false, error: "lead ausente" };
-      const [lead] = await db.update(leads).set({ status: String(input.status), updatedAt: new Date() }).where(and(eq(leads.id, ctx.leadId), eq(leads.organizacaoId, ctx.organizacaoId))).returning({ id: leads.id, status: leads.status });
-      return lead ? { ok: true, data: lead } : { ok: false, error: "lead não encontrado" };
+      const r = await executarAcaoAvulsa("crm_update_stage", {
+        organizacaoId: ctx.organizacaoId, entityType: "lead", entityId: ctx.leadId,
+        vars: {}, config: { stage: String(input.status) },
+      });
+      return r.sucesso ? { ok: true, data: r.resultado } : { ok: false, error: r.erro };
     },
   },
   {
@@ -163,9 +197,13 @@ export const AGENT_TOOLS: AgentToolRegistration[] = [
     parameters: objectSchema({ negocio_id: stringProp("UUID do negócio"), status: stringProp("Novo estágio") }, ["negocio_id", "status"]),
     execute: async (ctx, input) => {
       const simulated = preview(ctx, "deal.advance", input); if (simulated) return simulated;
-      if (["ganho", "won", "closed_won"].includes(String(input.status).toLowerCase())) return { ok: false, error: "Won exige evidência validada pelo gate comercial" };
-      const [deal] = await db.update(negocios).set({ status: String(input.status), updatedAt: new Date() }).where(and(eq(negocios.id, String(input.negocio_id)), eq(negocios.organizacaoId, ctx.organizacaoId))).returning({ id: negocios.id, status: negocios.status });
-      return deal ? { ok: true, data: deal } : { ok: false, error: "negócio não encontrado" };
+      // O gate do Ganho vive no adapter, não aqui: um "não" repetido em cada
+      // chamador é um "não" que uma das cópias esquece.
+      const r = await executarAcaoAvulsa("crm_update_stage", {
+        organizacaoId: ctx.organizacaoId, entityType: "negocio", entityId: String(input.negocio_id),
+        vars: {}, config: { stage: String(input.status) },
+      });
+      return r.sucesso ? { ok: true, data: r.resultado } : { ok: false, error: r.erro };
     },
   },
   {
