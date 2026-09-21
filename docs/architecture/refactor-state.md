@@ -25,7 +25,7 @@ Fases 01 a 16 concluídas.
 
 ## Último commit
 
-`8917613` — fix(24): só a PRIMEIRA mudança de etapa do sistema publicava evento
+`374d726` — refactor(24): a timeline parou no dia da carga e ninguém percebeu
 
 Branch de trabalho: `refactor/arquitetura-canonica`, criada a partir de `98940fe`.
 
@@ -258,6 +258,19 @@ caso `CONTRATO_SEM_PROCESSO_COMERCIAL`.
 - o legado só refina onde sabe algo que o canônico não deriva (`qualificacao`).
   Deixá-lo sobrescrever punha o card em "Novo" enquanto o contador do canônico dizia
   outra coisa — total e cards discordando na mesma tela.
+
+### Três peças que existiam e ninguém chamava
+
+O mesmo defeito, em três lugares, todos encontrados indo olhar — nenhum quebrava nada:
+
+| Peça | Sintoma |
+|---|---|
+| adapter da CAPI | escrito e testado; **nada em runtime chamava**, nenhum evento saía |
+| `projetarTimeline` | 14.078 linhas, todas do backfill; a timeline parava no dia da carga |
+| `publicarEvento` canônico | 4 chamadores contra 20 do legado, que só escrevia na fila |
+
+É o padrão a vigiar no resto do refactor: peça pronta, teste verde, produção sem
+caller.
 
 ### Dois modelos de evento, convergidos
 

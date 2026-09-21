@@ -965,3 +965,27 @@ Verificado revertendo a correção de propósito: dois negócios movidos publica
 evento sem ela, dois com ela.
 
 **Commit:** `8917613`.
+
+---
+
+## 2026-09-21 — Fase 24 · Registro e timeline
+
+**A maior parte dos fatos não existia no registro.** Dois publicadores conviviam: um
+grava só a mensagem no `event_outbox` (20 chamadores), outro grava o fato em
+`domain_events` e a mensagem (4 chamadores). Fila e registro são coisas diferentes: a
+fila some de vista depois de processada, o registro é de onde sai a timeline e onde se
+olha para responder "o que houve com esta empresa em agosto". O legado passou a gravar
+os dois, na mesma transação, sem tocar nos vinte chamadores.
+
+**A timeline parou no dia da carga.** `projetarTimeline` existia, tinha teste, e só era
+chamada em teste — as 14.078 linhas eram todas do backfill. Ligada no consumidor.
+
+Nem todo evento vira linha: `domain_events` é o registro completo, a timeline é o que
+uma pessoa lê. Projetar tudo transformaria a tela num log, e log que ninguém lê esconde
+o que importa.
+
+Dois bugs pegos ao ligar: `Date` cru no template do postgres.js (a proteção entrou
+dentro da função do pacote, para nenhum chamador precisar lembrar) e o id da fila onde
+a FK espera o id do registro.
+
+**Commits:** `55822d9`, `374d726`.
