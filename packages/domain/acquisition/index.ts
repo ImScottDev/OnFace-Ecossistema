@@ -10,6 +10,11 @@ export {
   type TipoAquisicao,
   type Atribuicao,
 } from "./commands/registrar-entrada";
+export {
+  moverEtapaDaAquisicao,
+  type EtapaAquisicaoCanonica,
+  type AlvoDaEtapa,
+} from "./commands/mover-etapa-aquisicao";
 
 export {
   boardDeAquisicoes,

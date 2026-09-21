@@ -14,7 +14,7 @@
  */
 
 export type EstagioAquisicao =
-  | "novo" | "em_contato" | "qualificado" | "oportunidade"
+  | "novo" | "em_contato" | "qualificacao" | "qualificado" | "oportunidade"
   | "nutricao" | "desqualificado";
 
 export interface CardAquisicao {
@@ -78,6 +78,29 @@ type SqlTag = (strings: TemplateStringsArray, ...values: unknown[]) => unknown;
  * tag de SQL, e truque em consulta é onde bug se esconde.
  */
 
+/**
+ * A etapa do card e o total da coluna precisam sair da MESMA expressão. Eram
+ * duas cópias do mesmo CASE em consultas diferentes, e duas cópias da mesma
+ * regra divergem em silêncio — é o bug que este refactor existe para acabar.
+ *
+ * `pe.codigo` é a etapa gravada (SPEC §8.2) e manda. O CASE é o fallback para
+ * aquisição sem etapa própria: deixou de ser a verdade, não deixou de existir.
+ */
+function expressaoDeEtapa(sql: SqlTag): unknown {
+  return sql`COALESCE(pe.codigo, CASE
+             WHEN a.desqualificado_em IS NOT NULL THEN 'desqualificado'
+             WHEN a.nutricao_status IS NOT NULL AND a.nutricao_status <> '' THEN 'nutricao'
+             WHEN EXISTS (SELECT 1 FROM oportunidades o
+                           WHERE o.organizacao_id = a.organizacao_id
+                             AND (o.pessoa_id = a.pessoa_id OR o.empresa_id = a.empresa_id)
+                             AND o.ganho_at IS NULL AND o.perdido_at IS NULL) THEN 'oportunidade'
+             WHEN a.qualificado THEN 'qualificado'
+             WHEN a.last_touch_at IS NOT NULL AND a.first_touch_at IS NOT NULL
+                  AND a.last_touch_at > a.first_touch_at THEN 'em_contato'
+             ELSE 'novo'
+           END)`;
+}
+
 export async function boardDeAquisicoes(
   db: Executor, sql: SqlTag, organizacaoId: string, filtros: FiltrosBoard = {},
 ): Promise<{ cards: CardAquisicao[]; totaisPorEtapa: Record<string, number>; total: number }> {
@@ -98,18 +121,7 @@ export async function boardDeAquisicoes(
            e.nome AS empresa, a.empresa_id::text,
            NULLIF(trim(concat_ws(' ', p.nome, p.sobrenome)), '') AS pessoa,
            a.pessoa_id::text, p.cargo,
-           CASE
-             WHEN a.desqualificado_em IS NOT NULL THEN 'desqualificado'
-             WHEN a.nutricao_status IS NOT NULL AND a.nutricao_status <> '' THEN 'nutricao'
-             WHEN EXISTS (SELECT 1 FROM oportunidades o
-                           WHERE o.organizacao_id = a.organizacao_id
-                             AND (o.pessoa_id = a.pessoa_id OR o.empresa_id = a.empresa_id)
-                             AND o.ganho_at IS NULL AND o.perdido_at IS NULL) THEN 'oportunidade'
-             WHEN a.qualificado THEN 'qualificado'
-             WHEN a.last_touch_at IS NOT NULL AND a.first_touch_at IS NOT NULL
-                  AND a.last_touch_at > a.first_touch_at THEN 'em_contato'
-             ELSE 'novo'
-           END AS etapa,
+           ${expressaoDeEtapa(sql)} AS etapa,
            a.origem, a.canal, pc.campaign AS campanha,
            u.nome AS responsavel, a.responsavel_id::text,
            a.qualificado, p.email, p.telefone,
@@ -122,6 +134,7 @@ export async function boardDeAquisicoes(
       LEFT JOIN empresas e ON e.id = a.empresa_id
       LEFT JOIN pessoas  p ON p.id = a.pessoa_id
       LEFT JOIN usuarios u ON u.id = a.responsavel_id
+      LEFT JOIN pipeline_etapas pe ON pe.id = a.etapa_id
       -- Atribuição vem do primeiro toque, que é o que originou a aquisição.
       LEFT JOIN LATERAL (
         SELECT campaign FROM pontos_contato t
@@ -176,19 +189,9 @@ export async function boardDeAquisicoes(
   // O contador NUNCA sai da lista truncada: com limite de 400, contar o array
   // faria a coluna dizer 400 onde há 2.392. Vem de count() sobre a tabela.
   const totais = await db.execute<{ etapa: string; n: number }>(sql`
-    SELECT CASE
-             WHEN a.desqualificado_em IS NOT NULL THEN 'desqualificado'
-             WHEN a.nutricao_status IS NOT NULL AND a.nutricao_status <> '' THEN 'nutricao'
-             WHEN EXISTS (SELECT 1 FROM oportunidades o
-                           WHERE o.organizacao_id = a.organizacao_id
-                             AND (o.pessoa_id = a.pessoa_id OR o.empresa_id = a.empresa_id)
-                             AND o.ganho_at IS NULL AND o.perdido_at IS NULL) THEN 'oportunidade'
-             WHEN a.qualificado THEN 'qualificado'
-             WHEN a.last_touch_at IS NOT NULL AND a.first_touch_at IS NOT NULL
-                  AND a.last_touch_at > a.first_touch_at THEN 'em_contato'
-             ELSE 'novo'
-           END AS etapa, count(*)::int AS n
+    SELECT ${expressaoDeEtapa(sql)} AS etapa, count(*)::int AS n
       FROM aquisicoes a
+      LEFT JOIN pipeline_etapas pe ON pe.id = a.etapa_id
       LEFT JOIN LATERAL (
         SELECT campaign FROM pontos_contato t
          WHERE t.aquisicao_id = a.id

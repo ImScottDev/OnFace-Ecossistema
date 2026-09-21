@@ -17,6 +17,7 @@
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { sincronizarAquisicaoDoLead } from "./sincronizar-aquisicao";
+import { moverEtapaDaAquisicao, type EtapaAquisicaoCanonica } from "@onface/acquisition";
 import type { ExecutorDb } from "./executor";
 import type { Ator } from "./dominio";
 
@@ -177,6 +178,12 @@ export async function registrarEvento(evento: EventoVendas, tx: ExecutorDb = db)
  * as conversões de funil e o tempo por etapa que a spec pede em §18/§28 — e
  * que os relatórios existentes já calculam.
  */
+/** As etapas que a aquisição canônica conhece (SPEC §8.2, migration 0081). */
+const ETAPAS_DA_AQUISICAO = new Set<string>([
+  "novo", "em_contato", "qualificacao", "qualificado",
+  "oportunidade", "nutricao", "desqualificado",
+]);
+
 export async function registrarMudancaDeEtapa(params: {
   organizacaoId: string;
   ator: Ator;
@@ -200,6 +207,29 @@ export async function registrarMudancaDeEtapa(params: {
       ${params.motivo ?? null}
     )
   `);
+
+  // CUTOVER DE ESCRITA (fase 25). A etapa da aquisição passa a ser GRAVADA no
+  // canônico, e não mais deduzida de fatos.
+  //
+  // Aqui é a porta única: todo comando de pré-vendas que muda etapa — mover,
+  // qualificar, nutrir, desqualificar, reativar — chama esta função. Ligar em
+  // cada comando seria a mesma regra escrita cinco vezes, que é como as duas
+  // verdades nasceram.
+  //
+  // Só para o board de pré-vendas: `OpportunityStageChanged` é pipeline de
+  // venda, que já espelha por `espelharNoDominioV2`.
+  if (params.tipo === "StageChanged" && params.leadId && ETAPAS_DA_AQUISICAO.has(params.para)) {
+    await moverEtapaDaAquisicao(
+      tx as never, sql as never,
+      { organizacaoId: params.organizacaoId, leadLegadoId: params.leadId },
+      params.para as EtapaAquisicaoCanonica,
+    ).catch((e) => {
+      // Best-effort pela mesma razão da ponte: a aquisição espelho pode não
+      // existir para um lead antigo, e derrubar a ação do usuário por causa
+      // disso trocaria board desatualizado por tela que não salva.
+      console.warn(`[etapa-canonica] lead ${params.leadId} não moveu para ${params.para}:`, e);
+    });
+  }
 
   await registrarEvento({
     organizacaoId: params.organizacaoId,

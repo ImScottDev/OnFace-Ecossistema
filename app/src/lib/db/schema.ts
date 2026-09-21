@@ -475,6 +475,8 @@ export const pipelines = pgTable(
     organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
     nome: text("nome").notNull(),
     slug: text("slug").notNull(),
+    /** ACQUISITION | SALES (SPEC §8.2). O de aquisição é o board de pré-vendas. */
+    tipo: text("tipo").default("SALES").notNull(),
     ordem: integer("ordem").default(0).notNull(),
     stages: jsonb("stages").notNull().default([]),
     closedStages: jsonb("closed_stages").notNull().default([]),
