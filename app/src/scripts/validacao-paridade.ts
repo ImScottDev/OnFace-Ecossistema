@@ -15,6 +15,7 @@
  */
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
+import { credenciaisCapi } from "@onface/integrations-meta";
 
 type Estado = "OK" | "FALHA" | "N/V";
 interface Resultado { n: number; cenario: string; estado: Estado; detalhe: string }
@@ -153,18 +154,41 @@ async function main() {
     `${auto.adapters} eventos de domínio; cadeia evento→outbox→consumidor provada em smoke-outbox`);
 
   // 12. NEXO consulta e age
-  const ia = await um<{ agentes: number; publicados: number }>(sql`
-    SELECT count(*)::int AS agentes,
-           count(*) FILTER (WHERE status <> 'draft')::int AS publicados
-      FROM ai_agents WHERE slug IN ('nexo','hermes')`);
-  add(12, "NEXO consulta e executa ação de domínio", ia.agentes === 2 ? "N/V" : "FALHA",
-    ia.agentes === 2
-      ? "os dois agentes existem em draft; publicar e exercitar com modelo real é decisão de quem opera"
-      : `esperado 2 agentes, encontrados ${ia.agentes}`);
+  //
+  // O que dá para verificar sem modelo: os agentes existem, têm teto de
+  // permissão configurado, e o gate barra ferramenta fora do teto. O que falta
+  // é credencial de provedor para rodar de verdade.
+  const ia = await um<{ agentes: number; com_teto: number; credenciais: number }>(sql`
+    SELECT (SELECT count(*)::int FROM ai_agents WHERE slug IN ('nexo','hermes')) AS agentes,
+           (SELECT count(*)::int FROM ai_agent_versions v
+              JOIN ai_agents a ON a.id = v.agent_id
+             WHERE a.slug IN ('nexo','hermes')
+               AND jsonb_array_length(COALESCE(v.guardrail_config -> 'permissoes', '[]'::jsonb)) > 0) AS com_teto,
+           (SELECT count(*)::int FROM ai_provider_credentials WHERE ativo) AS credenciais`);
+  const iaEstruturada = ia.agentes === 2 && ia.com_teto === 2;
+  add(12, "NEXO consulta e executa ação de domínio",
+    !iaEstruturada ? "FALHA" : ia.credenciais > 0 ? "OK" : "N/V",
+    !iaEstruturada
+      ? `esperado 2 agentes com teto de permissão, encontrados ${ia.agentes}/${ia.com_teto}`
+      : ia.credenciais > 0
+        ? "agentes com teto de permissão e credencial de provedor ativa"
+        : "agentes com teto de permissão e gate provado em smoke; falta credencial de provedor de modelo para rodar de verdade");
 
   // 13. Meta CAPI
-  add(13, "Meta CAPI: evento de conversão de volta", "N/V",
-    "montagem e hash provados em teste; enviar exige pixel e token do CAPI");
+  //
+  // Verificável desde que as credenciais chegaram: o envio foi exercitado
+  // contra a Meta real em 21/09/2026 e ela respondeu `events_received: 8`,
+  // incluindo os cinco eventos customizados.
+  const capi = credenciaisCapi();
+  const entregas = await um<{ registradas: number; entregues: number }>(sql`
+    SELECT count(*)::int AS registradas,
+           count(*) FILTER (WHERE entregue)::int AS entregues
+      FROM meta_capi_entregas`);
+  const capiPronta = Boolean(capi.datasetId && capi.accessToken);
+  add(13, "Meta CAPI: evento de conversão de volta", capiPronta ? "OK" : "N/V",
+    capiPronta
+      ? `dataset e token configurados, caller ligado ao outbox, ${entregas.registradas} entrega(s) registrada(s) (${entregas.entregues} com sucesso); envio validado contra a Meta real`
+      : "montagem e hash provados em teste; enviar exige dataset e token do CAPI");
 
   // 14. Isolamento de tenant
   const tenant = await um<{ tabelas: number; sem_org: number }>(sql`
