@@ -7,6 +7,7 @@ import {
   isCallfaceLead,
   type ParsedRdLead,
 } from "@/lib/integrations/rd-station";
+import { telefoneUsavel } from "@/lib/whatsapp/phone-utils";
 
 /**
  * Busca IDs reais da Meta deixados em staging pelo webhook /api/webhooks/meta-lead-ids
@@ -17,7 +18,7 @@ import {
 async function buscarMetaIdsStaging(
   email: string | undefined,
   telefone: string | undefined
-): Promise<{ adId?: string; adsetId?: string; campaignId?: string } | null> {
+): Promise<{ adId?: string; adsetId?: string; campaignId?: string; telefone?: string } | null> {
   if (!email && !telefone) return null;
   const condicoes = [];
   if (email) condicoes.push(eq(metaLeadStaging.email, email));
@@ -30,7 +31,13 @@ async function buscarMetaIdsStaging(
     .limit(1);
   if (!row) return null;
   await db.update(metaLeadStaging).set({ usado: true }).where(eq(metaLeadStaging.id, row.id));
-  return { adId: row.adId ?? undefined, adsetId: row.adsetId ?? undefined, campaignId: row.campaignId ?? undefined };
+  return {
+    adId: row.adId ?? undefined,
+    adsetId: row.adsetId ?? undefined,
+    campaignId: row.campaignId ?? undefined,
+    // A Meta manda o telefone certo aqui. O RD nem sempre (ver backfill abaixo).
+    telefone: telefoneUsavel(row.telefone) ?? undefined,
+  };
 }
 
 /**
@@ -120,6 +127,14 @@ export async function POST(req: NextRequest) {
 
       const p: ParsedRdLead = parseRdLead(rd);
       const metaIds = await buscarMetaIdsStaging(p.email, p.telefone);
+
+      // Telefone: a fonte boa é a Meta, não o RD. A ponte Meta→RD lê o campo do
+      // formulário pelo nome e, quando o form usa outro nome, grava lixo na
+      // conversão ("undefined", e num caso real "Brazil" — leu o campo de país).
+      // O mesmo lead chega íntegro no meta_lead_staging, então quando o RD não
+      // trouxe telefone usável a gente pega o da Meta. Isso roda ANTES do dedup
+      // de propósito: com o número certo o lead casa com quem ele é de verdade.
+      if (!p.telefone && metaIds?.telefone) p.telefone = metaIds.telefone;
 
       // Campos do formulário que não têm coluna própria vão pro camposCustom
       // (Tipo de negócio e Tamanho da base vêm nas tags do RD).

@@ -616,6 +616,131 @@ export const assinaturas = pgTable(
   ]
 );
 
+// ─── BILLING IDENTITIES (customer Stripe canônico + aliases históricos) ────
+// Uma empresa pode ter Customers Stripe legados sem que isso autorize mesclar
+// cobranças. O vínculo é CRM-only e preserva cada ID histórico para auditoria.
+export const billingIdentities = pgTable(
+  "billing_identities",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+    empresaId: uuid("empresa_id").references(() => empresas.id),
+    leadId: uuid("lead_id").references(() => leads.id),
+    canonicalStripeCustomerId: text("canonical_stripe_customer_id"),
+    cnpjNormalized: text("cnpj_normalized"),
+    primaryEmailNormalized: text("primary_email_normalized"),
+    status: text("status").default("REVIEW").notNull(),
+    evidence: jsonb("evidence").default({}).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("uq_billing_identity_canonical_customer").on(table.organizacaoId, table.canonicalStripeCustomerId),
+    uniqueIndex("uq_billing_identity_empresa").on(table.organizacaoId, table.empresaId),
+    index("idx_billing_identity_cnpj").on(table.organizacaoId, table.cnpjNormalized),
+    index("idx_billing_identity_email").on(table.organizacaoId, table.primaryEmailNormalized),
+  ],
+);
+
+export const billingCustomerAliases = pgTable(
+  "billing_customer_aliases",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    billingIdentityId: uuid("billing_identity_id").references(() => billingIdentities.id).notNull(),
+    stripeCustomerId: text("stripe_customer_id").notNull(),
+    isCanonical: boolean("is_canonical").default(false).notNull(),
+    resolutionSource: text("resolution_source").notNull(),
+    evidence: jsonb("evidence").default({}).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("uq_billing_alias_customer").on(table.stripeCustomerId),
+    index("idx_billing_alias_identity").on(table.billingIdentityId),
+  ],
+);
+
+export const billingAuditRuns = pgTable("billing_audit_runs", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id),
+  scope: jsonb("scope").default({}).notNull(),
+  status: text("status").default("RUNNING").notNull(),
+  summary: jsonb("summary").default({}).notNull(),
+  artifactPath: text("artifact_path"),
+  startedAt: timestamp("started_at", { withTimezone: true }).defaultNow().notNull(),
+  finishedAt: timestamp("finished_at", { withTimezone: true }),
+});
+
+export const billingResolutionCases = pgTable(
+  "billing_resolution_cases",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    auditRunId: uuid("audit_run_id").references(() => billingAuditRuns.id),
+    organizacaoId: uuid("organizacao_id").references(() => organizacoes.id),
+    queue: text("queue").notNull(),
+    stripeCustomerId: text("stripe_customer_id"),
+    stripeSubscriptionId: text("stripe_subscription_id"),
+    crmEntityType: text("crm_entity_type"),
+    crmEntityId: uuid("crm_entity_id"),
+    evidence: jsonb("evidence").default({}).notNull(),
+    recommendedAction: jsonb("recommended_action").default({}).notNull(),
+    status: text("status").default("OPEN").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("idx_billing_cases_queue").on(table.organizacaoId, table.queue, table.status),
+    index("idx_billing_cases_customer").on(table.stripeCustomerId),
+  ],
+);
+
+export const billingCorrectionLedger = pgTable(
+  "billing_correction_ledger",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    auditRunId: uuid("audit_run_id").references(() => billingAuditRuns.id),
+    billingIdentityId: uuid("billing_identity_id").references(() => billingIdentities.id),
+    organizacaoId: uuid("organizacao_id").references(() => organizacoes.id),
+    entityType: text("entity_type").notNull(),
+    entityId: uuid("entity_id"),
+    action: text("action").notNull(),
+    before: jsonb("before").default({}).notNull(),
+    after: jsonb("after").default({}).notNull(),
+    evidence: jsonb("evidence").default({}).notNull(),
+    ruleApplied: text("rule_applied").notNull(),
+    operator: text("operator").notNull(),
+    reversible: boolean("reversible").default(true).notNull(),
+    revertedAt: timestamp("reverted_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_billing_ledger_audit_run").on(table.auditRunId, table.createdAt),
+    index("idx_billing_ledger_entity").on(table.entityType, table.entityId),
+  ],
+);
+
+// O evento é persistido antes de qualquer efeito. O ID único do Stripe torna
+// retries seguros e permite reprocessamento operacional sem pedir replay à API.
+export const stripeWebhookEvents = pgTable(
+  "stripe_webhook_events",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    stripeEventId: text("stripe_event_id").notNull(),
+    eventType: text("event_type").notNull(),
+    payload: jsonb("payload").notNull(),
+    status: text("status").default("PENDING").notNull(),
+    attempts: integer("attempts").default(0).notNull(),
+    lastError: text("last_error"),
+    receivedAt: timestamp("received_at", { withTimezone: true }).defaultNow().notNull(),
+    processingStartedAt: timestamp("processing_started_at", { withTimezone: true }),
+    processedAt: timestamp("processed_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("uq_stripe_webhook_event_id").on(table.stripeEventId),
+    index("idx_stripe_webhook_events_status").on(table.status, table.receivedAt),
+  ],
+);
+
 // ─── FATURAS (cobranças: Stripe invoices + faturamento PABX/Wevy) ─────────
 export const faturas = pgTable(
   "faturas",

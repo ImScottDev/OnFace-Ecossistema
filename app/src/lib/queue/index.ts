@@ -19,6 +19,12 @@ const groqJobOptions = { ...defaultJobOptions, attempts: 5, backoff: { type: "ex
 export const leadScoringQueue = new Queue("lead-scoring", { connection, defaultJobOptions });
 export const notificationQueue = new Queue("notifications", { connection, defaultJobOptions });
 export const conversionSyncQueue = new Queue("conversion-sync", { connection, defaultJobOptions });
+// Stripe delivery is persisted in Postgres first; this queue only triggers the
+// idempotent reconciliation of that stored event.
+export const stripeWebhookEventsQueue = new Queue("stripe-webhook-events", {
+  connection,
+  defaultJobOptions: { ...defaultJobOptions, attempts: 8, backoff: { type: "exponential" as const, delay: 15000 } },
+});
 export const followUpQueue = new Queue("follow-up", { connection, defaultJobOptions });
 export const whatsappIncomingQueue = new Queue("whatsapp-incoming", { connection, defaultJobOptions });
 export const whatsappOutgoingQueue = new Queue("whatsapp-outgoing", { connection, defaultJobOptions });

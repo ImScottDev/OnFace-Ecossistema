@@ -34,6 +34,31 @@ Histórico da reconciliação (por que isso existe, o que tinha divergido entre
 prod/homolog/git) está em `crm-callface-status.md` no vault, entrada de
 07/08/2026.
 
+### O git NÃO é fiel a produção — confira antes de assumir (medido em 08/09)
+
+`main` diverge do que roda em `/opt/callface/crm/app` em ~21 arquivos, e a
+divergência é de produção estar À FRENTE: existe código lá que nunca foi
+versionado (`relatorios/components/TabFechamentoComercial.tsx`,
+`lib/relatorios/fechamento-comercial.ts`, `lib/crm/resolver-empresa.ts`,
+`lib/services/`, `app/api/uploads/`) e dependência também
+(`exceljs@^4.4.0` estava no `package.json` do servidor e não no do git —
+derrubou um deploy em homolog com `ERR_MODULE_NOT_FOUND`).
+
+Antes de construir em cima de um arquivo, confira se ele é um dos divergentes:
+
+```bash
+rsync -a -e "ssh -i ~/.ssh/infra_callface.pem" --exclude "*.bak*" \
+  ubuntu@34.204.200.52:/opt/callface/crm/app/src/ /tmp/prod-src/
+diff -rq --strip-trailing-cr app/src /tmp/prod-src
+```
+
+**Use `--strip-trailing-cr` sempre**: os arquivos no servidor estão em CRLF e
+o `diff` puro acusa 100% dos arquivos como diferentes.
+
+Consequência prática pro deploy: prefira **rsync seletivo** (só os arquivos
+que você mexeu) a rsync do `src/` inteiro — senão você apaga o código não
+versionado que só existe no servidor.
+
 ## Ambiente de dev local
 
 Postgres 16 + Redis nativos via Homebrew (não Docker — não está instalado

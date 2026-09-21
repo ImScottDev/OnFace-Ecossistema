@@ -116,6 +116,22 @@ const conversionSyncWorker = new Worker(
   { connection, concurrency: 1 }
 );
 
+// Stripe webhook: the HTTP route already persisted the payload by Stripe event
+// ID. The worker replays that record idempotently; 30-minute polling remains
+// a safety reconciliation, never the primary path.
+const stripeWebhookEventsWorker = new Worker(
+  "stripe-webhook-events",
+  async (job) => {
+    const { stripeEventId } = job.data as { stripeEventId: string };
+    const { processStoredStripeWebhookEvent } = await import("../lib/integrations/stripe-webhook-events");
+    const result = await processStoredStripeWebhookEvent(stripeEventId);
+    console.log(`[StripeWebhookWorker] ${stripeEventId}: ${result.type}${result.skipped ? " (already processed)" : ""}`);
+    return result;
+  },
+  { connection, concurrency: 1 },
+);
+trackRedisConnection(stripeWebhookEventsWorker);
+
 // Follow-up Worker
 const followUpWorker = new Worker(
   "follow-up",

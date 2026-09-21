@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { telefoneUsavel } from "@/lib/whatsapp/phone-utils";
 import { leads, organizacoes, metaLeadStaging } from "@/lib/db/schema";
 import { and, eq, or, sql } from "drizzle-orm";
 
@@ -54,7 +55,7 @@ export async function POST(req: NextRequest) {
   }
 
   const email = body.email?.trim().toLowerCase() || undefined;
-  const telefone = body.personalPhone?.trim() || undefined;
+  const telefone = telefoneUsavel(body.personalPhone) || undefined;
   if (!email && !telefone) {
     return NextResponse.json({ ok: false, error: "sem email nem telefone" }, { status: 400 });
   }
@@ -100,6 +101,11 @@ export async function POST(req: NextRequest) {
         metaAdId: sql`COALESCE(NULLIF(${leads.metaAdId}, ''), ${body.adId ?? null})`,
         metaAdsetId: sql`COALESCE(NULLIF(${leads.metaAdsetId}, ''), ${body.adsetId ?? null})`,
         metaCampaignId: sql`COALESCE(NULLIF(${leads.metaCampaignId}, ''), ${body.campaignId ?? null})`,
+        // Telefone só PREENCHE, nunca sobrescreve: quando a ponte Meta→RD erra o
+        // campo do formulário, o lead nasce sem telefone e a SDR fica sem pra quem
+        // ligar. A Meta manda o número certo aqui. Mesmo padrão first-touch acima,
+        // e igualmente sem tocar updated_at.
+        telefone: sql`COALESCE(NULLIF(${leads.telefone}, ''), ${telefone ?? null})`,
       })
       .where(eq(leads.id, existing.id));
     return NextResponse.json({ ok: true, status: "matched-existing-lead", leadId: existing.id });

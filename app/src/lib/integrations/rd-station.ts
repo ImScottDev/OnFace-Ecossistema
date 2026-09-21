@@ -10,6 +10,8 @@
  * Fonte da estrutura: navegação real no n8n + nota callface/auditoria-meta-bm.md.
  */
 
+import { telefoneUsavel } from "@/lib/whatsapp/phone-utils";
+
 export interface ParsedRdLead {
   nome: string;
   sobrenome?: string;
@@ -205,10 +207,12 @@ export function parseRdLead(lead: RdLead): ParsedRdLead {
   }
   if (!utmContent) utmContent = s(origin.value);
 
+  // telefoneUsavel descarta lixo ("undefined", "-", vazio) ANTES de virar dado:
+  // esse valor também é chave de dedup no webhook, e lixo lá engole lead novo.
   const telefone =
-    s(content.Telefone || content.Celular || custom.Telefone) ||
-    s(lead.mobile_phone) ||
-    s(lead.personal_phone) ||
+    telefoneUsavel(s(content.Telefone || content.Celular || custom.Telefone)) ||
+    telefoneUsavel(s(lead.mobile_phone)) ||
+    telefoneUsavel(s(lead.personal_phone)) ||
     undefined;
 
   // Campos de qualificação do form viajam nas tags ("tipo: X", "base: Y").

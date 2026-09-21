@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { telefoneUsavel } from "@/lib/whatsapp/phone-utils";
 import { leads, organizacoes, statusChanges } from "@/lib/db/schema";
 import { and, eq } from "drizzle-orm";
 
@@ -64,7 +65,8 @@ export async function POST(req: NextRequest) {
 
   const nome = clean(body.nome);
   const email = clean(body.email)?.toLowerCase() ?? null;
-  const telefone = clean(body.telefone);
+  // Mesmo lixo do RD pode chegar por aqui (bug de template no form manda "undefined").
+  const telefone = telefoneUsavel(clean(body.telefone));
   const cargo = clean(body.cargo);
   const empresa = clean(body.empresa);
 

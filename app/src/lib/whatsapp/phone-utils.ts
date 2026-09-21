@@ -18,6 +18,26 @@ export function sanitizePushName(pushName?: string | null): string | null {
   return trimmed;
 }
 
+/**
+ * Telefone utilizável como dado/chave, ou `null` se for lixo.
+ *
+ * A ponte Meta→RD manda a string literal "undefined" quando o formulário do
+ * anúncio não tem campo de telefone (ou o nome do campo mudou). Sem esse filtro
+ * o lixo vira chave de deduplicação: TODO lead sem telefone casa com o primeiro
+ * que já entrou assim e é gravado como update dele, em vez de virar card novo.
+ * Aconteceu de verdade — 2 leads pagos perdidos entre 09 e 16/09/2026, ver
+ * decisões/2026-09-17-crm-telefone-undefined-engoliu-leads.
+ *
+ * ponytail: corte por contagem de dígitos (>= 8 cobre fixo BR sem DDD). Se um
+ * dia entrar número curto real (ramal, short code), trocar por validação por país.
+ */
+export function telefoneUsavel(raw?: string | null): string | null {
+  if (typeof raw !== "string") return null;
+  const t = raw.trim();
+  if (t.replace(/\D/g, "").length < 8) return null;
+  return t;
+}
+
 /** Strip to digits only, add country code 55 only for Brazilian numbers */
 export function normalizePhone(raw: string): string {
   const trimmed = raw.trim();
