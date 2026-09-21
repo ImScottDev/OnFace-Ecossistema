@@ -82,6 +82,69 @@ test("a rota de token chama o teto em vez de decidir sozinha", () => {
     "a listagem não pode devolver o hash do token");
 });
 
+/**
+ * Rotas de escrita SEM sessão. Cada uma tem gate PRÓPRIO, verificado lendo.
+ *
+ * Esta lista existe porque "166 rotas sem gate de permissão" era um balde com
+ * duas coisas dentro: rota de operação, onde a autenticação é o gate, e rota
+ * pública por desenho, onde o gate é token ou assinatura. Misturadas, uma rota
+ * nova que esquecesse a sessão entraria sem ninguém notar.
+ *
+ * O que cada uma usa, conferido no código:
+ *
+ *   apollo /webhook              segredo de ambiente
+ *   whatsapp /webhook            assinatura + segredo
+ *   auth-flow /esqueci           sempre 200, não revela se o e-mail existe
+ *   auth-flow /definir-senha     token com prazo e consumo de uso único
+ *   nps /:token                  token do convite
+ *   fulfillment-formulario (2)   publicToken do formulário
+ *   propostas *-publico (4)      UUID não enumerável + estado e validade
+ *                                checados no domínio (proposta-aceite)
+ */
+const PUBLICAS_POR_DESENHO = new Set([
+  "apollo.ts: POST /webhook",
+  "auth-flow.ts: POST /definir-senha",
+  "auth-flow.ts: POST /esqueci",
+  "fulfillment-formulario-publico.ts: POST /fulfillment-formulario/:publicToken/upload",
+  "fulfillment-formulario-publico.ts: POST /fulfillment-formulario/:publicToken",
+  "nps.ts: POST /:token",
+  "propostas.ts: POST /propostas/:id/aceitar-publico",
+  "propostas.ts: POST /propostas/:id/recusar-publico",
+  "propostas.ts: POST /propostas/:id/ajuste-publico",
+  "propostas.ts: POST /propostas/:id/assinar-publico",
+  "whatsapp.ts: POST /whatsapp/webhook",
+]);
+
+const SESSAO = /getCtx\(c\)|getTenantFromRequest\(c\)/;
+
+test("rota de escrita sem sessão é pública por desenho, e está nomeada", () => {
+  // O ponto: rota NOVA que esqueça a sessão cai aqui, em vez de se diluir num
+  // contador. Quem a escreveu decide se é pública de propósito e a nomeia, ou
+  // põe o gate.
+  const semSessao: string[] = [];
+  for (const f of fs.readdirSync(ROTAS)) {
+    if (!f.endsWith(".ts") || f.endsWith(".test.ts")) continue;
+    const src = fs.readFileSync(path.join(ROTAS, f), "utf8");
+    for (const m of src.matchAll(/app\.(post|patch|put|delete)\("([^"]*)"/g)) {
+      const corpo = src.slice(m.index, m.index + 900);
+      if (GATES.test(corpo) || SESSAO.test(corpo)) continue;
+      semSessao.push(`${f}: ${m[1].toUpperCase()} ${m[2] || "/"}`);
+    }
+  }
+
+  const naoDeclaradas = semSessao.filter((r) => !PUBLICAS_POR_DESENHO.has(r));
+  assert.deepEqual(naoDeclaradas, [],
+    "rota de escrita sem sessão e sem declaração de que é pública:\n" +
+    `${naoDeclaradas.join("\n")}\n` +
+    "Se for pública de propósito, some à lista dizendo QUAL é o gate dela.");
+
+  // O contrário também: nome na lista que não existe mais vira ruído e faz a
+  // próxima pessoa achar que a rota está coberta.
+  const obsoletas = [...PUBLICAS_POR_DESENHO].filter((r) => !semSessao.includes(r));
+  assert.deepEqual(obsoletas, [],
+    `estas estão declaradas como públicas e não existem mais (ou ganharam gate):\n${obsoletas.join("\n")}`);
+});
+
 test("o levantamento de rotas abertas continua visível", () => {
   // Este teste NÃO exige que as 181 sejam fechadas: exige que o número não
   // cresça em silêncio. Rota de escrita nova sem gate aparece aqui, e quem a

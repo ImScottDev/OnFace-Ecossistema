@@ -1866,3 +1866,38 @@ ficar órfão sem ninguém perceber. O comportamento das regras continua provado
 
 **Validação:** tsc limpo, **263 testes, 0 falhas**, build exit 0 com a rota
 `/ajustes/api-tokens` registrada, smoke de tokens verde.
+
+---
+
+## 2026-09-21 — Fase 22: as 11 rotas públicas saíram do balde
+
+"166 rotas de escrita sem gate de permissão" era um contador com duas coisas dentro:
+rota de operação, onde a autenticação é o gate, e rota pública por desenho, onde o gate
+é token ou assinatura. Misturadas, **uma rota nova que esquecesse a sessão entraria sem
+ninguém notar** — bastava o total ficar abaixo do teto.
+
+Separadas: **154 exigem sessão, 11 não exigem nada**. As 11 foram lidas uma a uma, e
+todas têm gate próprio:
+
+| Rota | Gate |
+|---|---|
+| `apollo /webhook` | segredo de ambiente |
+| `whatsapp /webhook` | assinatura + segredo |
+| `auth-flow /esqueci` | sempre 200, não revela se o e-mail existe |
+| `auth-flow /definir-senha` | token com prazo **e consumo de uso único** |
+| `nps /:token` | token do convite |
+| `fulfillment-formulario` (2) | `publicToken` do formulário |
+| `propostas *-publico` (4) | UUID não enumerável, com estado e validade checados no domínio |
+
+Duas coisas que só apareceram lendo, e que minha varredura por padrão tinha errado: o
+`definir-senha` **consome** o token (`consumirToken`), então não é reutilizável — meu
+regex procurava outro radical e teria reportado um falso positivo de segurança; e as
+rotas públicas de proposta delegam a validação de estado e validade para
+`proposta-aceite`, que é o lugar certo, então a rota parecer "só o id na URL" não
+significa ausência de regra.
+
+A trava agora exige que rota sem sessão esteja nomeada COM o gate dela, e também acusa
+nome na lista que não existe mais — declaração obsoleta faz a próxima pessoa achar que
+algo está coberto. Verificada com uma rota de escrita sem gate acrescentada de propósito.
+
+**Validação:** tsc limpo, **264 testes, 0 falhas**, build exit 0.

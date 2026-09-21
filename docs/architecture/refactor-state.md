@@ -16,7 +16,7 @@ Fases 01 a 16 concluídas.
 | 17 leitores | telas de vendas no canônico **com a propagação fechada**; leituras que descartavam dinheiro corrigidas. Falta a leitura de detalhe/edição, que migra junto com a escrita na fase 25 |
 | 18 motor único | **concluída** — os dois motores não têm mais nenhuma implementação própria de ação |
 | 19 IA | NEXO e Hermes em `draft`, a IA não escreve direto no banco, busca de conhecimento no banco com índice, e **permissão delegada com teto por interseção**. Publicar os agentes é decisão de quem opera |
-| 22 RBAC | papéis, mapa, vínculos e **paridade provada**. Rotas financeiras, de automação, de agente e de plataforma de IA já exigem permissão. Restam 166 rotas de operação, com o número travado contra crescimento |
+| 22 RBAC | papéis, mapa, vínculos e **paridade provada**. Rotas financeiras, de automação, de agente, de plataforma de IA e de token já exigem permissão. Das 165 restantes, **154 são operação** (a autenticação é o gate) e **11 são públicas por desenho, agora nomeadas uma a uma com o gate de cada** |
 | 20 Meta | **CAPI validada contra a Meta real** (8 eventos aceitos em Test Events). Inbound implementado e testável; ativação real bloqueada só pela permissão da Página |
 | 21 storage | **pontos de upload migrados** (anexo, avatar, formulário público): checksum, deduplicação, organização na chave, entrega independente de provedor. O adapter S3/R2 espera credencial, e só isso. A justificativa anterior para adiar ("só troca um disco local por outro") estava errada: o que mudou não foi o disco, foi metadado, dedup, isolamento e endereçamento |
 | 23 API pública | **concluída** — `/api/v1` com 9 recursos, token com escopo e uso registrado; criar, listar e revogar por rota e por tela (`/ajustes/api-tokens`), com teto de escopo testado e gerador de credencial corrigido |
@@ -25,7 +25,7 @@ Fases 01 a 16 concluídas.
 
 ## Último commit
 
-`(tela de tokens)` — feat(23): gestão de tokens da API pública tem tela
+`(rotas públicas nomeadas)` — test(22): as 11 rotas públicas saíram do balde
 
 Branch de trabalho: `refactor/arquitetura-canonica`, criada a partir de `98940fe`.
 
@@ -537,7 +537,7 @@ canônico hoje faria o lead sumir da tela de pré-vendas no mesmo instante.
 
 ## Testes executados
 
-Estado atual: `tsc --noEmit` limpo, **build de produção passando**, **263 testes, 0
+Estado atual: `tsc --noEmit` limpo, **build de produção passando**, **264 testes, 0
 falhas**, e **22 de 22 smokes** verdes, mais o aceite de vendas em **72 passaram, 0 falharam, 3 não verificados** contra o banco real (conferidos por código de
 saída, não por texto: procurar "FALHA" na saída dava falso positivo em `falhados=0`):
 
