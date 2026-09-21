@@ -55,6 +55,9 @@ importers:
       '@onface/platform-events':
         specifier: workspace:*
         version: link:../packages/platform/events
+      '@onface/platform-storage':
+        specifier: workspace:*
+        version: link:../packages/platform/storage
       '@onface/sales':
         specifier: workspace:*
         version: link:../packages/domain/sales
@@ -288,6 +291,8 @@ importers:
   packages/platform/observability: {}
 
   packages/platform/permissions: {}
+
+  packages/platform/storage: {}
 
   packages/platform/tenancy: {}
 

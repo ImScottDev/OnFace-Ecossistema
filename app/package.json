@@ -49,6 +49,7 @@
     "@onface/integrations-meta": "workspace:*",
     "@onface/platform-database": "workspace:*",
     "@onface/platform-events": "workspace:*",
+    "@onface/platform-storage": "workspace:*",
     "@onface/sales": "workspace:*",
     "@radix-ui/react-dialog": "^1.1.23",
     "@radix-ui/react-dropdown-menu": "^2.1.24",

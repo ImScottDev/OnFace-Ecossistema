@@ -7,7 +7,7 @@ const nextConfig: NextConfig = {
   // isto o build quebra com "module not found" nos imports de `@onface/*`.
   transpilePackages: [
     "@onface/acquisition", "@onface/catalog", "@onface/identity", "@onface/sales",
-    "@onface/platform-database", "@onface/platform-events", "@onface/integrations-meta",
+    "@onface/platform-database", "@onface/platform-events", "@onface/platform-storage", "@onface/integrations-meta",
   ],
   typescript: { ignoreBuildErrors: true },
   images: {

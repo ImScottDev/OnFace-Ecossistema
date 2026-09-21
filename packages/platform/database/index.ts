@@ -5,3 +5,5 @@
 
 export { criarRepositorioAquisicao, type Executor } from "./src/repositorio-aquisicao";
 export { criarRepositorioVendas } from "./src/repositorio-vendas";
+
+export { criarRepositorioArquivos } from "./src/repositorio-arquivos";
