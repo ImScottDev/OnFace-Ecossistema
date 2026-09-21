@@ -16,6 +16,7 @@
  */
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
+import { sincronizarAquisicaoDoLead } from "./sincronizar-aquisicao";
 import type { ExecutorDb } from "./executor";
 import type { Ator } from "./dominio";
 
@@ -118,6 +119,19 @@ export async function registrarEvento(evento: EventoVendas, tx: ExecutorDb = db)
         ${JSON.stringify({ evento: evento.tipo, ator: evento.ator.tipo, ...(evento.contexto ?? {}) })}::jsonb
       )
     `);
+  }
+
+  // CUTOVER DE LEITURA (fase 17). O board de pré-vendas lê `aquisicoes`, e as
+  // oito ações do módulo escrevem em `leads`. Toda ação passa por aqui, então
+  // aqui é onde a propagação cabe: um lugar, todas as ações.
+  //
+  // Sem isto, o usuário qualifica um lead, salva, e o card não sai do lugar.
+  // Nada dá erro — o produto só parece ter engolido a ação.
+  //
+  // Fica fora da transação de propósito: é espelho, não parte do fato. Se
+  // falhar, a ação comercial já está gravada e o backfill reconcilia.
+  if (evento.leadId) {
+    void sincronizarAquisicaoDoLead(evento.leadId);
   }
 }
 
