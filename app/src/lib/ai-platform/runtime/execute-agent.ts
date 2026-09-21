@@ -22,6 +22,15 @@ export type ExecuteAgentInput = {
   mode: "test" | "live";
   suppressEgress?: boolean;
   payload?: Record<string, unknown>;
+  /**
+   * Quem acionou o agente (SPEC §31).
+   *
+   * NEXO é operado por conversa e tem usuário; Hermes roda por evento e não
+   * tem. Quando existe, o teto de permissão da execução é a INTERSEÇÃO entre
+   * o que a versão do agente permite e o que essa pessoa pode — o agente não
+   * empresta poder a ninguém, e ninguém empresta poder ao agente.
+   */
+  usuarioId?: string | null;
 };
 
 export type ExecuteAgentResult = {
@@ -181,6 +190,23 @@ export async function executeAgent(input: ExecuteAgentInput): Promise<ExecuteAge
     const guardrails = selected.version.guardrailConfig && typeof selected.version.guardrailConfig === "object" ? selected.version.guardrailConfig as Record<string, unknown> : {};
     const autonomy = (["suggest", "approval", "autonomous"] as const).includes(guardrails.autonomy as "suggest") ? guardrails.autonomy as "suggest" | "approval" | "autonomous" : "suggest";
     trace.push({ type: "autonomy", mode: autonomy });
+
+    // Teto de permissão DESTA execução. Sem configuração na versão, o agente
+    // fica sem escrita: agente que nasce podendo tudo é porta que ninguém
+    // abriu de propósito.
+    const { delegacaoDoRun } = await import("../permissao-delegada");
+    const delegacao = await delegacaoDoRun({
+      organizacaoId: input.organizacaoId,
+      agentVersionId: selected.version.id,
+      usuarioId: input.usuarioId ?? null,
+    });
+    // O trace guarda o teto, não o pedido: quando o agente disser "não pude",
+    // o registro precisa mostrar o que ele podia.
+    trace.push({
+      type: "permissoes",
+      origem: delegacao.origem,
+      concedidas: [...delegacao.permissoes].sort(),
+    });
     await assertBudget(run.id, input, selected.agent.id);
     const { apiKey, baseUrl } = await resolveApiKey(selected.version);
     const toolIds = Array.isArray(selected.version.tools) ? selected.version.tools.filter((value): value is string => typeof value === "string") : [];
@@ -209,7 +235,7 @@ export async function executeAgent(input: ExecuteAgentInput): Promise<ExecuteAge
         if (!allowedNames.has(call.name)) result = { ok: false, error: `tool fora da allowlist: ${call.name}` };
         else {
           const startedTool = Date.now();
-          try { result = await executeRegisteredTool(call.name, { organizacaoId: input.organizacaoId, agentId: selected.agent.id, runId: run.id, contatoId: input.contatoId, leadId: input.leadId, mode: input.mode, autonomy }, call.input); }
+          try { result = await executeRegisteredTool(call.name, { organizacaoId: input.organizacaoId, agentId: selected.agent.id, runId: run.id, contatoId: input.contatoId, leadId: input.leadId, mode: input.mode, autonomy, permissoesDelegadas: delegacao.permissoes }, call.input); }
           catch (error) { result = { ok: false, error: error instanceof Error ? error.message : String(error) }; }
           await persistStep({ organizacaoId: input.organizacaoId, runId: run.id, sequence: sequence++, kind: "tool_call", name: call.name, status: result.ok ? "completed" : "failed", input: call.input, output: result, latencyMs: Date.now() - startedTool, errorCode: result.ok ? undefined : "tool_failed", errorMessage: result.error });
         }

@@ -20,6 +20,14 @@ export type AgentToolContext = {
   leadId?: string | null;
   mode: "test" | "live";
   autonomy: "suggest" | "approval" | "autonomous";
+  /**
+   * Teto de permissão DESTA execução (SPEC §31).
+   *
+   * Interseção entre o que a versão do agente permite e o que quem acionou
+   * pode. Ausente = nenhuma escrita: o padrão restritivo é deliberado, porque
+   * agente que nasce podendo tudo é porta que ninguém abriu de propósito.
+   */
+  permissoesDelegadas?: ReadonlySet<string>;
 };
 
 export type AgentToolResult = { ok: boolean; data?: unknown; error?: string; handoff?: boolean };
@@ -387,6 +395,25 @@ export function modelToolsForIds(ids: string[]): ModelTool[] {
 export async function executeRegisteredTool(name: string, ctx: AgentToolContext, input: Record<string, unknown>): Promise<AgentToolResult> {
   const tool = byName.get(name);
   if (!tool) return { ok: false, error: `tool não registrada: ${name}` };
+
+  // GATE DE PERMISSÃO DELEGADA (SPEC §31), no ponto único por onde toda
+  // ferramenta passa — verificar dentro de cada uma seria catorze lugares para
+  // alguém esquecer um.
+  //
+  // O risco que isto fecha: NEXO é operado por conversa. Sem o gate, um SDR
+  // pede ao agente uma ação que o papel dele não permite, o agente executa, e o
+  // RBAC inteiro vira decoração — basta pedir ao robô.
+  const { ferramentaPermitida } = await import("../permissao-delegada");
+  const v = ferramentaPermitida(tool.id, {
+    permissoes: (ctx.permissoesDelegadas ?? new Set()) as Set<never>,
+    origem: ctx.permissoesDelegadas ? "versao" : "nenhuma",
+  });
+  if (!v.permitido) {
+    // A mensagem diz o que faltou: o agente precisa poder explicar ao usuário
+    // por que não fez, em vez de tentar outro caminho para o mesmo efeito.
+    return { ok: false, error: `sem permissão delegada para ${tool.id} (exige ${v.exigida})` };
+  }
+
   return tool.execute(ctx, input);
 }
 

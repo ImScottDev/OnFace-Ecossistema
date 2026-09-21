@@ -70,3 +70,68 @@ test("ferramenta que muda estado comercial não escreve direto no banco", () => 
     "ferramenta de IA voltou a escrever direto no que o adapter governa",
   );
 });
+
+test("toda ferramenta que muta exige permissão delegada", async () => {
+  const { AGENT_TOOLS } = await import("./tools/registry.js");
+  const { PERMISSAO_POR_FERRAMENTA } = await import("./permissao-delegada.js");
+
+  // Ferramenta que muda dado de negócio sem permissão mapeada é uma porta que
+  // o RBAC não cobre: o agente faz por conversa o que o papel não permite.
+  //
+  // As exceções são deliberadas e todas da mesma família: é o que um agente faz
+  // quando NÃO pode agir — pedir ajuda, abrir caso, levantar alerta. Negá-las
+  // deixaria ele travado em silêncio, que é pior que agir demais.
+  //
+  // Nenhuma delas toca dado de negócio: escrevem em fila de trabalho humano.
+  // O abuso possível é volume (agente levantando cem alertas), e isso é
+  // limitação de taxa, não de permissão.
+  const EXCECOES = new Set([
+    "handoff.request", "case.open", "alert.create",
+    "skill.activate", "message.prepare", "response.classify",
+  ]);
+
+  const semGate = AGENT_TOOLS
+    .filter((t) => t.mutates && !EXCECOES.has(t.id) && !PERMISSAO_POR_FERRAMENTA[t.id])
+    .map((t) => t.id);
+
+  assert.deepEqual(semGate, [], "ferramenta de escrita sem permissão exigida");
+});
+
+test("o gate roda no executor único, não em cada ferramenta", async () => {
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+  const registry = fs.readFileSync(path.resolve(import.meta.dirname, "tools/registry.ts"), "utf8");
+
+  // Verificar dentro de cada ferramenta seriam catorze lugares para alguém
+  // esquecer um. O executor é por onde todas passam.
+  const trecho = registry.slice(registry.indexOf("export async function executeRegisteredTool"));
+  assert.match(trecho, /ferramentaPermitida/, "o executor único não checa permissão delegada");
+  assert.match(trecho, /sem permissão delegada/, "a recusa precisa dizer o que faltou");
+});
+
+test("NEXO e Hermes têm tetos diferentes, e nenhum mexe em automação", async (t) => {
+  if (!DB_URL) return t.skip("DATABASE_URL não definida");
+  const { db } = await import("@/lib/db");
+  const { sql } = await import("drizzle-orm");
+
+  const linhas = await db.execute<{ slug: string; permissoes: string[] | null }>(sql`
+    SELECT a.slug, v.guardrail_config -> 'permissoes' AS permissoes
+      FROM ai_agents a JOIN ai_agent_versions v ON v.agent_id = a.id
+     WHERE a.slug IN ('nexo','hermes')`);
+
+  const porSlug = new Map(linhas.map((l) => [l.slug, new Set(l.permissoes ?? [])]));
+  const nexo = porSlug.get("nexo");
+  const hermes = porSlug.get("hermes");
+  assert.ok(nexo && hermes, "os dois agentes precisam de teto configurado");
+
+  // Hermes roda sem humano por trás: o teto dele é o mais apertado.
+  assert.ok(hermes!.size < nexo!.size, "o executor sem humano deveria ter teto menor que o copiloto");
+
+  // Mudar fluxo de automação por conversa é como se perde o controle de um
+  // sistema: o pedido vira configuração e ninguém revisou.
+  for (const [slug, p] of porSlug) {
+    assert.ok(!p.has("automation.manage"), `${slug} não deveria poder alterar automação`);
+    assert.ok(!p.has("finance.manage"), `${slug} não deveria poder mexer em financeiro`);
+    assert.ok(!p.has("admin.manage_users"), `${slug} não deveria poder gerir usuários`);
+  }
+});
