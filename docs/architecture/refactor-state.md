@@ -1206,6 +1206,41 @@ Duas correções de caminho vieram junto:
 - 284 das 527 oportunidades abertas não têm empresa canônica. Sem cair no lead,
   a fila entregaria linha sem nome, e linha sem nome não é acionável.
 
+### CP10 — Intelligence Runtime: publicar sem credencial calava o atendimento
+
+Auditoria primeiro, e ela corrigiu uma conclusão minha. O runtime **tem**
+chamador: `worker/index.ts` chama `executeAgent` por import dinâmico relativo
+dentro de `handleAiSdrResponse`. Uma varredura textual não acha, porque o
+caminho do import é o mesmo texto que se costuma filtrar.
+
+O estado real medido: 28 tabelas `ai_*`, 2 agentes (NEXO e Hermes), 2 versões,
+**0 execuções**, **0 credenciais de provider**. Os dois apontam para
+`anthropic` / `claude-sonnet-4-6`, e o ambiente só tem `GROQ_API_KEY`.
+
+**O defeito.** O gate de publicação conferia provider, modelo, instruções e
+gatilho. Não conferia credencial. Publicar o NEXO hoje passaria nas quatro
+checagens; na primeira mensagem do cliente, `resolveApiKey` levanta
+"Credencial anthropic não configurada", e o worker **não cai no SDR legado** —
+por decisão explícita e correta, porque cair geraria resposta duplicada. O
+resultado seria o contato escrevendo e ninguém respondendo, com um
+`console.error` no servidor como único sinal.
+
+`lib/ai-platform/prontidao.ts` responde "este agente consegue rodar?" e devolve
+o que falta em português, com a consequência junto: *"cadastre uma chave de
+Anthropic em Integrações. Sem ela o agente é acionado, falha na chamada e o
+contato fica sem resposta."* As quatro checagens antigas foram absorvidas — uma
+lista só, usada pelo publish e pelo endpoint que a tela consulta antes de
+tentar, porque duas listas de requisito divergem e a que diverge é sempre a que
+o usuário lê.
+
+A prontidão pergunta se a credencial **existe**; nunca lê, decifra ou loga o
+valor. Um teste trava isso, e outro trava a divergência entre as variáveis de
+ambiente que o gate consulta e as que o runtime realmente usa.
+
+**BLOQUEIO REAL que permanece:** sem credencial Anthropic (ou sem repontar os
+agentes para Groq, que é decisão de produto), NEXO e Hermes não executam. O
+que dependia de credencial parou aqui; o que não dependia está feito.
+
 ### Auditoria de CS Health (histórico da decisão)
 
 Menor do que o gap analysis inicial dizia:

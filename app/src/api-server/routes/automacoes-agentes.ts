@@ -20,6 +20,7 @@ import {
   isKnownAgentTool,
 } from "@/lib/ai/agent-studio";
 import { executeAgent } from "@/lib/ai-platform/runtime/execute-agent";
+import { verificarProntidao, resumoDasFaltas } from "@/lib/ai-platform/prontidao";
 
 const app = new Hono();
 
@@ -278,6 +279,19 @@ app.patch("/automacoes/agentes/:id/versions/:versionId", async (c) => {
   return c.json(updated);
 });
 
+// A tela pergunta ANTES de tentar publicar: a lista de pendências é a mesma
+// que o publish usa, então não existe "passou aqui e falhou lá".
+app.get("/automacoes/agentes/:id/versions/:versionId/prontidao", async (c) => {
+  const ctx = await exigirCtx(c, "ai.configure");
+  const [agent] = await db.select({ id: aiAgents.id }).from(aiAgents)
+    .where(and(eq(aiAgents.id, c.req.param("id")), eq(aiAgents.organizacaoId, ctx.organizacaoId))).limit(1);
+  if (!agent) return c.json({ error: "Agente nao encontrado" }, 404);
+  const [version] = await db.select().from(aiAgentVersions)
+    .where(and(eq(aiAgentVersions.id, c.req.param("versionId")), eq(aiAgentVersions.agentId, agent.id))).limit(1);
+  if (!version) return c.json({ error: "Versao nao encontrada" }, 404);
+  return c.json(await verificarProntidao(version));
+});
+
 app.post("/automacoes/agentes/:id/versions/:versionId/publish", async (c) => {
   const ctx = await exigirCtx(c, "ai.configure");
   const [agent] = await db.select({ id: aiAgents.id }).from(aiAgents).where(and(eq(aiAgents.id, c.req.param("id")), eq(aiAgents.organizacaoId, ctx.organizacaoId))).limit(1);
@@ -285,11 +299,18 @@ app.post("/automacoes/agentes/:id/versions/:versionId/publish", async (c) => {
   const [version] = await db.select().from(aiAgentVersions).where(and(eq(aiAgentVersions.id, c.req.param("versionId")), eq(aiAgentVersions.agentId, agent.id))).limit(1);
   if (!version) return c.json({ error: "Versao nao encontrada" }, 404);
   if (version.status !== "draft") return c.json({ error: "Somente um rascunho pode ser publicado" }, 409);
-  const triggerConfig = version.triggerConfig && typeof version.triggerConfig === "object" ? version.triggerConfig as Record<string, unknown> : {};
-  const events = Array.isArray(triggerConfig.events) ? triggerConfig.events.filter((event): event is string => typeof event === "string") : [];
-  if (!version.provider?.trim() || !version.modelo?.trim()) return c.json({ error: "Defina provider e modelo antes de publicar" }, 409);
-  if (version.systemPrompt.trim().length < 20) return c.json({ error: "Complete as instrucoes antes de publicar" }, 409);
-  if (events.length === 0) return c.json({ error: "Escolha pelo menos um gatilho antes de publicar" }, 409);
+
+  // As quatro checagens que existiam aqui viraram uma, junto com a que
+  // faltava: CREDENCIAL. Sem ela a publicação passava e o agente falhava na
+  // primeira mensagem do cliente, sem cair no legado (cair duplicaria a
+  // resposta) — ou seja, o contato ficava sem resposta em silêncio.
+  const prontidao = await verificarProntidao(version);
+  if (!prontidao.pronto) {
+    return c.json({
+      error: `Falta ${prontidao.faltas.length === 1 ? "um item" : `${prontidao.faltas.length} itens`} para publicar: ${resumoDasFaltas(prontidao)}`,
+      faltas: prontidao.faltas,
+    }, 409);
+  }
   const updated = await db.transaction(async (tx) => {
     await tx.update(aiAgentVersions).set({ status: "superseded", supersededAt: new Date() }).where(and(eq(aiAgentVersions.agentId, agent.id), eq(aiAgentVersions.status, "published")));
     await tx.update(aiAgentVersions).set({ status: "published", publishedAt: new Date() }).where(eq(aiAgentVersions.id, version.id));
