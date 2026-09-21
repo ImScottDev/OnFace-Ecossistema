@@ -7,25 +7,27 @@
 
 ## Fase atual
 
-**17 a 22** (em andamento)
+**25 e 26 concluídas** — 27 e 28 aguardam aprovação do Kauã (são destrutivas).
 
-Fases 01 a 16 concluídas.
+Fases 01 a 26 concluídas.
 
 | Fase | Estado |
 |---|---|
-| 17 leitores | telas de vendas no canônico **com a propagação fechada**; leituras que descartavam dinheiro corrigidas. Falta a leitura de detalhe/edição, que migra junto com a escrita na fase 25 |
+| 17 leitores | **concluída** — telas de vendas no canônico com a propagação fechada; a leitura de detalhe/edição migrou na fase 25, junto com a escrita |
 | 18 motor único | **concluída** — os dois motores não têm mais nenhuma implementação própria de ação |
 | 19 IA | NEXO e Hermes em `draft`, a IA não escreve direto no banco, busca de conhecimento no banco com índice, e **permissão delegada com teto por interseção**. Publicar os agentes é decisão de quem opera |
 | 22 RBAC | papéis, mapa, vínculos e **paridade provada**. Rotas financeiras, de automação, de agente, de plataforma de IA e de token já exigem permissão. Das 165 restantes, **154 são operação** (a autenticação é o gate) e **11 são públicas por desenho, agora nomeadas uma a uma com o gate de cada** |
-| 20 Meta | **CAPI validada contra a Meta real** (8 eventos aceitos em Test Events). Inbound implementado e testável; ativação real bloqueada só pela permissão da Página |
+| 20 Meta | **concluída** — CAPI validada contra a Meta real (8 eventos aceitos) e inbound direto provado com `leadgen_id` real pela rota de verdade. Zero credencial Meta pendente |
 | 21 storage | **pontos de upload migrados** (anexo, avatar, formulário público): checksum, deduplicação, organização na chave, entrega independente de provedor. O adapter S3/R2 espera credencial, e só isso. A justificativa anterior para adiar ("só troca um disco local por outro") estava errada: o que mudou não foi o disco, foi metadado, dedup, isolamento e endereçamento |
 | 23 API pública | **concluída** — `/api/v1` com 9 recursos, token com escopo e uso registrado; criar, listar e revogar por rota e por tela (`/ajustes/api-tokens`), com teto de escopo testado e gerador de credencial corrigido |
 | 24 paridade | **13 dos 14 cenários passam, 0 falham**. O único não verificável é o NEXO, por falta de credencial de provedor de modelo |
-| 25 a 28 | dependem de 17 completa; 28 precisa de aprovação do Kauã |
+| 25 detalhe/escrita | **concluída** — a etapa da aquisição saiu da dedução para `pipeline_etapas`; cadência e atribuição chegam ao canônico; detalhe do lead lê `pontos_contato` e `aquisicoes` |
+| 26 semânticas | **concluída** — próxima ação é Task, no-show é estado de Meeting, trial depende da capacidade da oferta, estagnação e trial ganharam casa canônica, proposta conta pelo vínculo canônico, cliente é derivado |
+| 27 e 28 | **não executadas, por instrução**. São destrutivas (desligar escrita legada, remover fallback, CONTRACT, virada) e dependem de aprovação do Kauã |
 
 ## Último commit
 
-`ebae527` — feat(23): o catálogo sincroniza com o Stripe em vez de copiar planilha
+`239a787` — Fase 26.3: cliente é derivado, não uma marca que envelhece
 
 Branch de trabalho: `refactor/arquitetura-canonica`, criada a partir de `98940fe`.
 
@@ -110,6 +112,11 @@ dos quais só o que veio da Meta é devolvido.
 | 0075 | `busca_conhecimento` | full-text em português com `unaccent` e índice GIN | sim, DROP COLUMN |
 | 0076 | `meta_capi_entregas` | auditoria da entrega de conversão à Meta | sim, DROP TABLE |
 | 0077 | `permissao_delegada_agentes` | teto de permissão do NEXO (7) e do Hermes (5) | sim, remove a chave do jsonb |
+| 0081 | `etapa_da_aquisicao_tem_casa_canonica` | cria o pipeline de AQUISIÇÃO com 7 etapas e materializa `aquisicoes.etapa_id` com o que o board já mostrava (2.919 novo, 531 em contato, 539 oportunidade) | sim, inverso no arquivo |
+| 0082 | `no_show_e_estado_da_reuniao` | move 34 dos 38 no-shows históricos para `reunioes.status`; 4 ficam como reconciliação nomeada | sim, inverso no arquivo |
+| 0083 | `trial_e_capacidade_da_oferta` | `ofertas_comerciais.permite_trial`, semeado a partir do pipeline que já tem a etapa `trial` (Callface AI sim, PABX não) | sim, DROP COLUMN |
+| 0084 | `estagnacao_no_modelo_canonico` | `oportunidades.motivo_estagnacao` e `estagnado_em`, com os 227 casos abertos copiados | sim, DROP COLUMN |
+| 0085 | `trial_no_modelo_canonico` | `oportunidades.trial_iniciado_em` e `trial_encerrado_em`, com os 17 históricos copiados | sim, DROP COLUMN |
 
 ## Credenciais: o que está configurado e o que falta
 
@@ -245,6 +252,17 @@ evidência no banco permite deduzir.
 8 identidades aparecem ligadas a mais de uma empresa. Ganharam vínculo para cada
 empresa, **nenhum marcado principal**, e um caso em `reconciliacao_casos`. A decisão
 é humana e posterior.
+
+Abertos nas fases 25 e 26, todos **nomeados e não resolvidos por palpite**:
+
+| Caso | Quantos | Por que não foi resolvido |
+|---|---|---|
+| No-show sem reunião para marcar | 1 negócio | não há reunião nenhuma ligada a ele |
+| No-show com duas reuniões | 1 negócio | não há como saber a qual o cliente faltou |
+| No-show cuja reunião já estava `cancelada` | 2 negócios | cancelar antes e não aparecer são fatos diferentes |
+| Propostas ligadas só a um lead | **455**, das quais **81 aceitas** | atribuí-las a uma oportunidade específica seria inventar |
+| Marcados `cliente` sem contrato ativo | 111 | a marca pode estar certa por um fato que o contrato não registra |
+| Trials históricos sem família comercial | 16 de 17 | não servem de evidência para a política de trial |
 
 ## Readers migrados
 
@@ -499,19 +517,43 @@ ninguém consegue reportar.
 Os dois têm smoke que consulta **o board de verdade**, e os dois foram verificados
 falhando de propósito antes de entrar.
 
-### Por que a leitura de detalhe/edição não migrou
+### Fase 25: a tela lia canônico e escrevia legado
 
-Ler o canônico e escrever no legado cria janela de inconsistência visível numa tela
-de edição: o usuário salva e não vê a mudança. Para board e relatório, que são
-agregados e tolerantes, a propagação resolve. Para detalhe e edição, a leitura migra
-**junto com a escrita**, na fase 25. Não é escopo reduzido: é a ordem que não quebra
-a tela no meio do caminho.
+A pergunta que nenhum teste fazia: **depois de a tela executar a ação, a mesma tela
+mostra o resultado?** Teste de escrita confere a escrita; teste de leitura confere a
+leitura; ninguém fechava o ciclo. `smoke-tela-escreve-tela-le` fecha — chama a mesma
+função que a server action chama e relê pela mesma consulta que a página usa.
+
+Na primeira execução, o board dizia "novo" enquanto o detalhe dizia "em_contato".
+
+| Buraco | Medida | Correção |
+|---|---|---|
+| Mover card para Em contato escrevia `leads.estagio_pre_vendas`; o board lia `aquisicoes`, onde a etapa era **derivada** de fatos | `aquisicoes.etapa_id` em 0 de 3.989 | migration 0081 cria o pipeline de aquisição e materializa a etapa; `registrarMudancaDeEtapa` vira a porta única |
+| Card e total da coluna liam **duas cópias** do mesmo CASE | 2 definições | uma só, `expressaoDeEtapa` |
+| Cadência escrevia `last_contact_at` e nada mais | **zero** chamadas à porta canônica em `cadencia.ts` | os dois toques passam por `registrarPrimeiroContato` |
+| `registrarTouchpoint` gravava o ponto de contato sem `aquisicao_id` | 1.583 de 1.583 tinham o vínculo **pelo backfill**; medir dava 100% | resolvido dentro da função, a partir do lead legado |
+| Detalhe do lead lia UTMs de `leads` | paridade exata com `pontos_contato`: campaign 1.428, medium 1.490, content 1.278, term 1.251, **zero só de um lado** | lê `pontos_contato` (SPEC §8.3), legado como fallback |
+
+### Fase 26: as semânticas que não tinham dono
+
+| Semântica | O que estava errado | Onde mora agora |
+|---|---|---|
+| Próxima ação | `negocios.proxima_acao` vazia em **1.562 de 1.562**; o selo "Sem próxima ação" aparecia em todo card aberto | `tarefas` (SPEC §23), uma por oportunidade via `chave_idempotencia`. O selo caiu de 527 para 523 dos 527 abertos |
+| No-show | `no_show_em` preenchido nos mesmos 38 em que `status = 'no_show'` — cópia do status, escrita por nenhum código de runtime. `reunioes.status` só tinha `agendada` e `cancelada` | `reunioes.status = 'no_show'`, marcado pela rota. O negócio **não** vira perdido |
+| Trial | `iniciarTrial` sem gate: PABX e White Label podiam entrar em trial. `trial_encerrado_em` em 0 de 1.562 | capacidade em `ofertas_comerciais.permite_trial`, regra em `@onface/catalog::podeIniciarTrial`, datas em `oportunidades` |
+| Estagnação | `motivo_estagnacao` idêntico a `status` nos 227 casos; existia só no legado | `oportunidades.motivo_estagnacao` + `estagnado_em`, levados pelo espelho |
+| Contagem de propostas | casava só por `negocio_id` | casa por `oportunidade_id` com o legado como fallback |
+| Cliente | `leads.tipo` só atualizado ao mexer num contrato: **111 marcados sem contrato ativo, 124 com contrato ativo e não marcados** | derivado (contrato ativo OU marca). O filtro "Clientes" foi de 287 para 411 |
 
 ### Ainda no legado, e dito no código
 
-Cabeçalho do lead (nutrição, desqualificação, interesse declarado), condução da venda
-(próxima ação, no-show, trial, estagnação) e contagem de propostas. Não têm dono no
-modelo canônico até a fase 26.
+Sobrou o texto livre que o modelo canônico não modela: observação de nutrição,
+detalhe de desqualificação, etapa de origem da desqualificação, qualificação em JSON
+e interesse declarado (`servicos_interesse`). São campos de texto sem semântica de
+domínio; a SPEC não define casa para eles, e inventar uma seria decidir produto.
+
+Contadores de não lidas (`email_nao_lidos`, `whatsapp_nao_lidas`) continuam no lead
+de propósito: são estado de interface, não fato de negócio.
 
 ## Código de domínio migrado para `packages/`
 
@@ -538,7 +580,13 @@ Os demais 37 pacotes seguem vazios, recebendo código conforme as fases avançam
 | `api-server/routes/contatos-unified.ts` | **migrado** | idem |
 | `worker/index.ts` (3 criadores de contato) | **migrado** | `garantirPessoaDeContato` |
 | escrita de `negocios` — **todo caminho de Ganho** (30) | **migrado** | `decidirGanhoPelaOferta` + `propagarGanhoCanonico` |
-| `api-server/routes/{email,whatsapp,contratos,cadencia}.ts` | pendente (atualizam, não criam) | — |
+| `api-server/routes/cadencia.ts` (2 toques) | **migrado** | `registrarPrimeiroContato` |
+| `lib/vendas/pipeline.ts::definirProximaAcao` | **migrado** | cria a tarefa canônica (SPEC §23) |
+| `lib/vendas/pipeline.ts::iniciarTrial` | **migrado** | `podeIniciarTrial` + espelho canônico |
+| `lib/vendas/pipeline.ts::marcarEstagnacao` | **migrado** | espelho canônico |
+| `api-server/routes/negocios.ts` (no-show) | **migrado** | marca `reunioes.status` |
+| `api-server/routes/{email,whatsapp}.ts` | contadores de não lidas: **estado de interface**, ficam no lead de propósito | — |
+| `api-server/routes/contratos.ts` (`leads.tipo`) | escrita mantida como ponte; a LEITURA passou a derivar | — |
 | troca de responsável (7 caminhos) | **migrada** | `registrarMudancaResponsavel`, que propaga e audita |
 | `crm_update_stage` / `crm_assign_owner` / `crm_add_note` do motor | **migrados** | portas de pré-vendas e de dono; nota publica evento |
 | `lib/crm/pos-venda.ts` (adaptador legado) | ainda em uso por `negocios.ts:804`, morre na fase 17 | — |
@@ -571,8 +619,8 @@ canônico hoje faria o lead sumir da tela de pré-vendas no mesmo instante.
 
 ## Testes executados
 
-Estado atual: `tsc --noEmit` limpo, **build de produção passando**, **275 testes, 0
-falhas**, e **24 de 24 smokes** verdes, mais o aceite de vendas em **97 passaram, 0 falharam** contra o banco real (conferidos por código de
+Estado atual: `tsc --noEmit` limpo, **build de produção passando**, **276 testes, 0
+falhas**, e **25 de 25 smokes** verdes, mais o aceite de vendas em **97 passaram, 0 falharam** contra o banco real (conferidos por código de
 saída, não por texto: procurar "FALHA" na saída dava falso positivo em `falhados=0`):
 
 - `smoke-ponte-canonica` — entrada externa chega inteira ao canônico e não duplica;

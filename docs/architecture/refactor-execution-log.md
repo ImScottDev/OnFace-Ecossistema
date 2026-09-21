@@ -2004,3 +2004,124 @@ seria inventar regra comercial, e a pergunta ficou registrada para o Kauã.
 
 **Validação:** tsc limpo, **273 testes, 0 falhas**, build exit 0, aceite 97/0, smoke do
 catálogo com zero pendências.
+
+---
+
+## 2026-09-21 — Fase 25: a pergunta que nenhum teste fazia
+
+Board e detalhe tinham teste. Escrita tinha teste. Ninguém perguntava: **depois de a
+tela executar a ação, a mesma tela mostra o resultado?** `smoke-tela-escreve-tela-le`
+chama a MESMA função que a server action chama e relê pela MESMA consulta que a página
+usa. Na primeira execução, o board dizia "novo" enquanto o detalhe dizia "em_contato".
+
+**A causa.** `moverEtapa` escrevia `leads.estagio_pre_vendas`; o board lê `aquisicoes`,
+onde a etapa era **derivada** de fatos — `last_touch_at > first_touch_at` virava "em
+contato". Mover um card não é um fato de toque, então a derivação não via nada e o card
+voltava para Novo. Sem erro, sem jeito de reportar.
+
+A SPEC §8.2 já dizia onde a etapa mora: `pipelines` + `pipeline_etapas`, com
+`aquisicoes.etapa_id` apontando. As duas colunas existiam e estavam em **0 de 3.989**.
+
+Migration 0081 cria o pipeline de aquisição com 7 etapas e materializa em `etapa_id`
+exatamente o que o board já mostrava: **2.919 novo, 531 em contato, 539 oportunidade**.
+Nenhum card mudou de coluna. `updated_at` não foi tocado, pela lição do backfill que
+bumpou 216 leads e fez o board mostrar "17min" em tudo.
+
+**Onde ligar.** `registrarMudancaDeEtapa` — por onde já passavam mover, qualificar,
+nutrir, desqualificar e reativar. Ligar em cada comando seria a mesma regra escrita
+cinco vezes, que é como as duas verdades nasceram.
+
+**Duas cópias do mesmo CASE.** O card e o total da coluna tinham a derivação escrita
+duas vezes, em consultas diferentes. Corrigir só uma faria total e cards discordarem
+dentro da mesma tela. Viraram uma expressão só.
+
+### Os dois escritores que o inventário chamava de "atualizam, não criam"
+
+Foi onde estava o resto.
+
+**Cadência não chegava ao board.** `cadencia.ts` tem **zero** chamadas à porta canônica
+no arquivo inteiro. Escrevia `leads.last_contact_at` e `sdr_status`, e o card continuava
+em Novo. Os dois toques passaram por `registrarPrimeiroContato`.
+
+**Atribuição nascia sem aquisição.** `registrarTouchpoint` gravava pessoa, empresa e
+lead legado, e deixava `aquisicao_id` NULO. Os 1.583 pontos de contato existentes tinham
+o vínculo porque o BACKFILL preencheu — medir o banco dava 100% e não acusava nada. Só
+criar um lead pela tela e reler a atribuição mostrava o buraco. **Terceira vez que esse
+padrão aparece nesta refatoração.** Resolvido dentro da função, a partir do lead legado.
+
+**Leitura de detalhe.** Atribuição saiu de `leads` para `pontos_contato` (SPEC §8.3).
+Medido campo a campo antes de trocar: campaign 1.428, medium 1.490, content 1.278, term
+1.251, e **zero só de um lado**. Nutrição e desqualificação leem o estado de
+`aquisicoes`.
+
+**Validação:** tsc limpo, 276 testes 0 falhas, build exit 0, 25/25 smokes,
+`smoke-tela-escreve-tela-le` 30/30, aceite de vendas 97/0, zero resíduo.
+
+---
+
+## 2026-09-21 — Fase 26: as semânticas que não tinham dono
+
+Cinco fatos de condução da venda viviam em coluna do negócio, sem casa canônica.
+
+**Próxima ação.** `negocios.proxima_acao` está vazia em **1.562 de 1.562**. O efeito
+visível: o selo "Sem próxima ação" aparecia em TODO card aberto, inclusive nos que
+tinham tarefa marcada — o selo olhava a coluna, a fila do vendedor olhava `tarefas`.
+Virou Task (SPEC §23), uma por oportunidade via `chave_idempotencia`; limpar declina em
+vez de apagar, que preserva o rastro de que alguém combinou e desmarcou. O selo caiu de
+**527 para 523** dos 527 abertos — o número baixo é a verdade, não o bug.
+
+**No-show.** `no_show_em` preenchido nos mesmos 38 registros em que `status = 'no_show'`.
+Cópia do status legado, escrita por nenhum código de runtime. Enquanto isso
+`reunioes.status` tinha só `agendada` e `cancelada` em 295 linhas: a reunião a que o
+cliente faltou continuava agendada para sempre. Uma auditoria anterior já tinha
+tropeçado nisso ("realizadas era sempre 0, ninguém atualiza `reunioes.status`") e
+contornado contando eventos.
+
+A migration 0082 moveu 34 dos 38. **A primeira versão dela sobrescreveu dois que já
+estavam `cancelada`** — cancelar antes e não aparecer são fatos diferentes. Restaurados
+do `pre-refactor-20260920.dump` e o filtro entrou na migration. Os 4 restantes ficam
+como reconciliação nomeada.
+
+O negócio continua NÃO virando perdido: fica na coluna e o lead volta para pré-vendas.
+
+**Trial.** `iniciarTrial` gravava sem gate nenhum — PABX e White Label, que são venda
+por contrato com implantação, podiam entrar em "trial". A capacidade foi para a oferta
+(`permite_trial`), e o valor inicial **não é palpite**: o pipeline de vendas do Callface
+AI tem a etapa `trial`, o do PABX não tem. Quem configurou aqueles pipelines já disse
+quais produtos têm trial. Os 17 trials históricos não serviram de evidência porque 16
+deles não têm família comercial nenhuma. `trial_encerrado_em` está em 0 de 1.562: no
+modelo atual um trial começa e nunca termina, e isso foi copiado como está.
+
+**Estagnação.** `motivo_estagnacao` é IDÊNTICO a `negocios.status` nos 227 registros.
+Não torna o dado inventado — `outra_data`, `sem_retorno`, `trava_negociacao` e
+`trava_assinatura` são motivos que alguém registrou; o vocabulário legado é que guardava
+motivo e posição na mesma coluna. Os 227 estão todos em oportunidade aberta.
+
+`marcarEstagnacao`, `iniciarTrial` e `encerrarTrial` não chamavam o espelho: a escrita
+ficava só no legado e o canônico só descobria por acaso, na próxima mudança de etapa.
+
+**Propostas.** Detalhe e board casam por `oportunidade_id` com `negocio_id` como
+fallback. Registrado sem palpite: **455 propostas apontam só para um lead**, sem negócio
+nem oportunidade, e **81 delas estão ACEITAS**.
+
+**Cliente.** SPEC §16.3 é literal: "Do not model one absolute `empresa.status =
+CLIENTE`". `leads.tipo` só era atualizado ao mexer num contrato por uma rota específica;
+todo outro caminho deixava a marca envelhecer. Medido: **287 marcados, 300 com contrato
+ativo, 111 marcados sem contrato, 124 com contrato e não marcados**. O filtro "Clientes"
+perdia 124 clientes de verdade. Passou a derivar (contrato ativo OU marca) — união e não
+substituição, de propósito: ninguém some da tela, e os 111 ficam como reconciliação.
+
+### Duas armadilhas do próprio método
+
+**Crase em comentário de SQL, décima vez.** Escrevendo o comentário que explicava a
+leitura canônica de atribuição, citei nomes de coluna entre crases dentro de um template
+`sql`. O erro sai como `TS1005` sem mencionar SQL.
+
+**Smoke que dependia do relógio.** `smoke-catalogo-stripe` verificava reclassificação com
+`created_at < now() - interval '1 hour'`. Uma hora depois da primeira sincronização os 15
+produtos viraram "antigos" e o smoke passou a falhar sozinho, sem nada ter mudado.
+Trocado pela invariante real: sincronizar de novo não cria linha.
+
+**Validação:** tsc limpo, **276 testes 0 falhas**, build exit 0, **25/25 smokes**,
+aceite de vendas **97/0**, paridade **13/14** (NEXO, credencial de provedor), migrations
+em dia, zero resíduo de smoke no banco.
