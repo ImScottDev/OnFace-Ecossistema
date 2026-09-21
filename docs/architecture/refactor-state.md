@@ -25,7 +25,7 @@ Fases 01 a 16 concluídas.
 
 ## Último commit
 
-`2d880d3` — fix(17): último leitor de família fora da cadeia, e trava para a classe
+`530ba1f` — fix(16): lead criado pela tela não tinha aquisição e sumia do board
 
 Branch de trabalho: `refactor/arquitetura-canonica`, criada a partir de `98940fe`.
 
@@ -278,6 +278,35 @@ todos eles.
 O smoke falha acima de um segundo: consulta de board lenta é problema de produto, não
 de teste.
 
+### Lead criado pela tela não aparecia no board da tela
+
+O achado mais grave da rodada, e o que mais ensina sobre como escolher o que testar.
+
+`preVendas.criarLead` **não criava a aquisição canônica**. Só a rota HTTP `POST /leads` e
+o webhook do site chamavam a porta; as duas server actions do CRM2 (criar lead na tela de
+pré-vendas, criar lead a partir da empresa) não chamavam. O board lê `aquisicoes`.
+
+**O registro existia, a tela estava certa, e os dois não se encontravam.** Quem cria não
+consegue nem reportar um bug desses.
+
+Dois defeitos estruturais vieram em cadeia:
+
+| O quê | Consequência |
+|---|---|
+| a porta canônica não gravava `lead_legado_id` na aquisição, só na proveniência | aquisição de runtime nasce órfã: card não abre, nada do lead propaga de volta |
+| `criarOportunidadeDoLead` vinculava empresa com SQL direto, fora de `registrarEvento` | lead ganhava empresa e não aparecia na conta dele |
+
+**Por que medir o banco não acusava:** 3.989 leads e 3.989 aquisições vieram do backfill,
+já pareados, divergência zero. Só criando um lead do zero o buraco aparece.
+
+**E por que nenhum smoke pegou:** `smoke-prevendas-leitura` cria o lead chamando
+`garantirEntradaCanonica` **direto**. Testava a porta, não o caminho que a tela percorre.
+Testar o caminho feliz pelo atalho é como isso sobreviveu a uma fase inteira de cutover.
+
+`smoke-lead-nasce-no-board` fecha isso pelo caminho da tela, e foi verificado com a
+correção removida: 6 verificações falham, entre elas o board não contando o lead novo
+(3.702 → 3.702).
+
 ### A família do produto: de campo vazio na tela a operação travada
 
 `negocios.service_family` é NULL em 475 das 1.561 oportunidades, e nessas o canônico
@@ -509,7 +538,7 @@ canônico hoje faria o lead sumir da tela de pré-vendas no mesmo instante.
 ## Testes executados
 
 Estado atual: `tsc --noEmit` limpo, **build de produção passando**, **262 testes, 0
-falhas**, e **21 de 21 smokes** verdes contra o banco real (conferidos por código de
+falhas**, e **22 de 22 smokes** verdes contra o banco real (conferidos por código de
 saída, não por texto: procurar "FALHA" na saída dava falso positivo em `falhados=0`):
 
 - `smoke-ponte-canonica` — entrada externa chega inteira ao canônico e não duplica;
