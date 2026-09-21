@@ -252,3 +252,43 @@ empresa bloqueada na proposta.
 **Testes:** 134 passando, 0 falhas.
 
 **Commit:** `484b1bb`
+
+---
+
+## 2026-09-21 — Fases 09 a 13 — CONCLUÍDAS
+
+**Migrations:** 0064 (proposta/contrato canônicos), 0065 (cliente e serviço),
+0066 (ciclos de fulfillment), 0067 (communications canônica).
+
+**09.** 1.094 de 1.095 propostas e 336 de 336 contratos ligados à oportunidade.
+455 propostas e 406 contratos nunca tiveram negócio de origem: não é perda.
+
+**10.** `clientes` vira perfil 1:1 de CS da empresa, já respeitado (0 empresas com
+mais de um cliente). 29 serviços ligados à oportunidade pelo contrato.
+
+**11.** `UNIQUE(serviço)` vira `UNIQUE(serviço, tipo, ciclo)`. **407 serviços ativos
+sem nenhuma jornada** — não foram criados onboardings retroativos, porque o serviço
+entrou já ativo por carga de sistema antigo e inventar jornada é histórico falso.
+Caso aberto; a regra do SPEC §18 vale para ganho novo.
+
+**12.** 536 pagamentos criados de fatura paga. **Soma bate exatamente:
+R$ 194.294,36 nos dois lados.** 118 faturas pagas sem data viraram caso em vez de
+ganhar data fabricada. 108 faturas seguem sem empresa: caso aberto.
+
+**13.** 33.005 de 34.761 linhas migradas, 5.249 conversas.
+
+Dois achados que mudaram o resultado:
+
+1. **24.380 de 25.363 mensagens de WhatsApp não têm `lead_id`**, só `contato_id`. A
+   primeira versão usava `JOIN` interno em `leads` e teria descartado **96% do
+   histórico de WhatsApp em silêncio**. Corrigido para resolver identidade e
+   organização pelo contato.
+2. **`emails` tem 4.460 linhas para 2.704 `message_id` distintos.** 1.185 ids
+   repetidos em 2.941 linhas: a mesma mensagem gravada mais de uma vez.
+   `communications` já tinha `UNIQUE(canal, external_id)`. Migrou a primeira
+   ocorrência de cada. Deduplicação, não perda.
+
+WhatsApp e ligações: zero não migradas. 27.131 comunicações sem pessoa resolvida,
+registradas assim mesmo e com caso aberto.
+
+**Testes:** 134 passando, `tsc` limpo.

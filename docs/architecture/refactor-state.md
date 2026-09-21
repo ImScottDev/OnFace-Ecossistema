@@ -7,13 +7,13 @@
 
 ## Fase atual
 
-**09 — Proposta e contrato com referência canônica** (próxima)
+**14 e 15 — Separação de tarefa/reunião/nota e eventos + timeline** (próximas)
 
-Fases 01 a 08 concluídas.
+Fases 01 a 13 concluídas.
 
 ## Último commit
 
-`484b1bb` — refactor(08): politica comercial por oferta
+`refactor(13)` — comunicacoes canonicas, 33.005 de 34.761 linhas
 
 Branch de trabalho: `refactor/arquitetura-canonica`, criada a partir de `98940fe`.
 
@@ -86,6 +86,21 @@ Pacote vazio não afeta o build: `tsc` limpo e 111 testes passando com o workspa
 | 06 aquisição | `src/scripts/backfill/06-aquisicao.ts` | 3.989 leads | **3.989 aquisições**, 1.583 touchpoints | 0 |
 | 07 oportunidade | `src/scripts/backfill/07-pipeline-oportunidade.ts` | 1.562 negócios | **1.561 oportunidades**, 10 etapas | **1.084** |
 | 08 oferta | `src/scripts/backfill/08-oferta-comercial.ts` | 477 c/ família | **477 vinculadas** a 4 ofertas | 0 |
+| 09 proposta/contrato | `09-proposta-contrato.ts` | 1.095 + 336 | **1.094 + 336** vinculados | 0 |
+| 10 cliente/serviço | `10-cliente-servico.ts` | 438 serviços | 29 ligados à oportunidade | 0 |
+| 11 fulfillment | migration 0066 | 25 jornadas | ciclos habilitados | 1 |
+| 12 financeiro | `12-financeiro.ts` | 951 faturas | **536 pagamentos**, soma confere | 2 |
+| 13 comunicações | `13-comunicacoes.ts` | 34.761 linhas | **33.005 comms**, 5.249 conversas | 2 |
+
+### Panorama do modelo canônico
+
+```text
+pessoas            3.950      conversas         5.249
+aquisicoes         3.989      communications   33.005
+oportunidades      1.561      pagamentos          536
+pontos_contato     1.583      ofertas               4
+pipeline_etapas       10      casos abertos     1.097
+```
 
 Os dois são idempotentes por `backfill_provenance` e só inserem.
 
