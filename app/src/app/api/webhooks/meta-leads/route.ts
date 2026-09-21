@@ -2,7 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
-import { normalizarLeadAds, chaveDeIdempotencia, type LeadAdsBruto } from "@onface/integrations-meta";
+import {
+  normalizarLeadAds, chaveDeIdempotencia, buscarLeadNaGraph, combinar,
+  credenciaisLeadAds, type LeadAdsBruto,
+} from "@onface/integrations-meta";
 import { garantirEntradaCanonica } from "@/lib/vendas/ponte-canonica";
 
 /**
@@ -26,14 +29,13 @@ import { garantirEntradaCanonica } from "@/lib/vendas/ponte-canonica";
  * `leadgen_id` garante que o mesmo lead não vire dois.
  */
 
-const APP_SECRET = process.env.META_APP_SECRET || "";
-const VERIFY_TOKEN = process.env.META_WEBHOOK_VERIFY_TOKEN || "";
 const ORG_SLUG = process.env.META_WEBHOOK_ORG_SLUG || "scott-studio";
 
 /** Verificação de assinatura da Meta: `X-Hub-Signature-256: sha256=<hmac>`. */
 function assinaturaConfere(corpoBruto: string, cabecalho: string | null): boolean {
-  if (!APP_SECRET || !cabecalho?.startsWith("sha256=")) return false;
-  const esperado = createHmac("sha256", APP_SECRET).update(corpoBruto).digest("hex");
+  const { appSecret } = credenciaisLeadAds();
+  if (!appSecret || !cabecalho?.startsWith("sha256=")) return false;
+  const esperado = createHmac("sha256", appSecret).update(corpoBruto).digest("hex");
   const recebido = cabecalho.slice(7);
   if (esperado.length !== recebido.length) return false;
   return timingSafeEqual(Buffer.from(esperado), Buffer.from(recebido));
@@ -42,6 +44,7 @@ function assinaturaConfere(corpoBruto: string, cabecalho: string | null): boolea
 /** Handshake de assinatura do webhook, feito uma vez pela Meta. */
 export async function GET(req: NextRequest) {
   const p = req.nextUrl.searchParams;
+  const { verifyToken: VERIFY_TOKEN } = credenciaisLeadAds();
   if (!VERIFY_TOKEN) {
     console.error("[MetaLeads] META_WEBHOOK_VERIFY_TOKEN não configurado — recusando verificação");
     return new NextResponse("verify token not configured", { status: 503 });
@@ -58,7 +61,8 @@ export async function POST(req: NextRequest) {
   // Fail-closed, igual aos webhooks de Stripe e Callface: sem segredo
   // configurado não se processa nada. Um webhook aberto é uma porta de escrita
   // pública no CRM.
-  if (!APP_SECRET) {
+  const cred = credenciaisLeadAds();
+  if (!cred.appSecret) {
     console.error("[MetaLeads] META_APP_SECRET não configurado — recusando evento (fail-closed)");
     return NextResponse.json({ ok: false, error: "app secret not configured" }, { status: 503 });
   }
@@ -87,11 +91,37 @@ export async function POST(req: NextRequest) {
       if (change.field && change.field !== "leadgen") continue;
       if (!change.value) continue;
 
-      const n = normalizarLeadAds(change.value);
+      // BUSCA NA GRAPH API — não é otimização, é obrigatório.
+      //
+      // O webhook de leadgen NÃO traz os dados do lead: ele avisa que existe um
+      // lead e entrega o `leadgen_id`. Nome, e-mail, telefone e as respostas do
+      // formulário só aparecem depois de buscar em `/{leadgen_id}`.
+      //
+      // Assumir `field_data` no payload funciona com o integrador que já buscou
+      // por nós, e falha em silêncio quando a Meta chama direto.
+      const leadgenId = String(change.value.leadgen_id ?? "");
+      let bruto = change.value;
+      if (leadgenId) {
+        const busca = await buscarLeadNaGraph(leadgenId, cred.accessToken);
+        if (busca.ok && busca.lead) {
+          bruto = combinar(change.value, busca.lead);
+        } else {
+          // Config ausente e permissão pendente NÃO são bug: são estado
+          // conhecido, e precisam aparecer como tal no log para ninguém
+          // procurar defeito onde não tem.
+          const tipo = busca.semCredencial ? "sem credencial"
+            : busca.semPermissao ? "permissão da Página pendente"
+            : "falha";
+          console.warn(`[MetaLeads] retrieval do lead ${leadgenId} não ocorreu (${tipo}): ${busca.erro}`);
+        }
+      }
+
+      const n = normalizarLeadAds(bruto);
 
       // Sem e-mail nem telefone não há identidade, e sem identidade a porta
-      // canônica recusa — de propósito. Registrar a tentativa é melhor que
-      // criar um registro que ninguém consegue contatar.
+      // canônica recusa — de propósito. Inventar identificador para a entrada
+      // passar seria trocar um lead perdido por um registro que ninguém
+      // consegue contatar, que é pior.
       if (!n.email && !n.telefone) {
         console.warn(`[MetaLeads] lead ${n.metaLeadId} sem e-mail e sem telefone; não entrou`);
         resultados.push({ metaLeadId: n.metaLeadId, ok: false, motivo: "sem identificador" });

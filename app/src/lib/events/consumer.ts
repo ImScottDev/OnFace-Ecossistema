@@ -69,6 +69,26 @@ export async function processarEventosPendentes(limite = 50): Promise<{ processa
       const list = handlers.get(evento.eventType) || [];
       for (const handler of list) await handler(evento);
       await dispatchAutomationEvent(evento);
+
+      // ENTREGA À META (SPEC §20). O adapter da CAPI existia desde a primeira
+      // rodada da fase 20 e NADA em runtime o chamava: a integração parecia
+      // pronta e nenhum evento saía daqui.
+      //
+      // Fica dentro do processamento do outbox de propósito — é a fila que dá
+      // retry, idempotência e ordem. E fica em try próprio porque a Meta não
+      // pode derrubar o evento: o fato já aconteceu, e o handler de domínio já
+      // rodou. Se a entrega falhar, ela fica registrada e é reprocessável.
+      try {
+        const { entregarEventoNaMeta, registrarEntregaCapi } = await import("@/lib/integrations/meta/entrega-capi");
+        const r = await entregarEventoNaMeta(evento as never);
+        // Fato que não vai para a Meta (sem mapeamento, sem touchpoint dela)
+        // não vira linha de auditoria: seria ruído sobre o que está certo.
+        if (r.motivo !== "sem_mapeamento" && r.motivo !== "sem_touchpoint_meta") {
+          await registrarEntregaCapi(evento as never, r);
+        }
+      } catch (e) {
+        console.error(`[outbox] entrega à Meta falhou para ${evento.eventType} (best-effort):`, e);
+      }
       await db
         .update(eventOutbox)
         .set({ status: "processed", processedAt: new Date(), processingStartedAt: null })

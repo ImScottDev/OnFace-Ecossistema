@@ -3,11 +3,19 @@
  * Cruza com o tracking do CRM por utm_campaign (matching por nome normalizado).
  *
  * Requer no .env:
- *   META_ACCESS_TOKEN     — token long-lived com escopo ads_read (System User do BM, ideal)
- *   META_AD_ACCOUNT_ID    — id da conta de anúncios, formato act_123456789 (ou só o número)
- *   META_API_VERSION      — opcional, default v21.0
+ *   META_ADS_ACCESS_TOKEN — token com escopo `ads_read` ou `ads_management`.
+ *                           NÃO é o token da CAPI: medido em 21/09/2026, o token
+ *                           da CAPI tem só `read_ads_dataset_quality` e a Meta
+ *                           responde erro 200 ("Ad account owner has NOT grant
+ *                           ads_management or ads_read permission") ao tentar ler
+ *                           insights com ele. São credenciais separadas.
+ *                           `META_ACCESS_TOKEN` continua valendo como nome antigo.
+ *   META_AD_ACCOUNT_ID    — id da conta, com ou sem o prefixo `act_`
+ *   META_API_VERSION      — opcional; o default vem de `@onface/integrations-meta`
+ *                           e hoje é v26.0, validado contra a Graph API
  */
 
+import { metaApiVersion, credenciaisAds } from "@onface/integrations-meta";
 const LEAD_ACTIONS = new Set([
   "lead",
   "onsite_conversion.lead_grouped",
@@ -41,7 +49,8 @@ export interface MetaCampanha {
 }
 
 export function metaConfigured(): boolean {
-  return !!(process.env.META_ACCESS_TOKEN && process.env.META_AD_ACCOUNT_ID);
+  const { accessToken, adAccountId } = credenciaisAds();
+  return Boolean(accessToken && adAccountId);
 }
 
 /** Normaliza nome de campanha p/ casar Meta x utm_campaign. */
@@ -73,10 +82,10 @@ export async function fetchMetaAdInsights(
   since: string,
   until: string
 ): Promise<MetaCriativo[]> {
-  const token = process.env.META_ACCESS_TOKEN;
-  const raw = process.env.META_AD_ACCOUNT_ID || "";
+  const { accessToken: token, adAccountId: acctResolvida } = credenciaisAds();
+  const raw = acctResolvida ?? "";
   if (!token || !raw) return [];
-  const version = process.env.META_API_VERSION || "v21.0";
+  const version = metaApiVersion();
   const accts = raw.split(",").map((a) => a.trim()).filter(Boolean)
     .map((a) => (a.startsWith("act_") ? a : `act_${a}`));
 
@@ -140,10 +149,10 @@ export async function fetchMetaAdsetInsights(
   since: string,
   until: string
 ): Promise<MetaConjunto[]> {
-  const token = process.env.META_ACCESS_TOKEN;
-  const raw = process.env.META_AD_ACCOUNT_ID || "";
+  const { accessToken: token, adAccountId: acctResolvida } = credenciaisAds();
+  const raw = acctResolvida ?? "";
   if (!token || !raw) return [];
-  const version = process.env.META_API_VERSION || "v21.0";
+  const version = metaApiVersion();
   const accts = raw.split(",").map((a) => a.trim()).filter(Boolean)
     .map((a) => (a.startsWith("act_") ? a : `act_${a}`));
 
@@ -193,10 +202,10 @@ export async function fetchMetaCampaignInsights(
   since: string,
   until: string
 ): Promise<MetaCampanha[]> {
-  const token = process.env.META_ACCESS_TOKEN;
-  const raw = process.env.META_AD_ACCOUNT_ID || "";
+  const { accessToken: token, adAccountId: acctResolvida } = credenciaisAds();
+  const raw = acctResolvida ?? "";
   if (!token || !raw) return [];
-  const version = process.env.META_API_VERSION || "v21.0";
+  const version = metaApiVersion();
   // suporta múltiplas contas separadas por vírgula (Callface, CC, CC2...)
   const accts = raw.split(",").map((a) => a.trim()).filter(Boolean)
     .map((a) => (a.startsWith("act_") ? a : `act_${a}`));

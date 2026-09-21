@@ -94,7 +94,7 @@ test("evento sem credencial é config ausente, não integração quebrada", asyn
   const { enviarParaCapi } = await import("@onface/integrations-meta");
   const r = await enviarParaCapi(
     [{ eventName: "Lead", eventTime: 1, eventId: "x" }],
-    { pixelId: null, accessToken: null },
+    { datasetId: null, accessToken: null },
   );
   assert.equal(r.ok, false);
   assert.equal(r.semCredencial, true, "sem isso, o alerta de integração dispara em ambiente nunca configurado");

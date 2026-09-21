@@ -4736,3 +4736,37 @@ export const apiTokenUsos = pgTable(
   },
   (table) => [index("idx_api_token_usos_token").on(table.tokenId, table.ocorridoEm)],
 );
+
+// ─── ENTREGA DE CONVERSÕES À META (SPEC §20) ────────────────────────────────
+//
+// Uma linha por evento do outbox, não por tentativa: o que se quer saber é o
+// estado atual daquele fato. Sem esta tabela não há resposta para a única
+// pergunta que importa quando o gerenciador da Meta não bate com o CRM —
+// **esse evento chegou lá?**
+export const metaCapiEntregas = pgTable(
+  "meta_capi_entregas",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizacaoId: uuid("organizacao_id").references(() => organizacoes.id, { onDelete: "cascade" }).notNull(),
+    outboxId: uuid("outbox_id").references(() => eventOutbox.id, { onDelete: "cascade" }).notNull(),
+    eventType: text("event_type").notNull(),
+    eventName: text("event_name"),
+    /** Determinístico: dá para procurar este mesmo id no Events Manager. */
+    eventId: text("event_id"),
+    entregue: boolean("entregue").default(false).notNull(),
+    /**
+     * Distingue casos que parecem iguais e não são: `sem_mapeamento` e
+     * `sem_touchpoint_meta` são o comportamento CERTO; `sem_credencial` é
+     * configuração; `recusado` não melhora com retry; `transitorio` melhora.
+     */
+    motivo: text("motivo"),
+    detalhe: text("detalhe"),
+    tentativas: integer("tentativas").default(1).notNull(),
+    criadoEm: timestamp("criado_em", { withTimezone: true }).defaultNow().notNull(),
+    atualizadoEm: timestamp("atualizado_em", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("uq_meta_capi_entregas_outbox").on(table.outboxId),
+    index("idx_meta_capi_entregas_pendentes").on(table.organizacaoId, table.criadoEm),
+  ],
+);

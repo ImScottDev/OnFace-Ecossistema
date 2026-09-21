@@ -18,5 +18,34 @@ export {
   hashCapi,
   type EventoCapi,
   type ResultadoCapi,
+  type CredenciaisCapiEnvio,
   enviarParaCapi,
 } from "./src/conversions-api";
+
+export {
+  META_API_VERSION_PADRAO,
+  metaApiVersion,
+  metaGraphUrl,
+  credenciaisCapi,
+  credenciaisLeadAds,
+  credenciaisAds,
+  diagnosticoMeta,
+  type CredenciaisLeadAds,
+  type CredenciaisAds,
+} from "./src/config";
+
+export {
+  POLITICA_EVENTOS,
+  regraDoEvento,
+  veioDaMeta,
+  idDeterministicoDoEvento,
+  type EventoDominioMeta,
+  type RegraEvento,
+  type Atribuicao,
+} from "./src/politica-eventos";
+
+export {
+  buscarLeadNaGraph,
+  combinar,
+  type ResultadoRetrieval,
+} from "./src/lead-retrieval";

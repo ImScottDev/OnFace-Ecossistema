@@ -17,11 +17,14 @@
  * domínio, pelo evento.
  */
 import { createHash } from "node:crypto";
+import { metaGraphUrl } from "./config";
 
-export type EventoCapiNome =
-  | "Lead"            // entrada qualificada
-  | "Purchase"        // pagamento confirmado
-  | "CompleteRegistration"; // venda ganha
+/**
+ * O nome vai como string porque a política decide qual é (ver
+ * `politica-eventos.ts`). Fixar um union aqui obrigaria a mudar este arquivo
+ * toda vez que a política ganhasse um evento, e a política é que manda.
+ */
+export type EventoCapiNome = string;
 
 export interface EventoCapi {
   eventName: EventoCapiNome;
@@ -46,6 +49,10 @@ export interface ResultadoCapi {
   erro?: string;
   /** true quando faltou credencial: é config ausente, não falha de integração. */
   semCredencial?: boolean;
+  /** true quando vale repetir: rede, limite de taxa, erro transitório da Meta. */
+  tentarDeNovo?: boolean;
+  /** Identificador da Meta para rastrear a chamada no suporte deles. */
+  traceId?: string | null;
 }
 
 /** SHA-256 do valor normalizado, como a Meta exige para dado pessoal. */
@@ -88,8 +95,9 @@ export function montarEventoCapi(evento: EventoCapi): Record<string, unknown> {
   return corpo;
 }
 
-export interface CredenciaisCapi {
-  pixelId: string | null;
+export interface CredenciaisCapiEnvio {
+  /** Pixel/Dataset ID: o mesmo número, o mesmo endpoint. */
+  datasetId: string | null;
   accessToken: string | null;
   testEventCode?: string | null;
 }
@@ -97,29 +105,54 @@ export interface CredenciaisCapi {
 /**
  * Envia os eventos para a Meta.
  *
- * Falta de credencial devolve `semCredencial`, não erro: é configuração
- * ausente, e tratar as duas coisas como a mesma faz o alerta de integração
- * quebrada disparar num ambiente que nunca foi configurado.
+ * Três resultados distintos, e a distinção importa para quem chama decidir o
+ * que fazer:
+ *
+ *   `semCredencial`  configuração ausente — não é falha, não alerta, não repete;
+ *   `tentarDeNovo`   transitório (rede, limite de taxa, erro deles) — repete;
+ *   nenhum dos dois  a Meta recusou o evento — repetir daria o mesmo erro.
+ *
+ * Tratar os três como "erro" faria a fila tentar para sempre um evento que
+ * nunca vai passar, e faria o alerta de integração quebrada disparar num
+ * ambiente que ninguém configurou.
  */
 export async function enviarParaCapi(
-  eventos: EventoCapi[], cred: CredenciaisCapi,
+  eventos: EventoCapi[], cred: CredenciaisCapiEnvio,
   fetchImpl: typeof fetch = fetch,
+  env: NodeJS.ProcessEnv = process.env,
 ): Promise<ResultadoCapi> {
   if (!eventos.length) return { ok: true, enviados: 0 };
-  if (!cred.pixelId || !cred.accessToken) return { ok: false, semCredencial: true, erro: "Meta CAPI sem pixel ou token configurado" };
+  if (!cred.datasetId || !cred.accessToken) {
+    return { ok: false, semCredencial: true, erro: "Meta CAPI sem dataset ou token configurado" };
+  }
 
   const corpo: Record<string, unknown> = { data: eventos.map(montarEventoCapi) };
   if (cred.testEventCode) corpo.test_event_code = cred.testEventCode;
 
+  let r: Response;
   try {
-    const r = await fetchImpl(`https://graph.facebook.com/v21.0/${cred.pixelId}/events`, {
+    r = await fetchImpl(metaGraphUrl(`${cred.datasetId}/events`, env), {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${cred.accessToken}` },
       body: JSON.stringify(corpo),
     });
-    if (!r.ok) return { ok: false, erro: `Meta respondeu ${r.status}: ${(await r.text()).slice(0, 300)}` };
-    return { ok: true, enviados: eventos.length };
   } catch (e) {
-    return { ok: false, erro: String(e) };
+    return { ok: false, erro: `falha de rede: ${String(e)}`, tentarDeNovo: true };
   }
+
+  if (!r.ok) {
+    const texto = (await r.text().catch(() => "")).slice(0, 400);
+    let codigo: number | undefined;
+    try { codigo = (JSON.parse(texto) as { error?: { code?: number } }).error?.code; } catch { /* texto cru */ }
+    // 4 e 17 são limite de taxa; 1 e 2 são erro transitório da Meta.
+    const transitorio = r.status >= 500 || codigo === 4 || codigo === 17 || codigo === 1 || codigo === 2;
+    return { ok: false, erro: `Meta respondeu ${r.status}: ${texto}`, tentarDeNovo: transitorio };
+  }
+
+  const resposta = (await r.json().catch(() => ({}))) as { events_received?: number; fbtrace_id?: string };
+  return {
+    ok: true,
+    enviados: resposta.events_received ?? eventos.length,
+    traceId: resposta.fbtrace_id ?? null,
+  };
 }
