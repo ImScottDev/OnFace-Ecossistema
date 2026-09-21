@@ -1,0 +1,26 @@
+# Workspace do OnFace.
+#
+# `app` é o pacote monolítico atual e continua sendo a aplicação que roda. Os
+# pacotes sob `packages/` recebem o código domínio a domínio, conforme as fases
+# do refactor avançam (docs/architecture/refactor-state.md). `apps/` recebe as
+# três aplicações quando a migração física chegar nelas.
+#
+# Enquanto um pacote estiver vazio, ele não afeta o build: o `app` só importa o
+# que já foi migrado.
+packages:
+  - app
+  - apps/*
+  - packages/domain/*
+  - packages/integrations/*
+  - packages/platform/*
+  - packages/shared/*
+
+# Herdado de app/pnpm-workspace.yaml: decisão explícita de quais dependências
+# podem rodar script de build. Sem isso o pnpm 11 falha o install implícito e
+# derruba qualquer `pnpm exec`.
+allowBuilds:
+  esbuild: true
+  msgpackr-extract: false
+  puppeteer: false
+  sharp: false
+  unrs-resolver: set this to true or false
