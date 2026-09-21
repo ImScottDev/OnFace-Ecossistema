@@ -4,6 +4,7 @@ import {
   uuid,
   text,
   integer,
+  bigint,
   boolean,
   timestamp,
   decimal,
@@ -4315,3 +4316,262 @@ export const pessoaEmpresaVinculos = pgTable("pessoa_empresa_vinculos", {
   uniqueIndex("idx_pessoa_empresa_vinculo_ativo").on(table.pessoaId, table.empresaId).where(sql`encerrado_em IS NULL`),
   index("idx_pessoa_empresa_vinculo_empresa").on(table.empresaId),
 ]);
+// ═══ MODELO CANÔNICO — expansão da fase 04 do refactor (SPEC §38.2) ═══
+// Criadas pelas migrations 0057, 0058 e 0059. Vazias até o backfill das
+// fases 05 a 15. Ver docs/architecture/refactor-state.md.
+
+export const pipelineEtapas = pgTable("pipeline_etapas", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+  pipelineId: uuid("pipeline_id").references(() => pipelines.id, { onDelete: "cascade" }).notNull(),
+  codigo: text("codigo").notNull(),
+  nome: text("nome").notNull(),
+  ordem: integer("ordem").default(0).notNull(),
+  tipoFechamento: text("tipo_fechamento").default("OPEN").notNull(),
+  ativo: boolean("ativo").default(true).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const aquisicoes = pgTable("aquisicoes", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+  empresaId: uuid("empresa_id").references(() => empresas.id, { onDelete: "set null" }),
+  pessoaId: uuid("pessoa_id").references(() => pessoas.id, { onDelete: "set null" }),
+  tipo: text("tipo").default("INBOUND").notNull(),
+  origem: text("origem"),
+  canal: text("canal"),
+  sourceProvider: text("source_provider"),
+  pipelineId: uuid("pipeline_id").references(() => pipelines.id, { onDelete: "set null" }),
+  etapaId: uuid("etapa_id").references(() => pipelineEtapas.id, { onDelete: "set null" }),
+  responsavelId: uuid("responsavel_id").references(() => usuarios.id, { onDelete: "set null" }),
+  qualificado: boolean("qualificado").default(false).notNull(),
+  qualificadoEm: timestamp("qualificado_em", { withTimezone: true }),
+  desqualificadoEm: timestamp("desqualificado_em", { withTimezone: true }),
+  motivoDesqualificacao: text("motivo_desqualificacao"),
+  nutricaoStatus: text("nutricao_status"),
+  retomarEm: timestamp("retomar_em", { withTimezone: true }),
+  firstTouchAt: timestamp("first_touch_at", { withTimezone: true }),
+  lastTouchAt: timestamp("last_touch_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  closedAt: timestamp("closed_at", { withTimezone: true }),
+});
+
+export const ofertasComerciais = pgTable("ofertas_comerciais", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+  servicoCatalogoId: uuid("servico_catalogo_id").references(() => servicosCatalogo.id).notNull(),
+  codigo: text("codigo").notNull(),
+  nome: text("nome").notNull(),
+  ativo: boolean("ativo").default(true).notNull(),
+  requiresCompanyBeforeProposal: boolean("requires_company_before_proposal").default(true).notNull(),
+  requiresContract: boolean("requires_contract").default(false).notNull(),
+  winCondition: text("win_condition").notNull(),
+  paymentTrigger: text("payment_trigger").notNull(),
+  createsSubscription: boolean("creates_subscription").default(false).notNull(),
+  billingModel: text("billing_model"),
+  onboardingRequired: boolean("onboarding_required").default(true).notNull(),
+  implementationRequired: boolean("implementation_required").default(false).notNull(),
+  contratoTemplateId: uuid("contrato_template_id").references(() => contratoTemplates.id, { onDelete: "set null" }),
+  checkoutProvider: text("checkout_provider"),
+  metadata: jsonb("metadata").default({}).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const pagamentos = pgTable("pagamentos", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+  faturaId: uuid("fatura_id").references(() => faturas.id, { onDelete: "cascade" }).notNull(),
+  empresaId: uuid("empresa_id").references(() => empresas.id).notNull(),
+  servicoCanonicoId: uuid("servico_canonico_id").references(() => servicosCanonicos.id, { onDelete: "set null" }),
+  provider: text("provider").notNull(),
+  externalPaymentId: text("external_payment_id"),
+  paymentMethod: text("payment_method"),
+  amount: decimal("amount", { precision: 14, scale: 2 }).notNull(),
+  currency: text("currency").default("BRL").notNull(),
+  status: text("status").default("PENDING").notNull(),
+  paidAt: timestamp("paid_at", { withTimezone: true }),
+  failedAt: timestamp("failed_at", { withTimezone: true }),
+  refundedAt: timestamp("refunded_at", { withTimezone: true }),
+  idempotencyKey: text("idempotency_key"),
+  metadata: jsonb("metadata").default({}).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const conversas = pgTable("conversas", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+  empresaId: uuid("empresa_id").references(() => empresas.id, { onDelete: "set null" }),
+  pessoaId: uuid("pessoa_id").references(() => pessoas.id, { onDelete: "set null" }),
+  canal: text("canal").notNull(),
+  externalThreadId: text("external_thread_id"),
+  responsavelId: uuid("responsavel_id").references(() => usuarios.id, { onDelete: "set null" }),
+  status: text("status").default("OPEN").notNull(),
+  lastMessageAt: timestamp("last_message_at", { withTimezone: true }),
+  metadata: jsonb("metadata").default({}).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const domainEvents = pgTable("domain_events", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+  eventType: text("event_type").notNull(),
+  aggregateType: text("aggregate_type").notNull(),
+  aggregateId: uuid("aggregate_id").notNull(),
+  actorType: text("actor_type").default("SYSTEM").notNull(),
+  actorId: uuid("actor_id"),
+  occurredAt: timestamp("occurred_at", { withTimezone: true }).defaultNow().notNull(),
+  correlationId: uuid("correlation_id"),
+  causationId: uuid("causation_id"),
+  idempotencyKey: text("idempotency_key"),
+  source: text("source"),
+  payload: jsonb("payload").default({}).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const timelineEvents = pgTable("timeline_events", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+  empresaId: uuid("empresa_id").references(() => empresas.id, { onDelete: "cascade" }),
+  pessoaId: uuid("pessoa_id").references(() => pessoas.id, { onDelete: "cascade" }),
+  aquisicaoId: uuid("aquisicao_id").references(() => aquisicoes.id, { onDelete: "cascade" }),
+  oportunidadeId: uuid("oportunidade_id").references(() => oportunidades.id, { onDelete: "cascade" }),
+  servicoCanonicoId: uuid("servico_canonico_id").references(() => servicosCanonicos.id, { onDelete: "cascade" }),
+  domainEventId: uuid("domain_event_id").references(() => domainEvents.id, { onDelete: "set null" }),
+  tipo: text("tipo").notNull(),
+  titulo: text("titulo").notNull(),
+  descricao: text("descricao"),
+  icone: text("icone"),
+  actorType: text("actor_type").default("SYSTEM").notNull(),
+  actorId: uuid("actor_id"),
+  occurredAt: timestamp("occurred_at", { withTimezone: true }).defaultNow().notNull(),
+  metadata: jsonb("metadata").default({}).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const csHealthSnapshots = pgTable("cs_health_snapshots", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+  empresaId: uuid("empresa_id").references(() => empresas.id, { onDelete: "cascade" }).notNull(),
+  servicoCanonicoId: uuid("servico_canonico_id").references(() => servicosCanonicos.id, { onDelete: "cascade" }),
+  score: integer("score").notNull(),
+  status: text("status").notNull(),
+  factors: jsonb("factors").default({}).notNull(),
+  calculationVersion: text("calculation_version").notNull(),
+  calculatedAt: timestamp("calculated_at", { withTimezone: true }).defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const automacaoVersoes = pgTable("automacao_versoes", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+  automacaoId: uuid("automacao_id").references(() => automacoes.id, { onDelete: "cascade" }).notNull(),
+  version: integer("version").notNull(),
+  nodes: jsonb("nodes").default([]).notNull(),
+  edges: jsonb("edges").default([]).notNull(),
+  triggerConfig: jsonb("trigger_config").default({}).notNull(),
+  settings: jsonb("settings").default({}).notNull(),
+  publishedAt: timestamp("published_at", { withTimezone: true }),
+  createdById: uuid("created_by_id").references(() => usuarios.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const automacaoPassosExecucao = pgTable("automacao_passos_execucao", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+  execucaoId: uuid("execucao_id").references(() => automacaoExecucoes.id, { onDelete: "cascade" }).notNull(),
+  nodeId: text("node_id").notNull(),
+  nodeType: text("node_type").notNull(),
+  ordem: integer("ordem").default(0).notNull(),
+  status: text("status").default("PENDING").notNull(),
+  input: jsonb("input").default({}).notNull(),
+  output: jsonb("output").default({}).notNull(),
+  erro: text("erro"),
+  startedAt: timestamp("started_at", { withTimezone: true }),
+  finishedAt: timestamp("finished_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const automacaoInscricoes = pgTable("automacao_inscricoes", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+  automacaoId: uuid("automacao_id").references(() => automacoes.id, { onDelete: "cascade" }).notNull(),
+  versionId: uuid("version_id").references(() => automacaoVersoes.id, { onDelete: "set null" }),
+  entityType: text("entity_type").notNull(),
+  entityId: uuid("entity_id").notNull(),
+  status: text("status").default("ACTIVE").notNull(),
+  currentNodeId: text("current_node_id"),
+  proximoPassoEm: timestamp("proximo_passo_em", { withTimezone: true }),
+  enrolledAt: timestamp("enrolled_at", { withTimezone: true }).defaultNow().notNull(),
+  finishedAt: timestamp("finished_at", { withTimezone: true }),
+  motivoSaida: text("motivo_saida"),
+  metadata: jsonb("metadata").default({}).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const permissions = pgTable("permissions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  codigo: text("codigo").notNull(),
+  dominio: text("dominio").notNull(),
+  descricao: text("descricao"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const roles = pgTable("roles", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+  codigo: text("codigo").notNull(),
+  nome: text("nome").notNull(),
+  descricao: text("descricao"),
+  sistema: boolean("sistema").default(false).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const rolePermissions = pgTable("role_permissions", {
+  roleId: uuid("role_id").references(() => roles.id, { onDelete: "cascade" }).notNull(),
+  permissionId: uuid("permission_id").references(() => permissions.id, { onDelete: "cascade" }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const userRoles = pgTable("user_roles", {
+  usuarioId: uuid("usuario_id").references(() => usuarios.id, { onDelete: "cascade" }).notNull(),
+  roleId: uuid("role_id").references(() => roles.id, { onDelete: "cascade" }).notNull(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+  concedidoPorId: uuid("concedido_por_id").references(() => usuarios.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const fileObjects = pgTable("file_objects", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+  storageProvider: text("storage_provider").notNull(),
+  storageKey: text("storage_key").notNull(),
+  bucket: text("bucket"),
+  nomeOriginal: text("nome_original").notNull(),
+  mimeType: text("mime_type").notNull(),
+  tamanhoBytes: bigint("tamanho_bytes", { mode: "number" }).notNull(),
+  checksumSha256: text("checksum_sha256"),
+  retencaoAte: timestamp("retencao_ate", { withTimezone: true }),
+  enviadoPorId: uuid("enviado_por_id").references(() => usuarios.id, { onDelete: "set null" }),
+  metadata: jsonb("metadata").default({}).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+});
+
+export const fileLinks = pgTable("file_links", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+  fileObjectId: uuid("file_object_id").references(() => fileObjects.id, { onDelete: "cascade" }).notNull(),
+  entityType: text("entity_type").notNull(),
+  entityId: uuid("entity_id").notNull(),
+  papel: text("papel"),
+  createdById: uuid("created_by_id").references(() => usuarios.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
