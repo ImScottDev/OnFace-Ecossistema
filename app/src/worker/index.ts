@@ -4155,6 +4155,15 @@ Responda APENAS com o JSON valido, sem markdown.`;
         paraStatus: "reuniao_agendada",
         motivo: "Insumo comercial gerado via formulario do site",
       });
+      // Propaga para a oportunidade canônica, como `leads.ts` e o
+      // `cadence-engine` já fazem. Sem isto o negócio anda no legado e o board
+      // do Pipeline, que lê `oportunidades.etapa`, continua mostrando a etapa
+      // antiga: o lead entra pelo formulário do site, a IA gera o insumo, e
+      // quem olha a tela não vê o negócio avançar.
+      {
+        const { syncOportunidadeFromNegocio } = await import("../lib/crm/sync-domain-model");
+        await syncOportunidadeFromNegocio(negocioId);
+      }
       await db.update(leadsT).set({
         status: "em_qualificacao",
         updatedAt: new Date(),

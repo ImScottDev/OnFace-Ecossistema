@@ -1482,6 +1482,32 @@ passou a cobrir os dois, e foi verificada por reintrodução nos dois lugares.
 
 **Validação:** tsc limpo, **311 testes 0 falhas**, **29/29 smokes**.
 
+### CP17 — O lead do site andava no legado e parava na tela
+
+Última lente da dívida central: quem move **fato comercial** do negócio
+(`status`, ganho, perda) sem passar pela porta.
+
+Seis arquivos. Três são a porta (`lib/vendas/pipeline`, `lib/crm/won-evidence`,
+`lib/crm/converter-oportunidade`). Dos três de fora, dois **já propagavam** e
+diziam isso no código: `api-server/routes/leads.ts` e
+`lib/cadencia/cadence-engine.ts` chamam `syncOportunidadeFromNegocio`.
+
+O terceiro não. `worker/index.ts`, no caminho do formulário do site: a IA gera
+o insumo comercial, o worker move o negócio para `reuniao_agendada` e registra
+em `status_changes` — e a oportunidade canônica ficava para trás. Como o board
+lê `oportunidades.etapa` desde a fase 17, quem abrisse a tela veria a etapa
+antiga. O lead entra, a IA trabalha, e o board não mexe.
+
+**A divergência medida era zero**, e isso não absolve: os 24 negócios em
+`reuniao_agendada` vieram do backfill, não desse caminho. Defeito latente
+aparece em produção, no primeiro formulário preenchido.
+
+A trava exige o par: arquivo que escreve `negocios.status` fora de
+`lib/vendas`/`lib/crm` precisa chamar a propagação. Verificada por remoção da
+chamada — os dois testes falham sem ela.
+
+**Validação:** tsc limpo, **313 testes 0 falhas**, **29/29 smokes**.
+
 ### Auditoria de CS Health (histórico da decisão)
 
 Menor do que o gap analysis inicial dizia:

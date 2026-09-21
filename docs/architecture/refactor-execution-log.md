@@ -2405,3 +2405,18 @@ Ele expôs um buraco na própria trava do CP15, que olhava só a pasta
 por reintrodução nos dois lugares.
 
 **Validação:** tsc limpo, **311 testes 0 falhas**, **29/29 smokes**.
+
+## 2026-09-21 — CP17: o lead do formulário andava no legado e parava na tela
+
+Seis arquivos movem `negocios.status`. Três são a porta. Dos três de fora, dois
+já propagavam para o canônico e diziam isso no código.
+
+O terceiro era o worker, no caminho do formulário do site. A IA gera o insumo, o
+worker move o negócio, registra em `status_changes`, e a oportunidade canônica
+fica para trás — com o board lendo `oportunidades.etapa`, a tela não mexe.
+
+A divergência no banco era zero, porque os 24 negócios naquele status vieram do
+backfill e não desse caminho. Zero de divergência hoje não absolve defeito
+latente: ele aparece em produção, no primeiro formulário preenchido.
+
+**Validação:** tsc limpo, **313 testes 0 falhas**, **29/29 smokes**.
