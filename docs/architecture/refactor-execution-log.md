@@ -747,3 +747,34 @@ banco projetada crua, e foi verificado pegando o caso real, inclusive o primeiro
 falso positivo (`AS servicos`, que é alias e não coluna).
 
 **Commit:** `be5e84a`.
+
+---
+
+## 2026-09-21 — Fase 24 · Validação de paridade, e o que ela encontrou
+
+A validação percorre os 14 cenários do SPEC e distingue **três** respostas, não duas:
+OK, FALHA e NÃO VERIFICÁVEL com o motivo dito. Tratar "não verificável" como OK é o
+que faz uma virada parecer segura.
+
+**R$ 103.255,19 de faturas pagas estavam sem pagamento canônico.** O estado dizia que
+a conciliação batia exata em R$ 194.294,36 — e batia, para o subconjunto que o
+backfill migrou. Ele exigia `empresa_id` na própria fatura, e 71 pagas não tinham.
+Pela cadeia canônica, 43 recuperam empresa: **R$ 16.751,30 de receita voltou ao
+modelo**. As outras 28 viraram caso por linha, porque agregado diz que o problema
+existe e por linha diz qual fatura conferir. Conciliação agora: R$ 211.045,66 dos
+dois lados.
+
+**A regra de "proposta exige empresa" existia e não estava ligada em lugar nenhum.**
+285 propostas de oportunidade sem empresa, 59 deste mês. Regra que mora só no domínio
+e ninguém chama é documentação, não regra. Ligada na rota, com default restritivo
+quando a oferta não está resolvida.
+
+**A conferência do próprio backfill comparava universos diferentes** depois que a
+cadeia mudou, e acusava divergência inexistente. O cenário financeiro passou a
+comparar o universo conciliável e exigir que o resto esteja coberto por caso.
+
+Carteira de CS virou "não verificável", não falha: a capacidade existe na rota e
+nenhum dos 275 clientes tem dono. Cobrar isso do código seria cobrar uma decisão de
+operação.
+
+**Commit:** `64d94e8`.

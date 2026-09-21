@@ -20,12 +20,12 @@ Fases 01 a 16 concluídas.
 | 20 Meta | entrada direta e CAPI **construídos e testados**; falta credencial para enviar de verdade |
 | 21 storage | serviço construído e testado; adapter S3/R2 espera credencial. Migrar os pontos de upload vem junto, porque trocá-los agora só muda um disco local por outro |
 | 23 API pública | `/api/v1` com 9 recursos, token com escopo, uso registrado. Falta a tela de gestão de tokens |
-| 24 paridade | não iniciada |
+| 24 paridade | **11 dos 14 cenários passam, 0 falham, 3 não verificáveis e nomeados** |
 | 25 a 28 | dependem de 17 completa; 28 precisa de aprovação do Kauã |
 
 ## Último commit
 
-`be5e84a` — refactor(23): API pública v1, onde o escopo do token é teto e não sugestão
+`64d94e8` — refactor(24): validação de paridade, e R$ 16.751,30 de receita que voltou
 
 Branch de trabalho: `refactor/arquitetura-canonica`, criada a partir de `98940fe`.
 
@@ -67,6 +67,19 @@ ambas de controle interno e deliberadamente não declaradas.
   de entrada. A barreira entra antes do código.
 
 Pacote vazio não afeta o build: `tsc` limpo e 111 testes passando com o workspace novo.
+
+## Prontidão para virada (SPEC §24)
+
+`pnpm tsx src/scripts/validacao-paridade.ts` percorre os 14 cenários e responde, um
+por um, se dá para virar. **11 passam, 0 falham, 3 não verificáveis.**
+
+Os três não verificáveis estão nomeados, e "não verificável" **não é OK**:
+
+| # | Cenário | O que falta |
+|---|---|---|
+| 8 | Carteira de CS tem dono | a capacidade existe na rota; nenhum dos 275 clientes tem responsável. Atribuir é decisão de operação |
+| 12 | NEXO consulta e age | os dois agentes existem em `draft`; publicar e exercitar com modelo real é decisão de quem opera |
+| 13 | Meta CAPI | montagem e hash provados em teste; enviar exige pixel e token |
 
 ## Migrations aplicadas neste refactor
 
@@ -123,7 +136,7 @@ que nunca foi configurado.
 | 09 proposta/contrato | `09-proposta-contrato.ts` | 1.095 + 336 | **1.094 + 336** vinculados | 0 |
 | 10 cliente/serviço | `10-cliente-servico.ts` | 438 serviços | 29 ligados à oportunidade | 0 |
 | 11 fulfillment | migration 0066 | 25 jornadas | ciclos habilitados | 1 |
-| 12 financeiro | `12-financeiro.ts` | 951 faturas | **536 pagamentos**, soma confere | 2 |
+| 12 financeiro | `12-financeiro.ts` | 951 faturas | **579 pagamentos**, soma confere | 146 |
 | 13 comunicações | `13-comunicacoes.ts` | 34.761 linhas | **33.005 comms**, 5.249 conversas | 2 |
 | 14-15 eventos | `14-15-eventos-timeline.ts` | 13.044 atividades | **14.078 timeline**, 2.016 eventos | 0 |
 
