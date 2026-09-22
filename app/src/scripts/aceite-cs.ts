@@ -7,7 +7,7 @@
  */
 import { encode } from "@auth/core/jwt";
 import { db } from "@/lib/db";
-import { organizacoes, usuarios, empresas, clientes, servicosCanonicos, csMarcos, csRiscos, csCancelamentos, negocios, tarefas, atividades, csRenovacoes, contratos } from "@/lib/db/schema";
+import { organizacoes, usuarios, empresas, clientes, servicosCanonicos, csMarcos, csRiscos, csCancelamentos, negocios, tarefas, atividades, csRenovacoes, contratos, oportunidades } from "@/lib/db/schema";
 import { and, eq, sql, desc, inArray } from "drizzle-orm";
 import { app } from "@/api-server/server";
 import { marcosDoCiclo } from "@/lib/cs/playbooks";
@@ -263,7 +263,18 @@ async function main() {
   console.log("\n── limpando dados de teste ──");
   if (criado.cancelamentos.length) await db.delete(csCancelamentos).where(inArray(csCancelamentos.id, criado.cancelamentos));
   if (criado.riscos.length) await db.delete(csRiscos).where(inArray(csRiscos.id, criado.riscos));
-  if (criado.negocios.length) await db.delete(negocios).where(inArray(negocios.id, criado.negocios));
+  if (criado.negocios.length) {
+    // A oportunidade canônica ANTES do negócio legado.
+    //
+    // `oportunidades.negocio_id_legado` referencia `negocios.id` e a FK não
+    // cascateia. Enquanto o espelho não existia, apagar o negócio bastava;
+    // depois que a ponte de Ganho passou a criar a oportunidade, esta limpeza
+    // ficou para trás e o aceite inteiro morria no final com
+    // `oportunidades_negocio_id_legado_fkey` — depois de os 12 testes passarem,
+    // o que faz a falha parecer de outro lugar.
+    await db.delete(oportunidades).where(inArray(oportunidades.negocioIdLegado, criado.negocios));
+    await db.delete(negocios).where(inArray(negocios.id, criado.negocios));
+  }
   // Cobre as 3 origens que os testes criam: título marcado, tarefa de
   // cobrança do evento de pagamento, e as derivadas de risco/cancelamento —
   // essas duas últimas só se identificam pela chave de idempotência.

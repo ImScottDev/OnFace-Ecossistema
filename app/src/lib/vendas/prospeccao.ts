@@ -142,7 +142,21 @@ export async function adicionarProspect(entrada: EntradaDeProspect, ator: Ator):
     // vezes para o mesmo prospect não pode render duas aquisições.
     idempotencyKey: `prospeccao:${organizacaoId}:${prospect.id}`,
   }, prospect.id);
-  if (!canonica.ok) {
+  // Falhar duro, MENOS quando a recusa é legítima.
+  //
+  // A primeira versão desta trava lançava em toda falha da ponte, e derrubou o
+  // caso mais comum do outbound: o prospect que nasce com empresa e nome
+  // porque o contato ainda vai ser descoberto. O domínio recusa esse registro
+  // de propósito — sem e-mail nem telefone não há como deduplicar — e recusa
+  // certo. Quem errou foi a trava, ao tratar uma condição de negócio como
+  // defeito. É o terceiro guarda desta leva a recusar a decisão correta, e a
+  // conclusão já não é nova: guarda que impede o certo custa tanto quanto
+  // guarda nenhum.
+  //
+  // Sem identificador o prospect segue sem par canônico, e quem o traz de volta
+  // é `preQualificar` — a saída do outbound para Pré-vendas, onde o contato já
+  // foi descoberto. Qualquer outro código continua sendo falha dura.
+  if (!canonica.ok && canonica.codigo !== "SEM_IDENTIFICADOR") {
     throw new RegraDeNegocio(
       "prospect_sem_entrada_canonica",
       `O prospect foi criado mas não entrou no modelo canônico: ${canonica.erro ?? "motivo não informado"}`,
@@ -375,6 +389,72 @@ export async function preQualificar(params: {
     VALUES (${params.leadId}::uuid, ${`prospeccao:${prospect.estado ?? "novo"}`}, 'novo',
             ${params.ator.usuarioId ?? null}::uuid, 'Pré-qualificado no outbound')
   `);
+
+  // A segunda chance de entrar no canônico.
+  //
+  // O prospect pode ter nascido sem e-mail nem telefone, e nesse caso
+  // `adicionarProspect` não conseguiu abrir a aquisição. Aqui ele está virando
+  // Lead de Pré-vendas, o que só acontece depois de alguém falar com a empresa:
+  // é o momento em que o contato costuma existir. Sem esta chamada, relaxar a
+  // trava lá em cima teria trocado um erro por um órfão permanente, que é o
+  // buraco que o CP42 existe para tapar.
+  //
+  // Chamar de novo é seguro por dois caminhos independentes de deduplicação: a
+  // mesma `idempotencyKey` devolve a aquisição que já existe, e uma aquisição
+  // aberta para a mesma identidade também. Por isso a chave é IDÊNTICA à de
+  // `adicionarProspect` — mudá-la abriria um segundo processo para o mesmo fato.
+  //
+  // Sem `if (email || telefone)` de propósito: o que conta como identificador é
+  // regra do domínio, que normaliza antes de decidir. Repetir o teste aqui com
+  // truthiness criaria uma segunda versão da mesma regra.
+  //
+  // ANTES da porta, o contato descoberto precisa chegar na pessoa que já está
+  // ligada a este lead. Sem isso nascem DUAS pessoas para o mesmo prospect, e o
+  // banco mostra como: `adicionarProspect` resolve a pessoa pelo caminho de
+  // vendas (que cria com nome, sem exigir contato) e a porta resolve pelo
+  // caminho do domínio (que só acha por e-mail ou telefone). Enquanto a pessoa
+  // ligada ao lead não tiver o contato, o domínio não a reconhece e cria outra
+  // — e o `idx_pessoas_lead_legado`, que é ÚNICO, estoura na hora de ligar a
+  // segunda ao mesmo lead. Medido em 22/09, com o prospect sem contato sendo
+  // pré-qualificado depois do enriquecimento.
+  //
+  // `COALESCE` e não atribuição: enriquecimento preenche o que falta, nunca
+  // sobrescreve o que alguém já apurou. E sem tocar `updated_at`, pelo mesmo
+  // motivo que o backfill não toca: a coluna é sinal de atividade na tela.
+  await db.execute(sql`
+    UPDATE pessoas SET
+      email = COALESCE(email, ${prospect.email ?? null}),
+      telefone = COALESCE(telefone, ${prospect.telefone ?? null})
+     WHERE lead_id_legado = ${prospect.id}::uuid
+       AND organizacao_id = ${params.organizacaoId}::uuid
+       AND (email IS NULL OR telefone IS NULL)`);
+
+  const canonica = await garantirEntradaCanonica({
+    organizacaoId: params.organizacaoId, tipo: "OUTBOUND",
+    origem: "outbound", provider: "prospeccao",
+    pessoa: {
+      nome: prospect.nome, sobrenome: prospect.sobrenome ?? null,
+      email: prospect.email ?? null, telefone: prospect.telefone ?? null,
+      cargo: prospect.cargo ?? null,
+    },
+    empresa: { nome: prospect.empresa ?? "" },
+    responsavelId: prospect.responsavel_id ?? null,
+    idempotencyKey: `prospeccao:${params.organizacaoId}:${prospect.id}`,
+  }, prospect.id);
+  // O `NOT EXISTS` é o cinto: `lead_id_legado IS NULL` protege a pessoa que já
+  // aponta para OUTRO lead, não o lead que já tem dono. Se a propagação acima
+  // não bastar para o domínio reconhecer a pessoa (um telefone que normaliza
+  // diferente, por exemplo), sem esta cláusula o UPDATE tentaria ligar a
+  // segunda pessoa ao mesmo lead e derrubaria a pré-qualificação inteira por
+  // violação de índice.
+  if (canonica.ok && canonica.pessoaId) {
+    await db.execute(sql`
+      UPDATE pessoas SET lead_id_legado = ${prospect.id}::uuid
+       WHERE id = ${canonica.pessoaId}::uuid
+         AND organizacao_id = ${params.organizacaoId}::uuid
+         AND lead_id_legado IS NULL
+         AND NOT EXISTS (SELECT 1 FROM pessoas o WHERE o.lead_id_legado = ${prospect.id}::uuid)`);
+  }
 
   await registrarEvento({
     organizacaoId: params.organizacaoId, tipo: "ProspectPreQualified", ator: params.ator,

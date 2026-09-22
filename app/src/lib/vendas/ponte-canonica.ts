@@ -29,6 +29,19 @@ export interface ResultadoPonte {
   criada?: boolean;
   semDono?: boolean;
   erro?: string;
+  /**
+   * O motivo, do jeito que o domínio o nomeia, e não só a frase.
+   *
+   * `SEM_IDENTIFICADOR` é recusa legítima: sem e-mail nem telefone não há como
+   * saber se a pessoa já existe, e criar às cegas é como a base ganhou
+   * duplicata durante anos. Qualquer outro código é defeito.
+   *
+   * Sem este campo o chamador só recebia a frase "informe e-mail ou telefone",
+   * e tratar as duas situações igual custou uma regressão: o CP42 passou a
+   * lançar em toda falha da ponte, e derrubou o prospect de outbound que nasce
+   * com empresa e nome antes de alguém descobrir o contato.
+   */
+  codigo?: string;
 }
 
 /**
@@ -49,7 +62,7 @@ export async function garantirEntradaCanonica(
       // o id do card, e `sincronizarAquisicaoDoLead` casa os dois modelos por
       // ele. Sem isso, aquisição criada em runtime nasce órfã.
       const r = await registrarEntrada(repo, { ...entrada, leadLegadoId: leadLegadoId ?? entrada.leadLegadoId ?? null });
-      if (!r.ok) return { ok: false, erro: r.erro };
+      if (!r.ok) return { ok: false, erro: r.erro, codigo: r.codigo };
 
       if (r.criada) {
         // Evento + outbox na mesma transação da escrita canônica. É o que a

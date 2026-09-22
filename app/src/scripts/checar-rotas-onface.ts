@@ -109,6 +109,24 @@ const DETALHES: Rota[] = [
 const TITULO_DE_ERRO = /^\s*(404|500|Error|Application error)/i;
 const tituloDe = (html: string) => html.match(/<title>([^<]*)<\/title>/)?.[1] ?? "";
 
+/**
+ * Falha de COMPILAÇÃO, que o `<title>` não denuncia.
+ *
+ * Em desenvolvimento o Next devolve a página de erro com o trecho do arquivo que
+ * não compilou, e o título nem sempre muda. Foi assim que uma crase dentro de um
+ * comentário SQL — dentro de um template literal, o que fecha o literal — ficou
+ * invisível para este verificador enquanto o console do navegador gritava.
+ *
+ * Diferente da frase "This page could not be found", que o Next embute no payload
+ * RSC de TODA página, estas três não aparecem em página saudável: medido em
+ * 22/09, zero ocorrências em `/inicio` e `/pipeline` carregadas com sessão.
+ */
+const MARCAS_DE_COMPILACAO = [
+  "Parsing ecmascript source code failed",
+  "Module not found",
+  "Failed to compile",
+];
+
 async function main() {
   console.log(`Base: ${BASE}\n`);
 
@@ -157,9 +175,22 @@ async function main() {
       ok(false, `${caminho} — caiu no login: a sessão não foi aceita (defeito de ambiente, não da tela)`);
       return;
     }
+    // O corpo é lido ANTES de olhar o status, e não depois. Medido na
+    // reintrodução de 22/09: a MESMA crase devolveu ora 200 com o overlay de
+    // erro do dev, ora 500 limpo — a diferença entre as duas foi o instante da
+    // recompilação, não a gravidade. Lendo só o corpo dos 200, metade das
+    // execuções relatava "HTTP 500" sem dizer QUAL arquivo não compila.
+    const html = await r.text();
+    const compilacao = MARCAS_DE_COMPILACAO.find((m) => html.includes(m));
+    if (compilacao) {
+      // O trecho que o Next mostra costuma nomear o arquivo: vale mais que o
+      // nome da rota, porque o erro quase sempre está num módulo importado.
+      const arquivo = html.match(/\.\/(app\/src\/[\w./-]+)/)?.[1];
+      ok(false, `${caminho} — NÃO COMPILA ("${compilacao}"${arquivo ? ` em ${arquivo}` : ""})`);
+      return;
+    }
     if (r.status !== 200) { ok(false, `${caminho} — HTTP ${r.status} em ${destino}`); return; }
 
-    const html = await r.text();
     const titulo = tituloDe(html);
     if (TITULO_DE_ERRO.test(titulo)) {
       ok(false, `${caminho} — respondeu 200 com página de erro (título "${titulo}")`);

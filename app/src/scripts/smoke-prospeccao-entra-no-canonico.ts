@@ -21,7 +21,7 @@
  */
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
-import { adicionarProspect } from "@/lib/vendas/prospeccao";
+import { adicionarProspect, preQualificar } from "@/lib/vendas/prospeccao";
 import { ATOR_SISTEMA } from "@/lib/vendas/dominio";
 
 const MARCA = "smoke-prospec-";
@@ -38,6 +38,8 @@ async function limpar() {
     sql`DELETE FROM atividades WHERE lead_id IN (SELECT id FROM leads WHERE nome LIKE ${MARCA + "%"})`,
     sql`DELETE FROM vendas_eventos WHERE lead_id IN (SELECT id FROM leads WHERE nome LIKE ${MARCA + "%"})`,
     sql`DELETE FROM lead_labels WHERE lead_id IN (SELECT id FROM leads WHERE nome LIKE ${MARCA + "%"})`,
+    // `preQualificar` grava a mudança de estado, e ela segura o lead pela FK.
+    sql`DELETE FROM status_changes WHERE lead_id IN (SELECT id FROM leads WHERE nome LIKE ${MARCA + "%"})`,
     sql`DELETE FROM aquisicoes WHERE lead_legado_id IN (SELECT id FROM leads WHERE nome LIKE ${MARCA + "%"})`,
     sql`DELETE FROM aquisicoes WHERE empresa_id IN (SELECT id FROM empresas WHERE nome LIKE ${MARCA + "%"})`,
     sql`DELETE FROM pessoas WHERE nome LIKE ${MARCA + "%"}`,
@@ -88,6 +90,60 @@ async function main() {
     SELECT count(*)::int AS n FROM aquisicoes a
      WHERE a.organizacao_id = ${org.id}::uuid AND a.lead_legado_id = ${r.leadId}::uuid`);
   ok(noBoard.n === 1, `o board canônico enxerga o prospect (${noBoard.n})`);
+
+  console.log("\n═══ pré-qualificar não abre um SEGUNDO processo ═══");
+  // A porta canônica é chamada de novo em `preQualificar`. Se a deduplicação
+  // não pegasse, o mesmo prospect renderia duas aquisições — que é pior do que
+  // o buraco que ela foi criada para tapar.
+  await preQualificar({ organizacaoId: org.id, leadId: r.leadId!, ator: ATOR_SISTEMA });
+  const [aq2] = await db.execute<{ n: number }>(sql`
+    SELECT count(*)::int AS n FROM aquisicoes WHERE lead_legado_id = ${r.leadId}::uuid`);
+  ok(aq2.n === 1, `continua com uma aquisição só depois de pré-qualificar (${aq2.n})`);
+
+  console.log("\n═══ o prospect SEM contato: nasce fora, e entra quando o contato aparece ═══");
+  // O caso mais comum do outbound: empresa e nome do decisor, contato ainda por
+  // descobrir. O domínio RECUSA abrir aquisição assim, e recusa certo — sem
+  // e-mail nem telefone não há como saber se a pessoa já existe.
+  //
+  // Este trecho existe porque a primeira versão da trava tratou essa recusa
+  // legítima como defeito e lançava: o aceite de vendas parou inteiro em
+  // "informe e-mail ou telefone". O smoke não pegou porque só exercitava o
+  // prospect COM contato — cobertura que mede o caminho fácil.
+  const semContato = `${MARCA}sem-${Date.now()}`;
+  const s = await adicionarProspect({
+    organizacaoId: org.id,
+    empresa: { nome: `${semContato} Ltda` },
+    pessoa: { nome: semContato },
+    fonte: "smoke", importado: false,
+  }, ATOR_SISTEMA);
+  ok(Boolean(s.leadId), "prospect sem e-mail nem telefone é criado, e não estoura");
+
+  const [aqSem] = await db.execute<{ n: number }>(sql`
+    SELECT count(*)::int AS n FROM aquisicoes WHERE lead_legado_id = ${s.leadId}::uuid`);
+  ok(aqSem.n === 0, `nasce fora do canônico, porque não há como deduplicar (${aqSem.n})`);
+
+  // O contato aparece — é o que o enriquecimento ou a primeira conversa fazem.
+  await db.execute(sql`
+    UPDATE leads SET email = ${`${semContato}@exemplo.invalid`}, telefone = '11988880000'
+     WHERE id = ${s.leadId}::uuid`);
+  await preQualificar({ organizacaoId: org.id, leadId: s.leadId!, ator: ATOR_SISTEMA });
+
+  const [aqDepois] = await db.execute<{ n: number }>(sql`
+    SELECT count(*)::int AS n FROM aquisicoes WHERE lead_legado_id = ${s.leadId}::uuid`);
+  ok(aqDepois.n === 1, `entra no canônico ao ser pré-qualificado (${aqDepois.n})`);
+  const [peDepois] = await db.execute<{ n: number }>(sql`
+    SELECT count(*)::int AS n FROM pessoas WHERE lead_id_legado = ${s.leadId}::uuid`);
+  ok(peDepois.n === 1, `e a pessoa canônica fica ligada ao lead (${peDepois.n})`);
+
+  // UMA pessoa, não duas. `adicionarProspect` resolve a pessoa pelo caminho de
+  // vendas e a porta pelo caminho do domínio; enquanto a primeira não tiver o
+  // contato, a segunda não a reconhece e cria outra. A contagem por NOME pega a
+  // duplicata que a contagem por `lead_id_legado` não pega — a segunda pessoa
+  // fica SOLTA, sem vínculo, e some do lado do lead enquanto a aquisição
+  // aponta para ela.
+  const [duplicatas] = await db.execute<{ n: number }>(sql`
+    SELECT count(*)::int AS n FROM pessoas WHERE nome = ${semContato}`);
+  ok(duplicatas.n === 1, `e é UMA pessoa, não duas para o mesmo prospect (${duplicatas.n})`);
 
   await limpar();
   const [resto] = await db.execute<{ n: number }>(sql`
