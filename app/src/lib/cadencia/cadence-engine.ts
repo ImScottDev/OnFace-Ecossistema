@@ -29,7 +29,7 @@ import { createHash } from "node:crypto";
 import { db } from "@/lib/db";
 import { registrarMudancaResponsavel } from "@/lib/crm/owner";
 import { moverEtapa as moverEtapaPreVendas } from "@/lib/vendas/pre-vendas";
-import { ETAPAS_PRE_VENDAS, type EtapaPreVendas } from "@/lib/vendas/dominio";
+import { ETAPAS_PRE_VENDAS, type EtapaPreVendas, type Ator } from "@/lib/vendas/dominio";
 import { cadenceDefinitions, cadenceDefinitionPointers, cadenceVersions, cadenceEnrollments, cadenceEnrollmentEvents, leads, contatos, negocios, oportunidades, clientes, servicosCanonicos, whatsappTemplates, whatsappMensagens, whatsappSessao, atividades, tarefas, entityLabels, labels, leadLabels, contatoLabels } from "@/lib/db/schema";
 import { eq, and, lte, inArray, desc, or, isNull, lt, sql } from "drizzle-orm";
 import { avaliarCondicao, type Condicao } from "@/lib/crm/condicao";
@@ -72,6 +72,22 @@ export interface CadenceActionContext {
   entityType: string;
   entityId: string;
   vars: Record<string, unknown>;
+  /**
+   * Quem está executando, quando o chamador sabe.
+   *
+   * O motor é compartilhado: a cadência roda por conta própria, e o agente de
+   * IA usa a MESMA porta via `executarAcaoAvulsa`. Sem este campo, o adapter
+   * fixava `SYSTEM` para os dois, e o registro de eventos perdia a única coisa
+   * que os distingue — `vendas_eventos` tinha 41 linhas e todas diziam SYSTEM.
+   *
+   * O domínio já previa isso: `ATORES` inclui `AI_AGENT`, com o comentário
+   * "humano e IA usam o MESMO motor; a diferença é só quem executou, e é isso
+   * que este tipo carrega por todo comando de negócio". O tipo existia e nada
+   * o usava.
+   *
+   * Ausente continua sendo `SYSTEM`: cadência de verdade não tem pessoa atrás.
+   */
+  ator?: Ator;
   step: CadenceStep;
   enrollmentId: string;
   attempt: number;
@@ -137,6 +153,11 @@ export async function executarAcaoAvulsa(
     entityType: ctx.entityType,
     entityId: ctx.entityId,
     vars: ctx.vars,
+    // O contexto é remontado campo a campo aqui, então cada campo novo precisa
+    // ser repassado à mão. `ator` ficou de fora na primeira tentativa: o campo
+    // existia na interface, as ferramentas do agente o preenchiam, e ele morria
+    // nesta linha — o adapter continuava vendo SYSTEM.
+    ator: ctx.ator,
     step: { id: `avulso:${adapterNome}`, tipo: "action", adapter: adapterNome, config: ctx.config ?? {}, branches: [] },
     enrollmentId: `avulso:${assinatura}`,
     attempt: 0,
@@ -437,8 +458,11 @@ registrarAdapter("crm_update_stage", async (ctx) => {
   if (!stage) return { sucesso: false, erro: "nova etapa não informada" };
   if (["ganho", "won", "closed_won"].includes(stage.toLowerCase())) return { sucesso: false, erro: "Won exige o gate comercial de pagamento/assinatura" };
 
-  // Automação age como sistema: não há pessoa por trás da regra.
-  const ator = { tipo: "SYSTEM" as const, usuarioId: null, ref: `automacao:${ctx.entityType}` };
+  // Automação age como sistema: não há pessoa por trás da regra. Mas quando o
+  // chamador sabe quem é — o agente de IA, por exemplo — o ator vem no contexto
+  // e é ele que entra no evento.
+  const ator: Ator = ctx.ator
+    ?? { tipo: "SYSTEM", usuarioId: null, ref: `automacao:${ctx.entityType}` };
 
   try {
     if (ctx.entityType === "lead") {

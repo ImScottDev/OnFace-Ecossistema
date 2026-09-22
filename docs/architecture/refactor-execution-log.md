@@ -2927,3 +2927,24 @@ Observação: `SPEC-IA-01`, citado na ordem de execução, não existe no reposi
 nem no vault — mesmo caso do `ONFACE-ARCHITECTURE-SPEC.md`.
 
 Validação: tsc limpo, 345 testes / 0 falhas.
+
+## 2026-09-22 — CP45: o registro não distinguia a IA da automação
+
+`ATORES` inclui `AI_AGENT` com o comentário "humano e IA usam o MESMO motor; a
+diferença é só quem executou". Nada usava o tipo: o adapter `crm_update_stage`
+fixava SYSTEM e o `CadenceActionContext` não tinha campo de ator. Medido:
+`vendas_eventos` com 41 linhas, todas SYSTEM.
+
+O contexto ganhou `ator?: Ator` (ausente = SYSTEM, porque cadência não tem
+pessoa atrás) e as três ferramentas do agente passam AI_AGENT com o id do agente
+em `ref`.
+
+No meio do conserto, o defeito clássico: com o campo na interface e as
+ferramentas preenchendo, o smoke ainda dava SYSTEM — `executarAcaoAvulsa`
+remonta o contexto campo a campo e o `ator` morria nessa linha. Só um smoke da
+cadeia inteira encontra isso.
+
+`smoke-ator-atravessa` move um lead pelos dois caminhos e confere que os
+conjuntos de evento não se confundem.
+
+Validação: tsc limpo, 345 testes / 0 falhas.

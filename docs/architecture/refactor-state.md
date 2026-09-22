@@ -64,7 +64,7 @@ com o PABX invendável.
 
 ## Último commit
 
-`(CP44)` — a ferramenta de tag do agente era a terceira cópia da regra
+`(CP45)` — o registro não sabia diferenciar a IA da automação
 
 **Estado medido em 22/09/2026:** tsc limpo · **345 testes / 0 falhas** · build de
 produção limpo · **36 verificações** na bateria de smokes · **4 aceites com 208
@@ -2615,6 +2615,39 @@ vigente continua sendo o HUB do ONFACE mais este documento.
 
 **Validação:** tsc limpo, **345 testes / 0 falhas**, smoke novo verde, trava
 provada por reintrodução.
+
+### CP45 — O registro não sabia diferenciar a IA da automação
+
+`ATORES` inclui `AI_AGENT` desde sempre, com o comentário que explica por quê:
+*"Humano e IA usam o MESMO motor. A diferença é só quem executou, e é isso que
+este tipo carrega por todo comando de negócio."*
+
+**O tipo existia e nada o usava.** O adapter `crm_update_stage` fixava
+`{ tipo: "SYSTEM", ref: "automacao:<entidade>" }`, e o `CadenceActionContext` não
+tinha campo de ator — então quem chamasse não tinha como dizer quem era. Medido:
+`vendas_eventos` com 41 linhas, **todas SYSTEM**, inclusive as do agente.
+Perguntar *"o que a IA fez com meus leads"* não tinha resposta pelo registro
+canônico.
+
+O motor é compartilhado de propósito: a cadência roda sozinha e o agente usa a
+mesma porta via `executarAcaoAvulsa`. O que faltava era o ator atravessar.
+
+- `CadenceActionContext` ganhou `ator?: Ator`; ausente continua sendo `SYSTEM`,
+  porque cadência de verdade não tem pessoa atrás.
+- As três ferramentas do agente que movem etapa ou criam tarefa passam
+  `{ tipo: "AI_AGENT", ref: agentId }`.
+
+**E o defeito clássico apareceu no meio do conserto.** Com o campo na interface e
+as ferramentas preenchendo, o smoke ainda dava `SYSTEM`: `executarAcaoAvulsa`
+**remonta o contexto campo a campo**, e o `ator` morria nessa linha. É a forma
+exata de "correção aplicada sem atualizar quem repassa" — só um smoke que
+exercita a cadeia inteira encontra isso.
+
+`smoke-ator-atravessa` move um lead pelos dois caminhos e confere que os dois
+conjuntos de evento **não se confundem**: se o ator não atravessasse, seriam
+idênticos, que era o estado anterior.
+
+**Validação:** tsc limpo, **345 testes / 0 falhas**, smoke novo verde.
 
 ### Auditoria de CS Health (histórico da decisão)
 

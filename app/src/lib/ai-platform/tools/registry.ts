@@ -11,6 +11,7 @@ import { converterLeadEmOportunidade } from "@/lib/crm/converter-oportunidade";
 import { enviarParaDiscagem } from "@/lib/integrations/callface";
 import { publicarEvento } from "@/lib/events/outbox";
 import { adicionarTag, removerTag } from "@/lib/crm/tags";
+import type { Ator } from "@/lib/vendas/dominio";
 import { executarAcaoAvulsa } from "@/lib/cadencia/cadence-engine";
 
 export type AgentToolContext = {
@@ -46,6 +47,20 @@ export type AgentToolRegistration = {
 
 const objectSchema = (properties: Record<string, unknown> = {}, required: string[] = []) => ({ type: "object", properties, required, additionalProperties: false });
 const stringProp = (description: string) => ({ type: "string", description });
+
+/**
+ * Quem está executando, do ponto de vista do domínio.
+ *
+ * O motor de ações é compartilhado entre a cadência e o agente, e até 22/09 ele
+ * fixava `SYSTEM` para os dois: `vendas_eventos` tinha 41 linhas e todas diziam
+ * SYSTEM, inclusive as do agente. `ATORES` já previa `AI_AGENT` — "humano e IA
+ * usam o MESMO motor; a diferença é só quem executou" — e nada usava o tipo.
+ *
+ * `ref` carrega o id do agente, que é o que responde "qual agente fez isto".
+ */
+const atorDoAgente = (ctx: AgentToolContext): Ator => ({
+  tipo: "AI_AGENT", usuarioId: null, ref: ctx.agentId ?? null,
+});
 
 function preview(ctx: AgentToolContext, operation: string, input: Record<string, unknown>): AgentToolResult | null {
   return ctx.mode === "test" || ctx.autonomy !== "autonomous" ? { ok: true, data: { preview: true, approvalRequired: ctx.mode === "live" && ctx.autonomy === "approval", operation, input } } : null;
@@ -188,7 +203,7 @@ export const AGENT_TOOLS: AgentToolRegistration[] = [
         ? Math.max(0, Math.round((new Date(String(input.vence_em)).getTime() - Date.now()) / 60_000))
         : undefined;
       const r = await executarAcaoAvulsa("crm_create_task", {
-        organizacaoId: ctx.organizacaoId, entityType: "lead", entityId: leadId, vars: {},
+        organizacaoId: ctx.organizacaoId, entityType: "lead", entityId: leadId, vars: {}, ator: atorDoAgente(ctx),
         config: {
           title: String(input.titulo),
           description: input.descricao ? String(input.descricao) : undefined,
@@ -208,7 +223,7 @@ export const AGENT_TOOLS: AgentToolRegistration[] = [
       if (!ctx.leadId) return { ok: false, error: "lead ausente" };
       const r = await executarAcaoAvulsa("crm_update_stage", {
         organizacaoId: ctx.organizacaoId, entityType: "lead", entityId: ctx.leadId,
-        vars: {}, config: { stage: String(input.status) },
+        vars: {}, ator: atorDoAgente(ctx), config: { stage: String(input.status) },
       });
       return r.sucesso ? { ok: true, data: r.resultado } : { ok: false, error: r.erro };
     },
@@ -235,7 +250,7 @@ export const AGENT_TOOLS: AgentToolRegistration[] = [
       // chamador é um "não" que uma das cópias esquece.
       const r = await executarAcaoAvulsa("crm_update_stage", {
         organizacaoId: ctx.organizacaoId, entityType: "negocio", entityId: String(input.negocio_id),
-        vars: {}, config: { stage: String(input.status) },
+        vars: {}, ator: atorDoAgente(ctx), config: { stage: String(input.status) },
       });
       return r.sucesso ? { ok: true, data: r.resultado } : { ok: false, error: r.erro };
     },
