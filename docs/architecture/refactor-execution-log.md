@@ -2563,3 +2563,19 @@ usavam. Resposta 404 e não 403: dizer "existe, mas não é sua" confirmaria o i
 
 Verificado por reintrodução: com o código antigo o smoke pega HTTP 200 e a
 escrita na execução da vizinha.
+
+## 2026-09-22 — CP28: reentrega da Meta duplicava o staging
+
+Dos quatro webhooks que inserem, três tinham marca de idempotência. O de
+`meta-lead-ids` não, e a tabela só tinha PK no id.
+
+O risco estava materializado: ao criar o índice único, a migration removeu 18
+linhas duplicadas de 576, para 558 `fb_lead_id` distintos.
+
+Erro meu, corrigido antes do commit: escrevi na migration que a tabela estava
+vazia, confundindo com `meta_capi_entregas`. O `DELETE 18` desmentiu e o
+comentário foi reescrito com o fato medido.
+
+O índice sozinho teria criado um modo de falha novo — webhook respondendo erro
+na reentrega é o que faz a Meta reentregar mais. Por isso o `onConflictDoNothing`
+entrou no mesmo passo.

@@ -121,6 +121,13 @@ export async function POST(req: NextRequest) {
 
   // Lead ainda não existe no CRM (RD ainda não processou) — fica no staging pro
   // rd-lead casar na hora de criar/atualizar.
+  // IDEMPOTENTE por `fbLeadId`. A Meta reentrega o webhook quando não recebe
+  // 200 a tempo, e sem isto cada reentrega criava uma linha nova: a migration
+  // 0090 removeu 18 duplicatas reais ao criar o índice único.
+  //
+  // `onConflictDoNothing` e não `DoUpdate`: o payload da reentrega é o MESMO
+  // evento, então não há o que atualizar — e sem o `onConflict`, o índice novo
+  // faria o webhook responder erro, o que só provocaria mais reentrega.
   await db.insert(metaLeadStaging).values({
     fbLeadId: body.fbLeadId,
     email,
@@ -131,7 +138,7 @@ export async function POST(req: NextRequest) {
     adName: body.adName,
     adsetName: body.adsetName,
     campaignName: body.campaignName,
-  });
+  }).onConflictDoNothing();
 
   return NextResponse.json({ ok: true, status: "staged" });
 }

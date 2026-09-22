@@ -426,6 +426,11 @@ export const metaLeadStaging = pgTable(
     index("idx_meta_lead_staging_email").on(table.email),
     index("idx_meta_lead_staging_telefone").on(table.telefone),
     index("idx_meta_lead_staging_created_at").on(table.createdAt),
+    // Idempotência da reentrega da Meta (migration 0090). Parcial porque
+    // `fb_lead_id` é nullable: o único que interessa é o id real do lead.
+    uniqueIndex("idx_meta_lead_staging_fb_lead_id")
+      .on(table.fbLeadId)
+      .where(sql`fb_lead_id IS NOT NULL`),
   ]
 );
 

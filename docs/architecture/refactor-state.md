@@ -1882,6 +1882,41 @@ contexto obtido participe de alguma decisão.
 
 **Validação:** tsc limpo, **326 testes 0 falhas**, **31 smokes**.
 
+### CP28 — Reentrega da Meta duplicava o staging, e havia 18 duplicatas reais
+
+Varredura de idempotência nos webhooks, que é item que o próprio plano manda
+preservar. Quatro arquivos inserem; três tinham marca (`onConflict`,
+`external_id`, chave de idempotência). O quarto não:
+`POST /api/webhooks/meta-lead-ids` inseria em `meta_lead_staging` sem nada, e a
+tabela só tinha PK no `id`.
+
+A Meta reentrega o webhook quando não recebe 200 a tempo. **O risco não era
+teórico:** ao criar o índice único, a migration removeu **18 linhas
+duplicadas**. A tabela tinha 576 linhas para 558 `fb_lead_id` distintos.
+
+**Um erro meu, corrigido antes de commitar.** Escrevi na migration que a tabela
+estava vazia — eu tinha confundido `meta_lead_staging` com `meta_capi_entregas`
+na lista de tabelas sem linha. O `DELETE 18` desmentiu na hora, e o comentário
+foi reescrito com o fato medido. Migration que afirma o que não aconteceu é
+pior que migration sem comentário.
+
+**As duas metades andam juntas, e essa é a parte que importa.** O índice único
+sozinho teria criado um modo de falha NOVO: o webhook passaria a responder erro
+na reentrega, e erro é exatamente o que faz a Meta reentregar de novo. Por isso
+o código ganhou `onConflictDoNothing` no mesmo passo — e `DoNothing` e não
+`DoUpdate`, porque a reentrega carrega o mesmo evento, não um dado novo.
+
+A deduplicação mantém a linha mais recente de cada `fb_lead_id`, que é
+exatamente a que `/api/webhooks/rd-lead` já escolhia
+(`orderBy(desc(createdAt)).limit(1)`): nenhum consumidor muda de resposta.
+
+O smoke prova as três garantias: reentrega não duplica, reentrega não vira
+erro, e a trava é do **banco** — inserir sem `onConflict` é recusado pelo
+índice, então outro caminho que apareça também não consegue duplicar.
+
+**Validação:** tsc limpo, **326 testes 0 falhas**, `smoke-meta-lead-ads` 14/14,
+índice declarado no Drizzle (o guard de drift cobre).
+
 ### Auditoria de CS Health (histórico da decisão)
 
 Menor do que o gap analysis inicial dizia:
