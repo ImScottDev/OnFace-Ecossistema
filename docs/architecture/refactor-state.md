@@ -1988,6 +1988,36 @@ script ganhar um teto, o documento fica certo e a execução errada.
 
 **Validação:** tsc limpo, **329 testes 0 falhas**.
 
+### CP31 — Migration do refactor reaplica, e o primeiro teste disso não testava nada
+
+Continuação do CP30: o procedimento corrigido só vale se a cadeia aguentar ser
+reexecutada. A virada pode precisar disso — um passo falha no meio, alguém
+corrige o dado e roda de novo. `migrar.ts` registra o que já aplicou e não
+repete, mas essa proteção é do **orquestrador**: se o SQL for aplicado à mão, ou
+o registro se perder, quem segura é a própria migration.
+
+Verificado por execução, não por leitura: as 35 migrations de 0056 em diante
+reaplicam sem erro, em ~2s. Nenhuma tem `INSERT` de seed (o `metric_catalog` é
+populado em runtime, não na migration), e o DDL usa `IF NOT EXISTS`.
+
+**A primeira versão do teste não testava nada, e a verificação por reintrodução
+foi o que mostrou.** Ele rodava cada migration uma vez dentro de
+`BEGIN; … ROLLBACK;`. Com o rollback, a segunda execução nunca via a primeira:
+uma migration deliberadamente quebrada (`CREATE TABLE` sem `IF NOT EXISTS`)
+**passou**.
+
+O teste passou a aplicar o corpo **duas vezes na mesma transação** — é a segunda
+que encontra o estado da primeira. Com isso a migration quebrada falha, como
+devia.
+
+Vale como método: teste que não falha com o defeito não é teste, e a única
+forma de saber é reintroduzir o defeito de propósito.
+
+O corte em 0056 é onde o refactor começa. Migration anterior é história, e
+reescrevê-la é pior que conviver com ela.
+
+**Validação:** tsc limpo, **330 testes 0 falhas**, banco sem resíduo.
+
 ### Auditoria de CS Health (histórico da decisão)
 
 Menor do que o gap analysis inicial dizia:

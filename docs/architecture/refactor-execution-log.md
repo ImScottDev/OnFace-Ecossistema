@@ -2609,3 +2609,19 @@ a cada migration nova.
 A trava acusou 0073 a 0077 também, e ali ela exagerou: estavam documentadas numa
 linha agregada que o padrão não reconhecia. Foram abertas em linhas próprias
 porque a agregada as descrevia mal.
+
+## 2026-09-22 — CP31: o primeiro teste de reaplicação não testava nada
+
+O procedimento corrigido no CP30 só vale se a cadeia aguentar reexecução. As 35
+migrations de 0056 em diante reaplicam sem erro, em ~2s, verificado por execução.
+
+A primeira versão do teste rodava cada migration uma vez dentro de
+BEGIN/ROLLBACK. Com o rollback, a segunda execução nunca via a primeira: uma
+migration deliberadamente quebrada passou. Só a verificação por reintrodução
+mostrou isso.
+
+Corrigido para aplicar o corpo duas vezes na mesma transação — é a segunda que
+encontra o estado da primeira.
+
+Teste que não falha com o defeito não é teste, e a única forma de saber é
+reintroduzir o defeito de propósito.
