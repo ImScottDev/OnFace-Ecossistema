@@ -3317,3 +3317,29 @@ descrever o estado antigo.
 
 Validação: tsc limpo, 354 testes / 0 falhas, 50 verificações, build completo com
 o portão, 14/14 rotas reconferidas depois do build (ele sobrescreve `.next`).
+
+### CP62 — portão automático entre escrever código e empurrar
+
+O diagnóstico da fundação registrou em 19/09: *"Não existe nenhum portão
+automático entre escrever código e subir em produção. Sem CI."* O CP61 cobriu
+quem constrói. Este cobre quem empurra.
+
+`.github/workflows/portao.yml` responde **uma** pergunta, e responde de verdade:
+o que foi empurrado compila e não fura nenhuma regra de arquitetura. Typecheck
+com o mesmo comando que o `build` usa, e as **91 travas de arquitetura**.
+
+**Só isto, e por um motivo medido.** As 91 travas e o `tsc` rodam limpos com
+`DATABASE_URL` ausente. Os outros 263 testes e os 50 smokes vão contra um banco
+carregado com dado de produção, e não existe banco assim no CI. Rodá-los contra
+um banco vazio não provaria nada e acabaria em vermelho permanente, que é como
+um portão morre. Essa parte continua sendo a bateria local
+(`scripts/rodar-smokes.sh`, `scripts/rodar-aceites.sh`).
+
+Verificado com os comandos exatos do workflow: typecheck sai 0, as 91 travas
+passam sem banco, e o dry-run confirma o lockfile sincronizado para o
+`--frozen-lockfile`. A versão do pnpm declarada é a que gerou o lockfile.
+
+**Achado anotado e não tocado:** o repositório é workspace **pnpm**
+(`pnpm-workspace.yaml`, 42 projetos), e o `Dockerfile` instala com `npm ci`
+sobre um `app/package-lock.json` legado. Os dois convivem hoje; vale decidir
+qual é o gerenciador antes da virada.

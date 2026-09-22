@@ -3274,3 +3274,17 @@ build em `error TS2322`.
 README corrigido; `ignoreBuildErrors` mantido com o motivo escrito.
 
 Validação: tsc limpo, 354 testes / 0 falhas, 50 verificações, 14/14 rotas.
+
+## 2026-09-22 — CP62: CI mínimo e honesto
+
+`.github/workflows/portao.yml`: typecheck (mesmo comando do build) + 91 travas
+de arquitetura, em push nas branches principais e em PR.
+
+Só isso porque só isso é verdade sem banco: medido, as 91 travas e o tsc rodam
+com `DATABASE_URL` ausente. Smokes e aceites precisam de banco com dado de
+produção e continuam locais — no CI virariam vermelho permanente.
+
+Verificado com os comandos exatos, incluindo o dry-run do `--frozen-lockfile`.
+
+Achado anotado: workspace pnpm x `npm ci` no Dockerfile, com
+`app/package-lock.json` legado. Decidir antes da virada.
