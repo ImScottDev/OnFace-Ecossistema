@@ -1,0 +1,166 @@
+/* ─────────────────────────────────────────────────────────────────────────
+ * Estrutura de página ONFACE
+ *
+ * Ritmo, não uniformidade: o espaço entre cabeçalho e resumo é menor que o
+ * espaço entre resumo e conteúdo, porque cabeçalho e resumo são o mesmo
+ * assunto e o conteúdo é outro. Um `gap` único aplicado em tudo é o que faz
+ * uma tela parecer montada por template.
+ * ───────────────────────────────────────────────────────────────────────── */
+
+.onface-pagina {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+/* ── Cabeçalho ────────────────────────────────────────────────────────── */
+
+.onface-pagina-cabecalho {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.875rem;
+}
+
+.onface-pagina-identidade {
+  min-width: 0;
+}
+
+/* 1.25rem, não 2.5rem. A trilha já nomeou a página; este título existe para
+   ancorar a ação ao lado e para o leitor de tela. Um display gigante aqui
+   seria hero dentro de software operacional. */
+.onface-pagina-titulo {
+  font-size: 1.25rem;
+  font-weight: var(--weight-bold);
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  color: var(--text-strong);
+  margin: 0;
+}
+
+.onface-pagina-descricao {
+  margin: 0.1875rem 0 0;
+  font-size: var(--text-md);
+  line-height: 1.45;
+  color: var(--text-muted);
+  max-width: 68ch;
+}
+
+.onface-pagina-acoes {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+/* ── Resumo ───────────────────────────────────────────────────────────── */
+
+/* Linha de fatos, não grid de cards. Os separadores são hairlines entre os
+   itens: o bloco inteiro é uma superfície só, e cada fato é uma coluna dela.
+   É isso que impede a leitura de "seis caixinhas". */
+.onface-resumo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  border: 1px solid var(--line-hairline);
+  border-radius: var(--radius-card);
+  background: var(--surface-card);
+  overflow: hidden;
+  margin-bottom: 1.25rem;
+}
+
+.onface-resumo-item {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.125rem;
+  flex: 1 1 0;
+  min-width: 9.5rem;
+  padding: 0.75rem 1rem;
+  border-inline-start: 1px solid var(--line-hairline);
+}
+.onface-resumo-item:first-child {
+  border-inline-start: 0;
+}
+
+.onface-resumo-rotulo {
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.onface-resumo-valor {
+  font-size: 1.0625rem;
+  font-weight: var(--weight-bold);
+  line-height: 1.15;
+  color: var(--text-strong);
+  /* Número em tabela alinha por coluna. Sem isto, comparar dois valores na
+     mesma linha obriga o olho a recalcular a largura de cada dígito. */
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.015em;
+}
+
+.onface-resumo-detalhe {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  line-height: 1.3;
+}
+
+/* O destaque não muda de cor: muda de tamanho e de peso. Cor é reservada para
+   significado, e "este é o número principal" não é significado, é hierarquia. */
+.onface-resumo-item[data-destaque="true"] {
+  flex-grow: 1.6;
+}
+.onface-resumo-item[data-destaque="true"] .onface-resumo-valor {
+  font-size: 1.5rem;
+  letter-spacing: -0.025em;
+}
+
+/* Sinal é a exceção onde a cor é significado: este número acusa trabalho
+   parado. Coral no valor, fundo levíssimo, e a linha inteira vira o recorte. */
+.onface-resumo-item[data-sinal="true"] {
+  background: var(--onface-coral-subtle);
+}
+.onface-resumo-item[data-sinal="true"] .onface-resumo-valor {
+  color: var(--onface-coral);
+}
+
+a.onface-resumo-item {
+  transition: background-color 160ms ease-out;
+}
+a.onface-resumo-item:hover {
+  background: var(--onface-coral-border);
+}
+a.onface-resumo-item:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+
+.onface-resumo-cta {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--onface-coral);
+}
+
+/* Estreito: os fatos empilham em duas colunas em vez de espremer seis numa
+   linha. O destaque perde a vantagem de largura porque ela não existe mais. */
+@media (max-width: 900px) {
+  .onface-resumo-item {
+    flex: 1 1 45%;
+    min-width: 0;
+  }
+  .onface-resumo-item[data-destaque="true"] {
+    flex-basis: 100%;
+  }
+  .onface-resumo-item:nth-child(odd) {
+    border-inline-start: 0;
+  }
+  .onface-resumo-item:nth-child(n + 3) {
+    border-block-start: 1px solid var(--line-hairline);
+  }
+}

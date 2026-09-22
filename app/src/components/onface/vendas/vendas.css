@@ -84,6 +84,13 @@
   flex-wrap: wrap;
   margin-bottom: calc(18 * var(--onface-u));
 }
+
+/* O CTA primário encosta no fim da barra. Sem isto ele seguia o fluxo dos
+   filtros, quebrava para a linha de baixo e custava uma faixa inteira de
+   altura ao board — numa tela cuja única função é caber o máximo de coluna. */
+.ov-controles-cta {
+  margin-inline-start: auto;
+}
 .ov-abas {
   display: inline-flex;
   gap: calc(2 * var(--onface-u));

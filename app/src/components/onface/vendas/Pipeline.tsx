@@ -147,26 +147,27 @@ export function Pipeline({ dados, filtro, loop = false, loops = null, selecaoIni
 
             O que era navegação virou informação — o resumo continua dizendo
             quanto há em cada desfecho, sem esconder nenhum. */}
-        <div className="ds-resumo-faixa" aria-label="Resumo do funil">
-          <span><strong>{dados.resumo.abertas}</strong> abertas</span>
-          <span><strong>{dados.resumo.ganhas}</strong> ganhas</span>
-          <span><strong>{dados.resumo.perdidas}</strong> perdidas</span>
-          {/* LOOP ABERTO (Next Step Invariant). O contador já existia e não
-              levava a lugar nenhum: o operador via "527 sem próxima ação" e
-              não tinha como olhar quais. Agora recorta o board. */}
-          {dados.resumo.semProximaAcao > 0 ? (
-            <button
-              type="button"
-              className="ds-grid-resumo-sinal"
-              data-ativo={loop}
-              aria-pressed={loop}
-              onClick={() => navegar({ loop: loop ? null : "sem-proxima-acao" })}
-            >
-              <span>{dados.resumo.semProximaAcao} sem próxima ação</span>
-              <small>{loop ? "mostrando só estas" : "clique para ver só estas"}</small>
-            </button>
-          ) : null}
-        </div>
+        {/* Os contadores de aberto/ganho/perdido saíram daqui: o resumo da
+            página já os carrega, com hierarquia. Mantê-los nos dois lugares
+            fazia o operador ler o mesmo número duas vezes antes de chegar no
+            board.
+
+            O que fica é CONTROLE, não informação: quando o recorte está
+            ligado, esta é a única maneira de desligá-lo, então o chip precisa
+            estar entre os filtros. Desligado, ele não aparece — quem liga é o
+            sinal do resumo. */}
+        {loop ? (
+          <button
+            type="button"
+            className="ds-grid-resumo-sinal"
+            data-ativo
+            aria-pressed
+            onClick={() => navegar({ loop: null })}
+          >
+            <span>{dados.resumo.semProximaAcao} sem próxima ação</span>
+            <small>mostrando só estas · limpar</small>
+          </button>
+        ) : null}
         <Busca valor={busca} aoMudar={setBusca} placeholder="Buscar empresa ou oportunidade" />
         <button type="button" className="ov-botao" data-variante="neutro" onClick={() => navegar({ busca })}>Buscar</button>
         <select className="ov-select" value={filtro.familia ?? ""} aria-label="Filtrar por família"
@@ -181,7 +182,14 @@ export function Pipeline({ dados, filtro, loop = false, loops = null, selecaoIni
           <option value="">Todos os responsáveis</option>
           {dados.filtros.responsaveis.map((r) => <option key={r.id} value={r.id}>{r.nome}</option>)}
         </select>
-        <button type="button" className="ov-botao" onClick={() => { limparBloqueio(); setModal("nova"); }}>
+        {/* CTA primário no fim da barra de controles (§47). `margin-inline-start:
+            auto` em vez de uma linha só para ele: o botão estava quebrando para
+            a segunda linha e custando uma faixa inteira de altura do board. */}
+        <button
+          type="button"
+          className="ov-botao ov-controles-cta"
+          onClick={() => { limparBloqueio(); setModal("nova"); }}
+        >
           <Plus aria-hidden />Nova oportunidade
         </button>
       </div>

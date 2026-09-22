@@ -1,9 +1,9 @@
 import { redirect } from "next/navigation";
 import { getTenantContext } from "@/lib/auth/tenant";
 import { boardPipeline } from "@/lib/vendas/consultas";
-import { OnfacePage, OnfacePageBand, OnfacePageSurface } from "@/components/onface/shell/OnfacePage";
+import { Pagina, PaginaCabecalho, PaginaResumo } from "@/components/onface/shell/Pagina";
 import { Pipeline } from "@/components/onface/vendas/Pipeline";
-import { Hero, type RotaBaseVendas } from "@/components/onface/vendas/ui";
+import { type RotaBaseVendas } from "@/components/onface/vendas/ui";
 import { moeda } from "@/components/onface/vendas/formato";
 import {
   acaoAgendarReuniao, acaoAlterarFamilia, acaoBuscarEmpresas, acaoCriarOportunidade,
@@ -47,21 +47,30 @@ export async function PipelinePage({ searchParams, rotaBase = "" }: {
   const loops = semProximaAcao ? await resumoDeLoops(ctx.organizacaoId, responsavelId) : null;
 
   return (
-    <OnfacePage>
-      <OnfacePageBand>
-        <Hero
-          titulo="Pipeline"
-          descricao="Oportunidades comerciais reais. Uma família por oportunidade; reunião, trial e no-show são eventos, não colunas."
-          resumo={[
-            { rotulo: "Em aberto", valor: dados.resumo.abertas },
-            { rotulo: "Valor em aberto", valor: moeda(dados.resumo.valorEmAberto) },
-            { rotulo: "Sem próxima ação", valor: dados.resumo.semProximaAcao, alerta: dados.resumo.semProximaAcao > 0 },
-            { rotulo: "Ganhas", valor: dados.resumo.ganhas },
-          ]}
-        />
-      </OnfacePageBand>
-      <OnfacePageSurface sobreposto>
-        <Pipeline
+    <Pagina>
+      <PaginaCabecalho titulo="Pipeline" />
+      <PaginaResumo
+        itens={[
+          {
+            rotulo: "Valor em aberto",
+            valor: moeda(dados.resumo.valorEmAberto),
+            detalhe: `${dados.resumo.abertas} oportunidades`,
+            destaque: true,
+          },
+          {
+            // Deixou de ser enfeite no topo: o número vira o recorte do board.
+            // É a aplicação direta do P6 (Next Step sempre visível) — a tela
+            // não só acusa o problema, ela abre a fila de quem o tem.
+            rotulo: "Sem próxima ação",
+            valor: dados.resumo.semProximaAcao,
+            sinal: true,
+            href: "/pipeline?loop=sem-proxima-acao",
+          },
+          { rotulo: "Ganhas", valor: dados.resumo.ganhas },
+          { rotulo: "Perdidas", valor: dados.resumo.perdidas },
+        ]}
+      />
+      <Pipeline
           dados={dados}
           aba={aba ?? undefined}
           filtro={{ busca, responsavelId, familia }}
@@ -78,8 +87,7 @@ export async function PipelinePage({ searchParams, rotaBase = "" }: {
             buscarEmpresas: acaoBuscarEmpresas, detalhe: acaoDetalhe,
           }}
         />
-      </OnfacePageSurface>
-    </OnfacePage>
+    </Pagina>
   );
 }
 
