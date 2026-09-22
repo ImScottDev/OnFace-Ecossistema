@@ -13,6 +13,7 @@ import { db } from "@/lib/db";
 import { csMarcos, tarefas, negocios, empresas, servicosCanonicos } from "@/lib/db/schema";
 import { and, eq } from "drizzle-orm";
 import { abrirProximoCiclo } from "./jornada";
+import { syncOportunidadeFromNegocio } from "@/lib/crm/sync-domain-model";
 import { CODIGO_FECHA_CICLO } from "./playbooks";
 import { marcarRiscoManual, type Severidade } from "./riscos";
 import { criarTarefaCs, registrarInteracao } from "./tarefas";
@@ -130,6 +131,20 @@ export async function executarCheckpoint(input: ExecutarCheckpointInput): Promis
       camposCustom: { tipoExpansao: input.expansao.tipo, origemCs: true, marcoId: marco.id },
     }).returning({ id: negocios.id });
     negocioExpansaoId = negocio.id;
+
+  // A expansão precisa existir no canônico como qualquer outra oportunidade.
+  //
+  // O comentário logo acima diz o que este bloco decidiu: "expansão é
+  // oportunidade comercial de verdade, nunca alteração de serviço por anotação
+  // de checkpoint". Faltava a outra metade dessa frase, que é o negócio chegar
+  // em `oportunidades` — sem ela, a expansão nasce só no legado e some das
+  // leituras canônicas (pipeline, relatórios, política de Ganho).
+  //
+  // Hoje o banco tem ZERO negócios com `commercial_motion = 'EXPANSION'`: o
+  // caminho nunca foi exercido. Por isso o buraco não aparece em contagem
+  // nenhuma, e por isso ele é barato de fechar agora, antes do primeiro uso,
+  // em vez de virar backfill depois.
+    await syncOportunidadeFromNegocio(negocio.id);
   }
 
   let proximaAcaoId: string | null = null;

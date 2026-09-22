@@ -16,6 +16,18 @@ import path from "node:path";
 const SRC = path.resolve(import.meta.dirname, "../..");
 const ler = (p: string) => fs.readFileSync(path.join(SRC, p), "utf8");
 
+/**
+ * Corpo do arquivo SEM as linhas de import.
+ *
+ * Sem isto, o teste passa pela linha de `import` e não pela chamada — foi o que
+ * aconteceu na primeira versão da trava de negócios: removi
+ * `await syncOportunidadeFromNegocio(...)` do corpo, o import continuou lá, e o
+ * teste seguiu verde. Um guard que confirma a importação e não o uso é o mesmo
+ * falso-verde que ele existe para pegar.
+ */
+const corpo = (p: string) =>
+  ler(p).split("\n").filter((l) => !/^\s*import\s/.test(l)).join("\n");
+
 /** Caminhos que CRIAM identidade comercial e já passam pela porta canônica. */
 const MIGRADOS = [
   "app/api/webhooks/rd-lead/route.ts",
@@ -63,7 +75,7 @@ test("todo arquivo que CRIA lead passa pela porta canônica", () => {
   const criaLead = /db\.insert\(leads\)|INSERT INTO leads\b/;
   const semPorta = arquivos.filter((rel) => {
     if (/\.test\.tsx?$/.test(rel) || rel.includes("migrations")) return false;
-    const src = ler(rel);
+    const src = corpo(rel);
     if (!criaLead.test(src)) return false;
     return !src.includes("garantirEntradaCanonica");
   });
@@ -72,6 +84,41 @@ test("todo arquivo que CRIA lead passa pela porta canônica", () => {
     "estes arquivos criam lead e NÃO chamam garantirEntradaCanonica. O registro " +
     "nasce fora do modelo canônico: sem aquisição, sem AcquisitionCreated e " +
     "invisível para as telas que leem o canônico.\n  " + semPorta.join("\n  "));
+});
+
+test("todo arquivo que CRIA negócio o sincroniza ao canônico", () => {
+  // A irmã do teste acima, para a outra entidade. Os dois caminhos de expansão
+  // de CS — `lib/cs/checkpoint.ts` e `api-server/routes/cs.ts` — criavam o
+  // negócio e paravam aí, mesmo declarando no comentário que "expansão é
+  // oportunidade comercial de verdade".
+  //
+  // Nenhuma contagem denunciava: o banco tem ZERO negócios com
+  // `commercial_motion = 'EXPANSION'`, porque o caminho nunca foi exercido. O
+  // buraco só aparecia no primeiro uso, e aí já seria backfill.
+  const arquivos: string[] = [];
+  const varrer = (dir: string) => {
+    for (const e of fs.readdirSync(path.join(SRC, dir), { withFileTypes: true })) {
+      const rel = path.join(dir, e.name);
+      if (e.isDirectory()) { if (e.name !== "node_modules") varrer(rel); }
+      else if (/\.tsx?$/.test(e.name)) arquivos.push(rel);
+    }
+  };
+  for (const raiz of ["app", "api-server", "lib", "worker"]) varrer(raiz);
+
+  const criaNegocio = /db\.insert\(negocios\)|INSERT INTO negocios\b/;
+  // Vale qualquer um dos caminhos que levam ao canônico: a porta de domínio, a
+  // sincronização direta, ou o bundle que faz as duas coisas.
+  const chegaAoCanonico = /syncOportunidadeFromNegocio|criarOportunidade|sincronizarOportunidade/;
+  const semSync = arquivos.filter((rel) => {
+    if (/\.test\.tsx?$/.test(rel) || rel.includes("migrations")) return false;
+    const src = corpo(rel);
+    return criaNegocio.test(src) && !chegaAoCanonico.test(src);
+  });
+
+  assert.deepEqual(semSync, [],
+    "estes arquivos criam negócio e não o levam a `oportunidades`. Ele nasce só " +
+    "no legado e some das leituras canônicas: pipeline, relatórios e a política " +
+    "de Ganho.\n  " + semSync.join("\n  "));
 });
 
 test("a ponte de cutover declara que é temporária", () => {

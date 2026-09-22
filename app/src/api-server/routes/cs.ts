@@ -17,6 +17,7 @@ import { z } from "zod";
 import { getCtx } from "../compat.js";
 import { temPermissao } from "@/lib/auth/permissoes";
 import { montarFila, pulsoCarteira, type MotivoFila } from "@/lib/cs/fila";
+import { syncOportunidadeFromNegocio } from "@/lib/crm/sync-domain-model";
 import { iniciarJornadaCs, cicloAtual } from "@/lib/cs/jornada";
 import {
   PLAYBOOK_RELACIONAMENTO, CHECKLIST_RENOVACAO, definicaoMarco, rotuloRegua,
@@ -577,6 +578,20 @@ app.post("/cs/clientes/:empresaId/expansao", async (c) => {
     pipelineId: parsed.data.pipelineId ?? null,
     camposCustom: { tipoExpansao: parsed.data.tipo, origemCs: true },
   }).returning();
+
+  // A expansão precisa existir no canônico como qualquer outra oportunidade.
+  //
+  // O comentário logo acima diz o que este bloco decidiu: "expansão é
+  // oportunidade comercial de verdade, nunca alteração de serviço por anotação
+  // de checkpoint". Faltava a outra metade dessa frase, que é o negócio chegar
+  // em `oportunidades` — sem ela, a expansão nasce só no legado e some das
+  // leituras canônicas (pipeline, relatórios, política de Ganho).
+  //
+  // Hoje o banco tem ZERO negócios com `commercial_motion = 'EXPANSION'`: o
+  // caminho nunca foi exercido. Por isso o buraco não aparece em contagem
+  // nenhuma, e por isso ele é barato de fechar agora, antes do primeiro uso,
+  // em vez de virar backfill depois.
+  await syncOportunidadeFromNegocio(negocio.id);
 
   await registrarInteracao({
     organizacaoId: ctx.organizacaoId, empresaId, tipo: "cs_expansao",
