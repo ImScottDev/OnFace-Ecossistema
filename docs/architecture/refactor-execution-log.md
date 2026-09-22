@@ -3440,3 +3440,35 @@ NÃO inverti o tom por conta própria. Fica para o Kauã decidir.
 Validação: tsc limpo, 365 testes / 0 falhas, 32 pares de contraste sem falha,
 21 rotas em 200 (inclusive o espelho congelado e o preview), zero erro de
 console, sem overflow horizontal.
+
+
+**UX-16 — o acento da superfície escura ainda era o verde legado.** O escopo
+`[data-cf2-superficie="escura"]` do `globals.css` forçava `--cf2-accent: #6ee7a8`
+(seaweed claro). A marca virou coral em 15/09 no tema claro e este escopo ficou
+para trás, então TODA superfície escura do produto continuava verde: cabeçalho
+de `/negocios/:id` e `/empresas/:id`, faixa da Carteira, Pulso do Financeiro.
+Agora usa `--onface-coral-mark` (#ff4d29): medido 5,36:1 sobre #111827 e 5,41:1
+sobre #16171c — AA de texto NORMAL nos dois fundos escuros que o produto tem.
+
+Vale dizer o que a trava NÃO pega: a troca de verde por coral é decisão de
+MARCA, e o verificador de contraste aprovava os dois. Só a leitura do código
+acha esse tipo de defeito.
+
+**UX-17 — faixa escura sem declarar que é escura.** A faixa de sinais e a
+triagem da Carteira pintam `--cf2-bg-inverse` (#111827) e não declaravam
+`data-cf2-superficie="escura"` — o mecanismo que o próprio projeto criou para
+reescrever os tokens de alerta em fundo escuro. Sem ele os tokens chegam
+calibrados para fundo BRANCO. Medido antes: "Inadimplentes" em `--cf2-danger-text`
+(#b91c1c) sobre #111827 dava **2,74:1**, reprova AA até para texto grande. Com
+o escopo vira #f06a6f e dá 5,91:1.
+
+**Erro de medição meu, registrado:** a primeira leitura deu 1,18:1 nos rótulos
+e eu quase abri um segundo defeito por causa disso. O navegador serializa
+`color-mix` como `color(srgb 1 1 1 / 0.58)` — floats de 0 a 1 — e minha função
+tratava como 0-255. Alfa também precisa ser COMPOSTO sobre o fundo antes de
+medir. Com o parsing certo, 6,61:1.
+
+**Oito pares novos no verificador** (40 no total, 0 falhas), cobrindo os dois
+fundos escuros do produto. Provados ao contrário: restaurando os tokens antigos,
+`danger / inverse` cai para 2,74:1 e `danger / chrome-alt` para 2,77:1, e a
+trava acusa as duas.

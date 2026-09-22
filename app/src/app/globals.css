@@ -634,12 +634,17 @@
   --cf2-warning-text: var(--cf2-home-ws-warning);
   --cf2-success-text: #4ade80;
   /* O accent também vira texto (valor do negócio no header escuro de
-     /negocios e /empresas): o seaweed-700 dá 2.8:1 sobre #16171c. */
-  --cf2-accent: #6ee7a8;
-  --cf2-accent-border: #6ee7a8;
+     /negocios e /empresas): o seaweed-700 dava 2.8:1 sobre #16171c.
+     Era `#6ee7a8`, verde do sistema legado — a marca virou coral em 15/09 no
+     tema claro e este escopo ficou para trás, então toda superfície escura do
+     produto continuava verde. Coral de marca (`--onface-coral-mark`, #ff4d29)
+     medido: 5,36:1 sobre #111827 e 5,41:1 sobre #16171c, AA para texto normal
+     nos dois fundos escuros que o produto tem. */
+  --cf2-accent: var(--onface-coral-mark);
+  --cf2-accent-border: var(--onface-coral-mark);
   /* O par anda junto: com o accent claro, o texto POR CIMA dele tem que
-     escurecer, senão o botão primário fica branco sobre verde-claro. */
-  --cf2-text-on-accent: #05231a;
+     escurecer, senão o botão primário fica claro sobre coral claro. */
+  --cf2-text-on-accent: var(--onface-preto-logo);
   /* Só os tons de APOIO. `--cf2-text-primary` e `--cf2-home-ink` ficam de
      fora de propósito: eles são usados como cor de texto em elementos de
      fundo CLARO aninhados aqui dentro (o botão branco de "Filtros" no hero de

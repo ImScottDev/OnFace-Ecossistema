@@ -260,8 +260,15 @@ export function Cf2ClientesWorkspace() {
 
   return (
     <div className="flex flex-col gap-5 h-full min-h-0">
+      {/* `data-cf2-superficie="escura"` faltava aqui, e é o mecanismo que o
+          próprio projeto criou para isto: sem ele os tokens de alerta chegam
+          com o valor calibrado para fundo BRANCO. Medido nesta faixa antes do
+          conserto: "Inadimplentes" em `--cf2-danger-text` (#b91c1c) sobre
+          #111827 dava 2,74:1 — reprova AA até para texto grande. Com o escopo
+          o token vira #f06a6f e passa. */}
       <section
         aria-label="Sinais da carteira"
+        data-cf2-superficie="escura"
         className="grid grid-cols-2 overflow-hidden rounded-[var(--radius-card)] shrink-0 md:grid-cols-3 xl:grid-cols-[1.55fr_repeat(5,minmax(0,1fr))]"
         style={{ background: "var(--cf2-bg-inverse)", border: "1px solid var(--cf2-bg-inverse)" }}
       >
@@ -288,7 +295,7 @@ export function Cf2ClientesWorkspace() {
       </section>
 
       <div className="grid flex-1 min-h-0 gap-4 xl:grid-cols-[248px_minmax(0,1fr)]">
-        <aside className="flex flex-col gap-5 rounded-[var(--radius-card)] p-5 xl:sticky xl:top-0 xl:self-start" style={{ background: "var(--cf2-bg-inverse)", color: "var(--cf2-text-on-inverse)" }}>
+        <aside data-cf2-superficie="escura" className="flex flex-col gap-5 rounded-[var(--radius-card)] p-5 xl:sticky xl:top-0 xl:self-start" style={{ background: "var(--cf2-bg-inverse)", color: "var(--cf2-text-on-inverse)" }}>
           <div>
             <p className="text-[10px] font-bold uppercase tracking-[0.1em]" style={{ color: "color-mix(in srgb, var(--cf2-text-on-inverse) 55%, transparent)" }}>Triagem da carteira</p>
             <p className="mt-2 text-[17px] font-bold">Onde agir agora</p>

@@ -24,6 +24,13 @@ const OF = {
   linha: '#dbdede',
 };
 
+// Fundos escuros do produto e os tons que o escopo `[data-cf2-superficie]`
+// entrega em cima deles.
+const ESC = {
+  inverse: '#111827', chromeAlt: '#16171c',
+  danger: '#f06a6f', warning: '#f5b638',
+};
+
 const pares = [
   ['texto primário / superfície', '#111827', '#ffffff', 4.5],
   ['texto secundário / superfície', '#4b5563', '#ffffff', 4.5],
@@ -66,6 +73,32 @@ const pares = [
   // Elemento de interface, piso 3: a marca continua sendo a marca aqui.
   ['ONFACE indicador coral / grafite', OF.coral, OF.grafite, 3],
   ['ONFACE hairline / papel', OF.linha, OF.papel, 1.2],
+
+  // ── Superfícies ESCURAS do produto ──────────────────────────────────────
+  //
+  // O produto tem dois fundos escuros: `--cf2-bg-inverse` (#111827) na faixa e
+  // na triagem da Carteira, e `--cf2-chrome-bg-alt` (#16171c) nos cabeçalhos
+  // de /negocios e /empresas e no Pulso do Financeiro.
+  //
+  // Quem escreve em cima deles é o escopo `[data-cf2-superficie="escura"]` do
+  // `globals.css`. Uma superfície escura que ESQUECE de declarar o atributo
+  // recebe os tokens calibrados para fundo branco — foi o que aconteceu na
+  // faixa da Carteira, onde "Inadimplentes" dava 2,74:1. Os dois primeiros
+  // pares guardam justamente o que o escopo entrega.
+  ['ONFACE escuro: danger / inverse', ESC.danger, ESC.inverse, 3],
+  ['ONFACE escuro: warning / inverse', ESC.warning, ESC.inverse, 3],
+  ['ONFACE escuro: danger / chrome-alt', ESC.danger, ESC.chromeAlt, 3],
+  // O accent em superfície escura era `#6ee7a8`, verde do sistema legado que
+  // sobreviveu à virada da marca para coral. Coral de marca passa AA de texto
+  // NORMAL nos dois fundos, então o piso aqui é 4,5 e não 3.
+  ['ONFACE escuro: accent coral / inverse', OF.coral, ESC.inverse, 4.5],
+  ['ONFACE escuro: accent coral / chrome-alt', OF.coral, ESC.chromeAlt, 4.5],
+  // Tinta POR CIMA do accent coral, para quando ele é preenchimento e não texto.
+  ['ONFACE escuro: tinta / accent coral', OF.pretoLogo, OF.coral, 4.5],
+  ['ONFACE escuro: texto / inverse', '#ffffff', ESC.inverse, 4.5],
+  // Rótulo a 58% de branco composto sobre o fundo escuro — é o que a faixa da
+  // Carteira usa em `color-mix`, e alfa tem que ser composto antes de medir.
+  ['ONFACE escuro: rótulo 58% / inverse', '#8b8f97', ESC.inverse, 4.5],
 ];
 
 console.log('\n  AUDITORIA DE CONTRASTE — WCAG 2.1 AA\n');
