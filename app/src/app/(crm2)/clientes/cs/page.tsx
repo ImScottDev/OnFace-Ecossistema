@@ -16,13 +16,9 @@ export default async function ClientesCsPage() {
   // global e ações. Sem o `gap-6`/`pt-6` de antes: eram ~50px de espaço morto
   // entre a topbar e a primeira informação útil da tela.
   return (
-    <div className="flex flex-col gap-3">
-      <div className="-m-6 mb-0 relative flex flex-col px-6 py-3.5 rounded-tl-2xl border-b" style={{ background: "var(--cf2-bg-surface)", borderColor: "var(--cf2-border-default)" }}>
-        <Cf2Topbar orgNome={org?.nome || "Callface"} variant="light" title="CS" compactTitle actions={null} />
-      </div>
-      <div className="pt-3">
-        <Cf2CsWorkspace />
-      </div>
+    <div className="onface-pagina">
+      <Cf2Topbar orgNome={org?.nome || "Callface"} variant="light" title="CS" compactTitle actions={null} />
+      <Cf2CsWorkspace />
     </div>
   );
 }

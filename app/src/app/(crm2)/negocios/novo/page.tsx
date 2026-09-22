@@ -18,16 +18,12 @@ export default async function NovoNegocioPage() {
   const [org] = await db.select({ nome: organizacoes.nome }).from(organizacoes).where(eq(organizacoes.id, ctx.organizacaoId)).limit(1);
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className="-m-6 mb-0 relative flex flex-col px-6 py-3.5 rounded-tl-2xl border-b" style={{ background: "var(--cf2-bg-surface)", borderColor: "var(--cf2-border-default)" }}>
-        {/* `actions={null}` remove o CTA: já estamos DENTRO da criação de
-            negócio, e o botão "Novo negócio" apontando pra própria tela é
-            um beco. Passar ctaLabel="" deixava um "+" solto. */}
-        <Cf2Topbar orgNome={org?.nome || "Callface"} variant="light" title="Novo negócio" compactTitle actions={null} />
-      </div>
-      <div className="pt-3">
-        <FormNovoNegocio />
-      </div>
+    <div className="onface-pagina">
+      {/* `actions={null}` remove o CTA: já estamos DENTRO da criação de
+          negócio, e o botão "Novo negócio" apontando pra própria tela é
+          um beco. Passar ctaLabel="" deixava um "+" solto. */}
+      <Cf2Topbar orgNome={org?.nome || "Callface"} variant="light" title="Novo negócio" compactTitle actions={null} />
+      <FormNovoNegocio />
     </div>
   );
 }

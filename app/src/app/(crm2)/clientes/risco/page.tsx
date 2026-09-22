@@ -22,13 +22,10 @@ export default async function ClientesRiscoPage() {
     .where(eq(organizacoes.id, ctx.organizacaoId)).limit(1);
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="-m-6 mb-0 relative flex flex-col px-6 py-3.5 rounded-tl-2xl border-b"
-        style={{ background: "var(--cf2-bg-surface)", borderColor: "var(--cf2-border-default)" }}>
-        <Cf2Topbar orgNome={org?.nome || "Callface"} variant="light" title="Clientes"
-          subtitle="Risco / Churn — contas com sinal de saída antes do cancelamento" compactTitle actions={null} />
-      </div>
-      <div className="pt-6"><Cf2RiscoWorkspace /></div>
+    <div className="onface-pagina">
+      <Cf2Topbar orgNome={org?.nome || "Callface"} variant="light" title="Risco e churn"
+        subtitle="Contas com sinal de saída antes do cancelamento" actions={null} />
+      <Cf2RiscoWorkspace />
     </div>
   );
 }

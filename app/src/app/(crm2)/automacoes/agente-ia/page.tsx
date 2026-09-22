@@ -14,13 +14,9 @@ export default async function AutomacoesAgenteIAPage() {
   const orgNome = org?.nome || "Callface";
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="-m-6 mb-0 relative flex flex-col px-6 py-3.5 rounded-tl-2xl border-b" style={{ background: "var(--cf2-bg-surface)", borderColor: "var(--cf2-border-default)" }}>
-        <Cf2Topbar orgNome={orgNome} variant="light" title="Agente de IA" subtitle="Callpilot e follow-ups automáticos — o que já roda e o que ainda é conceito de produto" compactTitle actions={null} />
-      </div>
-      <div className="pt-6">
-        <Cf2AgenteIAHub />
-      </div>
+    <div className="onface-pagina">
+      <Cf2Topbar orgNome={orgNome} variant="light" title="Agente de IA" subtitle="Callpilot e follow-ups automáticos — o que já roda e o que ainda é conceito de produto" compactTitle actions={null} />
+      <Cf2AgenteIAHub />
     </div>
   );
 }

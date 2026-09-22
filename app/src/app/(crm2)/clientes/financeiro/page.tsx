@@ -18,24 +18,19 @@ export default async function ClientesFinanceiroPage() {
     .limit(1);
 
   return (
-    <div className="flex flex-col gap-6">
-      <div
-        className="-m-6 mb-0 relative flex flex-col px-6 py-3.5 rounded-tl-2xl border-b"
-        style={{ background: "var(--cf2-bg-surface)", borderColor: "var(--cf2-border-default)" }}
-      >
-        <Cf2Topbar
-          orgNome={org?.nome || "Callface"}
-          variant="light"
-          title="Clientes"
-          subtitle="MRR, cobrança, assinaturas, churn e conciliação"
-          compactTitle actions={null}
-        />
-      </div>
-      <div className="pt-6">
-        <Suspense fallback={null}>
-          <FinanceiroCentral />
-        </Suspense>
-      </div>
+    <div className="onface-pagina">
+      <Cf2Topbar
+        orgNome={org?.nome || "Callface"}
+        title="Financeiro"
+        subtitle="MRR, cobrança, assinaturas, churn e conciliação"
+        actions={null}
+      />
+      {/* `fallback={null}` deixava a tela em branco enquanto o financeiro
+          carregava; agora o `loading.tsx` da rota cobre o primeiro paint e
+          este Suspense só precisa não piscar. */}
+      <Suspense fallback={null}>
+        <FinanceiroCentral />
+      </Suspense>
     </div>
   );
 }

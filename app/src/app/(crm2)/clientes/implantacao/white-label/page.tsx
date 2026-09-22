@@ -25,13 +25,9 @@ export default async function ClientesImplantacaoWhiteLabelPage() {
     .where(eq(organizacoes.id, ctx.organizacaoId)).limit(1);
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="-m-6 mb-0 relative flex flex-col px-6 py-3.5 rounded-tl-2xl border-b"
-        style={{ background: "var(--cf2-bg-surface)", borderColor: "var(--cf2-border-default)" }}>
-        <Cf2Topbar orgNome={org?.nome || "Callface"} variant="light" title="Clientes"
-          subtitle="Implantação White Label — pós-fechamento" compactTitle actions={null} />
-      </div>
-      <div className="pt-6"><Cf2EntregaWorkspace familiaFixa="WHITE_LABEL" /></div>
+    <div className="onface-pagina">
+      <Cf2Topbar orgNome={org?.nome || "Callface"} variant="light" title="Implantação White Label" actions={null} />
+      <Cf2EntregaWorkspace familiaFixa="WHITE_LABEL" />
     </div>
   );
 }

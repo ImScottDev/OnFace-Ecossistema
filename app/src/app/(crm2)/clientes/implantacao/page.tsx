@@ -40,10 +40,8 @@ export default async function ClientesImplantacaoPage({ searchParams }: { search
   const orgNome = org?.nome || "Callface";
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="-m-6 mb-0 relative flex flex-col px-6 py-3.5 rounded-tl-2xl border-b" style={{ background: "var(--cf2-bg-surface)", borderColor: "var(--cf2-border-default)" }}>
-        <Cf2Topbar orgNome={orgNome} variant="light" title="Clientes" subtitle={trilha.subtitle} compactTitle actions={null} />
-      </div>
+    <div className="onface-pagina">
+      <Cf2Topbar orgNome={orgNome} variant="light" title="Implantação" subtitle={trilha.subtitle} compactTitle actions={null} />
       <div className="pt-6 flex flex-col gap-4">
         <div className="flex items-center gap-1 p-1 rounded-control w-fit" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }}>
           {TRILHAS.map((t) => {
