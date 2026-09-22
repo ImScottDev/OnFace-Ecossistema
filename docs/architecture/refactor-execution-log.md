@@ -2863,3 +2863,28 @@ desativaria no ciclo seguinte o que não estiver no Stripe. Para saber se é cri
 preço ou preencher metadata falta uma chave de leitura do Stripe — bloqueio 8.
 
 Validação: tsc limpo, 341 testes / 0 falhas, smoke novo verde.
+
+## 2026-09-22 — CP42: prospect criado pela tela nascia fora do canônico
+
+`adicionarProspect`, o botão da tela `/prospeccao`, criava o lead com SQL direto
+e não chamava `garantirEntradaCanonica`; o caminho irmão (importação de lista)
+chamava desde a fase 16. Medido por smoke que cria pela função da tela e relê
+pela consulta da tela: 0 aquisições, 0 pessoas vinculadas, 0 eventos
+`AcquisitionCreated`, fora do board. Os 3.598 leads com aquisição no banco vêm do
+backfill da fase 06; contagem histórica mede o passado.
+
+Segundo achado: `resolverPessoa` roda antes do INSERT do lead, então a pessoa
+nascia sem `lead_id_legado`, e a porta reaproveita a pessoa em vez de criar
+outra. O banco mostra que é anomalia: 3.950 de 3.950 pessoas têm o vínculo.
+
+A trava `escritores-migrados` enumerava sete caminhos e prometia acusar porta
+nova. Agora varre o diretório, e foi ela que acusou `prospeccao.ts`.
+
+Validação: tsc limpo, 342 testes / 0 falhas, provado por reintrodução.
+
+**Nota de ambiente:** durante este checkpoint o worktree recebeu mudanças de
+outra execução (instalação de shadcn/ui, 20 componentes, `app/dashboard/`,
+`package.json` e `pnpm-lock.yaml`), e o conserto em `prospeccao.ts` foi revertido
+junto. As alterações do shadcn foram desfeitas pela mesma origem minutos depois.
+Nada commitado foi afetado. O conserto foi reaplicado a partir de cópia salva no
+vault e commitado de imediato.

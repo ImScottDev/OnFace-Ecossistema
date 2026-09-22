@@ -64,9 +64,9 @@ com o PABX invendável.
 
 ## Último commit
 
-`38d88c6` — CP41, o sync do catálogo podia esvaziar o catálogo inteiro
+`c32293c` — CP42, prospect criado pela tela nascia fora do modelo canônico
 
-**Estado medido em 22/09/2026:** tsc limpo · **341 testes / 0 falhas** · build de
+**Estado medido em 22/09/2026:** tsc limpo · **342 testes / 0 falhas** · build de
 produção limpo · **36 verificações** na bateria de smokes · **4 aceites com 208
 asserções** · **paridade 13/14** (o não verificável é o NEXO, por credencial) ·
 **14/14 rotas do ONFACE** renderizando. Nada de produção foi tocado.
@@ -2508,6 +2508,48 @@ que virou o bloqueio 8.
 
 **Validação:** tsc limpo, **341 testes / 0 falhas**, smoke novo verde, catálogo
 real conferido antes e depois.
+
+### CP42 — Prospect criado pela tela nascia fora do modelo canônico
+
+A dívida central do ONFACE, como o HUB a define: *o dado entra por porta que não
+aplica a regra*. Fui verificar onde isso ainda acontece **em runtime**, e não no
+histórico.
+
+`adicionarProspect` — o botão "adicionar prospect" da tela `/prospeccao` —
+criava o lead com SQL direto e **não chamava `garantirEntradaCanonica`**. O
+caminho irmão, a importação de lista em `api-server/routes/prospeccao.ts`,
+chamava a porta desde a fase 16. Um dos dois ficou para trás.
+
+Medido com um smoke que cria pela função que a tela chama e relê pela consulta
+que a tela usa:
+
+| | antes | depois |
+|---|---|---|
+| aquisição canônica | 0 | 1 |
+| pessoa canônica vinculada | 0 | 1 |
+| evento `AcquisitionCreated` | 0 | 1 |
+| visível no board canônico | 0 | 1 |
+
+**Os 3.598 leads do banco terem aquisição não desmentia isso.** Eles têm porque o
+backfill da fase 06 rodou uma vez sobre o que já existia. Contagem histórica mede
+o passado; o buraco estava no presente. Foi por isso que o smoke foi necessário:
+nenhuma consulta agregada responderia essa pergunta.
+
+**Segundo achado, no mesmo caminho.** `resolverPessoa` roda ANTES do INSERT do
+lead, porque o lead precisa da empresa e do contato já resolvidos. A pessoa
+nascia sem `lead_id_legado`, e a porta não conserta: ela reaproveita a pessoa
+existente em vez de criar outra. Que isso é anomalia e não escolha, o banco
+responde: **3.950 de 3.950 pessoas têm o vínculo**, sem uma exceção.
+
+**A trava tinha o mesmo defeito das outras de hoje.** O comentário no topo de
+`escritores-migrados.test.ts` promete que *"quando alguém abrir uma porta nova
+sem ligar, o teste acusa aqui"*, e ele só verificava os sete caminhos da própria
+lista. Agora varre o diretório: todo arquivo que cria lead tem que chamar a
+porta. Foi a versão nova que acusou `prospeccao.ts`.
+
+**Validação:** tsc limpo, **342 testes / 0 falhas**, smoke provado por
+reintrodução nos dois sentidos, resíduo zero e nenhuma pessoa sem vínculo no
+banco depois.
 
 ### Auditoria de CS Health (histórico da decisão)
 
