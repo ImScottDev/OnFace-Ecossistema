@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BadgeCheck, LogOut, Search, Settings2, Sparkles } from "lucide-react";
+import { BadgeCheck, LogOut, Search, Settings2 } from "lucide-react";
 import { signOut, useSession } from "next-auth/react";
 import {
   DropdownMenu,
@@ -30,7 +30,8 @@ function iniciais(nome: string) {
  * Topbar do ONFACE — UX-EXECUTION-SPEC §1.2.
  *
  * Com a navegação na coluna, sobra o que a spec nomeia: trilha curta, busca
- * global, NEXO, notificações e usuário. Nada mais entra aqui.
+ * global, NEXO, notificações e usuário. Nada mais entra aqui. O NEXO está
+ * bloqueado e o porquê está no comentário ao lado de onde ele entraria.
  *
  * A trilha é deliberadamente curta e NÃO repete o título da página. A spec é
  * explícita ("Não repetir título de página na Topbar e no body"), e o efeito
@@ -86,13 +87,14 @@ export function TopbarOnface() {
           </kbd>
         </button>
 
-        {/* NEXO é a única ação coral da casca: é o copiloto, não um utilitário
-            a mais. Ainda sem painel — enquanto não existir, o botão leva ao
-            workspace em vez de abrir um vazio. */}
-        <Link href="/automacoes/nexo" className="onface-nexo">
-          <Sparkles aria-hidden />
-          <span>NEXO</span>
-        </Link>
+        {/* O §1.5 pede um botão NEXO persistente aqui, e ele NÃO está montado
+            de propósito.
+            
+            Bloqueio real: `/automacoes/nexo` não existe, e o painel do §1.5
+            também não — os componentes em `ds/nexo.tsx` são spec do Design
+            System, sem rota, sem conversa e sem runtime ligado. Um botão
+            coral levando a 404 seria pior que a ausência dele. Quando o
+            workspace existir, o botão volta aqui e o item volta à árvore. */}
 
         <Cf2NotificationBell variant="onface" />
 

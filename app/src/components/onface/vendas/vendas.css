@@ -278,15 +278,6 @@
 .ov-limpar-filtros:hover { background: var(--onface-coral-subtle); }
 .ov-limpar-filtros:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 
-.ov-coluna-vazia-acao {
-  font-size: calc(11.5 * var(--onface-u));
-  font-weight: var(--weight-semibold);
-  color: var(--onface-coral);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-.ov-coluna-vazia-acao:hover { color: var(--onface-coral-hover); }
-.ov-coluna-vazia-acao:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-radius: 2px; }
 
 /* ── Card ──────────────────────────────────────────────────────────────── */
 

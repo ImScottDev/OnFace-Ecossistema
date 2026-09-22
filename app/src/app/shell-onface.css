@@ -214,32 +214,9 @@
   line-height: 1.4;
 }
 
-/* Único elemento coral da casca. NEXO é o copiloto; se hover e notificação
-   também fossem coral, ele deixaria de significar alguma coisa. */
-.onface-nexo {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.375rem;
-  height: 2rem;
-  padding-inline: 0.75rem;
-  border-radius: var(--radius-control);
-  background: var(--onface-coral);
-  color: var(--onface-white);
-  font-size: var(--text-md);
-  font-weight: var(--weight-semibold);
-  transition: background-color 160ms ease-out;
-}
-.onface-nexo:hover {
-  background: var(--onface-coral-hover);
-}
-.onface-nexo:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
-}
-.onface-nexo > svg {
-  width: var(--icon-sm);
-  height: var(--icon-sm);
-}
+/* O botão NEXO viveria aqui e é o único elemento coral previsto para a
+   casca. As regras saíram junto com ele: CSS sem consumidor é a próxima
+   pessoa procurando o componente que o usa e não achando. Voltam com ele. */
 
 .onface-topbar-v2-regua {
   width: 1px;
@@ -325,12 +302,6 @@
     display: none;
   }
   .onface-busca {
-    padding-inline: 0.5rem;
-  }
-  .onface-nexo > span {
-    display: none;
-  }
-  .onface-nexo {
     padding-inline: 0.5rem;
   }
 }

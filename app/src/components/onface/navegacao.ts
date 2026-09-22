@@ -1,7 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 import {
   Bot, Building2, CalendarDays, FileText, Gauge, Headphones, Home,
-  LineChart, ListChecks, Repeat, Rocket, Server, Settings2, Sparkles,
+  LineChart, ListChecks, Repeat, Rocket, Server, Settings2,
   Target, TrendingUp, Users, Wallet, Workflow, Zap,
 } from "lucide-react";
 
@@ -79,7 +79,12 @@ export const NAVEGACAO: GrupoNav[] = [
       { label: "Fluxos", href: "/automacoes/fluxos", icon: Workflow },
       { label: "Cadências", href: "/automacoes/cadencias", icon: Repeat },
       { label: "Agentes", href: "/automacoes/agentes", icon: Bot },
-      { label: "NEXO", href: "/automacoes/nexo", icon: Sparkles, pendente: true },
+      // NEXO (§1.5, §19.16) NÃO entra na árvore enquanto `/automacoes/nexo`
+      // não existir. O teste `link-nao-leva-pro-vazio` pegou este item
+      // apontando para 404 — item de menu que não leva a lugar nenhum é a UI
+      // cenográfica que o produto proíbe. Os componentes existem em
+      // `ds/nexo.tsx`, mas só como spec do Design System: não há rota, nem
+      // conversa, nem runtime ligado. Volta numa linha quando a rota existir.
       { label: "Execuções", href: "/automacoes/execucoes", icon: LineChart },
     ],
   },
