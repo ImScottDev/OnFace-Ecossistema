@@ -1,4 +1,17 @@
 /**
+ * ⚠️  ÓRFÃO — mapeado em 22/09/2026, NÃO removido.
+ *
+ * Dez funções deste arquivo estão sem chamador: alimentavam a Visão Geral de
+ * Vendas, que a rota `/vendas` deixou de renderizar. O que restou em uso são
+ * os tipos, importados pelos componentes igualmente órfãos.
+ *
+ * Está aqui de propósito: remoção de legado exige autorização explícita, e o
+ * inventário está em `docs/architecture/refactor-state.md` (CP40) para essa
+ * decisão. O aviso existe porque o risco concreto não é o arquivo ocupar
+ * espaço — é alguém abrir este e consertar a tela errada, já que ele compila,
+ * passa no tsc e parece vivo.
+ */
+/**
  * Visão Geral de Vendas — cockpit comercial (30/08).
  *
  * Regra que define este arquivo: **toda** função aceita a mesma assinatura de

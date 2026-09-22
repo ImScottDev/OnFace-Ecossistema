@@ -2376,6 +2376,59 @@ roteiro — uma tela nova que ninguém acrescente ali nunca seria aberta pelo pa
 **Validação:** tsc limpo, **340 testes / 0 falhas**, **35 verificações** na
 bateria de smokes (32 + 3 checagens de tela), **14/14 rotas** do ONFACE.
 
+### CP40 — Inventário do código órfão, mapeado e não removido
+
+Última varredura da lente "peça pronta sem caller", agora sobre o projeto
+inteiro: cruzar cada função exportada de `analytics/` e cada componente contra
+quem realmente os chama.
+
+**O que apareceu não são buracos — é uma geração de tela substituída.** A rota
+`/vendas` virou a "Central de Trabalho Comercial" (`Cf2TarefasWorkspace`), e a
+Visão Geral de Vendas anterior ficou inteira sem chamador:
+
+| arquivo | linhas |
+|---|---|
+| `components/crm2/propostas/NovaProposta.tsx` | 1.125 |
+| `lib/analytics/vendas-visao-geral.ts` (10 funções) | 769 |
+| `components/crm2/vendas/Blocos.tsx` | 633 |
+| `components/crm2/vendas/FiltrosVendas.tsx` | 174 |
+| `components/crm2/PreVendasPulse.tsx` | 138 |
+| `components/crm2/vendas/MovimentoComercial.tsx` | 94 |
+| `components/crm2/AreaTabs.tsx` | 80 |
+| **total no CRM2** | **~3.000** |
+
+Mais ~1.500 linhas em `components/crm/` (ContratoDrawer, EmailPanel,
+EmailThreadView, SdrStageControl, MeuDiaClient, ServiceCatalogManager), que são
+do CRM1 e cuja orfandade é esperada.
+
+**Nada foi removido.** Remoção de legado exige autorização explícita, e isto é
+inventário para essa decisão, não um pedido para tomá-la.
+
+O que foi feito é mais barato e resolve o risco concreto: os cinco maiores do
+CRM2 ganharam um aviso no topo dizendo o que os substituiu. **O risco não é o
+arquivo ocupar espaço — é alguém abrir um deles e consertar a tela errada**, já
+que compilam, passam no tsc e parecem vivos. Eu quase fiz isso ao investigar a
+rota de nova proposta.
+
+A trava `orfao-continua-orfao` fecha as duas pontas: o arquivo marcado continua
+sem chamador, e quem religar um deles tira o aviso no mesmo commit. Um aviso que
+envelhece é pior que nenhum — manda a pessoa para longe de código vivo.
+
+**Dois falsos positivos que o teste pegou antes de mim,** e que valem como
+método: existem **dois** `Blocos.tsx` no projeto (`crm2/vendas`, órfão, e
+`crm2/design`, vivo), então casar pelo nome do arquivo acusava o órfão por
+chamadores do homônimo; e órfão que importa órfão não é religar — o conjunto
+está morto junto, que é como foi mapeado.
+
+**Falsos positivos descartados na varredura**, pelo mesmo motivo que a regra
+existe (*sem-caller nem sempre é buraco*): `/propostas/novo` parecia rota
+inexistente e é um redirect deliberado para `/propostas/nova`, com o porquê
+escrito no arquivo; e `pessoaPorId` "não achava" leads que a lista também não
+mostra, porque os dois lados aplicam o mesmo `NOT EXISTS`.
+
+**Validação:** tsc limpo, **341 testes / 0 falhas**, trava provada por
+reintrodução (religar `Blocos` na página de vendas deixa o teste vermelho).
+
 ### Auditoria de CS Health (histórico da decisão)
 
 Menor do que o gap analysis inicial dizia:

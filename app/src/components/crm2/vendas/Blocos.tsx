@@ -1,3 +1,16 @@
+/**
+ * ⚠️  ÓRFÃO — mapeado em 22/09/2026, NÃO removido.
+ *
+ * A rota `/vendas` NÃO renderiza mais este arquivo. Em algum ponto ela virou a
+ * "Central de Trabalho Comercial" (`Cf2TarefasWorkspace foco="comercial"`), e
+ * estes blocos ficaram sem nenhum chamador — zero referências em todo o `src`.
+ *
+ * Está aqui de propósito: remoção de legado exige autorização explícita, e o
+ * inventário está em `docs/architecture/refactor-state.md` (CP40) para essa
+ * decisão. O aviso existe porque o risco concreto não é o arquivo ocupar
+ * espaço — é alguém abrir este e consertar a tela errada, já que ele compila,
+ * passa no tsc e parece vivo.
+ */
 import {
   Users, BarChart3, FileText, Sparkles,
   Wallet, Target, Percent, Receipt, LineChart, AlertTriangle,

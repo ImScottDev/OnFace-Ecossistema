@@ -1,5 +1,19 @@
 "use client";
 
+/**
+ * ⚠️  ÓRFÃO — mapeado em 22/09/2026, NÃO removido.
+ *
+ * Sem chamador. O compositor em uso é `DialogoNovaProposta`, em
+ * `components/onface/vendas/Propostas.tsx`; `/propostas/nova` abre a listagem
+ * com `abrirComposer`, e `/propostas/novo` é só um redirect para ela.
+ *
+ * Está aqui de propósito: remoção de legado exige autorização explícita, e o
+ * inventário está em `docs/architecture/refactor-state.md` (CP40) para essa
+ * decisão. O aviso existe porque o risco concreto não é o arquivo ocupar
+ * espaço — é alguém abrir este e consertar a tela errada, já que ele compila,
+ * passa no tsc e parece vivo.
+ */
+
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useRouter, useSearchParams } from "next/navigation";

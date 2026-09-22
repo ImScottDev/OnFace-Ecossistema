@@ -2812,3 +2812,26 @@ teste passou a provar que o primeiro item da lista abre no detalhe.
 
 Validação: tsc limpo, 340 testes / 0 falhas, 35 verificações na bateria,
 14/14 rotas.
+
+## 2026-09-22 — CP40: inventário do código órfão
+
+Varredura da lente "peça pronta sem caller" sobre o projeto inteiro. O que
+apareceu não são buracos: é uma geração de tela substituída. A rota `/vendas`
+virou a Central de Trabalho Comercial e a Visão Geral de Vendas anterior ficou
+sem chamador — ~3.000 linhas no CRM2 (NovaProposta 1.125, vendas-visao-geral
+769, Blocos 633, FiltrosVendas 174, PreVendasPulse 138, MovimentoComercial 94,
+AreaTabs 80), mais ~1.500 em `components/crm/`, do CRM1.
+
+Nada removido: remoção de legado exige autorização. Os cinco maiores do CRM2
+ganharam aviso no topo dizendo o que os substituiu — o risco é alguém abrir um
+deles e consertar a tela errada, porque compilam e parecem vivos.
+
+Trava `orfao-continua-orfao`: arquivo marcado continua sem chamador, e quem
+religar tira o aviso no mesmo commit. Dois falsos positivos que ela pegou antes
+de mim: existem dois `Blocos.tsx` (vendas órfão, design vivo), e órfão que
+importa órfão não é religar.
+
+Falsos positivos descartados na varredura: `/propostas/novo` é redirect
+deliberado, e `pessoaPorId` não acha leads que a lista também não mostra.
+
+Validação: tsc limpo, 341 testes / 0 falhas, trava provada por reintrodução.

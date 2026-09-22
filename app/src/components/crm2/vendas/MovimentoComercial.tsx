@@ -1,5 +1,18 @@
 "use client";
 
+/**
+ * ⚠️  ÓRFÃO — mapeado em 22/09/2026, NÃO removido.
+ *
+ * Sem chamador: pertence à Visão Geral de Vendas anterior, que a rota `/vendas`
+ * deixou de renderizar quando virou a Central de Trabalho Comercial.
+ *
+ * Está aqui de propósito: remoção de legado exige autorização explícita, e o
+ * inventário está em `docs/architecture/refactor-state.md` (CP40) para essa
+ * decisão. O aviso existe porque o risco concreto não é o arquivo ocupar
+ * espaço — é alguém abrir este e consertar a tela errada, já que ele compila,
+ * passa no tsc e parece vivo.
+ */
+
 import { Line, LineChart, XAxis, YAxis, CartesianGrid } from "recharts";
 import { Activity } from "lucide-react";
 import { Cf2ChartContainer, Cf2ChartTooltip, Cf2ChartTooltipContent } from "@/components/crm2/ui/Chart";
