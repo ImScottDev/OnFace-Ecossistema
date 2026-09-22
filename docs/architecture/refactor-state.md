@@ -3223,3 +3223,38 @@ vezes (CP47, CP51, CP53).
 
 Validação: tsc limpo, 354 testes / 0 falhas, 46 verificações na bateria, aceites
 verdes menos o catálogo PABX.
+
+### CP59 — o conferidor de ambiente mandava apagar a credencial que o CP57 provou funcionar
+
+Três verificadores tinham chamador **só em npm script** (`check:env`,
+`check:vendas`), que nenhuma bateria executa. É o buraco do CP32/CP33 de novo, e
+`checar-env` estava **vermelho** sem ninguém saber.
+
+Ele acusava 6 variáveis lidas pelo código e ausentes do `.env.example`, e
+listava **23 como candidatas a remoção**. Entre as 23 estavam as sete da Meta,
+inclusive `META_CAPI_ACCESS_TOKEN` — cuja entrega o CP57 tinha acabado de provar
+que funciona. **Quem seguisse o conselho apagaria a credencial em uso.**
+
+Duas causas, as duas do formato que esta leva vem encontrando:
+
+| causa | efeito |
+|---|---|
+| varre só `app/src` | o repositório virou monorepo e `packages/` inteiro ficou fora |
+| padrão exige `process.env.` colado | `packages/integrations/meta` lê `env.META_CAPI_ACCESS_TOKEN` de um objeto recebido |
+
+Corrigidos os dois, as candidatas a remoção caíram de **23 para 7**, e nenhuma
+das que sobraram é da Meta. Acrescentado também o que a INFRAESTRUTURA lê: sem
+isso `DB_PASSWORD` e a chave do wuzapi apareciam como removíveis, e removê-las
+quebraria o `docker-compose` sem que nada em TypeScript acusasse.
+
+**Um falso positivo no caminho, e é o mesmo erro pela quarta vez em dois dias:**
+o padrão novo capturou o `env.VAR` que eu tinha escrito no comentário explicando
+o padrão novo. Comentário passou a não contar — a mesma correção do CP56.
+
+As 19 ausentes foram documentadas (Callface AI, dataset da CAPI, Documenso, as
+quatro chaves de virada, wuzapi e as duas do verificador de telas). O exemplo
+cobre as **100** variáveis que o código lê, e os três verificadores entraram na
+bateria: **46 → 49**.
+
+Validação: tsc limpo, 354 testes / 0 falhas, 49 verificações, 14/14 rotas,
+aceites verdes menos o catálogo PABX.

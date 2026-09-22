@@ -3223,3 +3223,22 @@ agregado apagado é histórico legítimo.
 
 Validação: tsc limpo, 354 testes / 0 falhas, 46 verificações, aceites verdes
 menos o catálogo.
+
+## 2026-09-22 — CP59: checar-env estava vermelho e fora de toda bateria
+
+`checar-env`, `checar-vendas-dominio` e `checar-vendas-consultas` tinham
+chamador só em npm script. O primeiro acusava 6 variáveis ausentes do
+`.env.example` e mandava remover 23 — entre elas as sete da Meta, provadas no
+CP57.
+
+Causas: varria só `app/src` (monorepo: `packages/` fora) e exigia
+`process.env.` colado (`packages/integrations/meta` usa `env.VAR`). Somado o que
+a infraestrutura lê, candidatas a remoção: 23 → 7, nenhuma da Meta.
+
+Falso positivo pelo caminho: o padrão novo capturou o `env.VAR` do comentário
+que explicava o padrão novo. Comentário deixou de contar.
+
+19 variáveis documentadas; o exemplo cobre as 100 lidas. Os três entraram na
+bateria: 46 → 49.
+
+Validação: tsc limpo, 354 testes / 0 falhas, 49 verificações, 14/14 rotas.
