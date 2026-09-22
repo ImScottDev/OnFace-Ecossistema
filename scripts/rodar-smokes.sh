@@ -88,6 +88,12 @@ rodar_grupo "src/scripts/smoke-*.ts" "smokes"
   # funciona. Quem seguisse o conselho apagaria credencial em uso.
   rodar_grupo "src/scripts/checar-env.ts" "conferência de ambiente"
   rodar_grupo "src/scripts/checar-vendas-*.ts" "checagens de vendas"
+  # `checar-pre-deploy` diz se o banco aceita as migrations do refactor, e é o
+  # que responde "pode subir?". Nunca tinha rodado com sucesso: o comando npm
+  # chamava `tsx` SEM `--env-file`, então ele morria em `DATABASE_URL não
+  # definida` antes da primeira consulta. O verificador que autoriza a virada
+  # não conseguia nem conectar no banco.
+  rodar_grupo "src/scripts/checar-pre-deploy.ts" "prontidão para migrations"
 }
 
 # A higiene POR ÚLTIMO, e depois de todos.

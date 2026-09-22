@@ -18,7 +18,7 @@
     "db:relatorio-duplicidade-contratos": "tsx --env-file=.env src/lib/db/relatorio-duplicidade-contratos.ts",
     "db:relatorio-data-quality": "tsx --env-file=.env src/lib/db/relatorio-data-quality.ts",
     "check:relatorios": "tsx --env-file=.env src/scripts/checar-invariantes-relatorios.ts",
-    "check:pre-deploy": "tsx src/scripts/checar-pre-deploy.ts",
+    "check:pre-deploy": "tsx --env-file-if-exists=.env src/scripts/checar-pre-deploy.ts",
     "catalogo:sync": "tsx --env-file=.env src/scripts/sincronizar-catalogo-stripe.ts",
     "catalogo:sync:dry": "tsx --env-file=.env src/scripts/sincronizar-catalogo-stripe.ts --dry-run",
     "test": "node --import tsx --env-file-if-exists=.env --test \"src/**/*.test.ts\"",
