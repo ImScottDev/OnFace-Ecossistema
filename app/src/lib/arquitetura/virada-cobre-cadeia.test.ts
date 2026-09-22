@@ -70,3 +70,20 @@ test("o passo dos aceites chama o script, e o script cobre todos", () => {
   assert.match(script, /exit "\$FALHOU"/,
     "o script precisa sair diferente de zero quando um aceite falha, senão a virada segue no vermelho");
 });
+
+test("todo validador de src/scripts é chamado pela bateria da virada", () => {
+  // Mesmo defeito dos aceites, um nível acima: o passo 9 pede "a validação de
+  // paridade", e nem `validacao-paridade` nem `validar-catalogo-oficial` eram
+  // chamados por nada. O de catálogo estava morrendo com TypeError na linha 171
+  // — indexava `[0]` de uma consulta vazia — e ninguém sabia, porque ninguém
+  // rodava. Enumerar aqui só os dois de hoje deixaria o terceiro órfão de novo,
+  // então o teste varre o diretório.
+  const script = fs.readFileSync(path.join(RAIZ, "scripts", "rodar-aceites.sh"), "utf8");
+  const validadores = fs.readdirSync(path.join(RAIZ, "app", "src", "scripts"))
+    .filter((f) => /^valida/.test(f) && f.endsWith(".ts"));
+  assert.ok(validadores.length >= 2, `esperado ao menos 2 validadores, achei ${validadores.length}`);
+  for (const v of validadores) {
+    assert.ok(script.includes(v),
+      `${v} não é chamado por scripts/rodar-aceites.sh — validador sem caller não roda nunca`);
+  }
+});

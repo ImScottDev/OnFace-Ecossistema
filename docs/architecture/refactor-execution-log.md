@@ -2643,3 +2643,42 @@ apareceria no domingo da virada.
 
 Criado `scripts/rodar-aceites.sh`, chamado pelo passo 9. Os quatro somam 208
 asserções, 0 falhas.
+
+## 2026-09-22 — CP33: os dois validadores da virada também não rodavam
+
+A lente do CP32 aplicada ao resto do passo 9. O passo pede "a validação de
+paridade, TODOS os aceites e os smokes", e nem `validacao-paridade` nem
+`validar-catalogo-oficial` eram chamados por nada — zero referências em
+`package.json`, em script, em CI.
+
+Rodados à mão: paridade passa (13/14, o não verificável é o NEXO por credencial);
+o de catálogo morria com `TypeError: Cannot read properties of undefined
+(reading 'lk')` na linha 171, indexando `[0]` de uma consulta vazia, e as seções
+3, 4 e 5 nunca rodavam.
+
+Três defeitos no mesmo script, todos de envelhecimento sem caller:
+
+1. `[0].lk!` sem guarda — agora cai para outra família de setup, diz que caiu e
+   segue.
+2. `limpar()` derivava os negócios só das propostas. Morrendo entre criar o
+   negócio e criar a proposta, negócio e oportunidade ficavam órfãos e a rodada
+   seguinte travava para sempre no `DELETE` de `pessoas` pela FK da
+   oportunidade. Aconteceu de verdade. Agora o negócio vem também do título.
+3. Dois asserts com número mágico (`213 prices / 21 produtos` e `217 legados`),
+   que são o tamanho do snapshot da planilha. Passaram a comparar contra linha
+   de base medida antes do teste, que é a invariante real: "o teste não suja o
+   catálogo".
+
+Os dois validadores entraram em `scripts/rodar-aceites.sh`. A trava varre o
+diretório: todo `src/scripts/valida*.ts` precisa de caller. Provada por
+reintrodução — removido o validador de catálogo do runner, o teste fica
+vermelho com a mensagem certa.
+
+GAP REAL: o catálogo PABX no banco tem 30 preços e 5 categorias; o snapshot tem
+194 e 9. Faltam Plano (18), Setup/Implantação (21), Integração (25), Serviço
+Avulso (23), Linha SIP (5), Linha 0800 (4), Callface AI Pro e Business. Dois
+caminhos de carga divergentes — planilha (16/09) x Stripe real (21/09). 41
+preços em comum, 14 só no banco, 172 só no snapshot. Decisão do Kauã: bloqueio 7.
+
+Validação: tsc limpo; `./scripts/rodar-aceites.sh` roda 4 aceites (208
+asserções, 0 falhas) + 2 validadores e sai vermelho pelo gap de catálogo.

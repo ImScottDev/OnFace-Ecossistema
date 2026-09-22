@@ -35,6 +35,13 @@ async function limpar() {
   const leadIds = [...new Set(ps.map((p) => p.leadId).filter((v): v is string => !!v))];
   const ls = await db.select({ id: leads.id, empresaId: leads.empresaId }).from(leads).where(like(leads.nome, `${TAG}%`));
   for (const l of ls) if (!leadIds.includes(l.id)) leadIds.push(l.id);
+  // O negócio precisa vir do PRÓPRIO título, não só das propostas. Quando o
+  // script morre entre criar o negócio e criar a proposta, `ps` volta vazio, o
+  // negócio e a oportunidade dele ficam de fora da limpeza, e a próxima rodada
+  // trava para sempre no DELETE de `pessoas` — a oportunidade órfã segura a
+  // pessoa pela FK. Foi exatamente o que aconteceu.
+  const ns = await db.select({ id: negocios.id }).from(negocios).where(like(negocios.titulo, `${TAG}%`));
+  for (const n of ns) if (!negocioIds.includes(n.id)) negocioIds.push(n.id);
   const empresaIds = [...new Set(ls.map((l) => l.empresaId).filter((v): v is string => !!v))];
   const grupos = propostaIds.length ? (await db.select({ id: propostaGrupoComercial.id }).from(propostaGrupoComercial).where(inArray(propostaGrupoComercial.propostaId, propostaIds))).map((g) => g.id) : [];
   const oportIds = negocioIds.length ? (await db.select({ id: oportunidades.id }).from(oportunidades).where(inArray(oportunidades.negocioIdLegado, negocioIds))).map((o) => o.id) : [];
@@ -102,6 +109,16 @@ async function main() {
   const [pipeline] = await db.select({ id: pipelines.id }).from(pipelines).where(eq(pipelines.organizacaoId, org.id)).limit(1);
   await limpar();
 
+  // Linha de base, medida antes de o teste escrever qualquer coisa. As três
+  // invariantes de "o teste não suja o catálogo" são comparadas contra ESTES
+  // números, não contra constantes: as constantes que estavam aqui (213 prices,
+  // 21 produtos, 217 legados) eram o tamanho do snapshot da planilha, e faziam
+  // o script acusar sujeira toda vez que o catálogo do banco tinha outro
+  // tamanho legítimo — que é o caso desde a carga vinda do Stripe real.
+  const [{ n: precosAntes }] = await db.select({ n: sql<number>`count(*)::int` }).from(catalogoPrecos);
+  const [{ n: produtosAntes }] = await db.select({ n: sql<number>`count(*)::int` }).from(servicosCatalogo).where(eq(servicosCatalogo.origemCatalogo, "oficial_stripe"));
+  const [{ n: legadoAntes }] = await db.select({ n: sql<number>`count(*)::int` }).from(servicosCatalogo).where(eq(servicosCatalogo.origemCatalogo, "legado"));
+
   console.log("\n=== 1. ESTRUTURA DO CATÁLOGO NO CRM\n");
   const arvore = await db.execute<{ familia: string; categoria: string; produto: string; precos: number; menor: string; maior: string }>(sql`
     SELECT sc.service_family AS familia, sc.categoria, sc.nome AS produto,
@@ -162,13 +179,37 @@ async function main() {
   const [negocio] = await db.insert(negocios).values({
     organizacaoId: org.id, leadId: lead.id, empresaId: empresa.id, pipelineId: pipeline.id,
     titulo: `${TAG} venda`, status: "proposta_enviada", responsavelId: user.id,
+    // `criarPropostaComItens` recusa proposta em negócio sem família. O item
+    // recorrente deste teste é Callface AI Starter, então a família do negócio
+    // é a dele. Sem isto o script morre em "Defina a família comercial".
+    serviceFamily: "CALLFACE_AI",
   }).returning({ id: negocios.id });
   await syncOportunidadeFromNegocio(negocio.id);
 
-  const pabxSetup = await preco((await db.select({ lk: catalogoPrecos.lookupKey }).from(catalogoPrecos)
+  // O item de setup deste teste é PABX QUANDO o catálogo tem um. Hoje não tem:
+  // o snapshot da planilha traz 21 preços de "PABX - Setup / Implantação" e o
+  // banco, carregado do Stripe real, tem zero. Indexar `[0].lk` direto matava o
+  // script inteiro com TypeError, e as seções 3, 4 e 5 nunca chegavam a rodar —
+  // o gap de dado aparecia como defeito de script.
+  //
+  // O que a seção prova é que um item de SETUP grava os campos do catálogo e
+  // nunca vira MRR; a família não é o ponto. Então cai para outra família, diz
+  // em voz alta que caiu, e segue.
+  const [setupDisponivel] = await db.select({ lk: catalogoPrecos.lookupKey, familia: servicosCatalogo.serviceFamily })
+    .from(catalogoPrecos)
     .innerJoin(servicosCatalogo, eq(servicosCatalogo.id, catalogoPrecos.servicoCatalogoId))
-    .where(and(eq(servicosCatalogo.serviceFamily, "PABX"), eq(catalogoPrecos.tipo, "setup")))
-    .orderBy(asc(catalogoPrecos.ordem)).limit(1))[0].lk!);
+    .where(and(eq(catalogoPrecos.tipo, "setup"), sql`${catalogoPrecos.lookupKey} IS NOT NULL`))
+    .orderBy(sql`CASE WHEN ${servicosCatalogo.serviceFamily} = 'PABX' THEN 0 ELSE 1 END`, asc(catalogoPrecos.ordem))
+    .limit(1);
+  if (!setupDisponivel) {
+    falha("nenhum preço de tipo 'setup' no catálogo — seção 3 não pode ser verificada");
+    throw new Error("catálogo sem preço de setup: rode a carga do catálogo oficial antes de validar");
+  }
+  if (setupDisponivel.familia !== "PABX") {
+    falha(`catálogo sem preço de setup em PABX — a seção 3 roda com ${setupDisponivel.familia}`);
+    info("o snapshot catalogo-oficial.json tem 'PABX - Setup / Implantação' com 21 preços; o banco tem 0");
+  }
+  const pabxSetup = await preco(setupDisponivel.lk!);
 
   // Desconto de 15% no recorrente; setup com valor negociado (desconto em valor).
   const DESC_PCT = 15;
@@ -217,11 +258,15 @@ async function main() {
     ? ok(`desconto de ${DESC_PCT}%: subtotal R$ ${rec.subtotal} (tabela R$ ${rec.valorTabela}/un), price oficial PRESERVADO — nenhum produto/price novo`)
     : falha(`desconto: subtotal=${rec.subtotal} esperado=${esperadoSub.toFixed(2)} valorTabela=${rec.valorTabela}`);
 
+  // A invariante é "negociar desconto NÃO cria produto nem price" — comparada
+  // contra o catálogo MEDIDO antes do teste. Antes isto comparava com 213/21,
+  // os números do snapshot da planilha: o assert falhava por o banco ter sido
+  // carregado do Stripe real (55/15), e não por o teste ter sujado o catálogo.
   const [{ n: precosDepois }] = await db.select({ n: sql<number>`count(*)::int` }).from(catalogoPrecos);
   const [{ n: produtosDepois }] = await db.select({ n: sql<number>`count(*)::int` }).from(servicosCatalogo).where(eq(servicosCatalogo.origemCatalogo, "oficial_stripe"));
-  Number(precosDepois) === 213 && Number(produtosDepois) === 21
+  Number(precosDepois) === precosAntes && Number(produtosDepois) === produtosAntes
     ? ok(`catálogo intacto depois do desconto: ${produtosDepois} produtos, ${precosDepois} prices`)
-    : falha(`catálogo mudou: ${produtosDepois} produtos, ${precosDepois} prices`);
+    : falha(`catálogo mudou durante o teste: ${produtosAntes}→${produtosDepois} produtos, ${precosAntes}→${precosDepois} prices`);
 
   // Propagação pro modelo de domínio v2.
   const oi = await db.select({ produto: oportunidadeItens.produto, serviceFamily: oportunidadeItens.serviceFamily, revenueNature: oportunidadeItens.revenueNature, stripePriceId: oportunidadeItens.stripePriceId, skuPreco: oportunidadeItens.skuPreco })
@@ -240,7 +285,7 @@ async function main() {
     const pr = await preco(lookup);
     const [emp] = await db.insert(empresas).values({ organizacaoId: org.id, nome: `${TAG} WL ${rotulo} LTDA` }).returning({ id: empresas.id });
     const [ld] = await db.insert(leads).values({ organizacaoId: org.id, nome: `${TAG} WL ${rotulo}`, email: `zztestecat.wl.${esperaContrato}@exemplo.invalid`, empresaId: emp.id, tipo: "lead", status: "qualified" }).returning({ id: leads.id });
-    const [ng] = await db.insert(negocios).values({ organizacaoId: org.id, leadId: ld.id, empresaId: emp.id, pipelineId: pipeline.id, titulo: `${TAG} WL ${rotulo}`, status: "proposta_enviada", responsavelId: user.id }).returning({ id: negocios.id });
+    const [ng] = await db.insert(negocios).values({ organizacaoId: org.id, leadId: ld.id, empresaId: emp.id, pipelineId: pipeline.id, titulo: `${TAG} WL ${rotulo}`, status: "proposta_enviada", responsavelId: user.id, serviceFamily: "WHITE_LABEL" }).returning({ id: negocios.id });
     await syncOportunidadeFromNegocio(ng.id);
     const pc = await criarPropostaComItens({
       organizacaoId: org.id, leadId: ld.id, negocioId: ng.id, moeda: "BRL", observacoes: `${TAG} WL ${rotulo}`,
@@ -265,7 +310,9 @@ async function main() {
            (SELECT COUNT(*)::int FROM servicos_catalogo WHERE origem_catalogo='legado' AND ativo) AS "legadoAtivo",
            (SELECT COUNT(*)::int FROM servicos_catalogo WHERE origem_catalogo='oficial_stripe') AS oficial
   `);
-  Number(legado) === 217 ? ok(`${legado} produtos legados preservados (${legadoAtivo} ativos), ${oficial} oficiais`) : falha(`legado=${legado}, esperado 217`);
+  Number(legado) === legadoAntes
+    ? ok(`${legado} produtos legados preservados (${legadoAtivo} ativos), ${oficial} oficiais`)
+    : falha(`o teste mexeu no legado: ${legadoAntes}→${legado} produtos`);
 
   console.log(`\n=== RESULTADO`);
   if (falhas.length === 0) console.log(`\x1b[32mTodas as verificações passaram.\x1b[0m`);

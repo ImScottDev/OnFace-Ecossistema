@@ -2061,6 +2061,65 @@ feito — o CP31 provou que as 35 migrations do refactor reaplicam sem erro.
 
 **Validação:** tsc limpo, **331 testes 0 falhas**, 4 aceites com 208 asserções.
 
+### CP33 — Os dois validadores da virada também não rodavam, e um deles quebrava
+
+Mesma lente do CP32 aplicada ao resto do passo 9. O passo pede "a validação de
+paridade, TODOS os aceites e os smokes", e **nem `validacao-paridade` nem
+`validar-catalogo-oficial` eram chamados por nada** — zero referências em
+`package.json`, em script, em CI.
+
+Rodados à mão:
+
+- **paridade:** passa, 13/14. O não verificável é o NEXO, por falta de
+  credencial de provedor de modelo (bloqueio 1).
+- **catálogo:** morria com `TypeError: Cannot read properties of undefined
+  (reading 'lk')` na linha 171. Indexava `[0]` de uma consulta que volta vazia,
+  e as seções 3, 4 e 5 nunca chegavam a rodar.
+
+Três defeitos no mesmo script, todos do tipo "o script envelheceu e ninguém
+percebeu porque ninguém o roda":
+
+1. `[0].lk!` sem guarda. Agora cai para outra família de setup, **diz em voz
+   alta que caiu** e segue, em vez de matar o script.
+2. `limpar()` derivava os negócios **só das propostas**. Quando o script morria
+   entre criar o negócio e criar a proposta, o negócio e a oportunidade ficavam
+   órfãos, e a rodada seguinte travava para sempre no `DELETE` de `pessoas` —
+   a oportunidade órfã segura a pessoa pela FK. Foi exatamente o que aconteceu.
+   Agora o negócio também vem pelo próprio título marcado.
+3. Dois asserts com **número mágico**: `213 prices / 21 produtos` e `217
+   legados`. São o tamanho do snapshot da planilha. A invariante de verdade é
+   "o teste não suja o catálogo", então passaram a comparar contra uma linha de
+   base medida antes do teste. Os dois eram falso-vermelho.
+
+Os dois validadores entraram em `scripts/rodar-aceites.sh`, e a trava varre o
+diretório em vez de enumerar: **todo `src/scripts/valida*.ts` precisa ter caller**,
+senão o próximo nasce órfão igual. Provada por reintrodução.
+
+**GAP REAL ENCONTRADO — catálogo PABX incompleto.** Com o script consertado, as
+2 falhas que restam são dado faltando, não defeito:
+
+| | snapshot `catalogo-oficial.json` (16/09) | banco (carga de 21/09) |
+|---|---|---|
+| produtos | 21 | 15 |
+| preços | 213 | 55 |
+| categorias PABX | 9 | 5 |
+| preços PABX | 194 | 30 |
+
+Faltam 6 produtos PABX inteiros — **Plano** (18 preços), **Setup / Implantação**
+(21), **Integração / Módulo** (25), **Serviço Avulso** (23), **Linha SIP** (5) e
+**Linha 0800** (4) — mais *Callface AI Pro* e *Business*. São **dois caminhos de
+carga divergentes**: o snapshot veio da planilha e o banco veio do
+`sincronizar-stripe.ts` lendo o Stripe real. 41 preços estão nos dois, 14 só no
+banco, 172 só no snapshot.
+
+Sem plano e setup de PABX **o vendedor não monta uma venda de PABX no sistema
+novo**. Escolher entre as duas cargas mexe em preço de venda, então é decisão do
+Kauã — registrada como bloqueio 7.
+
+**Validação:** tsc limpo, guard provado por reintrodução,
+`./scripts/rodar-aceites.sh` roda 4 aceites (208 asserções, 0 falhas) + 2
+validadores, e sai vermelho pelo gap de catálogo — que é o comportamento certo.
+
 ### Auditoria de CS Health (histórico da decisão)
 
 Menor do que o gap analysis inicial dizia:
@@ -2089,6 +2148,7 @@ externo ou decisão do Kauã.
 | 4 | 1.084 oportunidades sem `service_family` | trava o filtro por produto nos relatórios, que por isso não foi construído |
 | 5 | 4 prices do Stripe sem nome | catálogo sincroniza, esses quatro ficam sem rótulo legível |
 | 6 | 275 contas de CS sem responsável | a fila de CS não consegue atribuir dono a elas |
+| 7 | Catálogo PABX incompleto: faltam Plano, Setup, Integração, Serviço e 2 linhas (172 preços do snapshot ausentes no banco) | o vendedor não monta venda de PABX no sistema novo; `validar-catalogo-oficial` deixa o passo 9 da virada vermelho. Escolher entre a planilha e o Stripe real mexe em preço de venda (CP33) |
 
 **Achado aberto, não tocado:** Meta Conversions API está configurada e com zero
 entregas. Token existe, smoke passa, nenhuma conversão entregue de verdade.

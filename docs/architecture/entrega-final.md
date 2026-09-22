@@ -232,7 +232,7 @@ Cada uma foi verificada **falhando de propósito** antes de entrar.
    banco carregado.** 0 falhas para seguir.
 
    ```bash
-   ./scripts/rodar-aceites.sh      # os quatro aceites, 208 asserções
+   ./scripts/rodar-aceites.sh      # 4 aceites (208 asserções) + 2 validadores
    ```
 
    > Este script existe porque o passo dizia "o aceite de vendas" e **nenhuma
@@ -241,6 +241,38 @@ Cada uma foi verificada **falhando de propósito** antes de entrar.
    > (criava o negócio sem família comercial, e a regra que exige família antes
    > da proposta entrou depois dele). Ninguém viu, porque ninguém rodava. Com a
    > virada dependendo deste passo, um aceite quebrado só apareceria no domingo.
+   >
+   > **Os dois validadores tinham o mesmo buraco.** O passo pede "a validação de
+   > paridade", e nem `validacao-paridade` nem `validar-catalogo-oficial` eram
+   > chamados por nada. Rodados à mão em 22/09: a paridade passa (13/14, o não
+   > verificável é o NEXO por falta de credencial de modelo) e o de catálogo
+   > **morria com TypeError** — indexava `[0]` de uma consulta vazia e nunca
+   > chegava às seções 3, 4 e 5. Consertado, ele agora acusa o gap real do
+   > catálogo (abaixo) em vez de quebrar.
+
+   **BLOQUEIO CONHECIDO neste passo: o catálogo PABX está incompleto.** O
+   validador falha em 2 de 22 verificações, e as duas são o mesmo dado faltando:
+
+   | | snapshot `catalogo-oficial.json` | banco (carga de 21/09) |
+   |---|---|---|
+   | produtos | 21 | 15 |
+   | preços | 213 | 55 |
+   | categorias PABX | 9 | 5 |
+   | preços PABX | 194 | 30 |
+
+   Faltam 6 produtos PABX inteiros — **PABX - Plano** (18 preços),
+   **PABX - Setup / Implantação** (21), **Integração / Módulo** (25),
+   **Serviço Avulso** (23), **Linha SIP** (5) e **Linha 0800** (4) — mais
+   *Callface AI Pro* e *Business*. São dois caminhos de carga divergentes: o
+   snapshot veio da planilha (16/09) e o banco veio do
+   `sincronizar-stripe.ts` lendo o Stripe real (21/09). 41 preços estão nos
+   dois, 14 só no banco, 172 só no snapshot.
+
+   Sem o plano e o setup de PABX **o vendedor não consegue montar uma venda de
+   PABX no sistema novo**. Escolher entre as duas cargas é decisão comercial
+   (mexe em preço de venda) e depende do Kauã: ou o Stripe recebe os produtos
+   que faltam, ou a planilha é o catálogo e `importar-catalogo-oficial.ts` roda
+   antes da virada.
 
 10. **Subir o código novo e provar no navegador.**
 
