@@ -83,6 +83,15 @@ export type ItemResumo = {
    * "0 sem próxima ação" é boa notícia, não alerta. */
   sinal?: boolean;
   href?: string;
+  /** Torna a coluna um filtro da própria tela.
+   *
+   * É o caso do CS: "Em risco 7" não é enfeite, é o recorte da fila. Com
+   * `href` o número LEVA a outro lugar; com `aoSelecionar` ele RECORTA aqui,
+   * preservando o contexto — que é o que a spec pede de Quick View. Os dois
+   * juntos não fazem sentido, e `aoSelecionar` vence. */
+  aoSelecionar?: () => void;
+  /** Recorte vigente. Só com `aoSelecionar`. */
+  ativo?: boolean;
 };
 
 /**
@@ -111,6 +120,24 @@ export function PaginaResumo({ itens }: { itens: ItemResumo[] }) {
           "data-destaque": item.destaque ? "true" : undefined,
           "data-sinal": acusa ? "true" : undefined,
         };
+
+        // Filtro da própria tela: o recorte acontece aqui, sem trocar de rota.
+        // `aria-pressed` e não `aria-selected` porque cada coluna liga e
+        // desliga sozinha — não é uma lista onde só um pode estar escolhido.
+        if (item.aoSelecionar) {
+          return (
+            <button
+              key={item.rotulo}
+              type="button"
+              onClick={item.aoSelecionar}
+              aria-pressed={Boolean(item.ativo)}
+              {...props}
+              data-ativo={item.ativo ? "true" : undefined}
+            >
+              {conteudo}
+            </button>
+          );
+        }
 
         // Sinal com destino vira o recorte. Sem destino, continua sendo só a
         // leitura — nunca um link que não leva a lugar nenhum.

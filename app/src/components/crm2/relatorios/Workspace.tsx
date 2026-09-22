@@ -12,6 +12,7 @@ import TabPosVenda from "./TabPosVenda";
 import PeriodSelector from "./PeriodSelector";
 import { useMe } from "@/lib/useMe";
 import { isAdminView } from "@/lib/auth/roles";
+import { Skeleton } from "@/components/ui/skeleton";
 
 /**
  * Insights — migrado do shell legado `(crm)/relatorios` (08/09/2026).
@@ -52,56 +53,47 @@ export function Cf2RelatoriosWorkspace() {
   const pessoal = isCloser || isSdr;
   const abaPessoalAtiva = abaPessoal ?? (isSdr ? "sdr" : "comercial");
 
+  // Abas e período moram na mesma linha: são os dois controles que definem o
+  // recorte, e separá-los em duas faixas fazia a pessoa varrer a tela de cima
+  // a baixo pra montar uma pergunta só.
+  const seletorPeriodo = <PeriodSelector value={periodo} onChange={setPeriodo} />;
+
   return (
     <div className="flex flex-col gap-4">
-      <div
-        className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 px-5 py-4 rounded-[24px]"
-        data-cf2-superficie="escura"
-        style={{ background: "var(--cf2-home-hero-bg)" }}
-      >
-        <div className="min-w-0">
-          <p
-            className="text-[10px] font-semibold uppercase"
-            style={{ color: "var(--cf2-home-text-muted)", letterSpacing: "1.6px", fontFamily: "var(--cf2-font-heading)" }}
-          >
-            Insights
-          </p>
-          <h1
-            className="text-[20px] font-semibold leading-tight"
-            style={{ color: "var(--cf2-home-text-strong)", fontFamily: "var(--cf2-font-heading)", letterSpacing: "-0.32px" }}
-          >
-            {isCloser ? "Meu desempenho" : "Desempenho da operação"}
-          </h1>
-          <p className="text-[12px] mt-0.5" style={{ color: "var(--cf2-home-text-muted)" }}>
-            {isCloser
-              ? "Sua meta, seu funil e seus números no período."
-              : "Histórico confiável a partir de 12/06/2026, quando a base saiu do Zoho."}
-          </p>
-        </div>
-        {!meLoading && (
-          <div className="shrink-0">
-            <PeriodSelector value={periodo} onChange={setPeriodo} />
-          </div>
-        )}
-      </div>
-
-      {meLoading ? null : pessoal && !visaoCompleta ? (
+      {/* A faixa escura de 24px de raio saiu daqui.
+       *
+       * Ela repetia o título ("Insights" no cabeçalho da página, "Desempenho
+       * da operação" logo abaixo) e era o único hero de uma tela que é só
+       * consulta. O aviso sobre o histórico do Zoho não se perdeu: virou a
+       * descrição da página, que é onde uma ressalva permanente sobre
+       * confiança no dado pertence. A frase que sobrava para closer ("Sua
+       * meta, seu funil e seus números no período") era descrição de título,
+       * não informação — as abas já dizem isso. */}
+      {meLoading ? (
+        <EsqueletoInsights />
+      ) : pessoal && !visaoCompleta ? (
         <>
           {/* Closer e SDR veem a própria performance. Duas abas só, porque é
               o que existe de recorte pessoal — inventar mais viraria menu vazio. */}
-          <div className="flex items-center gap-1 flex-wrap">
-            {[["comercial", "Meu desempenho"], ["sdr", "Minha pré-venda"]].map(([k, label]) => (
-              <BotaoAba key={k} ativo={abaPessoalAtiva === k} onClick={() => setAbaPessoal(k)}>{label}</BotaoAba>
-            ))}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-1 flex-wrap">
+              {[["comercial", "Meu desempenho"], ["sdr", "Minha pré-venda"]].map(([k, label]) => (
+                <BotaoAba key={k} ativo={abaPessoalAtiva === k} onClick={() => setAbaPessoal(k)}>{label}</BotaoAba>
+              ))}
+            </div>
+            {seletorPeriodo}
           </div>
           {abaPessoalAtiva === "sdr" ? <TabSdr periodo={periodo} /> : <TabComercialCloser periodo={periodo} />}
         </>
       ) : (
         <>
-          <div className="flex items-center gap-1 flex-wrap">
-            {ABAS.map((t) => (
-              <BotaoAba key={t.key} ativo={aba === t.key} onClick={() => setAba(t.key)}>{t.label}</BotaoAba>
-            ))}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-1 flex-wrap">
+              {ABAS.map((t) => (
+                <BotaoAba key={t.key} ativo={aba === t.key} onClick={() => setAba(t.key)}>{t.label}</BotaoAba>
+              ))}
+            </div>
+            {seletorPeriodo}
           </div>
 
           {aba === "sdr" && <TabSdr periodo={periodo} />}
@@ -113,6 +105,28 @@ export function Cf2RelatoriosWorkspace() {
           {aba === "midia-paga" && <TabMidiaPaga periodo={periodo} />}
         </>
       )}
+    </div>
+  );
+}
+
+/** Enquanto `/api/me` não responde a tela não sabe QUAIS abas existem — o
+ * recorte pessoal do closer e a visão completa da gestão têm menus diferentes.
+ * Antes disso a página ficava literalmente em branco (`meLoading ? null`). O
+ * esqueleto tem a forma do que vem: a linha de abas com o seletor à direita e
+ * os dois primeiros blocos de número. */
+function EsqueletoInsights() {
+  return (
+    <div className="flex flex-col gap-4" aria-busy="true" aria-label="Carregando insights">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex gap-1.5">
+          {[72, 88, 80, 110].map((w) => (
+            <Skeleton key={w} className="h-7 rounded-full" style={{ width: w }} />
+          ))}
+        </div>
+        <Skeleton className="h-8 w-40 rounded-[var(--radius-control)]" />
+      </div>
+      <Skeleton className="h-[104px] w-full rounded-[var(--radius-card)]" />
+      <Skeleton className="h-[220px] w-full rounded-[var(--radius-card)]" />
     </div>
   );
 }

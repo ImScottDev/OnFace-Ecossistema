@@ -120,6 +120,10 @@ export function Cf2TarefasWorkspace({ foco = "operacao" }: { foco?: "operacao" |
   const [tipo, setTipo] = useState("todos");
   const [origem, setOrigem] = useState<"todas" | "manual" | "automatica">("todas");
   const [busca, setBusca] = useState("");
+  // Recorte "só atrasadas". Mora aqui e não na URL porque o resto dos
+  // filtros desta tela também é estado local — misturar as duas fontes
+  // faria o botão Voltar desfazer meio filtro.
+  const [soAtrasadas, setSoAtrasadas] = useState(false);
   const [criando, setCriando] = useState(false);
   const [editando, setEditando] = useState<TarefaLegado | null>(null);
 
@@ -170,13 +174,15 @@ export function Cf2TarefasWorkspace({ foco = "operacao" }: { foco?: "operacao" |
   const todas = data?.tarefas ?? [];
 
   const filtradas = useMemo(() => {
-    if (!busca.trim()) return todas;
     const t = busca.trim().toLowerCase();
-    return todas.filter((x) =>
-      x.titulo.toLowerCase().includes(t)
-      || (x.empresaNome ?? "").toLowerCase().includes(t)
-      || (x.leadNome ?? "").toLowerCase().includes(t));
-  }, [todas, busca]);
+    return todas.filter((x) => {
+      if (soAtrasadas && baldeDaTarefa(x) !== "atrasadas") return false;
+      if (!t) return true;
+      return x.titulo.toLowerCase().includes(t)
+        || (x.empresaNome ?? "").toLowerCase().includes(t)
+        || (x.leadNome ?? "").toLowerCase().includes(t);
+    });
+  }, [todas, busca, soAtrasadas]);
 
   const grupos = useMemo(() => {
     const ordem: Balde[] = ["atrasadas", "hoje", "semana", "depois", "semData", "concluidas"];
@@ -207,7 +213,12 @@ export function Cf2TarefasWorkspace({ foco = "operacao" }: { foco?: "operacao" |
   };
 
   return (
-    <div className="flex flex-col gap-4">
+    // O resumo fica FORA do contêiner com `gap`: ele já carrega o próprio
+    // ritmo (14px do cabeçalho, 20px para o conteúdo) e, somado a um gap de
+    // 16px, virava 36px medidos no navegador — quase o dobro do desenho. Aqui
+    // ele é filho direto de `.onface-pagina`, que é flex sem gap, igual às
+    // cinco telas de vendas.
+    <>
       {/* A faixa escura com o título repetido saiu.
        *
        * Ela dizia "Operação / Tarefas" dentro de uma tela cuja trilha na
@@ -227,23 +238,21 @@ export function Cf2TarefasWorkspace({ foco = "operacao" }: { foco?: "operacao" |
             destaque: true,
           },
           {
-            // Sinal SEM destino, de propósito: esta tela não lê filtro da URL
-            // (o estado é local), então `?filtro=atrasadas` seria um link que
-            // não leva a lugar nenhum — o número morto que a spec proíbe, e
-            // que eu mesmo tinha acabado de criar aqui.
-            //
-            // O coral continua dizendo que precisa de atenção, e a lista
-            // abaixo já abre agrupada por ATRASADAS. Vira link quando a tela
-            // aceitar recorte por URL (§39).
+            // O número que acusa agora RECORTA, sem trocar de rota: o estado
+            // desta tela é local, então `?filtro=atrasadas` seria um link
+            // morto, mas o clique aqui é o mesmo resultado sem sair do lugar.
             rotulo: "Atrasadas",
             valor: contagem.atrasadas,
             sinal: true,
+            ativo: soAtrasadas,
+            aoSelecionar: () => setSoAtrasadas((v) => !v),
           },
           { rotulo: "Hoje", valor: contagem.hoje },
           { rotulo: "Automáticas", valor: contagem.automaticas },
         ]}
       />
 
+      <div className="flex flex-col gap-4">
       {/* Filtros. O CTA primário fecha a linha, como nas telas de vendas. */}
       <div className="flex items-center gap-2 flex-wrap">
         <Seletor valor={resp} onChange={setResp} opcoes={[
@@ -279,8 +288,15 @@ export function Cf2TarefasWorkspace({ foco = "operacao" }: { foco?: "operacao" |
         <div className="flex flex-col gap-2">{Array.from({ length: 6 }).map((_, i) => <Cf2Skeleton key={i} className="h-[52px]" />)}</div>
       ) : grupos.length === 0 ? (
         <Cf2EmptyState
-          title={busca ? "Nenhuma tarefa encontrada" : "Nenhuma tarefa nesta visão"}
-          description={busca ? "Tente outro termo." : "Tarefas de checkpoint, cobrança e risco também aparecem aqui, geradas automaticamente."}
+          title={busca ? "Nenhuma tarefa encontrada" : soAtrasadas ? "Nenhuma tarefa atrasada" : "Nenhuma tarefa nesta visão"}
+          description={
+            busca ? "Tente outro termo."
+              // O vazio precisa dizer QUAL recorte está vigente, senão a
+              // pessoa lê "não tem tarefa" quando na verdade tem, fora do
+              // filtro que ela mesma ligou dois cliques atrás.
+              : soAtrasadas ? "O recorte Atrasadas está ligado. Clique nele de novo para ver a lista inteira."
+              : "Tarefas de checkpoint, cobrança e risco também aparecem aqui, geradas automaticamente."
+          }
         />
       ) : (
         <div className="flex flex-col gap-4">
@@ -325,7 +341,8 @@ export function Cf2TarefasWorkspace({ foco = "operacao" }: { foco?: "operacao" |
           invalidateKeys={[["cf2-tarefas"], ["cs-fila"], ["cs-agenda"]]}
         />
       )}
-    </div>
+      </div>
+    </>
   );
 }
 

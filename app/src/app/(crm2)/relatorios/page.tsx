@@ -14,7 +14,12 @@ export default async function RelatoriosPage() {
 
   return (
     <div className="onface-pagina">
-      <Cf2Topbar orgNome={org?.nome || "Callface"} variant="light" title="Insights" compactTitle actions={null} />
+      <Cf2Topbar
+        orgNome={org?.nome || "Callface"}
+        title="Insights"
+        subtitle="Histórico confiável a partir de 12/06/2026, quando a base saiu do Zoho."
+        actions={null}
+      />
       <Cf2RelatoriosWorkspace />
     </div>
   );

@@ -1,0 +1,64 @@
+/* ─────────────────────────────────────────────────────────────────────────
+ * Controles ONFACE sobre as primitivas do shadcn
+ *
+ * Aqui não se cria componente: aplica-se o Design System em cima do que o
+ * shadcn já instalou. Folha global (entra pelo `globals.css`) porque o
+ * primitivo aparece em telas que não compartilham nenhum outro import — uma
+ * classe cuja folha não carregou já custou uma tela quebrada neste projeto.
+ * ───────────────────────────────────────────────────────────────────────── */
+
+/* ── Controle segmentado (ToggleGroup) ────────────────────────────────────
+ *
+ * O `variant="outline"` do shadcn marca a seleção com `bg-accent`, e no tema
+ * ONFACE isso deu rgb(238,239,243) contra rgb(246,246,243) — medido no
+ * navegador: 3% de diferença de luminância. Selecionado e não selecionado
+ * ficavam indistinguíveis, o que é pior do que feio: a pessoa não sabe qual
+ * recorte está vendo.
+ *
+ * O desenho é o que o DS já usa em `.ov-abas`: trilho rebaixado, pílulas
+ * transparentes, e a selecionada sobe como papel. A diferença passa a ser
+ * superfície + peso + uma sombra neutra de 1px — nunca cor de marca, que
+ * neste produto significa "isto exige atenção".
+ *
+ * Alcança os três lugares que usam o primitivo hoje: escopo da carteira,
+ * recorte da fila de CS e densidade do DataGrid. */
+
+[data-slot="toggle-group"] {
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--radius-full);
+  background: var(--surface-sunken);
+  border: 1px solid var(--line-hairline);
+}
+
+[data-slot="toggle-group-item"] {
+  border: 0;
+  border-radius: var(--radius-full);
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+  font-weight: var(--weight-medium);
+  white-space: nowrap;
+}
+
+[data-slot="toggle-group-item"]:hover {
+  color: var(--text-body);
+  background: transparent;
+}
+
+[data-slot="toggle-group-item"][data-state="on"] {
+  background: var(--surface-card);
+  color: var(--text-strong);
+  font-weight: var(--weight-semibold);
+  box-shadow: 0 1px 2px rgba(17, 19, 24, 0.08);
+}
+
+/* A contagem ao lado do rótulo é informação secundária dentro do próprio
+   botão. No selecionado ela sobe junto, senão vira um cinza flutuando em
+   cima de papel branco. */
+[data-slot="toggle-group-item"] .tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+[data-slot="toggle-group-item"][data-state="on"] .tabular-nums {
+  opacity: 0.85;
+}

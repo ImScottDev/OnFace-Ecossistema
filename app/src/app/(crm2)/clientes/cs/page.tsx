@@ -1,23 +1,16 @@
-import { db } from "@/lib/db";
-import { organizacoes } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
 import { getTenantContext } from "@/lib/auth/tenant";
 import { redirect } from "next/navigation";
-import { Cf2Topbar } from "@/components/crm2/Topbar";
 import { Cf2CsWorkspace } from "@/components/crm2/clientes/CsWorkspace";
 
 export default async function ClientesCsPage() {
   const ctx = await getTenantContext();
   if (!ctx) redirect("/login");
 
-  const [org] = await db.select({ nome: organizacoes.nome }).from(organizacoes).where(eq(organizacoes.id, ctx.organizacaoId)).limit(1);
-
-  // O hero já carrega título e contexto; a topbar aqui fica só com busca
-  // global e ações. Sem o `gap-6`/`pt-6` de antes: eram ~50px de espaço morto
-  // entre a topbar e a primeira informação útil da tela.
+  // O cabeçalho mora no workspace: escopo e busca são estado de cliente, e um
+  // cabeçalho aqui sem eles obrigaria a tela a ter dois — foi o que produziu
+  // "CS" na página e "Customer Success" logo abaixo.
   return (
     <div className="onface-pagina">
-      <Cf2Topbar orgNome={org?.nome || "Callface"} variant="light" title="CS" compactTitle actions={null} />
       <Cf2CsWorkspace />
     </div>
   );

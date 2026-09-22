@@ -3357,3 +3357,52 @@ media 3767px numa viewport de 1125.
 Validação: tsc limpo, 364 testes / 0 falhas, 91 arquiteturais, 66 rotas varridas
 em servidor limpo (63 em 200, 3 em 307 propositais), zero erro de console,
 1440 e 390 sem overflow horizontal.
+
+
+**UX-09 — insights.** `GROUP BY 1, 2` onde a posição 2 é `SUM(mrr)`: agregado
+não entra em GROUP BY, o Postgres recusava a query, a rota devolvia 500 e o
+gráfico "Faturamento fechado por categoria" era uma caixa cinza sem nem estado
+de erro. As outras três ocorrências de `GROUP BY 1, 2` no mesmo arquivo são
+legítimas (duas datas, não agregados) e ficaram como estão. A faixa escura de
+raio 24 saiu: repetia o título e era o único hero de uma tela de consulta. O
+aviso do histórico do Zoho virou descrição da página. `meLoading ? null`
+deixava a tela em branco até `/api/me` responder — agora tem esqueleto com a
+forma do que vem.
+
+**UX-10 — customer success.** A faixa `CsHero` tinha quatro defeitos somados:
+três nomes para a mesma tela, card dentro de card (raio 28 → 22 → 18), lime do
+CRM legado e hero em software operacional. Reconstruída como `CsCabecalho`.
+
+O achado que só apareceu depois: os seis números da faixa eram botões de
+filtro, e **dois deles nunca funcionaram**. "Exigem atenção" e "Expansões" não
+correspondem a segmento nenhum de `itemNoSegmento`, que cai no `default: false`
+— clicar esvaziava a fila. Os outros quatro liam contagem de `/api/cs/pulso` e
+recortavam `/api/cs/fila`, duas fontes com números diferentes. E existia uma
+SEGUNDA barra de filtro logo abaixo, essa com a contagem certa.
+
+Resolvido separando o que são duas coisas: a faixa é PULSO (carteira inteira,
+fatos) e a linha de chips é o RECORTE (fila de hoje, contagem do mesmo conjunto
+que o clique corta). Medido na base: dos 24 riscos abertos, zero são
+não-financeiros — "Em risco 24" e "Inadimplentes 18" acusavam o mesmo problema
+contado de dois jeitos, então só o primeiro ficou coral.
+
+**UX-11 — ritmo do resumo.** `PaginaResumo` carrega `margin-bottom: 1.25rem`, e
+dentro de um contêiner com `gap-4` isso virava 36px medidos no navegador contra
+os 20px do desenho. Tarefas e CS passaram a pôr o resumo fora do contêiner com
+gap, como as cinco telas de vendas já faziam.
+
+**UX-12 — número que acusa agora recorta.** `PaginaResumo` ganhou
+`aoSelecionar`/`ativo`: a coluna vira `<button aria-pressed>` e filtra a própria
+tela sem trocar de rota. Primeiro consumidor: "Atrasadas" em Tarefas, que era
+um sinal coral declaradamente sem destino. O vazio resultante nomeia o recorte
+em vez de dizer "nenhuma tarefa".
+
+**UX-13 — controle segmentado.** O `variant="outline"` do shadcn marca seleção
+com `bg-accent`; medido no tema ONFACE deu rgb(238,239,243) contra
+rgb(246,246,243) — 3% de luminância, seleção invisível. `controles-onface.css`
+aplica o desenho que o DS já usa em `.ov-abas` (trilho rebaixado, pílula que
+sobe como papel) sobre o primitivo, em folha global. Alcança escopo da carteira,
+recorte da fila e densidade do DataGrid de uma vez.
+
+Validação: tsc limpo, 365 testes / 0 falhas, 32 pares de contraste sem falha,
+21 rotas do produto em 200, zero erro de console, sem overflow horizontal.

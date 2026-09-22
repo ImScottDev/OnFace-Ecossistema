@@ -362,15 +362,14 @@ export function Cf2AutomacoesWorkspace() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold" style={{ color: "var(--cf2-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>Automações</h1>
-          <p className="text-xs mt-1" style={{ color: "var(--cf2-text-secondary)" }}>Motor real: 12 gatilhos × 8 ações já rodando em produção. Crie ou edite regras aqui.</p>
-        </div>
+      {/* O título próprio saiu: a página já tem cabeçalho e a topbar já tem a
+          trilha — eram três "Automações" antes do primeiro dado. Sobra a ação,
+          alinhada à direita como nas outras telas. */}
+      <div className="flex items-center justify-end">
         <button
           onClick={() => setShowForm(true)}
           className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold"
-          style={{ background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" }}
+          style={{ background: "var(--primary)", color: "var(--primary-foreground)" }}
         >
           <Plus className="w-4 h-4" /> Nova Automação
         </button>

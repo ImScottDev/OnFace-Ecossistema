@@ -9,7 +9,8 @@ import { useOrgUsuarios } from "@/components/crm/BoardFilters";
 import { AssignOwnerControl } from "@/components/crm2/shared/AssignOwnerControl";
 import { iniciaisEmpresa, corAvatarEmpresa, TEXTO_SOBRE_AVATAR } from "@/components/crm2/shared/avatar";
 import { Cf2CsAgenda, Cf2CsMetricas } from "./CsAgenda";
-import { Cf2CsHero, type PulsoCs, type Escopo } from "./CsHero";
+import { Cf2CsCabecalho, type PulsoCs, type Escopo } from "./CsCabecalho";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Cf2CsFila, SEGMENTOS, itemNoSegmento, type ItemFila } from "./CsFila";
 import { Cf2CsBlocos, type PainelCs } from "./CsBlocos";
 
@@ -104,18 +105,19 @@ export function Cf2CsWorkspace() {
   const irParaSegmento = (s: string) => { setSegmento(s); setVisao("geral"); };
 
   return (
-    <div className="flex flex-col gap-4">
-      <Cf2CsHero
+    // Cabeçalho e resumo ficam FORA do contêiner com `gap`: os dois já trazem
+    // o próprio ritmo. Dentro de um `gap-4` a faixa de resumo somava 36px até
+    // o conteúdo, contra os 20px do desenho.
+    <>
+      <Cf2CsCabecalho
         pulso={pulso}
-        exigemAtencao={clientesNaFila}
         escopo={escopo}
         onEscopo={(e) => { setEscopo(e); setSegmento(null); }}
         busca={busca}
         onBusca={setBusca}
-        segmentoAtivo={segmento}
-        onSegmento={(s) => { setSegmento(s); if (s) setVisao("geral"); }}
       />
 
+      <div className="flex flex-col gap-4">
       <div className="flex items-center gap-1 flex-wrap">
         {ABAS.map(([k, label]) => (
           <button
@@ -135,37 +137,41 @@ export function Cf2CsWorkspace() {
       {visao === "geral" && (
         <div className="grid xl:grid-cols-[minmax(0,1fr)_320px] gap-4 items-start">
           <div className="min-w-0 flex flex-col gap-3">
-            <div className="flex items-center justify-between gap-3 flex-wrap">
-              <div>
-                <p className="text-[15px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Precisa da sua atenção</p>
-                <p className="text-[11.5px]" style={{ color: "var(--cf2-text-tertiary)" }}>
-                  Uma linha por cliente. Conta com mais de um problema mostra o pior e agrega o resto.
-                </p>
-              </div>
+            <div className="flex items-baseline gap-2 flex-wrap">
+              {/* A contagem entra no título: é o tamanho do dia, e era o
+                  número que a faixa de cima anunciava como "Exigem atenção"
+                  sem conseguir recortar. Aqui ele nomeia exatamente o
+                  conjunto que a lista abaixo mostra. */}
+              <p className="text-[15px] font-bold" style={{ color: "var(--text-strong)" }}>
+                Precisa da sua atenção
+              </p>
+              <span className="text-[13px] font-semibold tabular-nums" style={{ color: "var(--text-muted)" }}>
+                {clientesNaFila}
+              </span>
+              <p className="text-[11.5px] basis-full" style={{ color: "var(--text-muted)" }}>
+                Uma linha por cliente. Conta com mais de um problema mostra o pior e agrega o resto.
+              </p>
             </div>
 
-            {/* Segmentos: recortes do mesmo conjunto, com a contagem real de
-                clientes — chip sem número obriga a clicar pra descobrir que
-                está vazio. */}
-            <div className="flex items-center gap-1.5 flex-wrap">
-              {SEGMENTOS.filter((seg) => (contagemSegmentos[seg.chave] ?? 0) > 0).map((seg) => {
-                const ativo = segmento === seg.chave;
-                return (
-                  <button
-                    key={seg.chave}
-                    onClick={() => setSegmento(ativo ? null : seg.chave)}
-                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11.5px] font-medium transition-colors"
-                    style={{
-                      background: ativo ? "var(--cf2-bg-inverse)" : "var(--cf2-bg-surface-muted)",
-                      color: ativo ? "#fff" : "var(--cf2-text-secondary)",
-                    }}
-                  >
-                    {seg.label}
-                    <span style={{ opacity: 0.65 }}>{contagemSegmentos[seg.chave]}</span>
-                  </button>
-                );
-              })}
-            </div>
+            {/* Recorte da fila: esta linha é a ÚNICA que filtra a tela, e a
+                contagem sai do mesmo conjunto que o clique corta — um chip
+                nunca abre vazio. Segmento sem ninguém não aparece. */}
+            <ToggleGroup
+              type="single"
+              variant="outline"
+              size="sm"
+              value={segmento ?? ""}
+              onValueChange={(v) => setSegmento(v || null)}
+              aria-label="Recorte da fila"
+              className="flex-wrap"
+            >
+              {SEGMENTOS.filter((seg) => (contagemSegmentos[seg.chave] ?? 0) > 0).map((seg) => (
+                <ToggleGroupItem key={seg.chave} value={seg.chave}>
+                  {seg.label}
+                  <span className="tabular-nums opacity-60">{contagemSegmentos[seg.chave]}</span>
+                </ToggleGroupItem>
+              ))}
+            </ToggleGroup>
 
             <Cf2CsFila
               itens={itens}
@@ -196,7 +202,8 @@ export function Cf2CsWorkspace() {
       {visao === "renovacoes" && <Renovacoes />}
       {visao === "expansoes" && <Expansoes />}
       {visao === "metricas" && <Cf2CsMetricas />}
-    </div>
+      </div>
+    </>
   );
 }
 

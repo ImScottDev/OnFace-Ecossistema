@@ -131,15 +131,64 @@
   color: var(--onface-coral-texto);
 }
 
-a.onface-resumo-item {
+a.onface-resumo-item,
+button.onface-resumo-item {
   transition: background-color 160ms ease-out;
 }
 a.onface-resumo-item:hover {
   background: var(--onface-coral-border);
 }
-a.onface-resumo-item:focus-visible {
+a.onface-resumo-item:focus-visible,
+button.onface-resumo-item:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: -2px;
+}
+
+/* ── Coluna que filtra ────────────────────────────────────────────────── */
+
+/* O botão herda a mesma célula: alinhamento de texto à esquerda e altura
+   cheia, senão o `<button>` centraliza e a linha perde o prumo. */
+button.onface-resumo-item {
+  text-align: start;
+  font: inherit;
+  cursor: pointer;
+  appearance: none;
+  background: transparent;
+  border: 0;
+  border-inline-start: 1px solid var(--line-hairline);
+}
+button.onface-resumo-item:first-child {
+  border-inline-start: 0;
+}
+button.onface-resumo-item:hover {
+  background: var(--surface-sunken);
+}
+
+/* Recorte vigente.
+ *
+ * A seleção NÃO usa coral: coral já é "este número acusa um problema", e uma
+ * célula pode ser as duas coisas (Em risco = 7, e é o filtro aberto). Dois
+ * significados na mesma cor viram nenhum. A seleção é superfície rebaixada
+ * mais um trilho embaixo — o mesmo vocabulário da aba. */
+button.onface-resumo-item[data-ativo="true"] {
+  background: var(--surface-sunken);
+}
+button.onface-resumo-item[data-ativo="true"]::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  inset-block-end: 0;
+  height: 2px;
+  background: var(--text-strong);
+}
+button.onface-resumo-item[data-ativo="true"] .onface-resumo-rotulo {
+  color: var(--text-body);
+}
+
+/* `position: relative` é o que o trilho da seleção ancora. Fica na célula e
+   não só no botão porque o sinal coral também pinta o fundo da célula. */
+.onface-resumo-item {
+  position: relative;
 }
 
 .onface-resumo-cta {
