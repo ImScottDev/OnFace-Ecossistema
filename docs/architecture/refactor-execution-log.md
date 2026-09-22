@@ -3163,3 +3163,24 @@ Limpo e registrado: nenhuma tela do ONFACE usa fixture; o `"—"` da Visão Gera
 agregado honesto, não placeholder.
 
 Validação: tsc limpo, 354 testes / 0 falhas, 45 smokes, 14/14 rotas.
+
+## 2026-09-22 — CP56: as travas antigas, provadas ao contrário
+
+23 travas arquiteturais; 17 varrem diretório; 11 sem conta do universo.
+
+A de tenant isolation passava VERDE com zero rotas examinadas (provado trocando
+`getCtx` por nome inexistente). Todas as 17 ganharam a conta.
+
+Padrões estreitos demais, achados ao aplicar a mesma pergunta:
+- criador de lead → porta canônica: alcançava 2 de 9 (`db.insert(leads)` tem
+  zero ocorrências; o repo escreve `await db\n  .insert(leads)` e `tx.insert`)
+- criador de negócio → oportunidade: 3 de 9
+- chamada órfã (CP52): 356 de 424 URLs `/api` do front
+
+Corrigidos. Todos os criadores passam pelo canônico; `lib/db/seed.ts` virou
+isenção nomeada. Nenhuma das 68 chamadas antes invisíveis era órfã.
+
+**Formato do defeito:** o padrão não cobre a forma que o código realmente usa.
+`db.` colado x quebra de linha, `fetch(` x helper, `href=` x `href:`.
+
+Validação: tsc limpo, 354 testes / 0 falhas, 45 smokes, 14/14 rotas.

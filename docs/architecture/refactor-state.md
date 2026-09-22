@@ -3099,3 +3099,48 @@ agregadas ("6 negócios parados"), e agregado não tem responsável nem cliente
 tem consumidor.
 
 Validação: tsc limpo, 354 testes / 0 falhas, 45 smokes, 14/14 rotas.
+
+### CP56 — a trava de tenant isolation passava verde varrendo zero rotas
+
+Regra do CP55 aplicada às travas antigas. Das **23** travas arquiteturais, 17
+varrem diretório e **11 não tinham nenhuma conta** do que alcançaram.
+
+**A pior é a de isolamento de tenant**, que está na lista do que não pode
+regredir. Ela filtra rotas procurando `const ctx = await getCtx`. Troquei o nome
+por um que não existe, simulando o código renomear o helper: **os dois testes
+ficaram verdes examinando zero rotas**. Com a conta, o mesmo experimento falha
+dizendo quantas alcançou.
+
+**E o padrão escondia pior que a falta da conta.** "Todo arquivo que CRIA lead
+passa pela porta canônica" procurava `db.insert(leads)`, e o repositório tem
+**zero** ocorrências dessa forma: o estilo é `await db` quebrado em linha antes
+do `.insert`, e há `tx.insert(leads)` em transação.
+
+| trava | alcançava | existem |
+|---|---|---|
+| criador de lead → porta canônica | **2** | 9 |
+| criador de negócio → oportunidade | **3** | 9 |
+
+Os 7 de fora do primeiro incluem `routes/leads.ts`, que o comentário da própria
+trava chama de maior porta de escrita do sistema. Verde de 22% de cobertura é o
+falso verde mais caro que existe, porque essa trava guarda a dívida central do
+projeto: o dado que entra por porta que não aplica a regra.
+
+Corrigidos os padrões, os 8 criadores de lead e os 9 de negócio passam todos
+pelo canônico. Sobra `lib/db/seed.ts`, que popula a base do zero fora de
+qualquer jornada: isenção **nomeada**, em vez de continuar escondida atrás de um
+padrão frouxo.
+
+**A trava do CP52 também estava estreita.** Lia só `fetch("/api/…")`, e os
+helpers do front (`requestJson(url)`, `apiFetch`) recebem a URL pronta, com o
+literal no chamador. Medido: **424 URLs `/api` literais no front, 356 lidas, 68
+fora** — 16% da superfície. Nenhuma das 68 era órfã, mas ninguém sabia porque
+nada olhava. Passou a ler qualquer literal `/api/…`, com duas exclusões que o
+levantamento exigiu: linha de comentário e cliente de API externa (`lib/apollo/
+client.ts`, onde `/api/v1/people/match` é caminho da Apollo).
+
+O formato do defeito, que vale para a próxima trava: **o padrão não cobre a
+forma que o código realmente usa.** `db.` colado contra quebra de linha,
+`fetch(` contra helper, `href=` contra `href:`. Três ocorrências em dois dias.
+
+Validação: tsc limpo, 354 testes / 0 falhas, 45 smokes, 14/14 rotas.
