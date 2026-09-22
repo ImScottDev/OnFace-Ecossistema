@@ -3056,3 +3056,20 @@ CS por risco, fila de CS pela carteira) e passou a olhar a consulta, não o
 arquivo.
 
 Validação: tsc limpo, 350 testes / 0 falhas.
+
+## 2026-09-22 — CP52: três varreduras limpas e a trava do botão morto
+
+Métricas restantes do catálogo: `oportunidades_abertas` em `relatorios/comercial`
+é drill-down (agrupa por etapa e tipo de receita), e os totais batem — 527 no
+catálogo, 527 somando o relatório.
+
+Erro engolido: 4 catch vazios (todos `fs.unlinkSync` em `finally`) e 31 com valor
+neutro (parsing de JSON). Nenhum sobre consulta ao banco.
+
+Chamada do front para rota inexistente: 336 rotas cruzadas com todo
+`fetch("/api/…")`, zero órfãs. Virou trava, porque o defeito já passou por uma
+revisão (16/09, botão aprovado sem fazer nada). Dois falsos positivos meus no
+caminho: o prefixo vem da montagem e não da declaração (44 falsos), e a URL do
+front é template, então a chamada vale como prefixo da rota (13 falsos).
+
+Validação: tsc limpo, 351 testes / 0 falhas.

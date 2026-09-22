@@ -64,9 +64,9 @@ com o PABX invendável.
 
 ## Último commit
 
-`(CP51)` — "clientes ativos" tinha duas contas: 361 e 272
+`(CP52)` — três varreduras limpas, e a trava do botão morto
 
-**Estado medido em 22/09/2026:** tsc limpo · **350 testes / 0 falhas** · build de
+**Estado medido em 22/09/2026:** tsc limpo · **351 testes / 0 falhas** · build de
 produção limpo · **36 verificações** na bateria de smokes · **4 aceites com 208
 asserções** · **paridade 13/14** (o não verificável é o NEXO, por credencial) ·
 **14/14 rotas do ONFACE** renderizando. Nada de produção foi tocado.
@@ -2860,6 +2860,41 @@ a carteira — marcada por `portfolio_included`. A trava passou a olhar a
 **Validação:** tsc limpo, **350 testes / 0 falhas**, a tela e o catálogo agora
 respondem o mesmo número, e a reintrodução da conta própria deixa a trava
 vermelha.
+
+### CP52 — Três varreduras limpas, e a trava do botão morto
+
+Rodada de auditoria em que **o resultado principal foi não achar nada** em duas
+lentes, e isso vale registrar com a mesma clareza de um achado.
+
+**Métricas restantes do catálogo.** Depois do CP51, varri as outras cinco.
+`oportunidades_abertas` aparece em `relatorios/comercial.ts` com agregação
+própria, mas agrupada por etapa e tipo de receita — é drill-down, outra
+granularidade, a mesma distinção que a trava do MRR já faz. Conferido no banco:
+**527 no catálogo, 527 somando o relatório**. Coerente.
+
+**Erro engolido em silêncio.** O CP12 pagou por um `catch` cego que mostrou duas
+consultas quebradas como "0". Varri o `src` inteiro: 4 `catch` vazios e 31 que
+devolvem valor neutro. **Nenhum sobre consulta ao banco** — os 31 são parsing de
+JSON de requisição, e os 4 vazios são `fs.unlinkSync` em `finally`, limpeza de
+temporário onde falhar não importa.
+
+**Chamada do front para rota inexistente.** Esta rendeu a trava. O defeito já
+passou por uma revisão inteira — em 16/09 um botão foi aprovado sem fazer nada —
+e nenhum teste de tipo pega, porque a URL é string.
+
+Cruzadas as **336 rotas** do Hono e do Next contra todo `fetch("/api/…")` do
+front: **zero órfãs**. Mas o caminho até esse zero é o que a trava registra,
+porque me deu dois falsos positivos:
+
+- **o prefixo vem da montagem**, não da declaração: `admin.ts` declara
+  `/org-switch` e o servidor monta `app.route("/api/admin", …)`. Assumir `/api`
+  fixo acusou **44** rotas que existem;
+- **a URL do front é template**: `fetch(\`/api/metas/usuario/${id}\`)` lido até o
+  `${` vira três segmentos contra quatro da rota. Comparar por igualdade acusou
+  mais **13**. A chamada vale como prefixo da rota.
+
+**Validação:** tsc limpo, **351 testes / 0 falhas**, trava provada por
+reintrodução (um `fetch` para rota inventada é acusado pelo nome do arquivo).
 
 ### Auditoria de CS Health (histórico da decisão)
 
