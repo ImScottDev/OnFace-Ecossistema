@@ -3025,3 +3025,18 @@ media `negocios`, tabela que a limpeza apagava. Quebrou três testes de
 reconciliação. Corrigidos a ordem e o assert.
 
 Validação: tsc limpo, 349 testes / 0 falhas.
+
+## 2026-09-22 — CP50: a última atividade da empresa vinha vazia para toda a base
+
+Varredura do padrão do CP49: coluna lida que está 100% NULL. Das 779 anuláveis em
+tabelas com dado, 317 estão vazias, a maioria legitimamente. Cruzando com quem lê,
+sobrou uma: `atividades.empresa_id`, com 13.044 atividades e zero preenchidas.
+
+Medido: das 2.250 empresas, zero com atividade por `a.empresa_id` e 1.575 pelo
+lead. Na listagem, "última atividade" ia de 0 de 200 para 109 de 200.
+
+Dois dos três leitores já estavam certos — `clientes-crm2` faz a união e
+`fulfillments.ts` tem o comentário registrando o problema. A listagem não tinha
+acompanhado. A união preserva os dois caminhos.
+
+Validação: tsc limpo, 349 testes / 0 falhas, smoke provado por reintrodução.

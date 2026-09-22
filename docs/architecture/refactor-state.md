@@ -64,7 +64,7 @@ com o PABX invendável.
 
 ## Último commit
 
-`(CP49)` — a data do aceite não era gravada, e três leituras dependiam dela
+`(CP50)` — 70% das empresas mostravam "sem atividade" tendo atividade
 
 **Estado medido em 22/09/2026:** tsc limpo · **349 testes / 0 falhas** · build de
 produção limpo · **36 verificações** na bateria de smokes · **4 aceites com 208
@@ -2798,6 +2798,34 @@ tabelas que o smoke cria.
 
 **Validação:** tsc limpo, **349 testes / 0 falhas**, smoke provado por
 reintrodução nos dois consertos.
+
+### CP50 — 70% das empresas mostravam "sem atividade" tendo atividade
+
+Varredura sistemática do padrão que o CP49 revelou: **coluna que alguém lê e
+está 100% NULL no banco**. Das 779 colunas anuláveis em tabelas com dado, 317
+estão inteiramente vazias — a maioria legitimamente (integração não usada, campo
+de outro CRM na migração). Cruzando com quem as lê, sobrou **uma**.
+
+`atividades.empresa_id`: **13.044 atividades, zero com empresa**. O campo existe
+no schema, mas as atividades vieram da migração do CRM legado, onde ele não
+existia, e quem escreve hoje só o preenche quando o chamador passa a empresa. Na
+prática, **a atividade chega à empresa pelo lead**.
+
+Medido: das **2.250 empresas**, zero têm atividade por `a.empresa_id` e **1.575
+têm pelo lead**. Na listagem, a coluna "última atividade" ia de **0 de 200 para
+109 de 200**.
+
+**Dois dos três leitores já estavam certos**, e é isso que torna o achado
+convincente: o Cliente 360 (`clientes-crm2`) faz `or(empresaId, inArray(leadId))`,
+e `fulfillments.ts` tem o comentário que registra o problema — *"ligada via
+leads.empresaId (atividades não tem empresaId direto)"*. A listagem de empresas
+era o lugar que não tinha acompanhado.
+
+A união preserva os dois caminhos: o campo direto continua valendo para as
+escritas novas, e o lead cobre a base histórica.
+
+**Validação:** tsc limpo, **349 testes / 0 falhas**, smoke prova os dois caminhos
+e a reintrodução devolve o vazio.
 
 ### Auditoria de CS Health (histórico da decisão)
 

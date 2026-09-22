@@ -692,7 +692,17 @@ export async function diretorioEmpresas(organizacaoId: string, filtros: {
           AND l.estagio_pre_vendas IN ('novo','em_contato','qualificacao','qualificado')) AS leads_ativos,
         (SELECT u.nome FROM clientes c JOIN usuarios u ON u.id = c.responsavel_id
           WHERE c.empresa_id = e.id LIMIT 1) AS responsavel,
-        (SELECT max(a.created_at)::text FROM atividades a WHERE a.empresa_id = e.id) AS ultima_atividade
+        -- A atividade chega à empresa por DOIS caminhos, e só um estava aqui.
+        -- Medido em 22/09: das 2.250 empresas, ZERO tinham atividade por
+        -- a.empresa_id e 1.575 têm pelo lead. O campo direto existe no schema e
+        -- está 100% NULL: as 13.044 atividades vieram da migração do CRM
+        -- legado, onde ele não existia, e quem escreve hoje só o preenche
+        -- quando o chamador passa a empresa.
+        -- O Cliente 360 (clientes-crm2) já fazia essa união; esta listagem não,
+        -- e por isso a coluna "última atividade" vinha vazia para 70% da base.
+        (SELECT max(a.created_at)::text FROM atividades a
+          WHERE a.empresa_id = e.id
+             OR a.lead_id IN (SELECT l2.id FROM leads l2 WHERE l2.empresa_id = e.id)) AS ultima_atividade
         FROM empresas e
        WHERE e.organizacao_id = ${organizacaoId}::uuid
          AND (${busca}::text IS NULL OR lower(e.nome) LIKE ${busca}
