@@ -30,7 +30,11 @@ test("o MRR global é somado num lugar só: o catálogo", () => {
   // global, e ele pertence ao catálogo. Somar por empresa é outra granularidade
   // (o detalhe da carteira) e continua permitido.
   const infratores: string[] = [];
-  for (const f of arquivos(SRC)) {
+  const todos = arquivos(SRC);
+  // A conta do universo. Sem ela o teste passa verde varrendo zero, e verde de
+  // varredura vazia não significa nada: provado no CP56 na trava de tenant.
+  assert.ok(todos.length > 200, `só ${todos.length} arquivos alcançados — a varredura quebrou`);
+  for (const f of todos) {
     if (f.includes(path.join("lib", "metricas"))) continue;
     const txt = fs.readFileSync(f, "utf8");
     if (!/(sum|SUM)\s*\(\s*(sc\.|s\.)?current_recurring_value/.test(txt)) continue;

@@ -24,7 +24,13 @@ function arquivosTs(dir: string): string[] {
 test("o adapter do SaaS não contém verbo de escrita", () => {
   const proibidos = /\b(INSERT\s+INTO|UPDATE\s+\w|DELETE\s+FROM|DROP\s+|ALTER\s+|CREATE\s+|TRUNCATE|GRANT|REVOKE)\b/i;
   const achados: string[] = [];
-  for (const f of arquivosTs(RAIZ_PACOTE)) {
+  const doPacote = arquivosTs(RAIZ_PACOTE);
+  // Quantos o filtro ALCANÇOU. Sem esta conta o teste passa verde varrendo
+  // zero, e o verde não significa nada: provado no CP56 renomeando o helper
+  // que a trava de tenant procurava, com os dois testes ficando verdes.
+  assert.ok(doPacote.length > 0,
+    "o adapter do SaaS não tem nenhum arquivo .ts alcançável — o pacote mudou de lugar");
+  for (const f of doPacote) {
     const txt = fs.readFileSync(f, "utf8");
     // Comentário não conta: o arquivo EXPLICA que não escreve.
     const semComentario = txt.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "").replace(/--.*$/gm, "");

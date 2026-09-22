@@ -39,14 +39,20 @@ function arquivos(dir: string): string[] {
 
 test("todo caminho que move a etapa do negócio propaga para a oportunidade", () => {
   const infratores: string[] = [];
+  let candidatos = 0;
   for (const f of arquivos(SRC)) {
     const rel = path.relative(SRC, f).split(path.sep).join("/");
     // `lib/vendas` e `lib/crm` SÃO a porta: propagam por dentro.
     if (rel.startsWith("lib/vendas/") || rel.startsWith("lib/crm/")) continue;
     const txt = fs.readFileSync(f, "utf8");
     if (!MOVE_ETAPA.test(txt)) continue;
+    candidatos++;
     if (!PROPAGA.test(txt)) infratores.push(rel);
   }
+  // A conta do universo. Sem ela o teste passa verde varrendo zero, e verde de
+  // varredura vazia não significa nada: provado no CP56 na trava de tenant.
+  assert.ok(candidatos > 0,
+    "nenhum arquivo move a etapa do negócio — MOVE_ETAPA deixou de casar com o código");
   assert.deepEqual(infratores, [],
     `movem negocios.status sem propagar para o canônico: ${infratores.join(", ")}. ` +
     `Chame syncOportunidadeFromNegocio depois da escrita, senão o board mostra a etapa antiga.`);

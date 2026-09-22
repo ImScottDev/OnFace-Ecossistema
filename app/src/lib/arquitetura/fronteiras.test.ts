@@ -48,7 +48,12 @@ const SDKS_DE_PROVEDOR = [
 
 test("domínio não importa SDK de provedor externo (SPEC §35)", () => {
   const violacoes: string[] = [];
-  for (const arq of arquivosTs(path.join(PACKAGES, "domain"))) {
+  const doDominio = arquivosTs(path.join(PACKAGES, "domain"));
+  // A conta do universo. Sem ela o teste passa verde varrendo zero, e verde de
+  // varredura vazia não significa nada: provado no CP56 na trava de tenant.
+  assert.ok(doDominio.length > 10,
+    `só ${doDominio.length} arquivos de domínio alcançados — packages/domain mudou de lugar`);
+  for (const arq of doDominio) {
     for (const imp of importsDe(arq)) {
       if (SDKS_DE_PROVEDOR.some((sdk) => imp === sdk.replace(/\/$/, "") || imp.startsWith(sdk))) {
         violacoes.push(`${rel(arq)} importa ${imp}`);

@@ -61,17 +61,23 @@ const DATA_JUSTIFICADA: Record<string, string> = {
 
 test("nenhuma chave de idempotência carrega o relógio da execução", () => {
   const infratores: string[] = [];
+  let chavesExaminadas = 0;
   for (const arq of arquivos(SRC)) {
     const txt = fs.readFileSync(arq, "utf8")
       .replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
     // A chave e o que ela interpola, na mesma expressão.
     for (const m of txt.matchAll(/(?:idempotencyKey|chaveIdempotencia|idempotency_key)\s*:\s*`([^`]*)`/g)) {
+      chavesExaminadas++;
       const rel = path.relative(SRC, arq).split(path.sep).join("/");
       if (RELOGIO_DA_EXECUCAO.test(m[1]) && !(rel in DATA_JUSTIFICADA)) {
         infratores.push(`${rel} → \`${m[1].replace(/\s+/g, " ")}\``);
       }
     }
   }
+  // A conta do universo. Sem ela o teste passa verde varrendo zero, e verde de
+  // varredura vazia não significa nada: provado no CP56 na trava de tenant.
+  assert.ok(chavesExaminadas > 5,
+    `só ${chavesExaminadas} chaves de idempotência alcançadas — o padrão de nome mudou`);
   assert.deepEqual(infratores, [],
     "estas chaves incluem o instante da execução, então nunca dedupicam:\n  " +
     infratores.join("\n  ") +

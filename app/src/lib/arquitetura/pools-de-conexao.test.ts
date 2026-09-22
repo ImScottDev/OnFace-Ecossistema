@@ -47,7 +47,11 @@ function arquivos(dir: string): string[] {
 
 test("nenhum pool de conexão novo no runtime", () => {
   const novos: string[] = [];
-  for (const f of arquivos(SRC)) {
+  const todos = arquivos(SRC);
+  // A conta do universo. Sem ela o teste passa verde varrendo zero, e verde de
+  // varredura vazia não significa nada: provado no CP56 na trava de tenant.
+  assert.ok(todos.length > 200, `só ${todos.length} arquivos alcançados — a varredura quebrou`);
+  for (const f of todos) {
     const rel = path.relative(SRC, f).split(path.sep).join("/");
     if (rel.startsWith("scripts/")) continue;
     const txt = fs.readFileSync(f, "utf8");

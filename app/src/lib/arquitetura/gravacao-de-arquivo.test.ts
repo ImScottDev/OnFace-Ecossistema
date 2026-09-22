@@ -31,7 +31,11 @@ function arquivosTs(dir: string): string[] {
 const ESCRITA_EM_DISCO = /\bfs\.(writeFileSync|createWriteStream)\s*\(|\bwriteFile\s*\(/;
 
 test("rota HTTP não grava arquivo no disco: passa pelo acervo", () => {
-  const infratores = arquivosTs(path.join(SRC, "api-server", "routes"))
+  const rotas = arquivosTs(path.join(SRC, "api-server", "routes"));
+  // A conta do universo. Sem ela o teste passa verde varrendo zero, e verde de
+  // varredura vazia não significa nada: provado no CP56 na trava de tenant.
+  assert.ok(rotas.length > 20, `só ${rotas.length} rotas alcançadas — a pasta mudou de lugar`);
+  const infratores = rotas
     .filter((p) => ESCRITA_EM_DISCO.test(fs.readFileSync(p, "utf8")))
     .map((p) => path.relative(SRC, p));
 

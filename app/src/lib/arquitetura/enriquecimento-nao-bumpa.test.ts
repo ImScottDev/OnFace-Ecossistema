@@ -56,7 +56,13 @@ test("nenhuma integração nova bumpa updated_at sem justificativa registrada", 
     if (!/updatedAt:\s*new Date\(\)/.test(fs.readFileSync(path.join(SRC, rel), "utf8"))) continue;
     if (!(rel in BUMP_JUSTIFICADO)) infratores.push(rel);
   }
-  for (const f of arquivos(path.join(SRC, "lib", "integrations"))) {
+  const integracoes = arquivos(path.join(SRC, "lib", "integrations"));
+  // Quantos o filtro ALCANÇOU. Sem esta conta o teste passa verde varrendo
+  // zero, e o verde não significa nada: provado no CP56 renomeando o helper
+  // que a trava de tenant procurava, com os dois testes ficando verdes.
+  assert.ok(integracoes.length > 5,
+    `só ${integracoes.length} arquivos de integração alcançados — a pasta mudou de lugar`);
+  for (const f of integracoes) {
     const rel = path.relative(SRC, f).split(path.sep).join("/");
     if (!/updatedAt:\s*new Date\(\)/.test(fs.readFileSync(f, "utf8"))) continue;
     if (!(rel in BUMP_JUSTIFICADO)) infratores.push(rel);

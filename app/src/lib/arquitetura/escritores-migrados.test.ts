@@ -42,6 +42,16 @@ const MIGRADOS = [
 /** Caminhos que criam CONTATO (identidade sem processo de aquisição). */
 const IDENTIDADE_SEM_AQUISICAO = ["worker/index.ts"];
 
+/**
+ * Semente do banco de desenvolvimento: popula a base do zero, fora de qualquer
+ * jornada, e passar pela porta canônica ali criaria aquisição e evento de
+ * entrada para dado que nunca entrou por lugar nenhum.
+ *
+ * Isenção NOMEADA, e não padrão frouxo. O padrão frouxo foi exatamente o que
+ * escondeu sete criadores de lead e seis de negócio até o CP56.
+ */
+const FORA_DA_REGRA = ["lib/db/seed.ts"];
+
 test("todo criador de identidade migrado chama a porta canônica", () => {
   const faltando = MIGRADOS.filter((p) => !ler(p).includes("garantirEntradaCanonica"));
   assert.deepEqual(faltando, [], `estes deveriam chamar a porta canônica e não chamam:\n${faltando.join("\n")}`);
@@ -72,9 +82,29 @@ test("todo arquivo que CRIA lead passa pela porta canônica", () => {
   };
   for (const raiz of ["app", "api-server", "lib", "worker"]) varrer(raiz);
 
-  const criaLead = /db\.insert\(leads\)|INSERT INTO leads\b/;
+  // `\.insert\(leads\)`, e não `db\.insert\(leads\)`.
+  //
+  // O padrão antigo exigia o `db.` colado, e **zero** arquivos do repo escrevem
+  // assim: o estilo é `await db\n  .insert(leads)`, quebrado em linhas, e há
+  // ainda `tx.insert(leads)` dentro de transação. Medido no CP56: a trava
+  // alcançava **2 de 9** criadores de lead, e os 7 de fora incluem
+  // `routes/leads.ts`, que o próprio comentário dela chama de maior porta de
+  // escrita do sistema.
+  //
+  // Verde de 22% de cobertura é o falso verde mais caro que existe, porque a
+  // trava guarda justamente a dívida central do projeto: o dado que entra por
+  // porta que não aplica a regra.
+  const criaLead = /\.insert\(leads\)|INSERT INTO\s+leads\b/i;
+  const criadores = arquivos.filter((rel) =>
+    !/\.test\.tsx?$/.test(rel) && !rel.includes("migrations") && criaLead.test(corpo(rel)));
+  // Quantos o filtro ALCANÇOU. Sem esta conta o teste passa verde varrendo
+  // zero, e o verde não significa nada: provado no CP56 renomeando o helper
+  // que a trava de tenant procurava, com os dois testes ficando verdes.
+  assert.ok(criadores.length >= 8,
+    `só ${criadores.length} arquivos criam lead — o padrão de escrita mudou e a varredura não alcança mais`);
   const semPorta = arquivos.filter((rel) => {
     if (/\.test\.tsx?$/.test(rel) || rel.includes("migrations")) return false;
+    if (FORA_DA_REGRA.includes(rel.split(path.sep).join("/"))) return false;
     const src = corpo(rel);
     if (!criaLead.test(src)) return false;
     return !src.includes("garantirEntradaCanonica");
@@ -105,12 +135,22 @@ test("todo arquivo que CRIA negócio o sincroniza ao canônico", () => {
   };
   for (const raiz of ["app", "api-server", "lib", "worker"]) varrer(raiz);
 
-  const criaNegocio = /db\.insert\(negocios\)|INSERT INTO negocios\b/;
+  // Mesma correção do teste de lead, e pelo mesmo motivo: exigir o `db.` colado
+  // alcançava 3 dos 9 arquivos que criam negócio, porque o estilo do repo é
+  // `await db\n  .insert(negocios)` e há `tx.insert(negocios)` em transação.
+  const criaNegocio = /\.insert\(negocios\)|INSERT INTO\s+negocios\b/i;
   // Vale qualquer um dos caminhos que levam ao canônico: a porta de domínio, a
   // sincronização direta, ou o bundle que faz as duas coisas.
   const chegaAoCanonico = /syncOportunidadeFromNegocio|criarOportunidade|sincronizarOportunidade/;
+  const criadoresDeNegocio = arquivos.filter((rel) =>
+    !/\.test\.tsx?$/.test(rel) && !rel.includes("migrations") && criaNegocio.test(corpo(rel)));
+  assert.ok(criadoresDeNegocio.length >= 8,
+    `só ${criadoresDeNegocio.length} arquivos criam negócio — o padrão de escrita mudou ` +
+    `e a varredura não alcança mais`);
+
   const semSync = arquivos.filter((rel) => {
     if (/\.test\.tsx?$/.test(rel) || rel.includes("migrations")) return false;
+    if (FORA_DA_REGRA.includes(rel.split(path.sep).join("/"))) return false;
     const src = corpo(rel);
     return criaNegocio.test(src) && !chegaAoCanonico.test(src);
   });

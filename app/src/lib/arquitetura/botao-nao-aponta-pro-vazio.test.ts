@@ -16,6 +16,18 @@
  *    lido até o `${` vira `/api/metas/usuario`, três segmentos contra quatro da
  *    rota `/usuario/:usuarioId`. Comparar por igualdade acusou mais 13. Por isso
  *    a chamada vale como PREFIXO da rota.
+ *
+ * **Ampliada no CP56, depois de aplicar a regra do CP55 a ela mesma.** A versão
+ * original lia só `fetch("/api/…")`, e o front não chama a API só assim: helpers
+ * como `requestJson(url)` e `apiFetch` recebem a URL pronta, então o literal
+ * mora no CHAMADOR e o `fetch` vê uma variável. Medido: **424 URLs `/api`
+ * literais no front, 356 lidas, 68 fora** — 16% da superfície. Nenhuma das 68
+ * era órfã, mas isso ninguém sabia, porque nada olhava.
+ *
+ * Passou a ler qualquer string literal `/api/…`, com duas exclusões que o
+ * próprio levantamento exigiu: linha de comentário (um cabeçalho que cita a
+ * rota não é chamada) e cliente de API EXTERNA, onde `/api/v1/people/match` é
+ * caminho da Apollo colado em `https://api.apollo.io`, e não rota nossa.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -23,6 +35,18 @@ import fs from "node:fs";
 import path from "node:path";
 
 const SRC = path.join(process.cwd(), "src");
+
+/**
+ * Arquivos onde `/api/…` é caminho de serviço de TERCEIRO, não rota nossa.
+ *
+ * `lib/apollo/client.ts` monta `https://api.apollo.io` + `/api/v1/people/match`.
+ * Cobrar rota nossa para esses cinco caminhos seria acusar código correto, que
+ * é o defeito que este repo já pagou três vezes nesta leva de travas.
+ *
+ * Exceção NOMEADA, e não um padrão que "parece externo": arquivo novo com API
+ * de terceiro aparece vermelho, alguém olha e decide, em vez de passar batido.
+ */
+const CLIENTES_DE_API_EXTERNA = ["lib/apollo/client.ts"];
 
 /** Rotas do Hono, com o prefixo que o servidor usa ao montar cada arquivo. */
 function rotasRegistradas(): Set<string> {
@@ -80,11 +104,15 @@ test("toda chamada do front tem rota do outro lado", () => {
 
   const orfas: string[] = [];
   for (const arq of telas(SRC)) {
-    const txt = fs.readFileSync(arq, "utf8");
-    for (const m of txt.matchAll(/fetch\(\s*[`"']\/(api\/[^`"'?\s${]+)/g)) {
-      const chamada = "/" + m[1].replace(/\/$/, "");
-      if (!casa(chamada)) {
-        orfas.push(`${chamada}  ←  ${path.relative(SRC, arq).split(path.sep).join("/")}`);
+    const rel = path.relative(SRC, arq).split(path.sep).join("/");
+    if (CLIENTES_DE_API_EXTERNA.includes(rel)) continue;
+    // Linha a linha, e não `matchAll` no arquivo inteiro, porque é assim que dá
+    // para saber se o literal está dentro de um comentário.
+    for (const linha of fs.readFileSync(arq, "utf8").split("\n")) {
+      if (/^\s*(\/\/|\*|\/\*)/.test(linha)) continue;
+      for (const m of linha.matchAll(/[`"']\/(api\/[^`"'?\s${]+)/g)) {
+        const chamada = "/" + m[1].replace(/\/$/, "");
+        if (!casa(chamada)) orfas.push(`${chamada}  ←  ${rel}`);
       }
     }
   }

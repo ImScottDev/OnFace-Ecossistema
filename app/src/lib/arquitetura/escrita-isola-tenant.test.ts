@@ -26,6 +26,11 @@ const ISENTAS: Record<string, string> = {};
 
 test("nenhuma rota de escrita descarta o contexto que obteve", () => {
   const infratores: string[] = [];
+  // Quantas rotas o filtro realmente ALCANÇOU. Sem esta conta o teste passa
+  // verde varrendo zero: provado em 22/09 trocando `getCtx` por um nome que
+  // não existe, e os dois testes ficaram verdes examinando nada. É a trava de
+  // isolamento de tenant, então falso verde aqui é o pior que existe.
+  let examinadas = 0;
   for (const nome of fs.readdirSync(ROTAS).filter((f) => /\.ts$/.test(f) && !/\.test\./.test(f))) {
     const txt = fs.readFileSync(path.join(ROTAS, nome), "utf8");
     const re = /app\.(post|put|patch|delete)\(\s*"([^"]+)"/g;
@@ -37,11 +42,15 @@ test("nenhuma rota de escrita descarta o contexto que obteve", () => {
       if (!/const ctx = await get(Super)?Ctx/.test(corpo)) continue;
       // Escreve no banco?
       if (!/db\.(insert|update|delete)\(/.test(corpo)) continue;
+      examinadas++;
       const depois = corpo.split(/const ctx = await get(?:Super)?Ctx[^\n]*\n/)[1] ?? "";
       const chave = `${nome}:${m[1].toUpperCase()} ${m[2]}`;
       if (!/ctx\./.test(depois) && !(chave in ISENTAS)) infratores.push(chave);
     }
   }
+  assert.ok(examinadas > 20,
+    `só ${examinadas} rotas de escrita com contexto foram alcançadas — o extrator provavelmente ` +
+    `quebrou (nome de helper trocado, rotas movidas), e o verde não significa nada`);
   assert.deepEqual(infratores, [],
     `escrevem com o contexto descartado: ${infratores.join(", ")}. ` +
     `Autenticar não é isolar — filtre pela organização (ou pelo usuário, quando for o caso).`);
