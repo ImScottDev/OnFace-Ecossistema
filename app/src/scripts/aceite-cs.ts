@@ -107,6 +107,15 @@ async function main() {
 
   // ── TESTE 5 — novo cliente gera marcos ──
   console.log("\nTESTE 5 — jornada automática");
+  // O alvo é uma conta REAL da carteira, escolhida de propósito por ter dado em
+  // volta. Semear a jornada nela é escrita de verdade: em 22/09 sobraram 7
+  // marcos e uma tarefa PLAYBOOK em "Unresolved billing identity", porque a
+  // limpeza cobria riscos, negócios, tarefas e atividades — e não `cs_marcos`.
+  // A tarefa apareceu na fila de trabalho do CS. Guardar o que já existia é o
+  // que separa "o que o aceite criou" do que é da conta.
+  const marcosPreexistentes = new Set(
+    (await db.select({ id: csMarcos.id }).from(csMarcos).where(eq(csMarcos.empresaId, alvo.id))).map((m) => m.id),
+  );
   const jornadaAntes = await api("GET", `/api/cs/clientes/${alvo.id}/jornada`);
   const marcosAntes = ((jornadaAntes.body?.marcos ?? []) as unknown[]).length;
   const iniciar = await api("POST", `/api/cs/clientes/${alvo.id}/jornada/iniciar`);
@@ -266,6 +275,20 @@ async function main() {
          OR ${tarefas.chaveIdempotencia} LIKE 'CS_CANCEL:%')`,
   ));
   await db.delete(atividades).where(and(eq(atividades.empresaId, alvo.id), sql`${atividades.descricao} LIKE '%[ACEITE]%' OR ${atividades.titulo} LIKE '%[ACEITE]%'`));
+
+  // Os marcos que o TESTE 5 semeou na conta real, e só eles. A ordem importa:
+  // `cs_marcos.tarefa_id` referencia `tarefas`, então o marco cai primeiro e a
+  // tarefa de playbook depois — o contrário é recusado pela FK.
+  const marcosDoAceite = (await db.select({ id: csMarcos.id }).from(csMarcos).where(eq(csMarcos.empresaId, alvo.id)))
+    .map((m) => m.id).filter((id) => !marcosPreexistentes.has(id));
+  if (marcosDoAceite.length) {
+    await db.delete(csMarcos).where(inArray(csMarcos.id, marcosDoAceite));
+    await db.delete(tarefas).where(and(
+      eq(tarefas.empresaId, alvo.id),
+      inArray(tarefas.chaveIdempotencia, marcosDoAceite.map((id) => `CS_MARCO:${id}`)),
+    ));
+    console.log(`  ${marcosDoAceite.length} marcos do aceite removidos da conta real`);
+  }
   console.log("  limpo");
 
   console.log(`\n═══ ${passou} passaram, ${falhou} falharam ═══`);

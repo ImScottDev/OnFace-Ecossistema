@@ -71,6 +71,60 @@ test("o passo dos aceites chama o script, e o script cobre todos", () => {
     "o script precisa sair diferente de zero quando um aceite falha, senão a virada segue no vermelho");
 });
 
+test("os smokes têm runner, ele varre por glob, e o passo 9 o chama", () => {
+  // Terceiro buraco da mesma família: 32 smokes e NENHUM chamador — nem
+  // package.json, nem script, nem CI. O passo 9 exige "os smokes" e o único
+  // caminho era a mão de alguém, um a um.
+  const doc = fs.readFileSync(ENTREGA, "utf8");
+  assert.match(doc, /rodar-smokes\.sh/,
+    "o procedimento precisa chamar o script que roda TODOS os smokes");
+
+  const script = fs.readFileSync(path.join(RAIZ, "scripts", "rodar-smokes.sh"), "utf8");
+  assert.match(script, /src\/scripts\/smoke-\*\.ts/,
+    "o runner precisa varrer os smokes por glob: enumerar deixa o próximo de fora");
+  assert.match(script, /exit "\$FALHOU"/,
+    "o runner precisa sair diferente de zero quando um smoke falha");
+});
+
+test("o aceite de CS devolve a conta real como a encontrou", () => {
+  // `aceite-cs` trabalha de propósito sobre uma conta REAL da carteira — a
+  // primeira com serviço no portfólio — porque o valor do teste está no dado em
+  // volta. O preço disso é que tudo que ele escreve lá precisa voltar.
+  //
+  // Em 22/09 não voltava: a limpeza cobria cancelamentos, riscos, negócios,
+  // tarefas e atividades, e NÃO `cs_marcos`. Sobraram 7 marcos e uma tarefa
+  // PLAYBOOK em "Unresolved billing identity", e a tarefa foi parar na fila de
+  // trabalho do CS. Mesma família do incidente de 21/09, em que um smoke semeou
+  // 1.932 marcos em 276 contas reais.
+  const aceite = fs.readFileSync(path.join(RAIZ, "app", "src", "scripts", "aceite-cs.ts"), "utf8");
+  assert.match(aceite, /marcosPreexistentes/,
+    "o aceite precisa guardar os marcos que a conta JÁ tinha, senão não sabe quais são dele");
+  assert.match(aceite, /db\.delete\(csMarcos\)/,
+    "o aceite semeia jornada numa conta real e precisa remover os marcos que criou");
+  assert.match(aceite, /CS_MARCO:/,
+    "o sweep do aceite gera tarefa de playbook a partir do marco — ela também precisa cair");
+});
+
+test("a lista de backfills do runner cobre a pasta inteira", () => {
+  // Aqui a enumeração é DEFENSÁVEL — o backfill tem ordem (05, 06, 07…) e
+  // deixá-la explícita no script documenta a sequência. O que ela não faz é
+  // avisar quando um passo novo nasce: o 11º backfill ficaria fora em silêncio,
+  // e a virada rodaria 10 de 11 sem ninguém notar. Este teste é o aviso.
+  const script = fs.readFileSync(path.join(RAIZ, "scripts", "rodar-backfills.sh"), "utf8");
+  const bloco = script.match(/PASSOS=\(([\s\S]*?)\)/);
+  assert.ok(bloco, "a lista PASSOS sumiu de rodar-backfills.sh");
+  const listados = bloco![1].split("\n").map((l) => l.trim()).filter(Boolean);
+  const naPasta = fs.readdirSync(path.join(RAIZ, "app", "src", "scripts", "backfill"))
+    .filter((f) => f.endsWith(".ts")).map((f) => f.replace(/\.ts$/, "")).sort();
+
+  const faltando = naPasta.filter((f) => !listados.includes(f));
+  assert.deepEqual(faltando, [],
+    `backfill na pasta e fora do runner: ${faltando.join(", ")} — a virada rodaria ${listados.length} de ${naPasta.length}`);
+  const sobrando = listados.filter((l) => !naPasta.includes(l));
+  assert.deepEqual(sobrando, [],
+    `o runner chama backfill que não existe mais: ${sobrando.join(", ")}`);
+});
+
 test("todo validador de src/scripts é chamado pela bateria da virada", () => {
   // Mesmo defeito dos aceites, um nível acima: o passo 9 pede "a validação de
   // paridade", e nem `validacao-paridade` nem `validar-catalogo-oficial` eram

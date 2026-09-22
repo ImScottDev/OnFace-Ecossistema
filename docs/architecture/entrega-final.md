@@ -233,7 +233,12 @@ Cada uma foi verificada **falhando de propósito** antes de entrar.
 
    ```bash
    ./scripts/rodar-aceites.sh      # 4 aceites (208 asserções) + 2 validadores
+   ./scripts/rodar-smokes.sh       # os 32 smokes
    ```
+
+   > **Os smokes tinham o mesmo buraco, e era o maior dos três:** 32 scripts,
+   > **nenhum chamador** — zero referências em `package.json`, em script ou em
+   > CI. O passo pedia "os smokes" e o único caminho era rodar um a um, à mão.
 
    > Este script existe porque o passo dizia "o aceite de vendas" e **nenhuma
    > bateria rodava aceite nenhum** — só a mão. Em 22/09 o

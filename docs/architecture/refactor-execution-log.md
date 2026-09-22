@@ -2682,3 +2682,40 @@ preços em comum, 14 só no banco, 172 só no snapshot. Decisão do Kauã: bloqu
 
 Validação: tsc limpo; `./scripts/rodar-aceites.sh` roda 4 aceites (208
 asserções, 0 falhas) + 2 validadores e sai vermelho pelo gap de catálogo.
+
+## 2026-09-22 — CP34: os 32 smokes sem caller, e um aceite sujando a carteira real
+
+Terceira perna do passo 9. 32 smokes e nenhum chamador — zero referências em
+`package.json`, em script, em CI. Criado `scripts/rodar-smokes.sh` (glob, exit
+code, filtro opcional), chamado pelo passo 9 junto com os aceites.
+
+Primeira execução da bateria: 31 de 32. O que falhou levou ao achado.
+
+`aceite-cs` escreve numa conta REAL da carteira — escolhe de propósito "a que
+tem serviço no portfólio e mais dado em volta". A limpeza cobria cancelamentos,
+riscos, negócios, tarefas e atividades, e não `cs_marcos`. Medido: a query do
+aceite devolve `101bca9d-… Unresolved billing identity`, que tinha 7 marcos (D0
+a M12) de 22/09 03:06:26 e uma tarefa PLAYBOOK gerada pelo sweep do próprio
+aceite — na fila de trabalho do CS. Hipóteses descartadas antes de concluir:
+nenhum `domain_events` na janela, e os outros callers de `iniciarJornadaCs`
+criam a própria empresa.
+
+Corrigido: guarda os marcos preexistentes antes do TESTE 5 e remove só os seus,
+na ordem da FK (marco antes da tarefa). Resíduo revertido com backup em
+`docs/architecture/evidencias/2026-09-22-residuo-aceite-cs.sql`: DELETE 7 e
+DELETE 1, carteira a zero. Aceite corrigido: 48/0.
+
+`smoke-jornada-em-lote` media o total absoluto de marcos fora da conta de teste
+— foi o que pegou o vazamento, mas ficaria vermelho para sempre depois da
+virada, com 275 contas legitimamente semeadas. Passou a medir delta.
+
+Travas por reintrodução: runner de smokes por glob com exit code; `aceite-cs`
+guarda preexistentes, apaga `csMarcos` e cobre `CS_MARCO:`; a lista enumerada de
+`rodar-backfills.sh` cobre a pasta inteira.
+
+Gotcha: `rodar-smokes.sh` e `npm test` no mesmo banco dão corrida —
+`reconciliacao-backfill` acusou "3 leads sem aquisição" que eram leads de um
+smoke em voo. Sozinha, a suíte dá 335/0.
+
+Validação: tsc limpo, 335 testes / 0 falhas, 32/32 smokes, 208 asserções de
+aceite.

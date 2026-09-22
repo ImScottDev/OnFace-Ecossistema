@@ -40,6 +40,10 @@ async function main() {
 
   const [empresa] = await db.execute<{ id: string }>(sql`
     INSERT INTO empresas (organizacao_id, nome) VALUES (${org.id}::uuid, ${marca}) RETURNING id::text`);
+  // Linha de base da carteira, antes de o smoke tocar em qualquer coisa.
+  const [base] = await db.execute<{ n: number }>(sql`
+    SELECT count(*)::int AS n FROM cs_marcos WHERE empresa_id <> ${empresa.id}::uuid`);
+  const marcosForaAntes = base.n;
   await db.execute(sql`
     INSERT INTO clientes (organizacao_id, empresa_id, entrou_carteira_em)
     VALUES (${org.id}::uuid, ${empresa.id}::uuid, now())`);
@@ -82,10 +86,19 @@ async function main() {
 
   console.log("\n═══ a carteira real continua intocada ═══");
   // A garantia que faltava na primeira versão: o smoke não pode mexer em conta
-  // que não é dele.
+  // que não é dele. Medido como DELTA contra a linha de base do início, não
+  // como total absoluto: depois da virada a carteira terá marcos legítimos —
+  // 275 contas semeadas de verdade — e um assert de "zero marcos fora" ficaria
+  // vermelho para sempre pelo motivo errado.
+  //
+  // A versão absoluta prestou um serviço antes de sair: em 22/09 ela pegou
+  // `aceite-cs` semeando a jornada numa conta REAL da carteira e deixando 7
+  // marcos e uma tarefa PLAYBOOK na fila do CS. Por isso o delta continua
+  // sendo verificado aqui, e não foi simplesmente removido.
   const [fora] = await db.execute<{ n: number }>(sql`
     SELECT count(*)::int AS n FROM cs_marcos WHERE empresa_id <> ${empresa.id}::uuid`);
-  ok(fora.n === 0, `nenhum marco fora da conta de teste (${fora.n})`);
+  ok(fora.n === marcosForaAntes,
+     `nenhum marco novo fora da conta de teste (${marcosForaAntes} antes, ${fora.n} depois)`);
 
   console.log("\n═══ sem sessão não passa ═══");
   const anon = await csRoutes.request("http://local/cs/jornada/semear", { method: "POST", body: "{}" });

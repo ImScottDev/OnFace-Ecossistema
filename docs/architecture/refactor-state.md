@@ -2120,6 +2120,64 @@ Kauã — registrada como bloqueio 7.
 `./scripts/rodar-aceites.sh` roda 4 aceites (208 asserções, 0 falhas) + 2
 validadores, e sai vermelho pelo gap de catálogo — que é o comportamento certo.
 
+### CP34 — Os 32 smokes sem caller, e um aceite escrevendo na carteira real
+
+Terceira e última perna do passo 9, e a de maior volume: **32 smokes, nenhum
+chamador** — zero referências em `package.json`, em script, em CI. Criado
+`scripts/rodar-smokes.sh` (glob, exit code, filtro opcional por padrão), que o
+passo 9 agora chama junto com os aceites.
+
+Na primeira execução da bateria inteira: **31 de 32 passaram**, e o que falhou
+levou ao achado do checkpoint.
+
+**`aceite-cs` estava escrevendo numa conta REAL da carteira.** Ele escolhe de
+propósito "a empresa que tem serviço no portfólio e mais dado em volta" — o que
+tem valor, porque exercita fila, 360 e escopos contra dado de verdade. O preço é
+que tudo que ele escreve lá precisa voltar, e a limpeza cobria cancelamentos,
+riscos, negócios, tarefas e atividades, **mas não `cs_marcos`**.
+
+Prova, medida no banco: a query do aceite devolve
+`101bca9d-… Unresolved billing identity`, e essa conta tinha **7 marcos** (D0 a
+M12) criados às 03:06:26 de 22/09, mais uma tarefa `PLAYBOOK` —
+*"Primeiro ciclo — Unresolved billing identity"* — gerada pelo sweep do próprio
+aceite. **A tarefa estava na fila de trabalho do CS.** Descartadas as outras
+hipóteses antes de concluir: não houve `domain_events` na janela (não foi o
+consumer), e os outros dois callers de `iniciarJornadaCs` criam a própria
+empresa.
+
+Mesma família do incidente de 21/09, em que um smoke semeou 1.932 marcos em 276
+contas reais. A diferença é de escala, não de natureza.
+
+Corrigido: o aceite guarda os marcos que a conta **já tinha** antes do TESTE 5 e
+remove só os seus na limpeza, na ordem que a FK exige (marco antes da tarefa de
+playbook). Resíduo revertido com backup em
+`docs/architecture/evidencias/2026-09-22-residuo-aceite-cs.sql` — `DELETE 7` e
+`DELETE 1`, carteira de volta a zero. O aceite corrigido roda 48/0 e reporta
+"7 marcos do aceite removidos da conta real".
+
+O assert do `smoke-jornada-em-lote` que pegou o vazamento era **absoluto**
+("nenhum marco fora da conta de teste"). Passou a medir **delta**: depois da
+virada a carteira terá 275 contas semeadas de verdade, e o absoluto ficaria
+vermelho para sempre pelo motivo errado.
+
+Travas novas, todas provadas por reintrodução:
+
+- o runner de smokes existe, varre por glob e sai diferente de zero;
+- `aceite-cs` guarda os marcos preexistentes, apaga `csMarcos` e cobre a tarefa
+  `CS_MARCO:`;
+- a lista enumerada de `rodar-backfills.sh` cobre a pasta inteira — a ordem
+  explícita (05, 06, 07…) tem valor documental, mas não avisa quando o 11º passo
+  nasce.
+
+**Gotcha registrado:** não rodar `./scripts/rodar-smokes.sh` junto com
+`npm test`. Os dois usam o mesmo banco e os testes de reconciliação varrem
+tabelas inteiras; em paralelo, `reconciliacao-backfill` acusou "3 leads sem
+aquisição" que eram leads temporários de um smoke em voo. Sozinha, a suíte dá
+335/0.
+
+**Validação:** tsc limpo, **335 testes / 0 falhas**, **32/32 smokes**, 4 aceites
+com 208 asserções.
+
 ### Auditoria de CS Health (histórico da decisão)
 
 Menor do que o gap analysis inicial dizia:
