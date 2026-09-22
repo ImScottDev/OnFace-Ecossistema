@@ -9,8 +9,8 @@ export default function ClientesExpansaoPage() {
       area="Clientes"
       resumo="Oportunidades dentro da base: upgrade, aumento de uso e renovação de contrato."
       dependencias={[
-            "Não existe pipeline de expansão no domínio. Enquanto não existir, nenhuma tela mostra etapa de expansão",
             "Definir o gatilho de renovação a partir do contrato",
+            "Não há histórico de expansão para a tela mostrar: zero negócios com commercial_motion EXPANSION. O caminho existe e é exercido por smoke; o que falta é a operação usá-lo",
       ]}
     />
   );

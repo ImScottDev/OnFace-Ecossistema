@@ -9,7 +9,7 @@ export default function ClientesCarteiraPage() {
       area="Clientes"
       resumo="A base ativa vista como carteira: quem atende cada conta, quanto ela pesa e desde quando é cliente."
       dependencias={[
-            "Definir o dono da conta (hoje não existe responsável de carteira no banco)",
+            "Atribuir o dono da conta: clientes.responsavel_cs_id existe e está vazio nas 275 contas. É atribuição de gente, não campo faltando",
             "Definir o critério de segmentação da carteira",
       ]}
     />
