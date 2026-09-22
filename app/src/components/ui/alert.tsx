@@ -11,6 +11,19 @@ const alertVariants = cva(
         default: "bg-card text-card-foreground",
         destructive:
           "bg-card text-destructive *:data-[slot=alert-description]:text-destructive/90 [&>svg]:text-current",
+
+        /* Variantes de DOMÍNIO, no componente do shadcn e não num alerta
+         * paralelo. Lêem o par semântico por token, então continuam legíveis
+         * dentro de uma ilha `[data-cf2-superficie="escura"]`, onde o escopo
+         * reescreve os dois lados do par.
+         *
+         * `warning` é "não deu para carregar, tente de novo": a leitura
+         * falhou mas nada quebrou. `destructive` continua sendo o que o
+         * shadcn diz que é, consequência destrutiva. */
+        warning:
+          "border-transparent bg-[var(--cf2-warning-bg)] text-[var(--cf2-warning-text)] *:data-[slot=alert-description]:text-current [&>svg]:text-current",
+        info:
+          "border-transparent bg-[var(--cf2-informativo-bg)] text-[var(--cf2-informativo-fg)] *:data-[slot=alert-description]:text-current [&>svg]:text-current",
       },
     },
     defaultVariants: {
