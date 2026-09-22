@@ -1815,6 +1815,28 @@ também é resultado:
 **Validação:** tsc limpo, **324 testes 0 falhas**, **30 smokes**, banco conferido
 de volta ao estado anterior.
 
+### CP26 — Um smoke quebrou sozinho à meia-noite, e estava certo em quebrar
+
+Na bateria seguinte ao CP25, `smoke-cs-health` falhou: *"gravou 550 snapshot(s)
+(antes 275)"*. **O produto estava correto** — 275 snapshots de 21/09 e 275 de
+22/09, um por conta por dia, que é exatamente o desenho do CP3.
+
+O smoke é que afirmava `total da tabela === número de contas`. Isso só vale no
+primeiro dia de vida da tabela. A data virou e a afirmação quebrou sozinha, sem
+ninguém tocar em nada.
+
+É a segunda vez que esse defeito aparece: o `smoke-catalogo-stripe` usava
+`created_at < now() - interval '1 hour'` e começou a falhar uma hora depois da
+primeira sincronização. Afirmação dependente de relógio passa hoje e mente
+amanhã, e o pior é que ela mente nos **dois** sentidos — pode esconder um
+defeito real tanto quanto inventar um.
+
+O invariante certo é **por dia**: um snapshot por conta na data corrente,
+reexecução atualiza em vez de empilhar, e o histórico dos dias anteriores
+continua lá. As três coisas agora são verificadas separadamente.
+
+**Validação:** tsc limpo, **324 testes 0 falhas**, bateria de **30 smokes**.
+
 ### Auditoria de CS Health (histórico da decisão)
 
 Menor do que o gap analysis inicial dizia:

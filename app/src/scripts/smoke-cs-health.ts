@@ -43,17 +43,31 @@ async function main() {
      "todo fator carrega a evidência numérica que o produziu");
 
   console.log("\n═══ materialização contra o banco real ═══");
-  const antes = await db.execute<{ n: number }>(sql`SELECT count(*)::int AS n FROM cs_health_snapshots`);
+  // O snapshot é DIÁRIO: um por conta por dia. Contar o total da tabela era
+  // afirmação dependente de relógio — passou 21/09 e quebrou sozinha em 22/09,
+  // com 275 snapshots de cada dia somando 550. O invariante real é por dia.
+  const doDia = async () => {
+    const [r] = await db.execute<{ n: number }>(sql`
+      SELECT count(*)::int AS n FROM cs_health_snapshots
+       WHERE (calculated_at AT TIME ZONE 'UTC')::date = (now() AT TIME ZONE 'UTC')::date`);
+    return r?.n ?? 0;
+  };
+
   const r = await calcularHealth(org.id);
   ok(r.contas > 0, `avaliou ${r.contas} conta(s)`);
   console.log(`         saudáveis ${r.saudaveis} · atenção ${r.atencao} · em risco ${r.emRisco} · cobertura média ${r.coberturaMedia}%`);
 
-  const [depois] = await db.execute<{ n: number }>(sql`SELECT count(*)::int AS n FROM cs_health_snapshots`);
-  ok(depois.n === r.contas, `gravou ${depois.n} snapshot(s) (antes ${antes[0].n})`);
+  const depois = await doDia();
+  ok(depois === r.contas, `gravou um snapshot por conta HOJE (${depois} de ${r.contas})`);
 
   const r2 = await calcularHealth(org.id);
-  const [final] = await db.execute<{ n: number }>(sql`SELECT count(*)::int AS n FROM cs_health_snapshots`);
-  ok(final.n === depois.n, `rodar de novo no mesmo dia ATUALIZA, não empilha (${depois.n} → ${final.n})`);
+  const final = await doDia();
+  ok(final === depois, `rodar de novo no mesmo dia ATUALIZA, não empilha (${depois} → ${final})`);
+
+  // E o histórico não é apagado: o snapshot de ontem continua lá.
+  const [total] = await db.execute<{ n: number }>(sql`
+    SELECT count(*)::int AS n FROM cs_health_snapshots`);
+  ok(total.n >= depois, `o histórico é preservado (${total.n} snapshots no total)`);
   ok(r2.contas === r.contas, "mesma cobertura na reexecução");
 
   console.log("\n═══ leitura para o Cliente 360 ═══");

@@ -2530,3 +2530,18 @@ própria e ganhou a verificação que faltava: nenhum marco fora da conta de tes
 Três fios fechados sem código no caminho: os ganhos sem contrato são históricos
 ou de oferta que não exige; não há duas políticas de Won; e a tela de
 duplicidade não tem buraco.
+
+## 2026-09-22 — CP26: o smoke que quebrou sozinho à meia-noite
+
+`smoke-cs-health` falhou dizendo "gravou 550 snapshot(s) (antes 275)". O produto
+estava certo: 275 de 21/09 e 275 de 22/09, um por conta por dia, que é o
+desenho. O smoke afirmava que o total da tabela é igual ao número de contas, o
+que só vale no primeiro dia.
+
+Segunda aparição do defeito: `smoke-catalogo-stripe` usava
+`created_at < now() - interval '1 hour'` e passou a falhar uma hora depois da
+primeira sincronização.
+
+Afirmação dependente de relógio mente nos dois sentidos, e o invariante certo
+aqui é por dia: um snapshot por conta hoje, reexecução atualiza em vez de
+empilhar, histórico preservado.
