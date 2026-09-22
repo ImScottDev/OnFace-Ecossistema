@@ -1,0 +1,57 @@
+# Portão automático entre escrever código e subir.
+#
+# O diagnóstico da fundação registrou, em 19/09: "Não existe nenhum portão
+# automático entre escrever código e subir em produção. Sem CI." O CP61 pôs o
+# typecheck dentro do `npm run build`, o que cobre quem constrói. Isto cobre
+# quem empurra.
+#
+# O QUE RODA AQUI, e por quê só isto: as 91 travas de arquitetura e o typecheck
+# não precisam de banco — medido em 22/09, rodam limpos com `DATABASE_URL`
+# ausente. Os outros 263 testes e os 50 smokes vão contra um banco carregado com
+# dado de produção, e não existe banco assim no CI. Rodá-los aqui contra um
+# banco vazio não provaria nada e acabaria em vermelho permanente, que é como
+# um portão morre.
+#
+# Então este workflow responde uma pergunta só, e responde de verdade: **o que
+# foi empurrado compila, e não fura nenhuma regra de arquitetura?** O resto
+# continua sendo a bateria local (`scripts/rodar-smokes.sh`,
+# `scripts/rodar-aceites.sh`), que precisa do banco real.
+name: portão
+
+on:
+  push:
+    branches: ["main", "dev", "homolog", "refactor/**", "onface/**"]
+  pull_request:
+
+jobs:
+  tipos-e-arquitetura:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      # O workspace é pnpm (`pnpm-workspace.yaml` na raiz): os `@onface/*` de
+      # `packages/` só ficam resolvíveis com ele.
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # O mesmo comando que o `build` roda desde o CP61, e a mesma razão: o
+      # portão tem que ser o comando de verdade, não uma variação dele.
+      - name: typecheck
+        working-directory: app
+        run: pnpm exec tsc --noEmit
+
+      # As travas que provam regra de arquitetura: porta canônica, isolamento de
+      # tenant, idempotência sem relógio, link que não leva ao vazio, métrica com
+      # definição única. Todas leem arquivo, nenhuma toca banco.
+      - name: travas de arquitetura
+        working-directory: app
+        run: pnpm exec tsx --test "src/lib/arquitetura/*.test.ts"
