@@ -3184,3 +3184,42 @@ com sinal da Meta, declarada ao lado deles. Mesmo formato do número mágico que
 CP33 tirou do validador do catálogo.
 
 Validação: tsc limpo, 354 testes / 0 falhas, 45 smokes.
+
+### CP58 — terceiro resíduo de teste em dois dias, e sempre longe da causa
+
+| quando | o que ficou | onde apareceu |
+|---|---|---|
+| CP49 | 3 leads | 3 testes de reconciliação |
+| CP56 | 3 oportunidades sem etapa | `relatorios/cobertura.test.ts`, **duas fases adiante** |
+| CP58 | 6 empresas, 1 tarefa, 4 eventos de outbox órfãos | a checagem nova, na hora |
+
+O padrão é sempre o mesmo, e não é desleixo: **a limpeza de cada script conhece
+as tabelas que ELE escreve**, e envelhece quando a escrita cresce por baixo. A
+ponte canônica passou a criar oportunidade; o evento passou a ir para o outbox.
+Nenhum script incluiu o que ele não escreveu com as próprias mãos.
+
+O que torna caro é que o resíduo nunca aparece onde nasceu. No CP56 ele apareceu
+num teste de cobertura de outra fase, onde ninguém procuraria.
+
+**`checar-residuo-de-teste`** olha o banco inteiro pelas marcas que os scripts
+usam (`smoke-`, `[ACEITE`), roda **por último** nas duas baterias, e **não limpa
+nada de propósito**: limpar esconderia o defeito e deixaria a próxima execução
+sujar de novo. O que se quer é o script culpado aparecer.
+
+**Achou dois defeitos meus, de hoje, na primeira execução.**
+`smoke-prospeccao-entra-no-canonico` passou a publicar evento quando
+`preQualificar` virou a segunda chance de entrada canônica (CP53), e
+`smoke-portas-de-entrada` nasceu publicando (CP54). Nenhum dos dois limpava o
+outbox, porque quem escreve nele é a ponte, não o script: **2 eventos pendentes
+órfãos por execução, cada um**.
+
+**Uma checagem foi estreitada antes de entrar.** A primeira versão contava todo
+evento órfão e acusou 8, todos já processados. Evento processado cujo agregado
+foi apagado depois é registro histórico legítimo, e é para isso que
+`domain_events` existe. Só o PENDENTE atrapalha, porque o consumidor vai
+pegá-lo, não vai achar contexto e vai gravar auditoria que não responde nada.
+Acusar o histórico junto seria a trava dogmática que esta leva já pagou três
+vezes (CP47, CP51, CP53).
+
+Validação: tsc limpo, 354 testes / 0 falhas, 46 verificações na bateria, aceites
+verdes menos o catálogo PABX.

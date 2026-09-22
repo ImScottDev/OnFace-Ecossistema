@@ -3204,3 +3204,22 @@ entrega. Reintrodução (tirar `campaignId` de `veioDaMeta`) derruba de 2 para 1
 contra a quantidade de cenários da Meta.
 
 Validação: tsc limpo, 354 testes / 0 falhas, 45 smokes.
+
+## 2026-09-22 — CP58: higiene do banco vira verificação própria
+
+Terceiro resíduo de teste em dois dias (CP49, CP56, CP58), sempre aparecendo
+longe da causa. A limpeza de cada script conhece só as tabelas que ele escreve,
+e envelhece quando a escrita cresce por baixo.
+
+`checar-residuo-de-teste`: varre o banco pelas marcas `smoke-` e `[ACEITE`,
+roda por último em `rodar-smokes.sh` e `rodar-aceites.sh`, não limpa nada.
+
+Achou dois defeitos do mesmo dia: `smoke-prospeccao-entra-no-canonico` (CP53) e
+`smoke-portas-de-entrada` (CP54) publicam evento e não limpavam o outbox — 2
+pendentes órfãos por execução cada.
+
+Estreitada antes de entrar: só evento PENDENTE órfão conta. Processado com
+agregado apagado é histórico legítimo.
+
+Validação: tsc limpo, 354 testes / 0 falhas, 46 verificações, aceites verdes
+menos o catálogo.
