@@ -1,8 +1,8 @@
 import { redirect } from "next/navigation";
 import { getTenantContext } from "@/lib/auth/tenant";
-import { OnfacePage, OnfacePageBand, OnfacePageSurface } from "@/components/onface/shell/OnfacePage";
+import { Pagina, PaginaCabecalho, PaginaResumo } from "@/components/onface/shell/Pagina";
 import { Propostas } from "@/components/onface/vendas/Propostas";
-import { Hero, type RotaBaseVendas } from "@/components/onface/vendas/ui";
+import { type RotaBaseVendas } from "@/components/onface/vendas/ui";
 import { moeda } from "@/components/onface/vendas/formato";
 import {
   acaoCatalogo, acaoCriar, acaoCriarRevisao, acaoDetalhe, acaoEnviar,
@@ -33,20 +33,27 @@ export async function PropostasPage({ searchParams, abrirComposer = false, rotaB
   const aceitas = linhas.filter((p) => p.status === "aceita");
 
   return (
-    <OnfacePage>
-      <OnfacePageBand>
-        <Hero
-          titulo="Propostas"
-          descricao="Uma oportunidade tem várias propostas históricas e uma vigente por vez. Catálogo filtrado pela família; aceite não é ganho."
-          resumo={[
-            { rotulo: "Abertas", valor: vigentes.length },
-            { rotulo: "Em aberto", valor: moeda(vigentes.reduce((s, p) => s + (p.total ?? 0), 0)) },
-            { rotulo: "Aceitas", valor: aceitas.length },
-            { rotulo: "Ajuste pedido", valor: linhas.filter((p) => p.status === "ajuste_solicitado").length, alerta: linhas.some((p) => p.status === "ajuste_solicitado") },
-          ]}
-        />
-      </OnfacePageBand>
-      <OnfacePageSurface sobreposto>
+    <Pagina>
+      <PaginaCabecalho titulo="Propostas" />
+      <PaginaResumo
+        itens={[
+          {
+            rotulo: "Em aberto",
+            valor: moeda(vigentes.reduce((s, p) => s + (p.total ?? 0), 0)),
+            detalhe: `${vigentes.length} propostas vigentes`,
+            destaque: true,
+          },
+          // Ajuste pedido é a única linha desta tela que espera alguém: o
+          // cliente respondeu e a bola está com o closer.
+          {
+            rotulo: "Ajuste pedido",
+            valor: linhas.filter((p) => p.status === "ajuste_solicitado").length,
+            sinal: true,
+          },
+          { rotulo: "Aceitas", valor: aceitas.length },
+        ]}
+      />
+
         <Propostas
           linhas={linhas}
           filtro={{ busca, status }}
@@ -62,8 +69,7 @@ export async function PropostasPage({ searchParams, abrirComposer = false, rotaB
             expirarVencidas: acaoExpirarVencidas, salvarJuridicos: acaoSalvarJuridicos,
           }}
         />
-      </OnfacePageSurface>
-    </OnfacePage>
+    </Pagina>
   );
 }
 

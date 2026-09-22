@@ -47,6 +47,13 @@ export interface CardAquisicao {
 export interface FiltrosBoard {
   etapas?: EstagioAquisicao[];
   responsavelId?: string | null;
+  /** Recorta o board para as aquisições sem dono.
+   *
+   * O card já expunha `semDono` e o resumo já contava quantas eram, mas não
+   * havia como VER quais: o operador lia "223 sem responsável" e não tinha
+   * caminho a partir dali. O número virava enfeite, que é justamente o que a
+   * spec proíbe (§23.4, "não mostre KPI sobre o qual não se pode agir"). */
+  semDono?: boolean;
   origem?: string | null;
   campanha?: string | null;
   busca?: string | null;
@@ -144,6 +151,7 @@ export async function boardDeAquisicoes(
      WHERE a.organizacao_id = ${organizacaoId}::uuid
        AND (${filtros.incluirEncerradas ? sql`TRUE` : sql`a.closed_at IS NULL`})
        AND (${filtros.responsavelId ?? null}::uuid IS NULL OR a.responsavel_id = ${filtros.responsavelId ?? null}::uuid)
+       AND (${filtros.semDono ? sql`a.responsavel_id IS NULL` : sql`TRUE`})
        AND (${filtros.origem ?? null}::text IS NULL OR a.origem = ${filtros.origem ?? null})
        AND (${filtros.campanha ?? null}::text IS NULL OR pc.campaign = ${filtros.campanha ?? null})
        AND (${filtros.desde ?? null}::date IS NULL OR a.created_at >= ${filtros.desde ?? null}::date)
@@ -200,6 +208,7 @@ export async function boardDeAquisicoes(
      WHERE a.organizacao_id = ${organizacaoId}::uuid
        AND (${filtros.incluirEncerradas ? sql`TRUE` : sql`a.closed_at IS NULL`})
        AND (${filtros.responsavelId ?? null}::uuid IS NULL OR a.responsavel_id = ${filtros.responsavelId ?? null}::uuid)
+       AND (${filtros.semDono ? sql`a.responsavel_id IS NULL` : sql`TRUE`})
        AND (${filtros.origem ?? null}::text IS NULL OR a.origem = ${filtros.origem ?? null})
        AND (${filtros.campanha ?? null}::text IS NULL OR pc.campaign = ${filtros.campanha ?? null})
        AND (${filtros.desde ?? null}::date IS NULL OR a.created_at >= ${filtros.desde ?? null}::date)

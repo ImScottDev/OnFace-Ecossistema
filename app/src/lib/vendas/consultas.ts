@@ -78,6 +78,8 @@ export interface FiltrosPreVendas {
   servico?: string | null;
   /** "ativos" | "nutricao" | "desqualificados" (Bloco 01 §22). */
   aba?: "ativos" | "nutricao" | "desqualificados";
+  /** Recorte do board para aquisições sem responsável. */
+  semDono?: boolean;
   desde?: string | null;
 }
 
@@ -114,6 +116,7 @@ export async function boardPreVendas(organizacaoId: string, filtros: FiltrosPreV
   const board = await boardDeAquisicoes(db as never, sql as never, organizacaoId, {
     etapas: etapasDaAba as EstagioAquisicao[],
     responsavelId: filtros.responsavelId ?? null,
+    semDono: filtros.semDono ?? false,
     origem: filtros.origem ?? null,
     busca: filtros.busca ?? null,
     campanha: filtros.campanha ?? null,

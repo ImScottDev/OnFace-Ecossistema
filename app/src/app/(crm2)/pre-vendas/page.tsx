@@ -1,9 +1,9 @@
 import { redirect } from "next/navigation";
 import { getTenantContext } from "@/lib/auth/tenant";
 import { boardPreVendas } from "@/lib/vendas/consultas";
-import { OnfacePage, OnfacePageBand, OnfacePageSurface } from "@/components/onface/shell/OnfacePage";
+import { Pagina, PaginaCabecalho, PaginaResumo } from "@/components/onface/shell/Pagina";
 import { PreVendas } from "@/components/onface/vendas/PreVendas";
-import { Hero, type RotaBaseVendas } from "@/components/onface/vendas/ui";
+import { type RotaBaseVendas } from "@/components/onface/vendas/ui";
 import {
   acaoAssociarEmpresa, acaoAtribuir, acaoCriarLead, acaoCriarOportunidade,
   acaoDesqualificar, acaoDetalhe, acaoMoverEtapa, acaoNutrir, acaoQualificar,
@@ -32,7 +32,7 @@ type Aba = "ativos" | "nutricao" | "desqualificados";
  * rota oficial devolvia o usuário para dentro do preview.
  */
 export async function PreVendasPage({ searchParams, rotaBase = "" }: {
-  searchParams: Promise<{ aba?: string; busca?: string; responsavel?: string }>;
+  searchParams: Promise<{ aba?: string; busca?: string; responsavel?: string; loop?: string }>;
   rotaBase?: RotaBaseVendas;
 }) {
   const ctx = await getTenantContext();
@@ -46,24 +46,40 @@ export async function PreVendasPage({ searchParams, rotaBase = "" }: {
   const busca = params.busca?.trim() || "";
   const responsavelId = params.responsavel || null;
 
-  const dados = await boardPreVendas(ctx.organizacaoId, { aba, busca, responsavelId });
+  // Recorte "sem dono": o resumo acusa quantas são e este parâmetro mostra
+  // quais. Sem ele o número seria enfeite.
+  const semDono = params.loop === "sem-dono";
+
+  const dados = await boardPreVendas(ctx.organizacaoId, { aba, busca, responsavelId, semDono });
 
   return (
-    <OnfacePage>
-      <OnfacePageBand>
-        <Hero
-          titulo="Pré-vendas"
-          descricao="Empresas em qualificação. A empresa é o objeto de trabalho; a pessoa é o contato através do qual ela é trabalhada."
-          resumo={[
-            { rotulo: "Em jogo", valor: dados.resumo.ativos },
-            { rotulo: "Sem responsável", valor: dados.resumo.semResponsavel, alerta: dados.resumo.semResponsavel > 0 },
-            { rotulo: "Sem 1º contato", valor: dados.resumo.semPrimeiroContato, alerta: dados.resumo.semPrimeiroContato > 0 },
-            { rotulo: "Em nutrição", valor: dados.resumo.nutricao },
-          ]}
-        />
-      </OnfacePageBand>
+    <Pagina>
+      <PaginaCabecalho titulo="Pré-vendas" />
+      <PaginaResumo
+        itens={[
+          {
+            rotulo: "Em jogo",
+            valor: dados.resumo.ativos,
+            detalhe: `${dados.resumo.nutricao} em nutrição`,
+            destaque: true,
+          },
+          // Os dois sinais desta tela são os dois jeitos de um lead morrer
+          // parado: ninguém dono dele, ou dono sem ter falado ainda.
+          {
+            rotulo: "Sem responsável",
+            valor: dados.resumo.semResponsavel,
+            sinal: true,
+            href: "/pre-vendas?loop=sem-dono",
+          },
+          // "Sem 1º contato" fica como fato, não como sinal: a consulta
+          // canônica ainda não tem esse recorte, e sinal sem destino é o
+          // número morto que a spec proíbe. Vira sinal quando o filtro
+          // existir.
+          { rotulo: "Sem 1º contato", valor: dados.resumo.semPrimeiroContato },
+          { rotulo: "Em nutrição", valor: dados.resumo.nutricao },
+        ]}
+      />
 
-      <OnfacePageSurface sobreposto>
         <PreVendas
           rotaBase={rotaBase}
           dados={dados}
@@ -84,8 +100,7 @@ export async function PreVendasPage({ searchParams, rotaBase = "" }: {
             detalhe: acaoDetalhe,
           }}
         />
-      </OnfacePageSurface>
-    </OnfacePage>
+    </Pagina>
   );
 }
 

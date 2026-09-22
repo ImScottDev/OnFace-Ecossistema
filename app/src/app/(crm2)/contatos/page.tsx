@@ -2,9 +2,9 @@ import { redirect } from "next/navigation";
 import { getTenantContext } from "@/lib/auth/tenant";
 import { diretorioEmpresas, diretorioPessoas, pessoaPorId } from "@/lib/vendas/consultas";
 import type { RelacionamentoEmpresa } from "@/lib/vendas/dominio";
-import { OnfacePage, OnfacePageBand, OnfacePageSurface } from "@/components/onface/shell/OnfacePage";
+import { Pagina, PaginaCabecalho, PaginaResumo } from "@/components/onface/shell/Pagina";
 import { Contatos } from "@/components/onface/vendas/Contatos";
-import { Hero, type RotaBaseVendas } from "@/components/onface/vendas/ui";
+import { type RotaBaseVendas } from "@/components/onface/vendas/ui";
 import {
   acaoBuscarEmpresas, acaoCriarEmpresa, acaoCriarLeadDaEmpresa, acaoCriarPessoa,
   acaoEmpresa360, acaoNovaOportunidade, acaoResponsaveis, acaoSalvarDadosJuridicos,
@@ -44,20 +44,22 @@ export async function ContatosPage({ searchParams, rotaBase = "" }: {
   const pessoasComAlvo = pessoaInicial && !pessoas.some((p) => p.id === pessoaInicial.id) ? [pessoaInicial, ...pessoas] : pessoas;
 
   return (
-    <OnfacePage>
-      <OnfacePageBand>
-        <Hero
-          titulo="Contatos & Empresas"
-          descricao="O diretório do ONFACE. A relação de cada empresa é consequência dos processos reais, não um status editável."
-          resumo={[
-            { rotulo: "Empresas", valor: empresas.total },
-            { rotulo: "Clientes", valor: empresas.porRelacionamento.cliente },
-            { rotulo: "Em oportunidade", valor: empresas.porRelacionamento.em_oportunidade },
-            { rotulo: "Em Pré-vendas", valor: empresas.porRelacionamento.em_pre_vendas },
-          ]}
-        />
-      </OnfacePageBand>
-      <OnfacePageSurface sobreposto>
+    <Pagina>
+      <PaginaCabecalho titulo="Contatos & Empresas" />
+      <PaginaResumo
+        itens={[
+          {
+            rotulo: "Empresas",
+            valor: empresas.total,
+            detalhe: "no diretório",
+            destaque: true,
+          },
+          { rotulo: "Clientes", valor: empresas.porRelacionamento.cliente },
+          { rotulo: "Em oportunidade", valor: empresas.porRelacionamento.em_oportunidade },
+          { rotulo: "Em pré-vendas", valor: empresas.porRelacionamento.em_pre_vendas },
+        ]}
+      />
+
         <Contatos
           aba={aba}
           empresas={empresas}
@@ -78,8 +80,7 @@ export async function ContatosPage({ searchParams, rotaBase = "" }: {
             buscarEmpresas: acaoBuscarEmpresas,
           }}
         />
-      </OnfacePageSurface>
-    </OnfacePage>
+    </Pagina>
   );
 }
 
