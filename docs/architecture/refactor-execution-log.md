@@ -2719,3 +2719,31 @@ smoke em voo. Sozinha, a suíte dá 335/0.
 
 Validação: tsc limpo, 335 testes / 0 falhas, 32/32 smokes, 208 asserções de
 aceite.
+
+## 2026-09-22 — CP35: a home pintava de verde uma queda de 78%
+
+O passo 10 da virada é uma frase sem roteiro ("subir o código novo e provar no
+navegador"). Indo provar, os quatro cards de KPI da Visão Geral usavam o mesmo
+selo verde fixo (`badge-positive`, `#3fb950` cru do export do Figma): receita
+−78% em verde, leads −51% em verde, e dois selos verdes com "—" dentro.
+
+`ds/crm.css` já tinha `.of-tendencia[data-tom]` com ok/risco/neutro — a tela não
+usava. Importar o arquivo ali é seguro (todos os seletores são de classe
+`.of-`/`.ds-`). O tom passou a sair de `tomDoDelta`: positivo → ok, negativo →
+risco, nulo ou zero → neutro.
+
+Medido no navegador com sessão real: −78% e −51% em `rgba(231,0,11,0.1)` com
+texto vermelho; os dois "—" em cinza neutro.
+
+`checar-onface-inicio.ts` terminava em `process.exit(0)` incondicional — existia
+para pegar "home mostrando 0 com 244 clientes" e nunca falhava. Ganhou 8 asserts
+na forma "não pode zerar quando a fonte tem linha", sem reimplementar a conta da
+tela.
+
+Achado aberto para o CP36: o gráfico "Evolução da operação" no centro da home é
+imagem SVG estática do Figma, com legenda fixa "Crescimento consistente em todas
+as frentes" e meses até dezembro. `getEvolucaoOperacao` existe, devolve série
+real e não é chamada pela home.
+
+Trava `sinal-nao-e-decoracao` provada por reintrodução nas duas direções.
+Validação: tsc limpo, 337 testes / 0 falhas.

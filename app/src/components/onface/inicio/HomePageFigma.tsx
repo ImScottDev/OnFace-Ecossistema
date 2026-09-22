@@ -4,12 +4,29 @@ import Link from "next/link";
 import { useState } from "react";
 
 /** Direct Figma frame 316:34672. Keep its structure and geometry intact. */
+// O selo de variação é o único ponto em que esta tela sai do desenho e entra no
+// Design System, e por um motivo: o frame do Figma traz os quatro cards com o
+// MESMO selo verde, porque no desenho todos os números eram positivos. Ligado ao
+// dado real, isso virou receita de −78% pintada de verde e dois selos verdes com
+// "—" dentro. `ds/crm.css` já tem o padrão com os três tons — só não estava
+// sendo usado aqui. Todos os seletores desse arquivo são de classe `.of-`/`.ds-`,
+// então importá-lo não mexe na geometria do frame.
+import "../ds/crm.css";
 export interface OperacaoItem { empresa: string; descricao: string; etapa: string; valor: string; }
 export interface EtapaItem { nome: string; pct: string; }
+/**
+ * Tom do selo de variação, na convenção do Design System
+ * (`ds/crm.css` → `.of-tendencia[data-tom]`): verde é resultado consumado,
+ * vermelho é piora, cinza é parado ou sem base de comparação.
+ */
+export type TomTendencia = "ok" | "risco" | "neutro";
+
 export interface DadosInicio {
   saudacao: string; dataExtenso: string;
-  receita: { valor: string; delta: string }; leads: { valor: string; delta: string };
-  operacoesAtivas: string; operacoesDelta: string; clientesAtivos: string; clientesDelta: string;
+  receita: { valor: string; delta: string; tom: TomTendencia };
+  leads: { valor: string; delta: string; tom: TomTendencia };
+  operacoesAtivas: string; operacoesDelta: string; operacoesTom: TomTendencia;
+  clientesAtivos: string; clientesDelta: string; clientesTom: TomTendencia;
   operacao: { empresa: string; servico: string; responsavel: string; cargo: string; valor: string; proximoPasso: string; proximoPassoData: string; prazo: string; prazoApoio: string; risco: string; insight: string };
   jornada0: string; jornada1: string; jornada2: string; jornada3: string;
   resumo: { prioridade: string; status: string; origem: string; inicio: string; previsao: string };
@@ -135,8 +152,8 @@ export function HomePageFigma({ d }: { d: DadosInicio }) {
                           {d.receita.valor}
                         </p>
                         <div className="content-stretch flex items-center justify-between relative shrink-0 w-full" data-node-id="316:34697" data-name="metric-badge-row">
-                          <div className="bg-[rgba(63,185,80,0.13)] content-stretch flex items-center px-[5.963px] py-[1.987px] relative rounded-[5.963px] shrink-0" data-node-id="316:34698" data-name="badge-positive">
-                            <p className="[word-break:break-word] font-['Plus_Jakarta_Sans:Bold'] font-bold leading-[normal] relative shrink-0 text-[#3fb950] text-[10.931px] whitespace-nowrap" data-node-id="316:34699">
+                          <div className="of-tendencia" data-tom={d.receita.tom} data-node-id="316:34698" data-name="metric-badge">
+                            <p className="[word-break:break-word] font-['Plus_Jakarta_Sans:Bold'] font-bold leading-[normal] relative shrink-0 text-[10.931px] whitespace-nowrap" data-node-id="316:34699">
                               {d.receita.delta}
                             </p>
                           </div>
@@ -160,8 +177,8 @@ export function HomePageFigma({ d }: { d: DadosInicio }) {
                           {d.operacoesAtivas}
                         </p>
                         <div className="content-stretch flex items-center justify-between relative shrink-0 w-full" data-node-id="316:34708" data-name="metric-badge-row">
-                          <div className="bg-[rgba(63,185,80,0.13)] content-stretch flex items-center px-[5.963px] py-[1.987px] relative rounded-[5.963px] shrink-0" data-node-id="316:34709" data-name="badge-positive">
-                            <p className="[word-break:break-word] font-['Plus_Jakarta_Sans:Bold'] font-bold leading-[normal] relative shrink-0 text-[#3fb950] text-[10.931px] whitespace-nowrap" data-node-id="316:34710">
+                          <div className="of-tendencia" data-tom={d.operacoesTom} data-node-id="316:34709" data-name="metric-badge">
+                            <p className="[word-break:break-word] font-['Plus_Jakarta_Sans:Bold'] font-bold leading-[normal] relative shrink-0 text-[10.931px] whitespace-nowrap" data-node-id="316:34710">
                               {d.operacoesDelta}
                             </p>
                           </div>
@@ -183,8 +200,8 @@ export function HomePageFigma({ d }: { d: DadosInicio }) {
                           {d.clientesAtivos}
                         </p>
                         <div className="content-stretch flex items-center justify-between relative shrink-0 w-full" data-node-id="316:34718" data-name="metric-badge-row">
-                          <div className="bg-[rgba(63,185,80,0.13)] content-stretch flex items-center px-[5.963px] py-[1.987px] relative rounded-[5.963px] shrink-0" data-node-id="316:34719" data-name="badge-positive">
-                            <p className="[word-break:break-word] font-['Plus_Jakarta_Sans:Bold'] font-bold leading-[normal] relative shrink-0 text-[#3fb950] text-[10.931px] whitespace-nowrap" data-node-id="316:34720">
+                          <div className="of-tendencia" data-tom={d.clientesTom} data-node-id="316:34719" data-name="metric-badge">
+                            <p className="[word-break:break-word] font-['Plus_Jakarta_Sans:Bold'] font-bold leading-[normal] relative shrink-0 text-[10.931px] whitespace-nowrap" data-node-id="316:34720">
                               {d.clientesDelta}
                             </p>
                           </div>
@@ -206,8 +223,8 @@ export function HomePageFigma({ d }: { d: DadosInicio }) {
                           {d.leads.valor}
                         </p>
                         <div className="content-stretch flex items-center justify-between relative shrink-0 w-full" data-node-id="316:34728" data-name="metric-badge-row">
-                          <div className="bg-[rgba(63,185,80,0.13)] content-stretch flex items-center px-[5.963px] py-[1.987px] relative rounded-[5.963px] shrink-0" data-node-id="316:34729" data-name="badge-positive">
-                            <p className="[word-break:break-word] font-['Plus_Jakarta_Sans:Bold'] font-bold leading-[normal] relative shrink-0 text-[#3fb950] text-[10.931px] whitespace-nowrap" data-node-id="316:34730">
+                          <div className="of-tendencia" data-tom={d.leads.tom} data-node-id="316:34729" data-name="metric-badge">
+                            <p className="[word-break:break-word] font-['Plus_Jakarta_Sans:Bold'] font-bold leading-[normal] relative shrink-0 text-[10.931px] whitespace-nowrap" data-node-id="316:34730">
                               {d.leads.delta}
                             </p>
                           </div>

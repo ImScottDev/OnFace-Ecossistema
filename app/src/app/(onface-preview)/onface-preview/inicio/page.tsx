@@ -7,13 +7,21 @@ import {
   getJornadaEtapas, getLeadsGerados, getOperacaoDetalhe, getOperacoesAtivas,
   getOperacoesPrioritarias, getReceitaMes,
 } from "@/lib/analytics/onface-inicio";
-import { HomePageFigma, type DadosInicio } from "@/components/onface/inicio/HomePageFigma";
+import { HomePageFigma, type DadosInicio, type TomTendencia } from "@/components/onface/inicio/HomePageFigma";
 
 export const dynamic = "force-dynamic";
 
 const TZ = "America/Sao_Paulo";
 const brl = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const pct = (d: number | null) => (d === null ? "—" : `${d >= 0 ? "+ " : "− "}${Math.abs(d)}%`);
+/**
+ * O selo do card só pode ser verde quando o número subiu. O frame do Figma traz
+ * os quatro cards com o mesmo selo positivo — no desenho todos os números eram
+ * inventados e positivos — e ligado ao dado real isso pintava de verde uma
+ * receita de −78%. Zero é "parado", não "bom".
+ */
+const tomDoDelta = (d: number | null): TomTendencia =>
+  d === null || d === 0 ? "neutro" : d > 0 ? "ok" : "risco";
 const dataCurta = (d: Date | null) =>
   d ? d.toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" }) : "—";
 
@@ -66,15 +74,17 @@ export default async function OnfaceInicioPreview() {
   const d: DadosInicio = {
     saudacao: primeiroNome ? `${periodo}, ${primeiroNome}.` : `${periodo}.`,
     dataExtenso: `${dataBruta.charAt(0).toUpperCase()}${dataBruta.slice(1)} · Callface`,
-    receita: { valor: brl(receita.valor), delta: pct(receita.deltaPct) },
-    leads: { valor: leads.valor.toLocaleString("pt-BR"), delta: pct(leads.deltaPct) },
+    receita: { valor: brl(receita.valor), delta: pct(receita.deltaPct), tom: tomDoDelta(receita.deltaPct) },
+    leads: { valor: leads.valor.toLocaleString("pt-BR"), delta: pct(leads.deltaPct), tom: tomDoDelta(leads.deltaPct) },
     operacoesAtivas: ativas.toLocaleString("pt-BR"),
     // O desenho traz um badge fixo de "+ 8%" aqui, mas não existe série
     // histórica de operações ativas nem de clientes para comparar mês a mês.
     // Sem base, o selo fica neutro em vez de exibir número inventado.
     operacoesDelta: "—",
+    operacoesTom: "neutro",
     clientesAtivos: clientes.toLocaleString("pt-BR"),
     clientesDelta: "—",
+    clientesTom: "neutro",
     operacao: {
       empresa: op?.empresa ?? "Nenhuma entrega em curso",
       servico: op?.servico ?? "—",

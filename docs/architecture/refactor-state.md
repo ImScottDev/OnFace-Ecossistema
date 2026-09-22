@@ -2178,6 +2178,56 @@ aquisição" que eram leads temporários de um smoke em voo. Sozinha, a suíte d
 **Validação:** tsc limpo, **335 testes / 0 falhas**, **32/32 smokes**, 4 aceites
 com 208 asserções.
 
+### CP35 — A home pintava de verde uma queda de 78%
+
+O passo 10 da virada é uma frase — *"subir o código novo e provar no
+navegador"* — sem roteiro. Indo provar, o primeiro card da Visão Geral mostrava:
+
+    Receita do mês   R$ 10.143,60   [− 78%]   ← em verde
+    Operações ativas          480   [  —  ]   ← em verde
+    Clientes ativos           272   [  —  ]   ← em verde
+    Leads gerados             265   [− 51%]   ← em verde
+
+Os quatro selos eram `badge-positive` com a cor crua do export do Figma
+(`#3fb950`), fixa na marcação. No desenho todos os números eram inventados e
+positivos; ligados ao banco real, a tela passou a afirmar o contrário do que o
+número diz, no primeiro lugar em que a pessoa olha.
+
+`ds/crm.css` **já tinha o padrão certo** — `.of-tendencia[data-tom]`, com ok,
+risco e neutro, e o comentário que define a convenção ("verde = resultado
+consumado, vermelho = piora, cinza = parado"). A tela só não o usava. Importar
+`crm.css` ali é seguro: todos os seus seletores são de classe `.of-`/`.ds-`,
+nada vaza para a geometria do frame.
+
+Medido no navegador, com sessão real, depois da correção:
+
+| card | delta | fundo | texto |
+|---|---|---|---|
+| Receita | − 78% | `rgba(231,0,11,0.1)` | vermelho |
+| Operações | — | `rgb(238,239,243)` | cinza |
+| Clientes | — | `rgb(238,239,243)` | cinza |
+| Leads | − 51% | `rgba(231,0,11,0.1)` | vermelho |
+
+**O checador da home não checava nada.** `checar-onface-inicio.ts` existe
+justamente porque "a home anterior mostrou 0 clientes ativos com 244 clientes
+cadastrados" — e terminava em `process.exit(0)` incondicional. Imprimia os
+números e dizia OK mesmo que todos viessem zerados: um relatório se passando por
+verificador. Ganhou 8 asserts na forma **"não pode zerar quando a fonte tem
+linha"**, deliberadamente sem reimplementar a conta da tela — repetir a regra
+faria o check concordar com a tela inclusive quando os dois estivessem errados.
+
+**Achado aberto, medido e não corrigido neste checkpoint:** o gráfico "Evolução
+da operação", que ocupa o centro da home, **é imagem estática exportada do
+Figma** (`/onface/inicio/*.svg`), com a legenda fixa *"Crescimento consistente em
+todas as frentes"* e meses até dezembro — enquanto a receita cai 78% e estamos em
+setembro. `getEvolucaoOperacao` existe, devolve série real (Ago R$ 45.782,70 /
+537 leads / 58 ganhos · Set R$ 10.143,60 / 265 / 37) e **a home não a chama**.
+Peça pronta sem caller, na tela principal. Vai para o CP36.
+
+**Validação:** tsc limpo, **337 testes / 0 falhas**, trava
+`sinal-nao-e-decoracao` provada por reintrodução nas duas direções (cor crua de
+volta, e `data-tom` fixo em `ok`).
+
 ### Auditoria de CS Health (histórico da decisão)
 
 Menor do que o gap analysis inicial dizia:
