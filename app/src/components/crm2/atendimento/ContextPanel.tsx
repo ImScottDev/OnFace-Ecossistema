@@ -266,7 +266,7 @@ export function Cf2ContextPanel({ conversa, contexto, loading }: { conversa: Con
           <div className="flex flex-col gap-3.5 rounded-xl p-3.5" style={{ background: "var(--cf2-bg-surface-muted)" }}>
             <div className="flex items-center justify-between">
               <p className="text-[11px] font-bold tracking-wide" style={{ color: "var(--cf2-text-tertiary)" }}>PESSOA</p>
-              <Cf2Badge variant={contexto.isCliente ? "success" : "neutral"} dark>{contexto.isCliente ? "Cliente" : "Lead"}</Cf2Badge>
+              <Cf2Badge variant={contexto.isCliente ? "success" : "neutral"}>{contexto.isCliente ? "Cliente" : "Lead"}</Cf2Badge>
             </div>
             <div className="flex gap-3 items-center">
               <div className="flex items-center justify-center rounded-full shrink-0 w-10 h-10" style={{ background: "var(--cf2-accent)" }}>

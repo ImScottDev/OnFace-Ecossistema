@@ -634,6 +634,27 @@
   --cf2-danger-text: var(--cf2-home-ws-danger);
   --cf2-warning-text: var(--cf2-home-ws-warning);
   --cf2-success-text: #4ade80;
+  --cf2-negativo-fg: var(--cf2-home-ws-danger);
+  --cf2-informativo-fg: #7dd3fc;
+
+  /* O FUNDO do par semântico, que faltava aqui.
+   *
+   * O escopo reescrevia só a metade `-text` de cada par. Dentro de uma ilha
+   * escura o texto virava o tom de alto brilho e o fundo continuava sendo o
+   * claro do tema de papel: verde-claro sobre verde-claro, 1,6:1. O
+   * `Cf2Badge` contornou isso fixando hex em duas tabelas paralelas, com o
+   * achado do Kauã de 25/08 anotado no arquivo ("fundo branco do nada" em
+   * Propostas). Contorno em componente é o sintoma; o token incompleto era a
+   * causa.
+   *
+   * Aqui o fundo passa a ser uma tinta de 14% do PRÓPRIO tom de alto brilho,
+   * então o par anda junto por construção. Medido sobre os dois fundos
+   * escuros do produto (#111827 e #16171C): verde 7,65:1, âmbar 7,48:1,
+   * vermelho 4,94:1, neutro 11,69:1. */
+  --cf2-success-bg: color-mix(in srgb, #4ade80 14%, transparent);
+  --cf2-warning-bg: color-mix(in srgb, var(--cf2-home-ws-warning) 14%, transparent);
+  --cf2-negativo-bg: color-mix(in srgb, var(--cf2-home-ws-danger) 14%, transparent);
+  --cf2-informativo-bg: color-mix(in srgb, #7dd3fc 14%, transparent);
   /* O accent também vira texto (valor do negócio no header escuro de
      /negocios e /empresas): o seaweed-700 dava 2.8:1 sobre #16171c.
      Era `#6ee7a8`, verde do sistema legado — a marca virou coral em 15/09 no

@@ -18,6 +18,27 @@ const badgeVariants = cva(
           "border-border text-foreground [a&]:hover:bg-accent [a&]:hover:text-accent-foreground",
         ghost: "[a&]:hover:bg-accent [a&]:hover:text-accent-foreground",
         link: "text-primary underline-offset-4 [a&]:hover:underline",
+
+        /* Variantes de DOMÍNIO, adicionadas ao componente do shadcn em vez de
+         * num badge paralelo. O shadcn não traz semântica de status porque ela
+         * é do produto, e estender `badgeVariants` é o caminho que a própria
+         * doc indica: o componente mora no repo e é nosso.
+         *
+         * Elas lêem o par semântico por token, nunca hex. É isso que faz o
+         * badge continuar legível dentro de uma ilha
+         * `[data-cf2-superficie="escura"]`, onde o escopo reescreve os dois
+         * lados do par. A versão anterior, em `crm2/ui/Badge.tsx`, mantinha
+         * DUAS tabelas de hex justamente porque o escopo só reescrevia o
+         * texto; o escopo foi completado e as tabelas deixaram de ser
+         * necessárias.
+         *
+         * `danger` convive com `destructive` e não o substitui: `destructive`
+         * é preenchimento sólido para ação destrutiva, `danger` é o estado
+         * "isto está ruim" em tinta suave. */
+        success: "bg-[var(--cf2-success-bg)] text-[var(--cf2-success-text)]",
+        warning: "bg-[var(--cf2-warning-bg)] text-[var(--cf2-warning-text)]",
+        danger: "bg-[var(--cf2-negativo-bg)] text-[var(--cf2-negativo-fg)]",
+        info: "bg-[var(--cf2-informativo-bg)] text-[var(--cf2-informativo-fg)]",
       },
     },
     defaultVariants: {

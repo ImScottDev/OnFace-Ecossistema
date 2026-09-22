@@ -143,12 +143,17 @@ type Padrao = {
 const PADROES: Padrao[] = [
   {
     nome: "Página padrão",
-    linha: "Topbar grafite, faixa escura de cabeçalho e canvas claro por baixo. Toda tela nasce aqui.",
+    // Esta entrada descrevia "topbar grafite, faixa escura de cabeçalho e
+    // canvas claro por baixo", que era a moldura da casca ANTERIOR — e a
+    // marcava como pronta, dizendo "toda tela nasce aqui". A casca virou
+    // papel em 18/09 e a moldura grafite se dissolveu em 22/09; o mapa ficou
+    // mandando todo mundo nascer no lugar errado.
+    linha: "Cabeçalho compacto com a ação à direita, faixa de resumo com hierarquia, conteúdo direto no papel. Sem faixa escura e sem canvas dentro de canvas.",
     estado: "pronto",
-    onde: "OnfacePage",
+    onde: "Pagina · PaginaCabecalho · PaginaResumo",
     diagrama: [
-      { altura: "fina", blocos: [{ peso: 1, tom: "forte" }] },
-      { altura: "media", blocos: [{ peso: 1, tom: "forte" }] },
+      { altura: "fina", blocos: [{ peso: 2, tom: "forte" }, { peso: 1, tom: "fraco" }] },
+      { altura: "fina", blocos: [{ peso: 2, tom: "forte" }, { peso: 1, tom: "fraco" }, { peso: 1, tom: "fraco" }, { peso: 1, tom: "fraco" }] },
       { altura: "alta", blocos: [{ peso: 1, tom: "fraco" }] },
     ],
   },

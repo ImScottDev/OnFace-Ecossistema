@@ -135,6 +135,22 @@ const pares = [
   // ── Coral no cartão em destaque da Visão Geral ──────────────────────────
   // Branco sobre o coral da marca dá 3,30:1, e é o cartão que mais gente lê.
   ['tinta ONFACE / coral da marca', OF.pretoLogo, OF.coral, 4.5],
+
+  // ── Pílula DENTRO de ilha escura ────────────────────────────────────────
+  //
+  // O escopo `[data-cf2-superficie="escura"]` reescrevia só a metade `-text`
+  // de cada par semântico: dentro da ilha o texto virava o tom de alto brilho
+  // e o fundo continuava o claro do tema de papel. "Ganho" saía verde-claro
+  // sobre verde-claro, 1,6:1 (achado do Kauã em 25/08). O `Cf2Badge`
+  // contornava com duas tabelas de hex; o contorno saiu e o escopo passou a
+  // reescrever o fundo como tinta de 14% do próprio tom.
+  //
+  // Os fundos abaixo são o resultado COMPOSTO dessa tinta sobre a faixa,
+  // porque `color-mix` com alfa não pode ser medido como cor sólida.
+  ['ilha escura: verde / verde 14%', '#4ade80', '#193433', 4.5],
+  ['ilha escura: âmbar / âmbar 14%', '#f5b638', '#312e29', 4.5],
+  ['ilha escura: vermelho / vermelho 14%', '#f06a6f', '#302331', 4.5],
+  ['ilha escura: azul / azul 14%', '#7dd3fc', '#203245', 4.5],
 ];
 
 console.log('\n  AUDITORIA DE CONTRASTE — WCAG 2.1 AA\n');
