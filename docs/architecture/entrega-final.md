@@ -37,7 +37,11 @@ apaga coluna ou tabela: a contração é a fase 27 e não foi executada.
 | 0070 | papéis, mapa papel→permissão e vínculos de usuário |
 | 0071 | NEXO e Hermes, em `draft` |
 | 0072 | tokens da API pública e registro de uso |
-| 0073 a 0077 | referência de etapa, permissão delegada de agente e correções de drift |
+| 0073 | `oportunidades` ganha os campos que o SPEC 11.1 define |
+| 0074 | `pipeline_etapas` semeada com as etapas que o produto DE FATO usa |
+| 0075 | busca na base de conhecimento pelo BANCO, não pela aplicação (SPEC 19) |
+| 0076 | `meta_capi_entregas` — auditoria da entrega de conversões à Meta (SPEC 20) |
+| 0077 | teto de permissão das versões do NEXO e do Hermes (SPEC 31) |
 | 0078 | anexos no acervo canônico de arquivos |
 | 0079 | `source_process` deixa de guardar marcador de backfill |
 | 0080 | identidade recupera o WhatsApp do lead |
@@ -46,6 +50,11 @@ apaga coluna ou tabela: a contração é a fase 27 e não foi executada.
 | 0083 | `ofertas_comerciais.permite_trial` |
 | 0084 | estagnação em `oportunidades` |
 | 0085 | período de trial em `oportunidades` |
+| 0086 | fundação read-only da integração Callface AI (estado de sync e janela de snapshot) |
+| 0087 | `metric_catalog` — a definição de cada métrica, materializada |
+| 0088 | `cs_health_snapshots` — health diário por conta |
+| 0089 | `calendar_provider` em `reunioes` — Microsoft e Google atrás da mesma porta |
+| 0090 | índice único de `meta_lead_staging.fb_lead_id` — reentrega da Meta não duplica (removeu 18 linhas) |
 
 ## 3. AS-IS → TO-BE
 
@@ -193,7 +202,13 @@ Cada uma foi verificada **falhando de propósito** antes de entrar.
    dev não versionado entra aqui, antes de 0033/0039, que leem colunas que
    nenhuma migration cria.
 
-6. **Resto da cadeia, 0013 a 0086.**
+6. **Resto da cadeia, de 0013 até o FIM.** Sem teto: `migrar.ts` sem `--ate`
+   aplica tudo que estiver em `migrations/`, em ordem de nome, e é assim que
+   `ensaio-carga.sh` roda. Este passo dizia "0013 a 0086" até 22/09, quando a
+   cadeia já ia até 0090 — seguido ao pé da letra, deixaria de fora
+   `metric_catalog`, `cs_health_snapshots`, o `calendar_provider` e o índice de
+   idempotência do staging da Meta. Número fixo aqui envelhece a cada
+   migration nova; o script nunca teve esse teto.
 
 7. **Backfills, na ordem, com `./scripts/rodar-backfills.sh`:** 05 identidade,
    06 aquisição, 07 pipeline, 08 oferta, 09 proposta/contrato, 10 cliente/serviço,

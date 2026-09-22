@@ -2595,3 +2595,17 @@ do CP24. Segunda evidência independente, com data, de que produção roda códi
 anterior a esta branch.
 
 Nada a corrigir aqui: o caminho já não existe, e o passivo para na virada.
+
+## 2026-09-22 — CP30: o procedimento parava numa migration que não é a última
+
+O passo 6 dizia "resto da cadeia, 0013 a 0086" e a cadeia vai até 0090. Ao pé da
+letra, a virada deixaria de fora metric_catalog, cs_health_snapshots,
+calendar_provider e o índice do staging da Meta.
+
+O script nunca teve o teto: `ensaio-carga.sh` chama `migrar.ts` sem `--ate`. Era
+drift do documento, não da execução — mas número fixo num procedimento envelhece
+a cada migration nova.
+
+A trava acusou 0073 a 0077 também, e ali ela exagerou: estavam documentadas numa
+linha agregada que o padrão não reconhecia. Foram abertas em linhas próprias
+porque a agregada as descrevia mal.

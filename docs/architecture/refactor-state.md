@@ -1959,6 +1959,35 @@ argumento da virada.
 
 **Validação:** tsc limpo, **326 testes 0 falhas**, **32 smokes**.
 
+### CP30 — O procedimento de virada parava numa migration que não é a última
+
+O passo 6 de `entrega-final.md` dizia **"resto da cadeia, 0013 a 0086"**. A
+cadeia vai até **0090**. Seguido ao pé da letra, a virada deixaria de fora
+`metric_catalog` (0087), `cs_health_snapshots` (0088), o `calendar_provider`
+(0089) e o índice de idempotência do staging da Meta (0090) — quatro features do
+produto sem tabela em produção.
+
+**O script nunca teve esse teto.** `ensaio-carga.sh` chama `migrar.ts` sem
+`--ate` no passo final, e o migrador lê o diretório e aplica tudo em ordem. Era
+drift do documento, não da execução. Mas quem lê o documento não sabe disso, e
+número fixo num procedimento envelhece a cada migration nova.
+
+O passo passou a dizer "de 0013 até o FIM", e a tabela ganhou 0086 a 0090.
+
+**A trava achou mais do que eu tinha visto.** Ao rodar, acusou 0073 a 0077
+também. Olhando, elas **estavam** documentadas — numa linha agregada
+`| 0073 a 0077 | referência de etapa, permissão delegada de agente e correções
+de drift |`, que meu padrão não reconhecia. Não era o buraco que o teste
+sugeria, e registrar isso importa: a agregada descrevia mal as cinco
+(0075 é busca de conhecimento pelo banco, 0076 é auditoria de entrega à Meta).
+Foram abertas em linhas próprias e a agregada saiu.
+
+Três garantias na trava: cada migration aparece na tabela, o passo da cadeia não
+enumera teto, e o **script** continua sem `--ate` no passo final — porque se o
+script ganhar um teto, o documento fica certo e a execução errada.
+
+**Validação:** tsc limpo, **329 testes 0 falhas**.
+
 ### Auditoria de CS Health (histórico da decisão)
 
 Menor do que o gap analysis inicial dizia:

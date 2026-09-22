@@ -1,0 +1,57 @@
+/**
+ * O procedimento de virada não pode envelhecer em silêncio.
+ *
+ * Até 22/09 o passo 6 de `entrega-final.md` dizia "resto da cadeia, 0013 a
+ * 0086" — e a cadeia já ia até 0090. Seguido ao pé da letra, a virada deixaria
+ * de fora `metric_catalog`, `cs_health_snapshots`, o `calendar_provider` e o
+ * índice de idempotência do staging da Meta: quatro features do produto sem
+ * tabela em produção.
+ *
+ * O script nunca teve esse teto (`migrar.ts` sem `--ate` aplica tudo), mas
+ * quem lê o documento não sabe disso. Número fixo num procedimento envelhece a
+ * cada migration nova, e ninguém volta para conferir.
+ *
+ * Esta trava cobre as duas metades: cada migration está documentada, e o passo
+ * que aplica a cadeia não enumera um teto.
+ */
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+
+const RAIZ = path.join(process.cwd(), "..");
+const MIGRATIONS = path.join(process.cwd(), "src", "lib", "db", "migrations");
+const ENTREGA = path.join(RAIZ, "docs", "architecture", "entrega-final.md");
+
+test("toda migration aparece na tabela da entrega", () => {
+  const doc = fs.readFileSync(ENTREGA, "utf8");
+  const numeros = fs.readdirSync(MIGRATIONS)
+    .filter((f) => f.endsWith(".sql"))
+    .map((f) => f.slice(0, 4))
+    .filter((n) => Number(n) >= 56); // a tabela documenta a partir da 0056
+  const ausentes = numeros.filter((n) => !new RegExp(`\\|\\s*${n}\\s*\\|`).test(doc));
+  assert.deepEqual(ausentes, [],
+    `migrations fora da tabela de entrega-final.md: ${ausentes.join(", ")}. ` +
+    `Quem executar a virada pelo documento não saberá que existem.`);
+});
+
+test("o passo que aplica a cadeia não enumera um teto", () => {
+  const doc = fs.readFileSync(ENTREGA, "utf8");
+  const i = doc.indexOf("**Resto da cadeia");
+  assert.ok(i > 0, "o passo do resto da cadeia sumiu do procedimento");
+  const passo = doc.slice(i, i + 200);
+  assert.doesNotMatch(passo, /0013 a 00\d\d\b/,
+    "o passo voltou a fixar um número de migration final: ele envelhece na próxima migration");
+  assert.match(passo, /FIM|fim/, "o passo precisa dizer que a cadeia vai até o fim");
+});
+
+test("o ensaio de carga roda a cadeia sem teto", () => {
+  // A garantia real: se o script ganhar um `--ate` no passo final, o documento
+  // fica certo e a execução errada.
+  const ensaio = fs.readFileSync(path.join(RAIZ, "scripts", "ensaio-carga.sh"), "utf8");
+  const i = ensaio.indexOf("cadeia, resto");
+  assert.ok(i > 0, "o passo 'cadeia, resto' sumiu do ensaio");
+  const trecho = ensaio.slice(i, i + 260);
+  assert.doesNotMatch(trecho, /--ate=/,
+    "o passo final do ensaio ganhou um teto: a cadeia deixaria de aplicar as migrations novas");
+});
