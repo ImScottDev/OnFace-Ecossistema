@@ -103,7 +103,15 @@ export function TopbarOnface() {
         {/* `modal={false}`: no modo modal o Radix trava o scroll do body e
             compensa a barra, o que desloca a página inteira ao abrir. */}
         <DropdownMenu modal={false}>
+          {/* `id` explícito porque o gerado pelo Radix diverge entre servidor
+              e cliente e o React acusa hidratação a cada carga. Medido: a
+              casca antiga tem o mesmo erro, com DOIS triggers em vez de um —
+              é defeito herdado, não desta barra. O `useId` do React codifica a
+              posição na árvore, e algo acima renderiza diferente nos dois
+              lados; fixar o id é o mecanismo que o próprio Radix expõe para
+              SSR e resolve sem depender de achar o divergente. */}
           <DropdownMenuTrigger
+            id="onface-menu-perfil"
             className="onface-perfil"
             aria-label={`Abrir menu de ${nome}`}
           >
