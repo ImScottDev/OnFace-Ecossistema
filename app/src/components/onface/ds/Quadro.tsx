@@ -4,13 +4,19 @@
  *
  * Um kanban de verdade: arrasta entre etapas, reordena dentro da etapa, e o
  * estado muda de fato. A regra que sustenta o componente inteiro é a fonte
- * única: a coluna de um negócio É `negocio.etapa` e a ordem dentro da coluna É
- * a ordem no array. Não existe estrutura paralela de colunas, então quadro e
- * lista nunca divergem — mover o cartão é a mesma escrita que a lista faria.
+ * única: a coluna de um item É o que `colunaDe` devolve e a ordem dentro da
+ * coluna É a ordem no array. Não existe estrutura paralela de colunas, então
+ * quadro e lista nunca divergem — mover o cartão é a mesma escrita que a lista
+ * faria.
  *
- * Controlado de propósito (`negocios` + `aoMudar`): quem monta a tela é dono do
- * dado. Assim o mesmo quadro serve o funil de vendas, a fila de cobrança e o
- * onboarding sem cada tela guardar uma cópia divergente do board.
+ * Controlado e AGNÓSTICO de dado (`itens` + `aoMudar` + render props): quem
+ * monta a tela é dono do tipo. Nasceu preso ao `Negocio` de demonstração do
+ * laboratório, o que o deixava impossível de usar no produto — o mesmo defeito
+ * que a biblioteca inteira tinha, peça pronta sem consumidor. Agora o mesmo
+ * quadro serve Pré-vendas, Pipeline e o catálogo, cada um com o seu cartão.
+ *
+ * O que ele NÃO faz, de propósito: desenhar o cartão, abrir a gaveta e decidir
+ * o que é urgente. Isso é do domínio de cada tela.
  */
 
 import * as React from "react";
@@ -42,182 +48,87 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useReducedMotion } from "motion/react";
-import {
-  ArrowRightLeft,
-  CalendarPlus,
-  EllipsisVertical,
-  Inbox,
-  Phone,
-  SquareArrowOutUpRight,
-} from "lucide-react";
+import { Inbox } from "lucide-react";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
-import type { TomEstado } from "./crm";
-import { ETAPAS_QUADRO, brl, compacto, type Etapa, type Negocio } from "./dados";
-/* A etiqueta do cartão é a mesma `.of-status` da tela de registro, então o
-   quadro carrega o CSS dela mesmo quando é montado fora da família de CRM. */
 import "./crm.css";
 import "./quadro.css";
-
-/* ── Etiquetas ──────────────────────────────────────────────────────────── */
-/* A etiqueta do cartão é a mesma da lista e a mesma do cabeçalho de entidade:
-   mesma palavra, mesmo par superfície/texto. O `Badge variant="outline"` que
-   estava aqui não pintava o rótulo (texto herdado, ~1.1:1 no efetivo) e era
-   justamente o sinal de SLA, a informação pela qual se olha o quadro.
-
-   Regra de sinal: cinza é informativo (o prazo está de pé), coral é "exige
-   ação agora" (vence hoje, ou o negócio está sem próxima tarefa) e vermelho é
-   prazo estourado. Verde não aparece no funil: negócio ganho sai do quadro. */
-const ETIQUETA: Record<Negocio["situacao"], { rotulo: string; tom: TomEstado }> = {
-  "no-prazo": { rotulo: "No prazo", tom: "neutro" },
-  hoje: { rotulo: "Hoje", tom: "acento" },
-  atrasado: { rotulo: "Atrasada", tom: "risco" },
-  "sem-tarefa": { rotulo: "Sem tarefa", tom: "acento" },
-};
-
-const eUrgente = (n: Negocio) => n.situacao === "atrasado" || n.situacao === "hoje";
 
 /* ── Identidade das colunas ─────────────────────────────────────────────── */
 /* A coluna precisa ser droppable com id próprio, senão coluna vazia não recebe
    cartão. O prefixo distingue "soltei sobre a coluna" de "soltei sobre um
    cartão", que é a única informação que o dnd-kit devolve em `over`. */
 const PREFIXO_COLUNA = "coluna:";
-const idDaColuna = (etapa: Etapa) => `${PREFIXO_COLUNA}${etapa}`;
+const idDaColuna = (chave: string) => `${PREFIXO_COLUNA}${chave}`;
 
-function colunaDe(id: UniqueIdentifier, negocios: Negocio[]): Etapa | null {
-  const bruto = String(id);
-  if (bruto.startsWith(PREFIXO_COLUNA)) return bruto.slice(PREFIXO_COLUNA.length) as Etapa;
-  return negocios.find((n) => n.id === bruto)?.etapa ?? null;
-}
-
-/** Move o negócio para outra etapa, entrando na posição do cartão sob o cursor.
- *  Sem cartão embaixo (coluna vazia), entra no fim da coluna. */
-function moverParaColuna(
-  negocios: Negocio[],
-  idAtivo: string,
-  destino: Etapa,
-  idSobre: UniqueIdentifier,
-): Negocio[] {
-  const atual = negocios.find((n) => n.id === idAtivo);
-  if (!atual) return negocios;
-
-  const restante = negocios.filter((n) => n.id !== idAtivo);
-  const alvo = restante.findIndex((n) => n.id === String(idSobre));
-  const indice = alvo >= 0 ? alvo : restante.length;
-  return [...restante.slice(0, indice), { ...atual, etapa: destino }, ...restante.slice(indice)];
-}
-
-/** Reordena dentro da etapa preservando as posições que a coluna já ocupa no
- *  array: só o conteúdo dessas casas muda, o resto do funil fica parado. */
-function reordenarColuna(negocios: Negocio[], etapa: Etapa, ordem: string[]): Negocio[] {
-  const porId = new Map(negocios.map((n) => [n.id, n]));
-  let cursor = 0;
-  return negocios.map((n) => (n.etapa === etapa ? (porId.get(ordem[cursor++]) ?? n) : n));
-}
-
-/* ── Cartão ─────────────────────────────────────────────────────────────── */
-type PropsCorpo = {
-  negocio: Negocio;
-  mostrarValor: boolean;
-  marcarUrgentes: boolean;
+export type ColunaQuadro = {
+  chave: string;
+  rotulo: string;
+  /** Total real da etapa quando a página carregou só parte dela. Sem isto o
+   *  cabeçalho contaria o que está na tela e chamaria de total. */
+  total?: number;
 };
 
-/** Conteúdo visual do cartão. Compartilhado com o DragOverlay para o cartão
- *  levantado ser o mesmo objeto, não uma imitação que envelhece sozinha. */
-function CorpoCartao({ negocio, mostrarValor, acao }: PropsCorpo & { acao?: React.ReactNode }) {
-  const etiqueta = ETIQUETA[negocio.situacao];
-  return (
-    <>
-      <div className="qd-cartao-topo">
-        <span className="qd-cartao-titulo">
-          <strong>{negocio.titulo}</strong>
-          <small>{negocio.empresa}</small>
-        </span>
-        {acao}
-      </div>
-      <div className="ds-quadro-cartao-rodape">
-        <span className="of-status" data-tom={etiqueta.tom}>
-          {etiqueta.rotulo}
-        </span>
-        <span className="qd-cartao-meta">
-          {mostrarValor ? <span className="qd-valor">{brl(negocio.valor)}</span> : null}
-          <span className="qd-pessoa" title={negocio.responsavel.nome} aria-hidden="true">
-            {negocio.responsavel.iniciais}
-          </span>
-        </span>
-      </div>
-    </>
-  );
-}
+export type PropsQuadro<T> = {
+  itens: T[];
+  colunas: ColunaQuadro[];
+  idDe: (item: T) => string;
+  colunaDe: (item: T) => string;
+  /** Devolve o item na coluna nova. O quadro não sabe montar o seu tipo. */
+  comColuna: (item: T, chave: string) => T;
+  renderCartao: (item: T) => React.ReactNode;
+  aoMudar: (proximos: T[]) => void;
+  /** Abre o detalhe (gaveta, painel, rota). Sem isto o cartão só arrasta. */
+  aoAbrir?: (item: T) => void;
+  /**
+   * Recusa um destino e diz por quê.
+   *
+   * Existe porque etapa nem sempre é posição no board: em Pré-vendas,
+   * Qualificado grava fato histórico, Oportunidade cria entidade no Pipeline e
+   * Nutrição/Desqualificação exigem motivo estruturado. Sem esta porta o
+   * arraste passaria por cima de regra de negócio, que é pior do que não ter
+   * arraste.
+   */
+  podeSoltar?: (item: T, destino: string) => true | string;
+  /** Medida do cabeçalho: soma, contagem, o que a tela quiser. */
+  renderMedida?: (itens: T[], coluna: ColunaQuadro) => React.ReactNode;
+  renderVazio?: (coluna: ColunaQuadro) => React.ReactNode;
+  /** Nome do item em anúncio de leitor de tela e no toast de desfazer. */
+  rotuloDe?: (item: T) => string;
+  /** Marca visual de item que exige ação agora. */
+  eUrgente?: (item: T) => boolean;
+  /**
+   * Classe do invólucro arrastável.
+   *
+   * O padrão traz a superfície do quadro (`ds-quadro-cartao`). Quem já monta o
+   * próprio cartão passa outra coisa: duas definições da mesma superfície é o
+   * bug que o `ov-card` por cima do `Item` já causou, rodapé 30px para fora.
+   */
+  classeCartao?: string;
+};
 
-function MenuCartao({ negocio, aoAbrir }: { negocio: Negocio; aoAbrir: () => void }) {
-  return (
-    /* O menu vive dentro de um cartão arrastável: sem parar a propagação, o
-       pointerdown viraria arraste e o Espaço pegaria o cartão em vez de abrir
-       o menu. */
-    <span
-      className="qd-acao"
-      onPointerDown={(e) => e.stopPropagation()}
-      onKeyDown={(e) => e.stopPropagation()}
-      onClick={(e) => e.stopPropagation()}
-    >
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className="qd-acao-botao"
-            aria-label={`Ações de ${negocio.titulo}`}
-          >
-            <EllipsisVertical />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="qd-menu">
-          <DropdownMenuLabel>{negocio.empresa}</DropdownMenuLabel>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onSelect={aoAbrir}>
-            <SquareArrowOutUpRight /> Abrir negócio
-          </DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => toast(`Ligando para ${negocio.empresa}`)}>
-            <Phone /> Ligar agora
-          </DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => toast("Tarefa criada para amanhã, 09:00")}>
-            <CalendarPlus /> Agendar tarefa
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </span>
-  );
-}
-
-function Cartao({
-  negocio,
-  mostrarValor,
-  marcarUrgentes,
+/* ── Cartão ─────────────────────────────────────────────────────────────── */
+function Cartao<T>({
+  item,
+  id,
+  urgente,
+  classe,
+  renderCartao,
   aoAbrir,
-}: PropsCorpo & { aoAbrir: (n: Negocio) => void }) {
+}: {
+  item: T;
+  id: string;
+  urgente: boolean;
+  classe: string;
+  renderCartao: (item: T) => React.ReactNode;
+  aoAbrir?: (item: T) => void;
+}) {
   const reduzido = useReducedMotion();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging, isSorting } =
     useSortable({
-      id: negocio.id,
+      id,
       /* O leitor de tela anuncia em português: "sortable" não diz nada para
          quem está tocando o funil. */
-      attributes: { roleDescription: "cartão de negócio" },
+      attributes: { roleDescription: "cartão" },
       /* Movimento é orientação, não enfeite: quem pediu menos movimento recebe
          a troca de posição sem a animação de acomodação. */
       transition: reduzido ? null : undefined,
@@ -226,13 +137,13 @@ function Cartao({
   return (
     <div
       ref={setNodeRef}
-      className="ds-quadro-cartao"
+      className={classe}
       style={{ transform: CSS.Translate.toString(transform), transition }}
       data-arrastando={isDragging ? "true" : undefined}
-      data-urgente={marcarUrgentes && eUrgente(negocio) ? "true" : undefined}
+      data-urgente={urgente ? "true" : undefined}
       {...attributes}
       {...listeners}
-      onClick={() => aoAbrir(negocio)}
+      onClick={() => aoAbrir?.(item)}
       onKeyDown={(evento) => {
         listeners?.onKeyDown?.(evento);
         /* Espaço é do arraste (KeyboardSensor); Enter fica livre para abrir,
@@ -241,165 +152,224 @@ function Cartao({
            está no meio de um movimento. */
         if (evento.key === "Enter" && !isSorting) {
           evento.preventDefault();
-          aoAbrir(negocio);
+          aoAbrir?.(item);
         }
       }}
     >
-      <CorpoCartao
-        negocio={negocio}
-        mostrarValor={mostrarValor}
-        marcarUrgentes={marcarUrgentes}
-        acao={<MenuCartao negocio={negocio} aoAbrir={() => aoAbrir(negocio)} />}
-      />
+      {renderCartao(item)}
     </div>
   );
 }
 
 /* ── Coluna ─────────────────────────────────────────────────────────────── */
-function Coluna({
-  etapa,
+function Coluna<T>({
+  coluna,
   itens,
   sobre,
-  mostrarValor,
-  marcarUrgentes,
+  recusada,
+  idDe,
+  renderCartao,
+  renderMedida,
+  renderVazio,
+  eUrgente,
+  classeCartao,
   aoAbrir,
 }: {
-  etapa: Etapa;
-  itens: Negocio[];
+  coluna: ColunaQuadro;
+  itens: T[];
   sobre: boolean;
-  mostrarValor: boolean;
-  marcarUrgentes: boolean;
-  aoAbrir: (n: Negocio) => void;
+  recusada: boolean;
+  idDe: (item: T) => string;
+  renderCartao: (item: T) => React.ReactNode;
+  renderMedida?: (itens: T[], coluna: ColunaQuadro) => React.ReactNode;
+  renderVazio?: (coluna: ColunaQuadro) => React.ReactNode;
+  eUrgente?: (item: T) => boolean;
+  classeCartao: string;
+  aoAbrir?: (item: T) => void;
 }) {
-  const { setNodeRef } = useDroppable({ id: idDaColuna(etapa) });
-  const soma = itens.reduce((total, n) => total + n.valor, 0);
+  const { setNodeRef } = useDroppable({ id: idDaColuna(coluna.chave) });
 
   return (
-    <section className="ds-quadro-coluna" data-sobre={sobre ? "true" : undefined}>
+    <section
+      className="ds-quadro-coluna"
+      data-sobre={sobre ? "true" : undefined}
+      data-recusada={recusada ? "true" : undefined}
+      aria-label={coluna.rotulo}
+    >
       <header className="ds-quadro-topo qd-coluna-topo">
-        <strong>{etapa}</strong>
-        {/* Contagem e soma saem do próprio estado, então acompanham o arraste
-            em tempo real em vez de virar número decorativo. Dinheiro e
-            quantidade são duas leituras diferentes: separados, o olho escolhe
-            qual quer primeiro em vez de ler "3 · R$ 58k" como um texto só. */}
+        <strong>{coluna.rotulo}</strong>
+        {/* A medida sai do próprio estado, então acompanha o arraste em tempo
+            real em vez de virar número decorativo. */}
         <span className="qd-coluna-medida">
-          <span className="qd-coluna-soma">{compacto(soma)}</span>
-          <span className="qd-coluna-conta" aria-hidden="true">
-            {itens.length}
-          </span>
+          {renderMedida ? (
+            renderMedida(itens, coluna)
+          ) : (
+            <span className="qd-coluna-conta" aria-hidden="true">
+              {coluna.total != null && coluna.total > itens.length
+                ? `${itens.length} de ${coluna.total}`
+                : itens.length}
+            </span>
+          )}
           <span className="sr-only">
-            {itens.length === 1 ? "1 negócio" : `${itens.length} negócios`}
+            {itens.length === 1 ? "1 item" : `${itens.length} itens`}
           </span>
         </span>
       </header>
 
       <div className="qd-lista" ref={setNodeRef}>
-        <SortableContext items={itens.map((n) => n.id)} strategy={verticalListSortingStrategy}>
-          {itens.map((negocio) => (
+        <SortableContext items={itens.map(idDe)} strategy={verticalListSortingStrategy}>
+          {itens.map((item) => (
             <Cartao
-              key={negocio.id}
-              negocio={negocio}
-              mostrarValor={mostrarValor}
-              marcarUrgentes={marcarUrgentes}
+              key={idDe(item)}
+              id={idDe(item)}
+              item={item}
+              urgente={Boolean(eUrgente?.(item))}
+              classe={classeCartao}
+              renderCartao={renderCartao}
               aoAbrir={aoAbrir}
             />
           ))}
         </SortableContext>
-        {itens.length === 0 ? (
-          <p className="ds-quadro-vazia">
-            <Inbox aria-hidden="true" />
-            Arraste um negócio para cá
-          </p>
-        ) : null}
+        {itens.length === 0
+          ? (renderVazio?.(coluna) ?? (
+              <p className="ds-quadro-vazia">
+                <Inbox aria-hidden="true" />
+                Arraste um cartão para cá
+              </p>
+            ))
+          : null}
       </div>
     </section>
   );
 }
 
 /* ── Quadro ─────────────────────────────────────────────────────────────── */
-export type PropsQuadro = {
-  negocios: Negocio[];
-  /** Ordem das colunas. Ganho e Perdido ficam fora: saída de funil não é etapa
-   *  de trabalho, e ninguém arrasta um negócio de volta de "Ganho". */
-  etapas?: Etapa[];
-  aoMudar: (proximos: Negocio[]) => void;
-  mostrarValor?: boolean;
-  marcarUrgentes?: boolean;
-};
-
-export function Quadro({
-  negocios,
-  etapas = ETAPAS_QUADRO,
+export function Quadro<T>({
+  itens,
+  colunas,
+  idDe,
+  colunaDe,
+  comColuna,
+  renderCartao,
   aoMudar,
-  mostrarValor = true,
-  marcarUrgentes = true,
-}: PropsQuadro) {
+  aoAbrir,
+  podeSoltar,
+  renderMedida,
+  renderVazio,
+  rotuloDe,
+  eUrgente,
+  classeCartao = "ds-quadro-cartao",
+}: PropsQuadro<T>) {
   const reduzido = useReducedMotion();
   const idDnd = React.useId();
   const [idAtivo, setIdAtivo] = React.useState<string | null>(null);
-  const [colunaSobre, setColunaSobre] = React.useState<Etapa | null>(null);
-  const [idAberto, setIdAberto] = React.useState<string | null>(null);
-  /* Guardados no início do arraste: no fim, a etapa do cartão já mudou (o
+  const [colunaSobre, setColunaSobre] = React.useState<string | null>(null);
+  const [recusa, setRecusa] = React.useState<string | null>(null);
+  /* Guardados no início do arraste: no fim, a coluna do cartão já mudou (o
      movimento entre colunas acontece durante o `over`), então sem o retrato
      inicial não dá para saber de onde ele veio nem como desfazer. */
-  const inicioRef = React.useRef<{ etapa: Etapa; antes: Negocio[] } | null>(null);
+  const inicioRef = React.useRef<{ chave: string; antes: T[] } | null>(null);
 
   const sensores = useSensors(
-    /* 6px de tolerância: abaixo disso é clique (abre a gaveta), acima é
+    /* 6px de tolerância: abaixo disso é clique (abre o detalhe), acima é
        arraste. Sem isso, todo clique no cartão viraria um micro-arraste. */
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
-      /* Enter sai do arraste e fica para abrir o negócio: pegar e soltar é só
-         no Espaço. */
+      /* Enter sai do arraste e fica para abrir o item: pegar e soltar é só no
+         Espaço. */
       keyboardCodes: { start: ["Space"], cancel: ["Escape"], end: ["Space"] },
     }),
   );
 
-  const tituloDe = React.useCallback(
-    (id: UniqueIdentifier) => negocios.find((n) => n.id === String(id))?.titulo ?? "negócio",
-    [negocios],
+  const itemPorId = React.useCallback(
+    (id: UniqueIdentifier) => itens.find((i) => idDe(i) === String(id)) ?? null,
+    [itens, idDe],
+  );
+
+  /** Resolve um id do dnd-kit (cartão ou coluna) na chave de coluna. */
+  const chaveDe = React.useCallback(
+    (id: UniqueIdentifier): string | null => {
+      const bruto = String(id);
+      if (bruto.startsWith(PREFIXO_COLUNA)) return bruto.slice(PREFIXO_COLUNA.length);
+      const item = itemPorId(id);
+      return item ? colunaDe(item) : null;
+    },
+    [itemPorId, colunaDe],
+  );
+
+  const rotulo = React.useCallback(
+    (id: UniqueIdentifier) => {
+      const item = itemPorId(id);
+      return item ? (rotuloDe?.(item) ?? idDe(item)) : "cartão";
+    },
+    [itemPorId, rotuloDe, idDe],
+  );
+
+  const rotuloColuna = React.useCallback(
+    (chave: string | null) => colunas.find((c) => c.chave === chave)?.rotulo ?? chave ?? "",
+    [colunas],
   );
 
   const alvoDe = React.useCallback(
     (id: UniqueIdentifier) => {
-      const etapa = colunaDe(id, negocios);
+      const chave = chaveDe(id);
       const bruto = String(id);
-      if (bruto.startsWith(PREFIXO_COLUNA)) return `a coluna ${etapa}`;
-      return `${tituloDe(id)}, na coluna ${etapa}`;
+      if (bruto.startsWith(PREFIXO_COLUNA)) return `a coluna ${rotuloColuna(chave)}`;
+      return `${rotulo(id)}, na coluna ${rotuloColuna(chave)}`;
     },
-    [negocios, tituloDe],
+    [chaveDe, rotulo, rotuloColuna],
   );
 
   const anuncios: Announcements = React.useMemo(
     () => ({
       onDragStart: ({ active }) =>
-        `Negócio ${tituloDe(active.id)} pego. Use as setas para escolher a posição e o espaço para soltar.`,
+        `${rotulo(active.id)} pego. Use as setas para escolher a posição e o espaço para soltar.`,
       onDragOver: ({ active, over }) =>
         over
-          ? `${tituloDe(active.id)} sobre ${alvoDe(over.id)}.`
-          : `${tituloDe(active.id)} fora de qualquer coluna.`,
+          ? `${rotulo(active.id)} sobre ${alvoDe(over.id)}.`
+          : `${rotulo(active.id)} fora de qualquer coluna.`,
       onDragEnd: ({ active, over }) =>
         over
-          ? `${tituloDe(active.id)} solto em ${alvoDe(over.id)}.`
-          : `${tituloDe(active.id)} devolvido à posição original.`,
+          ? `${rotulo(active.id)} solto em ${alvoDe(over.id)}.`
+          : `${rotulo(active.id)} devolvido à posição original.`,
       onDragCancel: ({ active }) =>
-        `Movimentação cancelada. ${tituloDe(active.id)} voltou para o lugar de origem.`,
+        `Movimentação cancelada. ${rotulo(active.id)} voltou para o lugar de origem.`,
     }),
-    [alvoDe, tituloDe],
+    [alvoDe, rotulo],
   );
 
   const instrucoes: ScreenReaderInstructions = {
     draggable:
-      "Pressione espaço para pegar o negócio. Use as setas para movê-lo dentro da coluna ou para outra etapa. Pressione espaço para soltar ou escape para cancelar.",
+      "Pressione espaço para pegar o cartão. Use as setas para movê-lo dentro da coluna ou para outra etapa. Pressione espaço para soltar ou escape para cancelar.",
   };
 
+  /** Move o item para outra coluna, entrando na posição do cartão sob o cursor.
+   *  Sem cartão embaixo (coluna vazia), entra no fim. */
+  function moverParaColuna(idAtivoStr: string, destino: string, idSobre: UniqueIdentifier): T[] {
+    const atual = itens.find((i) => idDe(i) === idAtivoStr);
+    if (!atual) return itens;
+    const restante = itens.filter((i) => idDe(i) !== idAtivoStr);
+    const alvo = restante.findIndex((i) => idDe(i) === String(idSobre));
+    const indice = alvo >= 0 ? alvo : restante.length;
+    return [...restante.slice(0, indice), comColuna(atual, destino), ...restante.slice(indice)];
+  }
+
+  /** Reordena dentro da coluna preservando as posições que ela já ocupa no
+   *  array: só o conteúdo dessas casas muda, o resto do funil fica parado. */
+  function reordenarColuna(chave: string, ordem: string[]): T[] {
+    const porId = new Map(itens.map((i) => [idDe(i), i]));
+    let cursor = 0;
+    return itens.map((i) => (colunaDe(i) === chave ? (porId.get(ordem[cursor++]) ?? i) : i));
+  }
+
   function aoIniciar({ active }: DragStartEvent) {
-    const etapa = colunaDe(active.id, negocios);
-    if (!etapa) return;
+    const chave = chaveDe(active.id);
+    if (!chave) return;
     setIdAtivo(String(active.id));
-    setColunaSobre(etapa);
-    inicioRef.current = { etapa, antes: negocios };
+    setColunaSobre(chave);
+    setRecusa(null);
+    inicioRef.current = { chave, antes: itens };
   }
 
   /* A troca de coluna acontece aqui, não no fim: o cartão já aparece na coluna
@@ -408,41 +378,83 @@ export function Quadro({
   function aoPassarPor({ active, over }: DragOverEvent) {
     if (!over) {
       setColunaSobre(null);
+      setRecusa(null);
       return;
     }
-    const destino = colunaDe(over.id, negocios);
+    const destino = chaveDe(over.id);
+    const origem = chaveDe(active.id);
+    const item = itemPorId(active.id);
     setColunaSobre(destino);
 
-    const origem = colunaDe(active.id, negocios);
-    if (!destino || !origem || origem === destino) return;
-    aoMudar(moverParaColuna(negocios, String(active.id), destino, over.id));
+    if (!destino || !origem || !item || origem === destino) {
+      setRecusa(null);
+      return;
+    }
+
+    /* Destino recusado pela regra: a coluna acende como bloqueada e o cartão
+       NÃO entra nela. Deixar entrar e desfazer depois ensina o movimento
+       errado. */
+    const veredito = podeSoltar?.(item, destino) ?? true;
+    if (veredito !== true) {
+      setRecusa(destino);
+      return;
+    }
+
+    setRecusa(null);
+    aoMudar(moverParaColuna(String(active.id), destino, over.id));
   }
 
   function aoSoltar({ active, over }: DragEndEvent) {
     const inicio = inicioRef.current;
+    const destinoRecusado = recusa;
     setIdAtivo(null);
     setColunaSobre(null);
+    setRecusa(null);
     inicioRef.current = null;
     if (!over || !inicio) return;
 
-    const destino = colunaDe(over.id, negocios);
-    if (!destino) return;
+    const item = itemPorId(active.id);
+    const destino = chaveDe(over.id);
 
-    if (destino === colunaDe(active.id, negocios)) {
-      const ids = negocios.filter((n) => n.etapa === destino).map((n) => n.id);
-      const de = ids.indexOf(String(active.id));
-      const para = ids.indexOf(String(over.id));
-      if (de >= 0 && para >= 0 && de !== para) {
-        aoMudar(reordenarColuna(negocios, destino, arrayMove(ids, de, para)));
+    /* Soltou em cima de uma coluna que a regra recusa: diz o motivo em vez de
+       simplesmente não acontecer nada.
+     *
+     * A checagem é refeita AQUI e não só lida do estado de `recusa`. Pelo
+     * teclado o `onDragOver` não chega numa coluna vazia, então o estado
+     * transitório fica nulo e a pessoa só via o cartão não sair do lugar, sem
+     * explicação nenhuma. Regra de negócio não pode depender de um evento de
+     * ponteiro ter acontecido. */
+    const alvoRecusado = destinoRecusado ?? destino;
+    if (item && alvoRecusado) {
+      const motivo = podeSoltar?.(item, alvoRecusado);
+      if (typeof motivo === "string") {
+        toast.error(`${rotulo(active.id)} não vai para ${rotuloColuna(alvoRecusado)}`, {
+          description: motivo,
+        });
+        /* Se o `over` chegou a mover o cartão antes da recusa, devolve. */
+        if (inicio.antes !== itens) aoMudar(inicio.antes);
+        return;
       }
     }
 
-    if (destino !== inicio.etapa) {
+    if (!destino) return;
+
+    if (destino === chaveDe(active.id)) {
+      const ids = itens.filter((i) => colunaDe(i) === destino).map(idDe);
+      const de = ids.indexOf(String(active.id));
+      const para = ids.indexOf(String(over.id));
+      if (de >= 0 && para >= 0 && de !== para) {
+        aoMudar(reordenarColuna(destino, arrayMove(ids, de, para)));
+      }
+    }
+
+    if (destino !== inicio.chave) {
       /* Mudança de etapa é escrita de negócio, não ajuste visual: avisa e
          oferece a volta, porque arraste erra fácil. */
-      toast.success(`${tituloDe(active.id)} → ${destino}`, {
-        description: `Saiu de ${inicio.etapa}.`,
-        action: { label: "Desfazer", onClick: () => aoMudar(inicio.antes) },
+      const antes = inicio.antes;
+      toast.success(`${rotulo(active.id)} → ${rotuloColuna(destino)}`, {
+        description: `Saiu de ${rotuloColuna(inicio.chave)}.`,
+        action: { label: "Desfazer", onClick: () => aoMudar(antes) },
       });
     }
   }
@@ -450,132 +462,60 @@ export function Quadro({
   function aoCancelar() {
     setIdAtivo(null);
     setColunaSobre(null);
+    setRecusa(null);
     inicioRef.current = null;
   }
 
-  const arrastado = idAtivo ? (negocios.find((n) => n.id === idAtivo) ?? null) : null;
-  const aberto = idAberto ? (negocios.find((n) => n.id === idAberto) ?? null) : null;
+  const arrastado = idAtivo ? itens.find((i) => idDe(i) === idAtivo) : undefined;
 
   return (
-    <>
-      <DndContext
-        /* Sem id explícito o dnd-kit numera sozinho a partir de um contador de
-           módulo: o servidor renderiza `DndDescribedBy-0` e o cliente cai em
-           outro número, e o React reclama de hidratação no primeiro paint de
-           qualquer tela com quadro. `useId` é estável entre servidor e cliente
-           e continua único por instância, que importa porque a mesma tela monta
-           mais de um quadro. */
-        id={idDnd}
-        sensors={sensores}
-        collisionDetection={closestCorners}
-        modifiers={[restrictToWindowEdges]}
-        accessibility={{ announcements: anuncios, screenReaderInstructions: instrucoes }}
-        onDragStart={aoIniciar}
-        onDragOver={aoPassarPor}
-        onDragEnd={aoSoltar}
-        onDragCancel={aoCancelar}
-      >
-        {/* Abaixo de ~150u por coluna o cartão fica ilegível: em vez de espremer,
-            o quadro rola na horizontal. */}
-        <div className="qd-rolagem">
-          <div className="ds-quadro">
-            {etapas.map((etapa) => (
-              <Coluna
-                key={etapa}
-                etapa={etapa}
-                itens={negocios.filter((n) => n.etapa === etapa)}
-                sobre={colunaSobre === etapa && idAtivo !== null}
-                mostrarValor={mostrarValor}
-                marcarUrgentes={marcarUrgentes}
-                aoAbrir={(n) => setIdAberto(n.id)}
-              />
-            ))}
-          </div>
-        </div>
-
-        <DragOverlay dropAnimation={reduzido ? null : undefined}>
-          {arrastado ? (
-            <div className="ds-quadro-cartao" data-sobreposicao="true">
-              <CorpoCartao
-                negocio={arrastado}
-                mostrarValor={mostrarValor}
-                marcarUrgentes={marcarUrgentes}
-              />
-            </div>
-          ) : null}
-        </DragOverlay>
-      </DndContext>
-
-      <Sheet open={aberto !== null} onOpenChange={(v) => !v && setIdAberto(null)}>
-        <SheetContent className="qd-gaveta">
-          {aberto ? <GavetaNegocio negocio={aberto} /> : null}
-        </SheetContent>
-      </Sheet>
-    </>
-  );
-}
-
-/* ── Gaveta de detalhe ──────────────────────────────────────────────────── */
-/* Lê do mesmo array do quadro: a etapa mostrada aqui é a etapa de agora, não a
-   que o cartão tinha quando foi aberto. */
-function GavetaNegocio({ negocio }: { negocio: Negocio }) {
-  const etiqueta = ETIQUETA[negocio.situacao];
-  const campos: { rotulo: string; valor: string }[] = [
-    { rotulo: "Etapa", valor: negocio.etapa },
-    { rotulo: "Valor", valor: brl(negocio.valor, true) },
-    { rotulo: "Produto", valor: negocio.produto },
-    { rotulo: "Origem", valor: negocio.origem },
-    { rotulo: "Responsável", valor: negocio.responsavel.nome },
-    { rotulo: "Próxima ação", valor: negocio.proximaAcao },
-    {
-      rotulo: "Criado em",
-      valor: new Date(`${negocio.criadoEm}T12:00:00`).toLocaleDateString("pt-BR", {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-      }),
-    },
-  ];
-
-  return (
-    <>
-      <SheetHeader className="qd-gaveta-topo">
-        <SheetTitle className="qd-gaveta-titulo">{negocio.titulo}</SheetTitle>
-        <SheetDescription className="qd-gaveta-empresa">{negocio.empresa}</SheetDescription>
-        <span className="qd-gaveta-etiquetas">
-          <span className="of-status" data-tom={etiqueta.tom}>
-            {etiqueta.rotulo}
-          </span>
-          {/* Etapa é informação, não alerta: pastilha neutra ao lado do sinal
-              de SLA, para as duas não brigarem por atenção. */}
-          <span className="of-status" data-tom="neutro">
-            {negocio.etapa}
-          </span>
-        </span>
-      </SheetHeader>
-
-      <div className="qd-gaveta-corpo">
-        <dl className="qd-campos">
-          {campos.map((campo) => (
-            <div className="qd-campo" key={campo.rotulo}>
-              <dt>{campo.rotulo}</dt>
-              <dd>{campo.valor}</dd>
-            </div>
+    <DndContext
+      /* Sem id explícito o dnd-kit numera sozinho a partir de um contador de
+         módulo: o servidor renderiza `DndDescribedBy-0` e o cliente cai em
+         outro número, e o React reclama de hidratação no primeiro paint de
+         qualquer tela com quadro. `useId` é estável entre servidor e cliente
+         e continua único por instância, que importa porque a mesma tela monta
+         mais de um quadro. */
+      id={idDnd}
+      sensors={sensores}
+      collisionDetection={closestCorners}
+      modifiers={[restrictToWindowEdges]}
+      accessibility={{ announcements: anuncios, screenReaderInstructions: instrucoes }}
+      onDragStart={aoIniciar}
+      onDragOver={aoPassarPor}
+      onDragEnd={aoSoltar}
+      onDragCancel={aoCancelar}
+    >
+      {/* Abaixo de ~150u por coluna o cartão fica ilegível: em vez de espremer,
+          o quadro rola na horizontal. */}
+      <div className="qd-rolagem">
+        <div className="ds-quadro">
+          {colunas.map((coluna) => (
+            <Coluna
+              key={coluna.chave}
+              coluna={coluna}
+              itens={itens.filter((i) => colunaDe(i) === coluna.chave)}
+              sobre={colunaSobre === coluna.chave && idAtivo !== null}
+              recusada={recusa === coluna.chave}
+              idDe={idDe}
+              renderCartao={renderCartao}
+              renderMedida={renderMedida}
+              renderVazio={renderVazio}
+              eUrgente={eUrgente}
+              classeCartao={classeCartao}
+              aoAbrir={aoAbrir}
+            />
           ))}
-        </dl>
-
-        <div className="ds-linha">
-          <Button size="sm">
-            <Phone /> Ligar
-          </Button>
-          <Button variant="outline" size="sm">
-            <CalendarPlus /> Agendar
-          </Button>
-          <Button variant="subtle" size="sm">
-            <ArrowRightLeft /> Mudar etapa
-          </Button>
         </div>
       </div>
-    </>
+
+      <DragOverlay dropAnimation={reduzido ? null : undefined}>
+        {arrastado ? (
+          <div className={classeCartao} data-sobreposicao="true">
+            {renderCartao(arrastado)}
+          </div>
+        ) : null}
+      </DragOverlay>
+    </DndContext>
   );
 }

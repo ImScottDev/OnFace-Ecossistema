@@ -14,7 +14,7 @@
 import * as React from "react";
 import { Bloco, Regras, Secao } from "../lab";
 import { AssistenteProposta, CanvasAutomacao, OnboardingImplantacao } from "../fluxos";
-import { Quadro } from "../Quadro";
+import { QuadroDemo } from "./Quadro";
 import { NEGOCIOS, type Etapa, type Negocio } from "../dados";
 import "../fluxos.css";
 
@@ -117,7 +117,11 @@ export function SecaoFluxos() {
         {/* `fx-quadro` só ajusta a contagem de colunas: `quadro.css` fixa quatro
             e este recorte tem seis. É estilo, não um segundo componente. */}
         <div className="fx-quadro">
-          <Quadro negocios={roadmap} etapas={SEIS_ETAPAS} aoMudar={setRoadmap} />
+          <QuadroDemo
+            negocios={roadmap}
+            colunas={SEIS_ETAPAS.map((etapa) => ({ chave: etapa, rotulo: etapa }))}
+            aoMudar={setRoadmap}
+          />
         </div>
       </Bloco>
 
@@ -130,7 +134,7 @@ export function SecaoFluxos() {
         naoFaca={{
           titulo: "Forçar campo que o domínio não tem",
           texto:
-            "Limitação registrada, não contornada: o cartão não mostra peso porque `Negocio` não tem esse campo, e as etapas são as do funil porque `Etapa` é união fechada em `dados.ts`. Peso e etapas de implantação exigem mexer em `dados.ts` e em `Quadro.tsx`, que são de outra equipe. Até lá, documenta-se a falta em vez de inventar um quadro paralelo.",
+            "Limitação registrada, não contornada: o cartão não mostra peso porque `Negocio` não tem esse campo, e as etapas são as do funil porque `Etapa` é união fechada em `dados.ts`. Peso e etapas de implantação exigem mexer em `dados.ts`, que é de outra equipe; o `Quadro` já aceita qualquer lista de colunas. Até lá, documenta-se a falta em vez de inventar um quadro paralelo.",
         }}
       />
     </Secao>

@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { AlertTriangle, Inbox, Search, SearchX, X } from "lucide-react";
+import { cn } from "@/lib/utils/cn";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -42,7 +43,7 @@ export function Hero({ titulo, descricao, resumo, acoes }: {
       <div>
         <h1>{titulo}</h1>
         <p>{descricao}</p>
-        {acoes ? <div className="ov-acoes" style={{ marginTop: "calc(14 * var(--onface-u))" }}>{acoes}</div> : null}
+        {acoes ? <div className="ov-acoes mt-3.5">{acoes}</div> : null}
       </div>
       <div className="ov-resumo">
         {resumo.map((r) => (
@@ -319,7 +320,7 @@ export function ComPainel({ aberto, painel, children }: {
 }) {
   return (
     <div className="ov-com-painel" data-aberto={aberto}>
-      <div style={{ minWidth: 0 }}>{children}</div>
+      <div className="min-w-0">{children}</div>
       {aberto ? painel : null}
     </div>
   );
@@ -336,7 +337,7 @@ export function Painel({ titulo, subtitulo, aoFechar, acoesTopo, children }: {
   return (
     <aside className="ov-painel" aria-label={titulo}>
       <div className="ov-painel-topo">
-        <div style={{ minWidth: 0 }}>
+        <div className="min-w-0">
           <h2>{titulo}</h2>
           {subtitulo ? <p>{subtitulo}</p> : null}
         </div>
@@ -418,25 +419,15 @@ export function Dialogo({ aberto, aoFechar, titulo, descricao, largura, children
 }) {
   return (
     <Dialog open={aberto} onOpenChange={(v) => { if (!v) aoFechar(); }}>
-      <DialogContent
-        className="ov-dialogo"
-        style={{
-          maxWidth: largura === "larga" ? "calc(680 * var(--onface-u))" : "calc(480 * var(--onface-u))",
-          // `flex-direction` explícito: o DialogHeader do shadcn é `flex-col`,
-          // e sem isto o botão de fechar cai para baixo do título.
-        }}
-      >
-        <DialogHeader style={{ flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: "calc(12 * var(--onface-u))", textAlign: "left" }}>
-          <div style={{ minWidth: 0 }}>
-            <DialogTitle style={{ fontFamily: "var(--font-onface-display), sans-serif", fontSize: "calc(16 * var(--onface-u))" }}>
-              {titulo}
-            </DialogTitle>
-            {descricao ? (
-              <DialogDescription style={{ fontSize: "calc(12 * var(--onface-u))", marginTop: "calc(4 * var(--onface-u))" }}>
-                {descricao}
-              </DialogDescription>
-            ) : null}
-          </div>
+      {/* O `sm:` é obrigatório aqui: o `DialogContent` do shadcn já traz
+          `sm:max-w-lg`, e o tailwind-merge NÃO deduplica entre breakpoints —
+          um `max-w-md` sem prefixo perde para ele a partir de 640px. */}
+      <DialogContent className={cn("ov-dialogo", largura === "larga" ? "sm:max-w-2xl" : "sm:max-w-md")}>
+        <DialogHeader>
+          <DialogTitle className="font-[family-name:var(--font-onface-display)] text-base">
+            {titulo}
+          </DialogTitle>
+          {descricao ? <DialogDescription className="text-xs">{descricao}</DialogDescription> : null}
         </DialogHeader>
         {children}
       </DialogContent>

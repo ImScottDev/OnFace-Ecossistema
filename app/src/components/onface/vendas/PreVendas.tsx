@@ -14,7 +14,7 @@
  *   - Nutrição e Desqualificação exigem motivo estruturado.
  */
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -33,9 +33,16 @@ import {
   type RotaBaseVendas,
 } from "./ui";
 import { AcoesContato } from "./pagina";
+import { Quadro } from "@/components/onface/ds/Quadro";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { DialogFooter } from "@/components/ui/dialog";
+import {
+  Field, FieldDescription, FieldLabel, FieldLegend, FieldSet,
+} from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Item, ItemContent, ItemDescription, ItemFooter, ItemTitle } from "@/components/ui/item";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -110,6 +117,30 @@ export function PreVendas({ dados, aba, filtro, acoes, rotaBase = "" }: {
     if (!selecionado) return;
     const resultado = await acoes.detalhe(selecionado);
     if (resultado.ok && resultado.dados) setDetalhe(resultado.dados);
+  }
+
+  /* O quadro é controlado, então o board vive em estado local e o servidor é a
+     verdade que o repõe. Sem a cópia local o cartão voltaria para a coluna de
+     origem entre o soltar e o `router.refresh()`. */
+  const cardsDoServidor = useMemo(
+    () => dados.colunas.flatMap((coluna) => coluna.cards),
+    [dados.colunas],
+  );
+  const [cards, setCards] = useState(cardsDoServidor);
+  useEffect(() => setCards(cardsDoServidor), [cardsDoServidor]);
+
+  function aoMudarQuadro(proximos: CardPreVendas[]) {
+    const etapaAntes = new Map(cards.map((c) => [c.leadId, c.etapa]));
+    setCards(proximos);
+    const movido = proximos.find((c) => etapaAntes.get(c.leadId) !== c.etapa);
+    // Sem mudança de etapa foi só reordenação dentro da coluna: ordem de
+    // cartão não é fato de negócio e não vira escrita.
+    if (!movido) return;
+    void rodar(
+      () => acoes.moverEtapa(movido.leadId, movido.etapa as "novo" | "em_contato" | "qualificacao"),
+      false,
+      `${movido.empresa} movido.`,
+    );
   }
 
   async function rodar(fn: () => Promise<Resultado<unknown>>, fecharModal = true, mensagem = "Alteração salva.") {
@@ -209,31 +240,36 @@ export function PreVendas({ dados, aba, filtro, acoes, rotaBase = "" }: {
           />
         }
       >
-        <Board>
-          {dados.colunas.map((coluna) => (
-            <Coluna
-              key={coluna.chave}
-              titulo={coluna.rotulo}
-              total={coluna.total}
-              carregados={coluna.cards.length}
-            >
-              {coluna.cards.length === 0 ? (
-                <ColunaVazia filtrado={Boolean(filtro.busca || filtro.responsavelId)}>
-                  Nenhuma empresa nesta etapa.
-                </ColunaVazia>
-              ) : (
-                coluna.cards.map((card) => (
-                  <CardLead
-                    key={card.leadId}
-                    card={card}
-                    selecionado={card.leadId === selecionado}
-                    aoAbrir={() => abrir(card.leadId)}
-                  />
-                ))
-              )}
-            </Coluna>
-          ))}
-        </Board>
+        <Quadro<CardPreVendas>
+          itens={cards}
+          colunas={dados.colunas.map((c) => ({ chave: c.chave, rotulo: c.rotulo, total: c.total }))}
+          idDe={(c) => c.leadId}
+          colunaDe={(c) => c.etapa}
+          comColuna={(c, chave) => ({ ...c, etapa: chave as CardPreVendas["etapa"] })}
+          rotuloDe={(c) => c.empresa}
+          podeSoltar={(_card, destino) => MOTIVO_NAO_ARRASTA[destino] ?? true}
+          /* O cartão já traz a própria superfície (`Item variant="outline"`).
+             Passar a do quadro por cima seria a segunda definição da mesma
+             superfície, que foi o bug do `ov-card` em cima do `Item`. */
+          classeCartao="cursor-grab active:cursor-grabbing data-[arrastando]:opacity-40"
+          renderMedida={(itens, coluna) => (
+            <span className="ov-coluna-contagem">
+              {coluna.total != null && itens.length < coluna.total
+                ? `${itens.length} de ${coluna.total}`
+                : itens.length}
+            </span>
+          )}
+          renderVazio={() => (
+            <ColunaVazia filtrado={Boolean(filtro.busca || filtro.responsavelId)}>
+              Nenhuma empresa nesta etapa.
+            </ColunaVazia>
+          )}
+          renderCartao={(card) => (
+            <CardLead card={card} selecionado={card.leadId === selecionado} />
+          )}
+          aoAbrir={(card) => void abrir(card.leadId)}
+          aoMudar={aoMudarQuadro}
+        />
       </ComPainel>
 
       {/* ── Diálogos ────────────────────────────────────────────────────── */}
@@ -299,6 +335,20 @@ export function PreVendas({ dados, aba, filtro, acoes, rotaBase = "" }: {
 /* ── Card ──────────────────────────────────────────────────────────────── */
 
 /**
+ * Etapas que NÃO se alcançam arrastando, e por quê.
+ *
+ * Não é limitação da interface, é o domínio: `acoes.moverEtapa` aceita
+ * exatamente `novo`, `em_contato` e `qualificacao`. Qualificado grava um fato
+ * histórico e Oportunidade cria uma entidade no Pipeline — as duas têm comando
+ * próprio, com confirmação. O quadro recusa o destino E diz o motivo, em vez
+ * de simplesmente não acontecer nada quando a pessoa solta o cartão.
+ */
+const MOTIVO_NAO_ARRASTA: Record<string, string> = {
+  qualificado: "Qualificado grava um fato histórico. Use Qualificar no painel do lead.",
+  oportunidade: "Oportunidade cria um negócio no Pipeline. Use Criar oportunidade no painel do lead.",
+};
+
+/**
  * Cartão de lead, sobre o `Item` do shadcn.
  *
  * Era um `<button class="ov-card">` com quatro `<span>` e estilo inline no
@@ -319,8 +369,8 @@ export function PreVendas({ dados, aba, filtro, acoes, rotaBase = "" }: {
  * enxerga via o ícone e não tinha como saber o que ele significa sem leitor de
  * tela.
  */
-function CardLead({ card, selecionado, aoAbrir }: {
-  card: CardPreVendas; selecionado: boolean; aoAbrir: () => void;
+function CardLead({ card, selecionado }: {
+  card: CardPreVendas; selecionado: boolean;
 }) {
   const etiquetas = (
     <>
@@ -340,7 +390,6 @@ function CardLead({ card, selecionado, aoAbrir }: {
     <Item
       variant="outline"
       size="sm"
-      asChild
       /* `ov-card` saiu do cartão.
        *
        * Ele trazia display, direção, padding, raio, borda e sombra próprios, e
@@ -364,8 +413,7 @@ function CardLead({ card, selecionado, aoAbrir }: {
       className="w-full gap-2 px-3 py-2.5 text-left data-[selecionado]:ring-2 data-[selecionado]:ring-[var(--onface-coral)]"
       data-selecionado={selecionado || undefined}
     >
-      <button type="button" onClick={aoAbrir}>
-        <ItemContent className="basis-full gap-0.5">
+      <ItemContent className="basis-full gap-0.5">
           <ItemTitle className="font-[family-name:var(--font-onface-display)] text-[13.5px] leading-tight font-bold [overflow-wrap:anywhere]">{card.empresa}</ItemTitle>
           <ItemDescription className="text-[11.5px] leading-snug [overflow-wrap:anywhere]">
             {card.pessoa
@@ -413,8 +461,7 @@ function CardLead({ card, selecionado, aoAbrir }: {
             ) : null}
             <span className="tabular-nums">{decorrido(card.horasSemInteracao)}</span>
           </span>
-        </ItemFooter>
-      </button>
+      </ItemFooter>
     </Item>
   );
 }
@@ -763,10 +810,6 @@ function DialogoOportunidade({ aberto, lead, responsaveis, pendente, bloqueio, a
   const [comReuniao, setComReuniao] = useState(false);
   const [dataReuniao, setDataReuniao] = useState("");
 
-  function alternar(familia: Familia) {
-    setFamilias((atual) => atual.includes(familia) ? atual.filter((f) => f !== familia) : [...atual, familia]);
-  }
-
   const pronto = Boolean(responsavelId) && (!comReuniao || Boolean(dataReuniao));
 
   return (
@@ -779,66 +822,87 @@ function DialogoOportunidade({ aberto, lead, responsaveis, pendente, bloqueio, a
       <div className="ov-form">
         {bloqueio ? <AvisoBloqueio bloqueio={bloqueio} /> : null}
 
-        <div>
-          <span style={{ display: "block", marginBottom: "calc(6 * var(--onface-u))", color: "var(--text-muted, #666e7d)", fontSize: "calc(10.5 * var(--onface-u))", fontWeight: 700, letterSpacing: "var(--tracking-caps)", textTransform: "uppercase" }}>
-            Família comercial
-          </span>
-          <div className="ov-familias">
+        {/* `FieldSet` + `FieldLegend` porque é um grupo de controles com um
+            rótulo só, que é o caso que a doc do Field nomeia. O `ToggleGroup`
+            entra no lugar de cinco `<button data-marcada>`: seleção múltipla
+            já é o que ele faz, com `role="group"` e teclado de graça. */}
+        <FieldSet>
+          <FieldLegend variant="label">Família comercial</FieldLegend>
+          <ToggleGroup
+            type="multiple"
+            variant="outline"
+            value={familias}
+            onValueChange={(v) => setFamilias(v as Familia[])}
+          >
             {FAMILIAS.map((f) => (
-              <button key={f} type="button" className="ov-familia" data-marcada={familias.includes(f)} onClick={() => alternar(f)}>
-                {ROTULO_FAMILIA[f]}
-              </button>
+              <ToggleGroupItem key={f} value={f}>{ROTULO_FAMILIA[f]}</ToggleGroupItem>
             ))}
-          </div>
-          <p className="ov-nota" style={{ marginTop: "calc(6 * var(--onface-u))" }}>
+          </ToggleGroup>
+          <FieldDescription>
             {familias.length === 0
               ? "A oportunidade entra em Entrada com família a definir. Será obrigatório escolher uma antes de criar proposta, contrato, checkout ou concluir como ganha."
               : familias.length > 1
                 ? `Serão criadas ${familias.length} oportunidades irmãs, uma por família, com fechamento independente e o mesmo bundle.`
                 : "Cada oportunidade pertence a exatamente uma família. Marcar mais de uma cria oportunidades irmãs."}
-          </p>
-        </div>
+          </FieldDescription>
+        </FieldSet>
 
-        <label>
-          <span>Responsável comercial</span>
-          <select value={responsavelId} onChange={(e) => setResponsavelId(e.target.value)}>
-            <option value="">Escolha o closer</option>
-            {responsaveis.map((r) => <option key={r.id} value={r.id}>{r.nome}</option>)}
-          </select>
-        </label>
+        <Field>
+          <FieldLabel htmlFor="op-responsavel">Responsável comercial</FieldLabel>
+          <NativeSelect
+            id="op-responsavel"
+            value={responsavelId}
+            onChange={(e) => setResponsavelId(e.target.value)}
+          >
+            <NativeSelectOption value="">Escolha o closer</NativeSelectOption>
+            {responsaveis.map((r) => (
+              <NativeSelectOption key={r.id} value={r.id}>{r.nome}</NativeSelectOption>
+            ))}
+          </NativeSelect>
+        </Field>
 
-        <div>
-          <span style={{ display: "block", marginBottom: "calc(6 * var(--onface-u))", color: "var(--text-muted, #666e7d)", fontSize: "calc(10.5 * var(--onface-u))", fontWeight: 700, letterSpacing: "var(--tracking-caps)", textTransform: "uppercase" }}>
-            Próximo passo
-          </span>
-          <div className="ov-familias">
-            <button type="button" className="ov-familia" data-marcada={!comReuniao} onClick={() => setComReuniao(false)}>
-              Apenas criar oportunidade
-            </button>
-            <button type="button" className="ov-familia" data-marcada={comReuniao} onClick={() => setComReuniao(true)}>
-              Criar e agendar reunião
-            </button>
-          </div>
-          <p className="ov-nota" style={{ marginTop: "calc(6 * var(--onface-u))" }}>
+        {/* Escolha única, então `type="single"`. O par era dois botões com
+            `data-marcada` complementares, que é um rádio escrito à mão. */}
+        <FieldSet>
+          <FieldLegend variant="label">Próximo passo</FieldLegend>
+          <ToggleGroup
+            type="single"
+            variant="outline"
+            value={comReuniao ? "reuniao" : "so-criar"}
+            onValueChange={(v) => { if (v) setComReuniao(v === "reuniao"); }}
+          >
+            <ToggleGroupItem value="so-criar">Apenas criar oportunidade</ToggleGroupItem>
+            <ToggleGroupItem value="reuniao">Criar e agendar reunião</ToggleGroupItem>
+          </ToggleGroup>
+          <FieldDescription>
             Reunião não é requisito: a oportunidade entra no Pipeline com ou sem agenda.
-          </p>
-        </div>
+          </FieldDescription>
+        </FieldSet>
 
         {comReuniao ? (
-          <label>
-            <span>Data e hora da reunião</span>
-            <input type="datetime-local" value={dataReuniao} onChange={(e) => setDataReuniao(e.target.value)} />
-          </label>
+          <Field>
+            <FieldLabel htmlFor="op-reuniao">Data e hora da reunião</FieldLabel>
+            <Input
+              id="op-reuniao"
+              type="datetime-local"
+              value={dataReuniao}
+              onChange={(e) => setDataReuniao(e.target.value)}
+            />
+          </Field>
         ) : null}
 
-        <div className="ov-form-rodape">
-          <button type="button" className="ov-botao" data-variante="neutro" onClick={aoFechar}>Cancelar</button>
-          <button type="button" className="ov-botao" disabled={pendente || !pronto}
-            onClick={() => aoConfirmar(familias, responsavelId, comReuniao ? { data: dataReuniao } : null)}>
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={aoFechar}>Cancelar</Button>
+          <Button
+            type="button"
+            loading={pendente}
+            disabled={!pronto}
+            onClick={() => aoConfirmar(familias, responsavelId, comReuniao ? { data: dataReuniao } : null)}
+          >
             <ArrowRight aria-hidden />
             {familias.length > 1 ? `Criar ${familias.length} oportunidades` : "Criar oportunidade"}
-          </button>
-        </div>
+          </Button>
+        </DialogFooter>
       </div>
     </Dialogo>
   );

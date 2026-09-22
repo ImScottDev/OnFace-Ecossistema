@@ -14,17 +14,77 @@
   overscroll-behavior-x: contain;
   padding-block: var(--space-2);
 }
+/* Base do quadro.
+ *
+ * Estas regras moravam só no `ds.css`, que é folha do LABORATÓRIO. Montado numa
+ * tela de produto, o quadro vinha `display: block` e as colunas empilhavam uma
+ * embaixo da outra em largura cheia. Componente que só se desenha dentro do
+ * próprio catálogo não é componente, é demonstração: a folha do quadro passa a
+ * bastar sozinha. */
 .qd-rolagem > .ds-quadro {
-  grid-template-columns: repeat(4, minmax(calc(152 * var(--onface-u)), 1fr));
+  display: grid;
+  gap: var(--space-12);
+  align-items: start;
+  /* `grid-auto-flow: column` e NÃO `repeat(4, ...)`.
+   *
+   * O número fixo veio da demo do laboratório, que tem quatro etapas. Ligado
+   * no funil real, que tem sete, as três últimas caíam numa segunda linha
+   * abaixo da dobra: colunas existindo no DOM e inalcançáveis na tela. Com
+   * fluxo por coluna, o quadro tem tantas colunas quantas o domínio tiver e o
+   * `qd-rolagem` rola de lado, que é o que o comentário acima já prometia. */
+  grid-auto-flow: column;
+  /* Piso em `rem`, não em `--onface-u`.
+   *
+   * O piso antigo era `152 * var(--onface-u)`, e `--onface-u` encolhe com a
+   * viewport: medido, dava 126px de coluna, com o nome da empresa quebrando em
+   * três linhas e a etiqueta cortada no meio. 13rem é a largura em que o
+   * cartão volta a ser legível, e ela não depende da escala. */
+  grid-auto-columns: minmax(13rem, 1fr);
 }
-@media (max-width: 1100px) {
-  .qd-rolagem > .ds-quadro {
-    grid-template-columns: repeat(2, minmax(calc(152 * var(--onface-u)), 1fr));
-  }
+.qd-rolagem .ds-quadro-coluna {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  border-radius: var(--radius-card);
+  background: var(--surface-sunken);
+  transition:
+    background-color var(--duration-base) var(--ease-standard),
+    box-shadow var(--duration-base) var(--ease-standard);
 }
+.qd-rolagem .ds-quadro-coluna[data-sobre="true"] {
+  background: var(--onface-coral-subtle);
+  box-shadow: inset 0 0 0 1px var(--onface-coral-border);
+}
+/* Destino recusado pela regra de negócio: o alvo diz "aqui não" enquanto o
+   cartão ainda está no ar, em vez de deixar soltar e desfazer depois. */
+.qd-rolagem .ds-quadro-coluna[data-recusada="true"] {
+  background: var(--cf2-negativo-bg, #fdecec);
+  box-shadow: inset 0 0 0 1px var(--cf2-negativo-fg, #dc2626);
+  cursor: not-allowed;
+}
+.qd-rolagem .ds-quadro-topo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-4) var(--space-6);
+}
+.qd-rolagem .ds-quadro-vazia {
+  display: grid;
+  place-items: center;
+  gap: var(--space-4);
+  padding: var(--space-24) var(--space-12);
+  border: 1px dashed var(--line-hairline);
+  border-radius: var(--radius-lg);
+  color: var(--text-subtle);
+  font-size: var(--text-sm);
+  text-align: center;
+}
+/* No telefone a coluna encolhe até o piso de leitura e o quadro continua
+   rolando de lado. Empilhar em coluna única perderia a noção de funil, que é a
+   única razão de olhar o quadro em vez da lista. */
 @media (max-width: 760px) {
   .qd-rolagem > .ds-quadro {
-    grid-template-columns: minmax(0, 1fr);
+    grid-auto-columns: minmax(13rem, 82vw);
   }
 }
 
