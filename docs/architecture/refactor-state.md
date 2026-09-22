@@ -3000,3 +3000,49 @@ PABX sem plano, setup, serviço e integração. Bloqueio de dado à espera do Ka
 não defeito de código.
 
 Validação: tsc limpo, 351 testes / 0 falhas, 44 smokes, 14/14 rotas do ONFACE.
+
+### CP54 — "zero leads sem aquisição" não provava nada
+
+As cinco rotas de cutover chamam `garantirEntradaCanonica` com `void`, de
+propósito ("falha aqui não derruba a criação"). O preço é que ninguém fica
+sabendo quando falha: a recusa do domínio volta como RETORNO, não como exceção,
+e por isso não passava nem pelo `catch` da ponte.
+
+**A medição que parecia responder, e não respondia.** Zero dos 3.989 leads está
+sem aquisição. Dos 400 criados nos últimos 30 dias, os 400 têm a aquisição
+criada em menos de 60s do lead. Os dois números são verdadeiros e não querem
+dizer o que parecem: o lead mais recente do banco é de **18/09**, o backfill da
+fase 06 rodou em **21/09** gravando a aquisição com `created_at` COPIADO do
+lead, e `AcquisitionCreated` saiu em **0 de 400**.
+
+Fica a regra, que vale para qualquer medição futura nesta base: **presença de
+aquisição não distingue runtime de backfill.** O sinal que só o runtime produz
+é o evento. É a mesma armadilha do CP42, agora com o mecanismo nomeado.
+
+**A prova que faltava.** `smoke-portas-de-entrada` exercita `POST /api/leads` e
+`POST /api/contatos-unified` pela API HTTP real, com sessão de verdade, e cobra
+as três coisas juntas: o lead nasce, a aquisição aparece e o evento entra no
+outbox. As duas passam. A aquisição chega **1ms** e **102ms** depois da
+resposta, e essa é a janela em que o registro existe no legado e ainda não
+existe no canônico. Reintroduzindo a falha na ponte, as duas ficam vermelhas, e
+sem o smoke seria invisível: lead criado, resposta 201, log limpo.
+
+`smoke-ponte-canonica` continua provando que a ponte funciona quando chamada.
+Este prova que as rotas a chamam e que a chamada chega ao fim, que é outra
+pergunta.
+
+**A parte que faltava fechar, sem contrariar a decisão.** A ponte passou a
+registrar a recusa do domínio, menos `SEM_IDENTIFICADOR`, que é caso legítimo e
+viraria ruído até ninguém mais ler o log. O `void` segue best-effort; o que
+muda é deixar de ser mudo.
+
+**Dois achados de caminho.** `POST /api/leads` não cria só o lead: sai com
+oportunidade e negócio junto, o que só apareceu pelo resíduo que a limpeza não
+conseguia apagar. E a limpeza do smoke engolia o erro com `catch` mudo, o mesmo
+defeito que custou três testes de reconciliação no CP49; o `catch` agora fala.
+
+Observado uma vez e não reproduzido: a bateria acusou 1 de 45 logo depois de eu
+deixar resíduo no banco com a reintrodução, e passou nas três execuções
+seguintes. A hipótese é o resíduo, não medida.
+
+Validação: tsc limpo, 351 testes / 0 falhas, 45 smokes, 14/14 rotas.

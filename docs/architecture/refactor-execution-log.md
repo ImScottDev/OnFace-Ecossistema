@@ -3115,3 +3115,26 @@ Aceites vermelhos em três pontos, dois deles defeito:
 
 Validação: tsc limpo, 351 testes / 0 falhas, 44 smokes, 14/14 rotas do ONFACE,
 aceites verdes menos o catálogo.
+
+## 2026-09-22 — CP54: "zero leads sem aquisição" não provava nada
+
+`void garantirEntradaCanonica(...)` nas 5 rotas de cutover é decisão
+documentada, e mantida. O problema era outro: a recusa do domínio volta como
+retorno, não exceção, e não era logada em lugar nenhum.
+
+Medição que enganava: 0 de 3.989 leads sem aquisição; 400 de 400 com aquisição
+criada em menos de 60s do lead. Mas o lead mais novo é de 18/09, o backfill da
+fase 06 rodou em 21/09 copiando `created_at`, e `AcquisitionCreated` saiu em 0
+de 400. **Presença de aquisição não distingue runtime de backfill; o evento sim.**
+
+`smoke-portas-de-entrada`: `POST /api/leads` e `POST /api/contatos-unified` pela
+API real, cobrando lead + aquisição + evento no outbox. Verdes, com a aquisição
+chegando 1ms e 102ms depois da resposta. Reintrodução (ponte devolvendo `ok:
+false`) deixa as duas vermelhas.
+
+A ponte passou a logar a recusa do domínio, exceto `SEM_IDENTIFICADOR`.
+
+Achados de caminho: `POST /api/leads` cria oportunidade e negócio junto; o
+`catch` mudo da limpeza escondia a violação de FK (defeito do CP49 de novo).
+
+Validação: tsc limpo, 351 testes / 0 falhas, 45 smokes, 14/14 rotas.
