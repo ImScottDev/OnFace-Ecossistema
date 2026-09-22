@@ -77,6 +77,19 @@ rodar_grupo "src/scripts/smoke-*.ts" "smokes"
   rodar_grupo "src/scripts/checar-onface-*.ts" "checagens de tela"
 }
 
+{
+  echo ""
+  echo "── verificadores fora da bateria até o CP59 ──"
+  # `checar-env` e os dois `checar-vendas-*` tinham chamador só em npm script
+  # (`check:env`, `check:vendas`), que nenhuma bateria executa. `checar-env`
+  # estava VERMELHO e ninguém sabia: acusava 6 variáveis lidas pelo código e
+  # ausentes do `.env.example`, e listava 23 como "candidatas a remoção" —
+  # entre elas as sete da Meta, cuja entrega o CP57 tinha acabado de provar que
+  # funciona. Quem seguisse o conselho apagaria credencial em uso.
+  rodar_grupo "src/scripts/checar-env.ts" "conferência de ambiente"
+  rodar_grupo "src/scripts/checar-vendas-*.ts" "checagens de vendas"
+}
+
 # A higiene POR ÚLTIMO, e depois de todos.
 #
 # Cada script limpa as tabelas que ELE escreve, e é aí que escapa: a limpeza

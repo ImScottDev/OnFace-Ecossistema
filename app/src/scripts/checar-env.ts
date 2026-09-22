@@ -31,28 +31,89 @@ function acharRaiz(): string {
   throw new Error("raiz do repositório não encontrada");
 }
 const RAIZ = acharRaiz();
-const SRC = path.join(RAIZ, "app/src");
+
+/**
+ * Onde o código mora. `packages/` entra, e essa é a metade que faltava.
+ *
+ * Varrendo só `app/src`, o verificador marcou **23 variáveis como candidatas a
+ * remoção**, e entre elas estavam as sete da Meta — inclusive
+ * `META_CAPI_ACCESS_TOKEN`, cuja entrega o CP57 tinha acabado de provar que
+ * funciona. Quem seguisse o conselho tiraria do `.env.example` a credencial que
+ * o produto usa.
+ *
+ * O repositório virou monorepo em algum ponto e este script não acompanhou. É o
+ * mesmo formato dos outros: a ferramenta olha onde o código estava.
+ */
+const PASTAS = [path.join(RAIZ, "app/src"), path.join(RAIZ, "packages")]
+  .filter((d) => fs.existsSync(d));
 
 /** Variáveis que o código lê de verdade. */
 function variaveisDoCodigo(): Map<string, string[]> {
   const achadas = new Map<string, string[]>();
-  const pilha = [SRC];
+  const pilha = [...PASTAS];
   while (pilha.length) {
     const dir = pilha.pop()!;
     for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
       const p = path.join(dir, e.name);
-      if (e.isDirectory()) { pilha.push(p); continue; }
+      if (e.isDirectory()) {
+        if (e.name !== "node_modules" && e.name !== "dist") pilha.push(p);
+        continue;
+      }
       if (!/\.tsx?$/.test(e.name)) continue;
-      const src = fs.readFileSync(p, "utf8");
-      for (const m of src.matchAll(/process\.env\.([A-Z_0-9]+)/g)) {
-        const lista = achadas.get(m[1]) ?? [];
+      // Comentário não conta. O próprio cabeçalho deste arquivo cita
+      // `env.VAR` como exemplo, e a primeira versão do padrão novo se acusou.
+      const src = fs.readFileSync(p, "utf8")
+        .split("\n").filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join("\n");
+      // Três formas, porque o código usa as três. `packages/integrations/meta/
+      // src/config.ts` lê `env.META_CAPI_ACCESS_TOKEN` de um objeto recebido, e
+      // o padrão que exigia `process.env.` colado não via nenhuma das sete
+      // variáveis da Meta.
+      //
+      // Casar `env.VAR` genérico pode marcar como usada uma variável que não é
+      // — e esse é o erro seguro: o custo de marcar a mais é zero, e o de
+      // marcar a menos é alguém apagar credencial em uso.
+      for (const m of src.matchAll(/(?:process\.env|\benv)\.([A-Z_0-9]{3,})|process\.env\[["']([A-Z_0-9]{3,})["']\]/g)) {
+        const nome = m[1] ?? m[2];
+        if (!nome) continue;
+        const lista = achadas.get(nome) ?? [];
         const rel = path.relative(RAIZ, p);
         if (!lista.includes(rel)) lista.push(rel);
-        achadas.set(m[1], lista);
+        achadas.set(nome, lista);
       }
     }
   }
+  // Infraestrutura também lê variável, e o `.env.example` documenta as duas
+  // coisas. Sem isto, `DB_USER`, `APP_PORT`, `HONO_API_PORT` e
+  // `COMPOSE_PROJECT_NAME` apareciam como "candidatas a remoção" — e removê-las
+  // quebraria o `docker-compose` sem que nada em TypeScript acusasse.
+  for (const arq of composeEDockerfile()) {
+    const src = fs.readFileSync(arq, "utf8");
+    for (const m of src.matchAll(/\$\{?([A-Z_0-9]{3,})\}?/g)) {
+      const lista = achadas.get(m[1]) ?? [];
+      const rel = path.relative(RAIZ, arq);
+      if (!lista.includes(rel)) lista.push(rel);
+      achadas.set(m[1], lista);
+    }
+  }
   return achadas;
+}
+
+/** Os arquivos de infraestrutura que interpolam variável de ambiente. */
+function composeEDockerfile(): string[] {
+  const achados: string[] = [];
+  const pilha = [RAIZ];
+  while (pilha.length) {
+    const dir = pilha.pop()!;
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) {
+        if (!["node_modules", ".git", ".next", "dist"].includes(e.name)) pilha.push(p);
+        continue;
+      }
+      if (/^(docker-)?compose.*\.ya?ml$/.test(e.name) || /^Dockerfile/.test(e.name)) achados.push(p);
+    }
+  }
+  return achados;
 }
 
 function variaveisDocumentadas(): Set<string> {
