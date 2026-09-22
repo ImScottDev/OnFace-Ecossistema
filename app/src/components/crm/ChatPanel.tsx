@@ -15,13 +15,10 @@ import {
   ChevronRight,
   ChevronUp,
   ChevronDown,
-  StickyNote,
   Building2,
   Phone as PhoneIcon,
   Mail,
   Briefcase,
-  CalendarPlus,
-  DollarSign,
   MessageCircle,
   Film,
   Mic,
@@ -1093,15 +1090,18 @@ export function ChatPanel({
                   {stage.label}
                 </button>
               ))}
-              <button className="chat-quick-action" title="Adicionar nota">
-                <StickyNote className="w-3 h-3 inline mr-0.5" /> Nota
-              </button>
-              <button className="chat-quick-action" title="Agendar tarefa">
-                <CalendarPlus className="w-3 h-3 inline mr-0.5" /> Tarefa
-              </button>
-              <button className="chat-quick-action" title="Editar MRR">
-                <DollarSign className="w-3 h-3 inline mr-0.5" /> MRR
-              </button>
+              {/* "Nota", "Tarefa" e "MRR" saíram daqui.
+                *
+                * Eram três `<button>` com um `title` e nada mais: sem
+                * `onClick`, sem mutation, sem capacidade no componente. Nunca
+                * foram ligados, e ficavam ao lado dos botões de etapa, que
+                * funcionam — o que fazia parecer que o grupo inteiro
+                * funcionava.
+                *
+                * A capacidade não se perde: o §17.5 põe Task e Meeting no
+                * CABEÇALHO da conversa, e o painel de contexto (§17.8) já
+                * lista as tarefas abertas da pessoa. O lugar delas é lá,
+                * ligado ao domínio, não aqui como chip decorativo. */}
             </div>
           )}
         </div>
