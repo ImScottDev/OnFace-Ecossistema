@@ -105,7 +105,7 @@ pnpm ds:check             # aderência à escala do Design System
 pnpm db:migrar:check      # o banco está em dia?
 ```
 
-O build **não** é portão de tipo: `next.config.ts` está com `typescript.ignoreBuildErrors`.
+O build **é** portão de tipo desde o CP61: `npm run build` roda `tsc --noEmit` antes do `next build`, e falha no primeiro erro. `next.config.ts` mantém `typescript.ignoreBuildErrors` porque o tsc já rodou — deixar o Next checar de novo só custaria tempo. Antes disso o portão estava só na disciplina de quem lembrava: o Dockerfile constrói com `NEXT_TYPESCRIPT_CHECK=false npm run build` e nenhum tsc.
 Rode `tsc` explicitamente.
 
 ---
