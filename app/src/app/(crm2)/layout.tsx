@@ -6,7 +6,7 @@ import { Cf2SidebarProvider } from "@/components/crm2/ui/Sidebar";
 import { Cf2ThemeRoot } from "@/components/crm2/ThemeRoot";
 import { Cf2CamadaModal } from "@/components/crm2/CamadaModal";
 import { OnfaceThemeRoot } from "@/components/onface/OnfaceThemeRoot";
-import { SidebarOnface } from "@/components/onface/shell/SidebarOnface";
+import { AppSidebar } from "@/components/app-sidebar";
 import { TopbarOnface } from "@/components/onface/shell/TopbarOnface";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -80,7 +80,7 @@ export default async function Crm2Layout({
       <Cf2CamadaModal />
       <TooltipProvider delayDuration={200}>
         <SidebarProvider defaultOpen={abertaPorPadrao}>
-          <SidebarOnface />
+          <AppSidebar />
           <SidebarInset className="onface-conteudo">
             <TopbarOnface />
             <Cf2SidebarProvider className="h-auto min-h-0 overflow-visible">
