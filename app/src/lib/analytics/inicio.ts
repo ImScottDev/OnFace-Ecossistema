@@ -523,16 +523,29 @@ export interface JornadaOperacao {
  * mostrava "0 clientes ativos" com 244 clientes cadastrados. Aqui o número
  * bate com o que a pessoa encontra ao clicar no card.
  */
+/**
+ * Clientes ativos, pelo Metric Catalog.
+ *
+ * Esta função tinha a PRÓPRIA conta, e ela divergia do catálogo num filtro:
+ * `portfolio_included = true`. Medido em 22/09 sobre a mesma base:
+ *
+ *     catálogo  361 empresas
+ *     esta      272 empresas      (89 a menos, 33%)
+ *
+ * Três telas liam daqui — a home do CRM2, a Visão Geral e a home do ONFACE — e
+ * mostravam 272 enquanto o catálogo respondia 361 para a mesma pergunta. O
+ * Documento Mestre é explícito no Módulo 12: "mesma métrica não possui cálculos
+ * diferentes em telas distintas", e define cliente ativo como Company + Service
+ * ACTIVE, sem menção a portfólio.
+ *
+ * `portfolio_included` é outro recorte — o que entra na carteira comercial — e
+ * continua servindo a quem precisa dele, como a fila de CS. O que não pode é
+ * dois recortes com o mesmo nome.
+ */
 export async function getClientesAtivos(orgId: string): Promise<number> {
-  const [row] = await db.execute<{ n: number }>(sql`
-    SELECT COUNT(DISTINCT sc.empresa_id)::int AS n
-      FROM servicos_canonicos sc
-     WHERE sc.organizacao_id = ${orgId}
-       AND sc.commercial_lifecycle = 'ACTIVE'
-       AND sc.portfolio_included = true
-       AND sc.empresa_id IS NOT NULL
-  `);
-  return Number(row?.n || 0);
+  const { medir } = await import("@/lib/metricas/catalogo");
+  const m = await medir(orgId, "clientes_ativos");
+  return Number(m.valor || 0);
 }
 
 /** Contagem de "Equipe" do header — usuários ativos da organização, com as

@@ -43,6 +43,44 @@ test("o MRR global é somado num lugar só: o catálogo", () => {
     `somam MRR global fora do catálogo: ${infratores.join(", ")}. Use medir(org, "mrr_atual").`);
 });
 
+test("clientes ativos é contado num lugar só: o catálogo", () => {
+  // A trava do MRR nasceu porque a palavra saía de cinco expressões. O mesmo
+  // aconteceu com "clientes ativos", e passou despercebido porque a trava só
+  // olhava MRR: `analytics/inicio.ts` tinha a própria conta, com um filtro a
+  // mais (`portfolio_included = true`). Medido em 22/09 na mesma base:
+  //
+  //     catálogo  361 empresas
+  //     a tela    272 empresas     (89 a menos, 33%)
+  //
+  // Três telas liam a versão curta. `portfolio_included` continua sendo um
+  // recorte legítimo — a carteira comercial, que a fila de CS usa — mas com
+  // OUTRO nome. Contar empresas distintas com serviço ACTIVE é a métrica
+  // catalogada, e ela tem um dono só.
+  const infratores: string[] = [];
+  for (const f of arquivos(SRC)) {
+    if (f.includes(path.join("lib", "metricas"))) continue;
+    const txt = fs.readFileSync(f, "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    // Olha a CONSULTA, não o arquivo. A primeira versão casava arquivo inteiro
+    // e acusou três lugares certos: `novos_30d` (outra métrica), o painel de CS
+    // (conta riscos, não serviços) e a fila de CS (o recorte da CARTEIRA, que
+    // `portfolio_included` marca). Métrica diferente com nome parecido não é a
+    // mesma métrica.
+    for (const m of txt.matchAll(/count\s*\(\s*DISTINCT\s+\w*\.?empresa_id[\s\S]{0,400}/gi)) {
+      const consulta = m[0];
+      if (!/commercial_lifecycle\s*=\s*'ACTIVE'/i.test(consulta)) continue;
+      // `portfolio_included` é o recorte da carteira comercial, não o global.
+      if (/portfolio_included/i.test(consulta)) continue;
+      // Janela de tempo é outra métrica (entradas do período).
+      if (/created_at\s*>=|interval\s*'/i.test(consulta)) continue;
+      infratores.push(path.relative(SRC, f).split(path.sep).join("/"));
+      break;
+    }
+  }
+  assert.deepEqual(infratores, [],
+    `contam clientes ativos fora do catálogo: ${infratores.join(", ")}. ` +
+    `Use medir(org, "clientes_ativos") — ou dê outro nome, se o recorte for outro.`);
+});
+
 test("toda métrica catalogada diz o que NÃO inclui", () => {
   // O campo existe para impedir a próxima pessoa de somar setup no MRR
   // "porque parecia receita". Métrica sem essa fronteira escrita volta a

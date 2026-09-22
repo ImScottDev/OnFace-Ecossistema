@@ -3040,3 +3040,19 @@ Dois dos três leitores já estavam certos — `clientes-crm2` faz a união e
 acompanhado. A união preserva os dois caminhos.
 
 Validação: tsc limpo, 349 testes / 0 falhas, smoke provado por reintrodução.
+
+## 2026-09-22 — CP51: "clientes ativos" tinha duas contas
+
+`analytics/inicio.ts::getClientesAtivos` tinha conta própria, com
+`portfolio_included = true` a mais que o catálogo. Medido: catálogo 361
+empresas, a função 272 — 89 a menos, 33%. Três telas liam a versão curta.
+
+O Documento Mestre define cliente ativo como Company + Service ACTIVE, sem
+portfólio; a função passou a chamar `medir(org, "clientes_ativos")`.
+`portfolio_included` segue sendo o recorte da carteira, com outro nome.
+
+A trava nova acusou três lugares certos antes de ficar boa (novos_30d, painel de
+CS por risco, fila de CS pela carteira) e passou a olhar a consulta, não o
+arquivo.
+
+Validação: tsc limpo, 350 testes / 0 falhas.

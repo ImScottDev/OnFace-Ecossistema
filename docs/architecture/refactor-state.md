@@ -64,9 +64,9 @@ com o PABX invendável.
 
 ## Último commit
 
-`(CP50)` — 70% das empresas mostravam "sem atividade" tendo atividade
+`(CP51)` — "clientes ativos" tinha duas contas: 361 e 272
 
-**Estado medido em 22/09/2026:** tsc limpo · **349 testes / 0 falhas** · build de
+**Estado medido em 22/09/2026:** tsc limpo · **350 testes / 0 falhas** · build de
 produção limpo · **36 verificações** na bateria de smokes · **4 aceites com 208
 asserções** · **paridade 13/14** (o não verificável é o NEXO, por credencial) ·
 **14/14 rotas do ONFACE** renderizando. Nada de produção foi tocado.
@@ -2826,6 +2826,40 @@ escritas novas, e o lead cobre a base histórica.
 
 **Validação:** tsc limpo, **349 testes / 0 falhas**, smoke prova os dois caminhos
 e a reintrodução devolve o vazio.
+
+### CP51 — "Clientes ativos" tinha duas contas: 361 e 272
+
+O Módulo 12 é explícito: *"mesma métrica não possui cálculos diferentes em telas
+distintas"*. A trava que nasceu disso só olhava **MRR**, porque foi o MRR que
+custou cinco expressões e números de R$ 61 mil a R$ 497 mil. A segunda métrica
+repetida passou despercebida.
+
+`analytics/inicio.ts::getClientesAtivos` tinha a própria conta, com um filtro a
+mais que o catálogo: `portfolio_included = true`. Medido na mesma base:
+
+| | empresas |
+|---|---|
+| catálogo (`clientes_ativos`) | **361** |
+| a função das telas | **272** |
+
+**89 a menos, 33% de diferença**, e três telas liam a versão curta: a home do
+CRM2, a Visão Geral e a home do ONFACE.
+
+O Documento Mestre define cliente ativo como **Company + Service ACTIVE**, sem
+menção a portfólio — então a definição catalogada é a correta, e a função passou
+a chamá-la. `portfolio_included` continua sendo um recorte legítimo (a carteira
+comercial, que a fila de CS usa); o que não pode é dois recortes com o mesmo
+nome.
+
+**A trava nova acusou três lugares certos antes de ficar boa**, e os três
+ensinam a fronteira: `novos_30d` conta entradas do período (outra métrica), o
+painel de CS conta empresas com risco aberto (outra coisa), e a fila de CS conta
+a carteira — marcada por `portfolio_included`. A trava passou a olhar a
+**consulta**, não o arquivo, e a reconhecer esses três recortes.
+
+**Validação:** tsc limpo, **350 testes / 0 falhas**, a tela e o catálogo agora
+respondem o mesmo número, e a reintrodução da conta própria deixa a trava
+vermelha.
 
 ### Auditoria de CS Health (histórico da decisão)
 
