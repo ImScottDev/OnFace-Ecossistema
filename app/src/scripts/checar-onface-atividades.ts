@@ -54,6 +54,45 @@ async function main() {
   if (!d.atividades.length) vazios.push("atividades");
   if (!empresas.length) vazios.push("empresas");
   console.log(vazios.length ? `\nBLOCOS VAZIOS: ${vazios.join(", ")}` : "\nNenhum bloco vazio.");
+
+  // ── e o que faz deste arquivo um verificador ──
+  //
+  // Ele já sabia quais blocos estavam vazios, imprimia a lista e saía com
+  // `process.exit(0)`. Tela de Atividades sem nenhuma atividade passava verde.
+  console.log("\n── a tela não fica vazia com o banco cheio ──");
+  let falhas = 0;
+  const ok = (cond: unknown, msg: string) => {
+    console.log(`  ${cond ? "\x1b[32mok\x1b[0m   " : "\x1b[31mFALHA\x1b[0m"} ${msg}`);
+    if (!cond) falhas++;
+  };
+
+  const [{ n: tarefasNoBanco }] = await db.execute<{ n: number }>(sql`
+    SELECT count(*)::int AS n FROM tarefas WHERE organizacao_id = ${org.id}::uuid`);
+  ok(tarefasNoBanco === 0 || d.atividades.length > 0,
+     `a lista não vem vazia com ${tarefasNoBanco} tarefas no banco (${d.atividades.length})`);
+
+  // Sem empresa na busca, o formulário de criação abre e não deixa criar nada.
+  const [{ n: empresasNoBanco }] = await db.execute<{ n: number }>(sql`
+    SELECT count(*)::int AS n FROM empresas WHERE organizacao_id = ${org.id}::uuid`);
+  ok(empresasNoBanco === 0 || empresas.length > 0,
+     `a busca de empresas do formulário responde com ${empresasNoBanco} empresas cadastradas (${empresas.length})`);
+
+  // A lista tem LIMIT 300 e o resumo vem de agregação separada — é assim que
+  // tem que ser. Se um dia o resumo passar a ser contado em cima da lista, ele
+  // trava em 300 e a tela passa a subnotificar exatamente quando há trabalho
+  // demais, que é quando o número importa.
+  const abertasNaLista = d.atividades.filter((a) => a.status !== "concluida").length;
+  ok(d.atividades.length < 300 || d.resumo.abertas >= abertasNaLista,
+     `o resumo não sai da lista truncada (resumo ${d.resumo.abertas} · lista ${d.atividades.length}/300)`);
+
+  ok(d.colunas.length > 0, `o kanban tem colunas (${d.colunas.length})`);
+  ok(d.atividades.every((a) => a.titulo.trim() !== ""),
+     "toda atividade listada tem título — linha sem título é registro que ninguém consegue acionar");
+
+  if (falhas > 0) {
+    console.log(`\n\x1b[31m${falhas} verificação(ões) falharam\x1b[0m`);
+    process.exit(1);
+  }
   process.exit(0);
 }
 

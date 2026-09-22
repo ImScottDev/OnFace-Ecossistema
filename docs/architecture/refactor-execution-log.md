@@ -2784,3 +2784,31 @@ os usava. A página passou a buscar `getMrrAtivo` (Metric Catalog) e
 MRR · 5 sinais abertos. O MRR do card bate com o da tela de Clientes.
 
 Validação: tsc limpo, 339 testes / 0 falhas, trava provada por reintrodução.
+
+## 2026-09-22 — CP38 e CP39: as checagens de tela e o passo 10
+
+CP38. As três `checar-onface-*` também terminavam em `process.exit(0)`
+incondicional. A de Visão Geral já calculava a lista de blocos vazios, imprimia
+`BLOCOS VAZIOS: …` e saía zero — o painel em branco passava verde com o
+diagnóstico impresso na tela. Critério de falha calibrado: só vira falha o vazio
+que não acontece por operação (períodos de `generate_series`, operações com
+entrega aberta, métricas sem valor). O assert do resumo truncado da tela de
+Atividades provou valor na primeira execução: resumo 320, lista 300/300.
+
+Duas mentiras que o runner contou sobre si mesmo, as duas minhas: chamei uma
+função `rodar` que só existia no outro script — as três checagens deram
+`command not found` e o runner fechou com "✔ 32 verificações passaram" — e,
+com filtro que não casa nada, dizia "✔ 0 verificações passaram" e saía zero.
+Zero executado não é sucesso; grupo com glob vazio agora é acusado pelo nome.
+
+CP39. `checar-rotas-onface.ts` cobre as 14 rotas do ONFACE e entra no passo 10,
+junto com o comando de subir os dois processos. A primeira versão acusou as 13
+rotas, todas falsas: procurava "This page could not be found" no corpo, e essa
+frase está no payload RSC que o Next embute em toda página. Erro se identifica
+pelo `<title>`. A segunda acusou 404 numa rota certa: o id do contato vinha de
+`leads` cru, e um lead com pessoa canônica espelhada é excluído da lista E do
+detalhe pelo mesmo `NOT EXISTS`. O id passou a vir da consulta da lista, e o
+teste passou a provar que o primeiro item da lista abre no detalhe.
+
+Validação: tsc limpo, 340 testes / 0 falhas, 35 verificações na bateria,
+14/14 rotas.

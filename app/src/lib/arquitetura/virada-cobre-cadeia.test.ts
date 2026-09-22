@@ -84,6 +84,43 @@ test("os smokes têm runner, ele varre por glob, e o passo 9 o chama", () => {
     "o runner precisa varrer os smokes por glob: enumerar deixa o próximo de fora");
   assert.match(script, /exit "\$FALHOU"/,
     "o runner precisa sair diferente de zero quando um smoke falha");
+  assert.match(script, /src\/scripts\/checar-onface-\*\.ts/,
+    "as checagens de tela também precisam rodar: os três saíam com exit 0 incondicional");
+
+  // Duas mentiras que o runner contou sobre si mesmo antes de ficar assim:
+  // chamava uma função que só existia no outro script — as três checagens
+  // davam "command not found" e ele fechou com "✔ 32 verificações passaram" —
+  // e, com um filtro que não casava nada, dizia "✔ 0 verificações passaram" e
+  // saía zero. Zero executado não é sucesso.
+  assert.match(script, /PASSOU\+FALHOU\)\)" -eq 0/,
+    "o runner precisa recusar a rodada em que NADA foi executado");
+  assert.match(script, /achou" -eq 0/,
+    "o runner precisa acusar grupo cujo glob não casou arquivo nenhum");
+});
+
+test("o passo 10 tem roteiro, e o roteiro cobre as rotas do ONFACE", () => {
+  // O passo 10 era uma frase: "subir o código novo e provar no navegador".
+  // Sem roteiro, "provar" virou abrir a home e seguir — e a Visão Geral passou
+  // semanas pintando de verde uma queda de 78%.
+  const doc = fs.readFileSync(ENTREGA, "utf8");
+  assert.match(doc, /checar-rotas-onface/,
+    "o passo 10 precisa chamar o verificador de rotas");
+  assert.match(doc, /api-server\/index\.ts/,
+    "o passo precisa mandar subir o Hono: sem ele as telas respondem 200 sem dado");
+
+  const script = fs.readFileSync(
+    path.join(RAIZ, "app", "src", "scripts", "checar-rotas-onface.ts"), "utf8");
+  // Cada rota do preview tem que estar na lista. Uma tela nova que ninguém
+  // acrescenta aqui nunca é aberta pelo passo 10.
+  const dir = path.join(RAIZ, "app", "src", "app", "(onface-preview)", "onface-preview");
+  const telas = fs.readdirSync(dir, { withFileTypes: true })
+    .filter((e) => e.isDirectory() && !e.name.startsWith("[")).map((e) => e.name);
+  const ausentes = telas.filter((t) => !script.includes(`/onface-preview/${t}`));
+  assert.deepEqual(ausentes, [],
+    `telas do preview fora do roteiro do passo 10: ${ausentes.join(", ")}`);
+
+  assert.match(script, /startsWith\("\/login"\)/,
+    "o script precisa distinguir 'caiu no login' de 'a tela quebrou' — são causas diferentes");
 });
 
 test("o aceite de CS devolve a conta real como a encontrou", () => {

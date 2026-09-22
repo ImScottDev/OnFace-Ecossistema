@@ -233,12 +233,20 @@ Cada uma foi verificada **falhando de propósito** antes de entrar.
 
    ```bash
    ./scripts/rodar-aceites.sh      # 4 aceites (208 asserções) + 2 validadores
-   ./scripts/rodar-smokes.sh       # os 32 smokes
+   ./scripts/rodar-smokes.sh       # 32 smokes + 3 checagens de tela
    ```
 
    > **Os smokes tinham o mesmo buraco, e era o maior dos três:** 32 scripts,
    > **nenhum chamador** — zero referências em `package.json`, em script ou em
    > CI. O passo pedia "os smokes" e o único caminho era rodar um a um, à mão.
+   >
+   > As três `checar-onface-*` entram no mesmo runner. Elas rodam as consultas de
+   > uma tela e conferem que ela **não fica em branco com o banco cheio** — e as
+   > três também terminavam em `process.exit(0)` incondicional: imprimiam os
+   > números, listavam os blocos vazios que elas mesmas calculavam, e diziam OK.
+   > Relatório, não verificador. O cabeçalho de uma delas descreve o defeito que
+   > ela não pegava: *"foi assim que a home anterior mostrou 0 clientes ativos
+   > com 244 clientes cadastrados"*.
 
    > Este script existe porque o passo dizia "o aceite de vendas" e **nenhuma
    > bateria rodava aceite nenhum** — só a mão. Em 22/09 o
@@ -280,6 +288,31 @@ Cada uma foi verificada **falhando de propósito** antes de entrar.
    antes da virada.
 
 10. **Subir o código novo e provar no navegador.**
+
+    ```bash
+    npm run dev                                  # na pasta app
+    npx tsx src/api-server/index.ts              # o Hono, na 3011
+    npx tsx --env-file=.env src/scripts/checar-rotas-onface.ts
+    ```
+
+    > **Este passo era uma frase.** Sem roteiro, "provar" virava abrir a home,
+    > ver que carregou e seguir — e foi assim que a Visão Geral passou semanas
+    > pintando de verde uma queda de 78%, com um gráfico feito de imagens e
+    > quatro elogios escritos na marcação (CP35 a CP37).
+    >
+    > `checar-rotas-onface` é a **metade automatizável** da prova: as 14 rotas do
+    > ONFACE respondem 200, renderizam a marcação que as identifica e não estão
+    > em branco. Ele não substitui o olho — cor, alinhamento e leitura continuam
+    > sendo do navegador. Serve para o passo começar de um estado conhecido.
+    >
+    > **Os dois processos são obrigatórios.** Em desenvolvimento o rewrite de
+    > `/api/*` só existe com `NODE_ENV=development`; sem o Hono na 3011, 140
+    > telas respondem 200 com o corpo vazio de dado — o modo mais convincente de
+    > uma tela mentir. O script confere os dois antes de começar.
+    >
+    > O que olhar depois, no navegador, e que o script não cobre: os selos de
+    > variação têm a cor do sinal; o gráfico de evolução acompanha os meses
+    > reais; nenhum card afirma saúde sem número ao lado.
 
 11. **Observar por um ciclo comercial** antes das fases 27 e 28.
 

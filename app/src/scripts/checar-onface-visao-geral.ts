@@ -64,6 +64,46 @@ async function main() {
   console.log(vazios.length ? `\nBLOCOS VAZIOS: ${vazios.join(", ")}` : "\nNenhum bloco vazio.");
 
   console.log(`\nFALTA NO DOMÍNIO: ${PENDENCIAS_DE_DADO.join(" · ")}`);
+
+  // ── e o que faz deste arquivo um verificador ──
+  //
+  // Ele já calculava `vazios` — sabia quais blocos da tela estavam em branco —
+  // imprimia a lista e saía com `process.exit(0)`. Um painel inteiro zerado
+  // passava verde. O cabeçalho descreve exatamente esse defeito ("o modo como
+  // um painel fica bonito mostrando zero") e o script não o pegava.
+  //
+  // Nem todo vazio é defeito, e é por isso que o `vazios` sozinho não serve de
+  // critério: a agenda de hoje pode não ter compromisso, e não haver pendência
+  // é a melhor notícia possível. Os dois abaixo são diferentes — vazios só
+  // acontecem se a leitura quebrou.
+  console.log("\n── o painel não fica em branco com o banco cheio ──");
+  let falhas = 0;
+  const ok = (cond: unknown, msg: string) => {
+    console.log(`  ${cond ? "\x1b[32mok\x1b[0m   " : "\x1b[31mFALHA\x1b[0m"} ${msg}`);
+    if (!cond) falhas++;
+  };
+
+  // A série vem de `generate_series`: períodos vazios significam que a consulta
+  // quebrou, nunca que o mês não teve movimento.
+  ok(d.grafico.periodos.length > 0, `o gráfico tem períodos (${d.grafico.periodos.length})`);
+  ok(d.grafico.series.every((s) => s.rotulos.length === d.grafico.periodos.length),
+     "toda série cobre os mesmos períodos — série curta desalinha a leitura do eixo");
+
+  const [{ n: abertos }] = await db.execute<{ n: number }>(sql`
+    SELECT count(*)::int AS n FROM fulfillments
+     WHERE organizacao_id = ${org.id}::uuid AND status NOT IN ('COMPLETED','CANCELED')`);
+  ok(abertos === 0 || d.operacoes.length > 0,
+     `a lista de operações não vem vazia com ${abertos} entregas abertas (${d.operacoes.length})`);
+
+  ok(d.metricas.length > 0 && d.metricas.every((m) => m.valor.trim() !== ""),
+     `toda métrica do topo tem valor (${d.metricas.length})`);
+  ok(d.operacoes.every((o) => o.empresa.trim() !== "" && o.etapa.trim() !== ""),
+     "toda operação listada diz de quem é e em que etapa está");
+
+  if (falhas > 0) {
+    console.log(`\n\x1b[31m${falhas} verificação(ões) falharam\x1b[0m`);
+    process.exit(1);
+  }
   process.exit(0);
 }
 

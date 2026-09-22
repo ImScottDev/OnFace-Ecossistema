@@ -30,12 +30,10 @@ FALHOU=0
 PASSOU=0
 QUEBRADOS=()
 
-for f in src/scripts/smoke-*.ts; do
-  nome=$(basename "$f" .ts)
-  [ -n "$PADRAO" ] && [[ "$nome" != *"$PADRAO"* ]] && continue
+rodar() {
+  local nome=$1 arquivo=$2 saida
   printf '── %-46s' "$nome"
-  # `pipefail` faz o pipeline devolver a falha do tsx, não o sucesso do tail.
-  if saida=$(npx tsx --env-file=.env "$f" 2>&1); then
+  if saida=$(npx tsx --env-file=.env "$arquivo" 2>&1); then
     echo "ok"
     PASSOU=$((PASSOU+1))
   else
@@ -44,13 +42,53 @@ for f in src/scripts/smoke-*.ts; do
     QUEBRADOS+=("$nome")
     FALHOU=$((FALHOU+1))
   fi
-done
+}
+
+# Glob que não casa nada devolve o padrão literal, e `npx tsx` sobre um arquivo
+# inexistente falharia com uma mensagem que não diz o que aconteceu. Pior: um
+# diretório renomeado passaria como "0 falhas". Conferir a existência é o que
+# separa "rodou e passou" de "não rodou".
+rodar_grupo() {
+  local padrao=$1 rotulo=$2 achou=0
+  for f in $padrao; do
+    [ -f "$f" ] || continue
+    achou=$((achou+1))
+    nome=$(basename "$f" .ts)
+    [ -n "$PADRAO" ] && [[ "$nome" != *"$PADRAO"* ]] && continue
+    rodar "$nome" "$f"
+  done
+  if [ "$achou" -eq 0 ]; then
+    echo "✘ nenhum arquivo em $padrao — $rotulo não foi verificado"
+    FALHOU=$((FALHOU+1))
+    QUEBRADOS+=("$rotulo (nenhum arquivo)")
+  fi
+}
+
+echo "── smokes ──"
+rodar_grupo "src/scripts/smoke-*.ts" "smokes"
+
+{
+  echo ""
+  echo "── checagens de tela ──"
+  # `checar-onface-*` roda as consultas de uma tela e confere que ela não fica em
+  # branco com o banco cheio. Os três também saíam com `process.exit(0)`
+  # incondicional até 22/09: imprimiam os números, listavam os blocos vazios que
+  # eles mesmos calculavam, e diziam OK. Relatório, não verificador.
+  rodar_grupo "src/scripts/checar-onface-*.ts" "checagens de tela"
+}
 
 echo ""
+# Zero verificação executada NÃO é sucesso. Com um filtro que não casa nada, o
+# script dizia "✔ 0 verificações passaram" e saía zero — a mesma mentira que
+# esta bateria existe para pegar, cometida por ela mesma.
+if [ "$((PASSOU+FALHOU))" -eq 0 ]; then
+  echo "✘ nenhuma verificação casou \"$PADRAO\" — nada foi executado"
+  exit 1
+fi
 if [ "$FALHOU" -eq 0 ]; then
-  echo "✔ $PASSOU smokes passaram"
+  echo "✔ $PASSOU verificações passaram"
 else
-  echo "✘ $FALHOU de $((PASSOU+FALHOU)) smokes falharam — a virada NÃO segue com isto vermelho"
+  echo "✘ $FALHOU de $((PASSOU+FALHOU)) verificações falharam — a virada NÃO segue com isto vermelho"
   printf '   %s\n' "${QUEBRADOS[@]}"
 fi
 exit "$FALHOU"

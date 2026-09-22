@@ -2293,6 +2293,89 @@ Clientes mostra. Uma métrica, uma definição.
 **Validação:** tsc limpo, **339 testes / 0 falhas**, trava estendida e provada
 por reintrodução (devolver "Saudável" à marcação deixa o teste vermelho).
 
+### CP38 — As três checagens de tela também eram relatório
+
+Fechamento do fio aberto no CP35. As três `checar-onface-*` existem para pegar
+um defeito específico, e o cabeçalho de uma delas o descreve: *"foi assim que a
+home anterior mostrou 0 clientes ativos com 244 clientes cadastrados"*. **As três
+terminavam em `process.exit(0)` incondicional.**
+
+A de Visão Geral é o caso mais desconfortável: ela **já calculava** a lista de
+blocos vazios, imprimia `BLOCOS VAZIOS: …` e saía zero. O painel inteiro em
+branco passava verde, com o diagnóstico impresso na tela.
+
+O critério de falha é calibrado, porque nem todo vazio é defeito — a agenda de
+hoje pode não ter compromisso, e não haver pendência é a melhor notícia
+possível. Só vira falha o vazio que **só acontece se a leitura quebrou**:
+
+| tela | verifica |
+|---|---|
+| Visão Geral | períodos do gráfico (vêm de `generate_series`, nunca vazios); séries do mesmo comprimento; operações não vazias com entrega aberta; toda métrica com valor |
+| Início | operações e leads não zeram com a fonte cheia; jornada com etapas; fila de prioritárias não vazia com operação aberta; série histórica não é linha de zeros |
+| Atividades | lista não vazia com tarefa no banco; busca de empresas do formulário responde; **o resumo não sai da lista truncada**; kanban com colunas |
+
+O assert do resumo truncado provou seu valor na primeira execução: **resumo 320,
+lista 300 de 300**. A lista está exatamente no teto. Se um dia o resumo passar a
+ser contado em cima dela, trava em 300 e a tela subnotifica justamente quando há
+trabalho demais — que é quando o número importa.
+
+As três entraram em `scripts/rodar-smokes.sh`, e a trava exige que continuem lá.
+
+**Duas mentiras que o runner contou sobre si mesmo, e as duas são minhas.** Ao
+ligar as checagens, chamei uma função `rodar` que só existia no *outro* runner.
+As três deram `command not found`, o contador de falhas não subiu, e o script
+fechou com **"✔ 32 verificações passaram"** — três verificações não executadas,
+reportadas como verdes. É exatamente o defeito que esta bateria existe para
+pegar, cometido por ela.
+
+Ao consertar, apareceu a segunda: com um filtro que não casa nada, o script
+dizia **"✔ 0 verificações passaram"** e saía zero. **Zero executado não é
+sucesso.** Agora a rodada em que nada rodou é falha, e um grupo cujo glob não
+casa arquivo nenhum é acusado pelo nome — um diretório renomeado passaria como
+"0 falhas". As duas coisas estão na trava.
+
+### CP39 — O passo 10 era uma frase
+
+*"Subir o código novo e provar no navegador."* Sem roteiro, "provar" vira abrir
+a home, ver que carregou e seguir — e foi assim que a Visão Geral passou semanas
+pintando de verde uma queda de 78% (CP35 a CP37).
+
+`checar-rotas-onface.ts` é a metade automatizável da prova: **as 14 rotas do
+ONFACE** respondem 200, renderizam a marcação que as identifica e não estão em
+branco. Ele confere antes se os DOIS processos estão de pé — em desenvolvimento
+o rewrite de `/api/*` só existe com `NODE_ENV=development`, e sem o Hono na 3011
+as telas respondem 200 com o corpo vazio de dado.
+
+**Duas armadilhas que o próprio script caiu antes de ficar de pé**, e as duas
+valem mais que o script:
+
+**A primeira versão acusou as 13 rotas — todas falsas.** Ela procurava
+`"This page could not be found"` no corpo da resposta. Essa frase está no payload
+RSC que o Next embute em **toda** página (o `not-found` vem serializado junto),
+então aparece numa tela saudável de 155 kB. O `<title>` real era
+*"ONFACE — Atividades"*. Erro se identifica pelo `<title>`, nunca por procurar a
+frase no HTML inteiro: um verificador que acusa o que não existe queima a
+confiança tão rápido quanto um que deixa passar o que existe.
+
+**A segunda acusou um 404 numa rota que está certa.** O id da tela de contato
+vinha de `SELECT id FROM leads ORDER BY created_at DESC LIMIT 1`. Contato é a
+única entidade da tela cujo id pode ser de `pessoas` **ou** de `leads`, e um lead
+que já tem pessoa canônica espelhada é excluído — por
+`NOT EXISTS (SELECT 1 FROM pessoas WHERE lead_id_legado = l.id)`, **nos dois
+lados**: `diretorioPessoas` e `pessoaPorId` aplicam o mesmo filtro. O lead que
+peguei não aparece na lista, então ninguém chega nele pela tela. Perseguir aquele
+404 teria levado a "consertar" código correto.
+
+O id passou a vir da **mesma consulta que alimenta a lista**, o que faz o teste
+provar o que interessa: *o primeiro item que a lista mostra abre no detalhe*.
+
+A trava exige que toda tela em `(onface-preview)/onface-preview/` esteja no
+roteiro — uma tela nova que ninguém acrescente ali nunca seria aberta pelo passo
+10. Provada criando um diretório de tela e vendo o teste acusá-lo pelo nome.
+
+**Validação:** tsc limpo, **340 testes / 0 falhas**, **35 verificações** na
+bateria de smokes (32 + 3 checagens de tela), **14/14 rotas** do ONFACE.
+
 ### Auditoria de CS Health (histórico da decisão)
 
 Menor do que o gap analysis inicial dizia:
