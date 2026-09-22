@@ -118,7 +118,7 @@ export default function TabComercialCloser({ periodo }: { periodo: string }) {
                 <div className="h-6 rounded-md transition-all duration-500" style={{ width: `${(e.atingiu / maxFunil) * 100}%`, background: e.status === "ganho" ? "var(--cf2-success-text)" : "#3B82F6" }} />
               </div>
               <span className="text-[12px] text-[var(--cf2-text-secondary)] w-10 text-right">{e.atingiu}</span>
-              <span className="text-[11px] w-14 text-right" style={{ color: e.taxaDoAnterior == null ? "var(--cf2-text-tertiary)" : e.taxaDoAnterior >= 50 ? "#10B981" : "var(--cf2-warning-text)" }}>
+              <span className="text-[11px] w-14 text-right" style={{ color: e.taxaDoAnterior == null ? "var(--cf2-text-tertiary)" : e.taxaDoAnterior >= 50 ? "var(--cf2-success-text)" : "var(--cf2-warning-text)" }}>
                 {e.taxaDoAnterior == null ? "" : `${e.taxaDoAnterior}%`}
               </span>
             </div>

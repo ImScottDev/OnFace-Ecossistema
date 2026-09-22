@@ -42,8 +42,8 @@ const STATUS_LABEL: Record<string, string> = {
 };
 const TIPO_LABEL: Record<string, { label: string; color: string }> = {
   recorrente: { label: "Recorrente", color: "var(--cf2-danger-text)" },
-  avulso: { label: "Avulso", color: "var(--cf2-accent-border)" },
-  setup: { label: "Setup", color: "var(--cf2-accent-border)" },
+  avulso: { label: "Avulso", color: "var(--cf2-accent-text)" },
+  setup: { label: "Setup", color: "var(--cf2-accent-text)" },
 };
 
 // Stripe não avisa se o cliente ABRIU o link, só se completou/pagou — mesmo
@@ -170,7 +170,7 @@ export function Cf2PropostaDetalhe() {
             <p className="text-[13px] mt-0.5" style={{ color: "var(--cf2-text-secondary)" }}>
               {proposta.leadNome}{proposta.leadEmpresa && ` · ${proposta.leadEmpresa}`}
               {proposta.negocioId && (
-                <> · <Link href={`/negocios/${proposta.negocioId}`} className="hover:underline" style={{ color: "var(--cf2-accent-border)" }}>{proposta.negocioTitulo || "ver negócio"}</Link></>
+                <> · <Link href={`/negocios/${proposta.negocioId}`} className="hover:underline" style={{ color: "var(--cf2-accent-text)" }}>{proposta.negocioTitulo || "ver negócio"}</Link></>
               )}
             </p>
           </div>
@@ -250,7 +250,7 @@ export function Cf2PropostaDetalhe() {
           <div className="flex flex-col gap-3">
             <div className="flex items-center justify-between gap-3 flex-wrap">
               <div className="flex items-center gap-2 min-w-0">
-                <Link2 className="w-4 h-4 shrink-0" style={{ color: "var(--cf2-accent-border)" }} />
+                <Link2 className="w-4 h-4 shrink-0" style={{ color: "var(--cf2-accent-text)" }} />
                 <span className="text-[13px] font-semibold shrink-0" style={{ color: "var(--cf2-text-primary)" }}>Link de pagamento</span>
                 <a href={linkPagamento} target="_blank" rel="noreferrer" className="text-[12px] truncate max-w-[260px] hover:underline" style={{ color: "var(--cf2-text-tertiary)" }}>{linkPagamento}</a>
               </div>
@@ -326,7 +326,7 @@ export function Cf2PropostaDetalhe() {
             </div>
             <div className="flex justify-between text-[13px]">
               <span style={{ color: "var(--cf2-text-secondary)" }}>Avulso / Setup</span>
-              <span className="font-medium" style={{ color: "var(--cf2-accent-border)" }}>{moedaInfo.symbol} {fmt(proposta.totalAvulso)}</span>
+              <span className="font-medium" style={{ color: "var(--cf2-accent-text)" }}>{moedaInfo.symbol} {fmt(proposta.totalAvulso)}</span>
             </div>
             <div className="flex justify-between pt-2.5 border-t" style={{ borderColor: "var(--cf2-border-default)" }}>
               <span className="font-semibold" style={{ color: "var(--cf2-text-primary)" }}>Total Geral</span>
@@ -348,7 +348,7 @@ export function Cf2PropostaDetalhe() {
           <div className="flex items-center gap-3">
             <Check className="w-4 h-4" style={{ color: "var(--cf2-success-text)" }} />
             <span className="text-[13px]" style={{ color: "var(--cf2-text-secondary)" }}>Contrato gerado a partir desta proposta.</span>
-            <Link href={`/contratos/${proposta.contratoId}`} className="text-[13px] font-medium ml-auto" style={{ color: "var(--cf2-accent-border)" }}>Ver contrato</Link>
+            <Link href={`/contratos/${proposta.contratoId}`} className="text-[13px] font-medium ml-auto" style={{ color: "var(--cf2-accent-text)" }}>Ver contrato</Link>
           </div>
         </Cf2Card>
       )}

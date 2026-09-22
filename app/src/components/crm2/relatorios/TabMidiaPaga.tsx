@@ -101,7 +101,7 @@ function SectionTitle({ children, hint }: { children: React.ReactNode; hint?: st
 }
 
 // Disciplina de cor (21/07): número SEMPRE branco; accent vira tique e só quando é status.
-const STATUS_ACCENTS = new Set(["var(--cf2-success-text)", "var(--cf2-warning-text)", "var(--cf2-danger-text)", "#10B981"]);
+const STATUS_ACCENTS = new Set(["var(--cf2-success-text)", "var(--cf2-warning-text)", "var(--cf2-danger-text)"]);
 function HeroKpi({ label, value, sub, accent, big, icon: Icon }: { label: string; value: string; sub?: string; accent?: string; big?: boolean; icon?: React.ComponentType<{ className?: string }> }) {
   const tick = accent && STATUS_ACCENTS.has(accent) ? accent : TIQUE_NEUTRO;
   return (
@@ -123,7 +123,7 @@ function HeroKpi({ label, value, sub, accent, big, icon: Icon }: { label: string
   );
 }
 
-const ALERTA_COR: Record<Alerta["nivel"], string> = { verde: "#10B981", amarelo: "var(--cf2-warning-text)", vermelho: "var(--cf2-danger-text)" };
+const ALERTA_COR: Record<Alerta["nivel"], string> = { verde: "var(--cf2-success-text)", amarelo: "var(--cf2-warning-text)", vermelho: "var(--cf2-danger-text)" };
 const ALERTA_ICONE: Record<Alerta["nivel"], string> = { verde: "🟢", amarelo: "🟡", vermelho: "🔴" };
 
 function AlertasList({ alertas }: { alertas: Alerta[] }) {

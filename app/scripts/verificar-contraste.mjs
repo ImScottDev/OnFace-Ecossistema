@@ -99,6 +99,42 @@ const pares = [
   // Rótulo a 58% de branco composto sobre o fundo escuro — é o que a faixa da
   // Carteira usa em `color-mix`, e alfa tem que ser composto antes de medir.
   ['ONFACE escuro: rótulo 58% / inverse', '#8b8f97', ESC.inverse, 4.5],
+
+  // Terceiro cinza no claro. O slate do shell escuro tinha virado
+  // `--text-subtle` no tema de papel e dava 2,84:1 — reprova até o piso de
+  // ícone. Estes dois pares guardam o valor que ficou no lugar.
+  ['ONFACE texto sutil / papel', OF.textoMuted, OF.papel, 4.5],
+  ['ONFACE texto sutil / cartão branco', OF.textoMuted, OF.branco, 4.5],
+  // E este guarda o motivo: slate NÃO serve como texto no claro.
+  ['ONFACE slate / grafite (onde ele serve)', '#8b949e', OF.grafite, 4.5],
+
+  // ── Pílulas de status ────────────────────────────────────────────────────
+  //
+  // O mapa de status da Entrega usava a escala 500 do Tailwind como TEXTO em
+  // cima do próprio tom a 9%. Cor 500 é de preenchimento: azul dava 3,36:1 e
+  // âmbar ~2,2:1. Estes pares guardam os semânticos que entraram no lugar.
+  ['pílula informativo: fg / bg', '#2542a8', '#eaeffe', 4.5],
+  ['pílula âmbar: fg / bg', '#b45309', '#fffbeb', 4.5],
+  ['pílula negativo: fg / bg', '#a11d21', '#fceded', 4.5],
+  ['pílula verde: fg / bg', '#15803d', '#dcfce7', 4.5],
+  // "Pronto para validação" não tinha par semântico. #8E27EF passava raspando
+  // (4,95:1); #7C1FD4 dá folga sobre o mesmo tom lavado.
+  ['pílula roxo: fg / bg', '#7c1fd4', '#f4ecfd', 4.5],
+
+  // ── Verde do produto x verde do Tailwind ────────────────────────────────
+  // `#10B981` é emerald-500. Como TEXTO sobre branco dá 2,54:1 — reprova AA e
+  // reprova até o piso de 3:1 do tique de status de 3px que o KPI desenha.
+  ['verde semântico / branco', '#15803d', OF.branco, 4.5],
+
+  // ── Tinta sobre avatar ──────────────────────────────────────────────────
+  // A paleta de avatar é de tons claros e saturados. Branco em cima dela deu
+  // 1,23:1 em `/clientes/onboarding`; a tinta escura do helper passa nas cinco.
+  ['tinta de avatar / lima', '#12150c', '#aaff00', 4.5],
+  ['tinta de avatar / rosa (o pior da paleta)', '#12150c', '#ff6b8a', 4.5],
+
+  // ── Coral no cartão em destaque da Visão Geral ──────────────────────────
+  // Branco sobre o coral da marca dá 3,30:1, e é o cartão que mais gente lê.
+  ['tinta ONFACE / coral da marca', OF.pretoLogo, OF.coral, 4.5],
 ];
 
 console.log('\n  AUDITORIA DE CONTRASTE — WCAG 2.1 AA\n');

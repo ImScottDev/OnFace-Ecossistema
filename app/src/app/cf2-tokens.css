@@ -21,6 +21,9 @@
   --cf2-text-on-inverse: #ffffff;
   --cf2-accent: var(--seaweed-600);
   --cf2-accent-border: var(--seaweed-700);
+  /* Acento como TEXTO. Existia só no tema ONFACE, e 62 lugares usavam
+     `--cf2-accent-border` no lugar — token de BORDA pintando texto. */
+  --cf2-accent-text: var(--seaweed-700);
   --cf2-accent-bg-subtle: #f3f4f6;
   --cf2-success-text: #15803d;
   --cf2-success-bg: #dcfce7;

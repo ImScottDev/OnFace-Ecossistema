@@ -106,7 +106,7 @@ export function Cf2CalendarioConfiguracoes() {
       <div className="rounded-2xl p-6" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
         <div className="flex items-center justify-between mb-1">
           <div className="flex items-center gap-2">
-            <Clock className="w-4 h-4" style={{ color: "var(--cf2-accent-border)" }} />
+            <Clock className="w-4 h-4" style={{ color: "var(--cf2-accent-text)" }} />
             <p className="text-[16px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Horário de Trabalho</p>
           </div>
           <Toggle ativo={ativo} onChange={() => { setAtivo(!ativo); marcarDirty(); }} />
@@ -145,7 +145,7 @@ export function Cf2CalendarioConfiguracoes() {
         <div className="h-px w-full my-5" style={{ background: "var(--cf2-border-default)" }} />
 
         <div className="flex items-center gap-2 mb-3">
-          <Coffee className="w-4 h-4" style={{ color: "var(--cf2-accent-border)" }} />
+          <Coffee className="w-4 h-4" style={{ color: "var(--cf2-accent-text)" }} />
           <p className="text-[14px] font-bold flex-1" style={{ color: "var(--cf2-text-primary)" }}>Pausa de Almoço</p>
           <Toggle ativo={temAlmoco} onChange={() => { setTemAlmoco(!temAlmoco); marcarDirty(); }} />
         </div>
@@ -179,7 +179,7 @@ export function Cf2CalendarioConfiguracoes() {
       <div className="rounded-2xl p-6" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
         <div className="flex items-center justify-between mb-1">
           <div className="flex items-center gap-2">
-            <Lock className="w-4 h-4" style={{ color: "var(--cf2-accent-border)" }} />
+            <Lock className="w-4 h-4" style={{ color: "var(--cf2-accent-text)" }} />
             <p className="text-[16px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Bloqueios de Agenda</p>
           </div>
           <button

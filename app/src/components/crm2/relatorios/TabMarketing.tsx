@@ -236,7 +236,7 @@ function SectionTitle({ children, hint }: { children: React.ReactNode; hint?: st
 
 // Disciplina de cor (21/07): número SEMPRE branco; accent vira tique e só quando
 // é status (lima/âmbar/vermelho). min-w-0/break-words evita overlap (auditoria item 9).
-const STATUS_ACCENTS = new Set(["var(--cf2-success-text)", "var(--cf2-warning-text)", "var(--cf2-danger-text)", "#10B981"]);
+const STATUS_ACCENTS = new Set(["var(--cf2-success-text)", "var(--cf2-warning-text)", "var(--cf2-danger-text)"]);
 function HeroKpi({ label, value, sub, accent, big, icon: Icon }: { label: string; value: string; sub?: string; accent?: string; big?: boolean; icon?: React.ComponentType<{ className?: string }> }) {
   const tick = accent && STATUS_ACCENTS.has(accent) ? accent : TIQUE_NEUTRO;
   return (

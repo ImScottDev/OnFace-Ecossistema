@@ -373,8 +373,8 @@ export function Cf2OnboardingDetail({ fulfillmentId }: { fulfillmentId: string }
               <Cf2Badge variant={ESTADO_BADGE[fulfillment.status] ?? "neutral"}>{ESTADO_LABEL[fulfillment.status] ?? fulfillment.status}</Cf2Badge>
             </div>
             <div className="flex items-center gap-1.5 text-[11px] mt-0.5" style={{ color: "var(--cf2-text-secondary)" }}>
-              {data.negocioTitulo && data.negocioId ? <>Negócio: <a href={`/negocios/${data.negocioId}`} className="font-semibold" style={{ color: "var(--cf2-accent-border)" }}>{data.negocioTitulo}</a></> : <span style={secLabel}>Sem negócio vinculado</span>}
-              {data.propostaId && <>· Proposta: <a href={`/propostas/${data.propostaId}`} className="font-semibold" style={{ color: "var(--cf2-accent-border)" }}>{data.propostaNumero ? `#P-${data.propostaNumero}` : "ver"}</a></>}
+              {data.negocioTitulo && data.negocioId ? <>Negócio: <a href={`/negocios/${data.negocioId}`} className="font-semibold" style={{ color: "var(--cf2-accent-text)" }}>{data.negocioTitulo}</a></> : <span style={secLabel}>Sem negócio vinculado</span>}
+              {data.propostaId && <>· Proposta: <a href={`/propostas/${data.propostaId}`} className="font-semibold" style={{ color: "var(--cf2-accent-text)" }}>{data.propostaNumero ? `#P-${data.propostaNumero}` : "ver"}</a></>}
             </div>
             <div className="flex items-center gap-2 mt-3">
               {data.leadId && <Cf2Button asChild variant="secondary" size="sm"><a href={atendimentoHref(data.leadId, "ligacao", data.leadTelefone)} {...alvoExterno("ligacao", data.leadTelefone)}><Phone className="w-3.5 h-3.5" /> Ligar</a></Cf2Button>}
@@ -471,7 +471,7 @@ export function Cf2OnboardingDetail({ fulfillmentId }: { fulfillmentId: string }
                 </span>
                 <span className="font-bold" style={{ color: "var(--cf2-text-primary)" }}>Total: {brl(ultimaProposta.valorTotal)}</span>
               </div>
-              <a href={`/propostas/${ultimaProposta.id}`} className="text-[11px] font-semibold flex items-center gap-1" style={{ color: "var(--cf2-accent-border)" }}>Ver proposta completa <ExternalLink className="w-3 h-3" /></a>
+              <a href={`/propostas/${ultimaProposta.id}`} className="text-[11px] font-semibold flex items-center gap-1" style={{ color: "var(--cf2-accent-text)" }}>Ver proposta completa <ExternalLink className="w-3 h-3" /></a>
             </>
           ) : (
             <p className="text-[11px]" style={secLabel}>Nenhuma proposta vinculada a este onboarding.</p>
@@ -501,7 +501,7 @@ export function Cf2OnboardingDetail({ fulfillmentId }: { fulfillmentId: string }
                   <button onClick={() => setMarcoExpandido(expandido ? null : m.key)} className="w-full flex items-center gap-3 py-2.5 text-left">
                     <div className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0" style={{
                       background: m.status === "concluido" ? "var(--cf2-success-text)" : atual ? "var(--cf2-accent-bg)" : "var(--cf2-bg-surface-muted)",
-                      color: m.status === "concluido" ? "#fff" : atual ? "var(--cf2-accent-border)" : "var(--cf2-text-tertiary)",
+                      color: m.status === "concluido" ? "#fff" : atual ? "var(--cf2-accent-text)" : "var(--cf2-text-tertiary)",
                       border: atual ? "2px solid var(--cf2-accent-border)" : "none",
                     }}>
                       {m.status === "concluido" ? <CheckCircle2 className="w-3.5 h-3.5" /> : i + 1}
@@ -514,7 +514,7 @@ export function Cf2OnboardingDetail({ fulfillmentId }: { fulfillmentId: string }
                   {expandido && (
                     <div className="pl-9 pb-3 flex flex-col gap-1">
                       {m.status !== "concluido" && m.status !== "nao_aplicavel" && (
-                        <button onClick={() => marcarMarcoNaoAplicavel.mutate(m.itens.filter((i) => i.status !== "DONE").map((i) => i.id))} className="self-end text-[11px] font-semibold mb-1" style={{ color: "var(--cf2-accent-border)" }}>Marcar etapa inteira como não aplicável</button>
+                        <button onClick={() => marcarMarcoNaoAplicavel.mutate(m.itens.filter((i) => i.status !== "DONE").map((i) => i.id))} className="self-end text-[11px] font-semibold mb-1" style={{ color: "var(--cf2-accent-text)" }}>Marcar etapa inteira como não aplicável</button>
                       )}
                       {m.itens.map((item) => {
                         const itemInfo = ITEM_STATUS_INFO[item.status] ?? ITEM_STATUS_INFO.PENDING;
@@ -567,7 +567,7 @@ export function Cf2OnboardingDetail({ fulfillmentId }: { fulfillmentId: string }
           <Cf2Card className="flex flex-col gap-2" padding="16px">
             <div className="flex items-center justify-between">
               <p className="text-[11px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Pendências e tarefas</p>
-              {data.leadId && <button onClick={() => setTarefaAberta(true)} className="text-[11px] font-semibold" style={{ color: "var(--cf2-accent-border)" }}>+ Nova</button>}
+              {data.leadId && <button onClick={() => setTarefaAberta(true)} className="text-[11px] font-semibold" style={{ color: "var(--cf2-accent-text)" }}>+ Nova</button>}
             </div>
             {tarefasAbertas.length === 0 ? (
               <p className="text-[11px]" style={secLabel}>Nenhuma pendência aberta.</p>
@@ -639,7 +639,7 @@ export function Cf2OnboardingDetail({ fulfillmentId }: { fulfillmentId: string }
               <Lock className="w-3 h-3" /> Concluir e enviar para CS
             </Cf2Button>
           )}
-          {jaConcluido && data.propostaId && <a href={`/propostas/${data.propostaId}`} className="text-[11px] font-semibold flex items-center gap-1" style={{ color: "var(--cf2-accent-border)" }}><FileText className="w-3 h-3" /> Ver proposta</a>}
+          {jaConcluido && data.propostaId && <a href={`/propostas/${data.propostaId}`} className="text-[11px] font-semibold flex items-center gap-1" style={{ color: "var(--cf2-accent-text)" }}><FileText className="w-3 h-3" /> Ver proposta</a>}
         </Cf2Card>
       </div>
 

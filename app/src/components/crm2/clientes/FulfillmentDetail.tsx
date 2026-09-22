@@ -452,7 +452,7 @@ function PabxWorkspace({ fulfillmentId, data, documentosLegado }: { fulfillmentI
               <div className="flex items-center gap-2 flex-wrap">
                 <h1 className="text-[19px] font-bold truncate" style={{ color: "var(--cf2-chrome-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>{empresaNome || "—"}</h1>
                 <span className="text-[10px] px-2 py-0.5 rounded-full font-bold" style={{ background: "var(--cf2-chrome-surface-active)", color: "var(--cf2-chrome-text-secondary)" }}>{FAMILIA_LABEL[fulfillment.serviceFamily]}</span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full font-bold" style={{ background: fulfillment.status === "COMPLETED" ? "var(--cf2-accent-bg-subtle)" : fulfillment.status.startsWith("BLOCKED") ? "#ef444422" : "var(--cf2-chrome-surface-active)", color: fulfillment.status === "COMPLETED" ? "var(--cf2-accent-border)" : fulfillment.status.startsWith("BLOCKED") ? "#ff8e83" : "var(--cf2-chrome-text-primary)" }}>
+                <span className="text-[10px] px-2 py-0.5 rounded-full font-bold" style={{ background: fulfillment.status === "COMPLETED" ? "var(--cf2-accent-bg-subtle)" : fulfillment.status.startsWith("BLOCKED") ? "#ef444422" : "var(--cf2-chrome-surface-active)", color: fulfillment.status === "COMPLETED" ? "var(--cf2-accent-text)" : fulfillment.status.startsWith("BLOCKED") ? "#ff8e83" : "var(--cf2-chrome-text-primary)" }}>
                   {STATUS_MACRO_LABEL[fulfillment.status] || fulfillment.status}
                 </span>
               </div>
@@ -507,11 +507,11 @@ function PabxWorkspace({ fulfillmentId, data, documentosLegado }: { fulfillmentI
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 <div>
                   <p className="text-[10px]" style={{ color: "var(--cf2-text-tertiary)" }}>Negócio</p>
-                  {negocioId ? <Link href={`/negocios/${negocioId}`} className="text-[13px] font-bold hover:underline" style={{ color: "var(--cf2-accent-border)" }}>{negocioTitulo || "Ver negócio"} →</Link> : <p className="text-[13px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>—</p>}
+                  {negocioId ? <Link href={`/negocios/${negocioId}`} className="text-[13px] font-bold hover:underline" style={{ color: "var(--cf2-accent-text)" }}>{negocioTitulo || "Ver negócio"} →</Link> : <p className="text-[13px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>—</p>}
                 </div>
                 <div>
                   <p className="text-[10px]" style={{ color: "var(--cf2-text-tertiary)" }}>Proposta aceita</p>
-                  {propostaId ? <Link href={`/propostas/${propostaId}`} className="text-[13px] font-bold hover:underline" style={{ color: "var(--cf2-accent-border)" }}>Proposta #{propostaNumero} →</Link> : <p className="text-[13px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>—</p>}
+                  {propostaId ? <Link href={`/propostas/${propostaId}`} className="text-[13px] font-bold hover:underline" style={{ color: "var(--cf2-accent-text)" }}>Proposta #{propostaNumero} →</Link> : <p className="text-[13px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>—</p>}
                 </div>
                 <Campo label="Responsável comercial" valor={responsavelComercialNome || "—"} />
                 <Campo label="Plano contratado" valor={(escopoVendidoSnapshot?.plano as string) || "—"} />
@@ -596,13 +596,13 @@ function PabxWorkspace({ fulfillmentId, data, documentosLegado }: { fulfillmentI
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
               <Cf2Card>
-                <div className="flex items-center justify-between mb-1"><CardTitulo icon={Phone} tint="#8B5CF6" title="Portabilidade" subtitle={`${(linhasPortabilidade ?? []).length} linha(s)`} /><button onClick={() => setPortabilidadeOpen(true)} className="text-[11px] font-bold" style={{ color: "var(--cf2-accent-border)" }}>Ver tudo →</button></div>
+                <div className="flex items-center justify-between mb-1"><CardTitulo icon={Phone} tint="#8B5CF6" title="Portabilidade" subtitle={`${(linhasPortabilidade ?? []).length} linha(s)`} /><button onClick={() => setPortabilidadeOpen(true)} className="text-[11px] font-bold" style={{ color: "var(--cf2-accent-text)" }}>Ver tudo →</button></div>
                 {(linhasPortabilidade ?? []).length === 0 ? <p className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhuma linha submetida ainda.</p> : (
                   <p className="text-[12px]" style={{ color: "var(--cf2-text-secondary)" }}>{(linhasPortabilidade ?? []).filter((l) => !l.anexoUrl).length} pendente(s) de comprovante · operadoras: {[...new Set((linhasPortabilidade ?? []).map((l) => l.operadoraAtual).filter(Boolean))].join(", ") || "—"}</p>
                 )}
               </Cf2Card>
               <Cf2Card>
-                <div className="flex items-center justify-between mb-1"><CardTitulo icon={ListChecks} tint="var(--cf2-warning-text)" title="Ramais e URA" subtitle={`${(ramaisMaterializados ?? []).length} ramal(is)`} /><button onClick={() => setRamaisOpen(true)} className="text-[11px] font-bold" style={{ color: "var(--cf2-accent-border)" }}>Ver tudo →</button></div>
+                <div className="flex items-center justify-between mb-1"><CardTitulo icon={ListChecks} tint="var(--cf2-warning-text)" title="Ramais e URA" subtitle={`${(ramaisMaterializados ?? []).length} ramal(is)`} /><button onClick={() => setRamaisOpen(true)} className="text-[11px] font-bold" style={{ color: "var(--cf2-accent-text)" }}>Ver tudo →</button></div>
                 <p className="text-[12px]" style={{ color: "var(--cf2-text-secondary)" }}>Horário: {formulario?.respostas?.ura?.diasHorarioAtendimento || "—"} · {formulario?.respostas?.ura?.opcoes?.length ?? 0} opção(ões) de URA</p>
               </Cf2Card>
             </div>
@@ -748,7 +748,7 @@ function PabxWorkspace({ fulfillmentId, data, documentosLegado }: { fulfillmentI
               <tbody>{(linhasPortabilidade ?? []).map((l) => (
                 <tr key={l.id} style={{ borderTop: "1px solid var(--cf2-border-default)" }}>
                   <td className="py-1.5 pr-3">{l.ddd || "—"}</td><td className="py-1.5 pr-3">{l.tipo === "nova_linha" ? "(nova)" : l.numero || "—"}</td><td className="py-1.5 pr-3">{l.tipo === "nova_linha" ? "Linha nova" : "Portabilidade"}</td><td className="py-1.5 pr-3">{l.operadoraAtual || "—"}</td><td className="py-1.5 pr-3">{l.titular || "—"}</td>
-                  <td className="py-1.5">{l.anexoUrl ? <button onClick={() => setPreview({ nome: l.anexoId || "comprovante", url: l.anexoUrl! })} className="hover:underline" style={{ color: "var(--cf2-accent-border)" }}>Ver</button> : "—"}</td>
+                  <td className="py-1.5">{l.anexoUrl ? <button onClick={() => setPreview({ nome: l.anexoId || "comprovante", url: l.anexoUrl! })} className="hover:underline" style={{ color: "var(--cf2-accent-text)" }}>Ver</button> : "—"}</td>
                 </tr>
               ))}</tbody>
             </table>
@@ -812,7 +812,7 @@ function PessoaCard({ nome, cargo, telefone, email, papel, leadId }: { nome: str
         <p className="text-[13px] font-bold truncate" style={{ color: "var(--cf2-text-primary)" }}>{nome}</p>
         {leadId && <Link href={`/contatos/${leadId}`} title="Abrir perfil"><ExternalLink className="w-3.5 h-3.5" style={{ color: "var(--cf2-text-tertiary)" }} /></Link>}
       </div>
-      {papel && <span className="text-[10px] font-bold self-start px-1.5 py-0.5 rounded" style={{ background: "var(--cf2-accent-bg-subtle)", color: "var(--cf2-accent-border)" }}>{papel}</span>}
+      {papel && <span className="text-[10px] font-bold self-start px-1.5 py-0.5 rounded" style={{ background: "var(--cf2-accent-bg-subtle)", color: "var(--cf2-accent-text)" }}>{papel}</span>}
       {cargo && <p className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>{cargo}</p>}
       <div className="flex items-center gap-2 mt-1">
         {telefone && <a href={`tel:${telefone}`} title="Ligar"><Phone className="w-3.5 h-3.5" style={{ color: "var(--cf2-text-secondary)" }} /></a>}
@@ -836,7 +836,7 @@ function MacroetapaCard({ m, onContinuar }: { m: Macroetapa; onContinuar: () => 
       </div>
       <p className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>{done}/{m.itens.length} tarefas · {m.responsavel || "sem responsável"}{m.prazo ? ` · prazo ${new Date(m.prazo).toLocaleDateString("pt-BR")}` : ""}</p>
       {m.bloqueio && <p className="text-[11px] px-2 py-1 rounded-lg" style={{ background: "color-mix(in srgb, var(--cf2-danger-text) 10%, transparent)", color: "var(--cf2-danger-text)" }}>{m.bloqueio.blockerReason || "Etapa bloqueada"}</p>}
-      <button onClick={onContinuar} className="text-[11px] font-bold self-start mt-1" style={{ color: "var(--cf2-accent-border)" }}>Continuar etapa →</button>
+      <button onClick={onContinuar} className="text-[11px] font-bold self-start mt-1" style={{ color: "var(--cf2-accent-text)" }}>Continuar etapa →</button>
     </div>
   );
 }
@@ -1143,7 +1143,7 @@ function OnboardingLegacyView({ fulfillmentId, data, documentosLegado }: { fulfi
 
       <div className="flex items-center gap-1 overflow-x-auto pb-1" style={{ borderBottom: "1px solid var(--cf2-border-default)" }}>
         {ABAS.map((a) => (
-          <button key={a.key} onClick={() => setAba(a.key)} className="shrink-0 px-3 py-2 text-[12px] font-semibold whitespace-nowrap" style={{ color: aba === a.key ? "var(--cf2-accent-border)" : "var(--cf2-text-secondary)", borderBottom: aba === a.key ? "2px solid var(--cf2-accent-border)" : "2px solid transparent" }}>{a.label}</button>
+          <button key={a.key} onClick={() => setAba(a.key)} className="shrink-0 px-3 py-2 text-[12px] font-semibold whitespace-nowrap" style={{ color: aba === a.key ? "var(--cf2-accent-text)" : "var(--cf2-text-secondary)", borderBottom: aba === a.key ? "2px solid var(--cf2-accent-border)" : "2px solid transparent" }}>{a.label}</button>
         ))}
       </div>
 
@@ -1155,7 +1155,7 @@ function OnboardingLegacyView({ fulfillmentId, data, documentosLegado }: { fulfi
               <span className="text-[11px] font-bold px-2 py-1 rounded-full" style={{ background: formulario?.status === "SUBMITTED" ? "var(--cf2-success-bg)" : "var(--cf2-bg-surface-muted)", color: formulario?.status === "SUBMITTED" ? "var(--cf2-success-text)" : "var(--cf2-text-secondary)" }}>{formulario?.status === "SUBMITTED" ? "Formulário recebido" : "Aguardando envio do cliente"}</span>
             </div>
             {linkFormulario ? <>
-              <div className="mt-4 flex items-center gap-2 rounded-lg p-2.5" style={{ background: "var(--cf2-bg-surface-muted)" }}><span className="flex-1 truncate text-[12px]" style={{ color: "var(--cf2-text-secondary)" }}>{linkFormulario}</span><a href={linkFormulario} target="_blank" rel="noreferrer" className="text-[11px] font-bold px-2.5 py-1.5 rounded-lg shrink-0" style={{ background: "var(--cf2-bg-surface)", color: "var(--cf2-accent-border)", border: "1px solid var(--cf2-border-default)" }}>Abrir formulário</a></div>
+              <div className="mt-4 flex items-center gap-2 rounded-lg p-2.5" style={{ background: "var(--cf2-bg-surface-muted)" }}><span className="flex-1 truncate text-[12px]" style={{ color: "var(--cf2-text-secondary)" }}>{linkFormulario}</span><a href={linkFormulario} target="_blank" rel="noreferrer" className="text-[11px] font-bold px-2.5 py-1.5 rounded-lg shrink-0" style={{ background: "var(--cf2-bg-surface)", color: "var(--cf2-accent-text)", border: "1px solid var(--cf2-border-default)" }}>Abrir formulário</a></div>
               <div className="mt-3 grid gap-3 sm:grid-cols-2"><TemplateContato titulo="WhatsApp" texto={mensagemWhatsApp} href={atendimentoHref("whatsapp", mensagemWhatsApp)} acao="Enviar pelo WhatsApp" /><TemplateContato titulo="E-mail" texto={mensagemEmail} href={atendimentoHref("email", mensagemEmail)} acao="Enviar por e-mail" /></div>
             </> : <p className="mt-4 text-[12px]" style={{ color: "var(--cf2-danger-text)" }}>O link público ainda não foi gerado para este projeto.</p>}
           </div>}

@@ -588,7 +588,7 @@ export function Cf2ChatThread({
               className="flex items-center gap-1.5 px-3.5 py-2 rounded-full text-[12px] font-semibold self-center transition-colors"
               style={{ background: "var(--cf2-accent-bg-subtle)", color: "var(--cf2-text-primary)" }}
             >
-              <Sparkles className="w-3.5 h-3.5" style={{ color: "var(--cf2-accent-border)" }} /> Carol AI resumiu esta conversa
+              <Sparkles className="w-3.5 h-3.5" style={{ color: "var(--cf2-accent-text)" }} /> Carol AI resumiu esta conversa
               <ChevronDown className="w-3.5 h-3.5 transition-transform" style={{ transform: resumoAberto ? "rotate(180deg)" : "none", color: "var(--cf2-text-tertiary)" }} />
             </button>
             {resumoAberto && (

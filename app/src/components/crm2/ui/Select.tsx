@@ -81,7 +81,7 @@ export const Cf2SelectItem = React.forwardRef<
   >
     <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
     <SelectPrimitive.ItemIndicator className="absolute right-2 flex items-center">
-      <Check className="size-4" style={{ color: "var(--cf2-accent-border)" }} />
+      <Check className="size-4" style={{ color: "var(--cf2-accent-text)" }} />
     </SelectPrimitive.ItemIndicator>
   </SelectPrimitive.Item>
 ));

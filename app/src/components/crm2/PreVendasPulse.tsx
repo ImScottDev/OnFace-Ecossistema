@@ -57,7 +57,7 @@ function MetricGroup({ label, valor, sub, subTom }: { label: string; valor: stri
   return <div className="flex-1 flex flex-col gap-1.5 min-w-0">
     <p className="text-[11px] font-bold uppercase" style={{ color: "var(--cf2-chrome-text-secondary)" }}>{label}</p>
     <p className="text-[28px] font-bold" style={{ color: "var(--cf2-chrome-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>{valor}</p>
-    <p className="text-xs" style={{ color: subTom === "accent" ? "var(--cf2-accent-border)" : "var(--cf2-chrome-text-secondary)" }}>{sub}</p>
+    <p className="text-xs" style={{ color: subTom === "accent" ? "var(--cf2-accent-text)" : "var(--cf2-chrome-text-secondary)" }}>{sub}</p>
   </div>;
 }
 

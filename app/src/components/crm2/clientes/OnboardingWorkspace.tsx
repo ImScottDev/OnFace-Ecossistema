@@ -157,7 +157,7 @@ export function Cf2OnboardingWorkspace() {
     <div className="flex flex-col gap-5 h-full min-h-0">
       <div className="flex flex-col items-stretch justify-between gap-3 shrink-0 lg:flex-row lg:items-center">
         <div>
-          <p className="text-[24px] font-bold flex items-center gap-2" style={{ color: "var(--cf2-text-primary)" }}><Sparkles className="w-5 h-5" style={{ color: "var(--cf2-accent-border)" }} /> Onboarding</p>
+          <p className="text-[24px] font-bold flex items-center gap-2" style={{ color: "var(--cf2-text-primary)" }}><Sparkles className="w-5 h-5" style={{ color: "var(--cf2-accent-text)" }} /> Onboarding</p>
           <p className="text-[13px]" style={{ color: "var(--cf2-text-secondary)" }}>Gerencie todos os clientes em processo de onboarding e acompanhe a jornada até o primeiro valor.</p>
         </div>
         <div className="flex items-center gap-2 min-w-0">
@@ -172,7 +172,7 @@ export function Cf2OnboardingWorkspace() {
         </div>
       </div>
 
-      <section aria-label="Pulso do onboarding" className="grid grid-cols-2 overflow-hidden rounded-[var(--radius-card)] shrink-0 lg:grid-cols-[1.5fr_repeat(4,minmax(0,1fr))]" style={{ background: "var(--cf2-bg-inverse)" }}>
+      <section aria-label="Pulso do onboarding" data-cf2-superficie="escura" className="grid grid-cols-2 overflow-hidden rounded-[var(--radius-card)] shrink-0 lg:grid-cols-[1.5fr_repeat(4,minmax(0,1fr))]" style={{ background: "var(--cf2-bg-inverse)" }}>
         {KPIS.map((k, index) => {
           const principal = index === 0;
           return (
@@ -196,7 +196,7 @@ export function Cf2OnboardingWorkspace() {
           const ativo = aba === a.key;
           const n = a.key === "todos" ? lista.length : lista.filter((f) => f.estado_operacional === a.key).length;
           return (
-            <button key={a.key} onClick={() => setAba(a.key)} className="text-[12px] font-semibold px-3 py-1.5 rounded-full whitespace-nowrap shrink-0" style={{ background: ativo ? "var(--cf2-accent-bg)" : "var(--cf2-bg-surface-muted)", color: ativo ? "var(--cf2-accent-border)" : "var(--cf2-text-secondary)" }}>
+            <button key={a.key} onClick={() => setAba(a.key)} className="text-[12px] font-semibold px-3 py-1.5 rounded-full whitespace-nowrap shrink-0" style={{ background: ativo ? "var(--cf2-accent-bg)" : "var(--cf2-bg-surface-muted)", color: ativo ? "var(--onface-coral-texto)" : "var(--cf2-text-secondary)" }}>
               {a.label}{n > 0 ? ` (${n})` : ""}
             </button>
           );

@@ -13,7 +13,7 @@ export function GaugeChart({ value, label, target }: GaugeChartProps) {
   const data = [{ value: clamped }, { value: 100 - clamped }];
 
   const fillColor =
-    clamped >= 30 ? "#10B981" : clamped >= 15 ? "var(--cf2-warning-text)" : "var(--cf2-danger-text)";
+    clamped >= 30 ? "var(--cf2-success-text)" : clamped >= 15 ? "var(--cf2-warning-text)" : "var(--cf2-danger-text)";
 
   return (
     <div className="relative flex flex-col items-center" style={{ height: 160 }}>

@@ -709,7 +709,7 @@ export function Cf2NegocioWorkspace({ negocioId }: { negocioId: string }) {
                 <Cf2Card>
                   <div className="flex items-center justify-between">
                     <CardTitulo icon={Building2} tint="#3B82F6" title="Sobre o negócio" />
-                    {!editandoSobre && <button onClick={() => { setSobreForm({ titulo: negocio.titulo, descricao: negocio.descricao || "", responsavelId: negocio.responsavelId || "", previsaoFechamento: negocio.previsaoFechamento || "" }); setEditandoSobre(true); }} className="flex items-center gap-1 text-[12px] font-semibold" style={{ color: "var(--cf2-accent-border)" }}><Pencil className="w-3 h-3" /> Editar</button>}
+                    {!editandoSobre && <button onClick={() => { setSobreForm({ titulo: negocio.titulo, descricao: negocio.descricao || "", responsavelId: negocio.responsavelId || "", previsaoFechamento: negocio.previsaoFechamento || "" }); setEditandoSobre(true); }} className="flex items-center gap-1 text-[12px] font-semibold" style={{ color: "var(--cf2-accent-text)" }}><Pencil className="w-3 h-3" /> Editar</button>}
                   </div>
                   {editandoSobre ? (
                     <div className="mt-3 flex flex-col gap-2.5">
@@ -800,7 +800,7 @@ export function Cf2NegocioWorkspace({ negocioId }: { negocioId: string }) {
                       <div className="flex items-center justify-between gap-3 text-[13px]">
                         <span style={{ color: "var(--cf2-text-tertiary)" }}>Lead de origem</span>
                         {lead ? (
-                          <Link href={`/contatos/${lead.id}`} className="font-medium truncate max-w-[200px]" style={{ color: "var(--cf2-accent-border)" }}>{lead.nome} →</Link>
+                          <Link href={`/contatos/${lead.id}`} className="font-medium truncate max-w-[200px]" style={{ color: "var(--cf2-accent-text)" }}>{lead.nome} →</Link>
                         ) : (
                           <span style={{ color: "var(--cf2-text-tertiary)" }}>—</span>
                         )}
@@ -850,7 +850,7 @@ export function Cf2NegocioWorkspace({ negocioId }: { negocioId: string }) {
                 <Cf2Card>
                   <div className="flex items-center justify-between">
                     <CardTitulo icon={Package} tint="var(--cf2-accent-border)" title="Composição comercial" subtitle="O que está sendo vendido nesta oportunidade" />
-                    <button onClick={() => setActiveTab("produtos")} className="text-[12px] font-semibold shrink-0" style={{ color: "var(--cf2-accent-border)" }}>Ver detalhes →</button>
+                    <button onClick={() => setActiveTab("produtos")} className="text-[12px] font-semibold shrink-0" style={{ color: "var(--cf2-accent-text)" }}>Ver detalhes →</button>
                   </div>
                   <div className="mt-3">
                     {itens.length > 0 ? (
@@ -903,7 +903,7 @@ export function Cf2NegocioWorkspace({ negocioId }: { negocioId: string }) {
                   <div className="mt-3 space-y-1.5">
                     {propostas.length === 0 && <Cf2EmptyState title="Nenhuma proposta ainda" />}
                     {propostas.slice(0, 3).map((p) => <PropostaRow key={p.id} p={p} />)}
-                    {propostas.length > 3 && <button onClick={() => setActiveTab("propostas")} className="text-[12px] font-semibold pt-1" style={{ color: "var(--cf2-accent-border)" }}>Ver todas ({propostas.length}) →</button>}
+                    {propostas.length > 3 && <button onClick={() => setActiveTab("propostas")} className="text-[12px] font-semibold pt-1" style={{ color: "var(--cf2-accent-text)" }}>Ver todas ({propostas.length}) →</button>}
                   </div>
                 </Cf2Card>
 
@@ -916,7 +916,7 @@ export function Cf2NegocioWorkspace({ negocioId }: { negocioId: string }) {
                         <FileText className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--cf2-text-tertiary)" }} /> Proposta #{String(p.numero).padStart(3, "0")}-v{p.versao}.pdf
                       </a>
                     ))}
-                    {(propostas.length > 2 || anexosLegado.length > 0) && <button onClick={() => setActiveTab("documentos")} className="text-[12px] font-semibold pt-1" style={{ color: "var(--cf2-accent-border)" }}>Ver todos →</button>}
+                    {(propostas.length > 2 || anexosLegado.length > 0) && <button onClick={() => setActiveTab("documentos")} className="text-[12px] font-semibold pt-1" style={{ color: "var(--cf2-accent-text)" }}>Ver todos →</button>}
                   </div>
                 </Cf2Card>
 
@@ -982,7 +982,7 @@ export function Cf2NegocioWorkspace({ negocioId }: { negocioId: string }) {
                                 <span className="text-[13px] font-medium truncate" style={{ color: "var(--cf2-text-primary)" }}>{item.produto || "Item sem nome"}</span>
                                 <Cf2Badge variant={NATURE_VARIANT[item.revenueNature] || "neutral"}>{NATURE_LABEL[item.revenueNature] || item.revenueNature}</Cf2Badge>
                                 <span className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>× {item.quantidade}</span>
-                                {item.servicoCanonicoId && <span title="Serviço canônico ativado"><ShieldCheck className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--cf2-accent-border)" }} /></span>}
+                                {item.servicoCanonicoId && <span title="Serviço canônico ativado"><ShieldCheck className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--cf2-accent-text)" }} /></span>}
                               </div>
                               <span className="text-[13px] font-semibold shrink-0" style={{ color: "var(--cf2-text-primary)" }}>{brl(item.valorTotal)}</span>
                             </div>
@@ -1272,7 +1272,7 @@ export function Cf2NegocioWorkspace({ negocioId }: { negocioId: string }) {
         <Cf2DialogContent className="max-w-4xl w-[92vw] h-[85vh] flex flex-col">
           <Cf2DialogHeader className="flex-row items-center justify-between gap-3 pr-6">
             <Cf2DialogTitle className="truncate">{preview?.nome}</Cf2DialogTitle>
-            {preview && <a href={preview.url} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-[12px] font-semibold shrink-0" style={{ color: "var(--cf2-accent-border)" }}><Download className="w-3.5 h-3.5" /> Baixar</a>}
+            {preview && <a href={preview.url} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-[12px] font-semibold shrink-0" style={{ color: "var(--cf2-accent-text)" }}><Download className="w-3.5 h-3.5" /> Baixar</a>}
           </Cf2DialogHeader>
           <div className="flex-1 min-h-0 overflow-auto rounded-lg flex items-center justify-center" style={{ background: "var(--cf2-bg-canvas)" }}>
             {preview?.tipo === "imagem" && <img src={preview.url} alt={preview.nome} className="max-w-full max-h-full object-contain" />}
@@ -1281,7 +1281,7 @@ export function Cf2NegocioWorkspace({ negocioId }: { negocioId: string }) {
               <div className="flex flex-col items-center gap-2 p-6 text-center">
                 <FileText className="w-8 h-8" style={{ color: "var(--cf2-text-tertiary)" }} />
                 <p className="text-[13px]" style={{ color: "var(--cf2-text-secondary)" }}>Pré-visualização não disponível pra este tipo de arquivo.</p>
-                {preview && <a href={preview.url} target="_blank" rel="noreferrer" className="text-[12px] font-semibold" style={{ color: "var(--cf2-accent-border)" }}>Baixar {preview.nome}</a>}
+                {preview && <a href={preview.url} target="_blank" rel="noreferrer" className="text-[12px] font-semibold" style={{ color: "var(--cf2-accent-text)" }}>Baixar {preview.nome}</a>}
               </div>
             )}
           </div>
@@ -1356,7 +1356,7 @@ function FeedColuna({ titulo, eventos, onAbrirLigacao, vazio }: { titulo: string
                   style={{ borderBottom: "1px solid var(--cf2-border-default)" }}
                 >
                   <div className="min-w-0 flex-1">
-                    <p className="text-[13px]" style={{ color: "var(--cf2-text-primary)" }}>{e.titulo}{clicavel && <span className="ml-1.5 text-[11px] font-semibold" style={{ color: "var(--cf2-accent-border)" }}>Ver detalhes →</span>}</p>
+                    <p className="text-[13px]" style={{ color: "var(--cf2-text-primary)" }}>{e.titulo}{clicavel && <span className="ml-1.5 text-[11px] font-semibold" style={{ color: "var(--cf2-accent-text)" }}>Ver detalhes →</span>}</p>
                     <p className="text-[11px] mt-0.5" style={{ color: "var(--cf2-text-tertiary)" }}>{formatDataHora(e.data)}{e.autor ? ` · ${e.autor}` : ""}</p>
                   </div>
                   <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full shrink-0" style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-tertiary)" }}>{TIPO_EVENTO_LABEL[e.tipo] || e.tipo}</span>
@@ -1465,7 +1465,7 @@ function PropostaComposicaoCard({ p }: { p: PropostaCompleta }) {
             <span>{rec > 0 && `Rec: ${brl(rec)}/mês`}{rec > 0 && avulso > 0 && " · "}{avulso > 0 && `Avulso: ${brl(avulso)}`}</span>
             <span className="font-semibold shrink-0" style={{ color: "var(--cf2-text-primary)" }}>Total: {brl(p.totalGeral)}</span>
           </div>
-          <Link href={`/propostas/${p.id}`} className="text-[12px] font-medium text-center mt-0.5" style={{ color: "var(--cf2-accent-border)" }}>Ver proposta completa</Link>
+          <Link href={`/propostas/${p.id}`} className="text-[12px] font-medium text-center mt-0.5" style={{ color: "var(--cf2-accent-text)" }}>Ver proposta completa</Link>
         </div>
       )}
     </div>

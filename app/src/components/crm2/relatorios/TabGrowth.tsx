@@ -68,7 +68,7 @@ const darkTooltip = {
 // Disciplina de cor (reforma 21/07): número SEMPRE branco; o accent vira um
 // tique fino à esquerda e SÓ quando é status (lima/âmbar/vermelho) — cor de
 // domínio decorativa foi removida de propósito.
-const STATUS_ACCENTS = new Set(["var(--cf2-success-text)", "var(--cf2-warning-text)", "var(--cf2-danger-text)", "#10B981"]);
+const STATUS_ACCENTS = new Set(["var(--cf2-success-text)", "var(--cf2-warning-text)", "var(--cf2-danger-text)"]);
 function Kpi({ label, value, sub, accent, icon: Icon }: { label: string; value: string; sub?: string; accent?: string; icon?: React.ComponentType<{ className?: string }> }) {
   const tick = accent && STATUS_ACCENTS.has(accent) ? accent : TIQUE_NEUTRO;
   return (
@@ -215,7 +215,7 @@ export default function TabGrowth({ periodo }: { periodo: string }) {
             <Kpi label="Reun. agendadas" value={String(f?.reunioesAgendadas ?? 0)} />
             <Kpi label="Reun. realizadas" value={String(f?.reunioesRealizadas ?? 0)} accent="#3B82F6" />
             <Kpi label="No-show" value={String(f?.noShow ?? 0)} accent="var(--cf2-warning-text)" />
-            <Kpi label="Clientes" value={String(f?.ganhos ?? 0)} sub={pct(f?.taxaFechamento ?? null) + " do qualif."} accent="#10B981" />
+            <Kpi label="Clientes" value={String(f?.ganhos ?? 0)} sub={pct(f?.taxaFechamento ?? null) + " do qualif."} accent="var(--cf2-success-text)" />
           </div>
           {funilBars.length > 0 && (
             <ChartCard title="Conversão do pipeline" subtitle="Reunião → proposta → negociação → ganho" loading={false} empty={funilBars.length === 0} delay={0.1}>
@@ -240,7 +240,7 @@ export default function TabGrowth({ periodo }: { periodo: string }) {
             <Kpi label="Win rate" value={pct(r?.winRate ?? null)} sub={r?.winAmostraPequena ? `base pequena · n=${r?.winN}` : `${r?.winN ?? 0} decididos`} accent={r?.winAmostraPequena ? "var(--cf2-warning-text)" : "#fff"} />
             <Kpi label="Ticket médio" value={r?.ticketMedio != null ? brl(r.ticketMedio) : "—"} />
             <Kpi label="Ciclo médio" value={r?.cicloMedio != null ? `${r.cicloMedio}d` : "—"} sub="até fechar" />
-            <Kpi label="Fechamento" value={pct(f?.taxaFechamento ?? null)} sub="qualificado → cliente" accent="#10B981" />
+            <Kpi label="Fechamento" value={pct(f?.taxaFechamento ?? null)} sub="qualificado → cliente" accent="var(--cf2-success-text)" />
           </div>
 
           {/* PIPELINE & FORECAST */}
@@ -309,7 +309,7 @@ export default function TabGrowth({ periodo }: { periodo: string }) {
                         <td className="px-4 py-2.5 text-[var(--cf2-text-primary)] font-medium truncate max-w-[160px]">{m.nome}</td>
                         <td className="px-3 py-2.5 text-right text-[var(--cf2-success-text)] font-semibold">{m.ganhos}</td>
                         <td className="px-3 py-2.5 text-right text-[var(--cf2-text-tertiary)]">{m.perdidos}</td>
-                        <td className="px-3 py-2.5 text-right" style={{ color: (m.winRate ?? 0) >= 30 ? "#10B981" : "var(--cf2-warning-text)" }}>{pct(m.winRate)}</td>
+                        <td className="px-3 py-2.5 text-right" style={{ color: (m.winRate ?? 0) >= 30 ? "var(--cf2-success-text)" : "var(--cf2-warning-text)" }}>{pct(m.winRate)}</td>
                         <td className="px-4 py-2.5 text-right text-[var(--cf2-accent)] font-semibold">{brl(m.receita)}</td>
                       </tr>
                     ))}

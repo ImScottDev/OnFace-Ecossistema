@@ -226,19 +226,19 @@ export function EmpresaDrawer({ empresaId, open, onClose, onOpenLead, onOpenNego
               {empresa.website && (
                 <div className="flex items-center justify-between gap-3 text-[13px]">
                   <span style={{ color: "var(--cf2-text-tertiary)" }}>Website</span>
-                  <a href={empresa.website.startsWith("http") ? empresa.website : `https://${empresa.website}`} target="_blank" rel="noopener noreferrer" className="font-medium truncate max-w-[220px] hover:underline" style={{ color: "var(--cf2-accent-border)" }}>{empresa.website}</a>
+                  <a href={empresa.website.startsWith("http") ? empresa.website : `https://${empresa.website}`} target="_blank" rel="noopener noreferrer" className="font-medium truncate max-w-[220px] hover:underline" style={{ color: "var(--cf2-accent-text)" }}>{empresa.website}</a>
                 </div>
               )}
               {empresa.instagram && (
                 <div className="flex items-center justify-between gap-3 text-[13px]">
                   <span style={{ color: "var(--cf2-text-tertiary)" }}>Instagram</span>
-                  <a href={`https://instagram.com/${(empresa.instagram as string).replace(/^@/, "")}`} target="_blank" rel="noopener noreferrer" className="font-medium hover:underline" style={{ color: "var(--cf2-accent-border)" }}>@{(empresa.instagram as string).replace(/^@/, "")}</a>
+                  <a href={`https://instagram.com/${(empresa.instagram as string).replace(/^@/, "")}`} target="_blank" rel="noopener noreferrer" className="font-medium hover:underline" style={{ color: "var(--cf2-accent-text)" }}>@{(empresa.instagram as string).replace(/^@/, "")}</a>
                 </div>
               )}
               {empresa.linkedin && (
                 <div className="flex items-center justify-between gap-3 text-[13px]">
                   <span style={{ color: "var(--cf2-text-tertiary)" }}>LinkedIn</span>
-                  <a href={String(empresa.linkedin).startsWith("http") ? String(empresa.linkedin) : `https://linkedin.com/company/${empresa.linkedin}`} target="_blank" rel="noopener noreferrer" className="font-medium hover:underline" style={{ color: "var(--cf2-accent-border)" }}>Ver perfil</a>
+                  <a href={String(empresa.linkedin).startsWith("http") ? String(empresa.linkedin) : `https://linkedin.com/company/${empresa.linkedin}`} target="_blank" rel="noopener noreferrer" className="font-medium hover:underline" style={{ color: "var(--cf2-accent-text)" }}>Ver perfil</a>
                 </div>
               )}
               {(empresa.annualRevenue || empresa.foundedYear) && (
@@ -322,7 +322,7 @@ export function EmpresaDrawer({ empresaId, open, onClose, onOpenLead, onOpenNego
                         </div>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
-                        <a href={`/api/contratos/${ct.id}/pdf`} target="_blank" rel="noreferrer" className="text-[11px] font-medium hover:underline" style={{ color: "var(--cf2-accent-border)" }}>PDF</a>
+                        <a href={`/api/contratos/${ct.id}/pdf`} target="_blank" rel="noreferrer" className="text-[11px] font-medium hover:underline" style={{ color: "var(--cf2-accent-text)" }}>PDF</a>
                         <Cf2Badge variant={assinado ? "success" : "neutral"}>{assinado ? "Assinado" : ct.status}</Cf2Badge>
                       </div>
                     </div>

@@ -210,7 +210,7 @@ export function Cf2ClienteDrawer({ empresaId, open, onClose }: { empresaId: stri
                   <div className="flex flex-col gap-2">
                     {contratos.slice(0, 3).map((contrato) => <ContratoRow key={contrato.id} contrato={contrato} anexos={anexosContrato} />)}
                     {contratos.length === 0 && <p className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhum contrato vinculado a este cliente.</p>}
-                    {contratos.length > 3 && <button onClick={() => setTab("Contratos")} className="text-left text-[11px] font-semibold" style={{ color: "var(--cf2-accent-border)" }}>+ {contratos.length - 3} contrato(s)</button>}
+                    {contratos.length > 3 && <button onClick={() => setTab("Contratos")} className="text-left text-[11px] font-semibold" style={{ color: "var(--cf2-accent-text)" }}>+ {contratos.length - 3} contrato(s)</button>}
                   </div>
                 </Secao>
 
@@ -315,7 +315,7 @@ function Secao({ titulo, acao, children }: { titulo: string; acao?: { label: str
       <div className="flex items-center justify-between">
         <p className="text-[11px] font-bold uppercase" style={{ color: "var(--cf2-text-tertiary)" }}>{titulo}</p>
         {acao && (
-          <button onClick={acao.onClick} className="text-[11px] font-semibold" style={{ color: "var(--cf2-accent-border)" }}>{acao.label} →</button>
+          <button onClick={acao.onClick} className="text-[11px] font-semibold" style={{ color: "var(--cf2-accent-text)" }}>{acao.label} →</button>
         )}
       </div>
       {children}

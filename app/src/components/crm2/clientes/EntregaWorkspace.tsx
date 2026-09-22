@@ -63,13 +63,28 @@ const STATUS_LABEL: Record<string, string> = {
   READY_FOR_VALIDATION: "Pronto pra validação",
   COMPLETED: "Concluído",
 };
+/**
+ * Cor de status por PAPEL, não pela escala 500 do Tailwind.
+ *
+ * O mapa usava o mesmo tom como texto e como fundo a 9% (`#3b82f618`). Cor
+ * 500 é feita para PREENCHIMENTO; como texto em cima do próprio tom lavado
+ * ela não alcança: medido em 22/09, "Em andamento" dava 3,36:1 e o âmbar
+ * (#F59E0B) fica em torno de 2,2:1 — pior que o azul.
+ *
+ * Os pares semânticos do projeto já resolvem e já estão no verificador de
+ * contraste: informativo 7,54:1, âmbar 4,84:1, negativo 5,69:1, verde 4,57:1.
+ * (Vermelho é `--cf2-negativo-bg/-fg`; `--cf2-danger-bg` não existe, e usá-lo
+ * deixaria a pílula com fundo inválido — quase o que eu fiz.)
+ * Só "pronto para validação" não tinha par; o roxo desceu de #8E27EF (4,95:1,
+ * passa raspando) para #7C1FD4, que dá 6,08:1 sobre o mesmo fundo lavado.
+ */
 const STATUS_COLOR: Record<string, { bg: string; text: string }> = {
   NOT_STARTED: { bg: "var(--cf2-bg-surface-muted)", text: "var(--cf2-text-tertiary)" },
-  IN_PROGRESS: { bg: "#3b82f618", text: "#3b82f6" },
-  BLOCKED_CUSTOMER: { bg: "#f59e0b18", text: "#f59e0b" },
-  BLOCKED_INTERNAL: { bg: "#ef444418", text: "#ef4444" },
-  BLOCKED_PROVIDER: { bg: "#ef444418", text: "#ef4444" },
-  READY_FOR_VALIDATION: { bg: "#8e27ef18", text: "#8e27ef" },
+  IN_PROGRESS: { bg: "var(--cf2-informativo-bg)", text: "var(--cf2-informativo-fg)" },
+  BLOCKED_CUSTOMER: { bg: "var(--cf2-warning-bg)", text: "var(--cf2-warning-text)" },
+  BLOCKED_INTERNAL: { bg: "var(--cf2-negativo-bg)", text: "var(--cf2-negativo-fg)" },
+  BLOCKED_PROVIDER: { bg: "var(--cf2-negativo-bg)", text: "var(--cf2-negativo-fg)" },
+  READY_FOR_VALIDATION: { bg: "#7c1fd414", text: "#7c1fd4" },
   COMPLETED: { bg: "var(--cf2-success-bg)", text: "var(--cf2-success-text)" },
 };
 
@@ -172,7 +187,7 @@ export function Cf2EntregaWorkspace({ familiaFixa }: { familiaFixa?: "PABX" | "C
         </div>
       </div>
 
-      <section aria-label="Pulso de entrega" className="grid grid-cols-2 overflow-hidden rounded-[var(--radius-card)] shrink-0 lg:grid-cols-[1.5fr_repeat(3,minmax(0,1fr))]" style={{ background: "var(--cf2-bg-inverse)" }}>
+      <section aria-label="Pulso de entrega" data-cf2-superficie="escura" className="grid grid-cols-2 overflow-hidden rounded-[var(--radius-card)] shrink-0 lg:grid-cols-[1.5fr_repeat(3,minmax(0,1fr))]" style={{ background: "var(--cf2-bg-inverse)" }}>
         {[
           { label: "Em andamento", valor: lista.filter((f) => f.status !== "COMPLETED").length, sub: "entregas ativas", alerta: false },
           { label: "Aguardando cliente", valor: aguardandoCliente, sub: "espera externa", alerta: false },
@@ -276,7 +291,7 @@ function KanbanImplantacaoPabx({
 
   const KPIS = [
     { label: "IMPLANTAÇÕES ATIVAS", valor: resumo?.ativas ?? 0, sub: resumo ? `+${resumo.ativasNovas30d} este mês` : null, icon: Activity, tone: "var(--cf2-success-text)" },
-    { label: "EM ANDAMENTO", valor: resumo?.emAndamento ?? 0, sub: resumo && resumo.ativas > 0 ? `${Math.round((resumo.emAndamento / resumo.ativas) * 100)}% do total` : null, icon: Hourglass, tone: "#3b82f6" },
+    { label: "EM ANDAMENTO", valor: resumo?.emAndamento ?? 0, sub: resumo && resumo.ativas > 0 ? `${Math.round((resumo.emAndamento / resumo.ativas) * 100)}% do total` : null, icon: Hourglass, tone: "var(--cf2-informativo-fg)" },
     { label: "AGUARDANDO CLIENTE", valor: resumo?.aguardandoCliente ?? 0, sub: resumo && resumo.ativas > 0 ? `${Math.round((resumo.aguardandoCliente / resumo.ativas) * 100)}% do total` : null, icon: UserRound, tone: "#f59e0b" },
     { label: "BLOQUEADAS", valor: resumo?.bloqueadas ?? 0, sub: resumo && resumo.ativas > 0 ? `${Math.round((resumo.bloqueadas / resumo.ativas) * 100)}% do total` : null, icon: Lock, tone: "var(--cf2-danger-text)" },
     { label: "CONCLUÍDAS (MÊS)", valor: resumo?.concluidasMes ?? 0, sub: concluidasDeltaPct !== null ? `${concluidasDeltaPct >= 0 ? "+" : ""}${concluidasDeltaPct}% vs mês anterior` : null, icon: CheckCircle2, tone: "var(--cf2-success-text)" },
@@ -317,7 +332,7 @@ function KanbanImplantacaoPabx({
         </select>
       </div>
 
-      <section aria-label="Pulso da implantação PABX" className="grid grid-cols-2 overflow-hidden rounded-[var(--radius-card)] shrink-0 md:grid-cols-3 xl:grid-cols-[1.45fr_repeat(5,minmax(0,1fr))]" style={{ background: "var(--cf2-bg-inverse)" }}>
+      <section aria-label="Pulso da implantação PABX" data-cf2-superficie="escura" className="grid grid-cols-2 overflow-hidden rounded-[var(--radius-card)] shrink-0 md:grid-cols-3 xl:grid-cols-[1.45fr_repeat(5,minmax(0,1fr))]" style={{ background: "var(--cf2-bg-inverse)" }}>
         {KPIS.map((k, index) => {
           const principal = index === 0;
           return (

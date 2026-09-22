@@ -206,6 +206,7 @@
      a silhueta, e um tom ainda mais escuro criaria um contorno duro. */
   --cf2-accent: var(--seaweed-700);
   --cf2-accent-border: var(--seaweed-700);
+  --cf2-accent-text: var(--seaweed-700);
   --cf2-accent-bg-subtle: #f3f4f6;
 
   /* Semânticas.

@@ -271,7 +271,7 @@ export function Cf2CallDetail({ conversa }: { conversa: ConversaItem }) {
                         <ul className="flex flex-col gap-1">
                           {parsed.proximasAcoes.map((a, i) => (
                             <li key={i} className="text-[12px] flex items-start gap-1.5" style={{ color: "var(--cf2-text-primary)" }}>
-                              <span style={{ color: "var(--cf2-accent-border)" }}>✦</span>{a}
+                              <span style={{ color: "var(--cf2-accent-text)" }}>✦</span>{a}
                             </li>
                           ))}
                         </ul>
@@ -283,7 +283,7 @@ export function Cf2CallDetail({ conversa }: { conversa: ConversaItem }) {
             )}
 
             {detalhe.callLink && (
-              <a href={detalhe.callLink} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-[12px] font-semibold" style={{ color: "var(--cf2-accent-border)" }}>
+              <a href={detalhe.callLink} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-[12px] font-semibold" style={{ color: "var(--cf2-accent-text)" }}>
                 <ExternalLink className="w-3 h-3" /> Abrir na Callface
               </a>
             )}

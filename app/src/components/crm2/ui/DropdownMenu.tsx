@@ -67,7 +67,7 @@ export const Cf2DropdownMenuCheckboxItem = React.forwardRef<
   >
     <span className="absolute left-2 flex size-3.5 items-center justify-center">
       <DropdownMenuPrimitive.ItemIndicator>
-        <Check className="size-3.5" style={{ color: "var(--cf2-accent-border)" }} />
+        <Check className="size-3.5" style={{ color: "var(--cf2-accent-text)" }} />
       </DropdownMenuPrimitive.ItemIndicator>
     </span>
     {children}
@@ -90,7 +90,7 @@ export const Cf2DropdownMenuRadioItem = React.forwardRef<
   >
     <span className="absolute left-2 flex size-3.5 items-center justify-center">
       <DropdownMenuPrimitive.ItemIndicator>
-        <Circle className="size-2 fill-current" style={{ color: "var(--cf2-accent-border)" }} />
+        <Circle className="size-2 fill-current" style={{ color: "var(--cf2-accent-text)" }} />
       </DropdownMenuPrimitive.ItemIndicator>
     </span>
     {children}

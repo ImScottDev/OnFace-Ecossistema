@@ -556,7 +556,7 @@ export function Cf2LeadDrawer({
             title="Qualificação (SDR)"
             T={T}
             defaultOpen
-            icon={<ClipboardCheck className="w-3.5 h-3.5" style={{ color: "var(--cf2-accent-border)" }} />}
+            icon={<ClipboardCheck className="w-3.5 h-3.5" style={{ color: "var(--cf2-accent-text)" }} />}
             right={<span className="text-[12px] font-semibold" style={{ color: T.textSecondary }}>{qualProgress.count}/{qualProgress.total}</span>}
           >
             <div className="h-1.5 w-full rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.08)" }}>

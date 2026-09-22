@@ -162,7 +162,22 @@ html[data-onface-theme="light"] {
      busca, meta de card —, então era a maior parte do texto secundário do
      produto inteiro reprovando em contraste. */
   --text-muted: var(--onface-cinza-2);
-  --text-subtle: var(--onface-slate);
+  /* O terceiro degrau de cinza NÃO EXISTE no papel, e este token tentava ser
+     ele. Era `--onface-slate` (#8B949E): 2,84:1 sobre o papel e 3,08:1 sobre o
+     cartão branco — reprova AA para texto e reprova até o piso de 3:1 de
+     ícone. Medido em 22/09 na tela do Financeiro: 34 elementos de uma vez,
+     rótulo de bloco, linha de apoio de indicador e valor zerado.
+
+     É EXATAMENTE a correção que `--text-muted` recebeu em 18/09, com a conta
+     anotada logo acima; este ficou uma linha abaixo e passou batido.
+
+     Slate continua certo onde nasceu: sobre o grafite da casca ele dá 6,30:1,
+     e é isso que `--text-on-shell-muted` usa três linhas abaixo.
+
+     Sobraram dois cinzas no claro, e é o que cabe. Hierarquia de terceiro
+     nível se faz por TAMANHO e PESO, que é a regra que o resto do sistema já
+     segue — não por mais uma cor que ninguém enxerga. */
+  --text-subtle: var(--onface-cinza-2);
   --text-on-accent: var(--onface-white);
   --text-on-shell: var(--onface-branco-logo);
   /* The DS maps this role to --onface-cinza (#6D747E), which lands at 3.8:1 on

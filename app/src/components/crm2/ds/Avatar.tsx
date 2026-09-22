@@ -1,6 +1,7 @@
 import { Building2, User, Bot } from "lucide-react";
 import { Avatar, AvatarImage, AvatarFallback, AvatarGroup, AvatarGroupCount } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils/cn";
+import { TEXTO_SOBRE_AVATAR } from "@/components/crm2/shared/avatar";
 
 /**
  * Avatar de ENTIDADE do CRM2 (30/08) — construído sobre o `avatar` do
@@ -61,9 +62,20 @@ export function Cf2Avatar({
       className={cn(tipo === "empresa" && "rounded-[10px] [&>*]:rounded-[10px]", className)}
     >
       {src && <AvatarImage src={src} alt={nome ?? ""} />}
+      {/* Tinta do helper compartilhado, não `--cf2-home-lime-ink`.
+       *
+       * Aquele token é a tinta sobre o PREENCHIMENTO da marca (lima antes,
+       * coral desde 15/09) e no tema ONFACE resolve para branco. A paleta de
+       * avatar é de tons claros e saturados, então branco em cima dela deu
+       * 1,23:1 — medido em `/clientes/onboarding` em 22/09.
+       *
+       * `TEXTO_SOBRE_AVATAR` (#12150C) nasceu da auditoria de 09/09 pelo
+       * mesmo motivo, com a conta anotada: aqui ele dá de 6,78:1 (rosa) a
+       * 14,95:1 (lima) nas cinco cores desta paleta. A correção existia e
+       * este componente não a tinha recebido. */}
       <AvatarFallback
         className="font-bold"
-        style={iniciais ? { background: cor, color: "var(--cf2-home-lime-ink)" } : undefined}
+        style={iniciais ? { background: cor, color: TEXTO_SOBRE_AVATAR } : undefined}
       >
         {iniciais || <Icone className="size-3.5" style={{ color: "var(--cf2-text-secondary)" }} />}
       </AvatarFallback>

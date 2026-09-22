@@ -880,7 +880,7 @@ export function Cf2NovaPropostaWorkspace() {
                         )}
                       </div>
                       {unico
-                        ? <Plus className="w-4 h-4 shrink-0" style={{ color: "var(--cf2-accent-border)" }} />
+                        ? <Plus className="w-4 h-4 shrink-0" style={{ color: "var(--cf2-accent-text)" }} />
                         : <ChevronDown className="w-4 h-4 shrink-0 transition-transform" style={{ color: "var(--cf2-text-tertiary)", transform: aberto ? "rotate(180deg)" : undefined }} />}
                     </button>
 
@@ -909,7 +909,7 @@ export function Cf2NovaPropostaWorkspace() {
                                 </span>
                                 {jaTem
                                   ? <Check className="w-3.5 h-3.5" style={{ color: "var(--cf2-success-text)" }} />
-                                  : <Plus className="w-3.5 h-3.5" style={{ color: "var(--cf2-accent-border)" }} />}
+                                  : <Plus className="w-3.5 h-3.5" style={{ color: "var(--cf2-accent-text)" }} />}
                               </div>
                             </button>
                           );
@@ -1089,7 +1089,7 @@ export function Cf2NovaPropostaWorkspace() {
                         {signatarios.length > 1 && <button type="button" onClick={() => setSignatarios((prev) => prev.filter((_, i) => i !== idx))} aria-label="Remover signatário" style={{ color: "var(--cf2-danger-text)" }}>×</button>}
                       </div>
                     ))}
-                    <button type="button" onClick={() => setSignatarios((prev) => [...prev, { nome: "", email: "", papel: "Signatário", ordem: prev.length + 1 }])} className="text-[10px] font-semibold" style={{ color: "var(--cf2-accent-border)" }}>+ Adicionar signatário</button>
+                    <button type="button" onClick={() => setSignatarios((prev) => [...prev, { nome: "", email: "", papel: "Signatário", ordem: prev.length + 1 }])} className="text-[10px] font-semibold" style={{ color: "var(--cf2-accent-text)" }}>+ Adicionar signatário</button>
                   </div>
                 )}
               </div>

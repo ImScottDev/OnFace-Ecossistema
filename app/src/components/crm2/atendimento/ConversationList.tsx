@@ -166,7 +166,8 @@ export function Cf2ConversationList({
               <button
                 type="button"
                 className="text-[12px] font-semibold underline underline-offset-2"
-                style={{ color: "var(--onface-coral)" }}
+                // Coral de TEXTO: a marca pura dá 3,30:1 sobre papel.
+                style={{ color: "var(--onface-coral-texto)" }}
                 onClick={() => onViewChange("todos")}
               >
                 Ver a caixa inteira

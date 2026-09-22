@@ -500,7 +500,7 @@ export default function TabComercial({ periodo }: TabComercialProps) {
                       <td className="px-3 py-2.5 text-right text-[var(--cf2-text-secondary)]">{conversao != null ? `${conversao}%` : "—"}</td>
                       <td className="px-3 py-2.5 text-right text-[var(--cf2-text-tertiary)]">{m.perdidos}</td>
                       <td className="px-3 py-2.5 text-right">
-                        <span style={{ color: m.winRate >= 30 ? "#10B981" : m.winRate > 0 ? "var(--cf2-warning-text)" : "var(--cf2-text-tertiary)" }} className="font-semibold">
+                        <span style={{ color: m.winRate >= 30 ? "var(--cf2-success-text)" : m.winRate > 0 ? "var(--cf2-warning-text)" : "var(--cf2-text-tertiary)" }} className="font-semibold">
                           {m.winRate}%
                         </span>
                       </td>

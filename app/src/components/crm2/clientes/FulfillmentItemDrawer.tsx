@@ -33,7 +33,7 @@ export interface FulfillmentItem {
 
 const STATUS_OPTIONS: { value: FulfillmentItem["status"]; label: string; icon: React.ElementType; color: string }[] = [
   { value: "PENDING", label: "Não iniciado", icon: Circle, color: "var(--cf2-text-tertiary)" },
-  { value: "IN_PROGRESS", label: "Em andamento", icon: Clock, color: "var(--cf2-accent-border)" },
+  { value: "IN_PROGRESS", label: "Em andamento", icon: Clock, color: "var(--cf2-accent-text)" },
   { value: "BLOCKED", label: "Bloqueado", icon: AlertTriangle, color: "var(--cf2-danger-text)" },
   { value: "VALIDATION", label: "Validação", icon: ShieldCheck, color: "#8e27ef" },
   { value: "DONE", label: "Concluído", icon: Check, color: "var(--cf2-success-text)" },

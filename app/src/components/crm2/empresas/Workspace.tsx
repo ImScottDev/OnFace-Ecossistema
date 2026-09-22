@@ -245,7 +245,7 @@ export function Cf2EmpresaWorkspace({ empresaId }: { empresaId: string }) {
                 <Cf2Card>
                   <div className="flex items-center justify-between">
                     <CardTitulo icon={Building2} tint="#3B82F6" title="Sobre a empresa" />
-                    {!editando && <button onClick={() => { setForm({ nome: empresa.nome, cnpj: empresa.cnpj || "", setor: empresa.setor || "", porte: empresa.porte || "", cidade: empresa.cidade || "", estado: empresa.estado || "", website: empresa.website || "", observacoes: empresa.observacoes || "" }); setEditando(true); }} className="flex items-center gap-1 text-[12px] font-semibold" style={{ color: "var(--cf2-accent-border)" }}><Pencil className="w-3 h-3" /> Editar</button>}
+                    {!editando && <button onClick={() => { setForm({ nome: empresa.nome, cnpj: empresa.cnpj || "", setor: empresa.setor || "", porte: empresa.porte || "", cidade: empresa.cidade || "", estado: empresa.estado || "", website: empresa.website || "", observacoes: empresa.observacoes || "" }); setEditando(true); }} className="flex items-center gap-1 text-[12px] font-semibold" style={{ color: "var(--cf2-accent-text)" }}><Pencil className="w-3 h-3" /> Editar</button>}
                   </div>
                   {editando ? (
                     <div className="mt-3 flex flex-col gap-2.5">
@@ -302,7 +302,7 @@ export function Cf2EmpresaWorkspace({ empresaId }: { empresaId: string }) {
                 <Cf2Card>
                   <div className="flex items-center justify-between">
                     <CardTitulo icon={Briefcase} tint="var(--cf2-accent-border)" title="Negócios" subtitle={`${negocios.length} no total`} />
-                    <button onClick={() => setActiveTab("negocios")} className="text-[12px] font-semibold shrink-0" style={{ color: "var(--cf2-accent-border)" }}>Ver todos →</button>
+                    <button onClick={() => setActiveTab("negocios")} className="text-[12px] font-semibold shrink-0" style={{ color: "var(--cf2-accent-text)" }}>Ver todos →</button>
                   </div>
                   <div className="mt-3 space-y-1.5">
                     {negocios.length === 0 && <Cf2EmptyState title="Nenhum negócio ainda" description="Crie a primeira oportunidade pra esta empresa." />}
@@ -327,7 +327,7 @@ export function Cf2EmpresaWorkspace({ empresaId }: { empresaId: string }) {
                         <Cf2Badge variant="neutral">{l.tipo}</Cf2Badge>
                       </Link>
                     ))}
-                    {leads.length > 5 && <button onClick={() => setActiveTab("contatos")} className="text-[12px] font-semibold pt-1" style={{ color: "var(--cf2-accent-border)" }}>Ver todos ({leads.length}) →</button>}
+                    {leads.length > 5 && <button onClick={() => setActiveTab("contatos")} className="text-[12px] font-semibold pt-1" style={{ color: "var(--cf2-accent-text)" }}>Ver todos ({leads.length}) →</button>}
                   </div>
                 </Cf2Card>
 
@@ -504,7 +504,7 @@ export function Cf2EmpresaWorkspace({ empresaId }: { empresaId: string }) {
         <Cf2DialogContent className="max-w-4xl w-[92vw] h-[85vh] flex flex-col">
           <Cf2DialogHeader className="flex-row items-center justify-between gap-3 pr-6">
             <Cf2DialogTitle className="truncate">{preview?.nome}</Cf2DialogTitle>
-            {preview && <a href={preview.url} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-[12px] font-semibold shrink-0" style={{ color: "var(--cf2-accent-border)" }}><Download className="w-3.5 h-3.5" /> Baixar</a>}
+            {preview && <a href={preview.url} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-[12px] font-semibold shrink-0" style={{ color: "var(--cf2-accent-text)" }}><Download className="w-3.5 h-3.5" /> Baixar</a>}
           </Cf2DialogHeader>
           <div className="flex-1 min-h-0 overflow-auto rounded-lg flex items-center justify-center" style={{ background: "var(--cf2-bg-canvas)" }}>
             {preview?.tipo === "imagem" && <img src={preview.url} alt={preview.nome} className="max-w-full max-h-full object-contain" />}
@@ -513,7 +513,7 @@ export function Cf2EmpresaWorkspace({ empresaId }: { empresaId: string }) {
               <div className="flex flex-col items-center gap-2 p-6 text-center">
                 <FileText className="w-8 h-8" style={{ color: "var(--cf2-text-tertiary)" }} />
                 <p className="text-[13px]" style={{ color: "var(--cf2-text-secondary)" }}>Pré-visualização não disponível pra este tipo de arquivo.</p>
-                {preview && <a href={preview.url} target="_blank" rel="noreferrer" className="text-[12px] font-semibold" style={{ color: "var(--cf2-accent-border)" }}>Baixar {preview.nome}</a>}
+                {preview && <a href={preview.url} target="_blank" rel="noreferrer" className="text-[12px] font-semibold" style={{ color: "var(--cf2-accent-text)" }}>Baixar {preview.nome}</a>}
               </div>
             )}
           </div>

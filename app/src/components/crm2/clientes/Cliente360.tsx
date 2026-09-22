@@ -746,7 +746,7 @@ export function Cf2Cliente360({ empresaId }: { empresaId: string }) {
                 <div className="flex items-center gap-2 flex-wrap mt-2">
                   <span className="text-[10px] font-mono px-1.5 py-0.5 rounded" style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-tertiary)" }}>{idClienteFormatado}</span>
                   {(empresa.tags ?? []).map((t) => (
-                    <span key={t} className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full font-semibold" style={{ background: "var(--cf2-accent-bg-subtle)", color: "var(--cf2-accent-border)" }}>
+                    <span key={t} className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full font-semibold" style={{ background: "var(--cf2-accent-bg-subtle)", color: "var(--cf2-accent-text)" }}>
                       <Tag className="w-2.5 h-2.5" /> {t}
                       <button
                         onClick={() => salvarTags.mutate((empresa.tags ?? []).filter((x) => x !== t))}
@@ -797,7 +797,7 @@ export function Cf2Cliente360({ empresaId }: { empresaId: string }) {
             </div>
           </div>
 
-          <section className="grid overflow-hidden rounded-[var(--radius-card)] lg:grid-cols-[1.2fr_0.8fr]" style={{ background: "var(--cf2-bg-inverse)" }}>
+          <section data-cf2-superficie="escura" className="grid overflow-hidden rounded-[var(--radius-card)] lg:grid-cols-[1.2fr_0.8fr]" style={{ background: "var(--cf2-bg-inverse)" }}>
             <div className="p-5 sm:p-6" style={{ borderRight: "1px solid color-mix(in srgb, var(--cf2-text-on-inverse) 15%, transparent)" }}>
               <p className="text-[10px] font-bold uppercase tracking-[0.1em]" style={{ color: "color-mix(in srgb, var(--cf2-text-on-inverse) 56%, transparent)" }}>Receita mensal da conta</p>
               <p className="mt-3 text-[34px] font-bold leading-none tabular-nums sm:text-[42px]" style={{ color: "var(--cf2-accent)" }}>{brl(currentMrr)}</p>
@@ -1054,7 +1054,7 @@ export function Cf2Cliente360({ empresaId }: { empresaId: string }) {
                         <p className="text-[12px]" style={{ color: "var(--cf2-text-secondary)" }}>ganho em {data(origemAquisicao.vendaOrigem.ganhoAt)}</p>
                       )}
                       {origemAquisicao.vendaOrigem.negocioId && (
-                        <a href={`/negocios/${origemAquisicao.vendaOrigem.negocioId}`} className="text-[12px] font-semibold" style={{ color: "var(--cf2-accent-border)" }}>abrir negócio →</a>
+                        <a href={`/negocios/${origemAquisicao.vendaOrigem.negocioId}`} className="text-[12px] font-semibold" style={{ color: "var(--cf2-accent-text)" }}>abrir negócio →</a>
                       )}
                     </div>
                   )}

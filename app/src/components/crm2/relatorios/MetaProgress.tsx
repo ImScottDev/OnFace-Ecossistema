@@ -64,8 +64,14 @@ export function MetaProgress({ tipo, valorAlvo, realizado, label = "Meta do mês
         <p className="text-[11px] text-[var(--cf2-text-tertiary)] uppercase tracking-[0.14em] font-medium">{label}</p>
         <span
           className="text-[11px] font-medium px-2 py-0.5 rounded-full"
+          // Fundo do TOKEN, não um alfa inventado na linha. O antigo era
+          // `rgba(200,255,0,0.10)` no ritmo — lima do CRM legado, marca que o
+          // produto não usa mais — e `rgba(245,158,11,0.12)` abaixo do ritmo,
+          // que composto sobre o cartão dava 4,04:1 com o âmbar de texto:
+          // reprova AA (medido em 22/09). Com o par semântico dá 4,84:1
+          // (âmbar) e 4,57:1 (verde).
           style={{
-            background: noRitmo ? "rgba(200,255,0,0.10)" : "rgba(245,158,11,0.12)",
+            background: noRitmo ? "var(--cf2-success-bg)" : "var(--cf2-warning-bg)",
             color: noRitmo ? "var(--cf2-success-text)" : "var(--cf2-warning-text)",
           }}
         >

@@ -316,7 +316,7 @@ function CardLead({ card, selecionado, aoAbrir }: {
         <span style={{ display: "inline-flex", alignItems: "center", gap: "calc(6 * var(--onface-u))" }}>
           {card.responsavelIniciais
             ? <span className="ov-avatar" aria-hidden>{card.responsavelIniciais}</span>
-            : <span style={{ color: "var(--onface-coral)" }}>Sem responsável</span>}
+            : <span style={{ color: "var(--onface-coral-texto)" /* de TEXTO: a marca pura dá 3,30:1 no papel */ }}>Sem responsável</span>}
           {card.responsavel ? card.responsavel.split(" ")[0] : null}
         </span>
         <span style={{ display: "inline-flex", alignItems: "center", gap: "calc(8 * var(--onface-u))" }}>

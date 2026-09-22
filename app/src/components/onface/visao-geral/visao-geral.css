@@ -16,7 +16,18 @@
   --ovg-line-soft: rgba(255, 255, 255, 0.06);
   --ovg-ink-invert: #ffffff;
   --ovg-ink-muted: #8b949e;
-  --ovg-ink-faint: #6d747e;
+  /* O terceiro cinza não existe, nem no escuro nem no claro.
+   *
+   * Era #6D747E, que é cinza de fundo CLARO. Esta tela quase toda é escura, e
+   * lá ele dava 3,67:1 sobre o cartão (#161B22) e 3,82:1 sobre a faixa
+   * (#12171D) — reprova AA em 15 elementos, medidos no navegador em 22/09.
+   *
+   * Sobre fundo escuro "mais fraco" quer dizer MENOS contraste, e menos
+   * contraste é exatamente o que não cabe: o degrau abaixo de `ink-muted`
+   * reprova por definição. Então faint e muted são o mesmo cinza, e a
+   * hierarquia de terceiro nível se faz por tamanho e peso — a mesma decisão
+   * tomada para `--text-subtle` no tema de papel, pelo mesmo motivo. */
+  --ovg-ink-faint: #8b949e;
   --ovg-coral: #fe4f2b;
   --ovg-coral-hover: #ff5f3e;
   --ovg-green: #3fb950;
@@ -208,7 +219,10 @@
 .ovg-badge[data-tendencia="neutra"] { background: rgba(255, 255, 255, 0.07); color: var(--ovg-ink-muted); }
 .ovg-metric-apoio {
   margin: 0;
-  color: var(--ovg-ink-faint);
+  /* `--ovg-ink-faint` (#6D747E) é cinza de fundo CLARO: sobre o cartão
+     escuro (#161B22) dá 3,67:1. `--ovg-ink-muted` (#8B949E) dá 5,62:1 no
+     mesmo fundo. Dez elementos desta tela usavam o errado. */
+  color: var(--ovg-ink-muted);
   font-size: calc(12 * var(--onface-u));
   font-weight: 400;
 }
@@ -382,9 +396,17 @@
   background: var(--ovg-coral);
 }
 .ovg-area[data-destaque="true"]:hover { background: var(--ovg-coral-hover); }
+/* Tinta escura sobre o coral, não branco.
+ *
+ * Branco sobre `--ovg-coral` (#FE4F2B) dá 3,30:1 — reprova AA para texto
+ * normal, e é o cartão em DESTAQUE da tela de entrada, o que mais gente lê.
+ * `--ovg-ink` (#12171D) sobre o mesmo coral dá 5,46:1. É a mesma conta que o
+ * `onface.css` já anota para o coral da marca: ele não carrega texto claro. */
 .ovg-area[data-destaque="true"] .ovg-area-icon,
-.ovg-area[data-destaque="true"] .ovg-area-state { color: #fff; }
-.ovg-area[data-destaque="true"] .ovg-area-state { opacity: 0.86; }
+.ovg-area[data-destaque="true"] .ovg-area-label,
+.ovg-area[data-destaque="true"] .ovg-area-state { color: var(--ovg-ink); }
+/* A opacidade saiu junto: 0,86 de tinta escura sobre coral cairia para 4,3:1,
+   de novo abaixo do piso. Hierarquia aqui se faz por peso, não por opacidade. */
 
 /* ── Assistente ────────────────────────────────────────────────────────── */
 /* Card fechado: termina nas duas ações, sem área de conversa. */
@@ -545,7 +567,8 @@
   transition: background 160ms var(--ovg-ease), color 160ms var(--ovg-ease);
 }
 .ovg-filter:hover { color: #fff; }
-.ovg-filter[data-active="true"] { background: var(--ovg-coral); color: #fff; }
+/* Mesma conta do cartão em destaque: branco sobre coral é 3,30:1. */
+.ovg-filter[data-active="true"] { background: var(--ovg-coral); color: var(--ovg-ink); }
 
 /* ── Painel claro ─────────────────────────────────────────────────────── */
 /* Geometria vem de `.onface-page-surface`; aqui entram a grade de fundo do
@@ -742,7 +765,7 @@
   background: var(--ovg-paper);
 }
 .ovg-card-title { margin: 0; font-size: calc(18 * var(--onface-u)); font-weight: 700; letter-spacing: -0.01em; }
-.ovg-card-sub { margin: calc(4 * var(--onface-u)) 0 0; color: #7b828b; font-size: calc(13 * var(--onface-u)); font-weight: 400; }
+.ovg-card-sub { margin: calc(4 * var(--onface-u)) 0 0; color: var(--text-muted); /* #7B828B dava 3,88:1 sobre o branco */ font-size: calc(13 * var(--onface-u)); font-weight: 400; }
 
 /* Resumo */
 .ovg-summary { margin: calc(18 * var(--onface-u)) 0 0; display: flex; flex-direction: column; }
@@ -755,7 +778,7 @@
   border-bottom: 1px solid #f0f0ee;
 }
 .ovg-summary-row:last-child { border-bottom: 0; }
-.ovg-summary-label { color: #7b828b; font-size: calc(13 * var(--onface-u)); font-weight: 400; }
+.ovg-summary-label { color: var(--text-muted); /* #7B828B dava 3,88:1 sobre o branco */ font-size: calc(13 * var(--onface-u)); font-weight: 400; }
 .ovg-summary-value { color: var(--ovg-ink); font-size: calc(13 * var(--onface-u)); font-weight: 700; text-align: right; }
 .ovg-chip {
   display: inline-flex;
@@ -815,7 +838,8 @@
   padding-top: calc(14 * var(--onface-u));
   border-top: 1px solid #f0f0ee;
 }
-.ovg-table-contagem { color: #868d95; font-size: calc(12 * var(--onface-u)); }
+/* #868D95 dava 3,36:1 sobre o branco da tabela. O muted do tema dá 5,41:1. */
+.ovg-table-contagem { color: var(--text-muted); font-size: calc(12 * var(--onface-u)); }
 .ovg-table-link {
   color: var(--ovg-ink);
   font-size: calc(12 * var(--onface-u));
@@ -856,7 +880,7 @@
 .ovg-row[data-selected="true"] { background: var(--ovg-paper-sunken); }
 .ovg-row-company { margin: 0; font-size: calc(13.6 * var(--onface-u)); font-weight: 700; }
 .ovg-row-chevron { color: #b6bcc3; transition: transform 160ms var(--ovg-ease); }
-.ovg-row:hover .ovg-row-chevron { transform: translateX(2px); color: #7b828b; }
+.ovg-row:hover .ovg-row-chevron { transform: translateX(2px); color: var(--text-muted); /* #7B828B dava 3,88:1 sobre o branco */ }
 /* ── Selo ──────────────────────────────────────────────────────────────
  * Um único formato para etapa e jornada: mesma altura, mesmo raio, mesmo
  * espaçamento, ícone à esquerda. O que muda é a cor, e cor aqui é semântica:

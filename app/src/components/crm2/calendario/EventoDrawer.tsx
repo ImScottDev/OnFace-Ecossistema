@@ -102,7 +102,7 @@ export function Cf2EventoDrawer({ evento, onClose }: { evento: Evento; onClose: 
             <div className="flex items-center gap-3 text-[13px]">
               <LinkIcon className="w-4 h-4 shrink-0" style={{ color: "var(--cf2-text-tertiary)" }} />
               <span style={{ color: "var(--cf2-text-secondary)" }}>Link</span>
-              <a href={evento.link} target="_blank" rel="noreferrer" className="flex-1 text-right truncate" style={{ color: "var(--cf2-accent-border)" }}>Entrar na reunião</a>
+              <a href={evento.link} target="_blank" rel="noreferrer" className="flex-1 text-right truncate" style={{ color: "var(--cf2-accent-text)" }}>Entrar na reunião</a>
             </div>
           )}
 
@@ -112,7 +112,7 @@ export function Cf2EventoDrawer({ evento, onClose }: { evento: Evento; onClose: 
             <div className="flex items-center gap-3 text-[13px]">
               <User className="w-4 h-4 shrink-0" style={{ color: "var(--cf2-text-tertiary)" }} />
               <span style={{ color: "var(--cf2-text-secondary)" }}>Pessoa</span>
-              <a href={`/contatos/${evento.leadId}`} className="flex-1 text-right truncate" style={{ color: "var(--cf2-accent-border)" }}>{evento.leadNome} →</a>
+              <a href={`/contatos/${evento.leadId}`} className="flex-1 text-right truncate" style={{ color: "var(--cf2-accent-text)" }}>{evento.leadNome} →</a>
             </div>
           )}
           {evento.empresaNome && (
@@ -126,7 +126,7 @@ export function Cf2EventoDrawer({ evento, onClose }: { evento: Evento; onClose: 
             <div className="flex items-center gap-3 text-[13px]">
               <Briefcase className="w-4 h-4 shrink-0" style={{ color: "var(--cf2-text-tertiary)" }} />
               <span style={{ color: "var(--cf2-text-secondary)" }}>Negócio</span>
-              <a href={`/negocios/${evento.negocioId}`} className="flex-1 text-right truncate" style={{ color: "var(--cf2-accent-border)" }}>{evento.negocioTitulo} · {brl(evento.negocioValor)} →</a>
+              <a href={`/negocios/${evento.negocioId}`} className="flex-1 text-right truncate" style={{ color: "var(--cf2-accent-text)" }}>{evento.negocioTitulo} · {brl(evento.negocioValor)} →</a>
             </div>
           )}
 
