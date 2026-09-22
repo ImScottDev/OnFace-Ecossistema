@@ -2927,9 +2927,12 @@ externo ou decisão do Kauã.
 | 7 | Catálogo PABX incompleto: faltam Plano, Setup, Integração, Serviço e 2 linhas (172 preços do snapshot ausentes no banco) | o vendedor não monta venda de PABX no sistema novo; `validar-catalogo-oficial` deixa o passo 9 da virada vermelho. **Importar a planilha NÃO resolve sozinho:** o worker roda `catalogo-stripe-sync` de hora em hora e desativa todo preço que não estiver no Stripe (CP33, CP41) |
 | 8 | `STRIPE_API_KEY` vazia no ambiente de dev | impede medir por que o Stripe devolveu 55 preços e a planilha tem 213. Uma chave **de leitura** roda `catalogo:sync:dry` e distingue as duas causas possíveis, que têm custos muito diferentes: metadata faltando nos produtos (barato) ou os preços não existirem no Stripe (caro) |
 
-**Achado aberto, não tocado:** Meta Conversions API está configurada e com zero
-entregas. Token existe, smoke passa, nenhuma conversão entregue de verdade.
-Visível no hub de integrações desde o CP12.
+**Achado do CP12 ENCERRADO no CP57, com a causa medida.** "Meta CAPI
+configurada e com zero entregas" era verdade e era enganoso. A causa é que **não
+existe evento de negócio para lead da Meta desde que o outbox existe**: o outbox
+começou em 21/09, o lead mais recente do banco é de 18/09, e os 33 eventos que
+há são de smoke e teste. A integração entrega quando há o que entregar, e isso
+agora está provado no formato que a base de verdade tem, não só no do smoke.
 
 ## Nota de auditoria — inconsistência levantada pelo Kauã em 21/09
 
@@ -3144,3 +3147,40 @@ forma que o código realmente usa.** `db.` colado contra quebra de linha,
 `fetch(` contra helper, `href=` contra `href:`. Três ocorrências em dois dias.
 
 Validação: tsc limpo, 354 testes / 0 falhas, 45 smokes, 14/14 rotas.
+
+### CP57 — "zero entregas" era falta de tráfego, e o smoke não cobria a base real
+
+O estado registrava, desde o CP12, um achado aberto: *"Meta Conversions API está
+configurada e com zero entregas. Token existe, smoke passa, nenhuma conversão
+entregue de verdade."* É o formato de defeito que esta leva vem encontrando, e
+por isso valia medir em vez de acreditar nas duas pontas.
+
+**A causa é falta de tráfego, e ela se prova por datas.** O outbox tem 33
+eventos, 26 processados, **zero com erro ou tentativa**. O mais antigo é de
+21/09; o lead mais recente do banco é de **18/09**. Não houve um único fato de
+negócio para lead da Meta desde que a entrega existe. `meta_capi_entregas` está
+vazia porque não teve o que registrar.
+
+**O que a medição achou de verdade foi um buraco de cobertura.** Dos 3.989
+leads, **797 têm `meta_ad_id`** e o ponto de contato deles traz `ad_id` e
+`campaign_id`. E **zero** dos 1.583 pontos de contato têm `fbclid`, `fbc`, `fbp`
+ou `meta_lead_id`: atribuição de campanha o histórico tem, identificador de
+usuário não.
+
+Os dois cenários de `smoke-capi-outbox` sempre criavam `meta_lead_id`. O caminho
+que **797 registros percorreriam** nunca tinha sido exercido uma vez. Que ele
+funcionaria dava para deduzir lendo o código — `veioDaMeta` aceita `campaignId`
+sozinho e a identidade vem do e-mail —, mas dedução não é medição, e a diferença
+entre as duas é o assunto desta fase inteira.
+
+Cenário 3 acrescentado, com o formato da base. **Entrega.** Verificado por
+reintrodução: tirando `campaignId` de `veioDaMeta`, as entregas caem de 2 para 1
+e o smoke acusa.
+
+**Um assert envelheceu no caminho.** `entregas.entregues === 1` ficou vermelho no
+instante em que o terceiro cenário entrou: o smoke acusou a integração
+funcionando melhor do que antes. Passou a contar contra a quantidade de cenários
+com sinal da Meta, declarada ao lado deles. Mesmo formato do número mágico que o
+CP33 tirou do validador do catálogo.
+
+Validação: tsc limpo, 354 testes / 0 falhas, 45 smokes.

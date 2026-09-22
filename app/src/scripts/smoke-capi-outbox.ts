@@ -33,7 +33,20 @@ async function main() {
    * falhou — aconteceu aqui na primeira execução, e o teste de reconciliação da
    * fase 05 é que apareceria depois cobrando a pessoa sem provenance.
    */
-  async function cenario(comMeta: boolean, sufixo: string) {
+  /**
+   * `soCampanha` é o formato da BASE REAL, e não um caso de borda inventado.
+   *
+   * Medido em 22/09: dos 3.989 leads, **797 têm `meta_ad_id`** e o ponto de
+   * contato deles traz `ad_id` e `campaign_id` — e **zero** trazem `fbclid`,
+   * `fbc`, `fbp` ou `meta_lead_id`. Atribuição de campanha o histórico tem;
+   * identificador de usuário, não.
+   *
+   * Os dois cenários originais sempre criavam `meta_lead_id`, então o caminho
+   * que 797 registros percorreriam nunca foi exercido. `veioDaMeta` aceita
+   * `campaignId` sozinho, e a identidade vem do e-mail — mas isso era dedução
+   * lendo o código, não medição.
+   */
+  async function cenario(comMeta: boolean, sufixo: string, soCampanha = false) {
     const registro: { pessoa?: string; aquisicao?: string; touchpoint?: string } = {};
     criados.push(registro);
 
@@ -55,7 +68,7 @@ async function main() {
       VALUES (${org.id}::uuid, ${pessoa.id}::uuid, ${aquisicao.id}::uuid,
               ${comMeta ? "meta" : "apollo"}, ${comMeta ? "paid_social" : "outbound"},
               ${comMeta ? "paga" : "organica"},
-              ${comMeta ? `lead-${marca}` : null}, ${comMeta ? `camp-${marca}` : null},
+              ${comMeta && !soCampanha ? `lead-${marca}` : null}, ${comMeta ? `camp-${marca}` : null},
               true, now())
       RETURNING id`);
     registro.touchpoint = touchpoint.id;
@@ -64,6 +77,10 @@ async function main() {
 
   try {
     console.log("");
+    // Quantos cenários têm sinal da Meta e devem virar conversão. Fica aqui,
+    // ao lado dos cenários, para mudar junto com eles.
+    const CENARIOS_DA_META = 2;
+
     // CENÁRIO 1: veio da Meta.
     const daMeta = await cenario(true, "meta");
     await db.transaction(async (tx) => {
@@ -92,6 +109,22 @@ async function main() {
         source: "smoke",
         idempotencyKey: `${marca}:outbound`,
         payload: { pessoa_id: semMeta.pessoaId, aquisicao_id: semMeta.aquisicaoId },
+        entregarExternamente: true,
+      });
+    });
+
+    // CENÁRIO 3: atribuição só por campanha, que é o formato dos 797 da base.
+    const soCampanha = await cenario(true, "campanha", true);
+    await db.transaction(async (tx) => {
+      await publicarEvento(tx as never, sql as never, {
+        organizacaoId: org.id,
+        eventType: "AcquisitionCreated",
+        aggregateType: "aquisicao",
+        aggregateId: soCampanha.aquisicaoId,
+        actorType: "INTEGRATION",
+        source: "smoke",
+        idempotencyKey: `${marca}:campanha`,
+        payload: { pessoa_id: soCampanha.pessoaId, aquisicao_id: soCampanha.aquisicaoId },
         entregarExternamente: true,
       });
     });
@@ -134,7 +167,13 @@ async function main() {
 
     console.log("\n  RESULTADO");
     const checagens: [string, boolean, string][] = [
-      ["a cadeia fecha", entregas.entregues === 1, "o fato virou conversão na Meta, passando pelo worker"],
+      // Contra a quantidade de cenários da Meta, e não contra um número escrito.
+      // O `=== 1` daqui envelheceu no instante em que o terceiro cenário
+      // entrou: o smoke acusou vermelho com a integração funcionando melhor do
+      // que antes. É o mesmo formato de defeito que o CP33 achou no validador
+      // do catálogo, com o número da medição virando constante do teste.
+      ["a cadeia fecha", entregas.entregues === CENARIOS_DA_META,
+       `os ${CENARIOS_DA_META} fatos com sinal da Meta viraram conversão, passando pelo worker`],
       ["só o que veio", outboundEntregue.n === 0, "outbound puro não é devolvido como conversão da Meta"],
       ["auditado", entregas.total >= 1, "existe resposta para 'esse evento chegou na Meta?'"],
       ["id determinístico", entregas.event_ids.includes("onface:Lead:"), "o event_id sai do evento de domínio, e a Meta deduplica por ele"],

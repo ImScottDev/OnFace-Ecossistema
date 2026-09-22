@@ -3184,3 +3184,23 @@ isenção nomeada. Nenhuma das 68 chamadas antes invisíveis era órfã.
 `db.` colado x quebra de linha, `fetch(` x helper, `href=` x `href:`.
 
 Validação: tsc limpo, 354 testes / 0 falhas, 45 smokes, 14/14 rotas.
+
+## 2026-09-22 — CP57: a Meta CAPI entregava, faltava tráfego e faltava cobertura
+
+Achado aberto desde o CP12 ("configurada, zero entregas") medido e encerrado.
+
+Causa: outbox começa em 21/09, lead mais recente do banco é de 18/09, e os 33
+eventos existentes são de smoke e teste. Nenhum fato de negócio para lead da
+Meta desde que a entrega existe. Zero com erro, zero com tentativa.
+
+Buraco real, achado no caminho: dos 3.989 leads, **797 têm `meta_ad_id`** e o
+ponto de contato traz `ad_id`/`campaign_id`; **zero** dos 1.583 pontos de
+contato têm `fbclid`/`fbc`/`fbp`/`meta_lead_id`. Os dois cenários do
+`smoke-capi-outbox` sempre criavam `meta_lead_id`, então o caminho de 797
+registros nunca foi exercido. Cenário 3 acrescentado com o formato da base:
+entrega. Reintrodução (tirar `campaignId` de `veioDaMeta`) derruba de 2 para 1.
+
+`entregas.entregues === 1` envelheceu ao ganhar o cenário: passou a contar
+contra a quantidade de cenários da Meta.
+
+Validação: tsc limpo, 354 testes / 0 falhas, 45 smokes.
