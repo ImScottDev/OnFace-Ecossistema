@@ -3138,3 +3138,28 @@ Achados de caminho: `POST /api/leads` cria oportunidade e negócio junto; o
 `catch` mudo da limpeza escondia a violação de FK (defeito do CP49 de novo).
 
 Validação: tsc limpo, 351 testes / 0 falhas, 45 smokes, 14/14 rotas.
+
+## 2026-09-22 — CP55: a varredura que deu zero, e era falsa
+
+Releitura das 7 telas pendentes contra o domínio de hoje, como o próprio plano
+mandava fazer "quando o domínio mudar". 3 de 7 descreviam o mundo de semanas
+atrás: Expansão (o pipeline existe, falta histórico), Carteira (a coluna existe
+e está vazia nas 275 contas) e Pós-vendas (a árvore congelada já respondeu
+metade). Cada frase dizia "falta construir" quando o que falta é decidir,
+atribuir ou usar.
+
+Varredura de links de navegação: 0 órfãos em 147 rotas — e era falso. O padrão
+lia só `href=` do JSX, e a navegação usa `href:` de objeto. Descoberto porque a
+reintrodução não acusou. Com o padrão certo, o zero é real.
+
+**Regra:** varredura que devolve zero precisa ser provada ao contrário antes de
+virar boa notícia.
+
+Travas novas: `link-nao-leva-pro-vazio` (links de página, irmão do CP52) e
+`pendente-diz-a-verdade` (coerência menu ↔ tela nas duas direções, primeiro
+consumidor de `destinosPendentes()`).
+
+Limpo e registrado: nenhuma tela do ONFACE usa fixture; o `"—"` da Visão Geral é
+agregado honesto, não placeholder.
+
+Validação: tsc limpo, 354 testes / 0 falhas, 45 smokes, 14/14 rotas.

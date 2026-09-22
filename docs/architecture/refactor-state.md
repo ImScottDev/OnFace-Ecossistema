@@ -3046,3 +3046,56 @@ deixar resíduo no banco com a reintrodução, e passou nas três execuções
 seguintes. A hipótese é o resíduo, não medida.
 
 Validação: tsc limpo, 351 testes / 0 falhas, 45 smokes, 14/14 rotas.
+
+### CP55 — a varredura que deu zero, e era falsa
+
+O próprio plano tinha registrado o aprendizado do par CP20/CP21: *"a dependência
+escrita num placeholder envelhece… vale reler as sete restantes quando o domínio
+mudar"*. Entre o CP22 e o CP54 o domínio mudou muito, e ninguém releu. **Três das
+sete descreviam o mundo de semanas atrás:**
+
+| tela | o que dizia | o que é hoje |
+|---|---|---|
+| Expansão & Renovação | "não existe pipeline de expansão no domínio" | existe: `executarCheckpoint` cria oportunidade com `commercial_motion = EXPANSION`, e `smoke-expansao-entra-no-canonico` exercita o caminho. Falta **histórico**, zero registros |
+| Carteira | "não existe responsável de carteira no banco" | `clientes.responsavel_cs_id` existe e está NULL nas **275** contas. É atribuição de gente, e já estava na lista de bloqueios do Kauã |
+| Pós-vendas | "decidir se é tela própria ou só agrupamento no menu" | a árvore congelada em 16/09 respondeu metade: Pós-vendas **é** o pai de Onboarding e Implantação. Resta se o destino clicável mostra resumo próprio |
+
+A diferença não é cosmética: cada uma dessas frases dizia que faltava
+*construir*, quando o que falta é decidir, atribuir ou usar. É outra pessoa
+destravando.
+
+**A varredura que deu zero e era falsa.** Cruzei todo link de navegação com as
+147 rotas de página: **0 órfãos**. O número era mentira. O padrão lia só `href=`
+(a forma do JSX) e a árvore de navegação declara `href:` (a forma de objeto),
+então o arquivo mais importante do cruzamento era justamente o que não era lido.
+Só descobri porque a reintrodução NÃO acusou: um link quebrado de propósito no
+menu passou verde.
+
+Com o padrão certo a medição acusa, e o resultado real continua sendo zero — mas
+agora é um zero que vale alguma coisa.
+
+Fica a regra, e ela generaliza as varreduras limpas do CP52: **varredura que
+devolve zero precisa ser provada ao contrário antes de virar boa notícia.**
+
+**Duas travas.** `link-nao-leva-pro-vazio` é o irmão de
+`botao-nao-aponta-pro-vazio` pelo lado de quem clica: cobre item de menu, botão
+e `router.push` que levam a rota de página inexistente, com as mesmas duas
+regras de lá (route group não entra na URL; a comparação vale como prefixo,
+porque a URL costuma ser template). `pendente-diz-a-verdade` cobre a coerência
+entre a marca do menu e a tela, **nas duas direções**: item marcado com tela
+construída, e tela `ModuloPendente` sem marca no menu. As duas provadas por
+reintrodução.
+
+A segunda é também o primeiro consumidor de `destinosPendentes()`, que era
+exportado e não tinha nenhum — "peça pronta sem caller" no arquivo que serve de
+inventário justamente do que falta.
+
+**Varredura limpa, registrada como tal:** nenhuma tela do ONFACE renderiza
+fixture. `visao-geral/mock.ts` só é importado por `/onface-desenho`, que é a
+referência congelada; as telas do preview leem dado real. O `"—"` das pendências
+da Visão Geral não é placeholder: `getPrecisaAtencao` devolve contagens
+agregadas ("6 negócios parados"), e agregado não tem responsável nem cliente
+único. O que estava desatualizado ali era `PENDENCIAS_DE_DADO` — que também não
+tem consumidor.
+
+Validação: tsc limpo, 354 testes / 0 falhas, 45 smokes, 14/14 rotas.
