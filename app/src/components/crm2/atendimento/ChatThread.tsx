@@ -112,6 +112,43 @@ function StatusIcon({ status }: { status: string | null }) {
   }
 }
 
+/**
+ * Imagem de mensagem, com o caso real de link morto.
+ *
+ * A mídia do WhatsApp vive num CDN com URL assinada e prazo: medido em 22/09
+ * na caixa real, três anexos devolviam 410 Gone e a tela mostrava o ícone de
+ * imagem quebrada do navegador, sem dizer o que houve. Anexo que expirou é
+ * fato do histórico, não erro do produto — a conversa continua legível e o
+ * lugar do anexo continua marcado.
+ */
+function ImagemDaConversa({ url }: { url: string }) {
+  const [expirou, setExpirou] = useState(false);
+
+  if (expirou) {
+    return (
+      <p
+        className="rounded-lg px-3 py-2 text-[12px]"
+        style={{
+          background: "var(--cf2-bg-surface-muted)",
+          color: "var(--cf2-text-tertiary)",
+        }}
+      >
+        Imagem não está mais disponível no provedor.
+      </p>
+    );
+  }
+
+  return (
+    <img
+      src={url}
+      alt=""
+      className="rounded-lg max-w-full"
+      loading="lazy"
+      onError={() => setExpirou(true)}
+    />
+  );
+}
+
 export function Cf2ChatThread({
   conversa,
   contexto,
@@ -622,7 +659,7 @@ export function Cf2ChatThread({
                     <p className="truncate" style={{ color: "var(--cf2-text-secondary)" }}>{replyMsg.conteudo || "Mensagem"}</p>
                   </div>
                 )}
-                {m.mediaUrl && m.tipo === "image" && <img src={m.mediaUrl} alt="" className="rounded-lg max-w-full" />}
+                {m.mediaUrl && m.tipo === "image" && <ImagemDaConversa url={m.mediaUrl} />}
                 {m.mediaUrl && m.tipo === "audio" && <audio controls src={m.mediaUrl} className="max-w-full" />}
                 {m.tipo === "document" && (m.mediaUrl || m.mediaFilename) && (
                   <FileAttachmentCard url={m.mediaUrl} filename={m.mediaFilename} />

@@ -145,7 +145,27 @@ export function Cf2ConversationList({
             <span className="flex items-center justify-center w-10 h-10 rounded-full" style={{ background: "var(--cf2-bg-surface-muted)" }}>
               <Inbox className="w-4.5 h-4.5" style={{ color: "var(--cf2-text-tertiary)" }} />
             </span>
-            <p className="text-[13px]" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhuma conversa por aqui ainda.</p>
+            {/* A lista tem o próprio vazio, e ele precisa dizer o mesmo que o
+                painel ao lado. "Nenhuma conversa por aqui ainda" era a mesma
+                frase para fila pessoal vazia e caixa vazia — medido em 22/09,
+                a fila dizia isso com 40 conversas em "Todos" a um clique. */}
+            <p className="text-[13px]" style={{ color: "var(--cf2-text-tertiary)" }}>
+              {view === "meus"
+                ? "Nada atribuído a você."
+                : view === "nao_atribuidos"
+                  ? "Toda a fila já tem dono."
+                  : "Nenhuma conversa nesta caixa."}
+            </p>
+            {view === "meus" ? (
+              <button
+                type="button"
+                className="text-[12px] font-semibold underline underline-offset-2"
+                style={{ color: "var(--onface-coral)" }}
+                onClick={() => onViewChange("todos")}
+              >
+                Ver a caixa inteira
+              </button>
+            ) : null}
           </div>
         )}
         {conversas.map((item) => {

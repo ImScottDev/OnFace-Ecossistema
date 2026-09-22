@@ -294,6 +294,23 @@
   }
 }
 
+/* Workspace de tela cheia: inbox, builder, qualquer superfície onde a rolagem
+ * pertence a um painel interno e não à página.
+ *
+ * A rota se declara com `data-workspace="tela-cheia"` e a casca reage por
+ * `:has()`. O contrário — a página tentando impor altura de fora — foi o que
+ * criou o `cf2-altura-tela`, que somava uma segunda viewport porque não sabia
+ * quanto a casca já tinha consumido. Aqui a conta é uma só e mora onde a
+ * altura da topbar é definida.
+ *
+ * Sem isto o Atendimento media 3767px numa viewport de 1125: a fila crescia
+ * com as 40 conversas e quem rolava era a página inteira, junto com os outros
+ * dois painéis. */
+.onface-conteudo-interno:has(> [data-workspace="tela-cheia"]) {
+  height: calc(100dvh - var(--shell-topbar-v2-h));
+  overflow: hidden;
+}
+
 /* Largura estreita: a busca vira só o ícone e o NEXO perde o rótulo, antes de
    qualquer coisa ser empurrada para fora da barra. */
 @media (max-width: 900px) {

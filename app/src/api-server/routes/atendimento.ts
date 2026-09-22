@@ -97,8 +97,23 @@ type ItemUnificado = {
 app.get("/atendimento/conversas", async (c) => {
   const ctx = await getCtx(c);
 
-  const canal = c.req.query("canal") || "todas"; // todas | whatsapp | email | ligacao
-  const view = c.req.query("view") || "meus"; // meus | nao_atribuidos | todos | fechadas | ia
+  // O canal vem da URL e indexa `porCanal` mais abaixo. Sem validar aqui,
+  // qualquer valor desconhecido virava `[...undefined]` e derrubava a rota com
+  // 500 — medido em 22/09 com `?canal=todos`, que é o erro de digitação mais
+  // provável já que a VIEW válida chama-se "todos". Entrada de fora do sistema
+  // não escolhe o caminho do código: valor inesperado cai no padrão.
+  const CANAIS = ["todas", "whatsapp", "email", "ligacao"] as const;
+  const canalPedido = c.req.query("canal");
+  const canal: (typeof CANAIS)[number] =
+    CANAIS.includes(canalPedido as (typeof CANAIS)[number])
+      ? (canalPedido as (typeof CANAIS)[number])
+      : "todas";
+  const VIEWS = ["meus", "nao_atribuidos", "todos", "fechadas", "ia"] as const;
+  const viewPedida = c.req.query("view");
+  const view: (typeof VIEWS)[number] =
+    VIEWS.includes(viewPedida as (typeof VIEWS)[number])
+      ? (viewPedida as (typeof VIEWS)[number])
+      : "meus";
   const search = c.req.query("search") ?? null;
   const viewAs = c.req.query("viewAs") ?? null;
   const limit = Math.min(parseInt(c.req.query("limit") || "40"), 100);

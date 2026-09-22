@@ -1,5 +1,6 @@
 "use client";
 
+import { Button } from "@/components/ui/button";
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { ChevronLeft, Info } from "lucide-react";
@@ -16,6 +17,87 @@ import { Cf2ContextPanel } from "./ContextPanel";
 import { Cf2NovaMensagemModal } from "./NovaMensagemModal";
 import { Cf2AtribuirModal } from "./AtribuirModal";
 import { Cf2NovaConversaThread } from "./NovaConversaThread";
+
+/**
+ * Estado vazio do Atendimento.
+ *
+ * "Nenhuma conversa por aqui ainda" era a mesma frase para três situações
+ * diferentes, e nenhuma delas tinha saída:
+ *
+ * - a API falhou (o `catch` devolvia lista vazia e o erro sumia);
+ * - a fila "Meus" está vazia porque nada foi atribuído a esta pessoa —
+ *   medido em 22/09, a caixa tinha 40 conversas em "Todos" enquanto a tela
+ *   dizia que não havia nenhuma;
+ * - a caixa está realmente vazia.
+ *
+ * P7 pede que o vazio ensine o próximo movimento, e o movimento certo é
+ * diferente em cada caso. Por isso o componente pergunta POR QUE está vazio
+ * antes de escolher a frase.
+ */
+function VazioDoAtendimento({
+  deepLinkSemMatch, temLead, view, erro, aoTentarDeNovo, aoVerTodos,
+}: {
+  deepLinkSemMatch: boolean;
+  temLead: boolean;
+  view: string;
+  erro: boolean;
+  aoTentarDeNovo: () => void;
+  aoVerTodos: () => void;
+}) {
+  const estilo = { color: "var(--cf2-text-tertiary)" } as const;
+
+  if (erro) {
+    return (
+      <div className="flex flex-col items-center gap-3 text-center">
+        <p className="text-[13px]" style={{ color: "var(--cf2-text-secondary)" }}>
+          Não foi possível carregar as conversas.
+        </p>
+        <Button size="sm" onClick={aoTentarDeNovo}>
+          Tentar de novo
+        </Button>
+      </div>
+    );
+  }
+
+  if (deepLinkSemMatch) {
+    return (
+      <p className="text-[13px]" style={estilo}>
+        {temLead
+          ? "Esse lead ainda não tem conversa nesse canal."
+          : "Esse contato ainda não tem conversa nesse canal."}
+      </p>
+    );
+  }
+
+  // A fila pessoal vazia é o caso mais comum e o mais enganoso: parece
+  // produto sem dado, é só ninguém ter atribuído nada a você.
+  if (view === "meus") {
+    return (
+      <div className="flex flex-col items-center gap-3 text-center">
+        <p className="text-[13px]" style={estilo}>
+          Nenhuma conversa atribuída a você.
+        </p>
+        <Button size="sm" variant="outline" onClick={aoVerTodos}>
+          Ver a caixa inteira
+        </Button>
+      </div>
+    );
+  }
+
+  if (view === "nao_atribuidos") {
+    return (
+      <p className="text-[13px]" style={estilo}>
+        Nenhuma conversa esperando dono. Toda a fila já tem responsável.
+      </p>
+    );
+  }
+
+  return (
+    <p className="text-[13px]" style={estilo}>
+      Nenhuma conversa nesta caixa.
+    </p>
+  );
+}
 
 export function Cf2AtendimentoWorkspace() {
   const queryClient = useQueryClient();
@@ -80,7 +162,7 @@ export function Cf2AtendimentoWorkspace() {
   // retornar depois.
   const leadIdParaFiltro = leadIdParam && chaveDeepLink !== deepLinkAplicado ? leadIdParam : null;
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["cf2-conversas", canal, view, search, leadIdParaFiltro],
     queryFn: async () => {
       const params = new URLSearchParams({ canal, view });
@@ -90,7 +172,12 @@ export function Cf2AtendimentoWorkspace() {
       // comentário na rota `/atendimento/conversas`).
       if (leadIdParaFiltro) params.set("leadId", leadIdParaFiltro);
       const res = await fetch(`/api/atendimento/conversas?${params.toString()}`);
-      if (!res.ok) return { conversas: [] as ConversaItem[] };
+      // Falha de API NÃO vira lista vazia. Devolver `[]` aqui fazia um 500
+      // aparecer na tela como "Nenhuma conversa por aqui ainda" — o operador
+      // não tinha como distinguir caixa vazia de produto quebrado, e nem como
+      // tentar de novo. Lançar deixa o React Query marcar `isError`, e a tela
+      // mostra erro com recuperação (§44, P8).
+      if (!res.ok) throw new Error(`conversas:${res.status}`);
       return res.json();
     },
     refetchInterval: 8000,
@@ -191,7 +278,11 @@ export function Cf2AtendimentoWorkspace() {
   });
 
   return (
-    <div className="flex flex-col gap-3 h-full min-h-0">
+    // `flex-1 min-h-0` e não `h-full`: o inbox é o único conteúdo da rota e
+    // precisa ocupar a altura que a casca deixa. `h-full` dependia de um pai
+    // com altura fixa — era o `cf2-altura-tela` da página, que somava uma
+    // segunda viewport à casca nova e saiu junto com o título duplicado.
+    <div data-workspace="tela-cheia" className="flex flex-1 min-h-0 flex-col gap-3">
       {temConversa && (
         <div className="flex items-center justify-between gap-2 -mb-1">
           <button
@@ -279,11 +370,14 @@ export function Cf2AtendimentoWorkspace() {
           className="hidden lg:flex flex-1 items-center justify-center rounded-2xl"
           style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}
         >
-          <p className="text-[13px]" style={{ color: "var(--cf2-text-tertiary)" }}>
-            {deepLinkSemMatch
-              ? (leadIdParam ? "Esse lead ainda não tem conversa nesse canal." : "Esse contato ainda não tem conversa nesse canal.")
-              : "Nenhuma conversa por aqui ainda."}
-          </p>
+          <VazioDoAtendimento
+            deepLinkSemMatch={deepLinkSemMatch}
+            temLead={Boolean(leadIdParam)}
+            view={view}
+            erro={isError}
+            aoTentarDeNovo={() => void refetch()}
+            aoVerTodos={() => setView("todos")}
+          />
         </div>
       )}
       </div>
