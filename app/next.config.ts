@@ -1,7 +1,24 @@
 import type { NextConfig } from "next";
+import path from "node:path";
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  // A raiz do trace é DECLARADA, e não inferida.
+  //
+  // O Next acerta sozinho hoje, e avisa que pode não acertar: *"We detected
+  // multiple lockfiles and selected the directory of pnpm-lock.yaml as the root
+  // directory"* — o `app/package-lock.json` legado é o segundo. Medido no CP63,
+  // com e sem esta linha, a saída é a mesma: `standalone/app/server.js`.
+  //
+  // Ela fica porque a raiz decide o FORMATO da saída, e o `Dockerfile` copia
+  // dela. Se a inferência mudar (alguém mexe num lockfile), o servidor passa a
+  // sair em `standalone/server.js` e o `CMD` aponta para um arquivo que não
+  // existe — falha no container, não no build, que é o lugar mais caro.
+  //
+  // Os `@onface/*` não dependem disto: `transpilePackages` os embute nos chunks
+  // do servidor, e é por isso que `standalone/node_modules/@onface` não existe
+  // e ainda assim o domínio está lá.
+  outputFileTracingRoot: path.join(__dirname, ".."),
   // Os pacotes de domínio e plataforma são TypeScript puro, sem build próprio
   // (SPEC §34). O bundler precisa transpilá-los junto com a aplicação — sem
   // isto o build quebra com "module not found" nos imports de `@onface/*`.

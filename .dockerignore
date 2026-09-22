@@ -1,0 +1,14 @@
+# O contexto passou a ser a raiz do repositório (ver o cabeçalho do Dockerfile),
+# e sem isto o daemon recebe os node_modules de 42 projetos antes de começar.
+**/node_modules
+**/.next
+**/dist
+.git
+.github
+_deploy-dev
+_deploy-prod
+docs
+**/*.log
+**/.env
+**/.env.*
+!**/.env.example

@@ -87,7 +87,11 @@ services:
 
   app:
     build:
-      context: ./app
+      # Contexto na RAIZ, e o Dockerfile também. O contexto `./app` deixava
+      # `packages/` fora da imagem, e o `npm ci` de lá morria em `workspace:*`:
+      # os três containers do CRM não construíam desde que o repositório virou
+      # monorepo (CP63).
+      context: .
       dockerfile: Dockerfile
     image: crm2-dev-app
     container_name: callface-crm2-dev-app
@@ -141,7 +145,11 @@ services:
 
   api:
     build:
-      context: ./app
+      # Contexto na RAIZ, e o Dockerfile também. O contexto `./app` deixava
+      # `packages/` fora da imagem, e o `npm ci` de lá morria em `workspace:*`:
+      # os três containers do CRM não construíam desde que o repositório virou
+      # monorepo (CP63).
+      context: .
       dockerfile: Dockerfile.api
     image: crm2-dev-api
     container_name: callface-crm2-dev-api
@@ -186,7 +194,11 @@ services:
 
   worker:
     build:
-      context: ./app
+      # Contexto na RAIZ, e o Dockerfile também. O contexto `./app` deixava
+      # `packages/` fora da imagem, e o `npm ci` de lá morria em `workspace:*`:
+      # os três containers do CRM não construíam desde que o repositório virou
+      # monorepo (CP63).
+      context: .
       dockerfile: Dockerfile.worker
     image: crm2-dev-worker
     container_name: callface-crm2-dev-worker
