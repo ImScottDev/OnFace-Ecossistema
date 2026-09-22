@@ -62,7 +62,24 @@ export async function garantirEntradaCanonica(
       // o id do card, e `sincronizarAquisicaoDoLead` casa os dois modelos por
       // ele. Sem isso, aquisição criada em runtime nasce órfã.
       const r = await registrarEntrada(repo, { ...entrada, leadLegadoId: leadLegadoId ?? entrada.leadLegadoId ?? null });
-      if (!r.ok) return { ok: false, erro: r.erro, codigo: r.codigo };
+      if (!r.ok) {
+        // A recusa do domínio não levanta exceção, então ela não passava pelo
+        // `catch` lá embaixo e não aparecia em lugar nenhum. Nas cinco rotas de
+        // cutover a chamada é `void`, de propósito, para não derrubar a criação
+        // do lead — e o preço disso era ninguém ficar sabendo quando falhava.
+        //
+        // `SEM_IDENTIFICADOR` fica de fora porque é recusa esperada: contato
+        // sem e-mail nem telefone é caso legítimo, e logar isso como erro
+        // encheria o log de ruído até ninguém mais ler.
+        if (r.codigo !== "SEM_IDENTIFICADOR") {
+          console.error(
+            `[ponte-canonica] entrada recusada (${r.codigo ?? "sem código"}): ${r.erro};`,
+            `org=${entrada.organizacaoId} provider=${entrada.provider ?? entrada.origem ?? "?"}`,
+            `lead=${leadLegadoId ?? entrada.leadLegadoId ?? "-"}`,
+          );
+        }
+        return { ok: false, erro: r.erro, codigo: r.codigo };
+      }
 
       if (r.criada) {
         // Evento + outbox na mesma transação da escrita canônica. É o que a
