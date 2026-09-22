@@ -1394,7 +1394,12 @@ app.get("/faturamento-categoria", async (c) => {
       FROM negocios
      WHERE organizacao_id = ${orgId} AND status = 'ganho' AND ganho_at IS NOT NULL
        AND ganho_at >= GREATEST(date_trunc('month', now()) - make_interval(months => ${meses - 1}), ${GO_LIVE_ISO}::timestamptz)
-     GROUP BY 1, 2 ORDER BY 1`);
+     -- GROUP BY 1 e não 1, 2: a posição 2 é o SUM(mrr), e agregado não entra
+     -- em GROUP BY. O Postgres recusava a query inteira, a rota devolvia 500 e
+     -- o gráfico "Faturamento fechado por categoria" aparecia como caixa
+     -- cinza vazia na tela de Insights. As outras duas consultas deste mesmo
+     -- handler sempre agruparam por 1; esta ficou para trás.
+     GROUP BY 1 ORDER BY 1`);
 
   const porPessoa = await db.execute(sql`
     -- CUTOVER DE LEITURA (fase 17): a fonte passou a ser oportunidades.
