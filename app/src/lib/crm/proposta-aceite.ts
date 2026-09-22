@@ -86,7 +86,15 @@ export async function processarAceiteDaProposta(opts: {
 
   const aceitoEm = new Date();
   const [propostaAtualizada] = await db.update(propostas)
-    .set({ status: "aceita", clienteRespondeuEm: aceitoEm, updatedAt: aceitoEm })
+    // `aceitaEm` é o campo que as LEITURAS usam para saber que a proposta foi
+    // aceita: o checklist de fechamento (`proposta_aceita`), a fila de loops
+    // abertos e a tela de proposta. Ele não estava sendo gravado — a data ia só
+    // para `clienteRespondeuEm`, que ninguém consulta com esse significado.
+    //
+    // Medido em 22/09: **427 propostas com `status = 'aceita'` e `aceita_em`
+    // NULL em todas**, e por causa disso 142 delas apareciam na fila de loops
+    // como proposta parada esperando resposta — uma proposta que já foi aceita.
+    .set({ status: "aceita", aceitaEm: aceitoEm, clienteRespondeuEm: aceitoEm, updatedAt: aceitoEm })
     .where(and(
       eq(propostas.id, opts.propostaId),
       eq(propostas.organizacaoId, opts.organizacaoId),

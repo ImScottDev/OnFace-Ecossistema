@@ -122,6 +122,16 @@ export async function filaDeLoops(f: FiltrosLoop): Promise<ItemLoop[]> {
   if (quer("PROPOSTA_SEM_DESFECHO")) {
     // A proposta mais antiga em aberto é a que manda: é ela que está esperando
     // resposta há mais tempo.
+    //
+    // `aceita` entra na lista de status excluídos porque `aceita_em` não basta:
+    // medido em 22/09, existem **427 propostas com `status = 'aceita'` e
+    // `aceita_em` NULL**. Elas vêm da migração do CRM legado, onde esse campo
+    // nunca existiu, e nenhuma fonte honesta dá a data do aceite delas —
+    // `updated_at` é o relógio de trabalho, e contrato e ganho vêm depois.
+    //
+    // Sem esta linha, 142 propostas JÁ ACEITAS apareciam na fila como proposta
+    // parada esperando resposta do cliente. O status é o dado que existe; a
+    // data, para essas, não existe e não se inventa.
     const linhas = await db.execute<Linha>(sql`
       ${SELECAO},
              (SELECT extract(day FROM now() - min(p.enviada_em))::int
@@ -129,14 +139,14 @@ export async function filaDeLoops(f: FiltrosLoop): Promise<ItemLoop[]> {
                WHERE p.negocio_id = o.negocio_id_legado
                  AND p.enviada_em < now() - ${`${DIAS_PROPOSTA} days`}::interval
                  AND p.aceita_em IS NULL
-                 AND lower(coalesce(p.status,'')) NOT IN ('recusada','cancelada')) AS dias,
+                 AND lower(coalesce(p.status,'')) NOT IN ('recusada','cancelada','aceita')) AS dias,
              NULL::text AS detalhe
       ${baseAberta(f)}
         AND EXISTS (SELECT 1 FROM propostas p2
                      WHERE p2.negocio_id = o.negocio_id_legado
                        AND p2.enviada_em < now() - ${`${DIAS_PROPOSTA} days`}::interval
                        AND p2.aceita_em IS NULL
-                       AND lower(coalesce(p2.status,'')) NOT IN ('recusada','cancelada'))
+                       AND lower(coalesce(p2.status,'')) NOT IN ('recusada','cancelada','aceita'))
       ORDER BY o.valor DESC NULLS LAST`);
     for (const l of linhas) {
       itens.push(monta(l, "PROPOSTA_SEM_DESFECHO", "Proposta sem resposta",

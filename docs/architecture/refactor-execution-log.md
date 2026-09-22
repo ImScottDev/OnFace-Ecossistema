@@ -3003,3 +3003,25 @@ leads com `apollo_id` no banco, caminho nunca exercido.
 Bump removido e a trava passou a cobrir integrações fora de `lib/integrations`.
 
 Validação: tsc limpo, 349 testes / 0 falhas.
+
+## 2026-09-22 — CP49: a data do aceite não era gravada
+
+`processarAceiteDaProposta` calculava `aceitoEm` e gravava só em
+`clienteRespondeuEm`; `aceita_em`, que três leituras consultam, ficava NULL.
+Medido: 427 propostas aceitas com `aceita_em` NULL, e 345 negócios cujo checklist
+dizia "sem aceite registrado".
+
+Sem fonte honesta para as históricas (updated_at é relógio de trabalho; contrato
+e ganho vêm depois; cliente_respondeu_em é NULL nas 427), o conserto é dos dois
+lados: a escrita grava para as próximas, e checklist e fila reconhecem
+`status = 'aceita'` para as antigas. Checklist: 0 de 5 → 5 de 5.
+
+Alcance honesto: na fila de loops o efeito hoje é zero — as 122 oportunidades
+afetadas estão todas fechadas. A correção vale para o caso futuro.
+
+Erro meu: o smoke deixou 3 leads (limpeza pulava `pontos_contato`, que segura
+`pessoas`, que segura `leads`, com `.catch()` engolindo), e o assert de resíduo
+media `negocios`, tabela que a limpeza apagava. Quebrou três testes de
+reconciliação. Corrigidos a ordem e o assert.
+
+Validação: tsc limpo, 349 testes / 0 falhas.

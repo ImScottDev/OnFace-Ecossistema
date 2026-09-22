@@ -64,7 +64,7 @@ com o PABX invendável.
 
 ## Último commit
 
-`(CP48)` — varredura de isolamento, e um enriquecimento escondido numa rota
+`(CP49)` — a data do aceite não era gravada, e três leituras dependiam dela
 
 **Estado medido em 22/09/2026:** tsc limpo · **349 testes / 0 falhas** · build de
 produção limpo · **36 verificações** na bateria de smokes · **4 aceites com 208
@@ -2756,6 +2756,48 @@ moram fora de `lib/integrations`, nomeando-as.
 
 **Validação:** tsc limpo, **349 testes / 0 falhas**, trava provada por
 reintrodução.
+
+### CP49 — A data do aceite não era gravada, e três leituras dependiam dela
+
+`propostas.aceita_em` é o campo que responde *"esta proposta foi aceita?"* para
+três leituras: o checklist de fechamento, a fila de loops abertos e a tela de
+proposta.
+
+**Ele não estava sendo gravado.** `processarAceiteDaProposta` calculava
+`aceitoEm` e mandava a data só para `clienteRespondeuEm`, que ninguém consulta
+com esse significado. Medido: **427 propostas com `status = 'aceita'` e
+`aceita_em` NULL em todas**, e **345 negócios** cujo checklist dizia *"sem aceite
+registrado"* para uma proposta que já tinha gerado contrato.
+
+**As históricas não têm conserto de dado, e não se inventa.** Elas vieram da
+migração do CRM legado, onde o campo não existia. Procurei fonte: `updated_at` é
+o relógio de trabalho; contrato (191) e ganho (355) vêm *depois* do aceite;
+`cliente_respondeu_em` é NULL nas 427. Nenhuma é a data do aceite.
+
+Por isso o conserto é dos dois lados:
+
+- **escrita**: o aceite passa a gravar `aceitaEm`, para as próximas terem a data;
+- **leitura**: checklist e fila reconhecem `status = 'aceita'` além da data, que
+  é o dado que existe para as históricas.
+
+Medido antes e depois no checklist: **0 de 5 reconhecidas → 5 de 5**.
+
+**Honestidade sobre o alcance:** na fila de loops o efeito hoje é **zero**. A
+consulta tratava 122 oportunidades como "proposta esperando resposta" por causa
+disso, e **nenhuma delas está aberta** — proposta aceita vira negócio ganho, e a
+oportunidade fecha. A correção vale para o caso que ainda não aconteceu, e o
+efeito visível hoje é no checklist dos 345 negócios.
+
+**Um erro meu, no caminho.** O smoke deixou 3 leads para trás: a limpeza pulava
+`pontos_contato`, que segura `pessoas`, que segura `leads` — os três DELETEs
+falhavam em cadeia, em silêncio, porque cada um tem `.catch()`. E o assert de
+resíduo media **`negocios`**, tabela que a limpeza conseguia apagar, então dizia
+"resíduo 0". Os 3 leads quebraram três testes de reconciliação na rodada
+seguinte. Agora a limpeza segue a ordem das FKs e o assert conta as quatro
+tabelas que o smoke cria.
+
+**Validação:** tsc limpo, **349 testes / 0 falhas**, smoke provado por
+reintrodução nos dois consertos.
 
 ### Auditoria de CS Health (histórico da decisão)
 

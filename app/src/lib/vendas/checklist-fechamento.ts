@@ -84,9 +84,16 @@ export async function checklistDeFechamento(
            oc.payment_trigger, oc.onboarding_required, oc.implementation_required,
            oc.permite_trial,
            (o.empresa_id IS NOT NULL) AS tem_empresa,
+           -- aceita_em OU o status. As 427 propostas aceitas que vieram da
+           -- migração do CRM legado não têm a data, porque o campo não existia
+           -- lá, e sem o segundo termo o checklist dizia "sem aceite
+           -- registrado" para todas elas, inclusive as que já geraram contrato.
+           -- (Sem crase neste comentário: ela fecharia o template literal, e o
+           -- erro sai como TS1005 numa linha distante.)
            EXISTS (SELECT 1 FROM propostas p
                     WHERE (p.oportunidade_id = o.id OR p.negocio_id = ${negocioId}::uuid)
-                      AND p.aceita_em IS NOT NULL) AS proposta_aceita,
+                      AND (p.aceita_em IS NOT NULL
+                           OR lower(coalesce(p.status,'')) = 'aceita')) AS proposta_aceita,
            EXISTS (SELECT 1 FROM contratos c
                     WHERE (c.oportunidade_id = o.id OR c.negocio_id = ${negocioId}::uuid)
                       AND lower(coalesce(c.status,'')) IN ('fully_signed','assinado','ativo')) AS contrato_assinado,
