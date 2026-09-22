@@ -5,9 +5,19 @@ import { ResponsiveContainer, Tooltip } from "recharts";
 import { cn } from "@/lib/utils/cn";
 
 /**
- * Primitivas de gráfico do CRM2 (30/08) — equivalente ao `ui/chart.tsx` do
- * shadcn, portado à mão pra convenção `Cf2*` do projeto (que não usa o
- * shadcn CLI / `components.json`).
+ * Primitivas de gráfico do CRM2 (30/08).
+ *
+ * **Aviso para quem chegar aqui:** este arquivo é um port À MÃO do
+ * `ui/chart.tsx` do shadcn, e o motivo escrito aqui em 30/08 — "o projeto não
+ * usa o shadcn CLI / `components.json`" — é FALSO desde então. O repo tem
+ * `components.json`, resolve `base: radix`, e `ui/chart.tsx` está instalado.
+ * Não portar nada à mão de novo.
+ *
+ * Não foi convertido em adaptador porque os dois consumidores
+ * (`inicio/MrrEvolucao.tsx` e `vendas/MovimentoComercial.tsx`) estão na lista
+ * de componentes sem caminho a partir de rota: converter um arquivo morto
+ * gasta risco sem entregar tela. Sai junto com eles quando a limpeza de
+ * legado for autorizada.
  *
  * Existe pra que todo gráfico do produto tenha o MESMO tooltip, o mesmo
  * cursor de hover e o mesmo container responsivo — em vez de cada tela
