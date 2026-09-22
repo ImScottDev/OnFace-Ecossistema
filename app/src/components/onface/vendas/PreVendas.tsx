@@ -28,7 +28,7 @@ import {
 } from "@/lib/vendas/dominio";
 import type { Resultado } from "@/lib/vendas/resultado";
 import {
-  Abas, AvisoBloqueio, Board, Busca, Campo, Coluna, ColunaVazia, ComPainel,
+  Abas, AvisoBloqueio, Board, Busca, Campo, Coluna, ColunaVazia, ComPainel, LimparFiltros,
   Dialogo, Painel, Secao, Tag, dataCurta, dataHora, decorrido, useAcao,
   type RotaBaseVendas,
 } from "./ui";
@@ -138,6 +138,10 @@ export function PreVendas({ dados, aba, filtro, acoes, rotaBase = "" }: {
           <span><strong>{dados.resumo.nutricao}</strong> em nutrição</span>
           <span><strong>{dados.resumo.desqualificados}</strong> desqualificados</span>
         </div>
+        <LimparFiltros
+          ativo={Boolean(filtro.busca || filtro.responsavelId)}
+          aoLimpar={() => { setBusca(""); navegar({ busca: null, responsavel: null }); }}
+        />
         <Busca
           valor={busca}
           aoMudar={setBusca}
@@ -202,7 +206,9 @@ export function PreVendas({ dados, aba, filtro, acoes, rotaBase = "" }: {
               carregados={coluna.cards.length}
             >
               {coluna.cards.length === 0 ? (
-                <ColunaVazia>Nenhuma empresa nesta etapa.</ColunaVazia>
+                <ColunaVazia filtrado={Boolean(filtro.busca || filtro.responsavelId)}>
+                  Nenhuma empresa nesta etapa.
+                </ColunaVazia>
               ) : (
                 coluna.cards.map((card) => (
                   <CardLead

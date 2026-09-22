@@ -151,8 +151,48 @@ export function Coluna({ titulo, total, carregados, extra, colapsada, children }
   );
 }
 
-export function ColunaVazia({ children }: { children: ReactNode }) {
-  return <p className="ov-coluna-vazia">{children}</p>;
+/**
+ * Coluna sem cartões.
+ *
+ * P7 exige que o vazio ensine o próximo movimento, e a frase certa depende do
+ * MOTIVO do vazio. São dois motivos diferentes com respostas opostas:
+ *
+ * - filtrado: existe trabalho, o recorte é que escondeu.
+ * - natural: a etapa está livre, e não há nada a fazer nela.
+ *
+ * "Nenhuma empresa nesta etapa.", que era o texto único, não responde nenhum
+ * dos dois. A saída do caso filtrado é o `LimparFiltros` da barra, não um
+ * botão por coluna: ver ali embaixo o porquê.
+ */
+export function ColunaVazia({
+  children,
+  filtrado = false,
+}: {
+  children: ReactNode;
+  filtrado?: boolean;
+}) {
+  return (
+    <div className="ov-coluna-vazia" data-filtrado={filtrado || undefined}>
+      <p>{filtrado ? "Nada aqui com os filtros atuais." : children}</p>
+    </div>
+  );
+}
+
+/**
+ * Limpar filtros — um só, na barra de controle.
+ *
+ * Nasceu dentro da coluna vazia e apareceu quatro vezes na mesma tela, um por
+ * etapa. Repetir a mesma saída em cada coluna não dá quatro saídas, dá ruído.
+ * Na barra ele fica ao lado do que criou o estado e serve também quando a
+ * busca DEVOLVE resultado — que é quando a pessoa mais precisa voltar.
+ */
+export function LimparFiltros({ ativo, aoLimpar }: { ativo: boolean; aoLimpar: () => void }) {
+  if (!ativo) return null;
+  return (
+    <button type="button" className="ov-limpar-filtros" onClick={aoLimpar}>
+      Limpar filtros
+    </button>
+  );
 }
 
 

@@ -289,6 +289,12 @@
 /* ── Conteúdo ─────────────────────────────────────────────────────────── */
 
 .onface-conteudo {
+  /* A topbar encolheu de 4.5rem para 3.25rem, e onze regras espalhadas em
+     quatro folhas calculam posição e altura a partir de `--shell-topbar-h`
+     (painel sticky, navegação do DS, altura de coluna de board). Redefinir a
+     variável aqui dentro acerta todas de uma vez, e a casca antiga — que o
+     `(onface-preview)` ainda usa — continua lendo o valor dela no `:root`. */
+  --shell-topbar-h: var(--shell-topbar-v2-h);
   display: flex;
   flex-direction: column;
   flex: 1;

@@ -27,7 +27,7 @@ import {
 } from "@/lib/vendas/dominio";
 import type { Resultado } from "@/lib/vendas/resultado";
 import {
-   AvisoBloqueio, Board, Busca, Campo, ChecklistFechamento, Coluna, ColunaVazia, ComPainel,
+   AvisoBloqueio, Board, Busca, Campo, ChecklistFechamento, Coluna, ColunaVazia, ComPainel, LimparFiltros,
   Dialogo, Painel, Secao, Tag, dataCurta, dataHora, moeda, moedaExata, useAcao,
   type RotaBaseVendas,
 } from "./ui";
@@ -168,6 +168,10 @@ export function Pipeline({ dados, filtro, loop = false, loops = null, selecaoIni
             <small>mostrando só estas · limpar</small>
           </button>
         ) : null}
+        <LimparFiltros
+          ativo={Boolean(filtro.busca || filtro.responsavelId || filtro.familia || loop)}
+          aoLimpar={() => { setBusca(""); navegar({ busca: null, responsavel: null, familia: null, loop: null }); }}
+        />
         <Busca valor={busca} aoMudar={setBusca} placeholder="Buscar empresa ou oportunidade" />
         <button type="button" className="ov-botao" data-variante="neutro" onClick={() => navegar({ busca })}>Buscar</button>
         <select className="ov-select" value={filtro.familia ?? ""} aria-label="Filtrar por família"
@@ -252,7 +256,9 @@ export function Pipeline({ dados, filtro, loop = false, loops = null, selecaoIni
               extra={coluna.valorTotal > 0 ? <span> · {moeda(coluna.valorTotal)}</span> : null}
             >
               {coluna.cards.length === 0 ? (
-                <ColunaVazia>Nenhuma oportunidade nesta etapa.</ColunaVazia>
+                <ColunaVazia filtrado={Boolean(filtro.busca || filtro.responsavelId || filtro.familia || loop)}>
+                  Nenhuma oportunidade nesta etapa.
+                </ColunaVazia>
               ) : (
                 coluna.cards.map((card) => (
                   <CardOportunidade key={card.id} card={card} selecionado={card.id === selecionado} aoAbrir={() => abrir(card.id)} />

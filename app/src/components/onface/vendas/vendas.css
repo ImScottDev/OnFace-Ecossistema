@@ -184,20 +184,34 @@
 
 /* Rolagem lateral existe no board, nunca dentro da coluna: a coluna rola no
    eixo vertical e os cartões nunca ficam mais largos que ela. */
+/* O board ocupa a altura que sobra, em vez de calculá-la.
+ *
+ * Era `max-height: calc(100dvh - var(--shell-topbar-h) - 260u)` na coluna:
+ * dois números mágicos que descreviam a casca de 18/09. A topbar encolheu de
+ * 4.5rem para 3.25rem e a faixa hero de 260u deixou de existir, então a conta
+ * passou a descontar altura que ninguém ocupa — sobrava uma faixa branca
+ * embaixo do board em toda tela.
+ *
+ * `flex: 1` + `min-height: 0` faz o navegador medir. Quando o cabeçalho mudar
+ * de novo, nada aqui precisa mudar. */
 .ov-board {
   display: flex;
   gap: calc(12 * var(--onface-u));
-  align-items: flex-start;
+  align-items: stretch;
   overflow-x: auto;
   padding-bottom: calc(10 * var(--onface-u));
   scrollbar-width: thin;
+  flex: 1;
+  min-height: 0;
 }
 .ov-coluna {
   display: flex;
   flex-direction: column;
   flex: 0 0 calc(262 * var(--onface-u));
   min-width: 0;
-  max-height: calc(100dvh - var(--shell-topbar-h) - calc(260 * var(--onface-u)));
+  /* `max-height: 100%` e não `height`: coluna com poucos cartões não estica
+     até o rodapé só para preencher — ela para onde o conteúdo para. */
+  max-height: 100%;
   border-radius: calc(16 * var(--onface-u));
   background: var(--surface-subtle, #f6f7f9);
 }
@@ -238,6 +252,41 @@
   font-size: calc(11.5 * var(--onface-u));
   text-align: center;
 }
+.ov-coluna-vazia p { margin: 0; }
+/* Vazio por filtro ganha um traço pontilhado: a coluna continua sendo um
+   alvo de drop, e a borda diz que ali cabe conteúdo — o vazio natural não
+   precisa dizer isso. */
+.ov-coluna-vazia[data-filtrado] {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(8 * var(--onface-u));
+  border: 1px dashed var(--line-hairline);
+  border-radius: var(--radius-md);
+  margin: calc(6 * var(--onface-u));
+}
+.ov-limpar-filtros {
+  height: calc(34 * var(--onface-u));
+  padding-inline: calc(12 * var(--onface-u));
+  border-radius: calc(999 * var(--onface-u));
+  color: var(--onface-coral);
+  font-size: calc(12.5 * var(--onface-u));
+  font-weight: var(--weight-semibold);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ov-limpar-filtros:hover { background: var(--onface-coral-subtle); }
+.ov-limpar-filtros:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+
+.ov-coluna-vazia-acao {
+  font-size: calc(11.5 * var(--onface-u));
+  font-weight: var(--weight-semibold);
+  color: var(--onface-coral);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.ov-coluna-vazia-acao:hover { color: var(--onface-coral-hover); }
+.ov-coluna-vazia-acao:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-radius: 2px; }
 
 /* ── Card ──────────────────────────────────────────────────────────────── */
 
