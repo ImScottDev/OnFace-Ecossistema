@@ -1,0 +1,330 @@
+/* ─────────────────────────────────────────────────────────────────────────
+ * Casca ONFACE v2 — sidebar + topbar (UX-EXECUTION-SPEC §1.2)
+ *
+ * Arquivo separado do `onface.css` de propósito: ali moram os tokens e a casca
+ * horizontal anterior, e misturar as duas deixaria impossível saber qual regra
+ * pertence a qual. Quando a horizontal sair, some este comentário e some o
+ * bloco de lá, não daqui.
+ *
+ * Geometria e cor vêm inteiras dos tokens do Design System. Nenhum hex mora
+ * neste arquivo.
+ * ───────────────────────────────────────────────────────────────────────── */
+
+:root {
+  --shell-topbar-v2-h: 3.25rem;
+}
+
+/* ── Sidebar ──────────────────────────────────────────────────────────── */
+
+.onface-sidebar [data-slot="sidebar-inner"],
+.onface-sidebar [data-sidebar="sidebar"] {
+  /* Hairline em vez de sombra: a casca é definida por linha, não por
+     elevação (Design System ONFACE, "flat + hairlines"). */
+  border-right: 1px solid var(--sidebar-border);
+}
+
+.onface-sidebar-header {
+  height: var(--shell-topbar-v2-h);
+  justify-content: center;
+  padding-inline: 0.875rem;
+  border-bottom: 1px solid var(--sidebar-border);
+}
+
+.onface-sidebar-marca {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  border-radius: var(--radius-sm);
+  outline-offset: 2px;
+}
+.onface-sidebar-marca:focus-visible {
+  outline: 2px solid var(--sidebar-ring);
+}
+
+.onface-sidebar-lockup {
+  height: 1.125rem;
+  width: auto;
+}
+.onface-sidebar-simbolo {
+  display: none;
+  height: 1.25rem;
+  width: 1.25rem;
+}
+
+/* No modo ícone o lockup vira símbolo. Trocar o arquivo em vez de encolher o
+   lockup: a 3rem o lockup inteiro seria uma mancha. */
+.onface-sidebar[data-collapsible="icon"] .onface-sidebar-lockup {
+  display: none;
+}
+.onface-sidebar[data-collapsible="icon"] .onface-sidebar-simbolo {
+  display: block;
+}
+.onface-sidebar[data-collapsible="icon"] .onface-sidebar-header {
+  padding-inline: 0;
+}
+.onface-sidebar[data-collapsible="icon"] .onface-sidebar-marca {
+  justify-content: center;
+  width: 100%;
+}
+
+.onface-sidebar-corpo {
+  gap: 0.125rem;
+  padding-block: 0.5rem;
+}
+
+/* O rótulo de grupo é o elemento que mais recua na coluna: ele organiza, não
+   compete. Caixa alta pequena com tracking é o que permite baixar o contraste
+   sem perder legibilidade. */
+.onface-sidebar-grupo {
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--text-on-shell-muted);
+  opacity: 0.72;
+  height: 1.75rem;
+  padding-inline: 0.625rem;
+}
+
+.onface-nav-linha {
+  font-size: var(--text-md);
+  font-weight: var(--weight-medium);
+  color: var(--sidebar-foreground);
+  border-radius: var(--radius-md);
+  height: 2rem;
+}
+.onface-nav-linha > svg {
+  color: var(--text-on-shell-muted);
+  transition: color 160ms ease-out;
+}
+.onface-nav-linha:hover > svg {
+  color: var(--sidebar-accent-foreground);
+}
+
+/* Seleção é sinal, e sinal é coral. Hover é só mudança de superfície: se os
+   dois usassem coral, o ponteiro apagaria a informação de onde a pessoa está.
+   A barra à esquerda carrega o estado quando a coluna colapsa e o texto some. */
+.onface-nav-linha[data-active="true"] {
+  background: var(--sidebar-accent);
+  color: var(--sidebar-accent-foreground);
+  font-weight: var(--weight-semibold);
+}
+.onface-nav-linha[data-active="true"] > svg {
+  color: var(--sidebar-primary);
+}
+.onface-nav-linha[data-active="true"]::before {
+  content: "";
+  position: absolute;
+  inset-block: 0.3125rem;
+  inset-inline-start: 0;
+  width: 2px;
+  border-radius: var(--radius-full);
+  background: var(--sidebar-primary);
+}
+
+.onface-sidebar-rodape {
+  border-top: 1px solid var(--sidebar-border);
+  padding-block: 0.5rem;
+}
+
+/* ── Topbar ───────────────────────────────────────────────────────────── */
+
+.onface-topbar-v2 {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  height: var(--shell-topbar-v2-h);
+  padding-inline: 1rem;
+  background: var(--surface-page);
+  border-bottom: 1px solid var(--line-hairline);
+}
+
+.onface-topbar-v2-esq,
+.onface-topbar-v2-dir {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.onface-topbar-v2-toggle {
+  color: var(--text-muted);
+}
+
+.onface-trilha {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-width: 0;
+  font-size: var(--text-md);
+}
+.onface-trilha-grupo {
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.onface-trilha-sep {
+  color: var(--text-muted);
+  opacity: 0.5;
+}
+.onface-trilha-atual {
+  color: var(--text-strong);
+  font-weight: var(--weight-semibold);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.onface-busca {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: 2rem;
+  padding-inline: 0.625rem;
+  border: 1px solid var(--line-hairline);
+  border-radius: var(--radius-control);
+  background: var(--surface-card);
+  color: var(--text-muted);
+  font-size: var(--text-md);
+  transition: border-color 160ms ease-out, color 160ms ease-out;
+}
+.onface-busca:hover {
+  border-color: var(--text-muted);
+  color: var(--text-body);
+}
+.onface-busca:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+.onface-busca > svg {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+}
+.onface-busca-kbd {
+  font-family: inherit;
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-medium);
+  color: var(--text-muted);
+  border: 1px solid var(--line-hairline);
+  border-radius: var(--radius-xs);
+  padding: 0.0625rem 0.25rem;
+  line-height: 1.4;
+}
+
+/* Único elemento coral da casca. NEXO é o copiloto; se hover e notificação
+   também fossem coral, ele deixaria de significar alguma coisa. */
+.onface-nexo {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  height: 2rem;
+  padding-inline: 0.75rem;
+  border-radius: var(--radius-control);
+  background: var(--onface-coral);
+  color: var(--onface-white);
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  transition: background-color 160ms ease-out;
+}
+.onface-nexo:hover {
+  background: var(--onface-coral-hover);
+}
+.onface-nexo:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.onface-nexo > svg {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+}
+
+.onface-topbar-v2-regua {
+  width: 1px;
+  height: 1.25rem;
+  background: var(--line-hairline);
+  margin-inline: 0.125rem;
+}
+
+.onface-perfil {
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--radius-full);
+}
+.onface-perfil:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.onface-perfil-avatar {
+  display: grid;
+  place-items: center;
+  width: var(--avatar-sm);
+  height: var(--avatar-sm);
+  border-radius: var(--radius-full);
+  background: var(--onface-graphite);
+  color: var(--onface-white);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.02em;
+}
+.onface-menu-perfil-topo {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.5rem 0.625rem 0.625rem;
+}
+.onface-menu-perfil-topo strong {
+  display: block;
+  font-size: var(--text-md);
+  color: var(--text-strong);
+}
+.onface-menu-perfil-topo small {
+  display: block;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+/* ── Conteúdo ─────────────────────────────────────────────────────────── */
+
+.onface-conteudo {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  /* `min-width: 0` acima é o que permite board horizontal rolar DENTRO do
+     conteúdo sem empurrar a página (spec §48). Sem ele o flex item cresce
+     junto com o board e a página inteira vaza na horizontal. */
+  background: var(--surface-page);
+}
+
+.onface-conteudo-interno {
+  flex: 1;
+  min-width: 0;
+  padding: 1.25rem;
+}
+
+@media (min-width: 1280px) {
+  .onface-conteudo-interno {
+    padding: 1.5rem 1.75rem;
+  }
+}
+
+/* Largura estreita: a busca vira só o ícone e o NEXO perde o rótulo, antes de
+   qualquer coisa ser empurrada para fora da barra. */
+@media (max-width: 900px) {
+  .onface-busca-label,
+  .onface-busca-kbd {
+    display: none;
+  }
+  .onface-busca {
+    padding-inline: 0.5rem;
+  }
+  .onface-nexo > span {
+    display: none;
+  }
+  .onface-nexo {
+    padding-inline: 0.5rem;
+  }
+}

@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "./onface.css";
+@import "./shell-onface.css";
 /* Callface UI System — escalas, motion e utilitários compostos. */
 @import "./cf2-design-system.css";
 

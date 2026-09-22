@@ -193,6 +193,25 @@ html[data-onface-theme="light"] {
   --ring: var(--onface-coral);
   --radius: var(--radius-control);
   --font-sans: var(--font-onface-ui), ui-sans-serif, system-ui, sans-serif;
+
+  /* Sidebar: a segunda camada neutra da casca.
+   *
+   * O shadcn Sidebar lê estes oito tokens e nenhum existia no projeto — sem
+   * eles o componente sai sem cor nenhuma. A sidebar é grafite contra o papel
+   * do conteúdo: é esse contraste que deixa o conteúdo ser o assunto e a
+   * navegação recuar. Coral aparece só em item selecionado, nunca em hover:
+   * hover é mudança de superfície, seleção é sinal.
+   *
+   * O acento de hover é branco a 6% em vez de um cinza fixo para acompanhar
+   * qualquer ajuste do grafite sem virar uma segunda cor para manter. */
+  --sidebar: var(--onface-graphite);
+  --sidebar-foreground: var(--text-on-shell);
+  --sidebar-primary: var(--onface-coral);
+  --sidebar-primary-foreground: var(--onface-white);
+  --sidebar-accent: rgba(255, 255, 255, 0.06);
+  --sidebar-accent-foreground: var(--onface-white);
+  --sidebar-border: var(--line-on-shell);
+  --sidebar-ring: var(--onface-coral);
 }
 
 
