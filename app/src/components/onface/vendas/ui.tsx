@@ -1,7 +1,13 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
-import { AlertTriangle, Search, X } from "lucide-react";
+import { AlertTriangle, Inbox, Search, SearchX, X } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -50,20 +56,31 @@ export function Hero({ titulo, descricao, resumo, acoes }: {
   );
 }
 
+/**
+ * Busca do módulo, sobre o `InputGroup` do shadcn.
+ *
+ * Era um `<label class="ov-busca">` com `<input type="search">` dentro e o
+ * ícone posicionado na unha. O `InputGroup` existe exatamente para isto:
+ * campo com addon. A doc pede que o `InputGroupAddon` venha DEPOIS do input no
+ * DOM e se posicione por `align`, para o foco funcionar — é por isso que a
+ * ordem abaixo parece invertida em relação ao que se vê na tela.
+ */
 export function Busca({ valor, aoMudar, placeholder }: {
   valor: string; aoMudar: (v: string) => void; placeholder: string;
 }) {
   return (
-    <label className="ov-busca">
-      <Search aria-hidden />
-      <input
+    <InputGroup className="min-w-[220px] flex-1">
+      <InputGroupInput
         type="search"
         value={valor}
         placeholder={placeholder}
         aria-label={placeholder}
         onChange={(e) => aoMudar(e.target.value)}
       />
-    </label>
+      <InputGroupAddon align="inline-start">
+        <Search />
+      </InputGroupAddon>
+    </InputGroup>
   );
 }
 
@@ -72,30 +89,72 @@ export function Abas<T extends string>({ abas, ativa, aoTrocar }: {
   ativa: T;
   aoTrocar: (chave: T) => void;
 }) {
+  // `Tabs` do shadcn sem `TabsContent`: aqui a aba é um SELETOR, o conteúdo é
+  // trocado pela tela. O componente continua entregando o que a versão à mão
+  // não tinha completo — navegação por seta do teclado, `aria-controls` e o
+  // indicador de ativo por `data-state` em vez de atributo próprio.
   return (
-    <div className="ov-abas" role="tablist">
-      {abas.map((aba) => (
-        <button
-          key={aba.chave}
-          type="button"
-          role="tab"
-          aria-selected={aba.chave === ativa}
-          data-ativa={aba.chave === ativa}
-          onClick={() => aoTrocar(aba.chave)}
-        >
-          {aba.rotulo}
-          {typeof aba.contagem === "number" ? ` · ${aba.contagem}` : ""}
-        </button>
-      ))}
-    </div>
+    <Tabs value={ativa} onValueChange={(v) => aoTrocar(v as T)}>
+      <TabsList>
+        {abas.map((aba) => (
+          <TabsTrigger key={aba.chave} value={aba.chave}>
+            {aba.rotulo}
+            {typeof aba.contagem === "number" ? (
+              <span className="tabular-nums opacity-60">{aba.contagem}</span>
+            ) : null}
+          </TabsTrigger>
+        ))}
+      </TabsList>
+    </Tabs>
   );
 }
+
+/**
+ * Etiqueta do módulo Vendas, agora sobre o `Badge` do shadcn.
+ *
+ * Era um `<span class="ov-tag">` com cinco tons em hex no `vendas.css`, e é
+ * usada em 9 arquivos do módulo. O `Badge` da biblioteca já tinha a forma
+ * (pílula, 12px, tipografia) e recebeu a semântica de status como VARIANTE
+ * (`success`/`warning`/`danger`/`info`), que é onde ela pertence.
+ *
+ * Os hex somem junto: `#166534`, `#92400e`, `#1d4ed8` e companhia eram
+ * calibrados só para fundo claro e não acompanhavam ilha escura. As variantes
+ * lêem o par semântico por token, que o escopo `[data-cf2-superficie]`
+ * reescreve dos dois lados.
+ *
+ * `tom` continua na assinatura porque são 9 arquivos chamando; o mapa traduz
+ * para o vocabulário da biblioteca.
+ */
+const TOM_PARA_BADGE = {
+  coral: "default",
+  alerta: "warning",
+  sucesso: "success",
+  info: "info",
+  "neutro-escuro": "secondary",
+} as const;
 
 export function Tag({ children, tom }: {
   children: ReactNode;
   tom?: "coral" | "alerta" | "sucesso" | "info" | "neutro-escuro";
 }) {
-  return <span className="ov-tag" data-tom={tom}>{children}</span>;
+  // Sem tom é etiqueta NEUTRA, que aqui quer dizer contorno e não
+  // preenchimento: o `default` do shadcn é o coral da marca, e etiqueta de
+  // origem ("Mídia Paga") não é sinal de marca.
+  return (
+    // `max-w-full` + `truncate`: o `Badge` do shadcn é `whitespace-nowrap` e
+    // `overflow-hidden`, então etiqueta longa não quebra, ela ESTICA. O nome
+    // de campanha real do Callface ("TRT | Lead | Aquisição White Label — II-
+    // callface") passa da largura do cartão e vazava 86px em 3 cartões,
+    // medido no navegador. Cortar é melhor que vazar: o nome inteiro fica no
+    // `title` para quem precisar dele.
+    <Badge
+      variant={tom ? TOM_PARA_BADGE[tom] : "outline"}
+      className="max-w-full truncate text-[10px] font-semibold"
+      title={typeof children === "string" ? children : undefined}
+    >
+      {children}
+    </Badge>
+  );
 }
 
 /* ── Board ─────────────────────────────────────────────────────────────── */
@@ -171,10 +230,25 @@ export function ColunaVazia({
   children: ReactNode;
   filtrado?: boolean;
 }) {
+  // `Empty` do shadcn no lugar do `<div>` próprio. A composição é a que a doc
+  // define (`Empty > EmptyHeader > EmptyMedia/EmptyTitle`), só que sem
+  // `EmptyDescription`: a coluna tem uma frase, não duas, e descrição que
+  // repete o título é o padrão que a direção proíbe.
+  //
+  // `border-none` e `p-4`: dentro de uma coluna de kanban o vazio é um
+  // estado discreto, não um bloco de convite. O `Empty` padrão traz moldura
+  // tracejada e `p-12`, que aqui empurraria a coluna inteira.
   return (
-    <div className="ov-coluna-vazia" data-filtrado={filtrado || undefined}>
-      <p>{filtrado ? "Nada aqui com os filtros atuais." : children}</p>
-    </div>
+    <Empty className="border-none p-4" data-filtrado={filtrado || undefined}>
+      <EmptyHeader className="gap-1">
+        <EmptyMedia variant="icon" className="mb-0 size-8">
+          {filtrado ? <SearchX /> : <Inbox />}
+        </EmptyMedia>
+        <EmptyTitle className="text-[12px] font-normal text-muted-foreground">
+          {filtrado ? "Nada aqui com os filtros atuais." : children}
+        </EmptyTitle>
+      </EmptyHeader>
+    </Empty>
   );
 }
 
@@ -189,9 +263,10 @@ export function ColunaVazia({
 export function LimparFiltros({ ativo, aoLimpar }: { ativo: boolean; aoLimpar: () => void }) {
   if (!ativo) return null;
   return (
-    <button type="button" className="ov-limpar-filtros" onClick={aoLimpar}>
+    <Button type="button" variant="ghost" size="sm" onClick={aoLimpar}>
+      <X data-icon="inline-start" />
       Limpar filtros
-    </button>
+    </Button>
   );
 }
 
@@ -267,9 +342,9 @@ export function Painel({ titulo, subtitulo, aoFechar, acoesTopo, children }: {
         </div>
         <div className="ov-painel-topo-acoes">
           {acoesTopo}
-          <button type="button" className="ov-painel-fechar" onClick={aoFechar} aria-label="Fechar painel">
-            <X aria-hidden />
-          </button>
+          <Button type="button" variant="ghost" size="icon-sm" onClick={aoFechar} aria-label="Fechar painel">
+            <X />
+          </Button>
         </div>
       </div>
       {children}
@@ -312,20 +387,22 @@ export interface Bloqueio {
 export function AvisoBloqueio({ bloqueio, aoAgir }: {
   bloqueio: Bloqueio; aoAgir?: (tipo: string) => void;
 }) {
+  // `Alert` do shadcn: o `role="alert"` vem do componente, e `variant="warning"`
+  // e não `destructive` porque gate de regra não é consequência destrutiva, é
+  // um requisito que falta. O CTA que destrava continua dentro do alerta, que
+  // é a terceira parte que a spec exige e que um toast não cumpre.
   return (
-    <div className="ov-bloqueio" role="alert">
-      <AlertTriangle aria-hidden />
-      <div>
-        {bloqueio.mensagem}
+    <Alert variant="warning">
+      <AlertTriangle />
+      <AlertDescription className="flex flex-col items-start gap-2">
+        <span>{bloqueio.mensagem}</span>
         {bloqueio.acao && aoAgir ? (
-          <div>
-            <button type="button" onClick={() => aoAgir(bloqueio.acao!.tipo)}>
-              {bloqueio.acao.rotulo}
-            </button>
-          </div>
+          <Button type="button" size="sm" variant="outline" onClick={() => aoAgir(bloqueio.acao!.tipo)}>
+            {bloqueio.acao.rotulo}
+          </Button>
         ) : null}
-      </div>
-    </div>
+      </AlertDescription>
+    </Alert>
   );
 }
 

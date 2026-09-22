@@ -33,6 +33,11 @@ import {
   type RotaBaseVendas,
 } from "./ui";
 import { AcoesContato } from "./pagina";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { Item, ItemContent, ItemDescription, ItemFooter, ItemTitle } from "@/components/ui/item";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 type Aba = "ativos" | "nutricao" | "desqualificados";
 
@@ -147,21 +152,28 @@ export function PreVendas({ dados, aba, filtro, acoes, rotaBase = "" }: {
           aoMudar={setBusca}
           placeholder="Buscar empresa, pessoa ou e-mail"
         />
-        <button type="button" className="ov-botao" data-variante="neutro" onClick={() => navegar({ busca })}>
+        <Button type="button" variant="outline" onClick={() => navegar({ busca })}>
           Buscar
-        </button>
-        <select
-          className="ov-select"
+        </Button>
+        {/* `NativeSelect` e não o `Select` do Radix: a doc do shadcn traz os
+            dois, e o nativo é o certo para FILTRO com lista aberta — mantém
+            teclado, busca por digitação e o seletor do sistema no celular. O
+            Radix entra quando o item precisa de render próprio (ícone, avatar,
+            duas linhas), que não é o caso de uma lista de nomes. */}
+        <NativeSelect
+          className="w-[190px]"
           value={filtro.responsavelId ?? ""}
           onChange={(e) => navegar({ responsavel: e.target.value || null })}
           aria-label="Filtrar por responsável"
         >
-          <option value="">Todos os responsáveis</option>
-          {dados.filtros.responsaveis.map((r) => <option key={r.id} value={r.id}>{r.nome}</option>)}
-        </select>
-        <button type="button" className="ov-botao" onClick={() => { limparBloqueio(); setModal("novo"); }}>
-          <Plus aria-hidden />Novo lead
-        </button>
+          <NativeSelectOption value="">Todos os responsáveis</NativeSelectOption>
+          {dados.filtros.responsaveis.map((r) => (
+            <NativeSelectOption key={r.id} value={r.id}>{r.nome}</NativeSelectOption>
+          ))}
+        </NativeSelect>
+        <Button type="button" onClick={() => { limparBloqueio(); setModal("novo"); }}>
+          <Plus data-icon="inline-start" />Novo lead
+        </Button>
       </div>
 
       {bloqueio && !modal ? (
@@ -286,46 +298,124 @@ export function PreVendas({ dados, aba, filtro, acoes, rotaBase = "" }: {
 
 /* ── Card ──────────────────────────────────────────────────────────────── */
 
+/**
+ * Cartão de lead, sobre o `Item` do shadcn.
+ *
+ * Era um `<button class="ov-card">` com quatro `<span>` e estilo inline no
+ * rodapé, repetido 1.005 vezes na tela. O `Item` existe para exatamente esta
+ * forma, e a doc é explícita sobre quando usá-lo: "se você só precisa exibir
+ * conteúdo como título, descrição e ações, use `Item`" (`Field` é para
+ * entrada de formulário, que não é o caso aqui).
+ *
+ * A composição segue a da doc: `Item > ItemContent > ItemTitle/ItemDescription`
+ * mais `ItemFooter` para a linha de baixo. O cartão inteiro continua clicável,
+ * agora por `asChild` sobre um `<button>`, que é como a doc monta item
+ * acionável sem aninhar botão dentro de botão.
+ *
+ * Duas coisas que a versão à mão não tinha e vêm da biblioteca: anel de foco
+ * visível pelo teclado e o alvo de clique tratado pelo componente.
+ *
+ * Os ícones de canal ganharam `Tooltip`. Antes eram `aria-label` puro: quem
+ * enxerga via o ícone e não tinha como saber o que ele significa sem leitor de
+ * tela.
+ */
 function CardLead({ card, selecionado, aoAbrir }: {
   card: CardPreVendas; selecionado: boolean; aoAbrir: () => void;
 }) {
+  const etiquetas = (
+    <>
+      {card.origem ? <Tag>{card.origem}</Tag> : null}
+      {card.campanha ? <Tag>{card.campanha}</Tag> : null}
+      {card.servicos?.slice(0, 1).map((s) => <Tag key={s} tom="info">{s}</Tag>)}
+      {/* O fato Qualificado acompanha o card mesmo fora da coluna
+          Qualificado — é o ponto da spec: ele sobrevive à etapa. */}
+      {card.qualificado && card.etapa !== "qualificado" ? <Tag tom="sucesso">Qualificado</Tag> : null}
+      {card.preQualificado ? <Tag tom="neutro-escuro">Pré-qualificado</Tag> : null}
+      {card.nutricaoRetomarEm ? <Tag tom="alerta">Retomar {dataCurta(card.nutricaoRetomarEm)}</Tag> : null}
+      {card.desqualificacaoMotivo ? <Tag tom="neutro-escuro">{card.desqualificacaoMotivo}</Tag> : null}
+    </>
+  );
+
   return (
-    <button type="button" className="ov-card" data-selecionado={selecionado} onClick={aoAbrir}>
-      <span className="ov-card-empresa">{card.empresa}</span>
-      {card.pessoa ? (
-        <span className="ov-card-pessoa">
-          {card.pessoa}{card.cargo ? ` · ${card.cargo}` : ""}
-        </span>
-      ) : (
-        <span className="ov-card-pessoa">Sem contato associado</span>
-      )}
+    <Item
+      variant="outline"
+      size="sm"
+      asChild
+      /* `ov-card` saiu do cartão.
+       *
+       * Ele trazia display, direção, padding, raio, borda e sombra próprios, e
+       * brigava com o `variant="outline"` do `Item`: o rodapé ficava 30px para
+       * fora do cartão porque o `basis-full` do `ItemFooter` não vira largura
+       * cheia dentro de uma coluna que a CSS de fora já tinha montado. Duas
+       * definições da mesma superfície é o que a biblioteca existe para
+       * impedir.
+       *
+       * A seleção, que era `box-shadow` no `vendas.css`, vira anel por
+       * `data-selecionado` aqui. Pipeline ainda usa `ov-card` e por isso a
+       * regra continua no CSS: ela sai quando Pipeline for a vez.
+       *
+       * E NÃO se força `flex-col` aqui. O `Item` é uma LINHA que quebra
+       * (`flex flex-wrap`), e o `basis-full` do `ItemFooter` é justamente o
+       * que faz o rodapé pular para a própria linha. Forçando coluna, o
+       * `flex-wrap` passa a criar uma segunda COLUNA à direita para o que não
+       * cabe, e foi assim que 201 de 201 cartões vazaram 162px. A composição
+       * certa é a da doc: conteúdo ocupa a linha, e quem precisa de linha
+       * própria pede `basis-full`. */
+      className="w-full gap-2 px-3 py-2.5 text-left data-[selecionado]:ring-2 data-[selecionado]:ring-[var(--onface-coral)]"
+      data-selecionado={selecionado || undefined}
+    >
+      <button type="button" onClick={aoAbrir}>
+        <ItemContent className="basis-full gap-0.5">
+          <ItemTitle className="font-[family-name:var(--font-onface-display)] text-[13.5px] leading-tight font-bold [overflow-wrap:anywhere]">{card.empresa}</ItemTitle>
+          <ItemDescription className="text-[11.5px] leading-snug [overflow-wrap:anywhere]">
+            {card.pessoa
+              ? `${card.pessoa}${card.cargo ? ` · ${card.cargo}` : ""}`
+              : "Sem contato associado"}
+          </ItemDescription>
+        </ItemContent>
 
-      <span className="ov-card-meta">
-        {card.origem ? <Tag>{card.origem}</Tag> : null}
-        {card.campanha ? <Tag>{card.campanha}</Tag> : null}
-        {card.servicos?.slice(0, 1).map((s) => <Tag key={s} tom="info">{s}</Tag>)}
-        {/* O fato Qualificado acompanha o card mesmo fora da coluna
-            Qualificado — é o ponto da spec: ele sobrevive à etapa. */}
-        {card.qualificado && card.etapa !== "qualificado" ? <Tag tom="sucesso">Qualificado</Tag> : null}
-        {card.preQualificado ? <Tag tom="neutro-escuro">Pré-qualificado</Tag> : null}
-        {card.nutricaoRetomarEm ? <Tag tom="alerta">Retomar {dataCurta(card.nutricaoRetomarEm)}</Tag> : null}
-        {card.desqualificacaoMotivo ? <Tag tom="neutro-escuro">{card.desqualificacaoMotivo}</Tag> : null}
-      </span>
+        {/* As etiquetas ficam numa linha própria e não em `ItemActions`:
+            `ItemActions` é para AÇÃO, e etiqueta é estado. `basis-full` é o
+            mesmo mecanismo que o `ItemFooter` usa para ganhar a linha. */}
+        <div className="flex min-w-0 basis-full flex-wrap items-center gap-1 empty:hidden">{etiquetas}</div>
 
-      <span className="ov-card-rodape">
-        <span style={{ display: "inline-flex", alignItems: "center", gap: "calc(6 * var(--onface-u))" }}>
-          {card.responsavelIniciais
-            ? <span className="ov-avatar" aria-hidden>{card.responsavelIniciais}</span>
-            : <span style={{ color: "var(--onface-coral-texto)" /* de TEXTO: a marca pura dá 3,30:1 no papel */ }}>Sem responsável</span>}
-          {card.responsavel ? card.responsavel.split(" ")[0] : null}
-        </span>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: "calc(8 * var(--onface-u))" }}>
-          {card.temWhatsapp ? <MessageCircle aria-label="Tem WhatsApp" style={{ width: "calc(12 * var(--onface-u))", height: "calc(12 * var(--onface-u))" }} /> : null}
-          {card.temEmail ? <Mail aria-label="Tem e-mail" style={{ width: "calc(12 * var(--onface-u))", height: "calc(12 * var(--onface-u))" }} /> : null}
-          {decorrido(card.horasSemInteracao)}
-        </span>
-      </span>
-    </button>
+        <ItemFooter className="gap-2 text-[11px] text-muted-foreground">
+          <span className="inline-flex min-w-0 items-center gap-1.5">
+            {card.responsavelIniciais ? (
+              <Avatar className="size-5">
+                <AvatarFallback className="text-[9px] font-semibold">
+                  {card.responsavelIniciais}
+                </AvatarFallback>
+              </Avatar>
+            ) : (
+              /* Coral de TEXTO: a marca pura dá 3,30:1 sobre papel. */
+              <span className="text-[var(--onface-coral-texto)]">Sem responsável</span>
+            )}
+            {card.responsavel ? <span className="truncate">{card.responsavel.split(" ")[0]}</span> : null}
+          </span>
+
+          <span className="inline-flex shrink-0 items-center gap-2">
+            {card.temWhatsapp ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <MessageCircle className="size-3" aria-label="Tem WhatsApp" />
+                </TooltipTrigger>
+                <TooltipContent>Tem WhatsApp</TooltipContent>
+              </Tooltip>
+            ) : null}
+            {card.temEmail ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Mail className="size-3" aria-label="Tem e-mail" />
+                </TooltipTrigger>
+                <TooltipContent>Tem e-mail</TooltipContent>
+              </Tooltip>
+            ) : null}
+            <span className="tabular-nums">{decorrido(card.horasSemInteracao)}</span>
+          </span>
+        </ItemFooter>
+      </button>
+    </Item>
   );
 }
 
