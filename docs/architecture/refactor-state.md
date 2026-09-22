@@ -1837,6 +1837,51 @@ continua lá. As três coisas agora são verificadas separadamente.
 
 **Validação:** tsc limpo, **324 testes 0 falhas**, bateria de **30 smokes**.
 
+### CP27 — Uma rota de escrita atravessava a fronteira entre organizações
+
+Varredura de RBAC e tenant isolation nas 217 rotas de escrita do `api-server`.
+A primeira passagem acusou 176 sem gate, e **estava errada**: não reconhecia
+`getSuperCtx`, que exige `super_admin` e lança 403. Corrigido o padrão, o
+resultado bate com a decisão já registrada na fase 22 — as rotas restantes são
+de operação, e `getCtx` é o gate (lança 401 sem sessão).
+
+A segunda lente foi a que achou o problema: **rota autenticada que escreve sem
+usar o contexto**. De 205 rotas, 6 escrevem sem filtro de organização no corpo.
+Cinco são legítimas — quatro de `admin.ts`, onde super admin gerencia
+organizações, e o `PATCH /perfil`, que isola por usuário.
+
+A sexta era real:
+
+```
+app.patch("/email/sequencias/execucoes/:id", async (c) => {
+  const ctx = await getCtx(c);                    // obtido...
+  ...
+  .where(eq(emailSequenciaExecucoes.id, id))      // ...e descartado
+```
+
+**Qualquer usuário autenticado de qualquer organização podia pausar, retomar ou
+cancelar a execução de sequência de e-mail de outra organização**, bastando ter
+o id. Autenticar não é isolar: `getCtx` prova quem é a pessoa, e o filtro é o
+que impede que ela alcance dado alheio.
+
+`email_sequencia_execucoes` não tem `organizacao_id` própria, então o
+isolamento vem pela sequência — a mesma âncora que as outras rotas do arquivo
+já usavam. A resposta é **404 e não 403**, de propósito: para quem não é da
+organização, a execução não existe, e dizer "existe, mas não é sua"
+confirmaria o id.
+
+`smoke-isolamento-sequencia` prova as duas metades com duas organizações reais:
+a vizinha responde 404 e continua ATIVA, a própria responde 200 e é pausada.
+Verificado por reintrodução — com o código antigo, a rota devolve 200 e escreve
+na execução da vizinha.
+
+A trava arquitetural cobre o padrão, não o caso: rota que escreve e obtém
+contexto precisa **usar** o contexto. Ela não exige `organizacaoId`, porque
+perfil isola por usuário e super admin gerencia organizações; exige que o
+contexto obtido participe de alguma decisão.
+
+**Validação:** tsc limpo, **326 testes 0 falhas**, **31 smokes**.
+
 ### Auditoria de CS Health (histórico da decisão)
 
 Menor do que o gap analysis inicial dizia:

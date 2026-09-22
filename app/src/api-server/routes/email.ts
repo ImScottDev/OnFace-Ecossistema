@@ -1024,11 +1024,27 @@ app.patch("/email/sequencias/execucoes/:id", async (c) => {
     const updates: Record<string, unknown> = { status: statusMap[action] };
     if (action === "cancelar") updates.concluidoAt = new Date();
 
+    // ISOLAMENTO POR ORGANIZAÇÃO. Até 22/09 o `where` usava só o id, e o `ctx`
+    // era obtido e descartado: qualquer usuário autenticado de QUALQUER
+    // organização podia pausar, retomar ou cancelar a execução de sequência de
+    // outra, bastando ter o id.
+    //
+    // `email_sequencia_execucoes` não tem `organizacao_id` própria — a âncora é
+    // a sequência, do mesmo jeito que as outras rotas deste arquivo fazem.
     const [updated] = await db.update(emailSequenciaExecucoes)
       .set(updates)
-      .where(eq(emailSequenciaExecucoes.id, id))
+      .where(and(
+        eq(emailSequenciaExecucoes.id, id),
+        inArray(
+          emailSequenciaExecucoes.sequenciaId,
+          db.select({ id: emailSequencias.id }).from(emailSequencias)
+            .where(eq(emailSequencias.organizacaoId, ctx.organizacaoId)),
+        ),
+      ))
       .returning();
 
+    // 404 e não 403 de propósito: para quem não é da organização, a execução
+    // não existe. Dizer "existe, mas não é sua" confirmaria o id.
     if (!updated) return c.json({ error: "Execução não encontrada" }, 404);
     return c.json(updated);
   } catch (error) {

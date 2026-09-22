@@ -2545,3 +2545,21 @@ primeira sincronização.
 Afirmação dependente de relógio mente nos dois sentidos, e o invariante certo
 aqui é por dia: um snapshot por conta hoje, reexecução atualiza em vez de
 empilhar, histórico preservado.
+
+## 2026-09-22 — CP27: uma rota atravessava a fronteira entre organizações
+
+Varredura de RBAC nas 217 rotas de escrita. A primeira passagem acusou 176 sem
+gate e estava errada — não reconhecia `getSuperCtx`. Corrigido o padrão, o
+resultado bate com a decisão da fase 22.
+
+A lente que achou o problema foi outra: rota autenticada que escreve **sem usar
+o contexto**. Seis casos, cinco legítimos (super admin e perfil). O sexto era
+real: `PATCH /email/sequencias/execucoes/:id` obtinha `ctx` e descartava, e o
+`where` usava só o id. Qualquer usuário autenticado de qualquer organização
+podia pausar, retomar ou cancelar a execução de sequência de outra.
+
+Isolamento pela sequência, que é a âncora que as outras rotas do arquivo já
+usavam. Resposta 404 e não 403: dizer "existe, mas não é sua" confirmaria o id.
+
+Verificado por reintrodução: com o código antigo o smoke pega HTTP 200 e a
+escrita na execução da vizinha.
