@@ -49,6 +49,13 @@ for f in src/scripts/validacao-paridade.ts src/scripts/validar-catalogo-oficial.
 done
 
 echo ""
+# A higiene por último. Os aceites são os que mais sujam, porque montam jornada
+# inteira: em 22/09 sobraram 6 empresas `[ACEITE-VENDAS]` de execuções que
+# morreram no meio, e o resíduo só apareceu num teste de outra fase.
+echo "═══ higiene do banco"
+rodar "checar-residuo-de-teste" "src/scripts/checar-residuo-de-teste.ts"
+
+echo ""
 if [ "$FALHOU" -eq 0 ]; then
   echo "✔ aceites e validadores passaram"
 else

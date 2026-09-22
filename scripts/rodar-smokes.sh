@@ -77,6 +77,23 @@ rodar_grupo "src/scripts/smoke-*.ts" "smokes"
   rodar_grupo "src/scripts/checar-onface-*.ts" "checagens de tela"
 }
 
+# A higiene POR ÚLTIMO, e depois de todos.
+#
+# Cada script limpa as tabelas que ELE escreve, e é aí que escapa: a limpeza
+# envelhece quando a escrita cresce por baixo (a ponte canônica passou a criar
+# oportunidade; o evento passou a ir para o outbox). Três episódios em dois dias
+# — CP49, CP56 e CP58 — e nos três o resíduo apareceu longe da causa, num teste
+# de outra fase. Verificar uma vez, no fim, olhando o banco inteiro, é o que
+# põe a culpa perto do culpado.
+#
+# Só roda quando a bateria inteira rodou: com filtro, o que ficou de fora pode
+# ser justamente quem sujou.
+if [ -z "$PADRAO" ]; then
+  echo ""
+  echo "── higiene do banco ──"
+  rodar_grupo "src/scripts/checar-residuo-de-teste.ts" "higiene do banco"
+fi
+
 echo ""
 # Zero verificação executada NÃO é sucesso. Com um filtro que não casa nada, o
 # script dizia "✔ 0 verificações passaram" e saía zero — a mesma mentira que

@@ -43,6 +43,12 @@ async function limpar() {
     sql`DELETE FROM atividades WHERE lead_id IN (SELECT id FROM leads WHERE nome LIKE ${MARCA + "%"})`,
     sql`DELETE FROM vendas_eventos WHERE lead_id IN (SELECT id FROM leads WHERE nome LIKE ${MARCA + "%"})`,
     sql`DELETE FROM status_changes WHERE lead_id IN (SELECT id FROM leads WHERE nome LIKE ${MARCA + "%"})`,
+    // O OUTBOX também, e antes das aquisições. Ele não é escrito pelo script, e
+    // sim pela ponte, e por isso nenhuma limpeza o incluía: a higiene da
+    // bateria pegou 2 eventos pendentes órfãos deixados por este smoke no
+    // mesmo dia em que ele nasceu.
+    sql`DELETE FROM event_outbox WHERE aggregate_id IN (
+          SELECT id FROM aquisicoes WHERE lead_legado_id IN (SELECT id FROM leads WHERE nome LIKE ${MARCA + "%"}))`,
     sql`DELETE FROM domain_events WHERE aggregate_id IN (
           SELECT id FROM aquisicoes WHERE lead_legado_id IN (SELECT id FROM leads WHERE nome LIKE ${MARCA + "%"}))`,
     sql`DELETE FROM backfill_provenance WHERE id_canonico IN (

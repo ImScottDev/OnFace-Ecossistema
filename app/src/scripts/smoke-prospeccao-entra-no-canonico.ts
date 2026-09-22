@@ -40,6 +40,15 @@ async function limpar() {
     sql`DELETE FROM lead_labels WHERE lead_id IN (SELECT id FROM leads WHERE nome LIKE ${MARCA + "%"})`,
     // `preQualificar` grava a mudança de estado, e ela segura o lead pela FK.
     sql`DELETE FROM status_changes WHERE lead_id IN (SELECT id FROM leads WHERE nome LIKE ${MARCA + "%"})`,
+    // Evento e outbox ANTES da aquisição, que é o agregado a que eles apontam.
+    // Nenhuma limpeza os incluía porque quem escreve é a ponte, e não o script.
+    // Depois que `preQualificar` virou a segunda chance de entrada canônica
+    // (CP53), este smoke passou a publicar evento e a deixar 2 pendentes
+    // órfãos por execução.
+    sql`DELETE FROM event_outbox WHERE aggregate_id IN (
+          SELECT id FROM aquisicoes WHERE lead_legado_id IN (SELECT id FROM leads WHERE nome LIKE ${MARCA + "%"}))`,
+    sql`DELETE FROM domain_events WHERE aggregate_id IN (
+          SELECT id FROM aquisicoes WHERE lead_legado_id IN (SELECT id FROM leads WHERE nome LIKE ${MARCA + "%"}))`,
     sql`DELETE FROM aquisicoes WHERE lead_legado_id IN (SELECT id FROM leads WHERE nome LIKE ${MARCA + "%"})`,
     sql`DELETE FROM aquisicoes WHERE empresa_id IN (SELECT id FROM empresas WHERE nome LIKE ${MARCA + "%"})`,
     sql`DELETE FROM pessoas WHERE nome LIKE ${MARCA + "%"}`,
