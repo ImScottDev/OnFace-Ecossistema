@@ -83,10 +83,26 @@
   min-width: 0;
 }
 
+/* Quatro colunas de largura igual fixa cortavam os dois valores principais.
+ *
+ * Medido no navegador em 22/09, a 1440 de largura: `R$ 425.619,39` pede 164px
+ * e a caixa tinha 95. O `white-space: nowrap` do valor está certo — dinheiro
+ * não quebra nem vira reticência —, mas ele só funciona se a coluna couber o
+ * número, e `repeat(4, 1fr)` divide o que sobra sem olhar o conteúdo.
+ *
+ * `auto-fit` com piso dimensionado pelo maior valor real resolve: cabem quatro
+ * lado a lado quando há largura, e dois por linha quando não há. A saudação
+ * atravessa as linhas para que a métrica que desce não caia embaixo dela. */
 .ovg-hero-top {
   display: grid;
-  grid-template-columns: calc(256 * var(--onface-u)) repeat(4, minmax(0, 1fr));
+  grid-template-columns:
+    calc(256 * var(--onface-u))
+    repeat(auto-fit, minmax(calc(190 * var(--onface-u)), 1fr));
   gap: calc(12 * var(--onface-u));
+}
+.ovg-hero-top > .ovg-greeting {
+  grid-column: 1;
+  grid-row: 1 / -1;
 }
 
 /* Saudação */
@@ -703,8 +719,14 @@
   font-weight: 700;
   letter-spacing: -0.01em;
   /* Duas linhas é melhor que texto cortado: o rodapé tem quatro colunas e
-     rótulos como "Reunião técnica" não cabem em uma só nesta largura. */
+     rótulos como "Reunião técnica" não cabem em uma só nesta largura.
+     A quebra por espaço resolvia essas; não resolvia palavra única, e
+     "Reagendado" continuava sendo cortado sem nem reticência. `hyphens`
+     com o `lang="pt-BR"` do documento separa na sílaba certa, e o
+     `overflow-wrap` é a rede embaixo para termo que o dicionário não conhece. */
   line-height: 1.25;
+  hyphens: auto;
+  overflow-wrap: break-word;
 }
 .ovg-foot-value[data-tom="positivo"] { color: var(--ovg-green); }
 .ovg-foot-value[data-tom="negativo"] { color: #ff7f6e; }
