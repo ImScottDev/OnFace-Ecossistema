@@ -1,61 +1,59 @@
 import type { Metadata } from "next";
-import { Noto_Sans, Poppins, Manrope, Geist, Inter, Plus_Jakarta_Sans } from "next/font/google";
+import { Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 
-// Noto Sans (UI/body) + Poppins (display/headings — decisão Scott 18/jun, no lugar do Kanit).
-const notoSans = Noto_Sans({
-  variable: "--font-body",
-  subsets: ["latin"],
-  weight: ["400", "500", "700", "800", "900"],
-});
-
-const poppins = Poppins({
-  variable: "--font-heading",
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-});
-
-// CRM 2.0 (novo App Shell, tema claro — contrato visual do Figma, 09/08):
-// tipografia própria da V2, desacoplada do style guide antigo (Kanit/Noto).
-// Só adiciona variável CSS nova — não toca nada usado pelas telas legadas.
-const manrope = Manrope({
-  variable: "--font-cf2-heading",
+/**
+ * Plus Jakarta Sans é a ÚNICA família do produto.
+ *
+ * A UX-EXECUTION-SPEC §1.1 nomeia a fonte ("Plus Jakarta Sans") e proíbe o
+ * retorno a Inter/Manrope. Medido no navegador em 22/09, antes desta mudança,
+ * a casca renderizava 131 elementos em Inter, 14 em Manrope e 9 em Plus
+ * Jakarta: `--font-onface-ui` apontava para `--font-cf2-ui`, que era Inter.
+ * O produto inteiro estava na fonte que a spec bane, e a fonte oficial só
+ * pegava os títulos.
+ *
+ * Em vez de caçar as ocorrências em 30 arquivos CSS, as seis variáveis que já
+ * existiam (`--font-body`, `--font-heading`, `--font-cf2-*`, `--font-onface-*`)
+ * passam a apontar todas para a mesma família. Quem consome continua lendo a
+ * variável que sempre leu, e o resultado é uma fonte só em toda superfície.
+ *
+ * Efeito colateral desejado: cinco downloads de webfont a menos (Noto Sans,
+ * Poppins, Manrope, Geist, Inter). O peso 900 que o Noto trazia não existe em
+ * Plus Jakarta; 800 é o topo da família e assume o lugar.
+ */
+const jakarta = Plus_Jakarta_Sans({
   subsets: ["latin"],
   weight: ["400", "500", "600", "700", "800"],
+  display: "swap",
+  variable: "--font-onface",
 });
 
-const geist = Geist({
-  variable: "--font-cf2-nav",
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-});
-
-const inter = Inter({
-  variable: "--font-cf2-ui",
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-});
-
-const plusJakarta = Plus_Jakarta_Sans({
-  variable: "--font-onface-display",
-  subsets: ["latin"],
-  // 400 entra para o corpo das telas ONFACE: a referência usa a mesma família
-  // em título e texto de apoio, e sem o regular o navegador sintetizava o peso.
-  weight: ["400", "500", "600", "700", "800"],
-});
+/** As variáveis legadas viram apelidos da família única. Mantê-las é o que
+ * permite trocar a fonte sem tocar nos 15 mil linhas de CSS que as consomem. */
+const ALIASES_DE_FONTE = [
+  "--font-body",
+  "--font-heading",
+  "--font-cf2-ui",
+  "--font-cf2-nav",
+  "--font-cf2-heading",
+  "--font-onface-ui",
+  "--font-onface-display",
+]
+  .map((nome) => `${nome}: var(--font-onface);`)
+  .join("");
 
 export const metadata: Metadata = {
-  title: "Callface | CRM",
-  description: "CRM + SDR inteligente para inteligência comercial via voz",
+  title: "ONFACE",
+  description: "Sistema operacional comercial: aquisição, venda, entrega e relacionamento.",
   icons: {
-    icon: "/brand/callface-icon.png",
-    apple: "/brand/callface-icon.png",
+    icon: "/onface/figma-logo.svg",
+    apple: "/onface/figma-logo.svg",
   },
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "Callface CRM",
+    title: "ONFACE",
   },
   other: {
     "mobile-web-app-capable": "yes",
@@ -70,28 +68,19 @@ export default function RootLayout({
 }>) {
   return (
     // As variáveis de fonte ficam no <html>, não no <body> (correção 31/08).
-    // Motivo: o Cf2ThemeRoot põe `data-cf2-theme` no <html>, e é lá que
-    // `--cf2-font-ui: var(--font-cf2-ui), …` é calculada. Com as vars só no
-    // body, `--font-cf2-ui` não existia nesse escopo, o var() ficava vazio e a
-    // declaração inteira virava inválida — o browser caía no SERIF padrão.
-    // Aparecia só em portal (drawer/dropdown/modal), que herda do body a
-    // versão já quebrada vinda do html.
-    // `suppressHydrationWarning` no <html>: as cascas marcam o tema no próprio
-    // elemento antes da hidratação (`data-onface-theme` via script inline no
-    // layout do ONFACE, `data-cf2-theme` via efeito no CRM 2.0). O servidor não
-    // emite esses atributos, então o React acusa divergência de árvore num
-    // atributo que é intencionalmente definido no cliente. Suprimir aqui é o
-    // padrão para theming, e só vale para o <html>.
-    <html
-      lang="pt-BR"
-      suppressHydrationWarning
-      className={`${notoSans.variable} ${poppins.variable} ${manrope.variable} ${geist.variable} ${inter.variable} ${plusJakarta.variable}`}
-    >
-      <body
-        className={`antialiased`}
-      >
-        {children}
-      </body>
+    // Motivo: as cascas marcam `data-onface-theme`/`data-cf2-theme` no <html>, e
+    // é nesse escopo que `--cf2-font-ui: var(--font-cf2-ui), …` é calculada. Com
+    // as vars só no body, o var() ficava vazio, a declaração inteira virava
+    // inválida e o browser caía no SERIF padrão dentro de portais.
+    //
+    // `suppressHydrationWarning`: as cascas marcam o tema no próprio elemento
+    // antes da hidratação. O servidor não emite esses atributos, então o React
+    // acusa divergência num atributo que é intencionalmente definido no cliente.
+    <html lang="pt-BR" suppressHydrationWarning className={jakarta.variable}>
+      <head>
+        <style dangerouslySetInnerHTML={{ __html: `:root{${ALIASES_DE_FONTE}}` }} />
+      </head>
+      <body className="antialiased">{children}</body>
     </html>
   );
 }

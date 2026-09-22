@@ -285,8 +285,6 @@ importers:
 
   packages/integrations/whatsapp: {}
 
-  packages/platform/audit: {}
-
   packages/platform/auth: {}
 
   packages/platform/database: {}
