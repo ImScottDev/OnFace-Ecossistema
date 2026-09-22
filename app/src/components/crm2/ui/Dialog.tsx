@@ -1,74 +1,63 @@
 "use client";
 
-import * as React from "react";
-import * as DialogPrimitive from "@radix-ui/react-dialog";
-import { X } from "lucide-react";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { cn } from "@/lib/utils/cn";
 
-export const Cf2Dialog = DialogPrimitive.Root;
-export const Cf2DialogTrigger = DialogPrimitive.Trigger;
-export const Cf2DialogClose = DialogPrimitive.Close;
+/**
+ * Adaptadores de diálogo do CRM 2.0 sobre o `Dialog` do shadcn.
+ *
+ * Era uma reimplementação do `dialog.tsx` do shadcn sobre o
+ * `@radix-ui/react-dialog` cru: mesmo portal, mesmo overlay, mesmo
+ * `showCloseButton`, com cor e sombra inline em vez de token. 9 consumidores,
+ * migrados pelo miolo.
+ *
+ * **O que impedia a troca era o empilhamento**, e foi resolvido antes: o
+ * shadcn põe todo overlay em `z-50` e o produto tinha nove números soltos
+ * entre 60 e 1100, então trocar direto mandaria o diálogo para trás de meia
+ * dúzia de camadas. Agora a biblioteca lê `--z-modal`/`--z-popover`
+ * (`onface.css`), acima de tudo que existe hoje, com menu acima de modal
+ * porque menu abre dentro de modal.
+ *
+ * `sm:max-w-md` continua por `className`: o shadcn abre em `sm:max-w-lg` e os
+ * 9 diálogos do produto foram desenhados na largura menor. Tem que ser no
+ * mesmo breakpoint — `max-w-md` puro perde para `sm:max-w-lg`, que vem depois
+ * na folha e o tailwind-merge não deduplica entre breakpoints. Medido: abria
+ * em 512px em vez de 448. Largura é decisão de
+ * cada diálogo; superfície e comportamento são da biblioteca.
+ */
+
+export const Cf2Dialog = Dialog;
+export const Cf2DialogTrigger = DialogTrigger;
+export const Cf2DialogClose = DialogClose;
 
 export function Cf2DialogContent({
   className,
-  children,
-  showCloseButton = true,
   ...props
-}: DialogPrimitive.DialogContentProps & { showCloseButton?: boolean }) {
-  return (
-    <DialogPrimitive.Portal>
-      <DialogPrimitive.Overlay className="fixed inset-0 z-[70] bg-black/40 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
-      <DialogPrimitive.Content
-        className={cn(
-          "fixed left-1/2 top-1/2 z-[70] w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-[var(--cf2-radius-lg)] p-6 outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
-          className
-        )}
-        style={{
-          background: "var(--cf2-bg-surface)",
-          boxShadow: "var(--cf2-shadow-card-md)",
-          border: "1px solid var(--cf2-border-default)",
-        }}
-        {...props}
-      >
-        {children}
-        {showCloseButton && (
-          <DialogPrimitive.Close
-            className="absolute right-4 top-4 rounded-[var(--cf2-radius-sm)] p-1 opacity-70 transition-opacity hover:opacity-100 cursor-pointer"
-            style={{ color: "var(--cf2-text-secondary)" }}
-          >
-            <X className="size-4" />
-            <span className="sr-only">Fechar</span>
-          </DialogPrimitive.Close>
-        )}
-      </DialogPrimitive.Content>
-    </DialogPrimitive.Portal>
-  );
+}: React.ComponentProps<typeof DialogContent>) {
+  return <DialogContent className={cn("sm:max-w-md", className)} {...props} />;
 }
 
 export function Cf2DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
-  return <div className={cn("flex flex-col gap-1.5 mb-4", className)} {...props} />;
+  return <DialogHeader className={cn("gap-1.5", className)} {...props} />;
 }
 
-export function Cf2DialogTitle({ className, ...props }: DialogPrimitive.DialogTitleProps) {
-  return (
-    <DialogPrimitive.Title
-      className={cn("text-base font-semibold", className)}
-      style={{ color: "var(--cf2-text-primary)", fontFamily: "var(--cf2-font-heading)" }}
-      {...props}
-    />
-  );
+export function Cf2DialogTitle({ className, ...props }: React.ComponentProps<typeof DialogTitle>) {
+  return <DialogTitle className={cn("text-base", className)} {...props} />;
 }
 
-export function Cf2DialogDescription({ className, ...props }: DialogPrimitive.DialogDescriptionProps) {
-  return (
-    <DialogPrimitive.Description
-      className={cn("text-[13px]", className)}
-      style={{ color: "var(--cf2-text-secondary)" }}
-      {...props}
-    />
-  );
+export function Cf2DialogDescription({ className, ...props }: React.ComponentProps<typeof DialogDescription>) {
+  return <DialogDescription className={cn("text-[13px]", className)} {...props} />;
 }
 
 export function Cf2DialogFooter({ className, ...props }: React.ComponentProps<"div">) {
-  return <div className={cn("flex items-center justify-end gap-2 mt-6", className)} {...props} />;
+  return <DialogFooter className={cn("mt-2", className)} {...props} />;
 }

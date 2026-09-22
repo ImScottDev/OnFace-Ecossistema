@@ -1,41 +1,38 @@
 "use client";
 
-import * as React from "react";
-import * as LabelPrimitive from "@radix-ui/react-label";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils/cn";
 
-const fieldBase =
-  "w-full rounded-[var(--cf2-radius-sm)] text-sm px-3 py-2 outline-none transition-colors placeholder:text-[var(--cf2-text-tertiary)] focus:border-[var(--cf2-accent-border)] disabled:opacity-50 disabled:cursor-not-allowed";
+/**
+ * Adaptadores de campo do CRM 2.0 sobre `Input`, `Textarea` e `Label` do
+ * shadcn.
+ *
+ * Eram três campos paralelos com borda, fundo e foco inline. O que o repo já
+ * tinha instalado e não era usado por eles traz de graça o que a versão à mão
+ * não tinha: anel de foco de 3px, estado `aria-invalid` com anel vermelho,
+ * `data-slot` para o CSS alcançar, e o `Label` desabilitando junto com o
+ * `peer`.
+ *
+ * São 21 `Cf2Input`, 24 `Cf2Label` e 2 `Cf2Textarea`. Trocar o miolo migra
+ * todos de uma vez.
+ *
+ * O `Label` aqui importava `@radix-ui/react-label` direto enquanto o do
+ * shadcn importa o pacote unificado `radix-ui`. O repo carrega os dois, que é
+ * dívida conhecida; um importador a menos do pacote antigo.
+ */
 
-const fieldStyle: React.CSSProperties = {
-  background: "var(--cf2-bg-surface)",
-  color: "var(--cf2-text-primary)",
-  border: "1px solid var(--cf2-border-default)",
-};
+export function Cf2Input({ className, ...props }: React.ComponentProps<"input">) {
+  return <Input className={className} {...props} />;
+}
 
-export const Cf2Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>(
-  ({ className, style, ...props }, ref) => (
-    <input ref={ref} className={cn(fieldBase, className)} style={{ ...fieldStyle, ...style }} {...props} />
-  )
-);
-Cf2Input.displayName = "Cf2Input";
+export function Cf2Textarea({ className, ...props }: React.ComponentProps<"textarea">) {
+  return <Textarea className={cn("min-h-20 resize-y", className)} {...props} />;
+}
 
-export const Cf2Textarea = React.forwardRef<HTMLTextAreaElement, React.TextareaHTMLAttributes<HTMLTextAreaElement>>(
-  ({ className, style, ...props }, ref) => (
-    <textarea ref={ref} className={cn(fieldBase, "min-h-20 resize-y", className)} style={{ ...fieldStyle, ...style }} {...props} />
-  )
-);
-Cf2Textarea.displayName = "Cf2Textarea";
-
-export const Cf2Label = React.forwardRef<
-  React.ElementRef<typeof LabelPrimitive.Root>,
-  React.ComponentPropsWithoutRef<typeof LabelPrimitive.Root>
->(({ className, style, ...props }, ref) => (
-  <LabelPrimitive.Root
-    ref={ref}
-    className={cn("text-[13px] font-medium", className)}
-    style={{ color: "var(--cf2-text-secondary)", ...style }}
-    {...props}
-  />
-));
-Cf2Label.displayName = "Cf2Label";
+/** 13px e tom de apoio: é o tamanho que as 24 chamadas já desenham ao lado de
+ * campos densos, e o `Label` do shadcn vem em 14px. */
+export function Cf2Label({ className, ...props }: React.ComponentProps<typeof Label>) {
+  return <Label className={cn("text-[13px] text-muted-foreground", className)} {...props} />;
+}

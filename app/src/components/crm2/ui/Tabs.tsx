@@ -1,46 +1,33 @@
 "use client";
 
-import * as React from "react";
-import * as TabsPrimitive from "@radix-ui/react-tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils/cn";
 
-export const Cf2Tabs = TabsPrimitive.Root;
+/**
+ * Adaptadores de abas do CRM 2.0 sobre as `Tabs` do shadcn.
+ *
+ * Eram quatro wrappers do `@radix-ui/react-tabs` cru, com trilho e pílula
+ * desenhados inline — ou seja, a mesma composição que o `tabs.tsx` do shadcn
+ * já fazia no repo, escrita de novo. 6 consumidores, migrados pelo miolo.
+ *
+ * Um importador a menos do `@radix-ui/react-*` individual: o shadcn importa o
+ * pacote unificado `radix-ui`, e o repo carrega os dois, que é dívida
+ * conhecida.
+ *
+ * A altura fica em 13px por `className` porque é a densidade que as seis telas
+ * já usam. O resto (trilho, estado ativo, foco, teclado) é da biblioteca.
+ */
 
-export const Cf2TabsList = React.forwardRef<
-  React.ElementRef<typeof TabsPrimitive.List>,
-  React.ComponentPropsWithoutRef<typeof TabsPrimitive.List>
->(({ className, ...props }, ref) => (
-  <TabsPrimitive.List
-    ref={ref}
-    className={cn("inline-flex items-center gap-1 rounded-[var(--cf2-radius-md)] p-1", className)}
-    style={{ background: "var(--cf2-bg-surface-muted)" }}
-    {...props}
-  />
-));
-Cf2TabsList.displayName = "Cf2TabsList";
+export const Cf2Tabs = Tabs;
 
-export const Cf2TabsTrigger = React.forwardRef<
-  React.ElementRef<typeof TabsPrimitive.Trigger>,
-  React.ComponentPropsWithoutRef<typeof TabsPrimitive.Trigger>
->(({ className, ...props }, ref) => (
-  <TabsPrimitive.Trigger
-    ref={ref}
-    className={cn(
-      "inline-flex items-center justify-center rounded-[var(--cf2-radius-sm)] px-3 py-1.5 text-[13px] font-medium transition-colors cursor-pointer data-[state=active]:shadow-sm data-[state=active]:bg-[var(--cf2-bg-surface)] data-[state=active]:text-[var(--cf2-text-primary)]",
-      className
-    )}
-    style={{
-      color: "var(--cf2-text-secondary)",
-    }}
-    {...props}
-  />
-));
-Cf2TabsTrigger.displayName = "Cf2TabsTrigger";
+export function Cf2TabsList({ className, ...props }: React.ComponentProps<typeof TabsList>) {
+  return <TabsList className={className} {...props} />;
+}
 
-export const Cf2TabsContent = React.forwardRef<
-  React.ElementRef<typeof TabsPrimitive.Content>,
-  React.ComponentPropsWithoutRef<typeof TabsPrimitive.Content>
->(({ className, ...props }, ref) => (
-  <TabsPrimitive.Content ref={ref} className={cn("mt-3 outline-none", className)} {...props} />
-));
-Cf2TabsContent.displayName = "Cf2TabsContent";
+export function Cf2TabsTrigger({ className, ...props }: React.ComponentProps<typeof TabsTrigger>) {
+  return <TabsTrigger className={cn("text-[13px]", className)} {...props} />;
+}
+
+export function Cf2TabsContent({ className, ...props }: React.ComponentProps<typeof TabsContent>) {
+  return <TabsContent className={cn("mt-3 outline-none", className)} {...props} />;
+}
