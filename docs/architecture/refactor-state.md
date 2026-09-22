@@ -3343,3 +3343,58 @@ passam sem banco, e o dry-run confirma o lockfile sincronizado para o
 (`pnpm-workspace.yaml`, 42 projetos), e o `Dockerfile` instala com `npm ci`
 sobre um `app/package-lock.json` legado. Os dois convivem hoje; vale decidir
 qual é o gerenciador antes da virada.
+
+### CP63 — nenhum dos três containers do CRM construía desde que o repo virou monorepo
+
+Achado enquanto eu anotava uma inconsistência menor no CP62 ("workspace pnpm x
+`npm ci` no Dockerfile"). **Provado com `docker build`, não por leitura:**
+
+```
+npm error code EUNSUPPORTEDPROTOCOL
+npm error Unsupported URL Type "workspace:": workspace:*
+```
+
+Duas incompatibilidades no mesmo ponto. `app/package.json` declara os nove
+`@onface/*` como `workspace:*`, protocolo do pnpm que o `npm ci` não entende. E
+o contexto do build era `./app`, então `packages/` não entrava na imagem nem se
+o instalador entendesse. Os três Dockerfiles — app, api e worker — morrem no
+mesmo `npm ci`.
+
+**Isso não é detalhe de build: a virada depende de construir estas imagens**, e
+elas estavam impossíveis desde a primeira fase do refactor. Ninguém notou porque
+ninguém constrói imagem desde então.
+
+| container | estado |
+|---|---|
+| api | **constrói e sobe** — `[API] Process 1 listening on port 3001` |
+| worker | **constrói e sobe** — `[Worker] All workers started successfully` |
+| app (Next) | corrigido no mesmo padrão, **build não validado** (ver abaixo) |
+
+**O defeito seguinte, que só o container revela.** Com `--packages=external` os
+`@onface/*` ficavam externos, e o Node tentava carregar `index.ts` em runtime:
+
+```
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module
+'/repo/packages/domain/acquisition/commands/registrar-entrada'
+```
+
+Os pacotes são TypeScript puro, sem build próprio (SPEC §34). O Next resolve com
+`transpilePackages`; no esbuild, quem resolve é o alias, que tira o import de
+"bare" e faz o pacote ser compilado para dentro do bundle. Medido: **0**
+ocorrências de `@onface/` no bundle e o domínio presente.
+
+`next.config` ganhou `outputFileTracingRoot` explícito. O Next acerta sozinho
+hoje **e avisa que pode não acertar**, porque encontra dois lockfiles
+(`app/package-lock.json` legado). A raiz decide o FORMATO da saída e o
+`Dockerfile` copia dela: se a inferência mudar, o servidor sai noutro caminho e o
+`CMD` aponta para um arquivo que não existe — falha no container, não no build.
+
+**NÃO VALIDADO, e é o que falta:** o build da imagem do app (Next) não completa
+nesta máquina. O Docker local tem **3,8 GB e 2 CPUs**, e o `next build` é morto
+por SIGKILL com 1536 e também com 3072 de heap. O typecheck dentro do container
+saiu pelo mesmo motivo, e o portão de tipo continua no CI (CP62) e no `npm run
+build` local (CP61). **Falta construir a imagem do app numa máquina com mais
+memória** — é o único passo desta correção que não pôde ser provado aqui.
+
+Validação: tsc limpo, 354 testes / 0 falhas, 50 verificações, 14/14 rotas,
+`docker compose config` válido resolvendo os três Dockerfiles novos.

@@ -3288,3 +3288,24 @@ Verificado com os comandos exatos, incluindo o dry-run do `--frozen-lockfile`.
 
 Achado anotado: workspace pnpm x `npm ci` no Dockerfile, com
 `app/package-lock.json` legado. Decidir antes da virada.
+
+## 2026-09-22 — CP63: as imagens não construíam
+
+`npm ci` morre em `workspace:*` (protocolo pnpm). Contexto `./app` deixava
+`packages/` fora. Os três Dockerfiles quebrados desde a primeira fase do
+refactor; ninguém notou porque ninguém constrói imagem.
+
+Reescritos para contexto na raiz + pnpm. **api e worker validados de ponta a
+ponta: constroem e sobem.**
+
+Defeito seguinte, só visível no container: `--packages=external` externalizava
+os `@onface/*` e o Node tentava carregar `.ts`. Resolvido com alias por pacote,
+que faz o esbuild embutir. Medido: 0 `@onface/` no bundle.
+
+`outputFileTracingRoot` declarado: o Next infere certo hoje mas avisa sobre dois
+lockfiles, e a raiz decide o formato da saída que o Dockerfile copia.
+
+**Pendente:** build da imagem do app (Next) não completa nesta máquina (Docker
+com 3,8 GB; SIGKILL com 1536 e com 3072). Precisa de máquina maior.
+
+Validação: tsc limpo, 354 testes / 0 falhas, 50 verificações, 14/14 rotas.
