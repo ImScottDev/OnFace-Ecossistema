@@ -2429,6 +2429,54 @@ mostra, porque os dois lados aplicam o mesmo `NOT EXISTS`.
 **Validação:** tsc limpo, **341 testes / 0 falhas**, trava provada por
 reintrodução (religar `Blocos` na página de vendas deixa o teste vermelho).
 
+### CP41 — O sync do catálogo podia esvaziar o catálogo inteiro
+
+Varredura final da lente, agora sobre API e worker. As duas estão limpas: **60
+de 61 rotas do Hono montadas** (a 61ª é um stub de `auth` que não deve ser
+montado — a autenticação fica no Next, e montá-lo interceptaria `/api/auth/*`),
+e **23 de 23 jobs agendados têm processador**.
+
+O achado veio de um desvio. Investigando se o bloqueio 7 poderia ser resolvido
+importando a planilha, encontrei `catalogo-stripe-sync` rodando **de hora em
+hora** no worker — e, no fim de `sincronizarCatalogoStripe`:
+
+```sql
+UPDATE catalogo_precos SET ativo = false
+ WHERE ... AND stripe_price_id NOT IN (SELECT jsonb_array_elements_text($ids))
+```
+
+**Com a lista vazia, o `NOT IN` é verdadeiro para toda linha.** Medido no banco:
+desativaria **55 de 55** preços — o catálogo comercial inteiro.
+
+E `lerCatalogoDoStripe` devolve vazio **sem lançar** em pelo menos três
+caminhos: a conta responde 200 com `data: []` (chave de outro ambiente, produtos
+arquivados); `ehProdutoDeCatalogo` deixa de casar porque renomearam os produtos
+no Stripe; ou nenhum preço casa um produto que passou no filtro anterior. Só
+HTTP fora de 2xx lança. O desfecho seria o construtor de proposta abrir vazio e
+ninguém conseguir vender — o sintoma que o passo 8 da virada nomeia.
+
+Duas guardas, e a segunda cobre o mesmo defeito em escala menor:
+
+- **catálogo vazio não desativa nada** e a recusa é reportada;
+- **desativação de mais da metade do catálogo é recusada** por suspeita de
+  leitura parcial, nomeando o número (`37 de 55`). Página que faltou ou filtro
+  que passou a casar metade some com metade do que a equipe vende, em silêncio,
+  numa linha de log de um job de hora em hora.
+
+`smoke-catalogo-nao-esvazia` exercita a função de verdade contra o banco, com
+catálogos fabricados, e confere que o catálogo real fica intocado. **Provado por
+reintrodução, e a prova foi literal:** com as guardas desligadas, o sync
+desativou os 55 preços de fato. Reativados e conferidos — 55 ativos, 0 inativos.
+
+**Isto muda o bloqueio 7.** Importar `catalogo-oficial.json` não resolve
+sozinho: os preços da planilha que não existirem no Stripe seriam desativados no
+próximo ciclo do worker. O caminho passa pelo Stripe — e para saber se é
+*criar preços* ou apenas *preencher metadata* é preciso uma chave de leitura,
+que virou o bloqueio 8.
+
+**Validação:** tsc limpo, **341 testes / 0 falhas**, smoke novo verde, catálogo
+real conferido antes e depois.
+
 ### Auditoria de CS Health (histórico da decisão)
 
 Menor do que o gap analysis inicial dizia:
@@ -2457,7 +2505,8 @@ externo ou decisão do Kauã.
 | 4 | 1.084 oportunidades sem `service_family` | trava o filtro por produto nos relatórios, que por isso não foi construído |
 | 5 | 4 prices do Stripe sem nome | catálogo sincroniza, esses quatro ficam sem rótulo legível |
 | 6 | 275 contas de CS sem responsável | a fila de CS não consegue atribuir dono a elas |
-| 7 | Catálogo PABX incompleto: faltam Plano, Setup, Integração, Serviço e 2 linhas (172 preços do snapshot ausentes no banco) | o vendedor não monta venda de PABX no sistema novo; `validar-catalogo-oficial` deixa o passo 9 da virada vermelho. Escolher entre a planilha e o Stripe real mexe em preço de venda (CP33) |
+| 7 | Catálogo PABX incompleto: faltam Plano, Setup, Integração, Serviço e 2 linhas (172 preços do snapshot ausentes no banco) | o vendedor não monta venda de PABX no sistema novo; `validar-catalogo-oficial` deixa o passo 9 da virada vermelho. **Importar a planilha NÃO resolve sozinho:** o worker roda `catalogo-stripe-sync` de hora em hora e desativa todo preço que não estiver no Stripe (CP33, CP41) |
+| 8 | `STRIPE_API_KEY` vazia no ambiente de dev | impede medir por que o Stripe devolveu 55 preços e a planilha tem 213. Uma chave **de leitura** roda `catalogo:sync:dry` e distingue as duas causas possíveis, que têm custos muito diferentes: metadata faltando nos produtos (barato) ou os preços não existirem no Stripe (caro) |
 
 **Achado aberto, não tocado:** Meta Conversions API está configurada e com zero
 entregas. Token existe, smoke passa, nenhuma conversão entregue de verdade.

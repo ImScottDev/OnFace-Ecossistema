@@ -217,6 +217,31 @@ export async function sincronizarCatalogoStripe(
     if (linha.criado) r.precosCriados++; else r.precosAtualizados++;
   }
 
+  // GUARDA: catálogo vazio NUNCA desativa nada.
+  //
+  // O `NOT IN` abaixo, com a lista vazia, é verdadeiro para toda linha — medido
+  // no banco de dev em 22/09: desativaria **55 de 55** preços, o catálogo
+  // comercial inteiro. E `lerCatalogoDoStripe` devolve vazio sem lançar em pelo
+  // menos três caminhos: a conta responde 200 com `data: []` (chave de outro
+  // ambiente, produtos arquivados); `ehProdutoDeCatalogo` deixa de casar porque
+  // alguém renomeou os produtos no Stripe; ou os preços não casam mais nenhum
+  // produto que passou no filtro anterior. Nenhum deles é exceção.
+  //
+  // Com o `catalogo-stripe-sync` rodando de hora em hora no worker, o efeito é
+  // o construtor de proposta abrir vazio e ninguém conseguir vender — e o
+  // próprio procedimento de virada nomeia esse sintoma no passo 8.
+  //
+  // Catálogo vazio não é "o Stripe não tem mais nada para vender": é leitura
+  // que falhou. Desativar tudo com base nela transforma uma falha de leitura em
+  // perda de operação.
+  if (catalogo.precos.length === 0) {
+    r.pendencias.push({
+      produto: "(catálogo inteiro)", stripeProductId: "-",
+      oQueFalta: "o Stripe não devolveu nenhum preço; desativação em massa recusada",
+    });
+    return r;
+  }
+
   // Preço que sumiu do Stripe por completo vira INATIVO, nunca apagado:
   // proposta histórica aponta para ele, e apagar quebraria o que já foi vendido.
   // O array vai como JSON e volta a ser lista dentro do Postgres.
@@ -226,6 +251,33 @@ export async function sincronizarCatalogoStripe(
   // JSON e expandir com `jsonb_array_elements_text` contorna sem depender de
   // como o driver serializa array naquela versao.
   const idsVivos = JSON.stringify(catalogo.precos.map((p) => p.id));
+
+  // A guarda de catálogo vazio cobre o caso catastrófico; esta cobre o caso
+  // ruidoso, que é o mesmo defeito em escala menor. Uma leitura parcial — página
+  // que faltou, filtro de nome que passou a casar metade — some com metade do
+  // que a equipe vende, e sem isto some em silêncio, uma linha de log no meio
+  // de um job de hora em hora. Contar ANTES é o que permite recusar.
+  const [{ n: alvos }] = await db.execute<{ n: number }>(sql`
+    SELECT count(*)::int AS n FROM catalogo_precos
+     WHERE organizacao_id = ${organizacaoId}::uuid
+       AND ativo = true AND stripe_price_id IS NOT NULL
+       AND stripe_price_id NOT IN (SELECT jsonb_array_elements_text(${idsVivos}::jsonb))`);
+  const [{ n: ativos }] = await db.execute<{ n: number }>(sql`
+    SELECT count(*)::int AS n FROM catalogo_precos
+     WHERE organizacao_id = ${organizacaoId}::uuid
+       AND ativo = true AND stripe_price_id IS NOT NULL`);
+
+  // Metade do catálogo saindo de uma vez é evento de operação, não rotina de
+  // sincronização. O sync recusa e nomeia o número; desativar em massa fica
+  // para quem decidir isso de propósito.
+  if (ativos > 0 && alvos > ativos / 2) {
+    r.pendencias.push({
+      produto: "(desativação em massa)", stripeProductId: "-",
+      oQueFalta: `o Stripe deixaria ${alvos} de ${ativos} preços ativos de fora; recusado por suspeita de leitura parcial`,
+    });
+    return r;
+  }
+
   const desativados = await db.execute<{ id: string }>(sql`
     UPDATE catalogo_precos SET ativo = false, updated_at = now()
      WHERE organizacao_id = ${organizacaoId}::uuid

@@ -2835,3 +2835,31 @@ Falsos positivos descartados na varredura: `/propostas/novo` é redirect
 deliberado, e `pessoaPorId` não acha leads que a lista também não mostra.
 
 Validação: tsc limpo, 341 testes / 0 falhas, trava provada por reintrodução.
+
+## 2026-09-22 — CP41: o sync do catálogo podia esvaziar o catálogo inteiro
+
+Varredura da lente sobre API e worker: 60 de 61 rotas do Hono montadas (a 61ª é
+stub de `auth`, que não deve ser montado) e 23 de 23 jobs agendados com
+processador. As duas áreas limpas.
+
+O achado veio de um desvio. Investigando se importar a planilha resolveria o
+bloqueio 7, encontrei `catalogo-stripe-sync` rodando de hora em hora e, no fim
+de `sincronizarCatalogoStripe`, um UPDATE que desativa todo preço fora da lista
+lida. Com a lista vazia o `NOT IN` é verdadeiro para toda linha: medido no
+banco, desativaria 55 de 55 preços.
+
+`lerCatalogoDoStripe` devolve vazio sem lançar em três caminhos — 200 com
+`data: []`, `ehProdutoDeCatalogo` deixando de casar, ou nenhum preço casando
+produto que passou no filtro. Só HTTP fora de 2xx lança.
+
+Duas guardas: catálogo vazio não desativa nada, e desativação de mais da metade
+é recusada por suspeita de leitura parcial, nomeando o número.
+`smoke-catalogo-nao-esvazia` prova as duas contra o banco. Provado por
+reintrodução: com as guardas desligadas o sync desativou os 55 de fato;
+reativados e conferidos.
+
+Isto muda o bloqueio 7: importar a planilha não resolve sozinho, porque o worker
+desativaria no ciclo seguinte o que não estiver no Stripe. Para saber se é criar
+preço ou preencher metadata falta uma chave de leitura do Stripe — bloqueio 8.
+
+Validação: tsc limpo, 341 testes / 0 falhas, smoke novo verde.
