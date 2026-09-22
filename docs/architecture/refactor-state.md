@@ -1775,6 +1775,46 @@ histórico e decisão de operação (qual contrato fica). Os 17 "obsoleto
 confirmado" são inequívocos pelo Stripe, mas mesmo eles não serão tocados sem
 autorização.
 
+### CP25 — A jornada de CS só começava por clique, uma conta por vez
+
+`semearJornadaEmLote` existe desde 08/09 e **nenhuma rota ou tela a expunha**.
+A única porta era `POST /cs/clientes/:id/jornada/iniciar`, uma empresa por
+clique. Com 275 contas, ninguém clicou 275 vezes.
+
+Estado medido: **`cs_marcos` vazia**, 0 de 275 clientes com jornada iniciada, e
+o `processarMarcosVencidos` do sweep rodando sobre nada desde sempre. A jornada
+de CS inteira estava desligada por falta de um caminho em lote.
+
+`POST /cs/jornada/semear` expõe a capacidade com **simulação por padrão**:
+responde quantas contas seriam alcançadas e só grava com `{ aplicar: true }`.
+Semear a carteira é escrita em massa e decisão de operação; a rota entrega o
+caminho sem tomar a decisão. Gate por `cs.manage`.
+
+**Um erro meu, cometido e revertido.** A primeira versão do smoke chamou a rota
+com `aplicar: true` **sem limite**, e semeou a carteira de verdade: 1.932
+marcos em 276 contas reais. Revertido à mão — e a reversão por janela de tempo
+não bastou, porque `iniciarJornadaCs` grava `jornada_iniciada_em` com data
+**retroativa** (a entrada na carteira), não `now()`. Estado conferido de volta
+em 0 marcos e 0 jornadas, igual à medição anterior.
+
+O smoke passou a exercer o lote pela função, numa empresa que ele mesmo cria, e
+ganhou uma verificação que faltava: **nenhum marco fora da conta de teste**.
+
+Antes de chegar aqui, três fios foram puxados e fechados sem código, o que
+também é resultado:
+
+- **313 negócios ganhos sem contrato** não são violação: 276 são oportunidades
+  sem oferta (bloqueio conhecido) e 36 são `CALLFACE_AI_DIRECT`, que não exige
+  contrato. O único caso de oferta que exige é de **30/03**, meses antes de a
+  política existir.
+- **Não há duas políticas de Won.** `avaliarEvidenciaWon` delega para a política
+  da oferta quando ela existe (`decidirGanhoPelaOferta`), e a família é fallback
+  documentado para negócio sem oferta canônica.
+- **A tela de duplicidade não tem buraco** (ver CP24).
+
+**Validação:** tsc limpo, **324 testes 0 falhas**, **30 smokes**, banco conferido
+de volta ao estado anterior.
+
 ### Auditoria de CS Health (histórico da decisão)
 
 Menor do que o gap analysis inicial dizia:

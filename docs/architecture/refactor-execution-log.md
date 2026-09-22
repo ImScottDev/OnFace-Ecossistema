@@ -2511,3 +2511,22 @@ que o HUB já registra: o deploy é rsync, não git, e produção roda outro có
 
 Para a decisão da virada: o passivo cresce ~R$ 7 mil de MRR inflado por mês, e
 para no dia da virada, porque o caminho duplicador não existe mais aqui.
+
+## 2026-09-22 — CP25: a jornada de CS estava desligada por falta de um caminho em lote
+
+`semearJornadaEmLote` existia desde 08/09 sem nenhuma rota. A única porta era
+uma conta por clique, e com 275 contas ninguém clicou 275 vezes: `cs_marcos`
+vazia, 0 de 275 com jornada, e o sweep processando nada.
+
+A rota nova simula por padrão e só grava com `{ aplicar: true }`, porque semear
+a carteira é decisão de operação.
+
+**Erro meu, registrado:** a primeira versão do smoke chamou `aplicar: true` sem
+limite e semeou 1.932 marcos em 276 contas reais. Revertido, e a reversão por
+janela de tempo não bastou — `iniciarJornadaCs` grava `jornada_iniciada_em` com
+data retroativa, não `now()`. O smoke passou a exercer o lote numa empresa
+própria e ganhou a verificação que faltava: nenhum marco fora da conta de teste.
+
+Três fios fechados sem código no caminho: os ganhos sem contrato são históricos
+ou de oferta que não exige; não há duas políticas de Won; e a tela de
+duplicidade não tem buraco.

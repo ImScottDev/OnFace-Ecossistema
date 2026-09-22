@@ -15,6 +15,7 @@ import {
 import { and, eq, desc, sql, inArray, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { getCtx } from "../compat.js";
+import { temPermissao } from "@/lib/auth/permissoes";
 import { montarFila, pulsoCarteira, type MotivoFila } from "@/lib/cs/fila";
 import { iniciarJornadaCs, cicloAtual } from "@/lib/cs/jornada";
 import {
@@ -193,6 +194,52 @@ app.get("/cs/clientes/:empresaId/jornada", async (c) => {
     renovacoes,
     conta: conta ?? null,
   });
+});
+
+/**
+ * Semear a jornada da CARTEIRA, não de uma conta por vez.
+ *
+ * `semearJornadaEmLote` existia desde 08/09 e **nenhuma rota ou tela a
+ * expunha**. A única porta era `POST /cs/clientes/:id/jornada/iniciar`, uma
+ * empresa por clique — e com 275 contas ninguém clicou 275 vezes. Medido em
+ * 21/09: `cs_marcos` **vazia**, 0 de 275 clientes com jornada iniciada, e o
+ * `processarMarcosVencidos` do sweep rodando sobre nada.
+ *
+ * `dryRun` é o padrão DE PROPÓSITO. Semear a carteira é escrita em massa e
+ * decisão de operação: a rota mostra quantas contas seriam alcançadas, e só
+ * grava quando o chamador pede explicitamente. `iniciarJornadaCs` é idempotente
+ * por marco, então repetir só acrescenta o que falta.
+ */
+app.post("/cs/jornada/semear", async (c) => {
+  const ctx = await getCtx(c);
+  if (!(await temPermissao(
+    { usuarioId: ctx.userId, organizacaoId: ctx.organizacaoId, role: ctx.userRole, tipo: "HUMAN" },
+    "cs.manage",
+  ))) return c.json({ error: "Sem permissão para semear a jornada da carteira" }, 403);
+
+  const corpo = await c.req.json().catch(() => ({}));
+  const aplicar = corpo?.aplicar === true;
+  const limite = Number.isFinite(corpo?.limite) ? Math.min(Number(corpo.limite), 1000) : undefined;
+  const incluirJaIniciadas = corpo?.incluirJaIniciadas === true;
+
+  const { semearJornadaEmLote } = await import("@/lib/cs/jornada");
+
+  if (!aplicar) {
+    // Simulação: conta os alvos pelo MESMO critério do lote, sem escrever.
+    const [alvo] = await db.execute<{ n: number }>(sql`
+      SELECT count(*)::int AS n FROM clientes
+       WHERE organizacao_id = ${ctx.organizacaoId}::uuid
+         AND empresa_id IS NOT NULL
+         ${incluirJaIniciadas ? sql`` : sql`AND jornada_iniciada_em IS NULL`}`);
+    return c.json({
+      simulacao: true,
+      contasAlcancadas: alvo?.n ?? 0,
+      aviso: "Nada foi gravado. Repita com { aplicar: true } para semear de verdade.",
+    });
+  }
+
+  const r = await semearJornadaEmLote(ctx.organizacaoId, { limite, incluirJaIniciadas });
+  return c.json({ simulacao: false, ...r });
 });
 
 app.post("/cs/clientes/:empresaId/jornada/iniciar", async (c) => {
