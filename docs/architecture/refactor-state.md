@@ -2,7 +2,7 @@
 
 > Documento de continuidade. Sempre reflete o estado **atual**, não o histórico.
 > O histórico fica em `refactor-execution-log.md`.
-> Fonte normativa do TO-BE: **o arquivo `ONFACE-ARCHITECTURE-SPEC.md` não existe**
+> Fonte normativa do TO-BE: **nem `ONFACE-ARCHITECTURE-SPEC.md` nem `SPEC-IA-01` existem**
 > neste repositório nem no vault (conferido em 21/09). A ordem vigente é a do
 > HUB do ONFACE no vault (`02_PROJETOS/Callface/ONFACE/HUB.md`), que define as
 > frentes e a dívida arquitetural central.
@@ -64,9 +64,9 @@ com o PABX invendável.
 
 ## Último commit
 
-`5bc4322` — CP43, expansão de CS nascia só no legado
+`(CP44)` — a ferramenta de tag do agente era a terceira cópia da regra
 
-**Estado medido em 22/09/2026:** tsc limpo · **343 testes / 0 falhas** · build de
+**Estado medido em 22/09/2026:** tsc limpo · **345 testes / 0 falhas** · build de
 produção limpo · **36 verificações** na bateria de smokes · **4 aceites com 208
 asserções** · **paridade 13/14** (o não verificável é o NEXO, por credencial) ·
 **14/14 rotas do ONFACE** renderizando. Nada de produção foi tocado.
@@ -2577,6 +2577,44 @@ ele existe para pegar.** Os dois testes passaram a comparar o corpo do arquivo
 sem as linhas de import, e a reintrodução acusa.
 
 **Validação:** tsc limpo, **343 testes / 0 falhas**, provado por reintrodução.
+
+### CP44 — A ferramenta de tag do agente era a terceira cópia da regra
+
+A regra do projeto para IA: *ação reutilizável + evento + a IA consome a
+ferramenta, nunca o banco*. E a regra do refactor quando duas implementações se
+sobrepõem: consolidar na arquitetura já definida, nunca abrir um terceiro
+caminho.
+
+`lib/crm/tags.ts` existe exatamente por isso — a lógica de tag estava escrita
+duas vezes (`cadence-engine::mutateTag` e o registry do agente) e foi
+consolidada numa porta. **A ferramenta do agente ficou para trás.** Ela resolvia
+o label, mexia em `entity_labels` e `lead_labels` e publicava `TagAdded` por
+conta própria, com a mesma chave de idempotência da porta.
+
+**E já tinham divergido.** A porta escreve também em `contatoLabels`, o espelho
+legado que as telas de contato leem; a cópia do agente não escrevia. É uma
+diferença que **não aparece em contagem nenhuma** de `entity_labels` — só
+olhando a tabela que ficou de fora.
+
+O que a ferramenta mantém de próprio é criar a tag ausente: o agente pode
+etiquetar com nome novo, e a porta, de propósito, recusa tag inexistente. Criar
+antes e então chamar a porta preserva o comportamento sem duplicar a regra.
+
+`smoke-agente-tag-pela-porta` exercita a ferramenta como o runtime do agente a
+chama — `mode: live` e `autonomy: autonomous`, o único par que escreve — e
+confere as três coisas: as duas tabelas, o evento, e que **reaplicar não
+republica** (senão a automação dispara a cada reexecução).
+
+A trava não proíbe o registry de tocar o banco: ele lê muito, e leitura não
+coordena efeito. Proíbe reimplementar a regra que já tem porta.
+
+**Observação registrada, não corrigida:** `SPEC-IA-01`, citado na ordem de
+execução, **não existe** no repositório nem no vault — mesmo caso do
+`ONFACE-ARCHITECTURE-SPEC.md`, que esta página já nomeia no topo. A ordem
+vigente continua sendo o HUB do ONFACE mais este documento.
+
+**Validação:** tsc limpo, **345 testes / 0 falhas**, smoke novo verde, trava
+provada por reintrodução.
 
 ### Auditoria de CS Health (histórico da decisão)
 

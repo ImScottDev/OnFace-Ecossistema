@@ -10,6 +10,7 @@ import type { ModelTool } from "../runtime/provider-gateway";
 import { converterLeadEmOportunidade } from "@/lib/crm/converter-oportunidade";
 import { enviarParaDiscagem } from "@/lib/integrations/callface";
 import { publicarEvento } from "@/lib/events/outbox";
+import { adicionarTag, removerTag } from "@/lib/crm/tags";
 import { executarAcaoAvulsa } from "@/lib/cadencia/cadence-engine";
 
 export type AgentToolContext = {
@@ -246,18 +247,41 @@ export const AGENT_TOOLS: AgentToolRegistration[] = [
       const simulated = preview(ctx, "lead.tag", input); if (simulated) return simulated;
       if (!ctx.leadId) return { ok: false, error: "lead ausente" };
       const nome = String(input.tag ?? "").trim(); if (!nome) return { ok: false, error: "tag vazia" };
-      let [label] = await db.select({ id: labels.id }).from(labels).where(and(eq(labels.organizacaoId, ctx.organizacaoId), sql`lower(${labels.nome}) = lower(${nome})`)).limit(1);
-      if (!label) [label] = await db.insert(labels).values({ organizacaoId: ctx.organizacaoId, nome }).returning({ id: labels.id });
-      if (input.acao === "remover") {
-        const [removed] = await db.delete(entityLabels).where(and(eq(entityLabels.organizacaoId, ctx.organizacaoId), eq(entityLabels.entityType, "lead"), eq(entityLabels.entityId, ctx.leadId), eq(entityLabels.labelId, label.id))).returning({ id: entityLabels.id });
-        await db.delete(leadLabels).where(and(eq(leadLabels.leadId, ctx.leadId), eq(leadLabels.labelId, label.id)));
-        if (removed) await publicarEvento({ organizacaoId: ctx.organizacaoId, eventType: "TagRemoved", aggregateType: "lead", aggregateId: ctx.leadId, payload: { leadId: ctx.leadId, tag: nome, labelId: label.id }, idempotencyKey: `tag:remove:${removed.id}` });
-        return { ok: true, data: { removed: Boolean(removed), labelId: label.id } };
+
+      // A REGRA DE TAG É DE `lib/crm/tags.ts`, e esta ferramenta só a consome.
+      //
+      // Até 22/09 este bloco reimplementava a porta inteira: resolvia o label,
+      // mexia nas duas tabelas e publicava o evento com a mesma chave de
+      // idempotência. Era a TERCEIRA cópia da mesma regra — `cadence-engine` e
+      // o registry já tinham sido consolidados em `lib/crm/tags.ts` uma vez, e
+      // esta ficou para trás.
+      //
+      // Duas cópias da mesma regra divergem em silêncio, e estas já divergiam:
+      // a porta escreve também em `contatoLabels` (o espelho legado que as
+      // telas de contato leem) e esta cópia não. Tag aplicada pelo agente num
+      // contato simplesmente não aparecia lá.
+      //
+      // O que a ferramenta mantém de próprio é a criação da tag ausente: o
+      // agente pode etiquetar com um nome novo, e a porta, de propósito, recusa
+      // tag que não existe. Criar antes e então chamar a porta preserva o
+      // comportamento sem duplicar a regra.
+      const [existente] = await db.select({ id: labels.id }).from(labels)
+        .where(and(eq(labels.organizacaoId, ctx.organizacaoId), sql`lower(${labels.nome}) = lower(${nome})`)).limit(1);
+      if (!existente && input.acao === "remover") {
+        // Remover tag que nunca existiu não é erro nem trabalho: é no-op.
+        return { ok: true, data: { removed: false, labelId: null } };
       }
-      await db.insert(leadLabels).values({ leadId: ctx.leadId, labelId: label.id }).onConflictDoNothing();
-      const [assignment] = await db.insert(entityLabels).values({ organizacaoId: ctx.organizacaoId, entityType: "lead", entityId: ctx.leadId, labelId: label.id }).onConflictDoNothing().returning({ id: entityLabels.id });
-      if (assignment) await publicarEvento({ organizacaoId: ctx.organizacaoId, eventType: "TagAdded", aggregateType: "lead", aggregateId: ctx.leadId, payload: { leadId: ctx.leadId, tag: nome, labelId: label.id }, idempotencyKey: `tag:add:${assignment.id}` });
-      return { ok: true, data: { assignmentId: assignment?.id ?? null, deduplicated: !assignment, labelId: label.id } };
+      const labelId = existente?.id
+        ?? (await db.insert(labels).values({ organizacaoId: ctx.organizacaoId, nome }).returning({ id: labels.id }))[0].id;
+
+      const r = input.acao === "remover"
+        ? await removerTag({ organizacaoId: ctx.organizacaoId, entityType: "lead", entityId: ctx.leadId, label: labelId })
+        : await adicionarTag({ organizacaoId: ctx.organizacaoId, entityType: "lead", entityId: ctx.leadId, label: labelId });
+      if (!r.ok) return { ok: false, error: r.erro ?? "a porta de tag recusou a operação" };
+
+      return input.acao === "remover"
+        ? { ok: true, data: { removed: r.mudou, labelId: r.labelId ?? null } }
+        : { ok: true, data: { assignmentId: null, deduplicated: !r.mudou, labelId: r.labelId ?? null } };
     },
   },
   {

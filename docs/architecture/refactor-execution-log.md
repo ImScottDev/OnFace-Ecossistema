@@ -2906,3 +2906,24 @@ chamada, então a reintrodução passou verde. Os dois testes agora comparam o c
 do arquivo sem imports.
 
 Validação: tsc limpo, 343 testes / 0 falhas.
+
+## 2026-09-22 — CP44: a ferramenta de tag do agente era a terceira cópia
+
+`lib/crm/tags.ts` existe porque a lógica estava escrita duas vezes
+(`cadence-engine::mutateTag` e o registry do agente). A consolidação aconteceu e
+a ferramenta do agente ficou para trás: resolvia o label, mexia em
+`entity_labels` e `lead_labels` e publicava `TagAdded` por conta própria.
+
+Já tinham divergido: a porta escreve também em `contatoLabels`, o espelho legado
+das telas de contato, e a cópia do agente não. Diferença invisível em contagem
+de `entity_labels`.
+
+A ferramenta mantém de próprio só a criação da tag ausente — a porta recusa tag
+inexistente de propósito. `smoke-agente-tag-pela-porta` exercita como o runtime
+chama (`live` + `autonomous`) e confere as duas tabelas, o evento, e que
+reaplicar não republica. Trava provada por reintrodução.
+
+Observação: `SPEC-IA-01`, citado na ordem de execução, não existe no repositório
+nem no vault — mesmo caso do `ONFACE-ARCHITECTURE-SPEC.md`.
+
+Validação: tsc limpo, 345 testes / 0 falhas.
