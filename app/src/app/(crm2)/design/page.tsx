@@ -4,10 +4,14 @@ import { CatalogoBlocos } from "@/components/crm2/design/Blocos";
 import { CatalogoGraficos } from "@/components/crm2/design/Graficos";
 import { CatalogoPrincipios } from "@/components/crm2/design/Principios";
 
-export const metadata = { title: "Callface UI System" };
+export const metadata = { title: "Design System" };
 
 /**
- * Callface UI System — catálogo vivo (30/08).
+ * Design System ONFACE — catálogo vivo (30/08; renomeado 22/09).
+ *
+ * Chamava-se "Callface UI System". A marca do produto é ONFACE desde 15/09 e
+ * o catálogo é a fonte única dele; manter o nome anterior no título da aba e
+ * no `h1` era a marca antiga viva no lugar mais visível possível.
  *
  * Não é documentação escrita à mão: renderiza os tokens e componentes REAIS.
  * Se alguém mudar um valor em cf2-design-system.css, esta página muda junto —
@@ -48,11 +52,10 @@ export default function PaginaDesign() {
   return (
     <div className="flex flex-col gap-8 pb-10">
       <header className="cf2-faixa cf2-p-card">
-        <p className="text-micro uppercase" style={{ color: "var(--cf2-brand)" }}>
-          Fundação
-        </p>
-        <h1 className="text-destaque font-display mt-1" style={{ color: "var(--cf2-chrome-text-primary)" }}>
-          Callface UI System
+        {/* O micro-label "Fundação" saiu: era rótulo em cima do título
+            dizendo a mesma coisa que o título já diz. */}
+        <h1 className="text-destaque font-display" style={{ color: "var(--cf2-chrome-text-primary)" }}>
+          Design System ONFACE
         </h1>
         <p className="text-corpo mt-2 max-w-2xl" style={{ color: "var(--cf2-chrome-text-secondary)" }}>
           A escala única do produto. Toda tela do CRM 2.0 usa estes tokens — nenhuma

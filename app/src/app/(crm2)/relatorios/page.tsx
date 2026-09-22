@@ -6,6 +6,8 @@ import { redirect } from "next/navigation";
 import { Cf2Topbar } from "@/components/crm2/Topbar";
 import { Cf2RelatoriosWorkspace } from "@/components/crm2/relatorios/Workspace";
 
+export const metadata = { title: "Insights" };
+
 export default async function RelatoriosPage() {
   const ctx = await getTenantContext();
   if (!ctx) redirect("/login");

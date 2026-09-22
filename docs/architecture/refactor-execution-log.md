@@ -3517,3 +3517,29 @@ telas. O texto do vazio mandava clicar em "Nova Automação" e o botão dizia
 
 Validação: tsc limpo, 365 testes / 0 falhas, 40 pares de contraste sem falha,
 31 rotas do produto e 21 de Ajustes com exatamente um `h1` cada.
+
+
+**UX-19 — a aba diz qual tela está aberta.** Três padrões vivos ao mesmo
+tempo, medidos no HTML servido: `Pipeline | Callface` (a marca ANTERIOR, em 5
+rotas), `Início | ONFACE` (2 rotas, o certo) e `ONFACE` pelado em 12 rotas —
+aba que não diz nada sobre onde a pessoa está. Com meia dúzia de abas abertas,
+todas iguais, achar a certa vira sorte.
+
+O layout raiz passou a declarar `title: { default, template: "%s | ONFACE" }`
+e cada rota passa só o nome da tela, o mesmo rótulo do menu e do `h1`. 40
+rotas tituladas. O catálogo do Design System, que ainda se chamava "Callface UI
+System" no título e no `h1`, virou "Design System ONFACE" — era a marca antiga
+viva no lugar mais visível possível para quem consulta o DS.
+
+**Trava nova:** `aba-diz-onde-voce-esta.test.ts` varre todo `page.tsx` do
+produto e exige título próprio, recusando a marca anterior. Provada ao
+contrário com duas iscas (título com "Callface", rota sem título) — acusa as
+duas e volta a passar quando removidas.
+
+E uma correção na própria trava: a primeira versão reprovou "Implantação
+Callface AI", que está CERTO — `CALLFACE_AI` é família de serviço, um produto
+que a empresa vende, não a marca anterior do CRM. Guarda que recusa o certo é
+pior que guarda ausente, porque ensina a ignorar o teste. A regra passou a
+excluir a família.
+
+Validação: tsc limpo, 366 testes / 0 falhas, 40 pares de contraste sem falha.

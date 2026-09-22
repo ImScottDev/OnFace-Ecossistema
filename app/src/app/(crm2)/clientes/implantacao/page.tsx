@@ -12,6 +12,8 @@ import { redirect } from "next/navigation";
 import { Cf2Topbar } from "@/components/crm2/Topbar";
 import { Cf2EntregaWorkspace } from "@/components/crm2/clientes/EntregaWorkspace";
 
+export const metadata = { title: "Implantação" };
+
 // Frente 2C.1 — Implantação deixou de ser só PABX. White Label tem trilha
 // PRÓPRIA (ver lib/crm/politica-familia.ts): antes desta frente ele não
 // aparecia em Implantação nem em Onboarding, ficava invisível no produto

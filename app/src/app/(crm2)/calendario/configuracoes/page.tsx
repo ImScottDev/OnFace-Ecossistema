@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { Cf2CalendarioConfiguracoes } from "@/components/crm2/calendario/Configuracoes";
 
+export const metadata = { title: "Configurações do calendário" };
+
 export default async function CalendarioConfiguracoesPage() {
   const ctx = await getTenantContext();
   if (!ctx) redirect("/login");

@@ -7,6 +7,8 @@ import { redirect } from "next/navigation";
 import { Cf2Topbar } from "@/components/crm2/Topbar";
 import { Cf2CampanhaWizard } from "@/components/crm2/automacoes/CampanhaWizard";
 
+export const metadata = { title: "Nova campanha" };
+
 export default async function NovaCampanhaPage() {
   const ctx = await getTenantContext();
   if (!ctx) redirect("/login");

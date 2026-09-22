@@ -11,7 +11,7 @@ import {
   acaoNoShow, acaoPerder, acaoReagendar, acaoTentarGanhar, acaoTrial,
 } from "./actions";
 
-export const metadata = { title: "Pipeline | Callface" };
+export const metadata = { title: "Pipeline" };
 export const dynamic = "force-dynamic";
 
 type Aba = "abertas" | "ganhas" | "perdidas";

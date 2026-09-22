@@ -1,5 +1,7 @@
 import { ModuloPendente } from "@/components/crm2/ModuloPendente";
 
+export const metadata = { title: "Relatórios" };
+
 /** Destino estrutural da árvore de navegação congelada em 16/09.
  *  O módulo ainda não foi construído: a página não simula funcionalidade. */
 export default function RelatoriosBibliotecaPage() {

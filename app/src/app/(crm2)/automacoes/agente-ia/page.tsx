@@ -6,6 +6,8 @@ import { redirect } from "next/navigation";
 import { Cf2Topbar } from "@/components/crm2/Topbar";
 import { Cf2AgenteIAHub } from "@/components/crm2/automacoes/AgenteIAHub";
 
+export const metadata = { title: "Agente IA" };
+
 export default async function AutomacoesAgenteIAPage() {
   const ctx = await getTenantContext();
   if (!ctx) redirect("/login");

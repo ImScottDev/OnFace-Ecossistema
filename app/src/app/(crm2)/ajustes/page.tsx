@@ -33,6 +33,8 @@ import {
   Blocks,
 } from "lucide-react";
 
+export const metadata = { title: "Ajustes" };
+
 /**
  * Hub administrativo do CRM 2.0 (19/08). Item "Ajustes" da navegação macro
  * apontava pra `/configuracoes`, que hoje é só o layout+telas legadas do

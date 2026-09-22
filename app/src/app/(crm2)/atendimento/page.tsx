@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { getTenantContext } from "@/lib/auth/tenant";
 import { Cf2AtendimentoWorkspace } from "@/components/crm2/atendimento/Workspace";
 
-export const metadata = { title: "Atendimento | ONFACE" };
+export const metadata = { title: "Atendimento" };
 
 /**
  * Atendimento — inbox omnichannel (§17).

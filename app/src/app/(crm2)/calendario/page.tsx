@@ -7,6 +7,8 @@ import { eq } from "drizzle-orm";
 import { Cf2Topbar } from "@/components/crm2/Topbar";
 import { Cf2CalendarioWorkspace } from "@/components/crm2/calendario/Workspace";
 
+export const metadata = { title: "Calendário" };
+
 export default async function CalendarioPage() {
   const ctx = await getTenantContext();
   if (!ctx) redirect("/login");

@@ -6,6 +6,8 @@ import { redirect } from "next/navigation";
 import { Cf2Topbar } from "@/components/crm2/Topbar";
 import { FormNovoNegocio } from "./_form";
 
+export const metadata = { title: "Novo negócio" };
+
 /**
  * Novo negócio. Migrada do shell legado em 08/09/2026 — é o destino do botão
  * "Novo negócio" da topbar, que aparece em TODA página do CRM2: era a saída

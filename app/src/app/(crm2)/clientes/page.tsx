@@ -6,6 +6,8 @@ import { redirect } from "next/navigation";
 import { Cf2Topbar } from "@/components/crm2/Topbar";
 import { Cf2ClientesWorkspace } from "@/components/crm2/clientes/Workspace";
 
+export const metadata = { title: "Carteira" };
+
 export default async function ClientesPage() {
   const ctx = await getTenantContext();
   if (!ctx) redirect("/login");

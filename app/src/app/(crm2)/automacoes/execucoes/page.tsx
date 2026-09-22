@@ -6,6 +6,8 @@ import { redirect } from "next/navigation";
 import { Cf2Topbar } from "@/components/crm2/Topbar";
 import { Cf2ExecucoesWorkspace } from "@/components/crm2/automacoes/ExecucoesWorkspace";
 
+export const metadata = { title: "Execuções" };
+
 export default async function AutomacoesExecucoesPage() {
   const ctx = await getTenantContext();
   if (!ctx) redirect("/login");

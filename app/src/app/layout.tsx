@@ -43,7 +43,11 @@ const ALIASES_DE_FONTE = [
   .join("");
 
 export const metadata: Metadata = {
-  title: "ONFACE",
+  // Template em vez de string: cada rota passa só o nome da tela e o produto
+  // completa. Antes havia três padrões vivos ao mesmo tempo — "Pipeline |
+  // Callface" (marca anterior, em 5 rotas), "Início | ONFACE" e o "ONFACE"
+  // pelado em 12 rotas, que deixava a aba sem dizer onde a pessoa está.
+  title: { default: "ONFACE", template: "%s | ONFACE" },
   description: "Sistema operacional comercial: aquisição, venda, entrega e relacionamento.",
   icons: {
     icon: "/onface/figma-logo.svg",

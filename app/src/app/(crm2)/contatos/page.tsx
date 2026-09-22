@@ -11,7 +11,7 @@ import {
   acaoVincularPessoa,
 } from "./actions";
 
-export const metadata = { title: "Contatos & Empresas | Callface" };
+export const metadata = { title: "Contatos & Empresas" };
 export const dynamic = "force-dynamic";
 
 /**

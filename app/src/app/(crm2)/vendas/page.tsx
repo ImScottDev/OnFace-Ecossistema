@@ -6,6 +6,8 @@ import { redirect } from "next/navigation";
 import { Cf2Topbar } from "@/components/crm2/Topbar";
 import { Cf2TarefasWorkspace } from "@/components/crm2/tarefas/Workspace";
 
+export const metadata = { title: "Vendas" };
+
 /**
  * Central de Trabalho Comercial. Mostra a única entidade de atividade
  * (`tarefas`) já usada pelo produto, limitada aos vínculos de lead e

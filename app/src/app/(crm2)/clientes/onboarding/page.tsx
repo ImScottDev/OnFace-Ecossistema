@@ -11,6 +11,8 @@ import { redirect } from "next/navigation";
 import { Cf2Topbar } from "@/components/crm2/Topbar";
 import { Cf2OnboardingWorkspace } from "@/components/crm2/clientes/OnboardingWorkspace";
 
+export const metadata = { title: "Onboarding" };
+
 export default async function ClientesOnboardingPage() {
   const ctx = await getTenantContext();
   if (!ctx) redirect("/login");

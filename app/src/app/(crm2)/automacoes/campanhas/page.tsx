@@ -6,6 +6,8 @@ import { redirect } from "next/navigation";
 import { Cf2Topbar } from "@/components/crm2/Topbar";
 import { Cf2CampanhasWorkspace } from "@/components/crm2/automacoes/CampanhasWorkspace";
 
+export const metadata = { title: "Campanhas" };
+
 export default async function AutomacoesCampanhasPage() {
   const ctx = await getTenantContext();
   if (!ctx) redirect("/login");

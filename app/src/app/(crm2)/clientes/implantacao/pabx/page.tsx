@@ -6,6 +6,8 @@ import { redirect } from "next/navigation";
 import { Cf2Topbar } from "@/components/crm2/Topbar";
 import { Cf2EntregaWorkspace } from "@/components/crm2/clientes/EntregaWorkspace";
 
+export const metadata = { title: "Implantação PABX" };
+
 /** Implantação PABX — recorte da família no board de entregas.
  *
  *  Era `ModuloPendente`, com a dependência "falta definir as etapas próprias

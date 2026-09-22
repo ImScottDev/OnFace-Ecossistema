@@ -1,5 +1,7 @@
 import { PropostasPage } from "../page";
 
+export const metadata = { title: "Nova proposta" };
+
 /**
  * Entrada profunda estável do compositor. A interface, ações e gates são os
  * mesmos da lista de propostas; esta rota só define o estado inicial.

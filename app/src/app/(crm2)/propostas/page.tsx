@@ -9,7 +9,7 @@ import {
   acaoExpirarVencidas, acaoListar, acaoOportunidadesAbertas, acaoSalvarJuridicos,
 } from "./actions";
 
-export const metadata = { title: "Propostas | Callface" };
+export const metadata = { title: "Propostas" };
 export const dynamic = "force-dynamic";
 
 /** Rota OFICIAL do produto. A implementação mudou de casa em 18/09 (F1, lote 2):

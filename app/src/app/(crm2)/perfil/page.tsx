@@ -6,6 +6,8 @@ import { redirect } from "next/navigation";
 import { Cf2Topbar } from "@/components/crm2/Topbar";
 import { ConteudoPerfil } from "./_conteudo";
 
+export const metadata = { title: "Perfil" };
+
 export default async function PerfilPage() {
   const ctx = await getTenantContext();
   if (!ctx) redirect("/login");

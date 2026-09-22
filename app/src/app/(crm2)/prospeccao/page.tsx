@@ -11,7 +11,7 @@ import {
   acaoPausarCadencia, acaoPreQualificar, acaoRegistrarResposta, acaoResponsaveis,
 } from "./actions";
 
-export const metadata = { title: "Prospecção | Callface" };
+export const metadata = { title: "Prospecção" };
 export const dynamic = "force-dynamic";
 
 /** Rota OFICIAL do produto. A implementação mudou de casa em 18/09 (F1, lote 2):

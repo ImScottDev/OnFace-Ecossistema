@@ -6,6 +6,8 @@ import { redirect } from "next/navigation";
 import { Cf2Topbar } from "@/components/crm2/Topbar";
 import { Cf2TarefasWorkspace } from "@/components/crm2/tarefas/Workspace";
 
+export const metadata = { title: "Tarefas" };
+
 export default async function TarefasPage() {
   const ctx = await getTenantContext();
   if (!ctx) redirect("/login");

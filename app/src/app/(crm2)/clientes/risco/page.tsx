@@ -6,6 +6,8 @@ import { redirect } from "next/navigation";
 import { Cf2Topbar } from "@/components/crm2/Topbar";
 import { Cf2RiscoWorkspace } from "@/components/crm2/clientes/RiscoWorkspace";
 
+export const metadata = { title: "Risco" };
+
 /** Risco / Churn (v0.13, Módulo 08).
  *
  *  Era `ModuloPendente` desde 16/09, com duas dependências listadas. As duas

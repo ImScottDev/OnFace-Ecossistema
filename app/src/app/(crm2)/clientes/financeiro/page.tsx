@@ -7,6 +7,8 @@ import { Cf2Topbar } from "@/components/crm2/Topbar";
 import { Suspense } from "react";
 import { FinanceiroCentral } from "@/components/crm2/financeiro/Workspace";
 
+export const metadata = { title: "Financeiro" };
+
 export default async function ClientesFinanceiroPage() {
   const ctx = await getTenantContext();
   if (!ctx) redirect("/login");

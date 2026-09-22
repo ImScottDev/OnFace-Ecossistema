@@ -3,7 +3,7 @@ import { getTenantContext } from "@/lib/auth/tenant";
 import { montarVisaoGeral } from "@/lib/analytics/onface-visao-geral";
 import { VisaoGeral } from "@/components/onface/visao-geral/VisaoGeral";
 
-export const metadata = { title: "Início | ONFACE" };
+export const metadata = { title: "Início" };
 export const dynamic = "force-dynamic";
 
 /**

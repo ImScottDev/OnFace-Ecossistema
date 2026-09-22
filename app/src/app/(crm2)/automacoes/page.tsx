@@ -2,6 +2,8 @@ import { getTenantContext } from "@/lib/auth/tenant";
 import { redirect } from "next/navigation";
 import { Cf2AutomacoesWorkspace } from "@/components/crm2/automacoes/Workspace";
 
+export const metadata = { title: "Automações" };
+
 export default async function AutomacoesPage() {
   const ctx = await getTenantContext();
   if (!ctx) redirect("/login");

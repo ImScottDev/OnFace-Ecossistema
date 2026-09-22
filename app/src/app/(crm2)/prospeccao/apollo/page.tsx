@@ -2,6 +2,8 @@ import { getTenantContext } from "@/lib/auth/tenant";
 import { redirect } from "next/navigation";
 import { BuscaApollo } from "./_busca";
 
+export const metadata = { title: "Busca Apollo" };
+
 /**
  * Busca Apollo. Era a última tela que a navegação do CRM2 mandava pro shell
  * legado (link "módulo legado" dentro de Prospecção). Migrada em 08/09/2026 e

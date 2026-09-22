@@ -10,7 +10,7 @@ import {
   acaoReativar, acaoRegistrarContato, acaoSalvarQualificacao,
 } from "./actions";
 
-export const metadata = { title: "Pré-vendas | Callface" };
+export const metadata = { title: "Pré-vendas" };
 export const dynamic = "force-dynamic";
 
 type Aba = "ativos" | "nutricao" | "desqualificados";

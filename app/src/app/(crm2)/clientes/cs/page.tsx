@@ -2,6 +2,8 @@ import { getTenantContext } from "@/lib/auth/tenant";
 import { redirect } from "next/navigation";
 import { Cf2CsWorkspace } from "@/components/crm2/clientes/CsWorkspace";
 
+export const metadata = { title: "Customer Success" };
+
 export default async function ClientesCsPage() {
   const ctx = await getTenantContext();
   if (!ctx) redirect("/login");
