@@ -64,9 +64,9 @@ com o PABX invendável.
 
 ## Último commit
 
-`c32293c` — CP42, prospect criado pela tela nascia fora do modelo canônico
+`5bc4322` — CP43, expansão de CS nascia só no legado
 
-**Estado medido em 22/09/2026:** tsc limpo · **342 testes / 0 falhas** · build de
+**Estado medido em 22/09/2026:** tsc limpo · **343 testes / 0 falhas** · build de
 produção limpo · **36 verificações** na bateria de smokes · **4 aceites com 208
 asserções** · **paridade 13/14** (o não verificável é o NEXO, por credencial) ·
 **14/14 rotas do ONFACE** renderizando. Nada de produção foi tocado.
@@ -2550,6 +2550,33 @@ porta. Foi a versão nova que acusou `prospeccao.ts`.
 **Validação:** tsc limpo, **342 testes / 0 falhas**, smoke provado por
 reintrodução nos dois sentidos, resíduo zero e nenhuma pessoa sem vínculo no
 banco depois.
+
+### CP43 — Expansão de CS nascia só no legado
+
+Continuação do CP42 na outra entidade. Os dois caminhos de expansão de CS,
+`lib/cs/checkpoint.ts` e `api-server/routes/cs.ts`, criavam o negócio e paravam
+aí — apesar de o comentário do próprio bloco declarar que *"expansão é
+oportunidade comercial de verdade, nunca alteração de serviço por anotação de
+checkpoint"*. Faltava a outra metade da frase: chegar em `oportunidades`.
+
+**Nenhuma contagem denunciava, e o motivo vale guardar:** o banco tem **zero**
+negócios com `commercial_motion = 'EXPANSION'`. O caminho nunca foi exercido,
+então a ausência não aparece em consulta alguma. Barato de fechar agora, antes do
+primeiro uso; depois seria backfill.
+
+`smoke-expansao-entra-no-canonico` monta o cenário numa conta só do teste (o
+aceite de CS já custou 7 marcos numa conta real, CP34) e confere que a
+oportunidade nasce e que a família atravessa igual — porque a família é o que
+decide a trilha de entrega e a política de Ganho.
+
+**E um defeito meu, na própria trava.** A primeira versão passava pela linha de
+`import`, não pela chamada: removi o `await syncOportunidadeFromNegocio` do corpo
+da rota para provar por reintrodução, o import continuou lá, e o teste seguiu
+verde. **Um guard que confirma a importação e não o uso é o mesmo falso-verde que
+ele existe para pegar.** Os dois testes passaram a comparar o corpo do arquivo
+sem as linhas de import, e a reintrodução acusa.
+
+**Validação:** tsc limpo, **343 testes / 0 falhas**, provado por reintrodução.
 
 ### Auditoria de CS Health (histórico da decisão)
 

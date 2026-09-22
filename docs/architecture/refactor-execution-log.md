@@ -2888,3 +2888,21 @@ outra execução (instalação de shadcn/ui, 20 componentes, `app/dashboard/`,
 junto. As alterações do shadcn foram desfeitas pela mesma origem minutos depois.
 Nada commitado foi afetado. O conserto foi reaplicado a partir de cópia salva no
 vault e commitado de imediato.
+
+## 2026-09-22 — CP43: expansão de CS nascia só no legado
+
+Os dois caminhos de expansão (`lib/cs/checkpoint.ts` e `api-server/routes/cs.ts`)
+criavam o negócio sem levá-lo a `oportunidades`, apesar de declararem no
+comentário que expansão é oportunidade comercial de verdade. Nenhuma contagem
+denunciava: o banco tem zero negócios com `commercial_motion = 'EXPANSION'`, o
+caminho nunca foi exercido.
+
+Os dois passaram a chamar `syncOportunidadeFromNegocio`.
+`smoke-expansao-entra-no-canonico` monta o cenário numa conta só do teste e
+confere que a oportunidade nasce e que a família atravessa igual.
+
+Defeito meu na trava: a primeira versão casava a linha de `import` e não a
+chamada, então a reintrodução passou verde. Os dois testes agora comparam o corpo
+do arquivo sem imports.
+
+Validação: tsc limpo, 343 testes / 0 falhas.
