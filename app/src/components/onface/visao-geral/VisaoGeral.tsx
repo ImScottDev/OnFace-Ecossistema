@@ -5,7 +5,7 @@ import { useMemo, useState } from "react";
 import {
   AlertCircle, ArrowRight, ArrowUpRight, Bell, Briefcase, CalendarDays,
   CheckCircle2, ChevronRight, CircleDashed, Clock, DollarSign, Headphones,
-  Copy, LifeBuoy, ListChecks, MessageCircle, MoreVertical, Plus, Rocket, Settings, Sprout,
+  Copy, LifeBuoy, ListChecks, MessageCircle, MoreVertical, Plus, Rocket, Sprout,
   TrendingUp, UserPlus, Users, Video, Wallet, Wrench, X,
 } from "lucide-react";
 import { OnfacePage, OnfacePageBand, OnfacePageSurface } from "../shell/OnfacePage";
@@ -32,7 +32,6 @@ const ICONES_AREA = {
   suporte: Bell,
 } as const;
 
-const ICONES_ACAO = { resumo: Briefcase, gargalos: TrendingUp } as const;
 
 const COR_SERIE = { coral: "#fe4f2b", azul: "#3b82f6", cinza: "#8b949e" } as const;
 
@@ -315,9 +314,9 @@ function Assistente({
           <h2 className="ovg-assistant-name">{dados.nome}</h2>
           <p className="ovg-assistant-sign">{dados.assinatura}</p>
         </div>
-        <button type="button" className="ovg-assistant-config" aria-label={`Configurar o ${dados.nome}`}>
-          <Settings size={16} strokeWidth={2} aria-hidden />
-        </button>
+        {/* A engrenagem de configuração saiu: não tinha handler nenhum e não
+            há tela de configuração do NEXO para levar a lugar nenhum. Volta
+            quando `/automacoes/nexo` existir. */}
       </header>
 
       <p className="ovg-assistant-greeting">{dados.saudacao}</p>
@@ -330,17 +329,21 @@ function Assistente({
         <ArrowRight size={18} strokeWidth={2.25} aria-hidden />
       </button>
 
-      <div className="ovg-assistant-actions">
-        {dados.acoes.map((acao) => {
-          const Icone = ICONES_ACAO[acao.icone];
-          return (
-            <button key={acao.chave} type="button" className="ovg-assistant-action">
-              <Icone size={16} strokeWidth={1.75} aria-hidden />
-              {acao.label}
-            </button>
-          );
-        })}
-      </div>
+      {/* "Gerar resumo" e "Analisar gargalos" saíram daqui.
+       *
+       * Eram dois `<button>` sem `onClick`: clicar não fazia nada. Verificado
+       * no navegador em 22/09 clicando um a um e observando URL, DOM e rede —
+       * nenhum dos três mudava. É a UI cenográfica que o produto proíbe, e
+       * doía mais aqui do que em qualquer outro lugar: são as duas ações mais
+       * chamativas da tela de entrada.
+       *
+       * Não têm para onde apontar: as duas dependem do runtime do NEXO, que
+       * não existe (mesmo bloqueio registrado na casca e na navegação).
+       * `dados.acoes` continua vindo do servidor e volta a ser renderizado
+       * junto com as ações de verdade.
+       *
+       * O CTA principal acima FICA: `aoVerPrioridades` funciona e leva à aba
+       * de prioridades, que é dado real. */}
     </aside>
   );
 }

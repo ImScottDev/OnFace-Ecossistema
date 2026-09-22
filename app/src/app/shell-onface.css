@@ -53,16 +53,16 @@
 
 /* No modo ícone o lockup vira símbolo. Trocar o arquivo em vez de encolher o
    lockup: a 3rem o lockup inteiro seria uma mancha. */
-.onface-sidebar[data-collapsible="icon"] .onface-sidebar-lockup {
+[data-slot="sidebar"][data-collapsible="icon"] .onface-sidebar-lockup {
   display: none;
 }
-.onface-sidebar[data-collapsible="icon"] .onface-sidebar-simbolo {
+[data-slot="sidebar"][data-collapsible="icon"] .onface-sidebar-simbolo {
   display: block;
 }
-.onface-sidebar[data-collapsible="icon"] .onface-sidebar-header {
+[data-slot="sidebar"][data-collapsible="icon"] .onface-sidebar-header {
   padding-inline: 0;
 }
-.onface-sidebar[data-collapsible="icon"] .onface-sidebar-marca {
+[data-slot="sidebar"][data-collapsible="icon"] .onface-sidebar-marca {
   justify-content: center;
   width: 100%;
 }
@@ -82,8 +82,28 @@
   text-transform: uppercase;
   color: var(--text-on-shell-muted);
   opacity: 0.72;
-  height: 1.75rem;
+  /* 2rem e não 1.75: é a altura que o `-mt-8` do shadcn desconta para colapsar
+     o rótulo. Com 1.75 a margem negativa sobrava e o rótulo ficava meio
+     recolhido, vazando "COM", "CLIE", "OPE" por cima dos ícones. */
+  height: 2rem;
   padding-inline: 0.625rem;
+}
+
+/* No modo ícone o rótulo some.
+ *
+ * Dois erros empilhados aqui, os dois medidos no navegador:
+ *
+ * 1. Esta folha carrega DEPOIS do Tailwind, então o `opacity: 0.72` acima
+ *    vencia o `opacity-0` que o shadcn aplica. O colapso existia e a minha
+ *    regra o desfazia.
+ * 2. O seletor era `.onface-sidebar[data-collapsible="icon"]`, e nunca casou:
+ *    `data-collapsible` mora em `[data-slot="sidebar"]`, o wrapper externo,
+ *    enquanto `className` do `<Sidebar>` cai em `[data-slot="sidebar-container"]`,
+ *    que é filho. Todas as regras de modo-ícone deste arquivo estavam mortas,
+ *    inclusive a troca do lockup pelo símbolo. */
+[data-slot="sidebar"][data-collapsible="icon"] .onface-sidebar-grupo {
+  opacity: 0;
+  pointer-events: none;
 }
 
 .onface-nav-linha {
