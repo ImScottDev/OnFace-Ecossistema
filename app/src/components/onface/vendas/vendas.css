@@ -158,7 +158,9 @@
   padding-inline: calc(16 * var(--onface-u));
   border: 0;
   border-radius: calc(999 * var(--onface-u));
-  background: var(--onface-coral);
+  /* Coral de AÇÃO e não o da marca: branco sobre #FE4F2B dá 3,30:1 e este
+     botão é o CTA primário de quatro telas. Ver o bloco de tokens. */
+  background: var(--onface-coral-acao);
   color: var(--onface-white);
   font-family: var(--font-onface-display), sans-serif;
   font-size: calc(12.5 * var(--onface-u));
@@ -167,7 +169,7 @@
   white-space: nowrap;
 }
 .ov-botao svg { width: calc(14 * var(--onface-u)); height: calc(14 * var(--onface-u)); }
-.ov-botao:hover { background: var(--onface-coral-hover); }
+.ov-botao:hover { background: var(--onface-coral-acao-hover); }
 .ov-botao[data-variante="neutro"] {
   background: var(--surface-subtle, #f1f2f5);
   color: var(--onface-preto-logo);
@@ -269,7 +271,7 @@
   height: calc(34 * var(--onface-u));
   padding-inline: calc(12 * var(--onface-u));
   border-radius: calc(999 * var(--onface-u));
-  color: var(--onface-coral);
+  color: var(--onface-coral-texto);
   font-size: calc(12.5 * var(--onface-u));
   font-weight: var(--weight-semibold);
   cursor: pointer;

@@ -6,6 +6,24 @@ const lum=(r)=>0.2126*lin(r[0])+0.7152*lin(r[1])+0.0722*lin(r[2]);
 const ratio=(a,b)=>{const[l1,l2]=[lum(hex(a)),lum(hex(b))].sort((x,y)=>y-x);return (l1+0.05)/(l2+0.05);};
 const SW={50:'#edf7f3',100:'#dbf0e7',200:'#b8e0cf',500:'#4db386',600:'#3d8f6b',700:'#2e6b51',800:'#1f4736',950:'#0b1913'};
 
+// Paleta ONFACE. Os pares abaixo do divisor guardam a casca NOVA; os de cima
+// continuam guardando o CRM legado enquanto ele existir.
+//
+// `coral` é a marca e não carrega texto: em cima dele branco dá 3,30:1. Por
+// isso existem `coralAcao` (fundo de controle com texto branco) e `coralTexto`
+// (coral como texto sobre papel ou sobre o coral a 10%). Os três estão em
+// `onface.css` com a mesma conta anotada.
+const OF = {
+  coral: '#fe4f2b', coralAcao: '#d04123', coralTexto: '#b7391f',
+  // coral-subtle é rgba(254,79,43,.1); composto sobre o papel dá isto:
+  coralSubtleSobrePapel: '#f7e5df',
+  papel: '#f6f6f3', branco: '#ffffff', grafite: '#090e14', pretoLogo: '#12171d',
+  textoForte: '#12171d', textoCorpo: '#1f252c',
+  textoMuted: '#616b78',   // cinza-2; o cinza (#6d747e) dava 4,36:1 no papel
+  textoNaCasca: '#eeeff3', textoNaCascaMuted: '#8b949e',
+  linha: '#dbdede',
+};
+
 const pares = [
   ['texto primário / superfície', '#111827', '#ffffff', 4.5],
   ['texto secundário / superfície', '#4b5563', '#ffffff', 4.5],
@@ -28,6 +46,22 @@ const pares = [
   ['hero: texto forte / hero-bg', '#f4f5f6', '#121316', 4.5],
   ['hero: texto muted / hero-bg', '#9ca0a9', '#121316', 4.5],
   ['borda de CONTROLE / superfície', '#767e8c', '#ffffff', 3],
+
+  // ── ONFACE (casca nova) ───────────────────────────────────────────────
+  ['ONFACE texto forte / papel', OF.textoForte, OF.papel, 4.5],
+  ['ONFACE texto corpo / papel', OF.textoCorpo, OF.papel, 4.5],
+  ['ONFACE texto muted / papel', OF.textoMuted, OF.papel, 4.5],
+  ['ONFACE texto muted / card branco', OF.textoMuted, OF.branco, 4.5],
+  // O CTA primário do produto. Com o coral da marca dava 3,30:1.
+  ['ONFACE branco / coral de AÇÃO', OF.branco, OF.coralAcao, 4.5],
+  // O número de sinal do resumo, sobre o coral a 10%.
+  ['ONFACE coral de TEXTO / coral sutil', OF.coralTexto, OF.coralSubtleSobrePapel, 4.5],
+  ['ONFACE coral de TEXTO / papel', OF.coralTexto, OF.papel, 4.5],
+  ['ONFACE sidebar: texto / grafite', OF.textoNaCasca, OF.grafite, 4.5],
+  ['ONFACE sidebar: rótulo de grupo / grafite', OF.textoNaCascaMuted, OF.grafite, 4.5],
+  // Elemento de interface, piso 3: a marca continua sendo a marca aqui.
+  ['ONFACE indicador coral / grafite', OF.coral, OF.grafite, 3],
+  ['ONFACE hairline / papel', OF.linha, OF.papel, 1.2],
 ];
 
 console.log('\n  AUDITORIA DE CONTRASTE — WCAG 2.1 AA\n');

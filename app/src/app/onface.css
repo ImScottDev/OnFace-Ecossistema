@@ -14,6 +14,31 @@
   --onface-coral-subtle: rgba(254, 79, 43, 0.1);
   --onface-coral-border: rgba(255, 77, 41, 0.2);
 
+  /* ── Os dois corais que o contraste exige ─────────────────────────────
+   *
+   * `#FE4F2B` é a marca e continua sendo ela em tudo que NÃO carrega texto:
+   * borda, ícone, indicador de seleção, barra do item ativo. Como elemento de
+   * interface o piso é 3:1 e ele passa.
+   *
+   * Onde há texto, medido em 22/09 no navegador, ele reprova:
+   *
+   *   branco sobre #FE4F2B ............ 3,30:1  (piso 4,5 — CTA primário)
+   *   #FE4F2B sobre coral-subtle ...... 2,92:1  (piso 4,5 — número de sinal)
+   *   #FE4F2B sobre papel ............. 3,05:1  (piso 4,5)
+   *
+   * O CTA primário do produto inteiro estava reprovando. Estes dois derivados
+   * mantêm o matiz do coral e resolvem cada caso pelo mínimo necessário:
+   *
+   *   --onface-coral-acao  #D04123  branco sobre ele: 4,71:1
+   *   --onface-coral-texto #B7391F  sobre subtle 4,77:1 · sobre papel 5,36:1
+   *
+   * É desvio do hex nomeado no §1.1, e é deliberado: o §52 põe contraste na
+   * linha de base de acessibilidade, e entre honrar o hex e honrar o piso, o
+   * piso ganha. Reverter é uma linha cada, e a marca segue #FE4F2B. */
+  --onface-coral-acao: #d04123;
+  --onface-coral-acao-hover: #b7391f;
+  --onface-coral-texto: #b7391f;
+
   /* Ink & surface */
   --onface-preto-logo: #12171d;
   --onface-graphite: #090e14;
@@ -150,7 +175,17 @@ html[data-onface-theme="light"] {
   /* Text */
   --text-strong: var(--onface-preto-logo);
   --text-body: #1f252c;
-  --text-muted: var(--onface-cinza);
+  /* Um degrau abaixo na MESMA rampa do DS, e a razão é medida: `--onface-cinza`
+     (#6D747E) sobre o papel (#F6F6F3) dá 4,36:1, abaixo do piso de 4,5:1 para
+     texto de corpo. `--onface-cinza-2` (#616B78) dá 5,0:1.
+
+     É a mesma correção que o token do shell escuro já tinha recebido, com o
+     mesmo motivo anotado logo abaixo: lá o DS mapeava cinza e dava 3,8:1 sobre
+     o grafite. O papel ficou de fora na época. Este token carrega 229
+     ocorrências em 30 arquivos — rótulo de resumo, trilha, placeholder de
+     busca, meta de card —, então era a maior parte do texto secundário do
+     produto inteiro reprovando em contraste. */
+  --text-muted: var(--onface-cinza-2);
   --text-subtle: var(--onface-slate);
   --text-on-accent: var(--onface-white);
   --text-on-shell: var(--onface-branco-logo);
@@ -178,7 +213,9 @@ html[data-onface-theme="light"] {
   --card-foreground: var(--text-strong);
   --popover: var(--surface-card);
   --popover-foreground: var(--text-strong);
-  --primary: var(--onface-coral);
+  /* Ação, não marca: o `--primary` do shadcn vira fundo de botão com texto
+     branco em cima, e é esse par que precisa passar em contraste. */
+  --primary: var(--onface-coral-acao);
   --primary-foreground: var(--onface-white);
   --secondary: var(--onface-branco-logo);
   --secondary-foreground: var(--text-strong);

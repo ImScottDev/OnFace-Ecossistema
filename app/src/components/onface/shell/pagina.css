@@ -127,7 +127,8 @@
   background: var(--onface-coral-subtle);
 }
 .onface-resumo-item[data-sinal="true"] .onface-resumo-valor {
-  color: var(--onface-coral);
+  /* Coral de TEXTO: o da marca sobre o fundo coral-10% dá 2,92:1. */
+  color: var(--onface-coral-texto);
 }
 
 a.onface-resumo-item {
@@ -144,7 +145,7 @@ a.onface-resumo-item:focus-visible {
 .onface-resumo-cta {
   font-size: var(--text-xs);
   font-weight: var(--weight-semibold);
-  color: var(--onface-coral);
+  color: var(--onface-coral-texto);
 }
 
 /* Estreito: os fatos empilham em duas colunas em vez de espremer seis numa
