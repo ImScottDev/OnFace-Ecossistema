@@ -342,3 +342,54 @@
     padding-inline: 0.5rem;
   }
 }
+
+/* ── Moldura de página herdada da casca grafite ───────────────────────────
+ *
+ * `page.css` monta toda tela ONFACE como "moldura grafite + canvas branco
+ * flutuando dentro". Fazia sentido quando a casca INTEIRA era grafite: o
+ * canvas era o papel sobre a mesa.
+ *
+ * Na casca em papel virou outra coisa. Medido no navegador em
+ * `/pipeline/:id`: `.onface-page` pinta rgb(18,23,29) numa borda de 15px em
+ * volta de um canvas com raio de 35px — o único quase-preto de um produto que
+ * é papel, e o maior raio do sistema. E o conteúdo entrava com 58px de recuo
+ * (28 da casca + 15 da moldura + 15 do canvas) contra os 28 das outras telas.
+ *
+ * Aqui a moldura se dissolve: a casca já é a superfície, e os cartões do
+ * conteúdo passam a pousar nela como em Tarefas, CS e Vendas. Nada de
+ * `page.css` foi apagado — `/onface-desenho`, o espelho congelado, não tem
+ * `.onface-conteudo` e continua com a moldura grafite exatamente como estava.
+ *
+ * Alcança as seis superfícies do produto que usam a moldura: os quatro
+ * detalhes (pipeline, proposta, empresa, pessoa), a Visão Geral e Atividades. */
+
+.onface-conteudo .onface-page {
+  --onface-moldura: 0px;
+  background: transparent;
+  min-height: 0;
+  padding-bottom: 0;
+}
+
+.onface-conteudo .onface-page-surface {
+  margin-inline: 0;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+}
+
+/* O canvas que subia por baixo da faixa escura não tem mais faixa por baixo
+   de quem subir: a margem negativa puxaria o conteúdo para dentro da topbar. */
+.onface-conteudo .onface-page-surface[data-sobreposto="true"] {
+  margin-top: 0;
+  padding-top: 0;
+}
+
+/* Canvas escuro continua sendo escolha da tela (monitoramento, parede), então
+   mantém superfície e raio próprios — ele é um cartão de verdade, não moldura. */
+.onface-conteudo .onface-page-surface[data-tom="escuro"] {
+  padding: 1.25rem;
+  border-radius: var(--radius-card);
+  background: var(--onface-graphite-surface);
+  color: var(--onface-branco-logo);
+}

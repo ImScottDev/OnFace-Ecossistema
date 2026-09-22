@@ -463,8 +463,9 @@ export async function montarVisaoGeral(
     areas: {
       titulo: "Áreas em destaque",
       subtitulo: "Módulos do ecossistema ONFACE.",
-      linkLabel: "Ver todos os módulos",
-      linkHref: "/inicio",
+      // Sem "ver todos": apontava para `/inicio`, a própria página. Link que
+      // recarrega onde a pessoa já está é pior que link ausente — promete
+      // mais e entrega o mesmo. A lista completa de módulos é o menu lateral.
       itens: [
         { chave: "operacao", label: "Operação", estado: `${operacoesAtivas} em curso`, icone: "operacao", href: "/atendimento", destaque: true },
         { chave: "comercial", label: "Comercial", estado: `${brlCompacto(mrrMes.atual)} no mês`, icone: "comercial", href: "/vendas" },

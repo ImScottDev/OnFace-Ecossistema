@@ -3431,6 +3431,13 @@ mais o `ONFACE-UX-EXECUTION-SPEC-v1.md`.
 | Controle segmentado | **concluído** — `ToggleGroup` do shadcn recebe o desenho do DS em folha global; antes a seleção tinha 3% de diferença de luminância |
 | `/estudio`, `/onface-desenho` | protótipos ainda no repositório |
 
+**Decisões abertas para o Kauã (além dos bloqueios abaixo):**
+
+4. `/inicio` é a única tela escura do produto inteiro. A spec não prescreve o
+   tom ("dark/light behavior conforme sistema definido no projeto") e há
+   evidência de preferência do Kauã pelo escuro da Início. Não invertido por
+   conta própria.
+
 **Bloqueios registrados:**
 
 1. NEXO (§1.5, §19.16) — não há rota, painel, conversa nem runtime ligado.

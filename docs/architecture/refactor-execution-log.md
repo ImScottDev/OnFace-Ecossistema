@@ -3406,3 +3406,37 @@ recorte da fila e densidade do DataGrid de uma vez.
 
 Validação: tsc limpo, 365 testes / 0 falhas, 32 pares de contraste sem falha,
 21 rotas do produto em 200, zero erro de console, sem overflow horizontal.
+
+
+**UX-14 — moldura grafite dissolvida na casca nova.** `page.css` monta toda
+tela ONFACE como "moldura grafite + canvas branco flutuando dentro". Fazia
+sentido quando a casca INTEIRA era grafite. Medido em `/pipeline/:id`:
+`.onface-page` pintava rgb(18,23,29) numa borda de 15px em volta de um canvas
+com raio de 35px — o único quase-preto de um produto que é papel, e o maior
+raio do sistema. O conteúdo entrava com 58px de recuo (28 da casca + 15 da
+moldura + 15 do canvas) contra os 28 das outras telas.
+
+`shell-onface.css` dissolve a moldura sob `.onface-conteudo`. Nada de
+`page.css` foi apagado: `/onface-desenho`, o espelho congelado, não tem
+`.onface-conteudo` e continua exatamente como estava (verificado no HTML
+servido). Alcança seis superfícies do produto: os quatro detalhes (pipeline,
+proposta, empresa, pessoa), a Visão Geral e Atividades.
+
+**UX-15 — link que aponta para a própria página.** "Ver todos os módulos ›" na
+Visão Geral tinha `linkHref: "/inicio"`. O teste `link-nao-leva-pro-vazio` não
+pega: `/inicio` é rota válida. Mas recarregar onde a pessoa já está é pior que
+não ter link — promete mais e entrega o mesmo. A lista completa de módulos é o
+menu lateral. `linkLabel`/`linkHref` viraram opcionais no tipo, porque "ver
+todos" só faz sentido quando existe um lugar com todos.
+
+**Decisão registrada, não tomada:** `/inicio` é a ÚNICA tela escura do produto.
+A spec §6 define "Início | Command Center | Page" e o item de checklist da §7601
+diz "dark/light behavior conforme sistema definido no projeto" — ou seja, não
+prescreve o tom. Há evidência de preferência do Kauã pela riqueza do escuro da
+Início (comentário de 25/08 em `negocios/Workspace.tsx`). Como uma tela de
+entrada escura também é leitura legítima de "o produto precisa ter momentos",
+NÃO inverti o tom por conta própria. Fica para o Kauã decidir.
+
+Validação: tsc limpo, 365 testes / 0 falhas, 32 pares de contraste sem falha,
+21 rotas em 200 (inclusive o espelho congelado e o preview), zero erro de
+console, sem overflow horizontal.

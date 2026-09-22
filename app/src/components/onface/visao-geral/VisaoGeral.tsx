@@ -1075,9 +1075,11 @@ export function VisaoGeral({ dados }: { dados: DadosVisaoGeral }) {
                     <h2 className="ovg-panel-title">{dados.areas.titulo}</h2>
                     <p className="ovg-panel-sub">{dados.areas.subtitulo}</p>
                   </div>
-                  <Link className="ovg-panel-link" href={dados.areas.linkHref}>
-                    {dados.areas.linkLabel} ›
-                  </Link>
+                  {dados.areas.linkHref && dados.areas.linkLabel ? (
+                    <Link className="ovg-panel-link" href={dados.areas.linkHref}>
+                      {dados.areas.linkLabel} ›
+                    </Link>
+                  ) : null}
                 </header>
 
                 <div className="ovg-areas-grid">

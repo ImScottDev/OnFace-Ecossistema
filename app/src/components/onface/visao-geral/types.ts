@@ -295,7 +295,9 @@ export interface DadosVisaoGeral {
   ctaPrincipal: { label: string; href: string };
   metricas: Metrica[];
   grafico: Grafico;
-  areas: { titulo: string; subtitulo: string; linkLabel: string; linkHref: string; itens: AreaDestaque[] };
+  /** `linkLabel`/`linkHref` são opcionais: "ver todos" só existe quando há
+   * um lugar com TODOS. Em Áreas não há — a lista completa é o menu. */
+  areas: { titulo: string; subtitulo: string; linkLabel?: string; linkHref?: string; itens: AreaDestaque[] };
   assistente: Assistente;
   abas: Aba[];
   operacoes: Operacao[];
