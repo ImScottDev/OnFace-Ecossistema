@@ -3258,3 +3258,28 @@ bateria: **46 → 49**.
 
 Validação: tsc limpo, 354 testes / 0 falhas, 49 verificações, 14/14 rotas,
 aceites verdes menos o catálogo PABX.
+
+### CP60 — o verificador que autoriza a virada não conseguia conectar no banco
+
+Varrendo os **32 npm scripts**, dez não são invocados por nenhum runner, CI ou
+documento. Oito são operacionais e é assim que devem ser (`db:migrate`,
+`catalogo:sync`, `posvenda:reprocessar`). Dois são verificadores.
+
+**`check:pre-deploy` é o que responde "pode subir?"**: confere se alguma linha do
+banco impede as migrations do refactor. Ele chamava `tsx` **sem `--env-file`**,
+então morria em `DATABASE_URL não definida` antes da primeira consulta. O
+verificador que autoriza a virada nunca tinha rodado com sucesso.
+
+Vale registrar que ele **falha do jeito certo**: sem conseguir verificar, diz
+"NÃO PRONTO" em vez de dizer "PRONTO". Foi por isso que o defeito apareceu como
+erro e não como falso verde — o contrário do que aconteceu na trava de tenant do
+CP56.
+
+Com o `.env` carregado (`--env-file-if-exists`, como o `test` já fazia), ele
+responde: **PRONTO, nenhuma linha impede as migrations**, e as oito do refactor
+já estão aplicadas neste banco. Entrou na bateria: **49 → 50**.
+
+O outro, `ds:strict`, acusa 4.264 violações herdadas com placar que zera módulo
+a módulo. É dívida conhecida e gerenciada, não defeito novo, e fica como está.
+
+Validação: tsc limpo, 354 testes / 0 falhas, 50 verificações.

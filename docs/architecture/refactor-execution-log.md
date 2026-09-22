@@ -3242,3 +3242,20 @@ que explicava o padrão novo. Comentário deixou de contar.
 bateria: 46 → 49.
 
 Validação: tsc limpo, 354 testes / 0 falhas, 49 verificações, 14/14 rotas.
+
+## 2026-09-22 — CP60: check:pre-deploy nunca tinha rodado
+
+Dos 32 npm scripts, 10 sem chamador externo; 8 são operacionais, 2 são
+verificadores.
+
+`check:pre-deploy` chamava `tsx` sem `--env-file` e morria em `DATABASE_URL não
+definida`. Corrigido para `--env-file-if-exists=.env`. Responde PRONTO: nenhuma
+linha impede as migrations, as 8 do refactor já aplicadas. Entrou na bateria
+(49 → 50).
+
+Ele falha do jeito certo — "NÃO PRONTO" quando não consegue verificar —, e foi
+por isso que apareceu como erro e não como falso verde.
+
+`ds:strict`: 4.264 violações herdadas, placar gerenciado, dívida conhecida.
+
+Validação: tsc limpo, 354 testes / 0 falhas, 50 verificações.
