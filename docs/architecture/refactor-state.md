@@ -3398,3 +3398,42 @@ memória** — é o único passo desta correção que não pôde ser provado aqu
 
 Validação: tsc limpo, 354 testes / 0 falhas, 50 verificações, 14/14 rotas,
 `docker compose config` válido resolvendo os três Dockerfiles novos.
+
+## Camada de experiência (UX) — em andamento
+
+Branch `redesign/onface-ux-spec-v1`. O `refactor-state` acima descreve o
+backend; esta seção descreve a interface, que é o que o passo "QA do Kauã na
+tela" depende.
+
+**Nota de fonte:** o aviso no topo deste documento de que `ONFACE-ARCHITECTURE-SPEC.md`
+e `SPEC-IA-01` não existem está desatualizado. Os três documentos normativos
+estão em `~/Downloads/`: `ONFACE-DOCUMENTO-MESTRE-PRODUTO-JORNADAS-v13.md`,
+`ONFACE-SPEC-IA-01-INTELLIGENCE-RUNTIME.md` e `ONFACE-ARCHITECTURE-SPEC.md`,
+mais o `ONFACE-UX-EXECUTION-SPEC-v1.md`.
+
+| Frente | Estado |
+|---|---|
+| Tipografia | **concluída** — Plus Jakarta única, medido 100% |
+| App Shell | **concluída** — sidebar + topbar do §1.2/§1.3 |
+| Estrutura de página | **concluída** — sem faixa hero, resumo hierárquico |
+| Módulo Vendas | **concluído** — 5 telas no padrão novo |
+| Início | **concluído** — rota canônica serve a Visão Geral |
+| Atendimento | **parcial** — vazio, erro, validação e altura resolvidos; o layout de três painéis do §17.2 ainda não é o do spec |
+| Clientes / Onboarding / Implantação / CS | pendente — ainda no `Cf2Topbar` e padrão antigo |
+| Automações / Agentes / Execuções | pendente |
+| Financeiro | pendente |
+| Insights / Relatórios | pendente |
+| Tarefas / Calendário | pendente |
+| Ajustes | pendente |
+| loading/error/not-found por rota | **ausente no app inteiro** — zero arquivos |
+| Cores hardcoded | 1.321 em 128 arquivos, não migradas |
+| `/estudio`, `/onface-desenho` | protótipos ainda no repositório |
+
+**Bloqueios registrados:**
+
+1. NEXO (§1.5, §19.16) — não há rota, painel, conversa nem runtime ligado.
+2. `DESIGN.md` descreve o sistema Callface legado (verde seaweed, radius
+   28–32px). Enquanto não for reescrito para o ONFACE, o detector de design
+   mede contra a paleta errada.
+3. Financeiro voltou ao menu por força do §1.3; a árvore congelada em 16/09 o
+   escondia. Decisão de produto do Kauã se mantém ou não.

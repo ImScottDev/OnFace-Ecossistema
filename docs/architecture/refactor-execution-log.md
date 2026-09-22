@@ -3309,3 +3309,51 @@ lockfiles, e a raiz decide o formato da saída que o Dockerfile copia.
 com 3,8 GB; SIGKILL com 1536 e com 3072). Precisa de máquina maior.
 
 Validação: tsc limpo, 354 testes / 0 falhas, 50 verificações, 14/14 rotas.
+
+## 2026-09-22 — UX-01 a UX-08: reconstrução da camada de experiência
+
+Branch `redesign/onface-ux-spec-v1`, worktree isolado. Base normativa:
+`ONFACE-UX-EXECUTION-SPEC-v1.md` (7.699 linhas), que não estava no repositório
+— vive em `~/Downloads/`, junto com o Documento Mestre v0.13 e a SPEC-IA-01.
+O aviso no topo do `refactor-state.md` de que esses documentos "não existem"
+está desatualizado.
+
+**UX-01 — tipografia.** `--font-onface-ui` apontava para `--font-cf2-ui`, que
+era Inter. O produto renderizava 131 elementos em Inter e 14 em Manrope — as
+duas fontes que o §1.1 bane por nome — contra 9 em Plus Jakarta. Uma linha.
+Depois: 387 elementos, 100% Plus Jakarta, cinco webfonts a menos.
+
+**UX-02 — casca.** Sidebar + topbar (§1.2) sobre o `Sidebar` do shadcn. A barra
+horizontal escondia cinco dos seis grupos atrás de hover. Topbar de 4.5rem para
+3.25rem. Oito tokens `--sidebar-*` que o shadcn consome e não existiam. Árvore
+do §1.3, com Financeiro de volta em GESTÃO. 10 testes de roteamento do menu.
+
+**UX-03 — estrutura de página.** Faixa grafite + canvas branco saíram: com a
+casca em papel eram uma laje escura e um contêiner dentro de outro. Resumo com
+hierarquia, e o número que acusa problema virou o recorte que o resolve.
+
+**UX-04 — vendas.** Padrão propagado para pré-vendas, propostas, contatos e
+prospecção. Junto, o filtro `semDono` que faltava em `boardDeAquisicoes`: o
+resumo contava 223 sem responsável e não havia como ver quais.
+
+**UX-05 — início.** `/inicio` servia o Command Center do CRM 2.0 enquanto o
+menu apontava para `/onface-preview/visao-geral`. A canônica era a pior.
+14 textos cortados viraram zero: `repeat(4, 1fr)` dividia largura sem olhar
+conteúdo e `R$ 425.619,39` pedia 164px numa caixa de 95.
+
+**UX-06 — vazio e altura.** Empty state que distingue filtro de etapa livre.
+Board parou de calcular altura com números mágicos da casca anterior.
+
+**UX-07 — NEXO.** O teste `link-nao-leva-pro-vazio` pegou o item apontando para
+404. Os componentes existem em `ds/nexo.tsx` como spec do DS: sem rota, sem
+conversa, sem runtime. Removido da casca com o bloqueio registrado.
+
+**UX-08 — atendimento.** `?canal=todos` derrubava a rota com 500 (valor de URL
+indexando `porCanal` sem validação). `if (!res.ok) return []` transformava
+falha de API em caixa vazia. O vazio era a mesma frase para três situações
+diferentes. Mídia do WhatsApp expirada (410) virava imagem quebrada. Inbox
+media 3767px numa viewport de 1125.
+
+Validação: tsc limpo, 364 testes / 0 falhas, 91 arquiteturais, 66 rotas varridas
+em servidor limpo (63 em 200, 3 em 307 propositais), zero erro de console,
+1440 e 390 sem overflow horizontal.
