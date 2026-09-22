@@ -1,318 +1,643 @@
 /* ─────────────────────────────────────────────────────────────────────────
- * Casca ONFACE v2 — sidebar + topbar (UX-EXECUTION-SPEC §1.2)
+ * Casca ONFACE — coluna + barra do topo.
  *
  * Arquivo separado do `onface.css` de propósito: ali moram os tokens e a casca
  * horizontal anterior, e misturar as duas deixaria impossível saber qual regra
  * pertence a qual. Quando a horizontal sair, some este comentário e some o
  * bloco de lá, não daqui.
- *
- * Geometria e cor vêm inteiras dos tokens do Design System. Nenhum hex mora
- * neste arquivo.
  * ───────────────────────────────────────────────────────────────────────── */
 
 :root {
-  --shell-topbar-v2-h: 3.25rem;
+  --shell-topbar-v2-h: 52px;
 }
 
-/* ── Sidebar ──────────────────────────────────────────────────────────── */
+/* ─────────────────────────────────────────────────────────────────────────
+ * Tudo abaixo é REPLICAÇÃO do protótipo `OnFace Casca.dc.html` (handoff de
+ * 22/09/2026). Os valores são os do desenho, não uma tradução deles para os
+ * tokens antigos: o handoff É o sistema agora, e onde ele e o legado
+ * discordam, ele ganha.
+ *
+ * Os hex ficam explícitos de propósito enquanto o handoff é a fonte. Trocar
+ * por token só depois que o token existir com ESTE valor — mapear para o
+ * token parecido foi exatamente o erro que fez a casca sair diferente do
+ * desenho na primeira tentativa.
+ * ───────────────────────────────────────────────────────────────────────── */
 
-.onface-sidebar [data-slot="sidebar-inner"],
-.onface-sidebar [data-sidebar="sidebar"] {
-  /* Hairline em vez de sombra: a casca é definida por linha, não por
-     elevação (Design System ONFACE, "flat + hairlines"). */
-  border-right: 1px solid var(--sidebar-border);
+@keyframes onface-fade {
+  from { opacity: 0 }
+  to { opacity: 1 }
+}
+@keyframes onface-pisca {
+  0%, 100% { opacity: 1 }
+  50% { opacity: .25 }
+}
+
+/* ── Página ───────────────────────────────────────────────────────────────
+ *
+ * `padding:10px` e `gap:10px` sobre o grafite: é o que faz a coluna ABRAÇAR o
+ * cartão em vez de encostar nele. O shadcn dá `m-2 ml-0` no `variant="inset"`
+ * e come justamente a margem da esquerda. */
+[data-slot="sidebar-wrapper"]:has(.onface-sidebar) {
+  background: #090e14;
+  padding: 10px;
+  gap: 10px;
+  /* Altura FECHADA, não mínima. No protótipo a página é `height:100vh;
+     overflow:hidden` e quem rola é sempre um painel interno. Com altura
+     mínima, uma tela comprida empurrava o documento inteiro: medido na
+     Pré-vendas, 11.201px de altura, com o cabeçalho das etapas saindo de cena
+     assim que a primeira coluna passava de uma tela. */
+  height: 100svh;
+  overflow: hidden;
+}
+
+/* ── Coluna ───────────────────────────────────────────────────────────── */
+
+.onface-sidebar[data-slot="sidebar-container"],
+.onface-sidebar [data-slot="sidebar-inner"] {
+  border: 0;
+  box-shadow: none;
+}
+.onface-sidebar [data-slot="sidebar-inner"] {
+  /* Fundo próprio, e não transparente herdando a moldura. No protótipo o
+     `aside` é um item de flex e nada passa por baixo dele; no shadcn a coluna
+     é `position: fixed`, então o conteúdo corre POR TRÁS — medido em /inicio e
+     /pipeline, dava para ler o texto da página através da barra. Mesma cor da
+     moldura, então o desenho não muda. */
+  background: #090e14;
+  /* Sem padding próprio: o container do shadcn já traz `p-2`, que é o mesmo
+     8px do protótipo. Somar os dois empurrava o botão Criar para x=26 quando
+     o desenho o põe em x=18. */
+  padding: 0;
+  gap: 0;
+}
+
+/* A coluna do shadcn é `position: fixed`, então ela NÃO enxerga o padding da
+   moldura e encosta na borda da janela. Medido: x=0, y=0, 226×900 numa página
+   com 10px de respiro em volta. Os 10px voltam aqui, à mão. */
+.onface-sidebar[data-slot="sidebar-container"] {
+  top: 10px;
+  bottom: 10px;
+  left: 10px;
+  height: calc(100svh - 20px);
+}
+
+/* Trilho recolhido: 52px cravados, como no protótipo.
+ *
+ * O shadcn calcula `--sidebar-width-icon + spacing(4) + 2px` e chega a 70px,
+ * enquanto o espaçador que empurra o conteúdo usa os 52px limpos. Os 18px de
+ * diferença viravam coluna por cima do conteúdo. Aqui os dois passam a medir
+ * o mesmo. */
+[data-slot="sidebar"][data-collapsible="icon"] .onface-sidebar[data-slot="sidebar-container"],
+[data-slot="sidebar"][data-collapsible="icon"] [data-slot="sidebar-gap"] {
+  width: 52px;
 }
 
 .onface-sidebar-header {
-  height: var(--shell-topbar-v2-h);
-  justify-content: center;
-  padding-inline: 0.875rem;
-  border-bottom: 1px solid var(--sidebar-border);
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0;
 }
 
+/* Marca: 38px de altura, lockup 93×16 encostado à esquerda com 9px. */
 .onface-sidebar-marca {
   display: flex;
   align-items: center;
-  min-width: 0;
-  border-radius: var(--radius-sm);
+  height: 38px;
+  flex: 0 0 auto;
+  overflow: hidden;
+  border-radius: 6px;
   outline-offset: 2px;
 }
 .onface-sidebar-marca:focus-visible {
-  outline: 2px solid var(--sidebar-ring);
+  outline: 2px solid #fe4f2b;
 }
-
 .onface-sidebar-lockup {
-  height: 1.125rem;
-  width: auto;
+  display: block;
+  width: 93px;
+  height: 16px;
+  flex: 0 0 auto;
+  margin-left: 9px;
 }
 .onface-sidebar-simbolo {
   display: none;
-  height: 1.25rem;
-  width: 1.25rem;
+  width: 30px;
+  height: 12px;
+  flex: 0 0 auto;
+  margin-inline: auto;
 }
+[data-slot="sidebar"][data-collapsible="icon"] .onface-sidebar-lockup { display: none }
+[data-slot="sidebar"][data-collapsible="icon"] .onface-sidebar-simbolo { display: block }
+[data-slot="sidebar"][data-collapsible="icon"] .onface-sidebar-marca { justify-content: center }
 
-/* No modo ícone o lockup vira símbolo. Trocar o arquivo em vez de encolher o
-   lockup: a 3rem o lockup inteiro seria uma mancha. */
-[data-slot="sidebar"][data-collapsible="icon"] .onface-sidebar-lockup {
-  display: none;
-}
-[data-slot="sidebar"][data-collapsible="icon"] .onface-sidebar-simbolo {
-  display: block;
-}
-[data-slot="sidebar"][data-collapsible="icon"] .onface-sidebar-header {
-  padding-inline: 0;
-}
-[data-slot="sidebar"][data-collapsible="icon"] .onface-sidebar-marca {
-  justify-content: center;
+/* ── Criar ────────────────────────────────────────────────────────────────
+ *
+ * Único coral sólido e único atalho de escrita da coluna. Acima da árvore de
+ * propósito: criar não é navegar. */
+.onface-sidebar-criar {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 12px;
+  height: 34px;
   width: 100%;
+  border-radius: 9px;
+  background: #d93c1a;
+  color: #fff;
+  font-size: 13.5px;
+  font-weight: 600;
+  flex: 0 0 auto;
+  padding: 0 12px;
+  box-shadow: none;
 }
+.onface-sidebar-criar:hover {
+  background: #c2330f;
+}
+.onface-sidebar-criar svg {
+  width: 15px;
+  height: 15px;
+  stroke-width: 2.1;
+  flex: 0 0 auto;
+}
+[data-slot="sidebar"][data-collapsible="icon"] .onface-sidebar-criar {
+  justify-content: center;
+  padding: 0;
+}
+[data-slot="sidebar"][data-collapsible="icon"] .onface-sidebar-criar-rotulo { display: none }
 
+/* ── Árvore ───────────────────────────────────────────────────────────── */
+
+.onface-sidebar [data-slot="sidebar-content"] {
+  margin-top: 14px;
+  gap: 0;
+  padding-bottom: 6px;
+  overflow-x: hidden;
+}
 .onface-sidebar-corpo {
-  gap: 0.125rem;
-  padding-block: 0.5rem;
+  padding: 0;
+  gap: 1px;
+}
+.onface-sidebar-corpo [data-slot="sidebar-menu"] {
+  gap: 1px;
 }
 
-/* O rótulo de grupo é o elemento que mais recua na coluna: ele organiza, não
-   compete. Caixa alta pequena com tracking é o que permite baixar o contraste
-   sem perder legibilidade. */
+/* Rótulo de seção: o elemento que mais recua na coluna. Organiza, não
+   compete. */
 .onface-sidebar-grupo {
-  font-size: var(--text-2xs);
-  font-weight: var(--weight-semibold);
-  letter-spacing: var(--tracking-caps);
+  height: auto;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: .09em;
   text-transform: uppercase;
-  color: var(--text-on-shell-muted);
-  opacity: 0.72;
-  /* 2rem e não 1.75: é a altura que o `-mt-8` do shadcn desconta para colapsar
-     o rótulo. Com 1.75 a margem negativa sobrava e o rótulo ficava meio
-     recolhido, vazando "COM", "CLIE", "OPE" por cima dos ícones. */
-  height: 2rem;
-  padding-inline: 0.625rem;
+  color: #7e8894;
+  padding: 15px 9px 6px;
+  white-space: nowrap;
 }
-
-/* No modo ícone o rótulo some.
- *
- * Dois erros empilhados aqui, os dois medidos no navegador:
- *
- * 1. Esta folha carrega DEPOIS do Tailwind, então o `opacity: 0.72` acima
- *    vencia o `opacity-0` que o shadcn aplica. O colapso existia e a minha
- *    regra o desfazia.
- * 2. O seletor era `.onface-sidebar[data-collapsible="icon"]`, e nunca casou:
- *    `data-collapsible` mora em `[data-slot="sidebar"]`, o wrapper externo,
- *    enquanto `className` do `<Sidebar>` cai em `[data-slot="sidebar-container"]`,
- *    que é filho. Todas as regras de modo-ícone deste arquivo estavam mortas,
- *    inclusive a troca do lockup pelo símbolo. */
 [data-slot="sidebar"][data-collapsible="icon"] .onface-sidebar-grupo {
   opacity: 0;
   pointer-events: none;
 }
 
-.onface-nav-linha {
-  font-size: var(--text-md);
-  font-weight: var(--weight-medium);
-  color: var(--sidebar-foreground);
-  border-radius: var(--radius-md);
-  height: 2rem;
-}
-.onface-nav-linha > svg {
-  color: var(--text-on-shell-muted);
-  transition: color 160ms ease-out;
-}
-.onface-nav-linha:hover > svg {
-  color: var(--sidebar-accent-foreground);
-}
-
-/* Seleção é sinal, e sinal é coral. Hover é só mudança de superfície: se os
-   dois usassem coral, o ponteiro apagaria a informação de onde a pessoa está.
-   A barra à esquerda carrega o estado quando a coluna colapsa e o texto some. */
-.onface-nav-linha[data-active="true"] {
-  background: var(--sidebar-accent);
-  color: var(--sidebar-accent-foreground);
-  font-weight: var(--weight-semibold);
-}
-.onface-nav-linha[data-active="true"] > svg {
-  color: var(--sidebar-primary);
-}
-.onface-nav-linha[data-active="true"]::before {
-  content: "";
-  position: absolute;
-  inset-block: 0.3125rem;
-  inset-inline-start: 0;
-  width: 2px;
-  border-radius: var(--radius-full);
-  background: var(--sidebar-primary);
-}
-
-.onface-sidebar-rodape {
-  border-top: 1px solid var(--sidebar-border);
-  padding-block: 0.5rem;
-}
-
-/* ── Topbar ───────────────────────────────────────────────────────────── */
-
-.onface-topbar-v2 {
-  position: sticky;
-  top: 0;
-  z-index: 30;
+/* Área. `!important` nos estados porque o `SidebarMenuButton` do shadcn pinta
+   hover e `data-active` por utilitário de igual especificidade, e aqui quem
+   manda é o desenho. */
+.onface-nav {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  height: var(--shell-topbar-v2-h);
-  padding-inline: 1rem;
-  background: var(--surface-page);
-  border-bottom: 1px solid var(--line-hairline);
+  gap: 11px;
+  padding: 7px 9px;
+  height: auto;
+  border-radius: 8px;
+  font-size: 13.5px;
+  font-weight: 500;
+  width: 100%;
+  white-space: nowrap;
+  color: #b9c1ca;
+  background: transparent;
+}
+.onface-nav > svg:first-child {
+  width: 17px;
+  height: 17px;
+  stroke-width: 1.7;
+  flex: 0 0 auto;
+}
+.onface-nav:hover {
+  background: #1a222c !important;
+  color: #b9c1ca !important;
+}
+.onface-nav[data-active="true"] {
+  background: #1f2833 !important;
+  color: #eeeff3 !important;
+  font-weight: 600;
+}
+.onface-nav:focus-visible {
+  outline: 2px solid #fe4f2b;
+  outline-offset: -2px;
+}
+[data-slot="sidebar"][data-collapsible="icon"] .onface-nav {
+  justify-content: center;
+  padding: 7px 0;
+  overflow: hidden;
+}
+/* No trilho de 52px só o ícone sobrevive. Sem esconder o rótulo e o chevron
+   eles vazam PARA FORA da coluna — medido: "vendas", "peraç", "lient" e
+   "nsigh" aparecendo soltos por cima do conteúdo, porque o botão centraliza e
+   o texto transborda para os dois lados. */
+[data-slot="sidebar"][data-collapsible="icon"] .onface-nav > span,
+[data-slot="sidebar"][data-collapsible="icon"] .onface-sidebar-chevron,
+[data-slot="sidebar"][data-collapsible="icon"] .onface-sidebar-submenu {
+  display: none;
 }
 
-.onface-topbar-v2-esq,
-.onface-topbar-v2-dir {
+.onface-sidebar-chevron {
+  width: 13px;
+  height: 13px;
+  stroke-width: 2.2;
+  color: #7e8894;
+  flex: 0 0 auto;
+  margin-left: auto;
+  transform: rotate(-90deg);
+  transition: transform .14s cubic-bezier(.2, 0, .2, 1);
+}
+[data-state="open"] > .onface-sidebar-chevron {
+  transform: none;
+}
+
+/* Submenu: trilho de 1px à esquerda, que é o que amarra os filhos à área sem
+   gastar um segundo nível de fundo. */
+.onface-sidebar-submenu {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 2px 0 6px 17px;
+  padding: 0 0 0 18px;
+  border-left: 1px solid #242c36;
+  animation: onface-fade .14s ease-out both;
+  translate: none;
+}
+.onface-nav-sub {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  min-width: 0;
-}
-
-.onface-topbar-v2-toggle {
-  color: var(--text-muted);
-}
-
-.onface-trilha {
-  display: flex;
-  align-items: center;
-  gap: 0.375rem;
-  min-width: 0;
-  font-size: var(--text-md);
-}
-.onface-trilha-grupo {
-  color: var(--text-muted);
+  gap: 7px;
+  padding: 6px 9px;
+  height: auto;
+  border-radius: 7px;
+  font-size: 12.5px;
+  font-weight: 400;
+  width: 100%;
+  color: #9aa4ae;
+  background: transparent;
   white-space: nowrap;
 }
-.onface-trilha-sep {
-  color: var(--text-muted);
-  opacity: 0.5;
+.onface-nav-sub:hover {
+  color: #eeeff3 !important;
+  background: transparent !important;
 }
-.onface-trilha-atual {
-  color: var(--text-strong);
-  font-weight: var(--weight-semibold);
+.onface-nav-sub[data-active="true"] {
+  color: #eeeff3 !important;
+  font-weight: 600;
+  background: #1a222c !important;
+}
+
+/* ── NEXO ─────────────────────────────────────────────────────────────────
+ *
+ * O rodapé da coluna, e a única superfície elevada dela: é a única coisa ali
+ * que FALA, e não um destino como os outros. */
+.onface-sidebar-rodape {
+  padding: 0;
+}
+.onface-nexo {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex: 0 0 auto;
+  margin-top: 8px;
+  padding: 8px;
+  height: auto;
+  border-radius: 10px;
+  background: #161d26;
+  box-shadow: inset 0 0 0 1px #242c36;
+  transition: background 120ms cubic-bezier(0, 0, .2, 1);
+}
+.onface-nexo:hover {
+  background: #1f2833 !important;
+}
+.onface-nexo-avatar {
+  display: block;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  flex: 0 0 auto;
+}
+.onface-nexo-texto {
+  flex: 1;
+  min-width: 0;
+}
+.onface-nexo-nome {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-onface-titulo), sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: .01em;
+  color: #eeeff3;
+  white-space: nowrap;
+}
+.onface-nexo-ponto {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #fe4f2b;
+  flex: 0 0 auto;
+  animation: onface-pisca 1.6s ease-in-out infinite;
+}
+.onface-nexo-resumo {
+  display: block;
+  font-size: 11px;
+  color: #a9b2bc;
+  line-height: 1.35;
+  margin-top: 1px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-
-.onface-busca {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  height: 2rem;
-  padding-inline: 0.625rem;
-  border: 1px solid var(--line-hairline);
-  border-radius: var(--radius-control);
-  background: var(--surface-card);
-  color: var(--text-muted);
-  font-size: var(--text-md);
-  transition: border-color 160ms ease-out, color 160ms ease-out;
-}
-.onface-busca:hover {
-  border-color: var(--text-muted);
-  color: var(--text-body);
-}
-.onface-busca:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 1px;
-}
-.onface-busca > svg {
-  width: var(--icon-sm);
-  height: var(--icon-sm);
-}
-.onface-busca-kbd {
-  font-family: inherit;
-  font-size: var(--text-2xs);
-  font-weight: var(--weight-medium);
-  color: var(--text-muted);
-  border: 1px solid var(--line-hairline);
-  border-radius: var(--radius-xs);
-  padding: 0.0625rem 0.25rem;
+.onface-nexo-kbd {
+  flex: 0 0 auto;
+  font-family: var(--font-onface-mono), monospace;
+  font-size: 10px;
+  color: #7e8894;
+  background: transparent;
+  border: 1px solid #2e3741;
+  border-radius: 4px;
+  padding: 1px 4px;
   line-height: 1.4;
+  box-shadow: none;
+}
+[data-slot="sidebar"][data-collapsible="icon"] .onface-nexo-texto,
+[data-slot="sidebar"][data-collapsible="icon"] .onface-nexo-kbd { display: none }
+[data-slot="sidebar"][data-collapsible="icon"] .onface-nexo {
+  justify-content: center;
+  padding: 6px;
 }
 
-/* O botão NEXO viveria aqui e é o único elemento coral previsto para a
-   casca. As regras saíram junto com ele: CSS sem consumidor é a próxima
-   pessoa procurando o componente que o usa e não achando. Voltam com ele. */
-
-.onface-topbar-v2-regua {
-  width: 1px;
-  height: 1.25rem;
-  background: var(--line-hairline);
-  margin-inline: 0.125rem;
-}
-
-.onface-perfil {
-  display: inline-flex;
-  align-items: center;
-  border-radius: var(--radius-full);
-}
-.onface-perfil:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
-}
-.onface-perfil-avatar {
-  display: grid;
-  place-items: center;
-  width: var(--avatar-sm);
-  height: var(--avatar-sm);
-  border-radius: var(--radius-full);
-  background: var(--onface-graphite);
-  color: var(--onface-white);
-  font-size: var(--text-2xs);
-  font-weight: var(--weight-bold);
-  letter-spacing: 0.02em;
-}
-.onface-menu-perfil-topo {
-  display: flex;
-  align-items: center;
-  gap: 0.625rem;
-  padding: 0.5rem 0.625rem 0.625rem;
-}
-.onface-menu-perfil-topo strong {
-  display: block;
-  font-size: var(--text-md);
-  color: var(--text-strong);
-}
-.onface-menu-perfil-topo small {
-  display: block;
-  font-size: var(--text-xs);
-  color: var(--text-muted);
-}
-
-/* ── Conteúdo ─────────────────────────────────────────────────────────── */
-
-.onface-conteudo {
-  /* A topbar encolheu de 4.5rem para 3.25rem, e onze regras espalhadas em
-     quatro folhas calculam posição e altura a partir de `--shell-topbar-h`
-     (painel sticky, navegação do DS, altura de coluna de board). Redefinir a
-     variável aqui dentro acerta todas de uma vez, e a casca antiga — que o
-     `(onface-preview)` ainda usa — continua lendo o valor dela no `:root`. */
-  --shell-topbar-h: var(--shell-topbar-v2-h);
+.onface-nexo-painel {
   display: flex;
   flex-direction: column;
-  flex: 1;
-  min-width: 0;
-  /* `min-width: 0` acima é o que permite board horizontal rolar DENTRO do
-     conteúdo sem empurrar a página (spec §48). Sem ele o flex item cresce
-     junto com o board e a página inteira vaza na horizontal. */
-  background: var(--surface-page);
+  gap: 12px;
+}
+.onface-nexo-avisos {
+  display: flex;
+  flex-direction: column;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.onface-nexo-avisos li + li { border-top: 1px solid #eef1f1 }
+.onface-nexo-avisos a,
+.onface-nexo-avisos > li > span {
+  display: grid;
+  gap: 2px;
+  padding: 11px 4px;
+}
+.onface-nexo-avisos a:hover { background: #f6f7f7 }
+.onface-nexo-aviso-titulo {
+  font-size: 13px;
+  font-weight: 600;
+  color: #12171d;
+}
+/* Lido recua, não some: o histórico continua legível, só para de disputar. */
+.onface-nexo-avisos li[data-lida="true"] .onface-nexo-aviso-titulo {
+  font-weight: 500;
+  color: #4a5560;
+}
+.onface-nexo-aviso-msg {
+  font-size: 12px;
+  color: #4a5560;
+  line-height: 1.5;
 }
 
+/* ── Cartão de conteúdo ───────────────────────────────────────────────── */
+
+.onface-conteudo {
+  --shell-topbar-h: 52px;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  min-height: 0;
+  background: #fff;
+  border-radius: 14px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  /* Quem dá o respiro dos quatro lados é o `padding` da moldura, não a margem
+     do cartão. O `!important` não é preguiça: a utilidade do shadcn é
+     `md:peer-data-[variant=inset]:ml-0` + `m-2`, de especificidade maior que
+     qualquer classe desta folha, e ela comia justamente a margem da esquerda
+     — o cartão encostava na coluna. */
+  margin: 0 !important;
+  box-shadow: none;
+}
+
+/* Quem rola é o conteúdo, DENTRO do cartão. É o par obrigatório do
+   `overflow:hidden` da moldura: sem ele, tela comprida vira conteúdo cortado
+   em vez de conteúdo rolável. */
 .onface-conteudo-interno {
   flex: 1;
   min-width: 0;
-  padding: 1.25rem;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 20px;
 }
-
 @media (min-width: 1280px) {
   .onface-conteudo-interno {
-    padding: 1.5rem 1.75rem;
+    padding: 24px 28px;
   }
 }
+
+/* ── Barra do topo ────────────────────────────────────────────────────── */
+
+.onface-topbar-v2 {
+  flex: 0 0 auto;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 13px;
+  border-bottom: 1px solid #e3e7e8;
+  background: #fff;
+}
+.onface-topbar-v2-esq,
+.onface-topbar-v2-dir {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.onface-topbar-v2-dir {
+  gap: 2px;
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+
+/* Recolher a coluna, buscar e notificações: os três são o mesmo botão de
+   30×30. Um só desenho para as três ações que não pertencem a tela nenhuma. */
+.onface-topbar-v2 .onface-utility,
+.onface-topbar-v2-toggle {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #5c6672;
+  background: transparent;
+}
+.onface-topbar-v2 .onface-utility:hover,
+.onface-topbar-v2-toggle:hover {
+  background: #f2f2f0 !important;
+  color: #12171d !important;
+}
+.onface-topbar-v2 .onface-utility svg,
+.onface-topbar-v2-toggle svg {
+  width: 17px;
+  height: 17px;
+  stroke-width: 1.9;
+}
+
+.onface-topbar-v2-regua {
+  flex: 0 0 auto;
+  width: 1px;
+  height: 18px;
+  background: #e4e4e1;
+}
+
+/* ── Nome da página ───────────────────────────────────────────────────────
+ *
+ * Título e apoio na mesma linha, não empilhados: empilhar obrigaria a barra a
+ * crescer, e 52px é o que faz esta faixa ler como moldura em vez de
+ * cabeçalho. O título mora AQUI e some do conteúdo — é o que devolve uma
+ * faixa inteira de altura lá dentro. */
+.onface-titulo {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+.onface-titulo-nome {
+  margin: 0;
+  font-family: var(--font-onface-titulo), sans-serif;
+  font-size: 14.5px;
+  font-weight: 700;
+  letter-spacing: -.01em;
+  color: #12171d;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+.onface-titulo-apoio {
+  margin: 0;
+  font-size: 12.5px;
+  color: #4a5560;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+/* ── Perfil ───────────────────────────────────────────────────────────── */
+
+.onface-perfil {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 7px 0 3px;
+  border-radius: 9px;
+  flex: 0 0 auto;
+  margin-left: 4px;
+}
+.onface-perfil:hover,
+.onface-perfil[data-state="open"] {
+  background: #f1f3f3;
+}
+.onface-perfil:focus-visible {
+  outline: 2px solid #fe4f2b;
+  outline-offset: 2px;
+}
+.onface-perfil-avatar {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  border-radius: 9999px;
+  background: #12171d;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.onface-perfil-texto {
+  min-width: 0;
+  text-align: left;
+}
+.onface-perfil-nome {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #12171d;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+.onface-perfil-org {
+  display: block;
+  font-size: 11px;
+  color: #67787c;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+.onface-perfil-chevron {
+  width: 13px;
+  height: 13px;
+  stroke-width: 2.2;
+  color: #67787c;
+  flex: 0 0 auto;
+  transition: transform .13s cubic-bezier(.2, 0, .2, 1);
+}
+.onface-perfil[data-state="open"] .onface-perfil-chevron {
+  transform: rotate(180deg);
+}
+
+.onface-menu-perfil-topo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 6px 9px;
+}
+.onface-menu-perfil-topo strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: #12171d;
+  line-height: 1.3;
+}
+.onface-menu-perfil-topo small {
+  display: block;
+  font-size: 11.5px;
+  color: #67787c;
+  line-height: 1.35;
+}
+
+/* Largura estreita: o perfil perde o texto e fica só o avatar, antes de
+   qualquer coisa ser empurrada para fora da barra. */
+@media (max-width: 900px) {
+  .onface-perfil-texto,
+  .onface-perfil-chevron { display: none }
+  .onface-titulo-apoio { display: none }
+}
+
+
 
 /* Workspace de tela cheia: inbox, builder, qualquer superfície onde a rolagem
  * pertence a um painel interno e não à página.
@@ -327,21 +652,12 @@
  * com as 40 conversas e quem rolava era a página inteira, junto com os outros
  * dois painéis. */
 .onface-conteudo-interno:has(> [data-workspace="tela-cheia"]) {
-  height: calc(100dvh - var(--shell-topbar-v2-h));
+  /* 100% do cartao, nao da viewport: a moldura ja come 20px de altura e a
+     conta contra 100dvh sobrava exatamente isso. */
+  height: 100%;
   overflow: hidden;
 }
 
-/* Largura estreita: a busca vira só o ícone e o NEXO perde o rótulo, antes de
-   qualquer coisa ser empurrada para fora da barra. */
-@media (max-width: 900px) {
-  .onface-busca-label,
-  .onface-busca-kbd {
-    display: none;
-  }
-  .onface-busca {
-    padding-inline: 0.5rem;
-  }
-}
 
 /* ── Moldura de página herdada da casca grafite ───────────────────────────
  *

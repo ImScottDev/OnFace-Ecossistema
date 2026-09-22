@@ -79,7 +79,18 @@ export default async function Crm2Layout({
       <Cf2ThemeRoot />
       <Cf2CamadaModal />
       <TooltipProvider delayDuration={200}>
-        <SidebarProvider defaultOpen={abertaPorPadrao}>
+        {/* As duas larguras são as do protótipo: 226px aberta, 52px recolhida.
+            O provider escreve inline e ganha de qualquer CSS, então é aqui que
+            elas têm de viver — declarar na folha não adianta. */}
+        <SidebarProvider
+          defaultOpen={abertaPorPadrao}
+          style={
+            {
+              "--sidebar-width": "226px",
+              "--sidebar-width-icon": "52px",
+            } as React.CSSProperties
+          }
+        >
           <AppSidebar />
           <SidebarInset className="onface-conteudo">
             <TopbarOnface />

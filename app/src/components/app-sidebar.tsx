@@ -3,133 +3,103 @@
 import * as React from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import {
-  Building2,
-  Gauge,
-  Headphones,
-  TrendingUp,
-  Zap,
-  type LucideIcon,
-} from "lucide-react"
+import { Plus } from "lucide-react"
 
 import { NavMain } from "@/components/nav-main"
-import { NavSecondary } from "@/components/nav-secondary"
-import { NavUser } from "@/components/nav-user"
+import { NexoPainel } from "@/components/onface/shell/NexoPainel"
+import { NAVEGACAO, destinoAtivo } from "@/components/onface/navegacao"
+import { Button } from "@/components/ui/button"
 import {
-  NAVEGACAO,
-  NAVEGACAO_RODAPE,
-  destinoAtivo,
-} from "@/components/onface/navegacao"
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
   SidebarHeader,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
 } from "@/components/ui/sidebar"
 
 /**
- * Casca do ONFACE — bloco `sidebar-08` do shadcn, com os dados reais.
+ * Casca do ONFACE — coluna de navegação.
  *
- * O bloco é a base acordada para a casca (22/09) e a composição dele fica
- * intacta: `variant="inset"`, cabeçalho em `SidebarMenuButton size="lg"`,
- * `NavMain` com grupos colapsáveis, `NavSecondary` ancorada com `mt-auto` e
- * `NavUser` no rodapé. O que muda é só o `data`, que no bloco vem com
- * "Acme Inc" e "shadcn / m@example.com".
+ * A base continua sendo o bloco `sidebar-08` do shadcn (`variant="inset"`,
+ * `NavMain` com grupos colapsáveis), e a árvore continua morando em
+ * `navegacao.ts`, que tem teste próprio. O que mudou em 22/09 vem do handoff
+ * "OnFace — Casca + Pré-vendas", declarado versão final:
  *
- * Três adaptações, todas obrigatórias, nenhuma estética:
- *
- * 1. `<a href>` vira `Link`. O bloco é uma demo estática; com `<a>` cada
- *    clique no menu recarrega o app inteiro.
- * 2. Os seis grupos de `navegacao.ts` viram os itens-pai do `NavMain`, e os
- *    destinos viram os sub-itens. A árvore continua morando em `navegacao.ts`,
- *    que é a fonte única e tem teste próprio.
- * 3. O pai aponta para o PRIMEIRO destino do grupo, não para `#`. Item de menu
- *    que não leva a lugar nenhum é UI cenográfica, e o repo tem teste que
- *    reprova (`link-nao-leva-pro-vazio`).
- *
- * `nav-projects` do bloco não foi montado: o ONFACE não tem o conceito de
- * "Projects" e uma lista vazia com menu "More" seria cromo sem função.
+ * 1. **Marca em vez de cartão de workspace.** O bloco põe ícone + nome +
+ *    subtítulo numa linha de 3 alturas. O handoff põe o lockup e nada mais: o
+ *    nome do produto não precisa ser dito duas vezes na mesma coluna.
+ * 2. **Botão Criar**, coral, logo abaixo da marca. É o único atalho global de
+ *    escrita, e ele fica ACIMA da árvore de propósito — criar não é navegar.
+ * 3. **NEXO no rodapé, no lugar do cartão de usuário.** O perfil subiu para o
+ *    canto superior direito da barra do topo, que é onde o handoff o desenha.
+ *    Isto desfaz a arrumação de mais cedo no mesmo dia, quando o perfil tinha
+ *    descido para cá junto com a adoção do bloco.
+ * 4. **Ajustes saiu da coluna.** Ele vive agora dentro do menu do perfil, como
+ *    "Ajustes da organização" — por isso `NAVEGACAO_RODAPE` ficou vazio e a
+ *    `NavSecondary` não é mais montada.
  */
-
-/** Ícone de família para o item-pai. Os grupos de `navegacao.ts` não têm
- * ícone porque na coluna anterior eram só rótulos de seção; no `NavMain` o pai
- * é uma linha clicável e precisa de um. */
-const ICONE_DO_GRUPO: Record<string, LucideIcon> = {
-  Comercial: TrendingUp,
-  Clientes: Building2,
-  Operação: Headphones,
-  Automação: Zap,
-  Gestão: Gauge,
-}
-
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const pathname = usePathname()
   const ativo = destinoAtivo(pathname)
 
-  const navMain = NAVEGACAO.flatMap((grupo) => {
-    // O grupo sem rótulo (Início) é um destino solto, sem filhos.
-    if (!grupo.label) {
-      return grupo.itens.map((item) => ({
-        title: item.label,
-        url: item.href,
-        icon: item.icon,
-        isActive: ativo === item.href,
-      }))
-    }
-    const contemOAtivo = grupo.itens.some((item) => item.href === ativo)
-    return [
-      {
-        title: grupo.label,
-        url: grupo.itens[0].href,
-        icon: ICONE_DO_GRUPO[grupo.label] ?? grupo.itens[0].icon,
-        // Abre o grupo onde a pessoa está: sem isto ela chega numa coluna
-        // fechada e precisa reabrir o próprio contexto a cada navegação.
-        isActive: contemOAtivo,
-        items: grupo.itens.map((item) => ({
-          title: item.label,
-          url: item.href,
-          isActive: item.href === ativo,
-        })),
-      },
-    ]
-  })
-
   return (
-    <Sidebar variant="inset" className="onface-sidebar" {...props}>
-      <SidebarHeader>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton size="lg" asChild>
-              <Link href="/inicio" aria-label="ONFACE, ir para o início">
-                <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
-                  <img src="/onface/figma-logo.svg" alt="" className="size-4" />
-                </div>
-                <div className="grid flex-1 text-left text-sm leading-tight">
-                  <span className="truncate font-medium">ONFACE</span>
-                  <span className="truncate text-xs">Operação comercial</span>
-                </div>
-              </Link>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
+    // `collapsible="icon"` e não o `offcanvas` padrão: no protótipo a coluna
+    // recolhida vira um trilho de 52px só com ícones, ela não sai de cena. Com
+    // offcanvas o espaçador colapsa para 0 e o conteúdo passa POR BAIXO da
+    // barra fixa — medido em /contatos, a primeira coluna da tabela ficava
+    // escondida atrás do menu.
+    <Sidebar variant="inset" collapsible="icon" className="onface-sidebar" {...props}>
+      <SidebarHeader className="onface-sidebar-header">
+        <Link href="/inicio" className="onface-sidebar-marca" aria-label="ONFACE, ir para o início">
+          {/* Duas imagens e não uma com `object-fit`: o lockup e o símbolo têm
+              proporções diferentes, e recortar o lockup no modo ícone deixaria
+              meia palavra aparecendo. Quem troca é o CSS, pelo
+              `data-collapsible` do wrapper. */}
+          <img src="/onface/onface-lockup-negativa.svg" alt="" className="onface-sidebar-lockup" />
+          <img src="/onface/figma-logo.svg" alt="" className="onface-sidebar-simbolo" />
+        </Link>
+
+        {/* Criar leva às quatro telas que DONAM cada criação, e não abre o
+            formulário direto. É deliberado e é o limite de hoje: nenhuma das
+            quatro páginas aceita um parâmetro de abertura (`searchParams` de
+            Pipeline e Propostas estão logo ali e não têm um), então um
+            `?criar=lead` seria um link que não faz nada. Quando as telas
+            honrarem o parâmetro, é trocar o `href` aqui. */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button className="onface-sidebar-criar" title="Criar">
+              <Plus aria-hidden />
+              <span className="onface-sidebar-criar-rotulo">Criar</span>
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" side="right" className="w-52">
+            <DropdownMenuItem asChild>
+              <Link href="/pre-vendas">Novo lead</Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <Link href="/pipeline">Nova oportunidade</Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <Link href="/propostas">Nova proposta</Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <Link href="/tarefas">Nova atividade</Link>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </SidebarHeader>
+
       <SidebarContent>
-        <NavMain items={navMain} />
-        <NavSecondary
-          items={NAVEGACAO_RODAPE.map((item) => ({
-            title: item.label,
-            url: item.href,
-            icon: item.icon,
-            isActive: ativo === item.href,
-          }))}
-          className="mt-auto"
-        />
+        <NavMain areas={NAVEGACAO} destinoAtivo={ativo} />
       </SidebarContent>
-      <SidebarFooter>
-        <NavUser />
+
+      <SidebarFooter className="onface-sidebar-rodape">
+        <NexoPainel />
       </SidebarFooter>
     </Sidebar>
   )

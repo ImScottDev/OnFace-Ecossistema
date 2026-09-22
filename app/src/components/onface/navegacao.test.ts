@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { NAVEGACAO, NAVEGACAO_RODAPE, destinoAtivo, trilhaAtual } from "./navegacao";
+import { DESTINOS, NAVEGACAO, destinoAtivo, trilhaAtual } from "./navegacao";
 
 describe("navegação ONFACE", () => {
   it("acende o destino exato", () => {
     assert.equal(destinoAtivo("/pipeline"), "/pipeline");
-    assert.equal(destinoAtivo("/financeiro"), "/financeiro");
+    assert.equal(destinoAtivo("/pre-vendas"), "/pre-vendas");
   });
 
   it("acende o destino em subrota", () => {
@@ -18,7 +18,6 @@ describe("navegação ONFACE", () => {
   it("prefere o prefixo mais longo entre destinos irmãos", () => {
     assert.equal(destinoAtivo("/clientes/cs"), "/clientes/cs");
     assert.equal(destinoAtivo("/clientes/cs/empresa-1"), "/clientes/cs");
-    assert.equal(destinoAtivo("/clientes/onboarding/f-1"), "/clientes/onboarding");
     assert.equal(destinoAtivo("/clientes"), "/clientes");
     assert.equal(destinoAtivo("/automacoes/fluxos/f1"), "/automacoes/fluxos");
     assert.equal(destinoAtivo("/automacoes"), "/automacoes");
@@ -31,17 +30,19 @@ describe("navegação ONFACE", () => {
 
   it("herda destino para rotas fora da árvore", () => {
     assert.equal(destinoAtivo("/negocios/42"), "/pipeline");
-    assert.equal(destinoAtivo("/empresas/9"), "/clientes");
-    assert.equal(destinoAtivo("/clientes/risco"), "/clientes/cs");
-    assert.equal(destinoAtivo("/clientes/financeiro"), "/financeiro");
-    assert.equal(destinoAtivo("/prospeccao/apollo"), "/pre-vendas");
+    assert.equal(destinoAtivo("/empresas/9"), "/contatos");
+    assert.equal(destinoAtivo("/clientes/sucesso"), "/clientes/cs");
+    assert.equal(destinoAtivo("/whatsapp"), "/atendimento");
   });
 
-  // `/clientes/risco` herda de `/clientes/cs` e também casaria `/clientes`.
-  // O mais longo tem de vencer, senão Carteira acende no lugar de CS.
-  it("prefere a herança mais específica", () => {
-    assert.equal(destinoAtivo("/clientes/carteira"), "/clientes");
-    assert.equal(destinoAtivo("/clientes/expansao"), "/clientes/cs");
+  // O handoff de 22/09 tirou estes três da árvore visível. Sem herança, abrir
+  // qualquer um deles apagaria a coluna inteira e a pessoa ficaria "em lugar
+  // nenhum" dentro do produto.
+  it("mantém posição para os destinos que saíram da árvore", () => {
+    assert.equal(destinoAtivo("/clientes/onboarding/f-1"), "/pos-vendas");
+    assert.equal(destinoAtivo("/clientes/implantacao/pabx"), "/pos-vendas");
+    assert.equal(destinoAtivo("/financeiro/cobranca"), "/clientes");
+    assert.equal(destinoAtivo("/clientes/financeiro"), "/clientes");
   });
 
   it("devolve null fora do produto", () => {
@@ -49,21 +50,52 @@ describe("navegação ONFACE", () => {
     assert.equal(destinoAtivo("/p/token-publico"), null);
   });
 
-  it("monta a trilha com grupo e item", () => {
-    assert.deepEqual(trilhaAtual("/pipeline/1"), { grupo: "Comercial", item: "Pipeline" });
-    assert.deepEqual(trilhaAtual("/inicio"), { grupo: null, item: "Início" });
-    assert.deepEqual(trilhaAtual("/ajustes/email"), { grupo: null, item: "Ajustes" });
+  it("monta a trilha com área, item e apoio", () => {
+    assert.deepEqual(trilhaAtual("/pipeline/1"), {
+      area: "Vendas",
+      item: "Pipeline",
+      apoio: "Oportunidades comerciais, uma família por oportunidade",
+    });
+    assert.deepEqual(trilhaAtual("/pre-vendas"), {
+      area: "Vendas",
+      item: "Pré-vendas",
+      apoio: "Leads, qualificação e saídas",
+    });
+    // Área sem filhos é o próprio destino: não tem nível acima.
+    assert.deepEqual(trilhaAtual("/inicio"), {
+      area: null,
+      item: "Início",
+      apoio: "O dia da operação num lugar só",
+    });
     assert.equal(trilhaAtual("/login"), null);
   });
 
-  it("não tem href duplicado na árvore", () => {
-    const hrefs = [...NAVEGACAO.flatMap((g) => g.itens), ...NAVEGACAO_RODAPE].map((i) => i.href);
+  it("não tem href duplicado entre os destinos", () => {
+    const hrefs = DESTINOS.map((i) => i.href);
     assert.equal(new Set(hrefs).size, hrefs.length);
   });
 
-  it("todo item da árvore acende a si mesmo", () => {
-    for (const item of [...NAVEGACAO.flatMap((g) => g.itens), ...NAVEGACAO_RODAPE]) {
+  it("todo destino acende a si mesmo", () => {
+    for (const item of DESTINOS) {
       assert.equal(destinoAtivo(item.href), item.href, `${item.href} não acende a si mesmo`);
+    }
+  });
+
+  // Uma área com filhos nunca é destino: o clique nela abre o grupo. O href
+  // dela existe só para apontar ao primeiro filho, e tem de ser um deles —
+  // senão o pai leva para fora do próprio grupo.
+  it("área com filhos aponta para o primeiro filho", () => {
+    for (const area of NAVEGACAO) {
+      if (!area.itens?.length) continue;
+      assert.equal(area.href, area.itens[0].href, `${area.label} não aponta para o primeiro filho`);
+    }
+  });
+
+  // Item de menu que não leva a lugar nenhum é UI cenográfica. Aqui a prova é
+  // estrutural; a existência do arquivo de rota foi verificada à mão em 22/09.
+  it("todo destino tem href absoluto de rota", () => {
+    for (const item of DESTINOS) {
+      assert.match(item.href, /^\/[a-z0-9-]+(\/[a-z0-9-]+)*$/, `${item.label} tem href estranho`);
     }
   });
 });

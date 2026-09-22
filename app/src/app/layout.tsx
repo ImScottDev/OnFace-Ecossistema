@@ -1,45 +1,63 @@
 import type { Metadata } from "next";
-import { Plus_Jakarta_Sans } from "next/font/google";
+import { IBM_Plex_Mono, Inter, Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 
 /**
- * Plus Jakarta Sans é a ÚNICA família do produto.
+ * Três famílias, e cada uma tem um trabalho — handoff "OnFace — Casca +
+ * Pré-vendas", 22/09/2026, declarado versão final pelo Scott.
  *
- * A UX-EXECUTION-SPEC §1.1 nomeia a fonte ("Plus Jakarta Sans") e proíbe o
- * retorno a Inter/Manrope. Medido no navegador em 22/09, antes desta mudança,
- * a casca renderizava 131 elementos em Inter, 14 em Manrope e 9 em Plus
- * Jakarta: `--font-onface-ui` apontava para `--font-cf2-ui`, que era Inter.
- * O produto inteiro estava na fonte que a spec bane, e a fonte oficial só
- * pegava os títulos.
+ * Isto SUBSTITUI a regra de família única que valia até hoje de manhã. A
+ * UX-EXECUTION-SPEC §1.1 mandava Plus Jakarta em tudo e proibia Inter; o
+ * handoff volta a separar os papéis, e a separação é o que dá hierarquia sem
+ * gastar tamanho:
  *
- * Em vez de caçar as ocorrências em 30 arquivos CSS, as seis variáveis que já
- * existiam (`--font-body`, `--font-heading`, `--font-cf2-*`, `--font-onface-*`)
- * passam a apontar todas para a mesma família. Quem consome continua lendo a
- * variável que sempre leu, e o resultado é uma fonte só em toda superfície.
+ * - **Plus Jakarta Sans** (600/700/800): título, nome de coluna, número
+ *   grande. É a voz da marca, e ela fala pouco.
+ * - **Inter** (400/500/600/700): todo o resto. Texto de interface denso em
+ *   Jakarta fica largo e a linha some mais cedo.
+ * - **IBM Plex Mono**: só atalho de teclado. ⌘K e ⌘J precisam ler como tecla.
  *
- * Efeito colateral desejado: cinco downloads de webfont a menos (Noto Sans,
- * Poppins, Manrope, Geist, Inter). O peso 900 que o Noto trazia não existe em
- * Plus Jakarta; 800 é o topo da família e assume o lugar.
+ * As variáveis legadas continuam existindo e cada uma aponta para o papel
+ * certo: quem consome `--font-cf2-ui` (corpo) recebe Inter, quem consome
+ * `--font-onface-display` (título) recebe Jakarta. Ninguém precisa mudar de
+ * variável.
  */
 const jakarta = Plus_Jakarta_Sans({
   subsets: ["latin"],
-  weight: ["400", "500", "600", "700", "800"],
+  weight: ["600", "700", "800"],
   display: "swap",
-  variable: "--font-onface",
+  variable: "--font-onface-titulo",
 });
 
-/** As variáveis legadas viram apelidos da família única. Mantê-las é o que
- * permite trocar a fonte sem tocar nos 15 mil linhas de CSS que as consomem. */
+const inter = Inter({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  display: "swap",
+  variable: "--font-onface-corpo",
+});
+
+const plexMono = IBM_Plex_Mono({
+  subsets: ["latin"],
+  weight: ["400", "500"],
+  display: "swap",
+  variable: "--font-onface-mono",
+});
+
+/** Cada variável legada aponta para o papel que ela sempre teve. Mantê-las é o
+ * que permite mudar a tipografia sem tocar nas 15 mil linhas de CSS que as
+ * consomem. */
 const ALIASES_DE_FONTE = [
-  "--font-body",
-  "--font-heading",
-  "--font-cf2-ui",
-  "--font-cf2-nav",
-  "--font-cf2-heading",
-  "--font-onface-ui",
-  "--font-onface-display",
+  ["--font-body", "--font-onface-corpo"],
+  ["--font-cf2-ui", "--font-onface-corpo"],
+  ["--font-cf2-nav", "--font-onface-corpo"],
+  ["--font-onface-ui", "--font-onface-corpo"],
+  ["--font-heading", "--font-onface-titulo"],
+  ["--font-cf2-heading", "--font-onface-titulo"],
+  ["--font-onface-display", "--font-onface-titulo"],
+  // `--font-onface` era o nome da família única; ainda há CSS lendo ele.
+  ["--font-onface", "--font-onface-corpo"],
 ]
-  .map((nome) => `${nome}: var(--font-onface);`)
+  .map(([apelido, papel]) => `${apelido}: var(${papel});`)
   .join("");
 
 export const metadata: Metadata = {
@@ -80,7 +98,11 @@ export default function RootLayout({
     // `suppressHydrationWarning`: as cascas marcam o tema no próprio elemento
     // antes da hidratação. O servidor não emite esses atributos, então o React
     // acusa divergência num atributo que é intencionalmente definido no cliente.
-    <html lang="pt-BR" suppressHydrationWarning className={jakarta.variable}>
+    <html
+      lang="pt-BR"
+      suppressHydrationWarning
+      className={`${jakarta.variable} ${inter.variable} ${plexMono.variable}`}
+    >
       <head>
         <style dangerouslySetInnerHTML={{ __html: `:root{${ALIASES_DE_FONTE}}` }} />
       </head>

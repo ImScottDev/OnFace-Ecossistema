@@ -1,8 +1,9 @@
 "use client"
 
 import Link from "next/link"
-import { ChevronRight, type LucideIcon } from "lucide-react"
+import { ChevronDown } from "lucide-react"
 
+import type { AreaNav } from "@/components/onface/navegacao"
 import {
   Collapsible,
   CollapsibleContent,
@@ -12,7 +13,6 @@ import {
   SidebarGroup,
   SidebarGroupLabel,
   SidebarMenu,
-  SidebarMenuAction,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarMenuSub,
@@ -20,66 +20,110 @@ import {
   SidebarMenuSubItem,
 } from "@/components/ui/sidebar"
 
+/**
+ * Árvore da coluna — `nav-main` do bloco `sidebar-08`, com três adaptações que
+ * vêm do handoff de 22/09 e não de preferência.
+ *
+ * 1. **O clique no pai abre o grupo; ele não navega.** O bloco põe um `Link` no
+ *    pai e um `SidebarMenuAction` separado só para o chevron, o que dá dois
+ *    alvos na mesma linha fazendo coisas diferentes — e o de fora leva para o
+ *    primeiro filho, escondendo os outros cinco. No handoff a linha inteira é
+ *    o gatilho do grupo. Área SEM filhos continua sendo um link normal.
+ * 2. **Rótulo de seção acima da área**, quando `secao` está preenchido. É o que
+ *    separa o bloco de inteligência do resto sem inventar um segundo menu.
+ * 3. **O grupo que contém a página aberta nasce aberto.** `defaultOpen` só vale
+ *    na montagem e o layout não remonta em navegação client-side, então sem a
+ *    chave a área abre na primeira visita e nunca mais. A chave muda quando a
+ *    área entra ou sai de ativa: remonta só ela e preserva o que a pessoa
+ *    abriu à mão nas outras.
+ */
+/** Quebra a lista plana em blocos: um bloco novo começa em toda área que
+ *  declara `secao`. É o que permite o rótulo de seção ser um
+ *  `SidebarGroupLabel` de verdade, irmão da lista, em vez de um rótulo
+ *  enfiado dentro de um `<li>`. */
+function emBlocos(areas: AreaNav[]): Array<{ secao: string | null; areas: AreaNav[] }> {
+  const blocos: Array<{ secao: string | null; areas: AreaNav[] }> = []
+  for (const area of areas) {
+    if (!blocos.length || area.secao) blocos.push({ secao: area.secao ?? null, areas: [] })
+    blocos[blocos.length - 1].areas.push(area)
+  }
+  return blocos
+}
+
 export function NavMain({
-  items,
+  areas,
+  destinoAtivo,
 }: {
-  items: {
-    title: string
-    url: string
-    icon: LucideIcon
-    isActive?: boolean
-    items?: {
-      title: string
-      url: string
-      isActive?: boolean
-    }[]
-  }[]
+  areas: AreaNav[]
+  destinoAtivo: string | null
 }) {
   return (
-    <SidebarGroup>
-      {/* O rótulo "Platform" do bloco saiu: aqui os itens-pai JÁ SÃO os grupos
-          da operação (Comercial, Clientes, Operação...), então um cabeçalho
-          acima deles nomearia o produto duas vezes. */}
+    <>
+      {emBlocos(areas).map((bloco, i) => (
+    <SidebarGroup key={bloco.secao ?? `bloco-${i}`} className="onface-sidebar-corpo">
+      {bloco.secao && (
+        <SidebarGroupLabel className="onface-sidebar-grupo">{bloco.secao}</SidebarGroupLabel>
+      )}
       <SidebarMenu>
-        {items.map((item) => (
-          <Collapsible key={item.title} asChild defaultOpen={item.isActive}>
-            <SidebarMenuItem>
-              <SidebarMenuButton asChild tooltip={item.title} isActive={item.isActive}>
-                <Link href={item.url}>
-                  <item.icon />
-                  <span>{item.title}</span>
-                </Link>
-              </SidebarMenuButton>
-              {item.items?.length ? (
-                <>
-                  <CollapsibleTrigger asChild>
-                    <SidebarMenuAction className="data-[state=open]:rotate-90">
-                      <ChevronRight />
-                      <span className="sr-only">Toggle</span>
-                    </SidebarMenuAction>
-                  </CollapsibleTrigger>
-                  <CollapsibleContent>
-                    <SidebarMenuSub>
-                      {item.items?.map((subItem) => (
-                        <SidebarMenuSubItem key={subItem.title}>
-                          <SidebarMenuSubButton asChild isActive={subItem.isActive}>
-                            <Link
-                              href={subItem.url}
-                              aria-current={subItem.isActive ? "page" : undefined}
-                            >
-                              <span>{subItem.title}</span>
+        {bloco.areas.map((area) => {
+          const filhos = area.itens ?? []
+          const contemOAtivo = filhos.some((f) => f.href === destinoAtivo)
+          const ehOAtivo = !filhos.length && area.href === destinoAtivo
+
+          if (!filhos.length) {
+            return (
+              <SidebarMenuItem key={area.label}>
+                <SidebarMenuButton asChild tooltip={area.label} isActive={ehOAtivo} className="onface-nav">
+                  <Link href={area.href} aria-current={ehOAtivo ? "page" : undefined}>
+                    <area.icon />
+                    <span>{area.label}</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            )
+          }
+
+          return (
+            <Collapsible
+              key={`${area.label}-${contemOAtivo}`}
+              asChild
+              defaultOpen={contemOAtivo}
+              className="group/area"
+            >
+              <SidebarMenuItem>
+                <CollapsibleTrigger asChild>
+                  <SidebarMenuButton tooltip={area.label} isActive={contemOAtivo} className="onface-nav">
+                    <area.icon />
+                    <span>{area.label}</span>
+                    {/* Chevron desce quando abre. Quem gira é o CSS, pelo
+                        `data-state` que o próprio Collapsible escreve no
+                        botão — o valor da rotação é o do protótipo. */}
+                    <ChevronDown className="onface-sidebar-chevron" />
+                  </SidebarMenuButton>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <SidebarMenuSub className="onface-sidebar-submenu">
+                    {filhos.map((filho) => {
+                      const ativo = filho.href === destinoAtivo
+                      return (
+                        <SidebarMenuSubItem key={filho.label}>
+                          <SidebarMenuSubButton asChild isActive={ativo} className="onface-nav-sub">
+                            <Link href={filho.href} aria-current={ativo ? "page" : undefined}>
+                              <span>{filho.label}</span>
                             </Link>
                           </SidebarMenuSubButton>
                         </SidebarMenuSubItem>
-                      ))}
-                    </SidebarMenuSub>
-                  </CollapsibleContent>
-                </>
-              ) : null}
-            </SidebarMenuItem>
-          </Collapsible>
-        ))}
+                      )
+                    })}
+                  </SidebarMenuSub>
+                </CollapsibleContent>
+              </SidebarMenuItem>
+            </Collapsible>
+          )
+        })}
       </SidebarMenu>
     </SidebarGroup>
+      ))}
+    </>
   )
 }
