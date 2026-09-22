@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { relative } from "node:path";
+import { readFileSync, readdirSync } from "node:fs";
+import { join, relative } from "node:path";
 import { test } from "node:test";
-import { globSync } from "node:fs";
 
 /**
  * Botão que não faz nada é UI cenográfica, e o produto a proíbe.
@@ -92,10 +91,21 @@ const FORA_DO_PRODUTO = [
   "src/components/onface/ds/secoes/",
 ];
 
+/** Mesma travessia que as outras travas de arquitetura usam: `readdirSync`
+ * recursivo. `globSync` existe no runtime do Node 22 mas não nos tipos deste
+ * projeto, e o `tsc --noEmit` reprovava. */
+function telasTsx(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+    const caminho = join(dir, e.name);
+    if (e.isDirectory()) return e.name === "node_modules" ? [] : telasTsx(caminho);
+    return e.name.endsWith(".tsx") && !e.name.includes(".test.") ? [caminho] : [];
+  });
+}
+
 test("nenhum botão promete ação que não pode cumprir", () => {
-  const arquivos = globSync("src/{app,components}/**/*.tsx", { cwd: process.cwd() })
-    .filter((f) => !f.includes(".test."))
-    .filter((f) => !FORA_DO_PRODUTO.some((fora) => f.includes(fora)));
+  const arquivos = [...telasTsx("src/app"), ...telasTsx("src/components")].filter(
+    (f) => !FORA_DO_PRODUTO.some((fora) => f.includes(fora)),
+  );
 
   const mortos: string[] = [];
 
