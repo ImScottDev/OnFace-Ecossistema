@@ -14,6 +14,82 @@ import { useState } from "react";
 import "../ds/crm.css";
 export interface OperacaoItem { empresa: string; descricao: string; etapa: string; valor: string; }
 export interface EtapaItem { nome: string; pct: string; }
+/** Um mês da série de evolução, do jeito que a tela consome.
+ *  Estruturalmente igual ao `PontoEvolucao` de `analytics/onface-inicio`, mas com
+ *  nome próprio: o componente não importa de analytics, e dois tipos com o mesmo
+ *  nome no projeto só geram confusão na hora de ler o erro do compilador. */
+export interface PontoSerie { label: string; receita: number; leads: number; ganhos: number; }
+
+/* ───────────────────────── Evolução da operação ─────────────────────────
+ * O frame do Figma desenha este gráfico como uma pilha de `<img>` de segmento
+ * de reta, cada um girado num ângulo fixo (−6.16deg, −8.37deg, …), com os meses
+ * Jul a Dez escritos na marcação. Era decoração: subia sempre, terminava em
+ * dezembro e não olhava o banco — enquanto `getEvolucaoOperacao` já devolvia 12
+ * meses reais e ninguém a chamava.
+ *
+ * Aqui é SVG de verdade, na mesma caixa do desenho (506.58 × 108.836), para o
+ * card não mudar de geometria. Cada série é normalizada pelo PRÓPRIO máximo:
+ * receita em dezenas de milhares e ganhos em dezenas não cabem num eixo só, e
+ * forçá-las nele achataria duas das três linhas até virarem o mesmo traço no
+ * chão. A leitura que o card oferece é de tendência, e é isso que a legenda diz.
+ */
+const CHART_W = 506.58;
+const CHART_H = 108.836;
+
+function GraficoEvolucao({ pontos }: { pontos: PontoSerie[] }) {
+  const series = [
+    { chave: "receita", rotulo: "Receita", cor: "#FE4F2B", valores: pontos.map((p) => p.receita) },
+    { chave: "leads", rotulo: "Leads", cor: "#3B82F6", valores: pontos.map((p) => p.leads) },
+    { chave: "ganhos", rotulo: "Ganhos", cor: "#94A3B8", valores: pontos.map((p) => p.ganhos) },
+  ];
+  // 4px de respiro em cima e embaixo: sem isso o pico encosta na borda do card
+  // e o traço fica cortado pela metade da sua espessura.
+  const MARGEM = 4;
+  const util = CHART_H - MARGEM * 2;
+  const passo = pontos.length > 1 ? CHART_W / (pontos.length - 1) : 0;
+  const traco = (valores: number[]) => {
+    const max = Math.max(...valores, 1);
+    return valores
+      .map((v, i) => `${(i * passo).toFixed(2)},${(CHART_H - MARGEM - (v / max) * util).toFixed(2)}`)
+      .join(" ");
+  };
+
+  if (!pontos.length) {
+    return (
+      <div className="flex h-[108.836px] items-center justify-center relative shrink-0 w-[506.58px]">
+        <p className="text-[#4e5d73] text-[11.873px]">Sem histórico para o período</p>
+      </div>
+    );
+  }
+
+  return (
+    <svg
+      className="h-[108.836px] relative shrink-0 w-[506.58px]"
+      viewBox={`0 0 ${CHART_W} ${CHART_H}`}
+      preserveAspectRatio="none"
+      role="img"
+      aria-label={
+        `Evolução de ${pontos.length} meses, de ${pontos[0].label} a ${pontos[pontos.length - 1].label}. ` +
+        series.map((s) => `${s.rotulo}: ${s.valores[s.valores.length - 1]}`).join("; ")
+      }
+    >
+      {[0, 0.33, 0.66, 1].map((f) => (
+        <line key={f} x1="0" x2={CHART_W} y1={f * CHART_H} y2={f * CHART_H} stroke="#30363d" strokeWidth="0.99" />
+      ))}
+      {series.map((s) => (
+        <polyline
+          key={s.chave}
+          points={traco(s.valores)}
+          fill="none"
+          stroke={s.cor}
+          strokeWidth="1.98"
+          strokeLinejoin="round"
+          strokeLinecap="round"
+        />
+      ))}
+    </svg>
+  );
+}
 /**
  * Tom do selo de variação, na convenção do Design System
  * (`ds/crm.css` → `.of-tendencia[data-tom]`): verde é resultado consumado,
@@ -31,6 +107,9 @@ export interface DadosInicio {
   jornada0: string; jornada1: string; jornada2: string; jornada3: string;
   resumo: { prioridade: string; status: string; origem: string; inicio: string; previsao: string };
   operacoes: OperacaoItem[]; etapas: EtapaItem[];
+  evolucao: PontoSerie[];
+  /** Frase do subtítulo, derivada da série — o frame trazia "Crescimento consistente em todas as frentes." fixo. */
+  evolucaoResumo: string;
 }
 const assetPathPrefix = "/onface/inicio";
 const imgAvatarBadge = `${assetPathPrefix}/fe7b6.svg`;
@@ -77,8 +156,6 @@ const imgSectorIcon1 = `${assetPathPrefix}/f9fd5.svg`;
 const imgSectorIcon2 = `${assetPathPrefix}/55755.svg`;
 const imgSectorIcon3 = `${assetPathPrefix}/b702b.svg`;
 const imgTablerTrendingUp = `${assetPathPrefix}/a2289.svg`;
-const imgTrendLineLayer = `${assetPathPrefix}/14560.svg`;
-const imgTrendLineLayer1 = `${assetPathPrefix}/11192.svg`;
 const imgUserAvatar = `${assetPathPrefix}/43d99.png`;
 
 export function HomePageFigma({ d }: { d: DadosInicio }) {
@@ -246,7 +323,7 @@ export function HomePageFigma({ d }: { d: DadosInicio }) {
                           Evolução da operação
                         </p>
                         <p className="font-['Plus_Jakarta_Sans:Regular'] font-[var(--weight\/normal,400)] relative shrink-0 text-[#8b949e] text-[11.925px]" data-node-id="316:34738">
-                          Crescimento consistente em todas as frentes.
+                          {d.evolucaoResumo}
                         </p>
                       </div>
                       <div className="content-stretch flex gap-[11.873px] items-center relative shrink-0" data-node-id="316:34739" data-name="Frame">
@@ -263,7 +340,7 @@ export function HomePageFigma({ d }: { d: DadosInicio }) {
                             <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgEllipse1} />
                           </div>
                           <p className="[word-break:break-word] font-['DM_Sans:Medium'] font-[var(--weight\/medium,500)] leading-[15.831px] relative shrink-0 text-[11.873px] text-white whitespace-nowrap" data-node-id="316:34745" style={{ fontVariationSettings: '"opsz" 14' }}>
-                            Operações
+                            Leads
                           </p>
                         </div>
                         <div className="content-stretch flex gap-[5.936px] items-center relative shrink-0" data-node-id="316:34746" data-name="Frame">
@@ -271,110 +348,20 @@ export function HomePageFigma({ d }: { d: DadosInicio }) {
                             <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgEllipse2} />
                           </div>
                           <p className="[word-break:break-word] font-['DM_Sans:Medium'] font-[var(--weight\/medium,500)] leading-[15.831px] relative shrink-0 text-[11.873px] text-white whitespace-nowrap" data-node-id="316:34748" style={{ fontVariationSettings: '"opsz" 14' }}>
-                            Clientes
+                            Ganhos
                           </p>
                         </div>
                       </div>
                     </div>
-                    <div className="h-[108.836px] relative shrink-0 w-[506.58px]" data-node-id="316:34749" data-name="Chart-Canvas">
-                      <div className="absolute h-0 left-0 top-0 w-[506.58px]" data-node-id="316:34750" data-name="Line">
-                        <div className="absolute inset-[-0.99px_0_0_0]">
-                          <img alt="" className="block max-w-none size-full" src={imgLine} />
-                        </div>
-                      </div>
-                      <div className="absolute h-0 left-0 top-[27.7px] w-[506.58px]" data-node-id="316:34751" data-name="Line">
-                        <div className="absolute inset-[-0.99px_0_0_0]">
-                          <img alt="" className="block max-w-none size-full" src={imgLine} />
-                        </div>
-                      </div>
-                      <div className="absolute h-0 left-0 top-[54.42px] w-[506.58px]" data-node-id="316:34752" data-name="Line">
-                        <div className="absolute inset-[-0.99px_0_0_0]">
-                          <img alt="" className="block max-w-none size-full" src={imgLine} />
-                        </div>
-                      </div>
-                      <div className="absolute h-0 left-0 top-[82.12px] w-[506.58px]" data-node-id="316:34753" data-name="Line">
-                        <div className="absolute inset-[-0.99px_0_0_0]">
-                          <img alt="" className="block max-w-none size-full" src={imgLine} />
-                        </div>
-                      </div>
-                      <div className="absolute h-0 left-0 top-[108.84px] w-[506.58px]" data-node-id="316:34754" data-name="Line">
-                        <div className="absolute inset-[-0.99px_0_0_0]">
-                          <img alt="" className="block max-w-none size-full" src={imgLine} />
-                        </div>
-                      </div>
-                      <div className="absolute h-[108.836px] left-0 top-0 w-[506.58px]" data-node-id="316:34755" data-name="Trend-Line-Layer">
-                        <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgTrendLineLayer} />
-                      </div>
-                      <div className="absolute h-[108.836px] left-0 top-0 w-[506.58px]" data-node-id="316:34761" data-name="Trend-Line-Layer">
-                        <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgTrendLineLayer1} />
-                      </div>
-                      <div className="absolute content-stretch flex h-[108.836px] items-start left-0 top-0 w-[506.58px]" data-node-id="316:34767" data-name="Trend-Line-Layer">
-                        <div className="absolute flex h-[10.893px] items-center justify-center left-0 top-[93px] w-[100.928px]" data-node-id="316:34768">
-                          <div className="flex-none rotate-[-6.16deg]">
-                            <div className="h-0 relative w-[101.514px]" data-name="Line">
-                              <div className="absolute inset-[-1.98px_0_0_0]">
-                                <img alt="" className="block max-w-none size-full" height="1.979" src={imgLine1} width="101.514" />
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                        <div className="absolute flex h-[10.892px] items-center justify-center left-[100.92px] top-[82.11px] w-[101.923px]" data-node-id="316:34769">
-                          <div className="flex-none rotate-[-6.1deg]">
-                            <div className="h-0 relative w-[102.503px]" data-name="Line">
-                              <div className="absolute inset-[-1.98px_0_0_0]">
-                                <img alt="" className="block max-w-none size-full" height="1.979" src={imgLine2} width="102.503" />
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                        <div className="absolute flex h-[14.849px] items-center justify-center left-[202.83px] top-[67.27px] w-[100.922px]" data-node-id="316:34770">
-                          <div className="flex-none rotate-[-8.37deg]">
-                            <div className="h-0 relative w-[102.009px]" data-name="Line">
-                              <div className="absolute inset-[-1.98px_0_0_0]">
-                                <img alt="" className="block max-w-none size-full" height="1.979" src={imgLine3} width="102.009" />
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                        <div className="absolute flex h-[14.851px] items-center justify-center left-[303.75px] top-[52.43px] w-[101.922px]" data-node-id="316:34771">
-                          <div className="flex-none rotate-[-8.29deg]">
-                            <div className="h-0 relative w-[102.998px]" data-name="Line">
-                              <div className="absolute inset-[-1.98px_0_0_0]">
-                                <img alt="" className="block max-w-none size-full" height="1.979" src={imgLine4} width="102.998" />
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                        <div className="absolute flex h-[19.774px] items-center justify-center left-[405.66px] top-[32.67px] w-[100.881px]" data-node-id="316:34772">
-                          <div className="flex-none rotate-[-11.09deg]">
-                            <div className="h-0 relative w-[102.8px]" data-name="Line">
-                              <div className="absolute inset-[-1.98px_0_0_0]">
-                                <img alt="" className="block max-w-none size-full" height="1.979" src={imgLine5} width="102.8" />
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
+                    <GraficoEvolucao pontos={d.evolucao} />
+                    {/* Os rótulos saem da série, não da marcação: o frame trazia
+                        "Jul … Dez" escrito à mão, com três meses no futuro. */}
                     <div className="[word-break:break-word] content-stretch flex font-['DM_Sans:Medium'] font-[var(--weight\/medium,500)] items-center justify-between leading-[15.831px] px-[5.936px] relative shrink-0 text-[#4e5d73] text-[11.873px] w-full whitespace-nowrap" data-node-id="316:34773" data-name="Frame">
-                      <p className="relative shrink-0" data-node-id="316:34774" style={{ fontVariationSettings: '"opsz" 14' }}>
-                        Jul
-                      </p>
-                      <p className="relative shrink-0" data-node-id="316:34775" style={{ fontVariationSettings: '"opsz" 14' }}>
-                        Ago
-                      </p>
-                      <p className="relative shrink-0" data-node-id="316:34776" style={{ fontVariationSettings: '"opsz" 14' }}>
-                        Set
-                      </p>
-                      <p className="relative shrink-0" data-node-id="316:34777" style={{ fontVariationSettings: '"opsz" 14' }}>
-                        Out
-                      </p>
-                      <p className="relative shrink-0" data-node-id="316:34778" style={{ fontVariationSettings: '"opsz" 14' }}>
-                        Nov
-                      </p>
-                      <p className="relative shrink-0" data-node-id="316:34779" style={{ fontVariationSettings: '"opsz" 14' }}>
-                        Dez
-                      </p>
+                      {d.evolucao.map((ponto) => (
+                        <p key={ponto.label} className="relative shrink-0" style={{ fontVariationSettings: '"opsz" 14' }}>
+                          {ponto.label}
+                        </p>
+                      ))}
                     </div>
                     <div className="absolute inset-0 pointer-events-none rounded-[inherit] shadow-[inset_0.989px_0.989px_0px_0px_rgba(255,255,255,0.08)]" />
                   </div>

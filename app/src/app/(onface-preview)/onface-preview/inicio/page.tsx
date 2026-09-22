@@ -4,10 +4,12 @@ import { db } from "@/lib/db";
 import { getTenantContext } from "@/lib/auth/tenant";
 import { getClientesAtivos } from "@/lib/analytics/inicio";
 import {
-  getJornadaEtapas, getLeadsGerados, getOperacaoDetalhe, getOperacoesAtivas,
-  getOperacoesPrioritarias, getReceitaMes,
+  getEvolucaoOperacao, getJornadaEtapas, getLeadsGerados, getOperacaoDetalhe,
+  getOperacoesAtivas, getOperacoesPrioritarias, getReceitaMes,
 } from "@/lib/analytics/onface-inicio";
-import { HomePageFigma, type DadosInicio, type TomTendencia } from "@/components/onface/inicio/HomePageFigma";
+import {
+  HomePageFigma, type DadosInicio, type PontoSerie, type TomTendencia,
+} from "@/components/onface/inicio/HomePageFigma";
 
 export const dynamic = "force-dynamic";
 
@@ -26,6 +28,27 @@ const dataCurta = (d: Date | null) =>
   d ? d.toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" }) : "—";
 
 /**
+ * O subtítulo do card de evolução dizia "Crescimento consistente em todas as
+ * frentes." — escrito na marcação, no mesmo card em que a receita caía 78%. Uma
+ * afirmação sobre o dado tem que sair do dado; quando a série não permite
+ * afirmar nada, o certo é dizer o período, não elogiar a operação.
+ */
+function resumoDaEvolucao(serie: PontoSerie[]): string {
+  if (serie.length < 2) return "Histórico ainda curto para comparar.";
+  const primeiro = serie[0], ultimo = serie[serie.length - 1];
+  const janela = `${primeiro.label} a ${ultimo.label}`;
+  const sobe = (a: number, b: number) => b > a;
+  const subindo = [
+    sobe(primeiro.receita, ultimo.receita) && "receita",
+    sobe(primeiro.leads, ultimo.leads) && "leads",
+    sobe(primeiro.ganhos, ultimo.ganhos) && "ganhos",
+  ].filter(Boolean) as string[];
+  if (subindo.length === 3) return `${janela}: receita, leads e ganhos em alta.`;
+  if (subindo.length === 0) return `${janela}: as três frentes abaixo do início do período.`;
+  return `${janela}: ${subindo.join(" e ")} em alta, o resto abaixo do início do período.`;
+}
+
+/**
  * Visão Geral ONFACE — preview.
  *
  * A tela é a marcação do Figma (ver `HomePageFigma`); esta página só resolve
@@ -38,13 +61,14 @@ export default async function OnfaceInicioPreview() {
 
   const hoje = new Date();
 
-  const [receita, leads, ativas, clientes, jornada, prioritarias] = await Promise.all([
+  const [receita, leads, ativas, clientes, jornada, prioritarias, evolucao] = await Promise.all([
     getReceitaMes(ctx.organizacaoId, hoje),
     getLeadsGerados(ctx.organizacaoId, hoje),
     getOperacoesAtivas(ctx.organizacaoId),
     getClientesAtivos(ctx.organizacaoId),
     getJornadaEtapas(ctx.organizacaoId, hoje),
     getOperacoesPrioritarias(ctx.organizacaoId, 5),
+    getEvolucaoOperacao(ctx.organizacaoId, hoje),
   ]);
 
   const [entrega] = await db.execute<{ id: string }>(sql`
@@ -70,6 +94,10 @@ export default async function OnfaceInicioPreview() {
         : "Sem prazo definido";
 
   const pipelineParado = jornada.find((e) => e.chave === "pipeline")?.vencidos ?? 0;
+
+  // `getEvolucaoOperacao` devolve doze meses já rotulados ("Jan"…"Dez").
+  // Seis cabem na largura do card sem os rótulos se encavalarem.
+  const serie = evolucao.slice(-6);
 
   const d: DadosInicio = {
     saudacao: primeiroNome ? `${periodo}, ${primeiroNome}.` : `${periodo}.`,
@@ -120,6 +148,8 @@ export default async function OnfaceInicioPreview() {
     jornada1: jornada[1]?.label ?? "—",
     jornada2: jornada[2]?.label ?? "—",
     jornada3: jornada[3]?.label ?? "—",
+    evolucao: serie,
+    evolucaoResumo: resumoDaEvolucao(serie),
     operacoes: prioritarias.map((l) => ({
       empresa: l.empresa,
       descricao: l.descricao,

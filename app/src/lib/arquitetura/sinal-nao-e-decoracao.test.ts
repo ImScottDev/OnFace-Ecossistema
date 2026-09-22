@@ -34,6 +34,10 @@ const PAGE = path.join(RAIZ, "src", "app", "(onface-preview)", "onface-preview",
 /** Verde do export do Figma: `#3fb950` e o `rgba(63,185,80,…)` do fundo. */
 const VERDE_CRU = /#3fb950|rgba\(63,\s*185,\s*80/i;
 
+/** Tira comentários de bloco e de linha, para o assert olhar só o que renderiza. */
+const semComentarios = (fonte: string) =>
+  fonte.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+
 test("a home não pinta selo com cor crua de sucesso", () => {
   const home = fs.readFileSync(HOME, "utf8");
   assert.doesNotMatch(home, VERDE_CRU,
@@ -43,6 +47,36 @@ test("a home não pinta selo com cor crua de sucesso", () => {
 
   const selos = home.match(/className="of-tendencia"/g) ?? [];
   assert.equal(selos.length, 4, `esperados 4 selos no padrão do DS, achei ${selos.length}`);
+});
+
+test("o gráfico da home sai da série, não do export do Figma", () => {
+  // O card central da Visão Geral era uma pilha de <img> de segmento de reta,
+  // cada um girado num ângulo fixo, com os meses "Jul … Dez" escritos na
+  // marcação — três deles no futuro — e o subtítulo "Crescimento consistente em
+  // todas as frentes." no mesmo card em que a receita caía 78%.
+  // `getEvolucaoOperacao` já devolvia doze meses reais e não era chamada.
+  const home = fs.readFileSync(HOME, "utf8");
+  assert.doesNotMatch(home, /imgTrendLineLayer/,
+    "voltaram as camadas de linha exportadas do Figma — o gráfico tem que sair do dado");
+  assert.doesNotMatch(home, /rotate-\[-?\d/,
+    "segmento de reta girado em ângulo fixo é desenho, não série");
+  // Só a MARCAÇÃO conta. Os comentários deste arquivo citam a frase antiga de
+  // propósito, para explicar o que foi trocado — um match no arquivo inteiro
+  // proibiria documentar o defeito, e foi o que aconteceu na primeira versão
+  // desta trava: ela ficou vermelha por causa do próprio comentário.
+  const marcacao = semComentarios(home);
+  assert.doesNotMatch(marcacao, /Crescimento consistente em todas as frentes/,
+    "o subtítulo voltou a afirmar crescimento sem olhar a série");
+  assert.match(home, /<GraficoEvolucao pontos=\{d\.evolucao\}/,
+    "o card precisa receber a série");
+  assert.match(home, /d\.evolucao\.map/,
+    "os rótulos de mês precisam sair da série: escritos na marcação, ficam presos em Jul–Dez");
+
+  const page = fs.readFileSync(PAGE, "utf8");
+  assert.match(page, /getEvolucaoOperacao\(/,
+    "a página precisa chamar a consulta da série — ela existia e ninguém a chamava");
+  assert.match(page, /resumoDaEvolucao/,
+    "o subtítulo do card precisa ser derivado da série");
 });
 
 test("o tom do selo é função do sinal, não constante", () => {

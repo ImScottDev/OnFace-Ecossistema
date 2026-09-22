@@ -2747,3 +2747,26 @@ real e não é chamada pela home.
 
 Trava `sinal-nao-e-decoracao` provada por reintrodução nas duas direções.
 Validação: tsc limpo, 337 testes / 0 falhas.
+
+## 2026-09-22 — CP36: o gráfico no centro da home era desenho
+
+O card "Evolução da operação" era uma pilha de <img> de segmento de reta, cada
+um girado num ângulo fixo, com os meses "Jul … Dez" escritos na marcação (três
+no futuro) e o subtítulo fixo "Crescimento consistente em todas as frentes." no
+mesmo card em que a receita caía 78%. `getEvolucaoOperacao` já devolvia doze
+meses reais e a home não a chamava.
+
+Trocado por SVG na mesma caixa do desenho. Cada série é normalizada pelo próprio
+máximo — receita em dezenas de milhares e ganhos em dezenas não cabem num eixo
+só. A legenda passou a nomear o que a consulta devolve (Receita, Leads, Ganhos,
+no lugar de Receita, Operações, Clientes) e o subtítulo virou `resumoDaEvolucao`,
+derivado da comparação entre o primeiro e o último mês.
+
+Medido no navegador com sessão real: 3 polyline, zero img de gráfico, rótulos
+Abr–Set vindos da série.
+
+Trava `sinal-nao-e-decoracao` estendida. A primeira versão dela ficou vermelha
+por causa do próprio comentário que citava a frase antiga: agora ignora
+comentários e olha só a marcação.
+
+Validação: tsc limpo, 338 testes / 0 falhas.

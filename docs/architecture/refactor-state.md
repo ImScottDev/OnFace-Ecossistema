@@ -2228,6 +2228,41 @@ Peça pronta sem caller, na tela principal. Vai para o CP36.
 `sinal-nao-e-decoracao` provada por reintrodução nas duas direções (cor crua de
 volta, e `data-tom` fixo em `ok`).
 
+### CP36 — O gráfico no centro da home era desenho
+
+Continuação direta do achado do CP35. O card "Evolução da operação", que ocupa o
+meio da Visão Geral, era uma **pilha de `<img>` de segmento de reta**, cada um
+girado num ângulo fixo (`rotate-[-6.16deg]`, `-8.37deg`, …), com os meses
+**"Jul … Dez" escritos na marcação** — três deles no futuro, num dia 22 de
+setembro — e o subtítulo **"Crescimento consistente em todas as frentes."** no
+mesmo card em que a receita caía 78%.
+
+`getEvolucaoOperacao` já existia, já devolvia doze meses reais de receita
+fechada, leads e negócios ganhos, e **a home não a chamava**. Peça pronta sem
+caller, na tela principal do produto.
+
+Agora é SVG de verdade, na mesma caixa do desenho (506,58 × 108,836), para o
+card não mudar de geometria. Três decisões que valem registro:
+
+- **cada série normalizada pelo próprio máximo.** Receita em dezenas de milhares
+  e ganhos em dezenas não cabem num eixo só: forçá-las nele achataria duas das
+  três linhas até virarem o mesmo traço no chão. O card oferece leitura de
+  tendência, e a legenda diz isso.
+- **a legenda passou a nomear o que existe.** Dizia "Receita · Operações ·
+  Clientes"; a consulta devolve receita, leads e ganhos. Rótulo que não
+  corresponde à série é a mesma mentira, em letra menor.
+- **o subtítulo é derivado.** `resumoDaEvolucao` compara o primeiro e o último
+  mês e escreve o que achou — hoje *"Abr a Set: leads e ganhos em alta, o resto
+  abaixo do início do período."*
+
+Medido no navegador, com sessão real: 3 `polyline`, zero `<img>` de gráfico,
+rótulos `Abr Mai Jun Jul Ago Set` vindos da série.
+
+**Validação:** tsc limpo, **338 testes / 0 falhas**, trava
+`sinal-nao-e-decoracao` estendida e provada por reintrodução. A primeira versão
+da trava ficou vermelha por causa do próprio comentário que citava a frase
+antiga — agora ela olha só a marcação, ignorando comentários.
+
 ### Auditoria de CS Health (histórico da decisão)
 
 Menor do que o gap analysis inicial dizia:
