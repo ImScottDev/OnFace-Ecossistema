@@ -2966,3 +2966,21 @@ igual ao de hoje) e o reparo o desliga.
 estendida às escritas derivadas e provada por reintrodução.
 
 Validação: tsc limpo, 347 testes / 0 falhas.
+
+## 2026-09-22 — CP47: chave de idempotência com relógio não dedupica
+
+Duas rotas de conversa construíam a chave com o instante da requisição, então
+nada dedupicava. E em `contatos.ts` a condição do tipo de evento estava
+invertida: `responsavelId === targetUserId` (já era dessa pessoa, nada mudou)
+publicava `ConversationClaimed`, e assumir conversa sem dono caía em
+`ConversationTransferred`.
+
+Aplicado o padrão de `lib/crm/tags.ts`: publicar só quando mudou, chave
+descrevendo o estado alcançado. `snooze` carrega o prazo, que é estado.
+
+A trava achou dois casos não vistos: `cadence-engine` com fallback
+`?? new Date()` (corrigido, o `recebidaEm` é fato estável) e `lib/cs/handoff.ts`
+com granularidade de DIA, que está certo e virou exceção nomeada — a primeira
+versão da trava acusava a decisão correta.
+
+Validação: tsc limpo, 349 testes / 0 falhas, smoke novo verde.

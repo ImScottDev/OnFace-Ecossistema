@@ -301,14 +301,43 @@ app.post("/atendimento/conversas/:id/acao", async (c) => {
     close: "ConversationClosed",
     reopen: "ConversationReopened",
   } as const;
-  await publicarEvento({
-    organizacaoId: ctx.organizacaoId,
-    eventType: eventByAction[acao],
-    aggregateType: "contato",
-    aggregateId: contatoId,
-    payload: { acao, usuarioId: alvo, actorId: ctx.userId, minutos: parsed.data.minutos ?? null },
-    idempotencyKey: `contato:${contatoId}:${acao}:${agora.getTime()}`,
-  });
+  // O EVENTO SAI DO FATO, NÃO DO RELÓGIO.
+  //
+  // A chave era `contato:<id>:<acao>:<agora.getTime()>`, e `agora` é
+  // `new Date()` desta requisição — ou seja, **cada chamada gerava uma chave
+  // nova e nada dedupicava**. Idempotência decorativa: dois cliques no mesmo
+  // botão publicavam dois `ConversationClaimed`, e quem consome o evento
+  // (automação, notificação) reagia duas vezes.
+  //
+  // O padrão certo já existe no projeto, em `lib/crm/tags.ts`: **só publica
+  // quando MUDOU**. Reivindicar uma conversa que já é sua não é fato novo; o
+  // estado anterior é o que decide.
+  //
+  // Hoje `domain_events` não tem nenhum `Conversation*` — o caminho ainda não
+  // foi exercido, e é por isso que dá para consertar antes de virar limpeza.
+  const mudou =
+    acao === "claim" || acao === "transfer" ? contato.responsavelId !== alvo
+    : acao === "release" ? contato.responsavelId !== null
+    : acao === "unsnooze" ? contato.snoozedUntil !== null
+    : acao === "close" ? contato.status !== "closed"
+    : acao === "reopen" ? contato.status !== "open"
+    // `snooze` é sempre fato novo: adiar de novo é outra decisão, com outro prazo.
+    : true;
+
+  if (mudou) {
+    await publicarEvento({
+      organizacaoId: ctx.organizacaoId,
+      eventType: eventByAction[acao],
+      aggregateType: "contato",
+      aggregateId: contatoId,
+      payload: { acao, usuarioId: alvo, actorId: ctx.userId, minutos: parsed.data.minutos ?? null },
+      // A chave descreve o ESTADO alcançado, não o instante. Reprocessar a
+      // mesma transição não publica de novo; uma transição diferente sim.
+      idempotencyKey: acao === "snooze"
+        ? `contato:${contatoId}:snooze:${(patch.snoozedUntil as Date).getTime()}`
+        : `contato:${contatoId}:${acao}:${alvo ?? "nenhum"}`,
+    });
+  }
 
   return c.json({ contato: updated });
 });

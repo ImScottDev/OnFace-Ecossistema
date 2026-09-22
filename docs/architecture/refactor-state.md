@@ -64,9 +64,9 @@ com o PABX invendável.
 
 ## Último commit
 
-`(CP46)` — o relógio de trabalho andava sem trabalho, em dois lugares
+`(CP47)` — chave de idempotência que carrega o relógio não dedupica nada
 
-**Estado medido em 22/09/2026:** tsc limpo · **347 testes / 0 falhas** · build de
+**Estado medido em 22/09/2026:** tsc limpo · **349 testes / 0 falhas** · build de
 produção limpo · **36 verificações** na bateria de smokes · **4 aceites com 208
 asserções** · **paridade 13/14** (o não verificável é o NEXO, por credencial) ·
 **14/14 rotas do ONFACE** renderizando. Nada de produção foi tocado.
@@ -2680,6 +2680,50 @@ grava sem mover o relógio, a chamada por ação move, e a chamada em lote não.
 Trava estendida e provada por reintrodução nos dois casos.
 
 **Validação:** tsc limpo, **347 testes / 0 falhas**, smoke novo verde.
+
+### CP47 — Chave de idempotência que carrega o relógio não dedupica nada
+
+Uma chave de idempotência existe para responder *"este fato já foi
+registrado?"*. Se ela inclui o instante da execução, a resposta é sempre **não**:
+cada chamada gera chave nova. É pior que não ter, porque o código afirma que
+protege.
+
+Duas estavam assim, nas rotas que mexem no dono de uma conversa:
+
+```
+contato:${id}:${acao}:${agora.getTime()}              // agora = new Date()
+contato:${id}:assignment:${updated.updatedAt.getTime()}
+```
+
+**E a segunda escondia um defeito maior.** A condição do tipo de evento estava
+invertida: `contato.responsavelId === targetUserId` significa que a conversa **já
+era daquela pessoa** — nada mudou — e mesmo assim publicava
+`ConversationClaimed`; assumir uma conversa **sem dono**, que é o significado de
+*claim*, caía em `ConversationTransferred`.
+
+O padrão certo já existe no projeto, em `lib/crm/tags.ts`: **publicar só quando
+MUDOU**, com a chave descrevendo o **estado alcançado**. `snooze` mostra a
+fronteira: adiar de novo, com outro prazo, É outro fato, então a chave dele
+carrega o prazo — que é estado, não relógio.
+
+`domain_events` não tinha nenhum `Conversation*`: o caminho nunca foi exercido, e
+por isso nenhuma contagem denunciava.
+
+**A trava achou dois casos que eu não tinha visto**, e o segundo mudou o desenho
+dela:
+
+- `cadence-engine` usava `input.recebidaEm ?? new Date()`. O `recebidaEm` é fato
+  externo e estável; o fallback trocava o fato pelo relógio. Corrigido.
+- `lib/cs/handoff.ts` usa `new Date().toISOString().slice(0, 10)` — o **dia**, não
+  o instante. Sem id de fatura, duas falhas da mesma empresa no mesmo dia são
+  deliberadamente o mesmo fato. **Está certo**, e a primeira versão da trava o
+  acusava. Virou exceção nomeada com o porquê, no mesmo desenho de
+  `BUMP_JUSTIFICADO`. Uma trava dogmática a ponto de recusar a decisão certa é
+  tão ruim quanto nenhuma.
+
+**Validação:** tsc limpo, **349 testes / 0 falhas**, `smoke-evento-de-conversa`
+prova os três casos (claim sem dono, reatribuir ao mesmo, transferir), trava
+provada por reintrodução nos dois sentidos.
 
 ### Auditoria de CS Health (histórico da decisão)
 

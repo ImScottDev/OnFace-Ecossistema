@@ -106,14 +106,29 @@ app.post("/contatos/:id/atribuir", async (c) => {
     .where(eq(contatos.id, id))
     .returning();
 
-  await publicarEvento({
-    organizacaoId: ctx.organizacaoId,
-    eventType: contato.responsavelId === targetUserId ? "ConversationClaimed" : "ConversationTransferred",
-    aggregateType: "contato",
-    aggregateId: id,
-    payload: { actorId: ctx.userId, usuarioAnteriorId: contato.responsavelId, usuarioId: targetUserId },
-    idempotencyKey: `contato:${id}:assignment:${updated.updatedAt?.getTime() ?? Date.now()}`,
-  });
+  // Dois defeitos moravam aqui, e o segundo escondia o primeiro.
+  //
+  // 1. A CHAVE saía do relógio: `assignment:${updated.updatedAt.getTime()}`
+  //    muda a cada chamada, então nada dedupicava. Idempotência decorativa.
+  //
+  // 2. A CONDIÇÃO estava invertida. `contato.responsavelId === targetUserId`
+  //    significa que a conversa JÁ era dessa pessoa — não mudou nada — e ainda
+  //    assim publicava `ConversationClaimed`. E assumir uma conversa SEM dono,
+  //    que é o significado de "claim", caía em `ConversationTransferred`.
+  //
+  // O padrão do projeto (`lib/crm/tags.ts`) é publicar só quando MUDOU, e a
+  // chave descrever o estado alcançado.
+  if (contato.responsavelId !== targetUserId) {
+    await publicarEvento({
+      organizacaoId: ctx.organizacaoId,
+      // Sem dono antes é reivindicação; com outro dono antes é transferência.
+      eventType: contato.responsavelId === null ? "ConversationClaimed" : "ConversationTransferred",
+      aggregateType: "contato",
+      aggregateId: id,
+      payload: { actorId: ctx.userId, usuarioAnteriorId: contato.responsavelId, usuarioId: targetUserId },
+      idempotencyKey: `contato:${id}:assignment:${targetUserId}`,
+    });
+  }
 
   return c.json({ contato: updated });
 });

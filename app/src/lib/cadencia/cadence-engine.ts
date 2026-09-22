@@ -726,7 +726,12 @@ export async function registrarRespostaEmCadencias(input: { organizacaoId: strin
       cancelReason: pause ? "resposta recebida" : row.cancelReason,
       scheduledAt: pause ? null : new Date(), nextEvalAt: pause ? null : new Date(), updatedAt: new Date(),
     }).where(eq(cadenceEnrollments.id, row.id));
-    await db.insert(cadenceEnrollmentEvents).values({ enrollmentId: row.id, stepId: row.currentStepId ?? "-", status: pause ? "pausado_por_resposta" : "resposta_recebida", resultado: { contatoId: input.contatoId }, idempotencyKey: `reply:${row.id}:${(input.recebidaEm ?? new Date()).toISOString()}` }).onConflictDoNothing();
+    await db.insert(cadenceEnrollmentEvents).values({ enrollmentId: row.id, stepId: row.currentStepId ?? "-", status: pause ? "pausado_por_resposta" : "resposta_recebida", resultado: { contatoId: input.contatoId }, // `recebidaEm` é o instante em que a resposta CHEGOU, e como fato externo
+      // ele é estável: a mesma resposta reentregue traz a mesma data. O problema
+      // era o fallback `?? new Date()`, que trocava o fato pelo relógio — sem a
+      // data, cada reentrega virava um evento novo. Uma resposta sem data é "a
+      // resposta que pausou esta inscrição", e a inscrição só pausa uma vez.
+      idempotencyKey: `reply:${row.id}:${input.recebidaEm?.toISOString() ?? "sem-data"}` }).onConflictDoNothing();
     atualizados++;
   }
   return atualizados;
