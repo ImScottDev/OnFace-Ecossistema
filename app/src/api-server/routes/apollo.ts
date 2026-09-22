@@ -362,7 +362,17 @@ app.post("/webhook", async (c) => {
       return c.json({ ok: true, message: "Lead not found" });
     }
 
-    const updates: Record<string, unknown> = { updatedAt: new Date() };
+    // SEM `updatedAt`: isto é enriquecimento, não trabalho no lead.
+    //
+    // O webhook preenche telefone e e-mail que FALTAVAM (`!lead.telefone`,
+    // `!lead.email`) — descobrir o contato de alguém é dado que chegou, não
+    // alguém que trabalhou o lead. `leads.updated_at` é o relógio do board de
+    // Pré-vendas, e bumpar aqui jogaria para o topo leads que ninguém tocou.
+    //
+    // É a mesma regra que tirou o bump de `rd-criativo` (2.006 leads parados) e
+    // do lead scoring. Hoje o banco tem ZERO leads com `apollo_id`, então o
+    // caminho nunca foi exercido e dá para fechar antes de virar limpeza.
+    const updates: Record<string, unknown> = {};
 
     // Update phone if we got one
     if (person.phone_numbers?.length && !lead.telefone) {
@@ -379,7 +389,7 @@ app.post("/webhook", async (c) => {
       updates.email = person.personal_emails[0];
     }
 
-    if (Object.keys(updates).length > 1) {
+    if (Object.keys(updates).length > 0) {
       await db.update(leads).set(updates).where(eq(leads.id, lead.id));
       console.log(`Apollo webhook: updated lead ${lead.id} with waterfall data`);
     }

@@ -2984,3 +2984,22 @@ com granularidade de DIA, que está certo e virou exceção nomeada — a primei
 versão da trava acusava a decisão correta.
 
 Validação: tsc limpo, 349 testes / 0 falhas, smoke novo verde.
+
+## 2026-09-22 — CP48: varredura de isolamento e o enriquecimento do Apollo
+
+Varredura de tenant isolation nas 61 rotas do Hono. O grep ingênuo dá 110
+ocorrências, quase todas o padrão seguro (carregar filtrando por organização,
+404 se não vier, atualizar por id). Filtrando por handler que nunca menciona
+`organizacaoId`, sobram 7: quatro de `admin.ts` (super-admin, acima da
+organização por definição), `definir-senha` (token identifica o usuário),
+`perfil PATCH` (o próprio `ctx.userId`) e o webhook do Apollo (autentica com
+`timingSafeEqual`, organização vem do lead). Nenhum furo.
+
+O webhook do Apollo entregou outra coisa: preenche telefone e e-mail que
+faltavam e bumpava `updated_at`. Enriquecimento pela definição do CP46, fora da
+varredura da trava por causa da pasta — é integração com nome de rota. Zero
+leads com `apollo_id` no banco, caminho nunca exercido.
+
+Bump removido e a trava passou a cobrir integrações fora de `lib/integrations`.
+
+Validação: tsc limpo, 349 testes / 0 falhas.

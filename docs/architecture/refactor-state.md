@@ -64,7 +64,7 @@ com o PABX invendável.
 
 ## Último commit
 
-`(CP47)` — chave de idempotência que carrega o relógio não dedupica nada
+`(CP48)` — varredura de isolamento, e um enriquecimento escondido numa rota
 
 **Estado medido em 22/09/2026:** tsc limpo · **349 testes / 0 falhas** · build de
 produção limpo · **36 verificações** na bateria de smokes · **4 aceites com 208
@@ -2724,6 +2724,38 @@ dela:
 **Validação:** tsc limpo, **349 testes / 0 falhas**, `smoke-evento-de-conversa`
 prova os três casos (claim sem dono, reatribuir ao mesmo, transferir), trava
 provada por reintrodução nos dois sentidos.
+
+### CP48 — Varredura de isolamento, e um enriquecimento escondido numa rota
+
+Varredura de **tenant isolation** sobre as 61 rotas do Hono, procurando o que o
+CP27 achou: escrita por id sem escopo de organização.
+
+O grep ingênuo dá **110 ocorrências**, e quase todas são o padrão seguro —
+carregar o registro filtrando por organização, devolver 404 se não vier, e então
+atualizar por id. Filtrando por **handler inteiro que nunca menciona
+`organizacaoId`**, sobram 7:
+
+| rota | veredito |
+|---|---|
+| 4 de `admin.ts` (organizações e usuários) | **legítimo**: são rotas de super-admin, que operam acima da organização por definição |
+| `auth-flow POST /definir-senha` | **legítimo**: o token identifica o usuário |
+| `perfil PATCH /` | **legítimo**: o usuário edita o próprio registro, por `ctx.userId` |
+| `apollo POST /webhook` | **legítimo**: autentica com `timingSafeEqual`, e a organização vem do lead encontrado pelo `apollo_id` |
+
+**Nenhum furo de isolamento.** Mas o webhook do Apollo entregou outra coisa: ele
+preenche telefone e e-mail que **faltavam** e **bumpava `updated_at`**.
+
+Isso é enriquecimento pela definição do CP46 — descobrir o contato de alguém é
+dado que chegou, não trabalho feito no lead — e ficava **fora da varredura da
+trava por causa da pasta**: é integração com nome de rota. É a mesma correção
+que já tinha sido feita em `rd-criativo` (2.006 leads parados) e no lead scoring.
+
+Hoje o banco tem **zero leads com `apollo_id`**: o caminho nunca foi exercido, e
+por isso nenhuma contagem denunciava. A trava passou a cobrir integrações que
+moram fora de `lib/integrations`, nomeando-as.
+
+**Validação:** tsc limpo, **349 testes / 0 falhas**, trava provada por
+reintrodução.
 
 ### Auditoria de CS Health (histórico da decisão)
 

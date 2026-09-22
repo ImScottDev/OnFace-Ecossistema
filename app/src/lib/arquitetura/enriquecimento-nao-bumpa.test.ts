@@ -40,8 +40,22 @@ function arquivos(dir: string): string[] {
   });
 }
 
+/**
+ * Integrações que moram FORA de `lib/integrations`.
+ *
+ * `api-server/routes/apollo.ts` é integração com nome de rota: recebe webhook do
+ * Apollo e preenche telefone e e-mail que faltavam. Ficava fora da varredura por
+ * causa da pasta, e bumpava `updated_at` — o mesmo enriquecimento que já tinha
+ * sido tirado de `rd-criativo`.
+ */
+const INTEGRACOES_FORA_DA_PASTA = ["api-server/routes/apollo.ts"];
+
 test("nenhuma integração nova bumpa updated_at sem justificativa registrada", () => {
   const infratores: string[] = [];
+  for (const rel of INTEGRACOES_FORA_DA_PASTA) {
+    if (!/updatedAt:\s*new Date\(\)/.test(fs.readFileSync(path.join(SRC, rel), "utf8"))) continue;
+    if (!(rel in BUMP_JUSTIFICADO)) infratores.push(rel);
+  }
   for (const f of arquivos(path.join(SRC, "lib", "integrations"))) {
     const rel = path.relative(SRC, f).split(path.sep).join("/");
     if (!/updatedAt:\s*new Date\(\)/.test(fs.readFileSync(f, "utf8"))) continue;
