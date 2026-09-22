@@ -2492,3 +2492,22 @@ Mesmo padrão do CP22: a correção foi aplicada numa leitura e não na irmã.
 
 **Validação:** tsc limpo, **324 testes 0 falhas**, **29/29 smokes**, tela
 conferida no navegador.
+
+## 2026-09-21 — CP24: o MRR duplicado cresce, e a prova está na descrição
+
+Investigação de dois exports sem chamador que NÃO virou código: a ferramenta, o
+relatório e a tela de duplicidade existem e funcionam em 0,2s.
+
+O que rendeu foi um número datado. O MRR em excesso saiu de R$ 17.449,30 (08/08)
+para R$ 24.205,50 (14/09) e está em R$ 31.840,60 hoje.
+
+A causa raiz foi corrigida em `syncStripe` no commit f17c961, de 09/08, e os
+duplicados continuam nascendo — o último par é de 18/09. A prova de por quê está
+na descrição: cada par traz "Gerado da proposta #P-XXXX-v1", string que o commit
+63dcd5c removeu do código em 16/08.
+
+Contrato criado em 18/09 com uma string apagada do código em 16/08 confirma o
+que o HUB já registra: o deploy é rsync, não git, e produção roda outro código.
+
+Para a decisão da virada: o passivo cresce ~R$ 7 mil de MRR inflado por mês, e
+para no dia da virada, porque o caminho duplicador não existe mais aqui.

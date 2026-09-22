@@ -1729,6 +1729,52 @@ nomeia pessoas.
 **Validação:** tsc limpo, **324 testes 0 falhas**, **29/29 smokes**, e a tela
 conferida no navegador mostrando o insight junto dos 33% da meta do mês.
 
+### CP24 — O MRR duplicado não é passivo parado: ele cresce
+
+Investigação a partir de dois exports sem chamador em
+`lib/crm/contrato-duplicidade.ts`. **Não virou código novo**: a ferramenta, o
+relatório e a tela (`/ajustes/qualidade-dados/duplicidade`) existem, funcionam
+em 0,2s e são honestos — a própria tela avisa "nada é corrigido aqui". O que a
+investigação rendeu foi um número datado.
+
+**A progressão do passivo:**
+
+| quando | MRR em excesso | fonte |
+|---|---|---|
+| 08/08/2026 | R$ 17.449,30 | auditoria original, 36 pares |
+| 14/09/2026 | R$ 24.205,50 | registro do refactor, 60 contratos |
+| **21/09/2026** | **R$ 31.840,60** | medido hoje, 134 grupos |
+
+Classificado pela evidência do Stripe, e não por heurística: 68 upsell
+confirmado (venda real em paralelo, não tocar), 17 obsoleto confirmado, 339
+ambíguos — destes, 123 duplicata provável, 179 legítimo provável e 37 que
+precisam mesmo de olho humano.
+
+**Por que cresce, se a causa raiz foi corrigida.** O fix entrou em `syncStripe`
+no commit `f17c961`, de **09/08**: ele passou a checar `stripeSubscriptionId`
+antes de decidir criar vs. reaproveitar. E os duplicados continuam nascendo —
+o último par é de **18/09**.
+
+A prova de por quê está na descrição dos contratos. Cada par é sempre o mesmo:
+`Assinatura Stripe — <plano>` (do sync, sem negócio) mais
+`Gerado da proposta #P-XXXX-v1` (com negócio). **A string "Gerado da proposta"
+não existe no código desde o commit `63dcd5c`, de 16/08**, quando o
+commercial-core-v2 a trocou por "Gerado do grupo comercial".
+
+Contratos criados em 17 e 18/09 carregando uma string removida do código em
+16/08 só têm uma explicação, e ela já está registrada no HUB: **o deploy é
+rsync, não git, e produção roda código que não é o desta branch**.
+
+**Consequência para a decisão da virada:** o passivo não é histórico parado. Ele
+cresce cerca de **R$ 7 mil de MRR inflado por mês** enquanto produção rodar o
+código atual dela. A virada para desde o dia em que acontecer, porque o caminho
+duplicador já não existe aqui.
+
+**BLOQUEIO registrado:** resolver as duplicatas existentes é escrita em dado
+histórico e decisão de operação (qual contrato fica). Os 17 "obsoleto
+confirmado" são inequívocos pelo Stripe, mas mesmo eles não serão tocados sem
+autorização.
+
 ### Auditoria de CS Health (histórico da decisão)
 
 Menor do que o gap analysis inicial dizia:
