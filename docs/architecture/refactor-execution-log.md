@@ -2579,3 +2579,19 @@ comentário foi reescrito com o fato medido.
 O índice sozinho teria criado um modo de falha novo — webhook respondendo erro
 na reentrega é o que faz a Meta reentregar mais. Por isso o `onConflictDoNothing`
 entrou no mesmo passo.
+
+## 2026-09-22 — CP29: idempotência auditada, e a segunda prova sobre produção
+
+Varredura dos jobs de fila. Meu padrão de regex acusou seis sem marca e estava
+errado — regex sobre corpo de função vaza entre blocos. A medição no banco não.
+
+No dado: 0 chaves repetidas no outbox, 0 duplicatas de WhatsApp, 4.938 de 4.938
+ligações com chave. As 96 atividades idênticas no mesmo minuto pediam olho, e as
+de ligação apontavam para 42 ligações DISTINTAS — chamadas reais, não reentrega.
+
+A duplicação real era "Link de pagamento gerado" gravado duas vezes para a mesma
+proposta. Essa string não existe no código desde 16/08, commit 63dcd5c — o mesmo
+do CP24. Segunda evidência independente, com data, de que produção roda código
+anterior a esta branch.
+
+Nada a corrigir aqui: o caminho já não existe, e o passivo para na virada.

@@ -1917,6 +1917,48 @@ erro, e a trava é do **banco** — inserir sem `onConflict` é recusado pelo
 **Validação:** tsc limpo, **326 testes 0 falhas**, `smoke-meta-lead-ads` 14/14,
 índice declarado no Drizzle (o guard de drift cobre).
 
+### CP29 — Idempotência: varredura fechada, e a segunda prova de que produção roda outro código
+
+Varredura de idempotência nos jobs de fila do worker, o item que faltava da
+lista que o plano manda preservar. Seis jobs inseriam sem marca **no meu
+padrão de busca**, e o padrão estava errado: `stripe-webhook-events` responde
+`(already processed)` e o `conversion-sync` reaproveita o payload já persistido
+por evento do Stripe. Regex sobre corpo de função vaza entre blocos; a medição
+no banco não.
+
+Medido no dado, que é o que vale:
+
+| verificação | resultado |
+|---|---|
+| `domain_events` com chave repetida | **0** — o outbox é idempotente |
+| WhatsApp com mesmo `uazapi_message_id` | **0** |
+| `ligacoes` com chave de idempotência | **4.938 de 4.938** |
+| atividades idênticas no mesmo minuto | 96 grupos |
+
+As 96 pediam olho. **Não eram todas duplicação:** as de `ligacao` apontam para
+**42 ligações DISTINTAS** — são chamadas reais diferentes com o mesmo resumo de
+IA, não reentrega do webhook. O webhook de telefonia é idempotente desde
+`51bf5ed` (09/08), com `onConflictDoNothing` na chave e os efeitos colaterais
+rodando só quando o insert acontece.
+
+A duplicação real é `proposta_enviada`: *"Link de pagamento gerado"* gravado
+**duas vezes para a MESMA proposta**, no mesmo minuto, a mais recente em 17/09.
+
+**E essa string não existe no código desde 16/08** — saiu no commit `63dcd5c`,
+o mesmo do CP24. É a **segunda evidência independente**, com data, de que
+produção roda código anterior a esta branch. No CP24 foi a descrição de
+contrato; aqui é a de atividade, por outro caminho, batendo na mesma data.
+
+Passivo pós-16/08, para dimensionar: 24 linhas a mais em `proposta_enviada`,
+4 em `cadencia`, 4 em `ligacao`, 2 em `onboarding_concluido`.
+
+**Nada a corrigir no código atual** — o caminho que duplicava já não existe
+aqui, e o passivo para no dia da virada. Registrado porque "auditado e o
+código está limpo" é resultado, e porque a segunda evidência fortalece o
+argumento da virada.
+
+**Validação:** tsc limpo, **326 testes 0 falhas**, **32 smokes**.
+
 ### Auditoria de CS Health (histórico da decisão)
 
 Menor do que o gap analysis inicial dizia:
