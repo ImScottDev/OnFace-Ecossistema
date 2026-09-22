@@ -55,3 +55,18 @@ test("o ensaio de carga roda a cadeia sem teto", () => {
   assert.doesNotMatch(trecho, /--ate=/,
     "o passo final do ensaio ganhou um teto: a cadeia deixaria de aplicar as migrations novas");
 });
+
+test("o passo dos aceites chama o script, e o script cobre todos", () => {
+  // O passo 9 dizia "o aceite de vendas", no singular, e nenhuma bateria rodava
+  // aceite nenhum. Um deles ficou quebrado por tempo indeterminado e só
+  // apareceria no dia da virada.
+  const doc = fs.readFileSync(ENTREGA, "utf8");
+  assert.match(doc, /rodar-aceites\.sh/,
+    "o procedimento precisa chamar o script que roda TODOS os aceites");
+
+  const script = fs.readFileSync(path.join(RAIZ, "scripts", "rodar-aceites.sh"), "utf8");
+  assert.match(script, /src\/scripts\/aceite-\*\.ts/,
+    "o script precisa varrer os aceites por glob: enumerar deixa o próximo de fora");
+  assert.match(script, /exit "\$FALHOU"/,
+    "o script precisa sair diferente de zero quando um aceite falha, senão a virada segue no vermelho");
+});

@@ -2625,3 +2625,21 @@ encontra o estado da primeira.
 
 Teste que não falha com o defeito não é teste, e a única forma de saber é
 reintroduzir o defeito de propósito.
+
+## 2026-09-22 — CP32: o aceite que a virada exige estava quebrado
+
+Tentei refazer o ensaio de carga e bati num bloqueio legítimo: nenhum dump nem
+banco local representa produção virgem. O dump pré-refactor carrega
+`_carga_contagem_antes` e o banco pre_carga já tem `oportunidades`. Ensaio real
+exige dump fresco, e isso é acesso a produção.
+
+A tentativa rendeu outra coisa. Ao rodar os aceites do passo 9,
+`aceite-contrato-assinado` falhava: criava o negócio sem família comercial, e a
+regra que exige família antes da proposta entrou depois dele.
+
+Ninguém viu porque **nada roda os aceites** — nem script, nem package.json, nem
+CI. O procedimento dizia "o aceite de vendas", no singular. Um aceite quebrado só
+apareceria no domingo da virada.
+
+Criado `scripts/rodar-aceites.sh`, chamado pelo passo 9. Os quatro somam 208
+asserções, 0 falhas.

@@ -2018,6 +2018,49 @@ reescrevê-la é pior que conviver com ela.
 
 **Validação:** tsc limpo, **330 testes 0 falhas**, banco sem resíduo.
 
+### CP32 — O aceite que a virada exige estava quebrado, e nada o rodava
+
+Tentativa de refazer o ensaio de carga para validar a cadeia até 0090 (CP30/31).
+**Bloqueado, e o bloqueio é legítimo:** nenhum dump nem banco local representa
+produção virgem. O `pre-refactor-20260920.dump` carrega
+`_carga_contagem_antes`, artefato de uma carga anterior, e o banco
+`callface_crm_pre_carga_20260920` já tem `oportunidades` e
+`_migracoes_aplicadas`. Um ensaio de verdade exige `pg_dump` fresco dentro do
+container de produção, e produção depende de autorização do Kauã — mesmo para
+leitura.
+
+A tentativa, porém, levou a um defeito real. Ao rodar os aceites que o passo 9
+da virada exige, **`aceite-contrato-assinado` falhava**: criava o negócio sem
+família comercial, e `criarPropostaComItens` recusa proposta de oportunidade sem
+família. A regra entrou depois do aceite, e o aceite não acompanhou.
+
+**Por que ninguém viu: nada roda os aceites.** Não estão em nenhum script de
+bateria, nem no `package.json`, nem em CI. O procedimento de virada diz "rodar o
+aceite de vendas" — no singular — e o único caminho era a mão de alguém. Um
+aceite quebrado só apareceria no domingo da virada.
+
+Corrigido o cenário (a família é o assunto do teste: é a oferta que fecha na
+assinatura, então deixá-la implícita nunca fez sentido) e criado
+`scripts/rodar-aceites.sh`, que o passo 9 agora chama. Os quatro juntos somam
+**208 asserções, 0 falhas**:
+
+| aceite | asserções |
+|---|---|
+| contrato assinado | 32 |
+| CS | 48 |
+| vendas | 97 |
+| won → CS | 31 |
+
+A trava cobre o que faz o script valer: ele varre por **glob** (enumerar
+deixaria o próximo aceite de fora) e **sai diferente de zero** quando um falha,
+senão a virada seguiria no vermelho.
+
+**BLOQUEIO registrado:** o ensaio completo da cadeia 0086–0090 sobre dado de
+produção depende de dump fresco. O que dava para validar sem produção está
+feito — o CP31 provou que as 35 migrations do refactor reaplicam sem erro.
+
+**Validação:** tsc limpo, **331 testes 0 falhas**, 4 aceites com 208 asserções.
+
 ### Auditoria de CS Health (histórico da decisão)
 
 Menor do que o gap analysis inicial dizia:

@@ -81,6 +81,11 @@ async function cenario(familia: "PABX" | "WHITE_LABEL", nomeServico: string, tri
   const [negocio] = await db.insert(negocios).values({
     organizacaoId: org.id, leadId: lead.id, empresaId: empresa.id, titulo: `${rotulo} — oportunidade`,
     status: "proposta_apresentada", responsavelId: user.id, mrrEstimado: "2500.00",
+    // A família precisa estar definida ANTES da proposta: `criarPropostaComItens`
+    // recusa oportunidade sem ela desde que a regra entrou, e este aceite
+    // criava o negócio sem nenhuma. O cenário é exatamente sobre a família que
+    // fecha na assinatura, então deixá-la implícita nunca fez sentido aqui.
+    serviceFamily: familia,
   }).returning({ id: negocios.id });
 
   // 1. Proposta com item da família

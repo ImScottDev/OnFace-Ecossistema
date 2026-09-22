@@ -228,8 +228,19 @@ Cada uma foi verificada **falhando de propósito** antes de entrar.
    Sem isso o construtor de proposta abre vazio e o aceite fica em 72/0/3 não
    verificados em vez de 97/0.
 
-9. **Rodar a validação de paridade, o aceite de vendas e os smokes contra o
+9. **Rodar a validação de paridade, TODOS os aceites e os smokes contra o
    banco carregado.** 0 falhas para seguir.
+
+   ```bash
+   ./scripts/rodar-aceites.sh      # os quatro aceites, 208 asserções
+   ```
+
+   > Este script existe porque o passo dizia "o aceite de vendas" e **nenhuma
+   > bateria rodava aceite nenhum** — só a mão. Em 22/09 o
+   > `aceite-contrato-assinado` estava quebrado havia tempo indeterminado
+   > (criava o negócio sem família comercial, e a regra que exige família antes
+   > da proposta entrou depois dele). Ninguém viu, porque ninguém rodava. Com a
+   > virada dependendo deste passo, um aceite quebrado só apareceria no domingo.
 
 10. **Subir o código novo e provar no navegador.**
 
