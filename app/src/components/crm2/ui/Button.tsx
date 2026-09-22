@@ -1,75 +1,63 @@
 "use client";
 
 import * as React from "react";
-import { Slot } from "@radix-ui/react-slot";
-import { Loader2 } from "lucide-react";
-import { cn } from "@/lib/utils/cn";
+import { Button } from "@/components/ui/button";
+
+/**
+ * Adaptador do botão do CRM 2.0 sobre o `Button` do shadcn.
+ *
+ * Este arquivo era um botão PARALELO, e um duplicado sem nada a mais: o
+ * `Button` do shadcn no repo já tem `asChild`, `loading` com spinner e
+ * bloqueio de duplo-envio, `disabled`, dez variantes e oito tamanhos. O que
+ * havia aqui era um subconjunto disso, escrito de novo com `style` inline
+ * em vez de variante.
+ *
+ * São 75 chamadas em 17 arquivos. Trocar o miolo migra as 75 de uma vez.
+ * Quando o último consumidor chamar `Button` direto, este arquivo sai.
+ *
+ * `React.forwardRef` saiu junto: nenhum consumidor passa `ref`, e no React 19
+ * `ref` chega como prop normal.
+ */
 
 type Variant = "primary" | "secondary" | "ghost" | "danger";
 type Size = "sm" | "md" | "lg" | "icon";
 
-const SIZE_CLASS: Record<Size, string> = {
-  sm: "h-8 px-3 text-xs gap-1.5",
-  md: "h-9 px-3.5 text-[13px] gap-2",
-  lg: "h-10 px-4 text-sm gap-2",
-  icon: "h-9 w-9 p-0",
-};
+/** Os quatro nomes do CRM 2.0 para o vocabulário do shadcn.
+ *
+ * `secondary` daqui era superfície + borda + tinta, que é o `outline` do
+ * shadcn, não o `secondary` dele (que é preenchimento escuro sólido). Traduzir
+ * pelo NOME em vez de pelo desenho teria invertido 25 botões.
+ *
+ * `danger` era um contorno vermelho; vira `destructive`, que é sólido. São
+ * três usos, todos em Propostas, e todos são a confirmação destrutiva de
+ * verdade ("Recusar Proposta", "Excluir") ou o gatilho dela. Sólido no botão
+ * que confirma é a convenção do shadcn e não esconde o peso da ação. */
+const PARA_SHADCN = {
+  primary: "default",
+  secondary: "outline",
+  ghost: "ghost",
+  danger: "destructive",
+} as const;
 
-function variantStyle(variant: Variant): React.CSSProperties {
-  switch (variant) {
-    case "primary":
-      return { background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" };
-    case "secondary":
-      return {
-        background: "var(--cf2-bg-surface)",
-        color: "var(--cf2-text-primary)",
-        border: "1px solid var(--cf2-border-default)",
-      };
-    case "danger":
-      return {
-        background: "transparent",
-        color: "var(--cf2-danger-text)",
-        border: "1px solid var(--cf2-danger-border)",
-      };
-    case "ghost":
-    default:
-      return { background: "transparent", color: "var(--cf2-text-primary)" };
-  }
-}
+/** `md` do CRM 2.0 é h-9, que é o `default` do shadcn. Os outros três batem. */
+const TAMANHO = {
+  sm: "sm",
+  md: "default",
+  lg: "lg",
+  icon: "icon",
+} as const;
 
-export interface Cf2ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+export interface Cf2ButtonProps extends React.ComponentProps<"button"> {
   variant?: Variant;
   size?: Size;
   loading?: boolean;
   asChild?: boolean;
 }
 
-export const Cf2Button = React.forwardRef<HTMLButtonElement, Cf2ButtonProps>(
-  ({ variant = "primary", size = "md", loading, asChild, className, style, disabled, children, ...props }, ref) => {
-    const Comp = asChild ? Slot : "button";
-
-    return (
-      <Comp
-        ref={ref}
-        className={cn(
-          "inline-flex items-center justify-center rounded-[var(--cf2-radius-md)] font-medium whitespace-nowrap transition-colors cursor-pointer select-none disabled:opacity-50 disabled:pointer-events-none hover:brightness-95 active:brightness-90",
-          SIZE_CLASS[size],
-          className
-        )}
-        style={{ ...variantStyle(variant), ...style }}
-        disabled={asChild ? undefined : disabled || loading}
-        {...props}
-      >
-        {asChild ? (
-          children
-        ) : (
-          <>
-            {loading && <Loader2 className="size-3.5 animate-spin" />}
-            {children}
-          </>
-        )}
-      </Comp>
-    );
-  }
-);
-Cf2Button.displayName = "Cf2Button";
+export function Cf2Button({
+  variant = "primary",
+  size = "md",
+  ...props
+}: Cf2ButtonProps) {
+  return <Button variant={PARA_SHADCN[variant]} size={TAMANHO[size]} {...props} />;
+}
