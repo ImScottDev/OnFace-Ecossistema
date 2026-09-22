@@ -14,7 +14,7 @@ const SW={50:'#edf7f3',100:'#dbf0e7',200:'#b8e0cf',500:'#4db386',600:'#3d8f6b',7
 // (coral como texto sobre papel ou sobre o coral a 10%). Os três estão em
 // `onface.css` com a mesma conta anotada.
 const OF = {
-  coral: '#fe4f2b', coralAcao: '#d04123', coralTexto: '#b7391f',
+  coral: '#fe4f2b', coralDeep: '#d93c1a', coralTexto: '#b7391f',
   // coral-subtle é rgba(254,79,43,.1); composto sobre o papel dá isto:
   coralSubtleSobrePapel: '#f7e5df',
   papel: '#f6f6f3', branco: '#ffffff', grafite: '#090e14', pretoLogo: '#12171d',
@@ -52,11 +52,15 @@ const pares = [
   ['ONFACE texto corpo / papel', OF.textoCorpo, OF.papel, 4.5],
   ['ONFACE texto muted / papel', OF.textoMuted, OF.papel, 4.5],
   ['ONFACE texto muted / card branco', OF.textoMuted, OF.branco, 4.5],
-  // O CTA primário do produto. Com o coral da marca dava 3,30:1.
-  ['ONFACE branco / coral de AÇÃO', OF.branco, OF.coralAcao, 4.5],
+  // O CTA primário do produto. Com o coral da marca dava 3,30:1. O coral
+  // profundo já existia no projeto desde 18/09, pelo mesmo motivo.
+  ['ONFACE branco / coral PROFUNDO (preenchimento)', OF.branco, OF.coralDeep, 4.5],
   // O número de sinal do resumo, sobre o coral a 10%.
   ['ONFACE coral de TEXTO / coral sutil', OF.coralTexto, OF.coralSubtleSobrePapel, 4.5],
   ['ONFACE coral de TEXTO / papel', OF.coralTexto, OF.papel, 4.5],
+  // O terceiro grau existe porque o profundo resolve preenchimento e reprova
+  // como letra: #D93C1A sobre papel dá 4,21:1 e sobre o coral a 10% dá 3,74:1.
+  // Os dois pares acima guardam o grau certo em cada fundo.
   ['ONFACE sidebar: texto / grafite', OF.textoNaCasca, OF.grafite, 4.5],
   ['ONFACE sidebar: rótulo de grupo / grafite', OF.textoNaCascaMuted, OF.grafite, 4.5],
   // Elemento de interface, piso 3: a marca continua sendo a marca aqui.

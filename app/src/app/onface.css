@@ -14,30 +14,6 @@
   --onface-coral-subtle: rgba(254, 79, 43, 0.1);
   --onface-coral-border: rgba(255, 77, 41, 0.2);
 
-  /* ── Os dois corais que o contraste exige ─────────────────────────────
-   *
-   * `#FE4F2B` é a marca e continua sendo ela em tudo que NÃO carrega texto:
-   * borda, ícone, indicador de seleção, barra do item ativo. Como elemento de
-   * interface o piso é 3:1 e ele passa.
-   *
-   * Onde há texto, medido em 22/09 no navegador, ele reprova:
-   *
-   *   branco sobre #FE4F2B ............ 3,30:1  (piso 4,5 — CTA primário)
-   *   #FE4F2B sobre coral-subtle ...... 2,92:1  (piso 4,5 — número de sinal)
-   *   #FE4F2B sobre papel ............. 3,05:1  (piso 4,5)
-   *
-   * O CTA primário do produto inteiro estava reprovando. Estes dois derivados
-   * mantêm o matiz do coral e resolvem cada caso pelo mínimo necessário:
-   *
-   *   --onface-coral-acao  #D04123  branco sobre ele: 4,71:1
-   *   --onface-coral-texto #B7391F  sobre subtle 4,77:1 · sobre papel 5,36:1
-   *
-   * É desvio do hex nomeado no §1.1, e é deliberado: o §52 põe contraste na
-   * linha de base de acessibilidade, e entre honrar o hex e honrar o piso, o
-   * piso ganha. Reverter é uma linha cada, e a marca segue #FE4F2B. */
-  --onface-coral-acao: #d04123;
-  --onface-coral-acao-hover: #b7391f;
-  --onface-coral-texto: #b7391f;
 
   /* Ink & surface */
   --onface-preto-logo: #12171d;
@@ -215,7 +191,7 @@ html[data-onface-theme="light"] {
   --popover-foreground: var(--text-strong);
   /* Ação, não marca: o `--primary` do shadcn vira fundo de botão com texto
      branco em cima, e é esse par que precisa passar em contraste. */
-  --primary: var(--onface-coral-acao);
+  --primary: var(--onface-coral-deep);
   --primary-foreground: var(--onface-white);
   --secondary: var(--onface-branco-logo);
   --secondary-foreground: var(--text-strong);
@@ -1367,6 +1343,16 @@ html[data-onface-theme="light"] {
      cheio, chip ativo). O coral da marca continua intacto para fill sem texto,
      borda, ícone, foco e série de gráfico. */
   --onface-coral-deep: #d93c1a;
+
+  /* O coral profundo resolve PREENCHIMENTO (branco em cima: 4,55:1) e não
+     resolve TEXTO. Medido em 22/09: #D93C1A como texto dá 3,74:1 sobre o
+     coral a 10% e 4,21:1 sobre o papel, os dois abaixo do piso.
+     
+     Este é o terceiro grau da mesma rampa, para quando o coral É a letra:
+     número de sinal, link de recorte, rótulo de alerta.
+     
+       #B7391F  sobre coral-subtle 4,76:1 · sobre papel 5,36:1 */
+  --onface-coral-texto: #b7391f;
 
   /* Marca. Decisão do Scott 18/09: o preenchimento de marca usa o coral
      profundo, porque `bg-marca` sempre carrega texto ou glifo por cima

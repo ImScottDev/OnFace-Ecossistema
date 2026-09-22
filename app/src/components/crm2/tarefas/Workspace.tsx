@@ -5,6 +5,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Bot, Building2, Check, Plus, Trash2, UserRound } from "lucide-react";
+import { PaginaResumo } from "@/components/onface/shell/Pagina";
+import { Button } from "@/components/ui/button";
 import { Cf2Badge } from "@/components/crm2/ui/Badge";
 import { Cf2EmptyState, Cf2Skeleton } from "@/components/crm2/ui/States";
 import { useOrgUsuarios } from "@/components/crm/BoardFilters";
@@ -206,51 +208,43 @@ export function Cf2TarefasWorkspace({ foco = "operacao" }: { foco?: "operacao" |
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Cabeçalho compacto: o número de atrasadas é o que muda a ordem do dia. */}
-      <div
-        className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 px-5 py-4 rounded-[24px]"
-        data-cf2-superficie="escura"
-        style={{ background: "var(--cf2-home-hero-bg)" }}
-      >
-        <div className="flex items-center gap-6 flex-wrap">
-          <div>
-            <p className="text-[10px] font-semibold uppercase" style={{ color: "var(--cf2-home-text-muted)", letterSpacing: "1.6px", fontFamily: "var(--cf2-font-heading)" }}>
-              {foco === "comercial" ? "Vendas" : "Operação"}
-            </p>
-            <h1 className="text-[20px] font-semibold leading-tight" style={{ color: "var(--cf2-home-text-strong)", fontFamily: "var(--cf2-font-heading)", letterSpacing: "-0.32px" }}>
-              {foco === "comercial" ? "Central de trabalho" : "Tarefas"}
-            </h1>
-          </div>
-          <div className="flex items-center gap-5">
-            {[
-              { rotulo: "Atrasadas", valor: contagem.atrasadas, alerta: contagem.atrasadas > 0 },
-              { rotulo: "Hoje", valor: contagem.hoje, alerta: false },
-              { rotulo: "Automáticas", valor: contagem.automaticas, alerta: false },
-              { rotulo: "Abertas", valor: contagem.total, alerta: false },
-            ].map((k) => (
-              <div key={k.rotulo}>
-                <p className="text-[9.5px] uppercase" style={{ color: "var(--cf2-home-text-muted)", letterSpacing: "0.62px" }}>{k.rotulo}</p>
-                <p
-                  className="text-[22px] font-semibold leading-none"
-                  style={{ color: k.alerta ? "var(--cf2-home-danger)" : "var(--cf2-home-text-strong)", fontFamily: "var(--cf2-font-heading)" }}
-                >
-                  {k.valor}
-                </p>
-              </div>
-            ))}
-          </div>
-        </div>
+      {/* A faixa escura com o título repetido saiu.
+       *
+       * Ela dizia "Operação / Tarefas" dentro de uma tela cuja trilha na
+       * topbar já diz "Operação / Tarefas" e cujo cabeçalho de página já diz
+       * "Tarefas" — três vezes o mesmo nome antes do primeiro dado. E era a
+       * única superfície escura entre telas de papel.
+       *
+       * O que valia ali eram os quatro números, que agora vivem no resumo
+       * padrão com hierarquia: atrasadas é o que muda a ordem do dia, então é
+       * sinal, e leva para o recorte. */}
+      <PaginaResumo
+        itens={[
+          {
+            rotulo: "Abertas",
+            valor: contagem.total,
+            detalhe: `${contagem.hoje} para hoje`,
+            destaque: true,
+          },
+          {
+            // Sinal SEM destino, de propósito: esta tela não lê filtro da URL
+            // (o estado é local), então `?filtro=atrasadas` seria um link que
+            // não leva a lugar nenhum — o número morto que a spec proíbe, e
+            // que eu mesmo tinha acabado de criar aqui.
+            //
+            // O coral continua dizendo que precisa de atenção, e a lista
+            // abaixo já abre agrupada por ATRASADAS. Vira link quando a tela
+            // aceitar recorte por URL (§39).
+            rotulo: "Atrasadas",
+            valor: contagem.atrasadas,
+            sinal: true,
+          },
+          { rotulo: "Hoje", valor: contagem.hoje },
+          { rotulo: "Automáticas", valor: contagem.automaticas },
+        ]}
+      />
 
-        <button
-          onClick={() => setCriando(true)}
-          className="flex items-center gap-1.5 px-4 h-9 rounded-full text-[13px] font-semibold shrink-0"
-          style={{ background: "var(--cf2-home-lime)", color: "var(--cf2-home-lime-ink)" }}
-        >
-          <Plus className="w-4 h-4" /> Nova atividade
-        </button>
-      </div>
-
-      {/* Filtros */}
+      {/* Filtros. O CTA primário fecha a linha, como nas telas de vendas. */}
       <div className="flex items-center gap-2 flex-wrap">
         <Seletor valor={resp} onChange={setResp} opcoes={[
           { v: "todos", l: "Todo o time" }, { v: "meu", l: "Minhas" },
@@ -272,6 +266,13 @@ export function Cf2TarefasWorkspace({ foco = "operacao" }: { foco?: "operacao" |
           className="h-8 px-3 rounded-lg text-[12.5px] outline-none flex-1 min-w-[180px] max-w-[280px]"
           style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }}
         />
+        {/* O CTA vinha dentro da faixa escura que saiu. Encosta no fim da
+            barra de controle, mesmo lugar que em Pipeline e Pré-vendas —
+            é o que faz as três telas se comportarem igual. */}
+        <Button size="sm" className="ms-auto" onClick={() => setCriando(true)}>
+          <Plus data-icon="inline-start" />
+          Nova atividade
+        </Button>
       </div>
 
       {isLoading ? (
