@@ -35,6 +35,45 @@ test("todo criador de identidade migrado chama a porta canônica", () => {
   assert.deepEqual(faltando, [], `estes deveriam chamar a porta canônica e não chamam:\n${faltando.join("\n")}`);
 });
 
+test("todo arquivo que CRIA lead passa pela porta canônica", () => {
+  // A lista acima é enumerada, e o comentário no topo deste arquivo promete que
+  // "quando alguém abrir uma porta nova sem ligar, o teste acusa aqui". Ele não
+  // acusava: só verificava os sete caminhos que já estavam na lista. Uma porta
+  // nova nascia fora dela e passava verde.
+  //
+  // Foi assim que `lib/vendas/prospeccao.ts` ficou de fora. O caminho irmão (a
+  // importação de lista, em `api-server/routes/prospeccao.ts`) chamava a porta
+  // desde a fase 16; o `adicionarProspect`, que é o botão "adicionar prospect"
+  // da tela, nunca chamou. Medido em 22/09: o prospect nascia com 0 aquisições,
+  // 0 eventos e fora do board canônico. Os 3.598 leads do banco terem aquisição
+  // não desmentia isso — eles têm porque o backfill rodou uma vez sobre o que
+  // já existia.
+  //
+  // Por isso este teste VARRE o diretório em vez de enumerar.
+  const arquivos: string[] = [];
+  const varrer = (dir: string) => {
+    for (const e of fs.readdirSync(path.join(SRC, dir), { withFileTypes: true })) {
+      const rel = path.join(dir, e.name);
+      if (e.isDirectory()) { if (e.name !== "node_modules") varrer(rel); }
+      else if (/\.tsx?$/.test(e.name)) arquivos.push(rel);
+    }
+  };
+  for (const raiz of ["app", "api-server", "lib", "worker"]) varrer(raiz);
+
+  const criaLead = /db\.insert\(leads\)|INSERT INTO leads\b/;
+  const semPorta = arquivos.filter((rel) => {
+    if (/\.test\.tsx?$/.test(rel) || rel.includes("migrations")) return false;
+    const src = ler(rel);
+    if (!criaLead.test(src)) return false;
+    return !src.includes("garantirEntradaCanonica");
+  });
+
+  assert.deepEqual(semPorta, [],
+    "estes arquivos criam lead e NÃO chamam garantirEntradaCanonica. O registro " +
+    "nasce fora do modelo canônico: sem aquisição, sem AcquisitionCreated e " +
+    "invisível para as telas que leem o canônico.\n  " + semPorta.join("\n  "));
+});
+
 test("a ponte de cutover declara que é temporária", () => {
   // Dual-write sem data de morte vira permanente, e o SPEC §56 proíbe isso
   // como estado final. O aviso no topo do arquivo é o que impede alguém

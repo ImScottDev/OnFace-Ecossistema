@@ -19,6 +19,7 @@ import { db } from "@/lib/db";
 import { registrarEvento } from "./eventos";
 import { resolverEmpresa, resolverPessoa, registrarTouchpoint, type DadosEmpresa } from "./identidade";
 import { criarOportunidade } from "./pipeline";
+import { garantirEntradaCanonica } from "./ponte-canonica";
 import {
   MOTIVOS_DESCARTE, RegraDeNegocio,
   type Ator, type EstadoProspeccao, type Familia, type MotivoDescarte,
@@ -109,6 +110,64 @@ export async function adicionarProspect(entrada: EntradaDeProspect, ator: Ator):
     )
     RETURNING id::text
   `);
+
+  // A ENTRADA CANÔNICA, que faltava.
+  //
+  // Esta função criava o lead legado e parava aí. O caminho irmão — a
+  // importação de lista, em `api-server/routes/prospeccao.ts` — já chamava a
+  // porta desde a fase 16; este, que é o "adicionar prospect" da tela, nunca
+  // chamou. Medido com `smoke-prospeccao-entra-no-canonico` em 22/09: um
+  // prospect criado pela tela nascia com **0 aquisições, 0 pessoas canônicas,
+  // 0 eventos `AcquisitionCreated` e fora do board canônico**.
+  //
+  // Os 3.598 leads do banco terem aquisição não desmentia isso: eles têm porque
+  // o backfill da fase 06 rodou UMA vez sobre o que já existia. Contagem
+  // histórica mede o passado; o buraco estava no runtime.
+  //
+  // `await`, não `void`: a entrada canônica é parte do resultado de adicionar
+  // um prospect, não um efeito colateral que pode falhar calado.
+  const canonica = await garantirEntradaCanonica({
+    organizacaoId, tipo: "OUTBOUND",
+    origem: entrada.fonte ?? "outbound", provider: "prospeccao",
+    pessoa: {
+      nome: entrada.pessoa?.nome ?? entrada.empresa.nome,
+      sobrenome: entrada.pessoa?.sobrenome ?? null,
+      email: entrada.pessoa?.email ?? null,
+      telefone: entrada.pessoa?.telefone ?? null,
+      cargo: entrada.pessoa?.cargo ?? null,
+    },
+    empresa: entrada.empresa,
+    responsavelId: entrada.responsavelId ?? null,
+    // O par (organização, lead) é a chave do fato: a mesma tela chamada duas
+    // vezes para o mesmo prospect não pode render duas aquisições.
+    idempotencyKey: `prospeccao:${organizacaoId}:${prospect.id}`,
+  }, prospect.id);
+  if (!canonica.ok) {
+    throw new RegraDeNegocio(
+      "prospect_sem_entrada_canonica",
+      `O prospect foi criado mas não entrou no modelo canônico: ${canonica.erro ?? "motivo não informado"}`,
+    );
+  }
+
+  // E o vínculo da pessoa com o lead.
+  //
+  // `resolverPessoa` roda ANTES do INSERT acima, porque o lead precisa do
+  // `empresa_id` e do contato já resolvidos. O efeito colateral é que a pessoa
+  // nasce sem saber a qual lead pertence, e a porta canônica não conserta: ela
+  // reaproveita a pessoa que já existe em vez de criar outra.
+  //
+  // Que isso é anomalia, e não uma escolha, o banco responde: **3.950 de 3.950
+  // pessoas têm `lead_id_legado`**, sem uma exceção. Um prospect criado pela
+  // tela seria o primeiro registro sem o vínculo.
+  //
+  // `IS NULL` no WHERE: pessoa já ligada a outro lead não é religada aqui.
+  if (pessoaId) {
+    await db.execute(sql`
+      UPDATE pessoas SET lead_id_legado = ${prospect.id}::uuid
+       WHERE id = ${pessoaId}::uuid
+         AND organizacao_id = ${organizacaoId}::uuid
+         AND lead_id_legado IS NULL`);
+  }
 
   await registrarTouchpoint({
     organizacaoId, pessoaId, empresaId: empresa.empresaId, leadIdLegado: prospect.id,
