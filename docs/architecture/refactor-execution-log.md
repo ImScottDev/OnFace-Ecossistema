@@ -3259,3 +3259,18 @@ por isso que apareceu como erro e não como falso verde.
 `ds:strict`: 4.264 violações herdadas, placar gerenciado, dívida conhecida.
 
 Validação: tsc limpo, 354 testes / 0 falhas, 50 verificações.
+
+## 2026-09-22 — CP61: o portão de tipo não estava no caminho da imagem
+
+`ignoreBuildErrors` está no repo desde o commit inicial, documentado como
+armadilha, com `tsc --noEmit` declarado como gate. Mas `Dockerfile:12` roda
+`NEXT_TYPESCRIPT_CHECK=false npm run build` e nenhum tsc: a imagem era
+construída sem verificação de tipo nenhuma.
+
+`npm run build` = `npm run typecheck && next build`. Portão em todo caminho que
+constrói, sem tocar no Dockerfile. Reintrodução: erro de tipo plantado para o
+build em `error TS2322`.
+
+README corrigido; `ignoreBuildErrors` mantido com o motivo escrito.
+
+Validação: tsc limpo, 354 testes / 0 falhas, 50 verificações, 14/14 rotas.

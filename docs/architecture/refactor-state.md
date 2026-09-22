@@ -3283,3 +3283,37 @@ O outro, `ds:strict`, acusa 4.264 violações herdadas com placar que zera módu
 a módulo. É dívida conhecida e gerenciada, não defeito novo, e fica como está.
 
 Validação: tsc limpo, 354 testes / 0 falhas, 50 verificações.
+
+### CP61 — a imagem era construída sem nenhuma verificação de tipo
+
+`next.config.ts` tem `typescript.ignoreBuildErrors` desde o commit inicial, e
+isso estava **documentado como armadilha conhecida** em dois lugares: o README
+dizia "o build não é portão de tipo", e o TASK-001 avisava que *"npm run build
+passar NÃO prova typecheck limpo; o gate é `tsc --noEmit`"*.
+
+A compensação existia. O que ninguém tinha conferido é se ela estava no caminho
+que importa:
+
+```
+Dockerfile:12   RUN NEXT_TYPESCRIPT_CHECK=false npm run build
+```
+
+Nenhum `tsc`. **A imagem que vai para produção era montada sem nenhuma
+verificação de tipo**, e o gate morava só na disciplina de quem lembrava de
+rodar o comando à mão.
+
+É o formato desta fase inteira, aplicado a uma decisão documentada: a
+documentação registrava a armadilha e a compensação, e ninguém checou se a
+compensação alcançava o caminho de deploy.
+
+`npm run build` passou a ser `npm run typecheck && next build`. O portão fica em
+TODO caminho que constrói, incluindo o da imagem, **sem tocar no Dockerfile**.
+Verificado por reintrodução: com um erro de tipo plantado, o build para em
+`error TS2322` e não chega a compilar.
+
+`ignoreBuildErrors` fica, agora com o motivo escrito no arquivo: o tsc já rodou
+antes, e deixar o Next checar de novo só custaria tempo. O README deixou de
+descrever o estado antigo.
+
+Validação: tsc limpo, 354 testes / 0 falhas, 50 verificações, build completo com
+o portão, 14/14 rotas reconferidas depois do build (ele sobrescreve `.next`).
