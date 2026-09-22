@@ -2948,3 +2948,21 @@ cadeia inteira encontra isso.
 conjuntos de evento não se confundem.
 
 Validação: tsc limpo, 345 testes / 0 falhas.
+
+## 2026-09-22 — CP46: o relógio de trabalho andava sem trabalho
+
+A trava do relógio só varria `lib/integrations` e não alcançava dois casos.
+
+`lead-scoring` gravava o score (valor derivado) e bumpava `updated_at`. Os dois
+chamadores já bumpam por conta própria; era redundante ali e perigoso num
+recálculo em lote futuro. Bump removido.
+
+`sync-negocio-valores` bumpava sempre, inclusive quando chamado por
+`repair-negocios-valor-expirada`. Medido: 372 negócios, 107 abertos, com
+`updated_at` entre 20/07 e 22/09. Virou parâmetro `tocarRelogio` (default true,
+igual ao de hoje) e o reparo o desliga.
+
+`smoke-relogio-de-trabalho` prova os três comportamentos contra o banco. Trava
+estendida às escritas derivadas e provada por reintrodução.
+
+Validação: tsc limpo, 347 testes / 0 falhas.

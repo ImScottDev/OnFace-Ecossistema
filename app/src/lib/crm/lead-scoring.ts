@@ -119,8 +119,16 @@ export async function calculateLeadScore(leadId: string): Promise<number> {
     }
   }
 
-  // Update lead score in DB
-  await db.update(leads).set({ leadScore: score, updatedAt: new Date() }).where(eq(leads.id, leadId));
+  // O score é DERIVADO, então gravá-lo não é trabalho feito no lead.
+  //
+  // `leads.updated_at` é o relógio de "quando alguém trabalhou isto": o board de
+  // Pré-vendas ordena por ele e o badge "Xd na etapa" sai dele. Os dois
+  // chamadores do scoring já bumpam por conta própria — a criação do lead e o
+  // PATCH, que faz `set({ ...updateData, updatedAt: new Date() })` antes de
+  // enfileirar o recálculo. O bump daqui era redundante nesses dois casos e
+  // perigoso no que ainda não existe: um recálculo em lote, depois de mudar as
+  // regras de pontuação, jogaria a base inteira para o topo do board.
+  await db.update(leads).set({ leadScore: score }).where(eq(leads.id, leadId));
 
   return score;
 }

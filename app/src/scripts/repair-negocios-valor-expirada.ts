@@ -9,6 +9,12 @@
  * negócios que têm ao menos 1 proposta "expirada" — população exatamente
  * afetada pelo bug antigo).
  *
+ * NÃO TOCA O RELÓGIO. Medido em 22/09: o reparo alcança 372 negócios, 107 deles
+ * abertos, com `updated_at` espalhado entre 20/07 e 22/09. Com o bump ligado,
+ * os 107 iriam para o topo do Pipeline de uma vez e a ordem real se perderia —
+ * o mesmo defeito que já custou 216 leads no board de Pré-vendas. Corrigir um
+ * valor calculado errado não é trabalho feito no negócio.
+ *
  *   npx tsx src/scripts/repair-negocios-valor-expirada.ts
  */
 import { db } from "../lib/db";
@@ -30,7 +36,7 @@ async function main() {
   for (const { negocioId } of afetados) {
     if (!negocioId) continue;
     try {
-      await syncNegocioValoresFromPropostas(negocioId);
+      await syncNegocioValoresFromPropostas(negocioId, { tocarRelogio: false });
       ok++;
     } catch (e) {
       falhas++;

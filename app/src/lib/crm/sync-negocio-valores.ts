@@ -15,7 +15,10 @@ import { eq, and, notInArray, sql } from "drizzle-orm";
  *
  * Call this after any proposta mutation (create, update, delete, accept, reject).
  */
-export async function syncNegocioValoresFromPropostas(negocioId: string) {
+export async function syncNegocioValoresFromPropostas(
+  negocioId: string,
+  { tocarRelogio = true }: { tocarRelogio?: boolean } = {},
+) {
   const [totals] = await db
     .select({
       totalRecorrente: sql<string>`COALESCE(SUM(CASE WHEN ${propostaItens.tipo} = 'recorrente' THEN ${propostaItens.subtotal} ELSE 0 END), 0)`,
@@ -37,7 +40,17 @@ export async function syncNegocioValoresFromPropostas(negocioId: string) {
       mrrEstimado: totals.totalRecorrente,
       valorProjeto: totals.totalAvulso,
       valorTotal: totals.totalGeral,
-      updatedAt: new Date(),
+      // O relógio só anda quando há trabalho por trás da chamada.
+      //
+      // As rotas chamam este sync DENTRO de uma ação real (mudar o status do
+      // negócio, criar ou excluir proposta), e nesses casos bumpar está certo.
+      // O lote é outra história: `repair-negocios-valor-expirada` recalcula
+      // todos os negócios com proposta expirada, e medido em 22/09 são **372
+      // negócios, 107 deles abertos**, com datas de 20/07 a 22/09. Rodar o
+      // reparo com o bump ligado jogaria os 107 para o topo do Pipeline de uma
+      // vez e apagaria a ordem real — o mesmo defeito que já custou 216 leads
+      // no board de Pré-vendas.
+      ...(tocarRelogio ? { updatedAt: new Date() } : {}),
     })
     .where(eq(negocios.id, negocioId));
 }

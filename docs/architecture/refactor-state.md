@@ -64,9 +64,9 @@ com o PABX invendável.
 
 ## Último commit
 
-`(CP45)` — o registro não sabia diferenciar a IA da automação
+`(CP46)` — o relógio de trabalho andava sem trabalho, em dois lugares
 
-**Estado medido em 22/09/2026:** tsc limpo · **345 testes / 0 falhas** · build de
+**Estado medido em 22/09/2026:** tsc limpo · **347 testes / 0 falhas** · build de
 produção limpo · **36 verificações** na bateria de smokes · **4 aceites com 208
 asserções** · **paridade 13/14** (o não verificável é o NEXO, por credencial) ·
 **14/14 rotas do ONFACE** renderizando. Nada de produção foi tocado.
@@ -2648,6 +2648,38 @@ conjuntos de evento **não se confundem**: se o ator não atravessasse, seriam
 idênticos, que era o estado anterior.
 
 **Validação:** tsc limpo, **345 testes / 0 falhas**, smoke novo verde.
+
+### CP46 — O relógio de trabalho andava sem trabalho, em dois lugares
+
+`leads.updated_at` e `negocios.updated_at` não são "quando a linha mudou": o
+board ordena por eles e o badge "Xd na etapa" sai deles. São **quando alguém
+trabalhou isto**. Já custou duas vezes — um backfill bumpou 216 leads e o board
+passou a mostrar "17min" em tudo; `rd-criativo` alcançaria 2.253.
+
+A trava que nasceu daquilo só varria `lib/integrations`, e por isso não alcançava
+os dois casos medidos hoje:
+
+**`lead-scoring` gravava um número derivado e bumpava.** Os dois chamadores — a
+criação do lead e o PATCH, que faz `set({ ...updateData, updatedAt: new Date() })`
+antes de enfileirar — já bumpam por conta própria. Era redundante ali, e
+perigoso no recálculo em lote que ainda não existe: mudar as regras de pontuação
+jogaria a base inteira para o topo do board.
+
+**`sync-negocio-valores` bumpava sempre, inclusive em lote.** Ele é chamado por
+ações reais (mudar status, criar ou excluir proposta) e também por
+`repair-negocios-valor-expirada`. Medido: o reparo alcança **372 negócios, 107
+deles abertos**, com `updated_at` espalhado entre 20/07 e 22/09 — os 107 iriam
+para o topo do Pipeline de uma vez.
+
+O segundo **não virou proibição**, porque chamado por uma ação bumpar está
+certo. Virou parâmetro `tocarRelogio`, com o default de sempre; o reparo o
+desliga. Corrigir um valor calculado errado não é trabalho feito no negócio.
+
+`smoke-relogio-de-trabalho` prova os três comportamentos contra o banco: o score
+grava sem mover o relógio, a chamada por ação move, e a chamada em lote não.
+Trava estendida e provada por reintrodução nos dois casos.
+
+**Validação:** tsc limpo, **347 testes / 0 falhas**, smoke novo verde.
 
 ### Auditoria de CS Health (histórico da decisão)
 

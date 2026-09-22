@@ -100,3 +100,50 @@ test("nenhum backfill reseta o relógio de trabalho", () => {
     `Use o valor de origem (ex.: \`updated_at = a.updated_at\`) em vez de now().`);
 });
 
+
+/**
+ * Escritas DERIVADAS: gravam um valor calculado a partir de outra coisa.
+ *
+ * A primeira versão desta trava só varria `lib/integrations`, e por isso não
+ * alcançava dois casos medidos em 22/09:
+ *
+ *   `lib/crm/lead-scoring.ts` gravava o score e bumpava. Os dois chamadores
+ *   (criação e PATCH) já bumpam por conta própria, então era redundante ali — e
+ *   perigoso no recálculo em lote que ainda não existe: mudar as regras de
+ *   pontuação jogaria a base inteira para o topo do board.
+ *
+ *   `lib/crm/sync-negocio-valores.ts` bumpava sempre, inclusive quando chamado
+ *   pelo script de reparo. Medido: **372 negócios, 107 deles abertos**, com
+ *   `updated_at` entre 20/07 e 22/09. O reparo jogaria os 107 para o topo do
+ *   Pipeline de uma vez.
+ *
+ * O segundo não virou proibição: chamado por uma ação real, bumpar está certo.
+ * Virou parâmetro, com o default de sempre — e é o parâmetro que esta trava
+ * exige que continue existindo.
+ */
+const DERIVADAS_SEM_BUMP = [
+  "lib/crm/lead-scoring.ts",
+];
+
+test("escrita derivada não reseta o relógio de trabalho", () => {
+  const infratores = DERIVADAS_SEM_BUMP.filter((rel) => {
+    const txt = fs.readFileSync(path.join(SRC, rel), "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    return /updatedAt:\s*new Date\(\)/.test(txt);
+  });
+  assert.deepEqual(infratores, [],
+    `estes gravam valor DERIVADO e voltaram a bumpar updated_at: ${infratores.join(", ")}. ` +
+    `Quem trabalhou o registro já bumpou; derivar de novo não é trabalho novo.`);
+});
+
+test("o sync de valores do negócio deixa o relógio ser escolhido", () => {
+  const txt = fs.readFileSync(path.join(SRC, "lib", "crm", "sync-negocio-valores.ts"), "utf8");
+  assert.match(txt, /tocarRelogio/,
+    "o sync precisa aceitar `tocarRelogio`: chamado por ação bumpa, chamado em lote não");
+  assert.match(txt, /tocarRelogio\s*=\s*true/,
+    "o default tem que continuar bumpando, senão as rotas mudam de comportamento em silêncio");
+
+  const reparo = fs.readFileSync(path.join(SRC, "scripts", "repair-negocios-valor-expirada.ts"), "utf8");
+  assert.match(reparo, /tocarRelogio:\s*false/,
+    "o reparo em lote precisa desligar o relógio: são 372 negócios, 107 abertos");
+});
