@@ -2263,6 +2263,36 @@ rótulos `Abr Mai Jun Jul Ago Set` vindos da série.
 da trava ficou vermelha por causa do próprio comentário que citava a frase
 antiga — agora ela olha só a marcação, ignorando comentários.
 
+### CP37 — "Financeiro: Saudável" era texto na marcação
+
+Terceiro placeholder da mesma tela. O painel "Áreas em destaque" trazia quatro
+afirmações sobre a saúde do negócio, escritas na marcação e nunca comparadas com
+o banco:
+
+| card | dizia | diz agora |
+|---|---|---|
+| Operação | "Em movimento" | 480 em curso |
+| Comercial | "Alta performance" | R$ 10,1k no mês |
+| Financeiro | "Saudável" | R$ 425,6k de MRR |
+| Suporte | "Excelente NPS" | 5 sinais abertos |
+
+"Financeiro: Saudável" aparecia na mesma tela em que a faixa de Cobrança mostra
+R$ 26.729,69 com 7 vencidos, e "Excelente NPS" sem nenhuma resposta de NPS no
+período.
+
+Nada foi inventado: `montarVisaoGeral` **já derivava os mesmos quatro** a partir
+de número, e a home Figma não os usava — o terceiro caso de peça pronta sem
+caller na mesma tela, depois do gráfico e dos selos. A página passou a buscar
+`getMrrAtivo` (que lê do Metric Catalog, a definição única de MRR) e
+`getPrecisaAtencao`, e a derivar os quatro estados com a mesma forma curta do
+painel, para os dois não divergirem.
+
+Conferência cruzada: o card diz R$ 425,6k de MRR, o mesmo número que a tela de
+Clientes mostra. Uma métrica, uma definição.
+
+**Validação:** tsc limpo, **339 testes / 0 falhas**, trava estendida e provada
+por reintrodução (devolver "Saudável" à marcação deixa o teste vermelho).
+
 ### Auditoria de CS Health (histórico da decisão)
 
 Menor do que o gap analysis inicial dizia:

@@ -110,6 +110,8 @@ export interface DadosInicio {
   evolucao: PontoSerie[];
   /** Frase do subtítulo, derivada da série — o frame trazia "Crescimento consistente em todas as frentes." fixo. */
   evolucaoResumo: string;
+  /** Estado de cada card de "Áreas em destaque", derivado de número. */
+  areaOperacao: string; areaComercial: string; areaFinanceiro: string; areaSuporte: string;
 }
 const assetPathPrefix = "/onface/inicio";
 const imgAvatarBadge = `${assetPathPrefix}/fe7b6.svg`;
@@ -386,7 +388,7 @@ export function HomePageFigma({ d }: { d: DadosInicio }) {
                           <p className="font-['Plus_Jakarta_Sans:Bold'] font-bold relative shrink-0 text-[12.919px] text-white" data-node-id="316:34791">
                             Operação
                           </p>
-                          <p className="font-['Plus_Jakarta_Sans:Regular'] font-normal relative shrink-0 text-[8.944px] text-[rgba(255,255,255,0.8)]" data-node-id="316:34792">{`Em movimento >`}</p>
+                          <p className="font-['Plus_Jakarta_Sans:Regular'] font-normal relative shrink-0 text-[8.944px] text-[rgba(255,255,255,0.8)]" data-node-id="316:34792">{`${d.areaOperacao} >`}</p>
                         </div>
                       </Link>
                       <Link href="/negocios" className="bg-[#1f242c] border-[#30363d] border-[0.994px] border-solid col-2 content-stretch flex flex-col gap-[11.925px] items-start justify-self-stretch p-[11.925px] relative rounded-[15.9px] row-1 self-stretch shrink-0" data-node-id="316:34793" data-name="SectorCard-Comercial">
@@ -397,7 +399,7 @@ export function HomePageFigma({ d }: { d: DadosInicio }) {
                           <p className="font-['Plus_Jakarta_Sans:Bold'] font-bold relative shrink-0 text-[12.919px] text-white" data-node-id="316:34797">
                             Comercial
                           </p>
-                          <p className="font-['Plus_Jakarta_Sans:Regular'] font-normal relative shrink-0 text-[#8b949e] text-[8.944px]" data-node-id="316:34798">{`Alta performance >`}</p>
+                          <p className="font-['Plus_Jakarta_Sans:Regular'] font-normal relative shrink-0 text-[#8b949e] text-[8.944px]" data-node-id="316:34798">{`${d.areaComercial} >`}</p>
                         </div>
                       </Link>
                       <Link href="/clientes/financeiro" className="bg-[#1f242c] border-[#30363d] border-[0.994px] border-solid col-1 content-stretch flex flex-col gap-[11.925px] items-start justify-self-stretch p-[11.925px] relative rounded-[15.9px] row-2 self-stretch shrink-0" data-node-id="316:34799" data-name="SectorCard-Financeiro">
@@ -408,7 +410,7 @@ export function HomePageFigma({ d }: { d: DadosInicio }) {
                           <p className="font-['Plus_Jakarta_Sans:Bold'] font-bold relative shrink-0 text-[12.919px] text-white" data-node-id="316:34803">
                             Financeiro
                           </p>
-                          <p className="font-['Plus_Jakarta_Sans:Regular'] font-normal relative shrink-0 text-[#8b949e] text-[8.944px]" data-node-id="316:34804">{`Saudável >`}</p>
+                          <p className="font-['Plus_Jakarta_Sans:Regular'] font-normal relative shrink-0 text-[#8b949e] text-[8.944px]" data-node-id="316:34804">{`${d.areaFinanceiro} >`}</p>
                         </div>
                       </Link>
                       <Link href="/clientes" className="bg-[#1f242c] border-[#30363d] border-[0.994px] border-solid col-2 content-stretch flex flex-col gap-[11.925px] items-start justify-self-stretch p-[11.925px] relative rounded-[15.9px] row-2 self-stretch shrink-0" data-node-id="316:34805" data-name="SectorCard-Suporte">
@@ -419,7 +421,7 @@ export function HomePageFigma({ d }: { d: DadosInicio }) {
                           <p className="font-['Plus_Jakarta_Sans:Bold'] font-bold relative shrink-0 text-[12.919px] text-white" data-node-id="316:34809">
                             Suporte
                           </p>
-                          <p className="font-['Plus_Jakarta_Sans:Regular'] font-normal relative shrink-0 text-[#8b949e] text-[8.944px]" data-node-id="316:34810">{`Excelente NPS >`}</p>
+                          <p className="font-['Plus_Jakarta_Sans:Regular'] font-normal relative shrink-0 text-[#8b949e] text-[8.944px]" data-node-id="316:34810">{`${d.areaSuporte} >`}</p>
                         </div>
                       </Link>
                     </div>

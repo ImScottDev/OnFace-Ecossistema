@@ -79,6 +79,22 @@ test("o gráfico da home sai da série, não do export do Figma", () => {
     "o subtítulo do card precisa ser derivado da série");
 });
 
+test("os cards de área dizem um número, não um elogio", () => {
+  // "Em movimento", "Alta performance", "Saudável", "Excelente NPS": quatro
+  // afirmações sobre a saúde do negócio, escritas na marcação, que nunca
+  // olharam o banco. "Financeiro: Saudável" aparecia junto de R$ 26.729,69 em
+  // cobrança com 7 vencidos, e "Excelente NPS" sem nenhuma resposta de NPS no
+  // período. `montarVisaoGeral` já derivava os mesmos quatro a partir de número.
+  const marcacao = semComentarios(fs.readFileSync(HOME, "utf8"));
+  for (const elogio of ["Em movimento", "Alta performance", "Saudável", "Excelente NPS"]) {
+    assert.ok(!marcacao.includes(elogio),
+      `"${elogio}" voltou para a marcação — o card tem que dizer um número`);
+  }
+  for (const campo of ["d.areaOperacao", "d.areaComercial", "d.areaFinanceiro", "d.areaSuporte"]) {
+    assert.ok(marcacao.includes(campo), `o card de ${campo} não lê o estado do dado`);
+  }
+});
+
 test("o tom do selo é função do sinal, não constante", () => {
   const page = fs.readFileSync(PAGE, "utf8");
   assert.match(page, /tomDoDelta/,

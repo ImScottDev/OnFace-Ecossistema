@@ -2770,3 +2770,17 @@ por causa do próprio comentário que citava a frase antiga: agora ignora
 comentários e olha só a marcação.
 
 Validação: tsc limpo, 338 testes / 0 falhas.
+
+## 2026-09-22 — CP37: "Financeiro: Saudável" era texto na marcação
+
+Terceiro placeholder da mesma tela. Os quatro cards de "Áreas em destaque"
+traziam "Em movimento", "Alta performance", "Saudável" e "Excelente NPS"
+escritos na marcação. "Financeiro: Saudável" convivia com R$ 26.729,69 em
+cobrança e 7 vencidos; "Excelente NPS" sem nenhuma resposta de NPS no período.
+
+`montarVisaoGeral` já derivava os mesmos quatro a partir de número e a home não
+os usava. A página passou a buscar `getMrrAtivo` (Metric Catalog) e
+`getPrecisaAtencao` e a derivar: 480 em curso · R$ 10,1k no mês · R$ 425,6k de
+MRR · 5 sinais abertos. O MRR do card bate com o da tela de Clientes.
+
+Validação: tsc limpo, 339 testes / 0 falhas, trava provada por reintrodução.

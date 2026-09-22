@@ -2,7 +2,8 @@ import { redirect } from "next/navigation";
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { getTenantContext } from "@/lib/auth/tenant";
-import { getClientesAtivos } from "@/lib/analytics/inicio";
+import { getClientesAtivos, getPrecisaAtencao } from "@/lib/analytics/inicio";
+import { getMrrAtivo } from "@/lib/analytics/command-center";
 import {
   getEvolucaoOperacao, getJornadaEtapas, getLeadsGerados, getOperacaoDetalhe,
   getOperacoesAtivas, getOperacoesPrioritarias, getReceitaMes,
@@ -15,6 +16,9 @@ export const dynamic = "force-dynamic";
 
 const TZ = "America/Sao_Paulo";
 const brl = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+/** Mesma forma curta que o painel da Visão Geral usa, para os dois não divergirem. */
+const brlCompacto = (v: number) =>
+  v >= 1000 ? `R$ ${(v / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}k` : brl(v);
 const pct = (d: number | null) => (d === null ? "—" : `${d >= 0 ? "+ " : "− "}${Math.abs(d)}%`);
 /**
  * O selo do card só pode ser verde quando o número subiu. O frame do Figma traz
@@ -61,7 +65,7 @@ export default async function OnfaceInicioPreview() {
 
   const hoje = new Date();
 
-  const [receita, leads, ativas, clientes, jornada, prioritarias, evolucao] = await Promise.all([
+  const [receita, leads, ativas, clientes, jornada, prioritarias, evolucao, mrrAtivo, atencao] = await Promise.all([
     getReceitaMes(ctx.organizacaoId, hoje),
     getLeadsGerados(ctx.organizacaoId, hoje),
     getOperacoesAtivas(ctx.organizacaoId),
@@ -69,6 +73,8 @@ export default async function OnfaceInicioPreview() {
     getJornadaEtapas(ctx.organizacaoId, hoje),
     getOperacoesPrioritarias(ctx.organizacaoId, 5),
     getEvolucaoOperacao(ctx.organizacaoId, hoje),
+    getMrrAtivo(ctx.organizacaoId),
+    getPrecisaAtencao(ctx.organizacaoId, hoje),
   ]);
 
   const [entrega] = await db.execute<{ id: string }>(sql`
@@ -150,6 +156,15 @@ export default async function OnfaceInicioPreview() {
     jornada3: jornada[3]?.label ?? "—",
     evolucao: serie,
     evolucaoResumo: resumoDaEvolucao(serie),
+    // Os quatro cards de "Áreas em destaque" traziam "Em movimento", "Alta
+    // performance", "Saudável" e "Excelente NPS" escritos na marcação —
+    // afirmações sobre a saúde do negócio que nunca olharam o banco.
+    // `montarVisaoGeral` já derivava os mesmos quatro a partir de número; aqui
+    // é a mesma derivação, com as consultas que esta página já faz.
+    areaOperacao: `${ativas.toLocaleString("pt-BR")} em curso`,
+    areaComercial: `${brlCompacto(receita.valor)} no mês`,
+    areaFinanceiro: `${brlCompacto(mrrAtivo.atual)} de MRR`,
+    areaSuporte: atencao.length === 1 ? "1 sinal aberto" : `${atencao.length} sinais abertos`,
     operacoes: prioritarias.map((l) => ({
       empresa: l.empresa,
       descricao: l.descricao,
