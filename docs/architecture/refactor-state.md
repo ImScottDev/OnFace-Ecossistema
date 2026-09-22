@@ -2945,3 +2945,58 @@ Foi apontada contradição entre "corrigi quatro colunas de `billing_customer_al
 
 As duas afirmações eram verdadeiras. A comunicação foi ambígua por não dizer que a
 correção estava em commit anterior herdado, e não em alteração pendente.
+
+### CP53 — O guarda do CP42 recusava o prospect mais comum do outbound
+
+**O verificador não enxergava build quebrado.** Uma crase dentro de comentário
+SQL, dentro de template literal, derrubava sete telas, e `checar-rotas-onface`
+dizia "HTTP 500" sem nomear o arquivo. A leitura do corpo passou para ANTES da
+checagem de status: a mesma falha volta ora como 200 com o overlay do dev, ora
+como 500 limpo, e o que separa as duas é o instante da recompilação, não a
+gravidade. Medido na reintrodução: 7 rotas acusadas com o arquivo no relato,
+contra 3 sem nome na versão anterior, e 14/14 depois de restaurar.
+
+**A regressão que eu mesmo plantei no CP42.** A trava passou a lançar em toda
+falha da ponte canônica. Só que o domínio recusa de propósito quando não há
+e-mail nem telefone, porque sem identificador não há como saber se a pessoa já
+existe, e criar às cegas é como a base ganhou duplicata durante anos. O prospect
+de outbound nasce exatamente assim, com empresa e nome do decisor, e o contato
+vem depois. O aceite de vendas parava inteiro em "informe e-mail ou telefone".
+
+`ResultadoPonte` ganhou `codigo`, que a ponte descartava, e só
+`SEM_IDENTIFICADOR` passa. É o terceiro guarda desta leva a recusar a decisão
+certa: CP47 com granularidade de dia no handoff de CS, CP51 com três recortes
+legítimos, agora este. A conclusão já não é hipótese: guarda que impede o certo
+custa tanto quanto guarda nenhum, e a diferença entre os dois é medida em quanto
+tempo se perde acreditando no vermelho.
+
+**A metade sem a qual a correção seria pior.** Relaxar a trava sozinha trocaria
+um erro por um órfão permanente, que é o buraco que o CP42 existe para tapar.
+`preQualificar` virou a segunda chance de entrada canônica: é a saída do
+outbound para Pré-vendas, o momento em que o contato já foi descoberto. Chamada
+com a MESMA `idempotencyKey`, e a repetição é coberta por dois caminhos
+independentes de deduplicação que o domínio já tinha.
+
+**A duplicata silenciosa que isso revelou.** `adicionarProspect` resolve a
+pessoa pelo caminho de vendas, que cria com nome; a porta resolve pelo caminho
+do domínio, que só acha por e-mail ou telefone. Sem contato, a segunda não
+reconhece a primeira e cria outra, e `idx_pessoas_lead_legado`, que é ÚNICO,
+estoura ao ligar as duas ao mesmo lead. A correção é na raiz: o contato
+descoberto chega na pessoa já ligada antes de a porta ser chamada.
+
+Vale registrar o formato do assert, porque o óbvio não pegaria: contar por
+`lead_id_legado` dá 1 nos dois casos, porque a segunda pessoa fica SOLTA, sem
+vínculo, enquanto a aquisição aponta para ela. Quem enxerga é a contagem por
+nome. Reintrodução mede 2.
+
+**A limpeza que matava o aceite depois de ele passar.** `aceite-cs` apagava
+`negocios` sem soltar a oportunidade espelho (`oportunidades.negocio_id_legado`,
+FK sem cascade). Morria no final, com os 12 testes verdes, o que faz a falha
+parecer de outro lugar. Deixou 3 oportunidades sem etapa no banco, e elas
+derrubaram `relatorios/cobertura.test.ts` duas fases adiante. Resíduo removido.
+
+**Aceite que segue vermelho, e está certo:** `validar-catalogo-oficial` acusa
+PABX sem plano, setup, serviço e integração. Bloqueio de dado à espera do Kauã,
+não defeito de código.
+
+Validação: tsc limpo, 351 testes / 0 falhas, 44 smokes, 14/14 rotas do ONFACE.

@@ -3073,3 +3073,45 @@ caminho: o prefixo vem da montagem e não da declaração (44 falsos), e a URL d
 front é template, então a chamada vale como prefixo da rota (13 falsos).
 
 Validação: tsc limpo, 351 testes / 0 falhas.
+
+## 2026-09-22 — CP53: o guarda do CP42 recusava o prospect mais comum do outbound
+
+O verificador de rotas não enxergava build quebrado. Passou a ler o corpo ANTES
+de olhar o status: a mesma crase em comentário SQL devolveu ora 200 com o
+overlay do dev, ora 500 limpo, e a diferença entre as duas foi o instante da
+recompilação. Lendo só os 200, metade das execuções relatava "HTTP 500" sem
+dizer qual arquivo. Reintrodução: 7 rotas acusadas com o arquivo nomeado, e
+14/14 depois de restaurar. Antes eram 3, e sem nome.
+
+Aceites vermelhos em três pontos, dois deles defeito:
+
+1. Meu, do CP42. A trava lançava em toda falha da ponte canônica, inclusive
+   quando o domínio recusa de propósito: prospect de outbound nasce com empresa
+   e nome, e sem e-mail nem telefone não há como deduplicar. O aceite de vendas
+   parava inteiro em "informe e-mail ou telefone". A ponte passou a repassar o
+   `codigo` do domínio (`ResultadoPonte.codigo`) e só `SEM_IDENTIFICADOR` passa.
+   Terceiro guarda desta leva a recusar a decisão correta (CP47, CP51, CP53).
+
+   Relaxar sozinho trocaria erro por órfão permanente. `preQualificar` virou a
+   segunda chance de entrada canônica, com a MESMA `idempotencyKey`, e a
+   deduplicação do domínio cobre a repetição por dois caminhos independentes
+   (chave e aquisição aberta da mesma identidade).
+
+   Isso descobriu uma duplicata silenciosa: `adicionarProspect` resolve a pessoa
+   pelo caminho de vendas (cria só com nome) e a porta pelo caminho do domínio
+   (só acha por e-mail ou telefone). Sem contato, a segunda não reconhece a
+   primeira e cria outra, e `idx_pessoas_lead_legado` (ÚNICO) estoura ao ligar
+   as duas ao mesmo lead. Correção na raiz: o contato descoberto chega na pessoa
+   já ligada antes da porta ser chamada. Reintrodução mede 2 pessoas.
+
+2. A limpeza do `aceite-cs` apagava `negocios` sem soltar a oportunidade
+   espelho (`oportunidades.negocio_id_legado`, FK sem cascade). Morria DEPOIS
+   dos 12 testes passarem, o que faz a falha parecer de outro lugar, e deixou
+   3 oportunidades sem etapa no banco, que derrubaram
+   `relatorios/cobertura.test.ts` duas fases adiante. Resíduo removido.
+
+3. `validar-catalogo-oficial` continua vermelho, e está certo: o catálogo PABX
+   não tem plano, setup, serviço nem integração. Bloqueio de dado, não defeito.
+
+Validação: tsc limpo, 351 testes / 0 falhas, 44 smokes, 14/14 rotas do ONFACE,
+aceites verdes menos o catálogo.
