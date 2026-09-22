@@ -1,9 +1,6 @@
 import { redirect } from "next/navigation";
-import { eq } from "drizzle-orm";
-import { db } from "@/lib/db";
-import { organizacoes } from "@/lib/db/schema";
 import { getTenantContext } from "@/lib/auth/tenant";
-import { Cf2Topbar } from "@/components/crm2/Topbar";
+import { PaginaCabecalho } from "@/components/onface/shell/Pagina";
 
 /**
  * Destino estrutural de um módulo que a árvore de navegação já prevê e o
@@ -14,31 +11,25 @@ import { Cf2Topbar } from "@/components/crm2/Topbar";
  * ser e de onde o dado virá quando existir. Quando o módulo for construído, a
  * rota deixa de usar este componente.
  */
-export async function ModuloPendente({ titulo, area, resumo, dependencias }: {
+export async function ModuloPendente({ titulo, resumo, dependencias }: {
   titulo: string;
-  area: string;
   resumo: string;
   dependencias: string[];
 }) {
   const ctx = await getTenantContext();
   if (!ctx) redirect("/login");
 
-  const [org] = await db
-    .select({ nome: organizacoes.nome })
-    .from(organizacoes)
-    .where(eq(organizacoes.id, ctx.organizacaoId))
-    .limit(1);
-
   return (
-    <div className="flex flex-col gap-3">
-      <div
-        className="-m-6 mb-0 relative flex flex-col px-6 py-3.5 rounded-tl-2xl border-b"
-        style={{ background: "var(--cf2-bg-surface)", borderColor: "var(--cf2-border-default)" }}
-      >
-        <Cf2Topbar orgNome={org?.nome || "Callface"} variant="light" title={titulo} compactTitle actions={null} />
-      </div>
+    // O nome do módulo e o resumo vivem no cabeçalho da página, como em toda
+    // tela do produto. Antes apareciam DUAS vezes: o cabeçalho dizia "Fluxos"
+    // e o cartão logo abaixo dizia "Fluxos" de novo, com a área ("Automações")
+    // como micro-label em cima — que é a terceira vez, porque a trilha da
+    // topbar já diz o grupo. Sobrou o que é único desta tela: a lista do que
+    // precisa acontecer antes.
+    <>
+      <PaginaCabecalho titulo={titulo} descricao={resumo} />
 
-      <div className="pt-6">
+      <div>
         {/* Cara ONFACE (18/09, F1): grafite como moldura, coral só no fio que
             marca o estado, tipografia display no título. O coral aqui é sinal,
             não decoração — é o único ponto colorido da tela, e diz "isto ainda
@@ -66,24 +57,10 @@ export async function ModuloPendente({ titulo, area, resumo, dependencias }: {
             style={{ background: "var(--onface-coral)" }}
           />
 
-          <p
-            className="text-micro font-semibold uppercase"
-            style={{ color: "var(--onface-coral)", letterSpacing: "0.14em" }}
-          >
-            {area}
-          </p>
-          <h1
-            className="mt-2 text-titulo font-semibold leading-tight"
-            style={{ fontFamily: "var(--font-onface-display), ui-sans-serif, system-ui, sans-serif" }}
-          >
-            {titulo}
-          </h1>
-          <p className="mt-3 max-w-prose text-corpo leading-relaxed opacity-80">{resumo}</p>
-
           {/* O contrato desta tela é não fingir. Em vez de um gráfico vazio ou
               um número inventado, ela mostra o que falta acontecer antes. */}
-          <p className="mt-6 text-micro font-semibold uppercase opacity-55" style={{ letterSpacing: "0.14em" }}>
-            Depende de
+          <p className="text-micro font-semibold uppercase opacity-55" style={{ letterSpacing: "0.14em" }}>
+            Ainda não existe. Depende de
           </p>
           <ul className="mt-3 flex flex-col gap-2 text-corpo">
             {dependencias.map((item) => (
@@ -95,6 +72,6 @@ export async function ModuloPendente({ titulo, area, resumo, dependencias }: {
           </ul>
         </div>
       </div>
-    </div>
+    </>
   );
 }

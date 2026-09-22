@@ -126,7 +126,6 @@ export default function ServicosCatalogoPage() {
     <div className="max-w-4xl mx-auto p-6">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-[18px] font-bold text-[var(--cf2-text-primary)]">Catálogo de Serviços</h1>
           <p className="text-[12px] text-[var(--cf2-text-tertiary)] mt-0.5">
             Gerencie os serviços oferecidos pela sua organização
           </p>

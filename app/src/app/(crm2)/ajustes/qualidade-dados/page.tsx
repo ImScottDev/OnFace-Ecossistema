@@ -39,7 +39,6 @@ export default async function QualidadeDadosPage() {
   return (
     <div className="flex flex-col gap-5 max-w-5xl">
       <CabecalhoDiag
-        titulo="Qualidade de dados"
         descricao="Dez verificações só-leitura contra o banco real. Nada é corrigido aqui — a tela mede e mostra onde procurar; correção em massa sempre exige decisão humana explícita."
       />
 

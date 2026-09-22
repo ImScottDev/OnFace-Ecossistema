@@ -117,7 +117,6 @@ export default function ApiTokensPage() {
     <div className="space-y-6">
       <div className="flex items-start gap-3">
         <div className="flex-1">
-          <h1 className="text-xl font-bold text-[var(--cf2-text-primary)]">Tokens da API</h1>
           <p className="text-sm text-[var(--cf2-text-tertiary)] mt-1">
             Credenciais para sistemas externos lerem e gravarem pela API pública. Cada token
             vale só para os escopos que você marcar.

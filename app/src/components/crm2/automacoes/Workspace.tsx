@@ -21,6 +21,8 @@ import {
 import { useOrgUsuarios } from "@/components/crm/BoardFilters";
 import { Cf2Badge } from "../ui/Badge";
 import { Cf2EmptyState } from "../ui/States";
+import { PaginaCabecalho } from "@/components/onface/shell/Pagina";
+import { Button } from "@/components/ui/button";
 
 /**
  * Builder de Automações do cf2 — motor real por trás (lib/crm/automacao-engine.ts):
@@ -361,24 +363,30 @@ export function Cf2AutomacoesWorkspace() {
   const inputStyle = { background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" };
 
   return (
-    <div className="space-y-4">
-      {/* O título próprio saiu: a página já tem cabeçalho e a topbar já tem a
-          trilha — eram três "Automações" antes do primeiro dado. Sobra a ação,
-          alinhada à direita como nas outras telas. */}
-      <div className="flex items-center justify-end">
-        <button
-          onClick={() => setShowForm(true)}
-          className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold"
-          style={{ background: "var(--primary)", color: "var(--primary-foreground)" }}
-        >
-          <Plus className="w-4 h-4" /> Nova Automação
-        </button>
-      </div>
+    // O cabeçalho passou a viver aqui.
+    //
+    // O título próprio já tinha saído (a topbar diz a trilha e a página dizia
+    // "Automações" de novo), mas o CTA ficou sozinho numa linha só dele —
+    // uma faixa inteira de altura para um botão, entre o cabeçalho e o
+    // primeiro dado. A ação pertence ao cabeçalho, como em todas as outras
+    // telas; e quem sabe abrir o formulário é este componente, não a rota.
+    <>
+      <PaginaCabecalho
+        titulo="Automações"
+        descricao="Fluxos, cadências, agentes e execuções — mesmo motor por trás"
+        acoes={
+          <Button size="sm" onClick={() => setShowForm(true)}>
+            <Plus data-icon="inline-start" /> Nova automação
+          </Button>
+        }
+      />
+
+      <div className="space-y-4">
 
       {isLoading ? (
         <p className="text-sm" style={{ color: "var(--cf2-text-tertiary)" }}>Carregando...</p>
       ) : rules.length === 0 ? (
-        <Cf2EmptyState title="Nenhuma automação configurada ainda" description={'O motor já roda de verdade (12 gatilhos ligados) — clique em "Nova Automação" pra cadastrar a 1ª regra.'} />
+        <Cf2EmptyState title="Nenhuma automação configurada ainda" description={'O motor já roda de verdade: 12 gatilhos ligados. Use "Nova automação" para cadastrar a primeira regra.'} />
       ) : (
         <div className="space-y-3">
           {rules.map((rule) => {
@@ -550,6 +558,7 @@ export function Cf2AutomacoesWorkspace() {
           </div>
         </div>
       )}
-    </div>
+      </div>
+    </>
   );
 }

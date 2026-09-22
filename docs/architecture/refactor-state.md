@@ -3420,12 +3420,12 @@ mais o `ONFACE-UX-EXECUTION-SPEC-v1.md`.
 | Início | **concluído** — rota canônica serve a Visão Geral |
 | Atendimento | **parcial** — vazio, erro, validação e altura resolvidos; o layout de três painéis do §17.2 ainda não é o do spec |
 | Clientes / Onboarding / Implantação / CS | **parcial** — CS reconstruído (faixa hero fora, filtro único, dois filtros mortos removidos); Carteira/Onboarding/Implantação só com o cabeçalho novo |
-| Automações / Agentes / Execuções | **parcial** — título duplicado removido; sub-rotas pendentes |
+| Automações / Agentes / Execuções | **parcial** — cabeçalhos unificados em Visão geral, Cadências e Agentes; Fluxos e Execuções ainda são `ModuloPendente` |
 | Financeiro | pendente |
 | Insights / Relatórios | **parcial** — faixa hero fora, abas e período numa linha, esqueleto de carregamento, gráfico de faturamento por categoria voltou (500 no `GROUP BY`) |
 | Tarefas | **concluída** — resumo com recorte "Atrasadas" ligado, ritmo de 20px corrigido |
-| Calendário | pendente |
-| Ajustes | pendente |
+| Calendário | **auditado, sem defeito estrutural** — cabeçalho, seletor de visão e grade em ordem; base sem evento para exercitar |
+| Ajustes | **parcial** — 18 telas ganharam `h1` (tinham zero), índice sem os 18 chips coral; as telas em si não foram refeitas |
 | loading/error/not-found por rota | **concluída** para `(crm2)` — `loading.tsx`, `error.tsx` e `not-found.tsx` |
 | Cores hardcoded | 946 em 83 arquivos no código alcançável (a contagem anterior de 1.321/128 incluía 28% em arquivos sem importador) |
 | Controle segmentado | **concluído** — `ToggleGroup` do shadcn recebe o desenho do DS em folha global; antes a seleção tinha 3% de diferença de luminância |

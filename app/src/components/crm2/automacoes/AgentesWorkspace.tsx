@@ -9,6 +9,8 @@ import { toast } from "sonner";
 import { AGENT_PRESETS, AGENT_PURPOSES, DEFAULT_HANDOFF_CONFIG } from "@/lib/ai/agent-studio";
 import { Cf2Badge } from "../ui/Badge";
 import { Cf2EmptyState, Cf2ErrorState, Cf2Skeleton } from "../ui/States";
+import { PaginaCabecalho } from "@/components/onface/shell/Pagina";
+import { Button } from "@/components/ui/button";
 
 interface AgenteResumo {
   id: string; tipo: string; nome: string; descricao: string; ativo: boolean;
@@ -110,7 +112,16 @@ export function Cf2AgentesWorkspace() {
   const runs = useMemo(() => data?.agentes.reduce((sum, a) => sum + a.execucoes, 0) ?? 0, [data]);
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-[11px] font-bold uppercase tracking-[.16em]" style={{ color: "var(--cf2-accent-text)" }}>Agentes IA</p><h1 className="mt-1 text-2xl font-bold">Equipe digital da operação</h1><p className="mt-1 max-w-2xl text-[12px] leading-5" style={{ color: "var(--cf2-text-secondary)" }}>Configure comportamento, capacidades, limites e handoff. Toda versão é rastreável e exige publicação explícita.</p></div><button onClick={() => setCriando(true)} className="flex items-center gap-2 rounded-xl px-4 py-2.5 text-[12px] font-bold" style={{ background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" }}><Plus className="h-4 w-4" /> Novo agente</button></div>
+      {/* Saíram três coisas: o micro-label coral "Agentes IA" (a trilha já diz
+          Automação / Agentes, e coral é reservado para o que exige atenção), o
+          título "Equipe digital da operação" — que é frase de marketing, não
+          nome de tela — e o segundo cabeçalho que a rota desenhava dizendo
+          "Automações". O nome é o do menu e o da spec: Agentes. */}
+      <PaginaCabecalho
+        titulo="Agentes"
+        descricao="Configure comportamento, capacidades, limites e handoff. Toda versão é rastreável e exige publicação explícita."
+        acoes={<Button size="sm" onClick={() => setCriando(true)}><Plus data-icon="inline-start" /> Novo agente</Button>}
+      />
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">{[[Bot, data?.agentes.length ?? 0, "agentes configurados"], [ShieldCheck, published, "versões publicadas"], [Activity, runs, "execuções registradas"]].map(([Icon, value, label]) => { const C = Icon as typeof Bot; return <div key={String(label)} className="rounded-2xl p-4" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}><C className="h-4 w-4" style={{ color: "var(--cf2-text-tertiary)" }} /><p className="mt-3 text-xl font-bold">{String(value)}</p><p className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>{String(label)}</p></div>; })}</div>
       {isLoading ? <div className="grid gap-3 md:grid-cols-2"><Cf2Skeleton className="h-48" /><Cf2Skeleton className="h-48" /></div> : isError ? <Cf2ErrorState message="Não foi possível carregar os agentes." /> : !data?.agentes.length ? <Cf2EmptyState title="Nenhum agente configurado" description="Crie o primeiro agente. Ele nascerá como rascunho e poderá ser testado antes da publicação." /> : <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{data.agentes.map((a) => <AgenteCard key={a.id} agente={a} />)}</div>}
       {criando && <NovoAgenteModal onClose={() => setCriando(false)} />}

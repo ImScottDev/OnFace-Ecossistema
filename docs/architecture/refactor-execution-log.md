@@ -3472,3 +3472,48 @@ medir. Com o parsing certo, 6,61:1.
 fundos escuros do produto. Provados ao contrário: restaurando os tokens antigos,
 `danger / inverse` cai para 2,74:1 e `danger / chrome-alt` para 2,77:1, e a
 trava acusa as duas.
+
+
+**UX-18 — um `h1` por rota, e ele nomeia a tela.** Varredura do HTML servido
+em 31 rotas do produto e nas 21 de Ajustes. Oito rotas do produto estavam
+erradas:
+
+| Rota | Antes | Depois |
+|---|---|---|
+| `/atendimento` | **zero `h1`** | "Atendimento" (o texto já visível virou `h1`) |
+| `/relatorios/performance` | "Performance" × 2 | "Performance" |
+| `/relatorios/biblioteca` | "Relatórios" × 2 | "Relatórios" |
+| `/automacoes/fluxos` | "Fluxos" × 2 | "Fluxos" |
+| `/automacoes/cadencias` | "Automações" + "Follow-ups" | "Cadências" |
+| `/automacoes/agentes` | "Automações" + "Equipe digital da operação" | "Agentes" |
+| `/prospeccao/apollo` | "Prospecção · Busca Apollo" + "Prospecção Apollo" | "Busca Apollo" |
+| 18 telas de `/ajustes` | **zero `h1`** | o nome da seção |
+
+Três causas distintas, não uma:
+
+1. **`ModuloPendente`** desenhava `Cf2Topbar title={titulo}` E um `<h1>{titulo}</h1>`
+   no cartão, com a área ("Automações") como micro-label em cima — três vezes o
+   mesmo assunto. Alcançava 11 rotas de uma vez. A prop `area` saiu junto: sem
+   consumidor, ela seria a próxima pessoa procurando onde aparece.
+2. **Workspaces com cabeçalho próprio** enquanto a rota desenhava outro. Em
+   Cadências e Agentes os dois discordavam do nome: a spec §6 e o menu
+   congelado dizem "Cadências" e "Agentes"; a tela dizia "Follow-ups" e
+   "Equipe digital da operação", que é frase de marketing.
+3. **Título que não é texto.** O layout de Ajustes passava `<AjustesTitulo/>`
+   (um `<span>` com "Ajustes / seção") como título. Nó não cabe em `h1`, então
+   o cabeçalho o renderizava solto e as 18 telas nasciam sem `h1` nenhum — e a
+   trilha aparecia em duplicata. Agora o `h1` é a SEÇÃO e a trilha da casca diz
+   onde ela mora.
+
+**Índice de Ajustes: 18 chips coral de uma vez.** Coral é a cor de "isto exige
+atenção"; pintada em todo item de uma lista de configuração, deixa de
+significar qualquer coisa — e índice de ajustes não tem nada que exija atenção.
+Ícone solto em `--text-muted`, sem o quadradinho arredondado.
+
+**Automações:** o CTA "Nova automação" ocupava uma faixa inteira só dele entre
+o cabeçalho e o primeiro dado. Foi para o cabeçalho, como em todas as outras
+telas. O texto do vazio mandava clicar em "Nova Automação" e o botão dizia
+"Nova automação" — instrução tem que citar o rótulo exato.
+
+Validação: tsc limpo, 365 testes / 0 falhas, 40 pares de contraste sem falha,
+31 rotas do produto e 21 de Ajustes com exatamente um `h1` cada.

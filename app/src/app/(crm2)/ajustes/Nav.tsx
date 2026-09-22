@@ -1,5 +1,7 @@
 "use client";
 
+import { PaginaCabecalho } from "@/components/onface/shell/Pagina";
+
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
@@ -160,22 +162,24 @@ export function AjustesNav() {
  * que tela o usuário estava. Reusa a mesma lista do Nav — um rótulo só, em
  * um lugar só.
  */
-export function AjustesTitulo() {
+/**
+ * Cabeçalho das 18 telas de Ajustes.
+ *
+ * Era um `<span>` com "Ajustes / <seção>" passado como TÍTULO para o
+ * `Cf2Topbar`. Duas consequências, as duas medidas no navegador:
+ *
+ * 1. **Nenhuma das 18 páginas tinha `h1`.** Título que não é texto não cabe
+ *    no `h1` (HTML inválido), então o cabeçalho o renderizava solto. Leitor
+ *    de tela abria a tela sem nenhum cabeçalho de nível 1.
+ * 2. **Trilha em duplicata.** A topbar da casca já diz "Ajustes"; repetir
+ *    "Ajustes /" logo abaixo é o mesmo nome duas vezes antes do primeiro
+ *    controle.
+ *
+ * Agora o `h1` é a SEÇÃO ("WhatsApp"), e a trilha da casca é que diz onde
+ * ela mora. O índice, sem seção, continua se chamando "Ajustes".
+ */
+export function AjustesCabecalho() {
   const pathname = usePathname();
   const atual = itemAtualDeAjustes(pathname);
-
-  if (!atual) return <span>Ajustes</span>;
-  return (
-    <span className="flex items-center gap-1.5 min-w-0">
-      <Link
-        href="/ajustes"
-        className="shrink-0 rounded transition-colors hover:underline"
-        style={{ color: "var(--cf2-text-tertiary)" }}
-      >
-        Ajustes
-      </Link>
-      <span aria-hidden style={{ color: "var(--cf2-text-tertiary)" }}>/</span>
-      <span className="truncate">{atual.label}</span>
-    </span>
-  );
+  return <PaginaCabecalho titulo={atual?.label ?? "Ajustes"} />;
 }

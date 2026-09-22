@@ -10,6 +10,8 @@ import { createEmptyFollowupGraph } from "@/lib/ai-platform/followup/graph";
 import { legacyStepsToFollowupGraph } from "@/lib/ai-platform/followup/legacy";
 import { validateFollowupForPublish, type FollowupValidationResult } from "@/lib/ai-platform/followup/validate";
 import type { CadenceStep } from "@/lib/cadencia/cadence-engine";
+import { PaginaCabecalho } from "@/components/onface/shell/Pagina";
+import { Button } from "@/components/ui/button";
 
 type Cadencia = {
   id: string; nome: string; entityType: string; ativo: boolean; status: string; versao: number; publishedAt: string | null;
@@ -66,7 +68,16 @@ export function Cf2CadenciasWorkspace() {
 
   const cadencias = flows.data?.cadencias ?? [];
   return <div className="flex flex-col gap-5">
-    <header className="flex flex-wrap items-end justify-between gap-3"><div><h1 className="text-[24px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Follow-ups</h1><p className="mt-1 text-[13px]" style={{ color: "var(--cf2-text-secondary)" }}>Fluxos de retomada e acompanhamento, com cada inscrição rastreável até concluir, pausar ou cancelar.</p></div><button onClick={() => open()} className="flex items-center gap-2 rounded-lg px-3 py-2 text-[12px] font-semibold" style={{ background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" }}><Plus className="size-3.5" />Novo follow-up</button></header>
+    {/* "Cadências" e não "Follow-ups": é o nome do menu, que o Kauã congelou, e
+        o mesmo da spec (§6, "Cadências | List/Builder | Page | follow-up").
+        Follow-up é o QUE a cadência faz, e isso a descrição diz. Antes a
+        trilha dizia Cadências, o cabeçalho da página dizia Automações e o
+        título dizia Follow-ups — três nomes para uma tela. */}
+    <PaginaCabecalho
+      titulo="Cadências"
+      descricao="Fluxos de retomada e acompanhamento, com cada inscrição rastreável até concluir, pausar ou cancelar."
+      acoes={<Button size="sm" onClick={() => open()}><Plus data-icon="inline-start" />Novo follow-up</Button>}
+    />
     <nav className="flex w-fit gap-1 rounded-xl p-1" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }}><Tab active={view === "flows"} onClick={() => setView("flows")} icon={GitBranch}>Fluxos</Tab><Tab active={view === "queue"} onClick={() => setView("queue")} icon={ListChecks}>Fila</Tab></nav>
     {view === "flows" ? <Flows cadencias={cadencias} loading={flows.isLoading} error={flows.isError} onEdit={open} onPause={pauseFlow} onRollback={rollback} /> : <Queue data={queue.data} loading={queue.isLoading} error={queue.isError} status={status} flow={flow} search={search} onStatus={setStatus} onFlow={setFlow} onSearch={setSearch} onAction={(id, action) => enrollmentAction.mutate({ id, action })} onOpenEvents={setOpenEventsFor} busy={enrollmentAction.isPending} />}
     {flows.data?.mecanismosParalelos.cadenciaSdrInboundExecucoes ? <div className="flex gap-3 rounded-xl p-4" style={{ background: "var(--cf2-warning-bg)", border: "1px solid var(--cf2-warning-border)" }}><AlertTriangle className="mt-0.5 size-4 shrink-0" style={{ color: "var(--cf2-warning-text)" }} /><p className="text-[12px] leading-5" style={{ color: "var(--cf2-text-secondary)" }}><strong style={{ color: "var(--cf2-warning-text)" }}>Legado separado.</strong> Existem {flows.data.mecanismosParalelos.cadenciaSdrInboundExecucoes} execuções de SDR inbound fora deste motor. Elas seguem visíveis para não fingir que já foram migradas.</p></div> : null}

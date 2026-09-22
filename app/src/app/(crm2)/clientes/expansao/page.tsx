@@ -6,7 +6,6 @@ export default function ClientesExpansaoPage() {
   return (
     <ModuloPendente
       titulo="Expansão & Renovação"
-      area="Clientes"
       resumo="Oportunidades dentro da base: upgrade, aumento de uso e renovação de contrato."
       dependencias={[
             "Definir o gatilho de renovação a partir do contrato",

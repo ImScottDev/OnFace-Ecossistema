@@ -6,7 +6,6 @@ export default function AutomacoesFluxosPage() {
   return (
     <ModuloPendente
       titulo="Fluxos"
-      area="Automações"
       resumo="Os fluxos de automação em si: o que dispara, o que executa e em que ordem."
       dependencias={[
             "Definir se o fluxo é editado aqui ou continua no n8n, com esta tela sendo leitura",

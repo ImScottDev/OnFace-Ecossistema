@@ -247,12 +247,18 @@ function AjusteCardItem({ card }: { card: AjusteCard }) {
         opacity: card.href ? 1 : 0.7,
       }}
     >
-      <div
-        className="flex items-center justify-center rounded-lg shrink-0 w-9 h-9"
-        style={{ background: card.href ? "var(--cf2-accent)" : "var(--cf2-bg-surface-muted)" }}
-      >
-        <Icon className="w-4 h-4" style={{ color: card.href ? "var(--cf2-text-on-accent)" : "var(--cf2-text-tertiary)" }} />
-      </div>
+      {/* Ícone solto, sem o quadradinho arredondado.
+       *
+       * Medido nesta tela: 18 chips coral de uma vez. Coral é a cor de
+       * "isto exige atenção"; pintada em todo item de uma lista de
+       * configuração, ela deixa de significar qualquer coisa — e índice de
+       * ajustes não tem nada que exija atenção. O ícone continua ajudando a
+       * varrer a lista, agora sem competir com o título que está ao lado. */}
+      <Icon
+        className="w-[18px] h-[18px] shrink-0 mt-px"
+        style={{ color: "var(--text-muted)" }}
+        aria-hidden
+      />
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
           <p className="text-[14px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>{card.titulo}</p>

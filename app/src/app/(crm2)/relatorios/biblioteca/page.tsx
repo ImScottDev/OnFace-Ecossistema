@@ -6,7 +6,6 @@ export default function RelatoriosBibliotecaPage() {
   return (
     <ModuloPendente
       titulo="Relatórios"
-      area="Insights"
       resumo="Biblioteca de relatórios salvos, separada da visão geral de indicadores."
       dependencias={[
             "Definir quais relatórios entram e quem pode salvar um relatório novo",

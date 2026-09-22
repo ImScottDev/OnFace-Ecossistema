@@ -58,9 +58,15 @@ export function Cf2ConversationList({
     >
       <div className="flex flex-col gap-4 p-5 pb-4" style={{ borderBottom: "1px solid var(--cf2-border-default)" }}>
         <div className="flex items-center justify-between">
-          <p className="text-[18px] font-semibold tracking-tight" style={{ color: "var(--cf2-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>
+          {/* `h1` e não `p`: a rota do Atendimento não desenha cabeçalho de
+              página de propósito (a tela É o workspace de três painéis), e o
+              resultado era uma rota do produto SEM nenhum `h1` — leitor de
+              tela abria a tela sem cabeçalho de nível 1. Este texto já era o
+              título visível; agora ele também é o título do documento. Nada
+              muda na tela. */}
+          <h1 className="text-[18px] font-semibold tracking-tight" style={{ color: "var(--cf2-text-primary)", fontFamily: "var(--cf2-font-heading)" }}>
             Atendimento
-          </p>
+          </h1>
           <button
             onClick={onNovaMensagem}
             title="Nova mensagem"

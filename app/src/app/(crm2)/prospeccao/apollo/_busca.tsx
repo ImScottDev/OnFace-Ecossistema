@@ -336,7 +336,9 @@ export function BuscaApollo() {
             <Radar className="w-5 h-5 text-[var(--cf2-text-primary)]" />
           </div>
           <div>
-            <h1 className="text-xl font-bold text-[var(--cf2-text-primary)]">Prospecção Apollo</h1>
+            {/* "Busca Apollo": a trilha da casca já diz Prospecção, e a rota
+                dizia "Prospecção · Busca Apollo" logo acima disto. */}
+            <h1 className="onface-pagina-titulo">Busca Apollo</h1>
             <p className="text-xs text-[var(--cf2-text-tertiary)] hidden sm:block">Busque e importe leads da base Apollo.io (275M+ contatos)</p>
           </div>
         </div>

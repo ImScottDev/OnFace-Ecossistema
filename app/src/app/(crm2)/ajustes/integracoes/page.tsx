@@ -51,7 +51,6 @@ export default function IntegracoesPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-bold text-[var(--cf2-text-primary)]">Integrações</h1>
         <p className="text-sm text-[var(--cf2-text-tertiary)] mt-1">Configure as chaves de API das integrações da sua organização.</p>
       </div>
 

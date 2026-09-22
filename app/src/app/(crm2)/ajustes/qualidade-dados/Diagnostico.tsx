@@ -74,11 +74,16 @@ export function CartaoDiag({ titulo, children }: { titulo: ReactNode; children: 
   );
 }
 
-/** Cabeçalho comum das duas telas de diagnóstico. */
-export function CabecalhoDiag({ titulo, descricao }: { titulo: string; descricao: string }) {
+/** Cabeçalho comum das duas telas de diagnóstico.
+ *
+ * `h2` e não `h1`: o `h1` da seção é do layout de Ajustes. Com os dois, a
+ * tela de Qualidade de dados anunciava o próprio nome duas vezes seguidas —
+ * medido no HTML servido. A sub-tela de duplicidade tem nome próprio e
+ * continua se apresentando, agora um nível abaixo. */
+export function CabecalhoDiag({ titulo, descricao }: { titulo?: string; descricao: string }) {
   return (
     <header className="flex flex-col gap-1">
-      <h1 className="text-lg font-semibold" style={{ color: "var(--cf2-text-primary)" }}>{titulo}</h1>
+      {titulo ? <h2 className="text-lg font-semibold" style={{ color: "var(--cf2-text-primary)" }}>{titulo}</h2> : null}
       <p className="text-[12.5px] max-w-3xl leading-relaxed" style={{ color: "var(--cf2-text-tertiary)" }}>
         {descricao}
       </p>
