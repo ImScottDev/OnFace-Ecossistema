@@ -13,13 +13,40 @@
 **Refactor arquitetural: fases 01 a 26 concluídas.** 27 e 28 aguardam aprovação
 do Kauã (são destrutivas).
 
-**Conclusão do produto (Documento Mestre v0.13): CP1 a CP13 concluídos.** Essa é
-a etapa em que o ONFACE parou de ser fundação e virou produto utilizável: as
-jornadas operacionais estão fechadas e os números das telas foram acertados
-contra o dado real.
+**Conclusão do produto (Documento Mestre v0.13): CP1 a CP41 concluídos.**
+
+Três blocos, em ordem:
+
+- **CP1 a CP13** — o ONFACE deixou de ser fundação e virou produto utilizável:
+  jornadas operacionais fechadas e números das telas acertados contra o dado
+  real.
+- **CP14 a CP29** — as portas de escrita, o isolamento entre organizações, a
+  idempotência dos webhooks, e a segunda prova independente de que produção roda
+  código anterior a 16/08.
+- **CP30 a CP41** — o procedimento de virada deixou de envelhecer em silêncio.
+  Os passos 9 e 10 pediam aceites, validadores, smokes e "provar no navegador", e
+  **nada disso era executado por nada**: 4 aceites (um quebrado), 2 validadores
+  (um morrendo com TypeError), 32 smokes e 3 checagens de tela, todos sem
+  chamador. Hoje há dois runners e um verificador de rotas, e o passo 10 tem
+  roteiro. No caminho: a home parou de pintar de verde uma queda de 78%, o
+  gráfico central deixou de ser imagem, e o sync do catálogo ganhou piso — ele
+  podia desativar os 55 preços de uma vez.
 
 A próxima etapa NÃO é mais código: é **QA do Kauã na tela**, e depois a virada
 (fases 27 e 28), que é destrutiva e depende de autorização explícita.
+
+### Como verificar o estado, em quatro comandos
+
+```bash
+cd app && npx tsc --noEmit && npm test   # 341 testes, 0 falhas
+./scripts/rodar-aceites.sh               # 4 aceites (208 asserções) + 2 validadores
+./scripts/rodar-smokes.sh                # 33 smokes + 3 checagens de tela
+cd app && npx tsx --env-file=.env src/scripts/checar-rotas-onface.ts   # 14 rotas
+```
+
+O único vermelho esperado hoje é `validar-catalogo-oficial`, pelo **bloqueio 7**
+(catálogo PABX incompleto). É o comportamento correto: a virada não deve seguir
+com o PABX invendável.
 
 | Fase | Estado |
 |---|---|
@@ -37,7 +64,12 @@ A próxima etapa NÃO é mais código: é **QA do Kauã na tela**, e depois a vi
 
 ## Último commit
 
-`d3ca6c2` — CP13, autoverificação: a fila de loops estava sem tela
+`38d88c6` — CP41, o sync do catálogo podia esvaziar o catálogo inteiro
+
+**Estado medido em 22/09/2026:** tsc limpo · **341 testes / 0 falhas** · build de
+produção limpo · **36 verificações** na bateria de smokes · **4 aceites com 208
+asserções** · **paridade 13/14** (o não verificável é o NEXO, por credencial) ·
+**14/14 rotas do ONFACE** renderizando. Nada de produção foi tocado.
 
 Branch de trabalho: `refactor/arquitetura-canonica`, criada a partir de `98940fe`.
 
