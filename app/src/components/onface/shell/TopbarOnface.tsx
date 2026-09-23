@@ -13,7 +13,7 @@ import {
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Cf2NotificationBell } from "@/components/crm2/NotificationBell";
+import { Notificacoes } from "./Notificacoes";
 import { trilhaAtual } from "../navegacao";
 
 /**
@@ -89,7 +89,7 @@ export function TopbarOnface() {
           </TooltipContent>
         </Tooltip>
 
-        <Cf2NotificationBell variant="onface" />
+        <Notificacoes />
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

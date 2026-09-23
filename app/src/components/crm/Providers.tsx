@@ -6,6 +6,7 @@ import { useState, useEffect } from "react";
 import { Toaster } from "sonner";
 import { CommandPalette } from "./CommandPalette";
 import { Cf2CommandPalette } from "@/components/crm2/CommandPalette";
+import { PaletaBusca } from "@/components/onface/shell/PaletaBusca";
 import type { Session } from "next-auth";
 
 // Global 401 handler — redirects to /login when session expires silently.
@@ -77,24 +78,32 @@ export function Providers({
     <SessionProvider session={session}>
       <QueryClientProvider client={queryClient}>
         {children}
-        {variant === "cf2" || variant === "onface" ? (
+        {variant === "onface" ? (
+          <>
+            {/* Aviso ancorado embaixo ao centro, grafite, como o protótipo
+                desenha. Estava no canto superior direito, que é onde o CRM 2.0
+                o põe — e ali ele disputa com o sino e o menu do usuário. */}
+            <Toaster
+              theme="light"
+              position="bottom-center"
+              toastOptions={{ className: "onface-aviso", unstyled: true }}
+            />
+            <PaletaBusca />
+          </>
+        ) : variant === "cf2" ? (
           <>
             <Toaster
               theme="light"
               position="top-right"
               toastOptions={{
-                style: variant === "onface" ? {
-                  background: "var(--onface-chrome)",
-                  border: "1px solid rgba(255,255,255,0.14)",
-                  color: "var(--onface-chrome-foreground)",
-                } : {
+                style: {
                   background: "var(--cf2-bg-surface)",
                   border: "1px solid var(--cf2-border-default)",
                   color: "var(--cf2-text-primary)",
                 },
               }}
             />
-            <Cf2CommandPalette variant={variant === "onface" ? "onface" : "cf2"} />
+            <Cf2CommandPalette variant="cf2" />
           </>
         ) : (
           <>

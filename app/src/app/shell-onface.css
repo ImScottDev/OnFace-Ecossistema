@@ -214,6 +214,10 @@
   white-space: nowrap;
   color: #b9c1ca;
   background: transparent;
+  /* Sem anel. Algo fora desta folha pinta
+     `inset 0 0 0 1px rgba(255,255,255,.1)` em todo botão da coluna, e no
+     desenho não existe linha nenhuma em volta dos itens do menu. */
+  box-shadow: none;
 }
 .onface-nav > svg:first-child {
   width: 17px;
@@ -708,4 +712,634 @@
   border-radius: var(--radius-card);
   background: var(--onface-graphite-surface);
   color: var(--onface-branco-logo);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+ * Overlays da casca — paleta ⌘K, sino, NEXO e aviso.
+ * Valores do protótipo `OnFace Casca.dc.html`.
+ * ───────────────────────────────────────────────────────────────────────── */
+
+@keyframes onface-rise {
+  from { opacity: 0; transform: translateY(6px) }
+  to { opacity: 1; transform: none }
+}
+@keyframes onface-cursor {
+  0%, 100% { opacity: 1 }
+  50% { opacity: 0 }
+}
+
+/* ── Paleta ⌘K ────────────────────────────────────────────────────────── */
+
+.onface-paleta-veu {
+  position: fixed;
+  inset: 0;
+  background: rgba(9, 14, 20, .42);
+  z-index: 60;
+  display: flex;
+  justify-content: center;
+  padding: 88px 20px 20px;
+  animation: onface-fade .14s ease-out both;
+}
+.onface-paleta {
+  width: 576px;
+  max-width: 100%;
+  height: max-content;
+  max-height: calc(100vh - 116px);
+  background: #fff;
+  border-radius: 10px;
+  border: 1px solid #e3e7e8;
+  box-shadow: 0 10px 30px -6px rgba(0, 0, 0, .22);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  animation: onface-rise .16s cubic-bezier(.2, 0, .2, 1) both;
+}
+.onface-paleta-topo {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 12px 14px;
+  border-bottom: 1px solid #eef1f1;
+}
+.onface-paleta-topo > svg {
+  width: 16px;
+  height: 16px;
+  stroke-width: 1.9;
+  color: #4a5560;
+  flex: 0 0 auto;
+}
+.onface-paleta-topo input {
+  border: 0;
+  outline: 0;
+  background: transparent;
+  width: 100%;
+  font-size: 14px;
+  min-width: 0;
+  color: #12171d;
+}
+.onface-paleta-topo input::placeholder { color: #67787c }
+/* O campo É a caixa inteira, ele não desenha caixa própria.
+ *
+ * O seletor precisa do `[data-cf2-theme]` porque a regra que estava vencendo é
+ * `[data-cf2-theme] :is(input, textarea):focus-visible`, do CRM 2.0 — atributo
+ * mais pseudo-classe ganha de classe simples, e ela pintava um anel verde
+ * (`rgb(46,107,81)`) em volta do campo, que o desenho não tem. O foco não some:
+ * ele passa para a caixa, logo abaixo. */
+[data-cf2-theme] .onface-paleta-topo input:focus,
+[data-cf2-theme] .onface-paleta-topo input:focus-visible,
+[data-cf2-theme] .onface-nexo-caixa input:focus,
+[data-cf2-theme] .onface-nexo-caixa input:focus-visible,
+.onface-paleta-topo input:focus-visible,
+.onface-nexo-caixa input:focus-visible {
+  outline: none;
+  box-shadow: none;
+  border: 0;
+}
+.onface-paleta:focus-within {
+  border-color: #fe4f2b;
+}
+.onface-nexo-caixa:focus-within {
+  box-shadow: inset 0 0 0 1px #fe4f2b;
+}
+.onface-paleta-item > svg:first-child {
+  width: 16px;
+  height: 16px;
+  stroke-width: 1.8;
+  color: #4a5560;
+  flex: 0 0 auto;
+}
+.onface-paleta-esc {
+  flex: 0 0 auto;
+  font-family: var(--font-onface-mono), monospace;
+  font-size: 11px;
+  color: #4a5560;
+  background: #f1f3f3;
+  border-radius: 4px;
+  padding: 2px 6px;
+}
+.onface-paleta-corpo {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px;
+}
+.onface-paleta-grupo {
+  font-size: 11px;
+  font-weight: 600;
+  color: #4a5560;
+  letter-spacing: .04em;
+  padding: 8px 8px 4px;
+}
+.onface-paleta-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 8px;
+  border-radius: 7px;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  color: #1f252c;
+}
+/* Marcado é o item sob o cursor OU sob a seta: um estado só, senão teclado e
+   mouse desenham dois "selecionados" ao mesmo tempo. */
+.onface-paleta-item[data-marcado="true"] { background: #f1f3f3 }
+.onface-paleta-item-label {
+  flex: 1;
+  font-size: 14px;
+  line-height: 20px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.onface-paleta-tag {
+  flex: 0 0 auto;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: #4a5560;
+  background: #f1f3f3;
+  border-radius: 4px;
+  padding: 2px 6px;
+  white-space: nowrap;
+}
+.onface-paleta-vazio {
+  padding: 26px 16px;
+  text-align: center;
+  border-top: 1px solid #eef1f1;
+  margin-top: 4px;
+}
+.onface-paleta-vazio > div {
+  font-size: 12.5px;
+  font-weight: 600;
+  margin-bottom: 5px;
+  color: #12171d;
+}
+.onface-paleta-vazio > p {
+  margin: 0 auto;
+  font-size: 12px;
+  color: #4a5560;
+  line-height: 1.5;
+  max-width: 400px;
+  text-wrap: pretty;
+}
+.onface-paleta-rodape {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 14px;
+  padding: 8px 14px;
+  border-top: 1px solid #eef1f1;
+  background: #fafafa;
+  font-size: 11.5px;
+  color: #4a5560;
+  flex-wrap: wrap;
+}
+.onface-paleta-rodape span { white-space: nowrap }
+
+/* ── Sino ─────────────────────────────────────────────────────────────── */
+
+.onface-sino { position: relative }
+.onface-sino-ponto {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #fe4f2b;
+}
+.onface-sino-painel {
+  width: 352px;
+  max-width: calc(100vw - 24px);
+  padding: 0;
+  border-radius: 10px;
+  background: #fff;
+  border: 1px solid #e3e7e8;
+  box-shadow: 0 10px 26px -6px rgba(0, 0, 0, .2);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.onface-sino-topo {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 12px 9px;
+  font-family: var(--font-onface-titulo), sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  color: #12171d;
+  white-space: nowrap;
+}
+.onface-sino-chips {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 5px;
+  padding: 0 12px 10px;
+}
+.onface-sino-chips button {
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 7px;
+  border: 0;
+  cursor: pointer;
+  font-size: 11.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  background: #f1f3f3;
+  color: #4a5560;
+}
+.onface-sino-chips button[data-ativo="true"] {
+  background: #12171d;
+  color: #fff;
+  font-weight: 600;
+}
+.onface-sino-vazio {
+  border-top: 1px solid #eef1f1;
+  padding: 26px 16px 28px;
+  text-align: center;
+}
+.onface-sino-vazio > div {
+  font-size: 13px;
+  font-weight: 600;
+  color: #3d4650;
+  margin-bottom: 5px;
+}
+.onface-sino-vazio > p {
+  margin: 0;
+  font-size: 12px;
+  color: #4a5560;
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+.onface-sino-lista {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid #eef1f1;
+  max-height: 380px;
+  overflow-y: auto;
+}
+.onface-sino-lista li + li { border-top: 1px solid #eef1f1 }
+.onface-sino-lista a,
+.onface-sino-lista button {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+.onface-sino-lista a:hover,
+.onface-sino-lista button:hover { background: #f6f7f7 }
+.onface-sino-titulo {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #12171d;
+}
+.onface-sino-lista li[data-lida="true"] .onface-sino-titulo {
+  font-weight: 500;
+  color: #4a5560;
+}
+.onface-sino-msg {
+  font-size: 12px;
+  color: #4a5560;
+  line-height: 1.45;
+}
+.onface-sino-quando {
+  font-size: 10.5px;
+  color: #67787c;
+}
+
+/* ── NEXO ─────────────────────────────────────────────────────────────── */
+
+.onface-nexo-veu {
+  position: fixed;
+  inset: 0;
+  background: rgba(9, 14, 20, .5);
+  z-index: 58;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  animation: onface-fade .16s ease-out both;
+}
+.onface-nexo-modal {
+  width: 900px;
+  max-width: 100%;
+  height: min(640px, calc(100vh - 40px));
+  background: #fff;
+  border-radius: 14px;
+  overflow: hidden;
+  display: flex;
+  animation: onface-rise .2s cubic-bezier(.2, 0, .2, 1) both;
+}
+
+.onface-nexo-coluna {
+  flex: 0 0 auto;
+  width: 218px;
+  background: #12171d;
+  display: flex;
+  flex-direction: column;
+  padding: 12px 10px;
+}
+.onface-nexo-coluna-topo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 6px 12px;
+}
+.onface-nexo-coluna-topo span {
+  font-family: var(--font-onface-titulo), sans-serif;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: .02em;
+  color: #eeeff3;
+  white-space: nowrap;
+}
+.onface-nexo-nova {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 11px;
+  border-radius: 9px;
+  background: #d93c1a;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  border: 0;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+.onface-nexo-nova:hover { background: #c2330f }
+.onface-nexo-nova svg { width: 14px; height: 14px; stroke-width: 2.2; flex: 0 0 auto }
+
+.onface-nexo-rotulo {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: #7e8894;
+  padding: 16px 6px 7px;
+  flex: 0 0 auto;
+}
+.onface-nexo-atalhos {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 0 0 auto;
+}
+.onface-nexo-atalhos button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 8px;
+  border-radius: 8px;
+  border: 0;
+  cursor: pointer;
+  text-align: left;
+  font-size: 12.5px;
+  background: transparent;
+  color: #b9c1ca;
+}
+.onface-nexo-atalhos button:hover { background: #1a222c }
+.onface-nexo-atalhos button[data-ativo="true"] {
+  background: #1f2833;
+  color: #eeeff3;
+  font-weight: 600;
+}
+.onface-nexo-atalhos svg { width: 15px; height: 15px; stroke-width: 1.9; flex: 0 0 auto }
+/* `:not()` no rótulo, e não `flex:0 0 auto` no ponto: o seletor descendente
+   `.onface-nexo-atalhos span` tem especificidade maior que a classe do ponto e
+   vencia — o ponto de 5px virava uma barra coral esticada até a borda. */
+.onface-nexo-atalhos span:not(.onface-nexo-atalho-ponto) {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.onface-nexo-atalho-ponto {
+  flex: 0 0 auto;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #fe4f2b;
+}
+.onface-nexo-historico {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.onface-nexo-historico p {
+  margin: 0;
+  padding: 7px 8px;
+  font-size: 12px;
+  color: #7e8894;
+  line-height: 1.4;
+}
+
+.onface-nexo-conteudo {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+}
+.onface-nexo-cabecalho {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 13px 16px;
+  border-bottom: 1px solid #e3e7e8;
+}
+.onface-nexo-titulo {
+  font-family: var(--font-onface-titulo), sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -.01em;
+  color: #12171d;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  margin-right: auto;
+}
+.onface-nexo-contexto {
+  flex: 0 0 auto;
+  font-size: 11.5px;
+  color: #4a5560;
+  white-space: nowrap;
+}
+.onface-nexo-cabecalho button {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  color: #4a5560;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.onface-nexo-cabecalho button:hover { background: #f1f3f3; color: #12171d }
+.onface-nexo-cabecalho button svg { width: 15px; height: 15px; stroke-width: 2 }
+
+.onface-nexo-conversa {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.onface-nexo-linha {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+}
+.onface-nexo-linha[data-de="eu"] { justify-content: flex-end }
+.onface-nexo-bolha {
+  max-width: 84%;
+  min-width: 0;
+  padding: 10px 13px;
+  border-radius: 11px;
+  background: #f6f7f7;
+}
+.onface-nexo-bolha[data-de="eu"] { background: #12171d }
+.onface-nexo-texto-bolha {
+  font-size: 13px;
+  line-height: 1.55;
+  text-wrap: pretty;
+  color: #1f252c;
+}
+.onface-nexo-bolha[data-de="eu"] .onface-nexo-texto-bolha { color: #eeeff3 }
+
+.onface-nexo-composer {
+  flex: 0 0 auto;
+  padding: 11px 16px 13px;
+  border-top: 1px solid #e3e7e8;
+}
+.onface-nexo-caixa {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  border-radius: 11px;
+  background: #fff;
+  box-shadow: inset 0 0 0 1px #dbdede;
+  padding: 6px 6px 6px 12px;
+}
+.onface-nexo-caixa input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font-size: 13.5px;
+  height: 32px;
+  color: #12171d;
+}
+.onface-nexo-caixa input::placeholder { color: #67787c }
+.onface-nexo-enviar {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: #f1f3f3;
+  color: #a3a8a4;
+  cursor: not-allowed;
+}
+.onface-nexo-enviar[data-pronto="true"] {
+  background: #d93c1a;
+  color: #fff;
+  cursor: pointer;
+}
+.onface-nexo-enviar svg { width: 15px; height: 15px; stroke-width: 2 }
+.onface-nexo-sugestoes {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+.onface-nexo-sugestoes button {
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 7px;
+  background: #fff;
+  box-shadow: inset 0 0 0 1px #e3e7e8;
+  color: #4a5560;
+  font-size: 11.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  flex: 0 0 auto;
+  border: 0;
+  cursor: pointer;
+}
+.onface-nexo-sugestoes button:hover { background: #f1f3f3; color: #12171d }
+
+.onface-nexo-radar {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px;
+  background: #f6f6f3;
+}
+.onface-nexo-sem-serie {
+  background: #fff;
+  border-radius: 11px;
+  box-shadow: inset 0 0 0 1px #dbdede;
+  padding: 26px 20px 28px;
+  text-align: center;
+}
+.onface-nexo-sem-serie > div {
+  font-size: 13px;
+  font-weight: 600;
+  color: #12171d;
+  margin-bottom: 5px;
+}
+.onface-nexo-sem-serie > p {
+  margin: 0 auto;
+  max-width: 420px;
+  font-size: 12px;
+  color: #4a5560;
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+
+/* ── Aviso ────────────────────────────────────────────────────────────── */
+
+.onface-aviso {
+  position: fixed;
+  bottom: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 70;
+  background: #12171d;
+  color: #eeeff3;
+  border-radius: 10px;
+  padding: 10px 15px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  max-width: calc(100vw - 32px);
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.4;
+  animation: onface-rise .22s cubic-bezier(.2, 0, .2, 1) both;
 }
