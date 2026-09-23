@@ -388,3 +388,77 @@ Kauã. O script está pronto e roda com `--aplicar` quando ele aprovar.
 `billing_status = UNKNOWN` em 264 de 439 **não** é defeito: são 253 de
 `LEDGER_JULHO`, 10 MANUAL e 1 WEVY, todos sem assinatura Stripe. Sem fonte de
 cobrança, UNKNOWN é a resposta honesta.
+
+---
+
+# Execução no ambiente remoto (23/09)
+
+Autorizado pelo Scott em sessão. Feito por SSH em `ubuntu@34.204.200.52`,
+domínio `dev.crm.callface.io`.
+
+## Como foi rodado
+
+O container `callface-crm2-dev-api` é build de produção: não tem `src/` nem
+`tsconfig.json`. Rodar os backfills exigiu um container efêmero que empresta as
+dependências da imagem e monta o fonte do host:
+
+```bash
+docker run --rm --network crm2dev-network \
+  -v /opt/callface/crm2-dev/app/src:/repo/app/src \
+  -v /opt/callface/crm2-dev/app/tsconfig.json:/repo/app/tsconfig.json \
+  --env-file /opt/callface/crm2-dev/.env \
+  -w /repo/app crm2-dev-api \
+  node --import tsx src/scripts/backfill/<passo>.ts --aplicar
+```
+
+O `--env-file` evita materializar a senha do banco: ela nunca sai do `.env`.
+
+## Resultado
+
+| passo | resultado |
+|---|---|
+| migration `0090_meta_staging_idempotente` | aplicada (era a única pendente) |
+| backfill `06b` | 1597 aquisições com etapa do funil legado |
+| recorte de funil | 2105 aquisições `tipo <> 'lead'` encerradas |
+| backfill `16` | reconciliação verde: estagnações 227=227, trials 17=17 |
+
+Contagem no banco remoto, depois:
+
+| etapa | total |
+|---|---|
+| novo | 59 |
+| em_contato | 485 |
+| qualificacao | 198 |
+| qualificado | 22 |
+| oportunidade | 144 |
+| nutricao | 54 |
+| desqualificado | 635 |
+| **no funil** | **1597** (era 3702) |
+| total | 3989 (nada perdido) |
+
+Os 1597 são exatamente os leads `tipo='lead'` que o funil legado audita — o
+mesmo número que aparece no enunciado do problema.
+
+## O que falta no remoto: um rebuild
+
+`packages/domain/acquisition/queries/board-pre-vendas.ts` foi copiado, mas a
+imagem do app ainda carrega a versão antiga. O DADO está correto; a LEITURA não.
+
+Com a query antiga (`incluirEncerradas` = `TRUE`), o board mostra as 3989 e a
+coluna Novo volta a 2126, porque as 2105 fora do funil entram pela mesma porta.
+
+```bash
+cd /opt/callface/crm2-dev && docker compose -p crm2-dev build app && docker compose -p crm2-dev up -d app
+```
+
+Não executado: o classifier recusou com "Interfere With Workloads", e a razão
+procede — o build disputa os 2 vCPU da EC2 com o `callface-crm-app` de produção,
+que está de pé há 5 dias no mesmo host. Rodar fora do horário comercial.
+
+O mesmo vale para o serviço `api`, que serve a mesma consulta pelo Hono.
+
+## Carteira: aplicada no DEV local
+
+`reconciliar-billing-carteira.ts --aplicar` rodou no Postgres local: **60
+serviços reconciliados**. `billing_status` deixou de ser o retrato do dia do Won
+e passou a refletir a assinatura. Não aplicado em produção nem no dev remoto.
