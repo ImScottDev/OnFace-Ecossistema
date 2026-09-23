@@ -4,7 +4,6 @@ import { SessionProvider } from "next-auth/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState } from "react";
 import { OnfaceThemeRoot } from "@/components/onface/OnfaceThemeRoot";
-import { OnfaceTopbar } from "@/components/onface/OnfaceTopbar";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
 
@@ -21,10 +20,7 @@ export function DesenhoProviders({ children }: { children: React.ReactNode }) {
       <QueryClientProvider client={queryClient}>
         <TooltipProvider delayDuration={200}>
           <OnfaceThemeRoot />
-          <div className="onface-app-shell">
-            <OnfaceTopbar />
-            {children}
-          </div>
+          {children}
           {/* O espelho não tinha Toaster, e o produto tem.
               Sem ele todo `toast()` sai silencioso aqui — o que faz uma ação
               recusada pelo servidor parecer um clique morto, e foi o que me

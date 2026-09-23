@@ -202,9 +202,17 @@ const PREFIXOS: Array<[prefixo: string, destino: string]> = [
   ...ROTA_HERDA_DESTINO,
 ].sort((a, b) => b[0].length - a[0].length);
 
-/** O href do item que deve acender, ou null fora da árvore. */
+/** O href do item que deve acender, ou null fora da árvore.
+ *
+ * O prefixo do banco de desenho cai fora antes da busca: `/onface-desenho/x`
+ * é a MESMA tela que `/x`, e sem isso o espelho abre com a coluna toda apagada
+ * e sem título — que foi o que me fez ler a casca como quebrada quando ela só
+ * não sabia onde estava. */
 export function destinoAtivo(pathname: string): string | null {
-  return PREFIXOS.find(([prefixo]) => casa(prefixo, pathname))?.[1] ?? null;
+  const rota = pathname.startsWith("/onface-desenho/")
+    ? pathname.slice("/onface-desenho".length)
+    : pathname;
+  return PREFIXOS.find(([prefixo]) => casa(prefixo, rota))?.[1] ?? null;
 }
 
 export type Trilha = {
