@@ -18,6 +18,20 @@ async function main() {
     console.log(`\n═══ ${org.slug} ═══`);
     if (SO_IDENTIDADE) {
       const r = await resolverIdentidades(org.id);
+      // O `ok` é checado ANTES dos números, e não só o `erro`.
+      //
+      // Quando o banco do SaaS não responde, a resolução volta com ok:false e
+      // todos os contadores zerados, mas `avaliadas` preenchido. O script só
+      // imprimia `erro`, que nesse caminho pode vir vazio — e a saída ficava
+      // "avaliadas 174 · vinculadas 0 · sem sinal 0 · disputadas 0", que soa
+      // como trabalho feito e não soma: 174 avaliadas têm de cair em ALGUMA
+      // categoria. Medido em 23/09 com o túnel da porta 55432 fechado.
+      if (!r.ok) {
+        console.log(`  ✘ NÃO SINCRONIZOU — o banco do Callface AI não respondeu.`);
+        console.log(`    ${r.naoConfigurado ? "CALLFACE_AI_DATABASE_URL não configurada neste ambiente." : (r.erro || "sem mensagem do driver; confira se o túnel/porta está de pé.")}`);
+        console.log(`    (${r.avaliadas} empresa(s) seriam avaliadas quando a conexão voltar)`);
+        continue;
+      }
       console.log(`  avaliadas ${r.avaliadas} · vinculadas ${r.vinculadas} · já tinham ${r.jaVinculadas}`);
       console.log(`  sem sinal determinístico ${r.semSinal} · disputadas ${r.disputadas} · contradições ${r.contradicoes}`);
       if (r.erro) console.log(`  erro: ${r.erro}`);

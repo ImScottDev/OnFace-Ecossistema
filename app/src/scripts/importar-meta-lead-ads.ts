@@ -88,6 +88,57 @@ async function leadsDoFormulario(formId: string, token: string, desde: Date): Pr
   return todos;
 }
 
+/**
+ * Lead legado correspondente, criando quando não existe.
+ *
+ * Por que é obrigatório e não enfeite de migração: `registrar-entrada.ts` diz,
+ * em comentário próprio, que aquisição sem `lead_legado_id` "nasce órfã — o
+ * card não abre e nada do lead volta a propagar para ela". A leitura canônica
+ * do board devolve esse id COMO o id do card.
+ *
+ * Medido em 23/09: a primeira versão deste script (e o webhook de leadgen, que
+ * tem o mesmo buraco) criou 54 aquisições sem o vínculo, e o board passou a
+ * divergir da conferência independente em exatamente 54 — "sem 1o contato"
+ * dizia 1016 contra 962.
+ *
+ * A busca é por e-mail e telefone, os mesmos identificadores que a porta
+ * canônica usa para decidir identidade. Sem isso, reimportar criaria um lead
+ * legado novo a cada rodada e a idempotência da aquisição não salvaria a tabela
+ * `leads` de duplicar.
+ */
+async function garantirLeadLegado(
+  organizacaoId: string,
+  n: ReturnType<typeof normalizarLeadAds>,
+): Promise<string | null> {
+  const email = n.email?.trim().toLowerCase() || null;
+  const telefone = n.telefone?.replace(/\D/g, "") || null;
+  if (!email && !telefone) return null;
+
+  const [ja] = await db.execute<{ id: string }>(sql`
+    SELECT id::text FROM leads
+     WHERE organizacao_id = ${organizacaoId}::uuid
+       AND ((${email}::text IS NOT NULL AND lower(email) = ${email})
+         OR (${telefone}::text IS NOT NULL AND regexp_replace(coalesce(telefone,''), '\D', '', 'g') = ${telefone}))
+     ORDER BY created_at ASC LIMIT 1`);
+  if (ja) return ja.id;
+
+  const partes = (n.nome ?? "").trim().split(/\s+/);
+  const [novo] = await db.execute<{ id: string }>(sql`
+    INSERT INTO leads (organizacao_id, nome, sobrenome, email, telefone, empresa, cargo,
+                       origem, tipo, sdr_status, utm_source, utm_medium, utm_campaign,
+                       utm_term, utm_content, meta_ad_id, meta_adset_id, meta_campaign_id,
+                       created_at, updated_at)
+    VALUES (${organizacaoId}::uuid, ${partes[0] || null}, ${partes.slice(1).join(" ") || null},
+            ${n.email}, ${n.telefone}, ${n.empresa}, ${n.cargo},
+            'Mídia Paga', 'lead', 'pending',
+            ${n.atribuicao.utmSource}, ${n.atribuicao.utmMedium}, ${n.atribuicao.utmCampaign},
+            ${n.atribuicao.utmTerm}, ${n.atribuicao.utmContent},
+            ${n.atribuicao.adId}, ${n.atribuicao.adsetId}, ${n.atribuicao.campaignId},
+            ${n.ocorridoEm ?? new Date()}, ${n.ocorridoEm ?? new Date()})
+    RETURNING id::text`);
+  return novo?.id ?? null;
+}
+
 async function main() {
   console.log(`\n  IMPORTAÇÃO Meta Lead Ads — últimos ${DIAS} dias ${APLICAR ? "(APLICANDO)" : "(dry-run)"}\n`);
 
@@ -127,6 +178,7 @@ async function main() {
       if (!n.email && !n.telefone) { semIdentidade++; continue; }
       if (!APLICAR) { criados++; continue; }
 
+      const leadLegadoId = APLICAR ? await garantirLeadLegado(org.id, n) : null;
       const r = await garantirEntradaCanonica({
         organizacaoId: org.id,
         tipo: "INBOUND",
@@ -147,7 +199,7 @@ async function main() {
         },
         idempotencyKey: chaveDeIdempotencia(n),
         ocorridoEm: n.ocorridoEm,
-      });
+      }, leadLegadoId);
 
       if (!r.ok) { falhas++; console.error(`     ✘ ${n.metaLeadId}: ${r.erro ?? "recusado"}`); continue; }
       if (r.criada) criados++; else jaExistiam++;
