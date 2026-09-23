@@ -1,13 +1,12 @@
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { boardPreVendas } from "@/lib/vendas/consultas";
-import { OnfacePage, OnfacePageBand, OnfacePageSurface } from "@/components/onface/shell/OnfacePage";
-import { PreVendas } from "@/components/onface/vendas/PreVendas";
-import { Hero } from "@/components/onface/vendas/ui";
+import { PreVendasQuadro } from "@/components/onface/vendas/PreVendasQuadro";
 import {
-  acaoAssociarEmpresa, acaoAtribuir, acaoCriarLead, acaoCriarOportunidade,
-  acaoDesqualificar, acaoDetalhe, acaoMoverEtapa, acaoNutrir, acaoQualificar,
-  acaoReativar, acaoRegistrarContato, acaoSalvarQualificacao,
+  acaoAssociarEmpresa, acaoAtribuir, acaoAtribuirEmMassa, acaoCriarLead,
+  acaoCriarOportunidade, acaoCriarTarefa, acaoDesqualificar, acaoDetalhe,
+  acaoMoverEtapa, acaoNutrir, acaoQualificar, acaoReativar,
+  acaoRegistrarContato, acaoSalvarQualificacao,
 } from "@/app/(crm2)/pre-vendas/actions";
 
 export const metadata = { title: "ONFACE — Pré-vendas (dado real)" };
@@ -33,34 +32,18 @@ export default async function DesenhoPreVendas({ searchParams }: {
   const dados = await boardPreVendas(org.id, { aba, busca, responsavelId });
 
   return (
-    <OnfacePage>
-      <OnfacePageBand>
-        <Hero
-          titulo="Pré-vendas"
-          descricao="Empresas em qualificação. A empresa é o objeto de trabalho; a pessoa é o contato através do qual ela é trabalhada."
-          resumo={[
-            { rotulo: "Em jogo", valor: dados.resumo.ativos },
-            { rotulo: "Sem responsável", valor: dados.resumo.semResponsavel, alerta: dados.resumo.semResponsavel > 0 },
-            { rotulo: "Sem 1º contato", valor: dados.resumo.semPrimeiroContato, alerta: dados.resumo.semPrimeiroContato > 0 },
-            { rotulo: "Em nutrição", valor: dados.resumo.nutricao },
-          ]}
-        />
-      </OnfacePageBand>
-      <OnfacePageSurface sobreposto>
-        <PreVendas
-          dados={dados}
-          aba={aba}
-          filtro={{ busca, responsavelId }}
-          acoes={{
-            moverEtapa: acaoMoverEtapa, qualificar: acaoQualificar,
-            salvarQualificacao: acaoSalvarQualificacao, nutrir: acaoNutrir,
-            desqualificar: acaoDesqualificar, reativar: acaoReativar,
-            registrarContato: acaoRegistrarContato, atribuir: acaoAtribuir,
-            criarOportunidade: acaoCriarOportunidade, criarLead: acaoCriarLead,
-            associarEmpresa: acaoAssociarEmpresa, detalhe: acaoDetalhe,
-          }}
-        />
-      </OnfacePageSurface>
-    </OnfacePage>
+    <PreVendasQuadro
+      dados={dados}
+      usuarioId={null}
+      acoes={{
+        moverEtapa: acaoMoverEtapa, qualificar: acaoQualificar,
+        salvarQualificacao: acaoSalvarQualificacao, nutrir: acaoNutrir,
+        desqualificar: acaoDesqualificar, reativar: acaoReativar,
+        registrarContato: acaoRegistrarContato, atribuir: acaoAtribuir,
+        criarOportunidade: acaoCriarOportunidade, criarLead: acaoCriarLead,
+        associarEmpresa: acaoAssociarEmpresa, detalhe: acaoDetalhe,
+        criarTarefa: acaoCriarTarefa, atribuirEmMassa: acaoAtribuirEmMassa,
+      }}
+    />
   );
 }

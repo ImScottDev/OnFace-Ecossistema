@@ -7,7 +7,11 @@ import { toast } from "sonner";
 import type { BoardPreVendas, CardPreVendas } from "@/lib/vendas/consultas";
 import type { EstagioPreVendas } from "@/lib/vendas/dominio";
 import type { AcoesPreVendas } from "./PreVendas";
+import type { DetalheLead } from "@/lib/vendas/consultas";
+import type { LinhaDoTempo } from "@/lib/vendas/eventos";
+import { GavetaLead } from "./GavetaLead";
 import "./pre-vendas-quadro.css";
+import "./gaveta-lead.css";
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Pré-vendas — réplica do protótipo `OnFace Pre-vendas.dc.html`.
@@ -148,6 +152,11 @@ export function PreVendasQuadro({
   const [sobre, setSobre] = React.useState<ChaveColuna | null>(null);
   const [expandidas, setExpandidas] = React.useState<Record<string, boolean>>({});
   const [gruposFechados, setGruposFechados] = React.useState<Record<string, boolean>>({});
+  /** Quem está aberto na gaveta, e o detalhe dele quando chega do servidor.
+   *  São dois estados e não um: o id abre a gaveta na hora, o detalhe entra
+   *  depois. Esperar o detalhe para abrir faria o clique parecer morto. */
+  const [aberto, setAberto] = React.useState<string | null>(null);
+  const [detalhe, setDetalhe] = React.useState<{ lead: DetalheLead | null; timeline: LinhaDoTempo[] } | null>(null);
 
   // Fechar ao clicar fora: um listener só para os dois tipos de popover, e ele
   // ignora o clique que nasceu DENTRO de um deles.
@@ -244,9 +253,25 @@ export function PreVendasQuadro({
     }
   };
 
+  /** Busca o detalhe e entrega para a gaveta.
+   *
+   *  `acoes.detalhe` é server action: ela DEVOLVE o registro, não abre nada.
+   *  Chamar e descartar o resultado era o motivo de o clique no cartão não
+   *  fazer nada. */
+  const carregar = React.useCallback(
+    async (id: string) => {
+      setDetalhe(null);
+      const r = await acoes.detalhe(id);
+      if (r.ok) setDetalhe(r.dados ?? { lead: null, timeline: [] });
+      else toast(r.erro ?? "Não deu para abrir o lead");
+    },
+    [acoes],
+  );
+
   const abrir = (id: string) => {
     if (selecao.length) return marcar(id);
-    void acoes.detalhe(id);
+    setAberto(id);
+    void carregar(id);
   };
 
   /* ── Cartão ─────────────────────────────────────────────────────────── */
@@ -658,6 +683,23 @@ export function PreVendasQuadro({
             </div>
           </div>
         </div>
+      )}
+
+      {aberto && (
+        <GavetaLead
+          lead={detalhe?.lead ?? null}
+          timeline={detalhe?.timeline ?? []}
+          responsaveis={dados.filtros.responsaveis}
+          acoes={acoes}
+          aoFechar={() => {
+            setAberto(null);
+            setDetalhe(null);
+          }}
+          aoRecarregar={() => {
+            router.refresh();
+            void carregar(aberto);
+          }}
+        />
       )}
 
       {selecao.length > 0 && (

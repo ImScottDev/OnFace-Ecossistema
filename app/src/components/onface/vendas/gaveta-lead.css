@@ -1,0 +1,346 @@
+/* ─────────────────────────────────────────────────────────────────────────
+ * Gaveta de detalhe do lead.
+ *
+ * Fonte: `screenshots/gaveta-detalhe-lead.png`. A marcação dela não vem no
+ * bundle do handoff, então a geometria é medida da imagem e o resto segue a
+ * linguagem já declarada do protótipo.
+ * ───────────────────────────────────────────────────────────────────────── */
+
+.gv-veu {
+  position: fixed;
+  inset: 0;
+  background: rgba(9, 14, 20, .42);
+  z-index: 56;
+  display: flex;
+  justify-content: flex-end;
+  animation: onface-fade .14s ease-out both;
+}
+
+.gv {
+  width: 468px;
+  max-width: 100%;
+  height: 100%;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  /* Entra da direita, .2s, como o README do handoff declara para a gaveta. */
+  animation: gv-entra .2s cubic-bezier(.2, 0, .2, 1) both;
+}
+@keyframes gv-entra {
+  from { transform: translateX(22px); opacity: 0 }
+  to { transform: none; opacity: 1 }
+}
+
+.gv-topo {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 18px 16px 14px;
+}
+.gv-avatar {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  border-radius: 9999px;
+  background: #eeeff3;
+  color: #616b78;
+  font-size: 13px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.gv-identidade { flex: 1; min-width: 0 }
+.gv-identidade h2 {
+  margin: 0;
+  font-family: var(--font-onface-titulo), sans-serif;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -.02em;
+  color: #12171d;
+  line-height: 1.25;
+}
+.gv-papel {
+  margin: 2px 0 0;
+  font-size: 12.5px;
+  color: #4a5560;
+  line-height: 1.4;
+}
+.gv-linha-contato {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  color: #4a5560;
+  line-height: 1.35;
+}
+.gv-fechar {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  color: #4a5560;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.gv-fechar:hover { background: #f1f3f3; color: #12171d }
+.gv-fechar svg { width: 15px; height: 15px; stroke-width: 2 }
+
+/* Três canais, mesmo peso: a gaveta não escolhe por onde falar. */
+.gv-canais {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 8px;
+  padding: 0 16px 14px;
+}
+.gv-canais button {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 34px;
+  border-radius: 9px;
+  background: #fff;
+  box-shadow: inset 0 0 0 1px #dbdede;
+  border: 0;
+  cursor: pointer;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: #1f252c;
+  white-space: nowrap;
+}
+.gv-canais button:hover { background: #f6f7f7 }
+.gv-canais svg { width: 15px; height: 15px; stroke-width: 1.8; flex: 0 0 auto }
+
+.gv-corpo {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px 16px 18px;
+  border-top: 1px solid #eef1f1;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.gv-rotulo {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: #67787c;
+  letter-spacing: .04em;
+  margin-bottom: 6px;
+}
+
+.gv-par {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.gv-par label { min-width: 0 }
+
+.gv-campo {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 30px 0 11px;
+  border-radius: 9px;
+  background: #fff;
+  box-shadow: inset 0 0 0 1px #dbdede;
+}
+.gv-campo select {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: #12171d;
+  appearance: none;
+  cursor: pointer;
+}
+/* Sem responsável é um buraco, não um valor neutro: ele fica coral, que é a
+   mesma tinta que o cartão usa para "sem próxima ação". */
+.gv-campo[data-vazio="true"] select { color: #c2330f; font-weight: 600 }
+.gv-campo[data-vazio="true"] .gv-campo-icone { color: #c2330f }
+.gv-campo-seta {
+  position: absolute;
+  right: 10px;
+  width: 13px;
+  height: 13px;
+  stroke-width: 2.1;
+  color: #67787c;
+  pointer-events: none;
+}
+.gv-campo-icone { width: 14px; height: 14px; stroke-width: 2.2; flex: 0 0 auto; color: #4a5560 }
+.gv-ponto-etapa {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #4a5560;
+}
+[data-cf2-theme] .gv-campo select:focus-visible,
+.gv-campo select:focus-visible { outline: none; box-shadow: none }
+.gv-campo:focus-within { box-shadow: inset 0 0 0 1px #fe4f2b }
+
+.gv-secao { min-width: 0 }
+.gv-tags { display: flex; gap: 6px; flex-wrap: wrap; align-items: center }
+.gv-tag {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 7px;
+  background: #eeeff3;
+  color: #4a5560;
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.gv-tag-vazia { background: transparent; box-shadow: inset 0 0 0 1px #e3e7e8; font-weight: 500 }
+.gv-tag-mais {
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  background: #fff;
+  box-shadow: inset 0 0 0 1px #dbdede;
+  border: 0;
+  cursor: pointer;
+  color: #4a5560;
+}
+.gv-tag-mais:hover { background: #f6f7f7; color: #12171d }
+.gv-tag-mais svg { width: 12px; height: 12px; stroke-width: 2.2 }
+
+.gv-origem-linha { display: flex; align-items: center; gap: 9px; margin-bottom: 8px }
+.gv-origem-linha .gv-rotulo { margin-bottom: 0 }
+
+.gv-atribuicao {
+  margin: 0;
+  border-radius: 9px;
+  box-shadow: inset 0 0 0 1px #e3e7e8;
+  overflow: hidden;
+}
+.gv-atribuicao > div {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 10px;
+  padding: 9px 12px;
+  font-size: 12.5px;
+}
+.gv-atribuicao > div + div { border-top: 1px solid #eef1f1 }
+.gv-atribuicao dt { color: #67787c }
+.gv-atribuicao dd {
+  margin: 0;
+  color: #1f252c;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gv-proxima { margin: 0; font-size: 12.5px; color: #1f252c }
+.gv-oportunidades { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px }
+.gv-oportunidades li {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 12.5px;
+}
+.gv-oportunidades a { color: #12171d; font-weight: 600; text-decoration: none }
+.gv-oportunidades a:hover { color: #c2330f }
+.gv-oportunidades span { color: #67787c; margin-left: auto; white-space: nowrap }
+
+.gv-rodape {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid #e3e7e8;
+  background: #fff;
+}
+.gv-rodape-espaco { flex: 1; min-width: 4px }
+.gv-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 9px;
+  background: #fff;
+  box-shadow: inset 0 0 0 1px #dbdede;
+  border: 0;
+  cursor: pointer;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: #1f252c;
+  white-space: nowrap;
+  text-decoration: none;
+}
+.gv-btn:hover { background: #f6f7f7; text-decoration: none }
+.gv-btn svg { width: 15px; height: 15px; stroke-width: 1.8; flex: 0 0 auto }
+
+.gv-qualificar {
+  display: flex;
+  align-items: stretch;
+  height: 34px;
+  border-radius: 9px;
+  overflow: hidden;
+  background: #d93c1a;
+  flex: 0 0 auto;
+}
+.gv-qualificar-principal {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 13px;
+  background: transparent;
+  border: 0;
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.gv-qualificar-principal:hover { background: rgba(0, 0, 0, .12) }
+.gv-qualificar-principal svg { width: 14px; height: 14px; stroke-width: 2.4; flex: 0 0 auto }
+.gv-qualificar-fio { flex: 0 0 auto; width: 1px; background: rgba(255, 255, 255, .34) }
+.gv-qualificar-seta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  background: transparent;
+  border: 0;
+  color: #fff;
+  cursor: pointer;
+}
+.gv-qualificar-seta:hover { background: rgba(0, 0, 0, .12) }
+.gv-qualificar-seta svg { width: 13px; height: 13px; stroke-width: 2.1 }
+
+/* Esqueleto com a FORMA do conteúdo: a gaveta abre instantânea e o detalhe
+   chega depois. Uma frase centralizada faria a gaveta saltar quando o dado
+   entrasse. */
+.gv-esqueleto {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px 16px;
+}
+.gv-esqueleto > span {
+  display: block;
+  border-radius: 7px;
+  background: #f1f3f3;
+  animation: onface-pisca 1.4s ease-in-out infinite;
+}
