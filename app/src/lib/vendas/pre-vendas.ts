@@ -324,7 +324,26 @@ export async function atribuirResponsavel(params: {
   ator: Ator;
 }): Promise<void> {
   const lead = await carregarLead(params.organizacaoId, params.leadId);
-  if (lead.responsavel_id === params.responsavelId) return;
+
+  /* Nada a mudar no legado — mas o board NÃO lê o legado.
+   *
+   * O atalho era `return` seco, e ele criava uma divergência permanente: se o
+   * lead já tivesse esse responsável e a aquisição não (propagação que falhou
+   * antes, backfill que não cobriu, lead atribuído por caminho legado), toda
+   * tentativa futura caía aqui e saía sem tocar em `aquisicoes`. O card ficava
+   * "Sem responsável" para sempre, e reatribuir pela tela não resolvia —
+   * porque do ponto de vista do legado não havia o que fazer.
+   *
+   * Medido em 22/09: 6 atribuições, 5 chegaram ao board. A que faltou era
+   * exatamente uma cujo lead já apontava para aquele responsável.
+   *
+   * Sincronizar aqui é o que torna a ação convergente: repetir a atribuição
+   * conserta o espelho em vez de virar operação nula. */
+  if (lead.responsavel_id === params.responsavelId) {
+    const { sincronizarAquisicaoDoLead } = await import("./sincronizar-aquisicao");
+    await sincronizarAquisicaoDoLead(params.leadId);
+    return;
+  }
 
   await db.execute(sql`
     UPDATE leads SET responsavel_id = ${params.responsavelId}::uuid, updated_at = now()
@@ -461,6 +480,23 @@ export async function moverEtapa(params: {
   }
 }
 
+/**
+ * Array de texto como UM parâmetro, no formato literal do Postgres.
+ *
+ * O template do Drizzle espalha um array JS em um parâmetro por item, então
+ * `${["Callface AI"]}` chega no banco como o escalar `'Callface AI'` e o
+ * cast para `text[]` estoura com "malformed array literal". Com dois itens o
+ * erro muda de forma mas continua errado. É o mesmo motivo pelo qual
+ * `consultas.ts` não usa `= ANY(${array})`.
+ *
+ * Cada elemento vai entre aspas duplas com escape, e não cru: nome de serviço
+ * pode ter vírgula, e vírgula crua dentro do literal vira DOIS elementos.
+ */
+export function literalDeTexto(valores: string[] | null | undefined): string | null {
+  if (!valores) return null;
+  return `{${valores.map((v) => `"${v.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`).join(",")}}`;
+}
+
 /** Salva a qualificação estruturada sem decidir nada (Bloco 01 §8).
  *  Preencher os campos não qualifica: qualificar é ato explícito. */
 export async function salvarQualificacao(params: {
@@ -474,7 +510,7 @@ export async function salvarQualificacao(params: {
     UPDATE leads SET
       qualificacao = COALESCE(qualificacao, '{}'::jsonb) || ${JSON.stringify(params.qualificacao)}::jsonb,
       qualificacao_iniciada_em = COALESCE(qualificacao_iniciada_em, now()),
-      servicos_interesse = COALESCE(${params.qualificacao.servicosInteresse ?? null}, servicos_interesse),
+      servicos_interesse = COALESCE(${literalDeTexto(params.qualificacao.servicosInteresse)}::text[], servicos_interesse),
       updated_at = now()
      WHERE id = ${params.leadId}::uuid
   `);

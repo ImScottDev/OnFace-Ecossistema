@@ -474,7 +474,6 @@
   border: 1px solid #dbdede;
   transition: border-color .12s cubic-bezier(0, 0, .2, 1), box-shadow .12s cubic-bezier(0, 0, .2, 1);
 }
-.pv-card[data-travada="true"] { cursor: pointer }
 .pv-card[data-sel="1"] { border-color: #fe4f2b; box-shadow: inset 0 0 0 1px #fe4f2b }
 .pv-card[data-arrastando="true"] {
   border-color: rgba(255, 77, 41, .2);

@@ -306,7 +306,7 @@ export function PreVendasQuadro({
   };
 
   /* ── Cartão ─────────────────────────────────────────────────────────── */
-  const Cartao = ({ c, travada }: { c: CardPreVendas; travada: boolean }) => {
+  const Cartao = ({ c }: { c: CardPreVendas }) => {
     const marcado = selecao.includes(c.leadId);
     const origem = c.campanha ?? c.origem ?? "Sem origem";
     const tag = (c.servicos ?? [])[0];
@@ -314,9 +314,8 @@ export function PreVendasQuadro({
       <div
         className="pv-card"
         data-sel={marcado ? "1" : "0"}
-        data-travada={travada}
         data-arrastando={arrastando === c.leadId}
-        draggable={!travada}
+        draggable
         onDragStart={(e) => {
           e.dataTransfer.effectAllowed = "move";
           e.dataTransfer.setData("text/plain", c.leadId);
@@ -575,7 +574,7 @@ export function PreVendasQuadro({
 
                   <div className="pv-coluna-lista">
                     {cards.map((c) => (
-                      <Cartao key={c.leadId} c={c} travada={!col.livre} />
+                      <Cartao key={c.leadId} c={c} />
                     ))}
                     {!cards.length && (
                       <div className="pv-coluna-vazia">
