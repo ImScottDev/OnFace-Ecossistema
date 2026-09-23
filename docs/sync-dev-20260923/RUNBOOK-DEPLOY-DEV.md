@@ -152,3 +152,67 @@ a tabela falha com 8 erros ignorados. Depois de restaurar, reaplique o DDL de
   ("Autônomo", "Por conta própria" existem como empresa hoje).
 - **`sdr_sem_retorno`** (46 leads) mapeado para `nutricao`, por ser estagnação e
   não descarte. A etapa `sem_resposta` do CRM2 não existe no canônico.
+
+
+---
+
+# Estado em 23/09 12:00 — o que já está posicionado no servidor
+
+Feito nesta sessão, confirmado por leitura:
+
+| artefato | onde | tamanho |
+|---|---|---|
+| dump de produção de hoje (01:49) | host `/tmp/prod-para-dev-20260923.dump` | 18 MB |
+| backup do dev remoto antes do refresh | container `callface-crm2-dev-postgres:/tmp/devremoto-antes-refresh-20260923.dump` | 28 MB |
+| migration 0090 | **aplicada** no dev remoto | — |
+| backfills 06b e 16 | **aplicados** no dev remoto (3702 → 1597) | — |
+| `board-pre-vendas.ts` corrigido | copiado para `/opt/callface/crm2-dev/packages/...` | — |
+
+**Atenção ao disco: a raiz está em 93% (7,2 GB livres).** Confira antes do
+restore, e apague os dois arquivos de `/tmp` quando terminar.
+
+## Os três comandos que faltam
+
+O dump já está lá; não precisa baixar nada nem tocar em produção.
+
+```bash
+ssh -i ~/.ssh/infra_callface.pem ubuntu@34.204.200.52
+
+# 1. recarregar o banco do dev remoto com produção de hoje
+docker cp /tmp/prod-para-dev-20260923.dump callface-crm2-dev-postgres:/tmp/restore.dump
+docker exec callface-crm2-dev-postgres sh -lc \
+  'dropdb --force --if-exists -U callface callface_crm \
+   && createdb -O callface -U callface callface_crm \
+   && pg_restore -U callface -d callface_crm --no-owner --no-privileges /tmp/restore.dump'
+
+# 2. cadeia de carga + migrations + backfills
+#    (a receita completa está na seção "Carga de dados no dev remoto" acima;
+#     os backfills rodam pelo container efêmero documentado no DIAGNOSTICO.md)
+
+# 3. rebuild para a leitura nova valer — fora do horário comercial
+cd /opt/callface/crm2-dev
+docker compose -p crm2-dev build app
+docker compose -p crm2-dev build api
+docker compose -p crm2-dev up -d app api
+
+# 4. healthcheck
+curl -s -o /dev/null -w '%{http_code}\n' https://dev.crm.callface.io/
+
+# 5. limpar
+rm -f /tmp/prod-para-dev-20260923.dump
+docker exec callface-crm2-dev-postgres rm -f /tmp/restore.dump
+```
+
+## Por que parei aqui
+
+Três ações foram recusadas pela política de permissão, cada uma por um motivo que
+procede:
+
+- `docker compose build` — "Interfere With Workloads": disputa os 2 vCPU com o
+  `callface-crm-app` de produção, no mesmo host, de pé há 5 dias.
+- `dropdb --force` no dev remoto — deleção destrutiva.
+- `pg_dump` dentro do container de **produção** — escrita em recurso de produção.
+
+O que era possível sem tocar em produção e sem destruir nada foi feito: o dado
+canônico do dev remoto está correto (1597 no funil, reconciliação verde), o dump
+de hoje está posicionado, e há backup para voltar atrás.
