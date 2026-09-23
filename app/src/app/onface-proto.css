@@ -53,6 +53,11 @@
   --of-neutro: #f1f3f3;
   /** Calha: a depressão onde o cartão do quadro se apoia. Também chip escuro. */
   --of-calha: #eeeff3;
+  /** Faixa de agrupamento da lista. Separa sem virar cabeçalho de tabela: fica
+   *  entre o branco da linha e o `--of-papel-alterno` do cabeçalho. */
+  --of-faixa-grupo: #fbfbfb;
+  /** Fundo do que está marcado — cartão ou linha. Coral diluído até virar papel. */
+  --of-selecionado: #fff7f5;
 
   /* ── Tintas ───────────────────────────────────────────────────────────
    *
@@ -111,6 +116,12 @@
   --of-coral-fundo: #fff6f4;
   /** O contorno que acompanha esse fundo. */
   --of-coral-contorno: #fadfd8;
+  /** Anel do avatar vazado — o lugar que pede dono e ainda não tem. Mais firme
+   *  que `--of-coral-contorno`, porque aqui ele é o único traço do elemento. */
+  --of-coral-anel: #f0c8bd;
+  /** Coral de preencher: o tom da etapa Oportunidade e do avatar sem dono. Um
+   *  degrau acima de `--of-coral-fundo`, que é quase branco. */
+  --of-coral-fundo-forte: #fdeae5;
 
   /* ── Etapas do funil ──────────────────────────────────────────────────
    *

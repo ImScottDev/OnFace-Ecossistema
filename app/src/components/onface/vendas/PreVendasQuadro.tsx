@@ -79,12 +79,27 @@ const COLUNAS: Array<{
     icone: "M6 6l12 12M18 6L6 18" },
 ];
 
-const INDICADORES = [
-  { label: "Leads ativos", campo: (r: BoardPreVendas["resumo"]) => `${r.ativos} · estágio ∈ ativos` },
-  { label: "Sem primeiro contato", campo: (r: BoardPreVendas["resumo"]) => `${r.semPrimeiroContato} · primeiro_contato_at is null` },
-  { label: "Sem responsável", campo: (r: BoardPreVendas["resumo"]) => `${r.semResponsavel} · responsavel_id is null` },
-  { label: "Em nutrição", campo: (r: BoardPreVendas["resumo"]) => `${r.nutricao} · estágio = nutricao` },
-  { label: "Desqualificados", campo: (r: BoardPreVendas["resumo"]) => `${r.desqualificados} · estágio = desqualificado` },
+const numero = new Intl.NumberFormat("pt-BR");
+
+/** Duração humana: o protótipo pede "tempo até 1º contato" numa linha só. */
+function duracao(horas: number | null): string {
+  if (horas == null) return "—";
+  if (horas < 1) return `${Math.round(horas * 60)} min`;
+  if (horas < 48) return `${horas.toFixed(1).replace(".", ",")} h`;
+  return `${(horas / 24).toFixed(1).replace(".", ",")} dias`;
+}
+
+/* Os CINCO do protótipo, nesta ordem. Antes daqui a tela mostrava outros três
+   no lugar dos três últimos — os que já tinham número pronto na consulta — e
+   a linha de apoio trazia o trecho de SQL que o handoff usa para dizer DE ONDE
+   vem o número. No protótipo isso faz sentido: não há banco. Aqui há, e quem
+   lê a tela precisa do valor, não da cláusula. */
+const INDICADORES: Array<{ label: string; valor: (r: BoardPreVendas["resumo"]) => string }> = [
+  { label: "Leads ativos", valor: (r) => numero.format(r.ativos) },
+  { label: "Sem primeiro contato", valor: (r) => numero.format(r.semPrimeiroContato) },
+  { label: "Sem próxima ação", valor: (r) => numero.format(r.semProximaAcao) },
+  { label: "Qualificados no mês", valor: (r) => numero.format(r.qualificadosNoMes) },
+  { label: "Tempo até 1º contato", valor: (r) => duracao(r.horasAteContato) },
 ];
 
 type ChaveFiltro = "responsavel" | "origem" | "interesse" | "sla";
@@ -176,6 +191,10 @@ export function PreVendasQuadro({
    *  sai, o modo decide QUAIS. */
   const [modalExport, setModalExport] = React.useState(false);
   const [modoSelecao, setModoSelecao] = React.useState(false);
+  /** O seletor de responsável da linha da lista, com o retângulo do botão que
+   *  o abriu — o menu é `fixed` porque a lista rola na horizontal e um menu
+   *  absoluto seria recortado pela própria rolagem. */
+  const [respAberto, setRespAberto] = React.useState<{ id: string; rect: DOMRect } | null>(null);
   const [selecao, setSelecao] = React.useState<string[]>([]);
   const [arrastando, setArrastando] = React.useState<string | null>(null);
   const [sobre, setSobre] = React.useState<ChaveColuna | null>(null);
@@ -195,15 +214,25 @@ export function PreVendasQuadro({
   // Fechar ao clicar fora: um listener só para os dois tipos de popover, e ele
   // ignora o clique que nasceu DENTRO de um deles.
   React.useEffect(() => {
-    const aoClicar = (e: MouseEvent) => {
+    // `pointerdown` na captura, como no protótipo: pega mouse, toque e caneta
+    // com o mesmo handler, e chega antes de qualquer `stopPropagation` de quem
+    // está por baixo.
+    const aoClicar = (e: PointerEvent) => {
       const alvo = e.target as HTMLElement;
       if (!alvo.closest("[data-pv-popover]")) {
         setFiltroAberto(null);
         setExportAberto(false);
       }
     };
-    document.addEventListener("mousedown", aoClicar);
-    return () => document.removeEventListener("mousedown", aoClicar);
+    // Os menus fixos guardam o retângulo do botão que os abriu; se a janela
+    // muda de tamanho o retângulo mente, e o menu aparece descolado do botão.
+    const aoRedimensionar = () => setRespAberto(null);
+    document.addEventListener("pointerdown", aoClicar, true);
+    window.addEventListener("resize", aoRedimensionar);
+    return () => {
+      document.removeEventListener("pointerdown", aoClicar, true);
+      window.removeEventListener("resize", aoRedimensionar);
+    };
   }, []);
 
   const todos = React.useMemo(() => dados.colunas.flatMap((c) => c.cards), [dados]);
@@ -334,8 +363,13 @@ export function PreVendasQuadro({
   /* ── Cartão ─────────────────────────────────────────────────────────── */
   const Cartao = ({ c }: { c: CardPreVendas }) => {
     const marcado = selecao.includes(c.leadId);
-    const origem = c.campanha ?? c.origem ?? "Sem origem";
-    const tag = (c.servicos ?? [])[0];
+    // Origem é o CANAL de entrada, como no protótipo (`L.origem`). Trazer a
+    // campanha na frente enchia o chip de "TRT - CALL FACE [2026]" e escondia
+    // de onde o lead veio, que é o que o filtro de origem recorta.
+    const origem = c.origem ?? "Sem origem";
+    // A Tag de verdade, não o serviço de interesse: decisão do Kauã. O serviço
+    // já tem filtro próprio e aparece na gaveta.
+    const tag = c.tag;
     return (
       <div
         className="pv-card"
@@ -347,7 +381,13 @@ export function PreVendasQuadro({
           e.dataTransfer.setData("text/plain", c.leadId);
           setArrastando(c.leadId);
         }}
-        onDragEnd={() => setArrastando(null)}
+        /* Solta os DOIS estados, como o `larga` do protótipo. Soltar o cartão
+           fora de qualquer coluna não dispara `dragleave` na última coluna
+           realçada, e ela ficava acesa até o arrasto seguinte. */
+        onDragEnd={() => {
+          setArrastando(null);
+          setSobre(null);
+        }}
         onClick={() => abrir(c.leadId)}
         tabIndex={0}
         role="button"
@@ -563,7 +603,7 @@ export function PreVendasQuadro({
         {INDICADORES.map((i) => (
           <div key={i.label} className="pv-indicador">
             <div className="pv-indicador-rotulo">{i.label}</div>
-            <div className="pv-indicador-valor">{i.campo(dados.resumo)}</div>
+            <div className="pv-indicador-valor">{i.valor(dados.resumo)}</div>
           </div>
         ))}
       </div>
@@ -698,6 +738,10 @@ export function PreVendasQuadro({
                         <span className="pv-ponto" style={{ background: col.cor }} />
                         <span className="pv-grupo-nome">{col.label}</span>
                         <span className="pv-grupo-conta">{cards.length}</span>
+                        {/* O espaçador joga o alerta para a direita, longe do
+                            contador: ele é o aviso da faixa, não um adorno do
+                            número. */}
+                        <span className="pv-espacador" />
                         {semAcao > 0 && <span className="pv-grupo-alerta">{semAcao} sem ação</span>}
                       </button>
 
@@ -706,13 +750,19 @@ export function PreVendasQuadro({
                           <div
                             key={c.leadId}
                             className="pv-lista-grade pv-linha"
+                            data-sel={selecao.includes(c.leadId) ? "1" : "0"}
                             onClick={() => abrir(c.leadId)}
                             role="button"
                             tabIndex={0}
                           >
-                            <span className="pv-caixa" data-on={selecao.includes(c.leadId)} onClick={(e) => { e.stopPropagation(); marcar(c.leadId); }}>
+                            <button
+                              className="pv-check"
+                              data-on={selecao.includes(c.leadId)}
+                              title="Selecionar"
+                              onClick={(e) => { e.stopPropagation(); marcar(c.leadId); }}
+                            >
                               {selecao.includes(c.leadId) && <Icone d={D.check} />}
-                            </span>
+                            </button>
                             <div style={{ minWidth: 0 }}>
                               <div className="pv-linha-empresa">{c.empresa || "Sem empresa"}</div>
                               <div className="pv-linha-pessoa">
@@ -721,20 +771,39 @@ export function PreVendasQuadro({
                             </div>
                             <div className="pv-linha-acao">
                               {!c.proximaAcao && <span className="pv-card-urgente" />}
-                              <span className="pv-card-acao-texto" data-sem={!c.proximaAcao}>
-                                {c.proximaAcao?.titulo ?? "Sem próxima ação"}
+                              <span className="pv-linha-acao-texto" data-sem={!c.proximaAcao}>
+                                {c.proximaAcao
+                                  ? c.proximaAcao.venceEm
+                                    ? `${c.proximaAcao.titulo} · ${c.proximaAcao.venceEm}`
+                                    : c.proximaAcao.titulo
+                                  : "Sem próxima ação"}
                               </span>
                             </div>
-                            <div className="pv-linha-resp">
-                              <span className="pv-avatar">{c.responsavelIniciais ?? iniciais(c.responsavel)}</span>
-                              <span className="pv-card-resp">{c.responsavel ?? "Sem responsável"}</span>
+                            {/* Responsável é botão, e o menu troca de verdade.
+                                Texto estático aqui obrigava a abrir a gaveta
+                                para uma mudança que o desenho resolve na linha. */}
+                            <div style={{ minWidth: 0, position: "relative" }}>
+                              <button
+                                className="pv-linha-resp"
+                                data-on={respAberto?.id === c.leadId}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const r = e.currentTarget.getBoundingClientRect();
+                                  setRespAberto((s) =>
+                                    s?.id === c.leadId ? null : { id: c.leadId, rect: r },
+                                  );
+                                }}
+                              >
+                                <span className="pv-linha-resp-avatar" data-vazio={!c.responsavel}>
+                                  {c.responsavel ? c.responsavelIniciais ?? iniciais(c.responsavel) : "—"}
+                                </span>
+                                <span className="pv-linha-resp-nome" data-vazio={!c.responsavel}>
+                                  {c.responsavel ?? "Sem responsável"}
+                                </span>
+                                <Icone d={D.chevronBaixo} className="pv-chev" />
+                              </button>
                             </div>
-                            <div style={{ minWidth: 0 }}>
-                              <span className="pv-selo-origem" data-origem={c.origem ?? ""}>
-                                <Icone d={D.origem} />
-                                <span>{c.origem ?? "—"}</span>
-                              </span>
-                            </div>
+                            <div className="pv-linha-origem">{c.origem ?? "—"}</div>
                             <div className="pv-linha-tempo">{dias(c.horasNaEtapa)}</div>
                           </div>
                         ))}
@@ -745,7 +814,7 @@ export function PreVendasQuadro({
                 {!gruposLista.length && (
                   <div className="pv-lista-vazia">
                     <div>Nenhum lead com esses filtros</div>
-                    <p>Limpe um filtro ou mude a busca para ver a lista de novo.</p>
+                    <p>Limpe a busca ou os filtros para ver a lista inteira.</p>
                   </div>
                 )}
               </div>
@@ -808,6 +877,27 @@ export function PreVendasQuadro({
           aoConcluir={() => {
             router.refresh();
             if (aberto) void carregar(aberto);
+          }}
+        />
+      )}
+
+      {respAberto && (
+        <MenuResponsavel
+          rect={respAberto.rect}
+          responsaveis={dados.filtros.responsaveis}
+          aoFechar={() => setRespAberto(null)}
+          aoEscolher={async (id, nome) => {
+            const leadId = respAberto.id;
+            setRespAberto(null);
+            const r = await acoes.atribuir(leadId, id);
+            toast(
+              r.ok
+                ? nome
+                  ? `Responsável alterado para ${nome}`
+                  : "Responsável removido — lead volta para a fila"
+                : r.erro,
+            );
+            if (r.ok) router.refresh();
           }}
         />
       )}
@@ -878,5 +968,59 @@ export function PreVendasQuadro({
         />
       )}
     </div>
+  );
+}
+
+/** O seletor de responsável de uma linha da lista.
+ *
+ * Abre para baixo do botão; quando não cabe, vira para cima — a última faixa
+ * da lista fica encostada no rodapé e um menu que abre para fora da janela é
+ * um menu que não existe. Os 208px de largura e a altura de 196 são os do
+ * desenho. */
+function MenuResponsavel({
+  rect,
+  responsaveis,
+  aoFechar,
+  aoEscolher,
+}: {
+  rect: DOMRect;
+  responsaveis: Array<{ id: string; nome: string }>;
+  aoFechar: () => void;
+  aoEscolher: (id: string | null, nome: string | null) => void;
+}) {
+  React.useEffect(() => {
+    const sair = (e: KeyboardEvent) => e.key === "Escape" && aoFechar();
+    window.addEventListener("keydown", sair);
+    return () => window.removeEventListener("keydown", sair);
+  }, [aoFechar]);
+
+  const alto = 196;
+  const abaixo = window.innerHeight - rect.bottom - 12;
+  const paraCima = abaixo < alto && rect.top - 12 > abaixo;
+  const estilo: React.CSSProperties = {
+    position: "fixed",
+    left: Math.min(rect.left, window.innerWidth - 218),
+    maxHeight: Math.max(140, Math.min(alto, paraCima ? rect.top - 12 : abaixo)),
+    ...(paraCima
+      ? { bottom: window.innerHeight - rect.top + 4 }
+      : { top: rect.bottom + 4 }),
+  };
+
+  return (
+    <>
+      <div className="pv-resp-fora" onClick={aoFechar} role="presentation" />
+      <div className="pv-resp-menu" style={estilo}>
+        {responsaveis.map((r) => (
+          <button key={r.id} onClick={() => aoEscolher(r.id, r.nome)}>
+            <span className="pv-resp-avatar">{iniciais(r.nome)}</span>
+            <span>{r.nome}</span>
+          </button>
+        ))}
+        <button onClick={() => aoEscolher(null, null)}>
+          <span className="pv-resp-avatar" data-vazio="true">—</span>
+          <span>Sem responsável</span>
+        </button>
+      </div>
+    </>
   );
 }

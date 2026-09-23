@@ -66,6 +66,19 @@ export type ColunaQuadro = {
   /** Total real da etapa quando a página carregou só parte dela. Sem isto o
    *  cabeçalho contaria o que está na tela e chamaria de total. */
   total?: number;
+  /**
+   * Coluna de SAÍDA: fica na mesma linha, em faixa estreita, e abre sob clique.
+   *
+   * Nutrição e Desqualificado são estados reais e precisam estar no board —
+   * escondê-las em aba foi o que o Kanban único veio desfazer. Mas elas não
+   * são etapas por onde o trabalho PASSA, e ocupando 262u cada sobrava menos
+   * de meia coluna de Oportunidade na tela: o operador rolava de lado para
+   * chegar onde o dinheiro está.
+   *
+   * `details` e não estado próprio: abrir, fechar, teclado e leitor de tela
+   * são do navegador.
+   */
+  colapsavel?: boolean;
 };
 
 export type PropsQuadro<T> = {
@@ -189,56 +202,84 @@ function Coluna<T>({
 }) {
   const { setNodeRef } = useDroppable({ id: idDaColuna(coluna.chave) });
 
+  const medida = (
+    <span className={coluna.colapsavel ? "qd-coluna-medida ds-coluna-fechada-numeros" : "qd-coluna-medida"}>
+      {renderMedida ? (
+        renderMedida(itens, coluna)
+      ) : (
+        <span className="qd-coluna-conta" aria-hidden="true">
+          {coluna.total != null && coluna.total > itens.length
+            ? `${itens.length} de ${coluna.total}`
+            : itens.length}
+        </span>
+      )}
+      <span className="sr-only">
+        {itens.length === 1 ? "1 item" : `${itens.length} itens`}
+      </span>
+    </span>
+  );
+
+  const lista = (
+    <div className="qd-lista">
+      <SortableContext items={itens.map(idDe)} strategy={verticalListSortingStrategy}>
+        {itens.map((item) => (
+          <Cartao
+            key={idDe(item)}
+            id={idDe(item)}
+            item={item}
+            urgente={Boolean(eUrgente?.(item))}
+            classe={classeCartao}
+            renderCartao={renderCartao}
+            aoAbrir={aoAbrir}
+          />
+        ))}
+      </SortableContext>
+      {itens.length === 0
+        ? (renderVazio?.(coluna) ?? (
+            <p className="ds-quadro-vazia">
+              <Inbox aria-hidden="true" />
+              Arraste um cartão para cá
+            </p>
+          ))
+        : null}
+    </div>
+  );
+
+  /* Coluna de saída: o droppable vai no `details` INTEIRO, não na lista.
+     Fechado, a lista não é renderizada pelo navegador, e um alvo que só
+     existe quando a coluna está aberta obrigaria a abrir antes de arrastar —
+     que é o passo a mais que a faixa estreita existe para evitar. */
+  if (coluna.colapsavel) {
+    return (
+      <details
+        ref={setNodeRef as unknown as React.Ref<HTMLDetailsElement>}
+        className="ds-quadro-coluna ds-coluna-fechada"
+        data-sobre={sobre ? "true" : undefined}
+        data-recusada={recusada ? "true" : undefined}
+        aria-label={coluna.rotulo}
+      >
+        <summary className="ds-quadro-topo qd-coluna-topo">
+          <strong>{coluna.rotulo}</strong>
+          {medida}
+        </summary>
+        {lista}
+      </details>
+    );
+  }
+
   return (
     <section
       className="ds-quadro-coluna"
       data-sobre={sobre ? "true" : undefined}
       data-recusada={recusada ? "true" : undefined}
       aria-label={coluna.rotulo}
+      ref={setNodeRef}
     >
       <header className="ds-quadro-topo qd-coluna-topo">
         <strong>{coluna.rotulo}</strong>
-        {/* A medida sai do próprio estado, então acompanha o arraste em tempo
-            real em vez de virar número decorativo. */}
-        <span className="qd-coluna-medida">
-          {renderMedida ? (
-            renderMedida(itens, coluna)
-          ) : (
-            <span className="qd-coluna-conta" aria-hidden="true">
-              {coluna.total != null && coluna.total > itens.length
-                ? `${itens.length} de ${coluna.total}`
-                : itens.length}
-            </span>
-          )}
-          <span className="sr-only">
-            {itens.length === 1 ? "1 item" : `${itens.length} itens`}
-          </span>
-        </span>
+        {medida}
       </header>
-
-      <div className="qd-lista" ref={setNodeRef}>
-        <SortableContext items={itens.map(idDe)} strategy={verticalListSortingStrategy}>
-          {itens.map((item) => (
-            <Cartao
-              key={idDe(item)}
-              id={idDe(item)}
-              item={item}
-              urgente={Boolean(eUrgente?.(item))}
-              classe={classeCartao}
-              renderCartao={renderCartao}
-              aoAbrir={aoAbrir}
-            />
-          ))}
-        </SortableContext>
-        {itens.length === 0
-          ? (renderVazio?.(coluna) ?? (
-              <p className="ds-quadro-vazia">
-                <Inbox aria-hidden="true" />
-                Arraste um cartão para cá
-              </p>
-            ))
-          : null}
-      </div>
+      {lista}
     </section>
   );
 }

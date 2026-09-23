@@ -166,8 +166,22 @@ export async function registrarEvento(evento: EventoVendas, tx: ExecutorDb = db)
   //
   // Fica fora da transação de propósito: é espelho, não parte do fato. Se
   // falhar, a ação comercial já está gravada e o backfill reconcilia.
+  //
+  // MAS É ESPERADO, e isto não é a mesma coisa que estar na transação.
+  //
+  // Era `void` — dispara e segue. Numa server action, a ação retorna e a
+  // página já relê `aquisicoes`; sem esperar, não há nada que garanta que o
+  // espelho foi escrito antes dessa releitura, e o card volta ao estado
+  // anterior sem erro nenhum aparecer.
+  //
+  // `await` NÃO torna o espelho crítico: `sincronizarAquisicaoDoLead` engole a
+  // própria exceção, então continua best-effort. O que se ganha é a ordem.
+  //
+  // (A divergência de atribuição investigada em 22/09 tinha outra causa — o
+  // atalho idempotente em `atribuirResponsavel`, corrigido lá. Este `await`
+  // fecha a janela de ordenação, que é um problema real e distinto.)
   if (evento.leadId) {
-    void sincronizarAquisicaoDoLead(evento.leadId);
+    await sincronizarAquisicaoDoLead(evento.leadId);
   }
 }
 

@@ -42,6 +42,14 @@ export interface CardAquisicao {
   motivoDesqualificacao: string | null;
   /** Aquisição sem dono é fato a mostrar, não erro a esconder. */
   semDono: boolean;
+  /**
+   * Próxima ação — a tarefa aberta mais próxima de vencer.
+   *
+   * NÃO é um campo de texto do card. É a Task real, e por isso ela tem `id`:
+   * o card linka para a tarefa, e "sem próxima ação" é a ausência de linha
+   * aqui, não uma string vazia que alguém esqueceu de preencher.
+   */
+  proximaAcao: { id: string; titulo: string; venceEm: string | null } | null;
 }
 
 export interface FiltrosBoard {
@@ -60,6 +68,29 @@ export interface FiltrosBoard {
   desde?: string | null;
   incluirEncerradas?: boolean;
   limite?: number;
+
+  /* ── Views operacionais ────────────────────────────────────────────────
+   *
+   * Resolvidas em SQL, nunca filtrando o array depois. O limite é POR COLUNA
+   * (67 de 2.919), então recortar em memória mostraria "12 atrasados" quando
+   * há 400: o contador da coluna vem de `count()` sobre a tabela e passaria a
+   * discordar dos cards logo abaixo dele. Foi exatamente esse o bug que a
+   * consulta de totais existe para não repetir.
+   * ──────────────────────────────────────────────────────────────────── */
+
+  /** Sem nenhuma tarefa aberta. É a ausência da Task, não um campo vazio. */
+  semProximaAcao?: boolean;
+  /** Próxima ação vence até este instante (ISO). Cobre "Hoje" e "vencidas". */
+  proximaAcaoAte?: string | null;
+  /**
+   * Recorte "atrasados": próxima ação vencida OU parado além do SLA.
+   *
+   * Os dois critérios vêm juntos porque atraso é um só conceito para quem
+   * opera — "está passando da hora" —, e separá-los em dois filtros obrigaria
+   * a tela a saber montar o OU. O limiar em horas chega de fora: política de
+   * SLA é da camada de produto, não deste pacote.
+   */
+  atrasado?: { agora: string; semToqueHa: number } | null;
 }
 
 export interface Executor {
@@ -108,6 +139,50 @@ function expressaoDeEtapa(sql: SqlTag): unknown {
            END)`;
 }
 
+/**
+ * A tarefa aberta mais próxima de vencer, por aquisição.
+ *
+ * `LATERAL` e não `JOIN`: só a primeira linha interessa, e um join comum
+ * multiplicaria a aquisição por quantas tarefas ela tenha. `lead_legado_id` é
+ * a ponte enquanto Task continuar pendurada no lead — quando ela passar a
+ * apontar para a aquisição, muda só esta função.
+ *
+ * `NULLS LAST` é regra de negócio, não detalhe: tarefa sem prazo não é a mais
+ * urgente, é a que não tem hora marcada. Ela só vira próxima ação quando não
+ * existe nenhuma com data.
+ */
+function proximaAcaoLateral(sql: SqlTag): unknown {
+  return sql`LEFT JOIN LATERAL (
+        SELECT t.id::text AS id, t.titulo,
+               COALESCE(t.vence_em, t.data_vencimento::timestamptz) AS vence_em
+          FROM tarefas t
+         WHERE t.lead_id = a.lead_legado_id
+           AND t.organizacao_id = a.organizacao_id
+           AND t.concluida = false
+         ORDER BY COALESCE(t.vence_em, t.data_vencimento::timestamptz) ASC NULLS LAST
+         LIMIT 1
+      ) px ON TRUE`;
+}
+
+/**
+ * As condições das views rápidas, iguais nas duas consultas.
+ *
+ * Estão aqui numa função só porque cards e totais PRECISAM concordar: duas
+ * cópias da mesma condição divergem em silêncio, e o board passa a anunciar um
+ * número que os cartões desmentem.
+ */
+function condicoesDeView(sql: SqlTag, f: FiltrosBoard): unknown {
+  return sql`
+       AND (${f.semProximaAcao ? sql`px.id IS NULL` : sql`TRUE`})
+       AND (${f.proximaAcaoAte ?? null}::timestamptz IS NULL
+            OR px.vence_em <= ${f.proximaAcaoAte ?? null}::timestamptz)
+       AND (${f.atrasado ? sql`(
+              px.vence_em < ${f.atrasado.agora}::timestamptz
+              OR COALESCE(a.last_touch_at, a.first_touch_at, a.created_at)
+                 < ${f.atrasado.agora}::timestamptz - make_interval(hours => ${f.atrasado.semToqueHa})
+            )` : sql`TRUE`})`;
+}
+
 export async function boardDeAquisicoes(
   db: Executor, sql: SqlTag, organizacaoId: string, filtros: FiltrosBoard = {},
 ): Promise<{ cards: CardAquisicao[]; totaisPorEtapa: Record<string, number>; total: number }> {
@@ -136,6 +211,8 @@ export async function boardDeAquisicoes(
            a.last_touch_at::text AS ultimo_toque,
            a.created_at::text AS criado_em,
            a.retomar_em::text, a.motivo_desqualificacao,
+           px.id AS proxima_acao_id, px.titulo AS proxima_acao_titulo,
+           px.vence_em::text AS proxima_acao_vence_em,
            a.updated_at AS ordenacao
       FROM aquisicoes a
       LEFT JOIN empresas e ON e.id = a.empresa_id
@@ -148,6 +225,7 @@ export async function boardDeAquisicoes(
          WHERE t.aquisicao_id = a.id
          ORDER BY t.is_first_touch DESC, t.ocorrido_em ASC LIMIT 1
       ) pc ON TRUE
+      ${proximaAcaoLateral(sql)}
      WHERE a.organizacao_id = ${organizacaoId}::uuid
        AND (${filtros.incluirEncerradas ? sql`TRUE` : sql`a.closed_at IS NULL`})
        AND (${filtros.responsavelId ?? null}::uuid IS NULL OR a.responsavel_id = ${filtros.responsavelId ?? null}::uuid)
@@ -155,6 +233,7 @@ export async function boardDeAquisicoes(
        AND (${filtros.origem ?? null}::text IS NULL OR a.origem = ${filtros.origem ?? null})
        AND (${filtros.campanha ?? null}::text IS NULL OR pc.campaign = ${filtros.campanha ?? null})
        AND (${filtros.desde ?? null}::date IS NULL OR a.created_at >= ${filtros.desde ?? null}::date)
+       ${condicoesDeView(sql, filtros)}
        AND (${busca}::text IS NULL OR
             lower(COALESCE(e.nome, '')) LIKE ${busca} OR
             lower(concat_ws(' ', p.nome, p.sobrenome)) LIKE ${busca} OR
@@ -191,6 +270,13 @@ export async function boardDeAquisicoes(
       retomarEm: (l.retomar_em as string) ?? null,
       motivoDesqualificacao: (l.motivo_desqualificacao as string) ?? null,
       semDono: !l.responsavel_id,
+      proximaAcao: l.proxima_acao_id
+        ? {
+            id: String(l.proxima_acao_id),
+            titulo: String(l.proxima_acao_titulo ?? "Tarefa"),
+            venceEm: (l.proxima_acao_vence_em as string) ?? null,
+          }
+        : null,
     }))
     .filter((c) => !etapas || etapas.includes(c.etapa));
 
@@ -205,6 +291,7 @@ export async function boardDeAquisicoes(
          WHERE t.aquisicao_id = a.id
          ORDER BY t.is_first_touch DESC, t.ocorrido_em ASC LIMIT 1
       ) pc ON TRUE
+      ${proximaAcaoLateral(sql)}
      WHERE a.organizacao_id = ${organizacaoId}::uuid
        AND (${filtros.incluirEncerradas ? sql`TRUE` : sql`a.closed_at IS NULL`})
        AND (${filtros.responsavelId ?? null}::uuid IS NULL OR a.responsavel_id = ${filtros.responsavelId ?? null}::uuid)
@@ -212,6 +299,7 @@ export async function boardDeAquisicoes(
        AND (${filtros.origem ?? null}::text IS NULL OR a.origem = ${filtros.origem ?? null})
        AND (${filtros.campanha ?? null}::text IS NULL OR pc.campaign = ${filtros.campanha ?? null})
        AND (${filtros.desde ?? null}::date IS NULL OR a.created_at >= ${filtros.desde ?? null}::date)
+       ${condicoesDeView(sql, filtros)}
      GROUP BY 1`);
 
   const totaisPorEtapa: Record<string, number> = {};

@@ -350,8 +350,11 @@ export async function acaoOpcoesEmMassa(): Promise<
   if (!ctx) return { ok: false, erro: "Sessão expirada." };
   return executar("opções em massa", async () => {
     const [tags, cadencias] = await Promise.all([
+      // A tabela chama `labels`, não `tags`: eu tinha escrito o nome do
+      // conceito em vez do nome da tabela, e a ação de Tag em massa falhava
+      // toda vez, com o erro escondido atrás do "não consegui concluir".
       db.execute<{ id: string; nome: string }>(sql`
-        SELECT id::text, nome FROM tags
+        SELECT id::text, nome FROM labels
          WHERE organizacao_id = ${ctx.organizacaoId}::uuid
          ORDER BY nome LIMIT 60
       `),

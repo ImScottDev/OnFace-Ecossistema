@@ -21,10 +21,18 @@ import {
   type EstadoProspeccao, type EstagioPreVendas, type EtapaPipeline,
   type RelacionamentoEmpresa,
 } from "./dominio";
+import { HORAS_ATRASO } from "./sla";
+import { VIEWS_PRE_VENDAS, ehView, type ViewPreVendas } from "./dominio";
 import { boardDeAquisicoes, type EstagioAquisicao } from "@onface/acquisition";
 import { boardDeOportunidades } from "@onface/sales";
 
 const LIMITE_PADRAO = 400;
+
+/* As views rápidas moram em `dominio.ts` — são vocabulário, não consulta, e a
+   barra da tela (Client Component) precisa da lista. Importar daqui puxava o
+   driver do Postgres para o bundle do navegador e derrubava a rota inteira com
+   "Can't resolve 'fs'". Reexportadas para quem já as importava deste módulo. */
+export { VIEWS_PRE_VENDAS, ehView, type ViewPreVendas };
 
 /**
  * Lista de chaves como literal de array do Postgres.
@@ -52,6 +60,8 @@ export interface CardPreVendas {
   origem: string | null;
   campanha: string | null;
   servicos: string[] | null;
+  /** A Tag do lead (tabela `labels`) — o segundo chip do cartão. */
+  tag: string | null;
   responsavel: string | null;
   responsavelIniciais: string | null;
   /** Fato histórico, não posição no board (Bloco 01 §10). */
@@ -68,6 +78,8 @@ export interface CardPreVendas {
   desqualificacaoMotivo: string | null;
   /** Quando o lead já concluiu o handoff, para onde ele leva. */
   oportunidadeId: string | null;
+  /** Próxima ação: a Task real, nunca uma string digitada no card. */
+  proximaAcao: { id: string; titulo: string; venceEm: string | null } | null;
 }
 
 export interface FiltrosPreVendas {
@@ -81,12 +93,116 @@ export interface FiltrosPreVendas {
   /** Recorte do board para aquisições sem responsável. */
   semDono?: boolean;
   desde?: string | null;
+  /** View rápida. A tradução para condição de SQL mora em `FILTRO_DA_VIEW`. */
+  view?: ViewPreVendas;
+  /** Quem está olhando — só a view "meus" usa. */
+  usuarioId?: string | null;
+}
+
+/**
+ * Quantos cada view rápida pega, sobre o universo inteiro.
+ *
+ * Uma consulta só, com `FILTER`: seis consultas separadas custariam seis
+ * varreduras da mesma tabela para responder a mesma pergunta em seis recortes.
+ *
+ * Os contadores contam ABERTAS (exceto "todos"), e isso é regra: acusar atraso
+ * de um lead desqualificado é pedir ação sobre algo que saiu do funil.
+ */
+async function contadoresDeViews(
+  organizacaoId: string, usuarioId: string | null | undefined,
+): Promise<Record<ViewPreVendas, number>> {
+  const [c] = await db.execute<{
+    todos: number; meus: number; hoje: number;
+    atrasados: number; sem_dono: number; sem_proxima_acao: number;
+  }>(sql`
+    WITH base AS (
+      SELECT a.closed_at, a.responsavel_id, a.last_touch_at, a.first_touch_at,
+             a.created_at, px.vence_em
+        FROM aquisicoes a
+        LEFT JOIN LATERAL (
+          SELECT COALESCE(t.vence_em, t.data_vencimento::timestamptz) AS vence_em
+            FROM tarefas t
+           WHERE t.lead_id = a.lead_legado_id
+             AND t.organizacao_id = a.organizacao_id
+             AND t.concluida = false
+           ORDER BY COALESCE(t.vence_em, t.data_vencimento::timestamptz) ASC NULLS LAST
+           LIMIT 1
+        ) px ON TRUE
+       WHERE a.organizacao_id = ${organizacaoId}::uuid
+    )
+    SELECT
+      count(*)::int AS todos,
+      count(*) FILTER (
+        WHERE closed_at IS NULL
+          AND ${usuarioId ?? null}::uuid IS NOT NULL
+          AND responsavel_id = ${usuarioId ?? null}::uuid
+      )::int AS meus,
+      -- "Hoje" é até o FIM do dia, não as próximas 24h: quem abre às 9h
+      -- precisa ver o que vence às 15h.
+      count(*) FILTER (
+        WHERE closed_at IS NULL AND vence_em IS NOT NULL
+          AND vence_em < date_trunc('day', now()) + interval '1 day'
+      )::int AS hoje,
+      count(*) FILTER (
+        WHERE closed_at IS NULL
+          AND (vence_em < now()
+               OR COALESCE(last_touch_at, first_touch_at, created_at)
+                  < now() - make_interval(hours => ${HORAS_ATRASO}))
+      )::int AS atrasados,
+      count(*) FILTER (WHERE closed_at IS NULL AND responsavel_id IS NULL)::int AS sem_dono,
+      count(*) FILTER (WHERE closed_at IS NULL AND vence_em IS NULL)::int AS sem_proxima_acao
+      FROM base`);
+
+  return {
+    todos: c?.todos ?? 0,
+    meus: c?.meus ?? 0,
+    hoje: c?.hoje ?? 0,
+    atrasados: c?.atrasados ?? 0,
+    "sem-dono": c?.sem_dono ?? 0,
+    "sem-proxima-acao": c?.sem_proxima_acao ?? 0,
+  };
+}
+
+/**
+ * Traduz a view escolhida nas condições que a consulta canônica entende.
+ *
+ * "Hoje" é até o FIM do dia, não as próximas 24 horas: quem abre o board às 9h
+ * quer ver o que vence às 15h, e um corte rolante esconderia metade da agenda
+ * do próprio dia.
+ */
+function filtroDaView(view: ViewPreVendas | undefined, usuarioId: string | null | undefined) {
+  const agora = new Date();
+  switch (view) {
+    case "meus":
+      return { responsavelId: usuarioId ?? null };
+    case "hoje": {
+      const fimDoDia = new Date(agora);
+      fimDoDia.setHours(23, 59, 59, 999);
+      return { proximaAcaoAte: fimDoDia.toISOString() };
+    }
+    case "atrasados":
+      return { atrasado: { agora: agora.toISOString(), semToqueHa: HORAS_ATRASO } };
+    case "sem-dono":
+      return { semDono: true };
+    case "sem-proxima-acao":
+      return { semProximaAcao: true };
+    default:
+      return {};
+  }
 }
 
 export interface BoardPreVendas {
   colunas: Array<{ chave: EstagioPreVendas; rotulo: string; total: number; cards: CardPreVendas[] }>;
-  resumo: { ativos: number; nutricao: number; desqualificados: number; semResponsavel: number; semPrimeiroContato: number };
+  resumo: {
+    ativos: number; nutricao: number; desqualificados: number;
+    semResponsavel: number; semPrimeiroContato: number;
+    semProximaAcao: number; qualificadosNoMes: number;
+    /** Média de horas entre a chegada e o primeiro toque, ou null se ninguém foi contatado. */
+    horasAteContato: number | null;
+  };
   filtros: { responsaveis: Array<{ id: string; nome: string }>; origens: string[]; campanhas: string[] };
+  /** Quantos cada view rápida encontra. Sem isto a view é um botão às cegas. */
+  contadores: Record<ViewPreVendas, number>;
 }
 
 export async function boardPreVendas(organizacaoId: string, filtros: FiltrosPreVendas = {}): Promise<BoardPreVendas> {
@@ -113,6 +229,11 @@ export async function boardPreVendas(organizacaoId: string, filtros: FiltrosPreV
   // campo NULO. Eles existiam no banco, com dono e origem, e não apareciam em
   // tela nenhuma. No canônico não há registro sem estado: aquisição aberta e
   // não qualificada é "novo", que é um estado, não um vazio.
+  // A view entra DEPOIS dos filtros explícitos e pode sobrescrevê-los: quem
+  // clica em "Meus" está dizendo de quem é o board, e isso vence um
+  // `responsavel=` que tivesse sobrado na URL.
+  const daView = filtroDaView(filtros.view, filtros.usuarioId);
+
   const board = await boardDeAquisicoes(db as never, sql as never, organizacaoId, {
     etapas: etapasDaAba as EstagioAquisicao[],
     responsavelId: filtros.responsavelId ?? null,
@@ -125,6 +246,7 @@ export async function boardPreVendas(organizacaoId: string, filtros: FiltrosPreV
     // precisa delas, e a aba "ativos" continua sem.
     incluirEncerradas: aba !== "ativos",
     limite: LIMITE_PADRAO,
+    ...daView,
   });
 
   // Enriquecimento legado — TEMPORÁRIO, sai na fase 26 junto com as leituras
@@ -148,6 +270,27 @@ export async function boardPreVendas(organizacaoId: string, filtros: FiltrosPreV
              negocio_ativo_id::text
         FROM leads WHERE id = ANY(${literalDeArray(leadIds)}::uuid[])`);
     for (const l of linhas) legado.set(l.id, l);
+  }
+
+  /* A tag do cartão — decisão do Kauã: é a Tag de verdade, não o serviço de
+     interesse (que já tem chip próprio e filtro próprio).
+     A tabela chama `labels`, e o vínculo canônico é `entity_labels`;
+     `lead_labels` é a legada e ainda carrega vínculo que a canônica não tem,
+     então as duas entram. Uma tag por lead: o cartão do protótipo mostra uma. */
+  const tagPorLead = new Map<string, string>();
+  if (leadIds.length > 0) {
+    const linhas = await db.execute<{ lead_id: string; nome: string }>(sql`
+      SELECT DISTINCT ON (v.lead_id) v.lead_id::text AS lead_id, l.nome
+        FROM (
+          SELECT entity_id AS lead_id, label_id FROM entity_labels
+           WHERE entity_type = 'lead' AND entity_id = ANY(${literalDeArray(leadIds)}::uuid[])
+          UNION
+          SELECT lead_id, label_id FROM lead_labels
+           WHERE lead_id = ANY(${literalDeArray(leadIds)}::uuid[])
+        ) v
+        JOIN labels l ON l.id = v.label_id AND l.organizacao_id = ${organizacaoId}::uuid
+       ORDER BY v.lead_id, l.nome`);
+    for (const t of linhas) tagPorLead.set(t.lead_id, t.nome);
   }
 
   const agora = Date.now();
@@ -176,6 +319,7 @@ export async function boardPreVendas(organizacaoId: string, filtros: FiltrosPreV
         origem: c.origem,
         campanha: c.campanha,
         servicos: l?.servicos ?? null,
+        tag: (c.leadId ? tagPorLead.get(c.leadId) : null) ?? null,
         responsavel: c.responsavel,
         responsavelIniciais: iniciais(c.responsavel),
         qualificado: c.qualificado,
@@ -189,6 +333,7 @@ export async function boardPreVendas(organizacaoId: string, filtros: FiltrosPreV
         nutricaoRetomarEm: c.retomarEm,
         desqualificacaoMotivo: c.motivoDesqualificacao,
         oportunidadeId: l?.negocio_ativo_id ?? null,
+        proximaAcao: c.proximaAcao,
       };
     })
     .filter((c) => etapasDaAba.includes(c.etapa))
@@ -212,6 +357,7 @@ export async function boardPreVendas(organizacaoId: string, filtros: FiltrosPreV
   const [resumo] = await db.execute<{
     ativos: number; nutricao: number; desqualificados: number;
     sem_responsavel: number; sem_primeiro_contato: number;
+    sem_proxima_acao: number; qualificados_no_mes: number; horas_ate_contato: number | null;
   }>(sql`
     SELECT
       count(*) FILTER (WHERE closed_at IS NULL AND desqualificado_em IS NULL
@@ -234,9 +380,33 @@ export async function boardPreVendas(organizacaoId: string, filtros: FiltrosPreV
       count(*) FILTER (
         WHERE closed_at IS NULL
           AND (last_touch_at IS NULL OR last_touch_at <= first_touch_at)
-      )::int AS sem_primeiro_contato
-      FROM aquisicoes WHERE organizacao_id = ${organizacaoId}::uuid
+      )::int AS sem_primeiro_contato,
+      -- Os tres abaixo existem porque a faixa de indicadores do protótipo
+      -- nomeia estes cinco, e três deles não tinham número nenhum: a tela
+      -- mostrava outros três, escolhidos por serem os que já existiam aqui.
+      --
+      -- "Sem próxima ação" é a mesma definição do cartão: lead aberto sem
+      -- tarefa em aberto. O join é pelo lead legado, igual ao resto do arquivo.
+      count(*) FILTER (
+        WHERE closed_at IS NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM tarefas t
+             WHERE t.lead_id = a.lead_legado_id
+               AND t.organizacao_id = a.organizacao_id
+               AND t.concluida = false
+          )
+      )::int AS sem_proxima_acao,
+      count(*) FILTER (
+        WHERE qualificado_em >= date_trunc('month', now())
+      )::int AS qualificados_no_mes,
+      -- Média só sobre quem FOI contatado: incluir quem nunca foi puxaria o
+      -- número para baixo e diria que o time responde rápido.
+      avg(EXTRACT(EPOCH FROM (last_touch_at - first_touch_at)) / 3600)
+        FILTER (WHERE last_touch_at > first_touch_at)::float AS horas_ate_contato
+      FROM aquisicoes a WHERE organizacao_id = ${organizacaoId}::uuid
   `);
+
+  const contadores = await contadoresDeViews(organizacaoId, filtros.usuarioId);
 
   const responsaveis = await db.execute<{ id: string; nome: string }>(sql`
     SELECT DISTINCT u.id::text, u.nome FROM usuarios u
@@ -261,12 +431,16 @@ export async function boardPreVendas(organizacaoId: string, filtros: FiltrosPreV
       desqualificados: resumo?.desqualificados ?? 0,
       semResponsavel: resumo?.sem_responsavel ?? 0,
       semPrimeiroContato: resumo?.sem_primeiro_contato ?? 0,
+      semProximaAcao: resumo?.sem_proxima_acao ?? 0,
+      qualificadosNoMes: resumo?.qualificados_no_mes ?? 0,
+      horasAteContato: resumo?.horas_ate_contato ?? null,
     },
     filtros: {
       responsaveis: responsaveis.map((r) => ({ id: r.id, nome: r.nome })),
       origens: origens.map((o) => o.origem),
       campanhas: campanhas.map((c) => c.campanha),
     },
+    contadores,
   };
 }
 

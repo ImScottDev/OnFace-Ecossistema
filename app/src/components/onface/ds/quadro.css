@@ -438,3 +438,55 @@
   font-variant-numeric: tabular-nums;
   font-weight: var(--weight-semibold);
 }
+
+/* ── Coluna de saída dentro do Quadro ────────────────────────────────────
+ *
+ * O padrão `ds-coluna-fechada` nasceu para a `Coluna` do módulo Vendas; o
+ * Quadro do DS passou a usá-lo em 22/09 para Nutrição e Desqualificado, e aí
+ * apareceu o que faltava: `flex-basis` de 52u era respeitado e a coluna
+ * mesmo assim media 208px.
+ *
+ * A causa é o piso implícito do flex. `min-width: auto` faz o item nunca
+ * encolher abaixo do próprio conteúdo, e o conteúdo aqui é o título de pé
+ * mais a contagem — 183px. Um flex-basis menor que o piso é simplesmente
+ * ignorado. `min-width: 0` remove o piso e a faixa passa a valer.
+ * ────────────────────────────────────────────────────────────────────── */
+.qd-rolagem .ds-quadro-coluna.ds-coluna-fechada:not([open]) {
+  flex: 0 0 calc(52 * var(--onface-u));
+  width: calc(52 * var(--onface-u));
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* A medida do Quadro é horizontal por padrão; na faixa estreita ela empilha.
+   Sem isto a contagem sai da coluna e cobre a vizinha. */
+.qd-rolagem .ds-coluna-fechada:not([open]) .qd-coluna-medida {
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  white-space: normal;
+}
+
+/* Aberta, volta a ser uma coluna comum do quadro. */
+.qd-rolagem .ds-quadro-coluna.ds-coluna-fechada[open] {
+  flex: 0 0 calc(262 * var(--onface-u));
+  min-width: 0;
+}
+
+/* ── O `sr-only` que esticava a página ───────────────────────────────────
+ *
+ * A contagem da coluna tem um par: o número visível (`aria-hidden`) e a
+ * versão falada ("12 itens", `sr-only`). O `sr-only` do Tailwind é
+ * `position: absolute`, e sem nenhum ancestral posicionado o bloco que o
+ * contém vira o viewport inicial — ele deixa de ser recortado pelo overflow
+ * do `qd-rolagem` e passa a contar para o scroll do documento.
+ *
+ * Efeito medido em 22/09: com sete colunas, o `sr-only` da última caía em
+ * x=1634 e a PÁGINA ganhava 129px de rolagem horizontal, que é exatamente o
+ * que o board rolar sozinho existe para evitar. Não aparecia em inspeção
+ * visual nenhuma — o elemento tem 1px e é invisível.
+ *
+ * `position: relative` na medida ancora o filho e o recorte volta a valer.
+ * ────────────────────────────────────────────────────────────────────── */
+.qd-coluna-medida { position: relative; }

@@ -10,6 +10,30 @@
 
 /* ── Pré-vendas (Bloco 01 §2) ──────────────────────────────────────────── */
 
+/**
+ * As views rápidas do workspace (§5 da spec).
+ *
+ * NÃO são páginas nem abas: são recortes salvos do mesmo board. Ficam aqui, e
+ * não na tela, porque cada uma vira condição de SQL — resolver "atrasados" no
+ * cliente faria a coluna anunciar 2.919 e mostrar 12.
+ */
+export const VIEWS_PRE_VENDAS = [
+  { chave: "todos", rotulo: "Todos" },
+  { chave: "meus", rotulo: "Meus" },
+  { chave: "hoje", rotulo: "Hoje" },
+  { chave: "atrasados", rotulo: "Atrasados" },
+  { chave: "sem-dono", rotulo: "Sem dono" },
+  { chave: "sem-proxima-acao", rotulo: "Sem próxima ação" },
+] as const;
+
+export type ViewPreVendas = (typeof VIEWS_PRE_VENDAS)[number]["chave"];
+
+export function ehView(valor: string | null | undefined): valor is ViewPreVendas {
+  return VIEWS_PRE_VENDAS.some((v) => v.chave === valor);
+}
+
+
+
 export const ETAPAS_PRE_VENDAS = ["novo", "em_contato", "qualificacao", "qualificado", "oportunidade"] as const;
 export type EtapaPreVendas = (typeof ETAPAS_PRE_VENDAS)[number];
 
