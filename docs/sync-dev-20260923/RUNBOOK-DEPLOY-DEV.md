@@ -1,8 +1,77 @@
 # Runbook: publicar em dev.crm.callface.io
 
-Preparado em 23/09. **Não executado**: o acesso SSH e a escrita em banco foram
-negados pelo classifier de permissões no fim da sessão (as mesmas ações
-funcionaram no início, quando o dump de produção foi puxado).
+Preparado em 23/09. **Não executado**: leitura por SSH foi permitida e o
+ambiente foi inspecionado, mas TODA escrita remota (`scp`, `docker exec` de
+escrita) foi negada pelo classifier com "Remote Shell Writes".
+
+## Estado do ambiente remoto, medido em 23/09
+
+O ambiente **já está no ar**. Não precisa ser criado, precisa ser atualizado:
+
+```
+callface-crm2-dev-app        Up About an hour (healthy)
+callface-crm2-dev-api        Up About an hour (healthy)
+callface-crm2-dev-worker     Up About an hour (healthy)
+callface-crm2-dev-postgres   Up 11 days (healthy)
+callface-crm2-dev-redis      Up 11 days (healthy)
+callface-crm2-dev-wuzapi     Up 11 days
+```
+
+Banco dele hoje:
+
+```
+leads              3989      (produção tem 4012 — está atrasado)
+aquisicoes         3989
+aquisicoes ativas  3702      <-- EXATAMENTE os "3702 ativos" do relato
+negocios           1562      (produção tem 1578)
+migrations            90     (falta a 0090)
+```
+
+**Este é o ambiente que mostrou os números errados.** Os 3702 ativos com Novo
+2915 e Qualificação 3 vêm daqui, não do DEV local.
+
+Diferenças em relação ao DEV local já corrigido:
+
+| item | dev remoto | dev local |
+|---|---|---|
+| `06b-estado-pre-vendas-legado.ts` | **ausente** | presente |
+| última migration | 0089 | 0090 |
+| aquisições ativas | 3702 | 1620 |
+| dado de produção | ~3 dias atrás | de hoje |
+
+`/opt/callface/crm2-dev` não é clone git: o `.git` aponta para um worktree do Mac,
+ou seja, a pasta chega por rsync. `git pull` lá dentro falha. A atualização de
+código é cópia de arquivo, não `git pull` — ajuste o passo 3 abaixo conforme o
+fluxo de rsync que você já usa.
+
+## Sequência mínima para alinhar o remoto
+
+Corrige o dado sem rebuild (backfill roda por `tsx`, não precisa de build):
+
+```bash
+# copiar os três arquivos corrigidos
+scp -i ~/.ssh/infra_callface.pem \
+  app/src/scripts/backfill/06b-estado-pre-vendas-legado.ts \
+  app/src/scripts/backfill/06-aquisicao.ts \
+  app/src/scripts/backfill/16-materializacao-canonica.ts \
+  ubuntu@34.204.200.52:/opt/callface/crm2-dev/app/src/scripts/backfill/
+
+# aplicar a migration que falta e os backfills
+ssh -i ~/.ssh/infra_callface.pem ubuntu@34.204.200.52
+cd /opt/callface/crm2-dev
+docker compose -p crm2-dev run --rm --no-deps --entrypoint "" api \
+  node --import tsx src/lib/db/migrar.ts
+docker compose -p crm2-dev run --rm --no-deps --entrypoint "" api \
+  node --import tsx src/scripts/backfill/06b-estado-pre-vendas-legado.ts --aplicar
+docker compose -p crm2-dev run --rm --no-deps --entrypoint "" api \
+  node --import tsx src/scripts/backfill/16-materializacao-canonica.ts --aplicar
+```
+
+Depois disso as aquisições ativas devem cair de 3702 para o número de leads
+`tipo='lead'` daquele banco, com as sete etapas batendo.
+
+A correção do nome da empresa (`board-pre-vendas.ts`) é **leitura** e só vale
+depois de rebuild do app — é o único passo que exige build na EC2.
 
 ## Antes de começar, saiba disto
 
