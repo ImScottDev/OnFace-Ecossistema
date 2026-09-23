@@ -12,6 +12,7 @@ import { criarOportunidadeDoLead } from "@/lib/vendas/pipeline";
 import { detalheLead, type DetalheLead } from "@/lib/vendas/consultas";
 import { lerLinhaDoTempo, type LinhaDoTempo } from "@/lib/vendas/eventos";
 import { resolverEmpresa } from "@/lib/vendas/identidade";
+import { adicionarTag, removerTag } from "@/lib/crm/tags";
 
 /* A rota oficial do produto.
  *
@@ -365,5 +366,29 @@ export async function acaoOpcoesEmMassa(): Promise<
       `),
     ]);
     return { tags: [...tags], cadencias: [...cadencias] };
+  });
+}
+
+/** Põe ou tira uma tag de UM lead — o botão "+" da gaveta.
+ *
+ * O motor em massa já fazia isso para vários; a gaveta precisava de um a um e
+ * não tinha porta, então o "+" só emitia um aviso dizendo que a peça viria. */
+export async function acaoTagDoLead(
+  leadId: string,
+  label: string,
+  operacao: "adicionar" | "remover",
+): Promise<Resultado<{ mudou: boolean }>> {
+  const ctx = await contexto();
+  if (!ctx) return { ok: false, erro: "Sessão expirada." };
+  return executar("tag do lead", async () => {
+    const fn = operacao === "adicionar" ? adicionarTag : removerTag;
+    const r = await fn({
+      organizacaoId: ctx.organizacaoId,
+      entityType: "lead",
+      entityId: leadId,
+      label,
+    });
+    revalidatePath(ROTA);
+    return { mudou: r.mudou };
   });
 }

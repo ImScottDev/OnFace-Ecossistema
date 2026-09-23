@@ -95,6 +95,10 @@ export interface AcoesPreVendas {
   detalhe: (leadId: string) => Promise<Resultado<{ lead: DetalheLead | null; timeline: LinhaDoTempo[] }>>;
   criarTarefa: (e: EntradaTarefa) => Promise<Resultado<{ tarefaId: string }>>;
   atribuirEmMassa: (leadIds: string[], responsavelId: string | null) => Promise<Resultado<{ total: number }>>;
+  /** Põe ou tira UMA tag de UM lead — o "+" e o "x" dos chips da gaveta. */
+  tag: (leadId: string, label: string, operacao: "adicionar" | "remover") => Promise<Resultado<{ mudou: boolean }>>;
+  /** As tags que a organização tem, para o menu do "+". */
+  tagsDaOrg: () => Promise<Resultado<{ tags: Array<{ id: string; nome: string }>; cadencias: Array<{ id: string; nome: string }> }>>;
 }
 
 /** O que o formulário de próxima ação devolve. */

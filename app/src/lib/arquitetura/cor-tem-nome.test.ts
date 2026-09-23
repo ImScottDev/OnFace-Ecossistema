@@ -61,6 +61,21 @@ const EXTENSOES = [".tsx", ".ts", ".css"];
  *  id de commit ou hash em comentário, não cor. */
 const HEX = /#[0-9a-fA-F]{3,8}\b/g;
 
+/** Tira comentários antes de contar.
+ *
+ * A trava existe contra hex em VALOR, e estava reprovando hex em PROSA: o
+ * comentário que diz "no protótipo isto é `#67787c`" é justamente a
+ * documentação que eu quero, e citar o valor de origem é o método desta
+ * migração. Sem isto, explicar de onde veio um token custa um ponto de dívida.
+ *
+ * Simplificação conhecida: um `//` dentro de string (uma URL) leva o resto da
+ * linha junto. O caso que isso mascararia — um hex literal depois de uma URL,
+ * na mesma linha — não existe no repo, e o custo de um parser de verdade aqui
+ * não se paga. */
+function semComentarios(fonte: string): string {
+  return fonte.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+}
+
 function arquivos(dir: string, achados: string[] = []): string[] {
   let entradas;
   try {
@@ -87,7 +102,7 @@ function contar(): Record<string, number> {
   for (const base of ESCOPO) {
     for (const rel of arquivos(join(RAIZ, base))) {
       const fonte = readFileSync(join(RAIZ, rel), "utf8");
-      const n = (fonte.match(HEX) ?? []).length;
+      const n = (semComentarios(fonte).match(HEX) ?? []).length;
       if (n > 0) fora[rel] = n;
     }
   }

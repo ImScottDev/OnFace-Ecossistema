@@ -8,6 +8,7 @@ import {
   acaoCriarOportunidade, acaoCriarTarefa, acaoDesqualificar, acaoDetalhe,
   acaoMoverEtapa, acaoNutrir, acaoQualificar, acaoReativar,
   acaoRegistrarContato, acaoSalvarQualificacao,
+  acaoTagDoLead, acaoOpcoesEmMassa,
 } from "./actions";
 
 export const metadata = { title: "Pré-vendas" };
@@ -83,6 +84,7 @@ export async function PreVendasPage({ searchParams, rotaBase = "" }: {
         detalhe: acaoDetalhe,
         criarTarefa: acaoCriarTarefa,
         atribuirEmMassa: acaoAtribuirEmMassa,
+        tag: acaoTagDoLead, tagsDaOrg: acaoOpcoesEmMassa,
       }}
     />
   );

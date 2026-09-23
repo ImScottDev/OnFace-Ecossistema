@@ -3,6 +3,13 @@ import path from "node:path";
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  /* O selo flutuante do Next em desenvolvimento fica no canto inferior
+     esquerdo por padrão, mas o `nextjs-portal` que o hospeda cobre o canto
+     superior direito da janela — e é exatamente ali que vive o X da gaveta de
+     detalhe. Em toda avaliação por screenshot o selo aparecia no lugar do
+     botão de fechar e a peça parecia estar sem ele. Ele não existe em
+     produção; aqui ele só atrapalha a leitura do desenho. */
+  devIndicators: false,
   // A raiz do trace é DECLARADA, e não inferida.
   //
   // O Next acerta sozinho hoje, e avisa que pode não acertar: *"We detected

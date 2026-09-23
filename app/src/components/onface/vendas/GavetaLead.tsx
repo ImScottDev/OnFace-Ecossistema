@@ -54,6 +54,12 @@ const CORES_ETAPA: Record<string, string> = {
 
 const LIVRES = ["novo", "em_contato", "qualificacao"] as const;
 
+const ROTULO_ETAPA: Record<(typeof LIVRES)[number], string> = {
+  novo: "Novo",
+  em_contato: "Em contato",
+  qualificacao: "Qualificação",
+};
+
 const INTERESSES = ["Callface AI", "PABX", "White Label", "Integrações", "SMS"];
 const FITS = ["Alto", "Médio", "Baixo"] as const;
 
@@ -94,11 +100,41 @@ function iniciais(nome: string | null) {
   return nome.split(" ").filter(Boolean).slice(0, 2).map((p) => p[0]).join("").toUpperCase();
 }
 
+/** `+5522997517318` → `+55 22 99751-7318`.
+ *
+ * O protótipo mostra `+55 11 98813-3597`; o banco guarda a string crua, e a
+ * gaveta exibia um bloco de treze dígitos que ninguém lê nem confere. */
+function telefoneLegivel(bruto: string | null): string | null {
+  if (!bruto) return null;
+  const d = bruto.replace(/\D/g, "");
+  const nac = d.startsWith("55") ? d.slice(2) : d;
+  if (nac.length < 10 || nac.length > 11) return bruto;
+  const ddd = nac.slice(0, 2);
+  const resto = nac.slice(2);
+  const corte = resto.length - 4;
+  return `+55 ${ddd} ${resto.slice(0, corte)}-${resto.slice(corte)}`;
+}
+
 function dataCurta(iso: string | null) {
   if (!iso) return null;
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return null;
   return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+/** `19 set 2026 · 09:14` — o formato da linha "Entrada" no protótipo.
+ *
+ * `toLocaleDateString` em pt-BR devolve "13 de mai. de 2026": dois "de" e um
+ * ponto de abreviação numa coluna de 74px, e sem a hora, que é o que separa
+ * dois leads do mesmo dia. */
+function dataHora(iso: string | null): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const dia = String(d.getDate()).padStart(2, "0");
+  const mes = d.toLocaleDateString("pt-BR", { month: "short" }).replace(".", "");
+  const hora = d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  return `${dia} ${mes} ${d.getFullYear()} · ${hora}`;
 }
 
 function Secao({
@@ -119,7 +155,8 @@ function Secao({
   /** Atalho que só faz sentido com a seção aberta. */
   acao?: { rotulo: string; aoClicar: () => void };
   /** Estado da seção, visível aberta ou fechada. */
-  selo?: { texto: string; tom: "ok" | "neutro" };
+  /** Três tons, como o `qualProgSelo` do protótipo: cheio, parcial, vazio. */
+  selo?: { texto: string; tom: "ok" | "neutro" | "aviso"; naDireita?: boolean };
   children: React.ReactNode;
 }) {
   return (
@@ -127,11 +164,15 @@ function Secao({
       <button type="button" className="gv-secao-cab" data-aberta={aberta} onClick={aoAlternar}>
         <Icone d={D.chevronDir} className="gv-secao-chevron" />
         <span className="gv-secao-nome">{nome}</span>
-        {selo && <span className="gv-secao-selo" data-tom={selo.tom}>{selo.texto}</span>}
+        {/* O `cadSelo` vem ANTES do espaçador (colado ao nome) e o
+            `qualProgSelo` vem DEPOIS (na direita). Eu punha os dois colados ao
+            nome, e a contagem de campos ficava no lugar do estado da cadência. */}
+        {selo && !selo.naDireita && <span className="gv-secao-selo" data-tom={selo.tom}>{selo.texto}</span>}
         <span className="gv-secao-espaco" />
         {!aberta && resumo && (
           <span className="gv-secao-resumo" data-alerta={alerta}>{resumo}</span>
         )}
+        {selo && selo.naDireita && <span className="gv-secao-selo" data-tom={selo.tom}>{selo.texto}</span>}
         {aberta && acao && (
           <span
             role="button"
@@ -170,7 +211,23 @@ export function GavetaLead({
 }) {
   const [ocupado, setOcupado] = React.useState(false);
   const [saidaAberta, setSaidaAberta] = React.useState(false);
-  const [abertas, setAbertas] = React.useState<Record<string, boolean>>({ acao: true, qual: true });
+  /* O padrão do protótipo: `{ cad: true, acao: true, qualif: false, timeline:
+     false }`. Eu abria a QUALIFICAÇÃO e fechava a CADÊNCIA — o inverso: a
+     gaveta abria numa parede de campos vazios e escondia se o lead está
+     recebendo toque automático. */
+  const [abertas, setAbertas] = React.useState<Record<string, boolean>>({ cad: true, acao: true });
+  /** Qual dos dois campos do cabeçalho está com o menu aberto. */
+  const [campoAberto, setCampoAberto] = React.useState<"etapa" | "resp" | null>(null);
+  const [tagMenu, setTagMenu] = React.useState(false);
+  /** `null` enquanto não buscou: o menu mostra "Carregando…" em vez de "nenhuma". */
+  const [tagsDisponiveis, setTagsDisponiveis] = React.useState<Array<{ id: string; nome: string }> | null>(null);
+
+  const carregarTags = React.useCallback(async () => {
+    if (tagsDisponiveis) return;
+    const r = await acoes.tagsDaOrg();
+    setTagsDisponiveis(r.ok ? (r.dados?.tags ?? []) : []);
+    if (!r.ok) toast(r.erro);
+  }, [acoes, tagsDisponiveis]);
 
   /* A qualificação edita NO LUGAR e grava sozinha.
    *
@@ -285,7 +342,7 @@ export function GavetaLead({
   ].filter(Boolean).length;
 
   const atribuicao: Array<[string, string | null]> = [
-    ["Entrada", dataCurta(lead.criadoEm)],
+    ["Entrada", dataHora(lead.criadoEm)],
     ["Campanha", lead.atribuicao.campanha],
     ["Conjunto", lead.atribuicao.medium],
     ["Criativo", lead.atribuicao.conteudo],
@@ -303,7 +360,7 @@ export function GavetaLead({
                 {[lead.pessoa.cargo, lead.empresa.nome].filter(Boolean).join(" · ") || "Sem empresa"}
               </p>
               <div className="gv-contatos">
-                {lead.pessoa.telefone && <span>{lead.pessoa.telefone}</span>}
+                {lead.pessoa.telefone && <span>{telefoneLegivel(lead.pessoa.telefone)}</span>}
                 {lead.pessoa.email && <span>{lead.pessoa.email}</span>}
               </div>
             </div>
@@ -330,48 +387,86 @@ export function GavetaLead({
             </button>
           </div>
 
+          {/* Botão e menu, não `<select>`. O select nativo desenha o PRÓPRIO
+              chevron ao lado do que a folha desenhava — dois chevrons — e o
+              `:focus-within` acendia um anel coral que o protótipo não tem. */}
           <div className="gv-par">
-            <label>
+            <div>
               <span className="gv-rotulo">Etapa</span>
               {/* Só as três livres. As outras quatro gravam um fato e pedem o
                   porquê — elas ficam no menu de saídas, no rodapé. */}
-              <span className="gv-campo">
-                <span className="gv-ponto-etapa" style={{ background: CORES_ETAPA[lead.etapa] ?? "var(--of-tinta-4)" }} />
-                <select
-                  value={(LIVRES as readonly string[]).includes(lead.etapa) ? lead.etapa : ""}
+              <div className="gv-campo-caixa">
+                <button
+                  className="gv-campo"
                   disabled={ocupado}
-                  onChange={(e) =>
-                    rodar(acoes.moverEtapa(lead.id, e.target.value as (typeof LIVRES)[number]), "Etapa alterada")
-                  }
+                  onClick={() => setCampoAberto(campoAberto === "etapa" ? null : "etapa")}
                 >
-                  {!(LIVRES as readonly string[]).includes(lead.etapa) && (
-                    <option value="">{lead.etapaRotulo}</option>
-                  )}
-                  <option value="novo">Novo</option>
-                  <option value="em_contato">Em contato</option>
-                  <option value="qualificacao">Qualificação</option>
-                </select>
-                <Icone d={D.chevronBaixo} className="gv-campo-seta" />
-              </span>
-            </label>
+                  <span className="gv-ponto-etapa" style={{ background: CORES_ETAPA[lead.etapa] ?? "var(--of-tinta-4)" }} />
+                  <span className="gv-campo-texto">{lead.etapaRotulo}</span>
+                  <Icone d={D.chevronBaixo} className="gv-campo-seta" />
+                </button>
+                {campoAberto === "etapa" && (
+                  <div className="gv-campo-menu">
+                    {LIVRES.map((k) => (
+                      <button
+                        key={k}
+                        data-on={lead.etapa === k}
+                        onClick={() => {
+                          setCampoAberto(null);
+                          void rodar(acoes.moverEtapa(lead.id, k), "Etapa alterada");
+                        }}
+                      >
+                        <span className="gv-ponto-etapa" style={{ background: CORES_ETAPA[k] }} />
+                        <span>{ROTULO_ETAPA[k]}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
 
-            <label>
+            <div>
               <span className="gv-rotulo">Responsável</span>
-              <span className="gv-campo" data-vazio={!lead.responsavel.id}>
-                <span className="gv-resp-avatar">{lead.responsavel.nome ? iniciais(lead.responsavel.nome) : "—"}</span>
-                <select
-                  value={lead.responsavel.id ?? ""}
+              <div className="gv-campo-caixa">
+                <button
+                  className="gv-campo"
+                  data-vazio={!lead.responsavel.id}
                   disabled={ocupado}
-                  onChange={(e) => rodar(acoes.atribuir(lead.id, e.target.value || null), "Responsável alterado")}
+                  onClick={() => setCampoAberto(campoAberto === "resp" ? null : "resp")}
                 >
-                  <option value="">Sem responsável</option>
-                  {responsaveis.map((r) => (
-                    <option key={r.id} value={r.id}>{r.nome}</option>
-                  ))}
-                </select>
-                <Icone d={D.chevronBaixo} className="gv-campo-seta" />
-              </span>
-            </label>
+                  <span className="gv-resp-avatar">{lead.responsavel.nome ? iniciais(lead.responsavel.nome) : "—"}</span>
+                  <span className="gv-campo-texto">{lead.responsavel.nome ?? "Sem responsável"}</span>
+                  <Icone d={D.chevronBaixo} className="gv-campo-seta" />
+                </button>
+                {campoAberto === "resp" && (
+                  <div className="gv-campo-menu">
+                    {responsaveis.map((r) => (
+                      <button
+                        key={r.id}
+                        data-on={lead.responsavel.id === r.id}
+                        onClick={() => {
+                          setCampoAberto(null);
+                          void rodar(acoes.atribuir(lead.id, r.id), "Responsável alterado");
+                        }}
+                      >
+                        <span className="gv-resp-avatar">{iniciais(r.nome)}</span>
+                        <span>{r.nome}</span>
+                      </button>
+                    ))}
+                    <button
+                      data-on={!lead.responsavel.id}
+                      onClick={() => {
+                        setCampoAberto(null);
+                        void rodar(acoes.atribuir(lead.id, null), "Responsável removido");
+                      }}
+                    >
+                      <span className="gv-resp-avatar" data-vazio="true">—</span>
+                      <span>Sem responsável</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         </header>
 
@@ -388,19 +483,54 @@ export function GavetaLead({
           <div className="gv-bloco">
             <div>
               <span className="gv-rotulo">Tags</span>
+              {/* As Tags de verdade (tabela `labels`), não os serviços de
+                  interesse. Sem tag o protótipo não mostra chip nenhum: só o
+                  "+". Um chip escrito "Sem tag" parece uma tag chamada
+                  "Sem tag". */}
               <div className="gv-tags">
-                {interesses.map((t) => (
-                  <span key={t} className="gv-tag">{t}</span>
+                {lead.tags.map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    className="gv-tag"
+                    title={`Tirar a tag ${t.nome}`}
+                    disabled={ocupado}
+                    onClick={() => rodar(acoes.tag(lead.id, t.id, "remover"), `Tag ${t.nome} removida`)}
+                  >
+                    <span>{t.nome}</span>
+                    <Icone d={D.x} />
+                  </button>
                 ))}
-                {!interesses.length && <span className="gv-tag gv-tag-vazia">Sem tag</span>}
-                <button
-                  type="button"
-                  className="gv-tag-mais"
-                  title="Adicionar tag"
-                  onClick={() => toast("Menu de tags — a próxima peça do handoff.")}
-                >
-                  <Icone d={D.mais} />
-                </button>
+                <div className="gv-campo-caixa">
+                  <button
+                    type="button"
+                    className="gv-tag-mais"
+                    data-on={tagMenu}
+                    title="Adicionar tag"
+                    onClick={() => { setTagMenu(!tagMenu); if (!tagMenu) void carregarTags(); }}
+                  >
+                    <Icone d={D.mais} />
+                  </button>
+                  {tagMenu && (
+                    <div className="gv-campo-menu gv-tag-menu">
+                      {tagsDisponiveis === null && <p className="gv-tag-carregando">Carregando…</p>}
+                      {tagsDisponiveis?.filter((t) => !lead.tags.some((x) => x.id === t.id)).map((t) => (
+                        <button
+                          key={t.id}
+                          onClick={() => {
+                            setTagMenu(false);
+                            void rodar(acoes.tag(lead.id, t.id, "adicionar"), `Tag ${t.nome} aplicada`);
+                          }}
+                        >
+                          <span>{t.nome}</span>
+                        </button>
+                      ))}
+                      {tagsDisponiveis?.length === 0 && (
+                        <p className="gv-tag-carregando">Nenhuma tag cadastrada nesta organização.</p>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -438,8 +568,9 @@ export function GavetaLead({
             nome="CADÊNCIA"
             aberta={!!abertas.cad}
             aoAlternar={() => alternar("cad")}
+            /* `cadResumo` é informação, não alarme: no protótipo sai em
+               `#67787c`. O coral pertence ao resumo de "sem próxima ação". */
             resumo="Fora de cadência"
-            alerta
           >
             <div className="gv-cad-vazia">
               <span>Fora de cadência — nenhum toque automático sai para este lead.</span>
@@ -487,9 +618,16 @@ export function GavetaLead({
             nome="QUALIFICAÇÃO"
             aberta={!!abertas.qual}
             aoAlternar={() => alternar("qual")}
-            resumo={resumoQual}
-            alerta={!lead.qualificado && preenchidos === 0}
-            selo={{ texto: `${preenchidos} de 4 campos`, tom: preenchidos === 4 ? "ok" : "neutro" }}
+            /* Três tons, como no `qualProgSelo`: cheio é verde, vazio é âmbar
+               (é o que pede ação) e o meio do caminho é cinza. Eu só tinha
+               verde e cinza, então "0 de 4" saía igual a "3 de 4".
+               Ele fica na direita e dispensa resumo: a contagem JÁ é o resumo,
+               e eu mostrava os dois, um ao lado do outro. */
+            selo={{
+              texto: `${preenchidos} de 4 campos`,
+              tom: preenchidos === 4 ? "ok" : preenchidos === 0 ? "aviso" : "neutro",
+              naDireita: true,
+            }}
           >
             <div className="gv-qualif">
               <div>

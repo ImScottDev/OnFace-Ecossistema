@@ -318,6 +318,207 @@ export default async () => {
 };
 
 /**
+ * Terceira bateria: a GAVETA DE DETALHE.
+ *
+ * Os valores vêm de `OnFace Pecas.dc.html` (bloco `temDetalhe`). Ela ficou de
+ * fora das duas primeiras porque o fonte da peça não está na pasta 01 — e o
+ * resultado foi medir 221 valores da tela e nenhum da peça que mais se abre.
+ */
+export async function gaveta() {
+  const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
+  const q = (s) => document.querySelector(s);
+  const qa = (s) => [...document.querySelectorAll(s)];
+  const achados = [];
+  let total = 0;
+
+  function conferir(area, o_que, real, esperado) {
+    total += 1;
+    if (!equivalente(String(real), String(esperado))) {
+      achados.push({ area, o_que, real: String(real), esperado: String(esperado) });
+    }
+  }
+  const g = (sel, prop) => {
+    const e = q(sel);
+    return e ? getComputedStyle(e)[prop] : "ausente";
+  };
+  const cx = (sel) => {
+    const e = q(sel);
+    return e ? `${Math.round(e.getBoundingClientRect().width)}x${Math.round(e.getBoundingClientRect().height)}` : "ausente";
+  };
+
+  // Abre pelo cartão, que é como o protótipo abre (`OnFaceEstado.abrir`).
+  q(".pv-card-empresa")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  await esperar(1600);
+  conferir("gaveta", "abriu", !!q(".gv"), true);
+  if (!q(".gv")) return { total, divergencias: achados.length, conformidade: `${total - achados.length}/${total}`, achados };
+
+  /* ── Moldura ───────────────────────────────────────────────────────── */
+  const gv = q(".gv");
+  const cr = gv.getBoundingClientRect();
+  conferir("moldura", "largura", Math.round(cr.width), 436);
+  conferir("moldura", "raio", g(".gv", "borderRadius"), "14px");
+  /* A borda direita do viewport de um `fixed` não é `clientWidth`: com o html
+     em `overflow:hidden` o Chromium ainda reserva a calha da barra de rolagem,
+     e medir por `clientWidth` acusava 16px onde o CSS diz 10. A sonda devolve
+     a borda de verdade em qualquer ambiente. */
+  const sonda = document.createElement("div");
+  sonda.style.cssText = "position:fixed;top:0;right:0;width:1px;height:1px";
+  document.body.appendChild(sonda);
+  const bordaDireita = sonda.getBoundingClientRect().right;
+  sonda.remove();
+  conferir("moldura", "flutua 10px da direita", Math.round(bordaDireita - cr.right), 10);
+  conferir("moldura", "flutua 10px do topo", Math.round(cr.top), 10);
+  conferir("moldura", "véu", g(".gv-veu", "backgroundColor"), "rgba(9, 14, 20, 0.42)");
+
+  /* ── Cabeçalho ─────────────────────────────────────────────────────── */
+  conferir("cabeçalho", "recuo", g(".gv-topo", "padding"), "15px 16px 13px");
+  conferir("cabeçalho", "fio", g(".gv-topo", "borderBottom"), "1px solid rgb(227, 231, 232)");
+  conferir("cabeçalho", "avatar", cx(".gv-avatar"), "38x38");
+  conferir("cabeçalho", "avatar fonte", `${g(".gv-avatar", "fontSize")}/${g(".gv-avatar", "fontWeight")}`, "13px/700");
+  conferir("cabeçalho", "nome", `${g(".gv-identidade h2", "fontSize")}/${g(".gv-identidade h2", "fontWeight")}`, "16px/700");
+  conferir("cabeçalho", "nome família", (g(".gv-identidade h2", "fontFamily") || "").split(",")[0], '"Plus Jakarta Sans"');
+  conferir("cabeçalho", "nome espacejamento", g(".gv-identidade h2", "letterSpacing"), "-0.24px");
+  conferir("cabeçalho", "cargo · empresa", g(".gv-papel", "fontSize"), "12.5px");
+  conferir("cabeçalho", "contatos fonte", g(".gv-contatos span", "fontSize"), "12px");
+  conferir("cabeçalho", "contatos margem", g(".gv-contatos", "marginTop"), "6px");
+  /* O telefone do protótipo sai legível (`+55 11 98813-3597`); o banco guarda
+     a string crua, e treze dígitos colados ninguém lê nem confere. */
+  conferir("cabeçalho", "telefone legível", /^\+55 \d{2} \d{4,5}-\d{4}$/.test(q(".gv-contatos span")?.textContent ?? ""), true);
+  conferir("cabeçalho", "X de fechar", cx(".gv-fechar"), "28x28");
+  conferir("cabeçalho", "X raio", g(".gv-fechar", "borderRadius"), "8px");
+  conferir("cabeçalho", "X tinta", g(".gv-fechar", "color"), "rgb(74, 85, 96)");
+
+  const toque = q(".gv-canais button");
+  conferir("toques", "quantos", qa(".gv-canais button").length, 3);
+  conferir("toques", "altura", toque ? Math.round(toque.getBoundingClientRect().height) : "ausente", 32);
+  conferir("toques", "recuo", g(".gv-canais button", "padding"), "0px 11px");
+  conferir("toques", "raio", g(".gv-canais button", "borderRadius"), "8px");
+  conferir("toques", "anel", g(".gv-canais button", "boxShadow"), "rgb(219, 222, 222) 0px 0px 0px 1px inset");
+  conferir("toques", "fonte", `${g(".gv-canais button", "fontSize")}/${g(".gv-canais button", "fontWeight")}`, "12.5px/500");
+  conferir("toques", "gap", g(".gv-canais", "gap"), "6px");
+
+  /* Botão, não `<select>`: o select nativo desenha o próprio chevron ao lado
+     do nosso — dois chevrons — e acende um anel de foco que não existe lá. */
+  conferir("campos", "sem select nativo", qa(".gv select").length, 0);
+  conferir("campos", "etapa é botão", q(".gv-campo")?.tagName, "BUTTON");
+  conferir("campos", "grade", g(".gv-par", "gridTemplateColumns").split(" ").length, 2);
+  conferir("campos", "grade gap", g(".gv-par", "gap"), "10px");
+  conferir("campos", "grade margem", g(".gv-par", "marginTop"), "14px");
+  conferir("campos", "altura", cx(".gv-campo").split("x")[1], "32");
+  conferir("campos", "recuo", g(".gv-campo", "padding"), "0px 10px");
+  conferir("campos", "raio", g(".gv-campo", "borderRadius"), "8px");
+  conferir("campos", "anel", g(".gv-campo", "boxShadow"), "rgb(219, 222, 222) 0px 0px 0px 1px inset");
+  conferir("campos", "fonte", `${g(".gv-campo", "fontSize")}/${g(".gv-campo", "fontWeight")}`, "12.5px/500");
+  conferir("campos", "rótulo", `${g(".gv-rotulo", "fontSize")}/${g(".gv-rotulo", "fontWeight")}`, "11px/600");
+  conferir("campos", "rótulo margem", g(".gv-rotulo", "marginBottom"), "5px");
+  conferir("campos", "ponto da etapa", cx(".gv-ponto-etapa"), "7x7");
+  conferir("campos", "avatar do responsável", cx(".gv-resp-avatar"), "20x20");
+  conferir("campos", "seta", cx(".gv-campo-seta"), "12x12");
+
+  /* ── Corpo: tags e origem ──────────────────────────────────────────── */
+  conferir("corpo", "recuo", g(".gv-bloco", "padding"), "14px 16px");
+  conferir("corpo", "gap", g(".gv-bloco", "gap"), "13px");
+  /* Sem tag o protótipo não põe chip nenhum, só o "+": um chip escrito
+     "Sem tag" parece uma tag chamada "Sem tag". */
+  conferir("tags", "sem chip de vazio", !!q(".gv-tag-vazia"), false);
+  conferir("tags", "botão +", cx(".gv-tag-mais"), "22x22");
+  conferir("tags", "gap", g(".gv-tags", "gap"), "5px");
+  conferir("origem", "selo altura", cx(".gv-selo-origem").split("x")[1], "19");
+  conferir("origem", "selo fonte", `${g(".gv-selo-origem", "fontSize")}/${g(".gv-selo-origem", "fontWeight")}`, "11px/700");
+  conferir("origem", "bloco fundo", g(".gv-atribuicao", "backgroundColor"), "rgb(250, 250, 250)");
+  conferir("origem", "bloco raio", g(".gv-atribuicao", "borderRadius"), "9px");
+  conferir("origem", "bloco recuo", g(".gv-atribuicao", "padding"), "9px 11px");
+  conferir("origem", "bloco gap", g(".gv-atribuicao", "gap"), "6px");
+  conferir("origem", "coluna do rótulo", g(".gv-atribuicao dt", "flexBasis"), "74px");
+  conferir("origem", "rótulo fonte", g(".gv-atribuicao dt", "fontSize"), "11px");
+  /* `19 set 2026 · 09:14`. Em pt-BR o `toLocaleDateString` devolve
+     "13 de mai. de 2026": dois "de" e um ponto de abreviação numa coluna de
+     74px, e sem a hora, que é o que separa dois leads do mesmo dia. */
+  conferir(
+    "origem",
+    "entrada com data e hora",
+    /^\d{2} \w{3} \d{4} · \d{2}:\d{2}$/.test(qa(".gv-atribuicao dd")[0]?.textContent ?? ""),
+    true,
+  );
+
+  /* ── Seções ────────────────────────────────────────────────────────── */
+  const nomes = qa(".gv-secao-nome").map((e) => e.textContent.trim());
+  conferir("seções", "as quatro, nesta ordem", nomes.join("|"), "CADÊNCIA|PRÓXIMA AÇÃO|QUALIFICAÇÃO|TIMELINE");
+  /* `{ cad: true, acao: true, qualif: false, timeline: false }`. Eu abria a
+     QUALIFICAÇÃO e fechava a CADÊNCIA — o inverso: a gaveta abria numa parede
+     de campos vazios e escondia se o lead recebe toque automático. */
+  conferir(
+    "seções",
+    "quais abrem por padrão",
+    qa(".gv-secao-cab").map((e) => e.dataset.aberta).join("|"),
+    "true|true|false|false",
+  );
+  conferir("seções", "título fonte", `${g(".gv-secao-nome", "fontSize")}/${g(".gv-secao-nome", "fontWeight")}`, "11px/600");
+  conferir("seções", "título tinta", g(".gv-secao-nome", "color"), "rgb(74, 85, 96)");
+  conferir("seções", "título espacejamento", g(".gv-secao-nome", "letterSpacing"), "0.44px");
+  conferir("seções", "cabeçalho recuo", g(".gv-secao-cab", "padding"), "8px");
+  conferir("seções", "cabeçalho gap", g(".gv-secao-cab", "gap"), "8px");
+  conferir("seções", "chevron", cx(".gv-secao-chevron"), "13x13");
+  conferir("seções", "chevron tinta", g(".gv-secao-chevron", "color"), "rgb(103, 120, 124)");
+  conferir("seções", "fio entre seções", g(".gv-fio", "backgroundColor"), "rgb(238, 241, 241)");
+
+  const selo = q(".gv-secao-selo");
+  conferir("selo", "altura", selo ? Math.round(selo.getBoundingClientRect().height) : "ausente", 18);
+  conferir("selo", "recuo", g(".gv-secao-selo", "padding"), "0px 7px");
+  conferir("selo", "raio", g(".gv-secao-selo", "borderRadius"), "5px");
+  conferir("selo", "fonte", `${g(".gv-secao-selo", "fontSize")}/${g(".gv-secao-selo", "fontWeight")}`, "10.5px/700");
+  /* Três tons no protótipo: cheio verde, vazio âmbar, meio cinza. Com só dois
+     tons, "0 de 4" saía igual a "3 de 4" — o vazio é o que pede ação. */
+  conferir("selo", "vazio é âmbar", selo?.dataset.tom === "aviso" ? g(".gv-secao-selo", "backgroundColor") : "não-vazio", "rgb(247, 237, 216)");
+  /* O `cadSelo` vem ANTES do espaçador e o `qualProgSelo` DEPOIS: um fica
+     colado ao nome, o outro na direita. Eu colava os dois no nome. */
+  const cabQual = qa(".gv-secao-cab").find((e) => e.textContent.includes("QUALIFICAÇÃO"));
+  const seloQual = cabQual?.querySelector(".gv-secao-selo");
+  const espaco = cabQual?.querySelector(".gv-secao-espaco");
+  conferir(
+    "selo",
+    "o da qualificação fica na direita",
+    seloQual && espaco ? espaco.compareDocumentPosition(seloQual) === Node.DOCUMENT_POSITION_FOLLOWING : "ausente",
+    true,
+  );
+  /* A contagem JÁ é o resumo da seção; mostrar os dois punha "0 de 4 campos"
+     ao lado de "Sem critério apurado", dizendo a mesma coisa duas vezes. */
+  conferir("selo", "sem resumo além do selo", !!cabQual?.querySelector(".gv-secao-resumo"), false);
+
+  /* ── Rodapé ────────────────────────────────────────────────────────── */
+  conferir("rodapé", "recuo", g(".gv-rodape", "padding"), "11px 16px");
+  conferir("rodapé", "fio", g(".gv-rodape", "borderTop"), "1px solid rgb(227, 231, 232)");
+  conferir("rodapé", "gap", g(".gv-rodape", "gap"), "7px");
+  conferir("rodapé", "Qualificar coral", g(".gv-saida-grupo", "backgroundColor"), "rgb(217, 60, 26)");
+  conferir("rodapé", "Qualificar altura", cx(".gv-saida-grupo").split("x")[1], "34");
+  conferir("rodapé", "divisória do botão dividido", g(".gv-saida-fio", "backgroundColor"), "rgba(255, 255, 255, 0.34)");
+
+  /* ── Comportamento ─────────────────────────────────────────────────── */
+  q(".gv-campo")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  await esperar(320);
+  conferir("comportamento", "campo abre menu", !!q(".gv-campo-menu"), true);
+  conferir("comportamento", "menu tem as três etapas livres", qa(".gv-campo-menu button").length, 3);
+  q(".gv-campo")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  await esperar(260);
+
+  const cabQualif = qa(".gv-secao-cab").find((e) => e.textContent.includes("QUALIFICAÇÃO"));
+  cabQualif?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  await esperar(320);
+  conferir("comportamento", "seção abre no clique", cabQualif?.dataset.aberta, "true");
+
+  q(".gv-fechar")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  await esperar(360);
+  conferir("comportamento", "X fecha", !!q(".gv"), false);
+
+  return {
+    total,
+    divergencias: achados.length,
+    conformidade: `${total - achados.length}/${total}`,
+    achados,
+  };
+}
+
+/**
  * Segunda bateria: ESTADOS e INTERAÇÕES.
  *
  * A primeira mede a tela parada, e tela parada esconde metade do protótipo —

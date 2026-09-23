@@ -7,6 +7,7 @@ import {
   acaoCriarOportunidade, acaoCriarTarefa, acaoDesqualificar, acaoDetalhe,
   acaoMoverEtapa, acaoNutrir, acaoQualificar, acaoReativar,
   acaoRegistrarContato, acaoSalvarQualificacao,
+  acaoTagDoLead, acaoOpcoesEmMassa,
 } from "@/app/(crm2)/pre-vendas/actions";
 
 export const metadata = { title: "ONFACE — Pré-vendas (dado real)" };
@@ -43,6 +44,7 @@ export default async function DesenhoPreVendas({ searchParams }: {
         criarOportunidade: acaoCriarOportunidade, criarLead: acaoCriarLead,
         associarEmpresa: acaoAssociarEmpresa, detalhe: acaoDetalhe,
         criarTarefa: acaoCriarTarefa, atribuirEmMassa: acaoAtribuirEmMassa,
+        tag: acaoTagDoLead, tagsDaOrg: acaoOpcoesEmMassa,
       }}
     />
   );

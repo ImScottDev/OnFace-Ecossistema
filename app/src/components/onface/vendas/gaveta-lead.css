@@ -154,43 +154,73 @@
   color: var(--of-tinta-2);
   margin-bottom: 5px;
 }
+/* Botão, não `<select>`: o select nativo desenha o próprio chevron ao lado do
+   nosso e acende um anel de foco que o protótipo não tem. O menu é filho do
+   campo. */
+.gv-campo-caixa { position: relative }
 .gv-campo {
-  position: relative;
   display: flex;
   align-items: center;
   gap: 6px;
   width: 100%;
   height: 32px;
-  padding: 0 26px 0 10px;
+  padding: 0 10px;
+  border: 0;
   border-radius: var(--of-r-controle);
   background: var(--of-papel);
   box-shadow: var(--of-anel);
-}
-.gv-campo select {
-  flex: 1;
-  min-width: 0;
-  border: 0;
-  outline: 0;
-  background: transparent;
   font-size: var(--of-t-corpo);
   font-weight: var(--of-peso-medio);
   color: var(--of-tinta-forte);
-  appearance: none;
   cursor: pointer;
+  text-align: left;
+}
+.gv-campo:hover:not(:disabled) { background: var(--of-papel-hover) }
+.gv-campo:disabled { cursor: progress }
+.gv-campo-texto {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
   text-overflow: ellipsis;
 }
-[data-cf2-theme] .gv-campo select:focus-visible,
-.gv-campo select:focus-visible { outline: none; box-shadow: none }
-.gv-campo:focus-within { box-shadow: var(--of-anel-coral) }
 .gv-campo-seta {
-  position: absolute;
-  right: 9px;
+  flex: 0 0 auto;
   width: 12px;
   height: 12px;
   stroke-width: 2.2;
   color: var(--of-tinta-2);
-  pointer-events: none;
 }
+.gv-campo-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 100%;
+  z-index: 44;
+  border-radius: 6px;
+  background: var(--of-papel);
+  border: 1px solid var(--of-linha);
+  box-shadow: 0 8px 20px -4px rgba(0, 0, 0, .18), 0 2px 4px -2px rgba(0, 0, 0, .12);
+  padding: 4px;
+  animation: onface-rise .12s var(--of-curva) both;
+}
+.gv-campo-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 6px;
+  border-radius: 6px;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  font-size: var(--of-t-corpo);
+  color: var(--of-tinta);
+  white-space: nowrap;
+}
+.gv-campo-menu button:hover { background: var(--of-papel-hover) }
+.gv-campo-menu button[data-on="true"] { font-weight: var(--of-peso-semi) }
 .gv-ponto-etapa {
   flex: 0 0 auto;
   width: 7px;
@@ -211,8 +241,9 @@
 }
 /* Sem responsável é buraco, não valor neutro: mesma tinta do "sem próxima
    ação" no cartão. */
-.gv-campo[data-vazio="true"] select { color: var(--of-coral-texto); font-weight: var(--of-peso-semi) }
-.gv-campo[data-vazio="true"] .gv-resp-avatar { background: var(--of-coral-fundo); color: var(--of-coral-texto) }
+.gv-campo[data-vazio="true"] .gv-campo-texto { color: var(--of-coral-texto); font-weight: var(--of-peso-semi) }
+.gv-campo[data-vazio="true"] .gv-resp-avatar,
+.gv-resp-avatar[data-vazio="true"] { background: var(--of-coral-fundo); color: var(--of-coral-texto) }
 
 /* Faixa de bloqueio: o que esta gaveta NÃO vai deixar fazer, e por quê. */
 .gv-bloqueio {
@@ -271,7 +302,7 @@
   background: var(--of-calha);
   color: var(--of-tinta-2);
   font-size: var(--of-t-meta-min);
-  font-weight: var(--of-peso-semi);
+  font-weight: var(--of-peso-forte);
   white-space: nowrap;
 }
 .gv-atribuicao {
@@ -597,16 +628,22 @@
 /* O cabeçalho de seção ganhou três peças: selo de estado, espaçador e um
    atalho que só existe com a seção aberta. */
 .gv-secao-espaco { flex: 1; min-width: 0 }
+/* Geometria do `qualProgSelo`/`cadSelo`: 18 de altura, raio 5, 10.5/700. */
 .gv-secao-selo {
   flex: 0 0 auto;
-  padding: 2px 7px;
-  border-radius: 6px;
-  font-size: var(--of-t-rotulo);
-  font-weight: var(--of-peso-semi);
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 7px;
+  border-radius: 5px;
+  font-size: 10.5px;
+  font-weight: var(--of-peso-forte);
   white-space: nowrap;
 }
 .gv-secao-selo[data-tom="ok"] { background: var(--of-canal-whatsapp-fundo); color: var(--of-canal-whatsapp-tinta) }
 .gv-secao-selo[data-tom="neutro"] { background: var(--of-calha); color: var(--of-tinta-2) }
+/* Vazio é âmbar: é o que pede ação, e sem ele "0 de 4" saía igual a "3 de 4". */
+.gv-secao-selo[data-tom="aviso"] { background: var(--of-canal-organico-fundo); color: var(--of-canal-organico-tinta) }
 .gv-secao-acao {
   flex: 0 0 auto;
   font-size: var(--of-t-corpo-min);

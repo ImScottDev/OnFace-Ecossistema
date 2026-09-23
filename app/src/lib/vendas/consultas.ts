@@ -1266,6 +1266,8 @@ export interface DetalheLead {
   };
   responsavel: { id: string | null; nome: string | null };
   servicos: string[] | null;
+  /** Tags do lead (tabela `labels`). A gaveta mostra estas, não os serviços. */
+  tags: Array<{ id: string; nome: string }>;
   primeiroContatoEm: string | null;
   criadoEm: string;
   nutricao: { motivo: string | null; retomarEm: string | null; observacao: string | null };
@@ -1345,6 +1347,19 @@ export async function detalheLead(organizacaoId: string, leadId: string): Promis
             OR (${l.empresa_id ?? null}::uuid IS NOT NULL AND empresa_id = ${l.empresa_id ?? null}::uuid))
   `);
 
+  /* As Tags do lead. Mesma união do board: `entity_labels` é a canônica e
+     `lead_labels` é a legada que ainda tem vínculo que a canônica não pegou. */
+  const tags = await db.execute<{ id: string; nome: string }>(sql`
+    SELECT DISTINCT l.id::text, l.nome
+      FROM (
+        SELECT label_id FROM entity_labels
+         WHERE entity_type = 'lead' AND entity_id = ${leadId}::uuid
+        UNION
+        SELECT label_id FROM lead_labels WHERE lead_id = ${leadId}::uuid
+      ) v
+      JOIN labels l ON l.id = v.label_id AND l.organizacao_id = ${organizacaoId}::uuid
+     ORDER BY l.nome`);
+
   const oportunidades = await db.execute<{
     id: string; titulo: string; etapa: string | null; familia: string | null;
   }>(sql`
@@ -1392,6 +1407,7 @@ export async function detalheLead(organizacaoId: string, leadId: string): Promis
     },
     responsavel: { id: l.responsavel_id, nome: l.responsavel },
     servicos: l.servicos,
+    tags: tags.map((t) => ({ id: t.id, nome: t.nome })),
     primeiroContatoEm: l.primeiro_contato_at,
     criadoEm: l.criado_em,
     nutricao: { motivo: l.nutricao_motivo, retomarEm: l.nutricao_retomar_em, observacao: l.nutricao_observacao },
