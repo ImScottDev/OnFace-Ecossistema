@@ -200,7 +200,16 @@ export async function boardDeAquisicoes(
     WITH base AS (
     SELECT a.id::text AS aquisicao_id,
            a.lead_legado_id::text AS lead_id,
-           e.nome AS empresa, a.empresa_id::text,
+           -- O nome da empresa segue a MESMA precedência do board legado
+           -- (api-server/routes/leads.ts:439): o texto que a pessoa preencheu
+           -- vem primeiro, a entidade depois.
+           --
+           -- Ler só e.nome fazia 467 dos 1.620 cards ativos dizerem "Empresa
+           -- nao informada" com o nome gravado em leads.empresa, medido em
+           -- 23/09. A entidade nao existe para eles porque o texto veio de
+           -- formulario e nunca virou uma linha em empresas; descartar o texto
+           -- e perder dado que o sistema antigo mostrava, nao e ausencia.
+           COALESCE(NULLIF(trim(lg.empresa), ''), e.nome) AS empresa, a.empresa_id::text,
            NULLIF(trim(concat_ws(' ', p.nome, p.sobrenome)), '') AS pessoa,
            a.pessoa_id::text, p.cargo,
            ${expressaoDeEtapa(sql)} AS etapa,
@@ -216,6 +225,7 @@ export async function boardDeAquisicoes(
            a.updated_at AS ordenacao
       FROM aquisicoes a
       LEFT JOIN empresas e ON e.id = a.empresa_id
+      LEFT JOIN leads    lg ON lg.id = a.lead_legado_id
       LEFT JOIN pessoas  p ON p.id = a.pessoa_id
       LEFT JOIN usuarios u ON u.id = a.responsavel_id
       LEFT JOIN pipeline_etapas pe ON pe.id = a.etapa_id
@@ -227,7 +237,10 @@ export async function boardDeAquisicoes(
       ) pc ON TRUE
       ${proximaAcaoLateral(sql)}
      WHERE a.organizacao_id = ${organizacaoId}::uuid
-       AND (${filtros.incluirEncerradas ? sql`TRUE` : sql`a.closed_at IS NULL`})
+       AND (${filtros.incluirEncerradas
+              ? sql`(a.closed_at IS NULL OR a.desqualificado_em IS NOT NULL
+                     OR COALESCE(a.nutricao_status, '') <> '')`
+              : sql`a.closed_at IS NULL`})
        AND (${filtros.responsavelId ?? null}::uuid IS NULL OR a.responsavel_id = ${filtros.responsavelId ?? null}::uuid)
        AND (${filtros.semDono ? sql`a.responsavel_id IS NULL` : sql`TRUE`})
        AND (${filtros.origem ?? null}::text IS NULL OR a.origem = ${filtros.origem ?? null})
@@ -235,7 +248,7 @@ export async function boardDeAquisicoes(
        AND (${filtros.desde ?? null}::date IS NULL OR a.created_at >= ${filtros.desde ?? null}::date)
        ${condicoesDeView(sql, filtros)}
        AND (${busca}::text IS NULL OR
-            lower(COALESCE(e.nome, '')) LIKE ${busca} OR
+            lower(COALESCE(NULLIF(trim(lg.empresa), ''), e.nome, '')) LIKE ${busca} OR
             lower(concat_ws(' ', p.nome, p.sobrenome)) LIKE ${busca} OR
             lower(COALESCE(p.email, '')) LIKE ${busca})
     )
@@ -293,7 +306,10 @@ export async function boardDeAquisicoes(
       ) pc ON TRUE
       ${proximaAcaoLateral(sql)}
      WHERE a.organizacao_id = ${organizacaoId}::uuid
-       AND (${filtros.incluirEncerradas ? sql`TRUE` : sql`a.closed_at IS NULL`})
+       AND (${filtros.incluirEncerradas
+              ? sql`(a.closed_at IS NULL OR a.desqualificado_em IS NOT NULL
+                     OR COALESCE(a.nutricao_status, '') <> '')`
+              : sql`a.closed_at IS NULL`})
        AND (${filtros.responsavelId ?? null}::uuid IS NULL OR a.responsavel_id = ${filtros.responsavelId ?? null}::uuid)
        AND (${filtros.semDono ? sql`a.responsavel_id IS NULL` : sql`TRUE`})
        AND (${filtros.origem ?? null}::text IS NULL OR a.origem = ${filtros.origem ?? null})

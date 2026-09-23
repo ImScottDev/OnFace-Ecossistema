@@ -26,6 +26,7 @@ cd "$RAIZ/app"
 PASSOS=(
   05-identidade
   06-aquisicao
+  06b-estado-pre-vendas-legado
   07-pipeline-oportunidade
   08-oferta-comercial
   09-proposta-contrato

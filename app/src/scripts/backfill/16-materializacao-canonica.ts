@@ -147,6 +147,41 @@ async function main() {
          AND o.trial_iniciado_em IS NULL`);
   }
 
+  // ── 4. Capacidade de trial da oferta (0083) ─────────────────────────────
+  //
+  // Mesma família dos blocos acima, e a que tinha passado despercebida. A 0083
+  // liga permite_trial nas ofertas CALLFACE_AI lendo os pipelines já
+  // configurados, mas roda na cadeia de migrations, quando ofertas_comerciais
+  // ainda está VAZIA: o backfill 08 é que a cria. O UPDATE toca zero linhas e
+  // as quatro ofertas nascem com o default false.
+  //
+  // O efeito medido em 23/09: nenhuma oferta permitia trial, e iniciarTrial
+  // recusava com trial_exige_oferta toda oportunidade Callface AI — inclusive
+  // as certas. O legado tem 19 negócios em trial e o canônico preservou os 19,
+  // então a operação usa trial de verdade; só a capacidade tinha sumido.
+  //
+  // A condição é a mesma da migration, sem palpite: a oferta entra se o
+  // pipeline da família tem a etapa trial. Hoje "Callface AI" tem, "PABX" não.
+  const trialSemCapacidade = await conta(sql`
+    SELECT count(*)::int AS n FROM ofertas_comerciais oc
+     WHERE oc.codigo LIKE 'CALLFACE_AI%' AND oc.ativo AND oc.permite_trial = false
+       AND EXISTS (
+         SELECT 1 FROM pipelines p
+           JOIN pipeline_etapas pe ON pe.pipeline_id = p.id AND pe.codigo = 'trial'
+          WHERE p.organizacao_id = oc.organizacao_id AND p.nome = 'Callface AI')`);
+  console.log(`  4. ofertas sem a capacidade de trial ..... ${trialSemCapacidade}`);
+
+  if (APLICAR && trialSemCapacidade > 0) {
+    await db.execute(sql`
+      UPDATE ofertas_comerciais oc
+         SET permite_trial = true, updated_at = oc.updated_at
+       WHERE oc.codigo LIKE 'CALLFACE_AI%' AND oc.ativo AND oc.permite_trial = false
+         AND EXISTS (
+           SELECT 1 FROM pipelines p
+             JOIN pipeline_etapas pe ON pe.pipeline_id = p.id AND pe.codigo = 'trial'
+            WHERE p.organizacao_id = oc.organizacao_id AND p.nome = 'Callface AI')`);
+  }
+
   // ── Reconciliação: o legado e o canônico têm que bater ──────────────────
   console.log(`\n  RECONCILIAÇÃO\n`);
   const linhas = await db.execute<{ o_que: string; legado: number; canonico: number }>(sql`

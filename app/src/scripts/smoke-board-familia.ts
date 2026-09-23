@@ -42,7 +42,25 @@ async function main() {
   console.log(`  com família DEPOIS: ${depois}\n`);
 
   ok(depois > antes, `o board passa a mostrar família em mais cards (${antes} → ${depois})`);
-  ok(depois - antes === 125, `exatamente os 125 medidos (ganho real: ${depois - antes})`);
+
+  // O ganho é conferido contra a IDENTIDADE, não contra um número de uma carga.
+  //
+  // Isto travava em `depois - antes === 125`, medido numa carga de produção de
+  // uma data. Desde que o DEV passou a ser recarregado com dump fresco o número
+  // sobe sozinho (128 em 23/09) e o smoke acusava regressão onde só havia dado
+  // novo — verificador que mente sobre o estado é pior que verificador ausente.
+  //
+  // A propriedade que importa não é o tamanho do ganho: é que cada card ganho
+  // seja exatamente um negócio aberto sem família no legado cuja oportunidade
+  // canônica tem família. Isso é verdade em qualquer carga.
+  const deduzidos = await um(sql`
+    SELECT count(*)::int AS n FROM negocios n
+     WHERE n.status NOT IN ('ganho','perdido')
+       AND n.service_family IS NULL
+       AND EXISTS (SELECT 1 FROM oportunidades o
+                    WHERE o.negocio_id_legado = n.id AND o.service_family IS NOT NULL)`);
+  ok(depois - antes === deduzidos,
+     `o ganho (${depois - antes}) é exatamente o que a dedução canônica cobre (${deduzidos})`);
 
   // O legado continua mandando onde tem valor: editar ganha de deduzir.
   const legadoManda = await um(sql`

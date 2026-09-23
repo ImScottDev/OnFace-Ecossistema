@@ -66,9 +66,18 @@ async function main() {
 
     const qualificado = Boolean(l.qualificado) || l.qualificado_em != null;
     const desqualificado = l.desqualificado_em != null;
-    // Encerrada quando desqualificou, ou quando virou cliente (a aquisição
-    // cumpriu o papel dela; o vínculo de cliente vive no pós-venda).
-    const encerrada = desqualificado || l.tipo === "cliente";
+    // Encerrada quando desqualificou, ou quando o registro não está no funil de
+    // pré-vendas. O board legado recorta `tipo = 'lead'`
+    // (src/api-server/routes/leads.ts:252): contato de empresa importado do Zoho
+    // e ex-cliente nunca passaram por aquisição, e cliente já cumpriu o papel
+    // dela (o vínculo vive no pós-venda). Sem este recorte os 2.098 contatos e
+    // os 9 ex-clientes entram abertos e a coluna Novo vai a 1.966 contra os 59
+    // do board real — medido no ensaio de 23/09.
+    //
+    // Encerrar não apaga nada: a aquisição existe, com origem e datas, e sai só
+    // do funil ativo.
+    const foraDoFunil = l.tipo != null && l.tipo !== "lead";
+    const encerrada = desqualificado || foraDoFunil;
     const estado = desqualificado ? "desqualificada" : qualificado ? "qualificada" : encerrada ? "encerrada" : "aberta";
     porEstado.set(estado, (porEstado.get(estado) ?? 0) + 1);
 
