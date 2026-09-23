@@ -297,6 +297,16 @@
   color: #eeeff3 !important;
   background: transparent !important;
 }
+/* Destino que existe como rota e ainda não tem módulo. Cinza médio, nunca
+   coral: é informação, não alerta. */
+.onface-nav-pendente {
+  flex: 0 0 auto;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--of-shell-pendente);
+  margin-left: auto;
+}
 .onface-nav-sub[data-active="true"] {
   color: #eeeff3 !important;
   font-weight: 600;

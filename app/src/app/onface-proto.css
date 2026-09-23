@@ -250,5 +250,7 @@
   --of-shell-ativo: #1f2833;
   --of-shell-elevado: #161d26;
   --of-shell-linha: #242c36;
+  /** Destino que existe como rota e ainda não tem módulo. Informação, não alerta. */
+  --of-shell-pendente: #59636f;
   --of-shell-linha-2: #2e3741;
 }

@@ -1,6 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 import {
-  BarChart3, Bot, Building2, CalendarDays, FileText, Headphones, Home,
+  BarChart3, Bot, BriefcaseBusiness, Building2, CalendarDays, FileText, Headphones, Home,
   LayoutDashboard, LifeBuoy, LineChart, ListChecks, Megaphone, PhoneCall,
   Repeat, Rocket, Sparkles, TrendingUp, Users, Workflow, Zap,
 } from "lucide-react";
@@ -62,7 +62,7 @@ export const NAVEGACAO: AreaNav[] = [
   {
     label: "Vendas",
     href: "/pre-vendas",
-    icon: TrendingUp,
+    icon: BriefcaseBusiness,
     itens: [
       { label: "Pré-vendas", href: "/pre-vendas", icon: PhoneCall },
       { label: "Pipeline", href: "/pipeline", icon: ListChecks },
@@ -86,7 +86,7 @@ export const NAVEGACAO: AreaNav[] = [
   {
     label: "Clientes",
     href: "/clientes",
-    icon: Building2,
+    icon: Users,
     itens: [
       { label: "Visão Geral", href: "/clientes", icon: Building2 },
       { label: "Carteira", href: "/clientes/carteira", icon: Users, pendente: true },

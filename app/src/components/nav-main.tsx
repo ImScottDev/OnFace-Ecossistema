@@ -110,6 +110,13 @@ export function NavMain({
                           <SidebarMenuSubButton asChild isActive={ativo} className="onface-nav-sub">
                             <Link href={filho.href} aria-current={ativo ? "page" : undefined}>
                               <span>{filho.label}</span>
+                              {/* Ponto de destino ainda sem módulo. O protótipo o
+                                  desenha, e ele é honesto: o item leva a uma tela
+                                  que existe mas está vazia, e quem olha o menu
+                                  descobre isso antes de clicar. */}
+                              {filho.pendente && (
+                                <span className="onface-nav-pendente" title="Rota sem módulo" />
+                              )}
                             </Link>
                           </SidebarMenuSubButton>
                         </SidebarMenuSubItem>
