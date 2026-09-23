@@ -1,0 +1,497 @@
+/* Sistema de layout — estilos de `bento.tsx` e da seção Layouts do laboratório.
+ *
+ * O que já existe em `ds.css` (.ds-bento, .ds-bento-cartao, os spans e o corte
+ * responsivo) não é reescrito aqui: este arquivo só acrescenta o que falta —
+ * a versão sobre a casca escura, o cartão clicável, mestre-detalhe, o painel
+ * com divisor e os diagramas da galeria. Só token e múltiplo de --onface-u. */
+
+/* ═══ Bento ═════════════════════════════════════════════════════════════ */
+.lay-bento[data-tom="escuro"] {
+  padding: var(--space-16);
+  border-radius: var(--radius-card-lg);
+  background: var(--surface-shell);
+}
+/* Sobre a casca, o cartão escuro do ds.css tem exatamente a cor do fundo e
+   some. Um degrau acima (a mesma superfície elevada que a Metrica escura usa)
+   devolve a borda sem inventar sombra: a casca é definida por fio, não por
+   sombra colorida. */
+.lay-bento[data-tom="escuro"] .ds-bento-cartao[data-tom="escuro"] {
+  background: var(--surface-shell-raised);
+  box-shadow: inset 0 0 0 1px var(--onface-alpha-hairline);
+}
+.lay-bento[data-tom="escuro"] .lay-cartao-topo strong { color: var(--text-on-shell); }
+.lay-bento[data-tom="escuro"] .lay-cartao-topo small { color: var(--text-on-shell-muted); }
+.lay-bento[data-tom="escuro"] .lay-lista-simples strong { color: var(--text-on-shell); }
+.lay-bento[data-tom="escuro"] .lay-lista-simples span,
+.lay-bento[data-tom="escuro"] .lay-lista-simples small { color: var(--text-on-shell-muted); }
+.lay-bento[data-tom="escuro"] .lay-lista-simples li { border-color: var(--onface-alpha-hairline); }
+
+/* ── Slot herói ─────────────────────────────────────────────────────────
+   A métrica que responde a pergunta da tela não pode ter o mesmo peso dos
+   apoios. O contraste aqui é de escala, espaço e peso — não de cor: a paleta
+   já está decidida e coral continua reservado para ação. Sem isto, bento é só
+   um grid irregular com quatro números do mesmo tamanho. */
+.lay-cartao[data-destaque="true"] .ds-metrica {
+  justify-content: space-between;
+  gap: var(--space-16);
+  padding: var(--space-24);
+}
+.lay-cartao[data-destaque="true"] .ds-metrica-rotulo {
+  color: var(--text-body);
+  font-size: var(--text-sm);
+}
+/* 52u contra os 25u do KPI padrão: a diferença precisa sobreviver ao teste do
+   desfoque, e 1.5x não sobrevive. */
+.lay-cartao[data-destaque="true"] .ds-metrica-valor {
+  font-size: calc(52 * var(--onface-u));
+  letter-spacing: -0.035em;
+}
+.lay-cartao[data-destaque="true"] .ds-metrica-apoio { font-size: var(--text-md); }
+.lay-cartao[data-destaque="true"] .ds-faixa { height: calc(44 * var(--onface-u)); }
+.lay-bento[data-tom="escuro"] .lay-cartao[data-destaque="true"] .ds-metrica-rotulo {
+  color: var(--text-on-shell);
+}
+
+/* Cartão que não desenha superfície: o filho (Metrica, gráfico com moldura)
+   já traz a dele, e duas bordas concêntricas viram moldura de quadro. */
+.lay-cartao-nu { display: flex; flex-direction: column; min-width: 0; }
+.lay-cartao-nu > * { flex: 1; }
+
+/* ── Segunda camada do cartão de apoio ──────────────────────────────────
+   O cartão de apoio fica na mesma linha de um herói alto e, com um número só
+   dentro, esticava até 55% de vazio. Vazio precisa ser escolha, e ali era
+   sobra de grid. A prévia dá ao apoio a mesma segunda camada que o herói já
+   tem na minitendência: as duas primeiras linhas do que o número está
+   contando, que é a pergunta seguinte de quem lê o número.
+
+   A prévia é quem recebe `flex: 1` — a esticada da grade sobra nela, não no
+   número. Métrica e prévia dividem UMA superfície (a métrica perde a borda de
+   baixo e o raio inferior), senão viram dois cartões empilhados, que é o
+   anti-padrão "card dentro de card" com outro nome. */
+.lay-apoio { display: flex; flex-direction: column; min-width: 0; }
+.lay-apoio > .ds-metrica {
+  flex: 0 0 auto;
+  border-bottom: 0;
+  border-end-start-radius: 0;
+  border-end-end-radius: 0;
+}
+.lay-apoio-previa {
+  flex: 1;
+  display: flex; flex-direction: column; gap: var(--space-6);
+  padding: var(--space-10) var(--space-16) var(--space-12);
+  border: 1px solid var(--line-hairline);
+  border-radius: 0 0 var(--radius-card) var(--radius-card);
+  background: var(--surface-card);
+}
+.lay-apoio-previa > div {
+  display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-8);
+  min-width: 0;
+}
+.lay-apoio-previa span {
+  color: var(--text-muted); font-size: var(--text-xs);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.lay-apoio-previa b {
+  color: var(--text-body); font-size: var(--text-xs); font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+/* Casca escura: o par não tem borda, tem anel interno. Mesmo raciocínio de
+   superfície única, com o token alfa da casca no lugar do hairline. */
+.lay-bento[data-tom="escuro"] .lay-apoio > .ds-metrica {
+  border-end-start-radius: 0;
+  border-end-end-radius: 0;
+}
+.lay-bento[data-tom="escuro"] .lay-apoio-previa {
+  border: 0;
+  box-shadow: inset 0 0 0 1px var(--onface-alpha-hairline);
+  background: var(--surface-shell-raised);
+}
+.lay-bento[data-tom="escuro"] .lay-apoio-previa span { color: var(--onface-slate); }
+.lay-bento[data-tom="escuro"] .lay-apoio-previa b { color: var(--text-on-shell); }
+
+/* ── Chip de sinal ──────────────────────────────────────────────────────
+   Regra de sinal do sistema: coral significa "exige atenção ou ação agora", e
+   por isso NÃO leva seta — seta conta variação e empatava a forma com a
+   pílula verde de tendência que fica na mesma linha do bento.
+   Preenchimento coral com rótulo por cima usa o coral fundo: branco sobre
+   `--onface-coral` dá 3,30:1 e reprova texto; sobre `--onface-coral-deep` dá
+   4,55:1. */
+.lay-sinal {
+  display: inline-flex; align-items: center;
+  height: calc(22 * var(--onface-u)); padding-inline: var(--space-8);
+  border-radius: var(--radius-full);
+  background: var(--onface-coral-deep); color: var(--onface-white);
+  font-size: var(--text-2xs); font-weight: var(--weight-semibold);
+  white-space: nowrap;
+}
+
+.lay-cartao-topo {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-8);
+}
+.lay-cartao-identidade { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+.lay-cartao-topo strong {
+  color: var(--text-strong);
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+}
+.lay-cartao-topo small { color: var(--text-muted); font-size: var(--text-xs); }
+
+/* Cartão clicável. O hover de borda vem do ds.css; aqui entram só as coisas
+   que o elemento `button` estraga por padrão (fonte, alinhamento, largura). */
+button.lay-cartao {
+  width: 100%;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+button.lay-cartao:focus-visible {
+  outline: var(--space-2) solid var(--onface-coral);
+  outline-offset: var(--space-2);
+}
+/* Cartão clicável sem superfície própria: o hover precisa acontecer na borda
+   do filho (a Metrica), senão o clique fica sem nenhuma resposta visual. */
+button.lay-cartao-nu .ds-metrica,
+button.lay-cartao-nu .lay-apoio-previa { transition: border-color var(--duration-base) var(--ease-standard); }
+/* A prévia entra junto: métrica e prévia são a mesma superfície, e metade da
+   borda mudando de cor no hover denunciaria a costura. */
+button.lay-cartao-nu:hover .ds-metrica,
+button.lay-cartao-nu:hover .lay-apoio-previa { border-color: var(--onface-coral-border); }
+
+/* ═══ Mestre-detalhe ════════════════════════════════════════════════════ */
+.lay-md {
+  display: grid;
+  grid-template-columns: minmax(0, calc(280 * var(--onface-u))) minmax(0, 1fr);
+  min-height: calc(340 * var(--onface-u));
+  overflow: hidden;
+  border: 1px solid var(--line-hairline);
+  border-radius: var(--radius-card);
+  background: var(--surface-card);
+}
+.lay-md-coluna {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border-right: 1px solid var(--line-hairline);
+  background: var(--surface-sunken);
+}
+.lay-md-cabecalho {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+  padding: var(--space-12);
+  border-bottom: 1px solid var(--line-hairline);
+  color: var(--text-strong);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+}
+.lay-md-lista {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  max-height: calc(420 * var(--onface-u));
+  padding: var(--space-8);
+  overflow-y: auto;
+}
+.lay-md-item {
+  display: flex;
+  gap: var(--space-10);
+  width: 100%;
+  padding: var(--space-10);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-body);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard);
+}
+/* Hover fica no meio do caminho entre a coluna afundada e o branco: se o hover
+   já for branco, ele empata com a seleção e o item selecionado deixa de ser o
+   único branco da coluna. */
+.lay-md-item:hover { background: color-mix(in srgb, var(--surface-card) 55%, var(--surface-sunken)); }
+/* Seleção inequívoca: três sinais ao mesmo tempo, porque um só falha em
+   alguma condição. Superfície (a única placa branca da coluna cinza), fio
+   coral na borda de ataque e contorno hairline fechando a placa. No teste do
+   desfoque sobra uma mancha branca sozinha — que é exatamente o que se quer. */
+.lay-md-item[aria-current="true"] {
+  background: var(--surface-card);
+  box-shadow:
+    inset calc(3 * var(--onface-u)) 0 0 var(--onface-coral),
+    inset 0 0 0 1px var(--line-hairline);
+}
+.lay-md-item[aria-current="true"] .lay-conversa strong { color: var(--text-strong); }
+.lay-md-item[aria-current="true"] .lay-conversa-previa { color: var(--text-body); }
+/* Não selecionado recua um degrau: sem isso a lista inteira grita junto e a
+   seleção não tem de onde se destacar. */
+.lay-md-item:not([aria-current="true"]) .lay-conversa strong { color: var(--text-body); font-weight: var(--weight-medium); }
+.lay-md-item:focus-visible {
+  outline: var(--space-2) solid var(--onface-coral);
+  outline-offset: calc(-1 * var(--space-2));
+}
+.lay-md-detalhe {
+  min-width: 0;
+  max-height: calc(468 * var(--onface-u));
+  padding: var(--space-20);
+  overflow-y: auto;
+}
+.lay-md-gaveta { max-height: 85dvh; padding: var(--space-16); }
+.lay-md-gaveta-topo { padding: 0; }
+.lay-md-gaveta-corpo { min-height: 0; overflow-y: auto; }
+
+/* ═══ Painel dividido ═══════════════════════════════════════════════════ */
+.lay-split {
+  display: grid;
+  grid-template-columns: var(--lay-split, 50%) auto minmax(0, 1fr);
+  min-height: calc(320 * var(--onface-u));
+  overflow: hidden;
+  border: 1px solid var(--line-hairline);
+  border-radius: var(--radius-card);
+  background: var(--surface-card);
+}
+/* Enquanto arrasta, o ponteiro atravessa texto: sem isto o navegador começa a
+   selecionar o conteúdo dos painéis no meio do gesto. */
+.lay-split[data-arrastando="true"] { cursor: col-resize; user-select: none; }
+.lay-split-painel { display: flex; flex-direction: column; min-width: 0; }
+.lay-split-painel[data-lado="fim"] { background: var(--surface-sunken); }
+.lay-split-rotulo {
+  margin: 0;
+  padding: var(--space-10) var(--space-12);
+  border-bottom: 1px solid var(--line-hairline);
+  color: var(--text-subtle);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+.lay-split-corpo { flex: 1; min-height: 0; padding: var(--space-16); overflow: auto; }
+
+/* Alvo largo, fio fino: a área de pegada tem que ser confortável para o
+   ponteiro sem engrossar a linha que o olho lê. */
+.lay-split-divisor {
+  position: relative;
+  width: var(--space-12);
+  cursor: col-resize;
+  touch-action: none;
+}
+.lay-split-divisor::before {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  left: 50%;
+  width: 1px;
+  transform: translateX(-50%);
+  background: var(--line-hairline);
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+/* Pegador visível: divisor sem marca é descoberto por acidente. */
+.lay-split-divisor::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: var(--space-4);
+  height: var(--space-24);
+  transform: translate(-50%, -50%);
+  border-radius: var(--radius-full);
+  background: var(--onface-line);
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+.lay-split-divisor:hover::before,
+.lay-split-divisor:focus-visible::before,
+.lay-split[data-arrastando="true"] .lay-split-divisor::before { background: var(--onface-coral); }
+.lay-split-divisor:hover::after,
+.lay-split-divisor:focus-visible::after,
+.lay-split[data-arrastando="true"] .lay-split-divisor::after { background: var(--onface-coral); }
+.lay-split-divisor:focus-visible {
+  outline: var(--space-2) solid var(--onface-coral);
+  outline-offset: calc(-1 * var(--space-2));
+}
+
+/* ═══ Galeria de padrões ════════════════════════════════════════════════ */
+.lay-galeria {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(calc(200 * var(--onface-u)), 1fr));
+  gap: var(--space-12);
+}
+.lay-padrao {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-10);
+  padding: var(--space-12);
+  border: 1px solid var(--line-hairline);
+  border-radius: var(--radius-card);
+  background: var(--surface-card);
+}
+.lay-padrao-topo { display: flex; align-items: center; justify-content: space-between; gap: var(--space-8); }
+.lay-padrao-topo strong { color: var(--text-strong); font-size: var(--text-md); font-weight: var(--weight-semibold); }
+.lay-padrao p { margin: 0; color: var(--text-muted); font-size: var(--text-xs); line-height: 1.45; }
+.lay-padrao code {
+  color: var(--text-subtle);
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Diagrama: blocos cinza, nunca coral. A grade é estrutura, e estrutura não é
+   sinal — se o diagrama pintar de coral, o coral deixa de querer dizer ação. */
+.lay-diagrama {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-8);
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+}
+.lay-diagrama-linha { display: flex; gap: var(--space-4); }
+.lay-diagrama-bloco {
+  flex: 1;
+  border-radius: var(--radius-xs);
+  background: var(--onface-line);
+}
+.lay-diagrama-bloco[data-tom="fraco"] { background: var(--surface-card); box-shadow: inset 0 0 0 1px var(--onface-line); }
+.lay-diagrama-bloco[data-tom="forte"] { background: var(--onface-slate); }
+.lay-diagrama-bloco[data-tom="risco"] { background: transparent; box-shadow: inset 0 0 0 1px var(--onface-line); }
+.lay-diagrama-linha[data-altura="fina"] .lay-diagrama-bloco { height: calc(6 * var(--onface-u)); }
+.lay-diagrama-linha[data-altura="media"] .lay-diagrama-bloco { height: calc(14 * var(--onface-u)); }
+.lay-diagrama-linha[data-altura="alta"] .lay-diagrama-bloco { height: calc(30 * var(--onface-u)); }
+
+.lay-legenda {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-16);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+.lay-legenda span { display: inline-flex; align-items: center; gap: var(--space-6); }
+.lay-legenda svg { width: var(--icon-xs); height: var(--icon-xs); }
+
+/* ═══ Faixa de decisão dentro da grade ══════════════════════════════════
+   O <Momento> grafite ocupa a largura inteira do bento e o resto da grade
+   continua claro e seco. É essa troca de superfície que separa "onde eu
+   decido" de "onde eu trabalho" — se a tela inteira fosse grafite, não
+   existiria nem um nem outro. */
+.lay-momento-numeros {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-32);
+  margin-top: var(--space-20);
+}
+.lay-momento-numero { display: flex; flex-direction: column; gap: var(--space-4); }
+.lay-momento-numero span {
+  color: var(--onface-slate);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+
+/* ═══ Peças das demos ═══════════════════════════════════════════════════ */
+.lay-lista-simples { display: flex; flex-direction: column; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
+.lay-lista-simples li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-10);
+  padding-block: var(--space-8);
+  border-bottom: 1px solid var(--line-hairline);
+  font-size: var(--text-sm);
+}
+.lay-lista-simples li:last-child { border-bottom: 0; }
+.lay-lista-texto { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; margin-right: auto; }
+.lay-lista-simples strong {
+  overflow: hidden;
+  color: var(--text-strong);
+  font-size: var(--text-md);
+  font-weight: var(--weight-medium);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lay-lista-simples span { color: var(--text-muted); font-size: var(--text-xs); }
+.lay-lista-simples b { color: var(--text-strong); font-size: var(--text-sm); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.lay-insight-acao { margin-top: var(--space-10); }
+
+.lay-conversa { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+.lay-conversa-topo { display: flex; align-items: center; justify-content: space-between; gap: var(--space-8); }
+.lay-conversa strong { color: var(--text-strong); font-size: var(--text-md); font-weight: var(--weight-semibold); }
+.lay-conversa small { color: var(--text-subtle); font-size: var(--text-2xs); font-variant-numeric: tabular-nums; }
+/* Prévia em `span`, não em `p`: o resumo vive dentro de um `button`, que só
+   aceita conteúdo de frase. `p` ali é marcação inválida e o navegador quebra
+   o botão em dois. */
+.lay-conversa-previa {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  line-height: 1.4;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.lay-conversa-canal { display: inline-flex; align-items: center; gap: var(--space-4); color: var(--text-subtle); font-size: var(--text-2xs); }
+.lay-conversa-canal svg { width: var(--icon-xs); height: var(--icon-xs); }
+
+/* O detalhe é o documento, a lista é o índice: o cabeçalho fecha com um fio e
+   o título sobe de escala para que o painel não pareça a continuação da
+   coluna da esquerda. */
+.lay-detalhe-cabecalho {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin-bottom: var(--space-16);
+  padding-bottom: var(--space-12);
+  border-bottom: 1px solid var(--line-hairline);
+}
+.lay-detalhe-cabecalho strong {
+  color: var(--text-strong);
+  font-family: var(--font-onface-display), sans-serif;
+  font-size: var(--display-title);
+  font-weight: var(--weight-bold);
+}
+.lay-detalhe-cabecalho span { color: var(--text-muted); font-size: var(--text-sm); }
+.lay-mensagem {
+  padding: var(--space-12);
+  border: 1px solid var(--line-hairline);
+  border-radius: var(--radius-lg);
+  background: var(--surface-sunken);
+  color: var(--text-body);
+  font-size: var(--text-md);
+  line-height: 1.5;
+}
+.lay-mensagem + .lay-mensagem { margin-top: var(--space-8); }
+.lay-mensagem[data-lado="nosso"] { background: var(--onface-coral-subtle); border-color: var(--onface-coral-border); }
+.lay-mensagem small { display: block; margin-top: var(--space-6); color: var(--text-subtle); font-size: var(--text-2xs); }
+
+/* Editor de documento: o campo ocupa o painel inteiro, sem alça de resize
+   própria — quem redimensiona aqui é o divisor. */
+.lay-editor {
+  width: 100%;
+  min-height: calc(220 * var(--onface-u));
+  resize: none;
+  font-family: var(--font-onface-ui), ui-sans-serif, system-ui, sans-serif;
+  font-size: var(--text-md);
+  line-height: 1.6;
+}
+.lay-previa { color: var(--text-body); font-size: var(--text-md); line-height: 1.6; }
+.lay-previa p { margin: 0 0 var(--space-12); }
+.lay-previa p:last-child { margin-bottom: 0; }
+.lay-previa strong { color: var(--text-strong); }
+.lay-variaveis { display: flex; flex-wrap: wrap; gap: var(--space-6); margin-top: var(--space-12); }
+
+@media (max-width: 760px) {
+  /* Duas colunas não cabem: a lista vira a tela e o detalhe vira gaveta.
+     O painel de detalhe some do fluxo para não existir duas vezes. */
+  .lay-md { grid-template-columns: minmax(0, 1fr); }
+  .lay-md-coluna { border-right: 0; }
+  .lay-md-detalhe { display: none; }
+
+  /* Empilhado não há o que dividir: o arraste é lateral. */
+  .lay-split { grid-template-columns: minmax(0, 1fr); }
+  .lay-split-divisor { display: none; }
+  .lay-split-painel[data-lado="fim"] { border-top: 1px solid var(--line-hairline); }
+}

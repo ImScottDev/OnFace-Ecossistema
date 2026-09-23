@@ -1,0 +1,501 @@
+/* Padrões compostos do ONFACE.
+ *
+ * Só o que os quatro padrões precisam e nenhum componente de `ui/` já resolve.
+ * Nada de hex cru e nada de px solto: cor sai de token, medida sai de
+ * calc(N * var(--onface-u)) ou de --space-*. */
+
+/* ── Compartilhado ──────────────────────────────────────────────────────── */
+
+.of-p-campo { display: flex; flex-direction: column; gap: var(--space-6); }
+.of-p-ajuda {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+}
+.of-p-ajuda code {
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-xs);
+  background: var(--surface-sunken);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--text-strong);
+}
+.of-p-girando { animation: of-p-giro 0.9s linear infinite; }
+@keyframes of-p-giro { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .of-p-girando { animation-duration: 2.4s; }
+}
+
+/* ── 01 · Diálogo de convite ────────────────────────────────────────────── */
+
+.of-p-convite { max-width: calc(520 * var(--onface-u)); gap: var(--space-16); }
+
+/* A caixa imita um campo de destinatário: a borda é do conjunto, não do input
+   de dentro, senão o foco desenha um retângulo no meio dos chips. */
+.of-p-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-6);
+  min-height: var(--control-form);
+  padding: var(--space-6);
+  border: 1px solid var(--line-hairline);
+  border-radius: var(--radius-control);
+  background: var(--surface-card);
+  cursor: text;
+  transition: border-color var(--duration-fast, 120ms) var(--ease-standard);
+}
+.of-p-chips:focus-within { border-color: var(--onface-coral); box-shadow: 0 0 0 calc(3 * var(--onface-u)) var(--onface-coral-subtle); }
+.of-p-chips[data-erro="true"] { border-color: var(--status-danger); }
+.of-p-chips[data-erro="true"]:focus-within { box-shadow: 0 0 0 calc(3 * var(--onface-u)) rgba(231, 0, 11, 0.12); }
+
+.of-p-chips-entrada {
+  flex: 1 1 calc(140 * var(--onface-u));
+  min-width: calc(120 * var(--onface-u));
+  height: var(--control-sm);
+  border: 0;
+  background: transparent;
+  color: var(--text-strong);
+  font: inherit;
+  font-size: var(--text-md);
+  outline: none;
+}
+.of-p-chips-entrada::placeholder { color: var(--text-subtle); }
+
+.of-p-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  height: var(--control-sm);
+  padding: 0 var(--space-4) 0 var(--space-8);
+  border: 1px solid var(--line-hairline);
+  border-radius: var(--radius-full);
+  background: var(--surface-sunken);
+  color: var(--text-body);
+  font-size: var(--text-sm);
+  max-width: 100%;
+}
+/* Coral é reservado para ação; e-mail fora do formato é erro, então ele usa a
+   cor de erro. Marcar inválido em coral faria o chip quebrado parecer o chip
+   selecionado. */
+.of-p-chip[data-invalido="true"] {
+  border-color: rgba(231, 0, 11, 0.32);
+  background: rgba(231, 0, 11, 0.06);
+  color: var(--status-danger);
+}
+.of-p-chip[data-invalido="true"] > svg { width: var(--icon-xs); height: var(--icon-xs); flex-shrink: 0; }
+.of-p-chip button {
+  display: inline-grid;
+  place-items: center;
+  width: var(--control-xs);
+  height: var(--control-xs);
+  border: 0;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: inherit;
+  opacity: 0.6;
+  cursor: pointer;
+}
+.of-p-chip button:hover { opacity: 1; background: var(--onface-coral-subtle); }
+.of-p-chip button:focus-visible { outline: 2px solid var(--onface-coral); outline-offset: 1px; opacity: 1; }
+.of-p-chip button svg { width: var(--icon-xs); height: var(--icon-xs); }
+
+.of-p-papeis {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  padding: var(--space-12);
+  border-radius: var(--radius-card);
+  background: var(--surface-sunken);
+}
+.of-p-papeis-rotulo {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+.of-p-papel-linha {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-8);
+}
+.of-p-papel-linha > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-body);
+  font-size: var(--text-sm);
+}
+
+.of-p-convite-rodape {
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-12);
+}
+.of-p-assentos {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  text-align: start;
+}
+.of-p-assentos[data-estouro="true"] { color: var(--status-danger); }
+.of-p-assentos svg { width: var(--icon-xs); height: var(--icon-xs); flex-shrink: 0; }
+
+.of-p-convite-fim {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-6);
+  padding: var(--space-32) var(--space-16);
+  text-align: center;
+}
+.of-p-convite-fim-marca {
+  display: grid;
+  place-items: center;
+  width: calc(40 * var(--onface-u));
+  height: calc(40 * var(--onface-u));
+  border-radius: var(--radius-full);
+  background: var(--onface-coral-subtle);
+  color: var(--onface-coral);
+}
+.of-p-convite-fim-marca svg { width: var(--icon-lg); height: var(--icon-lg); }
+.of-p-convite-fim strong { color: var(--text-strong); font-size: var(--text-base); }
+.of-p-convite-fim p { margin: 0; color: var(--text-muted); font-size: var(--text-sm); max-width: 40ch; }
+
+/* ── 02 · Configurações com trilho de auditoria ─────────────────────────── */
+
+.of-p-config {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) calc(280 * var(--onface-u));
+  gap: var(--space-24);
+  align-items: start;
+}
+.of-p-config-form { display: flex; flex-direction: column; gap: var(--space-16); min-width: 0; }
+.of-p-aba { display: flex; flex-direction: column; gap: var(--space-16); padding-top: var(--space-16); }
+
+.of-p-linha-chave {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--space-12);
+  padding-bottom: var(--space-12);
+  border-bottom: 1px solid var(--line-hairline);
+}
+.of-p-linha-chave:last-child { padding-bottom: 0; border-bottom: 0; }
+
+.of-p-config-rodape {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-12);
+  padding-top: var(--space-12);
+  border-top: 1px solid var(--line-hairline);
+}
+
+/* O trilho gruda no topo enquanto o formulário rola: a pergunta "quem mexeu
+   nisso" nasce olhando para o campo, não depois de rolar de volta. */
+.of-p-trilho {
+  position: sticky;
+  top: var(--space-16);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-20);
+  padding: var(--space-16);
+  border: 1px solid var(--line-hairline);
+  border-radius: var(--radius-card);
+  background: var(--surface-sunken);
+}
+.of-p-trilho-titulo {
+  margin: 0 0 var(--space-10);
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+.of-p-trilho-lista { display: flex; flex-direction: column; gap: var(--space-12); margin: 0; padding: 0; list-style: none; }
+.of-p-trilho-lista li { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--space-8); }
+.of-p-trilho-lista p { margin: 0; color: var(--text-body); font-size: var(--text-xs); line-height: 1.5; }
+.of-p-trilho-lista strong { color: var(--text-strong); font-weight: var(--weight-semibold); }
+.of-p-trilho-lista time { display: block; margin-top: var(--space-2); color: var(--text-subtle); font-size: var(--text-2xs); }
+.of-p-trilho-marca {
+  display: grid;
+  place-items: center;
+  width: var(--avatar-sm);
+  height: var(--avatar-sm);
+  border-radius: var(--radius-full);
+  background: var(--surface-card);
+  box-shadow: var(--ring-inset-hairline);
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+}
+/* A entrada recém-criada é a única coral: ela é a consequência do que a
+   pessoa acabou de fazer, o resto é histórico. */
+.of-p-trilho-lista li[data-novo="true"] .of-p-trilho-marca {
+  background: var(--onface-coral-subtle);
+  box-shadow: inset 0 0 0 1px var(--onface-coral-border);
+  color: #c23b1d;
+}
+
+.of-p-heat { display: grid; gap: calc(3 * var(--onface-u)); }
+.of-p-heat-coluna { display: grid; grid-auto-rows: 1fr; gap: calc(3 * var(--onface-u)); }
+.of-p-heat-celula {
+  aspect-ratio: 1;
+  min-height: calc(10 * var(--onface-u));
+  padding: 0;
+  border: 0;
+  border-radius: calc(2 * var(--onface-u));
+  /* Mesma escala do MapaDeContato: um só coral por opacidade. Ver
+     graficos-avancados.css — a técnica é compartilhada de propósito para o
+     produto não ter duas gramáticas de mapa de calor. */
+  background: color-mix(in srgb, var(--onface-coral) calc(var(--intensidade) * 100%), var(--surface-card));
+  cursor: pointer;
+  transition: transform var(--duration-fast, 120ms) var(--ease-standard);
+}
+.of-p-heat-celula:hover,
+.of-p-heat-celula[data-foco="true"] { transform: scale(1.3); }
+.of-p-heat-celula:focus-visible { outline: 2px solid var(--onface-coral); outline-offset: 1px; }
+@media (prefers-reduced-motion: reduce) {
+  .of-p-heat-celula { transition: none; }
+  .of-p-heat-celula:hover,
+  .of-p-heat-celula[data-foco="true"] { transform: none; box-shadow: 0 0 0 1px var(--onface-coral); }
+}
+
+/* ── 03 · Changelog ─────────────────────────────────────────────────────── */
+
+.of-p-changelog { display: flex; flex-direction: column; gap: var(--space-20); }
+.of-p-cl-lista { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
+.of-p-cl-item {
+  display: grid;
+  grid-template-columns: calc(84 * var(--onface-u)) minmax(0, 1fr);
+  gap: var(--space-20);
+  padding-bottom: var(--space-24);
+}
+.of-p-cl-item:last-child { padding-bottom: 0; }
+
+/* Trilho de data: coluna própria, alinhada entre as entradas. É o que separa
+   este componente da LinhaDoTempo de registro — lá o eixo é o evento do
+   cliente, aqui é a release. */
+.of-p-cl-trilho { position: relative; display: flex; flex-direction: column; gap: var(--space-2); text-align: end; padding-right: var(--space-16); }
+.of-p-cl-trilho::after {
+  content: "";
+  position: absolute;
+  inset-inline-end: 0;
+  inset-block: calc(6 * var(--onface-u)) calc(-1 * var(--space-24));
+  border-inline-end: 1px solid var(--line-hairline);
+}
+.of-p-cl-item:last-child .of-p-cl-trilho::after { inset-block-end: auto; height: calc(24 * var(--onface-u)); }
+.of-p-cl-trilho time {
+  color: var(--text-strong);
+  font-family: var(--font-onface-display), sans-serif;
+  font-size: var(--text-base);
+  font-weight: var(--weight-bold);
+  font-variant-numeric: tabular-nums;
+}
+.of-p-cl-versao { color: var(--text-muted); font-size: var(--text-2xs); font-variant-numeric: tabular-nums; }
+.of-p-cl-ponto {
+  position: absolute;
+  inset-inline-end: calc(-4 * var(--onface-u));
+  top: calc(5 * var(--onface-u));
+  width: calc(7 * var(--onface-u));
+  height: calc(7 * var(--onface-u));
+  border-radius: var(--radius-full);
+  background: var(--onface-line);
+}
+.of-p-cl-item:first-child .of-p-cl-ponto { background: var(--onface-coral); }
+
+.of-p-cl-corpo { min-width: 0; display: flex; flex-direction: column; gap: var(--space-8); }
+.of-p-cl-badges { display: flex; flex-wrap: wrap; gap: var(--space-6); }
+.of-p-cl-tipo,
+.of-p-cl-impacto {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  height: var(--control-xs);
+  padding: 0 var(--space-8);
+  border-radius: var(--radius-full);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+.of-p-cl-tipo svg { width: var(--icon-xs); height: var(--icon-xs); }
+/* Só "novidade" fica em coral: é o que muda o que a pessoa pode fazer. Correção
+   e melhoria são histórico e ficam em cinza — três tipos coloridos fariam o
+   changelog inteiro brilhar e nenhum tipo se destacaria. */
+.of-p-cl-tipo[data-tipo="novidade"] { background: var(--onface-coral-subtle); color: #c23b1d; }
+.of-p-cl-tipo[data-tipo="melhoria"] { background: var(--surface-sunken); color: var(--text-body); }
+.of-p-cl-tipo[data-tipo="correcao"] { background: var(--surface-sunken); color: var(--text-muted); }
+
+.of-p-cl-impacto { box-shadow: var(--ring-inset-hairline); color: var(--text-muted); }
+.of-p-cl-impacto[data-impacto="alto"] { box-shadow: inset 0 0 0 1px var(--onface-coral-border); color: #c23b1d; }
+
+.of-p-cl-corpo h4 {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: var(--text-base);
+  font-weight: var(--weight-semibold);
+  line-height: 1.35;
+}
+.of-p-cl-corpo ul { margin: 0; padding-inline-start: var(--space-16); display: flex; flex-direction: column; gap: var(--space-4); }
+.of-p-cl-corpo li { color: var(--text-muted); font-size: var(--text-sm); line-height: 1.55; }
+.of-p-cl-corpo li::marker { color: var(--onface-line); }
+
+/* ── 04 · Tela de entrada ───────────────────────────────────────────────── */
+
+.of-p-entrada {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  min-height: calc(460 * var(--onface-u));
+  border-radius: var(--radius-card);
+  overflow: hidden;
+  background: var(--surface-card);
+}
+.of-p-entrada-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  justify-content: center;
+  padding: var(--space-32);
+}
+.of-p-entrada-form form { display: flex; flex-direction: column; gap: var(--space-16); margin-top: var(--space-12); }
+.of-p-entrada-form h3 {
+  margin: var(--space-16) 0 0;
+  color: var(--text-strong);
+  font-family: var(--font-onface-display), sans-serif;
+  font-size: var(--display-title);
+  font-weight: var(--weight-bold);
+}
+.of-p-entrada-marca {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8);
+  color: var(--text-strong);
+  font-family: var(--font-onface-display), sans-serif;
+  font-size: var(--text-base);
+  font-weight: var(--weight-extrabold);
+  letter-spacing: var(--tracking-wordmark);
+}
+.of-p-entrada-ponto {
+  width: calc(10 * var(--onface-u));
+  height: calc(10 * var(--onface-u));
+  border-radius: var(--radius-full);
+  background: var(--onface-coral);
+}
+
+/* Ícone dentro do campo: posicionado sobre o Input do repo, sem tocar nele. */
+.of-p-entrada-campo { position: relative; display: flex; align-items: center; }
+.of-p-entrada-campo > svg {
+  position: absolute;
+  inset-inline-start: var(--space-10);
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+  color: var(--text-subtle);
+  pointer-events: none;
+}
+.of-p-entrada-campo input { padding-inline-start: calc(34 * var(--onface-u)); }
+.of-p-entrada-campo input[type="password"] { padding-inline-end: calc(36 * var(--onface-u)); }
+.of-p-entrada-olho {
+  position: absolute;
+  inset-inline-end: var(--space-4);
+  display: grid;
+  place-items: center;
+  width: var(--control-md);
+  height: var(--control-md);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.of-p-entrada-olho:hover { color: var(--text-strong); }
+.of-p-entrada-olho:focus-visible { outline: 2px solid var(--onface-coral); outline-offset: 1px; }
+.of-p-entrada-olho svg { width: var(--icon-sm); height: var(--icon-sm); }
+
+.of-p-entrada-erro,
+.of-p-entrada-ok {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  margin: 0;
+  padding: var(--space-10) var(--space-12);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  line-height: 1.45;
+}
+.of-p-entrada-erro { background: rgba(231, 0, 11, 0.08); color: var(--status-danger); }
+.of-p-entrada-ok { background: rgba(63, 185, 80, 0.1); color: var(--status-success-strong); }
+.of-p-entrada-erro svg,
+.of-p-entrada-ok svg { width: var(--icon-sm); height: var(--icon-sm); flex-shrink: 0; }
+.of-p-entrada-dica { padding-top: var(--space-4); border-top: 1px solid var(--line-hairline); }
+
+.of-p-entrada-marca-painel {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: flex-end;
+  padding: var(--space-32);
+  background: var(--surface-shell);
+}
+.of-p-entrada-painel-conteudo { position: relative; z-index: 1; display: flex; flex-direction: column; gap: var(--space-12); }
+.of-p-entrada-painel-rotulo {
+  margin: 0;
+  color: var(--onface-slate);
+  font-family: var(--font-onface-display), sans-serif;
+  font-size: var(--display-label);
+  font-weight: var(--weight-extrabold);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+.of-p-entrada-marca-painel h3 {
+  margin: 0;
+  max-width: 16ch;
+  color: var(--onface-white);
+  font-family: var(--font-onface-display), sans-serif;
+  font-size: calc(34 * var(--onface-u));
+  font-weight: var(--weight-bold);
+  line-height: 1.1;
+  letter-spacing: var(--tracking-wordmark);
+}
+.of-p-entrada-painel-apoio { margin: 0; max-width: 42ch; color: var(--onface-branco-logo); font-size: var(--text-md); line-height: 1.6; }
+.of-p-entrada-painel-lista { display: flex; flex-direction: column; gap: var(--space-8); margin: var(--space-4) 0 0; padding: 0; list-style: none; }
+.of-p-entrada-painel-lista li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-8);
+  /* --onface-slate (#8B949E) sobre o grafite da casca dá 4,8:1. Descer para
+     --onface-cinza quebraria o mínimo de 4.5:1 deste texto. */
+  color: var(--onface-slate);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+.of-p-entrada-painel-lista svg { width: var(--icon-xs); height: var(--icon-xs); margin-top: calc(3 * var(--onface-u)); color: var(--onface-coral); }
+
+/* ── Responsivo ─────────────────────────────────────────────────────────── */
+
+@media (max-width: 900px) {
+  .of-p-config { grid-template-columns: minmax(0, 1fr); }
+  .of-p-trilho { position: static; }
+  .of-p-entrada { grid-template-columns: minmax(0, 1fr); }
+  /* O painel de marca vai para cima no mobile: ele é a promessa, e a promessa
+     vem antes do formulário quando não cabem lado a lado. */
+  .of-p-entrada-marca-painel { order: -1; min-height: calc(220 * var(--onface-u)); padding: var(--space-24); }
+  .of-p-entrada-form { padding: var(--space-24); }
+}
+
+@media (max-width: 620px) {
+  .of-p-cl-item { grid-template-columns: minmax(0, 1fr); gap: var(--space-10); }
+  .of-p-cl-trilho { flex-direction: row; align-items: baseline; gap: var(--space-8); text-align: start; padding-right: 0; }
+  .of-p-cl-trilho::after,
+  .of-p-cl-ponto { display: none; }
+  .of-p-convite-rodape { align-items: stretch; }
+}

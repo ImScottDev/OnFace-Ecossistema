@@ -1,0 +1,295 @@
+/* Quadro — só o que o ds.css não cobre.
+ *
+ * As classes .ds-quadro-* continuam sendo a base (coluna, cartão, estado de
+ * hover da coluna, coluna vazia). Aqui ficam três coisas: o piso de largura
+ * que troca "espremer" por "rolar", o miolo do cartão e a gaveta de detalhe. */
+
+/* ── Rolagem horizontal ──────────────────────────────────────────────────
+   O ds.css já reflui 4 → 2 → 1 coluna. O que falta é o piso: entre os
+   breakpoints a coluna encolhe até o cartão ficar ilegível. Com um mínimo por
+   trilha, o quadro rola em vez de espremer. No telefone a coluna é única e o
+   piso sai do caminho, senão a tela rolaria de lado sem motivo. */
+.qd-rolagem {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  padding-block: var(--space-2);
+}
+.qd-rolagem > .ds-quadro {
+  grid-template-columns: repeat(4, minmax(calc(152 * var(--onface-u)), 1fr));
+}
+@media (max-width: 1100px) {
+  .qd-rolagem > .ds-quadro {
+    grid-template-columns: repeat(2, minmax(calc(152 * var(--onface-u)), 1fr));
+  }
+}
+@media (max-width: 760px) {
+  .qd-rolagem > .ds-quadro {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* A lista é o alvo de soltura da coluna: precisa ter área própria mesmo vazia,
+   senão a coluna sem cartão não recebe nada. */
+.qd-lista {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  min-height: calc(56 * var(--onface-u));
+}
+
+/* ── Coluna: superfície afundada, não caixa ──────────────────────────────
+   A coluna de propósito NÃO ganha borda. Se ela tivesse moldura, o cartão
+   branco dentro dela viraria caixa dentro de caixa e o quadro inteiro viraria
+   uma malha de retângulos. A separação é de superfície: a coluna é o plano
+   afundado (papel), o cartão é o plano branco que se levanta dele. */
+.qd-rolagem .ds-quadro-coluna {
+  gap: var(--space-6);
+  padding: var(--space-6) var(--space-8) var(--space-12);
+}
+
+/* Cabeçalho da coluna: é a única coisa da coluna que precisa passar no teste
+   de desfoque. Nome da etapa em display, soma em tabular e contagem em pastilha
+   branca — três pesos diferentes em vez de uma linha cinza única. */
+.ds-quadro-topo.qd-coluna-topo {
+  align-items: baseline;
+  gap: var(--space-8);
+  margin-bottom: var(--space-2);
+  padding: var(--space-8) var(--space-6) var(--space-10);
+  border-bottom: 1px solid var(--line-hairline);
+}
+.ds-quadro-topo.qd-coluna-topo strong {
+  font-family: var(--font-onface-display), sans-serif;
+  font-size: var(--text-base);
+  font-weight: var(--weight-bold);
+  letter-spacing: -0.01em;
+}
+.qd-coluna-medida {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-6);
+  flex-shrink: 0;
+}
+/* Descendente de propósito: o `.ds-quadro-topo span` do ds.css é mais
+   específico que uma classe solta e apagaria estes dois pesos. */
+.qd-coluna-medida .qd-coluna-soma {
+  color: var(--text-strong);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+.qd-coluna-medida .qd-coluna-conta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: calc(20 * var(--onface-u));
+  height: calc(18 * var(--onface-u));
+  padding-inline: var(--space-4);
+  border-radius: var(--radius-full);
+  background: var(--surface-card);
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-bold);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Alvo de soltura: a coluna sob o cursor precisa ser óbvia à distância de um
+   braço, então o anel de acento é mais grosso que a hairline do ds.css. */
+.qd-rolagem .ds-quadro-coluna[data-sobre="true"] {
+  box-shadow: inset 0 0 0 calc(2 * var(--onface-u)) var(--onface-coral-border);
+}
+
+/* ── Cartão ─────────────────────────────────────────────────────────────── */
+.qd-cartao-topo {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-6);
+}
+.qd-cartao-titulo {
+  min-width: 0;
+}
+/* Dentro do cartão o negócio é o assunto e a empresa é referência. Mesmo peso
+   nos dois deixaria o cartão com uma mancha só de texto médio. A separação é
+   de tamanho e peso, não de cor: a empresa fica no `--text-muted` que o ds.css
+   já dá (4.72:1 sobre o cartão branco). O `--text-subtle` que estava aqui é o
+   cinza de casca escura e caía para 3.08:1 no claro, abaixo do piso de texto. */
+.ds-quadro-cartao .qd-cartao-titulo strong {
+  font-size: var(--text-base);
+  letter-spacing: -0.01em;
+}
+.qd-cartao-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+.qd-valor {
+  color: var(--text-strong);
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+/* Iniciais sobre o plano afundado: `--text-muted` ali dá 4.11:1, abaixo do
+   piso de texto. Um grau de cinza mais fundo sobe para 4.71:1 sem mudar o
+   papel da peça (continua apoio, não título). */
+.qd-pessoa {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: var(--avatar-sm);
+  height: var(--avatar-sm);
+  border-radius: var(--radius-full);
+  background: var(--surface-sunken);
+  color: var(--onface-cinza-2);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-bold);
+}
+
+/* A etiqueta de SLA do cartão é `.of-status` (crm.css): mesma pastilha da
+   tela de registro, mesmo par superfície/texto medido. No cartão ela só
+   encolhe um grau para não empurrar o rodapé. */
+.ds-quadro-cartao-rodape .of-status {
+  height: calc(20 * var(--onface-u));
+  padding-inline: var(--space-6);
+}
+
+/* Ação por cartão: discreta no ponteiro, permanente no toque (onde não existe
+   hover) e sempre visível quando recebe foco de teclado. */
+.qd-acao {
+  flex-shrink: 0;
+  margin: calc(-1 * var(--space-4)) calc(-1 * var(--space-4)) 0 0;
+}
+.qd-acao-botao {
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-standard);
+}
+.ds-quadro-cartao:hover .qd-acao-botao,
+.qd-acao-botao:focus-visible,
+.qd-acao-botao[data-state="open"] {
+  opacity: 1;
+}
+@media (pointer: coarse) {
+  .qd-acao-botao { opacity: 1; }
+}
+/* O canto superior direito do cartão passou a ser do ponto de urgência
+   (ds.css). A ação sai da frente dele em vez de cobri-lo no hover: a marca de
+   "é agora" não pode sumir justamente quando a pessoa está mirando o cartão. */
+.ds-quadro-cartao[data-urgente="true"] .qd-acao {
+  margin-right: var(--space-20);
+}
+
+/* ── Profundidade: só o cartão levantado ────────────────────────────────
+   O único lugar do quadro onde sombra é semântica. O cartão saiu do plano e
+   está preso ao cursor, então ele projeta de verdade, inclina de leve e cresce
+   um fio. Cartão parado continua sem sombra nenhuma. */
+.ds-quadro-cartao[data-sobreposicao="true"] {
+  border-color: var(--onface-coral-border);
+  box-shadow:
+    0 calc(2 * var(--onface-u)) calc(6 * var(--onface-u))
+      color-mix(in srgb, var(--onface-graphite) 12%, transparent),
+    0 calc(18 * var(--onface-u)) calc(36 * var(--onface-u))
+      color-mix(in srgb, var(--onface-graphite) 26%, transparent);
+  rotate: -1.2deg;
+  scale: 1.02;
+}
+/* Inclinação é gesto, não informação: quem pediu menos movimento recebe só a
+   sombra, que é o que diz "isto está por cima". */
+@media (prefers-reduced-motion: reduce) {
+  .ds-quadro-cartao[data-sobreposicao="true"] { rotate: none; scale: 1; }
+}
+
+/* O cartão é o item arrastável e recebe foco: o anel não pode depender de o
+   laboratório estar dentro da casca. */
+.ds-quadro-cartao:focus-visible {
+  outline: 2px solid var(--onface-coral);
+  outline-offset: 2px;
+}
+
+/* Coluna vazia: o convite ("arraste um negócio para cá") é texto de leitura
+   sobre o plano afundado, e o `--text-subtle` do ds.css dá 2.68:1 ali. Um grau
+   de cinza mais fundo chega a 4.71:1 sem virar título. */
+.qd-rolagem .ds-quadro-vazia {
+  color: var(--onface-cinza-2);
+}
+.ds-quadro-vazia svg {
+  width: var(--icon-lg);
+  height: var(--icon-lg);
+  opacity: 0.7;
+}
+
+/* ── Gaveta de detalhe ──────────────────────────────────────────────────
+   O SheetContent traz utilitários próprios (largura, padding, bg-background):
+   a superfície da gaveta precisa ganhar deles. */
+.qd-gaveta {
+  width: min(calc(440 * var(--onface-u)), calc(100vw - var(--space-32))) !important;
+  max-width: none !important;
+  gap: 0 !important;
+  padding: 0 !important;
+  background: var(--surface-card) !important;
+  border-color: var(--line-hairline) !important;
+}
+.qd-gaveta-topo {
+  gap: var(--space-6) !important;
+  padding: var(--space-24) var(--space-24) var(--space-16) !important;
+  border-bottom: 1px solid var(--line-hairline);
+}
+.qd-gaveta-titulo {
+  max-width: 32ch;
+  color: var(--text-strong);
+  font-family: var(--font-onface-display), sans-serif;
+  font-size: var(--display-title);
+  font-weight: var(--weight-bold);
+  line-height: 1.2;
+}
+.qd-gaveta-empresa {
+  color: var(--text-muted);
+  font-size: var(--text-md);
+}
+.qd-gaveta-etiquetas {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-6);
+  margin-top: var(--space-4);
+}
+.qd-gaveta-corpo {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-20);
+  min-height: 0;
+  padding: var(--space-20) var(--space-24);
+  overflow-y: auto;
+}
+.qd-campos {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-16);
+  margin: 0;
+}
+.qd-campo {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+/* Rótulo de campo em versalete: pequeno, então precisa do cinza de leitura
+   (4.72:1 sobre a gaveta branca), não do cinza de casca escura (3.08:1). */
+.qd-campo dt {
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+.qd-campo dd {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: var(--text-md);
+  font-weight: var(--weight-medium);
+}
+
+/* O menu do cartão é ancorado no claro, não no chrome escuro do topbar. */
+.qd-menu {
+  min-width: calc(190 * var(--onface-u));
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-popover);
+}

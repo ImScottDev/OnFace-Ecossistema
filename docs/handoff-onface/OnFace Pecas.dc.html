@@ -1,0 +1,2083 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <script src="dados.js"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@600;700;800&amp;family=Inter:wght@400;500;600&amp;family=IBM+Plex+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box}html,body{margin:0;padding:0}
+body{background:#090e14;font-family:Inter,system-ui,sans-serif;-webkit-font-smoothing:antialiased;color:#12171d}
+button{font:inherit;color:inherit;border:0;background:none;cursor:pointer;text-align:left}
+input{font:inherit;color:inherit}input::placeholder{color:#4a5560}
+a{color:#d93c1a;text-decoration:none}a:hover{color:#b8300f;text-decoration:underline}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-thumb{background:#d2d5d5;border:3px solid transparent;background-clip:content-box;border-radius:8px}
+@keyframes of-fade{from{opacity:0}to{opacity:1}}
+@keyframes of-rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@keyframes of-slide{from{transform:translateX(22px);opacity:0}to{transform:none;opacity:1}}
+@keyframes of-pisca{0%,100%{opacity:1}50%{opacity:.25}}
+@keyframes of-cursor{0%,100%{opacity:1}50%{opacity:0}}
+@keyframes of-pop{from{transform:scale(.6);opacity:0}to{transform:none;opacity:1}}
+@keyframes of-tick{to{stroke-dashoffset:0}}
+.of-card .of-check{opacity:0;transition:opacity 120ms cubic-bezier(0,0,.2,1)}
+.of-check>*{display:flex;align-items:center;justify-content:center}
+.of-card:hover .of-check,.of-card:focus-within .of-check,.of-card[data-sel="1"] .of-check{opacity:1}
+.of-chev{opacity:0;transition:opacity 120ms cubic-bezier(0,0,.2,1)}
+.of-card:hover .of-chev,.of-card:focus-within .of-chev{opacity:.55}
+</style>
+</helmet>
+<div style="display:contents">
+  <sc-if value="{{ temDetalhe }}">
+    <div onClick="{{ fecharDetalhe }}" style="position:fixed;inset:0;background:rgba(9,14,20,.42);z-index:40;animation:of-fade .18s ease-out both"></div>
+  </sc-if>
+  <sc-if value="{{ temDetalhe }}">
+    <aside style="position:fixed;top:10px;right:10px;bottom:10px;width:436px;max-width:calc(100vw - 20px);background:#fff;border-radius:14px;z-index:41;display:flex;flex-direction:column;overflow:hidden;animation:of-slide .26s cubic-bezier(.2,0,.2,1) both">
+
+      <div style="flex:0 0 auto;padding:15px 16px 13px;border-bottom:1px solid #e3e7e8">
+        <div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:11px">
+          <span style="{{ det.avatarStyle }}">{{ det.iniciais }}</span>
+          <div style="min-width:0;flex:1">
+            <div style="font-family:'Plus Jakarta Sans',sans-serif;font-size:16px;font-weight:700;letter-spacing:-.015em;color:#12171d;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ det.pessoa }}</div>
+            <div style="font-size:12.5px;color:#4a5560;line-height:1.35;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ det.cargo }} · {{ det.empresa }}</div>
+            <div style="display:flex;flex-direction:column;gap:1px;margin-top:6px">
+              <span style="font-size:12px;color:#4a5560;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ det.telefone }}</span>
+              <span style="font-size:12px;color:#4a5560;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ det.email }}</span>
+            </div>
+          </div>
+          <button onClick="{{ fecharDetalhe }}" style="flex:0 0 auto;width:28px;height:28px;border-radius:8px;display:grid;place-items:center;color:#4a5560" style-hover="background:#f1f3f3;color:#12171d">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"></path></svg>
+          </button>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <sc-for list="{{ det.toques }}" as="t" hint-placeholder-count="3">
+            <button onClick="{{ t.onClick }}" style="display:flex;align-items:center;gap:6px;height:32px;padding:0 11px;border-radius:8px;background:#fff;box-shadow:inset 0 0 0 1px #dbdede;font-size:12.5px;font-weight:500;white-space:nowrap;flex:0 0 auto" style-hover="background:#f6f7f7">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto"><path d="{{ t.d }}"></path></svg>
+              <span>{{ t.label }}</span>
+            </button>
+          </sc-for>
+        </div><div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px">
+            <div>
+              <div style="font-size:11px;font-weight:600;color:#4a5560;margin-bottom:5px">Etapa</div>
+              <button onClick="{{ det.trocarEtapa }}" style="display:flex;align-items:center;gap:6px;width:100%;height:32px;padding:0 10px;border-radius:8px;background:#fff;box-shadow:inset 0 0 0 1px #dbdede;font-size:12.5px;font-weight:500" style-hover="background:#f6f7f7">
+                <span style="{{ det.etapaPonto }}"></span>
+                <span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left">{{ det.etapa }}</span>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#4a5560" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto"><path d="m6 9 6 6 6-6"></path></svg>
+              </button>
+            </div>
+            <div>
+              <div style="font-size:11px;font-weight:600;color:#4a5560;margin-bottom:5px">Responsável</div>
+              <button onClick="{{ det.trocarResp }}" style="display:flex;align-items:center;gap:6px;width:100%;height:32px;padding:0 10px;border-radius:8px;background:#fff;box-shadow:inset 0 0 0 1px #dbdede;font-size:12.5px;font-weight:500" style-hover="background:#f6f7f7">
+                <span style="{{ det.respAvatar }}">{{ det.respIniciais }}</span>
+                <span style="{{ det.respTexto }}">{{ det.resp }}</span>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#4a5560" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto"><path d="m6 9 6 6 6-6"></path></svg>
+              </button>
+            </div>
+          </div>
+      </div>
+
+      <sc-if value="{{ det.semEmpresa }}">
+        <div style="flex:0 0 auto;display:flex;align-items:flex-start;gap:8px;padding:10px 16px;background:#fff6f4;border-bottom:1px solid #fadfd8">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#c2330f" stroke-width="2" stroke-linejoin="round" style="flex:0 0 auto;margin-top:1px"><rect x="4" y="11" width="16" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>
+          <span style="font-size:12px;color:#9c3210;line-height:1.45;text-wrap:pretty">Sem empresa associada: <strong style="font-weight:600">Criar oportunidade</strong> fica bloqueado.</span>
+        </div>
+      </sc-if>
+
+      <div style="flex:1;min-height:0;overflow-y:auto">
+
+        <div style="padding:14px 16px;display:flex;flex-direction:column;gap:13px">
+          <div>
+            <div style="font-size:11px;font-weight:600;color:#4a5560;margin-bottom:6px">Tags</div>
+            <div style="display:flex;gap:5px;flex-wrap:wrap">
+              <sc-for list="{{ det.tags }}" as="g" hint-placeholder-count="2">
+                <span style="display:inline-flex;align-items:center;height:22px;padding:0 8px;border-radius:6px;background:#eeeff3;color:#4a5560;font-size:11.5px;font-weight:600;white-space:nowrap;flex:0 0 auto">{{ g.label }}</span>
+              </sc-for>
+              <div data-of-tagmenu="1" style="position:relative;flex:0 0 auto">
+                <button onClick="{{ det.addTag }}" style="{{ det.addTagStyle }}" style-hover="background:#f1f3f3;color:#12171d" title="Adicionar tag">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" style="{{ det.addTagIcone }}"><path d="M12 5v14M5 12h14"></path></svg>
+                </button>
+
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div style="display:flex;align-items:center;gap:7px;margin-bottom:7px">
+              <span style="font-size:11px;font-weight:600;color:#4a5560">Origem</span>
+              <span style="{{ det.origemSelo }}">{{ det.origem }}</span>
+            </div>
+            <div style="border-radius:9px;background:#fafafa;box-shadow:inset 0 0 0 1px #eef1f1;padding:9px 11px;display:flex;flex-direction:column;gap:6px">
+              <sc-for list="{{ det.origemDetalhe }}" as="o" hint-placeholder-count="4">
+                <div style="display:flex;align-items:baseline;gap:9px">
+                  <span style="flex:0 0 74px;font-size:11px;color:#4a5560">{{ o.label }}</span>
+                  <span style="{{ o.valorStyle }}">{{ o.valor }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+
+          
+        </div>
+
+        <div style="height:1px;background:#eef1f1"></div>
+
+        <div style="padding:6px 8px 8px">
+          <button onClick="{{ det.sec.cad.alternar }}" style="{{ det.sec.cad.cabStyle }}" style-hover="background:#fafafa">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#67787c" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="{{ det.sec.cad.chevron }}"><path d="m9 18 6-6-6-6"></path></svg>
+            <span style="font-size:11px;font-weight:600;color:#4a5560;letter-spacing:.04em;white-space:nowrap">CADÊNCIA</span>
+            <sc-if value="{{ det.temCad }}">
+              <span style="{{ det.cadSelo }}">{{ det.cadEstado }}</span>
+            </sc-if>
+            <span style="flex:1;min-width:0"></span>
+            <sc-if value="{{ det.sec.cad.fechada }}">
+              <span style="font-size:11.5px;color:#67787c;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:190px">{{ det.cadResumo }}</span>
+            </sc-if>
+          </button>
+          <sc-if value="{{ det.sec.cad.aberta }}">
+          <div style="padding:2px 8px 6px">
+
+          <sc-if value="{{ det.temCad }}">
+            <div>
+              <div style="font-size:13px;font-weight:600;color:#12171d;margin-bottom:8px">{{ det.cadNome }}</div>
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+                <div style="flex:1;display:flex;gap:3px">
+                  <sc-for list="{{ det.cadPassos }}" as="p" hint-placeholder-count="5">
+                    <span style="{{ p.style }}"></span>
+                  </sc-for>
+                </div>
+                <span style="flex:0 0 auto;font-size:11.5px;font-weight:600;color:#4a5560;white-space:nowrap">{{ det.cadPasso }}</span>
+              </div>
+              <div style="display:flex;gap:6px;flex-wrap:wrap">
+                <button onClick="{{ det.pausarCad }}" style="height:30px;padding:0 11px;border-radius:8px;background:#fff;box-shadow:inset 0 0 0 1px #dbdede;font-size:12px;font-weight:500;white-space:nowrap;flex:0 0 auto" style-hover="background:#f6f7f7">{{ det.cadBotao }}</button>
+                <button onClick="{{ det.abrirPicker }}" style="height:30px;padding:0 11px;border-radius:8px;background:#fff;box-shadow:inset 0 0 0 1px #dbdede;font-size:12px;font-weight:500;white-space:nowrap;flex:0 0 auto" style-hover="background:#f6f7f7">Trocar cadência</button>
+                <button onClick="{{ det.removerCad }}" style="height:30px;padding:0 11px;border-radius:8px;background:#fff;box-shadow:inset 0 0 0 1px #f0d5cf;color:#c2330f;font-size:12px;font-weight:500;white-space:nowrap;flex:0 0 auto" style-hover="background:#fff6f4">Remover</button>
+              </div>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ det.semCad }}">
+            <div style="display:flex;align-items:center;gap:10px">
+              <span style="flex:1;min-width:0;font-size:12.5px;color:#4a5560;line-height:1.45;text-wrap:pretty">Fora de cadência — nenhum toque automático sai para este lead.</span>
+              <button onClick="{{ det.abrirPicker }}" style="flex:0 0 auto;display:flex;align-items:center;gap:6px;height:30px;padding:0 11px;border-radius:8px;background:#fff;box-shadow:inset 0 0 0 1px #dbdede;font-size:12px;font-weight:600;white-space:nowrap" style-hover="background:#f6f7f7">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" style="flex:0 0 auto"><path d="M12 5v14M5 12h14"></path></svg>
+                <span>Inserir</span>
+              </button>
+            </div>
+          </sc-if>
+
+          </div>
+          </sc-if>
+        </div>
+
+        <div style="height:1px;background:#eef1f1"></div>
+
+        <div style="padding:6px 8px 8px">
+          <button onClick="{{ det.sec.acao.alternar }}" style="{{ det.sec.acao.cabStyle }}" style-hover="background:#fafafa">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#67787c" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="{{ det.sec.acao.chevron }}"><path d="m9 18 6-6-6-6"></path></svg>
+            <span style="font-size:11px;font-weight:600;color:#4a5560;letter-spacing:.04em;white-space:nowrap">PRÓXIMA AÇÃO</span>
+            <span style="flex:1;min-width:0"></span>
+            <sc-if value="{{ det.sec.acao.fechada }}">
+              <span style="{{ det.acaoResumoStyle }}">{{ det.acaoResumo }}</span>
+            </sc-if>
+          </button>
+          <sc-if value="{{ det.sec.acao.aberta }}">
+          <div style="display:flex;align-items:center;gap:9px;padding:6px 8px 6px;flex-wrap:wrap">
+            <sc-if value="{{ det.semAcao }}">
+              <span style="flex:0 0 auto;width:7px;height:7px;border-radius:50%;background:#fe4f2b"></span>
+            </sc-if>
+            <sc-if value="{{ det.temAcao }}">
+              <span style="{{ det.tipoSelo }}">{{ det.acaoTipo }}</span>
+            </sc-if>
+            <span style="{{ det.acaoTexto }}">{{ det.acao }}</span>
+            <button onClick="{{ det.verAcao }}" style="flex:0 0 auto;height:28px;padding:0 11px;border-radius:7px;background:#fff;box-shadow:inset 0 0 0 1px #dbdede;font-size:12px;font-weight:600;white-space:nowrap" style-hover="background:#f6f7f7">{{ det.acaoBotao }}</button>
+            <button onClick="{{ det.criarAtv }}" style="flex:0 0 auto;display:flex;align-items:center;gap:5px;height:28px;padding:0 10px;border-radius:7px;background:#fff;box-shadow:inset 0 0 0 1px #dbdede;font-size:12px;font-weight:600;white-space:nowrap" style-hover="background:#f6f7f7" title="Criar outra atividade">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" style="flex:0 0 auto"><path d="M12 5v14M5 12h14"></path></svg>
+              <span>Nova</span>
+            </button>
+          </div>
+          </sc-if>
+        </div>
+
+        <div style="height:1px;background:#eef1f1"></div>
+
+        <div style="padding:6px 8px 8px">
+          <button onClick="{{ det.sec.qualif.alternar }}" style="{{ det.sec.qualif.cabStyle }}" style-hover="background:#fafafa">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#67787c" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="{{ det.sec.qualif.chevron }}"><path d="m9 18 6-6-6-6"></path></svg>
+            <span style="font-size:11px;font-weight:600;color:#4a5560;letter-spacing:.04em;white-space:nowrap">QUALIFICAÇÃO</span>
+            <span style="flex:1;min-width:0"></span>
+            <span style="{{ det.qualProgSelo }}">{{ det.qualProg }}</span>
+          </button>
+          <sc-if value="{{ det.sec.qualif.aberta }}">
+          <div style="display:flex;flex-direction:column;gap:11px;padding:6px 8px 6px">
+            <sc-for list="{{ det.qualif }}" as="q" hint-placeholder-count="4">
+              <div>
+                <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">
+                  <span style="font-size:11px;font-weight:600;color:#4a5560">{{ q.label }}</span>
+                  <span style="flex:1"></span>
+                  <sc-if value="{{ q.temSelo }}">
+                    <span style="{{ q.seloStyle }}">{{ q.selo }}</span>
+                  </sc-if>
+                </div>
+                <sc-if value="{{ q.ehTexto }}">
+                  <input value="{{ q.valor }}" onChange="{{ q.setTexto }}" placeholder="{{ q.dica }}" style="{{ q.inputStyle }}">
+                </sc-if>
+                <sc-if value="{{ q.ehEscolha }}">
+                  <div style="display:flex;gap:5px;flex-wrap:wrap">
+                    <sc-for list="{{ q.opcoes }}" as="o" hint-placeholder-count="3">
+                      <button onClick="{{ o.onClick }}" style="{{ o.style }}">{{ o.label }}</button>
+                    </sc-for>
+                  </div>
+                </sc-if>
+                <sc-if value="{{ q.ehNumero }}">
+                  <div style="display:flex;align-items:stretch;height:34px;border-radius:8px;background:#fff;box-shadow:inset 0 0 0 1px #dbdede;overflow:hidden">
+                    <button onClick="{{ q.menos }}" style="flex:0 0 auto;width:34px;display:grid;place-items:center;background:#fafafa;border:0;border-right:1px solid #eef1f1;color:#4a5560;cursor:pointer" style-hover="background:#f1f3f3;color:#12171d" title="Diminuir">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 12h14"></path></svg>
+                    </button>
+                    <input value="{{ q.valor }}" onChange="{{ q.setTexto }}" inputMode="numeric" style="flex:1;min-width:0;border:0;outline:0;background:transparent;text-align:center;font-family:'Plus Jakarta Sans',sans-serif;font-size:14px;font-weight:700;color:#12171d;font-variant-numeric:tabular-nums">
+                    <span style="flex:0 0 auto;display:flex;align-items:center;padding-right:10px;font-size:11.5px;color:#67787c;white-space:nowrap">atendentes</span>
+                    <button onClick="{{ q.mais }}" style="flex:0 0 auto;width:34px;display:grid;place-items:center;background:#fafafa;border:0;border-left:1px solid #eef1f1;color:#4a5560;cursor:pointer" style-hover="background:#f1f3f3;color:#12171d" title="Aumentar">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+                    </button>
+                  </div>
+                </sc-if>
+              </div>
+            </sc-for>
+          </div>
+          </sc-if>
+        </div>
+
+        <div style="height:1px;background:#eef1f1"></div>
+
+        <div style="padding:6px 8px 14px">
+          <button onClick="{{ det.sec.timeline.alternar }}" style="{{ det.sec.timeline.cabStyle }}" style-hover="background:#fafafa">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#67787c" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="{{ det.sec.timeline.chevron }}"><path d="m9 18 6-6-6-6"></path></svg>
+            <span style="font-size:11px;font-weight:600;color:#4a5560;letter-spacing:.04em;white-space:nowrap">TIMELINE</span>
+            <span style="flex:1;min-width:0"></span>
+            <sc-if value="{{ det.sec.timeline.fechada }}">
+              <span style="font-size:11.5px;color:#67787c;white-space:nowrap">{{ det.timelineConta }}</span>
+            </sc-if>
+            <sc-if value="{{ det.sec.timeline.aberta }}">
+              <span onClick="{{ det.verTimeline }}" style="font-size:12px;font-weight:600;color:#c2330f;white-space:nowrap;flex:0 0 auto;cursor:pointer">{{ det.timelineBotao }}</span>
+            </sc-if>
+          </button>
+          <sc-if value="{{ det.sec.timeline.aberta }}">
+          <div style="display:flex;flex-direction:column;padding:6px 8px 4px">
+            <sc-for list="{{ det.timeline }}" as="t" hint-placeholder-count="5">
+              <div style="display:grid;grid-template-columns:52px 14px 1fr;gap:9px">
+                <span style="font-size:11.5px;color:#4a5560;text-align:right;white-space:nowrap;padding-top:1px;font-variant-numeric:tabular-nums">{{ t.hora }}</span>
+                <span style="display:flex;flex-direction:column;align-items:center">
+                  <span style="{{ t.ponto }}"></span>
+                  <span style="{{ t.trilho }}"></span>
+                </span>
+                <span style="padding-bottom:13px;min-width:0">
+                  <span style="display:block;font-size:12.5px;color:#1f252c;line-height:1.4;text-wrap:pretty">{{ t.titulo }}</span>
+                  <sc-if value="{{ t.temAutor }}">
+                    <span style="display:block;font-size:11px;color:#4a5560;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:3px">{{ t.autor }}</span>
+                  </sc-if>
+                </span>
+              </div>
+            </sc-for>
+          </div>
+          </sc-if>
+        </div>
+      </div>
+
+      <div style="flex:0 0 auto;padding:11px 16px;border-top:1px solid #e3e7e8;display:flex;gap:7px;flex-wrap:wrap">
+        <button onClick="{{ det.abrirEmpresa }}" style="{{ det.empresaBtn }}" title="{{ det.empresaDica }}">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto"><path d="M3 21V7l9-4 9 4v14M9 21v-6h6v6M8 11h.01M16 11h.01"></path></svg>
+          <span>Abrir empresa</span>
+        </button>
+        <button onClick="{{ det.abrirContato }}" style="display:flex;align-items:center;gap:6px;height:34px;padding:0 12px;border-radius:8px;background:#fff;box-shadow:inset 0 0 0 1px #dbdede;font-size:12.5px;font-weight:500;white-space:nowrap;flex:0 0 auto" style-hover="background:#f6f7f7">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0"></path></svg>
+          <span>Abrir contato</span>
+        </button>
+        <span style="flex:1;min-width:0"></span>
+        <div data-of-saida="1" style="position:relative;flex:0 0 auto">
+          <div style="display:flex;align-items:stretch;height:34px;border-radius:8px;overflow:hidden;background:#d93c1a" data-comment-anchor="5af3f0da6b-button">
+            <button onClick="{{ qualificar }}" style="display:flex;align-items:center;gap:6px;padding:0 12px;background:transparent;border:0;color:#fff;font-size:12.5px;font-weight:600;white-space:nowrap;cursor:pointer" style-hover="background:rgba(0,0,0,.14)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto"><path d="M20 6 9 17l-5-5"></path></svg>
+              <span>Qualificar</span>
+            </button>
+            <span style="flex:0 0 auto;width:1px;background:rgba(255,255,255,.34)"></span>
+            <button onClick="{{ det.toggleSaida }}" style="display:grid;place-items:center;width:27px;background:transparent;border:0;color:#fff;cursor:pointer" style-hover="background:rgba(0,0,0,.14)" title="Outras saídas do lead">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="{{ det.saidaChevron }}"><path d="m6 9 6 6 6-6"></path></svg>
+            </button>
+          </div>
+
+          <sc-if value="{{ det.saidaMenu }}">
+            <div style="position:absolute;bottom:calc(100% + 6px);right:0;width:268px;z-index:44;border-radius:6px;background:#fff;border:1px solid #e3e7e8;box-shadow:0 -4px 6px -1px rgba(0,0,0,.1),0 -2px 4px -2px rgba(0,0,0,.1);padding:4px;animation:of-rise .12s cubic-bezier(.2,0,.2,1) both">
+              <div style="font-size:11px;font-weight:600;color:#4a5560;letter-spacing:.04em;padding:7px 8px 4px">SAÍDAS DO LEAD</div>
+              <sc-for list="{{ det.saidas }}" as="s" hint-placeholder-count="4">
+                <button onClick="{{ s.onClick }}" style="{{ s.style }}" style-hover="background:#f1f3f3">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto;margin-top:1px"><path d="{{ s.d }}"></path></svg>
+                  <span style="flex:1;min-width:0">
+                    <span style="display:block;font-size:13.5px;font-weight:500;line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ s.label }}</span>
+                    <span style="display:block;font-size:11.5px;color:#4a5560;line-height:1.4;margin-top:1px;text-wrap:pretty">{{ s.nota }}</span>
+                  </span>
+                </button>
+              </sc-for>
+            </div>
+          </sc-if>
+        </div>
+      </div>
+    </aside>
+  </sc-if>
+
+  <sc-if value="{{ atvAberta }}">
+    <div onClick="{{ fecharAtv }}" style="position:fixed;inset:0;background:rgba(9,14,20,.45);z-index:52;display:grid;place-items:center;padding:20px;animation:of-fade .16s ease-out both">
+      <div onClick="{{ parar }}" style="width:452px;max-width:100%;max-height:calc(100vh - 40px);background:#fff;border-radius:13px;overflow:hidden;display:flex;flex-direction:column;animation:of-rise .2s cubic-bezier(.2,0,.2,1) both">
+
+        <div style="flex:0 0 auto;padding:15px 18px 13px;border-bottom:1px solid #e3e7e8;display:flex;align-items:flex-start;gap:10px">
+          <div style="min-width:0;flex:1">
+            <div style="display:flex;align-items:center;gap:7px;margin-bottom:5px;flex-wrap:wrap">
+              <span style="{{ atv.situacaoSelo }}">{{ atv.situacao }}</span>
+              <span style="{{ atv.tipoSelo }}">{{ atv.tipo }}</span>
+            </div>
+            <div style="font-family:'Plus Jakarta Sans',sans-serif;font-size:15.5px;font-weight:700;letter-spacing:-.012em;line-height:1.3;margin-bottom:3px;text-wrap:pretty">{{ atv.tituloVisto }}</div>
+            <div style="font-size:12.5px;color:#4a5560;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ atv.contexto }}</div>
+          </div>
+          <button onClick="{{ fecharAtv }}" style="flex:0 0 auto;width:28px;height:28px;border-radius:8px;display:grid;place-items:center;color:#4a5560" style-hover="background:#f1f3f3;color:#12171d">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"></path></svg>
+          </button>
+        </div>
+
+        <div style="flex:1;min-height:0;overflow-y:auto;padding:16px 18px;display:flex;flex-direction:column;gap:15px">
+
+          <sc-if value="{{ atv.ehVer }}">
+            <div style="display:flex;flex-direction:column;gap:13px">
+              <div style="display:flex;align-items:flex-start;gap:10px">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4a5560" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto;margin-top:2px"><path d="M8 2v4M16 2v4M3 8h18M5 6h14a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z"></path></svg>
+                <div style="min-width:0;flex:1">
+                  <div style="font-size:11px;font-weight:600;color:#4a5560;margin-bottom:2px">Quando</div>
+                  <div style="font-size:13px;font-weight:500;color:#12171d">{{ atv.quando }}</div>
+                </div>
+              </div>
+              <div style="display:flex;align-items:flex-start;gap:10px">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4a5560" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto;margin-top:2px"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0"></path></svg>
+                <div style="min-width:0;flex:1">
+                  <div style="font-size:11px;font-weight:600;color:#4a5560;margin-bottom:2px">Responsável</div>
+                  <div style="font-size:13px;font-weight:500;color:#12171d">{{ atv.resp }}</div>
+                </div>
+              </div>
+              <div style="display:flex;align-items:flex-start;gap:10px">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4a5560" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto;margin-top:2px"><path d="M4 6h16M4 12h16M4 18h10"></path></svg>
+                <div style="min-width:0;flex:1">
+                  <div style="font-size:11px;font-weight:600;color:#4a5560;margin-bottom:3px">Descrição</div>
+                  <div style="{{ atv.descStyle }}">{{ atv.descVista }}</div>
+                </div>
+              </div>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ atv.ehEditar }}">
+            <div style="display:flex;flex-direction:column;gap:15px">
+              <div>
+                <div style="font-size:11px;font-weight:600;color:#4a5560;margin-bottom:6px">Situação</div>
+                <div style="display:flex;gap:5px;flex-wrap:wrap">
+                  <sc-for list="{{ atv.situacoes }}" as="s" hint-placeholder-count="4">
+                    <button onClick="{{ s.onClick }}" style="{{ s.style }}">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto"><path d="{{ s.d }}"></path></svg>
+                      <span>{{ s.label }}</span>
+                    </button>
+                  </sc-for>
+                </div>
+              </div>
+
+              <div>
+                <div style="font-size:11px;font-weight:600;color:#4a5560;margin-bottom:6px">Tipo</div>
+                <div style="display:flex;gap:5px;flex-wrap:wrap">
+                  <sc-for list="{{ atv.tipos }}" as="t" hint-placeholder-count="6">
+                    <button onClick="{{ t.onClick }}" style="{{ t.style }}">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto"><path d="{{ t.d }}"></path></svg>
+                      <span>{{ t.label }}</span>
+                    </button>
+                  </sc-for>
+                </div>
+              </div>
+
+              <div>
+                <div style="font-size:11px;font-weight:600;color:#4a5560;margin-bottom:6px">Título</div>
+                <input value="{{ atv.titulo }}" onChange="{{ atv.setTitulo }}" placeholder="O que precisa ser feito" style="width:100%;height:34px;padding:0 11px;border-radius:8px;background:#fff;border:1px solid #dbdede;outline:0;font-size:13px">
+              </div>
+
+              <div>
+                <div style="font-size:11px;font-weight:600;color:#4a5560;margin-bottom:6px">Descrição</div>
+                <textarea value="{{ atv.desc }}" onChange="{{ atv.setDesc }}" rows="3" placeholder="Contexto, roteiro da ligação, o que combinar" style="width:100%;padding:9px 11px;border-radius:8px;background:#fff;border:1px solid #dbdede;outline:0;font-size:13px;line-height:1.5;resize:vertical;font-family:inherit"></textarea>
+              </div>
+
+              <div style="display:grid;grid-template-columns:1fr 118px;gap:9px">
+                <div>
+                  <div style="font-size:11px;font-weight:600;color:#4a5560;margin-bottom:6px">Data</div>
+                  <input value="{{ atv.data }}" onChange="{{ atv.setData }}" type="date" style="width:100%;height:34px;padding:0 11px;border-radius:8px;background:#fff;border:1px solid #dbdede;outline:0;font-size:13px">
+                </div>
+                <div>
+                  <div style="font-size:11px;font-weight:600;color:#4a5560;margin-bottom:6px">Hora</div>
+                  <input value="{{ atv.hora }}" onChange="{{ atv.setHora }}" type="time" style="width:100%;height:34px;padding:0 11px;border-radius:8px;background:#fff;border:1px solid #dbdede;outline:0;font-size:13px">
+                </div>
+              </div>
+
+              <div>
+                <div style="font-size:11px;font-weight:600;color:#4a5560;margin-bottom:6px">Responsável</div>
+                <button onClick="{{ atv.trocarResp }}" style="display:flex;align-items:center;gap:7px;width:100%;height:34px;padding:0 11px;border-radius:8px;background:#fff;box-shadow:inset 0 0 0 1px #dbdede;font-size:13px" style-hover="background:#f6f7f7">
+                  <span style="flex:0 0 auto;width:20px;height:20px;border-radius:9999px;background:#eeeff3;color:#4a5560;display:grid;place-items:center;font-size:9px;font-weight:700">{{ atv.respIniciais }}</span>
+                  <span style="flex:1;min-width:0;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ atv.resp }}</span>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#4a5560" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto"><path d="m6 9 6 6 6-6"></path></svg>
+                </button>
+              </div>
+            </div>
+          </sc-if>
+        </div>
+
+        <sc-if value="{{ atv.ehVer }}">
+          <div style="flex:0 0 auto;padding:12px 18px;border-top:1px solid #e3e7e8;background:#fafafa;display:flex;gap:7px;align-items:center;flex-wrap:wrap">
+            <button onClick="{{ atv.concluir }}" style="{{ atv.concluirStyle }}">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto"><path d="M20 6 9 17l-5-5"></path></svg>
+              <span>{{ atv.concluirLabel }}</span>
+            </button>
+            <button onClick="{{ atv.declinar }}" style="{{ atv.declinarStyle }}">{{ atv.declinarLabel }}</button>
+            <span style="flex:1;min-width:0"></span>
+            <button onClick="{{ atv.editar }}" style="display:flex;align-items:center;gap:6px;height:34px;padding:0 14px;border-radius:8px;background:#fff;box-shadow:inset 0 0 0 1px #dbdede;font-size:12.5px;font-weight:600;white-space:nowrap;flex:0 0 auto" style-hover="background:#f1f3f3">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto"><path d="M17 3a2.8 2.8 0 0 1 4 4L7.5 20.5 2 22l1.5-5.5z"></path></svg>
+              <span>Editar</span>
+            </button>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ atv.ehEditar }}">
+          <div style="flex:0 0 auto;padding:12px 18px;border-top:1px solid #e3e7e8;background:#fafafa;display:flex;gap:7px;align-items:center;justify-content:flex-end;flex-wrap:wrap">
+            <button onClick="{{ atv.cancelarEdicao }}" style="height:34px;padding:0 14px;border-radius:8px;background:#fff;box-shadow:inset 0 0 0 1px #dbdede;font-size:12.5px;font-weight:500;white-space:nowrap;flex:0 0 auto" style-hover="background:#f1f3f3">Cancelar</button>
+            <button onClick="{{ atv.salvar }}" style="height:34px;padding:0 15px;border-radius:8px;background:#d93c1a;color:#fff;font-size:12.5px;font-weight:600;white-space:nowrap;flex:0 0 auto" style-hover="background:#c2330f">Salvar</button>
+          </div>
+        </sc-if>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ det.tagMenu }}">
+    <div data-of-tagmenu="1" style="{{ det.tagMenuStyle }}">
+      <div style="flex:0 0 auto;font-size:10px;font-weight:700;letter-spacing:.08em;color:#67787c;padding:7px 8px 5px">TAGS DISPONÍVEIS</div>
+      <div style="flex:1;min-height:56px;overflow-y:auto;display:flex;flex-direction:column;gap:1px">
+        <sc-for list="{{ det.tagOpcoes }}" as="t" hint-placeholder-count="5">
+          <button onClick="{{ t.onClick }}" style="{{ t.style }}" style-hover="background:#f6f7f7">
+            <span style="{{ t.caixa }}">
+              <sc-if value="{{ t.on }}">
+                <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round" style="display:block"><path d="M20 6 9 17l-5-5"></path></svg>
+              </sc-if>
+            </span>
+            <span style="flex:1;min-width:0;text-align:left">
+              <span style="display:block;font-size:12.5px;font-weight:600;color:#12171d;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ t.label }}</span>
+              <span style="{{ t.notaStyle }}">{{ t.nota }}</span>
+            </span>
+            <sc-if value="{{ t.dispara }}">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#c2330f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto;margin-top:2px"><path d="M13 2 3 14h9l-1 8 10-12h-9z"></path></svg>
+            </sc-if>
+          </button>
+        </sc-for>
+      </div>
+      <div style="flex:0 0 auto;height:1px;background:#eef1f1;margin:5px 3px"></div>
+      <div style="flex:0 0 auto;display:flex;gap:6px;padding:3px 3px 4px">
+        <input value="{{ det.tagNova }}" onChange="{{ det.setTagNova }}" onKeyDown="{{ det.tagNovaTecla }}" placeholder="Criar nova tag" style="flex:1;min-width:0;height:32px;padding:0 10px;border-radius:8px;background:#fff;outline:0;font-size:12.5px;font-family:inherit;border:1px solid #dbdede">
+        <button onClick="{{ det.criarTag }}" style="{{ det.criarTagStyle }}">Criar</button>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ cad.aberto }}">
+    <div onClick="{{ cad.fechar }}" style="position:fixed;inset:0;background:rgba(9,14,20,.5);z-index:57;display:grid;place-items:center;padding:20px;animation:of-fade .16s ease-out both">
+      <div onClick="{{ parar }}" style="width:840px;max-width:100%;height:min(580px,calc(100vh - 40px));background:#fff;border-radius:14px;overflow:hidden;display:flex;animation:of-rise .2s cubic-bezier(.2,0,.2,1) both">
+
+        <aside style="flex:0 0 auto;width:246px;background:#fafafa;border-right:1px solid #e3e7e8;display:flex;flex-direction:column">
+          <div style="flex:0 0 auto;padding:14px 14px 10px">
+            <div style="font-family:'Plus Jakarta Sans',sans-serif;font-size:13.5px;font-weight:700;letter-spacing:-.01em;color:#12171d">Cadências</div>
+            <div style="font-size:11.5px;color:#67787c;line-height:1.4;margin-top:2px">Escolha o fluxo que vai tocar o lead.</div>
+          </div>
+          <div style="flex:1;min-height:0;overflow-y:auto;padding:0 8px 10px;display:flex;flex-direction:column;gap:3px">
+            <sc-for list="{{ cad.lista }}" as="c" hint-placeholder-count="4">
+              <button onClick="{{ c.onClick }}" style="{{ c.style }}">
+                <span style="display:flex;align-items:center;gap:7px;width:100%;min-width:0">
+                  <span style="{{ c.ponto }}"></span>
+                  <span style="flex:1;min-width:0;font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left">{{ c.nome }}</span>
+                </span>
+                <span style="display:flex;align-items:center;gap:7px;width:100%;margin-top:4px;padding-left:14px">
+                  <span style="font-size:11px;color:#67787c;white-space:nowrap">{{ c.resumo }}</span>
+                  <span style="flex:1"></span>
+                  <span style="display:flex;gap:3px;flex:0 0 auto">
+                    <sc-for list="{{ c.icones }}" as="i" hint-placeholder-count="3">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#8b949e" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto"><path d="{{ i.d }}"></path></svg>
+                    </sc-for>
+                  </span>
+                </span>
+              </button>
+            </sc-for>
+          </div>
+        </aside>
+
+        <div style="flex:1;min-width:0;display:flex;flex-direction:column;background:#fff">
+          <div style="flex:0 0 auto;display:flex;align-items:flex-start;gap:10px;padding:14px 17px 13px;border-bottom:1px solid #e3e7e8">
+            <div style="flex:1;min-width:0">
+              <div style="font-family:'Plus Jakarta Sans',sans-serif;font-size:14.5px;font-weight:700;letter-spacing:-.015em;color:#12171d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ cad.nome }}</div>
+              <div style="font-size:12px;color:#4a5560;line-height:1.45;margin-top:2px;text-wrap:pretty">{{ cad.descricao }}</div>
+            </div>
+            <button onClick="{{ cad.fechar }}" style="flex:0 0 auto;width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#4a5560;border:0;background:transparent;cursor:pointer" style-hover="background:#f1f3f3;color:#12171d">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"></path></svg>
+            </button>
+          </div>
+
+          <div style="flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:15px 17px 17px;display:flex;flex-direction:column;gap:16px">
+            <div>
+              <div style="font-size:10px;font-weight:700;letter-spacing:.08em;color:#67787c;margin-bottom:10px">RESUMO DO FLUXO</div>
+              <div style="display:flex;flex-direction:column">
+                <sc-for list="{{ cad.passos }}" as="p" hint-placeholder-count="5">
+                  <div style="display:grid;grid-template-columns:54px 22px 1fr;gap:10px;align-items:start">
+                    <span style="font-size:11.5px;font-weight:600;color:#4a5560;text-align:right;padding-top:5px;white-space:nowrap">{{ p.quando }}</span>
+                    <span style="display:flex;flex-direction:column;align-items:center;align-self:stretch">
+                      <span style="{{ p.marcaStyle }}">
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto"><path d="{{ p.d }}"></path></svg>
+                      </span>
+                      <sc-if value="{{ p.temLinha }}">
+                        <span style="flex:1;width:1px;background:#e3e7e8;min-height:12px"></span>
+                      </sc-if>
+                    </span>
+                    <span style="min-width:0;padding-bottom:12px">
+                      <span style="display:block;font-size:12.5px;font-weight:600;color:#12171d;line-height:1.35;text-wrap:pretty">{{ p.titulo }}</span>
+                      <span style="display:block;font-size:11.5px;color:#4a5560;line-height:1.45;margin-top:1px;text-wrap:pretty">{{ p.nota }}</span>
+                    </span>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+
+            <div>
+              <div style="font-size:10px;font-weight:700;letter-spacing:.08em;color:#67787c;margin-bottom:8px">ESTE FLUXO USA</div>
+              <div style="display:flex;gap:6px;flex-wrap:wrap">
+                <sc-for list="{{ cad.canais }}" as="c" hint-placeholder-count="3">
+                  <span style="{{ c.style }}">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto"><path d="{{ c.d }}"></path></svg>
+                    <span>{{ c.label }}</span>
+                    <span style="opacity:.62">{{ c.conta }}</span>
+                  </span>
+                </sc-for>
+              </div>
+            </div>
+
+            <div>
+              <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
+                <span style="font-size:10px;font-weight:700;letter-spacing:.08em;color:#67787c">DISPARAR A PARTIR DE</span>
+                <span style="font-size:10px;font-weight:700;color:#c2330f">*</span>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:9px">
+                <sc-for list="{{ cad.origens }}" as="o" hint-placeholder-count="2">
+                  <div style="display:flex;align-items:center;gap:10px;min-width:0">
+                    <span style="{{ o.selo }}">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto"><path d="{{ o.d }}"></path></svg>
+                    </span>
+                    <span style="flex:0 0 96px;font-size:12px;color:#4a5560;white-space:nowrap">{{ o.label }}</span>
+                    <span style="flex:1;min-width:0;position:relative">
+                      {{ o.campo }}
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#4a5560" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="position:absolute;right:11px;top:50%;transform:translateY(-50%);pointer-events:none"><path d="m6 9 6 6 6-6"></path></svg>
+                    </span>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+
+          <div style="flex:0 0 auto;padding:12px 17px;border-top:1px solid #e3e7e8;background:#fafafa;display:flex;gap:9px;align-items:center">
+            <span style="flex:1;min-width:0;font-size:11.5px;color:#4a5560;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ cad.rodape }}</span>
+            <button onClick="{{ cad.fechar }}" style="height:34px;padding:0 14px;border-radius:8px;background:#fff;box-shadow:inset 0 0 0 1px #dbdede;font-size:12.5px;font-weight:500;white-space:nowrap;flex:0 0 auto;border:0;cursor:pointer" style-hover="background:#f1f3f3">Cancelar</button>
+            <button onClick="{{ cad.confirmar }}" style="{{ cad.btnStyle }}">{{ cad.btnLabel }}</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ qual.aberto }}">
+    <div onClick="{{ qual.fechar }}" style="position:fixed;inset:0;background:rgba(9,14,20,.5);z-index:53;display:grid;place-items:center;padding:20px;animation:of-fade .16s ease-out both">
+      <div onClick="{{ parar }}" style="width:476px;max-width:100%;max-height:calc(100vh - 40px);background:#fff;border-radius:14px;overflow:hidden;display:flex;flex-direction:column;animation:of-rise .2s cubic-bezier(.2,0,.2,1) both">
+
+        <div style="flex:0 0 auto;padding:16px 19px 14px;border-bottom:1px solid #e3e7e8">
+          <div style="display:flex;align-items:flex-start;gap:11px">
+            <span style="flex:0 0 auto;width:32px;height:32px;border-radius:9px;background:#e6f4ee;box-shadow:inset 0 0 0 1px #bfe3d4;display:grid;place-items:center">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1f7256" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg>
+            </span>
+            <div style="flex:1;min-width:0">
+              <div style="font-family:'Plus Jakarta Sans',sans-serif;font-size:15px;font-weight:700;letter-spacing:-.015em;color:#12171d;line-height:1.25">{{ qual.titulo }}</div>
+              <div style="font-size:12.5px;color:#4a5560;line-height:1.45;margin-top:2px;text-wrap:pretty">{{ qual.subtitulo }}</div>
+            </div>
+            <button onClick="{{ qual.fechar }}" style="flex:0 0 auto;width:28px;height:28px;border-radius:8px;display:grid;place-items:center;color:#4a5560;border:0;background:transparent;cursor:pointer" style-hover="background:#f1f3f3;color:#12171d">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"></path></svg>
+            </button>
+          </div>
+          <div style="display:flex;align-items:center;gap:9px;margin-top:12px;padding:9px 11px;border-radius:9px;background:#fafafa;box-shadow:inset 0 0 0 1px #eef1f1">
+            <span style="flex:0 0 auto;width:26px;height:26px;border-radius:7px;background:#eeeff3;color:#4a5560;font-size:9.5px;font-weight:700;display:grid;place-items:center">{{ qual.iniciais }}</span>
+            <span style="flex:1;min-width:0">
+              <span style="display:block;font-size:12.5px;font-weight:600;color:#12171d;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ qual.empresa }}</span>
+              <span style="display:block;font-size:11px;color:#67787c;line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ qual.pessoa }}</span>
+            </span>
+            <span style="{{ qual.canalStyle }}">{{ qual.canal }}</span>
+          </div>
+        </div>
+
+        <sc-if value="{{ qual.passoDados }}">
+        <div style="flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:17px 19px 19px;display:flex;flex-direction:column;gap:17px">
+
+          <div>
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
+              <span style="font-size:10.5px;font-weight:700;letter-spacing:.07em;color:#4a5560">INTERESSE</span>
+              <span style="font-size:10.5px;font-weight:700;color:#c2330f">*</span>
+              <span style="flex:1"></span>
+              <span style="font-size:11px;color:#67787c;white-space:nowrap">{{ qual.interesseConta }}</span>
+            </div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              <sc-for list="{{ qual.interesses }}" as="i" hint-placeholder-count="4">
+                <button onClick="{{ i.onClick }}" style="{{ i.style }}">
+                  <sc-if value="{{ i.on }}">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto"><path d="M20 6 9 17l-5-5"></path></svg>
+                  </sc-if>
+                  <span>{{ i.label }}</span>
+                </button>
+              </sc-for>
+            </div>
+          </div>
+
+          <div>
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
+              <span style="font-size:10.5px;font-weight:700;letter-spacing:.07em;color:#4a5560">TAMANHO DA OPERAÇÃO</span>
+              <span style="font-size:10.5px;font-weight:700;color:#c2330f">*</span>
+              <span style="flex:1"></span>
+              <span style="{{ qual.porteFaixaStyle }}">{{ qual.porteFaixa }}</span>
+            </div>
+            <div style="display:flex;align-items:stretch;height:42px;border-radius:10px;background:#fff;box-shadow:inset 0 0 0 1px #dbdede;overflow:hidden">
+              <button onClick="{{ qual.menos }}" style="flex:0 0 auto;width:40px;display:grid;place-items:center;background:#fafafa;border:0;border-right:1px solid #eef1f1;color:#4a5560;cursor:pointer" style-hover="background:#f1f3f3;color:#12171d" title="Diminuir">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 12h14"></path></svg>
+              </button>
+              <input value="{{ qual.porte }}" onChange="{{ qual.setPorte }}" inputMode="numeric" style="flex:1;min-width:0;border:0;outline:0;background:transparent;text-align:center;font-family:'Plus Jakarta Sans',sans-serif;font-size:17px;font-weight:700;letter-spacing:-.01em;color:#12171d;font-variant-numeric:tabular-nums">
+              <span style="flex:0 0 auto;display:flex;align-items:center;padding-right:12px;font-size:12px;color:#67787c;white-space:nowrap">atendentes</span>
+              <button onClick="{{ qual.mais }}" style="flex:0 0 auto;width:40px;display:grid;place-items:center;background:#fafafa;border:0;border-left:1px solid #eef1f1;color:#4a5560;cursor:pointer" style-hover="background:#f1f3f3;color:#12171d" title="Aumentar">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+              </button>
+            </div>
+            <div style="display:flex;gap:6px;margin-top:7px;flex-wrap:wrap">
+              <sc-for list="{{ qual.portesRapidos }}" as="p" hint-placeholder-count="4">
+                <button onClick="{{ p.onClick }}" style="{{ p.style }}">{{ p.label }}</button>
+              </sc-for>
+            </div>
+          </div>
+
+          <div>
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
+              <span style="font-size:10.5px;font-weight:700;letter-spacing:.07em;color:#4a5560">DOR PRINCIPAL</span>
+              <span style="font-size:10.5px;font-weight:700;color:#c2330f">*</span>
+            </div>
+            <input value="{{ qual.dor }}" onChange="{{ qual.setDor }}" placeholder="Ex.: alto custo com telefonia" style="{{ qual.dorStyle }}">
+            <sc-if value="{{ qual.faltaDor }}">
+              <div style="display:flex;align-items:center;gap:5px;margin-top:6px">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#c2330f" stroke-width="2.2" stroke-linecap="round" style="flex:0 0 auto"><path d="M12 8v5M12 17h.01M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z"></path></svg>
+                <span style="font-size:11.5px;font-weight:600;color:#c2330f">Escolha uma sugestão abaixo ou escreva a dor</span>
+              </div>
+            </sc-if>
+            <div style="display:flex;gap:6px;margin-top:7px;flex-wrap:wrap">
+              <sc-for list="{{ qual.doresRapidas }}" as="d" hint-placeholder-count="3">
+                <button onClick="{{ d.onClick }}" style="{{ d.style }}">{{ d.label }}</button>
+              </sc-for>
+            </div>
+          </div>
+
+          <div>
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
+              <span style="font-size:10.5px;font-weight:700;letter-spacing:.07em;color:#4a5560">FIT</span>
+              <span style="font-size:10.5px;font-weight:700;color:#c2330f">*</span>
+            </div>
+            <div style="display:flex;gap:7px">
+              <sc-for list="{{ qual.fits }}" as="ft" hint-placeholder-count="3">
+                <button onClick="{{ ft.onClick }}" style="{{ ft.style }}">
+                  <span style="{{ ft.barras }}">
+                    <sc-for list="{{ ft.niveis }}" as="n" hint-placeholder-count="3">
+                      <span style="{{ n.style }}"></span>
+                    </sc-for>
+                  </span>
+                  <span style="font-size:12.5px;font-weight:600;white-space:nowrap">{{ ft.label }}</span>
+                </button>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+
+        </sc-if>
+
+        <sc-if value="{{ qual.passoOpp }}">
+          <div style="flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:17px 19px 19px;display:flex;flex-direction:column;gap:17px">
+            <div>
+              <div style="display:flex;align-items:center;gap:6px;margin-bottom:9px">
+                <span style="font-size:10.5px;font-weight:700;letter-spacing:.07em;color:#4a5560">COMO ESSA OPORTUNIDADE IRÁ AVANÇAR?</span>
+                <span style="font-size:10.5px;font-weight:700;color:#c2330f">*</span>
+              </div>
+              <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:7px">
+                <sc-for list="{{ qual.avancos }}" as="v" hint-placeholder-count="5">
+                  <button onClick="{{ v.onClick }}" style="{{ v.style }}">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto"><path d="{{ v.d }}"></path></svg>
+                    <span style="font-size:12.5px;font-weight:600;white-space:nowrap">{{ v.label }}</span>
+                  </button>
+                </sc-for>
+              </div>
+            </div>
+
+            <div style="height:1px;background:#eef1f1"></div>
+
+              <div>
+                <div style="display:flex;align-items:center;gap:5px;margin-bottom:6px">
+                  <span style="font-size:10.5px;font-weight:700;letter-spacing:.07em;color:#4a5560">OPORTUNIDADE</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;height:40px;padding:0 12px;border-radius:9px;background:#fafafa;box-shadow:inset 0 0 0 1px #eef1f1">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#67787c" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto"><path d="M16 20V6a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v14M2 9a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z"></path></svg>
+                  <span style="flex:1;min-width:0;font-size:13px;font-weight:600;color:#12171d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ qual.oppNome }}</span>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#a3a8a4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto" title="Nome travado"><path d="M5 11h14v10H5zM8 11V7a4 4 0 0 1 8 0v4"></path></svg>
+                </div>
+              </div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+              <div>
+                <div style="display:flex;align-items:center;gap:5px;margin-bottom:6px">
+                  <span style="font-size:10.5px;font-weight:700;letter-spacing:.07em;color:#4a5560">RESPONSÁVEL</span>
+                </div>
+                <div style="position:relative">
+                  {{ qual.campoResp }}
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#4a5560" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="position:absolute;right:11px;top:50%;transform:translateY(-50%);pointer-events:none"><path d="m6 9 6 6 6-6"></path></svg>
+                </div>
+              </div>
+              <div>
+                <div style="display:flex;align-items:center;gap:5px;margin-bottom:6px">
+                  <span style="font-size:10.5px;font-weight:700;letter-spacing:.07em;color:#4a5560">ETAPA INICIAL</span>
+                </div>
+                <div style="position:relative">
+                  {{ qual.campoEtapa }}
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#4a5560" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="position:absolute;right:11px;top:50%;transform:translateY(-50%);pointer-events:none"><path d="m6 9 6 6 6-6"></path></svg>
+                </div>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ qual.passoReuniao }}">
+          <div style="flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:17px 19px 19px;display:flex;flex-direction:column;gap:15px">
+            <div style="display:flex;align-items:center;gap:9px;padding:10px 12px;border-radius:9px;background:#fafafa;box-shadow:inset 0 0 0 1px #eef1f1">
+              <span style="flex:0 0 auto;width:26px;height:26px;border-radius:7px;background:#eeeff3;color:#4a5560;font-size:9.5px;font-weight:700;display:flex;align-items:center;justify-content:center">{{ qual.iniciaisPessoa }}</span>
+              <span style="flex:1;min-width:0">
+                <span style="display:block;font-size:12.5px;font-weight:600;color:#12171d;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ qual.contatoNome }}</span>
+                <span style="display:block;font-size:11px;color:#67787c;line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ qual.contatoEmail }}</span>
+              </span>
+              <button onClick="{{ qual.addConvidado }}" style="flex:0 0 auto;display:flex;align-items:center;gap:5px;height:28px;padding:0 10px;border-radius:7px;background:#fff;box-shadow:inset 0 0 0 1px #dbdede;font-size:11.5px;font-weight:600;color:#1f252c;white-space:nowrap;border:0;cursor:pointer" style-hover="background:#f1f3f3">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" style="flex:0 0 auto"><path d="M12 5v14M5 12h14"></path></svg>
+                <span>Convidado</span>
+              </button>
+            </div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+              <div>
+                <div style="display:flex;align-items:center;gap:5px;margin-bottom:6px">
+                  <span style="font-size:10.5px;font-weight:700;letter-spacing:.07em;color:#4a5560">DATA</span>
+                  <span style="font-size:10.5px;font-weight:700;color:#c2330f">*</span>
+                </div>
+                <input value="{{ qual.reuData }}" onChange="{{ qual.setReuData }}" type="date" style="{{ qual.inputStyle }}">
+              </div>
+              <div>
+                <div style="display:flex;align-items:center;gap:5px;margin-bottom:6px">
+                  <span style="font-size:10.5px;font-weight:700;letter-spacing:.07em;color:#4a5560">HORÁRIO</span>
+                  <span style="font-size:10.5px;font-weight:700;color:#c2330f">*</span>
+                </div>
+                <input value="{{ qual.reuHora }}" onChange="{{ qual.setReuHora }}" type="time" style="{{ qual.inputStyle }}">
+              </div>
+            </div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+              <div>
+                <div style="display:flex;align-items:center;gap:5px;margin-bottom:6px">
+                  <span style="font-size:10.5px;font-weight:700;letter-spacing:.07em;color:#4a5560">DURAÇÃO</span>
+                </div>
+                <div style="display:flex;gap:6px">
+                  <sc-for list="{{ qual.duracoes }}" as="d" hint-placeholder-count="3">
+                    <button onClick="{{ d.onClick }}" style="{{ d.style }}">{{ d.label }}</button>
+                  </sc-for>
+                </div>
+              </div>
+              <div>
+                <div style="display:flex;align-items:center;gap:5px;margin-bottom:6px">
+                  <span style="font-size:10.5px;font-weight:700;letter-spacing:.07em;color:#4a5560">CLOSER</span>
+                </div>
+                <div style="position:relative">
+                  {{ qual.campoCloser }}
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#4a5560" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="position:absolute;right:11px;top:50%;transform:translateY(-50%);pointer-events:none"><path d="m6 9 6 6 6-6"></path></svg>
+                </div>
+              </div>
+            </div>
+
+              <div>
+                <div style="display:flex;align-items:center;gap:5px;margin-bottom:6px">
+                  <span style="font-size:10.5px;font-weight:700;letter-spacing:.07em;color:#4a5560">TIPO</span>
+                </div>
+                <div style="display:flex;gap:7px">
+                <sc-for list="{{ qual.tiposReuniao }}" as="t" hint-placeholder-count="3">
+                  <button onClick="{{ t.onClick }}" style="{{ t.style }}">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto"><path d="{{ t.d }}"></path></svg>
+                    <span style="font-size:12.5px;font-weight:600;white-space:nowrap">{{ t.label }}</span>
+                  </button>
+                </sc-for>
+              </div>
+              </div>
+
+              <div>
+                <div style="display:flex;align-items:center;gap:5px;margin-bottom:6px">
+                  <span style="font-size:10.5px;font-weight:700;letter-spacing:.07em;color:#4a5560">TÍTULO</span>
+                  <span style="font-size:10.5px;font-weight:700;color:#c2330f">*</span>
+                </div>
+                <input value="{{ qual.reuTitulo }}" onChange="{{ qual.setReuTitulo }}" placeholder="Ex.: Grupo Aurora x Callface" style="{{ qual.inputStyle }}">
+              </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ qual.passoTarefa }}">
+          <div style="flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:17px 19px 19px;display:flex;flex-direction:column;gap:15px">
+            <div style="display:flex;align-items:center;gap:9px;padding:10px 12px;border-radius:9px;background:#fafafa;box-shadow:inset 0 0 0 1px #eef1f1">
+              <span style="{{ qual.canalSelo }}">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto"><path d="{{ qual.tarefaIcone }}"></path></svg>
+              </span>
+              <span style="flex:1;min-width:0;font-size:12.5px;color:#4a5560;line-height:1.45;text-wrap:pretty">{{ qual.tarefaDica }}</span>
+            </div>
+
+              <div>
+                <div style="display:flex;align-items:center;gap:5px;margin-bottom:6px">
+                  <span style="font-size:10.5px;font-weight:700;letter-spacing:.07em;color:#4a5560">TÍTULO</span>
+                  <span style="font-size:10.5px;font-weight:700;color:#c2330f">*</span>
+                </div>
+                <input value="{{ qual.tarTitulo }}" onChange="{{ qual.setTarTitulo }}" placeholder="{{ qual.tarTituloDica }}" style="{{ qual.inputStyle }}">
+              </div>
+              <div>
+                <div style="display:flex;align-items:center;gap:5px;margin-bottom:6px">
+                  <span style="font-size:10.5px;font-weight:700;letter-spacing:.07em;color:#4a5560">QUANDO</span>
+                  <span style="font-size:10.5px;font-weight:700;color:#c2330f">*</span>
+                </div>
+                <div>
+                <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:7px">
+                  <sc-for list="{{ qual.quandos }}" as="q" hint-placeholder-count="3">
+                    <button onClick="{{ q.onClick }}" style="{{ q.style }}">{{ q.label }}</button>
+                  </sc-for>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+                  <input value="{{ qual.tarData }}" onChange="{{ qual.setTarData }}" type="date" style="{{ qual.inputStyle }}">
+                  <input value="{{ qual.tarHora }}" onChange="{{ qual.setTarHora }}" type="time" style="{{ qual.inputStyle }}">
+                </div>
+              </div>
+              </div>
+              <div>
+                <div style="display:flex;align-items:center;gap:5px;margin-bottom:6px">
+                  <span style="font-size:10.5px;font-weight:700;letter-spacing:.07em;color:#4a5560">OBSERVAÇÃO</span>
+                </div>
+                <input value="{{ qual.tarObs }}" onChange="{{ qual.setTarObs }}" placeholder="Ex.: já conversando com o decisor" style="{{ qual.inputStyle }}">
+              </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ qual.passoOk }}">
+          <div style="flex:1;min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:13px;padding:44px 24px">
+            <span style="width:56px;height:56px;border-radius:9999px;background:#e6f4ee;display:flex;align-items:center;justify-content:center;animation:of-pop .32s cubic-bezier(.2,.9,.3,1.3) both">
+              <svg width="27" height="27" viewBox="0 0 24 24" fill="none" stroke="#1f7256" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" style="stroke-dasharray:28;stroke-dashoffset:28;animation:of-tick .34s .16s cubic-bezier(.2,0,.2,1) forwards"><path d="M20 6 9 17l-5-5"></path></svg>
+            </span>
+            <div style="text-align:center">
+              <div style="font-family:'Plus Jakarta Sans',sans-serif;font-size:15px;font-weight:700;letter-spacing:-.015em;color:#12171d">{{ qual.okTitulo }}</div>
+              <div style="font-size:12.5px;color:#4a5560;line-height:1.5;margin-top:4px;text-wrap:pretty">{{ qual.okNota }}</div>
+            </div>
+          </div>
+        </sc-if>
+        <div style="flex:0 0 auto;padding:12px 19px;border-top:1px solid #e3e7e8;background:#fafafa;display:flex;gap:9px;align-items:center">
+          <sc-if value="{{ qual.podeVoltar }}">
+            <button onClick="{{ qual.voltar }}" style="display:flex;align-items:center;gap:6px;height:34px;padding:0 12px;border-radius:8px;background:#fff;box-shadow:inset 0 0 0 1px #dbdede;font-size:12.5px;font-weight:500;white-space:nowrap;flex:0 0 auto;border:0;cursor:pointer" style-hover="background:#f1f3f3">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto"><path d="m15 18-6-6 6-6"></path></svg>
+              <span>Voltar</span>
+            </button>
+          </sc-if>
+          <sc-if value="{{ qual.passoDados }}">
+            <span style="{{ qual.statusStyle }}">{{ qual.status }}</span>
+          </sc-if>
+          <span style="flex:1;min-width:0"></span>
+          <sc-if value="{{ qual.passoDados }}">
+            <button onClick="{{ qual.fechar }}" style="height:34px;padding:0 14px;border-radius:8px;background:#fff;box-shadow:inset 0 0 0 1px #dbdede;font-size:12.5px;font-weight:500;white-space:nowrap;flex:0 0 auto;border:0;cursor:pointer" style-hover="background:#f1f3f3">Cancelar</button>
+            <div data-of-qualmenu="1" ref="{{ qual.ancora }}" style="position:relative;flex:0 0 auto">
+              <button onClick="{{ qual.toggleMenu }}" style="{{ qual.grupoStyle }}" style-hover="{{ qual.hover }}">
+                <span style="{{ qual.corpoStyle }}">Qualificar</span>
+                <span style="{{ qual.divisoria }}"></span>
+                <span style="{{ qual.setaStyle }}">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="{{ qual.chevron }}"><path d="m6 9 6 6 6-6"></path></svg>
+                </span>
+              </button>
+            </div>
+          </sc-if>
+          <sc-if value="{{ qual.passoOpp }}">
+            <button onClick="{{ qual.irDetalhe }}" style="{{ qual.btnAvancoStyle }}">{{ qual.btnAvancoLabel }}</button>
+          </sc-if>
+          <sc-if value="{{ qual.passoDetalhe }}">
+            <button onClick="{{ qual.concluir }}" style="{{ qual.btnFinalStyle }}">{{ qual.btnFinalLabel }}</button>
+          </sc-if>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ qual.menu }}">
+    <div data-of-qualmenu="1" style="{{ qual.menuStyle }}">
+      <sc-for list="{{ qual.opcoesSaida }}" as="o" hint-placeholder-count="2">
+        <button onClick="{{ o.onClick }}" style="{{ o.style }}" style-hover="background:#f1f3f3">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto;margin-top:1px"><path d="{{ o.d }}"></path></svg>
+          <span style="flex:1;min-width:0">
+            <span style="display:block;font-size:13.5px;font-weight:500;line-height:1.35">{{ o.label }}</span>
+            <span style="display:block;font-size:11.5px;color:#4a5560;line-height:1.4;margin-top:1px;text-wrap:pretty">{{ o.nota }}</span>
+          </span>
+        </button>
+      </sc-for>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ desq.aberto }}">
+    <div onClick="{{ desq.fechar }}" style="position:fixed;inset:0;background:rgba(9,14,20,.45);z-index:53;display:grid;place-items:center;padding:20px;animation:of-fade .16s ease-out both">
+      <div onClick="{{ parar }}" style="width:432px;max-width:100%;max-height:calc(100vh - 40px);background:#fff;border-radius:13px;overflow:hidden;display:flex;flex-direction:column;animation:of-rise .2s cubic-bezier(.2,0,.2,1) both">
+
+        <div style="flex:0 0 auto;padding:16px 18px 13px;border-bottom:1px solid #e3e7e8">
+          <div style="font-family:'Plus Jakarta Sans',sans-serif;font-size:14.5px;font-weight:700;letter-spacing:-.01em;margin-bottom:3px">Desqualificar lead</div>
+          <div style="font-size:12.5px;color:#4a5560;line-height:1.45;text-wrap:pretty">{{ desq.contexto }}</div>
+        </div>
+
+        <div style="flex:1;min-height:0;overflow-y:auto;padding:16px 18px;display:flex;flex-direction:column;gap:15px">
+          <div>
+            <div style="display:flex;align-items:center;gap:5px;margin-bottom:7px">
+              <span style="font-size:11px;font-weight:600;color:#4a5560">Motivo da desqualificação</span>
+              <span style="font-size:11px;font-weight:700;color:#c2330f">*</span>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:5px">
+              <sc-for list="{{ desq.motivos }}" as="m" hint-placeholder-count="6">
+                <button onClick="{{ m.onClick }}" style="{{ m.style }}">
+                  <span style="{{ m.radio }}"></span>
+                  <span style="flex:1;min-width:0;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ m.label }}</span>
+                </button>
+              </sc-for>
+            </div>
+          </div>
+
+          <div>
+            <div style="display:flex;align-items:center;gap:7px;margin-bottom:7px">
+              <span style="font-size:11px;font-weight:600;color:#4a5560">Observação</span>
+              <span style="{{ desq.obsSelo }}">{{ desq.obsRotulo }}</span>
+            </div>
+            <textarea value="{{ desq.obs }}" onChange="{{ desq.setObs }}" rows="3" placeholder="{{ desq.obsDica }}" style="{{ desq.obsStyle }}"></textarea>
+          </div>
+        </div>
+
+        <div style="flex:0 0 auto;padding:12px 18px;border-top:1px solid #e3e7e8;background:#fafafa;display:flex;gap:7px;justify-content:flex-end">
+          <button onClick="{{ desq.fechar }}" style="height:34px;padding:0 14px;border-radius:8px;background:#fff;box-shadow:inset 0 0 0 1px #dbdede;font-size:12.5px;font-weight:500;white-space:nowrap;flex:0 0 auto;border:0;cursor:pointer" style-hover="background:#f1f3f3">Cancelar</button>
+          <button onClick="{{ desq.confirmar }}" style="{{ desq.btnStyle }}">{{ desq.btnLabel }}</button>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ temNutrir }}">
+    <div onClick="{{ fecharNutrir }}" style="position:fixed;inset:0;background:rgba(9,14,20,.45);z-index:50;display:grid;place-items:center;padding:20px;animation:of-fade .16s ease-out both">
+      <div onClick="{{ parar }}" style="width:428px;max-width:100%;background:#fff;border-radius:13px;overflow:hidden;animation:of-rise .2s cubic-bezier(.2,0,.2,1) both">
+        <div style="padding:16px 18px 13px;border-bottom:1px solid #e3e7e8">
+          <div style="font-family:'Plus Jakarta Sans',sans-serif;font-size:14.5px;font-weight:700;margin-bottom:3px">Mover para nutrição</div>
+          <div style="font-size:12.5px;color:#4a5560;line-height:1.45;text-wrap:pretty">Nutrição não pode ser lixeira elegante: exige motivo, e a maioria exige data de retomada.</div>
+        </div>
+        <div style="padding:16px 18px;display:flex;flex-direction:column;gap:14px">
+          <div style="display:flex;flex-direction:column;gap:5px">
+            <sc-for list="{{ motivosNutricao }}" as="m" hint-placeholder-count="8">
+              <button onClick="{{ m.onClick }}" style="{{ m.style }}">
+                <span style="{{ m.radio }}"></span>
+                <span style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ m.label }}</span>
+                <sc-if value="{{ m.exige }}">
+                  <span style="flex:0 0 auto;font-size:10px;font-weight:600;color:#6e5420;background:#f7edd8;border-radius:4px;padding:2px 6px;white-space:nowrap">data</span>
+                </sc-if>
+              </button>
+            </sc-for>
+          </div>
+          <div>
+            <div style="display:flex;align-items:center;gap:7px;margin-bottom:7px">
+              <span style="font-size:11.5px;font-weight:600;color:#3d4650">Retomar em</span>
+              <sc-if value="{{ exigeData }}">
+                <span style="font-size:10px;font-weight:600;color:#9c3210;background:#fdeae5;border-radius:4px;padding:2px 6px;white-space:nowrap">obrigatório</span>
+              </sc-if>
+            </div>
+            <input value="{{ dataRetomada }}" onChange="{{ setData }}" type="date" style="{{ dataStyle }}">
+            <div style="font-size:11.5px;color:#4a5560;margin-top:6px;line-height:1.45;text-wrap:pretty">Gera tarefa real — o lead reaparece na fila nessa data.</div>
+          </div>
+        </div>
+        <div style="padding:12px 18px;border-top:1px solid #e3e7e8;background:#fafaf8;display:flex;gap:7px;justify-content:flex-end">
+          <button onClick="{{ fecharNutrir }}" style="height:34px;padding:0 14px;border-radius:8px;border:1px solid #dbdede;background:#fff;font-size:12.5px;font-weight:500;white-space:nowrap;flex:0 0 auto" style-hover="background:#f2f2f0">Cancelar</button>
+          <button onClick="{{ confirmarNutrir }}" style="{{ nutrirBtnStyle }}">{{ nutrirBtnLabel }}</button>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:460,&quot;height&quot;:260}}">
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    const E = (typeof window !== "undefined" && window.OnFaceEstado) || null;
+    const d = E ? E.tudo() : {};
+    this.state = {
+      detalhe: false, detalheId: null,
+      cadPausada: false, nutrir: false, motivo: null, data: "",
+      atvAberta: false, atvModo: "ver", atvDraft: null,
+      cadPicker: false, timelineTudo: false, secDrawer: null,
+      cadModal: false, cadEscolha: null, cadOrigens: {},
+      tagMenu: null, tagRect: null, tagNova: "",
+      saidaMenu: false,
+      desqAberto: false, desqMotivo: null, desqObs: "",
+      qualAberto: false, qualDados: {}, qualMenu: false, qualRect: null, qualPasso: "dados", qualOpp: {}, qualOkTitulo: "", qualOkNota: "", qualTentou: false,
+      leads: d.leads || [],
+      qual: d.qual || {}, cadencias: d.cadencias || {}, atvs: d.atvs || {},
+      tagsLead: d.tagsLead || {}, tagsCriadas: d.tagsCriadas || []
+    };
+    this.qualRef = React.createRef();
+  }
+
+  componentDidMount() {
+    const E = window.OnFaceEstado;
+    this._offEstado = E ? E.assinar((d) => {
+      const patch = {};
+      ["leads", "qual", "cadencias", "atvs", "tagsLead", "tagsCriadas"].forEach(k => {
+        if (d[k] !== this.state[k]) patch[k] = d[k];
+      });
+      if (Object.keys(patch).length) this.setState(patch);
+    }) : null;
+    this._offPecas = E ? E.assinarPecas((peca, leadId) => this.abrirPeca(peca, leadId)) : null;
+    this._k = (e) => {
+      if (e.key !== "Escape") return;
+      if (this.state.atvAberta) return this.setState({ atvAberta: false, atvDraft: null });
+      if (this.state.tagMenu) return this.setState({ tagMenu: null });
+      if (this.state.cadModal) return this.setState({ cadModal: false });
+      if (this.state.qualMenu) return this.setState({ qualMenu: false });
+      if (this.state.qualAberto) return this.setState({ qualAberto: false, qualDados: {}, qualMenu: false });
+      if (this.state.desqAberto) return this.setState({ desqAberto: false, desqMotivo: null, desqObs: "" });
+      if (this.state.saidaMenu) return this.setState({ saidaMenu: false });
+      if (this.state.nutrir) return this.setState({ nutrir: false, motivo: null, data: "" });
+      if (this.state.detalhe) this.setState({ detalhe: false, cadPicker: false, timelineTudo: false });
+    };
+    document.addEventListener("keydown", this._k);
+    this._fora = (e) => {
+      const alvo = e.target;
+      const dentro = (sel) => alvo && alvo.closest && alvo.closest(sel);
+      const mudar = {};
+      if (this.state.saidaMenu && !dentro("[data-of-saida]")) mudar.saidaMenu = false;
+      if (this.state.qualMenu && !dentro("[data-of-qualmenu]")) mudar.qualMenu = false;
+      if (this.state.tagMenu && !dentro("[data-of-tagmenu]")) mudar.tagMenu = null;
+      if (Object.keys(mudar).length) this.setState(mudar);
+    };
+    document.addEventListener("pointerdown", this._fora, true);
+    this._resize = () => { if (this.state.tagMenu) this.setState({ tagMenu: null }); };
+    window.addEventListener("resize", this._resize);
+  }
+
+  componentDidUpdate(_, anterior) {
+    const E = window.OnFaceEstado;
+    if (!E) return;
+    const patch = {};
+    ["leads", "qual", "cadencias", "atvs", "tagsLead", "tagsCriadas"].forEach(k => {
+      if (anterior[k] !== this.state[k]) patch[k] = this.state[k];
+    });
+    if (Object.keys(patch).length) E.gravar(patch);
+  }
+
+  componentWillUnmount() {
+    document.removeEventListener("keydown", this._k);
+    document.removeEventListener("pointerdown", this._fora, true);
+    window.removeEventListener("resize", this._resize);
+    if (this._offEstado) this._offEstado();
+    if (this._offPecas) this._offPecas();
+    clearTimeout(this._qk);
+  }
+
+  abrirPeca(peca, leadId) {
+    const base = leadId ? { detalheId: leadId } : {};
+    if (peca === "detalhe") return this.setState(Object.assign({}, base, { detalhe: true }));
+    if (peca === "nutrir") return this.setState(Object.assign({}, base, { nutrir: true, motivo: null, data: "" }));
+    if (peca === "desqualificar") return this.setState(Object.assign({}, base, { desqAberto: true, desqMotivo: null, desqObs: "" }));
+    if (peca === "qualificar") return this.setState(Object.assign({}, base, { qualAberto: true, qualDados: {}, qualMenu: false, qualTentou: false, qualPasso: "dados", qualOpp: {} }));
+    if (peca === "atividade") return this.setState(Object.assign({}, base, { atvAberta: true, atvModo: "editar", atvDraft: null }));
+    if (peca === "cadencia") return this.setState(Object.assign({}, base, { cadModal: true, cadEscolha: null }));
+  }
+
+  diz(texto, tom) {
+    const E = window.OnFaceEstado;
+    if (E) E.avisar(texto, tom);
+  }
+
+  ir(href, label) {
+    const E = window.OnFaceEstado;
+    if (E) E.irPara(href, label);
+  }
+
+  criarTagLead(id) {
+    const nome = (this.state.tagNova || "").trim();
+    if (!nome) return this.diz("Escreva o nome da tag", "erro");
+    this.setState(s => ({
+      tagsCriadas: (s.tagsCriadas || []).indexOf(nome) >= 0 ? s.tagsCriadas : (s.tagsCriadas || []).concat(nome),
+      tagsLead: Object.assign({}, s.tagsLead, { [id]: ((s.tagsLead || {})[id] || []).concat(nome) }),
+      tagNova: ""
+    }));
+    this.diz("Tag " + nome + " criada e aplicada", "ok");
+  }
+
+  atvVazia(L) {
+    return { tipo: "Follow up", situacao: "A fazer", titulo: "", desc: "", data: "", hora: "", resp: (L && L.resp) || "Scott Ferraz" };
+  }
+
+  setQual(id, campo, valor, padrao) {
+    this.setState(s => {
+      const base = Object.assign({}, padrao || {}, s.qual[id] || {});
+      return { qual: Object.assign({}, s.qual, { [id]: Object.assign(base, { [campo]: valor }) }) };
+    });
+  }
+
+  setAtv(id, patch, padrao) {
+    this.setState(s => {
+      const base = Object.assign({}, padrao || {}, s.atvs[id] || {});
+      return { atvs: Object.assign({}, s.atvs, { [id]: Object.assign(base, patch) }) };
+    });
+  }
+
+  renderVals() {
+    const S = this.state;
+    const iniciaisDe = (n) => n ? n.split(" ").filter(Boolean).slice(0, 2).map(p => p[0]).join("").toUpperCase() : "—";
+    const L0 = S.leads.find(x => x.id === S.detalheId) || S.leads[0];
+    const rotuloEtapa = { novo: "Novo", em_contato: "Em contato", qualificacao: "Qualificação", qualificado: "Qualificado", oportunidade: "Oportunidade", nutricao: "Nutrição", desqualificado: "Desqualificado" };
+    const corEtapa = { novo: "#4a5560", em_contato: "#4c8fe0", qualificacao: "#9b8bd8", qualificado: "#2f9e7a", oportunidade: "#fe4f2b", nutricao: "#c8a86a", desqualificado: "#4a5560" };
+    const slug = (s) => (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z]/g, "");
+    const dorPor = { "Callface AI": "Atendimento manual não escala", "PABX": "Telefonia legada e caindo", "White Label": "Quer revender com marca própria" };
+    const passoAtual = L0 ? (L0.etapa === "novo" ? 1 : L0.etapa === "em_contato" ? 2 : 3) : 1;
+    const cadPadrao = L0 ? (L0.etapa === "novo" ? null : L0.etapa === "oportunidade" ? "Pós-proposta" : "Primeiro contato") : null;
+    const cadAtual = L0 ? (S.cadencias.hasOwnProperty(L0.id) ? S.cadencias[L0.id] : cadPadrao) : null;
+    const qualPadrao = L0 && L0.etapa !== "novo" ? {
+      interesse: L0.interesse,
+      tamanho: "45",
+      dor: dorPor[L0.interesse] || "",
+      fit: L0.tag === "Enterprise" ? "Alto" : "Médio"
+    } : {};
+    const qualLead = L0 ? Object.assign({}, qualPadrao, S.qual[L0.id] || {}) : {};
+    const qualPreenchidos = ["interesse", "tamanho", "dor", "fit"].filter(k => qualLead[k]).length;
+    const atvPadrao = L0 ? {
+      tipo: L0.acao && L0.acao.indexOf("Ligar") === 0 ? "Ligação" : L0.acao && L0.acao.indexOf("E-mail") === 0 ? "E-mail" : L0.acao && L0.acao.indexOf("Reunião") === 0 ? "Reunião" : "Follow up",
+      situacao: "A fazer",
+      titulo: L0.acao || "",
+      desc: L0.acao ? "Confirmar o cenário atual de atendimento e quem decide a compra. Se avançar, agendar a reunião de descoberta com o time técnico." : "",
+      data: "2026-09-23", hora: "14:30",
+      resp: L0.resp || "Scott Ferraz"
+    } : {};
+    const ehDraft = !!S.atvDraft;
+    const atvLead = ehDraft ? S.atvDraft : (L0 ? Object.assign({}, atvPadrao, S.atvs[L0.id] || {}) : {});
+    const mudaAtv = (patch) => ehDraft
+      ? this.setState(s => ({ atvDraft: Object.assign({}, s.atvDraft, patch) }))
+      : this.setAtv(L0.id, patch, atvPadrao);
+    const det = L0 ? {
+      pessoa: L0.pessoa, cargo: L0.cargo,
+      empresa: L0.empresa || "Sem empresa",
+      semEmpresa: !L0.empresa,
+      iniciais: iniciaisDe(L0.pessoa),
+      avatarStyle: "flex:0 0 auto;width:38px;height:38px;border-radius:9999px;display:grid;place-items:center;font-family:'Plus Jakarta Sans',sans-serif;font-size:13px;font-weight:700;background:#eeeff3;color:#4a5560",
+      telefone: "+55 11 9" + (7000 + (L0.id.charCodeAt(1) * 37) % 2999) + "-" + (1000 + (L0.id.charCodeAt(1) * 53) % 8999),
+      email: slug(L0.pessoa.split(" ")[0]) + "@" + slug(L0.empresa || "semempresa") + ".com.br",
+      toques: [
+        { label: "Ligar", d: "M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.4-1.2a2 2 0 0 1 2.1-.5c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z", onClick: () => this.diz("Chamada iniciada pelo Callface — registra na timeline", "ok") },
+        { label: "WhatsApp", d: "M21 11.5a8.4 8.4 0 0 1-9 8.4 9 9 0 0 1-3.8-.8L3 21l1.9-4.1A8.4 8.4 0 0 1 12 3a8.4 8.4 0 0 1 9 8.5z", onClick: () => this.diz("Conversa aberta no Atendimento", "ok") },
+        { label: "E-mail", d: "M4 4h16v16H4zM4 7l8 6 8-6", onClick: () => this.diz("Compositor de e-mail — a desenhar", "aviso") }
+      ],
+      cad: (() => {
+        const ic = {"wa":"M21 11.5a8.4 8.4 0 0 1-9 8.4 9 9 0 0 1-3.8-.8L3 21l1.9-4.1A8.4 8.4 0 0 1 12 3a8.4 8.4 0 0 1 9 8.5z","tel":"M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7","mail":"M4 4h16v16H4zM4 7l8 6 8-6","task":"M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"};
+        const fluxos = [
+          { k: "Primeiro contato", cor: "#4c8fe0", descricao: "Abertura em três canais nos primeiros cinco dias — para lead inbound recém-chegado.",
+            passos: [
+              ["Dia 0", "WhatsApp de abertura", "Mensagem curta citando a campanha de origem", "wa"],
+              ["Dia 0", "Ligação de conexão", "Tentativa no mesmo dia, até 2 toques", "tel"],
+              ["Dia 2", "E-mail com case", "Case do segmento do lead", "mail"],
+              ["Dia 4", "WhatsApp de retomada", "Pergunta única, sem material", "wa"],
+              ["Dia 5", "Tarefa de decisão", "Seguir, nutrir ou desqualificar", "task"]
+            ] },
+          { k: "Prospecção inbound", cor: "#9b8bd8", descricao: "Cadência longa para lead que baixou material mas não pediu contato.",
+            passos: [
+              ["Dia 0", "E-mail de boas-vindas", "Confirma o material e oferece conversa", "mail"],
+              ["Dia 3", "WhatsApp leve", "Checagem de interesse", "wa"],
+              ["Dia 7", "Ligação", "Janela comercial da manhã", "tel"],
+              ["Dia 10", "Tarefa de decisão", "Encerrar ou mover para nutrição", "task"]
+            ] },
+          { k: "Pós-proposta", cor: "#fe4f2b", descricao: "Acompanhamento após proposta enviada — pressão leve e prazo claro.",
+            passos: [
+              ["Dia 1", "WhatsApp de confirmação", "Confirma o recebimento da proposta", "wa"],
+              ["Dia 3", "Ligação de dúvidas", "Abre espaço para objeção", "tel"],
+              ["Dia 6", "E-mail com prazo", "Reforça validade comercial", "mail"],
+              ["Dia 8", "Tarefa de decisão", "Fechar, renegociar ou perder", "task"]
+            ] },
+          { k: "Reativação", cor: "#c8a86a", descricao: "Retoma lead parado há mais de 30 dias, com toque único por semana.",
+            passos: [
+              ["Dia 0", "E-mail de retomada", "Novidade do produto desde o último contato", "mail"],
+              ["Dia 7", "WhatsApp", "Pergunta sobre o momento atual", "wa"],
+              ["Dia 14", "Tarefa de decisão", "Nutrir ou arquivar", "task"]
+            ] }
+        ];
+        const escolha = S.cadEscolha || "Primeiro contato";
+        const atual = fluxos.find(x => x.k === escolha) || fluxos[0];
+        const canaisDe = (fx) => {
+          const c = {};
+          fx.passos.forEach(p => { c[p[3]] = (c[p[3]] || 0) + 1; });
+          return c;
+        };
+        const rotulos = { wa: "WhatsApp", tel: "Telefone", mail: "E-mail", task: "Tarefa" };
+        const cores = { wa: "background:#eeeff3;color:#4a5560", tel: "background:#eeeff3;color:#4a5560", mail: "background:#eeeff3;color:#4a5560", task: "background:#12171d;color:#fff" };
+        const usa = canaisDe(atual);
+        const numeros = S.cadOrigens || {};
+        const bancos = {
+          wa: [["+55 11 4003-2210", "Comercial · SP"], ["+55 11 98877-1200", "Camila Reis"], ["+55 41 3030-8800", "Sul"]],
+          tel: [["+55 11 4003-2200", "Tronco comercial"], ["+55 11 4003-2244", "Discador pré-vendas"]],
+          mail: [["comercial@callface.com.br", "Caixa comercial"], ["camila@callface.com.br", "Camila Reis"]]
+        };
+        const inp = "width:100%;height:36px;padding:0 30px 0 11px;border-radius:8px;background:#fff;outline:0;font-size:12.5px;font-family:inherit;border:1px solid #dbdede;appearance:none;cursor:pointer";
+        const estiloSel = { width: "100%", height: "36px", padding: "0 30px 0 11px", borderRadius: "8px", background: "#fff", outline: 0, fontSize: "12.5px", fontFamily: "inherit", border: "1px solid #dbdede", appearance: "none", cursor: "pointer", color: "#1f252c" };
+        const precisa = Object.keys(bancos).filter(k => usa[k]);
+        const valorDe = (k) => numeros[k] || bancos[k][0][0];
+        return {
+          aberto: !!S.cadModal,
+          fechar: () => this.setState({ cadModal: false }),
+          nome: atual.k,
+          descricao: atual.descricao,
+          selectStyle: inp,
+          lista: fluxos.map(fx => {
+            const on = fx.k === escolha;
+            const c = canaisDe(fx);
+            return {
+              nome: fx.k,
+              resumo: fx.passos.length + " passos · " + fx.passos[fx.passos.length - 1][0].toLowerCase(),
+              ponto: "flex:0 0 auto;width:7px;height:7px;border-radius:50%;background:" + (on ? "#fe4f2b" : "#c8ccc9"),
+              icones: Object.keys(c).filter(k => k !== "task").map(k => ({ d: ic[k] })),
+              style: "display:flex;flex-direction:column;align-items:flex-start;width:100%;padding:9px 10px;border-radius:9px;border:0;cursor:pointer;text-align:left;transition:background 120ms cubic-bezier(0,0,.2,1);"
+                + (on ? "background:#fff;box-shadow:inset 0 0 0 1px #dbdede;color:#12171d" : "background:transparent;color:#1f252c"),
+              onClick: () => this.setState({ cadEscolha: fx.k })
+            };
+          }),
+          passos: atual.passos.map((p, i) => ({
+            quando: p[0], titulo: p[1], nota: p[2], d: ic[p[3]],
+            temLinha: i < atual.passos.length - 1,
+            marcaStyle: "flex:0 0 auto;width:22px;height:22px;border-radius:7px;display:flex;align-items:center;justify-content:center;" + (i === 0 ? "background:#fe4f2b;color:#fff" : cores[p[3]])
+          })),
+          canais: Object.keys(usa).map(k => ({
+            label: rotulos[k], d: ic[k], conta: usa[k] + (usa[k] > 1 ? " toques" : " toque"),
+            style: "display:inline-flex;align-items:center;gap:6px;height:27px;padding:0 10px;border-radius:8px;font-size:11.5px;font-weight:600;white-space:nowrap;flex:0 0 auto;background:#fff;box-shadow:inset 0 0 0 1px #e3e7e8;color:#1f252c"
+          })),
+          origens: precisa.map(k => ({
+            label: rotulos[k], d: ic[k],
+            selo: "flex:0 0 auto;width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:#eeeff3;color:#4a5560",
+            campo: React.createElement("select", {
+              value: valorDe(k), style: estiloSel,
+              onChange: (e) => {
+                const v = e.target.value;
+                this.setState(s => ({ cadOrigens: Object.assign({}, s.cadOrigens, { [k]: v }) }));
+              }
+            }, bancos[k].map(([v, nota]) => React.createElement("option", { key: v, value: v }, v + " · " + nota)))
+          })),
+          rodape: atual.passos.length + " toques · primeiro disparo hoje",
+          btnLabel: (cadAtual ? "Trocar para esta cadência" : "Inserir na cadência"),
+          btnStyle: "height:34px;padding:0 15px;border-radius:8px;background:#d93c1a;color:#fff;font-size:12.5px;font-weight:600;white-space:nowrap;flex:0 0 auto;border:0;cursor:pointer",
+          confirmar: () => {
+            const id = L0.id;
+            this.setState(s => ({ cadencias: Object.assign({}, s.cadencias, { [id]: escolha }), cadModal: false, cadPausada: false }));
+            this.diz("Lead inserido em " + escolha + " — primeiro toque sai hoje", "ok");
+          }
+        };
+      })(),
+
+      sec: (() => {
+        const padrao = { cad: true, acao: true, qualif: false, timeline: false };
+        const est = S.secDrawer || {};
+        const mk = (k) => {
+          const aberta = est.hasOwnProperty(k) ? est[k] : padrao[k];
+          return {
+            aberta, fechada: !aberta,
+            chevron: "flex:0 0 auto;transition:transform .14s cubic-bezier(.2,0,.2,1);transform:rotate(" + (aberta ? 90 : 0) + "deg)",
+            cabStyle: "display:flex;align-items:center;gap:8px;width:100%;padding:8px;border-radius:8px;border:0;background:transparent;cursor:pointer;text-align:left;transition:background 120ms cubic-bezier(0,0,.2,1)",
+            alternar: () => this.setState(s => ({ secDrawer: Object.assign({}, padrao, s.secDrawer, { [k]: !aberta }) }))
+          };
+        };
+        return { cad: mk("cad"), acao: mk("acao"), qualif: mk("qualif"), timeline: mk("timeline") };
+      })(),
+      cadResumo: (cadAtual ? cadAtual : "Fora de cadência"),
+      acaoResumo: L0.acao ? (L0.venceEm ? L0.acao + " · " + L0.venceEm : L0.acao) : "Sem próxima ação",
+      acaoResumoStyle: "font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:210px;"
+        + (L0.acao ? "color:#67787c" : "color:#c2330f;font-weight:600"),
+      timelineConta: "5 eventos",
+      etapa: rotuloEtapa[L0.etapa],
+      etapaPonto: "flex:0 0 auto;width:7px;height:7px;border-radius:50%;background:" + corEtapa[L0.etapa],
+      trocarEtapa: () => this.diz("Novo, Em contato e Qualificação trocam aqui. Qualificado e Oportunidade são comando.", "aviso"),
+      resp: L0.resp || "Sem responsável",
+      respIniciais: iniciaisDe(L0.resp),
+      respAvatar: "flex:0 0 auto;width:20px;height:20px;border-radius:9999px;display:grid;place-items:center;font-size:9px;font-weight:700;background:"
+        + (L0.resp ? "#eeeff3;color:#616b78" : "#fdeae5;color:#9c3210"),
+      respTexto: "flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left;color:" + (L0.resp ? "#1f252c" : "#c2330f"),
+      trocarResp: () => this.diz("Atribuir responsável — combobox de usuários", "aviso"),
+      origem: L0.origem,
+      origemSelo: "display:inline-flex;align-items:center;height:19px;padding:0 8px;border-radius:6px;background:#eeeff3;color:#4a5560;font-size:11px;font-weight:700;white-space:nowrap",
+      origemDetalhe: (() => {
+        const meses = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+        const base = new Date(2026, 8, 22, 9, 14);
+        const d = new Date(base.getTime() - L0.dias * 864e5 - (L0.id.charCodeAt(1) % 7) * 36e5);
+        const entrada = d.getDate() + " " + meses[d.getMonth()] + " " + d.getFullYear() + " · "
+          + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+        const porOrigem = {
+          "Meta Ads": { conjunto: "Interesse — gestão de atendimento", criativo: "Vídeo 30s · depoimento de cliente" },
+          "Instagram": { conjunto: "Direct do perfil", criativo: "Story com link · bio" },
+          "WhatsApp": { conjunto: "Clique no anúncio para WhatsApp", criativo: "Imagem única · oferta" },
+          "Site": { conjunto: "—", criativo: "Formulário de contato" },
+          "Formulário": { conjunto: "—", criativo: "Landing page de PABX" },
+          "Orgânica": { conjunto: "—", criativo: "—" }
+        };
+        const o = porOrigem[L0.origem] || porOrigem["Site"];
+        return [
+          { label: "Entrada", valor: entrada },
+          { label: "Campanha", valor: L0.campanha || "—" },
+          { label: "Conjunto", valor: o.conjunto },
+          { label: "Criativo", valor: o.criativo }
+        ].map(x => ({
+          label: x.label, valor: x.valor,
+          valorStyle: "flex:1;min-width:0;font-size:12px;line-height:1.45;text-wrap:pretty;"
+            + (x.valor === "—" ? "color:#a3a8a4" : "color:#1f252c;font-weight:500")
+        }));
+      })(),
+      tags: (() => {
+        const base = (L0.tag ? [L0.tag] : []).concat([L0.interesse]);
+        const extras = (S.tagsLead || {})[L0.id] || [];
+        return base.concat(extras.filter(t => base.indexOf(t) < 0)).map(t => ({ label: t }));
+      })(),
+      tagMenu: S.tagMenu === L0.id,
+      addTagStyle: "display:flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:6px;padding:0;border:0;cursor:pointer;flex:0 0 auto;background:"
+        + (S.tagMenu === L0.id ? "#12171d;color:#fff" : "#fff;color:#4a5560;box-shadow:inset 0 0 0 1px #dbdede"),
+      addTagIcone: "transition:transform .14s cubic-bezier(.2,0,.2,1);transform:rotate(" + (S.tagMenu === L0.id ? 45 : 0) + "deg)",
+      addTag: (e) => {
+        e.stopPropagation();
+        const r = e.currentTarget.getBoundingClientRect();
+        this.setState(s => ({
+          tagMenu: s.tagMenu === L0.id ? null : L0.id,
+          tagRect: { top: r.top, bottom: r.bottom, left: r.left, right: r.right }
+        }));
+      },
+      tagMenuStyle: (() => {
+        const r = S.tagRect;
+        const vh = typeof window !== "undefined" ? window.innerHeight : 800;
+        const vw = typeof window !== "undefined" ? window.innerWidth : 1200;
+        const largura = Math.min(308, vw - 24);
+        const abaixo = r ? vh - r.bottom - 14 : 400;
+        const acima = r ? r.top - 14 : 400;
+        const paraCima = !!r && abaixo < 240 && acima > abaixo;
+        const teto = Math.max(200, Math.min(330, paraCima ? acima : abaixo));
+        const pos = r
+          ? (paraCima ? "bottom:" + (vh - r.top + 6) + "px;" : "top:" + (r.bottom + 6) + "px;")
+            + "left:" + Math.max(12, Math.min(r.left, vw - largura - 12)) + "px;"
+          : "top:140px;left:24px;";
+        return "position:fixed;" + pos + "width:" + largura + "px;max-height:" + teto + "px;display:flex;flex-direction:column;z-index:48;"
+          + "border-radius:10px;background:#fff;border:1px solid #e3e7e8;box-shadow:0 10px 26px -6px rgba(0,0,0,.2),0 2px 4px -2px rgba(0,0,0,.1);padding:5px;animation:of-rise .12s cubic-bezier(.2,0,.2,1) both";
+      })(),
+      tagOpcoes: (() => {
+        const catalogo = [
+          ["Prioridade", "Sobe o lead no topo da fila", null],
+          ["Enterprise", "Roteia para o time de contas grandes", "Pós-proposta"],
+          ["Sem CNPJ", "Bloqueia criação de oportunidade", null],
+          ["Reunião pedida", "Dispara fluxo de agendamento", "Primeiro contato"],
+          ["Sem orçamento", "Move para nutrição em 7 dias", "Reativação"],
+          ["Concorrente", "Marca para análise competitiva", null],
+          ["Reativar", "Entra na régua de retomada", "Reativação"]
+        ].concat(((S.tagsCriadas || []).map(t => [t, "Tag criada por você", null])));
+        const atuais = ((L0.tag ? [L0.tag] : []).concat([L0.interesse])).concat((S.tagsLead || {})[L0.id] || []);
+        return catalogo.map(([label, nota, fluxo]) => {
+          const on = atuais.indexOf(label) >= 0;
+          return {
+            label, on, dispara: !!fluxo,
+            nota: fluxo ? "dispara " + fluxo : nota,
+            notaStyle: "display:block;font-size:11px;line-height:1.4;margin-top:1px;text-wrap:pretty;"
+              + (fluxo ? "color:#9c3210;font-weight:600" : "color:#67787c"),
+            caixa: "flex:0 0 auto;width:16px;height:16px;border-radius:5px;display:flex;align-items:center;justify-content:center;margin-top:2px;"
+              + (on ? "background:#12171d" : "background:#fff;box-shadow:inset 0 0 0 1.5px #c8ccc9"),
+            style: "display:flex;align-items:flex-start;gap:9px;width:100%;padding:8px;border-radius:7px;border:0;background:transparent;cursor:pointer;text-align:left",
+            onClick: () => {
+              this.setState(s => {
+                const atual = (s.tagsLead || {})[L0.id] || [];
+                const nova = on ? atual.filter(x => x !== label) : atual.concat(label);
+                return { tagsLead: Object.assign({}, s.tagsLead, { [L0.id]: nova }) };
+              });
+              if (!on && fluxo) this.diz("Tag " + label + " aplicada — fluxo " + fluxo + " disparado", "ok");
+            }
+          };
+        });
+      })(),
+      tagNova: S.tagNova || "",
+      setTagNova: (e) => this.setState({ tagNova: e.target.value }),
+      tagNovaTecla: (e) => { if (e.key === "Enter") this.criarTagLead(L0.id); },
+      criarTag: () => this.criarTagLead(L0.id),
+      criarTagStyle: "height:32px;padding:0 13px;border-radius:8px;font-size:12.5px;font-weight:600;white-space:nowrap;flex:0 0 auto;border:0;"
+        + ((S.tagNova || "").trim() ? "background:#12171d;color:#fff;cursor:pointer" : "background:#eeeff3;color:#a3a8a4;cursor:not-allowed"),
+      temCad: !!cadAtual, semCad: !cadAtual,
+      cadNome: cadAtual || "",
+      cadEstado: S.cadPausada ? "Pausada" : "Ativa",
+      cadSelo: "display:inline-flex;align-items:center;height:18px;padding:0 7px;border-radius:5px;font-size:10.5px;font-weight:700;white-space:nowrap;background:"
+        + (S.cadPausada ? "#f7edd8;color:#6e5420" : "#e6f4ee;color:#1f7256"),
+      cadPasso: "Passo " + passoAtual + " de 5",
+      cadPassos: [1, 2, 3, 4, 5].map(i => ({
+        style: "flex:1;height:4px;border-radius:9999px;background:" + (i <= passoAtual ? (S.cadPausada ? "#c8a86a" : "#fe4f2b") : "#e3e7e8")
+      })),
+      cadBotao: S.cadPausada ? "Retomar" : "Pausar",
+      pausarCad: () => { const n = !S.cadPausada; this.setState({ cadPausada: n }); this.diz(n ? "Cadência pausada — nenhum toque automático sai" : "Cadência retomada", n ? "aviso" : "ok"); },
+      abrirPicker: () => this.setState({ cadModal: true, cadEscolha: cadAtual || "Primeiro contato" }),
+      removerCad: () => { this.setState(s => ({ cadencias: Object.assign({}, s.cadencias, { [L0.id]: null }), cadPicker: false })); this.diz("Lead removido da cadência", "aviso"); },
+      cadOpcoes: [
+        ["Prospecção inbound", "5 toques"], ["Primeiro contato", "3 toques"],
+        ["Reengajamento", "5 toques"], ["Pós-proposta", "4 toques"]
+      ].map(([nome, toques]) => ({
+        label: nome, toques,
+        style: "display:flex;align-items:center;gap:8px;width:100%;padding:6px 8px;border-radius:6px;"
+          + (cadAtual === nome ? "background:#fff6f4;font-weight:600" : ""),
+        onClick: () => {
+          this.setState(s => ({ cadencias: Object.assign({}, s.cadencias, { [L0.id]: nome }), cadPicker: false, cadPausada: false }));
+          this.diz("Lead inserido em " + nome + " — toque 1 agendado", "ok");
+        }
+      })),
+
+      temAcao: !!L0.acao, semAcao: !L0.acao,
+      acao: L0.acao ? (L0.venceEm ? L0.acao + " · " + L0.venceEm : L0.acao) : "Sem próxima ação",
+      acaoTipo: atvLead.tipo,
+      tipoSelo: "flex:0 0 auto;display:inline-flex;align-items:center;height:19px;padding:0 7px;border-radius:5px;background:#eeeff3;color:#4a5560;font-size:10.5px;font-weight:700;white-space:nowrap",
+      acaoTexto: "flex:1;min-width:0;font-size:13px;line-height:1.4;text-wrap:pretty;font-weight:" + (L0.acao ? "500;color:#12171d" : "600;color:#c2330f"),
+      acaoBotao: L0.acao ? "Ver" : "Criar",
+      verAcao: () => this.setState({ atvAberta: true, atvModo: L0.acao ? "ver" : "editar", atvDraft: L0.acao ? null : this.atvVazia(L0) }),
+      criarAtv: () => this.setState({ atvAberta: true, atvModo: "editar", atvDraft: this.atvVazia(L0) }),
+
+      qualProg: qualPreenchidos + " de 4 campos",
+      qualProgSelo: "flex:0 0 auto;display:inline-flex;align-items:center;height:18px;padding:0 7px;border-radius:5px;font-size:10.5px;font-weight:700;white-space:nowrap;background:"
+        + (qualPreenchidos === 4 ? "#e6f4ee;color:#1f7256" : qualPreenchidos === 0 ? "#f7edd8;color:#6e5420" : "#eeeff3;color:#4a5560"),
+      qualif: [
+        { campo: "interesse", label: "Interesse", tipo: "multi", opcoes: ["Callface AI", "PABX", "White Label", "Integrações", "SMS"] },
+        { campo: "tamanho", label: "Tamanho da operação", tipo: "numero" },
+        { campo: "dor", label: "Dor principal", tipo: "texto", dica: "Ex: atendimento manual não escala" },
+        { campo: "fit", label: "Fit", tipo: "escolha", opcoes: ["Alto", "Médio", "Baixo"] }
+      ].map(q => {
+        const valor = qualLead[q.campo] || "";
+        const marcados = q.tipo === "multi" ? String(valor).split("|").filter(Boolean) : [];
+        const n = parseInt(String(valor).replace(/[^0-9]/g, ""), 10);
+        const temN = !isNaN(n) && n > 0;
+        const faixa = !temN ? null
+          : n <= 10 ? ["Micro", "#eeeff3", "#4a5560"]
+          : n <= 50 ? ["Pequena", "#e8f0fb", "#2c5f9e"]
+          : n <= 200 ? ["Média", "#e6f4ee", "#1f7256"]
+          : ["Enterprise", "#fff6f4", "#9c3210"];
+        const passo = (delta) => this.setQual(L0.id, q.campo, String(Math.max(1, (temN ? n : 0) + delta)), qualPadrao);
+        return {
+          label: q.label, dica: q.dica || "",
+          ehTexto: q.tipo === "texto", ehEscolha: q.tipo === "escolha" || q.tipo === "multi", ehNumero: q.tipo === "numero",
+          valor,
+          temSelo: q.tipo === "numero" ? !!faixa : (q.tipo === "multi" && marcados.length > 0),
+          selo: q.tipo === "numero" ? (faixa ? faixa[0] : "") : marcados.length + " selecionado" + (marcados.length > 1 ? "s" : ""),
+          seloStyle: q.tipo === "numero" && faixa
+            ? "font-size:10px;font-weight:700;border-radius:5px;padding:2px 6px;white-space:nowrap;background:" + faixa[1] + ";color:" + faixa[2]
+            : "font-size:11px;color:#67787c;white-space:nowrap",
+          inputStyle: "width:100%;height:32px;padding:0 10px;border-radius:8px;background:#fff;outline:0;font-size:12.5px;border:1px solid " + (valor ? "#dbdede" : "#e3e7e8"),
+          setTexto: (e) => this.setQual(L0.id, q.campo, q.tipo === "numero" ? e.target.value.replace(/[^0-9]/g, "") : e.target.value, qualPadrao),
+          menos: () => passo(-5),
+          mais: () => passo(5),
+          opcoes: (q.opcoes || []).map(o => {
+            const on = q.tipo === "multi" ? marcados.indexOf(o) >= 0 : valor === o;
+            return {
+              label: o,
+              style: "height:28px;padding:0 10px;border-radius:7px;font-size:12px;white-space:nowrap;flex:0 0 auto;cursor:pointer;border:0;font-weight:"
+                + (on ? "600;background:#12171d;color:#fff" : "500;background:#fff;color:#1f252c;box-shadow:inset 0 0 0 1px #dbdede"),
+              onClick: () => this.setQual(L0.id, q.campo,
+                q.tipo === "multi"
+                  ? (on ? marcados.filter(x => x !== o) : marcados.concat(o)).join("|")
+                  : (valor === o ? "" : o),
+                qualPadrao)
+            };
+          })
+        };
+      }),
+      empresaBtn: "display:flex;align-items:center;gap:6px;height:34px;padding:0 12px;border-radius:8px;font-size:12.5px;font-weight:500;white-space:nowrap;flex:0 0 auto;"
+        + (L0.empresa ? "background:#fff;box-shadow:inset 0 0 0 1px #dbdede;color:#1f252c;cursor:pointer" : "background:#fafafa;box-shadow:inset 0 0 0 1px #e3e7e8;color:#a3a8a4;cursor:not-allowed"),
+      empresaDica: L0.empresa ? "Abrir registro de " + L0.empresa : "Lead sem empresa associada",
+      abrirEmpresa: () => L0.empresa
+        ? (this.setState({ detalhe: false }), window.OnFaceEstado && window.OnFaceEstado.irPara("/onface-preview/empresa", "Empresa", { lead: L0.id }))
+        : this.diz("Lead sem empresa associada — associe para abrir o registro", "erro"),
+      abrirContato: () => this.ir("/onface-preview/contatos", "Contatos & Empresas"),
+
+      temMaisTimeline: true,
+      timelineBotao: S.timelineTudo ? "Ver menos" : "Ver tudo",
+      verTimeline: () => this.setState(s => ({ timelineTudo: !s.timelineTudo })),
+      timeline: (() => {
+        const base = [
+          { hora: "13:42", titulo: "WhatsApp recebido — pediu proposta", ator: "HUMAN", autor: L0.pessoa.split(" ")[0] },
+          { hora: "13:18", titulo: "Ligação realizada · 4min 12s", ator: "HUMAN", autor: L0.resp || "—" },
+          { hora: "12:55", titulo: 'Tag "' + (L0.tag || L0.interesse) + '" adicionada', ator: "AI_AGENT", autor: "ONI" },
+          { hora: "11:30", titulo: "Cadência " + (L0.etapa === "novo" ? "Prospecção inbound" : "Primeiro contato") + " iniciada", ator: "AUTOMATION", autor: "Fluxo" },
+          { hora: "ontem", titulo: "Lead criado via " + L0.origem, ator: "SYSTEM", autor: "—" },
+          { hora: "ontem", titulo: "E-mail de boas-vindas entregue", ator: "AUTOMATION", autor: "Fluxo" },
+          { hora: "2 dias", titulo: "Formulário preenchido no site", ator: "HUMAN", autor: L0.pessoa.split(" ")[0] },
+          { hora: "2 dias", titulo: "Enriquecimento de dados concluído", ator: "AI_AGENT", autor: "ONI" }
+        ];
+        const selo = { HUMAN: ["#eeeff3", "#4a5560"], AI_AGENT: ["#fdeae5", "#9c3210"], AUTOMATION: ["#efecfa", "#4f3fa8"], SYSTEM: ["#eef1f1", "#4a5560"] };
+        return (S.timelineTudo ? base : base.slice(0, 5)).map((t, i, arr) => ({
+          hora: t.hora, titulo: t.titulo,
+          temAutor: t.autor && t.autor !== "—",
+          autor: t.ator === "AI_AGENT" ? "ONI" : t.ator === "AUTOMATION" ? "Automação" : t.autor,
+          ponto: "width:8px;height:8px;border-radius:50%;flex:0 0 auto;margin-top:4px;background:" + (i === 0 ? "#fe4f2b" : "#fff") + ";box-shadow:inset 0 0 0 " + (i === 0 ? "0" : "1.6px") + " #c8ccc9",
+          trilho: i === arr.length - 1 ? "display:none" : "flex:1;width:1.6px;background:#e3e7e8;margin:3px 0"
+        }));
+      })(),
+      oportBtn: "height:34px;padding:0 13px;border-radius:8px;font-size:12.5px;font-weight:500;white-space:nowrap;flex:0 0 auto;"
+        + (L0.empresa ? "background:#fff;box-shadow:inset 0 0 0 1px #dbdede;color:#1f252c;cursor:pointer" : "background:#fafafa;box-shadow:inset 0 0 0 1px #e3e7e8;color:#a3a8a4;cursor:not-allowed"),
+      oportDica: L0.empresa ? "Cria oportunidade no Pipeline" : "Bloqueado: lead sem empresa associada",
+      desqStart: () => this.setState({ desqAberto: true, desqMotivo: null, desqObs: "" }),
+
+      saidaMenu: S.saidaMenu,
+      toggleSaida: () => this.setState(s => ({ saidaMenu: !s.saidaMenu })),
+      saidaChevron: "flex:0 0 auto;transition:transform .12s cubic-bezier(.2,0,.2,1);transform:rotate(" + (S.saidaMenu ? 180 : 0) + "deg)",
+      saidas: [
+        { k: "qualificar", label: "Qualificar", nota: "Grava o fato e mantém o lead no funil", ok: true,
+          d: "M20 6 9 17l-5-5" },
+        { k: "oportunidade", label: "Criar oportunidade", nota: L0.empresa ? "Cria a oportunidade no Pipeline" : "Bloqueado: lead sem empresa associada", ok: !!L0.empresa,
+          d: "M16 20V6a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v14M2 9a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z" },
+        { k: "nutrir", label: "Mover para nutrição", nota: "Exige motivo e data de retomada", ok: true,
+          d: "M12 8v4l3 2M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z" },
+        { k: "desqualificar", label: "Desqualificar", nota: "Exige motivo — sustenta o relatório de perda", ok: true, perigo: true,
+          d: "M6 6l12 12M18 6L6 18" }
+      ].map(s => ({
+        label: s.label, nota: s.nota, d: s.d,
+        style: "display:flex;align-items:flex-start;gap:9px;width:100%;padding:8px;border-radius:6px;text-align:left;border:0;background:transparent;"
+          + (s.ok ? (s.perigo ? "color:#9c3210;cursor:pointer" : "color:#1f252c;cursor:pointer") : "color:#a3a8a4;cursor:not-allowed"),
+        onClick: () => {
+          this.setState({ saidaMenu: false });
+          if (s.k === "qualificar") return this.setState({ qualAberto: true, qualDados: {}, qualMenu: false, qualTentou: false, qualPasso: "dados", qualOpp: {} });
+          if (s.k === "oportunidade") return L0.empresa
+            ? this.diz("Oportunidade criada no Pipeline", "ok")
+            : this.diz("Bloqueado: lead sem empresa associada", "erro");
+          if (s.k === "nutrir") return this.setState({ nutrir: true });
+          return this.setState({ desqAberto: true, desqMotivo: null, desqObs: "" });
+        }
+      }))
+    } : null;
+
+    const motivos = [
+      ["sem_resposta", "Sem resposta", true], ["sem_interesse_agora", "Sem interesse no momento", true],
+      ["timing", "Timing inadequado", true], ["sem_orcamento", "Sem orçamento agora", true],
+      ["contrato_vigente", "Contrato vigente", true], ["decisao_interna", "Aguardando decisão interna", false],
+      ["retomar_em_data", "Retomar em outra data", true], ["outro", "Outro", false]
+    ];
+    const motivosNutricao = motivos.map(([k, l, exige]) => {
+      const on = S.motivo === k;
+      return {
+        label: l, exige,
+        style: "display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:8px;font-size:12.5px;width:100%;border:1px solid "
+          + (on ? "#fe4f2b;background:#fff6f4;font-weight:600" : "#e3e7e8;background:#fff"),
+        radio: "flex:0 0 auto;width:14px;height:14px;border-radius:50%;border:" + (on ? "4.5px solid #d93c1a" : "1.5px solid #c5cac7"),
+        onClick: () => this.setState({ motivo: k })
+      };
+    });
+
+    const sel = motivos.find(m => m[0] === S.motivo);
+    const exigeData = !!(sel && sel[2]);
+    const faltaData = exigeData && !S.data;
+    const podeNutrir = !!S.motivo && !faltaData;
+
+    return {
+      det,
+      temDetalhe: S.detalhe,
+      cad: det ? det.cad : { aberto: false, lista: [], passos: [], canais: [], origens: [] },
+      fecharDetalhe: () => this.setState({ detalhe: false, cadPicker: false, timelineTudo: false, saidaMenu: false }),
+      contato: () => this.diz("Primeiro contato registrado uma vez só — move para Em contato", "ok"),
+      qualificar: () => this.setState({ qualAberto: true, qualDados: {}, qualMenu: false, qualTentou: false, qualPasso: "dados", qualOpp: {} }),
+      oportunidade: () => {
+        if (det && det.semEmpresa) return this.diz("Bloqueado: lead sem empresa associada", "erro");
+        const id = S.detalheId;
+        this.setState(s => ({ leads: s.leads.map(L => L.id === id ? Object.assign({}, L, { etapa: "oportunidade" }) : L) }));
+        this.diz("Oportunidade criada no Pipeline", "ok");
+      },
+
+      temNutrir: S.nutrir,
+      abrirNutrir: () => this.setState({ nutrir: true }),
+      fecharNutrir: () => this.setState({ nutrir: false, motivo: null, data: "" }),
+      motivosNutricao, exigeData,
+      dataRetomada: S.data,
+      setData: (e) => this.setState({ data: e.target.value }),
+      dataStyle: "width:100%;height:34px;padding:0 11px;border-radius:8px;font-size:13px;background:#fff;border:1px solid " + (faltaData ? "#f0b5a8" : "#dbdede"),
+      nutrirBtnLabel: faltaData ? "Informe a data" : "Mover para nutrição",
+      nutrirBtnStyle: "height:34px;padding:0 14px;border-radius:8px;font-size:12.5px;font-weight:600;white-space:nowrap;flex:0 0 auto;"
+        + (podeNutrir ? "background:#d93c1a;color:#fff" : "background:#e3e7e8;color:#a3a8a4;cursor:not-allowed"),
+      confirmarNutrir: () => {
+        if (!S.motivo) return this.diz("Escolha um motivo — nutrição sem motivo é limbo", "erro");
+        if (faltaData) return this.diz("Esse motivo exige data: sem ela o lead some da operação", "erro");
+        const id = S.detalheId;
+        this.setState(s => ({
+          leads: s.leads.map(x => x.id === id ? Object.assign({}, x, { etapa: "nutricao", acao: "Retomar contato", venceEm: S.data }) : x),
+          nutrir: false, motivo: null, data: ""
+        }));
+        this.diz("Nutrição registrada e tarefa de retomada criada", "ok");
+      },
+
+      atvAberta: S.atvAberta && !!L0,
+      fecharAtv: () => this.setState({ atvAberta: false, atvDraft: null }),
+      cadPicker: S.cadPicker,
+      atv: L0 ? {
+        contexto: (L0.empresa || "Sem empresa") + " · " + L0.pessoa,
+        ehVer: S.atvModo === "ver", ehEditar: S.atvModo === "editar",
+        tituloVisto: atvLead.titulo || "Atividade sem título",
+        situacao: atvLead.situacao,
+        situacaoSelo: "display:inline-flex;align-items:center;height:20px;padding:0 8px;border-radius:6px;font-size:11px;font-weight:700;white-space:nowrap;background:"
+          + ({ "A fazer": "#eeeff3;color:#4a5560", "Em andamento": "#e8f0fb;color:#2c5f9e", "Feito": "#e6f4ee;color:#1f7256", "Declinada": "#fdeae5;color:#9c3210" }[atvLead.situacao] || "#eeeff3;color:#4a5560"),
+        tipo: atvLead.tipo,
+        tipoSelo: "display:inline-flex;align-items:center;height:20px;padding:0 8px;border-radius:6px;background:#fff6f4;color:#9c3210;font-size:11px;font-weight:700;white-space:nowrap",
+        quando: (() => {
+          const d = atvLead.data ? atvLead.data.split("-") : null;
+          const meses = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+          return d ? Number(d[2]) + " " + meses[Number(d[1]) - 1] + " " + d[0] + " · " + (atvLead.hora || "—") : "Sem data";
+        })(),
+        descVista: atvLead.desc || "Sem descrição",
+        descStyle: "font-size:13px;line-height:1.5;text-wrap:pretty;" + (atvLead.desc ? "color:#1f252c" : "color:#4a5560;font-style:italic"),
+        desc: atvLead.desc || "",
+        setDesc: (e) => mudaAtv({ desc: e.target.value }),
+        editar: () => this.setState({ atvModo: "editar" }),
+        cancelarEdicao: () => this.setState(ehDraft || !atvLead.titulo ? { atvAberta: false, atvDraft: null } : { atvModo: "ver" }),
+        declinarLabel: atvLead.situacao === "Declinada" ? "Reabrir" : "Declinar",
+        declinarStyle: "height:34px;padding:0 13px;border-radius:8px;font-size:12.5px;font-weight:600;white-space:nowrap;flex:0 0 auto;cursor:pointer;border:0;background:#fff;box-shadow:inset 0 0 0 1px #f0d5cf;color:#c2330f",
+        declinar: () => {
+          const decl = atvLead.situacao === "Declinada";
+          mudaAtv({ situacao: decl ? "A fazer" : "Declinada" });
+          if (!decl) {
+            this.setState(s => ({ leads: s.leads.map(x => x.id === L0.id ? Object.assign({}, x, { acao: null, venceEm: null }) : x), atvAberta: false }));
+            this.diz("Atividade declinada — o lead fica sem próxima ação", "aviso");
+          } else this.diz("Atividade reaberta", "aviso");
+        },
+        situacoes: [
+          { v: "A fazer", d: "M12 8v4l3 2M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z" },
+          { v: "Em andamento", d: "M12 2a10 10 0 0 1 10 10M12 6a6 6 0 0 1 6 6" },
+          { v: "Feito", d: "M20 6 9 17l-5-5" },
+          { v: "Declinada", d: "M6 6l12 12M18 6L6 18" }
+        ].map(s => ({
+          label: s.v, d: s.d,
+          style: "display:flex;align-items:center;gap:6px;height:30px;padding:0 11px;border-radius:8px;font-size:12.5px;white-space:nowrap;flex:0 0 auto;cursor:pointer;border:0;font-weight:"
+            + (atvLead.situacao === s.v ? "600;background:#12171d;color:#fff" : "500;background:#fff;color:#1f252c;box-shadow:inset 0 0 0 1px #dbdede"),
+          onClick: () => mudaAtv({ situacao: s.v })
+        })),
+        tipos: [
+          { v: "Ligação", d: "M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.4-1.2a2 2 0 0 1 2.1-.5c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z" },
+          { v: "Mensagem", d: "M21 11.5a8.4 8.4 0 0 1-9 8.4 9 9 0 0 1-3.8-.8L3 21l1.9-4.1A8.4 8.4 0 0 1 12 3a8.4 8.4 0 0 1 9 8.5z" },
+          { v: "E-mail", d: "M4 4h16v16H4zM4 7l8 6 8-6" },
+          { v: "Follow up", d: "M3 12a9 9 0 1 0 9-9 9 9 0 0 0-6.4 2.6L3 8M3 3v5h5" },
+          { v: "Reunião", d: "M8 2v4M16 2v4M3 8h18M5 6h14a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z" },
+          { v: "Proposta", d: "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M9 13h6M9 17h4" }
+        ].map(t => ({
+          label: t.v, d: t.d,
+          style: "display:flex;align-items:center;gap:6px;height:30px;padding:0 11px;border-radius:8px;font-size:12.5px;white-space:nowrap;flex:0 0 auto;cursor:pointer;border:0;font-weight:"
+            + (atvLead.tipo === t.v ? "600;background:#fff6f4;color:#9c3210;box-shadow:inset 0 0 0 1px #fe4f2b" : "500;background:#fff;color:#1f252c;box-shadow:inset 0 0 0 1px #dbdede"),
+          onClick: () => mudaAtv({ tipo: t.v })
+        })),
+        titulo: atvLead.titulo,
+        setTitulo: (e) => mudaAtv({ titulo: e.target.value }),
+        data: atvLead.data, setData: (e) => mudaAtv({ data: e.target.value }),
+        hora: atvLead.hora, setHora: (e) => mudaAtv({ hora: e.target.value }),
+        resp: atvLead.resp, respIniciais: iniciaisDe(atvLead.resp),
+        trocarResp: () => this.diz("Atribuir responsável da atividade — combobox de usuários", "aviso"),
+        concluirLabel: atvLead.situacao === "Feito" ? "Reabrir" : "Marcar como feito",
+        concluirStyle: "display:flex;align-items:center;gap:6px;height:34px;padding:0 13px;border-radius:8px;font-size:12.5px;font-weight:600;white-space:nowrap;flex:0 0 auto;cursor:pointer;border:0;"
+          + (atvLead.situacao === "Feito" ? "background:#fff;color:#1f252c;box-shadow:inset 0 0 0 1px #dbdede" : "background:#e6f4ee;color:#1f7256"),
+        concluir: () => {
+          const feito = atvLead.situacao === "Feito";
+          mudaAtv({ situacao: feito ? "A fazer" : "Feito" });
+          if (!feito) {
+            this.setState(s => ({ leads: s.leads.map(x => x.id === L0.id ? Object.assign({}, x, { acao: null, venceEm: null }) : x), atvAberta: false }));
+            this.diz("Atividade concluída — crie a próxima para não perder o lead", "ok");
+          } else this.diz("Atividade reaberta", "aviso");
+        },
+        salvar: () => {
+          const a = atvLead;
+          if (!a.titulo && !a.tipo) return this.diz("Dê um título à atividade", "erro");
+          this.setState(s => ({
+            leads: s.leads.map(x => x.id === L0.id ? Object.assign({}, x, { acao: a.titulo || a.tipo, venceEm: a.hora || null }) : x),
+            atvs: Object.assign({}, s.atvs, { [L0.id]: a }),
+            atvDraft: null, atvModo: "ver"
+          }));
+          this.diz(ehDraft ? "Nova atividade criada em tarefas" : "Atividade salva em tarefas", "ok");
+        }
+      } : { situacoes: [], tipos: [] },
+
+      qual: (() => {
+        const alvo = S.leads.find(x => x.id === S.detalheId) || {};
+        const d = S.qualDados || {};
+        const interesses = d.interesses || (alvo.interesse ? [alvo.interesse] : []);
+        const porte = d.porte === undefined ? 45 : d.porte;
+        const dor = d.dor === undefined ? "" : d.dor;
+        const fit = d.fit || "Alto";
+        const nPorte = parseInt(String(porte).replace(/[^0-9]/g, ""), 10);
+        const porteOk = !isNaN(nPorte) && nPorte > 0;
+        const completo = interesses.length > 0 && porteOk && !!dor.trim();
+        const semEmpresa = !alvo.empresa;
+        const mudar = (campo, valor) => this.setState(s => ({ qualDados: Object.assign({}, s.qualDados, { interesses, porte, dor, fit }, { [campo]: valor }) }));
+        const faixa = !porteOk ? { label: "—", cor: "#eeeff3", tinta: "#67787c" }
+          : nPorte <= 10 ? { label: "Micro", cor: "#eeeff3", tinta: "#4a5560" }
+          : nPorte <= 50 ? { label: "Pequena", cor: "#e8f0fb", tinta: "#2c5f9e" }
+          : nPorte <= 200 ? { label: "Média", cor: "#e6f4ee", tinta: "#1f7256" }
+          : { label: "Enterprise", cor: "#fff6f4", tinta: "#9c3210" };
+        const aplicar = (etapa, msg) => {
+          const id = S.detalheId;
+          this.setState(s => ({
+            leads: s.leads.map(x => x.id === id
+              ? Object.assign({}, x, { etapa, interesse: interesses[0], tag: "Fit " + fit })
+              : x),
+            qualAberto: false, qualDados: {}, qualMenu: false, saidaMenu: false
+          }));
+          this.diz(msg, "ok");
+        };
+        const iniciaisDe = (n) => (n || "").split(" ").slice(0, 2).map(p => p[0] || "").join("").toUpperCase() || "—";
+        const passo = S.qualPasso || "dados";
+        const O = S.qualOpp || {};
+        const avanco = O.avanco || null;
+        const ehReuniao = avanco === "reuniao";
+        const inp = "width:100%;height:38px;padding:0 12px;border-radius:9px;background:#fff;outline:0;font-size:13px;font-family:inherit;border:1px solid #dbdede";
+        const oppNome = (interesses[0] || alvo.interesse || "Oportunidade") + " · " + (alvo.empresa || "Sem empresa");
+        const equipe = ["Camila Reis", "Diego Nunes", "Ana Vitória"];
+        const slugE = (s) => (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z]/g, "");
+        const mudarO = (k, v) => this.setState(s => ({ qualOpp: Object.assign({}, s.qualOpp, { [k]: v }) }));
+        const vData = O.data || "2026-09-24";
+        const vHora = O.hora || "14:00";
+        const vTitulo = O.titulo === undefined ? (alvo.empresa || "Lead") + " x Callface" : O.titulo;
+        const vTarTitulo = O.tarTitulo === undefined
+          ? ({ whatsapp: "Retomar conversa no WhatsApp", ligacao: "Ligar para alinhar proposta", email: "Enviar proposta por e-mail", outro: "Próximo passo" }[avanco] || "")
+          : O.tarTitulo;
+        const vTarData = O.tarData || "2026-09-23";
+        const vTarHora = O.tarHora || "10:00";
+        const detalheOk = ehReuniao
+          ? !!(vData && vHora && String(vTitulo).trim())
+          : !!(String(vTarTitulo).trim() && vTarData && vTarHora);
+        const fecharTudo = (msg) => {
+          const id = S.detalheId;
+          this.setState(s => ({
+            leads: s.leads.map(x => x.id === id ? Object.assign({}, x, { etapa: "oportunidade", interesse: interesses[0], tag: "Fit " + fit }) : x),
+            qualPasso: "ok"
+          }));
+          clearTimeout(this._qk);
+          this._qk = setTimeout(() => {
+            this.setState({ qualAberto: false, qualDados: {}, qualOpp: {}, qualPasso: "dados", qualMenu: false });
+            this.diz(msg, "ok");
+          }, 1500);
+        };
+        const rotuloAvanco = { reuniao: "Agendar reunião", whatsapp: "WhatsApp", ligacao: "Ligação", email: "E-mail", outro: "Outro" }[avanco] || "";
+        return {
+          aberto: S.qualAberto,
+          fechar: () => this.setState({ qualAberto: false, qualDados: {}, qualOpp: {}, qualPasso: "dados", qualMenu: false }),
+
+          passoDados: passo === "dados",
+          passoOpp: passo === "opp",
+          passoReuniao: passo === "detalhe" && ehReuniao,
+          passoTarefa: passo === "detalhe" && !ehReuniao,
+          passoDetalhe: passo === "detalhe",
+          passoOk: passo === "ok",
+          podeVoltar: passo === "opp" || passo === "detalhe",
+          voltar: () => this.setState({ qualPasso: passo === "detalhe" ? "opp" : "dados", qualMenu: false }),
+          titulo: passo === "dados" ? "Qualificar lead"
+            : passo === "opp" ? "Criar oportunidade"
+            : passo === "detalhe" ? (ehReuniao ? "Agendar reunião" : "Próxima ação · " + rotuloAvanco)
+            : "Tudo certo",
+          subtitulo: passo === "dados" ? "Confirme os dados antes de qualificar."
+            : passo === "opp" ? "Defina como a oportunidade entra no Pipeline."
+            : passo === "detalhe" ? (ehReuniao ? "A reunião entra na agenda do closer." : "A oportunidade nasce com um próximo passo marcado.")
+            : "Registro gravado.",
+
+          inputStyle: inp,
+          selectStyle: inp + ";appearance:none;padding-right:30px;cursor:pointer",
+          campoResp: React.createElement("select", {
+            value: O.resp || alvo.resp || equipe[0],
+            style: { width: "100%", height: "38px", padding: "0 30px 0 12px", borderRadius: "9px", background: "#fff", outline: 0, fontSize: "13px", fontFamily: "inherit", border: "1px solid #dbdede", appearance: "none", cursor: "pointer", color: "#1f252c" },
+            onChange: (e) => mudarO("resp", e.target.value)
+          }, equipe.map(p => React.createElement("option", { key: p, value: p }, p))),
+          campoEtapa: React.createElement("select", {
+            value: O.etapa || "Novo",
+            style: { width: "100%", height: "38px", padding: "0 30px 0 12px", borderRadius: "9px", background: "#fff", outline: 0, fontSize: "13px", fontFamily: "inherit", border: "1px solid #dbdede", appearance: "none", cursor: "pointer", color: "#1f252c" },
+            onChange: (e) => mudarO("etapa", e.target.value)
+          }, ["Novo", "Descoberta", "Proposta"].map(p => React.createElement("option", { key: p, value: p }, p))),
+          campoCloser: React.createElement("select", {
+            value: O.closer || alvo.resp || equipe[0],
+            style: { width: "100%", height: "38px", padding: "0 30px 0 12px", borderRadius: "9px", background: "#fff", outline: 0, fontSize: "13px", fontFamily: "inherit", border: "1px solid #dbdede", appearance: "none", cursor: "pointer", color: "#1f252c" },
+            onChange: (e) => mudarO("closer", e.target.value)
+          }, equipe.map(p => React.createElement("option", { key: p, value: p }, p))),
+          oppNome,
+          responsaveis: equipe.map(p => ({ v: p, label: p })),
+          etapasOpp: ["Novo", "Descoberta", "Proposta"].map(p => ({ v: p, label: p })),
+          oppResp: O.resp || alvo.resp || equipe[0],
+          setOppResp: (e) => mudarO("resp", e.target.value),
+          oppEtapa: O.etapa || "Novo",
+          setOppEtapa: (e) => mudarO("etapa", e.target.value),
+          avancos: [
+            { k: "reuniao", label: "Agendar reunião", d: "M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" },
+            { k: "whatsapp", label: "WhatsApp", d: "M21 11.5a8.4 8.4 0 0 1-9 8.4 9 9 0 0 1-3.8-.8L3 21l1.9-4.1A8.4 8.4 0 0 1 12 3a8.4 8.4 0 0 1 9 8.5z" },
+            { k: "ligacao", label: "Ligação", d: "M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.5 2.6 1.3 3.5.2 4.2L8.1 9.9a16 16 0 0 0 6 6l1.9-1.2a2 2 0 0 1 2.1-.5c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.2 2z" },
+            { k: "email", label: "E-mail", d: "M4 4h16v16H4zM4 7l8 6 8-6" },
+            { k: "outro", label: "Outro", d: "M5 12h.01M12 12h.01M19 12h.01" }
+          ].map(v => {
+            const on = avanco === v.k;
+            return {
+              label: v.label, d: v.d,
+              style: "display:flex;align-items:center;justify-content:center;gap:7px;height:40px;padding:0 10px;border-radius:9px;border:0;cursor:pointer;min-width:0;transition:background 120ms cubic-bezier(0,0,.2,1);"
+                + (on ? "background:#12171d;color:#fff" : "background:#fff;box-shadow:inset 0 0 0 1px #e3e7e8;color:#1f252c"),
+              onClick: () => mudarO("avanco", v.k)
+            };
+          }),
+          btnAvancoLabel: avanco ? "Continuar" : "Escolha como avançar",
+          btnAvancoStyle: "height:34px;padding:0 15px;border-radius:8px;font-size:12.5px;font-weight:600;white-space:nowrap;flex:0 0 auto;border:0;"
+            + (avanco ? "background:#1f7256;color:#fff;cursor:pointer" : "background:#e3e7e8;color:#a3a8a4;cursor:not-allowed"),
+          irDetalhe: () => {
+            if (!avanco) return this.diz("Escolha como a oportunidade irá avançar", "erro");
+            this.setState({ qualPasso: "detalhe" });
+          },
+
+          iniciaisPessoa: iniciaisDe(alvo.pessoa),
+          contatoNome: alvo.pessoa || "—",
+          contatoEmail: slugE((alvo.pessoa || "").split(" ")[0]) + "@" + slugE(alvo.empresa || "semempresa") + ".com.br",
+          addConvidado: () => this.diz("Adicionar convidado — seletor de e-mail a desenhar", "aviso"),
+          reuData: vData,
+          setReuData: (e) => mudarO("data", e.target.value),
+          reuHora: vHora,
+          setReuHora: (e) => mudarO("hora", e.target.value),
+          reuCloser: O.closer || alvo.resp || equipe[0],
+          setReuCloser: (e) => mudarO("closer", e.target.value),
+          duracoes: ["30 min", "45 min", "1 h"].map(d2 => ({
+            label: d2,
+            style: "flex:1;min-width:0;height:38px;border-radius:9px;font-size:12.5px;white-space:nowrap;border:0;cursor:pointer;font-weight:"
+              + ((O.duracao || "30 min") === d2 ? "600;background:#12171d;color:#fff" : "500;background:#fff;box-shadow:inset 0 0 0 1px #e3e7e8;color:#1f252c"),
+            onClick: () => mudarO("duracao", d2)
+          })),
+          tiposReuniao: [
+            { k: "Vídeo", d: "m23 7-7 5 7 5zM1 5h15v14H1z" },
+            { k: "Ligação", d: "M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7" },
+            { k: "Presencial", d: "M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0zM12 7a3 3 0 1 0 0 6 3 3 0 0 0 0-6z" }
+          ].map(t => ({
+            label: t.k, d: t.d,
+            style: "display:flex;align-items:center;justify-content:center;gap:7px;flex:1;min-width:0;height:38px;border-radius:9px;border:0;cursor:pointer;"
+              + ((O.tipo || "Vídeo") === t.k ? "background:#12171d;color:#fff" : "background:#fff;box-shadow:inset 0 0 0 1px #e3e7e8;color:#1f252c"),
+            onClick: () => mudarO("tipo", t.k)
+          })),
+          reuTitulo: vTitulo,
+          setReuTitulo: (e) => mudarO("titulo", e.target.value),
+
+          tarefaIcone: { whatsapp: "M21 11.5a8.4 8.4 0 0 1-9 8.4 9 9 0 0 1-3.8-.8L3 21l1.9-4.1A8.4 8.4 0 0 1 12 3a8.4 8.4 0 0 1 9 8.5z", ligacao: "M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7", email: "M4 4h16v16H4zM4 7l8 6 8-6", outro: "M5 12h.01M12 12h.01M19 12h.01" }[avanco] || "M5 12h.01",
+          canalSelo: "flex:0 0 auto;width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:#eeeff3;color:#4a5560",
+          tarefaDica: { whatsapp: "A conversa segue no WhatsApp — deixe o próximo toque marcado.", ligacao: "A ligação fica agendada na fila do responsável.", email: "O e-mail entra como tarefa com prazo.", outro: "Registre o próximo passo combinado." }[avanco] || "",
+          tarTitulo: vTarTitulo,
+          setTarTitulo: (e) => mudarO("tarTitulo", e.target.value),
+          tarTituloDica: "Ex.: retomar conversa no WhatsApp",
+          tarData: vTarData,
+          setTarData: (e) => mudarO("tarData", e.target.value),
+          tarHora: vTarHora,
+          setTarHora: (e) => mudarO("tarHora", e.target.value),
+          quandos: [["Hoje, 16:30", "2026-09-22", "16:30"], ["Amanhã, 10:00", "2026-09-23", "10:00"], ["Seg, 09:00", "2026-09-28", "09:00"]].map(([label, dd, hh]) => ({
+            label,
+            style: "height:28px;padding:0 11px;border-radius:7px;font-size:11.5px;white-space:nowrap;flex:0 0 auto;border:0;cursor:pointer;font-weight:"
+              + ((vTarData === dd && vTarHora === hh) ? "600;background:#eeeff3;color:#12171d" : "500;background:#fff;box-shadow:inset 0 0 0 1px #e3e7e8;color:#67787c"),
+            onClick: () => this.setState(s => ({ qualOpp: Object.assign({}, s.qualOpp, { tarData: dd, tarHora: hh }) }))
+          })),
+          tarObs: O.tarObs || "",
+          setTarObs: (e) => mudarO("tarObs", e.target.value),
+
+          btnFinalLabel: ehReuniao ? "Criar oportunidade + agendar reunião" : "Criar oportunidade",
+          btnFinalStyle: "height:34px;padding:0 15px;border-radius:8px;font-size:12.5px;font-weight:600;white-space:nowrap;flex:0 0 auto;border:0;"
+            + (detalheOk ? "background:#1f7256;color:#fff;cursor:pointer" : "background:#e3e7e8;color:#a3a8a4;cursor:not-allowed"),
+          concluir: () => {
+            if (!detalheOk) return this.diz("Preencha os campos obrigatórios", "erro");
+            fecharTudo(ehReuniao ? "Oportunidade criada e reunião agendada" : "Oportunidade criada com próximo passo marcado");
+          },
+          okTitulo: passo === "ok" ? (S.qualOkTitulo || "Qualificado") : "",
+          okNota: passo === "ok" ? (S.qualOkNota || "qualificado_em e qualificado_por gravados.") : "",
+
+          empresa: alvo.empresa || "Sem empresa associada",
+          pessoa: (alvo.pessoa || "") + (alvo.cargo ? " · " + alvo.cargo : ""),
+          canal: alvo.origem || "—",
+          canalStyle: "flex:0 0 auto;display:inline-flex;align-items:center;height:21px;padding:0 8px;border-radius:6px;font-size:10.5px;font-weight:700;white-space:nowrap;"
+            + ({ "Meta Ads": "background:#fff6f4;color:#9c3210", "Instagram": "background:#efecfa;color:#4f3fa8", "WhatsApp": "background:#e6f4ee;color:#1f7256", "Formulário": "background:#e8f0fb;color:#2c5f9e", "Site": "background:#e8f0fb;color:#2c5f9e", "Orgânica": "background:#f7edd8;color:#6e5420" }[alvo.origem] || "background:#eeeff3;color:#4a5560"),
+          iniciais: iniciaisDe(alvo.empresa || alvo.pessoa),
+
+          interesseConta: interesses.length ? interesses.length + " selecionado" + (interesses.length > 1 ? "s" : "") : "escolha ao menos um",
+          interesses: ["Callface AI", "PABX", "White Label", "Integrações", "SMS"].map(op => {
+            const on = interesses.indexOf(op) >= 0;
+            return {
+              label: op, on,
+              style: "display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 " + (on ? "12px" : "13px") + ";border-radius:9px;font-size:12.5px;white-space:nowrap;flex:0 0 auto;border:0;cursor:pointer;transition:background 120ms cubic-bezier(0,0,.2,1);"
+                + (on ? "background:#12171d;color:#fff;font-weight:600" : "background:#fff;box-shadow:inset 0 0 0 1px #dbdede;color:#1f252c;font-weight:500"),
+              onClick: () => mudar("interesses", on ? interesses.filter(x => x !== op) : interesses.concat(op))
+            };
+          }),
+
+          porte: String(porte),
+          setPorte: (e) => mudar("porte", e.target.value.replace(/[^0-9]/g, "")),
+          menos: () => mudar("porte", String(Math.max(1, (porteOk ? nPorte : 1) - 5))),
+          mais: () => mudar("porte", String((porteOk ? nPorte : 0) + 5)),
+          porteFaixa: faixa.label,
+          porteFaixaStyle: "font-size:10.5px;font-weight:700;border-radius:5px;padding:2px 7px;white-space:nowrap;background:" + faixa.cor + ";color:" + faixa.tinta,
+          portesRapidos: [10, 25, 50, 120].map(v => ({
+            label: v + " atendentes",
+            style: "height:26px;padding:0 10px;border-radius:7px;font-size:11.5px;font-weight:500;white-space:nowrap;flex:0 0 auto;border:0;cursor:pointer;"
+              + (nPorte === v ? "background:#eeeff3;color:#12171d;font-weight:600" : "background:#fff;box-shadow:inset 0 0 0 1px #e3e7e8;color:#67787c"),
+            onClick: () => mudar("porte", String(v))
+          })),
+
+          dor,
+          setDor: (e) => mudar("dor", e.target.value),
+          dorStyle: "width:100%;height:42px;padding:0 13px;border-radius:10px;background:#fff;outline:0;font-size:13px;font-family:inherit;border:1px solid "
+            + (dor.trim() ? "#dbdede" : (S.qualTentou ? "#fe4f2b" : "#f0c8bd")),
+          faltaDor: !dor.trim() && !!S.qualTentou,
+          faltaInteresse: interesses.length === 0 && !!S.qualTentou,
+          doresRapidas: ["Alto custo com telefonia", "Perde ligação fora do horário", "Sem histórico de atendimento", "Equipe não escala"].map(t => ({
+            label: t,
+            style: "height:26px;padding:0 10px;border-radius:7px;font-size:11.5px;font-weight:500;white-space:nowrap;flex:0 0 auto;border:0;cursor:pointer;"
+              + (dor === t ? "background:#eeeff3;color:#12171d;font-weight:600" : "background:#fff;box-shadow:inset 0 0 0 1px #e3e7e8;color:#67787c"),
+            onClick: () => mudar("dor", t)
+          })),
+
+          fits: [["Alto", 3, "#1f7256", "#e6f4ee", "#bfe3d4"], ["Médio", 2, "#8a6a1f", "#f7edd8", "#e6d3a8"], ["Baixo", 1, "#9c3210", "#fdeae5", "#f5cec3"]].map(([label, n, tinta, fundo, borda]) => {
+            const on = fit === label;
+            return {
+              label, onClick: () => mudar("fit", label),
+              barras: "display:inline-flex;align-items:flex-end;gap:2px;height:13px;flex:0 0 auto",
+              niveis: [1, 2, 3].map(i => ({
+                style: "width:3px;border-radius:2px;height:" + (i * 4 + 1) + "px;background:" + (i <= n ? (on ? tinta : "#a3a8a4") : (on ? "rgba(0,0,0,.12)" : "#e3e7e8"))
+              })),
+              style: "display:flex;align-items:center;justify-content:center;gap:8px;flex:1;height:40px;border-radius:10px;border:0;cursor:pointer;transition:background 120ms cubic-bezier(0,0,.2,1);"
+                + (on ? "background:" + fundo + ";box-shadow:inset 0 0 0 1px " + borda + ";color:" + tinta : "background:#fff;box-shadow:inset 0 0 0 1px #e3e7e8;color:#67787c")
+            };
+          }),
+
+          status: completo ? "Pronto para qualificar" : (!dor.trim() ? "Falta a dor principal" : "Preencha os campos obrigatórios"),
+          statusStyle: "font-size:11.5px;font-weight:600;white-space:nowrap;color:" + (completo ? "#1f7256" : (S.qualTentou ? "#c2330f" : "#67787c")),
+
+          ancora: this.qualRef,
+          grupoStyle: "display:flex;align-items:stretch;height:34px;border-radius:8px;overflow:hidden;padding:0;border:0;background:"
+            + (completo ? "#1f7256;cursor:pointer" : "#e3e7e8;cursor:not-allowed"),
+          corpoStyle: "display:flex;align-items:center;padding:0 14px;font-size:12.5px;font-weight:600;white-space:nowrap;"
+            + (completo ? "color:#fff" : "color:#a3a8a4"),
+          setaStyle: "display:flex;align-items:center;justify-content:center;width:27px;"
+            + (completo ? "color:#fff" : "color:#a3a8a4"),
+          hover: completo ? "background:rgba(0,0,0,.14)" : "background:transparent",
+          divisoria: "flex:0 0 auto;width:1px;background:" + (completo ? "rgba(255,255,255,.34)" : "#d3d8d9"),
+          chevron: "flex:0 0 auto;transition:transform .12s cubic-bezier(.2,0,.2,1);transform:rotate(" + (S.qualMenu ? 180 : 0) + "deg)",
+          menu: S.qualMenu,
+          menuStyle: (() => {
+            const r = S.qualRect;
+            const vh = typeof window !== "undefined" ? window.innerHeight : 800;
+            const vw = typeof window !== "undefined" ? window.innerWidth : 1200;
+            const pos = r ? "bottom:" + (vh - r.top + 6) + "px;right:" + Math.max(10, vw - r.right) + "px;" : "bottom:90px;right:40px;";
+            return "position:fixed;" + pos + "width:288px;z-index:56;border-radius:8px;background:#fff;border:1px solid #e3e7e8;box-shadow:0 -8px 20px -4px rgba(0,0,0,.18),0 2px 4px -2px rgba(0,0,0,.12);padding:4px;animation:of-rise .12s cubic-bezier(.2,0,.2,1) both";
+          })(),
+          toggleMenu: () => {
+            if (!completo) {
+              this.setState({ qualTentou: true });
+              return this.diz(!dor.trim() ? "Falta a dor principal para qualificar" : "Preencha os campos obrigatórios para qualificar", "erro");
+            }
+            const el = this.qualRef.current;
+            const r = el ? el.getBoundingClientRect() : null;
+            this.setState(s => ({ qualMenu: !s.qualMenu, qualRect: r ? { top: r.top, bottom: r.bottom, left: r.left, right: r.right } : null }));
+          },
+          opcoesSaida: [
+            { k: "so", label: "Qualificar", nota: "Grava o fato e mantém o lead no funil", ok: true, d: "M20 6 9 17l-5-5" },
+            { k: "opp", label: "Qualificar + criar oportunidade", nota: semEmpresa ? "Bloqueado: lead sem empresa associada" : "Cria a oportunidade no Pipeline", ok: !semEmpresa,
+              d: "M16 20V6a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v14M2 9a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z" }
+          ].map(o => ({
+            label: o.label, nota: o.nota, d: o.d,
+            style: "display:flex;align-items:flex-start;gap:9px;width:100%;padding:8px;border-radius:6px;text-align:left;border:0;background:transparent;"
+              + (o.ok ? "color:#1f252c;cursor:pointer" : "color:#a3a8a4;cursor:not-allowed"),
+            onClick: () => {
+              this.setState({ qualMenu: false });
+              if (o.k === "so") {
+                const id = S.detalheId;
+                this.setState(s => ({
+                  leads: s.leads.map(x => x.id === id ? Object.assign({}, x, { etapa: "qualificado", interesse: interesses[0], tag: "Fit " + fit }) : x),
+                  qualPasso: "ok", qualOkTitulo: "Lead qualificado", qualOkNota: "qualificado_em e qualificado_por gravados."
+                }));
+                clearTimeout(this._qk);
+                this._qk = setTimeout(() => this.setState({ qualAberto: false, qualDados: {}, qualOpp: {}, qualPasso: "dados" }), 1500);
+                return;
+              }
+              if (semEmpresa) return this.diz("Bloqueado: lead sem empresa associada", "erro");
+              this.setState({ qualPasso: "opp", qualOkTitulo: "Oportunidade criada", qualOkNota: "O lead seguiu para o Pipeline." });
+            }
+          })),
+          confirmar: () => {
+            if (!completo) {
+              this.setState({ qualTentou: true });
+              return this.diz(!dor.trim() ? "Falta a dor principal para qualificar" : "Preencha os campos obrigatórios para qualificar", "erro");
+            }
+            const el = this.qualRef.current;
+            const r = el ? el.getBoundingClientRect() : null;
+            this.setState(s => ({ qualMenu: !s.qualMenu, qualRect: r ? { top: r.top, bottom: r.bottom, left: r.left, right: r.right } : null }));
+          }
+        };
+      })(),
+
+      desq: (() => {
+        const alvo = S.leads.find(x => x.id === S.detalheId);
+        const opcoes = [
+          ["sem_fit", "Sem fit"], ["fora_icp", "Fora do ICP"], ["sem_interesse", "Sem interesse"],
+          ["dados_invalidos", "Dados inválidos"], ["duplicado", "Duplicado"], ["outro", "Outro"]
+        ];
+        const ehOutro = S.desqMotivo === "outro";
+        const faltaObs = ehOutro && !S.desqObs.trim();
+        const pode = !!S.desqMotivo && !faltaObs;
+        return {
+          aberto: S.desqAberto,
+          contexto: alvo ? (alvo.empresa || "Sem empresa") + " · " + alvo.pessoa + " — o motivo sustenta o relatório de perda." : "",
+          fechar: () => this.setState({ desqAberto: false, desqMotivo: null, desqObs: "" }),
+          motivos: opcoes.map(([k, label]) => {
+            const on = S.desqMotivo === k;
+            return {
+              label,
+              radio: "flex:0 0 auto;width:15px;height:15px;border-radius:50%;border:" + (on ? "5px solid #d93c1a" : "1.5px solid #c8ccc9"),
+              style: "display:flex;align-items:center;gap:9px;width:100%;padding:8px 10px;border-radius:8px;font-size:13px;cursor:pointer;border:0;"
+                + (on ? "background:#fff6f4;box-shadow:inset 0 0 0 1px #fe4f2b;font-weight:600" : "background:#fff;box-shadow:inset 0 0 0 1px #e3e7e8"),
+              onClick: () => this.setState({ desqMotivo: k })
+            };
+          }),
+          obs: S.desqObs,
+          setObs: (e) => this.setState({ desqObs: e.target.value }),
+          obsRotulo: ehOutro ? "obrigatória" : "opcional",
+          obsSelo: "font-size:10px;font-weight:700;border-radius:4px;padding:2px 6px;white-space:nowrap;"
+            + (ehOutro ? "background:#fdeae5;color:#9c3210" : "background:#eeeff3;color:#4a5560"),
+          obsDica: ehOutro ? "Descreva o motivo — obrigatório em Outro" : "Contexto que ajuda o time depois",
+          obsStyle: "width:100%;padding:9px 11px;border-radius:8px;background:#fff;outline:0;font-size:13px;line-height:1.5;resize:vertical;font-family:inherit;border:1px solid "
+            + (faltaObs ? "#f0b5a8" : "#dbdede"),
+          btnLabel: faltaObs ? "Descreva o motivo" : "Desqualificar",
+          btnStyle: "height:34px;padding:0 15px;border-radius:8px;font-size:12.5px;font-weight:600;white-space:nowrap;flex:0 0 auto;border:0;"
+            + (pode ? "background:#c2330f;color:#fff;cursor:pointer" : "background:#e3e7e8;color:#a3a8a4;cursor:not-allowed"),
+          confirmar: () => {
+            if (!S.desqMotivo) return this.diz("Escolha o motivo da desqualificação", "erro");
+            if (faltaObs) return this.diz("Em Outro, a observação é obrigatória", "erro");
+            const rotulo = (opcoes.find(o => o[0] === S.desqMotivo) || [])[1];
+            const id = S.detalheId;
+            this.setState(s => ({
+              leads: s.leads.map(x => x.id === id ? Object.assign({}, x, { etapa: "desqualificado", acao: null, venceEm: null, tag: rotulo }) : x),
+              desqAberto: false, desqMotivo: null, desqObs: "",
+      qualAberto: false, qualDados: {}, qualMenu: false, qualRect: null, qualPasso: "dados", qualOpp: {}, qualOkTitulo: "", qualOkNota: "", qualTentou: false, detalhe: false, saidaMenu: false
+            }));
+            this.diz("Lead desqualificado · " + rotulo, "ok");
+          }
+        };
+      })(),
+
+      parar: (e) => e.stopPropagation()
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,423 @@
+/* Estilos da família de domínio (crm.tsx).
+ *
+ * Só entra aqui o que ds.css ainda não resolve. Nada de valor cru: cor sai dos
+ * tokens ONFACE ou dos pares semânticos `--cf2-*` da ponte, medida sai de
+ * `calc(N * var(--onface-u))`. */
+
+html[data-onface-theme="light"] {
+  /* Véu da gaveta. Derivado do grafite da marca, não um preto qualquer. */
+  --of-scrim: color-mix(in srgb, var(--onface-graphite) 52%, transparent);
+
+  /* Tinta de pastilha tingida (fundo em 10-12% da cor, texto na mesma cor).
+     São dois problemas diferentes: `--onface-coral-deep` foi calibrado para o
+     branco EM CIMA dele (4.55:1) e, usado como TEXTO sobre coral a 10%, cai
+     para 4.02:1; o `--status-danger` cru sobre o vermelho a 10% dá 4.01:1.
+     Um grau de grafite em cima de cada um resolve os dois sem cor nova:
+     acento 5.14:1 no cartão branco e 4.52:1 no plano afundado, risco 5.17:1 e
+     4.50:1 nos mesmos planos. O coral e o vermelho da marca continuam
+     intactos para preenchimento, borda, ícone e série. */
+  --of-tinta-acento: color-mix(in srgb, var(--onface-coral-deep) 85%, var(--onface-graphite));
+  --of-tinta-risco: color-mix(in srgb, var(--status-danger) 85%, var(--onface-graphite));
+}
+
+/* ═══ Cabeçalho de entidade ═════════════════════════════════════════════ */
+.of-cabecalho { display: flex; flex-direction: column; gap: var(--space-16); }
+
+/* O tipo é lido antes do nome: a mesma tela serve Lead e Contrato, e quem
+   abre precisa saber o que está olhando sem interpretar o conteúdo. */
+.of-entidade-eyebrow {
+  display: inline-flex; align-items: center; gap: var(--space-4);
+  /* Versalete de 10px é o texto mais frágil do cabeçalho: `--text-subtle` é o
+     cinza de casca escura e dá 3.08:1 no claro (2.68:1 sobre plano afundado).
+     Um grau mais fundo passa em papel, branco e afundado (4.71 a 5.41:1). */
+  color: var(--onface-cinza-2);
+  font-size: var(--text-2xs); font-weight: var(--weight-extrabold);
+  letter-spacing: var(--tracking-caps); text-transform: uppercase;
+}
+.of-entidade-eyebrow svg { width: var(--icon-xs); height: var(--icon-xs); }
+
+.of-entidade-texto { min-width: 0; }
+.of-entidade-acoes { display: flex; align-items: center; gap: var(--space-8); flex-shrink: 0; }
+.of-entidade-campo strong { color: var(--text-body); font-weight: var(--weight-semibold); }
+
+/* Avatar por ícone quando a entidade não tem iniciais (ticket, contrato). */
+.ds-entidade-avatar svg { width: var(--icon-lg); height: var(--icon-lg); }
+
+/* ── Ponto focal da tela de registro ────────────────────────────────────
+   Fora da gaveta, o cabeçalho é a coisa mais forte da tela: o nome domina em
+   escala, o estado encosta nele e a meta cai para referência. Com tudo no
+   mesmo peso, a pessoa lê o cabeçalho inteiro para descobrir onde está.
+
+   O avatar vai para grafite, não coral: a âncora escura segura o canto
+   superior esquerdo e o coral fica inteiro para a ação primária, que é o
+   único foco de cor da composição. */
+.of-cabecalho:not([data-compacto="true"]) .ds-entidade-avatar {
+  width: calc(52 * var(--onface-u));
+  height: calc(52 * var(--onface-u));
+  background: var(--surface-shell);
+  color: var(--onface-white);
+}
+.of-cabecalho:not([data-compacto="true"]) .ds-entidade-nome {
+  font-size: calc(26 * var(--onface-u));
+  letter-spacing: -0.02em;
+  line-height: 1.12;
+}
+.of-cabecalho:not([data-compacto="true"]) .ds-entidade-identidade { gap: var(--space-16); }
+/* Meta é apoio: menor, mais clara e só o valor em peso de leitura. Clara até
+   onde o olho alcança: em 11px, o cinza de casca escura reprova (3.08:1). */
+.of-cabecalho .ds-entidade-meta {
+  margin-top: var(--space-6);
+  color: var(--onface-cinza-2);
+  font-size: var(--text-xs);
+  gap: var(--space-12);
+}
+.of-cabecalho .ds-entidade-meta svg { width: var(--icon-xs); height: var(--icon-xs); color: var(--onface-cinza-2); }
+
+/* Compacto: dentro da gaveta o cabeçalho divide espaço com o conteúdo. */
+.of-cabecalho[data-compacto="true"] { gap: var(--space-12); }
+.of-cabecalho[data-compacto="true"] .ds-entidade-avatar {
+  width: var(--avatar-lg); height: var(--avatar-lg);
+  border-radius: var(--radius-md); font-size: var(--text-md);
+}
+.of-cabecalho[data-compacto="true"] .ds-entidade-nome { font-size: var(--text-lg); }
+
+/* ═══ Etiqueta de estado ════════════════════════════════════════════════ */
+.of-status {
+  display: inline-flex; align-items: center; gap: var(--space-4);
+  height: var(--control-xs); padding-inline: var(--space-8);
+  border-radius: var(--radius-full);
+  font-size: var(--text-xs); font-weight: var(--weight-semibold); white-space: nowrap;
+}
+.of-status svg { width: var(--icon-xs); height: var(--icon-xs); }
+/* Quatro pares medidos, não quatro cores escolhidas. Verde e cinza vêm da
+   ponte cf2 e já passam (4.73:1 e 15.67:1 no pior plano); coral e vermelho
+   precisam da tinta um grau mais funda, senão a pastilha reprova justamente
+   nos dois estados que a pessoa procura no quadro. */
+.of-status[data-tom="ok"] { background: var(--cf2-positivo-bg); color: var(--cf2-positivo-fg); }
+.of-status[data-tom="risco"] { background: var(--cf2-negativo-bg); color: var(--of-tinta-risco); }
+.of-status[data-tom="acento"] { background: var(--cf2-atencao-bg); color: var(--of-tinta-acento); }
+.of-status[data-tom="neutro"] { background: var(--cf2-informativo-bg); color: var(--cf2-informativo-fg); }
+
+/* ═══ Abas da entidade ══════════════════════════════════════════════════ */
+/* O TabsList do shadcn vem com utilitários próprios; aqui ele passa a falar
+   ONFACE (indicador coral, rótulo do produto) sem tocar em components/ui. */
+.of-entidade-abas {
+  width: 100%; justify-content: flex-start;
+  border-bottom: 1px solid var(--line-hairline);
+  border-radius: 0; padding: 0; height: auto;
+}
+/* O rótulo da aba pinta aqui, por cor explícita, e nunca por `text-foreground`
+   do shadcn: aquele utilitário depende de `--foreground`, que só existe
+   quando o tema ONFACE já está marcado no <html>. A barra de abas aparece
+   tanto sobre branco quanto sobre o plano afundado (Cliente 360), e o
+   `--text-muted` reprova no afundado (4.11:1); um grau mais fundo passa nos
+   dois (4.71:1 e 5.41:1). */
+.of-entidade-abas [data-slot="tabs-trigger"] {
+  flex: 0 0 auto;
+  height: var(--control-lg); padding-inline: var(--space-12);
+  color: var(--onface-cinza-2);
+  font-size: var(--text-md); font-weight: var(--weight-medium);
+}
+.of-entidade-abas [data-slot="tabs-trigger"]:hover { color: var(--text-strong); }
+.of-entidade-abas [data-slot="tabs-trigger"][data-state="active"] {
+  color: var(--of-tinta-acento); font-weight: var(--weight-semibold);
+}
+.of-entidade-abas [data-slot="tabs-trigger"]::after {
+  inset-inline: 0; bottom: calc(-1 * var(--onface-u)); height: calc(2 * var(--onface-u));
+  background: var(--onface-coral);
+}
+.of-aba-contagem {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: calc(18 * var(--onface-u)); padding-inline: var(--space-4);
+  border-radius: var(--radius-full);
+  /* Número de 10px sobre plano afundado: `--text-muted` dá 4.11:1 ali. */
+  background: var(--surface-sunken); color: var(--onface-cinza-2);
+  font-size: var(--text-2xs); font-weight: var(--weight-bold); font-variant-numeric: tabular-nums;
+}
+.of-entidade-abas [data-state="active"] .of-aba-contagem {
+  background: var(--cf2-atencao-bg); color: var(--of-tinta-acento);
+}
+
+/* ═══ Linha do tempo ════════════════════════════════════════════════════ */
+.of-tempo-filtros { display: flex; flex-wrap: wrap; gap: var(--space-6); margin-bottom: var(--space-16); }
+.of-tempo-autor { display: inline-flex; align-items: center; gap: var(--space-4); }
+.of-tempo-ponto { width: calc(3 * var(--onface-u)); height: calc(3 * var(--onface-u)); border-radius: var(--radius-full); background: var(--onface-line); }
+.ds-tempo-meta time { font-variant-numeric: tabular-nums; }
+
+/* O trilho é referência de continuidade, não conteúdo: fica mais claro que a
+   hairline de estrutura para a marca do evento ser a coisa legível da coluna
+   da esquerda. Hoje os dois tinham a mesma cor e brigavam. */
+.ds-tempo-item:not(:last-child) .ds-tempo-trilho::after {
+  background: color-mix(in srgb, var(--onface-line) 60%, transparent);
+}
+/* Marca neutra ganha contorno e ícone em peso de texto: sem isso, ícone cinza
+   claro sobre papel cinza claro não identifica canal nenhum. Só a neutra: as
+   marcas com tom já se leem pela cor, e cor ali é significado. */
+.ds-tempo .ds-tempo-marca:not([data-tom]) {
+  box-shadow: var(--ring-inset-hairline);
+  color: var(--text-body);
+}
+/* Marca de acento: coral cheio sobre coral a 10% dá 2.91:1 e o ícone some no
+   próprio halo, abaixo do piso de 3:1 de elemento de interface. O coral um
+   grau mais fundo sobe para 4.02:1 no branco e 3.54:1 no plano afundado,
+   mantendo a pastilha clara que separa o evento de acento do de risco. */
+.ds-tempo .ds-tempo-marca[data-tom="acento"] {
+  color: var(--onface-coral-deep);
+}
+
+/* Evento com consequência sobe de plano: superfície própria, título maior e
+   anel na marca. Evento de rotina continua texto solto sobre o fundo — é o
+   contraste entre os dois que faz a proposta enviada se ler primeiro. */
+.ds-tempo-item[data-marcante="true"] .ds-tempo-corpo {
+  padding: var(--space-10) var(--space-12);
+  border-radius: var(--radius-lg);
+  background: var(--surface-sunken);
+}
+.ds-tempo-item[data-marcante="true"] .ds-tempo-corpo strong {
+  font-size: var(--text-base);
+  font-weight: var(--weight-bold);
+  letter-spacing: -0.01em;
+}
+.ds-tempo .ds-tempo-item[data-marcante="true"] .ds-tempo-marca {
+  box-shadow: inset 0 0 0 calc(1.5 * var(--onface-u)) currentColor;
+}
+/* Densidade compacta esconde o detalhe: quem varre 40 eventos quer o assunto,
+   não o parágrafo. O detalhe volta no item expandido. */
+.ds-tempo[data-densidade="compacta"] .ds-tempo-corpo p { display: none; }
+.ds-tempo[data-densidade="compacta"] .ds-tempo-marca { width: var(--avatar-sm); height: var(--avatar-sm); }
+.ds-tempo[data-densidade="compacta"] .ds-tempo-marca svg { width: var(--icon-xs); height: var(--icon-xs); }
+.ds-tempo[data-densidade="compacta"] .ds-tempo-item:not(:last-child) .ds-tempo-trilho::after { top: var(--avatar-sm); }
+
+/* ═══ Anel ══════════════════════════════════════════════════════════════ */
+.of-anel { --of-anel-cor: var(--onface-coral); --of-anel-trilho: var(--onface-line); }
+.of-anel[data-tom="ok"] { --of-anel-cor: var(--cf2-positivo-solido); }
+.of-anel[data-tom="risco"] { --of-anel-cor: var(--status-danger); }
+.of-anel[data-tom="neutro"] { --of-anel-cor: var(--onface-slate); }
+.of-anel[data-tamanho="sm"] svg { width: calc(56 * var(--onface-u)); height: calc(56 * var(--onface-u)); }
+.of-anel[data-tamanho="md"] svg { width: calc(88 * var(--onface-u)); height: calc(88 * var(--onface-u)); }
+.of-anel[data-tamanho="lg"] svg { width: calc(128 * var(--onface-u)); height: calc(128 * var(--onface-u)); }
+.of-anel[data-tamanho="lg"] .ds-anel-valor { font-size: var(--display-kpi); }
+/* O rótulo acompanha o vão de cada tamanho. No sm não sobra vão nenhum: só o
+   número cabe, e o nome do indicador vive fora, em quem usa o anel. */
+.of-anel[data-tamanho="md"] .ds-anel-rotulo { font-size: var(--text-2xs); }
+.of-anel[data-tamanho="sm"] .ds-anel-rotulo { display: none; }
+.of-anel[data-tamanho="sm"] .ds-anel-valor { font-size: var(--text-md); }
+
+/* ═══ Métrica ═══════════════════════════════════════════════════════════ */
+.of-metrica-corpo { display: flex; align-items: center; justify-content: space-between; gap: var(--space-12); }
+.of-metrica-num { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
+.ds-metrica-topo svg { width: var(--icon-sm); height: var(--icon-sm); color: var(--text-subtle); }
+.ds-metrica[data-densidade="compacta"] { padding: var(--space-12); gap: var(--space-6); }
+.ds-metrica[data-densidade="compacta"] .ds-metrica-valor { font-size: var(--display-title); }
+
+.of-tendencia {
+  display: inline-flex; align-items: center; gap: var(--space-4);
+  height: var(--control-xs); padding-inline: var(--space-6);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs); font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.of-tendencia svg { width: var(--icon-xs); height: var(--icon-xs); }
+/* Mesmos pares medidos da pastilha de estado: verde = resultado consumado,
+   vermelho = piora, cinza = parado. O número é tabular e pequeno, então vale
+   o piso de texto, não o de elemento de interface. */
+.of-tendencia[data-tom="ok"] { background: var(--cf2-positivo-bg); color: var(--cf2-positivo-fg); }
+.of-tendencia[data-tom="risco"] { background: var(--cf2-negativo-bg); color: var(--of-tinta-risco); }
+.of-tendencia[data-tom="neutro"] { background: var(--surface-sunken); color: var(--onface-cinza-2); }
+
+/* Sobre a casca escura o par superfície/texto muda; o significado, não. */
+.ds-metrica[data-tom="escuro"] .ds-metrica-topo svg { color: var(--onface-slate); }
+.ds-metrica[data-tom="escuro"] .ds-faixa i { background: var(--onface-alpha-ring); }
+.ds-metrica[data-tom="escuro"] .ds-faixa i:last-child { background: var(--onface-coral); }
+.ds-metrica[data-tom="escuro"] .of-anel { --of-anel-trilho: var(--onface-alpha-divider); }
+.ds-metrica[data-tom="escuro"] .ds-anel-valor { color: var(--onface-white); }
+.ds-metrica[data-tom="escuro"] .ds-anel-rotulo { color: var(--onface-slate); }
+.ds-metrica[data-tom="escuro"] .of-tendencia[data-tom="neutro"] { background: var(--onface-alpha-hairline); color: var(--onface-slate); }
+/* Sobre a casca, verde e vermelho invertem o lado do par: as tintas escuras
+   (#137333 e o vermelho cheio) são para papel e caem para 2.40:1 e 3.51:1 no
+   grafite. Os tons claros que a paleta já tem para fundo escuro devolvem
+   5.63:1 e 6.79:1 sem inventar cor. */
+.ds-metrica[data-tom="escuro"] .of-tendencia[data-tom="ok"] { color: var(--status-success); }
+.ds-metrica[data-tom="escuro"] .of-tendencia[data-tom="risco"] { color: var(--status-danger-dark); }
+
+.of-metricas { display: grid; grid-template-columns: repeat(auto-fit, minmax(calc(190 * var(--onface-u)), 1fr)); gap: var(--space-12); }
+
+/* ═══ Gaveta de detalhe ═════════════════════════════════════════════════ */
+.of-gaveta-veu { position: fixed; inset: 0; z-index: 50; background: var(--of-scrim); }
+.of-gaveta {
+  position: fixed; inset-block: 0; right: 0; z-index: 51;
+  display: flex; flex-direction: column;
+  width: min(calc(560 * var(--onface-u)), calc(100vw - var(--space-32)));
+  background: var(--surface-card);
+  border-left: 1px solid var(--line-hairline);
+  box-shadow: var(--shadow-popover);
+}
+.of-gaveta[data-largura="larga"] { width: min(calc(760 * var(--onface-u)), calc(100vw - var(--space-32))); }
+/* O Tabs do shadcn traz `gap-2`; aqui a coluna é topo fixo + corpo rolável. */
+.of-gaveta .of-gaveta-tabs { display: flex; flex: 1; flex-direction: column; gap: 0; min-height: 0; }
+.of-gaveta-topo {
+  display: flex; align-items: flex-start; gap: var(--space-12);
+  padding: var(--space-20) var(--space-20) 0;
+  border-bottom: 1px solid var(--line-hairline);
+}
+.of-gaveta-topo > .of-cabecalho { flex: 1; min-width: 0; }
+/* O cabeçalho já encosta as abas na borda inferior da faixa. */
+.of-gaveta-topo .of-entidade-abas { border-bottom: 0; }
+.of-gaveta-fechar {
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+  width: var(--control-md); height: var(--control-md);
+  border: 0; border-radius: var(--radius-md);
+  background: transparent; color: var(--text-muted); cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard);
+}
+.of-gaveta-fechar:hover { background: var(--surface-sunken); color: var(--text-strong); }
+.of-gaveta-fechar svg { width: var(--icon-sm); height: var(--icon-sm); }
+.of-gaveta-corpo { flex: 1; min-height: 0; padding: var(--space-20); overflow-y: auto; overscroll-behavior: contain; }
+.of-gaveta-rodape {
+  display: flex; align-items: center; justify-content: flex-end; gap: var(--space-8);
+  flex-shrink: 0; padding: var(--space-12) var(--space-20);
+  border-top: 1px solid var(--line-hairline); background: var(--surface-card);
+}
+.of-gaveta-rodape[data-alinhamento="entre"] { justify-content: space-between; }
+/* A gaveta é portalizada, então fica fora do seletor de foco do app shell
+   (`onface.css`). Sem isto, o Tab dentro do painel não marca onde está. */
+.of-gaveta :is(button, a, [tabindex]):focus-visible {
+  outline: calc(2 * var(--onface-u)) solid var(--onface-coral);
+  outline-offset: calc(2 * var(--onface-u));
+}
+
+/* ═══ Composições da seção ══════════════════════════════════════════════ */
+.of-360 { display: grid; grid-template-columns: minmax(0, 1fr) calc(300 * var(--onface-u)); gap: var(--space-20); align-items: start; }
+.of-360-painel { display: flex; flex-direction: column; gap: var(--space-16); min-width: 0; }
+/* A lateral não é mais um cartão: quem dá a superfície é o <Momento> grafite
+   que mora dentro dela. Aqui sobra só a coluna. */
+.of-360-lateral { display: flex; flex-direction: column; gap: var(--space-12); min-width: 0; }
+
+/* Saúde e MRR sobre a casca: o anel é a evidência, a legenda é o contexto.
+   O <Momento> já traz o número grande no título. */
+.of-saude { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-16); margin-top: var(--space-20); }
+.of-saude-fatos { display: flex; flex-direction: column; gap: var(--space-8); margin: 0; min-width: 0; }
+.of-saude-fatos div { display: flex; flex-direction: column; gap: var(--space-2); }
+.of-saude-fatos dt {
+  color: var(--onface-slate);
+  font-size: var(--text-2xs); font-weight: var(--weight-extrabold);
+  letter-spacing: var(--tracking-caps); text-transform: uppercase;
+}
+.of-saude-fatos dd { margin: 0; color: var(--onface-white); font-size: var(--text-md); font-weight: var(--weight-semibold); }
+/* Anel sobre grafite: só o par superfície/texto muda, o componente é o mesmo. */
+.ds-momento .of-anel { --of-anel-trilho: var(--onface-alpha-divider); }
+.ds-momento .ds-anel-valor { color: var(--onface-white); }
+.ds-momento .ds-anel-rotulo { color: var(--onface-slate); }
+
+/* Indicadores da conta: uma superfície dividida, não três cartões. São a mesma
+   pergunta ("a conta está bem?") lida em três recortes, então dividem o mesmo
+   plano e se separam por régua e alinhamento. */
+.of-indicadores {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+  border: 1px solid var(--line-hairline); border-radius: var(--radius-card);
+  background: var(--surface-card); overflow: hidden;
+}
+.of-indicador { display: flex; align-items: center; gap: var(--space-12); padding: var(--space-16); min-width: 0; }
+.of-indicador + .of-indicador { border-left: 1px solid var(--line-hairline); }
+.of-indicador > div { min-width: 0; }
+.of-indicador strong {
+  display: block; color: var(--text-strong);
+  font-size: var(--text-base); font-weight: var(--weight-semibold);
+}
+.of-indicador small { display: block; margin-top: var(--space-2); color: var(--text-muted); font-size: var(--text-xs); line-height: 1.4; }
+
+/* Lista agrupada: linhas relacionadas dividem uma superfície com régua entre
+   elas. Uma borda por linha transformaria a lista numa pilha de cartões. O
+   item solto (fora de `.of-lista`) continua com moldura própria. */
+.of-lista {
+  display: flex; flex-direction: column;
+  border: 1px solid var(--line-hairline); border-radius: var(--radius-card);
+  background: var(--surface-card); overflow: hidden;
+}
+.of-lista-item {
+  display: flex; align-items: center; gap: var(--space-12);
+  padding: var(--space-12); border: 1px solid var(--line-hairline);
+  border-radius: var(--radius-lg); background: var(--surface-card);
+}
+.of-lista .of-lista-item { border: 0; border-radius: 0; background: transparent; }
+.of-lista .of-lista-item + .of-lista-item { border-top: 1px solid var(--line-hairline); }
+.of-lista-item > div { flex: 1; min-width: 0; }
+.of-lista-item strong { display: block; color: var(--text-strong); font-size: var(--text-md); font-weight: var(--weight-semibold); }
+.of-lista-item small { display: block; margin-top: var(--space-2); color: var(--text-muted); font-size: var(--text-xs); }
+.of-lista-avatar {
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+  width: var(--avatar-lg); height: var(--avatar-lg); border-radius: var(--radius-full);
+  background: var(--surface-sunken); color: var(--text-body);
+  font-size: var(--text-xs); font-weight: var(--weight-bold);
+}
+.of-lista-valor { color: var(--text-strong); font-size: var(--text-md); font-weight: var(--weight-semibold); font-variant-numeric: tabular-nums; }
+
+.of-galeria { display: grid; grid-template-columns: repeat(auto-fit, minmax(calc(150 * var(--onface-u)), 1fr)); gap: var(--space-16); justify-items: center; }
+.of-galeria figure { display: flex; flex-direction: column; align-items: center; gap: var(--space-8); margin: 0; }
+/* Legenda de galeria também é texto de leitura: cinza de casca escura sobre
+   papel dá 3.08:1. */
+.of-galeria figcaption { color: var(--onface-cinza-2); font-size: var(--text-xs); text-align: center; }
+
+@media (max-width: 1100px) {
+  .of-360 { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 760px) {
+  .of-entidade-acoes { width: 100%; }
+  .of-gaveta, .of-gaveta[data-largura="larga"] { width: 100vw; }
+  /* Empilhado, a régua vertical vira horizontal: continua sendo uma
+     superfície só, dividida. */
+  .of-indicadores { grid-template-columns: minmax(0, 1fr); }
+  .of-indicador + .of-indicador { border-left: 0; border-top: 1px solid var(--line-hairline); }
+  .of-cabecalho:not([data-compacto="true"]) .ds-entidade-nome { font-size: calc(22 * var(--onface-u)); }
+}
+
+/* ═══ Campos interativos do cabeçalho ═══════════════════════════════════
+   O campo de leitura é texto. O campo que leva a outro registro e o que se
+   edita no lugar precisam PARECER acionáveis antes do hover: um tem a seta de
+   saída, o outro tem o chevron. Sem esse sinal, a pessoa só descobre que dá
+   para clicar passando o mouse por cima de tudo. */
+.of-campo-link {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(2 * var(--onface-u));
+  color: var(--text-strong);
+  font-weight: var(--weight-semibold);
+  text-decoration: none;
+  border-bottom: 1px solid var(--line-hairline);
+  transition: color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
+}
+.of-campo-link svg { width: var(--icon-xs); height: var(--icon-xs); color: var(--text-subtle); }
+.of-campo-link:hover { color: var(--onface-coral-deep); border-bottom-color: var(--onface-coral-border); }
+.of-campo-link:hover svg { color: var(--onface-coral-deep); }
+.of-campo-link:focus-visible { outline: 2px solid var(--onface-coral); outline-offset: 2px; border-radius: var(--radius-xs); }
+
+.of-campo-editavel {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: calc(2 * var(--onface-u));
+  padding-inline: var(--space-4);
+  margin-inline: calc(-1 * var(--space-4));
+  border-radius: var(--radius-xs);
+  color: var(--text-strong);
+  font-weight: var(--weight-semibold);
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+.of-campo-editavel svg { width: var(--icon-xs); height: var(--icon-xs); color: var(--text-subtle); }
+.of-campo-editavel:hover { background: var(--surface-sunken); }
+/* O select nativo cobre o campo inteiro e fica invisível: o visual é o texto
+   ao lado, o comportamento e a acessibilidade são os do controle real. */
+.of-campo-editavel select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  font: inherit;
+}
+.of-campo-editavel:has(select:focus-visible) {
+  outline: 2px solid var(--onface-coral);
+  outline-offset: 2px;
+}

@@ -1,0 +1,254 @@
+/* ─────────────────────────────────────────────────────────────────────────
+ * ONFACE — camada de token do protótipo.
+ *
+ * Fonte: `docs/handoff-onface/inventario.md`, gerado por
+ * `scripts/inventario-handoff.mjs` a partir dos `.dc.html` do handoff.
+ * Regenerar o inventário e conferir esta folha contra ele a cada bundle novo.
+ *
+ * ── Por que esta folha existe ──────────────────────────────────────────
+ *
+ * O protótipo declara 7.415 valores de estilo em 2.849 blocos, com 113 cores,
+ * 24 tamanhos de fonte e 15 raios — tudo inline, sem nome. Até aqui cada tela
+ * era transcrita à mão, e transcrição à mão sobre esse volume deriva: cada
+ * tela mede certo isolada e o conjunto sai inconsistente. Aqui o valor ganha
+ * NOME e a tela passa a consumir o nome.
+ *
+ * ── O que entrou ──────────────────────────────────────────────────────
+ *
+ * As 27 cores que aparecem em três ou mais telas (Casca, Peças, Pré-vendas,
+ * Empresa). É o núcleo: 76 das 113 cores do protótipo nunca aparecem no
+ * Dashboard, e 36 aparecem SÓ nele — o Dashboard foi desenhado com outra
+ * rampa de cinza (`#667085`, `#475467`, `#e4e7ec`) e um teal que não existe em
+ * nenhuma outra tela. Essa divergência é decisão do Scott e está registrada no
+ * inventário; enquanto ela não for resolvida, o Dashboard fica fora daqui.
+ *
+ * ── Nome descreve PAPEL, não valor ────────────────────────────────────
+ *
+ * `--of-linha-controle`, nunca `--of-cinza-dbdede`. Token com nome de cor
+ * congela a cor: no dia em que ela muda, ou o nome mente ou você renomeia 300
+ * ocorrências. O papel sobrevive à troca de valor.
+ *
+ * ── Nada foi colapsado ────────────────────────────────────────────────
+ *
+ * Todo valor do núcleo está aqui com o valor do desenho. Onde o protótipo usa
+ * 12px e 12.5px para a mesma coisa, os dois estão presentes — colapsar muda
+ * 7.415 declarações e isso não se faz em silêncio. A proposta de colapso, com
+ * o custo de cada junção, está em `inventario.md`.
+ * ───────────────────────────────────────────────────────────────────── */
+
+:root {
+  /* ── Superfícies ──────────────────────────────────────────────────── */
+
+  /** Moldura da página: o grafite que a coluna e o cartão de conteúdo pousam. */
+  --of-moldura: #090e14;
+  /** Cartão de conteúdo, popover, gaveta — a superfície que recebe leitura. */
+  --of-papel: #fff;
+  /** Papel da TELA, dentro do cartão da casca. Um degrau abaixo do branco. */
+  --of-papel-tela: #f6f6f3;
+  /** Faixa alternada: cabeçalho de tabela, rodapé de paleta. */
+  --of-papel-alterno: #fafafa;
+  /** Hover de linha e de item de menu. O toque mais leve que existe. */
+  --of-papel-hover: #f6f7f7;
+  /** Superfície neutra com presença: chip, trilho, botão secundário apertado. */
+  --of-neutro: #f1f3f3;
+  /** Calha: a depressão onde o cartão do quadro se apoia. Também chip escuro. */
+  --of-calha: #eeeff3;
+
+  /* ── Tintas ───────────────────────────────────────────────────────────
+   *
+   * Cinco degraus, e cada um tem trabalho. `--of-tinta-2` é a mais usada do
+   * protótipo depois do branco (274 ocorrências): é a voz normal da interface,
+   * não uma exceção. */
+
+  /** Título, número que decide, avatar sólido. Também o grafite da coluna. */
+  --of-tinta-forte: #12171d;
+  /** Corpo de texto longo. */
+  --of-tinta: #1f252c;
+  /** Rótulo, metadado, ícone de controle. A voz padrão da interface. */
+  --of-tinta-2: #4a5560;
+  /** Apoio: linha de explicação, rótulo de seção, placeholder. */
+  --of-tinta-3: #67787c;
+  /** O degrau mais baixo que ainda lê: valor derivado, contagem em repouso. */
+  --of-tinta-4: #a3a8a4;
+  /** Variantes de uso restrito do protótipo, mantidas porque ele as distingue. */
+  --of-tinta-avatar: #616b78;   /* iniciais sobre chip claro */
+  --of-tinta-vazio: #3d4650;    /* título de estado vazio */
+
+  /* ── Linhas ───────────────────────────────────────────────────────── */
+
+  /** Contorno de controle e de cartão: a linha que define forma. */
+  --of-linha-controle: #dbdede;
+  /** Divisória de estrutura: rodapé de barra, borda de popover, topo de seção. */
+  --of-linha: #e3e7e8;
+  /** Fio interno: separa item de item dentro de uma mesma superfície. */
+  --of-fio: #eef1f1;
+  /** O fio mais fino do sistema: rodapé do cartão de lead. */
+  --of-fio-tenue: #f3f5f5;
+  /** Tracejado de "adicionar": borda que convida em vez de fechar. */
+  --of-linha-convite: #c8ccc9;
+  /** Polegar da barra de rolagem. */
+  --of-rolagem: #d2d5d5;
+
+  /* ── Coral ────────────────────────────────────────────────────────────
+   *
+   * Quatro corais, e a diferença entre eles é CONTRASTE, não gosto. O coral da
+   * marca reprova como texto; quem carrega texto branco é o de ação, e quem é
+   * escrito sobre papel é o de texto. */
+
+  /** A cor da marca. Superfície e sinal — ponto, anel de foco, barra. Sem texto. */
+  --of-coral-marca: #fe4f2b;
+  /** Fundo de botão que recebe texto branco: Criar, Novo lead, Qualificar. */
+  --of-coral-acao: #d93c1a;
+  /** O mesmo botão sob o cursor. */
+  --of-coral-acao-hover: #c2330f;
+  /** Coral escrito sobre papel: "Sem próxima ação", Limpar, Sair. */
+  --of-coral-texto: #c2330f;
+  /** Um degrau mais escuro, para o mesmo texto sobre fundo coral suave. */
+  --of-coral-texto-forte: #9c3210;
+  /** Link coral sob o cursor. */
+  --of-coral-link-hover: #b8300f;
+  /** Fundo coral suave: selo de origem paga, bolha de insight, hover destrutivo. */
+  --of-coral-fundo: #fff6f4;
+  /** O contorno que acompanha esse fundo. */
+  --of-coral-contorno: #fadfd8;
+
+  /* ── Etapas do funil ──────────────────────────────────────────────────
+   *
+   * Vêm de `dados.js`, não das telas: é a fonte única do protótipo para a cor
+   * de cada etapa. Ficam aqui porque o quadro, a lista e a gaveta precisam
+   * pintar a MESMA etapa da mesma cor. */
+
+  --of-etapa-novo: #4a5560;
+  --of-etapa-em-contato: #4c8fe0;
+  --of-etapa-qualificacao: #9b8bd8;
+  --of-etapa-qualificado: #2f9e7a;
+  --of-etapa-oportunidade: #fe4f2b;
+  --of-etapa-nutricao: #c8a86a;
+  --of-etapa-desqualificado: #4a5560;
+
+  /* ── Canais de entrada ────────────────────────────────────────────────
+   *
+   * Também de `dados.js`. Cada canal muda o jeito de abordar, então ele se
+   * distingue antes da leitura. Par fundo/tinta, sempre junto. */
+
+  --of-canal-pago-fundo: #fff6f4;
+  --of-canal-pago-tinta: #9c3210;
+  --of-canal-social-fundo: #efecfa;
+  --of-canal-social-tinta: #4f3fa8;
+  --of-canal-whatsapp-fundo: #e6f4ee;
+  --of-canal-whatsapp-tinta: #1f7256;
+  --of-canal-web-fundo: #e8f0fb;
+  --of-canal-web-tinta: #2c5f9e;
+  --of-canal-organico-fundo: #f7edd8;
+  --of-canal-organico-tinta: #6e5420;
+
+  /* ── Tipografia ───────────────────────────────────────────────────────
+   *
+   * Três famílias, cada uma com um trabalho. A escala tem meio pixel de
+   * propósito: 12.5px é o tamanho mais usado do protótipo inteiro (164
+   * ocorrências), não um descuido. Os nomes são papéis; a proposta de colapsar
+   * os pares está no inventário. */
+
+  --of-fonte-titulo: var(--font-onface-titulo), ui-sans-serif, system-ui, sans-serif;
+  --of-fonte: var(--font-onface-corpo), ui-sans-serif, system-ui, sans-serif;
+  --of-fonte-mono: var(--font-onface-mono), ui-monospace, monospace;
+
+  --of-t-micro: 9.5px;      /* iniciais dentro de avatar pequeno */
+  --of-t-rotulo: 10.5px;    /* RÓTULO MAIÚSCULO de seção e de indicador */
+  --of-t-rotulo-min: 10px;  /* o mesmo rótulo onde a largura aperta */
+  --of-t-meta: 11.5px;      /* metadado: responsável, tempo, contagem */
+  --of-t-meta-min: 11px;
+  --of-t-corpo: 12.5px;     /* corpo e botão — o tamanho mais usado */
+  --of-t-corpo-min: 12px;
+  --of-t-forte: 13.5px;     /* nome de lead, título de cartão */
+  --of-t-forte-min: 13px;
+  --of-t-secao: 14.5px;     /* nome da página na barra do topo */
+  --of-t-secao-min: 14px;
+  --of-t-titulo: 15px;      /* título dentro de painel */
+
+  --of-peso-medio: 500;
+  --of-peso-semi: 600;
+  --of-peso-forte: 700;
+  --of-peso-extra: 800;
+
+  /* Tracking negativo só em Plus Jakarta, que abre demais nos tamanhos de
+     título. Texto em Inter não leva tracking. */
+  --of-tracking-titulo: -0.01em;
+  --of-tracking-display: -0.03em;
+  --of-tracking-caps: 0.09em;
+
+  /* ── Raios ────────────────────────────────────────────────────────────
+   *
+   * Seis papéis. O protótipo usa quinze valores, de 2 a 14 — os vizinhos
+   * dentro de cada papel diferem em 1px e a proposta de junção está no
+   * inventário. Aqui cada papel guarda o valor que o protótipo mais usa nele. */
+
+  --of-r-micro: 4px;     /* selo, tecla, caixa de seleção */
+  --of-r-item: 7px;      /* item de menu, chip, botão pequeno */
+  --of-r-controle: 8px;  /* o raio mais usado do sistema (150 ocorrências) */
+  --of-r-acao: 9px;      /* controle de 34px: filtro, Criar, Novo lead */
+  --of-r-painel: 11px;   /* popover, bolha, bloco de atribuição */
+  --of-r-superficie: 12px; /* coluna do quadro, cartão de lista */
+  --of-r-casca: 14px;    /* o cartão de conteúdo da casca */
+  --of-r-pilula: 9999px;
+
+  /* ── Alturas de controle ──────────────────────────────────────────── */
+
+  --of-h-selo: 19px;      /* chip de origem e de tag */
+  --of-h-chip: 22px;      /* avatar pequeno, tag na gaveta */
+  --of-h-micro: 26px;     /* sugestão, chip de filtro */
+  --of-h-compacto: 28px;  /* ação dentro de cartão, fechar */
+  --of-h-utilidade: 30px; /* lupa, sino, recolher — os três do topo */
+  --of-h-controle: 34px;  /* busca, filtro, Criar, Novo lead, Qualificar */
+  --of-h-marca: 38px;     /* a faixa da marca na coluna */
+  --of-h-topo: 52px;      /* a barra do topo */
+
+  /* ── Movimento ────────────────────────────────────────────────────────
+   *
+   * Uma curva só. Mudança de estado é crossfade de cor e opacidade, nunca
+   * salto. */
+
+  --of-curva: cubic-bezier(.2, 0, .2, 1);
+  --of-curva-saida: cubic-bezier(0, 0, .2, 1);
+  --of-rapido: 120ms;
+  --of-base: 140ms;
+  --of-calmo: 200ms;
+
+  /* ── Sombras ──────────────────────────────────────────────────────────
+   *
+   * O protótipo tem 31 sombras distintas, e a maioria é `inset 0 0 0 1px` —
+   * contorno, não elevação. Elevação real só em coisa que FLUTUA. */
+
+  /** Contorno que não soma ao box model. O "border" do sistema. */
+  --of-anel: inset 0 0 0 1px var(--of-linha-controle);
+  --of-anel-forte: inset 0 0 0 1px var(--of-linha);
+  --of-anel-coral: inset 0 0 0 1px var(--of-coral-marca);
+  /** Popover ancorado. */
+  --of-sombra-popover: 0 10px 26px -6px rgba(0, 0, 0, .2);
+  /** Menu curto, colado no gatilho. */
+  --of-sombra-menu: 0 4px 6px -1px rgba(0, 0, 0, .1), 0 2px 4px -2px rgba(0, 0, 0, .1);
+  /** Paleta ⌘K, que flutua sobre a página inteira. */
+  --of-sombra-paleta: 0 10px 30px -6px rgba(0, 0, 0, .22);
+  /** Cartão sob o ponteiro durante o arrasto. */
+  --of-sombra-arrasto: 0 2px 6px rgba(9, 14, 20, .12), 0 18px 36px rgba(9, 14, 20, .26);
+
+  /* ── Véus ─────────────────────────────────────────────────────────── */
+
+  --of-veu-modal: rgba(9, 14, 20, .5);
+  --of-veu-paleta: rgba(9, 14, 20, .42);
+
+  /* ── Sobre o grafite ──────────────────────────────────────────────────
+   *
+   * A coluna é escura e o resto é claro, então ela tem tintas próprias. Cinza
+   * do tema claro sobre grafite reprova contraste. */
+
+  --of-shell-tinta: #eeeff3;
+  --of-shell-tinta-2: #b9c1ca;
+  --of-shell-tinta-3: #9aa4ae;
+  --of-shell-tinta-4: #7e8894;
+  --of-shell-hover: #1a222c;
+  --of-shell-ativo: #1f2833;
+  --of-shell-elevado: #161d26;
+  --of-shell-linha: #242c36;
+  --of-shell-linha-2: #2e3741;
+}

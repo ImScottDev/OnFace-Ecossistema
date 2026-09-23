@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app/src/app/onface.css">
+<link rel="stylesheet" href="app/src/components/onface/ds/ds.css">
+<link rel="stylesheet" href="app/src/components/onface/ds/crm.css">
+<link rel="stylesheet" href="app/src/components/onface/ds/datagrid.css">
+<link rel="stylesheet" href="app/src/components/onface/ds/graficos.css">
+<link rel="stylesheet" href="app/src/components/onface/ds/quadro.css">
+<link rel="stylesheet" href="app/src/components/onface/ds/nexo.css">
+<link rel="stylesheet" href="app/src/components/onface/ds/agenda.css">
+<link rel="stylesheet" href="app/src/components/onface/ds/fluxos.css">
+<link rel="stylesheet" href="app/src/components/onface/ds/padroes.css">
+<link rel="stylesheet" href="app/src/components/onface/ds/layouts.css">
+<style>
+html{--font-onface-display:'Plus Jakarta Sans';--font-onface-text:'Inter';--font-onface-body:'Inter';--font-onface-sans:'Inter';--shell-topbar-h:0px}
+body{margin:0;background:var(--onface-paper,#f6f6f3);font-family:'Inter',system-ui,sans-serif;-webkit-font-smoothing:antialiased;color:var(--text-strong,#12171d)}
+a{color:#c2330f;text-decoration:none}a:hover{color:#9c3210;text-decoration:underline}
+.lab-secao{scroll-margin-top:66px}
+.lab-marcar{position:absolute;top:8px;right:8px;opacity:0;transition:opacity 120ms cubic-bezier(0,0,.2,1)}
+.lab-peca:hover .lab-marcar,.lab-marcar:focus-visible{opacity:1}
+</style>
+</helmet>
+<div style="min-height:100vh">
+
+  <header style="position:sticky;top:0;z-index:30;background:rgba(9,14,20,.96);backdrop-filter:blur(8px);border-bottom:1px solid rgba(255,255,255,.08);display:flex;align-items:center;gap:12px;padding:0 20px;height:56px">
+    <svg viewBox="0 0 1346 233" width="93" height="16" style="flex:0 0 auto;display:block">
+      <path d="M166.339 3.0559C167.226 3.00203 168.115 2.96846 169.003 2.95463C173.907 2.91105 179.15 3.14422 184.105 3.17367L215.526 3.1822C247.453 3.23991 271.952 3.04796 299.693 21.7145C315.513 32.3605 325.68 41.798 335.714 58.3796C346.202 76.0907 351.746 96.292 351.764 116.875C351.628 141.607 343.322 165.601 328.135 185.124C310.593 207.755 283.891 224.352 255.427 228.173C243.705 229.747 231.449 229.514 219.621 229.486L186.301 229.453C165.31 229.842 143.974 229.369 122.962 229.394C117.468 229.415 112.056 229.446 106.565 229.131C48.9875 225.831 -0.0109149 175.989 0.129206 117.81C0.201018 87.993 11.1822 60.0247 32.0246 38.3955C40.5361 29.6847 50.3767 22.3804 61.1791 16.7558C64.5651 14.9717 68.2788 12.3291 71.6318 10.911C75.6023 9.10124 80.7248 8.87749 84.6823 7.67278C99.3374 3.21164 112.6 3.18691 127.828 3.13363C140.665 3.20399 153.503 3.17808 166.339 3.0559ZM242.866 192.022C284.424 188.52 315.274 151.992 311.768 110.438C308.261 68.8837 271.726 38.0408 230.168 41.5513C188.616 45.0612 157.776 81.5858 161.282 123.135C164.788 164.683 201.313 195.524 242.866 192.022Z" fill="#FE4F2B"></path>
+      <path d="M524.871 3.00586C528.463 3.42127 533.633 3.17073 537.372 3.146L557.229 3.09801C560.986 3.0933 564.31 3.02588 568.088 3.43834C573.92 4.07573 577.754 8.66405 578.284 14.4332C578.843 20.5192 578.678 27.1304 578.714 33.3394L578.628 73.7034L578.867 209.177C578.946 232.76 561.401 229.443 544.112 229.461C537.411 229.584 529.287 229.728 522.928 227.775C517.904 226.232 512.16 222.164 508.695 218.262C506.978 216.329 504.711 212.731 503.139 210.506L491.85 194.539L451.984 138.377L422.431 96.3895C419.137 91.6996 414.317 86.3155 411.723 81.3562C412.223 86.6814 411.967 95.7491 411.964 101.399L411.994 136.892L411.958 193.017C411.982 204.79 412.318 218.101 411.9 229.761C407.883 229.31 400.923 229.437 396.786 229.46L375.926 229.519C371.38 229.559 367.402 229.802 362.829 229.619C362.664 220.575 362.85 210.985 362.853 201.892C362.735 182.285 362.77 162.678 362.959 143.072C362.988 132.953 362.37 122.917 362.859 112.823C362.979 110.316 362.932 107.706 362.923 105.19C362.838 88.1411 362.847 71.092 362.944 54.0433C362.991 47.9906 362.797 42.0253 363.032 35.9661C363.763 17.0078 378.785 4.66189 397.119 3.33913C400.266 2.85689 404.78 3.3194 407.942 3.75718C425.629 6.20635 432.545 18.9168 441.443 31.8341L461.55 60.6909C471.028 74.5707 481.409 88.2229 491.055 102.094L518.95 141.655C521.058 144.618 522.545 147.599 524.794 150.634C524.408 143.579 524.715 134.803 524.691 127.623L524.779 78.3739C524.897 53.7444 524.058 27.5387 524.871 3.00586Z" fill="#FE4F2B"></path>
+      <path d="M596.919 228.471V3.62196H750.843V44.3664H643.7V101.409H735.752V142.153H643.7V228.471H596.919ZM727.335 228.471L803.391 3.62196H865.564L941.62 228.471H890.614L875.523 182.596H793.129L778.039 228.471H727.335ZM806.107 141.851H862.546L828.139 35.6139H840.815L806.107 141.851ZM1047.6 232.092C1031.5 232.092 1016.51 229.175 1002.63 223.34C988.948 217.505 976.977 209.356 966.715 198.893C956.453 188.431 948.405 176.157 942.57 162.072C936.936 147.988 934.119 132.596 934.119 115.895C934.119 99.1953 936.936 83.8029 942.57 69.7184C948.204 55.4328 956.152 43.1591 966.413 32.8976C976.675 22.4348 988.647 14.3865 1002.33 8.75274C1016.21 2.91775 1031.3 0.000248973 1047.6 0.000248973C1063.9 0.000248973 1078.49 2.71654 1091.36 8.14913C1104.44 13.5817 1115.51 20.8252 1124.56 29.8795C1133.62 38.9338 1140.05 48.9941 1143.88 60.0605L1102.53 79.98C1098.71 69.1148 1091.97 60.1611 1082.31 53.1189C1072.85 45.8754 1061.28 42.2537 1047.6 42.2537C1034.32 42.2537 1022.65 45.3724 1012.59 51.6098C1002.53 57.8472 994.683 66.4991 989.049 77.5655C983.616 88.4307 980.9 101.207 980.9 115.895C980.9 130.584 983.616 143.461 989.049 154.527C994.683 165.594 1002.53 174.245 1012.59 180.483C1022.65 186.72 1034.32 189.839 1047.6 189.839C1061.28 189.839 1072.85 186.318 1082.31 179.276C1091.97 172.032 1098.71 162.978 1102.53 152.113L1143.88 172.032C1140.05 183.099 1133.62 193.159 1124.56 202.213C1115.51 211.268 1104.44 218.511 1091.36 223.944C1078.49 229.376 1063.9 232.092 1047.6 232.092ZM1158.81 228.471V3.62196H1310.01V44.3664H1205.59V95.3723H1303.98V136.117H1205.59V187.726H1310.01V228.471H1158.81Z" fill="#EEEFF3"></path>
+    </svg>
+    <span style="width:1px;height:18px;background:rgba(255,255,255,.14);flex:0 0 auto"></span>
+    <span style="font-family:'Plus Jakarta Sans',sans-serif;font-size:13px;font-weight:600;color:#eeeff3;white-space:nowrap;flex:0 0 auto">Design System</span>
+    <span style="font-size:12px;color:#8b949e;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0">laboratório importado do repo · CSS real</span>
+    <span style="flex:1;min-width:8px"></span>
+    <span style="display:flex;align-items:center;gap:7px;flex:0 0 auto;background:rgba(254,79,43,.14);border:1px solid rgba(255,77,41,.3);border-radius:8px;padding:5px 10px">
+      <span style="width:6px;height:6px;border-radius:50%;background:#fe4f2b;flex:0 0 auto"></span>
+      <span style="font-size:11.5px;font-weight:600;color:#ffb6a5;white-space:nowrap">{{ marcadasLabel }}</span>
+    </span>
+    <button onClick="{{ limparMarcas }}" style="flex:0 0 auto;font-size:11.5px;font-weight:500;color:#8b949e;white-space:nowrap;background:none;border:0;cursor:pointer" style-hover="color:#eeeff3">Limpar</button>
+  </header>
+
+  <div style="display:flex;align-items:flex-start;gap:0">
+
+    <nav style="position:sticky;top:56px;flex:0 0 auto;width:212px;height:calc(100vh - 56px);overflow-y:auto;background:#fff;border-right:1px solid var(--line-hairline,#dbdede);padding:14px 10px">
+      <sc-for list="{{ grupos }}" as="g" hint-placeholder-count="3">
+        <div style="margin-bottom:10px">
+          <div style="font-size:10.5px;font-weight:600;letter-spacing:.0875em;text-transform:uppercase;color:var(--text-muted,#6d747e);padding:8px 10px 5px">{{ g.grupo }}</div>
+          <sc-for list="{{ g.itens }}" as="i" hint-placeholder-count="4">
+            <a href="{{ i.href }}" style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:8px;font-size:13px;font-weight:500;color:var(--text-body,#1f252c);text-decoration:none" style-hover="background:var(--surface-sunken,#eeeff3);text-decoration:none">
+              <span style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ i.rotulo }}</span>
+              <sc-if value="{{ i.temMarcas }}">
+                <span style="flex:0 0 auto;min-width:17px;height:16px;padding-inline:4px;border-radius:9999px;background:#fe4f2b;color:#fff;font-size:9.5px;font-weight:700;display:grid;place-items:center">{{ i.marcas }}</span>
+              </sc-if>
+            </a>
+          </sc-for>
+        </div>
+      </sc-for>
+    </nav>
+
+    <main style="flex:1;min-width:0;padding:22px 24px 80px;max-width:1180px">
+
+      <div class="ds-lab-sumario" style="margin-bottom:24px">
+        <p class="ds-lab-sumario-rotulo" style="margin:0 0 6px">Como usar esta página</p>
+        <p style="margin:0;font-size:13px;line-height:1.6;color:var(--text-body,#1f252c);text-wrap:pretty">Cada peça tem um botão <strong style="font-weight:600">Usar</strong> no canto (aparece ao passar o mouse). Marque o que entra no OnFace e eu construo as telas só com o que você marcou. O que ficar sem marca eu trato como descartado.</p>
+      </div>
+
+      <sc-for list="{{ secoes }}" as="s" hint-placeholder-count="14">
+        <section id="{{ s.id }}" class="lab-secao" style="margin-bottom:34px">
+          <div class="ds-lab-cabecalho-linha" style="margin-bottom:4px">
+            <span class="ds-lab-cabecalho-ordem">{{ s.ordem }}</span>
+            <h2 style="margin:0;font-family:'Plus Jakarta Sans',sans-serif;font-size:18px;font-weight:700;letter-spacing:-.01em;color:var(--text-strong,#12171d);white-space:nowrap">{{ s.titulo }}</h2>
+            <span class="ds-fio"></span>
+          </div>
+          <p style="margin:0 0 14px;padding-left:34px;font-size:13px;line-height:1.55;color:var(--text-muted,#6d747e);max-width:70ch;text-wrap:pretty">{{ s.chamada }}</p>
+
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(268px,1fr));gap:12px">
+            <sc-for list="{{ s.pecas }}" as="p" hint-placeholder-count="4">
+              <div class="lab-peca" style="{{ p.style }}">
+                <button onClick="{{ p.marcar }}" class="lab-marcar" style="{{ p.btnStyle }}">{{ p.btnLabel }}</button>
+                <div style="font-size:13px;font-weight:600;color:var(--text-strong,#12171d);padding-right:56px;line-height:1.35">{{ p.nome }}</div>
+                <div style="font-size:11.5px;color:var(--text-muted,#6d747e);line-height:1.5;margin-top:4px;text-wrap:pretty">{{ p.nota }}</div>
+                <div style="font-family:'IBM Plex Mono','SFMono-Regular',monospace;font-size:10.5px;color:var(--text-subtle,#8b949e);margin-top:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ p.classe }}</div>
+              </div>
+            </sc-for>
+          </div>
+        </section>
+      </sc-for>
+    </main>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1280,&quot;height&quot;:860}}">
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { marcadas: {} };
+  }
+
+  componentDidMount() {
+    document.documentElement.setAttribute("data-onface-theme", "claro");
+    try {
+      const salvo = localStorage.getItem("onface-ds-marcadas");
+      if (salvo) this.setState({ marcadas: JSON.parse(salvo) });
+    } catch (e) {}
+  }
+
+  salvar(marcadas) {
+    try { localStorage.setItem("onface-ds-marcadas", JSON.stringify(marcadas)); } catch (e) {}
+  }
+
+  catalogo() {
+    return [
+      { grupo: "Base", secoes: [
+        { id: "fundacoes", titulo: "Fundações", chamada: "Cor, tipografia, espaço e a unidade fluida. Três camadas de token: marca, semântica e componente.", pecas: [
+          { nome: "Coral como único acento", nota: "Ação e sinal, nunca decoração. Coral #fe4f2b; borda e fundo em alfa.", classe: "--onface-coral · --onface-coral-subtle · --onface-coral-border" },
+          { nome: "Escala fluida --onface-u", nota: "1u = 1px da prancheta de 1440. A tela é redução fiel do desenho, com piso e teto.", classe: "clamp(0.5px, 0.0694vw, 1.3px)" },
+          { nome: "Superfícies", nota: "Papel, cartão e plano afundado. O cartão se levanta do afundado — sem sombra.", classe: "--surface-card · --surface-sunken · --onface-paper" },
+          { nome: "Hairline de 1px", nota: "Definição por fio, não por sombra. --shadow-card é none no sistema.", classe: "--line-hairline: #dbdede" },
+          { nome: "Par tipográfico", nota: "Plus Jakarta Sans para display e nav; Inter para UI e corpo.", classe: "--font-onface-display · --font-onface-text" },
+          { nome: "Escala de texto", nota: "10 / 11 / 12 / 13 / 14 e display 18. Nada abaixo de 10u em caps.", classe: "--text-2xs → --text-base · --display-title" },
+          { nome: "Raios", nota: "4 / 6 / 8 / 10 / 12 / 16 / 20 / 40. Card e lg empatam em 12.", classe: "--radius-sm → --radius-card-lg" },
+          { nome: "Foco em duas formas", nota: "Campo usa anel (box-shadow segue o raio); botão e link usam outline.", classe: "outline: 2px solid var(--onface-coral)" }
+        ] },
+        { id: "movimento", titulo: "Movimento", chamada: "Durações curtas e uma curva padrão. Sem bounce, sem mola, sem entrada teatral.", pecas: [
+          { nome: "Durações", nota: "80 / 120 / 180 / 280ms. Acima disso a interface parece travada.", classe: "--duration-instant → --duration-slow" },
+          { nome: "Curvas", nota: "Entrada, saída e enfatizada. A enfatizada só no que muda de estado.", classe: "--ease-enter · --ease-exit · --ease-emphasized" },
+          { nome: "Respeitar redução", nota: "prefers-reduced-motion zera as durações e remove inclinação do arraste.", classe: "@media (prefers-reduced-motion: reduce)" }
+        ] },
+        { id: "linguagem", titulo: "Linguagem visual", chamada: "O que dá cara ao produto sem virar enfeite: malha técnica, marca e o anti-padrão declarado.", pecas: [
+          { nome: "Fundo gráfico", nota: "Malha técnica sutil atrás de faixa grafite. Nunca atrás de texto de leitura.", classe: "FundoGrafico variante=malha" },
+          { nome: "Faixa grafite", nota: "Abertura de tela. Conteúdo na frente, malha atrás, nada decorativo.", classe: ".ds-lab-hero" },
+          { nome: "Anti-padrão: faixa lateral", nota: "Urgência é ponto coral no canto do cartão. Faixa colorida na lateral é o tique mais reconhecível de interface gerada por IA.", classe: "[data-urgente] → ponto, não stripe" },
+          { nome: "Lockup oficial", nota: "ON em coral, FACE em #eeeff3. Nunca redesenhar a wordmark à mão.", classe: "onface-lockup-negativa.svg" }
+        ] }
+      ] },
+      { grupo: "Componentes", secoes: [
+        { id: "componentes", titulo: "Primitivas", chamada: "As 39 primitivas shadcn do repo, tematizadas. Aqui o que o ONFACE reescreve por cima delas.", pecas: [
+          { nome: "Button — 5 degraus", nota: "default, secondary, tertiary, outline, subtle, ghost, link + destructive, success, warning.", classe: "components/ui/button.tsx" },
+          { nome: "Tamanhos de controle", nota: "xs 24 · sm 32 · default 36 · lg 44. Toque nunca abaixo de 44.", classe: "--control-xs → --control-cta" },
+          { nome: "Pastilha de status", nota: "Par superfície/texto medido. Mesma pastilha no registro e no cartão.", classe: ".of-status" },
+          { nome: "Chip de filtro", nota: "Tracejado quando inativo, sólido quando ativo. Diz que é opcional antes do clique.", classe: ".ds-chip-filtro" },
+          { nome: "Estado vazio", nota: "Ícone, título e o convite. Nunca caixa vazia sem instrução.", classe: ".ds-quadro-vazia · .of-vazio" },
+          { nome: "Overrides de portal", nota: "Popover, Command e Select reancorados no tema — senão parecem de outro produto.", classe: ".onface-menu · .onface-notif" },
+          { nome: "Kbd", nota: "Atalho em mono dentro de pastilha. Usado em busca e menus.", classe: "components/ui/kbd" },
+          { nome: "Skeleton", nota: "Texto, avatar e card. Carregamento sem pulo de layout.", classe: "Skeleton=Text|Avatar|Card" }
+        ] },
+        { id: "dados", titulo: "Dados e tabela", chamada: "O DataGrid: cabeçalho fixo, densidades, seleção e ações em massa.", pecas: [
+          { nome: "Cabeçalho sticky", nota: "Coluna nunca perde o nome ao rolar.", classe: ".ds-grid-tabela th { position: sticky }" },
+          { nome: "Três densidades", nota: "Compacta, padrão e confortável. A escolha persiste por usuário.", classe: "[data-densidade]" },
+          { nome: "Seleção com tinta coral", nota: "Linha selecionada muda de superfície, não de borda.", classe: "[data-selecionada]" },
+          { nome: "Barra de ações em massa", nota: "Aparece só com seleção. Diz quantos e o que vai acontecer.", classe: ".ds-grid-acoes-massa" },
+          { nome: "Célula principal", nota: "Nome forte + referência fraca na mesma célula. Evita coluna duplicada.", classe: ".ds-grid-celula-principal" },
+          { nome: "Número tabular", nota: "font-variant-numeric em toda coluna de valor. Dígito alinhado.", classe: ".ds-grid-num" },
+          { nome: "Linha de detalhe", nota: "Expande no lugar, em plano afundado. Sem tirar a pessoa da lista.", classe: ".ds-grid-detalhe" },
+          { nome: "Rodapé de paginação", nota: "Contagem à esquerda, controles à direita, ambos quebram no estreito.", classe: ".ds-grid-rodape" }
+        ] },
+        { id: "graficos", titulo: "Gráficos", chamada: "Métrica, anel e faixa. Coral só no que importa, cinza no resto.", pecas: [
+          { nome: "Métrica", nota: "Número grande, rótulo pequeno, delta medido. Variante escura para faixa grafite.", classe: ".ds-metrica" },
+          { nome: "Anel", nota: "Número dentro do traço; 68% do diâmetro reservado ao texto para caber.", classe: ".ds-anel" },
+          { nome: "Faixa de barras", nota: "Só a última barra é coral — é a leitura de \"agora\".", classe: ".ds-faixa" },
+          { nome: "Linha com comparação", nota: "Período atual sólido, anterior tracejado cinza.", classe: "graficos.css" }
+        ] },
+        { id: "quadro", titulo: "Quadro", chamada: "O kanban. Coluna é plano afundado sem borda; cartão é o plano branco que se levanta dela.", pecas: [
+          { nome: "Coluna sem borda", nota: "Se a coluna tivesse moldura, o cartão branco viraria caixa dentro de caixa e o quadro viraria malha de retângulos.", classe: ".ds-quadro-coluna" },
+          { nome: "Piso de largura", nota: "152u por trilha: o quadro rola em vez de espremer o cartão até ficar ilegível.", classe: ".qd-rolagem" },
+          { nome: "Cabeçalho de coluna", nota: "Etapa em display, soma em tabular, contagem em pastilha branca. Três pesos, não uma linha cinza.", classe: ".qd-coluna-topo" },
+          { nome: "Alvo de soltura", nota: "Anel coral interno de 2u — óbvio à distância de um braço.", classe: "[data-sobre=true]" },
+          { nome: "Cartão levantado", nota: "O único lugar do quadro onde sombra é semântica: duas camadas, inclina 1.2° e cresce 2%.", classe: "[data-sobreposicao=true]" },
+          { nome: "Ponto de urgência", nota: "Canto superior direito. A ação do cartão sai da frente dele no hover em vez de cobri-lo.", classe: "[data-urgente=true]" },
+          { nome: "Ação por cartão", nota: "Discreta no ponteiro, permanente no toque, sempre visível no foco de teclado.", classe: ".qd-acao-botao" },
+          { nome: "Gaveta de detalhe", nota: "440u, campos em duas colunas, rótulo em versalete.", classe: ".qd-gaveta · .qd-campos" }
+        ] }
+      ] },
+      { grupo: "Produto", secoes: [
+        { id: "registro", titulo: "Registro e CRM", chamada: "A tela de uma entidade: cabeçalho, identidade, campos e histórico.", pecas: [
+          { nome: "Cabeçalho de entidade", nota: "Nome, relacionamento derivado e ações primárias na mesma linha.", classe: ".of-entidade-topo" },
+          { nome: "Pastilha de relacionamento", nota: "Cadastrada, Em pré-vendas, Em oportunidade, Cliente, Ex-cliente. Derivada dos processos, nunca escolhida à mão.", classe: "ROTULO_RELACIONAMENTO" },
+          { nome: "Linha do tempo", nota: "Marcas com tom acento, ok e risco, trilho conectando.", classe: ".ds-tempo · .ds-tempo-trilho" },
+          { nome: "Grade de campos", nota: "Rótulo em versalete sobre valor médio. Duas colunas que colapsam para uma.", classe: ".qd-campos · .qd-campo" },
+          { nome: "Papéis da pessoa", nota: "Contato principal, decisor, influenciador, financeiro, técnico, usuário.", classe: "PAPEIS_PESSOA" }
+        ] },
+        { id: "nexo", titulo: "NEXO e IA", chamada: "Humano e agente executam os mesmos comandos. Muda só o ator — e a interface precisa mostrar isso.", pecas: [
+          { nome: "Cursor de digitação", nota: "Pisca enquanto o agente compõe. Diz que algo está acontecendo sem barra de progresso falsa.", classe: ".nexo-cursor" },
+          { nome: "Passos feito / agora", nota: "Estado por passo, com ponto pulsando no atual.", classe: "[data-passo=feito|agora]" },
+          { nome: "Cartão de insight", nota: "Superfície coral suave. É sugestão, não fato do sistema.", classe: ".nexo-insight" },
+          { nome: "Selo de ator", nota: "HUMAN, AI_AGENT, AUTOMATION, SYSTEM. Sem isso não se audita o que a IA fez no seu nome.", classe: "Ator.tipo" },
+          { nome: "Avatar do ONI", nota: "Bitmap oficial, não ícone genérico.", classe: "public/onface/oni/oni-avatar.png" }
+        ] },
+        { id: "agenda", titulo: "Agenda", chamada: "Calendário e disponibilidade. Onde atividade e compromisso se encontram.", pecas: [
+          { nome: "Grade de mês", nota: "Dia com carga, não só número. Hoje marcado por peso, não por cor.", classe: "agenda.css" },
+          { nome: "Faixa de dia", nota: "Blocos por hora com sobreposição resolvida lado a lado.", classe: ".ag-dia" },
+          { nome: "Célula Date", nota: "72 variantes: estado × posição × tamanho. Vem do kit .fig.", classe: "Date (72 variants)" }
+        ] },
+        { id: "fluxos", titulo: "Fluxos e passos", chamada: "Automação visível: gatilho, condição, ação e o que aconteceu de fato.", pecas: [
+          { nome: "Passo de fluxo", nota: "Gatilho, condição e ação com formas distintas — não três caixas iguais.", classe: "fluxos.css" },
+          { nome: "Execução", nota: "Linha por disparo, com resultado e motivo da falha.", classe: ".fx-execucao" },
+          { nome: "Cadência", nota: "Sequência de toques com espera entre eles.", classe: ".fx-cadencia" }
+        ] },
+        { id: "padroes", titulo: "Padrões de tela", chamada: "As montagens que repetem: lista, registro, quadro, painel e vazio.", pecas: [
+          { nome: "Lista com filtros", nota: "Busca, chips, segmento de visão e ação primária numa faixa que quebra bem.", classe: "padroes.css" },
+          { nome: "Registro", nota: "Cabeçalho fixo, corpo rolável, ações no rodapé da gaveta.", classe: ".pd-registro" },
+          { nome: "Painel", nota: "Bento com align-items:start — senão cartão de duas linhas vira caixa com 55% de vazio.", classe: ".ds-bento" },
+          { nome: "Gate de regra", nota: "Bloqueia, explica o requisito e oferece o CTA que destrava.", classe: "RegraDeNegocio.acao" }
+        ] },
+        { id: "layouts", titulo: "Layouts", chamada: "A casca e as molduras de página.", pecas: [
+          { nome: "Casca com sidebar inset", nota: "Sidebar graphite abraçando o conteúdo branco arredondado. É o que já construímos.", classe: "OnFace Casca.dc.html" },
+          { nome: "Faixa + superfície sobreposta", nota: "Abertura grafite com a superfície branca subindo por cima.", classe: "OnfacePageBand · OnfacePageSurface" },
+          { nome: "Moldura de página", nota: "Largura máxima, respiro e onde o conteúdo encosta.", classe: "shell/page.css" }
+        ] }
+      ] }
+    ];
+  }
+
+  renderVals() {
+    const M = this.state.marcadas;
+    const cat = this.catalogo();
+
+    const contarSecao = (s) => s.pecas.filter(p => M[s.id + "/" + p.nome]).length;
+
+    let ordem = 0;
+    const secoes = [];
+    cat.forEach(g => g.secoes.forEach(s => {
+      ordem += 1;
+      secoes.push({
+        id: s.id, titulo: s.titulo, chamada: s.chamada,
+        ordem: String(ordem).padStart(2, "0"),
+        pecas: s.pecas.map(p => {
+          const chave = s.id + "/" + p.nome;
+          const on = !!M[chave];
+          return {
+            nome: p.nome, nota: p.nota, classe: p.classe,
+            style: "position:relative;padding:12px 13px 13px;border-radius:12px;background:#fff;transition:box-shadow 120ms cubic-bezier(0,0,.2,1);"
+              + (on ? "box-shadow:inset 0 0 0 2px #fe4f2b" : "box-shadow:inset 0 0 0 1px var(--line-hairline,#dbdede)"),
+            btnStyle: "height:22px;padding:0 9px;border-radius:7px;font-size:11px;font-weight:600;white-space:nowrap;cursor:pointer;border:1px solid "
+              + (on ? "#fe4f2b;background:#fe4f2b;color:#fff;opacity:1" : "var(--line-hairline,#dbdede);background:#fff;color:var(--text-muted,#6d747e)"),
+            btnLabel: on ? "✓ Usar" : "Usar",
+            marcar: () => {
+              const novo = Object.assign({}, this.state.marcadas);
+              if (novo[chave]) delete novo[chave]; else novo[chave] = true;
+              this.setState({ marcadas: novo });
+              this.salvar(novo);
+            }
+          };
+        })
+      });
+    }));
+
+    const total = secoes.reduce((a, s) => a + s.pecas.length, 0);
+    const marcadas = Object.keys(M).length;
+
+    return {
+      secoes,
+      grupos: cat.map(g => ({
+        grupo: g.grupo,
+        itens: g.secoes.map(s => {
+          const n = contarSecao(s);
+          return { rotulo: s.titulo, href: "#" + s.id, marcas: n, temMarcas: n > 0 };
+        })
+      })),
+      marcadasLabel: marcadas + " de " + total + " marcadas",
+      limparMarcas: () => { this.setState({ marcadas: {} }); this.salvar({}); }
+    };
+  }
+}
+</script>
+</body>
+</html>

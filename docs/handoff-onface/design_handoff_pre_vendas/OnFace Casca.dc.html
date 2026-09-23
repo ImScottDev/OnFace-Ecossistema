@@ -1,0 +1,979 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <script src="dados.js"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@600;700;800&amp;family=Inter:wght@400;500;600&amp;family=IBM+Plex+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box}html,body{margin:0;padding:0}
+body{background:#090e14;font-family:Inter,system-ui,sans-serif;-webkit-font-smoothing:antialiased;color:#12171d}
+button{font:inherit;color:inherit;border:0;background:none;cursor:pointer;text-align:left}
+input{font:inherit;color:inherit}input::placeholder{color:#4a5560}
+a{color:#d93c1a;text-decoration:none}a:hover{color:#b8300f;text-decoration:underline}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-thumb{background:#d2d5d5;border:3px solid transparent;background-clip:content-box;border-radius:8px}
+@keyframes of-fade{from{opacity:0}to{opacity:1}}
+@keyframes of-rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@keyframes of-slide{from{transform:translateX(22px);opacity:0}to{transform:none;opacity:1}}
+@keyframes of-pisca{0%,100%{opacity:1}50%{opacity:.25}}
+@keyframes of-cursor{0%,100%{opacity:1}50%{opacity:0}}
+@keyframes of-pop{from{transform:scale(.6);opacity:0}to{transform:none;opacity:1}}
+@keyframes of-tick{to{stroke-dashoffset:0}}
+.of-card .of-check{opacity:0;transition:opacity 120ms cubic-bezier(0,0,.2,1)}
+.of-check>*{display:flex;align-items:center;justify-content:center}
+.of-card:hover .of-check,.of-card:focus-within .of-check,.of-card[data-sel="1"] .of-check{opacity:1}
+.of-chev{opacity:0;transition:opacity 120ms cubic-bezier(0,0,.2,1)}
+.of-card:hover .of-chev,.of-card:focus-within .of-chev{opacity:.55}
+</style>
+</helmet>
+<div style="display:flex;height:100vh;max-height:100vh;overflow:hidden;background:#090e14;padding:10px;gap:10px;font-size:14px">
+
+  <aside style="{{ railStyle }}">
+    <div style="display:flex;align-items:center;justify-content:center;height:38px;flex:0 0 auto;overflow:hidden">
+      <sc-if value="{{ aberta }}" hint-placeholder-val="{{ true }}">
+        <svg viewBox="0 0 1346 233" width="93" height="16" style="flex:0 0 auto;display:block;margin:0 auto 0 9px" role="img" aria-label="ONFACE">
+          <path d="M166.339 3.0559C167.226 3.00203 168.115 2.96846 169.003 2.95463C173.907 2.91105 179.15 3.14422 184.105 3.17367L215.526 3.1822C247.453 3.23991 271.952 3.04796 299.693 21.7145C315.513 32.3605 325.68 41.798 335.714 58.3796C346.202 76.0907 351.746 96.292 351.764 116.875C351.628 141.607 343.322 165.601 328.135 185.124C310.593 207.755 283.891 224.352 255.427 228.173C243.705 229.747 231.449 229.514 219.621 229.486L186.301 229.453C165.31 229.842 143.974 229.369 122.962 229.394C117.468 229.415 112.056 229.446 106.565 229.131C48.9875 225.831 -0.0109149 175.989 0.129206 117.81C0.201018 87.993 11.1822 60.0247 32.0246 38.3955C40.5361 29.6847 50.3767 22.3804 61.1791 16.7558C64.5651 14.9717 68.2788 12.3291 71.6318 10.911C75.6023 9.10124 80.7248 8.87749 84.6823 7.67278C99.3374 3.21164 112.6 3.18691 127.828 3.13363C140.665 3.20399 153.503 3.17808 166.339 3.0559ZM242.866 192.022C284.424 188.52 315.274 151.992 311.768 110.438C308.261 68.8837 271.726 38.0408 230.168 41.5513C188.616 45.0612 157.776 81.5858 161.282 123.135C164.788 164.683 201.313 195.524 242.866 192.022Z" fill="#FE4F2B"></path>
+          <path d="M524.871 3.00586C528.463 3.42127 533.633 3.17073 537.372 3.146L557.229 3.09801C560.986 3.0933 564.31 3.02588 568.088 3.43834C573.92 4.07573 577.754 8.66405 578.284 14.4332C578.843 20.5192 578.678 27.1304 578.714 33.3394L578.628 73.7034L578.867 209.177C578.946 232.76 561.401 229.443 544.112 229.461C537.411 229.584 529.287 229.728 522.928 227.775C517.904 226.232 512.16 222.164 508.695 218.262C506.978 216.329 504.711 212.731 503.139 210.506L491.85 194.539L451.984 138.377L422.431 96.3895C419.137 91.6996 414.317 86.3155 411.723 81.3562C412.223 86.6814 411.967 95.7491 411.964 101.399L411.994 136.892L411.958 193.017C411.982 204.79 412.318 218.101 411.9 229.761C407.883 229.31 400.923 229.437 396.786 229.46L375.926 229.519C371.38 229.559 367.402 229.802 362.829 229.619C362.664 220.575 362.85 210.985 362.853 201.892C362.735 182.285 362.77 162.678 362.959 143.072C362.988 132.953 362.37 122.917 362.859 112.823C362.979 110.316 362.932 107.706 362.923 105.19C362.838 88.1411 362.847 71.092 362.944 54.0433C362.991 47.9906 362.797 42.0253 363.032 35.9661C363.763 17.0078 378.785 4.66189 397.119 3.33913C400.266 2.85689 404.78 3.3194 407.942 3.75718C425.629 6.20635 432.545 18.9168 441.443 31.8341L461.55 60.6909C471.028 74.5707 481.409 88.2229 491.055 102.094L518.95 141.655C521.058 144.618 522.545 147.599 524.794 150.634C524.408 143.579 524.715 134.803 524.691 127.623L524.779 78.3739C524.897 53.7444 524.058 27.5387 524.871 3.00586Z" fill="#FE4F2B"></path>
+          <path d="M596.919 228.471V3.62196H750.843V44.3664H643.7V101.409H735.752V142.153H643.7V228.471H596.919ZM727.335 228.471L803.391 3.62196H865.564L941.62 228.471H890.614L875.523 182.596H793.129L778.039 228.471H727.335ZM806.107 141.851H862.546L828.139 35.6139H840.815L806.107 141.851ZM1047.6 232.092C1031.5 232.092 1016.51 229.175 1002.63 223.34C988.948 217.505 976.977 209.356 966.715 198.893C956.453 188.431 948.405 176.157 942.57 162.072C936.936 147.988 934.119 132.596 934.119 115.895C934.119 99.1953 936.936 83.8029 942.57 69.7184C948.204 55.4328 956.152 43.1591 966.413 32.8976C976.675 22.4348 988.647 14.3865 1002.33 8.75274C1016.21 2.91775 1031.3 0.000248973 1047.6 0.000248973C1063.9 0.000248973 1078.49 2.71654 1091.36 8.14913C1104.44 13.5817 1115.51 20.8252 1124.56 29.8795C1133.62 38.9338 1140.05 48.9941 1143.88 60.0605L1102.53 79.98C1098.71 69.1148 1091.97 60.1611 1082.31 53.1189C1072.85 45.8754 1061.28 42.2537 1047.6 42.2537C1034.32 42.2537 1022.65 45.3724 1012.59 51.6098C1002.53 57.8472 994.683 66.4991 989.049 77.5655C983.616 88.4307 980.9 101.207 980.9 115.895C980.9 130.584 983.616 143.461 989.049 154.527C994.683 165.594 1002.53 174.245 1012.59 180.483C1022.65 186.72 1034.32 189.839 1047.6 189.839C1061.28 189.839 1072.85 186.318 1082.31 179.276C1091.97 172.032 1098.71 162.978 1102.53 152.113L1143.88 172.032C1140.05 183.099 1133.62 193.159 1124.56 202.213C1115.51 211.268 1104.44 218.511 1091.36 223.944C1078.49 229.376 1063.9 232.092 1047.6 232.092ZM1158.81 228.471V3.62196H1310.01V44.3664H1205.59V95.3723H1303.98V136.117H1205.59V187.726H1310.01V228.471H1158.81Z" fill="#EEEFF3"></path>
+        </svg>
+      </sc-if>
+      <sc-if value="{{ fechada }}">
+        <svg viewBox="0 0 591 233" width="30" height="12" style="flex:0 0 auto;display:block" role="img" aria-label="ONFACE">
+          <path d="M166.339 3.0559C167.226 3.00203 168.115 2.96846 169.003 2.95463C173.907 2.91105 179.15 3.14422 184.105 3.17367L215.526 3.1822C247.453 3.23991 271.952 3.04796 299.693 21.7145C315.513 32.3605 325.68 41.798 335.714 58.3796C346.202 76.0907 351.746 96.292 351.764 116.875C351.628 141.607 343.322 165.601 328.135 185.124C310.593 207.755 283.891 224.352 255.427 228.173C243.705 229.747 231.449 229.514 219.621 229.486L186.301 229.453C165.31 229.842 143.974 229.369 122.962 229.394C117.468 229.415 112.056 229.446 106.565 229.131C48.9875 225.831 -0.0109149 175.989 0.129206 117.81C0.201018 87.993 11.1822 60.0247 32.0246 38.3955C40.5361 29.6847 50.3767 22.3804 61.1791 16.7558C64.5651 14.9717 68.2788 12.3291 71.6318 10.911C75.6023 9.10124 80.7248 8.87749 84.6823 7.67278C99.3374 3.21164 112.6 3.18691 127.828 3.13363C140.665 3.20399 153.503 3.17808 166.339 3.0559ZM242.866 192.022C284.424 188.52 315.274 151.992 311.768 110.438C308.261 68.8837 271.726 38.0408 230.168 41.5513C188.616 45.0612 157.776 81.5858 161.282 123.135C164.788 164.683 201.313 195.524 242.866 192.022Z" fill="#FE4F2B"></path>
+          <path d="M524.871 3.00586C528.463 3.42127 533.633 3.17073 537.372 3.146L557.229 3.09801C560.986 3.0933 564.31 3.02588 568.088 3.43834C573.92 4.07573 577.754 8.66405 578.284 14.4332C578.843 20.5192 578.678 27.1304 578.714 33.3394L578.628 73.7034L578.867 209.177C578.946 232.76 561.401 229.443 544.112 229.461C537.411 229.584 529.287 229.728 522.928 227.775C517.904 226.232 512.16 222.164 508.695 218.262C506.978 216.329 504.711 212.731 503.139 210.506L491.85 194.539L451.984 138.377L422.431 96.3895C419.137 91.6996 414.317 86.3155 411.723 81.3562C412.223 86.6814 411.967 95.7491 411.964 101.399L411.994 136.892L411.958 193.017C411.982 204.79 412.318 218.101 411.9 229.761C407.883 229.31 400.923 229.437 396.786 229.46L375.926 229.519C371.38 229.559 367.402 229.802 362.829 229.619C362.664 220.575 362.85 210.985 362.853 201.892C362.735 182.285 362.77 162.678 362.959 143.072C362.988 132.953 362.37 122.917 362.859 112.823C362.979 110.316 362.932 107.706 362.923 105.19C362.838 88.1411 362.847 71.092 362.944 54.0433C362.991 47.9906 362.797 42.0253 363.032 35.9661C363.763 17.0078 378.785 4.66189 397.119 3.33913C400.266 2.85689 404.78 3.3194 407.942 3.75718C425.629 6.20635 432.545 18.9168 441.443 31.8341L461.55 60.6909C471.028 74.5707 481.409 88.2229 491.055 102.094L518.95 141.655C521.058 144.618 522.545 147.599 524.794 150.634C524.408 143.579 524.715 134.803 524.691 127.623L524.779 78.3739C524.897 53.7444 524.058 27.5387 524.871 3.00586Z" fill="#FE4F2B"></path>
+        </svg>
+      </sc-if>
+    </div>
+
+    <button onClick="{{ criar }}" style="{{ criarStyle }}" style-hover="background:#c2330f" title="Criar">
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" style="flex:0 0 auto"><path d="M8 3.3v9.4M3.3 8h9.4"></path></svg>
+      <sc-if value="{{ aberta }}" hint-placeholder-val="{{ true }}"><span style="white-space:nowrap">Criar</span></sc-if>
+    </button>
+
+    <nav style="margin-top:14px;display:flex;flex-direction:column;overflow-y:auto;overflow-x:hidden;flex:1 1 0;min-height:0;padding-bottom:6px;gap:1px">
+      <sc-for list="{{ areas }}" as="a" hint-placeholder-count="7">
+        <div>
+          <sc-if value="{{ a.grupo }}"><div style="{{ a.grupoStyle }}">{{ a.grupo }}</div></sc-if>
+          <button onClick="{{ a.acionar }}" style="{{ a.style }}" style-hover="background:#1a222c" title="{{ a.label }}">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto"><path d="{{ a.d }}"></path></svg>
+            <sc-if value="{{ aberta }}" hint-placeholder-val="{{ true }}">
+              <span style="white-space:nowrap;flex:1;overflow:hidden;text-overflow:ellipsis">{{ a.label }}</span>
+            </sc-if>
+            <sc-if value="{{ a.temFilhos }}">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="{{ a.chevron }}"><path d="m6 9 6 6 6-6"></path></svg>
+            </sc-if>
+          </button>
+          <sc-if value="{{ a.expandido }}">
+            <div style="display:flex;flex-direction:column;gap:1px;margin:2px 0 6px 17px;padding-left:18px;border-left:1px solid #242c36;animation:of-fade .14s ease-out both">
+              <sc-for list="{{ a.filhos }}" as="f" hint-placeholder-count="5">
+                <button onClick="{{ f.ir }}" style="{{ f.style }}" style-hover="color:#eeeff3">
+                  <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1">{{ f.label }}</span>
+                  <sc-if value="{{ f.pendente }}"><span style="flex:0 0 auto;width:5px;height:5px;border-radius:50%;background:#59636f" title="Rota sem módulo"></span></sc-if>
+                </button>
+              </sc-for>
+            </div>
+          </sc-if>
+        </div>
+      </sc-for>
+    </nav>
+
+    <button onClick="{{ abrirNexo }}" style="{{ nexoBtnStyle }}" style-hover="background:#1f2833" title="NEXO — assistente e avisos · ⌘J">
+      <span style="{{ nexoMarca }}"><img src="assets/oni-avatar.png" alt="ONI" width="26" height="26" style="display:block;border-radius:7px;flex:0 0 auto"></span>
+      <sc-if value="{{ aberta }}" hint-placeholder-val="{{ true }}">
+        <span style="flex:1;min-width:0">
+          <span style="display:flex;align-items:center;gap:6px">
+            <span style="font-family:'Plus Jakarta Sans',sans-serif;font-size:13px;font-weight:700;letter-spacing:.01em;color:#eeeff3;white-space:nowrap">NEXO</span>
+            <span style="width:6px;height:6px;border-radius:50%;background:#fe4f2b;flex:0 0 auto;animation:of-pisca 1.6s ease-in-out infinite"></span>
+          </span>
+          <span style="display:block;font-size:11px;color:#a9b2bc;line-height:1.35;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ nexoResumo }}</span>
+        </span>
+      </sc-if>
+      <sc-if value="{{ aberta }}" hint-placeholder-val="{{ true }}">
+        <span style="flex:0 0 auto;font-family:'IBM Plex Mono',monospace;font-size:10px;color:#7e8894;border:1px solid #2e3741;border-radius:4px;padding:1px 4px">⌘J</span>
+      </sc-if>
+    </button>
+  </aside>
+  <main style="flex:1;min-width:0;height:100%;min-height:0;background:#fff;border-radius:14px;display:flex;flex-direction:column;overflow:hidden">
+    <header style="flex:0 0 auto;height:52px;display:flex;align-items:center;gap:10px;padding:0 13px;border-bottom:1px solid #e3e7e8">
+      <button onClick="{{ toggleRail }}" style="flex:0 0 auto;width:30px;height:30px;border-radius:8px;display:grid;place-items:center;color:#5c6672" style-hover="background:#f2f2f0;color:#12171d" title="Recolher menu · ⌘B">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect><path d="M9 3v18"></path></svg>
+      </button>
+      <span style="flex:0 0 auto;width:1px;height:18px;background:#e4e4e1"></span>
+      <sc-for list="{{ trilha }}" as="t" hint-placeholder-count="0">
+        <span style="display:flex;align-items:center;gap:7px;flex:0 0 auto;min-width:0">
+          <button onClick="{{ t.ir }}" style="{{ t.style }}" style-hover="color:#12171d">{{ t.label }}</button>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#a3a8a4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto"><path d="m9 18 6-6-6-6"></path></svg>
+        </span>
+      </sc-for>
+      <span style="font-family:'Plus Jakarta Sans',sans-serif;font-size:14.5px;font-weight:700;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:0 1 auto">{{ titulo }}</span>
+      <sc-if value="{{ temSubtitulo }}" hint-placeholder-val="{{ true }}">
+        <span style="font-size:12.5px;color:#4a5560;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0">{{ subtitulo }}</span>
+      </sc-if>
+      <span style="flex:1;min-width:8px"></span>
+
+      <button onClick="{{ buscar }}" style="flex:0 0 auto;width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#5c6672;border:0;background:transparent;cursor:pointer" style-hover="background:#f2f2f0;color:#12171d" title="Buscar · ⌘K">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m16.5 16.5 4 4"></path></svg>
+      </button>
+
+      <div data-of-sino="1" style="position:relative;flex:0 0 auto">
+        <button onClick="{{ toggleSino }}" style="{{ sinoBtnStyle }}" title="Notificações">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0"></path></svg>
+          <span style="position:absolute;top:5px;right:5px;width:6px;height:6px;border-radius:50%;background:#fe4f2b"></span>
+        </button>
+
+        <sc-if value="{{ sinoAberto }}">
+          <div style="position:absolute;top:calc(100% + 6px);right:0;width:352px;max-width:calc(100vw - 24px);z-index:45;border-radius:10px;background:#fff;border:1px solid #e3e7e8;box-shadow:0 10px 26px -6px rgba(0,0,0,.2);display:flex;flex-direction:column;animation:of-rise .12s cubic-bezier(.2,0,.2,1) both">
+            <div style="flex:0 0 auto;display:flex;align-items:center;gap:8px;padding:11px 12px 9px">
+              <span style="font-family:'Plus Jakarta Sans',sans-serif;font-size:13px;font-weight:700;white-space:nowrap">Notificações</span>
+              <span style="flex:1"></span>
+            </div>
+            <div style="flex:0 0 auto;display:flex;gap:5px;padding:0 12px 10px">
+              <sc-for list="{{ filtrosSino }}" as="s" hint-placeholder-count="3">
+                <button onClick="{{ s.onClick }}" style="{{ s.style }}">{{ s.label }}</button>
+              </sc-for>
+            </div>
+            <div style="border-top:1px solid #eef1f1;padding:26px 16px 28px;text-align:center">
+              <div style="font-size:13px;font-weight:600;color:#3d4650;margin-bottom:5px">{{ sinoVazioTitulo }}</div>
+              <div style="font-size:12px;color:#4a5560;line-height:1.5;text-wrap:pretty">{{ sinoVazioTexto }}</div>
+            </div>
+          </div>
+        </sc-if>
+      </div>
+
+      <div data-of-perfil="1" style="position:relative;flex:0 0 auto">
+        <button onClick="{{ togglePerfil }}" style="{{ perfilBtnStyle }}">
+          <span style="flex:0 0 auto;width:28px;height:28px;border-radius:9999px;background:#12171d;color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center">SF</span>
+          <span style="min-width:0;text-align:left">
+            <span style="display:block;font-size:12.5px;font-weight:600;color:#12171d;line-height:1.25;white-space:nowrap">Scott Ferraz</span>
+            <span style="display:block;font-size:11px;color:#67787c;line-height:1.3;white-space:nowrap">Callface</span>
+          </span>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#67787c" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="{{ perfilChevron }}"><path d="m6 9 6 6 6-6"></path></svg>
+        </button>
+
+        <sc-if value="{{ perfilAberto }}">
+          <div style="position:absolute;top:calc(100% + 6px);right:0;width:268px;z-index:45;border-radius:10px;background:#fff;border:1px solid #e3e7e8;box-shadow:0 10px 26px -6px rgba(0,0,0,.2);padding:4px;animation:of-rise .12s cubic-bezier(.2,0,.2,1) both">
+            <div style="display:flex;align-items:center;gap:8px;padding:8px 6px 9px">
+              <span style="flex:0 0 auto;width:32px;height:32px;border-radius:9999px;background:#12171d;color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center">SF</span>
+              <span style="min-width:0">
+                <span style="display:block;font-size:13px;font-weight:600;color:#12171d;line-height:1.3;white-space:nowrap">Scott Ferraz</span>
+                <span style="display:block;font-size:11.5px;color:#67787c;line-height:1.35;white-space:nowrap">scott@callface.com.br</span>
+              </span>
+            </div>
+
+            <div style="height:1px;background:#eef1f1;margin:0 -4px 4px"></div>
+
+            <sc-for list="{{ itensPerfil }}" as="m" hint-placeholder-count="4">
+              <button onClick="{{ m.onClick }}" style="display:flex;align-items:center;gap:8px;width:100%;padding:6px;border-radius:7px;border:0;background:transparent;cursor:pointer;text-align:left;color:#1f252c" style-hover="background:#f6f7f7">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4a5560" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto"><path d="{{ m.d }}"></path></svg>
+                <span style="flex:1;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ m.label }}</span>
+                <sc-if value="{{ m.atalho }}">
+                  <span style="flex:0 0 auto;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#4a5560;background:#f1f3f3;border-radius:4px;padding:1px 5px">{{ m.atalho }}</span>
+                </sc-if>
+              </button>
+            </sc-for>
+
+            <div style="height:1px;background:#eef1f1;margin:4px -4px"></div>
+
+            <button onClick="{{ sair }}" style="display:flex;align-items:center;gap:8px;width:100%;padding:6px;border-radius:7px;border:0;background:transparent;cursor:pointer;color:#c2330f" style-hover="background:#fdeeea">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"></path></svg>
+              <span style="flex:1;font-size:13px;white-space:nowrap;text-align:left">Sair</span>
+            </button>
+          </div>
+        </sc-if>
+      </div>
+    </header>
+
+    <div style="flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden">{{ children }}</div>
+  </main>
+
+  <sc-if value="{{ nexo.aberto }}">
+    <div onClick="{{ nexo.fechar }}" style="position:fixed;inset:0;background:rgba(9,14,20,.5);z-index:58;display:grid;place-items:center;padding:20px;animation:of-fade .16s ease-out both">
+      <div onClick="{{ parar }}" style="width:900px;max-width:100%;height:min(640px,calc(100vh - 40px));background:#fff;border-radius:14px;overflow:hidden;display:flex;animation:of-rise .2s cubic-bezier(.2,0,.2,1) both">
+
+        <aside style="flex:0 0 auto;width:218px;background:#12171d;display:flex;flex-direction:column;padding:12px 10px">
+          <div style="display:flex;align-items:center;gap:8px;padding:2px 6px 12px">
+            <img src="assets/oni-avatar.png" alt="ONI" width="26" height="26" style="display:block;border-radius:7px;flex:0 0 auto">
+            <span style="font-family:'Plus Jakarta Sans',sans-serif;font-size:14px;font-weight:800;letter-spacing:.02em;color:#eeeff3;white-space:nowrap">NEXO</span>
+          </div>
+
+          <button onClick="{{ nexo.novaConversa }}" style="display:flex;align-items:center;gap:8px;height:34px;padding:0 11px;border-radius:9px;background:#d93c1a;color:#fff;font-size:13px;font-weight:600;white-space:nowrap;border:0;cursor:pointer;flex:0 0 auto" style-hover="background:#c2330f">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" style="flex:0 0 auto"><path d="M12 5v14M5 12h14"></path></svg>
+            <span>Nova conversa</span>
+          </button>
+
+          <div style="font-size:10.5px;font-weight:600;letter-spacing:.08em;color:#7e8894;padding:16px 6px 7px;flex:0 0 auto">INSIGHTS NEXO</div>
+          <div style="display:flex;flex-direction:column;gap:1px;flex:0 0 auto">
+            <sc-for list="{{ nexo.atalhos }}" as="a" hint-placeholder-count="3">
+              <button onClick="{{ a.onClick }}" style="{{ a.style }}" style-hover="background:#1a222c">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto"><path d="{{ a.d }}"></path></svg>
+                <span style="flex:1;min-width:0;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ a.label }}</span>
+                <sc-if value="{{ a.ativo }}">
+                  <span style="flex:0 0 auto;width:5px;height:5px;border-radius:50%;background:#fe4f2b"></span>
+                </sc-if>
+              </button>
+            </sc-for>
+          </div>
+
+          <div style="font-size:10.5px;font-weight:600;letter-spacing:.08em;color:#7e8894;padding:16px 6px 7px;flex:0 0 auto">HISTÓRICO</div>
+          <div style="flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:1px">
+            <sc-for list="{{ nexo.historico }}" as="h" hint-placeholder-count="4">
+              <button onClick="{{ h.onClick }}" style="{{ h.style }}" style-hover="background:#1a222c">
+                <span style="flex:1;min-width:0">
+                  <span style="display:block;font-size:12.5px;line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ h.titulo }}</span>
+                  <span style="display:block;font-size:10.5px;color:#7e8894;line-height:1.3;margin-top:1px;white-space:nowrap">{{ h.quando }}</span>
+                </span>
+              </button>
+            </sc-for>
+          </div>
+        </aside>
+
+        <div style="flex:1;min-width:0;display:flex;flex-direction:column;background:#fff">
+          <div style="flex:0 0 auto;display:flex;align-items:center;gap:9px;padding:13px 16px;border-bottom:1px solid #e3e7e8">
+            <span style="font-family:'Plus Jakarta Sans',sans-serif;font-size:14px;font-weight:700;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0">{{ nexo.titulo }}</span>
+            <span style="flex:1;min-width:8px"></span>
+            <span style="flex:0 0 auto;font-size:11.5px;color:#4a5560;white-space:nowrap">{{ nexo.contexto }}</span>
+            <button onClick="{{ nexo.fechar }}" style="flex:0 0 auto;width:28px;height:28px;border-radius:8px;display:grid;place-items:center;color:#4a5560;border:0;background:transparent;cursor:pointer" style-hover="background:#f1f3f3;color:#12171d">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"></path></svg>
+            </button>
+          </div>
+
+          <sc-if value="{{ nexo.ehRadar }}">
+            <div style="flex:1;min-height:0;overflow-y:auto;padding:14px;background:#f6f6f3;display:flex;flex-direction:column;gap:11px">
+
+              <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;flex:0 0 auto;background:#e3e7e8;border-radius:11px;overflow:hidden;box-shadow:0 0 0 1px #e3e7e8">
+                <sc-for list="{{ nexo.radar.kpis }}" as="k" hint-placeholder-count="3">
+                  <div style="background:#fff;padding:12px 13px 13px;min-width:0">
+                    <div style="font-size:10px;font-weight:600;letter-spacing:.08em;color:#67787c;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ k.label }}</div>
+                    <div style="display:flex;align-items:baseline;gap:7px;margin-top:7px">
+                      <span style="font-family:'Plus Jakarta Sans',sans-serif;font-size:23px;font-weight:700;letter-spacing:-.03em;line-height:1;color:#12171d;white-space:nowrap">{{ k.valor }}</span>
+                      <span style="{{ k.deltaStyle }}">{{ k.delta }}</span>
+                    </div>
+                    <div style="font-size:11px;color:#67787c;margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ k.nota }}</div>
+                  </div>
+                </sc-for>
+              </div>
+
+              <div style="display:grid;grid-template-columns:minmax(0,242px) minmax(0,1fr);gap:11px;align-items:start;flex:0 0 auto">
+
+                <section style="background:#fff;border-radius:11px;box-shadow:inset 0 0 0 1px #dbdede;padding:13px 14px 14px;min-width:0">
+                  <div style="font-size:10px;font-weight:600;letter-spacing:.08em;color:#67787c;line-height:1.4;text-wrap:pretty">{{ nexo.radar.arco.rotulo }}</div>
+                  <div style="position:relative;margin-top:2px">
+                    <svg viewBox="0 0 220 132" width="100%" style="display:block;overflow:visible">
+                      <sc-for list="{{ nexo.radar.arco.segmentos }}" as="s" hint-placeholder-count="34">
+                        <line x1="{{ s.x1 }}" y1="{{ s.y1 }}" x2="{{ s.x2 }}" y2="{{ s.y2 }}" stroke="{{ s.cor }}" stroke-width="5" stroke-linecap="butt"></line>
+                      </sc-for>
+                    </svg>
+                    <div style="position:absolute;left:0;right:0;bottom:6%;display:flex;flex-direction:column;align-items:center;gap:3px;pointer-events:none">
+                      <span style="font-family:'Plus Jakarta Sans',sans-serif;font-size:32px;font-weight:700;letter-spacing:-.035em;line-height:1;color:#12171d">{{ nexo.radar.arco.pct }}</span>
+                      <span style="font-size:11px;color:#67787c;white-space:nowrap">{{ nexo.radar.arco.sub }}</span>
+                    </div>
+                  </div>
+                  <div style="display:flex;flex-direction:column;gap:9px;margin-top:13px;padding-top:12px;border-top:1px solid #eef1f1">
+                    <sc-for list="{{ nexo.radar.arco.pilha }}" as="p" hint-placeholder-count="3">
+                      <div style="display:flex;align-items:center;gap:9px;min-width:0">
+                        <span style="{{ p.chipStyle }}"></span>
+                        <span style="flex:1;min-width:0;font-size:12.5px;color:#1f252c;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ p.nome }}</span>
+                        <span style="flex:0 0 auto;font-size:12.5px;font-weight:700;color:#12171d;font-variant-numeric:tabular-nums">{{ p.valor }}</span>
+                        <span style="flex:0 0 auto;width:34px;text-align:right;font-size:11px;color:#67787c;font-variant-numeric:tabular-nums">{{ p.share }}</span>
+                      </div>
+                    </sc-for>
+                  </div>
+                </section>
+
+                <section style="background:#fff;border-radius:11px;box-shadow:inset 0 0 0 1px #dbdede;padding:13px 14px 14px;min-width:0">
+                  <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;min-width:0">
+                    <span style="flex:0 1 auto;min-width:0;font-size:10px;font-weight:600;letter-spacing:.08em;color:#67787c;line-height:1.4;text-wrap:pretty">{{ nexo.radar.degrau.rotulo }}</span>
+                    <span style="flex:1;min-width:8px"></span>
+                    <span style="flex:0 0 auto;display:flex;align-items:center;gap:11px">
+                      <span style="display:inline-flex;align-items:center;gap:5px">
+                        <span style="width:13px;height:0;border-top:2px dotted #9aa1a6;display:inline-block"></span>
+                        <span style="font-size:10.5px;color:#67787c;white-space:nowrap">meta</span>
+                      </span>
+                      <span style="display:inline-flex;align-items:center;gap:5px">
+                        <span style="width:13px;height:2.5px;border-radius:2px;background:#fe4f2b;display:inline-block"></span>
+                        <span style="font-size:10.5px;color:#67787c;white-space:nowrap">realizado</span>
+                      </span>
+                    </span>
+                  </div>
+                  <div style="position:relative">
+                  <svg viewBox="0 0 520 210" width="100%" style="display:block;overflow:visible">
+                    <defs>
+                      <pattern id="ofPontos" width="5" height="5" patternUnits="userSpaceOnUse">
+                        <circle cx="1.2" cy="1.2" r=".85" fill="#d5d9da"></circle>
+                      </pattern>
+                      <linearGradient id="ofArea" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stop-color="#fe4f2b" stop-opacity=".26"></stop>
+                        <stop offset="100%" stop-color="#fe4f2b" stop-opacity=".03"></stop>
+                      </linearGradient>
+                    </defs>
+                    <sc-for list="{{ nexo.radar.degrau.grade }}" as="g" hint-placeholder-count="4">
+                      <line x1="36" y1="{{ g.y }}" x2="516" y2="{{ g.y }}" stroke="#eef1f1" stroke-width="1"></line>
+                    </sc-for>
+                    <path d="{{ nexo.radar.degrau.metaArea }}" fill="url(#ofPontos)"></path>
+                    <path d="{{ nexo.radar.degrau.metaLinha }}" fill="none" stroke="#9aa1a6" stroke-width="1.5" stroke-dasharray="1.5 4" stroke-linecap="round"></path>
+                    <path d="{{ nexo.radar.degrau.realArea }}" fill="url(#ofArea)"></path>
+                    <path d="{{ nexo.radar.degrau.realLinha }}" fill="none" stroke="#fe4f2b" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"></path>
+                    <circle cx="{{ nexo.radar.degrau.pontaX }}" cy="{{ nexo.radar.degrau.pontaY }}" r="4" fill="#fe4f2b" stroke="#fff" stroke-width="2"></circle>
+                  </svg>
+                    <sc-for list="{{ nexo.radar.degrau.grade }}" as="g" hint-placeholder-count="4">
+                      <span style="{{ g.style }}">{{ g.label }}</span>
+                    </sc-for>
+                    <sc-for list="{{ nexo.radar.degrau.marcos }}" as="m" hint-placeholder-count="4">
+                      <span style="{{ m.style }}">{{ m.label }}</span>
+                    </sc-for>
+                  </div>
+                  <p style="margin:8px 0 0;font-size:11.5px;color:#4a5560;line-height:1.5;text-wrap:pretty">{{ nexo.radar.degrau.nota }}</p>
+                </section>
+              </div>
+
+              <section style="background:#fff;border-radius:11px;box-shadow:inset 0 0 0 1px #dbdede;padding:12px 14px 13px;flex:0 0 auto">
+                <div style="font-size:10px;font-weight:600;letter-spacing:.08em;color:#67787c;margin-bottom:4px">O QUE O NEXO ESTÁ VENDO</div>
+                <div style="display:flex;flex-direction:column">
+                  <sc-for list="{{ nexo.radar.sinais }}" as="s" hint-placeholder-count="3">
+                    <div style="{{ s.linhaStyle }}">
+                      <span style="{{ s.pontoStyle }}"></span>
+                      <span style="flex:1;min-width:0;font-size:12.5px;line-height:1.5;color:#1f252c;text-wrap:pretty">{{ s.texto }}</span>
+                      <button onClick="{{ s.onClick }}" style="flex:0 0 auto;height:27px;padding:0 11px;border-radius:7px;background:#fff;box-shadow:inset 0 0 0 1px #dbdede;font-size:11.5px;font-weight:600;color:#1f252c;white-space:nowrap;border:0;cursor:pointer" style-hover="background:#f1f3f3">{{ s.acao }}</button>
+                    </div>
+                  </sc-for>
+                </div>
+              </section>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ nexo.ehChat }}">
+          <div style="flex:1;min-height:0;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:14px">
+            <sc-for list="{{ nexo.mensagens }}" as="m" hint-placeholder-count="3">
+              <div style="{{ m.linhaStyle }}">
+                <sc-if value="{{ m.ehOni }}">
+                  <img src="assets/oni-avatar.png" alt="ONI" width="26" height="26" style="display:block;border-radius:7px;flex:0 0 auto">
+                </sc-if>
+                <div style="{{ m.bolhaStyle }}">
+                  <sc-if value="{{ m.ehInsight }}">
+                    <div style="display:flex;align-items:center;gap:7px;margin-bottom:8px">
+                      <span style="width:6px;height:6px;border-radius:50%;background:#fe4f2b;flex:0 0 auto"></span>
+                      <span style="font-size:10.5px;font-weight:700;letter-spacing:.06em;color:#9c3210;white-space:nowrap">{{ m.rotulo }}</span>
+                    </div>
+                  </sc-if>
+                  <div style="{{ m.textoStyle }}">{{ m.texto }}</div>
+                  <sc-if value="{{ m.temItens }}">
+                    <div style="display:flex;flex-direction:column;gap:7px;margin-top:10px">
+                      <sc-for list="{{ m.itens }}" as="i" hint-placeholder-count="3">
+                        <div style="display:flex;align-items:flex-start;gap:8px">
+                          <span style="flex:0 0 auto;width:5px;height:5px;border-radius:50%;background:#c8ccc9;margin-top:6px"></span>
+                          <span style="flex:1;min-width:0;font-size:12.5px;line-height:1.5;color:#1f252c;text-wrap:pretty">{{ i.texto }}</span>
+                        </div>
+                      </sc-for>
+                    </div>
+                  </sc-if>
+                  <sc-if value="{{ m.temAcoes }}">
+                    <div style="display:flex;gap:6px;margin-top:11px;flex-wrap:wrap">
+                      <sc-for list="{{ m.acoes }}" as="b" hint-placeholder-count="2">
+                        <button onClick="{{ b.onClick }}" style="{{ b.style }}">{{ b.label }}</button>
+                      </sc-for>
+                    </div>
+                  </sc-if>
+                </div>
+              </div>
+            </sc-for>
+
+            <sc-if value="{{ nexo.pensando }}">
+              <div style="display:flex;align-items:flex-start;gap:9px">
+                <img src="assets/oni-avatar.png" alt="ONI" width="26" height="26" style="display:block;border-radius:7px;flex:0 0 auto">
+                <span style="display:inline-flex;align-items:center;gap:7px;padding:9px 12px;border-radius:10px;background:#f6f7f7;font-size:12.5px;color:#4a5560">
+                  <span>Consultando a base</span>
+                  <span style="width:2px;height:13px;background:#fe4f2b;display:inline-block;animation:of-cursor 1s steps(2) infinite"></span>
+                </span>
+              </div>
+            </sc-if>
+          </div>
+
+          <div style="flex:0 0 auto;padding:11px 16px 13px;border-top:1px solid #e3e7e8">
+            <div style="display:flex;align-items:flex-end;gap:8px;border-radius:11px;background:#fff;box-shadow:inset 0 0 0 1px #dbdede;padding:6px 6px 6px 12px">
+              <input value="{{ nexo.rascunho }}" onChange="{{ nexo.setRascunho }}" onKeyDown="{{ nexo.tecla }}" placeholder="Oii, usuario Comoo posso te ajudar?" style="flex:1;min-width:0;border:0;outline:0;background:transparent;font-size:13.5px;height:32px">
+              <button onClick="{{ nexo.enviar }}" style="{{ nexo.enviarStyle }}" title="Enviar">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"></path></svg>
+              </button>
+            </div>
+            <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+              <sc-for list="{{ nexo.sugestoes }}" as="s" hint-placeholder-count="3">
+                <button onClick="{{ s.onClick }}" style="height:26px;padding:0 10px;border-radius:7px;background:#fff;box-shadow:inset 0 0 0 1px #e3e7e8;color:#4a5560;font-size:11.5px;font-weight:500;white-space:nowrap;flex:0 0 auto;border:0;cursor:pointer" style-hover="background:#f1f3f3;color:#12171d">{{ s.label }}</button>
+              </sc-for>
+            </div>
+          </div>
+          </sc-if>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ buscaAberta }}">
+    <div onClick="{{ fecharBusca }}" style="position:fixed;inset:0;background:rgba(9,14,20,.42);z-index:60;display:flex;justify-content:center;padding:88px 20px 20px;animation:of-fade .14s ease-out both">
+      <div onClick="{{ parar }}" style="width:576px;max-width:100%;height:max-content;max-height:calc(100vh - 116px);background:#fff;border-radius:10px;border:1px solid #e3e7e8;box-shadow:0 10px 30px -6px rgba(0,0,0,.22);overflow:hidden;display:flex;flex-direction:column;animation:of-rise .16s cubic-bezier(.2,0,.2,1) both">
+        <div style="flex:0 0 auto;display:flex;align-items:center;gap:9px;padding:12px 14px;border-bottom:1px solid #eef1f1">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4a5560" stroke-width="1.9" stroke-linecap="round" style="flex:0 0 auto"><circle cx="11" cy="11" r="7"></circle><path d="m16.5 16.5 4 4"></path></svg>
+          <input value="{{ termo }}" onChange="{{ setTermo }}" onKeyDown="{{ teclaBusca }}" ref="{{ buscaRef }}" placeholder="Buscar empresa, pessoa, lead, oportunidade ou proposta" style="border:0;outline:0;background:transparent;width:100%;font-size:14px;min-width:0">
+          <span style="flex:0 0 auto;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#4a5560;background:#f1f3f3;border-radius:4px;padding:2px 6px">ESC</span>
+        </div>
+        <div style="flex:1;min-height:0;overflow-y:auto;padding:4px">
+          <sc-for list="{{ gruposBusca }}" as="g" hint-placeholder-count="2">
+            <div>
+              <div style="font-size:11px;font-weight:600;color:#4a5560;letter-spacing:.04em;padding:8px 8px 4px">{{ g.titulo }}</div>
+              <sc-for list="{{ g.itens }}" as="r" hint-placeholder-count="4">
+                <button onClick="{{ r.onClick }}" onMouseEnter="{{ r.onHover }}" style="{{ r.style }}">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4a5560" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto"><path d="{{ r.d }}"></path></svg>
+                  <span style="flex:1;font-size:14px;line-height:20px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ r.label }}</span>
+                  <sc-if value="{{ r.tag }}">
+                    <span style="flex:0 0 auto;font-size:10.5px;font-weight:600;color:#4a5560;background:#f1f3f3;border-radius:4px;padding:2px 6px;white-space:nowrap">{{ r.tag }}</span>
+                  </sc-if>
+                </button>
+              </sc-for>
+            </div>
+          </sc-for>
+          <sc-if value="{{ buscaSemDados }}">
+            <div style="padding:26px 16px;text-align:center;border-top:1px solid #eef1f1;margin-top:4px">
+              <div style="font-size:12.5px;font-weight:600;margin-bottom:5px">{{ buscaVazioTitulo }}</div>
+              <div style="font-size:12px;color:#4a5560;line-height:1.5;max-width:400px;margin:0 auto;text-wrap:pretty">{{ buscaVazioTexto }}</div>
+            </div>
+          </sc-if>
+        </div>
+        <div style="flex:0 0 auto;display:flex;gap:14px;padding:8px 14px;border-top:1px solid #eef1f1;background:#fafafa;font-size:11.5px;color:#4a5560;flex-wrap:wrap">
+          <span style="white-space:nowrap">↑↓ navegar</span><span style="white-space:nowrap">↵ abrir</span><span style="white-space:nowrap">esc fechar</span>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ temAviso }}">
+    <div style="position:fixed;bottom:18px;left:50%;transform:translateX(-50%);z-index:70;background:#12171d;color:#eeeff3;border-radius:10px;padding:10px 15px;display:flex;align-items:center;gap:9px;max-width:calc(100vw - 32px);animation:of-rise .22s cubic-bezier(.2,0,.2,1) both">
+      <span style="{{ avisoPonto }}"></span>
+      <span style="font-size:12.5px;font-weight:500;line-height:1.4">{{ aviso }}</span>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1280,&quot;height&quot;:820},&quot;rota&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;/onface-preview/pre-vendas&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Moldura&quot;},&quot;titulo&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;Pré-vendas&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Moldura&quot;},&quot;subtitulo&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;Leads, qualificação e saídas&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Moldura&quot;},&quot;trilha&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;{ label: string, ir?: () =&gt; void }[]&quot;},&quot;menuAberto&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Moldura&quot;}}">
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    const E = (typeof window !== "undefined" && window.OnFaceEstado) || null;
+    const d = E ? E.tudo() : {};
+    this.state = {
+      aberta: props.menuAberto !== undefined ? props.menuAberto !== false : d.menuAberto !== false,
+      exp: d.menuGrupos || { Vendas: true, "Operação": false, Clientes: false, "Automações": false, Insights: false },
+      leads: d.leads || [],
+      perfilAberto: false,
+      sinoAberto: false, filtroSino: "todas",
+      buscaAberta: false, termo: "", idx: 0,
+      nexoAberto: false, nexoAba: null, nexoConversa: "c0", nexoRascunho: "", nexoPensando: false,
+      nexoMsgs: {
+        c0: [{ de: "oni", texto: "Bom dia, Scott. Olhei a sua carteira de pré-vendas agora: 5 leads estão sem próxima ação e 2 entraram hoje sem responsável." },
+             { de: "oni", insight: true, rotulo: "PRIORIDADE DE HOJE", texto: "Três leads passaram do tempo de primeiro contato:", itens: ["Cliniface Saúde — 6 dias sem contato, sem responsável", "Braspar Distribuidora — 9 dias parado, sem próxima ação", "Sollar Imóveis — 14 dias em qualificação"], acoes: [{ label: "Atribuir a mim", tom: "primario" }, { label: "Criar atividades", tom: "" }] }]
+      },
+      aviso: null
+    };
+    this.buscaRef = React.createRef();
+  }
+
+  componentDidMount() {
+    const E = window.OnFaceEstado;
+    this._offEstado = E ? E.assinar((d) => { if (d.leads !== this.state.leads) this.setState({ leads: d.leads }); }) : null;
+    this._offAviso = E ? E.assinarAviso((texto, tom) => this.diz(texto, tom)) : null;
+    this._k = (e) => {
+      const cmd = e.metaKey || e.ctrlKey;
+      if (cmd && e.key.toLowerCase() === "b") { e.preventDefault(); this.setState(s => ({ aberta: !s.aberta })); }
+      else if (cmd && e.key.toLowerCase() === "k") { e.preventDefault(); this.abrirBusca(); }
+      else if (cmd && e.key.toLowerCase() === "j") { e.preventDefault(); this.setState(s => ({ nexoAberto: !s.nexoAberto })); }
+      else if (e.key === "Escape") {
+        if (this.state.buscaAberta) return this.setState({ buscaAberta: false });
+        if (this.state.nexoAberto) return this.setState({ nexoAberto: false });
+        if (this.state.perfilAberto || this.state.sinoAberto) this.setState({ perfilAberto: false, sinoAberto: false });
+      }
+    };
+    document.addEventListener("keydown", this._k);
+    this._fora = (e) => {
+      const alvo = e.target;
+      const dentro = (sel) => alvo && alvo.closest && alvo.closest(sel);
+      const mudar = {};
+      if (this.state.perfilAberto && !dentro("[data-of-perfil]")) mudar.perfilAberto = false;
+      if (this.state.sinoAberto && !dentro("[data-of-sino]")) mudar.sinoAberto = false;
+      if (Object.keys(mudar).length) this.setState(mudar);
+    };
+    document.addEventListener("pointerdown", this._fora, true);
+  }
+
+  componentDidUpdate(_, anterior) {
+    if (anterior.aberta !== this.state.aberta || anterior.exp !== this.state.exp) {
+      const E = window.OnFaceEstado;
+      if (E) E.gravar({ menuAberto: this.state.aberta, menuGrupos: this.state.exp });
+    }
+  }
+
+  componentWillUnmount() {
+    document.removeEventListener("keydown", this._k);
+    document.removeEventListener("pointerdown", this._fora, true);
+    if (this._offEstado) this._offEstado();
+    if (this._offAviso) this._offAviso();
+    clearTimeout(this._t);
+    clearTimeout(this._nx);
+  }
+
+  diz(texto, tom) {
+    clearTimeout(this._t);
+    this.setState({ aviso: { texto, tom: tom || "ok" } });
+    this._t = setTimeout(() => this.setState({ aviso: null }), 3400);
+  }
+
+  abrirBusca() {
+    this.setState({ buscaAberta: true, termo: "", idx: 0, perfilAberto: false, sinoAberto: false },
+      () => { if (this.buscaRef.current) this.buscaRef.current.focus(); });
+  }
+
+  itensBusca() {
+    const nav = [];
+    this.arvore().forEach(m => {
+      nav.push({ label: m.label, href: m.href, tag: "" });
+      (m.filhos || []).forEach(f => nav.push({ label: m.label + " › " + f.label, href: f.href, tag: f.pendente ? "em construção" : "" }));
+    });
+    const dNav = "M9 18l6-6-6-6";
+    const dAcao = "M12 5v14M5 12h14";
+    const grupos = [
+      { titulo: "Ações", itens: [
+        { label: "Novo lead", d: dAcao, acao: () => { this.setState({ buscaAberta: false }); this.diz("Novo lead — formulário a desenhar", "aviso"); } },
+        { label: "Nova oportunidade", d: dAcao, acao: () => { this.setState({ buscaAberta: false }); this.diz("Criar oportunidade — tela a desenhar", "aviso"); } },
+        { label: "Nova proposta", d: dAcao, acao: () => { this.setState({ buscaAberta: false }); this.diz("Criar proposta — tela a desenhar", "aviso"); } },
+        { label: "Nova atividade", d: dAcao, acao: () => { this.setState({ buscaAberta: false }); this.diz("Criar atividade — tela a desenhar", "aviso"); } }
+      ] },
+      { titulo: "Ir para", itens: nav.map(n => ({
+        label: n.label, d: dNav, tag: n.tag,
+        acao: () => { this.setState({ buscaAberta: false }); this.ir(n.href, n.label); }
+      })) }
+    ];
+    const q = this.state.termo.trim().toLowerCase();
+    if (!q) return grupos.map(g => ({ titulo: g.titulo, itens: g.itens.slice(0, g.titulo === "Ações" ? 4 : 6) }));
+    return grupos
+      .map(g => ({ titulo: g.titulo, itens: g.itens.filter(i => i.label.toLowerCase().includes(q)) }))
+      .filter(g => g.itens.length);
+  }
+
+  montarRadar(modo) {
+    const mes = modo === "mes";
+    const meta = mes ? 48 : 12;
+    const feito = mes ? 34 : 9;
+    const pilhaBruta = mes
+      ? [["Camila Reis", 14, "#fe4f2b"], ["Diego Nunes", 12, "#12171d"], ["Ana Vitória", 8, "#7f8b95"]]
+      : [["Camila Reis", 4, "#fe4f2b"], ["Diego Nunes", 3, "#12171d"], ["Ana Vitória", 2, "#7f8b95"]];
+
+    const N = 32, cx = 110, cy = 100, rExt = 86, rInt = 72;
+    const segmentos = [];
+    const preenchidos = Math.round((feito / meta) * N);
+    let acum = 0;
+    const faixas = pilhaBruta.map(([, v, cor], i) => {
+      const ultimo = i === pilhaBruta.length - 1;
+      const qtd = ultimo ? Math.max(0, preenchidos - acum) : Math.round((v / meta) * N);
+      const fx = { ini: acum, fim: acum + qtd, cor };
+      acum += qtd;
+      return fx;
+    });
+    for (let i = 0; i < N; i++) {
+      const ang = Math.PI - (i + 0.5) * (Math.PI / N);
+      void ang;
+      const c = Math.cos(ang), s = Math.sin(ang);
+      const faixa = faixas.find(fx => i >= fx.ini && i < fx.fim);
+      segmentos.push({
+        x1: +(cx + rInt * c).toFixed(1), y1: +(cy - rInt * s).toFixed(1),
+        x2: +(cx + rExt * c).toFixed(1), y2: +(cy - rExt * s).toFixed(1),
+        cor: faixa ? faixa.cor : "#e8eaeb"
+      });
+    }
+
+    const x0 = 36, xF = 516, yTopo = 22, yBase = 174;
+    const teto = Math.ceil(meta * 1.1);
+    const esc = (v) => +(yBase - (v / teto) * (yBase - yTopo)).toFixed(1);
+    const px = (t) => +(x0 + t * (xF - x0)).toFixed(1);
+
+    const marcosDef = mes
+      ? [["S1", 12], ["S2", 24], ["S3", 36], ["S4", 48]]
+      : [["seg", 2.4], ["ter", 4.8], ["qua", 7.2], ["qui", 9.6], ["sex", 12]];
+    const nM = marcosDef.length;
+
+    let metaLinha = "", metaArea = "M " + x0 + " " + yBase;
+    marcosDef.forEach(([, v], i) => {
+      const xa = px(i / nM), xb = px((i + 1) / nM), y = esc(v);
+      metaLinha += (i === 0 ? "M " + xa + " " + y : " L " + xa + " " + y) + " L " + xb + " " + y;
+      metaArea += " L " + xa + " " + y + " L " + xb + " " + y;
+    });
+    metaArea += " L " + xF + " " + yBase + " Z";
+
+    const diario = mes
+      ? [1, 2, 4, 5, 7, 9, 10, 12, 13, 15, 17, 19, 20, 22, 24, 26, 28, 30, 32, 34]
+      : [2, 4, 5, 7, 9];
+    const nD = diario.length;
+    const pts = diario.map((v, i) => [px((i + 1) / nD), esc(v)]);
+    const realLinha = pts.map((p, i) => (i === 0 ? "M " + px(0) + " " + esc(0) + " L " : "L ") + p[0] + " " + p[1]).join(" ");
+    const realArea = realLinha + " L " + pts[nD - 1][0] + " " + yBase + " L " + px(0) + " " + yBase + " Z";
+
+    const passos = [0, Math.round(teto / 3), Math.round((teto / 3) * 2), teto];
+    const iniciais = (n) => n.split(" ").slice(0, 2).map(p => p[0]).join("").toUpperCase();
+    const ritmo = feito / meta;
+    const esperado = mes ? 0.75 : 0.8;
+
+    return {
+      kpis: [
+        { label: "QUALIFICADOS", valor: String(feito), delta: (ritmo >= esperado ? "+" : "−") + Math.abs(Math.round((ritmo - esperado) * 100)) + " p.p.",
+          ok: ritmo >= esperado, nota: "meta de " + meta + (mes ? " no mês" : " na semana") },
+        { label: "1º CONTATO", valor: mes ? "3h12" : "2h48", delta: "−26%", ok: true, nota: "mediana até o primeiro toque" },
+        { label: "CONVERSÃO", valor: mes ? "31%" : "34%", delta: "+4 p.p.", ok: true, nota: "lead → oportunidade" }
+      ].map(k => Object.assign({}, k, {
+        delta: (k.delta.indexOf("−") === 0 ? "↓ " : "↑ ") + k.delta.replace("+", "").replace("−", ""),
+        deltaStyle: "font-size:11.5px;font-weight:700;white-space:nowrap;font-variant-numeric:tabular-nums;color:" + (k.ok ? "#1f7256" : "#c2330f")
+      })),
+      arco: {
+        rotulo: mes ? "META DO MÊS · RESPONSÁVEIS" : "META DA SEMANA · RESPONSÁVEIS",
+        segmentos,
+        pct: Math.round(ritmo * 100) + "%",
+        sub: feito + " de " + meta + " qualificados",
+        pilha: pilhaBruta.map(([nome, v, cor]) => ({
+          nome, valor: v, iniciais: iniciais(nome),
+          share: Math.round((v / feito) * 100) + "%",
+          chipStyle: "flex:0 0 auto;width:9px;height:9px;border-radius:3px;background:" + cor
+        }))
+      },
+      degrau: {
+        rotulo: mes ? "RITMO CONTRA A META" : "RITMO CONTRA A META",
+        grade: passos.map(v => ({
+          y: esc(v), label: String(v),
+          style: "position:absolute;right:" + (100 - (30 / 520) * 100).toFixed(2) + "%;top:" + ((esc(v) / 210) * 100).toFixed(2)
+            + "%;transform:translateY(-50%);font-size:10px;color:#4a5560;white-space:nowrap;pointer-events:none;font-variant-numeric:tabular-nums"
+        })),
+        metaLinha, metaArea, realLinha, realArea,
+        pontaX: pts[nD - 1][0], pontaY: pts[nD - 1][1],
+        marcos: marcosDef.map(([label], i) => ({
+          label,
+          style: "position:absolute;left:" + ((px((i + 0.5) / nM) / 520) * 100).toFixed(2) + "%;top:" + ((198 / 210) * 100).toFixed(2)
+            + "%;transform:translate(-50%,-50%);font-size:10px;color:#4a5560;white-space:nowrap;pointer-events:none"
+        })),
+        nota: ritmo >= esperado
+          ? "Você está acima do degrau — mantendo esse ritmo fecha " + Math.round(feito / (mes ? 0.75 : 0.8)) + " qualificados."
+          : "O realizado caiu abaixo do degrau desde a " + (mes ? "terceira semana" : "quarta-feira") + ". Faltam " + (meta - feito) + " para bater a meta."
+      },
+      sinais: [
+        { texto: "Cliniface Saúde e Braspar estão sem responsável há mais de 5 dias — são os dois maiores tickets parados.", acao: "Atribuir", tom: "urgente" },
+        { texto: "Leads de Meta Ads convertem 2,1× mais que os de formulário, mas recebem o primeiro contato 4h depois.", acao: "Ver recorte", tom: "" },
+        { texto: "A etapa Em contato acumulou " + this.state.leads.filter(L => L.etapa === "em_contato").length + " leads sem tarefa aberta.", acao: "Abrir", tom: "" }
+      ].map((s, i) => ({
+        texto: s.texto, acao: s.acao,
+        linhaStyle: "display:flex;align-items:center;gap:10px;min-width:0;padding:11px 0;"
+          + (i === 0 ? "" : "border-top:1px solid #f3f5f5"),
+        pontoStyle: "flex:0 0 auto;width:7px;height:7px;border-radius:50%;background:" + (s.tom === "urgente" ? "#fe4f2b" : "#c8ccc9"),
+        onClick: () => this.diz("Recorte aberto a partir do radar do NEXO", "ok")
+      }))
+    };
+  }
+
+  arvore() {
+    return [
+      { label: "Início", d: "M3 3h7v9H3zM14 3h7v5h-7zM14 12h7v9h-7zM3 16h7v5H3z", href: "/onface-preview/visao-geral" },
+      { label: "Atendimento", d: "M3 18v-6a9 9 0 0 1 18 0v6M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z", href: "/atendimento" },
+      { label: "Vendas", d: "M16 20V6a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v14M2 9a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z", href: "/vendas", filhos: [
+        { label: "Pré-vendas", href: "/onface-preview/pre-vendas" },
+        { label: "Pipeline", href: "/onface-preview/pipeline" },
+        { label: "Propostas", href: "/onface-preview/propostas" },
+        { label: "Prospecção", href: "/onface-preview/prospeccao" },
+        { label: "Campanhas", href: "/automacoes/campanhas" },
+        { label: "Contatos & Empresas", href: "/onface-preview/contatos" }
+      ] },
+      { label: "Operação", d: "m3 17 2 2 4-4M3 7l2 2 4-4M13 6h8M13 12h8M13 18h8", href: "/onface-preview/atividades", filhos: [
+        { label: "Atividades", href: "/onface-preview/atividades" },
+        { label: "Calendário", href: "/calendario" },
+        { label: "Chamados", href: "/chamados", pendente: true },
+        { label: "Pós-vendas", href: "/pos-vendas", pendente: true }
+      ] },
+      { label: "Clientes", d: "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0M22 21v-2a4 4 0 0 0-3-3.9", href: "/clientes", filhos: [
+        { label: "Visão Geral", href: "/clientes" },
+        { label: "Carteira", href: "/clientes/carteira", pendente: true },
+        { label: "Customer Success", href: "/clientes/cs" },
+        { label: "Expansão & Renovação", href: "/clientes/expansao", pendente: true },
+        { label: "Risco / Churn", href: "/clientes/risco", pendente: true }
+      ] },
+      { grupo: "INTELIGÊNCIA", label: "Automações", d: "M4 14h7l-1 7 10-11h-7l1-7z", href: "/automacoes", filhos: [
+        { label: "Visão Geral", href: "/automacoes" },
+        { label: "Fluxos", href: "/automacoes/fluxos", pendente: true },
+        { label: "Cadências / Follow-ups", href: "/automacoes/cadencias" },
+        { label: "NEXO / Agentes IA", href: "/automacoes/agentes" },
+        { label: "Execuções", href: "/automacoes/execucoes" }
+      ] },
+      { label: "Insights", d: "M3 3v18h18M18 17V9M13 17V5M8 17v-3", href: "/relatorios", filhos: [
+        { label: "Visão Geral", href: "/relatorios" },
+        { label: "Relatórios", href: "/relatorios/biblioteca", pendente: true },
+        { label: "Performance", href: "/relatorios/performance", pendente: true }
+      ] }
+    ];
+  }
+
+  area(href) {
+    if (href === "/onface-preview/empresa") href = "/onface-preview/pre-vendas";
+    const pares = [];
+    this.arvore().forEach(m => {
+      pares.push({ href: m.href, area: m.label });
+      (m.filhos || []).forEach(f => pares.push({ href: f.href, area: m.label }));
+    });
+    pares.sort((a, b) => b.href.length - a.href.length);
+    const hit = pares.find(p => href === p.href || href.startsWith(p.href + "/"));
+    return hit ? hit.area : null;
+  }
+
+  ir(href, label) {
+    const E = window.OnFaceEstado;
+    if (E) E.irPara(href, label);
+    else this.diz('"' + label + '" ainda não foi desenhada — em construção', "aviso");
+  }
+
+  renderVals() {
+    const S = this.state;
+    const rota = this.props.rota || "/onface-preview/pre-vendas";
+    const ativa = this.area(rota);
+    const navBase = "display:flex;align-items:center;gap:11px;padding:7px 9px;border-radius:8px;font-size:13.5px;font-weight:500;width:100%;white-space:nowrap;";
+    const largura = S.aberta ? 226 : 52;
+    const areas = this.arvore().map(m => {
+      const on = ativa === m.label;
+      const temFilhos = !!(m.filhos && m.filhos.length);
+      const expandido = S.aberta && temFilhos && !!S.exp[m.label];
+      return {
+        label: m.label, d: m.d, temFilhos: temFilhos && S.aberta, expandido,
+        grupo: S.aberta ? (m.grupo || "") : "",
+        grupoStyle: "font-size:10.5px;font-weight:600;letter-spacing:.09em;color:#7e8894;padding:15px 9px 6px;white-space:nowrap",
+        style: navBase + (on ? "background:#1f2833;color:#eeeff3;font-weight:600" : "color:#b9c1ca") + (S.aberta ? "" : ";justify-content:center;padding:7px 0"),
+        chevron: "flex:0 0 auto;color:#7e8894;transition:transform .14s cubic-bezier(.2,0,.2,1);transform:rotate(" + (expandido ? 0 : -90) + "deg)",
+        acionar: () => {
+          if (temFilhos && S.aberta) this.setState(s => ({ exp: Object.assign({}, s.exp, { [m.label]: !s.exp[m.label] }) }));
+          else this.ir(m.href, m.label);
+        },
+        filhos: (m.filhos || []).map(f => ({
+          label: f.label, pendente: !!f.pendente,
+          style: "display:flex;align-items:center;gap:7px;padding:6px 9px;border-radius:7px;font-size:12.5px;width:100%;"
+            + ((rota === f.href || (rota === "/onface-preview/empresa" && f.href === "/onface-preview/pre-vendas")) ? "color:#eeeff3;font-weight:600;background:#1a222c" : "color:#9aa4ae;font-weight:400"),
+          ir: () => this.ir(f.href, f.label)
+        }))
+      };
+    });
+
+    const gruposBusca = this.itensBusca();
+    const planos = [];
+    gruposBusca.forEach(g => g.itens.forEach(i => { i.pos = planos.length; planos.push(i); }));
+    const trilha = (this.props.trilha || []).map(t => ({
+      label: t.label,
+      ir: t.ir || (() => {}),
+      style: "border:0;background:transparent;padding:0;font-family:'Plus Jakarta Sans',sans-serif;font-size:14.5px;font-weight:700;letter-spacing:-.01em;color:#4a5560;white-space:nowrap;cursor:pointer;flex:0 0 auto"
+    }));
+
+    return {
+      titulo: this.props.titulo || "OnFace",
+      subtitulo: this.props.subtitulo || "",
+      temSubtitulo: !!this.props.subtitulo,
+      trilha,
+      aberta: S.aberta, fechada: !S.aberta,
+      railStyle: "flex:0 0 auto;width:" + largura + "px;height:100%;min-height:0;display:flex;flex-direction:column;padding:8px;overflow:hidden;transition:width .16s cubic-bezier(.2,0,.2,1)",
+      criarStyle: "display:flex;align-items:center;gap:9px;margin-top:12px;height:34px;border-radius:9px;background:#d93c1a;color:#fff;font-size:13.5px;font-weight:600;flex:0 0 auto;"
+        + (S.aberta ? "padding:0 12px" : "justify-content:center;padding:0"),
+      perfilStyle: "display:flex;align-items:center;gap:9px;padding:7px;border-radius:9px;flex:0 0 auto;margin-top:6px;" + (S.aberta ? "" : "justify-content:center"),
+      areas,
+      toggleRail: () => this.setState(s => ({ aberta: !s.aberta })),
+      criar: () => this.diz("Criar: atalho global para lead, oportunidade, proposta e atividade", "aviso"),
+
+      perfilAberto: S.perfilAberto,
+      togglePerfil: () => this.setState(s => ({ perfilAberto: !s.perfilAberto })),
+      perfilBtnStyle: "display:flex;align-items:center;gap:8px;height:34px;padding:0 7px 0 3px;border-radius:9px;"
+        + (S.perfilAberto ? "background:#f1f3f3" : ""),
+      perfilChevron: "flex:0 0 auto;transition:transform .13s cubic-bezier(.2,0,.2,1);transform:rotate(" + (S.perfilAberto ? 180 : 0) + "deg)",
+
+      itensPerfil: [
+        { label: "Minha conta", d: "M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0", atalho: "" },
+        { label: "Ajustes da organização", d: "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6 1.65 1.65 0 0 0 10 3.09V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z", atalho: "" }
+      ].map(m => Object.assign({}, m, {
+        onClick: () => { this.setState({ perfilAberto: false }); this.diz('"' + m.label + '" ainda não foi desenhada', "aviso"); }
+      })),
+
+      sair: () => { this.setState({ perfilAberto: false }); this.diz("Encerrar sessão", "aviso"); },
+
+      buscar: () => this.abrirBusca(),
+      buscaAberta: S.buscaAberta, buscaRef: this.buscaRef,
+      fecharBusca: () => this.setState({ buscaAberta: false }),
+      termo: S.termo,
+      setTermo: (e) => this.setState({ termo: e.target.value, idx: 0 }),
+      gruposBusca: gruposBusca.map(g => ({
+        titulo: g.titulo,
+        itens: g.itens.map(i => ({
+          label: i.label, d: i.d, tag: i.tag || "",
+          style: "display:flex;align-items:center;gap:8px;width:100%;padding:6px 8px;border-radius:6px;"
+            + (i.pos === S.idx ? "background:#f1f3f3" : ""),
+          onClick: i.acao, onHover: () => this.setState({ idx: i.pos })
+        }))
+      })),
+      teclaBusca: (e) => {
+        if (e.key === "ArrowDown") { e.preventDefault(); this.setState({ idx: Math.min(planos.length - 1, S.idx + 1) }); }
+        else if (e.key === "ArrowUp") { e.preventDefault(); this.setState({ idx: Math.max(0, S.idx - 1) }); }
+        else if (e.key === "Enter") { const it = planos[S.idx]; if (it) it.acao(); }
+      },
+      buscaSemDados: true,
+      buscaVazioTitulo: S.termo.trim() ? "Nenhum destino com esse nome" : "Registros ainda não entram na busca",
+      buscaVazioTexto: S.termo.trim()
+        ? "Empresas, pessoas, leads, oportunidades e propostas entram aqui quando a busca for ligada ao banco."
+        : "Por enquanto a busca cobre destinos e ações. Empresa, pessoa, lead, oportunidade e proposta vêm do banco.",
+
+      sinoAberto: S.sinoAberto,
+      toggleSino: () => this.setState(s => ({ sinoAberto: !s.sinoAberto, perfilAberto: false })),
+      sinoBtnStyle: "width:30px;height:30px;border-radius:8px;display:grid;place-items:center;position:relative;color:"
+        + (S.sinoAberto ? "#12171d;background:#f1f3f3" : "#5c6672"),
+      filtrosSino: [["todas", "Todas"], ["nao_lidas", "Não lidas"], ["nexo", "NEXO"]].map(([k, l]) => ({
+        label: l,
+        style: "height:26px;padding:0 10px;border-radius:7px;font-size:12px;font-weight:500;white-space:nowrap;flex:0 0 auto;border:1px solid "
+          + (S.filtroSino === k ? "#12171d;background:#12171d;color:#fff;font-weight:600" : "#e3e7e8;background:#fff;color:#4a5560"),
+        onClick: () => this.setState({ filtroSino: k })
+      })),
+      sinoVazioTitulo: S.filtroSino === "nexo" ? "O NEXO não agiu ainda" : S.filtroSino === "nao_lidas" ? "Nada não lido" : "Sem notificações",
+      sinoVazioTexto: S.filtroSino === "nexo"
+        ? "Aqui fica o que os agentes fizeram no seu nome — cada ação com ator AI_AGENT, para você auditar."
+        : "Alimentado por eventos e tarefas: lead inbound sem responsável, primeiro contato pendente, retomada de nutrição vencendo, proposta visualizada ou expirando.",
+      lerTudo: () => this.diz("Todas marcadas como lidas", "ok"),
+      verTudo: () => { this.setState({ sinoAberto: false }); this.diz("Central de notificações — tela a desenhar", "aviso"); },
+
+
+      abrirNexo: () => this.setState({ nexoAberto: true }),
+      nexoResumo: "3 avisos · 2 insights",
+      nexoBtnStyle: "display:flex;align-items:center;gap:9px;flex:0 0 auto;margin-top:8px;padding:8px;border-radius:10px;border:0;cursor:pointer;background:#161d26;box-shadow:inset 0 0 0 1px #242c36;transition:background 120ms cubic-bezier(0,0,.2,1);"
+        + (S.aberta ? "" : "justify-content:center"),
+      nexoMarca: "flex:0 0 auto;width:26px;height:26px;border-radius:8px;background:rgba(254,79,43,.16);box-shadow:inset 0 0 0 1px rgba(255,77,41,.3);display:grid;place-items:center",
+      nexo: (() => {
+        const conv = S.nexoConversa;
+        const msgs = S.nexoMsgs[conv] || [];
+        const hist = [
+          { id: "c0", titulo: "Prioridades de hoje", quando: "agora" },
+          { id: "c1", titulo: "Por que a recusa subiu?", quando: "ontem" },
+          { id: "c2", titulo: "Resumo do funil de setembro", quando: "2 dias" },
+          { id: "c3", titulo: "Leads sem empresa associada", quando: "4 dias" }
+        ];
+        const titulos = {};
+        hist.forEach(h => { titulos[h.id] = h.titulo; });
+        const responder = (pergunta) => {
+          const id = S.nexoConversa;
+          this.setState(s => {
+            const atual = (s.nexoMsgs[id] || []).concat([{ de: "eu", texto: pergunta }]);
+            return { nexoMsgs: Object.assign({}, s.nexoMsgs, { [id]: atual }), nexoRascunho: "", nexoPensando: true };
+          });
+          clearTimeout(this._nx);
+    clearTimeout(this._qk);
+          this._nx = setTimeout(() => {
+            const leads = this.state.leads;
+            const semAcao = leads.filter(L => !L.acao && L.etapa !== "desqualificado" && L.etapa !== "nutricao").length;
+            const semDono = leads.filter(L => !L.resp).length;
+            const resposta = {
+              de: "oni",
+              texto: "Na pré-vendas agora: " + leads.length + " leads no total, " + semAcao + " sem próxima ação e " + semDono + " sem responsável.",
+              itens: ["Maior risco: Sollar Imóveis, 14 dias em qualificação sem atividade", "Melhor chance: Interlagos Frotas, qualificado com proposta a montar", "Gargalo: Em contato acumula leads sem tarefa aberta"],
+              acoes: [{ label: "Abrir lista filtrada", tom: "primario" }, { label: "Exportar recorte", tom: "" }]
+            };
+            this.setState(s => ({
+              nexoMsgs: Object.assign({}, s.nexoMsgs, { [id]: (s.nexoMsgs[id] || []).concat([resposta]) }),
+              nexoPensando: false
+            }));
+          }, 900);
+        };
+        return {
+          aberto: S.nexoAberto,
+          fechar: () => this.setState({ nexoAberto: false }),
+          titulo: S.nexoAba === "mes" ? "Radar do mês · setembro"
+            : S.nexoAba === "semana" ? "Radar da semana · 16–22 set"
+            : (titulos[conv] || "Nova conversa"),
+          contexto: S.nexoAba === "mes" || S.nexoAba === "semana" ? "Scott Ferreira · Pré-vendas" : "Pré-vendas · " + S.leads.length + " leads",
+          pensando: S.nexoPensando,
+          novaConversa: () => {
+            const id = "n" + Date.now();
+            this.setState(s => ({ nexoAba: null, nexoConversa: id, nexoMsgs: Object.assign({}, s.nexoMsgs, { [id]: [] }), nexoRascunho: "", nexoPensando: false }));
+          },
+          ehRadar: S.nexoAba === "mes" || S.nexoAba === "semana",
+          ehChat: S.nexoAba !== "mes" && S.nexoAba !== "semana",
+          atalhos: [
+            { k: "mes", label: "Meu mês", d: "M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" },
+            { k: "semana", label: "Minha semana", d: "M3 17l5-6 4 4 5-8 4 5" },
+            { k: "copiloto", label: "Copiloto", d: "M8 10h8M8 14h5M21 12a9 9 0 1 1-3.6-7.2L21 4l-1 4.5A8.9 8.9 0 0 1 21 12z" }
+          ].map(a => {
+            const on = a.k === "copiloto" ? (S.nexoAba !== "mes" && S.nexoAba !== "semana") : S.nexoAba === a.k;
+            return {
+              label: a.label, d: a.d, ativo: on,
+              style: "display:flex;align-items:center;gap:8px;width:100%;padding:7px 8px;border-radius:8px;border:0;cursor:pointer;text-align:left;font-size:12.5px;background:"
+                + (on ? "#1f2833;color:#eeeff3;font-weight:600" : "transparent;color:#b9c1ca"),
+              onClick: () => this.setState({ nexoAba: a.k === "copiloto" ? null : a.k })
+            };
+          }),
+          radar: this.montarRadar(S.nexoAba === "semana" ? "semana" : "mes"),
+          historico: hist.map(h => ({
+            titulo: h.titulo, quando: h.quando,
+            style: "display:flex;align-items:center;gap:8px;width:100%;padding:7px 8px;border-radius:8px;border:0;cursor:pointer;text-align:left;background:"
+              + (conv === h.id ? "#1f2833;color:#eeeff3" : "transparent;color:#b9c1ca"),
+            onClick: () => this.setState({ nexoAba: null, nexoConversa: h.id, nexoPensando: false })
+          })),
+          mensagens: msgs.map(m => {
+            const eu = m.de === "eu";
+            return {
+              ehOni: !eu, ehInsight: !!m.insight, rotulo: m.rotulo || "",
+              texto: m.texto,
+              linhaStyle: "display:flex;align-items:flex-start;gap:9px;" + (eu ? "justify-content:flex-end" : ""),
+              bolhaStyle: "max-width:84%;min-width:0;padding:10px 13px;border-radius:11px;"
+                + (eu ? "background:#12171d" : m.insight ? "background:#fff6f4;box-shadow:inset 0 0 0 1px #fadfd8" : "background:#f6f7f7"),
+              textoStyle: "font-size:13px;line-height:1.55;text-wrap:pretty;" + (eu ? "color:#eeeff3" : "color:#1f252c"),
+              temItens: !!(m.itens && m.itens.length),
+              itens: (m.itens || []).map(t => ({ texto: t })),
+              temAcoes: !!(m.acoes && m.acoes.length),
+              acoes: (m.acoes || []).map(b => ({
+                label: b.label,
+                style: "height:28px;padding:0 11px;border-radius:7px;font-size:12px;font-weight:600;white-space:nowrap;flex:0 0 auto;border:0;cursor:pointer;"
+                  + (b.tom === "primario" ? "background:#d93c1a;color:#fff" : "background:#fff;color:#1f252c;box-shadow:inset 0 0 0 1px #dbdede"),
+                onClick: () => {
+                  if (b.label === "Abrir lista filtrada") {
+                    this.setState({ nexoAberto: false });
+                    if (window.OnFaceEstado) window.OnFaceEstado.abrir("filtrar-sem-acao", null);
+                    return this.diz("Lista filtrada por leads sem próxima ação", "ok");
+                  }
+                  if (b.label === "Exportar recorte") {
+                    this.setState({ nexoAberto: false });
+                    if (window.OnFaceEstado) window.OnFaceEstado.abrir("exportar", null);
+                    return;
+                  }
+                  this.diz("Ação do NEXO registrada com ator AI_AGENT", "ok");
+                }
+              }))
+            };
+          }),
+          rascunho: S.nexoRascunho,
+          setRascunho: (e) => this.setState({ nexoRascunho: e.target.value }),
+          tecla: (e) => { if (e.key === "Enter" && S.nexoRascunho.trim()) responder(S.nexoRascunho.trim()); },
+          enviar: () => { if (S.nexoRascunho.trim()) responder(S.nexoRascunho.trim()); },
+          enviarStyle: "flex:0 0 auto;width:32px;height:32px;border-radius:8px;display:grid;place-items:center;border:0;"
+            + (S.nexoRascunho.trim() ? "background:#d93c1a;color:#fff;cursor:pointer" : "background:#f1f3f3;color:#a3a8a4;cursor:not-allowed"),
+          sugestoes: [
+            "Quem está sem próxima ação?",
+            "Leads parados há mais de 7 dias",
+            "Onde o funil está travando?"
+          ].map(s => ({ label: s, onClick: () => responder(s) }))
+        };
+      })(),
+
+      temAviso: !!S.aviso,
+      aviso: S.aviso ? S.aviso.texto : "",
+      avisoPonto: "flex:0 0 auto;width:7px;height:7px;border-radius:50%;background:"
+        + (S.aviso && S.aviso.tom === "erro" ? "#fe4f2b" : S.aviso && S.aviso.tom === "aviso" ? "#e0a93d" : "#4fd1a5"),
+      parar: (e) => e.stopPropagation()
+    };
+  }
+}
+</script>
+</body>
+</html>

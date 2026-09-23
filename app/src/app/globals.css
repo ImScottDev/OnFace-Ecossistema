@@ -1,5 +1,9 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+/* A camada de token do protótipo entra ANTES de `onface.css` e de
+   `shell-onface.css`: os dois consomem `--of-*`, e token tem de existir antes
+   de ser lido. Ela é gerada a partir de `docs/handoff-onface/inventario.md`. */
+@import "./onface-proto.css";
 @import "./onface.css";
 @import "./shell-onface.css";
 @import "./controles-onface.css";
