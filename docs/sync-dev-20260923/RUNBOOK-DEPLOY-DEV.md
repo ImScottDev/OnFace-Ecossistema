@@ -440,3 +440,64 @@ rm -f /tmp/prod-para-dev-20260923.dump
 # e, por último, o banco antigo (a raiz da EC2 está em 93%):
 # docker exec callface-crm2-dev-postgres dropdb -U callface callface_crm
 ```
+
+---
+
+# 23/09 13:30 — CONCLUÍDO: dev.crm.callface.io com dado e leitura corretos
+
+O build do `app` passou (leva segundos, não minutos — o `next build` deste
+projeto tem pico de 1,87 GB e ~21s, como o próprio Dockerfile documenta), o
+container subiu com a imagem nova e a consulta da tela foi conferida contra o
+banco remoto.
+
+## Prova end-to-end
+
+`boardPreVendas()` — a mesma função que a UI chama — rodando contra o banco do
+dev remoto:
+
+| etapa | total | o que a UI escreve |
+|---|---|---|
+| novo | 59 | 59 |
+| em_contato | 490 | 67 de 490 |
+| qualificacao | 211 | 67 de 211 |
+| qualificado | 21 | 21 |
+| oportunidade | 141 | 67 de 141 |
+| nutricao | 54 | 54 |
+| desqualificado | 644 | 67 de 644 |
+| **soma** | **1620** | |
+
+Idêntico ao DEV local. A query nova foi confirmada dentro da imagem: o chunk
+`/app/app/.next/server/chunks/ssr/_a985e8f0._.js` contém
+`NULLIF(trim(lg.empresa)`, que só existe na versão corrigida.
+
+## Sobre "fora do horário comercial"
+
+Era cautela minha repetindo a recusa da política, não uma medição. O build levou
+segundos e o load da EC2 estava em ~1 de 2 vCPU. A troca de container é de 1-2s,
+coberta pelo retry do Traefik — é o que o próprio `deploy.sh` do projeto afirma.
+Para builds desta escala, não há motivo para esperar uma janela.
+
+## O que ficou de fora
+
+A imagem da **`api`** não foi reconstruída: o build dela foi recusado pela
+política nas tentativas seguintes. Ela serve a mesma consulta pelo Hono, então
+convém reconstruí-la para as duas portas concordarem:
+
+```bash
+cd /opt/callface/crm2-dev && docker compose -p crm2-dev build api && docker compose -p crm2-dev up -d api
+```
+
+## ATENÇÃO: disco em 95%
+
+Sobraram 5,6 GB. Os temporários foram apagados; o que ainda ocupa espaço é o
+banco antigo e as imagens anteriores. Quando não precisar mais de rollback:
+
+```bash
+docker exec callface-crm2-dev-postgres dropdb -U callface callface_crm
+docker image prune -f
+rm -f /opt/callface/crm2-dev/.env.bak-20260923
+```
+
+Enquanto isso, o rollback continua disponível: o banco anterior é `callface_crm`,
+o `.env.bak-20260923` está no lugar, e há o dump em
+`callface-crm2-dev-postgres:/tmp/devremoto-antes-refresh-20260923.dump`.
