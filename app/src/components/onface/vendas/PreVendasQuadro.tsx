@@ -11,6 +11,7 @@ import type { DetalheLead } from "@/lib/vendas/consultas";
 import type { LinhaDoTempo } from "@/lib/vendas/eventos";
 import { GavetaLead } from "./GavetaLead";
 import { SaidasLead, type LeadDaSaida, type Saida } from "./SaidasLead";
+import { AtividadeLead } from "./AtividadeLead";
 import "./pre-vendas-quadro.css";
 import "./gaveta-lead.css";
 
@@ -178,6 +179,8 @@ export function PreVendasQuadro({
   /** Saída pedida e o lead dela. Guardo o CARD e não só o id: o modal mostra
    *  empresa, pessoa e origem, e buscá-los de novo faria o modal abrir vazio. */
   const [saida, setSaida] = React.useState<{ tipo: Saida; lead: LeadDaSaida } | null>(null);
+  /** Atividade aberta: `ver` mostra a que existe, `nova` abre em edição. */
+  const [atividade, setAtividade] = React.useState<{ modo: "ver" | "nova"; lead: CardPreVendas } | null>(null);
   const [detalhe, setDetalhe] = React.useState<{ lead: DetalheLead | null; timeline: LinhaDoTempo[] } | null>(null);
 
   // Fechar ao clicar fora: um listener só para os dois tipos de popover, e ele
@@ -731,9 +734,29 @@ export function PreVendasQuadro({
             const card = todos.find((c) => c.leadId === aberto);
             if (card) setSaida({ tipo, lead: paraSaida(card) });
           }}
-          aoPedirAtividade={() => {
+          aoPedirAtividade={(modo) => {
             const card = todos.find((c) => c.leadId === aberto);
-            if (card) setSaida({ tipo: "atividade", lead: paraSaida(card) });
+            if (card) setAtividade({ modo, lead: card });
+          }}
+        />
+      )}
+
+      {atividade && (
+        <AtividadeLead
+          contexto={[atividade.lead.empresa || "Sem empresa", atividade.lead.pessoa].filter(Boolean).join(" · ")}
+          leadId={atividade.lead.leadId}
+          atual={
+            atividade.modo === "ver" && atividade.lead.proximaAcao
+              ? { titulo: atividade.lead.proximaAcao.titulo, venceEm: atividade.lead.proximaAcao.venceEm }
+              : null
+          }
+          responsaveis={dados.filtros.responsaveis}
+          responsavelPadrao={{ id: usuarioId, nome: atividade.lead.responsavel }}
+          acoes={acoes}
+          aoFechar={() => setAtividade(null)}
+          aoConcluir={() => {
+            router.refresh();
+            if (aberto) void carregar(aberto);
           }}
         />
       )}

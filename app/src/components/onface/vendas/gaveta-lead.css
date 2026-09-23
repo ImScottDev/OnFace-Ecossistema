@@ -575,3 +575,242 @@
   background: var(--of-neutro);
   animation: onface-pisca 1.4s ease-in-out infinite;
 }
+
+/* ── Miolo, lido do fonte ─────────────────────────────────────────────── */
+
+.gv-tag-mais {
+  width: var(--of-h-chip);
+  height: var(--of-h-chip);
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  background: var(--of-papel);
+  box-shadow: var(--of-anel);
+  border: 0;
+  cursor: pointer;
+  color: var(--of-tinta-2);
+  flex: 0 0 auto;
+}
+.gv-tag-mais:hover { background: var(--of-neutro); color: var(--of-tinta-forte) }
+.gv-tag-mais svg { width: 12px; height: 12px; stroke-width: 2.3 }
+
+/* O cabeçalho de seção ganhou três peças: selo de estado, espaçador e um
+   atalho que só existe com a seção aberta. */
+.gv-secao-espaco { flex: 1; min-width: 0 }
+.gv-secao-selo {
+  flex: 0 0 auto;
+  padding: 2px 7px;
+  border-radius: 6px;
+  font-size: var(--of-t-rotulo);
+  font-weight: var(--of-peso-semi);
+  white-space: nowrap;
+}
+.gv-secao-selo[data-tom="ok"] { background: var(--of-canal-whatsapp-fundo); color: var(--of-canal-whatsapp-tinta) }
+.gv-secao-selo[data-tom="neutro"] { background: var(--of-calha); color: var(--of-tinta-2) }
+.gv-secao-acao {
+  flex: 0 0 auto;
+  font-size: var(--of-t-corpo-min);
+  font-weight: var(--of-peso-semi);
+  color: var(--of-coral-texto);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.gv-secao-acao:hover { color: var(--of-coral-texto-forte) }
+
+/* Tipo da próxima ação: o chip que diz COMO, antes de dizer o quê. */
+.gv-acao-tipo {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  height: var(--of-h-selo);
+  padding: 0 7px;
+  border-radius: 6px;
+  background: var(--of-calha);
+  color: var(--of-tinta-2);
+  font-size: var(--of-t-rotulo);
+  font-weight: var(--of-peso-semi);
+  white-space: nowrap;
+}
+
+/* ── Qualificação editável no lugar ───────────────────────────────────── */
+
+.gv-qualif {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  padding: 6px 8px;
+}
+.gv-q-cab { display: flex; align-items: center; gap: 6px; margin-bottom: 5px }
+.gv-q-cab .gv-rotulo { margin-bottom: 0 }
+.gv-q-cab small {
+  margin-left: auto;
+  font-size: var(--of-t-meta-min);
+  color: var(--of-tinta-3);
+  white-space: nowrap;
+}
+.gv-q-selo {
+  margin-left: auto;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: var(--of-canal-web-fundo);
+  color: var(--of-canal-web-tinta);
+  font-size: var(--of-t-rotulo);
+  font-weight: var(--of-peso-semi);
+  white-space: nowrap;
+}
+
+.gv-q-opcoes { display: flex; gap: 5px; flex-wrap: wrap }
+.gv-q-opcoes button {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: var(--of-r-item);
+  border: 0;
+  cursor: pointer;
+  background: var(--of-papel);
+  box-shadow: var(--of-anel);
+  color: var(--of-tinta);
+  font-size: var(--of-t-corpo);
+  font-weight: var(--of-peso-medio);
+  white-space: nowrap;
+}
+.gv-q-opcoes button:hover { background: var(--of-papel-hover) }
+.gv-q-opcoes button[data-on="true"] {
+  background: var(--of-tinta-forte);
+  color: var(--of-papel);
+  box-shadow: none;
+  font-weight: var(--of-peso-semi);
+}
+
+.gv-q-stepper {
+  display: flex;
+  align-items: stretch;
+  height: var(--of-h-controle);
+  border-radius: var(--of-r-controle);
+  background: var(--of-papel);
+  box-shadow: var(--of-anel);
+  overflow: hidden;
+}
+.gv-q-stepper button {
+  flex: 0 0 auto;
+  width: var(--of-h-controle);
+  display: grid;
+  place-items: center;
+  background: var(--of-papel-alterno);
+  border: 0;
+  color: var(--of-tinta-2);
+  cursor: pointer;
+}
+.gv-q-stepper button:first-child { border-right: 1px solid var(--of-fio) }
+.gv-q-stepper button:last-child { border-left: 1px solid var(--of-fio) }
+.gv-q-stepper button:hover { background: var(--of-neutro); color: var(--of-tinta-forte) }
+.gv-q-stepper button svg { width: 13px; height: 13px; stroke-width: 2.4 }
+.gv-q-stepper input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  text-align: center;
+  font-family: var(--of-fonte-titulo);
+  font-size: var(--of-t-secao-min);
+  font-weight: var(--of-peso-forte);
+  color: var(--of-tinta-forte);
+  font-variant-numeric: tabular-nums;
+}
+.gv-q-stepper > span {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  padding-right: 10px;
+  font-size: var(--of-t-meta);
+  color: var(--of-tinta-3);
+  white-space: nowrap;
+}
+.gv-q-campo {
+  width: 100%;
+  height: var(--of-h-controle);
+  padding: 0 11px;
+  border-radius: var(--of-r-controle);
+  border: 0;
+  background: var(--of-papel);
+  box-shadow: var(--of-anel);
+  font-size: var(--of-t-corpo);
+  color: var(--of-tinta-forte);
+}
+.gv-q-campo::placeholder { color: var(--of-tinta-3) }
+[data-cf2-theme] .gv-q-campo:focus-visible,
+[data-cf2-theme] .gv-q-stepper input:focus-visible,
+.gv-q-campo:focus-visible,
+.gv-q-stepper input:focus-visible { outline: none; box-shadow: none }
+.gv-q-campo:focus-visible { box-shadow: var(--of-anel-coral) }
+.gv-q-stepper:focus-within { box-shadow: var(--of-anel-coral) }
+
+/* ── Timeline com trilha ──────────────────────────────────────────────── */
+
+.gv-linha-tempo {
+  list-style: none;
+  margin: 0;
+  padding: 6px 8px 4px;
+  display: flex;
+  flex-direction: column;
+}
+.gv-linha-tempo li {
+  display: grid;
+  grid-template-columns: 52px 14px 1fr;
+  gap: 9px;
+}
+.gv-linha-tempo time {
+  font-size: var(--of-t-meta);
+  color: var(--of-tinta-2);
+  text-align: right;
+  white-space: nowrap;
+  padding-top: 1px;
+  font-variant-numeric: tabular-nums;
+}
+.gv-tl-marca { display: flex; flex-direction: column; align-items: center }
+/* Ponto cheio no evento mais recente, vazio nos anteriores: é o que diz onde a
+   história está agora sem escrever "último" em lugar nenhum. */
+.gv-tl-ponto {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  margin-top: 5px;
+  flex: 0 0 auto;
+  box-shadow: inset 0 0 0 1.5px var(--of-linha-convite);
+}
+.gv-tl-ponto[data-atual="true"] { background: var(--of-coral-marca); box-shadow: none }
+.gv-tl-trilho { flex: 1; width: 1px; background: var(--of-fio); margin-top: 3px }
+.gv-tl-texto { padding-bottom: 13px; min-width: 0 }
+.gv-tl-texto > span {
+  display: block;
+  font-size: var(--of-t-corpo);
+  color: var(--of-tinta);
+  line-height: 1.4;
+  text-wrap: pretty;
+}
+.gv-tl-texto > em {
+  display: block;
+  font-style: normal;
+  font-size: var(--of-t-meta-min);
+  color: var(--of-tinta-2);
+  margin-top: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Lead fora de cadência: a frase e o convite, lado a lado. */
+.gv-cad-vazia {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+}
+.gv-cad-vazia > span {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--of-t-corpo);
+  color: var(--of-tinta-2);
+  line-height: 1.45;
+  text-wrap: pretty;
+}

@@ -1,0 +1,276 @@
+/* Modal de atividade — geometria de `OnFace Pecas.dc.html` (bloco `atvAberta`). */
+
+.at-veu {
+  position: fixed;
+  inset: 0;
+  background: rgba(9, 14, 20, .45);
+  z-index: 52;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  animation: onface-fade .16s ease-out both;
+}
+.at {
+  width: 452px;
+  max-width: 100%;
+  max-height: calc(100vh - 40px);
+  background: var(--of-papel);
+  border-radius: 13px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  animation: onface-rise .2s var(--of-curva) both;
+}
+
+.at-topo {
+  flex: 0 0 auto;
+  padding: 15px 18px 13px;
+  border-bottom: 1px solid var(--of-linha);
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.at-topo-texto { min-width: 0; flex: 1 }
+.at-selos { display: flex; align-items: center; gap: 7px; margin-bottom: 5px; flex-wrap: wrap }
+.at-selo-situacao,
+.at-selo-tipo {
+  display: inline-flex;
+  align-items: center;
+  height: var(--of-h-selo);
+  padding: 0 8px;
+  border-radius: 6px;
+  font-size: var(--of-t-meta-min);
+  font-weight: var(--of-peso-semi);
+  white-space: nowrap;
+}
+.at-selo-situacao { background: var(--of-calha); color: var(--of-tinta-2) }
+/* O tipo sai em coral: é ele que muda o que a pessoa vai fazer a seguir. */
+.at-selo-tipo { background: var(--of-coral-fundo); color: var(--of-coral-texto-forte) }
+.at-topo-texto h2 {
+  margin: 0 0 3px;
+  font-family: var(--of-fonte-titulo);
+  font-size: 15.5px;
+  font-weight: var(--of-peso-forte);
+  letter-spacing: -.012em;
+  line-height: 1.3;
+  color: var(--of-tinta-forte);
+  text-wrap: pretty;
+}
+.at-topo-texto p {
+  margin: 0;
+  font-size: var(--of-t-corpo);
+  color: var(--of-tinta-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.at-fechar {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--of-r-controle);
+  display: grid;
+  place-items: center;
+  color: var(--of-tinta-2);
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.at-fechar:hover { background: var(--of-neutro); color: var(--of-tinta-forte) }
+.at-fechar svg { width: 15px; height: 15px; stroke-width: 2 }
+
+.at-corpo {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.at-rotulo {
+  display: block;
+  font-size: var(--of-t-meta-min);
+  font-weight: var(--of-peso-semi);
+  color: var(--of-tinta-2);
+  margin-bottom: 6px;
+}
+
+.at-opcoes { display: flex; gap: 5px; flex-wrap: wrap }
+.at-op {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 11px;
+  border-radius: var(--of-r-controle);
+  font-size: var(--of-t-corpo);
+  font-weight: var(--of-peso-medio);
+  white-space: nowrap;
+  flex: 0 0 auto;
+  cursor: pointer;
+  border: 0;
+  background: var(--of-papel);
+  color: var(--of-tinta);
+  box-shadow: var(--of-anel);
+}
+.at-op:hover { background: var(--of-papel-hover) }
+.at-op svg { width: 13px; height: 13px; stroke-width: 2.1; flex: 0 0 auto }
+/* Situação escolhida fica sólida: é estado, e estado é um só.
+   Tipo escolhido fica coral com contorno: é categoria, e ela colore o que vem
+   depois — o selo do topo e o chip na próxima ação. */
+.at-op[data-on="true"] {
+  font-weight: var(--of-peso-semi);
+  background: var(--of-tinta-forte);
+  color: var(--of-papel);
+  box-shadow: none;
+}
+.at-op-tipo[data-on="true"] {
+  background: var(--of-coral-fundo);
+  color: var(--of-coral-texto-forte);
+  box-shadow: inset 0 0 0 1px var(--of-coral-marca);
+}
+.at-op-tipo svg { stroke-width: 1.9 }
+
+.at-campo {
+  width: 100%;
+  height: var(--of-h-controle);
+  padding: 0 11px;
+  border-radius: var(--of-r-controle);
+  background: var(--of-papel);
+  border: 1px solid var(--of-linha-controle);
+  outline: 0;
+  font-size: var(--of-t-forte-min);
+  color: var(--of-tinta-forte);
+}
+.at-area {
+  width: 100%;
+  padding: 9px 11px;
+  border-radius: var(--of-r-controle);
+  background: var(--of-papel);
+  border: 1px solid var(--of-linha-controle);
+  outline: 0;
+  font-size: var(--of-t-forte-min);
+  line-height: 1.5;
+  resize: vertical;
+  font-family: inherit;
+  color: var(--of-tinta-forte);
+}
+.at-campo::placeholder,
+.at-area::placeholder { color: var(--of-tinta-3) }
+[data-cf2-theme] .at-campo:focus-visible,
+[data-cf2-theme] .at-area:focus-visible,
+.at-campo:focus-visible,
+.at-area:focus-visible { outline: none; border-color: var(--of-coral-marca); box-shadow: none }
+
+.at-quando { display: grid; grid-template-columns: 1fr 118px; gap: 9px }
+
+.at-resp {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  height: var(--of-h-controle);
+  padding: 0 28px 0 11px;
+  border-radius: var(--of-r-controle);
+  background: var(--of-papel);
+  box-shadow: var(--of-anel);
+}
+.at-resp select {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font-size: var(--of-t-forte-min);
+  color: var(--of-tinta-forte);
+  appearance: none;
+  cursor: pointer;
+}
+[data-cf2-theme] .at-resp select:focus-visible,
+.at-resp select:focus-visible { outline: none; box-shadow: none }
+.at-resp:focus-within { box-shadow: var(--of-anel-coral) }
+.at-resp-avatar {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--of-r-pilula);
+  background: var(--of-calha);
+  color: var(--of-tinta-2);
+  display: grid;
+  place-items: center;
+  font-size: 9px;
+  font-weight: var(--of-peso-forte);
+}
+.at-resp-seta {
+  position: absolute;
+  right: 10px;
+  width: 12px;
+  height: 12px;
+  stroke-width: 2.2;
+  color: var(--of-tinta-2);
+  pointer-events: none;
+}
+
+.at-ver { display: flex; flex-direction: column; gap: 13px }
+.at-ver-linha { display: flex; align-items: flex-start; gap: 10px }
+.at-ver-linha > svg {
+  width: 16px;
+  height: 16px;
+  stroke-width: 1.8;
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--of-tinta-2);
+}
+.at-ver-linha > div { min-width: 0; flex: 1 }
+.at-ver-linha .at-rotulo { margin-bottom: 2px }
+.at-ver-linha strong {
+  display: block;
+  font-size: var(--of-t-forte-min);
+  font-weight: var(--of-peso-medio);
+  color: var(--of-tinta-forte);
+  line-height: 1.45;
+  text-wrap: pretty;
+}
+.at-ver-linha strong[data-vazio="true"] { color: var(--of-tinta-4); font-weight: var(--of-peso-medio) }
+
+.at-rodape {
+  flex: 0 0 auto;
+  padding: 12px 18px;
+  border-top: 1px solid var(--of-linha);
+  background: var(--of-papel-alterno);
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.at-rodape[data-modo="editar"] { justify-content: flex-end }
+.at-espaco { flex: 1; min-width: 0 }
+.at-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: var(--of-h-controle);
+  padding: 0 14px;
+  border-radius: var(--of-r-controle);
+  background: var(--of-papel);
+  box-shadow: var(--of-anel);
+  border: 0;
+  cursor: pointer;
+  font-size: var(--of-t-corpo);
+  font-weight: var(--of-peso-semi);
+  white-space: nowrap;
+  flex: 0 0 auto;
+  color: var(--of-tinta);
+}
+.at-btn:hover { background: var(--of-neutro) }
+.at-btn svg { width: 14px; height: 14px; stroke-width: 2.2; flex: 0 0 auto }
+.at-btn-ok { background: var(--of-canal-whatsapp-fundo); color: var(--of-canal-whatsapp-tinta); box-shadow: inset 0 0 0 1px var(--of-canal-whatsapp-contorno) }
+.at-btn-ok:hover { filter: brightness(.97) }
+.at-btn-recusa { color: var(--of-coral-texto) }
+.at-btn-recusa:hover { background: var(--of-coral-fundo) }
+.at-btn-salvar { background: var(--of-coral-acao); color: var(--of-papel); box-shadow: none; padding: 0 15px }
+.at-btn-salvar:hover { background: var(--of-coral-acao-hover) }
+.at-btn-salvar:disabled { opacity: .6; cursor: progress }

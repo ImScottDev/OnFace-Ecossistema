@@ -6,7 +6,7 @@ import { toast } from "sonner";
 
 import type { DetalheLead } from "@/lib/vendas/consultas";
 import type { LinhaDoTempo } from "@/lib/vendas/eventos";
-import type { AcoesPreVendas } from "./PreVendas";
+import { rotuloAtor, rotuloEvento, type AcoesPreVendas } from "./PreVendas";
 import type { Saida } from "./SaidasLead";
 import "./gaveta-lead.css";
 
@@ -38,6 +38,7 @@ const D = {
   contato: "M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0",
   check: "M20 6 9 17l-5-5",
   relogio: "M12 8v4l3 2M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z",
+  menos: "M5 12h14",
   oportunidade: "M16 20V6a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v14M2 9a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z",
 };
 
@@ -52,6 +53,33 @@ const CORES_ETAPA: Record<string, string> = {
 };
 
 const LIVRES = ["novo", "em_contato", "qualificacao"] as const;
+
+const INTERESSES = ["Callface AI", "PABX", "White Label", "Integrações", "SMS"];
+const FITS = ["Alto", "Médio", "Baixo"] as const;
+
+/** Faixa derivada do número, nunca digitada. */
+const faixaDe = (n: number) =>
+  n <= 10 ? "Micro" : n <= 50 ? "Pequena" : n <= 200 ? "Média" : "Enterprise";
+
+/** Hoje mostra hora; antes disso, a data. O histórico de um lead é lido no dia
+ *  em que ele acontece, e hora é o que separa dois toques da mesma tarde. */
+function horaOuData(iso: string) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  const hoje = new Date();
+  const mesmoDia = d.toDateString() === hoje.toDateString();
+  if (mesmoDia) return d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  const ontem = new Date(hoje);
+  ontem.setDate(hoje.getDate() - 1);
+  if (d.toDateString() === ontem.toDateString()) return "ontem";
+  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" });
+}
+
+/** O tipo que o modal de atividade grava como prefixo do título. */
+function partirAcao(titulo: string): { tipo: string | null; texto: string } {
+  const m = titulo.match(/^\[([^\]]+)\]\s*(.*)$/);
+  return m ? { tipo: m[1], texto: m[2] } : { tipo: null, texto: titulo };
+}
 
 function Icone({ d, className }: { d: string; className?: string }) {
   return (
@@ -79,6 +107,8 @@ function Secao({
   alerta,
   aberta,
   aoAlternar,
+  acao,
+  selo,
   children,
 }: {
   nome: string;
@@ -86,6 +116,10 @@ function Secao({
   alerta?: boolean;
   aberta: boolean;
   aoAlternar: () => void;
+  /** Atalho que só faz sentido com a seção aberta. */
+  acao?: { rotulo: string; aoClicar: () => void };
+  /** Estado da seção, visível aberta ou fechada. */
+  selo?: { texto: string; tom: "ok" | "neutro" };
   children: React.ReactNode;
 }) {
   return (
@@ -93,8 +127,21 @@ function Secao({
       <button type="button" className="gv-secao-cab" data-aberta={aberta} onClick={aoAlternar}>
         <Icone d={D.chevronDir} className="gv-secao-chevron" />
         <span className="gv-secao-nome">{nome}</span>
+        {selo && <span className="gv-secao-selo" data-tom={selo.tom}>{selo.texto}</span>}
+        <span className="gv-secao-espaco" />
         {!aberta && resumo && (
           <span className="gv-secao-resumo" data-alerta={alerta}>{resumo}</span>
+        )}
+        {aberta && acao && (
+          <span
+            role="button"
+            tabIndex={0}
+            className="gv-secao-acao"
+            onClick={(e) => { e.stopPropagation(); acao.aoClicar() }}
+            onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); acao.aoClicar() } }}
+          >
+            {acao.rotulo}
+          </span>
         )}
       </button>
       {aberta && children}
@@ -119,11 +166,56 @@ export function GavetaLead({
   aoFechar: () => void;
   aoRecarregar: () => void;
   aoPedirSaida: (saida: Saida) => void;
-  aoPedirAtividade: () => void;
+  aoPedirAtividade: (modo: "ver" | "nova") => void;
 }) {
   const [ocupado, setOcupado] = React.useState(false);
   const [saidaAberta, setSaidaAberta] = React.useState(false);
-  const [abertas, setAbertas] = React.useState<Record<string, boolean>>({ acao: true });
+  const [abertas, setAbertas] = React.useState<Record<string, boolean>>({ acao: true, qual: true });
+
+  /* A qualificação edita NO LUGAR e grava sozinha.
+   *
+   * O desenho não tem botão de salvar nessa seção, e ele está certo: a pessoa
+   * ajusta a dor no meio de uma ligação, não abre um formulário. A gravação
+   * espera 700ms depois da última tecla — sem isso, cada letra da dor viraria
+   * uma escrita no banco. */
+  const [rascunho, setRascunho] = React.useState(() => ({
+    interesses: [] as string[],
+    porte: 0,
+    dor: "",
+    fit: "" as string,
+  }));
+  const sujo = React.useRef(false);
+
+  React.useEffect(() => {
+    if (!lead) return;
+    const q = (lead.qualificacao ?? {}) as { servicosInteresse?: string[]; dor?: string; quantidade?: number | null; icp?: string };
+    sujo.current = false;
+    setRascunho({
+      interesses: lead.servicos ?? q.servicosInteresse ?? [],
+      porte: q.quantidade ?? 0,
+      dor: q.dor ?? "",
+      fit: q.icp ?? "",
+    });
+  }, [lead]);
+
+  const editar = (patch: Partial<typeof rascunho>) => {
+    sujo.current = true;
+    setRascunho((r) => ({ ...r, ...patch }));
+  };
+
+  React.useEffect(() => {
+    if (!lead || !sujo.current) return;
+    const id = setTimeout(() => {
+      sujo.current = false;
+      void acoes.salvarQualificacao(lead.id, {
+        servicosInteresse: rascunho.interesses,
+        quantidade: rascunho.porte || null,
+        dor: rascunho.dor.trim() || undefined,
+        icp: rascunho.fit || undefined,
+      });
+    }, 700);
+    return () => clearTimeout(id);
+  }, [rascunho, lead, acoes]);
 
   React.useEffect(() => {
     const aoTeclar = (e: KeyboardEvent) => e.key === "Escape" && (saidaAberta ? setSaidaAberta(false) : aoFechar());
@@ -178,6 +270,19 @@ export function GavetaLead({
     : qual?.dor
       ? "Parcial"
       : "Sem critério apurado";
+
+  const acao = lead.proximaAcao ? partirAcao(lead.proximaAcao.titulo) : null;
+  const tipoDaAcao = acao?.tipo ?? null;
+  const tituloDaAcao = acao?.texto ?? "";
+
+  /* Quantos dos quatro critérios estão preenchidos. O desenho mostra
+     "4 de 4 campos" no cabeçalho, e é o que diz se vale abrir a seção. */
+  const preenchidos = [
+    rascunho.interesses.length > 0,
+    rascunho.porte > 0,
+    rascunho.dor.trim().length > 0,
+    rascunho.fit.length > 0,
+  ].filter(Boolean).length;
 
   const atribuicao: Array<[string, string | null]> = [
     ["Entrada", dataCurta(lead.criadoEm)],
@@ -288,6 +393,14 @@ export function GavetaLead({
                   <span key={t} className="gv-tag">{t}</span>
                 ))}
                 {!interesses.length && <span className="gv-tag gv-tag-vazia">Sem tag</span>}
+                <button
+                  type="button"
+                  className="gv-tag-mais"
+                  title="Adicionar tag"
+                  onClick={() => toast("Menu de tags — a próxima peça do handoff.")}
+                >
+                  <Icone d={D.mais} />
+                </button>
               </div>
             </div>
 
@@ -309,6 +422,36 @@ export function GavetaLead({
 
           <div className="gv-fio" />
 
+          {/* Cadência.
+            *
+            * O desenho tem dois estados: em cadência (nome, barra de passos,
+            * "Passo 2 de 5", Pausar/Trocar/Remover) e fora dela. O nosso banco
+            * só sustenta o segundo: `cadencia_execucoes` é LOG de toque já
+            * enviado — ordem, canal, status — e não guarda QUAL cadência o lead
+            * segue nem de quantos passos ela é. Desenhar "Passo 2 de 5" em cima
+            * disso seria afirmar dois números que a tabela não tem.
+            *
+            * O estado vazio abaixo é o do próprio protótipo, palavra por
+            * palavra. Quando existir atribuição de cadência, o outro estado
+            * entra aqui. */}
+          <Secao
+            nome="CADÊNCIA"
+            aberta={!!abertas.cad}
+            aoAlternar={() => alternar("cad")}
+            resumo="Fora de cadência"
+            alerta
+          >
+            <div className="gv-cad-vazia">
+              <span>Fora de cadência — nenhum toque automático sai para este lead.</span>
+              <button type="button" className="gv-mini" onClick={() => toast("Escolher cadência — a próxima peça do handoff.")}>
+                <Icone d={D.mais} />
+                <span>Inserir</span>
+              </button>
+            </div>
+          </Secao>
+
+          <div className="gv-fio" />
+
           <Secao
             nome="PRÓXIMA AÇÃO"
             aberta={!!abertas.acao}
@@ -318,16 +461,22 @@ export function GavetaLead({
           >
             <div className="gv-acao-linha">
               {!lead.proximaAcao && <span className="gv-acao-ponto" />}
+              {tipoDaAcao && <span className="gv-acao-tipo">{tipoDaAcao}</span>}
               <span className="gv-acao-texto" data-sem={!lead.proximaAcao}>
                 {lead.proximaAcao
                   ? lead.proximaAcao.venceEm
-                    ? `${lead.proximaAcao.titulo} · ${lead.proximaAcao.venceEm}`
-                    : lead.proximaAcao.titulo
+                    ? `${tituloDaAcao} · ${lead.proximaAcao.venceEm}`
+                    : tituloDaAcao
                   : "Sem próxima ação"}
               </span>
-              <button type="button" className="gv-mini" onClick={aoPedirAtividade}>
+              {lead.proximaAcao && (
+                <button type="button" className="gv-mini" onClick={() => aoPedirAtividade("ver")}>
+                  <span>Ver</span>
+                </button>
+              )}
+              <button type="button" className="gv-mini" onClick={() => aoPedirAtividade("nova")}>
                 <Icone d={D.mais} />
-                <span>{lead.proximaAcao ? "Outra" : "Definir"}</span>
+                <span>{lead.proximaAcao ? "Nova" : "Definir"}</span>
               </button>
             </div>
           </Secao>
@@ -339,27 +488,80 @@ export function GavetaLead({
             aberta={!!abertas.qual}
             aoAlternar={() => alternar("qual")}
             resumo={resumoQual}
-            alerta={!lead.qualificado && !qual?.dor}
+            alerta={!lead.qualificado && preenchidos === 0}
+            selo={{ texto: `${preenchidos} de 4 campos`, tom: preenchidos === 4 ? "ok" : "neutro" }}
           >
-            {qual?.dor || qual?.quantidade || qual?.icp ? (
-              <dl className="gv-atribuicao" style={{ margin: "2px 8px 6px" }}>
-                {qual.dor && (
-                  <div><dt>Dor</dt><dd>{qual.dor}</dd></div>
-                )}
-                {qual.quantidade != null && (
-                  <div><dt>Operação</dt><dd>{qual.quantidade} atendentes</dd></div>
-                )}
-                {qual.icp && <div><dt>Fit</dt><dd>{qual.icp}</dd></div>}
-                {lead.qualificadoPor && (
-                  <div><dt>Por</dt><dd>{lead.qualificadoPor}</dd></div>
-                )}
-              </dl>
-            ) : (
-              <p className="gv-vazio">
-                Nenhum critério apurado. Qualificar pede interesse, tamanho da operação, dor e
-                fit — e grava um fato que sobrevive à etapa seguinte.
-              </p>
-            )}
+            <div className="gv-qualif">
+              <div>
+                <div className="gv-q-cab">
+                  <span className="gv-rotulo">Interesse</span>
+                  <small>{rascunho.interesses.length ? `${rascunho.interesses.length} selecionado${rascunho.interesses.length > 1 ? "s" : ""}` : "nenhum"}</small>
+                </div>
+                <div className="gv-q-opcoes">
+                  {INTERESSES.map((i) => {
+                    const on = rascunho.interesses.includes(i);
+                    return (
+                      <button
+                        key={i}
+                        type="button"
+                        data-on={on}
+                        onClick={() =>
+                          editar({ interesses: on ? rascunho.interesses.filter((x) => x !== i) : [...rascunho.interesses, i] })
+                        }
+                      >
+                        {i}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <div className="gv-q-cab">
+                  <span className="gv-rotulo">Tamanho da operação</span>
+                  {rascunho.porte > 0 && <span className="gv-q-selo">{faixaDe(rascunho.porte)}</span>}
+                </div>
+                <div className="gv-q-stepper">
+                  <button type="button" onClick={() => editar({ porte: Math.max(0, rascunho.porte - 5) })} title="Diminuir">
+                    <Icone d={D.menos} />
+                  </button>
+                  <input
+                    value={rascunho.porte}
+                    inputMode="numeric"
+                    onChange={(e) => {
+                      const n = parseInt(e.target.value.replace(/\D/g, ""), 10);
+                      editar({ porte: Number.isFinite(n) ? n : 0 });
+                    }}
+                    aria-label="Atendentes"
+                  />
+                  <span>atendentes</span>
+                  <button type="button" onClick={() => editar({ porte: rascunho.porte + 5 })} title="Aumentar">
+                    <Icone d={D.mais} />
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <span className="gv-rotulo">Dor principal</span>
+                <input
+                  className="gv-q-campo"
+                  value={rascunho.dor}
+                  onChange={(e) => editar({ dor: e.target.value })}
+                  placeholder="Ex.: alto custo com telefonia"
+                />
+              </div>
+
+              <div>
+                <span className="gv-rotulo">Fit</span>
+                <div className="gv-q-opcoes">
+                  {FITS.map((f) => (
+                    <button key={f} type="button" data-on={rascunho.fit === f} onClick={() => editar({ fit: f })}>
+                      {f}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
           </Secao>
 
           {lead.oportunidades.length > 0 && (
@@ -386,17 +588,30 @@ export function GavetaLead({
           <div className="gv-fio" />
 
           <Secao
-            nome="HISTÓRICO"
+            nome="TIMELINE"
             aberta={!!abertas.hist}
             aoAlternar={() => alternar("hist")}
             resumo={timeline.length ? `${timeline.length} evento${timeline.length > 1 ? "s" : ""}` : "Sem histórico"}
+            acao={timeline.length > 12 ? { rotulo: "Ver tudo", aoClicar: () => toast(`${timeline.length} eventos — a tela de histórico é a próxima peça.`) } : undefined}
           >
             {timeline.length ? (
               <ul className="gv-linha-tempo">
-                {timeline.slice(0, 20).map((e) => (
+                {timeline.slice(0, 12).map((e, i) => (
                   <li key={e.id}>
-                    <time>{dataCurta(e.ocorridoEm) ?? "—"}</time>
-                    <span>{e.titulo || e.tipo}</span>
+                    <time>{horaOuData(e.ocorridoEm)}</time>
+                    {/* Ponto cheio no evento mais recente, vazio nos anteriores:
+                        é o que diz onde a história está agora sem escrever
+                        "último" em lugar nenhum. */}
+                    <span className="gv-tl-marca">
+                      <span className="gv-tl-ponto" data-atual={i === 0} />
+                      {i < Math.min(timeline.length, 12) - 1 && <span className="gv-tl-trilho" />}
+                    </span>
+                    <span className="gv-tl-texto">
+                      <span>{e.titulo || rotuloEvento(e.tipo)}</span>
+                      {(e.usuarioNome || e.atorTipo) && (
+                        <em>{e.usuarioNome ?? rotuloAtor(e.atorTipo)}</em>
+                      )}
+                    </span>
                   </li>
                 ))}
               </ul>
