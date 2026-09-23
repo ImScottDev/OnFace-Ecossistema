@@ -18,13 +18,15 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
-  ArrowRight, Building2, CalendarClock, CheckCircle2, Mail, MessageCircle, Plus, Sparkles, UserPlus,
+  ArrowRight, Building2, CalendarClock, CheckCircle2, Inbox, Mail, MessageCircle,
+  Plus, SearchX, Sparkles, UserPlus, Users, X,
 } from "lucide-react";
 import type { BoardPreVendas, CardPreVendas, DetalheLead } from "@/lib/vendas/consultas";
 import type { LinhaDoTempo } from "@/lib/vendas/eventos";
 import {
   FAMILIAS, MOTIVOS_DESQUALIFICACAO, MOTIVOS_NUTRICAO, ROTULO_FAMILIA,
-  type Familia, type MotivoDesqualificacao, type MotivoNutricao, type Qualificacao,
+  type Familia, type MotivoDesqualificacao, type MotivoNutricao,
+  type Qualificacao, type ViewPreVendas,
 } from "@/lib/vendas/dominio";
 import type { Resultado } from "@/lib/vendas/resultado";
 import {
@@ -33,6 +35,18 @@ import {
   type RotaBaseVendas,
 } from "./ui";
 import { AcoesContato } from "./pagina";
+import { CardAquisicao, quandoVence } from "./pre-vendas-card";
+import {
+  BuscaPreVendas, ChipsDeFiltro, ExportarPreVendas, FiltrosPreVendas,
+  ViewsRapidas, type ChipFiltro, type ValoresDeFiltro,
+} from "./pre-vendas-barra";
+import { PaginaCabecalho } from "@/components/onface/shell/Pagina";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { Textarea } from "@/components/ui/textarea";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Quadro } from "@/components/onface/ds/Quadro";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -44,6 +58,9 @@ import {
 import { Input } from "@/components/ui/input";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Item, ItemContent, ItemDescription, ItemFooter, ItemTitle } from "@/components/ui/item";
+import {
+  Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle,
+} from "@/components/ui/empty";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 type Aba = "ativos" | "nutricao" | "desqualificados";
@@ -76,26 +93,56 @@ export interface AcoesPreVendas {
   criarLead: (e: EntradaNovoLead) => Promise<Resultado<{ leadId: string }>>;
   associarEmpresa: (leadId: string, nome: string, cnpj: string | null) => Promise<Resultado>;
   detalhe: (leadId: string) => Promise<Resultado<{ lead: DetalheLead | null; timeline: LinhaDoTempo[] }>>;
+  criarTarefa: (e: EntradaTarefa) => Promise<Resultado<{ tarefaId: string }>>;
+  atribuirEmMassa: (leadIds: string[], responsavelId: string | null) => Promise<Resultado<{ total: number }>>;
 }
 
-export function PreVendas({ dados, aba, filtro, acoes, rotaBase = "" }: {
+/** O que o formulário de próxima ação devolve. */
+export interface EntradaTarefa {
+  leadId: string;
+  titulo: string;
+  responsavelId: string | null;
+  venceEm: string | null;
+  prioridade: "baixa" | "media" | "alta";
+  descricao: string | null;
+}
+
+export function PreVendas({ dados, filtro, acoes, rotaBase = "", usuarioId }: {
   dados: BoardPreVendas;
-  /** Só para link antigo salvo; o board padrão é o único, sem aba. */
-  aba?: Aba;
-  filtro: { busca: string; responsavelId: string | null };
+  filtro: {
+    busca: string;
+    responsavelId: string | null;
+    view: ViewPreVendas;
+    origem: string | null;
+    campanha: string | null;
+    desde: string | null;
+  };
   acoes: AcoesPreVendas;
   /** Prefixo das rotas irmãs do módulo. Vazio = rota oficial do produto. */
   rotaBase?: RotaBaseVendas;
+  /** Quem está olhando. A view "Meus" é sobre esta pessoa. */
+  usuarioId: string | null;
 }) {
   const router = useRouter();
   const [, iniciarNavegacao] = useTransition();
-  const [busca, setBusca] = useState(filtro.busca);
   const [selecionado, setSelecionado] = useState<string | null>(null);
   const [detalhe, setDetalhe] = useState<{ lead: DetalheLead | null; timeline: LinhaDoTempo[] } | null>(null);
-  const [modal, setModal] = useState<null | "qualificar" | "nutrir" | "desqualificar" | "oportunidade" | "novo" | "empresa">(null);
+  const [modal, setModal] = useState<null | "qualificar" | "nutrir" | "desqualificar" | "oportunidade" | "novo" | "empresa" | "tarefa" | "atribuir-massa">(null);
   const [sucesso, setSucesso] = useState<string | null>(null);
+  const [exportando, setExportando] = useState(false);
+  /** Cartões marcados para ação em massa. */
+  const [marcados, setMarcados] = useState<Set<string>>(new Set());
+  /** Etapa visível no celular: sete colunas lado a lado não cabem em 390px. */
+  const [etapaMobile, setEtapaMobile] = useState<string>("novo");
   const { pendente, bloqueio, limparBloqueio, executar } = useAcao();
+  /* O mesmo breakpoint do `vendas.css` (768px), e o hook já existia no
+     projeto. No servidor ele devolve `false`, então o board nasce completo e
+     o celular recorta depois da hidratação — sem divergência de marcação. */
+  const noCelular = useIsMobile();
 
+  /* ── Navegação: todo recorte mora na URL ──────────────────────────────
+     Recarregar, mandar o link e voltar do detalhe precisam devolver o mesmo
+     board. Recorte em `useState` morre no primeiro F5. */
   function navegar(mudancas: Record<string, string | null>) {
     const url = new URL(window.location.href);
     for (const [chave, valor] of Object.entries(mudancas)) {
@@ -129,13 +176,31 @@ export function PreVendas({ dados, aba, filtro, acoes, rotaBase = "" }: {
   const [cards, setCards] = useState(cardsDoServidor);
   useEffect(() => setCards(cardsDoServidor), [cardsDoServidor]);
 
+  /** Cartão sobre o qual a ação rápida foi disparada, sem abrir o painel. */
+  const [alvoRapido, setAlvoRapido] = useState<CardPreVendas | null>(null);
+
   function aoMudarQuadro(proximos: CardPreVendas[]) {
     const etapaAntes = new Map(cards.map((c) => [c.leadId, c.etapa]));
-    setCards(proximos);
     const movido = proximos.find((c) => etapaAntes.get(c.leadId) !== c.etapa);
-    // Sem mudança de etapa foi só reordenação dentro da coluna: ordem de
-    // cartão não é fato de negócio e não vira escrita.
-    if (!movido) return;
+    if (!movido) {
+      // Sem mudança de etapa foi só reordenação dentro da coluna: ordem de
+      // cartão não é fato de negócio e não vira escrita.
+      setCards(proximos);
+      return;
+    }
+
+    /* Nutrição e Desqualificação EXIGEM motivo estruturado (§20 e §21), e
+       `moverEtapa` não aceita esses destinos. Antes o arraste chamava o
+       comando com um destino que o domínio recusa: o cartão ia para a coluna
+       na tela e a escrita falhava calada. Agora o destino abre o diálogo e o
+       board só muda quando o comando volta. */
+    if (movido.etapa === "nutricao" || movido.etapa === "desqualificado") {
+      void abrir(movido.leadId);
+      setModal(movido.etapa === "nutricao" ? "nutrir" : "desqualificar");
+      return;
+    }
+
+    setCards(proximos);
     void rodar(
       () => acoes.moverEtapa(movido.leadId, movido.etapa as "novo" | "em_contato" | "qualificacao"),
       false,
@@ -144,9 +209,6 @@ export function PreVendas({ dados, aba, filtro, acoes, rotaBase = "" }: {
   }
 
   async function rodar(fn: () => Promise<Resultado<unknown>>, fecharModal = true, mensagem = "Alteração salva.") {
-    // O desfecho vem do próprio `executar` desde 19/09: antes a confirmação
-    // era capturada numa variável por efeito colateral dentro do callback,
-    // porque o retorno não distinguia sucesso sem dado de falha.
     const desfecho = await executar(async () => (await fn()) as Resultado<unknown>);
     const confirmou = desfecho.ok;
     if (confirmou) {
@@ -160,52 +222,160 @@ export function PreVendas({ dados, aba, filtro, acoes, rotaBase = "" }: {
 
   const lead = detalhe?.lead ?? null;
 
+  /* ── Ações rápidas do cartão ──────────────────────────────────────────
+     WhatsApp e ligação NÃO abrem uma caixa de entrada aqui: o Atendimento é a
+     inbox canônica do produto, e uma segunda dentro de Pré-vendas seria a
+     conversa duplicada que a spec proíbe (§14). */
+  function aoAgirNoCartao(acao: "whatsapp" | "ligar" | "tarefa" | "mais", card: CardPreVendas) {
+    setAlvoRapido(card);
+    if (acao === "whatsapp") {
+      router.push(`${rotaBase}/atendimento?leadId=${card.leadId}&canal=whatsapp`);
+      return;
+    }
+    if (acao === "ligar") {
+      router.push(`${rotaBase}/atendimento?leadId=${card.leadId}&canal=ligacao`);
+      return;
+    }
+    if (acao === "tarefa") {
+      limparBloqueio();
+      setModal("tarefa");
+      return;
+    }
+    void abrir(card.leadId);
+  }
+
+  /* ── Seleção múltipla ─────────────────────────────────────────────────── */
+
+  function marcar(leadId: string, valor: boolean) {
+    setMarcados((atual) => {
+      const proximo = new Set(atual);
+      if (valor) proximo.add(leadId);
+      else proximo.delete(leadId);
+      return proximo;
+    });
+  }
+
+  const emSelecao = marcados.size > 0;
+
+  /* ── Chips do recorte vigente ─────────────────────────────────────────── */
+
+  const chips: ChipFiltro[] = [];
+  if (filtro.busca) chips.push({ chave: "busca", rotulo: "Busca", valor: filtro.busca });
+  if (filtro.responsavelId) {
+    const r = dados.filtros.responsaveis.find((x) => x.id === filtro.responsavelId);
+    chips.push({ chave: "responsavel", rotulo: "Responsável", valor: r?.nome ?? "—" });
+  }
+  if (filtro.origem) chips.push({ chave: "origem", rotulo: "Origem", valor: filtro.origem });
+  if (filtro.campanha) chips.push({ chave: "campanha", rotulo: "Campanha", valor: filtro.campanha });
+  if (filtro.desde) chips.push({ chave: "desde", rotulo: "Desde", valor: filtro.desde });
+
+  const valoresDeFiltro: ValoresDeFiltro = {
+    responsavelId: filtro.responsavelId,
+    origem: filtro.origem,
+    campanha: filtro.campanha,
+    desde: filtro.desde,
+  };
+
+  /** Quantos o recorte alcança — é o que o Exportar leva. */
+  const totalDoRecorte = dados.colunas.reduce((soma, c) => soma + c.total, 0);
+
+  async function exportar() {
+    setExportando(true);
+    try {
+      const url = new URL(window.location.href);
+      url.pathname = `${rotaBase}/pre-vendas/exportar`;
+      window.location.href = url.toString();
+    } finally {
+      // O download navega; devolver o botão evita deixá-lo girando para sempre
+      // se o navegador bloquear a ida.
+      setTimeout(() => setExportando(false), 1500);
+    }
+  }
+
+  /* ── Colunas ──────────────────────────────────────────────────────────
+     Nutrição e Desqualificado são estados reais e ficam no board — o Kanban
+     único veio desfazer as abas. Mas não são etapas por onde o trabalho
+     PASSA: em faixa estreita, sobra board para onde o dinheiro está. */
+  const colunas = dados.colunas
+    // No celular o board é UMA etapa por vez. Sete colunas em 390px não é
+    // board, é um mapa que ninguém lê — e a rolagem lateral dentro de uma
+    // tela que já rola na vertical é o gesto mais fácil de errar.
+    .filter((c) => !noCelular || c.chave === etapaMobile)
+    .map((c) => ({
+      chave: c.chave,
+      rotulo: c.rotulo,
+      total: c.total,
+      // A faixa estreita só faz sentido quando há vizinhas para poupar.
+      colapsavel: !noCelular && (c.chave === "nutricao" || c.chave === "desqualificado"),
+    }));
+
+  const filtrando = chips.length > 0 || filtro.view !== "todos";
+
   return (
     <>
-      <div className="ov-controles">
-        {/* KANBAN ÚNICO (v0.13, Módulo 01 §2). As abas Ativos/Nutrição/
-            Desqualificados saíram: as sete situações vivem no mesmo board, e
-            Nutrição e Desqualificado são colunas como as outras.
+      <PaginaCabecalho
+        titulo="Pré-vendas"
+        descricao="Trabalhe aquisição, contato e qualificação antes do Pipeline Comercial."
+        acoes={
+          <div className="pv-barra-acoes">
+            <FiltrosPreVendas
+              valores={valoresDeFiltro}
+              opcoes={dados.filtros}
+              quantidade={chips.filter((c) => c.chave !== "busca").length}
+              aoAplicar={(v) => navegar({
+                responsavel: v.responsavelId,
+                origem: v.origem,
+                campanha: v.campanha,
+                desde: v.desde,
+              })}
+            />
+            <ExportarPreVendas quantidade={totalDoRecorte} aoExportar={exportar} ocupado={exportando} />
+            <Button type="button" onClick={() => { limparBloqueio(); setModal("novo"); }}>
+              <Plus data-icon="inline-start" />Nova aquisição
+            </Button>
+          </div>
+        }
+      />
 
-            O que era navegação virou informação — o resumo continua dizendo
-            quantos há em cada situação, sem esconder nenhuma. */}
-        <div className="ds-resumo-faixa" aria-label="Resumo da operação">
-          <span><strong>{dados.resumo.ativos}</strong> ativos</span>
-          <span><strong>{dados.resumo.nutricao}</strong> em nutrição</span>
-          <span><strong>{dados.resumo.desqualificados}</strong> desqualificados</span>
-        </div>
-        <LimparFiltros
-          ativo={Boolean(filtro.busca || filtro.responsavelId)}
-          aoLimpar={() => { setBusca(""); navegar({ busca: null, responsavel: null }); }}
-        />
-        <Busca
-          valor={busca}
-          aoMudar={setBusca}
-          placeholder="Buscar empresa, pessoa ou e-mail"
-        />
-        <Button type="button" variant="outline" onClick={() => navegar({ busca })}>
-          Buscar
-        </Button>
-        {/* `NativeSelect` e não o `Select` do Radix: a doc do shadcn traz os
-            dois, e o nativo é o certo para FILTRO com lista aberta — mantém
-            teclado, busca por digitação e o seletor do sistema no celular. O
-            Radix entra quando o item precisa de render próprio (ícone, avatar,
-            duas linhas), que não é o caso de uma lista de nomes. */}
-        <NativeSelect
-          className="w-[190px]"
-          value={filtro.responsavelId ?? ""}
-          onChange={(e) => navegar({ responsavel: e.target.value || null })}
-          aria-label="Filtrar por responsável"
-        >
-          <NativeSelectOption value="">Todos os responsáveis</NativeSelectOption>
-          {dados.filtros.responsaveis.map((r) => (
-            <NativeSelectOption key={r.id} value={r.id}>{r.nome}</NativeSelectOption>
-          ))}
-        </NativeSelect>
-        <Button type="button" onClick={() => { limparBloqueio(); setModal("novo"); }}>
-          <Plus data-icon="inline-start" />Novo lead
-        </Button>
+      <div className="pv-barra">
+        <BuscaPreVendas valor={filtro.busca} aoBuscar={(busca) => navegar({ busca: busca || null })} />
       </div>
+
+      <ViewsRapidas
+        ativa={filtro.view}
+        contadores={dados.contadores}
+        aoTrocar={(v) => navegar({ view: v === "todos" ? null : v })}
+      />
+
+      {/* Seleção e chips disputam o mesmo assunto — o recorte atual —, então
+          se revezam em vez de empilhar e empurrar o board para fora da dobra. */}
+      {emSelecao ? (
+        <div className="pv-selecao" role="status">
+          <span className="pv-selecao-conta">
+            {marcados.size === 1 ? "1 selecionada" : `${marcados.size} selecionadas`}
+          </span>
+          <div className="pv-selecao-acoes">
+            <Button type="button" size="sm" variant="outline" onClick={() => { limparBloqueio(); setModal("atribuir-massa"); }}>
+              <Users data-icon="inline-start" />Atribuir
+            </Button>
+            <Button type="button" size="sm" variant="ghost" onClick={() => setMarcados(new Set())}>
+              <X data-icon="inline-start" />Limpar seleção
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <ChipsDeFiltro
+          chips={chips}
+          aoRemover={(chave) => navegar({
+            busca: chave === "busca" ? null : filtro.busca,
+            responsavel: chave === "responsavel" ? null : filtro.responsavelId,
+            origem: chave === "origem" ? null : filtro.origem,
+            campanha: chave === "campanha" ? null : filtro.campanha,
+            desde: chave === "desde" ? null : filtro.desde,
+          })}
+          aoLimparTudo={() => navegar({ busca: null, responsavel: null, origem: null, campanha: null, desde: null })}
+        />
+      )}
 
       {bloqueio && !modal ? (
         <div style={{ marginBottom: "calc(14 * var(--onface-u))" }}>
@@ -214,63 +384,120 @@ export function PreVendas({ dados, aba, filtro, acoes, rotaBase = "" }: {
       ) : null}
       {sucesso ? <p className="ov-nota" role="status">{sucesso}</p> : null}
 
-      <ComPainel
-        aberto={Boolean(selecionado)}
-        painel={
-          <PainelLead
-            rotaBase={rotaBase}
-            lead={lead}
-            timeline={detalhe?.timeline ?? []}
-            pendente={pendente}
-            bloqueio={bloqueio}
-            responsaveis={dados.filtros.responsaveis}
-            aoFechar={() => { setSelecionado(null); setDetalhe(null); limparBloqueio(); }}
-            aoAgir={(tipo) => {
-              if (tipo === "qualificar") setModal("qualificar");
-              else if (tipo === "criar_oportunidade") setModal("oportunidade");
-              else if (tipo === "associar_empresa") setModal("empresa");
-            }}
-            acoes={{
-              mover: (para) => rodar(() => acoes.moverEtapa(lead!.id, para), false),
-              contato: (canal) => rodar(() => acoes.registrarContato(lead!.id, canal), false),
-              atribuir: (id) => rodar(() => acoes.atribuir(lead!.id, id), false),
-              reativar: () => rodar(() => acoes.reativar(lead!.id), false),
-              abrirModal: setModal,
-            }}
+      {/* Seletor de etapa do celular. Só aparece abaixo de 768px. */}
+      <div className="pv-etapa-mobile pv-barra">
+        <NativeSelect
+          value={etapaMobile}
+          onChange={(e) => setEtapaMobile(e.target.value)}
+          aria-label="Etapa visível"
+          className="w-full"
+        >
+          {dados.colunas.map((c) => (
+            <NativeSelectOption key={c.chave} value={c.chave}>
+              {c.rotulo} ({c.total})
+            </NativeSelectOption>
+          ))}
+        </NativeSelect>
+      </div>
+
+      {cards.length === 0 && filtrando ? (
+        <Empty className="my-8">
+          <EmptyHeader>
+            <EmptyMedia variant="icon"><SearchX /></EmptyMedia>
+            <EmptyTitle>Nenhuma aquisição com estes filtros</EmptyTitle>
+            <EmptyDescription>
+              O recorte atual não alcança nenhum registro. A operação continua lá.
+            </EmptyDescription>
+          </EmptyHeader>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => navegar({ busca: null, responsavel: null, origem: null, campanha: null, desde: null, view: null })}
+          >
+            Limpar filtros
+          </Button>
+        </Empty>
+      ) : cards.length === 0 ? (
+        <Empty className="my-8">
+          <EmptyHeader>
+            <EmptyMedia variant="icon"><Inbox /></EmptyMedia>
+            <EmptyTitle>Sua operação de pré-vendas começa aqui</EmptyTitle>
+            <EmptyDescription>
+              Adicione a primeira aquisição manualmente — ela entra em Novo e passa a ser trabalhada no board.
+            </EmptyDescription>
+          </EmptyHeader>
+          <Button type="button" onClick={() => { limparBloqueio(); setModal("novo"); }}>
+            <Plus data-icon="inline-start" />Nova aquisição
+          </Button>
+        </Empty>
+      ) : (
+        <ComPainel
+          aberto={Boolean(selecionado)}
+          painel={
+            <PainelLead
+              rotaBase={rotaBase}
+              lead={lead}
+              timeline={detalhe?.timeline ?? []}
+              pendente={pendente}
+              bloqueio={bloqueio}
+              responsaveis={dados.filtros.responsaveis}
+              aoFechar={() => { setSelecionado(null); setDetalhe(null); limparBloqueio(); }}
+              aoAgir={(tipo) => {
+                if (tipo === "qualificar") setModal("qualificar");
+                else if (tipo === "criar_oportunidade") setModal("oportunidade");
+                else if (tipo === "associar_empresa") setModal("empresa");
+                else if (tipo === "tarefa") { setAlvoRapido(null); setModal("tarefa"); }
+              }}
+              acoes={{
+                mover: (para) => rodar(() => acoes.moverEtapa(lead!.id, para), false),
+                contato: (canal) => rodar(() => acoes.registrarContato(lead!.id, canal), false),
+                atribuir: (id) => rodar(() => acoes.atribuir(lead!.id, id), false),
+                reativar: () => rodar(() => acoes.reativar(lead!.id), false),
+                abrirModal: setModal,
+              }}
+            />
+          }
+        >
+          <Quadro<CardPreVendas>
+            itens={noCelular ? cards.filter((c) => c.etapa === etapaMobile) : cards}
+            colunas={colunas}
+            idDe={(c) => c.leadId}
+            colunaDe={(c) => c.etapa}
+            comColuna={(c, chave) => ({ ...c, etapa: chave as CardPreVendas["etapa"] })}
+            rotuloDe={(c) => c.empresa}
+            podeSoltar={(_card, destino) => MOTIVO_NAO_ARRASTA[destino] ?? true}
+            /* O cartão já traz a própria superfície (`Item variant="outline"`).
+               Passar a do quadro por cima seria a segunda definição da mesma
+               superfície, que foi o bug do `ov-card` em cima do `Item`. */
+            classeCartao="cursor-grab active:cursor-grabbing data-[arrastando]:opacity-40"
+            renderMedida={(itens, coluna) => (
+              <span className="ov-coluna-contagem">
+                {coluna.total != null && itens.length < coluna.total
+                  ? `${itens.length} de ${coluna.total}`
+                  : itens.length}
+              </span>
+            )}
+            renderVazio={() => (
+              <ColunaVazia filtrado={filtrando}>
+                Sem registros aqui.
+              </ColunaVazia>
+            )}
+            renderCartao={(card) => (
+              <CardAquisicao
+                card={card}
+                selecionado={card.leadId === selecionado}
+                marcado={marcados.has(card.leadId)}
+                emSelecao={emSelecao}
+                rotaBase={rotaBase}
+                aoMarcar={marcar}
+                aoAgir={aoAgirNoCartao}
+              />
+            )}
+            aoAbrir={(card) => void abrir(card.leadId)}
+            aoMudar={aoMudarQuadro}
           />
-        }
-      >
-        <Quadro<CardPreVendas>
-          itens={cards}
-          colunas={dados.colunas.map((c) => ({ chave: c.chave, rotulo: c.rotulo, total: c.total }))}
-          idDe={(c) => c.leadId}
-          colunaDe={(c) => c.etapa}
-          comColuna={(c, chave) => ({ ...c, etapa: chave as CardPreVendas["etapa"] })}
-          rotuloDe={(c) => c.empresa}
-          podeSoltar={(_card, destino) => MOTIVO_NAO_ARRASTA[destino] ?? true}
-          /* O cartão já traz a própria superfície (`Item variant="outline"`).
-             Passar a do quadro por cima seria a segunda definição da mesma
-             superfície, que foi o bug do `ov-card` em cima do `Item`. */
-          classeCartao="cursor-grab active:cursor-grabbing data-[arrastando]:opacity-40"
-          renderMedida={(itens, coluna) => (
-            <span className="ov-coluna-contagem">
-              {coluna.total != null && itens.length < coluna.total
-                ? `${itens.length} de ${coluna.total}`
-                : itens.length}
-            </span>
-          )}
-          renderVazio={() => (
-            <ColunaVazia filtrado={Boolean(filtro.busca || filtro.responsavelId)}>
-              Nenhuma empresa nesta etapa.
-            </ColunaVazia>
-          )}
-          renderCartao={(card) => (
-            <CardLead card={card} selecionado={card.leadId === selecionado} />
-          )}
-          aoAbrir={(card) => void abrir(card.leadId)}
-          aoMudar={aoMudarQuadro}
-        />
-      </ComPainel>
+        </ComPainel>
+      )}
 
       {/* ── Diálogos ────────────────────────────────────────────────────── */}
 
@@ -288,7 +515,7 @@ export function PreVendas({ dados, aba, filtro, acoes, rotaBase = "" }: {
         aberto={modal === "nutrir"}
         pendente={pendente}
         bloqueio={bloqueio}
-        aoFechar={() => setModal(null)}
+        aoFechar={() => { setModal(null); router.refresh(); }}
         aoConfirmar={(motivo, retomarEm, obs) => rodar(() => acoes.nutrir(lead!.id, motivo, retomarEm, obs))}
       />
 
@@ -296,7 +523,7 @@ export function PreVendas({ dados, aba, filtro, acoes, rotaBase = "" }: {
         aberto={modal === "desqualificar"}
         pendente={pendente}
         bloqueio={bloqueio}
-        aoFechar={() => setModal(null)}
+        aoFechar={() => { setModal(null); router.refresh(); }}
         aoConfirmar={(motivo, detalhe) => rodar(() => acoes.desqualificar(lead!.id, motivo, detalhe))}
       />
 
@@ -328,11 +555,42 @@ export function PreVendas({ dados, aba, filtro, acoes, rotaBase = "" }: {
         aoFechar={() => setModal(null)}
         aoConfirmar={(nome, cnpj) => rodar(() => acoes.associarEmpresa(lead!.id, nome, cnpj))}
       />
+
+      <DialogoTarefa
+        aberto={modal === "tarefa"}
+        contexto={alvoRapido
+          ? { leadId: alvoRapido.leadId, nome: alvoRapido.empresa }
+          : lead ? { leadId: lead.id, nome: lead.empresa.nome } : null}
+        responsaveis={dados.filtros.responsaveis}
+        usuarioId={usuarioId}
+        pendente={pendente}
+        bloqueio={bloqueio}
+        aoFechar={() => { setModal(null); setAlvoRapido(null); }}
+        aoConfirmar={(entrada) => rodar(() => acoes.criarTarefa(entrada), true, "Tarefa criada.")}
+      />
+
+      <DialogoAtribuirEmMassa
+        aberto={modal === "atribuir-massa"}
+        quantidade={marcados.size}
+        responsaveis={dados.filtros.responsaveis}
+        pendente={pendente}
+        bloqueio={bloqueio}
+        aoFechar={() => setModal(null)}
+        aoConfirmar={async (responsavelId) => {
+          const ok = await rodar(
+            () => acoes.atribuirEmMassa([...marcados], responsavelId),
+            true,
+            `${marcados.size} ${marcados.size === 1 ? "aquisição atribuída" : "aquisições atribuídas"}.`,
+          );
+          if (ok) setMarcados(new Set());
+          return ok;
+        }}
+      />
     </>
   );
 }
 
-/* ── Card ──────────────────────────────────────────────────────────────── */
+/* ── Regra de arraste ──────────────────────────────────────────────────── */
 
 /**
  * Etapas que NÃO se alcançam arrastando, e por quê.
@@ -348,126 +606,64 @@ const MOTIVO_NAO_ARRASTA: Record<string, string> = {
   oportunidade: "Oportunidade cria um negócio no Pipeline. Use Criar oportunidade no painel do lead.",
 };
 
-/**
- * Cartão de lead, sobre o `Item` do shadcn.
- *
- * Era um `<button class="ov-card">` com quatro `<span>` e estilo inline no
- * rodapé, repetido 1.005 vezes na tela. O `Item` existe para exatamente esta
- * forma, e a doc é explícita sobre quando usá-lo: "se você só precisa exibir
- * conteúdo como título, descrição e ações, use `Item`" (`Field` é para
- * entrada de formulário, que não é o caso aqui).
- *
- * A composição segue a da doc: `Item > ItemContent > ItemTitle/ItemDescription`
- * mais `ItemFooter` para a linha de baixo. O cartão inteiro continua clicável,
- * agora por `asChild` sobre um `<button>`, que é como a doc monta item
- * acionável sem aninhar botão dentro de botão.
- *
- * Duas coisas que a versão à mão não tinha e vêm da biblioteca: anel de foco
- * visível pelo teclado e o alvo de clique tratado pelo componente.
- *
- * Os ícones de canal ganharam `Tooltip`. Antes eram `aria-label` puro: quem
- * enxerga via o ícone e não tinha como saber o que ele significa sem leitor de
- * tela.
- */
-function CardLead({ card, selecionado }: {
-  card: CardPreVendas; selecionado: boolean;
-}) {
-  const etiquetas = (
-    <>
-      {card.origem ? <Tag>{card.origem}</Tag> : null}
-      {card.campanha ? <Tag>{card.campanha}</Tag> : null}
-      {card.servicos?.slice(0, 1).map((s) => <Tag key={s} tom="info">{s}</Tag>)}
-      {/* O fato Qualificado acompanha o card mesmo fora da coluna
-          Qualificado — é o ponto da spec: ele sobrevive à etapa. */}
-      {card.qualificado && card.etapa !== "qualificado" ? <Tag tom="sucesso">Qualificado</Tag> : null}
-      {card.preQualificado ? <Tag tom="neutro-escuro">Pré-qualificado</Tag> : null}
-      {card.nutricaoRetomarEm ? <Tag tom="alerta">Retomar {dataCurta(card.nutricaoRetomarEm)}</Tag> : null}
-      {card.desqualificacaoMotivo ? <Tag tom="neutro-escuro">{card.desqualificacaoMotivo}</Tag> : null}
-    </>
-  );
-
-  return (
-    <Item
-      variant="outline"
-      size="sm"
-      /* `ov-card` saiu do cartão.
-       *
-       * Ele trazia display, direção, padding, raio, borda e sombra próprios, e
-       * brigava com o `variant="outline"` do `Item`: o rodapé ficava 30px para
-       * fora do cartão porque o `basis-full` do `ItemFooter` não vira largura
-       * cheia dentro de uma coluna que a CSS de fora já tinha montado. Duas
-       * definições da mesma superfície é o que a biblioteca existe para
-       * impedir.
-       *
-       * A seleção, que era `box-shadow` no `vendas.css`, vira anel por
-       * `data-selecionado` aqui. Pipeline ainda usa `ov-card` e por isso a
-       * regra continua no CSS: ela sai quando Pipeline for a vez.
-       *
-       * E NÃO se força `flex-col` aqui. O `Item` é uma LINHA que quebra
-       * (`flex flex-wrap`), e o `basis-full` do `ItemFooter` é justamente o
-       * que faz o rodapé pular para a própria linha. Forçando coluna, o
-       * `flex-wrap` passa a criar uma segunda COLUNA à direita para o que não
-       * cabe, e foi assim que 201 de 201 cartões vazaram 162px. A composição
-       * certa é a da doc: conteúdo ocupa a linha, e quem precisa de linha
-       * própria pede `basis-full`. */
-      className="w-full gap-2 px-3 py-2.5 text-left data-[selecionado]:ring-2 data-[selecionado]:ring-[var(--onface-coral)]"
-      data-selecionado={selecionado || undefined}
-    >
-      <ItemContent className="basis-full gap-0.5">
-          <ItemTitle className="font-[family-name:var(--font-onface-display)] text-[13.5px] leading-tight font-bold [overflow-wrap:anywhere]">{card.empresa}</ItemTitle>
-          <ItemDescription className="text-[11.5px] leading-snug [overflow-wrap:anywhere]">
-            {card.pessoa
-              ? `${card.pessoa}${card.cargo ? ` · ${card.cargo}` : ""}`
-              : "Sem contato associado"}
-          </ItemDescription>
-        </ItemContent>
-
-        {/* As etiquetas ficam numa linha própria e não em `ItemActions`:
-            `ItemActions` é para AÇÃO, e etiqueta é estado. `basis-full` é o
-            mesmo mecanismo que o `ItemFooter` usa para ganhar a linha. */}
-        <div className="flex min-w-0 basis-full flex-wrap items-center gap-1 empty:hidden">{etiquetas}</div>
-
-        <ItemFooter className="gap-2 text-[11px] text-muted-foreground">
-          <span className="inline-flex min-w-0 items-center gap-1.5">
-            {card.responsavelIniciais ? (
-              <Avatar className="size-5">
-                <AvatarFallback className="text-[9px] font-semibold">
-                  {card.responsavelIniciais}
-                </AvatarFallback>
-              </Avatar>
-            ) : (
-              /* Coral de TEXTO: a marca pura dá 3,30:1 sobre papel. */
-              <span className="text-[var(--onface-coral-texto)]">Sem responsável</span>
-            )}
-            {card.responsavel ? <span className="truncate">{card.responsavel.split(" ")[0]}</span> : null}
-          </span>
-
-          <span className="inline-flex shrink-0 items-center gap-2">
-            {card.temWhatsapp ? (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <MessageCircle className="size-3" aria-label="Tem WhatsApp" />
-                </TooltipTrigger>
-                <TooltipContent>Tem WhatsApp</TooltipContent>
-              </Tooltip>
-            ) : null}
-            {card.temEmail ? (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Mail className="size-3" aria-label="Tem e-mail" />
-                </TooltipTrigger>
-                <TooltipContent>Tem e-mail</TooltipContent>
-              </Tooltip>
-            ) : null}
-            <span className="tabular-nums">{decorrido(card.horasSemInteracao)}</span>
-          </span>
-      </ItemFooter>
-    </Item>
-  );
-}
-
 /* ── Painel ────────────────────────────────────────────────────────────── */
 
+/**
+ * Os CTAs do painel, por estágio.
+ *
+ * Fica numa tabela e não espalhado em `if`s dentro do JSX porque o contrato da
+ * spec (§13) é exatamente este: cada estado tem UM próximo passo óbvio e um
+ * alternativo. Escrito como dados, dá para ler a regra inteira de uma vez e
+ * conferir contra a spec sem seguir ramo de condicional.
+ *
+ * A regra que este mapa existe para tornar impossível de quebrar: QUALIFICAR
+ * NÃO CRIA OPORTUNIDADE (§16). `qualificado` é o único estágio cujo CTA
+ * primário é "Criar oportunidade", e ele só chega ali depois que alguém
+ * confirmou a qualificação — nunca como efeito colateral dela.
+ */
+const PROXIMO_PASSO: Record<string, {
+  primario?: { rotulo: string; tipo: string; icone: typeof ArrowRight };
+  secundario?: { rotulo: string; tipo: string };
+}> = {
+  novo: {
+    primario: { rotulo: "Iniciar contato", tipo: "contato_whatsapp", icone: MessageCircle },
+    secundario: { rotulo: "Qualificar", tipo: "qualificar" },
+  },
+  em_contato: {
+    primario: { rotulo: "Continuar qualificação", tipo: "qualificar", icone: Sparkles },
+    secundario: { rotulo: "Agendar reunião", tipo: "oportunidade" },
+  },
+  qualificacao: {
+    primario: { rotulo: "Confirmar qualificação", tipo: "qualificar", icone: CheckCircle2 },
+  },
+  qualificado: {
+    primario: { rotulo: "Criar oportunidade", tipo: "criar_oportunidade", icone: ArrowRight },
+  },
+  oportunidade: {
+    primario: { rotulo: "Abrir oportunidade", tipo: "abrir_oportunidade", icone: ArrowRight },
+  },
+  nutricao: {
+    primario: { rotulo: "Retomar agora", tipo: "reativar", icone: ArrowRight },
+  },
+  // Desqualificado não ganha CTA comercial. "Reavaliar" existe porque o
+  // domínio permite retomar, mas entra como ação secundária e discreta: um
+  // botão coral aqui seria o produto insistindo em quem já disse não.
+  desqualificado: {
+    secundario: { rotulo: "Reavaliar", tipo: "reativar" },
+  },
+};
+
+/**
+ * Quick View da aquisição.
+ *
+ * Painel e não rota: o SDR trabalha dezenas de registros por hora e navegar
+ * para fora do board perderia a posição, o recorte e a rolagem a cada um.
+ *
+ * A ordem das seções é a ordem das perguntas de quem abre: o que faço agora
+ * (CTA), com quem falo (contato), de onde veio e quando foi tocado (resumo),
+ * o que já sei (qualificação), o que virou negócio (oportunidades) e o que
+ * aconteceu (histórico).
+ */
 function PainelLead({ lead, timeline, pendente, bloqueio, responsaveis, aoFechar, aoAgir, acoes, rotaBase }: {
   lead: DetalheLead | null;
   timeline: LinhaDoTempo[];
@@ -481,19 +677,51 @@ function PainelLead({ lead, timeline, pendente, bloqueio, responsaveis, aoFechar
     contato: (canal: "whatsapp" | "email" | "ligacao") => Promise<boolean>;
     atribuir: (responsavelId: string | null) => Promise<boolean>;
     reativar: () => Promise<boolean>;
-    abrirModal: (m: "qualificar" | "nutrir" | "desqualificar" | "oportunidade") => void;
+    abrirModal: (m: "qualificar" | "nutrir" | "desqualificar" | "oportunidade" | "tarefa") => void;
   };
   rotaBase: RotaBaseVendas;
 }) {
+  /* Esqueleto com a FORMA do conteúdo, não um "carregando…".
+     O painel abre instantâneo e o detalhe chega depois; uma frase centralizada
+     faria a gaveta saltar quando o conteúdo entrasse. */
   if (!lead) {
-    return <Painel titulo="Carregando" aoFechar={aoFechar}><p className="ov-nota">Buscando o lead…</p></Painel>;
+    return (
+      <Painel titulo="Carregando" aoFechar={aoFechar}>
+        <div className="flex flex-col gap-3 p-1">
+          <Skeleton className="h-5 w-2/3" />
+          <Skeleton className="h-4 w-1/2" />
+          <Skeleton className="h-9 w-full" />
+          <Skeleton className="h-24 w-full" />
+          <Skeleton className="h-24 w-full" />
+        </div>
+      </Painel>
+    );
   }
 
   const q = (lead.qualificacao ?? {}) as Record<string, string | undefined>;
   const encerrado = lead.etapa === "nutricao" || lead.etapa === "desqualificado";
+  const passo = PROXIMO_PASSO[lead.etapa] ?? {};
+
+  /** Despacha o CTA para a ação certa. */
+  function agir(tipo: string) {
+    if (tipo === "contato_whatsapp") void acoes.contato("whatsapp");
+    else if (tipo === "qualificar") {
+      // Sair de "em contato" para "qualificação" é um fato de processo, e ele
+      // acontece ao ABRIR o formulário, não ao salvá-lo: quem começou a
+      // levantar informação já está qualificando.
+      if (lead!.etapa === "em_contato") void acoes.mover("qualificacao");
+      acoes.abrirModal("qualificar");
+    }
+    else if (tipo === "reativar") void acoes.reativar();
+    else aoAgir(tipo);
+  }
 
   return (
-    <Painel titulo={lead.empresa.nome} subtitulo={`${lead.pessoa.nome}${lead.pessoa.cargo ? ` · ${lead.pessoa.cargo}` : ""}`} aoFechar={aoFechar}>
+    <Painel
+      titulo={lead.empresa.nome}
+      subtitulo={`${lead.pessoa.nome}${lead.pessoa.cargo ? ` · ${lead.pessoa.cargo}` : ""}`}
+      aoFechar={aoFechar}
+    >
       <div className="ov-card-meta">
         <Tag tom="coral">{lead.etapaRotulo}</Tag>
         {lead.qualificado ? <Tag tom="sucesso">Qualificado {dataCurta(lead.qualificadoEm)}</Tag> : null}
@@ -502,52 +730,133 @@ function PainelLead({ lead, timeline, pendente, bloqueio, responsaveis, aoFechar
 
       {bloqueio ? <AvisoBloqueio bloqueio={bloqueio} aoAgir={aoAgir} /> : null}
 
-      <Secao titulo="Ações">
-        <div className="ov-acoes">
+      {/* ── Qualificado sem oportunidade: o estado que a spec §16 manda tornar
+          explícito. O fato de ter passado no critério NÃO criou negócio
+          nenhum, e o painel diz isso com todas as letras em vez de deixar a
+          pessoa supor. */}
+      {lead.etapa === "qualificado" && lead.oportunidades.length === 0 ? (
+        <p className="ov-nota" role="status">
+          <CheckCircle2 aria-hidden className="inline size-3.5 align-[-2px]" />{" "}
+          Lead qualificado. Nenhuma oportunidade foi criada — o handoff para o
+          Pipeline é uma ação explícita.
+        </p>
+      ) : null}
+
+      {/* ── Próximo passo ───────────────────────────────────────────────── */}
+      <Secao titulo="Próximo passo">
+        <div className="flex flex-wrap gap-2">
+          {passo.primario ? (
+            <Button
+              type="button"
+              disabled={pendente}
+              onClick={() => {
+                if (passo.primario!.tipo === "abrir_oportunidade" && lead.oportunidades[0]) return;
+                agir(passo.primario!.tipo);
+              }}
+              asChild={passo.primario.tipo === "abrir_oportunidade" && Boolean(lead.oportunidades[0])}
+            >
+              {passo.primario.tipo === "abrir_oportunidade" && lead.oportunidades[0] ? (
+                <Link href={`${rotaBase}/pipeline?oportunidade=${lead.oportunidades[0].id}`}>
+                  <ArrowRight aria-hidden />Abrir oportunidade
+                </Link>
+              ) : (
+                <>
+                  <passo.primario.icone aria-hidden />
+                  {passo.primario.rotulo}
+                </>
+              )}
+            </Button>
+          ) : null}
+
+          {passo.secundario ? (
+            <Button type="button" variant="outline" disabled={pendente} onClick={() => agir(passo.secundario!.tipo)}>
+              {passo.secundario.rotulo}
+            </Button>
+          ) : null}
+
           {!encerrado ? (
-            <>
-              {lead.etapa === "novo" ? (
-                <button type="button" className="ov-botao" disabled={pendente} onClick={() => acoes.contato("whatsapp")}>
-                  <MessageCircle aria-hidden />Registrar 1º contato
-                </button>
-              ) : null}
-              {lead.etapa === "em_contato" ? (
-                <button type="button" className="ov-botao" disabled={pendente} onClick={() => acoes.mover("qualificacao")}>
-                  <Sparkles aria-hidden />Iniciar qualificação
-                </button>
-              ) : null}
-              {(lead.etapa === "qualificacao" || lead.etapa === "em_contato") ? (
-                <button type="button" className="ov-botao" data-variante="contorno" disabled={pendente} onClick={() => acoes.abrirModal("qualificar")}>
-                  <CheckCircle2 aria-hidden />Qualificar
-                </button>
-              ) : null}
-              {lead.etapa === "qualificado" ? (
-                <button type="button" className="ov-botao" disabled={pendente} onClick={() => acoes.abrirModal("oportunidade")}>
-                  <ArrowRight aria-hidden />Criar oportunidade
-                </button>
-              ) : null}
-              <button type="button" className="ov-botao" data-variante="neutro" disabled={pendente} onClick={() => acoes.abrirModal("nutrir")}>
-                Nutrir
-              </button>
-              <button type="button" className="ov-botao" data-variante="perigo" disabled={pendente} onClick={() => acoes.abrirModal("desqualificar")}>
-                Desqualificar
-              </button>
-            </>
-          ) : (
-            <button type="button" className="ov-botao" disabled={pendente} onClick={() => acoes.reativar()}>
-              Retomar lead
-            </button>
-          )}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button type="button" variant="ghost" size="icon" aria-label="Mais ações">
+                  <Building2 aria-hidden className="rotate-90 opacity-0 absolute" />
+                  <span aria-hidden>⋯</span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onSelect={() => acoes.abrirModal("tarefa")}>
+                  Criar tarefa
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => acoes.abrirModal("qualificar")}>
+                  Editar qualificação
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => acoes.abrirModal("nutrir")}>
+                  Enviar para nutrição
+                </DropdownMenuItem>
+                <DropdownMenuItem variant="destructive" onSelect={() => acoes.abrirModal("desqualificar")}>
+                  Desqualificar
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : null}
         </div>
       </Secao>
 
-      <Secao titulo="Contato">
+      {/* ── Próxima ação: a Task real ───────────────────────────────────── */}
+      <Secao titulo="Próxima ação">
+        {lead.proximaAcao ? (
+          <p className="ov-nota">
+            <CalendarClock aria-hidden className="inline size-3 align-[-2px]" />{" "}
+            {lead.proximaAcao.titulo} · <strong>{quandoVence(lead.proximaAcao.venceEm)}</strong>
+          </p>
+        ) : (
+          <div className="flex flex-col items-start gap-2">
+            <p className="ov-nota">Nenhuma tarefa aberta para esta aquisição.</p>
+            <Button type="button" variant="outline" size="sm" onClick={() => acoes.abrirModal("tarefa")}>
+              <CalendarClock aria-hidden />Definir próxima ação
+            </Button>
+          </div>
+        )}
+      </Secao>
+
+      <Secao titulo="Falar agora">
         <AcoesContato alvo={{
           leadId: lead.id,
           whatsapp: lead.pessoa.whatsapp,
           telefone: lead.pessoa.telefone,
           email: lead.pessoa.email,
         }} />
+      </Secao>
+
+      {/* ── Resumo operacional ──────────────────────────────────────────── */}
+      <Secao titulo="Resumo operacional">
+        <dl style={{ margin: 0 }}>
+          <Campo rotulo="Origem">{lead.atribuicao.origem}</Campo>
+          <Campo rotulo="Campanha">{lead.atribuicao.campanha}</Campo>
+          <Campo rotulo="Interesse">{lead.servicos?.join(", ")}</Campo>
+          {/* `primeiroToque`/`ultimoToque` são o CANAL do toque (`source` do
+              ponto de contato), não a data dele. Rotulados como "toque" eles
+              liam como data e entregavam "ig" — o que parecia dado corrompido
+              e era só o Instagram. */}
+          <Campo rotulo="Canal de entrada">{lead.atribuicao.primeiroToque}</Campo>
+          <Campo rotulo="Último canal">{lead.atribuicao.ultimoToque}</Campo>
+          <Campo rotulo="1º contato">{dataHora(lead.primeiroContatoEm)}</Campo>
+          <Campo rotulo="Criada em">{dataHora(lead.criadoEm)}</Campo>
+          <Campo rotulo="Landing page">{lead.atribuicao.landingPage}</Campo>
+        </dl>
+      </Secao>
+
+      <Secao titulo="Responsável">
+        <NativeSelect
+          value={lead.responsavel.id ?? ""}
+          disabled={pendente}
+          onChange={(e) => acoes.atribuir(e.target.value || null)}
+          aria-label="Responsável pela aquisição"
+        >
+          <NativeSelectOption value="">Sem responsável</NativeSelectOption>
+          {responsaveis.map((r) => (
+            <NativeSelectOption key={r.id} value={r.id}>{r.nome}</NativeSelectOption>
+          ))}
+        </NativeSelect>
       </Secao>
 
       <Secao titulo="Empresa">
@@ -558,13 +867,15 @@ function PainelLead({ lead, timeline, pendente, bloqueio, responsaveis, aoFechar
           <Campo rotulo="CNPJ">{lead.empresa.cnpj}</Campo>
         </dl>
         {lead.empresa.id ? (
-          <Link className="ov-botao" data-variante="contorno" href={`${rotaBase}/contatos?empresa=${lead.empresa.id}`}>
-            <Building2 aria-hidden />Abrir empresa
-          </Link>
+          <Button asChild variant="outline" size="sm">
+            <Link href={`${rotaBase}/empresas/${lead.empresa.id}`}>
+              <Building2 aria-hidden />Abrir empresa
+            </Link>
+          </Button>
         ) : (
-          <button type="button" className="ov-botao" data-variante="contorno" onClick={() => aoAgir("associar_empresa")}>
+          <Button type="button" variant="outline" size="sm" onClick={() => aoAgir("associar_empresa")}>
             <Building2 aria-hidden />Associar empresa
-          </button>
+          </Button>
         )}
       </Secao>
 
@@ -584,47 +895,21 @@ function PainelLead({ lead, timeline, pendente, bloqueio, responsaveis, aoFechar
         )}
       </Secao>
 
-      <Secao titulo="Atribuição">
-        <dl style={{ margin: 0 }}>
-          <Campo rotulo="Origem">{lead.atribuicao.origem}</Campo>
-          <Campo rotulo="Campanha">{lead.atribuicao.campanha}</Campo>
-          <Campo rotulo="Primeiro toque">{lead.atribuicao.primeiroToque}</Campo>
-          <Campo rotulo="Último toque">{lead.atribuicao.ultimoToque}</Campo>
-          <Campo rotulo="Landing page">{lead.atribuicao.landingPage}</Campo>
-        </dl>
+      <Secao titulo="Oportunidades">
+        {lead.oportunidades.length === 0 ? (
+          <p className="ov-nota">Nenhuma oportunidade criada a partir desta aquisição.</p>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {lead.oportunidades.map((o) => (
+              <Button key={o.id} asChild variant="outline" size="sm" className="justify-start">
+                <Link href={`${rotaBase}/pipeline?oportunidade=${o.id}`}>
+                  {o.titulo} · {o.etapaRotulo}
+                </Link>
+              </Button>
+            ))}
+          </div>
+        )}
       </Secao>
-
-      <Secao titulo="Responsável">
-        <select
-          className="ov-select"
-          value={lead.responsavel.id ?? ""}
-          disabled={pendente}
-          onChange={(e) => acoes.atribuir(e.target.value || null)}
-          aria-label="Responsável pelo lead"
-        >
-          <option value="">Sem responsável</option>
-          {responsaveis.map((r) => <option key={r.id} value={r.id}>{r.nome}</option>)}
-        </select>
-      </Secao>
-
-      {lead.oportunidades.length > 0 ? (
-        <Secao titulo="Oportunidades">
-          {lead.oportunidades.map((o) => (
-            <Link key={o.id} className="ov-botao" data-variante="contorno" href={`${rotaBase}/pipeline?oportunidade=${o.id}`}>
-              {o.titulo} · {o.etapaRotulo}
-            </Link>
-          ))}
-        </Secao>
-      ) : null}
-
-      {lead.proximaAcao ? (
-        <Secao titulo="Próxima ação">
-          <p className="ov-nota">
-            <CalendarClock aria-hidden style={{ width: "calc(12 * var(--onface-u))", height: "calc(12 * var(--onface-u))", verticalAlign: "-2px" }} />
-            {" "}{lead.proximaAcao.titulo} · {dataCurta(lead.proximaAcao.venceEm)}
-          </p>
-        </Secao>
-      ) : null}
 
       <Secao titulo="Histórico">
         {timeline.length === 0 ? (
@@ -649,7 +934,6 @@ function PainelLead({ lead, timeline, pendente, bloqueio, responsaveis, aoFechar
     </Painel>
   );
 }
-
 /* ── Diálogos ──────────────────────────────────────────────────────────── */
 
 function DialogoQualificar({ aberto, lead, pendente, bloqueio, aoFechar, aoSalvar }: {
@@ -1068,4 +1352,213 @@ export function rotuloAtor(tipo: string): string {
     case "SYSTEM": return "Sistema";
     default: return "Equipe";
   }
+}
+
+/* ── Próxima ação ──────────────────────────────────────────────────────── */
+
+/**
+ * Criar a próxima ação.
+ *
+ * É a Task real, e é por isso que este diálogo existe: "sem próxima ação" era
+ * o estado mais acionável do board e não tinha saída nenhuma na tela. O CTA no
+ * cartão abre daqui já amarrado à aquisição.
+ *
+ * O prazo nasce preenchido para amanhã de manhã. Campo de data vazio em
+ * criação rápida é o caminho mais curto para uma tarefa sem prazo, e tarefa
+ * sem prazo não vira próxima ação de ninguém — ela cai para o fim da fila por
+ * `NULLS LAST` e some.
+ */
+function DialogoTarefa({ aberto, contexto, responsaveis, usuarioId, pendente, bloqueio, aoFechar, aoConfirmar }: {
+  aberto: boolean;
+  contexto: { leadId: string; nome: string } | null;
+  responsaveis: Array<{ id: string; nome: string }>;
+  usuarioId: string | null;
+  pendente: boolean;
+  bloqueio: { mensagem: string } | null;
+  aoFechar: () => void;
+  aoConfirmar: (e: EntradaTarefa) => Promise<boolean>;
+}) {
+  function amanhaDeManha() {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    d.setHours(10, 0, 0, 0);
+    // `toISOString` devolve UTC e o input espera hora local: o deslocamento
+    // faria a tarefa nascer três horas fora do combinado.
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+
+  /* Só assume o usuário da sessão se ele for de fato um responsável possível.
+     Sem esta checagem o `select` mostrava "Sem responsável" (porque o id não
+     está entre as opções) enquanto o estado carregava o id mesmo assim, e o
+     INSERT morria em violação de chave estrangeira — a tela dizia uma coisa e
+     mandava outra. */
+  const padraoResponsavel = responsaveis.some((r) => r.id === usuarioId) ? usuarioId! : "";
+
+  const [titulo, setTitulo] = useState("");
+  const [responsavelId, setResponsavelId] = useState(padraoResponsavel);
+  const [venceEm, setVenceEm] = useState(amanhaDeManha);
+  const [prioridade, setPrioridade] = useState<"baixa" | "media" | "alta">("media");
+  const [descricao, setDescricao] = useState("");
+
+  // Reabrir para outro registro precisa de um formulário limpo.
+  const [ultimo, setUltimo] = useState<string | null>(null);
+  if (aberto && contexto && contexto.leadId !== ultimo) {
+    setUltimo(contexto.leadId);
+    setTitulo("");
+    setDescricao("");
+    setVenceEm(amanhaDeManha());
+    setResponsavelId(padraoResponsavel);
+  }
+
+  return (
+    <Dialogo
+      aberto={aberto}
+      aoFechar={aoFechar}
+      titulo="Nova tarefa"
+      descricao={contexto ? `Próxima ação de ${contexto.nome}` : undefined}
+    >
+      <div className="ov-form">
+        {bloqueio ? <AvisoBloqueio bloqueio={bloqueio} /> : null}
+
+        <Field>
+          <FieldLabel htmlFor="t-titulo">O que precisa ser feito</FieldLabel>
+          <Input
+            id="t-titulo"
+            value={titulo}
+            autoFocus
+            placeholder="Ligar para apresentar a Callface"
+            onChange={(e) => setTitulo(e.target.value)}
+          />
+        </Field>
+
+        <div className="ov-form-linha">
+          <Field>
+            <FieldLabel htmlFor="t-responsavel">Responsável</FieldLabel>
+            <NativeSelect
+              id="t-responsavel"
+              value={responsavelId}
+              onChange={(e) => setResponsavelId(e.target.value)}
+            >
+              <NativeSelectOption value="">Sem responsável</NativeSelectOption>
+              {responsaveis.map((r) => (
+                <NativeSelectOption key={r.id} value={r.id}>{r.nome}</NativeSelectOption>
+              ))}
+            </NativeSelect>
+          </Field>
+
+          <Field>
+            <FieldLabel htmlFor="t-prazo">Prazo</FieldLabel>
+            <Input
+              id="t-prazo"
+              type="datetime-local"
+              value={venceEm}
+              onChange={(e) => setVenceEm(e.target.value)}
+            />
+          </Field>
+
+          <Field>
+            <FieldLabel htmlFor="t-prioridade">Prioridade</FieldLabel>
+            <NativeSelect
+              id="t-prioridade"
+              value={prioridade}
+              onChange={(e) => setPrioridade(e.target.value as "baixa" | "media" | "alta")}
+            >
+              <NativeSelectOption value="baixa">Baixa</NativeSelectOption>
+              <NativeSelectOption value="media">Média</NativeSelectOption>
+              <NativeSelectOption value="alta">Alta</NativeSelectOption>
+            </NativeSelect>
+          </Field>
+        </div>
+
+        <Field>
+          <FieldLabel htmlFor="t-descricao">Detalhe</FieldLabel>
+          <Textarea
+            id="t-descricao"
+            rows={3}
+            value={descricao}
+            onChange={(e) => setDescricao(e.target.value)}
+          />
+        </Field>
+
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={aoFechar}>Cancelar</Button>
+          <Button
+            type="button"
+            loading={pendente}
+            disabled={!titulo.trim() || !contexto}
+            onClick={() => aoConfirmar({
+              leadId: contexto!.leadId,
+              titulo: titulo.trim(),
+              responsavelId: responsavelId || null,
+              venceEm: venceEm || null,
+              prioridade,
+              descricao: descricao.trim() || null,
+            })}
+          >
+            <CalendarClock aria-hidden />Criar tarefa
+          </Button>
+        </DialogFooter>
+      </div>
+    </Dialogo>
+  );
+}
+
+/* ── Ação em massa ─────────────────────────────────────────────────────── */
+
+/**
+ * Atribuir várias aquisições de uma vez.
+ *
+ * 223 aquisições sem dono é o maior buraco da operação, e resolver uma a uma
+ * pelo painel são 223 aberturas de gaveta. O comando é o mesmo de sempre
+ * (`atribuirResponsavel`), aplicado por registro: o resultado continua
+ * auditável um a um, não vira um UPDATE em bloco sem rastro.
+ */
+function DialogoAtribuirEmMassa({ aberto, quantidade, responsaveis, pendente, bloqueio, aoFechar, aoConfirmar }: {
+  aberto: boolean;
+  quantidade: number;
+  responsaveis: Array<{ id: string; nome: string }>;
+  pendente: boolean;
+  bloqueio: { mensagem: string } | null;
+  aoFechar: () => void;
+  aoConfirmar: (responsavelId: string | null) => Promise<boolean>;
+}) {
+  const [responsavelId, setResponsavelId] = useState("");
+
+  return (
+    <Dialogo
+      aberto={aberto}
+      aoFechar={aoFechar}
+      titulo={`Atribuir ${quantidade} ${quantidade === 1 ? "aquisição" : "aquisições"}`}
+      descricao="Cada registro recebe o responsável individualmente e gera o próprio evento na linha do tempo."
+    >
+      <div className="ov-form">
+        {bloqueio ? <AvisoBloqueio bloqueio={bloqueio} /> : null}
+        <Field>
+          <FieldLabel htmlFor="m-responsavel">Responsável</FieldLabel>
+          <NativeSelect
+            id="m-responsavel"
+            value={responsavelId}
+            onChange={(e) => setResponsavelId(e.target.value)}
+          >
+            <NativeSelectOption value="">Escolha quem assume</NativeSelectOption>
+            {responsaveis.map((r) => (
+              <NativeSelectOption key={r.id} value={r.id}>{r.nome}</NativeSelectOption>
+            ))}
+          </NativeSelect>
+        </Field>
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={aoFechar}>Cancelar</Button>
+          <Button
+            type="button"
+            loading={pendente}
+            disabled={!responsavelId}
+            onClick={() => aoConfirmar(responsavelId)}
+          >
+            <Users aria-hidden />Atribuir
+          </Button>
+        </DialogFooter>
+      </div>
+    </Dialogo>
+  );
 }

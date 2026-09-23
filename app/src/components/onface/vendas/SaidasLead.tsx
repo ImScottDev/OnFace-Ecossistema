@@ -21,7 +21,7 @@ import "./saidas-lead.css";
  * quadro só anunciava o que ia pedir; agora ele pede.
  * ───────────────────────────────────────────────────────────────────────── */
 
-export type Saida = "qualificar" | "nutrir" | "desqualificar";
+export type Saida = "qualificar" | "nutrir" | "desqualificar" | "atividade";
 
 export type LeadDaSaida = {
   id: string;
@@ -51,6 +51,13 @@ const DORES_RAPIDAS = [
   "Não mede o time",
   "Atendimento lento",
 ];
+const ATIVIDADES_RAPIDAS = [
+  "Ligar para qualificar",
+  "Enviar proposta",
+  "Follow-up por WhatsApp",
+  "Agendar reunião",
+];
+
 const FITS = ["Alto", "Médio", "Baixo"] as const;
 
 function Icone({ d, className }: { d: string; className?: string }) {
@@ -99,6 +106,11 @@ export function SaidasLead({
   const [motivoDesq, setMotivoDesq] = React.useState<MotivoDesqualificacao | null>(null);
   const [detalhe, setDetalhe] = React.useState("");
 
+  // Próxima ação. É uma Task real do produto, não uma string no cartão.
+  const [titulo, setTitulo] = React.useState("");
+  const [venceEm, setVenceEm] = React.useState("");
+  const [prioridade, setPrioridade] = React.useState<"baixa" | "media" | "alta">("media");
+
   React.useEffect(() => {
     const aoTeclar = (e: KeyboardEvent) => e.key === "Escape" && aoFechar();
     window.addEventListener("keydown", aoTeclar);
@@ -117,7 +129,9 @@ export function SaidasLead({
         ].filter(Boolean) as string[]
       : saida === "nutrir"
         ? ([!motivoNutrir && "motivo", exigeRetomada && !retomarEm && "data de retomada"].filter(Boolean) as string[])
-        : ([!motivoDesq && "motivo"].filter(Boolean) as string[]);
+        : saida === "desqualificar"
+          ? ([!motivoDesq && "motivo"].filter(Boolean) as string[])
+          : ([!titulo.trim() && "título"].filter(Boolean) as string[]);
 
   const gravar = async () => {
     if (faltando.length) {
@@ -147,9 +161,20 @@ export function SaidasLead({
         const r = await acoes.nutrir(lead.id, motivoNutrir!, retomarEm || null, observacao.trim() || null);
         toast(r.ok ? `${lead.empresa} foi para nutrição` : r.erro ?? "Não deu para nutrir");
         if (!r.ok) return;
-      } else {
+      } else if (saida === "desqualificar") {
         const r = await acoes.desqualificar(lead.id, motivoDesq!, detalhe.trim() || null);
         toast(r.ok ? `${lead.empresa} desqualificada` : r.erro ?? "Não deu para desqualificar");
+        if (!r.ok) return;
+      } else {
+        const r = await acoes.criarTarefa({
+          leadId: lead.id,
+          titulo: titulo.trim(),
+          responsavelId: null,
+          venceEm: venceEm || null,
+          prioridade,
+          descricao: detalhe.trim() || null,
+        });
+        toast(r.ok ? "Próxima ação definida" : r.erro ?? "Não deu para criar a atividade");
         if (!r.ok) return;
       }
       aoConcluir();
@@ -180,6 +205,13 @@ export function SaidasLead({
       subtitulo: "O motivo é o que sustenta relatório de perda depois. Sem ele, a saída não diz nada.",
       icone: D.x,
       botao: "Desqualificar",
+    },
+    atividade: {
+      tom: "neutro" as const,
+      titulo: "Próxima ação",
+      subtitulo: "A próxima ação é uma tarefa de verdade, com dono e prazo — não um lembrete escrito no cartão.",
+      icone: D.mais,
+      botao: "Definir",
     },
   }[saida];
 
@@ -374,6 +406,68 @@ export function SaidasLead({
                   value={observacao}
                   onChange={(e) => setObservacao(e.target.value)}
                   placeholder="O que faz este lead voltar"
+                />
+              </section>
+            </>
+          )}
+
+          {saida === "atividade" && (
+            <>
+              <section>
+                <div className="sl-rotulo">
+                  <span>O QUE FAZER</span>
+                  <em>*</em>
+                </div>
+                <input
+                  className="sl-campo"
+                  data-falta={cobrado && !titulo.trim()}
+                  value={titulo}
+                  onChange={(e) => setTitulo(e.target.value)}
+                  placeholder="Ex.: ligar para confirmar o volume de ramais"
+                />
+                <div className="sl-rapidos">
+                  {ATIVIDADES_RAPIDAS.map((t) => (
+                    <button key={t} type="button" data-on={titulo === t} onClick={() => setTitulo(t)}>
+                      {t}
+                    </button>
+                  ))}
+                </div>
+              </section>
+
+              <section>
+                <div className="sl-rotulo">
+                  <span>QUANDO</span>
+                </div>
+                <input
+                  type="date"
+                  className="sl-campo"
+                  value={venceEm}
+                  onChange={(e) => setVenceEm(e.target.value)}
+                />
+              </section>
+
+              <section>
+                <div className="sl-rotulo">
+                  <span>PRIORIDADE</span>
+                </div>
+                <div className="sl-fits">
+                  {(["baixa", "media", "alta"] as const).map((pr) => (
+                    <button key={pr} type="button" data-on={prioridade === pr} onClick={() => setPrioridade(pr)}>
+                      {pr === "media" ? "Média" : pr === "baixa" ? "Baixa" : "Alta"}
+                    </button>
+                  ))}
+                </div>
+              </section>
+
+              <section>
+                <div className="sl-rotulo">
+                  <span>DETALHE</span>
+                </div>
+                <input
+                  className="sl-campo"
+                  value={detalhe}
+                  onChange={(e) => setDetalhe(e.target.value)}
+                  placeholder="O que precisa estar em mãos"
                 />
               </section>
             </>

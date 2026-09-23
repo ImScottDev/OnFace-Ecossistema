@@ -807,3 +807,273 @@
   font-size: calc(13 * var(--onface-u));
 }
 .ov-faixa-loops-motivos { display: flex; flex-wrap: wrap; gap: calc(12 * var(--onface-u)); opacity: 0.85; }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   PRÉ-VENDAS — workspace operacional
+   
+   O que muda em relação ao que havia: o board deixou de ser uma lista de
+   cartões para virar a superfície onde o SDR trabalha. Isso exigiu três
+   coisas que não existiam — ação sob o ponteiro, sinal de atraso legível e
+   uma barra de trabalho que não empurre o board para fora da dobra.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ── Barra de trabalho ─────────────────────────────────────────────────── */
+
+/* Uma linha, não duas: busca e ações dividem a mesma faixa, e o que sobra de
+   altura é board. Cada bloco que se empilha aqui custa um cartão a menos
+   visível em 900px de tela. */
+.pv-barra {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8);
+  margin-bottom: var(--space-12);
+}
+.pv-barra-busca { flex: 1 1 calc(240 * var(--onface-u)); min-width: calc(200 * var(--onface-u)); }
+.pv-barra-acoes { display: inline-flex; align-items: center; gap: var(--space-6); flex-shrink: 0; }
+
+/* ── Views rápidas ─────────────────────────────────────────────────────── */
+
+/* Filtros salvos, não navegação. A diferença importa no desenho: aba sugere
+   que existe outro conteúdo atrás; aqui o conteúdo é o mesmo board recortado,
+   então a peça é uma fileira de alternadores, e o ativo é marcado por
+   superfície — coral fica reservado para o CTA e para o sinal de atraso. */
+.pv-views {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+  border-bottom: 1px solid var(--line-hairline);
+  padding-bottom: var(--space-8);
+  margin-bottom: var(--space-12);
+}
+.pv-view {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-6);
+  height: var(--control-md);
+  padding: 0 var(--space-10);
+  border: 1px solid transparent;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--motion-fast) var(--ease-standard),
+              color var(--motion-fast) var(--ease-standard);
+}
+.pv-view:hover { background: var(--surface-sunken); color: var(--text-body); }
+.pv-view:focus-visible { outline: 2px solid var(--onface-coral); outline-offset: 2px; }
+.pv-view[data-ativa="true"] {
+  background: var(--surface-shell);
+  border-color: var(--surface-shell);
+  color: var(--text-on-shell);
+}
+/* A contagem é o que torna a view uma decisão e não um palpite. */
+.pv-view-conta {
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+  opacity: 0.65;
+}
+.pv-view[data-ativa="true"] .pv-view-conta { opacity: 0.8; }
+/* View que acusa problema carrega o sinal no próprio número. */
+.pv-view[data-sinal="true"]:not([data-ativa="true"]) .pv-view-conta {
+  color: var(--onface-coral-texto);
+  opacity: 1;
+  font-weight: var(--weight-semibold);
+}
+
+/* ── Chips de filtro ativo ─────────────────────────────────────────────── */
+
+.pv-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-6);
+  margin-bottom: var(--space-10);
+}
+.pv-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-6);
+  height: var(--control-sm);
+  padding: 0 var(--space-4) 0 var(--space-10);
+  border: 1px solid var(--line-hairline);
+  border-radius: var(--radius-full);
+  background: var(--surface-card);
+  font-size: var(--text-xs);
+  color: var(--text-body);
+}
+.pv-chip strong { font-weight: var(--weight-semibold); }
+.pv-chip button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: calc(16 * var(--onface-u));
+  height: calc(16 * var(--onface-u));
+  border: 0;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.pv-chip button:hover { background: var(--surface-sunken); color: var(--text-strong); }
+.pv-chip button:focus-visible { outline: 2px solid var(--onface-coral); outline-offset: 1px; }
+
+/* ── Barra de seleção múltipla ─────────────────────────────────────────── */
+
+/* Aparece no lugar dos chips quando há marcados: as duas coisas competem pelo
+   mesmo assunto (o recorte atual) e empilhá-las empurra o board. */
+.pv-selecao {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8);
+  padding: var(--space-8) var(--space-12);
+  margin-bottom: var(--space-10);
+  border: 1px solid var(--onface-coral-border);
+  border-radius: var(--radius-md);
+  background: var(--onface-coral-subtle);
+}
+.pv-selecao-conta {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--text-strong);
+  font-variant-numeric: tabular-nums;
+}
+.pv-selecao-acoes { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--space-6); }
+
+/* ── Cartão ────────────────────────────────────────────────────────────── */
+
+/* As ações e o checkbox existem no DOM sempre e só a opacidade muda: quem
+   navega por teclado não tem ponteiro, e `display:none` tiraria as ações da
+   ordem de foco. `:focus-within` cobre esse caso. */
+
+.pv-card { position: relative; }
+
+/* FLUTUAM sobre o cartão, não ocupam lugar na linha do título.
+ *
+ * No fluxo, os quatro botões comiam ~100u de uma coluna de 262u e o título
+ * quebrava LETRA POR LETRA ("Lean dro Vinc o") — o `overflow-wrap: anywhere`,
+ * que existe para um e-mail gigante sem espaço, passou a agir em todo nome
+ * porque não sobrava largura nenhuma. Fora do fluxo, o título tem a coluna
+ * inteira e as ações aparecem por cima só quando há intenção de agir. */
+.pv-card-acoes {
+  position: absolute;
+  top: calc(4 * var(--onface-u));
+  inset-inline-end: calc(4 * var(--onface-u));
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: calc(1 * var(--onface-u));
+  padding: calc(2 * var(--onface-u));
+  border-radius: var(--radius-sm);
+  /* O cartão por baixo continua legível enquanto as ações estão escondidas;
+     visíveis, elas precisam da própria superfície para não empastelar o nome. */
+  background: var(--surface-card);
+  box-shadow: -8px 0 8px -4px var(--surface-card);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--motion-fast) var(--ease-standard);
+}
+.pv-card:hover .pv-card-acoes,
+.pv-card:focus-within .pv-card-acoes { opacity: 1; pointer-events: auto; }
+.pv-card[data-marcado] .pv-card-acoes { background: var(--onface-coral-subtle); }
+.pv-card-marcar {
+  display: inline-flex;
+  align-items: center;
+  padding-top: calc(2 * var(--onface-u));
+  opacity: 0;
+  transition: opacity var(--motion-fast) var(--ease-standard);
+}
+.pv-card:hover .pv-card-marcar,
+.pv-card:focus-within .pv-card-marcar,
+.pv-card[data-marcado] .pv-card-marcar,
+.pv-card[data-em-selecao] .pv-card-marcar { opacity: 1; }
+
+.pv-card[data-marcado] {
+  border-color: var(--onface-coral-border);
+  background: var(--onface-coral-subtle);
+}
+
+/* As duas linhas de tempo. `dl` porque é literalmente um par rótulo/valor, e
+   a grade de duas colunas mantém os valores alinhados entre os cartões — é o
+   alinhamento que permite varrer a coluna inteira com o olho sem ler cada um. */
+.pv-card-tempos {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: calc(1 * var(--onface-u)) var(--space-8);
+  margin: 0;
+  font-size: var(--text-xs);
+}
+.pv-card-tempos > div { display: contents; }
+.pv-card-tempos dt { color: var(--text-muted); white-space: nowrap; }
+.pv-card-tempos dd {
+  margin: 0;
+  text-align: right;
+  color: var(--text-body);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Ação vencida: peso e cor, mas o cartão já carrega o selo "Ação vencida" no
+   rodapé — cor nunca é o único portador do estado. */
+.pv-card-tempos > div[data-atrasada] dd {
+  color: var(--status-danger);
+  font-weight: var(--weight-semibold);
+}
+.pv-card-tempos > div[data-ausente] dt { color: var(--onface-coral-texto); }
+
+.pv-card-definir {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--onface-coral-texto);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.pv-card-definir:focus-visible { outline: 2px solid var(--onface-coral); outline-offset: 2px; }
+
+/* ── Mobile: uma etapa por vez ─────────────────────────────────────────── */
+
+/* Sete colunas lado a lado em 390px não é board, é um mapa que ninguém lê. No
+   celular a etapa vira um seletor e a coluna escolhida ocupa a largura toda. */
+.pv-etapa-mobile { display: none; }
+
+@media (max-width: 767px) {
+  .pv-etapa-mobile { display: flex; }
+  /* Exportar sai da linha: no celular ninguém baixa planilha, e o espaço vale
+     mais para o CTA primário. Continua alcançável no desktop. */
+  .pv-barra-acoes .pv-acao-opcional { display: none; }
+
+  /* Uma etapa por vez ocupa a largura toda — o recorte é feito em JS
+     (`useIsMobile`), aqui só resta soltar a largura fixa da coluna. */
+  .qd-rolagem .ds-quadro-coluna {
+    flex: 1 1 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+  .qd-rolagem { overflow-x: hidden; }
+
+  /* As ações do cartão não dependem de hover num aparelho sem ponteiro. */
+  .pv-card-acoes { opacity: 1; pointer-events: auto; position: static; box-shadow: none; background: transparent; }
+  .pv-card-marcar { opacity: 1; }
+
+  /* O painel vira a tela inteira: gaveta de 360u em 390px não sobra board
+     nenhum atrás para justificar ser gaveta. */
+  .ov-com-painel[data-aberto="true"] .ov-painel {
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-modal);
+    max-height: none;
+    width: 100%;
+    overflow-y: auto;
+    border-radius: 0;
+  }
+}

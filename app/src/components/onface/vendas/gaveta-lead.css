@@ -1,159 +1,170 @@
 /* ─────────────────────────────────────────────────────────────────────────
  * Gaveta de detalhe do lead.
  *
- * Fonte: `screenshots/gaveta-detalhe-lead.png`. A marcação dela não vem no
- * bundle do handoff, então a geometria é medida da imagem e o resto segue a
- * linguagem já declarada do protótipo.
+ * Geometria de `docs/handoff-onface/OnFace Pecas.dc.html` (bloco `temDetalhe`),
+ * lida do fonte. A versão anterior desta folha saiu do screenshot e errava dez
+ * valores — entre eles a posição (a gaveta FLUTUA com os 10px da moldura, não
+ * cola na borda), a largura, o raio e o tamanho do nome.
  * ───────────────────────────────────────────────────────────────────────── */
 
 .gv-veu {
   position: fixed;
   inset: 0;
-  background: rgba(9, 14, 20, .42);
-  z-index: 56;
-  display: flex;
-  justify-content: flex-end;
-  animation: onface-fade .14s ease-out both;
+  background: var(--of-veu-paleta);
+  z-index: 40;
+  animation: onface-fade .18s ease-out both;
 }
 
+/* Flutua com a mesma margem da moldura, nos quatro lados. Ela é um cartão
+   apoiado na página, não um painel encaixado na borda da janela. */
 .gv {
-  width: 468px;
-  max-width: 100%;
-  height: 100%;
-  background: #fff;
+  position: fixed;
+  top: 10px;
+  right: 10px;
+  bottom: 10px;
+  width: 436px;
+  max-width: calc(100vw - 20px);
+  background: var(--of-papel);
+  border-radius: var(--of-r-casca);
+  z-index: 41;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  /* Entra da direita, .2s, como o README do handoff declara para a gaveta. */
-  animation: gv-entra .2s cubic-bezier(.2, 0, .2, 1) both;
+  animation: gv-entra .26s var(--of-curva) both;
 }
 @keyframes gv-entra {
   from { transform: translateX(22px); opacity: 0 }
   to { transform: none; opacity: 1 }
 }
 
+/* ── Cabeçalho ────────────────────────────────────────────────────────── */
+
 .gv-topo {
   flex: 0 0 auto;
+  padding: 15px 16px 13px;
+  border-bottom: 1px solid var(--of-linha);
+}
+.gv-topo-linha {
   display: flex;
   align-items: flex-start;
-  gap: 12px;
-  padding: 18px 16px 14px;
+  gap: 10px;
+  margin-bottom: 11px;
 }
 .gv-avatar {
   flex: 0 0 auto;
-  width: 44px;
-  height: 44px;
-  border-radius: 9999px;
-  background: #eeeff3;
-  color: #616b78;
+  width: 38px;
+  height: 38px;
+  border-radius: var(--of-r-pilula);
+  display: grid;
+  place-items: center;
+  font-family: var(--of-fonte-titulo);
   font-size: 13px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  font-weight: var(--of-peso-forte);
+  background: var(--of-calha);
+  color: var(--of-tinta-avatar);
 }
 .gv-identidade { flex: 1; min-width: 0 }
 .gv-identidade h2 {
   margin: 0;
-  font-family: var(--font-onface-titulo), sans-serif;
-  font-size: 18px;
-  font-weight: 700;
-  letter-spacing: -.02em;
-  color: #12171d;
+  font-family: var(--of-fonte-titulo);
+  font-size: 16px;
+  font-weight: var(--of-peso-forte);
+  letter-spacing: -.015em;
+  color: var(--of-tinta-forte);
   line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .gv-papel {
   margin: 2px 0 0;
-  font-size: 12.5px;
-  color: #4a5560;
-  line-height: 1.4;
-}
-.gv-linha-contato {
-  margin: 4px 0 0;
-  font-size: 12.5px;
-  color: #4a5560;
+  font-size: var(--of-t-corpo);
+  color: var(--of-tinta-2);
   line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.gv-contatos {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-top: 6px;
+}
+.gv-contatos span {
+  font-size: var(--of-t-corpo-min);
+  color: var(--of-tinta-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .gv-fechar {
   flex: 0 0 auto;
   width: 28px;
   height: 28px;
-  border-radius: 8px;
+  border-radius: var(--of-r-controle);
   display: grid;
   place-items: center;
-  color: #4a5560;
+  color: var(--of-tinta-2);
   border: 0;
   background: transparent;
   cursor: pointer;
 }
-.gv-fechar:hover { background: #f1f3f3; color: #12171d }
+.gv-fechar:hover { background: var(--of-neutro); color: var(--of-tinta-forte) }
 .gv-fechar svg { width: 15px; height: 15px; stroke-width: 2 }
 
-/* Três canais, mesmo peso: a gaveta não escolhe por onde falar. */
+/* Os toques. Não são três colunas iguais: eles ocupam o que precisam e
+   quebram, como qualquer grupo de botões do sistema. */
 .gv-canais {
-  flex: 0 0 auto;
   display: flex;
-  gap: 8px;
-  padding: 0 16px 14px;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 .gv-canais button {
-  flex: 1 1 0;
-  min-width: 0;
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 7px;
-  height: 34px;
-  border-radius: 9px;
-  background: #fff;
-  box-shadow: inset 0 0 0 1px #dbdede;
+  gap: 6px;
+  height: 32px;
+  padding: 0 11px;
+  border-radius: var(--of-r-controle);
+  background: var(--of-papel);
+  box-shadow: var(--of-anel);
   border: 0;
   cursor: pointer;
-  font-size: 12.5px;
-  font-weight: 500;
-  color: #1f252c;
+  font-size: var(--of-t-corpo);
+  font-weight: var(--of-peso-medio);
+  color: var(--of-tinta);
   white-space: nowrap;
+  flex: 0 0 auto;
 }
-.gv-canais button:hover { background: #f6f7f7 }
-.gv-canais svg { width: 15px; height: 15px; stroke-width: 1.8; flex: 0 0 auto }
-
-.gv-corpo {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 14px 16px 18px;
-  border-top: 1px solid #eef1f1;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.gv-rotulo {
-  display: block;
-  font-size: 11px;
-  font-weight: 600;
-  color: #67787c;
-  letter-spacing: .04em;
-  margin-bottom: 6px;
-}
+.gv-canais button:hover { background: var(--of-papel-hover) }
+.gv-canais button:disabled { opacity: .55; cursor: progress }
+.gv-canais svg { width: 14px; height: 14px; stroke-width: 1.9; flex: 0 0 auto }
 
 .gv-par {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 14px;
 }
-.gv-par label { min-width: 0 }
-
+.gv-rotulo {
+  display: block;
+  font-size: var(--of-t-meta-min);
+  font-weight: var(--of-peso-semi);
+  color: var(--of-tinta-2);
+  margin-bottom: 5px;
+}
 .gv-campo {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 8px;
-  height: 34px;
-  padding: 0 30px 0 11px;
-  border-radius: 9px;
-  background: #fff;
-  box-shadow: inset 0 0 0 1px #dbdede;
+  gap: 6px;
+  width: 100%;
+  height: 32px;
+  padding: 0 26px 0 10px;
+  border-radius: var(--of-r-controle);
+  background: var(--of-papel);
+  box-shadow: var(--of-anel);
 }
 .gv-campo select {
   flex: 1;
@@ -161,186 +172,406 @@
   border: 0;
   outline: 0;
   background: transparent;
-  font-size: 12.5px;
-  font-weight: 500;
-  color: #12171d;
+  font-size: var(--of-t-corpo);
+  font-weight: var(--of-peso-medio);
+  color: var(--of-tinta-forte);
   appearance: none;
   cursor: pointer;
+  text-overflow: ellipsis;
 }
-/* Sem responsável é um buraco, não um valor neutro: ele fica coral, que é a
-   mesma tinta que o cartão usa para "sem próxima ação". */
-.gv-campo[data-vazio="true"] select { color: #c2330f; font-weight: 600 }
-.gv-campo[data-vazio="true"] .gv-campo-icone { color: #c2330f }
+[data-cf2-theme] .gv-campo select:focus-visible,
+.gv-campo select:focus-visible { outline: none; box-shadow: none }
+.gv-campo:focus-within { box-shadow: var(--of-anel-coral) }
 .gv-campo-seta {
   position: absolute;
-  right: 10px;
-  width: 13px;
-  height: 13px;
-  stroke-width: 2.1;
-  color: #67787c;
+  right: 9px;
+  width: 12px;
+  height: 12px;
+  stroke-width: 2.2;
+  color: var(--of-tinta-2);
   pointer-events: none;
 }
-.gv-campo-icone { width: 14px; height: 14px; stroke-width: 2.2; flex: 0 0 auto; color: #4a5560 }
 .gv-ponto-etapa {
   flex: 0 0 auto;
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: #4a5560;
 }
-[data-cf2-theme] .gv-campo select:focus-visible,
-.gv-campo select:focus-visible { outline: none; box-shadow: none }
-.gv-campo:focus-within { box-shadow: inset 0 0 0 1px #fe4f2b }
+.gv-resp-avatar {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--of-r-pilula);
+  display: grid;
+  place-items: center;
+  font-size: 9px;
+  font-weight: var(--of-peso-forte);
+  background: var(--of-calha);
+  color: var(--of-tinta-avatar);
+}
+/* Sem responsável é buraco, não valor neutro: mesma tinta do "sem próxima
+   ação" no cartão. */
+.gv-campo[data-vazio="true"] select { color: var(--of-coral-texto); font-weight: var(--of-peso-semi) }
+.gv-campo[data-vazio="true"] .gv-resp-avatar { background: var(--of-coral-fundo); color: var(--of-coral-texto) }
 
-.gv-secao { min-width: 0 }
-.gv-tags { display: flex; gap: 6px; flex-wrap: wrap; align-items: center }
+/* Faixa de bloqueio: o que esta gaveta NÃO vai deixar fazer, e por quê. */
+.gv-bloqueio {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 16px;
+  background: var(--of-coral-fundo);
+  border-bottom: 1px solid var(--of-coral-contorno);
+}
+.gv-bloqueio svg { width: 14px; height: 14px; stroke-width: 2; flex: 0 0 auto; margin-top: 1px; color: var(--of-coral-texto) }
+.gv-bloqueio span {
+  font-size: var(--of-t-corpo-min);
+  color: var(--of-coral-texto-forte);
+  line-height: 1.45;
+  text-wrap: pretty;
+}
+.gv-bloqueio strong { font-weight: var(--of-peso-semi) }
+
+/* ── Corpo ────────────────────────────────────────────────────────────── */
+
+.gv-corpo { flex: 1; min-height: 0; overflow-y: auto }
+.gv-bloco {
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+}
+.gv-fio { height: 1px; background: var(--of-fio) }
+
+.gv-tags { display: flex; gap: 5px; flex-wrap: wrap }
 .gv-tag {
   display: inline-flex;
   align-items: center;
-  height: 22px;
-  padding: 0 9px;
-  border-radius: 7px;
-  background: #eeeff3;
-  color: #4a5560;
-  font-size: 11.5px;
-  font-weight: 600;
+  height: var(--of-h-chip);
+  padding: 0 8px;
+  border-radius: 6px;
+  background: var(--of-calha);
+  color: var(--of-tinta-2);
+  font-size: var(--of-t-meta);
+  font-weight: var(--of-peso-semi);
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+.gv-tag-vazia { background: transparent; box-shadow: var(--of-anel); font-weight: var(--of-peso-medio) }
+
+.gv-origem-linha { display: flex; align-items: center; gap: 7px; margin-bottom: 7px }
+.gv-origem-linha .gv-rotulo { margin-bottom: 0 }
+.gv-selo-origem {
+  display: inline-flex;
+  align-items: center;
+  height: var(--of-h-selo);
+  padding: 0 8px;
+  border-radius: 6px;
+  background: var(--of-calha);
+  color: var(--of-tinta-2);
+  font-size: var(--of-t-meta-min);
+  font-weight: var(--of-peso-semi);
   white-space: nowrap;
 }
-.gv-tag-vazia { background: transparent; box-shadow: inset 0 0 0 1px #e3e7e8; font-weight: 500 }
-.gv-tag-mais {
-  width: 22px;
-  height: 22px;
-  border-radius: 7px;
-  display: grid;
-  place-items: center;
-  background: #fff;
-  box-shadow: inset 0 0 0 1px #dbdede;
-  border: 0;
-  cursor: pointer;
-  color: #4a5560;
-}
-.gv-tag-mais:hover { background: #f6f7f7; color: #12171d }
-.gv-tag-mais svg { width: 12px; height: 12px; stroke-width: 2.2 }
-
-.gv-origem-linha { display: flex; align-items: center; gap: 9px; margin-bottom: 8px }
-.gv-origem-linha .gv-rotulo { margin-bottom: 0 }
-
 .gv-atribuicao {
   margin: 0;
   border-radius: 9px;
-  box-shadow: inset 0 0 0 1px #e3e7e8;
-  overflow: hidden;
+  background: var(--of-papel-alterno);
+  box-shadow: inset 0 0 0 1px var(--of-fio);
+  padding: 9px 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
-.gv-atribuicao > div {
-  display: grid;
-  grid-template-columns: 92px minmax(0, 1fr);
-  gap: 10px;
-  padding: 9px 12px;
-  font-size: 12.5px;
+.gv-atribuicao > div { display: flex; align-items: baseline; gap: 9px }
+.gv-atribuicao dt {
+  flex: 0 0 74px;
+  font-size: var(--of-t-meta-min);
+  color: var(--of-tinta-2);
 }
-.gv-atribuicao > div + div { border-top: 1px solid #eef1f1 }
-.gv-atribuicao dt { color: #67787c }
 .gv-atribuicao dd {
   margin: 0;
-  color: #1f252c;
+  flex: 1;
   min-width: 0;
+  font-size: var(--of-t-corpo);
+  color: var(--of-tinta);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.gv-atribuicao dd[data-vazio="true"] { color: var(--of-tinta-4) }
 
-.gv-proxima { margin: 0; font-size: 12.5px; color: #1f252c }
-.gv-oportunidades { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px }
-.gv-oportunidades li {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  font-size: 12.5px;
-}
-.gv-oportunidades a { color: #12171d; font-weight: 600; text-decoration: none }
-.gv-oportunidades a:hover { color: #c2330f }
-.gv-oportunidades span { color: #67787c; margin-left: auto; white-space: nowrap }
+/* ── Seções que abrem e fecham ────────────────────────────────────────── */
 
-.gv-rodape {
-  flex: 0 0 auto;
+.gv-secao { padding: 6px 8px 8px }
+.gv-secao-cab {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 12px 16px;
-  border-top: 1px solid #e3e7e8;
-  background: #fff;
+  width: 100%;
+  padding: 8px;
+  border-radius: var(--of-r-controle);
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: background var(--of-rapido) var(--of-curva-saida);
 }
-.gv-rodape-espaco { flex: 1; min-width: 4px }
+.gv-secao-cab:hover { background: var(--of-papel-alterno) }
+.gv-secao-chevron {
+  width: 13px;
+  height: 13px;
+  stroke-width: 2.2;
+  color: var(--of-tinta-3);
+  flex: 0 0 auto;
+  transition: transform var(--of-base) var(--of-curva);
+}
+.gv-secao-cab[data-aberta="true"] .gv-secao-chevron { transform: rotate(90deg) }
+.gv-secao-nome {
+  font-size: var(--of-t-meta-min);
+  font-weight: var(--of-peso-semi);
+  color: var(--of-tinta-2);
+  letter-spacing: .04em;
+  white-space: nowrap;
+}
+/* Fechada, a seção resume o que guarda. Seção que fecha e não diz nada obriga
+   a abrir uma por uma para procurar. */
+.gv-secao-resumo {
+  margin-left: auto;
+  font-size: var(--of-t-meta);
+  color: var(--of-tinta-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 190px;
+}
+.gv-secao-resumo[data-alerta="true"] { color: var(--of-coral-texto); font-weight: var(--of-peso-semi) }
+.gv-secao-corpo { padding: 2px 8px 6px }
+
+.gv-acao-linha {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 8px;
+  flex-wrap: wrap;
+}
+.gv-acao-ponto {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--of-coral-marca);
+}
+.gv-acao-texto {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--of-t-corpo);
+  color: var(--of-tinta);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.gv-acao-texto[data-sem="true"] { color: var(--of-coral-texto); font-weight: var(--of-peso-semi) }
+.gv-mini {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 11px;
+  border-radius: var(--of-r-item);
+  background: var(--of-papel);
+  box-shadow: var(--of-anel);
+  border: 0;
+  cursor: pointer;
+  font-size: var(--of-t-corpo-min);
+  font-weight: var(--of-peso-semi);
+  color: var(--of-tinta);
+  white-space: nowrap;
+}
+.gv-mini:hover { background: var(--of-papel-hover) }
+.gv-mini svg { width: 12px; height: 12px; stroke-width: 2.3; flex: 0 0 auto }
+
+.gv-vazio {
+  padding: 6px 8px;
+  font-size: var(--of-t-corpo);
+  color: var(--of-tinta-2);
+  line-height: 1.45;
+  text-wrap: pretty;
+  margin: 0;
+}
+
+.gv-linha-tempo {
+  list-style: none;
+  margin: 0;
+  padding: 2px 8px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.gv-linha-tempo li { display: flex; align-items: baseline; gap: 9px; min-width: 0 }
+.gv-linha-tempo time {
+  flex: 0 0 74px;
+  font-size: var(--of-t-meta-min);
+  color: var(--of-tinta-3);
+  font-variant-numeric: tabular-nums;
+}
+.gv-linha-tempo span {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--of-t-corpo);
+  color: var(--of-tinta);
+  line-height: 1.45;
+  text-wrap: pretty;
+}
+
+.gv-oportunidades { list-style: none; margin: 0; padding: 2px 8px 6px; display: flex; flex-direction: column; gap: 7px }
+.gv-oportunidades li { display: flex; align-items: center; gap: 9px; font-size: var(--of-t-corpo) }
+.gv-oportunidades a { color: var(--of-tinta-forte); font-weight: var(--of-peso-semi); text-decoration: none }
+.gv-oportunidades a:hover { color: var(--of-coral-texto) }
+.gv-oportunidades em { font-style: normal; color: var(--of-tinta-3); margin-left: auto; white-space: nowrap }
+
+/* ── Rodapé ───────────────────────────────────────────────────────────── */
+
+.gv-rodape {
+  flex: 0 0 auto;
+  padding: 11px 16px;
+  border-top: 1px solid var(--of-linha);
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+  align-items: center;
+}
 .gv-btn {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  height: 34px;
+  gap: 6px;
+  height: var(--of-h-controle);
   padding: 0 12px;
-  border-radius: 9px;
-  background: #fff;
-  box-shadow: inset 0 0 0 1px #dbdede;
+  border-radius: var(--of-r-controle);
+  background: var(--of-papel);
+  box-shadow: var(--of-anel);
   border: 0;
   cursor: pointer;
-  font-size: 12.5px;
-  font-weight: 500;
-  color: #1f252c;
+  font-size: var(--of-t-corpo);
+  font-weight: var(--of-peso-medio);
+  color: var(--of-tinta);
   white-space: nowrap;
+  flex: 0 0 auto;
   text-decoration: none;
 }
-.gv-btn:hover { background: #f6f7f7; text-decoration: none }
-.gv-btn svg { width: 15px; height: 15px; stroke-width: 1.8; flex: 0 0 auto }
+.gv-btn:hover { background: var(--of-papel-hover); text-decoration: none }
+.gv-btn[data-bloqueado="true"] { opacity: .5; cursor: not-allowed }
+.gv-btn svg { width: 14px; height: 14px; stroke-width: 1.9; flex: 0 0 auto }
+.gv-rodape-espaco { flex: 1; min-width: 0 }
 
-.gv-qualificar {
-  display: flex;
-  align-items: stretch;
-  height: 34px;
-  border-radius: 9px;
-  overflow: hidden;
-  background: #d93c1a;
+.gv-saida {
+  position: relative;
   flex: 0 0 auto;
 }
-.gv-qualificar-principal {
+.gv-saida-grupo {
+  display: flex;
+  align-items: stretch;
+  height: var(--of-h-controle);
+  border-radius: var(--of-r-controle);
+  overflow: hidden;
+  background: var(--of-coral-acao);
+}
+.gv-saida-principal {
   display: flex;
   align-items: center;
-  gap: 7px;
-  padding: 0 13px;
+  gap: 6px;
+  padding: 0 12px;
   background: transparent;
   border: 0;
-  color: #fff;
-  font-size: 12.5px;
-  font-weight: 600;
+  color: var(--of-papel);
+  font-size: var(--of-t-corpo);
+  font-weight: var(--of-peso-semi);
   white-space: nowrap;
   cursor: pointer;
 }
-.gv-qualificar-principal:hover { background: rgba(0, 0, 0, .12) }
-.gv-qualificar-principal svg { width: 14px; height: 14px; stroke-width: 2.4; flex: 0 0 auto }
-.gv-qualificar-fio { flex: 0 0 auto; width: 1px; background: rgba(255, 255, 255, .34) }
-.gv-qualificar-seta {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
+.gv-saida-principal:hover { background: rgba(0, 0, 0, .14) }
+.gv-saida-principal svg { width: 14px; height: 14px; stroke-width: 2.2; flex: 0 0 auto }
+.gv-saida-fio { flex: 0 0 auto; width: 1px; background: rgba(255, 255, 255, .34) }
+.gv-saida-seta {
+  display: grid;
+  place-items: center;
+  width: 27px;
   background: transparent;
   border: 0;
-  color: #fff;
+  color: var(--of-papel);
   cursor: pointer;
 }
-.gv-qualificar-seta:hover { background: rgba(0, 0, 0, .12) }
-.gv-qualificar-seta svg { width: 13px; height: 13px; stroke-width: 2.1 }
+.gv-saida-seta:hover { background: rgba(0, 0, 0, .14) }
+.gv-saida-seta svg { width: 12px; height: 12px; stroke-width: 2.2; transition: transform var(--of-rapido) var(--of-curva) }
+.gv-saida[data-aberto="true"] .gv-saida-seta svg { transform: rotate(180deg) }
+
+/* O menu abre PARA CIMA: ele nasce no rodapé e para baixo não há espaço. */
+.gv-saida-menu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  right: 0;
+  width: 268px;
+  z-index: 44;
+  border-radius: 6px;
+  background: var(--of-papel);
+  border: 1px solid var(--of-linha);
+  box-shadow: 0 -4px 6px -1px rgba(0, 0, 0, .1), 0 -2px 4px -2px rgba(0, 0, 0, .1);
+  padding: 4px;
+  animation: onface-rise .12s var(--of-curva) both;
+}
+.gv-saida-rotulo {
+  font-size: var(--of-t-meta-min);
+  font-weight: var(--of-peso-semi);
+  color: var(--of-tinta-2);
+  letter-spacing: .04em;
+  padding: 7px 8px 4px;
+}
+.gv-saida-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  width: 100%;
+  padding: 8px;
+  border-radius: 6px;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  color: var(--of-tinta);
+}
+.gv-saida-item:hover { background: var(--of-neutro) }
+.gv-saida-item svg { width: 16px; height: 16px; stroke-width: 1.8; flex: 0 0 auto; margin-top: 1px }
+.gv-saida-item strong {
+  display: block;
+  font-size: var(--of-t-forte);
+  font-weight: var(--of-peso-medio);
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.gv-saida-item small {
+  display: block;
+  font-size: var(--of-t-meta);
+  color: var(--of-tinta-2);
+  line-height: 1.4;
+  margin-top: 1px;
+  text-wrap: pretty;
+}
 
 /* Esqueleto com a FORMA do conteúdo: a gaveta abre instantânea e o detalhe
-   chega depois. Uma frase centralizada faria a gaveta saltar quando o dado
-   entrasse. */
+   chega depois. Uma frase centralizada faria a gaveta saltar. */
 .gv-esqueleto {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding: 18px 16px;
+  padding: 15px 16px;
 }
 .gv-esqueleto > span {
   display: block;
-  border-radius: 7px;
-  background: #f1f3f3;
+  border-radius: var(--of-r-item);
+  background: var(--of-neutro);
   animation: onface-pisca 1.4s ease-in-out infinite;
 }

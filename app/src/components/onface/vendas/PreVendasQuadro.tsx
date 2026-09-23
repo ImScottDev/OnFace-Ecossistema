@@ -727,6 +727,14 @@ export function PreVendasQuadro({
             router.refresh();
             void carregar(aberto);
           }}
+          aoPedirSaida={(tipo) => {
+            const card = todos.find((c) => c.leadId === aberto);
+            if (card) setSaida({ tipo, lead: paraSaida(card) });
+          }}
+          aoPedirAtividade={() => {
+            const card = todos.find((c) => c.leadId === aberto);
+            if (card) setSaida({ tipo: "atividade", lead: paraSaida(card) });
+          }}
         />
       )}
 
@@ -736,7 +744,10 @@ export function PreVendasQuadro({
           lead={saida.lead}
           acoes={acoes}
           aoFechar={() => setSaida(null)}
-          aoConcluir={() => router.refresh()}
+          aoConcluir={() => {
+            router.refresh();
+            if (aberto) void carregar(aberto);
+          }}
         />
       )}
 
