@@ -290,3 +290,44 @@ docker exec callface-crm2-dev-postgres rm -rf /tmp/restore.dump /tmp/carga
 ```
 
 Lembrete: a raiz da EC2 está em 93%, e agora há um banco a mais.
+
+## Duas formas de virar a chave (escolha uma)
+
+### A) Rename dos bancos
+
+Troca o nome, o `.env` continua apontando para `callface_crm`.
+
+```bash
+docker compose -p crm2-dev stop app api worker
+docker exec callface-crm2-dev-postgres psql -U callface -d postgres \
+  -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity
+       WHERE datname LIKE 'callface_crm%' AND pid <> pg_backend_pid();" \
+  -c "ALTER DATABASE callface_crm RENAME TO callface_crm_antes_20260923;" \
+  -c "ALTER DATABASE callface_crm_novo RENAME TO callface_crm;"
+docker compose -p crm2-dev start app api worker
+```
+
+### B) Apontar o `.env` para o banco novo (mais simples, sem mexer em banco)
+
+Uma linha, e o antigo fica intocado com o nome que já tem:
+
+```bash
+cd /opt/callface/crm2-dev
+cp .env .env.bak-20260923
+sed -i 's#/callface_crm$#/callface_crm_novo#' .env
+grep -c callface_crm_novo .env        # confira quantas linhas mudaram
+docker compose -p crm2-dev up -d --force-recreate app api worker
+```
+
+Para voltar atrás: `cp .env.bak-20260923 .env` e recriar os containers.
+
+Confira antes quantas variáveis do `.env` citam o banco — se alguma URL não
+terminar em `/callface_crm` (com parâmetros depois, por exemplo), o `sed` acima
+não a alcança.
+
+**A opção B é a que eu escolheria**: não renomeia nada, não exige parar os
+containers antes, e o rollback é copiar um arquivo de volta.
+
+Nos dois casos o rebuild continua necessário para a leitura nova
+(`board-pre-vendas.ts`) valer. Sem ele o board mostra o total sem o recorte de
+funil, mesmo com o dado correto embaixo.
