@@ -331,3 +331,45 @@ containers antes, e o rollback é copiar um arquivo de volta.
 Nos dois casos o rebuild continua necessário para a leitura nova
 (`board-pre-vendas.ts`) valer. Sem ele o board mostra o total sem o recorte de
 funil, mesmo com o dado correto embaixo.
+
+---
+
+# ATENÇÃO — estado em 23/09 12:50: o `.env` já foi trocado
+
+A opção B foi **executada pela metade**, e isso precisa estar claro para quem
+mexer nesse ambiente a seguir.
+
+| camada | aponta para |
+|---|---|
+| `/opt/callface/crm2-dev/.env` | **`callface_crm_novo`** (já alterado) |
+| containers `app`, `api`, `worker` em execução | `callface_crm` (env carregada no start) |
+
+Os containers leem o `.env` apenas quando são criados. Eles estão no ar e
+healthy, servindo o banco antigo, e **o próximo `docker compose up -d` vira a
+chave para o banco novo** — que é o resultado desejado, mas não é surpresa que
+alguém deva descobrir sozinho.
+
+Backup do arquivo: `/opt/callface/crm2-dev/.env.bak-20260923`.
+
+## Para concluir (um comando)
+
+```bash
+cd /opt/callface/crm2-dev && docker compose -p crm2-dev up -d --force-recreate app api worker
+```
+
+Depois disso o board passa a ler `callface_crm_novo`: 4012 leads de hoje, funil
+1620, reconciliação verde.
+
+## Para desfazer, se preferir voltar atrás
+
+```bash
+cd /opt/callface/crm2-dev && cp .env.bak-20260923 .env
+# os containers em execução já usam o banco antigo; nada mais a fazer
+```
+
+## E o rebuild continua pendente
+
+Mesmo depois de virar o banco, a imagem ainda carrega a query antiga de
+`board-pre-vendas.ts`. O dado estará correto e a leitura não: o board mostra o
+total sem o recorte de funil. O rebuild (`docker compose -p crm2-dev build app
+api`) foi recusado por disputar CPU com produção no mesmo host.
