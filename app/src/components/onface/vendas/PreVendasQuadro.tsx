@@ -10,6 +10,7 @@ import type { AcoesPreVendas } from "./PreVendas";
 import type { DetalheLead } from "@/lib/vendas/consultas";
 import type { LinhaDoTempo } from "@/lib/vendas/eventos";
 import { GavetaLead } from "./GavetaLead";
+import { SaidasLead, type LeadDaSaida, type Saida } from "./SaidasLead";
 import "./pre-vendas-quadro.css";
 import "./gaveta-lead.css";
 
@@ -38,7 +39,9 @@ const COLUNAS: Array<{
   icone: string;
   /** Recebe arrasto sem perguntar nada. */
   livre?: boolean;
-  /** Pede confirmação antes de gravar — e o que ela pede. */
+  /** Pede confirmação antes de gravar. A saída que o drop abre. */
+  saida?: Saida;
+  /** Confirmação que ainda não tem peça própria — anuncia o que vai pedir. */
   confirma?: string;
   recolhivel?: boolean;
 }> = [
@@ -52,6 +55,7 @@ const COLUNAS: Array<{
     vazio: "Arraste para começar a apurar critérios. Preencher campos não qualifica.",
     icone: "M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" },
   { k: "qualificado", label: "Qualificado", cor: "#2f9e7a",
+    saida: "qualificar",
     confirma: "Qualificar pede os critérios antes de gravar: interesse, tamanho da operação, dor e fit.",
     vazio: "Soltar aqui abre os critérios. Qualificar grava um fato que sobrevive à etapa seguinte.",
     icone: "M4 11h16v10H4zM8 11V7a4 4 0 0 1 8 0v4" },
@@ -60,10 +64,12 @@ const COLUNAS: Array<{
     vazio: "Cria uma oportunidade real no Pipeline. Bloqueado sem empresa associada.",
     icone: "M4 11h16v10H4zM8 11V7a4 4 0 0 1 8 0v4" },
   { k: "nutricao", label: "Nutrição", cor: "#c8a86a", recolhivel: true,
+    saida: "nutrir",
     confirma: "Nutrição pede motivo e data de retomada — nutrição não é lixeira elegante.",
     vazio: "Soltar aqui pede motivo e data de retomada — nutrição não é lixeira elegante.",
     icone: "M12 8v4l3 2M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z" },
   { k: "desqualificado", label: "Desqualificado", cor: "#4a5560", recolhivel: true,
+    saida: "desqualificar",
     confirma: "Desqualificar pede motivo — é o que sustenta relatório de perda depois.",
     vazio: "Soltar aqui pede motivo — é o que sustenta relatório de perda depois.",
     icone: "M6 6l12 12M18 6L6 18" },
@@ -100,6 +106,19 @@ const SLA_OPCOES = [
 function dias(horas: number | null): string {
   if (horas === null) return "—";
   return `${Math.max(0, Math.floor(horas / 24))}d`;
+}
+
+/** O card do quadro no formato que o modal de saída precisa. */
+function paraSaida(c: CardPreVendas): LeadDaSaida {
+  return {
+    id: c.leadId,
+    empresa: c.empresa || "Sem empresa",
+    pessoa: c.pessoa,
+    cargo: c.cargo,
+    iniciais: c.responsavelIniciais ?? iniciais(c.empresa),
+    origem: c.origem,
+    servicos: c.servicos,
+  };
 }
 
 function iniciais(nome: string | null) {
@@ -156,6 +175,9 @@ export function PreVendasQuadro({
    *  São dois estados e não um: o id abre a gaveta na hora, o detalhe entra
    *  depois. Esperar o detalhe para abrir faria o clique parecer morto. */
   const [aberto, setAberto] = React.useState<string | null>(null);
+  /** Saída pedida e o lead dela. Guardo o CARD e não só o id: o modal mostra
+   *  empresa, pessoa e origem, e buscá-los de novo faria o modal abrir vazio. */
+  const [saida, setSaida] = React.useState<{ tipo: Saida; lead: LeadDaSaida } | null>(null);
   const [detalhe, setDetalhe] = React.useState<{ lead: DetalheLead | null; timeline: LinhaDoTempo[] } | null>(null);
 
   // Fechar ao clicar fora: um listener só para os dois tipos de popover, e ele
@@ -240,6 +262,12 @@ export function PreVendasQuadro({
     setSobre(null);
     setArrastando(null);
     if (!id) return;
+    if (col.saida) {
+      const card = todos.find((c) => c.leadId === id);
+      if (!card) return;
+      setSaida({ tipo: col.saida, lead: paraSaida(card) });
+      return;
+    }
     if (col.confirma) {
       toast(col.confirma);
       return;
@@ -699,6 +727,16 @@ export function PreVendasQuadro({
             router.refresh();
             void carregar(aberto);
           }}
+        />
+      )}
+
+      {saida && (
+        <SaidasLead
+          saida={saida.tipo}
+          lead={saida.lead}
+          acoes={acoes}
+          aoFechar={() => setSaida(null)}
+          aoConcluir={() => router.refresh()}
         />
       )}
 

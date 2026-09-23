@@ -137,6 +137,8 @@
   --of-canal-social-tinta: #4f3fa8;
   --of-canal-whatsapp-fundo: #e6f4ee;
   --of-canal-whatsapp-tinta: #1f7256;
+  /** Contorno do par verde. Declarado no popup de qualificação do protótipo. */
+  --of-canal-whatsapp-contorno: #bfe3d4;
   --of-canal-web-fundo: #e8f0fb;
   --of-canal-web-tinta: #2c5f9e;
   --of-canal-organico-fundo: #f7edd8;
