@@ -123,7 +123,21 @@ async function main() {
            a.organizacao_id::text, l.sdr_status, l.origem,
            l.updated_at::text, l.created_at::text, l.last_contact_at::text
       FROM leads l
-      JOIN aquisicoes a ON a.lead_legado_id = l.id
+      -- A ponte e backfill_provenance, nao aquisicoes.lead_legado_id.
+      --
+      -- Numa base virgem o vínculo direto ainda não existe quando este passo
+      -- roda: quem o preenche é o bloco 0 do passo 16, e o 16 é o último da
+      -- cadeia. Casar por ele devolvia ZERO linhas e o backfill dizia "0
+      -- aquisições" sem errar — medido no refresh do dev remoto em 23/09.
+      --
+      -- A provenance é gravada pelo próprio 06, então existe sempre que a
+      -- aquisição existe. O COALESCE mantém o caminho direto para bases que já
+      -- têm o vínculo (dev, homolog), onde a provenance pode ter sido podada.
+      LEFT JOIN backfill_provenance bp
+        ON bp.entidade_canonica = 'aquisicao' AND bp.tabela_origem = 'leads'
+       AND bp.id_origem = l.id::text
+      JOIN aquisicoes a
+        ON a.id = COALESCE(bp.id_canonico, (SELECT a2.id FROM aquisicoes a2 WHERE a2.lead_legado_id = l.id LIMIT 1))
      WHERE l.tipo = 'lead'`);
 
   // Negócios por lead, uma consulta só. A escolha do principal é a mesma de
