@@ -182,6 +182,85 @@ async function main() {
             WHERE p.organizacao_id = oc.organizacao_id AND p.nome = 'Callface AI')`);
   }
 
+  // ── 5. Etapa da oportunidade ────────────────────────────────────────────
+  //
+  // Décimo caso do mesmo padrão. O backfill 07 grava `etapa` como TEXTO
+  // ('entrada', 'proposta', 'ganho'…) e deixa `etapa_id` nulo. A etapa canônica
+  // mora em `pipeline_etapas` (SPEC §8.2), igual à da aquisição, e o teste
+  // `cobertura.test.ts` cobra exatamente isso.
+  //
+  // Medido em 23/09 com produção carregada: 6 de 1.577 oportunidades com
+  // `etapa_id`. As etapas existem nos pipelines Callface AI e PABX com os
+  // mesmos códigos — só faltava ligar.
+  //
+  // Casa por pipeline_id + codigo, nunca por codigo sozinho: 'ganho' existe nos
+  // dois pipelines, e ignorar o pipeline apontaria metade das oportunidades
+  // para a etapa da família errada.
+  const oportunidadeSemEtapa = await conta(sql`
+    SELECT count(*)::int AS n FROM oportunidades o
+     WHERE o.etapa_id IS NULL AND o.etapa IS NOT NULL AND o.pipeline_id IS NOT NULL
+       AND EXISTS (SELECT 1 FROM pipeline_etapas pe
+                    WHERE pe.pipeline_id = o.pipeline_id AND pe.codigo = o.etapa)`);
+  console.log(`  5. oportunidades sem etapa canônica ..... ${oportunidadeSemEtapa}`);
+
+  if (APLICAR && oportunidadeSemEtapa > 0) {
+    await db.execute(sql`
+      UPDATE oportunidades o
+         SET etapa_id = pe.id, updated_at = o.updated_at
+        FROM pipeline_etapas pe
+       WHERE pe.pipeline_id = o.pipeline_id AND pe.codigo = o.etapa
+         AND o.etapa_id IS NULL`);
+  }
+
+  // Oportunidade SEM pipeline: a família diz qual é.
+  //
+  // Quatro oportunidades chegaram do legado sem `pipeline_id` (3 com
+  // service_family CALLFACE_AI, 1 sem família nenhuma). Sem pipeline não há
+  // como escolher entre a etapa 'ganho' do Callface AI e a do PABX — são duas
+  // linhas distintas com o mesmo código.
+  //
+  // A família resolve três delas. A quarta, sem família, fica sem etapa de
+  // propósito: o SPEC §42 proíbe inventar, e um pipeline chutado é pior que um
+  // campo vazio que a tela sabe representar.
+  const semPipeline = await conta(sql`
+    SELECT count(*)::int AS n FROM oportunidades
+     WHERE etapa_id IS NULL AND pipeline_id IS NULL AND service_family IS NOT NULL`);
+  console.log(`  5b. oportunidades sem pipeline, com família ${semPipeline}`);
+
+  if (APLICAR && semPipeline > 0) {
+    await db.execute(sql`
+      UPDATE oportunidades o
+         SET pipeline_id = pe.pipeline_id, etapa_id = pe.id, updated_at = o.updated_at
+        FROM pipeline_etapas pe
+        JOIN pipelines p ON p.id = pe.pipeline_id AND p.tipo = 'SALES'
+       WHERE o.etapa_id IS NULL AND o.pipeline_id IS NULL
+         AND o.service_family IS NOT NULL
+         AND pe.codigo = o.etapa
+         AND upper(replace(p.nome, ' ', '_')) = upper(o.service_family)`);
+  }
+
+  // ── 6. Setup da oportunidade (0073) ─────────────────────────────────────
+  //
+  // Mesmo padrão: a migration 0073 criou `setup_estimado` para separar receita
+  // de implantação da recorrente, e o backfill 07 nunca preencheu a coluna.
+  //
+  // Efeito medido em 23/09: o relatório de ganhos mostrava R$ 0,00 de setup
+  // contra R$ 76.628,87 no legado — receita de implantação simplesmente sumia
+  // da leitura canônica. O `cobertura.test.ts` cobra a paridade e pegou.
+  const semSetup = await conta(sql`
+    SELECT count(*)::int AS n FROM oportunidades o
+      JOIN negocios n ON n.id = o.negocio_id_legado
+     WHERE o.setup_estimado IS NULL AND n.valor_setup IS NOT NULL AND n.valor_setup <> 0`);
+  console.log(`  6. oportunidades sem setup materializado  ${semSetup}`);
+
+  if (APLICAR && semSetup > 0) {
+    await db.execute(sql`
+      UPDATE oportunidades o
+         SET setup_estimado = n.valor_setup, updated_at = o.updated_at
+        FROM negocios n
+       WHERE n.id = o.negocio_id_legado
+         AND o.setup_estimado IS NULL AND n.valor_setup IS NOT NULL AND n.valor_setup <> 0`);
+  }
   // ── Reconciliação: o legado e o canônico têm que bater ──────────────────
   console.log(`\n  RECONCILIAÇÃO\n`);
   const linhas = await db.execute<{ o_que: string; legado: number; canonico: number }>(sql`

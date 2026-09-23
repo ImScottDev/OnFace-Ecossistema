@@ -3021,6 +3021,40 @@ const slaWorker = new Worker(
       return;
     }
 
+    if (job.name === "callface-ai-sync") {
+      // O sync do SaaS Callface AI tinha motor completo e NENHUM acionador: só
+      // um script manual, que ninguém rodava. O efeito visível era o Cliente 360
+      // mostrando "não conectado" nos 238 serviços da família CALLFACE_AI, e as
+      // quatro tabelas `callface_ai_*` em zero desde que foram criadas.
+      //
+      // A conexão com o banco do SaaS é somente-leitura por desenho (três
+      // travas no pacote de integração), então este job não escreve lá.
+      //
+      // Falha de conexão NÃO derruba o job: a resolução devolve `ok: false` em
+      // vez de lançar, e aqui isso vira log. O banco do SaaS fica atrás de um
+      // túnel que nem sempre está de pé, e um job que explode a cada 6 horas por
+      // isso só produz ruído de alerta.
+      const { sincronizarCallfaceAi } = await import("../lib/integrations/callface-ai/sincronizar");
+      const { resolverIdentidades } = await import("../lib/integrations/callface-ai/identidade");
+      const { fecharConexao } = await import("@onface/integrations-callface-ai");
+      try {
+        const orgs = await db.execute<{ id: string; slug: string }>(
+          rawSql`SELECT id::text, slug FROM organizacoes`);
+        for (const org of orgs) {
+          const ident = await resolverIdentidades(org.id);
+          if (!ident.ok) {
+            console.warn(`[callface-ai-sync] ${org.slug}: identidades NÃO sincronizaram — ${ident.naoConfigurado ? "CALLFACE_AI_DATABASE_URL ausente" : (ident.erro || "banco do SaaS não respondeu")}`);
+            continue;
+          }
+          const r = await sincronizarCallfaceAi(org.id);
+          console.log(`[callface-ai-sync] ${org.slug}: ${ident.vinculadas} identidade(s) nova(s), ${r.tenants} tenant(s), ${r.snapshots} snapshot(s)${r.erro ? ` — erro: ${r.erro}` : ""}`);
+        }
+      } finally {
+        await fecharConexao().catch(() => undefined);
+      }
+      return;
+    }
+
     if (job.name === "cs-sweep") {
       const { rodarSweepCsTodasOrgs } = await import("../lib/cs/sweep");
       const resultados = await rodarSweepCsTodasOrgs();
@@ -3901,7 +3935,7 @@ const SCHEDULERS_JOBS_AGENDADOS = [
   "rd-criativo-sync", "outlook-reuniao-sync", "follow-up-proposta", "cs-sweep", "calendar-sync-retry",
   "alerta-renovacao", "reativar-lead-perdido", "check-whatsapp-connection", "snapshot-diario",
   "cadence-sweep", "event-outbox-sweep", "lembrete-reuniao-30min",
-  "catalogo-stripe-sync",
+  "catalogo-stripe-sync", "callface-ai-sync",
 ];
 
 // Schedule recurring jobs
@@ -3919,6 +3953,9 @@ async function setupScheduledJobs() {
   await scheduledQueue.upsertJobScheduler("outlook-reuniao-sync", { every: 15 * 60 * 1000 }, { name: "outlook-reuniao-sync" });
   await scheduledQueue.upsertJobScheduler("follow-up-proposta", { every: 60 * 60 * 1000 }, { name: "follow-up-proposta" });
   await scheduledQueue.upsertJobScheduler("cs-sweep", { every: 60 * 60 * 1000 }, { name: "cs-sweep" });
+  // A cada 6 h: o snapshot do Callface AI é uso agregado por tenant, não muda de
+  // minuto a minuto, e a leitura atravessa um túnel para fora da VPC.
+  await scheduledQueue.upsertJobScheduler("callface-ai-sync", { every: 6 * 60 * 60 * 1000 }, { name: "callface-ai-sync" });
   // A cada 10 min: falha de calendário é quase sempre transitória, e o
   // convite atrasado perde valor rápido.
   await scheduledQueue.upsertJobScheduler("calendar-sync-retry", { every: 10 * 60 * 1000 }, { name: "calendar-sync-retry" });

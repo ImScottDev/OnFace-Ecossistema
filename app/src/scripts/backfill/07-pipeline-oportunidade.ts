@@ -128,6 +128,21 @@ async function main() {
 
     if (!APLICAR) { criadas++; if (n.metodo_familia === "NAO_RESOLVIDO") casos++; continue; }
 
+    // source_process recebe a origem REAL do negócio legado, nunca um marcador
+    // de carga.
+    //
+    // Este passo gravava a string 'BACKFILL_07' na coluna, e source_process é
+    // coluna de NEGÓCIO: diz de onde a oportunidade veio (PRE_SALES,
+    // OUTBOUND_DIRECT, MANUAL, EXPANSION) e aparece na tela como "Origem". O
+    // usuário lia "Origem: BACKFILL_07".
+    //
+    // A migration 0079 existe para consertar isso, mas roda ANTES deste
+    // backfill: numa carga limpa ela varre uma tabela vazia e o marcador é
+    // reintroduzido logo em seguida. Medido em 23/09 com produção carregada:
+    // 1.571 de 1.577 oportunidades com o marcador, apesar da migration.
+    //
+    // A proveniência não se perde: mora em backfill_provenance, que é o lugar
+    // dela. Sem origem no legado, fica NULL — o SPEC §42 proíbe inventar.
     const r = await db.execute<{ id: string; criada: boolean }>(sql`
       WITH ja AS (
         SELECT id_canonico AS id FROM backfill_provenance
@@ -135,13 +150,14 @@ async function main() {
       ), nova AS (
         INSERT INTO oportunidades (
           organizacao_id, empresa_id, pessoa_id, pipeline_id, stage, etapa, responsavel_id,
-          titulo, valor, mrr, service_family, commercial_motion, source_process,
+          titulo, valor, mrr, setup_estimado, service_family, commercial_motion, source_process,
           ganho_at, perdido_at, motivo_perda, negocio_id_legado, lead_id, created_at, updated_at
         )
         SELECT ${n.organizacao_id}::uuid, ${n.empresa_id}::uuid, ${n.pessoa_id}::uuid,
                ${n.pipeline_id}::uuid, ${n.status ?? "aberto"}, ${n.etapa}, ${n.responsavel_id}::uuid,
-               ${n.titulo}, ${n.valor_total ?? n.valor_projeto}, ${n.mrr_fechado ?? n.mrr_estimado}, ${n.familia_resolvida},
-               ${n.commercial_motion ?? "NEW_BUSINESS"}, 'BACKFILL_07',
+               ${n.titulo}, ${n.valor_total ?? n.valor_projeto}, ${n.mrr_fechado ?? n.mrr_estimado},
+               ${n.valor_setup ?? null}, ${n.familia_resolvida},
+               ${n.commercial_motion ?? "NEW_BUSINESS"}, ${n.source_process ?? null},
                ${fech === "WON" ? (n.ganho_at ?? n.updated_at) : null},
                ${fech === "LOST" ? n.updated_at : null},
                ${fech === "LOST" ? n.motivo_perda : null},

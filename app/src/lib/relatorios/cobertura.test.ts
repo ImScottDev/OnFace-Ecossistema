@@ -143,8 +143,22 @@ test("toda oportunidade aponta para uma etapa que existe", async (t) => {
       FROM oportunidades o`);
 
   assert.equal(r.orfas, 0, "oportunidade apontando para etapa inexistente");
+
+  // A cobrança é sobre quem TEM pipeline.
+  //
+  // Sem `pipeline_id` não existe etapa a apontar: o código 'ganho' existe uma
+  // vez em cada pipeline de vendas, e escolher um deles sem o pipeline seria
+  // chutar a família — o SPEC §42 proíbe. Medido em 23/09: 1 oportunidade veio
+  // do legado sem pipeline E sem família, e ela fica sem etapa de propósito.
+  //
+  // O que este teste existe para pegar continua pego: divergência de
+  // vocabulário, ou seja, oportunidade com pipeline cuja etapa não casa com
+  // nenhuma linha de `pipeline_etapas`.
+  const [semPipeline] = await db.execute<{ n: number }>(sql`
+    SELECT count(*)::int AS n FROM oportunidades WHERE pipeline_id IS NULL`);
   assert.equal(
-    r.com_etapa, r.total,
-    `${r.total - r.com_etapa} oportunidades sem etapa canônica: o vocabulário de etapa divergiu de novo`,
+    r.com_etapa, r.total - semPipeline.n,
+    `${r.total - semPipeline.n - r.com_etapa} oportunidades COM pipeline e sem etapa canônica: ` +
+    "o vocabulário de etapa divergiu de novo",
   );
 });

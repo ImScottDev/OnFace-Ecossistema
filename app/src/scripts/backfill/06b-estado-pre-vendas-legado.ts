@@ -235,6 +235,20 @@ async function main() {
                qualificado_em = CASE WHEN ${etapa === "qualificado"} THEN COALESCE(a.qualificado_em, alvo.quando) ELSE a.qualificado_em END,
                desqualificado_em = CASE WHEN ${etapa === "desqualificado"} THEN COALESCE(a.desqualificado_em, alvo.quando) ELSE a.desqualificado_em END,
                nutricao_status = CASE WHEN ${etapa === "nutricao"} THEN COALESCE(NULLIF(a.nutricao_status, ''), 'estagnado_legado') ELSE a.nutricao_status END,
+               -- Saída do funil ENCERRA a aquisição.
+               --
+               -- Desqualificado e nutrição são as duas saídas (SAIDAS_PRE_VENDAS):
+               -- vivem em aba própria e não entram no board de ativos. Gravar o
+               -- estado sem encerrar deixava as 698 saídas contando como abertas,
+               -- e o teste de leitura canônica pegou: o board de "ativos" somava
+               -- 976 enquanto 1.674 aquisições tinham closed_at nulo.
+               --
+               -- A data é a do próprio fato, nunca now(): encerrar num backfill
+               -- não é um evento de hoje.
+               closed_at = CASE
+                 WHEN ${etapa === "desqualificado" || etapa === "nutricao"}
+                   THEN COALESCE(a.closed_at, a.desqualificado_em, alvo.quando, a.created_at)
+                 ELSE a.closed_at END,
                -- updated_at preservado: backfill não é toque do operador, e
                -- bumpar a coluna faz o board inteiro dizer "agora mesmo".
                updated_at = a.updated_at
