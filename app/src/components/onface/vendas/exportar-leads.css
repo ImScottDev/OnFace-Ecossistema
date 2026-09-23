@@ -1,0 +1,245 @@
+/* Exportar leads — geometria de `OnFace Pre-vendas.dc.html` (bloco `exp.aberto`). */
+
+.ex-veu {
+  position: fixed;
+  inset: 0;
+  background: rgba(9, 14, 20, .45);
+  z-index: 54;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  animation: onface-fade .16s ease-out both;
+}
+.ex {
+  width: 520px;
+  max-width: 100%;
+  max-height: calc(100vh - 40px);
+  background: var(--of-papel);
+  border-radius: 13px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  animation: onface-rise .2s var(--of-curva) both;
+}
+
+.ex-topo {
+  flex: 0 0 auto;
+  padding: 15px 18px 13px;
+  border-bottom: 1px solid var(--of-linha);
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.ex-topo > div { min-width: 0; flex: 1 }
+.ex-topo h2 {
+  margin: 0 0 3px;
+  font-family: var(--of-fonte-titulo);
+  font-size: 15px;
+  font-weight: var(--of-peso-forte);
+  letter-spacing: -.01em;
+  color: var(--of-tinta-forte);
+}
+.ex-topo p {
+  margin: 0;
+  font-size: var(--of-t-corpo);
+  color: var(--of-tinta-2);
+  line-height: 1.45;
+  text-wrap: pretty;
+}
+.ex-fechar {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--of-r-controle);
+  display: grid;
+  place-items: center;
+  color: var(--of-tinta-2);
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.ex-fechar:hover { background: var(--of-neutro); color: var(--of-tinta-forte) }
+.ex-fechar svg { width: 15px; height: 15px; stroke-width: 2 }
+
+.ex-corpo {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.ex-rotulo {
+  display: block;
+  font-size: var(--of-t-meta-min);
+  font-weight: var(--of-peso-semi);
+  color: var(--of-tinta-2);
+  margin-bottom: 7px;
+}
+
+.ex-escopos { display: flex; flex-direction: column; gap: 5px }
+.ex-escopo {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 11px;
+  border-radius: var(--of-r-controle);
+  border: 0;
+  background: var(--of-papel);
+  box-shadow: var(--of-anel);
+  cursor: pointer;
+  text-align: left;
+  color: var(--of-tinta);
+}
+.ex-escopo:hover { background: var(--of-papel-hover) }
+.ex-escopo[data-on="true"] { box-shadow: inset 0 0 0 1px var(--of-coral-acao) }
+/* Rádio desenhado pela borda: 5px de coral é o preenchido, 1.5px de cinza é o
+   vazio. Sem SVG e sem input, porque o estado é só espessura. */
+.ex-radio {
+  flex: 0 0 auto;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  margin-top: 2px;
+  border: 1.5px solid var(--of-linha-convite);
+}
+.ex-escopo[data-on="true"] .ex-radio { border: 5px solid var(--of-coral-acao) }
+.ex-escopo-texto { flex: 1; min-width: 0 }
+.ex-escopo-texto strong {
+  display: block;
+  font-size: var(--of-t-forte-min);
+  font-weight: var(--of-peso-medio);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ex-escopo-texto small {
+  display: block;
+  font-size: var(--of-t-meta);
+  color: var(--of-tinta-2);
+  line-height: 1.4;
+  text-wrap: pretty;
+}
+/* A contagem por escopo é o que evita exportar 3.989 sem querer. */
+.ex-escopo-conta {
+  flex: 0 0 auto;
+  font-size: var(--of-t-corpo-min);
+  font-weight: var(--of-peso-forte);
+  color: var(--of-tinta-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.ex-colunas, .ex-formatos { display: flex; gap: 5px; flex-wrap: wrap }
+.ex-coluna {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 11px 0 9px;
+  border-radius: var(--of-r-controle);
+  border: 0;
+  cursor: pointer;
+  background: var(--of-papel);
+  box-shadow: var(--of-anel);
+  color: var(--of-tinta);
+  font-size: var(--of-t-corpo);
+  font-weight: var(--of-peso-medio);
+  white-space: nowrap;
+}
+.ex-coluna:hover { background: var(--of-papel-hover) }
+.ex-coluna[data-on="true"] { font-weight: var(--of-peso-semi) }
+.ex-caixa {
+  flex: 0 0 auto;
+  width: 15px;
+  height: 15px;
+  border-radius: 4px;
+  display: grid;
+  place-items: center;
+  background: var(--of-papel);
+  box-shadow: inset 0 0 0 1.5px var(--of-linha-convite);
+}
+.ex-caixa[data-on="true"] { background: var(--of-tinta-forte); box-shadow: none }
+.ex-caixa svg { width: 9px; height: 9px; stroke-width: 3.6; color: var(--of-papel) }
+
+.ex-formatos button {
+  height: 30px;
+  padding: 0 12px;
+  border-radius: var(--of-r-controle);
+  border: 0;
+  cursor: pointer;
+  background: var(--of-papel);
+  box-shadow: var(--of-anel);
+  color: var(--of-tinta);
+  font-size: var(--of-t-corpo);
+  font-weight: var(--of-peso-medio);
+  white-space: nowrap;
+}
+.ex-formato-atual {
+  display: inline-flex;
+  align-items: center;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: var(--of-r-controle);
+  background: var(--of-tinta-forte);
+  color: var(--of-papel);
+  font-size: var(--of-t-corpo);
+  font-weight: var(--of-peso-semi);
+  white-space: nowrap;
+}
+.ex-formatos button[data-on] {
+  background: var(--of-tinta-forte);
+  color: var(--of-papel);
+  box-shadow: none;
+  font-weight: var(--of-peso-semi);
+}
+.ex-formatos button:disabled { opacity: .45; cursor: not-allowed }
+
+.ex-rodape {
+  flex: 0 0 auto;
+  padding: 12px 18px;
+  border-top: 1px solid var(--of-linha);
+  background: var(--of-papel-alterno);
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.ex-total {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--of-t-corpo);
+  color: var(--of-tinta);
+  line-height: 1.4;
+  text-wrap: pretty;
+}
+.ex-total strong { font-weight: var(--of-peso-forte); font-variant-numeric: tabular-nums }
+.ex-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: var(--of-h-controle);
+  padding: 0 14px;
+  border-radius: var(--of-r-controle);
+  background: var(--of-papel);
+  box-shadow: var(--of-anel);
+  border: 0;
+  cursor: pointer;
+  font-size: var(--of-t-corpo);
+  font-weight: var(--of-peso-medio);
+  white-space: nowrap;
+  flex: 0 0 auto;
+  color: var(--of-tinta);
+}
+.ex-btn:hover { background: var(--of-neutro) }
+.ex-btn svg { width: 14px; height: 14px; stroke-width: 1.9; flex: 0 0 auto }
+.ex-btn-gerar {
+  background: var(--of-coral-acao);
+  color: var(--of-papel);
+  box-shadow: none;
+  font-weight: var(--of-peso-semi);
+  padding: 0 15px;
+}
+.ex-btn-gerar:hover { background: var(--of-coral-acao-hover) }
+.ex-btn-gerar:disabled { opacity: .6; cursor: progress }

@@ -6,13 +6,21 @@ import { db } from "@/lib/db";
 import { getTenantContext } from "@/lib/auth/tenant";
 import { atorHumano, type Familia, type MotivoDesqualificacao, type MotivoNutricao, type Qualificacao } from "@/lib/vendas/dominio";
 import { executar, type Resultado } from "@/lib/vendas/resultado";
+import { executarEmMassa, type AcaoEmMassa, type ResultadoEmMassa } from "@/lib/vendas/acoes-em-massa";
 import * as preVendas from "@/lib/vendas/pre-vendas";
 import { criarOportunidadeDoLead } from "@/lib/vendas/pipeline";
 import { detalheLead, type DetalheLead } from "@/lib/vendas/consultas";
 import { lerLinhaDoTempo, type LinhaDoTempo } from "@/lib/vendas/eventos";
 import { resolverEmpresa } from "@/lib/vendas/identidade";
 
-const ROTA = "/onface-preview/pre-vendas";
+/* A rota oficial do produto.
+ *
+ * Era "/onface-preview/pre-vendas" — o caminho de onde esta tela veio em 18/09,
+ * quando a implementação morava no preview. Depois da inversão, TODA escrita
+ * desta página revalidava o espelho e deixava a rota real com o cache velho:
+ * qualificar, nutrir e desqualificar só apareciam no `router.refresh()` do
+ * cliente, e um F5 logo depois trazia o estado anterior de volta. */
+const ROTA = "/pre-vendas";
 
 /** Tenant e ator vêm SEMPRE do servidor: o cliente nunca escolhe em nome de
  *  qual organização ou de qual usuário a ação acontece. */
@@ -130,7 +138,7 @@ export async function acaoCriarOportunidade(entrada: {
       ator: ctx.ator,
     });
     revalidatePath(ROTA);
-    revalidatePath("/onface-preview/pipeline");
+    revalidatePath("/pipeline");
     return { ids: resultado.oportunidades.map((o) => o.id) };
   });
 }
@@ -207,4 +215,152 @@ export async function acaoResponsaveis(): Promise<Array<{ id: string; nome: stri
      WHERE organizacao_id = ${ctx.organizacaoId}::uuid AND ativo = true ORDER BY nome
   `);
   return linhas.map((l) => ({ id: l.id, nome: l.nome }));
+}
+
+/**
+ * Próxima ação: cria a Task real, amarrada à aquisição.
+ *
+ * `vence_em` é o que a leitura do board ordena. Tarefa sem prazo existe, mas
+ * cai para o fim por `NULLS LAST` — ela não vira a próxima ação de ninguém.
+ */
+export async function acaoCriarTarefa(entrada: {
+  leadId: string;
+  titulo: string;
+  responsavelId: string | null;
+  venceEm: string | null;
+  prioridade: "baixa" | "media" | "alta";
+  descricao: string | null;
+}): Promise<Resultado<{ tarefaId: string }>> {
+  const ctx = await contexto();
+  if (!ctx) return { ok: false, erro: "Sessão expirada." };
+  if (!entrada.titulo?.trim()) return { ok: false, erro: "A tarefa precisa de um título." };
+
+  return executar("criar tarefa", async () => {
+    /* Responsável precisa existir NESTA organização. Sem a checagem o banco
+       recusa por chave estrangeira e a pessoa recebe "tente de novo em
+       instantes" para um erro que nenhuma tentativa conserta. */
+    if (entrada.responsavelId) {
+      const [dono] = await db.execute<{ id: string }>(sql`
+        SELECT id::text FROM usuarios
+         WHERE id = ${entrada.responsavelId}::uuid
+           AND organizacao_id = ${ctx.organizacaoId}::uuid`);
+      if (!dono) throw new Error("O responsável escolhido não está nesta organização.");
+    }
+
+    const venceEm = entrada.venceEm ? new Date(entrada.venceEm) : null;
+    if (venceEm && Number.isNaN(venceEm.getTime())) {
+      throw new Error("A data do prazo não é válida.");
+    }
+    const [linha] = await db.execute<{ id: string }>(sql`
+      INSERT INTO tarefas (organizacao_id, lead_id, usuario_id, titulo, descricao,
+                           tipo, prioridade, vence_em, data_vencimento, origem)
+      VALUES (${ctx.organizacaoId}::uuid, ${entrada.leadId}::uuid,
+              ${entrada.responsavelId}::uuid, ${entrada.titulo.trim()},
+              ${entrada.descricao}, 'tarefa', ${entrada.prioridade},
+              ${venceEm ? venceEm.toISOString() : null}::timestamptz,
+              ${venceEm ? venceEm.toISOString() : null}::date, 'MANUAL')
+      RETURNING id::text`);
+    revalidatePath(ROTA);
+    return { tarefaId: linha.id };
+  });
+}
+
+/**
+ * Atribuir várias aquisições de uma vez.
+ *
+ * Passa pelo MESMO comando de domínio de uma a uma, num laço: cada registro
+ * emite o próprio evento e continua auditável. Um `UPDATE ... WHERE id = ANY`
+ * seria mais rápido e apagaria a linha do tempo de todas elas.
+ *
+ * Falha individual não derruba o lote — o resultado diz quantas entraram.
+ */
+export async function acaoAtribuirEmMassa(
+  leadIds: string[], responsavelId: string | null,
+): Promise<Resultado<{ total: number }>> {
+  const ctx = await contexto();
+  if (!ctx) return { ok: false, erro: "Sessão expirada." };
+  if (leadIds.length === 0) return { ok: false, erro: "Nenhuma aquisição selecionada." };
+
+  return executar("atribuir em massa", async () => {
+    let total = 0;
+    /* A primeira falha é GUARDADA, não engolida.
+     *
+     * Engolir toda exceção fez o lote inteiro falhar com "tente de novo em
+     * instantes" enquanto o motivo real ficava invisível — inclusive para
+     * quem estava depurando. Uma recusa individual continua sem derrubar as
+     * outras; o que muda é que o lote sabe dizer por que parou. */
+    let primeiraFalha: unknown = null;
+    for (const leadId of leadIds) {
+      try {
+        await preVendas.atribuirResponsavel({
+          organizacaoId: ctx.organizacaoId, leadId, responsavelId,
+          origemAtribuicao: "manual", ator: ctx.ator,
+        });
+        total += 1;
+      } catch (erro) {
+        primeiraFalha ??= erro;
+      }
+    }
+    if (total === 0) {
+      console.error("[vendas] atribuição em massa: nenhuma aplicada", primeiraFalha);
+      throw primeiraFalha instanceof Error
+        ? primeiraFalha
+        : new Error("Nenhuma aquisição pôde ser atribuída.");
+    }
+    revalidatePath(ROTA);
+    return { total };
+  });
+}
+
+/**
+ * Ações em lote da barra de seleção.
+ *
+ * Usa `executarEmMassa`, o motor que já existe: ele resolve o alvo por
+ * organização, aplica uma a uma e devolve o desfecho de CADA lead — aplicado,
+ * ignorado ou falhou, com o motivo em português. É isso que permite a barra
+ * dizer "48 de 50, 2 já estavam na cadência" em vez de um "pronto" que esconde
+ * metade.
+ */
+export async function acaoEmMassa(
+  acao: AcaoEmMassa,
+  leadIds: string[],
+  valor: string | null,
+): Promise<Resultado<ResultadoEmMassa>> {
+  const ctx = await contexto();
+  if (!ctx) return { ok: false, erro: "Sessão expirada." };
+  if (!leadIds.length) return { ok: false, erro: "Nenhum lead selecionado." };
+  return executar("ação em massa", async () => {
+    const r = await executarEmMassa({
+      organizacaoId: ctx.organizacaoId,
+      acao,
+      leadIds,
+      atorId: ctx.ator.usuarioId,
+      valor,
+    });
+    revalidatePath(ROTA);
+    return r;
+  });
+}
+
+/** As opções que a barra de seleção oferece: tags e cadências da organização. */
+export async function acaoOpcoesEmMassa(): Promise<
+  Resultado<{ tags: Array<{ id: string; nome: string }>; cadencias: Array<{ id: string; nome: string }> }>
+> {
+  const ctx = await contexto();
+  if (!ctx) return { ok: false, erro: "Sessão expirada." };
+  return executar("opções em massa", async () => {
+    const [tags, cadencias] = await Promise.all([
+      db.execute<{ id: string; nome: string }>(sql`
+        SELECT id::text, nome FROM tags
+         WHERE organizacao_id = ${ctx.organizacaoId}::uuid
+         ORDER BY nome LIMIT 60
+      `),
+      db.execute<{ id: string; nome: string }>(sql`
+        SELECT id::text, nome FROM cadence_definitions
+         WHERE organizacao_id = ${ctx.organizacaoId}::uuid AND ativo IS NOT false
+         ORDER BY nome LIMIT 40
+      `),
+    ]);
+    return { tags: [...tags], cadencias: [...cadencias] };
+  });
 }

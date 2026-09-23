@@ -12,6 +12,9 @@ import type { LinhaDoTempo } from "@/lib/vendas/eventos";
 import { GavetaLead } from "./GavetaLead";
 import { SaidasLead, type LeadDaSaida, type Saida } from "./SaidasLead";
 import { AtividadeLead } from "./AtividadeLead";
+import { ExportarLeads } from "./ExportarLeads";
+import { BarraSelecao } from "./BarraSelecao";
+import "./barra-selecao.css";
 import "./pre-vendas-quadro.css";
 import "./gaveta-lead.css";
 
@@ -148,6 +151,7 @@ const D = {
   visao: "M3 3h18v18H3zM3 9h18M9 21V9",
   funil: "M22 3H2l8 9.5V19l4 2v-8.5z",
   selecionar: "M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11",
+  x: "M6 6l12 12M18 6L6 18",
 };
 
 export function PreVendasQuadro({
@@ -167,6 +171,11 @@ export function PreVendasQuadro({
   });
   const [filtroAberto, setFiltroAberto] = React.useState<ChaveFiltro | null>(null);
   const [exportAberto, setExportAberto] = React.useState(false);
+  /** O modal de critérios, e o modo em que a pessoa marca os cartões para
+   *  exportar só eles. São dois porque o desenho separa: o modal decide O QUE
+   *  sai, o modo decide QUAIS. */
+  const [modalExport, setModalExport] = React.useState(false);
+  const [modoSelecao, setModoSelecao] = React.useState(false);
   const [selecao, setSelecao] = React.useState<string[]>([]);
   const [arrastando, setArrastando] = React.useState<string | null>(null);
   const [sobre, setSobre] = React.useState<ChaveColuna | null>(null);
@@ -298,6 +307,23 @@ export function PreVendasQuadro({
     },
     [acoes],
   );
+
+  /** O recorte da tela, no formato que `/pre-vendas/exportar` espera. */
+  const filtrosDaTela = React.useMemo(
+    () => ({
+      busca: busca.trim() || null,
+      responsavel: sel.responsavel.find((v) => v !== "__sem__") ?? null,
+      origem: sel.origem[0] ?? null,
+    }),
+    [busca, sel],
+  );
+
+  const baixarVisao = () => {
+    const url = new URL("/pre-vendas/exportar", window.location.origin);
+    for (const [k, v] of Object.entries(filtrosDaTela)) if (v) url.searchParams.set(k, v);
+    window.location.href = url.toString();
+    toast(`Gerando planilha com ${visiveis.length} leads`);
+  };
 
   const abrir = (id: string) => {
     if (selecao.length) return marcar(id);
@@ -475,7 +501,13 @@ export function PreVendasQuadro({
           {exportAberto && (
             <div className="pv-filtro-menu pv-exportar-menu" style={{ left: "auto", right: 0 }}>
               <div className="pv-exportar-rotulo">EXPORTAR</div>
-              <button className="pv-exportar-item" onClick={() => toast("Exportação ainda não está ligada nesta tela")}>
+              <button
+                className="pv-exportar-item"
+                onClick={() => {
+                  setExportAberto(false);
+                  baixarVisao();
+                }}
+              >
                 <Icone d={D.visao} />
                 <span>
                   <strong>Exportar esta visão</strong>
@@ -484,18 +516,25 @@ export function PreVendasQuadro({
                   </small>
                 </span>
               </button>
-              <button className="pv-exportar-item" onClick={() => toast("Escolher critérios — tela a desenhar")}>
+              <button
+                className="pv-exportar-item"
+                onClick={() => {
+                  setExportAberto(false);
+                  setModalExport(true);
+                }}
+              >
                 <Icone d={D.funil} />
                 <span>
                   <strong>Escolher critérios</strong>
-                  <small>Filtros, colunas e formato do arquivo</small>
+                  <small>Escopo, colunas e formato do arquivo</small>
                 </span>
               </button>
               <button
                 className="pv-exportar-item"
                 onClick={() => {
                   setExportAberto(false);
-                  toast("Marque os cartões e exporte só eles");
+                  setModoSelecao(true);
+                  setSelecao([]);
                 }}
               >
                 <Icone d={D.selecionar} />
@@ -773,29 +812,70 @@ export function PreVendasQuadro({
         />
       )}
 
-      {selecao.length > 0 && (
-        <div className="pv-massa">
-          <span className="pv-massa-conta">
-            {selecao.length} {selecao.length === 1 ? "lead" : "leads"}
-          </span>
-          <button onClick={() => toast("Exportar seleção — ainda não ligado")}>Exportar</button>
+      {modalExport && (
+        <ExportarLeads
+          contagens={{ visao: visiveis.length, criterios: dados.resumo.ativos, selecao: selecao.length }}
+          filtrosDaTela={filtrosDaTela}
+          idsSelecionados={selecao}
+          aoFechar={() => setModalExport(false)}
+          aoPedirSelecao={() => {
+            setModalExport(false);
+            setModoSelecao(true);
+            setSelecao([]);
+          }}
+        />
+      )}
+
+      {modoSelecao && (
+        <div className="bs-export">
+          <Icone d={D.exportar} />
+          <span className="bs-export-texto">Selecione os leads na tela</span>
+          <span className="bs-conta">{selecao.length}</span>
+          <span className="bs-fio" />
           <button
-            onClick={async () => {
-              const r = await acoes.atribuirEmMassa(selecao, usuarioId);
-              toast(r.ok ? `${selecao.length} atribuídos a você` : r.erro ?? "Não deu para atribuir");
-              if (r.ok) {
-                setSelecao([]);
-                router.refresh();
-              }
+            className="bs-export-concluir"
+            disabled={!selecao.length}
+            onClick={() => {
+              setModoSelecao(false);
+              setModalExport(true);
             }}
           >
-            Atribuir a mim
+            Concluir seleção
           </button>
-          <button onClick={() => toast("Mover etapa em lote — pede confirmação por lead")}>Mover etapa</button>
-          <button className="pv-massa-limpar" onClick={() => setSelecao([])}>
-            Limpar
+          <button
+            className="bs-limpar"
+            title="Cancelar exportação"
+            aria-label="Cancelar exportação"
+            onClick={() => {
+              setModoSelecao(false);
+              setSelecao([]);
+            }}
+          >
+            <Icone d={D.x} />
           </button>
         </div>
+      )}
+
+      {!modoSelecao && selecao.length > 0 && (
+        <BarraSelecao
+          selecao={selecao}
+          responsaveis={dados.filtros.responsaveis}
+          aoLimpar={() => setSelecao([])}
+          aoMoverEtapa={async (para) => {
+            /* Mover etapa não existe no motor de massa: aqui é lead a lead, e
+               o relato conta quantos passaram. Falhar no meio não desfaz o que
+               já moveu — o board recarrega e mostra o estado real. */
+            const r = await Promise.all(selecao.map((id) => acoes.moverEtapa(id, para)));
+            const ok = r.filter((x) => x.ok).length;
+            toast(`${ok} de ${selecao.length} movidos`);
+            setSelecao([]);
+            router.refresh();
+          }}
+          aoConcluir={() => {
+            setSelecao([]);
+            router.refresh();
+          }}
+        />
       )}
     </div>
   );
