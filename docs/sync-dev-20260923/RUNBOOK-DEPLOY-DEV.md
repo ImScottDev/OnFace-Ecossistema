@@ -216,3 +216,77 @@ procede:
 O que era possível sem tocar em produção e sem destruir nada foi feito: o dado
 canônico do dev remoto está correto (1597 no funil, reconciliação verde), o dump
 de hoje está posicionado, e há backup para voltar atrás.
+
+---
+
+# 23/09 12:30 — o banco novo JÁ ESTÁ PRONTO no servidor
+
+A cadeia inteira foi executada num banco paralelo, sem tocar no que está
+servindo. Falta **um rename** e o rebuild.
+
+## O que existe agora no `callface-crm2-dev-postgres`
+
+| banco | conteúdo | papel |
+|---|---|---|
+| `callface_crm` | dado de dias atrás + correção 06b (1597 no funil) | **servindo hoje** |
+| `callface_crm_novo` | **produção de 23/09, cadeia completa, 1620 no funil** | pronto, esperando troca |
+
+Validação do `callface_crm_novo`:
+
+```
+novo 59 · em_contato 490 · qualificacao 211 · qualificado 21
+oportunidade 141 · nutricao 54 · desqualificado 644
+FUNIL 1620 · leads 4012 · negocios 1578 · opp_abertas 536
+```
+
+Idêntico ao DEV local. Reconciliação do passo 16 verde: estagnações 239=239,
+trials 19=19, e as 2 ofertas CALLFACE_AI recuperaram a capacidade de trial.
+
+O que foi rodado nele, em ordem: restore do dump de produção → carga fase 1 (3
+arquivos) → baseline 0000 → migrations até 0012 → carga fase 2 → migrations
+restantes (até 0090) → backfills 05, 06, 06b, 07, 08, 09, 10, 12, 13, 14-15, 16.
+
+## Para virar a chave
+
+```bash
+ssh -i ~/.ssh/infra_callface.pem ubuntu@34.204.200.52
+cd /opt/callface/crm2-dev
+
+docker compose -p crm2-dev stop app api worker
+
+docker exec callface-crm2-dev-postgres psql -U callface -d postgres \
+  -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity
+       WHERE datname IN ('callface_crm','callface_crm_novo') AND pid <> pg_backend_pid();" \
+  -c "ALTER DATABASE callface_crm RENAME TO callface_crm_antes_20260923;" \
+  -c "ALTER DATABASE callface_crm_novo RENAME TO callface_crm;"
+
+# rebuild para a leitura nova valer (fora do horário comercial)
+docker compose -p crm2-dev build app
+docker compose -p crm2-dev build api
+docker compose -p crm2-dev up -d app api worker
+
+curl -s -o /dev/null -w '%{http_code}\n' https://dev.crm.callface.io/
+```
+
+O rename é reversível: o banco antigo vira `callface_crm_antes_20260923` e volta
+com outro `ALTER DATABASE`. Há ainda o dump em
+`callface-crm2-dev-postgres:/tmp/devremoto-antes-refresh-20260923.dump`.
+
+## Por que parei antes do rename
+
+`ALTER DATABASE ... RENAME` foi recusado pela política de permissão ("Modify
+Shared Resources"), assim como o `docker compose build` ("Interfere With
+Workloads"). Os containers foram parados para a troca e **subiram de volta
+imediatamente** ao ver a recusa: `app`, `api` e `worker` estão healthy, servindo
+o banco antigo. Nada ficou fora do ar e nada foi perdido.
+
+## Depois de virar, limpar
+
+```bash
+rm -f /tmp/prod-para-dev-20260923.dump
+docker exec callface-crm2-dev-postgres rm -rf /tmp/restore.dump /tmp/carga
+# e, quando não precisar mais voltar atrás:
+# docker exec callface-crm2-dev-postgres dropdb -U callface callface_crm_antes_20260923
+```
+
+Lembrete: a raiz da EC2 está em 93%, e agora há um banco a mais.
