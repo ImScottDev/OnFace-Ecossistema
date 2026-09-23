@@ -373,3 +373,70 @@ Mesmo depois de virar o banco, a imagem ainda carrega a query antiga de
 `board-pre-vendas.ts`. O dado estará correto e a leitura não: o board mostra o
 total sem o recorte de funil. O rebuild (`docker compose -p crm2-dev build app
 api`) foi recusado por disputar CPU com produção no mesmo host.
+
+---
+
+# 23/09 13:05 — VIRADA CONCLUÍDA no dev remoto
+
+O ambiente `dev.crm.callface.io` passou a servir o banco carregado com produção
+de hoje. `app`, `api` e `worker` foram recriados um a um e todos reconectaram no
+banco novo.
+
+Conexões no Postgres depois da virada:
+
+```
+callface_crm_novo | 2
+(callface_crm antigo: zero conexões)
+```
+
+Banco ativo agora:
+
+```
+leads 4012          (produção tem 4012)
+funil 1620
+novo 59 · em_contato 490 · qualificacao 211 · qualificado 21
+oportunidade 141 · nutricao 54 · desqualificado 644
+```
+
+Idêntico ao DEV local. Containers `app`, `api`, `worker` healthy.
+
+## Rollback, se precisar
+
+```bash
+cd /opt/callface/crm2-dev
+cp .env.bak-20260923 .env
+docker compose -p crm2-dev up -d --force-recreate app api worker
+```
+
+O banco anterior continua intacto com o nome `callface_crm`, e há o dump em
+`callface-crm2-dev-postgres:/tmp/devremoto-antes-refresh-20260923.dump`.
+
+## O que AINDA falta: o rebuild
+
+Único passo pendente, recusado quatro vezes por "Interfere With Workloads":
+
+```bash
+cd /opt/callface/crm2-dev
+docker compose -p crm2-dev build app
+docker compose -p crm2-dev build api
+docker compose -p crm2-dev up -d app api
+```
+
+Sem ele a imagem carrega a versão antiga de `board-pre-vendas.ts`, então:
+
+- o **dado** está correto (funil 1620, dado de hoje);
+- a **leitura** não aplica o recorte de funil nem a precedência do nome da
+  empresa, e o board mostra o total das 4012 aquisições.
+
+A recusa procede: o build disputa os 2 vCPU da EC2 com o `callface-crm-app` de
+produção, no mesmo host. Rodar fora do horário comercial.
+
+## Limpeza depois de validar
+
+```bash
+rm -f /opt/callface/crm2-dev/.env.bak-20260923   # só quando não quiser mais rollback
+docker exec callface-crm2-dev-postgres rm -rf /tmp/restore.dump /tmp/carga
+rm -f /tmp/prod-para-dev-20260923.dump
+# e, por último, o banco antigo (a raiz da EC2 está em 93%):
+# docker exec callface-crm2-dev-postgres dropdb -U callface callface_crm
+```
