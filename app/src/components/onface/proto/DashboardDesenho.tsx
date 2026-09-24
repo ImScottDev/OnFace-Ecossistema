@@ -13,6 +13,7 @@
 
 import { Fragment } from "react";
 import { estilo, foco, hover } from "./proto-runtime";
+import "./DashboardDesenho.css";
 
 /**
  * O que o desenho consome.

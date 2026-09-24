@@ -397,6 +397,17 @@ if (!entrada || !saida) {
 
 const html = readFileSync(entrada, "utf8");
 
+/* O `<style>` do `<helmet>` — reset, scrollbar e @keyframes.
+ *
+ * Passou despercebido na primeira versão e o efeito foi silencioso: sem
+ * `button{text-align:left}` os itens da sidebar saíram centralizados, e sem os
+ * `@keyframes` (of-rise, of-fade, of-slide, of-pisca) as entradas de popover e
+ * gaveta simplesmente não aconteciam. Nada quebra, tudo fica um pouco errado —
+ * que é o tipo de divergência mais caro de achar.
+ *
+ * Sai para um `.css` ao lado, importado pelo componente gerado. */
+const estiloDoHelmet = /<style>([\s\S]*?)<\/style>/.exec(html)?.[1]?.trim() ?? "";
+
 // O script do protótipo sai inteiro para um arquivo ao lado: é lógica, e é
 // onde os dados de exemplo precisam virar os dados reais.
 const script = /<script type="text\/x-dc"[^>]*>([\s\S]*?)<\/script>/.exec(html);
@@ -427,6 +438,7 @@ writeFileSync(saida, `"use client";
 
 import { Fragment } from "react";
 import { estilo, foco, hover } from "./proto-runtime";
+${estiloDoHelmet ? `import "./${basename(saida).replace(/\.tsx$/, ".css")}";` : ""}
 
 /**
  * O que o desenho consome.
@@ -449,6 +461,16 @@ ${jsx}
   );
 }
 `, "utf8");
+
+if (estiloDoHelmet) {
+  const destinoCss = saida.replace(/\.tsx$/, ".css");
+  writeFileSync(destinoCss, `/* GERADO por scripts/dc-para-tsx.mjs — o <style> do <helmet> de
+   ${basename(entrada)}: reset, scrollbar e @keyframes.
+
+   Sem ele a tela fica "quase certa": botão com texto centralizado em vez de à
+   esquerda, e popover/gaveta sem animação de entrada. */\n\n${estiloDoHelmet}\n`, "utf8");
+  console.log(`estilo do helmet → ${destinoCss}`);
+}
 
 if (script) {
   const destinoScript = saida.replace(/\.tsx$/, ".logica.txt");

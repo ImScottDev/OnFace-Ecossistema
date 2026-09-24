@@ -6,7 +6,7 @@ import { Cf2SidebarProvider } from "@/components/crm2/ui/Sidebar";
 import { Cf2ThemeRoot } from "@/components/crm2/ThemeRoot";
 import { Cf2CamadaModal } from "@/components/crm2/CamadaModal";
 import { OnfaceThemeRoot } from "@/components/onface/OnfaceThemeRoot";
-import { AppSidebar } from "@/components/app-sidebar";
+import { CascaProto } from "@/components/onface/proto/CascaProto";
 import { TopbarOnface } from "@/components/onface/shell/TopbarOnface";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -82,25 +82,15 @@ export default async function Crm2Layout({
         {/* As duas larguras são as do protótipo: 226px aberta, 52px recolhida.
             O provider escreve inline e ganha de qualquer CSS, então é aqui que
             elas têm de viver — declarar na folha não adianta. */}
-        <SidebarProvider
-          defaultOpen={abertaPorPadrao}
-          style={
-            {
-              "--sidebar-width": "226px",
-              "--sidebar-width-icon": "52px",
-            } as React.CSSProperties
-          }
-        >
-          <AppSidebar />
-          <SidebarInset className="onface-conteudo">
-            <TopbarOnface />
-            <Cf2SidebarProvider className="h-auto min-h-0 overflow-visible">
-              <main className="onface-conteudo-interno flex min-w-0 flex-1 flex-col gap-5">
-                {children}
-              </main>
-            </Cf2SidebarProvider>
-          </SidebarInset>
-        </SidebarProvider>
+        {/* A CASCA É A DO CLAUDE DESIGN desde 24/09.
+            `AppSidebar` + `TopbarOnface` eram a versão recriada à mão, e
+            comparar propriedade por propriedade não basta: a casca é sidebar
+            com grupos, topo com trilha, busca ⌘K, sino, perfil e NEXO — dezenas
+            de detalhes que só batem quando é o mesmo markup.
+            Ver docs/design/COMO-LIGAR-UMA-TELA.md. */}
+        <Cf2SidebarProvider className="h-auto min-h-0 overflow-visible">
+          <CascaProto>{children}</CascaProto>
+        </Cf2SidebarProvider>
       </TooltipProvider>
     </Providers>
   );

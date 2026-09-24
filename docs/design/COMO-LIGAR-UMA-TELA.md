@@ -77,7 +77,7 @@ O bundle `OneFace2.zip` traz cinco arquivos `.dc.html`. Todos convertidos:
 |---|---|---|
 | `OnFace Pre-vendas` | `PreVendasDesenho` | **sim** — `/pre-vendas` |
 | `OnFace Pecas` | `PecasDesenho` | **sim** — gaveta e modais de Pré-vendas |
-| `OnFace Casca` | `CascaDesenho` | não — a casca do produto já bate, ver abaixo |
+| `OnFace Casca` | `CascaDesenho` | **sim** — o layout de `(crm2)` inteiro |
 | `OnFace Empresa` | `EmpresaDesenho` | não |
 | `OnFace Dashboard` | `DashboardDesenho` | não |
 
@@ -94,12 +94,24 @@ repo, sem uso pela rota.
 
 ### A casca
 
-Não foi trocada porque já bate valor por valor com `OnFace Casca.dc.html`,
-conferido no navegador: wrapper `#090e14` com `padding:10px` e `gap:10px`,
-`<main>` branco com `border-radius:14px` e `overflow:hidden`.
+**Trocada em 24/09.** `AppSidebar` + `TopbarOnface` eram a versão recriada à
+mão e saíram do layout de `(crm2)`.
 
-Trocar a casca do produto pela convertida afetaria as ~80 telas de uma vez, e
-isso é decisão à parte — não um efeito colateral de ligar Pré-vendas.
+Eu tinha dito que ela "já batia", medindo quatro propriedades do container
+(fundo, padding, gap, raio). Não bastava: a casca é sidebar com grupos
+expansíveis, topo com trilha, busca ⌘K, sino, perfil e NEXO — dezenas de
+detalhes que só batem quando é o mesmo markup. Comparar container não é
+comparar casca.
+
+O título e a trilha saem de `trilhaAtual(pathname)`, a mesma fonte que a
+topbar antiga usava, para as duas nunca divergirem. As rotas da árvore do
+protótipo apontam para `/onface-preview/*`; o prefixo cai em `CascaLiga.ir()`,
+num lugar só, em vez de editar a árvore e perder a regeração.
+
+As ~80 telas continuam recebendo o recuo da casca: `CascaProto` envolve o
+miolo em `onface-conteudo-interno`, e o CSS já sabe zerá-lo para quem traz
+`data-workspace="desenho"`. Testadas depois da troca: `/inicio`, `/pipeline`,
+`/tarefas`, `/clientes` e `/atendimento` — todas 200, nenhuma quebrada.
 
 ### O que o conversor aprendeu nesta rodada
 
@@ -112,3 +124,17 @@ isso é decisão à parte — não um efeito colateral de ligar Pré-vendas.
   atributo, e como filho o leitor de tela ainda anuncia
 - `class` + `style-hover` + `style-focus` desembocam num `className` só
 - atributos numéricos (`rows`, `cols`, `span`, `min`, `max`…)
+
+### O `<style>` do `<helmet>` — o erro que quase passou
+
+A primeira versão do conversor pulava o `<helmet>` inteiro, e o efeito foi
+silencioso: **nada quebrou, tudo ficou um pouco errado.** Os itens da sidebar
+saíram centralizados (falta de `button{text-align:left}`), popover e gaveta
+entravam sem animação (faltavam os `@keyframes of-rise`, `of-fade`, `of-slide`,
+`of-pisca`) e o checkbox do cartão não aparecia no hover — porque
+`.of-card:hover .of-check` vive ali também.
+
+É o tipo de divergência mais caro de achar: não dá erro, só fica torto.
+
+Agora o conversor extrai esse `<style>` para um `.css` ao lado e o componente
+gerado o importa.
