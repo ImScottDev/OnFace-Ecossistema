@@ -450,8 +450,26 @@ html[data-onface-theme="light"] {
    biblioteca onde a calha realmente fica reservada. Em navegador sem
    `scrollbar-gutter`, a compensação dela continua valendo, que é o
    comportamento menos ruim dos dois. */
+/* ATUALIZADO em 24/09, com a casca do Claude Design.
+ *
+ * A calha existia porque a página rolava: o topbar fixo não encolhia junto com
+ * o body e a tela pulava. Com a casca nova o documento NÃO rola — ela é
+ * `height:100vh` com `overflow:hidden`, e quem rola é o miolo. A calha passou a
+ * reservar 10px que nunca seriam usados, e eles apareciam como uma faixa branca
+ * na direita da janela, do lado de fora do grafite.
+ *
+ * `overflow:hidden` aqui é o par: sem barra no documento não há o que compensar,
+ * e o motivo original da calha deixa de existir em vez de ser contornado.
+ * A compensação do `react-remove-scroll` continua zerada logo abaixo — ela roda
+ * mesmo sem barra visível. */
 html[data-onface-theme] {
-  scrollbar-gutter: stable;
+  scrollbar-gutter: auto;
+  overflow: hidden;
+}
+
+html[data-onface-theme] body[data-scroll-locked] {
+  margin-right: 0 !important;
+  padding-right: 0 !important;
 }
 
 @supports (scrollbar-gutter: stable) {

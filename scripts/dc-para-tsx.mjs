@@ -108,6 +108,13 @@ function valorDeAtributo(nome, bruto) {
 
   if (inteira) { anotarExpressao(inteira[1]); return `{${inteira[1].trim()}}`; }
 
+  /* Caminho de asset: o protótipo abre como arquivo e referencia
+     `assets/x.png` relativo a si. Servido pelo Next, esse caminho depende da
+     rota atual e quebra em qualquer sub-rota — vira absoluto, em `public`. */
+  if ((nome === "src" || nome === "href") && /^(?:\.\/)?assets\//.test(bruto)) {
+    return JSON.stringify("/proto/" + bruto.replace(/^(?:\.\/)?assets\//, ""));
+  }
+
   // Interpolação no meio do texto: `title="Abrir {{ nome }}"`.
   if (bruto.includes("{{")) {
     const corpo = bruto.replace(/\{\{([\s\S]+?)\}\}/g, (_, e) => "${" + e.trim() + "}");

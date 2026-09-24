@@ -62,8 +62,26 @@ export function estilo(css: string | React.CSSProperties | null | undefined): Re
 /* ── Hover ─────────────────────────────────────────────────────────────── */
 
 const classesDeHover = new Map<string, string>();
+const jaInjetadas = new Set<string>();
 let folha: CSSStyleSheet | null = null;
-let contador = 0;
+
+/**
+ * O nome da classe sai de um hash do CSS, não de um contador.
+ *
+ * Com contador o nome dependia da ORDEM em que os elementos renderizaram, e no
+ * servidor a folha nem existe — `hover()` devolvia "" lá e "of-h1" aqui. O
+ * React comparava `className=""` com `className="of-h1"` e acusava hidratação
+ * quebrada em toda tela.
+ *
+ * Determinístico, os dois lados chegam ao mesmo nome sem combinar nada. A
+ * REGRA continua só no cliente, e isso é correto: `:hover` é comportamento de
+ * ponteiro, que não existe antes da hidratação.
+ */
+function nomeDaClasse(chave: string): string {
+  let h = 5381;
+  for (let i = 0; i < chave.length; i++) h = ((h << 5) + h + chave.charCodeAt(i)) | 0;
+  return `of-h${(h >>> 0).toString(36)}`;
+}
 
 function folhaDeHover(): CSSStyleSheet | null {
   if (folha) return folha;
@@ -104,28 +122,33 @@ function pseudo(css: string | null | undefined, qual: string): string {
   if (!css) return "";
 
   const chave = `${qual}|${css}`;
-  const guardada = classesDeHover.get(chave);
-  if (guardada) return guardada;
-
-  const alvo = folhaDeHover();
-  if (!alvo) return "";
-
-  const classe = `of-h${(contador += 1)}`;
-  const corpo = css
-    .split(";")
-    .map((p) => p.trim())
-    .filter(Boolean)
-    .map((p) => `${p} !important`)
-    .join(";");
-
-  try {
-    alvo.insertRule(`.${classe}:${qual}{${corpo}}`, alvo.cssRules.length);
-  } catch {
-    // Uma declaração que o navegador recusa não pode derrubar a tela: o
-    // elemento fica sem hover, com o estilo base intacto.
-    return "";
+  let classe = classesDeHover.get(chave);
+  if (!classe) {
+    classe = nomeDaClasse(chave);
+    classesDeHover.set(chave, classe);
   }
 
-  classesDeHover.set(chave, classe);
+  // O NOME é devolvido sempre, inclusive no servidor — é o que faz os dois
+  // lados baterem. A regra entra quando houver documento.
+  if (!jaInjetadas.has(chave)) {
+    const alvo = folhaDeHover();
+    if (alvo) {
+      const corpo = css
+        .split(";")
+        .map((p) => p.trim())
+        .filter(Boolean)
+        .map((p) => `${p} !important`)
+        .join(";");
+      try {
+        alvo.insertRule(`.${classe}:${qual}{${corpo}}`, alvo.cssRules.length);
+        jaInjetadas.add(chave);
+      } catch {
+        // Declaração que o navegador recusa não derruba a tela: o elemento
+        // fica sem hover, com o estilo base intacto.
+        jaInjetadas.add(chave);
+      }
+    }
+  }
+
   return classe;
 }

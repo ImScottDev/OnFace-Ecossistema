@@ -82,11 +82,10 @@ class Logica extends React.Component<PropsCasca, any> {
     document.addEventListener("pointerdown", this._fora, true);
   }
 
-  componentDidUpdate(_, anterior) {
-    if (anterior.aberta !== this.state.aberta || anterior.exp !== this.state.exp) {
-        if (E) E.gravar({ menuAberto: this.state.aberta, menuGrupos: this.state.exp });
-    }
-  }
+  /* O protótipo gravava a preferência de menu no `localStorage` dele. No
+     produto o cookie `sidebar_state` já faz isso, lido pelo layout no servidor
+     — gravar aqui seria a segunda fonte para o mesmo estado. */
+  componentDidUpdate(_prev: any, _anterior: any) {}
 
   componentWillUnmount() {
     document.removeEventListener("keydown", this._k);

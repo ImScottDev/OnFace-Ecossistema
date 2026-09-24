@@ -88,7 +88,13 @@ export default async function Crm2Layout({
             com grupos, topo com trilha, busca ⌘K, sino, perfil e NEXO — dezenas
             de detalhes que só batem quando é o mesmo markup.
             Ver docs/design/COMO-LIGAR-UMA-TELA.md. */}
-        <Cf2SidebarProvider className="h-auto min-h-0 overflow-visible">
+        {/* `display:contents`: o provider existe pelo CONTEXTO — `useSidebar()`
+            faz throw sem ele, e o `Cf2SidebarTrigger` é chamado por dezenas de
+            telas. Mas ele não pode participar do layout: como flex container,
+            o wrapper grafite da casca encolhia ao conteúdo e sobravam 34px de
+            branco na direita da janela. No protótipo a casca é filha do
+            `<body>` e ocupa tudo. */}
+        <Cf2SidebarProvider className="contents">
           <CascaProto>{children}</CascaProto>
         </Cf2SidebarProvider>
       </TooltipProvider>

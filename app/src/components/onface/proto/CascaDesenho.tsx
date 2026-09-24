@@ -147,7 +147,7 @@ Criar
 </nav>
 <button onClick={abrirNexo} style={estilo(nexoBtnStyle)} title="NEXO — assistente e avisos · ⌘J" className={[hover("background:#1f2833")].filter(Boolean).join(" ")}>
 <span style={estilo(nexoMarca)}>
-<img src="assets/oni-avatar.png" alt="ONI" width="26" height="26" style={{ display: "block", borderRadius: "7px", flex: "0 0 auto" }} />
+<img src="/proto/oni-avatar.png" alt="ONI" width="26" height="26" style={{ display: "block", borderRadius: "7px", flex: "0 0 auto" }} />
 </span>
 {(aberta) ? (<>
 <span style={{ flex: "1", minWidth: "0" }}>
@@ -312,7 +312,7 @@ Sair
 <div onClick={parar} style={{ width: "900px", maxWidth: "100%", height: "min(640px,calc(100vh - 40px))", background: "#fff", borderRadius: "14px", overflow: "hidden", display: "flex", animation: "of-rise .2s cubic-bezier(.2,0,.2,1) both" }}>
 <aside style={{ flex: "0 0 auto", width: "218px", background: "#12171d", display: "flex", flexDirection: "column", padding: "12px 10px" }}>
 <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "2px 6px 12px" }}>
-<img src="assets/oni-avatar.png" alt="ONI" width="26" height="26" style={{ display: "block", borderRadius: "7px", flex: "0 0 auto" }} />
+<img src="/proto/oni-avatar.png" alt="ONI" width="26" height="26" style={{ display: "block", borderRadius: "7px", flex: "0 0 auto" }} />
 <span style={{ fontFamily: "'Plus Jakarta Sans',sans-serif", fontSize: "14px", fontWeight: "800", letterSpacing: ".02em", color: "#eeeff3", whiteSpace: "nowrap" }}>
 NEXO
 </span>
@@ -536,7 +536,7 @@ O QUE O NEXO ESTÁ VENDO
 <Fragment key={m?.id ?? m?.chave ?? i1}>
 <div style={estilo(m.linhaStyle)}>
 {(m.ehOni) ? (<>
-<img src="assets/oni-avatar.png" alt="ONI" width="26" height="26" style={{ display: "block", borderRadius: "7px", flex: "0 0 auto" }} />
+<img src="/proto/oni-avatar.png" alt="ONI" width="26" height="26" style={{ display: "block", borderRadius: "7px", flex: "0 0 auto" }} />
 </>) : null}
 <div style={estilo(m.bolhaStyle)}>
 {(m.ehInsight) ? (<>
@@ -581,7 +581,7 @@ O QUE O NEXO ESTÁ VENDO
 ))}
 {(nexo.pensando) ? (<>
 <div style={{ display: "flex", alignItems: "flex-start", gap: "9px" }}>
-<img src="assets/oni-avatar.png" alt="ONI" width="26" height="26" style={{ display: "block", borderRadius: "7px", flex: "0 0 auto" }} />
+<img src="/proto/oni-avatar.png" alt="ONI" width="26" height="26" style={{ display: "block", borderRadius: "7px", flex: "0 0 auto" }} />
 <span style={{ display: "inline-flex", alignItems: "center", gap: "7px", padding: "9px 12px", borderRadius: "10px", background: "#f6f7f7", fontSize: "12.5px", color: "#4a5560" }}>
 <span>
 Consultando a base
