@@ -134,7 +134,12 @@ export function PreVendasProto({ dados, acoes }: {
 
   return (
     <>
-      <PreVendasLiga leads={leads} abrir={abrir} ir={(href) => router.push(href)} />
+      {/* `data-workspace="desenho"`: a tela traz o próprio fundo e o leva até
+          a borda, então a casca tira o recuo de 24/28px. Sem isto sobrava uma
+          moldura branca em volta e o quadro chegava cortado na direita. */}
+      <div data-workspace="desenho">
+        <PreVendasLiga leads={leads} abrir={abrir} ir={(href) => router.push(href)} />
+      </div>
 
       {aberto && (
         <GavetaLead

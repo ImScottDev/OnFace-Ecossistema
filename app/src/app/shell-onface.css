@@ -672,6 +672,30 @@
   overflow: hidden;
 }
 
+/* ── Tela que pinta o próprio fundo ──────────────────────────────────────
+ *
+ * As telas vindas do Claude Design trazem o fundo do papel (`#f6f6f3`) no
+ * próprio container e o levam até a borda. Com o recuo de 24/28px da casca,
+ * sobrava uma moldura BRANCA em volta — o branco do `<main>` aparecendo por
+ * baixo — e o quadro chegava cortado na direita.
+ *
+ * É a mesma altura do `tela-cheia`, sem o recuo. Modo próprio e não uma
+ * mudança no `tela-cheia` porque o Atendimento depende do recuo dele: lá os
+ * três painéis pousam sobre o papel da casca, aqui a tela É o papel.
+ * ────────────────────────────────────────────────────────────────────── */
+.onface-conteudo-interno:has(> [data-workspace="desenho"]) {
+  height: 100%;
+  overflow: hidden;
+  padding: 0;
+}
+.onface-conteudo-interno > [data-workspace="desenho"] {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+
 
 /* ── Moldura de página herdada da casca grafite ───────────────────────────
  *
