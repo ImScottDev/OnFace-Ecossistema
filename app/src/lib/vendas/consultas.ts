@@ -28,6 +28,21 @@ import { boardDeOportunidades } from "@onface/sales";
 
 const LIMITE_PADRAO = 400;
 
+/**
+ * Cartões por coluna na primeira carga.
+ *
+ * 67 era o valor derivado antigo e aparecia como "67 de 2.919" no cabeçalho —
+ * o contador e a lista discordando na mesma tela. 120 enche a coluna bem além
+ * da primeira dobra em qualquer monitor, e o que passar disso a pessoa pede
+ * com "ver mais".
+ *
+ * NÃO existe "sem limite": a maior coluna tem milhares de registros e
+ * renderizar todos de uma vez trava o navegador sem ajudar ninguém — ninguém
+ * varre 2.000 cartões com o olho. O caminho para volume alto é filtro e busca,
+ * que a barra inteira existe para oferecer.
+ */
+const POR_COLUNA_PADRAO = 120;
+
 /* As views rápidas moram em `dominio.ts` — são vocabulário, não consulta, e a
    barra da tela (Client Component) precisa da lista. Importar daqui puxava o
    driver do Postgres para o bundle do navegador e derrubava a rota inteira com
@@ -97,6 +112,9 @@ export interface FiltrosPreVendas {
   view?: ViewPreVendas;
   /** Quem está olhando — só a view "meus" usa. */
   usuarioId?: string | null;
+  /** Cartões por coluna. A tela aumenta com "ver mais"; o padrão cobre a
+   *  primeira dobra sem carregar milhares de cartões de uma vez. */
+  porColuna?: number;
 }
 
 /**
@@ -246,6 +264,7 @@ export async function boardPreVendas(organizacaoId: string, filtros: FiltrosPreV
     // precisa delas, e a aba "ativos" continua sem.
     incluirEncerradas: aba !== "ativos",
     limite: LIMITE_PADRAO,
+    porColuna: filtros.porColuna ?? POR_COLUNA_PADRAO,
     ...daView,
   });
 

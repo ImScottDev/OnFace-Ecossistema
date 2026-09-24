@@ -22,9 +22,11 @@ import "./gaveta-lead.css";
  * Pré-vendas — réplica do protótipo `OnFace Pre-vendas.dc.html`.
  *
  * Estrutura do desenho, de cima para baixo: barra de controles (busca local,
- * quatro filtros split, "Filtros" tracejado, alternador Quadro/Lista,
- * Exportar e Novo lead coral dividido), faixa de indicadores em texto puro, e
- * então o quadro ou a lista.
+ * quatro filtros split, "Filtros" tracejado, alternador Quadro/Lista e
+ * Exportar), faixa de indicadores em texto puro, e então o quadro ou a lista.
+ *
+ * "Novo lead" saiu em 24/09, por decisão do Kauã: não existe no desenho, e o
+ * botão só abria um toast. Exportar ficou com a posição e o coral dele.
  *
  * **Etapa não é campo, é consequência.** O protótipo deixa arrastar livremente
  * só entre Novo, Em contato e Qualificação; Qualificado, Oportunidade,
@@ -242,6 +244,25 @@ export function PreVendasQuadro({
   }, []);
 
   const todos = React.useMemo(() => dados.colunas.flatMap((c) => c.cards), [dados]);
+
+  /** O total REAL da etapa, que vem de `count()` sobre a tabela — não o
+   *  tamanho do array que coube nesta carga. */
+  const totalDaEtapa = React.useCallback(
+    (k: string) => dados.colunas.find((c) => c.chave === k)?.total ?? 0,
+    [dados.colunas],
+  );
+
+  /** Pede mais uma leva para TODAS as colunas, pela URL.
+   *
+   *  Na URL e não em estado local porque o quadro recarrega do servidor a cada
+   *  ação (mover, qualificar, atribuir): em `useState` o "ver mais" se desfazia
+   *  no primeiro arrasto e a pessoa perdia a posição. */
+  const verMais = React.useCallback(() => {
+    const url = new URL(window.location.href);
+    const atual = Number.parseInt(url.searchParams.get("mostrar") ?? "", 10);
+    url.searchParams.set("mostrar", String((Number.isFinite(atual) ? atual : 120) + 120));
+    router.push(`${url.pathname}${url.search}`);
+  }, [router]);
 
   const opcoesDe = (k: ChaveFiltro): Array<{ v: string; label: string }> => {
     if (k === "responsavel") {
@@ -540,7 +561,13 @@ export function PreVendasQuadro({
         </div>
 
         <div className="pv-filtro" data-pv-popover>
-          <button className="pv-exportar" onClick={() => setExportAberto((v) => !v)}>
+          {/* Exportar é a ação primária da barra desde 24/09.
+              "Novo lead" saiu — não existe no desenho e o botão era decorativo
+              (abria um toast dizendo "formulário a ligar"). Em vez de deixar
+              um lugar vazio no fim da barra, Exportar herdou a POSIÇÃO e a
+              superfície coral dele: é a única ação da barra que faz algo, e o
+              acento pertence a quem age. */}
+          <button className="pv-novo-principal pv-exportar-cta" onClick={() => setExportAberto((v) => !v)}>
             <Icone d={D.exportar} />
             <span>Exportar</span>
           </button>
@@ -593,16 +620,6 @@ export function PreVendasQuadro({
           )}
         </div>
 
-        <div className="pv-novo">
-          <button className="pv-novo-principal" onClick={() => toast("Novo lead — formulário a ligar")}>
-            <Icone d={D.mais} />
-            <span>Novo lead</span>
-          </button>
-          <span className="pv-novo-fio" />
-          <button className="pv-novo-seta" title="Outras criações" onClick={() => toast("Outras criações")}>
-            <Icone d={D.chevronDuplo} />
-          </button>
-        </div>
       </div>
 
       <div className="pv-indicadores">
@@ -645,7 +662,9 @@ export function PreVendasQuadro({
                         <path d="M8 11V7a4 4 0 0 1 8 0v4" strokeLinejoin="round" />
                       </svg>
                     )}
-                    <span className="pv-coluna-conta">{cards.length}</span>
+                    <span className="pv-coluna-conta" title={`${cards.length} carregados de ${totalDaEtapa(col.k)}`}>
+                      {totalDaEtapa(col.k)}
+                    </span>
                     {col.recolhivel && (
                       <button
                         className="pv-coluna-fechar"
@@ -666,6 +685,16 @@ export function PreVendasQuadro({
                         <Icone d={col.icone} />
                         <div>{col.vazio}</div>
                       </div>
+                    )}
+                    {/* O contador do cabeçalho conta a ETAPA inteira; a lista
+                        mostra a primeira leva. Sem esta linha os dois números
+                        discordavam em silêncio e não havia como chegar no
+                        resto. */}
+                    {totalDaEtapa(col.k) > cards.length && (
+                      <button className="pv-coluna-mais" onClick={verMais}>
+                        Ver mais {Math.min(120, totalDaEtapa(col.k) - cards.length)}
+                        <small>{cards.length} de {totalDaEtapa(col.k)}</small>
+                      </button>
                     )}
                   </div>
                 </section>

@@ -68,6 +68,15 @@ export interface FiltrosBoard {
   desde?: string | null;
   incluirEncerradas?: boolean;
   limite?: number;
+  /**
+   * Quantos cartões por coluna.
+   *
+   * Era derivado — `ceil(limite / 6)` sobre um limite global de 400, o que dava
+   * 67 fixos em TODA coluna. O cabeçalho dizia "2.919" e a coluna mostrava 67:
+   * o número e a lista discordavam na mesma tela, e não havia como chegar no
+   * resto. Agora é explícito e a tela decide, com "ver mais" por cima.
+   */
+  porColuna?: number;
 
   /* ── Views operacionais ────────────────────────────────────────────────
    *
@@ -256,7 +265,7 @@ export async function boardDeAquisicoes(
       SELECT base.*, row_number() OVER (PARTITION BY etapa ORDER BY ordenacao DESC) AS pos
         FROM base
     ) q
-     WHERE pos <= ${Math.max(1, Math.ceil(limite / 6))}
+     WHERE pos <= ${Math.max(1, filtros.porColuna ?? Math.ceil(limite / 6))}
      ORDER BY etapa, ordenacao DESC`);
 
   const cards = linhas

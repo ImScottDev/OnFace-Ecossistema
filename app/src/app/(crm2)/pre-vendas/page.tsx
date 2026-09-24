@@ -35,6 +35,9 @@ export async function PreVendasPage({ searchParams, rotaBase = "" }: {
     origem?: string; campanha?: string; desde?: string;
     /** Link antigo salvo por alguém antes do Kanban único. */
     aba?: string; loop?: string;
+    /** Quantos cartões por coluna — o "ver mais" do quadro aumenta este número.
+     *  Fica na URL para sobreviver ao recarregar e ao voltar do detalhe. */
+    mostrar?: string;
   }>;
   rotaBase?: RotaBaseVendas;
 }) {
@@ -60,9 +63,14 @@ export async function PreVendasPage({ searchParams, rotaBase = "" }: {
   const campanha = params.campanha || null;
   const desde = params.desde || null;
 
+  /* Teto de 2.000: acima disso o navegador trava montando cartão e ninguém
+     varre isso com o olho — para volume alto o caminho é filtro e busca. */
+  const pedido = Number.parseInt(params.mostrar ?? "", 10);
+  const porColuna = Number.isFinite(pedido) ? Math.min(Math.max(pedido, 20), 2000) : undefined;
+
   const dados = await boardPreVendas(ctx.organizacaoId, {
     aba, busca, responsavelId, origem, campanha, desde,
-    view, usuarioId: ctx.userId,
+    view, usuarioId: ctx.userId, porColuna,
   });
 
   return (

@@ -1045,3 +1045,54 @@
 }
 .pv-massa button:hover { background: rgba(255, 255, 255, .18) }
 .pv-massa-limpar { background: transparent !important; color: #a9b2bc !important }
+
+/* ── Exportar como ação primária da barra ────────────────────────────────
+ *
+ * O coral morava em `.pv-novo`, o invólucro do botão dividido "Novo lead";
+ * `.pv-novo-principal` era transparente por cima dele. Com "Novo lead" fora
+ * (24/09 — não existe no desenho e o botão só abria um toast), Exportar
+ * assume a posição e precisa carregar a superfície sozinho.
+ *
+ * Um acento por barra: coral é ação, e Exportar passou a ser a única.
+ * ────────────────────────────────────────────────────────────────────── */
+.pv-exportar-cta {
+  height: 34px;
+  border-radius: 9px;
+  background: #d93c1a;
+  flex: 0 0 auto;
+}
+.pv-exportar-cta:hover { background: #c2330f }
+
+/* ── Ver mais ────────────────────────────────────────────────────────────
+ *
+ * O cabeçalho da coluna conta a etapa inteira; a lista carrega uma leva. Sem
+ * este botão os dois números discordavam em silêncio ("2.919" no topo, 67
+ * cartões embaixo) e não havia caminho para o resto.
+ *
+ * Fica no fim da lista, discreto: é continuação de leitura, não ação de
+ * negócio — coral aqui competiria com o que de fato age na tela.
+ * ────────────────────────────────────────────────────────────────────── */
+.pv-coluna-mais {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 100%;
+  padding: 9px 10px;
+  margin-top: 2px;
+  border: 1px dashed var(--of-linha-forte, #dbdede);
+  border-radius: 9px;
+  background: transparent;
+  color: var(--of-tinta-2, #4a5560);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.pv-coluna-mais:hover { background: var(--of-neutro, #eeeff3); color: var(--of-tinta-forte, #12171d) }
+.pv-coluna-mais:focus-visible { outline: 2px solid var(--of-coral-marca, #fe4f2b); outline-offset: 2px }
+.pv-coluna-mais small {
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--of-tinta-3, #6d747e);
+  font-variant-numeric: tabular-nums;
+}

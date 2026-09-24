@@ -32,7 +32,7 @@ Legenda: **fiel** = confere com o design · **difere** = existe mas diverge ·
 | `+ Filtros` tracejado | fiel | |
 | Alternador Quadro / Lista | fiel | |
 | Exportar com 3 caminhos | fiel | |
-| `+ Novo lead` split coral | **difere** | quebra para a segunda linha em 1512px; no design fica na mesma linha |
+| `+ Novo lead` split coral | **removido** | 24/09, decisão do Kauã: não existe no desenho e o botão só abria um toast. Exportar herdou posição e coral |
 | Faixa de indicadores em texto puro | **difere** | falta a linha da fórmula (`count(leads) · estagio = ativos`) |
 
 ### Quadro
@@ -45,7 +45,7 @@ Legenda: **fiel** = confere com o design · **difere** = existe mas diverge ·
 | Cartão: empresa, pessoa, chips, próxima ação, rodapé | fiel | |
 | Checkbox no hover, fixo quando marcado | fiel | |
 | Arrasto HTML5 com realce da coluna | fiel | |
-| Contador da coluna | **difere** | mostra 67 (limite por coluna da consulta), não o total da etapa |
+| Contador da coluna | fiel | 24/09: passou a mostrar o total real da etapa; "Ver mais" carrega o resto |
 
 ### Saídas do lead
 
@@ -121,3 +121,53 @@ http://localhost:3100/pre-vendas
    responsável.
 3. Arrastar um cartão para a coluna **Oportunidade** → mesmo modal.
 4. Arrastar para **Qualificado** → popup de qualificação.
+
+---
+
+## Correções de 24/09 (segunda rodada)
+
+### 3. "Novo lead" removido; Exportar virou a ação primária
+
+O botão não existe no desenho e era decorativo — `toast("Novo lead —
+formulário a ligar")`. Exportar assumiu a posição e a superfície coral, que
+vinha do invólucro `.pv-novo`. Um acento por barra, e ele pertence a quem age.
+
+### 4. O limite de 67 por coluna
+
+Vinha de `Math.ceil(limite / 6)` sobre um limite global de 400 — 67 fixos em
+toda coluna, enquanto o cabeçalho anunciava o total da etapa. O número e a
+lista discordavam na mesma tela e não havia caminho para o resto.
+
+Agora: `porColuna` explícito (padrão 120), o cabeçalho mostra o **total real da
+etapa** (de `count()`, não do array carregado), e o fim da lista traz
+`Ver mais` com "N de M". O valor vive na URL (`?mostrar=`), então sobrevive ao
+recarregar e às ações que recarregam o quadro.
+
+Não existe "sem limite": a maior coluna tem centenas de registros e montar
+todos de uma vez trava o navegador sem ajudar — para volume alto o caminho é
+filtro e busca.
+
+---
+
+## Sobre os números da coluna "Novo" (medido em 24/09)
+
+Levantado porque o desenho mostra `NOVO 0` e a tela mostrava outro número.
+
+| medida | valor |
+|---|---|
+| gravadas com etapa `novo` | 2.182 |
+| **destas, encerradas (`closed_at`)** | **2.070** |
+| **abertas — o que a tela mostra** | **112** |
+| abertas que entraram nos últimos 2 dias | 57 |
+| abertas que entraram na última semana | 75 |
+| abertas paradas há mais de 30 dias | 37 |
+| mais antiga aberta | 05/08/2026 |
+
+**A conciliação de "novo" está correta.** A tela filtra encerradas e mostra
+112, dos quais metade chegou nos últimos dois dias — que é o que a etapa
+significa.
+
+Fica registrado um resíduo que não afeta esta tela: **2.070 aquisições
+encerradas continuam com etapa `novo`**. Elas nunca saíram da etapa inicial e
+foram fechadas. Qualquer relatório que agrupe por etapa sem filtrar
+`closed_at` vai contá-las.
