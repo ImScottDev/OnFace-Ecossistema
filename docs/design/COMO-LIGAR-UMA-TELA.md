@@ -66,3 +66,49 @@ dados de exemplo precisam virar os dados reais. Converter isso em silêncio
 produziria uma tela bonita alimentada por mock, que é o pior desfecho
 possível — então ele sai para um `.logica.txt` marcado, para ser portado com
 atenção.
+
+---
+
+## Estado das telas do zip (24/09)
+
+O bundle `OneFace2.zip` traz cinco arquivos `.dc.html`. Todos convertidos:
+
+| desenho | componente gerado | ligado? |
+|---|---|---|
+| `OnFace Pre-vendas` | `PreVendasDesenho` | **sim** — `/pre-vendas` |
+| `OnFace Pecas` | `PecasDesenho` | **sim** — gaveta e modais de Pré-vendas |
+| `OnFace Casca` | `CascaDesenho` | não — a casca do produto já bate, ver abaixo |
+| `OnFace Empresa` | `EmpresaDesenho` | não |
+| `OnFace Dashboard` | `DashboardDesenho` | não |
+
+### As peças são o ponto que mais importa
+
+`OnFace Pecas.dc.html` traz a gaveta de detalhe, o popup de qualificação,
+nutrição, desqualificação, o modal de atividade, o menu de tags e o de
+cadência. No produto existiam versões **recriadas à mão** (`vendas/GavetaLead`,
+`vendas/SaidasLead`) e era daí que vinha boa parte da divergência que aparecia
+na revisão.
+
+Desde 24/09 `/pre-vendas` usa as peças convertidas. As recriadas continuam no
+repo, sem uso pela rota.
+
+### A casca
+
+Não foi trocada porque já bate valor por valor com `OnFace Casca.dc.html`,
+conferido no navegador: wrapper `#090e14` com `padding:10px` e `gap:10px`,
+`<main>` branco com `border-radius:14px` e `overflow:hidden`.
+
+Trocar a casca do produto pela convertida afetaria as ~80 telas de uma vez, e
+isso é decisão à parte — não um efeito colateral de ligar Pré-vendas.
+
+### O que o conversor aprendeu nesta rodada
+
+- tags SVG em camelCase (`linearGradient`, `clipPath`, `feGaussianBlur`…): o
+  HTML não diferencia maiúscula, o JSX sim
+- `style-focus`, irmão do `style-hover` — vira regra `:focus-within`, e não
+  `:focus`, porque no protótipo o estilo está no invólucro e quem recebe foco é
+  o `input` dentro dele
+- `title` em `<svg>` vira `<title>` filho: o tipo do React não aceita o
+  atributo, e como filho o leitor de tela ainda anuncia
+- `class` + `style-hover` + `style-focus` desembocam num `className` só
+- atributos numéricos (`rows`, `cols`, `span`, `min`, `max`…)

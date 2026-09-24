@@ -22,9 +22,8 @@ import { useRouter } from "next/navigation";
 import type { BoardPreVendas, CardPreVendas, DetalheLead } from "@/lib/vendas/consultas";
 import type { LinhaDoTempo } from "@/lib/vendas/eventos";
 import type { AcoesPreVendas } from "../vendas/PreVendas";
-import { GavetaLead } from "../vendas/GavetaLead";
-import { SaidasLead, type LeadDaSaida, type Saida } from "../vendas/SaidasLead";
 import { PreVendasLiga, type LeadDoDesenho, type PecaDoDesenho } from "./PreVendasLiga";
+import { PecasLiga } from "./PecasLiga";
 
 /* ── Domínio → desenho ─────────────────────────────────────────────────── */
 
@@ -74,19 +73,6 @@ function iniciais(nome: string | null) {
   return nome.split(" ").filter(Boolean).slice(0, 2).map((p) => p[0]).join("").toUpperCase();
 }
 
-function paraSaida(c: CardPreVendas): LeadDaSaida {
-  return {
-    id: c.leadId,
-    empresa: c.empresa || "Sem empresa",
-    pessoa: c.pessoa,
-    cargo: c.cargo,
-    iniciais: c.responsavelIniciais ?? iniciais(c.empresa),
-    origem: c.origem,
-    servicos: c.servicos,
-    empresaId: c.empresaId,
-  };
-}
-
 /* ── A tela ────────────────────────────────────────────────────────────── */
 
 export function PreVendasProto({ dados, acoes }: {
@@ -101,36 +87,18 @@ export function PreVendasProto({ dados, acoes }: {
   );
   const leads = React.useMemo(() => todos.map(paraODesenho), [todos]);
 
-  /** A gaveta e as saídas, que o protótipo abria por `OnFaceEstado.abrir`. */
-  const [detalhe, setDetalhe] = React.useState<{ lead: DetalheLead | null; timeline: LinhaDoTempo[] } | null>(null);
-  const [aberto, setAberto] = React.useState<string | null>(null);
-  const [saida, setSaida] = React.useState<{ tipo: Saida; lead: LeadDaSaida } | null>(null);
+  /* As PEÇAS do protótipo — gaveta, qualificação, nutrição, desqualificação,
+     atividade, tags, cadência — vêm de `OnFace Pecas.dc.html`, convertidas.
+     Antes eram as versões recriadas à mão (`vendas/GavetaLead`,
+     `vendas/SaidasLead`), e era daí que vinha boa parte da divergência.
 
-  const carregar = React.useCallback(async (id: string) => {
-    setAberto(id);
-    setDetalhe(null);
-    const r = await acoes.detalhe(id);
-    if (r.ok) setDetalhe(r.dados ?? { lead: null, timeline: [] });
-  }, [acoes]);
+     O protótipo as abre por um barramento; aqui a `ref` faz esse papel: a
+     tela chama `abrirPeca`, que é o método do protótipo, intocado. */
+  const pecas = React.useRef<PecasLiga>(null);
 
-  /**
-   * A porta única dos overlays.
-   *
-   * No protótipo ela chamava o mock; aqui chama a peça real. É o ÚNICO ponto
-   * de contato entre a lógica portada e o produto — por isso ela é uma função
-   * só, com um `switch`, e não handlers espalhados pelo arquivo.
-   */
   const abrir = React.useCallback((peca: PecaDoDesenho, id: string) => {
-    const card = todos.find((c) => c.leadId === id);
-    if (!card) return;
-    if (peca === "detalhe") { void carregar(id); return; }
-    setSaida({ tipo: peca as Saida, lead: paraSaida(card) });
-  }, [todos, carregar]);
-
-  const recarregar = React.useCallback(() => {
-    router.refresh();
-    if (aberto) void carregar(aberto);
-  }, [router, aberto, carregar]);
+    pecas.current?.abrirPeca(peca, id);
+  }, []);
 
   return (
     <>
@@ -141,35 +109,13 @@ export function PreVendasProto({ dados, acoes }: {
         <PreVendasLiga leads={leads} abrir={abrir} ir={(href) => router.push(href)} />
       </div>
 
-      {aberto && (
-        <GavetaLead
-          lead={detalhe?.lead ?? null}
-          timeline={detalhe?.timeline ?? []}
-          responsaveis={dados.filtros.responsaveis}
-          acoes={acoes}
-          aoFechar={() => { setAberto(null); setDetalhe(null); }}
-          aoRecarregar={recarregar}
-          aoPedirSaida={(tipo) => {
-            const card = todos.find((c) => c.leadId === aberto);
-            if (card) setSaida({ tipo, lead: paraSaida(card) });
-          }}
-          aoPedirAtividade={() => {
-            const card = todos.find((c) => c.leadId === aberto);
-            if (card) setSaida({ tipo: "atividade", lead: paraSaida(card) });
-          }}
-        />
-      )}
+      <PecasLiga
+        ref={pecas}
+        leads={leads}
+        ir={(href) => router.push(href)}
+        aoGravar={() => router.refresh()}
+      />
 
-      {saida && (
-        <SaidasLead
-          saida={saida.tipo}
-          lead={saida.lead}
-          acoes={acoes}
-          responsaveis={dados.filtros.responsaveis}
-          aoFechar={() => setSaida(null)}
-          aoConcluir={recarregar}
-        />
-      )}
     </>
   );
 }

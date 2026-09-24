@@ -12,7 +12,7 @@
  */
 
 import { Fragment } from "react";
-import { estilo, hover } from "./proto-runtime";
+import { estilo, foco, hover } from "./proto-runtime";
 
 /**
  * O que o desenho consome.
@@ -73,7 +73,7 @@ export function PreVendasDesenho(vals: ValoresDePreVendasDesenho) {
 <Fragment key={f?.id ?? f?.chave ?? i1}>
 <div data-of-filtro="1" style={{ position: "relative", flex: "0 0 auto" }}>
 <div style={estilo(f.grupoStyle)}>
-<button onClick={f.abrir} style={estilo(f.corpoStyle)} className={hover(f.corpoHover)}>
+<button onClick={f.abrir} style={estilo(f.corpoStyle)} className={[hover(f.corpoHover)].filter(Boolean).join(" ")}>
 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ flex: "0 0 auto" }}>
 <path d={f.icone} />
 </svg>
@@ -87,7 +87,7 @@ export function PreVendasDesenho(vals: ValoresDePreVendasDesenho) {
 </>) : null}
 </button>
 <span style={estilo(f.divisoria)} />
-<button onClick={f.abrir} style={estilo(f.setaStyle)} title="Abrir opções" className={hover(f.corpoHover)}>
+<button onClick={f.abrir} style={estilo(f.setaStyle)} title="Abrir opções" className={[hover(f.corpoHover)].filter(Boolean).join(" ")}>
 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" style={estilo(f.chevron)}>
 <path d="m7 15 5 5 5-5M7 9l5-5 5 5" />
 </svg>
@@ -101,7 +101,7 @@ export function PreVendasDesenho(vals: ValoresDePreVendasDesenho) {
 <div style={{ maxHeight: "260px", overflowY: "auto" }}>
 {(f.opcoes ?? []).map((o: any, i2: number) => (
 <Fragment key={o?.id ?? o?.chave ?? i2}>
-<button onClick={o.onClick} style={{ display: "flex", alignItems: "center", gap: "9px", width: "100%", padding: "7px 6px", borderRadius: "6px", border: "0", background: "transparent", cursor: "pointer", textAlign: "left" }} className={hover("background:#f6f7f7")}>
+<button onClick={o.onClick} style={{ display: "flex", alignItems: "center", gap: "9px", width: "100%", padding: "7px 6px", borderRadius: "6px", border: "0", background: "transparent", cursor: "pointer", textAlign: "left" }} className={[hover("background:#f6f7f7")].filter(Boolean).join(" ")}>
 <span style={estilo(o.caixa)}>
 {(o.on) ? (<>
 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.4" strokeLinecap="round" strokeLinejoin="round" style={{ display: "block" }}>
@@ -117,7 +117,7 @@ export function PreVendasDesenho(vals: ValoresDePreVendasDesenho) {
 ))}
 </div>
 <div style={{ height: "1px", background: "#eef1f1", margin: "4px -4px" }} />
-<button onClick={f.limpar} style={{ width: "100%", padding: "7px 6px", borderRadius: "6px", border: "0", background: "transparent", cursor: "pointer", textAlign: "left", fontSize: "12.5px", fontWeight: "600", color: "#c2330f" }} className={hover("background:#fdeeea")}>
+<button onClick={f.limpar} style={{ width: "100%", padding: "7px 6px", borderRadius: "6px", border: "0", background: "transparent", cursor: "pointer", textAlign: "left", fontSize: "12.5px", fontWeight: "600", color: "#c2330f" }} className={[hover("background:#fdeeea")].filter(Boolean).join(" ")}>
 Limpar
 </button>
 </div>
@@ -125,7 +125,7 @@ Limpar
 </div>
 </Fragment>
 ))}
-<button onClick={maisFiltros} style={{ display: "flex", alignItems: "center", gap: "7px", height: "34px", padding: "0 12px", borderRadius: "9px", border: "1px dashed #c8ccc9", background: "transparent", fontSize: "13px", fontWeight: "500", color: "#67787c", whiteSpace: "nowrap", flex: "0 0 auto", cursor: "pointer" }} className={hover("border-color:#8b949e;color:#12171d")}>
+<button onClick={maisFiltros} style={{ display: "flex", alignItems: "center", gap: "7px", height: "34px", padding: "0 12px", borderRadius: "9px", border: "1px dashed #c8ccc9", background: "transparent", fontSize: "13px", fontWeight: "500", color: "#67787c", whiteSpace: "nowrap", flex: "0 0 auto", cursor: "pointer" }} className={[hover("border-color:#8b949e;color:#12171d")].filter(Boolean).join(" ")}>
 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" style={{ flex: "0 0 auto" }}>
 <path d="M12 5v14M5 12h14" />
 </svg>
@@ -144,7 +144,7 @@ Filtros
 ))}
 </div>
 <div data-of-expmenu="1" ref={expRef} style={{ position: "relative", flex: "0 0 auto" }}>
-<button onClick={toggleExportMenu} style={{ display: "flex", alignItems: "center", gap: "7px", height: "34px", padding: "0 12px", borderRadius: "9px", background: "#fff", boxShadow: "inset 0 0 0 1px #dbdede", fontSize: "13px", fontWeight: "500", color: "#1f252c", whiteSpace: "nowrap", border: "0", cursor: "pointer" }} className={hover("background:#f6f7f7")}>
+<button onClick={toggleExportMenu} style={{ display: "flex", alignItems: "center", gap: "7px", height: "34px", padding: "0 12px", borderRadius: "9px", background: "#fff", boxShadow: "inset 0 0 0 1px #dbdede", fontSize: "13px", fontWeight: "500", color: "#1f252c", whiteSpace: "nowrap", border: "0", cursor: "pointer" }} className={[hover("background:#f6f7f7")].filter(Boolean).join(" ")}>
 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" style={{ flex: "0 0 auto" }}>
 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
 </svg>
@@ -157,7 +157,7 @@ Exportar
 <div style={{ fontSize: "11px", fontWeight: "600", color: "#4a5560", letterSpacing: ".04em", padding: "7px 8px 5px" }}>
 EXPORTAR
 </div>
-<button onClick={exp.abrirVisao} style={{ display: "flex", alignItems: "flex-start", gap: "9px", width: "100%", padding: "8px", borderRadius: "6px", border: "0", background: "transparent", cursor: "pointer", textAlign: "left", color: "#1f252c" }} className={hover("background:#f1f3f3")}>
+<button onClick={exp.abrirVisao} style={{ display: "flex", alignItems: "flex-start", gap: "9px", width: "100%", padding: "8px", borderRadius: "6px", border: "0", background: "transparent", cursor: "pointer", textAlign: "left", color: "#1f252c" }} className={[hover("background:#f1f3f3")].filter(Boolean).join(" ")}>
 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ flex: "0 0 auto", marginTop: "1px" }}>
 <path d="M3 3h18v18H3zM3 9h18M9 21V9" />
 </svg>
@@ -170,7 +170,7 @@ Exportar esta visão
 </span>
 </span>
 </button>
-<button onClick={exp.abrirCriterios} style={{ display: "flex", alignItems: "flex-start", gap: "9px", width: "100%", padding: "8px", borderRadius: "6px", border: "0", background: "transparent", cursor: "pointer", textAlign: "left", color: "#1f252c" }} className={hover("background:#f1f3f3")}>
+<button onClick={exp.abrirCriterios} style={{ display: "flex", alignItems: "flex-start", gap: "9px", width: "100%", padding: "8px", borderRadius: "6px", border: "0", background: "transparent", cursor: "pointer", textAlign: "left", color: "#1f252c" }} className={[hover("background:#f1f3f3")].filter(Boolean).join(" ")}>
 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ flex: "0 0 auto", marginTop: "1px" }}>
 <path d="M22 3H2l8 9.5V19l4 2v-8.5z" />
 </svg>
@@ -183,7 +183,7 @@ Filtros, colunas e formato do arquivo
 </span>
 </span>
 </button>
-<button onClick={exp.abrirSelecao} style={{ display: "flex", alignItems: "flex-start", gap: "9px", width: "100%", padding: "8px", borderRadius: "6px", border: "0", background: "transparent", cursor: "pointer", textAlign: "left", color: "#1f252c" }} className={hover("background:#f1f3f3")}>
+<button onClick={exp.abrirSelecao} style={{ display: "flex", alignItems: "flex-start", gap: "9px", width: "100%", padding: "8px", borderRadius: "6px", border: "0", background: "transparent", cursor: "pointer", textAlign: "left", color: "#1f252c" }} className={[hover("background:#f1f3f3")].filter(Boolean).join(" ")}>
 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ flex: "0 0 auto", marginTop: "1px" }}>
 <path d="M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
 </svg>
@@ -200,7 +200,7 @@ Marque os cartões e exporte só eles
 </>) : null}
 </div>
 <div style={{ display: "flex", alignItems: "stretch", height: "34px", borderRadius: "9px", overflow: "hidden", background: "#d93c1a", flex: "0 0 auto" }}>
-<button onClick={novoLead} style={{ display: "flex", alignItems: "center", gap: "7px", padding: "0 13px", background: "transparent", border: "0", color: "#fff", fontSize: "13px", fontWeight: "600", whiteSpace: "nowrap", cursor: "pointer" }} className={hover("background:rgba(0,0,0,.12)")}>
+<button onClick={novoLead} style={{ display: "flex", alignItems: "center", gap: "7px", padding: "0 13px", background: "transparent", border: "0", color: "#fff", fontSize: "13px", fontWeight: "600", whiteSpace: "nowrap", cursor: "pointer" }} className={[hover("background:rgba(0,0,0,.12)")].filter(Boolean).join(" ")}>
 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" style={{ flex: "0 0 auto" }}>
 <path d="M12 5v14M5 12h14" />
 </svg>
@@ -209,7 +209,7 @@ Novo lead
 </span>
 </button>
 <span style={{ flex: "0 0 auto", width: "1px", background: "rgba(255,255,255,.34)" }} />
-<button onClick={maisCriar} style={{ display: "flex", alignItems: "center", justifyContent: "center", width: "28px", background: "transparent", border: "0", color: "#fff", cursor: "pointer" }} title="Outras criações" className={hover("background:rgba(0,0,0,.12)")}>
+<button onClick={maisCriar} style={{ display: "flex", alignItems: "center", justifyContent: "center", width: "28px", background: "transparent", border: "0", color: "#fff", cursor: "pointer" }} title="Outras criações" className={[hover("background:rgba(0,0,0,.12)")].filter(Boolean).join(" ")}>
 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" style={{ flex: "0 0 auto" }}>
 <path d="m7 15 5 5 5-5M7 9l5-5 5 5" />
 </svg>
@@ -252,7 +252,7 @@ Novo lead
 {col.conta}
 </span>
 {(col.recolhivel) ? (<>
-<button onClick={col.fechar} style={{ flex: "0 0 auto", width: "22px", height: "22px", borderRadius: "6px", display: "flex", alignItems: "center", justifyContent: "center", color: "#4a5560", border: "0", background: "transparent", cursor: "pointer" }} title="Recolher coluna" className={hover("background:#e3e7e8;color:#12171d")}>
+<button onClick={col.fechar} style={{ flex: "0 0 auto", width: "22px", height: "22px", borderRadius: "6px", display: "flex", alignItems: "center", justifyContent: "center", color: "#4a5560", border: "0", background: "transparent", cursor: "pointer" }} title="Recolher coluna" className={[hover("background:#e3e7e8;color:#12171d")].filter(Boolean).join(" ")}>
 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
 <path d="m15 18-6-6 6-6" />
 </svg>
@@ -354,7 +354,7 @@ Lista de trabalho
 ordenada por urgência — quem não tem próxima ação sobe ao topo
 </span>
 <span style={{ flex: "1", minWidth: "0" }} />
-<button onClick={alternarTodos} style={{ fontSize: "12px", fontWeight: "600", color: "#c2330f", whiteSpace: "nowrap", flex: "0 0 auto", border: "0", background: "transparent", cursor: "pointer" }} className={hover("color:#9c3210")}>
+<button onClick={alternarTodos} style={{ fontSize: "12px", fontWeight: "600", color: "#c2330f", whiteSpace: "nowrap", flex: "0 0 auto", border: "0", background: "transparent", cursor: "pointer" }} className={[hover("color:#9c3210")].filter(Boolean).join(" ")}>
 {alternarTodosLabel}
 </button>
 <span style={{ fontSize: "11.5px", fontWeight: "600", color: "#4a5560", whiteSpace: "nowrap", flex: "0 0 auto" }}>
@@ -384,7 +384,7 @@ PARADO
 {(listaGrupos ?? []).map((g: any, i1: number) => (
 <Fragment key={g?.id ?? g?.chave ?? i1}>
 <div>
-<button onClick={g.alternar} style={estilo(g.cabecalhoStyle)} className={hover("background:#f1f3f3")}>
+<button onClick={g.alternar} style={estilo(g.cabecalhoStyle)} className={[hover("background:#f1f3f3")].filter(Boolean).join(" ")}>
 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#4a5560" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={estilo(g.chevron)}>
 <path d="m6 9 6 6 6-6" />
 </svg>
@@ -409,7 +409,7 @@ PARADO
 <div>
 {(g.linhas ?? []).map((r: any, i2: number) => (
 <Fragment key={r?.id ?? r?.chave ?? i2}>
-<div data-sel={r.selAttr} onClick={r.abrir} style={estilo(r.style)} className={"of-card " + hover("background:#fafafa")}>
+<div data-sel={r.selAttr} onClick={r.abrir} style={estilo(r.style)} className={["of-card", hover("background:#fafafa")].filter(Boolean).join(" ")}>
 <button onClick={r.marcar} style={estilo(r.checkStyle)} title="Selecionar" className="of-check">
 {(r.sel) ? (<>
 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.4" strokeLinecap="round" strokeLinejoin="round" style={{ display: "block", flex: "0 0 auto" }}>
@@ -434,7 +434,7 @@ PARADO
 </span>
 </div>
 <div data-of-resp="1" style={{ minWidth: "0", position: "relative" }}>
-<button onClick={r.abrirResp} style={estilo(r.respBtnStyle)} className={hover("background:#f1f3f3")}>
+<button onClick={r.abrirResp} style={estilo(r.respBtnStyle)} className={[hover("background:#f1f3f3")].filter(Boolean).join(" ")}>
 <span style={estilo(r.avatarStyle)}>
 {r.iniciais}
 </span>
@@ -449,7 +449,7 @@ PARADO
 <div data-of-resp="1" style={estilo(r.respMenuStyle)}>
 {(r.respOpcoes ?? []).map((o: any, i3: number) => (
 <Fragment key={o?.id ?? o?.chave ?? i3}>
-<button onClick={o.onClick} style={estilo(o.style)} className={hover("background:#f6f7f7")}>
+<button onClick={o.onClick} style={estilo(o.style)} className={[hover("background:#f6f7f7")].filter(Boolean).join(" ")}>
 <span style={estilo(o.avatar)}>
 {o.iniciais}
 </span>
@@ -504,7 +504,7 @@ Exportar leads
 Gera uma planilha com os leads que atendem aos critérios abaixo.
 </div>
 </div>
-<button onClick={exp.fechar} style={{ flex: "0 0 auto", width: "28px", height: "28px", borderRadius: "8px", display: "grid", placeItems: "center", color: "#4a5560" }} className={hover("background:#f1f3f3;color:#12171d")}>
+<button onClick={exp.fechar} style={{ flex: "0 0 auto", width: "28px", height: "28px", borderRadius: "8px", display: "grid", placeItems: "center", color: "#4a5560" }} className={[hover("background:#f1f3f3;color:#12171d")].filter(Boolean).join(" ")}>
 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
 <path d="M6 6l12 12M18 6L6 18" />
 </svg>
@@ -546,7 +546,7 @@ Escopo
 {g.titulo}
 </span>
 {(g.ativo) ? (<>
-<button onClick={g.limpar} style={{ fontSize: "11px", fontWeight: "500", color: "#c2330f", whiteSpace: "nowrap", flex: "0 0 auto" }} className={hover("color:#9c3210")}>
+<button onClick={g.limpar} style={{ fontSize: "11px", fontWeight: "500", color: "#c2330f", whiteSpace: "nowrap", flex: "0 0 auto" }} className={[hover("color:#9c3210")].filter(Boolean).join(" ")}>
 limpar
 </button>
 </>) : null}
@@ -610,7 +610,7 @@ Formato
 </strong>
  {exp.totalLabel}
 </span>
-<button onClick={exp.fechar} style={{ height: "34px", padding: "0 14px", borderRadius: "8px", background: "#fff", boxShadow: "inset 0 0 0 1px #dbdede", fontSize: "12.5px", fontWeight: "500", whiteSpace: "nowrap", flex: "0 0 auto" }} className={hover("background:#f1f3f3")}>
+<button onClick={exp.fechar} style={{ height: "34px", padding: "0 14px", borderRadius: "8px", background: "#fff", boxShadow: "inset 0 0 0 1px #dbdede", fontSize: "12.5px", fontWeight: "500", whiteSpace: "nowrap", flex: "0 0 auto" }} className={[hover("background:#f1f3f3")].filter(Boolean).join(" ")}>
 Cancelar
 </button>
 <button onClick={exp.gerar} style={estilo(exp.gerarStyle)}>
@@ -641,7 +641,7 @@ Selecione os leads na tela
 <button onClick={exp.voltar} style={estilo(exp.voltarStyle)}>
 Concluir seleção
 </button>
-<button onClick={exp.cancelarSel} style={{ display: "grid", placeItems: "center", width: "28px", height: "28px", borderRadius: "8px", color: "#a9b2bc", flex: "0 0 auto" }} title="Cancelar exportação" className={hover("background:rgba(255,255,255,.12);color:#eeeff3")}>
+<button onClick={exp.cancelarSel} style={{ display: "grid", placeItems: "center", width: "28px", height: "28px", borderRadius: "8px", color: "#a9b2bc", flex: "0 0 auto" }} title="Cancelar exportação" className={[hover("background:rgba(255,255,255,.12);color:#eeeff3")].filter(Boolean).join(" ")}>
 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round">
 <path d="M6 6l12 12M18 6L6 18" />
 </svg>
@@ -659,7 +659,7 @@ Concluir seleção
 <div style={{ maxHeight: "250px", overflowY: "auto" }}>
 {(painelOpcoes ?? []).map((o: any, i1: number) => (
 <Fragment key={o?.id ?? o?.chave ?? i1}>
-<button onClick={o.onClick} style={estilo(o.style)} className={hover("background:#f1f3f3")}>
+<button onClick={o.onClick} style={estilo(o.style)} className={[hover("background:#f1f3f3")].filter(Boolean).join(" ")}>
 <span style={{ flex: "1", fontSize: "13.5px", lineHeight: "20px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
 {o.label}
 </span>
@@ -686,7 +686,7 @@ Concluir seleção
 <span style={{ flex: "0 0 auto", width: "1px", height: "20px", background: "rgba(255,255,255,.14)", margin: "0 2px" }} />
 {(acoesMassa ?? []).map((a: any, i1: number) => (
 <Fragment key={a?.id ?? a?.chave ?? i1}>
-<button onClick={a.onClick} style={estilo(a.style)} className={hover("background:rgba(255,255,255,.12)")}>
+<button onClick={a.onClick} style={estilo(a.style)} className={[hover("background:rgba(255,255,255,.12)")].filter(Boolean).join(" ")}>
 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" style={{ flex: "0 0 auto" }}>
 <path d={a.d} />
 </svg>
@@ -697,7 +697,7 @@ Concluir seleção
 </Fragment>
 ))}
 <span style={{ flex: "0 0 auto", width: "1px", height: "20px", background: "rgba(255,255,255,.14)", margin: "0 2px" }} />
-<button onClick={limparSelecao} style={{ display: "grid", placeItems: "center", width: "28px", height: "28px", borderRadius: "8px", color: "#a9b2bc", flex: "0 0 auto" }} title="Limpar seleção · Esc" className={hover("background:rgba(255,255,255,.12);color:#eeeff3")}>
+<button onClick={limparSelecao} style={{ display: "grid", placeItems: "center", width: "28px", height: "28px", borderRadius: "8px", color: "#a9b2bc", flex: "0 0 auto" }} title="Limpar seleção · Esc" className={[hover("background:rgba(255,255,255,.12);color:#eeeff3")].filter(Boolean).join(" ")}>
 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round">
 <path d="M6 6l12 12M18 6L6 18" />
 </svg>

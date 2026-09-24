@@ -129,6 +129,15 @@ function converterTexto(texto) {
 
 /* ── Tokenizador ───────────────────────────────────────────────────────── */
 
+/* O HTML não diferencia maiúscula em nome de tag, mas o JSX sim: `<lineargradient>`
+   vira um elemento desconhecido. Estas são as tags SVG com camelCase. */
+const TAGS_SVG = new Map([
+  "linearGradient", "radialGradient", "clipPath", "textPath", "foreignObject",
+  "feGaussianBlur", "feColorMatrix", "feComposite", "feOffset", "feBlend",
+  "feFlood", "feMerge", "feMergeNode", "feDropShadow", "feTurbulence",
+  "feDisplacementMap", "animateTransform", "animateMotion",
+].map((n) => [n.toLowerCase(), n]));
+
 const VAZIAS = new Set([
   "area", "base", "br", "col", "embed", "hr", "img", "input",
   "link", "meta", "param", "source", "track", "wbr",
@@ -156,14 +165,16 @@ function tokenizar(html) {
     i = fecha + 1;
 
     if (cru.startsWith("</")) {
-      tokens.push({ tipo: "fecha", nome: /^<\/\s*([^\s>]+)/.exec(cru)[1].toLowerCase() });
+      const fechado = /^<\/\s*([^\s>]+)/.exec(cru)[1].toLowerCase();
+      tokens.push({ tipo: "fecha", nome: TAGS_SVG.get(fechado) ?? fechado });
       continue;
     }
 
     const nome = /^<\s*([^\s/>]+)/.exec(cru)[1];
+    const minusculo = nome.toLowerCase();
     tokens.push({
       tipo: "abre",
-      nome: nome.toLowerCase(),
+      nome: TAGS_SVG.get(minusculo) ?? minusculo,
       atributos: lerAtributos(cru.slice(nome.length + 1)),
       sozinha: /\/\s*>$/.test(cru) || VAZIAS.has(nome.toLowerCase()),
     });
@@ -293,8 +304,10 @@ function gerar(tokens) {
     if (t.sozinha) return { tipo: "bloco", codigo: `<${t.nome}${atributos} />` };
 
     const dentro = filhos(t.nome);
-    if (!dentro.length) return { tipo: "bloco", codigo: `<${t.nome}${atributos} />` };
-    return { tipo: "bloco", codigo: `<${t.nome}${atributos}>\n${juntar(dentro)}\n</${t.nome}>` };
+    const titulo = tituloDeSvg.get(t);
+    const cabeca = titulo ? `<title>${titulo}</title>\n` : "";
+    if (!dentro.length && !cabeca) return { tipo: "bloco", codigo: `<${t.nome}${atributos} />` };
+    return { tipo: "bloco", codigo: `<${t.nome}${atributos}>\n${cabeca}${juntar(dentro)}\n</${t.nome}>` };
   }
 
   function pular(nome) {
@@ -314,15 +327,25 @@ const juntar = (partes) => partes.map((p) => p.codigo).join("\n");
 const atributo = (t, nome) => t.atributos.find((a) => a.nome === nome)?.valor ?? null;
 
 /** Atributos que o React quer como número, não como string. */
-const NUMERICOS = new Set(["tabIndex", "colSpan", "rowSpan", "maxLength", "size"]);
+const NUMERICOS = new Set(["tabIndex", "colSpan", "rowSpan", "maxLength", "size", "rows", "cols", "span", "start", "min", "max", "step"]);
+
+/* `title` em `<svg>`: o protótipo usa para o tooltip nativo, e o tipo do React
+   não aceita o atributo em SVG. Vira `<title>` filho — que além de compilar é
+   a forma acessível: o leitor de tela anuncia o nome do gráfico. */
+const tituloDeSvg = new Map();
 
 function montarAtributos(t) {
   const fora = [];
   let hover = null;
+  let foco = null;
   let classe = null;
 
   for (const a of t.atributos) {
     if (a.nome === "style-hover") { hover = a.valor; continue; }
+    /* `style-focus` é o irmão do hover no protótipo. Mesmo mecanismo: sem
+       pseudo-classe em estilo inline, ele vira regra numa folha. */
+    if (a.nome === "style-focus") { foco = a.valor; continue; }
+    if (a.nome === "title" && t.nome === "svg") { tituloDeSvg.set(t, a.valor); continue; }
     // Dicas do editor do protótipo: não têm sentido em produção.
     if (a.nome.startsWith("hint-") || a.nome === "data-screen-label") continue;
     if (a.valor === null) { fora.push(a.nome); continue; }
@@ -341,16 +364,24 @@ function montarAtributos(t) {
     fora.push(`${nome}=${valorDeAtributo(a.nome, a.valor)}`);
   }
 
-  if (hover) {
-    // O runtime registra o par e devolve a classe com `:hover`.
-    const expr = soExpressao(hover);
-    const chamada = expr ? `hover(${expr[1].trim()})` : `hover(${JSON.stringify(hover)})`;
-    if (expr) anotarExpressao(expr[1]);
-    fora.push(classe
-      ? `className={${JSON.stringify(classe + " ")} + ${chamada}}`
-      : `className={${chamada}}`);
-  } else if (classe !== null) {
-    fora.push(`className=${valorDeAtributo("class", classe)}`);
+  /* `class`, `style-hover` e `style-focus` desembocam todos em `className`:
+     o JSX recusa o atributo repetido, então eles se juntam aqui. */
+  const pedacos = [];
+  if (classe !== null) {
+    const inteira = soExpressao(classe);
+    if (inteira) { anotarExpressao(inteira[1]); pedacos.push(inteira[1].trim()); }
+    else pedacos.push(JSON.stringify(classe));
+  }
+  for (const [css, fn] of [[hover, "hover"], [foco, "foco"]]) {
+    if (!css) continue;
+    const expr = soExpressao(css);
+    if (expr) { anotarExpressao(expr[1]); pedacos.push(`${fn}(${expr[1].trim()})`); }
+    else pedacos.push(`${fn}(${JSON.stringify(css)})`);
+  }
+  if (pedacos.length) {
+    fora.push(pedacos.length === 1 && classe !== null && !hover && !foco
+      ? `className=${valorDeAtributo("class", classe)}`
+      : `className={[${pedacos.join(", ")}].filter(Boolean).join(" ")}`);
   }
 
   return fora.length ? " " + fora.join(" ") : "";
@@ -395,7 +426,7 @@ writeFileSync(saida, `"use client";
  */
 
 import { Fragment } from "react";
-import { estilo, hover } from "./proto-runtime";
+import { estilo, foco, hover } from "./proto-runtime";
 
 /**
  * O que o desenho consome.

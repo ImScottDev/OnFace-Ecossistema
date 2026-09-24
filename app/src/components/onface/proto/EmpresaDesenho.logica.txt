@@ -1,0 +1,204 @@
+
+class Component extends DCLogic {
+  state = { aba: "Visão geral", pausada: false };
+
+  componentDidMount() {
+    const E = window.OnFaceEstado;
+    this._off = E ? E.assinar(() => this.forceUpdate()) : null;
+  }
+
+  componentWillUnmount() { if (this._off) this._off(); }
+
+  /* A página não recebe mais props da casca: lê o estado compartilhado e o ?lead= da URL. */
+  fonte() {
+    const E = window.OnFaceEstado;
+    const d = E ? E.tudo() : {};
+    const D = window.OnFaceDados || {};
+    const leads = d.leads || D.LEADS || [];
+    const leadId = this.props.leadId || (E && E.parametro("lead")) || (leads[0] || {}).id;
+    const alvo = leads.find(x => x.id === leadId) || leads[0] || {};
+    const cadencias = d.cadencias || {};
+    const qual = d.qual || {};
+    return {
+      leads, leadId,
+      cadencia: Object.prototype.hasOwnProperty.call(cadencias, leadId)
+        ? cadencias[leadId]
+        : (D.cadenciaPadrao ? D.cadenciaPadrao(alvo) : null),
+      porte: (qual[leadId] || {}).tamanho || "45",
+      qualificacao: qual[leadId] || {},
+      onVoltar: () => E && E.irPara("/onface-preview/pre-vendas", "Pré-vendas"),
+      onQualificar: (id) => E && E.abrir("qualificar", id || leadId),
+      onRegistrar: (id) => E && E.abrir("atividade", id || leadId),
+      onTrocarCadencia: (id) => E && E.abrir("cadencia", id || leadId),
+      onRemoverCadencia: (id) => {
+        if (!E) return;
+        const c = Object.assign({}, E.tudo().cadencias);
+        c[id || leadId] = null;
+        E.gravar({ cadencias: c });
+        E.avisar("Empresa removida da cadência", "aviso");
+      },
+      onAbrirLead: (id) => E && E.abrir("detalhe", id || leadId),
+      onAviso: (texto, tom) => E && E.avisar(texto, tom)
+    };
+  }
+
+  renderVals() {
+    const P = this.fonte();
+    const D = (typeof window !== "undefined" && window.OnFaceDados) || {};
+    const leads = P.leads || D.LEADS || [];
+    const E = leads.find(x => x.id === P.leadId) || leads[0] || {};
+    const diz = P.onAviso || function () {};
+    const ini = D.iniciais || ((n) => (n || "").slice(0, 2).toUpperCase());
+    const slug = D.slug || ((s) => (s || "").toLowerCase().replace(/[^a-z]/g, ""));
+    const etapas = D.ETAPAS || {};
+    const segmentos = D.SEGMENTOS || {};
+
+    const dominio = slug(E.empresa || "empresa") + ".com.br";
+    const seg = segmentos[E.empresa] || "Serviços";
+    const porte = P.porte || "45";
+    const cadE = P.cadencia === undefined ? (D.cadenciaPadrao ? D.cadenciaPadrao(E) : null) : P.cadencia;
+    const qual = P.qualificacao || {};
+    const chip = "display:inline-flex;align-items:center;height:22px;padding:0 8px;border-radius:6px;background:#eeeff3;color:#4a5560;font-size:11.5px;font-weight:600;white-space:nowrap;flex:0 0 auto";
+
+    const ico = {
+      wa: "M21 11.5a8.4 8.4 0 0 1-9 8.4 9 9 0 0 1-3.8-.8L3 21l1.9-4.1A8.4 8.4 0 0 1 12 3a8.4 8.4 0 0 1 9 8.5z",
+      tel: "M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7",
+      mail: "M4 4h16v16H4zM4 7l8 6 8-6"
+    };
+
+    const pessoas = [
+      [E.pessoa, E.cargo, true],
+      ["Ricardo Alves", "Gerente de TI", false],
+      ["Juliana Prado", "Gerente de CX", false]
+    ];
+
+    return {
+      nome: E.empresa || "Sem empresa",
+      trilhaTopo: [
+        { label: "Pré-vendas", ir: () => P.onVoltar && P.onVoltar() },
+        { label: "Empresas", ir: () => diz("Lista de empresas — a desenhar", "aviso") }
+      ],
+      iniciais: ini(E.empresa || E.pessoa),
+      etapa: (etapas[E.etapa] || {}).label || "—",
+      etapaSelo: "display:inline-flex;align-items:center;height:23px;padding:0 9px;border-radius:7px;font-size:11.5px;font-weight:700;white-space:nowrap;background:#eeeff3;color:"
+        + ((etapas[E.etapa] || {}).cor || "#4a5560"),
+      voltar: () => P.onVoltar && P.onVoltar(),
+
+      meta: [
+        { label: "Responsável:", valor: E.resp || "Sem responsável", d: "M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0" },
+        { label: "Origem:", valor: E.origem, d: "M6 3v12M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6M6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6M18 9a9 9 0 0 1-9 9" },
+        { label: "Campanha:", valor: E.campanha || "—", destaque: !!E.campanha, d: "M3 11l18-5v12L3 14v-3zM11.6 16.8a3 3 0 1 1-5.8-1.6" },
+        { label: "Segmento:", valor: seg, d: "M12 2 2 7l10 5 10-5zM2 17l10 5 10-5M2 12l10 5 10-5" },
+        { label: "Porte:", valor: porte + " atendentes", d: "M3 21V7l9-4 9 4v14M9 21v-6h6v6" },
+        { label: "Criado em:", valor: "20 set 2026", d: "M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" }
+      ].map(m => ({
+        label: m.label, valor: m.valor, d: m.d,
+        valorStyle: "font-weight:600;white-space:nowrap;color:" + (m.destaque ? "#c2330f" : "#12171d")
+      })),
+
+      abas: ["Visão geral", "Pessoas", "Atividades", "Oportunidades", "Arquivos"].map(t => {
+        const on = this.state.aba === t;
+        return {
+          label: t,
+          style: "height:36px;padding:0 13px;border:0;background:transparent;cursor:pointer;font-size:13px;white-space:nowrap;"
+            + (on ? "color:#12171d;font-weight:600;box-shadow:inset 0 -2px 0 #d93c1a" : "color:#67787c;font-weight:500"),
+          onClick: () => on ? null : diz("Aba " + t + " — a desenhar", "aviso")
+        };
+      }),
+
+      resumo: [
+        { label: "CNPJ", valor: "34.567.890/0001-12", tipo: "texto" },
+        { label: "Porte", valor: porte + " atendentes", tipo: "texto" },
+        { label: "Site", valor: "https://" + dominio, tipo: "link" },
+        { label: "Fonte", valor: E.origem, tipo: "texto" },
+        { label: "Cidade / UF", valor: "São Paulo / SP", tipo: "texto" },
+        { label: "Interesse", tipo: "chips", chips: [E.interesse, "PABX"] },
+        { label: "Segmento", valor: seg, tipo: "texto" },
+        { label: "Fit", tipo: "chips", chips: [(E.tag && E.tag.indexOf("Fit") === 0) ? E.tag.replace("Fit ", "") : "Alto"] }
+      ].map(r => ({
+        label: r.label, valor: r.valor || "", href: "#",
+        ehTexto: r.tipo === "texto", ehChips: r.tipo === "chips", ehLink: r.tipo === "link",
+        chips: (r.chips || []).map(c => ({ label: c, style: chip }))
+      })),
+
+      qualif: [
+        ["Interesse principal", E.interesse],
+        ["Dor principal", qual.dor || "Alto custo com telefonia"],
+        ["Canal preferido", E.origem === "WhatsApp" ? "WhatsApp" : "Telefone"],
+        ["Urgência", "Média"],
+        ["Fit", qual.fit || "Alto"]
+      ].map(([label, valor]) => ({
+        label, valor,
+        style: "display:inline-flex;align-items:center;height:26px;padding:0 10px;border-radius:7px;background:#eeeff3;color:#1f252c;font-size:12px;font-weight:600;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"
+      })),
+
+      pessoas: pessoas.map(([nome, cargo, principal], i) => ({
+        nome, cargo, principal,
+        iniciais: ini(nome),
+        email: slug((nome || "").split(" ")[0]) + "." + slug((nome || "").split(" ").slice(-1)[0]) + "@" + dominio,
+        tel: ["+55 11 91234-5678", "+55 11 99876-5432", "+55 11 98765-4321"][i],
+        linhaStyle: "display:flex;align-items:center;gap:11px;flex-wrap:wrap;padding:11px 0;" + (i === 0 ? "" : "border-top:1px solid #f3f5f5"),
+        acoes: [
+          { titulo: "WhatsApp", d: ico.wa }, { titulo: "Ligar", d: ico.tel }, { titulo: "E-mail", d: ico.mail }
+        ].map(ac => Object.assign({}, ac, { onClick: () => diz(ac.titulo + " para " + nome, "ok") }))
+      })),
+
+      timeline: [
+        ["Próxima ação agendada", E.acao || "Ligar para " + E.pessoa, "Hoje, 16:30", "M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z", true],
+        ["WhatsApp recebido", E.pessoa, "Ontem, 13:42", ico.wa, false],
+        ["Lead criado via " + E.origem, "Sistema", "20 set", "M12 5v14M5 12h14", false],
+        ["Campanha " + (E.campanha || E.origem), "Meta Ads", "20 set", "M3 11l18-5v12L3 14v-3z", false]
+      ].map(([titulo, autor, quando, d, coral], i, arr) => ({
+        titulo, autor, quando, d, temLinha: i < arr.length - 1,
+        marca: "flex:0 0 auto;width:22px;height:22px;border-radius:7px;display:flex;align-items:center;justify-content:center;"
+          + (coral ? "background:#fff6f4;color:#c2330f" : "background:#eeeff3;color:#4a5560")
+      })),
+
+      acaoTitulo: E.acao ? E.acao + " · " + (E.venceEm || "hoje") : "Ligar para " + E.pessoa + " · hoje, 16:30",
+      acaoNota: "Entender necessidades de telefonia e apresentar o " + E.interesse + ".",
+      resp: E.resp || "Sem responsável",
+      respIniciais: ini(E.resp),
+      tags: ((E.tag ? [E.tag] : []).concat([E.interesse, seg.split(" ")[0]])).map(t => ({ label: t })),
+
+      origem: [
+        ["Origem", E.origem], ["Campanha", E.campanha || "—"],
+        ["Conjunto", E.campanha ? "Interesse — gestão de atendimento" : "—"],
+        ["Criativo", E.campanha ? "Vídeo 30s · depoimento de cliente" : "Formulário de contato"]
+      ].map(([label, valor]) => ({
+        label, valor,
+        valorStyle: "flex:1;min-width:0;font-size:12.5px;line-height:1.45;text-wrap:pretty;" + (valor === "—" ? "color:#a3a8a4" : "color:#1f252c;font-weight:500")
+      })),
+
+      cadNome: cadE || "Fora de cadência",
+      cadEstado: cadE ? (this.state.pausada ? "Pausada" : "Ativa") : "Inativa",
+      cadSelo: "display:inline-flex;align-items:center;height:20px;padding:0 8px;border-radius:6px;font-size:10.5px;font-weight:700;white-space:nowrap;"
+        + (cadE && !this.state.pausada ? "background:#e6f4ee;color:#1f7256" : "background:#eeeff3;color:#4a5560"),
+      cadPasso: "Passo 2 de 5",
+      cadPassos: [1, 2, 3, 4, 5].map(i => ({
+        style: "flex:1;height:3px;border-radius:2px;background:" + (i <= 2 ? "#fe4f2b" : "#e3e7e8")
+      })),
+      pausar: () => {
+        const n = !this.state.pausada;
+        this.setState({ pausada: n });
+        diz(n ? "Cadência pausada" : "Cadência retomada", n ? "aviso" : "ok");
+      },
+      trocarCad: () => P.onTrocarCadencia && P.onTrocarCadencia(E.id, cadE),
+      removerCad: () => P.onRemoverCadencia && P.onRemoverCadencia(E.id),
+
+      relacoes: [
+        { conta: "3", label: "Contatos", d: "M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0" },
+        { conta: "1", label: "Oportunidade", d: "M12 2v20M17 6H9.5a3.5 3.5 0 1 0 0 7h5a3.5 3.5 0 1 1 0 7H6" },
+        { conta: "0", label: "Contratos", d: "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6" },
+        { conta: "0", label: "Tickets", d: "M3 18v-6a9 9 0 0 1 18 0v6M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z" }
+      ].map(r => Object.assign({}, r, { onClick: () => diz(r.label + " — a desenhar", "aviso") })),
+
+      editar: () => diz("Edição inline — a desenhar", "aviso"),
+      registrar: () => P.onRegistrar && P.onRegistrar(E.id),
+      qualificar: () => P.onQualificar && P.onQualificar(E.id),
+      mais: () => diz("Mesclar, arquivar, exportar registro", "aviso"),
+      addPessoa: () => diz("Adicionar pessoa — a desenhar", "aviso"),
+      verAcao: () => P.onAbrirLead && P.onAbrirLead(E.id),
+      ligar: () => diz("Discador aberto para " + (E.pessoa || "o contato"), "ok")
+    };
+  }
+}

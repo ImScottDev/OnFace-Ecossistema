@@ -86,9 +86,25 @@ function folhaDeHover(): CSSStyleSheet | null {
  * comportamento de ponteiro, que só existe depois da hidratação.
  */
 export function hover(css: string | null | undefined): string {
+  return pseudo(css, "hover");
+}
+
+/**
+ * O irmão do hover para `:focus-within`.
+ *
+ * `focus-within` e não `focus`: no protótipo o estilo está no invólucro e quem
+ * recebe o foco é o `input` dentro dele — com `:focus` a moldura nunca
+ * acenderia, que é justamente o retorno visual de "estou digitando aqui".
+ */
+export function foco(css: string | null | undefined): string {
+  return pseudo(css, "focus-within");
+}
+
+function pseudo(css: string | null | undefined, qual: string): string {
   if (!css) return "";
 
-  const guardada = classesDeHover.get(css);
+  const chave = `${qual}|${css}`;
+  const guardada = classesDeHover.get(chave);
   if (guardada) return guardada;
 
   const alvo = folhaDeHover();
@@ -103,13 +119,13 @@ export function hover(css: string | null | undefined): string {
     .join(";");
 
   try {
-    alvo.insertRule(`.${classe}:hover{${corpo}}`, alvo.cssRules.length);
+    alvo.insertRule(`.${classe}:${qual}{${corpo}}`, alvo.cssRules.length);
   } catch {
     // Uma declaração que o navegador recusa não pode derrubar a tela: o
     // elemento fica sem hover, com o estilo base intacto.
     return "";
   }
 
-  classesDeHover.set(css, classe);
+  classesDeHover.set(chave, classe);
   return classe;
 }
