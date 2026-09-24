@@ -29,19 +29,17 @@ import { boardDeOportunidades } from "@onface/sales";
 const LIMITE_PADRAO = 400;
 
 /**
- * Cartões por coluna na primeira carga.
+ * Cartões por coluna.
  *
- * 67 era o valor derivado antigo e aparecia como "67 de 2.919" no cabeçalho —
- * o contador e a lista discordando na mesma tela. 120 enche a coluna bem além
- * da primeira dobra em qualquer monitor, e o que passar disso a pessoa pede
- * com "ver mais".
+ * SEM limite operacional, por decisão do Kauã (24/09): o board mostra a etapa
+ * inteira. O teto de 4.000 é só uma trava contra consulta patológica — a maior
+ * etapa hoje tem 644 registros, e o board inteiro soma ~1.150.
  *
- * NÃO existe "sem limite": a maior coluna tem milhares de registros e
- * renderizar todos de uma vez trava o navegador sem ajudar ninguém — ninguém
- * varre 2.000 cartões com o olho. O caminho para volume alto é filtro e busca,
- * que a barra inteira existe para oferecer.
+ * Eu vinha defendendo 120 com "montar milhares de cartões trava o navegador".
+ * O número real desmente o argumento nesta base, e a decisão é de quem opera a
+ * tela: quem trabalha a fila precisa chegar no fim dela sem pedir licença.
  */
-const POR_COLUNA_PADRAO = 120;
+const POR_COLUNA_PADRAO = 4000;
 
 /* As views rápidas moram em `dominio.ts` — são vocabulário, não consulta, e a
    barra da tela (Client Component) precisa da lista. Importar daqui puxava o

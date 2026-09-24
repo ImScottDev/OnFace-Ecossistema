@@ -33,6 +33,14 @@ export interface PropsPecas {
   tagsDaOrg?: string[];
   /** Chamado depois de cada gravação, para a tela reler do servidor. */
   aoGravar?: () => void;
+  /**
+   * Os três toques da gaveta.
+   *
+   * No protótipo eram `this.diz("Conversa aberta no Atendimento")` — um toast
+   * dizendo que algo aconteceu, sem nada acontecer. Aqui a tela decide o que
+   * fazer: registrar o contato e abrir o Atendimento no canal certo.
+   */
+  falar?: (canal: "ligacao" | "whatsapp" | "email", leadId: string) => void;
 }
 
 
@@ -200,9 +208,10 @@ class Logica extends React.Component<PropsPecas, any> {
       telefone: "+55 11 9" + (7000 + (L0.id.charCodeAt(1) * 37) % 2999) + "-" + (1000 + (L0.id.charCodeAt(1) * 53) % 8999),
       email: slug(L0.pessoa.split(" ")[0]) + "@" + slug(L0.empresa || "semempresa") + ".com.br",
       toques: [
-        { label: "Ligar", d: "M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.4-1.2a2 2 0 0 1 2.1-.5c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z", onClick: () => this.diz("Chamada iniciada pelo Callface — registra na timeline", "ok") },
-        { label: "WhatsApp", d: "M21 11.5a8.4 8.4 0 0 1-9 8.4 9 9 0 0 1-3.8-.8L3 21l1.9-4.1A8.4 8.4 0 0 1 12 3a8.4 8.4 0 0 1 9 8.5z", onClick: () => this.diz("Conversa aberta no Atendimento", "ok") },
-        { label: "E-mail", d: "M4 4h16v16H4zM4 7l8 6 8-6", onClick: () => this.diz("Compositor de e-mail — a desenhar", "aviso") }
+        /* Os três toques ABREM o canal. No protótipo davam toast e pronto. */
+        { label: "Ligar", d: "M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.4-1.2a2 2 0 0 1 2.1-.5c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z", onClick: () => this.props.falar?.("ligacao", L0.id) },
+        { label: "WhatsApp", d: "M21 11.5a8.4 8.4 0 0 1-9 8.4 9 9 0 0 1-3.8-.8L3 21l1.9-4.1A8.4 8.4 0 0 1 12 3a8.4 8.4 0 0 1 9 8.5z", onClick: () => this.props.falar?.("whatsapp", L0.id) },
+        { label: "E-mail", d: "M4 4h16v16H4zM4 7l8 6 8-6", onClick: () => this.props.falar?.("email", L0.id) }
       ],
       cad: (() => {
         const ic = {"wa":"M21 11.5a8.4 8.4 0 0 1-9 8.4 9 9 0 0 1-3.8-.8L3 21l1.9-4.1A8.4 8.4 0 0 1 12 3a8.4 8.4 0 0 1 9 8.5z","tel":"M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7","mail":"M4 4h16v16H4zM4 7l8 6 8-6","task":"M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"};

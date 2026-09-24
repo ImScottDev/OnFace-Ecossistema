@@ -18,12 +18,14 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 
 import type { BoardPreVendas, CardPreVendas, DetalheLead } from "@/lib/vendas/consultas";
 import type { LinhaDoTempo } from "@/lib/vendas/eventos";
 import type { AcoesPreVendas } from "../vendas/PreVendas";
 import { PreVendasLiga, type LeadDoDesenho, type PecaDoDesenho } from "./PreVendasLiga";
 import { PecasLiga } from "./PecasLiga";
+import { type CanalAtendimento } from "../vendas/atendimento";
 
 /* ── Domínio → desenho ─────────────────────────────────────────────────── */
 
@@ -50,6 +52,10 @@ function paraODesenho(c: CardPreVendas): LeadDoDesenho {
     interesse: c.servicos?.[0] ?? null,
     // O protótipo tem UMA tag por cartão; o domínio traz a lista de serviços.
     tag: c.servicos && c.servicos.length > 1 ? c.servicos[1] : null,
+    telefone: c.temTelefone ? "sim" : null,
+    whatsapp: c.temWhatsapp ? "sim" : null,
+    email: c.temEmail ? "sim" : null,
+    empresaId: c.empresaId,
     acao: c.proximaAcao?.titulo ?? null,
     venceEm: c.proximaAcao?.venceEm ? quando(c.proximaAcao.venceEm) : null,
     etapa: c.etapa,
@@ -100,6 +106,43 @@ export function PreVendasProto({ dados, acoes }: {
     pecas.current?.abrirPeca(peca, id);
   }, []);
 
+  /**
+   * Os três toques da gaveta: registra o contato E abre o canal.
+   *
+   * Registrar sozinho era meio caminho, e do lado de quem usa parecia
+   * quebrado: o toast dizia "conversa aberta no Atendimento" e nada abria.
+   *
+   * A conversa certa é resolvida por `urlAtendimento`, a porta única do
+   * produto — `wa.me` e `mailto:` jogam o operador para fora e deixam o
+   * histórico do lead com um buraco no momento em que alguém falou com ele.
+   */
+  const falar = React.useCallback(async (canal: CanalAtendimento, leadId: string) => {
+    const card = todos.find((c) => c.leadId === leadId);
+    if (!card) return;
+
+    /* A URL sai do `leadId`, não do número.
+     *
+     * `urlAtendimento` exige o telefone e o board não o carrega — só sabe SE
+     * existe (`temTelefone`). Passar um placeholder para satisfazer a função
+     * fazia ela devolver `null` na validação de 10 dígitos, e o botão não
+     * levava a lugar nenhum.
+     *
+     * Quem resolve a conversa certa é o Atendimento, a partir do lead: é assim
+     * que o deep link do Negócio sempre funcionou. O que o board precisa saber
+     * é apenas se há canal para abrir. */
+    const temCanal = canal === "email" ? card.temEmail : (card.temTelefone || card.temWhatsapp);
+    if (!temCanal) {
+      toast(`Este contato não tem ${canal === "email" ? "e-mail" : "telefone"} cadastrado.`);
+      return;
+    }
+    const destino = `/atendimento?canal=${canal}&leadId=${encodeURIComponent(leadId)}`;
+
+    // Antes da navegação: depois do push este componente desmonta e a
+    // promessa ficaria órfã.
+    await acoes.registrarContato(leadId, canal);
+    router.push(destino);
+  }, [todos, acoes, router]);
+
   return (
     <>
       {/* `data-workspace="desenho"`: a tela traz o próprio fundo e o leva até
@@ -114,6 +157,7 @@ export function PreVendasProto({ dados, acoes }: {
         leads={leads}
         ir={(href) => router.push(href)}
         aoGravar={() => router.refresh()}
+        falar={falar}
       />
 
     </>

@@ -687,6 +687,18 @@
   height: 100%;
   overflow: hidden;
   padding: 0;
+  /* `flex column` é o que faz a altura CHEGAR na tela.
+   *
+   * Sem isto o container é `display:block`, e aí o `flex:1;min-height:0` que a
+   * tela do protótipo usa não significa nada: o filho de um bloco cresce com o
+   * conteúdo. A coluna do quadro media 19.297px numa janela de 1.080 e a lista
+   * de cartões, que deveria rolar dentro dela, nunca chegava a ter overflow —
+   * o board simplesmente não rolava.
+   *
+   * A cadeia de altura do protótipo é `flex:1 + min-height:0` do topo até a
+   * lista; basta um elo `block` no meio para ela se perder inteira. */
+  display: flex;
+  flex-direction: column;
 }
 .onface-conteudo-interno > [data-workspace="desenho"] {
   display: flex;
@@ -1376,4 +1388,23 @@
   font-weight: 500;
   line-height: 1.4;
   animation: onface-rise .22s cubic-bezier(.2, 0, .2, 1) both;
+}
+
+/* ── Rolagem sem barra dentro da tela do desenho ─────────────────────────
+ *
+ * A coluna do quadro rola, e isso precisa acontecer — o que não precisa é a
+ * barra aparecer dentro dela. Com sete colunas, sete barras cinzas verticais
+ * cortam o board no sentido da leitura e competem com o conteúdo, que é o
+ * oposto do que o desenho mostra.
+ *
+ * `scrollbar-width: none` cobre Firefox; o `::-webkit-scrollbar` cobre o
+ * resto. A rolagem por roda, trackpad, teclado e arrasto continua inteira —
+ * só o indicador some.
+ * ────────────────────────────────────────────────────────────────────── */
+[data-workspace="desenho"] * {
+  scrollbar-width: none;
+}
+[data-workspace="desenho"] *::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }

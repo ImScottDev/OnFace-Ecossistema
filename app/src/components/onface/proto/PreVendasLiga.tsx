@@ -56,6 +56,12 @@ export interface LeadDoDesenho {
   acao: string | null;
   venceEm: string | null;
   etapa: string;
+  /* Os canais. O mock do protótipo não os tinha porque lá os botões só
+     davam toast; no produto eles abrem o Atendimento no contato certo. */
+  telefone?: string | null;
+  whatsapp?: string | null;
+  email?: string | null;
+  empresaId?: string | null;
 }
 
 export type PecaDoDesenho = "detalhe" | "qualificar" | "nutrir" | "desqualificar";
