@@ -2,12 +2,14 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import type { DetalheLead } from "@/lib/vendas/consultas";
 import type { LinhaDoTempo } from "@/lib/vendas/eventos";
 import { rotuloAtor, rotuloEvento, type AcoesPreVendas } from "./PreVendas";
 import type { Saida } from "./SaidasLead";
+import { urlAtendimento, type CanalAtendimento } from "./atendimento";
 import "./gaveta-lead.css";
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -209,6 +211,7 @@ export function GavetaLead({
   aoPedirSaida: (saida: Saida) => void;
   aoPedirAtividade: (modo: "ver" | "nova") => void;
 }) {
+  const router = useRouter();
   const [ocupado, setOcupado] = React.useState(false);
   const [saidaAberta, setSaidaAberta] = React.useState(false);
   /* O padrão do protótipo: `{ cad: true, acao: true, qualif: false, timeline:
@@ -300,6 +303,54 @@ export function GavetaLead({
     }
   };
 
+  /**
+   * Os três toques: registra o contato E ABRE O CANAL.
+   *
+   * Registrar sozinho era meio caminho — e do lado de quem usa parecia
+   * quebrado: clicava em "WhatsApp", aparecia um toast dizendo "WhatsApp
+   * registrado" e nada abria. O lead mudava de etapa por uma conversa que
+   * ninguém teve.
+   *
+   * `urlAtendimento` já existia em `./atendimento` e não estava ligada a nada.
+   * Ela resolve a conversa certa por lead e por telefone, e é a porta única do
+   * produto para qualquer canal: `wa.me`, `mailto:` e `tel:` jogam o operador
+   * para fora e deixam a conversa sem registro.
+   *
+   * Sem telefone ou e-mail ela devolve `null`, e aí o toque não acontece: o
+   * botão fica desabilitado em vez de registrar um contato impossível.
+   */
+  const falar = async (canal: CanalAtendimento) => {
+    if (!lead) return;
+    const destino = urlAtendimento(canal, {
+      leadId: lead.id,
+      whatsapp: lead.pessoa.whatsapp,
+      telefone: lead.pessoa.telefone,
+      email: lead.pessoa.email,
+    });
+    if (!destino) {
+      toast("Este contato não tem " + (canal === "email" ? "e-mail" : "telefone") + " cadastrado.");
+      return;
+    }
+    setOcupado(true);
+    try {
+      // O registro vem ANTES da navegação: depois de `router.push` este
+      // componente desmonta e a promessa ficaria órfã.
+      await acoes.registrarContato(lead.id, canal);
+    } finally {
+      setOcupado(false);
+    }
+    router.push(destino);
+  };
+
+  /** Canal que este lead de fato suporta — o botão sem destino fica apagado. */
+  const podeFalar = (canal: CanalAtendimento) =>
+    lead != null && urlAtendimento(canal, {
+      leadId: lead.id,
+      whatsapp: lead.pessoa.whatsapp,
+      telefone: lead.pessoa.telefone,
+      email: lead.pessoa.email,
+    }) !== null;
+
   const alternar = (k: string) => setAbertas((s) => ({ ...s, [k]: !s[k] }));
 
   if (!lead) {
@@ -373,15 +424,27 @@ export function GavetaLead({
               "Em contato" quando é o primeiro — é o motor, não um registro
               paralelo. */}
           <div className="gv-canais">
-            <button disabled={ocupado} onClick={() => rodar(acoes.registrarContato(lead.id, "ligacao"), "Ligação registrada")}>
+            <button
+              disabled={ocupado || !podeFalar("ligacao")}
+              title={podeFalar("ligacao") ? "Abrir no Atendimento" : "Sem telefone cadastrado"}
+              onClick={() => void falar("ligacao")}
+            >
               <Icone d={D.telefone} />
               <span>Ligar</span>
             </button>
-            <button disabled={ocupado} onClick={() => rodar(acoes.registrarContato(lead.id, "whatsapp"), "WhatsApp registrado")}>
+            <button
+              disabled={ocupado || !podeFalar("whatsapp")}
+              title={podeFalar("whatsapp") ? "Abrir no Atendimento" : "Sem telefone cadastrado"}
+              onClick={() => void falar("whatsapp")}
+            >
               <Icone d={D.whatsapp} />
               <span>WhatsApp</span>
             </button>
-            <button disabled={ocupado} onClick={() => rodar(acoes.registrarContato(lead.id, "email"), "E-mail registrado")}>
+            <button
+              disabled={ocupado || !podeFalar("email")}
+              title={podeFalar("email") ? "Abrir no Atendimento" : "Sem e-mail cadastrado"}
+              onClick={() => void falar("email")}
+            >
               <Icone d={D.email} />
               <span>E-mail</span>
             </button>
@@ -806,11 +869,12 @@ export function GavetaLead({
                   className="gv-saida-item"
                   onClick={() => {
                     setSaidaAberta(false);
-                    if (semEmpresa) {
-                      toast("Criar oportunidade exige empresa associada.");
-                      return;
-                    }
-                    toast("Criar oportunidade pede família e responsável — peça a desenhar.");
+                    /* A peça existe desde 24/09. Antes daqui saía um toast
+                       dizendo o que ela pediria — e era o mesmo buraco do
+                       arrasto para a coluna Oportunidade. A checagem de
+                       empresa mora DENTRO da peça, que explica o que fazer em
+                       vez de só recusar. */
+                    aoPedirSaida("oportunidade");
                   }}
                 >
                   <Icone d={D.oportunidade} />

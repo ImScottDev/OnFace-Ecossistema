@@ -64,7 +64,11 @@ const COLUNAS: Array<{
     vazio: "Soltar aqui abre os critérios. Qualificar grava um fato que sobrevive à etapa seguinte.",
     icone: "M4 11h16v10H4zM8 11V7a4 4 0 0 1 8 0v4" },
   { k: "oportunidade", label: "Oportunidade", cor: "#fe4f2b",
-    confirma: "Criar oportunidade pede família e responsável, e exige empresa associada.",
+    /* Era só `confirma`: soltar aqui mostrava um toast explicando o que ia
+       pedir e não pedia nada. A passagem mais importante do funil — lead vira
+       negócio — era a única saída sem peça, e o próprio código dizia "peça a
+       desenhar". Agora abre o mesmo modal das outras saídas. */
+    saida: "oportunidade",
     vazio: "Cria uma oportunidade real no Pipeline. Bloqueado sem empresa associada.",
     icone: "M4 11h16v10H4zM8 11V7a4 4 0 0 1 8 0v4" },
   { k: "nutricao", label: "Nutrição", cor: "#c8a86a", recolhivel: true,
@@ -137,6 +141,8 @@ function paraSaida(c: CardPreVendas): LeadDaSaida {
     iniciais: c.responsavelIniciais ?? iniciais(c.empresa),
     origem: c.origem,
     servicos: c.servicos,
+    // A saída "oportunidade" recusa lead sem conta: o negócio é da empresa.
+    empresaId: c.empresaId,
   };
 }
 
@@ -873,6 +879,7 @@ export function PreVendasQuadro({
           saida={saida.tipo}
           lead={saida.lead}
           acoes={acoes}
+          responsaveis={dados.filtros.responsaveis}
           aoFechar={() => setSaida(null)}
           aoConcluir={() => {
             router.refresh();

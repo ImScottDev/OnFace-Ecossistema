@@ -4,8 +4,8 @@ import * as React from "react";
 import { toast } from "sonner";
 
 import {
-  MOTIVOS_DESQUALIFICACAO, MOTIVOS_NUTRICAO,
-  type MotivoDesqualificacao, type MotivoNutricao, type Qualificacao,
+  FAMILIAS, MOTIVOS_DESQUALIFICACAO, MOTIVOS_NUTRICAO, ROTULO_FAMILIA,
+  type Familia, type MotivoDesqualificacao, type MotivoNutricao, type Qualificacao,
 } from "@/lib/vendas/dominio";
 import type { AcoesPreVendas } from "./PreVendas";
 import "./saidas-lead.css";
@@ -21,11 +21,14 @@ import "./saidas-lead.css";
  * quadro só anunciava o que ia pedir; agora ele pede.
  * ───────────────────────────────────────────────────────────────────────── */
 
-export type Saida = "qualificar" | "nutrir" | "desqualificar" | "atividade";
+export type Saida = "qualificar" | "nutrir" | "desqualificar" | "atividade" | "oportunidade";
 
 export type LeadDaSaida = {
   id: string;
   empresa: string;
+  /** Sem empresa canônica não se cria oportunidade: o negócio é da conta,
+   *  não da pessoa. `null` faz a saída explicar isso em vez de falhar. */
+  empresaId?: string | null;
   pessoa: string | null;
   cargo: string | null;
   iniciais: string;
@@ -81,12 +84,15 @@ export function SaidasLead({
   saida,
   lead,
   acoes,
+  responsaveis = [],
   aoFechar,
   aoConcluir,
 }: {
   saida: Saida;
   lead: LeadDaSaida;
   acoes: AcoesPreVendas;
+  /** Quem pode assumir a oportunidade. Só a saída "oportunidade" usa. */
+  responsaveis?: Array<{ id: string; nome: string }>;
   aoFechar: () => void;
   aoConcluir: () => void;
 }) {
@@ -105,6 +111,12 @@ export function SaidasLead({
   const [observacao, setObservacao] = React.useState("");
   const [motivoDesq, setMotivoDesq] = React.useState<MotivoDesqualificacao | null>(null);
   const [detalhe, setDetalhe] = React.useState("");
+
+  /* Oportunidade. Uma família por oportunidade é regra do domínio: marcar duas
+     cria duas oportunidades irmãs, com fechamento independente e o mesmo
+     bundle — nunca uma oportunidade com duas famílias dentro. */
+  const [familias, setFamilias] = React.useState<Familia[]>([]);
+  const [donoOp, setDonoOp] = React.useState("");
 
   // Próxima ação. É uma Task real do produto, não uma string no cartão.
   const [titulo, setTitulo] = React.useState("");
@@ -131,7 +143,13 @@ export function SaidasLead({
         ? ([!motivoNutrir && "motivo", exigeRetomada && !retomarEm && "data de retomada"].filter(Boolean) as string[])
         : saida === "desqualificar"
           ? ([!motivoDesq && "motivo"].filter(Boolean) as string[])
-          : ([!titulo.trim() && "título"].filter(Boolean) as string[]);
+          : saida === "oportunidade"
+            ? ([
+                !lead.empresaId && "empresa associada",
+                !familias.length && "família",
+                !donoOp && "responsável comercial",
+              ].filter(Boolean) as string[])
+            : ([!titulo.trim() && "título"].filter(Boolean) as string[]);
 
   const gravar = async () => {
     if (faltando.length) {
@@ -164,6 +182,20 @@ export function SaidasLead({
       } else if (saida === "desqualificar") {
         const r = await acoes.desqualificar(lead.id, motivoDesq!, detalhe.trim() || null);
         toast(r.ok ? `${lead.empresa} desqualificada` : r.erro ?? "Não deu para desqualificar");
+        if (!r.ok) return;
+      } else if (saida === "oportunidade") {
+        const r = await acoes.criarOportunidade({
+          leadId: lead.id,
+          familias,
+          responsavelId: donoOp,
+        });
+        toast(
+          r.ok
+            ? familias.length > 1
+              ? `${familias.length} oportunidades criadas no Pipeline`
+              : `Oportunidade de ${lead.empresa} criada no Pipeline`
+            : r.erro ?? "Não deu para criar a oportunidade",
+        );
         if (!r.ok) return;
       } else {
         const r = await acoes.criarTarefa({
@@ -205,6 +237,13 @@ export function SaidasLead({
       subtitulo: "O motivo é o que sustenta relatório de perda depois. Sem ele, a saída não diz nada.",
       icone: D.x,
       botao: "Desqualificar",
+    },
+    oportunidade: {
+      tom: "ok" as const,
+      titulo: "Criar oportunidade",
+      subtitulo: "A oportunidade nasce no Pipeline como negócio aberto. Qualificar não cria oportunidade — esta é a passagem, e ela é explícita.",
+      icone: D.check,
+      botao: "Criar oportunidade",
     },
     atividade: {
       tom: "neutro" as const,
@@ -251,6 +290,86 @@ export function SaidasLead({
         </header>
 
         <div className="sl-corpo">
+          {saida === "oportunidade" && (
+            <>
+              {/* Empresa é pré-requisito, não campo: o negócio é da conta. A
+                  saída diz isso ANTES de a pessoa preencher o resto e
+                  descobrir no fim que não dava. */}
+              {!lead.empresaId && (
+                <div className="sl-aviso" data-tom="erro">
+                  <Icone d={D.alerta} />
+                  <span>
+                    <strong>Este lead não tem empresa associada.</strong>
+                    Associe a empresa na gaveta do lead — a oportunidade pertence à conta,
+                    não à pessoa.
+                  </span>
+                </div>
+              )}
+
+              <section>
+                <div className="sl-rotulo">
+                  <span>FAMÍLIA</span>
+                  <em>*</em>
+                  <span className="sl-espaco" />
+                  <small>
+                    {familias.length > 1
+                      ? `${familias.length} oportunidades irmãs`
+                      : familias.length === 1
+                        ? "1 escolhida"
+                        : "nenhuma"}
+                  </small>
+                </div>
+                <div className="sl-chips">
+                  {FAMILIAS.map((f) => {
+                    const on = familias.includes(f);
+                    return (
+                      <button
+                        key={f}
+                        type="button"
+                        className="sl-chip"
+                        data-on={on}
+                        onClick={() =>
+                          setFamilias((s) => (on ? s.filter((x) => x !== f) : [...s, f]))
+                        }
+                      >
+                        {on && <Icone d={D.check} className="sl-chip-check" />}
+                        <span>{ROTULO_FAMILIA[f]}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="sl-ajuda">
+                  Cada oportunidade pertence a uma família só. Marcar mais de uma cria
+                  oportunidades irmãs, com fechamento independente.
+                </p>
+              </section>
+
+              <section>
+                <div className="sl-rotulo">
+                  <span>RESPONSÁVEL COMERCIAL</span>
+                  <em>*</em>
+                </div>
+                <div className="sl-chips">
+                  {responsaveis.map((r) => (
+                    <button
+                      key={r.id}
+                      type="button"
+                      className="sl-chip"
+                      data-on={donoOp === r.id}
+                      onClick={() => setDonoOp((v) => (v === r.id ? "" : r.id))}
+                    >
+                      {donoOp === r.id && <Icone d={D.check} className="sl-chip-check" />}
+                      <span>{r.nome}</span>
+                    </button>
+                  ))}
+                </div>
+                {!responsaveis.length && (
+                  <p className="sl-ajuda">Nenhum usuário ativo para assumir a oportunidade.</p>
+                )}
+              </section>
+            </>
+          )}
+
           {saida === "qualificar" && (
             <>
               <section>

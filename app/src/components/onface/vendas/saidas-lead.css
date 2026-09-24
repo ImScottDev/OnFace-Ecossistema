@@ -385,3 +385,36 @@
 .sl-confirmar[data-tom="ok"] { background: var(--of-canal-whatsapp-tinta) }
 .sl-confirmar[data-tom="ok"]:hover { filter: brightness(.92) }
 .sl-confirmar:disabled { opacity: .6; cursor: progress }
+
+/* Texto de apoio de uma seção: explica a REGRA que o controle acima obedece
+   (por que marcar duas famílias cria duas oportunidades, por que não há quem
+   assumir). Não é rótulo nem erro — por isso o tom é o do metadado, um degrau
+   abaixo do corpo, e não o coral da cobrança. */
+.sl-ajuda {
+  margin: 6px 0 0;
+  font-size: var(--of-t-meta);
+  line-height: 1.45;
+  color: var(--of-tinta-3);
+}
+
+/* Pré-requisito que a saída não resolve sozinha — some quando é atendido.
+   Fica no topo do corpo para a pessoa ler ANTES de preencher o resto e
+   descobrir no fim que não dava. */
+.sl-aviso {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: var(--of-t-meta);
+  line-height: 1.45;
+}
+.sl-aviso[data-tom="erro"] {
+  background: var(--of-coral-fundo);
+  box-shadow: inset 0 0 0 1px var(--of-coral-contorno);
+  /* O degrau mais escuro: `--of-coral-texto` é calibrado para o papel, e
+     sobre o fundo coral suave ele perde contraste. */
+  color: var(--of-coral-texto-forte);
+}
+.sl-aviso svg { width: 14px; height: 14px; stroke-width: 2.2; flex: 0 0 auto; margin-top: 1px }
+.sl-aviso strong { display: block; font-weight: var(--of-peso-semi) }
