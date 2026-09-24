@@ -171,3 +171,58 @@ Fica registrado um resíduo que não afeta esta tela: **2.070 aquisições
 encerradas continuam com etapa `novo`**. Elas nunca saíram da etapa inicial e
 foram fechadas. Qualquer relatório que agrupe por etapa sem filtrar
 `closed_at` vai contá-las.
+
+---
+
+## 24/09 — a tela passou a SER o protótipo
+
+O que estava acontecendo até aqui: a tela era **recriada** em React lendo o
+desenho. Cada transcrição introduz divergência — espaçamento, peso, chip, cor —
+e o resultado é que o Kauã precisava validar elemento por elemento e ainda
+sobrava coisa errada. Duas rodadas de correção não resolveram, porque o método
+é que estava errado.
+
+Agora `/pre-vendas` renderiza o protótipo convertido por máquina.
+
+### As três peças
+
+| arquivo | o que é | escrito à mão? |
+|---|---|---|
+| `proto/PreVendasDesenho.tsx` | o markup, convertido do `.dc.html` | **não** |
+| `proto/PreVendasLiga.tsx` | a lógica do protótipo, portada por substituição | **não** |
+| `proto/PreVendasProto.tsx` | traduz o domínio e liga os overlays | sim |
+
+Só o terceiro foi escrito, e de propósito: decidir que campo do
+`CardPreVendas` vira que campo do lead do desenho é julgamento, e julgamento
+não se automatiza. O markup e a lógica não passaram por transcrição nenhuma,
+então não há divergência visual para procurar neles.
+
+### O que mudou na tela, de imediato
+
+- A faixa de indicadores voltou a mostrar **a fórmula** de cada número
+  (`count(leads) · estagio ∈ ativos`), que a versão recriada não tinha.
+- O checkbox do cartão voltou para o **canto superior direito**.
+- Espaçamento, chips de origem com cor por canal, e o cartão inteiro passaram
+  a ser os do desenho.
+
+### O que a versão recriada tinha e o protótipo não
+
+Estas eram correções pedidas sobre o código antigo. Como a tela agora é o
+desenho, elas voltaram ao estado do desenho e precisam de decisão:
+
+| item | no desenho | pedido do Kauã em 24/09 |
+|---|---|---|
+| botão `+ Novo lead` | existe | remover, Exportar assume o lugar |
+| contador da coluna | conta os cartões carregados | mostrar o total real da etapa |
+| `Ver mais` por coluna | não existe | carregar além da primeira leva |
+
+**Onde corrigir:** no Claude Design, não aqui. Editar o arquivo gerado é
+reabrir a porta da divergência — a próxima geração sobrescreve, e volta tudo.
+Se a decisão for manter no código, ela precisa entrar como opção do adaptador,
+declarada neste registro.
+
+### Arquivos da versão recriada
+
+`vendas/PreVendasQuadro.tsx` e `vendas/pre-vendas-quadro.css` deixaram de ser
+usados pela rota. Não foram removidos: remoção de código é autorização à
+parte, e a comparação entre os dois ainda é útil enquanto a virada assenta.

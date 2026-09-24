@@ -1,7 +1,11 @@
 import { redirect } from "next/navigation";
 import { getTenantContext } from "@/lib/auth/tenant";
 import { boardPreVendas, ehView, type ViewPreVendas } from "@/lib/vendas/consultas";
-import { PreVendasQuadro } from "@/components/onface/vendas/PreVendasQuadro";
+/* A tela é o desenho do Claude Design, convertido por máquina — não uma
+   recriação. `PreVendasQuadro` era a versão feita à mão e saiu em 24/09:
+   cada transcrição dela introduzia divergência visual que só aparecia na
+   revisão do Kauã. Ver docs/design/COMO-LIGAR-UMA-TELA.md. */
+import { PreVendasProto } from "@/components/onface/proto/PreVendasProto";
 import { type RotaBaseVendas } from "@/components/onface/vendas/ui";
 import {
   acaoAssociarEmpresa, acaoAtribuir, acaoAtribuirEmMassa, acaoCriarLead,
@@ -74,9 +78,8 @@ export async function PreVendasPage({ searchParams, rotaBase = "" }: {
   });
 
   return (
-    <PreVendasQuadro
+    <PreVendasProto
       dados={dados}
-      usuarioId={ctx.userId}
       acoes={{
         moverEtapa: acaoMoverEtapa,
         qualificar: acaoQualificar,
