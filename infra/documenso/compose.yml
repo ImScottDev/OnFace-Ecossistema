@@ -20,7 +20,9 @@ services:
     image: axllent/mailpit:v1.27
     restart: unless-stopped
     ports:
-      - "8025:8025"
+      # A caixa de teste nunca deve ficar exposta no host. O acesso de quem
+      # administra o DEV e feito por tunel temporario.
+      - "127.0.0.1:8025:8025"
 
   documenso:
     image: ghcr.io/documenso/documenso:v2.16.0
@@ -29,7 +31,9 @@ services:
       database:
         condition: service_healthy
     ports:
-      - "3500:3000"
+      # A interface nao e exposta diretamente. O Traefik a publica pela
+      # proxy-network sob o dominio dedicado de assinaturas.
+      - "127.0.0.1:3500:3000"
     environment:
       NEXTAUTH_SECRET: ${DOCUMENSO_NEXTAUTH_SECRET}
       NEXT_PRIVATE_ENCRYPTION_KEY: ${DOCUMENSO_ENCRYPTION_KEY}
@@ -46,9 +50,21 @@ services:
       NEXT_PRIVATE_SMTP_SECURE: "false"
       NEXT_PRIVATE_SMTP_FROM_NAME: Callface Contratos
       NEXT_PRIVATE_SMTP_FROM_ADDRESS: contratos@callface.io
-      NEXT_PUBLIC_DISABLE_SIGNUP: "false"
+      NEXT_PUBLIC_DISABLE_SIGNUP: ${DOCUMENSO_DISABLE_SIGNUP:-true}
     volumes:
       - ./certs/cert.p12:/opt/documenso/cert.p12:ro
+    networks:
+      - default
+      - crm2dev-network
+      - proxy-network
 
 volumes:
   documenso_database:
+
+networks:
+  crm2dev-network:
+    external: true
+    name: ${CRM2_DEV_NETWORK:-crm2dev-network}
+  proxy-network:
+    external: true
+    name: ${DOCUMENSO_PROXY_NETWORK:-proxy-network}

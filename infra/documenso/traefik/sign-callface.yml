@@ -1,0 +1,17 @@
+http:
+  routers:
+    documenso-sign:
+      rule: "Host(`sign.callface.io`)"
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: cloudflare
+      middlewares:
+        - security-headers@file
+        - rate-limit@file
+      service: documenso-sign
+  services:
+    documenso-sign:
+      loadBalancer:
+        servers:
+          - url: "http://documenso:3000"
