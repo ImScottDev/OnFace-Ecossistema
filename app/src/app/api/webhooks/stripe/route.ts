@@ -498,17 +498,20 @@ async function resolveWebhookOrganization(event: StripeEventPayload): Promise<st
 }
 
 export async function POST(request: NextRequest) {
-  const payload = await request.text();
   const secret = process.env.STRIPE_WEBHOOK_SECRET;
-  const sig = request.headers.get("stripe-signature");
 
   // FAIL-CLOSED (auditoria item 8): sem secret configurado, o endpoint público
   // aceitava QUALQUER payload forjado — um POST com metadata.propostaId gerava
   // contrato e promovia lead a cliente sem pagamento.
   if (!secret) {
     console.error("[StripeWebhook] STRIPE_WEBHOOK_SECRET não configurado — recusando evento (fail-closed)");
-    return NextResponse.json({ error: "webhook secret not configured" }, { status: 500 });
+    // 503 diz ao Stripe que esta porta está temporariamente indisponível e que
+    // deve haver reentrega depois da configuração. 500 parece bug do handler.
+    return NextResponse.json({ error: "webhook secret not configured" }, { status: 503 });
   }
+
+  const payload = await request.text();
+  const sig = request.headers.get("stripe-signature");
   if (!verify(payload, sig, secret)) {
     return NextResponse.json({ error: "invalid signature" }, { status: 400 });
   }

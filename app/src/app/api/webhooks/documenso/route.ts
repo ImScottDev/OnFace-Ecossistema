@@ -47,7 +47,9 @@ function finalDocumentUrl(contractId: string, payload: DocumensoPayload["payload
 export async function POST(request: NextRequest) {
   const configuredSecret = process.env.DOCUMENSO_WEBHOOK_SECRET;
   const receivedSecret = request.headers.get("x-documenso-secret");
-  if (!configuredSecret) return NextResponse.json({ error: "webhook secret not configured" }, { status: 500 });
+  // Sem segredo, a integração não está pronta. 503 mantém o contrato de
+  // indisponibilidade temporária e permite retentativa do provedor.
+  if (!configuredSecret) return NextResponse.json({ error: "webhook secret not configured" }, { status: 503 });
   if (!receivedSecret) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const recebido = Buffer.from(receivedSecret);
   const esperado = Buffer.from(configuredSecret);

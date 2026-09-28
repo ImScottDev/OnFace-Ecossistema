@@ -187,3 +187,20 @@ test("a entrega distingue os motivos de não entregar", async () => {
     assert.ok(entrega.includes(motivo), `a entrega deveria distinguir o motivo "${motivo}"`);
   }
 });
+
+test("falha transitória da CAPI volta o evento para retry, não para processado", async () => {
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+  const consumidor = fs.readFileSync(path.resolve(import.meta.dirname, "../events/consumer.ts"), "utf8");
+
+  // A CAPI registra a tentativa, mas `tentarDeNovo` precisa atravessar o try
+  // interno e alcançar o catch do consumidor. Sem isto, o update para
+  // `processed` acontecia logo depois de uma falha 5xx da Meta.
+  const inicio = consumidor.indexOf("let erroCapiReprocessavel");
+  const processado = consumidor.indexOf('status: "processed"', inicio);
+  assert.ok(inicio >= 0, "o consumidor não guarda a falha transitória da CAPI");
+  assert.ok(processado > inicio, "não encontrou a marcação de processado do outbox");
+  const trecho = consumidor.slice(inicio, processado);
+  assert.match(trecho, /r\.tentarDeNovo/, "o resultado retryable da CAPI não é considerado");
+  assert.match(trecho, /throw erroCapiReprocessavel/, "a falha transitória não alcança o retry do outbox");
+});

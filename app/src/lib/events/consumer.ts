@@ -93,6 +93,7 @@ export async function processarEventosPendentes(limite = 50): Promise<{ processa
       // retry, idempotência e ordem. E fica em try próprio porque a Meta não
       // pode derrubar o evento: o fato já aconteceu, e o handler de domínio já
       // rodou. Se a entrega falhar, ela fica registrada e é reprocessável.
+      let erroCapiReprocessavel: Error | null = null;
       try {
         const { entregarEventoNaMeta, registrarEntregaCapi } = await import("@/lib/integrations/meta/entrega-capi");
         const r = await entregarEventoNaMeta(evento as never);
@@ -101,9 +102,20 @@ export async function processarEventosPendentes(limite = 50): Promise<{ processa
         if (r.motivo !== "sem_mapeamento" && r.motivo !== "sem_touchpoint_meta") {
           await registrarEntregaCapi(evento as never, r);
         }
+        // A entrega pode falhar sem desfazer o fato de domínio, mas uma falha
+        // transitória não pode encerrar o evento no outbox. A tentativa fica
+        // auditada acima; ao propagar o erro abaixo, o catch externo devolve a
+        // linha para `pending` e aplica a política normal de retry.
+        if (r.tentarDeNovo) {
+          erroCapiReprocessavel = new Error(
+            `[meta/capi] entrega transitória para ${evento.eventType}: ${r.detalhe ?? "sem detalhe"}`,
+          );
+        }
       } catch (e) {
         console.error(`[outbox] entrega à Meta falhou para ${evento.eventType} (best-effort):`, e);
+        erroCapiReprocessavel = e instanceof Error ? e : new Error(String(e));
       }
+      if (erroCapiReprocessavel) throw erroCapiReprocessavel;
       await db
         .update(eventOutbox)
         .set({ status: "processed", processedAt: new Date(), processingStartedAt: null })

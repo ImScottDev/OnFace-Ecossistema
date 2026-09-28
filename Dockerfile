@@ -28,7 +28,10 @@ COPY . .
 RUN pnpm install --frozen-lockfile
 
 ENV NEXT_TELEMETRY_DISABLED=1
-ENV NODE_OPTIONS="--max-old-space-size=3072"
+# O DEV divide uma EC2 de 8 GB com os serviços atuais. O build do Next com 3 GB
+# deixava a máquina inteira em swap; 1,5 GB mantém o processo contido sem
+# afetar o runtime do app, que tem seu próprio teto abaixo.
+ENV NODE_OPTIONS="--max-old-space-size=1536"
 
 # `next build` direto, e NÃO `run build`, que desde o CP61 roda `tsc --noEmit`
 # antes.

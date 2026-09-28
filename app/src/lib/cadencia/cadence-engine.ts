@@ -690,7 +690,11 @@ async function hidratarVars(enrollment: typeof cadenceEnrollments.$inferSelect):
   const vars = { ...((enrollment.vars as Record<string, unknown>) ?? {}), entity_type: enrollment.entityType, has_replied: Boolean(enrollment.lastInboundAt) };
   if (enrollment.entityType === "lead") {
     const [lead, tagsRows] = await Promise.all([
-      db.select({ status: leads.status, sdrStatus: leads.sdrStatus, stage: leads.crm2PreVendasStage, origem: leads.origem, responsavelId: leads.responsavelId, empresaId: leads.empresaId })
+      // `crm2PreVendasStage` é o retrato do De/Para legado; depois de uma
+      // automação mover o lead ele não acompanha mais a etapa operacional.
+      // Condições da cadência precisam ler a mesma coluna que a porta canônica
+      // escreve, ou um passo seguinte decide usando o estado anterior.
+      db.select({ status: leads.status, sdrStatus: leads.sdrStatus, stage: leads.estagioPreVendas, origem: leads.origem, responsavelId: leads.responsavelId, empresaId: leads.empresaId })
         .from(leads).where(and(eq(leads.id, enrollment.entityId), eq(leads.organizacaoId, enrollment.organizacaoId))).limit(1).then((rows) => rows[0] ?? null),
       db.select({ nome: labels.nome }).from(leadLabels).innerJoin(labels, eq(labels.id, leadLabels.labelId)).where(eq(leadLabels.leadId, enrollment.entityId)),
     ]);

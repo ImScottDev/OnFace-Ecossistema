@@ -125,14 +125,34 @@ function variaveisDocumentadas(): Set<string> {
  * Obrigatórias por jornada. Faltando qualquer uma, a jornada correspondente
  * não acontece — e falha em silêncio ou com 503 do lado do provedor.
  */
-const OBRIGATORIAS: { nome: string; vars: string[] }[] = [
-  { nome: "núcleo (sobe o sistema)", vars: ["DATABASE_URL", "REDIS_URL", "NEXTAUTH_SECRET", "NEXTAUTH_URL"] },
-  { nome: "entrada de lead", vars: ["RD_WEBHOOK_SECRET", "META_LEADIDS_WEBHOOK_SECRET"] },
-  { nome: "atendimento por WhatsApp", vars: ["UAZAPI_WEBHOOK_SECRET", "UAZAPI_BASE_URL"] },
-  { nome: "telefonia", vars: ["CALLFACE_WEBHOOK_SECRET"] },
-  { nome: "pagamento e billing", vars: ["STRIPE_API_KEY", "STRIPE_WEBHOOK_SECRET"] },
-  { nome: "assinatura de contrato", vars: ["DOCUMENSO_API_URL", "DOCUMENSO_API_TOKEN", "DOCUMENSO_WEBHOOK_SECRET"] },
-  { nome: "e-mail", vars: ["EMAIL_ENCRYPTION_KEY"] },
+type Jornada = {
+  nome: string;
+  /** Tudo que esta jornada exige. */
+  todas?: string[];
+  /** Pelo menos uma destas alternativas precisa existir. */
+  umaDelas?: string[];
+};
+
+// Cada entrada corresponde a uma porta ou uma capacidade independente. Juntar
+// rotas novas e legadas aqui mascara um fluxo pronto como se estivesse desligado
+// (ou o inverso). Stripe tambem tem duas chaves com papeis distintos: a
+// restricted read-only e a secret de escrita; checkout aceita qualquer uma
+// porque o provider suporta ambos os nomes.
+const OBRIGATORIAS: Jornada[] = [
+  { nome: "núcleo (sobe o sistema)", todas: ["DATABASE_URL", "REDIS_URL", "NEXTAUTH_SECRET", "NEXTAUTH_URL"] },
+  { nome: "lead por RD Station (ponte legada)", todas: ["RD_WEBHOOK_SECRET"] },
+  { nome: "Meta Lead Ads (entrada direta)", todas: ["META_LEADS_ACCESS_TOKEN", "META_APP_SECRET", "META_PAGE_ID", "META_WEBHOOK_VERIFY_TOKEN"] },
+  { nome: "Meta IDs por n8n (ponte legada)", todas: ["META_LEADIDS_WEBHOOK_SECRET"] },
+  { nome: "Meta Conversions API", todas: ["META_CAPI_ACCESS_TOKEN"], umaDelas: ["META_PIXEL_ID", "META_DATASET_ID"] },
+  { nome: "atendimento por WhatsApp", todas: ["UAZAPI_WEBHOOK_SECRET", "UAZAPI_BASE_URL"] },
+  { nome: "telefonia", todas: ["CALLFACE_WEBHOOK_SECRET"] },
+  { nome: "Stripe (sincronizar catálogo e billing)", todas: ["STRIPE_API_KEY"] },
+  { nome: "Stripe (checkout ou alteração de assinatura)", umaDelas: ["STRIPE_SECRET_KEY", "STRIPE_API_KEY"] },
+  { nome: "Stripe (webhook de ciclo de vida)", todas: ["STRIPE_WEBHOOK_SECRET"] },
+  { nome: "assinatura de contrato", todas: ["DOCUMENSO_API_URL", "DOCUMENSO_API_TOKEN", "DOCUMENSO_WEBHOOK_SECRET"] },
+  { nome: "e-mail", todas: ["EMAIL_ENCRYPTION_KEY"] },
+  { nome: "Microsoft 365 (OAuth de agenda)", todas: ["MICROSOFT_CLIENT_ID", "MICROSOFT_CLIENT_SECRET"] },
+  { nome: "Callface AI (sincronização de dados)", todas: ["CALLFACE_AI_DATABASE_URL"] },
 ];
 
 let problemas = 0;
@@ -162,12 +182,14 @@ if (obsoletas.length > 0) {
 if (CONFERIR_AMBIENTE) {
   console.log("\nAmbiente carregado:");
   for (const grupo of OBRIGATORIAS) {
-    const faltando = grupo.vars.filter((v) => !process.env[v]);
-    if (faltando.length === 0) {
+    const faltando = (grupo.todas ?? []).filter((v) => !process.env[v]);
+    const temAlternativa = !grupo.umaDelas || grupo.umaDelas.some((v) => Boolean(process.env[v]));
+    if (faltando.length === 0 && temAlternativa) {
       console.log(`  ✔ ${grupo.nome}`);
     } else {
-      problemas += faltando.length;
-      console.log(`  ✘ ${grupo.nome} — faltando: ${faltando.join(", ")}`);
+      problemas += faltando.length + (temAlternativa ? 0 : 1);
+      const detalhes = [...faltando, ...(temAlternativa ? [] : [`uma de: ${grupo.umaDelas!.join(" | ")}`])];
+      console.log(`  ✘ ${grupo.nome} — faltando: ${detalhes.join(", ")}`);
     }
   }
   console.log(

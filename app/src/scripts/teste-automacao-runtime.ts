@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { and, eq, like } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { atividades, cadenceDefinitionPointers, cadenceDefinitions, cadenceEnrollmentEvents, cadenceEnrollments, cadenceVersions, entityLabels, eventOutbox, labels, leads, organizacoes, tarefas } from "@/lib/db/schema";
+import { atividades, cadenceDefinitionPointers, cadenceDefinitions, cadenceEnrollmentEvents, cadenceEnrollments, cadenceVersions, entityLabels, eventOutbox, labels, leads, organizacoes, statusChanges, tarefas } from "@/lib/db/schema";
 import { compileFollowupGraph } from "@/lib/ai-platform/followup/compile";
 import type { FollowupGraph } from "@/lib/ai-platform/followup/graph";
 import { dispatchAutomationEvent } from "@/lib/automations/event-dispatcher";
@@ -15,7 +15,7 @@ let labelId: string | null = null;
 async function main() {
   const [org] = await db.select({ id: organizacoes.id }).from(organizacoes).limit(1);
   assert(org, "nenhuma organização local disponível");
-  const [lead] = await db.insert(leads).values({ organizacaoId: org.id, nome: marker, origem: "runtime-test", crm2PreVendasStage: "novo" }).returning({ id: leads.id });
+  const [lead] = await db.insert(leads).values({ organizacaoId: org.id, nome: marker, origem: "runtime-test", estagioPreVendas: "novo" }).returning({ id: leads.id });
   leadId = lead.id;
   const [label] = await db.insert(labels).values({ organizacaoId: org.id, nome: marker, cor: "#aaff00" }).returning({ id: labels.id });
   labelId = label.id;
@@ -48,7 +48,7 @@ async function main() {
   for (let i = 0; i < steps.length; i++) await avancarEnrollment(enrollments[0]!.id);
 
   const [[updatedLead], taskRows, tagRows, noteRows, runEvents, [finalEnrollment]] = await Promise.all([
-    db.select({ stage: leads.crm2PreVendasStage }).from(leads).where(eq(leads.id, lead.id)),
+    db.select({ stage: leads.estagioPreVendas }).from(leads).where(eq(leads.id, lead.id)),
     db.select().from(tarefas).where(eq(tarefas.chaveIdempotencia, `cadence:${enrollments[0]!.id}:task:0`)),
     db.select().from(entityLabels).where(and(eq(entityLabels.entityType, "lead"), eq(entityLabels.entityId, lead.id), eq(entityLabels.labelId, label.id))),
     db.select().from(atividades).where(and(eq(atividades.leadId, lead.id), eq(atividades.titulo, marker), eq(atividades.tipo, "nota_automacao"))),
@@ -70,6 +70,10 @@ async function cleanup() {
     await db.delete(atividades).where(eq(atividades.leadId, leadId));
     await db.delete(entityLabels).where(and(eq(entityLabels.entityType, "lead"), eq(entityLabels.entityId, leadId)));
     await db.delete(eventOutbox).where(eq(eventOutbox.aggregateId, leadId));
+    // Mover etapa gera histórico auditável. Ele é filho do lead, então precisa
+    // sair antes do registro de smoke; sem isso o finally falha e o próprio
+    // teste deixa resíduo no DEV.
+    await db.delete(statusChanges).where(eq(statusChanges.leadId, leadId));
   }
   if (definitionId) await db.delete(cadenceDefinitions).where(eq(cadenceDefinitions.id, definitionId));
   if (leadId) await db.delete(leads).where(eq(leads.id, leadId));
@@ -77,4 +81,8 @@ async function cleanup() {
   await db.delete(tarefas).where(like(tarefas.titulo, "AUTOMATION-E2E-%"));
 }
 
-main().finally(cleanup).catch((error) => { console.error(error); process.exitCode = 1; });
+main()
+  .catch((error) => { console.error(error); process.exitCode = 1; })
+  .then(cleanup)
+  .catch((error) => { console.error(error); process.exitCode = 1; })
+  .finally(() => process.exit(process.exitCode ?? 0));
