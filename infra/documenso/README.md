@@ -30,8 +30,11 @@ Antes de enviar qualquer contrato real:
    eventos `DOCUMENT_OPENED`, `DOCUMENT_SIGNED`, `DOCUMENT_RECIPIENT_COMPLETED`,
    `DOCUMENT_COMPLETED`, `DOCUMENT_REJECTED`, `DOCUMENT_CANCELLED` e
    `RECIPIENT_EXPIRED`.
-4. Configure SMTP de entrega real e desative novos cadastros apos as contas
-   administrativas estarem criadas.
+4. Configure entrega transacional antes de convidar clientes: use
+   `DOCUMENSO_SMTP_*` para `smtp-auth` ou `DOCUMENSO_SMTP_TRANSPORT=resend`
+   com `DOCUMENSO_RESEND_API_KEY`. O Mailpit e somente uma caixa de teste e
+   nao e canal de entrega para destinatario real.
+5. Desative novos cadastros apos as contas administrativas estarem criadas.
 
 O certificado local gerado por `setup-local.sh` serve para selar e auditar os
 PDFs do ambiente. Ele nao e um certificado ICP-Brasil ou uma declaracao de
