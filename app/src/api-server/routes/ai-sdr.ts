@@ -271,8 +271,10 @@ app.post("/style/analyze", async (c) => {
   // enviada para a OpenAI volta 401. O provedor do produto é Groq
   // (`lib/ai/sdr` chama api.groq.com, o modelo padrão do `ai_sdr_config` é
   // `llama-3.3-70b-versatile`, e o ambiente tem GROQ_API_KEY), então o caminho
-  // certo é consolidar aqui em vez de manter dois provedores.
-  let apiKey = process.env.GROQ_API_KEY || process.env.OPENAI_API_KEY;
+  // certo é consolidar aqui em vez de manter dois provedores. Uma chave OpenAI
+  // não autentica no endpoint da Groq; a plataforma multi-provider resolve
+  // OpenAI em `lib/ai-platform`, não neste SDR legado.
+  let apiKey = process.env.GROQ_API_KEY;
   if (config?.groqApiKey) {
     try { apiKey = decrypt(config.groqApiKey); } catch { /* use env fallback */ }
   }
@@ -321,7 +323,7 @@ Retorne um guia de estilo conciso (max 500 palavras) que uma IA possa seguir par
 
     if (!res.ok) {
       const errText = await res.text();
-      return c.json({ error: `OpenAI API error: ${errText}` }, 500);
+      return c.json({ error: `Groq API error: ${errText}` }, 500);
     }
 
     const data = await res.json() as {

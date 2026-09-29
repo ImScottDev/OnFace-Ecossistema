@@ -61,22 +61,18 @@ test("ninguém chama api.openai.com fora do gateway multi-provider", () => {
     `O provedor do SDR é Groq; uma chave Groq enviada para a OpenAI volta 401.`);
 });
 
-test("todo gate de chave do SDR procura GROQ_API_KEY antes", () => {
-  // Procurar só `OPENAI_API_KEY` é o que fazia o SDR ser pulado com a chave
-  // Groq presente no ambiente.
+test("o SDR legado não aceita OPENAI_API_KEY como se fosse chave Groq", () => {
+  // O endpoint `api.groq.com` não aceita uma chave emitida pela OpenAI. A
+  // plataforma multi-provider é o único lugar que pode consultar OpenAI.
   const infratores: string[] = [];
   for (const f of arquivos(SRC)) {
     const rel = path.relative(SRC, f).split(path.sep).join("/");
     if (rel.startsWith(PLATAFORMA_MULTI_PROVIDER)) continue;
     const txt = semComentarios(fs.readFileSync(f, "utf8"));
-    if (!/process\.env\.OPENAI_API_KEY/.test(txt)) continue;
-    // Aceita como fallback, nunca sozinho nem primeiro.
-    if (!/process\.env\.GROQ_API_KEY\s*\|\|\s*process\.env\.OPENAI_API_KEY/.test(txt)) {
-      infratores.push(rel);
-    }
+    if (/process\.env\.OPENAI_API_KEY/.test(txt)) infratores.push(rel);
   }
   assert.deepEqual(infratores, [],
-    `leem OPENAI_API_KEY sem tentar GROQ_API_KEY antes: ${infratores.join(", ")}.`);
+    `leem OPENAI_API_KEY fora da plataforma multi-provider: ${infratores.join(", ")}.`);
 });
 
 test("o modelo padrão do SDR existe na Groq", () => {

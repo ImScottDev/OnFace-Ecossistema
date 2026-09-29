@@ -938,8 +938,9 @@ async function handleAiSdrResponse(params: {
   // `lib/ai/sdr`, que chama api.groq.com. Até 21/09 os três gates do SDR liam
   // só `OPENAI_API_KEY`, que NÃO existe neste ambiente — o SDR era pulado com
   // "Sem OPENAI_API_KEY" enquanto a chave Groq estava lá, e a lib sabia usá-la.
-  // `OPENAI_API_KEY` fica como fallback para quem já a tivesse definida.
-  let apiKey = process.env.GROQ_API_KEY || process.env.OPENAI_API_KEY;
+  // Chaves OpenAI não são compatíveis com api.groq.com; a plataforma
+  // multi-provider é quem deve atender agentes OpenAI.
+  let apiKey = process.env.GROQ_API_KEY;
   if (config.groqApiKey) {
     try {
       const { decrypt } = await import("../lib/email/encryption");
@@ -1689,7 +1690,7 @@ async function runAiSdrFirstContactSweep(): Promise<{ iniciados: number }> {
           descricao: "Novo → Em Contato (Agente SDR, automático)",
         });
 
-        let apiKey = process.env.GROQ_API_KEY || process.env.OPENAI_API_KEY;
+        let apiKey = process.env.GROQ_API_KEY;
         if (config.groqApiKey) {
           try {
             const { decrypt } = await import("../lib/email/encryption");
@@ -1856,7 +1857,7 @@ async function runAiSdrRetrySweep(): Promise<{ enviados: number }> {
         continue;
       }
 
-      let apiKey = process.env.GROQ_API_KEY || process.env.OPENAI_API_KEY;
+      let apiKey = process.env.GROQ_API_KEY;
       if (config.groqApiKey) {
         try {
           const { decrypt } = await import("../lib/email/encryption");
