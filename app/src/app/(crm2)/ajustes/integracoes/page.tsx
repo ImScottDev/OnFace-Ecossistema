@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Key, Eye, EyeOff, Save, CheckCircle, AlertCircle } from "lucide-react";
+import Link from "next/link";
+import { Key, Eye, EyeOff, Save, CheckCircle, AlertCircle, Mail, ArrowRight } from "lucide-react";
 
 export default function IntegracoesPage() {
   const queryClient = useQueryClient();
@@ -52,6 +53,29 @@ export default function IntegracoesPage() {
     <div className="space-y-6">
       <div>
         <p className="text-sm text-[var(--cf2-text-tertiary)] mt-1">Configure as chaves de API das integrações da sua organização.</p>
+      </div>
+
+      <div className="bg-[var(--cf2-bg-surface)] rounded-xl p-6 border border-[var(--cf2-border-default)]">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#0067B8]/15 text-[#1683D8]">
+              <Mail className="w-4 h-4" />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-[var(--cf2-text-primary)]">Microsoft 365</h2>
+              <p className="mt-1 text-xs text-[var(--cf2-text-tertiary)]">
+                Conecte Outlook e Microsoft 365 para enviar, receber e sincronizar e-mails pelo ONFACE.
+              </p>
+            </div>
+          </div>
+          <Link
+            href="/ajustes/email"
+            className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg bg-[#0067B8] px-3 py-2 text-[13px] font-medium text-white transition-opacity hover:opacity-90"
+          >
+            Configurar Microsoft
+            <ArrowRight className="w-3.5 h-3.5" />
+          </Link>
+        </div>
       </div>
 
       {/* Apollo.io */}

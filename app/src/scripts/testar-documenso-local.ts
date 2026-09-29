@@ -7,7 +7,7 @@
  * provar Won -> Service -> Implantação PABX.
  */
 import { and, desc, eq, isNull, like } from "drizzle-orm";
-import { db } from "@/lib/db";
+import { db, fecharConexao } from "@/lib/db";
 import {
   catalogoPrecos,
   contratos,
@@ -29,6 +29,8 @@ import { vincularContratoAoGrupo } from "@/lib/crm/grupo-comercial";
 
 const TAG = "[DOCUMENSO-E2E]";
 const EMAIL = "documenso-e2e@callface.local";
+const FIXTURE_LOOKUP_KEY = "E2E-DOCUMENSO-FIXTURE";
+let fixturePrecoId: string | null = null;
 
 function resultadoContrato(contrato: typeof contratos.$inferSelect) {
   const signatarios = Array.isArray(contrato.signatarios) ? contrato.signatarios : [];
@@ -48,8 +50,20 @@ function resultadoContrato(contrato: typeof contratos.$inferSelect) {
 }
 
 async function criar() {
-  const [org] = await db.select({ id: organizacoes.id }).from(organizacoes).limit(1);
-  if (!org) throw new Error("Organização local não encontrada");
+  // O banco de DEV pode ter organizações auxiliares. A jornada precisa usar
+  // aquela que efetivamente possui um preço PABX contratável, não a primeira
+  // linha retornada pelo banco.
+  const [org] = await db.select({ id: organizacoes.id }).from(organizacoes)
+    .innerJoin(servicosCatalogo, eq(servicosCatalogo.organizacaoId, organizacoes.id))
+    .innerJoin(catalogoPrecos, eq(catalogoPrecos.servicoCatalogoId, servicosCatalogo.id))
+    .where(and(
+      eq(servicosCatalogo.serviceFamily, "PABX"),
+      eq(servicosCatalogo.ativo, true),
+      eq(catalogoPrecos.ativo, true),
+      eq(catalogoPrecos.exigeContrato, true),
+    ))
+    .limit(1);
+  if (!org) throw new Error("Organização com preço PABX contratável não encontrada");
   const [user] = await db.select({ id: usuarios.id }).from(usuarios)
     .where(and(eq(usuarios.organizacaoId, org.id), eq(usuarios.ativo, true))).limit(1);
   const [pipeline] = await db.select({ id: pipelines.id }).from(pipelines)
@@ -77,7 +91,7 @@ async function criar() {
     return;
   }
 
-  const [produto] = await db.select({
+  let [produto] = await db.select({
     servicoCatalogoId: servicosCatalogo.id,
     catalogoPrecoId: catalogoPrecos.id,
     nome: servicosCatalogo.nome,
@@ -95,7 +109,80 @@ async function criar() {
     ))
     .orderBy(desc(catalogoPrecos.updatedAt))
     .limit(1);
-  if (!produto) throw new Error("Preço oficial PABX com contrato obrigatório não encontrado");
+  if (!produto) {
+    // O DEV pode estar com o catálogo migrado, mas sem os preços reconciliados.
+    // A fixture existe só para o ensaio: nunca chama Stripe e é desativada no
+    // fim, para não parecer uma oferta comercial disponível.
+    const [fixtureExistente] = await db.select({
+      servicoCatalogoId: servicosCatalogo.id,
+      catalogoPrecoId: catalogoPrecos.id,
+      nome: servicosCatalogo.nome,
+      descricao: servicosCatalogo.descricao,
+      tipo: servicosCatalogo.tipo,
+      valor: catalogoPrecos.valor,
+    }).from(catalogoPrecos)
+      .innerJoin(servicosCatalogo, eq(servicosCatalogo.id, catalogoPrecos.servicoCatalogoId))
+      .where(and(
+        eq(catalogoPrecos.organizacaoId, org.id),
+        eq(catalogoPrecos.lookupKey, FIXTURE_LOOKUP_KEY),
+      ))
+      .limit(1);
+
+    if (fixtureExistente) {
+      fixturePrecoId = fixtureExistente.catalogoPrecoId;
+      await db.update(catalogoPrecos).set({ ativo: true, updatedAt: new Date() })
+        .where(eq(catalogoPrecos.id, fixturePrecoId));
+      produto = fixtureExistente;
+      console.log("Fixture de preço PABX reativada para o ensaio Documenso.");
+    } else {
+      const [servicoPabx] = await db.select({
+        id: servicosCatalogo.id,
+        nome: servicosCatalogo.nome,
+        descricao: servicosCatalogo.descricao,
+        tipo: servicosCatalogo.tipo,
+      }).from(servicosCatalogo)
+        .where(and(
+          eq(servicosCatalogo.organizacaoId, org.id),
+          eq(servicosCatalogo.serviceFamily, "PABX"),
+          eq(servicosCatalogo.ativo, true),
+        ))
+        .limit(1);
+      if (!servicoPabx) throw new Error("Serviço PABX ativo não encontrado para a fixture Documenso");
+
+      const [precoFixture] = await db.insert(catalogoPrecos).values({
+        organizacaoId: org.id,
+        servicoCatalogoId: servicoPabx.id,
+        stripePriceId: "price_e2e_documenso_fixture",
+        sku: "E2E-DOCUMENSO",
+        lookupKey: FIXTURE_LOOKUP_KEY,
+        variacao: "Teste interno Documenso",
+        descricao: "Fixture isolada para CRM -> Documenso; sem Stripe real.",
+        valor: "1.00",
+        moeda: "BRL",
+        tipo: "recorrente",
+        recorrente: true,
+        periodo: "mensal",
+        revenueNature: "MRR",
+        modeloCobranca: "recorrencia_mensal",
+        modeloPrecoStripe: "Tarifa fixa",
+        exigeContrato: true,
+        observacao: "Desativada automaticamente após o ensaio Documenso.",
+        ativo: true,
+        ordem: 9999,
+      }).returning({ id: catalogoPrecos.id });
+      fixturePrecoId = precoFixture.id;
+      produto = {
+        servicoCatalogoId: servicoPabx.id,
+        catalogoPrecoId: precoFixture.id,
+        nome: servicoPabx.nome,
+        descricao: servicoPabx.descricao,
+        tipo: servicoPabx.tipo,
+        valor: "1.00",
+      };
+      console.log("Fixture de preço PABX criada para o ensaio Documenso.");
+    }
+  }
+  if (!produto) throw new Error("Preço PABX indisponível para o ensaio Documenso");
 
   const sufixo = Date.now().toString(36);
   const [empresa] = await db.insert(empresas).values({
@@ -129,6 +216,7 @@ async function criar() {
     responsavelId: user.id,
     titulo: `${TAG} PABX ${sufixo}`,
     status: "proposta_enviada",
+    serviceFamily: "PABX",
   }).returning({ id: negocios.id });
   await syncOportunidadeFromNegocio(negocio.id);
 
@@ -167,7 +255,16 @@ async function criar() {
   resultadoContrato(contrato);
 }
 
-criar().catch((error) => {
-  console.error(error instanceof Error ? error.message : String(error));
-  process.exitCode = 1;
-});
+criar()
+  .catch((error) => {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  })
+  .finally(async () => {
+    if (fixturePrecoId) {
+      await db.update(catalogoPrecos).set({ ativo: false, updatedAt: new Date() })
+        .where(eq(catalogoPrecos.id, fixturePrecoId))
+        .catch(() => {});
+    }
+    await fecharConexao().catch(() => {});
+  });

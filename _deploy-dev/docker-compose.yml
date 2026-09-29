@@ -114,7 +114,9 @@ services:
       - "traefik.http.routers.crm2dev-app.rule=Host(`dev.crm.callface.io`) && (!PathPrefix(`/api`) || PathPrefix(`/api/auth`) || PathPrefix(`/api/financeiro`) || PathPrefix(`/api/onboarding`) || PathPrefix(`/api/campanhas`) || PathPrefix(`/api/contratos-publicos`))"
       - "traefik.http.routers.crm2dev-app.entrypoints=websecure"
       - "traefik.http.routers.crm2dev-app.tls.certresolver=cloudflare"
-      - "traefik.http.routers.crm2dev-app.middlewares=security-headers@file,crm2dev-auth@file"
+      # O DEV continua protegido pelo login do CRM. Basic Auth aqui criava uma
+      # segunda barreira invisível e impedia o fluxo normal de autenticação.
+      - "traefik.http.routers.crm2dev-app.middlewares=security-headers@file"
       - "traefik.http.routers.crm2dev-app.priority=50"
       - "traefik.http.services.crm2dev-app.loadbalancer.server.port=3000"
     networks:
@@ -165,7 +167,7 @@ services:
       - "traefik.http.routers.crm2dev-api.rule=Host(`dev.crm.callface.io`) && PathPrefix(`/api`) && !PathPrefix(`/api/auth`) && !PathPrefix(`/api/webhooks`) && !PathPrefix(`/api/financeiro`) && !PathPrefix(`/api/onboarding`) && !PathPrefix(`/api/campanhas`) && !PathPrefix(`/api/contratos-publicos`)"
       - "traefik.http.routers.crm2dev-api.entrypoints=websecure"
       - "traefik.http.routers.crm2dev-api.tls.certresolver=cloudflare"
-      - "traefik.http.routers.crm2dev-api.middlewares=security-headers@file,crm2dev-auth@file"
+      - "traefik.http.routers.crm2dev-api.middlewares=security-headers@file"
       - "traefik.http.routers.crm2dev-api.priority=100"
       - "traefik.http.services.crm2dev-api.loadbalancer.server.port=3001"
     networks:

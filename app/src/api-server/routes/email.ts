@@ -1088,7 +1088,7 @@ app.get("/email/auth/google/callback", async (c) => {
   const stateParam = c.req.query("state") ?? null;
 
   if (!code || !stateParam) {
-    return c.redirect(`${process.env.NEXTAUTH_URL}/configuracoes/email?error=missing_params`);
+    return c.redirect(`${process.env.NEXTAUTH_URL}/ajustes/email?error=missing_params`);
   }
 
   try {
@@ -1109,10 +1109,10 @@ app.get("/email/auth/google/callback", async (c) => {
       syncStatus: "active",
     });
 
-    return c.redirect(`${process.env.NEXTAUTH_URL}/configuracoes/email?success=google`);
+    return c.redirect(`${process.env.NEXTAUTH_URL}/ajustes/email?success=google`);
   } catch (error) {
     console.error("[Google OAuth] Callback error:", error);
-    return c.redirect(`${process.env.NEXTAUTH_URL}/configuracoes/email?error=oauth_failed`);
+    return c.redirect(`${process.env.NEXTAUTH_URL}/ajustes/email?error=oauth_failed`);
   }
 });
 
@@ -1135,7 +1135,7 @@ app.get("/email/auth/microsoft/callback", async (c) => {
   const stateParam = c.req.query("state") ?? null;
 
   if (!code || !stateParam) {
-    return c.redirect(`${process.env.NEXTAUTH_URL}/configuracoes/email?error=missing_params`);
+    return c.redirect(`${process.env.NEXTAUTH_URL}/ajustes/email?error=missing_params`);
   }
 
   try {
@@ -1156,10 +1156,10 @@ app.get("/email/auth/microsoft/callback", async (c) => {
       syncStatus: "active",
     });
 
-    return c.redirect(`${process.env.NEXTAUTH_URL}/configuracoes/email?success=microsoft`);
+    return c.redirect(`${process.env.NEXTAUTH_URL}/ajustes/email?success=microsoft`);
   } catch (error) {
     console.error("[Microsoft OAuth] Callback error:", error);
-    return c.redirect(`${process.env.NEXTAUTH_URL}/configuracoes/email?error=oauth_failed`);
+    return c.redirect(`${process.env.NEXTAUTH_URL}/ajustes/email?error=oauth_failed`);
   }
 });
 
