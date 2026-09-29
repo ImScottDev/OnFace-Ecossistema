@@ -3,7 +3,7 @@
  * WhatsApp, automacoes ou configuracao publicada. O agente e os rastros do
  * proprio smoke sao removidos ao final, inclusive quando o provider falha.
  *
- * Requer uma credencial valida em GROQ_API_KEY e pode escolher o modelo com
+ * Requer uma credencial valida em OPENAI_API_KEY e pode escolher o modelo com
  * ONFACE_AGENT_SMOKE_MODEL. Nunca execute contra producao.
  */
 import { randomUUID } from "node:crypto";
@@ -39,8 +39,8 @@ async function main() {
       versao: 1,
       status: "draft",
       systemPrompt: `Responda exatamente ${EXPECTED}, sem pontuacao adicional.`,
-      provider: "groq",
-      modelo: process.env.ONFACE_AGENT_SMOKE_MODEL || "llama-3.1-8b-instant",
+      provider: "openai",
+      modelo: process.env.ONFACE_AGENT_SMOKE_MODEL || "gpt-4.1-mini",
       tools: [],
       triggerConfig: { eventType: "onface.dev.agent.smoke" },
       handoffConfig: {},
