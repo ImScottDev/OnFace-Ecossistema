@@ -16,6 +16,7 @@ import { getGoogleAuthUrl } from "@/lib/email/google";
 import { exchangeGoogleCode } from "@/lib/email/google";
 import { getMicrosoftAuthUrl } from "@/lib/email/microsoft";
 import { exchangeMicrosoftCode } from "@/lib/email/microsoft";
+import { createEmailOAuthState, readEmailOAuthState } from "@/lib/email/oauth-state";
 
 const app = new Hono();
 
@@ -1074,10 +1075,10 @@ app.get("/email/thread/:threadId", async (c) => {
 app.get("/email/auth/google", async (c) => {
   const ctx = await getCtx(c);
 
-  const state = encrypt(JSON.stringify({
+  const state = createEmailOAuthState({
     organizacaoId: ctx.organizacaoId,
     userId: ctx.userId,
-  }));
+  });
 
   const url = getGoogleAuthUrl(state);
   return c.redirect(url);
@@ -1092,7 +1093,7 @@ app.get("/email/auth/google/callback", async (c) => {
   }
 
   try {
-    const state = JSON.parse(decrypt(stateParam));
+    const state = readEmailOAuthState(stateParam);
     const { organizacaoId, userId } = state;
 
     const tokens = await exchangeGoogleCode(code);
@@ -1121,10 +1122,10 @@ app.get("/email/auth/google/callback", async (c) => {
 app.get("/email/auth/microsoft", async (c) => {
   const ctx = await getCtx(c);
 
-  const state = encrypt(JSON.stringify({
+  const state = createEmailOAuthState({
     organizacaoId: ctx.organizacaoId,
     userId: ctx.userId,
-  }));
+  });
 
   const url = getMicrosoftAuthUrl(state);
   return c.redirect(url);
@@ -1139,7 +1140,7 @@ app.get("/email/auth/microsoft/callback", async (c) => {
   }
 
   try {
-    const state = JSON.parse(decrypt(stateParam));
+    const state = readEmailOAuthState(stateParam);
     const { organizacaoId, userId } = state;
 
     const tokens = await exchangeMicrosoftCode(code);
