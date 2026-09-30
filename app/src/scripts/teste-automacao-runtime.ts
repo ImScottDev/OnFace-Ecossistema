@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { and, eq, like } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { atividades, cadenceDefinitionPointers, cadenceDefinitions, cadenceEnrollmentEvents, cadenceEnrollments, cadenceVersions, entityLabels, eventOutbox, labels, leads, organizacoes, statusChanges, tarefas } from "@/lib/db/schema";
 import { compileFollowupGraph } from "@/lib/ai-platform/followup/compile";
@@ -78,7 +78,6 @@ async function cleanup() {
   if (definitionId) await db.delete(cadenceDefinitions).where(eq(cadenceDefinitions.id, definitionId));
   if (leadId) await db.delete(leads).where(eq(leads.id, leadId));
   if (labelId) await db.delete(labels).where(eq(labels.id, labelId));
-  await db.delete(tarefas).where(like(tarefas.titulo, "AUTOMATION-E2E-%"));
 }
 
 main()
