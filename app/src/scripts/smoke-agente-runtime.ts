@@ -12,7 +12,7 @@ import { db } from "@/lib/db";
 import { aiAgentRuns, aiAgentRunSteps, aiAgentVersions, aiAgents, organizacoes } from "@/lib/db/schema";
 import { executeAgent } from "@/lib/ai-platform/runtime/execute-agent";
 
-const EXPECTED = "ONFACE_AGENT_SMOKE_OK";
+const EXPECTED_MESSAGE = "ONFACE_AGENT_SMOKE_TOOL_OK";
 
 async function main() {
   const [organization] = await db.select({ id: organizacoes.id }).from(organizacoes).limit(1);
@@ -38,16 +38,22 @@ async function main() {
       agentId,
       versao: 1,
       status: "draft",
-      systemPrompt: `Responda exatamente ${EXPECTED}, sem pontuacao adicional.`,
+      systemPrompt: [
+        "Você está em um teste de integração do ONFACE.",
+        "Na primeira resposta, chame exatamente duas ferramentas:",
+        "lead_update_status com status 'em_contato' e message_prepare com uma única mensagem.",
+        `A mensagem precisa ser exatamente ${EXPECTED_MESSAGE}.`,
+        "Não responda em texto fora das chamadas de ferramenta.",
+      ].join(" "),
       provider: "openai",
       modelo: process.env.ONFACE_AGENT_SMOKE_MODEL || "gpt-4.1-mini",
-      tools: [],
+      tools: ["lead.update_status", "message.prepare"],
       triggerConfig: { eventType: "onface.dev.agent.smoke" },
       handoffConfig: {},
       knowledgeConfig: {},
-      guardrailConfig: { autonomy: "suggest" },
-      maxSteps: 1,
-      tokenBudget: 64,
+      guardrailConfig: { autonomy: "autonomous", permissoes: ["acquisition.manage"] },
+      maxSteps: 2,
+      tokenBudget: 256,
       historyMessageWindow: 1,
       historyTokenWindow: 500,
       casesEnabled: false,
@@ -63,16 +69,25 @@ async function main() {
       suppressEgress: true,
     });
 
-    const steps = await db.select({ kind: aiAgentRunSteps.kind, status: aiAgentRunSteps.status })
+    const steps = await db.select({ kind: aiAgentRunSteps.kind, name: aiAgentRunSteps.name, status: aiAgentRunSteps.status, output: aiAgentRunSteps.output })
       .from(aiAgentRunSteps)
       .where(and(eq(aiAgentRunSteps.runId, result.runId), eq(aiAgentRunSteps.organizacaoId, organization.id)));
 
+    const previewDaEtapa = steps.some((step) => {
+      if (step.name !== "lead_update_status" || step.status !== "completed" || !step.output || typeof step.output !== "object") return false;
+      const output = step.output as { data?: { preview?: unknown; operation?: unknown } };
+      return output.data?.preview === true && output.data.operation === "lead.update_status";
+    });
+
     const assertions: Array<[string, boolean]> = [
       ["run em modo test", result.status === "completed"],
-      ["resposta do provider", result.responseText === EXPECTED],
+      ["resposta preparada pelo agente", result.responseText === EXPECTED_MESSAGE],
       ["nenhuma mensagem enviada", result.sentMessageIds.length === 0],
       ["chamada do modelo registrada", steps.some((step) => step.kind === "model_call" && step.status === "completed")],
+      ["mudança de lead passou pelo preview seguro", previewDaEtapa],
+      ["mensagem passou pela ferramenta", steps.some((step) => step.kind === "tool_call" && step.name === "message_prepare" && step.status === "completed")],
       ["guardrail registrado", steps.some((step) => step.kind === "guardrail" && step.status === "completed")],
+      ["nenhum egress foi criado", !steps.some((step) => step.kind === "egress")],
     ];
     for (const [label, passed] of assertions) console.log(`${passed ? "ok" : "FALHOU"} ${label}`);
     if (assertions.some(([, passed]) => !passed)) throw new Error("Smoke do runtime de IA falhou");

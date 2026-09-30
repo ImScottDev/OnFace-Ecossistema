@@ -3,7 +3,26 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { Key, Eye, EyeOff, Save, CheckCircle, AlertCircle, Mail, ArrowRight } from "lucide-react";
+import { Key, Eye, EyeOff, Save, CheckCircle, AlertCircle, Mail, ArrowRight, Bot, Loader2, ShieldCheck } from "lucide-react";
+
+type AiProvider = "openai" | "anthropic" | "groq" | "google";
+
+type AiCredential = {
+  id: string;
+  provider: AiProvider;
+  label: string;
+  masked: string;
+  ativo: boolean;
+  validatedAt: string | null;
+  validationError: string | null;
+};
+
+const AI_PROVIDER_LABEL: Record<AiProvider, string> = {
+  openai: "OpenAI",
+  anthropic: "Anthropic (Claude)",
+  groq: "Groq",
+  google: "Google AI",
+};
 
 export default function IntegracoesPage() {
   const queryClient = useQueryClient();
@@ -77,6 +96,8 @@ export default function IntegracoesPage() {
           </Link>
         </div>
       </div>
+
+      <AiProviders />
 
       {/* Apollo.io */}
       <div className="bg-[var(--cf2-bg-surface)] rounded-xl p-6 border border-[var(--cf2-border-default)]">
@@ -183,6 +204,174 @@ export default function IntegracoesPage() {
 
           O estado de cada linha é DERIVADO de sinal no banco, não declarado. */}
       <Inventario />
+    </div>
+  );
+}
+
+function AiProviders() {
+  const queryClient = useQueryClient();
+  const [provider, setProvider] = useState<AiProvider>("openai");
+  const [label, setLabel] = useState("OpenAI principal");
+  const [apiKey, setApiKey] = useState("");
+  const [showApiKey, setShowApiKey] = useState(false);
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["ai-provider-credentials"],
+    queryFn: async () => {
+      const res = await fetch("/api/automacoes/ai/credentials");
+      if (!res.ok) throw new Error("Falha ao carregar credenciais de IA");
+      return res.json() as Promise<{ credentials: AiCredential[] }>;
+    },
+  });
+
+  const createMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/automacoes/ai/credentials", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider, label: label.trim(), apiKey }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || "Não foi possível salvar a credencial");
+      return body as AiCredential;
+    },
+    onSuccess: () => {
+      setApiKey("");
+      setShowApiKey(false);
+      queryClient.invalidateQueries({ queryKey: ["ai-provider-credentials"] });
+    },
+  });
+
+  const validateMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/automacoes/ai/credentials/${id}/validate`, { method: "POST" });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || !body.ok) throw new Error(body.error || "A credencial não respondeu ao teste");
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["ai-provider-credentials"] }),
+  });
+
+  const canSave = label.trim().length > 0 && apiKey.trim().length >= 8 && !createMutation.isPending;
+  const credentials = data?.credentials ?? [];
+
+  return (
+    <div className="bg-[var(--cf2-bg-surface)] rounded-xl p-6 border border-[var(--cf2-border-default)]">
+      <div className="flex items-start gap-3">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--cf2-accent)]/15 text-[var(--cf2-accent)]">
+          <Bot className="w-4 h-4" />
+        </div>
+        <div>
+          <h2 className="text-lg font-semibold text-[var(--cf2-text-primary)]">IA e agentes</h2>
+          <p className="mt-1 text-xs text-[var(--cf2-text-tertiary)]">
+            Credenciais por organização para os agentes e automações do ONFACE.
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-5 grid gap-3 md:grid-cols-[minmax(0,0.7fr)_minmax(0,1fr)]">
+        <label className="flex flex-col gap-1.5 text-xs font-medium text-[var(--cf2-text-secondary)]">
+          Provedor
+          <select
+            value={provider}
+            onChange={(event) => {
+              const nextProvider = event.target.value as AiProvider;
+              setProvider(nextProvider);
+              setLabel(`${AI_PROVIDER_LABEL[nextProvider]} principal`);
+            }}
+            className="h-10 rounded-lg border border-[var(--cf2-border-default)] bg-[var(--cf2-bg-surface)] px-3 text-sm font-normal text-[var(--cf2-text-primary)] outline-none focus:border-[var(--cf2-accent)]"
+          >
+            {(Object.keys(AI_PROVIDER_LABEL) as AiProvider[]).map((item) => (
+              <option key={item} value={item}>{AI_PROVIDER_LABEL[item]}</option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1.5 text-xs font-medium text-[var(--cf2-text-secondary)]">
+          Identificação interna
+          <input
+            value={label}
+            onChange={(event) => setLabel(event.target.value)}
+            className="h-10 rounded-lg border border-[var(--cf2-border-default)] bg-[var(--cf2-bg-surface)] px-3 text-sm font-normal text-[var(--cf2-text-primary)] outline-none focus:border-[var(--cf2-accent)]"
+            placeholder="Ex.: OpenAI produção"
+          />
+        </label>
+      </div>
+
+      <div className="mt-3 flex gap-2">
+        <div className="relative flex-1">
+          <input
+            type={showApiKey ? "text" : "password"}
+            value={apiKey}
+            onChange={(event) => setApiKey(event.target.value)}
+            className="h-10 w-full rounded-lg border border-[var(--cf2-border-default)] bg-[var(--cf2-bg-surface)] px-3 pr-10 font-mono text-sm text-[var(--cf2-text-primary)] outline-none focus:border-[var(--cf2-accent)]"
+            placeholder={`Chave de API da ${AI_PROVIDER_LABEL[provider]}`}
+            autoComplete="off"
+          />
+          <button
+            type="button"
+            onClick={() => setShowApiKey((value) => !value)}
+            aria-label={showApiKey ? "Ocultar chave" : "Exibir chave"}
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--cf2-text-tertiary)] hover:text-[var(--cf2-text-secondary)]"
+          >
+            {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+          </button>
+        </div>
+        <button
+          type="button"
+          onClick={() => createMutation.mutate()}
+          disabled={!canSave}
+          className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg bg-[var(--cf2-accent)] px-3 text-[13px] font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {createMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+          Salvar
+        </button>
+      </div>
+      {createMutation.isError && <p className="mt-2 text-xs text-[var(--cf2-danger-text)]">{(createMutation.error as Error).message}</p>}
+
+      <div className="mt-5 border-t border-[var(--cf2-border-default)] pt-4">
+        <p className="text-xs font-medium text-[var(--cf2-text-secondary)]">Credenciais configuradas</p>
+        {isLoading ? (
+          <p className="mt-3 text-xs text-[var(--cf2-text-tertiary)]">Carregando...</p>
+        ) : credentials.length === 0 ? (
+          <p className="mt-3 text-xs text-[var(--cf2-text-tertiary)]">Nenhuma credencial de IA cadastrada nesta organização.</p>
+        ) : (
+          <div className="mt-3 divide-y divide-[var(--cf2-border-default)]">
+            {credentials.map((credential) => {
+              const status = credential.validatedAt
+                ? "Validada"
+                : credential.validationError
+                  ? "Falhou no último teste"
+                  : "Ainda não testada";
+              const color = credential.validatedAt
+                ? "var(--cf2-success-text)"
+                : credential.validationError
+                  ? "var(--cf2-danger-text)"
+                  : "var(--cf2-warning-text)";
+              return (
+                <div key={credential.id} className="flex flex-col gap-2 py-3 first:pt-0 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-[var(--cf2-text-primary)]">
+                      {AI_PROVIDER_LABEL[credential.provider]} <span className="font-normal text-[var(--cf2-text-tertiary)]">{credential.masked}</span>
+                    </p>
+                    <p className="text-xs text-[var(--cf2-text-tertiary)]">{credential.label}</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs font-medium" style={{ color }}>{status}</span>
+                    <button
+                      type="button"
+                      onClick={() => validateMutation.mutate(credential.id)}
+                      disabled={validateMutation.isPending}
+                      className="inline-flex h-8 items-center gap-1.5 rounded-md border border-[var(--cf2-border-default)] px-2.5 text-xs font-medium text-[var(--cf2-text-secondary)] hover:bg-[var(--cf2-bg-surface-muted)] disabled:opacity-50"
+                    >
+                      {validateMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldCheck className="w-3.5 h-3.5" />}
+                      Testar
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

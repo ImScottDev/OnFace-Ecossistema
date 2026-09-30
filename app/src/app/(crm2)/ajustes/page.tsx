@@ -196,14 +196,20 @@ const BLOCOS: AjusteBloco[] = [
     titulo: "Integrações",
     cards: [
       {
-        titulo: "Apollo.io",
-        descricao: "Chave de API do Apollo.io, usada em enriquecimento e prospecção.",
+        titulo: "Microsoft 365",
+        descricao: "Conecte Outlook e Microsoft 365 para sincronizar e-mails e agenda no ONFACE.",
+        href: "/ajustes/email",
+        icon: Mail,
+      },
+      {
+        titulo: "Integrações e IA",
+        descricao: "Configure provedores de IA, Apollo e as demais integrações da organização.",
         href: "/ajustes/integracoes",
         icon: Key,
       },
       {
         titulo: "Outras integrações",
-        descricao: "Stripe, WhatsApp Business, Outlook e Mixpanel já rodam no CRM, mas ainda sem uma tela central de status.",
+        descricao: "Stripe, WhatsApp Business, Meta e Documenso são acompanhados pela operação técnica.",
         icon: Package,
       },
     ],
