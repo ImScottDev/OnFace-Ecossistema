@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { db } from "@/lib/db";
 import { syncStripe } from "@/lib/integrations/stripe-sync";
+import { organizationIdFromStripeMetadata } from "@/lib/integrations/stripe-webhook-metadata";
 import { propostas, leads, empresas, checkouts, notificacoes, usuarios, assinaturas, faturas, stripeWebhookEvents, organizacoes, auditLog } from "@/lib/db/schema";
 import { eq, and, isNull, or, sql, desc } from "drizzle-orm";
 import { buscarCheckoutPorSessionId } from "@/lib/crm/checkout";
@@ -490,6 +491,16 @@ async function resolveWebhookOrganization(event: StripeEventPayload): Promise<st
   }
   if (candidates.size === 1) return [...candidates][0];
   if (candidates.size > 1) return null;
+
+  // Checkout/subscription criada pelo ONFACE carrega esse ID na metadata.
+  // Validamos tambem no banco: metadata e somente uma pista autenticada pelo
+  // webhook, jamais uma autorizacao para inventar uma organizacao.
+  const metadataOrganizationId = organizationIdFromStripeMetadata(object);
+  if (metadataOrganizationId) {
+    const [organization] = await db.select({ id: organizacoes.id })
+      .from(organizacoes).where(eq(organizacoes.id, metadataOrganizationId)).limit(1);
+    if (organization) return organization.id;
+  }
 
   // Instalação atual de uma organização: fallback explícito e seguro. Quando
   // houver mais de uma, o evento permanece unresolved e não faz sync global.
