@@ -246,7 +246,10 @@ export async function createGroupCheckout(params: CreateGroupCheckoutParams): Pr
   appendNested(form, "phone_number_collection", { enabled: true });
   appendNested(form, "tax_id_collection", { enabled: true });
   appendNested(form, "name_collection", { business: { enabled: true }, individual: { enabled: true } });
-  appendNested(form, "customer_update", { name: "auto", address: "auto", phone: "auto" });
+  // Stripe Checkout aceita atualização automática de nome/endereço do Customer,
+  // mas não expõe `customer_update[phone]`. O telefone continua coletado na
+  // sessão acima e o webhook preenche o CRM sem invalidar a criação do checkout.
+  appendNested(form, "customer_update", { name: "auto", address: "auto" });
   appendNested(form, "custom_fields", [{ key: "cpfcnpj", label: { type: "custom", custom: "CPF ou CNPJ" }, type: "text", optional: false }]);
   // Sem isso a Stripe usa o default da conta pro boleto (3 dias) e ignora a
   // "Validade" da proposta — fix de produção a4ef701. Vale pra assinatura e
