@@ -1,5 +1,8 @@
 # O contexto passou a ser a raiz do repositório (ver o cabeçalho do Dockerfile),
 # e sem isto o daemon recebe os node_modules de 42 projetos antes de começar.
+# O padrão recursivo não alcança o diretório da raiz em todas as versões do
+# builder. Mantemos os dois para que runners temporários nunca inflem a imagem.
+node_modules
 **/node_modules
 **/.next
 **/dist
