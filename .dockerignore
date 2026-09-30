@@ -15,3 +15,6 @@ docs
 **/.env
 **/.env.*
 !**/.env.example
+# Uploads vivem em volume no runtime; incluí-los no contexto só torna o build
+# lento e não os torna disponíveis dentro da imagem final.
+uploads

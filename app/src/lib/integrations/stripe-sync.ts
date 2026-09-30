@@ -265,6 +265,7 @@ export async function syncStripe(organizacaoId?: string): Promise<{ subs: number
         ? item0.price.product
         : item0?.price?.product?.id || null;
       const planoNome = item0ProductId ? productName.get(item0ProductId) || null : null;
+      const quantidadeTotal = s.items?.data?.reduce((acc, item) => acc + (item.quantity || 1), 0) || 1;
 
       const [existing] = await tx
         .select({ id: assinaturas.id, status: assinaturas.status, contratoId: assinaturas.contratoId, mrr: assinaturas.mrr, leadId: assinaturas.leadId, servicoId: assinaturas.servicoId })
@@ -386,6 +387,7 @@ export async function syncStripe(organizacaoId?: string): Promise<{ subs: number
             motivoCancelamento: motivo,
             produto: planoNome,
             stripePriceId: item0?.price?.id || null,
+            quantidade: quantidadeTotal,
             currentPeriodEnd: s.current_period_end ? new Date(s.current_period_end * 1000) : null,
             syncedAt: new Date(),
             updatedAt: new Date(),
@@ -484,7 +486,7 @@ export async function syncStripe(organizacaoId?: string): Promise<{ subs: number
             stripeCustomerId: sCustId,
             produto: planoNome,
             stripePriceId: item0?.price?.id || null,
-            quantidade: s.items?.data?.reduce((acc, i) => acc + (i.quantity || 1), 0) || 1,
+            quantidade: quantidadeTotal,
             mrr: String(mrr),
             status: s.status,
             motivoCancelamento: motivo,
