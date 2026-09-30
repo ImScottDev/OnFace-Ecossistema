@@ -843,11 +843,9 @@ export const assinaturas = pgTable(
 // subscription do Stripe — multi-item (ex: White Label licença MRR + setup
 // + adicional na MESMA subscription) hoje é resumido ("price do item0 +
 // quantidade somada"), perde granularidade real de produto/preço por item.
-// Esta tabela é só o SCHEMA (schema não é feature) — ainda não é lida/
-// escrita por `stripe-sync.ts`/webhook; a granularidade continua vindo só
-// de `assinaturas.raw` (payload Stripe completo) até esse wiring ser feito
-// num bloco dedicado (mudança em reconciliação de billing ao vivo pede
-// validação própria, não é extensão de schema).
+// O sync e o webhook materializam os itens nesta tabela. A granularidade
+// operacional de preço/quantidade vem daqui; `assinaturas.raw` continua
+// guardado como evidência do payload da Stripe.
 export const assinaturaItens = pgTable(
   "assinatura_itens",
   {

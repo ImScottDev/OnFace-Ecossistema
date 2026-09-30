@@ -23,7 +23,7 @@
  */
 import { db } from "../db";
 import { assinaturaItens, assinaturas, contratos, faturas, leads, mrrMovimentos, organizacoes, notificacoes, usuarios } from "../db/schema";
-import { eq, gt, sql, and, inArray } from "drizzle-orm";
+import { eq, gt, sql, and, inArray, isNotNull } from "drizzle-orm";
 import { resolveBillingCustomer, type BillingResolution } from "./billing-identity";
 
 const STRIPE_API = "https://api.stripe.com/v1";
@@ -349,6 +349,10 @@ export async function syncStripe(organizacaoId?: string): Promise<{ subs: number
             })
             .onConflictDoUpdate({
               target: assinaturaItens.stripeSubscriptionItemId,
+              // O índice único de stripe_subscription_item_id é parcial
+              // (só valores não nulos). O alvo do upsert precisa declarar a
+              // mesma condição para o PostgreSQL conseguir inferi-lo.
+              targetWhere: isNotNull(assinaturaItens.stripeSubscriptionItemId),
               set: {
                 organizacaoId: org.id,
                 assinaturaId,
