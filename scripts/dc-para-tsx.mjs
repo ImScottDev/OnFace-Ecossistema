@@ -78,7 +78,11 @@ function nomeDeAtributo(nome) {
  * `zIndex: "35"` funcionam, e converter para número quebraria os compostos.
  */
 function estiloParaObjeto(texto) {
-  const pares = [];
+  /* Mapa, não lista: em CSS a última declaração vence e repetir é legítimo
+     (`padding:0;padding-top:4px` no mesmo atributo acontece no protótipo). Num
+     objeto JS a repetição é erro de sintaxe, então a última ganha aqui
+     também — mesmo resultado, código válido. */
+  const pares = new Map();
   for (const parte of texto.split(";")) {
     const corte = parte.indexOf(":");
     if (corte < 0) continue;
@@ -86,9 +90,9 @@ function estiloParaObjeto(texto) {
     const valor = parte.slice(corte + 1).trim();
     if (!chave || !valor) continue;
     const propriedade = chave.startsWith("--") ? `"${chave}"` : camel(chave);
-    pares.push(`${propriedade}: ${JSON.stringify(valor)}`);
+    pares.set(propriedade, `${propriedade}: ${JSON.stringify(valor)}`);
   }
-  return `{ ${pares.join(", ")} }`;
+  return `{ ${[...pares.values()].join(", ")} }`;
 }
 
 /* ── Expressões `{{ }}` ────────────────────────────────────────────────── */
@@ -126,12 +130,28 @@ function valorDeAtributo(nome, bruto) {
 
 /* ── Texto ─────────────────────────────────────────────────────────────── */
 
+/* Chaves e `>` soltos em texto quebram o JSX.
+ *
+ * O `>` aparece quando o protótipo tem HTML malformado — CSS que escapou para
+ * fora das aspas do `style` e virou conteúdo de texto. Acontece de verdade
+ * (`OnFace Atividades.dc.html:651`), e a conversão tem de sobreviver a isso:
+ * o defeito é do desenho e se conserta lá, mas não pode derrubar o build de
+ * todas as outras telas enquanto isso. */
+function escapar(texto) {
+  return texto.replace(/[{}>]/g, (c) => `{${JSON.stringify(c)}}`);
+}
+
 function converterTexto(texto) {
-  if (!texto.includes("{{")) {
-    // Chaves soltas em texto quebram JSX.
-    return texto.replace(/[{}]/g, (c) => `{"${c}"}`);
-  }
-  return texto.replace(/\{\{([\s\S]+?)\}\}/g, (_, e) => { anotarExpressao(e); return `{${e.trim()}}`; });
+  if (!texto.includes("{{")) return escapar(texto);
+  return texto
+    .split(/(\{\{[\s\S]+?\}\})/)
+    .map((parte) => {
+      const m = /^\{\{([\s\S]+?)\}\}$/.exec(parte);
+      if (!m) return escapar(parte);
+      anotarExpressao(m[1]);
+      return `{${m[1].trim()}}`;
+    })
+    .join("");
 }
 
 /* ── Tokenizador ───────────────────────────────────────────────────────── */
@@ -277,12 +297,20 @@ function gerar(tokens) {
     if (t.nome === "sc-for") {
       const lista = atributo(t, "list");
       const item = atributo(t, "as") || "item";
+      /* O nome do laço vale SÓ dentro dele.
+       *
+       * Como `locaisDeLaco` era um conjunto que só crescia, um nome usado como
+       * `as=` em algum ponto do arquivo sumia do contrato em TODO o resto —
+       * `pa` é item de laço numa lista e valor de topo no modal da mesma tela,
+       * e o modal ficava referenciando um identificador que nada declarava. */
+      const jaEraLocal = locaisDeLaco.has(item);
       locaisDeLaco.add(item);
       /* Índice numerado por nível: `sc-for` dentro de `sc-for` usaria `i` nos
          dois e o TypeScript acusa identificador duplicado. */
       const indice = `i${(profundidadeDeLaco += 1)}`;
       const dentro = t.sozinha ? [] : filhos("sc-for");
       profundidadeDeLaco -= 1;
+      if (!jaEraLocal) locaisDeLaco.delete(item);
       const expr = soExpressao(lista ?? "")?.[1]?.trim() ?? lista ?? "[]";
       anotarExpressao(expr);
       return {

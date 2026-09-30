@@ -1,0 +1,197 @@
+
+class Component extends DCLogic {
+  state = { larg: typeof window !== "undefined" ? window.innerWidth : 1400, v: 0, visao: "mes", ref: null, dia: null, off: {}, det: null, mini: 0 };
+
+  componentDidMount() {
+    const E = window.OnFaceEstado;
+    if (E) this._off = E.assinar(() => this.setState(s => ({ v: s.v + 1 })));
+    this._fora = (e) => { const den = (q) => e.target.closest && e.target.closest(q); if (this.state.det && !den("[data-cal-pop]")) this.setState({ det: null }); if (this.state.tiposR && !den("[data-cal-tipos]")) this.setState({ tiposR: null }); };
+    this._esc = (e) => { if (e.key !== "Escape") return; if (this.state.det) this.setState({ det: null }); else if (this.state.atv) this.setState({ atv: null }); };
+    this._rs = () => this.setState({ larg: window.innerWidth }); window.addEventListener("resize", this._rs);
+    document.addEventListener("mousedown", this._fora); document.addEventListener("keydown", this._esc);
+    const v = E && E.parametro && E.parametro("visao"); if (v === "semana") this.setState({ visao: "semana" });
+    this.rolar();
+  }
+  componentWillUnmount() { if (this._off) this._off(); window.removeEventListener("resize", this._rs); document.removeEventListener("mousedown", this._fora); document.removeEventListener("keydown", this._esc); }
+  componentDidUpdate(pp, ps) { if (ps.visao !== this.state.visao) this.rolar(); }
+  rolar() { setTimeout(() => { if (this._sc) this._sc.scrollTop = 56 - 10; }, 60); }
+
+  hoje() { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }
+  deIso(s) { if (!s) return null; const [a, m, d] = s.split("-").map(Number); return new Date(a, m - 1, d); }
+
+  renderVals() {
+    const S = this.state, E = window.OnFaceEstado, A = window.OnFaceAgenda, D = window.OnFaceDados || {}, EU = "Scott Ferraz";
+    const pad = (n) => String(n).padStart(2, "0"), iso = A ? A.iso : () => "", hm = A ? A.hm : () => "";
+    const cap = (t) => t.replace(/^./, c => c.toUpperCase());
+    const H0 = this.hoje(), agora = new Date();
+    const ref = S.ref ? this.deIso(S.ref) : H0, dia = S.dia ? this.deIso(S.dia) : H0;
+    const same = (a, b) => a && b && a.toDateString() === b.toDateString();
+    const TP = {
+      "Reunião": ["m16 10 5-3v10l-5-3zM4 6h10a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z", "#c2330f", "#fff6f4", "#fe4f2b"],
+      "Ligação": ["M13.8 16.6a1 1 0 0 0 1.2-.3l.4-.5A2 2 0 0 1 17 15h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2A18 18 0 0 1 2 4a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v3a2 2 0 0 1-.8 1.6l-.5.4a1 1 0 0 0-.3 1.2 14 14 0 0 0 6.4 6.4z", "#1f7256", "#e6f4ee", "#1f7256"],
+      "Mensagem": ["M21 11.5a8.4 8.4 0 0 1-9 8.4 9 9 0 0 1-3.8-.8L3 21l1.9-4.1A8.4 8.4 0 0 1 12 3a8.4 8.4 0 0 1 9 8.5z", "#1f7256", "#e6f4ee", "#1f7256"],
+      "E-mail": ["M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM22 6l-10 7L2 6", "#2c5f9e", "#e8f0fb", "#2c5f9e"],
+      "Follow up": ["M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5", "#6e5420", "#f7edd8", "#c9a45c"],
+      "Proposta": ["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6", "#4f3fa8", "#efecfa", "#4f3fa8"],
+      "Tarefa": ["M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11", "#4a5560", "#eeeff3", "#67787c"]
+    };
+    const grp = (t) => TP[t] ? t : "Tarefa", tp = (t) => TP[grp(t)];
+    const meu = (x) => (x.assignees || []).indexOf(EU) >= 0 || x.resp === EU || x.tipo === "Reunião";
+    const todos = (A ? A.itens() : []).filter(x => x.quando && meu(x));
+    const vis = todos.filter(x => !S.off[grp(x.tipo)]);
+    const doDia = (d) => vis.filter(x => same(x.quando, d)).sort((a, b) => (b.temHora ? 1 : 0) - (a.temHora ? 1 : 0) || a.quando - b.quando);
+    const feita = (x) => x.situacao === "Feita" || x.situacao === "Declinada";
+    const refReu = (x) => x.tipo === "Reunião" && (x.src === "o" ? { src: "o", oppId: x.oppId, i: x.idx } : x.src === "p" ? { src: "p", id: x.id } : null);
+
+    const abrirItem = (x, e) => { if (e) e.stopPropagation(); const rr = refReu(x); if (rr) { this.setState({ det: null }); return E && E.abrir("reuniao", rr); }
+      if (x.src === "l") { this.setState({ det: null }); return E && E.abrir("detalhe", x.leadId); } this.setState({ det: null, atv: x.key, com: "", novaSub: "" }); };
+    const chip = (x) => { const T = tp(x.tipo), f = feita(x);
+      return { t: x.titulo, h: hm(x.quando), temH: x.temHora, ico: T[0], cor: T[1], dica: x.titulo + (x.empresa ? " · " + x.empresa : ""), onClick: (e) => abrirItem(x, e),
+        style: "display:flex;align-items:center;gap:5px;width:100%;min-width:0;height:22px;padding:0 6px 0 7px;border-radius:6px;border:0;cursor:pointer;text-align:left;font-size:11.5px;font-weight:500;color:#12171d;background:" + T[2] + ";box-shadow:inset 2px 0 0 " + T[3] + (f ? ";opacity:.5;text-decoration:line-through" : "") }; };
+
+    // mês
+    const m0 = new Date(ref.getFullYear(), ref.getMonth(), 1), nd = new Date(ref.getFullYear(), ref.getMonth() + 1, 0).getDate(), st = new Date(m0); st.setDate(1 - m0.getDay());
+    const nW = Math.ceil((m0.getDay() + nd) / 7);
+    const celulas = Array.from({ length: nW * 7 }, (_, i) => { const d = new Date(st.getFullYear(), st.getMonth(), st.getDate() + i), its = doDia(d), fora = d.getMonth() !== m0.getMonth(), hj = same(d, H0), sel = same(d, dia);
+      return { n: String(d.getDate()), itens: its.slice(0, 3).map(chip), temMais: its.length > 3, mais: "+" + (its.length - 3) + " mais",
+        onClick: () => this.setState({ dia: iso(d) }), abrirMais: (e) => { e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); this.setState({ dia: iso(d), det: { lista: its.map(x => x.key), titulo: cap(d.toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "short" }).replace(/\./g, "")) + " · " + its.length + " itens", r: { left: r.left, right: r.right, top: r.top, bottom: r.bottom } } }); },
+        style: "min-width:0;min-height:118px;padding:7px 7px 8px;display:flex;flex-direction:column;gap:3px;cursor:pointer;box-shadow:inset -1px -1px 0 #eef1f1;background:" + (hj ? "#fff8f5" : sel ? "#fafafa" : fora ? "#fcfcfb" : "#fff"),
+        nStyle: "align-self:flex-start;min-width:24px;height:24px;padding:0 6px;margin-bottom:2px;border-radius:9999px;display:grid;place-items:center;font-size:12.5px;font-variant-numeric:tabular-nums;font-weight:" + (hj || sel ? "700" : "600") + ";" + (hj ? "background:#fe4f2b;color:#fff" : sel ? "background:#12171d;color:#fff" : "color:" + (fora ? "#c4c9ca" : "#12171d")) }; });
+
+    // semana
+    const HI = 7, HF = 21, RH = 56;
+    const w0 = new Date(ref.getFullYear(), ref.getMonth(), ref.getDate() - ((ref.getDay() + 6) % 7));
+    const dW = [0, 1, 2, 3, 4, 5, 6].map(i => new Date(w0.getFullYear(), w0.getMonth(), w0.getDate() + i));
+    const SEMS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+    const cabSem = dW.map(d => { const hj = same(d, H0); return { sem: SEMS[d.getDay()], n: String(d.getDate()), onClick: () => this.setState({ dia: iso(d) }),
+      style: "display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 0 10px;border:0;cursor:pointer;background:" + (hj ? "#fff8f5" : "transparent") + ";box-shadow:inset 1px 0 0 #eef1f1",
+      nStyle: "min-width:30px;height:30px;padding:0 6px;border-radius:9999px;display:grid;place-items:center;font-family:'Plus Jakarta Sans',sans-serif;font-size:17px;font-weight:700;font-variant-numeric:tabular-nums;" + (hj ? "background:#fe4f2b;color:#fff" : same(d, dia) ? "background:#12171d;color:#fff" : "color:#12171d") }; });
+    const colSem = dW.map(d => { const its = doDia(d), hj = same(d, H0), fds = d.getDay() === 0 || d.getDay() === 6;
+      const ev = its.filter(x => x.temHora).map(x => { let s = x.quando, e2;
+        if (x.tipo === "Reunião" && x.ini && x.fim && x.fim > x.ini) { s = x.ini; e2 = x.fim; }
+        else e2 = new Date(s.getTime() + 30 * 6e4);
+        return { x, s, e: e2 }; }).sort((a, b) => a.s - b.s);
+      const extras = []; let grupo = [], fimG = null;
+      const fechaG = () => { const lanes = []; grupo.forEach(o => { let l = lanes.findIndex(end => end <= o.s); if (l < 0) { l = lanes.length; lanes.push(o.e); } else lanes[l] = o.e; o.l = l; });
+        const nL = Math.max(1, lanes.length);
+        if (nL > 3) { const ocult = grupo.filter(o => o.l >= 2); ocult.forEach(o => { o.oculto = true; }); grupo.forEach(o => { o.nL = 3; }); extras.push({ s: ocult[0].s, e: new Date(ocult[0].s.getTime() + 30 * 6e4), l: 2, nL: 3, itens: ocult.map(o => o.x) }); }
+        else grupo.forEach(o => { o.nL = nL; }); grupo = []; };
+      ev.forEach(o => { if (grupo.length && o.s >= fimG) fechaG(); grupo.push(o); fimG = grupo.length === 1 || o.e > fimG ? o.e : fimG; }); fechaG();
+      const maisEv = extras.map(o => { const top = Math.max(0, ((o.s.getHours() + o.s.getMinutes() / 60) - HI) * RH);
+        return { t: "+" + o.itens.length + " no mesmo horário", sub: "", h: "", ico: "M12 5v14M5 12h14", cor: "#4a5560", longo: false, onClick: (e) => { e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); this.setState({ det: { lista: o.itens.map(x => x.key), r: { left: r.left, right: r.right, top: r.top, bottom: r.bottom } } }); },
+          tStyle: "min-width:0;font-size:11.5px;font-weight:500;color:#12171d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis",
+          style: "position:absolute;z-index:1;left:calc(" + (2 / 3 * 100).toFixed(2) + "% + 3px);width:calc(" + (100 / 3).toFixed(2) + "% - 6px);top:" + (top + 1).toFixed(1) + "px;height:24px;padding:4px 7px;border-radius:8px;border:0;cursor:pointer;text-align:left;overflow:hidden;display:flex;flex-direction:column;background:#f3f4f4;box-shadow:inset 0 0 0 1px #e3e7e8" }; });
+      const evs = ev.filter(o => !o.oculto).map(o => { const T = tp(o.x.tipo), f = feita(o.x); const top = Math.max(0, ((o.s.getHours() + o.s.getMinutes() / 60) - HI) * RH), h = Math.max(24, (o.e - o.s) / 36e5 * RH - 3);
+        const e3 = new Date(o.e); e3._h = true;
+        return { t: o.x.titulo, sub: o.x.empresa || o.x.pessoa || o.x.area || "", h: hm(o.s) + " – " + hm(e3), ico: T[0], cor: T[1], longo: h >= 46, onClick: (e) => abrirItem(o.x, e),
+          tStyle: "min-width:0;font-size:11.5px;font-weight:500;color:#12171d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" + (f ? ";text-decoration:line-through" : ""),
+          style: "position:absolute;z-index:1;left:calc(" + (o.l / o.nL * 100).toFixed(2) + "% + 3px);width:calc(" + (100 / o.nL).toFixed(2) + "% - 6px);top:" + (top + 1).toFixed(1) + "px;height:" + h.toFixed(1) + "px;padding:4px 7px;border-radius:8px;border:0;cursor:pointer;text-align:left;overflow:hidden;display:flex;flex-direction:column;gap:1px;background:" + T[2] + ";box-shadow:inset 3px 0 0 " + T[3] + ",0 1px 2px rgba(18,23,29,.06)" + (f ? ";opacity:.55" : "") }; });
+      const nowH = agora.getHours() + agora.getMinutes() / 60;
+      return { evs: evs.concat(maisEv), diaTodo: its.filter(x => !x.temHora).map(chip),
+        diaTodoStyle: "min-width:0;display:flex;flex-direction:column;gap:3px;padding:5px 4px;box-shadow:inset 1px 0 0 #eef1f1;background:" + (hj ? "#fff8f5" : "transparent"),
+        slot: (e) => { const r = e.currentTarget.getBoundingClientRect(), y = e.clientY - r.top, meia = Math.floor(y / (RH / 2)), hh = HI + Math.floor(meia / 2); E && E.abrir("novaReuniao", { data: iso(d), hora: pad(hh) + ":" + (meia % 2 ? "30" : "00") }); },
+        temAgora: hj && nowH >= HI && nowH < HF, agora: "position:absolute;z-index:2;left:0;right:0;top:" + ((nowH - HI) * RH).toFixed(1) + "px;height:2px;background:#fe4f2b;pointer-events:none",
+        style: "position:relative;min-width:0;height:" + ((HF - HI) * RH) + "px;cursor:copy;box-shadow:inset 1px 0 0 #eef1f1;background-color:" + (hj ? "#fff8f5" : fds ? "#fbfbfa" : "#fff") + ";background-image:linear-gradient(#eef1f1 1px,transparent 1px);background-size:100% " + RH + "px" }; });
+
+    // mini + agenda
+    const mm = new Date(ref.getFullYear(), ref.getMonth() + (S.mini || 0), 1), mnd = new Date(mm.getFullYear(), mm.getMonth() + 1, 0).getDate();
+    const mcel = Array.from({ length: Math.ceil((mm.getDay() + mnd) / 7) * 7 }, (_, i) => { const d = new Date(mm.getFullYear(), mm.getMonth(), i - mm.getDay() + 1), fora = d.getMonth() !== mm.getMonth(), hj = same(d, H0), sel = same(d, dia);
+      const tem = vis.some(x => same(x.quando, d) && !feita(x)), reu = vis.some(x => x.tipo === "Reunião" && same(x.quando, d));
+      return { n: String(d.getDate()), onClick: () => this.setState({ dia: iso(d), ref: iso(d), mini: 0 }),
+        style: "justify-self:center;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;width:34px;height:34px;border-radius:9999px;border:0;cursor:pointer;font-size:12.5px;font-variant-numeric:tabular-nums;font-weight:" + (hj || sel ? "700" : "500") + ";" + (hj ? "background:#fe4f2b;color:#fff" : sel ? "background:#12171d;color:#fff" : "background:transparent;color:" + (fora ? "#c4c9ca" : "#1f252c")),
+        dot: "width:4px;height:4px;border-radius:9999px;background:" + (reu ? (hj || sel ? "#fff" : "#fe4f2b") : tem ? (hj || sel ? "rgba(255,255,255,.7)" : "#a3a8a4") : "transparent") }; });
+    const agDia = doDia(dia);
+    const agenda = agDia.map(x => { const T = tp(x.tipo), f = feita(x), agoraNela = x.temHora && same(dia, H0) && x.ini && x.fim && x.ini <= agora && x.fim >= agora;
+      return { h: x.temHora ? hm(x.tipo === "Reunião" && x.ini ? x.ini : x.quando) : "Dia", t: x.titulo, sub: [x.tipo, x.empresa || x.pessoa].filter(Boolean).join(" · "), ico: T[0], onClick: (e) => abrirItem(x, e),
+        row: "display:flex;align-items:center;gap:11px;width:100%;padding:9px 6px;border:0;border-radius:10px;cursor:pointer;text-align:left;box-shadow:inset 0 -1px 0 #f1f3f3" + (agoraNela ? ",inset 3px 0 0 #fe4f2b;background:#fff8f5" : ";background:transparent"),
+        hStyle: "flex:0 0 auto;width:38px;font-size:12.5px;font-weight:500;font-variant-numeric:tabular-nums;color:" + (x.temHora ? "#4a5560" : "#a3a8a4"),
+        icoBox: "flex:0 0 auto;width:32px;height:32px;border-radius:9px;display:grid;place-items:center;background:#f6f6f3;box-shadow:inset 0 0 0 1px #eef1f1;color:" + T[1],
+        tStyle: "display:block;font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:" + (f ? "#8b949e;text-decoration:line-through" : "#12171d") }; });
+
+    // período e tipos
+    const noPeriodo = S.visao === "semana" ? (x) => x.quando >= dW[0] && x.quando < new Date(dW[6].getTime() + 864e5) : (x) => x.quando.getMonth() === m0.getMonth() && x.quando.getFullYear() === m0.getFullYear();
+    const tipos = Object.keys(TP).map(k => { const on = !S.off[k], T = TP[k]; return { l: k === "Follow up" ? "Follow-ups" : k === "Reunião" ? "Reuniões" : k === "Ligação" ? "Ligações" : k === "Mensagem" ? "Mensagens" : k === "E-mail" ? "E-mails" : k === "Proposta" ? "Propostas" : "Tarefas", on, ico: T[0],
+      n: String(todos.filter(x => grp(x.tipo) === k && noPeriodo(x)).length), onClick: () => this.setState(s => ({ off: Object.assign({}, s.off, { [k]: on }) })),
+      icoBox: "flex:0 0 auto;width:26px;height:26px;border-radius:8px;display:grid;place-items:center;background:" + T[2] + ";color:" + T[1],
+      caixa: "flex:0 0 auto;width:16px;height:16px;border-radius:5px;display:grid;place-items:center;" + (on ? "background:#12171d" : "background:#fff;box-shadow:inset 0 0 0 1.5px #a9b1b4"), cor: T[1] }; });
+    const nPer = vis.filter(noPeriodo), nReu = nPer.filter(x => x.tipo === "Reunião").length;
+
+    // detalhe
+    const X = S.det && S.det.key ? todos.find(x => x.key === S.det.key) : null;
+    let det = { aberto: false, fatos: [], lista: [] };
+    if (S.det && S.det.lista) { const r = S.det.r, W = 300, vw = window.innerWidth, vh = window.innerHeight, L = S.det.lista.map(k => todos.find(x => x.key === k)).filter(Boolean);
+      det = { aberto: true, ehLista: true, ehItem: false, fatos: [], fechar: () => this.setState({ det: null }), titulo: S.det.titulo || L.length + " itens no mesmo horário",
+        pos: "position:fixed;z-index:70;width:" + W + "px;left:" + (r.right + 8 + W < vw ? r.right + 8 : Math.max(8, r.left - W - 8)) + "px;top:" + Math.max(8, Math.min(vh - 320, r.top - 10)) + "px;max-height:320px;overflow-y:auto;padding:12px;border-radius:14px;background:#fff;box-shadow:0 0 0 1px #e3e7e8,0 24px 50px -20px rgba(18,23,29,.45)",
+        lista: L.map(x => { const T = tp(x.tipo); return { t: x.titulo, sub: [hm(x.tipo === "Reunião" && x.ini ? x.ini : x.quando), x.empresa || x.pessoa].filter(Boolean).join(" · "), ico: T[0], icoBox: "flex:0 0 auto;width:30px;height:30px;border-radius:9px;display:grid;place-items:center;background:" + T[2] + ";color:" + T[1], onClick: (e) => abrirItem(x, e) }; }) };
+    }
+    if (X) { const T = tp(X.tipo), f = feita(X), r = S.det.r, W = 300, vw = window.innerWidth, vh = window.innerHeight;
+      const left = r.right + 8 + W < vw ? r.right + 8 : Math.max(8, r.left - W - 8), top = Math.max(8, Math.min(vh - 280, r.top - 10));
+      const SIT = { "A fazer": ["#eeeff3", "#4a5560"], "Em andamento": ["#e8f0fb", "#2c5f9e"], "Aguardando": ["#f7edd8", "#6e5420"], "Feita": ["#e6f4ee", "#1f7256"], "Declinada": ["#fdeeea", "#c2330f"] }[X.situacao] || ["#eeeff3", "#4a5560"];
+      const dataTxt = cap(X.quando.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" })) + (X.temHora ? " · " + hm(X.quando) : " · sem horário");
+      det = { aberto: true, ehItem: true, ehLista: false, lista: [], fechar: () => this.setState({ det: null }), pos: "position:fixed;z-index:70;width:" + W + "px;left:" + left + "px;top:" + top + "px;padding:14px 14px 14px 16px;border-radius:14px;background:#fff;box-shadow:0 0 0 1px #e3e7e8,0 24px 50px -20px rgba(18,23,29,.45)",
+        tipo: X.tipo, ico: T[0], tipoStyle: "display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 8px;border-radius:6px;font-size:11.5px;font-weight:500;background:" + T[2] + ";color:" + T[1],
+        sit: X.situacao === "Feita" ? "Feito" : X.situacao, sitStyle: "display:inline-flex;align-items:center;height:22px;padding:0 8px;border-radius:9999px;font-size:11.5px;font-weight:500;background:" + SIT[0] + ";color:" + SIT[1],
+        titulo: X.titulo,
+        fatos: [["M12 6v6l4 2M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z", dataTxt], X.empresa || X.pessoa ? ["M3 21h18M5 21V7l7-4 7 4v14M9 21v-4h6v4", [X.empresa, X.pessoa].filter(Boolean).join(" · ")] : null, X.oppRot ? ["M12 2v20M17 6H9.5a3.5 3.5 0 1 0 0 7h5a3.5 3.5 0 1 1 0 7H6", "Oportunidade · " + X.oppRot] : null, ["M20 21a8 8 0 0 0-16 0M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10z", X.resp || "Sem responsável"]].filter(Boolean).map(([d, t]) => ({ d, t })),
+        podeConcluir: X.src !== "l" || !f, concluirTxt: f ? "Reabrir" : "Concluir",
+        concluirStyle: "flex:0 0 auto;display:flex;align-items:center;gap:6px;height:34px;padding:0 12px;border-radius:9px;border:0;font-size:12.5px;font-weight:500;cursor:pointer;" + (f ? "background:#fff;color:#1f252c;box-shadow:inset 0 0 0 1px #dbdede" : "background:#e6f4ee;color:#1f7256"),
+        concluir: () => { A.situacao(X, f ? "A fazer" : "Feita"); E && E.avisar((f ? "Reaberta: " : "Feito: ") + X.titulo, "ok"); this.setState({ det: null }); },
+        abrirTxt: X.src === "l" ? "Abrir lead" : "Abrir detalhes",
+        abrir: () => { if (X.src === "l") { this.setState({ det: null }); return E && E.abrir("detalhe", X.leadId); } this.setState({ det: null, atv: X.key, com: "", novaSub: "" }); } };
+    }
+
+    const mudar = (n) => { const d = S.visao === "semana" ? new Date(ref.getFullYear(), ref.getMonth(), ref.getDate() + 7 * n) : new Date(ref.getFullYear(), ref.getMonth() + n, 1); this.setState({ ref: iso(d), mini: 0 }); };
+    const f2 = (d) => d.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" }).replace(".", "");
+    return {
+      irHoje: () => this.setState({ ref: iso(H0), dia: iso(H0), mini: 0 }), ant: () => mudar(-1), prox: () => mudar(1),
+      visoes: [["mes", "Mês"], ["semana", "Semana"]].map(([k, l]) => ({ l, onClick: () => this.setState({ visao: k }), style: "padding:0 14px;border-radius:7px;border:0;cursor:pointer;font-size:12.5px;white-space:nowrap;" + (S.visao === k ? "background:#fff;color:#12171d;font-weight:600;box-shadow:0 1px 2px rgba(18,23,29,.12)" : "background:transparent;color:#4a5560;font-weight:500") })),
+      novaReu: () => E && E.abrir("novaReuniao", { data: iso(dia) >= iso(H0) ? iso(dia) : iso(H0) }), novaReuDia: () => E && E.abrir("novaReuniao", { data: iso(dia) }),
+      novaAtv: () => E && E.irPara("/onface-preview/atividades", "Atividades", { nova: "1", data: iso(dia) }),
+      ehMes: S.visao === "mes", ehSemana: S.visao === "semana",
+      periodo: S.visao === "semana" ? f2(dW[0]) + " – " + f2(dW[6]) + " de " + dW[6].getFullYear() : cap(m0.toLocaleDateString("pt-BR", { month: "long", year: "numeric" })),
+      periodoSub: nPer.length + (nPer.length === 1 ? " item" : " itens") + " · " + nReu + (nReu === 1 ? " reunião" : " reuniões"),
+      semCab: ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"], celulas, cabSem, colSem, temDiaTodo: colSem.some(c => c.diaTodo.length), refSc: (el) => { this._sc = el; },
+      horas: Array.from({ length: HF - HI }, (_, i) => i === 0 ? "" : pad(HI + i) + ":00"),
+      mini: { mes: cap(mm.toLocaleDateString("pt-BR", { month: "long", year: "numeric" })), cel: mcel, ant: () => this.setState(s => ({ mini: (s.mini || 0) - 1 })), prox: () => this.setState(s => ({ mini: (s.mini || 0) + 1 })) },
+      diaTxt: (same(dia, H0) ? "Hoje · " : "") + cap(dia.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" })), agenda, agendaVazia: !agenda.length,
+      at: (() => { const Y = S.atv ? todos.find(x => x.key === S.atv) : null; if (!Y) return { aberto: false, sits: [], prios: [], subs: [], coms: [], equipe: [], vincs: [] };
+        const T = tp(Y.tipo), sv = (p, msg) => { A.salvar(Y, p); if (msg) E && E.avisar(msg, "ok"); };
+        const equipe = (D.EQUIPE || ["Camila Reis", "Diego Nunes", "Ana Vitória"]).concat([EU]).filter((x, i, a) => a.indexOf(x) === i);
+        const ini2 = D.iniciais || ((n) => (n || "").split(" ").map(x => x[0]).slice(0, 2).join("").toUpperCase());
+        const SITS = [["A fazer", "A fazer", "#4a5560"], ["Em andamento", "Em andamento", "#2c5f9e"], ["Aguardando", "Aguardando", "#6e5420"], ["Feita", "Feito", "#1f7256"], ["Declinada", "Declinada", "#c2330f"]];
+        const PR = { Alta: "#d93c1a", "Média": "#c9a45c", Baixa: "#8b949e" }, subs = Y.sub || [], coms = Y.comentarios || [], so = Y.src !== "l";
+        const agoraTxt = () => { const d2 = new Date(); return "Hoje, " + pad(d2.getHours()) + ":" + pad(d2.getMinutes()); };
+        return { aberto: true, fechar: () => this.setState({ atv: null }), leitura: !so,
+          tipo: Y.tipo, ico: T[0], tipoStyle: "display:inline-flex;align-items:center;gap:5px;height:24px;padding:0 9px;border-radius:7px;font-size:12px;font-weight:500;background:" + T[2] + ";color:" + T[1],
+          origem: Y.src === "o" ? "Da oportunidade " + Y.oppRot : Y.src === "l" ? "Próxima ação do lead no Pré-vendas" : (Y.area ? "Atividade de " + Y.area : "Atividade"),
+          titulo: Y.titulo, setTitulo: (e) => so && sv({ titulo: e.target.value }),
+          sits: SITS.map(([k, l, c]) => ({ l, onClick: () => sv({ situacao: k }, "“" + Y.titulo + "” · " + l), style: "height:30px;padding:0 11px;border-radius:9999px;border:0;cursor:pointer;font-size:12.5px;font-weight:500;white-space:nowrap;" + (Y.situacao === k ? "background:" + c + ";color:#fff" : "background:#fff;color:#1f252c;box-shadow:inset 0 0 0 1px #dbdede") })),
+          data: iso(Y.quando), hora: hm(Y.quando), setData: (e) => so && sv({ fimD: e.target.value, fimH: hm(Y.quando) }, "Prazo: " + e.target.value.split("-").reverse().join("/")), setHora: (e) => so && sv({ fimD: iso(Y.quando), fimH: e.target.value }),
+          prios: ["Baixa", "Média", "Alta"].map(p => ({ l: p, onClick: () => so && sv({ prioridade: p }, "Prioridade: " + p.toLowerCase()), style: "display:inline-flex;align-items:center;gap:5px;height:30px;padding:0 11px;border-radius:9999px;border:0;cursor:pointer;font-size:12.5px;font-weight:500;" + ((Y.prioridade || "Média") === p ? "background:" + PR[p] + ";color:#fff" : "background:#fff;color:#1f252c;box-shadow:inset 0 0 0 1px #dbdede") })),
+          resp: Y.resp || "Sem responsável", respIni: Y.resp ? ini2(Y.resp) : "?", equipe: equipe.map(n => ({ v: n, l: n })), setResp: (e) => so && sv({ resp: e.target.value, assignees: [e.target.value] }, "Responsável: " + e.target.value),
+          vincs: [Y.empresa ? ["M3 21h18M5 21V7l7-4 7 4v14M9 21v-4h6v4", Y.empresa, () => E && E.irPara("/onface-preview/empresa", Y.empresa, {})] : null, Y.pessoa ? ["M20 21a8 8 0 0 0-16 0M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10z", Y.pessoa, () => E && E.irPara("/onface-preview/pessoa", Y.pessoa, {})] : null, Y.oppRot ? ["M12 2v20M17 6H9.5a3.5 3.5 0 1 0 0 7h5a3.5 3.5 0 1 1 0 7H6", Y.oppRot, () => E && E.irPara("/onface-preview/oportunidade", Y.empresa, { opp: Y.oppId, ver: "" })] : null].filter(Boolean).map(([d, l, ir]) => ({ d, l, ir })),
+          temVinc: !!(Y.empresa || Y.pessoa || Y.oppRot),
+          desc: Y.desc || "", setDesc: (e) => so && sv({ desc: e.target.value }),
+          temSubs: subs.length > 0, subsTxt: subs.length ? subs.filter(x => x.feita).length + " de " + subs.length : "",
+          subs: subs.map((sb, i) => ({ t: sb.t, feita: !!sb.feita, tog: () => sv({ sub: subs.map((y, j) => j === i ? Object.assign({}, y, { feita: !y.feita }) : y) }),
+            check: "flex:0 0 auto;width:18px;height:18px;border-radius:6px;border:0;padding:0;display:grid;place-items:center;cursor:pointer;" + (sb.feita ? "background:#1f7256" : "background:#fff;box-shadow:inset 0 0 0 1.5px #a9b1b4"),
+            tStyle: "flex:1;min-width:0;font-size:13px;color:" + (sb.feita ? "#8b949e;text-decoration:line-through" : "#12171d") })),
+          novaSub: S.novaSub || "", setNovaSub: (e) => this.setState({ novaSub: e.target.value }), teclaSub: (e) => { if (e.key === "Enter" && (S.novaSub || "").trim() && so) { sv({ sub: subs.concat([{ t: S.novaSub.trim(), feita: false, resp: Y.resp || null }]) }); this.setState({ novaSub: "" }); } },
+          coms: coms.map(c => ({ autor: c.autor, ini: ini2(c.autor), quando: c.quando || "", t: c.texto || "" })), temComs: coms.length > 0,
+          com: S.com || "", setCom: (e) => this.setState({ com: e.target.value }),
+          comentar: () => { const t = (S.com || "").trim(); if (!t || !so) return; sv({ comentarios: coms.concat([{ autor: EU, texto: t, quando: agoraTxt() }]) }, "Comentário enviado"); this.setState({ com: "" }); },
+          feita: feita(Y), concluirTxt: feita(Y) ? "Reabrir" : "Marcar como feito", concluir: () => { sv({ situacao: feita(Y) ? "A fazer" : "Feita" }, (feita(Y) ? "Reaberta: " : "Feito: ") + Y.titulo); },
+          concluirStyle: "display:flex;align-items:center;gap:7px;height:40px;padding:0 16px;border-radius:10px;border:0;font-size:13px;font-weight:500;cursor:pointer;" + (feita(Y) ? "background:#fff;color:#1f252c;box-shadow:inset 0 0 0 1px #dbdede" : "background:#1f7256;color:#fff"),
+          irAtv: () => { this.setState({ atv: null }); E && E.irPara("/onface-preview/atividades", "Atividades", { atv: Y.key }); } }; })(),
+      tf: (() => { const nOff = Object.keys(S.off).filter(k => S.off[k]).length, ativo = nOff > 0, ab = !!S.tiposR, r = S.tiposR || { top: 100, bottom: 134, left: 20 };
+        return { aberto: ab, temOff: ativo, conta: String(Object.keys(TP).length - nOff),
+          abrir: (e) => { const el = e.currentTarget.closest("[data-cal-tipos]"), rr = el ? el.getBoundingClientRect() : null; this.setState(s => ({ tiposR: s.tiposR ? null : (rr ? { top: rr.top, bottom: rr.bottom, left: rr.left } : null) })); },
+          todos: () => this.setState({ off: {} }),
+          grupo: "display:flex;align-items:stretch;height:36px;border-radius:9px;overflow:hidden;color:" + (ativo ? "#fff" : "#1f252c") + ";background:" + (ativo ? "#d93c1a" : "#fff") + ";box-shadow:inset 0 0 0 1px " + (ativo ? "#c2330f" : ab ? "#b8bfc0" : "#dbdede"),
+          hover: ativo ? "background:rgba(255,255,255,.12)" : "background:#f6f7f7", div: "flex:0 0 auto;width:1px;background:" + (ativo ? "rgba(255,255,255,.34)" : "#e3e7e8"),
+          contaStyle: "min-width:17px;height:17px;padding-inline:4px;border-radius:9999px;font-size:10px;font-weight:500;display:grid;place-items:center;background:rgba(255,255,255,.22);color:#fff",
+          pos: "position:fixed;z-index:70;min-width:240px;left:" + Math.max(8, Math.min(window.innerWidth - 250, r.left)) + "px;top:" + (r.bottom + 5) + "px;border-radius:10px;background:#fff;border:1px solid #e3e7e8;box-shadow:0 10px 26px -6px rgba(0,0,0,.2);padding:5px" }; })(),
+      parar: (e) => e.stopPropagation(), tipos, det, railStyle: "flex:0 0 300px;min-width:0;min-height:0;overflow-y:auto;flex-direction:column;gap:12px;display:" + (S.larg >= 1180 ? "flex" : "none")
+    };
+  }
+}

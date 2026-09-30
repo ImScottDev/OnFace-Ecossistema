@@ -1,0 +1,235 @@
+
+class Component extends DCLogic {
+  state = { v: 0, ver: null, reu: null, rvAdd: null, rvAddErro: false };
+
+  componentDidMount() {
+    const E = window.OnFaceEstado; if (!E) return;
+    this._off = E.assinar(() => this.setState(s => ({ v: s.v + 1 })));
+    this._offP = E.assinarPecas((p, arg) => {
+      if (p === "reuniao" && arg) this.setState({ ver: arg, reu: null, rvAdd: null, rvAddErro: false });
+      else if (p === "novaReuniao") this.novo(arg || {});
+      else if (p === "editarReuniao" && arg) this.editar(arg);
+    });
+    this._esc = (e) => { if (e.key !== "Escape") return; if (this.state.reu) { e.stopImmediatePropagation(); this.setState({ reu: null }); } else if (this.state.ver) { e.stopImmediatePropagation(); this.setState({ ver: null }); } };
+    window.addEventListener("keydown", this._esc, true);
+  }
+  componentWillUnmount() { if (this._off) this._off(); if (this._offP) this._offP(); window.removeEventListener("keydown", this._esc, true); }
+
+  eu() { return "Scott Ferraz"; }
+  diz(t, tom) { const E = window.OnFaceEstado; if (E) E.avisar(t, tom || "ok"); }
+  pad(n) { return String(n).padStart(2, "0"); }
+  agora() { const d = new Date(); return "Hoje, " + this.pad(d.getHours()) + ":" + this.pad(d.getMinutes()); }
+  hoje() { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }
+  iso(d) { return d ? d.getFullYear() + "-" + this.pad(d.getMonth() + 1) + "-" + this.pad(d.getDate()) : ""; }
+  hm(d) { return d && d._h ? this.pad(d.getHours()) + ":" + this.pad(d.getMinutes()) : ""; }
+  rel(s) { if (!s) return null; const m = String(s).match(/^([+-]\d+)(?:\s+(\d{1,2}):(\d{2}))?$/); if (!m) return null; const d = this.hoje(); d.setDate(d.getDate() + (+m[1])); if (m[2]) { d.setHours(+m[2], +m[3]); d._h = true; } else d.setHours(23, 59); return d; }
+  deIso(d, h) { if (!d) return null; const [a, m, dd] = d.split("-").map(Number); const x = new Date(a, m - 1, dd); if (h) { const [hh, mi] = h.split(":").map(Number); x.setHours(hh, mi); x._h = true; } return x; }
+  soma(h, min) { if (!h) return ""; const [a, b] = h.split(":").map(Number); const t = a * 60 + b + (+min || 0); return this.pad(Math.floor(t / 60) % 24) + ":" + this.pad(t % 60); }
+  quandoData(q) { const t = String(q || "").toLowerCase(); const dm = t.match(/(\d{2})\/(\d{2})(?:\/(\d{4}))?/);
+    if (dm) return (dm[3] || new Date().getFullYear()) + "-" + dm[2] + "-" + dm[1];
+    const d = this.hoje(); if (t.indexOf("hoje") >= 0) return this.iso(d); if (t.indexOf("amanh") >= 0) { d.setDate(d.getDate() + 1); return this.iso(d); }
+    const i = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"].findIndex(x => t.indexOf(x) === 0); if (i >= 0) { d.setDate(d.getDate() + (i - d.getDay() + 7) % 7); return this.iso(d); } return ""; }
+  quandoHora(q) { const t = String(q || ""); const a = t.match(/(\d{1,2}):(\d{2})/); if (a) return this.pad(a[1]) + ":" + a[2]; const b = t.match(/(\d{1,2})h(\d{2})?/); return b ? this.pad(b[1]) + ":" + (b[2] || "00") : ""; }
+  opps() { const E = window.OnFaceEstado; return (E && E.ler("opps", null)) || (window.OnFaceDados || {}).OPORTUNIDADES || []; }
+  leads() { const E = window.OnFaceEstado; return (E && E.ler("leads", null)) || (window.OnFaceDados || {}).LEADS || []; }
+  lista() { const E = window.OnFaceEstado; const s = E && E.ler("atividadesV2", null); const l = s || window.OnFaceAtividadesSeed || []; return l.filter(a => !a.projeto && !a.projetoId); }
+  emailDe(pessoa, empresa, leadId) {
+    const L = this.leads().find(l => (leadId && l.id === leadId) || (pessoa && l.pessoa === pessoa && l.empresa === empresa)); if (L && L.email) return L.email;
+    if (!pessoa) return null; const sem = (s) => (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    return sem(pessoa.replace(/^dr\.?\s+/i, "").split(" ")[0]) + "@" + (empresa ? sem(empresa).replace(/[^a-z]/g, "") : "empresa") + ".com.br";
+  }
+
+  ler(ref) {
+    if (!ref) return null;
+    const FAM = { CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label" };
+    if (ref.src === "o") { const O = this.opps().find(o => o.id === ref.oppId), A = O && (O.atvs || [])[ref.i]; if (!A) return null; const RE = A.reuniao || {};
+      return { A, O, RE, titulo: A.titulo || "Reunião", empresa: O.empresa, pessoa: O.pessoa, cargo: O.cargo || "", familia: FAM[O.familia] || "", leadId: O.leadId, closer: RE.closer || A.autor || O.resp || this.eu(), desc: A.desc || "",
+        situacao: A.situacao || (A.feita ? "Feita" : "A fazer"), data: RE.data || this.quandoData(A.quando), hora: RE.hora || this.quandoHora(A.quando), dur: RE.duracao || 30, quandoTxt: A.quando || "", seed: O.id + (A.quando || "") }; }
+    const A = this.lista().find(a => a.id === ref.id); if (!A) return null; const RE = A.reuniao || {};
+    const di = A.iniD ? this.deIso(A.iniD, A.iniH) : this.rel(A.inicio), df = A.fimD ? this.deIso(A.fimD, A.fimH) : this.rel(A.fim), i0 = di || df;
+    return { A, RE, titulo: A.titulo || "Reunião", empresa: A.empresa || "", pessoa: A.pessoa || "", cargo: "", familia: "", leadId: null, closer: RE.closer || A.resp || this.eu(), desc: A.desc || "", situacao: A.situacao || "A fazer",
+      data: RE.data || this.iso(i0), hora: RE.hora || this.hm(i0), dur: RE.duracao || (di && df && di._h && df._h && df > di ? Math.round((df - di) / 6e4) : 30), quandoTxt: "", seed: A.id };
+  }
+
+  gravar(ref, M, patchA, patchR, msg) {
+    const E = window.OnFaceEstado; if (!E) return;
+    const R = Object.assign({}, M.RE, patchR || {});
+    if (ref.src === "o") { const opps = this.opps().slice(), k = opps.findIndex(o => o.id === ref.oppId); if (k < 0) return; const atvs = (opps[k].atvs || []).slice();
+      const A2 = Object.assign({}, atvs[ref.i], patchA || {}, { reuniao: R }); if (R.data && R.hora) A2.quando = R.data.split("-").reverse().join("/") + " · " + R.hora;
+      atvs[ref.i] = A2; opps[k] = Object.assign({}, opps[k], { atvs, eventos: msg ? [{ t: msg, quando: "Hoje", autor: this.eu() }].concat(opps[k].eventos || []) : opps[k].eventos }); E.gravar({ opps }); return; }
+    const L = this.lista().slice(), k = L.findIndex(a => a.id === ref.id); if (k < 0) return;
+    const A2 = Object.assign({}, L[k], patchA || {}, { reuniao: R });
+    if (R.data) Object.assign(A2, { iniD: R.data, iniH: R.hora || "", fimD: R.data, fimH: this.soma(R.hora, R.duracao || 30), inicio: null, fim: null });
+    if (msg) A2.log = (L[k].log || []).concat([{ autor: this.eu(), texto: msg.replace(/^./, c => c.toLowerCase()), quando: this.agora() }]);
+    L[k] = A2; E.gravar({ atividadesV2: L });
+  }
+
+  novo(pre) {
+    const d = this.hoje(); d.setDate(d.getDate() + 1);
+    const O = pre.oppId ? this.opps().find(o => o.id === pre.oppId) : null;
+    this.setState({ ver: null, reu: { ref: null, oppId: O ? O.id : "", empresa: pre.empresa || "", pessoa: pre.pessoa || "", data: pre.data || this.iso(d), hora: pre.hora || "14:00", dur: 30, tipo: "Vídeo",
+      closer: O ? O.resp : this.eu(), titulo: pre.titulo || (O ? O.empresa + " x Callface" : ""), pauta: "", conv: [], novoConv: null, tentou: false, local: "" } });
+  }
+  editar(ref) {
+    const M = this.ler(ref); if (!M) return;
+    const email = this.emailDe(M.pessoa, M.empresa, M.leadId), parts = M.RE.participantes || [];
+    this.setState({ ver: null, reu: { ref, oppId: ref.src === "o" ? ref.oppId : "", empresa: M.empresa, pessoa: M.pessoa, data: M.data, hora: M.hora || "14:00", dur: M.dur, tipo: M.RE.formato || "Vídeo", closer: M.closer,
+      titulo: M.titulo, pauta: M.desc, conv: parts.filter(p => p !== email), novoConv: null, tentou: false, local: M.RE.local || "" } });
+  }
+
+  renderVals() {
+    const S = this.state, E = window.OnFaceEstado, D = window.OnFaceDados || {}, EU = this.eu();
+    const ini = D.iniciais || ((n) => (n || "").split(" ").map(x => x[0]).slice(0, 2).join("").toUpperCase());
+    const equipe = (D.EQUIPE || ["Camila Reis", "Diego Nunes", "Ana Vitória"]).concat([EU]).filter((x, i, a) => a.indexOf(x) === i);
+    const FMT = { Vídeo: "m22 8-6 4 6 4V8zM2 6h14v12H2z", Ligação: "M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z", Presencial: "M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0zM12 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" };
+    const FAM = { CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label" };
+    const mailOk = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v || "").trim());
+
+    const rv = (() => {
+      const ref = S.ver, M = this.ler(ref);
+      if (!M) return { aberto: false, part: [], sits: [] };
+      const RE = M.RE, fechar = () => this.setState({ ver: null, rvAdd: null });
+      const emailC = this.emailDe(M.pessoa, M.empresa, M.leadId);
+      const parts = RE.participantes && RE.participantes.length ? RE.participantes : (emailC ? [emailC] : []);
+      const rsvp = RE.rsvp || parts.reduce((a, p, k) => (a[p] = k === 0 ? "aceitou" : "aguardando", a), {});
+      const formato = RE.formato || "Vídeo", closer = M.closer;
+      const seed = String(M.seed).split("").reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7).toString(36);
+      const link = RE.link || (formato === "Vídeo" ? "https://teams.microsoft.com/l/meetup-join/19%3ameeting_" + seed + "%40thread.v2" : null);
+      const dataTxt = M.data ? new Date(M.data + "T12:00:00").toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" }) : (M.quandoTxt || "Sem data");
+      const hr = M.hora, fim = this.soma(hr, M.dur);
+      const RS = { aceitou: ["Aceitou", "#e6f4ee", "#1f7256", "M20 6 9 17l-5-5"], talvez: ["Talvez", "#f7edd8", "#6e5420", "M12 16h.01M12 8a2.5 2.5 0 0 1 1 4.8V14"], recusou: ["Recusou", "#fdeeea", "#c2330f", "M18 6 6 18M6 6l12 12"], aguardando: ["Aguardando", "#eeeff3", "#67787c", "M12 6v6l4 2"] };
+      const nomeDe = (p) => p === emailC ? M.pessoa : p.split("@")[0].split(/[._-]/).map(s => s ? s[0].toUpperCase() + s.slice(1) : "").join(" ");
+      const contRS = parts.reduce((a, p) => (a[rsvp[p] || "aguardando"]++, a), { aceitou: 0, talvez: 0, recusou: 0, aguardando: 0 });
+      const baseR = { participantes: parts, rsvp, link, formato, closer };
+      const grava = (pA, pR, msg) => this.gravar(ref, M, pA, Object.assign({}, baseR, pR || {}), msg);
+      const RESU = { "Feita": "realizada", "Não compareceu": "noshow", "Declinada": "cancelada" };
+      const cur = RE.resultado || RESU[M.situacao] || "agendada";
+      const SIT = [["agendada", "Agendada", "A fazer"], ["realizada", "Realizada", "Feita"], ["noshow", "Não compareceu", ref.src === "o" ? "Não compareceu" : "Declinada"], ["cancelada", "Cancelada", "Declinada"]];
+      const add = S.rvAdd;
+      const confirmaAdd = () => { const v = (add || "").trim(); if (!mailOk(v)) return this.setState({ rvAddErro: true }); if (parts.indexOf(v) >= 0) return this.setState({ rvAdd: "", rvAddErro: false });
+        grava(null, { participantes: parts.concat(v), rsvp: Object.assign({}, rsvp, { [v]: "aguardando" }) }, "Participante adicionado · " + v); this.setState({ rvAdd: null, rvAddErro: false }); this.diz("Convite enviado para " + v + " pelo Outlook"); };
+      return { aberto: true, fechar,
+        titulo: M.titulo, sub: [M.empresa, M.pessoa].filter(Boolean).join(" · ") || "Reunião interna",
+        dataTxt: dataTxt.charAt(0).toUpperCase() + dataTxt.slice(1), horaTxt: hr ? hr + " – " + fim + " · " + (M.dur === 60 ? "1 h" : M.dur + " min") : "",
+        formato, formatoD: FMT[formato] || FMT["Vídeo"],
+        sync: "Sincronizado com o Outlook de " + closer.split(" ")[0] + (RE.sincronizado ? " · " + RE.sincronizado : " · há 2 min"),
+        temLink: !!link, linkCurto: link ? "teams.microsoft.com/l/meetup-join/…" + seed.slice(-6) : "",
+        copiar: () => { try { navigator.clipboard.writeText(link); } catch (e) {} this.diz("Link da reunião copiado"); },
+        entrar: () => E && E.abrirExterno ? E.abrirExterno(link) : window.open(link, "_blank"),
+        temLocal: formato !== "Vídeo", localL: formato === "Presencial" ? "Local" : "Ligação", localV: formato === "Presencial" ? (RE.local || "Local não informado") : "Callface liga para " + (M.pessoa || "o contato"),
+        rsResumo: [contRS.aceitou ? contRS.aceitou + " aceitou" : null, contRS.talvez ? contRS.talvez + " talvez" : null, contRS.recusou ? contRS.recusou + " recusou" : null, contRS.aguardando ? contRS.aguardando + " aguardando" : null].filter(Boolean).join(" · "),
+        organizador: closer, orgIni: ini(closer),
+        part: parts.map(p => { const st = RS[rsvp[p] || "aguardando"], nm = nomeDe(p); return { nome: nm, email: p, ini: ini(nm), st: st[0], d: st[3],
+          stStyle: "display:inline-flex;align-items:center;gap:4px;height:22px;padding:0 8px;border-radius:9999px;font-size:11px;font-weight:600;white-space:nowrap;background:" + st[1] + ";color:" + st[2],
+          removivel: p !== emailC, remover: () => { const r2 = Object.assign({}, rsvp); delete r2[p]; grava(null, { participantes: parts.filter(x => x !== p), rsvp: r2 }, "Participante removido · " + p); this.diz(p + " removido do convite"); } }; }),
+        addAberto: add != null, abrirAdd: () => this.setState({ rvAdd: "", rvAddErro: false }), add: add || "", setAdd: (e) => this.setState({ rvAdd: e.target.value, rvAddErro: false }),
+        teclaAdd: (e) => { if (e.key === "Enter") { e.preventDefault(); confirmaAdd(); } else if (e.key === "Escape") { e.stopPropagation(); this.setState({ rvAdd: null }); } }, confirmaAdd,
+        addErro: !!S.rvAddErro, addInp: "flex:1;min-width:0;height:38px;padding:0 12px;border-radius:9px;border:0;outline:0;background:#fff;font-size:13px;color:#12171d;box-shadow:inset 0 0 0 1px " + (S.rvAddErro ? "#d93c1a" : "#dbdede"),
+        temPauta: !!(M.desc || "").trim(), pauta: M.desc,
+        sits: SIT.map(([k, l, sv]) => ({ label: l, onClick: () => { if (k === cur) return; grava(ref.src === "o" ? { situacao: sv, feita: k !== "agendada" } : { situacao: sv }, { resultado: k === "agendada" ? null : k }, "Reunião · " + l.toLowerCase());
+            this.diz(k === "noshow" ? "Não compareceu registrado. Use Editar ou reagendar para marcar outra data." : "Reunião marcada como " + l.toLowerCase(), k === "realizada" || k === "agendada" ? "ok" : "aviso"); },
+          style: "height:32px;padding:0 12px;border-radius:9999px;border:0;cursor:pointer;font-size:12.5px;font-weight:600;white-space:nowrap;" + (cur === k ? "background:#12171d;color:#fff" : "background:#fff;color:#1f252c;box-shadow:inset 0 0 0 1px #dbdede") })),
+        editar: () => this.editar(ref) };
+    })();
+
+    const reu = (() => {
+      const RU = S.reu; if (!RU) return { aberto: false, conv: [], duracoes: [], tipos: [], equipe: [], oppsOpc: [] };
+      const up = (p) => this.setState(s => ({ reu: Object.assign({}, s.reu, p) }));
+      const oppsL = this.opps(), O = RU.oppId ? oppsL.find(o => o.id === RU.oppId) : null, edit = !!RU.ref;
+      const empresa = O ? O.empresa : (RU.empresa || "").trim(), pessoa = O ? O.pessoa : (RU.pessoa || "").trim();
+      const email = pessoa ? this.emailDe(pessoa, empresa, O && O.leadId) : null;
+      const falta = { data: !RU.data, hora: !RU.hora, titulo: !(RU.titulo || "").trim(), conv: RU.novoConv != null && RU.novoConv.trim() !== "" && !mailOk(RU.novoConv) };
+      const ok = !falta.data && !falta.hora && !falta.titulo && !falta.conv;
+      const fmtData = RU.data ? RU.data.split("-").reverse().join("/") : "";
+      const inp = (bad) => "width:100%;height:42px;padding:0 12px;border-radius:10px;border:0;outline:0;background:#fff;font-size:14px;color:#12171d;box-shadow:inset 0 0 0 1px " + (RU.tentou && bad ? "#d93c1a" : "#dbdede");
+      const chipS = (on) => "flex:1;display:flex;align-items:center;justify-content:center;gap:8px;height:42px;border-radius:10px;border:0;cursor:pointer;font-size:13.5px;font-weight:600;white-space:nowrap;" + (on ? "background:#12171d;color:#fff" : "background:#fff;color:#1f252c;box-shadow:inset 0 0 0 1px #dbdede");
+      const addConv = () => { const v = (RU.novoConv || "").trim(); if (!mailOk(v)) return up({ tentou: true }); up({ conv: (RU.conv || []).concat(v), novoConv: "" }); };
+      return { aberto: true, fechar: () => this.setState({ reu: null }),
+        tituloModal: edit ? "Editar reunião" : "Agendar reunião", subModal: O ? "A reunião entra na agenda e nas atividades da oportunidade." : "A reunião entra na sua agenda e em Atividades.",
+        temCartao: !!(empresa && (edit || O)), empresa, iniE: ini(empresa), sub: [pessoa, O && O.cargo].filter(Boolean).join(" · ") || "Sem contato", temFam: !!(O && FAM[O.familia]), familia: O ? FAM[O.familia] || "" : "",
+        escolhe: !edit, semOpp: !O, oppId: RU.oppId || "", oppL: O ? (FAM[O.familia] || "") + " · " + O.empresa : "Sem oportunidade",
+        oppsOpc: [{ v: "", l: "Sem oportunidade" }].concat(oppsL.filter(o => o.etapa !== "perdido").map(o => ({ v: o.id, l: (FAM[o.familia] || "") + " · " + o.empresa }))),
+        setOpp: (e) => { const O2 = oppsL.find(o => o.id === e.target.value); up({ oppId: O2 ? O2.id : "", closer: O2 ? O2.resp : RU.closer, titulo: O2 && !(RU.titulo || "").trim() ? O2.empresa + " x Callface" : RU.titulo }); },
+        ...(() => {
+          const RK = { Contato: 0, Prospect: 1, Lead: 2, Cliente: 3 }, RC = { Contato: ["#eeeff3", "#4a5560"], Prospect: ["#e8f0fb", "#2c5f9e"], Lead: ["#fff6f4", "#c2330f"], Cliente: ["#e6f4ee", "#1f7256"] };
+          const emps = {}, pess = {};
+          const putE = (n, rel, sub) => { if (!n) return; const c = emps[n]; if (!c) emps[n] = { n, rel, sub: sub || "" }; else if (RK[rel] > RK[c.rel]) c.rel = rel; };
+          const putP = (n, emp, rel, sub, email) => { if (!n) return; const k = n + "|" + (emp || ""); const c = pess[k]; if (!c) pess[k] = { n, emp: emp || "", rel, sub: sub || "", email }; else if (RK[rel] > RK[c.rel]) c.rel = rel; };
+          this.leads().forEach(l => { const rel = ["nutricao", "desqualificado"].indexOf(l.etapa) >= 0 ? "Contato" : "Lead"; putE(l.empresa, rel, typeof l.segmento === "string" ? l.segmento : ""); putP(l.pessoa, l.empresa, rel, l.cargo, l.email); });
+          oppsL.forEach(o => { const rel = o.etapa === "ganho" ? "Cliente" : o.etapa === "perdido" ? "Contato" : "Lead"; putE(o.empresa, rel, ""); (o.pessoas && o.pessoas.length ? o.pessoas : [{ nome: o.pessoa, papel: o.cargo }]).forEach(p => putP(p.nome, o.empresa, rel, p.papel)); });
+          ["empresas", "pessoas"].forEach(ch => { const arr = E && E.ler(ch, null); if (!Array.isArray(arr)) return; arr.forEach(x => { if (!x) return; const rel = RK[x.relacionamento] != null ? x.relacionamento : "Contato"; if (ch === "empresas") putE(x.nome || x.empresa, rel, x.segmento); else putP(x.nome || x.pessoa, x.empresa, rel, x.cargo, x.email); }); });
+          const sem = (t) => String(t || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+          const qE = sem(RU.empresa), qP = sem(RU.pessoa), foco = S.foco;
+          const listaE = Object.keys(emps).map(k => emps[k]).filter(x => !qE || sem(x.n).indexOf(qE) >= 0).sort((a, b) => (sem(a.n).indexOf(qE) - sem(b.n).indexOf(qE)) || a.n.localeCompare(b.n)).slice(0, 8);
+          const listaP = Object.keys(pess).map(k => pess[k]).filter(x => (!qP || sem(x.n).indexOf(qP) >= 0 || sem(x.emp).indexOf(qP) >= 0) && (!RU.empresa || !emps[RU.empresa] || x.emp === RU.empresa)).sort((a, b) => a.n.localeCompare(b.n)).slice(0, 8);
+          const exataE = !!emps[RU.empresa], exataP = Object.keys(pess).some(k => pess[k].n === RU.pessoa);
+          const pill = (rel) => { const c = RC[rel] || RC.Contato; return "flex:0 0 auto;height:20px;padding:0 7px;border-radius:9999px;display:inline-flex;align-items:center;font-size:10.5px;font-weight:600;background:" + c[0] + ";color:" + c[1]; };
+          const idx = S.sugIdx || 0;
+          const optS = (on) => "display:flex;align-items:center;gap:10px;width:100%;padding:7px 8px;border-radius:8px;border:0;cursor:pointer;text-align:left;background:" + (on ? "#f3f4f4" : "transparent");
+          const escE = (x) => { up({ titulo: (RU.titulo || "").trim() ? RU.titulo : x.n + " x Callface", empresa: x.n, pessoa: RU.pessoa && Object.keys(pess).some(k => pess[k].n === RU.pessoa && pess[k].emp === x.n) ? RU.pessoa : "" }); this.setState({ foco: "pessoa", sugIdx: 0 }); };
+          const escP = (x) => { up({ pessoa: x.n, empresa: x.emp || RU.empresa, titulo: (RU.titulo || "").trim() ? RU.titulo : (x.emp ? x.emp + " x Callface" : "") }); this.setState({ foco: null, sugIdx: 0 }); };
+          const tecla = (lista, esc) => (e) => { if (e.key === "ArrowDown") { e.preventDefault(); this.setState({ sugIdx: Math.min(lista.length - 1, idx + 1) }); } else if (e.key === "ArrowUp") { e.preventDefault(); this.setState({ sugIdx: Math.max(0, idx - 1) }); } else if (e.key === "Enter" && lista[idx]) { e.preventDefault(); esc(lista[idx]); } else if (e.key === "Escape") { e.stopPropagation(); this.setState({ foco: null }); } };
+          const inpS = (ok) => "width:100%;height:42px;padding:0 34px 0 34px;border-radius:10px;border:0;outline:0;background:#fff;font-size:14px;color:#12171d;box-shadow:inset 0 0 0 " + (ok ? "1.5px #1f7256" : "1px #dbdede");
+          return {
+            empresaIn: RU.empresa || "", setEmpresa: (e) => { up({ empresa: e.target.value }); this.setState({ foco: "empresa", sugIdx: 0 }); }, pessoaIn: RU.pessoa || "", setPessoa: (e) => { up({ pessoa: e.target.value }); this.setState({ foco: "pessoa", sugIdx: 0 }); },
+            focoempresa: () => this.setState({ foco: "empresa", sugIdx: 0 }), focopessoa: () => this.setState({ foco: "pessoa", sugIdx: 0 }), sair: () => setTimeout(() => this.setState({ foco: null }), 120),
+            teclaempresa: tecla(listaE, escE), teclapessoa: tecla(listaP, escP),
+            empresaInp: inpS(exataE), pessoaInp: inpS(exataP), empresaOk: !!RU.empresa, pessoaOk: !!RU.pessoa,
+            limparempresa: (e) => { e.preventDefault(); up({ empresa: "", pessoa: "" }); this.setState({ foco: "empresa" }); }, limparpessoa: (e) => { e.preventDefault(); up({ pessoa: "" }); this.setState({ foco: "pessoa" }); },
+            empresaLista: foco === "empresa" && !exataE, pessoaLista: foco === "pessoa" && !exataP,
+            empresaSug: listaE.map((x, i) => ({ l: x.n, sub: x.sub || Object.keys(pess).filter(k => pess[k].emp === x.n).length + " contatos", ini: ini(x.n), rel: x.rel, relStyle: pill(x.rel), style: optS(i === idx), escolher: (e) => { e.preventDefault(); escE(x); } })),
+            pessoaSug: listaP.map((x, i) => ({ l: x.n, sub: [x.sub, x.emp].filter(Boolean).join(" · "), ini: ini(x.n), rel: x.rel, relStyle: pill(x.rel), style: optS(i === idx), escolher: (e) => { e.preventDefault(); escP(x); } })),
+            empresaNada: !listaE.length, empresaNadaTxt: RU.empresa ? "Nenhuma empresa com “" + RU.empresa + "”. Vai ficar como texto livre." : "Nenhuma empresa na base.",
+            pessoaNada: !listaP.length, pessoaNadaTxt: RU.pessoa ? "Nenhum contato com “" + RU.pessoa + "”. Vai ficar como texto livre." : (RU.empresa ? "Nenhum contato em " + RU.empresa + "." : "Nenhum contato na base.")
+          };
+        })(),
+        pessoa: pessoa || "Convidados", email: email || "Inclua quem vai participar pelo e-mail", iniP: pessoa ? ini(pessoa) : "+",
+        conv: (RU.conv || []).map((c, i) => ({ email: c, remover: () => up({ conv: RU.conv.filter((_, k) => k !== i) }) })), temConv: (RU.conv || []).length > 0,
+        addAberto: RU.novoConv != null, abrirAdd: () => up({ novoConv: "" }), novoConv: RU.novoConv || "", setNovo: (e) => up({ novoConv: e.target.value }), addConv,
+        teclaConv: (e) => { if (e.key === "Enter") { e.preventDefault(); addConv(); } else if (e.key === "Escape") { e.stopPropagation(); up({ novoConv: null }); } },
+        convErro: RU.tentou && falta.conv, convInp: inp(falta.conv),
+        data: RU.data, setData: (e) => up({ data: e.target.value }), dataInp: inp(falta.data),
+        hora: RU.hora, setHora: (e) => up({ hora: e.target.value }), horaInp: inp(falta.hora),
+        duracoes: [[30, "30 min"], [45, "45 min"], [60, "1 h"]].map(([v, l]) => ({ label: l, style: chipS(RU.dur === v), onClick: () => up({ dur: v }) })),
+        closer: RU.closer, setCloser: (e) => up({ closer: e.target.value }), equipe: equipe.map(p => ({ v: p, l: p })),
+        tipos: Object.keys(FMT).map(l => ({ label: l, d: FMT[l], style: chipS(RU.tipo === l), onClick: () => up({ tipo: l }) })),
+        titulo: RU.titulo, setTitulo: (e) => up({ titulo: e.target.value }), tituloInp: inp(falta.titulo), tituloPh: "Ex.: Apresentação comercial",
+        pauta: RU.pauta, setPauta: (e) => up({ pauta: e.target.value }),
+        salvarTxt: edit ? "Salvar e atualizar convite" : "Agendar reunião",
+        ehPresencial: RU.tipo === "Presencial", ehVideo: RU.tipo === "Vídeo", local: RU.local || "", setLocal: (e) => up({ local: e.target.value }),
+        linkTxt: edit ? "O link do Teams é mantido. Se mudar data ou horário, o convite é atualizado e os aceites voltam a aguardando." : "O link do Teams é gerado pelo Outlook quando você agendar.",
+        resumoStyle: "white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" + (RU.tentou && !ok ? "color:#c2330f;font-weight:600" : ""), resumo: RU.tentou && !ok ? "Falta preencher: " + [falta.titulo ? "título" : null, falta.data ? "data" : null, falta.hora ? "horário" : null, falta.conv ? "e-mail do convidado" : null].filter(Boolean).join(", ") : fmtData ? fmtData + " às " + RU.hora + " · " + (RU.dur === 60 ? "1 h" : RU.dur + " min") + " · " + RU.tipo : "Escolha a data",
+        salvarStyle: "height:42px;padding:0 20px;border-radius:10px;border:0;font-size:13.5px;font-weight:700;white-space:nowrap;cursor:pointer;color:#fff;background:#1f7256",
+        salvar: () => {
+          if (!ok) return up({ tentou: true });
+          const quando = fmtData + " · " + RU.hora, M0 = edit ? this.ler(RU.ref) : null, antR = M0 ? M0.RE : {};
+          const participantes = (email ? [email] : []).concat(RU.conv || []).filter((x, i, a) => a.indexOf(x) === i);
+          const rsvp = Object.assign({}, antR.rsvp || {}); participantes.forEach(p => { if (!rsvp[p]) rsvp[p] = "aguardando"; }); Object.keys(rsvp).forEach(p => { if (participantes.indexOf(p) < 0) delete rsvp[p]; });
+          const mudouHora = edit && (M0.data !== RU.data || M0.hora !== RU.hora); if (mudouHora) participantes.forEach(p => { rsvp[p] = "aguardando"; });
+          const seed = ((O ? O.id : "r") + RU.data + RU.hora).split("").reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7).toString(36);
+          const link = RU.tipo === "Vídeo" ? (antR.link && !mudouHora ? antR.link : "https://teams.microsoft.com/l/meetup-join/19%3ameeting_" + seed + "%40thread.v2") : null;
+          const R = { data: RU.data, hora: RU.hora, duracao: RU.dur, formato: RU.tipo, closer: RU.closer, participantes, rsvp, link, local: RU.local || "", calendario: "Outlook", sincronizado: "agora" };
+          const tit = RU.titulo.trim(), desc = (RU.pauta || "").trim();
+          let ref = RU.ref;
+          if (edit) {
+            const pA = ref.src === "o" ? { titulo: tit, desc, autor: RU.closer, tipo: "Reunião" } : { titulo: tit, desc, tipo: "Reunião", resp: RU.closer, assignees: [RU.closer].concat(((M0.A.assignees) || []).filter(n => n !== RU.closer)) };
+            this.gravar(ref, M0, pA, R, (mudouHora ? "Reunião reagendada · " : "Reunião atualizada · ") + quando);
+          } else if (O) {
+            const opps = oppsL.slice(), k = opps.findIndex(o => o.id === O.id);
+            const atv = { titulo: tit, tipo: "Reunião", quando, feita: false, situacao: "A fazer", autor: RU.closer, desc, reuniao: R };
+            opps[k] = Object.assign({}, O, { atvs: [atv].concat(O.atvs || []), via: "reuniao", eventos: [{ t: "Reunião agendada · " + quando + " · " + RU.tipo + " com " + O.pessoa, quando: "Hoje", autor: RU.closer }].concat(O.eventos || []) });
+            E && E.gravar({ opps }); ref = { src: "o", oppId: O.id, i: 0 };
+          } else {
+            const id = "r" + Date.now().toString(36);
+            const nova = { id, titulo: tit, tipo: "Reunião", area: "Comercial", situacao: "A fazer", prioridade: "Média", resp: RU.closer, assignees: [RU.closer], criadoPor: EU, empresa: empresa || null, pessoa: pessoa || null, vincTipo: pessoa ? "pessoa" : empresa ? "empresa" : "nenhum",
+              desc, iniD: RU.data, iniH: RU.hora, fimD: RU.data, fimH: this.soma(RU.hora, RU.dur), inicio: null, fim: null, sub: [], comentarios: [], reuniao: R, log: [{ autor: EU, texto: "agendou a reunião", quando: this.agora() }] };
+            E && E.gravar({ atividadesV2: this.lista().concat([nova]) }); ref = { src: "p", id };
+          }
+          this.setState({ reu: null, ver: ref });
+          this.diz(edit ? (mudouHora ? "Reunião reagendada. Convite atualizado no Outlook." : "Reunião atualizada no Outlook.") : "Reunião agendada para " + quando + (participantes.length ? ". Convite enviado pelo Outlook a " + participantes.length + (participantes.length > 1 ? " pessoas" : " pessoa") : ""));
+        } };
+    })();
+
+    return { rv, reu, parar: (e) => e.stopPropagation() };
+  }
+}

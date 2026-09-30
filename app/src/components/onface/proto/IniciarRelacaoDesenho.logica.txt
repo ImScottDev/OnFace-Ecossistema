@@ -1,0 +1,123 @@
+
+class Component extends DCLogic {
+  state = { ctx: null, passo: 0, cam: null, f: {}, tentou: false };
+
+  componentDidMount() {
+    const E = window.OnFaceEstado;
+    if (!E) return;
+    this._off = E.assinarPecas((peca, ctx) => {
+      if (peca !== "iniciarRelacao" || !ctx) return;
+      const p0 = (ctx.pessoas || [])[0] || {};
+      const L = this.leads().find(l => l.empresa === ctx.empresa) || {};
+      this.setState({ ctx, passo: 0, cam: null, tentou: false,
+        f: { contato: ctx.pessoa || p0.nome || "", origem: L.origem && L.origem !== "Outbound" ? L.origem : "", etapa: "novo", resp: ctx.resp || "Camila Reis", interesse: L.interesse || "Callface AI", cadencia: "Primeiro contato", tipo: ctx.rel === "Cliente" ? "expansao" : "nova", familia: ({ "Callface AI": "CALLFACE_AI", PABX: "PABX", "White Label": "WHITE_LABEL" })[L.interesse] || "CALLFACE_AI", motivo: "" } });
+    });
+    this._esc = (e) => { if (e.key === "Escape" && this.state.ctx) this.setState({ ctx: null }); };
+    document.addEventListener("keydown", this._esc);
+  }
+  componentWillUnmount() { if (this._off) this._off(); document.removeEventListener("keydown", this._esc); }
+
+  leads() { const E = window.OnFaceEstado, D = window.OnFaceDados || {}; return (E && E.ler("leads", null)) || D.LEADS || []; }
+  opps() { const E = window.OnFaceEstado, D = window.OnFaceDados || {}; return (E && E.ler("opps", null)) || D.OPORTUNIDADES || []; }
+  agora() { const d = new Date(); return "Hoje, " + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); }
+
+  renderVals() {
+    const S = this.state, C = S.ctx, E = window.OnFaceEstado, D = window.OnFaceDados || {};
+    if (!C) return { aberto: false, passos: [], caminhos: [], contatos: [], origens: [], etapas: [], equipe: [], interesses: [], cadencias: [], tipos: [], familias: [], efeitos: [] };
+    const F = S.f, up = (p) => this.setState(s => ({ f: Object.assign({}, s.f, p), tentou: false }));
+    const ini = D.iniciais || ((n) => (n || "").split(" ").map(x => x[0]).slice(0, 2).join("").toUpperCase());
+    const equipe = D.EQUIPE || ["Camila Reis", "Diego Nunes", "Ana Vitória"];
+    const FAM = { CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label" };
+    const TIPO = { nova: "Nova venda", expansao: "Expansão", upgrade: "Upgrade", renovacao: "Renovação" };
+    const ETQ = { novo: "Novo", em_contato: "Em contato", qualificacao: "Qualificação" };
+    const chip = (on) => "height:32px;padding:0 12px;border-radius:9999px;border:0;cursor:pointer;font-size:12.5px;font-weight:600;white-space:nowrap;" + (on ? "background:#12171d;color:#fff" : "background:#fff;color:#1f252c;box-shadow:inset 0 0 0 1px #dbdede");
+    const rel = C.rel || "Contato";
+    const CAM = [
+      ["pv", "Enviar para Pré-vendas", "O SDR qualifica antes de virar oportunidade. Use para quem chegou por canal inbound e ainda não foi trabalhado.", "Lead", "Entra no quadro do Pré-vendas na etapa escolhida, com cadência", "M22 12h-4l-3 9L9 3l-3 9H2", false],
+      ["opp", "Criar oportunidade", "Pula o Pré-vendas: já existe interesse claro, indicação ou pedido de proposta. Precisa de empresa, que já temos.", "Lead", "Entra no Pipeline em Entrada, com o closer escolhido", "M12 2v20M17 6H9.5a3.5 3.5 0 1 0 0 7h5a3.5 3.5 0 1 1 0 7H6", false],
+      ["prosp", "Colocar em prospecção", "Outbound: a Callface vai atrás do contato com uma lista e cadência de prospecção.", "Prospect", "Página Prospecção", "M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM21 21l-4.3-4.3", true]
+    ];
+    const cam = S.cam, ehPv = cam === "pv", ehOpp = cam === "opp";
+    const contatos = (C.pessoas || []).filter(p => p && p.nome);
+    const erro = S.passo === 1 ? (!F.contato ? "Escolha o contato." : ehPv && !F.origem ? "Escolha a origem." : ehOpp && (F.motivo || "").trim().length < 10 ? "Conte em uma frase por que já vai para o Pipeline." : "") : "";
+    const fechar = () => this.setState({ ctx: null });
+    const P = contatos.find(p => p.nome === F.contato) || {};
+    const efeitos = ehPv ? [
+      ["Entra no Pré-vendas em " + ETQ[F.etapa], F.contato + " · " + C.empresa + " · origem " + F.origem + (F.resp ? " · SDR " + F.resp : ""), "M4 4h4v16H4zM10 4h4v10h-4zM16 4h4v6h-4z"],
+      rel === "Contato" ? ["Relacionamento passa a Lead", "Empresa e contato deixam de ser só Contato na base", "M20 6 9 17l-5-5"] : ["Relacionamento continua " + rel, rel === "Cliente" ? "Quem já compra pode ter uma nova aquisição em andamento" : "Mais uma aquisição sendo trabalhada com esta empresa", "M20 6 9 17l-5-5"],
+      [F.cadencia ? "Cadência “" + F.cadencia + "” começa hoje" : "Sem cadência", F.cadencia ? "Primeiro passo agendado para " + F.resp : "Você pode incluir depois pelo drawer do lead", "M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5"],
+      ["Registro na timeline", "Empresa e contato ganham o evento “Enviado ao Pré-vendas”", "M12 8v4l3 2M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z"]
+    ] : [
+      [TIPO[F.tipo] + " de " + FAM[F.familia] + " no Pipeline", "Entra em Entrada com " + F.resp + " como closer · contato " + F.contato, "M4 4h4v16H4zM10 4h4v10h-4zM16 4h4v6h-4z"],
+      rel === "Contato" ? ["Relacionamento passa a Lead", "Até a oportunidade ser ganha, quando vira Cliente", "M20 6 9 17l-5-5"] : ["Relacionamento continua " + rel, rel === "Cliente" ? "É uma nova oportunidade para quem já compra" : "Até a oportunidade ser ganha, quando vira Cliente", "M20 6 9 17l-5-5"],
+      ["Primeira nota interna", "“" + (F.motivo || "").trim().slice(0, 90) + ((F.motivo || "").trim().length > 90 ? "…" : "") + "”", "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6"],
+      ["Atividade de diagnóstico", "Agendar reunião de diagnóstico · para " + F.resp + " amanhã", "M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"]
+    ];
+    const concluir = () => {
+      if (!E) return;
+      const evTxt = ehPv ? "Enviado ao Pré-vendas · " + ETQ[F.etapa] + " · " + F.contato : TIPO[F.tipo] + " de " + FAM[F.familia] + " criada · closer " + F.resp;
+      const emps = Object.assign({}, E.ler("empresas", {})), X = emps[C.empresa] || {};
+      emps[C.empresa] = Object.assign({}, X, { eventos: [{ titulo: evTxt, quando: this.agora(), autor: "Scott Ferraz", tipo: ehPv ? "aquisicao" : "oportunidade" }].concat(X.eventos || []) });
+      if (ehPv) {
+        const id = "l" + Date.now().toString(36);
+        const leads = this.leads().concat([{ id, etapa: F.etapa, empresa: C.empresa, pessoa: F.contato, cargo: P.cargo || "", email: P.email || "", tel: P.tel || "", origem: F.origem, campanha: "", interesse: F.interesse, resp: F.resp, acao: F.cadencia ? "Primeiro contato" : null, venceEm: F.cadencia ? "hoje" : null, dias: 0, tag: "Inbound" }]);
+        const cads = Object.assign({}, E.ler("cadencias", {})); if (F.cadencia) cads[id] = F.cadencia;
+        E.gravar({ leads, cadencias: cads, empresas: emps });
+        this.setState({ ctx: null });
+        E.avisar(F.contato + " enviado ao Pré-vendas em " + ETQ[F.etapa], "ok");
+        if (C.aoConcluir) C.aoConcluir("pv", id);
+      } else {
+        const id = "o" + Date.now().toString(36);
+        const d2 = new Date(); d2.setDate(d2.getDate() + 1);
+        const opps = this.opps().concat([{ id, empresa: C.empresa, pessoa: F.contato, cargo: P.cargo || "", familia: F.familia, etapa: "entrada", resp: F.resp, dias: 0, tipo: F.tipo, origem: C.origem || "Base de contatos",
+          itens: [], propostas: [], pessoas: [{ nome: F.contato, papel: "Contato principal" }],
+          atvs: [{ titulo: "Agendar reunião de diagnóstico", tipo: "Tarefa", situacao: "A fazer", feita: false, autor: F.resp, quando: String(d2.getDate()).padStart(2, "0") + "/" + String(d2.getMonth() + 1).padStart(2, "0") + " · 10:00", desc: "Oportunidade criada direto da base de " + C.empresa + ". Entender volume, dor e decisor." }],
+          notas: [{ autor: "Scott Ferraz", quando: this.agora(), texto: F.motivo.trim(), tag: "Criada da base", anexos: [] }],
+          eventos: [{ t: evTxt, quando: this.agora(), autor: "Scott Ferraz" }] }]);
+        E.gravar({ opps, empresas: emps });
+        this.setState({ ctx: null });
+        E.avisar(TIPO[F.tipo] + " de " + FAM[F.familia] + " criada no Pipeline", "ok");
+        E.irPara("/onface-preview/oportunidade", C.empresa, { opp: id, ver: "" });
+      }
+    };
+    const PASSOS = ["Caminho", "Detalhes", "Revisão"];
+    return {
+      aberto: true, fechar, parar: (e) => e.stopPropagation(),
+      titulo: "Iniciar relação", sub: C.empresa + (C.pessoa ? " · " + C.pessoa : "") + " · relacionamento atual: " + rel,
+      passos: PASSOS.map((l, i) => { const on = i === S.passo, ok = i < S.passo; return { n: ok ? "✓" : String(i + 1), label: l,
+        wrap: "display:flex;align-items:center;gap:7px;" + (i ? "padding-left:10px;margin-left:4px;box-shadow:inset 1px 0 0 #e3e7e8" : ""),
+        num: "width:20px;height:20px;border-radius:9999px;display:grid;place-items:center;font-size:11px;font-weight:700;" + (on ? "background:#12171d;color:#fff" : ok ? "background:#e6f4ee;color:#1f7256" : "background:#eeeff3;color:#8b949e"),
+        lbl: "font-size:12.5px;font-weight:600;color:" + (on ? "#12171d" : "#8b949e") }; }),
+      p1: S.passo === 0, p2: S.passo === 1, p3: S.passo === 2,
+      caminhos: CAM.map(([k, l, s, relN, quando, d, bloq]) => { const on = cam === k; return { l, s, rel: rel === "Contato" || (rel === "Lead" && relN === "Prospect") ? rel + " → " + relN : "Continua " + rel, quando, d, bloqueado: bloq,
+        onClick: () => { if (bloq) return E && E.avisar("Prospecção entra quando fizermos a página de Prospecção", "aviso"); this.setState({ cam: k, passo: 1, tentou: false }); },
+        style: "display:flex;align-items:flex-start;gap:14px;width:100%;padding:16px;border-radius:14px;border:0;cursor:" + (bloq ? "default" : "pointer") + ";background:" + (bloq ? "#fafafa" : "#fff") + ";box-shadow:inset 0 0 0 " + (on ? "1.5px #12171d" : "1px #e3e7e8") + ";opacity:" + (bloq ? ".7" : "1"),
+        ico: "flex:0 0 auto;width:40px;height:40px;border-radius:11px;display:grid;place-items:center;" + (k === "pv" ? "background:#e8f0fb;color:#2c5f9e" : k === "opp" ? "background:#fff6f4;color:#c2330f" : "background:#eeeff3;color:#67787c"),
+        relStyle: "display:inline-flex;align-items:center;height:20px;padding:0 7px;border-radius:9999px;background:#eeeff3;color:#4a5560;font-size:11px;font-weight:600" }; }),
+      lbl: "display:flex;gap:3px;margin-bottom:8px;font-size:11.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#4a5560",
+      contatos: contatos.map(p => { const on = F.contato === p.nome; return { nome: p.nome, cargo: [p.cargo, p.email].filter(Boolean).join(" · ") || "Sem cargo", ini: ini(p.nome), onClick: () => up({ contato: p.nome }),
+        style: "display:flex;align-items:center;gap:10px;width:100%;padding:9px 12px;border-radius:11px;border:0;cursor:pointer;background:#fff;box-shadow:inset 0 0 0 " + (on ? "1.5px #12171d" : "1px #e3e7e8"),
+        radio: "flex:0 0 auto;width:16px;height:16px;border-radius:9999px;box-shadow:inset 0 0 0 " + (on ? "5px #12171d" : "1.5px #a9b1b4") }; }),
+      ehPv, ehOpp,
+      origens: ["Meta Ads", "Instagram", "Site", "Formulário", "WhatsApp", "Orgânica"].map(o => ({ l: o, style: chip(F.origem === o), onClick: () => up({ origem: o }) })),
+      etapas: Object.keys(ETQ).map(k => ({ l: ETQ[k], style: chip(F.etapa === k), onClick: () => up({ etapa: k }) })),
+      resp: F.resp, setResp: (e) => up({ resp: e.target.value }), equipe: equipe.map(p => ({ v: p, l: p })),
+      selBox: "position:relative;display:flex;align-items:center;gap:8px;height:40px;padding:0 12px;border-radius:10px;background:#fff;box-shadow:inset 0 0 0 1px #dbdede;cursor:pointer",
+      interesses: ["Callface AI", "PABX", "White Label"].map(o => ({ l: o, style: chip(F.interesse === o), onClick: () => up({ interesse: o }) })),
+      cadencias: [""].concat(D.CADENCIAS || []).map(c => ({ l: c || "Sem cadência", style: chip((F.cadencia || "") === c), onClick: () => up({ cadencia: c }) })),
+      tipos: Object.keys(TIPO).filter(k => rel === "Cliente" || k === "nova").map(k => ({ l: TIPO[k], style: chip(F.tipo === k), onClick: () => up({ tipo: k }) })),
+      familias: Object.keys(FAM).map(k => ({ l: FAM[k], style: chip(F.familia === k), onClick: () => up({ familia: k }) })),
+      motivo: F.motivo, setMotivo: (e) => up({ motivo: e.target.value }),
+      motivoStyle: "width:100%;padding:10px 12px;border-radius:10px;border:0;outline:0;resize:vertical;background:#fff;font-size:13px;line-height:1.5;color:#12171d;box-shadow:inset 0 0 0 1px " + (S.tentou && ehOpp && (F.motivo || "").trim().length < 10 ? "#d93c1a" : "#dbdede"),
+      temErro: S.tentou && !!erro, erro,
+      relDe: rel, relMuda: rel === "Contato", relMantem: rel !== "Contato", relPara: rel === "Contato" ? "Lead" : rel, relDeStyle: "display:inline-flex;align-items:center;height:26px;padding:0 10px;border-radius:9999px;background:#eeeff3;color:#4a5560;font-size:12.5px;font-weight:700",
+      relAlvo: C.empresa + " · " + F.contato,
+      efeitos: efeitos.map(([t, s, d]) => ({ t, s, d })),
+      temVoltar: S.passo > 0, voltar: () => this.setState(s => ({ passo: Math.max(0, s.passo - 1), tentou: false })),
+      temAvancar: S.passo > 0,
+      avancarTxt: S.passo === 1 ? "Revisar" : ehPv ? "Enviar ao Pré-vendas" : "Criar oportunidade",
+      avancarStyle: "flex:0 0 auto;white-space:nowrap;height:40px;padding:0 18px;border-radius:10px;border:0;cursor:pointer;font-size:13px;font-weight:700;color:#fff;background:" + (S.passo === 2 ? "#d93c1a" : "#12171d"),
+      avancar: () => { if (S.passo === 1) { if (erro) return this.setState({ tentou: true }); return this.setState({ passo: 2 }); } concluir(); }
+    };
+  }
+}

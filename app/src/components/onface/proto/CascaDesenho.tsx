@@ -36,13 +36,14 @@ export interface ValoresDeCascaDesenho {
   buscaVazioTitulo: any;
   buscar: any;
   children: any;
-  criar: any;
   criarStyle: any;
   fechada: any;
   fecharBusca: any;
+  fecharMenuMob: any;
   filtrosSino: any;
   gruposBusca: any;
   itensPerfil: any;
+  menuMob: any;
   nexo: any;
   nexoBtnStyle: any;
   nexoMarca: any;
@@ -51,6 +52,7 @@ export interface ValoresDeCascaDesenho {
   perfilAberto: any;
   perfilBtnStyle: any;
   perfilChevron: any;
+  qa: any;
   railStyle: any;
   sair: any;
   setTermo: any;
@@ -71,11 +73,12 @@ export interface ValoresDeCascaDesenho {
 }
 
 export function CascaDesenho(vals: ValoresDeCascaDesenho) {
-  const { aberta, abrirNexo, areas, aviso, avisoPonto, buscaAberta, buscaRef, buscaSemDados, buscaVazioTexto, buscaVazioTitulo, buscar, children, criar, criarStyle, fechada, fecharBusca, filtrosSino, gruposBusca, itensPerfil, nexo, nexoBtnStyle, nexoMarca, nexoResumo, parar, perfilAberto, perfilBtnStyle, perfilChevron, railStyle, sair, setTermo, sinoAberto, sinoBtnStyle, sinoVazioTexto, sinoVazioTitulo, subtitulo, teclaBusca, temAviso, temSubtitulo, termo, titulo, togglePerfil, toggleRail, toggleSino, trilha } = vals;
+  const { aberta, abrirNexo, areas, aviso, avisoPonto, buscaAberta, buscaRef, buscaSemDados, buscaVazioTexto, buscaVazioTitulo, buscar, children, criarStyle, fechada, fecharBusca, fecharMenuMob, filtrosSino, gruposBusca, itensPerfil, menuMob, nexo, nexoBtnStyle, nexoMarca, nexoResumo, parar, perfilAberto, perfilBtnStyle, perfilChevron, qa, railStyle, sair, setTermo, sinoAberto, sinoBtnStyle, sinoVazioTexto, sinoVazioTitulo, subtitulo, teclaBusca, temAviso, temSubtitulo, termo, titulo, togglePerfil, toggleRail, toggleSino, trilha } = vals;
   return (
     <>
-<div style={{ display: "flex", height: "100vh", maxHeight: "100vh", overflow: "hidden", background: "#090e14", padding: "10px", gap: "10px", fontSize: "14px" }}>
-<aside style={estilo(railStyle)}>
+<div data-r="casca" data-menu={menuMob} style={{ display: "flex", height: "100vh", maxHeight: "100vh", overflow: "hidden", background: "#090e14", padding: "10px", gap: "10px", fontSize: "14px" }}>
+<div data-r="rail-fundo" onClick={fecharMenuMob} style={{ display: "none", position: "fixed", inset: "0", zIndex: "89", background: "rgba(9,14,20,.55)" }} />
+<aside data-r="rail" style={estilo(railStyle)}>
 <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "38px", flex: "0 0 auto", overflow: "hidden" }}>
 {(aberta) ? (<>
 <svg viewBox="0 0 1346 233" width="93" height="16" style={{ flex: "0 0 auto", display: "block", margin: "0 auto 0 9px" }} role="img" aria-label="ONFACE">
@@ -91,16 +94,51 @@ export function CascaDesenho(vals: ValoresDeCascaDesenho) {
 </svg>
 </>) : null}
 </div>
-<button onClick={criar} style={estilo(criarStyle)} title="Criar" className={[hover("background:#c2330f")].filter(Boolean).join(" ")}>
-<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" style={{ flex: "0 0 auto" }}>
-<path d="M8 3.3v9.4M3.3 8h9.4" />
+<button onClick={qa.alternar} style={estilo(criarStyle)} title="Acesso rápido" className={[hover("background:#c2330f")].filter(Boolean).join(" ")}>
+<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" style={{ flex: "0 0 auto" }}>
+<path d="M13 2 3 14h9l-1 8 10-12h-9z" />
 </svg>
 {(aberta) ? (<>
-<span style={{ whiteSpace: "nowrap" }}>
-Criar
+<span style={{ flex: "1", minWidth: "0", textAlign: "left", whiteSpace: "nowrap" }}>
+Acesso rápido
 </span>
+<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={estilo(qa.chev)}>
+<path d="m6 9 6 6 6-6" />
+</svg>
 </>) : null}
 </button>
+<div style={estilo(qa.wrap)}>
+<div style={{ minHeight: "0", overflow: "hidden" }}>
+<div style={estilo(qa.painel)}>
+{(qa.itens ?? []).map((qi: any, i1: number) => (
+<Fragment key={qi?.id ?? qi?.chave ?? i1}>
+<button onClick={qi.onClick} title={qi.l} style={estilo(qi.style)} className={[hover("background:rgba(255,255,255,.08)")].filter(Boolean).join(" ")}>
+<span style={estilo(qi.ico)}>
+<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+<path d={qi.d} />
+</svg>
+</span>
+{(aberta) ? (<>
+<span style={{ flex: "1", minWidth: "0", textAlign: "left" }}>
+<span style={{ display: "block", fontSize: "13px", fontWeight: "600", color: "#eef1f1", whiteSpace: "nowrap" }}>
+{qi.l}
+</span>
+<span style={{ display: "block", marginTop: "1px", fontSize: "11px", color: "#8b949e", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+{qi.s}
+</span>
+</span>
+{(qi.temN) ? (<>
+<span style={estilo(qi.nStyle)}>
+{qi.n}
+</span>
+</>) : null}
+</>) : null}
+</button>
+</Fragment>
+))}
+</div>
+</div>
+</div>
 <nav style={{ marginTop: "14px", display: "flex", flexDirection: "column", overflowY: "auto", overflowX: "hidden", flex: "1 1 0", minHeight: "0", paddingBottom: "6px", gap: "1px" }}>
 {(areas ?? []).map((a: any, i1: number) => (
 <Fragment key={a?.id ?? a?.chave ?? i1}>
@@ -169,18 +207,18 @@ NEXO
 </>) : null}
 </button>
 </aside>
-<main style={{ flex: "1", minWidth: "0", height: "100%", minHeight: "0", background: "#fff", borderRadius: "14px", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-<header style={{ flex: "0 0 auto", height: "52px", display: "flex", alignItems: "center", gap: "10px", padding: "0 13px", borderBottom: "1px solid #e3e7e8" }}>
+<main data-r="main" style={{ flex: "1", minWidth: "0", height: "100%", minHeight: "0", background: "#fff", borderRadius: "14px", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+<header data-r="header" style={{ flex: "0 0 auto", height: "52px", display: "flex", alignItems: "center", gap: "10px", padding: "0 13px", borderBottom: "1px solid #e3e7e8" }}>
 <button onClick={toggleRail} style={{ flex: "0 0 auto", width: "30px", height: "30px", borderRadius: "8px", display: "grid", placeItems: "center", color: "#5c6672" }} title="Recolher menu · ⌘B" className={[hover("background:#f2f2f0;color:#12171d")].filter(Boolean).join(" ")}>
 <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round">
 <rect x="3" y="3" width="18" height="18" rx="2" />
 <path d="M9 3v18" />
 </svg>
 </button>
-<span style={{ flex: "0 0 auto", width: "1px", height: "18px", background: "#e4e4e1" }} />
+<span data-r="esconde-mobile" style={{ flex: "0 0 auto", width: "1px", height: "18px", background: "#e4e4e1" }} />
 {(trilha ?? []).map((t: any, i1: number) => (
 <Fragment key={t?.id ?? t?.chave ?? i1}>
-<span style={{ display: "flex", alignItems: "center", gap: "7px", flex: "0 0 auto", minWidth: "0" }}>
+<span data-r="trilha" style={{ display: "flex", alignItems: "center", gap: "7px", flex: "0 0 auto", minWidth: "0" }}>
 <button onClick={t.ir} style={estilo(t.style)} className={[hover("color:#12171d")].filter(Boolean).join(" ")}>
 {t.label}
 </button>
@@ -194,7 +232,7 @@ NEXO
 {titulo}
 </span>
 {(temSubtitulo) ? (<>
-<span style={{ fontSize: "12.5px", color: "#4a5560", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: "0" }}>
+<span data-r="sub" style={{ fontSize: "12.5px", color: "#4a5560", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: "0" }}>
 {subtitulo}
 </span>
 </>) : null}
@@ -308,9 +346,9 @@ Sair
 </div>
 </main>
 {(nexo.aberto) ? (<>
-<div onClick={nexo.fechar} style={{ position: "fixed", inset: "0", background: "rgba(9,14,20,.5)", zIndex: "58", display: "grid", placeItems: "center", padding: "20px", animation: "of-fade .16s ease-out both" }}>
+<div data-r="modal-fundo" onClick={nexo.fechar} style={{ position: "fixed", inset: "0", background: "rgba(9,14,20,.5)", zIndex: "58", display: "grid", placeItems: "center", padding: "20px", animation: "of-fade .16s ease-out both" }}>
 <div onClick={parar} style={{ width: "900px", maxWidth: "100%", height: "min(640px,calc(100vh - 40px))", background: "#fff", borderRadius: "14px", overflow: "hidden", display: "flex", animation: "of-rise .2s cubic-bezier(.2,0,.2,1) both" }}>
-<aside style={{ flex: "0 0 auto", width: "218px", background: "#12171d", display: "flex", flexDirection: "column", padding: "12px 10px" }}>
+<aside data-r="nexo-lado" style={{ flex: "0 0 auto", width: "218px", background: "#12171d", display: "flex", flexDirection: "column", padding: "12px 10px" }}>
 <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "2px 6px 12px" }}>
 <img src="/proto/oni-avatar.png" alt="ONI" width="26" height="26" style={{ display: "block", borderRadius: "7px", flex: "0 0 auto" }} />
 <span style={{ fontFamily: "'Plus Jakarta Sans',sans-serif", fontSize: "14px", fontWeight: "800", letterSpacing: ".02em", color: "#eeeff3", whiteSpace: "nowrap" }}>
@@ -616,7 +654,7 @@ Consultando a base
 </div>
 </>) : null}
 {(buscaAberta) ? (<>
-<div onClick={fecharBusca} style={{ position: "fixed", inset: "0", background: "rgba(9,14,20,.42)", zIndex: "60", display: "flex", justifyContent: "center", padding: "88px 20px 20px", animation: "of-fade .14s ease-out both" }}>
+<div data-r="modal-fundo" onClick={fecharBusca} style={{ position: "fixed", inset: "0", background: "rgba(9,14,20,.42)", zIndex: "60", display: "flex", justifyContent: "center", padding: "88px 20px 20px", animation: "of-fade .14s ease-out both" }}>
 <div onClick={parar} style={{ width: "576px", maxWidth: "100%", height: "max-content", maxHeight: "calc(100vh - 116px)", background: "#fff", borderRadius: "10px", border: "1px solid #e3e7e8", boxShadow: "0 10px 30px -6px rgba(0,0,0,.22)", overflow: "hidden", display: "flex", flexDirection: "column", animation: "of-rise .16s cubic-bezier(.2,0,.2,1) both" }}>
 <div style={{ flex: "0 0 auto", display: "flex", alignItems: "center", gap: "9px", padding: "12px 14px", borderBottom: "1px solid #eef1f1" }}>
 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4a5560" strokeWidth="1.9" strokeLinecap="round" style={{ flex: "0 0 auto" }}>

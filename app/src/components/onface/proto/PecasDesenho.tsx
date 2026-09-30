@@ -45,10 +45,11 @@ export interface ValoresDePecasDesenho {
   setData: any;
   temDetalhe: any;
   temNutrir: any;
+  vinc: any;
 }
 
 export function PecasDesenho(vals: ValoresDePecasDesenho) {
-  const { atv, atvAberta, cad, confirmarNutrir, dataRetomada, dataStyle, desq, det, exigeData, fecharAtv, fecharDetalhe, fecharNutrir, motivosNutricao, nutrirBtnLabel, nutrirBtnStyle, parar, qual, qualificar, setData, temDetalhe, temNutrir } = vals;
+  const { atv, atvAberta, cad, confirmarNutrir, dataRetomada, dataStyle, desq, det, exigeData, fecharAtv, fecharDetalhe, fecharNutrir, motivosNutricao, nutrirBtnLabel, nutrirBtnStyle, parar, qual, qualificar, setData, temDetalhe, temNutrir, vinc } = vals;
   return (
     <>
 <div style={{ display: "contents" }}>
@@ -56,7 +57,7 @@ export function PecasDesenho(vals: ValoresDePecasDesenho) {
 <div onClick={fecharDetalhe} style={{ position: "fixed", inset: "0", background: "rgba(9,14,20,.42)", zIndex: "40", animation: "of-fade .18s ease-out both" }} />
 </>) : null}
 {(temDetalhe) ? (<>
-<aside style={{ position: "fixed", top: "10px", right: "10px", bottom: "10px", width: "436px", maxWidth: "calc(100vw - 20px)", background: "#fff", borderRadius: "14px", zIndex: "41", display: "flex", flexDirection: "column", overflow: "hidden", animation: "of-slide .26s cubic-bezier(.2,0,.2,1) both" }}>
+<aside data-r="drawer" style={{ position: "fixed", top: "10px", right: "10px", bottom: "10px", width: "436px", maxWidth: "calc(100vw - 20px)", background: "#fff", borderRadius: "14px", zIndex: "41", display: "flex", flexDirection: "column", overflow: "hidden", animation: "of-slide .26s cubic-bezier(.2,0,.2,1) both" }}>
 <div style={{ flex: "0 0 auto", padding: "15px 16px 13px", borderBottom: "1px solid #e3e7e8" }}>
 <div style={{ display: "flex", alignItems: "flex-start", gap: "10px", marginBottom: "11px" }}>
 <span style={estilo(det.avatarStyle)}>
@@ -103,7 +104,7 @@ export function PecasDesenho(vals: ValoresDePecasDesenho) {
 <div style={{ fontSize: "11px", fontWeight: "600", color: "#4a5560", marginBottom: "5px" }}>
 Etapa
 </div>
-<button onClick={det.trocarEtapa} style={{ display: "flex", alignItems: "center", gap: "6px", width: "100%", height: "32px", padding: "0 10px", borderRadius: "8px", background: "#fff", boxShadow: "inset 0 0 0 1px #dbdede", fontSize: "12.5px", fontWeight: "500" }} className={[hover("background:#f6f7f7")].filter(Boolean).join(" ")}>
+<button data-of-dropmenu="1" onClick={det.trocarEtapa} style={{ display: "flex", alignItems: "center", gap: "6px", width: "100%", height: "32px", padding: "0 10px", borderRadius: "8px", background: "#fff", boxShadow: "inset 0 0 0 1px #dbdede", fontSize: "12.5px", fontWeight: "500" }} className={[hover("background:#f6f7f7")].filter(Boolean).join(" ")}>
 <span style={estilo(det.etapaPonto)} />
 <span style={{ flex: "1", minWidth: "0", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textAlign: "left" }}>
 {det.etapa}
@@ -117,7 +118,7 @@ Etapa
 <div style={{ fontSize: "11px", fontWeight: "600", color: "#4a5560", marginBottom: "5px" }}>
 Responsável
 </div>
-<button onClick={det.trocarResp} style={{ display: "flex", alignItems: "center", gap: "6px", width: "100%", height: "32px", padding: "0 10px", borderRadius: "8px", background: "#fff", boxShadow: "inset 0 0 0 1px #dbdede", fontSize: "12.5px", fontWeight: "500" }} className={[hover("background:#f6f7f7")].filter(Boolean).join(" ")}>
+<button data-of-dropmenu="1" onClick={det.trocarResp} style={{ display: "flex", alignItems: "center", gap: "6px", width: "100%", height: "32px", padding: "0 10px", borderRadius: "8px", background: "#fff", boxShadow: "inset 0 0 0 1px #dbdede", fontSize: "12.5px", fontWeight: "500" }} className={[hover("background:#f6f7f7")].filter(Boolean).join(" ")}>
 <span style={estilo(det.respAvatar)}>
 {det.respIniciais}
 </span>
@@ -155,16 +156,22 @@ Tags
 <div style={{ display: "flex", gap: "5px", flexWrap: "wrap" }}>
 {(det.tags ?? []).map((g: any, i1: number) => (
 <Fragment key={g?.id ?? g?.chave ?? i1}>
-<span style={{ display: "inline-flex", alignItems: "center", height: "22px", padding: "0 8px", borderRadius: "6px", background: "#eeeff3", color: "#4a5560", fontSize: "11.5px", fontWeight: "600", whiteSpace: "nowrap", flex: "0 0 auto" }}>
+<span style={estilo(g.style)}>
+{(g.auto) ? (<>
+<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+<path d="M13 2 3 14h9l-1 8 10-12h-9z" />
+</svg>
+</>) : null}
 {g.label}
 </span>
 </Fragment>
 ))}
 <div data-of-tagmenu="1" style={{ position: "relative", flex: "0 0 auto" }}>
-<button onClick={det.addTag} style={estilo(det.addTagStyle)} title="Adicionar tag" className={[hover("background:#f1f3f3;color:#12171d")].filter(Boolean).join(" ")}>
-<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" style={estilo(det.addTagIcone)}>
+<button onClick={det.abrirTags} style={{ display: "inline-flex", alignItems: "center", gap: "4px", height: "24px", padding: "0 9px", borderRadius: "9999px", border: "0", background: "#fff", boxShadow: "inset 0 0 0 1px #dbdede", fontSize: "12px", fontWeight: "600", color: "#4a5560", cursor: "pointer" }} title="Adicionar tag" className={[hover("background:#f1f3f3;color:#12171d")].filter(Boolean).join(" ")}>
+<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
 <path d="M12 5v14M5 12h14" />
 </svg>
+Tag
 </button>
 </div>
 </div>
@@ -323,15 +330,14 @@ QUALIFICAÇÃO
 </span>
 </button>
 {(det.sec.qualif.aberta) ? (<>
-<div style={{ display: "flex", flexDirection: "column", gap: "11px", padding: "6px 8px 6px" }}>
+<div style={{ margin: "4px 8px 6px", borderRadius: "10px", background: "#fff", boxShadow: "inset 0 0 0 1px #e3e7e8", overflow: "hidden" }}>
 {(det.qualif ?? []).map((q: any, i1: number) => (
 <Fragment key={q?.id ?? q?.chave ?? i1}>
-<div>
-<div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "5px" }}>
-<span style={{ fontSize: "11px", fontWeight: "600", color: "#4a5560" }}>
+<div style={estilo(q.linhaStyle)}>
+<div style={{ display: "flex", alignItems: "center", gap: "8px", minHeight: "18px" }}>
+<span style={{ flex: "1", minWidth: "0", fontSize: "11.5px", fontWeight: "600", color: "#4a5560" }}>
 {q.label}
 </span>
-<span style={{ flex: "1" }} />
 {(q.temSelo) ? (<>
 <span style={estilo(q.seloStyle)}>
 {q.selo}
@@ -341,11 +347,39 @@ QUALIFICAÇÃO
 {(q.ehTexto) ? (<>
 <input value={q.valor} onChange={q.setTexto} placeholder={q.dica} style={estilo(q.inputStyle)} />
 </>) : null}
-{(q.ehEscolha) ? (<>
-<div style={{ display: "flex", gap: "5px", flexWrap: "wrap" }}>
+{(q.ehMulti) ? (<>
+<button data-of-intmenu="1" onClick={q.abrirSelect} style={estilo(q.selectStyle)} className={[hover("box-shadow:inset 0 0 0 1px #b9bfbc")].filter(Boolean).join(" ")}>
+<span style={{ flex: "1", minWidth: "0", display: "flex", gap: "4px", flexWrap: "wrap", alignItems: "center" }}>
+{(q.chips ?? []).map((c: any, i2: number) => (
+<Fragment key={c?.id ?? c?.chave ?? i2}>
+<span style={{ display: "inline-flex", alignItems: "center", gap: "3px", height: "22px", padding: "0 4px 0 8px", borderRadius: "9999px", background: "#eeeff3", color: "#1f252c", fontSize: "12px", fontWeight: "500", whiteSpace: "nowrap" }}>
+<span>
+{c.label}
+</span>
+<span onClick={c.remover} style={{ width: "16px", height: "16px", borderRadius: "9999px", display: "grid", placeItems: "center", color: "#67787c", cursor: "pointer" }} title="Remover" className={[hover("background:#dcdfe3;color:#12171d")].filter(Boolean).join(" ")}>
+<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
+<path d="M18 6 6 18M6 6l12 12" />
+</svg>
+</span>
+</span>
+</Fragment>
+))}
+{(q.semChips) ? (<>
+<span style={{ fontSize: "12.5px", color: "#8b949e" }}>
+Selecionar interesses
+</span>
+</>) : null}
+</span>
+<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flex: "0 0 auto", color: "#67787c" }}>
+<path d="m6 9 6 6 6-6" />
+</svg>
+</button>
+</>) : null}
+{(q.ehUnico) ? (<>
+<div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: "2px", padding: "3px", borderRadius: "8px", background: "#eeeff3", height: "34px", boxSizing: "border-box" }}>
 {(q.opcoes ?? []).map((o: any, i2: number) => (
 <Fragment key={o?.id ?? o?.chave ?? i2}>
-<button onClick={o.onClick} style={estilo(o.style)}>
+<button onClick={o.onClick} style={estilo(o.segStyle)}>
 {o.label}
 </button>
 </Fragment>
@@ -355,16 +389,16 @@ QUALIFICAÇÃO
 {(q.ehNumero) ? (<>
 <div style={{ display: "flex", alignItems: "stretch", height: "34px", borderRadius: "8px", background: "#fff", boxShadow: "inset 0 0 0 1px #dbdede", overflow: "hidden" }}>
 <button onClick={q.menos} style={{ flex: "0 0 auto", width: "34px", display: "grid", placeItems: "center", background: "#fafafa", border: "0", borderRight: "1px solid #eef1f1", color: "#4a5560", cursor: "pointer" }} title="Diminuir" className={[hover("background:#f1f3f3;color:#12171d")].filter(Boolean).join(" ")}>
-<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
 <path d="M5 12h14" />
 </svg>
 </button>
-<input value={q.valor} onChange={q.setTexto} inputMode="numeric" style={{ flex: "1", minWidth: "0", border: "0", outline: "0", background: "transparent", textAlign: "center", fontFamily: "'Plus Jakarta Sans',sans-serif", fontSize: "14px", fontWeight: "700", color: "#12171d", fontVariantNumeric: "tabular-nums" }} />
-<span style={{ flex: "0 0 auto", display: "flex", alignItems: "center", paddingRight: "10px", fontSize: "11.5px", color: "#67787c", whiteSpace: "nowrap" }}>
+<input value={q.valor} onChange={q.setTexto} inputMode="numeric" placeholder="0" style={{ flex: "1", minWidth: "0", border: "0", outline: "0", background: "transparent", textAlign: "right", paddingRight: "5px", fontFamily: "'Plus Jakarta Sans',sans-serif", fontSize: "13.5px", fontWeight: "700", color: "#12171d", fontVariantNumeric: "tabular-nums" }} />
+<span style={{ flex: "1 1 auto", display: "flex", alignItems: "center", fontSize: "12px", color: "#67787c", whiteSpace: "nowrap" }}>
 atendentes
 </span>
 <button onClick={q.mais} style={{ flex: "0 0 auto", width: "34px", display: "grid", placeItems: "center", background: "#fafafa", border: "0", borderLeft: "1px solid #eef1f1", color: "#4a5560", cursor: "pointer" }} title="Aumentar" className={[hover("background:#f1f3f3;color:#12171d")].filter(Boolean).join(" ")}>
-<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
 <path d="M12 5v14M5 12h14" />
 </svg>
 </button>
@@ -432,7 +466,7 @@ TIMELINE
 <path d="M3 21V7l9-4 9 4v14M9 21v-6h6v6M8 11h.01M16 11h.01" />
 </svg>
 <span>
-Abrir empresa
+{det.empresaLabel}
 </span>
 </button>
 <button onClick={det.abrirContato} style={{ display: "flex", alignItems: "center", gap: "6px", height: "34px", padding: "0 12px", borderRadius: "8px", background: "#fff", boxShadow: "inset 0 0 0 1px #dbdede", fontSize: "12.5px", fontWeight: "500", whiteSpace: "nowrap", flex: "0 0 auto" }} className={[hover("background:#f6f7f7")].filter(Boolean).join(" ")}>
@@ -445,7 +479,7 @@ Abrir contato
 </button>
 <span style={{ flex: "1", minWidth: "0" }} />
 <div data-of-saida="1" style={{ position: "relative", flex: "0 0 auto" }}>
-<div style={{ display: "flex", alignItems: "stretch", height: "34px", borderRadius: "8px", overflow: "hidden", background: "#d93c1a" }}>
+<div style={{ display: "flex", alignItems: "stretch", height: "34px", borderRadius: "8px", overflow: "hidden", background: "#d93c1a" }} data-comment-anchor="5af3f0da6b-button">
 <button onClick={qualificar} style={{ display: "flex", alignItems: "center", gap: "6px", padding: "0 12px", background: "transparent", border: "0", color: "#fff", fontSize: "12.5px", fontWeight: "600", whiteSpace: "nowrap", cursor: "pointer" }} className={[hover("background:rgba(0,0,0,.14)")].filter(Boolean).join(" ")}>
 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flex: "0 0 auto" }}>
 <path d="M20 6 9 17l-5-5" />
@@ -490,7 +524,7 @@ SAÍDAS DO LEAD
 </aside>
 </>) : null}
 {(atvAberta) ? (<>
-<div onClick={fecharAtv} style={{ position: "fixed", inset: "0", background: "rgba(9,14,20,.45)", zIndex: "52", display: "grid", placeItems: "center", padding: "20px", animation: "of-fade .16s ease-out both" }}>
+<div data-r="modal-fundo" onClick={fecharAtv} style={{ position: "fixed", inset: "0", background: "rgba(9,14,20,.45)", zIndex: "52", display: "grid", placeItems: "center", padding: "20px", animation: "of-fade .16s ease-out both" }}>
 <div onClick={parar} style={{ width: "452px", maxWidth: "100%", maxHeight: "calc(100vh - 40px)", background: "#fff", borderRadius: "13px", overflow: "hidden", display: "flex", flexDirection: "column", animation: "of-rise .2s cubic-bezier(.2,0,.2,1) both" }}>
 <div style={{ flex: "0 0 auto", padding: "15px 18px 13px", borderBottom: "1px solid #e3e7e8", display: "flex", alignItems: "flex-start", gap: "10px" }}>
 <div style={{ minWidth: "0", flex: "1" }}>
@@ -681,6 +715,68 @@ Salvar
 </div>
 </div>
 </>) : null}
+{(det.dropAberto) ? (<>
+<div data-of-dropmenu="1" style={estilo(det.dropStyle)}>
+<div style={{ fontSize: "10px", fontWeight: "700", letterSpacing: ".08em", color: "#67787c", padding: "7px 8px 5px" }}>
+{det.dropTitulo}
+</div>
+{(det.dropItens ?? []).map((o: any, i1: number) => (
+<Fragment key={o?.id ?? o?.chave ?? i1}>
+<button onClick={o.onClick} style={{ display: "flex", alignItems: "center", gap: "9px", width: "100%", minHeight: "34px", padding: "6px 8px", borderRadius: "7px", border: "0", background: "transparent", cursor: "pointer", textAlign: "left" }} className={[hover("background:#f1f3f3")].filter(Boolean).join(" ")}>
+<span style={estilo(o.marca)}>
+{o.iniciais}
+</span>
+<span style={{ flex: "1", minWidth: "0" }}>
+<span style={{ display: "block", fontSize: "13px", fontWeight: "500", color: "#1f252c", whiteSpace: "nowrap" }}>
+{o.label}
+</span>
+{(o.temNota) ? (<>
+<span style={{ display: "block", fontSize: "11px", color: "#67787c", marginTop: "1px", whiteSpace: "nowrap" }}>
+{o.nota}
+</span>
+</>) : null}
+</span>
+{(o.on) ? (<>
+<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#12171d" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" style={{ flex: "0 0 auto" }}>
+<path d="M20 6 9 17l-5-5" />
+</svg>
+</>) : null}
+</button>
+</Fragment>
+))}
+</div>
+</>) : null}
+{(det.intMenu) ? (<>
+<div data-of-intmenu="1" style={estilo(det.intMenuStyle)}>
+<div style={{ fontSize: "10px", fontWeight: "700", letterSpacing: ".08em", color: "#67787c", padding: "7px 8px 5px" }}>
+PRODUTOS DE INTERESSE
+</div>
+{(det.intOpcoes ?? []).map((o: any, i1: number) => (
+<Fragment key={o?.id ?? o?.chave ?? i1}>
+<button onClick={o.onClick} style={{ display: "flex", alignItems: "center", gap: "9px", width: "100%", height: "34px", padding: "0 8px", borderRadius: "7px", border: "0", background: "transparent", cursor: "pointer", textAlign: "left" }} className={[hover("background:#f1f3f3")].filter(Boolean).join(" ")}>
+<span style={estilo(o.caixa)}>
+{(o.on) ? (<>
+<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.4" strokeLinecap="round" strokeLinejoin="round">
+<path d="M20 6 9 17l-5-5" />
+</svg>
+</>) : null}
+</span>
+<span style={{ flex: "1", minWidth: "0", fontSize: "13px", fontWeight: "500", color: "#1f252c", whiteSpace: "nowrap" }}>
+{o.label}
+</span>
+</button>
+</Fragment>
+))}
+<div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "4px", padding: "8px 8px 4px", borderTop: "1px solid #eef1f1" }}>
+<span style={{ flex: "1", fontSize: "11.5px", color: "#67787c" }}>
+{det.intResumo}
+</span>
+<button onClick={det.intLimpar} style={{ height: "26px", padding: "0 9px", borderRadius: "6px", border: "0", background: "transparent", fontSize: "12px", fontWeight: "500", color: "#4a5560", cursor: "pointer" }} className={[hover("background:#f1f3f3;color:#12171d")].filter(Boolean).join(" ")}>
+Limpar
+</button>
+</div>
+</div>
+</>) : null}
 {(det.tagMenu) ? (<>
 <div data-of-tagmenu="1" style={estilo(det.tagMenuStyle)}>
 <div style={{ flex: "0 0 auto", fontSize: "10px", fontWeight: "700", letterSpacing: ".08em", color: "#67787c", padding: "7px 8px 5px" }}>
@@ -724,7 +820,7 @@ Criar
 </div>
 </>) : null}
 {(cad.aberto) ? (<>
-<div onClick={cad.fechar} style={{ position: "fixed", inset: "0", background: "rgba(9,14,20,.5)", zIndex: "57", display: "grid", placeItems: "center", padding: "20px", animation: "of-fade .16s ease-out both" }}>
+<div data-r="modal-fundo" onClick={cad.fechar} style={{ position: "fixed", inset: "0", background: "rgba(9,14,20,.5)", zIndex: "57", display: "grid", placeItems: "center", padding: "20px", animation: "of-fade .16s ease-out both" }}>
 <div onClick={parar} style={{ width: "840px", maxWidth: "100%", height: "min(580px,calc(100vh - 40px))", background: "#fff", borderRadius: "14px", overflow: "hidden", display: "flex", animation: "of-rise .2s cubic-bezier(.2,0,.2,1) both" }}>
 <aside style={{ flex: "0 0 auto", width: "246px", background: "#fafafa", borderRight: "1px solid #e3e7e8", display: "flex", flexDirection: "column" }}>
 <div style={{ flex: "0 0 auto", padding: "14px 14px 10px" }}>
@@ -887,7 +983,7 @@ Cancelar
 </div>
 </>) : null}
 {(qual.aberto) ? (<>
-<div onClick={qual.fechar} style={{ position: "fixed", inset: "0", background: "rgba(9,14,20,.5)", zIndex: "53", display: "grid", placeItems: "center", padding: "20px", animation: "of-fade .16s ease-out both" }}>
+<div data-r="modal-fundo" onClick={qual.fechar} style={{ position: "fixed", inset: "0", background: "rgba(9,14,20,.5)", zIndex: "53", display: "grid", placeItems: "center", padding: "20px", animation: "of-fade .16s ease-out both" }}>
 <div onClick={parar} style={{ width: "476px", maxWidth: "100%", maxHeight: "calc(100vh - 40px)", background: "#fff", borderRadius: "14px", overflow: "hidden", display: "flex", flexDirection: "column", animation: "of-rise .2s cubic-bezier(.2,0,.2,1) both" }}>
 <div style={{ flex: "0 0 auto", padding: "16px 19px 14px", borderBottom: "1px solid #e3e7e8" }}>
 <div style={{ display: "flex", alignItems: "flex-start", gap: "11px" }}>
@@ -1085,6 +1181,48 @@ COMO ESSA OPORTUNIDADE IRÁ AVANÇAR?
 </div>
 </div>
 <div style={{ height: "1px", background: "#eef1f1" }} />
+{(qual.multiEmpresa) ? (<>
+<div>
+<div style={{ display: "flex", alignItems: "center", gap: "5px", marginBottom: "6px" }}>
+<span style={{ fontSize: "10.5px", fontWeight: "700", letterSpacing: ".07em", color: "#4a5560" }}>
+EMPRESA RELACIONADA
+</span>
+<span style={{ fontSize: "10.5px", fontWeight: "700", color: "#c2330f" }}>
+*
+</span>
+<span style={{ flex: "1" }} />
+<span style={{ fontSize: "11px", color: "#67787c", whiteSpace: "nowrap" }}>
+{qual.multiNota}
+</span>
+</div>
+<div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(180px,1fr))", gap: "6px" }}>
+{(qual.empresasOpp ?? []).map((e: any, i1: number) => (
+<Fragment key={e?.id ?? e?.chave ?? i1}>
+<button onClick={e.onClick} style={estilo(e.style)}>
+<span style={estilo(e.avatar)}>
+{e.iniciais}
+</span>
+<span style={{ flex: "1", minWidth: "0", textAlign: "left" }}>
+<span style={{ display: "block", fontSize: "13px", fontWeight: "600", color: "#12171d", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+{e.nome}
+</span>
+<span style={{ display: "block", fontSize: "11.5px", color: "#67787c", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+{e.papel}
+</span>
+</span>
+{(e.on) ? (<>
+<span style={{ flex: "0 0 auto", width: "18px", height: "18px", borderRadius: "9999px", background: "#12171d", color: "#fff", display: "grid", placeItems: "center" }}>
+<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.4" strokeLinecap="round" strokeLinejoin="round">
+<path d="M20 6 9 17l-5-5" />
+</svg>
+</span>
+</>) : null}
+</button>
+</Fragment>
+))}
+</div>
+</div>
+</>) : null}
 <div>
 <div style={{ display: "flex", alignItems: "center", gap: "5px", marginBottom: "6px" }}>
 <span style={{ fontSize: "10.5px", fontWeight: "700", letterSpacing: ".07em", color: "#4a5560" }}>
@@ -1157,6 +1295,32 @@ Convidado
 </span>
 </button>
 </div>
+{(qual.convAberto) ? (<>
+<div style={{ display: "flex", gap: "6px", marginTop: "-7px" }}>
+<input value={qual.convTexto} onChange={qual.setConvTexto} onKeyDown={qual.teclaConv} autoFocus={true} type="email" placeholder="email@empresa.com.br" style={{ flex: "1", minWidth: "0", height: "34px", padding: "0 11px", borderRadius: "8px", border: "0", boxShadow: "inset 0 0 0 1px #dbdede", outline: "0", fontSize: "13px", background: "#fff" }} />
+<button data-conv-ok="1" onClick={qual.confirmarConv} style={{ flex: "0 0 auto", height: "34px", padding: "0 13px", borderRadius: "8px", border: "0", background: "#12171d", color: "#fff", fontSize: "12.5px", fontWeight: "600", whiteSpace: "nowrap", cursor: "pointer" }} className={[hover("background:#1f252c")].filter(Boolean).join(" ")}>
+Adicionar
+</button>
+</div>
+</>) : null}
+{(qual.temConvidados) ? (<>
+<div style={{ display: "flex", gap: "5px", flexWrap: "wrap", marginTop: "-7px" }}>
+{(qual.convidados ?? []).map((c: any, i1: number) => (
+<Fragment key={c?.id ?? c?.chave ?? i1}>
+<span style={{ display: "inline-flex", alignItems: "center", gap: "4px", height: "24px", padding: "0 4px 0 9px", borderRadius: "9999px", background: "#eeeff3", color: "#1f252c", fontSize: "12px", whiteSpace: "nowrap" }}>
+<span>
+{c.email}
+</span>
+<button onClick={c.remover} style={{ width: "16px", height: "16px", borderRadius: "9999px", border: "0", padding: "0", background: "transparent", display: "grid", placeItems: "center", color: "#67787c", cursor: "pointer" }} title="Remover" className={[hover("background:#dcdfe3;color:#12171d")].filter(Boolean).join(" ")}>
+<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
+<path d="M18 6 6 18M6 6l12 12" />
+</svg>
+</button>
+</span>
+</Fragment>
+))}
+</div>
+</>) : null}
 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
 <div>
 <div style={{ display: "flex", alignItems: "center", gap: "5px", marginBottom: "6px" }}>
@@ -1345,7 +1509,7 @@ Cancelar
 <div data-of-qualmenu="1" ref={qual.ancora} style={{ position: "relative", flex: "0 0 auto" }}>
 <button onClick={qual.toggleMenu} style={estilo(qual.grupoStyle)} className={[hover(qual.hover)].filter(Boolean).join(" ")}>
 <span style={estilo(qual.corpoStyle)}>
-Qualificar
+{qual.btnLabel}
 </span>
 <span style={estilo(qual.divisoria)} />
 <span style={estilo(qual.setaStyle)}>
@@ -1391,8 +1555,124 @@ Qualificar
 ))}
 </div>
 </>) : null}
+{(vinc.aberto) ? (<>
+<div data-r="modal-fundo" onClick={vinc.fechar} style={{ position: "fixed", inset: "0", background: "rgba(9,14,20,.45)", zIndex: "53", display: "grid", placeItems: "center", padding: "20px", animation: "of-fade .16s ease-out both" }}>
+<div onClick={parar} style={{ width: "452px", maxWidth: "100%", maxHeight: "calc(100vh - 40px)", background: "#fff", borderRadius: "13px", overflow: "hidden", display: "flex", flexDirection: "column", animation: "of-rise .18s cubic-bezier(.2,0,.2,1) both", boxShadow: "0 24px 60px -12px rgba(0,0,0,.35)" }}>
+<div style={{ flex: "0 0 auto", padding: "16px 18px 12px", display: "flex", alignItems: "flex-start", gap: "11px" }}>
+<span style={{ flex: "0 0 auto", width: "34px", height: "34px", borderRadius: "9px", background: "#eeeff3", color: "#4a5560", display: "grid", placeItems: "center" }}>
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" style={{ flex: "0 0 auto" }}>
+<path d="M3 21V7l9-4 9 4v14M9 21v-6h6v6" />
+</svg>
+</span>
+<div style={{ flex: "1", minWidth: "0" }}>
+<div style={{ fontFamily: "'Plus Jakarta Sans',sans-serif", fontSize: "15.5px", fontWeight: "700", letterSpacing: "-.015em", color: "#12171d" }}>
+Vincular empresa
+</div>
+<div style={{ fontSize: "12px", color: "#4a5560", lineHeight: "1.45", marginTop: "2px", textWrap: "pretty" }}>
+{vinc.contexto}
+</div>
+</div>
+<button onClick={vinc.fechar} style={{ flex: "0 0 auto", width: "28px", height: "28px", borderRadius: "7px", border: "0", background: "transparent", color: "#4a5560", display: "grid", placeItems: "center", cursor: "pointer" }} title="Fechar" className={[hover("background:#f1f3f3;color:#12171d")].filter(Boolean).join(" ")}>
+<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" style={{ flex: "0 0 auto" }}>
+<path d="M18 6 6 18M6 6l12 12" />
+</svg>
+</button>
+</div>
+<div style={{ flex: "0 0 auto", padding: "0 18px 12px" }}>
+<div style={{ display: "flex", gap: "2px", padding: "3px", borderRadius: "9px", background: "#eeeff3" }}>
+<button onClick={vinc.irVinc} style={estilo(vinc.abaVinc)}>
+Empresa existente
+</button>
+<button onClick={vinc.irCad} style={estilo(vinc.abaCad)}>
+Cadastrar nova
+</button>
+</div>
+</div>
+<div style={{ flex: "1", minHeight: "0", overflowY: "auto", padding: "0 18px 16px" }}>
+{(vinc.ehVinc) ? (<>
+<div style={{ display: "flex", alignItems: "center", gap: "8px", height: "36px", padding: "0 11px", borderRadius: "8px", boxShadow: "inset 0 0 0 1px #dbdede", color: "#4a5560" }}>
+<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" style={{ flex: "0 0 auto" }}>
+<path d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM20.5 20.5 16 16" />
+</svg>
+<input value={vinc.busca} onChange={vinc.setBusca} placeholder="Buscar empresa pelo nome" style={{ flex: "1", minWidth: "0", border: "0", outline: "0", background: "transparent", fontSize: "13px" }} />
+</div>
+<div style={{ display: "flex", flexDirection: "column", gap: "2px", marginTop: "8px" }}>
+{(vinc.lista ?? []).map((e: any, i1: number) => (
+<Fragment key={e?.id ?? e?.chave ?? i1}>
+<button onClick={e.onClick} style={estilo(e.style)} className={[hover("background:#f6f6f3")].filter(Boolean).join(" ")}>
+<span style={{ flex: "0 0 auto", width: "30px", height: "30px", borderRadius: "8px", background: "#12171d", color: "#fff", fontFamily: "'Plus Jakarta Sans',sans-serif", fontSize: "10.5px", fontWeight: "700", display: "grid", placeItems: "center" }}>
+{e.iniciais}
+</span>
+<span style={{ flex: "1", minWidth: "0" }}>
+<span style={{ display: "block", fontSize: "13px", fontWeight: "600", color: "#12171d", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+{e.nome}
+</span>
+<span style={{ display: "block", fontSize: "11.5px", color: "#67787c", marginTop: "1px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+{e.meta}
+</span>
+</span>
+{(e.on) ? (<>
+<span style={{ flex: "0 0 auto", width: "18px", height: "18px", borderRadius: "9999px", background: "#12171d", color: "#fff", display: "grid", placeItems: "center" }}>
+<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.4" strokeLinecap="round" strokeLinejoin="round">
+<path d="M20 6 9 17l-5-5" />
+</svg>
+</span>
+</>) : null}
+</button>
+</Fragment>
+))}
+{(vinc.vazia) ? (<>
+<div style={{ padding: "18px 8px 6px", textAlign: "center" }}>
+<div style={{ fontSize: "12.5px", color: "#4a5560", marginBottom: "9px" }}>
+{vinc.vazioTexto}
+</div>
+<button onClick={vinc.irCad} style={{ height: "30px", padding: "0 12px", borderRadius: "8px", border: "0", background: "#fff", boxShadow: "inset 0 0 0 1px #dbdede", fontSize: "12px", fontWeight: "600", color: "#1f252c", cursor: "pointer" }} className={[hover("background:#f6f7f7")].filter(Boolean).join(" ")}>
+Cadastrar nova empresa
+</button>
+</div>
+</>) : null}
+</div>
+</>) : null}
+{(vinc.ehCad) ? (<>
+<div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+{(vinc.campos ?? []).map((c: any, i1: number) => (
+<Fragment key={c?.id ?? c?.chave ?? i1}>
+<label style={{ display: "block" }}>
+<span style={{ display: "flex", gap: "3px", fontSize: "11.5px", fontWeight: "600", color: "#4a5560", marginBottom: "5px" }}>
+<span>
+{c.label}
+</span>
+{(c.obrig) ? (<>
+<span style={{ color: "#c2330f" }}>
+*
+</span>
+</>) : null}
+</span>
+<input value={c.valor} onChange={c.set} placeholder={c.dica} style={estilo(c.style)} />
+{(c.erro) ? (<>
+<span style={{ display: "block", fontSize: "11.5px", color: "#c2330f", marginTop: "4px" }}>
+Informe o nome para cadastrar.
+</span>
+</>) : null}
+</label>
+</Fragment>
+))}
+</div>
+</>) : null}
+</div>
+<div style={{ flex: "0 0 auto", padding: "12px 18px", borderTop: "1px solid #e3e7e8", background: "#fafafa", display: "flex", gap: "7px", justifyContent: "flex-end" }}>
+<button onClick={vinc.fechar} style={{ height: "34px", padding: "0 14px", borderRadius: "8px", background: "#fff", boxShadow: "inset 0 0 0 1px #dbdede", fontSize: "12.5px", fontWeight: "500", whiteSpace: "nowrap", border: "0", cursor: "pointer" }} className={[hover("background:#f6f7f7")].filter(Boolean).join(" ")}>
+Cancelar
+</button>
+<button onClick={vinc.confirmar} style={estilo(vinc.btnStyle)}>
+{vinc.btnLabel}
+</button>
+</div>
+</div>
+</div>
+</>) : null}
 {(desq.aberto) ? (<>
-<div onClick={desq.fechar} style={{ position: "fixed", inset: "0", background: "rgba(9,14,20,.45)", zIndex: "53", display: "grid", placeItems: "center", padding: "20px", animation: "of-fade .16s ease-out both" }}>
+<div data-r="modal-fundo" onClick={desq.fechar} style={{ position: "fixed", inset: "0", background: "rgba(9,14,20,.45)", zIndex: "53", display: "grid", placeItems: "center", padding: "20px", animation: "of-fade .16s ease-out both" }}>
 <div onClick={parar} style={{ width: "432px", maxWidth: "100%", maxHeight: "calc(100vh - 40px)", background: "#fff", borderRadius: "13px", overflow: "hidden", display: "flex", flexDirection: "column", animation: "of-rise .2s cubic-bezier(.2,0,.2,1) both" }}>
 <div style={{ flex: "0 0 auto", padding: "16px 18px 13px", borderBottom: "1px solid #e3e7e8" }}>
 <div style={{ fontFamily: "'Plus Jakarta Sans',sans-serif", fontSize: "14.5px", fontWeight: "700", letterSpacing: "-.01em", marginBottom: "3px" }}>
@@ -1449,7 +1729,7 @@ Cancelar
 </div>
 </>) : null}
 {(temNutrir) ? (<>
-<div onClick={fecharNutrir} style={{ position: "fixed", inset: "0", background: "rgba(9,14,20,.45)", zIndex: "50", display: "grid", placeItems: "center", padding: "20px", animation: "of-fade .16s ease-out both" }}>
+<div data-r="modal-fundo" onClick={fecharNutrir} style={{ position: "fixed", inset: "0", background: "rgba(9,14,20,.45)", zIndex: "50", display: "grid", placeItems: "center", padding: "20px", animation: "of-fade .16s ease-out both" }}>
 <div onClick={parar} style={{ width: "428px", maxWidth: "100%", background: "#fff", borderRadius: "13px", overflow: "hidden", animation: "of-rise .2s cubic-bezier(.2,0,.2,1) both" }}>
 <div style={{ padding: "16px 18px 13px", borderBottom: "1px solid #e3e7e8" }}>
 <div style={{ fontFamily: "'Plus Jakarta Sans',sans-serif", fontSize: "14.5px", fontWeight: "700", marginBottom: "3px" }}>
@@ -1505,7 +1785,10 @@ Cancelar
 </div>
 </div>
 </>) : null}
+
 </div>
+
+
     </>
   );
 }

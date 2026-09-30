@@ -1,0 +1,97 @@
+
+class Component extends DCLogic {
+  state = { v: 0, modo: null, key: null, f: null, com: "", novaSub: "", tk: 0 };
+  componentDidMount() {
+    const E = window.OnFaceEstado; if (!E) return;
+    this._off = E.assinar(() => this.setState(s => ({ v: s.v + 1 })));
+    this._offP = E.assinarPecas((p, arg) => { if (p === "novaAtividade") this.nova(arg || {}); else if (p === "verAtividade" && arg) this.setState({ modo: "ver", key: arg, com: "", novaSub: "" }); });
+    this._esc = (e) => { if (e.key === "Escape" && this.state.modo) { e.stopImmediatePropagation(); this.setState({ modo: null }); } };
+    window.addEventListener("keydown", this._esc, true);
+  }
+  componentWillUnmount() { if (this._off) this._off(); if (this._offP) this._offP(); window.removeEventListener("keydown", this._esc, true); }
+  pad(n) { return String(n).padStart(2, "0"); }
+  iso(d) { return d ? d.getFullYear() + "-" + this.pad(d.getMonth() + 1) + "-" + this.pad(d.getDate()) : ""; }
+  agoraTxt() { const d = new Date(); return "Hoje, " + this.pad(d.getHours()) + ":" + this.pad(d.getMinutes()); }
+  nova(pre) {
+    const E = window.OnFaceEstado, D = window.OnFaceDados || {};
+    const L = pre.lead ? ((E && E.ler("leads", null)) || D.LEADS || []).find(l => l.id === pre.lead) : null;
+    this.setState({ modo: "nova", tk: Date.now(), novaSub: "", f: { titulo: pre.titulo || "", tipo: pre.tipo && pre.tipo !== "Reunião" ? pre.tipo : "Tarefa", prioridade: "Média", resp: "Scott Ferraz",
+      fimD: pre.data || this.iso(new Date()), fimH: "", empresa: pre.empresa || (L && L.empresa) || "", pessoa: pre.pessoa || (L && L.pessoa) || "", oppId: pre.oppId || "", descHtml: "", desc: "", anexos: [], sub: [], tentou: false, erro: null } });
+  }
+  renderVals() {
+    const S = this.state, E = window.OnFaceEstado, D = window.OnFaceDados || {}, EU = "Scott Ferraz", A = window.OnFaceAgenda;
+    const ini = D.iniciais || ((n) => (n || "").split(" ").map(x => x[0]).slice(0, 2).join("").toUpperCase());
+    const equipe = (D.EQUIPE || ["Camila Reis", "Diego Nunes", "Ana Vitória"]).concat([EU]).filter((x, i, a) => a.indexOf(x) === i);
+    const PR = { Alta: "#d93c1a", "Média": "#c9a45c", Baixa: "#8b949e" };
+    const prioS = (on, p) => "display:inline-flex;align-items:center;gap:5px;height:30px;padding:0 11px;border-radius:9999px;border:0;cursor:pointer;font-size:12.5px;font-weight:500;" + (on ? "background:" + PR[p] + ";color:#fff" : "background:#fff;color:#1f252c;box-shadow:inset 0 0 0 1px #dbdede");
+    const IE = "M3 21h18M5 21V7l7-4 7 4v14M9 21v-4h6v4", IP = "M20 21a8 8 0 0 0-16 0M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10z";
+    const TP = { "Reunião": ["m16 10 5-3v10l-5-3zM4 6h10a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z", "#c2330f", "#fff6f4"], "Ligação": ["M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z", "#1f7256", "#e6f4ee"], "Mensagem": ["M21 11.5a8.4 8.4 0 0 1-9 8.4 9 9 0 0 1-3.8-.8L3 21l1.9-4.1A8.4 8.4 0 0 1 12 3a8.4 8.4 0 0 1 9 8.5z", "#1f7256", "#e6f4ee"], "E-mail": ["M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM22 6l-10 7L2 6", "#2c5f9e", "#e8f0fb"], "Follow up": ["M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5", "#6e5420", "#f7edd8"], "Proposta": ["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6", "#4f3fa8", "#efecfa"], "Tarefa": ["M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11", "#4a5560", "#eeeff3"] };
+    const fechar = () => this.setState({ modo: null });
+
+    let nv = { aberto: false, naturezas: [], tipos: [], fmt: [], prios: [], equipe: [], vincs: [], subs: [], anexos: [] };
+    if (S.modo === "nova" && S.f) { const F = S.f, up = (p) => this.setState(s => ({ f: Object.assign({}, s.f, p, { erro: null }) }));
+      const lerArq = (fs) => fs.forEach(fl => { const r = new FileReader(); r.onload = () => this.setState(s => ({ f: Object.assign({}, s.f, { anexos: (s.f.anexos || []).concat([{ nome: fl.name || "arquivo", url: r.result, tipo: fl.type }]) }) })); r.readAsDataURL(fl); });
+      const setSub = (i, p) => up({ sub: F.sub.map((y, j) => j === i ? Object.assign({}, y, p) : y) });
+      const addSub = () => { const t = (S.novaSub || "").trim(); if (!t) return; up({ sub: F.sub.concat([{ t, desc: "", feita: false, resp: F.resp, fimD: F.fimD }]) }); this.setState({ novaSub: "" }); };
+      nv = { aberto: true,
+        naturezas: [["tarefa", "Tarefa", TP.Tarefa[0]], ["reuniao", "Reunião", TP["Reunião"][0]]].map(([k, l, d]) => ({ l, d, onClick: () => { if (k === "tarefa") return; this.setState({ modo: null }); E && E.abrir("novaReuniao", { data: F.fimD, hora: F.fimH || "14:00", titulo: F.titulo, empresa: F.empresa, pessoa: F.pessoa, oppId: F.oppId || "" }); },
+          style: "display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 11px;border-radius:7px;border:0;cursor:pointer;font-size:12.5px;white-space:nowrap;" + (k === "tarefa" ? "background:#fff;color:#12171d;font-weight:600;box-shadow:0 1px 2px rgba(18,23,29,.12)" : "background:transparent;color:#4a5560;font-weight:500") })),
+        tipo: F.tipo, tipos: Object.keys(TP).filter(t => t !== "Reunião"), setTipo: (e) => up({ tipo: e.target.value }),
+        titulo: F.titulo, setTitulo: (e) => up({ titulo: e.target.value }),
+        titInp: "width:100%;padding:4px 0;border:0;outline:0;background:transparent;font-family:'Plus Jakarta Sans',sans-serif;font-size:22px;font-weight:800;letter-spacing:-.03em;color:#12171d;box-shadow:inset 0 -1.5px 0 " + (F.tentou && !F.titulo.trim() ? "#d93c1a" : "transparent"),
+        descVazia: !(F.desc || "").trim(), descRef: (el) => { if (el) this._desc = el; if (!el || el._tk === S.tk) return; el._tk = S.tk; el.innerHTML = F.descHtml || ""; },
+        setDesc: (e) => up({ descHtml: e.currentTarget.innerHTML, desc: e.currentTarget.innerText }),
+        fmt: [["Negrito", "M6 4h8a4 4 0 0 1 0 8H6zM6 12h9a4 4 0 0 1 0 8H6z", "bold"], ["Itálico", "M19 4h-9M14 20H5M15 4 9 20", "italic"], ["Sublinhado", "M6 3v7a6 6 0 0 0 12 0V3M4 21h16", "underline"], ["Lista", "M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01", "insertUnorderedList"], ["Lista numerada", "M10 6h11M10 12h11M10 18h11M4 6h1v4M4 10h2M6 18H4c0-1 2-2 2-3s-1-1.5-2-1", "insertOrderedList"], ["Link", "M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7", "createLink"], ["Limpar formatação", "M4 7V4h16v3M9 20h6M12 4v16M3 3l18 18", "removeFormat"]]
+          .map(([l, d, cmd]) => ({ l, d, onClick: (e) => { e.preventDefault(); const el = this._desc; if (el) el.focus(); if (cmd === "createLink") { const u = window.prompt("Endereço do link", "https://"); if (!u) return; document.execCommand("createLink", false, u); } else document.execCommand(cmd, false, null); if (el) up({ descHtml: el.innerHTML, desc: el.innerText }); } })),
+        anexar: (e) => { const fs = Array.from(e.target.files || []); e.target.value = ""; lerArq(fs); },
+        temAnexos: F.anexos.length > 0, anexos: F.anexos.map((a, i) => ({ nome: a.nome, remover: () => up({ anexos: F.anexos.filter((_, j) => j !== i) }) })),
+        fimD: F.fimD, fimH: F.fimH, setFimD: (e) => up({ fimD: e.target.value }), setFimH: (e) => up({ fimH: e.target.value }),
+        prios: ["Baixa", "Média", "Alta"].map(p => ({ l: p, onClick: () => up({ prioridade: p }), style: prioS(F.prioridade === p, p) })),
+        resp: F.resp, respIni: ini(F.resp), equipe, setResp: (e) => up({ resp: e.target.value }),
+        temVinc: !!(F.empresa || F.pessoa), semVinc: !(F.empresa || F.pessoa),
+        vincs: [F.empresa ? [IE, F.empresa, () => up({ empresa: "" })] : null, F.pessoa ? [IP, F.pessoa, () => up({ pessoa: "" })] : null].filter(Boolean).map(([d, l, tirar]) => ({ d, l, tirar })),
+        subsN: F.sub.length ? String(F.sub.length) : "",
+        subs: F.sub.map((sb, i) => ({ t: sb.t, resp: sb.resp || EU, fimD: sb.fimD || "", set: (e) => setSub(i, { t: e.target.value }), setResp: (e) => setSub(i, { resp: e.target.value }), setFim: (e) => setSub(i, { fimD: e.target.value }), remover: () => up({ sub: F.sub.filter((_, j) => j !== i) }) })),
+        novaSub: S.novaSub || "", setNovaSub: (e) => this.setState({ novaSub: e.target.value }), teclaSub: (e) => { if (e.key === "Enter") { e.preventDefault(); addSub(); } }, addSub,
+        temErro: !!F.erro, erro: F.erro || "",
+        salvar: () => { if (!F.titulo.trim()) return this.setState(s => ({ f: Object.assign({}, s.f, { tentou: true, erro: "Dê um nome para a atividade." }) }));
+          if (F.oppId && E) { const opps = (E.ler("opps", null) || D.OPORTUNIDADES || []).slice(), k = opps.findIndex(o => o.id === F.oppId);
+            if (k >= 0) { const q = F.fimD ? F.fimD.split("-").reverse().join("/") + (F.fimH ? " · " + F.fimH : "") : "Sem data";
+              const atv = { titulo: F.titulo.trim(), tipo: F.tipo, quando: q, fimD: F.fimD, fimH: F.fimH, feita: false, situacao: "A fazer", autor: F.resp, prioridade: F.prioridade, desc: (F.desc || "").trim(), descHtml: F.descHtml || "", anexos: F.anexos, sub: F.sub.filter(x => (x.t || "").trim()), comentarios: [] };
+              opps[k] = Object.assign({}, opps[k], { atvs: [atv].concat(opps[k].atvs || []), eventos: [{ t: F.tipo + " criada · " + atv.titulo, quando: "Hoje", autor: EU }].concat(opps[k].eventos || []) });
+              E.gravar({ opps }); E.avisar("Atividade criada · " + opps[k].empresa, "ok"); return this.setState({ modo: null }); } }
+          const lista = (E && E.ler("atividadesV2", null)) || window.OnFaceAtividadesSeed || [];
+          const nova = { id: "a" + Date.now().toString(36), titulo: F.titulo.trim(), desc: (F.desc || "").trim(), descHtml: F.descHtml || "", anexos: F.anexos, tipo: F.tipo, situacao: "A fazer", prioridade: F.prioridade, resp: F.resp, assignees: [F.resp], criadoPor: EU, area: "Comercial",
+            iniD: "", iniH: "", fimD: F.fimD, fimH: F.fimH, inicio: null, fim: null, empresa: F.empresa || null, pessoa: F.pessoa || null, vincTipo: F.pessoa ? "pessoa" : F.empresa ? "empresa" : "nenhum",
+            sub: F.sub.filter(x => (x.t || "").trim()), comentarios: [], log: [{ autor: EU, texto: "criou a atividade", quando: this.agoraTxt() }] };
+          E && E.gravar({ atividadesV2: lista.concat([nova]) }); E && E.avisar("Atividade criada" + (F.empresa ? " · " + F.empresa : ""), "ok"); this.setState({ modo: null }); } };
+    }
+
+    let vr = { aberto: false, sits: [], prios: [], equipe: [], vincs: [], subs: [], coms: [] };
+    const Y = S.modo === "ver" && A ? A.itens().find(x => x.key === S.key) : null;
+    if (Y) { const T = TP[Y.tipo] || TP.Tarefa, so = Y.src !== "l", sv = (p, msg) => { A.salvar(Y, p); if (msg) E && E.avisar(msg, "ok"); };
+      const feita = Y.situacao === "Feita" || Y.situacao === "Declinada", subs = Y.sub || [], coms = Y.comentarios || [];
+      const SITS = [["A fazer", "A fazer", "#4a5560"], ["Em andamento", "Em andamento", "#2c5f9e"], ["Aguardando", "Aguardando", "#6e5420"], ["Feita", "Feito", "#1f7256"], ["Declinada", "Declinada", "#c2330f"]];
+      const raw = (Y.src === "p" ? (((E && E.ler("atividadesV2", null)) || window.OnFaceAtividadesSeed || []).find(a => a.id === Y.id) || {}) : {});
+      vr = { aberto: true, tipo: Y.tipo, ico: T[0], tipoStyle: "display:inline-flex;align-items:center;gap:5px;height:24px;padding:0 9px;border-radius:7px;font-size:12px;font-weight:500;background:" + T[2] + ";color:" + T[1],
+        origem: Y.src === "o" ? "Da oportunidade " + Y.oppRot : Y.src === "l" ? "Próxima ação do lead" : "Atividade",
+        titulo: Y.titulo, setTitulo: (e) => so && sv({ titulo: e.target.value }),
+        sits: SITS.map(([k, l, c]) => ({ l, onClick: () => sv({ situacao: k }, "“" + Y.titulo + "” · " + l), style: "height:30px;padding:0 11px;border-radius:9999px;border:0;cursor:pointer;font-size:12.5px;font-weight:500;white-space:nowrap;" + (Y.situacao === k ? "background:" + c + ";color:#fff" : "background:#fff;color:#1f252c;box-shadow:inset 0 0 0 1px #dbdede") })),
+        data: A.iso(Y.quando), hora: A.hm(Y.quando), setData: (e) => so && sv({ fimD: e.target.value, fimH: A.hm(Y.quando) }), setHora: (e) => so && sv({ fimD: A.iso(Y.quando), fimH: e.target.value }),
+        prios: ["Baixa", "Média", "Alta"].map(p => ({ l: p, onClick: () => so && sv({ prioridade: p }), style: prioS((Y.prioridade || "Média") === p, p) })),
+        resp: Y.resp || "Sem responsável", respIni: Y.resp ? ini(Y.resp) : "?", equipe, setResp: (e) => so && sv({ resp: e.target.value, assignees: [e.target.value] }),
+        temVinc: !!(Y.empresa || Y.pessoa), vincs: [Y.empresa ? [IE, Y.empresa] : null, Y.pessoa ? [IP, Y.pessoa] : null].filter(Boolean).map(([d, l]) => ({ d, l })),
+        temDesc: !!(raw.descHtml || Y.desc), descRef: (el) => { if (!el) return; const h = raw.descHtml || String(Y.desc || "").replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]).replace(/\n/g, "<br>"); if (el._h !== h) { el.innerHTML = h; el._h = h; } },
+        subsTxt: subs.length ? subs.filter(x => x.feita).length + " de " + subs.length : "",
+        subs: subs.map((sb, i) => ({ t: sb.t, feita: !!sb.feita, tog: () => sv({ sub: subs.map((y, j) => j === i ? Object.assign({}, y, { feita: !y.feita }) : y) }),
+          check: "flex:0 0 auto;width:18px;height:18px;border-radius:6px;border:0;padding:0;display:grid;place-items:center;cursor:pointer;" + (sb.feita ? "background:#1f7256" : "background:#fff;box-shadow:inset 0 0 0 1.5px #a9b1b4"),
+          tStyle: "flex:1;min-width:0;font-size:13px;color:" + (sb.feita ? "#8b949e;text-decoration:line-through" : "#12171d") })),
+        novaSub: S.novaSub || "", setNovaSub: (e) => this.setState({ novaSub: e.target.value }), teclaSub: (e) => { if (e.key === "Enter" && (S.novaSub || "").trim() && so) { sv({ sub: subs.concat([{ t: S.novaSub.trim(), feita: false }]) }); this.setState({ novaSub: "" }); } },
+        coms: coms.map(c => ({ autor: c.autor, quando: c.quando || "", t: c.texto || "" })), com: S.com || "", setCom: (e) => this.setState({ com: e.target.value }),
+        comentar: () => { const t = (S.com || "").trim(); if (!t || !so) return; sv({ comentarios: coms.concat([{ autor: EU, texto: t, quando: this.agoraTxt() }]) }, "Comentário enviado"); this.setState({ com: "" }); },
+        concluirTxt: feita ? "Reabrir" : "Marcar como feito", concluir: () => sv({ situacao: feita ? "A fazer" : "Feita" }, (feita ? "Reaberta: " : "Feito: ") + Y.titulo),
+        concluirStyle: "display:flex;align-items:center;gap:7px;height:40px;padding:0 16px;border-radius:10px;border:0;font-size:13px;font-weight:600;cursor:pointer;" + (feita ? "background:#fff;color:#1f252c;box-shadow:inset 0 0 0 1px #dbdede" : "background:#1f7256;color:#fff") };
+    }
+    return { nv, vr, fechar, parar: (e) => e.stopPropagation() };
+  }
+}

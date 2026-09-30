@@ -1,0 +1,15 @@
+/* GERADO por scripts/dc-para-tsx.mjs — o <style> do <helmet> de
+   OnFace Projeto.dc.html: reset, scrollbar e @keyframes.
+
+   Sem ele a tela fica "quase certa": botão com texto centralizado em vez de à
+   esquerda, e popover/gaveta sem animação de entrada. */
+
+*{box-sizing:border-box}
+    body{margin:0;font-family:Inter,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+    button,input,select,textarea{font-family:inherit;color:inherit}
+    a,a:hover{color:#c2330f}
+    button{transition:background-color .16s ease,box-shadow .16s ease,color .16s ease,transform .18s cubic-bezier(.16,1,.3,1)}
+    button:active{transform:scale(.97)}
+    ::-webkit-scrollbar{width:10px;height:10px}
+    ::-webkit-scrollbar-thumb{background:rgba(128,138,148,.35);border:3px solid transparent;background-clip:content-box;border-radius:8px}
+    input::placeholder,textarea::placeholder{color:#8b949e}

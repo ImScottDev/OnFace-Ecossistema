@@ -13,7 +13,7 @@
 
 import { Fragment } from "react";
 import { estilo, foco, hover } from "./proto-runtime";
-import "./PreVendasDesenho.css";
+import "./PrevendasDesenho.css";
 
 /**
  * O que o desenho consome.
@@ -23,7 +23,7 @@ import "./PreVendasDesenho.css";
  * Ligar a tela é preencher este objeto com dado real — e é só isso que há
  * para revisar, porque o resto não foi escrito à mão.
  */
-export interface ValoresDePreVendasDesenho {
+export interface ValoresDePrevendasDesenho {
   acoesMassa: any;
   alternarTodos: any;
   alternarTodosLabel: any;
@@ -36,13 +36,9 @@ export interface ValoresDePreVendasDesenho {
   exportMenu: any;
   exportMenuStyle: any;
   filtros: any;
-  indicadores: any;
   limparSelecao: any;
   listaGrupos: any;
   listaVazia: any;
-  maisCriar: any;
-  maisFiltros: any;
-  novoLead: any;
   painelAberto: any;
   painelOpcoes: any;
   painelTitulo: any;
@@ -57,13 +53,13 @@ export interface ValoresDePreVendasDesenho {
   visoes: any;
 }
 
-export function PreVendasDesenho(vals: ValoresDePreVendasDesenho) {
-  const { acoesMassa, alternarTodos, alternarTodosLabel, busca, colunas, ehFila, ehQuadro, exp, expRef, exportMenu, exportMenuStyle, filtros, indicadores, limparSelecao, listaGrupos, listaVazia, maisCriar, maisFiltros, novoLead, painelAberto, painelOpcoes, painelTitulo, parar, qtdSelecao, recolhidas, rotuloSelecao, setBusca, temSelecao, toggleExportMenu, totalLista, visoes } = vals;
+export function PrevendasDesenho(vals: ValoresDePrevendasDesenho) {
+  const { acoesMassa, alternarTodos, alternarTodosLabel, busca, colunas, ehFila, ehQuadro, exp, expRef, exportMenu, exportMenuStyle, filtros, limparSelecao, listaGrupos, listaVazia, painelAberto, painelOpcoes, painelTitulo, parar, qtdSelecao, recolhidas, rotuloSelecao, setBusca, temSelecao, toggleExportMenu, totalLista, visoes } = vals;
   return (
     <>
 <div style={{ flex: "1", minHeight: "0", background: "#f6f6f3", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-<div style={{ flex: "0 0 auto", padding: "14px 14px 0", display: "flex", alignItems: "center", gap: "7px", flexWrap: "wrap" }}>
-<div style={{ display: "flex", alignItems: "center", gap: "7px", background: "#fff", boxShadow: "inset 0 0 0 1px #dbdede", borderRadius: "9px", padding: "0 11px", height: "34px", flex: "1 1 200px", maxWidth: "270px", minWidth: "140px" }}>
+<div data-r="toolbar" data-stagger="45" data-stagger-tipo="blur" style={{ flex: "0 0 auto", padding: "14px 14px 0", display: "flex", alignItems: "center", gap: "7px", flexWrap: "wrap" }}>
+<div data-r="busca" style={{ display: "flex", alignItems: "center", gap: "7px", background: "#fff", boxShadow: "inset 0 0 0 1px #dbdede", borderRadius: "9px", padding: "0 11px", height: "34px", flex: "1 1 200px", maxWidth: "270px", minWidth: "140px" }}>
 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4a5560" strokeWidth="2" strokeLinecap="round" style={{ flex: "0 0 auto" }}>
 <circle cx="11" cy="11" r="7" />
 <path d="m16.5 16.5 4 4" />
@@ -126,14 +122,6 @@ Limpar
 </div>
 </Fragment>
 ))}
-<button onClick={maisFiltros} style={{ display: "flex", alignItems: "center", gap: "7px", height: "34px", padding: "0 12px", borderRadius: "9px", border: "1px dashed #c8ccc9", background: "transparent", fontSize: "13px", fontWeight: "500", color: "#67787c", whiteSpace: "nowrap", flex: "0 0 auto", cursor: "pointer" }} className={[hover("border-color:#8b949e;color:#12171d")].filter(Boolean).join(" ")}>
-<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" style={{ flex: "0 0 auto" }}>
-<path d="M12 5v14M5 12h14" />
-</svg>
-<span>
-Filtros
-</span>
-</button>
 <span style={{ flex: "1", minWidth: "8px" }} />
 <div style={{ display: "flex", background: "#eeeff3", borderRadius: "9px", padding: "3px", gap: "2px", flex: "0 0 auto", height: "34px", alignItems: "stretch" }}>
 {(visoes ?? []).map((v: any, i1: number) => (
@@ -145,13 +133,16 @@ Filtros
 ))}
 </div>
 <div data-of-expmenu="1" ref={expRef} style={{ position: "relative", flex: "0 0 auto" }}>
-<button onClick={toggleExportMenu} style={{ display: "flex", alignItems: "center", gap: "7px", height: "34px", padding: "0 12px", borderRadius: "9px", background: "#fff", boxShadow: "inset 0 0 0 1px #dbdede", fontSize: "13px", fontWeight: "500", color: "#1f252c", whiteSpace: "nowrap", border: "0", cursor: "pointer" }} className={[hover("background:#f6f7f7")].filter(Boolean).join(" ")}>
+<button onClick={toggleExportMenu} style={{ display: "flex", alignItems: "center", gap: "7px", height: "34px", padding: "0 11px 0 13px", borderRadius: "9px", background: "#d93c1a", fontSize: "13px", fontWeight: "600", color: "#fff", whiteSpace: "nowrap", border: "0", cursor: "pointer" }} className={[hover("background:#c2330f")].filter(Boolean).join(" ")}>
 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" style={{ flex: "0 0 auto" }}>
 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
 </svg>
 <span>
 Exportar
 </span>
+<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flex: "0 0 auto", opacity: ".85" }}>
+<path d="m6 9 6 6 6-6" />
+</svg>
 </button>
 {(exportMenu) ? (<>
 <div style={estilo(exportMenuStyle)}>
@@ -200,43 +191,13 @@ Marque os cartões e exporte só eles
 </div>
 </>) : null}
 </div>
-<div style={{ display: "flex", alignItems: "stretch", height: "34px", borderRadius: "9px", overflow: "hidden", background: "#d93c1a", flex: "0 0 auto" }}>
-<button onClick={novoLead} style={{ display: "flex", alignItems: "center", gap: "7px", padding: "0 13px", background: "transparent", border: "0", color: "#fff", fontSize: "13px", fontWeight: "600", whiteSpace: "nowrap", cursor: "pointer" }} className={[hover("background:rgba(0,0,0,.12)")].filter(Boolean).join(" ")}>
-<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" style={{ flex: "0 0 auto" }}>
-<path d="M12 5v14M5 12h14" />
-</svg>
-<span>
-Novo lead
-</span>
-</button>
-<span style={{ flex: "0 0 auto", width: "1px", background: "rgba(255,255,255,.34)" }} />
-<button onClick={maisCriar} style={{ display: "flex", alignItems: "center", justifyContent: "center", width: "28px", background: "transparent", border: "0", color: "#fff", cursor: "pointer" }} title="Outras criações" className={[hover("background:rgba(0,0,0,.12)")].filter(Boolean).join(" ")}>
-<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" style={{ flex: "0 0 auto" }}>
-<path d="m7 15 5 5 5-5M7 9l5-5 5 5" />
-</svg>
-</button>
-</div>
-</div>
-<div style={{ flex: "0 0 auto", display: "flex", gap: "18px", flexWrap: "wrap", padding: "13px 16px 12px" }}>
-{(indicadores ?? []).map((i: any, i1: number) => (
-<Fragment key={i?.id ?? i?.chave ?? i1}>
-<div style={{ minWidth: "0" }}>
-<div style={{ fontSize: "10.5px", fontWeight: "600", letterSpacing: ".06em", color: "#67787c", whiteSpace: "nowrap" }}>
-{i.label}
-</div>
-<div style={{ fontSize: "11.5px", color: "#a3a8a4", marginTop: "3px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-{i.campo}
-</div>
-</div>
-</Fragment>
-))}
 </div>
 {(ehQuadro) ? (<>
-<div style={{ flex: "1", minHeight: "0", overflowX: "auto", overflowY: "hidden", padding: "0 14px 14px" }}>
-<div style={{ display: "flex", gap: "10px", alignItems: "stretch", height: "100%", minHeight: "0" }}>
+<div data-r="board" style={{ flex: "1", minHeight: "0", overflowX: "auto", overflowY: "hidden", padding: "14px 14px 14px" }}>
+<div data-stagger="90" data-stagger-tipo="curtain" data-delay="120" style={{ display: "flex", gap: "10px", alignItems: "stretch", height: "100%", minHeight: "0" }}>
 {(colunas ?? []).map((col: any, i1: number) => (
 <Fragment key={col?.id ?? col?.chave ?? i1}>
-<section onDragOver={col.sobre} onDragLeave={col.sai} onDrop={col.solta} style={estilo(col.style)}>
+<section data-r="coluna" onDragOver={col.sobre} onDragLeave={col.sai} onDrop={col.solta} style={estilo(col.style)}>
 <div style={{ flex: "0 0 auto", display: "flex", alignItems: "center", gap: "8px", padding: "6px 6px 9px" }}>
 <span style={estilo(col.ponto)} />
 <span style={{ fontFamily: "'Plus Jakarta Sans',sans-serif", fontSize: "14px", fontWeight: "700", letterSpacing: "-.01em", whiteSpace: "nowrap", color: "#12171d" }}>
@@ -260,7 +221,7 @@ Novo lead
 </button>
 </>) : null}
 </div>
-<div style={{ flex: "1", minHeight: "56px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "8px", padding: "2px 0 8px" }}>
+<div data-stagger="70" data-stagger-tipo="spring" data-delay={col.atrasoEntrada} data-stagger-filhos-tilt="7" style={{ flex: "1", minHeight: "56px", overflowY: "auto", overflowX: "visible", display: "flex", flexDirection: "column", gap: "8px", padding: "2px 3px 8px", margin: "0 -3px" }}>
 {(col.cards ?? []).map((k: any, i2: number) => (
 <Fragment key={k?.id ?? k?.chave ?? i2}>
 <div data-sel={k.selAttr} draggable={col.arrastavel} onDragStart={k.pega} onDragEnd={k.larga} onClick={k.abrir} tabIndex={0} style={estilo(k.style)} className="of-card">
@@ -407,7 +368,7 @@ PARADO
 </>) : null}
 </button>
 {(g.aberto) ? (<>
-<div>
+<div data-stagger="38" data-stagger-tipo="swing">
 {(g.linhas ?? []).map((r: any, i2: number) => (
 <Fragment key={r?.id ?? r?.chave ?? i2}>
 <div data-sel={r.selAttr} onClick={r.abrir} style={estilo(r.style)} className={["of-card", hover("background:#fafafa")].filter(Boolean).join(" ")}>
@@ -494,7 +455,7 @@ Limpe a busca ou os filtros para ver a lista inteira.
 </>) : null}
 </div>
 {(exp.aberto) ? (<>
-<div onClick={exp.fechar} style={{ position: "fixed", inset: "0", background: "rgba(9,14,20,.45)", zIndex: "54", display: "grid", placeItems: "center", padding: "20px", animation: "of-fade .16s ease-out both" }}>
+<div data-r="modal-fundo" onClick={exp.fechar} style={{ position: "fixed", inset: "0", background: "rgba(9,14,20,.45)", zIndex: "54", display: "grid", placeItems: "center", padding: "20px", animation: "of-fade .16s ease-out both" }}>
 <div onClick={parar} style={{ width: "520px", maxWidth: "100%", maxHeight: "calc(100vh - 40px)", background: "#fff", borderRadius: "13px", overflow: "hidden", display: "flex", flexDirection: "column", animation: "of-rise .2s cubic-bezier(.2,0,.2,1) both" }}>
 <div style={{ flex: "0 0 auto", padding: "15px 18px 13px", borderBottom: "1px solid #e3e7e8", display: "flex", alignItems: "flex-start", gap: "10px" }}>
 <div style={{ minWidth: "0", flex: "1" }}>
@@ -627,7 +588,7 @@ Cancelar
 </div>
 </>) : null}
 {(exp.flutuante) ? (<>
-<div style={{ position: "fixed", bottom: "18px", left: "50%", transform: "translateX(-50%)", zIndex: "56", maxWidth: "calc(100vw - 28px)", animation: "of-rise .16s cubic-bezier(.2,0,.2,1) both" }}>
+<div data-r="barra-massa" style={{ position: "fixed", bottom: "18px", left: "50%", transform: "translateX(-50%)", zIndex: "56", maxWidth: "calc(100vw - 28px)", animation: "of-rise .16s cubic-bezier(.2,0,.2,1) both" }}>
 <div style={{ display: "flex", alignItems: "center", gap: "9px", background: "#12171d", borderRadius: "11px", padding: "8px 8px 8px 12px", boxShadow: "0 10px 30px -6px rgba(0,0,0,.34)", flexWrap: "wrap" }}>
 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fe4f2b" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" style={{ flex: "0 0 auto" }}>
 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
@@ -651,7 +612,7 @@ Concluir seleção
 </div>
 </>) : null}
 {(temSelecao) ? (<>
-<div data-of-massa="1" style={{ position: "fixed", bottom: "18px", left: "50%", transform: "translateX(-50%)", zIndex: "55", maxWidth: "calc(100vw - 28px)", animation: "of-rise .16s cubic-bezier(.2,0,.2,1) both" }}>
+<div data-of-massa="1" data-r="barra-massa" style={{ position: "fixed", bottom: "18px", left: "50%", transform: "translateX(-50%)", zIndex: "55", maxWidth: "calc(100vw - 28px)", animation: "of-rise .16s cubic-bezier(.2,0,.2,1) both" }}>
 {(painelAberto) ? (<>
 <div style={{ marginBottom: "8px", borderRadius: "10px", background: "#fff", border: "1px solid #e3e7e8", boxShadow: "0 10px 30px -6px rgba(0,0,0,.22)", padding: "4px", minWidth: "264px", animation: "of-rise .12s cubic-bezier(.2,0,.2,1) both" }}>
 <div style={{ fontSize: "11px", fontWeight: "600", color: "#4a5560", letterSpacing: ".04em", padding: "7px 8px 5px" }}>
