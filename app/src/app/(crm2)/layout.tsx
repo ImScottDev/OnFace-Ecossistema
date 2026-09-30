@@ -6,6 +6,7 @@ import { Cf2SidebarProvider } from "@/components/crm2/ui/Sidebar";
 import { Cf2ThemeRoot } from "@/components/crm2/ThemeRoot";
 import { Cf2CamadaModal } from "@/components/crm2/CamadaModal";
 import { OnfaceThemeRoot } from "@/components/onface/OnfaceThemeRoot";
+import Script from "next/script";
 import { CascaProto } from "@/components/onface/proto/CascaProto";
 import { TopbarOnface } from "@/components/onface/shell/TopbarOnface";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
@@ -94,6 +95,14 @@ export default async function Crm2Layout({
             o wrapper grafite da casca encolhia ao conteúdo e sobravam 34px de
             branco na direita da janela. No protótipo a casca é filha do
             `<body>` e ocupa tudo. */}
+        {/* `motion.js` do handoff, como veio.
+            Ele observa o DOM e anima só nó NOVO, então funciona igual sob o
+            React: `data-in`, `data-stagger` e `data-count` no markup convertido
+            passam a valer sem nenhuma ponte. Reescrevê-lo em React seria a
+            transcrição que este caminho evita — e ele já respeita
+            prefers-reduced-motion. */}
+        <Script src="/proto/motion.js" strategy="afterInteractive" />
+
         <Cf2SidebarProvider className="contents">
           <CascaProto>{children}</CascaProto>
         </Cf2SidebarProvider>

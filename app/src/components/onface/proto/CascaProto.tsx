@@ -33,7 +33,7 @@ export function CascaProto({ children }: { children: React.ReactNode }) {
          mostra título e subtítulo, e repetir a área ali seria dizer duas vezes
          onde a pessoa está. */
       trilha={trilha?.area ? [{ label: trilha.area }, { label: trilha.item }] : []}
-      ir={(href) => router.push(href)}
+      ir={(href: string) => router.push(href)}
     >
       {/* O protótipo entrega o miolo sem recuo, porque as telas dele pintam o
           próprio fundo até a borda. As outras ~80 telas do produto esperam o

@@ -1,38 +1,24 @@
-// @ts-nocheck — código portado do protótipo; ver a nota abaixo.
+// @ts-nocheck — lógica portada do protótipo; ver a nota abaixo.
 "use client";
 
 /* ─────────────────────────────────────────────────────────────────────────
- * Pré-vendas — a LIGAÇÃO entre o desenho e o produto.
+ * PreVendas — a lógica do handoff, portada.
  *
- * O markup vem de `PreVendasDesenho.tsx`, convertido por máquina a partir do
- * Claude Design e intocável. Este arquivo é a lógica do protótipo, portada por
- * substituição — não reescrita —, com três trocas e só três:
+ * GERADO por scripts/dc-logica-para-tsx.mjs a partir de
+ * PreVendasDesenho.logica.txt, e depois AJUSTADO à mão onde o dado real entra.
  *
- *   1. `window.OnFaceEstado.abrir(peça, id)`  →  `props.abrir(peça, id)`
- *      A porta única dos overlays. No protótipo abria mock; aqui abre a peça
- *      real (qualificar, nutrir, desqualificar, detalhe).
- *   2. `E.avisar(...)`  →  `toast(...)`
- *   3. `d.leads` (dados de exemplo)  →  `props.leads`, vindos do banco.
+ * O markup vive em `PreVendasDesenho.tsx`, convertido por máquina e intocável.
+ * Aqui ficam as mesmas contas do protótipo — filtros, estilos calculados,
+ * estados — com três trocas: o aviso vira toast, a navegação vira rota real e
+ * os dados de exemplo dão lugar às props.
  *
- * Todo o resto — filtros, colunas, arrasto, seleção, exportação, os estilos
- * calculados — é o código do desenho, palavra por palavra. É por isso que a
- * tela sai idêntica: não há transcrição em lugar nenhum.
- *
- * ── Por que `@ts-nocheck` ────────────────────────────────────────────────
+ * ── Por que `@ts-nocheck` ─────────────────────────────────────────────
  *
  * O protótipo é JavaScript sem anotação de tipo, e sob `strict` cada
- * parâmetro dele vira um erro — 166 na primeira passada. Anotar um por um
- * significaria reescrever o arquivo à mão, que é exatamente o que produz a
- * divergência que este caminho existe para eliminar: quem anota, lê; quem lê,
- * transcreve; quem transcreve, erra.
- *
- * A fronteira continua tipada, e é ela que importa: `Props` e
- * `LeadDoDesenho` abaixo, mais o contrato de `ValoresDePreVendasDesenho` no
- * markup. O miolo é código de apresentação portado — se ele estiver errado, a
- * tela mostra, e nenhum tipo teria pego.
- *
- * Quando o desenho estabilizar, este arquivo é o candidato natural a ser
- * reescrito com tipos — aí de uma vez, com a tela já validada por trás.
+ * parâmetro dele vira um erro. Anotar um por um significa reescrever o arquivo
+ * à mão — exatamente a transcrição que este caminho existe para eliminar.
+ * A fronteira continua tipada: `Props` abaixo e o contrato de valores no
+ * markup. O miolo é apresentação; se estiver errado, a tela mostra.
  * ───────────────────────────────────────────────────────────────────────── */
 
 import * as React from "react";
@@ -40,44 +26,49 @@ import { toast } from "sonner";
 
 import { PreVendasDesenho } from "./PreVendasDesenho";
 
-/** O lead na forma que o desenho consome. O adaptador em `PreVendas.tsx`
- *  traduz o `CardPreVendas` do domínio para cá. */
-export interface LeadDoDesenho {
-  id: string;
-  empresa: string | null;
-  pessoa: string;
-  cargo: string;
-  resp: string | null;
-  dias: number;
-  origem: string | null;
-  campanha: string | null;
-  interesse: string | null;
-  tag: string | null;
-  acao: string | null;
-  venceEm: string | null;
-  etapa: string;
-  /* Os canais. O mock do protótipo não os tinha porque lá os botões só
-     davam toast; no produto eles abrem o Atendimento no contato certo. */
-  telefone?: string | null;
-  whatsapp?: string | null;
-  email?: string | null;
-  empresaId?: string | null;
-}
-
-export type PecaDoDesenho = "detalhe" | "qualificar" | "nutrir" | "desqualificar";
-
 interface Props {
-  leads: LeadDoDesenho[];
-  /** A porta única dos overlays, no lugar do mock do protótipo. */
-  abrir: (peca: PecaDoDesenho, id: string) => void;
+  /** O que o protótipo lia do store. Preencher com dado real. */
+  dados?: Record<string, any>;
   ir: (href: string) => void;
+  abrir?: (peca: string, id?: string | null) => void;
+  abrirExterno?: (url: string) => void;
+  children?: React.ReactNode;
+  /* Cada tela recebe as suas: a Casca quer rota e titulo, Pre-vendas quer
+     falar. Nomear todas aqui obrigaria a editar o arquivo gerado a cada
+     regeracao, e arquivo gerado nao se edita. As props que a ligacao de fato
+     usa ficam tipadas no adaptador, que e escrito a mao. */
+  [extra: string]: any;
 }
 
 
-class Logica extends React.Component<Props, any> {
+class Logica extends React.Component<any, any> {
+  /**
+   * O store do protótipo, ligado ao produto.
+   *
+   * `assinar`/`gravar` não fazem nada: no protótipo o estado atravessava
+   * páginas pelo localStorage; aqui o servidor é a verdade e a página relê
+   * sozinha. O que atravessa de verdade — aviso, navegação e as peças —
+   * chega nas props.
+   */
+  E = {
+    tudo: () => this.props.dados ?? {},
+    ler: (k: string, alt?: any) => (this.props.dados as any)?.[k] ?? alt,
+    gravar: () => {},
+    assinar: () => null,
+    assinarPecas: () => null,
+    assinarAviso: () => null,
+    avisar: (texto: string, tom?: string) => this.diz(texto, tom),
+    abrir: (peca: string, id?: string | null) => this.props.abrir?.(peca, id),
+    abrirExterno: (url: string) => this.props.abrirExterno?.(url),
+    irPara: (href: string) => this.ir(href),
+    parametro: (nome: string) =>
+      typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get(nome),
+  };
+
   constructor(props) {
     super(props);
-    const d = { leads: props.leads, cadencias: {} as Record<string, string> };
+    const E = null as any; // o store só existe depois do construtor
+    const d: any = props.dados ?? {};
     this.state = {
       visao: props.visaoInicial || d.visao || "quadro",
       aba: "ativos", busca: "",
@@ -98,16 +89,17 @@ class Logica extends React.Component<Props, any> {
   }
 
   componentDidMount() {
-    this._offEstado = null; void ((d: any) => {
+    const E = this.E;
+    this._offEstado = E ? E.assinar((d) => {
       const patch = {};
       if (d.leads !== this.state.leads) patch.leads = d.leads;
       if (d.cadencias !== this.state.cadencias) patch.cadencias = d.cadencias;
       if (Object.keys(patch).length) this.setState(patch);
-    });
-    this._offPecas = null; void ((peca: string) => {
+    }) : null;
+    this._offPecas = E ? E.assinarPecas((peca) => {
       if (peca === "filtrar-sem-acao") this.setState(s => ({ visao: "fila", sel: Object.assign({}, s.sel, { sla: ["sem_acao"] }) }));
       if (peca === "exportar") this.setState({ expAberto: true, expEscopo: "criterios" });
-    });
+    }) : null;
     this._k = (e) => {
       if (e.key !== "Escape") return;
       if (this.state.exportMenu) return this.setState({ exportMenu: false });
@@ -134,7 +126,7 @@ class Logica extends React.Component<Props, any> {
   }
 
   componentDidUpdate(_, anterior) {
-    const E = null as any;
+    const E = this.E;
     if (!E) return;
     const patch = {};
     if (anterior.leads !== this.state.leads) patch.leads = this.state.leads;
@@ -156,9 +148,9 @@ class Logica extends React.Component<Props, any> {
     else toast(texto);
   }
 
-  /** Navegação de verdade: o protótipo só trocava de tela por dentro. */
-  ir(href: string, _label?: string) {
-    this.props.ir(href);
+  ir(href, label) {
+    const E = this.E;
+    if (E) E.irPara(href, label);
   }
 
   linhaLista(L, selecao, iniciaisDe) {
@@ -233,7 +225,7 @@ class Logica extends React.Component<Props, any> {
           this.setState(s => ({ selecao: s.selecao.indexOf(L.id) >= 0 ? s.selecao.filter(x => x !== L.id) : s.selecao.concat(L.id), acaoMassa: null }));
           return;
         }
-        this.props.abrir("detalhe", L.id);
+        if (this.E) this.E.abrir("detalhe", L.id);
       }
     };
   }
@@ -380,7 +372,7 @@ class Logica extends React.Component<Props, any> {
         icone: "M12 5v14M5 12h14" },
       { k: "em_contato", label: "Em contato", cor: "#4c8fe0",
         vazio: "Arraste um lead para cá ao registrar a primeira tentativa.",
-        icone: "M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.4-1.2a2 2 0 0 1 2.1-.5c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z" },
+        icone: "M13.83 16.57a1 1 0 0 0 1.21-.3l.36-.47A2 2 0 0 1 17 15h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2A18 18 0 0 1 2 4a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v3a2 2 0 0 1-.8 1.6l-.47.35a1 1 0 0 0-.29 1.23 14 14 0 0 0 6.39 6.39" },
       { k: "qualificacao", label: "Qualificação", cor: "#9b8bd8",
         vazio: "Arraste para começar a apurar critérios. Preencher campos não qualifica.",
         icone: "M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" },
@@ -436,7 +428,7 @@ class Logica extends React.Component<Props, any> {
         this.setState(s => ({ selecao: s.selecao.indexOf(id) >= 0 ? s.selecao.filter(x => x !== id) : s.selecao.concat(id), acaoMassa: null }));
         return;
       }
-      this.props.abrir("detalhe", id);
+      if (this.E) this.E.abrir("detalhe", id);
     };
     const recolhidas = colDefs.filter(c => c.recolhivel && !S.expandidas[c.k]).map(c => {
       const n = visiveis.filter(L => L.etapa === c.k).length;
@@ -454,13 +446,13 @@ class Logica extends React.Component<Props, any> {
           const id = S.arrastando;
           this.setState({ sobre: null, arrastando: null });
           if (!id) return;
-          if (c.k === "nutricao") this.props.abrir("nutrir", id);
-          else this.props.abrir("desqualificar", id);
+          if (c.k === "nutricao") if (this.E) this.E.abrir("nutrir", id);
+          else if (this.E) this.E.abrir("desqualificar", id);
         }
       };
     });
 
-    const colunas = colDefs.filter(c => !c.recolhivel || S.expandidas[c.k]).map(c => {
+    const colunas = colDefs.filter(c => !c.recolhivel || S.expandidas[c.k]).map((c, ci) => {
       const cards = visiveis.filter(L => L.etapa === c.k).map(card => ({
         empresa: card.empresa || "Sem empresa",
         pessoa: card.pessoa + " · " + card.cargo,
@@ -505,6 +497,7 @@ class Logica extends React.Component<Props, any> {
       }));
       return {
         label: c.label, travada: !!c.travada, confirma: !!c.confirma, dica: c.dica || "",
+        atrasoEntrada: String(260 + ci * 90),
         recolhivel: !!c.recolhivel,
         fechar: (e) => { e.stopPropagation(); this.setState(s => ({ expandidas: Object.assign({}, s.expandidas, { [c.k]: false }) })); },
         arrastavel: !c.travada && !c.recolhivel,
@@ -534,14 +527,13 @@ class Logica extends React.Component<Props, any> {
               : "Mover para Oportunidade cria uma oportunidade real. Use a ação Criar oportunidade.", "erro");
             return;
           }
-          if (c.k === "nutricao") { this.props.abrir("nutrir", id); return; }
-          if (c.k === "desqualificado") { this.props.abrir("desqualificar", id); return; }
-          if (c.k === "qualificado") { this.props.abrir("qualificar", id); return; }
+          if (c.k === "nutricao") { if (this.E) this.E.abrir("nutrir", id); return; }
+          if (c.k === "desqualificado") { if (this.E) this.E.abrir("desqualificar", id); return; }
+          if (c.k === "qualificado") { if (this.E) this.E.abrir("qualificar", id); return; }
           if (c.k === "oportunidade") {
             const alvo = this.state.leads.find(L => L.id === id);
             if (!alvo || !alvo.empresa) { this.diz("Bloqueado: lead sem empresa associada", "erro"); return; }
-            this.setState(s => ({ leads: s.leads.map(L => L.id === id ? Object.assign({}, L, { etapa: "oportunidade" }) : L) }));
-            this.diz("Oportunidade criada no Pipeline · " + alvo.empresa, "ok");
+            if (this.E) this.E.abrir("oportunidade", id);
             return;
           }
           if (S.origem === c.k) return;
@@ -593,7 +585,7 @@ class Logica extends React.Component<Props, any> {
     };
 
     return {
-      indicadores, filtros, visoes, colunas, recolhidas,
+      filtros, visoes, colunas, recolhidas,
       maisCriar: () => this.diz("Outras criações: oportunidade, proposta, atividade", "aviso"),
       maisFiltros: () => this.diz("Mais filtros: etapa, período de entrada, UTM, empresa sem CNPJ", "aviso"),
       exportMenu: S.exportMenu,
@@ -655,6 +647,14 @@ class Logica extends React.Component<Props, any> {
       exp: {
         aberto: S.expAberto, flutuante: S.expFlutuante,
         fechar: () => this.setState({ expAberto: false }),
+        resumoVisao: ativos.length + (ativos.length === 1 ? " lead" : " leads") + " com a busca e os filtros atuais",
+        abrirVisao: () => {
+          this.setState({ exportMenu: false });
+          if (!ativos.length) return this.diz("Nenhum lead na visão atual", "erro");
+          this.baixarCsv(ativos, "Visão atual exportada · " + ativos.length + " leads");
+        },
+        abrirCriterios: () => this.setState({ exportMenu: false, expAberto: true, expEscopo: "criterios", expFlutuante: false }),
+        abrirSelecao: () => this.setState({ exportMenu: false, expEscopo: "selecao", expFlutuante: true, expAberto: false, acaoMassa: null }),
         mostraFiltros: S.expEscopo !== "selecao",
         qtdSel: selecao.length,
         escopos: [
@@ -807,7 +807,7 @@ class Logica extends React.Component<Props, any> {
               this.setState(s => ({ selecao: s.selecao.indexOf(L.id) >= 0 ? s.selecao.filter(x => x !== L.id) : s.selecao.concat(L.id), acaoMassa: null }));
               return;
             }
-            this.props.abrir("detalhe", L.id);
+            if (this.E) this.E.abrir("detalhe", L.id);
           }
         };
       }),

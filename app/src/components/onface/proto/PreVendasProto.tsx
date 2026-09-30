@@ -23,7 +23,7 @@ import { toast } from "sonner";
 import type { BoardPreVendas, CardPreVendas, DetalheLead } from "@/lib/vendas/consultas";
 import type { LinhaDoTempo } from "@/lib/vendas/eventos";
 import type { AcoesPreVendas } from "../vendas/PreVendas";
-import { PreVendasLiga, type LeadDoDesenho, type PecaDoDesenho } from "./PreVendasLiga";
+import { PreVendasLiga } from "./PreVendasLiga";
 import { PecasLiga } from "./PecasLiga";
 import { type CanalAtendimento } from "../vendas/atendimento";
 
@@ -36,6 +36,18 @@ import { type CanalAtendimento } from "../vendas/atendimento";
  * `acao`, `venceEm`). Traduzir aqui, num lugar só, é o que permite o markup
  * ficar intocado: ele continua lendo os nomes que sempre leu.
  */
+/** O lead na forma que o desenho consome. */
+export interface LeadDoDesenho {
+  id: string; empresa: string | null; pessoa: string; cargo: string;
+  resp: string | null; dias: number; origem: string | null; campanha: string | null;
+  interesse: string | null; tag: string | null; acao: string | null;
+  venceEm: string | null; etapa: string;
+  telefone?: string | null; whatsapp?: string | null; email?: string | null;
+  empresaId?: string | null;
+}
+
+export type PecaDoDesenho = "detalhe" | "qualificar" | "nutrir" | "desqualificar";
+
 function paraODesenho(c: CardPreVendas): LeadDoDesenho {
   return {
     id: c.leadId,
@@ -149,13 +161,14 @@ export function PreVendasProto({ dados, acoes }: {
           a borda, então a casca tira o recuo de 24/28px. Sem isto sobrava uma
           moldura branca em volta e o quadro chegava cortado na direita. */}
       <div data-workspace="desenho">
-        <PreVendasLiga leads={leads} abrir={abrir} ir={(href) => router.push(href)} />
+        <PreVendasLiga dados={{ leads }} abrir={abrir} ir={(href: string) => router.push(href)} />
       </div>
 
       <PecasLiga
         ref={pecas}
+        dados={{ leads }}
         leads={leads}
-        ir={(href) => router.push(href)}
+        ir={(href: string) => router.push(href)}
         aoGravar={() => router.refresh()}
         falar={falar}
       />

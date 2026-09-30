@@ -1,19 +1,24 @@
-// @ts-nocheck — código portado do protótipo; ver a nota em PreVendasLiga.tsx.
+// @ts-nocheck — lógica portada do protótipo; ver a nota abaixo.
 "use client";
 
 /* ─────────────────────────────────────────────────────────────────────────
- * A casca, vinda de `OnFace Casca.dc.html`.
+ * Casca — a lógica do handoff, portada.
  *
- * Sidebar com grupos expansíveis, topo com trilha, busca ⌘K, sino, perfil,
- * NEXO e o toast. No protótipo é um arquivo só que todas as telas importam —
- * mexer aqui muda todas de uma vez, e é essa a razão de ela existir separada.
+ * GERADO por scripts/dc-logica-para-tsx.mjs a partir de
+ * CascaDesenho.logica.txt, e depois AJUSTADO à mão onde o dado real entra.
  *
- * Substituído em relação ao original, e só isto:
- *   - `E.irPara(href)`  → navegação real, com o prefixo `/onface-preview`
- *                         caindo fora (a árvore do protótipo aponta para onde
- *                         as telas dele moravam)
- *   - `E.avisar(...)`   → toast do produto
- *   - `E.abrir(...)`    → as duas ações do NEXO que tinham destino
+ * O markup vive em `CascaDesenho.tsx`, convertido por máquina e intocável.
+ * Aqui ficam as mesmas contas do protótipo — filtros, estilos calculados,
+ * estados — com três trocas: o aviso vira toast, a navegação vira rota real e
+ * os dados de exemplo dão lugar às props.
+ *
+ * ── Por que `@ts-nocheck` ─────────────────────────────────────────────
+ *
+ * O protótipo é JavaScript sem anotação de tipo, e sob `strict` cada
+ * parâmetro dele vira um erro. Anotar um por um significa reescrever o arquivo
+ * à mão — exatamente a transcrição que este caminho existe para eliminar.
+ * A fronteira continua tipada: `Props` abaixo e o contrato de valores no
+ * markup. O miolo é apresentação; se estiver errado, a tela mostra.
  * ───────────────────────────────────────────────────────────────────────── */
 
 import * as React from "react";
@@ -21,22 +26,49 @@ import { toast } from "sonner";
 
 import { CascaDesenho } from "./CascaDesenho";
 
-export interface PropsCasca {
-  children: React.ReactNode;
-  /** Rota atual, para a sidebar marcar o item ativo. */
-  rota: string;
-  titulo: string;
-  subtitulo?: string;
-  trilha?: Array<{ label: string; href?: string }>;
-  menuAberto?: boolean;
+interface Props {
+  /** O que o protótipo lia do store. Preencher com dado real. */
+  dados?: Record<string, any>;
   ir: (href: string) => void;
+  abrir?: (peca: string, id?: string | null) => void;
+  abrirExterno?: (url: string) => void;
+  children?: React.ReactNode;
+  /* Cada tela recebe as suas: a Casca quer rota e titulo, Pre-vendas quer
+     falar. Nomear todas aqui obrigaria a editar o arquivo gerado a cada
+     regeracao, e arquivo gerado nao se edita. As props que a ligacao de fato
+     usa ficam tipadas no adaptador, que e escrito a mao. */
+  [extra: string]: any;
 }
 
 
-class Logica extends React.Component<PropsCasca, any> {
+class Logica extends React.Component<any, any> {
+  /**
+   * O store do protótipo, ligado ao produto.
+   *
+   * `assinar`/`gravar` não fazem nada: no protótipo o estado atravessava
+   * páginas pelo localStorage; aqui o servidor é a verdade e a página relê
+   * sozinha. O que atravessa de verdade — aviso, navegação e as peças —
+   * chega nas props.
+   */
+  E = {
+    tudo: () => this.props.dados ?? {},
+    ler: (k: string, alt?: any) => (this.props.dados as any)?.[k] ?? alt,
+    gravar: () => {},
+    assinar: () => null,
+    assinarPecas: () => null,
+    assinarAviso: () => null,
+    avisar: (texto: string, tom?: string) => this.diz(texto, tom),
+    abrir: (peca: string, id?: string | null) => this.props.abrir?.(peca, id),
+    abrirExterno: (url: string) => this.props.abrirExterno?.(url),
+    irPara: (href: string) => this.ir(href),
+    parametro: (nome: string) =>
+      typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get(nome),
+  };
+
   constructor(props) {
     super(props);
-    const d: any = { menuAberto: props.menuAberto, menuGrupos: {} };
+    const E = null as any; // o store só existe depois do construtor
+    const d: any = props.dados ?? {};
     this.state = {
       aberta: props.menuAberto !== undefined ? props.menuAberto !== false : d.menuAberto !== false,
       exp: d.menuGrupos || { Vendas: true, "Operação": false, Clientes: false, "Automações": false, Insights: false },
@@ -44,7 +76,7 @@ class Logica extends React.Component<PropsCasca, any> {
       perfilAberto: false,
       sinoAberto: false, filtroSino: "todas",
       buscaAberta: false, termo: "", idx: 0,
-      nexoAberto: false, nexoAba: null, nexoConversa: "c0", nexoRascunho: "", nexoPensando: false,
+      qaAberto: false, nexoAberto: false, nexoAba: null, nexoConversa: "c0", nexoRascunho: "", nexoPensando: false,
       nexoMsgs: {
         c0: [{ de: "oni", texto: "Bom dia, Scott. Olhei a sua carteira de pré-vendas agora: 5 leads estão sem próxima ação e 2 entraram hoje sem responsável." },
              { de: "oni", insight: true, rotulo: "PRIORIDADE DE HOJE", texto: "Três leads passaram do tempo de primeiro contato:", itens: ["Cliniface Saúde — 6 dias sem contato, sem responsável", "Braspar Distribuidora — 9 dias parado, sem próxima ação", "Sollar Imóveis — 14 dias em qualificação"], acoes: [{ label: "Atribuir a mim", tom: "primario" }, { label: "Criar atividades", tom: "" }] }]
@@ -55,10 +87,13 @@ class Logica extends React.Component<PropsCasca, any> {
   }
 
   componentDidMount() {
-    /* O protótipo assinava o store para repintar quando outro arquivo mudava
-       o dado. Aqui o servidor é a verdade e a página relê sozinha. */
-    this._offEstado = null;
-    this._offAviso = null;
+    this._rsz = () => { const w = window.innerWidth; if (w !== this.state.larg) this.setState({ larg: w, menuMob: w < 768 ? this.state.menuMob : false }); };
+    this._rsz();
+    window.addEventListener("resize", this._rsz);
+    this._ultimo = { aberta: this.state.aberta, exp: this.state.exp };
+    const E = this.E;
+    this._offEstado = E ? E.assinar((d) => { if (d.leads !== this.state.leads) this.setState({ leads: d.leads }); }) : null;
+    this._offAviso = E ? E.assinarAviso((texto, tom) => this.diz(texto, tom)) : null;
     this._k = (e) => {
       const cmd = e.metaKey || e.ctrlKey;
       if (cmd && e.key.toLowerCase() === "b") { e.preventDefault(); this.setState(s => ({ aberta: !s.aberta })); }
@@ -82,12 +117,17 @@ class Logica extends React.Component<PropsCasca, any> {
     document.addEventListener("pointerdown", this._fora, true);
   }
 
-  /* O protótipo gravava a preferência de menu no `localStorage` dele. No
-     produto o cookie `sidebar_state` já faz isso, lido pelo layout no servidor
-     — gravar aqui seria a segunda fonte para o mesmo estado. */
-  componentDidUpdate(_prev: any, _anterior: any) {}
+  componentDidUpdate() {
+    const anterior = this._ultimo || { aberta: this.state.aberta, exp: this.state.exp };
+    this._ultimo = { aberta: this.state.aberta, exp: this.state.exp };
+    if (anterior.aberta !== this.state.aberta || anterior.exp !== this.state.exp) {
+      const E = this.E;
+      if (E) E.gravar({ menuAberto: this.state.aberta, menuGrupos: this.state.exp });
+    }
+  }
 
   componentWillUnmount() {
+    window.removeEventListener("resize", this._rsz);
     document.removeEventListener("keydown", this._k);
     document.removeEventListener("pointerdown", this._fora, true);
     if (this._offEstado) this._offEstado();
@@ -252,7 +292,6 @@ class Logica extends React.Component<PropsCasca, any> {
   arvore() {
     return [
       { label: "Início", d: "M3 3h7v9H3zM14 3h7v5h-7zM14 12h7v9h-7zM3 16h7v5H3z", href: "/onface-preview/visao-geral" },
-      { label: "Atendimento", d: "M3 18v-6a9 9 0 0 1 18 0v6M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z", href: "/atendimento" },
       { label: "Vendas", d: "M16 20V6a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v14M2 9a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z", href: "/vendas", filhos: [
         { label: "Pré-vendas", href: "/onface-preview/pre-vendas" },
         { label: "Pipeline", href: "/onface-preview/pipeline" },
@@ -262,17 +301,11 @@ class Logica extends React.Component<PropsCasca, any> {
         { label: "Contatos & Empresas", href: "/onface-preview/contatos" }
       ] },
       { label: "Operação", d: "m3 17 2 2 4-4M3 7l2 2 4-4M13 6h8M13 12h8M13 18h8", href: "/onface-preview/atividades", filhos: [
-        { label: "Atividades", href: "/onface-preview/atividades" },
-        { label: "Calendário", href: "/calendario" },
-        { label: "Chamados", href: "/chamados", pendente: true },
-        { label: "Pós-vendas", href: "/pos-vendas", pendente: true }
+        { label: "Onboarding & Implantação", href: "/operacao/onboarding" },
+        { label: "Customer Success", href: "/clientes/cs" }
       ] },
       { label: "Clientes", d: "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0M22 21v-2a4 4 0 0 0-3-3.9", href: "/clientes", filhos: [
-        { label: "Visão Geral", href: "/clientes" },
-        { label: "Carteira", href: "/clientes/carteira", pendente: true },
-        { label: "Customer Success", href: "/clientes/cs" },
-        { label: "Expansão & Renovação", href: "/clientes/expansao", pendente: true },
-        { label: "Risco / Churn", href: "/clientes/risco", pendente: true }
+        { label: "Visão Geral", href: "/clientes" }
       ] },
       { grupo: "INTELIGÊNCIA", label: "Automações", d: "M4 14h7l-1 7 10-11h-7l1-7z", href: "/automacoes", filhos: [
         { label: "Visão Geral", href: "/automacoes" },
@@ -301,15 +334,10 @@ class Logica extends React.Component<PropsCasca, any> {
     return hit ? hit.area : null;
   }
 
-  /**
-   * Navegação de verdade.
-   *
-   * A árvore do protótipo aponta para `/onface-preview/*`, que é onde as telas
-   * dele moravam. No produto as rotas são as de `(crm2)`, então o prefixo cai
-   * aqui — num lugar só, em vez de editar a árvore e perder a regeração.
-   */
-  ir(href: string, _label?: string) {
-    this.props.ir(String(href).replace(/^\/onface-preview/, ""));
+  ir(href, label) {
+    const E = this.E;
+    if (E) E.irPara(href, label);
+    else this.diz('"' + label + '" ainda não foi desenhada — em construção', "aviso");
   }
 
   renderVals() {
@@ -317,25 +345,27 @@ class Logica extends React.Component<PropsCasca, any> {
     const rota = this.props.rota || "/onface-preview/pre-vendas";
     const ativa = this.area(rota);
     const navBase = "display:flex;align-items:center;gap:11px;padding:7px 9px;border-radius:8px;font-size:13.5px;font-weight:500;width:100%;white-space:nowrap;";
-    const largura = S.aberta ? 226 : 52;
+    const mob = (S.larg || 1440) < 768;
+    const abertaV = mob || S.aberta;
+    const largura = mob ? 280 : abertaV ? 226 : 52;
     const areas = this.arvore().map(m => {
       const on = ativa === m.label;
       const temFilhos = !!(m.filhos && m.filhos.length);
-      const expandido = S.aberta && temFilhos && !!S.exp[m.label];
+      const expandido = abertaV && temFilhos && !!S.exp[m.label];
       return {
-        label: m.label, d: m.d, temFilhos: temFilhos && S.aberta, expandido,
-        grupo: S.aberta ? (m.grupo || "") : "",
+        label: m.label, d: m.d, temFilhos: temFilhos && abertaV, expandido,
+        grupo: abertaV ? (m.grupo || "") : "",
         grupoStyle: "font-size:10.5px;font-weight:600;letter-spacing:.09em;color:#7e8894;padding:15px 9px 6px;white-space:nowrap",
-        style: navBase + (on ? "background:#1f2833;color:#eeeff3;font-weight:600" : "color:#b9c1ca") + (S.aberta ? "" : ";justify-content:center;padding:7px 0"),
+        style: navBase + (on ? "background:#1f2833;color:#eeeff3;font-weight:600" : "color:#b9c1ca") + (abertaV ? "" : ";justify-content:center;padding:7px 0"),
         chevron: "flex:0 0 auto;color:#7e8894;transition:transform .14s cubic-bezier(.2,0,.2,1);transform:rotate(" + (expandido ? 0 : -90) + "deg)",
         acionar: () => {
-          if (temFilhos && S.aberta) this.setState(s => ({ exp: Object.assign({}, s.exp, { [m.label]: !s.exp[m.label] }) }));
+          if (temFilhos && abertaV) this.setState(s => ({ exp: Object.assign({}, s.exp, { [m.label]: !s.exp[m.label] }) }));
           else this.ir(m.href, m.label);
         },
         filhos: (m.filhos || []).map(f => ({
           label: f.label, pendente: !!f.pendente,
           style: "display:flex;align-items:center;gap:7px;padding:6px 9px;border-radius:7px;font-size:12.5px;width:100%;"
-            + ((rota === f.href || (rota === "/onface-preview/empresa" && f.href === "/onface-preview/pre-vendas")) ? "color:#eeeff3;font-weight:600;background:#1a222c" : "color:#9aa4ae;font-weight:400"),
+            + ((rota === f.href || ((rota === "/onface-preview/empresa" || rota === "/onface-preview/pessoa") && f.href === "/onface-preview/contatos")) ? "color:#eeeff3;font-weight:600;background:#1a222c" : "color:#9aa4ae;font-weight:400"),
           ir: () => this.ir(f.href, f.label)
         }))
       };
@@ -355,14 +385,29 @@ class Logica extends React.Component<PropsCasca, any> {
       subtitulo: this.props.subtitulo || "",
       temSubtitulo: !!this.props.subtitulo,
       trilha,
-      aberta: S.aberta, fechada: !S.aberta,
+      aberta: abertaV, fechada: !abertaV,
       railStyle: "flex:0 0 auto;width:" + largura + "px;height:100%;min-height:0;display:flex;flex-direction:column;padding:8px;overflow:hidden;transition:width .16s cubic-bezier(.2,0,.2,1)",
-      criarStyle: "display:flex;align-items:center;gap:9px;margin-top:12px;height:34px;border-radius:9px;background:#d93c1a;color:#fff;font-size:13.5px;font-weight:600;flex:0 0 auto;"
-        + (S.aberta ? "padding:0 12px" : "justify-content:center;padding:0"),
-      perfilStyle: "display:flex;align-items:center;gap:9px;padding:7px;border-radius:9px;flex:0 0 auto;margin-top:6px;" + (S.aberta ? "" : "justify-content:center"),
+      criarStyle: "display:flex;align-items:center;gap:9px;margin-top:12px;height:34px;border-radius:9px;border:0;cursor:pointer;background:" + (/atendimento/.test(this.props.rota || "") ? "#c2330f" : "#d93c1a") + ";color:#fff;font-size:13.5px;font-weight:600;flex:0 0 auto;"
+        + (abertaV ? "padding:0 12px" : "justify-content:center;padding:0"),
+      perfilStyle: "display:flex;align-items:center;gap:9px;padding:7px;border-radius:9px;flex:0 0 auto;margin-top:6px;" + (abertaV ? "" : "justify-content:center"),
       areas,
-      toggleRail: () => this.setState(s => ({ aberta: !s.aberta })),
-      criar: () => this.diz("Criar: atalho global para lead, oportunidade, proposta e atividade", "aviso"),
+      toggleRail: () => mob ? this.setState(s => ({ menuMob: !s.menuMob })) : this.setState(s => ({ aberta: !s.aberta })),
+      menuMob: mob && S.menuMob ? "1" : "0",
+      fecharMenuMob: () => this.setState({ menuMob: false }),
+      criar: () => this.ir("/atendimento", "Atendimento"),
+      qa: (() => { const on = !!S.qaAberto, rota = this.props.rota || "";
+        const IT = [["Atendimento", "Conversas e fila de clientes", "/atendimento", "M3 18v-6a9 9 0 0 1 18 0v6M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z", "3"],
+          ["Atividades", "Seu dia, foco e timeline", "/onface-preview/atividades", "M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11", ""],
+          ["Calendário", "Reuniões e compromissos", "/calendario", "M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z", ""]];
+        return { alternar: () => this.setState(s2 => ({ qaAberto: !s2.qaAberto })),
+          chev: "flex:0 0 auto;opacity:.85;transition:transform .28s cubic-bezier(.16,1,.3,1);transform:rotate(" + (on ? 180 : 0) + "deg)",
+          wrap: "display:grid;grid-template-rows:" + (on ? "1fr" : "0fr") + ";transition:grid-template-rows .32s cubic-bezier(.16,1,.3,1),opacity .2s ease;opacity:" + (on ? 1 : 0),
+          painel: "display:flex;flex-direction:column;gap:2px;margin-top:6px;padding:4px;border-radius:11px;background:rgba(255,255,255,.04);box-shadow:inset 0 0 0 1px rgba(255,255,255,.06)",
+          itens: IT.map(([l, s2, href, d, n], i) => { const at = rota === href || (href === "/atendimento" && /atendimento/.test(rota));
+            return { l, s: s2, d, n, temN: !!n, onClick: () => { this.setState({ qaAberto: false }); this.ir(href, l); },
+              nStyle: "flex:0 0 auto;min-width:20px;height:18px;padding:0 6px;border-radius:9999px;background:#fe4f2b;color:#fff;font-size:10.5px;font-weight:700;display:grid;place-items:center",
+              ico: "flex:0 0 auto;width:28px;height:28px;border-radius:8px;display:grid;place-items:center;" + (at ? "background:#fe4f2b;color:#fff" : "background:rgba(255,255,255,.07);color:#e7eaec"),
+              style: "display:flex;align-items:center;gap:10px;width:100%;padding:" + (abertaV ? "6px 8px 6px 6px" : "6px 0;justify-content:center") + ";border-radius:8px;border:0;cursor:pointer;text-align:left;background:" + (at ? "rgba(255,255,255,.07)" : "transparent") + ";transition:background-color .15s ease,transform .32s cubic-bezier(.16,1,.3,1),opacity .28s ease;transition-delay:0s," + (on ? i * 45 : 0) + "ms," + (on ? i * 45 : 0) + "ms;transform:translateY(" + (on ? 0 : -6) + "px);opacity:" + (on ? 1 : 0) }; }) }; })(),
 
       perfilAberto: S.perfilAberto,
       togglePerfil: () => this.setState(s => ({ perfilAberto: !s.perfilAberto })),
@@ -425,7 +470,7 @@ class Logica extends React.Component<PropsCasca, any> {
       abrirNexo: () => this.setState({ nexoAberto: true }),
       nexoResumo: "3 avisos · 2 insights",
       nexoBtnStyle: "display:flex;align-items:center;gap:9px;flex:0 0 auto;margin-top:8px;padding:8px;border-radius:10px;border:0;cursor:pointer;background:#161d26;box-shadow:inset 0 0 0 1px #242c36;transition:background 120ms cubic-bezier(0,0,.2,1);"
-        + (S.aberta ? "" : "justify-content:center"),
+        + (abertaV ? "" : "justify-content:center"),
       nexoMarca: "flex:0 0 auto;width:26px;height:26px;border-radius:8px;background:rgba(254,79,43,.16);box-shadow:inset 0 0 0 1px rgba(255,77,41,.3);display:grid;place-items:center",
       nexo: (() => {
         const conv = S.nexoConversa;
@@ -515,12 +560,12 @@ class Logica extends React.Component<PropsCasca, any> {
                 onClick: () => {
                   if (b.label === "Abrir lista filtrada") {
                     this.setState({ nexoAberto: false });
-                    this.props.ir("/pre-vendas?view=sem-proxima-acao");
+                    if (this.E) this.E.abrir("filtrar-sem-acao", null);
                     return this.diz("Lista filtrada por leads sem próxima ação", "ok");
                   }
                   if (b.label === "Exportar recorte") {
                     this.setState({ nexoAberto: false });
-                    this.diz("Exportar: use o botão na barra da tela.");
+                    if (this.E) this.E.abrir("exportar", null);
                     return;
                   }
                   this.diz("Ação do NEXO registrada com ator AI_AGENT", "ok");

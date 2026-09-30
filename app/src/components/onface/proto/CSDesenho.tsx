@@ -13,7 +13,7 @@
 
 import { Fragment } from "react";
 import { estilo, foco, hover } from "./proto-runtime";
-import "./CSDesenho.css";
+import "./CsDesenho.css";
 
 /**
  * O que o desenho consome.
@@ -23,7 +23,7 @@ import "./CSDesenho.css";
  * Ligar a tela é preencher este objeto com dado real — e é só isso que há
  * para revisar, porque o resto não foi escrito à mão.
  */
-export interface ValoresDeCSDesenho {
+export interface ValoresDeCsDesenho {
   abas: any;
   acoes: any;
   at: any;
@@ -50,7 +50,7 @@ export interface ValoresDeCSDesenho {
   vis: any;
 }
 
-export function CSDesenho(vals: ValoresDeCSDesenho) {
+export function CsDesenho(vals: ValoresDeCsDesenho) {
   const { abas, acoes, at, car, dist, escopo, ev, fechar, hand, ir, kp5, mP, mX, nx, ori, parar, pbs, rec, ren, runs, sau, tb, vida, vis } = vals;
   return (
     <>

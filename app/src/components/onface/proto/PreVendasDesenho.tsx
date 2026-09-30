@@ -13,7 +13,7 @@
 
 import { Fragment } from "react";
 import { estilo, foco, hover } from "./proto-runtime";
-import "./PrevendasDesenho.css";
+import "./PreVendasDesenho.css";
 
 /**
  * O que o desenho consome.
@@ -23,7 +23,7 @@ import "./PrevendasDesenho.css";
  * Ligar a tela é preencher este objeto com dado real — e é só isso que há
  * para revisar, porque o resto não foi escrito à mão.
  */
-export interface ValoresDePrevendasDesenho {
+export interface ValoresDePreVendasDesenho {
   acoesMassa: any;
   alternarTodos: any;
   alternarTodosLabel: any;
@@ -53,7 +53,7 @@ export interface ValoresDePrevendasDesenho {
   visoes: any;
 }
 
-export function PrevendasDesenho(vals: ValoresDePrevendasDesenho) {
+export function PreVendasDesenho(vals: ValoresDePreVendasDesenho) {
   const { acoesMassa, alternarTodos, alternarTodosLabel, busca, colunas, ehFila, ehQuadro, exp, expRef, exportMenu, exportMenuStyle, filtros, limparSelecao, listaGrupos, listaVazia, painelAberto, painelOpcoes, painelTitulo, parar, qtdSelecao, recolhidas, rotuloSelecao, setBusca, temSelecao, toggleExportMenu, totalLista, visoes } = vals;
   return (
     <>
