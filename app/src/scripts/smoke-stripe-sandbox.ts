@@ -26,9 +26,9 @@ function requireSandboxKey(): string {
   return key;
 }
 
-async function request<T>(key: string, path: string, form?: URLSearchParams): Promise<T> {
+async function request<T>(key: string, path: string, form?: URLSearchParams, method: "GET" | "POST" | "DELETE" = form ? "POST" : "GET"): Promise<T> {
   const response = await fetch(`${API}/${path}`, {
-    method: form ? "POST" : "GET",
+    method,
     headers: {
       Authorization: `Bearer ${key}`,
       ...(form ? { "Content-Type": "application/x-www-form-urlencoded" } : {}),
@@ -97,7 +97,7 @@ async function main(): Promise<void> {
     throw new Error("A atualizacao de quantidade da assinatura nao foi confirmada pela Stripe.");
   }
 
-  await request(key, `subscriptions/${subscription.id}/cancel`, new URLSearchParams());
+  await request(key, `subscriptions/${subscription.id}`, undefined, "DELETE");
   await request(key, `checkout/sessions/${checkout.id}/expire`, new URLSearchParams());
   await request(key, `products/${product.id}`, form({ active: "false" }));
 

@@ -256,18 +256,24 @@ export async function dispararAutomacoesFinanceiras(params: {
   stripeSubscriptionId?: string | null;
   campos: Record<string, unknown>;
 }): Promise<void> {
+  // Eventos de assinatura não carregam invoice. Usar string vazia (que nunca
+  // é um ID Stripe válido) preserva a consulta única e dá tipo explícito ao
+  // parâmetro SQL; `null IS NOT NULL` chegava sem tipo e o Postgres recusava.
+  const stripeInvoiceId = params.stripeInvoiceId || "";
+  const stripeSubscriptionId = params.stripeSubscriptionId || "";
+  const stripeCustomerId = params.stripeCustomerId || "";
   const links = await db.execute<{ empresa_id: string | null; lead_id: string | null; servico_id: string | null }>(sql`
     SELECT COALESCE(f.empresa_id, a.empresa_id) AS empresa_id,
            COALESCE(f.lead_id, a.lead_id) AS lead_id,
            a.servico_id AS servico_id
     FROM (SELECT 1) seed
     LEFT JOIN faturas f ON f.organizacao_id = ${params.organizacaoId}
-      AND ${params.stripeInvoiceId || null} IS NOT NULL
-      AND f.origem = 'stripe' AND f.external_id = ${params.stripeInvoiceId || null}
+      AND ${stripeInvoiceId} <> ''
+      AND f.origem = 'stripe' AND f.external_id = ${stripeInvoiceId}
     LEFT JOIN assinaturas a ON a.organizacao_id = ${params.organizacaoId}
       AND (
-        (${params.stripeSubscriptionId || null} IS NOT NULL AND a.stripe_subscription_id = ${params.stripeSubscriptionId || null})
-        OR (${params.stripeCustomerId || null} IS NOT NULL AND a.stripe_customer_id = ${params.stripeCustomerId || null})
+        (${stripeSubscriptionId} <> '' AND a.stripe_subscription_id = ${stripeSubscriptionId})
+        OR (${stripeCustomerId} <> '' AND a.stripe_customer_id = ${stripeCustomerId})
       )
     LIMIT 1
   `);
