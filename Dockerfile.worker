@@ -58,6 +58,19 @@ RUN cd app && pnpm dlx esbuild@0.28.2 src/scripts/smoke-claude-subscription-tool
     --bundle --platform=node --format=esm --outfile=dist/smoke-claude-subscription-tools.mjs \
     --packages=external --alias:@=./src --target=node22
 
+RUN cd app && pnpm dlx esbuild@0.28.2 src/scripts/smoke-nexo-claude-subscription.ts \
+    --bundle --platform=node --format=esm --outfile=dist/smoke-nexo-claude-subscription.mjs \
+    --packages=external --alias:@=./src --target=node22 \
+    --alias:@onface/acquisition=../packages/domain/acquisition/index.ts \
+    --alias:@onface/catalog=../packages/domain/catalog/index.ts \
+    --alias:@onface/identity=../packages/domain/identity/index.ts \
+    --alias:@onface/sales=../packages/domain/sales/index.ts \
+    --alias:@onface/integrations-callface-ai=../packages/integrations/callface-ai/index.ts \
+    --alias:@onface/integrations-meta=../packages/integrations/meta/index.ts \
+    --alias:@onface/platform-database=../packages/platform/database/index.ts \
+    --alias:@onface/platform-events=../packages/platform/events/index.ts \
+    --alias:@onface/platform-storage=../packages/platform/storage/index.ts
+
 FROM node:22-alpine AS runner
 # ffmpeg (áudio) + chromium (PDF de proposta via puppeteer)
 RUN apk add --no-cache ffmpeg chromium nss freetype harfbuzz ca-certificates ttf-freefont
