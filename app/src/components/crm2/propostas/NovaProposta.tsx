@@ -67,7 +67,10 @@ interface ItemCarrinho {
   periodo?: string | null;
   etiquetaUnidade?: string | null;
 }
-interface Signatario { nome: string; email: string; papel: string; ordem: number }
+// CPF e cargo do signatário existem porque o contrato os cita nominalmente
+// ({{pessoa_cpf}}, {{pessoa_cargo}}). Eram lidos de signatarios[0] e nunca
+// coletados: todo contrato saía com "não informado" no lugar.
+interface Signatario { nome: string; email: string; papel: string; ordem: number; cpf?: string; cargo?: string }
 
 const CATEGORIA_LABEL: Record<string, string> = { callface_ai: "Callface AI", pabx: "PABX", white_label: "White Label", outros: "Outros produtos" };
 
@@ -142,7 +145,7 @@ export function Cf2NovaPropostaWorkspace() {
   const [origemProposta, setOrigemProposta] = useState<null | "oportunidade" | "empresa" | "lead" | "contato">(null);
   const [dataValidade, setDataValidade] = useState("");
   const [observacoes, setObservacoes] = useState("");
-  const [signatarios, setSignatarios] = useState<Signatario[]>([{ nome: "", email: "", papel: "Signatário", ordem: 1 }]);
+  const [signatarios, setSignatarios] = useState<Signatario[]>([{ nome: "", email: "", papel: "Signatário", ordem: 1, cpf: "", cargo: "" }]);
   const [herdouServicos, setHerdouServicos] = useState(false);
   const [carregouEdicao, setCarregouEdicao] = useState(false);
 
@@ -213,7 +216,7 @@ export function Cf2NovaPropostaWorkspace() {
     setPrazoContratoMeses(propostaEditando.prazoContratoMeses ? String(propostaEditando.prazoContratoMeses) : "");
     setDataValidade(propostaEditando.dataValidade || "");
     setObservacoes(propostaEditando.observacoes || "");
-    setSignatarios(Array.isArray(propostaEditando.signatarios) && propostaEditando.signatarios.length > 0 ? propostaEditando.signatarios.map((s: Partial<Signatario>, i: number) => ({ nome: s.nome || "", email: s.email || "", papel: s.papel || "Signatário", ordem: s.ordem || i + 1 })) : [{ nome: "", email: "", papel: "Signatário", ordem: 1 }]);
+    setSignatarios(Array.isArray(propostaEditando.signatarios) && propostaEditando.signatarios.length > 0 ? propostaEditando.signatarios.map((s: Partial<Signatario>, i: number) => ({ nome: s.nome || "", email: s.email || "", papel: s.papel || "Signatário", ordem: s.ordem || i + 1, cpf: s.cpf || "", cargo: s.cargo || "" })) : [{ nome: "", email: "", papel: "Signatário", ordem: 1, cpf: "", cargo: "" }]);
     setHerdouServicos(true);
     setCarregouEdicao(true);
   }, [propostaEditando, carregouEdicao]);
@@ -1081,15 +1084,21 @@ export function Cf2NovaPropostaWorkspace() {
                       </select>
                     </div>
                     {signatarios.map((s, idx) => (
-                      <div key={idx} className="flex gap-1.5 mb-1.5">
+                      <div key={idx}>
+                        <div className="flex gap-1.5 mb-1.5">
                         <input value={s.nome} onChange={(e) => setSignatarios((prev) => prev.map((x, i) => i === idx ? { ...x, nome: e.target.value } : x))} placeholder="Nome completo" aria-label="Nome completo" className="min-w-0 flex-1 text-[11px] px-2 py-1.5 rounded outline-none" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }} />
                         <input type="email" value={s.email} onChange={(e) => setSignatarios((prev) => prev.map((x, i) => i === idx ? { ...x, email: e.target.value } : x))} placeholder="E-mail" className="min-w-0 flex-1 text-[11px] px-2 py-1.5 rounded outline-none" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }} />
                         <input value={s.papel} onChange={(e) => setSignatarios((prev) => prev.map((x, i) => i === idx ? { ...x, papel: e.target.value } : x))} placeholder="Papel (ex.: testemunha)" className="w-32 text-[11px] px-2 py-1.5 rounded outline-none" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }} />
                         <input type="number" min={1} value={s.ordem} onChange={(e) => setSignatarios((prev) => prev.map((x, i) => i === idx ? { ...x, ordem: Math.max(1, Number(e.target.value) || 1) } : x))} title="Ordem de assinatura" className="w-10 text-[11px] px-2 py-1.5 rounded outline-none" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }} />
                         {signatarios.length > 1 && <button type="button" onClick={() => setSignatarios((prev) => prev.filter((_, i) => i !== idx))} aria-label="Remover signatário" style={{ color: "var(--cf2-danger-text)" }}>×</button>}
+                        </div>
+                        <div className="flex gap-1.5 mb-2.5">
+                          <input value={s.cargo ?? ""} onChange={(e) => setSignatarios((prev) => prev.map((x, i) => i === idx ? { ...x, cargo: e.target.value } : x))} placeholder="Cargo (vai no contrato)" aria-label="Cargo do signatário" className="min-w-0 flex-1 text-[11px] px-2 py-1.5 rounded outline-none" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }} />
+                          <input value={s.cpf ?? ""} onChange={(e) => setSignatarios((prev) => prev.map((x, i) => i === idx ? { ...x, cpf: e.target.value } : x))} placeholder="CPF (vai no contrato)" aria-label="CPF do signatário" inputMode="numeric" className="min-w-0 flex-1 text-[11px] px-2 py-1.5 rounded outline-none" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }} />
+                        </div>
                       </div>
                     ))}
-                    <button type="button" onClick={() => setSignatarios((prev) => [...prev, { nome: "", email: "", papel: "Signatário", ordem: prev.length + 1 }])} className="text-[10px] font-semibold" style={{ color: "var(--cf2-accent-text)" }}>+ Adicionar signatário</button>
+                    <button type="button" onClick={() => setSignatarios((prev) => [...prev, { nome: "", email: "", papel: "Signatário", ordem: prev.length + 1, cpf: "", cargo: "" }])} className="text-[10px] font-semibold" style={{ color: "var(--cf2-accent-text)" }}>+ Adicionar signatário</button>
                   </div>
                 )}
               </div>

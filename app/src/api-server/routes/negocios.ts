@@ -652,11 +652,16 @@ app.patch("/negocios/:id", async (c) => {
         const mrrValor = parsed.data.mrrFechado || currentNegocio.mrrEstimado || "0";
         const setupValor = parsed.data.valorSetup || currentNegocio.valorSetup || "0";
         const [leadDoContrato] = await db.select({ nome: leads.nome, empresa: leads.empresa, empresaId: leads.empresaId, empresaCnpj: leads.empresaCnpj, email: leads.email }).from(leads).where(eq(leads.id, currentNegocio.leadId)).limit(1);
-        const empresaNome = leadDoContrato?.empresaId
-          ? (await db.select({ nome: empresas.nome }).from(empresas).where(eq(empresas.id, leadDoContrato.empresaId)).limit(1))[0]?.nome
+        // Razão social é o nome que vale no contrato; `empresas.nome` costuma
+        // ser o fantasia. Mesma correção aplicada em contrato-template.ts.
+        const empresaDoContrato = leadDoContrato?.empresaId
+          ? (await db.select({ nome: empresas.nome, razaoSocial: empresas.razaoSocial }).from(empresas).where(eq(empresas.id, leadDoContrato.empresaId)).limit(1))[0]
           : undefined;
+        const empresaNome = empresaDoContrato?.razaoSocial || empresaDoContrato?.nome;
         const variaveis: Record<string, string> = {
           empresa_nome: empresaNome || leadDoContrato?.empresa || leadDoContrato?.nome || "—",
+          empresa_razao_social: empresaNome || leadDoContrato?.empresa || "—",
+          empresa_nome_fantasia: empresaDoContrato?.nome || leadDoContrato?.empresa || "—",
           empresa_cnpj: leadDoContrato?.empresaCnpj || "não informado",
           pessoa_nome: leadDoContrato?.nome || "—",
           pessoa_email: leadDoContrato?.email || "não informado",

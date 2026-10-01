@@ -366,3 +366,44 @@
 [data-cf2-theme] :is(input, textarea, select, [data-slot="input"], [data-slot="textarea"], [data-slot="select-trigger"]) {
   border-color: var(--cf2-border-control);
 }
+
+/* Pré-visualização do template de contrato (Ajustes → Contratos).
+   O corpo colado do editor jurídico vem com quadro das partes e tabelas; sem
+   regra de borda a pré-visualização não mostra o documento que o cliente vai
+   receber. O HTML já foi saneado na gravação. */
+.cf2-contrato-preview table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0;
+}
+.cf2-contrato-preview td,
+.cf2-contrato-preview th {
+  border: 1px solid var(--cf2-border-default);
+  padding: 5px 7px;
+  vertical-align: middle;
+  word-wrap: break-word;
+}
+.cf2-contrato-preview table[border="0"] td,
+.cf2-contrato-preview table[border="0"] th {
+  border: 0;
+}
+.cf2-contrato-preview p { margin: 8px 0; }
+.cf2-contrato-preview blockquote { margin: 0 0 0 20px; padding: 0; border: 0; }
+.cf2-contrato-preview img { max-width: 100%; height: auto; }
+
+/* Padrão Callface de documento contratual na pré-visualização. As mesmas
+   classes do PDF (lib/crm/contrato-pdf.ts), aqui com os tokens do tema. */
+.cf2-contrato-preview .cf-num { text-align: right; font-weight: 700; color: var(--cf2-text-secondary); margin-bottom: 18px; }
+.cf2-contrato-preview .cf-titulo { text-align: center; font-size: 15px; font-weight: 700; margin: 0 0 4px; }
+.cf2-contrato-preview .cf-sub { text-align: center; font-weight: 700; color: var(--cf2-text-secondary); margin: 0 0 20px; }
+.cf2-contrato-preview .cf-partes th { background: var(--cf2-bg-surface-muted); text-align: center; }
+.cf2-contrato-preview .cf-partes td:first-child { width: 22%; color: var(--cf2-text-secondary); }
+.cf2-contrato-preview .cf-partes td:last-child { font-weight: 700; }
+.cf2-contrato-preview .cf-valores th { background: var(--cf2-accent); color: var(--cf2-text-on-accent); text-align: center; }
+.cf2-contrato-preview .cf-valores .cf-valor { text-align: center; font-weight: 700; }
+.cf2-contrato-preview .cf-alineas { margin: 0 0 0 20px; }
+.cf2-contrato-preview h2 { font-size: 13px; margin: 18px 0 6px; text-transform: uppercase; }
+.cf2-contrato-preview .cf-assinaturas td,
+.cf2-contrato-preview .cf-testemunhas td { border: 0; padding-top: 30px; }
+.cf2-contrato-preview .cf-assinaturas td { text-align: center; }
+.cf2-contrato-preview .cf-assinaturas .cf-linha { border-top: 1px solid var(--cf2-text-primary); padding-top: 5px; font-weight: 700; }

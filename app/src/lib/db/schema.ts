@@ -4135,7 +4135,9 @@ export const contratoTemplates = pgTable("contrato_templates", {
   versao: integer("versao").default(1).notNull(),
   commercialModel: text("commercial_model"), // null = genérico, aplica a qualquer modelo
   serviceFamily: text("service_family"), // null = qualquer família; PABX/WHITE_LABEL/CALLFACE_AI para texto específico
-  corpoTemplate: text("corpo_template").notNull(), // texto com {{variavel}} — substituição simples
+  // Contrato, aditivo e renovação convivem na mesma família (migration 0093).
+  tipoDocumento: text("tipo_documento").default("CONTRATO").notNull(), // CONTRATO | ADITIVO | RENOVACAO
+  corpoTemplate: text("corpo_template").notNull(), // texto ou HTML com {{variavel}} — substituição simples
   ativo: boolean("ativo").default(true).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [

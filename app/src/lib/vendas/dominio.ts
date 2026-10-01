@@ -262,11 +262,22 @@ export const ROTULO_MODO_FECHAMENTO: Record<ModoFechamento, string> = {
 export const VALIDADES_PROPOSTA = [7, 14, 22, 30] as const;
 
 /** Bloco 03 §21. */
-export const TIPOS_CONTRATUAIS = ["NOVO_CONTRATO", "ADITIVO", "UPGRADE", "DOWNGRADE"] as const;
+export const TIPOS_CONTRATUAIS = ["NOVO_CONTRATO", "ADITIVO", "UPGRADE", "DOWNGRADE", "RENOVACAO"] as const;
 export type TipoContratual = (typeof TIPOS_CONTRATUAIS)[number];
 
 /** Tipos que exigem referência a um contrato existente. */
-export const TIPOS_CONTRATUAIS_COM_BASE: TipoContratual[] = ["ADITIVO", "UPGRADE", "DOWNGRADE"];
+export const TIPOS_CONTRATUAIS_COM_BASE: TipoContratual[] = ["ADITIVO", "UPGRADE", "DOWNGRADE", "RENOVACAO"];
+
+/**
+ * Qual documento o contrato gerado usa. Upgrade e downgrade alteram um
+ * contrato vigente, e alteração se formaliza por termo aditivo — é o que a
+ * própria cláusula 9.3 dos contratos exige.
+ */
+export function tipoDocumentoDoContratual(tipo: string | null | undefined): "CONTRATO" | "ADITIVO" | "RENOVACAO" {
+  if (tipo === "ADITIVO" || tipo === "UPGRADE" || tipo === "DOWNGRADE") return "ADITIVO";
+  if (tipo === "RENOVACAO") return "RENOVACAO";
+  return "CONTRATO";
+}
 
 /* ── Prospecção (Bloco 04 §3) ──────────────────────────────────────────── */
 

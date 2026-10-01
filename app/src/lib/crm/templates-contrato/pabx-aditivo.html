@@ -1,0 +1,86 @@
+<p class="cf-num">Nº Contrato: {{contrato_numero}}</p>
+
+<p class="cf-titulo">TERMO ADITIVO DE CONTRATO</p>
+
+<table class="cf-partes" border="1">
+  <tbody>
+    <tr><th colspan="2">CONTRATADA</th></tr>
+    <tr><td>Razão social</td><td>{{callface_razao_social}}</td></tr>
+    <tr><td>CNPJ</td><td>{{callface_cnpj}}</td></tr>
+  </tbody>
+</table>
+
+<table class="cf-partes" border="1">
+  <tbody>
+    <tr><th colspan="2">CONTRATANTE</th></tr>
+    <tr><td>Razão social</td><td>{{empresa_razao_social}}</td></tr>
+    <tr><td>CNPJ</td><td>{{empresa_cnpj}}</td></tr>
+  </tbody>
+</table>
+
+<p>As partes já qualificadas no <b>Contrato de Prestação de Serviços</b>, registrado sob o nº <b>{{contrato_base_numero}}</b>, conjuntamente denominadas como <b>PARTES</b>, resolvem em comum acordo e de boa fé:</p>
+
+<h2>1. Objeto</h2>
+
+<p><b>1.1</b> O presente aditivo visa alterar e acrescentar ao objeto e valores do contrato aditado os recursos e serviços descritos e aprovados conforme escopo técnico da proposta comercial registrada sob nº <b>{{proposta_numero}}</b>, que é parte integrante deste instrumento.</p>
+
+<p><b>1.2</b> A assinatura do presente contrato implica na concordância das <b>PARTES</b> com os termos dispostos na proposta comercial referenciada na cláusula 1.1.</p>
+
+<h2>2. Valores</h2>
+
+<p><b>2.1</b> Os serviços que são objeto do presente aditivo serão pagos conforme tabela de custos abaixo, pelo período de tempo de vigência deste aditivo, especificado na cláusula 3.</p>
+
+<table class="cf-valores" border="1">
+  <tbody>
+    <tr><td class="cf-rotulo">MENSALIDADE</td><td class="cf-valor">{{mrr_total}}</td></tr>
+    <tr><td class="cf-rotulo">SETUP (PARCELA ÚNICA)</td><td class="cf-valor">{{setup_total}}</td></tr>
+  </tbody>
+</table>
+
+<p><b>Itens contratados neste aditivo</b></p>
+
+<table class="cf-valores" border="1">
+  <tbody>
+    <tr>
+      <th>Item</th><th>Descrição</th><th>Qtd.</th><th>Valor unitário</th><th>Total</th>
+    </tr>
+    {{itens_recorrentes_html}}
+    {{itens_setup_html}}
+  </tbody>
+</table>
+
+<h2>3. Vigência</h2>
+
+<p><b>3.1</b> O prazo de vigência deste aditivo seguirá o prazo do contrato principal, sendo certo que o reajuste monetário acontecerá anualmente, após 12 (doze) meses da entrega deste instrumento.</p>
+
+<p><b>3.2</b> O reajuste monetário previsto na cláusula 3.1 utilizará o mesmo índice de atualização estabelecido no contrato vinculado ao presente aditivo.</p>
+
+<h2>4. Assinatura eletrônica</h2>
+
+<p><b>4.1</b> As <b>PARTES</b> declaram e consentem que esse instrumento poderá ser assinado eletronicamente, nos termos do art. 10, parágrafo 2º, da MP 2200-2/2001, e do artigo 6º do Decreto 10.278/2020, sendo as assinaturas consideradas válidas, vinculantes e executáveis, desde que firmadas pelos representantes legais das partes e testemunhas indicadas. As <b>PARTES</b> renunciam à possibilidade de exigir a troca, envio ou entrega das vias não-eletrônicas deste instrumento, bem como renunciam ao direito de recusar ou contestar a validade das assinaturas eletrônicas, na medida máxima permitida pela legislação aplicável.</p>
+
+<h2>5. Ratificação</h2>
+
+<p><b>5.1</b> As <b>PARTES</b> ratificam todas as disposições e cláusulas do contrato principal e seus respectivos aditivos por este não alterados.</p>
+
+<p>Por estarem justas e contratadas, as partes acima qualificadas assinam o presente instrumento na presença de duas testemunhas abaixo indicadas.</p>
+
+<p style="text-align:center">Campinas (SP), {{data_emissao}}</p>
+
+<table class="cf-assinaturas">
+  <tbody>
+    <tr>
+      <td><span class="cf-linha">{{callface_razao_social}}</span><br><span class="cf-papel">CONTRATADA</span></td>
+      <td><span class="cf-linha">{{empresa_razao_social}}</span><br><span class="cf-papel">CONTRATANTE</span></td>
+    </tr>
+  </tbody>
+</table>
+
+<table class="cf-testemunhas">
+  <tbody>
+    <tr>
+      <td>Testemunha 1<br>Nome: {{testemunha_1_nome}}<br>CPF: {{testemunha_1_cpf}}</td>
+      <td>Testemunha 2<br>Nome: {{testemunha_2_nome}}<br>CPF: {{testemunha_2_cpf}}</td>
+    </tr>
+  </tbody>
+</table>

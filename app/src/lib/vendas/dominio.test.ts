@@ -15,7 +15,7 @@ import {
   ETAPAS_PIPELINE, ETAPAS_PRE_VENDAS, FAMILIAS, MOTIVOS_NUTRICAO,
   ROTULO_ETAPA_PIPELINE, ROTULO_ETAPA_PRE_VENDAS, ROTULO_FAMILIA,
   STATUS_LEGADO_DA_ETAPA, STATUS_PROPOSTA_VIGENTE,
-  TIPOS_CONTRATUAIS_COM_BASE, VALIDADES_PROPOSTA,
+  TIPOS_CONTRATUAIS_COM_BASE, VALIDADES_PROPOSTA, tipoDocumentoDoContratual,
   RegraDeNegocio, atorHumano, ehFamiliaValida, etapaDoStatusLegado,
 } from "./dominio";
 import {
@@ -107,8 +107,18 @@ describe("propostas", () => {
   });
 
   it("aditivo, upgrade e downgrade exigem contrato base", () => {
-    assert.deepEqual(TIPOS_CONTRATUAIS_COM_BASE, ["ADITIVO", "UPGRADE", "DOWNGRADE"]);
+    assert.deepEqual(TIPOS_CONTRATUAIS_COM_BASE, ["ADITIVO", "UPGRADE", "DOWNGRADE", "RENOVACAO"]);
     assert.ok(!TIPOS_CONTRATUAIS_COM_BASE.includes("NOVO_CONTRATO" as never));
+  });
+
+  it("o tipo contratual decide qual documento é gerado", () => {
+    assert.equal(tipoDocumentoDoContratual("NOVO_CONTRATO"), "CONTRATO");
+    assert.equal(tipoDocumentoDoContratual(null), "CONTRATO");
+    // Alteração de contrato vigente se formaliza por termo aditivo (cláusula 9.3).
+    assert.equal(tipoDocumentoDoContratual("ADITIVO"), "ADITIVO");
+    assert.equal(tipoDocumentoDoContratual("UPGRADE"), "ADITIVO");
+    assert.equal(tipoDocumentoDoContratual("DOWNGRADE"), "ADITIVO");
+    assert.equal(tipoDocumentoDoContratual("RENOVACAO"), "RENOVACAO");
   });
 });
 
