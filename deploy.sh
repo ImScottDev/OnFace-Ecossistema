@@ -20,13 +20,13 @@ echo "=== Deploy CRM Callface (alvo: $TARGET) ==="
 
 # ─── Conferência de ambiente e banco, ANTES de trocar qualquer container ─────
 echo "[pré] Conferindo variáveis de ambiente obrigatórias..."
-docker compose run --rm --no-deps --entrypoint "" api node --import tsx src/scripts/checar-env.ts --ambiente \
+docker compose run --rm --no-deps --entrypoint "" api node app/dist/checar-env-runtime.mjs \
   || { echo "✘ ambiente incompleto — corrija o .env antes de seguir (webhooks são fail-closed)"; exit 1; }
 
 echo "[pré] Conferindo migrations pendentes..."
-if ! docker compose run --rm --no-deps --entrypoint "" api node --import tsx src/lib/db/migrar.ts --check; then
+if ! docker compose run --rm --no-deps --entrypoint "" api env MIGRATIONS_DIR=/repo/app/dist/migrations node app/dist/migrar.mjs --check; then
   echo "[pré] Aplicando migrations pendentes..."
-  docker compose run --rm --no-deps --entrypoint "" api node --import tsx src/lib/db/migrar.ts \
+  docker compose run --rm --no-deps --entrypoint "" api env MIGRATIONS_DIR=/repo/app/dist/migrations node app/dist/migrar.mjs \
     || { echo "✘ falha ao migrar — deploy abortado, nenhum container trocado"; exit 1; }
 fi
 

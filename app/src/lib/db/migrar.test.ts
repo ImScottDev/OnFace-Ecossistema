@@ -50,8 +50,11 @@ test("--ate corta a cadeia no número informado", () => {
 
 test("o deploy aplica migration antes de trocar container", () => {
   const deploy = fs.readFileSync(path.join(RAIZ, "deploy.sh"), "utf8");
-  assert.ok(deploy.includes("migrar.ts"), "deploy.sh não chama o runner de migrations");
-  const posMigrar = deploy.indexOf("migrar.ts");
+  assert.ok(deploy.includes("app/dist/checar-env-runtime.mjs"), "deploy.sh não roda a checagem de ambiente compatível com a imagem");
+  assert.ok(!deploy.includes("node --import tsx"), "deploy.sh depende de tsx, que não existe na imagem de runtime");
+  assert.ok(deploy.includes("app/dist/migrar.mjs"), "deploy.sh não chama o migrador empacotado no runtime");
+  assert.ok(deploy.includes("MIGRATIONS_DIR=/repo/app/dist/migrations"), "deploy.sh não aponta o migrador para os SQLs da imagem");
+  const posMigrar = deploy.indexOf("app/dist/migrar.mjs");
   const posSwap = deploy.indexOf("docker compose up -d");
   assert.ok(posMigrar > -1 && posSwap > -1 && posMigrar < posSwap,
     "a migração precisa rodar ANTES do swap de container, senão o código novo encontra schema velho");

@@ -29,7 +29,9 @@ import path from "node:path";
 import crypto from "node:crypto";
 import postgres from "postgres";
 
-const DIR_MIGRATIONS = path.join(import.meta.dirname ?? path.join(process.cwd(), "src/lib/db"), "migrations");
+// A imagem de runtime leva o migrador já empacotado e os SQLs em `dist/`.
+// No checkout de desenvolvimento, preserva o diretório-fonte habitual.
+const DIR_MIGRATIONS = process.env.MIGRATIONS_DIR ?? path.join(import.meta.dirname ?? path.join(process.cwd(), "src/lib/db"), "migrations");
 
 export interface Migration {
   nome: string;

@@ -106,7 +106,7 @@ git pull
 docker compose -p crm2-dev run --rm --no-deps --entrypoint "" api \
   node --import tsx src/scripts/checar-env.ts --ambiente
 docker compose -p crm2-dev run --rm --no-deps --entrypoint "" api \
-  node --import tsx src/lib/db/migrar.ts --check
+  env MIGRATIONS_DIR=/repo/app/dist/migrations node app/dist/migrar.mjs --check
 
 # 5. buildar UM SERVIÇO POR VEZ (a EC2 tem 2 vCPU e produção está do lado)
 docker compose -p crm2-dev build app
@@ -115,7 +115,7 @@ docker compose -p crm2-dev build worker
 
 # 6. aplicar migrations e subir
 docker compose -p crm2-dev run --rm --no-deps --entrypoint "" api \
-  node --import tsx src/lib/db/migrar.ts
+  env MIGRATIONS_DIR=/repo/app/dist/migrations node app/dist/migrar.mjs
 docker compose -p crm2-dev up -d
 
 # 7. healthcheck

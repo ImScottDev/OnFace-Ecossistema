@@ -48,6 +48,16 @@ RUN cd app && pnpm dlx esbuild@0.28.2 src/api-server/index.ts \
     --alias:@onface/platform-events=../packages/platform/events/index.ts \
     --alias:@onface/platform-storage=../packages/platform/storage/index.ts
 
+# O deploy executa migrations antes de substituir containers. Empacotar o
+# migrador evita depender de `tsx`, que deliberadamente não existe no runtime.
+RUN cd app && pnpm dlx esbuild@0.28.2 src/lib/db/migrar.ts \
+    --bundle --platform=node --format=esm --outfile=dist/migrar.mjs \
+    --packages=external --target=node22
+
+RUN cd app && pnpm dlx esbuild@0.28.2 src/scripts/checar-env-runtime.ts \
+    --bundle --platform=node --format=esm --outfile=dist/checar-env-runtime.mjs \
+    --packages=external --target=node22
+
 FROM node:22-alpine AS runner
 # ffmpeg (áudio) + chromium (PDF de proposta via puppeteer)
 RUN apk add --no-cache ffmpeg chromium nss freetype harfbuzz ca-certificates ttf-freefont
@@ -62,6 +72,7 @@ ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 COPY --from=builder /repo/node_modules ./node_modules
 COPY --from=builder /repo/app/node_modules ./app/node_modules
 COPY --from=builder /repo/app/dist ./app/dist
+COPY --from=builder /repo/app/src/lib/db/migrations ./app/dist/migrations
 COPY --from=builder /repo/app/package.json ./app/
 
 RUN addgroup --system --gid 1001 nodejs && \
