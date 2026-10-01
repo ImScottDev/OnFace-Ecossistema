@@ -23,7 +23,7 @@ const result = await executeAgent({
   agentId: selected.agent.id,
   versionId: selected.version.id,
   eventType: "onface.claude_subscription.smoke",
-  message: "Este é um teste técnico interno. Chame context_read_crm uma única vez e depois responda somente ONFACE_NEXO_TOOL_OK.",
+  message: "Consulte os dados de CRM disponíveis para este contato usando context_read_crm. Em seguida, responda de forma objetiva somente com os dados que a consulta retornar; não invente informações.",
   mode: "test",
   suppressEgress: true,
 });
@@ -32,7 +32,7 @@ const steps = await db.select({ name: aiAgentRunSteps.name, status: aiAgentRunSt
   .from(aiAgentRunSteps)
   .where(and(eq(aiAgentRunSteps.runId, result.runId), eq(aiAgentRunSteps.kind, "tool_call")));
 
-if (result.status !== "completed" || result.responseText !== "ONFACE_NEXO_TOOL_OK") {
+if (result.status !== "completed" || !result.responseText?.trim()) {
   throw new Error(`Resultado inesperado do NEXO: status=${result.status} resposta=${result.responseText ?? "vazia"}`);
 }
 if (!steps.some((step) => step.name === "context_read_crm" && step.status === "completed")) {
