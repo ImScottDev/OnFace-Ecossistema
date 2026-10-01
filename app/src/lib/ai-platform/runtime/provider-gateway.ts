@@ -1,4 +1,4 @@
-export type AiProvider = "groq" | "openai" | "anthropic" | "google";
+export type AiProvider = "groq" | "openai" | "anthropic" | "google" | "claude_subscription";
 
 export type AgentMessage = {
   role: "system" | "user" | "assistant" | "tool";
@@ -148,6 +148,9 @@ async function callGoogle(input: ModelCallInput): Promise<ModelCallResult> {
 }
 
 export async function runModelCall(input: ModelCallInput): Promise<ModelCallResult> {
+  if (input.provider === "claude_subscription") {
+    throw new Error("Claude Subscription deve ser executado pelo ClaudeSubscriptionAdapter, não pelo gateway HTTP.");
+  }
   if (input.provider === "anthropic") return callAnthropic(input);
   if (input.provider === "google") return callGoogle(input);
   return callOpenAiCompatible(input);

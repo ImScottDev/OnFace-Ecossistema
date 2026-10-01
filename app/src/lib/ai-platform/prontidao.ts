@@ -23,7 +23,7 @@ import { db } from "@/lib/db";
 import { aiProviderCredentials, aiAgentVersions } from "@/lib/db/schema";
 import { and, eq } from "drizzle-orm";
 
-export type Provider = "groq" | "openai" | "anthropic" | "google";
+export type Provider = "groq" | "openai" | "anthropic" | "google" | "claude_subscription";
 
 export interface Falta {
   campo: "provider" | "modelo" | "credencial" | "instrucoes" | "gatilho";
@@ -46,10 +46,11 @@ const ENV_POR_PROVIDER: Record<Provider, () => string | undefined> = {
   openai: () => process.env.OPENAI_API_KEY,
   anthropic: () => process.env.ANTHROPIC_API_KEY,
   google: () => process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY,
+  claude_subscription: () => process.env.CLAUDE_CODE_OAUTH_TOKEN,
 };
 
 const NOME_DO_PROVIDER: Record<Provider, string> = {
-  groq: "Groq", openai: "OpenAI", anthropic: "Anthropic", google: "Google",
+  groq: "Groq", openai: "OpenAI", anthropic: "Anthropic", google: "Google", claude_subscription: "Claude Subscription",
 };
 
 export async function verificarProntidao(
@@ -95,7 +96,23 @@ export async function verificarProntidao(
 
   // Credencial: a verificação que faltava.
   let origem: Prontidao["origemDaCredencial"] = null;
-  if (provider) {
+  if (provider === "claude_subscription") {
+    if (version.credentialId) {
+      faltas.push({
+        campo: "credencial",
+        mensagem: "Claude Subscription não aceita credencial armazenada na organização",
+        comoResolver: "remova a credencial da versão e configure o token OAuth somente no ambiente do Super Admin",
+      });
+    } else if (ENV_POR_PROVIDER.claude_subscription()) {
+      origem = "ambiente";
+    } else {
+      faltas.push({
+        campo: "credencial",
+        mensagem: "Claude Subscription não está conectada no ambiente",
+        comoResolver: "gere o token oficial com claude setup-token e configure CLAUDE_CODE_OAUTH_TOKEN como segredo do ambiente",
+      });
+    }
+  } else if (provider) {
     if (version.credentialId && version.organizacaoId) {
       const [credencial] = await db.select({ id: aiProviderCredentials.id })
         .from(aiProviderCredentials)

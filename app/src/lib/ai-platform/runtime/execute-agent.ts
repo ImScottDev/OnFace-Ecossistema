@@ -9,6 +9,7 @@ import { whatsappOutgoingQueue } from "@/lib/queue";
 import { decryptCredential } from "../security/credentials";
 import { executeRegisteredTool, modelToolsForIds } from "../tools/registry";
 import { runModelCall, type AgentMessage, type AiProvider } from "./provider-gateway";
+import { ClaudeSubscriptionAdapter } from "./claude-subscription-adapter";
 
 export type ExecuteAgentInput = {
   organizacaoId: string;
@@ -84,6 +85,9 @@ async function selectAgent(input: ExecuteAgentInput): Promise<SelectedAgent> {
 async function resolveApiKey(version: typeof aiAgentVersions.$inferSelect): Promise<{ apiKey: string; baseUrl: string | null }> {
   const provider = version.provider as AiProvider | null;
   if (!provider) throw new Error("Provider não configurado");
+  if (provider === "claude_subscription") {
+    throw new Error("Claude Subscription não usa API key; use o ClaudeSubscriptionAdapter.");
+  }
   if (version.credentialId) {
     const [credential] = await db.select().from(aiProviderCredentials).where(and(eq(aiProviderCredentials.id, version.credentialId), eq(aiProviderCredentials.organizacaoId, version.organizacaoId!), eq(aiProviderCredentials.ativo, true))).limit(1);
     if (!credential) throw new Error("Credencial ativa não encontrada");
@@ -94,6 +98,7 @@ async function resolveApiKey(version: typeof aiAgentVersions.$inferSelect): Prom
     openai: process.env.OPENAI_API_KEY,
     anthropic: process.env.ANTHROPIC_API_KEY,
     google: process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY,
+    claude_subscription: undefined,
   };
   const apiKey = envByProvider[provider];
   if (!apiKey) throw new Error(`Credencial ${provider} não configurada`);
@@ -171,7 +176,7 @@ async function sendMessages(input: ExecuteAgentInput, runId: string, messages: s
 export async function executeAgent(input: ExecuteAgentInput): Promise<ExecuteAgentResult> {
   const selected = await selectAgent(input);
   const provider = selected.version.provider as AiProvider | null;
-  if (!provider || !["groq", "openai", "anthropic", "google"].includes(provider)) throw new Error(`Provider não suportado: ${provider ?? "vazio"}`);
+  if (!provider || !["groq", "openai", "anthropic", "google", "claude_subscription"].includes(provider)) throw new Error(`Provider não suportado: ${provider ?? "vazio"}`);
   if (!selected.version.modelo) throw new Error("Modelo não configurado");
   const correlationId = randomUUID();
   const [run] = await db.insert(aiAgentRuns).values({
@@ -208,7 +213,6 @@ export async function executeAgent(input: ExecuteAgentInput): Promise<ExecuteAge
       concedidas: [...delegacao.permissoes].sort(),
     });
     await assertBudget(run.id, input, selected.agent.id);
-    const { apiKey, baseUrl } = await resolveApiKey(selected.version);
     const toolIds = Array.isArray(selected.version.tools) ? selected.version.tools.filter((value): value is string => typeof value === "string") : [];
     const tools = modelToolsForIds(toolIds);
     const allowedNames = new Set(tools.map((tool) => tool.name));
@@ -220,7 +224,57 @@ export async function executeAgent(input: ExecuteAgentInput): Promise<ExecuteAge
     let finalText: string | null = null;
     const maxSteps = Math.min(25, Math.max(1, selected.version.maxSteps));
 
-    for (let iteration = 0; iteration < maxSteps; iteration++) {
+    if (provider === "claude_subscription") {
+      const started = Date.now();
+      const subscription = await new ClaudeSubscriptionAdapter().runAgent({
+        model: selected.version.modelo,
+        systemPrompt: messages[0]!.content,
+        userPrompt: messages[1]!.content,
+        tools,
+        maxTurns: maxSteps,
+        invokeTool: (name, toolInput) => executeRegisteredTool(name, {
+          organizacaoId: input.organizacaoId,
+          agentId: selected.agent.id,
+          runId: run.id,
+          contatoId: input.contatoId,
+          leadId: input.leadId,
+          mode: input.mode,
+          autonomy,
+          permissoesDelegadas: delegacao.permissoes,
+        }, toolInput),
+      });
+      tokensInput += subscription.tokensInput;
+      tokensOutput += subscription.tokensOutput;
+      finalText = subscription.text;
+      await persistStep({
+        organizacaoId: input.organizacaoId, runId: run.id, sequence: sequence++, kind: "model_call", name: selected.version.modelo,
+        status: "completed", input: { provider: "claude_subscription", messageCount: messages.length },
+        output: { text: subscription.text, toolCalls: subscription.toolCalls.map((call) => call.name), estimatedCostUsd: subscription.estimatedCostUsd },
+        tokensInput: subscription.tokensInput, tokensOutput: subscription.tokensOutput, cost: 0, latencyMs: Date.now() - started,
+      });
+      trace.push({ type: "model_call", provider: "claude_subscription", toolCalls: subscription.toolCalls.map((call) => call.name), hasText: Boolean(subscription.text) });
+
+      for (const call of subscription.toolCalls) {
+        await persistStep({
+          organizacaoId: input.organizacaoId, runId: run.id, sequence: sequence++, kind: "tool_call", name: call.name,
+          status: call.result.ok ? "completed" : "failed", input: call.input, output: call.result,
+          errorCode: call.result.ok ? undefined : "tool_failed", errorMessage: call.result.error,
+        });
+        const previewData = call.result.data && typeof call.result.data === "object" ? call.result.data as Record<string, unknown> : null;
+        if (input.mode === "live" && autonomy === "approval" && previewData?.approvalRequired) {
+          await db.insert(aiAlerts).values({ organizacaoId: input.organizacaoId, kind: "approval_required", severity: "warning", title: `Aprovação necessária: ${call.name}`, body: JSON.stringify(call.input).slice(0, 2000), refKind: "run", refId: run.id });
+          if (input.contatoId) await db.insert(aiCases).values({ organizacaoId: input.organizacaoId, contatoId: input.contatoId, leadId: input.leadId ?? null, agentId: selected.agent.id, runId: run.id, title: `Aprovar ação: ${call.name}`, summary: "O agente preparou uma ação e aguarda decisão humana.", blocker: "A versão está configurada no modo pedir aprovação.", source: "tool_approval", contextSnapshot: { kind: "tool_approval", toolName: call.name, toolInput: call.input } });
+          handoff = true;
+        }
+        if (call.name === "message_prepare" && call.result.ok && call.result.data && typeof call.result.data === "object") {
+          const list = (call.result.data as { messages?: unknown }).messages;
+          if (Array.isArray(list)) prepared.push(...list.filter((value): value is string => typeof value === "string"));
+        }
+        handoff ||= Boolean(call.result.handoff);
+        trace.push({ type: "tool_call", name: call.name, ok: call.result.ok, handoff: Boolean(call.result.handoff) });
+      }
+    } else for (let iteration = 0; iteration < maxSteps; iteration++) {
+      const { apiKey, baseUrl } = await resolveApiKey(selected.version);
       const started = Date.now();
       const model = await runModelCall({ provider, model: selected.version.modelo, apiKey, baseUrl, messages, tools, maxTokens: Math.min(selected.version.tokenBudget, 8192), temperature: 0.3 });
       tokensInput += model.tokensInput; tokensOutput += model.tokensOutput;
