@@ -8,8 +8,15 @@
  */
 type Jornada = { nome: string; todas?: string[]; umaDelas?: string[] };
 
-const JORNADAS: Jornada[] = [
+// Sem estas, o próprio CRM não consegue iniciar de forma coerente.
+const NUCLEO: Jornada[] = [
   { nome: "núcleo", todas: ["DATABASE_URL", "REDIS_URL", "NEXTAUTH_SECRET", "NEXTAUTH_URL"] },
+];
+
+// Integrações podem ser habilitadas em momentos distintos. O deploy não deve
+// deixar o schema e o código divergirem só porque uma delas ainda não foi
+// conectada; ele as anuncia explicitamente como pendências operacionais.
+const INTEGRACOES: Jornada[] = [
   { nome: "Stripe", todas: ["STRIPE_API_KEY", "STRIPE_WEBHOOK_SECRET"] },
   { nome: "Documenso", todas: ["DOCUMENSO_API_URL", "DOCUMENSO_API_TOKEN", "DOCUMENSO_WEBHOOK_SECRET"] },
   { nome: "e-mail", todas: ["EMAIL_ENCRYPTION_KEY"] },
@@ -19,7 +26,7 @@ const JORNADAS: Jornada[] = [
 ];
 
 let problemas = 0;
-for (const jornada of JORNADAS) {
+for (const jornada of NUCLEO) {
   const faltando = (jornada.todas ?? []).filter((nome) => !process.env[nome]);
   const alternativa = !jornada.umaDelas || jornada.umaDelas.some((nome) => Boolean(process.env[nome]));
   if (faltando.length === 0 && alternativa) {
@@ -28,6 +35,16 @@ for (const jornada of JORNADAS) {
   }
   problemas += faltando.length + (alternativa ? 0 : 1);
   console.error(`FALHA ${jornada.nome}: ${[...faltando, ...(alternativa ? [] : ["uma configuracao alternativa"])].join(", ")}`);
+}
+
+for (const jornada of INTEGRACOES) {
+  const faltando = (jornada.todas ?? []).filter((nome) => !process.env[nome]);
+  const alternativa = !jornada.umaDelas || jornada.umaDelas.some((nome) => Boolean(process.env[nome]));
+  console.log(
+    faltando.length === 0 && alternativa
+      ? `OK ${jornada.nome}`
+      : `PENDENTE ${jornada.nome}: ${[...faltando, ...(alternativa ? [] : ["uma configuracao alternativa"])].join(", ")}`
+  );
 }
 
 if (problemas > 0) process.exit(1);
