@@ -32,6 +32,13 @@ const EMAIL = "documenso-e2e@callface.local";
 const FIXTURE_LOOKUP_KEY = "E2E-DOCUMENSO-FIXTURE";
 let fixturePrecoId: string | null = null;
 
+// Este ensaio cria registros controlados no banco DEV e envia apenas para o
+// Mailpit interno. A confirmação explícita impede execução acidental pelo
+// worker ou por uma sessão operacional comum.
+if (process.env.DOCUMENSO_E2E_CONFIRM !== "YES") {
+  throw new Error("Recusado: defina DOCUMENSO_E2E_CONFIRM=YES para executar o ensaio Documenso.");
+}
+
 function resultadoContrato(contrato: typeof contratos.$inferSelect) {
   const signatarios = Array.isArray(contrato.signatarios) ? contrato.signatarios : [];
   const signingUrl = signatarios
