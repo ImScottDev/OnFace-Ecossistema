@@ -69,6 +69,15 @@ test("configurar a IA e usar a IA são permissões diferentes", () => {
     credenciais.slice(0, 400), /exigirCtx\(c, "ai\.configure"\)/,
     "criar credencial de provedor de IA sem gate deixa qualquer um ligar um modelo por conta da empresa",
   );
+
+  const claudeSubscription = src.slice(src.indexOf('app.get("/automacoes/ai/claude-subscription"'),
+    src.indexOf('app.put("/automacoes/ai/providers/bindings'));
+  assert.match(claudeSubscription, /exigirCtx\(c, "ai\.configure"\)/,
+    "o estado e o teste da assinatura Claude devem ser exclusivos de quem configura IA");
+  assert.match(claudeSubscription, /ClaudeSubscriptionAdapter/,
+    "o botão deve testar o Agent SDK, não uma API Anthropic paralela");
+  assert.doesNotMatch(claudeSubscription, /c\.req\.json\(/,
+    "a tela Claude não pode receber nem persistir token OAuth pelo navegador");
 });
 
 test("a rota de token chama o teto em vez de decidir sozinha", () => {
@@ -194,4 +203,3 @@ test("a tela de tokens existe e fala com as rotas certas", () => {
   assert.match(rota, /app\.post\("\/configuracoes\/api-tokens"/, "criar");
   assert.match(rota, /app\.delete\("\/configuracoes\/api-tokens\/:id"/, "revogar");
 });
-
