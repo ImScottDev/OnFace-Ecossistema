@@ -48,6 +48,12 @@ RUN cd app && pnpm dlx esbuild@0.28.2 src/worker/index.ts \
     --alias:@onface/platform-events=../packages/platform/events/index.ts \
     --alias:@onface/platform-storage=../packages/platform/storage/index.ts
 
+# Smoke executado dentro do proprio worker DEV. Ele nao expõe rota nem entra
+# na fila: prova que o adapter de assinatura Claude funciona no runtime real.
+RUN cd app && pnpm dlx esbuild@0.28.2 src/scripts/smoke-claude-subscription.ts \
+    --bundle --platform=node --format=esm --outfile=dist/smoke-claude-subscription.mjs \
+    --packages=external --alias:@=./src --target=node22
+
 FROM node:22-alpine AS runner
 # ffmpeg (áudio) + chromium (PDF de proposta via puppeteer)
 RUN apk add --no-cache ffmpeg chromium nss freetype harfbuzz ca-certificates ttf-freefont
