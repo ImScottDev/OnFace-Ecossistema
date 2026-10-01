@@ -10,6 +10,7 @@ import {
 } from "@/lib/db/schema";
 import { decryptCredential, encryptCredential, maskCredential } from "@/lib/ai-platform/security/credentials";
 import { runModelCall, type AiProvider } from "@/lib/ai-platform/runtime/provider-gateway";
+import { ClaudeSubscriptionAdapter } from "@/lib/ai-platform/runtime/claude-subscription-adapter";
 import { executeRegisteredTool } from "@/lib/ai-platform/tools/registry";
 import { getCtx, exigirCtx } from "../compat.js";
 
@@ -27,6 +28,41 @@ app.get("/automacoes/ai/providers", async (c) => {
     db.select().from(aiPurposeBindings).where(eq(aiPurposeBindings.organizacaoId, ctx.organizacaoId)),
   ]);
   return c.json({ providers, models, bindings });
+});
+
+/**
+ * A assinatura Claude pertence exclusivamente ao Super Admin e vive no
+ * ambiente do runtime. Esta rota deliberadamente devolve apenas o estado,
+ * nunca o token OAuth nem uma chave mascarada. Assim a tela pode orientar e
+ * testar a conexão sem transformar o banco numa segunda cópia do segredo.
+ */
+app.get("/automacoes/ai/claude-subscription", async (c) => {
+  await exigirCtx(c, "ai.configure");
+  return c.json({
+    configured: Boolean(process.env.CLAUDE_CODE_OAUTH_TOKEN?.trim()),
+    provider: "claude_subscription",
+    credentialSource: "environment",
+  });
+});
+
+/** Teste explícito e auditável da assinatura; nenhuma ação de CRM ou canal. */
+app.post("/automacoes/ai/claude-subscription/test", async (c) => {
+  const ctx = await exigirCtx(c, "ai.configure");
+  if (!process.env.CLAUDE_CODE_OAUTH_TOKEN?.trim()) {
+    return c.json({ error: "Claude Subscription não está conectada neste ambiente." }, 409);
+  }
+  try {
+    const result = await new ClaudeSubscriptionAdapter().runTextOnly("Responda somente ONFACE_OK");
+    if (result.text !== "ONFACE_OK") {
+      throw new Error("O Claude respondeu fora do contrato de verificação.");
+    }
+    await audit(ctx, "ai.claude_subscription.verify", "ai_provider", null, { provider: "claude_subscription", ok: true });
+    return c.json({ ok: true, response: result.text, durationMs: result.durationMs });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await audit(ctx, "ai.claude_subscription.verify", "ai_provider", null, { provider: "claude_subscription", ok: false, error: message.slice(0, 300) });
+    return c.json({ ok: false, error: message }, 422);
+  }
 });
 
 app.put("/automacoes/ai/providers/bindings/:purpose", async (c) => {

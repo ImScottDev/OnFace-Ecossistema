@@ -144,6 +144,8 @@ export default function IntegracoesPage() {
 
       <AiProviders />
 
+      <ClaudeSubscription />
+
       <Apollo />
 
       {/* O QUE EXISTE DE VERDADE.
@@ -453,6 +455,64 @@ function AiProviders() {
           </div>
         </label>
       </form>
+    </SecaoAjuste>
+  );
+}
+
+/** A assinatura Claude não é uma API key cadastrável pela organização. */
+function ClaudeSubscription() {
+  const queryClient = useQueryClient();
+  const { data, isLoading } = useQuery({
+    queryKey: ["claude-subscription"],
+    queryFn: async () => {
+      const res = await fetch("/api/automacoes/ai/claude-subscription");
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || "Não foi possível verificar a conexão Claude.");
+      return body as { configured: boolean };
+    },
+  });
+  const verify = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/automacoes/ai/claude-subscription/test", { method: "POST" });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || !body.ok) throw new Error(body.error || "A assinatura Claude não respondeu ao teste.");
+      return body as { response: string; durationMs: number };
+    },
+    onSuccess: (body) => {
+      queryClient.invalidateQueries({ queryKey: ["claude-subscription"] });
+      toast.success(`Claude conectado e validado (${body.response}).`);
+    },
+    onError: (error) => toast.error((error as Error).message),
+  });
+  const configured = Boolean(data?.configured);
+
+  return (
+    <SecaoAjuste
+      titulo="Claude Subscription"
+      ajuda="Conexão do Super Admin usada pelo NEXO e pelos agentes através do Claude Agent SDK. Não usa Anthropic Console API nem armazena uma chave no CRM."
+    >
+      <div className="aj-linha">
+        <span className="aj-conexao-icone"><Bot aria-hidden /></span>
+        <div className="aj-linha-corpo">
+          <span className="aj-linha-titulo">Conta Claude do Super Admin</span>
+          <span className="aj-linha-meta">
+            {isLoading ? "Verificando a conexão…" : configured
+              ? "Token OAuth protegido no ambiente. A tela nunca recebe nem revela esse segredo."
+              : "A conta ainda não foi conectada no ambiente deste servidor."}
+          </span>
+        </div>
+        <div className="aj-linha-acoes">
+          <PilulaEstado estado={configured ? "ok" : "pendente"}>{configured ? "Conectada" : "Pendente"}</PilulaEstado>
+          <Cf2Button size="sm" variant="secondary" disabled={!configured} loading={verify.isPending} onClick={() => verify.mutate()}>
+            <ShieldCheck aria-hidden /> Testar conexão
+          </Cf2Button>
+        </div>
+      </div>
+      {!configured ? (
+        <p className="aj-grupo-ajuda">
+          Para conectar, o Super Admin gera o token oficial com <code>claude setup-token</code> e o instala como segredo <code>CLAUDE_CODE_OAUTH_TOKEN</code> no ambiente. O ONFACE não aceita esse token pelo navegador nem o salva no banco.
+        </p>
+      ) : null}
     </SecaoAjuste>
   );
 }
