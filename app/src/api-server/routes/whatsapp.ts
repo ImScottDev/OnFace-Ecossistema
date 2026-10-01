@@ -34,6 +34,14 @@ function verifySignature(body: string, signature: string): boolean {
   }
 }
 
+function verifyWebhookToken(token: string): boolean {
+  try {
+    return crypto.timingSafeEqual(Buffer.from(token), Buffer.from(WEBHOOK_SECRET));
+  } catch {
+    return false;
+  }
+}
+
 app.post("/whatsapp/webhook", async (c) => {
   try {
     const rawBody = await c.req.text();
@@ -50,7 +58,11 @@ app.post("/whatsapp/webhook", async (c) => {
       return c.json({ error: "webhook secret not configured" }, 503);
     }
     const signature = c.req.header("x-hmac-signature") || "";
-    if (!signature || !verifySignature(rawBody, signature)) {
+    // O wuzapi não assina todos os tipos de evento. Para essas sessões, o
+    // segredo é anexado somente ao webhook cadastrado no próprio wuzapi.
+    // Mantemos HMAC como caminho preferencial quando o provedor o enviar.
+    const webhookToken = c.req.query("secret") || "";
+    if (!(signature && verifySignature(rawBody, signature)) && !verifyWebhookToken(webhookToken)) {
       return c.json({ error: "Invalid signature" }, 401);
     }
 
@@ -1262,9 +1274,13 @@ app.post("/whatsapp/status", async (c) => {
 
   if (action === "create") {
     if (!sessionName) return c.json({ error: "sessionName required" }, 400);
+    if (!WEBHOOK_SECRET) {
+      return c.json({ error: "UAZAPI_WEBHOOK_SECRET nao configurado" }, 503);
+    }
 
     const token = randomBytes(24).toString("hex");
-    const webhookUrl = `${process.env.NEXTAUTH_URL || "http://mcrm-production:3000"}/api/whatsapp/webhook`;
+    const webhookBaseUrl = `${process.env.NEXTAUTH_URL || "http://mcrm-production:3000"}/api/whatsapp/webhook`;
+    const webhookUrl = `${webhookBaseUrl}?secret=${encodeURIComponent(WEBHOOK_SECRET)}`;
 
     try {
       await wuzapiCreateUser(sessionName, token, webhookUrl);
