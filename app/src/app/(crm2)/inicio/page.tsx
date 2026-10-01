@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getTenantContext } from "@/lib/auth/tenant";
+import { isAdminView } from "@/lib/auth/roles";
 import { montarVisaoGeral } from "@/lib/analytics/onface-visao-geral";
 import { VisaoGeral } from "@/components/onface/visao-geral/VisaoGeral";
 
@@ -25,5 +26,11 @@ export default async function InicioPage() {
   if (!ctx) redirect("/login");
 
   const dados = await montarVisaoGeral(ctx.organizacaoId, ctx.userId, ctx.userName ?? "");
+  // Financeiro é tela de gestão (middleware: GESTAO). Para closer/SDR o tile
+  // mostrava faturas vencidas da organização e levava a uma rota que devolve
+  // para cá. Papel efetivo, então "ver como" também respeita.
+  if (!isAdminView(ctx.userRole)) {
+    dados.areas.itens = dados.areas.itens.filter((a) => a.chave !== "financeiro");
+  }
   return <VisaoGeral dados={dados} />;
 }

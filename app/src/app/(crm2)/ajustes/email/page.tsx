@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useProvedoresEmail, type ProvedoresEmail } from "./_provedores";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Mail, Trash2, Play, Pause, CheckCircle, AlertCircle, Plus, X,
@@ -47,6 +48,10 @@ type SubTab = (typeof subTabs)[number]["key"];
 
 /* ─── Main Page ─── */
 export default function EmailSettingsPage() {
+  // Presença da credencial OAuth, lida no servidor pelo layout desta rota (o
+  // segredo nunca vem ao browser). Sem ela a rota de conexão responde 500: o
+  // botão vira desabilitado com o motivo, como no Perfil.
+  const provedores = useProvedoresEmail();
   const [activeTab, setActiveTab] = useState<SubTab>("contas");
 
   return (
@@ -68,7 +73,7 @@ export default function EmailSettingsPage() {
         ))}
       </div>
 
-      {activeTab === "contas" ? <ContasSection /> : <TemplatesSection />}
+      {activeTab === "contas" ? <ContasSection {...provedores} /> : <TemplatesSection />}
     </div>
   );
 }
@@ -76,7 +81,7 @@ export default function EmailSettingsPage() {
 /* ═══════════════════════════════════════════════════════════════════
    CONTAS SECTION
    ═══════════════════════════════════════════════════════════════════ */
-function ContasSection() {
+function ContasSection({ microsoftConfigurado, googleConfigurado }: ProvedoresEmail) {
   const queryClient = useQueryClient();
   const [showImapForm, setShowImapForm] = useState(false);
   const [testing, setTesting] = useState<string | null>(null);
@@ -219,20 +224,27 @@ function ContasSection() {
       <div className="flex flex-wrap items-center gap-3 mb-6">
         <button
           onClick={() => { window.location.href = "/api/email/auth/microsoft"; }}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-medium transition-opacity hover:opacity-90"
-          style={{ background: "#0067B8", color: "#ffffff" }}
+          disabled={!microsoftConfigurado}
+          title={microsoftConfigurado ? undefined : "Microsoft não configurado neste ambiente"}
+          className="cf2-btn-primary flex items-center gap-2 px-4 py-2 text-[13px] font-medium disabled:opacity-40"
         >
           <Mail className="w-4 h-4" />
           Conectar Microsoft
         </button>
         <button
           onClick={() => { window.location.href = "/api/email/auth/google"; }}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-medium transition-opacity hover:opacity-90"
-          style={{ background: "#C5221F", color: "#ffffff" }}
+          disabled={!googleConfigurado}
+          title={googleConfigurado ? undefined : "Google não configurado neste ambiente"}
+          className="cf2-btn-primary flex items-center gap-2 px-4 py-2 text-[13px] font-medium disabled:opacity-40"
         >
           <Mail className="w-4 h-4" />
           Conectar Google
         </button>
+        {(!microsoftConfigurado || !googleConfigurado) && (
+          <span className="text-[11px] text-[var(--cf2-text-tertiary)]">
+            {!microsoftConfigurado && !googleConfigurado ? "Microsoft e Google não configurados" : !microsoftConfigurado ? "Microsoft não configurado" : "Google não configurado"} neste ambiente: a conexão OAuth não abre.
+          </span>
+        )}
         <button
           onClick={() => setShowImapForm(!showImapForm)}
           className="flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-medium text-[var(--cf2-text-secondary)] hover:text-[var(--cf2-text-primary)] transition-colors"
@@ -283,8 +295,7 @@ function ContasSection() {
           <button
             onClick={handleCreateImap}
             disabled={!imapForm.email || !imapForm.imapHost || !imapForm.smtpHost}
-            className="mt-3 px-4 py-1.5 rounded text-[12px] font-medium text-[var(--cf2-text-primary)] disabled:opacity-40"
-            style={{ background: "#3B82F6" }}
+            className="cf2-btn-primary mt-3 px-4 py-1.5 rounded text-[12px] font-medium disabled:opacity-40"
           >
             Adicionar conta
           </button>
@@ -503,8 +514,7 @@ function SyncConfigPanel({
       <button
         onClick={() => onSave(conta, mode, mode === "label" ? label : null, assinatura || null, envioComo || null)}
         disabled={saving || (mode === "label" && !label)}
-        className="px-3 py-1.5 rounded text-[11px] font-medium text-[var(--cf2-text-primary)] disabled:opacity-40"
-        style={{ background: "#3B82F6" }}
+        className="cf2-btn-primary px-3 py-1.5 rounded text-[11px] font-medium disabled:opacity-40"
       >
         {saving ? "Salvando..." : "Salvar configuração"}
       </button>
@@ -634,8 +644,7 @@ function TemplatesSection() {
         {!isEditing && (
           <button
             onClick={startCreate}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium text-[var(--cf2-text-primary)]"
-            style={{ background: "#3B82F6" }}
+            className="cf2-btn-primary flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium"
           >
             <Plus className="w-3.5 h-3.5" /> Novo template
           </button>
@@ -700,8 +709,7 @@ function TemplatesSection() {
               <button
                 onClick={creating ? handleCreate : handleUpdate}
                 disabled={!form.nome || !form.assunto || !form.corpo}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded text-[12px] font-medium text-[var(--cf2-text-primary)] disabled:opacity-40"
-                style={{ background: "#3B82F6" }}
+                className="cf2-btn-primary flex items-center gap-1.5 px-3 py-1.5 rounded text-[12px] font-medium disabled:opacity-40"
               >
                 <Save className="w-3 h-3" /> {creating ? "Criar" : "Salvar"}
               </button>

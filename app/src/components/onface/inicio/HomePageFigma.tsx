@@ -380,7 +380,7 @@ export function HomePageFigma({ d }: { d: DadosInicio }) {
                       <p className="font-['Plus_Jakarta_Sans:SemiBold'] font-semibold relative shrink-0 text-[#8b949e] text-[10.931px]" data-node-id="316:34785">{`Ver todos os módulos >`}</p>
                     </div>
                     <div className="gap-x-[7.949999809265137px] gap-y-[7.949999809265137px] grid grid-cols-[repeat(2,minmax(0,1fr))] grid-rows-[repeat(2,minmax(0,1fr))] h-[169px] relative shrink-0 w-[377px]" data-node-id="316:34786" data-name="SectorGrid">
-                      <Link href="/clientes/onboarding" className="bg-[#fe4f2b] col-1 content-stretch flex flex-col gap-[11.925px] items-start justify-self-stretch p-[11.925px] relative rounded-[15.9px] row-1 self-stretch shrink-0" data-node-id="316:34787" data-name="SectorCard-Operacao">
+                      <Link href="/pos-vendas" className="bg-[#fe4f2b] col-1 content-stretch flex flex-col gap-[11.925px] items-start justify-self-stretch p-[11.925px] relative rounded-[15.9px] row-1 self-stretch shrink-0" data-node-id="316:34787" data-name="SectorCard-Operacao">
                         <div className="relative shrink-0 size-[17.888px]" data-node-id="316:34788" data-name="sector-icon">
                           <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgSectorIcon} />
                         </div>
@@ -402,7 +402,7 @@ export function HomePageFigma({ d }: { d: DadosInicio }) {
                           <p className="font-['Plus_Jakarta_Sans:Regular'] font-normal relative shrink-0 text-[#8b949e] text-[8.944px]" data-node-id="316:34798">{`${d.areaComercial} >`}</p>
                         </div>
                       </Link>
-                      <Link href="/clientes/financeiro" className="bg-[#1f242c] border-[#30363d] border-[0.994px] border-solid col-1 content-stretch flex flex-col gap-[11.925px] items-start justify-self-stretch p-[11.925px] relative rounded-[15.9px] row-2 self-stretch shrink-0" data-node-id="316:34799" data-name="SectorCard-Financeiro">
+                      <Link href="/financeiro" className="bg-[#1f242c] border-[#30363d] border-[0.994px] border-solid col-1 content-stretch flex flex-col gap-[11.925px] items-start justify-self-stretch p-[11.925px] relative rounded-[15.9px] row-2 self-stretch shrink-0" data-node-id="316:34799" data-name="SectorCard-Financeiro">
                         <div className="relative shrink-0 size-[17.888px]" data-node-id="316:34800" data-name="sector-icon">
                           <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgSectorIcon2} />
                         </div>
@@ -590,7 +590,7 @@ export function HomePageFigma({ d }: { d: DadosInicio }) {
                       Acompanhe o progresso e os principais indicadores.
                     </p>
                   </div>
-                  <Link href="/clientes/onboarding" className="absolute h-[29px] left-[414px] top-0 w-[112px]" data-node-id="316:34908" data-name="btn-abrir-operacao" aria-label="Abrir operação">
+                  <Link href="/pos-vendas" className="absolute h-[29px] left-[414px] top-0 w-[112px]" data-node-id="316:34908" data-name="btn-abrir-operacao" aria-label="Abrir operação">
                     <div className="absolute bg-[#1b222b] border border-[#2a3540] border-solid h-[29px] left-0 rounded-[14px] top-0 w-[112px]" data-node-id="316:34909" data-name="btn-abrir-bg" />
                     <p className="[word-break:break-word] absolute font-['Plus_Jakarta_Sans:Medium'] font-medium leading-[normal] left-[16px] text-[#f8f9fa] text-[10px] top-[8px] whitespace-pre" data-node-id="316:34910">{`Abrir operação  ↗`}</p>
                   </Link>

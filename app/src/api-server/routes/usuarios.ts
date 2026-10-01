@@ -3,7 +3,7 @@ import bcrypt from "bcryptjs";
 import crypto from "node:crypto";
 import { db } from "@/lib/db";
 import { usuarios } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { z } from "zod";
 import { getCtx } from "../compat.js";
 import { isAdminView, ROLES, type Role } from "@/lib/auth/roles";
@@ -113,7 +113,7 @@ app.patch("/:id", async (c) => {
 
   // Só pode alterar usuário da mesma organização.
   const [alvo] = await db
-    .select({ id: usuarios.id })
+    .select({ id: usuarios.id, role: usuarios.role })
     .from(usuarios)
     .where(and(eq(usuarios.id, id), eq(usuarios.organizacaoId, ctx.organizacaoId)))
     .limit(1);
@@ -121,17 +121,44 @@ app.patch("/:id", async (c) => {
     return c.json({ error: "Usuário não encontrado nesta organização" }, 404);
   }
 
-  const [updated] = await db
-    .update(usuarios)
-    .set({ role: parsed.data.role, updatedAt: new Date() })
-    .where(and(eq(usuarios.id, id), eq(usuarios.organizacaoId, ctx.organizacaoId)))
-    .returning({
-      id: usuarios.id,
-      nome: usuarios.nome,
-      email: usuarios.email,
-      role: usuarios.role,
-      ativo: usuarios.ativo,
-    });
+  // Escalada de privilégio: gerente/diretoria/operações passam no isAdminView
+  // e conseguiam se promover (ou promover qualquer um) a admin, e rebaixar um
+  // admin. Medido em 01/10 com um gerente de teste: PATCH {role:"admin"} -> 200.
+  // Mexer no papel admin, para cima ou para baixo, é só de admin.
+  const ehAdmin = ctx.userRole === "admin" || ctx.userRole === "super_admin";
+  const tocaAdmin = parsed.data.role === "admin" || alvo.role === "admin" || alvo.role === "super_admin";
+  if (tocaAdmin && !ehAdmin) {
+    return c.json({ error: "Só administradores podem conceder ou retirar o papel de admin" }, 403);
+  }
+
+  // O papel mora em DOIS lugares: `usuarios.role` (gate legado, sessão) e
+  // `user_roles` (RBAC, que já decide financeiro, automações, agentes,
+  // integrações e o teto dos tokens). Trocar só o primeiro deixava a pessoa
+  // promovida a admin sem as permissões de admin — e, pior, a rebaixada a
+  // leitor ainda com as de gerente. Os dois mudam juntos, numa transação.
+  const updated = await db.transaction(async (tx) => {
+    const [u] = await tx
+      .update(usuarios)
+      .set({ role: parsed.data.role, updatedAt: new Date() })
+      .where(and(eq(usuarios.id, id), eq(usuarios.organizacaoId, ctx.organizacaoId)))
+      .returning({
+        id: usuarios.id,
+        nome: usuarios.nome,
+        email: usuarios.email,
+        role: usuarios.role,
+        ativo: usuarios.ativo,
+      });
+    await tx.execute(sql`
+      DELETE FROM user_roles WHERE usuario_id = ${id}::uuid AND organizacao_id = ${ctx.organizacaoId}::uuid`);
+    // Organização sem o papel no RBAC: fica sem vínculo e `permissoesEfetivas`
+    // cai no gate legado, que já responde pelo papel novo.
+    await tx.execute(sql`
+      INSERT INTO user_roles (usuario_id, role_id, organizacao_id, concedido_por_id)
+      SELECT ${id}::uuid, r.id, r.organizacao_id, ${ctx.userId}::uuid
+        FROM roles r
+       WHERE r.organizacao_id = ${ctx.organizacaoId}::uuid AND r.codigo = ${parsed.data.role}`);
+    return u;
+  });
 
   return c.json({ usuario: updated });
 });

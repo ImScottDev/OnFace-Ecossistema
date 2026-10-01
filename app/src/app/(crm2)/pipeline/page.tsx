@@ -2,7 +2,9 @@ import { redirect } from "next/navigation";
 import { getTenantContext } from "@/lib/auth/tenant";
 import { boardPipeline } from "@/lib/vendas/consultas";
 import { Pagina, PaginaCabecalho, PaginaResumo } from "@/components/onface/shell/Pagina";
-import { Pipeline } from "@/components/onface/vendas/Pipeline";
+/* A tela é o desenho do handoff, convertido por máquina. `vendas/Pipeline`
+   era a versão recriada à mão e sai da rota — ver docs/design/PLANO-HANDOFF.md. */
+import { PipelineProto } from "@/components/onface/proto/PipelineProto";
 import { type RotaBaseVendas } from "@/components/onface/vendas/ui";
 import { moeda } from "@/components/onface/vendas/formato";
 import {
@@ -47,47 +49,14 @@ export async function PipelinePage({ searchParams, rotaBase = "" }: {
   const loops = semProximaAcao ? await resumoDeLoops(ctx.organizacaoId, responsavelId) : null;
 
   return (
-    <Pagina>
-      <PaginaCabecalho titulo="Pipeline" />
-      <PaginaResumo
-        itens={[
-          {
-            rotulo: "Valor em aberto",
-            valor: moeda(dados.resumo.valorEmAberto),
-            detalhe: `${dados.resumo.abertas} oportunidades`,
-            destaque: true,
-          },
-          {
-            // Deixou de ser enfeite no topo: o número vira o recorte do board.
-            // É a aplicação direta do P6 (Next Step sempre visível) — a tela
-            // não só acusa o problema, ela abre a fila de quem o tem.
-            rotulo: "Sem próxima ação",
-            valor: dados.resumo.semProximaAcao,
-            sinal: true,
-            href: "/pipeline?loop=sem-proxima-acao",
-          },
-          { rotulo: "Ganhas", valor: dados.resumo.ganhas },
-          { rotulo: "Perdidas", valor: dados.resumo.perdidas },
-        ]}
-      />
-      <Pipeline
-          dados={dados}
-          aba={aba ?? undefined}
-          filtro={{ busca, responsavelId, familia }}
-          loop={semProximaAcao}
-          loops={loops}
-          selecaoInicial={params.oportunidade ?? null}
-          rotaBase={rotaBase}
-          acoes={{
-            moverEtapa: acaoMoverEtapa, definirProximaAcao: acaoDefinirProximaAcao,
-            marcarEstagnacao: acaoMarcarEstagnacao, alterarFamilia: acaoAlterarFamilia,
-            perder: acaoPerder, tentarGanhar: acaoTentarGanhar,
-            agendarReuniao: acaoAgendarReuniao, noShow: acaoNoShow, reagendar: acaoReagendar,
-            trial: acaoTrial, criarOportunidade: acaoCriarOportunidade,
-            buscarEmpresas: acaoBuscarEmpresas, detalhe: acaoDetalhe,
-          }}
-        />
-    </Pagina>
+    <PipelineProto
+      dados={dados}
+      acoes={{
+        moverEtapa: acaoMoverEtapa,
+        perder: acaoPerder,
+        tentarGanhar: acaoTentarGanhar,
+      }}
+    />
   );
 }
 

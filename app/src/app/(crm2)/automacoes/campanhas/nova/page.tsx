@@ -1,28 +1,34 @@
-import { Suspense } from "react";
-import { db } from "@/lib/db";
-import { organizacoes } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
-import { getTenantContext } from "@/lib/auth/tenant";
 import { redirect } from "next/navigation";
-import { Cf2Topbar } from "@/components/crm2/Topbar";
-import { Cf2CampanhaWizard } from "@/components/crm2/automacoes/CampanhaWizard";
+import { getTenantContext } from "@/lib/auth/tenant";
+import { podeGerirCampanhas, listasDisponiveis, sessoesWhatsapp } from "@/lib/automacoes/campanhas";
+import { Pagina, PaginaCabecalho } from "@/components/onface/shell/Pagina";
+import { CampanhaEditor } from "@/components/onface/campanhas/CampanhaEditor";
+import { acaoAgendarCampanha, acaoExcluirCampanha, acaoSalvarCampanha } from "../actions";
 
 export const metadata = { title: "Nova campanha" };
+export const dynamic = "force-dynamic";
 
-export default async function NovaCampanhaPage() {
+// `?canal=whatsapp` pré-seleciona o canal, como o wizard antigo fazia.
+export default async function NovaCampanhaPage({ searchParams }: { searchParams: Promise<{ canal?: string }> }) {
   const ctx = await getTenantContext();
   if (!ctx) redirect("/login");
-
-  const [org] = await db.select({ nome: organizacoes.nome }).from(organizacoes).where(eq(organizacoes.id, ctx.organizacaoId)).limit(1);
-  const orgNome = org?.nome || "Callface";
+  const [{ canal }, listas, sessoes, podeGerir] = await Promise.all([
+    searchParams, listasDisponiveis(ctx.organizacaoId), sessoesWhatsapp(ctx.organizacaoId), podeGerirCampanhas(ctx),
+  ]);
 
   return (
-    <div className="onface-pagina">
-      <Cf2Topbar orgNome={orgNome} variant="light" title="Automações" subtitle="Fluxos, cadências, agentes e execuções — mesmo motor por trás" compactTitle actions={null} />
-      {/* `useSearchParams` (canal pré-selecionado) exige fronteira de Suspense. */}
-      <Suspense fallback={null}>
-        <Cf2CampanhaWizard />
-      </Suspense>
-    </div>
+    <Pagina>
+      <PaginaCabecalho titulo="Nova campanha" descricao="Conteúdo, público e remetente. Salve como rascunho, agende ou envie agora." />
+      <CampanhaEditor
+        podeGerir={podeGerir}
+        campanha={null}
+        listas={listas}
+        sessoes={sessoes}
+        canalInicial={canal === "whatsapp" ? "whatsapp" : "email"}
+        acaoSalvar={acaoSalvarCampanha}
+        acaoExcluir={acaoExcluirCampanha}
+        acaoAgendar={acaoAgendarCampanha}
+      />
+    </Pagina>
   );
 }

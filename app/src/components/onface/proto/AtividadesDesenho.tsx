@@ -172,7 +172,7 @@ Nova atividade
 </Fragment>
 ))}
 </section>
-<section style={{ alignSelf: "start", background: "#fff", borderRadius: "14px", boxShadow: "inset 0 0 0 1px #e3e7e8", padding: "16px 14px 10px", minWidth: "0", display: "flex", flexDirection: "column" }}>
+<section style={estilo(`${ov.c7 ?? ""};align-self:start;background:#fff;border-radius:14px;box-shadow:inset 0 0 0 1px #e3e7e8;padding:16px 14px 10px;min-width:0;display:flex;flex-direction:column`)}>
 <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap", padding: "0 4px" }}>
 <span style={{ fontFamily: "'Plus Jakarta Sans',sans-serif", fontSize: "16px", fontWeight: "700", letterSpacing: "-.01em", color: "#12171d", whiteSpace: "nowrap" }}>
 Foco de hoje
@@ -246,7 +246,7 @@ Foco de hoje
 {dash.verListaTxt}
 </button>
 </section>
-<section style={{ background: "#fff", borderRadius: "14px", boxShadow: "inset 0 0 0 1px #e3e7e8", padding: "16px 14px 6px", minWidth: "0", display: "flex", flexDirection: "column", maxHeight: "560px" }}>
+<section style={estilo(`${ov.c5 ?? ""};background:#fff;border-radius:14px;box-shadow:inset 0 0 0 1px #e3e7e8;padding:16px 14px 6px;min-width:0;display:flex;flex-direction:column;max-height:560px`)}>
 <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "0 4px" }}>
 <span style={{ fontFamily: "'Plus Jakarta Sans',sans-serif", fontSize: "16px", fontWeight: "700", letterSpacing: "-.01em", color: "#12171d", whiteSpace: "nowrap" }}>
 Minha timeline
@@ -314,7 +314,7 @@ Nada por aqui ainda.
 ))}
 </div>
 </section>
-<div style={{ gridColumn: "1 / -1", display: "grid", gap: "12px" }}>
+<div style={estilo(`grid-column:1 / -1;display:grid;${dash.linhaCols ?? ""};gap:12px`)}>
 {(ov.radares ?? []).map((rd: any, i1: number) => (
 <Fragment key={rd?.id ?? rd?.chave ?? i1}>
 <section style={{ background: "#fff", borderRadius: "14px", boxShadow: "inset 0 0 0 1px #e3e7e8", padding: "18px 20px 16px", minWidth: "0", display: "flex", flexDirection: "column" }}>
@@ -548,7 +548,7 @@ Nada com prazo neste mês.
 </section>
 </Fragment>
 ))}
-<section style={{ position: "relative", overflow: "hidden", background: "#12171d", color: "#fff", borderRadius: "14px", padding: "18px", minWidth: "0", display: "flex", flexDirection: "column" }}>
+<section style={estilo(`${dash.nexoCol ?? ""};position:relative;overflow:hidden;background:#12171d;color:#fff;border-radius:14px;padding:18px;min-width:0;display:flex;flex-direction:column`)}>
 <span style={{ position: "absolute", right: "-80px", top: "-90px", width: "240px", height: "200px", borderRadius: "9999px", background: "#fe4f2b", opacity: ".16", filter: "blur(60px)", pointerEvents: "none" }} />
 <div style={{ position: "relative", display: "flex", alignItems: "center", gap: "10px" }}>
 <img src="/proto/oni-avatar.png" alt="NEXO" style={{ width: "32px", height: "32px", borderRadius: "10px", objectFit: "cover" }} />
@@ -1615,7 +1615,7 @@ Pessoa
 Datas
 </span>
 <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-<label style={{ position: "relative", cursor: "pointer" }}>
+<label style={estilo(`${dt.iniStyle ?? ""};position:relative;cursor:pointer`)}>
 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: "6px" }}>
 <path d="M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" />
 </svg>
@@ -1625,7 +1625,7 @@ Datas
 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a3a8a4" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
 <path d="M5 12h14M13 6l6 6-6 6" />
 </svg>
-<label style={{ position: "relative", cursor: "pointer" }}>
+<label style={estilo(`${dt.fimStyle ?? ""};position:relative;cursor:pointer`)}>
 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: "6px" }}>
 <path d="M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" />
 </svg>

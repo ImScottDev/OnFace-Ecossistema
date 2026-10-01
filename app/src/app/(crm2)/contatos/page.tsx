@@ -1,15 +1,12 @@
 import { redirect } from "next/navigation";
 import { getTenantContext } from "@/lib/auth/tenant";
-import { diretorioEmpresas, diretorioPessoas, pessoaPorId } from "@/lib/vendas/consultas";
-import type { RelacionamentoEmpresa } from "@/lib/vendas/dominio";
-import { Pagina, PaginaCabecalho, PaginaResumo } from "@/components/onface/shell/Pagina";
-import { Contatos } from "@/components/onface/vendas/Contatos";
+import { linhasDeContato } from "@/lib/contatos/tela-contatos";
+/* A tela é o desenho do handoff, convertido por máquina. `vendas/Contatos`
+   era a versão recriada à mão e sai da rota — mesmo caminho do Pipeline. */
+import { ContatosProto } from "@/components/onface/proto/ContatosProto";
 import { type RotaBaseVendas } from "@/components/onface/vendas/ui";
-import {
-  acaoBuscarEmpresas, acaoCriarEmpresa, acaoCriarLeadDaEmpresa, acaoCriarPessoa,
-  acaoEmpresa360, acaoNovaOportunidade, acaoResponsaveis, acaoSalvarDadosJuridicos,
-  acaoVincularPessoa,
-} from "./actions";
+import { acaoCriarEmpresa, acaoCriarPessoa, acaoResponsaveis } from "./actions";
+import { acaoAtribuirEmMassa, acaoCriarLead } from "../pre-vendas/actions";
 
 export const metadata = { title: "Contatos & Empresas" };
 export const dynamic = "force-dynamic";
@@ -17,70 +14,44 @@ export const dynamic = "force-dynamic";
 /**
  * Diretório relacional do ONFACE. Não é funil: é a base de identidade que
  * Vendas, Atendimento, Onboarding, CS e Financeiro compartilham.
+ *
+ * A lista é uma FATIA de 500 pessoas (as de interação mais recente). O
+ * desenho renderiza tudo de uma vez e refaz a árvore empresa→pessoas a cada
+ * hover; com as ~4 mil pessoas da base a tela travava. A busca vai ao banco
+ * (?busca=), então nada fica inalcançável, e a tela diz o tamanho do corte.
+ *
+ * `rotaBase` continua na assinatura porque o espelho em /onface-preview chama
+ * esta função; a tela nova navega sempre pelas rotas oficiais.
  */
-/** Rota OFICIAL do produto. A implementação mudou de casa em 18/09 (F1, lote 2):
- * morava em `/onface-preview/contatos` e agora é daqui. O preview virou um espelho
- * fino que chama esta mesma função com outro `rotaBase` — sem ele, um clique
- * numa tela irmã devolvia o usuário para dentro do preview. */
-export async function ContatosPage({ searchParams, rotaBase = "" }: {
-  searchParams: Promise<{ aba?: string; busca?: string; relacao?: string; semEmpresa?: string; empresa?: string; pessoa?: string }>;
+export async function ContatosPage({ searchParams }: {
+  searchParams: Promise<{ busca?: string }>;
   rotaBase?: RotaBaseVendas;
 }) {
   const ctx = await getTenantContext();
   if (!ctx) redirect("/login");
 
   const params = await searchParams;
-  const aba = params.aba === "pessoas" || params.pessoa ? "pessoas" : "empresas";
   const busca = params.busca?.trim() || "";
-  const relacionamento = (params.relacao || null) as RelacionamentoEmpresa | null;
-  const semEmpresa = params.semEmpresa === "1";
 
-  const [empresas, pessoas, pessoaInicial, responsaveis] = await Promise.all([
-    diretorioEmpresas(ctx.organizacaoId, { busca, relacionamento, limite: 200 }),
-    aba === "pessoas" ? diretorioPessoas(ctx.organizacaoId, { busca, semEmpresa, limite: 200 }) : Promise.resolve([]),
-    params.pessoa ? pessoaPorId(ctx.organizacaoId, params.pessoa) : Promise.resolve(null),
+  const [{ linhas, totais }, responsaveis] = await Promise.all([
+    linhasDeContato(ctx.organizacaoId, { busca, limite: 500 }),
     acaoResponsaveis(),
   ]);
-  const pessoasComAlvo = pessoaInicial && !pessoas.some((p) => p.id === pessoaInicial.id) ? [pessoaInicial, ...pessoas] : pessoas;
 
   return (
-    <Pagina>
-      <PaginaCabecalho titulo="Contatos & Empresas" />
-      <PaginaResumo
-        itens={[
-          {
-            rotulo: "Empresas",
-            valor: empresas.total,
-            detalhe: "no diretório",
-            destaque: true,
-          },
-          { rotulo: "Clientes", valor: empresas.porRelacionamento.cliente },
-          { rotulo: "Em oportunidade", valor: empresas.porRelacionamento.em_oportunidade },
-          { rotulo: "Em pré-vendas", valor: empresas.porRelacionamento.em_pre_vendas },
-        ]}
-      />
-
-        <Contatos
-          aba={aba}
-          empresas={empresas}
-          pessoas={pessoasComAlvo}
-          filtro={{ busca, relacionamento, semEmpresa }}
-          responsaveis={responsaveis}
-          selecaoInicial={params.empresa ?? null}
-          pessoaInicial={params.pessoa ?? null}
-          rotaBase={rotaBase}
-          acoes={{
-            criarEmpresa: acaoCriarEmpresa,
-            criarPessoa: acaoCriarPessoa,
-            vincularPessoa: acaoVincularPessoa,
-            criarLeadDaEmpresa: acaoCriarLeadDaEmpresa,
-            novaOportunidade: acaoNovaOportunidade,
-            salvarDadosJuridicos: acaoSalvarDadosJuridicos,
-            empresa360: acaoEmpresa360,
-            buscarEmpresas: acaoBuscarEmpresas,
-          }}
-        />
-    </Pagina>
+    <ContatosProto
+      linhas={linhas}
+      totais={totais}
+      responsaveis={responsaveis}
+      busca={busca}
+      agora={Date.now()}
+      acoes={{
+        criarEmpresa: acaoCriarEmpresa,
+        criarPessoa: acaoCriarPessoa,
+        criarLead: acaoCriarLead,
+        atribuirEmMassa: acaoAtribuirEmMassa,
+      }}
+    />
   );
 }
 

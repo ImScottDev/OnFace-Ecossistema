@@ -37,6 +37,10 @@ export interface LinhaProposta {
   enviadaEm: string | null;
   validade: string | null;
   ajusteSolicitado: string | null;
+  /** Quem responde pela oportunidade. A lista filtra por responsável. */
+  responsavel: string | null;
+  /** O contato da conversa — o que a linha mostra embaixo da empresa. */
+  pessoa: string | null;
 }
 
 export async function acaoListar(filtros: { status?: string | null; busca?: string | null } = {}): Promise<LinhaProposta[]> {
@@ -50,6 +54,7 @@ export async function acaoListar(filtros: { status?: string | null; busca?: stri
     familia: string | null; modo: string | null; total: string | null;
     total_recorrente: string | null; enviada_em: string | null;
     validade: string | null; ajuste: string | null;
+    responsavel: string | null; pessoa: string | null;
   }>(sql`
     SELECT p.id::text, p.numero, p.versao, p.status,
            COALESCE(e.nome, l.empresa) AS empresa, n.titulo AS oportunidade, p.negocio_id::text,
@@ -66,12 +71,20 @@ export async function acaoListar(filtros: { status?: string | null; busca?: stri
            p.modo_fechamento AS modo,
            p.total_geral::text AS total, p.total_recorrente::text,
            p.enviada_em::text, p.data_validade::text AS validade,
-           p.ajuste_solicitado_descricao AS ajuste
+           p.ajuste_solicitado_descricao AS ajuste,
+           -- O responsável e o contato: a lista filtra por um e mostra o outro,
+           -- e sem eles o filtro de responsável vinha vazio na tela.
+           COALESCE(u.nome, uo.nome) AS responsavel,
+           -- O contato vem do LEAD: a tabela negocios não tem pessoa_id, e o
+           -- lead é quem guarda com quem a conversa começou.
+           l.nome AS pessoa
       FROM propostas p
       LEFT JOIN negocios n ON n.id = p.negocio_id
       LEFT JOIN empresas e ON e.id = n.empresa_id
-      LEFT JOIN leads l ON l.id = p.lead_id
+      LEFT JOIN leads l ON l.id = COALESCE(p.lead_id, n.lead_id)
+      LEFT JOIN usuarios u ON u.id = n.responsavel_id
       LEFT JOIN oportunidades o ON o.negocio_id_legado = n.id
+      LEFT JOIN usuarios uo ON uo.id = o.responsavel_id
      WHERE p.organizacao_id = ${ctx.organizacaoId}::uuid
        AND (${filtros.status ?? null}::text IS NULL OR p.status = ${filtros.status ?? null})
        AND (${busca}::text IS NULL OR lower(COALESCE(e.nome, l.empresa, '')) LIKE ${busca}
@@ -87,6 +100,7 @@ export async function acaoListar(filtros: { status?: string | null; busca?: stri
     total: l.total === null ? null : Number(l.total),
     totalRecorrente: l.total_recorrente === null ? null : Number(l.total_recorrente),
     enviadaEm: l.enviada_em, validade: l.validade, ajusteSolicitado: l.ajuste,
+    responsavel: l.responsavel, pessoa: l.pessoa,
   }));
 }
 

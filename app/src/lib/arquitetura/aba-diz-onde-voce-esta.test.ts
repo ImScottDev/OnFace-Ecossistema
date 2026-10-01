@@ -63,7 +63,13 @@ test("toda rota de página do produto diz na aba qual tela é", () => {
 
     // `redirect(...)` no corpo: a rota não renderiza nada, quem tem título é
     // o destino. Uma aba nunca chega a mostrar este documento.
-    const soRedireciona = /redirect\(\s*["'`]/.test(fonte) && !/return\s*\(/.test(fonte);
+    //
+    // O destino nem sempre é literal: as pontes do protótipo chamam
+    // `redirect(rotaDoDesenho(...))` e as de Clientes montam a query antes
+    // (`redirect(qs.size ? ... : ...)`). Exigir aspas logo depois do parêntese
+    // reprovava quatro redirects legítimos, que então ganhariam um título que
+    // ninguém jamais lê. Quem não renderiza é que define a isenção.
+    const soRedireciona = /\bredirect\(/.test(fonte) && !/return\s*\(/.test(fonte);
 
     // "Callface AI" é FAMÍLIA DE SERVIÇO (`CALLFACE_AI`), um produto que a
     // empresa vende — não a marca anterior do CRM. A primeira versão desta

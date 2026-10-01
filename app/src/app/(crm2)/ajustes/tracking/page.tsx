@@ -40,12 +40,17 @@ export default function TrackingConfigPage() {
 
   return (
     <div className="space-y-5 max-w-3xl">
+      {/* Nenhum processo lê esta chave de organizacoes.settings (medido
+          01/10/2026; ver `semEfeito` em ../Nav). Salvar grava, e só. */}
+      <p className="aj-aviso" role="status">
+        <strong>Ainda sem efeito:</strong> estes campos ficam gravados, mas nenhum evento é enviado a partir deles. A entrega de conversões à Meta que já roda usa as credenciais do servidor, não esta tela.
+      </p>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <LineChart className="w-5 h-5 text-[var(--cf2-accent)]" />
           <div>
             <h2 className="text-lg font-semibold text-[var(--cf2-text-primary)]">Tracking &amp; Conversões</h2>
-            <p className="text-xs text-[var(--cf2-text-tertiary)]">Eventos server-side de funil para Meta CAPI, GA4 e Google Ads</p>
+            <p className="text-xs text-[var(--cf2-text-tertiary)]">Credenciais e eventos de funil para Meta CAPI, GA4 e Google Ads</p>
           </div>
         </div>
         <button onClick={save} disabled={saving} className="cf2-btn-primary px-4 py-1.5 text-sm">{saving ? "Salvando..." : "Salvar"}</button>

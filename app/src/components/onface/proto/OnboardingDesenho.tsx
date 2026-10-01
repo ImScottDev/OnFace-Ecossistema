@@ -347,7 +347,7 @@ Ver todos
 <span style={{ fontSize: "10.5px", fontWeight: "600", color: "var(--tx3)" }}>
 Próxima ação
 </span>
-<span style={{ whiteSpace: "normal", lineHeight: "1.3" }}>
+<span style={estilo(`${r.pxSt ?? ""};white-space:normal;line-height:1.3`)}>
 {r.px}
 </span>
 <span style={{ fontSize: "11.5px", color: "var(--tx2)", lineHeight: "1.35", textWrap: "pretty" }}>
@@ -397,7 +397,7 @@ Próxima ação
 </div>
 {(dr.aberto) ? (<>
 <div onClick={fecharDr} data-in="fade" style={{ position: "fixed", inset: "0", zIndex: "60", background: "rgba(12,16,21,.45)" }} />
-<aside data-r="drawer" data-in="slide-left" style={{ position: "fixed", top: "0", right: "0", bottom: "0", zIndex: "61", width: "min(480px,100vw)", display: "flex", flexDirection: "column", background: "var(--sf)", color: "var(--tx)", boxShadow: "-24px 0 60px -24px rgba(0,0,0,.45),inset 1px 0 0 var(--ln)" }}>
+<aside data-r="drawer" data-in="slide-left" style={estilo(`${tema.vars ?? ""};position:fixed;top:0;right:0;bottom:0;z-index:61;width:min(480px,100vw);display:flex;flex-direction:column;background:var(--sf);color:var(--tx);box-shadow:-24px 0 60px -24px rgba(0,0,0,.45),inset 1px 0 0 var(--ln)`)}>
 <div style={{ flex: "0 0 auto", padding: "18px 20px 14px", display: "flex", flexDirection: "column", gap: "12px", boxShadow: "inset 0 -1px 0 var(--ln)" }}>
 <div style={{ display: "flex", alignItems: "flex-start", gap: "12px" }}>
 <span style={{ flex: "0 0 auto", width: "40px", height: "40px", borderRadius: "12px", display: "grid", placeItems: "center", background: "var(--sf2)", color: "var(--tx)", fontFamily: "'Plus Jakarta Sans',sans-serif", fontSize: "13px", fontWeight: "700", boxShadow: "inset 0 0 0 1px var(--ln)" }}>
@@ -432,9 +432,9 @@ Próxima ação
 </div>
 <div style={{ flex: "1", minHeight: "0", overflowY: "auto", overflowX: "hidden", padding: "16px 20px 18px", display: "flex", flexDirection: "column", gap: "18px" }}>
 {(dr.temBloq) ? (<>
-<div style={{ display: "flex", gap: "10px", alignItems: "center", padding: "11px 12px", borderRadius: "11px", background: "{{ dr.bloqBg }}" }}>
+<div style={estilo(`display:flex;gap:10px;align-items:center;padding:11px 12px;border-radius:11px;background:${dr.bloqBg ?? ""}`)}>
 <span style={{ flex: "1", minWidth: "0" }}>
-<span style={{ display: "block", fontSize: "12.5px", fontWeight: "700", color: "{{ dr.bloqCor }}" }}>
+<span style={estilo(`display:block;font-size:12.5px;font-weight:700;color:${dr.bloqCor ?? ""}`)}>
 {dr.bloqT}
 </span>
 <span style={{ display: "block", marginTop: "2px", fontSize: "12px", color: "var(--tx2)" }}>
@@ -454,7 +454,7 @@ Próxima ação
 <span style={{ display: "block", marginTop: "5px", fontSize: "13px", fontWeight: "600", color: "var(--tx)", lineHeight: "1.35" }}>
 {dr.proxT}
 </span>
-<span style={{ display: "block", marginTop: "2px", fontSize: "12px", color: "{{ dr.proxCor }}" }}>
+<span style={estilo(`display:block;margin-top:2px;font-size:12px;color:${dr.proxCor ?? ""}`)}>
 {dr.proxQ}
 </span>
 </div>
@@ -470,7 +470,7 @@ Responsável
 {dr.resp}
 </span>
 </span>
-<span style={{ display: "block", marginTop: "2px", fontSize: "12px", color: "{{ dr.prazoCor }}" }}>
+<span style={estilo(`display:block;margin-top:2px;font-size:12px;color:${dr.prazoCor ?? ""}`)}>
 {dr.prazo}
 </span>
 </div>
@@ -511,7 +511,7 @@ Nenhuma tarefa aberta.
 {t.s}
 </span>
 </button>
-<span style={{ fontSize: "11.5px", color: "{{ t.qCor }}", whiteSpace: "nowrap" }}>
+<span style={estilo(`font-size:11.5px;color:${t.qCor ?? ""};white-space:nowrap`)}>
 {t.q}
 </span>
 </div>
@@ -605,7 +605,7 @@ Aguardando cliente
 </>) : null}
 {(mh.aberto) ? (<>
 <div data-r="modal-fundo" data-in="fade" onClick={fechar} style={{ position: "fixed", inset: "0", zIndex: "70", background: "rgba(12,16,21,.5)", display: "grid", placeItems: "center", padding: "20px" }}>
-<div data-in="pop" onClick={parar} style={{ width: "min(620px,100%)", maxHeight: "100%", display: "flex", flexDirection: "column", background: "var(--sf)", color: "var(--tx)", borderRadius: "16px", boxShadow: "0 30px 70px -20px rgba(0,0,0,.55),inset 0 0 0 1px var(--ln)", overflow: "hidden" }}>
+<div data-in="pop" onClick={parar} style={estilo(`${tema.vars ?? ""};width:min(620px,100%);max-height:100%;display:flex;flex-direction:column;background:var(--sf);color:var(--tx);border-radius:16px;box-shadow:0 30px 70px -20px rgba(0,0,0,.55),inset 0 0 0 1px var(--ln);overflow:hidden`)}>
 <div style={{ padding: "18px 20px 12px", display: "flex", alignItems: "flex-start", gap: "10px", boxShadow: "inset 0 -1px 0 var(--ln)" }}>
 <span style={{ flex: "1", minWidth: "0" }}>
 <span style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "11.5px", fontWeight: "600", color: "var(--tx3)" }}>
@@ -723,7 +723,7 @@ Cancelar
 </>) : null}
 {(mn.aberto) ? (<>
 <div data-r="modal-fundo" data-in="fade" onClick={fechar} style={{ position: "fixed", inset: "0", zIndex: "70", background: "rgba(12,16,21,.5)", display: "grid", placeItems: "center", padding: "20px" }}>
-<div data-in="pop" onClick={parar} style={{ width: "min(580px,100%)", maxHeight: "100%", display: "flex", flexDirection: "column", background: "var(--sf)", color: "var(--tx)", borderRadius: "16px", boxShadow: "0 30px 70px -20px rgba(0,0,0,.55),inset 0 0 0 1px var(--ln)", overflow: "hidden" }}>
+<div data-in="pop" onClick={parar} style={estilo(`${tema.vars ?? ""};width:min(580px,100%);max-height:100%;display:flex;flex-direction:column;background:var(--sf);color:var(--tx);border-radius:16px;box-shadow:0 30px 70px -20px rgba(0,0,0,.55),inset 0 0 0 1px var(--ln);overflow:hidden`)}>
 <div style={{ padding: "18px 20px 12px", display: "flex", alignItems: "flex-start", gap: "10px", boxShadow: "inset 0 -1px 0 var(--ln)" }}>
 <span style={{ flex: "1", minWidth: "0" }}>
 <span style={{ display: "block", fontFamily: "'Plus Jakarta Sans',sans-serif", fontSize: "17px", fontWeight: "700", color: "var(--tx)" }}>

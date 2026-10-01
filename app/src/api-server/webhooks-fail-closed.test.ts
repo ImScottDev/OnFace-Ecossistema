@@ -56,6 +56,42 @@ const WEBHOOKS: Webhook[] = [
  */
 const PUBLICOS_POR_DESENHO = ["app/api/webhooks/site-lead/route.ts"];
 
+/**
+ * Webhook cujo segredo NÃO é variável de ambiente: a credencial é um token
+ * por automação, guardado no banco e gerado na tela. Ele não cabe em
+ * `WEBHOOKS` (não há env para checar) nem em `PUBLICOS_POR_DESENHO` (ele é
+ * autenticado). Mas isento sem prova é isento de verdade, então aqui se
+ * verifica o que importa: a rota delega a UMA função que confere o token
+ * contra o banco, e token desconhecido recebe a mesma recusa que automação
+ * desligada — senão o 404 responderia "este token existe".
+ */
+const TOKEN_NO_BANCO = [
+  { nome: "Fluxos (automações)", arquivo: "app/api/webhooks/automacoes/[token]/route.ts",
+    servico: "lib/automacoes/fluxos-servico.ts", funcao: "receberWebhook" },
+];
+
+for (const wh of TOKEN_NO_BANCO) {
+  test(`webhook ${wh.nome}: token conferido no banco, recusa igual para desconhecido`, () => {
+    const rota = fs.readFileSync(path.join(SRC, wh.arquivo), "utf8");
+    assert.ok(rota.includes(wh.funcao), `${wh.arquivo}: não chama ${wh.funcao}`);
+    assert.doesNotMatch(rota, /process\.env\.[A-Z0-9_]*(SECRET|TOKEN|KEY)/,
+      `${wh.arquivo}: a credencial é o token do banco; ler segredo do ambiente aqui é outra porta`);
+
+    const servico = fs.readFileSync(path.join(SRC, wh.servico), "utf8");
+    const inicio = servico.indexOf(`export async function ${wh.funcao}`);
+    assert.ok(inicio > 0, `${wh.servico}: ${wh.funcao} sumiu`);
+    const proxima = servico.indexOf("\nexport ", inicio + 1);
+    const corpo = servico.slice(inicio, proxima > 0 ? proxima : undefined);
+    assert.match(corpo, /webhookToken/, `${wh.servico}: ${wh.funcao} não confere o token contra o banco`);
+    assert.match(corpo, /eq\(automacoes\.ativo, true\)/, `${wh.servico}: automação desligada tem de ser recusada`);
+    // Mesma mensagem e mesmo status para token inválido, inexistente e
+    // desligado: respostas diferentes viram um oráculo de tokens válidos.
+    const recusas = [...corpo.matchAll(/new ErroFluxo\(404, "([^"]*)"\)/g)].map((m) => m[1]);
+    assert.ok(recusas.length >= 2, `${wh.servico}: faltam as recusas 404 de token inválido e de automação ausente`);
+    assert.equal(new Set(recusas).size, 1, `${wh.servico}: as recusas 404 divergem (${[...new Set(recusas)].join(" | ")})`);
+  });
+}
+
 for (const wh of WEBHOOKS) {
   test(`webhook ${wh.nome}: segredo sem fallback literal`, () => {
     const src = fs.readFileSync(path.join(SRC, wh.arquivo), "utf8");
@@ -95,7 +131,7 @@ test("nenhum webhook novo ficou de fora desta verificação", () => {
       else if (e.name === "route.ts") encontrados.push(path.relative(SRC, p));
     }
   }
-  const cobertos = new Set([...WEBHOOKS.map((w) => w.arquivo), ...PUBLICOS_POR_DESENHO]);
+  const cobertos = new Set([...WEBHOOKS.map((w) => w.arquivo), ...PUBLICOS_POR_DESENHO, ...TOKEN_NO_BANCO.map((w) => w.arquivo)]);
   const descobertos = encontrados.filter((a) => !cobertos.has(a));
   assert.deepEqual(
     descobertos, [],

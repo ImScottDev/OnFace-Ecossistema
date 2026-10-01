@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { getTenantContext } from "@/lib/auth/tenant";
-import { atorHumano, type Familia, type MotivoDesqualificacao, type MotivoNutricao, type Qualificacao } from "@/lib/vendas/dominio";
+import { atorHumano, RegraDeNegocio, type Familia, type MotivoDesqualificacao, type MotivoNutricao, type Qualificacao } from "@/lib/vendas/dominio";
 import { executar, type Resultado } from "@/lib/vendas/resultado";
 import { executarEmMassa, type AcaoEmMassa, type ResultadoEmMassa } from "@/lib/vendas/acoes-em-massa";
 import * as preVendas from "@/lib/vendas/pre-vendas";
@@ -147,6 +147,8 @@ export async function acaoCriarOportunidade(entrada: {
 /** Criação manual de Lead. Empresa é obrigatória e resolvida antes (Bloco 01 §3). */
 export async function acaoCriarLead(entrada: {
   empresa: string;
+  /** Empresa já conhecida: o lead entra NELA, sem adivinhar por nome ou domínio do e-mail. */
+  empresaId?: string | null;
   cnpj?: string | null;
   website?: string | null;
   pessoaNome: string;
@@ -155,6 +157,8 @@ export async function acaoCriarLead(entrada: {
   telefone?: string | null;
   origem?: string | null;
   responsavelId?: string | null;
+  /** Rótulos de serviço ("Callface AI", "PABX"…), como `servicos_interesse` guarda. */
+  servicosInteresse?: string[] | null;
 }): Promise<Resultado<{ leadId: string }>> {
   const ctx = await contexto();
   if (!ctx) return { ok: false, erro: "Sessão expirada." };
@@ -163,12 +167,20 @@ export async function acaoCriarLead(entrada: {
 
   return executar("criar lead", async () => {
     const [primeiro, ...resto] = entrada.pessoaNome.trim().split(/\s+/);
+    let empresa: { nome: string; cnpj: string | null; website: string | null; email?: string | null } = {
+      nome: entrada.empresa.trim(), cnpj: entrada.cnpj ?? null,
+      website: entrada.website ?? null, email: entrada.email ?? null,
+    };
+    if (entrada.empresaId) {
+      const [e] = await db.execute<{ nome: string; cnpj: string | null; website: string | null }>(sql`
+        SELECT nome, cnpj, website FROM empresas
+         WHERE id = ${entrada.empresaId}::uuid AND organizacao_id = ${ctx.organizacaoId}::uuid`);
+      if (!e) throw new RegraDeNegocio("empresa_nao_encontrada", "Empresa não encontrada nesta organização.");
+      empresa = { nome: e.nome, cnpj: e.cnpj, website: e.website };
+    }
     const criado = await preVendas.criarLead({
       organizacaoId: ctx.organizacaoId,
-      empresa: {
-        nome: entrada.empresa.trim(), cnpj: entrada.cnpj ?? null,
-        website: entrada.website ?? null, email: entrada.email ?? null,
-      },
+      empresa,
       pessoa: {
         nome: primeiro, sobrenome: resto.length ? resto.join(" ") : null,
         cargo: entrada.cargo ?? null, email: entrada.email ?? null, telefone: entrada.telefone ?? null,
@@ -176,6 +188,7 @@ export async function acaoCriarLead(entrada: {
       touchpoint: { tipoOrigem: "manual", source: entrada.origem ?? "manual" },
       origem: entrada.origem ?? "Manual",
       responsavelId: entrada.responsavelId ?? null,
+      servicosInteresse: entrada.servicosInteresse?.length ? entrada.servicosInteresse : null,
     }, ctx.ator);
     revalidatePath(ROTA);
     return { leadId: criado.leadId };

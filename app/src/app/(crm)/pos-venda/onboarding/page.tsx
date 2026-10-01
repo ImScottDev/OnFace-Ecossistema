@@ -1,10 +1,10 @@
-// Página autenticada: o board lê a sessão do usuário para filtrar por
-// responsável. Prerender estático não tem sessão, e o build quebrava em
-// `useSession()` retornando undefined. Renderiza sob demanda.
-export const dynamic = "force-dynamic";
+import { redirect } from "next/navigation";
 
-import { Cf2OnboardingWorkspace } from "@/components/crm2/clientes/OnboardingWorkspace";
-
-export default function OnboardingPage() {
-  return <Cf2OnboardingWorkspace />;
+/**
+ * Pós-venda do CRM 1 — o onboarding vive em `/clientes/onboarding`.
+ * A rota antiga montava o board cf2 fora da casca (sem SessionProvider, e
+ * quebrava com erro 500 em `useSession`). Agora só redireciona.
+ */
+export default function RedirecionaPosVenda() {
+  redirect("/clientes/onboarding");
 }

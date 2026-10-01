@@ -8,14 +8,15 @@
  * Onde a referência diverge de um token do design system, o valor da
  * referência prevalece e a divergência fica anotada no comentário. */
 
-.ovg,
-.ovg-janela {
+.ovg {
   --ovg-shell: #12171d;
   --ovg-raised: #161b22;
   --ovg-line: #30363d;
   --ovg-line-soft: rgba(255, 255, 255, 0.06);
   --ovg-ink-invert: #ffffff;
   --ovg-ink-muted: #8b949e;
+  /* Azul da série secundária do gráfico e do estado "em andamento". */
+  --ovg-serie-azul: #3b82f6;
   /* O terceiro cinza não existe, nem no escuro nem no claro.
    *
    * Era #6D747E, que é cinza de fundo CLARO. Esta tela quase toda é escura, e
@@ -33,8 +34,14 @@
   --ovg-green: #3fb950;
   --ovg-green-soft: rgba(63, 185, 80, 0.13);
   --ovg-paper: #ffffff;
-  --ovg-paper-line: #e8eaec;
-  --ovg-paper-sunken: #f4f5f4;
+  /* Linha e calha do papel vêm do DS (onface-proto.css), não de valores
+     próprios da tela: #e8eaec e #f4f5f4 eram quase-iguais que divergiam. */
+  --ovg-paper-line: var(--of-linha);
+  --ovg-paper-sunken: var(--of-calha);
+  /* Coral é acento. Fundo de botão é o coral de AÇÃO, que aguenta texto
+     branco (6:1); o coral da marca com branco dava 3,3:1 e reprovava AA. */
+  --ovg-acao: var(--of-coral-acao);
+  --ovg-acao-hover: var(--of-coral-acao-hover);
   --ovg-ink: #12171d;
   --ovg-ink-body: #454c55;
   --ovg-gap: calc(16 * var(--onface-u));
@@ -42,17 +49,22 @@
   --ovg-radius-inner: calc(12 * var(--onface-u));
   --ovg-ease: cubic-bezier(0.2, 0, 0.2, 1);
 
-  font-family: var(--font-onface-display), ui-sans-serif, system-ui, sans-serif;
+  /* Corpo em Inter (a mesma variável do corpo em onface.css); Jakarta fica só
+     em títulos e números, aplicada logo abaixo. Antes a tela inteira herdava
+     Jakarta, contra a regra tipográfica ONFACE. */
+  font-family: var(--font-onface-ui), ui-sans-serif, system-ui, sans-serif;
   color: var(--ovg-ink);
+}
+.ovg h1, .ovg h2, .ovg h3,
+.ovg [class*="-title"], .ovg [class*="-titulo"],
+.ovg [class*="-value"], .ovg [class*="-valor"],
+.ovg [class*="-company-name"] {
+  font-family: var(--font-onface-display), ui-sans-serif, system-ui, sans-serif;
 }
 
 .ovg *,
 .ovg *::before,
-.ovg *::after,
-.ovg-janela,
-.ovg-janela *,
-.ovg-janela *::before,
-.ovg-janela *::after { box-sizing: border-box; }
+.ovg *::after { box-sizing: border-box; }
 
 /* Entrada: um único fade-up escalonado. Estado, não espetáculo. */
 @keyframes ovg-rise {
@@ -104,16 +116,19 @@
  * `auto-fit` com piso dimensionado pelo maior valor real resolve: cabem quatro
  * lado a lado quando há largura, e dois por linha quando não há. A saudação
  * atravessa as linhas para que a métrica que desce não caia embaixo dela. */
+/* auto-fit deixava 3+1 (uma célula vazia) a 1440 com o menu aberto. Agora a
+ * saudação ocupa a linha inteira e as 4 métricas vão em 4 colunas ou 2x2,
+ * escolhido pela largura real da coluna (container query), nunca 3+1. */
+.ovg-hero-main { container-type: inline-size; }
 .ovg-hero-top {
   display: grid;
-  grid-template-columns:
-    calc(256 * var(--onface-u))
-    repeat(auto-fit, minmax(calc(190 * var(--onface-u)), 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: calc(12 * var(--onface-u));
 }
-.ovg-hero-top > .ovg-greeting {
-  grid-column: 1;
-  grid-row: 1 / -1;
+.ovg-hero-top > .ovg-greeting { grid-column: 1 / -1; }
+/* 4 x (164px do maior valor + 36px de padding) + 3 vãos ≈ 840px. */
+@container (max-width: 860px) {
+  .ovg-hero-top { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 /* Saudação */
@@ -152,7 +167,7 @@
   padding-inline: calc(18 * var(--onface-u));
   border: 0;
   border-radius: 999px;
-  background: var(--ovg-coral);
+  background: var(--ovg-acao);
   color: #fff;
   font-family: inherit;
   font-size: calc(13 * var(--onface-u));
@@ -161,7 +176,7 @@
   cursor: pointer;
   transition: background 160ms var(--ovg-ease), transform 160ms var(--ovg-ease);
 }
-.ovg-cta:hover { background: var(--ovg-coral-hover); transform: translateY(-1px); }
+.ovg-cta:hover { background: var(--ovg-acao-hover); transform: translateY(-1px); }
 .ovg-cta:active { transform: none; }
 .ovg-tagline {
   display: flex;
@@ -181,12 +196,13 @@
   gap: calc(10 * var(--onface-u));
   min-height: calc(166 * var(--onface-u));
   padding: calc(18 * var(--onface-u));
-  border: 1px solid var(--ovg-line);
+  border: 0;
+  box-shadow: inset 0 0 0 1px var(--ovg-anel, var(--ovg-line));
   border-radius: var(--ovg-radius-card);
   background: var(--ovg-raised);
-  transition: border-color 160ms var(--ovg-ease), background 160ms var(--ovg-ease);
+  transition: box-shadow 160ms var(--ovg-ease), background 160ms var(--ovg-ease);
 }
-.ovg-metric:hover { border-color: #414a54; background: #191f27; }
+.ovg-metric:hover { --ovg-anel: #414a54; background: #191f27; }
 .ovg-metric-icon { color: #c9d1d9; }
 .ovg-metric-label {
   margin: 0;
@@ -237,7 +253,8 @@
 
 .ovg-panel {
   padding: calc(22 * var(--onface-u));
-  border: 1px solid var(--ovg-line);
+  border: 0;
+  box-shadow: inset 0 0 0 1px var(--ovg-anel, var(--ovg-line));
   border-radius: var(--ovg-radius-card);
   background: var(--ovg-raised);
 }
@@ -298,7 +315,7 @@
 .ovg-legend-item[data-off="true"] { opacity: 0.35; }
 .ovg-legend-dot { width: calc(8 * var(--onface-u)); height: calc(8 * var(--onface-u)); border-radius: 999px; }
 .ovg-legend-dot[data-cor="coral"] { background: var(--ovg-coral); }
-.ovg-legend-dot[data-cor="azul"] { background: #3b82f6; }
+.ovg-legend-dot[data-cor="azul"] { background: var(--ovg-serie-azul); }
 .ovg-legend-dot[data-cor="cinza"] { background: #8b949e; }
 
 .ovg-chart { position: relative; flex: 1; min-height: calc(190 * var(--onface-u)); margin-top: calc(20 * var(--onface-u)); }
@@ -356,10 +373,10 @@
   z-index: 2;
   min-width: calc(132 * var(--onface-u));
   padding: calc(10 * var(--onface-u)) calc(12 * var(--onface-u));
-  border: 1px solid var(--ovg-line);
+  border: 0;
   border-radius: calc(10 * var(--onface-u));
   background: #0d1218;
-  box-shadow: 0 calc(12 * var(--onface-u)) calc(28 * var(--onface-u)) rgba(0, 0, 0, 0.45);
+  box-shadow: inset 0 0 0 1px var(--ovg-line), 0 calc(12 * var(--onface-u)) calc(28 * var(--onface-u)) rgba(0, 0, 0, 0.45);
   pointer-events: none;
 }
 .ovg-chart-tooltip strong { display: block; margin-bottom: calc(6 * var(--onface-u)); font-size: calc(11 * var(--onface-u)); color: var(--ovg-ink-muted); font-weight: 600; }
@@ -374,28 +391,32 @@
   gap: calc(12 * var(--onface-u));
   margin-top: calc(20 * var(--onface-u));
 }
+/* Sem o tile Financeiro (papel sem gestão) sobram 3: o último ocupa a linha
+   em vez de deixar um buraco na grade. */
+.ovg-areas-grid > .ovg-area:last-child:nth-child(odd) { grid-column: 1 / -1; }
 .ovg-area {
   display: flex;
   flex-direction: column;
   gap: calc(24 * var(--onface-u));
   min-height: calc(96 * var(--onface-u));
   padding: calc(16 * var(--onface-u));
-  border: 1px solid var(--ovg-line);
+  border: 0;
+  box-shadow: inset 0 0 0 1px var(--ovg-anel, var(--ovg-line));
   border-radius: var(--ovg-radius-inner);
   background: var(--ovg-shell);
   color: inherit;
   text-decoration: none;
-  transition: transform 160ms var(--ovg-ease), border-color 160ms var(--ovg-ease), background 160ms var(--ovg-ease);
+  transition: transform 160ms var(--ovg-ease), box-shadow 160ms var(--ovg-ease), background 160ms var(--ovg-ease);
 }
-.ovg-area:hover { transform: translateY(-2px); border-color: rgba(254, 79, 43, 0.45); background: #1a212a; }
+.ovg-area:hover { transform: translateY(-2px); --ovg-anel: rgba(254, 79, 43, 0.45); background: #1a212a; }
 .ovg-area-icon { color: var(--ovg-coral); }
 .ovg-area-label { margin: 0; font-size: calc(15 * var(--onface-u)); font-weight: 700; }
 .ovg-area-state { margin: 2px 0 0; color: var(--ovg-ink-muted); font-size: calc(12 * var(--onface-u)); font-weight: 400; }
 .ovg-area[data-destaque="true"] {
-  border-color: transparent;
-  background: var(--ovg-coral);
+  --ovg-anel: transparent;
+  background: var(--ovg-acao);
 }
-.ovg-area[data-destaque="true"]:hover { background: var(--ovg-coral-hover); }
+.ovg-area[data-destaque="true"]:hover { background: var(--ovg-acao-hover); }
 /* Tinta escura sobre o coral, não branco.
  *
  * Branco sobre `--ovg-coral` (#FE4F2B) dá 3,30:1 — reprova AA para texto
@@ -404,7 +425,7 @@
  * `onface.css` já anota para o coral da marca: ele não carrega texto claro. */
 .ovg-area[data-destaque="true"] .ovg-area-icon,
 .ovg-area[data-destaque="true"] .ovg-area-label,
-.ovg-area[data-destaque="true"] .ovg-area-state { color: var(--ovg-ink); }
+.ovg-area[data-destaque="true"] .ovg-area-state { color: var(--ovg-ink-invert); }
 /* A opacidade saiu junto: 0,86 de tinta escura sobre coral cairia para 4,3:1,
    de novo abaixo do piso. Hierarquia aqui se faz por peso, não por opacidade. */
 
@@ -415,7 +436,8 @@
   display: flex;
   flex-direction: column;
   padding: calc(24 * var(--onface-u));
-  border: 1px solid var(--ovg-line);
+  border: 0;
+  box-shadow: inset 0 0 0 1px var(--ovg-anel, var(--ovg-line));
   border-radius: calc(24 * var(--onface-u));
   background: var(--ovg-raised);
   overflow: hidden;
@@ -446,34 +468,8 @@
 .ovg-assistant-head { position: relative; z-index: 1; display: flex; align-items: center; gap: calc(12 * var(--onface-u)); }
 .ovg-assistant-avatar { position: relative; flex-shrink: 0; }
 .ovg-assistant-avatar img { display: block; width: calc(46 * var(--onface-u)); height: calc(46 * var(--onface-u)); border-radius: 999px; }
-.ovg-assistant-online {
-  position: absolute;
-  right: 1px;
-  bottom: 2px;
-  width: calc(12 * var(--onface-u));
-  height: calc(12 * var(--onface-u));
-  border: 2px solid var(--ovg-raised);
-  border-radius: 999px;
-  background: #22c55e;
-}
 .ovg-assistant-name { margin: 0; font-size: calc(17 * var(--onface-u)); font-weight: 800; letter-spacing: -0.01em; }
 .ovg-assistant-sign { margin: 1px 0 0; color: var(--ovg-ink-muted); font-size: calc(13 * var(--onface-u)); font-weight: 400; }
-.ovg-assistant-config {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: calc(34 * var(--onface-u));
-  height: calc(34 * var(--onface-u));
-  margin-left: auto;
-  flex-shrink: 0;
-  border: 0;
-  border-radius: 999px;
-  background: var(--ovg-coral);
-  color: #fff;
-  cursor: pointer;
-  transition: background 160ms var(--ovg-ease), transform 200ms var(--ovg-ease);
-}
-.ovg-assistant-config:hover { background: var(--ovg-coral-hover); transform: rotate(45deg); }
 .ovg-assistant-greeting {
   position: relative;
   z-index: 1;
@@ -503,7 +499,7 @@
   padding: calc(16 * var(--onface-u)) calc(20 * var(--onface-u));
   border: 0;
   border-radius: calc(14 * var(--onface-u));
-  background: var(--ovg-coral);
+  background: var(--ovg-acao);
   color: #fff;
   font-family: inherit;
   font-size: calc(15 * var(--onface-u));
@@ -511,7 +507,7 @@
   cursor: pointer;
   transition: background 160ms var(--ovg-ease);
 }
-.ovg-assistant-cta:hover { background: var(--ovg-coral-hover); }
+.ovg-assistant-cta:hover { background: var(--ovg-acao-hover); }
 .ovg-assistant-cta svg { transition: transform 160ms var(--ovg-ease); }
 .ovg-assistant-cta:hover svg { transform: translateX(calc(3 * var(--onface-u))); }
 .ovg-assistant-actions { position: relative; display: grid; grid-template-columns: 1fr 1fr; gap: calc(12 * var(--onface-u)); margin-top: calc(12 * var(--onface-u)); }
@@ -567,8 +563,9 @@
   transition: background 160ms var(--ovg-ease), color 160ms var(--ovg-ease);
 }
 .ovg-filter:hover { color: #fff; }
-/* Mesma conta do cartão em destaque: branco sobre coral é 3,30:1. */
-.ovg-filter[data-active="true"] { background: var(--ovg-coral); color: var(--ovg-ink); }
+/* Aba ativa é estado, não ação: papel claro sobre o grafite, sem coral de
+   fundo (coral é acento). */
+.ovg-filter[data-active="true"] { background: var(--ovg-paper); color: var(--ovg-ink); }
 
 /* ── Painel claro ─────────────────────────────────────────────────────── */
 /* Geometria vem de `.onface-page-surface`; aqui entram a grade de fundo do
@@ -607,7 +604,8 @@
   flex-shrink: 0;
   height: calc(34 * var(--onface-u));
   padding-inline: calc(14 * var(--onface-u));
-  border: 1px solid var(--ovg-line);
+  border: 0;
+  box-shadow: inset 0 0 0 1px var(--ovg-anel, var(--ovg-line));
   border-radius: 999px;
   background: transparent;
   color: var(--ovg-ink-invert);
@@ -616,9 +614,9 @@
   font-weight: 600;
   text-decoration: none;
   cursor: pointer;
-  transition: background 160ms var(--ovg-ease), border-color 160ms var(--ovg-ease);
+  transition: background 160ms var(--ovg-ease), box-shadow 160ms var(--ovg-ease);
 }
-.ovg-ghost-btn:hover { background: var(--ovg-raised); border-color: #454e58; }
+.ovg-ghost-btn:hover { background: var(--ovg-raised); --ovg-anel: #454e58; }
 
 .ovg-detail-company { display: flex; align-items: center; justify-content: space-between; gap: calc(16 * var(--onface-u)); flex-wrap: wrap; }
 .ovg-detail-company-name { margin: 0; font-size: calc(20 * var(--onface-u)); font-weight: 800; letter-spacing: -0.015em; }
@@ -655,14 +653,15 @@
 .ovg-step[data-tom="ok"] .ovg-step-dot { background: var(--ovg-green); }
 .ovg-step[data-tom="andamento"] .ovg-step-dot { background: #f0883e; }
 .ovg-step[data-tom="bloqueado"] .ovg-step-dot { background: var(--ovg-coral); }
-.ovg-step[data-tom="bloqueado"] { border-color: rgba(254, 79, 43, 0.45); }
+.ovg-step[data-tom="bloqueado"] { --ovg-anel: rgba(254, 79, 43, 0.45); }
 .ovg-step[data-tom="pendente"] .ovg-step-estado { color: var(--ovg-ink-muted); }
 
 /* Selo do tipo de registro, ao lado do nome da empresa. */
 .ovg-detail-company-line { display: flex; align-items: center; gap: calc(10 * var(--onface-u)); flex-wrap: wrap; }
 .ovg-tipo {
   padding: calc(3 * var(--onface-u)) calc(9 * var(--onface-u));
-  border: 1px solid var(--ovg-line);
+  border: 0;
+  box-shadow: inset 0 0 0 1px var(--ovg-anel, var(--ovg-line));
   border-radius: 999px;
   color: var(--ovg-ink-muted);
   font-size: calc(11 * var(--onface-u));
@@ -685,7 +684,8 @@
   flex-direction: column;
   gap: calc(10 * var(--onface-u));
   padding: calc(12 * var(--onface-u));
-  border: 1px solid var(--ovg-line);
+  border: 0;
+  box-shadow: inset 0 0 0 1px var(--ovg-anel, var(--ovg-line));
   border-radius: var(--ovg-radius-inner);
   background: var(--ovg-raised);
 }
@@ -705,7 +705,8 @@
   align-items: center;
   gap: calc(12 * var(--onface-u));
   padding: calc(12 * var(--onface-u)) calc(14 * var(--onface-u));
-  border: 1px solid var(--ovg-line);
+  border: 0;
+  box-shadow: inset 0 0 0 1px var(--ovg-anel, var(--ovg-line));
   border-radius: var(--ovg-radius-inner);
   background: var(--ovg-raised);
 }
@@ -760,7 +761,7 @@
   display: flex;
   flex-direction: column;
   padding: calc(22 * var(--onface-u));
-  border: 1px solid var(--ovg-paper-line);
+  box-shadow: inset 0 0 0 1px var(--ovg-paper-line);
   border-radius: calc(24 * var(--onface-u));
   background: var(--ovg-paper);
 }
@@ -785,7 +786,7 @@
   align-items: center;
   gap: calc(6 * var(--onface-u));
   padding: calc(4 * var(--onface-u)) calc(10 * var(--onface-u));
-  border: 1px solid var(--ovg-paper-line);
+  box-shadow: inset 0 0 0 1px var(--ovg-paper-line);
   border-radius: 999px;
   font-size: calc(12 * var(--onface-u));
   font-weight: 600;
@@ -795,7 +796,7 @@
 .ovg-tags { display: flex; flex-wrap: wrap; gap: calc(8 * var(--onface-u)); justify-content: flex-end; }
 .ovg-tag {
   padding: calc(4 * var(--onface-u)) calc(10 * var(--onface-u));
-  border: 1px solid var(--ovg-paper-line);
+  box-shadow: inset 0 0 0 1px var(--ovg-paper-line);
   border-radius: calc(8 * var(--onface-u));
   color: #6f757d;
   font-size: calc(11 * var(--onface-u));
@@ -892,7 +893,7 @@
   gap: calc(6 * var(--onface-u));
   height: calc(28 * var(--onface-u));
   padding-inline: calc(10 * var(--onface-u));
-  border: 1px solid var(--ovg-paper-line);
+  box-shadow: inset 0 0 0 1px var(--ovg-paper-line);
   border-radius: calc(8 * var(--onface-u));
   background: #fff;
   color: var(--ovg-ink);
@@ -901,23 +902,36 @@
   white-space: nowrap;
 }
 .ovg-selo-icone { flex-shrink: 0; }
-.ovg-selo[data-estado="andamento"] .ovg-selo-icone { color: #3b82f6; }
+.ovg-selo[data-estado="andamento"] .ovg-selo-icone { color: var(--ovg-serie-azul); }
 .ovg-selo[data-estado="aguardando"] .ovg-selo-icone { color: #f0883e; }
 .ovg-selo[data-estado="concluida"] .ovg-selo-icone { color: var(--ovg-green); }
 .ovg-selo[data-estado="alerta"] {
-  border-color: transparent;
-  background: var(--ovg-coral);
-  color: #fff;
+  box-shadow: none;
+  background: var(--ovg-acao);
+  color: var(--ovg-ink-invert);
 }
 .ovg-selo[data-variante="jornada"] {
-  border-color: transparent;
+  box-shadow: none;
   background: var(--ovg-paper-sunken);
   color: #4b525a;
   font-weight: 500;
 }
 .ovg-selo[data-variante="jornada"] .ovg-selo-icone { color: #868d95; }
 
-.ovg-empty { padding: calc(28 * var(--onface-u)) 0; color: #868d95; font-size: calc(13 * var(--onface-u)); text-align: center; }
+.ovg-empty { padding: calc(28 * var(--onface-u)) 0; color: var(--text-muted); font-size: calc(13 * var(--onface-u)); text-align: center; }
+
+/* ── Largura do painel, não da janela ─────────────────────────────────
+   O desenho de três colunas foi feito para a prancheta de 1440 SEM a coluna
+   do menu. Dentro da casca, a 1440 de janela, o painel tem ~960px e a tabela
+   de prioridades espremia empresa e etapa uma sobre a outra (visto no
+   navegador em 01/10). A virada olha a largura do próprio painel, então
+   funciona igual com o menu aberto ou recolhido. */
+.ovg-board { container-type: inline-size; }
+@container (max-width: 1240px) {
+  .ovg-board-grid { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); }
+  .ovg-board-grid > :last-child { grid-column: 1 / -1; }
+  .ovg-board .ovg-pendencias[data-aberto="true"] { grid-template-columns: minmax(0, 1fr); }
+}
 
 /* ── Responsivo ───────────────────────────────────────────────────────── */
 /* Um único ponto de virada: o desenho de desktop vale até 768, sempre nas
@@ -975,7 +989,7 @@
 .ovg-agenda-dia span { color: #868d95; font-size: calc(11 * var(--onface-u)); font-weight: 400; }
 .ovg-compromisso {
   display: grid;
-  grid-template-columns: calc(58 * var(--onface-u)) minmax(0, 1fr) max-content calc(96 * var(--onface-u));
+  grid-template-columns: calc(64 * var(--onface-u)) minmax(0, 1fr) max-content;
   align-items: center;
   gap: calc(12 * var(--onface-u));
   padding: calc(11 * var(--onface-u)) calc(10 * var(--onface-u));
@@ -1032,7 +1046,8 @@
 .ovg-proximo-gente { display: flex; flex-wrap: wrap; gap: calc(6 * var(--onface-u)); margin-top: calc(12 * var(--onface-u)); }
 .ovg-proximo-gente span {
   padding: calc(4 * var(--onface-u)) calc(9 * var(--onface-u));
-  border: 1px solid var(--ovg-line);
+  border: 0;
+  box-shadow: inset 0 0 0 1px var(--ovg-anel, var(--ovg-line));
   border-radius: 999px;
   color: var(--ovg-ink-muted);
   font-size: calc(11 * var(--onface-u));
@@ -1059,8 +1074,8 @@
   height: calc(24 * var(--onface-u));
   padding-inline: calc(7 * var(--onface-u));
   border-radius: 999px;
-  background: var(--ovg-coral);
-  color: #fff;
+  background: var(--ovg-acao);
+  color: var(--ovg-ink-invert);
   font-size: calc(11.5 * var(--onface-u));
   font-weight: 700;
 }
@@ -1128,7 +1143,7 @@
 .ovg-nivel[data-nivel="alto"] { background: rgba(254, 79, 43, 0.12); color: #c23a17; }
 .ovg-nivel[data-nivel="alto"] .ovg-nivel-dot { background: var(--ovg-coral); }
 .ovg-nivel[data-nivel="moderado"] { background: rgba(59, 130, 246, 0.12); color: #1d4ed8; }
-.ovg-nivel[data-nivel="moderado"] .ovg-nivel-dot { background: #3b82f6; }
+.ovg-nivel[data-nivel="moderado"] .ovg-nivel-dot { background: var(--ovg-serie-azul); }
 .ovg-pend-area {
   display: inline-flex;
   align-items: center;
@@ -1167,7 +1182,7 @@
   font-size: calc(12 * var(--onface-u));
   min-width: 0;
 }
-.ovg-sem-dono { color: #9aa1a8; font-style: italic; }
+.ovg-sem-dono { color: var(--text-muted); font-style: italic; }
 .ovg-pend-acao { display: inline-flex; align-items: center; justify-content: flex-end; gap: calc(6 * var(--onface-u)); }
 .ovg-acao-btn {
   display: inline-flex;
@@ -1176,7 +1191,7 @@
   height: calc(30 * var(--onface-u));
   padding-inline: calc(14 * var(--onface-u));
   border-radius: calc(8 * var(--onface-u));
-  background: var(--ovg-coral);
+  background: var(--ovg-acao);
   color: #fff;
   font-size: calc(12 * var(--onface-u));
   font-weight: 600;
@@ -1184,15 +1199,15 @@
   white-space: nowrap;
   transition: background 160ms var(--ovg-ease);
 }
-.ovg-acao-btn:hover { background: var(--ovg-coral-hover); }
-.ovg-acao-mais { display: inline-flex; color: #b6bcc3; }
+.ovg-acao-btn:hover { background: var(--ovg-acao-hover); }
 .ovg-pend-nexo {
   display: flex;
   align-items: center;
   gap: calc(10 * var(--onface-u));
   margin-top: calc(14 * var(--onface-u));
   padding: calc(11 * var(--onface-u)) calc(12 * var(--onface-u));
-  border: 1px solid rgba(254, 79, 43, 0.25);
+  border: 0;
+  box-shadow: inset 0 0 0 1px rgba(254, 79, 43, 0.25);
   border-radius: calc(12 * var(--onface-u));
   background: rgba(254, 79, 43, 0.05);
 }
@@ -1211,7 +1226,8 @@
   width: calc(28 * var(--onface-u));
   height: calc(28 * var(--onface-u));
   flex-shrink: 0;
-  border: 1px solid var(--ovg-line);
+  border: 0;
+  box-shadow: inset 0 0 0 1px var(--ovg-anel, var(--ovg-line));
   border-radius: 999px;
   background: transparent;
   color: var(--ovg-ink-muted);
@@ -1225,14 +1241,15 @@
   grid-template-columns: minmax(0, 1fr) auto;
   gap: calc(2 * var(--onface-u)) calc(10 * var(--onface-u));
   padding: calc(12 * var(--onface-u)) calc(14 * var(--onface-u));
-  border: 1px solid var(--ovg-line);
+  border: 0;
+  box-shadow: inset 0 0 0 1px var(--ovg-anel, var(--ovg-line));
   border-radius: calc(12 * var(--onface-u));
   background: var(--ovg-raised);
   color: inherit;
   text-decoration: none;
-  transition: border-color 160ms var(--ovg-ease), background 160ms var(--ovg-ease);
+  transition: box-shadow 160ms var(--ovg-ease), background 160ms var(--ovg-ease);
 }
-.ovg-vinculo:hover { border-color: rgba(254, 79, 43, 0.5); background: #1a212a; }
+.ovg-vinculo:hover { --ovg-anel: rgba(254, 79, 43, 0.5); background: #1a212a; }
 .ovg-vinculo-tipo {
   color: var(--ovg-coral);
   font-size: calc(10 * var(--onface-u));
@@ -1265,7 +1282,7 @@
 @media (max-width: 767px) {
   .ovg-agenda,
   .ovg-pendencias,
-  .ovg-pendencias[data-aberto="true"] { grid-template-columns: minmax(0, 1fr); }
+  .ovg-board .ovg-pendencias[data-aberto="true"] { grid-template-columns: minmax(0, 1fr); }
   .ovg-compromisso { grid-template-columns: calc(52 * var(--onface-u)) minmax(0, 1fr); row-gap: calc(6 * var(--onface-u)); }
   .ovg-compromisso-gente,
   .ovg-pend-head { display: none; }
@@ -1276,187 +1293,13 @@
   .ovg-atividade-campos { grid-template-columns: minmax(0, 1fr); }
 }
 
-/* ═══ Janela do compromisso ══════════════════════════════════════════════
-   Controle remoto do evento que vive no calendário do Microsoft 365. */
-.ovg-janela.ovg-janela {
-  display: flex;
-  flex-direction: column;
-  gap: calc(16 * var(--onface-u));
-  width: min(calc(560 * var(--onface-u)), calc(100vw - 32px));
-  max-width: none;
-  padding: calc(22 * var(--onface-u));
-  border: 1px solid var(--ovg-line);
-  border-radius: calc(22 * var(--onface-u));
-  background: var(--ovg-shell);
-  color: var(--ovg-ink-invert);
-  font-family: var(--font-onface-display), ui-sans-serif, system-ui, sans-serif;
-}
-.ovg-janela .ovg-janela-head {
-  display: flex;
-  flex-direction: row;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: calc(14 * var(--onface-u));
-  text-align: left;
-}
-.ovg-janela-titulo { margin: calc(10 * var(--onface-u)) 0 0; font-size: calc(20 * var(--onface-u)); font-weight: 800; letter-spacing: -0.015em; }
-.ovg-janela-sub { margin: calc(3 * var(--onface-u)) 0 0; color: var(--ovg-ink-muted); font-size: calc(12.5 * var(--onface-u)); }
-.ovg-janela-desc { margin: 0; color: var(--ovg-ink-muted); font-size: calc(13 * var(--onface-u)); line-height: 1.5; }
-.ovg-janela-cancelado {
-  margin: 0;
-  padding: calc(10 * var(--onface-u)) calc(12 * var(--onface-u));
-  border: 1px solid rgba(254, 79, 43, 0.35);
-  border-radius: calc(10 * var(--onface-u));
-  background: rgba(254, 79, 43, 0.08);
-  color: var(--ovg-coral);
-  font-size: calc(12 * var(--onface-u));
-  font-weight: 600;
-}
-.ovg-janela-participantes .ovg-progresso-titulo { display: flex; align-items: center; gap: calc(8 * var(--onface-u)); }
-.ovg-janela-participantes .ovg-progresso-titulo span {
-  padding: calc(1 * var(--onface-u)) calc(7 * var(--onface-u));
-  border-radius: 999px;
-  background: var(--ovg-raised);
-  font-size: calc(10.5 * var(--onface-u));
-}
-.ovg-janela-participantes ul { display: flex; flex-direction: column; gap: calc(6 * var(--onface-u)); margin: calc(10 * var(--onface-u)) 0 0; padding: 0; list-style: none; }
-.ovg-janela-participantes li {
-  display: grid;
-  grid-template-columns: max-content minmax(0, 1fr) max-content max-content;
-  align-items: center;
-  gap: calc(10 * var(--onface-u));
-  padding: calc(8 * var(--onface-u)) calc(10 * var(--onface-u));
-  border: 1px solid var(--ovg-line);
-  border-radius: calc(10 * var(--onface-u));
-  background: var(--ovg-raised);
-}
-.ovg-janela .ovg-avatar-mini { background: #2b323a; color: #e6e9ec; }
-.ovg-part-nome { display: flex; flex-direction: column; min-width: 0; font-size: calc(12.5 * var(--onface-u)); font-weight: 600; }
-.ovg-part-nome small { color: var(--ovg-ink-faint); font-size: calc(10.5 * var(--onface-u)); font-weight: 400; overflow: hidden; text-overflow: ellipsis; }
-.ovg-part-tag {
-  padding: calc(3 * var(--onface-u)) calc(8 * var(--onface-u));
-  border-radius: 999px;
-  background: #2b323a;
-  color: var(--ovg-ink-muted);
-  font-size: calc(10 * var(--onface-u));
-  font-weight: 600;
-}
-.ovg-part-tag[data-externo="true"] { background: rgba(254, 79, 43, 0.14); color: var(--ovg-coral); }
-.ovg-part-status { color: var(--ovg-ink-faint); font-size: calc(10.5 * var(--onface-u)); white-space: nowrap; }
-.ovg-part-status[data-ok="true"] { color: var(--ovg-green); }
-.ovg-janela-link {
-  display: flex;
-  align-items: center;
-  gap: calc(10 * var(--onface-u));
-  padding: calc(9 * var(--onface-u)) calc(9 * var(--onface-u)) calc(9 * var(--onface-u)) calc(12 * var(--onface-u));
-  border: 1px solid var(--ovg-line);
-  border-radius: calc(10 * var(--onface-u));
-  background: var(--ovg-raised);
-}
-.ovg-janela-link span {
-  flex: 1;
-  min-width: 0;
-  color: var(--ovg-ink-muted);
-  font-size: calc(11.5 * var(--onface-u));
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.ovg-janela-link button {
-  display: inline-flex;
-  align-items: center;
-  gap: calc(6 * var(--onface-u));
-  flex-shrink: 0;
-  height: calc(28 * var(--onface-u));
-  padding-inline: calc(11 * var(--onface-u));
-  border: 1px solid var(--ovg-line);
-  border-radius: calc(8 * var(--onface-u));
-  background: transparent;
-  color: var(--ovg-ink-invert);
-  font-family: inherit;
-  font-size: calc(11.5 * var(--onface-u));
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 160ms var(--ovg-ease);
-}
-.ovg-janela-link button:hover { background: #222a33; }
-.ovg-janela-acoes { display: flex; flex-wrap: wrap; align-items: center; gap: calc(8 * var(--onface-u)); }
-.ovg-janela-acoes .ovg-acao-btn,
-.ovg-janela-acoes .ovg-ghost-btn { gap: calc(7 * var(--onface-u)); height: calc(34 * var(--onface-u)); }
-.ovg-janela-acoes .ovg-ghost-btn[disabled] { opacity: 0.4; cursor: not-allowed; }
-.ovg-btn-perigo { border-color: rgba(231, 0, 11, 0.4); color: #ff8f80; }
-.ovg-btn-perigo:hover:not([disabled]) { background: rgba(231, 0, 11, 0.12); }
-.ovg-btn-perigo-cheio { background: #c1121f; }
-.ovg-btn-perigo-cheio:hover { background: #d81e2b; }
-.ovg-janela-form { display: flex; flex-direction: column; gap: calc(12 * var(--onface-u)); }
-.ovg-janela-form label { display: flex; flex-direction: column; gap: calc(6 * var(--onface-u)); color: var(--ovg-ink-muted); font-size: calc(11.5 * var(--onface-u)); font-weight: 500; }
-.ovg-janela-form input[type="text"],
-.ovg-janela-form input[type="email"],
-.ovg-janela-form input[type="date"],
-.ovg-janela-form input[type="time"],
-.ovg-janela-form input:not([type]) {
-  height: calc(38 * var(--onface-u));
-  padding-inline: calc(12 * var(--onface-u));
-  border: 1px solid var(--ovg-line);
-  border-radius: calc(10 * var(--onface-u));
-  background: var(--ovg-raised);
-  color: var(--ovg-ink-invert);
-  font-family: inherit;
-  font-size: calc(13 * var(--onface-u));
-  outline: none;
-}
-.ovg-janela-form input:focus { border-color: var(--ovg-coral); }
-.ovg-janela-nota { margin: 0; color: var(--ovg-ink-faint); font-size: calc(11.5 * var(--onface-u)); line-height: 1.5; }
-.ovg-janela-preview {
-  margin: 0;
-  padding: calc(12 * var(--onface-u));
-  border: 1px solid var(--ovg-line);
-  border-radius: calc(10 * var(--onface-u));
-  background: var(--ovg-raised);
-  color: var(--ovg-ink-invert);
-  font-size: calc(12.5 * var(--onface-u));
-  line-height: 1.5;
-}
-.ovg-janela-escolha { display: flex; flex-direction: column; gap: calc(8 * var(--onface-u)); margin: 0; padding: 0; border: 0; }
-.ovg-janela-escolha legend { padding: 0 0 calc(8 * var(--onface-u)); color: var(--ovg-ink-muted); font-size: calc(11.5 * var(--onface-u)); font-weight: 500; }
-.ovg-janela-escolha label {
-  display: grid;
-  grid-template-columns: max-content minmax(0, 1fr);
-  gap: calc(2 * var(--onface-u)) calc(10 * var(--onface-u));
-  padding: calc(11 * var(--onface-u)) calc(12 * var(--onface-u));
-  border: 1px solid var(--ovg-line);
-  border-radius: calc(10 * var(--onface-u));
-  background: var(--ovg-raised);
-  color: var(--ovg-ink-invert);
-  font-size: calc(13 * var(--onface-u));
-  font-weight: 600;
-  cursor: pointer;
-  transition: border-color 160ms var(--ovg-ease);
-}
-.ovg-janela-escolha label[data-marcado="true"] { border-color: var(--ovg-coral); }
-.ovg-janela-escolha label small { grid-column: 2; color: var(--ovg-ink-faint); font-size: calc(11 * var(--onface-u)); font-weight: 400; }
-.ovg-janela-escolha input { accent-color: var(--ovg-coral); }
-.ovg-janela-aviso {
-  margin: 0;
-  padding: calc(10 * var(--onface-u)) calc(12 * var(--onface-u));
-  border-radius: calc(10 * var(--onface-u));
-  background: rgba(63, 185, 80, 0.12);
-  color: #6ee787;
-  font-size: calc(12 * var(--onface-u));
-  font-weight: 500;
-}
-.ovg-janela .ovg-sem-sinal { color: var(--ovg-ink-faint); }
-
-/* O compromisso agora é clicável: vira botão, mas continua parecendo linha. */
+/* O compromisso é um link para onde ele é tratado, com cara de linha. */
 .ovg-compromisso {
   width: 100%;
-  border: 0;
-  background: transparent;
-  font-family: inherit;
-  text-align: left;
+  color: inherit;
+  text-decoration: none;
   cursor: pointer;
 }
-.ovg-compromisso[data-encerrado="true"] .ovg-compromisso-titulo { color: #9aa1a8; text-decoration: line-through; }
 
 /* Meta do mês, no rodapé do gráfico. */
 .ovg-meta {

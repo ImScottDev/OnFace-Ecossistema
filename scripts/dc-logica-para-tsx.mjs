@@ -55,21 +55,88 @@ L = L.replace("class Component extends DCLogic {", `class Logica extends React.C
    * sozinha. O que atravessa de verdade — aviso, navegação e as peças —
    * chega nas props.
    */
+  /**
+   * O catálogo do domínio, no lugar do catálogo estático do protótipo.
+   *
+   * O nome NAO e "catalogo": a tela de Proposta ja tem um metodo catalogo()
+   * — o catalogo comercial dela — e um getter com o mesmo nome o sobrescreve.
+   * A colisao nao da erro de tipo: da "catalogo is not a function" em runtime,
+   * no meio do Builder.
+   */
+  get dadosDoProto(): any {
+    return this.props.catalogo ?? {};
+  }
+
+  /**
+   * Quem está usando — no protótipo, o Scott fixo como autor de nota,
+   * evento e atividade. Vem do contexto que a casca fornece com a sessão;
+   * \`props.usuario\` ganha quando o adaptador quer forçar.
+   */
+  static contextType = UsuarioDoProtoContexto;
+  get eu(): string {
+    return this.props.usuario?.nome ?? (this.context as any)?.nome ?? "Você";
+  }
+
   E = {
     tudo: () => this.props.dados ?? {},
     ler: (k: string, alt?: any) => (this.props.dados as any)?.[k] ?? alt,
-    gravar: () => {},
+    /* O store do protótipo gravava no localStorage. Aqui ele CHAMA A TELA:
+       quem sabe traduzir o patch em command é o adaptador, escrito à mão.
+       Engolir a chamada — como esta linha fazia — é o que mantinha
+       Pré-vendas parecendo que gravava sem gravar nada. */
+    gravar: (patch: any) => this.props.gravar?.(patch),
     assinar: () => null,
     assinarPecas: () => null,
     assinarAviso: () => null,
     avisar: (texto: string, tom?: string) => this.diz(texto, tom),
     abrir: (peca: string, id?: string | null) => this.props.abrir?.(peca, id),
     abrirExterno: (url: string) => this.props.abrirExterno?.(url),
-    irPara: (href: string) => this.ir(href),
+    /* A PROP, e nao o metodo ir() da classe.
+     *
+     * As telas do handoff definem ir(href, label) chamando E.irPara(...).
+     * Apontar irPara de volta para this.ir fecha o ciclo ir -> irPara -> ir,
+     * e o clique morre com "Maximum call stack size exceeded" — foi o que
+     * deixou o sidebar inteiro sem navegar. */
+    irPara: (href: string) => this.props.ir?.(href),
     parametro: (nome: string) =>
       typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get(nome),
   };
 `);
+
+/* ── Semear o estado no servidor ───────────────────────────────────────────
+ *
+ * O protótipo nasce com as listas em `null` e só as puxa no
+ * `componentDidMount`, porque a fonte dele era o `localStorage` — que não
+ * existe no servidor.
+ *
+ * Portado tal e qual, isso faz o SSR renderizar a tela VAZIA: o Pipeline saía
+ * do servidor com as seis colunas anunciando "nenhuma oportunidade" e só
+ * enchia depois da hidratação. Além do pisca, é mismatch de hidratação
+ * garantido, porque o HTML do servidor não é o que o cliente quer renderizar.
+ *
+ * Aqui os dados chegam por props e existem nos DOIS lados, então semear no
+ * construtor é o que torna a tela de fato renderizada no servidor. Só toca
+ * chave que nasce `null` e que `dados` traz — nenhuma outra decisão do
+ * protótipo é alterada.
+ * ────────────────────────────────────────────────────────────────────── */
+
+const SEMEAR = `
+  constructor(props: any) {
+    super(props);
+    const d: any = props.dados ?? {};
+    for (const k of Object.keys(this.state ?? {})) {
+      if ((this.state as any)[k] === null && d[k] != null) {
+        (this.state as any) = { ...(this.state as any), [k]: d[k] };
+      }
+    }
+  }
+`;
+
+/* Só as telas SEM construtor precisam disto. As que têm um já montam o state
+   a partir de `props.dados` lá dentro, e é ele que roda por último. */
+if (!/\n\s*constructor\s*\(/.test(L)) {
+  L = L.replace(/(\n\s*state = \{[\s\S]*?\n?\s*\};\n)/, (m) => `${m}${SEMEAR}`);
+}
 
 /* ── O store do protótipo ──────────────────────────────────────────────────
  *
@@ -84,6 +151,37 @@ L = L.replace("class Component extends DCLogic {", `class Logica extends React.C
  * ────────────────────────────────────────────────────────────────────── */
 
 L = L.replace(/window\.OnFaceEstado/g, "this.E");
+
+/* `window.OnFaceDados` é o CATÁLOGO do protótipo — equipe, etapas, famílias,
+   canais — e não o store. No produto ele vem do domínio, pela prop
+   `catalogo`. Sem esta troca a tela acessa `window` durante o SSR e o
+   servidor derruba a rota inteira com "window is not defined". */
+L = L.replace(/window\.OnFaceDados/g, "this.dadosDoProto");
+
+/* Os OUTROS globais do protótipo — OnFaceAgenda, OnFaceRelacoes,
+   OnFaceAtividadesSeed, OnFaceProjetos, OnFaceClientesSeed, OnFaceTagsOpp,
+   OnFaceHistoricoSeed, OnFaceProjetosSeed.
+ *
+ * Cada um e uma semente de mock pendurada na janela. Deixados como estao,
+ * derrubam a rota inteira no SSR com "window is not defined" — e quando o
+ * cliente assume, enchem a tela de dado inventado.
+ *
+ * Viram chaves do catalogo: o adaptador passa o dado real com o mesmo nome,
+ * ou nao passa e a tela mostra vazio, que e honesto.
+ *
+ * Sem fallback aqui: o proprio prototipo ja protege cada uso
+ * (`window.OnFaceX ? X(...) : vazio`, `window.OnFaceX || []`). Um `?? []`
+ * anulava essa guarda — Relacoes e Agenda sao FUNCAO/objeto, e `[]` chamado
+ * como funcao derrubava a Empresa 360. */
+/* Medidas da janela lidas no render (posicionar menu/popover). No SSR nao
+   ha `window` e a rota inteira cai para render no cliente. O valor do
+   servidor nao importa: o menu so abre depois de um clique, ja no cliente. */
+/* O usuário fixo do protótipo como autor. Ver `get eu()` na classe. */
+L = L.replace(/"Scott Ferraz"(\s*):/g, "[this.eu]$1:"); // chave de objeto (mapa de cor por pessoa)
+L = L.replace(/"Scott Ferraz"/g, "this.eu");
+L = L.replace(/"([^"]*?)Scott Ferraz([^"]*?)"/g, (_m, a, b) => `(${JSON.stringify(a)} + this.eu + ${JSON.stringify(b)})`);
+L = L.replace(/window\.inner(Width|Height)/g, (_m, eixo) => `(typeof window !== "undefined" ? window.inner${eixo} : ${eixo === "Width" ? 1440 : 900})`);
+L = L.replace(/window\.OnFace([A-Za-z]+)/g, (_m, nome) => `this.dadosDoProto.${nome}`);
 L = L.replace(/const E = this\.E;/g, "const E = this.E;");
 
 // `const E = (typeof window !== "undefined" && this.E) || null;` no construtor
@@ -91,7 +189,10 @@ L = L.replace(
   /const E = \(typeof window !== "undefined" && this\.E\) \|\| null;/,
   "const E = null as any; // o store só existe depois do construtor",
 );
-L = L.replace(/const d = E \? E\.tudo\(\) : \{\};/, "const d: any = props.dados ?? {};");
+/* `this.props`, e nao `props`: esta troca acontece tanto no construtor
+   (onde `props` existe) quanto em metodos como `fonte()` (onde nao existe).
+   Gerado com `props`, o metodo quebra com "props is not defined". */
+L = L.replace(/const d = E \? E\.tudo\(\) : \{\};/g, "const d: any = this.props.dados ?? {};");
 
 /* ── Avisar, navegar, abrir ────────────────────────────────────────────── */
 
@@ -118,7 +219,10 @@ if (L.endsWith("}")) {
   L = `${L.slice(0, -1).trimEnd()}
 
   render() {
-    return <${nomeDesenho} {...(this.renderVals() as any)} />;
+    /* \`children\` atravessa: a Casca envolve o conteúdo da rota, e sem isto
+       ela renderiza sozinha e a tela fica em branco. Estava consertado à MÃO
+       no arquivo gerado, e a primeira regeração apagou — por isso mora aqui. */
+    return <${nomeDesenho} {...(this.renderVals() as any)} children={this.props.children} />;
   }
 }`;
 }
@@ -150,6 +254,7 @@ import * as React from "react";
 import { toast } from "sonner";
 
 import { ${nomeDesenho} } from "./${nomeDesenho}";
+import { UsuarioDoProtoContexto } from "./usuario-do-proto";
 
 interface Props {
   /** O que o protótipo lia do store. Preencher com dado real. */

@@ -1,28 +1,32 @@
-import { db } from "@/lib/db";
-import { organizacoes } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
-import { getTenantContext } from "@/lib/auth/tenant";
 import { redirect } from "next/navigation";
-import { Cf2Topbar } from "@/components/crm2/Topbar";
-import { Cf2RelatoriosWorkspace } from "@/components/crm2/relatorios/Workspace";
+import { getTenantContext } from "@/lib/auth/tenant";
+import { Pagina } from "@/components/onface/shell/Pagina";
+import { InsightsOnface } from "@/components/onface/insights/InsightsOnface";
 
 export const metadata = { title: "Insights" };
 
-export default async function RelatoriosPage() {
+// Período aceito pelas rotas Hono (lib/relatorios/periodo.ts). Qualquer outro
+// valor vindo da URL cai no padrão em vez de chegar cru na API.
+const PERIODO_OK = /^(mes_atual|mes_passado|7d|30d|60d|90d|365d|12m|custom:\d{4}-\d{2}-\d{2}:\d{4}-\d{2}-\d{2})$/;
+
+/**
+ * Insights — visão geral (arquétipo A do ONFACE). A tela é cliente porque as
+ * abas herdadas leem do Hono via react-query; aqui só se garante a sessão e
+ * se entrega o recorte da URL (?aba=&periodo=), para que reload e link colado
+ * abram exatamente o que a pessoa estava vendo. A aba é validada contra o
+ * papel no cliente: aba que o papel não enxerga cai na padrão.
+ */
+export default async function RelatoriosPage({ searchParams }: { searchParams: Promise<{ aba?: string; periodo?: string }> }) {
   const ctx = await getTenantContext();
   if (!ctx) redirect("/login");
 
-  const [org] = await db.select({ nome: organizacoes.nome }).from(organizacoes).where(eq(organizacoes.id, ctx.organizacaoId)).limit(1);
+  const sp = await searchParams;
+  const periodo = sp.periodo && PERIODO_OK.test(sp.periodo) ? sp.periodo : "mes_atual";
+  const aba = typeof sp.aba === "string" ? sp.aba.slice(0, 32) : ""; // vazio = aba padrão do papel (SDR abre na pré-venda)
 
   return (
-    <div className="onface-pagina">
-      <Cf2Topbar
-        orgNome={org?.nome || "Callface"}
-        title="Insights"
-        subtitle="Histórico confiável a partir de 12/06/2026, quando a base saiu do Zoho."
-        actions={null}
-      />
-      <Cf2RelatoriosWorkspace />
-    </div>
+    <Pagina>
+      <InsightsOnface abaInicial={aba} periodoInicial={periodo} />
+    </Pagina>
   );
 }

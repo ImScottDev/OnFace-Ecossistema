@@ -76,7 +76,7 @@ export function FormNovoNegocio() {
   // Set title from preselected lead
   useEffect(() => {
     if (preselectedLead && !form.titulo) {
-      setForm(f => ({ ...f, titulo: `${preselectedLead.empresa || preselectedLead.nome} — Negócio` }));
+      setForm(f => ({ ...f, titulo: `${preselectedLead.empresa || preselectedLead.nome} — Oportunidade` }));
       setLeadSearch(preselectedLead.nome);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -91,12 +91,12 @@ export function FormNovoNegocio() {
       });
       if (!res.ok) {
         const err = await res.json();
-        throw new Error(err.error || "Erro ao criar negócio");
+        throw new Error(err.error || "Não foi possível criar a oportunidade. Tente de novo.");
       }
       return res.json();
     },
     onSuccess: (data) => {
-      router.push(`/negocios/${data.id}`);
+      router.push(`/pipeline/${data.id}`);
     },
   });
 
@@ -139,7 +139,7 @@ export function FormNovoNegocio() {
                 <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-[var(--cf2-bg-surface)] border border-[var(--cf2-border-default)] rounded-xl max-h-56 overflow-y-auto shadow-lg">
                   {leadsList.map(l => (
                     <button key={l.id} type="button" onClick={() => {
-                      setForm(f => ({ ...f, leadId: l.id, titulo: f.titulo || `${l.empresa || l.nome} — Negócio` }));
+                      setForm(f => ({ ...f, leadId: l.id, titulo: f.titulo || `${l.empresa || l.nome} — Oportunidade` }));
                       setLeadSearch(l.nome);
                       setShowLeadList(false);
                     }} className="w-full text-left px-3 py-2 text-sm text-[var(--cf2-text-primary)] hover:bg-[var(--cf2-bg-surface-muted)]">
@@ -154,7 +154,7 @@ export function FormNovoNegocio() {
 
         {/* Título */}
         <div>
-          <label className="text-[12px] font-medium text-[var(--cf2-text-secondary)] mb-1.5 block">Título do Negócio</label>
+          <label className="text-[12px] font-medium text-[var(--cf2-text-secondary)] mb-1.5 block">Título da oportunidade</label>
           <input value={form.titulo} onChange={e => setForm({ ...form, titulo: e.target.value })}
             className="w-full cf2-input rounded-lg px-3 py-2 text-sm outline-none" placeholder="Ex: Agência KOKO — LP + Funil" aria-label="Ex: Agência KOKO — LP + Funil" />
         </div>
@@ -220,7 +220,7 @@ export function FormNovoNegocio() {
         <div className="flex items-center gap-2 pt-3 mt-1" style={{ borderTop: "1px solid var(--cf2-border-default)" }}>
           <button type="submit" disabled={!form.leadId || !form.titulo || createMutation.isPending}
             className="cf2-btn-primary text-[13px]">
-            {createMutation.isPending ? "Criando..." : "Criar Negócio"}
+            {createMutation.isPending ? "Criando…" : "Criar oportunidade"}
           </button>
           <Link href={preLeadId ? `/contatos/${preLeadId}` : "/pipeline"} className="px-4 py-2 text-sm text-[var(--cf2-text-secondary)] hover:text-[var(--cf2-text-primary)]">
             Cancelar

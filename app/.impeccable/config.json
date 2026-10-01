@@ -1,0 +1,32 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "design-system-font",
+        "value": "inter",
+        "createdAt": "2026-10-01T09:08:49.919Z",
+        "reason": "handoff ONFACE: corpo em Inter (spec da tarefa do orquestrador, tokens do protótipo)"
+      },
+      {
+        "rule": "design-system-font",
+        "value": "plus jakarta sans",
+        "createdAt": "2026-10-01T09:08:50.040Z",
+        "reason": "handoff ONFACE: títulos/números em Plus Jakarta Sans (spec do protótipo)"
+      },
+      {
+        "rule": "overused-font",
+        "value": "inter",
+        "createdAt": "2026-10-01T11:10:00.000Z",
+        "reason": "fonte do protótipo ONFACE (títulos Plus Jakarta Sans, corpo Inter); mesma exceção da config da raiz"
+      },
+      {
+        "rule": "overused-font",
+        "value": "plus jakarta sans",
+        "createdAt": "2026-10-01T11:10:00.000Z",
+        "reason": "fonte do protótipo ONFACE (títulos Plus Jakarta Sans, corpo Inter); mesma exceção da config da raiz"
+      }
+    ]
+  }
+}

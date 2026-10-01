@@ -53,6 +53,24 @@ const NOME_DO_PROVIDER: Record<Provider, string> = {
   groq: "Groq", openai: "OpenAI", anthropic: "Anthropic", google: "Google", claude_subscription: "Claude Subscription",
 };
 
+/**
+ * Quais provedores têm credencial NO AMBIENTE — só o booleano, nunca o valor.
+ *
+ * As telas de Agentes precisam disso para dizer "conectado" e para não
+ * oferecer um provedor que vai falhar no primeiro envio. Elas liam
+ * `process.env` por conta própria, cada uma com a sua cópia da lista: três
+ * listas para a mesma verdade, e uma trava de arquitetura reprovava a leitura
+ * de `OPENAI_API_KEY` fora daqui — com razão, porque é esta plataforma que
+ * manda no assunto.
+ */
+export function provedoresNoAmbiente(): { id: Provider; nome: string; temCredencial: boolean }[] {
+  return (Object.keys(ENV_POR_PROVIDER) as Provider[]).map((id) => ({
+    id,
+    nome: NOME_DO_PROVIDER[id],
+    temCredencial: Boolean(ENV_POR_PROVIDER[id]()?.trim()),
+  }));
+}
+
 export async function verificarProntidao(
   version: Pick<typeof aiAgentVersions.$inferSelect,
     "provider" | "modelo" | "systemPrompt" | "triggerConfig" | "credentialId" | "organizacaoId">,

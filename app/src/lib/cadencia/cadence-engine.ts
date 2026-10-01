@@ -124,7 +124,16 @@ export function registrarAdapter(nome: string, fn: CadenceAdapter): void {
  */
 export async function executarAcaoAvulsa(
   adapterNome: string,
-  ctx: Omit<CadenceActionContext, "step" | "enrollmentId" | "attempt"> & { config?: Record<string, unknown> },
+  ctx: Omit<CadenceActionContext, "step" | "enrollmentId" | "attempt"> & {
+    config?: Record<string, unknown>;
+    /**
+     * Identidade da execução quando o chamador tem uma (o executor de Fluxos
+     * passa `fluxo:<execucao>:<no>:<tentativa>`). Sem ela, a chave sai só de
+     * entidade + config, e uma automação semanal nunca criaria de novo a mesma
+     * tarefa na mesma entidade: a segunda semana caía no ON CONFLICT da primeira.
+     */
+    chaveExecucao?: string;
+  },
 ): Promise<CadenceActionResult> {
   const adapter = adapters.get(adapterNome);
   if (!adapter) return { sucesso: false, erro: `adapter "${adapterNome}" não registrado` };
@@ -159,7 +168,7 @@ export async function executarAcaoAvulsa(
     // nesta linha — o adapter continuava vendo SYSTEM.
     ator: ctx.ator,
     step: { id: `avulso:${adapterNome}`, tipo: "action", adapter: adapterNome, config: ctx.config ?? {}, branches: [] },
-    enrollmentId: `avulso:${assinatura}`,
+    enrollmentId: ctx.chaveExecucao ?? `avulso:${assinatura}`,
     attempt: 0,
   });
 }
@@ -222,7 +231,11 @@ registrarAdapter("whatsapp", async (ctx) => {
     telefone = (await resolverContatoDaEntidade(ctx.entityType, ctx.entityId, ctx.organizacaoId)).telefone;
   }
   if (!telefone) return { sucesso: false, erro: "sem telefone resolvido pra esta entidade" };
-  const job = await whatsappOutgoingQueue.add("send", { phone: telefone, conteudo: mensagem, tipo: "text" }, { jobId: `cadence:${ctx.enrollmentId}:${ctx.step.id}:${ctx.attempt}` });
+  // A BullMQ recusa jobId com ":" (salvo o formato antigo de 3 partes): o id
+  // `cadence:<inscrição>:<passo>:<tentativa>` estourava "Custom Id cannot
+  // contain :" e nenhum WhatsApp de cadência ou de automação chegava à fila.
+  const jobId = `cadence-${ctx.enrollmentId}-${ctx.step.id}-${ctx.attempt}`.replace(/:/g, "-");
+  const job = await whatsappOutgoingQueue.add("send", { phone: telefone, conteudo: mensagem, tipo: "text" }, { jobId });
   return { sucesso: true, resultado: { jobId: job.id } };
 });
 
@@ -616,13 +629,14 @@ export async function iniciarCadencia(opts: {
   const idempotencyKey = opts.idempotencyKey ?? (opts.sourceEventId ? `event:${opts.cadenceDefinitionId}:${opts.sourceEventId}` : null);
   if (idempotencyKey) {
     const [replay] = await db.select({ id: cadenceEnrollments.id }).from(cadenceEnrollments)
-      .where(eq(cadenceEnrollments.idempotencyKey, idempotencyKey)).limit(1);
+      .where(and(eq(cadenceEnrollments.organizacaoId, opts.organizacaoId), eq(cadenceEnrollments.idempotencyKey, idempotencyKey))).limit(1);
     if (replay) return replay.id;
   }
   const [existente] = await db
     .select({ id: cadenceEnrollments.id })
     .from(cadenceEnrollments)
     .where(and(
+      eq(cadenceEnrollments.organizacaoId, opts.organizacaoId),
       eq(cadenceEnrollments.cadenceDefinitionId, opts.cadenceDefinitionId),
       eq(cadenceEnrollments.entityType, opts.entityType),
       eq(cadenceEnrollments.entityId, opts.entityId),
@@ -631,7 +645,9 @@ export async function iniciarCadencia(opts: {
     .limit(1);
   if (existente) return existente.id;
 
-  const [definicao] = await db.select().from(cadenceDefinitions).where(eq(cadenceDefinitions.id, opts.cadenceDefinitionId)).limit(1);
+  // Definição de outra organização nunca matricula (multi-tenant): o id vem do caller.
+  const [definicao] = await db.select().from(cadenceDefinitions)
+    .where(and(eq(cadenceDefinitions.id, opts.cadenceDefinitionId), eq(cadenceDefinitions.organizacaoId, opts.organizacaoId))).limit(1);
   if (!definicao || !definicao.ativo) return null;
 
   const [pointer] = await db.select().from(cadenceDefinitionPointers)

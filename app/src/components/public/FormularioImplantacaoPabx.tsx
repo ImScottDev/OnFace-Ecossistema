@@ -3,9 +3,9 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 
-const CARMIM = "#e23752";
-const ROXO = "#8e27ef";
-const TEXTO = "#181a32";
+const CARMIM = "var(--of-coral-acao)";
+const CORAL_LINK = "var(--of-coral-texto)";
+const TEXTO = "var(--of-tinta-forte)";
 
 /**
  * Formulário público de implantação PABX (reconstrução 20/08 — feedback
@@ -136,9 +136,11 @@ const JA_ENVIADO = new Set(["SUBMITTED", "IN_REVIEW", "APPROVED", "CORRECTION_RE
 
 function Shell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="public-pabx-shell" style={{ minHeight: "100vh", background: "#f7f7fa", display: "flex", justifyContent: "center", padding: "34px 20px 28px" }}>
+    <div className="public-pabx-shell" style={{ minHeight: "100vh", background: "var(--of-papel-tela)", display: "flex", justifyContent: "center", padding: "34px 20px 28px" }}>
       <style>{`
         .public-pabx-shell *, .public-pabx-shell *::before, .public-pabx-shell *::after { box-sizing: border-box; }
+        .public-pabx-shell { font-family: var(--of-fonte); color: var(--of-tinta); -webkit-font-smoothing: antialiased; }
+        .public-pabx-shell h1, .public-pabx-shell h2, .public-pabx-shell h3 { font-family: var(--of-fonte-titulo); letter-spacing: -.02em; }
         .public-pabx-container { width: 100%; max-width: 1160px; }
         .public-pabx-header { display: flex; justify-content: center; text-align: center; margin: 0 auto 24px; }
         .public-pabx-header h1 { font-size: clamp(28px, 4vw, 42px); line-height: 1.08; letter-spacing: -0.8px; }
@@ -161,48 +163,48 @@ function Shell({ children }: { children: React.ReactNode }) {
         .public-pabx-ramais-table th:nth-child(13), .public-pabx-ramais-table td:nth-child(13) { width: 160px; }
         .public-pabx-ramais-table th:last-child, .public-pabx-ramais-table td:last-child { width: 44px; }
         .public-pabx-ramais-table input:not([type="checkbox"]) { min-width: 0; }
-        .public-pabx-table-hint { margin: 2px 0 10px; color: #9497ab; font-size: 11px; }
-        .public-pabx-progress-mini { margin: 0 0 20px; padding: 12px 14px; border: 1px solid #ececf2; border-radius: 10px; background: #fafafd; }
-        .public-pabx-progress-mini-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; color: #6f7389; font-size: 12px; font-weight: 700; }
-        .public-pabx-progress-mini-bar { height: 6px; margin-top: 8px; overflow: hidden; border-radius: 99px; background: #e9eaf0; }
-        .public-pabx-progress-mini-fill { height: 100%; border-radius: inherit; background: linear-gradient(90deg, ${CARMIM}, ${ROXO}); }
+        .public-pabx-table-hint { margin: 2px 0 10px; color: var(--of-tinta-3); font-size: 11px; }
+        .public-pabx-progress-mini { margin: 0 0 20px; padding: 12px 14px; border: 1px solid var(--of-linha); border-radius: 10px; background: var(--of-papel-alterno); }
+        .public-pabx-progress-mini-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; color: var(--of-tinta-3); font-size: 12px; font-weight: 700; }
+        .public-pabx-progress-mini-bar { height: 6px; margin-top: 8px; overflow: hidden; border-radius: 99px; background: var(--of-linha); }
+        .public-pabx-progress-mini-fill { height: 100%; border-radius: inherit; background: ${CARMIM}; }
         .public-pabx-ramais-list { display: grid; gap: 14px; margin-bottom: 14px; }
-        .public-pabx-ramal-card { padding: 16px; border: 1px solid #e5e6ee; border-radius: 14px; background: #fff; }
+        .public-pabx-ramal-card { padding: 16px; border: 1px solid var(--of-linha); border-radius: 14px; background: #fff; }
         .public-pabx-ramal-card-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
         .public-pabx-ramal-fields { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0 14px; }
         .public-pabx-ramal-permissions { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px 14px; align-items: end; padding-top: 4px; }
         @media (min-width: 621px) { .public-pabx-international-field { transform: translateY(17px); } }
-        .public-pabx-check-field { min-height: 42px; display: flex; align-items: center; gap: 8px; padding: 0 10px; border: 1px solid #e2e3eb; border-radius: 8px; color: #596078; font-size: 12px; font-weight: 600; }
+        .public-pabx-check-field { min-height: 42px; display: flex; align-items: center; gap: 8px; padding: 0 10px; border: 1px solid var(--of-linha); border-radius: 8px; color: var(--of-tinta-2); font-size: 12px; font-weight: 600; }
         .public-pabx-check-field input { width: 16px; height: 16px; accent-color: ${CARMIM}; }
         .public-pabx-ramal-permissions .public-pabx-countries { grid-column: span 2; }
         .public-pabx-portabilidade-list { display: grid; gap: 14px; margin-bottom: 14px; }
-        .public-pabx-portabilidade-card { padding: 16px; border: 1px solid #e5e6ee; border-radius: 14px; background: #fff; }
+        .public-pabx-portabilidade-card { padding: 16px; border: 1px solid var(--of-linha); border-radius: 14px; background: #fff; }
         .public-pabx-portabilidade-card-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
         .public-pabx-portabilidade-fields { display: grid; grid-template-columns: minmax(120px, .45fr) minmax(220px, 1fr) minmax(170px, .55fr); gap: 0 14px; }
-        .public-pabx-upload-field { padding: 12px; border: 1px dashed #d9dbe5; border-radius: 10px; background: #fafafd; }
+        .public-pabx-upload-field { padding: 12px; border: 1px dashed var(--of-linha-controle); border-radius: 10px; background: var(--of-papel-alterno); }
         .public-pabx-upload-trigger { display: inline-flex; align-items: center; min-height: 38px; padding: 8px 12px; border: 1px solid ${CARMIM}; border-radius: 8px; background: #fff; color: ${CARMIM}; font-size: 12px; font-weight: 700; cursor: pointer; }
         @media (max-width: 620px) { .public-pabx-portabilidade-fields { grid-template-columns: 1fr; } }
         .public-pabx-main > div:last-child { margin-bottom: 0; }
         .public-pabx-aside { position: sticky; top: 20px; }
         .public-pabx-stepper { display: flex; align-items: flex-start; gap: 0; margin-top: 28px; }
         .public-pabx-step { position: relative; flex: 1; text-align: center; min-width: 0; }
-        .public-pabx-step:not(:last-child)::after { content: ""; position: absolute; top: 18px; left: calc(50% + 22px); right: calc(-50% + 22px); height: 2px; background: #e9e9f0; }
-        .public-pabx-step.is-complete:not(:last-child)::after, .public-pabx-step.is-current:not(:last-child)::after { background: linear-gradient(90deg, ${CARMIM}, #c13ad9); }
-        .public-pabx-step-dot { position: relative; z-index: 1; width: 36px; height: 36px; margin: 0 auto 9px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 2px solid #e3e4ec; background: #fff; color: #8c8fa3; font-size: 13px; font-weight: 800; }
-        .public-pabx-step.is-current .public-pabx-step-dot, .public-pabx-step.is-complete .public-pabx-step-dot { border-color: ${CARMIM}; background: ${CARMIM}; color: #fff; box-shadow: 0 5px 14px rgba(226,55,82,.18); }
-        .public-pabx-step-label { display: block; color: #7e8196; font-size: 12px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .public-pabx-step:not(:last-child)::after { content: ""; position: absolute; top: 18px; left: calc(50% + 22px); right: calc(-50% + 22px); height: 2px; background: var(--of-linha); }
+        .public-pabx-step.is-complete:not(:last-child)::after, .public-pabx-step.is-current:not(:last-child)::after { background: ${CARMIM}; }
+        .public-pabx-step-dot { position: relative; z-index: 1; width: 36px; height: 36px; margin: 0 auto 9px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 2px solid var(--of-linha); background: #fff; color: var(--of-tinta-3); font-size: 13px; font-weight: 800; }
+        .public-pabx-step.is-current .public-pabx-step-dot, .public-pabx-step.is-complete .public-pabx-step-dot { border-color: ${CARMIM}; background: ${CARMIM}; color: #fff; box-shadow: 0 5px 14px rgba(217,60,26,.18); }
+        .public-pabx-step-label { display: block; color: var(--of-tinta-3); font-size: 12px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .public-pabx-step.is-current .public-pabx-step-label { color: ${CARMIM}; }
-        .public-pabx-step-state { display: block; margin-top: 4px; color: #a1a3b3; font-size: 11px; }
+        .public-pabx-step-state { display: block; margin-top: 4px; color: var(--of-tinta-4); font-size: 11px; }
         .public-pabx-step.is-current .public-pabx-step-state { color: ${CARMIM}; }
         .public-pabx-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 22px; }
         .public-pabx-form-grid > * { min-width: 0; }
         .public-pabx-span-2 { grid-column: 1 / -1; }
         .public-pabx-channel-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
-        .public-pabx-channel { min-height: 52px; border: 1px solid #e2e3eb; border-radius: 10px; background: #fff; color: ${TEXTO}; font-size: 13px; font-weight: 700; cursor: pointer; }
-        .public-pabx-channel.is-selected { border-color: ${CARMIM}; background: #fff1f4; color: ${CARMIM}; box-shadow: 0 0 0 2px rgba(226,55,82,.08); }
+        .public-pabx-channel { min-height: 52px; border: 1px solid var(--of-linha); border-radius: 10px; background: #fff; color: ${TEXTO}; font-size: 13px; font-weight: 700; cursor: pointer; }
+        .public-pabx-channel.is-selected { border-color: ${CARMIM}; background: var(--of-coral-fundo); color: ${CARMIM}; box-shadow: 0 0 0 2px rgba(217,60,26,.08); }
         .public-pabx-progress-ring { width: 138px; height: 138px; margin: 8px auto 20px; border-radius: 50%; display: grid; place-items: center; }
         .public-pabx-progress-ring-inner { width: 112px; height: 112px; border-radius: 50%; background: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; }
-        .public-pabx-footer { padding: 20px 0 0; color: #9a9cad; font-size: 11px; text-align: center; }
+        .public-pabx-footer { padding: 20px 0 0; color: var(--of-tinta-3); font-size: 11px; text-align: center; }
         @media (max-width: 820px) {
           .public-pabx-grid { grid-template-columns: 1fr; }
           .public-pabx-aside { position: static; order: -1; }
@@ -224,7 +226,7 @@ function Shell({ children }: { children: React.ReactNode }) {
       <div className="public-pabx-container">
         <div className="public-pabx-header">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/brand/callface-logo.svg" alt="Callface" style={{ height: 38 }} />
+          <img src="/proto/callface-logo.png" alt="Callface" style={{ height: 30 }} />
         </div>
         {children}
       </div>
@@ -234,18 +236,18 @@ function Shell({ children }: { children: React.ReactNode }) {
 
 function Card({ children }: { children: React.ReactNode }) {
   return (
-    <div style={{ background: "#fff", borderRadius: 20, border: "1px solid #ececf2", boxShadow: "0 1px 3px rgba(0,0,0,0.04)", padding: 28, marginBottom: 16, color: TEXTO }}>
+    <div style={{ background: "#fff", borderRadius: 20, border: "1px solid var(--of-linha)", boxShadow: "0 1px 3px rgba(0,0,0,0.04)", padding: 28, marginBottom: 16, color: TEXTO }}>
       {children}
     </div>
   );
 }
 
 function EstadoFinal({ titulo, corpo, tom = "neutro" }: { titulo: string; corpo: string; tom?: "sucesso" | "erro" | "neutro" }) {
-  const cor = tom === "sucesso" ? "#0f9d58" : tom === "erro" ? CARMIM : "#4b4d63";
+  const cor = tom === "sucesso" ? "var(--of-canal-whatsapp-tinta)" : tom === "erro" ? CARMIM : "var(--of-tinta-2)";
   return (
     <Card>
       <h1 style={{ fontSize: 18, fontWeight: 700, color: cor, margin: "0 0 8px" }}>{titulo}</h1>
-      <p style={{ fontSize: 14, color: "#6b7280", lineHeight: 1.6, margin: 0 }}>{corpo}</p>
+      <p style={{ fontSize: 14, color: "var(--of-tinta-3)", lineHeight: 1.6, margin: 0 }}>{corpo}</p>
     </Card>
   );
 }
@@ -255,11 +257,11 @@ function EstadoFinal({ titulo, corpo, tom = "neutro" }: { titulo: string; corpo:
 // global do app (essa página pública roda no mesmo bundle do CRM). Todo
 // campo de texto abaixo tem `color: TEXTO` explícito agora.
 const inputStyle: React.CSSProperties = {
-  width: "100%", padding: "9px 10px", borderRadius: 8, border: "1px solid #dcdce6", fontSize: 13, boxSizing: "border-box", color: TEXTO, background: "#fff",
+  width: "100%", padding: "9px 10px", borderRadius: 8, border: "1px solid var(--of-linha-controle)", fontSize: 13, boxSizing: "border-box", color: TEXTO, background: "#fff",
 };
-const labelStyle: React.CSSProperties = { fontSize: 12, fontWeight: 600, color: "#6b7280", display: "block", marginBottom: 4 };
-const sectionTitleStyle: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: "#9497ab", textTransform: "uppercase", margin: "0 0 12px" };
-const thStyle: React.CSSProperties = { fontSize: 10, fontWeight: 700, color: "#9497ab", textTransform: "uppercase", padding: "0 6px 8px", textAlign: "left", whiteSpace: "nowrap" };
+const labelStyle: React.CSSProperties = { fontSize: 12, fontWeight: 600, color: "var(--of-tinta-3)", display: "block", marginBottom: 4 };
+const sectionTitleStyle: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: "var(--of-tinta-3)", textTransform: "uppercase", margin: "0 0 12px" };
+const thStyle: React.CSSProperties = { fontSize: 10, fontWeight: 700, color: "var(--of-tinta-3)", textTransform: "uppercase", padding: "0 6px 8px", textAlign: "left", whiteSpace: "nowrap" };
 const tdStyle: React.CSSProperties = { padding: "4px 6px", verticalAlign: "middle" };
 
 const PAISES = `Afeganistão|África do Sul|Albânia|Alemanha|Andorra|Angola|Antígua e Barbuda|Arábia Saudita|Argélia|Argentina|Armênia|Austrália|Áustria|Azerbaijão|Bahamas|Bahrein|Bangladesh|Barbados|Belarus|Bélgica|Belize|Benin|Bhutan|Bolívia|Bósnia e Herzegovina|Botsuana|Brasil|Brunei|Bulgária|Burkina Faso|Burundi|Cabo Verde|Camarões|Camboja|Canadá|Catar|Cazaquistão|Chade|Chile|China|Chipre|Colômbia|Comores|Congo|Coreia do Norte|Coreia do Sul|Costa do Marfim|Costa Rica|Croácia|Cuba|Dinamarca|Djibuti|Dominica|Egito|El Salvador|Emirados Árabes Unidos|Equador|Eritreia|Eslováquia|Eslovênia|Espanha|Estados Unidos|Estônia|Eswatini|Etiópia|Fiji|Filipinas|Finlândia|França|Gabão|Gâmbia|Gana|Geórgia|Granada|Grécia|Guatemala|Guiana|Guiné|Guiné-Bissau|Guiné Equatorial|Haiti|Honduras|Hungria|Iêmen|Ilhas Marshall|Ilhas Salomão|Índia|Indonésia|Irã|Iraque|Irlanda|Islândia|Israel|Itália|Jamaica|Japão|Jordânia|Kiribati|Kuwait|Laos|Lesoto|Letônia|Líbano|Libéria|Líbia|Liechtenstein|Lituânia|Luxemburgo|Macedônia do Norte|Madagascar|Malásia|Malaui|Maldivas|Mali|Malta|Marrocos|Maurício|Mauritânia|México|Mianmar|Micronésia|Moçambique|Moldávia|Mônaco|Mongólia|Montenegro|Namíbia|Nauru|Nepal|Nicarágua|Níger|Nigéria|Noruega|Nova Zelândia|Omã|Países Baixos|Palau|Panamá|Papua-Nova Guiné|Paquistão|Paraguai|Peru|Polônia|Portugal|Quênia|Quirguistão|Reino Unido|República Centro-Africana|República Democrática do Congo|República Dominicana|República Tcheca|Romênia|Ruanda|Rússia|Samoa|San Marino|Santa Lúcia|São Cristóvão e Névis|São Tomé e Príncipe|São Vicente e Granadinas|Seicheles|Senegal|Serra Leoa|Sérvia|Singapura|Síria|Somália|Sri Lanka|Sudão|Sudão do Sul|Suécia|Suíça|Suriname|Tailândia|Tajiquistão|Tanzânia|Timor-Leste|Togo|Tonga|Trinidad e Tobago|Tunísia|Turcomenistão|Turquia|Tuvalu|Ucrânia|Uganda|Uruguai|Uzbequistão|Vanuatu|Vaticano|Venezuela|Vietnã|Zâmbia|Zimbábue`.split("|");
@@ -314,7 +316,7 @@ function PaisesPicker({ id, value, onChange }: { id: string; value: string; onCh
       </select>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
         {selecionados.map((pais) => (
-          <span key={pais} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "5px 8px", borderRadius: 999, background: "#fff1f4", color: CARMIM, fontSize: 12, fontWeight: 700 }}>
+          <span key={pais} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "5px 8px", borderRadius: 999, background: "var(--of-coral-fundo)", color: CARMIM, fontSize: 12, fontWeight: 700 }}>
             {pais}
             <button type="button" onClick={() => onChange(selecionados.filter((item) => item !== pais).join(", "))} style={{ border: "none", background: "transparent", color: CARMIM, cursor: "pointer", fontWeight: 800, padding: 0 }}>×</button>
           </span>
@@ -362,25 +364,25 @@ function ProgressAside({ passo, passos }: { passo: number; passos: string[] }) {
       <Card>
         <p style={{ fontSize: 14, fontWeight: 800, color: TEXTO, margin: "0 0 14px" }}>Progresso do formulário</p>
         <div className="public-pabx-progress-card">
-          <div className="public-pabx-progress-ring" style={{ background: `conic-gradient(${CARMIM} ${percentual}%, #e9eaf0 0)` }}>
+          <div className="public-pabx-progress-ring" style={{ background: `conic-gradient(${CARMIM} ${percentual}%, var(--of-linha) 0)` }}>
             <div className="public-pabx-progress-ring-inner">
               <strong style={{ fontSize: 28, color: TEXTO }}>{percentual}%</strong>
-              <span style={{ fontSize: 11, color: "#7e8196" }}>Concluído</span>
+              <span style={{ fontSize: 11, color: "var(--of-tinta-3)" }}>Concluído</span>
             </div>
           </div>
         </div>
         <div style={{ display: "grid", gap: 12 }}>
           {passos.map((nome, i) => (
             <div key={nome} style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-              <span style={{ width: 24, height: 24, flexShrink: 0, borderRadius: "50%", display: "grid", placeItems: "center", background: i <= passo ? "#fff0f3" : "#f7f7fa", color: i <= passo ? CARMIM : "#7e8196", fontSize: 11, fontWeight: 800 }}>{i < passo ? "✓" : i + 1}</span>
-              <span><strong style={{ display: "block", fontSize: 12, color: i === passo ? CARMIM : TEXTO }}>{nome}</strong><small style={{ display: "block", marginTop: 2, color: "#8d90a1", fontSize: 11 }}>{i < passo ? "Concluído" : i === passo ? "Em andamento" : "Não iniciado"}</small></span>
+              <span style={{ width: 24, height: 24, flexShrink: 0, borderRadius: "50%", display: "grid", placeItems: "center", background: i <= passo ? "var(--of-coral-fundo)" : "var(--of-papel-tela)", color: i <= passo ? CARMIM : "var(--of-tinta-3)", fontSize: 11, fontWeight: 800 }}>{i < passo ? "✓" : i + 1}</span>
+              <span><strong style={{ display: "block", fontSize: 12, color: i === passo ? CARMIM : TEXTO }}>{nome}</strong><small style={{ display: "block", marginTop: 2, color: "var(--of-tinta-3)", fontSize: 11 }}>{i < passo ? "Concluído" : i === passo ? "Em andamento" : "Não iniciado"}</small></span>
             </div>
           ))}
         </div>
       </Card>
-      <div style={{ marginTop: 14, padding: 18, borderRadius: 16, border: "1px solid #eadfff", background: "#fbf8ff" }}>
-        <strong style={{ display: "block", marginBottom: 7, color: "#5d2ab5", fontSize: 13 }}>Importante</strong>
-        <p style={{ margin: 0, color: "#6f6680", fontSize: 12, lineHeight: 1.6 }}>Essas informações serão usadas exclusivamente para a implantação do seu sistema PABX.</p>
+      <div style={{ marginTop: 14, padding: 18, borderRadius: 16, border: "1px solid var(--of-coral-contorno)", background: "var(--of-coral-fundo)" }}>
+        <strong style={{ display: "block", marginBottom: 7, color: "var(--of-coral-texto)", fontSize: 13 }}>Importante</strong>
+        <p style={{ margin: 0, color: "var(--of-tinta-3)", fontSize: 12, lineHeight: 1.6 }}>Essas informações serão usadas exclusivamente para a implantação do seu sistema PABX.</p>
       </div>
     </aside>
   );
@@ -400,11 +402,11 @@ function NavegacaoPasso({ podeVoltar, onVoltar, onAvancar, textoAvancar }: { pod
   return (
     <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
       {podeVoltar && (
-        <button type="button" onClick={onVoltar} style={{ padding: "12px 20px", borderRadius: 10, border: "1px solid #ececf2", background: "#fff", color: "#4b4d63", fontWeight: 600, fontSize: 14, cursor: "pointer" }}>
+        <button type="button" onClick={onVoltar} style={{ padding: "12px 20px", borderRadius: 10, border: "1px solid var(--of-linha)", background: "#fff", color: "var(--of-tinta-2)", fontWeight: 600, fontSize: 14, cursor: "pointer" }}>
           Voltar
         </button>
       )}
-      <button type="button" onClick={onAvancar} style={{ flex: 1, padding: "13px", borderRadius: 10, border: "none", background: `linear-gradient(90deg, ${CARMIM}, ${ROXO})`, color: "#fff", fontWeight: 700, fontSize: 15, cursor: "pointer" }}>
+      <button type="button" onClick={onAvancar} style={{ flex: 1, padding: "13px", borderRadius: 10, border: "none", background: `${CARMIM}`, color: "#fff", fontWeight: 700, fontSize: 15, cursor: "pointer" }}>
         {textoAvancar}
       </button>
     </div>
@@ -415,14 +417,14 @@ function NavegacaoPasso({ podeVoltar, onVoltar, onAvancar, textoAvancar }: { pod
 // encaminhamento (opção/fallback/fora do horário), todos como lista
 // ordenada de referências já digitadas em passos anteriores.
 function ChipList({ itens, onRemover }: { itens: string[]; onRemover: (i: number) => void }) {
-  if (itens.length === 0) return <p style={{ fontSize: 12, color: "#9497ab" }}>Nenhum selecionado ainda.</p>;
+  if (itens.length === 0) return <p style={{ fontSize: 12, color: "var(--of-tinta-3)" }}>Nenhum selecionado ainda.</p>;
   return (
     <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
       {itens.map((item, i) => (
-        <span key={`${item}-${i}`} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 8px", borderRadius: 999, background: "#f7f7fa", border: "1px solid #ececf2", fontSize: 12, color: TEXTO }}>
-          {i > 0 && <span style={{ color: "#9497ab" }}>→</span>}
+        <span key={`${item}-${i}`} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 8px", borderRadius: 999, background: "var(--of-papel-tela)", border: "1px solid var(--of-linha)", fontSize: 12, color: TEXTO }}>
+          {i > 0 && <span style={{ color: "var(--of-tinta-3)" }}>→</span>}
           {item}
-          <button type="button" onClick={() => onRemover(i)} style={{ border: "none", background: "none", color: "#9497ab", cursor: "pointer", fontSize: 13, lineHeight: 1, padding: 0 }}>×</button>
+          <button type="button" onClick={() => onRemover(i)} style={{ border: "none", background: "none", color: "var(--of-tinta-3)", cursor: "pointer", fontSize: 13, lineHeight: 1, padding: 0 }}>×</button>
         </span>
       ))}
     </div>
@@ -459,7 +461,7 @@ function SeletorDepartamento({ ramaisDisponiveis, valor, onChange }: { ramaisDis
         <option value="">{departamentos.length ? "Selecione um departamento já cadastrado..." : "Nenhum departamento cadastrado na etapa Ramais"}</option>
         {departamentos.map((departamento) => <option key={departamento} value={departamento}>{departamento}</option>)}
       </select>
-      {departamentos.length === 0 && <p style={{ margin: "6px 0 0", color: "#9497ab", fontSize: 11 }}>Volte à etapa Ramais e informe pelo menos um departamento.</p>}
+      {departamentos.length === 0 && <p style={{ margin: "6px 0 0", color: "var(--of-tinta-3)", fontSize: 11 }}>Volte à etapa Ramais e informe pelo menos um departamento.</p>}
     </div>
   );
 }
@@ -473,7 +475,7 @@ function SeletorDestino({ ramaisDisponiveis, valor, onChange }: { ramaisDisponiv
     return (
       <div style={{ marginBottom: 8 }}>
         <ChipList itens={valor} onRemover={(i) => onChange(valor.filter((_, idx) => idx !== i))} />
-        <p style={{ margin: "6px 0 0", color: "#9497ab", fontSize: 11 }}>Nenhum ramal ou departamento cadastrado. Volte à etapa Ramais para configurar os destinos.</p>
+        <p style={{ margin: "6px 0 0", color: "var(--of-tinta-3)", fontSize: 11 }}>Nenhum ramal ou departamento cadastrado. Volte à etapa Ramais para configurar os destinos.</p>
       </div>
     );
   }
@@ -528,8 +530,8 @@ function SeletorVoz({ valor, onChange }: { valor: string; onChange: (v: string) 
               key={voz.id}
               style={{
                 display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 10,
-                border: selecionada ? `1.5px solid ${CARMIM}` : "1px solid #ececf2",
-                background: selecionada ? "#fdf1f3" : "#fff",
+                border: selecionada ? `1.5px solid ${CARMIM}` : "1px solid var(--of-linha)",
+                background: selecionada ? "var(--of-coral-fundo)" : "#fff",
               }}
             >
               <span style={{ fontSize: 13, fontWeight: 700, color: TEXTO, minWidth: 64 }}>{voz.nome}</span>
@@ -540,7 +542,7 @@ function SeletorVoz({ valor, onChange }: { valor: string; onChange: (v: string) 
                 onClick={() => onChange(voz.id)}
                 style={{
                   padding: "7px 12px", borderRadius: 8, border: selecionada ? "none" : `1px solid ${CARMIM}`,
-                  background: selecionada ? "#0f9d58" : "#fff", color: selecionada ? "#fff" : CARMIM,
+                  background: selecionada ? "var(--of-canal-whatsapp-tinta)" : "#fff", color: selecionada ? "#fff" : CARMIM,
                   fontWeight: 700, fontSize: 12, cursor: "pointer", whiteSpace: "nowrap",
                 }}
               >
@@ -550,7 +552,7 @@ function SeletorVoz({ valor, onChange }: { valor: string; onChange: (v: string) 
           );
         })}
       </div>
-      {!valor && <p style={{ fontSize: 11, color: "#9497ab", margin: "6px 0 0" }}>Escolha uma das vozes acima pra gravação da sua URA.</p>}
+      {!valor && <p style={{ fontSize: 11, color: "var(--of-tinta-3)", margin: "6px 0 0" }}>Escolha uma das vozes acima pra gravação da sua URA.</p>}
     </div>
   );
 }
@@ -573,19 +575,19 @@ function ResumoValidacao({ respostas, ramaisPreenchidos }: { respostas: Resposta
   if (!respostas.portabilidade.razaoSocialTitular) pendencias.push("Titular das linhas não informado");
 
   return (
-    <div style={{ marginTop: 16, padding: 14, borderRadius: 12, background: "#f7f7fa" }}>
+    <div style={{ marginTop: 16, padding: 14, borderRadius: 12, background: "var(--of-papel-tela)" }}>
       <p style={{ fontSize: 12, fontWeight: 700, color: TEXTO, margin: "0 0 8px" }}>Resumo rápido</p>
-      <p style={{ fontSize: 12, color: "#6b7280", margin: "2px 0" }}>{linhasPreenchidas.length} número(s)/linha(s) informado(s)</p>
-      <p style={{ fontSize: 12, color: "#6b7280", margin: "2px 0" }}>{ramaisPreenchidos.length} ramal(is) cadastrado(s)</p>
-      <p style={{ fontSize: 12, color: "#6b7280", margin: "2px 0" }}>{departamentosUnicos.size} departamento(s) único(s) entre os ramais</p>
-      <p style={{ fontSize: 12, color: "#6b7280", margin: "2px 0" }}>{opcoesUraConfiguradas} opção(ões) de URA configurada(s)</p>
-      <p style={{ fontSize: 12, color: "#6b7280", margin: "2px 0" }}>Voz selecionada: {vozNome || "nenhuma ainda"}</p>
+      <p style={{ fontSize: 12, color: "var(--of-tinta-3)", margin: "2px 0" }}>{linhasPreenchidas.length} número(s)/linha(s) informado(s)</p>
+      <p style={{ fontSize: 12, color: "var(--of-tinta-3)", margin: "2px 0" }}>{ramaisPreenchidos.length} ramal(is) cadastrado(s)</p>
+      <p style={{ fontSize: 12, color: "var(--of-tinta-3)", margin: "2px 0" }}>{departamentosUnicos.size} departamento(s) único(s) entre os ramais</p>
+      <p style={{ fontSize: 12, color: "var(--of-tinta-3)", margin: "2px 0" }}>{opcoesUraConfiguradas} opção(ões) de URA configurada(s)</p>
+      <p style={{ fontSize: 12, color: "var(--of-tinta-3)", margin: "2px 0" }}>Voz selecionada: {vozNome || "nenhuma ainda"}</p>
 
       {pendencias.length > 0 && (
-        <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid #ececf2" }}>
+        <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--of-linha)" }}>
           <p style={{ fontSize: 11, fontWeight: 700, color: CARMIM, margin: "0 0 4px" }}>Ainda pendente:</p>
           {pendencias.map((p) => (
-            <p key={p} style={{ fontSize: 12, color: "#6b7280", margin: "2px 0" }}>· {p}</p>
+            <p key={p} style={{ fontSize: 12, color: "var(--of-tinta-3)", margin: "2px 0" }}>· {p}</p>
           ))}
         </div>
       )}
@@ -623,14 +625,14 @@ function AnexoCelula({ token, linha, onChange }: { token: string; linha: LinhaPo
   if (linha.anexoUrl) {
     return (
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-        <a href={linha.anexoUrl} target="_blank" rel="noreferrer" style={{ minWidth: 0, color: ROXO, fontSize: 12, fontWeight: 600, textDecoration: "underline", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{linha.anexoNome || "Arquivo anexado"}</a>
-        <button type="button" onClick={() => onChange({ anexoUrl: "", anexoNome: "" })} style={{ border: "none", background: "none", color: "#9497ab", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>Remover arquivo</button>
+        <a href={linha.anexoUrl} target="_blank" rel="noreferrer" style={{ minWidth: 0, color: CORAL_LINK, fontSize: 12, fontWeight: 600, textDecoration: "underline", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{linha.anexoNome || "Arquivo anexado"}</a>
+        <button type="button" onClick={() => onChange({ anexoUrl: "", anexoNome: "" })} style={{ border: "none", background: "none", color: "var(--of-tinta-3)", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>Remover arquivo</button>
       </div>
     );
   }
   return (
     <div>
-      <label className="public-pabx-upload-trigger" style={{ color: enviando ? "#9497ab" : CARMIM, cursor: enviando ? "wait" : "pointer" }}>
+      <label className="public-pabx-upload-trigger" style={{ color: enviando ? "var(--of-tinta-3)" : CARMIM, cursor: enviando ? "wait" : "pointer" }}>
         {enviando ? "Enviando..." : "Anexar fatura/documento"}
         <input
           type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" style={{ display: "none" }}
@@ -708,7 +710,7 @@ export function FormularioImplantacaoPabx({ token }: { token: string }) {
     onSuccess: () => setEnviado(true),
   });
 
-  if (isLoading) return <Shell><Card><p style={{ color: "#9497ab", fontSize: 14 }}>Carregando formulário...</p></Card></Shell>;
+  if (isLoading) return <Shell><Card><p style={{ color: "var(--of-tinta-3)", fontSize: 14 }}>Carregando formulário...</p></Card></Shell>;
   if (error || !data) {
     return <Shell><EstadoFinal tom="erro" titulo="Link inválido" corpo="Confira o link recebido ou fale com quem te enviou a solicitação na Callface." /></Shell>;
   }
@@ -743,7 +745,7 @@ export function FormularioImplantacaoPabx({ token }: { token: string }) {
         <div style={{ textAlign: "center" }}>
           <button
             onClick={() => setEditando(true)}
-            style={{ padding: "10px 20px", borderRadius: 10, border: "1px solid #ececf2", background: "#fff", color: "#4b4d63", fontWeight: 600, fontSize: 13, cursor: "pointer" }}
+            style={{ padding: "10px 20px", borderRadius: 10, border: "1px solid var(--of-linha)", background: "#fff", color: "var(--of-tinta-2)", fontWeight: 600, fontSize: 13, cursor: "pointer" }}
           >
             Editar e reenviar
           </button>
@@ -788,7 +790,7 @@ export function FormularioImplantacaoPabx({ token }: { token: string }) {
           Formulário de implantação — PABX
         </p>
         <h1 style={{ fontSize: 32, lineHeight: 1.15, fontWeight: 800, color: TEXTO, margin: "0 0 10px" }}>Vamos iniciar sua implantação</h1>
-        <p style={{ maxWidth: 700, margin: "0 auto", color: "#687087", fontSize: 14, lineHeight: 1.6 }}>Preencha as informações abaixo para que possamos configurar seu sistema da melhor forma.</p>
+        <p style={{ maxWidth: 700, margin: "0 auto", color: "var(--of-tinta-3)", fontSize: 14, lineHeight: 1.6 }}>Preencha as informações abaixo para que possamos configurar seu sistema da melhor forma.</p>
         </div>
         <StepIndicator passos={PASSOS} atual={passo} onJump={setPasso} />
       </Card>
@@ -798,10 +800,10 @@ export function FormularioImplantacaoPabx({ token }: { token: string }) {
           {passo === 0 && (
             <Card>
               <div style={{ display: "flex", alignItems: "flex-start", gap: 14, marginBottom: 22 }}>
-                <div style={{ width: 48, height: 48, flexShrink: 0, borderRadius: 14, display: "grid", placeItems: "center", background: "#fff0f3", color: CARMIM, fontSize: 22 }}>1</div>
+                <div style={{ width: 48, height: 48, flexShrink: 0, borderRadius: 14, display: "grid", placeItems: "center", background: "var(--of-coral-fundo)", color: CARMIM, fontSize: 22 }}>1</div>
                 <div>
                   <h2 style={{ fontSize: 20, fontWeight: 800, color: TEXTO, margin: "0 0 5px" }}>Dados iniciais</h2>
-                  <p style={{ fontSize: 13, color: "#687087", lineHeight: 1.55, margin: 0 }}>Informe os dados do responsável técnico que nos ajudará durante a implantação.</p>
+                  <p style={{ fontSize: 13, color: "var(--of-tinta-3)", lineHeight: 1.55, margin: 0 }}>Informe os dados do responsável técnico que nos ajudará durante a implantação.</p>
                 </div>
               </div>
               <div className="public-pabx-form-grid">
@@ -840,7 +842,7 @@ export function FormularioImplantacaoPabx({ token }: { token: string }) {
       {passo === 1 && (
         <Card>
           <p style={sectionTitleStyle}>Portabilidade / novas linhas</p>
-          <p style={{ fontSize: 13, color: "#6b7280", margin: "0 0 12px" }}>
+          <p style={{ fontSize: 13, color: "var(--of-tinta-3)", margin: "0 0 12px" }}>
             Cadastre uma linha por número. Para uma linha nova, selecione “Sim” e informe somente o DDD. Anexe a fatura correspondente em cada linha de portabilidade.
           </p>
           <div className="public-pabx-portabilidade-list">
@@ -848,7 +850,7 @@ export function FormularioImplantacaoPabx({ token }: { token: string }) {
               <div key={linhaIndex} className="public-pabx-portabilidade-card">
                 <div className="public-pabx-portabilidade-card-header">
                   <strong style={{ color: TEXTO, fontSize: 14 }}>Linha {linhaIndex + 1}{linha.ddd ? `, DDD ${linha.ddd}` : ""}</strong>
-                  <button type="button" onClick={() => { atualizarPortabilidade({ linhas: p.linhas.filter((_, idx) => idx !== linhaIndex) }); setLinhasReveladas((n) => Math.max(1, n - 1)); }} style={{ border: "none", background: "transparent", color: "#9497ab", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>Remover linha</button>
+                  <button type="button" onClick={() => { atualizarPortabilidade({ linhas: p.linhas.filter((_, idx) => idx !== linhaIndex) }); setLinhasReveladas((n) => Math.max(1, n - 1)); }} style={{ border: "none", background: "transparent", color: "var(--of-tinta-3)", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>Remover linha</button>
                 </div>
                 <div className="public-pabx-portabilidade-fields">
                   <Field label="DDD" value={linha.ddd} onChange={(v) => atualizarLinha(linhaIndex, { ddd: v })} placeholder="15" />
@@ -859,7 +861,7 @@ export function FormularioImplantacaoPabx({ token }: { token: string }) {
                   <div className="public-pabx-upload-field">
                     <label style={labelStyle}>Fatura da linha</label>
                     <AnexoCelula token={token} linha={linha} onChange={(patch) => atualizarLinha(linhaIndex, patch)} />
-                    {!linha.anexoUrl && <p style={{ margin: "7px 0 0", color: "#9497ab", fontSize: 11 }}>PDF, JPG ou PNG. Envie a fatura correspondente a este número portado.</p>}
+                    {!linha.anexoUrl && <p style={{ margin: "7px 0 0", color: "var(--of-tinta-3)", fontSize: 11 }}>PDF, JPG ou PNG. Envie a fatura correspondente a este número portado.</p>}
                   </div>
                 )}
               </div>
@@ -879,7 +881,7 @@ export function FormularioImplantacaoPabx({ token }: { token: string }) {
             + Adicionar linha
           </button>
 
-          <p style={{ fontSize: 11, color: "#9497ab", background: "#f7f7fa", padding: 10, borderRadius: 10, marginBottom: 16 }}>
+          <p style={{ fontSize: 11, color: "var(--of-tinta-3)", background: "var(--of-papel-tela)", padding: 10, borderRadius: 10, marginBottom: 16 }}>
             Importante: se um conjunto de números tiver alguma lacuna não informada, a operadora pode não conseguir liberar aquele número depois. Confira se todos os números do bloco foram incluídos.
           </p>
 
@@ -895,7 +897,7 @@ export function FormularioImplantacaoPabx({ token }: { token: string }) {
         <Card>
           <ProgressMini passo={passo} total={PASSOS.length} />
           <p style={sectionTitleStyle}>Ramais</p>
-          <p style={{ fontSize: 13, color: "#6b7280", margin: "0 0 12px" }}>
+          <p style={{ fontSize: 13, color: "var(--of-tinta-3)", margin: "0 0 12px" }}>
             Uma linha por ramal/usuário. Sem pessoa designada? Preencha só o departamento.
           </p>
           <div className="public-pabx-ramais-list">
@@ -903,7 +905,7 @@ export function FormularioImplantacaoPabx({ token }: { token: string }) {
               <div key={ramalIndex} className="public-pabx-ramal-card">
                 <div className="public-pabx-ramal-card-header">
                   <strong style={{ color: TEXTO, fontSize: 14 }}>Ramal {ramal.ramal || `#${ramalIndex + 1}`}</strong>
-                  <button type="button" onClick={() => { setRespostas((r) => ({ ...r, ramais: r.ramais.filter((_, idx) => idx !== ramalIndex) })); setRamaisRevelados((n) => Math.max(1, n - 1)); }} style={{ border: "none", background: "transparent", color: "#9497ab", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>Remover ramal</button>
+                  <button type="button" onClick={() => { setRespostas((r) => ({ ...r, ramais: r.ramais.filter((_, idx) => idx !== ramalIndex) })); setRamaisRevelados((n) => Math.max(1, n - 1)); }} style={{ border: "none", background: "transparent", color: "var(--of-tinta-3)", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>Remover ramal</button>
                 </div>
                 <p style={{ ...sectionTitleStyle, marginBottom: 10 }}>Dados do usuário</p>
                 <div className="public-pabx-ramal-fields">
@@ -916,7 +918,7 @@ export function FormularioImplantacaoPabx({ token }: { token: string }) {
                   <Field label="Celular" value={ramal.celular} onChange={(v) => atualizarRamal(ramalIndex, { celular: v })} mask="telefone" />
                   {ramal.utilizaAparelhoMesa && <Field label="Modelo do aparelho" value={ramal.modeloAparelho} onChange={(v) => atualizarRamal(ramalIndex, { modeloAparelho: v })} placeholder="Ex.: Intelbras TIP 125i" />}
                 </div>
-                <p style={{ ...sectionTitleStyle, margin: "4px 0 10px", paddingTop: 8, borderTop: "1px solid #f0f0f5" }}>Permissões e recursos</p>
+                <p style={{ ...sectionTitleStyle, margin: "4px 0 10px", paddingTop: 8, borderTop: "1px solid var(--of-neutro)" }}>Permissões e recursos</p>
                 <div className="public-pabx-ramal-permissions">
                   <label className="public-pabx-check-field"><input type="checkbox" checked={ramal.notificacaoLigacoesPerdidas} onChange={(e) => atualizarRamal(ramalIndex, { notificacaoLigacoesPerdidas: e.target.checked })} /> Notificar ligações perdidas</label>
                   <label className="public-pabx-check-field"><input type="checkbox" checked={ramal.gravarLigacao} onChange={(e) => atualizarRamal(ramalIndex, { gravarLigacao: e.target.checked })} /> Gravar ligações</label>
@@ -952,13 +954,13 @@ export function FormularioImplantacaoPabx({ token }: { token: string }) {
           {numerosDisponiveis.length > 0 ? (
             <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 16 }}>
               {numerosDisponiveis.filter((n) => !u.numerosAtendidos.includes(n)).map((n) => (
-                <button key={n} type="button" onClick={() => atualizarUra({ numerosAtendidos: [...u.numerosAtendidos, n] })} style={{ padding: "6px 10px", borderRadius: 999, border: "1px dashed #dcdce6", background: "#fff", color: TEXTO, fontSize: 12, cursor: "pointer" }}>
+                <button key={n} type="button" onClick={() => atualizarUra({ numerosAtendidos: [...u.numerosAtendidos, n] })} style={{ padding: "6px 10px", borderRadius: 999, border: "1px dashed var(--of-linha-controle)", background: "#fff", color: TEXTO, fontSize: 12, cursor: "pointer" }}>
                   + {n}
                 </button>
               ))}
             </div>
           ) : (
-            <p style={{ fontSize: 11, color: "#9497ab", marginBottom: 12 }}>Nenhum número informado no passo de Portabilidade ainda — volte lá se precisar adicionar.</p>
+            <p style={{ fontSize: 11, color: "var(--of-tinta-3)", marginBottom: 12 }}>Nenhum número informado no passo de Portabilidade ainda — volte lá se precisar adicionar.</p>
           )}
 
           <Field label="Dias e horário de atendimento" value={u.diasHorarioAtendimento} onChange={(v) => atualizarUra({ diasHorarioAtendimento: v })} placeholder="Ex.: Segunda a sexta, 09h às 18h" />
@@ -970,9 +972,9 @@ export function FormularioImplantacaoPabx({ token }: { token: string }) {
           />
 
           <p style={{ ...sectionTitleStyle, marginTop: 16 }}>Opções de encaminhamento</p>
-          <p style={{ fontSize: 11, color: "#9497ab", margin: "0 0 10px" }}>Selecione o ramal/departamento (você pode montar uma ordem de preferência, ex.: tenta o 1º, se não atender tenta o 2º).</p>
+          <p style={{ fontSize: 11, color: "var(--of-tinta-3)", margin: "0 0 10px" }}>Selecione o ramal/departamento (você pode montar uma ordem de preferência, ex.: tenta o 1º, se não atender tenta o 2º).</p>
           {u.opcoes.map((opcao, i) => (
-            <div key={i} style={{ marginBottom: 12, padding: 12, borderRadius: 10, background: "#f7f7fa" }}>
+            <div key={i} style={{ marginBottom: 12, padding: 12, borderRadius: 10, background: "var(--of-papel-tela)" }}>
               <div style={{ display: "flex", gap: 8, marginBottom: 8, alignItems: "center" }}>
                 <SeletorDepartamento
                   ramaisDisponiveis={ramaisPreenchidos}
@@ -980,7 +982,7 @@ export function FormularioImplantacaoPabx({ token }: { token: string }) {
                   onChange={(rotulo) => { const novas = [...u.opcoes]; novas[i] = { ...opcao, rotulo }; atualizarUra({ opcoes: novas }); }}
                 />
                 {u.opcoes.length > 1 && (
-                  <button type="button" onClick={() => atualizarUra({ opcoes: u.opcoes.filter((_, idx) => idx !== i) })} style={{ border: "none", background: "none", color: "#9497ab", cursor: "pointer", fontSize: 12 }}>Remover opção</button>
+                  <button type="button" onClick={() => atualizarUra({ opcoes: u.opcoes.filter((_, idx) => idx !== i) })} style={{ border: "none", background: "none", color: "var(--of-tinta-3)", cursor: "pointer", fontSize: 12 }}>Remover opção</button>
                 )}
               </div>
               <SeletorDestino ramaisDisponiveis={ramaisPreenchidos} valor={opcao.destinos} onChange={(v) => { const novas = [...u.opcoes]; novas[i] = { ...opcao, destinos: v }; atualizarUra({ opcoes: novas }); }} />
@@ -1001,7 +1003,7 @@ export function FormularioImplantacaoPabx({ token }: { token: string }) {
           <SeletorDestino ramaisDisponiveis={ramaisPreenchidos} valor={u.encaminhamentoForaHorario} onChange={(v) => atualizarUra({ encaminhamentoForaHorario: v })} />
 
           <SeletorVoz valor={u.vozSelecionada} onChange={(v) => atualizarUra({ vozSelecionada: v })} />
-          <p style={{ fontSize: 11, color: "#9497ab", background: "#f7f7fa", padding: 10, borderRadius: 10 }}>
+          <p style={{ fontSize: 11, color: "var(--of-tinta-3)", background: "var(--of-papel-tela)", padding: 10, borderRadius: 10 }}>
             Se sua empresa já tem um fluxo de URA mais complexo documentado ou uma gravação existente que quer manter, envie por e-mail ao gestor do seu projeto.
           </p>
 
@@ -1012,7 +1014,7 @@ export function FormularioImplantacaoPabx({ token }: { token: string }) {
           {passo === 4 && (
         <Card>
           <p style={sectionTitleStyle}>Outras informações</p>
-          <p style={{ fontSize: 13, color: "#687087", lineHeight: 1.55, margin: "0 0 14px" }}>Revise os dados preenchidos antes de enviar. Você ainda pode voltar a qualquer etapa para ajustar alguma informação.</p>
+          <p style={{ fontSize: 13, color: "var(--of-tinta-3)", lineHeight: 1.55, margin: "0 0 14px" }}>Revise os dados preenchidos antes de enviar. Você ainda pode voltar a qualquer etapa para ajustar alguma informação.</p>
 
           <ResumoValidacao respostas={respostas} ramaisPreenchidos={ramaisPreenchidos} />
 

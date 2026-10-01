@@ -5,14 +5,11 @@ import { db } from "@/lib/db";
 import { organizacoes, usuarios } from "@/lib/db/schema";
 import { eq, SQL } from "drizzle-orm";
 import type { PgColumn } from "drizzle-orm/pg-core";
-import { isPersonalView } from "@/lib/auth/roles";
+import { isPersonalView, podeVerComo } from "@/lib/auth/roles";
 
 const NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET || process.env.AUTH_SECRET || "";
 const ORG_OVERRIDE_COOKIE = "mcrm-org-override";
 const VIEW_AS_COOKIE = "mcrm-view-as";
-// "Ver como" assume a identidade de outra pessoa (inclusive o papel dela),
-// então é acesso a dado alheio: exclusivo do super_admin.
-const ADMIN_ROLES = ["super_admin"];
 
 // NextAuth v5 derives a chave de criptografia via HKDF usando o NOME DO
 // COOKIE como salt/info — e o nome do cookie muda com o protocolo:
@@ -95,7 +92,7 @@ export async function getTenantFromRequest(c: Context): Promise<TenantContext | 
     }
   }
 
-  // View-as: só admin/gerente/super_admin podem "visualizar como" outro usuário.
+  // View-as: só o super_admin pode "visualizar como" outro usuário (podeVerComo).
   // O role do cookie NUNCA é confiado pros dados — buscamos o usuário no banco e
   // usamos o role/id reais dele, e só se for da mesma org (efetiva) e ativo.
   let effUserId = payload.id as string;
@@ -104,7 +101,7 @@ export async function getTenantFromRequest(c: Context): Promise<TenantContext | 
   let isViewingAs = false;
   let viewAsName = "";
 
-  if (ADMIN_ROLES.includes(userRole)) {
+  if (podeVerComo(userRole)) {
     const viewAs = getCookie(c, VIEW_AS_COOKIE);
     const targetId = viewAs ? viewAs.split(":")[0] : "";
     if (targetId && targetId !== (payload.id as string)) {

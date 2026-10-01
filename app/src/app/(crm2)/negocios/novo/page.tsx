@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import { Cf2Topbar } from "@/components/crm2/Topbar";
 import { FormNovoNegocio } from "./_form";
 
-export const metadata = { title: "Novo negócio" };
+export const metadata = { title: "Nova oportunidade" };
 
 /**
  * Novo negócio. Migrada do shell legado em 08/09/2026 — é o destino do botão
@@ -24,7 +24,7 @@ export default async function NovoNegocioPage() {
       {/* `actions={null}` remove o CTA: já estamos DENTRO da criação de
           negócio, e o botão "Novo negócio" apontando pra própria tela é
           um beco. Passar ctaLabel="" deixava um "+" solto. */}
-      <Cf2Topbar orgNome={org?.nome || "Callface"} variant="light" title="Novo negócio" compactTitle actions={null} />
+      <Cf2Topbar orgNome={org?.nome || "Callface"} variant="light" title="Nova oportunidade" compactTitle actions={null} />
       <FormNovoNegocio />
     </div>
   );

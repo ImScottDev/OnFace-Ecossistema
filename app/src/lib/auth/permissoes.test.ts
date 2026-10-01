@@ -154,6 +154,7 @@ test("criar automação e configurar agente exigem permissão", async () => {
   //   cai por um caminho que ninguém olha.
   const ESPERADO: Array<[string, string]> = [
     ["automacoes.ts", "automation.manage"],
+    ["automacoes-fluxos.ts", "automation.manage"],
     ["automacoes-cadencias.ts", "automation.manage"],
     ["automacoes-agentes.ts", "ai.configure"],
     ["automacoes-tags.ts", "acquisition.manage"],

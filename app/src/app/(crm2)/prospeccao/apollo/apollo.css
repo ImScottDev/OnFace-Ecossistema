@@ -1,0 +1,34 @@
+/* Busca Apollo no vocabulário ONFACE. Os botões reusam .pp-primario e
+ * .pp-secundario de vendas/prospeccao.css (importado no _busca.tsx) para que a tela
+ * irmã de /prospeccao tenha exatamente os mesmos controles de 34px.
+ * Elevação sempre por anel (box-shadow inset), nunca border: o anel não soma
+ * ao box model, então campos e botões alinham na mesma altura. */
+
+.ap-busca { font-family: var(--of-fonte); color: var(--of-tinta); }
+
+.ap-campo {
+  display: flex; align-items: center; gap: 8px; height: var(--of-h-controle); padding: 0 12px;
+  border: 0; border-radius: var(--of-r-acao); background: var(--of-papel); box-shadow: var(--of-anel);
+  font-size: 13px; color: var(--of-tinta-2); cursor: pointer;
+}
+input.ap-campo, .ap-campo input { color: var(--of-tinta-forte); cursor: text; }
+.ap-campo:focus-within, input.ap-campo:focus { box-shadow: var(--of-anel-coral); }
+
+.ap-cartao { border-radius: var(--of-r-superficie); background: var(--of-papel); box-shadow: var(--of-anel-forte); }
+.ap-popover { border-radius: var(--of-r-painel); background: var(--of-papel); box-shadow: var(--of-anel-forte), var(--of-sombra-popover); }
+.ap-linha { box-shadow: inset 0 -1px 0 var(--of-linha); }
+
+.ap-check {
+  display: flex; align-items: center; justify-content: center;
+  border-radius: var(--of-r-micro); box-shadow: inset 0 0 0 1px var(--of-linha-controle); background: var(--of-papel);
+}
+.ap-check-on { background: var(--of-coral-acao); box-shadow: none; color: var(--of-papel); }
+
+.ap-faixa { padding: 10px 12px; border-radius: var(--of-r-controle); }
+.ap-faixa-ok { background: var(--of-canal-whatsapp-fundo); box-shadow: inset 0 0 0 1px var(--of-canal-whatsapp-contorno); }
+.ap-faixa-erro { background: var(--of-coral-fundo); box-shadow: inset 0 0 0 1px var(--of-coral-contorno); }
+
+/* Desabilitado com motivo no title: fica visivelmente inerte, sem hover. */
+.ap-busca .pp-primario:disabled,
+.ap-busca .pp-secundario:disabled { opacity: .55; cursor: not-allowed; }
+.ap-busca .pp-primario:disabled:hover { background: var(--of-coral-acao); }

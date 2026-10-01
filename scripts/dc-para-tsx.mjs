@@ -107,6 +107,15 @@ function valorDeAtributo(nome, bruto) {
     // `style="{{ f.grupoStyle }}"` devolve uma STRING de CSS em tempo de
     // execução, então precisa do conversor do runtime.
     if (inteira) { anotarExpressao(inteira[1]); return `{estilo(${inteira[1].trim()})}`; }
+    /* Estilo MISTO: style="{{ ov.c7 }};align-self:start;...". A versao
+       anterior descartava a interpolacao e mantinha so o literal — e e
+       justamente a interpolacao que carrega grid-column, largura e cor
+       calculadas. Painel saia com 1/12 da grade. Monta a string CSS inteira
+       em tempo de execucao e deixa o estilo() do runtime converter. */
+    if (bruto.includes("{{")) {
+      const corpo = bruto.replace(/\{\{([\s\S]+?)\}\}/g, (_, e) => { anotarExpressao(e); return "${" + e.trim() + " ?? \"\"}"; });
+      return "{estilo(`" + corpo.replace(/`/g, "\\`") + "`)}";
+    }
     return `{${estiloParaObjeto(bruto)}}`;
   }
 
@@ -447,7 +456,19 @@ const estiloDoHelmet = /<style>([\s\S]*?)<\/style>/.exec(html)?.[1]?.trim() ?? "
 // onde os dados de exemplo precisam virar os dados reais.
 const script = /<script type="text\/x-dc"[^>]*>([\s\S]*?)<\/script>/.exec(html);
 const semScript = html.replace(/<script[\s\S]*?<\/script>/g, "");
-const corpo = /<body[^>]*>([\s\S]*)<\/body>/i.exec(semScript)?.[1] ?? semScript;
+const corpoBruto = /<body[^>]*>([\s\S]*)<\/body>/i.exec(semScript)?.[1] ?? semScript;
+
+/* O usuário do protótipo, fixo no markup ("Scott Ferraz", "SF", o e-mail e a
+ * organização no perfil da casca). Vira valor, para o adaptador passar quem
+ * está logado — senão todo mundo aparece como o Scott. Só a casca tem isso
+ * hoje; "Callface" sozinho só é trocado nela, porque nas outras telas é nome
+ * de empresa de exemplo. */
+const ehCasca = (nomeDado || "").startsWith("Casca") || /Casca/.test(basename(entrada));
+const corpo = corpoBruto
+  .replace(/>(\s*)Scott Ferraz(\s*)</g, ">$1{{ usuarioNome }}$2<")
+  .replace(/>(\s*)scott@callface\.com\.br(\s*)</g, ">$1{{ usuarioEmail }}$2<")
+  .replace(/>(\s*)SF(\s*)</g, ">$1{{ usuarioIniciais }}$2<")
+  .replace(ehCasca ? />(\s*)Callface(\s*)</g : /$^/, ">$1{{ usuarioOrganizacao }}$2<");
 
 const nome = nomeDado
   || basename(entrada).replace(/\.dc\.html$/, "").replace(/[^a-zA-Z0-9]+(.)/g, (_, c) => c.toUpperCase()).replace(/^./, (c) => c.toUpperCase());
@@ -499,11 +520,25 @@ ${jsx}
 
 if (estiloDoHelmet) {
   const destinoCss = saida.replace(/\.tsx$/, ".css");
+  /* O reset do protótipo chega como folha GLOBAL e sem camada, então ganha de
+     qualquer utilitário em `@layer`. O `a{color:#d93c1a}` dele é o caso caro:
+     o desenho não tem UMA âncora (conferido em 01/10 — zero `<a` nos arquivos
+     gerados), mas o `{children}` do app renderiza dentro da casca, e a regra
+     repintava de coral todo link do produto. Botão-como-link virava uma
+     pílula coral sem texto legível — aconteceu no 404, em /chamados e no
+     "Gerenciar sessões" de Ajustes, cada um "consertado" no seu canto.
+     `:not([class])` mantém a intenção (link solto do desenho sai coral) e
+     devolve a cor a qualquer componente, que sempre traz classe. */
+  const estiloSemVazamento = estiloDoHelmet.replace(
+    /(^|[^\w.#\[-])a(:hover)?\s*\{/g,
+    (m, antes, hover) => `${antes}a:not([class])${hover ?? ""}{`,
+  );
+
   writeFileSync(destinoCss, `/* GERADO por scripts/dc-para-tsx.mjs — o <style> do <helmet> de
    ${basename(entrada)}: reset, scrollbar e @keyframes.
 
    Sem ele a tela fica "quase certa": botão com texto centralizado em vez de à
-   esquerda, e popover/gaveta sem animação de entrada. */\n\n${estiloDoHelmet}\n`, "utf8");
+   esquerda, e popover/gaveta sem animação de entrada. */\n\n${estiloSemVazamento}\n`, "utf8");
   console.log(`estilo do helmet → ${destinoCss}`);
 }
 

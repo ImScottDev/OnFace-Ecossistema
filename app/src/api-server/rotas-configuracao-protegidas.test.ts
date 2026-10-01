@@ -29,6 +29,7 @@ const ROTAS = path.resolve(import.meta.dirname, "routes");
 /** Arquivos cujas rotas de escrita são todas de configuração. */
 const SO_CONFIGURACAO = [
   "automacoes.ts",
+  "automacoes-fluxos.ts",
   "automacoes-cadencias.ts",
   "automacoes-agentes.ts",
   "automacoes-tags.ts",

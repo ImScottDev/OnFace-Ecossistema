@@ -492,18 +492,22 @@ export async function getClientesRisco(orgId: string): Promise<ClienteRisco[]> {
       WHERE f.origem = 'stripe' AND f.tentativas >= 2 AND f.emitida_em >= now() - interval '90 days'
       GROUP BY f.lead_id
     )
+    -- Uma linha por CLIENTE, não por assinatura: lead com várias assinaturas
+    -- (ex.: 1 active + 2 past_due) saía repetido na lista "Clientes em risco"
+    -- e quebrava a key do React. MRR somado = o que está em jogo no cliente.
     SELECT l.id AS lead_id, l.nome, e.nome AS empresa,
-      COALESCE(a.mrr, 0)::float AS mrr,
-      (a.status = 'past_due') AS past_due,
-      COALESCE(r.n, 0) AS retries
+      SUM(COALESCE(a.mrr, 0))::float AS mrr,
+      bool_or(a.status = 'past_due') AS past_due,
+      MAX(COALESCE(r.n, 0)) AS retries
     FROM assinaturas a
     JOIN leads l ON l.id = a.lead_id
     LEFT JOIN empresas e ON e.id = l.empresa_id
     LEFT JOIN retries_90d r ON r.lead_id = l.id
     WHERE ${orgFilter("a.organizacao_id", orgId)}
       AND a.status IN ('active', 'past_due')
-      AND (a.status = 'past_due' OR COALESCE(r.n, 0) >= 2)
-    ORDER BY (a.status = 'past_due') DESC, COALESCE(a.mrr, 0) DESC
+    GROUP BY l.id, l.nome, e.nome
+    HAVING bool_or(a.status = 'past_due') OR MAX(COALESCE(r.n, 0)) >= 2
+    ORDER BY bool_or(a.status = 'past_due') DESC, SUM(COALESCE(a.mrr, 0)) DESC
     LIMIT 100
   `)) as unknown as Record<string, unknown>[];
   return rows.map((r) => {

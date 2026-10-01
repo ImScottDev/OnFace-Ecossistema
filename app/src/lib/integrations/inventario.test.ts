@@ -11,7 +11,14 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { db, fecharConexao } from "@/lib/db";
-import { inventarioDeIntegracoes } from "./inventario";
+import { sql } from "drizzle-orm";
+import { inventarioDeIntegracoes as inventarioDaOrg } from "./inventario";
+
+/** Organização com mais dado: é onde uma consulta quebrada apareceria. */
+async function inventarioDeIntegracoes() {
+  const [o] = await db.execute<{ id: string }>(sql`SELECT organizacao_id::text AS id FROM usuarios GROUP BY 1 ORDER BY count(*) DESC LIMIT 1`);
+  return inventarioDaOrg(o.id);
+}
 
 test("toda integração do inventário consegue ser lida", async (t) => {
   if (!process.env.DATABASE_URL) return t.skip("DATABASE_URL não definida");
@@ -55,5 +62,8 @@ test("a tela não voltou a ter cartão de placeholder", () => {
   // linha, que é o que distingue um rótulo de cartão de um texto explicativo.
   assert.doesNotMatch(tela, /\{\/\*[^\n]*\(placeholder\)[^\n]*\*\/\}/,
     "voltou a existir cartão de integração marcado como placeholder");
-  assert.match(tela, /<Inventario \/>/, "a tela precisa listar o inventário real");
+  // `<Inventario …/>` com props: na redesenhada de 01/10 a lista é carregada
+  // uma vez na página e repassada, em vez de cada bloco buscar a sua. O que a
+  // trava garante é que o inventário REAL continua na tela, não a assinatura.
+  assert.match(tela, /<Inventario[\s/>]/, "a tela precisa listar o inventário real");
 });

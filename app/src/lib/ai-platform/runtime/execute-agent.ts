@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { compilarPrompt } from "@/lib/ai/agente-escopo";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
@@ -221,7 +222,9 @@ export async function executeAgent(input: ExecuteAgentInput): Promise<ExecuteAge
     const tools = modelToolsForIds(toolIds);
     const allowedNames = new Set(tools.map((tool) => tool.name));
     const messages: AgentMessage[] = [
-      { role: "system", content: `${selected.version.systemPrompt}\n\nVocê opera dentro do CRM Callface. Use somente as ferramentas disponibilizadas. Não invente fatos, preços, agenda ou ações executadas. Para responder ao contato, devolva texto final ou use message_prepare. Para qualquer exceção ou pedido humano, use handoff_request.` },
+      // Instruções + escopo + expressões de handoff + regras fixas: a mesma
+      // função que a tela usa em "Ver prompt compilado" (lib/ai/agente-escopo).
+      { role: "system", content: compilarPrompt(selected.version) },
       { role: "user", content: input.message || `Evento ${input.eventType}: ${JSON.stringify(input.payload ?? {})}` },
     ];
     const prepared: string[] = [];

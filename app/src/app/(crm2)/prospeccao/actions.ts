@@ -51,6 +51,39 @@ export async function acaoAdicionarProspect(entrada: {
   });
 }
 
+/**
+ * Importação de CSV pela PRÓPRIA porta do "adicionar prospect".
+ *
+ * Existe `/api/prospeccao/import` no Hono, mas ele grava o lead direto e não
+ * marca `prospeccao_estado`: o que entrava por lá nunca aparecia nesta tela.
+ * Aqui cada linha passa por `adicionarProspect`, que reaproveita a empresa,
+ * cria a entrada canônica e aplica a lista — o mesmo efeito de digitar uma a
+ * uma. Item que falha não derruba os outros e volta contado.
+ */
+export async function acaoImportarProspects(
+  linhas: Array<{ empresa: string; cnpj?: string | null; website?: string | null; pessoaNome?: string | null; cargo?: string | null; email?: string | null; telefone?: string | null }>,
+  comum: { lista?: string | null; responsavelId?: string | null; fonte?: string | null },
+): Promise<Resultado<{ criados: number; jaExistiam: number; falhas: number }>> {
+  const ctx = await contexto();
+  if (!ctx) return { ok: false, erro: "Sessão expirada." };
+  if (!Array.isArray(linhas) || linhas.length === 0) return { ok: false, erro: "O arquivo não tem linhas válidas." };
+  // Teto por lote: cada linha é uma transação canônica; 500 já leva alguns segundos.
+  if (linhas.length > 500) return { ok: false, erro: "Arquivo acima de 500 linhas: divida em lotes." };
+
+  let criados = 0, jaExistiam = 0, falhas = 0;
+  for (const l of linhas) {
+    if (!l.empresa?.trim()) { falhas += 1; continue; }
+    const r = await acaoAdicionarProspect({
+      ...l, fonte: comum.fonte?.trim() || "CSV", lista: comum.lista?.trim() || null, responsavelId: comum.responsavelId || null,
+    });
+    if (!r.ok) falhas += 1;
+    else if (r.dados?.jaExistia) jaExistiam += 1;
+    else criados += 1;
+  }
+  revalidatePath(ROTA);
+  return { ok: true, dados: { criados, jaExistiam, falhas } };
+}
+
 export async function acaoInscreverEmCadencia(leadId: string, cadenceDefinitionId: string): Promise<Resultado> {
   const ctx = await contexto();
   if (!ctx) return { ok: false, erro: "Sessão expirada." };

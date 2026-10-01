@@ -2,8 +2,8 @@
 
 import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-
-const CARMIM = "#e23752";
+import { AlertTriangle, ArrowLeft, CheckCircle2, CreditCard, Loader2, Lock } from "lucide-react";
+import "./publico.css";
 
 interface CheckoutData {
   id: string;
@@ -13,21 +13,47 @@ interface CheckoutData {
   propostaNumero: string | null;
 }
 
-function Shell({ children }: { children: React.ReactNode }) {
+type Tom = "ok" | "risco" | "neutro";
+
+/** Cartão único no mesmo documento da proposta pública (fio coral, marca, papel). */
+function Cartao({ tom, Icone, titulo, children, propostaId }: {
+  tom: Tom; Icone: typeof Lock; titulo: string; children?: React.ReactNode; propostaId?: string | null;
+}) {
   return (
-    <div style={{ minHeight: "100vh", background: "#f7f7fa", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "40px 16px", textAlign: "center" }}>
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src="/brand/callface-logo.svg" alt="Callface" style={{ height: 32, marginBottom: 28 }} />
-      {children}
-    </div>
+    <main className="pp-tela" style={{ display: "grid", placeItems: "center" }}>
+      <div className="pp-coluna" style={{ maxWidth: 480 }}>
+        <article className="pp-doc">
+          <div className="pp-doc-corpo" style={{ gap: 22 }}>
+            <div className="pp-marca">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/proto/callface-logo.png" alt="Callface" />
+            </div>
+            <div className="pp-estado" style={{ padding: 0 }}>
+              <span className={`pp-estado-icone pp-status-${tom}`}><Icone size={18} aria-hidden className={Icone === Loader2 ? "animate-spin" : undefined} /></span>
+              <h1>{titulo}</h1>
+              {children}
+            </div>
+            {propostaId && (
+              <a className="pp-link" href={`/p/${propostaId}`}><ArrowLeft size={13} aria-hidden /> Voltar à proposta</a>
+            )}
+          </div>
+        </article>
+        <p className="pp-selo"><Lock size={12} aria-hidden /> Pagamento processado pela Stripe · a Callface não vê os dados do seu cartão</p>
+      </div>
+    </main>
   );
 }
 
 /**
- * Redireciona pro Stripe Hosted Checkout depois de registrar CheckoutOpened
- * de verdade (não dá pra saber que o cliente abriu o link se ele só é
- * jogado direto no domínio do Stripe). Auto-redirect + link manual de
- * fallback (evita ficar preso se o JS de redirect falhar).
+ * Bridge pública de checkout — nossa casca antes do Stripe Hosted Checkout.
+ *
+ * Registra CheckoutOpened de verdade (não dá pra saber que o cliente abriu o
+ * link se ele só é jogado direto no domínio do Stripe) e redireciona sozinha,
+ * com botão manual de reserva caso o redirect por JS falhe.
+ *
+ * Linguagem ONFACE (01/10), a mesma do documento da proposta. Quando o Stripe
+ * não está ligado (URL `mock://`, só em ambiente de teste), a tela diz isso
+ * com todas as letras — nenhum botão finge cobrar.
  */
 export function CheckoutPublico({ id }: { id: string }) {
   const { data, isLoading, error } = useQuery<CheckoutData>({
@@ -40,32 +66,58 @@ export function CheckoutPublico({ id }: { id: string }) {
     retry: false,
   });
 
+  const podeRedirecionar = !!data?.stripeCheckoutUrl && !data.stripeCheckoutUrl.startsWith("mock://") && data.status !== "pago" && data.status !== "expirado";
+
   useEffect(() => {
-    if (data?.stripeCheckoutUrl && !data.stripeCheckoutUrl.startsWith("mock://") && data.status !== "pago" && data.status !== "expirado") {
-      const t = setTimeout(() => { window.location.href = data.stripeCheckoutUrl!; }, 1200);
-      return () => clearTimeout(t);
-    }
-  }, [data]);
+    if (!podeRedirecionar) return;
+    const t = setTimeout(() => { window.location.href = data!.stripeCheckoutUrl!; }, 1200);
+    return () => clearTimeout(t);
+  }, [podeRedirecionar, data]);
 
-  if (isLoading) return <Shell><p style={{ color: "#9497ab", fontSize: 14 }}>Preparando pagamento...</p></Shell>;
-  if (error || !data) return <Shell><p style={{ color: CARMIM, fontSize: 14 }}>Link de pagamento não encontrado. Fale com quem te enviou a proposta.</p></Shell>;
+  if (isLoading) {
+    return <Cartao tom="neutro" Icone={Loader2} titulo="Preparando o pagamento…"><p>Só um instante.</p></Cartao>;
+  }
+  if (error || !data) {
+    return (
+      <Cartao tom="risco" Icone={AlertTriangle} titulo="Link de pagamento não encontrado">
+        <p>Confira se o link chegou completo ou fale com quem te enviou a proposta na Callface.</p>
+      </Cartao>
+    );
+  }
+  const ref = data.propostaNumero ? `Proposta ${data.propostaNumero}` : null;
 
-  if (data.status === "pago") return <Shell><p style={{ color: "#0f9d58", fontSize: 15, fontWeight: 700 }}>Pagamento já confirmado — obrigado!</p></Shell>;
-  if (data.status === "expirado") return <Shell><p style={{ color: CARMIM, fontSize: 14 }}>Este link de pagamento expirou. Fale com quem te enviou a proposta pra gerar um novo.</p></Shell>;
-  if (data.stripeCheckoutUrl?.startsWith("mock://")) {
-    return <Shell><p style={{ fontSize: 14, color: "#4b4d63", maxWidth: 420 }}>Checkout local em modo mock. Nenhuma chamada ou cobrança foi feita no Stripe. Valide a confirmação usando um evento de teste assinado no webhook.</p></Shell>;
+  if (data.status === "pago") {
+    return (
+      <Cartao tom="ok" Icone={CheckCircle2} titulo="Pagamento confirmado" propostaId={data.propostaId}>
+        <p>{ref ? `${ref} — ` : ""}recebemos a confirmação. Obrigado! Nosso time segue com os próximos passos.</p>
+      </Cartao>
+    );
+  }
+  if (data.status === "expirado") {
+    return (
+      <Cartao tom="risco" Icone={AlertTriangle} titulo="Este link de pagamento expirou" propostaId={data.propostaId}>
+        <p>Abra a proposta de novo para gerar um link atualizado, ou fale com quem te enviou.</p>
+      </Cartao>
+    );
+  }
+  if (!podeRedirecionar) {
+    // `mock://` (Stripe desligado no ambiente) ou URL ausente: sem cobrança possível.
+    return (
+      <Cartao tom="risco" Icone={AlertTriangle} titulo="Pagamento online indisponível" propostaId={data.propostaId}>
+        <p>
+          Não conseguimos abrir o pagamento para este link agora. Nenhuma cobrança foi feita.
+          Fale com quem te enviou a proposta para concluir por outro caminho.
+        </p>
+      </Cartao>
+    );
   }
 
   return (
-    <Shell>
-      <p style={{ fontSize: 14, color: "#4b4d63", marginBottom: 16 }}>
-        {data.propostaNumero ? `Proposta ${data.propostaNumero} — ` : ""}redirecionando pra pagamento seguro...
-      </p>
-      {data.stripeCheckoutUrl && (
-        <a href={data.stripeCheckoutUrl} style={{ padding: "12px 24px", borderRadius: 10, background: CARMIM, color: "#fff", fontWeight: 700, fontSize: 14, textDecoration: "none" }}>
-          Continuar pro pagamento
-        </a>
-      )}
-    </Shell>
+    <Cartao tom="neutro" Icone={CreditCard} titulo="Levando você ao pagamento seguro" propostaId={data.propostaId}>
+      <p>{ref ? `${ref}. ` : ""}Você será redirecionado em instantes. Se nada acontecer, use o botão abaixo.</p>
+      <a href={data.stripeCheckoutUrl!} className="pp-btn pp-btn-primario pp-btn-largo">
+        <Lock size={14} aria-hidden /> Continuar para o pagamento
+      </a>
+    </Cartao>
   );
 }

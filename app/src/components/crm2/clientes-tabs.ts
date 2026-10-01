@@ -15,5 +15,5 @@ export const CLIENTES_TABS: ModuleTabItem[] = [
   { key: "implantacao", label: "Implantação", href: "/clientes/implantacao" },
   { key: "onboarding", label: "Onboarding", href: "/clientes/onboarding" },
   { key: "cs", label: "CS", href: "/clientes/cs" },
-  { key: "financeiro", label: "Financeiro", href: "/clientes/financeiro" },
+  { key: "financeiro", label: "Financeiro", href: "/financeiro" },
 ];

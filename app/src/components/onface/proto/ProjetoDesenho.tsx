@@ -131,9 +131,9 @@ Agendar reunião
 </div>
 </section>
 {(h.temBloq) ? (<>
-<div data-in="rise" style={{ display: "flex", alignItems: "center", gap: "12px", padding: "12px 16px", borderRadius: "12px", background: "{{ h.bloqBg }}" }}>
+<div data-in="rise" style={estilo(`display:flex;align-items:center;gap:12px;padding:12px 16px;border-radius:12px;background:${h.bloqBg ?? ""}`)}>
 <span style={{ flex: "1", minWidth: "0", fontSize: "13px", color: "var(--tx)" }}>
-<strong style={{ color: "{{ h.bloqCor }}" }}>
+<strong style={estilo(`color:${h.bloqCor ?? ""}`)}>
 {h.bloqT}
 </strong>
  · {h.bloqS}
@@ -195,7 +195,7 @@ Nenhuma tarefa aberta.
 {t.s}
 </span>
 </button>
-<span style={{ fontSize: "12px", color: "{{ t.qCor }}", whiteSpace: "nowrap", paddingTop: "1px" }}>
+<span style={estilo(`font-size:12px;color:${t.qCor ?? ""};white-space:nowrap;padding-top:1px`)}>
 {t.q}
 </span>
 </div>
@@ -326,7 +326,7 @@ Em foco
 {k.s}
 </span>
 </button>
-<span style={{ fontSize: "12px", color: "{{ k.qCor }}", whiteSpace: "nowrap" }}>
+<span style={estilo(`font-size:12px;color:${k.qCor ?? ""};white-space:nowrap`)}>
 {k.q}
 </span>
 <span title={k.resp} style={{ width: "24px", height: "24px", borderRadius: "9999px", display: "grid", placeItems: "center", background: "var(--sf2)", color: "var(--tx2)", fontSize: "9.5px", fontWeight: "700", boxShadow: "inset 0 0 0 1px var(--ln)" }}>
@@ -374,7 +374,7 @@ Sem subtarefas.
 </>) : null}
 {(v.materiais) ? (<>
 <div style={{ display: "flex", flexWrap: "wrap", gap: "12px", alignItems: "flex-start" }}>
-<section data-in="rise" style={{ flex: "1 1 400px", minWidth: "0" }}>
+<section data-in="rise" style={estilo(`${card ?? ""};flex:1 1 400px;min-width:0`)}>
 <span style={estilo(tit)}>
 Materiais e links públicos
 </span>
@@ -412,7 +412,7 @@ Enviar ao cliente
 </Fragment>
 ))}
 </section>
-<section data-in="rise" style={{ flex: "1 1 400px", minWidth: "0" }}>
+<section data-in="rise" style={estilo(`${card ?? ""};flex:1 1 400px;min-width:0`)}>
 <span style={estilo(tit)}>
 Apresentação de kickoff
 </span>
@@ -497,7 +497,7 @@ Cada mensagem acontece no momento certo da entrega. O envio sai pelo Atendimento
 {(v.arquivos) ? (<>
 <section data-in="rise" style={estilo(card)}>
 <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-<span style={{ flex: "1" }}>
+<span style={estilo(`flex:1;${tit ?? ""}`)}>
 Arquivos do projeto
 </span>
 <label style={{ display: "flex", alignItems: "center", gap: "7px", height: "34px", padding: "0 13px", borderRadius: "9px", background: "#d93c1a", color: "#fff", fontSize: "13px", fontWeight: "600", cursor: "pointer" }}>
@@ -624,7 +624,7 @@ Próximo →
 </>) : null}
 {(rs.aberto) ? (<>
 <div data-r="modal-fundo" data-in="fade" onClick={fechar} style={{ position: "fixed", inset: "0", zIndex: "70", background: "rgba(12,16,21,.5)", display: "grid", placeItems: "center", padding: "20px" }}>
-<div data-in="pop" onClick={parar} style={{ width: "min(500px,100%)", background: "var(--sf)", color: "var(--tx)", borderRadius: "16px", boxShadow: "0 30px 70px -20px rgba(0,0,0,.55),inset 0 0 0 1px var(--ln)", overflow: "hidden" }}>
+<div data-in="pop" onClick={parar} style={estilo(`${tema.vars ?? ""};width:min(500px,100%);background:var(--sf);color:var(--tx);border-radius:16px;box-shadow:0 30px 70px -20px rgba(0,0,0,.55),inset 0 0 0 1px var(--ln);overflow:hidden`)}>
 <div style={{ padding: "18px 20px 12px", display: "flex", alignItems: "center", boxShadow: "inset 0 -1px 0 var(--ln)" }}>
 <span style={{ flex: "1", fontFamily: "'Plus Jakarta Sans',sans-serif", fontSize: "16px", fontWeight: "700", color: "var(--tx)" }}>
 {rs.titulo}

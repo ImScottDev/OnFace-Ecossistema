@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getTenantContext } from "@/lib/auth/tenant";
 import { PaginaCabecalho } from "@/components/onface/shell/Pagina";
@@ -11,10 +12,13 @@ import { PaginaCabecalho } from "@/components/onface/shell/Pagina";
  * ser e de onde o dado virá quando existir. Quando o módulo for construído, a
  * rota deixa de usar este componente.
  */
-export async function ModuloPendente({ titulo, resumo, dependencias }: {
+export async function ModuloPendente({ titulo, resumo, dependencias, enquanto }: {
   titulo: string;
   resumo: string;
   dependencias: string[];
+  /** Onde o trabalho acontece HOJE, enquanto o módulo não existe. Vazio que
+   *  ensina o próximo passo, em vez de beco sem saída. */
+  enquanto?: { texto: string; href: string; rotulo: string };
 }) {
   const ctx = await getTenantContext();
   if (!ctx) redirect("/login");
@@ -71,6 +75,20 @@ export async function ModuloPendente({ titulo, resumo, dependencias }: {
             ))}
           </ul>
         </div>
+        {enquanto ? (
+          <p className="mt-4 flex max-w-2xl flex-wrap items-center gap-3 text-corpo" style={{ color: "var(--text-muted)" }}>
+            <span>{enquanto.texto}</span>
+            <Link
+              href={enquanto.href}
+              className="inline-flex h-8 items-center rounded-control px-3 text-[13px] font-semibold transition-colors bg-[#d93c1a] hover:bg-[#c2330f]"
+              // Cor inline: a regra de link da página (coral) vencia o `text-white`
+              // e o rótulo sumia sobre o fundo coral — botão vazio na tela.
+              style={{ color: "#fff" }}
+            >
+              {enquanto.rotulo}
+            </Link>
+          </p>
+        ) : null}
       </div>
     </>
   );

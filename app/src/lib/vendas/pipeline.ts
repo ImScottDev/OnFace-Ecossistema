@@ -21,8 +21,7 @@ import { voltarParaQualificado } from "./pre-vendas";
 import {
   ehFamiliaValida, RegraDeNegocio, ROTULO_FAMILIA, STATUS_LEGADO_DA_ETAPA,
   type Ator, type EtapaPipeline, type EtapaPipelineAberta, type Familia,
-  type Motion, type MotivoEstagnacao, type MotivoPerda, type ProcessoOrigem,
-} from "./dominio";
+  type Motion, type MotivoEstagnacao, type MotivoPerda, type ProcessoOrigem, ROTULO_ETAPA_PIPELINE } from "./dominio";
 
 /* ── Leitura de apoio ──────────────────────────────────────────────────── */
 
@@ -379,13 +378,27 @@ export async function moverEtapa(params: {
   if (op.etapa === "ganho") {
     throw new RegraDeNegocio("oportunidade_ganha", "Esta oportunidade já foi ganha.");
   }
-  if (op.etapa === params.para) return;
+  if (op.etapa === params.para) {
+    // Idempotente no LEGADO não é idempotente no canônico.
+    //
+    // `op.etapa` vem de `negocios`, e a tela lê de `oportunidades`. Quando uma
+    // tentativa anterior atualizou o negócio e morreu antes do espelho — foi o
+    // que aconteceu com a FK de `status_changes` —, sair aqui congela a
+    // divergência: o usuário arrasta, nada acontece, e nada avisa.
+    //
+    // Mesma assinatura do bug de `atribuirResponsavel`: o caminho idempotente
+    // precisa reconciliar, não só sair.
+    await espelharNoDominioV2([op.id]);
+    return;
+  }
 
   const exigeProposta = params.para === "proposta" || params.para === "negociacao";
   if (exigeProposta && !ehFamiliaValida(op.service_family)) {
     throw new RegraDeNegocio(
       "etapa_exige_familia",
-      "Defina a família comercial antes de avançar para Proposta.",
+      // A etapa pedida, e não "Proposta" fixo: o gate vale para Negociação
+      // também, e a mensagem dizia o nome errado de quem pediu Negociação.
+      `Defina a família comercial antes de avançar para ${ROTULO_ETAPA_PIPELINE[params.para] ?? params.para}.`,
       { rotulo: "Definir família", tipo: "alterar_familia" },
     );
   }
@@ -409,23 +422,34 @@ async function aplicarEtapa(
   ator: Ator,
   motivo: string | null,
 ): Promise<void> {
-  await db.execute(sql`
-    UPDATE negocios SET
-      etapa = ${para},
-      etapa_desde = now(),
-      status = ${STATUS_LEGADO_DA_ETAPA[para]},
-      -- Sair da etapa limpa a estagnação: ela descrevia a parada anterior.
-      motivo_estagnacao = NULL,
-      estagnado_em = NULL,
-      updated_at = now()
-     WHERE id = ${op.id}::uuid
-  `);
+  // A etapa e o seu registro no histórico vão JUNTOS ou não vão.
+  //
+  // Estavam soltos, e a FK de `status_changes` provou o custo: o negócio já
+  // tinha mudado de etapa quando o INSERT do histórico estourou, e ficou uma
+  // etapa nova sem nenhum registro de quem a mudou — invisível, porque a ação
+  // devolveu erro e ninguém foi olhar o que já tinha sido gravado.
+  await db.transaction(async (tx) => {
+    await tx.execute(sql`
+      UPDATE negocios SET
+        etapa = ${para},
+        etapa_desde = now(),
+        status = ${STATUS_LEGADO_DA_ETAPA[para]},
+        -- Sair da etapa limpa a estagnação: ela descrevia a parada anterior.
+        motivo_estagnacao = NULL,
+        estagnado_em = NULL,
+        updated_at = now()
+       WHERE id = ${op.id}::uuid
+    `);
 
-  await registrarMudancaDeEtapa({
-    organizacaoId: op.organizacao_id, ator, negocioId: op.id, leadId: op.lead_id,
-    de: op.etapa, para, tipo: "OpportunityStageChanged", motivo,
+    await registrarMudancaDeEtapa({
+      organizacaoId: op.organizacao_id, ator, negocioId: op.id, leadId: op.lead_id,
+      de: op.etapa, para, tipo: "OpportunityStageChanged", motivo,
+    }, tx);
   });
 
+  // O espelho fica FORA da transação de propósito: ele chama código que usa a
+  // conexão global e é idempotente. Se falhar, a próxima tentativa de mover
+  // reconcilia pelo caminho idempotente lá em cima.
   await espelharNoDominioV2([op.id]);
 }
 

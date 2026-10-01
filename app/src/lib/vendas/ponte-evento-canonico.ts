@@ -24,6 +24,7 @@
 import { sql } from "drizzle-orm";
 import { publicarEvento } from "@onface/platform-events";
 import type { ExecutorDb } from "./executor";
+import { carimbarPayload } from "@/lib/automacoes/contexto";
 
 /**
  * Tradução do vocabulário do módulo para o canônico.
@@ -41,6 +42,9 @@ const TRADUCAO: Record<string, { tipo: string; agregado: string }> = {
   OpportunityCreated: { tipo: "OpportunityCreated", agregado: "oportunidade" },
   OpportunityWon: { tipo: "OpportunityWon", agregado: "oportunidade" },
   OpportunityLost: { tipo: "OpportunityLost", agregado: "oportunidade" },
+  // Mover no board /pipeline grava OpportunityStageChanged e parava aqui; sem
+  // ele, o gatilho "Negócio mudou de etapa" dos fluxos não via o board.
+  OpportunityStageChanged: { tipo: "OpportunityStageChanged", agregado: "oportunidade" },
   ProposalSent: { tipo: "ProposalSent", agregado: "proposta" },
   ProposalAccepted: { tipo: "ProposalAccepted", agregado: "proposta" },
   ContractSigned: { tipo: "ContractSigned", agregado: "contrato" },
@@ -114,7 +118,7 @@ export async function publicarEquivalenteCanonico(
     // A chave sai do evento legado, que já é único: retry e reprocessamento
     // geram a mesma, e nem o outbox nem a Meta contam duas vezes.
     idempotencyKey: evento.origemId ? `vendas:${evento.origemId}` : `vendas:${traducao.tipo}:${agregadoId}`,
-    payload: {
+    payload: carimbarPayload({
       pessoa_id: ids.pessoa_id,
       empresa_id: ids.empresa_id,
       aquisicao_id: ids.aquisicao_id,
@@ -126,7 +130,7 @@ export async function publicarEquivalenteCanonico(
       // em que os dois diferem e alguém vai precisar saber qual é qual.
       ocorrido_em: evento.ocorridoEm.toISOString(),
       ...(evento.contexto ?? {}),
-    },
+    }),
     entregarExternamente: true,
   });
 }

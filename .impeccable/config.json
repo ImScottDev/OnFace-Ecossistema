@@ -1,0 +1,36 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "design-system-font",
+        "value": "inter",
+        "createdAt": "2026-10-01T09:00:21.260Z",
+        "reason": "task spec OnFace: títulos Plus Jakarta Sans, corpo Inter, atalhos IBM Plex Mono (tokens do protótipo)"
+      },
+      {
+        "rule": "design-system-font",
+        "value": "plus jakarta sans",
+        "createdAt": "2026-10-01T09:00:21.292Z",
+        "reason": "task spec OnFace: títulos Plus Jakarta Sans, corpo Inter, atalhos IBM Plex Mono (tokens do protótipo)"
+      },
+      {
+        "rule": "design-system-font",
+        "value": "ibm plex mono",
+        "createdAt": "2026-10-01T09:00:21.322Z",
+        "reason": "task spec OnFace: títulos Plus Jakarta Sans, corpo Inter, atalhos IBM Plex Mono (tokens do protótipo)"
+      },
+      {
+        "rule": "overused-font",
+        "value": "inter",
+        "createdAt": "2026-10-01T09:05:33.415Z"
+      },
+      {
+        "rule": "overused-font",
+        "value": "plus jakarta sans",
+        "createdAt": "2026-10-01T09:05:38.266Z"
+      }
+    ]
+  }
+}

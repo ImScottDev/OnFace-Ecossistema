@@ -22,7 +22,7 @@ app.post("/search", async (c) => {
 
   const apiKey = await getOrgApolloKey(ctx.organizacaoId);
   if (!apiKey) {
-    return c.json({ error: "Apollo API key não configurada para esta organização. Peça ao administrador para configurar em Admin > Organizações." }, 400);
+    return c.json({ error: "Apollo API key não configurada para esta organização. Peça ao administrador para configurar em Ajustes › Integrações." }, 400);
   }
 
   const body = await c.req.json();
@@ -187,6 +187,10 @@ app.post("/import", async (c) => {
           origem: origem || "apollo",
           status: "novo",
           tipo: "contato",
+          // A busca Apollo é sub-rota de Prospecção: quem importa daqui está
+          // prospectando. Sem o estado o contato nascia fora da base outbound
+          // e nunca aparecia em /prospeccao para pré-qualificar.
+          prospeccaoEstado: "novo",
           leadScore: 0,
           apolloId: p.id,
           enrichStatus: "enriched",

@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { useMutation } from "@tanstack/react-query";
+import "@/components/onface/vendas/prospeccao.css";
+import "./apollo.css";
 import {
   Search, Radar, UserPlus, Building2, Briefcase, MapPin, Users, Filter,
   ChevronDown, ChevronUp, Loader2, Check, AlertCircle, X, Download,
@@ -123,16 +125,16 @@ function MultiSelect({ options, selected, onChange, label, icon: Icon }: {
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-[var(--cf2-bg-surface-muted)] border border-[var(--cf2-border-default)] text-sm text-[var(--cf2-text-secondary)] hover:bg-[var(--cf2-bg-surface-muted)] transition-colors"
+        className="ap-campo w-full text-left"
       >
-        <Icon className="w-3.5 h-3.5 text-[var(--cf2-text-tertiary)]" />
+        <Icon className="w-3.5 h-3.5 text-[var(--of-tinta-3)]" />
         <span className="flex-1 text-left truncate">
           {selected.length ? `${label} (${selected.length})` : label}
         </span>
         {open ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
       </button>
       {open && (
-        <div className="absolute z-20 mt-1 w-full max-h-48 overflow-y-auto rounded-lg bg-[#1A1D26] border border-[var(--cf2-border-default)] shadow-xl">
+        <div className="absolute z-20 mt-1 w-full max-h-48 overflow-y-auto ap-popover">
           {options.map((opt) => (
             <button
               key={opt.value}
@@ -144,12 +146,12 @@ function MultiSelect({ options, selected, onChange, label, icon: Icon }: {
                     : [...selected, opt.value]
                 );
               }}
-              className="w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-[var(--cf2-bg-surface-muted)] transition-colors"
+              className="w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-[var(--of-papel-hover)] transition-colors"
             >
-              <div className={`w-3.5 h-3.5 rounded border flex items-center justify-center ${selected.includes(opt.value) ? "bg-[var(--cf2-accent)] border-[var(--cf2-accent)]" : "border-[var(--cf2-border-default)]"}`}>
-                {selected.includes(opt.value) && <Check className="w-2.5 h-2.5 text-[var(--cf2-text-primary)]" />}
+              <div className={`w-3.5 h-3.5 ap-check ${selected.includes(opt.value) ? "ap-check-on" : ""}`}>
+                {selected.includes(opt.value) && <Check className="w-2.5 h-2.5 text-white" />}
               </div>
-              <span className="text-[var(--cf2-text-secondary)]">{opt.label}</span>
+              <span className="text-[var(--of-tinta-2)]">{opt.label}</span>
             </button>
           ))}
         </div>
@@ -158,7 +160,9 @@ function MultiSelect({ options, selected, onChange, label, icon: Icon }: {
   );
 }
 
-export function BuscaApollo() {
+/** `semChave`/`semPermissao` vêm do servidor: sem eles a busca só falhava
+ *  DEPOIS do clique, com a chave ausente, e o import devolvia 403 calado. */
+export function BuscaApollo({ semChave = null, semPermissao = null }: { semChave?: string | null; semPermissao?: string | null } = {}) {
   // Search filters
   const [keywords, setKeywords] = useState("");
   const [titles, setTitles] = useState("");
@@ -216,7 +220,7 @@ export function BuscaApollo() {
         const err = await res.json().catch(() => ({}));
         const detail = err.detail || err.error || "";
         if (res.status === 400 && detail.includes("API key")) {
-          throw new Error("Apollo API key não configurada. Configure em Configurações > Integrações.");
+          throw new Error("Apollo API key não configurada. Configure em Ajustes › Integrações.");
         }
         if (detail.includes("free plan") || detail.includes("API_INACCESSIBLE")) {
           throw new Error("Busca de prospects requer plano pago do Apollo.io. Seu plano atual (free) só permite enriquecimento de leads existentes.");
@@ -328,26 +332,31 @@ export function BuscaApollo() {
   const totalPages = Math.ceil(total / 25);
 
   return (
-    <div className="space-y-4">
+    <div className="ap-busca space-y-4">
+      {semChave ? (
+        <p role="status" className="text-sm rounded-[var(--of-r-controle)] px-3 py-2" style={{ background: "var(--of-coral-fundo, #fff6f4)", color: "var(--of-coral-texto, #c2330f)" }}>
+          {semChave}
+        </p>
+      ) : null}
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: "var(--cf2-accent)" }}>
-            <Radar className="w-5 h-5 text-[var(--cf2-text-primary)]" />
+          <div className="w-10 h-10 rounded-[var(--of-r-superficie)] flex items-center justify-center shrink-0 bg-[var(--of-coral-fundo)]">
+            <Radar className="w-5 h-5 text-[var(--of-coral-marca)]" />
           </div>
           <div>
             {/* "Busca Apollo": a trilha da casca já diz Prospecção, e a rota
                 dizia "Prospecção · Busca Apollo" logo acima disto. */}
             <h1 className="onface-pagina-titulo">Busca Apollo</h1>
-            <p className="text-xs text-[var(--cf2-text-tertiary)] hidden sm:block">Busque e importe leads da base Apollo.io (275M+ contatos)</p>
+            <p className="text-xs text-[var(--of-tinta-3)] hidden sm:block">Busque e importe leads da base Apollo.io (275M+ contatos)</p>
           </div>
         </div>
         {selected.size > 0 && (
           <button
             onClick={() => importMut.mutate(Array.from(selected))}
-            disabled={importMut.isPending}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-[var(--cf2-text-primary)] transition-colors w-fit"
-            style={{ background: "var(--cf2-accent)" }}
+            disabled={importMut.isPending || Boolean(semPermissao)}
+            title={semPermissao ?? undefined}
+            className="pp-primario w-fit"
           >
             {importMut.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
             Importar {selected.size} selecionado{selected.size > 1 ? "s" : ""} ({selected.size} crédito{selected.size > 1 ? "s" : ""})
@@ -357,13 +366,13 @@ export function BuscaApollo() {
 
       {/* Import result banner */}
       {importMut.isSuccess && (
-        <div className="flex items-center gap-2 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
-          <Check className="w-4 h-4 text-[var(--cf2-success-text)]" />
-          <span className="text-sm text-[var(--cf2-success-text)]">
+        <div className="flex items-center gap-2 ap-faixa ap-faixa-ok">
+          <Check className="w-4 h-4 text-[var(--of-canal-whatsapp-tinta)]" />
+          <span className="text-sm text-[var(--of-canal-whatsapp-tinta)]">
             {(importMut.data as Record<string, number>).imported} leads importados com sucesso
             {(importMut.data as Record<string, number>).errors > 0 && ` (${(importMut.data as Record<string, number>).errors} erros)`}
           </span>
-          <button onClick={() => importMut.reset()} className="ml-auto text-[var(--cf2-text-tertiary)] hover:text-[var(--cf2-text-primary)]"><X className="w-3.5 h-3.5" /></button>
+          <button onClick={() => importMut.reset()} className="ml-auto text-[var(--of-tinta-3)] hover:text-[var(--of-tinta-forte)]"><X className="w-3.5 h-3.5" /></button>
         </div>
       )}
 
@@ -374,33 +383,33 @@ export function BuscaApollo() {
           <button
             type="button"
             onClick={() => setShowSavedDropdown(!showSavedDropdown)}
-            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[var(--cf2-bg-surface-muted)] border border-[var(--cf2-border-default)] text-sm text-[var(--cf2-text-secondary)] hover:bg-[var(--cf2-bg-surface-muted)] transition-colors"
+            className="pp-secundario"
           >
-            <FolderOpen className="w-3.5 h-3.5 text-[var(--cf2-text-tertiary)]" />
+            <FolderOpen className="w-3.5 h-3.5 text-[var(--of-tinta-3)]" />
             <span>Buscas salvas</span>
             {savedSearches.length > 0 && (
-              <span className="ml-1 px-1.5 py-0.5 rounded-full bg-[var(--cf2-accent)]/20 text-[10px] text-[var(--cf2-accent)] font-medium">
+              <span className="ml-1 px-1.5 py-0.5 rounded-full bg-[var(--of-coral-fundo-forte)] text-[10px] text-[var(--of-coral-texto)] font-medium">
                 {savedSearches.length}
               </span>
             )}
             {showSavedDropdown ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
           </button>
           {showSavedDropdown && (
-            <div className="absolute z-30 mt-1 w-72 max-h-60 overflow-y-auto rounded-lg bg-[#1A1D26] border border-[var(--cf2-border-default)] shadow-xl">
+            <div className="absolute z-30 mt-1 w-72 max-h-60 overflow-y-auto ap-popover">
               {savedSearches.length === 0 ? (
-                <div className="px-3 py-4 text-center text-xs text-[var(--cf2-text-tertiary)]">
+                <div className="px-3 py-4 text-center text-xs text-[var(--of-tinta-3)]">
                   Nenhuma busca salva
                 </div>
               ) : (
                 savedSearches.map((s) => (
                   <div
                     key={s.id}
-                    className="flex items-center gap-2 px-3 py-2 hover:bg-[var(--cf2-bg-surface-muted)] transition-colors group"
+                    className="flex items-center gap-2 px-3 py-2 hover:bg-[var(--of-papel-hover)] transition-colors group"
                   >
                     <button
                       type="button"
                       onClick={() => handleLoadSearch(s)}
-                      className="flex-1 text-left text-sm text-[var(--cf2-text-secondary)] truncate"
+                      className="flex-1 text-left text-sm text-[var(--of-tinta-2)] truncate"
                     >
                       {s.nome}
                     </button>
@@ -410,7 +419,7 @@ export function BuscaApollo() {
                         e.stopPropagation();
                         handleDeleteSearch(s.id);
                       }}
-                      className="opacity-100 lg:opacity-0 lg:group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 text-[var(--cf2-danger-text)]/60 hover:text-[var(--cf2-danger-text)] transition-all"
+                      className="opacity-100 lg:opacity-0 lg:group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 text-[var(--of-coral-texto)]/60 hover:text-[var(--of-coral-texto)] transition-all"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
@@ -429,15 +438,14 @@ export function BuscaApollo() {
                 value={searchName}
                 onChange={(e) => setSearchName(e.target.value)}
                 placeholder="Nome da busca..." aria-label="Nome da busca"
-                className="px-3 py-1.5 rounded-lg bg-[var(--cf2-bg-surface-muted)] border border-[var(--cf2-border-default)] text-sm text-[var(--cf2-text-primary)] outline-none placeholder:text-[var(--cf2-text-tertiary)] w-48"
+                className="ap-campo w-48 outline-none"
                 onKeyDown={(e) => e.key === "Enter" && handleSaveSearch()}
                 autoFocus
               />
               <button
                 type="button"
                 onClick={handleSaveSearch}
-                className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium text-[var(--cf2-text-primary)] transition-colors"
-                style={{ background: "var(--cf2-accent)" }}
+                className="pp-primario"
               >
                 <Save className="w-3.5 h-3.5" />
                 Salvar
@@ -445,7 +453,7 @@ export function BuscaApollo() {
               <button
                 type="button"
                 onClick={() => { setShowSaveDialog(false); setSearchName(""); }}
-                className="text-[var(--cf2-text-tertiary)] hover:text-[var(--cf2-text-primary)]"
+                className="text-[var(--of-tinta-3)] hover:text-[var(--of-tinta-forte)]"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
@@ -454,9 +462,9 @@ export function BuscaApollo() {
             <button
               type="button"
               onClick={() => setShowSaveDialog(true)}
-              className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[var(--cf2-bg-surface-muted)] border border-[var(--cf2-border-default)] text-sm text-[var(--cf2-text-secondary)] hover:bg-[var(--cf2-bg-surface-muted)] transition-colors"
+              className="pp-secundario"
             >
-              <BookmarkPlus className="w-3.5 h-3.5 text-[var(--cf2-text-tertiary)]" />
+              <BookmarkPlus className="w-3.5 h-3.5 text-[var(--of-tinta-3)]" />
               <span>Salvar busca</span>
             </button>
           )}
@@ -464,12 +472,12 @@ export function BuscaApollo() {
       </div>
 
       {/* Search form */}
-      <form onSubmit={handleSearch} className="rounded-xl bg-[var(--cf2-bg-surface)] border border-[var(--cf2-border-default)] p-4 space-y-3">
+      <form onSubmit={handleSearch} className="ap-cartao p-4 space-y-3">
         <div className="flex items-center justify-between">
-          <span className="text-sm font-medium text-[var(--cf2-text-secondary)] flex items-center gap-2">
+          <span className="text-sm font-medium text-[var(--of-tinta-2)] flex items-center gap-2">
             <Filter className="w-3.5 h-3.5" /> Filtros de busca
           </span>
-          <button type="button" onClick={() => setShowFilters(!showFilters)} className="text-xs text-[var(--cf2-accent)] hover:underline">
+          <button type="button" onClick={() => setShowFilters(!showFilters)} className="text-xs text-[var(--of-coral-texto)] hover:underline">
             {showFilters ? "Ocultar" : "Mostrar"}
           </button>
         </div>
@@ -479,26 +487,26 @@ export function BuscaApollo() {
             {/* Row 1: Keywords + Titles */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
-                <label className="text-xs text-[var(--cf2-text-tertiary)] mb-1 block">Palavras-chave</label>
-                <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[var(--cf2-bg-surface-muted)] border border-[var(--cf2-border-default)]">
-                  <Search className="w-3.5 h-3.5 text-[var(--cf2-text-tertiary)]" />
+                <label className="text-xs text-[var(--of-tinta-3)] mb-1 block">Palavras-chave</label>
+                <div className="ap-campo">
+                  <Search className="w-3.5 h-3.5 text-[var(--of-tinta-3)]" />
                   <input
                     value={keywords}
                     onChange={(e) => setKeywords(e.target.value)}
                     placeholder="cybersecurity, marketing..." aria-label="cybersecurity, marketing"
-                    className="flex-1 bg-transparent text-sm text-[var(--cf2-text-primary)] outline-none placeholder:text-[var(--cf2-text-tertiary)]"
+                    className="flex-1 bg-transparent text-sm text-[var(--of-tinta-forte)] outline-none placeholder:text-[var(--of-tinta-3)]"
                   />
                 </div>
               </div>
               <div>
-                <label className="text-xs text-[var(--cf2-text-tertiary)] mb-1 block">Cargos (separados por vírgula)</label>
-                <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[var(--cf2-bg-surface-muted)] border border-[var(--cf2-border-default)]">
-                  <Briefcase className="w-3.5 h-3.5 text-[var(--cf2-text-tertiary)]" />
+                <label className="text-xs text-[var(--of-tinta-3)] mb-1 block">Cargos (separados por vírgula)</label>
+                <div className="ap-campo">
+                  <Briefcase className="w-3.5 h-3.5 text-[var(--of-tinta-3)]" />
                   <input
                     value={titles}
                     onChange={(e) => setTitles(e.target.value)}
                     placeholder="CEO, CTO, Diretor de TI..." aria-label="CEO, CTO, Diretor de TI"
-                    className="flex-1 bg-transparent text-sm text-[var(--cf2-text-primary)] outline-none placeholder:text-[var(--cf2-text-tertiary)]"
+                    className="flex-1 bg-transparent text-sm text-[var(--of-tinta-forte)] outline-none placeholder:text-[var(--of-tinta-3)]"
                   />
                 </div>
               </div>
@@ -507,26 +515,26 @@ export function BuscaApollo() {
             {/* Row 2: Person Name + Excluded Titles */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
-                <label className="text-xs text-[var(--cf2-text-tertiary)] mb-1 block">Nome da pessoa</label>
-                <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[var(--cf2-bg-surface-muted)] border border-[var(--cf2-border-default)]">
-                  <UserPlus className="w-3.5 h-3.5 text-[var(--cf2-text-tertiary)]" />
+                <label className="text-xs text-[var(--of-tinta-3)] mb-1 block">Nome da pessoa</label>
+                <div className="ap-campo">
+                  <UserPlus className="w-3.5 h-3.5 text-[var(--of-tinta-3)]" />
                   <input
                     value={personName}
                     onChange={(e) => setPersonName(e.target.value)}
                     placeholder="John Smith..." aria-label="John Smith"
-                    className="flex-1 bg-transparent text-sm text-[var(--cf2-text-primary)] outline-none placeholder:text-[var(--cf2-text-tertiary)]"
+                    className="flex-1 bg-transparent text-sm text-[var(--of-tinta-forte)] outline-none placeholder:text-[var(--of-tinta-3)]"
                   />
                 </div>
               </div>
               <div>
-                <label className="text-xs text-[var(--cf2-text-tertiary)] mb-1 block">Excluir cargos (separados por vírgula)</label>
-                <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[var(--cf2-bg-surface-muted)] border border-[var(--cf2-border-default)]">
-                  <X className="w-3.5 h-3.5 text-[var(--cf2-text-tertiary)]" />
+                <label className="text-xs text-[var(--of-tinta-3)] mb-1 block">Excluir cargos (separados por vírgula)</label>
+                <div className="ap-campo">
+                  <X className="w-3.5 h-3.5 text-[var(--of-tinta-3)]" />
                   <input
                     value={notTitles}
                     onChange={(e) => setNotTitles(e.target.value)}
                     placeholder="Intern, Assistant..." aria-label="Intern, Assistant"
-                    className="flex-1 bg-transparent text-sm text-[var(--cf2-text-primary)] outline-none placeholder:text-[var(--cf2-text-tertiary)]"
+                    className="flex-1 bg-transparent text-sm text-[var(--of-tinta-forte)] outline-none placeholder:text-[var(--of-tinta-3)]"
                   />
                 </div>
               </div>
@@ -541,14 +549,14 @@ export function BuscaApollo() {
             {/* Row 4: Location + Employee range */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
-                <label className="text-xs text-[var(--cf2-text-tertiary)] mb-1 block">Localização (separados por vírgula)</label>
-                <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[var(--cf2-bg-surface-muted)] border border-[var(--cf2-border-default)]">
-                  <MapPin className="w-3.5 h-3.5 text-[var(--cf2-text-tertiary)]" />
+                <label className="text-xs text-[var(--of-tinta-3)] mb-1 block">Localização (separados por vírgula)</label>
+                <div className="ap-campo">
+                  <MapPin className="w-3.5 h-3.5 text-[var(--of-tinta-3)]" />
                   <input
                     value={locations}
                     onChange={(e) => setLocations(e.target.value)}
                     placeholder="São Paulo, Brazil..." aria-label="São Paulo, Brazil"
-                    className="flex-1 bg-transparent text-sm text-[var(--cf2-text-primary)] outline-none placeholder:text-[var(--cf2-text-tertiary)]"
+                    className="flex-1 bg-transparent text-sm text-[var(--of-tinta-forte)] outline-none placeholder:text-[var(--of-tinta-3)]"
                   />
                 </div>
               </div>
@@ -558,26 +566,26 @@ export function BuscaApollo() {
             {/* Row 5: Org domain + Org name */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
-                <label className="text-xs text-[var(--cf2-text-tertiary)] mb-1 block">Domínio da empresa</label>
-                <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[var(--cf2-bg-surface-muted)] border border-[var(--cf2-border-default)]">
-                  <Building2 className="w-3.5 h-3.5 text-[var(--cf2-text-tertiary)]" />
+                <label className="text-xs text-[var(--of-tinta-3)] mb-1 block">Domínio da empresa</label>
+                <div className="ap-campo">
+                  <Building2 className="w-3.5 h-3.5 text-[var(--of-tinta-3)]" />
                   <input
                     value={orgDomains}
                     onChange={(e) => setOrgDomains(e.target.value)}
                     placeholder="empresa.com.br" aria-label="empresa.com.br"
-                    className="flex-1 bg-transparent text-sm text-[var(--cf2-text-primary)] outline-none placeholder:text-[var(--cf2-text-tertiary)]"
+                    className="flex-1 bg-transparent text-sm text-[var(--of-tinta-forte)] outline-none placeholder:text-[var(--of-tinta-3)]"
                   />
                 </div>
               </div>
               <div>
-                <label className="text-xs text-[var(--cf2-text-tertiary)] mb-1 block">Nome da empresa</label>
-                <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[var(--cf2-bg-surface-muted)] border border-[var(--cf2-border-default)]">
-                  <Building2 className="w-3.5 h-3.5 text-[var(--cf2-text-tertiary)]" />
+                <label className="text-xs text-[var(--of-tinta-3)] mb-1 block">Nome da empresa</label>
+                <div className="ap-campo">
+                  <Building2 className="w-3.5 h-3.5 text-[var(--of-tinta-3)]" />
                   <input
                     value={orgName}
                     onChange={(e) => setOrgName(e.target.value)}
                     placeholder="Ilikia, Eversafe..." aria-label="Ilikia, Eversafe"
-                    className="flex-1 bg-transparent text-sm text-[var(--cf2-text-primary)] outline-none placeholder:text-[var(--cf2-text-tertiary)]"
+                    className="flex-1 bg-transparent text-sm text-[var(--of-tinta-forte)] outline-none placeholder:text-[var(--of-tinta-3)]"
                   />
                 </div>
               </div>
@@ -593,9 +601,11 @@ export function BuscaApollo() {
 
         <button
           type="submit"
-          disabled={searchMut.isPending}
-          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-semibold text-[var(--cf2-text-on-accent)] transition-opacity hover:opacity-90 disabled:opacity-60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--cf2-accent)]"
-          style={{ background: "var(--cf2-accent)" }}
+          // Busca e import exigem admin no Hono (403 para os demais): o motivo
+          // aparece antes do clique, não como erro depois dele.
+          disabled={searchMut.isPending || Boolean(semChave || semPermissao)}
+          title={semChave ?? semPermissao ?? undefined}
+          className="pp-primario w-full justify-center"
         >
           {searchMut.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
           Buscar no Apollo
@@ -604,9 +614,9 @@ export function BuscaApollo() {
 
       {/* Results */}
       {searchMut.isError && (
-        <div className="flex items-center gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/20">
-          <AlertCircle className="w-4 h-4 text-[var(--cf2-danger-text)]" />
-          <span className="text-sm text-[var(--cf2-danger-text)]">{(searchMut.error as Error)?.message || "Erro na busca. Verifique a API key."}</span>
+        <div className="flex items-center gap-2 ap-faixa ap-faixa-erro">
+          <AlertCircle className="w-4 h-4 text-[var(--of-coral-texto)]" />
+          <span className="text-sm text-[var(--of-coral-texto)]">{(searchMut.error as Error)?.message || "Erro na busca. Verifique a API key."}</span>
         </div>
       )}
 
@@ -614,61 +624,61 @@ export function BuscaApollo() {
         <div className="space-y-2">
           {/* Results header */}
           <div className="flex items-center justify-between px-1">
-            <span className="text-sm text-[var(--cf2-text-secondary)]">
+            <span className="text-sm text-[var(--of-tinta-2)]">
               {total.toLocaleString("pt-BR")} resultados encontrados
               {total > 25 && ` — página ${page} de ${totalPages}`}
             </span>
-            <button onClick={selectAll} className="text-xs text-[var(--cf2-accent)] hover:underline">
+            <button onClick={selectAll} className="text-xs text-[var(--of-coral-texto)] hover:underline">
               {selected.size === results.length ? "Desmarcar todos" : "Selecionar todos"}
             </button>
           </div>
 
           {/* Results table */}
-          <div className="rounded-xl bg-[var(--cf2-bg-surface)] border border-[var(--cf2-border-default)] overflow-hidden">
+          <div className="ap-cartao overflow-hidden">
             <table className="w-full">
               <thead>
-                <tr className="border-b border-[var(--cf2-border-default)]">
+                <tr className="ap-linha">
                   <th className="w-10 px-3 py-2.5"></th>
-                  <th className="text-left text-[11px] font-medium text-[var(--cf2-text-tertiary)] uppercase tracking-wider px-3 py-2.5">Nome</th>
-                  <th className="text-left text-[11px] font-medium text-[var(--cf2-text-tertiary)] uppercase tracking-wider px-3 py-2.5 hidden md:table-cell">Cargo</th>
-                  <th className="text-left text-[11px] font-medium text-[var(--cf2-text-tertiary)] uppercase tracking-wider px-3 py-2.5">Empresa</th>
-                  <th className="text-center text-[11px] font-medium text-[var(--cf2-text-tertiary)] uppercase tracking-wider px-3 py-2.5 hidden md:table-cell">Email</th>
-                  <th className="text-center text-[11px] font-medium text-[var(--cf2-text-tertiary)] uppercase tracking-wider px-3 py-2.5 hidden md:table-cell">Telefone</th>
+                  <th className="text-left text-[11px] font-medium text-[var(--of-tinta-3)] uppercase tracking-wider px-3 py-2.5">Nome</th>
+                  <th className="text-left text-[11px] font-medium text-[var(--of-tinta-3)] uppercase tracking-wider px-3 py-2.5 hidden md:table-cell">Cargo</th>
+                  <th className="text-left text-[11px] font-medium text-[var(--of-tinta-3)] uppercase tracking-wider px-3 py-2.5">Empresa</th>
+                  <th className="text-center text-[11px] font-medium text-[var(--of-tinta-3)] uppercase tracking-wider px-3 py-2.5 hidden md:table-cell">Email</th>
+                  <th className="text-center text-[11px] font-medium text-[var(--of-tinta-3)] uppercase tracking-wider px-3 py-2.5 hidden md:table-cell">Telefone</th>
                 </tr>
               </thead>
               <tbody>
                 {results.map((person) => (
                   <tr
                     key={person.id}
-                    className={`border-b border-[var(--cf2-border-default)] transition-colors cursor-pointer ${selected.has(person.id) ? "bg-[var(--cf2-accent)]/10" : "hover:bg-[var(--cf2-bg-surface)]"}`}
+                    className={`ap-linha transition-colors cursor-pointer ${selected.has(person.id) ? "bg-[var(--of-coral-fundo)]" : "hover:bg-[var(--of-papel-hover)]"}`}
                     onClick={() => toggleSelect(person.id)}
                   >
                     <td className="px-3 py-2.5">
-                      <div className={`w-4 h-4 rounded border flex items-center justify-center ${selected.has(person.id) ? "bg-[var(--cf2-accent)] border-[var(--cf2-accent)]" : "border-[var(--cf2-border-default)]"}`}>
-                        {selected.has(person.id) && <Check className="w-2.5 h-2.5 text-[var(--cf2-text-primary)]" />}
+                      <div className={`w-4 h-4 ap-check ${selected.has(person.id) ? "ap-check-on" : ""}`}>
+                        {selected.has(person.id) && <Check className="w-2.5 h-2.5 text-white" />}
                       </div>
                     </td>
                     <td className="px-3 py-2.5">
                       <div className="flex items-center gap-2">
-                        <div className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold text-[var(--cf2-text-secondary)] bg-[var(--cf2-bg-surface-muted)]">
+                        <div className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold text-[var(--of-tinta-2)] bg-[var(--of-papel-hover)]">
                           {person.first_name[0]}{person.last_name_obfuscated?.[0] || ""}
                         </div>
-                        <span className="text-sm text-[var(--cf2-text-primary)]">
+                        <span className="text-sm text-[var(--of-tinta-forte)]">
                           {person.first_name} {person.last_name_obfuscated}
                         </span>
                       </div>
                     </td>
                     <td className="px-3 py-2.5 hidden md:table-cell">
-                      <span className="text-xs text-[var(--cf2-text-secondary)] truncate block max-w-[200px]">{person.title || "—"}</span>
+                      <span className="text-xs text-[var(--of-tinta-2)] truncate block max-w-[200px]">{person.title || "—"}</span>
                     </td>
                     <td className="px-3 py-2.5">
-                      <span className="text-xs text-[var(--cf2-text-secondary)]">{person.organization?.name || "—"}</span>
+                      <span className="text-xs text-[var(--of-tinta-2)]">{person.organization?.name || "—"}</span>
                     </td>
                     <td className="px-3 py-2.5 text-center hidden md:table-cell">
                       {person.has_email ? (
                         <span className="inline-block w-2 h-2 rounded-full bg-emerald-400" title="Tem email" />
                       ) : (
-                        <span className="inline-block w-2 h-2 rounded-full bg-[var(--cf2-bg-surface-muted)]" title="Sem email" />
+                        <span className="inline-block w-2 h-2 rounded-full bg-[var(--of-papel-hover)]" title="Sem email" />
                       )}
                     </td>
                     <td className="px-3 py-2.5 text-center hidden md:table-cell">
@@ -677,7 +687,7 @@ export function BuscaApollo() {
                       ) : person.has_direct_phone?.includes("Maybe") ? (
                         <span className="inline-block w-2 h-2 rounded-full bg-amber-400" title="Talvez" />
                       ) : (
-                        <span className="inline-block w-2 h-2 rounded-full bg-[var(--cf2-bg-surface-muted)]" title="Sem telefone" />
+                        <span className="inline-block w-2 h-2 rounded-full bg-[var(--of-papel-hover)]" title="Sem telefone" />
                       )}
                     </td>
                   </tr>
@@ -692,7 +702,7 @@ export function BuscaApollo() {
               <button
                 disabled={page <= 1}
                 onClick={() => handlePageChange(page - 1)}
-                className="px-3 py-1.5 rounded text-xs text-[var(--cf2-text-secondary)] bg-[var(--cf2-bg-surface-muted)] hover:bg-[var(--cf2-bg-surface-muted)] disabled:opacity-30"
+                className="px-3 py-1.5 rounded text-xs text-[var(--of-tinta-2)] bg-[var(--of-papel-hover)] hover:bg-[var(--of-papel-hover)] disabled:opacity-30"
               >
                 Anterior
               </button>
@@ -703,7 +713,7 @@ export function BuscaApollo() {
                   <button
                     key={p}
                     onClick={() => handlePageChange(p)}
-                    className={`w-8 h-8 rounded text-xs font-medium ${p === page ? "bg-[var(--cf2-accent)] text-[var(--cf2-text-on-accent)]" : "text-[var(--cf2-text-secondary)] bg-[var(--cf2-bg-surface-muted)] hover:bg-[var(--cf2-bg-surface-muted)]"}`}
+                    className={`w-8 h-8 rounded text-xs font-medium ${p === page ? "bg-[var(--of-coral-acao)] text-white" : "text-[var(--of-tinta-2)] bg-[var(--of-papel-hover)] hover:bg-[var(--of-papel-hover)]"}`}
                   >
                     {p}
                   </button>
@@ -712,7 +722,7 @@ export function BuscaApollo() {
               <button
                 disabled={page >= totalPages}
                 onClick={() => handlePageChange(page + 1)}
-                className="px-3 py-1.5 rounded text-xs text-[var(--cf2-text-secondary)] bg-[var(--cf2-bg-surface-muted)] hover:bg-[var(--cf2-bg-surface-muted)] disabled:opacity-30"
+                className="px-3 py-1.5 rounded text-xs text-[var(--of-tinta-2)] bg-[var(--of-papel-hover)] hover:bg-[var(--of-papel-hover)] disabled:opacity-30"
               >
                 Próxima
               </button>
@@ -724,18 +734,18 @@ export function BuscaApollo() {
       {/* Empty state */}
       {!searchMut.isPending && total === 0 && searchMut.isSuccess && (
         <div className="text-center py-16">
-          <Radar className="w-12 h-12 text-[var(--cf2-text-tertiary)]/40 mx-auto mb-3" aria-hidden />
-          <p className="text-sm text-[var(--cf2-text-tertiary)]">Nenhum resultado encontrado</p>
-          <p className="text-xs text-[var(--cf2-text-tertiary)] mt-1">Tente ajustar os filtros</p>
+          <Radar className="w-12 h-12 text-[var(--of-tinta-3)]/40 mx-auto mb-3" aria-hidden />
+          <p className="text-sm text-[var(--of-tinta-3)]">Nenhum resultado encontrado</p>
+          <p className="text-xs text-[var(--of-tinta-3)] mt-1">Tente ajustar os filtros</p>
         </div>
       )}
 
       {/* Initial state */}
       {!searchMut.isPending && !searchMut.isSuccess && !searchMut.isError && (
         <div className="text-center py-16">
-          <Radar className="w-16 h-16 text-[var(--cf2-text-tertiary)]/40 mx-auto mb-4" aria-hidden />
-          <p className="text-lg font-medium text-[var(--cf2-text-tertiary)]">Busque leads na base do Apollo.io</p>
-          <p className="text-sm text-[var(--cf2-text-secondary)] mt-1 max-w-md mx-auto">
+          <Radar className="w-16 h-16 text-[var(--of-tinta-3)]/40 mx-auto mb-4" aria-hidden />
+          <p className="text-lg font-medium text-[var(--of-tinta-3)]">Busque leads na base do Apollo.io</p>
+          <p className="text-sm text-[var(--of-tinta-2)] mt-1 max-w-md mx-auto">
             Use os filtros acima para encontrar decisores por cargo, senioridade, localização, indústria e mais.
             Selecione os resultados e importe direto no CRM.
           </p>

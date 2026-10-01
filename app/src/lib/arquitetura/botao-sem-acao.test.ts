@@ -89,6 +89,18 @@ const FORA_DO_PRODUTO = [
   // da trava porque a regra é sobre o produto; se um dia virarem interativos
   // de verdade, entram.
   "src/components/onface/ds/secoes/",
+  /* O markup convertido do handoff.
+   *
+   * São arquivos GERADOS por `scripts/dc-para-tsx.mjs`: corrigir um botão
+   * aqui dura até a próxima regeração, e é por isso que a regra não os
+   * alcança. O conserto mora no Claude Design.
+   *
+   * Isto NÃO perdoa o defeito — ele está registrado em
+   * `docs/design/DEFEITOS-DO-HANDOFF.md`, com arquivo e linha, e a tela só
+   * é ligada a uma rota depois que o adaptador dá ação a cada botão. O que
+   * é escrito à mão nesta pasta (`*Proto.tsx`) continua sob a regra.
+   */
+  "Desenho.tsx",
 ];
 
 /** Mesma travessia que as outras travas de arquitetura usam: `readdirSync`

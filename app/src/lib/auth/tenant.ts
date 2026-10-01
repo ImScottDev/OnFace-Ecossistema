@@ -4,12 +4,10 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { organizacoes, usuarios } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
+import { podeVerComo } from "./roles";
 
 const ORG_OVERRIDE_COOKIE = "mcrm-org-override";
 const VIEW_AS_COOKIE = "mcrm-view-as";
-// "Ver como" assume a identidade de outra pessoa (inclusive o papel dela),
-// então é acesso a dado alheio: exclusivo do super_admin.
-const VIEW_AS_ADMIN_ROLES = ["super_admin"];
 
 /**
  * Get the authenticated user's tenant context.
@@ -47,14 +45,14 @@ export async function getTenantContext() {
     }
   }
 
-  // View-as: admin/gerente/super_admin pode "visualizar como" outro usuário.
+  // View-as: só o super_admin pode "visualizar como" outro usuário (podeVerComo).
   // Espelha o override do api-server/auth.ts pra os server components (dashboard etc.)
   // refletirem o que o usuário visualizado veria. Vendedor real não tem o cookie.
   let effUserId = session.user.id as string;
   let effUserName = session.user.name || "";
   let effRole = userRole;
   let isViewingAs = false;
-  if (VIEW_AS_ADMIN_ROLES.includes(userRole)) {
+  if (podeVerComo(userRole)) {
     try {
       const cookieStore = await cookies();
       const viewAs = cookieStore.get(VIEW_AS_COOKIE)?.value;

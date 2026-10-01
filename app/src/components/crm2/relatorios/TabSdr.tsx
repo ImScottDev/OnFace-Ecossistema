@@ -118,8 +118,13 @@ function fmtHoras(h: number): string {
 export default function TabSdr({ periodo }: { periodo: string }) {
   const { data, isLoading } = useQuery<SdrEsteiraData>({
     queryKey: ["sdr-esteira", periodo],
-    queryFn: () =>
-      fetch(`/api/relatorios/sdr-esteira?periodo=${periodo}`).then((r) => r.json()),
+    // Confere r.ok: compartilha a queryKey com o HeroSdr de /relatorios; um
+    // 4xx/5xx viraria `{error}` e quebraria quem lê data.funil/data.reunioes.
+    queryFn: async () => {
+      const r = await fetch(`/api/relatorios/sdr-esteira?periodo=${periodo}`);
+      if (!r.ok) throw new Error(String(r.status));
+      return r.json();
+    },
   });
 
   const funilChartData =

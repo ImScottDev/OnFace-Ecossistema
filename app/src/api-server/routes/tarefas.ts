@@ -26,6 +26,7 @@ const TIPOS = [
 const createTarefaSchema = z.object({
   leadId: z.string().uuid().optional().nullable(),
   negocioId: z.string().uuid().optional().nullable(),
+  empresaId: z.string().uuid().optional().nullable(), // vínculo de conta (cliente/empresa sem lead)
   responsavelId: z.string().uuid().optional().nullable(), // default: quem está criando
   titulo: z.string().min(1),
   descricao: z.string().optional().nullable(),
@@ -46,6 +47,8 @@ const updateTarefaSchema = z.object({
   leadId: z.string().uuid().optional().nullable(),
   negocioId: z.string().uuid().optional().nullable(),
   concluida: z.boolean().optional(),
+  // Estado operacional (migration 0046). O trigger mantém `concluida` em sincronia.
+  status: z.enum(["a_fazer", "em_andamento", "aguardando", "concluida", "declinada"]).optional(),
 });
 
 // GET /api/tarefas
@@ -242,6 +245,17 @@ app.post("/tarefas", async (c) => {
     }
   }
 
+  if (parsed.data.empresaId) {
+    const [empresa] = await db
+      .select({ id: empresas.id })
+      .from(empresas)
+      .where(and(eq(empresas.id, parsed.data.empresaId), eq(empresas.organizacaoId, ctx.organizacaoId)))
+      .limit(1);
+    if (!empresa) {
+      return c.json({ error: "Empresa nao encontrada" }, 404);
+    }
+  }
+
   // Responsável: default é quem está criando; se vier outro, precisa ser da mesma org.
   let usuarioId = ctx.userId;
   if (parsed.data.responsavelId && parsed.data.responsavelId !== ctx.userId) {
@@ -269,6 +283,7 @@ app.post("/tarefas", async (c) => {
       organizacaoId: ctx.organizacaoId, // faltava: sem isso não aparece no dashboard
       leadId: parsed.data.leadId,
       negocioId: parsed.data.negocioId,
+      empresaId: parsed.data.empresaId,
       usuarioId,
       titulo: parsed.data.titulo,
       descricao: parsed.data.descricao,
@@ -280,6 +295,45 @@ app.post("/tarefas", async (c) => {
     .returning();
 
   return c.json(tarefa, 201);
+});
+
+// GET /api/tarefas/:id — uma tarefa, com os nomes dos vínculos (peça de atividade).
+app.get("/tarefas/:id", async (c) => {
+  const ctx = await getCtx(c);
+  const id = c.req.param("id");
+  if (!UUID_RE.test(id)) return c.json({ error: "Tarefa nao encontrada" }, 404);
+
+  const [tarefa] = await db
+    .select({
+      id: tarefas.id,
+      titulo: tarefas.titulo,
+      descricao: tarefas.descricao,
+      tipo: tarefas.tipo,
+      prioridade: tarefas.prioridade,
+      status: tarefas.status,
+      dataVencimento: tarefas.dataVencimento,
+      venceEm: tarefas.venceEm,
+      usuarioId: tarefas.usuarioId,
+      responsavelNome: usuarios.nome,
+      leadId: tarefas.leadId,
+      leadNome: leads.nome,
+      leadSobrenome: leads.sobrenome,
+      negocioId: tarefas.negocioId,
+      negocioTitulo: negocios.titulo,
+      empresaId: tarefas.empresaId,
+      empresaNome: empresas.nome,
+      origem: tarefas.origem,
+    })
+    .from(tarefas)
+    .leftJoin(leads, eq(tarefas.leadId, leads.id))
+    .leftJoin(empresas, eq(tarefas.empresaId, empresas.id))
+    .leftJoin(negocios, eq(tarefas.negocioId, negocios.id))
+    .leftJoin(usuarios, eq(tarefas.usuarioId, usuarios.id))
+    .where(and(eq(tarefas.id, id), eq(tarefas.organizacaoId, ctx.organizacaoId)))
+    .limit(1);
+
+  if (!tarefa) return c.json({ error: "Tarefa nao encontrada" }, 404);
+  return c.json(tarefa);
 });
 
 // PATCH /api/tarefas/:id

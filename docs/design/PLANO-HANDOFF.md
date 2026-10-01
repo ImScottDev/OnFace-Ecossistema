@@ -37,12 +37,13 @@ Medido em 30/09. É isto que decide a ordem: tela com query pronta fecha rápido
 
 | tela | query / command | estado |
 |---|---|---|
-| Pré-vendas | `boardPreVendas`, `detalheLead` + 14 actions | **ligada** |
-| Pipeline | `boardPipeline` | query pronta |
-| Oportunidade | `detalheOportunidade` | query pronta |
-| Contatos | `diretorioEmpresas`, `diretorioPessoas` | query pronta |
-| Empresa / Pessoa | `empresa`, `pessoaPorId` | query pronta |
-| Propostas / Proposta | `composicaoDaProposta`, `enviarProposta`, `criarRevisao`, `registrarRespostaDoCliente` | commands prontos, **falta a query de lista** |
+| Pré-vendas | `boardPreVendas`, `detalheLead` + 14 actions | **ligada e gravando** (30/09) |
+| Pipeline | `boardPipeline` + mover/perder/ganhar | **ligada** (30/09) |
+| Oportunidade | `detalheOportunidade` + atividades/notas/comitê | **ligada** (30/09) |
+| Contatos | `diretorioEmpresas`, `diretorioPessoas` | **NÃO ligar** — o desenho inventa e-mail; ver DEFEITOS-DO-HANDOFF |
+| Empresa / Pessoa | `empresa360`, `detalheLead` | **ligadas** (30/09) |
+| Propostas | `acaoListar` (a query de lista JÁ existia) | **ligada** (30/09), leitura |
+| Proposta (Builder) | `acaoCriar`, `acaoEnviar`, catálogo real | **ligada** (30/09) |
 | Atividades / Atividade | `montarAtividades` | query pronta |
 | CS | `lib/cs/*` (17 arquivos: carteira, risco, renovação, saúde) | o mais completo |
 | Onboarding | `lib/pos-venda/handoff-implantacao.ts` | parcial |
@@ -58,16 +59,19 @@ Medido em 30/09. É isto que decide a ordem: tela com query pronta fecha rápido
 
 A ordem é a do funil, e cada tela destrava a seguinte.
 
-1. **Pipeline** — `boardPipeline` pronto, gates em `lib/vendas/dominio.ts`.
-   Mesmo arquétipo de Pré-vendas (Kanban Workspace), então a ligação repete o
-   que já foi feito.
-2. **Oportunidade** — `detalheOportunidade` pronto. É a página que o card do
-   Pipeline abre.
-3. **Propostas + Proposta** — os commands existem; a query de lista precisa
-   ser escrita. A Proposta é o arquétipo Builder, o mais denso do handoff.
-4. **Contatos · Empresa · Pessoa** — três telas, três queries prontas. Baratas
-   e sustentam as anteriores (a oportunidade abre a empresa, a empresa abre a
-   pessoa).
+1. ~~**Pipeline**~~ — **feito em 30/09.** Arrastar grava e sobrevive ao
+   reload; perder e ganhar passam pelos commands; as outras sete mutações
+   avisam que ainda não gravam em vez de fingir. Registro em
+   `docs/design/pipeline.md`.
+2. ~~**Oportunidade**~~ — **feita em 30/09.** O 360 com atividades, notas,
+   comitê, propostas e linha do tempo reais; avançar/perder/ganhar gravam e a
+   recusa do domínio chega com o CTA que destrava.
+3. ~~**Propostas + Proposta**~~ — **feitas em 30/09.** A lista é leitura; o
+   Builder cria proposta com o catálogo REAL e grava amarrado ao
+   `catalogo_precos`.
+4. **Contatos · Empresa · Pessoa** — Empresa e Pessoa **ligadas em 30/09**.
+   Contatos fica de fora: o desenho inventa e-mail em 41 pontos, sem fallback
+   para o real. A tela atual funciona; o conserto é no Claude Design.
 
 **Fecha a fase quando:** um lead entra em Pré-vendas, vira oportunidade no
 Pipeline, recebe proposta, e a proposta chega a aceita — tudo com dado real,

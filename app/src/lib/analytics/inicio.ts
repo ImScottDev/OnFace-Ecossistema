@@ -272,7 +272,9 @@ export async function getAgendaHoje(orgId: string, usuarioId: string, hoje = new
       detalhe: [grupo === "agora" ? "Agora" : "Reunião", canal].filter(Boolean).join(" · "),
       grupo,
       icone: "reuniao",
-      href: r.negocioId ? `/negocios/${r.negocioId}` : r.leadId ? `/leads/${r.leadId}` : "/calendario",
+      // `/leads/:id` é redirect legado para `/contatos` e perde o id; a ficha
+      // da pessoa é chaveada pelo lead em `/pessoas/[id]`.
+      href: r.negocioId ? `/pipeline/${r.negocioId}` : r.leadId ? `/pessoas/${r.leadId}` : "/calendario",
     });
   }
 
@@ -287,7 +289,8 @@ export async function getAgendaHoje(orgId: string, usuarioId: string, hoje = new
       detalhe: grupo === "atrasada" ? "Tarefa · Atrasada" : "Tarefa · Hoje",
       grupo,
       icone: t.tipo === "ligar" ? "ligacao" : "tarefa",
-      href: t.leadId ? `/leads/${t.leadId}` : "/tarefas",
+      // `p:<id>` é a chave que a gaveta de Atividades procura (lista própria).
+      href: t.leadId ? `/pessoas/${t.leadId}` : `/tarefas?atv=${encodeURIComponent(`p:${t.id}`)}`,
     });
   }
 
@@ -344,7 +347,9 @@ export async function getPrecisaAtencao(orgId: string, hoje = new Date()): Promi
         SELECT COUNT(*)::int AS n, COALESCE(SUM(n.valor_total), 0) AS valor
           FROM negocios n
          WHERE n.organizacao_id = ${orgId}
-           AND n.status NOT IN ('ganho','perdido')
+           -- Mesma regra de "negócio aberto" do card Operações ativas
+           -- (onface-inicio.ts): 'sem_retorno' é encerramento, não negócio parado.
+           AND n.status NOT IN ('ganho','perdido','sem_retorno')
            AND n.updated_at < ${d5.toISOString()}
            AND NOT EXISTS (
              SELECT 1 FROM tarefas t WHERE t.negocio_id = n.id AND t.concluida = false
@@ -364,8 +369,10 @@ export async function getPrecisaAtencao(orgId: string, hoje = new Date()): Promi
   const nPag = Number(pagamentos[0]?.n || 0);
   if (nPag > 0) itens.push({
     id: "pagamentos", severidade: "critico", icone: "pagamento", area: "Financeiro",
-    titulo: `${nPag} ${nPag === 1 ? "pagamento falhou" : "pagamentos falharam"}`,
-    detalhe: `${brlCompacto(Number(pagamentos[0]?.valor || 0))} em cobranças vencidas há 3+ dias`,
+    // A consulta conta faturas 'aberta' vencidas há 3+ dias, não falhas de
+    // pagamento do gateway: o título diz o que o número é de verdade.
+    titulo: `${nPag} ${nPag === 1 ? "cobrança vencida" : "cobranças vencidas"} há 3+ dias`,
+    detalhe: `${brlCompacto(Number(pagamentos[0]?.valor || 0))} em faturas em aberto`,
     href: "/clientes/financeiro",
   });
 
@@ -374,7 +381,7 @@ export async function getPrecisaAtencao(orgId: string, hoje = new Date()): Promi
     id: "implantacao", severidade: "critico", icone: "implantacao", area: "Implantação",
     titulo: `${nImp} ${nImp === 1 ? "implantação bloqueada" : "implantações bloqueadas"}`,
     detalhe: "Aguardando liberação interna ou da operadora",
-    href: "/clientes/implantacao",
+    href: "/pos-vendas?aba=imp",
   });
 
   const nLeads = Number(leadsSemResposta[0]?.n || 0);
@@ -406,7 +413,7 @@ export async function getPrecisaAtencao(orgId: string, hoje = new Date()): Promi
     id: "onboarding", severidade: "info", icone: "onboarding", area: "Onboarding",
     titulo: `${nOnb} ${nOnb === 1 ? "onboarding aguardando 1º contato" : "onboardings aguardando 1º contato"}`,
     detalhe: "Contrato assinado sem kickoff agendado",
-    href: "/clientes/onboarding",
+    href: "/pos-vendas?aba=onb",
   });
 
   const peso: Record<AtencaoSeveridade, number> = { critico: 0, aviso: 1, info: 2 };

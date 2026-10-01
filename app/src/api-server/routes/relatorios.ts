@@ -1101,6 +1101,8 @@ app.get("/pos-venda", async (c) => {
 // GET /relatorios/tracking[?desde=YYYY-MM-DD]
 app.get("/tracking", async (c) => {
   const ctx = await getCtx(c);
+  // Funil da organização inteira por campanha (MRR incluso): visão de gestão.
+  if (!isAdminView(ctx.userRole)) return c.json({ error: "Forbidden" }, 403);
   const org = ctx.organizacaoId;
   // respeita o seletor de período da tela (presets ou custom). "all" = histórico.
   const periodo = c.req.query("periodo") ?? "all";

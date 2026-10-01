@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { DESTINOS, NAVEGACAO, destinoAtivo, trilhaAtual } from "./navegacao";
+import { MENU_ONFACE, areaAtivaOnface, normalizarPathnameOnface } from "./navigation";
 
 describe("navegação ONFACE", () => {
   it("acende o destino exato", () => {
@@ -97,5 +98,30 @@ describe("navegação ONFACE", () => {
     for (const item of DESTINOS) {
       assert.match(item.href, /^\/[a-z0-9-]+(\/[a-z0-9-]+)*$/, `${item.label} tem href estranho`);
     }
+  });
+
+  // Duas árvores convivem (`navigation.ts` alimenta a topbar do preview e o
+  // estúdio). Em 01/10 elas mostravam produtos diferentes: uma apontava para
+  // `/onface-preview/*` e ainda tinha Onboarding/Implantação. Esta trava
+  // mantém o espelho: mesmas áreas, rótulos e rotas, na mesma ordem.
+  it("a árvore de navigation.ts espelha a de navegacao.ts", () => {
+    // `pendente` entra no espelho: divergir aí é uma árvore prometendo tela
+    // que a outra admite não existir.
+    const daqui = NAVEGACAO.map((a) => ({
+      label: a.label, href: a.href,
+      filhos: (a.itens ?? []).map((i) => `${i.label} ${i.href}${i.pendente ? " pendente" : ""}`),
+    }));
+    const dela = MENU_ONFACE.map((a) => ({
+      label: a.label, href: a.href,
+      filhos: (a.children ?? []).map((i) => `${i.label} ${i.href}${i.pendente ? " pendente" : ""}`),
+    }));
+    assert.deepEqual(dela, daqui);
+  });
+
+  it("a tela do preview acende a área que representa", () => {
+    assert.equal(areaAtivaOnface(normalizarPathnameOnface("/onface-preview/pipeline")), "Vendas");
+    assert.equal(areaAtivaOnface(normalizarPathnameOnface("/onface-preview/atividades")), "Operação");
+    assert.equal(areaAtivaOnface(normalizarPathnameOnface("/onface-preview")), "Início");
+    assert.equal(areaAtivaOnface(normalizarPathnameOnface("/onface-preview/empresa/x")), "Vendas");
   });
 });

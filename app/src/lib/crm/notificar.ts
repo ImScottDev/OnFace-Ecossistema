@@ -98,9 +98,9 @@ export async function notificarFormularioImplantacaoRecebido(fulfillmentId: stri
     if (!f) return;
 
     const quem = f.empresaNome || "cliente sem nome cadastrado";
-    // Os dois shells existem (/pos-venda legado e /clientes no CRM2). A
-    // notificacao aponta para o CRM2, que e o destino da virada ONFACE.
-    const link = `/clientes/entrega/${f.id}`;
+    // O detalhe de qualquer entrega é o Projeto ONFACE (/projetos/:id, o id é
+    // o do fulfillment). /clientes/entrega/:id virou redirect para ele.
+    const link = `/projetos/${f.id}`;
 
     if (f.responsavelId) {
       await db.insert(notificacoes).values({
@@ -173,11 +173,9 @@ export async function notificarFulfillmentOnboardingCriado(fulfillmentId: string
     const quem = f.empresaNome || "cliente sem nome cadastrado";
     const { regraDaFamilia } = await import("@/lib/crm/politica-familia");
     const regra = regraDaFamilia(f.serviceFamily);
-    // A tela de detalhe é a mesma pros dois (o workspace de entrega já
-    // resolve o checklist pela família) — o que muda é a lista de onde ele
-    // vem. Implantação White Label ainda não tem rota própria: cai na de
-    // entrega, que é genérica. Registrado como pendência de UI da 2C.1.
-    const link = regra.trilha === "onboarding" ? `/clientes/onboarding/${f.id}` : `/clientes/entrega/${f.id}`;
+    // Onboarding e implantação abrem a mesma tela: o Projeto ONFACE
+    // (/projetos/:id), que resolve o checklist pela família.
+    const link = `/projetos/${f.id}`;
 
     if (f.responsavelId) {
       await db.insert(notificacoes).values({

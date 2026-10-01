@@ -266,4 +266,27 @@
   /** Destino que existe como rota e ainda não tem módulo. Informação, não alerta. */
   --of-shell-pendente: #59636f;
   --of-shell-linha-2: #2e3741;
+
+  /* Sucesso e aviso. Faltavam: o sistema tinha coral para ação e erro, e verde
+     só dentro de "etapa" e "canal", que são outra coisa. Sem um par semântico,
+     cada tela nova inventava o seu — em 01/10 havia quatro verdes e quatro
+     âmbares quase iguais espalhados por Cadências, Execuções e Campanhas. */
+  --of-sucesso-tinta: #1f7a45;
+  --of-sucesso-fundo: #e7f4ec;
+  --of-aviso-tinta: #8a5a00;
+  --of-aviso-fundo: #fdf3df;
+
+  /* Cinzas que faltavam na superfície clara: a borda que o controle ganha
+     quando está aberto ou sob o ponteiro, e o texto apagado de rótulo
+     secundário. Sem eles o quadro de Pré-vendas tinha quatro cinzas à mão
+     para dois papéis. */
+  --of-linha-forte: #b8bfc0;
+  --of-tinta-tenue: #b9bfc0;
+
+  /* Coral sobre o grafite da casca. O coral de ação (#d93c1a) some no escuro;
+     o protótipo clareia nos três degraus abaixo, e eles apareciam à mão no
+     Atendimento e no painel NEXO. */
+  --of-coral-no-escuro: #ff8a70;
+  --of-coral-no-escuro-2: #ff9f85;
+  --of-coral-no-escuro-3: #ffd5c8;
 }

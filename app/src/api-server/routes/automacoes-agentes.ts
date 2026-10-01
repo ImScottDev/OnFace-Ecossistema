@@ -78,7 +78,9 @@ app.get("/automacoes/agentes/catalogo", async (c) => {
 
 const versionSchema = z.object({
   systemPrompt: z.string().default(""),
-  provider: z.enum(["groq", "openai", "anthropic", "google"]).nullable().optional(),
+  // claude_subscription: adaptador da assinatura (execute-agent.ts); a
+  // prontidão recusa credencial da organização para ele.
+  provider: z.enum(["groq", "openai", "anthropic", "google", "claude_subscription"]).nullable().optional(),
   modelo: z.string().nullable().optional(),
   credentialId: z.string().uuid().nullable().optional(),
   channelSessionId: z.string().uuid().nullable().optional(),

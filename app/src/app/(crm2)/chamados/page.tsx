@@ -3,7 +3,10 @@ import { ModuloPendente } from "@/components/crm2/ModuloPendente";
 export const metadata = { title: "Chamados" };
 
 /** Destino estrutural da árvore de navegação congelada em 16/09.
- *  O módulo ainda não foi construído: a página não simula funcionalidade. */
+ *  O módulo ainda não foi construído: não há tabela de chamados no banco nem
+ *  integração com mesa de suporte, e a página não simula funcionalidade.
+ *  Revisado em 01/10: as duas dependências continuam abertas (decisão de
+ *  produto, não de código). */
 export default function ChamadosPage() {
   return (
     <ModuloPendente
@@ -13,6 +16,11 @@ export default function ChamadosPage() {
             "Definir a origem dos chamados (mesa de suporte atual ou registro dentro do CRM)",
             "Definir o que é um chamado fechado e quem pode fechar",
       ]}
+      enquanto={{
+        texto: "Hoje o pedido de suporte chega como conversa no Atendimento.",
+        href: "/atendimento",
+        rotulo: "Abrir Atendimento",
+      }}
     />
   );
 }

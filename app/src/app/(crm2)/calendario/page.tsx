@@ -1,26 +1,34 @@
+import { redirect } from "next/navigation";
 import { getTenantContext } from "@/lib/auth/tenant";
 import { isAdminView } from "@/lib/auth/roles";
-import { redirect } from "next/navigation";
-import { db } from "@/lib/db";
-import { organizacoes } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
-import { Cf2Topbar } from "@/components/crm2/Topbar";
-import { Cf2CalendarioWorkspace } from "@/components/crm2/calendario/Workspace";
+import { reunioesDaAgenda } from "@/lib/calendario/agenda-do-calendario";
+/* A tela é o desenho do handoff, convertido por máquina. `crm2/calendario/
+   Workspace` era a versão anterior e sai da rota — com ela saem a visão Dia, a
+   visão Equipe (busy-times do Outlook), bloqueios/almoço e o painel de
+   conflitos, que o handoff não tem. O título vem do desenho: sem Cf2Topbar. */
+import { CalendarioProto } from "@/components/onface/proto/CalendarioProto";
 
 export const metadata = { title: "Calendário" };
+export const dynamic = "force-dynamic";
 
-export default async function CalendarioPage() {
+export default async function CalendarioPage({ searchParams }: {
+  searchParams: Promise<{ visao?: string; dia?: string }>;
+}) {
   const ctx = await getTenantContext();
   if (!ctx) redirect("/login");
 
-  const [org] = await db.select({ nome: organizacoes.nome }).from(organizacoes).where(eq(organizacoes.id, ctx.organizacaoId)).limit(1);
+  const sp = await searchParams;
+  const reunioes = await reunioesDaAgenda(ctx.organizacaoId, ctx.userId, isAdminView(ctx.userRole));
+  // Responsáveis reais das reuniões — no lugar do fallback fictício da Liga.
+  const equipe = [...new Set(reunioes.map((r) => r.responsavel).filter((n): n is string => !!n))];
+  const dia = sp.dia && /^\d{4}-\d{2}-\d{2}$/.test(sp.dia) ? sp.dia : null;
 
   return (
-    <div className="flex flex-col gap-5 cf2-altura-tela">
-      <Cf2Topbar orgNome={org?.nome || "Callface"} title="Calendário" compactTitle actions={null} />
-      <div className="flex-1 min-h-0">
-        <Cf2CalendarioWorkspace isAdmin={isAdminView(ctx.userRole)} />
-      </div>
-    </div>
+    <CalendarioProto
+      reunioes={reunioes}
+      equipe={equipe}
+      visaoInicial={sp.visao === "semana" ? "semana" : "mes"}
+      diaInicial={dia}
+    />
   );
 }

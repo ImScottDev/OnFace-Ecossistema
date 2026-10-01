@@ -670,6 +670,13 @@
      conta contra 100dvh sobrava exatamente isso. */
   height: 100%;
   overflow: hidden;
+  /* `flex column` é o que faz a altura CHEGAR na tela.
+   *
+   * Sem isto o container é `display:block`: ele mede 1128px e o filho mede o
+   * conteúdo dele — o Atendimento ficava com 416px e sobrava meia tela branca
+   * embaixo. É o mesmo motivo da regra de `desenho` logo abaixo. */
+  display: flex;
+  flex-direction: column;
 }
 
 /* ── Tela que pinta o próprio fundo ──────────────────────────────────────

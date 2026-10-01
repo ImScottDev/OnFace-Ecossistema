@@ -49,6 +49,7 @@ import sdrRoutes from "./routes/sdr.js";
 import { aiSdrRoutes } from "./routes/ai-sdr.js";
 import { metasRoutes } from "./routes/metas.js";
 import { meRoutes } from "./routes/me.js";
+import { nexoRoutes } from "./routes/nexo.js";
 import { authFlowRoutes } from "./routes/auth-flow.js";
 import { atendimentoRoutes } from "./routes/atendimento.js";
 import { calendarioRoutes } from "./routes/calendario.js";
@@ -60,6 +61,7 @@ import { clientesFinanceiroRoutes } from "./routes/clientes-financeiro.js";
 import { scriptsAtendimentoRoutes } from "./routes/scripts-atendimento.js";
 import { documentosAtendimentoRoutes } from "./routes/documentos-atendimento.js";
 import { automacoesCadenciasRoutes } from "./routes/automacoes-cadencias.js";
+import automacoesFluxosRoutes from "./routes/automacoes-fluxos.js";
 import { automacoesExecucoesRoutes } from "./routes/automacoes-execucoes.js";
 import { automacoesAgentesRoutes } from "./routes/automacoes-agentes.js";
 import { automacoesTagsRoutes } from "./routes/automacoes-tags.js";
@@ -124,6 +126,8 @@ app.route("/api", csRoutes);
 app.route("/api", clientesFinanceiroRoutes);
 app.route("/api", scriptsAtendimentoRoutes);
 app.route("/api", documentosAtendimentoRoutes);
+// Antes de /api/automacoes: aquele tem "/:id" e engoliria /automacoes/fluxos.
+app.route("/api", automacoesFluxosRoutes);
 app.route("/api", automacoesCadenciasRoutes);
 app.route("/api", automacoesExecucoesRoutes);
 app.route("/api", automacoesAgentesRoutes);
@@ -152,6 +156,7 @@ app.route("/api/sdr", sdrRoutes);
 app.route("/api/ai-sdr", aiSdrRoutes);
 app.route("/api/metas", metasRoutes);
 app.route("/api/me", meRoutes);
+app.route("/api", nexoRoutes);
 // Montado em /api/conta (NÃO /api/auth* — esse prefixo o Traefik manda pro next-auth).
 app.route("/api/conta", authFlowRoutes);
 

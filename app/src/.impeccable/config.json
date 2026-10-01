@@ -1,0 +1,14 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "design-system-font",
+        "value": "plus jakarta sans",
+        "createdAt": "2026-10-01T08:23:59.587Z",
+        "reason": "fonte do proprio handoff do Claude Design (copiada do ClienteLiga gerado); adaptador nao escolhe tipografia"
+      }
+    ]
+  }
+}

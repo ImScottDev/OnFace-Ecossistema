@@ -1,19 +1,22 @@
 import { getTenantContext } from "@/lib/auth/tenant";
 import { redirect } from "next/navigation";
-import { Cf2CsWorkspace } from "@/components/crm2/clientes/CsWorkspace";
+import { dadosTelaCs } from "@/lib/cs/tela-cs";
+/* A tela é o desenho do handoff, convertido por máquina, com o adaptador
+   escrito à mão. O workspace anterior (Cf2CsWorkspace) segue no repositório
+   até a comparação com o protótipo fechar. */
+import { CsProto } from "@/components/onface/proto/CsProto";
 
 export const metadata = { title: "Customer Success" };
+export const dynamic = "force-dynamic";
 
-export default async function ClientesCsPage() {
+export default async function ClientesCsPage({ searchParams }: {
+  searchParams: Promise<{ aba?: string; view?: string }>;
+}) {
   const ctx = await getTenantContext();
   if (!ctx) redirect("/login");
 
-  // O cabeçalho mora no workspace: escopo e busca são estado de cliente, e um
-  // cabeçalho aqui sem eles obrigaria a tela a ter dois — foi o que produziu
-  // "CS" na página e "Customer Success" logo abaixo.
-  return (
-    <div className="onface-pagina">
-      <Cf2CsWorkspace />
-    </div>
-  );
+  // ?aba= e ?view= lidos aqui: o protótipo lia no componentDidMount, que o SSR não roda.
+  const [{ aba, view }, dados] = await Promise.all([searchParams, dadosTelaCs(ctx.organizacaoId)]);
+
+  return <CsProto dados={dados} eu={ctx.userName ?? ""} euId={ctx.userId} abaInicial={aba} viewInicial={view} />;
 }

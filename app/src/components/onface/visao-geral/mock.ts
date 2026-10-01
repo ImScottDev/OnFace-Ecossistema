@@ -33,6 +33,7 @@ const blueRock: Operacao = {
   valor: "R$ 53.154,00",
   status: "atencao",
   tipo: "implantacao",
+  href: "/clientes",
   detalhe: {
     tituloCard: "Detalhe da implantação",
     subtituloCard: "Progresso por frente e o que está travando a entrega.",
@@ -85,6 +86,7 @@ const novaTech: Operacao = {
   valor: "R$ 27.114,00",
   status: "atencao",
   tipo: "oportunidade",
+  href: "/clientes",
   detalhe: {
     tituloCard: "Detalhe da oportunidade",
     subtituloCard: "Onde a negociação está e o que falta para fechar.",
@@ -137,6 +139,7 @@ const apiceDigital: Operacao = {
   valor: "R$ 61.223,00",
   status: "atencao",
   tipo: "lead",
+  href: "/clientes",
   detalhe: {
     tituloCard: "Detalhe do lead",
     subtituloCard: "De onde veio, o que já sabemos e qual é o próximo contato.",
@@ -189,6 +192,7 @@ const lumeSaude: Operacao = {
   valor: "R$ 7.311,00",
   status: "atencao",
   tipo: "cliente",
+  href: "/clientes",
   detalhe: {
     tituloCard: "Detalhe do cliente",
     subtituloCard: "Saúde da conta em operação, suporte e financeiro.",
@@ -241,6 +245,7 @@ const orionFoods: Operacao = {
   valor: "R$ 89.430,00",
   status: "andamento",
   tipo: "upgrade",
+  href: "/clientes",
   detalhe: {
     tituloCard: "Detalhe do upgrade",
     subtituloCard: "Contrato atual, incremento em negociação e o que falta.",
@@ -287,6 +292,7 @@ const vittaLab: Operacao = {
   valor: "R$ 18.900,00",
   status: "andamento",
   tipo: "implantacao",
+  href: "/clientes",
   detalhe: {
     tituloCard: "Detalhe da implantação",
     subtituloCard: "Progresso por frente e o que está travando a entrega.",
@@ -333,6 +339,7 @@ const meridian: Operacao = {
   valor: "R$ 44.600,00",
   status: "andamento",
   tipo: "oportunidade",
+  href: "/clientes",
   detalhe: {
     tituloCard: "Detalhe da oportunidade",
     subtituloCard: "Onde a negociação está e o que falta para fechar.",
@@ -379,6 +386,7 @@ const caravela: Operacao = {
   valor: "R$ 31.480,00",
   status: "concluida",
   tipo: "cliente",
+  href: "/clientes",
   detalhe: {
     tituloCard: "Detalhe do cliente",
     subtituloCard: "Saúde da conta em operação, suporte e financeiro.",
@@ -425,6 +433,7 @@ const pontalSaude: Operacao = {
   valor: "R$ 22.740,00",
   status: "atencao",
   tipo: "implantacao",
+  href: "/clientes",
   detalhe: {
     tituloCard: "Detalhe da implantação",
     subtituloCard: "Progresso por frente e o que está travando a entrega.",
@@ -473,9 +482,9 @@ const AGENDA: Agenda = {
   proximo: {
     rotulo: "Em 40 minutos",
     titulo: "Reunião técnica de implantação",
-    cliente: "BlueRock",
-    quando: "Hoje, 11:00 · 45 min",
-    participantes: ["Kauã Scott", "Equipe técnica BlueRock"],
+    id: "ag-1",
+    apoio: "BlueRock",
+    quando: "Hoje, 11:00",
   },
   resumoDia: [
     { label: "Compromissos hoje", valor: "4" },
@@ -487,62 +496,24 @@ const AGENDA: Agenda = {
       chave: "hoje", label: "Hoje", apoio: "4 compromissos",
       compromissos: [
         {
-          id: "ag-1", data: "2026-09-16", hora: "11:00", duracao: "45 min",
-          titulo: "Reunião técnica de implantação",
+          id: "ag-1", hora: "11:00", titulo: "Reunião técnica de implantação",
           descricao: "Validar credenciais de acesso e destravar a etapa de configuração.",
-          cliente: "BlueRock",
-          contatoCliente: { nome: "Marcos Ribeiro", telefone: "+55 11 98812-4455" },
-          organizador: "Kauã Scott",
-          tipo: "reuniao", status: "confirmado", online: true,
-          linkReuniao: "https://teams.microsoft.com/l/meetup-join/bluerock-tecnica",
-          participantes: [
-            { id: "p1", nome: "Kauã Scott", iniciais: "KS", email: "kaua@callface.ai", externo: false, confirmado: true },
-            { id: "p2", nome: "Juliana Costa", iniciais: "JC", email: "juliana@callface.ai", externo: false, confirmado: true },
-            { id: "p3", nome: "Marcos Ribeiro", iniciais: "MR", email: "marcos@bluerock.com.br", externo: true, confirmado: true },
-          ],
+          tipo: "reuniao", atrasado: false, href: "/calendario",
         },
         {
-          id: "ag-2", data: "2026-09-16", hora: "14:00", duracao: "30 min",
-          titulo: "Follow-up de proposta",
+          id: "ag-2", hora: "14:00", titulo: "Follow-up de proposta",
           descricao: "Retomar a proposta enviada há 8 dias e entender o que falta para decidir.",
-          cliente: "NovaTech",
-          contatoCliente: { nome: "Paula Menezes", telefone: "+55 11 99604-2210" },
-          organizador: "Mariana Alves",
-          tipo: "follow-up", status: "pendente", online: true,
-          linkReuniao: "https://teams.microsoft.com/l/meetup-join/novatech-followup",
-          participantes: [
-            { id: "p4", nome: "Mariana Alves", iniciais: "MA", email: "mariana@callface.ai", externo: false, confirmado: true },
-            { id: "p5", nome: "Paula Menezes", iniciais: "PM", email: "paula@novatech.com.br", externo: true, confirmado: false },
-          ],
+          tipo: "follow-up", atrasado: false, href: "/calendario",
         },
         {
-          id: "ag-3", data: "2026-09-16", hora: "16:00", duracao: "60 min",
-          titulo: "Kickoff de onboarding",
+          id: "ag-3", hora: "16:00", titulo: "Kickoff de onboarding",
           descricao: "Primeira reunião da implantação, com apresentação do cronograma.",
-          cliente: "Pontal Saúde",
-          contatoCliente: { nome: "Renata Alves", telefone: "+55 21 98140-7733" },
-          organizador: "Juliana Costa",
-          tipo: "kickoff", status: "confirmado", online: true,
-          linkReuniao: "https://teams.microsoft.com/l/meetup-join/pontal-kickoff",
-          participantes: [
-            { id: "p6", nome: "Juliana Costa", iniciais: "JC", email: "juliana@callface.ai", externo: false, confirmado: true },
-            { id: "p7", nome: "Renata Alves", iniciais: "RA", email: "renata@pontalsaude.com.br", externo: true, confirmado: true },
-          ],
+          tipo: "kickoff", atrasado: false, href: "/calendario",
         },
         {
-          id: "ag-4", data: "2026-09-16", hora: "17:30", duracao: "25 min",
-          titulo: "Alinhamento de fila do dia",
+          id: "ag-4", hora: "17:30", titulo: "Alinhamento de fila do dia",
           descricao: "Revisão das pendências abertas e distribuição da fila.",
-          cliente: "Interno",
-          contatoCliente: null,
-          organizador: "Kauã Scott",
-          tipo: "interna", status: "confirmado", online: false,
-          linkReuniao: null,
-          participantes: [
-            { id: "p8", nome: "Kauã Scott", iniciais: "KS", email: "kaua@callface.ai", externo: false, confirmado: true },
-            { id: "p9", nome: "Camila Torres", iniciais: "CT", email: "camila@callface.ai", externo: false, confirmado: true },
-            { id: "p10", nome: "Rafael Lima", iniciais: "RL", email: "rafael@callface.ai", externo: false, confirmado: true },
-          ],
+          tipo: "interna", atrasado: false, href: "/calendario",
         },
       ],
     },
@@ -550,32 +521,14 @@ const AGENDA: Agenda = {
       chave: "amanha", label: "Amanhã", apoio: "2 compromissos",
       compromissos: [
         {
-          id: "ag-5", data: "2026-09-17", hora: "09:00", duracao: "30 min",
-          titulo: "Revisão de cobrança",
+          id: "ag-5", hora: "09:00", titulo: "Revisão de cobrança",
           descricao: "Alinhar o pagamento em aberto e atualizar o meio de cobrança.",
-          cliente: "Lume Saúde",
-          contatoCliente: { nome: "Douglas Prado", telefone: "+55 31 99712-8890" },
-          organizador: "Camila Torres",
-          tipo: "reuniao", status: "confirmado", online: true,
-          linkReuniao: "https://teams.microsoft.com/l/meetup-join/lume-cobranca",
-          participantes: [
-            { id: "p11", nome: "Camila Torres", iniciais: "CT", email: "camila@callface.ai", externo: false, confirmado: true },
-            { id: "p12", nome: "Douglas Prado", iniciais: "DP", email: "douglas@lumesaude.com.br", externo: true, confirmado: true },
-          ],
+          tipo: "reuniao", atrasado: false, href: "/calendario",
         },
         {
-          id: "ag-6", data: "2026-09-17", hora: "15:00", duracao: "45 min",
-          titulo: "Conversa de expansão",
+          id: "ag-6", hora: "15:00", titulo: "Conversa de expansão",
           descricao: "Apresentar a proposta das 4 novas unidades.",
-          cliente: "Orion Foods",
-          contatoCliente: { nome: "Sérgio Bastos", telefone: "+55 11 98330-5521" },
-          organizador: "Bruno Martins",
-          tipo: "reuniao", status: "pendente", online: true,
-          linkReuniao: "https://teams.microsoft.com/l/meetup-join/orion-expansao",
-          participantes: [
-            { id: "p13", nome: "Bruno Martins", iniciais: "BM", email: "bruno@callface.ai", externo: false, confirmado: true },
-            { id: "p14", nome: "Sérgio Bastos", iniciais: "SB", email: "sergio@orionfoods.com.br", externo: true, confirmado: false },
-          ],
+          tipo: "reuniao", atrasado: false, href: "/calendario",
         },
       ],
     },
@@ -596,8 +549,7 @@ const PENDENCIAS: Pendencias = {
       responsavel: "Camila Torres", responsavelIniciais: "CT",
       acaoLabel: "Cobrar", acaoHref: "/clientes/financeiro",
       detalhe: {
-        criadaEm: "02 de set de 2026, 09:12", criadaPor: "Automação de cobrança",
-        atualizadaEm: "hoje, 08:40",
+        origem: "Automação de cobrança",
         vinculo: { tipo: "Cliente", nome: "BlueRock", apoio: "Implantação ERP · Enterprise", href: "/clientes" },
         campos: [
           { label: "Valor em aberto", valor: "R$ 5.480,00" },
@@ -620,8 +572,7 @@ const PENDENCIAS: Pendencias = {
       responsavel: "Henrique S.", responsavelIniciais: "HS",
       acaoLabel: "Resolver", acaoHref: "/clientes/implantacao",
       detalhe: {
-        criadaEm: "28 de ago de 2026, 16:30", criadaPor: "Juliana Costa",
-        atualizadaEm: "ontem, 17:15",
+        origem: "Juliana Costa",
         vinculo: { tipo: "Entrega", nome: "NovaTech", apoio: "Migração de dados · Growth", href: "/clientes/implantacao" },
         campos: [
           { label: "Etapa", valor: "Portabilidade" },
@@ -643,8 +594,7 @@ const PENDENCIAS: Pendencias = {
       responsavel: "Rafael Lima", responsavelIniciais: "RL",
       acaoLabel: "Agendar", acaoHref: "/vendas",
       detalhe: {
-        criadaEm: "04 de set de 2026, 10:05", criadaPor: "Rafael Lima",
-        atualizadaEm: "há 2 dias",
+        origem: "Rafael Lima",
         vinculo: { tipo: "Negócio", nome: "Lume Saúde", apoio: "Automação de processos · Pro", href: "/vendas" },
         campos: [
           { label: "Valor da proposta", valor: "R$ 7.311,00" },
@@ -666,8 +616,7 @@ const PENDENCIAS: Pendencias = {
       responsavel: "Bruno Martins", responsavelIniciais: "BM",
       acaoLabel: "Ver caso", acaoHref: "/clientes/cs",
       detalhe: {
-        criadaEm: "30 de ago de 2026, 08:00", criadaPor: "Rotina de CS",
-        atualizadaEm: "há 5 dias",
+        origem: "Rotina de CS",
         vinculo: { tipo: "Cliente", nome: "Orion Foods", apoio: "Expansão de unidades · Enterprise", href: "/clientes" },
         campos: [
           { label: "MRR da conta", valor: "R$ 89.430,00" },
@@ -689,8 +638,7 @@ const PENDENCIAS: Pendencias = {
       responsavel: null, responsavelIniciais: null,
       acaoLabel: "Assumir", acaoHref: "/pre-vendas",
       detalhe: {
-        criadaEm: "ontem, 11:48", criadaPor: "Mariana Alves",
-        atualizadaEm: "ontem, 11:48",
+        origem: "Mariana Alves",
         vinculo: { tipo: "Lead", nome: "Ápice Digital", apoio: "Consultoria operacional · Enterprise", href: "/pre-vendas" },
         campos: [
           { label: "Origem", valor: "Meta Ads" },
@@ -712,8 +660,7 @@ const PENDENCIAS: Pendencias = {
       responsavel: "Juliana Costa", responsavelIniciais: "JC",
       acaoLabel: "Agendar", acaoHref: "/clientes/onboarding",
       detalhe: {
-        criadaEm: "21 de ago de 2026, 09:30", criadaPor: "Rotina de onboarding",
-        atualizadaEm: "há 3 dias",
+        origem: "Rotina de onboarding",
         vinculo: { tipo: "Entrega", nome: "Pontal Saúde", apoio: "Callpilot · Enterprise", href: "/clientes/onboarding" },
         campos: [
           { label: "Valor do contrato", valor: "R$ 22.740,00" },
@@ -776,8 +723,6 @@ export const DADOS_VISAO_GERAL: DadosVisaoGeral = {
   areas: {
     titulo: "Áreas em destaque",
     subtitulo: "Módulos do ecossistema ONFACE.",
-    linkLabel: "Ver todos os módulos",
-    linkHref: "/onface-preview",
     itens: [
       { chave: "operacao", label: "Operação", estado: "Em movimento", icone: "operacao", href: "/atendimento", destaque: true },
       { chave: "comercial", label: "Comercial", estado: "Alta performance", icone: "comercial", href: "/vendas" },
@@ -804,7 +749,6 @@ export const DADOS_VISAO_GERAL: DadosVisaoGeral = {
     { chave: "pendencias", label: "Pendências" },
   ],
   operacoes: [blueRock, novaTech, apiceDigital, lumeSaude, pontalSaude, orionFoods, vittaLab, meridian, caravela],
-  listaCompleta: { label: "Ver todas as operações", href: "/clientes" },
   agenda: AGENDA,
   pendencias: PENDENCIAS,
   meta: {

@@ -50,12 +50,21 @@ test("o board que cobre as três famílias tem alguém que o abra", () => {
   // passou meses sem um único link ("uso interno, não mais linkado nos tabs do
   // módulo", dizia o comentário). Peça pronta sem chamador é o defeito
   // recorrente deste repo, e neste caso custava ver a entrega do produto errado.
-  const pagina = fs.readFileSync(
+  // O board mudou de casa em 01/10: Implantação virou aba do painel de
+  // Pós-vendas (`/pos-vendas?aba=imp`), e `/clientes/implantacao` é hoje um
+  // redirect que leva o recorte de família adiante. A trava continua valendo —
+  // só mudou onde o chamador mora.
+  const redirect = fs.readFileSync(
     path.join(process.cwd(), "src", "app", "(crm2)", "clientes", "implantacao", "page.tsx"), "utf8");
-  assert.match(pagina, /familia:\s*null/,
-    "a página de Implantação precisa oferecer a visão sem família fixa");
-  assert.match(pagina, /familiaFixa=\{trilha\.familia\s*\?\?\s*undefined\}/,
-    "a trilha 'Todas' precisa chegar no workspace como ausência de filtro, não como string vazia");
+  assert.match(redirect, /\/pos-vendas\?aba=imp/,
+    "o endereço antigo de Implantação precisa levar ao painel que hoje a hospeda");
+
+  const painel = fs.readFileSync(
+    path.join(process.cwd(), "src", "app", "(crm2)", "pos-vendas", "page.tsx"), "utf8");
+  assert.match(painel, /familiaInicial=\{[^}]*:\s*null\}/,
+    "o painel de Pós-vendas precisa abrir sem família fixa — é a visão que cobre as três");
+  assert.match(painel, /abaInicial=/,
+    "sem `?aba=`, o redirect de Implantação cairia na aba errada");
 });
 
 test("o vocabulário de fase não volta para o arquivo que importa db", () => {

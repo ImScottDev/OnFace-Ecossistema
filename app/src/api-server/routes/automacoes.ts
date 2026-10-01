@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { db } from "@/lib/db";
-import { automacoes, automacaoExecucoes } from "@/lib/db/schema";
-import { eq, and, desc, sql } from "drizzle-orm";
+import { automacoes, automacaoExecucoes, cadenceDefinitions } from "@/lib/db/schema";
+import { eq, and, desc, sql, or, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { getCtx, exigirCtx } from "../compat.js";
 
@@ -19,6 +19,9 @@ const createAutomacaoSchema = z.object({
     "fatura_atrasada",
     "fatura_paga",
     "assinatura_status_alterado",
+    // Disparado de verdade em leads.ts e atendimento.ts; o builder oferecia e
+    // o POST respondia 400 porque o enum parou antes dele.
+    "tag_adicionada",
   ]),
   condicao: z.object({
     campo: z.string().optional(),
@@ -34,6 +37,8 @@ const createAutomacaoSchema = z.object({
     "enviar_whatsapp",
     "adicionar_tag_empresa",
     "remover_tag_empresa",
+    // Executor real em automacao-engine.ts (iniciarCadencia); mesmo caso acima.
+    "iniciar_cadencia",
   ]),
   acaoConfig: z.object({
     templateId: z.string().uuid().optional(),
@@ -46,6 +51,7 @@ const createAutomacaoSchema = z.object({
     diasInatividade: z.number().int().positive().optional(),
     diasAntesVencimento: z.number().int().positive().optional(),
     tag: z.string().min(1).max(80).optional(),
+    cadenceDefinitionId: z.string().uuid().optional(),
   }).optional().nullable(),
   ativo: z.boolean().default(true),
 });
@@ -64,6 +70,9 @@ const updateAutomacaoSchema = z.object({
     "fatura_atrasada",
     "fatura_paga",
     "assinatura_status_alterado",
+    // Disparado de verdade em leads.ts e atendimento.ts; o builder oferecia e
+    // o POST respondia 400 porque o enum parou antes dele.
+    "tag_adicionada",
   ]).optional(),
   condicao: z.object({
     campo: z.string().optional(),
@@ -79,6 +88,8 @@ const updateAutomacaoSchema = z.object({
     "enviar_whatsapp",
     "adicionar_tag_empresa",
     "remover_tag_empresa",
+    // Executor real em automacao-engine.ts (iniciarCadencia); mesmo caso acima.
+    "iniciar_cadencia",
   ]).optional(),
   acaoConfig: z.object({
     templateId: z.string().uuid().optional(),
@@ -91,11 +102,27 @@ const updateAutomacaoSchema = z.object({
     diasInatividade: z.number().int().positive().optional(),
     diasAntesVencimento: z.number().int().positive().optional(),
     tag: z.string().min(1).max(80).optional(),
+    cadenceDefinitionId: z.string().uuid().optional(),
   }).optional().nullable(),
   ativo: z.boolean().optional(),
 });
 
 const app = new Hono();
+
+/* iniciarCadencia (cadence-engine.ts) busca a definição só pelo id. Sem esta
+   checagem, uma regra da org A apontando para o UUID de uma cadência da org B
+   matricularia e executaria os passos da org B dentro da org A. Por isso todo
+   cadenceDefinitionId que entra por aqui precisa ser do tenant do request. */
+async function cadenciaInvalida(organizacaoId: string, acao: string | undefined, cadenceDefinitionId: string | undefined): Promise<string | null> {
+  if (acao === "iniciar_cadencia" && !cadenceDefinitionId) return "Escolha a cadência";
+  if (!cadenceDefinitionId) return null;
+  const [cad] = await db
+    .select({ id: cadenceDefinitions.id })
+    .from(cadenceDefinitions)
+    .where(and(eq(cadenceDefinitions.id, cadenceDefinitionId), eq(cadenceDefinitions.organizacaoId, organizacaoId)))
+    .limit(1);
+  return cad ? null : "Cadência não encontrada nesta organização";
+}
 
 // GET /automacoes — list all automations for current org
 app.get("/", async (c) => {
@@ -104,7 +131,8 @@ app.get("/", async (c) => {
   const result = await db
     .select()
     .from(automacoes)
-    .where(eq(automacoes.organizacaoId, ctx.organizacaoId))
+    // Só regras: a tela antiga não sabe editar fluxo do construtor.
+    .where(and(eq(automacoes.organizacaoId, ctx.organizacaoId), or(isNull(automacoes.tipo), eq(automacoes.tipo, "regra"))))
     .orderBy(desc(automacoes.createdAt));
 
   return c.json(result);
@@ -117,6 +145,8 @@ app.post("/", async (c) => {
   try {
     const body = await c.req.json();
     const data = createAutomacaoSchema.parse(body);
+    const erroCadencia = await cadenciaInvalida(ctx.organizacaoId, data.acao, data.acaoConfig?.cadenceDefinitionId ?? undefined);
+    if (erroCadencia) return c.json({ error: erroCadencia }, 422);
 
     const [newAutomacao] = await db
       .insert(automacoes)
@@ -211,6 +241,22 @@ app.patch("/:id", async (c) => {
   try {
     const body = await c.req.json();
     const data = updateAutomacaoSchema.parse(body);
+
+    // PATCH parcial: a ação e o config efetivos são o que veio no body ou, na
+    // falta, o que já está salvo — senão trocar só a ação para iniciar_cadencia
+    // reaproveitaria um cadenceDefinitionId antigo sem conferência.
+    if (data.acao !== undefined || data.acaoConfig !== undefined) {
+      const [atual] = await db
+        .select({ acao: automacoes.acao, acaoConfig: automacoes.acaoConfig })
+        .from(automacoes)
+        .where(and(eq(automacoes.id, id), eq(automacoes.organizacaoId, ctx.organizacaoId)))
+        .limit(1);
+      if (!atual) return c.json({ error: "Automação não encontrada" }, 404);
+      const acao = data.acao ?? atual.acao;
+      const config = data.acaoConfig !== undefined ? data.acaoConfig : (atual.acaoConfig as { cadenceDefinitionId?: string } | null);
+      const erroCadencia = await cadenciaInvalida(ctx.organizacaoId, acao, config?.cadenceDefinitionId ?? undefined);
+      if (erroCadencia) return c.json({ error: erroCadencia }, 422);
+    }
 
     const [updated] = await db
       .update(automacoes)

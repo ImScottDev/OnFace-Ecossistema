@@ -227,7 +227,7 @@ export async function getJornadaEtapas(orgId: string, hoje = new Date()): Promis
       vencidos: Number(proposta[0]?.vencidas || 0),
     },
     {
-      chave: "entrega", label: "Implantação", href: "/clientes/implantacao",
+      chave: "entrega", label: "Implantação", href: "/pos-vendas?aba=imp",
       total: Number(entrega[0]?.total || 0), valor: 0, vencidos: Number(entrega[0]?.atrasadas || 0),
     },
     {
@@ -370,10 +370,11 @@ export async function getOperacoesPrioritarias(orgId: string, limite = 8): Promi
     const { status, dias } = classificarPrazo(prazo);
     const tipo = r.tipo as TipoOperacao;
     const href =
-      tipo === "entrega" ? `/clientes/implantacao/${r.id}`
+      // O id da entrega é o do fulfillment, que é o que `/projetos/[id]` lê.
+      tipo === "entrega" ? `/projetos/${r.id}`
       : tipo === "cobranca" ? "/clientes/financeiro"
       : tipo === "proposta" ? `/propostas/${r.id}`
-      : `/negocios/${r.id}`;
+      : `/pipeline/${r.id}`;
     return {
       id: r.id,
       tipo,

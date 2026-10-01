@@ -53,7 +53,28 @@ const FORA: string[] = [
   "src/app/estudio",
   // Superfície congelada de referência.
   "src/app/onface-desenho",
+  /* Hex que é DADO, não estilo: a paleta de cores que uma etiqueta nova
+     recebe é gravada na linha de `labels` e devolvida para quem a lê. Virar
+     `var(--of-…)` gravaria a string do token no banco, e a cor da etiqueta
+     deixaria de existir fora desta folha de estilo. */
+  "src/app/(crm2)/pipeline/tags-actions.ts",
 ];
+
+/**
+ * O que o handoff gera, e por que é isento.
+ *
+ * A regra existe para quem ESCOLHE uma cor: escolher exige nomear. O conversor
+ * (`scripts/dc-para-tsx.mjs`) não escolhe nada — copia literal o que o Claude
+ * Design produziu, e é essa cópia cega que torna a tela fiel por construção.
+ * Tokenizar aqui significaria editar arquivo gerado, que a próxima regeração
+ * apaga.
+ *
+ * Casar pelo SUFIXO, e não por uma lista de nomes, é o que mantém isto
+ * correto quando as telas restantes forem convertidas — e o que mantém a
+ * regra valendo para o que é escrito à mão na mesma pasta: `*Proto.tsx` e os
+ * utilitários NÃO são isentos.
+ */
+const GERADO_PELO_HANDOFF = /^src\/components\/onface\/proto\/\w+(Desenho|Liga)\.(tsx|css)$/;
 
 const EXTENSOES = [".tsx", ".ts", ".css"];
 
@@ -87,6 +108,7 @@ function arquivos(dir: string, achados: string[] = []): string[] {
     const caminho = join(dir, e.name);
     const rel = relative(RAIZ, caminho).replaceAll("\\", "/");
     if (FORA.some((f) => rel === f || rel.startsWith(`${f}/`))) continue;
+    if (GERADO_PELO_HANDOFF.test(rel)) continue;
     if (e.isDirectory()) {
       if (e.name === "node_modules" || e.name.startsWith(".")) continue;
       arquivos(caminho, achados);

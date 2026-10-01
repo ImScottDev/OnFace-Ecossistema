@@ -1677,7 +1677,7 @@ Quando a alteração passa a valer
 {(f3.vigencias ?? []).map((vg: any, i1: number) => (
 <Fragment key={vg?.id ?? vg?.chave ?? i1}>
 <div onClick={vg.onClick} style={estilo(vg.style)}>
-<span style={{ marginTop: "1px" }} />
+<span style={estilo(`${vg.radio ?? ""};margin-top:1px`)} />
 <span style={{ flex: "1", minWidth: "0" }}>
 <span style={{ display: "block", fontSize: "12.5px", fontWeight: "600", color: "#12171d" }}>
 {vg.l}
@@ -1999,7 +1999,7 @@ Para
 <span style={{ display: "flex", gap: "3px", fontSize: "12px", fontWeight: "600", color: "#4a5560", marginBottom: "6px" }}>
 Cópia
 </span>
-<div style={{ display: "flex", alignItems: "center", gap: "5px", flexWrap: "wrap", minHeight: "38px", padding: "5px 8px", borderRadius: "9px", background: "#fff", boxShadow: "{{ f4.ccBorda }}" }}>
+<div style={estilo(`display:flex;align-items:center;gap:5px;flex-wrap:wrap;min-height:38px;padding:5px 8px;border-radius:9px;background:#fff;box-shadow:${f4.ccBorda ?? ""}`)}>
 {(f4.cc ?? []).map((cc: any, i1: number) => (
 <Fragment key={cc?.id ?? cc?.chave ?? i1}>
 <span style={{ display: "inline-flex", alignItems: "center", gap: "4px", height: "26px", padding: "0 4px 0 9px", borderRadius: "9999px", background: "#eeeff3", fontSize: "12px", fontWeight: "500", color: "#1f252c", maxWidth: "100%" }}>
@@ -2145,7 +2145,7 @@ do cadastro do contato
 </span>
 </>) : null}
 </span>
-<div style={{ display: "flex", alignItems: "center", gap: "10px", height: "44px", padding: "0 12px 0 8px", borderRadius: "10px", background: "#fff", boxShadow: "{{ f4.waBorda }}" }}>
+<div style={estilo(`display:flex;align-items:center;gap:10px;height:44px;padding:0 12px 0 8px;border-radius:10px;background:#fff;box-shadow:${f4.waBorda ?? ""}`)}>
 <span style={{ flex: "0 0 auto", width: "28px", height: "28px", borderRadius: "9999px", background: "#eeeff3", color: "#4a5560", fontSize: "11px", fontWeight: "700", display: "grid", placeItems: "center" }}>
 {f4.waIni}
 </span>

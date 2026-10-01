@@ -1,6 +1,6 @@
-import { Cf2OnboardingDetail } from "@/components/crm2/clientes/OnboardingDetail";
+import { redirect } from "next/navigation";
 
-export default async function OnboardingDetalhePage({ params }: { params: Promise<{ fulfillmentId: string }> }) {
-  const { fulfillmentId } = await params;
-  return <Cf2OnboardingDetail fulfillmentId={fulfillmentId} />;
+/** Pós-venda do CRM 1 — o detalhe do onboarding vive em `/clientes/onboarding/:id`. */
+export default async function RedirecionaOnboardingDetalhe({ params }: { params: Promise<{ fulfillmentId: string }> }) {
+  redirect(`/clientes/onboarding/${encodeURIComponent((await params).fulfillmentId)}`);
 }

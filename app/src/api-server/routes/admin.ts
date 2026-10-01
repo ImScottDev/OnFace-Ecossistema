@@ -5,6 +5,7 @@ import { organizacoes, usuarios, whatsappSessao, auditLog } from "@/lib/db/schem
 import { eq, and, sql as rawSql } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { getSuperCtx, getCtx } from "../compat.js";
+import { podeVerComo } from "@/lib/auth/roles";
 
 const app = new Hono();
 
@@ -346,13 +347,16 @@ app.post("/org-switch", async (c) => {
 
 // ─── View As (impersonação de leitura) ───────────────────────────
 const VIEW_AS_COOKIE = "mcrm-view-as";
-const VIEW_AS_ADMIN_ROLES = ["admin", "gerente", "super_admin"];
+// Quem pode ativar vem de `podeVerComo` (lib/auth/roles) — a mesma regra que o
+// auth.ts/tenant.ts aplicam ao LER o cookie. Antes aqui aceitava admin/gerente:
+// o cookie era gravado, o banner dizia "visualizando como", mas os dados seguiam
+// os do admin (o tenant ignora quem não é super_admin).
 
 // GET /admin/view-as — estado atual + lista de usuários da org.
 // Autoriza pelo role REAL (ctx.realRole) pra continuar funcionando durante o view-as.
 app.get("/view-as", async (c) => {
   const ctx = await getCtx(c);
-  if (!VIEW_AS_ADMIN_ROLES.includes(ctx.realRole)) {
+  if (!podeVerComo(ctx.realRole)) {
     return c.json({ error: "Forbidden" }, 403);
   }
 
@@ -387,7 +391,7 @@ app.get("/view-as", async (c) => {
 // POST /admin/view-as — { userId } seta; vazio/próprio limpa
 app.post("/view-as", async (c) => {
   const ctx = await getCtx(c);
-  if (!VIEW_AS_ADMIN_ROLES.includes(ctx.realRole)) {
+  if (!podeVerComo(ctx.realRole)) {
     return c.json({ error: "Forbidden" }, 403);
   }
 

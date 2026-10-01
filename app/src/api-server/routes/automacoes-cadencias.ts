@@ -12,7 +12,7 @@ import { cadenceDefinitions, cadenceDefinitionPointers, cadenceVersions, cadence
 import { eq, sql, and, desc, inArray } from "drizzle-orm";
 import { getCtx, exigirCtx } from "../compat.js";
 import { z } from "zod";
-import { cancelarCadencia } from "@/lib/cadencia/cadence-engine";
+import { cancelarCadencia, iniciarCadencia } from "@/lib/cadencia/cadence-engine";
 import type { CadenceStep } from "@/lib/cadencia/cadence-engine";
 import { compileFollowupGraph } from "@/lib/ai-platform/followup/compile";
 import { createEmptyFollowupGraph, followupGraphSchema, type FollowupGraph } from "@/lib/ai-platform/followup/graph";
@@ -77,7 +77,11 @@ app.get("/automacoes/cadencias/fila", async (c) => {
   const query = (c.req.query("q") ?? "").trim().toLowerCase();
 
   const conditions = [eq(cadenceEnrollments.organizacaoId, ctx.organizacaoId)];
-  if (status && status !== "all") conditions.push(eq(cadenceEnrollments.status, status));
+  // "em_curso" agrega os três estados vivos do motor (o retry grava "waiting",
+  // ver cadence-engine.ts) — é o mesmo agrupamento do card "Em curso", para o
+  // número do card bater com a lista aberta no drill-down.
+  if (status === "em_curso") conditions.push(inArray(cadenceEnrollments.status, ["active", "waiting", "waiting_reply"]));
+  else if (status && status !== "all") conditions.push(eq(cadenceEnrollments.status, status));
   if (definitionId && definitionId !== "all") conditions.push(eq(cadenceEnrollments.cadenceDefinitionId, definitionId));
 
   const [definitions, enrollments] = await Promise.all([
@@ -90,7 +94,7 @@ app.get("/automacoes/cadencias/fila", async (c) => {
     return acc;
   }, { lead: [] as string[], negocio: [] as string[], contato: [] as string[] });
   const [leadRows, negocioRows, contatoRows] = await Promise.all([
-    idsByType.lead.length ? db.select({ id: leads.id, nome: leads.nome, empresa: leads.empresa, email: leads.email, telefone: leads.telefone }).from(leads).where(and(eq(leads.organizacaoId, ctx.organizacaoId), inArray(leads.id, idsByType.lead))) : [],
+    idsByType.lead.length ? db.select({ id: leads.id, nome: leads.nome, sobrenome: leads.sobrenome, empresa: leads.empresa, email: leads.email, telefone: leads.telefone }).from(leads).where(and(eq(leads.organizacaoId, ctx.organizacaoId), inArray(leads.id, idsByType.lead))) : [],
     idsByType.negocio.length ? db.select({ id: negocios.id, titulo: negocios.titulo }).from(negocios).where(and(eq(negocios.organizacaoId, ctx.organizacaoId), inArray(negocios.id, idsByType.negocio))) : [],
     idsByType.contato.length ? db.select({ id: contatos.id, nome: contatos.nome, email: contatos.email, telefone: contatos.telefone }).from(contatos).where(and(eq(contatos.organizacaoId, ctx.organizacaoId), inArray(contatos.id, idsByType.contato))) : [],
   ]);
@@ -105,7 +109,7 @@ app.get("/automacoes/cadencias/fila", async (c) => {
     const lead = enrollment.entityType === "lead" ? leadById.get(enrollment.entityId) : undefined;
     const negocio = enrollment.entityType === "negocio" ? negocioById.get(enrollment.entityId) : undefined;
     const contato = enrollment.entityType === "contato" ? contatoById.get(enrollment.entityId) : undefined;
-    const entityName = lead?.nome ?? negocio?.titulo ?? contato?.nome ?? "Registro indisponível";
+    const entityName = (lead ? [lead.nome, lead.sobrenome].filter(Boolean).join(" ") || null : null) ?? negocio?.titulo ?? contato?.nome ?? "Registro indisponível";
     return {
       id: enrollment.id,
       status: enrollment.status,
@@ -319,6 +323,70 @@ app.get("/automacoes/cadencias/:id/enrollments", async (c) => {
     eq(cadenceEnrollments.organizacaoId, ctx.organizacaoId),
   )).orderBy(desc(cadenceEnrollments.updatedAt)).limit(100);
   return c.json({ enrollments: rows });
+});
+
+// Inscrição manual (tela /automacoes/cadencias, 01/10). Antes a única porta
+// de entrada manual era POST /prospeccao/cadencia/enroll, que não confere se o
+// lead é da organização (o motor recebe organizacaoId mas não valida a
+// entidade). Aqui a entidade é resolvida no tenant ANTES de chamar o motor, e
+// a escrita exige automation.manage como o resto do arquivo.
+const ENTIDADES_INSCREVIVEIS = ["lead", "contato", "negocio"] as const;
+type EntidadeInscrevivel = (typeof ENTIDADES_INSCREVIVEIS)[number];
+const ehInscrevivel = (t: string): t is EntidadeInscrevivel => (ENTIDADES_INSCREVIVEIS as readonly string[]).includes(t);
+
+async function buscarEntidades(organizacaoId: string, tipo: EntidadeInscrevivel, termo: string, ids?: string[]) {
+  const like = `%${termo}%`;
+  if (tipo === "lead") {
+    const rows = await db.select({ id: leads.id, nome: leads.nome, sobrenome: leads.sobrenome, empresa: leads.empresa, email: leads.email, telefone: leads.telefone }).from(leads)
+      .where(and(eq(leads.organizacaoId, organizacaoId), ids ? inArray(leads.id, ids) : termo ? sql`(concat_ws(' ', ${leads.nome}, ${leads.sobrenome}) ILIKE ${like} OR ${leads.empresa} ILIKE ${like} OR ${leads.email} ILIKE ${like})` : undefined))
+      .orderBy(desc(leads.updatedAt)).limit(20);
+    return rows.map((r) => ({ id: r.id, nome: [r.nome, r.sobrenome].filter(Boolean).join(" ") || "Sem nome", detalhe: r.empresa ?? r.email ?? r.telefone ?? null }));
+  }
+  if (tipo === "contato") {
+    const rows = await db.select({ id: contatos.id, nome: contatos.nome, email: contatos.email, telefone: contatos.telefone }).from(contatos)
+      .where(and(eq(contatos.organizacaoId, organizacaoId), ids ? inArray(contatos.id, ids) : termo ? sql`(${contatos.nome} ILIKE ${like} OR ${contatos.email} ILIKE ${like})` : undefined))
+      .orderBy(desc(contatos.updatedAt)).limit(20);
+    return rows.map((r) => ({ id: r.id, nome: r.nome || "Sem nome", detalhe: r.email ?? r.telefone ?? null }));
+  }
+  const rows = await db.select({ id: negocios.id, titulo: negocios.titulo, status: negocios.status }).from(negocios)
+    .where(and(eq(negocios.organizacaoId, organizacaoId), ids ? inArray(negocios.id, ids) : termo ? sql`${negocios.titulo} ILIKE ${like}` : undefined))
+    .orderBy(desc(negocios.updatedAt)).limit(20);
+  return rows.map((r) => ({ id: r.id, nome: r.titulo || "Sem título", detalhe: r.status ?? null }));
+}
+
+app.get("/automacoes/cadencias/:id/candidatos", async (c) => {
+  const ctx = await getCtx(c);
+  const [definition] = await db.select().from(cadenceDefinitions).where(and(eq(cadenceDefinitions.id, c.req.param("id")), eq(cadenceDefinitions.organizacaoId, ctx.organizacaoId))).limit(1);
+  if (!definition) return c.json({ error: "Cadencia nao encontrada" }, 404);
+  if (!ehInscrevivel(definition.entityType)) return c.json({ suportado: false, candidatos: [] });
+  const candidatos = await buscarEntidades(ctx.organizacaoId, definition.entityType, (c.req.query("q") ?? "").trim().slice(0, 80));
+  const ativos = candidatos.length ? await db.select({ entityId: cadenceEnrollments.entityId }).from(cadenceEnrollments).where(and(
+    eq(cadenceEnrollments.organizacaoId, ctx.organizacaoId), eq(cadenceEnrollments.cadenceDefinitionId, definition.id),
+    inArray(cadenceEnrollments.entityId, candidatos.map((x) => x.id)), inArray(cadenceEnrollments.status, ["active", "waiting", "waiting_reply", "paused"]),
+  )) : [];
+  const inscritos = new Set(ativos.map((a) => a.entityId));
+  return c.json({ suportado: true, candidatos: candidatos.map((x) => ({ ...x, jaInscrito: inscritos.has(x.id) })) });
+});
+
+app.post("/automacoes/cadencias/:id/enrollments", async (c) => {
+  const ctx = await exigirCtx(c, "automation.manage");
+  const parsed = z.object({ entityId: z.string().uuid() }).safeParse(await c.req.json());
+  if (!parsed.success) return c.json({ error: "Registro invalido" }, 400);
+  const [definition] = await db.select().from(cadenceDefinitions).where(and(eq(cadenceDefinitions.id, c.req.param("id")), eq(cadenceDefinitions.organizacaoId, ctx.organizacaoId))).limit(1);
+  if (!definition) return c.json({ error: "Cadencia nao encontrada" }, 404);
+  if (!definition.ativo) return c.json({ error: "Publique a cadência antes de inscrever alguém." }, 409);
+  if (!ehInscrevivel(definition.entityType)) return c.json({ error: "Inscrição manual disponível só para lead, contato ou negócio." }, 422);
+  const [entidade] = await buscarEntidades(ctx.organizacaoId, definition.entityType, "", [parsed.data.entityId]);
+  if (!entidade) return c.json({ error: "Registro nao encontrado" }, 404);
+  const [jaAtivo] = await db.select({ id: cadenceEnrollments.id }).from(cadenceEnrollments).where(and(
+    eq(cadenceEnrollments.organizacaoId, ctx.organizacaoId), eq(cadenceEnrollments.cadenceDefinitionId, definition.id),
+    eq(cadenceEnrollments.entityId, entidade.id), inArray(cadenceEnrollments.status, ["active", "waiting", "waiting_reply", "paused"]),
+  )).limit(1);
+  if (jaAtivo) return c.json({ enrollmentId: jaAtivo.id, jaExistia: true });
+  const enrollmentId = await iniciarCadencia({ cadenceDefinitionId: definition.id, organizacaoId: ctx.organizacaoId, entityType: definition.entityType, entityId: entidade.id, varsIniciais: { nome: entidade.nome } });
+  if (!enrollmentId) return c.json({ error: "Cadência sem passos publicados." }, 409);
+  await db.insert(cadenceEnrollmentEvents).values({ enrollmentId, stepId: "-", status: "enrolled", resultado: { actorId: ctx.userId, origem: "inscricao_manual" } });
+  return c.json({ enrollmentId, jaExistia: false }, 201);
 });
 
 app.get("/automacoes/cadencias/enrollments/:id/events", async (c) => {

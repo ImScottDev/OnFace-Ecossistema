@@ -1074,6 +1074,9 @@ app.get("/email/thread/:threadId", async (c) => {
 
 app.get("/email/auth/google", async (c) => {
   const ctx = await getCtx(c);
+  // O state do OAuth carrega ctx.userId; em "visualizar como" esse é o usuário
+  // visualizado, e a caixa do admin ficaria ligada à conta alheia.
+  if (ctx.isViewingAs) return c.json({ error: "Saia do modo visualizar como para conectar e-mail" }, 403);
 
   const state = createEmailOAuthState({
     organizacaoId: ctx.organizacaoId,
@@ -1121,6 +1124,9 @@ app.get("/email/auth/google/callback", async (c) => {
 
 app.get("/email/auth/microsoft", async (c) => {
   const ctx = await getCtx(c);
+  // O state do OAuth carrega ctx.userId; em "visualizar como" esse é o usuário
+  // visualizado, e a caixa do admin ficaria ligada à conta alheia.
+  if (ctx.isViewingAs) return c.json({ error: "Saia do modo visualizar como para conectar e-mail" }, 403);
 
   const state = createEmailOAuthState({
     organizacaoId: ctx.organizacaoId,

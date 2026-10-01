@@ -1,11 +1,24 @@
 import { notFound } from "next/navigation";
-import { OnfacePage, OnfacePageSurface } from "@/components/onface/shell/OnfacePage";
-import { DetalheOportunidadePagina } from "@/components/onface/vendas/pagina";
-import { acaoDetalhe } from "../actions";
+/* A tela é o desenho do handoff, convertido por máquina. `vendas/pagina`
+   era a versão recriada à mão e sai da rota — ver docs/design/PLANO-HANDOFF.md. */
+import { OportunidadeProto } from "@/components/onface/proto/OportunidadeProto";
+import { acaoDetalhe, acaoMoverEtapa, acaoPerder, acaoTentarGanhar, acaoDefinirProximaAcao } from "../actions";
 
 export default async function OportunidadePorId({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const resultado = await acaoDetalhe(id);
   if (!resultado.ok || !resultado.dados?.oportunidade) notFound();
-  return <OnfacePage><OnfacePageSurface><DetalheOportunidadePagina oportunidade={resultado.dados.oportunidade} timeline={resultado.dados.timeline} voltar="/pipeline" /></OnfacePageSurface></OnfacePage>;
+
+  return (
+    <OportunidadeProto
+      oportunidade={resultado.dados.oportunidade}
+      timeline={resultado.dados.timeline}
+      acoes={{
+        moverEtapa: acaoMoverEtapa,
+        perder: acaoPerder,
+        tentarGanhar: acaoTentarGanhar,
+        definirProximaAcao: acaoDefinirProximaAcao,
+      }}
+    />
+  );
 }

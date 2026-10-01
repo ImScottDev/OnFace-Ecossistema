@@ -1,323 +1,175 @@
 import Link from "next/link";
-import { db } from "@/lib/db";
-import { organizacoes } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
-import { getTenantContext } from "@/lib/auth/tenant";
 import { redirect } from "next/navigation";
-import { Cf2Badge } from "@/components/crm2/ui/Badge";
-import {
-  UserCog,
-  Users,
-  Shield,
-  ShieldCheck,
-  GitBranch,
-  SlidersHorizontal,
-  Package,
-  Tags,
-  Inbox,
-  Mail,
-  MessageSquare,
-  Bot,
-  Target,
-  Sparkles,
-  Handshake,
-  LineChart,
-  Key,
-  Bell,
-  ChevronRight,
-  FileText,
-  Tag,
-  Layers,
-  ScrollText,
-  Workflow,
-  Blocks,
-} from "lucide-react";
+import { getTenantContext } from "@/lib/auth/tenant";
+import { resumoAjustes } from "@/lib/ajustes/resumo";
 
 export const metadata = { title: "Ajustes" };
 
 /**
- * Hub administrativo do CRM 2.0 (19/08). Item "Ajustes" da navegação macro
- * apontava pra `/configuracoes`, que hoje é só o layout+telas legadas do
- * `(crm)` — sem hub próprio em CRM2. Esta página NÃO reconstrói nenhuma
- * tela de configuração (isso é trabalho grande, fica pra depois): é só a
- * página inicial que organiza links pras telas reais que já existem no
- * legado, mais 2 cards honestos de "em construção" onde não existe tela
- * nenhuma ainda (Permissões, status central de outras integrações).
+ * Índice de Ajustes no arquétipo H do ONFACE (01/10/2026).
  *
- * Cada link abaixo foi confirmado batendo em
- * `src/app/(crm)/configuracoes/<pasta>/page.tsx` antes de entrar aqui —
- * nada aponta pra rota que não existe.
+ * Era uma grade de 28 cartões, 7 deles "Em construção": a coluna de seções do
+ * layout já lista todo destino real, então repetir os destinos aqui era
+ * redundante, e os cartões sem tela eram promessa, não ajuste. Os sete saíram
+ * sem perda — nenhum levava a lugar algum (Permissões, que era um deles, agora
+ * tem tela própria em /ajustes/permissoes).
+ *
+ * O espaço virou o que um índice de configurações deveria responder de cara:
+ * em que estado está esta organização? Cada grupo é um cartão com título,
+ * ajuda, fatos derivados do banco (escopo da organização) e o link para a
+ * seção que resolve o que o fato acusa.
  */
 
-interface AjusteCard {
-  titulo: string;
-  descricao: string;
-  href?: string;
-  icon: React.ElementType;
-}
+type Estado = "ok" | "erro" | "pendente" | "neutro";
 
-interface AjusteBloco {
-  titulo: string;
-  cards: AjusteCard[];
-}
-
-const BLOCOS: AjusteBloco[] = [
-  {
-    titulo: "Organização & Acesso",
-    cards: [
-      {
-        titulo: "Usuários & Organização",
-        descricao: "Dados da organização (nome, slug, domínio) e lista de usuários do CRM.",
-        href: "/ajustes/geral",
-        icon: UserCog,
-      },
-      {
-        titulo: "Equipe, papéis e metas",
-        descricao: "Quem tem acesso, o papel de cada pessoa e a meta mensal — é aqui que se define a meta que a Home cobra.",
-        href: "/ajustes/membros",
-        icon: Users,
-      },
-      {
-        titulo: "Permissões",
-        descricao: "Hoje o papel de cada usuário só é exibido — ainda não existe tela para editar o que cada papel pode fazer.",
-        icon: Shield,
-      },
-    ],
-  },
-  {
-    titulo: "Comercial",
-    cards: [
-      {
-        titulo: "Pipeline & Etapas",
-        descricao: "Etapas do funil de vendas, etapas de fechamento e motivos de perda do negócio.",
-        href: "/ajustes/pipeline",
-        icon: GitBranch,
-      },
-      {
-        titulo: "Modelos Comerciais",
-        descricao: "Condições comerciais e modelos de proposta padrão por família de serviço.",
-        icon: Layers,
-      },
-      {
-        titulo: "Campos customizados",
-        descricao: "Campos extras nos formulários de lead e negócio.",
-        href: "/ajustes/campos-custom",
-        icon: SlidersHorizontal,
-      },
-      {
-        titulo: "Catálogo de Serviços",
-        descricao: "Produtos por família comercial (Callface AI/PABX/White Label) — semântica declarada, nunca inferida por nome.",
-        href: "/ajustes/catalogo",
-        icon: Package,
-      },
-      {
-        titulo: "Classificação de Leads",
-        descricao: "Setores e origens usados para classificar leads.",
-        href: "/ajustes/leads",
-        icon: Tags,
-      },
-      {
-        titulo: "Contratos",
-        descricao: "Templates de contrato — variáveis, versão, preview com dados fictícios.",
-        href: "/ajustes/contratos",
-        icon: FileText,
-      },
-    ],
-  },
-  {
-    titulo: "Comunicação",
-    cards: [
-      {
-        titulo: "Contas de E-mail",
-        descricao: "Conexão e sincronização das caixas de e-mail da equipe.",
-        href: "/ajustes/email",
-        icon: Inbox,
-      },
-      {
-        titulo: "Templates de E-mail",
-        descricao: "Modelos de e-mail usados em disparos e follow-ups.",
-        href: "/ajustes/email/templates",
-        icon: Mail,
-      },
-      {
-        titulo: "WhatsApp",
-        descricao: "Sessões de WhatsApp conectadas ao CRM.",
-        href: "/ajustes/whatsapp",
-        icon: MessageSquare,
-      },
-      {
-        titulo: "Scripts de Atendimento",
-        descricao: "Roteiros de ligação e mensagem usados por SDR e Closer — distinto de template de e-mail.",
-        icon: ScrollText,
-      },
-    ],
-  },
-  {
-    titulo: "IA & Growth",
-    cards: [
-      {
-        titulo: "AI SDR",
-        descricao: "SDR virtual (Groq) que qualifica leads automaticamente.",
-        href: "/ajustes/ai-sdr",
-        icon: Bot,
-      },
-      {
-        titulo: "Políticas de Automação",
-        descricao: "Regras gerais de automação (fluxos, cadências, agentes) além da configuração do AI SDR.",
-        icon: Workflow,
-      },
-      {
-        titulo: "ICP",
-        descricao: "Perfil de Cliente Ideal usado para qualificação e priorização de leads.",
-        href: "/ajustes/icp",
-        icon: Target,
-      },
-      {
-        titulo: "Enriquecimento Automático",
-        descricao: "Enriquecimento automático de dados de leads.",
-        href: "/ajustes/enriquecimento",
-        icon: Sparkles,
-      },
-      {
-        titulo: "Handover",
-        descricao: "O que acontece automaticamente quando um negócio é ganho.",
-        href: "/ajustes/handover",
-        icon: Handshake,
-      },
-      {
-        titulo: "Tracking & Conversões",
-        descricao: "Pixels e conversões offline (Meta CAPI, Google Ads).",
-        href: "/ajustes/tracking",
-        icon: LineChart,
-      },
-    ],
-  },
-  {
-    titulo: "Integrações",
-    cards: [
-      {
-        titulo: "Microsoft 365",
-        descricao: "Conecte Outlook e Microsoft 365 para sincronizar e-mails e agenda no ONFACE.",
-        href: "/ajustes/email",
-        icon: Mail,
-      },
-      {
-        titulo: "Integrações e IA",
-        descricao: "Configure provedores de IA, Apollo e as demais integrações da organização.",
-        href: "/ajustes/integracoes",
-        icon: Key,
-      },
-      {
-        titulo: "Outras integrações",
-        descricao: "Stripe, WhatsApp Business, Meta e Documenso são acompanhados pela operação técnica.",
-        icon: Package,
-      },
-    ],
-  },
-  {
-    titulo: "Sistema",
-    cards: [
-      {
-        titulo: "Notificações",
-        descricao: "Regras de notificação (SLA, alertas, resumo diário).",
-        href: "/ajustes/notificacoes",
-        icon: Bell,
-      },
-      {
-        titulo: "Tags",
-        descricao: "Etiquetas genéricas aplicadas a qualquer registro — diferente da Classificação de Leads (setor/origem).",
-        icon: Tag,
-      },
-      {
-        titulo: "Qualidade de dados",
-        descricao: "Dez verificações só-leitura contra o banco real, mais o relatório de duplicidade de contratos.",
-        href: "/ajustes/qualidade-dados",
-        icon: ShieldCheck,
-      },
-      {
-        titulo: "Elementos Globais",
-        descricao: "Campos e listas compartilhados entre módulos (não específicos de lead ou negócio).",
-        icon: Blocks,
-      },
-    ],
-  },
-];
-
-function AjusteCardItem({ card }: { card: AjusteCard }) {
-  const Icon = card.icon;
-  const conteudo = (
-    <div
-      className="flex items-start gap-3 h-full rounded-2xl p-4 transition-colors"
-      style={{
-        background: "var(--cf2-bg-surface)",
-        border: "1px solid var(--cf2-border-default)",
-        boxShadow: "var(--cf2-shadow-card-sm)",
-        opacity: card.href ? 1 : 0.7,
-      }}
-    >
-      {/* Ícone solto, sem o quadradinho arredondado.
-       *
-       * Medido nesta tela: 18 chips coral de uma vez. Coral é a cor de
-       * "isto exige atenção"; pintada em todo item de uma lista de
-       * configuração, ela deixa de significar qualquer coisa — e índice de
-       * ajustes não tem nada que exija atenção. O ícone continua ajudando a
-       * varrer a lista, agora sem competir com o título que está ao lado. */}
-      <Icon
-        className="w-[18px] h-[18px] shrink-0 mt-px"
-        style={{ color: "var(--text-muted)" }}
-        aria-hidden
-      />
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 flex-wrap">
-          <p className="text-[14px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>{card.titulo}</p>
-          {!card.href && <Cf2Badge variant="neutral">Em construção</Cf2Badge>}
-        </div>
-        <p className="text-[12px] mt-0.5" style={{ color: "var(--cf2-text-secondary)" }}>{card.descricao}</p>
-      </div>
-      {card.href && <ChevronRight className="w-4 h-4 shrink-0 mt-1" style={{ color: "var(--cf2-text-tertiary)" }} />}
+function Fato({ rotulo, valor, estado }: { rotulo: string; valor: string; estado?: Estado }) {
+  return (
+    <div className="aj-fato">
+      <dt>{rotulo}</dt>
+      <dd className={estado ? "aj-estado" : undefined} data-estado={estado}>{valor}</dd>
     </div>
   );
+}
 
-  if (!card.href) {
-    return <div>{conteudo}</div>;
-  }
-
+function Grupo({
+  titulo, ajuda, children, links,
+}: {
+  titulo: string;
+  ajuda: string;
+  children?: React.ReactNode;
+  links: { rotulo: string; href: string }[];
+}) {
   return (
-    <Link href={card.href} className="block h-full">
-      {conteudo}
-    </Link>
+    <section className="aj-grupo" aria-labelledby={`aj-${titulo}`}>
+      <div className="aj-grupo-cabeca">
+        <h2 className="aj-grupo-titulo" id={`aj-${titulo}`}>{titulo}</h2>
+        <p className="aj-grupo-ajuda">{ajuda}</p>
+      </div>
+      {children ? <dl className="aj-fatos">{children}</dl> : null}
+      <div className="aj-links">
+        {links.map((l) => <Link key={l.href} href={l.href} className="aj-link">{l.rotulo}</Link>)}
+      </div>
+    </section>
   );
 }
+
+const plural = (n: number, um: string, varios: string) => `${n} ${n === 1 ? um : varios}`;
 
 export default async function AjustesPage() {
   const ctx = await getTenantContext();
   if (!ctx) redirect("/login");
 
-  const [org] = await db
-    .select({ nome: organizacoes.nome })
-    .from(organizacoes)
-    .where(eq(organizacoes.id, ctx.organizacaoId))
-    .limit(1);
+  const r = await resumoAjustes(ctx.organizacaoId);
+
+  // "Conectado" só quando TODAS conectadas; parte caída é pendência, não ok —
+  // sessão desconectada é mensagem de WhatsApp que não sai.
+  const estadoWhats: Estado = r.whatsapp.total === 0 ? "neutro"
+    : r.whatsapp.conectadas === r.whatsapp.total ? "ok"
+    : r.whatsapp.conectadas === 0 ? "erro" : "pendente";
+  const estadoEmail: Estado = r.email.total === 0 ? "neutro" : r.email.comErro > 0 ? "erro" : "ok";
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-8">
-        {BLOCOS.map((bloco) => (
-          <section key={bloco.titulo} className="flex flex-col gap-3">
-            <p
-              className="text-[12px] font-bold uppercase tracking-wide"
-              style={{ color: "var(--cf2-text-tertiary)", fontFamily: "var(--cf2-font-heading)" }}
-            >
-              {bloco.titulo}
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {bloco.cards.map((card) => (
-                <AjusteCardItem key={card.titulo} card={card} />
-              ))}
-            </div>
-          </section>
-        ))}
-      </div>
+    <div className="aj-grupos">
+      <Grupo
+        titulo="Organização"
+        ajuda="Identidade da organização e quem trabalha nela."
+        links={[{ rotulo: "Geral", href: "/ajustes/geral" }, { rotulo: "Membros", href: "/ajustes/membros" }]}
+      >
+        <Fato rotulo="Nome" valor={r.organizacao?.nome ?? "—"} />
+        <Fato rotulo="Slug" valor={r.organizacao?.slug || "—"} />
+        <Fato rotulo="Pessoas ativas" valor={String(r.equipe.ativos)} />
+        <Fato
+          rotulo="Convites pendentes"
+          valor={String(r.equipe.convitesPendentes)}
+          estado={r.equipe.convitesPendentes > 0 ? "pendente" : undefined}
+        />
+        {r.equipe.convitesVencidos > 0 && (
+          // Só aparece quando existe: o link Membros, logo abaixo, é onde se reenvia.
+          <Fato
+            rotulo="Convites vencidos"
+            valor={plural(r.equipe.convitesVencidos, "convite vencido", "convites vencidos")}
+            estado="pendente"
+          />
+        )}
+      </Grupo>
+
+      <Grupo
+        titulo="Acesso"
+        ajuda="Papéis e o que cada um pode fazer. Financeiro, automações, agentes, CS e tokens de API já obedecem a esta matriz."
+        links={[{ rotulo: "Permissões", href: "/ajustes/permissoes" }, { rotulo: "Tokens da API", href: "/ajustes/api-tokens" }]}
+      >
+        <Fato rotulo="Papéis" valor={String(r.acesso.papeis)} />
+        <Fato
+          rotulo="Pessoas sem papel vinculado"
+          valor={String(r.acesso.ativosSemPapelVinculado)}
+          estado={r.acesso.ativosSemPapelVinculado > 0 ? "pendente" : "ok"}
+        />
+        <Fato rotulo="Tokens de API ativos" valor={String(r.tokensApiAtivos)} />
+      </Grupo>
+
+      <Grupo
+        titulo="Canais"
+        ajuda="Por onde o ONFACE fala com o cliente. Sessão desconectada é mensagem que não sai."
+        links={[
+          { rotulo: "WhatsApp", href: "/ajustes/whatsapp" },
+          { rotulo: "E-mail", href: "/ajustes/email" },
+          { rotulo: "Templates de e-mail", href: "/ajustes/email/templates" },
+        ]}
+      >
+        <Fato
+          rotulo="WhatsApp"
+          valor={r.whatsapp.total === 0 ? "Nenhuma sessão" : `${r.whatsapp.conectadas} de ${r.whatsapp.total} conectadas`}
+          estado={estadoWhats}
+        />
+        <Fato
+          rotulo="Caixas de e-mail"
+          valor={r.email.total === 0 ? "Nenhuma conectada"
+            : r.email.comErro > 0 ? `${plural(r.email.comErro, "com erro", "com erro")} de ${r.email.total}`
+            : plural(r.email.ativas, "sincronizando", "sincronizando")}
+          estado={estadoEmail}
+        />
+      </Grupo>
+
+      <Grupo
+        titulo="Integrações"
+        ajuda="Provedores de IA e de dados da organização. Chaves nunca aparecem aqui, só se existem."
+        links={[{ rotulo: "Integrações e IA", href: "/ajustes/integracoes" }, { rotulo: "AI SDR", href: "/ajustes/ai-sdr" }]}
+      >
+        <Fato
+          rotulo="Credenciais de IA"
+          valor={r.ia.credenciaisComErro > 0 ? `${r.ia.credenciaisComErro} com erro`
+            : r.ia.credenciaisAtivas > 0 ? plural(r.ia.credenciaisAtivas, "ativa", "ativas") : "Nenhuma"}
+          estado={r.ia.credenciaisComErro > 0 ? "erro" : r.ia.credenciaisAtivas > 0 ? "ok" : "pendente"}
+        />
+        <Fato
+          rotulo="Apollo"
+          valor={r.apolloConfigurado ? "Configurado" : "Não configurado"}
+          estado={r.apolloConfigurado ? "ok" : "pendente"}
+        />
+      </Grupo>
+
+      <Grupo
+        titulo="Comercial"
+        ajuda="Como o funil está montado: etapas, campos, distribuição de leads e o que se vende."
+        links={[
+          { rotulo: "Pipeline", href: "/ajustes/pipeline" },
+          { rotulo: "Campos custom", href: "/ajustes/campos-custom" },
+          { rotulo: "Leads", href: "/ajustes/leads" },
+          { rotulo: "Catálogo", href: "/ajustes/catalogo" },
+          { rotulo: "Serviços", href: "/ajustes/servicos" },
+          { rotulo: "Contratos", href: "/ajustes/contratos" },
+        ]}
+      />
+
+      <Grupo
+        titulo="Sistema"
+        ajuda="Conferências de qualidade dos dados da organização."
+        // Notificações, Tracking, Enriquecimento, ICP e Handover saíram do índice
+        // em 01/10/2026: gravam em organizacoes.settings chaves que nenhum
+        // processo lê (ver `semEfeito` em ./Nav). Oferecê-los aqui era prometer
+        // alerta, conversão e e-mail que nunca saem.
+        links={[{ rotulo: "Qualidade de dados", href: "/ajustes/qualidade-dados" }]}
+      />
     </div>
   );
 }

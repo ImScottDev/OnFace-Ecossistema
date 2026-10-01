@@ -1,16 +1,22 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { and, eq, gt, sql } from "drizzle-orm";
 import { auth } from "@/lib/auth/config";
+import { getTenantContext } from "@/lib/auth/tenant";
+import { db } from "@/lib/db";
+import { contatos } from "@/lib/db/schema";
+import { condicaoAcessoConversa } from "@/lib/whatsapp/acesso";
 import { Providers } from "@/components/crm/Providers";
 import { Cf2SidebarProvider } from "@/components/crm2/ui/Sidebar";
 import { Cf2ThemeRoot } from "@/components/crm2/ThemeRoot";
 import { Cf2CamadaModal } from "@/components/crm2/CamadaModal";
 import { OnfaceThemeRoot } from "@/components/onface/OnfaceThemeRoot";
-import Script from "next/script";
 import { CascaProto } from "@/components/onface/proto/CascaProto";
 import { TopbarOnface } from "@/components/onface/shell/TopbarOnface";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
+
+import { MotionDoProto } from "@/components/onface/proto/MotionDoProto";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +28,52 @@ async function resolveSession() {
         setTimeout(() => reject(new Error("auth-timeout")), 8000),
       ),
     ]);
+  } catch {
+    return null;
+  }
+}
+
+/** Conversas abertas com mensagem não lida que ESTE usuário pode abrir — o
+ * número do atalho "Atendimento" da casca. Uma contagem só, no layout, com a
+ * mesma regra de acesso da caixa de entrada (`condicaoAcessoConversa`), para o
+ * badge nunca prometer conversa que a pessoa não consegue ver.
+ *
+ * `null` quando não dá para contar: a casca esconde o número em vez de chutar.
+ * Layout não re-renderiza na navegação do cliente, então o número é o do
+ * carregamento da página — não é ao vivo. */
+/** O usuário da sessão, para o perfil da casca e como autor nas telas
+ * portadas — que no protótipo era "Scott Ferraz" fixo. */
+async function usuarioDaCasca(u: { name?: string | null; email?: string | null }) {
+  const nome = u.name?.trim() || u.email?.split("@")[0] || "Você";
+  let organizacao = "";
+  try {
+    const ctx = await getTenantContext();
+    if (ctx) {
+      const [o] = await db.execute<{ nome: string }>(sql`
+        SELECT nome FROM organizacoes WHERE id = ${ctx.organizacaoId}::uuid`);
+      organizacao = o?.nome ?? "";
+    }
+  } catch { /* sem organização, o perfil mostra só o nome */ }
+  return { nome, email: u.email ?? "", organizacao };
+}
+
+async function conversasNaoLidas(): Promise<number | null> {
+  try {
+    const ctx = await getTenantContext();
+    if (!ctx) return null;
+    const [r] = await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(contatos)
+      .where(and(
+        eq(contatos.organizacaoId, ctx.organizacaoId),
+        // A caixa (lib/atendimento/tela.ts) só lista WhatsApp; contar outro
+        // canal seria badge apontando conversa que a tela não mostra.
+        eq(contatos.canal, "whatsapp"),
+        eq(contatos.status, "open"),
+        gt(contatos.naoLidas, 0),
+        condicaoAcessoConversa(ctx),
+      ));
+    return r?.n ?? 0;
   } catch {
     return null;
   }
@@ -72,6 +124,8 @@ export default async function Crm2Layout({
   // empurrando o conteúdo de lado na frente do usuário.
   const cookieStore = await cookies();
   const abertaPorPadrao = cookieStore.get("sidebar_state")?.value !== "false";
+  const naoLidas = await conversasNaoLidas();
+  const usuario = await usuarioDaCasca(session.user);
 
   return (
     <Providers session={session} variant="onface">
@@ -101,10 +155,10 @@ export default async function Crm2Layout({
             passam a valer sem nenhuma ponte. Reescrevê-lo em React seria a
             transcrição que este caminho evita — e ele já respeita
             prefers-reduced-motion. */}
-        <Script src="/proto/motion.js" strategy="afterInteractive" />
+        <MotionDoProto />
 
         <Cf2SidebarProvider className="contents">
-          <CascaProto>{children}</CascaProto>
+          <CascaProto naoLidas={naoLidas} usuario={usuario}>{children}</CascaProto>
         </Cf2SidebarProvider>
       </TooltipProvider>
     </Providers>

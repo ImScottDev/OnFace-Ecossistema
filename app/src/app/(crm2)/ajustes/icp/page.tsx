@@ -70,6 +70,11 @@ export default function IcpConfigPage() {
 
   return (
     <div className="space-y-5 max-w-3xl">
+      {/* Nenhum processo lê esta chave de organizacoes.settings (medido
+          01/10/2026; ver `semEfeito` em ../Nav). Salvar grava, e só. */}
+      <p className="aj-aviso" role="status">
+        <strong>Ainda sem efeito:</strong> o perfil fica gravado como referência, mas nenhum processo o usa: não pontua lead, não filtra prospecção e não alimenta o AI SDR.
+      </p>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Target className="w-5 h-5 text-[var(--cf2-accent)]" />

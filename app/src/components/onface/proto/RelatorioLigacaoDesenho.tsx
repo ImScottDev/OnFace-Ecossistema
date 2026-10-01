@@ -477,7 +477,7 @@ GRAVAÇÃO
 </span>
 </span>
 <span style={{ height: "6px", borderRadius: "9999px", background: "#eceef0", overflow: "hidden" }}>
-<span style={{ display: "block" }} />
+<span style={estilo(`display:block;${sp.bar ?? ""}`)} />
 </span>
 <span style={{ fontSize: "12px", fontWeight: "700", color: "#12171d", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
 {sp.pct}

@@ -1134,6 +1134,13 @@ export const automacoes = pgTable("automacoes", {
   currentVersionId: uuid("current_version_id"),
   createdById: uuid("created_by_id"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  // Construtor de Automações (0092): rascunho { grafo, config } sobrescrito pelo
+  // autosave; cada Publicar vira linha imutável em automacao_versoes.
+  rascunho: jsonb("rascunho"),
+  rascunhoSalvoEm: timestamp("rascunho_salvo_em", { withTimezone: true }),
+  pasta: text("pasta"),
+  webhookToken: text("webhook_token"),
+  proximaExecucaoEm: timestamp("proxima_execucao_em", { withTimezone: true }),
 });
 
 // ─── WHATSAPP MENSAGENS ────────────────────────────────────
@@ -2673,11 +2680,34 @@ export const outreachCampanhas = pgTable("outreach_campanhas", {
   status: text("status").notNull().default("rascunho"), // rascunho | agendada | enviando | concluida
   totalDestinatarios: integer("total_destinatarios").default(0),
   totalEnviados: integer("total_enviados").default(0),
+  // 0091: envio pelo worker (sweep campanha-sweep, lib/automacoes/campanhas-envio.ts)
+  agendadaPara: timestamp("agendada_para", { withTimezone: true }),
+  iniciadaEm: timestamp("iniciada_em", { withTimezone: true }),
+  concluidaEm: timestamp("concluida_em", { withTimezone: true }),
   createdBy: uuid("created_by").references(() => usuarios.id),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   index("idx_outreach_campanhas_org").on(table.organizacaoId),
+]);
+
+/** Um destinatário por linha, com status individual do disparo (migration 0091). */
+export const outreachCampanhaDestinatarios = pgTable("outreach_campanha_destinatarios", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+  campanhaId: uuid("campanha_id").references(() => outreachCampanhas.id, { onDelete: "cascade" }).notNull(),
+  leadId: uuid("lead_id").references(() => leads.id, { onDelete: "set null" }),
+  nome: text("nome"),
+  destino: text("destino").notNull(),
+  status: text("status").notNull().default("pendente"), // pendente | enviando | enviado | bloqueado | falhou
+  erro: text("erro"),
+  mensagemId: text("mensagem_id"),
+  enviadoEm: timestamp("enviado_em", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("uq_campanha_destinatario_destino").on(table.campanhaId, table.destino),
+  index("idx_campanha_destinatarios_status").on(table.campanhaId, table.status),
 ]);
 
 // ═══════════════════════════════════════════════════════════════
@@ -2761,9 +2791,11 @@ export const automacaoExecucoes = pgTable("automacao_execucoes", {
   id: uuid("id").defaultRandom().primaryKey(),
   automacaoId: uuid("automacao_id").references(() => automacoes.id, { onDelete: "cascade" }).notNull(),
   organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
-  entityType: text("entity_type").notNull(), // lead | negocio | contato
-  entityId: uuid("entity_id").notNull(),
-  status: text("status").notNull(), // sucesso | erro | condicao_nao_atendida
+  // Nulos só em execução de fluxo sem registro (agendado "nenhum", webhook sem registro).
+  entityType: text("entity_type"), // lead | negocio | contato
+  entityId: uuid("entity_id"),
+  // regra: sucesso | erro | condicao_nao_atendida · fluxo: executando | aguardando | sucesso | erro | cancelado
+  status: text("status").notNull(),
   resultado: jsonb("resultado"),
   erro: text("erro"),
   executedAt: timestamp("executed_at", { withTimezone: true }).defaultNow().notNull(),
@@ -2771,6 +2803,14 @@ export const automacaoExecucoes = pgTable("automacao_execucoes", {
   triggerEventId: uuid("trigger_event_id"),
   startedAt: timestamp("started_at", { withTimezone: true }),
   finishedAt: timestamp("finished_at", { withTimezone: true }),
+  // Cursor do executor de fluxos (0092).
+  modo: text("modo"), // evento | manual | agendado | webhook
+  estado: jsonb("estado").default({}).notNull(), // { gatilho, vars, nos, tentativas }
+  noAtual: text("no_atual"),
+  retomarEm: timestamp("retomar_em", { withTimezone: true }),
+  claimedUntil: timestamp("claimed_until", { withTimezone: true }),
+  profundidade: integer("profundidade").default(0).notNull(),
+  idempotencyKey: text("idempotency_key"),
 }, (table) => [
   index("idx_automacao_execucoes_automacao").on(table.automacaoId),
   index("idx_automacao_execucoes_org").on(table.organizacaoId),
@@ -4670,6 +4710,9 @@ export const automacaoPassosExecucao = pgTable("automacao_passos_execucao", {
   startedAt: timestamp("started_at", { withTimezone: true }),
   finishedAt: timestamp("finished_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  saida: text("saida"),
+  // '<execucao>:<no>:<tentativa>': reservado ANTES do efeito externo (0092).
+  idempotencyKey: text("idempotency_key"),
 });
 
 export const automacaoInscricoes = pgTable("automacao_inscricoes", {

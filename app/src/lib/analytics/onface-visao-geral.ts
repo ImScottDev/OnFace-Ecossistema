@@ -3,9 +3,12 @@ import { db } from "@/lib/db";
 import {
   getAgendaHoje, getClientesAtivos, getMrrSeries, getPrecisaAtencao,
 } from "@/lib/analytics/inicio";
-import { getMrrAtivo, getMrrComparativo } from "@/lib/analytics/command-center";
 import {
-  getOperacaoDetalhe, getOperacoesAtivas, getOperacoesPrioritarias,
+  getAtendimentoResumo, getFinanceiroResumo, getImplantacaoResumo, getMrrAtivo, getMrrComparativo,
+} from "@/lib/analytics/command-center";
+import { getMetaComercialAgregada } from "@/lib/metas";
+import {
+  getOperacaoDetalhe, getOperacoesAtivas, getOperacoesPrioritarias, LIMITE_ESTAGNACAO_DIAS,
 } from "@/lib/analytics/onface-inicio";
 import type {
   Agenda, BlocoAgenda, CompromissoAgenda, DadosVisaoGeral, EstadoEtapa,
@@ -135,29 +138,72 @@ async function getMrrAtivoPorMes(orgId: string, mrrHoje: number, meses: number, 
   return pontos;
 }
 
-/** Meta de MRR do mês: soma dos alvos cadastrados no período.
- * Fonte: tabela `metas`, tipo `mrr_fechado`. Sem meta cadastrada devolve null
- * em vez de zero, porque zero mentiria dizendo que a meta foi batida. */
-async function getMetaMrrDoMes(orgId: string, hoje: Date): Promise<number | null> {
-  const periodo = new Date(hoje.getFullYear(), hoje.getMonth(), 1).toISOString().slice(0, 10);
-  const [row] = await db.execute<{ alvo: string | null }>(sql`
-    SELECT SUM(valor_alvo)::text AS alvo
-      FROM metas
-     WHERE organizacao_id = ${orgId}::uuid
-       AND tipo = 'mrr_fechado'
-       AND periodo = ${periodo}::date
-  `);
-  const alvo = Number(row?.alvo ?? 0);
-  return alvo > 0 ? alvo : null;
+/**
+ * Rota canônica de cada registro.
+ *
+ * As consultas compartilhadas (`getOperacoesPrioritarias`, `getAgendaHoje`)
+ * ainda devolvem links do CRM antigo: `/negocios/:id` abre a tela anterior à
+ * Oportunidade do handoff, `/leads/:id` redireciona para `/contatos` e perde o
+ * registro, e `/clientes/implantacao/:id` não existe (404). Aqui o link é
+ * reescrito para a rota da arquitetura nova — `/pipeline/:id`,
+ * `/pessoas/:id` (a ficha usa o id do lead), `/projetos/:id` (o id do projeto É o do fulfillment).
+ */
+export function rotaCanonica(href: string): string {
+  return href
+    .replace(/^\/negocios\/([^/?#]+)$/, "/pipeline/$1")
+    .replace(/^\/leads\/([^/?#]+)$/, "/pessoas/$1")
+    .replace(/^\/clientes\/implantacao\/([0-9a-f-]{36})$/, "/projetos/$1");
 }
 
+/** Nome da organização para o cabeçalho. Era "Callface" fixo no código: em
+ * qualquer outro tenant a tela de entrada diria o nome errado. */
+async function getNomeOrganizacao(orgId: string): Promise<string | null> {
+  const [row] = await db.execute<{ nome: string | null }>(sql`
+    SELECT nome FROM organizacoes WHERE id = ${orgId}::uuid
+  `);
+  return row?.nome ?? null;
+}
+
+/**
+ * Responsável de negócios e propostas do quadro de prioridades.
+ *
+ * A consulta compartilhada só traz responsável para entregas; para o resto o
+ * card dizia "Sem responsável" mesmo quando o negócio tem dono no banco. A
+ * proposta herda o responsável do negócio a que pertence (`criado_por_id` é
+ * quem digitou, não quem responde pela venda).
+ */
+async function getResponsaveis(orgId: string, negocioIds: string[], propostaIds: string[]) {
+  const mapa = new Map<string, string>();
+  if (!negocioIds.length && !propostaIds.length) return mapa;
+  const linhas = await db.execute<{ id: string; nome: string }>(sql`
+    SELECT n.id::text AS id, u.nome
+      FROM negocios n JOIN usuarios u ON u.id = n.responsavel_id
+     WHERE n.organizacao_id = ${orgId}::uuid
+       AND n.id::text = ANY(${`{${negocioIds.join(",")}}`}::text[])
+    UNION ALL
+    SELECT p.id::text, u.nome
+      FROM propostas p
+      JOIN negocios n ON n.id = p.negocio_id
+      JOIN usuarios u ON u.id = n.responsavel_id
+     WHERE p.organizacao_id = ${orgId}::uuid
+       AND p.id::text = ANY(${`{${propostaIds.join(",")}}`}::text[])
+  `);
+  for (const l of linhas) mapa.set(l.id, l.nome);
+  return mapa;
+}
+
+const iniciais = (nome: string | null) =>
+  (nome ?? "?").split(" ").filter(Boolean).slice(0, 2).map((p) => p[0]).join("").toUpperCase();
+
+/** `getPrecisaAtencao` fala em critico/aviso/info. O mapa antigo só conhecia
+ * critico/alto/medio, e todo aviso caía em "moderado" por omissão. */
 const SEVERIDADE_PARA_PRIORIDADE = {
   critico: "critico",
-  alto: "alto",
-  medio: "moderado",
-  moderado: "moderado",
-  baixo: "moderado",
+  aviso: "alto",
+  info: "moderado",
 } as const;
+
+const ROTULO_SEVERIDADE = { critico: "Crítico", aviso: "Alto", info: "Moderado" } as const;
 
 const AREA_POR_ICONE = {
   pagamento: "financeiro",
@@ -185,7 +231,10 @@ export async function montarVisaoGeral(
   nomeUsuario: string,
   hoje = new Date(),
 ): Promise<DadosVisaoGeral> {
-  const [mrrAtivo, mrrMes, series, clientes, operacoesAtivas, prioritarias, atencao, agendaCru, metaMrr] =
+  const [
+    mrrAtivo, mrrMes, series, clientes, operacoesAtivas, prioritarias, atencao, agendaCru, metaComercial,
+    nomeOrg, implantacao, financeiro, atendimento,
+  ] =
     await Promise.all([
       getMrrAtivo(orgId),
       getMrrComparativo(orgId, hoje),
@@ -195,8 +244,23 @@ export async function montarVisaoGeral(
       getOperacoesPrioritarias(orgId, 9),
       getPrecisaAtencao(orgId, hoje),
       getAgendaHoje(orgId, usuarioId, hoje),
-      getMetaMrrDoMes(orgId, hoje),
+      // Meta comercial é faturamento (mrr_fechado + valor_setup), com o
+      // fallback para metas antigas de `mrr_fechado`. A leitura anterior
+      // somava só o tipo legado contra o MRR recorrente: duas regras que o
+      // resto do produto já tinha aposentado.
+      getMetaComercialAgregada(orgId, hoje),
+      getNomeOrganizacao(orgId),
+      getImplantacaoResumo(orgId),
+      getFinanceiroResumo(orgId),
+      getAtendimentoResumo(orgId),
     ]);
+  const metaMrr = metaComercial.valorAlvo > 0 ? metaComercial.valorAlvo : null;
+
+  const responsaveis = await getResponsaveis(
+    orgId,
+    prioritarias.filter((o) => o.tipo === "negocio").map((o) => o.id),
+    prioritarias.filter((o) => o.tipo === "proposta").map((o) => o.id),
+  );
 
   // ── Gráfico: os seis meses até o mês corrente ──────────────────────────
   // Duas leituras diferentes de propósito: "Receita" é a base recorrente ativa
@@ -261,6 +325,18 @@ export async function montarVisaoGeral(
         ];
 
     const atrasada = linha.sla === "vencido";
+    const href = rotaCanonica(linha.href);
+    const responsavel = detalheEntrega?.responsavel?.nome ?? responsaveis.get(linha.id) ?? null;
+    // Para negócio, o "prazo" da consulta é a data em que ele estoura o limite
+    // de estagnação (última mexida + 14 dias), não um prazo combinado com o
+    // cliente. O texto precisa dizer o que o número é.
+    const textoSinal = linha.tipo === "negocio"
+      ? linha.diasPrazo !== null
+        ? `Sem atualização há ${Math.abs(linha.diasPrazo) + LIMITE_ESTAGNACAO_DIAS} dias (limite de ${LIMITE_ESTAGNACAO_DIAS}).`
+        : "Negócio parado além do limite de estagnação."
+      : linha.diasPrazo !== null
+        ? `Esta operação está ${Math.abs(linha.diasPrazo)} dias além do prazo.`
+        : "Esta operação passou do prazo.";
 
     return {
       id: linha.id,
@@ -272,14 +348,14 @@ export async function montarVisaoGeral(
       valor: linha.valor > 0 ? brl(linha.valor) : "—",
       status: atrasada ? "atencao" : "andamento",
       tipo,
+      href,
       detalhe: {
         tituloCard: rotulos.titulo,
         subtituloCard: rotulos.sub,
         tipoLabel: rotulos.selo,
         servico: linha.descricao,
-        responsavel: detalheEntrega?.responsavel?.nome ?? "Sem responsável",
-        responsavelIniciais: (detalheEntrega?.responsavel?.nome ?? "?")
-          .split(" ").filter(Boolean).slice(0, 2).map((p) => p[0]).join("").toUpperCase(),
+        responsavel: responsavel ?? "Sem responsável",
+        responsavelIniciais: iniciais(responsavel),
         responsavelCargo: rotulos.selo,
         progresso: {
           titulo: detalheEntrega?.etapas.length ? "Progresso por frente" : "Situação",
@@ -289,19 +365,18 @@ export async function montarVisaoGeral(
         // modelo sabe afirmar hoje para qualquer tipo.
         sinal: atrasada
           ? {
-              titulo: "Prazo vencido",
-              texto: linha.diasPrazo !== null
-                ? `Esta operação está ${Math.abs(linha.diasPrazo)} dias além do prazo combinado.`
-                : "Esta operação passou do prazo combinado.",
+              titulo: linha.tipo === "negocio" ? "Negócio parado" : "Prazo vencido",
+              texto: textoSinal,
               acaoLabel: "Abrir registro",
-              acaoHref: linha.href,
+              acaoHref: href,
             }
           : undefined,
         indicadores: [
           { label: "Valor", valor: linha.valor > 0 ? brl(linha.valor) : "—", apoio: linha.descricao },
           { label: "Etapa", valor: linha.etapa, apoio: rotulos.selo },
           {
-            label: "Prazo", valor: linha.prazo ? dataCurta(linha.prazo) : "Sem prazo",
+            label: linha.tipo === "negocio" ? "Limite de estagnação" : "Prazo",
+            valor: linha.prazo ? dataCurta(linha.prazo) : "Sem prazo",
             apoio: linha.diasPrazo !== null
               ? `${Math.abs(linha.diasPrazo)} dias ${linha.diasPrazo < 0 ? "em atraso" : "restantes"}`
               : "",
@@ -330,21 +405,21 @@ export async function montarVisaoGeral(
   // `getAgendaHoje` traz reuniões e tarefas do próprio CRM. Participante,
   // link de reunião e confirmação vivem no Microsoft 365 e só aparecem quando
   // o Graph estiver ligado: aqui ficam vazios em vez de inventados.
+  // Tarefa abre direto na gaveta de Atividades (`?atv=p:<id>`, a chave que o
+  // desenho usa para a lista própria); reunião abre o registro a que pertence.
+  // ponytail: a gaveta só abre se a tarefa estiver entre as 300 que
+  // montarAtividades carrega (onface-atividades.ts, LIMIT 300); hoje são ~287
+  // abertas. Upgrade: Atividades buscar a tarefa do parâmetro `atv` fora da página.
   const compromissos: CompromissoAgenda[] = agendaCru.map((item) => ({
     id: item.id,
-    data: hoje.toISOString().slice(0, 10),
-    hora: item.hora,
-    duracao: "—",
+    hora: item.hora === "--:--" ? "Sem hora" : item.hora,
     titulo: item.titulo,
     descricao: item.detalhe,
-    cliente: item.detalhe,
-    contatoCliente: null,
-    organizador: nomeUsuario,
     tipo: item.icone === "reuniao" ? "reuniao" : item.icone === "onboarding" ? "kickoff" : "follow-up",
-    status: "confirmado",
-    participantes: [],
-    online: item.icone === "reuniao",
-    linkReuniao: null,
+    atrasado: item.grupo === "atrasada",
+    href: item.id.startsWith("tarefa-")
+      ? `/tarefas?atv=${encodeURIComponent(`p:${item.id.slice("tarefa-".length)}`)}`
+      : rotaCanonica(item.href),
   }));
 
   const blocosAgenda: BlocoAgenda[] = compromissos.length
@@ -358,20 +433,21 @@ export async function montarVisaoGeral(
 
   const agenda: Agenda = {
     titulo: "Sua agenda",
-    subtitulo: "Reuniões e tarefas de hoje. Participantes e link entram com o Microsoft 365.",
-    proximo: compromissos[0]
-      ? {
-          rotulo: "Próximo",
-          titulo: compromissos[0].titulo,
-          cliente: compromissos[0].cliente,
-          quando: `Hoje, ${compromissos[0].hora}`,
-          participantes: [],
-        }
-      : null,
+    subtitulo: "Suas reuniões de hoje e tarefas que vencem hoje ou já venceram.",
+    // O próximo é o primeiro que ainda não passou; atrasado não é "próximo".
+    proximo: (() => {
+      const c = compromissos.find((x) => !x.atrasado) ?? null;
+      return c ? { rotulo: "Próximo", id: c.id, titulo: c.titulo, apoio: c.descricao, quando: `Hoje, ${c.hora}` } : null;
+    })(),
     resumoDia: [
       { label: "Compromissos hoje", valor: String(compromissos.length) },
       { label: "Reuniões", valor: String(compromissos.filter((c) => c.tipo === "reuniao").length) },
       { label: "Tarefas e follow-ups", valor: String(compromissos.filter((c) => c.tipo !== "reuniao").length) },
+      {
+        label: "Atrasados",
+        valor: String(compromissos.filter((c) => c.atrasado).length),
+        tom: compromissos.some((c) => c.atrasado) ? "negativo" : "neutro",
+      },
     ],
     blocos: blocosAgenda,
     linkLabel: "Abrir calendário",
@@ -385,31 +461,35 @@ export async function montarVisaoGeral(
     const area = AREA_POR_ICONE[item.icone] ?? "vendas";
     return {
       id: item.id,
-      prioridade: SEVERIDADE_PARA_PRIORIDADE[item.severidade as keyof typeof SEVERIDADE_PARA_PRIORIDADE] ?? "moderado",
+      prioridade: SEVERIDADE_PARA_PRIORIDADE[item.severidade] ?? "moderado",
       area,
       areaLabel: item.area,
       titulo: item.titulo,
       descricao: item.detalhe,
+      // O sinal é uma contagem agregada (ex.: "74 cobranças"), não um item de um
+      // cliente só, e não tem prazo próprio: os campos ficam vazios de verdade.
       cliente: "—",
-      prazoTexto: "Ver registro",
-      prazoTom: item.severidade === "critico" ? "atrasado" : "neutro",
+      prazoTexto: "Sem prazo",
+      // Sem prazo próprio não há como estar atrasado: a severidade já aparece
+      // na prioridade, pintar "Sem prazo" de vermelho se contradizia.
+      prazoTom: "neutro",
       responsavel: null,
       responsavelIniciais: null,
       acaoLabel: ACAO_POR_ICONE[item.icone] ?? "Abrir",
-      acaoHref: item.href,
+      acaoHref: rotaCanonica(item.href),
       detalhe: {
-        criadaEm: "—",
-        criadaPor: "Sinal automático da operação",
-        atualizadaEm: "agora",
+        origem: "Sinal automático, recalculado do banco a cada abertura do Início.",
+        // Todo sinal de `getPrecisaAtencao` é contagem agregada que leva a uma
+        // lista filtrada, nunca a um cliente ou negócio específico.
         vinculo: {
-          tipo: area === "financeiro" || area === "cs" ? "Cliente" : area === "implantacao" || area === "onboarding" ? "Entrega" : "Negócio",
-          nome: item.titulo,
-          apoio: item.area,
-          href: item.href,
+          tipo: "Lista",
+          nome: `Abrir em ${item.area}`,
+          apoio: item.detalhe,
+          href: rotaCanonica(item.href),
         },
         campos: [
           { label: "Área", valor: item.area },
-          { label: "Severidade", valor: item.severidade },
+          { label: "Severidade", valor: ROTULO_SEVERIDADE[item.severidade] ?? item.severidade },
         ],
         historico: [],
         proximoPasso: item.detalhe,
@@ -424,17 +504,22 @@ export async function montarVisaoGeral(
     timeZone: "America/Sao_Paulo", weekday: "long", day: "numeric", month: "long",
   });
 
-  const atingidoPct = metaMrr ? Math.min(100, Math.round((mrrMes.atual / metaMrr) * 100)) : 0;
-  const falta = metaMrr ? Math.max(0, metaMrr - mrrMes.atual) : 0;
+  // Realizado da meta = faturamento fechado pelas closers no mês, a MESMA conta
+  // da página de Metas e de /vendas. Não é o MRR do card ao lado.
+  const realizadoMeta = metaComercial.realizado;
+  const atingidoPct = metaMrr ? Math.min(100, Math.round((realizadoMeta / metaMrr) * 100)) : 0;
+  const falta = metaMrr ? Math.max(0, metaMrr - realizadoMeta) : 0;
 
   return {
     saudacao: primeiroNome ? `${periodo}, ${primeiroNome}.` : `${periodo}.`,
-    data: `${dataBruta.charAt(0).toUpperCase()}${dataBruta.slice(1)} · Callface`,
+    data: `${dataBruta.charAt(0).toUpperCase()}${dataBruta.slice(1)}${nomeOrg ? ` · ${nomeOrg}` : ""}`,
     tagline: ["MAIS POSSIBILIDADES.", "MAIS RESULTADOS."],
     ctaPrincipal: { label: "Nova Atividade", href: "/tarefas?nova=1" },
     metricas: [
       {
-        chave: "receita", icone: "receita", label: "Receita do mês",
+        // É o MRR ativo da carteira (catálogo `mrr_atual`), não receita do mês:
+        // o rótulo antigo prometia uma coisa e mostrava outra.
+        chave: "receita", icone: "receita", label: "MRR ativo",
         valor: brl(mrrAtivo.atual), delta: pct(mrrAtivo.deltaPct),
         tendencia: tendencia(mrrAtivo.deltaPct), apoio: `vs. ${mrrAtivo.janelaDias} dias atrás`,
       },
@@ -449,9 +534,9 @@ export async function montarVisaoGeral(
         tendencia: "neutra", apoio: "com serviço ativo no portfólio",
       },
       {
-        chave: "novo-faturamento", icone: "faturamento", label: "Novo faturamento",
+        chave: "novo-faturamento", icone: "faturamento", label: "MRR fechado no mês",
         valor: brl(mrrMes.atual), delta: pct(mrrMes.deltaPct),
-        tendencia: tendencia(mrrMes.deltaPct), apoio: "novas vendas no mês",
+        tendencia: tendencia(mrrMes.deltaPct), apoio: "vs. mesmo período do mês anterior",
       },
     ],
     grafico: {
@@ -466,11 +551,14 @@ export async function montarVisaoGeral(
       // Sem "ver todos": apontava para `/inicio`, a própria página. Link que
       // recarrega onde a pessoa já está é pior que link ausente — promete
       // mais e entrega o mesmo. A lista completa de módulos é o menu lateral.
+      // Cada tile mostra o número da tela para onde leva. Antes "Operação"
+      // levava ao Atendimento com a contagem de negócios+entregas, e "Suporte"
+      // mostrava os sinais de atenção: número e destino não conversavam.
       itens: [
-        { chave: "operacao", label: "Operação", estado: `${operacoesAtivas} em curso`, icone: "operacao", href: "/atendimento", destaque: true },
-        { chave: "comercial", label: "Comercial", estado: `${brlCompacto(mrrMes.atual)} no mês`, icone: "comercial", href: "/vendas" },
-        { chave: "financeiro", label: "Financeiro", estado: `${brlCompacto(mrrAtivo.atual)} de MRR`, icone: "financeiro", href: "/clientes/financeiro" },
-        { chave: "suporte", label: "Suporte", estado: `${atencao.length} sinais abertos`, icone: "suporte", href: "/atendimento" },
+        { chave: "operacao", label: "Entregas", estado: `${implantacao.ativas} ${implantacao.ativas === 1 ? "entrega em curso" : "entregas em curso"}`, icone: "operacao", href: "/pos-vendas", destaque: true },
+        { chave: "comercial", label: "Comercial", estado: `${brlCompacto(mrrMes.atual)} fechados no mês`, icone: "comercial", href: "/vendas" },
+        { chave: "financeiro", label: "Financeiro", estado: `${financeiro.atrasadoCount} ${financeiro.atrasadoCount === 1 ? "fatura vencida" : "faturas vencidas"}`, icone: "financeiro", href: "/clientes/financeiro" },
+        { chave: "suporte", label: "Atendimento", estado: `${atendimento.whatsappAbertas.toLocaleString("pt-BR")} conversas · ${atendimento.emailPendentes.toLocaleString("pt-BR")} e-mails`, icone: "suporte", href: "/atendimento" },
       ],
     },
     assistente: {
@@ -479,7 +567,9 @@ export async function montarVisaoGeral(
       saudacao: primeiroNome ? `Olá, ${primeiroNome}!` : "Olá!",
       destaqueQuantidade: String(atencao.length),
       destaqueTexto: atencao.length === 1 ? "item precisa de atenção agora." : "itens precisam de atenção agora.",
-      ctaLabel: "Ver prioridades",
+      // O número acima é de pendências (sinais de atenção), então o botão leva
+      // à aba Pendências. Levava a Prioridades, que é outra lista.
+      ctaLabel: "Ver pendências",
       ctaHref: "#operacoes",
       acoes: [
         { chave: "resumo", label: "Gerar resumo", icone: "resumo" },
@@ -492,7 +582,8 @@ export async function montarVisaoGeral(
       { chave: "pendencias", label: "Pendências" },
     ],
     operacoes,
-    listaCompleta: { label: "Ver todas as operações", href: "/clientes" },
+    // Sem "ver todas": não existe tela com todas as operações (negócio,
+    // proposta, entrega e cobrança juntos), e /clientes era outra coisa.
     agenda,
     pendencias: {
       titulo: "Itens que exigem ação agora",
@@ -504,7 +595,7 @@ export async function montarVisaoGeral(
     },
     meta: metaMrr
       ? {
-          titulo: "Meta do mês",
+          titulo: "Meta comercial do mês",
           valor: brl(metaMrr),
           atingidoPct,
           apoio: falta > 0 ? `Faltam ${brl(falta)} para alcançar a meta.` : "Meta do mês alcançada.",

@@ -3246,6 +3246,24 @@ const slaWorker = new Worker(
       if (processados > 0) console.log(`[F5/cadence-engine] ${processados} enrollments avançados`);
     }
 
+    if (job.name === "campanha-sweep") {
+      // Antes nada lia outreach_campanhas (memória callface_campanhas_nao_enviam).
+      // WhatsApp sai só por sendText → wuzapiFetch, com a WHATSAPP_ALLOWLIST.
+      const { sweepCampanhas } = await import("../lib/automacoes/campanhas-envio");
+      const r = await sweepCampanhas();
+      if (r.iniciadas || r.enviados || r.bloqueados || r.falhas || r.concluidas) {
+        console.log(`[campanhas] ${r.iniciadas} iniciadas, ${r.enviados} enviados, ${r.bloqueados} bloqueados, ${r.falhas} falhas, ${r.concluidas} concluídas`);
+      }
+    }
+
+    if (job.name === "fluxos-sweep") {
+      // Construtor de Automações: agendados devidos, tarefas vencidas e
+      // execuções em espera cujo horário chegou (docs/design/construtor-automacoes.md §4.3).
+      const { sweepFluxos } = await import("../lib/automacoes/disparo");
+      const r = await sweepFluxos();
+      if (r.agendados + r.tarefas + r.retomadas > 0) console.log(`[fluxos] agendados=${r.agendados} tarefas=${r.tarefas} retomadas=${r.retomadas}`);
+    }
+
     if (job.name === "lembrete-reuniao-30min") {
       // Automação real pedida pelo Kauã (10/08) — lembrete de reunião 30min
       // antes via WhatsApp, usando a mesma fila real de envio do resto do
@@ -3935,8 +3953,8 @@ const SCHEDULERS_JOBS_AGENDADOS = [
   "ai-sdr-meeting-confirmation", "stripe-sync", "reconcile-pagamentos", "expirar-propostas",
   "rd-criativo-sync", "outlook-reuniao-sync", "follow-up-proposta", "cs-sweep", "calendar-sync-retry",
   "alerta-renovacao", "reativar-lead-perdido", "check-whatsapp-connection", "snapshot-diario",
-  "cadence-sweep", "event-outbox-sweep", "lembrete-reuniao-30min",
-  "catalogo-stripe-sync", "callface-ai-sync",
+  "cadence-sweep", "event-outbox-sweep", "lembrete-reuniao-30min", "fluxos-sweep",
+  "catalogo-stripe-sync", "callface-ai-sync", "campanha-sweep",
 ];
 
 // Schedule recurring jobs
@@ -3965,8 +3983,12 @@ async function setupScheduledJobs() {
   await scheduledQueue.upsertJobScheduler("check-whatsapp-connection", { every: 5 * 60 * 1000 }, { name: "check-whatsapp-connection" });
   await scheduledQueue.upsertJobScheduler("snapshot-diario", { every: 60 * 60 * 1000 }, { name: "snapshot-diario" });
   await scheduledQueue.upsertJobScheduler("cadence-sweep", { every: 5 * 60 * 1000 }, { name: "cadence-sweep" });
+  await scheduledQueue.upsertJobScheduler("fluxos-sweep", { every: 60 * 1000 }, { name: "fluxos-sweep" });
   await scheduledQueue.upsertJobScheduler("event-outbox-sweep", { every: 60 * 1000 }, { name: "event-outbox-sweep" });
   await scheduledQueue.upsertJobScheduler("lembrete-reuniao-30min", { every: 5 * 60 * 1000 }, { name: "lembrete-reuniao-30min" });
+  // Campanhas de outreach: começa as agendadas vencidas e envia um lote por
+  // campanha a cada minuto (lib/automacoes/campanhas-envio.ts).
+  await scheduledQueue.upsertJobScheduler("campanha-sweep", { every: 60 * 1000 }, { name: "campanha-sweep" });
   // Catálogo comercial: o Stripe é onde o preço é decidido, então o CRM
   // sincroniza em vez de guardar cópia. De hora em hora porque preço muda por
   // decisão humana, não por evento: ninguém altera tabela de preço a cada

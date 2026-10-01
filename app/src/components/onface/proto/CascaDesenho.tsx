@@ -70,10 +70,14 @@ export interface ValoresDeCascaDesenho {
   toggleRail: any;
   toggleSino: any;
   trilha: any;
+  usuarioEmail: any;
+  usuarioIniciais: any;
+  usuarioNome: any;
+  usuarioOrganizacao: any;
 }
 
 export function CascaDesenho(vals: ValoresDeCascaDesenho) {
-  const { aberta, abrirNexo, areas, aviso, avisoPonto, buscaAberta, buscaRef, buscaSemDados, buscaVazioTexto, buscaVazioTitulo, buscar, children, criarStyle, fechada, fecharBusca, fecharMenuMob, filtrosSino, gruposBusca, itensPerfil, menuMob, nexo, nexoBtnStyle, nexoMarca, nexoResumo, parar, perfilAberto, perfilBtnStyle, perfilChevron, qa, railStyle, sair, setTermo, sinoAberto, sinoBtnStyle, sinoVazioTexto, sinoVazioTitulo, subtitulo, teclaBusca, temAviso, temSubtitulo, termo, titulo, togglePerfil, toggleRail, toggleSino, trilha } = vals;
+  const { aberta, abrirNexo, areas, aviso, avisoPonto, buscaAberta, buscaRef, buscaSemDados, buscaVazioTexto, buscaVazioTitulo, buscar, children, criarStyle, fechada, fecharBusca, fecharMenuMob, filtrosSino, gruposBusca, itensPerfil, menuMob, nexo, nexoBtnStyle, nexoMarca, nexoResumo, parar, perfilAberto, perfilBtnStyle, perfilChevron, qa, railStyle, sair, setTermo, sinoAberto, sinoBtnStyle, sinoVazioTexto, sinoVazioTitulo, subtitulo, teclaBusca, temAviso, temSubtitulo, termo, titulo, togglePerfil, toggleRail, toggleSino, trilha, usuarioEmail, usuarioIniciais, usuarioNome, usuarioOrganizacao } = vals;
   return (
     <>
 <div data-r="casca" data-menu={menuMob} style={{ display: "flex", height: "100vh", maxHeight: "100vh", overflow: "hidden", background: "#090e14", padding: "10px", gap: "10px", fontSize: "14px" }}>
@@ -281,14 +285,14 @@ Notificações
 <div data-of-perfil="1" style={{ position: "relative", flex: "0 0 auto" }}>
 <button onClick={togglePerfil} style={estilo(perfilBtnStyle)}>
 <span style={{ flex: "0 0 auto", width: "28px", height: "28px", borderRadius: "9999px", background: "#12171d", color: "#fff", fontSize: "10px", fontWeight: "700", display: "flex", alignItems: "center", justifyContent: "center" }}>
-SF
+{usuarioIniciais}
 </span>
 <span style={{ minWidth: "0", textAlign: "left" }}>
 <span style={{ display: "block", fontSize: "12.5px", fontWeight: "600", color: "#12171d", lineHeight: "1.25", whiteSpace: "nowrap" }}>
-Scott Ferraz
+{usuarioNome}
 </span>
 <span style={{ display: "block", fontSize: "11px", color: "#67787c", lineHeight: "1.3", whiteSpace: "nowrap" }}>
-Callface
+{usuarioOrganizacao}
 </span>
 </span>
 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#67787c" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={estilo(perfilChevron)}>
@@ -299,14 +303,14 @@ Callface
 <div style={{ position: "absolute", top: "calc(100% + 6px)", right: "0", width: "268px", zIndex: "45", borderRadius: "10px", background: "#fff", border: "1px solid #e3e7e8", boxShadow: "0 10px 26px -6px rgba(0,0,0,.2)", padding: "4px", animation: "of-rise .12s cubic-bezier(.2,0,.2,1) both" }}>
 <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "8px 6px 9px" }}>
 <span style={{ flex: "0 0 auto", width: "32px", height: "32px", borderRadius: "9999px", background: "#12171d", color: "#fff", fontSize: "11px", fontWeight: "700", display: "flex", alignItems: "center", justifyContent: "center" }}>
-SF
+{usuarioIniciais}
 </span>
 <span style={{ minWidth: "0" }}>
 <span style={{ display: "block", fontSize: "13px", fontWeight: "600", color: "#12171d", lineHeight: "1.3", whiteSpace: "nowrap" }}>
-Scott Ferraz
+{usuarioNome}
 </span>
 <span style={{ display: "block", fontSize: "11.5px", color: "#67787c", lineHeight: "1.35", whiteSpace: "nowrap" }}>
-scott@callface.com.br
+{usuarioEmail}
 </span>
 </span>
 </div>

@@ -141,6 +141,9 @@ export interface Operacao {
   valor: string;
   status: StatusOperacao;
   tipo: TipoRegistro;
+  /** Rota canônica do registro (oportunidade, proposta, projeto, cobrança).
+   * "Abrir registro" levava sempre a /clientes, qualquer que fosse o tipo. */
+  href: string;
   /** Detalhe exibido nos cards da faixa inferior quando o registro é o ativo. */
   detalhe: {
     /** Título e subtítulo do card mudam com o tipo: "Detalhe da oportunidade"
@@ -170,40 +173,24 @@ export interface Aba {
 }
 
 /* ── Agenda ─────────────────────────────────────────────────────────────
- * Resumo do que a pessoa tem marcado. A fonte é o calendário do Microsoft 365
- * (as agendas do time vivem no Outlook, não no Google), então isto é espelho,
- * nunca dono do compromisso. */
-
-export type StatusCompromisso = "confirmado" | "pendente" | "cancelado" | "no-show";
-
-export interface ParticipanteCompromisso {
-  id: string;
-  nome: string;
-  iniciais: string;
-  email: string;
-  /** Quem é do cliente recebe lembrete; quem é da casa, não. */
-  externo: boolean;
-  confirmado: boolean;
-}
+ * Reuniões de hoje e tarefas que vencem hoje ou já venceram, lidas do CRM.
+ *
+ * O contrato anterior trazia participantes, link, confirmação e ações de
+ * reagendar/cancelar/convidar que só mexiam no estado do navegador: nada
+ * persistia, e o reload desfazia tudo. Esses campos saíram junto com as ações.
+ * Reagendar e cancelar acontecem onde o compromisso vive — Calendário e
+ * Atividades —, e cada linha leva até lá. */
 
 export interface CompromissoAgenda {
   id: string;
-  data: string;
   hora: string;
-  duracao: string;
   titulo: string;
   descricao: string;
-  cliente: string;
-  /** Contato principal do lado do cliente, para o lembrete de WhatsApp. */
-  contatoCliente: { nome: string; telefone: string } | null;
-  organizador: string;
   tipo: "reuniao" | "follow-up" | "kickoff" | "interna";
-  status: StatusCompromisso;
-  participantes: ParticipanteCompromisso[];
-  online: boolean;
-  linkReuniao: string | null;
-  /** Preenchido quando o compromisso é cancelado, para a régua de no-show. */
-  cancelamento?: { por: "cliente" | "equipe"; motivo: string; quando: string };
+  /** Já passou do horário (reunião) ou do vencimento (tarefa). */
+  atrasado: boolean;
+  /** Onde o compromisso é tratado de verdade. */
+  href: string;
 }
 
 export interface BlocoAgenda {
@@ -218,10 +205,10 @@ export interface Agenda {
   subtitulo: string;
   proximo: {
     rotulo: string;
+    id: string;
     titulo: string;
-    cliente: string;
+    apoio: string;
     quando: string;
-    participantes: string[];
   } | null;
   resumoDia: Array<{ label: string; valor: string; tom?: "positivo" | "negativo" | "neutro" }>;
   blocos: BlocoAgenda[];
@@ -239,7 +226,9 @@ export type NivelPrioridade = "critico" | "alto" | "moderado";
 export type AreaPendencia = "financeiro" | "vendas" | "onboarding" | "cs" | "atendimento" | "implantacao";
 
 export interface VinculoAtividade {
-  tipo: "Cliente" | "Lead" | "Negócio" | "Entrega";
+  /** "Lista" quando o item é um sinal agregado ("74 cobranças vencidas"):
+   * ele não pertence a um registro só, e chamá-lo de "Cliente" mentia. */
+  tipo: "Cliente" | "Lead" | "Negócio" | "Entrega" | "Lista";
   nome: string;
   apoio: string;
   href: string;
@@ -261,9 +250,9 @@ export interface Pendencia {
   acaoHref: string;
   /** Painel lateral: o resumo da atividade e o registro a que ela pertence. */
   detalhe: {
-    criadaEm: string;
-    criadaPor: string;
-    atualizadaEm: string;
+    /** De onde o item veio. O sinal calculado não tem autor nem data de
+     * criação, e dizer isso é melhor que mostrar "Criada em —". */
+    origem: string;
     vinculo: VinculoAtividade;
     campos: Array<{ label: string; valor: string }>;
     historico: Array<{ quando: string; texto: string }>;
@@ -304,6 +293,7 @@ export interface DadosVisaoGeral {
   agenda: Agenda;
   pendencias: Pendencias;
   meta: MetaMes | null;
-  /** Rodapé da lista de prioridades: para onde vai o "ver todas". */
-  listaCompleta: { label: string; href: string };
+  /** Rodapé da lista de prioridades: para onde vai o "ver todas". Só existe
+   * quando há uma tela com TODAS as operações. */
+  listaCompleta?: { label: string; href: string };
 }

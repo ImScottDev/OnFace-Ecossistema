@@ -34,12 +34,17 @@ export default function NotificacoesConfigPage() {
 
   return (
     <div className="space-y-5 max-w-2xl">
+      {/* Nenhum processo lê esta chave de organizacoes.settings (medido
+          01/10/2026; ver `semEfeito` em ../Nav). Salvar grava, e só. */}
+      <p className="aj-aviso" role="status">
+        <strong>Ainda sem efeito:</strong> as regras ficam gravadas, mas nenhum processo do ONFACE as lê. Nenhum WhatsApp ou e-mail é enviado por elas.
+      </p>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Bell className="w-5 h-5 text-[var(--cf2-accent)]" />
           <div>
             <h2 className="text-lg font-semibold text-[var(--cf2-text-primary)]">Notificações</h2>
-            <p className="text-xs text-[var(--cf2-text-tertiary)]">Dispara quando um negócio entra num estágio</p>
+            <p className="text-xs text-[var(--cf2-text-tertiary)]">Destinatários avisados quando um negócio entra num estágio</p>
           </div>
         </div>
         <div className="flex gap-2">

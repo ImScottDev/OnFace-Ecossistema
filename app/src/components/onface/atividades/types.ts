@@ -36,6 +36,9 @@ export interface Atividade {
   responsavel: string | null;
   responsavelIniciais: string | null;
   vencimento: string | null;
+  /** `vence_em` e `data_vencimento` crus: o par data+hora local sai deles no cliente. */
+  venceEm?: string | null;
+  dataVencimento?: string | null;
   vencimentoTexto: string;
   /** Dias inteiros até o vencimento, calculado no servidor. O cliente não
    * chama `Date.now()` durante o render: isso torna o filtro instável e o

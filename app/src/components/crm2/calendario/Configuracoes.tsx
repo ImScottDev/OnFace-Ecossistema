@@ -22,7 +22,7 @@ const DEFAULT_ALMOCO: PausaAlmoco = { inicio: "12:00", fim: "13:00" };
 function Toggle({ ativo, onChange }: { ativo: boolean; onChange: () => void }) {
   return (
     <button
-      onClick={onChange}
+      type="button" role="switch" aria-checked={ativo} onClick={onChange}
       className="w-10 h-5 rounded-full relative shrink-0 transition-colors"
       style={{ background: ativo ? "var(--cf2-accent)" : "var(--cf2-bg-surface-muted)" }}
     >
@@ -107,7 +107,7 @@ export function Cf2CalendarioConfiguracoes() {
         <div className="flex items-center justify-between mb-1">
           <div className="flex items-center gap-2">
             <Clock className="w-4 h-4" style={{ color: "var(--cf2-accent-text)" }} />
-            <p className="text-[16px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Horário de Trabalho</p>
+            <p className="text-[16px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Horário de trabalho</p>
           </div>
           <Toggle ativo={ativo} onChange={() => { setAtivo(!ativo); marcarDirty(); }} />
         </div>
@@ -146,7 +146,7 @@ export function Cf2CalendarioConfiguracoes() {
 
         <div className="flex items-center gap-2 mb-3">
           <Coffee className="w-4 h-4" style={{ color: "var(--cf2-accent-text)" }} />
-          <p className="text-[14px] font-bold flex-1" style={{ color: "var(--cf2-text-primary)" }}>Pausa de Almoço</p>
+          <p className="text-[14px] font-bold flex-1" style={{ color: "var(--cf2-text-primary)" }}>Pausa de almoço</p>
           <Toggle ativo={temAlmoco} onChange={() => { setTemAlmoco(!temAlmoco); marcarDirty(); }} />
         </div>
         {temAlmoco && (
@@ -180,7 +180,7 @@ export function Cf2CalendarioConfiguracoes() {
         <div className="flex items-center justify-between mb-1">
           <div className="flex items-center gap-2">
             <Lock className="w-4 h-4" style={{ color: "var(--cf2-accent-text)" }} />
-            <p className="text-[16px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Bloqueios de Agenda</p>
+            <p className="text-[16px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Bloqueios de agenda</p>
           </div>
           <button
             onClick={() => setNovoBloqueioAberto(true)}

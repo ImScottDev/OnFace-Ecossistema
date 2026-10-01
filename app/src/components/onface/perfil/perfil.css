@@ -1,0 +1,116 @@
+/* /perfil — arquétipo H (Settings) do DS ONFACE.
+ * Coluna de seções em calha (sunken) + grupos brancos elevados por anel de
+ * 1px, nunca border. Coral só como acento (chip, foco, item ativo); o botão
+ * primário usa o tom de ação. Só tokens nomeados: a catraca cor-tem-nome
+ * reprova hex nesta camada. */
+
+.pfl { display: grid; grid-template-columns: minmax(180px, 220px) minmax(0, 1fr); gap: 20px; align-items: start; font-family: var(--of-fonte); color: var(--of-tinta); font-size: var(--of-t-corpo); }
+.pfl * { box-sizing: border-box; }
+
+/* ── Seções ── */
+.pfl-nav { position: sticky; top: 12px; display: flex; flex-direction: column; gap: 2px; padding: 10px; border-radius: var(--of-r-superficie); background: var(--of-calha); }
+.pfl-nav-rotulo { padding: 6px 10px 4px; font-size: var(--of-t-rotulo); font-weight: var(--of-peso-forte); letter-spacing: var(--of-tracking-caps); text-transform: uppercase; color: var(--of-tinta-3); }
+.pfl-nav-rotulo-2 { margin-top: 10px; }
+.pfl-nav-item { display: flex; align-items: center; min-height: var(--of-h-compacto); padding: 0 10px; border-radius: var(--of-r-item); color: var(--of-tinta-2); font-weight: var(--of-peso-medio); text-decoration: none; transition: background var(--of-rapido) var(--of-curva); }
+.pfl-nav-item:hover { background: var(--of-papel); color: var(--of-tinta-forte); text-decoration: none; }
+.pfl-nav-item:focus-visible { outline: none; box-shadow: var(--of-anel-coral); }
+
+/* ── Grupos ── */
+.pfl-grupos { display: flex; flex-direction: column; gap: 14px; min-width: 0; max-width: 860px; }
+.pfl-grupo { scroll-margin-top: 16px; padding: 18px 20px; border-radius: var(--of-r-superficie); background: var(--of-papel); box-shadow: var(--of-anel-forte); }
+.pfl-grupo-topo { margin-bottom: 14px; }
+.pfl-grupo-titulo { margin: 0; font-family: var(--of-fonte-titulo); font-size: var(--of-t-secao); font-weight: var(--of-peso-forte); letter-spacing: var(--of-tracking-titulo); color: var(--of-tinta-forte); }
+.pfl-grupo-ajuda { margin: 4px 0 0; color: var(--of-tinta-3); line-height: 1.5; max-width: 68ch; }
+.pfl-sub { margin: 4px 0 8px; font-size: var(--of-t-rotulo); font-weight: var(--of-peso-forte); letter-spacing: var(--of-tracking-caps); text-transform: uppercase; color: var(--of-tinta-3); }
+.pfl-sub ~ .pfl-sub { margin-top: 18px; }
+
+/* ── Identidade ── */
+.pfl-identidade { display: flex; align-items: center; gap: 16px; padding: 18px 20px; border-radius: var(--of-r-superficie); background: var(--of-tinta-forte); color: var(--of-shell-tinta); }
+.pfl-identidade-texto { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.pfl-nome { margin: 0; font-family: var(--of-fonte-titulo); font-size: 20px; font-weight: var(--of-peso-extra); letter-spacing: var(--of-tracking-display); color: var(--of-papel); }
+.pfl-email { color: var(--of-shell-tinta-2); }
+.pfl-fatos { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin-top: 8px; font-size: var(--of-t-meta); color: var(--of-shell-tinta-3); }
+.pfl-identidade .pfl-chip { background: var(--of-shell-ativo); color: var(--of-papel); box-shadow: inset 0 0 0 1px var(--of-coral-marca); }
+
+.pfl-avatar { display: inline-grid; place-items: center; flex: 0 0 auto; border-radius: var(--of-r-pilula); object-fit: cover; font-family: var(--of-fonte-titulo); font-weight: var(--of-peso-forte); background: var(--of-coral-marca); color: var(--of-papel); }
+.pfl-avatar[data-t="g"] { width: 56px; height: 56px; font-size: 18px; }
+.pfl-avatar[data-t="m"] { width: 40px; height: 40px; font-size: 14px; }
+
+.pfl-chip { display: inline-flex; align-items: center; height: var(--of-h-selo); padding: 0 8px; border-radius: var(--of-r-pilula); font-size: var(--of-t-meta); font-weight: var(--of-peso-semi); background: var(--of-coral-fundo); color: var(--of-coral-texto); }
+.pfl-chip-suave { margin-left: 8px; background: var(--of-neutro); color: var(--of-tinta-2); }
+
+/* ── Campos ── */
+.pfl-campos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 16px; }
+.pfl-campos-estreitos { grid-template-columns: minmax(0, 360px); }
+.pfl-campos-linha { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px 16px; }
+.pfl-campos-linha .pfl-campo { width: 128px; }
+.pfl-foto { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.pfl-campo { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.pfl-campo > span { font-size: var(--of-t-meta); font-weight: var(--of-peso-semi); color: var(--of-tinta-2); }
+.pfl-campo small, .pfl-dica, .pfl-oauth-off small { font-size: var(--of-t-meta); color: var(--of-tinta-3); line-height: 1.4; }
+.pfl-campo input { width: 100%; height: var(--of-h-controle); padding: 0 10px; border: 0; border-radius: var(--of-r-controle); background: var(--of-papel); box-shadow: var(--of-anel); font: inherit; color: var(--of-tinta-forte); outline: none; transition: box-shadow var(--of-rapido) var(--of-curva); }
+.pfl-campo input:focus-visible { box-shadow: var(--of-anel-coral); }
+.pfl-campo input:disabled { background: var(--of-calha); color: var(--of-tinta-3); cursor: not-allowed; }
+.pfl-senha { position: relative; }
+.pfl-senha input { padding-right: 38px; }
+.pfl-senha button { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); display: grid; place-items: center; width: 28px; height: 28px; border: 0; border-radius: var(--of-r-micro); background: transparent; color: var(--of-tinta-3); cursor: pointer; }
+.pfl-senha button:hover { color: var(--of-tinta-forte); }
+.pfl-senha button svg { width: 16px; height: 16px; }
+.pfl-check { display: inline-flex; align-items: center; gap: 8px; height: var(--of-h-controle); color: var(--of-tinta-2); font-weight: var(--of-peso-medio); }
+.pfl-check input { accent-color: var(--of-coral-acao); width: 15px; height: 15px; }
+
+.pfl-dias { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+.pfl-dia { min-width: 48px; height: var(--of-h-compacto); padding: 0 10px; border: 0; border-radius: var(--of-r-pilula); background: var(--of-papel); box-shadow: var(--of-anel); font: inherit; font-weight: var(--of-peso-semi); color: var(--of-tinta-2); cursor: pointer; }
+.pfl-dia[aria-pressed="true"] { background: var(--of-coral-fundo); color: var(--of-coral-texto); box-shadow: inset 0 0 0 1px var(--of-coral-anel); }
+.pfl-dia:disabled { cursor: not-allowed; opacity: .6; }
+
+/* ── Ações por grupo ── */
+.pfl-acoes { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 10px 12px; margin-top: 16px; padding-top: 14px; box-shadow: inset 0 1px 0 var(--of-fio); }
+.pfl-acoes-esq { justify-content: flex-start; margin-top: 10px; padding-top: 0; box-shadow: none; }
+.pfl-acoes .pfl-link:first-child { margin-right: auto; }
+.pfl-btn-primario, .pfl-btn { display: inline-flex; align-items: center; gap: 6px; height: var(--of-h-controle); padding: 0 14px; border: 0; border-radius: var(--of-r-acao); font: inherit; font-weight: var(--of-peso-semi); cursor: pointer; text-decoration: none; white-space: nowrap; transition: background var(--of-rapido) var(--of-curva); }
+.pfl-btn-primario { background: var(--of-coral-acao); color: var(--of-papel); }
+.pfl-btn-primario:hover:not(:disabled) { background: var(--of-coral-acao-hover); }
+.pfl-btn { background: var(--of-papel); color: var(--of-tinta-forte); box-shadow: var(--of-anel); }
+.pfl-btn:hover:not(:disabled) { background: var(--of-papel-hover); text-decoration: none; color: var(--of-tinta-forte); }
+.pfl-btn svg { width: 15px; height: 15px; }
+.pfl-btn-primario:disabled, .pfl-btn:disabled, .pfl-btn[data-desabilitado="true"] { opacity: var(--opacity-disabled); cursor: not-allowed; }
+.pfl-btn-primario:focus-visible, .pfl-btn:focus-visible, .pfl-btn:focus-within, .pfl-dia:focus-visible { outline: none; box-shadow: var(--of-anel-coral); }
+.pfl-oauth-off { display: inline-flex; flex-direction: column; gap: 3px; }
+.pfl-link { color: var(--of-coral-texto); font-weight: var(--of-peso-medio); }
+.pfl-link:hover { color: var(--of-coral-link-hover); }
+
+.pfl-retorno { margin: 0; font-size: var(--of-t-meta); font-weight: var(--of-peso-medio); }
+.pfl-retorno[data-tipo="ok"] { color: var(--of-canal-whatsapp-tinta); }
+.pfl-retorno[data-tipo="erro"] { color: var(--of-coral-texto-forte); }
+.pfl-aviso { margin: 0; padding: 10px 14px; border-radius: var(--of-r-painel); background: var(--of-coral-fundo); box-shadow: inset 0 0 0 1px var(--of-coral-contorno); color: var(--of-coral-texto-forte); font-weight: var(--of-peso-medio); }
+.pfl-vazio { margin: 0 0 4px; padding: 10px 12px; border-radius: var(--of-r-controle); background: var(--of-papel-alterno); box-shadow: inset 0 0 0 1px var(--of-fio); color: var(--of-tinta-3); line-height: 1.5; }
+
+/* ── Lista de conexões ── */
+.pfl-lista { list-style: none; margin: 0; padding: 0; border-radius: var(--of-r-painel); box-shadow: var(--of-anel-forte); overflow: hidden; }
+.pfl-linha { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; }
+.pfl-linha + .pfl-linha { box-shadow: inset 0 1px 0 var(--of-fio); }
+.pfl-linha-texto { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.pfl-linha-texto strong { display: inline-flex; align-items: center; font-weight: var(--of-peso-semi); color: var(--of-tinta-forte); overflow-wrap: anywhere; }
+.pfl-linha-texto span { font-size: var(--of-t-meta); color: var(--of-tinta-3); }
+.pfl-linha-texto .pfl-linha-erro { color: var(--of-coral-texto-forte); }
+.pfl-estado { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px; font-size: var(--of-t-meta); font-weight: var(--of-peso-semi); color: var(--of-tinta-2); }
+.pfl-estado::before { content: ""; width: 7px; height: 7px; border-radius: var(--of-r-pilula); background: var(--of-shell-pendente); }
+.pfl-estado[data-estado="ok"]::before { background: var(--of-etapa-qualificado); }
+.pfl-estado[data-estado="erro"]::before { background: var(--of-coral-marca); }
+.pfl-estado[data-estado="pendente"]::before { background: var(--of-etapa-nutricao); }
+
+/* Seções viram lista acima do conteúdo (regra do arquétipo H). */
+@media (max-width: 900px) {
+  .pfl { grid-template-columns: 1fr; }
+  .pfl-nav { position: static; flex-direction: row; flex-wrap: wrap; }
+  .pfl-nav-rotulo { display: none; }
+}
+@media (max-width: 560px) {
+  .pfl-campos { grid-template-columns: 1fr; }
+  .pfl-grupo, .pfl-identidade { padding: 14px 16px; }
+}
+
+/* Visualmente oculto mas focável (o input de arquivo do "Trocar foto"). */
+.pfl-oculto { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.pfl-foto .pfl-btn { position: relative; }

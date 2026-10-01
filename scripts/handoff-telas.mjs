@@ -21,6 +21,10 @@ import { join } from "node:path";
 /** `OnFace <arquivo>.dc.html` → nome do componente no produto. */
 export const TELAS = [
   ["Casca", "CascaDesenho"],
+  /* `OnFace Dashboard.dc.html` NÃO entra: apesar do nome, é outro produto —
+     um painel de pagamentos (Pix, taxa de recusa, "Ativar conta real"), com
+     paleta verde e casca própria. Não é o Início do CRM, que é a Visão Geral
+     em `/inicio`. Conferido no protótipo em 30/09. */
   ["Pecas", "PecasDesenho"],
   ["Pre-vendas", "PreVendasDesenho"],
   ["Pipeline", "PipelineDesenho"],

@@ -1,6 +1,6 @@
 import { auth } from "@/lib/auth/config";
 import { NextResponse } from "next/server";
-import { isAdminView } from "@/lib/auth/roles";
+import { isAdminView, podeVerComo } from "@/lib/auth/roles";
 
 export default auth((req) => {
   const { pathname } = req.nextUrl;
@@ -24,15 +24,19 @@ export default auth((req) => {
     return NextResponse.redirect(loginUrl);
   }
 
-  // Role efetivo: se um admin está "visualizando como" outro usuário (cookie mcrm-view-as),
-  // os bloqueios de tela usam o role daquele usuário pra refletir o que ele veria.
-  // O cookie só conta se o role REAL do token for admin/gerente/super_admin.
+  // Role efetivo: se o super_admin está "visualizando como" outro usuário (cookie
+  // mcrm-view-as), os bloqueios de tela usam o role daquele usuário pra refletir o
+  // que ele veria. Quem pode ativar o modo vem de `podeVerComo` — a mesma regra do
+  // tenant.ts e da API. Antes aqui aceitava admin/gerente, que o tenant ignorava:
+  // a tela bloqueava pelo papel do cookie enquanto os dados vinham pelo papel real.
+  // O papel do cookie não vem do banco (middleware roda no edge), mas só RESTRINGE
+  // a navegação de quem já é super_admin; os dados seguem validados no tenant/API.
   const realRole = (req.auth?.user as { role?: string })?.role || "";
   let effectiveRole = realRole;
-  if (req.auth && ["admin", "gerente", "super_admin"].includes(realRole)) {
-    const va = req.cookies.get("mcrm-view-as")?.value;
-    const vaRole = va ? va.split(":")[1] : "";
-    if (vaRole) effectiveRole = vaRole;
+  if (req.auth && podeVerComo(realRole)) {
+    // Cookie apontando pro próprio usuário não é "ver como" — o tenant também ignora.
+    const [vaId, vaRole] = (req.cookies.get("mcrm-view-as")?.value ?? "").split(":");
+    if (vaRole && vaId !== req.auth.user?.id) effectiveRole = vaRole;
   }
 
   // `/admin/*` não é mais uma área: desde 09/09/2026 é só um redirect pras

@@ -8,7 +8,7 @@
 body{background:#090e14;font-family:Inter,system-ui,sans-serif;-webkit-font-smoothing:antialiased;color:#12171d}
 button{font:inherit;color:inherit;border:0;background:none;cursor:pointer;text-align:left}
 input{font:inherit;color:inherit}input::placeholder{color:#4a5560}
-a{color:#d93c1a;text-decoration:none}a:hover{color:#b8300f;text-decoration:underline}
+a:not([class]){color:#d93c1a;text-decoration:none}a:not([class]):hover{color:#b8300f;text-decoration:underline}
 ::-webkit-scrollbar{width:10px;height:10px}
 ::-webkit-scrollbar-thumb{background:#d2d5d5;border:3px solid transparent;background-clip:content-box;border-radius:8px}
 @keyframes of-fade{from{opacity:0}to{opacity:1}}

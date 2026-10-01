@@ -1,10 +1,10 @@
-// Página autenticada: o board lê a sessão do usuário para filtrar por
-// responsável. Prerender estático não tem sessão, e o build quebrava em
-// `useSession()` retornando undefined. Renderiza sob demanda.
-export const dynamic = "force-dynamic";
+import { redirect } from "next/navigation";
 
-import { Cf2EntregaWorkspace } from "@/components/crm2/clientes/EntregaWorkspace";
-
-export default function ImplantacaoPabxPage() {
-  return <Cf2EntregaWorkspace familiaFixa="PABX" />;
+/**
+ * Pós-venda do CRM 1 — a implantação PABX vive em `/clientes/implantacao/pabx`.
+ * A rota antiga montava o board cf2 fora da casca (sem SessionProvider, e
+ * quebrava com erro 500 em `useSession`). Agora só redireciona.
+ */
+export default function RedirecionaPosVenda() {
+  redirect("/clientes/implantacao/pabx");
 }

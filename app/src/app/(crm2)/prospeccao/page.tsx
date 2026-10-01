@@ -2,11 +2,11 @@ import { redirect } from "next/navigation";
 import { getTenantContext } from "@/lib/auth/tenant";
 import { listaProspeccao } from "@/lib/vendas/consultas";
 import type { EstadoProspeccao } from "@/lib/vendas/dominio";
-import { Pagina, PaginaCabecalho, PaginaResumo } from "@/components/onface/shell/Pagina";
+import { getOrgApolloKey } from "@/lib/apollo/tenant-key";
 import { Prospeccao } from "@/components/onface/vendas/Prospeccao";
 import { type RotaBaseVendas } from "@/components/onface/vendas/ui";
 import {
-  acaoAdicionarProspect, acaoAtribuirEmMassa, acaoCadencias, acaoDescartar,
+  acaoAdicionarProspect, acaoAtribuirEmMassa, acaoCadencias, acaoDescartar, acaoImportarProspects,
   acaoInscreverEmCadencia, acaoMarcarSemResposta, acaoOportunidadeDireta,
   acaoPausarCadencia, acaoPreQualificar, acaoRegistrarResposta, acaoResponsaveis,
 } from "./actions";
@@ -32,49 +32,46 @@ export async function ProspeccaoPage({ searchParams, rotaBase = "" }: {
   const responsavelId = params.responsavel || null;
   const lista = params.lista?.trim() || null;
 
-  const [dados, cadencias, responsaveis] = await Promise.all([
+  const [dados, cadencias, responsaveis, chaveApollo] = await Promise.all([
     listaProspeccao(ctx.organizacaoId, { busca, estado, responsavelId, lista }),
     acaoCadencias(),
     acaoResponsaveis(),
+    getOrgApolloKey(ctx.organizacaoId),
   ]);
+  // Enriquecer enfileira um job que só o Apollo resolve, e o endpoint é de
+  // admin: sem chave ou sem papel o botão vira mentira, então a tela recebe o
+  // motivo em vez do botão.
+  const admin = ctx.userRole === "admin" || ctx.userRole === "super_admin";
+  const motivoSemEnriquecer = !chaveApollo
+    ? "Apollo não configurado para esta organização."
+    : !admin ? "Enriquecer é restrito a administradores." : null;
 
+  // Sem `Pagina`/`PaginaResumo`: arquétipo B (Contatos) pinta o papel até a
+  // borda e leva os contadores de estado para as abas da própria lista — o
+  // resumo em caixas repetia os mesmos números duas vezes na tela.
   return (
-    <Pagina>
-      <PaginaCabecalho titulo="Prospecção" />
-      <PaginaResumo
-        itens={[
-          {
-            rotulo: "Em cadência",
-            valor: dados.resumo.em_cadencia,
-            detalhe: `${dados.resumo.novo} novos aguardando`,
-            destaque: true,
-          },
-          // Quem respondeu e ninguém tocou é o lead mais quente parado do
-          // funil: é o único sinal desta tela.
-          { rotulo: "Responderam", valor: dados.resumo.respondeu, sinal: true },
-          { rotulo: "Pré-qualificados", valor: dados.resumo.pre_qualificado },
-        ]}
+    <div data-workspace="desenho">
+      <Prospeccao
+        dados={dados}
+        filtro={{ busca, estado, responsavelId, lista }}
+        visao={visao}
+        cadencias={cadencias}
+        responsaveis={responsaveis}
+        motivoSemEnriquecer={motivoSemEnriquecer}
+        acoes={{
+          adicionar: acaoAdicionarProspect,
+          importar: acaoImportarProspects,
+          inscreverEmCadencia: acaoInscreverEmCadencia,
+          pausarCadencia: acaoPausarCadencia,
+          registrarResposta: acaoRegistrarResposta,
+          marcarSemResposta: acaoMarcarSemResposta,
+          preQualificar: acaoPreQualificar,
+          oportunidadeDireta: acaoOportunidadeDireta,
+          descartar: acaoDescartar,
+          atribuirEmMassa: acaoAtribuirEmMassa,
+        }}
       />
-
-        <Prospeccao
-          dados={dados}
-          filtro={{ busca, estado, responsavelId, lista }}
-          visao={visao}
-          cadencias={cadencias}
-          responsaveis={responsaveis}
-          acoes={{
-            adicionar: acaoAdicionarProspect,
-            inscreverEmCadencia: acaoInscreverEmCadencia,
-            pausarCadencia: acaoPausarCadencia,
-            registrarResposta: acaoRegistrarResposta,
-            marcarSemResposta: acaoMarcarSemResposta,
-            preQualificar: acaoPreQualificar,
-            oportunidadeDireta: acaoOportunidadeDireta,
-            descartar: acaoDescartar,
-            atribuirEmMassa: acaoAtribuirEmMassa,
-          }}
-        />
-    </Pagina>
+    </div>
   );
 }
 

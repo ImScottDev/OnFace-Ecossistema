@@ -1,11 +1,12 @@
-import { notFound } from "next/navigation";
-import { OnfacePage, OnfacePageSurface } from "@/components/onface/shell/OnfacePage";
-import { DetalheEmpresaPagina } from "@/components/onface/vendas/pagina";
-import { acaoEmpresa360 } from "../../actions";
+import { redirect } from "next/navigation";
 
-export default async function EmpresaPorId({ params }: { params: Promise<{ id: string }> }) {
+/** `/contatos/empresas/:id` → `/empresas/:id`.
+ *
+ * A ficha da empresa passou a ser o desenho do handoff (`EmpresaProto`), que
+ * mora em `/empresas/:id` com o mesmo id. Esta rota era a versão anterior e
+ * ficou viva por link salvo, busca e histórico — redireciona em vez de
+ * mostrar a tela antiga. */
+export default async function EmpresaPorIdLegado({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const resultado = await acaoEmpresa360(id);
-  if (!resultado.ok || !resultado.dados?.empresa) notFound();
-  return <OnfacePage><OnfacePageSurface><DetalheEmpresaPagina empresa={resultado.dados.empresa} timeline={resultado.dados.timeline} voltar="/contatos" /></OnfacePageSurface></OnfacePage>;
+  redirect(`/empresas/${id}`);
 }

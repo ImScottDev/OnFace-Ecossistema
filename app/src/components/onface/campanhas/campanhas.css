@@ -1,0 +1,110 @@
+/* Campanhas — só o que o vendas.css não tem. Medidas em --onface-u e elevação
+   por box-shadow inset (nunca border), como o resto do ONFACE. */
+
+.cp-superficie {
+  border-radius: calc(14 * var(--onface-u));
+  background: var(--onface-white, var(--of-papel));
+  box-shadow: inset 0 0 0 1px var(--of-linha);
+}
+
+/* Aviso de domínio, não alerta de erro: papel sunken com acento coral à
+   esquerda. Coral é acento, nunca fundo. */
+.cp-aviso {
+  margin: 0 0 calc(14 * var(--onface-u));
+  padding: calc(10 * var(--onface-u)) calc(14 * var(--onface-u));
+  border-radius: calc(11 * var(--onface-u));
+  background: var(--of-calha);
+  box-shadow: inset calc(3 * var(--onface-u)) 0 0 0 var(--onface-coral, var(--of-coral-marca));
+  color: var(--of-tinta-forte);
+  font-size: calc(12 * var(--onface-u));
+  line-height: 1.5;
+}
+.cp-aviso a { color: var(--of-coral-acao); font-weight: 600; text-decoration: underline; }
+
+.cp-canal { display: inline-flex; align-items: center; gap: calc(5 * var(--onface-u)); }
+.cp-canal svg { width: calc(12 * var(--onface-u)); height: calc(12 * var(--onface-u)); }
+
+.cp-rodape { margin-top: calc(10 * var(--onface-u)); }
+
+/* Editor */
+.cp-editor { max-width: calc(760 * var(--onface-u)); gap: calc(14 * var(--onface-u)); }
+.cp-bloco {
+  display: flex;
+  flex-direction: column;
+  gap: calc(10 * var(--onface-u));
+  padding: calc(16 * var(--onface-u)) calc(18 * var(--onface-u));
+  border-radius: calc(14 * var(--onface-u));
+  background: var(--onface-white, var(--of-papel));
+  box-shadow: inset 0 0 0 1px var(--of-linha);
+}
+.cp-bloco h2 {
+  margin: 0;
+  font-family: var(--font-onface-display), sans-serif;
+  font-size: calc(13.5 * var(--onface-u));
+  font-weight: 700;
+  color: var(--of-tinta-forte);
+}
+.cp-campo { display: flex; flex-direction: column; gap: calc(6 * var(--onface-u)); }
+.cp-rotulo {
+  color: var(--text-muted, var(--of-tinta-3));
+  font-size: calc(10.5 * var(--onface-u));
+  font-weight: 600;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+.cp-mono { font-family: var(--font-onface-mono, "IBM Plex Mono"), monospace !important; font-size: calc(11.5 * var(--onface-u)) !important; }
+.cp-contagem { opacity: 0.6; font-variant-numeric: tabular-nums; font-weight: 500; }
+
+.cp-rodape-acoes {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: calc(16 * var(--onface-u));
+  flex-wrap: wrap;
+}
+.cp-envio { display: flex; flex-direction: column; align-items: flex-end; gap: calc(6 * var(--onface-u)); }
+.cp-envio .ov-nota { margin: 0; max-width: calc(440 * var(--onface-u)); text-align: right; }
+
+.cp-quando { display: flex; align-items: center; gap: calc(8 * var(--onface-u)); }
+.cp-quando span { color: var(--text-muted, var(--of-tinta-3)); font-size: calc(11.5 * var(--onface-u)); font-weight: 500; }
+.cp-quando input { width: auto; }
+
+/* Detalhe do envio */
+.cp-envio-painel { max-width: calc(760 * var(--onface-u)); display: flex; flex-direction: column; gap: calc(12 * var(--onface-u)); margin-bottom: calc(14 * var(--onface-u)); }
+.cp-envio-topo { display: flex; align-items: center; justify-content: space-between; gap: calc(12 * var(--onface-u)); flex-wrap: wrap; }
+.cp-envio-topo p { margin: 0; color: var(--of-tinta-forte); font-size: calc(12.5 * var(--onface-u)); }
+.cp-barra {
+  display: flex; height: calc(6 * var(--onface-u)); border-radius: 999px; overflow: hidden;
+  background: var(--of-calha);
+}
+.cp-barra span { display: block; height: 100%; }
+.cp-barra [data-s="enviado"] { background: var(--of-sucesso-tinta); }
+.cp-barra [data-s="bloqueado"] { background: var(--of-shell-tinta-3); }
+.cp-barra [data-s="falhou"] { background: var(--of-coral-acao); }
+.cp-erro-linha { color: var(--text-muted, var(--of-tinta-3)); font-size: calc(11 * var(--onface-u)); max-width: calc(360 * var(--onface-u)); }
+.cp-envio-painel .cp-erro-linha { white-space: normal; overflow: visible; }
+.cp-envio-painel td a { color: inherit; text-decoration: none; }
+.cp-envio-painel td a:hover { text-decoration: underline; }
+
+/* Prévia do WhatsApp: balão de saída, papel quente, sem verde de outro produto. */
+.cp-previa { display: flex; flex-direction: column; gap: calc(6 * var(--onface-u)); }
+.cp-previa p {
+  align-self: flex-start;
+  max-width: calc(420 * var(--onface-u));
+  margin: 0;
+  padding: calc(9 * var(--onface-u)) calc(12 * var(--onface-u));
+  border-radius: calc(12 * var(--onface-u)) calc(12 * var(--onface-u)) calc(12 * var(--onface-u)) calc(3 * var(--onface-u));
+  background: var(--of-papel-tela);
+  box-shadow: inset 0 0 0 1px var(--of-linha);
+  color: var(--of-tinta-forte);
+  font-size: calc(12.5 * var(--onface-u));
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+/* Seletor de visão (mesmo desenho das abas de Cadências). */
+.cp-abas { display: inline-flex; gap: 2px; padding: 3px; border-radius: 10px; background: var(--of-calha); }
+.cp-aba { height: 30px; padding: 0 12px; border-radius: 8px; font-size: 12.5px; font-weight: 600; color: var(--of-tinta-2); display: inline-flex; align-items: center; gap: 6px; text-decoration: none; }
+.cp-aba:hover { color: var(--of-tinta-forte); }
+.cp-aba[aria-current="page"] { background: var(--of-papel); color: var(--of-tinta-forte); box-shadow: inset 0 0 0 1px var(--of-linha); }
+.cp-aba-cont { font-family: "IBM Plex Mono", monospace; font-size: 11px; color: var(--of-tinta-3); }

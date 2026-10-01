@@ -25,6 +25,7 @@ import * as React from "react";
 import { toast } from "sonner";
 
 import { CascaDesenho } from "./CascaDesenho";
+import { UsuarioDoProtoContexto } from "./usuario-do-proto";
 
 interface Props {
   /** O que o protótipo lia do store. Preencher com dado real. */
@@ -50,17 +51,49 @@ class Logica extends React.Component<any, any> {
    * sozinha. O que atravessa de verdade — aviso, navegação e as peças —
    * chega nas props.
    */
+  /**
+   * O catálogo do domínio, no lugar do catálogo estático do protótipo.
+   *
+   * O nome NAO e "catalogo": a tela de Proposta ja tem um metodo catalogo()
+   * — o catalogo comercial dela — e um getter com o mesmo nome o sobrescreve.
+   * A colisao nao da erro de tipo: da "catalogo is not a function" em runtime,
+   * no meio do Builder.
+   */
+  get dadosDoProto(): any {
+    return this.props.catalogo ?? {};
+  }
+
+  /**
+   * Quem está usando — no protótipo, o Scott fixo como autor de nota,
+   * evento e atividade. Vem do contexto que a casca fornece com a sessão;
+   * `props.usuario` ganha quando o adaptador quer forçar.
+   */
+  static contextType = UsuarioDoProtoContexto;
+  get eu(): string {
+    return this.props.usuario?.nome ?? (this.context as any)?.nome ?? "Você";
+  }
+
   E = {
     tudo: () => this.props.dados ?? {},
     ler: (k: string, alt?: any) => (this.props.dados as any)?.[k] ?? alt,
-    gravar: () => {},
+    /* O store do protótipo gravava no localStorage. Aqui ele CHAMA A TELA:
+       quem sabe traduzir o patch em command é o adaptador, escrito à mão.
+       Engolir a chamada — como esta linha fazia — é o que mantinha
+       Pré-vendas parecendo que gravava sem gravar nada. */
+    gravar: (patch: any) => this.props.gravar?.(patch),
     assinar: () => null,
     assinarPecas: () => null,
     assinarAviso: () => null,
     avisar: (texto: string, tom?: string) => this.diz(texto, tom),
     abrir: (peca: string, id?: string | null) => this.props.abrir?.(peca, id),
     abrirExterno: (url: string) => this.props.abrirExterno?.(url),
-    irPara: (href: string) => this.ir(href),
+    /* A PROP, e nao o metodo ir() da classe.
+     *
+     * As telas do handoff definem ir(href, label) chamando E.irPara(...).
+     * Apontar irPara de volta para this.ir fecha o ciclo ir -> irPara -> ir,
+     * e o clique morre com "Maximum call stack size exceeded" — foi o que
+     * deixou o sidebar inteiro sem navegar. */
+    irPara: (href: string) => this.props.ir?.(href),
     parametro: (nome: string) =>
       typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get(nome),
   };
@@ -68,7 +101,7 @@ class Logica extends React.Component<any, any> {
   constructor(props) {
     super(props);
     const E = null as any; // o store só existe depois do construtor
-    const d: any = props.dados ?? {};
+    const d: any = this.props.dados ?? {};
     this.state = {
       aberta: props.menuAberto !== undefined ? props.menuAberto !== false : d.menuAberto !== false,
       exp: d.menuGrupos || { Vendas: true, "Operação": false, Clientes: false, "Automações": false, Insights: false },
@@ -87,7 +120,7 @@ class Logica extends React.Component<any, any> {
   }
 
   componentDidMount() {
-    this._rsz = () => { const w = window.innerWidth; if (w !== this.state.larg) this.setState({ larg: w, menuMob: w < 768 ? this.state.menuMob : false }); };
+    this._rsz = () => { const w = (typeof window !== "undefined" ? window.innerWidth : 1440); if (w !== this.state.larg) this.setState({ larg: w, menuMob: w < 768 ? this.state.menuMob : false }); };
     this._rsz();
     window.addEventListener("resize", this._rsz);
     this._ultimo = { aberta: this.state.aberta, exp: this.state.exp };
@@ -596,6 +629,9 @@ class Logica extends React.Component<any, any> {
   }
 
   render() {
+    /* `children` atravessa: a Casca envolve o conteúdo da rota, e sem isto
+       ela renderiza sozinha e a tela fica em branco. Estava consertado à MÃO
+       no arquivo gerado, e a primeira regeração apagou — por isso mora aqui. */
     return <CascaDesenho {...(this.renderVals() as any)} children={this.props.children} />;
   }
 }

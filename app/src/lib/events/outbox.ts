@@ -17,6 +17,7 @@
 import { db } from "@/lib/db";
 import { eventOutbox } from "@/lib/db/schema";
 import { eq, sql } from "drizzle-orm";
+import { carimbarPayload } from "@/lib/automacoes/contexto";
 
 /** `db` ou um client de transação (`db.transaction(async (tx) => ...)`) — o insert funciona igual nos dois. */
 type DbClient = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -97,6 +98,9 @@ export interface PublicarEventoOpts {
  * evento é publicado — nunca um sem o outro.
  */
 export async function publicarEvento(opts: PublicarEventoOpts, dbClient: DbClient = db): Promise<string | null> {
+  // Fato produzido dentro de um nó de automação sai carimbado (payload._automacao):
+  // é como o gatilho de evento dos fluxos enxerga automação disparando automação.
+  opts = { ...opts, payload: carimbarPayload(opts.payload) };
   try {
     const [inserted] = await dbClient.insert(eventOutbox).values({
       organizacaoId: opts.organizacaoId,

@@ -33,6 +33,10 @@ const STAGE_LABELS: Record<string, string> = {
 
 interface TabComercialProps {
   periodo: string;
+  /** Insights ONFACE (/relatorios) já mostra receita, ticket, win rate, ciclo
+   * e qualificados no hero grafite, da MESMA requisição. Lá a faixa daqui é
+   * repetição; na biblioteca (/relatorios/biblioteca/[id]) ela é o único topo. */
+  ocultarHero?: boolean;
 }
 
 // Paleta contida (disciplina de cor 21/07): neutros + 1 acento de marca no topo.
@@ -115,7 +119,7 @@ function formatCurrency(value: number): string {
   return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-export default function TabComercial({ periodo }: TabComercialProps) {
+export default function TabComercial({ periodo, ocultarHero = false }: TabComercialProps) {
   // Filtro de safra (COM-02): legado (zoho_id preenchido) vs nativo — reaproveita zoho_id, sem campo novo.
   const [safra, setSafra] = useState<"todos" | "legado" | "nativo">("todos");
   const { data: comercial, isLoading: loadingComercial } = useQuery<ComercialData>({
@@ -219,7 +223,10 @@ export default function TabComercial({ periodo }: TabComercialProps) {
         </div>
       ) : null}
 
-      {/* Faixa-herói: receita fechada no período */}
+      {/* Faixa-herói: receita fechada no período. O hero da página Insights
+          mostra sempre a safra "todos"; com outra safra filtrada a faixa volta,
+          senão o número filtrado sumiria da tela. */}
+      {ocultarHero && safra === "todos" ? null : (
       <HeroBand
         label="Receita fechada no período"
         value={loadingComercial ? "…" : formatCurrency(fechado?.receita ?? 0)}
@@ -238,6 +245,7 @@ export default function TabComercial({ periodo }: TabComercialProps) {
         <Stat label="Ciclo médio" value={loadingComercial ? "…" : comercial?.cicloMedio != null ? `${comercial.cicloMedio}d` : "—"} sub="lead caiu no CRM → ganho" icon={Clock} />
         <Stat label="Qualificados" value={loadingComercial ? "…" : comercial?.leadsQualificados ?? 0} sub="negócios criados no período" icon={Filter} />
       </HeroBand>
+      )}
 
       {/* Composição do faturamento (09/09/2026): a meta comercial é um número
           só; é aqui que se vê de QUE ele foi feito, mês a mês e por pessoa. */}

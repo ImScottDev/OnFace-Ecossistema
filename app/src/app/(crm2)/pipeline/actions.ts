@@ -5,7 +5,7 @@ import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { getTenantContext } from "@/lib/auth/tenant";
 import {
-  atorHumano,
+  atorHumano, MOTIONS, RegraDeNegocio, type Motion,
   type EtapaPipelineAberta, type Familia, type MotivoEstagnacao, type MotivoPerda,
 } from "@/lib/vendas/dominio";
 import { executar, type Resultado } from "@/lib/vendas/resultado";
@@ -146,20 +146,36 @@ export async function acaoCriarOportunidade(entrada: {
   valorEstimado?: string | null;
   previsaoFechamento?: string | null;
   proximaAcao?: string | null;
+  proximaAcaoEm?: string | null;
+  /** Lead que já existe: só VINCULA (não conclui handoff de Pré-vendas). */
+  leadId?: string | null;
+  /** Expansão/renovação de quem já é cliente. Ausente = nova venda. */
+  motion?: Motion;
 }): Promise<Resultado<{ ids: string[] }>> {
   const ctx = await contexto();
   if (!ctx) return { ok: false, erro: "Sessão expirada." };
   return executar("criar oportunidade", async () => {
+    // O lead vem do cliente: precisa ser DESTA organização antes de virar vínculo.
+    if (entrada.leadId) {
+      const [lead] = await db.execute<{ id: string }>(sql`
+        SELECT id::text FROM leads
+         WHERE id = ${entrada.leadId}::uuid AND organizacao_id = ${ctx.organizacaoId}::uuid`);
+      if (!lead) throw new RegraDeNegocio("lead_nao_encontrado", "O lead informado não está nesta organização.");
+    }
+    const motion = entrada.motion && MOTIONS.includes(entrada.motion) ? entrada.motion : undefined;
     const r = await pipeline.criarOportunidade({
       organizacaoId: ctx.organizacaoId,
       empresaId: entrada.empresaId,
       familias: entrada.familias,
       responsavelId: entrada.responsavelId,
-      sourceProcess: "MANUAL",
+      sourceProcess: motion && motion !== "NEW_BUSINESS" ? "EXPANSION" : "MANUAL",
+      motion,
+      leadId: entrada.leadId ?? null,
       titulo: entrada.titulo,
       valorEstimado: entrada.valorEstimado,
       previsaoFechamento: entrada.previsaoFechamento,
       proximaAcao: entrada.proximaAcao,
+      proximaAcaoEm: entrada.proximaAcaoEm,
     }, ctx.ator);
     revalidatePath(ROTA);
     return { ids: r.oportunidades.map((o) => o.id) };

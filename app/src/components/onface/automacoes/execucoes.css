@@ -1,0 +1,107 @@
+/* Execuções — arquétipo B (lista de dados), vocabulário de OnFace Contatos.
+   Elevação por box-shadow inset, nunca border. Coral só como acento. */
+
+.exe { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+
+.exe-filtros { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
+
+/* Segmento grafite: mesma pílula do filtro de visão do protótipo. */
+.exe-segmento { display: inline-flex; gap: 2px; padding: 3px; border-radius: 10px; background: var(--of-calha); }
+.exe-segmento a {
+  height: 30px; padding: 0 12px; display: inline-flex; align-items: center; border-radius: 8px;
+  font-size: 12.5px; font-weight: 600; color: var(--of-tinta-2); text-decoration: none; white-space: nowrap;
+}
+.exe-segmento a:hover { color: var(--of-tinta-forte); }
+.exe-segmento a[aria-current="page"] { background: var(--of-papel); color: var(--of-tinta-forte); box-shadow: inset 0 0 0 1px var(--of-linha); }
+
+.exe-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.exe-chip {
+  height: 28px; padding: 0 11px; display: inline-flex; align-items: center; border-radius: 9999px;
+  background: var(--of-papel); box-shadow: inset 0 0 0 1px var(--of-linha); font-size: 12px; font-weight: 600;
+  color: var(--of-tinta-2); text-decoration: none;
+}
+.exe-chip:hover { color: var(--of-tinta-forte); }
+.exe-chip[aria-current="true"] { background: var(--of-tinta-forte); color: var(--of-papel); box-shadow: none; }
+
+.exe-lista { list-style: none; margin: 0; padding: 0; background: var(--of-papel); border-radius: 12px; box-shadow: inset 0 0 0 1px var(--of-linha); overflow: hidden; }
+
+.exe-cab, .exe-linha {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 190px) 150px 92px; gap: 14px; align-items: center; padding: 0 16px;
+}
+.exe-cab {
+  height: 36px; font-size: 10.5px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--of-tinta-3);
+  background: var(--of-papel-tela); box-shadow: inset 0 -1px 0 var(--of-linha);
+}
+.exe-lista > li + li:not(.exe-cab) { box-shadow: inset 0 1px 0 var(--of-fio); }
+
+.exe-linha { min-height: 56px; padding-top: 9px; padding-bottom: 9px; cursor: pointer; list-style: none; }
+.exe-linha::-webkit-details-marker { display: none; }
+.exe-linha:hover { background: var(--of-papel-tela); }
+.exe-item[open] > .exe-linha { background: var(--of-papel-tela); }
+.exe-linha:focus-visible { outline: 2px solid var(--of-coral-marca); outline-offset: -2px; }
+
+.exe-nome { display: flex; flex-direction: column; min-width: 0; gap: 2px; }
+.exe-nome strong {
+  font-family: var(--font-onface-titulo), var(--font-onface-corpo), sans-serif; font-size: 13px; font-weight: 600; color: var(--of-tinta-forte);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.exe-fonte { font-size: 10.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--of-tinta-3); }
+.exe-fonte[data-fonte="automacao"] { color: var(--of-coral-acao-hover); }
+.exe-detalhe { font-size: 11.5px; color: var(--of-tinta-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.exe-entidade { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--of-tinta-2); min-width: 0; }
+.exe-entidade code, .exe-painel code { font-family: var(--font-onface-mono), ui-monospace, monospace; font-size: 11.5px; color: var(--of-tinta-3); }
+
+.exe-selo {
+  display: inline-flex; align-items: center; height: 22px; padding: 0 9px; border-radius: 9999px;
+  font-size: 11.5px; font-weight: 600; white-space: nowrap; background: var(--of-calha); color: var(--of-tinta-2);
+}
+.exe-selo[data-tom="ok"] { background: var(--of-sucesso-fundo); color: var(--of-sucesso-tinta); }
+.exe-selo[data-tom="atencao"] { background: var(--of-aviso-fundo); color: var(--of-aviso-tinta); }
+.exe-selo[data-tom="erro"] { background: var(--of-coral-fundo); color: var(--of-coral-acao-hover); }
+
+.exe-quando { font-size: 12px; color: var(--of-tinta-3); text-align: right; font-variant-numeric: tabular-nums; }
+
+.exe-painel { padding: 4px 16px 16px; display: flex; flex-direction: column; gap: 10px; background: var(--of-papel-tela); }
+.exe-painel dl { margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px 16px; }
+.exe-painel dt { font-size: 10.5px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--of-tinta-3); }
+.exe-painel dd { margin: 2px 0 0; font-size: 12.5px; color: var(--of-tinta); word-break: break-all; }
+.exe-erro { margin: 0; padding: 9px 11px; border-radius: 8px; background: var(--of-papel); box-shadow: inset 0 0 0 1px var(--of-linha); font-size: 12.5px; color: var(--of-tinta); }
+.exe-erro[data-tom="erro"] { background: var(--of-coral-fundo); color: var(--of-coral-texto-forte); box-shadow: inset 0 0 0 1px var(--of-coral-anel); }
+.exe-json {
+  margin: 0; max-height: 260px; overflow: auto; padding: 10px 12px; border-radius: 8px; background: var(--of-tinta-forte); color: var(--of-calha);
+  font-family: var(--font-onface-mono), ui-monospace, monospace; font-size: 11.5px; line-height: 1.5; white-space: pre-wrap; word-break: break-all;
+}
+
+.exe-vazio {
+  display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 56px 16px; text-align: center;
+  background: var(--of-papel); border-radius: 12px; box-shadow: inset 0 0 0 1px var(--of-linha);
+}
+.exe-vazio strong { font-family: var(--font-onface-titulo), sans-serif; font-size: 14px; color: var(--of-tinta-forte); }
+.exe-vazio span { font-size: 12.5px; color: var(--of-tinta-3); max-width: 52ch; }
+.exe-vazio a { font-size: 12.5px; font-weight: 600; color: var(--of-coral-acao-hover); }
+
+.exe-rodape { margin: 0; font-size: 12px; color: var(--of-tinta-3); }
+
+/* Botões: primário var(--of-coral-acao), secundário papel com contorno inset. */
+.exe-reproc { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.exe-btn {
+  height: 32px; padding: 0 12px; border: 0; border-radius: 8px; background: var(--of-papel); box-shadow: inset 0 0 0 1px var(--of-linha);
+  font-size: 12.5px; font-weight: 600; color: var(--of-tinta-forte); cursor: pointer;
+}
+.exe-btn:hover:not(:disabled) { background: var(--of-calha); }
+.exe-btn-primario { background: var(--of-coral-acao); color: var(--of-papel); box-shadow: none; }
+.exe-btn-primario:hover:not(:disabled) { background: var(--of-coral-acao-hover); }
+.exe-btn:disabled { opacity: .5; cursor: not-allowed; }
+.exe-reproc-motivo { font-size: 11.5px; color: var(--of-tinta-3); }
+.exe-reproc-msg { font-size: 12px; color: var(--of-sucesso-tinta); }
+.exe-reproc-msg[data-tipo="erro"] { color: var(--of-coral-acao-hover); }
+
+.exe-aviso { margin: 0; font-size: 12.5px; color: var(--of-tinta-3); }
+
+@media (max-width: 760px) {
+  .exe-cab { display: none; }
+  .exe-linha { grid-template-columns: minmax(0, 1fr) auto; }
+  .exe-entidade { display: none; }
+  .exe-quando { grid-column: 2; }
+}

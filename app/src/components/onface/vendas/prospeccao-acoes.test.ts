@@ -61,3 +61,26 @@ test("campo obrigatório vazio bloqueia antes de chamar o CRM", () => {
   assert.deepEqual(montarPayloadMassa("responsavel", ""), { tipo: "responsavel", responsavelId: null });
   assert.deepEqual(montarPayloadMassa("responsavel", null), { tipo: "responsavel", responsavelId: null });
 });
+
+test("CSV de prospects: separador ;, aspas, apelidos de coluna e linha sem empresa recusada", async () => {
+  const { lerCsvProspects } = await import("./prospeccao-acoes");
+  const r = lerCsvProspects('﻿Company;Nome;E-mail;Cargo\n"Acme; Ltda";Ana Lima;ana@acme.com;CEO\n;Sem Empresa;x@y.com;\nBeta;;;\n');
+  assert.equal(r.erro, null);
+  assert.deepEqual(r.recusadas, [3]);
+  assert.equal(r.linhas.length, 2);
+  assert.equal(r.linhas[0].empresa, "Acme; Ltda");
+  assert.equal(r.linhas[0].pessoaNome, "Ana Lima");
+  assert.equal(r.linhas[0].email, "ana@acme.com");
+  assert.equal(r.linhas[1].pessoaNome, null);
+  assert.match(lerCsvProspects("nome,email\nAna,a@b.c").erro ?? "", /empresa/);
+});
+
+test("lerCsvProspects aponta a linha do arquivo mesmo com linhas em branco no meio", async () => {
+  const { lerCsvProspects } = await import("./prospeccao-acoes");
+  // linha 1 cabeçalho, 2 Acme, 3 vazia, 4 vazia, 5 sem empresa, 6 Beta
+  const r = lerCsvProspects("empresa,nome\nAcme,Ana\n\n  \n,Bruno\nBeta,Caio\n");
+  assert.deepEqual(r.recusadas, [5]);
+  assert.deepEqual(r.linhas.map((l) => l.empresa), ["Acme", "Beta"]);
+  // cabeçalho depois de linhas em branco continua sendo achado
+  assert.deepEqual(lerCsvProspects("\n\nempresa\n,\nX").recusadas, [4]);
+});

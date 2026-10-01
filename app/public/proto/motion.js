@@ -68,9 +68,12 @@
     });
   };
 
-  function liga3d(el) {
+  // `forcaHerdada` vem do pai com data-stagger-filhos-tilt. Não se escreve
+  // `data-tilt` no filho: se isto rodar antes de o React hidratar, o atributo
+  // novo vira hydration mismatch.
+  function liga3d(el, forcaHerdada) {
     if (el.__of3d || reduz) return; el.__of3d = true;
-    const forca = +(el.getAttribute("data-tilt") || 6);
+    const forca = +(el.getAttribute("data-tilt") || forcaHerdada || 6);
     if (getComputedStyle(el).position === "static") el.style.setProperty("position", "relative");
     let raf = 0;
     el.addEventListener("pointermove", (e) => {
@@ -108,7 +111,7 @@
       if (el.hasAttribute && el.hasAttribute("data-tilt")) liga3d(el);
       if (el.hasAttribute && el.hasAttribute("data-magnet")) ligaIma(el);
     });
-    Array.from(raiz.querySelectorAll("[data-stagger-filhos-tilt]")).forEach(p => Array.from(p.children).forEach(c => { if (!c.hasAttribute("data-tilt")) { c.setAttribute("data-tilt", p.getAttribute("data-stagger-filhos-tilt") || "6"); liga3d(c); } }));
+    Array.from(raiz.querySelectorAll("[data-stagger-filhos-tilt]")).forEach(p => Array.from(p.children).forEach(c => { if (!c.hasAttribute("data-tilt")) liga3d(c, p.getAttribute("data-stagger-filhos-tilt")); }));
   };
 
   const obs = new MutationObserver(ms => {

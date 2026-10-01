@@ -25,6 +25,7 @@ import * as React from "react";
 import { toast } from "sonner";
 
 import { PecasDesenho } from "./PecasDesenho";
+import { UsuarioDoProtoContexto } from "./usuario-do-proto";
 
 interface Props {
   /** O que o protótipo lia do store. Preencher com dado real. */
@@ -50,17 +51,49 @@ class Logica extends React.Component<any, any> {
    * sozinha. O que atravessa de verdade — aviso, navegação e as peças —
    * chega nas props.
    */
+  /**
+   * O catálogo do domínio, no lugar do catálogo estático do protótipo.
+   *
+   * O nome NAO e "catalogo": a tela de Proposta ja tem um metodo catalogo()
+   * — o catalogo comercial dela — e um getter com o mesmo nome o sobrescreve.
+   * A colisao nao da erro de tipo: da "catalogo is not a function" em runtime,
+   * no meio do Builder.
+   */
+  get dadosDoProto(): any {
+    return this.props.catalogo ?? {};
+  }
+
+  /**
+   * Quem está usando — no protótipo, o Scott fixo como autor de nota,
+   * evento e atividade. Vem do contexto que a casca fornece com a sessão;
+   * `props.usuario` ganha quando o adaptador quer forçar.
+   */
+  static contextType = UsuarioDoProtoContexto;
+  get eu(): string {
+    return this.props.usuario?.nome ?? (this.context as any)?.nome ?? "Você";
+  }
+
   E = {
     tudo: () => this.props.dados ?? {},
     ler: (k: string, alt?: any) => (this.props.dados as any)?.[k] ?? alt,
-    gravar: () => {},
+    /* O store do protótipo gravava no localStorage. Aqui ele CHAMA A TELA:
+       quem sabe traduzir o patch em command é o adaptador, escrito à mão.
+       Engolir a chamada — como esta linha fazia — é o que mantinha
+       Pré-vendas parecendo que gravava sem gravar nada. */
+    gravar: (patch: any) => this.props.gravar?.(patch),
     assinar: () => null,
     assinarPecas: () => null,
     assinarAviso: () => null,
     avisar: (texto: string, tom?: string) => this.diz(texto, tom),
     abrir: (peca: string, id?: string | null) => this.props.abrir?.(peca, id),
     abrirExterno: (url: string) => this.props.abrirExterno?.(url),
-    irPara: (href: string) => this.ir(href),
+    /* A PROP, e nao o metodo ir() da classe.
+     *
+     * As telas do handoff definem ir(href, label) chamando E.irPara(...).
+     * Apontar irPara de volta para this.ir fecha o ciclo ir -> irPara -> ir,
+     * e o clique morre com "Maximum call stack size exceeded" — foi o que
+     * deixou o sidebar inteiro sem navegar. */
+    irPara: (href: string) => this.props.ir?.(href),
     parametro: (nome: string) =>
       typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get(nome),
   };
@@ -68,7 +101,7 @@ class Logica extends React.Component<any, any> {
   constructor(props) {
     super(props);
     const E = null as any; // o store só existe depois do construtor
-    const d: any = props.dados ?? {};
+    const d: any = this.props.dados ?? {};
     this.state = {
       detalhe: false, detalheId: null,
       cadPausada: false, nutrir: false, motivo: null, data: "",
@@ -225,7 +258,7 @@ class Logica extends React.Component<any, any> {
   }
 
   atvVazia(L) {
-    return { tipo: "Follow up", situacao: "A fazer", titulo: "", desc: "", data: "", hora: "", resp: (L && L.resp) || "Scott Ferraz" };
+    return { tipo: "Follow up", situacao: "A fazer", titulo: "", desc: "", data: "", hora: "", resp: (L && L.resp) || this.eu };
   }
 
   setQual(id, campo, valor, padrao) {
@@ -267,7 +300,7 @@ class Logica extends React.Component<any, any> {
       titulo: L0.acao || "",
       desc: L0.acao ? "Confirmar o cenário atual de atendimento e quem decide a compra. Se avançar, agendar a reunião de descoberta com o time técnico." : "",
       data: "2026-09-23", hora: "14:30",
-      resp: L0.resp || "Scott Ferraz"
+      resp: L0.resp || this.eu
     } : {};
     const ehDraft = !!S.atvDraft;
     const atvLead = ehDraft ? S.atvDraft : (L0 ? Object.assign({}, atvPadrao, S.atvs[L0.id] || {}) : {});
@@ -425,7 +458,7 @@ class Logica extends React.Component<any, any> {
       dropTitulo: S.dropMenu === "resp" ? "RESPONSÁVEL" : "MOVER PARA",
       dropStyle: (() => {
         const r = S.dropRect;
-        const vh = typeof window !== "undefined" ? window.innerHeight : 800;
+        const vh = typeof window !== "undefined" ? (typeof window !== "undefined" ? window.innerHeight : 900) : 800;
         const alto = S.dropMenu === "resp" ? 170 : 330;
         const paraCima = !!r && (vh - r.bottom - 12) < alto && r.top > vh - r.bottom;
         const pos = r ? (paraCima ? "bottom:" + (vh - r.top + 6) + "px;" : "top:" + (r.bottom + 6) + "px;") + "left:" + r.left + "px;width:" + Math.max(236, r.width) + "px;" : "top:120px;left:120px;width:240px;";
@@ -434,7 +467,7 @@ class Logica extends React.Component<any, any> {
       dropItens: (() => {
         const fechar = { dropMenu: null };
         if (S.dropMenu === "resp") {
-          const eq = (window.OnFaceDados && window.OnFaceDados.EQUIPE) || ["Camila Reis", "Diego Nunes", "Ana Vitória"];
+          const eq = (this.dadosDoProto && this.dadosDoProto.EQUIPE) || ["Camila Reis", "Diego Nunes", "Ana Vitória"];
           return eq.map(n => ({
             label: n, iniciais: iniciaisDe(n), on: L0.resp === n, temNota: false, nota: "",
             marca: "flex:0 0 auto;width:22px;height:22px;border-radius:9999px;display:grid;place-items:center;font-size:9px;font-weight:700;background:#eeeff3;color:#616b78",
@@ -444,7 +477,7 @@ class Logica extends React.Component<any, any> {
             }
           }));
         }
-        const ET = (window.OnFaceDados && window.OnFaceDados.ETAPAS) || {};
+        const ET = (this.dadosDoProto && this.dadosDoProto.ETAPAS) || {};
         const regra = { qualificado: "Abre a qualificação", oportunidade: "Qualifica e cria a oportunidade", nutricao: "Pede motivo e data de retomada", desqualificado: "Pede motivo" };
         return ["novo", "em_contato", "qualificacao", "qualificado", "oportunidade", "nutricao", "desqualificado"].map(k => ({
           label: (ET[k] && ET[k].label) || k, iniciais: "", on: L0.etapa === k,
@@ -518,7 +551,7 @@ class Logica extends React.Component<any, any> {
           return { opcoes, marcados: String(val || "").split("|").filter(Boolean), padrao: this._int ? this._int.qualPadrao : undefined };
         })();
         const r = S.intRect;
-        const vh = typeof window !== "undefined" ? window.innerHeight : 800;
+        const vh = typeof window !== "undefined" ? (typeof window !== "undefined" ? window.innerHeight : 900) : 800;
         const alto = 34 * cfg.opcoes.length + 80;
         const paraCima = !!r && (vh - r.bottom - 12) < alto && r.top > vh - r.bottom;
         const pos = r ? (paraCima ? "bottom:" + (vh - r.top + 6) + "px;" : "top:" + (r.bottom + 6) + "px;") + "left:" + r.left + "px;width:" + Math.max(220, r.width) + "px;" : "top:120px;left:120px;width:260px;";
@@ -550,8 +583,8 @@ class Logica extends React.Component<any, any> {
       },
       tagMenuStyle: (() => {
         const r = S.tagRect;
-        const vh = typeof window !== "undefined" ? window.innerHeight : 800;
-        const vw = typeof window !== "undefined" ? window.innerWidth : 1200;
+        const vh = typeof window !== "undefined" ? (typeof window !== "undefined" ? window.innerHeight : 900) : 800;
+        const vw = typeof window !== "undefined" ? (typeof window !== "undefined" ? window.innerWidth : 1440) : 1200;
         const largura = Math.min(308, vw - 24);
         const abaixo = r ? vh - r.bottom - 14 : 400;
         const acima = r ? r.top - 14 : 400;
@@ -1208,8 +1241,8 @@ class Logica extends React.Component<any, any> {
           menu: S.qualMenu,
           menuStyle: (() => {
             const r = S.qualRect;
-            const vh = typeof window !== "undefined" ? window.innerHeight : 800;
-            const vw = typeof window !== "undefined" ? window.innerWidth : 1200;
+            const vh = typeof window !== "undefined" ? (typeof window !== "undefined" ? window.innerHeight : 900) : 800;
+            const vw = typeof window !== "undefined" ? (typeof window !== "undefined" ? window.innerWidth : 1440) : 1200;
             const pos = r ? "bottom:" + (vh - r.top + 6) + "px;right:" + Math.max(10, vw - r.right) + "px;" : "bottom:90px;right:40px;";
             return "position:fixed;" + pos + "width:288px;z-index:56;border-radius:8px;background:#fff;border:1px solid #e3e7e8;box-shadow:0 -8px 20px -4px rgba(0,0,0,.18),0 2px 4px -2px rgba(0,0,0,.12);padding:4px;animation:of-rise .12s cubic-bezier(.2,0,.2,1) both";
           })(),
@@ -1385,7 +1418,10 @@ class Logica extends React.Component<any, any> {
   }
 
   render() {
-    return <PecasDesenho {...(this.renderVals() as any)} />;
+    /* `children` atravessa: a Casca envolve o conteúdo da rota, e sem isto
+       ela renderiza sozinha e a tela fica em branco. Estava consertado à MÃO
+       no arquivo gerado, e a primeira regeração apagou — por isso mora aqui. */
+    return <PecasDesenho {...(this.renderVals() as any)} children={this.props.children} />;
   }
 }
 

@@ -111,20 +111,22 @@ interface LinhaCrua extends Record<string, unknown> {
   negocio_titulo: string | null;
   negocio_id: string | null;
   servico: string | null;
+  fulfillment_id: string | null;
 }
 
 /** O vínculo é o que dá sentido à atividade: ela sempre pertence a alguém.
  * A ordem de precedência segue a do domínio (entrega, negócio, empresa, lead). */
 function vinculoDe(l: LinhaCrua): VinculoAtividade {
   if (l.servico && l.empresa_nome) {
-    return { tipo: "Entrega", nome: l.empresa_nome, apoio: l.servico, href: "/clientes/implantacao" };
+    // O projeto (fulfillment) do serviço, quando existe; sem ele, o painel de Pós-vendas.
+    return { tipo: "Entrega", nome: l.empresa_nome, apoio: l.servico, href: l.fulfillment_id ? `/projetos/${l.fulfillment_id}` : "/pos-vendas" };
   }
   if (l.negocio_id) {
     return {
       tipo: "Negócio",
       nome: l.negocio_titulo || l.empresa_nome || "Negócio",
       apoio: l.empresa_nome || "Sem empresa",
-      href: `/negocios/${l.negocio_id}`,
+      href: `/pipeline/${l.negocio_id}`,
     };
   }
   if (l.empresa_id && l.empresa_nome) {
@@ -137,9 +139,16 @@ function vinculoDe(l: LinhaCrua): VinculoAtividade {
   return { tipo: "Avulsa", nome: "Sem vínculo", apoio: "Atividade solta", href: "/tarefas" };
 }
 
+/**
+ * `garantirId`: a atividade que precisa vir mesmo fora da janela de 300 — o
+ * `/tarefas?atv=p:<id>` de um link direto (aqui chega o id cru, sem o `p:`). Ela sobe para o topo da ordenação em
+ * vez de ganhar uma segunda consulta; o filtro de organização continua o mesmo,
+ * então id de outra org simplesmente não aparece.
+ */
 export async function montarAtividades(
   orgId: string,
   hoje = new Date(),
+  garantirId: string | null = null,
 ): Promise<DadosAtividades> {
   const [linhas, responsaveis, totais] = await Promise.all([
     db.execute<LinhaCrua>(sql`
@@ -154,7 +163,10 @@ export async function montarAtividades(
              l.id::text    AS lead_id,
              n.titulo      AS negocio_titulo,
              n.id::text    AS negocio_id,
-             COALESCE(sc.canonical_product, sc.canonical_key) AS servico
+             COALESCE(sc.canonical_product, sc.canonical_key) AS servico,
+             (SELECT f.id::text FROM fulfillments f
+               WHERE f.servico_canonico_id = sc.id AND f.organizacao_id = t.organizacao_id
+               ORDER BY f.created_at DESC LIMIT 1) AS fulfillment_id
         FROM tarefas t
         LEFT JOIN usuarios u  ON u.id = t.usuario_id
         LEFT JOIN empresas e  ON e.id = t.empresa_id
@@ -162,7 +174,8 @@ export async function montarAtividades(
         LEFT JOIN negocios n  ON n.id = t.negocio_id
         LEFT JOIN servicos_canonicos sc ON sc.id = t.servico_canonico_id
        WHERE t.organizacao_id = ${orgId}::uuid
-       ORDER BY (t.status IN ('concluida','declinada')) ASC,
+       ORDER BY (t.id::text = ${garantirId ?? ""}) DESC,
+                (t.status IN ('concluida','declinada')) ASC,
                 COALESCE(t.vence_em, t.data_vencimento::timestamptz) ASC NULLS LAST,
                 t.created_at DESC
        LIMIT 300
@@ -219,6 +232,8 @@ export async function montarAtividades(
       responsavel: l.responsavel,
       responsavelIniciais: l.responsavel ? iniciais(l.responsavel) : null,
       vencimento: venc ? venc.toISOString().slice(0, 10) : null,
+      venceEm: l.vence_em,
+      dataVencimento: l.data_vencimento,
       vencimentoTexto: dataLonga(venc),
       diasAteVencimento: diasAte(venc, hoje),
       prazoTexto: prazo.texto,

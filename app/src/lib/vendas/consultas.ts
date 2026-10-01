@@ -29,6 +29,19 @@ import { boardDeOportunidades } from "@onface/sales";
 const LIMITE_PADRAO = 400;
 
 /**
+ * O teto de cartões do Pipeline, por etapa (o pacote divide pelas seis).
+ *
+ * 400 dava 67 por coluna, e o cabeçalho do quadro CONTA os cartões que
+ * recebeu: Entrada anunciava 67 tendo 251, Proposta 67 tendo 190. Número que
+ * mente é pior que número ausente, porque ninguém desconfia dele.
+ *
+ * 1800 = 300 por coluna, que cobre a maior etapa aberta (Entrada, 251) com
+ * folga. Ganho e Perdido têm mais que isso e continuam cortadas — nascem
+ * colapsadas, e são bucket de consulta, não fila de trabalho.
+ */
+const LIMITE_PIPELINE = 1800;
+
+/**
  * Cartões por coluna.
  *
  * SEM limite operacional, por decisão do Kauã (24/09): o board mostra a etapa
@@ -45,6 +58,8 @@ const POR_COLUNA_PADRAO = 4000;
    barra da tela (Client Component) precisa da lista. Importar daqui puxava o
    driver do Postgres para o bundle do navegador e derrubava a rota inteira com
    "Can't resolve 'fs'". Reexportadas para quem já as importava deste módulo. */
+import { textoSimples } from "./texto";
+
 export { VIEWS_PRE_VENDAS, ehView, type ViewPreVendas };
 
 /**
@@ -60,6 +75,23 @@ function literalDeArray(valores: readonly string[]): string {
 }
 
 /* ── Pré-vendas ────────────────────────────────────────────────────────── */
+
+/**
+ * `text[]` lido por `db.execute` cru às vezes chega como a string literal do
+ * Postgres (`{"Callface AI",PABX}`), não como array — o driver só converte os
+ * tipos que conhece. O export de Pré-vendas quebrava com
+ * "servicos?.join is not a function". Normalizar aqui serve todo consumidor.
+ */
+function comoLista(v: unknown): string[] | null {
+  if (v == null) return null;
+  if (Array.isArray(v)) return v.map(String);
+  if (typeof v === "string") {
+    const corpo = v.replace(/^\{|\}$/g, "");
+    if (!corpo) return [];
+    return corpo.split(",").map((x) => x.trim().replace(/^"|"$/g, ""));
+  }
+  return null;
+}
 
 export interface CardPreVendas {
   leadId: string;
@@ -335,7 +367,7 @@ export async function boardPreVendas(organizacaoId: string, filtros: FiltrosPreV
         etapa,
         origem: c.origem,
         campanha: c.campanha,
-        servicos: l?.servicos ?? null,
+        servicos: comoLista(l?.servicos),
         tag: (c.leadId ? tagPorLead.get(c.leadId) : null) ?? null,
         responsavel: c.responsavel,
         responsavelIniciais: iniciais(c.responsavel),
@@ -463,6 +495,9 @@ export async function boardPreVendas(organizacaoId: string, filtros: FiltrosPreV
 
 /* ── Pipeline ──────────────────────────────────────────────────────────── */
 
+/** Proposta que ainda pode virar "aceita" — é o que o badge chama de aberta. */
+const EM_ABERTO = new Set(["enviada", "visualizada", "ajuste_solicitado"]);
+
 export interface CardPipeline {
   id: string;
   empresa: string;
@@ -483,7 +518,25 @@ export interface CardPipeline {
   leadId: string | null;
   bundleId: string | null;
   propostas: number;
+  /**
+   * As propostas da oportunidade, da mais antiga para a mais nova.
+   *
+   * O cartão precisa do STATUS da proposta vigente (o chip) e o gate de
+   * "Proposta" precisa saber se existe alguma — nenhum dos dois se resolve
+   * com a contagem. Vem da mesma varredura que antes só contava, então não
+   * custa uma ida a mais ao banco.
+   *
+   * Sem `itens`: somar item a item para todos os cartões do quadro seria caro
+   * e o cartão não mostra a soma — quem mostra é o detalhe, que carrega sob
+   * demanda.
+   */
+  propostasLista: Array<{ numero: number; versao: number; status: string; enviadaEm: string | null; total: number | null; totalRecorrente: number | null }>;
+  /** Quem é a conversa. O cartão mostra "Pessoa · Cargo" abaixo da empresa. */
+  pessoa: string | null;
+  cargo: string | null;
   motivoPerda: string | null;
+  /** Nomes das tags da oportunidade. */
+  tags: string[];
 }
 
 export interface FiltrosPipeline {
@@ -536,7 +589,7 @@ export async function boardPipeline(organizacaoId: string, filtros: FiltrosPipel
     motion: filtros.motion ?? null,
     busca: filtros.busca ?? null,
     semProximaAcao: filtros.semProximaAcao ?? false,
-    limite: LIMITE_PADRAO,
+    limite: LIMITE_PIPELINE,
   });
 
   // Enriquecimento legado — TEMPORÁRIO, sai na fase 26. São os sinais de
@@ -547,14 +600,16 @@ export async function boardPipeline(organizacaoId: string, filtros: FiltrosPipel
     proxima_acao: string | null; proxima_acao_em: string | null; etapa_desde: string | null;
     no_show_em: string | null; trial_iniciado_em: string | null; trial_encerrado_em: string | null;
     motivo_estagnacao: string | null; lead_id: string | null;
-    propostas: number; proposta_aberta: number; proposta_aceita: number;
+    propostas: Array<{ numero: number; versao: number; status: string; enviada_em: string | null; total: string | number | null; total_recorrente: string | number | null }> | null;
+    pessoa: string | null; cargo: string | null; tags: string[] | null;
   }>();
   if (negocioIds.length > 0) {
     const linhas = await db.execute<{
       id: string; proxima_acao: string | null; proxima_acao_em: string | null;
       etapa_desde: string | null; no_show_em: string | null; trial_iniciado_em: string | null;
       trial_encerrado_em: string | null; motivo_estagnacao: string | null; lead_id: string | null;
-      propostas: number; proposta_aberta: number; proposta_aceita: number;
+        propostas: Array<{ numero: number; versao: number; status: string; enviada_em: string | null; total: string | number | null; total_recorrente: string | number | null }> | null;
+      pessoa: string | null; cargo: string | null; tags: string[] | null;
     }>(sql`
       SELECT n.id::text,
              -- Próxima ação É tarefa (SPEC §23). A coluna legada fica como
@@ -570,15 +625,24 @@ export async function boardPipeline(organizacaoId: string, filtros: FiltrosPipel
              COALESCE(oc.trial_encerrado_em, n.trial_encerrado_em)::text AS trial_encerrado_em,
              COALESCE(oc.motivo_estagnacao, n.motivo_estagnacao) AS motivo_estagnacao,
              n.lead_id::text,
+             -- O contato: o cartão mostra "Pessoa · Cargo" abaixo da empresa,
+             -- e sem isto ele identifica a conta mas não com quem se fala.
+             COALESCE(ps.nome, l.nome) AS pessoa,
+             COALESCE(ps.cargo, l.cargo) AS cargo,
              -- Proposta é canônica (SPEC §13.1); o vínculo é que tem duas portas.
-             (SELECT count(*)::int FROM propostas p
-               WHERE p.negocio_id = n.id OR p.oportunidade_id = oc.id) AS propostas,
-             (SELECT count(*)::int FROM propostas p
-               WHERE (p.negocio_id = n.id OR p.oportunidade_id = oc.id)
-                 AND p.status IN ('enviada','visualizada','ajuste_solicitado')) AS proposta_aberta,
-             (SELECT count(*)::int FROM propostas p
-               WHERE (p.negocio_id = n.id OR p.oportunidade_id = oc.id)
-                 AND p.status = 'aceita') AS proposta_aceita
+             --
+             -- Uma varredura só, trazendo a LISTA. Antes eram três contagens
+             -- sobre a mesma tabela (total, abertas, aceitas) e nenhuma delas
+             -- dizia o status da proposta vigente, que é o que o cartão mostra.
+             -- Contar em JS sobre o array custa nada e dá as três respostas.
+             pr.propostas,
+             -- Tags: canônica (entity_labels) ∪ legada (negocio_labels).
+             to_json(ARRAY(SELECT lb.nome FROM labels lb
+                    WHERE lb.organizacao_id = n.organizacao_id
+                      AND lb.id IN (SELECT label_id FROM entity_labels
+                                     WHERE entity_type = 'negocio' AND entity_id = n.id
+                                    UNION SELECT label_id FROM negocio_labels WHERE negocio_id = n.id)
+                    ORDER BY lb.nome)) AS tags
         FROM negocios n
         LEFT JOIN LATERAL (
           SELECT titulo, COALESCE(vence_em, data_vencimento) AS vence_em
@@ -591,6 +655,18 @@ export async function boardPipeline(organizacaoId: string, filtros: FiltrosPipel
            WHERE negocio_id = n.id AND status = 'no_show'
         ) r ON TRUE
         LEFT JOIN oportunidades oc ON oc.negocio_id_legado = n.id
+        LEFT JOIN leads l ON l.id = n.lead_id
+        -- A pessoa canônica vence o lead quando existe: é o cadastro.
+        LEFT JOIN pessoas ps ON ps.id = oc.pessoa_id
+        LEFT JOIN LATERAL (
+          SELECT json_agg(json_build_object(
+                   'numero', p.numero, 'versao', p.versao, 'status', p.status,
+                   'enviada_em', p.enviada_em::text, 'total', p.total_geral,
+                   'total_recorrente', p.total_recorrente
+                 ) ORDER BY p.numero, p.versao) AS propostas
+            FROM propostas p
+           WHERE p.negocio_id = n.id OR p.oportunidade_id = oc.id
+        ) pr ON TRUE
        WHERE n.id = ANY(${literalDeArray(negocioIds)}::uuid[])`);
     for (const l of linhas) legado.set(l.id, l);
   }
@@ -598,11 +674,18 @@ export async function boardPipeline(organizacaoId: string, filtros: FiltrosPipel
   const agora = Date.now();
   const cards: CardPipeline[] = board.cards.map((c) => {
     const l = c.negocioId ? legado.get(c.negocioId) : undefined;
+    // `json_agg` devolve NULL quando não há linha, e não um array vazio.
+    const propostas = (l?.propostas ?? []).map((p) => ({
+      numero: p.numero, versao: p.versao, status: p.status,
+      enviadaEm: p.enviada_em,
+      total: p.total == null ? null : Number(p.total),
+      totalRecorrente: p.total_recorrente == null ? null : Number(p.total_recorrente),
+    }));
     const badges: string[] = [];
     if (l?.no_show_em) badges.push("No-show");
     if (l?.trial_iniciado_em && !l.trial_encerrado_em) badges.push("Trial ativo");
-    if ((l?.proposta_aceita ?? 0) > 0) badges.push("Proposta aceita");
-    else if ((l?.proposta_aberta ?? 0) > 0) badges.push("Proposta aberta");
+    if (propostas.some((p) => p.status === "aceita")) badges.push("Proposta aceita");
+    else if (propostas.some((p) => EM_ABERTO.has(p.status))) badges.push("Proposta aberta");
     if (l?.motivo_estagnacao) badges.push(rotuloEstagnacao(l.motivo_estagnacao));
     if (!l?.proxima_acao && !c.ganho && !c.perdido) badges.push("Sem próxima ação");
     else if (l?.proxima_acao_em && new Date(l.proxima_acao_em).getTime() < agora) badges.push("Atrasado");
@@ -628,8 +711,12 @@ export async function boardPipeline(organizacaoId: string, filtros: FiltrosPipel
       badges,
       leadId: l?.lead_id ?? null,
       bundleId: c.bundleId,
-      propostas: l?.propostas ?? 0,
+      propostas: propostas.length,
+      propostasLista: propostas,
+      pessoa: l?.pessoa ?? null,
+      cargo: l?.cargo ?? null,
       motivoPerda: c.motivoPerda,
+      tags: l?.tags ?? [],
     };
   });
 
@@ -1267,7 +1354,7 @@ function iniciais(nome: string | null): string | null {
 export interface DetalheLead {
   id: string;
   empresa: { id: string | null; nome: string; setor: string | null; porte: string | null; cidade: string | null; website: string | null; cnpj: string | null };
-  pessoa: { nome: string; cargo: string | null; email: string | null; telefone: string | null; whatsapp: string | null };
+  pessoa: { nome: string; cargo: string | null; email: string | null; telefone: string | null; whatsapp: string | null; linkedin: string | null };
   etapa: EstagioPreVendas;
   etapaRotulo: string;
   qualificado: boolean;
@@ -1308,11 +1395,12 @@ export async function detalheLead(organizacaoId: string, leadId: string): Promis
     primeiro_contato_at: string | null; criado_em: string;
     nutricao_motivo: string | null; nutricao_retomar_em: string | null; nutricao_observacao: string | null;
     desq_motivo: string | null; desq_detalhe: string | null; desq_de_etapa: string | null;
+    linkedin: string | null;
   }>(sql`
     SELECT l.id::text, l.empresa_id::text, COALESCE(e.nome, l.empresa) AS empresa_nome,
            COALESCE(e.setor, l.empresa_setor) AS setor, COALESCE(e.porte, l.empresa_porte) AS porte,
            COALESCE(e.cidade, l.empresa_cidade) AS cidade, e.website, COALESCE(e.cnpj, l.empresa_cnpj) AS cnpj,
-           l.nome, l.sobrenome, l.cargo, l.email, l.telefone, l.whatsapp,
+           l.nome, l.sobrenome, l.cargo, l.email, l.telefone, l.whatsapp, l.linkedin,
            l.estagio_pre_vendas AS etapa, l.qualificado, l.qualificado_em::text,
            qu.nome AS qualificado_por, l.qualificado_por_tipo, l.pre_qualificado,
            l.qualificacao, COALESCE(a.origem, l.origem) AS origem,
@@ -1328,7 +1416,7 @@ export async function detalheLead(organizacaoId: string, leadId: string): Promis
            COALESCE(pc.landing_page, l.landing_page) AS landing_page,
            l.servicos_interesse AS servicos,
            l.responsavel_id::text, u.nome AS responsavel,
-           l.primeiro_contato_at::text, l.created_at::text AS criado_em,
+           l.primeiro_contato_at::text, to_json(l.created_at)#>>'{}' AS criado_em,
            -- Nutrição e desqualificação: o canônico guarda o estado
            -- (nutricao_status, retomar_em, motivo_desqualificacao); o
            -- legado guarda o texto livre que ainda não tem casa (observação,
@@ -1408,6 +1496,8 @@ export async function detalheLead(organizacaoId: string, leadId: string): Promis
     pessoa: {
       nome: [l.nome, l.sobrenome].filter(Boolean).join(" ").trim() || "Sem contato",
       cargo: l.cargo, email: l.email, telefone: l.telefone, whatsapp: l.whatsapp,
+      // Vazio é ausência: a ficha inventava o perfil a partir do nome.
+      linkedin: l.linkedin?.trim() || null,
     },
     etapa,
     etapaRotulo: ROTULO_ETAPA_PRE_VENDAS[etapa] ?? etapa,
@@ -1423,7 +1513,7 @@ export async function detalheLead(organizacaoId: string, leadId: string): Promis
       primeiroToque: toques?.primeiro ?? null, ultimoToque: toques?.ultimo ?? null,
     },
     responsavel: { id: l.responsavel_id, nome: l.responsavel },
-    servicos: l.servicos,
+    servicos: comoLista(l.servicos),
     tags: tags.map((t) => ({ id: t.id, nome: t.nome })),
     primeiroContatoEm: l.primeiro_contato_at,
     criadoEm: l.criado_em,
@@ -1463,12 +1553,25 @@ export interface DetalheOportunidade {
   motivoPerda: string | null;
   noShow: { em: string | null; contagem: number };
   trial: { iniciadoEm: string | null; encerradoEm: string | null };
-  propostas: Array<{ id: string; numero: number; versao: number; status: string; total: number | null; enviadaEm: string | null; modoFechamento: string | null }>;
+  propostas: Array<{
+    id: string; numero: number; versao: number; status: string; total: number | null;
+    enviadaEm: string | null; modoFechamento: string | null;
+    /** A composição. O 360 mostra a tabela "Produtos e valores" a partir dela. */
+    itens: Array<{ nome: string; natureza: string | null; quantidade: number; valorUnitario: number; subtotal: number }>;
+  }>;
   /** Checklist de fechamento (v0.13 §02.4). Nulo quando não há oportunidade canônica. */
   fechamento: import("./checklist-fechamento").ChecklistFechamento | null;
   reunioes: Array<{ id: string; titulo: string; data: string; status: string }>;
   irmas: Array<{ id: string; titulo: string; etapa: string; familia: string | null }>;
   evidencias: Array<{ tipo: string; em: string }>;
+  /** Atividades registradas (ligação, e-mail, reunião, nota de sistema). */
+  atividades: Array<{ id: string; tipo: string; titulo: string | null; descricao: string | null; autor: string | null; em: string }>;
+  /** Notas humanas do negócio. Separadas das atividades porque o 360 as mostra em trilhas diferentes. */
+  notas: Array<{ id: string; texto: string; autor: string | null; em: string }>;
+  /** Os outros contatos da empresa — o 360 lista o comitê, não só o contato principal. */
+  contatos: Array<{ id: string; nome: string; cargo: string | null; email: string | null; telefone: string | null }>;
+  /** Nomes das tags da oportunidade: `entity_labels` (canônica) ∪ `negocio_labels` (legada). */
+  tags: string[];
 }
 
 export async function detalheOportunidade(organizacaoId: string, negocioId: string): Promise<DetalheOportunidade | null> {
@@ -1535,6 +1638,7 @@ export async function detalheOportunidade(organizacaoId: string, negocioId: stri
   const propostas = await db.execute<{
     id: string; numero: number; versao: number; status: string;
     total: string | null; enviada_em: string | null; modo: string | null;
+    itens: Array<{ nome: string; natureza: string | null; quantidade: string | number; valor_unitario: string | number; subtotal: string | number }> | null;
   }>(sql`
     -- Proposta é canônica (SPEC §13.1); o vínculo é que ainda tem duas portas.
     -- Casar pela oportunidade primeiro e cair no negócio depois evita perder a
@@ -1542,8 +1646,21 @@ export async function detalheOportunidade(organizacaoId: string, negocioId: stri
     -- oportunidade nenhuma das 455 propostas que só apontam para um lead — essas
     -- são caso de reconciliação, não de palpite.
     SELECT p.id::text, p.numero, p.versao, p.status, p.total_geral::text AS total,
-           p.enviada_em::text, p.modo_fechamento AS modo
+           p.enviada_em::text, p.modo_fechamento AS modo,
+           -- A composição, na ordem em que foi montada. É o bloco "Produtos e
+           -- valores" do 360, que sem isto dizia "crie a primeira proposta"
+           -- mesmo para oportunidade com proposta fechada.
+           it.itens
       FROM propostas p
+      LEFT JOIN LATERAL (
+        SELECT json_agg(json_build_object(
+                 'nome', pi.nome, 'natureza', pi.revenue_nature,
+                 'quantidade', pi.quantidade, 'valor_unitario', pi.valor_unitario,
+                 'subtotal', pi.subtotal
+               ) ORDER BY pi.ordem, pi.created_at) AS itens
+          FROM proposta_itens pi
+         WHERE pi.proposta_id = p.id
+      ) it ON TRUE
      WHERE p.negocio_id = ${negocioId}::uuid
         OR p.oportunidade_id = (SELECT id FROM oportunidades WHERE negocio_id_legado = ${negocioId}::uuid)
      ORDER BY p.versao DESC, p.created_at DESC
@@ -1581,6 +1698,58 @@ export async function detalheOportunidade(organizacaoId: string, negocioId: stri
     SELECT tipo, verificado_em::text AS em FROM comercial_evidencia
      WHERE negocio_id = ${negocioId}::uuid ORDER BY verificado_em DESC
   `);
+
+  // Atividades, notas e comitê — o que o 360 mostra e a linha do tempo não
+  // cobre. `timeline_visible` existe porque parte das atividades é ruído de
+  // integração que nunca foi para o olho de ninguém.
+  const atividades = await db.execute<{
+    id: string; tipo: string; titulo: string | null; descricao: string | null; autor: string | null; em: string;
+  }>(sql`
+    SELECT a.id::text, a.tipo, a.titulo,
+           COALESCE(a.descricao, a.descricao_raw) AS descricao,
+           COALESCE(u.nome, a.usuario_display_name) AS autor,
+           a.created_at::text AS em
+      FROM atividades a
+      LEFT JOIN usuarios u ON u.id = a.usuario_id
+     WHERE a.negocio_id = ${negocioId}::uuid
+       AND a.organizacao_id = ${organizacaoId}::uuid
+       AND a.timeline_visible
+     ORDER BY a.created_at DESC
+     LIMIT 100
+  `);
+
+  const notas = await db.execute<{ id: string; texto: string; autor: string | null; em: string }>(sql`
+    SELECT n.id::text, COALESCE(n.conteudo, n.conteudo_raw) AS texto,
+           COALESCE(u.nome, n.autor_display_name) AS autor,
+           n.created_at::text AS em
+      FROM notas n
+      LEFT JOIN usuarios u ON u.id = n.autor_id
+     WHERE n.negocio_id = ${negocioId}::uuid
+       AND n.organizacao_id = ${organizacaoId}::uuid
+     ORDER BY n.created_at DESC
+     LIMIT 100
+  `);
+
+  // Sem empresa não há comitê a listar — e `empresa_id IS NULL` casaria com
+  // todas as pessoas soltas da organização.
+  const contatos = n.empresa_id ? await db.execute<{
+    id: string; nome: string; cargo: string | null; email: string | null; telefone: string | null;
+  }>(sql`
+    SELECT id::text, COALESCE(nome, 'Sem nome') AS nome, cargo, email, telefone
+      FROM pessoas
+     WHERE empresa_id = ${n.empresa_id}::uuid
+       AND organizacao_id = ${organizacaoId}::uuid
+     ORDER BY nome
+     LIMIT 50
+  `) : [];
+
+  const tags = await db.execute<{ nome: string }>(sql`
+    SELECT l.nome FROM labels l
+     WHERE l.organizacao_id = ${organizacaoId}::uuid
+       AND l.id IN (SELECT label_id FROM entity_labels
+                     WHERE entity_type = 'negocio' AND entity_id = ${negocioId}::uuid
+                    UNION SELECT label_id FROM negocio_labels WHERE negocio_id = ${negocioId}::uuid)
+     ORDER BY l.nome`);
 
   // No-show é estado da reunião (SPEC §23). A coluna `negocios.no_show_em` é
   // fallback: cobre os 4 casos históricos que a 0082 não pôde mover sem
@@ -1634,9 +1803,30 @@ export async function detalheOportunidade(organizacaoId: string, negocioId: stri
       id: p.id, numero: p.numero, versao: p.versao, status: p.status,
       total: p.total === null ? null : Number(p.total), enviadaEm: p.enviada_em,
       modoFechamento: p.modo,
+      // `json_agg` devolve NULL sem linhas, e não um array vazio.
+      itens: (p.itens ?? []).map((i) => ({
+        nome: i.nome,
+        natureza: i.natureza,
+        quantidade: Number(i.quantidade) || 1,
+        valorUnitario: Number(i.valor_unitario) || 0,
+        subtotal: Number(i.subtotal) || 0,
+      })),
     })),
+    tags: tags.map((t) => t.nome),
     reunioes: reunioes.map((r) => ({ id: r.id, titulo: r.titulo, data: r.data, status: r.status })),
     irmas: irmas.map((i) => ({ id: i.id, titulo: i.titulo, etapa: i.etapa ?? "entrada", familia: i.familia })),
     evidencias: evidencias.map((e) => ({ tipo: e.tipo, em: e.em })),
+    // `textoSimples`: 575 atividades do banco trazem HTML do Zoho dentro da
+    // descrição, e o React escapa tudo — o operador lia a tag no meio da frase.
+    atividades: atividades.map((a) => ({
+      id: a.id, tipo: a.tipo, titulo: a.titulo,
+      descricao: textoSimples(a.descricao), autor: a.autor, em: a.em,
+    })),
+    notas: notas.map((x) => ({
+      id: x.id, texto: textoSimples(x.texto) ?? "", autor: x.autor, em: x.em,
+    })),
+    contatos: contatos.map((c) => ({
+      id: c.id, nome: c.nome, cargo: c.cargo, email: c.email, telefone: c.telefone,
+    })),
   };
 }

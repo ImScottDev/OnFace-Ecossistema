@@ -71,6 +71,22 @@ const DETALHES: Rota[] = [
     caminho: "/onface-preview/contatos/empresas/:id", exige: ["Empresa"],
     id: () => umId(sql`SELECT id::text FROM empresas ORDER BY created_at DESC LIMIT 1`),
   },
+  /* As três PONTES do protótipo: endereços que o handoff usava e que hoje só
+     traduzem o parâmetro para a rota real. Entram aqui com o id de verdade
+     porque é assim que elas chegam colada numa conversa — sem id, redirecionam
+     para a lista e não provariam nada. O que se checa é o DESTINO ter aberto. */
+  {
+    caminho: "/onface-preview/empresa?lead=:id", exige: ["Empresa"],
+    id: () => umId(sql`SELECT l.id::text FROM leads l JOIN empresas e ON e.id = l.empresa_id ORDER BY l.updated_at DESC NULLS LAST LIMIT 1`),
+  },
+  {
+    caminho: "/onface-preview/pessoa?lead=:id", exige: ["Pessoa"],
+    id: () => umId(sql`SELECT id::text FROM leads ORDER BY updated_at DESC NULLS LAST LIMIT 1`),
+  },
+  {
+    caminho: "/onface-preview/oportunidade?opp=:id", exige: ["Pipeline"],
+    id: () => umId(sql`SELECT id::text FROM negocios WHERE status NOT IN ('ganho','perdido') ORDER BY updated_at DESC LIMIT 1`),
+  },
   {
     caminho: "/onface-preview/contatos/pessoas/:id", exige: ["Contato", "Pessoa"],
     // O id vem da MESMA consulta que alimenta a lista, e não de um

@@ -1,9 +1,30 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { Key, Eye, EyeOff, Save, CheckCircle, AlertCircle, Mail, ArrowRight, Bot, Loader2, ShieldCheck } from "lucide-react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
+import {
+  Bot, Eye, EyeOff, Mail, MessageCircle, Phone, CreditCard, Megaphone, Calendar, Database, ShieldCheck,
+  ArrowRight, Key,
+} from "lucide-react";
+import { Cf2Button } from "@/components/crm2/ui/Button";
+import { Cf2Input } from "@/components/crm2/ui/Input";
+import { SecaoAjuste, PilulaEstado, type EstadoAjuste } from "@/components/onface/ajustes/Secao";
+
+/**
+ * Integrações — redesenhada em 01/10/2026 no padrão ONFACE.
+ *
+ * Antes: um cartão "Microsoft 365" que só levava a E-mail, o formulário de IA,
+ * o Apollo e o inventário como lista de texto, cada um com um desenho próprio
+ * (botão roxo translúcido, cartão com borda). WhatsApp e e-mail, os dois
+ * canais que mais caem, nem apareciam.
+ *
+ * Agora a tela responde de cara "o que está ligado, o que caiu e onde se
+ * resolve": cartões de conexão com o estado DERIVADO do banco (escopo da
+ * organização, ver `lib/integrations/inventario`). Integração cuja credencial
+ * vive no servidor diz isso — não ganha botão "Conectar" que não conecta.
+ */
 
 type AiProvider = "openai" | "anthropic" | "groq" | "google";
 
@@ -24,18 +45,148 @@ const AI_PROVIDER_LABEL: Record<AiProvider, string> = {
   google: "Google AI",
 };
 
+type EstadoIntegracao = "em_uso" | "configurada" | "nao_configurada";
+
+interface LinhaIntegracao {
+  chave: string; nome: string; paraQue: string;
+  estado: EstadoIntegracao;
+  volume: number | null; rotuloVolume: string | null;
+  ultimoSinal: string | null; pendencia: string | null;
+  href: string | null; comErro?: number;
+}
+
+const CANAIS = new Set(["whatsapp", "email", "ia"]);
+
+const ICONE: Record<string, typeof Mail> = {
+  whatsapp: MessageCircle, email: Mail, ia: Bot, callface: Phone, stripe: CreditCard,
+  meta_lead_ads: Megaphone, meta_capi: Megaphone, microsoft_graph: Calendar, google_calendar: Calendar,
+  callface_ai_db: Database,
+};
+
+const ROTULO_CTA: Record<string, string> = {
+  whatsapp: "Gerenciar sessões",
+  email: "Gerenciar caixas",
+  microsoft_graph: "Conectar Outlook",
+};
+
+function estadoVisual(i: LinhaIntegracao): { estado: EstadoAjuste; rotulo: string } {
+  if ((i.comErro ?? 0) > 0 && i.estado === "em_uso") return { estado: "pendente", rotulo: "Parcial" };
+  if ((i.comErro ?? 0) > 0) return { estado: "erro", rotulo: i.chave === "ia" ? "Chave com erro" : "Desconectado" };
+  if (i.estado === "em_uso") return { estado: "ok", rotulo: i.chave === "whatsapp" || i.chave === "email" ? "Conectado" : "Em uso" };
+  if (i.estado === "configurada") return { estado: "neutro", rotulo: "Configurada" };
+  return { estado: "pendente", rotulo: "Não configurada" };
+}
+
+const dataBr = (iso: string) => new Date(`${iso}T00:00:00`).toLocaleDateString("pt-BR");
+
+function CartaoConexao({ i }: { i: LinhaIntegracao }) {
+  const Icone = ICONE[i.chave] ?? Key;
+  const { estado, rotulo } = estadoVisual(i);
+  return (
+    <article className="aj-conexao">
+      <div className="aj-conexao-topo">
+        <span className="aj-conexao-icone"><Icone aria-hidden /></span>
+        <h3 className="aj-conexao-nome">{i.nome}</h3>
+        <span className="ml-auto"><PilulaEstado estado={estado}>{rotulo}</PilulaEstado></span>
+      </div>
+      <p className="aj-conexao-texto">{i.paraQue[0].toUpperCase() + i.paraQue.slice(1)}.</p>
+      {i.volume !== null && i.volume > 0 && (
+        // Volume e data juntos: "828 faturas" sem data não diz se parou ontem ou há seis meses.
+        <span className="aj-conexao-fato">
+          {i.volume.toLocaleString("pt-BR")} {i.rotuloVolume}
+          {i.ultimoSinal ? <span className="font-normal text-[var(--text-muted)]"> · último em {dataBr(i.ultimoSinal)}</span> : null}
+        </span>
+      )}
+      {i.pendencia && <p className="aj-conexao-pendencia">{i.pendencia[0].toUpperCase() + i.pendencia.slice(1)}.</p>}
+      <div className="aj-conexao-rodape">
+        {i.href ? (
+          <Cf2Button asChild size="sm" variant={estado === "ok" ? "secondary" : "primary"}>
+            <Link href={i.href}>{ROTULO_CTA[i.chave] ?? "Configurar"} <ArrowRight aria-hidden /></Link>
+          </Cf2Button>
+        ) : i.chave === "ia" ? (
+          <a href="#aj-ia" className="aj-link">Chaves de IA da organização</a>
+        ) : (
+          <span>Credencial no servidor, configurada pelo time técnico.</span>
+        )}
+      </div>
+    </article>
+  );
+}
+
 export default function IntegracoesPage() {
+  const { data, isLoading, isError, error } = useQuery({
+    queryKey: ["integracoes-inventario"],
+    queryFn: async () => {
+      const res = await fetch("/api/configuracoes/integracoes/inventario");
+      if (res.status === 403) throw new Error("Só administradores veem o estado das integrações.");
+      if (!res.ok) throw new Error("Não foi possível carregar as integrações.");
+      return res.json() as Promise<{ integracoes: LinhaIntegracao[] }>;
+    },
+  });
+
+  const lista = data?.integracoes ?? [];
+  const canais = ["whatsapp", "email", "ia"].map((k) => lista.find((i) => i.chave === k)).filter(Boolean) as LinhaIntegracao[];
+
+  return (
+    <div className="aj-secoes">
+      <SecaoAjuste
+        titulo="Canais da organização"
+        ajuda="O que a própria organização conecta. O estado vem das sessões e caixas cadastradas, não de uma lista fixa."
+      >
+        {isLoading ? (
+          <p className="aj-grupo-ajuda">Carregando conexões…</p>
+        ) : isError ? (
+          <div className="aj-vazio"><strong>{(error as Error).message}</strong></div>
+        ) : (
+          <div className="aj-conexoes">{canais.map((i) => <CartaoConexao key={i.chave} i={i} />)}</div>
+        )}
+      </SecaoAjuste>
+
+      <AiProviders />
+
+      <Apollo />
+
+      {/* O QUE EXISTE DE VERDADE.
+          Aqui havia dois cartões com "(placeholder)" no próprio código — Meta
+          Conversions API e Google Ads Offline Conversions — enquanto cinco
+          integrações rodavam em produção sem aparecer em lugar nenhum:
+          discador Callface (4.918 ligações), Stripe (828 faturas), Meta Lead
+          Ads (797 leads), Callface AI (208 snapshots) e Microsoft 365 (58
+          reuniões). Quem abria esta tela concluía que o produto tinha uma
+          integração configurada.
+
+          O estado de cada linha é DERIVADO de sinal no banco, não declarado. */}
+      <Inventario lista={lista.filter((i) => !CANAIS.has(i.chave))} carregando={isLoading} />
+    </div>
+  );
+}
+
+function Inventario({ lista, carregando }: { lista: LinhaIntegracao[]; carregando: boolean }) {
+  return (
+    <SecaoAjuste
+      titulo="Integrações do sistema"
+      ajuda="Stripe, discador, Meta, agenda e o banco do Callface AI. Estado medido pelo que cada uma já produziu nesta organização."
+    >
+      {carregando ? (
+        <p className="aj-grupo-ajuda">Carregando…</p>
+      ) : (
+        <div className="aj-conexoes">{lista.map((i) => <CartaoConexao key={i.chave} i={i} />)}</div>
+      )}
+    </SecaoAjuste>
+  );
+}
+
+function Apollo() {
   const queryClient = useQueryClient();
   const [apolloKey, setApolloKey] = useState("");
   const [showKey, setShowKey] = useState(false);
-  const [dirty, setDirty] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ["integracoes-config"],
     queryFn: async () => {
       const res = await fetch("/api/configuracoes/integracoes");
       if (!res.ok) throw new Error("Erro ao carregar");
-      return res.json();
+      return res.json() as Promise<{ apolloApiKey: string; apolloConfigured: boolean }>;
     },
   });
 
@@ -62,156 +213,77 @@ export default function IntegracoesPage() {
       }
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (_d, key) => {
       queryClient.invalidateQueries({ queryKey: ["integracoes-config"] });
-      setDirty(false);
+      setApolloKey("");
+      toast.success(key ? "Chave do Apollo salva." : "Chave do Apollo removida.");
     },
+    onError: (e) => toast.error((e as Error).message),
   });
 
+  const configurado = Boolean(data?.apolloConfigured);
+
   return (
-    <div className="space-y-6">
-      <div>
-        <p className="text-sm text-[var(--cf2-text-tertiary)] mt-1">Configure as chaves de API das integrações da sua organização.</p>
-      </div>
-
-      <div className="bg-[var(--cf2-bg-surface)] rounded-xl p-6 border border-[var(--cf2-border-default)]">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex gap-3">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#0067B8]/15 text-[#1683D8]">
-              <Mail className="w-4 h-4" />
-            </div>
-            <div>
-              <h2 className="text-lg font-semibold text-[var(--cf2-text-primary)]">Microsoft 365</h2>
-              <p className="mt-1 text-xs text-[var(--cf2-text-tertiary)]">
-                Conecte Outlook e Microsoft 365 para enviar, receber e sincronizar e-mails pelo ONFACE.
-              </p>
-            </div>
-          </div>
-          <Link
-            href="/ajustes/email"
-            className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg bg-[#0067B8] px-3 py-2 text-[13px] font-medium text-white transition-opacity hover:opacity-90"
-          >
-            Configurar Microsoft
-            <ArrowRight className="w-3.5 h-3.5" />
-          </Link>
-        </div>
-      </div>
-
-      <AiProviders />
-
-      {/* Apollo.io */}
-      <div className="bg-[var(--cf2-bg-surface)] rounded-xl p-6 border border-[var(--cf2-border-default)]">
-        <div className="flex items-center gap-2 mb-4">
-          <Key className="w-5 h-5 text-[var(--cf2-text-secondary)]" />
-          <h2 className="text-lg font-semibold text-[var(--cf2-text-primary)]">Apollo.io</h2>
-          {data?.apolloConfigured && !dirty && (
-            <span className="flex items-center gap-1 text-xs text-[var(--cf2-success-text)] ml-auto">
-              <CheckCircle className="w-3.5 h-3.5" /> Configurado
-            </span>
-          )}
-          {!data?.apolloConfigured && !isLoading && (
-            <span className="flex items-center gap-1 text-xs text-[var(--cf2-warning-text)] ml-auto">
-              <AlertCircle className="w-3.5 h-3.5" /> Não configurado
-            </span>
-          )}
-        </div>
-
-        <p className="text-xs text-[var(--cf2-text-tertiary)] mb-3">
-          A API key do Apollo.io é usada para enriquecer leads e empresas com dados públicos.
-          Obtenha sua key em{" "}
-          <a href="https://app.apollo.io/#/settings/integrations/api" target="_blank" rel="noopener" className="text-[var(--cf2-text-secondary)] hover:underline">
-            apollo.io/settings
-          </a>.
-        </p>
-        <p className="text-[10px] text-[var(--cf2-text-tertiary)] mt-1">Enriquece leads e empresas com dados públicos: cargo, setor, tamanho, LinkedIn e mais.</p>
-
-        <div className="flex gap-2">
-          <div className="relative flex-1">
-            <input
-              className="w-full bg-[var(--cf2-bg-surface)] border border-[var(--cf2-border-default)] rounded-lg px-3 py-2.5 text-sm text-[var(--cf2-text-primary)] font-mono pr-10 focus:border-purple-500/40 focus:outline-none transition-colors"
-              type={showKey ? "text" : "password"}
-              placeholder={data?.apolloConfigured ? data.apolloApiKey : "Cole a API key do Apollo.io aqui"}
-              value={apolloKey}
-              onChange={(e) => { setApolloKey(e.target.value); setDirty(true); }}
-            />
-            <button
-              type="button"
-              onClick={() => setShowKey(!showKey)}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--cf2-text-tertiary)] hover:text-[var(--cf2-text-secondary)] transition-colors"
-            >
-              {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-            </button>
-          </div>
+    <SecaoAjuste
+      titulo="Apollo.io"
+      ajuda={<>Enriquece leads e empresas com cargo, setor, tamanho e LinkedIn. A chave fica em{" "}
+        <a href="https://app.apollo.io/#/settings/integrations/api" target="_blank" rel="noopener noreferrer" className="aj-link">apollo.io → Settings → API</a>.</>}
+      acao={!isLoading && (
+        <PilulaEstado estado={configurado ? "ok" : "pendente"}>{configurado ? "Configurado" : "Não configurado"}</PilulaEstado>
+      )}
+    >
+      <form
+        className="flex flex-col gap-2 sm:flex-row"
+        onSubmit={(e) => { e.preventDefault(); if (apolloKey.trim()) saveMut.mutate(apolloKey.trim()); }}
+      >
+        <div className="relative flex-1">
+          <Cf2Input
+            type={showKey ? "text" : "password"}
+            aria-label="Chave de API do Apollo"
+            className="pr-10 font-mono"
+            placeholder={configurado ? `Chave atual ${data?.apolloApiKey} — cole outra para trocar` : "Cole a chave de API do Apollo"}
+            value={apolloKey}
+            autoComplete="off"
+            onChange={(e) => setApolloKey(e.target.value)}
+          />
           <button
-            onClick={() => saveMut.mutate(apolloKey)}
-            disabled={!dirty || saveMut.isPending}
-            className="flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-medium bg-purple-500/20 text-[var(--cf2-text-secondary)] hover:bg-purple-500/30 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+            type="button"
+            onClick={() => setShowKey(!showKey)}
+            aria-label={showKey ? "Ocultar chave" : "Exibir chave"}
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text-strong)]"
           >
-            <Save className="w-4 h-4" />
-            {saveMut.isPending ? "Salvando..." : "Salvar"}
+            {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
           </button>
         </div>
-
-        {saveMut.isSuccess && (
-          <p className="text-xs text-[var(--cf2-success-text)] mt-2">API key salva com sucesso!</p>
+        <Cf2Button type="submit" disabled={!apolloKey.trim()} loading={saveMut.isPending}>Salvar chave</Cf2Button>
+        {configurado && (
+          <Cf2Button
+            type="button"
+            variant="ghost"
+            disabled={saveMut.isPending}
+            onClick={() => { if (confirm("Remover a chave do Apollo? O enriquecimento para de funcionar.")) saveMut.mutate(""); }}
+          >
+            Remover
+          </Cf2Button>
         )}
-        {saveMut.isError && (
-          <p className="text-xs text-[var(--cf2-danger-text)] mt-2">{(saveMut.error as Error).message}</p>
-        )}
+      </form>
 
-        {/* Credit balance */}
-        {credits?.configured && (
-          <div className="mt-4 pt-4 border-t border-[var(--cf2-border-default)]">
-            <h3 className="text-sm font-medium text-[var(--cf2-text-primary)] mb-3">Uso de Créditos</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div className="bg-[var(--cf2-bg-surface)] rounded-lg p-3 text-center">
-                <p className="text-lg font-bold text-[var(--cf2-text-primary)]">{credits.credits_used?.toLocaleString() ?? "—"}</p>
-                <p className="text-[11px] text-[var(--cf2-text-tertiary)]">Consumidos</p>
-              </div>
-              <div className="bg-[var(--cf2-bg-surface)] rounded-lg p-3 text-center">
-                <p className="text-lg font-bold text-[var(--cf2-success-text)]">{credits.credits_remaining?.toLocaleString() ?? "—"}</p>
-                <p className="text-[11px] text-[var(--cf2-text-tertiary)]">Disponíveis</p>
-              </div>
-              <div className="bg-[var(--cf2-bg-surface)] rounded-lg p-3 text-center">
-                <p className="text-lg font-bold text-[var(--cf2-text-secondary)]">{credits.credits_limit?.toLocaleString() ?? "—"}</p>
-                <p className="text-[11px] text-[var(--cf2-text-tertiary)]">Limite total</p>
-              </div>
-            </div>
-            {credits.plan && (
-              <p className="text-[11px] text-[var(--cf2-text-tertiary)] mt-2">Plano: {credits.plan}</p>
-            )}
-            <div className="mt-3 text-[11px] text-[var(--cf2-text-tertiary)]">
-              <p className="font-medium text-[var(--cf2-text-secondary)] mb-1">Custo por ação:</p>
-              <div className="flex flex-wrap gap-x-4 gap-y-0.5">
-                <span>Enriquecer lead: 1 crédito</span>
-                <span>Enriquecer empresa: 1 crédito</span>
-                <span>Revelar email: +1 crédito</span>
-                <span>Busca Apollo: 1 crédito</span>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* O QUE EXISTE DE VERDADE.
-          Aqui havia dois cartões com "(placeholder)" no próprio código — Meta
-          Conversions API e Google Ads Offline Conversions — enquanto cinco
-          integrações rodavam em produção sem aparecer em lugar nenhum:
-          discador Callface (4.918 ligações), Stripe (828 faturas), Meta Lead
-          Ads (797 leads), Callface AI (208 snapshots) e Microsoft 365 (58
-          reuniões). Quem abria esta tela concluía que o produto tinha uma
-          integração configurada.
-
-          O estado de cada linha é DERIVADO de sinal no banco, não declarado. */}
-      <Inventario />
-    </div>
+      {credits?.configured && (
+        <dl className="aj-fatos">
+          <div className="aj-fato"><dt>Créditos consumidos</dt><dd>{credits.credits_used?.toLocaleString("pt-BR") ?? "—"}</dd></div>
+          <div className="aj-fato"><dt>Disponíveis</dt><dd>{credits.credits_remaining?.toLocaleString("pt-BR") ?? "—"}</dd></div>
+          <div className="aj-fato"><dt>Limite do plano{credits.plan ? ` (${credits.plan})` : ""}</dt><dd>{credits.credits_limit?.toLocaleString("pt-BR") ?? "—"}</dd></div>
+          <div className="aj-fato"><dt>Custo</dt><dd className="font-normal text-[var(--text-muted)]">1 crédito por enriquecimento ou busca; revelar e-mail +1</dd></div>
+        </dl>
+      )}
+    </SecaoAjuste>
   );
 }
 
 function AiProviders() {
   const queryClient = useQueryClient();
-  const [provider, setProvider] = useState<AiProvider>("openai");
-  const [label, setLabel] = useState("OpenAI principal");
+  const [provider, setProvider] = useState<AiProvider>("anthropic");
+  const [label, setLabel] = useState("Anthropic (Claude) principal");
   const [apiKey, setApiKey] = useState("");
   const [showApiKey, setShowApiKey] = useState(false);
 
@@ -224,6 +296,11 @@ function AiProviders() {
     },
   });
 
+  const invalidar = () => {
+    queryClient.invalidateQueries({ queryKey: ["ai-provider-credentials"] });
+    queryClient.invalidateQueries({ queryKey: ["integracoes-inventario"] });
+  };
+
   const createMutation = useMutation({
     mutationFn: async () => {
       const res = await fetch("/api/automacoes/ai/credentials", {
@@ -232,14 +309,17 @@ function AiProviders() {
         body: JSON.stringify({ provider, label: label.trim(), apiKey }),
       });
       const body = await res.json().catch(() => ({}));
+      if (res.status === 403) throw new Error("Seu papel não pode configurar IA (permissão ai.configure).");
       if (!res.ok) throw new Error(body.error || "Não foi possível salvar a credencial");
       return body as AiCredential;
     },
     onSuccess: () => {
       setApiKey("");
       setShowApiKey(false);
-      queryClient.invalidateQueries({ queryKey: ["ai-provider-credentials"] });
+      invalidar();
+      toast.success("Credencial salva. Use \"Testar\" para confirmar que ela responde.");
     },
+    onError: (e) => toast.error((e as Error).message),
   });
 
   const validateMutation = useMutation({
@@ -248,192 +328,131 @@ function AiProviders() {
       const body = await res.json().catch(() => ({}));
       if (!res.ok || !body.ok) throw new Error(body.error || "A credencial não respondeu ao teste");
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["ai-provider-credentials"] }),
+    onSuccess: () => { invalidar(); toast.success("A credencial respondeu."); },
+    onError: (e) => { invalidar(); toast.error((e as Error).message); },
   });
 
-  const canSave = label.trim().length > 0 && apiKey.trim().length >= 8 && !createMutation.isPending;
+  const toggleMutation = useMutation({
+    mutationFn: async ({ id, ativo }: { id: string; ativo: boolean }) => {
+      const res = await fetch(`/api/automacoes/ai/credentials/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ativo }),
+      });
+      if (!res.ok) throw new Error("Não foi possível alterar a credencial");
+    },
+    onSuccess: (_d, v) => { invalidar(); toast.success(v.ativo ? "Credencial reativada." : "Credencial desativada."); },
+    onError: (e) => toast.error((e as Error).message),
+  });
+
+  const canSave = label.trim().length > 0 && apiKey.trim().length >= 8;
   const credentials = data?.credentials ?? [];
 
   return (
-    <div className="bg-[var(--cf2-bg-surface)] rounded-xl p-6 border border-[var(--cf2-border-default)]">
-      <div className="flex items-start gap-3">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--cf2-accent)]/15 text-[var(--cf2-accent)]">
-          <Bot className="w-4 h-4" />
-        </div>
-        <div>
-          <h2 className="text-lg font-semibold text-[var(--cf2-text-primary)]">IA e agentes</h2>
-          <p className="mt-1 text-xs text-[var(--cf2-text-tertiary)]">
-            Credenciais por organização para os agentes e automações do ONFACE.
-          </p>
-        </div>
-      </div>
-
-      <div className="mt-5 grid gap-3 md:grid-cols-[minmax(0,0.7fr)_minmax(0,1fr)]">
-        <label className="flex flex-col gap-1.5 text-xs font-medium text-[var(--cf2-text-secondary)]">
-          Provedor
-          <select
-            value={provider}
-            onChange={(event) => {
-              const nextProvider = event.target.value as AiProvider;
-              setProvider(nextProvider);
-              setLabel(`${AI_PROVIDER_LABEL[nextProvider]} principal`);
-            }}
-            className="h-10 rounded-lg border border-[var(--cf2-border-default)] bg-[var(--cf2-bg-surface)] px-3 text-sm font-normal text-[var(--cf2-text-primary)] outline-none focus:border-[var(--cf2-accent)]"
-          >
-            {(Object.keys(AI_PROVIDER_LABEL) as AiProvider[]).map((item) => (
-              <option key={item} value={item}>{AI_PROVIDER_LABEL[item]}</option>
-            ))}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1.5 text-xs font-medium text-[var(--cf2-text-secondary)]">
-          Identificação interna
-          <input
-            value={label}
-            onChange={(event) => setLabel(event.target.value)}
-            className="h-10 rounded-lg border border-[var(--cf2-border-default)] bg-[var(--cf2-bg-surface)] px-3 text-sm font-normal text-[var(--cf2-text-primary)] outline-none focus:border-[var(--cf2-accent)]"
-            placeholder="Ex.: OpenAI produção"
-          />
-        </label>
-      </div>
-
-      <div className="mt-3 flex gap-2">
-        <div className="relative flex-1">
-          <input
-            type={showApiKey ? "text" : "password"}
-            value={apiKey}
-            onChange={(event) => setApiKey(event.target.value)}
-            className="h-10 w-full rounded-lg border border-[var(--cf2-border-default)] bg-[var(--cf2-bg-surface)] px-3 pr-10 font-mono text-sm text-[var(--cf2-text-primary)] outline-none focus:border-[var(--cf2-accent)]"
-            placeholder={`Chave de API da ${AI_PROVIDER_LABEL[provider]}`}
-            autoComplete="off"
-          />
-          <button
-            type="button"
-            onClick={() => setShowApiKey((value) => !value)}
-            aria-label={showApiKey ? "Ocultar chave" : "Exibir chave"}
-            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--cf2-text-tertiary)] hover:text-[var(--cf2-text-secondary)]"
-          >
-            {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-          </button>
-        </div>
-        <button
-          type="button"
-          onClick={() => createMutation.mutate()}
-          disabled={!canSave}
-          className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg bg-[var(--cf2-accent)] px-3 text-[13px] font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          {createMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-          Salvar
-        </button>
-      </div>
-      {createMutation.isError && <p className="mt-2 text-xs text-[var(--cf2-danger-text)]">{(createMutation.error as Error).message}</p>}
-
-      <div className="mt-5 border-t border-[var(--cf2-border-default)] pt-4">
-        <p className="text-xs font-medium text-[var(--cf2-text-secondary)]">Credenciais configuradas</p>
-        {isLoading ? (
-          <p className="mt-3 text-xs text-[var(--cf2-text-tertiary)]">Carregando...</p>
-        ) : credentials.length === 0 ? (
-          <p className="mt-3 text-xs text-[var(--cf2-text-tertiary)]">Nenhuma credencial de IA cadastrada nesta organização.</p>
-        ) : (
-          <div className="mt-3 divide-y divide-[var(--cf2-border-default)]">
-            {credentials.map((credential) => {
-              const status = credential.validatedAt
-                ? "Validada"
-                : credential.validationError
-                  ? "Falhou no último teste"
-                  : "Ainda não testada";
-              const color = credential.validatedAt
-                ? "var(--cf2-success-text)"
-                : credential.validationError
-                  ? "var(--cf2-danger-text)"
-                  : "var(--cf2-warning-text)";
-              return (
-                <div key={credential.id} className="flex flex-col gap-2 py-3 first:pt-0 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-[var(--cf2-text-primary)]">
-                      {AI_PROVIDER_LABEL[credential.provider]} <span className="font-normal text-[var(--cf2-text-tertiary)]">{credential.masked}</span>
-                    </p>
-                    <p className="text-xs text-[var(--cf2-text-tertiary)]">{credential.label}</p>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className="text-xs font-medium" style={{ color }}>{status}</span>
-                    <button
-                      type="button"
-                      onClick={() => validateMutation.mutate(credential.id)}
-                      disabled={validateMutation.isPending}
-                      className="inline-flex h-8 items-center gap-1.5 rounded-md border border-[var(--cf2-border-default)] px-2.5 text-xs font-medium text-[var(--cf2-text-secondary)] hover:bg-[var(--cf2-bg-surface-muted)] disabled:opacity-50"
-                    >
-                      {validateMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldCheck className="w-3.5 h-3.5" />}
-                      Testar
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-
-const ESTADO = {
-  em_uso: { rotulo: "Em uso", cor: "var(--cf2-success-text)" },
-  configurada: { rotulo: "Configurada, sem uso ainda", cor: "var(--cf2-text-secondary)" },
-  nao_configurada: { rotulo: "Não configurada", cor: "var(--cf2-warning-text)" },
-} as const;
-
-interface LinhaIntegracao {
-  chave: string; nome: string; paraQue: string;
-  estado: keyof typeof ESTADO;
-  volume: number | null; rotuloVolume: string | null;
-  ultimoSinal: string | null; pendencia: string | null;
-}
-
-function Inventario() {
-  const { data, isLoading } = useQuery({
-    queryKey: ["integracoes-inventario"],
-    queryFn: async () => {
-      const res = await fetch("/api/configuracoes/integracoes/inventario");
-      if (!res.ok) throw new Error("Falha ao carregar as integrações");
-      return res.json() as Promise<{ integracoes: LinhaIntegracao[] }>;
-    },
-  });
-
-  return (
-    <div className="bg-[var(--cf2-bg-surface)] rounded-xl p-6 border border-[var(--cf2-border-default)]">
-      <h2 className="text-lg font-semibold text-[var(--cf2-text-primary)] mb-1">Integrações do sistema</h2>
-      <p className="text-xs text-[var(--cf2-text-tertiary)] mb-4">
-        O estado de cada uma vem do que ela produziu no banco, não de uma lista fixa.
-      </p>
+    <SecaoAjuste
+      id="aj-ia"
+      titulo="Chaves de IA da organização"
+      ajuda="Usadas pelos agentes, pelo NEXO e pelas automações. Com uma chave própria ativa, ela tem prioridade sobre a IA da plataforma. A chave é cifrada e nunca volta para a tela."
+    >
       {isLoading ? (
-        <p className="text-sm text-[var(--cf2-text-tertiary)]">Carregando…</p>
-      ) : (
-        <div className="flex flex-col divide-y divide-[var(--cf2-border-default)]">
-          {(data?.integracoes ?? []).map((i) => (
-            <div key={i.chave} className="flex flex-col gap-1 py-3 first:pt-0 last:pb-0">
-              <div className="flex items-baseline gap-2 flex-wrap">
-                <span className="text-sm font-semibold text-[var(--cf2-text-primary)]">{i.nome}</span>
-                <span className="text-[11px] font-medium" style={{ color: ESTADO[i.estado].cor }}>
-                  {ESTADO[i.estado].rotulo}
-                </span>
-                {/* Volume e data juntos: "828 faturas" sem data não diz se
-                    parou ontem ou há seis meses. */}
-                {i.volume !== null && i.volume > 0 && (
-                  <span className="text-[11px] text-[var(--cf2-text-tertiary)] ml-auto tabular-nums">
-                    {i.volume.toLocaleString("pt-BR")} {i.rotuloVolume}
-                    {i.ultimoSinal ? ` · último em ${new Date(i.ultimoSinal + "T00:00:00").toLocaleDateString("pt-BR")}` : ""}
-                  </span>
-                )}
-              </div>
-              <p className="text-xs text-[var(--cf2-text-tertiary)]">{i.paraQue}</p>
-              {i.pendencia && (
-                <p className="text-xs" style={{ color: "var(--cf2-warning-text)" }}>{i.pendencia}</p>
-              )}
-            </div>
-          ))}
+        <p className="aj-grupo-ajuda">Carregando…</p>
+      ) : credentials.length === 0 ? (
+        <div className="aj-vazio">
+          <strong>Nenhuma chave própria cadastrada.</strong>
+          Os agentes usam a IA da plataforma, quando o servidor tem uma. Para usar a conta da organização, cadastre a chave abaixo.
         </div>
+      ) : (
+        <ul className="aj-lista">
+          {credentials.map((c) => {
+            const estado: EstadoAjuste = !c.ativo ? "neutro" : c.validationError ? "erro" : c.validatedAt ? "ok" : "pendente";
+            const rotulo = !c.ativo ? "Desativada" : c.validationError ? "Falhou no teste" : c.validatedAt ? "Validada" : "Não testada";
+            return (
+              <li key={c.id} className="aj-linha">
+                <span className="aj-conexao-icone"><Bot aria-hidden /></span>
+                <div className="aj-linha-corpo">
+                  <span className="aj-linha-titulo">{AI_PROVIDER_LABEL[c.provider] ?? c.provider} <span className="aj-mono">{c.masked}</span></span>
+                  <span className="aj-linha-meta">{c.label}{c.validationError ? ` — ${c.validationError.slice(0, 120)}` : ""}</span>
+                </div>
+                <div className="aj-linha-acoes">
+                  <PilulaEstado estado={estado}>{rotulo}</PilulaEstado>
+                  {c.ativo && (
+                    <Cf2Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => validateMutation.mutate(c.id)}
+                      loading={validateMutation.isPending && validateMutation.variables === c.id}
+                    >
+                      <ShieldCheck aria-hidden /> Testar
+                    </Cf2Button>
+                  )}
+                  <Cf2Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => toggleMutation.mutate({ id: c.id, ativo: !c.ativo })}
+                    disabled={toggleMutation.isPending}
+                  >
+                    {c.ativo ? "Desativar" : "Reativar"}
+                  </Cf2Button>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
       )}
-    </div>
+
+      <form
+        className="flex flex-col gap-3 border-t border-[var(--line-hairline)] pt-4"
+        onSubmit={(e) => { e.preventDefault(); if (canSave) createMutation.mutate(); }}
+      >
+        <div className="aj-campos">
+          <label className="aj-campo">
+            <span>Provedor</span>
+            <select
+              value={provider}
+              onChange={(event) => {
+                const nextProvider = event.target.value as AiProvider;
+                setProvider(nextProvider);
+                setLabel(`${AI_PROVIDER_LABEL[nextProvider]} principal`);
+              }}
+              className="h-9 rounded-control border border-input bg-[var(--surface-card)] px-3 text-sm text-[var(--text-strong)]"
+            >
+              {(Object.keys(AI_PROVIDER_LABEL) as AiProvider[]).map((item) => (
+                <option key={item} value={item}>{AI_PROVIDER_LABEL[item]}</option>
+              ))}
+            </select>
+          </label>
+          <label className="aj-campo">
+            <span>Nome interno</span>
+            <Cf2Input value={label} onChange={(event) => setLabel(event.target.value)} placeholder="Ex.: Claude produção" />
+          </label>
+        </div>
+        <label className="aj-campo">
+          <span>Chave de API</span>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <div className="relative flex-1">
+              <Cf2Input
+                type={showApiKey ? "text" : "password"}
+                value={apiKey}
+                onChange={(event) => setApiKey(event.target.value)}
+                className="pr-10 font-mono"
+                placeholder={`Chave da ${AI_PROVIDER_LABEL[provider]}`}
+                autoComplete="off"
+              />
+              <button
+                type="button"
+                onClick={() => setShowApiKey((value) => !value)}
+                aria-label={showApiKey ? "Ocultar chave" : "Exibir chave"}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text-strong)]"
+              >
+                {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+            <Cf2Button type="submit" disabled={!canSave} loading={createMutation.isPending}>
+              Adicionar chave
+            </Cf2Button>
+          </div>
+        </label>
+      </form>
+    </SecaoAjuste>
   );
 }

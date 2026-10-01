@@ -55,7 +55,7 @@ export function PropostasDesenho(vals: ValoresDePropostasDesenho) {
 <div style={{ flex: "1", minHeight: "0", background: "#f6f6f3", display: "flex", overflow: "hidden" }}>
 <div style={{ flex: "1 1 auto", minWidth: "0", minHeight: "0", display: "flex", flexDirection: "column", overflow: "hidden" }}>
 <div data-in="rise" style={{ flex: "0 0 auto", padding: "14px 14px 0" }}>
-<div style={{ position: "relative", overflow: "hidden", display: "grid", gridTemplateColumns: "{{ fc.cols }}", gap: "{{ fc.gap }}", padding: "{{ fc.pad }}", borderRadius: "18px", background: "#12171d", color: "#fff", boxShadow: "0 1px 2px rgba(12,16,21,.12)" }}>
+<div style={estilo(`position:relative;overflow:hidden;display:grid;grid-template-columns:${fc.cols ?? ""};gap:${fc.gap ?? ""};padding:${fc.pad ?? ""};border-radius:18px;background:#12171d;color:#fff;box-shadow:0 1px 2px rgba(12,16,21,.12)`)}>
 <span style={{ position: "absolute", left: "30%", top: "-120px", width: "420px", height: "260px", borderRadius: "9999px", background: "#fe4f2b", opacity: ".1", filter: "blur(70px)", pointerEvents: "none" }} />
 <div style={{ position: "relative", minWidth: "0", display: "flex", flexDirection: "column" }}>
 <span style={{ display: "flex", alignItems: "center", gap: "6px", minWidth: "0" }}>
@@ -674,7 +674,7 @@ Versões
 </aside>
 </>) : null}
 {(fd.aberto) ? (<>
-<div data-pp-filtro="1" data-in="drop" style={{ minWidth: "220px", borderRadius: "10px", background: "#fff", border: "1px solid #e3e7e8", boxShadow: "0 10px 26px -6px rgba(0,0,0,.2),0 2px 4px -2px rgba(0,0,0,.1)", padding: "5px" }}>
+<div data-pp-filtro="1" data-in="drop" style={estilo(`${fd.pos ?? ""};min-width:220px;border-radius:10px;background:#fff;border:1px solid #e3e7e8;box-shadow:0 10px 26px -6px rgba(0,0,0,.2),0 2px 4px -2px rgba(0,0,0,.1);padding:5px`)}>
 <div style={{ fontSize: "11px", fontWeight: "600", color: "#4a5560", letterSpacing: ".04em", padding: "6px 6px 4px" }}>
 {fd.titulo}
 </div>

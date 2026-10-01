@@ -100,3 +100,83 @@ export function resumirExecucaoEmMassa(
 
   return { ok: false, total, falhas, parcial, mensagem: `${motivo} ${escopo}` };
 }
+
+/** Linha de CSV já no formato do comando `adicionarProspect`. */
+export interface LinhaCsvProspect {
+  empresa: string;
+  cnpj: string | null;
+  website: string | null;
+  pessoaNome: string | null;
+  cargo: string | null;
+  email: string | null;
+  telefone: string | null;
+}
+
+/* Cabeçalhos aceitos por campo. Planilha de Apollo, LinkedIn Sales Nav e a
+ * feita à mão chamam a mesma coluna de jeitos diferentes; casar por apelido
+ * evita obrigar a pessoa a renomear coluna antes de importar. */
+const APELIDOS_CSV: Record<keyof LinhaCsvProspect, string[]> = {
+  empresa: ["empresa", "company", "company name", "organizacao", "organization", "razao social", "nome fantasia"],
+  cnpj: ["cnpj"],
+  website: ["site", "website", "url", "dominio", "domain"],
+  pessoaNome: ["contato", "nome", "name", "pessoa", "full name", "nome completo"],
+  cargo: ["cargo", "title", "job title", "funcao"],
+  email: ["email", "e-mail", "e mail"],
+  telefone: ["telefone", "phone", "celular", "whatsapp", "fone"],
+};
+
+function normalizar(s: string): string {
+  return s.normalize("NFD").replace(/[̀-ͯ]/g, "").trim().toLowerCase();
+}
+
+/** Quebra uma linha de CSV respeitando aspas ("a;b" é um campo só). */
+function campos(linha: string, sep: string): string[] {
+  const out: string[] = [];
+  let atual = "";
+  let aspas = false;
+  for (let i = 0; i < linha.length; i++) {
+    const c = linha[i];
+    if (c === '"') {
+      if (aspas && linha[i + 1] === '"') { atual += '"'; i++; } else aspas = !aspas;
+    } else if (c === sep && !aspas) { out.push(atual); atual = ""; }
+    else atual += c;
+  }
+  out.push(atual);
+  return out.map((x) => x.trim());
+}
+
+/**
+ * Lê o CSV de prospects. Separador `;` ou `,` (Excel em pt-BR exporta `;`).
+ * Linha sem empresa é recusada com o número dela: o comando exige empresa, e
+ * "3 linhas ignoradas" sem dizer quais obriga a pessoa a caçar no arquivo.
+ * ponytail: não trata quebra de linha DENTRO de campo com aspas; planilha de
+ * prospect não costuma ter, trocar por papaparse se aparecer.
+ */
+export function lerCsvProspects(texto: string): { linhas: LinhaCsvProspect[]; recusadas: number[]; erro: string | null } {
+  // Sem filter: o número de linha mostrado na prévia tem de ser o do arquivo,
+  // então as linhas em branco são puladas guardando o índice original.
+  const brutas = texto.replace(/^\uFEFF/, "").split(/\r?\n/);
+  const iCab = brutas.findIndex((l) => l.trim());
+  if (iCab < 0 || !brutas.slice(iCab + 1).some((l) => l.trim())) return { linhas: [], recusadas: [], erro: "O arquivo precisa de um cabeçalho e ao menos uma linha." };
+  const sep = (brutas[iCab].match(/;/g)?.length ?? 0) > (brutas[iCab].match(/,/g)?.length ?? 0) ? ";" : ",";
+  const cab = campos(brutas[iCab], sep).map(normalizar);
+  const indice = Object.fromEntries(
+    (Object.keys(APELIDOS_CSV) as Array<keyof LinhaCsvProspect>).map((k) => [k, cab.findIndex((h) => APELIDOS_CSV[k].includes(h))]),
+  ) as Record<keyof LinhaCsvProspect, number>;
+  if (indice.empresa < 0) return { linhas: [], recusadas: [], erro: "Não encontrei a coluna de empresa (empresa, company ou organização)." };
+
+  const linhas: LinhaCsvProspect[] = [];
+  const recusadas: number[] = [];
+  brutas.forEach((bruta, i) => {
+    if (i <= iCab || !bruta.trim()) return;
+    const v = campos(bruta, sep);
+    const pegar = (k: keyof LinhaCsvProspect) => (indice[k] >= 0 ? v[indice[k]]?.trim() || null : null);
+    const empresa = pegar("empresa");
+    if (!empresa) { recusadas.push(i + 1); return; }
+    linhas.push({
+      empresa, cnpj: pegar("cnpj"), website: pegar("website"), pessoaNome: pegar("pessoaNome"),
+      cargo: pegar("cargo"), email: pegar("email"), telefone: pegar("telefone"),
+    });
+  });
+  return { linhas, recusadas, erro: null };
+}

@@ -1373,7 +1373,7 @@ export function Cf2Cliente360({ empresaId }: { empresaId: string }) {
                         há tempo) não ganha botão nenhum, não fabrica estado. */}
                     {s.fulfillment && (
                       <Link
-                        href={s.serviceFamily === "CALLFACE_AI" ? `/clientes/onboarding/${s.fulfillment.id}` : `/clientes/entrega/${s.fulfillment.id}`}
+                        href={`/projetos/${s.fulfillment.id}`}
                         className="text-[11px] underline inline-flex items-center gap-1 mt-1"
                         style={{ color: "var(--cf2-text-secondary)" }}
                       >

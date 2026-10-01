@@ -1,0 +1,70 @@
+/* Cadências — linguagem ONFACE, arquétipo B (Data List).
+   Escopo em .of-cad para não vazar para outras telas. Os valores são os
+   tokens do protótipo (OnFace Contatos.dc.html): elevação por box-shadow
+   inset, nunca border; coral só como acento; primário var(--of-coral-acao). */
+
+.of-cad { display: flex; flex-direction: column; gap: 14px; font-family: Inter, system-ui, sans-serif; color: var(--of-tinta); }
+.of-cad h2, .of-cad .of-num { font-family: "Plus Jakarta Sans", Inter, sans-serif; }
+
+.of-cad-btn { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 13px; border: 0; border-radius: 8px; font-size: 12.5px; font-weight: 600; cursor: pointer; white-space: nowrap; background: var(--of-papel); color: var(--of-tinta); box-shadow: inset 0 0 0 1px var(--of-linha-controle); transition: background-color .16s ease, box-shadow .16s ease; }
+.of-cad-btn:hover:not(:disabled) { background: var(--of-calha); }
+.of-cad-btn[data-tom="primario"] { background: var(--of-coral-acao); color: var(--of-papel); box-shadow: none; }
+.of-cad-btn[data-tom="primario"]:hover:not(:disabled) { background: var(--of-coral-acao-hover); }
+.of-cad-btn[data-tom="fantasma"] { background: transparent; box-shadow: none; color: var(--of-tinta-2); }
+.of-cad-btn[data-tamanho="p"] { height: 28px; padding: 0 9px; font-size: 11.5px; border-radius: 7px; }
+.of-cad-btn:disabled { opacity: .45; cursor: not-allowed; }
+.of-cad-btn svg { width: 14px; height: 14px; }
+
+.of-cad-barra { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.of-cad-abas { display: inline-flex; gap: 2px; padding: 3px; border-radius: 10px; background: var(--of-calha); }
+.of-cad-aba { height: 30px; padding: 0 12px; border: 0; border-radius: 8px; background: transparent; font-size: 12.5px; font-weight: 600; color: var(--of-tinta-2); cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+.of-cad-aba[aria-selected="true"] { background: var(--of-papel); color: var(--of-tinta-forte); box-shadow: inset 0 0 0 1px var(--of-linha); }
+.of-cad-aba .of-cad-cont { font-family: "IBM Plex Mono", monospace; font-size: 11px; color: var(--of-tinta-3); }
+
+.of-cad-campo { height: 34px; padding: 0 10px; border: 0; outline: 0; border-radius: 8px; background: var(--of-papel); box-shadow: inset 0 0 0 1px var(--of-linha-controle); font-size: 12.5px; color: var(--of-tinta-forte); }
+.of-cad-campo:focus { box-shadow: inset 0 0 0 1px var(--of-tinta-forte); }
+.of-cad-busca { display: flex; align-items: center; gap: 7px; flex: 1; min-width: 220px; }
+.of-cad-busca input { flex: 1; min-width: 0; }
+
+.of-cad-lista { background: var(--of-papel); border-radius: 12px; box-shadow: inset 0 0 0 1px var(--of-linha); overflow: hidden; }
+.of-cad-tabela { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.of-cad-tabela th { text-align: left; padding: 9px 14px; font-size: 10.5px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--of-tinta-3); background: var(--of-papel-tela); white-space: nowrap; }
+.of-cad-tabela td { padding: 11px 14px; border-top: 1px solid var(--of-fio); vertical-align: middle; }
+.of-cad-tabela tr[data-clicavel="true"] { cursor: pointer; }
+.of-cad-tabela tr[data-clicavel="true"]:hover td { background: var(--of-papel-alterno); }
+.of-cad-rolagem { overflow-x: auto; }
+.of-cad-nome { display: block; font-size: 13px; font-weight: 600; color: var(--of-tinta-forte); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 320px; }
+.of-cad-sub { display: block; font-size: 11.5px; color: var(--of-tinta-3); margin-top: 1px; }
+.of-cad-num { font-family: "Plus Jakarta Sans", Inter, sans-serif; font-weight: 700; color: var(--of-tinta-forte); font-variant-numeric: tabular-nums; }
+.of-cad-num[data-sinal="true"] { color: var(--of-coral-acao-hover); }
+.of-cad-acoes { display: flex; justify-content: flex-end; gap: 4px; }
+
+.of-cad-pilula { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px; border-radius: 9999px; font-size: 11px; font-weight: 600; background: var(--of-calha); color: var(--of-tinta-2); white-space: nowrap; }
+.of-cad-pilula::before { content: ""; width: 6px; height: 6px; border-radius: 9999px; background: currentColor; opacity: .8; }
+.of-cad-pilula[data-tom="ok"] { background: var(--of-sucesso-fundo); color: var(--of-sucesso-tinta); }
+.of-cad-pilula[data-tom="alerta"] { background: var(--of-aviso-fundo); color: var(--of-aviso-tinta); }
+.of-cad-pilula[data-tom="erro"] { background: var(--of-coral-fundo-forte); color: var(--of-coral-acao-hover); }
+
+.of-cad-aviso { display: flex; gap: 10px; align-items: flex-start; padding: 11px 14px; border-radius: 10px; background: var(--of-papel); box-shadow: inset 0 0 0 1px var(--of-linha); font-size: 12px; line-height: 1.5; color: var(--of-tinta-2); }
+.of-cad-aviso strong { color: var(--of-tinta-forte); }
+.of-cad-aviso svg { width: 15px; height: 15px; flex: 0 0 auto; margin-top: 1px; color: var(--of-coral-marca); }
+
+.of-cad-vazio { padding: 56px 16px; text-align: center; }
+.of-cad-vazio h2 { margin: 0; font-size: 14px; font-weight: 700; color: var(--of-tinta-forte); }
+.of-cad-vazio p { margin: 4px auto 14px; max-width: 46ch; font-size: 12.5px; color: var(--of-tinta-3); }
+
+.of-cad-veu { position: fixed; inset: 0; z-index: 1100; background: rgba(18,23,29,.42); display: grid; place-items: center; padding: 20px; }
+.of-cad-veu[data-lado="direita"] { place-items: stretch end; padding: 0; }
+.of-cad-modal { width: min(520px, 100%); max-height: calc(100vh - 40px); display: flex; flex-direction: column; background: var(--of-papel); border-radius: 14px; box-shadow: 0 30px 70px -20px rgba(18,23,29,.5); overflow: hidden; animation: ofCadIn .22s cubic-bezier(.16,1,.3,1); }
+.of-cad-gaveta { width: min(440px, 100vw); height: 100%; background: var(--of-papel); display: flex; flex-direction: column; box-shadow: -20px 0 50px -20px rgba(18,23,29,.4); animation: ofCadPainel .22s cubic-bezier(.16,1,.3,1); }
+.of-cad-modal-topo { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 16px 18px 12px; }
+.of-cad-modal-topo h2 { margin: 0; font-size: 15px; font-weight: 700; color: var(--of-tinta-forte); }
+.of-cad-modal-corpo { padding: 3px 18px 18px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+.of-cad-item { display: flex; align-items: center; gap: 10px; padding: 9px 11px; border-radius: 9px; background: var(--of-papel-tela); font-size: 12.5px; }
+.of-cad-item > div { flex: 1; min-width: 0; }
+.of-cad-pre { margin: 6px 0 0; padding: 8px; border-radius: 7px; background: var(--of-papel); font-family: "IBM Plex Mono", monospace; font-size: 10.5px; color: var(--of-tinta-2); white-space: pre-wrap; overflow-x: auto; }
+.of-cad-x { width: 30px; height: 30px; border: 0; border-radius: 8px; background: transparent; color: var(--of-tinta-3); display: grid; place-items: center; cursor: pointer; }
+.of-cad-x:hover { background: var(--of-calha); }
+
+@keyframes ofCadIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes ofCadPainel { from { opacity: 0; transform: translateX(12px); } to { opacity: 1; transform: none; } }

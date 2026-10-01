@@ -1,0 +1,115 @@
+/* Insights (/relatorios) — arquétipo A do handoff (OnFace Propostas/CS):
+   papel, hero grafite, coral só como acento, elevação por
+   box-shadow inset (nunca border). Tudo escopado em .ins para não vazar. */
+.ins {
+  /* Apelidos locais dos tokens nomeados (onface-proto.css / onface.css): a
+     trava cor-tem-nome recusa hex literal em arquivo novo da camada ONFACE. */
+  --ins-grafite: var(--of-tinta-forte); --ins-papel: var(--of-papel-tela); --ins-sunken: var(--of-calha); --ins-linha: var(--of-linha);
+  --ins-coral: var(--of-coral-marca); --ins-primario: var(--of-coral-acao); --ins-primario-hover: var(--of-coral-acao-hover);
+  --ins-texto: var(--of-tinta); --ins-mudo: var(--of-tinta-3); --ins-fraco: var(--onface-slate);
+  --ins-branco: var(--of-papel); --ins-fio: var(--of-fio); --ins-fio-tenue: var(--of-fio-tenue); --ins-tinta-2: var(--of-tinta-2);
+  --ins-escuro-texto: var(--of-shell-tinta-3); --ins-escuro-trilho: var(--of-tinta); --ins-escuro-celula: var(--onface-graphite-surface); --ins-escuro-grade: var(--of-shell-linha-2);
+  --ins-falta: var(--of-canal-organico-tinta);
+  display: flex; flex-direction: column; gap: 16px; min-width: 0;
+  font-family: Inter, system-ui, sans-serif; color: var(--ins-texto);
+}
+.ins strong, .ins h1, .ins h2, .ins h3 { font-family: "Plus Jakarta Sans", Inter, sans-serif; }
+
+.ins-cab { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.ins-titulo { margin: 0; font-size: 1.25rem; font-weight: 700; letter-spacing: -.02em; color: var(--ins-grafite); }
+.ins-sub { margin: 3px 0 0; font-size: 13px; color: var(--ins-mudo); }
+
+/* Seletor de período: pílula segmentada em papel, ativo em grafite. */
+.ins-periodo { position: relative; }
+.ins-seg { display: flex; align-items: center; gap: 2px; padding: 4px; border-radius: 9999px; background: var(--ins-branco); box-shadow: inset 0 0 0 1px var(--ins-linha); }
+.ins-seg button { height: 30px; padding: 0 12px; border-radius: 9999px; font-size: 12.5px; font-weight: 600; color: var(--ins-mudo); white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; }
+.ins-seg button:hover { color: var(--ins-grafite); background: var(--ins-sunken); }
+.ins-seg button[aria-pressed="true"] { background: var(--ins-grafite); color: var(--ins-branco); }
+.ins-seg button:focus-visible, .ins-aba:focus-visible, .ins-acao:focus-visible, .ins-link:focus-visible { outline: 2px solid var(--ins-coral); outline-offset: 2px; }
+.ins-pino { width: 6px; height: 6px; border-radius: 9999px; background: var(--ins-coral); }
+.ins-pop { position: absolute; right: 0; top: calc(100% + 6px); z-index: 40; width: 280px; padding: 14px; border-radius: 14px; background: var(--ins-branco); box-shadow: inset 0 0 0 1px var(--ins-linha), 0 18px 40px -18px rgba(18,23,29,.35); }
+.ins-pop p { margin: 0; font-size: 11.5px; color: var(--ins-mudo); }
+.ins-pop .ins-pop-rotulo { font-size: 10.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--ins-fraco); margin-bottom: 8px; }
+.ins-pop-campos { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+.ins-pop input { flex: 1; min-width: 0; height: 32px; padding: 0 8px; border-radius: 8px; border: 0; background: var(--ins-sunken); font-size: 12px; color: var(--ins-texto); }
+
+/* Hero grafite */
+.ins-hero { position: relative; overflow: hidden; padding: 22px 24px; border-radius: 20px; background: var(--ins-grafite); color: var(--ins-branco); box-shadow: 0 24px 48px -24px rgba(12,16,21,.7); }
+.ins-hero-brilho { position: absolute; right: -80px; top: -120px; width: 360px; height: 260px; border-radius: 9999px; background: var(--ins-coral); opacity: .14; filter: blur(60px); pointer-events: none; }
+.ins-hero-topo { position: relative; display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-end; justify-content: space-between; }
+.ins-hero-topo > div { flex: 1 1 320px; min-width: 0; }
+.ins-rotulo-escuro { display: block; font-size: 10.5px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--ins-fraco); }
+.ins-hero-valor { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 12px; margin-top: 8px; }
+.ins-hero-valor strong { font-size: clamp(30px, 5vh, 40px); font-weight: 800; letter-spacing: -.045em; line-height: 1; font-variant-numeric: tabular-nums; }
+.ins-hero-valor span { font-size: 13px; color: var(--ins-escuro-texto); }
+.ins-hero-valor b { color: var(--ins-branco); }
+.ins-barra { display: block; height: 8px; margin-top: 14px; border-radius: 9999px; background: var(--ins-escuro-trilho); overflow: hidden; max-width: 460px; }
+.ins-barra > span { display: block; height: 100%; border-radius: inherit; background: var(--ins-coral); }
+.ins-nota-escura { margin: 8px 0 0; font-size: 12px; color: var(--ins-escuro-texto); }
+.ins-grafico { flex: 0 1 340px; margin: 0; }
+.ins-grafico svg { width: 100%; height: auto; display: block; }
+.ins-g-area { fill: rgba(254,79,43,.16); }
+.ins-g-linha { fill: none; stroke: var(--ins-coral); stroke-width: 2.2; stroke-linejoin: round; stroke-linecap: round; }
+.ins-g-ponto { fill: var(--ins-coral); }
+.ins-grafico figcaption { display: flex; justify-content: space-between; gap: 14px; margin-top: 6px; font-size: 11.5px; color: var(--ins-escuro-texto); }
+.ins-hero-kpis { position: relative; display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1px; margin-top: 18px; border-radius: 12px; background: var(--ins-escuro-grade); overflow: hidden; }
+.ins-kpi { padding: 11px 14px; background: var(--ins-escuro-celula); min-width: 0; }
+.ins-kpi span { display: block; font-size: 11px; color: var(--ins-fraco); }
+.ins-kpi strong { display: block; margin-top: 3px; font-size: 18px; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ins-kpi small { display: block; margin-top: 1px; font-size: 11px; color: var(--ins-escuro-texto); }
+.ins-hero[aria-busy="true"] .ins-hero-valor strong, .ins-hero[aria-busy="true"] .ins-kpi strong { color: var(--ins-tinta-2); }
+
+/* Abas: régua em papel, ativa em grafite (mesma gramática do seletor). */
+.ins-abas { display: flex; gap: 2px; padding: 4px; border-radius: 12px; background: var(--ins-sunken); overflow-x: auto; scrollbar-width: none; }
+.ins-aba { flex: 0 0 auto; height: 32px; padding: 0 14px; border-radius: 9px; font-size: 13px; font-weight: 600; color: var(--ins-mudo); white-space: nowrap; }
+.ins-aba:hover { color: var(--ins-grafite); }
+.ins-aba[aria-selected="true"] { background: var(--ins-branco); color: var(--ins-grafite); box-shadow: inset 0 0 0 1px var(--ins-linha), 0 1px 2px rgba(18,23,29,.06); }
+
+/* Corpo das abas. As abas herdadas (crm2/relatorios/Tab*) falam --cf2-*, que a
+   casca ONFACE já remapeia para os tokens daqui. O que sobra é a borda: o DS
+   proíbe border como elevação, então os cartões arredondados delas viram
+   inset shadow aqui, sem reescrever 60 classes espalhadas em 10 arquivos (e
+   sem arriscar a lógica de cálculo que mora nelas). Divisórias de tabela
+   (border-b sem rounded) não são tocadas. */
+.ins-corpo { min-width: 0; }
+.ins-corpo [class*="rounded"][class*="border-[var(--cf2-border-default)]"] { border-width: 0 !important; box-shadow: inset 0 0 0 1px var(--ins-linha); }
+.ins-corpo h3 { font-family: "Plus Jakarta Sans", Inter, sans-serif; }
+
+/* Painéis próprios (Fechamento) */
+.ins-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+.ins-tile { padding: 14px 16px; border-radius: 14px; background: var(--ins-branco); box-shadow: inset 0 0 0 1px var(--ins-linha); min-width: 0; }
+.ins-tile span { display: block; font-size: 12px; font-weight: 600; color: var(--ins-mudo); }
+.ins-tile strong { display: block; margin-top: 4px; font-size: 24px; font-weight: 800; letter-spacing: -.035em; color: var(--ins-grafite); font-variant-numeric: tabular-nums; }
+.ins-tile small { display: block; margin-top: 2px; font-size: 11.5px; color: var(--ins-fraco); }
+.ins-tile[data-sinal] strong { color: var(--ins-primario); }
+.ins-filtros { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.ins-filtros select { height: 34px; padding: 0 10px; border-radius: 10px; border: 0; background: var(--ins-branco); box-shadow: inset 0 0 0 1px var(--ins-linha); font-size: 12.5px; color: var(--ins-texto); max-width: 220px; }
+.ins-link { font-size: 12.5px; font-weight: 600; color: var(--ins-primario-hover); }
+.ins-link:hover { text-decoration: underline; }
+.ins-acao { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 14px; border-radius: 10px; background: var(--ins-primario); color: var(--ins-branco); font-size: 12.5px; font-weight: 600; }
+.ins-acao:hover { background: var(--ins-primario-hover); }
+.ins-painel { border-radius: 14px; background: var(--ins-branco); box-shadow: inset 0 0 0 1px var(--ins-linha); min-width: 0; overflow: hidden; }
+.ins-painel-cab { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px; box-shadow: inset 0 -1px 0 var(--ins-fio); }
+.ins-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.ins-chip { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 11px; border-radius: 9999px; background: var(--ins-sunken); font-size: 12px; color: var(--ins-tinta-2); }
+.ins-chip b { color: var(--ins-grafite); font-variant-numeric: tabular-nums; }
+button.ins-chip[aria-pressed="true"] { background: var(--ins-grafite); color: var(--ins-branco); }
+button.ins-chip[aria-pressed="true"] b { color: var(--ins-branco); }
+.ins-tabela-wrap { overflow-x: auto; }
+.ins-tabela { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.ins-tabela th { padding: 9px 12px; text-align: left; font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--ins-fraco); white-space: nowrap; box-shadow: inset 0 -1px 0 var(--ins-fio); }
+.ins-tabela td { padding: 9px 12px; white-space: nowrap; color: var(--ins-tinta-2); box-shadow: inset 0 -1px 0 var(--ins-fio-tenue); }
+.ins-tabela tr:last-child td { box-shadow: none; }
+.ins-tabela td.ins-forte { color: var(--ins-grafite); font-weight: 600; }
+.ins-tabela td.ins-num { font-family: "Plus Jakarta Sans", sans-serif; font-weight: 700; color: var(--ins-grafite); font-variant-numeric: tabular-nums; }
+.ins-tabela a { color: var(--ins-grafite); font-weight: 600; }
+.ins-tabela a:hover { color: var(--ins-primario-hover); text-decoration: underline; }
+.ins-falta { color: var(--ins-falta); }
+.ins-fraco { color: var(--ins-fraco); }
+.ins-vazio { margin: 0; padding: 26px 8px; text-align: center; font-size: 13px; color: var(--ins-mudo); }
+.ins-ressalva { margin: 0; padding: 10px 14px 0; font-size: 12px; color: var(--ins-mudo); }
+
+@media (max-width: 640px) {
+  .ins-hero { padding: 18px 16px; }
+  .ins-seg { overflow-x: auto; max-width: 100%; }
+}

@@ -25,6 +25,7 @@ import * as React from "react";
 import { toast } from "sonner";
 
 import { PreVendasDesenho } from "./PreVendasDesenho";
+import { UsuarioDoProtoContexto } from "./usuario-do-proto";
 
 interface Props {
   /** O que o protótipo lia do store. Preencher com dado real. */
@@ -50,17 +51,49 @@ class Logica extends React.Component<any, any> {
    * sozinha. O que atravessa de verdade — aviso, navegação e as peças —
    * chega nas props.
    */
+  /**
+   * O catálogo do domínio, no lugar do catálogo estático do protótipo.
+   *
+   * O nome NAO e "catalogo": a tela de Proposta ja tem um metodo catalogo()
+   * — o catalogo comercial dela — e um getter com o mesmo nome o sobrescreve.
+   * A colisao nao da erro de tipo: da "catalogo is not a function" em runtime,
+   * no meio do Builder.
+   */
+  get dadosDoProto(): any {
+    return this.props.catalogo ?? {};
+  }
+
+  /**
+   * Quem está usando — no protótipo, o Scott fixo como autor de nota,
+   * evento e atividade. Vem do contexto que a casca fornece com a sessão;
+   * `props.usuario` ganha quando o adaptador quer forçar.
+   */
+  static contextType = UsuarioDoProtoContexto;
+  get eu(): string {
+    return this.props.usuario?.nome ?? (this.context as any)?.nome ?? "Você";
+  }
+
   E = {
     tudo: () => this.props.dados ?? {},
     ler: (k: string, alt?: any) => (this.props.dados as any)?.[k] ?? alt,
-    gravar: () => {},
+    /* O store do protótipo gravava no localStorage. Aqui ele CHAMA A TELA:
+       quem sabe traduzir o patch em command é o adaptador, escrito à mão.
+       Engolir a chamada — como esta linha fazia — é o que mantinha
+       Pré-vendas parecendo que gravava sem gravar nada. */
+    gravar: (patch: any) => this.props.gravar?.(patch),
     assinar: () => null,
     assinarPecas: () => null,
     assinarAviso: () => null,
     avisar: (texto: string, tom?: string) => this.diz(texto, tom),
     abrir: (peca: string, id?: string | null) => this.props.abrir?.(peca, id),
     abrirExterno: (url: string) => this.props.abrirExterno?.(url),
-    irPara: (href: string) => this.ir(href),
+    /* A PROP, e nao o metodo ir() da classe.
+     *
+     * As telas do handoff definem ir(href, label) chamando E.irPara(...).
+     * Apontar irPara de volta para this.ir fecha o ciclo ir -> irPara -> ir,
+     * e o clique morre com "Maximum call stack size exceeded" — foi o que
+     * deixou o sidebar inteiro sem navegar. */
+    irPara: (href: string) => this.props.ir?.(href),
     parametro: (nome: string) =>
       typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get(nome),
   };
@@ -68,7 +101,7 @@ class Logica extends React.Component<any, any> {
   constructor(props) {
     super(props);
     const E = null as any; // o store só existe depois do construtor
-    const d: any = props.dados ?? {};
+    const d: any = this.props.dados ?? {};
     this.state = {
       visao: props.visaoInicial || d.visao || "quadro",
       aba: "ativos", busca: "",
@@ -169,8 +202,8 @@ class Logica extends React.Component<any, any> {
       respMenu: this.state.respAberto === L.id,
       respMenuStyle: (() => {
         const r = this.state.respRect;
-        const vh = typeof window !== "undefined" ? window.innerHeight : 800;
-        const vw = typeof window !== "undefined" ? window.innerWidth : 1200;
+        const vh = typeof window !== "undefined" ? (typeof window !== "undefined" ? window.innerHeight : 900) : 800;
+        const vw = typeof window !== "undefined" ? (typeof window !== "undefined" ? window.innerWidth : 1440) : 1200;
         const alto = 196;
         const abaixo = r ? vh - r.bottom - 12 : 400;
         const paraCima = !!r && abaixo < alto && r.top - 12 > abaixo;
@@ -189,7 +222,7 @@ class Logica extends React.Component<any, any> {
           respRect: { top: el.top, bottom: el.bottom, left: el.left, right: el.right }
         }));
       },
-      respOpcoes: ["Scott Ferraz", "Camila Reis", "Diego Nunes", "Ana Vitória", null].map(nome => ({
+      respOpcoes: [this.eu, "Camila Reis", "Diego Nunes", "Ana Vitória", null].map(nome => ({
         label: nome || "Sem responsável",
         iniciais: nome ? iniciaisDe(nome) : "—",
         ativo: (L.resp || null) === nome,
@@ -399,7 +432,7 @@ class Logica extends React.Component<any, any> {
       if (q && ((L.empresa || "") + " " + L.pessoa + " " + L.cargo).toLowerCase().indexOf(q) < 0) return false;
       const sr = S.sel.responsavel, so = S.sel.origem, si = S.sel.interesse, ss = S.sel.sla;
       if (sr.length) {
-        const ok = (sr.indexOf("minhas") >= 0 && L.resp === "Scott Ferraz")
+        const ok = (sr.indexOf("minhas") >= 0 && L.resp === this.eu)
           || (sr.indexOf("sem_dono") >= 0 && !L.resp)
           || (sr.indexOf("equipe_sdr") >= 0 && !!L.resp)
           || (sr.indexOf("equipe_closer") >= 0 && !!L.resp);
@@ -592,8 +625,8 @@ class Logica extends React.Component<any, any> {
       expRef: this.expRef,
       exportMenuStyle: (() => {
         const r = S.expRect;
-        const vh = typeof window !== "undefined" ? window.innerHeight : 800;
-        const vw = typeof window !== "undefined" ? window.innerWidth : 1200;
+        const vh = typeof window !== "undefined" ? (typeof window !== "undefined" ? window.innerHeight : 900) : 800;
+        const vw = typeof window !== "undefined" ? (typeof window !== "undefined" ? window.innerWidth : 1440) : 1200;
         const abaixo = r ? vh - r.bottom - 16 : 400;
         const acima = r ? r.top - 16 : 400;
         const paraCima = abaixo < 260 && acima > abaixo;
@@ -672,7 +705,7 @@ class Logica extends React.Component<any, any> {
           }
         })),
         grupos: [
-          { k: "responsavel", titulo: "Responsável", opcoes: ["Scott Ferraz", "Camila Reis", "Diego Nunes", "Ana Vitória", "Sem responsável"] },
+          { k: "responsavel", titulo: "Responsável", opcoes: [this.eu, "Camila Reis", "Diego Nunes", "Ana Vitória", "Sem responsável"] },
           { k: "origem", titulo: "Canal de entrada", opcoes: ["Meta Ads", "Instagram", "Site", "Formulário", "WhatsApp", "Orgânica"] },
           { k: "interesse", titulo: "Interesse", opcoes: ["Callface AI", "PABX", "White Label"] },
           { k: "sla", titulo: "SLA", opcoes: ["Sem 1º contato", "Sem próxima ação", "Parado 7 dias+", "Parado 14 dias+"] },
@@ -842,7 +875,7 @@ class Logica extends React.Component<any, any> {
         const n = selecao.length;
         if (S.acaoMassa === "responsavel") {
           return [
-            { label: "Atribuir a mim", style: linha, onClick: aplica({ resp: "Scott Ferraz" }, n + " lead(s) atribuídos a você") },
+            { label: "Atribuir a mim", style: linha, onClick: aplica({ resp: this.eu }, n + " lead(s) atribuídos a você") },
             { label: "Camila Reis", style: linha, onClick: aplica({ resp: "Camila Reis" }, n + " lead(s) para Camila Reis") },
             { label: "Diego Nunes", style: linha, onClick: aplica({ resp: "Diego Nunes" }, n + " lead(s) para Diego Nunes") },
             { label: "Ana Vitória", style: linha, onClick: aplica({ resp: "Ana Vitória" }, n + " lead(s) para Ana Vitória") },
@@ -882,7 +915,10 @@ class Logica extends React.Component<any, any> {
   }
 
   render() {
-    return <PreVendasDesenho {...(this.renderVals() as any)} />;
+    /* `children` atravessa: a Casca envolve o conteúdo da rota, e sem isto
+       ela renderiza sozinha e a tela fica em branco. Estava consertado à MÃO
+       no arquivo gerado, e a primeira regeração apagou — por isso mora aqui. */
+    return <PreVendasDesenho {...(this.renderVals() as any)} children={this.props.children} />;
   }
 }
 

@@ -1,6 +1,7 @@
 import { getTenantContext } from "@/lib/auth/tenant";
 import { redirect } from "next/navigation";
-import { AjustesNav, AjustesCabecalho } from "./Nav";
+import { isAdminView } from "@/lib/auth/roles";
+import { AjustesCasca, AjustesCabecalho } from "./Nav";
 
 /**
  * Shell de Ajustes. A topbar vive aqui e não em cada uma das 17 telas —
@@ -14,10 +15,10 @@ export default async function AjustesLayout({ children }: { children: React.Reac
   return (
     <div className="onface-pagina">
       <AjustesCabecalho />
-      <div className="flex gap-5 items-start">
-        <AjustesNav />
-        <div className="min-w-0 flex-1">{children}</div>
-      </div>
+      {/* Fora da gestão só /ajustes/email abre (PESSOAIS no middleware): a coluna
+          de seções seria uma lista de links que voltam ao Início. Papel efetivo,
+          o mesmo que o middleware usa (vale em "visualizar como"). */}
+      <AjustesCasca gestao={isAdminView(ctx.userRole)}>{children}</AjustesCasca>
     </div>
   );
 }

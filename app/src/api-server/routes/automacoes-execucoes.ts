@@ -123,8 +123,9 @@ app.get("/automacoes/execucoes", async (c) => {
       tipo: "automacao" as const,
       nome: r.nome,
       status: normalizaStatusAutomacao(r.status),
-      entityType: r.entityType,
-      entityId: r.entityId,
+      // Execução de fluxo sem registro (agendado "nenhum", webhook) tem entidade nula.
+      entityType: r.entityType ?? "",
+      entityId: r.entityId ?? "",
       detalhe: resumoResultado(r.resultado, r.erro),
       executedAt: r.executedAt,
     }));

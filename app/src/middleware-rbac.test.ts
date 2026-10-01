@@ -28,8 +28,10 @@ function acharRaizApp(): string {
 const APP = acharRaizApp();
 const middleware = fs.readFileSync(path.join(APP, "src/middleware.ts"), "utf8");
 
-/** Telas que só gestão pode abrir, e que existem de verdade no CRM2. */
-const ROTAS_DE_GESTAO = ["/clientes/financeiro", "/ajustes"];
+/** Telas que só gestão pode abrir, e que existem de verdade no CRM2.
+ *  `/financeiro` voltou a ser tela real (Financeiro canônico ONFACE, 01/10),
+ *  não mais redirect — entra aqui para o gate não sair dela sem aviso. */
+const ROTAS_DE_GESTAO = ["/financeiro", "/clientes/financeiro", "/ajustes"];
 
 /** Rotas pessoais que qualquer papel autenticado precisa alcançar. */
 const ROTAS_PESSOAIS = ["/ajustes/email"];

@@ -613,6 +613,9 @@ app.get("/propostas/:id/publica", async (c) => {
     status: proposta.status,
     moeda: proposta.moeda,
     dataValidade: proposta.dataValidade,
+    // Emissão no cabeçalho do documento público (01/10): o cliente lê "emitida
+    // em / válida até" como em qualquer proposta impressa.
+    dataEmissao: proposta.dataEmissao ?? proposta.enviadaEm ?? proposta.createdAt,
     prazoContratoMeses: proposta.prazoContratoMeses,
     condicoesPagamento: proposta.condicoesPagamento,
     totalRecorrente: proposta.totalRecorrente,

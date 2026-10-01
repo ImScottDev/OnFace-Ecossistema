@@ -1,12 +1,21 @@
 import { Hono } from "hono";
 import { db } from "@/lib/db";
 import { usuarios, organizacoes } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { getCtx } from "../compat.js";
+import type { TenantContext } from "../auth.js";
 import { guardarNoAcervo } from "@/lib/arquivos/servico";
 
 const app = new Hono();
+
+// Escopo de org do próprio usuário. No "visualizar como" o alvo já foi validado
+// na org efetiva; fora dele, o usuário real mora na org ORIGINAL — o override de
+// org do super_admin troca ctx.organizacaoId, mas não o dono do perfil.
+function escopoUsuario(ctx: TenantContext) {
+  const orgId = ctx.isViewingAs ? ctx.organizacaoId : ctx.originalOrgId;
+  return and(eq(usuarios.id, ctx.userId), eq(usuarios.organizacaoId, orgId));
+}
 
 
 const MAX_AVATAR_SIZE = 5 * 1024 * 1024; // 5MB
@@ -28,7 +37,7 @@ app.get("/", async (c) => {
     })
     .from(usuarios)
     .innerJoin(organizacoes, eq(usuarios.organizacaoId, organizacoes.id))
-    .where(eq(usuarios.id, ctx.userId))
+    .where(escopoUsuario(ctx))
     .limit(1);
 
   if (!user) return c.json({ error: "User not found" }, 404);
@@ -39,6 +48,12 @@ app.get("/", async (c) => {
 // PATCH /perfil
 app.patch("/", async (c) => {
   const ctx = await getCtx(c);
+  // Em "visualizar como", o ctx.userId é o do usuário VISUALIZADO. Sem esta
+  // trava, um admin olhando a conta de alguém trocaria o nome/foto/senha
+  // DAQUELA pessoa achando que mexia no próprio perfil.
+  if (ctx.isViewingAs) {
+    return c.json({ error: "Saia do modo visualizar como para editar o perfil" }, 403);
+  }
 
   const body = await c.req.json();
   const { nome, senhaAtual, novaSenha } = body;
@@ -49,6 +64,9 @@ app.patch("/", async (c) => {
   if (nome !== undefined) {
     if (!nome || typeof nome !== "string" || nome.trim().length === 0) {
       return c.json({ error: "Nome não pode ser vazio" }, 400);
+    }
+    if (nome.trim().length > 120) {
+      return c.json({ error: "Nome muito longo (máximo 120 caracteres)" }, 400);
     }
     updates.nome = nome.trim();
   }
@@ -69,11 +87,17 @@ app.patch("/", async (c) => {
       );
     }
 
+    // bcrypt ignora o que passa de 72 bytes: aceitar mais seria prometer uma
+    // senha que na prática é outra.
+    if (Buffer.byteLength(novaSenha, "utf8") > 72) {
+      return c.json({ error: "A nova senha deve ter no máximo 72 bytes (caracteres acentuados e emojis contam mais)" }, 400);
+    }
+
     // Verify current password
     const [user] = await db
       .select({ senhaHash: usuarios.senhaHash })
       .from(usuarios)
-      .where(eq(usuarios.id, ctx.userId))
+      .where(escopoUsuario(ctx))
       .limit(1);
 
     if (!user) return c.json({ error: "User not found" }, 404);
@@ -92,7 +116,7 @@ app.patch("/", async (c) => {
 
   updates.updatedAt = new Date();
 
-  await db.update(usuarios).set(updates).where(eq(usuarios.id, ctx.userId));
+  await db.update(usuarios).set(updates).where(escopoUsuario(ctx));
 
   return c.json({ ok: true });
 });
@@ -100,6 +124,12 @@ app.patch("/", async (c) => {
 // POST /perfil — upload avatar
 app.post("/", async (c) => {
   const ctx = await getCtx(c);
+  // Em "visualizar como", o ctx.userId é o do usuário VISUALIZADO. Sem esta
+  // trava, um admin olhando a conta de alguém trocaria o nome/foto/senha
+  // DAQUELA pessoa achando que mexia no próprio perfil.
+  if (ctx.isViewingAs) {
+    return c.json({ error: "Saia do modo visualizar como para editar o perfil" }, 403);
+  }
 
   const formData = await c.req.formData();
   const file = formData.get("avatar") as File | null;
@@ -137,7 +167,7 @@ app.post("/", async (c) => {
   await db
     .update(usuarios)
     .set({ avatarUrl, updatedAt: new Date() })
-    .where(eq(usuarios.id, ctx.userId));
+    .where(escopoUsuario(ctx));
 
   return c.json({ avatarUrl });
 });

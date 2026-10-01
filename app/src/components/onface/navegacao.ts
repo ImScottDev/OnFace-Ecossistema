@@ -2,7 +2,7 @@ import type { LucideIcon } from "lucide-react";
 import {
   BarChart3, Bot, BriefcaseBusiness, Building2, CalendarDays, FileText, Headphones, Home,
   LayoutDashboard, LifeBuoy, LineChart, ListChecks, Megaphone, PhoneCall,
-  Repeat, Rocket, Sparkles, TrendingUp, Users, Workflow, Zap,
+  Repeat, Rocket, Sparkles, Users, Workflow, Zap,
 } from "lucide-react";
 
 /**
@@ -80,7 +80,7 @@ export const NAVEGACAO: AreaNav[] = [
       { label: "Atividades", href: "/tarefas", icon: ListChecks },
       { label: "Calendário", href: "/calendario", icon: CalendarDays },
       { label: "Chamados", href: "/chamados", icon: LifeBuoy, pendente: true },
-      { label: "Pós-vendas", href: "/pos-vendas", icon: Rocket, pendente: true },
+      { label: "Pós-vendas", href: "/pos-vendas", icon: Rocket },
     ],
   },
   {
@@ -89,10 +89,8 @@ export const NAVEGACAO: AreaNav[] = [
     icon: Users,
     itens: [
       { label: "Visão Geral", href: "/clientes", icon: Building2 },
-      { label: "Carteira", href: "/clientes/carteira", icon: Users, pendente: true },
       { label: "Customer Success", href: "/clientes/cs", icon: Users },
-      { label: "Expansão & Renovação", href: "/clientes/expansao", icon: TrendingUp, pendente: true },
-      { label: "Risco / Churn", href: "/clientes/risco", icon: LineChart, pendente: true },
+      { label: "Risco / Churn", href: "/clientes/risco", icon: LineChart },
     ],
   },
   {
@@ -102,7 +100,7 @@ export const NAVEGACAO: AreaNav[] = [
     icon: Zap,
     itens: [
       { label: "Visão Geral", href: "/automacoes", icon: Zap },
-      { label: "Fluxos", href: "/automacoes/fluxos", icon: Workflow, pendente: true },
+      { label: "Fluxos", href: "/automacoes/fluxos", icon: Workflow },
       { label: "Cadências / Follow-ups", href: "/automacoes/cadencias", icon: Repeat },
       { label: "NEXO / Agentes IA", href: "/automacoes/agentes", icon: Bot },
       { label: "Execuções", href: "/automacoes/execucoes", icon: LineChart },
@@ -114,8 +112,8 @@ export const NAVEGACAO: AreaNav[] = [
     icon: BarChart3,
     itens: [
       { label: "Visão Geral", href: "/relatorios", icon: BarChart3 },
-      { label: "Relatórios", href: "/relatorios/biblioteca", icon: FileText, pendente: true },
-      { label: "Performance", href: "/relatorios/performance", icon: LineChart, pendente: true },
+      { label: "Relatórios", href: "/relatorios/biblioteca", icon: FileText },
+      { label: "Performance", href: "/relatorios/performance", icon: LineChart },
     ],
   },
 ];
@@ -173,7 +171,9 @@ const ROTA_HERDA_DESTINO: Array<[prefixo: string, destino: string]> = [
   ["/clientes/financeiro", "/clientes"],
   ["/financeiro", "/clientes"],
   ["/negocios", "/pipeline"],
-  ["/vendas", "/pipeline"],
+  // /vendas tem título próprio (PAGINA_FORA_DA_ARVORE): herdar Pipeline fazia a
+  // topbar dizer "Pipeline" na visão geral de vendas.
+  ["/projetos", "/pos-vendas"],
   ["/empresas", "/contatos"],
   ["/pessoas", "/contatos"],
   ["/leads", "/pre-vendas"],
@@ -225,7 +225,23 @@ export type Trilha = {
 };
 
 /** Posição atual, para o cabeçalho da casca. */
+/**
+ * Páginas que não são item do menu mas têm nome próprio.
+ *
+ * A trilha normalmente sai do destino ativo; estas rotas não estão na árvore
+ * (ou herdam um destino só para o menu acender), e o nome herdado mentia — a
+ * visão geral de vendas aparecia como "Pipeline".
+ */
+const PAGINA_FORA_DA_ARVORE: Array<[prefixo: string, trilha: Trilha]> = [
+  ["/vendas", { area: "Vendas", item: "Visão geral", apoio: "Funil, meta e risco do time comercial" }],
+  ["/financeiro", { area: "Clientes", item: "Financeiro", apoio: "Contratos, faturas e cobrança" }],
+  ["/perfil", { area: null, item: "Meu perfil", apoio: "Conta, senha e preferências" }],
+  ["/projetos", { area: "Operação", item: "Projeto", apoio: "Entrega do serviço contratado" }],
+];
+
 export function trilhaAtual(pathname: string): Trilha | null {
+  const propria = PAGINA_FORA_DA_ARVORE.find(([pre]) => casa(pre, pathname));
+  if (propria) return propria[1];
   const destino = destinoAtivo(pathname);
   if (!destino) return null;
   const apoio = APOIO_DO_DESTINO[destino] ?? null;

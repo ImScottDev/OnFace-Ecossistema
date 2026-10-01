@@ -1,23 +1,36 @@
-import { db } from "@/lib/db";
-import { organizacoes } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { notFound, redirect } from "next/navigation";
 import { getTenantContext } from "@/lib/auth/tenant";
-import { redirect } from "next/navigation";
-import { Cf2Topbar } from "@/components/crm2/Topbar";
-import { ConteudoPerfil } from "./_conteudo";
+import { isAdminView } from "@/lib/auth/roles";
+import { carregarPerfil } from "@/lib/perfil/consultas";
+import { Pagina, PaginaCabecalho } from "@/components/onface/shell/Pagina";
+import { Perfil } from "@/components/onface/perfil/Perfil";
 
-export const metadata = { title: "Perfil" };
+export const metadata = { title: "Minha conta" };
+export const dynamic = "force-dynamic";
 
 export default async function PerfilPage() {
   const ctx = await getTenantContext();
   if (!ctx) redirect("/login");
 
-  const [org] = await db.select({ nome: organizacoes.nome }).from(organizacoes).where(eq(organizacoes.id, ctx.organizacaoId)).limit(1);
+  // ctx.userId já é o usuário efetivo (em "visualizar como", o visualizado):
+  // a tela mostra o que ele veria, e a escrita é travada por isViewingAs aqui
+  // e no Hono.
+  const perfil = await carregarPerfil(ctx.organizacaoId, ctx.userId);
+  if (!perfil) notFound();
 
   return (
-    <div className="onface-pagina">
-      <Cf2Topbar orgNome={org?.nome || "Callface"} variant="light" title="Meu perfil" compactTitle actions={null} />
-      <ConteudoPerfil />
-    </div>
+    <Pagina>
+      <PaginaCabecalho titulo="Minha conta" />
+      <Perfil
+        perfil={perfil}
+        visualizandoComo={ctx.isViewingAs}
+        // Papel efetivo, o mesmo que o middleware usa para liberar /ajustes.
+        podeGerirOrg={isAdminView(ctx.userRole)}
+        // Só a presença da credencial; o segredo nunca sai do servidor. Sem
+        // ela, o botão de conectar levaria a um erro do provedor.
+        microsoftConfigurado={Boolean(process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CLIENT_SECRET)}
+        googleConfigurado={Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET)}
+      />
+    </Pagina>
   );
 }

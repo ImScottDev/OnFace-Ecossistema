@@ -105,3 +105,16 @@ export const DEFAULT_TRIGGER_CONFIG = {
 export function isKnownAgentTool(toolId: string) {
   return AGENT_TOOL_CATALOG.some((tool) => tool.id === toolId);
 }
+
+/**
+ * NEXO e Hermes foram semeados (migração 0071) com o NOME de modelo da
+ * ferramenta (`context_read_crm`) em vez do id do catálogo (`context.read_crm`).
+ * O runtime resolve por id, então essas ferramentas eram ignoradas em
+ * silêncio, e o schema da versão recusa salvar o nome. A tela converte ao
+ * abrir; salvar grava o id certo.
+ */
+export function normalizarIdFerramenta(id: string): string {
+  if (isKnownAgentTool(id)) return id;
+  const comPonto = id.replace("_", ".");
+  return isKnownAgentTool(comPonto) ? comPonto : id;
+}

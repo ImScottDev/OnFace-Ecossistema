@@ -1054,11 +1054,10 @@ function OnboardingLegacyView({ fulfillmentId, data, documentosLegado }: { fulfi
   const { fulfillment, itens, empresaId, empresaNome, empresaLogoUrl, atividadesEmpresa, formulario, publicToken, leadId, leadTelefone, leadEmail } = data;
   const isWhiteLabel = fulfillment.serviceFamily === "WHITE_LABEL";
   const jornadaTitulo = isWhiteLabel ? "Implantação White Label" : "Onboarding";
-  // A fila de White Label tem rota própria em cada shell: /pos-venda/white-label
-  // em produção, /clientes/implantacao?familia=WHITE_LABEL no CRM2.
-  const jornadaHref = emPosVenda
-    ? (isWhiteLabel ? "/pos-venda/white-label" : "/pos-venda/onboarding")
-    : (isWhiteLabel ? "/clientes/implantacao?familia=WHITE_LABEL" : "/clientes/onboarding");
+  // As filas moram no painel de Pós-vendas (01/10). As rotas antigas
+  // (/pos-venda/*, /clientes/onboarding, /clientes/implantacao) só redirecionam
+  // para cá; apontar direto evita dois saltos de redirect.
+  const jornadaHref = isWhiteLabel ? "/pos-vendas?aba=imp&familia=WHITE_LABEL" : "/pos-vendas?aba=onb";
   const linkFormulario = isWhiteLabel && publicToken ? `${typeof window !== "undefined" ? window.location.origin : ""}/impl-white-label/${publicToken}` : null;
   const primeiroNome = (empresaNome || "").split(" ")[0] || "tudo bem";
   const nomeResponsavel = fulfillment.responsavelNome || "[seu nome]";

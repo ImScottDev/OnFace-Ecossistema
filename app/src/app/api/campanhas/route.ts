@@ -3,6 +3,7 @@ import { getTenantContext, unauthorizedResponse } from "@/lib/auth/tenant";
 import { db } from "@/lib/db";
 import { outreachCampanhas } from "@/lib/db/schema";
 import { eq, desc } from "drizzle-orm";
+import { podeGerirCampanhas } from "@/lib/automacoes/campanhas";
 
 // GET /api/campanhas — lista campanhas de outreach da org
 export async function GET() {
@@ -22,6 +23,10 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   const ctx = await getTenantContext();
   if (!ctx) return unauthorizedResponse();
+  // Desde que o worker `campanha-sweep` dispara o que está "agendada", esta
+  // rota não pode aceitar status do corpo nem escrita sem automation.manage:
+  // seria disparo em massa sem validação. Agendar é só pela tela (actions.ts).
+  if (!(await podeGerirCampanhas(ctx))) return NextResponse.json({ error: "Sem permissão" }, { status: 403 });
 
   const body = await req.json();
   if (!body.nome) return NextResponse.json({ error: "Nome obrigatório" }, { status: 400 });
@@ -36,7 +41,7 @@ export async function POST(req: NextRequest) {
       corpoHtml: body.corpoHtml || null,
       audiencia: body.audiencia || null,
       remetente: body.remetente || null,
-      status: body.status || "rascunho",
+      status: "rascunho",
       createdBy: ctx.userId,
     })
     .returning();

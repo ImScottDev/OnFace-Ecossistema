@@ -2,13 +2,24 @@
 
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Check, Clock, FileSignature, CreditCard, CheckCircle2, AlertTriangle, Download, ShieldCheck } from "lucide-react";
+import { Check, Clock, FileSignature, CreditCard, CheckCircle2, AlertTriangle, Download, ShieldCheck, Loader2 } from "lucide-react";
+import "./publico.css";
 
-const CARMIM = "#e23752";
-const ROXO = "#8e27ef";
-const GRADIENTE = `linear-gradient(90deg, ${CARMIM}, ${ROXO})`;
-const FONT_HEADING = "var(--font-heading), system-ui, sans-serif";
-const FONT_BODY = "var(--font-body), system-ui, sans-serif";
+/**
+ * Página pública da proposta — o documento que o CLIENTE da Callface abre.
+ *
+ * Redesenho ONFACE (01/10): é a pré-visualização do compositor
+ * (`OnFace Proposta.dc.html`) viva — fio coral no topo, cabeçalho com número
+ * e validade, "Escopo e investimento" na tabela de cabeça grafite, resumo
+ * financeiro com o valor no bloco escuro e a decisão num único bloco com
+ * contorno. Antes era o gradiente carmim→roxo do CRM 1, que não conversava
+ * com nada do produto novo.
+ *
+ * O comportamento é o mesmo de antes: aceitar/recusar/pedir ajuste, um card
+ * de próximo passo por grupo comercial depois do aceite (venda mista tem
+ * contrato e pagamento independentes — seção 15 do briefing) e polling de 8s
+ * porque assinatura e pagamento confirmam por webhook a qualquer momento.
+ */
 
 interface Item { id: string; nome: string; descricao: string | null; tipo: string; quantidade: string; valorUnitario: string; subtotal: string; commercialModel: string }
 interface Grupo {
@@ -22,7 +33,7 @@ interface Grupo {
 }
 interface PropostaPublicaData {
   id: string; numero: number; versao: number; status: string; moeda: string;
-  dataValidade: string | null; condicoesPagamento: string | null;
+  dataValidade: string | null; dataEmissao: string | null; condicoesPagamento: string | null;
   totalRecorrente: string; totalAvulso: string; totalGeral: string;
   motivoRecusa: string | null; clienteRespondeuEm: string | null;
   clienteNome: string | null; clienteCargo: string | null;
@@ -34,7 +45,15 @@ interface PropostaPublicaData {
 const brl = (v: string | number) =>
   Number(v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
-const TIPO_LABEL: Record<string, string> = { recorrente: "Mensal", avulso: "Avulso", setup: "Setup" };
+/** Data do banco (`2026-10-31` ou ISO) em dd/mm/aaaa sem escorregar de fuso. */
+function data(v: string | null): string | null {
+  if (!v) return null;
+  const d = /^\d{4}-\d{2}-\d{2}$/.test(v) ? new Date(`${v}T12:00:00`) : new Date(v);
+  return Number.isNaN(d.getTime()) ? null : d.toLocaleDateString("pt-BR");
+}
+
+/** Os mesmos de `STATUS_PROPOSTA_VIGENTE` (lib/vendas/dominio) e do aceite público. */
+const STATUS_VIGENTE = ["enviada", "visualizada", "ajuste_solicitado"];
 
 const CONDICAO_LABEL: Record<string, string> = {
   cartao: "Cartão",
@@ -49,71 +68,116 @@ function formatarCnpj(v: string): string {
   if (d.length !== 14) return v;
   return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12)}`;
 }
-// Ícone + cor por status de grupo comercial (24/08, pedido do Kauã: "algo
-// foda mesmo, contextualizando tudo") — cada etapa do pós-aceite (contrato/
-// assinatura/pagamento) agora tem um sinal visual próprio, não só texto.
-const GRUPO_STATUS_INFO: Record<string, { texto: string; cor: string; bg: string; Icon: typeof Clock }> = {
-  aguardando_contrato: { texto: "Contrato sendo preparado", cor: "#78788c", bg: "#f1f1f6", Icon: Clock },
-  contrato_enviado_assinatura: { texto: "Aguardando sua assinatura", cor: "#a3720a", bg: "#fdf3e0", Icon: FileSignature },
-  contrato_assinado: { texto: "Contrato assinado", cor: "#0f9d58", bg: "#e6f6ec", Icon: CheckCircle2 },
-  aguardando_checkout: { texto: "Preparando pagamento", cor: "#78788c", bg: "#f1f1f6", Icon: Clock },
-  checkout_gerado: { texto: "Aguardando pagamento", cor: "#a3720a", bg: "#fdf3e0", Icon: CreditCard },
-  pagamento_pendente: { texto: "Pagamento em processamento", cor: "#a3720a", bg: "#fdf3e0", Icon: Clock },
-  pago: { texto: "Pago", cor: "#0f9d58", bg: "#e6f6ec", Icon: CheckCircle2 },
-  concluido: { texto: "Concluído", cor: "#0f9d58", bg: "#e6f6ec", Icon: CheckCircle2 },
-  falhou: { texto: "Pagamento não confirmado", cor: CARMIM, bg: "#fdeaec", Icon: AlertTriangle },
+
+// Cada etapa do pós-aceite (contrato/assinatura/pagamento) tem um sinal
+// próprio — status nunca só por cor: o rótulo vai junto.
+type Tom = "neutro" | "atencao" | "ok" | "risco";
+const GRUPO_STATUS: Record<string, { texto: string; tom: Tom }> = {
+  aguardando_contrato: { texto: "Contrato sendo preparado", tom: "neutro" },
+  contrato_enviado_assinatura: { texto: "Aguardando sua assinatura", tom: "atencao" },
+  contrato_assinado: { texto: "Contrato assinado", tom: "ok" },
+  aguardando_checkout: { texto: "Preparando pagamento", tom: "neutro" },
+  checkout_gerado: { texto: "Aguardando pagamento", tom: "atencao" },
+  pagamento_pendente: { texto: "Pagamento em processamento", tom: "atencao" },
+  pago: { texto: "Pago", tom: "ok" },
+  concluido: { texto: "Concluído", tom: "ok" },
+  falhou: { texto: "Pagamento não confirmado", tom: "risco" },
 };
 
-function Shell({ children }: { children: React.ReactNode }) {
+function Tela({ children }: { children: React.ReactNode }) {
   return (
-    <div style={{ minHeight: "100vh", background: "#f6f5fa", fontFamily: FONT_BODY, colorScheme: "light" }}>
-      <div style={{ height: 6, background: GRADIENTE }} />
-      <div style={{ display: "flex", justifyContent: "center", padding: "48px 16px 64px" }}>
-        <div style={{ width: "100%", maxWidth: 620 }}>
-          <div style={{ display: "flex", justifyContent: "center", marginBottom: 32 }}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/brand/callface-logo.svg" alt="Callface" style={{ height: 30 }} />
-          </div>
-          {children}
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, marginTop: 28, color: "#9497ab", fontSize: 11 }}>
-            <ShieldCheck size={13} /> Proposta gerada e assinada digitalmente pela Callface
-          </div>
-        </div>
+    <main className="pp-tela">
+      <div className="pp-coluna">
+        {children}
+        <p className="pp-selo"><ShieldCheck size={13} aria-hidden /> Proposta emitida pela Callface · link pessoal, não compartilhe</p>
       </div>
+    </main>
+  );
+}
+
+function Marca() {
+  return (
+    <div className="pp-marca">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src="/proto/callface-logo.png" alt="Callface" />
+      <span>Telefonia em nuvem, IA e discagem</span>
     </div>
   );
 }
 
-function Card({ children, padded = true }: { children: React.ReactNode; padded?: boolean }) {
+function Aviso({ tom, children }: { tom: "erro" | "ok" | "neutro"; children: React.ReactNode }) {
+  const Icone = tom === "ok" ? CheckCircle2 : tom === "erro" ? AlertTriangle : Clock;
   return (
-    <div style={{ background: "#fff", borderRadius: 20, border: "1px solid #ececf2", boxShadow: "0 2px 10px -4px rgba(24,26,50,0.08)", padding: padded ? 28 : 0, marginBottom: 16, overflow: "hidden" }}>
-      {children}
+    <div className={`pp-aviso pp-aviso-${tom}`} role={tom === "erro" ? "alert" : "status"}>
+      <Icone size={15} aria-hidden /> <span>{children}</span>
     </div>
   );
 }
 
-function EstadoFinal({ titulo, corpo, tom = "neutro" }: { titulo: string; corpo: string; tom?: "sucesso" | "erro" | "neutro" }) {
-  const cor = tom === "sucesso" ? "#0f9d58" : tom === "erro" ? CARMIM : "#4b4d63";
-  const Icon = tom === "sucesso" ? CheckCircle2 : tom === "erro" ? AlertTriangle : Clock;
+function EstadoUnico({ titulo, corpo, tom = "neutro" }: { titulo: string; corpo: string; tom?: "ok" | "erro" | "neutro" }) {
+  const Icone = tom === "ok" ? CheckCircle2 : tom === "erro" ? AlertTriangle : Clock;
+  const cor = tom === "ok" ? "pp-status-ok" : tom === "erro" ? "pp-status-risco" : "pp-status-neutro";
   return (
-    <Card>
-      <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
-        <span style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 36, height: 36, borderRadius: 999, background: `${cor}18`, color: cor, flexShrink: 0 }}><Icon size={18} /></span>
-        <div>
-          <h1 style={{ fontSize: 18, fontWeight: 700, color: cor, margin: "0 0 6px", fontFamily: FONT_HEADING }}>{titulo}</h1>
-          <p style={{ fontSize: 14, color: "#6b7280", lineHeight: 1.6, margin: 0 }}>{corpo}</p>
+    <Tela>
+      <article className="pp-doc">
+        <div className="pp-doc-corpo">
+          <Marca />
+          <div className="pp-estado" style={{ padding: 0 }}>
+            <span className={`pp-estado-icone ${cor}`}><Icone size={18} aria-hidden /></span>
+            <h1>{titulo}</h1>
+            <p>{corpo}</p>
+          </div>
         </div>
+      </article>
+    </Tela>
+  );
+}
+
+function Carregando() {
+  return (
+    <Tela>
+      <article className="pp-doc" aria-busy="true" aria-label="Carregando proposta">
+        <div className="pp-doc-corpo">
+          <Marca />
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <div className="pp-esqueleto" style={{ width: 120, height: 10 }} />
+            <div className="pp-esqueleto" style={{ width: "62%", height: 28 }} />
+            <div className="pp-esqueleto" style={{ width: "38%", height: 12 }} />
+          </div>
+          <div className="pp-esqueleto" style={{ height: 160, borderRadius: 10 }} />
+          <div className="pp-esqueleto" style={{ height: 96, borderRadius: 10 }} />
+        </div>
+      </article>
+    </Tela>
+  );
+}
+
+function SecaoTitulo({ n, children }: { n: string; children: React.ReactNode }) {
+  return <div className="pp-secao-titulo"><span>{n}</span><h2>{children}</h2></div>;
+}
+
+function ItemLinha({ item }: { item: Item }) {
+  const mensal = item.tipo === "recorrente";
+  const qtd = Number(item.quantidade || 1);
+  return (
+    <div className="pp-item">
+      <div className="pp-item-nome">
+        <strong>{item.nome}</strong>
+        {item.descricao ? <small>{item.descricao}</small> : null}
       </div>
-    </Card>
+      <div className="pp-item-valor">
+        <strong>{brl(item.subtotal)}{mensal ? "/mês" : ""}</strong>
+        <small>{qtd.toLocaleString("pt-BR")} × {brl(item.valorUnitario)}</small>
+      </div>
+    </div>
   );
 }
 
 /** Um card de "próximo passo" por GRUPO COMERCIAL — venda mista tem requirements independentes (seção 15 do briefing). */
 function GrupoCard({ grupo, id, onAssinado }: { grupo: Grupo; id: string; onAssinado: () => void }) {
   const [nomeAssinatura, setNomeAssinatura] = useState("");
-  const statusInfo = GRUPO_STATUS_INFO[grupo.status] || { texto: grupo.status, cor: "#9497ab", bg: "#f1f1f6", Icon: Clock };
+  const status = GRUPO_STATUS[grupo.status] || { texto: "Em andamento", tom: "neutro" as Tom };
   const titulo = grupo.itens.map((i) => i.nome).join(" + ") || "Composição";
-  const StatusIcon = statusInfo.Icon;
 
   const assinar = useMutation({
     mutationFn: async () => {
@@ -121,105 +185,93 @@ function GrupoCard({ grupo, id, onAssinado }: { grupo: Grupo; id: string; onAssi
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ nomeCompleto: nomeAssinatura, contratoId: grupo.contrato?.id }),
       });
-      const body = await r.json();
-      if (!r.ok) throw new Error(body.error || "Falha ao assinar");
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(body.error || "Não conseguimos registrar a assinatura. Tente de novo em instantes.");
       return body;
     },
     onSuccess: onAssinado,
   });
 
   return (
-    <div id={`grupo-${grupo.id}`}>
-    <Card>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 16 }}>
-        <p style={{ fontSize: 15, fontWeight: 700, color: "#181a32", margin: 0, fontFamily: FONT_HEADING }}>{titulo}</p>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, color: statusInfo.cor, background: statusInfo.bg, padding: "5px 10px", borderRadius: 999, whiteSpace: "nowrap", flexShrink: 0 }}>
-          <StatusIcon size={13} /> {statusInfo.texto}
-        </span>
+    <div className="pp-passo" id={`grupo-${grupo.id}`}>
+      <div className="pp-passo-topo">
+        <strong>{titulo}</strong>
+        <span className={`pp-status pp-status-${status.tom}`}>{status.texto}</span>
       </div>
 
       {grupo.status === "contrato_enviado_assinatura" && grupo.contrato && (
-        <>
-          {grupo.contrato.signingUrl ? (
-            <a href={grupo.contrato.signingUrl} target="_blank" rel="noreferrer" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "13px", borderRadius: 12, background: GRADIENTE, color: "#fff", fontWeight: 700, fontSize: 14, textDecoration: "none" }}>
-              <FileSignature size={15} /> Ler e assinar contrato
-            </a>
-          ) : (
-            <>
-              {grupo.contrato.corpoGerado && (
-                <div style={{ background: "#fff", border: "1px solid #ececf2", borderRadius: 14, marginBottom: 14, overflow: "hidden" }}>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", borderBottom: "1px solid #ececf2", background: "#f7f7fa" }}>
-                    <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: 0.4, textTransform: "uppercase", color: "#78788c" }}>Contrato de prestação de serviços</span>
-                    <FileSignature size={14} color="#9497ab" />
-                  </div>
-                  <div style={{ padding: "16px 18px", maxHeight: 260, overflowY: "auto" }}>
-                    {grupo.contrato.corpoGerado.split(/\r?\n/).map((linha) => linha.trim()).filter(Boolean).map((linha, i) => {
-                      const doisPontos = linha.indexOf(":");
-                      const rotulo = doisPontos > 0 && doisPontos < 24 ? linha.slice(0, doisPontos) : null;
-                      const resto = rotulo ? linha.slice(doisPontos + 1).trim() : linha;
-                      return (
-                        <p key={i} style={{ fontSize: 12.5, color: "#3a3b4d", lineHeight: 1.7, margin: "0 0 10px", fontFamily: FONT_BODY }}>
-                          {rotulo && <span style={{ fontWeight: 700, color: "#181a32" }}>{rotulo}: </span>}
-                          {resto}
-                        </p>
-                      );
-                    })}
-                  </div>
+        grupo.contrato.signingUrl ? (
+          <a href={grupo.contrato.signingUrl} target="_blank" rel="noreferrer" className="pp-btn pp-btn-primario pp-btn-largo">
+            <FileSignature size={15} aria-hidden /> Ler e assinar contrato
+          </a>
+        ) : (
+          <>
+            {grupo.contrato.corpoGerado && (
+              <div className="pp-contrato">
+                <div className="pp-contrato-cabeca">
+                  <span className="pp-rotulo">Contrato de prestação de serviços</span>
+                  <FileSignature size={14} aria-hidden />
                 </div>
-              )}
-              <p style={{ fontSize: 12.5, color: "#6b7280", lineHeight: 1.6, margin: "0 0 12px" }}>
-                Confirme seu nome completo — isso registra um aceite eletrônico simples (não é assinatura digital com certificação).
-              </p>
-              <input
-                value={nomeAssinatura} onChange={(e) => setNomeAssinatura(e.target.value)} placeholder="Nome completo"
-                style={{ width: "100%", padding: "11px 14px", borderRadius: 10, border: "1px solid #dcdce6", fontSize: 14, marginBottom: 10, boxSizing: "border-box", fontFamily: FONT_BODY }}
-              />
-              <button
-                onClick={() => assinar.mutate()} disabled={!nomeAssinatura.trim() || assinar.isPending}
-                style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "13px", borderRadius: 12, border: "none", background: GRADIENTE, color: "#fff", fontWeight: 700, fontSize: 14, cursor: "pointer", opacity: !nomeAssinatura.trim() || assinar.isPending ? 0.5 : 1 }}
-              >
-                <Check size={15} /> {assinar.isPending ? "Enviando..." : "Concordo e assino eletronicamente"}
-              </button>
-              {assinar.isError && <p style={{ color: CARMIM, fontSize: 12, marginTop: 8 }}>{(assinar.error as Error).message}</p>}
-            </>
-          )}
-        </>
+                <div className="pp-contrato-corpo" tabIndex={0} aria-label="Texto do contrato">
+                  {grupo.contrato.corpoGerado.split(/\r?\n/).map((l) => l.trim()).filter(Boolean).map((linha, i) => {
+                    const dp = linha.indexOf(":");
+                    const rotulo = dp > 0 && dp < 24 ? linha.slice(0, dp) : null;
+                    return <p key={i}>{rotulo && <b>{rotulo}: </b>}{rotulo ? linha.slice(dp + 1).trim() : linha}</p>;
+                  })}
+                </div>
+              </div>
+            )}
+            <label htmlFor={`assinatura-${grupo.id}`} style={{ fontSize: 12.5, color: "var(--of-tinta-3)" }}>
+              Digite seu nome completo para assinar. Isso registra um aceite eletrônico simples (não é assinatura com certificado digital).
+            </label>
+            <input
+              id={`assinatura-${grupo.id}`} className="pp-campo" autoComplete="name"
+              value={nomeAssinatura} onChange={(e) => setNomeAssinatura(e.target.value)} placeholder="Nome completo"
+            />
+            <button
+              type="button" className="pp-btn pp-btn-primario pp-btn-largo"
+              onClick={() => assinar.mutate()} disabled={!nomeAssinatura.trim() || assinar.isPending}
+            >
+              {assinar.isPending ? <Loader2 size={15} className="animate-spin" aria-hidden /> : <Check size={15} aria-hidden />}
+              {assinar.isPending ? "Registrando…" : "Concordo e assino eletronicamente"}
+            </button>
+            {assinar.isError && <Aviso tom="erro">{(assinar.error as Error).message}</Aviso>}
+          </>
+        )
       )}
 
       {(grupo.status === "aguardando_checkout" || grupo.status === "checkout_gerado") && (
         grupo.pagamentoEstado === "boleto_pendente" ? (
-          <p style={{ fontSize: 13, color: "#4b4d63", margin: 0 }}>Boleto emitido — aguardando compensação (até 1 dia útil).</p>
+          <Aviso tom="neutro">Boleto emitido — aguardando compensação (até 1 dia útil).</Aviso>
         ) : grupo.pagamentoEstado === "indisponivel" ? (
-          <p style={{ fontSize: 13, color: CARMIM, margin: 0 }}>Não conseguimos gerar o link de pagamento agora. Fale com quem te enviou a proposta.</p>
+          <Aviso tom="erro">Não conseguimos gerar o link de pagamento agora. Fale com quem te enviou a proposta.</Aviso>
         ) : grupo.checkoutUrl ? (
-          <a href={grupo.checkoutUrl} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "13px", borderRadius: 12, background: GRADIENTE, color: "#fff", fontWeight: 700, fontSize: 14, textDecoration: "none" }}>
-            <CreditCard size={15} /> Ir para pagamento seguro
+          <a href={grupo.checkoutUrl} className="pp-btn pp-btn-primario pp-btn-largo">
+            <CreditCard size={15} aria-hidden /> Ir para o pagamento seguro
           </a>
         ) : (
-          <p style={{ fontSize: 13, color: "#9497ab", margin: 0 }}>Preparando o link de pagamento...</p>
+          <Aviso tom="neutro">Preparando o link de pagamento…</Aviso>
         )
       )}
 
       {(grupo.status === "pago" || grupo.status === "concluido") && (
-        <p style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "#0f9d58", margin: 0, fontWeight: 600 }}><CheckCircle2 size={15} /> Pagamento confirmado — obrigado!</p>
+        <Aviso tom="ok">Pagamento confirmado — obrigado!</Aviso>
       )}
       {grupo.status === "falhou" && (
-        <p style={{ fontSize: 13, color: CARMIM, margin: 0 }}>Não conseguimos confirmar o pagamento. Fale com quem te enviou a proposta pra gerar um novo link.</p>
+        <Aviso tom="erro">Não conseguimos confirmar o pagamento. Fale com quem te enviou a proposta para gerar um novo link.</Aviso>
       )}
-    </Card>
     </div>
   );
 }
 
 export function PropostaPublica({ id }: { id: string }) {
   const queryClient = useQueryClient();
+  const [painel, setPainel] = useState<"decisao" | "ajuste" | "recusa">("decisao");
   const [ajusteMsg, setAjusteMsg] = useState("");
   const [ajusteEnviado, setAjusteEnviado] = useState(false);
-  const [ajusteAberto, setAjusteAberto] = useState(false);
   const [recusaMotivo, setRecusaMotivo] = useState("");
-  const [recusaAberta, setRecusaAberta] = useState(false);
 
-  const { data, isLoading, error } = useQuery<PropostaPublicaData>({
+  const { data: p, isLoading, error } = useQuery<PropostaPublicaData>({
     queryKey: ["proposta-publica", id],
     queryFn: async () => {
       const r = await fetch(`/api/propostas/${id}/publica`);
@@ -235,12 +287,12 @@ export function PropostaPublica({ id }: { id: string }) {
   const aceitar = useMutation({
     mutationFn: async () => {
       const r = await fetch(`/api/propostas/${id}/aceitar-publico`, { method: "POST" });
-      const body = await r.json();
-      if (!r.ok) throw new Error(body.error || "Falha ao aceitar");
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(body.error || "Não conseguimos registrar o aceite. Tente de novo em instantes.");
       return body;
     },
     onSuccess: (body) => {
-      const primeiroPagamento = body?.grupos?.find((grupo: { checkoutId?: string; proximoPasso?: string }) => grupo.checkoutId);
+      const primeiroPagamento = body?.grupos?.find((grupo: { checkoutId?: string }) => grupo.checkoutId);
       const primeiroContrato = body?.grupos?.find((grupo: { grupoId?: string; proximoPasso?: string; proximoUrl?: string }) => grupo.proximoPasso === "contrato");
       if (primeiroPagamento?.checkoutId) {
         window.location.assign(`/checkout/${primeiroPagamento.checkoutId}`);
@@ -259,8 +311,8 @@ export function PropostaPublica({ id }: { id: string }) {
       const r = await fetch(`/api/propostas/${id}/recusar-publico`, {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ motivo: recusaMotivo || undefined }),
       });
-      const body = await r.json();
-      if (!r.ok) throw new Error(body.error || "Falha ao recusar");
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(body.error || "Não conseguimos registrar a recusa. Tente de novo em instantes.");
       return body;
     },
     onSuccess: invalidar,
@@ -271,203 +323,230 @@ export function PropostaPublica({ id }: { id: string }) {
       const r = await fetch(`/api/propostas/${id}/ajuste-publico`, {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mensagem: ajusteMsg }),
       });
-      const body = await r.json();
-      if (!r.ok) throw new Error(body.error || "Falha ao enviar");
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(body.error || "Não conseguimos enviar o pedido. Tente de novo em instantes.");
       return body;
     },
     onSuccess: () => setAjusteEnviado(true),
   });
 
-  if (isLoading) return <Shell><Card><p style={{ color: "#9497ab", fontSize: 14 }}>Carregando proposta...</p></Card></Shell>;
-  if (error || !data) {
-    return <Shell><EstadoFinal tom="erro" titulo="Proposta não encontrada" corpo="Confira o link recebido ou fale com quem te enviou a proposta na Callface." /></Shell>;
+  if (isLoading) return <Carregando />;
+  if (error || !p) {
+    return <EstadoUnico tom="erro" titulo="Proposta não encontrada" corpo="Confira se o link chegou completo ou fale com quem te enviou a proposta na Callface." />;
   }
 
-  const numeroFmt = `#P-${String(data.numero).padStart(3, "0")}-v${data.versao}`;
-  // Condição de pagamento legível pro cliente (01/09, 2B): junta o tipo
-  // estruturado com o nº de parcelas. "Não especificar" (tipo nulo) não vira
-  // texto nenhum — nesse caso o cliente escolhe no próprio checkout.
-  const condicaoPagamentoTexto = data.condicaoPagamentoTipo
-    ? data.condicaoPagamentoTipo === "boleto_parcelado" && data.parcelas && data.parcelas > 1
-      ? `Parcelado em ${data.parcelas}x`
-      : CONDICAO_LABEL[data.condicaoPagamentoTipo] || data.condicaoPagamentoTipo
+  const numeroFmt = `P-${String(p.numero).padStart(3, "0")}-v${p.versao}`;
+  // "Não especificar" (tipo nulo) não vira texto nenhum — o cliente escolhe no próprio checkout.
+  const condicaoPagamentoTexto = p.condicaoPagamentoTipo
+    ? p.condicaoPagamentoTipo === "boleto_parcelado" && p.parcelas && p.parcelas > 1
+      ? `Parcelado em ${p.parcelas}x`
+      : CONDICAO_LABEL[p.condicaoPagamentoTipo] || p.condicaoPagamentoTipo
     : null;
 
-  const validadeVencida = data.dataValidade ? new Date(data.dataValidade) < new Date(new Date().toDateString()) : false;
+  const validadeVencida = p.dataValidade ? new Date(`${p.dataValidade.slice(0, 10)}T23:59:59`) < new Date() : false;
+  const validaAte = data(p.dataValidade);
+  const emitidaEm = data(p.dataEmissao);
 
-  if (data.status === "expirada" || (["enviada", "ajuste_solicitado"].includes(data.status) && validadeVencida)) {
-    return <Shell><EstadoFinal tom="erro" titulo="Este link de proposta expirou" corpo="O prazo de validade dessa proposta passou. Fale com quem te enviou a proposta na Callface para receber uma atualizada." /></Shell>;
+  // `visualizada` é vigente: o primeiro GET desta própria página muda o status
+  // para ela. Antes a lista não tinha `visualizada` e os botões de decisão
+  // sumiam no refetch de 8s — o cliente abria e não conseguia aceitar.
+  const vigente = STATUS_VIGENTE.includes(p.status);
+  if (p.status === "expirada" || (vigente && validadeVencida)) {
+    return <EstadoUnico tom="erro" titulo="Este link de proposta expirou" corpo="O prazo de validade dessa proposta passou. Fale com quem te enviou a proposta na Callface para receber uma versão atualizada." />;
   }
-
-  if (data.status === "recusada") {
+  if (p.status === "substituida") {
+    return <EstadoUnico titulo="Esta proposta foi atualizada" corpo="Existe uma versão mais nova desta proposta. Peça o link atualizado a quem te enviou na Callface." />;
+  }
+  if (p.status === "recusada") {
     return (
-      <Shell>
-        <EstadoFinal
-          titulo="Proposta recusada"
-          corpo={`Você recusou a proposta ${numeroFmt}. Nosso time vai entrar em contato para entender melhor e ver os próximos passos.${data.motivoRecusa ? ` Motivo informado: "${data.motivoRecusa}"` : ""}`}
-        />
-      </Shell>
+      <EstadoUnico
+        titulo="Proposta recusada"
+        corpo={`Você recusou a proposta ${numeroFmt}. Nosso time vai entrar em contato para entender melhor e combinar os próximos passos.${p.motivoRecusa ? ` Motivo informado: “${p.motivoRecusa}”.` : ""}`}
+      />
     );
   }
 
-  const todosGruposConcluidos = data.grupos.length > 0 && data.grupos.every((g) => g.status === "concluido" || g.status === "pago");
-  const aindaNaoAceitou = ["enviada", "ajuste_solicitado"].includes(data.status);
+  const todosGruposConcluidos = p.grupos.length > 0 && p.grupos.every((g) => g.status === "concluido" || g.status === "pago");
+  const aindaNaoAceitou = vigente;
+  const mensais = p.itens.filter((i) => i.tipo === "recorrente");
+  const unicos = p.itens.filter((i) => i.tipo !== "recorrente");
+  const totalMensal = Number(p.totalRecorrente);
+  const totalUnico = Number(p.totalAvulso);
+
+  const titulo = p.empresa || p.clienteNome || "Proposta comercial";
+  const sub = p.negocioTitulo && p.negocioTitulo !== titulo ? p.negocioTitulo : null;
+
+  const meta: Array<[string, string]> = [["Proposta nº", numeroFmt]];
+  if (emitidaEm) meta.push(["Emissão", emitidaEm]);
+  if (validaAte) meta.push(["Válida até", validaAte]);
+  if (p.prazoContratoMeses) meta.push(["Contrato", `${p.prazoContratoMeses} meses`]);
+
+  const linhasResumo: Array<[string, string]> = [];
+  if (totalMensal > 0) linhasResumo.push(["Mensalidade", `${brl(totalMensal)}/mês`]);
+  if (totalUnico > 0) linhasResumo.push(["Setup e itens únicos", brl(totalUnico)]);
+  if (condicaoPagamentoTexto) linhasResumo.push(["Pagamento", condicaoPagamentoTexto]);
+  if (p.prazoContratoMeses) linhasResumo.push(["Fidelidade", `${p.prazoContratoMeses} meses`]);
+
+  let n = 0;
+  const proximo = () => String(++n).padStart(2, "0");
 
   return (
-    <Shell>
-      {/* Header em destaque (24/08, pedido do Kauã: "algo foda mesmo,
-          contextualizando tudo") — banda de gradiente da marca no topo do
-          card, empresa/cliente como título real, não mais um bloco de texto
-          plano igual aos outros. */}
-      <Card padded={false}>
-        <div style={{ height: 4, background: GRADIENTE }} />
-        <div style={{ padding: 28 }}>
-          <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.6, color: "#9497ab", textTransform: "uppercase", margin: "0 0 8px" }}>
-            Proposta {numeroFmt}
-          </p>
-          <h1 style={{ fontSize: 24, fontWeight: 800, color: "#181a32", margin: "0 0 6px", fontFamily: FONT_HEADING, letterSpacing: -0.3 }}>
-            {data.empresa || data.clienteNome || "Cliente"}
-          </h1>
-          {/* CNPJ e interlocutor (01/09, 2B): o cliente precisa se reconhecer
-              no documento. Só aparecem quando existem — nunca "—" ou vazio. */}
-          {data.empresaCnpj && (
-            <p style={{ fontSize: 12.5, color: "#9497ab", margin: "0 0 6px" }}>CNPJ {formatarCnpj(data.empresaCnpj)}</p>
-          )}
-          {data.clienteNome && data.empresa && (
-            <p style={{ fontSize: 13.5, color: "#6b7280", margin: "0 0 4px" }}>
-              {data.clienteNome}{data.clienteCargo ? ` · ${data.clienteCargo}` : ""}
-            </p>
-          )}
-          {data.negocioTitulo && <p style={{ fontSize: 13.5, color: "#6b7280", margin: 0 }}>{data.negocioTitulo}</p>}
-          {data.dataValidade && aindaNaoAceitou && (
-            <p style={{ fontSize: 12, color: validadeVencida ? CARMIM : "#9497ab", margin: "10px 0 0" }}>
-              Válida até {new Date(data.dataValidade).toLocaleDateString("pt-BR")}
-            </p>
-          )}
-        </div>
-      </Card>
-
-      <Card>
-        <p style={{ fontSize: 11, fontWeight: 700, color: "#9497ab", textTransform: "uppercase", letterSpacing: 0.5, margin: "0 0 14px" }}>O que está incluso</p>
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          {data.itens.map((item, i) => (
-            <div key={item.id} style={{ display: "flex", justifyContent: "space-between", gap: 12, paddingBottom: 12, borderBottom: i < data.itens.length - 1 ? "1px solid #f1f1f5" : "none" }}>
-              <div style={{ minWidth: 0 }}>
-                <p style={{ fontSize: 14.5, fontWeight: 600, color: "#181a32", margin: 0, fontFamily: FONT_HEADING }}>{item.nome}</p>
-                <p style={{ fontSize: 12, color: "#9497ab", margin: "3px 0 0" }}>
-                  {TIPO_LABEL[item.tipo] || item.tipo} · qtd {item.quantidade}
-                </p>
+    <Tela>
+      <article className="pp-doc">
+        <div className="pp-doc-corpo">
+          <header style={{ display: "flex", flexDirection: "column", gap: 26 }}>
+            <Marca />
+            <div className="pp-cabeca">
+              <div className="pp-cabeca-titulo">
+                <span className="pp-overline">Proposta comercial</span>
+                <h1 className="pp-titulo">{titulo}</h1>
+                {sub ? <p className="pp-sub">{sub}</p> : null}
               </div>
-              <p style={{ fontSize: 14.5, fontWeight: 700, color: "#181a32", whiteSpace: "nowrap", margin: 0 }}>{brl(item.subtotal)}</p>
+              <dl className="pp-meta" style={{ margin: 0 }}>
+                {meta.map(([l, v]) => <div key={l}><dt>{l}</dt><dd>{v}</dd></div>)}
+              </dl>
             </div>
-          ))}
-        </div>
-        <div style={{ marginTop: 18, paddingTop: 18, borderTop: "1px solid #ececf2", display: "flex", flexDirection: "column", gap: 5 }}>
-          {Number(data.totalRecorrente) > 0 && (
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "#6b7280" }}>
-              <span>Total mensal</span><span>{brl(data.totalRecorrente)}/mês</span>
-            </div>
-          )}
-          {Number(data.totalAvulso) > 0 && (
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "#6b7280" }}>
-              <span>Total avulso</span><span>{brl(data.totalAvulso)}</span>
-            </div>
-          )}
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginTop: 6 }}>
-            <span style={{ fontSize: 14, fontWeight: 700, color: "#181a32", fontFamily: FONT_HEADING }}>Total geral</span>
-            <span style={{ fontSize: 22, fontWeight: 800, color: "#181a32", fontFamily: FONT_HEADING }}>{brl(data.totalGeral)}</span>
-          </div>
-        </div>
-        {(condicaoPagamentoTexto || data.condicoesPagamento) && (
-          <p style={{ fontSize: 12, color: "#9497ab", marginTop: 14 }}>
-            {condicaoPagamentoTexto ? <>Pagamento: <strong style={{ color: "#4b4d63" }}>{condicaoPagamentoTexto}</strong>{data.condicoesPagamento ? " · " : ""}</> : null}
-            {data.condicoesPagamento}
-          </p>
-        )}
-      </Card>
-
-      {/* Pré-aceite: só o botão de decisão (a composição pode ser mista, mas o cliente decide uma vez só) */}
-      {aindaNaoAceitou && (
-        <Card>
-          {!ajusteAberto && !recusaAberta ? (
-            <>
-              <button
-                onClick={() => aceitar.mutate()} disabled={aceitar.isPending}
-                style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "14px", borderRadius: 12, border: "none", background: GRADIENTE, color: "#fff", fontWeight: 700, fontSize: 15, cursor: "pointer", marginBottom: 10, fontFamily: FONT_HEADING }}
-              >
-                <Check size={17} /> {aceitar.isPending ? "Processando..." : "Aceitar proposta"}
-              </button>
-              <div style={{ display: "flex", gap: 8 }}>
-                <button onClick={() => setAjusteAberto(true)} style={{ flex: 1, padding: "11px", borderRadius: 10, border: "1px solid #ececf2", background: "#fff", color: "#4b4d63", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
-                  Solicitar ajuste
-                </button>
-                <button onClick={() => setRecusaAberta(true)} style={{ flex: 1, padding: "11px", borderRadius: 10, border: "1px solid #ececf2", background: "#fff", color: "#4b4d63", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
-                  Recusar
-                </button>
+            {(p.empresa || p.clienteNome) && (
+              <div className="pp-partes">
+                {p.empresa && (
+                  <div>
+                    <span className="pp-rotulo">Cliente</span>
+                    <strong>{p.empresa}</strong>
+                    {p.empresaCnpj ? <small>CNPJ {formatarCnpj(p.empresaCnpj)}</small> : null}
+                  </div>
+                )}
+                {p.clienteNome && (
+                  <div>
+                    <span className="pp-rotulo">A/C</span>
+                    <strong>{p.clienteNome}</strong>
+                    {p.clienteCargo ? <small>{p.clienteCargo}</small> : null}
+                  </div>
+                )}
               </div>
-              {aceitar.isError && <p style={{ color: CARMIM, fontSize: 12, marginTop: 8 }}>{(aceitar.error as Error).message}</p>}
-            </>
-          ) : ajusteAberto ? (
-            ajusteEnviado ? (
-              <p style={{ fontSize: 13, color: "#0f9d58", margin: 0 }}>Ajuste solicitado. Nosso time vai entrar em contato com você.</p>
-            ) : (
-              <>
-                <textarea
-                  value={ajusteMsg} onChange={(e) => setAjusteMsg(e.target.value)}
-                  placeholder="O que você gostaria de ajustar?" rows={3}
-                  style={{ width: "100%", padding: "11px 14px", borderRadius: 10, border: "1px solid #dcdce6", fontSize: 14, marginBottom: 10, boxSizing: "border-box", resize: "vertical", fontFamily: FONT_BODY, background: "#fff", color: "#2b2d42", colorScheme: "light" }}
-                />
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button onClick={() => setAjusteAberto(false)} style={{ flex: 1, padding: "10px", borderRadius: 10, border: "1px solid #ececf2", background: "#fff", color: "#4b4d63", fontSize: 13, cursor: "pointer" }}>Voltar</button>
-                  <button
-                    onClick={() => solicitarAjuste.mutate()} disabled={!ajusteMsg.trim() || solicitarAjuste.isPending}
-                    style={{ flex: 1, padding: "10px", borderRadius: 10, border: "none", background: CARMIM, color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer", opacity: !ajusteMsg.trim() ? 0.5 : 1 }}
-                  >
-                    {solicitarAjuste.isPending ? "Enviando..." : "Enviar"}
-                  </button>
+            )}
+          </header>
+
+          <section aria-labelledby="pp-escopo">
+            <SecaoTitulo n={proximo()}><span id="pp-escopo">Escopo e investimento</span></SecaoTitulo>
+            <div className="pp-tabela">
+              <div className="pp-tabela-cabeca"><span>Descrição</span><span>Valor</span></div>
+              {p.itens.length === 0 ? (
+                <div className="pp-item"><div className="pp-item-nome"><small>Esta proposta ainda não tem itens. Fale com quem te enviou.</small></div></div>
+              ) : (
+                <>
+                  {mensais.length > 0 && <div className="pp-grupo">Mensalidade</div>}
+                  {mensais.map((item) => <ItemLinha key={item.id} item={item} />)}
+                  {unicos.length > 0 && <div className="pp-grupo">Implantação e itens únicos</div>}
+                  {unicos.map((item) => <ItemLinha key={item.id} item={item} />)}
+                </>
+              )}
+            </div>
+          </section>
+
+          <section aria-labelledby="pp-resumo">
+            <SecaoTitulo n={proximo()}><span id="pp-resumo">Condições e resumo financeiro</span></SecaoTitulo>
+            <div className="pp-resumo">
+              {linhasResumo.length > 0 && (
+                <div className="pp-cartao">
+                  <dl className="pp-linhas" style={{ margin: 0 }}>
+                    {linhasResumo.map(([l, v]) => <div key={l}><dt>{l}</dt><dd>{v}</dd></div>)}
+                  </dl>
                 </div>
-              </>
-            )
-          ) : (
-            <>
-              <textarea
-                value={recusaMotivo} onChange={(e) => setRecusaMotivo(e.target.value)}
-                placeholder="Motivo (opcional)" rows={3}
-                style={{ width: "100%", padding: "11px 14px", borderRadius: 10, border: "1px solid #dcdce6", fontSize: 14, marginBottom: 10, boxSizing: "border-box", resize: "vertical", fontFamily: FONT_BODY, background: "#fff", color: "#2b2d42", colorScheme: "light" }}
-              />
-              <div style={{ display: "flex", gap: 8 }}>
-                <button onClick={() => setRecusaAberta(false)} style={{ flex: 1, padding: "10px", borderRadius: 10, border: "1px solid #ececf2", background: "#fff", color: "#4b4d63", fontSize: 13, cursor: "pointer" }}>Voltar</button>
-                <button
-                  onClick={() => recusar.mutate()} disabled={recusar.isPending}
-                  style={{ flex: 1, padding: "10px", borderRadius: 10, border: "none", background: "#4b4d63", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
-                >
-                  {recusar.isPending ? "Enviando..." : "Confirmar recusa"}
-                </button>
+              )}
+              <div className="pp-total">
+                <div>
+                  <span className="pp-rotulo">Valor da proposta</span>
+                  {totalMensal > 0 && totalUnico > 0 ? <small>Mensalidade + setup e itens únicos</small> : totalMensal > 0 ? <small>Por mês</small> : null}
+                </div>
+                <strong>{brl(p.totalGeral)}{totalMensal > 0 && totalUnico === 0 ? "/mês" : ""}</strong>
               </div>
-            </>
+            </div>
+            {p.condicoesPagamento ? <p style={{ margin: "12px 0 0", fontSize: 12.5, color: "var(--of-tinta-3)" }}>{p.condicoesPagamento}</p> : null}
+          </section>
+
+          {/* Pré-aceite: o cliente decide uma vez só, mesmo numa composição mista. */}
+          {aindaNaoAceitou && (
+            <section className="pp-decisao" aria-label="Sua decisão">
+              {painel === "decisao" && (
+                <>
+                  <div className="pp-decisao-texto">
+                    <h3>{validaAte ? `Proposta válida até ${validaAte}` : "Pronto para seguir?"}</h3>
+                    <p>{p.status === "ajuste_solicitado" ? "Recebemos seu pedido de ajuste. Você ainda pode aceitar esta versão." : "Depois do aceite, o contrato e o pagamento chegam prontos, nesta mesma página."}</p>
+                  </div>
+                  <div className="pp-decisao-acoes">
+                    <button type="button" className="pp-btn pp-btn-secundario" onClick={() => setPainel("ajuste")}>Pedir ajuste</button>
+                    <button type="button" className="pp-btn pp-btn-ghost" onClick={() => setPainel("recusa")}>Recusar</button>
+                    <button type="button" className="pp-btn pp-btn-primario" onClick={() => aceitar.mutate()} disabled={aceitar.isPending}>
+                      {aceitar.isPending ? <Loader2 size={15} className="animate-spin" aria-hidden /> : <Check size={15} aria-hidden />}
+                      {aceitar.isPending ? "Registrando…" : "Aceitar proposta"}
+                    </button>
+                  </div>
+                  {aceitar.isError && <div className="pp-decisao-form"><Aviso tom="erro">{(aceitar.error as Error).message}</Aviso></div>}
+                </>
+              )}
+
+              {painel === "ajuste" && (
+                <div className="pp-decisao-form">
+                  {ajusteEnviado ? (
+                    <>
+                      <Aviso tom="ok">Pedido de ajuste enviado. Nosso time vai entrar em contato com você.</Aviso>
+                      <div><button type="button" className="pp-btn pp-btn-secundario" onClick={() => setPainel("decisao")}>Voltar à proposta</button></div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="pp-decisao-texto"><h3>O que você gostaria de ajustar?</h3><p>Escreva com suas palavras — quem te enviou a proposta recebe na hora.</p></div>
+                      <textarea className="pp-campo" rows={4} value={ajusteMsg} onChange={(e) => setAjusteMsg(e.target.value)} placeholder="Ex.: preciso de mais 5 ramais e começar só em novembro" aria-label="Ajuste desejado" autoFocus />
+                      {solicitarAjuste.isError && <Aviso tom="erro">{(solicitarAjuste.error as Error).message}</Aviso>}
+                      <div className="pp-decisao-acoes" style={{ marginLeft: 0 }}>
+                        <button type="button" className="pp-btn pp-btn-ghost" onClick={() => setPainel("decisao")}>Voltar</button>
+                        <button type="button" className="pp-btn pp-btn-primario" onClick={() => solicitarAjuste.mutate()} disabled={!ajusteMsg.trim() || solicitarAjuste.isPending}>
+                          {solicitarAjuste.isPending ? "Enviando…" : "Enviar pedido de ajuste"}
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {painel === "recusa" && (
+                <div className="pp-decisao-form">
+                  <div className="pp-decisao-texto"><h3>Recusar esta proposta</h3><p>Se puder, conte o motivo. Isso ajuda a gente a voltar com algo que faça sentido.</p></div>
+                  <textarea className="pp-campo" rows={3} value={recusaMotivo} onChange={(e) => setRecusaMotivo(e.target.value)} placeholder="Motivo (opcional)" aria-label="Motivo da recusa" autoFocus />
+                  {recusar.isError && <Aviso tom="erro">{(recusar.error as Error).message}</Aviso>}
+                  <div className="pp-decisao-acoes" style={{ marginLeft: 0 }}>
+                    <button type="button" className="pp-btn pp-btn-ghost" onClick={() => setPainel("decisao")}>Voltar</button>
+                    <button type="button" className="pp-btn pp-btn-escuro" onClick={() => recusar.mutate()} disabled={recusar.isPending}>
+                      {recusar.isPending ? "Enviando…" : "Confirmar recusa"}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </section>
           )}
-        </Card>
-      )}
 
-      {/* Pós-aceite: um card por grupo comercial — requirements independentes (seção 15) */}
-      {data.grupos.length > 0 && (
-        <>
-          <p style={{ fontSize: 11, fontWeight: 700, color: "#9497ab", textTransform: "uppercase", letterSpacing: 0.5, margin: "24px 0 12px" }}>Próximos passos</p>
-          {data.grupos.map((grupo) => (
-            <GrupoCard key={grupo.id} grupo={grupo} id={id} onAssinado={invalidar} />
-          ))}
-        </>
-      )}
+          {/* Pós-aceite: um card por grupo comercial — requirements independentes (seção 15). */}
+          {p.grupos.length > 0 && (
+            <section aria-labelledby="pp-passos">
+              <SecaoTitulo n={proximo()}><span id="pp-passos">Próximos passos</span></SecaoTitulo>
+              {p.grupos.map((grupo) => <GrupoCard key={grupo.id} grupo={grupo} id={id} onAssinado={invalidar} />)}
+            </section>
+          )}
 
-      {todosGruposConcluidos && (
-        <EstadoFinal tom="sucesso" titulo="Tudo certo!" corpo="Recebemos a confirmação de todos os itens desta proposta. Nosso time vai entrar em contato pra dar sequência." />
-      )}
+          {!aindaNaoAceitou && p.grupos.length === 0 && p.status === "aceita" && (
+            <Aviso tom="ok">Proposta aceita. Nosso time vai entrar em contato para dar sequência.</Aviso>
+          )}
+          {todosGruposConcluidos && (
+            <Aviso tom="ok">Tudo certo! Recebemos a confirmação de todos os itens desta proposta. Nosso time vai entrar em contato para dar sequência.</Aviso>
+          )}
 
-      <div style={{ textAlign: "center", marginTop: 12 }}>
-        <a href={`/api/propostas/${id}/pdf`} target="_blank" rel="noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, color: "#78788c", textDecoration: "none", fontWeight: 600 }}>
-          <Download size={13} /> Baixar PDF da proposta
-        </a>
-      </div>
-    </Shell>
+          <footer className="pp-rodape-doc">
+            <span>Proposta {numeroFmt} · Callface</span>
+            <a className="pp-link" href={`/api/propostas/${id}/pdf`} target="_blank" rel="noreferrer">
+              <Download size={13} aria-hidden /> Baixar PDF
+            </a>
+          </footer>
+        </div>
+      </article>
+    </Tela>
   );
 }

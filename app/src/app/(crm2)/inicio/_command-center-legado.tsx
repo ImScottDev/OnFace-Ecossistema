@@ -127,11 +127,11 @@ export default async function InicioPage() {
       rodape: `${cs.renovacoesProximas30d} ${cs.renovacoesProximas30d === 1 ? "renovação próxima" : "renovações próximas"}`,
     },
     {
-      label: "Onboardings", valor: String(onboarding.ativas), icone: "rocket", href: "/clientes/onboarding",
+      label: "Onboardings", valor: String(onboarding.ativas), icone: "rocket", href: "/pos-vendas?aba=onb",
       rodape: `${onboarding.aguardandoContato} aguardando contato`,
     },
     {
-      label: "Implantações PABX", valor: String(implantacao.ativas), icone: "server", href: "/clientes/implantacao",
+      label: "Implantações PABX", valor: String(implantacao.ativas), icone: "server", href: "/pos-vendas?aba=imp",
       rodape: `${implantacao.bloqueadas} ${implantacao.bloqueadas === 1 ? "bloqueada" : "bloqueadas"}`,
       tendencia: implantacao.atrasadas > 0
         ? { texto: `${implantacao.atrasadas} atrasadas`, direcao: "down", tom: "negativo" }
@@ -161,7 +161,7 @@ export default async function InicioPage() {
       ],
     },
     {
-      key: "onboarding", titulo: "Onboarding", href: "/clientes/onboarding", cta: "Abrir Onboarding",
+      key: "onboarding", titulo: "Onboarding", href: "/pos-vendas?aba=onb", cta: "Abrir Onboarding",
       metricas: [
         { label: "Ativos", valor: String(onboarding.ativas) },
         { label: "Aguardando contato", valor: String(onboarding.aguardandoContato), tom: onboarding.aguardandoContato > 0 ? "warning" : "neutro" },
@@ -169,7 +169,7 @@ export default async function InicioPage() {
       ],
     },
     {
-      key: "implantacao", titulo: "Implantação PABX", href: "/clientes/implantacao", cta: "Abrir Implantação",
+      key: "implantacao", titulo: "Implantação PABX", href: "/pos-vendas?aba=imp", cta: "Abrir Implantação",
       metricas: [
         { label: "Projetos ativos", valor: String(implantacao.ativas) },
         { label: "Bloqueados", valor: String(implantacao.bloqueadas), tom: implantacao.bloqueadas > 0 ? "danger" : "neutro" },
@@ -177,7 +177,7 @@ export default async function InicioPage() {
       ],
     },
     {
-      key: "cs", titulo: "Customer Success", href: "/clientes/sucesso", cta: "Abrir CS",
+      key: "cs", titulo: "Customer Success", href: "/clientes/cs", cta: "Abrir CS",
       metricas: [
         { label: "Ações pendentes", valor: String(cs.tarefasAbertas), tom: cs.tarefasAtrasadas > 0 ? "warning" : "neutro" },
         { label: "Renovações próximas", valor: String(cs.renovacoesProximas30d), tom: cs.renovacoesProximas30d > 0 ? "warning" : "neutro" },
@@ -222,9 +222,9 @@ export default async function InicioPage() {
             { label: "Ganhos", valor: String(fechadoMes.ganhos), apoio: "no período", href: "/pipeline?status=ganho" },
           ]}
           posVenda={[
-            { label: "Ativação", valor: String(onboarding.ativas), apoio: "em andamento", href: "/clientes/onboarding" },
+            { label: "Ativação", valor: String(onboarding.ativas), apoio: "em andamento", href: "/pos-vendas?aba=onb" },
             { label: "Clientes ativos", valor: String(clientesAtivos), apoio: "base ativa", href: "/clientes" },
-            { label: "CS", valor: String(cs.tarefasAbertas), apoio: "ações pendentes", href: "/clientes/sucesso" },
+            { label: "CS", valor: String(cs.tarefasAbertas), apoio: "ações pendentes", href: "/clientes/cs" },
           ]}
         />
       </div>

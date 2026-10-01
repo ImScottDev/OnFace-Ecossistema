@@ -1,7 +1,9 @@
 import { redirect } from "next/navigation";
 import { getTenantContext } from "@/lib/auth/tenant";
 import { Pagina, PaginaCabecalho, PaginaResumo } from "@/components/onface/shell/Pagina";
-import { Propostas } from "@/components/onface/vendas/Propostas";
+/* A tela é o desenho do handoff, convertido por máquina. `vendas/Propostas`
+   era a versão recriada à mão e sai da rota — ver docs/design/PLANO-HANDOFF.md. */
+import { PropostasProto } from "@/components/onface/proto/PropostasProto";
 import { type RotaBaseVendas } from "@/components/onface/vendas/ui";
 import { moeda } from "@/components/onface/vendas/formato";
 import {
@@ -32,45 +34,11 @@ export async function PropostasPage({ searchParams, abrirComposer = false, rotaB
   const vigentes = linhas.filter((p) => ["enviada", "visualizada", "ajuste_solicitado"].includes(p.status));
   const aceitas = linhas.filter((p) => p.status === "aceita");
 
-  return (
-    <Pagina>
-      <PaginaCabecalho titulo="Propostas" />
-      <PaginaResumo
-        itens={[
-          {
-            rotulo: "Em aberto",
-            valor: moeda(vigentes.reduce((s, p) => s + (p.total ?? 0), 0)),
-            detalhe: `${vigentes.length} propostas vigentes`,
-            destaque: true,
-          },
-          // Ajuste pedido é a única linha desta tela que espera alguém: o
-          // cliente respondeu e a bola está com o closer.
-          {
-            rotulo: "Ajuste pedido",
-            valor: linhas.filter((p) => p.status === "ajuste_solicitado").length,
-            sinal: true,
-          },
-          { rotulo: "Aceitas", valor: aceitas.length },
-        ]}
-      />
+  /* O desenho filtra por responsável, e a lista já sabe de quem é cada
+     proposta. Nomes únicos e ordenados: é o que alimenta o menu. */
+  const responsaveis = [...new Set(linhas.map((p) => p.responsavel).filter((n): n is string => Boolean(n)))].sort();
 
-        <Propostas
-          linhas={linhas}
-          filtro={{ busca, status }}
-          oportunidadeInicial={params.oportunidade ?? null}
-          propostaInicial={params.proposta ?? null}
-          abrirComposer={abrirComposer}
-          acaoInicial={params.acao ?? null}
-          rotaBase={rotaBase}
-          acoes={{
-            detalhe: acaoDetalhe, catalogo: acaoCatalogo,
-            oportunidadesAbertas: acaoOportunidadesAbertas, criar: acaoCriar,
-            enviar: acaoEnviar, criarRevisao: acaoCriarRevisao,
-            expirarVencidas: acaoExpirarVencidas, salvarJuridicos: acaoSalvarJuridicos,
-          }}
-        />
-    </Pagina>
-  );
+  return <PropostasProto linhas={linhas} responsaveis={responsaveis} />;
 }
 
 export default PropostasPage;

@@ -273,8 +273,13 @@ app.post("/prospeccao/cadencia/enroll", async (c) => {
   const cadenceDefinitionId: string = body.cadenceDefinitionId;
   if (!cadenceDefinitionId || leadIds.length === 0) return c.json({ error: "leadIds e cadenceDefinitionId são obrigatórios" }, 400);
 
+  // Só matricula lead da organização do contexto — id de outra org é ignorado
+  // (a definição também é checada por org dentro de iniciarCadencia).
+  const daOrg = await db.select({ id: leads.id }).from(leads)
+    .where(and(eq(leads.organizacaoId, ctx.organizacaoId), inArray(leads.id, leadIds)));
+
   let matriculados = 0;
-  for (const leadId of leadIds) {
+  for (const { id: leadId } of daOrg) {
     const id = await iniciarCadencia({ cadenceDefinitionId, organizacaoId: ctx.organizacaoId, entityType: "lead", entityId: leadId });
     if (id) matriculados++;
   }
@@ -292,7 +297,7 @@ app.post("/prospeccao/cadencia/pausar", async (c) => {
   const ativos = await db
     .select({ id: cadenceEnrollments.id })
     .from(cadenceEnrollments)
-    .where(and(eq(cadenceEnrollments.entityType, "lead"), inArray(cadenceEnrollments.entityId, leadIds), inArray(cadenceEnrollments.status, ["active", "waiting"])));
+    .where(and(eq(cadenceEnrollments.organizacaoId, ctx.organizacaoId), eq(cadenceEnrollments.entityType, "lead"), inArray(cadenceEnrollments.entityId, leadIds), inArray(cadenceEnrollments.status, ["active", "waiting"])));
 
   for (const e of ativos) {
     await cancelarCadencia(e.id, "pausado manualmente (Prospecção)");

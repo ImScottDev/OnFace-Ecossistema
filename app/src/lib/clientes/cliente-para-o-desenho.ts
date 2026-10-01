@@ -1,0 +1,273 @@
+/* ─────────────────────────────────────────────────────────────────────────
+ * Cliente 360 (desenho do handoff) — a leitura.
+ *
+ * Arquivo PRÓPRIO da tela: compõe o que já existe (empresa360, billingDaConta,
+ * healthDaEmpresa, lerLinhaDoTempo) e só traz em SQL o que nenhuma delas dá —
+ * linha de `clientes`, carteira por família, contratos + itens, anexos,
+ * closer, tarefas abertas e a equipe.
+ *
+ * Regra que vale para o arquivo todo: campo que o banco não tem volta null.
+ * Quem decide como mostrar a ausência ("—") é o adaptador, nunca esta camada
+ * inventando um default plausível.
+ * ───────────────────────────────────────────────────────────────────────── */
+
+import { db } from "@/lib/db";
+import { sql } from "drizzle-orm";
+import { empresa360, type Empresa360 } from "@/lib/vendas/consultas";
+import { billingDaConta, type FaturaResumo } from "@/lib/cs/billing";
+import { healthDaEmpresa } from "@/lib/cs/health";
+import { lerLinhaDoTempo, type LinhaDoTempo } from "@/lib/vendas/eventos";
+import { resolveLocalPath } from "@/lib/storage/legacy-attachment-storage";
+
+export interface ServicoDoCliente {
+  id: string;
+  familia: string;
+  produto: string | null;
+  valor: number;
+  billingStatus: string | null;
+  lifecycle: string | null;
+  contratoId: string | null;
+}
+
+export interface ContratoDoCliente {
+  id: string;
+  tipo: string;
+  status: string;
+  mrr: number | null;
+  inicio: string | null;
+  vencimento: string | null;
+  codigo: string | null;
+  stripeSubscriptionId: string | null;
+  familia: string | null;
+  produto: string | null;
+  itens: Array<{ nome: string; quantidade: number; valorUnitario: number; subtotal: number; familia: string | null; natureza: string | null }>;
+}
+
+export interface AnexoDoCliente {
+  id: string;
+  entidadeTipo: string;
+  entidadeId: string;
+  categoria: string | null;
+  nome: string;
+  tamanhoBytes: number | null;
+  criadoEm: string | null;
+  disponivel: boolean;
+}
+
+export interface TarefaDoCliente {
+  id: string;
+  titulo: string;
+  tipo: string | null;
+  venceEm: string | null;
+  responsavel: string | null;
+}
+
+export interface ClienteDoDesenho {
+  empresa: Empresa360;
+  clienteDesde: string | null;
+  servicos: ServicoDoCliente[];
+  contratos: ContratoDoCliente[];
+  faturas: FaturaResumo[];
+  stripeCustomerId: string | null;
+  assinaturas: Array<{ stripeSubscriptionId: string; status: string; mrr: number | null }>;
+  health: Awaited<ReturnType<typeof healthDaEmpresa>>;
+  closer: string | null;
+  fulfillmentAberto: boolean;
+  anexos: AnexoDoCliente[];
+  tarefas: TarefaDoCliente[];
+  equipe: string[];
+  timeline: LinhaDoTempo[];
+  /** pessoa canônica → lead legado. A ficha /pessoas/[id] é por LEAD. */
+  leadDaPessoa: Record<string, string>;
+  /** lead → created_at::text da última atividade visível na timeline. */
+  ultimoContatoPorLead: Record<string, string>;
+}
+
+export async function clienteParaODesenho(organizacaoId: string, empresaId: string): Promise<ClienteDoDesenho | null> {
+  /* "Cliente desde" vem da PRIMEIRA EVIDÊNCIA REAL de relação comercial:
+   * negócio ganho, início de contrato ou primeira fatura paga.
+   *
+   * `clientes.cliente_desde` sozinho mentia: 90 clientes têm 16/08/2026, que é
+   * o dia da carga de reconciliação, não o dia em que viraram clientes. Ele só
+   * entra como último recurso, e só se a data não for um dia de carga em massa
+   * — medido pelo próprio dado (mais de 20 clientes no mesmo dia), para não
+   * depender de uma data escrita no código. */
+  const [cli] = await db.execute<{ cliente_desde: string | null }>(sql`
+    SELECT COALESCE(
+             LEAST(
+               (SELECT min(n.ganho_at) FROM negocios n
+                 WHERE n.empresa_id = c.empresa_id AND n.organizacao_id = c.organizacao_id AND n.ganho_at IS NOT NULL),
+               (SELECT min(ct.inicio)::timestamptz FROM contratos ct
+                 WHERE ct.empresa_id = c.empresa_id AND ct.inicio IS NOT NULL),
+               (SELECT min(f.paga_em) FROM faturas f
+                 WHERE f.empresa_id = c.empresa_id AND f.paga_em IS NOT NULL)
+             ),
+             CASE WHEN (SELECT count(*) FROM clientes c2
+                         WHERE c2.organizacao_id = c.organizacao_id
+                           AND c2.cliente_desde::date = c.cliente_desde::date) > 20
+                  THEN NULL ELSE c.cliente_desde END
+           )::text AS cliente_desde
+      FROM clientes c
+     WHERE c.organizacao_id = ${organizacaoId}::uuid AND c.empresa_id = ${empresaId}::uuid`);
+  // Sem linha em `clientes` a empresa não é cliente: a rota responde 404 em
+  // vez de montar um 360 de quem nunca comprou.
+  if (!cli) return null;
+
+  const [empresa, billing, health, timeline] = await Promise.all([
+    empresa360(organizacaoId, empresaId),
+    billingDaConta(organizacaoId, empresaId),
+    healthDaEmpresa(organizacaoId, empresaId),
+    lerLinhaDoTempo({ organizacaoId, empresaId, limite: 60 }),
+  ]);
+  if (!empresa) return null;
+
+  const servicos = await db.execute<{
+    id: string; familia: string; produto: string | null; valor: string;
+    billing_status: string | null; lifecycle: string | null; contrato_id: string | null;
+  }>(sql`
+    SELECT id::text, service_family AS familia, canonical_product AS produto,
+           current_recurring_value::text AS valor, billing_status,
+           commercial_lifecycle AS lifecycle, contrato_id::text
+      FROM servicos_canonicos
+     WHERE organizacao_id = ${organizacaoId}::uuid AND empresa_id = ${empresaId}::uuid
+       AND portfolio_included = true
+     ORDER BY current_recurring_value DESC NULLS LAST`);
+
+  /* Contrato não tem um caminho só até a empresa. Os três (empresa_id direto,
+     negócio/lead por COALESCE — a regra da rota Hono, que respeita o cliente
+     final numa revenda — e o contrato do serviço canônico) viram UNIÃO de ids
+     numa CTE. Nunca OR na condição de JOIN: isso já travou este Postgres. */
+  const contratos = await db.execute<{
+    id: string; tipo: string; status: string; mrr: string | null; inicio: string | null;
+    vencimento: string | null; codigo: string | null; stripe_subscription_id: string | null;
+    familia: string | null; produto: string | null;
+  }>(sql`
+    WITH ids AS (
+      SELECT id FROM contratos WHERE organizacao_id = ${organizacaoId}::uuid AND empresa_id = ${empresaId}::uuid
+      UNION
+      SELECT c.id FROM contratos c
+        LEFT JOIN negocios n ON n.id = c.negocio_id
+        LEFT JOIN leads l ON l.id = c.lead_id
+       WHERE c.organizacao_id = ${organizacaoId}::uuid AND COALESCE(n.empresa_id, l.empresa_id) = ${empresaId}::uuid
+      UNION
+      SELECT contrato_id FROM servicos_canonicos
+       WHERE empresa_id = ${empresaId}::uuid AND contrato_id IS NOT NULL
+    )
+    SELECT c.id::text, c.tipo, c.status, c.mrr::text, c.inicio::text, c.vencimento::text,
+           COALESCE(c.codigo_legado, c.zoho_id) AS codigo, c.stripe_subscription_id,
+           c.service_family AS familia, c.produto
+      FROM contratos c JOIN ids ON ids.id = c.id
+     ORDER BY c.inicio DESC NULLS LAST, c.created_at DESC`);
+
+  const idsContrato = contratos.map((c) => c.id);
+  const itens = idsContrato.length ? await db.execute<{
+    contrato_id: string; nome: string; quantidade: string; valor_unitario: string; subtotal: string;
+    familia: string | null; natureza: string | null;
+  }>(sql`
+    SELECT contrato_id::text, nome, quantidade::text, valor_unitario::text, subtotal::text,
+           service_family AS familia, revenue_nature AS natureza
+      FROM contrato_itens WHERE contrato_id IN (${sql.join(idsContrato.map((id) => sql`${id}::uuid`), sql`, `)})
+     ORDER BY created_at`) : [];
+
+  const [closer] = await db.execute<{ nome: string | null }>(sql`
+    SELECT u.nome FROM negocios n JOIN usuarios u ON u.id = n.responsavel_id
+     WHERE n.empresa_id = ${empresaId}::uuid AND n.etapa = 'ganho'
+     ORDER BY n.ganho_at ASC NULLS LAST LIMIT 1`);
+
+  const [fulfill] = await db.execute<{ n: number }>(sql`
+    SELECT count(*)::int AS n FROM fulfillments f
+     WHERE f.servico_canonico_id IN (SELECT id FROM servicos_canonicos WHERE empresa_id = ${empresaId}::uuid)
+       AND f.completed_at IS NULL AND f.cancelled_at IS NULL`);
+
+  const negocioIds = (await db.execute<{ id: string }>(sql`
+    SELECT id::text FROM negocios WHERE empresa_id = ${empresaId}::uuid`)).map((r) => r.id);
+
+  /* Anexos do Zoho ligados à empresa, aos contratos e aos negócios dela. O
+     binário só existe onde `resolveLocalPath` acha — `disponivel` é a mesma
+     regra da rota de download, então o botão não promete o que a rota recusa. */
+  const alvosAnexo = [empresaId, ...idsContrato, ...negocioIds];
+  const anexos = await db.execute<{
+    id: string; entidade_tipo: string; entidade_id: string; categoria: string | null; nome_arquivo: string;
+    tamanho_bytes: number | null; criado_em: string | null; storage_path: string | null;
+  }>(sql`
+    SELECT id::text, entidade_tipo, entidade_id::text, categoria, nome_arquivo, tamanho_bytes,
+           criado_em_original::text AS criado_em, storage_path
+      FROM anexos_legado
+     WHERE organizacao_id = ${organizacaoId}::uuid
+       AND entidade_id IN (${sql.join(alvosAnexo.map((id) => sql`${id}::uuid`), sql`, `)})
+     ORDER BY criado_em_original DESC NULLS LAST`);
+
+  const tarefas = await db.execute<{
+    id: string; titulo: string; tipo: string | null; vence_em: string | null; responsavel: string | null;
+  }>(sql`
+    WITH alvo AS (
+      SELECT id FROM tarefas WHERE empresa_id = ${empresaId}::uuid
+      UNION
+      SELECT t.id FROM tarefas t JOIN negocios n ON n.id = t.negocio_id WHERE n.empresa_id = ${empresaId}::uuid
+      UNION
+      SELECT t.id FROM tarefas t JOIN leads l ON l.id = t.lead_id WHERE l.empresa_id = ${empresaId}::uuid
+    )
+    SELECT t.id::text, t.titulo, t.tipo, COALESCE(t.vence_em, t.data_vencimento)::text AS vence_em, u.nome AS responsavel
+      FROM tarefas t JOIN alvo ON alvo.id = t.id LEFT JOIN usuarios u ON u.id = t.usuario_id
+     WHERE NOT t.concluida
+     ORDER BY COALESCE(t.vence_em, t.data_vencimento) ASC NULLS LAST LIMIT 20`);
+
+  const equipe = (await db.execute<{ nome: string }>(sql`
+    SELECT nome FROM usuarios WHERE organizacao_id = ${organizacaoId}::uuid AND ativo = true ORDER BY nome`))
+    .map((u) => u.nome);
+
+  const leadDaPessoa = Object.fromEntries((await db.execute<{ id: string; lead: string }>(sql`
+    SELECT id::text, lead_id_legado::text AS lead FROM pessoas
+     WHERE empresa_id = ${empresaId}::uuid AND lead_id_legado IS NOT NULL`)).map((r) => [r.id, r.lead]));
+
+  // "Último contato" por pessoa: a atividade mora no lead (atividades.lead_id).
+  const leadIds = [...new Set(empresa.pessoas.map((p) => p.fonte === "lead" ? p.id : leadDaPessoa[p.id]).filter(Boolean))];
+  const ultimoContatoPorLead = leadIds.length ? Object.fromEntries((await db.execute<{ lead: string; ultimo: string }>(sql`
+    SELECT lead_id::text AS lead, max(created_at)::text AS ultimo FROM atividades
+     WHERE timeline_visible AND lead_id IN (${sql.join(leadIds.map((id) => sql`${id}::uuid`), sql`, `)})
+     GROUP BY lead_id`)).map((r) => [r.lead, r.ultimo])) : {};
+
+  // Faturas: o billing agrupa por serviço e devolve as não atribuídas à
+  // parte. A tela quer a conta inteira, sem repetir.
+  const vistas = new Set<string>();
+  const faturas: FaturaResumo[] = [];
+  for (const b of [...billing.porServico, ...(billing.naoAtribuido ? [billing.naoAtribuido] : [])]) {
+    for (const f of b.faturas) if (!vistas.has(f.id)) { vistas.add(f.id); faturas.push(f); }
+  }
+  const assinaturas = [...billing.porServico, ...(billing.naoAtribuido ? [billing.naoAtribuido] : [])]
+    .map((b) => b.assinatura).filter((a): a is NonNullable<typeof a> => !!a)
+    .map((a) => ({ stripeSubscriptionId: a.stripeSubscriptionId, status: a.status, mrr: a.mrr === null ? null : Number(a.mrr) }));
+
+  return {
+    empresa,
+    clienteDesde: cli.cliente_desde,
+    servicos: servicos.map((s) => ({
+      id: s.id, familia: s.familia, produto: s.produto, valor: Number(s.valor ?? 0),
+      billingStatus: s.billing_status, lifecycle: s.lifecycle, contratoId: s.contrato_id,
+    })),
+    contratos: contratos.map((c) => ({
+      id: c.id, tipo: c.tipo, status: c.status, mrr: c.mrr === null ? null : Number(c.mrr),
+      inicio: c.inicio, vencimento: c.vencimento, codigo: c.codigo,
+      stripeSubscriptionId: c.stripe_subscription_id, familia: c.familia, produto: c.produto,
+      itens: itens.filter((i) => i.contrato_id === c.id).map((i) => ({
+        nome: i.nome, quantidade: Number(i.quantidade), valorUnitario: Number(i.valor_unitario),
+        subtotal: Number(i.subtotal), familia: i.familia, natureza: i.natureza,
+      })),
+    })),
+    faturas,
+    stripeCustomerId: billing.stripeCustomerId,
+    assinaturas,
+    health,
+    closer: closer?.nome ?? null,
+    fulfillmentAberto: (fulfill?.n ?? 0) > 0,
+    anexos: anexos.map((a) => ({
+      id: a.id, entidadeTipo: a.entidade_tipo, entidadeId: a.entidade_id, categoria: a.categoria, nome: a.nome_arquivo,
+      tamanhoBytes: a.tamanho_bytes, criadoEm: a.criado_em, disponivel: resolveLocalPath(a.storage_path) !== null,
+    })),
+    tarefas: tarefas.map((t) => ({ id: t.id, titulo: t.titulo, tipo: t.tipo, venceEm: t.vence_em, responsavel: t.responsavel })),
+    equipe,
+    timeline,
+    leadDaPessoa,
+    ultimoContatoPorLead,
+  };
+}

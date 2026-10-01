@@ -37,12 +37,17 @@ export default function HandoverConfigPage() {
 
   return (
     <div className="space-y-5 max-w-2xl">
+      {/* Nenhum processo lê esta chave de organizacoes.settings (medido
+          01/10/2026; ver `semEfeito` em ../Nav). Salvar grava, e só. */}
+      <p className="aj-aviso" role="status">
+        <strong>Ainda sem efeito:</strong> o ONFACE grava este modelo, mas nenhum processo envia o e-mail de handover no ganho. Nada sai até essa ligação existir.
+      </p>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Handshake className="w-5 h-5 text-[var(--cf2-accent)]" />
           <div>
             <h2 className="text-lg font-semibold text-[var(--cf2-text-primary)]">Handover ao ganhar negócio</h2>
-            <p className="text-xs text-[var(--cf2-text-tertiary)]">Email disparado automaticamente quando um negócio vira Ganho</p>
+            <p className="text-xs text-[var(--cf2-text-tertiary)]">E-mail de passagem para a operação quando um negócio vira Ganho</p>
           </div>
         </div>
         <button onClick={save} disabled={saving} className="cf2-btn-primary px-4 py-1.5 text-sm">{saving ? "Salvando..." : "Salvar"}</button>

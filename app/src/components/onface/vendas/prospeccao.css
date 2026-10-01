@@ -1,0 +1,245 @@
+/* Prospecção — arquétipo B (Data List), no vocabulário de `OnFace Contatos.dc.html`:
+   papel até a borda, barra de controles em pílulas de 34px, abas de estado com
+   contador, um único cartão branco com cabeçalho "título · subtítulo · total"
+   e a grade rolando DENTRO dele. Elevação sempre por anel inset, nunca border. */
+
+.pp {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--of-papel-tela);
+  font-family: var(--of-fonte);
+  color: var(--of-tinta);
+}
+
+/* ── Barra de controles ─────────────────────────────────────────────────── */
+.pp-barra {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  padding: 14px 14px 0;
+}
+.pp-busca {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: var(--of-h-controle);
+  padding: 0 11px;
+  border-radius: var(--of-r-acao);
+  background: var(--of-papel);
+  box-shadow: var(--of-anel);
+  flex: 1 1 160px;
+  max-width: 240px;
+  min-width: 140px;
+}
+.pp-busca:focus-within { box-shadow: var(--of-anel-coral); }
+.pp-busca > svg { width: 14px; height: 14px; color: var(--of-tinta-2); flex: 0 0 auto; }
+.pp-busca input { border: 0; outline: 0; background: transparent; width: 100%; min-width: 0; font-size: 13px; color: var(--of-tinta-forte); }
+.pp-busca-limpar {
+  flex: 0 0 auto; width: 20px; height: 20px; border-radius: var(--of-r-pilula); border: 0;
+  background: var(--of-calha); color: var(--of-tinta-2); display: grid; place-items: center; cursor: pointer;
+}
+.pp-busca-limpar svg { width: 10px; height: 10px; stroke-width: 2.6; }
+
+/* Filtro = select nativo vestido de pílula: acessível de graça e sem popover
+   próprio para manter. Ligado, ganha o anel grafite do protótipo. */
+.pp-filtro {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: var(--of-h-controle);
+  padding: 0 10px 0 11px;
+  border-radius: var(--of-r-acao);
+  background: var(--of-papel);
+  box-shadow: var(--of-anel);
+  color: var(--of-tinta);
+  cursor: pointer;
+}
+.pp-filtro:hover { background: var(--of-papel-hover); }
+.pp-filtro[data-on="true"] { box-shadow: inset 0 0 0 1.5px var(--of-tinta-forte); }
+.pp-filtro > svg { width: 15px; height: 15px; stroke-width: 1.8; flex: 0 0 auto; color: var(--of-tinta-2); }
+.pp-filtro select {
+  border: 0; outline: 0; background: transparent; cursor: pointer;
+  font-size: 13px; font-weight: var(--of-peso-medio); color: inherit; width: 112px; text-overflow: ellipsis;
+}
+.pp-filtro select:disabled { cursor: not-allowed; color: var(--of-tinta-4); }
+
+.pp-limpar {
+  height: var(--of-h-controle); padding: 0 10px; border-radius: var(--of-r-acao); border: 0; background: transparent;
+  font-size: var(--of-t-corpo); font-weight: var(--of-peso-semi); color: var(--of-coral-texto); cursor: pointer;
+}
+.pp-limpar:hover { background: var(--of-coral-fundo-forte); }
+.pp-mola { flex: 1; min-width: 8px; }
+
+.pp-seg {
+  display: flex; align-items: stretch; gap: 2px; height: var(--of-h-controle); padding: 3px;
+  border-radius: var(--of-r-acao); background: var(--of-calha); flex: 0 0 auto;
+}
+.pp-seg button {
+  display: flex; align-items: center; gap: 6px; padding: 0 11px; border-radius: var(--of-r-item); border: 0;
+  background: transparent; cursor: pointer; font-size: var(--of-t-corpo); font-weight: var(--of-peso-medio); color: var(--of-tinta-2);
+}
+.pp-seg button svg { width: 14px; height: 14px; }
+.pp-seg button[data-on="true"] {
+  background: var(--of-papel); color: var(--of-tinta-forte); font-weight: var(--of-peso-semi);
+  box-shadow: 0 1px 2px rgba(18, 23, 29, .08), inset 0 0 0 1px var(--of-linha);
+}
+
+.pp-secundario {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 7px; height: var(--of-h-controle); padding: 0 12px;
+  border-radius: var(--of-r-acao); border: 0; background: var(--of-papel); box-shadow: var(--of-anel);
+  font-size: 13px; font-weight: var(--of-peso-medio); color: var(--of-tinta); cursor: pointer; white-space: nowrap; text-decoration: none;
+}
+.pp-secundario:hover { background: var(--of-papel-hover); color: var(--of-tinta); }
+.pp-secundario svg { width: 15px; height: 15px; stroke-width: 1.8; }
+/* Primário em var(--of-coral-acao): o coral da marca é acento, nunca fundo de botão. */
+.pp-primario {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 7px; height: var(--of-h-controle); padding: 0 13px 0 11px;
+  border-radius: var(--of-r-acao); border: 0; background: var(--of-coral-acao); color: var(--of-papel);
+  font-size: 13px; font-weight: var(--of-peso-semi); cursor: pointer; white-space: nowrap;
+}
+.pp-primario:hover { background: var(--of-coral-acao-hover); }
+.pp-primario svg { width: 15px; height: 15px; stroke-width: 2.1; }
+
+/* ── Abas de estado ─────────────────────────────────────────────────────── */
+.pp-abas {
+  flex: 0 0 auto; display: flex; gap: 2px; flex-wrap: wrap; padding: 10px 14px 0;
+}
+.pp-abas button {
+  display: flex; align-items: center; gap: 7px; height: 30px; padding: 0 10px; border-radius: var(--of-r-controle);
+  border: 0; background: transparent; cursor: pointer; font-size: var(--of-t-corpo); font-weight: var(--of-peso-medio); color: var(--of-tinta-2);
+}
+.pp-abas button:hover { background: var(--of-papel-hover); }
+.pp-abas button[data-on="true"] { background: var(--of-papel); color: var(--of-tinta-forte); font-weight: var(--of-peso-semi); box-shadow: var(--of-anel-forte); }
+.pp-conta {
+  min-width: 22px; height: 19px; padding: 0 6px; border-radius: var(--of-r-pilula); display: grid; place-items: center;
+  background: var(--of-calha); color: var(--of-tinta-2); font-size: var(--of-t-meta-min); font-weight: var(--of-peso-forte);
+  font-variant-numeric: tabular-nums;
+}
+.pp-abas button[data-on="true"] .pp-conta { background: var(--of-tinta-forte); color: var(--of-papel); }
+.pp-abas button[data-sinal="true"] .pp-conta { background: var(--of-coral-marca); color: var(--of-papel); }
+
+.pp-aviso { padding: 10px 14px 0; }
+.pp-ok {
+  margin: 10px 14px 0; display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 12px; border-radius: var(--of-r-controle);
+  background: var(--of-canal-whatsapp-fundo); color: var(--of-canal-whatsapp-tinta); font-size: var(--of-t-corpo); font-weight: var(--of-peso-medio);
+}
+.pp-ok button { margin-left: auto; border: 0; background: transparent; color: inherit; cursor: pointer; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 6px; }
+.pp-ok button svg { width: 12px; height: 12px; }
+
+/* ── Cartão da lista ────────────────────────────────────────────────────── */
+.pp-corpo { flex: 1; min-height: 0; display: flex; padding: 10px 14px 14px; }
+.pp-cartao {
+  flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden;
+  background: var(--of-papel); border-radius: var(--of-r-superficie); box-shadow: var(--of-anel-forte);
+  animation: onface-rise .2s var(--of-curva) both;
+}
+.pp-cartao-cab {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 9px; flex-wrap: wrap; padding: 11px 14px; border-bottom: 1px solid var(--of-fio);
+}
+.pp-cartao-titulo { margin: 0; font-family: var(--of-fonte-titulo); font-size: 13px; font-weight: var(--of-peso-forte); color: var(--of-tinta-forte); white-space: nowrap; }
+.pp-cartao-sub { flex: 1; min-width: 0; font-size: 12px; color: var(--of-tinta-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pp-cartao-conta { flex: 0 0 auto; font-size: var(--of-t-meta); font-weight: var(--of-peso-semi); color: var(--of-tinta-2); white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+.pp-rolagem { flex: 1; min-height: 0; overflow: auto; }
+.pp-kanban { flex: 1; min-height: 0; overflow: auto; padding: 12px; }
+.pp-grade { min-width: 980px; }
+.pp-linha {
+  display: grid;
+  grid-template-columns: 40px minmax(240px, 2.2fr) minmax(170px, 1.5fr) 140px minmax(120px, 1fr) minmax(110px, .9fr) minmax(150px, 1.1fr);
+  align-items: center;
+  column-gap: 12px;
+  padding: 10px 14px 10px 4px;
+  min-height: 56px;
+  border-bottom: 1px solid var(--of-fio-tenue);
+  cursor: pointer;
+  transition: background var(--of-rapido);
+}
+.pp-linha:hover { background: var(--of-papel-hover); }
+.pp-linha:focus-visible { outline: 0; box-shadow: inset 0 0 0 1.5px var(--of-coral-marca); }
+.pp-linha[data-marcada="true"], .pp-linha[data-aberta="true"] { background: var(--of-selecionado); }
+.pp-linha-cab {
+  position: sticky; top: 0; z-index: 1; min-height: 38px; padding-top: 0; padding-bottom: 0; cursor: default;
+  background: var(--of-papel); border-bottom: 1px solid var(--of-fio);
+  font-size: var(--of-t-rotulo); font-weight: var(--of-peso-semi); letter-spacing: .05em; color: var(--of-tinta-2);
+}
+.pp-linha-cab:hover { background: var(--of-papel); }
+.pp-linha > span:first-child { display: grid; place-items: center; }
+.pp-check { width: 15px; height: 15px; accent-color: var(--of-tinta-forte); cursor: pointer; }
+
+.pp-nome { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.pp-nome-texto { display: flex; flex-direction: column; min-width: 0; }
+.pp-avatar {
+  flex: 0 0 auto; width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center;
+  background: var(--of-tinta-forte); color: var(--of-papel); font-family: var(--of-fonte-titulo); font-size: 12px; font-weight: var(--of-peso-forte);
+}
+.pp-principal { font-size: 13px; font-weight: var(--of-peso-semi); color: var(--of-tinta-forte); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pp-secundaria { font-size: var(--of-t-corpo); color: var(--of-tinta); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pp-apoio { font-size: var(--of-t-meta); color: var(--of-tinta-3); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pp-apoio-cel { font-size: var(--of-t-corpo); color: var(--of-tinta-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.pp-selo {
+  display: inline-flex; align-items: center; gap: 6px; height: var(--of-h-selo); padding: 0 8px; border-radius: var(--of-r-pilula);
+  background: var(--of-papel); box-shadow: var(--of-anel-forte); font-size: var(--of-t-meta-min); font-weight: var(--of-peso-semi);
+  color: var(--of-tinta); white-space: nowrap;
+}
+.pp-selo-ponto { width: 6px; height: 6px; border-radius: 50%; background: var(--of-etapa-novo); }
+.pp-selo[data-tom="contato"] .pp-selo-ponto { background: var(--of-etapa-em-contato); }
+.pp-selo[data-tom="oportunidade"] .pp-selo-ponto { background: var(--of-etapa-oportunidade); }
+.pp-selo[data-tom="qualificado"] .pp-selo-ponto { background: var(--of-etapa-qualificado); }
+.pp-selo[data-tom="nutricao"] .pp-selo-ponto { background: var(--of-etapa-nutricao); }
+.pp-selo[data-tom="desqualificado"] { color: var(--of-tinta-3); }
+
+.pp-resp { display: flex; align-items: center; gap: 7px; min-width: 0; font-size: var(--of-t-corpo); color: var(--of-tinta); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pp-avatar-mini {
+  flex: 0 0 auto; width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--of-tinta-forte); color: var(--of-papel); font-size: 8.5px; font-weight: var(--of-peso-forte);
+}
+.pp-sem { color: var(--of-tinta-4); }
+
+.pp-vazio { padding: 56px 24px; text-align: center; color: var(--of-tinta-2); }
+.pp-vazio strong { display: block; font-family: var(--of-fonte-titulo); font-size: var(--of-t-secao); color: var(--of-tinta-forte); margin-bottom: 4px; }
+.pp-vazio p { margin: 0; font-size: var(--of-t-corpo); }
+
+.pp-link { font-size: var(--of-t-corpo); font-weight: var(--of-peso-semi); color: var(--of-coral-texto); text-decoration: none; }
+.pp-link:hover { color: var(--of-coral-link-hover); }
+
+.pp-previa {
+  display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: var(--of-r-controle);
+  background: var(--of-papel-alterno); box-shadow: var(--of-anel-forte); font-size: var(--of-t-corpo); color: var(--of-tinta);
+}
+
+/* ── Barra de seleção (rodapé) ──────────────────────────────────────────── */
+.pp-selecao {
+  position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); z-index: 55; max-width: calc(100vw - 28px);
+  display: flex; align-items: center; gap: 4px; flex-wrap: wrap; padding: 6px;
+  border-radius: 11px; background: var(--of-tinta-forte); box-shadow: 0 10px 30px -6px rgba(0, 0, 0, .34);
+  animation: onface-rise .16s var(--of-curva) both;
+}
+.pp-selecao-conta {
+  min-width: 22px; height: 20px; padding: 0 6px; margin-left: 4px; border-radius: var(--of-r-pilula); display: grid; place-items: center;
+  background: var(--of-coral-marca); color: var(--of-papel); font-size: var(--of-t-meta-min); font-weight: var(--of-peso-forte); font-variant-numeric: tabular-nums;
+}
+.pp-selecao-rotulo { font-size: var(--of-t-corpo); font-weight: var(--of-peso-medio); color: var(--of-shell-tinta); padding-right: 4px; }
+.pp-selecao-fio { width: 1px; height: 20px; background: rgba(255, 255, 255, .14); margin: 0 2px; }
+.pp-selecao-acao {
+  height: 28px; padding: 0 10px; border-radius: var(--of-r-controle); border: 0; background: transparent; cursor: pointer;
+  font-size: var(--of-t-corpo); font-weight: var(--of-peso-medio); color: var(--of-shell-tinta-2); white-space: nowrap;
+}
+.pp-selecao-acao:hover:not(:disabled) { background: rgba(255, 255, 255, .12); color: var(--of-shell-tinta); }
+.pp-selecao-acao:disabled { color: var(--of-shell-pendente); cursor: not-allowed; }
+.pp-selecao-limpar {
+  width: 28px; height: 28px; border-radius: var(--of-r-controle); border: 0; background: transparent; cursor: pointer;
+  display: grid; place-items: center; color: var(--of-shell-tinta-4);
+}
+.pp-selecao-limpar:hover { background: rgba(255, 255, 255, .12); color: var(--of-shell-tinta); }
+.pp-selecao-limpar svg { width: 14px; height: 14px; }
+
+@media (max-width: 720px) {
+  .pp-busca { max-width: none; flex-basis: 100%; }
+  .pp-mola { display: none; }
+}

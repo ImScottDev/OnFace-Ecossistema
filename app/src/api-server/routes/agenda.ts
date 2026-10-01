@@ -13,6 +13,17 @@ import { getBusyTimes, createOutlookEvent, deleteOutlookEvent } from "@/lib/emai
 
 const app = new Hono();
 
+// Em "visualizar como" o ctx.userId é o usuário visualizado: qualquer mutação
+// aqui (horário, bloqueio, pausa de rodízio) gravaria na agenda DELE achando que
+// mexia na própria. Leitura segue liberada — é pra isso que o modo existe.
+app.use("*", async (c, next) => {
+  if (c.req.method !== "GET" && c.req.method !== "HEAD") {
+    const ctx = await getCtx(c);
+    if (ctx.isViewingAs) return c.json({ error: "Saia do modo visualizar como para editar a agenda" }, 403);
+  }
+  await next();
+});
+
 const horaRegex = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 const horarioSchema = z

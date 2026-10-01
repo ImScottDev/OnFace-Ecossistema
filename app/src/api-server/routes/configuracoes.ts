@@ -13,9 +13,12 @@ const app = new Hono();
 // cada uma. A tela listava três cartões, dois deles marcados "placeholder" no
 // próprio código, enquanto cinco integrações rodavam em produção sem aparecer.
 app.get("/integracoes/inventario", async (c) => {
-  await getCtx(c);
+  const ctx = await getCtx(c);
+  if (ctx.userRole !== "admin" && ctx.userRole !== "super_admin") {
+    return c.json({ error: "Forbidden" }, 403);
+  }
   const { inventarioDeIntegracoes } = await import("@/lib/integrations/inventario");
-  return c.json({ integracoes: await inventarioDeIntegracoes() });
+  return c.json({ integracoes: await inventarioDeIntegracoes(ctx.organizacaoId) });
 });
 
 // GET /configuracoes/integracoes — return integration config (key masked)

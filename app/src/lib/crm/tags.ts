@@ -18,7 +18,7 @@
  * da substituição.
  */
 import { db } from "@/lib/db";
-import { labels, entityLabels, leadLabels, contatoLabels } from "@/lib/db/schema";
+import { labels, entityLabels, leadLabels, contatoLabels, negocioLabels } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { publicarEvento } from "@/lib/events/outbox";
 
@@ -71,6 +71,10 @@ export async function adicionarTag(opts: {
   if (opts.entityType === "contato") {
     await db.insert(contatoLabels).values({ contatoId: opts.entityId, labelId: label.id }).onConflictDoNothing();
   }
+  // O board legado do CRM2 (/pipeline-crm2/board) lê de `negocio_labels`.
+  if (opts.entityType === "negocio") {
+    await db.insert(negocioLabels).values({ negocioId: opts.entityId, labelId: label.id }).onConflictDoNothing();
+  }
 
   // Evento só quando MUDOU. Publicar em no-op faria a automação disparar de
   // novo a cada reexecução de cadência.
@@ -108,6 +112,9 @@ export async function removerTag(opts: {
   }
   if (opts.entityType === "contato") {
     await db.delete(contatoLabels).where(and(eq(contatoLabels.contatoId, opts.entityId), eq(contatoLabels.labelId, label.id)));
+  }
+  if (opts.entityType === "negocio") {
+    await db.delete(negocioLabels).where(and(eq(negocioLabels.negocioId, opts.entityId), eq(negocioLabels.labelId, label.id)));
   }
 
   if (removed) {

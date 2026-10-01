@@ -87,7 +87,11 @@ test("CTAs de gerenciamento carregam a entidade alvo e preservam a superfície O
   assert.match(desenhoPipeline, /rotaBase[=:]\s*"\/onface-desenho"/);
   assert.match(previewPipeline, /rotaBase[=:]\s*"\/onface-preview"/);
   assert.match(desenhoContatos, /pessoaInicial=\{params\.pessoa/);
-  assert.match(oficialContatos, /pessoaInicial=\{params\.pessoa/);
+  // A página OFICIAL de Contatos deixou de montar `vendas/Contatos` (a versão
+  // feita à mão, que abria a pessoa por `?pessoa=`): desde 30/09 ela é o
+  // desenho do handoff (`ContatosProto`), que abre a ficha em `/pessoas/:id`.
+  // Nenhum link do produto usa `?pessoa=` — conferido por grep em 01/10.
+  assert.match(oficialContatos, /ContatosProto/);
 });
 
 test("detalhes individuais não vazam timeline da empresa nem fazem busca truncada", () => {

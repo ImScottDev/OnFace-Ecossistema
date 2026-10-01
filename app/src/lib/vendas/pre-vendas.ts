@@ -187,7 +187,7 @@ export async function criarLead(entrada: EntradaDeLead, ator: Ator): Promise<Lea
       ${empresa?.empresaId ?? null}::uuid,
       ${entrada.empresa?.nome ?? null},
       ${entrada.origem ?? entrada.touchpoint.source ?? null},
-      ${entrada.servicosInteresse ?? null},
+      ${literalDeTexto(entrada.servicosInteresse)}::text[],
       ${responsavelId}::uuid,
       'lead', 'novo', 'pending', 'novo',
       ${entrada.preQualificado ?? false},

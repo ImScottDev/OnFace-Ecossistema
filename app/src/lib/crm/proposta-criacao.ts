@@ -88,11 +88,22 @@ export async function criarPropostaComItens(opts: {
   // Esta é a última fronteira antes de persistir uma proposta. A UI e o
   // pipeline já orientam o usuário, mas outros chamadores deste núcleo não
   // podem criar uma proposta para uma oportunidade ainda sem família.
+  /* A MESMA cadeia de família que o resto do módulo usa.
+   *
+   * Lia só `negocios.service_family`, e 128 das 536 oportunidades abertas têm
+   * a família apenas na oportunidade canônica, deduzida no backfill. O efeito
+   * era cruel: o cartão mostrava "Callface AI", o Builder mostrava "Definido
+   * pela oportunidade", e ao salvar o command dizia para definir a família que
+   * já estava ali.
+   *
+   * `pipeline.carregarOportunidade` e `consultas.ts` já resolviam assim; esta
+   * era a única porta que olhava um lado só. */
   const [negocio] = await db.execute<{ service_family: string | null }>(sql`
-    SELECT service_family
-      FROM negocios
-     WHERE id = ${opts.negocioId}::uuid
-       AND organizacao_id = ${opts.organizacaoId}::uuid
+    SELECT COALESCE(n.service_family, o.service_family) AS service_family
+      FROM negocios n
+      LEFT JOIN oportunidades o ON o.negocio_id_legado = n.id
+     WHERE n.id = ${opts.negocioId}::uuid
+       AND n.organizacao_id = ${opts.organizacaoId}::uuid
   `);
   if (!negocio) {
     throw new RegraDeNegocio("oportunidade_nao_encontrada", "Oportunidade não encontrada.");

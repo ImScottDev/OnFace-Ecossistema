@@ -1,18 +1,10 @@
-import { ModuloPendente } from "@/components/crm2/ModuloPendente";
+import { redirect } from "next/navigation";
 
-export const metadata = { title: "Carteira" };
-
-/** Destino estrutural da árvore de navegação congelada em 16/09.
- *  O módulo ainda não foi construído: a página não simula funcionalidade. */
-export default function ClientesCarteiraPage() {
-  return (
-    <ModuloPendente
-      titulo="Carteira"
-      resumo="A base ativa vista como carteira: quem atende cada conta, quanto ela pesa e desde quando é cliente."
-      dependencias={[
-            "Atribuir o dono da conta: clientes.responsavel_cs_id existe e está vazio nas 275 contas. É atribuição de gente, não campo faltando",
-            "Definir o critério de segmentação da carteira",
-      ]}
-    />
-  );
+/**
+ * A Carteira existe: é a aba "Carteira" do Customer Success (`/clientes/cs`),
+ * com as contas ativas, MRR, saúde e responsável. Este endereço era um
+ * placeholder de módulo e vira redirect para ela.
+ */
+export default function ClientesCarteiraRedirect() {
+  redirect("/clientes/cs?aba=carteira");
 }

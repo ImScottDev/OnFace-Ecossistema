@@ -5,15 +5,12 @@ import { useMemo, useState } from "react";
 import {
   AlertCircle, ArrowRight, ArrowUpRight, Bell, Briefcase, CalendarDays,
   CheckCircle2, ChevronRight, CircleDashed, Clock, DollarSign, Headphones,
-  Copy, LifeBuoy, ListChecks, MessageCircle, MoreVertical, Plus, Rocket, Sprout,
-  TrendingUp, UserPlus, Users, Video, Wallet, Wrench, X,
+  LifeBuoy, ListChecks, Plus, Rocket,
+  TrendingUp, Users, Video, Wallet, Wrench, X,
 } from "lucide-react";
 import { OnfacePage, OnfacePageBand, OnfacePageSurface } from "../shell/OnfacePage";
-import {
-  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
-} from "@/components/ui/dialog";
 import type {
-  AbaPainel, Agenda, CompromissoAgenda, DadosVisaoGeral, EstadoEtapa, Grafico,
+  AbaPainel, Agenda, DadosVisaoGeral, EstadoEtapa, Grafico,
   JornadaChave, MetaMes, Metrica, Operacao, Pendencia, Pendencias,
 } from "./types";
 import "./visao-geral.css";
@@ -33,7 +30,8 @@ const ICONES_AREA = {
 } as const;
 
 
-const COR_SERIE = { coral: "#fe4f2b", azul: "#3b82f6", cinza: "#8b949e" } as const;
+// Cores das séries vêm dos tokens do .ovg (visao-geral.css), não de hex solto.
+const COR_SERIE = { coral: "var(--ovg-coral)", azul: "var(--ovg-serie-azul)", cinza: "var(--ovg-ink-muted)" } as const;
 
 /* Selos padronizados.
  *
@@ -201,7 +199,7 @@ function GraficoEvolucao({ grafico, meta }: { grafico: Grafico; meta: MetaMes | 
                 cy={VB.padTop + alturaUtil * (1 - valor)}
                 r={foco === i ? 5 : 3.5}
                 fill={COR_SERIE[serie.cor]}
-                stroke="#161b22"
+                stroke="var(--ovg-raised)"
                 strokeWidth={2}
               />
             )),
@@ -292,10 +290,10 @@ function GraficoEvolucao({ grafico, meta }: { grafico: Grafico; meta: MetaMes | 
 
 function Assistente({
   dados,
-  aoVerPrioridades,
+  aoVerPendencias,
 }: {
   dados: DadosVisaoGeral["assistente"];
-  aoVerPrioridades: () => void;
+  aoVerPendencias: () => void;
 }) {
   return (
     <aside className="ovg-assistant" data-rise style={{ "--ovg-delay": 6 } as React.CSSProperties}>
@@ -308,7 +306,8 @@ function Assistente({
         <div className="ovg-assistant-avatar">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/onface/oni/oni-avatar.png" alt="" aria-hidden />
-          <span className="ovg-assistant-online" aria-hidden />
+          {/* Sem bolinha verde de "online": o runtime do NEXO não existe, e
+              status inventado é o mesmo problema dos botões sem ação. */}
         </div>
         <div>
           <h2 className="ovg-assistant-name">{dados.nome}</h2>
@@ -324,7 +323,7 @@ function Assistente({
         <b>{dados.destaqueQuantidade}</b> {dados.destaqueTexto}
       </p>
 
-      <button type="button" className="ovg-assistant-cta" onClick={aoVerPrioridades}>
+      <button type="button" className="ovg-assistant-cta" onClick={aoVerPendencias}>
         {dados.ctaLabel}
         <ArrowRight size={18} strokeWidth={2.25} aria-hidden />
       </button>
@@ -342,8 +341,8 @@ function Assistente({
        * `dados.acoes` continua vindo do servidor e volta a ser renderizado
        * junto com as ações de verdade.
        *
-       * O CTA principal acima FICA: `aoVerPrioridades` funciona e leva à aba
-       * de prioridades, que é dado real. */}
+       * O CTA principal acima FICA: `aoVerPendencias` funciona e leva à aba
+       * de pendências, que é dado real. */}
     </aside>
   );
 }
@@ -363,7 +362,7 @@ function DetalheOperacao({ operacao }: { operacao: Operacao }) {
           <h2 className="ovg-panel-title">{detalhe.tituloCard}</h2>
           <p className="ovg-panel-sub">{detalhe.subtituloCard}</p>
         </div>
-        <Link className="ovg-ghost-btn" href="/clientes">
+        <Link className="ovg-ghost-btn" href={operacao.href}>
           Abrir registro
           <ArrowUpRight size={14} strokeWidth={2} aria-hidden />
         </Link>
@@ -467,303 +466,14 @@ const ICONES_COMPROMISSO = {
   interna: Users,
 } as const;
 
-const ROTULO_STATUS = {
-  confirmado: "Confirmado",
-  pendente: "Aguardando",
-  cancelado: "Cancelado",
-  "no-show": "No-show",
-} as const;
-
-const ESTADO_SELO_STATUS = {
-  confirmado: "concluida",
-  pendente: "aguardando",
-  cancelado: "alerta",
-  "no-show": "alerta",
-} as const;
-
-type ModoCompromisso = "detalhe" | "reagendar" | "participante" | "lembrete" | "cancelar";
-
-/** Ações de um compromisso.
+/** Agenda do dia.
  *
- * O compromisso vive no calendário do Microsoft 365; esta janela é o controle
- * remoto dele. Cancelamento por parte do cliente não é só "cancelado": é o
- * evento que alimenta a régua de no-show, por isso a pergunta de quem cancelou
- * é obrigatória em vez de opcional. */
-function JanelaCompromisso({
-  compromisso, aoFechar, aoAtualizar,
-}: {
-  compromisso: CompromissoAgenda;
-  aoFechar: () => void;
-  aoAtualizar: (mudanca: Partial<CompromissoAgenda>) => void;
-}) {
-  const [modo, setModo] = useState<ModoCompromisso>("detalhe");
-  const [aviso, setAviso] = useState<string | null>(null);
-  const [data, setData] = useState(compromisso.data);
-  const [hora, setHora] = useState(compromisso.hora);
-  const [nomeNovo, setNomeNovo] = useState("");
-  const [emailNovo, setEmailNovo] = useState("");
-  const [motivo, setMotivo] = useState("");
-  const [quemCancelou, setQuemCancelou] = useState<"cliente" | "equipe">("cliente");
-
-  const contato = compromisso.contatoCliente;
-  const encerrado = compromisso.status === "cancelado" || compromisso.status === "no-show";
-
-  const copiarLink = async () => {
-    if (!compromisso.linkReuniao) return;
-    try {
-      await navigator.clipboard.writeText(compromisso.linkReuniao);
-      setAviso("Link copiado.");
-    } catch {
-      setAviso("Não consegui copiar. Copie manualmente pelo campo acima.");
-    }
-  };
-
-  const mensagemLembrete = contato
-    ? `Olá, ${contato.nome.split(" ")[0]}. Passando para confirmar nossa ${compromisso.titulo.toLowerCase()} ${compromisso.data === new Date().toISOString().slice(0, 10) ? "hoje" : "amanhã"} às ${compromisso.hora}.`
-    : "";
-
-  const adicionarParticipante = (evento: React.FormEvent) => {
-    evento.preventDefault();
-    const nome = nomeNovo.trim();
-    const email = emailNovo.trim();
-    if (!nome || !email) return;
-    const iniciais = nome.split(" ").filter(Boolean).slice(0, 2).map((p) => p[0]).join("").toUpperCase();
-    aoAtualizar({
-      participantes: [
-        ...compromisso.participantes,
-        { id: `p-${Date.now()}`, nome, email, iniciais, externo: !email.endsWith("@callface.ai"), confirmado: false },
-      ],
-    });
-    setNomeNovo("");
-    setEmailNovo("");
-    setAviso(`Convite para ${nome} enviado pelo calendário.`);
-    setModo("detalhe");
-  };
-
-  const reagendar = (evento: React.FormEvent) => {
-    evento.preventDefault();
-    aoAtualizar({ data, hora, status: "pendente" });
-    setAviso("Novo horário proposto. Os participantes precisam confirmar de novo.");
-    setModo("detalhe");
-  };
-
-  const cancelar = (evento: React.FormEvent) => {
-    evento.preventDefault();
-    aoAtualizar({
-      // Cancelamento do cliente é no-show: é esse registro que alimenta a régua
-      // de recuperação, e não pode virar um "cancelado" genérico.
-      status: quemCancelou === "cliente" ? "no-show" : "cancelado",
-      cancelamento: { por: quemCancelou, motivo: motivo.trim() || "Sem motivo informado", quando: "agora" },
-    });
-    setAviso(
-      quemCancelou === "cliente"
-        ? "Cancelado pelo cliente e registrado como no-show."
-        : "Reunião cancelada. Os participantes serão avisados.",
-    );
-    setModo("detalhe");
-  };
-
-  return (
-    <Dialog open onOpenChange={(estado) => { if (!estado) aoFechar(); }}>
-      <DialogContent className="ovg-janela" showCloseButton={false}>
-        <DialogHeader className="ovg-janela-head">
-          <div>
-            <span className="ovg-selo" data-estado={ESTADO_SELO_STATUS[compromisso.status]}>
-              {ROTULO_STATUS[compromisso.status]}
-            </span>
-            <DialogTitle className="ovg-janela-titulo">{compromisso.titulo}</DialogTitle>
-            <DialogDescription className="ovg-janela-sub">
-              {compromisso.cliente} · {compromisso.hora} · {compromisso.duracao}
-            </DialogDescription>
-          </div>
-          <button type="button" className="ovg-fechar" onClick={aoFechar} aria-label="Fechar">
-            <X size={15} strokeWidth={2} aria-hidden />
-          </button>
-        </DialogHeader>
-
-        {compromisso.cancelamento ? (
-          <p className="ovg-janela-cancelado">
-            {compromisso.cancelamento.por === "cliente" ? "Cancelado pelo cliente" : "Cancelado pela equipe"}
-            {" · "}{compromisso.cancelamento.motivo}
-          </p>
-        ) : (
-          <p className="ovg-janela-desc">{compromisso.descricao}</p>
-        )}
-
-        {modo === "detalhe" ? (
-          <>
-            <div className="ovg-janela-participantes">
-              <p className="ovg-progresso-titulo">
-                Participantes
-                <span>{compromisso.participantes.length}</span>
-              </p>
-              <ul>
-                {compromisso.participantes.map((pessoa) => (
-                  <li key={pessoa.id}>
-                    <span className="ovg-avatar-mini">{pessoa.iniciais}</span>
-                    <span className="ovg-part-nome">
-                      {pessoa.nome}
-                      <small>{pessoa.email}</small>
-                    </span>
-                    <span className="ovg-part-tag" data-externo={pessoa.externo}>
-                      {pessoa.externo ? "Cliente" : "Interno"}
-                    </span>
-                    <span className="ovg-part-status" data-ok={pessoa.confirmado}>
-                      {pessoa.confirmado ? "Confirmou" : "Sem resposta"}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            {compromisso.linkReuniao ? (
-              <div className="ovg-janela-link">
-                <span>{compromisso.linkReuniao}</span>
-                <button type="button" onClick={copiarLink}>
-                  <Copy size={13} strokeWidth={2} aria-hidden />
-                  Copiar
-                </button>
-              </div>
-            ) : (
-              <p className="ovg-sem-sinal">Compromisso presencial, sem link de reunião.</p>
-            )}
-
-            <div className="ovg-janela-acoes">
-              {compromisso.linkReuniao && !encerrado ? (
-                <a className="ovg-acao-btn" href={compromisso.linkReuniao} target="_blank" rel="noreferrer">
-                  <Video size={14} strokeWidth={2} aria-hidden />
-                  Entrar na reunião
-                </a>
-              ) : null}
-              <button type="button" className="ovg-ghost-btn" onClick={() => setModo("participante")} disabled={encerrado}>
-                <UserPlus size={13} strokeWidth={2} aria-hidden />
-                Incluir participante
-              </button>
-              <button type="button" className="ovg-ghost-btn" onClick={() => setModo("reagendar")} disabled={encerrado}>
-                <CalendarDays size={13} strokeWidth={2} aria-hidden />
-                Alterar data e hora
-              </button>
-              {contato ? (
-                <button type="button" className="ovg-ghost-btn" onClick={() => setModo("lembrete")} disabled={encerrado}>
-                  <MessageCircle size={13} strokeWidth={2} aria-hidden />
-                  Lembrete no WhatsApp
-                </button>
-              ) : null}
-              <button type="button" className="ovg-ghost-btn ovg-btn-perigo" onClick={() => setModo("cancelar")} disabled={encerrado}>
-                <X size={13} strokeWidth={2} aria-hidden />
-                Cancelar reunião
-              </button>
-            </div>
-          </>
-        ) : null}
-
-        {modo === "participante" ? (
-          <form className="ovg-janela-form" onSubmit={adicionarParticipante}>
-            <label>
-              Nome
-              <input value={nomeNovo} onChange={(e) => setNomeNovo(e.target.value)} placeholder="Nome de quem entra" />
-            </label>
-            <label>
-              E-mail
-              <input value={emailNovo} onChange={(e) => setEmailNovo(e.target.value)} placeholder="email@empresa.com" type="email" />
-            </label>
-            <div className="ovg-janela-acoes">
-              <button type="submit" className="ovg-acao-btn" disabled={!nomeNovo.trim() || !emailNovo.trim()}>Convidar</button>
-              <button type="button" className="ovg-ghost-btn" onClick={() => setModo("detalhe")}>Voltar</button>
-            </div>
-          </form>
-        ) : null}
-
-        {modo === "reagendar" ? (
-          <form className="ovg-janela-form" onSubmit={reagendar}>
-            <label>
-              Data
-              <input type="date" value={data} onChange={(e) => setData(e.target.value)} />
-            </label>
-            <label>
-              Hora
-              <input type="time" value={hora} onChange={(e) => setHora(e.target.value)} />
-            </label>
-            <p className="ovg-janela-nota">
-              Ao mudar o horário, o convite volta para aguardando e todo mundo confirma de novo.
-            </p>
-            <div className="ovg-janela-acoes">
-              <button type="submit" className="ovg-acao-btn">Propor novo horário</button>
-              <button type="button" className="ovg-ghost-btn" onClick={() => setModo("detalhe")}>Voltar</button>
-            </div>
-          </form>
-        ) : null}
-
-        {modo === "lembrete" && contato ? (
-          <div className="ovg-janela-form">
-            <p className="ovg-janela-nota">
-              Vai para {contato.nome} ({contato.telefone}).
-            </p>
-            <p className="ovg-janela-preview">{mensagemLembrete}</p>
-            <div className="ovg-janela-acoes">
-              <a
-                className="ovg-acao-btn"
-                href={`https://wa.me/${contato.telefone.replace(/\D/g, "")}?text=${encodeURIComponent(mensagemLembrete)}`}
-                target="_blank"
-                rel="noreferrer"
-                onClick={() => { setAviso("Lembrete aberto no WhatsApp."); setModo("detalhe"); }}
-              >
-                <MessageCircle size={14} strokeWidth={2} aria-hidden />
-                Abrir no WhatsApp
-              </a>
-              <button type="button" className="ovg-ghost-btn" onClick={() => setModo("detalhe")}>Voltar</button>
-            </div>
-          </div>
-        ) : null}
-
-        {modo === "cancelar" ? (
-          <form className="ovg-janela-form" onSubmit={cancelar}>
-            <fieldset className="ovg-janela-escolha">
-              <legend>Quem cancelou?</legend>
-              <label data-marcado={quemCancelou === "cliente"}>
-                <input type="radio" name="quem" checked={quemCancelou === "cliente"} onChange={() => setQuemCancelou("cliente")} />
-                O cliente
-                <small>Entra como no-show no histórico da conta.</small>
-              </label>
-              <label data-marcado={quemCancelou === "equipe"}>
-                <input type="radio" name="quem" checked={quemCancelou === "equipe"} onChange={() => setQuemCancelou("equipe")} />
-                Nós
-                <small>Cancelamento interno, sem no-show.</small>
-              </label>
-            </fieldset>
-            <label>
-              Motivo
-              <input value={motivo} onChange={(e) => setMotivo(e.target.value)} placeholder="O que aconteceu" />
-            </label>
-            <div className="ovg-janela-acoes">
-              <button type="submit" className="ovg-acao-btn ovg-btn-perigo-cheio">Confirmar cancelamento</button>
-              <button type="button" className="ovg-ghost-btn" onClick={() => setModo("detalhe")}>Voltar</button>
-            </div>
-          </form>
-        ) : null}
-
-        {aviso ? <p className="ovg-janela-aviso" role="status">{aviso}</p> : null}
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-/** Espelho do calendário do Microsoft 365. */
+ * Cada linha leva para onde o compromisso é tratado (registro da reunião ou a
+ * gaveta da atividade). A janela que existia aqui reagendava, cancelava e
+ * convidava só no estado do navegador — o reload desfazia tudo, e nada chegava
+ * ao banco nem ao calendário. Botão que finge salvar é pior que botão nenhum. */
 function PainelAgenda({ agenda }: { agenda: Agenda }) {
-  const [blocos, setBlocos] = useState(agenda.blocos);
-  const [abertoId, setAbertoId] = useState<string | null>(null);
-
-  const aberto = blocos.flatMap((b) => b.compromissos).find((c) => c.id === abertoId) ?? null;
-
-  const atualizar = (id: string, mudanca: Partial<CompromissoAgenda>) => {
-    setBlocos((atual) =>
-      atual.map((bloco) => ({
-        ...bloco,
-        compromissos: bloco.compromissos.map((c) => (c.id === id ? { ...c, ...mudanca } : c)),
-      })),
-    );
-  };
-
+  const vazia = agenda.blocos.every((b) => b.compromissos.length === 0);
   return (
     <div className="ovg-agenda">
       <section className="ovg-card ovg-agenda-lista">
@@ -775,50 +485,40 @@ function PainelAgenda({ agenda }: { agenda: Agenda }) {
           <Link className="ovg-table-link" href={agenda.linkHref}>{agenda.linkLabel} ›</Link>
         </header>
 
-        <div className="ovg-agenda-blocos">
-          {blocos.map((bloco) => (
-            <div key={bloco.chave} className="ovg-agenda-bloco">
-              <p className="ovg-agenda-dia">
-                {bloco.label}
-                <span>{bloco.apoio}</span>
-              </p>
-              {bloco.compromissos.map((item) => {
-                const Icone = ICONES_COMPROMISSO[item.tipo];
-                const encerrado = item.status === "cancelado" || item.status === "no-show";
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    className="ovg-compromisso"
-                    data-encerrado={encerrado}
-                    onClick={() => setAbertoId(item.id)}
-                  >
-                    <span className="ovg-compromisso-hora">
-                      <strong>{item.hora}</strong>
-                      <small>{item.duracao}</small>
-                    </span>
-                    <span className="ovg-compromisso-corpo">
-                      <span className="ovg-compromisso-titulo">{item.titulo}</span>
-                      <span className="ovg-compromisso-meta">
-                        <Icone size={12} strokeWidth={2} aria-hidden />
-                        {item.cliente}
-                        {item.online ? " · online" : " · presencial"}
+        {vazia ? (
+          <p className="ovg-empty">Nada na sua agenda hoje: nenhuma reunião marcada e nenhuma tarefa vencendo.</p>
+        ) : (
+          <div className="ovg-agenda-blocos">
+            {agenda.blocos.map((bloco) => (
+              <div key={bloco.chave} className="ovg-agenda-bloco">
+                <p className="ovg-agenda-dia">
+                  {bloco.label}
+                  <span>{bloco.apoio}</span>
+                </p>
+                {bloco.compromissos.map((item) => {
+                  const Icone = ICONES_COMPROMISSO[item.tipo];
+                  return (
+                    <Link key={item.id} href={item.href} className="ovg-compromisso">
+                      <span className="ovg-compromisso-hora">
+                        <strong>{item.hora}</strong>
                       </span>
-                    </span>
-                    <span className="ovg-compromisso-gente" aria-hidden>
-                      {item.participantes.slice(0, 3).map((pessoa) => (
-                        <span key={pessoa.id} className="ovg-avatar-mini">{pessoa.iniciais}</span>
-                      ))}
-                    </span>
-                    <span className="ovg-selo" data-estado={ESTADO_SELO_STATUS[item.status]}>
-                      {ROTULO_STATUS[item.status]}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          ))}
-        </div>
+                      <span className="ovg-compromisso-corpo">
+                        <span className="ovg-compromisso-titulo">{item.titulo}</span>
+                        <span className="ovg-compromisso-meta">
+                          <Icone size={12} strokeWidth={2} aria-hidden />
+                          {item.descricao}
+                        </span>
+                      </span>
+                      <span className="ovg-selo" data-estado={item.atrasado ? "alerta" : "aguardando"}>
+                        {item.atrasado ? "Atrasado" : "Hoje"}
+                      </span>
+                    </Link>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        )}
       </section>
 
       <div className="ovg-agenda-lado">
@@ -826,20 +526,18 @@ function PainelAgenda({ agenda }: { agenda: Agenda }) {
           <section className="ovg-detail ovg-proximo">
             <p className="ovg-proximo-rotulo">{agenda.proximo.rotulo}</p>
             <h3 className="ovg-proximo-titulo">{agenda.proximo.titulo}</h3>
-            <p className="ovg-proximo-cliente">{agenda.proximo.cliente}</p>
+            <p className="ovg-proximo-cliente">{agenda.proximo.apoio}</p>
             <p className="ovg-proximo-quando">
               <CalendarDays size={14} strokeWidth={2} aria-hidden />
               {agenda.proximo.quando}
             </p>
-            <div className="ovg-proximo-gente">
-              {agenda.proximo.participantes.map((pessoa) => (
-                <span key={pessoa}>{pessoa}</span>
-              ))}
-            </div>
-            <button type="button" className="ovg-assistant-cta ovg-proximo-cta" onClick={() => setAbertoId("ag-1")}>
+            <Link
+              className="ovg-assistant-cta ovg-proximo-cta"
+              href={agenda.blocos.flatMap((b) => b.compromissos).find((c) => c.id === agenda.proximo?.id)?.href ?? agenda.linkHref}
+            >
               Abrir compromisso
               <ArrowRight size={16} strokeWidth={2.25} aria-hidden />
-            </button>
+            </Link>
           </section>
         ) : null}
 
@@ -855,14 +553,6 @@ function PainelAgenda({ agenda }: { agenda: Agenda }) {
           </div>
         </section>
       </div>
-
-      {aberto ? (
-        <JanelaCompromisso
-          compromisso={aberto}
-          aoFechar={() => setAbertoId(null)}
-          aoAtualizar={(mudanca) => atualizar(aberto.id, mudanca)}
-        />
-      ) : null}
     </div>
   );
 }
@@ -894,6 +584,10 @@ function PainelPendencias({ pendencias }: { pendencias: Pendencias }) {
           <span>Responsável</span>
           <span>Ação</span>
         </div>
+
+        {pendencias.itens.length === 0 ? (
+          <p className="ovg-empty">Nenhum sinal de atenção aberto na operação agora.</p>
+        ) : null}
 
         <div className="ovg-pend-linhas">
           {pendencias.itens.map((p) => {
@@ -934,9 +628,9 @@ function PainelPendencias({ pendencias }: { pendencias: Pendencias }) {
                     )}
                   </span>
                 </button>
+                {/* O "⋮" ao lado saiu: era um ícone sem menu nenhum por trás. */}
                 <span className="ovg-pend-acao">
                   <Link className="ovg-acao-btn" href={p.acaoHref}>{p.acaoLabel}</Link>
-                  <span className="ovg-acao-mais" aria-hidden><MoreVertical size={14} strokeWidth={2} /></span>
                 </span>
               </div>
             );
@@ -991,17 +685,20 @@ function ResumoAtividade({ pendencia, aoFechar }: { pendencia: Pendencia; aoFech
         ))}
       </div>
 
-      <div className="ovg-atividade-bloco">
-        <p className="ovg-progresso-titulo">Histórico</p>
-        <ol className="ovg-historico">
-          {detalhe.historico.map((h) => (
-            <li key={h.quando}>
-              <span className="ovg-historico-quando">{h.quando}</span>
-              <span className="ovg-historico-texto">{h.texto}</span>
-            </li>
-          ))}
-        </ol>
-      </div>
+      {/* Sinal calculado não tem histórico próprio: sem linhas, sem bloco. */}
+      {detalhe.historico.length ? (
+        <div className="ovg-atividade-bloco">
+          <p className="ovg-progresso-titulo">Histórico</p>
+          <ol className="ovg-historico">
+            {detalhe.historico.map((h) => (
+              <li key={h.quando}>
+                <span className="ovg-historico-quando">{h.quando}</span>
+                <span className="ovg-historico-texto">{h.texto}</span>
+              </li>
+            ))}
+          </ol>
+        </div>
+      ) : null}
 
       <div className="ovg-insight">
         <MarcaNexo />
@@ -1011,14 +708,13 @@ function ResumoAtividade({ pendencia, aoFechar }: { pendencia: Pendencia; aoFech
         </div>
       </div>
 
-      <p className="ovg-atividade-rodape">
-        Criada em {detalhe.criadaEm} por {detalhe.criadaPor} · atualizada {detalhe.atualizadaEm}
-      </p>
+      <p className="ovg-atividade-rodape">{detalhe.origem}</p>
 
       <div className="ovg-atividade-acoes">
         <Link className="ovg-acao-btn" href={pendencia.acaoHref}>{pendencia.acaoLabel}</Link>
         <Link className="ovg-ghost-btn" href={detalhe.vinculo.href}>
-          Abrir {detalhe.vinculo.tipo.toLowerCase()} completo
+          Abrir {detalhe.vinculo.tipo.toLowerCase()}{" "}
+          {detalhe.vinculo.tipo === "Lista" || detalhe.vinculo.tipo === "Entrega" ? "completa" : "completo"}
           <ArrowUpRight size={13} strokeWidth={2} aria-hidden />
         </Link>
       </div>
@@ -1032,8 +728,9 @@ export function VisaoGeral({ dados }: { dados: DadosVisaoGeral }) {
 
   const operacaoAtiva = dados.operacoes.find((o) => o.id === selecionada) ?? dados.operacoes[0];
 
-  const verPrioridades = () => {
-    setAba("prioridades");
+  // O número do assistente conta pendências, então o CTA abre essa aba.
+  const verPendencias = () => {
+    setAba("pendencias");
     document.getElementById("operacoes")?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
@@ -1100,7 +797,7 @@ export function VisaoGeral({ dados }: { dados: DadosVisaoGeral }) {
             </div>
           </div>
 
-          <Assistente dados={dados.assistente} aoVerPrioridades={verPrioridades} />
+          <Assistente dados={dados.assistente} aoVerPendencias={verPendencias} />
         </div>
       </OnfacePageBand>
 
@@ -1157,7 +854,8 @@ export function VisaoGeral({ dados }: { dados: DadosVisaoGeral }) {
 
             <section className="ovg-card">
               <h2 className="ovg-card-title">Operações prioritárias</h2>
-              <p className="ovg-card-sub">Suas operações mais relevantes no momento.</p>
+              {/* A consulta é da organização inteira, não do usuário logado. */}
+              <p className="ovg-card-sub">Operações vencidas ou paradas da operação.</p>
 
               <div className="ovg-table">
                 <div className="ovg-table-head" aria-hidden>
@@ -1168,6 +866,9 @@ export function VisaoGeral({ dados }: { dados: DadosVisaoGeral }) {
                 </div>
 
                 <div className="ovg-rows">
+                  {dados.operacoes.length === 0 ? (
+                    <p className="ovg-empty">Nenhuma operação vencida ou parada agora.</p>
+                  ) : null}
                   {dados.operacoes.map((operacao) => (
                     <button
                       key={operacao.id}
@@ -1190,11 +891,16 @@ export function VisaoGeral({ dados }: { dados: DadosVisaoGeral }) {
 
                 <footer className="ovg-table-foot">
                   <span className="ovg-table-contagem">
-                    {dados.operacoes.length} operações em acompanhamento
+                    {/* A lista vem com LIMIT 9: o número é o recorte exibido, não um total. */}
+                    {dados.operacoes.length === 1
+                      ? "Mostrando a mais urgente"
+                      : `Mostrando as ${dados.operacoes.length} mais urgentes`}
                   </span>
-                  <Link className="ovg-table-link" href={dados.listaCompleta.href}>
-                    {dados.listaCompleta.label} ›
-                  </Link>
+                  {dados.listaCompleta ? (
+                    <Link className="ovg-table-link" href={dados.listaCompleta.href}>
+                      {dados.listaCompleta.label} ›
+                    </Link>
+                  ) : null}
                 </footer>
               </div>
             </section>

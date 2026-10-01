@@ -1,13 +1,14 @@
 "use client";
 
 import { PaginaCabecalho } from "@/components/onface/shell/Pagina";
+import "@/components/onface/ajustes/ajustes.css";
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import {
   ArrowLeft, Bell, Bot, Building2, FileText, Handshake, Key, KeyRound, Kanban, LineChart,
-  Mail, MessageCircle, Package, Settings, ShieldCheck, SlidersHorizontal, Sparkles, Target,
+  Lock, Mail, MessageCircle, Package, Settings, ShieldCheck, SlidersHorizontal, Sparkles, Target,
   UserCog, Users,
 } from "lucide-react";
 
@@ -17,10 +18,6 @@ import {
  * A navegação virou coluna lateral em vez da faixa horizontal de 15 abas que
  * existia antes: com 15 destinos, a faixa quebrava em duas linhas e a aba
  * ativa se perdia. Coluna cabe todas de uma vez, agrupadas por assunto.
- *
- * O hub (`/ajustes`) continua sendo a porta de entrada com os cards
- * descritivos; esta coluna é pra navegar ENTRE as telas depois de já estar
- * dentro — por isso não aparece no próprio hub.
  */
 
 type ItemAjuste = {
@@ -29,15 +26,23 @@ type ItemAjuste = {
   icon: typeof Settings;
   /** Só aparece na coluna para `super_admin` (a tela repete a checagem). */
   superAdmin?: boolean;
+  /**
+   * Tela que grava em `organizacoes.settings` uma chave que NENHUM processo lê
+   * (medido 01/10/2026: só `preVendas` tem leitor, em lib/vendas/pre-vendas.ts).
+   * Fica fora da coluna para não ser oferecida como ajuste que funciona; a rota
+   * continua viva (deep-link, dado já salvo) e a própria tela avisa.
+   */
+  semEfeito?: boolean;
 };
 
 export const GRUPOS: { titulo: string; itens: ItemAjuste[] }[] = [
   {
-    titulo: "Organização",
+    titulo: "Organização e acesso",
     itens: [
       { label: "Geral", href: "/ajustes/geral", icon: Settings },
       { label: "Membros", href: "/ajustes/membros", icon: UserCog },
-      { label: "Notificações", href: "/ajustes/notificacoes", icon: Bell },
+      { label: "Permissões", href: "/ajustes/permissoes", icon: Lock },
+      { label: "Notificações", href: "/ajustes/notificacoes", icon: Bell, semEfeito: true },
     ],
   },
   {
@@ -46,8 +51,8 @@ export const GRUPOS: { titulo: string; itens: ItemAjuste[] }[] = [
       { label: "Pipeline", href: "/ajustes/pipeline", icon: Kanban },
       { label: "Leads", href: "/ajustes/leads", icon: Users },
       { label: "Campos custom", href: "/ajustes/campos-custom", icon: SlidersHorizontal },
-      { label: "ICP", href: "/ajustes/icp", icon: Target },
-      { label: "Handover", href: "/ajustes/handover", icon: Handshake },
+      { label: "ICP", href: "/ajustes/icp", icon: Target, semEfeito: true },
+      { label: "Handover", href: "/ajustes/handover", icon: Handshake, semEfeito: true },
     ],
   },
   {
@@ -70,8 +75,8 @@ export const GRUPOS: { titulo: string; itens: ItemAjuste[] }[] = [
     titulo: "Inteligência e dados",
     itens: [
       { label: "AI SDR", href: "/ajustes/ai-sdr", icon: Bot },
-      { label: "Enriquecimento", href: "/ajustes/enriquecimento", icon: Sparkles },
-      { label: "Tracking", href: "/ajustes/tracking", icon: LineChart },
+      { label: "Enriquecimento", href: "/ajustes/enriquecimento", icon: Sparkles, semEfeito: true },
+      { label: "Tracking", href: "/ajustes/tracking", icon: LineChart, semEfeito: true },
       { label: "Integrações", href: "/ajustes/integracoes", icon: Key },
       { label: "Tokens da API", href: "/ajustes/api-tokens", icon: KeyRound },
     ],
@@ -99,58 +104,67 @@ export function itemAtualDeAjustes(pathname: string): ItemAjuste | undefined {
     .sort((a, b) => b.href.length - a.href.length)[0];
 }
 
-export function AjustesNav() {
+/**
+ * Casca de Ajustes no arquétipo H: coluna de seções + conteúdo.
+ *
+ * Mudou em 01/10/2026: a coluna agora aparece também no índice. Antes o índice
+ * escondia a coluna e repetia os mesmos destinos como cartões — duas listas do
+ * mesmo conteúdo, e a coluna sumindo e voltando a cada clique. Agora a coluna é
+ * fixa e o índice usa o espaço para o ESTADO da organização.
+ *
+ * Abaixo de 1024px a coluna só aparece no índice (lá ela É a lista de seções);
+ * dentro de uma seção fica só o "voltar", para o formulário ter a largura toda.
+ */
+export function AjustesCasca({ children, gestao }: { children: React.ReactNode; gestao: boolean }) {
+  const pathname = usePathname();
+  const indice = pathname === "/ajustes";
+  if (!gestao) return <div className="min-w-0">{children}</div>;
+  return (
+    <div className="aj-casca" data-indice={indice ? "true" : "false"}>
+      <AjustesNav indice={indice} />
+      <div className="min-w-0">{children}</div>
+    </div>
+  );
+}
+
+function AjustesNav({ indice }: { indice: boolean }) {
   const pathname = usePathname();
   const { data: session } = useSession();
   const superAdmin = (session?.user as { role?: string } | undefined)?.role === "super_admin";
   const atual = itemAtualDeAjustes(pathname);
-  // O hub tem composição própria (cards) e não usa a coluna.
-  if (pathname === "/ajustes") return null;
 
   return (
-    <nav className="w-[210px] shrink-0 flex flex-col gap-4 sticky top-0">
-        <Link
-          href="/ajustes"
-          className="flex items-center gap-1.5 text-[12px] font-semibold"
-          style={{ color: "var(--cf2-text-tertiary)" }}
-        >
-          <ArrowLeft className="w-3.5 h-3.5" /> Todos os ajustes
+    <nav className="aj-nav" aria-label="Seções de ajustes">
+      {!indice && (
+        <Link href="/ajustes" className="aj-nav-voltar">
+          <ArrowLeft className="w-3.5 h-3.5" aria-hidden /> Todos os ajustes
         </Link>
-
+      )}
+      <div className="aj-nav-grupos">
         {GRUPOS.map((grupo) => {
-          const itens = grupo.itens.filter((i) => !i.superAdmin || superAdmin);
+          const itens = grupo.itens.filter((i) => !i.semEfeito && (!i.superAdmin || superAdmin));
           if (itens.length === 0) return null;
           return (
-          <div key={grupo.titulo} className="flex flex-col gap-0.5">
-            <p
-              className="text-[10px] font-bold uppercase px-2 mb-1"
-              style={{ color: "var(--cf2-text-tertiary)", letterSpacing: "0.6px" }}
-            >
-              {grupo.titulo}
-            </p>
-            {itens.map((item) => {
-              const ativo = atual?.href === item.href;
-              const Icone = item.icon;
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  aria-current={ativo ? "page" : undefined}
-                  className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-[12.5px] transition-colors"
-                  style={{
-                    background: ativo ? "var(--cf2-bg-inverse)" : "transparent",
-                    color: ativo ? "#fff" : "var(--cf2-text-secondary)",
-                    fontWeight: ativo ? 600 : 400,
-                  }}
-                >
-                  <Icone className="w-3.5 h-3.5 shrink-0" />
-                  {item.label}
-                </Link>
-              );
-            })}
-          </div>
+            <div key={grupo.titulo} className="flex flex-col gap-0.5">
+              <p className="aj-nav-titulo">{grupo.titulo}</p>
+              {itens.map((item) => {
+                const Icone = item.icon;
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className="aj-nav-item"
+                    aria-current={atual?.href === item.href ? "page" : undefined}
+                  >
+                    <Icone aria-hidden />
+                    {item.label}
+                  </Link>
+                );
+              })}
+            </div>
           );
         })}
+      </div>
     </nav>
   );
 }

@@ -13,7 +13,7 @@
  */
 import { db } from "@/lib/db";
 import { automacoes, automacaoExecucoes, notificacoes, leads, labels, assinaturas, faturas, auditLog } from "@/lib/db/schema";
-import { eq, and, or, sql } from "drizzle-orm";
+import { eq, and, or, isNull, sql } from "drizzle-orm";
 import { sendResendEmail, isResendConfigured } from "@/lib/email/resend";
 import { whatsappOutgoingQueue } from "@/lib/queue";
 import { avaliarCondicao } from "@/lib/crm/condicao";
@@ -210,10 +210,20 @@ export async function dispararAutomacoes(gatilho: GatilhoAutomacao, ctx: Context
     regras = await db
       .select()
       .from(automacoes)
-      .where(and(eq(automacoes.organizacaoId, ctx.organizacaoId), eq(automacoes.gatilho, gatilho), eq(automacoes.ativo, true)));
+      // Só regras: linha migrada para o construtor (tipo = 'fluxo') roda no executor de fluxos.
+      .where(and(eq(automacoes.organizacaoId, ctx.organizacaoId), eq(automacoes.gatilho, gatilho), eq(automacoes.ativo, true), or(isNull(automacoes.tipo), eq(automacoes.tipo, "regra"))));
   } catch (err) {
     console.error(`[F5/automacao-engine] falha ao buscar automações do gatilho ${gatilho} (best-effort):`, err);
-    return;
+  }
+
+  // Fluxos que escutam este gatilho legado (só os fatos que não passam pelo
+  // outbox: NPS, contrato vencendo, lead inativo, Stripe). Import dinâmico para
+  // o motor antigo não carregar o executor de fluxos sem precisar.
+  try {
+    const { dispararFluxosPorGatilhoLegado } = await import("@/lib/automacoes/disparo");
+    await dispararFluxosPorGatilhoLegado(gatilho, ctx);
+  } catch (err) {
+    console.error(`[F5/automacao-engine] falha ao disparar fluxos do gatilho ${gatilho} (best-effort):`, err);
   }
 
   for (const regra of regras) {

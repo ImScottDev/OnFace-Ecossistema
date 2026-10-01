@@ -30,6 +30,16 @@ export function isAdminView(role: string | null | undefined): boolean {
   return role === "admin" || role === "gerente" || role === "super_admin" || role === "director" || role === "coordinator" || role === "operations";
 }
 
+/**
+ * "Ver como" (cookie `mcrm-view-as`) assume a identidade de outra pessoa,
+ * inclusive o papel dela — é acesso a dado alheio, exclusivo do super_admin.
+ * Fonte única pro papel REAL que pode ativar o modo: o middleware (gate de tela),
+ * o tenant.ts (server components) e o api-server/auth.ts (Hono) derivam daqui.
+ */
+export function podeVerComo(realRole: string | null | undefined): boolean {
+  return realRole === "super_admin";
+}
+
 /** SDR e closer veem apenas os próprios dados (filtro por responsavelId). */
 export function isPersonalView(role: string | null | undefined): boolean {
   return role === "sdr" || role === "closer" || role === "vendedor";

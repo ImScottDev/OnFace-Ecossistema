@@ -1,6 +1,6 @@
-import { Cf2FulfillmentDetail } from "@/components/crm2/clientes/FulfillmentDetail";
+import { redirect } from "next/navigation";
 
-export default async function EntregaDetalhePage({ params }: { params: Promise<{ fulfillmentId: string }> }) {
-  const { fulfillmentId } = await params;
-  return <Cf2FulfillmentDetail fulfillmentId={fulfillmentId} />;
+/** Pós-venda do CRM 1 — o detalhe da entrega vive em `/clientes/entrega/:id`. */
+export default async function RedirecionaEntregaDetalhe({ params }: { params: Promise<{ fulfillmentId: string }> }) {
+  redirect(`/clientes/entrega/${encodeURIComponent((await params).fulfillmentId)}`);
 }
