@@ -425,8 +425,10 @@ export function agentToolCatalog() {
 }
 
 export function modelToolsForIds(ids: string[]): ModelTool[] {
-  return ids.flatMap((id) => {
-    const tool = byId.get(id);
+  return ids.flatMap((reference) => {
+    // As versões antigas persistiram o nome público; o catálogo novo usa o
+    // ID estável. O runtime precisa aceitar ambos durante o corte.
+    const tool = byId.get(reference) ?? byName.get(reference);
     return tool ? [{ name: tool.name, description: tool.description, parameters: tool.parameters }] : [];
   });
 }

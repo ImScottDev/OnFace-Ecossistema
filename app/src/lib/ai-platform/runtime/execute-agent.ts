@@ -193,7 +193,11 @@ export async function executeAgent(input: ExecuteAgentInput): Promise<ExecuteAge
   const trace: Array<Record<string, unknown>> = [{ type: "selected", agentId: selected.agent.id, versionId: selected.version.id, provider, model: selected.version.modelo }];
   try {
     const guardrails = selected.version.guardrailConfig && typeof selected.version.guardrailConfig === "object" ? selected.version.guardrailConfig as Record<string, unknown> : {};
-    const autonomy = (["suggest", "approval", "autonomous"] as const).includes(guardrails.autonomy as "suggest") ? guardrails.autonomy as "suggest" | "approval" | "autonomous" : "suggest";
+    // A tela persiste `autonomia`; `autonomy` é aceito para versões já
+    // gravadas por integrações em inglês. Sem essa normalização o agente
+    // sempre caía silenciosamente em suggest.
+    const configuredAutonomy = guardrails.autonomia ?? guardrails.autonomy;
+    const autonomy = (["suggest", "approval", "autonomous"] as const).includes(configuredAutonomy as "suggest") ? configuredAutonomy as "suggest" | "approval" | "autonomous" : "suggest";
     trace.push({ type: "autonomy", mode: autonomy });
 
     // Teto de permissão DESTA execução. Sem configuração na versão, o agente
