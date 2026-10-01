@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { aiAgentRunSteps, aiAgents, aiAgentVersions } from "@/lib/db/schema";
+import { aiAgentRunSteps, aiAgents, aiAgentVersions, contatos } from "@/lib/db/schema";
 import { executeAgent } from "@/lib/ai-platform/runtime/execute-agent";
 
 if (process.env.CONFIRM_ONFACE_NEXO_CLAUDE_SMOKE !== "SIM") {
@@ -18,10 +18,18 @@ if (selected.version.provider !== "claude_subscription") {
   throw new Error(`NEXO não está configurado para Claude Subscription: ${selected.version.provider ?? "vazio"}`);
 }
 
+const [contact] = await db.select({ id: contatos.id })
+  .from(contatos)
+  .where(eq(contatos.organizacaoId, selected.agent.organizacaoId))
+  .limit(1);
+
+if (!contact) throw new Error("Smoke do NEXO exige ao menos um contato no ambiente DEV.");
+
 const result = await executeAgent({
   organizacaoId: selected.agent.organizacaoId,
   agentId: selected.agent.id,
   versionId: selected.version.id,
+  contatoId: contact.id,
   eventType: "onface.claude_subscription.smoke",
   message: "Consulte os dados de CRM disponíveis para este contato usando context_read_crm. Em seguida, responda de forma objetiva somente com os dados que a consulta retornar; não invente informações.",
   mode: "test",
