@@ -130,7 +130,12 @@ export async function migrar(opts: { url: string; check?: boolean; baseline?: bo
 // ─── CLI ─────────────────────────────────────────────────────────────────────
 // Só roda como CLI quando o arquivo executado é este mesmo — `includes("migrar")`
 // pegava também `migrar.test.ts` e o teste tentava conectar no banco.
-const ehCli = /(?:^|[\\/])migrar\.ts$/.test(process.argv[1] ?? "");
+//
+// A extensão precisa incluir o compilado: em runtime o arquivo é `migrar.mjs`,
+// e exigir `.ts` fazia o CLI sair 0 sem aplicar nada. O deploy registrava
+// "migrations aplicadas" e o banco seguia intocado — foi assim que a 0093 não
+// entrou no dev de 01/10.
+const ehCli = /(?:^|[\\/])migrar\.(ts|mjs|js)$/.test(process.argv[1] ?? "");
 if (ehCli) {
   const url = process.env.DATABASE_URL;
   if (!url) {

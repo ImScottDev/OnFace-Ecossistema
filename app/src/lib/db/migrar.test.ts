@@ -67,3 +67,18 @@ test("o deploy aponta para caminho e container que existem no compose", () => {
   assert.ok(m, "deploy.sh sem APP_CONTAINER");
   assert.ok(compose.includes(`container_name: ${m[1]}`), `deploy.sh referencia o container "${m[1]}", que não existe no docker-compose.yml`);
 });
+
+// O runtime executa `migrar.mjs`; exigir `.ts` fazia o deploy sair 0 sem
+// aplicar migration nenhuma, em silêncio.
+const ehCli = (caminho: string) => /(?:^|[\\/])migrar\.(ts|mjs|js)$/.test(caminho);
+
+test("o guard do CLI reconhece o arquivo compilado que roda em produção", () => {
+  assert.equal(ehCli("/repo/app/dist/migrar.mjs"), true);
+  assert.equal(ehCli("/repo/app/dist/migrar.js"), true);
+  assert.equal(ehCli("src/lib/db/migrar.ts"), true);
+});
+
+test("o guard do CLI não dispara pelo arquivo de teste", () => {
+  assert.equal(ehCli("src/lib/db/migrar.test.ts"), false);
+  assert.equal(ehCli("/repo/app/dist/migrar.test.mjs"), false);
+});
