@@ -2525,9 +2525,19 @@ const whatsappOutgoingWorker = new Worker(
       } else if (check?.jid) {
         // WhatsApp may return a corrected JID (e.g. removing extra 9th digit)
         const jidPhone = check.jid.replace(/@.*$/, "");
-        if (jidPhone && jidPhone !== phone) {
+        const originalDigits = phone.replace(/\D/g, "");
+        const jidDigits = jidPhone.replace(/\D/g, "");
+        // A resposta do /user/check pode conter um identificador LID em vez do
+        // telefone. Nunca deixe uma "correção" trocar o destinatário: ela só
+        // é válida quando preserva o núcleo de oito dígitos do contato.
+        const isSameRecipient = jidDigits.length >= 8
+          && originalDigits.length >= 8
+          && jidDigits.endsWith(originalDigits.slice(-8));
+        if (isSameRecipient && jidDigits !== originalDigits) {
           console.log(`[WA-Out] WhatsApp corrected phone: ${phone} → ${jidPhone}`);
-          correctedPhone = jidPhone;
+          correctedPhone = jidDigits;
+        } else if (!isSameRecipient && jidPhone) {
+          console.warn(`[WA-Out] Ignoring mismatched WhatsApp lookup result for ${phone}`);
         }
       }
     } catch (err) {
