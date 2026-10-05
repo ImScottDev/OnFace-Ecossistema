@@ -351,7 +351,8 @@ export async function buscarNegociosDaEmpresa(orgId: string, empresaId: string, 
       FROM negocios n
      WHERE n.organizacao_id = ${orgId}::uuid
        AND n.empresa_id = ${empresaId}::uuid
-       AND n.status NOT IN ('ganho','perdido')
+       -- Etapa canonica (Bloco 02 §9), nao o status legado.
+       AND n.etapa NOT IN ('ganho','perdido')
      ORDER BY n.created_at DESC
      LIMIT ${limite}
   `);

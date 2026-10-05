@@ -32,6 +32,7 @@
  */
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
+import { ROTULO_ETAPA_PIPELINE } from "@/lib/vendas/dominio";
 
 /**
  * Dias sem toque a partir dos quais um negócio aberto conta como parado. É
@@ -125,13 +126,22 @@ export async function getReceitaMes(orgId: string, hoje = new Date()): Promise<K
 }
 
 /** Operações ativas — negócios abertos no pipeline mais entregas em curso.
- *  É a carga de trabalho real da operação, não só os fulfillments. */
+ *  É a carga de trabalho real da operação, não só os fulfillments.
+ *
+ *  "Aberto" lê `negocios.etapa`, nunca `negocios.status`. A spec do Módulo 01
+ *  (Bloco 02 §9 define as seis etapas canônicas e §17 manda "evitar perpetuar
+ *  motivos como statuses diferentes") põe o estado do negócio em `etapa`;
+ *  `status` é a coluna legada que ainda guarda motivo de perda disfarçado de
+ *  estado — `outra_data`, `sem_retorno`, `trava_negociacao`, `trava_assinatura`,
+ *  `ativo`, `no_show`. Contar por `status` fazia o Início discordar do Pipeline:
+ *  medido em 05/10, 490 abertos por `status` contra 554 por `etapa`, e a conta
+ *  por `status` nem enxerga o de-para que o Pipeline está aplicando. */
 export async function getOperacoesAtivas(orgId: string): Promise<number> {
   const [row] = await db.execute<{ n: number }>(sql`
     SELECT (
       (SELECT COUNT(*) FROM negocios
         WHERE organizacao_id = ${orgId}
-          AND status NOT IN ('ganho','perdido','sem_retorno'))
+          AND etapa NOT IN ('ganho','perdido'))
       +
       (SELECT COUNT(*) FROM fulfillments
         WHERE organizacao_id = ${orgId}
@@ -171,7 +181,14 @@ export async function getJornadaEtapas(orgId: string, hoje = new Date()): Promis
                ) < ${corte.toISOString()}
              )::int AS parados
         FROM leads l
-       WHERE l.organizacao_id = ${orgId} AND l.status = 'novo'
+       -- Estágio canônico de Pré-vendas (Bloco 01 §6-§9), não leads.status.
+       -- leads.status e coluna morta: vale 'novo' nas 4.080 linhas da base,
+       -- então a faixa "Pré-vendas" do Início mostrava a BASE INTEIRA de
+       -- contatos como se fosse funil. Medido 05/10: 4.080 por status contra
+       -- 1.681 por estagio_pre_vendas (1.642 novo + 39 qualificado); as 2.399
+       -- sem estágio não estão em Pré-vendas (2.096 são tipo 'contato').
+       WHERE l.organizacao_id = ${orgId}
+         AND l.estagio_pre_vendas IN ('novo','em_contato','qualificacao','qualificado')
     `),
     db.execute<{ total: number; valor: string; parados: number }>(sql`
       SELECT COUNT(*)::int AS total,
@@ -184,7 +201,10 @@ export async function getJornadaEtapas(orgId: string, hoje = new Date()): Promis
              )::int AS parados
         FROM negocios n
        WHERE n.organizacao_id = ${orgId}
-         AND n.status NOT IN ('ganho','perdido','sem_retorno','proposta_apresentada')
+         -- Etapa canônica (ver getOperacoesAtivas). 'proposta' sai porque a
+         -- faixa seguinte ja conta proposta; era 'proposta_apresentada', o
+         -- nome legado do mesmo recorte.
+         AND n.etapa NOT IN ('ganho','perdido','proposta')
     `),
     db.execute<{ total: number; valor: string; vencidas: number }>(sql`
       SELECT COUNT(*)::int AS total,
@@ -257,17 +277,11 @@ export interface OperacaoLinha {
 }
 
 /** Rótulos dos estágios de `negocios.status` que a operação usa ao falar. */
-const ETAPA_NEGOCIO: Record<string, string> = {
-  reuniao_agendada: "Reunião agendada",
-  reuniao_realizada: "Reunião realizada",
-  proposta_apresentada: "Proposta apresentada",
-  negociacao_iniciada: "Em negociação",
-  trava_negociacao: "Negociação travada",
-  outra_data: "Reagendado",
-  no_show: "No-show",
-  trial: "Trial",
-  ativo: "Ativo",
-};
+/* Rótulo da etapa do negócio. Uma fonte só, a mesma do Pipeline: o mapa
+   local traduzia os `status` legados ("Reagendado", "Trial", "Ativo",
+   "Negociação travada") — nomes de coluna que a spec não tem — e nem cobria
+   todos ('sem_retorno' e 'trava_assinatura' chegavam crus na tela. */
+const ETAPA_NEGOCIO: Record<string, string> = ROTULO_ETAPA_PIPELINE;
 
 /**
  * "Operações prioritárias": o que precisa de ação agora, de qualquer etapa
@@ -336,14 +350,19 @@ export async function getOperacoesPrioritarias(orgId: string, limite = 8): Promi
       SELECT n.id::text, 'negocio',
              COALESCE(e.nome, l.empresa),
              COALESCE(n.titulo, 'Negócio'),
-             n.status,
+             -- A coluna vira o rótulo "Etapa" no card e na gaveta do Início.
+             -- Era n.status, e o Inicio escrevia trava_assinatura,
+             -- "outra_data", "sem_retorno" onde o Pipeline mostra uma das
+             -- seis etapas da spec (Bloco 02 §9). Nome canônico, traduzido
+             -- no adaptador por ROTULO_ETAPA_PIPELINE.
+             n.etapa,
              COALESCE(n.valor_total, 0),
              n.updated_at + interval '${sql.raw(String(LIMITE_ESTAGNACAO_DIAS))} days'
         FROM negocios n
         LEFT JOIN empresas e ON e.id = n.empresa_id
         LEFT JOIN leads l ON l.id = n.lead_id
        WHERE n.organizacao_id = ${orgId}
-         AND n.status NOT IN ('ganho','perdido','sem_retorno')
+         AND n.etapa NOT IN ('ganho','perdido')
          AND COALESCE(
                (SELECT MAX(a.created_at) FROM atividades a WHERE a.negocio_id = n.id),
                n.created_at

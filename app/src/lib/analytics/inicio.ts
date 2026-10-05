@@ -348,8 +348,10 @@ export async function getPrecisaAtencao(orgId: string, hoje = new Date()): Promi
           FROM negocios n
          WHERE n.organizacao_id = ${orgId}
            -- Mesma regra de "negócio aberto" do card Operações ativas
-           -- (onface-inicio.ts): 'sem_retorno' é encerramento, não negócio parado.
-           AND n.status NOT IN ('ganho','perdido','sem_retorno')
+           -- (onface-inicio.ts): etapa canonica, nunca o status legado, que
+           -- guarda motivo de perda ('sem_retorno', 'outra_data') no lugar de
+           -- estado — o que a spec do Bloco 02 §17 manda não perpetuar.
+           AND n.etapa NOT IN ('ganho','perdido')
            AND n.updated_at < ${d5.toISOString()}
            AND NOT EXISTS (
              SELECT 1 FROM tarefas t WHERE t.negocio_id = n.id AND t.concluida = false

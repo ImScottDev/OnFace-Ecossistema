@@ -531,7 +531,12 @@ export async function montarVisaoGeral(
       {
         chave: "clientes", icone: "clientes", label: "Clientes ativos",
         valor: clientes.toLocaleString("pt-BR"), delta: null,
-        tendencia: "neutra", apoio: "com serviço ativo no portfólio",
+        // A métrica do catálogo (`clientes_ativos`) é Company + Service ACTIVE,
+        // SEM filtro de portfólio — é a definição do Módulo 11. O apoio dizia
+        // "no portfólio", que é outro recorte e dá outro número (medido 05/10:
+        // 389 com serviço ativo, 272 com serviço ativo DE portfólio). Rótulo
+        // alinhado à conta que o número de fato faz.
+        tendencia: "neutra", apoio: "com serviço ativo",
       },
       {
         chave: "novo-faturamento", icone: "faturamento", label: "MRR fechado no mês",

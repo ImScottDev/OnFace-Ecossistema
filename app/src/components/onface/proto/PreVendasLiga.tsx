@@ -270,7 +270,7 @@ class Logica extends React.Component<any, any> {
     const slug = (s) => (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z]/g, "");
     const cadDe = (L) => S.cadencias.hasOwnProperty(L.id)
       ? (S.cadencias[L.id] || "Fora de cadência")
-      : (L.etapa === "novo" ? "Fora de cadência" : L.etapa === "oportunidade" ? "Pós-proposta" : "Primeiro contato");
+      : "Fora de cadência";  // sem cadência registrada = fora de cadência. Nao derivar da etapa.
     const cols = Object.keys(rotulos).filter(k => C[k]);
     const valor = (L, k) => {
       if (k === "empresa") return L.empresa || "Sem empresa";
@@ -583,7 +583,7 @@ class Logica extends React.Component<any, any> {
     const campanhasUnicas = S.leads.map(L => L.campanha).filter((t, i, a) => t && a.indexOf(t) === i);
     const cadDe = (L) => S.cadencias.hasOwnProperty(L.id)
       ? (S.cadencias[L.id] || "Fora de cadência")
-      : (L.etapa === "novo" ? "Fora de cadência" : L.etapa === "oportunidade" ? "Pós-proposta" : "Primeiro contato");
+      : "Fora de cadência";  // sem cadência registrada = fora de cadência. Nao derivar da etapa.
     const alvoExport = (() => {
       if (S.expEscopo === "selecao") return S.leads.filter(L => selecao.indexOf(L.id) >= 0);
       if (S.expEscopo === "visao") return ativos;

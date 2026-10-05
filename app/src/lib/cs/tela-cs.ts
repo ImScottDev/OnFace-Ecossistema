@@ -10,6 +10,7 @@
  */
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
+import { ROTULO_ETAPA_PIPELINE, type EtapaPipeline } from "@/lib/vendas/dominio";
 
 type Row = Record<string, any>;
 const FAMILIAS = ["PABX", "CALLFACE_AI", "WHITE_LABEL"] as const;
@@ -159,10 +160,12 @@ export async function dadosTelaCs(organizacaoId: string): Promise<DadosTelaCs> {
 
     db.execute<Row>(sql`
       WITH ${conta}
-      SELECT n.id, c.nome AS empresa, n.status, n.valor_total::float AS valor
+      -- etapa canonica (Bloco 02 §9): o campo vira o rotulo da expansao
+      -- na tela, e status escreveria 'outra_data' / 'trava_negociacao'.
+      SELECT n.id, c.nome AS empresa, n.etapa, n.valor_total::float AS valor
         FROM negocios n JOIN conta c ON c.empresa_id = n.empresa_id
        WHERE n.organizacao_id = ${organizacaoId} AND n.commercial_motion = 'EXPANSION'
-         AND n.status NOT IN ('ganho','perdido')`),
+         AND n.etapa NOT IN ('ganho','perdido')`),
 
     db.execute<Row>(sql`
       SELECT id, nome FROM usuarios
@@ -211,7 +214,7 @@ export async function dadosTelaCs(organizacaoId: string): Promise<DadosTelaCs> {
     })),
     leads: leads.map((r) => ({ id: r.id ?? null, empresa: r.empresa, origem: r.origem || "" })),
     expansoes: expansoes.map((r) => ({
-      id: r.id, empresa: r.empresa, etapa: r.status, tipo: "expansao" as const,
+      id: r.id, empresa: r.empresa, etapa: ROTULO_ETAPA_PIPELINE[r.etapa as EtapaPipeline] ?? r.etapa, tipo: "expansao" as const,
       itens: r.valor ? [{ natureza: "MRR", valor: r.valor, qtd: 1 }] : [],
     })),
     equipe: equipe.map((r) => ({ id: r.id, nome: r.nome })),
