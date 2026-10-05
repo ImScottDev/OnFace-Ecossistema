@@ -15,23 +15,30 @@ export async function processStoredStripeWebhookEvent(stripeEventId: string) {
     .where(eq(stripeWebhookEvents.eventId, stripeEventId))
     .limit(1);
   if (!event) throw new Error(`evento Stripe ${stripeEventId} não encontrado`);
-  if (event.status === "PROCESSED") return { skipped: true, type: event.eventType };
+  /* MINÚSCULAS, que é o vocabulário do schema
+     (`status: text("status").default("pending")`, schema.ts:908) e o que a rota
+     HTTP grava. Este módulo comparava em MAIÚSCULAS, então nada casava: evento
+     já processado era reprocessado, e o UPDATE de claim abaixo afetava zero
+     linhas — o job seguia sem trava, que é exatamente a corrida que o advisory
+     lock do syncStripe existe para matar. Eventos `failed` ficavam parados no
+     inbox sem ninguém drenar. */
+  if (event.status === "processed") return { skipped: true, type: event.eventType };
 
   await db
     .update(stripeWebhookEvents)
-    .set({ status: "PROCESSING", processingStartedAt: new Date(), attempts: sql`${stripeWebhookEvents.attempts} + 1`, lastError: null })
-    .where(and(eq(stripeWebhookEvents.id, event.id), inArray(stripeWebhookEvents.status, ["PENDING", "FAILED", "PROCESSING"])));
+    .set({ status: "processing", processingStartedAt: new Date(), attempts: sql`${stripeWebhookEvents.attempts} + 1`, lastError: null })
+    .where(and(eq(stripeWebhookEvents.id, event.id), inArray(stripeWebhookEvents.status, ["pending", "failed", "processing"])));
 
   try {
     const synced = await syncStripe();
     await db.update(stripeWebhookEvents)
-      .set({ status: "PROCESSED", processedAt: new Date(), lastError: null })
+      .set({ status: "processed", processedAt: new Date(), lastError: null })
       .where(eq(stripeWebhookEvents.id, event.id));
     return { skipped: false, type: event.eventType, synced };
   } catch (error) {
     const message = error instanceof Error ? error.message.slice(0, 2000) : String(error).slice(0, 2000);
     await db.update(stripeWebhookEvents)
-      .set({ status: "FAILED", lastError: message })
+      .set({ status: "failed", lastError: message })
       .where(eq(stripeWebhookEvents.id, event.id));
     throw error;
   }

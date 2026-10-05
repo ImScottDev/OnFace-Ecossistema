@@ -48,13 +48,6 @@ function stableIdempotencyKey(prefix: string): string {
   return prefix.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 255);
 }
 
-function randomSuffix(): string {
-  const letters = "abcdefghijklmnopqrstuvwxyz";
-  let suffix = "";
-  for (let i = 0; i < 8; i++) suffix += letters[Math.floor(Math.random() * letters.length)];
-  return suffix;
-}
-
 async function stripePost<T>(path: string, form: URLSearchParams, opts: { idempotencyKey?: string } = {}): Promise<T> {
   const response = await fetch(`${STRIPE_API}/${path}`, {
     method: "POST",
@@ -93,12 +86,51 @@ export interface StripeCustomerParams {
   metadata: Record<string, string>;
 }
 
+/**
+ * Procura um Customer que já exista no Stripe para este e-mail.
+ *
+ * Por que `customers?email=` e NÃO `customers/search`: o list é consistente na
+ * hora, e o search tem indexação atrasada — normalmente menos de um minuto, mas
+ * a própria documentação avisa que em incidente pode ficar até uma hora para
+ * trás. Num fluxo que acabou de criar o cliente, o search devolveria vazio e a
+ * gente criaria a duplicata que ele deveria evitar.
+ *
+ * O filtro é exato e sensível a maiúscula, então o e-mail é normalizado antes.
+ * Devolve `null` quando não acha, quando não há e-mail, ou quando a busca
+ * falha — nunca derruba o checkout por causa disto.
+ */
+async function acharCustomerPorEmail(email: string | null | undefined): Promise<string | null> {
+  const alvo = email?.trim().toLowerCase();
+  if (!alvo) return null;
+  try {
+    const r = await stripeGet<{ data: { id: string; email: string | null; deleted?: boolean }[] }>(
+      `customers?limit=100&email=${encodeURIComponent(alvo)}`,
+    );
+    /* Mais de um resultado significa que a duplicata já existe. Pega o primeiro
+       não apagado, que é o mais antigo — assim duas rodadas convergem para o
+       MESMO cliente em vez de alternarem. */
+    const achado = (r.data ?? []).filter((c) => !c.deleted).at(-1);
+    return achado?.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export async function createStripeCustomer(params: StripeCustomerParams): Promise<{ id: string; mocked: boolean }> {
   const mode = getStripeCheckoutMode();
   if (params.customerId) return { id: params.customerId, mocked: mode === "mock" };
   if (mode === "mock") {
     return { id: `cus_mock_${params.metadata.crm_company_id || params.metadata.crm_lead_id || "billing"}`.replace(/[^a-zA-Z0-9_]/g, "").slice(0, 80), mocked: true };
   }
+
+  /* Antes de criar, procura. O CRM já tenta reaproveitar o id que tem gravado
+     (lib/crm/checkout.ts), mas isso só cobre quem o CRM criou: cliente que já
+     existia no Stripe antes, ou criado por outro caminho, passava direto e
+     virava duplicata. A chave de idempotência não cobre esse caso porque o
+     Stripe só a guarda por 24 h — a segunda proposta no dia seguinte criava
+     outro cliente. Medido em 01/10: 30 empresas com mais de um customer. */
+  const existente = await acharCustomerPorEmail(params.email);
+  if (existente) return { id: existente, mocked: false };
 
   const form = new URLSearchParams();
   form.append("name", params.name.slice(0, 250));
@@ -197,14 +229,23 @@ function discountTotal(items: CheckoutItem[]): number {
   }, 0);
 }
 
-async function createOneTimeCoupon(amount: number, currency: string, metadata: Record<string, string>): Promise<string | null> {
+/**
+ * `attemptKey` entra na chave de idempotência DE PROPÓSITO.
+ *
+ * A chave era só `crm-coupon-<grupo>`. Como o Stripe guarda o resultado da
+ * primeira chamada por 24 h, re-gerar o checkout do mesmo grupo com um desconto
+ * RENEGOCIADO fazia ele devolver o cupom antigo — e o cliente pagava o desconto
+ * errado, sem erro nenhum aparecer. O valor também entra na chave: dois
+ * descontos diferentes nunca podem compartilhar cupom.
+ */
+async function createOneTimeCoupon(amount: number, currency: string, metadata: Record<string, string>, attemptKey: string): Promise<string | null> {
   if (amount <= 0) return null;
   const form = new URLSearchParams();
   form.append("amount_off", String(amountInCents(amount)));
   form.append("currency", currency.toLowerCase());
   form.append("duration", "once");
   appendMetadata(form, { ...metadata, crm_discount_type: "proposal_negotiated_discount" });
-  const coupon = await stripePost<{ id: string }>("coupons", form, { idempotencyKey: stableIdempotencyKey(`crm-coupon-${metadata.crm_group_id || "group"}`) });
+  const coupon = await stripePost<{ id: string }>("coupons", form, { idempotencyKey: stableIdempotencyKey(`crm-coupon-${metadata.crm_group_id || "group"}-${attemptKey}-${amountInCents(amount)}`) });
   return coupon.id;
 }
 
@@ -258,13 +299,20 @@ export async function createGroupCheckout(params: CreateGroupCheckoutParams): Pr
     appendNested(form, "payment_method_options", { boleto: { expires_after_days: params.boletoExpiresAfterDays } });
   }
   appendMetadata(form, metadata);
-  form.append("integration_identifier", `callface_crm_${randomSuffix()}`);
+  /* `integration_identifier` saiu daqui.
+   *
+   * Ele carregava um sufixo ALEATÓRIO no corpo, enquanto a chave de
+   * idempotência logo abaixo é determinística. O Stripe recusa a mesma chave
+   * com corpo diferente — então retentar a criação do checkout do mesmo grupo
+   * dentro de 24 h falhava POR CONSTRUÇÃO, justo quando mais importa (rede
+   * instável, timeout). O campo também não é parâmetro documentado de Checkout
+   * Session. Quem identifica a origem é a metadata `crm_*`, que já vai acima. */
 
   let index = 0;
   for (const item of recorrentes) appendOfficialLineItem(form, index++, item);
   for (const item of avulsos) appendOfficialLineItem(form, index++, item);
 
-  const couponId = await createOneTimeCoupon(discount, params.moeda, metadata);
+  const couponId = await createOneTimeCoupon(discount, params.moeda, metadata, params.attemptKey || "initial");
   if (couponId) appendNested(form, "discounts", [{ coupon: couponId }]);
   if (stripeMode === "subscription") appendNested(form, "subscription_data", { metadata });
   if (stripeMode === "payment") {

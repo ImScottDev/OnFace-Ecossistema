@@ -28,11 +28,22 @@ function requireKey(): string {
   return key;
 }
 
-async function stripePost<T>(path: string, form: URLSearchParams): Promise<T> {
+/** A MESMA versão que `stripe-checkout.ts` fixa. Sem este header a chamada roda
+ *  na versão default da conta, e o fluxo passa a conviver com DUAS versões da
+ *  API ao mesmo tempo — foi o que obrigou `stripe-sync.ts` a ler o id da
+ *  assinatura em dois lugares diferentes. */
+const STRIPE_API_VERSION = process.env.STRIPE_API_VERSION || "2026-08-26.dahlia";
+
+async function stripePost<T>(path: string, form: URLSearchParams, idempotencyKey?: string): Promise<T> {
   const key = requireKey();
   const res = await fetch(`${STRIPE_API}/${path}`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/x-www-form-urlencoded" },
+    headers: {
+      Authorization: `Bearer ${key}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+      "Stripe-Version": STRIPE_API_VERSION,
+      ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 255) } : {}),
+    },
     body: form.toString(),
   });
   if (!res.ok) {
@@ -43,6 +54,8 @@ async function stripePost<T>(path: string, form: URLSearchParams): Promise<T> {
 }
 
 export interface CobrancaAvulsaParams {
+  /** Id de domínio que torna a cobrança idempotente (ex.: `parcela-<propostaId>-3`). */
+  chaveCobranca?: string;
   stripeCustomerId: string;
   descricao: string;
   /** valor em reais (ex.: 199.90) */
@@ -66,13 +79,26 @@ export interface CobrancaResult {
  */
 export async function criarCobrancaAvulsa(params: CobrancaAvulsaParams): Promise<CobrancaResult> {
   const currency = (params.moeda || "BRL").toLowerCase();
+  /* A chave de idempotência é o que impede cobrar o cliente duas vezes.
+   *
+   * São três POSTs em sequência (item, fatura, finalizar) e nenhum deles era
+   * idempotente: uma falha de rede no meio deixava um item órfão no cliente, e
+   * o operador que repetisse gerava uma SEGUNDA fatura com o mesmo item — o
+   * cliente pagava duas vezes. Com a chave derivada de quem está cobrando e do
+   * quê, o retry devolve a mesma fatura em vez de criar outra.
+   *
+   * `chaveCobranca` vem de fora quando existe um id de domínio (parcela,
+   * proposta); sem ele, cai para descrição + valor, que já cobre o retry
+   * imediato do mesmo operador. */
+  const chave = params.chaveCobranca
+    || `${params.stripeCustomerId}-${params.descricao}-${Math.round(params.valor * 100)}`;
 
   const itemForm = new URLSearchParams();
   itemForm.append("customer", params.stripeCustomerId);
   itemForm.append("description", params.descricao);
   itemForm.append("amount", String(Math.round(params.valor * 100)));
   itemForm.append("currency", currency);
-  await stripePost("invoiceitems", itemForm);
+  await stripePost("invoiceitems", itemForm, `crm-invitem-${chave}`);
 
   const invoiceForm = new URLSearchParams();
   invoiceForm.append("customer", params.stripeCustomerId);
@@ -82,17 +108,20 @@ export async function criarCobrancaAvulsa(params: CobrancaAvulsaParams): Promise
   if (params.metadata) {
     for (const [k, v] of Object.entries(params.metadata)) invoiceForm.append(`metadata[${k}]`, v);
   }
-  const invoice = await stripePost<{ id: string }>("invoices", invoiceForm);
+  const invoice = await stripePost<{ id: string }>("invoices", invoiceForm, `crm-invoice-${chave}`);
 
   const finalized = await stripePost<{ id: string; status: string; hosted_invoice_url: string | null }>(
     `invoices/${invoice.id}/finalize`,
-    new URLSearchParams()
+    new URLSearchParams(),
+    `crm-finalize-${invoice.id}`,
   );
 
   return { invoiceId: finalized.id, hostedInvoiceUrl: finalized.hosted_invoice_url, status: finalized.status };
 }
 
 export interface PlanoParcelasParams {
+  /** Id de domínio do plano (ex.: a proposta). Torna cada parcela idempotente. */
+  chavePlano?: string;
   stripeCustomerId: string;
   descricaoBase: string;
   /** valor de CADA parcela em reais */
@@ -123,6 +152,9 @@ export async function criarPlanoDeParcelas(params: PlanoParcelasParams): Promise
         valor: params.valorParcela,
         moeda: params.moeda,
         diasVencimento: params.diasVencimento + i * 30,
+        /* Chave por PARCELA: refazer o plano inteiro depois de uma falha no
+           meio devolve as parcelas já criadas em vez de duplicá-las. */
+        chaveCobranca: `${params.chavePlano || params.descricaoBase}-p${numeroParcela}de${params.quantidade}`,
         metadata: { ...params.metadata, parcela: String(numeroParcela), totalParcelas: String(params.quantidade) },
       })
     );
