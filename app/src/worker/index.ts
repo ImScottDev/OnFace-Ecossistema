@@ -452,7 +452,7 @@ async function handlePhoneOutgoing(data: {
   const { phone, organizacaoId, sessaoId, message, timestamp } = data;
   const { normalizePhone, phoneLastDigits } = await import("../lib/whatsapp/phone-utils");
   const { contatos, whatsappMensagens, whatsappSessao } = await import("../lib/db/schema");
-  const { downloadMedia, downloadMediaByMessageId, saveBase64ToDisk, sessionToConfig } = await import("../lib/whatsapp/client");
+  const { downloadMedia, saveBase64ToDisk, sessionToConfig } = await import("../lib/whatsapp/client");
 
   const normalized = normalizePhone(phone);
   const last8 = phoneLastDigits(phone);
@@ -494,7 +494,7 @@ async function handlePhoneOutgoing(data: {
 
     if (message.mediaDownloadInfo) {
       try {
-        const dlInfo = message.mediaDownloadInfo as { url: string; mediaKey: string; mimetype: string; fileSHA256: string; fileLength: number | string; directPath: string };
+        const dlInfo = message.mediaDownloadInfo as { url: string; mediaKey: string; mimetype: string; fileSHA256: string; fileEncSHA256?: string; fileLength: number | string; directPath: string };
         const downloaded = await downloadMedia(msgType, dlInfo, config);
         if (downloaded.base64) {
           localMediaUrl = saveBase64ToDisk(downloaded.base64, fileId, msgType, message.mediaFilename || undefined, downloaded.mimetype);
@@ -505,18 +505,6 @@ async function handlePhoneOutgoing(data: {
       }
     }
 
-    // Fallback: re-download via wuzapi MessageId (base64 was stripped from job payload)
-    if (!saved && message.wuzapiMessageId) {
-      try {
-        const downloaded = await downloadMediaByMessageId(msgType, message.wuzapiMessageId, config);
-        if (downloaded) {
-          localMediaUrl = saveBase64ToDisk(downloaded.base64, fileId, msgType, message.mediaFilename || undefined, downloaded.mimetype);
-          saved = true;
-        }
-      } catch (dlErr) {
-        console.error(`[WA-PhoneOut] Failed to download media via wuzapi messageId:`, dlErr);
-      }
-    }
 
     if (!saved && message.base64Media) {
       try {
@@ -525,6 +513,12 @@ async function handlePhoneOutgoing(data: {
       } catch (b64Err) {
         console.error(`[WA-PhoneOut] Failed to save base64 media:`, b64Err);
       }
+    }
+
+    // Guardar a URL da CDN do WhatsApp é guardar um blob cifrado: o operador vê
+    // o balão e não abre nada. Isso precisa gritar, não passar batido.
+    if (!saved) {
+      console.error(`[WA-PhoneOut] MIDIA NAO SALVA (${msgType}, id ${fileId}): fica só a URL cifrada da CDN, que a tela não abre`);
     }
   }
 
@@ -694,9 +688,12 @@ async function handleWebhookEvent(data: {
         const mediaKey = (mediaMsg as Record<string, unknown>).MediaKey || (mediaMsg as Record<string, unknown>).mediaKey || "";
         const mimetype = (mediaMsg as Record<string, unknown>).Mimetype || (mediaMsg as Record<string, unknown>).mimetype || "";
         const fileSHA256 = (mediaMsg as Record<string, unknown>).FileSHA256 || (mediaMsg as Record<string, unknown>).fileSha256 || (mediaMsg as Record<string, unknown>).fileSHA256 || "";
+        // Hash do arquivo CIFRADO: sem ele o wuzapi não descriptografa e o
+        // download falha calado (ver MediaDownloadInfo em lib/whatsapp/client).
+        const fileEncSHA256 = (mediaMsg as Record<string, unknown>).FileEncSHA256 || (mediaMsg as Record<string, unknown>).fileEncSha256 || (mediaMsg as Record<string, unknown>).fileEncSHA256 || "";
         const fileLength = (mediaMsg as Record<string, unknown>).FileLength || (mediaMsg as Record<string, unknown>).fileLength || 0;
         const directPath = (mediaMsg as Record<string, unknown>).DirectPath || (mediaMsg as Record<string, unknown>).directPath || "";
-        if (mediaKey || directPath) mediaDownloadInfo = { url, mediaKey, mimetype, fileSHA256, fileLength, directPath };
+        if (mediaKey || directPath) mediaDownloadInfo = { url, mediaKey, mimetype, fileSHA256, fileEncSHA256, fileLength, directPath };
       }
 
       // Check for media already downloaded by the webhook handler (stored in _mediaBase64)
@@ -2234,7 +2231,7 @@ const whatsappIncomingWorker = new Worker(
 
     const { normalizePhone, phoneLastDigits } = await import("../lib/whatsapp/phone-utils");
     const { contatos, leads, whatsappMensagens, atividades, notificacoes, usuarios, whatsappSessao: waSessao, pessoas: pessoasT, communications: commsT } = await import("../lib/db/schema");
-    const { downloadMedia: dlMedia, downloadMediaByMessageId: dlByMsgId, saveBase64ToDisk: saveToDisk, sessionToConfig: toConfig } = await import("../lib/whatsapp/client");
+    const { downloadMedia: dlMedia, saveBase64ToDisk: saveToDisk, sessionToConfig: toConfig } = await import("../lib/whatsapp/client");
 
     const normalized = normalizePhone(phone);
     const last8 = phoneLastDigits(phone);
@@ -2289,7 +2286,7 @@ const whatsappIncomingWorker = new Worker(
 
       if (message.mediaDownloadInfo) {
         try {
-          const dlInfo = message.mediaDownloadInfo as { url: string; mediaKey: string; mimetype: string; fileSHA256: string; fileLength: number | string; directPath: string };
+          const dlInfo = message.mediaDownloadInfo as { url: string; mediaKey: string; mimetype: string; fileSHA256: string; fileEncSHA256?: string; fileLength: number | string; directPath: string };
           const downloaded = await dlMedia(msgType, dlInfo, inConfig);
           if (downloaded.base64) {
             localMediaUrl = saveToDisk(downloaded.base64, fileId, msgType, message.mediaFilename || undefined, downloaded.mimetype);
@@ -2300,18 +2297,6 @@ const whatsappIncomingWorker = new Worker(
         }
       }
 
-      // Fallback: re-download via wuzapi MessageId (base64 was stripped from job payload)
-      if (!saved && message.wuzapiMessageId) {
-        try {
-          const downloaded = await dlByMsgId(msgType, message.wuzapiMessageId, inConfig);
-          if (downloaded) {
-            localMediaUrl = saveToDisk(downloaded.base64, fileId, msgType, message.mediaFilename || undefined, downloaded.mimetype);
-            saved = true;
-          }
-        } catch (dlErr) {
-          console.error(`[WA-In] Failed to download media via wuzapi messageId:`, dlErr);
-        }
-      }
 
       if (!saved && message.base64Media) {
         try {
@@ -2320,6 +2305,11 @@ const whatsappIncomingWorker = new Worker(
         } catch (b64Err) {
           console.error(`[WA-In] Failed to save base64 media:`, b64Err);
         }
+      }
+
+      // Ver a nota em [WA-PhoneOut]: sem arquivo salvo, a mídia é inacessível.
+      if (!saved) {
+        console.error(`[WA-In] MIDIA NAO SALVA (${msgType}, id ${fileId}): fica só a URL cifrada da CDN, que a tela não abre`);
       }
     }
 

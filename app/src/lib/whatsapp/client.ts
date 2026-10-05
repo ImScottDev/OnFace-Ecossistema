@@ -374,6 +374,12 @@ export interface MediaDownloadInfo {
   fileSHA256: string;
   fileLength: number | string;
   directPath: string;
+  /** Hash do arquivo AINDA CIFRADO. O wuzapi exige para descriptografar a mídia
+   *  (handlers.go, structs de DownloadImage/Audio/Document/Video). Sem ele o
+   *  download falha e a mensagem fica só com a URL da CDN do WhatsApp, que é um
+   *  blob cifrado que navegador nenhum abre — foi o que aconteceu com 3.800
+   *  mídias até 05/10/2026. */
+  fileEncSHA256?: string;
 }
 
 /**
@@ -393,6 +399,7 @@ export async function downloadMedia(
       MediaKey: info.mediaKey,
       Mimetype: info.mimetype,
       FileSHA256: info.fileSHA256,
+      FileEncSHA256: info.fileEncSHA256,
       FileLength: typeof info.fileLength === "string" ? parseInt(info.fileLength) : info.fileLength,
       DirectPath: info.directPath,
     }),
@@ -402,37 +409,6 @@ export async function downloadMedia(
   if (!res.ok) throw new Error(data.message || data.error || `Failed to download ${tipo}`);
   const b64 = data.data?.Data || data.data?.data || "";
   return { base64: b64, mimetype: info.mimetype };
-}
-
-/**
- * Download media from WhatsApp via wuzapi using only the MessageId.
- * Used as fallback when base64 was stripped from the BullMQ job payload.
- */
-export async function downloadMediaByMessageId(
-  tipo: string,
-  messageId: string,
-  config?: WuzapiSessionConfig,
-): Promise<{ base64: string; mimetype: string } | null> {
-  const endpoint = getDownloadEndpoint(tipo);
-  try {
-    const res = await wuzapiFetch(endpoint, {
-      method: "POST",
-      body: JSON.stringify({ MessageId: messageId }),
-    }, config || DEFAULT_CONFIG);
-
-    const data = await res.json();
-    if (!res.ok) {
-      console.error(`[downloadMediaByMessageId] wuzapi error:`, data.message || data.error);
-      return null;
-    }
-    const b64 = data.data?.Data || data.data?.data || "";
-    if (!b64) return null;
-    const mimetype = data.data?.Mimetype || data.data?.mimetype || `application/octet-stream`;
-    return { base64: b64, mimetype };
-  } catch (err) {
-    console.error(`[downloadMediaByMessageId] Failed for ${tipo} ${messageId}:`, err);
-    return null;
-  }
 }
 
 /**
