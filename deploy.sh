@@ -59,7 +59,7 @@ git archive --format=tar HEAD | "${SSH[@]}" "rm -rf $STAGE && mkdir -p $STAGE &&
   --exclude=/uploads/ --exclude=/app/public/uploads/ \
   --exclude=/infra/documenso/.env --exclude=/infra/documenso/certs/ \
   --exclude=/.onface-release \
-  --exclude=/_backup* --exclude=/*.sql.gz --exclude=/*.bak-* \
+  --exclude='_backup*' --exclude='*.sql.gz' --exclude='*.dump' --exclude='*.bak-*' \
   $STAGE/ $DIR/ && rm -rf $STAGE"
 
 # ─── 2. Imagens, uma por vez, presas a 1 CPU ────────────────────────────────
