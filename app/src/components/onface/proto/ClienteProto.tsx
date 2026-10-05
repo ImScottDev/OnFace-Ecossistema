@@ -19,6 +19,8 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
+
+import { acaoNovaOportunidadeDoCliente, type TipoDeVenda } from "@/app/(crm2)/clientes/[id]/actions";
 import { toast } from "sonner";
 
 import type { ClienteDoDesenho } from "@/lib/clientes/cliente-para-o-desenho";
@@ -659,12 +661,70 @@ export function ClienteProto({ cliente }: { cliente: ClienteDoDesenho }) {
     abrirPeca(peca, id, { tela: "cliente", empresaId: cliente.empresa.id, empresa: cliente.empresa.nome });
   }, [abrirPeca, cliente.empresa.id, cliente.empresa.nome]);
 
-  /* Nenhuma mutação do Cliente tem command hoje (nota, CS, principal,
-     pessoa, documento, oportunidade). Avisar e reler é honesto; gravar pela
-     metade não é. */
-  const gravar = React.useCallback(() => {
-    toast("Isto ainda não grava pelo Cliente 360.");
+  /* O id falso que o desenho cria → o id real do negócio gravado.
+     A Liga monta a oportunidade localmente com `"o" + Date.now()` e, 350 ms
+     depois, navega para esse id. Sem a tradução, o vendedor cairia num 404
+     logo após criar. */
+  const idsReais = React.useRef<Map<string, string>>(new Map());
+
+  /**
+   * A modal "Nova oportunidade" passa a gravar.
+   *
+   * Ela já existia e montava o objeto certo na tela, mas aqui a resposta era
+   * "isto ainda não grava pelo Cliente 360" — o vendedor saía achando que
+   * tinha criado. As outras mutações do Cliente 360 (nota, CS, pessoa,
+   * documento) continuam sem command, e para elas o aviso segue honesto.
+   */
+  const gravar = React.useCallback(async (patch: { opps?: { id: string; tipo?: string; familia?: string; resp?: string; itens?: { valor?: number }[]; notas?: { texto?: string }[]; pessoa?: string }[] }) => {
+    const nova = patch?.opps?.find((o) => o.id?.startsWith("o") && !idsReais.current.has(o.id));
+    if (!nova) {
+      toast("Isto ainda não grava pelo Cliente 360.");
+      router.refresh();
+      return;
+    }
+
+    /* O desenho chama cross-sell de "nova" no campo `tipo`; o que distingue é
+       a família ser uma que o cliente ainda não tem. Renovação vem com o
+       próprio nome. */
+    const tipo: TipoDeVenda = nova.tipo === "expansao" ? "expansao"
+      : nova.tipo === "upgrade" ? "upgrade"
+      : nova.tipo === "renovacao" ? "renovacao"
+      : "crosssell";
+
+    const pessoa = cliente.empresa.pessoas.find((p) => p.nome === nova.pessoa);
+    /* Responsável fica com quem criou. O desenho oferece escolher o closer,
+       mas a camada de dados entrega a equipe só como lista de NOMES, e
+       adivinhar o usuário por nome erraria em homônimo e em quem mudou de
+       nome. Quem cria assume, e a reatribuição é um clique no Pipeline. */
+    const valor = nova.itens?.[0]?.valor;
+
+    const r = await acaoNovaOportunidadeDoCliente({
+      empresaId: cliente.empresa.id,
+      tipo,
+      familia: nova.familia ?? "",
+      responsavelId: null,
+      pessoaId: pessoa?.id ?? null,
+      valorEstimado: valor ? String(valor) : null,
+      observacao: nova.notas?.[0]?.texto ?? null,
+    });
+
+    if (!r.ok) {
+      toast.error(r.erro);
+      router.refresh();
+      return;
+    }
+    idsReais.current.set(nova.id, r.negocioId);
+    toast.success(`${r.titulo} criada no Pipeline.`);
     router.refresh();
+  }, [cliente.empresa.id, cliente.empresa.pessoas, router]);
+
+  /** Troca o id falso pelo real antes de navegar. */
+  const ir = React.useCallback((href: string) => {
+    let destino = href;
+    for (const [falso, real] of idsReais.current) {
+      if (destino.includes(falso)) destino = destino.split(falso).join(real);
+    }
+    router.push(destino);
   }, [router]);
 
   return (
@@ -677,7 +737,7 @@ export function ClienteProto({ cliente }: { cliente: ClienteDoDesenho }) {
         gravar={gravar}
         refresh={() => router.refresh()}
         abrirExterno={(u: string) => window.open(u, "_blank", "noopener")}
-        ir={(href: string) => router.push(href)}
+        ir={ir}
       />
     </div>
   );
