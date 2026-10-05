@@ -155,10 +155,19 @@ export async function carteiraParaODesenho(organizacaoId: string): Promise<Carte
     ),
     -- O desenho tem UM produto por cliente; a família de maior MRR. Só 2
     -- empresas têm mais de uma família, então o modelo não distorce.
+    --
+    -- SEM filtro de portfólio aqui: a CTE só serve para dar NOME ao produto,
+    -- e filtrar por portfolio_included fazia esta consulta decidir QUEM é
+    -- cliente — anulando o OR de universo (ver o JOIN la embaixo). Os 70
+    -- clientes que faturam sem serviço no portfólio têm serviço canônico
+    -- fora dele, e é de lá que sai a família. UNKNOWN fica de fora porque
+    -- não é família: é ausência de classificação, e o desenho a mostraria
+    -- como produto. Medido em 05/10: 342 de 342 ficam com família real.
     familia_dominante AS (
       SELECT DISTINCT ON (empresa_id) empresa_id, service_family FROM (
         SELECT sc.empresa_id, sc.service_family, SUM(sc.current_recurring_value) AS v FROM servicos_canonicos sc
-        WHERE sc.portfolio_included = true GROUP BY 1, 2) x
+        WHERE sc.empresa_id IS NOT NULL AND sc.service_family IS NOT NULL
+          AND sc.service_family <> 'UNKNOWN' GROUP BY 1, 2) x
       ORDER BY empresa_id, v DESC, service_family
     ),
     -- Relação empresa↔fatura resolvida aqui (COALESCE), nunca com OR no JOIN.
@@ -190,21 +199,38 @@ export async function carteiraParaODesenho(organizacaoId: string): Promise<Carte
       UNION ALL SELECT empresa_id, primeira FROM faturas_agg WHERE primeira IS NOT NULL
     ),
     inicio_agg AS (SELECT empresa_id, MIN(d) AS inicio FROM inicio_fontes WHERE empresa_id IS NOT NULL GROUP BY 1)
-    SELECT e.id, e.nome, COALESCE(e.setor, '') AS segmento, sa.mrr::float8 AS mrr, fd.service_family AS produto,
+    -- Os dois JOINs abaixo eram INNER e desfaziam o universo acima em
+    -- silêncio. Medido no banco do ensaio (05/10, competência 2026-09):
+    --   universo declarado .................... 342 empresas
+    --   render com os INNER ................... 216 empresas · R$ 393.546,53
+    --   faturam e não têm serviço de portfólio . 70 empresas · R$  98.044,96
+    --     (caíam no INNER de familia_dominante, que filtrava portfólio)
+    --   têm portfólio e não faturaram no mês ... 56 empresas · R$       0,00
+    --     (caíam no INNER de servicos_agg)
+    -- A carteira mostrava R$ 118.857,96 a menos que a planilha de setembro
+    -- (R$ 512.404,49) — e a decisão registrada neste arquivo é justamente
+    -- que o número da tela tem que ser o que o Scott confere na planilha.
+    -- LEFT em ambos: cliente sem receita no mês aparece com R$ 0 (que é o
+    -- fato), e cliente sem família aparece sem produto, em vez de sumir.
+    -- O que resta fora é o que NÃO tem dono: 38 linhas / R$ 20.813,00 com
+    -- empresa_id nulo em cliente_receita_mensal — receita não atribuída a
+    -- empresa nenhuma, que não dá para pôr em cliente nenhum sem inventar.
+    SELECT e.id, e.nome, COALESCE(e.setor, '') AS segmento,
+      COALESCE(sa.mrr, 0)::float8 AS mrr, fd.service_family AS produto,
       h.score AS saude, COALESCE(fat.n_atrasadas, 0) AS faturas_atrasadas, uo.nome AS resp,
       to_char(ia.inicio AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM') AS inicio,
       ((now() AT TIME ZONE 'America/Sao_Paulo')::date - (ua.ultima AT TIME ZONE 'America/Sao_Paulo')::date) AS ult_dias,
       to_char(ua.ultima AT TIME ZONE 'America/Sao_Paulo', 'HH24:MI') AS ult_hora
     FROM universo u JOIN empresas e ON e.id = u.empresa_id
-    JOIN servicos_agg sa ON sa.empresa_id = e.id
-    JOIN familia_dominante fd ON fd.empresa_id = e.id
+    LEFT JOIN servicos_agg sa ON sa.empresa_id = e.id
+    LEFT JOIN familia_dominante fd ON fd.empresa_id = e.id
     LEFT JOIN faturas_agg fat ON fat.empresa_id = e.id
     LEFT JOIN cliente_atual cli ON cli.empresa_id = e.id
     LEFT JOIN usuarios uo ON uo.id = cli.responsavel_id
     LEFT JOIN ultima_atividade_agg ua ON ua.empresa_id = e.id
     LEFT JOIN health h ON h.empresa_id = e.id
     LEFT JOIN inicio_agg ia ON ia.empresa_id = e.id
-    ORDER BY sa.mrr DESC
+    ORDER BY COALESCE(sa.mrr, 0) DESC, e.nome
   `);
 
   const clientes: ClienteDoDesenho[] = linhas.map((r) => ({
@@ -214,9 +240,13 @@ export async function carteiraParaODesenho(organizacaoId: string): Promise<Carte
     produto: r.produto,
     mrr: Number(r.mrr),
     /* Sem snapshot de saúde, 0 empurraria o cliente para "Em risco" — que
-       seria afirmar algo que o dado não diz. Hoje todas as 272 têm snapshot;
-       o fallback 70 (limite de "Saudável") é o mais neutro possível e só
-       existe para empresa nova ainda não avaliada pelo health engine. */
+       seria afirmar algo que o dado não diz. O fallback 70 (limite de
+       "Saudável") é o mais neutro possível.
+       ATENÇÃO (medido 05/10 no banco da virada): `cs_health_snapshots` está
+       VAZIA — 0 linhas. Então TODA a carteira cai no fallback e a coluna
+       Saúde não diz nada hoje. Não é bug desta consulta: o health engine
+       nunca rodou sobre a base carregada. Enquanto não rodar, 70 é o único
+       valor honesto; quando rodar, esta linha volta a ser exceção. */
     saude: r.saude ?? 70,
     /* 'Inativo' e 'Em implantação' são comparados literalmente pelo desenho.
        Nenhum dos dois ocorre (0 fulfillments ativos; churned fora do
