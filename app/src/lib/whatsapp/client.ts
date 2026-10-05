@@ -634,6 +634,40 @@ export async function getQrCode(config?: WuzapiSessionConfig): Promise<{ qr: str
   }
 }
 
+/**
+ * Código de pareamento por telefone: a alternativa ao QR Code.
+ *
+ * Número virtual (e qualquer número em aparelho onde não dá para ler o QR) só
+ * conecta por aqui: o WhatsApp mostra "Conectar com número de telefone" e pede
+ * o código de 8 letras que esta chamada devolve.
+ *
+ * Exige sessão JÁ CONECTADA e ainda não logada (`/session/connect` antes).
+ * O wuzapi responde 400 "already paired" se a sessão já estiver logada, e 400
+ * "no session" se não houver sessão — os dois casos sobem como erro com a
+ * mensagem dele, que é o que a tela precisa mostrar.
+ *
+ * `telefone` vai com DDI e DDD, só dígitos (ex.: 5511999998888).
+ */
+export async function pairPhone(
+  telefone: string,
+  config?: WuzapiSessionConfig,
+): Promise<{ codigo: string }> {
+  const apenasDigitos = (telefone || "").replace(/\D/g, "");
+  if (apenasDigitos.length < 10) throw new Error("Telefone inválido: use DDI + DDD + número");
+
+  const res = await wuzapiFetch("/session/pairphone", {
+    method: "POST",
+    body: JSON.stringify({ Phone: apenasDigitos }),
+  }, config || DEFAULT_CONFIG);
+
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || data.message || "Falha ao pedir o código de pareamento");
+
+  const codigo = data.data?.LinkingCode || data.data?.linkingCode || "";
+  if (!codigo) throw new Error("O wuzapi não devolveu código de pareamento");
+  return { codigo };
+}
+
 /** Connect/create session */
 export async function createSession(config?: WuzapiSessionConfig): Promise<void> {
   await wuzapiFetch("/session/connect", {

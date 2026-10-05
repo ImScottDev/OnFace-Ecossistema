@@ -15,7 +15,7 @@ import { veTodasAsConversas, checarAcessoContato } from "@/lib/whatsapp/acesso";
 import {
   reactToMessage, markRead, setPresence, deleteMessage, sessionToConfig,
   getStatus, createSession, disconnectSession, downloadAndSaveAvatar,
-  wuzapiCreateUser, wuzapiDeleteUser, wuzapiFindUser,
+  wuzapiCreateUser, wuzapiDeleteUser, wuzapiFindUser, pairPhone,
 } from "@/lib/whatsapp/client";
 import { randomBytes } from "crypto";
 import { appUrl } from "@/lib/app-url";
@@ -1266,11 +1266,12 @@ app.post("/whatsapp/status", async (c) => {
   const ctx = await getCtx(c);
 
   const body = await c.req.json();
-  const { action, sessionId, sessionName, label } = body as {
+  const { action, sessionId, sessionName, label, telefone } = body as {
     action: string;
     sessionId?: string;
     sessionName?: string;
     label?: string;
+    telefone?: string;
   };
 
   if (action === "create") {
@@ -1321,6 +1322,24 @@ app.post("/whatsapp/status", async (c) => {
   if (action === "connect") {
     await createSession(config);
     return c.json({ status: "connecting" });
+  }
+
+  /* Pareamento por código: a alternativa ao QR Code, para número virtual e para
+     aparelho onde não dá para ler o QR. Precisa de sessão conectada e ainda não
+     logada, então conecta antes se for preciso. O wuzapi responde 400 com
+     "already paired" ou "no session"; a mensagem dele sobe para a tela. */
+  if (action === "pair-phone") {
+    if (!telefone) return c.json({ error: "Informe o telefone com DDI e DDD" }, 400);
+    if (sessao.status !== "connected" && sessao.status !== "waiting_qr") {
+      await createSession(config);
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+    try {
+      const { codigo } = await pairPhone(telefone, config);
+      return c.json({ codigo });
+    } catch (e) {
+      return c.json({ error: e instanceof Error ? e.message : "Falha ao pedir o código" }, 400);
+    }
   }
 
   if (action === "disconnect") {

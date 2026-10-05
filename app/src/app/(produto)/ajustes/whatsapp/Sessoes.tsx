@@ -46,6 +46,12 @@ async function acao(nome: string, extra: Record<string, string> = {}) {
 export function SessoesWhatsapp() {
   const [nome, setNome] = useState("");
   const [ocupado, setOcupado] = useState<string | null>(null);
+  /* Pareamento por código: número virtual (e qualquer aparelho onde não dá para
+     ler o QR) só conecta por aqui. Guarda o telefone digitado e o código
+     devolvido, por sessão. */
+  const [pareando, setPareando] = useState<string | null>(null);
+  const [telefone, setTelefone] = useState("");
+  const [codigos, setCodigos] = useState<Record<string, string>>({});
 
   const { data, isLoading, isError, refetch, isFetching } = useQuery<{ sessions: Sessao[] }>({
     queryKey: ["whatsapp-sessions-config"],
@@ -83,6 +89,26 @@ export function SessoesWhatsapp() {
     }
   }
 
+  async function pedirCodigo(sessaoId: string) {
+    const num = telefone.replace(/\D/g, "");
+    if (num.length < 12) {
+      toast.error("Informe o número com DDI e DDD. Ex.: 5511999998888");
+      return;
+    }
+    setOcupado(sessaoId);
+    try {
+      const body = await acao("pair-phone", { sessionId: sessaoId, telefone: num });
+      const codigo = (body as { codigo?: string })?.codigo;
+      if (!codigo) throw new Error("O servidor não devolveu o código");
+      setCodigos((c) => ({ ...c, [sessaoId]: codigo }));
+      toast.success("Código gerado. Digite no celular em até 60 segundos.");
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setOcupado(null);
+    }
+  }
+
   function criar() {
     const rotulo = nome.trim();
     if (!rotulo) return;
@@ -94,7 +120,7 @@ export function SessoesWhatsapp() {
   return (
     <SecaoAjuste
       titulo="Seus números"
-      ajuda="Cada sessão é um número de WhatsApp conectado ao CRM por QR Code. É por ela que saem suas conversas e cadências."
+      ajuda="Cada sessão é um número de WhatsApp conectado ao CRM, por QR Code ou por código de telefone. É por ela que saem suas conversas e cadências."
       acao={
         <>
           {sessoes.length > 0 && (
@@ -115,7 +141,7 @@ export function SessoesWhatsapp() {
       ) : sessoes.length === 0 ? (
         <div className="aj-vazio">
           <strong>Você ainda não conectou nenhum número.</strong>
-          Dê um nome à sessão abaixo (ex.: Comercial), clique em Conectar e leia o QR Code em WhatsApp → Aparelhos conectados.
+          Dê um nome à sessão abaixo (ex.: Comercial), clique em Conectar e leia o QR Code em WhatsApp → Aparelhos conectados. Em número virtual, use “conectar por código”.
         </div>
       ) : (
         <ul className="aj-lista">
@@ -164,6 +190,50 @@ export function SessoesWhatsapp() {
                     </Cf2Button>
                   </div>
                 </div>
+                {s.status !== "connected" && (
+                  <div className="mb-3 flex flex-col gap-2 rounded-[var(--radius-card)] bg-[var(--surface-sunken)] p-4">
+                    {pareando === s.id ? (
+                      <>
+                        <span className="text-[var(--text-sm)] text-[var(--text-muted)]">
+                          No celular: WhatsApp → Aparelhos conectados → <strong>Conectar com número de telefone</strong>
+                        </span>
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+                          <label className="aj-campo flex-1">
+                            <span>Número com DDI e DDD</span>
+                            <Cf2Input
+                              placeholder="5511999998888"
+                              value={telefone}
+                              inputMode="numeric"
+                              onChange={(e) => setTelefone(e.target.value)}
+                            />
+                          </label>
+                          <Cf2Button size="sm" loading={ocupado === s.id} onClick={() => pedirCodigo(s.id)}>
+                            Gerar código
+                          </Cf2Button>
+                          <Cf2Button size="sm" variant="ghost" onClick={() => { setPareando(null); setTelefone(""); }}>
+                            Cancelar
+                          </Cf2Button>
+                        </div>
+                        {codigos[s.id] && (
+                          <div className="flex flex-col gap-1">
+                            <span className="aj-mono text-[var(--text-xl)] tracking-[0.3em]">{codigos[s.id]}</span>
+                            <span className="text-[var(--text-sm)] text-[var(--text-muted)]">
+                              Digite este código no celular. Ele expira em cerca de 60 segundos; gere outro se passar.
+                            </span>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <button
+                        type="button"
+                        className="self-start text-[var(--text-sm)] underline"
+                        onClick={() => { setPareando(s.id); setTelefone(""); }}
+                      >
+                        Não consigo ler o QR Code — conectar por código
+                      </button>
+                    )}
+                  </div>
+                )}
                 {s.status !== "connected" && s.qrCode && (
                   <div className="mb-3 flex flex-col items-center gap-2 rounded-[var(--radius-card)] bg-[var(--surface-sunken)] p-4">
                     <span className="inline-flex items-center gap-1.5 text-[var(--text-sm)] text-[var(--text-muted)]">
