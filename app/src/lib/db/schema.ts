@@ -991,6 +991,11 @@ export const mrrMovimentos = pgTable(
     organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
     leadId: uuid("lead_id").references(() => leads.id),
     assinaturaId: uuid("assinatura_id").references(() => assinaturas.id),
+    /* O dono comercial do movimento. Sem ele, expansão feita no Stripe entrava
+       no MRR e sumia da atribuição — nenhum closer creditado. Ver 0094. */
+    negocioId: uuid("negocio_id").references((): AnyPgColumn => negocios.id, { onDelete: "set null" }),
+    /** `true` quando a alteração veio de fora do CRM (alguém mexeu no Stripe). */
+    detectadoForaDoCrm: boolean("detectado_fora_do_crm").default(false).notNull(),
     contratoId: uuid("contrato_id").references(() => contratos.id),
     produto: text("produto").notNull(), // ai | pabx
     tipo: text("tipo").notNull(), // novo | expansao | contracao | churn | reativacao

@@ -97,6 +97,8 @@ interface StripeSubscription {
   current_period_start?: number;
   current_period_end?: number;
   cancellation_details?: { reason?: string | null; feedback?: string | null; comment?: string | null } | null;
+  /** `crm_negocio_id` aparece aqui quando a alteração passou pelo CRM. */
+  metadata?: Record<string, string> | null;
   items?: { data: {
     id: string;
     quantity?: number;
@@ -281,12 +283,24 @@ export async function syncStripe(organizacaoId?: string): Promise<{ subs: number
         contratoId: string | null,
         leadId: string | null,
         ocorridoEm: Date,
+        /* O negócio que originou a alteração, quando ela veio do CRM. Vem da
+           metadata `crm_negocio_id` que `stripe-assinatura.ts` carimba na
+           assinatura ao expandir ou trocar plano.
+
+           Quando é `null` num movimento de expansão/contração, significa que
+           alguém alterou a assinatura DIRETO no Stripe — o caso que fazia a
+           venda sumir: o MRR subia certo e nenhum closer era creditado. O
+           movimento fica marcado para a fila de revisão em vez de se perder. */
+        negocioId: string | null = null,
       ) => {
         if (Math.abs(delta) < 0.005) return;
+        const foraDoCrm = !negocioId && (tipo === "expansao" || tipo === "contracao");
         await tx.insert(mrrMovimentos).values({
           organizacaoId: org.id,
           leadId,
           assinaturaId,
+          negocioId,
+          detectadoForaDoCrm: foraDoCrm,
           contratoId,
           produto: "ai",
           tipo,
@@ -405,7 +419,13 @@ export async function syncStripe(organizacaoId?: string): Promise<{ subs: number
         } else if (!wasB && isB) {
           await registrarMovimento("reativacao", mrr, 0, mrr, existing.id, existing.contratoId, existing.leadId, new Date());
         } else if (wasB && isB && Math.abs(mrr - mrrAntes) >= 0.005) {
-          await registrarMovimento(mrr > mrrAntes ? "expansao" : "contracao", mrr - mrrAntes, mrrAntes, mrr, existing.id, existing.contratoId, existing.leadId, new Date());
+          /* `crm_negocio_id` só existe quando a alteração passou pelo CRM
+             (lib/integrations/stripe-assinatura.ts). Alteração feita à mão no
+             Dashboard do Stripe chega aqui sem dono. */
+          const donoDaAlteracao = typeof s.metadata?.crm_negocio_id === "string" && s.metadata.crm_negocio_id
+            ? s.metadata.crm_negocio_id
+            : null;
+          await registrarMovimento(mrr > mrrAntes ? "expansao" : "contracao", mrr - mrrAntes, mrrAntes, mrr, existing.id, existing.contratoId, existing.leadId, new Date(), donoDaAlteracao);
         }
 
         // transição de status -> reflete no contrato espelho (Carteira)

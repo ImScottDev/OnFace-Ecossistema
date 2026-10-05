@@ -58,6 +58,7 @@ apaga coluna ou tabela: a contração é a fase 27 e não foi executada.
 | 0091 | envio de campanhas — `agendada_para`/`iniciada_em`/`concluida_em` e `outreach_campanha_destinatarios` (status por destinatário) |
 | 0092 | construtor de Automações — rascunho, pasta, webhook e agenda em `automacoes`; cursor e carimbo de origem na execução |
 | 0093 | `contrato_templates.tipo_documento` — contrato, aditivo e renovação deixam de colidir na mesma família |
+| 0094 | `mrr_movimentos.negocio_id` e `detectado_fora_do_crm` — expansão feita no Stripe deixa de sumir da atribuição comercial |
 
 ## 3. AS-IS → TO-BE
 
