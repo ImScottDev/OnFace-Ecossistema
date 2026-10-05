@@ -80,6 +80,8 @@ export async function criarPropostaComItens(opts: {
   parcelas?: number;
   vencimentoDias?: number;
   prazoContratoMeses?: number | null;
+  /** Dias de teste antes da primeira cobrança. Ausente = sem teste. */
+  trialDias?: number | null;
   dataValidade?: string;
   signatarios?: Array<{ nome: string; email: string; papel?: string; ordem?: number }>;
   itens: ItemEntrada[];
@@ -146,6 +148,7 @@ export async function criarPropostaComItens(opts: {
     parcelas: opts.parcelas ?? 1,
     vencimentoDias: opts.vencimentoDias,
     prazoContratoMeses: opts.prazoContratoMeses ?? undefined,
+    trialDias: opts.trialDias ?? null,
     signatarios: opts.signatarios,
     totalRecorrente: totalRecorrente.toFixed(2),
     totalAvulso: totalAvulso.toFixed(2),

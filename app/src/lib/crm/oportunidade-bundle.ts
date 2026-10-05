@@ -63,6 +63,8 @@ export async function organizarVendaMultiLinha(opts: {
   parcelas?: number;
   vencimentoDias?: number;
   prazoContratoMeses?: number | null;
+  /** Dias de teste antes da primeira cobrança. Ausente = sem teste. */
+  trialDias?: number | null;
   dataValidade?: string;
   signatarios?: Array<{ nome: string; email: string; papel?: string; ordem?: number }>;
   criadoPorId: string;
@@ -111,7 +113,8 @@ export async function organizarVendaMultiLinha(opts: {
 
     const proposta = await criarPropostaComItens({
       organizacaoId: opts.organizacaoId, leadId: opts.leadId, negocioId, moeda: opts.moeda,
-      observacoes: opts.observacoes, condicoesPagamento: opts.condicoesPagamento, prazoContratoMeses: opts.prazoContratoMeses, dataValidade: opts.dataValidade,
+      observacoes: opts.observacoes, condicoesPagamento: opts.condicoesPagamento, prazoContratoMeses: opts.prazoContratoMeses,
+      trialDias: opts.trialDias ?? null, dataValidade: opts.dataValidade,
       condicaoPagamentoTipo: opts.condicaoPagamentoTipo, parcelas: opts.parcelas, vencimentoDias: opts.vencimentoDias,
       signatarios: opts.signatarios,
       itens, criadoPorId: opts.criadoPorId,

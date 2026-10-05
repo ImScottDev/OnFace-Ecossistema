@@ -59,6 +59,7 @@ apaga coluna ou tabela: a contração é a fase 27 e não foi executada.
 | 0092 | construtor de Automações — rascunho, pasta, webhook e agenda em `automacoes`; cursor e carimbo de origem na execução |
 | 0093 | `contrato_templates.tipo_documento` — contrato, aditivo e renovação deixam de colidir na mesma família |
 | 0094 | `mrr_movimentos.negocio_id` e `detectado_fora_do_crm` — expansão feita no Stripe deixa de sumir da atribuição comercial |
+| 0095 | `propostas.trial_dias` — o período de teste que a tela coletava passa a existir no banco e a chegar ao Stripe |
 
 ## 3. AS-IS → TO-BE
 

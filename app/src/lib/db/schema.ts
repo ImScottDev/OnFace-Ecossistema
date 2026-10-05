@@ -1553,6 +1553,9 @@ export const propostas = pgTable(
     // Prazo informado pelo vendedor antes do envio quando a composição exige
     // contrato. Não existe default: prazo jurídico precisa ser explícito.
     prazoContratoMeses: integer("prazo_contrato_meses"),
+    /** Dias de teste antes da primeira cobrança. NULL ou 0 = sem teste, que é
+     *  o padrão: quem decide é o vendedor em cada proposta. Ver 0095. */
+    trialDias: integer("trial_dias"),
     // Signatários informados pelo vendedor antes do envio quando a composição
     // usa contrato. Mantido na proposta para ser copiado ao contrato gerado
     // automaticamente no aceite, sem acoplar o domínio a um provider externo.

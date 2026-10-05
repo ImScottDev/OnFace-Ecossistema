@@ -199,6 +199,8 @@ export interface CreateGroupCheckoutParams {
    * independente da "Validade" escolhida na proposta. Range aceito pela Stripe: 0–60.
    */
   boletoExpiresAfterDays?: number;
+  /** Dias de teste antes da primeira cobrança. Ausente ou 0 = sem teste. */
+  trialDias?: number | null;
 }
 
 function appendNested(form: URLSearchParams, key: string, value: unknown): void {
@@ -314,7 +316,33 @@ export async function createGroupCheckout(params: CreateGroupCheckoutParams): Pr
 
   const couponId = await createOneTimeCoupon(discount, params.moeda, metadata, params.attemptKey || "initial");
   if (couponId) appendNested(form, "discounts", [{ coupon: couponId }]);
-  if (stripeMode === "subscription") appendNested(form, "subscription_data", { metadata });
+  if (stripeMode === "subscription") {
+    /* Período de teste, quando o vendedor marcou na proposta.
+     *
+     * O cartão CONTINUA sendo coletado (o default do Checkout em modo
+     * subscription é `payment_method_collection=always`): o cliente cadastra
+     * agora e a primeira cobrança só sai no fim do teste. Deixar de coletar
+     * daria um teste que termina sem forma de pagamento e morre em cobrança
+     * falha.
+     *
+     * `missing_payment_method=cancel` é a rede de segurança para o caso raro
+     * de a forma de pagamento sumir no meio: melhor a assinatura encerrar do
+     * que virar fatura vencida que ninguém vai pagar.
+     *
+     * O teto de 730 é o limite do Stripe; o piso de 1 evita `trial=0`, que
+     * ele recusa. */
+    const dias = Math.trunc(params.trialDias ?? 0);
+    const trial = dias > 0 ? Math.min(730, Math.max(1, dias)) : 0;
+    appendNested(form, "subscription_data", {
+      metadata,
+      ...(trial
+        ? {
+            trial_period_days: trial,
+            trial_settings: { end_behavior: { missing_payment_method: "cancel" } },
+          }
+        : {}),
+    });
+  }
   if (stripeMode === "payment") {
     appendNested(form, "payment_intent_data", { metadata });
     appendNested(form, "invoice_creation", { enabled: true, invoice_data: { metadata } });
