@@ -56,6 +56,12 @@ export type EventoDominio =
   | "CheckoutCreated"
   | "CheckoutOpened"
   | "PaymentFailed"
+  /* Risco pós-venda, vindo dos webhooks de `charge.*` e
+     `customer.subscription.deleted`. Separados de PaymentFailed de propósito:
+     dinheiro que voltou e assinatura que acabou são fatos diferentes de
+     cobrança que não entrou, e quem consome precisa distinguir. */
+  | "PaymentRefunded"
+  | "SubscriptionCanceled"
   | "CheckoutExpired"
   | "FulfillmentGroupCompleted"
   // Frente 2C.1 — motor interno de fechamento por família comercial.

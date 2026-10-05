@@ -398,11 +398,41 @@ class ClienteLigada extends ClienteLiga {
     // Status do Stripe dito como o Stripe diz: "unpaid" não é "Cancelada".
     const ROT_SUB: Record<string, string> = { canceled: "Cancelada", unpaid: "Inadimplente", past_due: "Pagamento em atraso", incomplete: "Incompleta", incomplete_expired: "Expirada", paused: "Pausada" };
     const abrirStripe = () => cus ? abrirUrl(STRIPE_CUSTOMER(cus)) : avisa("Esta conta não tem cliente Stripe vinculado.");
+
+    /* Portal do cliente: a sessão é efêmera (o Stripe a expira em minutos), por
+       isso ela é criada no clique e nunca guardada. */
+    const linkDoPortal = async (): Promise<string | null> => {
+      try {
+        const r = await fetch("/api/clientes/" + e.id + "/portal-stripe", { method: "POST" });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok || !d?.url) { toast.error(d?.error || "Não deu para abrir o portal do Stripe"); return null; }
+        return d.url as string;
+      } catch {
+        toast.error("Não deu para falar com o Stripe agora.");
+        return null;
+      }
+    };
+    /* A aba é aberta ANTES do fetch: o navegador só aceita popup que saia direto
+       do clique, e abrir depois da resposta cai no bloqueador. Sem `noopener`
+       porque com ele o `window.open` devolve null e some o handle para navegar. */
+    const gerenciarPagamento = () => {
+      const aba = window.open("about:blank", "_blank");
+      linkDoPortal().then((url) => {
+        if (!url) return aba?.close();
+        if (aba) aba.location.href = url; else abrirUrl(url);
+      });
+    };
     const stripe = {
       abrir: abrirStripe,
       sync: cus ? "Cliente Stripe · " + cus : "Sem cliente Stripe vinculado",
       linha: [cus, ...subsAtivas.map((a) => a.stripeSubscriptionId)].filter(Boolean).join(" · ") || "—",
-      portal: () => avisa("Gerar link do portal Stripe ainda não está ligado nesta tela."),
+      /* O rótulo deste botão no desenho é "Copiar portal do cliente", então ele
+         copia mesmo — e o toast avisa do prazo, porque mandar o link para o
+         cliente amanhã entrega uma sessão morta. */
+      portal: () => {
+        if (!cus) return avisa("Esta conta não tem cliente Stripe vinculado.");
+        linkDoPortal().then((url) => { if (url) copiar(url, "Link do portal (expira em minutos)"); });
+      },
       fatos: [
         { l: "Método", v: "—" },
         { l: "Próxima cobrança", v: proxF ? dmy(proxF.venc) : "—" },
@@ -495,6 +525,11 @@ class ClienteLigada extends ClienteLiga {
       menu: {
         ...v.menu,
         itens: [
+          /* Só aparece com cliente no Stripe: sem customer não existe portal, e
+             um item que só serve para explicar que não funciona é botão
+             mentiroso. É a saída para "o cliente paga no boleto e quer trocar
+             para cartão" — o portal é o único lugar onde ele informa o cartão. */
+          ...(cus ? [{ l: "Gerenciar pagamento", d: I.swap, onClick: () => { setS({ menu: null }); gerenciarPagamento(); } }] : []),
           { l: "Abrir no Stripe", d: I.card, onClick: () => { setS({ menu: null }); abrirStripe(); } },
           { l: "Abrir empresa", d: I.building, onClick: () => { setS({ menu: null }); nav("/empresas/" + e.id); } },
           { l: "Exportar faturas (CSV)", d: I.dl, onClick: () => { setS({ menu: null }); exportar(); } },

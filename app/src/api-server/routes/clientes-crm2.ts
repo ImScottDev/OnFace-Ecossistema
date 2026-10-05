@@ -17,7 +17,8 @@ import { eq, and, or, inArray, sql, desc, asc, isNotNull } from "drizzle-orm";
 import { z } from "zod";
 import { lerUsoCallfaceAi } from "@/lib/integrations/callface-ai/leitura-dominio";
 import { healthDaEmpresa } from "@/lib/cs/health";
-import { getCtx, getGestaoCtx } from "../compat.js";
+import { getCtx, getGestaoCtx, exigirCtx } from "../compat.js";
+import { abrirPortal } from "@/lib/integrations/stripe-portal";
 import { registrarMudancaResponsavel } from "@/lib/crm/owner";
 import { publicarEvento } from "@/lib/events/outbox";
 
@@ -1673,6 +1674,73 @@ app.get("/clientes-crm2/pessoa/:personId/atividades", async (c) => {
     .limit(200);
 
   return c.json({ leadId: pessoaLeadIds[0] ?? null, pessoaId: pessoa?.id ?? null, pessoaNome: nomePessoa, atividades: atividadesPessoa });
+});
+
+// POST /clientes/:empresaId/portal-stripe — link do Customer Portal do Stripe
+// para ESTA empresa.
+//
+// Nasce da dor real: cliente que paga no boleto quer passar para cartão e não
+// existe caminho. O CRM não pode receber cartão (nem deve) e o Dashboard
+// também não troca por ele — só o próprio cliente informa o meio novo. O portal
+// é a resposta oficial do Stripe, e esta rota é o que a transforma em um clique
+// no Cliente 360.
+//
+// Gate por `finance.manage`, não por cargo: quem gera este link está mexendo no
+// que o cliente paga — closer e SDR não entram, mesmo com acesso ao 360.
+//
+// `return_url` é montada AQUI, nunca recebida do corpo: ela volta do domínio do
+// Stripe para o nosso, e aceitar URL do cliente seria um redirecionamento
+// aberto assinado pela nossa conta.
+app.post("/clientes/:empresaId/portal-stripe", async (c) => {
+  const ctx = await exigirCtx(c, "finance.manage");
+  const empresaId = c.req.param("empresaId");
+  if (!UUID_RE.test(empresaId)) return c.json({ error: "empresaId inválido" }, 400);
+
+  const [empresa] = await db
+    .select({ id: empresas.id, nome: empresas.nome, stripeCustomerId: empresas.stripeCustomerId })
+    .from(empresas)
+    .where(and(eq(empresas.id, empresaId), eq(empresas.organizacaoId, ctx.organizacaoId)))
+    .limit(1);
+  if (!empresa) return c.json({ error: "Empresa não encontrada" }, 404);
+
+  // A coluna da empresa é a fonte preferida, mas ela é opcional e nem todo
+  // cliente a tem preenchida — quem veio por import ou teve a assinatura criada
+  // fora do CRM só aparece no espelho de assinaturas. Sem este fallback o botão
+  // falharia exatamente para a base antiga, que é quem ainda está no boleto. A
+  // assinatura mais recente vence: é a que carrega a cobrança viva.
+  let stripeCustomerId = empresa.stripeCustomerId;
+  if (!stripeCustomerId) {
+    const [assinatura] = await db
+      .select({ stripeCustomerId: assinaturas.stripeCustomerId })
+      .from(assinaturas)
+      .where(and(
+        eq(assinaturas.empresaId, empresaId),
+        eq(assinaturas.organizacaoId, ctx.organizacaoId),
+        isNotNull(assinaturas.stripeCustomerId),
+      ))
+      .orderBy(desc(assinaturas.createdAt))
+      .limit(1);
+    stripeCustomerId = assinatura?.stripeCustomerId ?? null;
+  }
+  if (!stripeCustomerId) {
+    // 409, não 500: a conta existe e a requisição está correta — é o cadastro
+    // que não tem cliente no Stripe, e quem recebe precisa saber exatamente
+    // isso para ir criar/vincular.
+    return c.json({ error: `${empresa.nome} não tem cliente no Stripe vinculado. Sem isso não há portal para abrir.` }, 409);
+  }
+
+  const base = process.env.NEXTAUTH_URL || "https://crm.callface.io";
+  try {
+    const portal = await abrirPortal({ stripeCustomerId, returnUrl: `${base}/clientes/${empresaId}` });
+    // Modo mock (dev sem chave): não há sessão, e dizer isso é melhor do que
+    // devolver uma URL falsa que o usuário vai clicar.
+    if (!portal.url) return c.json({ error: portal.motivo ?? "Portal indisponível neste ambiente." }, 503);
+    return c.json({ url: portal.url, stripeCustomerId });
+  } catch (erro) {
+    // O 500 genérico esconderia o que o Stripe disse (configuração sem termos,
+    // customer apagado, chave errada) — e sem isso ninguém conserta.
+    return c.json({ error: `O Stripe recusou abrir o portal: ${erro instanceof Error ? erro.message : String(erro)}` }, 502);
+  }
 });
 
 export const clientesCrm2Routes = app;

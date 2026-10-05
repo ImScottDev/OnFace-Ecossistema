@@ -389,6 +389,154 @@ async function handleInvoicePaymentFailed(invoice: Record<string, unknown>): Pro
   return `pagamento falhou de ${quem} — ${destinatarios.length} notificado(s)`;
 }
 
+/* ── Risco pós-venda: estorno, contestação e cancelamento ──────────────── */
+
+/** Quem avisar sobre esta conta: o responsável; sem ele, os admins ativos. */
+async function destinatariosDaConta(responsavelId: string | null): Promise<string[]> {
+  if (responsavelId) return [responsavelId];
+  const admins = await db
+    .select({ id: usuarios.id })
+    .from(usuarios)
+    .where(and(eq(usuarios.role, "admin"), eq(usuarios.ativo, true)));
+  return admins.map((a) => a.id);
+}
+
+/** O lead ligado a um customer do Stripe, com o responsável da conta. */
+async function leadDoCustomer(customerId: string | null) {
+  if (!customerId) return null;
+  const [lead] = await db
+    .select({ id: leads.id, nome: leads.nome, empresa: leads.empresa, empresaId: leads.empresaId, responsavelId: leads.responsavelId, organizacaoId: leads.organizacaoId })
+    .from(leads)
+    .where(eq(leads.stripeCustomerId, customerId))
+    .limit(1);
+  return lead ?? null;
+}
+
+/**
+ * `charge.refunded` — dinheiro devolvido.
+ *
+ * Sem isto, um negócio estornado continuava `ganho` com MRR vivo: o Financeiro
+ * mostrava receita que voltou para o cliente. O reembolso pode ser PARCIAL, e
+ * aí a decisão é comercial, não automática — por isso o handler registra e
+ * chama gente, em vez de reverter o ganho sozinho.
+ */
+async function handleChargeRefunded(charge: Record<string, unknown>): Promise<string> {
+  const customerId = typeof charge.customer === "string" ? charge.customer : null;
+  const lead = await leadDoCustomer(customerId);
+  const total = typeof charge.amount === "number" ? charge.amount / 100 : 0;
+  const devolvido = typeof charge.amount_refunded === "number" ? charge.amount_refunded / 100 : 0;
+  const parcial = devolvido > 0 && devolvido < total;
+  const quem = lead?.empresa || lead?.nome || customerId || "cliente";
+  const reais = (v: number) => v.toLocaleString("pt-BR", { minimumFractionDigits: 2 });
+
+  if (!lead) return `estorno de R$ ${reais(devolvido)} do customer ${customerId} sem lead no CRM`;
+
+  for (const usuarioId of await destinatariosDaConta(lead.responsavelId)) {
+    await db.insert(notificacoes).values({
+      usuarioId,
+      tipo: "estorno",
+      titulo: `${parcial ? "Estorno parcial" : "Estorno"} — ${quem}`,
+      mensagem:
+        `R$ ${reais(devolvido)}${parcial ? ` de R$ ${reais(total)}` : ""} devolvidos a ${quem}. ` +
+        `Confira se o negócio deve sair de ganho e se a entrega continua.`,
+      link: `/clientes${lead.empresaId ? `/${lead.empresaId}` : ""}`,
+    }).catch((e) => console.error("[StripeWebhook] falha ao notificar estorno:", e));
+  }
+
+  await publicarEvento({
+    organizacaoId: lead.organizacaoId,
+    eventType: "PaymentRefunded",
+    aggregateType: "lead",
+    aggregateId: lead.id,
+    payload: { customerId, valorDevolvido: devolvido, valorTotal: total, parcial },
+  }).catch(() => {});
+
+  return `estorno de R$ ${reais(devolvido)} de ${quem} registrado`;
+}
+
+/**
+ * `charge.dispute.*` — o cliente contestou no cartão.
+ *
+ * Tem prazo: a janela de resposta ao emissor é curta, e perder por silêncio é
+ * o pior desfecho. Por isso avisa na criação e no encerramento, dizendo quem
+ * ganhou. Boleto não tem contestação, então isto é caminho de cartão.
+ */
+async function handleDispute(dispute: Record<string, unknown>, encerrada: boolean): Promise<string> {
+  const customerId = typeof dispute.customer === "string" ? dispute.customer : null;
+  const lead = await leadDoCustomer(customerId);
+  const valor = typeof dispute.amount === "number" ? dispute.amount / 100 : 0;
+  const status = typeof dispute.status === "string" ? dispute.status : "desconhecido";
+  const quem = lead?.empresa || lead?.nome || customerId || "cliente";
+  const reais = valor.toLocaleString("pt-BR", { minimumFractionDigits: 2 });
+  if (!lead) return `contestação de R$ ${reais} sem lead no CRM`;
+
+  const ganhamos = status === "won";
+  const titulo = encerrada
+    ? `Contestação ${ganhamos ? "ganha" : "perdida"} — ${quem}`
+    : `Contestação aberta — ${quem}`;
+  const mensagem = encerrada
+    ? `A contestação de R$ ${reais} de ${quem} foi encerrada como "${status}".` +
+      (ganhamos ? "" : " O valor foi devolvido ao cliente.")
+    : `${quem} contestou R$ ${reais} no cartão. Há prazo para responder ao emissor — ` +
+      `junte comprovante de entrega e contrato no painel do Stripe.`;
+
+  for (const usuarioId of await destinatariosDaConta(lead.responsavelId)) {
+    await db.insert(notificacoes).values({
+      usuarioId, tipo: "contestacao", titulo, mensagem,
+      link: `/clientes${lead.empresaId ? `/${lead.empresaId}` : ""}`,
+    }).catch((e) => console.error("[StripeWebhook] falha ao notificar contestação:", e));
+  }
+  return encerrada ? `contestação de ${quem} encerrada (${status})` : `contestação de ${quem} aberta`;
+}
+
+/**
+ * `customer.subscription.deleted` — a assinatura acabou.
+ *
+ * O cancelamento costuma ser feito direto no Stripe, e o CRM ficava sem saber:
+ * cliente aparecia ativo numa carteira que já não existia. O espelho é
+ * atualizado pelo `syncStripe` logo depois deste handler, então aqui o trabalho
+ * é o que o sync NÃO faz — avisar gente e abrir a pendência do motivo.
+ *
+ * O motivo importa: sem ele não há como auditar churn. O Stripe só traz
+ * `cancellation_details` quando o cancelamento passou pelo portal com o motivo
+ * ligado; cancelado à mão no Dashboard vem vazio, e aí alguém precisa
+ * preencher.
+ */
+async function handleSubscriptionCanceled(subscription: Record<string, unknown>): Promise<string> {
+  const customerId = typeof subscription.customer === "string" ? subscription.customer : null;
+  const lead = await leadDoCustomer(customerId);
+  const detalhes = subscription.cancellation_details as Record<string, unknown> | undefined;
+  const motivoStripe = [detalhes?.reason, detalhes?.feedback, detalhes?.comment]
+    .filter((x): x is string => typeof x === "string" && x.length > 0)
+    .join(" · ");
+  const quem = lead?.empresa || lead?.nome || customerId || "cliente";
+  if (!lead) return `cancelamento do customer ${customerId} sem lead no CRM`;
+
+  const temMotivo = motivoStripe.length > 0;
+  for (const usuarioId of await destinatariosDaConta(lead.responsavelId)) {
+    await db.insert(notificacoes).values({
+      usuarioId,
+      tipo: temMotivo ? "cancelamento" : "cancelamento_sem_motivo",
+      titulo: `Assinatura cancelada — ${quem}`,
+      mensagem: temMotivo
+        ? `${quem} cancelou. Motivo informado: ${motivoStripe}.`
+        : `${quem} cancelou e o Stripe não trouxe motivo — provavelmente foi cancelado à mão. ` +
+          `Registre o motivo para o churn ficar auditável.`,
+      link: `/clientes${lead.empresaId ? `/${lead.empresaId}` : ""}`,
+    }).catch((e) => console.error("[StripeWebhook] falha ao notificar cancelamento:", e));
+  }
+
+  await publicarEvento({
+    organizacaoId: lead.organizacaoId,
+    eventType: "SubscriptionCanceled",
+    aggregateType: "lead",
+    aggregateId: lead.id,
+    payload: { customerId, subscriptionId: subscription.id, motivo: motivoStripe || null, motivoPendente: !temMotivo },
+  }).catch(() => {});
+
+  return `cancelamento de ${quem} registrado${temMotivo ? "" : " (motivo pendente)"}`;
+}
+
 // POST /api/webhooks/stripe
 // Recebe eventos do Stripe em TEMPO REAL (pagamento, assinatura, cancelamento,
 // checkout) e dispara um sync incremental. Configurar no painel Stripe:
@@ -420,6 +568,12 @@ const RELEVANT = new Set([
   "checkout.session.async_payment_succeeded",
   "checkout.session.async_payment_failed",
   "checkout.session.expired",
+  /* Risco pós-venda. Sem estes três, negócio estornado continuava `ganho` com
+     MRR vivo, e a contestação só aparecia no extrato do Stripe. Boleto não tem
+     chargeback (não existe fluxo de disputa), então `dispute` vale para cartão. */
+  "charge.refunded",
+  "charge.dispute.created",
+  "charge.dispute.closed",
 ]);
 
 // Tolerância de timestamp (doc Stripe: proteger contra replay) + suporte a múltiplos
@@ -680,6 +834,30 @@ export async function POST(request: NextRequest) {
       await finishInboxEvent("failed", String(e));
       return NextResponse.json({ error: "invoice paid handling failed, retry" }, { status: 500 });
     }
+  }
+
+  /* Estorno e contestação: registram e CHAMAM GENTE, não revertem sozinhos.
+     Reembolso parcial e disputa são decisão comercial — automatizar a reversão
+     do ganho erraria mais do que acertaria. O erro aqui é só logado: perder a
+     notificação é ruim, mas devolver 500 e fazer o Stripe reentregar o evento
+     geraria notificação repetida, que é pior. */
+  if (type === "charge.refunded") {
+    try {
+      console.log(`[StripeWebhook] ${type} -> ${await handleChargeRefunded(event.data?.object || {})}`);
+    } catch (e) { console.error("[StripeWebhook] erro no estorno:", e); }
+  }
+
+  if (type === "charge.dispute.created" || type === "charge.dispute.closed") {
+    try {
+      const r = await handleDispute(event.data?.object || {}, type.endsWith(".closed"));
+      console.log(`[StripeWebhook] ${type} -> ${r}`);
+    } catch (e) { console.error("[StripeWebhook] erro na contestação:", e); }
+  }
+
+  if (type === "customer.subscription.deleted") {
+    try {
+      console.log(`[StripeWebhook] ${type} -> ${await handleSubscriptionCanceled(event.data?.object || {})}`);
+    } catch (e) { console.error("[StripeWebhook] erro no cancelamento:", e); }
   }
 
   if (type.startsWith("customer.subscription.")) {
