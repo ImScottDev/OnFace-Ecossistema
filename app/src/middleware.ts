@@ -15,7 +15,7 @@ export default auth((req) => {
   // organização e dado financeiro — nunca tinham entrado nesta lista nem no
   // matcher. O guard de sessão do layout `(produto)` cobria a autenticação, mas
   // o middleware (que é quem aplica o gate de PAPEL, abaixo) nem rodava pra elas.
-  const crmRoutes = ["/dashboard", "/inicio", "/leads", "/pipeline", "/negocios", "/pre-vendas", "/carteira", "/contatos", "/empresas", "/contratos", "/propostas", "/financeiro", "/relatorios", "/campanhas", "/prospeccao", "/inbox", "/atendimento", "/calendario", "/automacoes", "/configuracoes", "/whatsapp", "/perfil", "/admin", "/tarefas", "/clientes", "/ajustes", "/vendas", "/design"];
+  const crmRoutes = ["/dashboard", "/inicio", "/leads", "/pipeline", "/negocios", "/pre-vendas", "/carteira", "/contatos", "/empresas", "/contratos", "/propostas", "/financeiro", "/relatorios", "/campanhas", "/prospeccao", "/inbox", "/atendimento", "/calendario", "/automacoes", "/configuracoes", "/whatsapp", "/perfil", "/admin", "/tarefas", "/clientes", "/ajustes", "/vendas", "/design", "/chamados", "/operacao", "/pessoas", "/pos-vendas", "/projetos"];
   const isCrmRoute = crmRoutes.some((route) => pathname.startsWith(route));
 
   if (isCrmRoute && !req.auth) {
@@ -62,7 +62,7 @@ export default auth((req) => {
   //
   // Backend também passou a checar papel (getGestaoCtx / isAdminView nas rotas
   // financeiras): isto aqui é navegação, não é a única barreira.
-  const GESTAO = ["/configuracoes", "/financeiro", "/onboarding", "/campanhas", "/clientes/financeiro", "/ajustes"];
+  const GESTAO = ["/configuracoes", "/financeiro", "/campanhas", "/clientes/financeiro", "/ajustes"];
   // Conexão de e-mail/calendário é PESSOAL (cada um conecta a própria conta),
   // não configuração da organização — closer e SDR precisam alcançar.
   const PESSOAIS = ["/configuracoes/email", "/ajustes/email"];
@@ -77,5 +77,5 @@ export default auth((req) => {
 });
 
 export const config = {
-  matcher: ["/clientes/:path*", "/ajustes/:path*", "/vendas/:path*", "/design/:path*", "/dashboard/:path*", "/inicio/:path*", "/leads/:path*", "/pipeline/:path*", "/negocios/:path*", "/pre-vendas/:path*", "/carteira/:path*", "/contatos/:path*", "/empresas/:path*", "/contratos/:path*", "/propostas/:path*", "/financeiro/:path*", "/relatorios/:path*", "/campanhas/:path*", "/prospeccao/:path*", "/inbox/:path*", "/atendimento/:path*", "/calendario/:path*", "/automacoes/:path*", "/configuracoes/:path*", "/whatsapp/:path*", "/perfil/:path*", "/admin/:path*", "/tarefas/:path*"],
+  matcher: ["/clientes/:path*", "/ajustes/:path*", "/vendas/:path*", "/design/:path*", "/dashboard/:path*", "/inicio/:path*", "/leads/:path*", "/pipeline/:path*", "/negocios/:path*", "/pre-vendas/:path*", "/carteira/:path*", "/contatos/:path*", "/empresas/:path*", "/contratos/:path*", "/propostas/:path*", "/financeiro/:path*", "/relatorios/:path*", "/campanhas/:path*", "/prospeccao/:path*", "/inbox/:path*", "/atendimento/:path*", "/calendario/:path*", "/automacoes/:path*", "/configuracoes/:path*", "/whatsapp/:path*", "/perfil/:path*", "/admin/:path*", "/tarefas/:path*", "/chamados/:path*", "/operacao/:path*", "/pessoas/:path*", "/pos-vendas/:path*", "/projetos/:path*"],
 };
