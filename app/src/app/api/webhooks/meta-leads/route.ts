@@ -150,6 +150,35 @@ export async function POST(req: NextRequest) {
         ocorridoEm: n.ocorridoEm,
       });
 
+      /* As respostas do formulário que não têm coluna própria.
+       *
+       * `normalizarLeadAds` já separa tudo que o formulário trouxe além de
+       * nome/e-mail/telefone/atribuição — e esse conteúdo estava sendo
+       * CALCULADO E JOGADO FORA. Um formulário novo com "qual seu
+       * faturamento?" chegava, a resposta era lida e sumia, e a SDR ligava
+       * sem ela.
+       *
+       * Vai para `leads.campos_custom`, que é onde o caminho do RD Station já
+       * guarda o mesmo tipo de dado — a ficha do lead lê de lá. O merge
+       * preserva o que já existe: reentrega da Meta não pode apagar o que
+       * alguém preencheu à mão.
+       *
+       * O lead é alcançado pelo vínculo da aquisição (`lead_legado_id`), que
+       * é o que a ponte canônica acabou de preencher — `leads` não tem coluna
+       * de id da Meta.
+       *
+       * Fora da transação de propósito: o lead já entrou. Perder a resposta
+       * extra é ruim, perder o lead inteiro por causa dela é pior. */
+      if (r.ok && n.respostas && Object.keys(n.respostas).length > 0) {
+        await db.execute(sql`
+          UPDATE leads
+             SET campos_custom = COALESCE(campos_custom, '{}'::jsonb) || ${JSON.stringify(n.respostas)}::jsonb,
+                 updated_at = now()
+           WHERE organizacao_id = ${org.id}::uuid
+             AND id = (SELECT lead_legado_id FROM aquisicoes WHERE id = ${r.aquisicaoId}::uuid)
+        `).catch((e) => console.error(`[MetaLeads] respostas do formulário não gravadas (${n.metaLeadId}):`, e));
+      }
+
       resultados.push({ metaLeadId: n.metaLeadId, ok: r.ok, motivo: r.erro });
       if (!r.ok) console.error(`[MetaLeads] lead ${n.metaLeadId} não entrou: ${r.erro}`);
     }
@@ -158,5 +187,27 @@ export async function POST(req: NextRequest) {
   // A Meta reentrega quando não recebe 200 rápido, e reentrega do mesmo fato é
   // o mesmo lead — a idempotência já trata. Responder 200 aqui evita fila de
   // retentativa por um lead que nós é que não conseguimos processar.
+  /* Lead que chegou e NÃO entrou é incidente, não rotina.
+   *
+   * Antes isto devolvia sempre 200 com `ok:true`. A Meta lê 200 como entregue
+   * e nunca retenta — então retrieval falhando por permissão da Página, ou
+   * formulário com nome de campo fora dos sinônimos, matava o lead em
+   * silêncio: nenhum contador subia, nenhum alerta saía, e a descoberta vinha
+   * quando alguém perguntasse por que o board estava vazio. Foi assim que se
+   * perderam 125 leads em julho.
+   *
+   * Devolver 500 faz a Meta RETENTAR, o que dá tempo de corrigir a permissão
+   * sem perder o lead. E o erro fica no log com o motivo de cada um. */
+  const perdidos = resultados.filter((x) => !x.ok);
+  if (perdidos.length > 0) {
+    console.error(
+      `[MetaLeads] ${perdidos.length} de ${resultados.length} lead(s) NÃO entraram:`,
+      perdidos.map((x) => `${x.metaLeadId}: ${x.motivo ?? "sem motivo"}`).join(" | "),
+    );
+    return NextResponse.json(
+      { ok: false, processados: resultados.length, perdidos: perdidos.length, resultados },
+      { status: 500 },
+    );
+  }
   return NextResponse.json({ ok: true, processados: resultados.length, resultados });
 }

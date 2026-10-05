@@ -144,9 +144,18 @@ export async function paginaDeAtendimento(ctx: Ctx): Promise<DadosAtendimento> {
     // Destino de transferência: quem está ativo na organização, não só quem já tem conversa.
     db.execute<{ id: string; nome: string }>(sql`
       SELECT id::text, nome FROM usuarios WHERE organizacao_id = ${org} AND ativo ORDER BY nome`),
+    /* Os números DA PESSOA, não os da organização.
+       O seletor de caixa listava os 8 números da empresa. O conteúdo nunca
+       vazou — `acesso` acima já barra conversa alheia — mas o rótulo e o
+       TELEFONE dos colegas apareciam, e escolher a caixa de outro abria uma
+       lista vazia. A mesma regra da query de conversas, aplicada aqui.
+       Sessão sem dono é compartilhada da organização e continua visível. */
     db.execute<{ id: string; label: string; fone: string | null }>(sql`
       SELECT id::text, btrim(label) AS label, NULLIF(split_part(phone_number, ':', 1), '') AS fone
-        FROM whatsapp_sessao WHERE organizacao_id = ${org} ORDER BY label`),
+        FROM whatsapp_sessao
+       WHERE organizacao_id = ${org}
+         AND ${veTodasAsConversas(ctx) ? sql`TRUE` : sql`(usuario_id = ${ctx.userId} OR usuario_id IS NULL)`}
+       ORDER BY label`),
     db.execute<{ id: string; nome: string }>(sql`
       SELECT id::text, nome FROM labels WHERE organizacao_id = ${org} ORDER BY nome`),
     db.execute<{ contato_id: string; nome: string }>(sql`
