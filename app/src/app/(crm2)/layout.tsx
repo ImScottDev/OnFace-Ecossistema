@@ -1,4 +1,3 @@
-import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { and, eq, gt, sql } from "drizzle-orm";
 import { auth } from "@/lib/auth/config";
@@ -12,8 +11,6 @@ import { Cf2ThemeRoot } from "@/components/crm2/ThemeRoot";
 import { Cf2CamadaModal } from "@/components/crm2/CamadaModal";
 import { OnfaceThemeRoot } from "@/components/onface/OnfaceThemeRoot";
 import { CascaProto } from "@/components/onface/proto/CascaProto";
-import { TopbarOnface } from "@/components/onface/shell/TopbarOnface";
-import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 import { MotionDoProto } from "@/components/onface/proto/MotionDoProto";
@@ -119,16 +116,11 @@ export default async function Crm2Layout({
   const session = await resolveSession();
   if (!session?.user) redirect("/login");
 
-  // O estado da coluna é lido no servidor para o primeiro paint já sair na
-  // largura certa. Sem isto a sidebar abre expandida e encolhe na hidratação,
-  // empurrando o conteúdo de lado na frente do usuário.
-  const cookieStore = await cookies();
-  const abertaPorPadrao = cookieStore.get("sidebar_state")?.value !== "false";
   const naoLidas = await conversasNaoLidas();
   const usuario = await usuarioDaCasca(session.user);
 
   return (
-    <Providers session={session} variant="onface">
+    <Providers session={session}>
       <script dangerouslySetInnerHTML={{ __html: TEMA_ANTES_DO_PAINT }} />
       <OnfaceThemeRoot />
       <Cf2ThemeRoot />

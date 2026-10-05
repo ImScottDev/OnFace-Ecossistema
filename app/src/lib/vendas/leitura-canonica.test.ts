@@ -17,7 +17,7 @@ import assert from "node:assert/strict";
 
 const DB_URL = process.env.DATABASE_URL;
 
-test("o board de pré-vendas conta toda aquisição aberta, sem exigir campo opcional", async (t) => {
+test("o board de pré-vendas conta toda aquisição aberta do seu universo, sem exigir campo opcional", async (t) => {
   if (!DB_URL) return t.skip("DATABASE_URL não definida");
   const { db } = await import("@/lib/db");
   const { sql } = await import("drizzle-orm");
@@ -26,9 +26,14 @@ test("o board de pré-vendas conta toda aquisição aberta, sem exigir campo opc
   const [org] = await db.execute<{ id: string }>(sql`SELECT id FROM organizacoes LIMIT 1`);
   const board = await boardPreVendas(org.id, { aba: "ativos" });
 
+  // Universo de Pré-vendas: aquisição aberta que não é prospect de outbound
+  // ainda em prospecção (ver `somenteDePreVendas`, a mesma regra do board).
+  const { somenteDePreVendas } = await import("@onface/acquisition");
   const [real] = await db.execute<{ n: number }>(sql`
-    SELECT count(*)::int AS n FROM aquisicoes
-     WHERE organizacao_id = ${org.id}::uuid AND closed_at IS NULL`);
+    SELECT count(*)::int AS n FROM aquisicoes a
+      LEFT JOIN leads lg ON lg.id = a.lead_legado_id
+     WHERE a.organizacao_id = ${org.id}::uuid AND a.closed_at IS NULL
+       AND ${somenteDePreVendas(sql)}`);
 
   const somaDasColunas = board.colunas.reduce((n, c) => n + c.total, 0);
   assert.equal(

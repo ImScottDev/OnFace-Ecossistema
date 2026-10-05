@@ -33,7 +33,7 @@ test("a página de Risco não usa ModuloPendente", () => {
 test("o menu não marca Risco como pendente", () => {
   // Menu e tela precisam concordar: item marcado pendente apontando para tela
   // pronta é tão ruim quanto o contrário.
-  const nav = fs.readFileSync(path.join(raiz, "src", "components", "onface", "navigation.ts"), "utf8");
+  const nav = fs.readFileSync(path.join(raiz, "src", "components", "onface", "navegacao.ts"), "utf8");
   const linha = nav.split("\n").find((l) => l.includes('href: "/clientes/risco"')) ?? "";
   assert.ok(linha, "o item Risco / Churn sumiu do menu");
   assert.doesNotMatch(linha, /pendente:\s*true/,

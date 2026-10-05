@@ -73,8 +73,10 @@ test("o vocabulário de fase não volta para o arquivo que importa db", () => {
   const puro = fs.readFileSync(path.join(process.cwd(), "src", "lib", "crm", "pos-venda-checklists.ts"), "utf8");
   assert.doesNotMatch(puro, /from\s+"@\/lib\/db/,
     "pos-venda-checklists precisa continuar puro: é o módulo que as telas importam");
-  const detalhe = fs.readFileSync(
-    path.join(process.cwd(), "src", "components", "crm2", "clientes", "OnboardingDetail.tsx"), "utf8");
-  assert.doesNotMatch(detalhe, /const MARCO_POR_WORKSTREAM: Record/,
-    "a cópia local do mapa de marcos voltou");
+  // Nenhuma tela mantém cópia própria do mapa de marcos.
+  const copias = fs.readdirSync(path.join(process.cwd(), "src", "components"), { recursive: true, encoding: "utf8" })
+    .filter((f) => /\.tsx?$/.test(f))
+    .filter((f) => /const MARCO_POR_WORKSTREAM: Record/.test(
+      fs.readFileSync(path.join(process.cwd(), "src", "components", f), "utf8")));
+  assert.deepEqual(copias, [], "a cópia local do mapa de marcos voltou");
 });

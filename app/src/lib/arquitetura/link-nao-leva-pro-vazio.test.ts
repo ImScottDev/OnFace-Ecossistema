@@ -21,11 +21,15 @@
  * 2. **A URL costuma ser template.** `/clientes/${id}` é lido até o `${`, então
  *    a comparação vale como PREFIXO e um segmento `[id]` casa com qualquer
  *    coisa. Exigir igualdade daria falso vermelho em toda rota de detalhe.
+ * 3. **As telas geradas (`components/onface/proto`) navegam por endereço de
+ *    protótipo** (`/onface-preview/pipeline`), e toda navegação delas passa por
+ *    `rotaDoDesenho` antes do `router.push`. O destino que conta é o traduzido.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+import { rotaDoDesenho } from "@/components/onface/proto/rota-do-desenho";
 
 const SRC = path.join(process.cwd(), "src");
 const APP = path.join(SRC, "app");
@@ -79,7 +83,8 @@ test("todo link da aplicação leva a uma tela que existe", () => {
   for (const arq of arquivos(SRC)) {
     const txt = fs.readFileSync(arq, "utf8");
     for (const m of txt.matchAll(padrao)) {
-      const destino = "/" + m[1].replace(/\/$/, "");
+      const lido = "/" + m[1].replace(/\/$/, "");
+      const destino = arq.includes(`${path.sep}onface${path.sep}proto${path.sep}`) ? rotaDoDesenho(lido) : lido;
       // `/api/*` é do irmão desta trava; `/` é a raiz.
       if (destino.startsWith("/api") || destino === "/") continue;
       if (!casa(destino)) {

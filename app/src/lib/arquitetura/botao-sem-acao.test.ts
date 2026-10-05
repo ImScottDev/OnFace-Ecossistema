@@ -77,10 +77,6 @@ function dentroDeTriggerAsChild(fonte: string, posicao: number): boolean {
  * autorização), então a dívida fica registrada em vez de escondida.
  */
 const FORA_DO_PRODUTO = [
-  // Componente com ZERO importadores — só é citado num comentário. É o
-  // padrão "peça pronta sem chamador": existe, compila, e nenhuma tela usa.
-  // Pendente de remoção.
-  "src/components/crm2/leads/PaginaCompleta.tsx",
   // Vitrine do Design System em /design. Os botões ali são EXEMPLOS de
   // composição, não ações — o que a página ensina é o arranjo. Ficam de fora
   // da trava porque a regra é sobre o produto; se um dia virarem interativos

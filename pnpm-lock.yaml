@@ -239,35 +239,11 @@ importers:
 
   packages/domain/acquisition: {}
 
-  packages/domain/activities: {}
-
-  packages/domain/automation: {}
-
   packages/domain/catalog: {}
-
-  packages/domain/communications: {}
-
-  packages/domain/contracts: {}
-
-  packages/domain/customer-services: {}
-
-  packages/domain/customer-success: {}
-
-  packages/domain/finance: {}
-
-  packages/domain/fulfillment: {}
 
   packages/domain/identity: {}
 
-  packages/domain/intelligence: {}
-
-  packages/domain/reporting: {}
-
   packages/domain/sales: {}
-
-  packages/integrations/apollo: {}
-
-  packages/integrations/callface: {}
 
   packages/integrations/callface-ai:
     dependencies:
@@ -275,49 +251,13 @@ importers:
         specifier: ^3.4.9
         version: 3.4.9
 
-  packages/integrations/documenso: {}
-
-  packages/integrations/google: {}
-
-  packages/integrations/legacy: {}
-
   packages/integrations/meta: {}
-
-  packages/integrations/microsoft: {}
-
-  packages/integrations/rd-station: {}
-
-  packages/integrations/stripe: {}
-
-  packages/integrations/whatsapp: {}
-
-  packages/platform/auth: {}
 
   packages/platform/database: {}
 
   packages/platform/events: {}
 
-  packages/platform/files: {}
-
-  packages/platform/jobs: {}
-
-  packages/platform/observability: {}
-
-  packages/platform/permissions: {}
-
   packages/platform/storage: {}
-
-  packages/platform/tenancy: {}
-
-  packages/shared/config: {}
-
-  packages/shared/types: {}
-
-  packages/shared/ui: {}
-
-  packages/shared/utils: {}
-
-  packages/shared/validation: {}
 
 packages:
 

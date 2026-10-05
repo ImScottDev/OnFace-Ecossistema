@@ -22,6 +22,14 @@ import {
   notificacoes,
 } from "./schema";
 
+// Seed de demonstração: cria usuários e registros de exemplo. Só roda contra um
+// banco local; contra dev publicado ou produção misturaria dado inventado com
+// dado real.
+if (!/@(localhost|127\.0\.0\.1)[:/]/.test(process.env.DATABASE_URL ?? "")) {
+  console.error("Recusado: este script só roda contra um banco local (DATABASE_URL em localhost).");
+  process.exit(1);
+}
+
 const connectionString = process.env.DATABASE_URL!;
 const client = postgres(connectionString);
 const db = drizzle(client);

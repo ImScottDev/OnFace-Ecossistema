@@ -46,7 +46,6 @@ const FORA: string[] = [
   // Declaram token. O hex aqui é o valor que o nome carrega.
   "src/app/onface-proto.css",
   "src/app/onface.css",
-  "src/app/cf2-tokens.css",
   "src/app/cf2-design-system.css",
   "src/app/globals.css",
   /* Hex que é DADO, não estilo: a paleta de cores que uma etiqueta nova
