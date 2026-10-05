@@ -17,6 +17,7 @@
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { registrarEvento, registrarMudancaDeEtapa } from "./eventos";
+import { publicarEvento } from "@/lib/events/outbox";
 import { voltarParaQualificado } from "./pre-vendas";
 import {
   ehFamiliaValida, RegraDeNegocio, ROTULO_FAMILIA, STATUS_LEGADO_DA_ETAPA,
@@ -451,6 +452,28 @@ async function aplicarEtapa(
   // conexão global e é idempotente. Se falhar, a próxima tentativa de mover
   // reconcilia pelo caminho idempotente lá em cima.
   await espelharNoDominioV2([op.id]);
+
+  /* O barramento, que é o que faz automação disparar em mudança de etapa.
+   *
+   * `registrarMudancaDeEtapa` grava o fato em `vendas_eventos` — o histórico
+   * do card e o tempo por etapa saem de lá. Mas quem acorda fluxo e cadência
+   * é o outbox, e ele não estava sendo alimentado por aqui: a rota legada
+   * (api-server/routes/negocios.ts) publicava, e o board do ONFACE não. Na
+   * prática, mover card no produto novo não disparava NADA.
+   *
+   * Best-effort de propósito: a etapa já está gravada e o espelho já
+   * reconciliou. Derrubar a movimentação porque o barramento falhou seria
+   * trocar um problema pequeno por um grande. */
+  await publicarEvento({
+    organizacaoId: op.organizacao_id,
+    eventType: "StageChanged",
+    aggregateType: "negocio",
+    aggregateId: op.id,
+    payload: { status: para, statusAnterior: op.etapa, motivo: motivo ?? null },
+    /* A mesma transição não pode virar dois disparos quando o vendedor
+       arrasta o card de ida e volta — a chave inclui de→para. */
+    idempotencyKey: `stage:${op.id}:${op.etapa}:${para}`,
+  }).catch((e: unknown) => console.error("[pipeline] StageChanged não publicado:", e));
 }
 
 /**
