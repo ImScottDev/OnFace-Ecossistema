@@ -1204,7 +1204,31 @@ class Logica extends React.Component<any, any> {
         const G = S.grav && S.grav.id === C.id ? S.grav : null;
         const seg = G ? Math.floor((Date.now() - G.ini) / 1000) : 0;
         const tempo = Math.floor(seg / 60) + ":" + String(seg % 60).padStart(2, "0");
-        const parar = () => { clearInterval(this._gravI); if (this._rec) { try { this._rec.stop(); } catch (x) {} } if (this._stream) this._stream.getTracks().forEach(t => t.stop()); this._rec = null; this._stream = null; };
+        /* `pararComAudio` devolve o arquivo gravado. O protótipo descartava os
+           pedaços e mandava só a duração: o balão aparecia e nada saía para o
+           WhatsApp. */
+        const pararComAudio = () => new Promise((resolve) => {
+          clearInterval(this._gravI);
+          const encerrar = () => {
+            if (this._stream) this._stream.getTracks().forEach(t => t.stop());
+            this._rec = null; this._stream = null;
+          };
+          const rec = this._rec;
+          if (!rec || rec.state === "inactive") { encerrar(); return resolve(null); }
+          rec.onstop = () => {
+            const pedacos = this._gravPedacos || [];
+            this._gravPedacos = [];
+            encerrar();
+            if (!pedacos.length) return resolve(null);
+            const blob = new Blob(pedacos, { type: rec.mimeType || "audio/webm" });
+            const fr = new FileReader();
+            fr.onload = () => resolve(String(fr.result || "") || null);
+            fr.onerror = () => resolve(null);
+            fr.readAsDataURL(blob);
+          };
+          try { rec.stop(); } catch (x) { encerrar(); resolve(null); }
+        });
+        const parar = () => { clearInterval(this._gravI); if (this._rec) { try { this._rec.stop(); } catch (x) {} } if (this._stream) this._stream.getTracks().forEach(t => t.stop()); this._rec = null; this._stream = null; this._gravPedacos = []; };
         return {
           ativo: !!G, parado: !G,
           pode: S.modo !== "nota" && !ehMail && C.canal !== "Telefone",
@@ -1220,16 +1244,22 @@ class Logica extends React.Component<any, any> {
             if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder) {
               navigator.mediaDevices.getUserMedia({ audio: true }).then(st => {
                 if (!this.state.grav) { st.getTracks().forEach(t => t.stop()); return; }
-                this._stream = st; this._rec = new MediaRecorder(st); this._rec.start();
+                this._stream = st;
+                this._gravPedacos = [];
+                this._rec = new MediaRecorder(st);
+                this._rec.ondataavailable = (ev) => { if (ev.data && ev.data.size) (this._gravPedacos = this._gravPedacos || []).push(ev.data); };
+                this._rec.start();
               }).catch(() => {});
             }
           },
           cancelar: () => { parar(); this.setState({ grav: null }); diz("Áudio descartado", "aviso"); },
           enviar: () => {
-            parar();
-            if (seg < 1) { this.setState({ grav: null }); return diz("Áudio curto demais", "aviso"); }
-            this.setState({ grav: null, novas: null });
-            pushOut({ audio: tempo });
+            if (seg < 1) { parar(); this.setState({ grav: null }); return diz("Áudio curto demais", "aviso"); }
+            pararComAudio().then((dados) => {
+              this.setState({ grav: null, novas: null });
+              if (!dados) return diz("Não consegui gravar o áudio. Confira a permissão do microfone.", "erro");
+              pushOut({ audio: tempo, audioData: dados, audioSeg: seg });
+            });
           }
         };
       })(),
@@ -1238,9 +1268,15 @@ class Logica extends React.Component<any, any> {
         if (!f) return;
         if (f.type && f.type.indexOf("image/") === 0 && S.modo !== "nota") { e.target.value = ""; return this.prepararImg(f, C.id); }
         const kb = f.size / 1024;
-        pushOut({ arq: f.name, tam: kb > 1024 ? (kb / 1024).toFixed(1).replace(".", ",") + " MB" : Math.max(1, Math.round(kb)) + " KB" });
+        const tam = kb > 1024 ? (kb / 1024).toFixed(1).replace(".", ",") + " MB" : Math.max(1, Math.round(kb)) + " KB";
         e.target.value = "";
-        diz("Arquivo enviado para " + primeiro, "ok");
+        /* O protótipo só mostrava o balão com nome e tamanho; o arquivo não
+           saía. Agora o conteúdo vai junto e o aviso de sucesso só aparece
+           depois que o envio é aceito (quem avisa é o adaptador). */
+        const fr = new FileReader();
+        fr.onload = () => pushOut({ arq: f.name, tam, arqData: String(fr.result || ""), mime: f.type || "" });
+        fr.onerror = () => diz("Não consegui ler o arquivo.", "erro");
+        fr.readAsDataURL(f);
       },
       enviar,
       enviarTitulo: S.modo === "nota" ? "Salvar nota" : "Enviar",

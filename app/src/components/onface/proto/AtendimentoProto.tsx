@@ -750,7 +750,14 @@ export function AtendimentoProto({ dados, contexto }: { dados: DadosAtendimento;
         if (m.de === "nota") { avisos.add("Nota interna ainda não é gravada no Atendimento. Use as notas do lead."); continue; }
         if (m.de === "out") {
           enviou = true;
-          const payload = m.img
+          /* Áudio gravado e arquivo anexado passaram a trazer o conteúdo
+             (audioData / arqData). Antes a tela mostrava o balão e nada saía:
+             o payload só tinha imagem ou texto. */
+          const payload = m.audioData
+            ? { contatoId: antes.id, tipo: "audio", mediaData: m.audioData, conteudo: "" }
+            : m.arqData
+            ? { contatoId: antes.id, tipo: "document", mediaData: m.arqData, fileName: m.arq, conteudo: m.t ?? "" }
+            : m.img
             ? { contatoId: antes.id, tipo: "image", mediaData: m.img, fileName: m.arq, conteudo: m.t ?? "" }
             : { contatoId: antes.id, tipo: "text", conteudo: m.t };
           trabalhos.push(enviar(payload).then(() => recarregar.add(antes.id)));
