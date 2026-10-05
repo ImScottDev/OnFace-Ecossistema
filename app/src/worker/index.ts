@@ -62,11 +62,14 @@ const healthServer = http.createServer((req, res) => {
     res.writeHead(404).end();
   }
 });
+<<<<<<< Updated upstream
 // 3002 é a porta que os três docker-compose (local, dev, prod) já testam no
 // healthcheck desde sempre. O default era 3001, então o container do worker
 // nascia unhealthy em todo deploy e a queda do processo nunca era detectável
 // (achado da auditoria de 14/09). Alinhado aqui e declarado explicitamente nos
 // composes, pra não depender de default nenhum.
+=======
+>>>>>>> Stashed changes
 const healthPort = parseInt(process.env.WORKER_HEALTH_PORT || "3002");
 healthServer.listen(healthPort, "0.0.0.0", () => {
   console.log(`[Worker] Health check listening on :${healthPort}`);

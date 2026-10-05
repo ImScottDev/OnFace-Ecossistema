@@ -172,9 +172,12 @@ test("o levantamento de rotas abertas continua visível", () => {
   }
   assert.ok(escritas > 150, "a varredura precisa estar encontrando as rotas");
   assert.ok(
-    semGate <= 170,
+    semGate <= 171,
     `${semGate} rotas de escrita sem autorização (medido em 21/09/2026: 166 depois de fechar ` +
-    "automação, agente e plataforma de IA). Se cresceu, uma rota nova entrou aberta.",
+    "automação, agente e plataforma de IA; 171 em 05/10, com PATCH /notificacoes, " +
+    "que é dado PESSOAL: o gate dele é a sessão mais o filtro por usuario_id, e " +
+    "não existe permissão de papel que faça sentido aí). Se cresceu, uma rota " +
+    "nova entrou aberta.",
   );
 });
 

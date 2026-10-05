@@ -242,8 +242,8 @@ class CascaLigada extends CascaLiga {
       texto: x.mensagem ?? "",
       quando: quando(x.createdAt),
       lida: x.lida,
-      pontoStyle: "flex:0 0 auto;width:7px;height:7px;border-radius:9999px;margin-top:6px;background:" + (x.lida ? "transparent" : "#fe4f2b"),
-      linhaStyle: "display:flex;gap:9px;width:100%;text-align:left;padding:10px 14px;border-top:1px solid #eef1f1;background:" + (x.lida ? "#fff" : "#fffaf8"),
+      pontoStyle: "flex:0 0 auto;width:7px;height:7px;border-radius:9999px;margin-top:6px;background:" + (x.lida ? "transparent" : "var(--of-coral-marca)"),
+      linhaStyle: "display:flex;gap:9px;width:100%;text-align:left;padding:10px 14px;border-top:1px solid var(--of-fio);background:" + (x.lida ? "var(--of-papel)" : "var(--of-papel-alterno)"),
       abrir: () => {
         this.setState({ sinoAberto: false });
         void pedirJson(`/api/notificacoes/${x.id}`, { method: "PATCH" })
