@@ -84,16 +84,39 @@
 -- aquisições/pipeline (frente C) nem em leads/contatos (frente D).
 --
 -- ───────────────────────────────────────────────────────────────────────────
--- REVERSÃO (tudo que este arquivo escreve é desfazível)
+-- RESULTADO MEDIDO (ensaio de 05/10, banco callface_crm_ensaio_virada)
 --
---   UPDATE clientes SET status_financeiro = NULL, lifecycle_status = NULL
---    WHERE lifecycle_status LIKE '%_2026-09';
---   DELETE FROM clientes WHERE lifecycle_status = 'ATIVO_SETEMBRO_2026-09'
---      AND created_at >= '<momento da carga>';   -- só os criados aqui
+--   clientes          275 → 344   (69 criados, 0 apagados)
+--     ativos  286 · churn provável 58 · criados sem cliente_desde 0
+--     cliente_desde dos 69: 1ª competência em cliente_receita_mensal
+--     (2021-04 a 2026-09), 0 caíram no fallback
+--   servicos_canonicos 453 → 472  (19 criados, 0 apagados)
+--     9 deles PABX por ausência de nota (UNRESOLVED) · 2 marcados AMBIGUOUS
+--   empresas / contratos / oportunidades: inalterados (2272 / 774 / 1613)
+--
+--   Família dos 286 clientes ativos (serviço dominante, valor = planilha):
+--     PABX        185  R$ 374.133,64
+--     CALLFACE_AI  96  R$  57.186,50
+--     WHITE_LABEL   5  R$  60.271,35
+--
+--   Reconciliação: 512.404,49 (324 docs) − 491.591,49 (286 ativos)
+--                  = 20.813,00, que são EXATAMENTE os 38 sem cadastro.
+--                  A consulta no fim do arquivo lista os 38, linha a linha.
+--
+--   Rodando duas vezes seguidas: 0 inserts, 0 updates na segunda.
+--
+-- ───────────────────────────────────────────────────────────────────────────
+-- REVERSÃO (tudo que este arquivo escreve é desfazível, nesta ordem)
+--
 --   DELETE FROM servicos_canonicos WHERE billing_source = 'LEDGER_SETEMBRO';
---   UPDATE servicos_canonicos SET confidence = 'CONFIRMED',
---          evidence = evidence - 'setembro_2026'
+--   UPDATE servicos_canonicos
+--      SET confidence = evidence -> 'setembro_2026' ->> 'confidence_anterior',
+--          evidence   = evidence - 'setembro_2026'
 --    WHERE evidence -> 'setembro_2026' ->> 'acao' = 'FLAG_AMBIGUOUS';
+--   DELETE FROM clientes WHERE lifecycle_status = 'ATIVO_SETEMBRO_2026-09_CRIADO_NA_VIRADA';
+--   UPDATE clientes SET status_financeiro = NULL, lifecycle_status = NULL
+--    WHERE lifecycle_status IN ('ATIVO_SETEMBRO_2026-09',
+--                               'CHURN_PROVAVEL_SEM_FATURA_2026-09');
 --
 -- PRÉ-REQUISITO: `tmp_set` (planilha de faturamento de setembro: doc, nome,
 -- cod, valor, lanc). É a mesma tabela que o passo 01 usa.
@@ -388,25 +411,49 @@ CREATE INDEX ON _set_fam (doc);
 -- ═══ 2. criar cliente canônico para quem pagou em setembro, tem empresa ════
 --        cadastrada e ainda não é cliente (medido: 69).
 --
--- `cliente_desde`: `cliente_receita_mensal` é da frente A e está com 0 linhas,
--- então não dá para tirar a primeira competência dali. Cai na regra seguinte —
--- a data mais antiga QUE EXISTE para aquele documento, nesta ordem de fontes:
--- início de contrato, ganho de oportunidade, criação da empresa no CRM. Não é
--- data inventada: é a mais antiga disponível, e o `least()` escolhe sozinho.
--- Se nenhuma existisse, ficaria NULL (hoje as 69 têm pelo menos a terceira).
+-- `cliente_desde`: primeira competência em que o documento aparece em
+-- `cliente_receita_mensal` (frente A — lido, nunca escrito aqui). Quando a
+-- frente A ainda não rodou, ou o documento não está lá, cai na data mais
+-- antiga QUE EXISTE: início de contrato, ganho de oportunidade ou criação da
+-- empresa no CRM — o `least()` escolhe sozinho. Nenhuma data é inventada; se
+-- nenhuma fonte tivesse data, ficaria NULL.
+-- Medido depois que a frente A carregou: as 69 têm histórico, competências de
+-- 2021-03 a 2026-09. Antes dela (tabela vazia) 14 vinham de oportunidade.ganho_at
+-- e 55 de empresas.created_at — por isso o passo 2b existe.
 INSERT INTO clientes (organizacao_id, empresa_id, cliente_desde, status_financeiro, lifecycle_status)
 SELECT e.organizacao_id,
        e.id,
-       LEAST(
-         (SELECT min(ct.inicio)::timestamptz   FROM contratos     ct WHERE ct.empresa_id = e.id),
-         (SELECT min(o.ganho_at)               FROM oportunidades o  WHERE o.empresa_id  = e.id),
-         e.created_at
+       COALESCE(
+         (SELECT min(r.competencia)::timestamptz FROM cliente_receita_mensal r
+           WHERE nullif(regexp_replace(coalesce(r.documento,''),'[^0-9]','','g'),'') = s.doc),
+         LEAST(
+           (SELECT min(ct.inicio)::timestamptz FROM contratos     ct WHERE ct.empresa_id = e.id),
+           (SELECT min(o.ganho_at)             FROM oportunidades o  WHERE o.empresa_id  = e.id),
+           e.created_at
+         )
        ),
        'ativo',
        'ATIVO_SETEMBRO_2026-09_CRIADO_NA_VIRADA'
   FROM empresas e
   JOIN _set_fam s ON s.doc = nullif(regexp_replace(coalesce(e.cnpj,''),'[^0-9]','','g'),'')
  WHERE NOT EXISTS (SELECT 1 FROM clientes c WHERE c.empresa_id = e.id);
+
+-- 2b. Converge `cliente_desde` dos clientes criados AQUI quando a frente A
+--     (cliente_receita_mensal) carregar depois deste passo. Só mexe nos 69
+--     criados por esta carga — `cliente_desde` dos clientes que já existiam no
+--     dump não é tocado. Sem isto, rodar as frentes fora de ordem deixaria a
+--     data pior do que o histórico permite.
+UPDATE clientes c
+   SET cliente_desde = r.primeira, updated_at = now()
+  FROM empresas e,
+       LATERAL (SELECT min(x.competencia)::timestamptz AS primeira
+                  FROM cliente_receita_mensal x
+                 WHERE nullif(regexp_replace(coalesce(x.documento,''),'[^0-9]','','g'),'')
+                     = nullif(regexp_replace(coalesce(e.cnpj,''),'[^0-9]','','g'),'')) r
+ WHERE e.id = c.empresa_id
+   AND c.lifecycle_status = 'ATIVO_SETEMBRO_2026-09_CRIADO_NA_VIRADA'
+   AND r.primeira IS NOT NULL
+   AND c.cliente_desde IS DISTINCT FROM r.primeira;
 
 -- ═══ 3. status financeiro ══════════════════════════════════════════════════
 -- Ativo = tem linha na planilha de setembro.

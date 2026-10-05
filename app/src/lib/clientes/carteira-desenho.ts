@@ -106,19 +106,52 @@ export async function carteiraParaODesenho(organizacaoId: string): Promise<Carte
     WITH universo AS (
       SELECT e.id AS empresa_id FROM empresas e
       WHERE e.organizacao_id = ${organizacaoId}
-        AND EXISTS (SELECT 1 FROM servicos_canonicos sc WHERE sc.empresa_id = e.id AND sc.portfolio_included = true)
+        -- Entra na carteira quem TEM serviço no portfólio OU quem FATUROU no
+        -- último mês. Antes era só a primeira condição, e por isso cliente que
+        -- paga todo mês mas não tem serviço canônico não aparecia em lugar
+        -- nenhum — em setembro/2026 eram 38 empresas, R$ 20.813. Quem paga é
+        -- cliente, independentemente de o cadastro canônico ter sido feito.
+        AND (
+          EXISTS (SELECT 1 FROM servicos_canonicos sc
+                   WHERE sc.empresa_id = e.id AND sc.portfolio_included = true)
+          OR EXISTS (SELECT 1 FROM cliente_receita_mensal r
+                      WHERE r.empresa_id = e.id
+                        AND r.organizacao_id = ${organizacaoId}
+                        AND r.competencia = (SELECT max(competencia) FROM cliente_receita_mensal
+                                              WHERE organizacao_id = ${organizacaoId}))
+        )
     ),
     -- clientes não tem unique em empresa_id: 1 linha por empresa, a mais recente.
     cliente_atual AS (
       SELECT DISTINCT ON (empresa_id) * FROM clientes WHERE empresa_id IS NOT NULL
       ORDER BY empresa_id, updated_at DESC NULLS LAST, id DESC
     ),
-    -- MRR = servicos_canonicos. Nunca contratos.mrr nem mrr_movimentos: são
-    -- outras duas fontes que não batem com esta (a soma de mrr_movimentos dá
-    -- 81 mil contra 425 mil daqui).
+    -- RECEITA = o que foi REALMENTE faturado no último mês fechado, de
+    -- cliente_receita_mensal.
+    --
+    -- Era SUM(servicos_canonicos.current_recurring_value), que é MRR
+    -- contratado, não faturamento. Os dois números não batem e a diferença não
+    -- é arredondamento: em setembro/2026 o canônico somava R$ 426.619,39 contra
+    -- R$ 512.404,49 efetivamente faturados. R$ 20.813 são 38 clientes que
+    -- faturam e não têm serviço canônico; os outros R$ 64.972 são clientes COM
+    -- serviço cujo current_recurring_value ficou defasado em relação ao que a
+    -- Callface cobrou — o campo veio do legado e nunca foi reconciliado.
+    --
+    -- Decisão do Scott (05/10): a carteira mostra o FATURADO, não o MRR. O
+    -- número da tela tem que ser o mesmo que ele confere na planilha do mês.
+    -- MRR contratado continua existindo em servicos_canonicos para quem
+    -- precisar da leitura de recorrência; só deixa de ser o número da carteira.
+    ultima_competencia AS (
+      SELECT max(competencia) AS competencia FROM cliente_receita_mensal
+       WHERE organizacao_id = ${organizacaoId}
+    ),
     servicos_agg AS (
-      SELECT sc.empresa_id, SUM(sc.current_recurring_value) AS mrr FROM servicos_canonicos sc
-      WHERE sc.portfolio_included = true GROUP BY 1
+      SELECT r.empresa_id, SUM(r.valor) AS mrr
+        FROM cliente_receita_mensal r, ultima_competencia uc
+       WHERE r.organizacao_id = ${organizacaoId}
+         AND r.competencia = uc.competencia
+         AND r.empresa_id IS NOT NULL
+       GROUP BY 1
     ),
     -- O desenho tem UM produto por cliente; a família de maior MRR. Só 2
     -- empresas têm mais de uma família, então o modelo não distorce.
