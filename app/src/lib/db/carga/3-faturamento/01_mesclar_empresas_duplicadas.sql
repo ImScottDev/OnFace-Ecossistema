@@ -23,6 +23,10 @@
 -- IDEMPOTENTE: depois de rodar, não há mais duplicata, então a segunda execução
 -- não encontra par e é no-op.
 
+-- `similarity()` vem do pg_trgm; o banco restaurado do dump pode nao ter a
+-- extensao. Criar aqui mantem o arquivo autossuficiente.
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
 DO $$
 DECLARE
   par record;
