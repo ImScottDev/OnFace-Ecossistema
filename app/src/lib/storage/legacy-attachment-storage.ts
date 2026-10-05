@@ -7,8 +7,7 @@
  * ATENÇÃO — isso é DEV-ONLY, não é arquitetura de produção:
  * os 1.980 arquivos binários reais hoje só existem numa pasta pessoal
  * no Mac do Scott (`~/Downloads/Attachments`), fruto da recuperação
- * manual da migração Zoho (ver
- * `docs/reconstruction/auditoria-legado-zoho/01-inventario-zoho.md`).
+ * manual da migração Zoho.
  * Em produção esses arquivos precisam morar em storage real (S3? R2?
  * bucket próprio? — DECISÃO AINDA NÃO TOMADA). Isso é um blocker de
  * infraestrutura a REGISTRAR pro Kauã/Scott, não uma decisão de

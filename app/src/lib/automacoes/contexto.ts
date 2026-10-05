@@ -1,5 +1,5 @@
 /**
- * Contexto de execução dos Fluxos (docs/design/construtor-automacoes.md §3.5 e §4.1).
+ * Contexto de execução dos Fluxos (docs/produto/automacoes-fluxos.md §3.5 e §4.1).
  *
  * Duas coisas moram aqui:
  *

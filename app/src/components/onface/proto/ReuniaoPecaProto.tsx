@@ -25,7 +25,7 @@ import { toast } from "sonner";
 import {
   acaoBaseDaPeca, acaoBuscarContatosDaPeca, acaoReuniaoDaPeca,
   type LeadDaPeca, type MembroDaPeca, type OppDaPeca, type ReuniaoDaPeca,
-} from "@/app/(crm2)/calendario/reuniao-actions";
+} from "@/app/(produto)/calendario/reuniao-actions";
 import { ReuniaoLiga } from "./ReuniaoLiga";
 import type { PecaProps } from "./pecas-host";
 

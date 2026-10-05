@@ -23,7 +23,7 @@ import { test } from "node:test";
  * `generateMetadata`, que esta varredura de fonte não sabe executar.
  */
 
-const RAIZ = join("src", "app", "(crm2)");
+const RAIZ = join("src", "app", "(produto)");
 
 /** Rotas de página do produto, sem as dinâmicas. */
 function paginas(dir: string): string[] {

@@ -2,7 +2,7 @@
  * F4 (Commercial) — classificação de contrato "ativo" duplicado.
  *
  * Escrito do zero a partir dos requisitos já documentados na auditoria
- * original (PLANO-MRR-CONTRATOS-DUPLICADOS.md, achado confirmado 08/08:
+ * original (achado confirmado 08/08:
  * 36 pares, R$17.449,30/mês de excesso) — NÃO copiado da branch `homolog`
  * (backup do Kauã, ele revisa sozinho depois, ver ADR-EXEC-008).
  *

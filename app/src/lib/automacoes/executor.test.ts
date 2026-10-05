@@ -1,5 +1,5 @@
 /**
- * Executor dos Fluxos contra o banco local (docs/design/construtor-automacoes.md §4).
+ * Executor dos Fluxos contra o banco local (docs/produto/automacoes-fluxos.md §4).
  *
  * Cada teste monta uma automação "[teste executor]" pelo próprio serviço
  * (criar → publicar), roda e apaga no fim (versões, execuções, passos e

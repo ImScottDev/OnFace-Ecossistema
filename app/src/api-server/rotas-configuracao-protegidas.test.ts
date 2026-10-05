@@ -187,7 +187,7 @@ test("a tela de tokens existe e fala com as rotas certas", () => {
   // (endpoint renomeado, rota removida) sem ninguém perceber. O comportamento
   // das regras é provado em `smoke-gestao-tokens` e `teto-de-token.test.ts`.
   const tela = fs.readFileSync(
-    path.join(ROTAS, "..", "..", "app", "(crm2)", "ajustes", "api-tokens", "page.tsx"), "utf8");
+    path.join(ROTAS, "..", "..", "app", "(produto)", "ajustes", "api-tokens", "page.tsx"), "utf8");
 
   assert.match(tela, /\/api\/configuracoes\/api-tokens/, "a tela tem que chamar a rota de tokens");
   assert.match(tela, /method: "DELETE"/, "e ter como revogar");

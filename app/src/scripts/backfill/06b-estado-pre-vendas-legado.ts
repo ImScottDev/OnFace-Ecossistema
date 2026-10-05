@@ -83,7 +83,7 @@ function colunaDoBoardLegado(l: {
  * `sdr_sem_retorno` mapeava para a etapa `sem_resposta` do CRM2, que não existe
  * no canônico. Vai para `nutricao` por ser estagnação e não descarte — são 46
  * leads, e a alternativa (`desqualificado`) é uma decisão de negócio que está
- * registrada em docs/sync-dev-20260923/DIAGNOSTICO.md aguardando o Kauã.
+ * aguardando o Kauã.
  */
 const PARA_ETAPA_CANONICA: Record<string, string> = {
   pending: "novo",

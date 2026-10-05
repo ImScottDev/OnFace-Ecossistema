@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useState, useTransition } from "react";
-import { acaoAlterarPermissao } from "@/app/(crm2)/ajustes/permissoes/actions";
+import { acaoAlterarPermissao } from "@/app/(produto)/ajustes/permissoes/actions";
 import "./ajustes.css";
 
 /** Nome do domínio em português; o código vem do catálogo `permissions.dominio`. */

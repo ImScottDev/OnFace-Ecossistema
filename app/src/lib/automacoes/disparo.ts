@@ -1,5 +1,5 @@
 /**
- * Gatilhos dos Fluxos (docs/design/construtor-automacoes.md §3): evento da
+ * Gatilhos dos Fluxos (docs/produto/automacoes-fluxos.md §3): evento da
  * plataforma (outbox OU gatilho legado, nunca os dois), agenda e tarefa
  * vencida. O webhook e o "Rodar agora" chamam `iniciarExecucao` direto.
  *

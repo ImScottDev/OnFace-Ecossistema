@@ -1,6 +1,6 @@
 /**
  * Visões complementares do relatório de Pré-vendas (SDR) — validadas contra dado
- * real de prod em 22/07 (ver LOGICA-SDR.md na raiz do repo, fonte da verdade).
+ * real de prod em 22/07 (ver docs/produto/relatorios-sdr.md na raiz do repo, fonte da verdade).
  *
  * Tudo aqui é SOMENTE LEITURA e org-scoped. Regras canônicas:
  * - "Qualificado" (coorte) = lead criado na janela, não desqualificado, com negócio

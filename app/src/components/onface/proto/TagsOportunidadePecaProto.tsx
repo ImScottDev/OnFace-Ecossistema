@@ -26,7 +26,7 @@ import { TagsOportunidadeDesenho } from "./TagsOportunidadeDesenho";
 import {
   acaoAplicarTags, acaoCriarTag, acaoTagsDoAlvo,
   type AlvoDeTag, type TagDoCatalogo, type TipoAlvoDeTag,
-} from "@/app/(crm2)/pipeline/tags-actions";
+} from "@/app/(produto)/pipeline/tags-actions";
 
 interface Externo {
   alvo: AlvoDeTag;

@@ -1,5 +1,5 @@
 /**
- * Executor dos Fluxos (docs/design/construtor-automacoes.md §4).
+ * Executor dos Fluxos (docs/produto/automacoes-fluxos.md §4).
  *
  * Anda o grafo publicado direto, com UM cursor por execução (cada saída leva a
  * no máximo um bloco, sem laço — `validarGrafo` garante). Não reimplementa

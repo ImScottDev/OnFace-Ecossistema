@@ -55,12 +55,12 @@ test("o board que cobre as três famílias tem alguém que o abra", () => {
   // redirect que leva o recorte de família adiante. A trava continua valendo —
   // só mudou onde o chamador mora.
   const redirect = fs.readFileSync(
-    path.join(process.cwd(), "src", "app", "(crm2)", "clientes", "implantacao", "page.tsx"), "utf8");
+    path.join(process.cwd(), "src", "app", "(produto)", "clientes", "implantacao", "page.tsx"), "utf8");
   assert.match(redirect, /\/pos-vendas\?aba=imp/,
     "o endereço antigo de Implantação precisa levar ao painel que hoje a hospeda");
 
   const painel = fs.readFileSync(
-    path.join(process.cwd(), "src", "app", "(crm2)", "pos-vendas", "page.tsx"), "utf8");
+    path.join(process.cwd(), "src", "app", "(produto)", "pos-vendas", "page.tsx"), "utf8");
   assert.match(painel, /familiaInicial=\{[^}]*:\s*null\}/,
     "o painel de Pós-vendas precisa abrir sem família fixa — é a visão que cobre as três");
   assert.match(painel, /abaInicial=/,

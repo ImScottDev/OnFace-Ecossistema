@@ -21,7 +21,7 @@ import path from "node:path";
 
 const RAIZ = path.join(process.cwd(), "..");
 const MIGRATIONS = path.join(process.cwd(), "src", "lib", "db", "migrations");
-const ENTREGA = path.join(RAIZ, "docs", "architecture", "entrega-final.md");
+const ENTREGA = path.join(RAIZ, "docs", "operacao", "virada", "entrega-final.md");
 
 test("toda migration aparece na tabela da entrega", () => {
   const doc = fs.readFileSync(ENTREGA, "utf8");

@@ -8,7 +8,7 @@ web
 
 ## Stack
 
-Next.js + React + Tailwind CSS + Hono API + Drizzle ORM + PostgreSQL + BullMQ + Redis + NextAuth. The CRM 2.0 work happens in the existing Callface CRM repository, primarily under `app/src/`, on branch `dev`.
+Next.js + React + Tailwind CSS + Hono API + Drizzle ORM + PostgreSQL + BullMQ + Redis + NextAuth. ONFACE lives in `github.com/ImScottDev/OnFace-Ecossistema` (single branch `main`), primarily under `app/src/`.
 
 ## Users
 
@@ -18,7 +18,7 @@ Secondary users are administrators and managers who need reliable operational vi
 
 ## Product Purpose
 
-CRM 2.0 is the operational system for Callface's full customer journey: acquisition, lead intake, qualification, opportunity, proposal, acceptance, contract/payment, validated Won, canonical service creation, onboarding or implementation, customer success, expansion, retention, and churn when retention fails.
+ONFACE is the operational system for Callface's full customer journey: acquisition, lead intake, qualification, opportunity, proposal, acceptance, contract/payment, validated Won, canonical service creation, onboarding or implementation, customer success, expansion, retention, and churn when retention fails.
 
 Success means the team can trust the product to close the critical path with real data: the correct lead becomes a qualified opportunity with context, a functional proposal, a valid acceptance path, the right commercial evidence, a customer, a service, and the correct post-sale workflow.
 
@@ -28,11 +28,11 @@ This is not the legacy CRM with a lighter theme. It is a connected operating sys
 
 ## Operating Context
 
-CRM 2.0 coexists with the legacy CRM in the same repo and deploy. Routes in the `(crm2)` group are the new product; legacy routes and `-legado` routes remain available until each module is closed. Closing a module means proving the flow and data, then flipping the sidebar flag for that module. There is no big-bang release.
+ONFACE replaces the legacy CRM. Every screen lives in the `(produto)` route group; the only legacy surface left in the app is `(enderecos-antigos)`, which redirects old CRM URLs (team bookmarks) to the new screens. The cutover replaces production with ONFACE in one controlled step, after validation on dev.crm.callface.io.
 
 The agreed work order is module by module in the customer journey: Acquisition, Sales, Post-sale/Implementation, CS/Retention, and Platform. The working ritual is to present the module, identify how it is drawn and where data is wrong, wait for Kaua's validation when business decisions are required, refactor front and back, then flip the menu flag.
 
-The local project is `/Users/Scott/Documents/Scott Studio/callface-crm-dev`; the production/homolog deployment flow is manual and sensitive. Production changes require explicit approval from Kaua/Scott.
+The local project is `/Users/Scott/Documents/Scott Studio/onface-ux-rebuild`. The validation environment is dev.crm.callface.io, published with `./deploy.sh dev`. Production changes require explicit approval from Kaua.
 
 ## Capabilities and Constraints
 

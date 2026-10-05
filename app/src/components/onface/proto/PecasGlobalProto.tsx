@@ -26,7 +26,7 @@ import {
   acaoMoverEtapa, acaoNutrir, acaoQualificar, acaoReativar,
   acaoRegistrarContato, acaoResponsaveis, acaoSalvarQualificacao,
   acaoTagDoLead, acaoOpcoesEmMassa,
-} from "@/app/(crm2)/pre-vendas/actions";
+} from "@/app/(produto)/pre-vendas/actions";
 import type { AcoesPreVendas } from "../vendas/PreVendas";
 import type { CanalAtendimento } from "../vendas/atendimento";
 import { executarIntencao, PecasLigadas, quando, type LeadDoDesenho } from "./PreVendasProto";

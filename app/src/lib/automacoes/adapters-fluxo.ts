@@ -1,6 +1,6 @@
 /**
  * Adapters que os Fluxos precisam e o motor de ações ainda não tinha
- * (docs/design/construtor-automacoes.md §2 e §4.5).
+ * (docs/produto/automacoes-fluxos.md §2 e §4.5).
  *
  * Entram no MESMO registro do cadence-engine (`registrarAdapter`): motor de
  * ações único (SPEC §18). Uma cadência pode usar qualquer um destes amanhã sem

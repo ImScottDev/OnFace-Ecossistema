@@ -3,7 +3,7 @@
 /* Automação → Agentes → [id]: editor do agente na linguagem ONFACE.
  *
  * Substitui o `Cf2AgenteDetalheWorkspace`. Estrutura inspirada no
- * Superagente do benchmark (docs/design/benchmark-funilvivo.md §3): abas
+ * Superagente: abas
  * de Identidade & escopo, Ações, Conhecimento, Gatilhos & handoff,
  * Desempenho e Histórico, com o Playground fixo à direita testando o
  * RASCUNHO.

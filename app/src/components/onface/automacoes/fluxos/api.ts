@@ -1,7 +1,7 @@
 /* Chamadas do construtor de automações às rotas Hono de
  * api-server/routes/automacoes-fluxos.ts. Os tipos são os DTOs de
  * lib/automacoes/grafo.ts: tela e API tipam contra o mesmo contrato
- * (docs/design/construtor-automacoes.md §5). Sem mock: se a rota falha, a
+ * (docs/produto/automacoes-fluxos.md §5). Sem mock: se a rota falha, a
  * tela mostra o erro real. */
 import type {
   ConfigFluxo, DetalheExecucao, ExecucaoResumo, FluxoDetalhe, FluxoResumo, GrafoFluxo, OpcoesInspetor,

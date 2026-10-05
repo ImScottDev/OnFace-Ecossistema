@@ -17,7 +17,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 const raiz = process.cwd();
-const PAGINA = path.join(raiz, "src", "app", "(crm2)", "clientes", "risco", "page.tsx");
+const PAGINA = path.join(raiz, "src", "app", "(produto)", "clientes", "risco", "page.tsx");
 
 test("a página de Risco não usa ModuloPendente", () => {
   const txt = fs.readFileSync(PAGINA, "utf8");

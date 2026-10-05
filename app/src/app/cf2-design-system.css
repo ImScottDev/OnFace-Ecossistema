@@ -2,7 +2,7 @@
    CALLFACE UI SYSTEM — Fundação (30/08)
    ═══════════════════════════════════════════════════════════════════════
    Por que este arquivo existe (auditoria que motivou):
-     - 13 raios diferentes em uso no (crm2): rounded-lg 382x, xl 198x,
+     - 13 raios diferentes em uso no (produto): rounded-lg 382x, xl 198x,
        2xl 145x — contra 33 usos do "padrão".
      - 24 tamanhos de fonte, incluindo meio-pixels (12.5, 11.5, 10.5, 9.5).
      - 3 escalas de raio CONCORRENTES: os tokens --cf2-radius-* (8/12/16/24),

@@ -11,7 +11,7 @@
 -- ───────────────────────────────────────────────────────────────────────────
 -- FONTES
 --
--- SPEC `docs/virada/specdrive-modulo-01-vendas-final.md`:
+-- SPEC `docs/produto/specdrive-modulo-01-vendas.md`:
 --   Bloco 01 §15 — "No-show não é coluna. No-show é evento comercial."
 --                  "preservar oportunidade existente / Lead retorna para
 --                  QUALIFICADO". Reagendar reusa a MESMA oportunidade.

@@ -20,7 +20,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 
-import { acaoNovaOportunidadeDoCliente, type TipoDeVenda } from "@/app/(crm2)/clientes/[id]/actions";
+import { acaoNovaOportunidadeDoCliente, type TipoDeVenda } from "@/app/(produto)/clientes/[id]/actions";
 import { toast } from "sonner";
 
 import type { ClienteDoDesenho } from "@/lib/clientes/cliente-para-o-desenho";

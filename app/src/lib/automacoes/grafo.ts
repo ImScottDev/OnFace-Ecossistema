@@ -1,6 +1,6 @@
 /**
  * Construtor de Automações (Fluxos) — contrato compartilhado entre o editor
- * (frontend) e o executor (backend). Ver docs/design/construtor-automacoes.md.
+ * (frontend) e o executor (backend). Ver docs/produto/automacoes-fluxos.md.
  *
  * Este arquivo é PURO: sem banco, sem React, sem Node. Roda no navegador (o
  * editor marca pendências e mostra prévia de expressão) e no servidor (a API

@@ -1544,7 +1544,7 @@ app.get("/sdr-esteira", async (c) => {
   const escopoSdr = soEuSdr ? [soEuSdr] : sdrIds;
   const [reunioesSdr, visoes] = await Promise.all([
     contarReunioes(orgId, since, until, { agendadasPor: escopoSdr }),
-    // Visões da auditoria 22/07 (LOGICA-SDR.md): split reunião/direta, quem qualificou,
+    // Visões da auditoria 22/07 (docs/produto/relatorios-sdr.md): split reunião/direta, quem qualificou,
     // SLA em duas bases, inbound×outbound, parados por tempo e base parada fora da coorte.
     getVisoesSdr(orgId, since, until),
   ]);

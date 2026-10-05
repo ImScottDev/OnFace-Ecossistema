@@ -26,7 +26,7 @@
 import * as React from "react";
 import { toast } from "sonner";
 
-import { acaoCriarTarefa, acaoDetalhe } from "@/app/(crm2)/pre-vendas/actions";
+import { acaoCriarTarefa, acaoDetalhe } from "@/app/(produto)/pre-vendas/actions";
 import type { DetalheLead } from "@/lib/vendas/consultas";
 import { parseResumoCallface, type ResumoCallfaceParsed } from "@/lib/utils/parse-resumo-callface";
 import { RelatorioLigacaoLiga } from "./RelatorioLigacaoLiga";

@@ -343,7 +343,7 @@ export default function TabComercial({ periodo, ocultarHero = false }: TabComerc
       {/* Cobertura de valor por etapa (COM-12): mede se a trava de valor do COM-10
           (não deixa avançar pra Proposta Enviada sem valor) está funcionando pra
           frente. Sempre org toda, não segmenta por safra (legado é tratado à
-          parte na Fase 0 — ver PLANO-RELATORIO-COMERCIAL.md). */}
+          parte na Fase 0) */}
       <ChartCard
         title="Cobertura de valor por etapa"
         subtitle="% de negócios com valor vinculado (valorTotal > 0) em cada etapa aberta"

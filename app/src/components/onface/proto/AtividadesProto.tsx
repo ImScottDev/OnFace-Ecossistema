@@ -17,7 +17,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import type { Atividade, DadosAtividades } from "@/components/onface/atividades/types";
-import { acaoResponsaveis } from "@/app/(crm2)/pre-vendas/actions";
+import { acaoResponsaveis } from "@/app/(produto)/pre-vendas/actions";
 import { AtividadesLiga } from "./AtividadesLiga";
 import { levarParametros } from "./rota-do-desenho";
 import { usePecas } from "./pecas-host";

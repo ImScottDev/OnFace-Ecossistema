@@ -47,7 +47,7 @@ export interface ItemCatalogo {
  * Itens sem família no cadastro NÃO entram. É uma decisão consciente: incluir
  * o não classificado "por garantia" traria de volta exatamente a mistura que a
  * regra existe para impedir. O que falta classificar está registrado como
- * dependência em docs/reconstruction/MODULO-01-VENDAS.md.
+ * dependência em docs/produto/modulo-01-vendas-implementacao.md.
  */
 export async function catalogoDaFamilia(organizacaoId: string, familia: Familia): Promise<ItemCatalogo[]> {
   const linhas = await db.execute<{

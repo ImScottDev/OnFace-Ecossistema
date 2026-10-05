@@ -3,7 +3,7 @@
  * Verificador do Callface UI System.
  *
  * Por que existe: a auditoria de 30/08 encontrou 13 raios e 24 tamanhos de
- * fonte diferentes no (crm2). A causa não foi desleixo — era que nada
+ * fonte diferentes no (produto). A causa não foi desleixo — era que nada
  * impedia. Criar a escala sem criar a trava significa refatorar 5 módulos e
  * ver a divergência voltar na semana seguinte.
  *
@@ -19,7 +19,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 
 const RAIZ = process.cwd();
-const ALVOS = ["src/app/(crm2)", "src/components/crm2"];
+const ALVOS = ["src/app/(produto)", "src/components/crm2"];
 // O catálogo mostra os tokens; ele precisa citar os valores literais.
 const ISENTOS = ["src/components/crm2/design/", "src/components/crm2/ds/"];
 

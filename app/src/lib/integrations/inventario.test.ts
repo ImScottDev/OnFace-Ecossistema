@@ -55,7 +55,7 @@ test("o estado vem de sinal real, e 'em uso' exige volume", async (t) => {
 
 test("a tela não voltou a ter cartão de placeholder", () => {
   const tela = fs.readFileSync(
-    path.join(process.cwd(), "src", "app", "(crm2)", "ajustes", "integracoes", "page.tsx"), "utf8");
+    path.join(process.cwd(), "src", "app", "(produto)", "ajustes", "integracoes", "page.tsx"), "utf8");
   // O formato exato do defeito: `{/* Meta CAPI (placeholder) */}` rotulando um
   // cartão. O comentário histórico acima cita a palavra de propósito e não
   // pode disparar a trava — por isso o padrão exige o fechamento na MESMA

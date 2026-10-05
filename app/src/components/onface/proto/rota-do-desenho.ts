@@ -44,7 +44,7 @@ export function rotaDoDesenho(href: string, params: Params = {}): string {
       return opp ? `/propostas/nova?oportunidade=${opp}` : "/propostas/nova";
     }
     case "/onface-preview/pessoa": {
-      // A ficha da pessoa é chaveada pelo LEAD (ver app/(crm2)/pessoas/[id]).
+      // A ficha da pessoa é chaveada pelo LEAD (ver app/(produto)/pessoas/[id]).
       const lead = uuid(p.lead);
       return lead ? `/pessoas/${lead}` : "/contatos";
     }
@@ -60,7 +60,7 @@ export function rotaDoDesenho(href: string, params: Params = {}): string {
       return p.aba ? `/clientes/${cliente}?aba=${encodeURIComponent(p.aba)}` : `/clientes/${cliente}`;
     }
     case "/operacao/projeto": {
-      // Projeto = fulfillment (ver app/(crm2)/projetos/[id]).
+      // Projeto = fulfillment (ver app/(produto)/projetos/[id]).
       const id = uuid(p.id);
       return id ? `/projetos/${id}` : "/pos-vendas";
     }

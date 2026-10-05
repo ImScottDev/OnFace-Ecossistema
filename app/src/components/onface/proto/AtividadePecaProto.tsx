@@ -16,7 +16,7 @@
 import * as React from "react";
 import { toast } from "sonner";
 
-import { acaoDetalhe, acaoResponsaveis } from "@/app/(crm2)/pre-vendas/actions";
+import { acaoDetalhe, acaoResponsaveis } from "@/app/(produto)/pre-vendas/actions";
 import { AtividadeLiga } from "./AtividadeLiga";
 import { usePecas, type PecaProps } from "./pecas-host";
 import {

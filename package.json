@@ -7,7 +7,6 @@
     "dev": "pnpm --filter ./app dev",
     "build": "pnpm --filter ./app build",
     "test": "pnpm --filter ./app test",
-    "typecheck": "pnpm --filter ./app exec tsc --noEmit",
-    "arq:fronteiras": "pnpm --filter ./app exec tsx src/scripts/checar-fronteiras.ts"
+    "typecheck": "pnpm --filter ./app exec tsc --noEmit"
   }
 }

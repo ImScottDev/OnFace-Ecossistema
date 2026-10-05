@@ -22,7 +22,7 @@ import "./fluxos/fluxos.css";
 
 /**
  * Automações → Fluxos: a lista do construtor (contrato
- * docs/design/construtor-automacoes.md §7.1).
+ * docs/produto/automacoes-fluxos.md §7.1).
  *
  * Cada linha é uma automação de `automacoes` com tipo 'fluxo': rascunho,
  * versão publicada e execuções vêm de GET /api/automacoes/fluxos. As regras

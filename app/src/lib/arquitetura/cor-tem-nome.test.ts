@@ -15,7 +15,7 @@ import { test } from "node:test";
  * **714 deles em `components/onface/`**, que é justamente a camada nova.
  *
  * A camada de token existe desde então em `app/src/app/onface-proto.css`,
- * gerada a partir de `docs/handoff-onface/inventario.md`.
+ * gerada a partir de `docs/design/handoff-onface/inventario.md`.
  *
  * ── Por que catraca e não zero ────────────────────────────────────────────
  *
@@ -52,7 +52,7 @@ const FORA: string[] = [
      recebe é gravada na linha de `labels` e devolvida para quem a lê. Virar
      `var(--of-…)` gravaria a string do token no banco, e a cor da etiqueta
      deixaria de existir fora desta folha de estilo. */
-  "src/app/(crm2)/pipeline/tags-actions.ts",
+  "src/app/(produto)/pipeline/tags-actions.ts",
 ];
 
 /**

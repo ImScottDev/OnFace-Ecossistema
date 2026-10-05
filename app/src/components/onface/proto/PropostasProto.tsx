@@ -13,7 +13,7 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
-import type { LinhaProposta } from "@/app/(crm2)/propostas/actions";
+import type { LinhaProposta } from "@/app/(produto)/propostas/actions";
 import { PropostasLiga } from "./PropostasLiga";
 import { levarParametros } from "./rota-do-desenho";
 import { usePecas } from "./pecas-host";

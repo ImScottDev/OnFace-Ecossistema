@@ -1,135 +1,164 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-09-10T00:00:00-03:00",
-  "title": "Design System: Callface CRM 2.0",
+  "generatedAt": "2026-10-05T00:00:00-03:00",
+  "title": "Design System: ONFACE",
   "extensions": {
     "colorMeta": {
-      "seaweed-500": {
-        "role": "primary",
-        "displayName": "Seaweed Command Green",
-        "canonical": "#4db386",
-        "tonalRamp": ["#edf7f3", "#dbf0e7", "#b8e0cf", "#94d1b7", "#70c29e", "#4db386", "#3d8f6b", "#2e6b51", "#1f4736", "#0f241b", "#0b1913"]
-      },
-      "page-bg": {
-        "role": "neutral",
-        "displayName": "Workspace Paper",
-        "canonical": "#fafafa"
-      },
-      "surface": {
-        "role": "neutral",
-        "displayName": "Surface White",
-        "canonical": "#ffffff"
-      },
-      "chrome-bg": {
-        "role": "neutral",
-        "displayName": "Dark Chrome",
-        "canonical": "#1c1f26"
-      },
-      "warning": {
-        "role": "secondary",
-        "displayName": "Attention Amber",
-        "canonical": "#f59e0b"
-      },
-      "danger": {
-        "role": "secondary",
-        "displayName": "Exception Red",
-        "canonical": "#d92d33"
-      },
-      "info": {
-        "role": "secondary",
-        "displayName": "Operational Blue",
-        "canonical": "#4667e6"
-      }
+      "coral": { "role": "primary", "displayName": "Coral da marca", "canonical": "#fe4f2b", "tonalRamp": ["#b7391f", "#d93c1a", "#fe4f2b", "#ff5a3c", "#ff8a6e"] },
+      "coral-deep": { "role": "primary", "displayName": "Coral profundo", "canonical": "#d93c1a" },
+      "coral-texto": { "role": "primary", "displayName": "Coral texto", "canonical": "#b7391f" },
+      "coral-hover": { "role": "primary", "displayName": "Coral hover", "canonical": "#ff5a3c" },
+      "coral-subtle": { "role": "primary", "displayName": "Coral lavado", "canonical": "rgba(254, 79, 43, 0.1)" },
+      "coral-border": { "role": "primary", "displayName": "Fio coral", "canonical": "rgba(255, 77, 41, 0.2)" },
+      "preto-logo": { "role": "neutral", "displayName": "Preto do logo (casca)", "canonical": "#12171d", "tonalRamp": ["#090e14", "#0b0f14", "#12171d", "#161b22"] },
+      "graphite": { "role": "neutral", "displayName": "Grafite", "canonical": "#090e14" },
+      "graphite-deep": { "role": "neutral", "displayName": "Grafite profundo", "canonical": "#0b0f14" },
+      "graphite-surface": { "role": "neutral", "displayName": "Grafite de superfície", "canonical": "#161b22" },
+      "paper": { "role": "neutral", "displayName": "Papel", "canonical": "#f6f6f3", "tonalRamp": ["#dbdede", "#eeeff3", "#f6f6f3", "#ffffff"] },
+      "branco-logo": { "role": "neutral", "displayName": "Branco do logo", "canonical": "#eeeff3" },
+      "white": { "role": "neutral", "displayName": "Branco", "canonical": "#ffffff" },
+      "text-body": { "role": "neutral", "displayName": "Texto de corpo", "canonical": "#1f252c" },
+      "cinza-2": { "role": "neutral", "displayName": "Cinza 2 (texto muted)", "canonical": "#616b78", "tonalRamp": ["#616b78", "#6d747e", "#8b949e"] },
+      "cinza": { "role": "neutral", "displayName": "Cinza", "canonical": "#6d747e" },
+      "slate": { "role": "neutral", "displayName": "Slate", "canonical": "#8b949e" },
+      "line": { "role": "neutral", "displayName": "Linha", "canonical": "#dbdede" },
+      "alpha-hairline": { "role": "neutral", "displayName": "Fio da casca", "canonical": "rgba(255, 255, 255, 0.051)" },
+      "alpha-divider": { "role": "neutral", "displayName": "Divisor da casca", "canonical": "rgba(255, 255, 255, 0.102)" },
+      "alpha-ring": { "role": "neutral", "displayName": "Anel da casca", "canonical": "rgba(255, 255, 255, 0.149)" },
+      "status-success": { "role": "secondary", "displayName": "Sucesso", "canonical": "#3fb950" },
+      "status-success-strong": { "role": "secondary", "displayName": "Sucesso texto", "canonical": "#137333" },
+      "status-danger": { "role": "secondary", "displayName": "Perigo", "canonical": "#e7000b" },
+      "status-danger-dark": { "role": "secondary", "displayName": "Perigo no escuro", "canonical": "#ff7f6e" },
+      "serie-2": { "role": "tertiary", "displayName": "Série 2", "canonical": "#ff8a6e" }
     },
     "typographyMeta": {
-      "display": {
-        "displayName": "Display",
-        "purpose": "One dominant hero number or control-room readout per screen."
-      },
-      "headline": {
-        "displayName": "Highlight",
-        "purpose": "Major KPI values and primary dashboard totals."
-      },
-      "title": {
-        "displayName": "Section Title",
-        "purpose": "Card and section titles in dense workspaces."
-      },
-      "body": {
-        "displayName": "Body",
-        "purpose": "Default UI copy, table cells, drawer content, and operational descriptions."
-      },
-      "label": {
-        "displayName": "Micro Label",
-        "purpose": "Badges, KPI labels, compact labels, and uppercase metadata."
-      }
+      "display": { "displayName": "Display", "purpose": "Número ou título de momento (--display-section)." },
+      "headline": { "displayName": "Métrica", "purpose": "Valor de KPI, tabular-nums (--display-kpi)." },
+      "title": { "displayName": "Título", "purpose": "Nome de entidade e título de bloco (--display-title)." },
+      "body": { "displayName": "Corpo", "purpose": "Texto de interface denso em Inter (--text-md)." },
+      "body-strong": { "displayName": "Corpo médio", "purpose": "Item e texto de controle (--text-base)." },
+      "label": { "displayName": "Rótulo de casca", "purpose": "Pílula de navegação (--display-nav)." },
+      "caption": { "displayName": "Apoio", "purpose": "Apoio de métrica e meta (--text-xs)." },
+      "mono": { "displayName": "Atalho", "purpose": "Só atalho de teclado (IBM Plex Mono)." }
     },
     "shadows": [
-      {
-        "name": "repouso",
-        "value": "0px 4px 8px 0px rgba(0, 0, 0, 0.04)",
-        "purpose": "Default cards and resting raised panels."
-      },
-      {
-        "name": "flutuante",
-        "value": "0px 8px 24px -4px rgba(0, 0, 0, 0.10)",
-        "purpose": "Dropdowns, popovers, select menus, and hover cards."
-      },
-      {
-        "name": "modal",
-        "value": "0px 24px 48px -12px rgba(0, 0, 0, 0.18)",
-        "purpose": "Dialogs, sheets, drawers, and blocking overlays."
-      },
-      {
-        "name": "shell",
-        "value": "-4px 0px 16px 0px rgba(0, 0, 0, 0.08)",
-        "purpose": "Application shell and side-panel separation."
-      }
+      { "name": "shadow-card", "value": "none", "purpose": "Cartão é plano; definição por hairline." },
+      { "name": "ring-inset-hairline", "value": "inset 0 0 0 1px var(--onface-line)", "purpose": "Definição de superfície sem sombra." },
+      { "name": "ring-inset-avatar", "value": "inset 0 0 0 1.5px var(--onface-alpha-ring)", "purpose": "Anel de avatar sobre a casca." },
+      { "name": "shadow-popover", "value": "0 0.5rem 1.5rem rgba(9, 14, 20, 0.08)", "purpose": "Popover, menu e diálogo sobre o papel." },
+      { "name": "shadow-popover-shell", "value": "0 0.75rem 2rem rgba(0, 0, 0, 0.32)", "purpose": "Menu, notificações e folha mobile sobre a casca grafite." }
     ],
     "motion": [
-      {
-        "name": "ease-padrao",
-        "value": "cubic-bezier(0.2, 0, 0, 1)",
-        "purpose": "Default color, border, shadow, transform, and opacity transitions."
-      },
-      {
-        "name": "ease-saida",
-        "value": "cubic-bezier(0.4, 0, 1, 1)",
-        "purpose": "Fast exits and dismissals."
-      },
-      {
-        "name": "duracao-rapida",
-        "value": "120ms",
-        "purpose": "Small state feedback."
-      },
-      {
-        "name": "duracao-padrao",
-        "value": "200ms",
-        "purpose": "Default interaction transitions."
-      },
-      {
-        "name": "duracao-lenta",
-        "value": "320ms",
-        "purpose": "Larger entrance, panel, and composed transitions."
-      }
+      { "name": "motion-fast", "value": "120ms", "purpose": "Crossfade de cor e fundo em estado." },
+      { "name": "motion-base", "value": "160ms", "purpose": "Transição padrão." },
+      { "name": "ease-standard", "value": "cubic-bezier(0.2, 0, 0.2, 1)", "purpose": "Mudança de estado no lugar." },
+      { "name": "curva-entrada", "value": "cubic-bezier(0, 0, 0.2, 1)", "purpose": "Algo entrando na tela (motion.ts)." },
+      { "name": "curva-saida", "value": "cubic-bezier(0.4, 0, 1, 1)", "purpose": "Algo saindo (motion.ts)." },
+      { "name": "curva-enfase", "value": "cubic-bezier(0.2, 0, 0, 1)", "purpose": "Overlay grande, painel, transição de página (motion.ts)." },
+      { "name": "mola-gaveta", "value": "spring stiffness 300, damping 34, mass 1", "purpose": "Gaveta e folha, sem quicar (motion.ts)." },
+      { "name": "opacity-hover", "value": "0.8", "purpose": "Hover por opacidade." },
+      { "name": "opacity-disabled", "value": "0.5", "purpose": "Estado desabilitado." }
     ],
     "breakpoints": [
-      { "name": "movel", "value": "480px" },
-      { "name": "tablet", "value": "768px" },
-      { "name": "desktop", "value": "1024px" },
-      { "name": "amplo", "value": "1440px" }
+      { "name": "prancheta", "value": "1440px" },
+      { "name": "tablet", "value": "1024px" },
+      { "name": "movel", "value": "768px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Botão primário",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Ação principal: coral profundo com texto branco.",
+      "html": "<button class=\"ds-btn-primary\">Salvar negócio</button>",
+      "css": ".ds-btn-primary { display: inline-flex; align-items: center; height: 2.25rem; padding: 0 1rem; border: 0; border-radius: var(--radius-control, 0.625rem); background: #d93c1a; color: #ffffff; font-family: Inter, sans-serif; font-size: 0.8125rem; font-weight: 500; transition: filter 120ms cubic-bezier(0.2, 0, 0.2, 1); } .ds-btn-primary:hover { filter: brightness(1.05); } .ds-btn-primary:active { filter: brightness(0.95); } .ds-btn-primary:focus-visible { outline: 2px solid #fe4f2b; outline-offset: 2px; }"
+    },
+    {
+      "name": "Botão secundário",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Segundo degrau: tinta escura.",
+      "html": "<button class=\"ds-btn-secondary\">Exportar</button>",
+      "css": ".ds-btn-secondary { display: inline-flex; align-items: center; height: 2.25rem; padding: 0 1rem; border: 0; border-radius: var(--radius-control, 0.625rem); background: #12171d; color: #ffffff; font-family: Inter, sans-serif; font-size: 0.8125rem; font-weight: 500; transition: opacity 120ms cubic-bezier(0.2, 0, 0.2, 1); } .ds-btn-secondary:hover { opacity: 0.9; } .ds-btn-secondary:focus-visible { outline: 2px solid #fe4f2b; outline-offset: 2px; }"
+    },
+    {
+      "name": "Botão outline",
+      "kind": "button",
+      "refersTo": "button-outline",
+      "description": "Ação neutra sobre superfície branca com fio.",
+      "html": "<button class=\"ds-btn-outline\">Filtrar</button>",
+      "css": ".ds-btn-outline { display: inline-flex; align-items: center; height: 2.25rem; padding: 0 1rem; border: 1px solid #dbdede; border-radius: var(--radius-control, 0.625rem); background: #ffffff; color: #12171d; font-family: Inter, sans-serif; font-size: 0.8125rem; font-weight: 500; transition: background-color 120ms cubic-bezier(0.2, 0, 0.2, 1); } .ds-btn-outline:hover { background: #f6f6f3; } .ds-btn-outline:focus-visible { outline: 2px solid #fe4f2b; outline-offset: 2px; }"
+    },
+    {
+      "name": "Campo",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Campo de texto com fio hairline e foco coral.",
+      "html": "<input class=\"ds-input\" placeholder=\"Buscar negócio\" />",
+      "css": ".ds-input { height: 2.25rem; width: 16rem; padding: 0.25rem 0.75rem; border: 1px solid #dbdede; border-radius: 0.5rem; background: #ffffff; color: #12171d; font-family: Inter, sans-serif; font-size: 0.875rem; outline: none; transition: box-shadow 120ms cubic-bezier(0.2, 0, 0.2, 1); } .ds-input::placeholder { color: #616b78; } .ds-input:focus-visible { border-color: #fe4f2b; box-shadow: 0 0 0 3px rgba(254, 79, 43, 0.2); }"
+    },
+    {
+      "name": "Topbar com pílulas",
+      "kind": "nav",
+      "refersTo": "topbar",
+      "description": "Casca grafite fixa; pílula inativa em slate, hover por fio claro, ativa em coral.",
+      "html": "<nav class=\"ds-topbar\"><strong class=\"ds-topbar-marca\">ONFACE</strong><a class=\"ds-pill\" aria-current=\"page\">Vendas</a><a class=\"ds-pill\">Clientes</a><a class=\"ds-pill\">Atividades</a></nav>",
+      "css": ".ds-topbar { display: flex; align-items: center; gap: 1rem; height: 4.5rem; padding: 0 1.5rem; background: #12171d; border-bottom: 1px solid rgba(255, 255, 255, 0.051); color: #eeeff3; } .ds-topbar-marca { font-family: 'Plus Jakarta Sans', sans-serif; font-weight: 800; letter-spacing: -0.05em; margin-right: 0.75rem; } .ds-pill { display: inline-flex; align-items: center; height: 2.375rem; padding: 0 1rem; border-radius: 1.25rem; color: #8b949e; font-family: 'Plus Jakarta Sans', sans-serif; font-size: 0.75rem; font-weight: 600; line-height: 1; cursor: pointer; transition: background-color 120ms cubic-bezier(0.2, 0, 0.2, 1), color 120ms cubic-bezier(0.2, 0, 0.2, 1); } .ds-pill:hover:not([aria-current='page']) { background: rgba(255, 255, 255, 0.051); color: #eeeff3; } .ds-pill[aria-current='page'] { background: #fe4f2b; color: #ffffff; } .ds-pill:focus-visible { outline: 2px solid #fe4f2b; outline-offset: 2px; }"
+    },
+    {
+      "name": "Cartão de métrica",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Superfície branca plana, fio hairline, número em Jakarta tabular.",
+      "html": "<div class=\"ds-card\"><span class=\"ds-card-rotulo\">Receita ganha</span><strong class=\"ds-card-valor\">R$ 184.300</strong><span class=\"ds-card-apoio\">12 negócios</span></div>",
+      "css": ".ds-card { display: flex; flex-direction: column; gap: 0.25rem; width: 16rem; padding: 1rem; background: #ffffff; border-radius: 0.75rem; box-shadow: inset 0 0 0 1px #dbdede; } .ds-card-rotulo { color: #616b78; font-family: Inter, sans-serif; font-size: 0.75rem; } .ds-card-valor { color: #12171d; font-family: 'Plus Jakarta Sans', sans-serif; font-size: 1.5625rem; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; } .ds-card-apoio { color: #616b78; font-family: Inter, sans-serif; font-size: 0.6875rem; }"
+    },
+    {
+      "name": "Badge de atenção",
+      "kind": "chip",
+      "refersTo": "badge-attention",
+      "description": "Sinal coral em pílula: coral texto sobre coral lavado.",
+      "html": "<span class=\"ds-badge-atencao\">Sem retorno há 5 dias</span>",
+      "css": ".ds-badge-atencao { display: inline-flex; align-items: center; height: 1.5rem; padding: 0 0.625rem; border-radius: 9999px; background: rgba(254, 79, 43, 0.1); color: #b7391f; font-family: Inter, sans-serif; font-size: 0.6875rem; font-weight: 600; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "A casca é lei",
+    "overview": "ONFACE é uma ferramenta de operação comercial densa: uma casca grafite permanente no topo, um canvas de papel quente onde o trabalho acontece e um único acento coral que só aparece quando algo pede ação ou atenção. O produto é plano de propósito; superfícies se definem por fio de 1px e troca de plano, nunca por sombra. A hierarquia vem de superfície, escala, peso, densidade e posição antes de vir de cor.",
+    "keyCharacteristics": [
+      "Casca grafite fixa no topo; a navegação nunca é branca.",
+      "Um foco coral por composição.",
+      "Hairline no lugar de sombra; só o temporário flutua.",
+      "Número que decide em Plus Jakarta Sans bold, `tabular-nums`.",
+      "Malha e fundo gráfico medidos na mesma unidade do layout, e só em momento, nunca em tela operacional."
     ],
     "rules": [
-      "One dominant element per screen.",
-      "Use color only when it carries operational meaning.",
-      "Write role tokens, not raw numbers.",
-      "Prefer drawers for long entity editing.",
-      "Do not install UI kits with competing theme systems.",
-      "Portal components must inherit CRM2 tokens from [data-cf2-theme]."
+      { "name": "The Coral Is Action Rule", "body": "Coral é ação principal, estado ativo e alerta que exige decisão. Nunca fundo de seção, nunca enfeite de cartão. Se tudo é coral, nada é.", "section": "colors" },
+      { "name": "The Signal Rule", "body": "Verde diz o que já aconteceu e deu certo; coral diz o que quer atenção agora; cinza diz que não há consequência. Duas pílulas com a mesma forma e cores diferentes na mesma linha é bug de semântica.", "section": "colors" },
+      { "name": "The Two Greys Rule", "body": "No claro existem dois cinzas de texto, e não três. Hierarquia de terceiro nível se faz por tamanho e peso, não por um cinza que ninguém enxerga.", "section": "colors" },
+      { "name": "The Legibility Floor Rule", "body": "Rótulo que o operador precisa ler não desce abaixo de 11px entregues, medidos no navegador, não no nominal do token.", "section": "typography" },
+      { "name": "The Tabular Number Rule", "body": "Valor que decide sai em Plus Jakarta bold com `tabular-nums`: coluna de número não dança entre linhas.", "section": "typography" },
+      { "name": "The Shell Is Law Rule", "body": "Topbar, moldura grafite, canvas claro e a escala em `--onface-u` não são negociáveis por tela. Quem precisa de outro layout está descrevendo um layout novo da casca, não uma exceção.", "section": "layout" },
+      { "name": "The One Metric Rule", "body": "Escolha o número que muda a decisão e dê a ele superfície, escala e peso. O resto é apoio: denso, pequeno e neutro.", "section": "layout" },
+      { "name": "The Temporary Floats Rule", "body": "Se a peça some quando você clica fora, ela pode flutuar. Card, KPI, tabela e painel ficam colados na página.", "section": "elevation" },
+      { "name": "The Contained Radius Rule", "body": "Card em cápsula está fora. O raio é token; pílula é só para chip, badge e avatar.", "section": "shapes" }
     ],
-    "componentSnippets": {
-      "primaryButton": "<button class=\"inline-flex h-9 items-center justify-center rounded-[var(--cf2-radius-md)] px-3.5 text-[13px] font-medium\" style=\"background: var(--cf2-accent); color: var(--cf2-text-on-accent)\">Ação principal</button>",
-      "card": "<div class=\"rounded-card cf2-p-card\" style=\"background: var(--cf2-bg-surface); border: 1px solid var(--cf2-border-default); box-shadow: var(--shadow-repouso)\">...</div>",
-      "input": "<input class=\"rounded-[var(--cf2-radius-sm)] px-3 py-2 text-sm\" style=\"background: var(--cf2-bg-surface); color: var(--cf2-text-primary); border: 1px solid var(--cf2-border-control)\" />"
-    }
+    "dos": [
+      "**Do** compor com o que existe: primeiro `components/ui` e o laboratório em `/design`, depois a composição de dois existentes.",
+      "**Do** tirar cor de token e medida de `calc(N * var(--onface-u))`.",
+      "**Do** usar coral profundo em preenchimento com texto, coral puro em traço, ícone e foco, e coral texto quando o coral é a letra.",
+      "**Do** dar grafite, fundo gráfico e número grande só ao bloco que muda o próximo passo (centro de comando, conclusão, proposta, processamento do NEXO, vazio importante).",
+      "**Do** definir superfície por fio de 1px e anel interno."
+    ],
+    "donts": [
+      "**Don't** abrir um segundo sistema: componente paralelo, hex solto, px solto ou casca própria de tela.",
+      "**Don't** usar sombra colorida ou glow coral; sombra é neutra.",
+      "**Don't** usar gradiente decorativo, glassmorphism ou card dentro de card.",
+      "**Don't** usar card em cápsula ou ilustração genérica em estado vazio; o vazio é ícone de linha, texto direto e a ação que resolve.",
+      "**Don't** pintar o bloco inteiro de coral, nem pôr dois momentos na mesma tela.",
+      "**Don't** colocar malha ou fundo gráfico atrás de tabela ou formulário.",
+      "**Don't** dar o mesmo tratamento a todos os blocos (democracia visual)."
+    ]
   }
 }

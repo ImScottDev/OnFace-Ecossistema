@@ -194,7 +194,7 @@ export async function POST(req: NextRequest) {
   // domínio corporativo do e-mail é o único identificador confiável disponível;
   // e-mail pessoal não identifica empresa nenhuma, então o lead entra sem ela e
   // a tela pede a associação antes de qualquer passo que exija Empresa.
-  // Registrado como dependência em docs/reconstruction/MODULO-01-VENDAS.md.
+  // Registrado como dependência em docs/produto/modulo-01-vendas-implementacao.md.
   const dominio = dominioDoEmail(email);
   const nomeEmpresa = empresa ?? (dominio ? dominio.split(".")[0] : null);
 

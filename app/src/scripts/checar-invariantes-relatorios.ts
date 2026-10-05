@@ -1,5 +1,5 @@
 /**
- * Checador de INVARIANTES dos relatórios (T7 do PLANO-ACAO-RELATORIOS.md).
+ * Checador de INVARIANTES dos relatórios (T7 do docs/produto/relatorios-sdr.md).
  * Roda contra DATABASE_URL e falha (exit 1) se alguma régua quebrar — pega de volta
  * os bugs da auditoria de 21/07 (soma por vendedor ≠ total, receita individual maior
  * que a total, funil não-monotônico) antes de chegarem na tela.

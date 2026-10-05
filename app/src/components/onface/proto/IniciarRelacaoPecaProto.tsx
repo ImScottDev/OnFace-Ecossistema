@@ -19,9 +19,9 @@ import { toast } from "sonner";
 
 import {
   acaoCriarLead, acaoEmMassa, acaoMoverEtapa, acaoOpcoesEmMassa, acaoResponsaveis,
-} from "@/app/(crm2)/pre-vendas/actions";
-import { acaoCriarOportunidade } from "@/app/(crm2)/pipeline/actions";
-import { acaoContextoDaEmpresa } from "@/app/(crm2)/empresas/actions";
+} from "@/app/(produto)/pre-vendas/actions";
+import { acaoCriarOportunidade } from "@/app/(produto)/pipeline/actions";
+import { acaoContextoDaEmpresa } from "@/app/(produto)/empresas/actions";
 import type { Familia, Motion, RelacionamentoEmpresa } from "@/lib/vendas/dominio";
 import { IniciarRelacaoLiga } from "./IniciarRelacaoLiga";
 import type { PecaProps } from "./pecas-host";

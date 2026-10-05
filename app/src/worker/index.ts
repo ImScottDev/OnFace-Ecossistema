@@ -857,7 +857,7 @@ async function handleAiSdrResponse(params: {
 }) {
   const { contatoId, contatoNome, leadId, organizacaoId, sessaoId, currentMessage, phone, sourceMessageId } = params;
 
-  // Callpilot nativo (port Deskcomm, P0 #1 — ver docs/reconstruction/DESKCOMM-AI-NATIVE-PORT-2026-08-24.md):
+  // Callpilot nativo (port Deskcomm, P0 #1):
   // se a organização tem agente publicado elegível para este evento, o runtime novo assume a
   // conversa e o legado abaixo nem roda. Se o agente nativo existir mas falhar de verdade, NÃO
   // cai no legado por baixo — geraria resposta duplicada/incoerente; a falha fica registrada no
@@ -3268,7 +3268,7 @@ const slaWorker = new Worker(
 
     if (job.name === "fluxos-sweep") {
       // Construtor de Automações: agendados devidos, tarefas vencidas e
-      // execuções em espera cujo horário chegou (docs/design/construtor-automacoes.md §4.3).
+      // execuções em espera cujo horário chegou (docs/produto/automacoes-fluxos.md §4.3).
       const { sweepFluxos } = await import("../lib/automacoes/disparo");
       const r = await sweepFluxos();
       if (r.agendados + r.tarefas + r.retomadas > 0) console.log(`[fluxos] agendados=${r.agendados} tarefas=${r.tarefas} retomadas=${r.retomadas}`);

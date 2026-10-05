@@ -24,7 +24,7 @@ import {
  * sob Pós-vendas, dentro de Operação. As rotas continuam existindo e acendem o
  * item certo pelo mapa de herança abaixo — nenhuma tela ficou inalcançável.
  *
- * Toda área aqui aponta para uma rota que existe em `(crm2)`: verificado
+ * Toda área aqui aponta para uma rota que existe em `(produto)`: verificado
  * arquivo por arquivo em 22/09, 20 de 20.
  */
 

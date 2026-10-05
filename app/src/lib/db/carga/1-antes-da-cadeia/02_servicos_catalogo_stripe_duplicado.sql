@@ -29,7 +29,7 @@
 -- Efeito medido no dump de 18/09: 145 das 146 linhas ficam com
 -- `stripe_product_id` NULL. A única que mantém o vínculo é a linha ATIVA de
 -- `prod_VBTJdoSBgwMkCL`, que vence sem empate. Os 10 grupos zerados estão
--- listados em `docs/virada/PLANO-DE-CARGA.md`, seção 2.2.1, para ratificação.
+-- listados em `docs/operacao/virada/PLANO-DE-CARGA.md`, seção 2.2.1, para ratificação.
 --
 -- Idempotente: rodar de novo não acha mais grupo duplicado e não faz nada.
 

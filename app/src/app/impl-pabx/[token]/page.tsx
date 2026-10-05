@@ -8,7 +8,7 @@ import { FormularioImplantacaoPabx } from "@/components/public/FormularioImplant
 /**
  * Página pública do formulário de implantação (Fulfillment, etapa 1 —
  * "levantamento de informações"). Sem login, sem sidebar — mesmo padrão de
- * /p/[id] (proposta pública): fora dos route groups (crm)/(crm2), client
+ * /p/[id] (proposta pública): fora dos route groups (crm)/(produto), client
  * component com QueryClient próprio, fetch direto no endpoint público.
  * Acesso só pelo publicToken (uuid opaco) na URL, nunca sessão.
  */

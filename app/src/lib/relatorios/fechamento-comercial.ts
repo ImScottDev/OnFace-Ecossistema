@@ -18,7 +18,7 @@
  * feito qualificação direta). `usuarios.role` NÃO é fonte confiável pra "quem
  * foi SDR quando" — a fonte real e histórica é `status_changes` (quem executou
  * a transição, no momento em que ela aconteceu), exatamente como já
- * documentado em LOGICA-SDR.md/AUDITORIA.md (21-22/07). `leads.agenda_closer_id`
+ * documentado em docs/produto/relatorios-sdr.md (21-22/07). `leads.agenda_closer_id`
  * existe no schema mas tem 0% de cobertura em produção — não é usado aqui.
  */
 import { db } from "@/lib/db";
@@ -206,7 +206,7 @@ export async function listarVendasFechadas(orgId: string, since: Date, until: Da
   }
 
   // "Quem qualificou" — primeiro evento real `→ reuniao_agendada` na vida do
-  // lead (mesma definição de LOGICA-SDR.md). usuario_id null = Agente SDR (IA).
+  // lead (mesma definição de docs/produto/relatorios-sdr.md). usuario_id null = Agente SDR (IA).
   const primeiroEventoAgendamento = leadIds.length > 0
     ? await db.execute<{ lead_id: string; usuario_id: string | null; created_at: string }>(sql`
         SELECT DISTINCT ON (lead_id) lead_id, usuario_id, created_at
@@ -279,7 +279,7 @@ export async function listarVendasFechadas(orgId: string, since: Date, until: Da
  * realizada, mesma régua de `funil-eventos.ts::contarReunioes`, mas linha a
  * linha em vez de agregado). "Realizada" = lead avançou pra qualquer etapa
  * pós-call (`POS_CALL`) depois do agendamento — closers pulam a etapa literal
- * "reunião realizada" (decisão Kauã 21/07, documentada em PLANO-ACAO-RELATORIOS.md).
+ * "reunião realizada" (decisão Kauã 21/07, documentada em docs/produto/relatorios-sdr.md).
  */
 export async function listarAgendasRealizadas(orgId: string, since: Date, until: Date): Promise<AgendaRealizada[]> {
   const agendamentos = await db.execute<{

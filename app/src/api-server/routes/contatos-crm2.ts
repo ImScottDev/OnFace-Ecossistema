@@ -63,7 +63,7 @@ const app = new Hono();
  * inbox pessoal como Atendimento, não filtra por responsável).
  *
  * "Relacionamento" (Cliente/Qualificado/Lead) não existe como campo no
- * schema — regra aplicada aqui (documentada em RECONSTRUCTION_STATE.md):
+ * schema — regra aplicada aqui:
  * Cliente se a empresa tem qualquer pessoa com leads.tipo='cliente';
  * Qualificado se tem negócio ativo (status fora de ganho/perdido) vinculado;
  * Lead nos demais casos. Ajustar se o Kauã definir outra regra.

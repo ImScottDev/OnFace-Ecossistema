@@ -25,8 +25,6 @@ function acharRaiz(): string {
 const raizRepo = acharRaiz();
 const COMPOSES = [
   "docker-compose.yml",
-  "_deploy-dev/docker-compose.yml",
-  "_deploy-prod/docker-compose.yml",
 ];
 
 function blocoDoWorker(conteudo: string): string {

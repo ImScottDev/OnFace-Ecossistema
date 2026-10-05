@@ -2,9 +2,9 @@
 /**
  * Inventário do protótipo ONFACE.
  *
- * Lê os `.dc.html` do handoff em `docs/handoff-onface/` e extrai TODO valor de
+ * Lê os `.dc.html` do handoff em `docs/design/handoff-onface/` e extrai TODO valor de
  * estilo que eles declaram: cor, tamanho, peso, raio, altura, espaçamento,
- * sombra, duração e curva. Escreve `docs/handoff-onface/inventario.md`.
+ * sombra, duração e curva. Escreve `docs/design/handoff-onface/inventario.md`.
  *
  * Por que existe: até aqui eu transcrevia valor por valor à mão, de
  * `style="…"` inline para CSS, tela a tela. Transcrição à mão sobre 386 estilos
@@ -19,7 +19,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 const RAIZ = path.resolve(import.meta.dirname, "..");
-const PASTA = path.join(RAIZ, "docs/handoff-onface");
+const PASTA = path.join(RAIZ, "docs/design/handoff-onface");
 const SAIDA = path.join(PASTA, "inventario.md");
 
 /** As telas e a moldura. `design_handoff_pre_vendas/` é cópia do recorte
@@ -159,7 +159,7 @@ linhas.push("# Inventário do protótipo ONFACE");
 linhas.push("");
 linhas.push(`Gerado por \`scripts/inventario-handoff.mjs\` em ${agora}. **Não editar à mão.**`);
 linhas.push("");
-linhas.push("Fonte: os `.dc.html` de `docs/handoff-onface/`. Este arquivo é o que a");
+linhas.push("Fonte: os `.dc.html` de `docs/design/handoff-onface/`. Este arquivo é o que a");
 linhas.push("camada de token tem de cobrir — cada valor aqui ou vira papel, ou é declarado");
 linhas.push("uso único. Valor que não está aqui não existe no desenho.");
 linhas.push("");

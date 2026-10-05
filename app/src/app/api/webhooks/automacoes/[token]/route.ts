@@ -1,6 +1,6 @@
 /**
  * Webhook público dos Fluxos: POST /api/webhooks/automacoes/<token>
- * (docs/design/construtor-automacoes.md §3.4).
+ * (docs/produto/automacoes-fluxos.md §3.4).
  *
  * Rota Next, não Hono: no Traefik, /api/webhooks/* é o único prefixo que vai
  * ao Next E fica fora do basic auth do dev.crm. Uma rota Hono ficaria atrás do

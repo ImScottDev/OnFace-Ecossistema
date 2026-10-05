@@ -1,7 +1,7 @@
 /**
  * Vocabulário canônico do Módulo 01 — Vendas.
  *
- * Fonte: specdrive-modulo-01-vendas-final.md. Nada aqui é escolha de
+ * Fonte: docs/produto/specdrive-modulo-01-vendas.md. Nada aqui é escolha de
  * implementação: são os nomes que a spec fechou. Quando o legado usa outro
  * nome, a tradução mora neste arquivo e em nenhum outro lugar — é o que
  * permite o resto do módulo falar só o domínio novo sem reescrever as tabelas

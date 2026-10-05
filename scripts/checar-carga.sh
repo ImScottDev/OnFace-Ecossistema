@@ -64,7 +64,7 @@ set +e
 saida_b=$(psql "$URL" -v ON_ERROR_STOP=1 2>&1 <<'SQL'
 DO $$
 DECLARE r record; n bigint; perdidas int := 0; declarado bigint;
-  -- Perdas de linha JÁ DECLARADAS em docs/virada/PLANO-DE-CARGA.md, seção
+  -- Perdas de linha JÁ DECLARADAS em docs/operacao/virada/PLANO-DE-CARGA.md, seção
   -- "Perdas". Qualquer tabela fora desta lista que perca linha reprova.
   aceitas text[] := ARRAY['lead_labels', 'meta_lead_staging'];
   -- meta_lead_staging: a migration 0090 deduplica por `fb_lead_id`, mantendo a
@@ -173,7 +173,7 @@ else
   echo "  ⚠ divergências (─ só em dev, + só no carregado):"
   grep -E '^[+-][^+-]' "$TMP/diff.txt" | head -60 || true
   echo "  ... total: $total linha(s). Cada uma precisa estar"
-  echo "      declarada em docs/virada/PLANO-DE-CARGA.md como diferença aceita."
+  echo "      declarada em docs/operacao/virada/PLANO-DE-CARGA.md como diferença aceita."
 fi
 
 echo

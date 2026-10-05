@@ -16,7 +16,7 @@
 
 /* Tela que traz a própria moldura não quer a caixa de conteúdo do CRM 2.0.
  *
- * O layout do `(crm2)` embrulha toda tela em `.cf2-workspace-content` com
+ * O layout do `(produto)` embrulha toda tela em `.cf2-workspace-content` com
  * `cf2-p-pagina` (32px) e `gap-5` — certo para as ~70 telas que só trazem
  * conteúdo, errado para as que trazem `.onface-page`, que já tem gutter,
  * moldura e fundo grafite próprios. Sem isto a tela ONFACE ganha padding duas

@@ -392,7 +392,7 @@ test("ninguém lê a família do produto só do legado", () => {
   const ARQUIVOS = [
     "api-server/routes/pipeline-crm2.ts",
     "api-server/routes/cs.ts",
-    "app/(crm2)/propostas/actions.ts",
+    "app/(produto)/propostas/actions.ts",
     "lib/vendas/consultas.ts",
     "lib/vendas/propostas.ts",
     "lib/vendas/pipeline.ts",

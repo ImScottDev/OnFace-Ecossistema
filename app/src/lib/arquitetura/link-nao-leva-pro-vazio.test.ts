@@ -16,8 +16,8 @@
  * que devolve zero precisa ser provada ao contrário antes de virar boa notícia.
  *
  * Duas regras herdadas do CP52, pelo mesmo motivo de lá:
- * 1. **Route group não entra na URL.** `app/(crm2)/clientes/page.tsx` atende
- *    `/clientes`. Contar `(crm2)` como segmento acusaria a aplicação inteira.
+ * 1. **Route group não entra na URL.** `app/(produto)/clientes/page.tsx` atende
+ *    `/clientes`. Contar `(produto)` como segmento acusaria a aplicação inteira.
  * 2. **A URL costuma ser template.** `/clientes/${id}` é lido até o `${`, então
  *    a comparação vale como PREFIXO e um segmento `[id]` casa com qualquer
  *    coisa. Exigir igualdade daria falso vermelho em toda rota de detalhe.

@@ -1,280 +1,282 @@
 ---
-name: Callface CRM 2.0
-description: Dense, trustworthy operating UI for Callface's sales and post-sale machine.
+name: ONFACE
+description: Sistema operacional comercial (aquisição, venda, entrega e relacionamento) em casca grafite, canvas de papel e um único acento coral.
 colors:
-  seaweed-50: "#edf7f3"
-  seaweed-100: "#dbf0e7"
-  seaweed-200: "#b8e0cf"
-  seaweed-300: "#94d1b7"
-  seaweed-400: "#70c29e"
-  seaweed-500: "#4db386"
-  seaweed-700: "#2e6b51"
-  seaweed-800: "#1f4736"
-  seaweed-950: "#0b1913"
-  page-bg: "#fafafa"
-  canvas-bg: "#f8fafc"
-  surface: "#ffffff"
-  surface-muted: "#f3f4f6"
-  text-primary: "#111827"
-  text-secondary: "#4b5563"
-  text-tertiary: "#666e7d"
-  border-default: "#e5e7eb"
-  border-control: "#767e8c"
-  chrome-bg: "#1c1f26"
-  chrome-bg-alt: "#16171c"
-  chrome-active: "#1a1d24"
-  chrome-text: "#ffffff"
-  chrome-text-muted: "#9ca3af"
-  success: "#4db386"
-  success-bg: "#edf7f3"
-  success-fg: "#1f4736"
-  danger: "#d92d33"
-  danger-bg: "#fceded"
-  danger-fg: "#a11d21"
-  warning: "#f59e0b"
-  warning-bg: "#fdf1dd"
-  warning-fg: "#8a5a06"
-  info: "#4667e6"
-  info-bg: "#eaeffe"
-  info-fg: "#2542a8"
-  chart-1: "#4db386"
-  chart-2: "#5b8def"
-  chart-3: "#f5a623"
-  chart-4: "#9b7ef0"
-  chart-5: "#f2708a"
+  coral: "#fe4f2b"
+  coral-deep: "#d93c1a"
+  coral-texto: "#b7391f"
+  coral-hover: "#ff5a3c"
+  coral-subtle: "rgba(254, 79, 43, 0.1)"
+  coral-border: "rgba(255, 77, 41, 0.2)"
+  preto-logo: "#12171d"
+  graphite: "#090e14"
+  graphite-deep: "#0b0f14"
+  graphite-surface: "#161b22"
+  paper: "#f6f6f3"
+  branco-logo: "#eeeff3"
+  white: "#ffffff"
+  text-body: "#1f252c"
+  cinza-2: "#616b78"
+  cinza: "#6d747e"
+  slate: "#8b949e"
+  line: "#dbdede"
+  alpha-hairline: "rgba(255, 255, 255, 0.051)"
+  alpha-divider: "rgba(255, 255, 255, 0.102)"
+  alpha-ring: "rgba(255, 255, 255, 0.149)"
+  status-success: "#3fb950"
+  status-success-strong: "#137333"
+  status-danger: "#e7000b"
+  status-danger-dark: "#ff7f6e"
+  serie-2: "#ff8a6e"
 typography:
   display:
-    fontFamily: "var(--cf2-font-heading), system-ui, sans-serif"
-    fontSize: "calc(40px * var(--cf2-escala))"
+    fontFamily: "Plus Jakarta Sans, sans-serif"
+    fontSize: "2rem"
     fontWeight: 700
     lineHeight: 1
-    letterSpacing: "-1.4px"
   headline:
-    fontFamily: "var(--cf2-font-heading), system-ui, sans-serif"
-    fontSize: "calc(30px * var(--cf2-escala))"
+    fontFamily: "Plus Jakarta Sans, sans-serif"
+    fontSize: "1.5625rem"
     fontWeight: 700
     lineHeight: 1
-    letterSpacing: "-1.2px"
+    fontFeature: "tnum"
   title:
-    fontFamily: "var(--cf2-font-heading), system-ui, sans-serif"
-    fontSize: "calc(17px * var(--cf2-escala))"
-    fontWeight: 600
-    lineHeight: 1.3
-    letterSpacing: "-0.4px"
-  body:
-    fontFamily: "var(--cf2-font-ui), system-ui, sans-serif"
-    fontSize: "calc(13px * var(--cf2-escala))"
-    fontWeight: 400
-    lineHeight: 1.45
-  label:
-    fontFamily: "var(--cf2-font-ui), system-ui, sans-serif"
-    fontSize: "calc(11px * var(--cf2-escala))"
+    fontFamily: "Plus Jakarta Sans, sans-serif"
+    fontSize: "1.125rem"
     fontWeight: 700
-    lineHeight: 1.3
-    letterSpacing: "0.4px"
+  body:
+    fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif"
+    fontSize: "0.8125rem"
+    fontWeight: 400
+    lineHeight: 1.6
+  body-strong:
+    fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif"
+    fontSize: "0.875rem"
+    fontWeight: 500
+  label:
+    fontFamily: "Plus Jakarta Sans, sans-serif"
+    fontSize: "0.75rem"
+    fontWeight: 600
+    lineHeight: 1
+  caption:
+    fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif"
+    fontSize: "0.6875rem"
+    fontWeight: 400
+  mono:
+    fontFamily: "IBM Plex Mono, monospace"
+    fontSize: "0.6875rem"
+    fontWeight: 500
 rounded:
-  hero: "32px"
-  card: "28px"
-  inner: "20px"
-  control: "14px"
-  chip: "10px"
+  xs: "0.25rem"
+  sm: "0.375rem"
+  md: "0.5rem"
+  control: "0.625rem"
+  card: "0.75rem"
+  card-lg: "1rem"
+  pill-nav: "1.25rem"
+  canvas: "2.5rem"
   full: "9999px"
 spacing:
-  colado: "4px"
-  item: "8px"
-  grupo: "12px"
-  bloco: "16px"
-  secao: "24px"
-  pagina: "32px"
+  space-2: "0.125rem"
+  space-4: "0.25rem"
+  space-6: "0.375rem"
+  space-8: "0.5rem"
+  space-10: "0.625rem"
+  space-12: "0.75rem"
+  space-16: "1rem"
+  space-20: "1.25rem"
+  space-24: "1.5rem"
+  space-32: "2rem"
+  space-40: "2.5rem"
+  space-48: "3rem"
 components:
   button-primary:
-    backgroundColor: "{colors.seaweed-700}"
-    textColor: "{colors.chrome-text}"
+    backgroundColor: "{colors.coral-deep}"
+    textColor: "{colors.white}"
     rounded: "{rounded.control}"
-    height: "36px"
-    padding: "0 14px"
+    height: "2.25rem"
+    padding: "0 1rem"
   button-secondary:
-    backgroundColor: "{colors.surface}"
-    textColor: "{colors.text-primary}"
+    backgroundColor: "{colors.preto-logo}"
+    textColor: "{colors.white}"
     rounded: "{rounded.control}"
-    height: "36px"
-    padding: "0 14px"
-  card-default:
-    backgroundColor: "{colors.surface}"
-    textColor: "{colors.text-primary}"
+    height: "2.25rem"
+    padding: "0 1rem"
+  button-tertiary:
+    backgroundColor: "{colors.branco-logo}"
+    textColor: "{colors.preto-logo}"
+    rounded: "{rounded.control}"
+    height: "2.25rem"
+    padding: "0 1rem"
+  button-outline:
+    backgroundColor: "{colors.white}"
+    textColor: "{colors.preto-logo}"
+    rounded: "{rounded.control}"
+    height: "2.25rem"
+    padding: "0 1rem"
+  button-destructive:
+    backgroundColor: "{colors.status-danger}"
+    textColor: "{colors.white}"
+    rounded: "{rounded.control}"
+    height: "2.25rem"
+  input:
+    backgroundColor: "{colors.white}"
+    textColor: "{colors.preto-logo}"
+    rounded: "{rounded.md}"
+    height: "2.25rem"
+    padding: "0.25rem 0.75rem"
+  card:
+    backgroundColor: "{colors.white}"
+    textColor: "{colors.preto-logo}"
     rounded: "{rounded.card}"
-    padding: "20px"
-  input-default:
-    backgroundColor: "{colors.surface}"
-    textColor: "{colors.text-primary}"
-    rounded: "{rounded.control}"
-    padding: "8px 12px"
+  topbar:
+    backgroundColor: "{colors.preto-logo}"
+    textColor: "{colors.branco-logo}"
+    height: "4.5rem"
+  nav-pill:
+    textColor: "{colors.branco-logo}"
+    typography: "{typography.label}"
+    rounded: "{rounded.pill-nav}"
+    height: "2.375rem"
+  sidebar:
+    backgroundColor: "{colors.graphite}"
+    textColor: "{colors.branco-logo}"
+  badge-attention:
+    backgroundColor: "{colors.coral-subtle}"
+    textColor: "{colors.coral-texto}"
+    rounded: "{rounded.full}"
 ---
 
-# Design System: Callface CRM 2.0
+# Design System: ONFACE
 
 ## Overview
 
-**Creative North Star: "The Revenue Control Room"**
+**Creative North Star: "A casca é lei"**
 
-Callface CRM 2.0 is an operational cockpit, not a marketing surface. It should feel like a precise control room for sales, implementation, CS, billing, and automations: calm enough for eight hours of use, dense enough to expose the real state of the business, and sharp enough that exceptions are visible without making every screen shout.
+ONFACE é uma ferramenta de operação comercial densa: uma casca grafite permanente no topo, um canvas de papel quente onde o trabalho acontece e um único acento coral que só aparece quando algo pede ação ou atenção. O produto é plano de propósito; superfícies se definem por fio de 1px e troca de plano, nunca por sombra. A hierarquia vem de superfície, escala, peso, densidade e posição antes de vir de cor.
 
-The visual system is light workspace plus dark chrome. The content area uses white and cool-gray surfaces for scanning, while the sidebar, hero bands, and Carol bar use fixed dark chrome. Brand lives in a seaweed green used sparingly for action, active state, success, and the primary chart series.
+Toda medida da casca e das telas ONFACE é expressa em `--onface-u`, uma unidade fluida em que 1u equivale a 1px da prancheta de 1440 (`clamp(0.5px, 0.0694vw × escala, 1.3px)`; abaixo de 768px, `clamp(0.8px, 0.2667vw, 1.25px)`). A tela inteira escala como uma redução ou ampliação fiel do desenho, em qualquer monitor e zoom. Os valores do frontmatter são os nominais da prancheta (os fallbacks em rem do `:root`); sob `html[data-onface-theme]` eles viram `calc(N * var(--onface-u))`. A densidade do produto inteiro tem um dial só, `--onface-escala` (decisão de 18/09: 1).
+
+O tema é escopado por `html[data-onface-theme="light"]`. Os componentes shadcn de `components/ui` leem utilitários que apontam para `--cf2-*`; a seção "Ponte cf2 → ONFACE" de `onface.css` reaponta esses papéis para os tokens ONFACE, então a biblioteca fala ONFACE sem fork. `--cf2-*` é ponte, não fonte: valores novos nascem em `--onface-*` e nos papéis semânticos.
 
 **Key Characteristics:**
-- Dense operational rhythm, not landing-page spacing.
-- Semantic color only: brand, positive, warning, danger, info.
-- Role tokens over raw values: `rounded-card`, `text-corpo`, `bg-positivo-suave`.
-- One dominant element per screen.
-- Real component states for loading, empty, error, focus, hover, and mobile.
+- Casca grafite fixa no topo; a navegação nunca é branca.
+- Um foco coral por composição.
+- Hairline no lugar de sombra; só o temporário flutua.
+- Número que decide em Plus Jakarta Sans bold, `tabular-nums`.
+- Malha e fundo gráfico medidos na mesma unidade do layout, e só em momento, nunca em tela operacional.
 
 ## Colors
 
-The palette is neutral-first with seaweed as the single brand accent, supported by clear status colors and a dark chrome shell.
+Uma rampa de acento (coral) sobre neutros de grafite e papel. Status existe à parte e responde a perguntas diferentes do acento.
 
 ### Primary
-- **Seaweed Command Green** (`#4db386`): brand action, active navigation, positive indicators, and chart series 1. Use it rarely enough that it remains a signal.
-- **Seaweed Ink** (`#0b1913`): text on Seaweed Command Green when the accent is used as a filled control.
-- **Seaweed Deep** (`#2e6b51`): focus outline, strong borders, and darker brand emphasis when contrast matters.
-
-### Secondary
-- **Operational Blue** (`#4667e6`): informational state and chart series 2.
-- **Attention Amber** (`#f59e0b`): warning state, risk, pending billing, and time-sensitive items.
-- **Exception Red** (`#d92d33`): errors, losses, delays, churn evidence, and destructive context.
+- **Coral da marca** (`coral`): borda, ícone, foco (`--ring`), `accent-color`, caret, item selecionado da sidebar e série principal de gráfico. Não carrega texto branco por cima: branco sobre ele dá 3,30:1.
+- **Coral profundo** (`coral-deep`): todo preenchimento que carrega rótulo ou glifo. É o `--primary` do shadcn, `--cf2-brand` e `--cf2-accent` (branco em cima: 4,55:1).
+- **Coral texto** (`coral-texto`): quando o coral é a própria letra (número de sinal, link de recorte, rótulo de alerta). 4,76:1 sobre `coral-subtle`, 5,36:1 sobre o papel.
+- **Coral hover** (`coral-hover`), **coral subtle** (`coral-subtle`, fundo lavado e seleção de texto) e **coral border** (`coral-border`, variante suave e fio).
 
 ### Neutral
-- **Workspace Paper** (`#fafafa`): page background for CRM2 surfaces.
-- **Canvas Mist** (`#f8fafc`): secondary workspace background.
-- **Surface White** (`#ffffff`): cards, controls, tables, dialogs, and popovers.
-- **Muted Surface** (`#f3f4f6`): table headers, tabs background, filter rails, hover rows, and soft panels.
-- **Primary Ink** (`#111827`): main text.
-- **Secondary Ink** (`#4b5563`): supporting copy, labels, and metadata.
-- **Tertiary Ink** (`#666e7d`): low-priority labels that still pass contrast on muted surfaces.
-- **Default Line** (`#e5e7eb`): card/table borders.
-- **Control Line** (`#767e8c`): input/select/checkbox border where the border is the only affordance.
-- **Dark Chrome** (`#1c1f26`): sidebar, top dark blocks, and fixed application chrome.
+- **Preto do logo** (`preto-logo`): superfície da casca (`--surface-shell`) e `--text-strong`.
+- **Grafite** (`graphite`): fundo da sidebar shadcn. **Grafite profundo** (`graphite-deep`) e **grafite de superfície** (`graphite-surface`): página e cartão no escopo escuro, e `--surface-shell-raised`.
+- **Papel** (`paper`): `--surface-page`, o fundo do trabalho. **Branco** (`white`): `--surface-card` e popover. **Branco do logo** (`branco-logo`): `--surface-sunken`, `secondary`/`muted`/`accent` do shadcn e texto sobre a casca.
+- **Texto de corpo** (`text-body`).
+- **Cinza 2** (`cinza-2`): `--text-muted` e `--text-subtle` no claro (5,0:1 sobre o papel).
+- **Slate** (`slate`): `--text-on-shell-muted` (6,30:1 sobre o grafite) e texto secundário no escopo escuro. **Cinza** (`cinza`): só texto terciário no escopo escuro.
+- **Linha** (`line`): `--line-hairline`, `--border`, `--input`.
+- **Alphas de casca** (`alpha-hairline`, `alpha-divider`, `alpha-ring`): fio, divisor e anel sobre grafite.
 
-### Named Rules
+### Status
+- **Sucesso** (`status-success` sólido, `status-success-strong` como texto; no escuro o forte sobe para `#7ee08a`).
+- **Perigo** (`status-danger`; no escuro vira `status-danger-dark`).
+- **Atenção** é o próprio coral (`--status-attention`, `--cf2-atencao` = coral profundo). Informativo é cinza 2 sobre branco do logo.
 
-**The Color Means Work Rule.** Do not use color as decoration. Green means brand/action/positive; amber means risk; red means loss or destructive state; blue means informational context.
+Séries de gráfico: `coral` (1), `serie-2` (2), `slate` (3), `line` (4), `status-success` (5).
 
-**The Accent Scarcity Rule.** Use one filled primary action per screen or panel. Multiple filled actions compete with operational urgency.
+**The Coral Is Action Rule.** Coral é ação principal, estado ativo e alerta que exige decisão. Nunca fundo de seção, nunca enfeite de cartão. Se tudo é coral, nada é.
+
+**The Signal Rule.** Verde diz o que já aconteceu e deu certo; coral diz o que quer atenção agora; cinza diz que não há consequência. Duas pílulas com a mesma forma e cores diferentes na mesma linha é bug de semântica.
+
+**The Two Greys Rule.** No claro existem dois cinzas de texto, e não três. Hierarquia de terceiro nível se faz por tamanho e peso, não por um cinza que ninguém enxerga.
 
 ## Typography
 
-**Display Font:** `var(--cf2-font-heading)` with system fallback  
-**Body Font:** `var(--cf2-font-ui)` with system fallback  
-**Navigation Font:** `var(--cf2-font-nav)` with system fallback  
-**Mono Font:** `ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace`
+**Display Font:** Plus Jakarta Sans (600/700/800), via `--font-onface-titulo`
+**Body Font:** Inter (400/500/600/700), via `--font-onface-corpo`
+**Mono Font:** IBM Plex Mono (400/500), via `--font-onface-mono`
 
-**Character:** compact, modern, and work-focused. The type scale exists to keep a CRM legible without making every card become a hero section.
+As três famílias são carregadas em `layout.tsx` e as variáveis legadas (`--font-cf2-ui`, `--font-onface-ui`, `--font-cf2-heading`, `--font-onface-display` e outras) apontam para o papel certo. Plus Jakarta é a voz da marca e fala pouco: título, nome de coluna, número grande. Inter é todo o resto. IBM Plex Mono é só atalho de teclado.
+
+**Character:** separação de papéis no lugar de tamanho; texto de interface denso em Inter, números e títulos em Jakarta.
 
 ### Hierarchy
-- **Display** (700, `text-hero`, 40px scaled, 1 line-height): one hero number or dominant control-room readout per screen.
-- **Headline** (700, `text-destaque`, 30px scaled, 1 line-height): major KPI values and primary dashboard totals.
-- **KPI** (700, `text-kpi`, 22px scaled, 1.05 line-height): KPI card values and compact metric emphasis.
-- **Title** (600, `text-titulo`, 17px scaled, 1.3 line-height): card and section titles.
-- **Item** (500-600, `text-item`, 14px scaled, 1.45 line-height): lead names, table primary labels, row titles, clickable list items.
-- **Body** (400, `text-corpo`, 13px scaled, 1.45 line-height): default UI copy and table cells.
-- **Support** (400, `text-apoio`, 12px scaled, 1.35 line-height): helper text, descriptions, captions, and metadata.
-- **Micro** (700, `text-micro`, 11px scaled, 1.3 line-height, 0.4px tracking): badges, KPI labels, compact uppercase labels.
+- **Display** (700, `--display-section`): número ou título de momento.
+- **Headline** (700, `--display-kpi`, line-height 1, `tabular-nums`): valor de métrica.
+- **Title** (700, `--display-title`): nome de entidade, título de bloco.
+- **Label** (600, `--display-nav`, line-height 1): pílula de navegação e rótulo de casca.
+- **Body** (400, `--text-md`, `--leading-body` 1.6) e **Body strong** (500, `--text-base`).
+- **Caption** (`--text-xs`): apoio de métrica e meta.
+- Escala de texto completa: `--text-2xs` 10, `--text-xs` 11, `--text-sm` 12, `--text-md` 13, `--text-base` 14, `--text-lg` 16 (u). Tracking de caixa-alta `0.0875em`; de wordmark `-0.05em`.
 
-### Named Rules
+**The Legibility Floor Rule.** Rótulo que o operador precisa ler não desce abaixo de 11px entregues, medidos no navegador, não no nominal do token.
 
-**The Role Before Size Rule.** Choose the class by job, not by visual taste. If the job is a table cell, use `text-corpo`; if it is a row title, use `text-item`.
+**The Tabular Number Rule.** Valor que decide sai em Plus Jakarta bold com `tabular-nums`: coluna de número não dança entre linhas.
 
 ## Layout
 
-The layout is a dense app shell: dark collapsible sidebar, contextual topbar, module tabs or area tabs, then full-width workspaces. Page padding is `cf2-p-pagina`: 16px on mobile and 24px from small screens up. Card padding is `cf2-p-card`: 16px 20px on mobile and 20px 24px from small screens up.
+Casca fixa (`--shell-topbar-h` 72u, compacta 60u, padding lateral 24u) acima do canvas; a casca devolve a altura no `padding-top`. O documento não rola: a casca é a moldura e quem rola é o miolo. Nada de rolagem lateral em nenhuma largura (`overflow-x: clip`).
 
-Spacing follows a 4px grid with semantic names: `colado` 4px, `item` 8px, `grupo` 12px, `bloco` 16px, `secao` 24px, and `pagina` 32px. Lists and tables stay compact; dashboard sections get more air only when it improves scanning.
+Espaçamento em passos de 2/4u (`space-2` a `space-48`). Alturas de controle: `--control-xs` 24, `sm` 28, `md` 32, `lg` 36, `form` 40, `cta` 44 (u). Ícones 12/16/18/20u. Avatares 24/32/40u, 36u na casca. Gutters 16/20/24u (mobile, tablet, desktop). Alvo de toque mínimo 44px.
 
-Responsive behavior should preserve usefulness rather than squeeze everything. Kanban, journey bands, and wide tables may scroll horizontally; secondary columns can disappear; controls should wrap before they overlap. Mobile targets use a 44px minimum tap area where rows or controls are clickable.
+Breakpoints reais: a 1440 a tela é o desenho (1u = 1px); a 1280 nada troca de forma, de propósito; abaixo de 1024 o descritor e a régua da marca saem do topbar e o perfil fica só com avatar; abaixo de 768 a unidade é recalibrada para o telefone, a navegação vira folha lateral e quadro e bento caem para uma coluna.
+
+Densidade (compacta, padrão, confortável) muda o respiro vertical da linha, nunca o tamanho da fonte nem a altura do controle.
+
+**The Shell Is Law Rule.** Topbar, moldura grafite, canvas claro e a escala em `--onface-u` não são negociáveis por tela. Quem precisa de outro layout está descrevendo um layout novo da casca, não uma exceção.
+
+**The One Metric Rule.** Escolha o número que muda a decisão e dê a ele superfície, escala e peso. O resto é apoio: denso, pequeno e neutro.
 
 ## Elevation & Depth
 
-Depth is structural and restrained. The system is mostly flat at rest, using tonal layering, border lines, and only three shadow roles. Shadows identify hierarchy, not decoration.
+Plano por padrão. A definição vem de fio de 1px (`--ring-inset-hairline`, `--line-hairline`) e troca de plano: casca grafite, papel da página, cartão branco, rebaixado. `--shadow-card` é `none`. Sombra existe só no que flutua (popover, menu, diálogo, folha, cartão sendo arrastado), sempre neutra; os valores estão no sidecar. Empilhamento: `--z-modal` 2000, `--z-popover` 2100, `--z-aviso` 2200 (menu acima de modal porque abre dentro dele).
 
-### Shadow Vocabulary
-- **Resting Surface** (`0px 4px 8px 0px rgba(0, 0, 0, 0.04)`): default cards and ordinary raised panels.
-- **Floating Surface** (`0px 8px 24px -4px rgba(0, 0, 0, 0.10)`): dropdowns, popovers, select menus, and hover cards.
-- **Modal Surface** (`0px 24px 48px -12px rgba(0, 0, 0, 0.18)`): dialogs, sheets, drawers, and blocking overlays.
-- **Shell Shadow** (`-4px 0px 16px 0px rgba(0, 0, 0, 0.08)`): application shell edge when a side panel needs separation.
+O escuro é um escopo, não um tema global: `.onface-page-surface[data-tom="escuro"]` ou `[data-onface-superficie="escura"]` reapontam a camada semântica para grafite. Coral não muda entre os dois tons.
 
-### Named Rules
-
-**The Hierarchy, Not Decoration Rule.** Do not add custom glows or new shadow recipes. If a surface is not resting, floating, modal, or shell, it probably does not need a shadow.
+**The Temporary Floats Rule.** Se a peça some quando você clica fora, ela pode flutuar. Card, KPI, tabela e painel ficam colados na página.
 
 ## Shapes
 
-The form language is soft but deliberate. Large surfaces are generously rounded, nested objects are smaller, controls are compact, and tags are crisp. Use named radius roles: `rounded-hero` 32px, `rounded-card` 28px, `rounded-inner` 20px, `rounded-control` 14px, `rounded-chip` 10px, and `rounded-full` for avatars, pills, and toggles.
+Cantos contidos: controle `control` (10u), cartão `card` (12u), cartão grande `card-lg` (16u), pílula de navegação `pill-nav` (20u), canvas `canvas` (40u). `full` só para chip, badge, avatar e trilho do controle segmentado. O `--radius` do shadcn é `--radius-control`, então `rounded-md` resolve em 8u e `rounded-xl` em 14u.
 
-Drawers and sheets that touch the viewport edge should not round all four corners; they round only the exposed side. Nested cards inside cards should be avoided unless the nested element is a real interactive or semantic surface.
+**The Contained Radius Rule.** Card em cápsula está fora. O raio é token; pílula é só para chip, badge e avatar.
 
 ## Components
 
-### Buttons
-- **Shape:** `rounded-control` with fixed heights: 32px small, 36px medium, 40px large, 36px square for icon buttons.
-- **Primary:** Seaweed Command Green background with Seaweed Ink text. One primary action per screen or focused panel.
-- **Secondary:** Surface White background, Primary Ink text, Default Line border.
-- **Ghost:** transparent background, Primary Ink text, hover by tonal shift.
-- **Danger:** transparent background, red text, red border.
-- **Hover / Active:** brightness shifts only (`95%` hover, `90%` active), not new colors.
-- **Focus:** one visible `2px` Seaweed Deep outline with `2px` offset.
+Primeira parada de toda tela é `components/ui` (shadcn do repo, reapontado pela ponte cf2). Componente novo só quando a composição de dois existentes não resolve.
 
-### Chips
-- **Style:** `rounded-chip`, compact type, soft semantic backgrounds with matching foreground text.
-- **State:** use a dot plus label for operational status when possible. Avoid turning every table cell into a filled badge.
+- **Botão** (`components/ui/button.tsx`): hierarquia de cinco degraus (primary coral profundo, secondary tinta, tertiary rebaixado, subtle, ghost) mais `outline`, `link` e semânticos (`destructive`, `success`, `warning`). Raio de controle, `loading` embutido, desabilitado a 45% de opacidade. Hover por brilho ou troca de superfície, nunca por cor nova.
+- **Campo** (`components/ui/input.tsx`): 36px de altura, fio `--input`, raio 8u, placeholder em `--text-muted`, foco em anel coral.
+- **Controle segmentado** (`ToggleGroup`, ajustado em `controles-onface.css`): trilho rebaixado em pílula; o item selecionado sobe como papel com peso e sombra neutra de 1px, nunca com cor de marca.
+- **Topbar e navegação** (`onface.css`): faixa fixa em preto do logo com fio `alpha-hairline`; pílulas de navegação em Jakarta 600, inativas em slate, hover em `alpha-hairline` e a ativa preenchida em coral da marca; seleção de texto coral a 30% dentro da casca.
+- **Sidebar shadcn**: grafite contra o papel; hover é branco a 6% (troca de superfície), coral só no item selecionado.
+- **Cartão de produto**: superfície branca, fio hairline, raio de cartão, sem sombra. Informação relacionada divide a mesma superfície com separador e alinhamento.
 
-### Cards / Containers
-- **Corner Style:** `rounded-card` for top-level cards, `rounded-inner` for internal panels.
-- **Background:** Surface White on Workspace Paper, or Dark Chrome for shell/hero bands.
-- **Shadow Strategy:** Resting Surface shadow only; use border and spacing for most hierarchy.
-- **Border:** Default Line for ordinary surfaces; semantic border only when the state matters.
-- **Internal Padding:** `cf2-p-card` by default.
-
-### Inputs / Fields
-- **Style:** Surface White background, Primary Ink text, `rounded-sm`/`--cf2-radius-sm`, 12px horizontal padding.
-- **Border:** Control Line when the border is the main affordance.
-- **Focus:** Seaweed Deep outline and accent border, without stacked rings.
-- **Disabled:** reduce opacity and remove pointer behavior.
-
-### Tables
-- **Style:** dense, full-width, horizontally scrollable when needed.
-- **Header:** 40px height, 12px semibold labels, Secondary Ink.
-- **Rows:** subtle bottom border, 10px vertical cell padding, hover on Muted Surface.
-- **Numbers:** align right and use tabular treatment where numeric comparison matters.
-
-### Navigation
-- **Shell:** dark chrome sidebar with compact rows, icons from `lucide-react`, collapsible desktop rail, mobile Sheet, and keyboard toggle.
-- **Active State:** active macro or subitem uses accent/active chrome treatment; only the current route gets the dot marker.
-- **Macro Structure:** Início, Atendimento, Vendas, Calendário, Clientes, Automações, Insights, Ajustes. Do not reintroduce legacy micro-routes as primary sidebar items.
-- **Tabs:** Muted Surface rail, Surface White active tab, compact 13px labels.
-
-### Charts
-- **Palette:** series 1 is always brand; series 2-5 use blue, amber, violet, and rose.
-- **Behavior:** tooltips are expected. Static charts that do not respond to hover feel unfinished in this product.
-- **Composition:** use bars, lines, gauges, or segmented bars before pie charts when categories exceed five.
-
-### Drawers / Dialogs / Portals
-- **Style:** Surface White, `rounded-card`, Default Line border, Modal Surface shadow.
-- **Portal Rule:** dropdown, modal, tooltip, sheet, and popover styles must inherit CRM2 tokens from `[data-cf2-theme]`, because portals live outside the page subtree.
-- **Usage:** long entity editing belongs in a drawer; avoid modal-on-modal stacks.
+Motion: mudança de estado é crossfade de cor e opacidade (`--motion-fast` 120ms, `--ease-standard`), sem quicar; molas e variantes de entrada vivem em `components/onface/ds/motion.ts`. `prefers-reduced-motion` zera transições na casca, menus e folhas.
 
 ## Do's and Don'ts
 
 ### Do:
-- **Do** use semantic tokens and `Cf2*` primitives for new CRM2 UI.
-- **Do** make data dense but grouped: table rows, KPI strips, drawers, and contextual tabs are preferred over giant isolated cards.
-- **Do** keep color tied to operational meaning.
-- **Do** include empty, loading, error, focus, hover, disabled, and mobile states with the component.
-- **Do** preserve the light workspace plus dark chrome split.
-- **Do** run the design system checks for touched surfaces when UI changes are made.
+- **Do** compor com o que existe: primeiro `components/ui` e o laboratório em `/design`, depois a composição de dois existentes.
+- **Do** tirar cor de token e medida de `calc(N * var(--onface-u))`.
+- **Do** usar coral profundo em preenchimento com texto, coral puro em traço, ícone e foco, e coral texto quando o coral é a letra.
+- **Do** dar grafite, fundo gráfico e número grande só ao bloco que muda o próximo passo (centro de comando, conclusão, proposta, processamento do NEXO, vazio importante).
+- **Do** definir superfície por fio de 1px e anel interno.
 
 ### Don't:
-- **Don't** write ad hoc hex colors, arbitrary radius values, or one-off font sizes in screen code.
-- **Don't** install Once UI, HeroUI, Flowbite, or any kit that brings a parallel theme system.
-- **Don't** use multiple filled primary actions in the same decision area.
-- **Don't** treat billing, lifecycle, revenue type, or status color as interchangeable.
-- **Don't** bring legacy CRM pages into the primary sidebar as top-level items.
-- **Don't** fabricate visual proof, metrics, health scores, or category states when the data model does not support them.
+- **Don't** abrir um segundo sistema: componente paralelo, hex solto, px solto ou casca própria de tela.
+- **Don't** usar sombra colorida ou glow coral; sombra é neutra.
+- **Don't** usar gradiente decorativo, glassmorphism ou card dentro de card.
+- **Don't** usar card em cápsula ou ilustração genérica em estado vazio; o vazio é ícone de linha, texto direto e a ação que resolve.
+- **Don't** pintar o bloco inteiro de coral, nem pôr dois momentos na mesma tela.
+- **Don't** colocar malha ou fundo gráfico atrás de tabela ou formulário.
+- **Don't** dar o mesmo tratamento a todos os blocos (democracia visual).

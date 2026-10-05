@@ -1,5 +1,5 @@
 /**
- * API do construtor de automações (docs/design/construtor-automacoes.md §5).
+ * API do construtor de automações (docs/produto/automacoes-fluxos.md §5).
  *
  * Montada em server.ts ANTES de `/api/automacoes` (aquele tem `/:id`, que
  * engoliria `/automacoes/fluxos`). Leitura com `getCtx`; toda escrita, ensaio

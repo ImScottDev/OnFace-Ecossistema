@@ -69,7 +69,7 @@ export async function processarEventosPendentes(limite = 50): Promise<{ processa
       const list = handlers.get(evento.eventType) || [];
       for (const handler of list) await handler(evento);
       await dispatchAutomationEvent(evento);
-      // Fluxos do construtor (docs/design/construtor-automacoes.md §3.1).
+      // Fluxos do construtor (docs/produto/automacoes-fluxos.md §3.1).
       // Best-effort por fluxo lá dentro; aqui só não deixa derrubar o evento.
       try {
         const { dispararFluxosPorEvento } = await import("@/lib/automacoes/disparo");

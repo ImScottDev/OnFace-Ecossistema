@@ -1,5 +1,5 @@
 /**
- * Serviço do construtor de automações (docs/design/construtor-automacoes.md §5
+ * Serviço do construtor de automações (docs/produto/automacoes-fluxos.md §5
  * e §6): CRUD, rascunho, publicação, versões, execuções, webhook e migração
  * das Regras antigas. A rota Hono e a rota Next do webhook usam este arquivo;
  * nenhuma das duas fala com o banco direto.

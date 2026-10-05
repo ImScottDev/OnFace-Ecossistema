@@ -77,7 +77,7 @@ O bundle `OneFace2.zip` traz cinco arquivos `.dc.html`. Todos convertidos:
 |---|---|---|
 | `OnFace Pre-vendas` | `PreVendasDesenho` | **sim** — `/pre-vendas` |
 | `OnFace Pecas` | `PecasDesenho` | **sim** — gaveta e modais de Pré-vendas |
-| `OnFace Casca` | `CascaDesenho` | **sim** — o layout de `(crm2)` inteiro |
+| `OnFace Casca` | `CascaDesenho` | **sim** — o layout de `(produto)` inteiro |
 | `OnFace Empresa` | `EmpresaDesenho` | não |
 | `OnFace Dashboard` | `DashboardDesenho` | não |
 
@@ -95,7 +95,7 @@ repo, sem uso pela rota.
 ### A casca
 
 **Trocada em 24/09.** `AppSidebar` + `TopbarOnface` eram a versão recriada à
-mão e saíram do layout de `(crm2)`.
+mão e saíram do layout de `(produto)`.
 
 Eu tinha dito que ela "já batia", medindo quatro propriedades do container
 (fundo, padding, gap, raio). Não bastava: a casca é sidebar com grupos

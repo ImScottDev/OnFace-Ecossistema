@@ -14,7 +14,7 @@
 --   contratos com `negocio_id`  350 de 774   ← por isso o vínculo direto falha
 --   dos 159 `ativo`: 159 têm contrato cujo `inicio` cai na janela do negócio
 --
--- SPEC — specdrive-modulo-01-vendas-final.md, Bloco 02 §19 "Ganho / Won":
+-- SPEC — docs/produto/specdrive-modulo-01-vendas.md, Bloco 02 §19 "Ganho / Won":
 -- "O estado WON é consequência de um gate de evidência válido para aquela
 -- família e para aquele modo comercial." Contrato assinado com data de início
 -- é o gate. §20 lista os fluxos (pagamento confirmado, contrato) — os dois

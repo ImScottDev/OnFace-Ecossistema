@@ -1,12 +1,12 @@
 /**
  * Fonte ÚNICA de métricas de EVENTO do funil, sobre `status_changes`.
- * (Auditoria 21/07 — AUDITORIA.md §1/§3: reuniões e no-show divergiam entre abas
+ * (Auditoria de 21/07: reuniões e no-show divergiam entre abas
  * porque cada uma lia de uma fonte: tabela `reunioes` (nunca atualizada após o
  * agendamento → "realizadas" sempre 0), snapshot de etapa do pipeline (não reage
  * ao período) e `status_changes` (a única correta). Tudo aqui é por evento,
  * distinct por lead, dentro da janela — cobertura completa desde o go-live.)
  *
- * Regras canônicas (PLANO-ACAO-RELATORIOS.md §1):
+ * Regras canônicas (docs/produto/relatorios-sdr.md (Regras canônicas)):
  * - Reunião agendada  = evento → 'reuniao_agendada'
  * - Reunião realizada = evento → 'reuniao_realizada'
  * - No-show           = evento → 'no_show'

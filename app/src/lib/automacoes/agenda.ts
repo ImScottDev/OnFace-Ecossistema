@@ -1,6 +1,6 @@
 /**
  * Relógio dos Fluxos: próximo disparo do gatilho agendado, "aguardar até
- * horário" e "horário comercial" (docs/design/construtor-automacoes.md §3.3).
+ * horário" e "horário comercial" (docs/produto/automacoes-fluxos.md §3.3).
  *
  * Agenda estruturada em vez de cron: dá para explicar na tela ("Seg, Qua às
  * 09:00") e não exige dependência nova. Fuso por automação, resolvido com

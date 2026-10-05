@@ -1,4 +1,0 @@
-_carga_contagem_antes
-_migracoes_aplicadas
-ai_models
-meta_lead_staging

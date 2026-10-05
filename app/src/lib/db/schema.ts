@@ -2827,7 +2827,7 @@ export const automacaoExecucoes = pgTable("automacao_execucoes", {
 
 // ═══════════════════════════════════════════════════════════════
 // CRM 2.0 — FASE 0 (Foundation): teams, audit_log, event_outbox
-// Ver docs/reconstruction/ARCHITECTURE_DECISIONS.md (ADR-EXEC-001, 005)
+// Ver docs/decisoes/ARCHITECTURE_DECISIONS.md (ADR-EXEC-001, 005)
 // ═══════════════════════════════════════════════════════════════
 
 // ─── TEAMS (RBAC v2 — usuarios.teamId aponta pra aqui, F0/RBAC) ────
@@ -3840,7 +3840,7 @@ export const clientes = pgTable("clientes", {
 // dedicado que publica pros interessados (ex: DealWon -> CS/Finance/Analytics).
 // ═══════════════════════════════════════════════════════════════
 // CRM 2.0 — FASE 5 (Automação): Cadence Engine — genérico, desacoplado de
-// canal/provider de IA. Ver docs/reconstruction/ARCHITECTURE_DECISIONS.md
+// canal/provider de IA. Ver docs/decisoes/ARCHITECTURE_DECISIONS.md
 // (ADR-EXEC-013) e lib/cadencia/cadence-engine.ts.
 // ═══════════════════════════════════════════════════════════════
 
@@ -3944,7 +3944,7 @@ export const cadenceEnrollmentEvents = pgTable("cadence_enrollment_events", {
 // ═══════════════════════════════════════════════════════════════
 // CRM 2.0 — FASE 4 (Commercial): Commercial Evidence — Won não pode ficar
 // acoplado só ao Stripe (achado real: PBX/venda manual fatura fora do
-// Stripe). Ver docs/reconstruction/ARCHITECTURE_DECISIONS.md (ADR-EXEC-012).
+// Stripe). Ver docs/decisoes/ARCHITECTURE_DECISIONS.md (ADR-EXEC-012).
 // ═══════════════════════════════════════════════════════════════
 
 export const comercialEvidencia = pgTable("comercial_evidencia", {
@@ -4000,7 +4000,7 @@ export const wonEvidencePolicies = pgTable("won_evidence_policies", {
 // (getMetaComercialAgregada/getPipelineAtual/getFechadoPeriodo) — nunca
 // reimplementados, pra não arriscar reintroduzir bug de contagem duplicada
 // (ver comentário em dashboard/page.tsx sobre o achado de 22/07).
-// Ver docs/reconstruction/ARCHITECTURE_DECISIONS.md (ADR-EXEC-011).
+// Ver docs/decisoes/ARCHITECTURE_DECISIONS.md (ADR-EXEC-011).
 // ═══════════════════════════════════════════════════════════════
 
 export const metricasDiarias = pgTable("metricas_diarias", {
@@ -4154,8 +4154,8 @@ export const contratoTemplates = pgTable("contrato_templates", {
 
 // ─── CALLFACE AI — FUNDAÇÃO DE INTEGRAÇÃO EXTERNAL IDENTITY (20/08) ────────
 // Baseado na auditoria read-only do banco do SaaS Callface AI
-// (projetos/callface/dados/callface-ai-db-audit-2026-08-20/
-// CALLFACE_AI_DB_AUDIT_HANDOFF.md). Recomendação da própria auditoria:
+// (vault: projetos/callface/dados/callface-ai-db-audit-2026-08-20/).
+// Recomendação da própria auditoria:
 // nunca consultar o banco do SaaS em tempo real pelas telas — snapshot/
 // agregado local, sincronizado por job incremental dedicado (usuário
 // Postgres read-only próprio no SaaS, sem rolbypassrls, ainda não criado).
@@ -4538,7 +4538,7 @@ export const pessoaEmpresaVinculos = pgTable("pessoa_empresa_vinculos", {
 ]);
 // ═══ MODELO CANÔNICO — expansão da fase 04 do refactor (SPEC §38.2) ═══
 // Criadas pelas migrations 0057, 0058 e 0059. Vazias até o backfill das
-// fases 05 a 15. Ver docs/architecture/refactor-state.md.
+// fases 05 a 15. Ver docs/decisoes/2026-09-22-refactor-arquitetural.md.
 
 export const pipelineEtapas = pgTable("pipeline_etapas", {
   id: uuid("id").defaultRandom().primaryKey(),

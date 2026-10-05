@@ -19,7 +19,7 @@ const raiz = process.cwd();
 
 test("a fila de loops é lida por uma tela, não só pelo smoke", () => {
   const consumidores = [
-    path.join("src", "app", "(crm2)", "pipeline", "page.tsx"),
+    path.join("src", "app", "(produto)", "pipeline", "page.tsx"),
   ];
   const quemChama = consumidores.filter((rel) =>
     /loops-abertos/.test(fs.readFileSync(path.join(raiz, rel), "utf8")));

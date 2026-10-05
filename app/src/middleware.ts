@@ -13,7 +13,7 @@ export default auth((req) => {
   // Saneamento 14/09: `/clientes`, `/ajustes`, `/vendas` e `/design` — rotas
   // reais do CRM2, e justamente as que carregam carteira, configuração da
   // organização e dado financeiro — nunca tinham entrado nesta lista nem no
-  // matcher. O guard de sessão do layout `(crm2)` cobria a autenticação, mas
+  // matcher. O guard de sessão do layout `(produto)` cobria a autenticação, mas
   // o middleware (que é quem aplica o gate de PAPEL, abaixo) nem rodava pra elas.
   const crmRoutes = ["/dashboard", "/inicio", "/leads", "/pipeline", "/negocios", "/pre-vendas", "/carteira", "/contatos", "/empresas", "/contratos", "/propostas", "/financeiro", "/relatorios", "/campanhas", "/prospeccao", "/inbox", "/atendimento", "/calendario", "/automacoes", "/configuracoes", "/whatsapp", "/perfil", "/admin", "/tarefas", "/clientes", "/ajustes", "/vendas", "/design"];
   const isCrmRoute = crmRoutes.some((route) => pathname.startsWith(route));
