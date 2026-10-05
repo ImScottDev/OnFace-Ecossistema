@@ -175,7 +175,9 @@ class Logica extends React.Component<any, any> {
     const mailDe = (n) => slug((n || "").split(" ")[0]) + "." + slug((n || "").split(" ").slice(-1)[0]) + "@" + dominio;
 
     const base = [
-      Object.assign({ nome: L.pessoa, cargo: L.cargo, tel: L.tel || "+55 11 91234-5678", principal: true }, L.email ? { email: L.email } : {})
+      /* ANTES: `tel: L.tel || "+55 11 91234-5678"` — telefone inventado quando o
+         contato não tem número. A ficha mostrava e o botão discava para ele. */
+      Object.assign({ nome: L.pessoa, cargo: L.cargo, tel: L.tel || "", principal: true }, L.email ? { email: L.email } : {})
     ].concat(L.registro ? [] : [
       { nome: "Ricardo Alves", cargo: "Gerente de TI", tel: "+55 11 99876-5432" },
       { nome: "Juliana Prado", cargo: "Gerente de CX", tel: "+55 11 98765-4321" }
@@ -185,7 +187,9 @@ class Logica extends React.Component<any, any> {
     const pk = slug(bruto.nome || "") + "@" + slug(nomeEmp);
     const todasP = (this.E && Es.ler("pessoas", {})) || {};
     const O = todasP[pk] || {};
-    const P = Object.assign({ email: bruto.email || mailDe(bruto.nome), whats: bruto.tel, linkedin: "linkedin.com/in/" + slug(bruto.nome || ""), cidade: L.registro ? (L.cidade || "—") : "São Paulo / SP", obs: "" }, bruto, O);
+    /* ANTES: e-mail montado do nome (`mailDe`), LinkedIn montado do nome e
+       cidade "São Paulo / SP" fixa. Três dados do contato inventados pela ficha. */
+    const P = Object.assign({ email: bruto.email || "", whats: bruto.tel, linkedin: "", cidade: L.cidade || "", obs: "" }, bruto, O);
     const gravarP = (patch) => { if (!this.E) return; const t = Object.assign({}, Es.ler("pessoas", {})); t[pk] = Object.assign({}, t[pk] || {}, patch); Es.gravar({ pessoas: t }); };
     const evento = (titulo, d) => {
       if (!this.E) return;
@@ -214,7 +218,10 @@ class Logica extends React.Component<any, any> {
     };
 
     const ligarCallface = () => {
-      let num = String(P.tel || "").replace(/\D/g, "");
+      /* Lê telefone E whatsapp: a ficha mostra o número no topo vindo de
+         qualquer um dos dois, e ler só `tel` fazia o botão dizer "não tem
+         telefone cadastrado" com o número na tela. */
+      let num = String(P.tel || P.whats || L.tel || "").replace(/\D/g, "");
       if (num.length > 11 && num.indexOf("55") === 0) num = num.slice(2);
       if (num.length < 10) return diz(primeiro + " não tem telefone cadastrado", "erro");
       if (Es && Es.abrirExterno) Es.abrirExterno("https://app.callface.ai/calls?call_to=" + num); else window.open("https://app.callface.ai/calls?call_to=" + num, "_blank");

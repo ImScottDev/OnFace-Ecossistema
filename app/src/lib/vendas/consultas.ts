@@ -1376,7 +1376,17 @@ export interface DetalheLead {
     origem: string | null; campanha: string | null; medium: string | null;
     conteudo: string | null; termo: string | null; landingPage: string | null;
     primeiroToque: string | null; ultimoToque: string | null;
+    /** Ids da Meta: é com eles que se chega ao anúncio, ao conjunto e ao criativo. */
+    metaAdId: string | null; metaAdsetId: string | null; metaCampaignId: string | null;
   };
+  /** TODA resposta do formulário de origem, na ordem em que veio.
+   *
+   *  O formulário da Meta (e o do RD, e o do site) pode ter 3 ou 10 perguntas, e
+   *  o conjunto muda quando alguém edita o formulário. Por isso isto é uma lista
+   *  aberta, e não um punhado de campos fixos: pergunta nova aparece sozinha.
+   *  As chaves técnicas da migração do Zoho ficam de fora — não são resposta de
+   *  ninguém. */
+  respostasFormulario: Array<{ pergunta: string; resposta: string }>;
   responsavel: { id: string | null; nome: string | null };
   servicos: string[] | null;
   /** Tags do lead (tabela `labels`). A gaveta mostra estas, não os serviços. */
@@ -1387,6 +1397,34 @@ export interface DetalheLead {
   desqualificacao: { motivo: string | null; detalhe: string | null; deEtapa: string | null };
   oportunidades: Array<{ id: string; titulo: string; etapa: string; etapaRotulo: string; familia: string | null }>;
   proximaAcao: { titulo: string; venceEm: string | null } | null;
+}
+
+/** Chaves de `campos_custom` que NÃO são resposta de formulário: vieram da
+ *  migração do Zoho ou são controle interno. Mostrá-las na ficha seria ruído. */
+const CHAVE_NAO_E_RESPOSTA = /^(zoho|crm2_|fonte_dado|nome_derivado_do_email|recuperacao|qualificacaoSdr)/i;
+
+/** Rótulo legível para a chave: `qual_sua_solucao` vira "Qual sua solucao". */
+function rotuloDaChave(chave: string): string {
+  const limpo = chave.replace(/[_-]+/g, " ").replace(/([a-z])([A-Z])/g, "$1 $2").trim();
+  return limpo.charAt(0).toUpperCase() + limpo.slice(1);
+}
+
+/** Toda resposta do formulário de origem, seja qual for o número de perguntas.
+ *
+ *  O formulário da Meta muda quando alguém edita o anúncio: pergunta nova tem
+ *  que aparecer sozinha na ficha, sem ninguém mexer no código. Por isso a lista
+ *  nasce das chaves gravadas, e não de um conjunto fixo. */
+export function respostasDoFormulario(campos: unknown): Array<{ pergunta: string; resposta: string }> {
+  if (!campos || typeof campos !== "object" || Array.isArray(campos)) return [];
+  const saida: Array<{ pergunta: string; resposta: string }> = [];
+  for (const [chave, valor] of Object.entries(campos as Record<string, unknown>)) {
+    if (CHAVE_NAO_E_RESPOSTA.test(chave)) continue;
+    if (valor === null || valor === undefined || valor === "") continue;
+    const texto = typeof valor === "object" ? JSON.stringify(valor) : String(valor);
+    if (!texto.trim()) continue;
+    saida.push({ pergunta: rotuloDaChave(chave), resposta: texto });
+  }
+  return saida;
 }
 
 export async function detalheLead(organizacaoId: string, leadId: string): Promise<DetalheLead | null> {
@@ -1405,11 +1443,14 @@ export async function detalheLead(organizacaoId: string, leadId: string): Promis
     nutricao_motivo: string | null; nutricao_retomar_em: string | null; nutricao_observacao: string | null;
     desq_motivo: string | null; desq_detalhe: string | null; desq_de_etapa: string | null;
     linkedin: string | null;
+    campos_custom: Record<string, unknown> | null;
+    meta_ad_id: string | null; meta_adset_id: string | null; meta_campaign_id: string | null;
   }>(sql`
     SELECT l.id::text, l.empresa_id::text, COALESCE(e.nome, l.empresa) AS empresa_nome,
            COALESCE(e.setor, l.empresa_setor) AS setor, COALESCE(e.porte, l.empresa_porte) AS porte,
            COALESCE(e.cidade, l.empresa_cidade) AS cidade, e.website, COALESCE(e.cnpj, l.empresa_cnpj) AS cnpj,
            l.nome, l.sobrenome, l.cargo, l.email, l.telefone, l.whatsapp, l.linkedin,
+           l.campos_custom, l.meta_ad_id, l.meta_adset_id, l.meta_campaign_id,
            l.estagio_pre_vendas AS etapa, l.qualificado, l.qualificado_em::text,
            qu.nome AS qualificado_por, l.qualificado_por_tipo, l.pre_qualificado,
            l.qualificacao, COALESCE(a.origem, l.origem) AS origem,
@@ -1520,7 +1561,9 @@ export async function detalheLead(organizacaoId: string, leadId: string): Promis
       origem: l.origem, campanha: l.utm_campaign, medium: l.utm_medium,
       conteudo: l.utm_content, termo: l.utm_term, landingPage: l.landing_page,
       primeiroToque: toques?.primeiro ?? null, ultimoToque: toques?.ultimo ?? null,
+      metaAdId: l.meta_ad_id, metaAdsetId: l.meta_adset_id, metaCampaignId: l.meta_campaign_id,
     },
+    respostasFormulario: respostasDoFormulario(l.campos_custom),
     responsavel: { id: l.responsavel_id, nome: l.responsavel },
     servicos: comoLista(l.servicos),
     tags: tags.map((t) => ({ id: t.id, nome: t.nome })),

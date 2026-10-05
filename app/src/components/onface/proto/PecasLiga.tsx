@@ -515,20 +515,14 @@ class Logica extends React.Component<any, any> {
         const d = new Date(base.getTime() - L0.dias * 864e5 - (L0.id.charCodeAt(1) % 7) * 36e5);
         const entrada = d.getDate() + " " + meses[d.getMonth()] + " " + d.getFullYear() + " · "
           + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
-        const porOrigem = {
-          "Meta Ads": { conjunto: "Interesse — gestão de atendimento", criativo: "Vídeo 30s · depoimento de cliente" },
-          "Instagram": { conjunto: "Direct do perfil", criativo: "Story com link · bio" },
-          "WhatsApp": { conjunto: "Clique no anúncio para WhatsApp", criativo: "Imagem única · oferta" },
-          "Site": { conjunto: "—", criativo: "Formulário de contato" },
-          "Formulário": { conjunto: "—", criativo: "Landing page de PABX" },
-          "Orgânica": { conjunto: "—", criativo: "—" }
-        };
-        const o = porOrigem[L0.origem] || porOrigem["Site"];
+        /* ANTES: um dicionário por origem inventava conjunto e criativo ("Formulário
+           de contato", "Landing page de PABX"). Não era o anúncio de ninguém. Os
+           ids reais da Meta e as UTMs chegam no lead; sem eles, "—". */
         return [
           { label: "Entrada", valor: entrada },
           { label: "Campanha", valor: L0.campanha || "—" },
-          { label: "Conjunto", valor: o.conjunto },
-          { label: "Criativo", valor: o.criativo }
+          { label: "Conjunto", valor: L0.conjunto || "—" },
+          { label: "Criativo", valor: L0.criativo || "—" }
         ].map(x => ({
           label: x.label, valor: x.valor,
           valorStyle: "flex:1;min-width:0;font-size:12px;line-height:1.45;text-wrap:pretty;"

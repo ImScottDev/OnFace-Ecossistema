@@ -54,6 +54,16 @@ export function rotaDoDesenho(href: string, params: Params = {}): string {
       const lead = uuid(p.lead);
       return lead ? `/empresas/por-lead?lead=${lead}` : "/contatos";
     }
+    case "/atendimento": {
+      /* A ficha abre o Atendimento JÁ na conversa daquela pessoa. Antes o
+         destino caía aqui sem os parâmetros (`lead` e `canal` iam no objeto e o
+         tradutor devolvia só "/atendimento"), então os botões Enviar mensagem e
+         Enviar e-mail levavam para a caixa de entrada inteira. */
+      const lead = uuid(p.lead);
+      const canal = (p.canal || "").toLowerCase();
+      const busca = [lead ? `leadId=${lead}` : "", canal ? `canal=${encodeURIComponent(canal)}` : ""].filter(Boolean).join("&");
+      return busca ? `/atendimento?${busca}` : "/atendimento";
+    }
     case "/clientes/360": {
       const cliente = uuid(p.cliente);
       if (!cliente) return "/clientes";

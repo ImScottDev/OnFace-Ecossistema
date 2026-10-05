@@ -602,7 +602,12 @@ const SEM_COMMAND: Record<string, string> = {
   tagsCriadas: "Criar tag nova é feito em Ajustes; aqui só se aplicam as existentes.",
 };
 
-export function AtendimentoProto({ dados, contexto }: { dados: DadosAtendimento; contexto: ContextoAtendimento }) {
+export function AtendimentoProto({ dados, contexto, leadInicial = null }: {
+  dados: DadosAtendimento;
+  contexto: ContextoAtendimento;
+  /** Lead que veio no `?leadId=` — a tela abre direto na conversa dele. */
+  leadInicial?: string | null;
+}) {
   const router = useRouter();
 
   /* O Liga lê `window.innerWidth` num class field — roda no construtor da
@@ -619,6 +624,16 @@ export function AtendimentoProto({ dados, contexto }: { dados: DadosAtendimento;
 
   // A verdade do servidor chegou: o que era otimista some.
   React.useEffect(() => { setLocal({}); }, [dados]);
+
+  /* Abrir na conversa de quem veio no link. Quem chega por "Enviar mensagem"
+     na ficha espera a conversa daquela pessoa, não a caixa inteira. Se o lead
+     ainda não tem conversa, a lista fica como está — avisar seria ruído: o
+     operador acabou de clicar e vê a tela. */
+  React.useEffect(() => {
+    if (!leadInicial) return;
+    const alvo = renderizadoRef.current.find((c: any) => c.lead === leadInicial || c.id === leadInicial);
+    if (alvo) instRef.current?.setState({ sel: alvo.id });
+  }, [leadInicial, dados]);
 
   const leadsPorId = React.useMemo(() => new Map(dados.leads.map((l) => [l.id, l])), [dados.leads]);
   const idPorNome = React.useMemo(() => new Map(dados.equipe.map((u) => [u.nome, u.id])), [dados.equipe]);

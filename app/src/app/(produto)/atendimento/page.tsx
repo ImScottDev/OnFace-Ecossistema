@@ -22,11 +22,17 @@ export const dynamic = "force-dynamic";
  * uma análise de ligação inventada para todo contato — ver pendências em
  * docs/design/DEFEITOS-DO-HANDOFF.md.
  */
-export default async function AtendimentoPage() {
+export default async function AtendimentoPage({ searchParams }: {
+  searchParams: Promise<{ leadId?: string; canal?: string }>;
+}) {
   const ctx = await getTenantContext();
   if (!ctx) redirect("/login");
+  /* `?leadId=` abre direto na conversa daquela pessoa. É assim que as fichas e
+     o board de Pré-vendas mandam ("Enviar mensagem"), e a tela ignorava o
+     parâmetro: caía sempre na caixa inteira. */
+  const { leadId } = await searchParams;
 
   const dados = await paginaDeAtendimento(ctx);
   const contexto = await contextoDosLeads(ctx.organizacaoId, dados.leads.map((l) => l.id));
-  return <AtendimentoProto dados={dados} contexto={contexto} />;
+  return <AtendimentoProto dados={dados} contexto={contexto} leadInicial={leadId ?? null} />;
 }
