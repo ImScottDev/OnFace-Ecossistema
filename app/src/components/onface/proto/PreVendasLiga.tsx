@@ -222,7 +222,10 @@ class Logica extends React.Component<any, any> {
           respRect: { top: el.top, bottom: el.bottom, left: el.left, right: el.right }
         }));
       },
-      respOpcoes: [this.eu, "Camila Reis", "Diego Nunes", "Ana Vitória", null].map(nome => ({
+      /* Equipe real da organização (D.EQUIPE vem de dados.filtros.responsaveis).
+         Eram três nomes fixos do protótipo, e escolher um deles falhava no
+         gravar com "Não encontrei … na equipe". */
+      respOpcoes: [this.eu].concat((D.EQUIPE || []).filter(n => n && n !== this.eu)).concat([null]).map(nome => ({
         label: nome || "Sem responsável",
         iniciais: nome ? iniciaisDe(nome) : "—",
         ativo: (L.resp || null) === nome,
@@ -276,8 +279,12 @@ class Logica extends React.Component<any, any> {
       if (k === "empresa") return L.empresa || "Sem empresa";
       if (k === "pessoa") return L.pessoa;
       if (k === "cargo") return L.cargo;
-      if (k === "email") return slug(L.pessoa.split(" ")[0]) + "@" + slug(L.empresa || "semempresa") + ".com.br";
-      if (k === "telefone") return "+55 11 9" + (7000 + (L.id.charCodeAt(1) * 37) % 2999) + "-" + (1000 + (L.id.charCodeAt(1) * 53) % 8999);
+      /* O board carrega só "tem e-mail/telefone?" (sim/null), não o valor. O
+         protótipo preenchia a exportação com e-mail montado do nome e telefone
+         calculado do id — contato falso que o operador levava para discar. Até
+         o board trazer o valor real, a coluna sai vazia. */
+      if (k === "email") return L.email && L.email !== "sim" ? L.email : "";
+      if (k === "telefone") return L.telefone && L.telefone !== "sim" ? L.telefone : "";
       if (k === "etapa") return etapas[L.etapa];
       if (k === "responsavel") return L.resp || "Sem responsável";
       if (k === "origem") return L.origem;
@@ -317,8 +324,9 @@ class Logica extends React.Component<any, any> {
         icone: "M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0", opcoes: [
         { v: "minhas", label: "Minhas", campo: "" },
         { v: "sem_dono", label: "Sem responsável", campo: "" },
-        { v: "equipe_sdr", label: "Equipe SDR", campo: "" },
-        { v: "equipe_closer", label: "Equipe Closer", campo: "" }
+        /* "Equipe SDR" e "Equipe Closer" recortavam os dois a mesma coisa
+           (qualquer lead com responsável): o papel do responsável não chega
+           até aqui. Voltam quando o board trouxer o papel. */
       ] },
       { k: "origem", label: "Origem", titulo: "CANAL DE ENTRADA",
         icone: "M6 3v12M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6M6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6M18 9a9 9 0 0 1-9 9", opcoes: [
@@ -433,9 +441,7 @@ class Logica extends React.Component<any, any> {
       const sr = S.sel.responsavel, so = S.sel.origem, si = S.sel.interesse, ss = S.sel.sla;
       if (sr.length) {
         const ok = (sr.indexOf("minhas") >= 0 && L.resp === this.eu)
-          || (sr.indexOf("sem_dono") >= 0 && !L.resp)
-          || (sr.indexOf("equipe_sdr") >= 0 && !!L.resp)
-          || (sr.indexOf("equipe_closer") >= 0 && !!L.resp);
+          || (sr.indexOf("sem_dono") >= 0 && !L.resp);
         if (!ok) return false;
       }
       if (so.length) {

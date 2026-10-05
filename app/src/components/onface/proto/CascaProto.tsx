@@ -14,6 +14,7 @@
  * ───────────────────────────────────────────────────────────────────────── */
 
 import * as React from "react";
+import { signOut } from "next-auth/react";
 import { usePathname, useRouter } from "next/navigation";
 
 import { trilhaAtual } from "../navegacao";
@@ -276,6 +277,9 @@ export function CascaProto({
          trilha dava "Execuções › Execuções" e "Visão Geral › Visão Geral" —
          no protótipo a trilha é o caminho até aqui, não o lugar onde se está. */
       trilha={trilha?.area ? [{ label: trilha.area }] : []}
+      /* Sair tem que encerrar a sessão de verdade: antes o botão só mostrava
+         um aviso e a pessoa seguia logada. */
+      sair={() => void signOut({ callbackUrl: "/login" })}
       ir={(href: string) => router.push(rotaDoDesenho(href))}
       /* Rota real do produto (ações e sinais do NEXO), sem tradução do desenho. */
       navegar={(href: string) => router.push(href)}

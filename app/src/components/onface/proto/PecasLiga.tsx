@@ -282,24 +282,26 @@ class Logica extends React.Component<any, any> {
     const rotuloEtapa = { novo: "Novo", em_contato: "Em contato", qualificacao: "Qualificação", qualificado: "Qualificado", oportunidade: "Oportunidade", nutricao: "Nutrição", desqualificado: "Desqualificado" };
     const corEtapa = { novo: "#4a5560", em_contato: "#4c8fe0", qualificacao: "#9b8bd8", qualificado: "#2f9e7a", oportunidade: "#fe4f2b", nutricao: "#c8a86a", desqualificado: "#4a5560" };
     const slug = (s) => (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z]/g, "");
-    const dorPor = { "Callface AI": "Atendimento manual não escala", "PABX": "Telefonia legada e caindo", "White Label": "Quer revender com marca própria" };
-    const passoAtual = L0 ? (L0.etapa === "novo" ? 1 : L0.etapa === "em_contato" ? 2 : 3) : 1;
-    const cadPadrao = L0 ? (L0.etapa === "novo" ? null : L0.etapa === "oportunidade" ? "Pós-proposta" : "Primeiro contato") : null;
-    const cadAtual = L0 ? (S.cadencias.hasOwnProperty(L0.id) ? S.cadencias[L0.id] : cadPadrao) : null;
-    const qualPadrao = L0 && L0.etapa !== "novo" ? {
-      interesse: L0.interesse,
-      tamanho: "45",
-      dor: dorPor[L0.interesse] || "",
-      fit: L0.tag === "Enterprise" ? "Alto" : "Médio"
-    } : {};
+    /* Cadência só existe se estiver REGISTRADA para este lead. O protótipo
+        deduzia o nome e o passo da etapa — lead em Qualificação virava
+        "Primeiro contato, passo 3 de 5" sem nenhuma inscrição no banco. Hoje
+        `cadence_enrollments` tem 0 linhas: toda cadência mostrada na gaveta era
+        inventada. Sem passo real, a barra de progresso não é desenhada. */
+    const cadAtual = L0 && S.cadencias.hasOwnProperty(L0.id) ? S.cadencias[L0.id] : null;
+    const cadPassoReal = L0 && S.cadPassos ? S.cadPassos[L0.id] : null;
+    /* Qualificação só mostra o que alguém preencheu. O protótipo preenchia
+        sozinho: tamanho "45" fixo, dor tirada de um dicionário pelo interesse e
+        fit "Alto"/"Médio" pela tag. A gaveta dizia "2 de 4 campos" sem ninguém
+        ter respondido nada. */
+    const qualPadrao = {};
     const qualLead = L0 ? Object.assign({}, qualPadrao, S.qual[L0.id] || {}) : {};
     const qualPreenchidos = ["interesse", "tamanho", "dor", "fit"].filter(k => qualLead[k]).length;
     const atvPadrao = L0 ? {
       tipo: L0.acao && L0.acao.indexOf("Ligar") === 0 ? "Ligação" : L0.acao && L0.acao.indexOf("E-mail") === 0 ? "E-mail" : L0.acao && L0.acao.indexOf("Reunião") === 0 ? "Reunião" : "Follow up",
       situacao: "A fazer",
       titulo: L0.acao || "",
-      desc: L0.acao ? "Confirmar o cenário atual de atendimento e quem decide a compra. Se avançar, agendar a reunião de descoberta com o time técnico." : "",
-      data: "2026-09-23", hora: "14:30",
+      desc: "",
+      data: "", hora: "",
       resp: L0.resp || this.eu
     } : {};
     const ehDraft = !!S.atvDraft;
@@ -640,10 +642,10 @@ class Logica extends React.Component<any, any> {
       cadEstado: S.cadPausada ? "Pausada" : "Ativa",
       cadSelo: "display:inline-flex;align-items:center;height:18px;padding:0 7px;border-radius:5px;font-size:10.5px;font-weight:700;white-space:nowrap;background:"
         + (S.cadPausada ? "#f7edd8;color:#6e5420" : "#e6f4ee;color:#1f7256"),
-      cadPasso: "Passo " + passoAtual + " de 5",
-      cadPassos: [1, 2, 3, 4, 5].map(i => ({
-        style: "flex:1;height:4px;border-radius:9999px;background:" + (i <= passoAtual ? (S.cadPausada ? "#c8a86a" : "#fe4f2b") : "#e3e7e8")
-      })),
+      cadPasso: cadPassoReal ? "Passo " + cadPassoReal.atual + " de " + cadPassoReal.total : "",
+      cadPassos: cadPassoReal ? Array.from({ length: cadPassoReal.total }, (_, k) => k + 1).map(i => ({
+        style: "flex:1;height:4px;border-radius:9999px;background:" + (i <= cadPassoReal.atual ? (S.cadPausada ? "#c8a86a" : "#fe4f2b") : "#e3e7e8")
+      })) : [],
       cadBotao: S.cadPausada ? "Retomar" : "Pausar",
       pausarCad: () => { const n = !S.cadPausada; this.setState({ cadPausada: n }); this.diz(n ? "Cadência pausada — nenhum toque automático sai" : "Cadência retomada", n ? "aviso" : "ok"); },
       abrirPicker: () => this.setState({ cadModal: true, cadEscolha: cadAtual || "Primeiro contato" }),

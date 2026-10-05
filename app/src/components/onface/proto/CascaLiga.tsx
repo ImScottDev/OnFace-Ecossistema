@@ -455,7 +455,10 @@ class Logica extends React.Component<any, any> {
         onClick: () => { this.setState({ perfilAberto: false }); this.diz('"' + m.label + '" ainda não foi desenhada', "aviso"); }
       })),
 
-      sair: () => { this.setState({ perfilAberto: false }); this.diz("Encerrar sessão", "aviso"); },
+      /* Sair tem que sair. Antes só mostrava o aviso "Encerrar sessão" e a
+         pessoa seguia logada achando que tinha saído. O adaptador liga isto ao
+         signOut do NextAuth (CascaProto). */
+      sair: () => { this.setState({ perfilAberto: false }); this.props.sair?.(); },
 
       buscar: () => this.abrirBusca(),
       buscaAberta: S.buscaAberta, buscaRef: this.buscaRef,
@@ -482,6 +485,10 @@ class Logica extends React.Component<any, any> {
         ? "Empresas, pessoas, leads, oportunidades e propostas entram aqui quando a busca for ligada ao banco."
         : "Por enquanto a busca cobre destinos e ações. Empresa, pessoa, lead, oportunidade e proposta vêm do banco.",
 
+      /* A bolinha vermelha ficava acesa sempre, inclusive com a lista vazia.
+         Só acende com não lida de verdade (hoje nada alimenta isto, então ela
+         some — que é a verdade). */
+      temNotificacao: !!(this.props.naoLidasNotificacao || 0),
       sinoAberto: S.sinoAberto,
       toggleSino: () => this.setState(s => ({ sinoAberto: !s.sinoAberto, perfilAberto: false })),
       sinoBtnStyle: "width:30px;height:30px;border-radius:8px;display:grid;place-items:center;position:relative;color:"
@@ -496,7 +503,9 @@ class Logica extends React.Component<any, any> {
       sinoVazioTexto: S.filtroSino === "nexo"
         ? "Aqui fica o que os agentes fizeram no seu nome — cada ação com ator AI_AGENT, para você auditar."
         : "Alimentado por eventos e tarefas: lead inbound sem responsável, primeiro contato pendente, retomada de nutrição vencendo, proposta visualizada ou expirando.",
-      lerTudo: () => this.diz("Todas marcadas como lidas", "ok"),
+      /* Não existe fila de notificação ligada à casca: dizer "todas marcadas
+         como lidas" em verde era avisar que algo aconteceu sem nada acontecer. */
+      lerTudo: () => this.diz("A central de notificações ainda não está ligada", "aviso"),
       verTudo: () => { this.setState({ sinoAberto: false }); this.diz("Central de notificações — tela a desenhar", "aviso"); },
 
 

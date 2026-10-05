@@ -57,6 +57,7 @@ export interface ValoresDeCascaDesenho {
   sair: any;
   setTermo: any;
   sinoAberto: any;
+  temNotificacao?: any;
   sinoBtnStyle: any;
   sinoVazioTexto: any;
   sinoVazioTitulo: any;
@@ -77,7 +78,7 @@ export interface ValoresDeCascaDesenho {
 }
 
 export function CascaDesenho(vals: ValoresDeCascaDesenho) {
-  const { aberta, abrirNexo, areas, aviso, avisoPonto, buscaAberta, buscaRef, buscaSemDados, buscaVazioTexto, buscaVazioTitulo, buscar, children, criarStyle, fechada, fecharBusca, fecharMenuMob, filtrosSino, gruposBusca, itensPerfil, menuMob, nexo, nexoBtnStyle, nexoMarca, nexoResumo, parar, perfilAberto, perfilBtnStyle, perfilChevron, qa, railStyle, sair, setTermo, sinoAberto, sinoBtnStyle, sinoVazioTexto, sinoVazioTitulo, subtitulo, teclaBusca, temAviso, temSubtitulo, termo, titulo, togglePerfil, toggleRail, toggleSino, trilha, usuarioEmail, usuarioIniciais, usuarioNome, usuarioOrganizacao } = vals;
+  const { aberta, abrirNexo, areas, aviso, avisoPonto, buscaAberta, buscaRef, buscaSemDados, buscaVazioTexto, buscaVazioTitulo, buscar, children, criarStyle, fechada, fecharBusca, fecharMenuMob, filtrosSino, gruposBusca, itensPerfil, menuMob, nexo, nexoBtnStyle, nexoMarca, nexoResumo, parar, perfilAberto, perfilBtnStyle, perfilChevron, qa, railStyle, sair, setTermo, sinoAberto, temNotificacao, sinoBtnStyle, sinoVazioTexto, sinoVazioTitulo, subtitulo, teclaBusca, temAviso, temSubtitulo, termo, titulo, togglePerfil, toggleRail, toggleSino, trilha, usuarioEmail, usuarioIniciais, usuarioNome, usuarioOrganizacao } = vals;
   return (
     <>
 <div data-r="casca" data-menu={menuMob} style={{ display: "flex", height: "100vh", maxHeight: "100vh", overflow: "hidden", background: "#090e14", padding: "10px", gap: "10px", fontSize: "14px" }}>
@@ -252,7 +253,9 @@ NEXO
 <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
 <path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0" />
 </svg>
+{(temNotificacao) ? (<>
 <span style={{ position: "absolute", top: "5px", right: "5px", width: "6px", height: "6px", borderRadius: "50%", background: "#fe4f2b" }} />
+</>) : null}
 </button>
 {(sinoAberto) ? (<>
 <div style={{ position: "absolute", top: "calc(100% + 6px)", right: "0", width: "352px", maxWidth: "calc(100vw - 24px)", zIndex: "45", borderRadius: "10px", background: "#fff", border: "1px solid #e3e7e8", boxShadow: "0 10px 26px -6px rgba(0,0,0,.2)", display: "flex", flexDirection: "column", animation: "of-rise .12s cubic-bezier(.2,0,.2,1) both" }}>
