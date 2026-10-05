@@ -13,7 +13,7 @@
         "rule": "design-system-font",
         "value": "plus jakarta sans",
         "createdAt": "2026-10-01T09:08:50.040Z",
-        "reason": "handoff ONFACE: títulos/números em Plus Jakarta Sans (spec do protótipo)"
+        "reason": "títulos e números do handoff ONFACE; o adaptador não escolhe tipografia, copia a do desenho gerado"
       },
       {
         "rule": "overused-font",
