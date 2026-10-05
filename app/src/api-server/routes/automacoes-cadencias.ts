@@ -409,8 +409,23 @@ app.post("/automacoes/cadencias/enrollments/:id/action", async (c) => {
   )).limit(1);
   if (!enrollment) return c.json({ error: "Enrollment nao encontrado" }, 404);
   if (parsed.data.action === "cancel") await cancelarCadencia(id, `cancelado_por_${ctx.userId}`);
-  else if (parsed.data.action === "pause") await db.update(cadenceEnrollments).set({ status: "paused", updatedAt: new Date() }).where(eq(cadenceEnrollments.id, id));
-  else await db.update(cadenceEnrollments).set({ status: "active", updatedAt: new Date() }).where(eq(cadenceEnrollments.id, id));
+  else if (parsed.data.action === "pause") {
+    /* Pausar zera o agendamento: a varredura não pode pegar a inscrição de novo
+       enquanto ela estiver parada. `claimedUntil` também sai, senão um claim
+       vivo segura a inscrição por até 2 minutos depois do retomar. */
+    await db.update(cadenceEnrollments)
+      .set({ status: "paused", scheduledAt: null, nextEvalAt: null, claimedUntil: null, updatedAt: new Date() })
+      .where(eq(cadenceEnrollments.id, id));
+  } else {
+    /* Retomar precisa DEVOLVER o agendamento. A pausa (aqui ou a automática por
+       resposta, em cadence-engine) deixa `scheduledAt` nulo, e a varredura
+       filtra por `scheduledAt <= now`: nulo nunca casa. Sem esta linha a
+       inscrição voltava para "active" e não andava mais — parecia retomada e
+       estava morta. Volta a correr agora. */
+    await db.update(cadenceEnrollments)
+      .set({ status: "active", scheduledAt: new Date(), nextEvalAt: new Date(), claimedUntil: null, cancelReason: null, updatedAt: new Date() })
+      .where(eq(cadenceEnrollments.id, id));
+  }
   await db.insert(cadenceEnrollmentEvents).values({ enrollmentId: id, stepId: enrollment.currentStepId ?? "-", status: parsed.data.action, resultado: { actorId: ctx.userId } });
   return c.json({ ok: true });
 });
