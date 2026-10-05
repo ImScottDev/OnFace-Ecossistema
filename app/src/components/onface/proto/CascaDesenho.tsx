@@ -58,6 +58,9 @@ export interface ValoresDeCascaDesenho {
   setTermo: any;
   sinoAberto: any;
   temNotificacao?: any;
+  itensSino?: any;
+  sinoVazio?: any;
+  lerTudo?: any;
   sinoBtnStyle: any;
   sinoVazioTexto: any;
   sinoVazioTitulo: any;
@@ -78,7 +81,7 @@ export interface ValoresDeCascaDesenho {
 }
 
 export function CascaDesenho(vals: ValoresDeCascaDesenho) {
-  const { aberta, abrirNexo, areas, aviso, avisoPonto, buscaAberta, buscaRef, buscaSemDados, buscaVazioTexto, buscaVazioTitulo, buscar, children, criarStyle, fechada, fecharBusca, fecharMenuMob, filtrosSino, gruposBusca, itensPerfil, menuMob, nexo, nexoBtnStyle, nexoMarca, nexoResumo, parar, perfilAberto, perfilBtnStyle, perfilChevron, qa, railStyle, sair, setTermo, sinoAberto, temNotificacao, sinoBtnStyle, sinoVazioTexto, sinoVazioTitulo, subtitulo, teclaBusca, temAviso, temSubtitulo, termo, titulo, togglePerfil, toggleRail, toggleSino, trilha, usuarioEmail, usuarioIniciais, usuarioNome, usuarioOrganizacao } = vals;
+  const { aberta, abrirNexo, areas, aviso, avisoPonto, buscaAberta, buscaRef, buscaSemDados, buscaVazioTexto, buscaVazioTitulo, buscar, children, criarStyle, fechada, fecharBusca, fecharMenuMob, filtrosSino, gruposBusca, itensPerfil, menuMob, nexo, nexoBtnStyle, nexoMarca, nexoResumo, parar, perfilAberto, perfilBtnStyle, perfilChevron, qa, railStyle, sair, setTermo, sinoAberto, temNotificacao, itensSino, sinoVazio, lerTudo, sinoBtnStyle, sinoVazioTexto, sinoVazioTitulo, subtitulo, teclaBusca, temAviso, temSubtitulo, termo, titulo, togglePerfil, toggleRail, toggleSino, trilha, usuarioEmail, usuarioIniciais, usuarioNome, usuarioOrganizacao } = vals;
   return (
     <>
 <div data-r="casca" data-menu={menuMob} style={{ display: "flex", height: "100vh", maxHeight: "100vh", overflow: "hidden", background: "#090e14", padding: "10px", gap: "10px", fontSize: "14px" }}>
@@ -274,6 +277,7 @@ Notificações
 </Fragment>
 ))}
 </div>
+{(sinoVazio) ? (<>
 <div style={{ borderTop: "1px solid #eef1f1", padding: "26px 16px 28px", textAlign: "center" }}>
 <div style={{ fontSize: "13px", fontWeight: "600", color: "#3d4650", marginBottom: "5px" }}>
 {sinoVazioTitulo}
@@ -282,6 +286,35 @@ Notificações
 {sinoVazioTexto}
 </div>
 </div>
+</>) : (<>
+<div style={{ maxHeight: "60vh", overflowY: "auto" }}>
+{(itensSino ?? []).map((n: any, i1: number) => (
+<Fragment key={n?.id ?? i1}>
+<button onClick={n.abrir} style={estilo(n.linhaStyle)} className={[hover("background:#f6f7f7")].filter(Boolean).join(" ")}>
+<span style={estilo(n.pontoStyle)} />
+<span style={{ flex: "1", minWidth: "0", display: "flex", flexDirection: "column", gap: "2px" }}>
+<span style={{ fontSize: "12.5px", fontWeight: n.lida ? "500" : "600", color: "#12171d", textWrap: "pretty" }}>
+{n.titulo}
+</span>
+{(n.texto) ? (<>
+<span style={{ fontSize: "12px", color: "#4a5560", lineHeight: "1.45", textWrap: "pretty" }}>
+{n.texto}
+</span>
+</>) : null}
+<span style={{ fontSize: "11px", color: "#67787c" }}>
+{n.quando}
+</span>
+</span>
+</button>
+</Fragment>
+))}
+</div>
+<div style={{ display: "flex", gap: "6px", borderTop: "1px solid #eef1f1", padding: "8px 12px" }}>
+<button onClick={lerTudo} style={{ height: "28px", padding: "0 10px", borderRadius: "7px", background: "#fff", boxShadow: "inset 0 0 0 1px #dbdede", fontSize: "12px", fontWeight: "500" }} className={[hover("background:#f6f7f7")].filter(Boolean).join(" ")}>
+Marcar tudo como lido
+</button>
+</div>
+</>)}
 </div>
 </>) : null}
 </div>

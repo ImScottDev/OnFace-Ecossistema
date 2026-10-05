@@ -51,11 +51,32 @@ async function pedirJson(url: string, init?: RequestInit): Promise<any> {
   return corpo;
 }
 
+/* Notificações: pessoais por desenho. `/api/notificacoes` já filtra pelo
+   usuário da sessão, então o vendedor vê os leads dele e não a desgraça inteira
+   da operação. O sino do protótipo nunca foi ligado nisso: a lista vinha vazia
+   e o ponto vermelho ficava aceso de qualquer jeito. */
+type Notificacao = { id: string; titulo: string; mensagem: string | null; tipo: string; lida: boolean; link: string | null; createdAt: string };
+
+/** "agora", "há 20 min", "ontem" — o que a linha do sino mostra. */
+function quando(iso: string): string {
+  const t = new Date(iso).getTime();
+  if (!Number.isFinite(t)) return "";
+  const min = Math.floor((Date.now() - t) / 60000);
+  if (min < 1) return "agora";
+  if (min < 60) return `há ${min} min`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `há ${h}h`;
+  const d = Math.floor(h / 24);
+  return d === 1 ? "ontem" : `há ${d} dias`;
+}
+
 class CascaLigada extends CascaLiga {
   constructor(props: any) {
     super(props);
     this.state = {
       ...this.state,
+      notificacoes: [] as Notificacao[],
+      naoLidasNotificacao: 0,
       nexoMsgs: { c0: [] },
       nexoConversas: [] as ConversaNexo[],
       nexoResumoReal: null as { texto: string; temAviso: boolean } | null,
@@ -66,6 +87,37 @@ class CascaLigada extends CascaLiga {
   componentDidMount() {
     super.componentDidMount();
     this.carregarNexo();
+    void this.carregarNotificacoes();
+    this._notifI = setInterval(() => void this.carregarNotificacoes(), 60000);
+  }
+
+  componentWillUnmount() {
+    if ((super.componentWillUnmount as any)) (super.componentWillUnmount as any)();
+    clearInterval(this._notifI);
+  }
+
+  _notifI: any = null;
+
+  async carregarNotificacoes() {
+    try {
+      const d = await pedirJson("/api/notificacoes");
+      this.setState({
+        notificacoes: Array.isArray(d?.notificacoes) ? d.notificacoes : [],
+        naoLidasNotificacao: Number(d?.naoLidas || 0),
+      });
+    } catch {
+      /* Sino não é razão para quebrar a casca: sem resposta, fica vazio. */
+    }
+  }
+
+  async marcarTudoLido() {
+    try {
+      await pedirJson("/api/notificacoes", { method: "PATCH" });
+      await this.carregarNotificacoes();
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   componentDidUpdate(_prevProps?: any, prevState?: any) {
@@ -173,6 +225,40 @@ class CascaLigada extends CascaLiga {
     const n: number | null = this.props.naoLidas ?? null;
     const S = this.state;
     v.nexoResumo = S.nexoResumoReal?.texto ?? "";
+
+    /* Sino com as notificações reais do usuário. Antes a lista não existia no
+       adaptador: a casca sempre caía no estado vazio e o ponto ficava aceso. */
+    const todas: Notificacao[] = S.notificacoes ?? [];
+    const filtro = S.filtroSino;
+    /* A aba NEXO é só intervenção proativa do agente. Nenhum tipo gravado hoje
+       vem do NEXO, então ela fica honestamente vazia até existir. */
+    const daAba = filtro === "nao_lidas" ? todas.filter((x) => !x.lida)
+      : filtro === "nexo" ? todas.filter((x) => x.tipo.startsWith("nexo_"))
+      : todas;
+    v.temNotificacao = (S.naoLidasNotificacao ?? 0) > 0;
+    v.itensSino = daAba.slice(0, 30).map((x) => ({
+      id: x.id,
+      titulo: x.titulo,
+      texto: x.mensagem ?? "",
+      quando: quando(x.createdAt),
+      lida: x.lida,
+      pontoStyle: "flex:0 0 auto;width:7px;height:7px;border-radius:9999px;margin-top:6px;background:" + (x.lida ? "transparent" : "#fe4f2b"),
+      linhaStyle: "display:flex;gap:9px;width:100%;text-align:left;padding:10px 14px;border-top:1px solid #eef1f1;background:" + (x.lida ? "#fff" : "#fffaf8"),
+      abrir: () => {
+        this.setState({ sinoAberto: false });
+        void pedirJson(`/api/notificacoes/${x.id}`, { method: "PATCH" })
+          .then(() => this.carregarNotificacoes())
+          .catch(() => undefined);
+        if (x.link) this.props.navegar?.(x.link);
+      },
+    }));
+    v.sinoVazio = v.itensSino.length === 0;
+    v.lerTudo = () => {
+      if ((S.naoLidasNotificacao ?? 0) === 0) return this.diz("Não há nada não lido", "aviso");
+      void this.marcarTudoLido().then((ok) =>
+        this.diz(ok ? "Tudo marcado como lido" : "Não consegui marcar como lido", ok ? "ok" : "erro"));
+    };
+    v.verTudo = () => { this.setState({ sinoAberto: false }); this.props.navegar?.("/tarefas"); };
     this.ligarNexo(v.nexo);
     // O perfil do topo: o desenho trazia "Scott Ferraz · Callface" fixo.
     const u: UsuarioDoProto | null = this.props.usuario ?? null;

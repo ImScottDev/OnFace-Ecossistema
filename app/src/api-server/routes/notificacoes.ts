@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { db } from "@/lib/db";
 import { notificacoes } from "@/lib/db/schema";
-import { desc, eq, and, SQL } from "drizzle-orm";
+import { desc, eq, and, sql, SQL } from "drizzle-orm";
 import { getCtx } from "../compat.js";
 
 const app = new Hono();
@@ -27,7 +27,27 @@ app.get("/notificacoes", async (c) => {
     .orderBy(desc(notificacoes.createdAt))
     .limit(100);
 
-  return c.json({ notificacoes: result });
+  /* A contagem de não lidas acompanha a lista: é ela que acende (ou apaga) o
+     ponto do sino. Antes o ponto era um <span> sem condição, sempre aceso. */
+  const [{ naoLidas }] = await db
+    .select({ naoLidas: sql<number>`count(*)::int` })
+    .from(notificacoes)
+    .where(and(eq(notificacoes.usuarioId, ctx.userId), eq(notificacoes.lida, false)));
+
+  return c.json({ notificacoes: result, naoLidas });
+});
+
+/* PATCH /api/notificacoes — marca TODAS as minhas como lidas.
+   Marcar como lida não conclui tarefa nenhuma: a obrigação continua na tarefa,
+   a notificação só chamava atenção para ela. */
+app.patch("/notificacoes", async (c) => {
+  const ctx = await getCtx(c);
+  const marcadas = await db
+    .update(notificacoes)
+    .set({ lida: true })
+    .where(and(eq(notificacoes.usuarioId, ctx.userId), eq(notificacoes.lida, false)))
+    .returning({ id: notificacoes.id });
+  return c.json({ ok: true, marcadas: marcadas.length });
 });
 
 // PATCH /api/notificacoes/:id — mark as read
