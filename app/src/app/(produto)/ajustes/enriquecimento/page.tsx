@@ -9,6 +9,12 @@ export default function EnriquecimentoConfigPage() {
   const [saving, setSaving] = useState(false);
   const [ativo, setAtivo] = useState(false);
   const [stage, setStage] = useState("qualquer");
+  /* A chave do Apollo é por organização (organizacoes.apollo_api_key) e a rota
+     já existia — faltava o campo: não havia onde cadastrar a chave pela tela,
+     e sem ela todo enriquecimento falha com "Apollo API key não configurada". */
+  const [chaveSalva, setChaveSalva] = useState("");
+  const [chaveNova, setChaveNova] = useState("");
+  const [salvandoChave, setSalvandoChave] = useState(false);
 
   useEffect(() => {
     fetch("/api/configuracoes/settings").then(r => r.json()).then((s) => {
@@ -17,7 +23,30 @@ export default function EnriquecimentoConfigPage() {
       if (e.stage) setStage(e.stage);
       setLoading(false);
     }).catch(() => setLoading(false));
+    fetch("/api/configuracoes/integracoes")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d) setChaveSalva(d.apolloApiKey || ""); })
+      .catch(() => undefined);
   }, []);
+
+  const salvarChave = async () => {
+    const valor = chaveNova.trim();
+    if (!valor) return;
+    setSalvandoChave(true);
+    const res = await fetch("/api/configuracoes/integracoes", {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ apolloApiKey: valor }),
+    });
+    setSalvandoChave(false);
+    if (!res.ok) {
+      toast.error(res.status === 403 ? "Só um administrador pode guardar a chave" : "Não consegui guardar a chave");
+      return;
+    }
+    const d = await fetch("/api/configuracoes/integracoes").then((r) => r.json()).catch(() => null);
+    setChaveSalva(d?.apolloApiKey || "");
+    setChaveNova("");
+    toast.success("Chave do Apollo guardada");
+  };
 
   const save = async () => {
     setSaving(true);
@@ -47,6 +76,32 @@ export default function EnriquecimentoConfigPage() {
           </div>
         </div>
         <button onClick={save} disabled={saving} className="cf2-btn-primary px-4 py-1.5 text-sm">{saving ? "Salvando..." : "Salvar"}</button>
+      </div>
+
+      <div className="card-solid p-4 space-y-2">
+        <label className="text-sm font-medium text-[var(--cf2-text-secondary)]">Chave da API do Apollo</label>
+        <p className="text-[11px] text-[var(--cf2-text-tertiary)]">
+          Guardada por organização. Sem ela, Enriquecer e Prospecção não conseguem
+          consultar o Apollo. A chave fica no servidor e a tela só mostra o começo e o fim dela.
+        </p>
+        {chaveSalva ? (
+          <p className="text-[11px] text-[var(--cf2-text-tertiary)]">Guardada: <span className="aj-mono">{chaveSalva}</span></p>
+        ) : (
+          <p className="text-[11px] text-[var(--cf2-text-tertiary)]">Nenhuma chave guardada.</p>
+        )}
+        <div className="flex gap-2">
+          <input
+            className="cf2-input w-full"
+            type="password"
+            autoComplete="off"
+            placeholder={chaveSalva ? "Colar uma chave nova para substituir" : "Colar a chave do Apollo"}
+            value={chaveNova}
+            onChange={(e) => setChaveNova(e.target.value)}
+          />
+          <button className="cf2-btn-primary px-4 py-1.5 text-sm whitespace-nowrap" onClick={salvarChave} disabled={!chaveNova.trim() || salvandoChave}>
+            {salvandoChave ? "Guardando…" : "Guardar"}
+          </button>
+        </div>
       </div>
 
       <div className="card-solid p-4 flex items-center justify-between">
