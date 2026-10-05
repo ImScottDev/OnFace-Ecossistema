@@ -105,6 +105,35 @@
 --     Não mexido: o recorte certo (janela de tempo, ou fechar o legado em
 --     massa) é decisão de operação, não de carga.
 --
+-- [10] /inicio, faixa da jornada — "Pré-vendas" mostrava 4.080, que é a BASE
+--     INTEIRA de contatos. A consulta lia `leads.status = 'novo'`, e
+--     `leads.status` é coluna morta: vale 'novo' nas 4.080 linhas. O estágio
+--     canônico é `estagio_pre_vendas` (Bloco 01 §6-§9): 1.642 novo + 39
+--     qualificado = 1.681 de fato em Pré-vendas; 2.399 sem estágio não estão
+--     no funil (2.096 são `tipo = 'contato'`). Trocado em onface-inicio.ts.
+--
+-- [11] BLOQUEIO PARA O DONO DO PIPELINE — `negocios` e `oportunidades`
+--     discordam em 157 registros, e as telas se dividem entre as duas fontes:
+--       oportunidades.etapa = 'ganho' ........ 775  (/pipeline, /relatorios)
+--       negocios.etapa      = 'ganho' ........ 618  (/inicio, /tarefas, /cs)
+--       negocios.etapa IS NULL ............... 157  (exatamente a diferença)
+--     Os 157 são os que `03_ativo_evidencia_de_contrato.sql` marcou
+--     `revisar_ativo_duplica_ganho_existente`: o lado `negocios` ficou NULO
+--     esperando revisão (correto), mas o lado `oportunidades` ficou GANHO com
+--     `ganho_at` preenchido. Resultado: duplicatas declaradas contam como
+--     venda ganha no board e no relatório — R$ 252.456,55 de valor de
+--     oportunidade, R$ 154.539,88 de `mrr_fechado`, com `ganho_at` entre
+--     02/07/2026 e 02/10/2026 (1 cai no mês corrente e entra na meta).
+--     NÃO corrigido aqui: a decisão sobre esses 157 é da frente do Pipeline.
+--
+-- [12] /relatorios e /pipeline mostram um pipeline de R$ 10.001,20 em 150
+--     oportunidades abertas (R$ 67 de ticket médio): 144 das 150 têm
+--     `valor_total` zerado. 45 delas TÊM proposta, somando R$ 203.628,35
+--     (R$ 131.478,45 recorrente). Spec Bloco 02 §14 manda o card priorizar o
+--     "Valor da oportunidade". Também é da frente do Pipeline — só fica
+--     registrado porque aparece no /inicio ("negócios sem próxima ação") e
+--     em todo indicador de forecast.
+--
 -- =========================================================================
 
 BEGIN;
@@ -218,6 +247,37 @@ SELECT (SELECT count(*) FROM empresas
        (SELECT count(*) FROM ativos)                                     AS clientes_ativos,
        (SELECT count(*) FROM ativos a
          WHERE a.empresa_id IN (SELECT emp FROM fatia WHERE emp IS NOT NULL)) AS clientes_ativos_visiveis;
+
+\echo '--- [10] faixa Pre-vendas do Inicio: status (morto) x estagio canonico ---'
+SELECT count(*) FILTER (WHERE status = 'novo')                                        AS por_status_morto,
+       count(*) FILTER (WHERE estagio_pre_vendas
+                        IN ('novo','em_contato','qualificacao','qualificado'))        AS por_estagio_canonico,
+       count(*) FILTER (WHERE estagio_pre_vendas IS NULL)                             AS fora_de_pre_vendas
+  FROM leads WHERE organizacao_id = '320a9052-dd43-4edb-9b74-34be53c5c419';
+
+\echo '--- [11] negocios x oportunidades: as duas fontes discordam ---'
+SELECT (SELECT count(*) FROM oportunidades WHERE etapa = 'ganho')      AS oport_ganho,
+       (SELECT count(*) FROM negocios      WHERE etapa = 'ganho')      AS negocio_ganho,
+       (SELECT count(*) FROM negocios      WHERE etapa IS NULL)        AS negocio_sem_etapa,
+       (SELECT count(*) FROM negocios n JOIN oportunidades o ON o.negocio_id_legado = n.id
+         WHERE COALESCE(n.etapa,'~') <> COALESCE(o.etapa,'~'))         AS pares_divergentes,
+       (SELECT round(COALESCE(sum(o.valor), 0), 2) FROM negocios n
+          JOIN oportunidades o ON o.negocio_id_legado = n.id
+         WHERE n.etapa IS NULL AND o.etapa = 'ganho')                  AS valor_duplicado_como_ganho;
+
+\echo '--- [12] valor do pipeline aberto ---'
+SELECT count(*)                                                        AS abertas,
+       count(*) FILTER (WHERE COALESCE(valor_total, 0) = 0)            AS com_valor_zero,
+       round(COALESCE(sum(valor_total), 0), 2)                         AS valor_na_tela,
+       (SELECT round(COALESCE(sum(p.total_geral), 0), 2) FROM (
+          SELECT DISTINCT ON (negocio_id) negocio_id, total_geral FROM propostas
+           WHERE negocio_id IN (SELECT id FROM negocios
+                                 WHERE organizacao_id = '320a9052-dd43-4edb-9b74-34be53c5c419'
+                                   AND etapa IN ('entrada','diagnostico','proposta','negociacao'))
+           ORDER BY negocio_id, versao DESC NULLS LAST, created_at DESC) p) AS valor_das_propostas
+  FROM negocios
+ WHERE organizacao_id = '320a9052-dd43-4edb-9b74-34be53c5c419'
+   AND etapa IN ('entrada','diagnostico','proposta','negociacao');
 
 \echo '--- [6] modulo de CS: a jornada nasceu vazia ---'
 SELECT (SELECT count(*) FROM cs_marcos)            AS marcos,
