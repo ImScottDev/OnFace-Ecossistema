@@ -3,7 +3,7 @@ import crypto from "crypto";
 import { db } from "@/lib/db";
 import { syncStripe } from "@/lib/integrations/stripe-sync";
 import { organizationIdFromStripeMetadata } from "@/lib/integrations/stripe-webhook-metadata";
-import { propostas, leads, empresas, checkouts, notificacoes, usuarios, assinaturas, faturas, stripeWebhookEvents, organizacoes, auditLog } from "@/lib/db/schema";
+import { propostas, leads, empresas, checkouts, notificacoes, usuarios, assinaturas, faturas, stripeWebhookEvents, organizacoes, auditLog, billingResolutionCases } from "@/lib/db/schema";
 import { eq, and, isNull, or, sql, desc } from "drizzle-orm";
 import { buscarCheckoutPorSessionId } from "@/lib/crm/checkout";
 import { concluirGrupo, marcarPagamentoFalhouNoGrupo } from "@/lib/crm/grupo-comercial";
@@ -34,7 +34,16 @@ async function handlePaymentConfirmed(session: Record<string, unknown>, checkout
   if (!stripeSessionId) return "session sem id";
 
   const checkout = checkoutOverride || await buscarCheckoutPorSessionId(stripeSessionId);
-  if (!checkout) return `checkout não rastreado pra session ${stripeSessionId} — fora do fluxo atual, ignorado`;
+  if (!checkout) {
+    await abrirCasoDePagamentoOrfao({
+      stripeCustomerId: typeof session.customer === "string" ? session.customer : null,
+      stripeSubscriptionId: typeof session.subscription === "string" ? session.subscription : null,
+      referencia: stripeSessionId,
+      tipo: "checkout.session",
+      valor: typeof session.amount_total === "number" ? session.amount_total / 100 : null,
+    });
+    return `checkout não rastreado pra session ${stripeSessionId} — caso aberto para conciliação`;
+  }
   if (checkout.status === "pago") return "checkout já estava pago (idempotente)";
 
   const stripeCustomer = typeof session.customer === "string" ? session.customer : null;
@@ -143,7 +152,16 @@ async function findCheckoutForBillingObject(object: Record<string, unknown>) {
 
 async function handleInvoicePaid(invoice: Record<string, unknown>): Promise<string> {
   const checkout = await findCheckoutForBillingObject(invoice);
-  if (!checkout) return "invoice.paid sem checkout rastreado (fica pro sync)";
+  if (!checkout) {
+    await abrirCasoDePagamentoOrfao({
+      stripeCustomerId: typeof invoice.customer === "string" ? invoice.customer : null,
+      stripeSubscriptionId: typeof invoice.subscription === "string" ? invoice.subscription : null,
+      referencia: typeof invoice.id === "string" ? invoice.id : "(sem id)",
+      tipo: "invoice.paid",
+      valor: typeof invoice.amount_paid === "number" ? invoice.amount_paid / 100 : null,
+    });
+    return "invoice.paid sem checkout rastreado — caso aberto para conciliação";
+  }
   const session: Record<string, unknown> = {
     id: checkout.stripeSessionId || `invoice_${String(invoice.id || "unknown")}`,
     customer: invoice.customer,
@@ -387,6 +405,67 @@ async function handleInvoicePaymentFailed(invoice: Record<string, unknown>): Pro
     }).catch((e) => console.error("[StripeWebhook] falha ao notificar pagamento falho:", e));
   }
   return `pagamento falhou de ${quem} — ${destinatarios.length} notificado(s)`;
+}
+
+/**
+ * Dinheiro que entrou sem passar pelo CRM vira CASO, não silêncio.
+ *
+ * Os dois handlers de pagamento saíam com uma string quando não achavam linha
+ * em `checkouts`, e o evento era marcado como processado com sucesso. O
+ * `syncStripe` depois criava assinatura, contrato e fatura — então o dinheiro
+ * aparecia no Financeiro e o negócio ficava aberto no pipeline para sempre.
+ * É o "signup direto nunca dá ganho automático".
+ *
+ * Marcar ganho automaticamente seria pior: sem saber qual negócio o pagamento
+ * fecha, o sistema escolheria errado. Então o fato fica registrado na fila que
+ * já existe para isto (`billing_resolution_cases`, até hoje vazia) com a
+ * evidência, e uma pessoa decide.
+ *
+ * `onConflictDoNothing` na chave do objeto: o Stripe reentrega evento, e abrir
+ * o mesmo caso três vezes transformaria a fila em ruído.
+ */
+async function abrirCasoDePagamentoOrfao(params: {
+  stripeCustomerId: string | null;
+  stripeSubscriptionId: string | null;
+  referencia: string;
+  tipo: string;
+  valor: number | null;
+}): Promise<void> {
+  const lead = await leadDoCustomer(params.stripeCustomerId);
+  await db.insert(billingResolutionCases).values({
+    organizacaoId: lead?.organizacaoId ?? null,
+    queue: "PAGAMENTO_SEM_NEGOCIO",
+    stripeCustomerId: params.stripeCustomerId,
+    stripeSubscriptionId: params.stripeSubscriptionId,
+    crmEntityType: lead ? "lead" : null,
+    crmEntityId: lead?.id ?? null,
+    evidence: {
+      tipo: params.tipo,
+      referencia: params.referencia,
+      valor: params.valor,
+      cliente: lead?.empresa || lead?.nome || null,
+      detectadoEm: new Date().toISOString(),
+    },
+    recommendedAction: {
+      acao: "vincular_a_negocio_ou_registrar_venda",
+      porque: "pagamento confirmado no Stripe sem checkout correspondente no CRM; o negócio não foi marcado ganho",
+    },
+  }).catch((e) => console.error("[StripeWebhook] falha ao abrir caso de pagamento órfão:", e));
+
+  if (lead) {
+    const quem = lead.empresa || lead.nome || "cliente";
+    for (const usuarioId of await destinatariosDaConta(lead.responsavelId)) {
+      await db.insert(notificacoes).values({
+        usuarioId,
+        tipo: "pagamento_sem_negocio",
+        titulo: `Pagamento sem negócio — ${quem}`,
+        mensagem:
+          `${quem} pagou${params.valor ? ` R$ ${params.valor.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : ""} ` +
+          `e não há checkout do CRM correspondente. O dinheiro entra no Financeiro, mas nenhum negócio foi marcado ganho — registre a venda.`,
+        link: `/clientes${lead.empresaId ? `/${lead.empresaId}` : ""}`,
+      }).catch(() => {});
+    }
+  }
 }
 
 /* ── Risco pós-venda: estorno, contestação e cancelamento ──────────────── */
