@@ -27,7 +27,6 @@ import type { Resultado } from "@/lib/vendas/resultado";
 import {
   Abas, AvisoBloqueio, Busca, Campo, ComPainel, Dialogo, Painel, Secao, Tag,
   dataCurta, dataHora, moeda, useAcao,
-  type RotaBaseVendas,
 } from "./ui";
 import { rotuloAtor, rotuloEvento } from "./PreVendas";
 import { DialogoJuridicos } from "./juridicos";
@@ -54,7 +53,7 @@ const RELACIONAMENTOS_FILTRO: Array<{ chave: RelacionamentoEmpresa | ""; rotulo:
   { chave: "cadastrada", rotulo: "Cadastrada" },
 ];
 
-export function Contatos({ aba, empresas, pessoas, filtro, responsaveis, selecaoInicial, pessoaInicial, rotaBase, acoes }: {
+export function Contatos({ aba, empresas, pessoas, filtro, responsaveis, selecaoInicial, pessoaInicial, acoes }: {
   aba: Aba;
   empresas: { linhas: LinhaEmpresa[]; total: number; porRelacionamento: Record<string, number> };
   pessoas: LinhaPessoa[];
@@ -62,7 +61,6 @@ export function Contatos({ aba, empresas, pessoas, filtro, responsaveis, selecao
   responsaveis: Array<{ id: string; nome: string }>;
   selecaoInicial?: string | null;
   pessoaInicial?: string | null;
-  rotaBase: RotaBaseVendas;
   acoes: AcoesContatos;
 }) {
   const router = useRouter();
@@ -174,7 +172,6 @@ export function Contatos({ aba, empresas, pessoas, filtro, responsaveis, selecao
             timeline={detalhe?.timeline ?? []}
             pendente={pendente}
             bloqueio={bloqueio}
-            rotaBase={rotaBase}
             aoFechar={() => { setSelecionada(null); setDetalhe(null); limparBloqueio(); }}
             aoAbrirModal={setModal}
           />
@@ -233,7 +230,7 @@ export function Contatos({ aba, empresas, pessoas, filtro, responsaveis, selecao
                 {pessoas.length === 0 ? (
                   <tr><td colSpan={4}><div className="ov-vazio"><strong>Nada encontrado</strong><p>Nenhuma pessoa com esses filtros.</p></div></td></tr>
                 ) : pessoas.map((p) => (
-                  <tr key={`${p.fonte}-${p.id}`} onClick={() => router.push(`${rotaBase}/contatos/pessoas/${p.id}`)}>
+                  <tr key={`${p.fonte}-${p.id}`} onClick={() => router.push(`/contatos/pessoas/${p.id}`)}>
                     <td className="ov-tabela-principal">{p.nome}</td>
                     <td className="ov-tabela-apoio">{p.cargo ?? "—"}</td>
                     <td className="ov-tabela-apoio">{p.email ?? p.telefone ?? p.whatsapp ?? "—"}</td>
@@ -297,12 +294,11 @@ export function Contatos({ aba, empresas, pessoas, filtro, responsaveis, selecao
 
 /* ── Painel Empresa 360 ────────────────────────────────────────────────── */
 
-function PainelEmpresa({ empresa, timeline, pendente, bloqueio, rotaBase, aoFechar, aoAbrirModal }: {
+function PainelEmpresa({ empresa, timeline, pendente, bloqueio, aoFechar, aoAbrirModal }: {
   empresa: Empresa360 | null;
   timeline: LinhaDoTempo[];
   pendente: boolean;
   bloqueio: { mensagem: string } | null;
-  rotaBase: RotaBaseVendas;
   aoFechar: () => void;
   aoAbrirModal: (m: "lead" | "oportunidade" | "juridicos") => void;
 }) {
@@ -323,7 +319,7 @@ function PainelEmpresa({ empresa, timeline, pendente, bloqueio, rotaBase, aoFech
 
       <Secao titulo="Ações">
         <div className="ov-acoes">
-          <Link className="ov-botao" data-variante="contorno" href={`${rotaBase}/contatos/empresas/${empresa.id}`}>
+          <Link className="ov-botao" data-variante="contorno" href={`/contatos/empresas/${empresa.id}`}>
             Abrir empresa
           </Link>
           <button type="button" className="ov-botao" disabled={pendente} onClick={() => aoAbrirModal("oportunidade")}>
@@ -377,7 +373,7 @@ function PainelEmpresa({ empresa, timeline, pendente, bloqueio, rotaBase, aoFech
       {empresa.leads.length > 0 ? (
         <Secao titulo="Pré-vendas">
           {empresa.leads.map((l) => (
-            <Link key={l.id} className="ov-botao" data-variante="contorno" href={`${rotaBase}/pre-vendas?busca=${encodeURIComponent(empresa.nome)}`}>
+            <Link key={l.id} className="ov-botao" data-variante="contorno" href={`/pre-vendas?busca=${encodeURIComponent(empresa.nome)}`}>
               {l.etapaRotulo} · {l.origem ?? "sem origem"} · {dataCurta(l.criadoEm)}
             </Link>
           ))}
@@ -387,7 +383,7 @@ function PainelEmpresa({ empresa, timeline, pendente, bloqueio, rotaBase, aoFech
       {empresa.oportunidades.length > 0 ? (
         <Secao titulo="Oportunidades">
           {empresa.oportunidades.map((o) => (
-            <Link key={o.id} className="ov-botao" data-variante="contorno" href={`${rotaBase}/pipeline?oportunidade=${o.id}`}>
+            <Link key={o.id} className="ov-botao" data-variante="contorno" href={`/pipeline?oportunidade=${o.id}`}>
               {o.titulo} · {o.etapaRotulo} · {moeda(o.valor)}
             </Link>
           ))}
@@ -397,7 +393,7 @@ function PainelEmpresa({ empresa, timeline, pendente, bloqueio, rotaBase, aoFech
       {empresa.propostas.length > 0 ? (
         <Secao titulo="Propostas">
           {empresa.propostas.map((p) => (
-            <Link key={p.id} className="ov-botao" data-variante="contorno" href={`${rotaBase}/propostas?proposta=${p.id}`}>
+            <Link key={p.id} className="ov-botao" data-variante="contorno" href={`/propostas?proposta=${p.id}`}>
               #{p.numero} v{p.versao} · {p.status} · {moeda(p.total)}
             </Link>
           ))}

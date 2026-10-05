@@ -68,7 +68,3 @@ infra/documenso/certs/*.pem
 .agent-*.pid
 .agent-*-prompt.txt
 
-# O conferidor da Pasta 01 é copiado para cá por `npm run conferir:pasta-01`.
-# A fonte é docs/handoff-onface/conferencia-pasta-01.js — duas cópias versionadas
-# divergem no primeiro ajuste.
-app/public/conferencia-pasta-01.js

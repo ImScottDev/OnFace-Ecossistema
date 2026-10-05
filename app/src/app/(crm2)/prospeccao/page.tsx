@@ -4,7 +4,6 @@ import { listaProspeccao } from "@/lib/vendas/consultas";
 import type { EstadoProspeccao } from "@/lib/vendas/dominio";
 import { getOrgApolloKey } from "@/lib/apollo/tenant-key";
 import { Prospeccao } from "@/components/onface/vendas/Prospeccao";
-import { type RotaBaseVendas } from "@/components/onface/vendas/ui";
 import {
   acaoAdicionarProspect, acaoAtribuirEmMassa, acaoCadencias, acaoDescartar, acaoImportarProspects,
   acaoInscreverEmCadencia, acaoMarcarSemResposta, acaoOportunidadeDireta,
@@ -14,13 +13,9 @@ import {
 export const metadata = { title: "Prospecção" };
 export const dynamic = "force-dynamic";
 
-/** Rota OFICIAL do produto. A implementação mudou de casa em 18/09 (F1, lote 2):
- * morava em `/onface-preview/prospeccao` e agora é daqui. O preview virou um espelho
- * fino que chama esta mesma função com outro `rotaBase` — sem ele, um clique
- * numa tela irmã devolvia o usuário para dentro do preview. */
-export async function ProspeccaoPage({ searchParams, rotaBase = "" }: {
+/** Prospecção (Módulo 01, Bloco 04). */
+export async function ProspeccaoPage({ searchParams }: {
   searchParams: Promise<{ visao?: string; busca?: string; estado?: string; responsavel?: string; lista?: string }>;
-  rotaBase?: RotaBaseVendas;
 }) {
   const ctx = await getTenantContext();
   if (!ctx) redirect("/login");

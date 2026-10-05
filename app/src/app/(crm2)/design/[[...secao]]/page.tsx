@@ -9,7 +9,7 @@ export const metadata = { title: "ONFACE Design System" };
 /**
  * ONFACE Design System — laboratório vivo.
  *
- * Fica dentro do route group `(onface-preview)` de propósito: herda a casca
+ * Mora no mesmo route group das telas de produto de propósito: herda a casca
  * real (topbar + tema + providers + toaster + command palette), então o que
  * está documentado aqui é exatamente o que a tela de produto recebe. Uma
  * biblioteca que roda em casca própria mente sobre si mesma.

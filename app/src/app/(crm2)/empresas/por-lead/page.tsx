@@ -9,7 +9,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
    pela empresa. A ponte precisa do banco, então mora aqui no servidor — com o
    tenant da sessão, para um id de outra organização não abrir nada. Lead sem
    empresa cadastrada vai para o diretório, que é onde se vincula uma. */
-export default async function EmpresaDoPrototipo({ searchParams }: {
+export default async function EmpresaPorLead({ searchParams }: {
   searchParams: Promise<{ lead?: string }>;
 }) {
   const { lead } = await searchParams;

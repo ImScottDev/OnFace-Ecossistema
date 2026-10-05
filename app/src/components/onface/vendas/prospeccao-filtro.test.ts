@@ -10,7 +10,7 @@ test("trocar lista navega com o filtro na URL e preserva os demais filtros", () 
 
   assert.equal(typeof navegar, "function", "a troca de lista precisa formar uma URL para a consulta server-side");
   assert.equal(
-    navegar?.("http://localhost:3000/onface-preview/prospeccao?busca=acme&estado=novo", { lista: "Consultoria" }),
-    "/onface-preview/prospeccao?busca=acme&estado=novo&lista=Consultoria",
+    navegar?.("http://localhost:3000/prospeccao?busca=acme&estado=novo", { lista: "Consultoria" }),
+    "/prospeccao?busca=acme&estado=novo&lista=Consultoria",
   );
 });

@@ -37,7 +37,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Item, ItemContent, ItemDescription, ItemFooter, ItemTitle } from "@/components/ui/item";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Tag, type RotaBaseVendas } from "./ui";
+import { Tag } from "./ui";
 import { decorrido } from "./formato";
 
 /* ── Leitura de tempo ──────────────────────────────────────────────────── */
@@ -161,7 +161,7 @@ function AcoesRapidas({ card, aoAgir }: {
 /* ── Cartão ────────────────────────────────────────────────────────────── */
 
 export function CardAquisicao({
-  card, selecionado, marcado, emSelecao, rotaBase, aoMarcar, aoAgir,
+  card, selecionado, marcado, emSelecao, aoMarcar, aoAgir,
 }: {
   card: CardPreVendas;
   /** Aberto no painel. */
@@ -170,7 +170,6 @@ export function CardAquisicao({
   marcado: boolean;
   /** Board em modo de seleção: o checkbox deixa de depender do hover. */
   emSelecao: boolean;
-  rotaBase: RotaBaseVendas;
   aoMarcar: (leadId: string, marcado: boolean) => void;
   aoAgir: (acao: "whatsapp" | "ligar" | "tarefa" | "mais", card: CardPreVendas) => void;
 }) {
@@ -218,7 +217,7 @@ export function CardAquisicao({
                   separa "trabalhar este registro" de "investigar esta conta". */}
               {temEmpresa && card.empresaId ? (
                 <Link
-                  href={`${rotaBase}/empresas/${card.empresaId}`}
+                  href={`/empresas/${card.empresaId}`}
                   className="hover:underline"
                   onPointerDown={(e) => e.stopPropagation()}
                   onClick={(e) => e.stopPropagation()}
@@ -276,7 +275,7 @@ export function CardAquisicao({
             {card.proximaAcao ? (
               // Clicar na próxima ação abre a TAREFA, não o painel do lead.
               <Link
-                href={`${rotaBase}/tarefas?tarefa=${card.proximaAcao.id}`}
+                href={`/tarefas?tarefa=${card.proximaAcao.id}`}
                 className="inline-flex items-center gap-1 hover:underline"
                 title={card.proximaAcao.titulo}
                 onPointerDown={(e) => e.stopPropagation()}

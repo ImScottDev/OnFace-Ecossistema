@@ -110,14 +110,13 @@ test("o passo 10 tem roteiro, e o roteiro cobre as rotas do ONFACE", () => {
 
   const script = fs.readFileSync(
     path.join(RAIZ, "app", "src", "scripts", "checar-rotas-onface.ts"), "utf8");
-  // Cada rota do preview tem que estar na lista. Uma tela nova que ninguém
-  // acrescenta aqui nunca é aberta pelo passo 10.
-  const dir = path.join(RAIZ, "app", "src", "app", "(onface-preview)", "onface-preview");
-  const telas = fs.readdirSync(dir, { withFileTypes: true })
-    .filter((e) => e.isDirectory() && !e.name.startsWith("[")).map((e) => e.name);
-  const ausentes = telas.filter((t) => !script.includes(`/onface-preview/${t}`));
-  assert.deepEqual(ausentes, [],
-    `telas do preview fora do roteiro do passo 10: ${ausentes.join(", ")}`);
+  // O roteiro abre o MENU, não uma lista à mão: a lista à mão ficou presa no
+  // espelho `/onface-preview/*` e o passo 10 passou a provar o espelho em vez
+  // do produto. Lendo os destinos do menu, tela nova entra sozinha.
+  assert.match(script, /import \{ DESTINOS \} from "@\/components\/onface\/navegacao"/,
+    "o roteiro do passo 10 precisa sair da árvore do menu");
+  assert.match(script, /DESTINOS\s*\.filter\(\(d\) => !d\.pendente\)/,
+    "o roteiro precisa abrir todo destino construído do menu");
 
   assert.match(script, /startsWith\("\/login"\)/,
     "o script precisa distinguir 'caiu no login' de 'a tela quebrou' — são causas diferentes");

@@ -23,7 +23,6 @@ export function DetalhePropostaPagina({ proposta, voltar }: { proposta: DetalheP
     revisar: async () => { abrirFluxo("revisar"); return true; },
     completarJuridicos: () => abrirFluxo("juridicos"),
   };
-  const rotaBase = voltar.replace(/\/propostas$/, "");
 
   return (
     <PaginaEntidade
@@ -36,7 +35,7 @@ export function DetalhePropostaPagina({ proposta, voltar }: { proposta: DetalheP
         principal={<>
           <Bloco titulo="Ações">
             <div className="ov-acoes">
-              <AcoesProposta proposta={proposta} pendente={false} acoes={acoes} rotaBase={rotaBase} />
+              <AcoesProposta proposta={proposta} pendente={false} acoes={acoes} />
             </div>
           </Bloco>
           <CorpoProposta proposta={proposta} pendente={false} bloqueio={null} variante="pagina" acoes={acoes} />

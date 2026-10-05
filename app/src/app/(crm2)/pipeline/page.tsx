@@ -5,7 +5,6 @@ import { Pagina, PaginaCabecalho, PaginaResumo } from "@/components/onface/shell
 /* A tela é o desenho do handoff, convertido por máquina. `vendas/Pipeline`
    era a versão recriada à mão e sai da rota — ver docs/design/PLANO-HANDOFF.md. */
 import { PipelineProto } from "@/components/onface/proto/PipelineProto";
-import { type RotaBaseVendas } from "@/components/onface/vendas/ui";
 import { moeda } from "@/components/onface/vendas/formato";
 import {
   acaoAgendarReuniao, acaoAlterarFamilia, acaoBuscarEmpresas, acaoCriarOportunidade,
@@ -18,13 +17,9 @@ export const dynamic = "force-dynamic";
 
 type Aba = "abertas" | "ganhas" | "perdidas";
 
-/** Rota OFICIAL do produto. A implementação mudou de casa em 18/09 (F1, lote 2):
- * morava em `/onface-preview/pipeline` e agora é daqui. O preview virou um espelho
- * fino que chama esta mesma função com outro `rotaBase` — sem ele, um clique
- * numa tela irmã devolvia o usuário para dentro do preview. */
-export async function PipelinePage({ searchParams, rotaBase = "" }: {
+/** Pipeline de oportunidades (Módulo 01, Bloco 02). */
+export async function PipelinePage({ searchParams }: {
   searchParams: Promise<{ aba?: string; busca?: string; responsavel?: string; familia?: string; oportunidade?: string; loop?: string }>;
-  rotaBase?: RotaBaseVendas;
 }) {
   const ctx = await getTenantContext();
   if (!ctx) redirect("/login");

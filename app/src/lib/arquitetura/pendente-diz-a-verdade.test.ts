@@ -25,7 +25,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { destinosPendentes } from "@/components/onface/navigation";
+import { destinosPendentes } from "@/components/onface/navegacao";
 
 const APP = path.join(process.cwd(), "src", "app");
 

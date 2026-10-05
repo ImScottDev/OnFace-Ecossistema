@@ -14,13 +14,8 @@ import { lerLinhaDoTempo, type LinhaDoTempo } from "@/lib/vendas/eventos";
 import { resolverEmpresa } from "@/lib/vendas/identidade";
 import { adicionarTag, removerTag } from "@/lib/crm/tags";
 
-/* A rota oficial do produto.
- *
- * Era "/onface-preview/pre-vendas" — o caminho de onde esta tela veio em 18/09,
- * quando a implementação morava no preview. Depois da inversão, TODA escrita
- * desta página revalidava o espelho e deixava a rota real com o cache velho:
- * qualificar, nutrir e desqualificar só apareciam no `router.refresh()` do
- * cliente, e um F5 logo depois trazia o estado anterior de volta. */
+/* Rota que toda escrita desta página revalida. Revalidar outro caminho deixa
+ * o cache da tela real velho: o F5 traz o estado anterior de volta. */
 const ROTA = "/pre-vendas";
 
 /** Tenant e ator vêm SEMPRE do servidor: o cliente nunca escolhe em nome de

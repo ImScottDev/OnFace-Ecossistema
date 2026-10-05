@@ -61,7 +61,7 @@ export interface AcoesPropostas {
   salvarJuridicos: (empresaId: string, dados: DadosJuridicos) => Promise<Resultado<{ completo: boolean; faltando: string[] }>>;
 }
 
-export function Propostas({ linhas, filtro, oportunidadeInicial, propostaInicial, abrirComposer = false, acaoInicial, rotaBase = "/onface-preview", acoes }: {
+export function Propostas({ linhas, filtro, oportunidadeInicial, propostaInicial, abrirComposer = false, acaoInicial, acoes }: {
   linhas: LinhaProposta[];
   filtro: { busca: string; status: string | null };
   oportunidadeInicial?: string | null;
@@ -71,7 +71,6 @@ export function Propostas({ linhas, filtro, oportunidadeInicial, propostaInicial
   /** Intenção trazida da página completa; a proposta é carregada antes do diálogo. */
   acaoInicial?: AcaoInicialProposta | null;
   /** Mantém todos os links dentro da superfície ONFACE atual. */
-  rotaBase?: string;
   acoes: AcoesPropostas;
 }) {
   const router = useRouter();
@@ -202,7 +201,6 @@ export function Propostas({ linhas, filtro, oportunidadeInicial, propostaInicial
             aoFechar={() => { setSelecionada(null); setDetalhe(null); limparBloqueio(); }}
             aoEnviar={() => setModal("enviar")}
             aoCompletarJuridicos={() => { limparBloqueio(); setModal("juridicos"); }}
-            rotaBase={rotaBase}
             aoRevisar={() => criarRevisao(detalhe!.id)}
           />
         }
@@ -287,7 +285,7 @@ export function Propostas({ linhas, filtro, oportunidadeInicial, propostaInicial
 
 /* ── Painel ────────────────────────────────────────────────────────────── */
 
-function PainelProposta({ proposta, pendente, bloqueio, aoFechar, aoEnviar, aoRevisar, aoCompletarJuridicos, rotaBase }: {
+function PainelProposta({ proposta, pendente, bloqueio, aoFechar, aoEnviar, aoRevisar, aoCompletarJuridicos }: {
   proposta: DetalheProposta | null;
   pendente: boolean;
   bloqueio: Bloqueio | null;
@@ -295,7 +293,6 @@ function PainelProposta({ proposta, pendente, bloqueio, aoFechar, aoEnviar, aoRe
   aoEnviar: () => void;
   aoRevisar: () => Promise<boolean>;
   aoCompletarJuridicos: () => void;
-  rotaBase: string;
 }) {
   if (!proposta) {
     return <Painel titulo="Carregando" aoFechar={aoFechar}><p className="ov-nota">Buscando a proposta…</p></Painel>;
@@ -307,14 +304,14 @@ function PainelProposta({ proposta, pendente, bloqueio, aoFechar, aoEnviar, aoRe
     <Painel
       titulo={`Proposta #${proposta.numero} · v${proposta.versao}`}
       subtitulo={proposta.empresa.nome ?? proposta.oportunidade.titulo}
-      acoesTopo={<AbrirEmPagina href={`${rotaBase}/propostas/${proposta.id}`} />}
+      acoesTopo={<AbrirEmPagina href={`/propostas/${proposta.id}`} />}
       aoFechar={aoFechar}
     >
       <div className="ov-card-meta"><TagsProposta proposta={proposta} /></div>
 
       <Secao titulo="Ações">
         <div className="ov-acoes">
-          <AcoesProposta proposta={proposta} pendente={pendente} acoes={acoesCorpo} rotaBase={rotaBase} />
+          <AcoesProposta proposta={proposta} pendente={pendente} acoes={acoesCorpo} />
         </div>
       </Secao>
 

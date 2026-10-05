@@ -29,7 +29,6 @@ import type { Resultado } from "@/lib/vendas/resultado";
 import {
    AvisoBloqueio, Board, Busca, Campo, ChecklistFechamento, Coluna, ColunaVazia, ComPainel, LimparFiltros,
   Dialogo, Painel, Secao, Tag, dataCurta, dataHora, moeda, moedaExata, useAcao,
-  type RotaBaseVendas,
 } from "./ui";
 import { rotuloAtor, rotuloEvento } from "./PreVendas";
 
@@ -54,7 +53,7 @@ export interface AcoesPipeline {
   detalhe: (id: string) => Promise<Resultado<{ oportunidade: DetalheOportunidade | null; timeline: LinhaDoTempo[] }>>;
 }
 
-export function Pipeline({ dados, filtro, loop = false, loops = null, selecaoInicial, rotaBase, acoes }: {
+export function Pipeline({ dados, filtro, loop = false, loops = null, selecaoInicial, acoes }: {
   dados: BoardPipeline;
   /** Só para link antigo salvo; o board padrão é o único, sem aba. */
   aba?: Aba;
@@ -64,7 +63,6 @@ export function Pipeline({ dados, filtro, loop = false, loops = null, selecaoIni
   /** Resumo da fila de loops, só quando o recorte está ativo. */
   loops?: import("@/lib/vendas/loops-abertos").ResumoLoops | null;
   selecaoInicial?: string | null;
-  rotaBase: RotaBaseVendas;
   acoes: AcoesPipeline;
 }) {
   const router = useRouter();
@@ -231,9 +229,8 @@ export function Pipeline({ dados, filtro, loop = false, loops = null, selecaoIni
             pendente={pendente}
             bloqueio={bloqueio}
             motivoGanhoPendente={resultadoGanho}
-            rotaBase={rotaBase}
             aoFechar={() => { setSelecionado(null); setDetalhe(null); limparBloqueio(); setResultadoGanho(null); }}
-            aoAgir={(tipo) => { if (tipo === "criar_proposta") router.push(`${rotaBase}/propostas?oportunidade=${op?.id ?? ""}`); }}
+            aoAgir={(tipo) => { if (tipo === "criar_proposta") router.push(`/propostas?oportunidade=${op?.id ?? ""}`); }}
             acoes={{
               mover: (para) => rodar(() => acoes.moverEtapa(op!.id, para), false),
               trial: (iniciar) => rodar(() => acoes.trial(op!.id, iniciar), false),
@@ -346,13 +343,12 @@ function CardOportunidade({ card, selecionado, aoAbrir }: {
 
 /* ── Painel ────────────────────────────────────────────────────────────── */
 
-function PainelOportunidade({ op, timeline, pendente, bloqueio, motivoGanhoPendente, rotaBase, aoFechar, aoAgir, acoes }: {
+function PainelOportunidade({ op, timeline, pendente, bloqueio, motivoGanhoPendente, aoFechar, aoAgir, acoes }: {
   op: DetalheOportunidade | null;
   timeline: LinhaDoTempo[];
   pendente: boolean;
   bloqueio: { mensagem: string; acao?: { rotulo: string; tipo: string } } | null;
   motivoGanhoPendente: string | null;
-  rotaBase: RotaBaseVendas;
   aoFechar: () => void;
   aoAgir: (tipo: string) => void;
   acoes: {
@@ -380,7 +376,7 @@ function PainelOportunidade({ op, timeline, pendente, bloqueio, motivoGanhoPende
         {op.badges.map((b) => <Tag key={b} tom="alerta">{b}</Tag>)}
       </div>
       <div className="ov-acoes">
-        <Link className="ov-botao" data-variante="contorno" href={`${rotaBase}/pipeline/${op.id}`}>
+        <Link className="ov-botao" data-variante="contorno" href={`/pipeline/${op.id}`}>
           Abrir oportunidade
         </Link>
       </div>
@@ -501,14 +497,14 @@ function PainelOportunidade({ op, timeline, pendente, bloqueio, motivoGanhoPende
         {op.propostas.length === 0 ? (
           <>
             <p className="ov-nota">Nenhuma proposta vinculada.</p>
-            <Link className="ov-botao" href={`${rotaBase}/propostas?oportunidade=${op.id}`}>
+            <Link className="ov-botao" href={`/propostas?oportunidade=${op.id}`}>
               <FileText aria-hidden />Criar proposta
             </Link>
           </>
         ) : (
           op.propostas.map((p) => (
             <Link key={p.id} className="ov-botao" data-variante="contorno"
-              href={`${rotaBase}/propostas?proposta=${p.id}`}>
+              href={`/propostas?proposta=${p.id}`}>
               #{p.numero} v{p.versao} · {p.status} · {moeda(p.total)}
             </Link>
           ))
@@ -532,7 +528,7 @@ function PainelOportunidade({ op, timeline, pendente, bloqueio, motivoGanhoPende
         <Secao titulo="Oportunidades relacionadas">
           <p className="ov-nota">Mesma negociação, ciclos independentes.</p>
           {op.irmas.map((i) => (
-            <Link key={i.id} className="ov-botao" data-variante="contorno" href={`${rotaBase}/pipeline?oportunidade=${i.id}`}>
+            <Link key={i.id} className="ov-botao" data-variante="contorno" href={`/pipeline?oportunidade=${i.id}`}>
               <Users aria-hidden />{i.titulo}
             </Link>
           ))}

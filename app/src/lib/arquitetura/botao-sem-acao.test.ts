@@ -77,9 +77,6 @@ function dentroDeTriggerAsChild(fonte: string, posicao: number): boolean {
  * autorização), então a dívida fica registrada em vez de escondida.
  */
 const FORA_DO_PRODUTO = [
-  // Protótipo estático, ZERO referências no código. Nasceu como preview e
-  // nunca foi ligado a rota alguma do menu. Pendente de remoção.
-  "src/app/estudio/",
   // Componente com ZERO importadores — só é citado num comentário. É o
   // padrão "peça pronta sem chamador": existe, compila, e nenhuma tela usa.
   // Pendente de remoção.

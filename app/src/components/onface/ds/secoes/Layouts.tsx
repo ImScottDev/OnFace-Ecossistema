@@ -173,7 +173,7 @@ const PADROES: Padrao[] = [
     nome: "Tabela",
     linha: "Muitas colunas comparáveis, ordenação, filtro, seleção em massa e densidade.",
     estado: "pronto",
-    onde: "/design/onface/dados",
+    onde: "/design/dados",
     diagrama: [
       { altura: "fina", blocos: [{ peso: 1, tom: "forte" }] },
       { altura: "fina", blocos: [{ peso: 3 }, { peso: 2 }, { peso: 1 }, { peso: 1 }] },
@@ -216,7 +216,7 @@ const PADROES: Padrao[] = [
     nome: "Registro 360",
     linha: "Cabeçalho de entidade, abas, linha do tempo e indicadores do cliente.",
     estado: "pronto",
-    onde: "/design/onface/registro",
+    onde: "/design/registro",
     diagrama: [
       { altura: "media", blocos: [{ peso: 1, tom: "forte" }] },
       { altura: "fina", blocos: [{ peso: 1 }, { peso: 1 }, { peso: 1 }, { peso: 3, tom: "risco" }] },
@@ -265,7 +265,7 @@ const PADROES: Padrao[] = [
     nome: "Quadro",
     linha: "Kanban por etapa, com arraste real e coluna vazia que explica o que fazer.",
     estado: "pronto",
-    onde: "/design/onface/quadro",
+    onde: "/design/quadro",
     diagrama: [
       { altura: "fina", blocos: [{ peso: 1, tom: "forte" }, { peso: 1, tom: "forte" }, { peso: 1, tom: "forte" }, { peso: 1, tom: "forte" }] },
       { altura: "alta", blocos: [{ peso: 1, tom: "fraco" }, { peso: 1, tom: "fraco" }, { peso: 1, tom: "fraco" }, { peso: 1, tom: "risco" }] },

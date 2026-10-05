@@ -54,9 +54,8 @@ export function TagsProposta({ proposta }: { proposta: DetalheProposta }) {
 }
 
 /** Os botões que de fato mudam o estado da proposta. */
-export function AcoesProposta({ proposta, pendente, acoes, rotaBase = "/onface-preview" }: {
-  proposta: DetalheProposta; pendente: boolean; acoes: AcoesCorpoProposta; rotaBase?: string;
-}) {
+export function AcoesProposta({ proposta, pendente, acoes }: {
+  proposta: DetalheProposta; pendente: boolean; acoes: AcoesCorpoProposta;}) {
   const rascunho = proposta.status === "rascunho";
   const vigente = ["enviada", "visualizada", "ajuste_solicitado"].includes(proposta.status);
   return (
@@ -72,12 +71,12 @@ export function AcoesProposta({ proposta, pendente, acoes, rotaBase = "/onface-p
         </button>
       ) : null}
       {proposta.oportunidade.id ? (
-        <Link className="ov-botao" data-variante="contorno" href={`${rotaBase}/pipeline/${proposta.oportunidade.id}`}>
+        <Link className="ov-botao" data-variante="contorno" href={`/pipeline/${proposta.oportunidade.id}`}>
           Abrir oportunidade
         </Link>
       ) : null}
       {proposta.empresa.id ? (
-        <Link className="ov-botao" data-variante="contorno" href={`${rotaBase}/contatos/empresas/${proposta.empresa.id}`}>
+        <Link className="ov-botao" data-variante="contorno" href={`/contatos/empresas/${proposta.empresa.id}`}>
           Abrir empresa
         </Link>
       ) : null}

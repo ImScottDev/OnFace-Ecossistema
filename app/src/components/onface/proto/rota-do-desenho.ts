@@ -10,8 +10,7 @@
  * resto caía em `router.push(href)` cru: abrir uma oportunidade pelo Pipeline
  * ia para `/onface-preview/oportunidade` (404), e tirar só o prefixo dava
  * `/oportunidade` (404 também). Centralizar aqui é o que impede o próximo
- * adaptador de reabrir o buraco — e as páginas de redirect dessas URLs usam a
- * mesma função, então colar o endereço do protótipo também chega no lugar.
+ * adaptador de reabrir o buraco.
  *
  * Id que não é UUID (linha otimista do protótipo, "registro" local) não vira
  * rota de detalhe: cairia num 404. Vai para a lista, que é honesto.
@@ -50,10 +49,10 @@ export function rotaDoDesenho(href: string, params: Params = {}): string {
       return lead ? `/pessoas/${lead}` : "/contatos";
     }
     case "/onface-preview/empresa": {
-      // O protótipo só sabe o lead; a empresa dele mora no banco. A página
-      // /onface-preview/empresa resolve no servidor, com o tenant da sessão.
+      // O protótipo só sabe o lead; a empresa dele mora no banco. A rota
+      // /empresas/por-lead resolve no servidor, com o tenant da sessão.
       const lead = uuid(p.lead);
-      return lead ? `/onface-preview/empresa?lead=${lead}` : "/contatos";
+      return lead ? `/empresas/por-lead?lead=${lead}` : "/contatos";
     }
     case "/clientes/360": {
       const cliente = uuid(p.cliente);

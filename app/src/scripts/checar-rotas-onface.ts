@@ -23,6 +23,7 @@
 import { encode } from "@auth/core/jwt";
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
+import { DESTINOS } from "@/components/onface/navegacao";
 
 const BASE = process.env.BASE || "http://localhost:3000";
 const API = process.env.API_BASE || "http://localhost:3011";
@@ -46,61 +47,48 @@ async function umId(consulta: ReturnType<typeof sql>): Promise<string | null> {
   return r?.id ?? null;
 }
 
-const ROTAS: Rota[] = [
-  { caminho: "/onface-preview", exige: ["ONFACE"] },
-  { caminho: "/onface-preview/inicio", exige: ["Evolução da operação", "Áreas em destaque", "of-tendencia"] },
-  { caminho: "/onface-preview/visao-geral", exige: ["Operaç"] },
-  { caminho: "/onface-preview/atividades", exige: ["Atividades"] },
-  { caminho: "/onface-preview/pre-vendas", exige: ["vendas"] },
-  { caminho: "/onface-preview/pipeline", exige: ["Pipeline"] },
-  { caminho: "/onface-preview/propostas", exige: ["Proposta"] },
-  { caminho: "/onface-preview/contatos", exige: ["Contatos"] },
-  { caminho: "/onface-preview/prospeccao", exige: ["Prospec"] },
-];
+/* As telas de lista são o MENU, não uma lista mantida à mão: a lista à mão
+   ficou apontando para o espelho `/onface-preview/*` depois que as telas
+   mudaram de casa, e o passo 10 passou a provar o espelho em vez do produto.
+   Lendo `DESTINOS`, toda tela que o menu oferece é aberta, e tela nova entra
+   sozinha. Item `pendente` fica de fora: ele mostra `ModuloPendente` de
+   propósito (ver pendente-diz-a-verdade.test.ts). O marcador é o rótulo do
+   item, que a casca escreve no cabeçalho da página. */
+const ROTAS: Rota[] = DESTINOS
+  .filter((d) => !d.pendente)
+  .map((d) => ({ caminho: d.href, exige: [d.label] }));
+
+/* Negócio "aberto" é etapa canônica (Bloco 02 §9), nunca o status legado. */
+const OPORTUNIDADE_ABERTA = sql`SELECT id::text FROM negocios WHERE etapa NOT IN ('ganho','perdido') ORDER BY updated_at DESC LIMIT 1`;
 
 const DETALHES: Rota[] = [
+  { caminho: "/pipeline/:id", exige: ["Pipeline"], id: () => umId(OPORTUNIDADE_ABERTA) },
   {
-    caminho: "/onface-preview/pipeline/:id", exige: ["Pipeline"],
-    id: () => umId(sql`SELECT id::text FROM negocios WHERE status NOT IN ('ganho','perdido') ORDER BY updated_at DESC LIMIT 1`),
-  },
-  {
-    caminho: "/onface-preview/propostas/:id", exige: ["Proposta"],
+    caminho: "/propostas/:id", exige: ["Proposta"],
     id: () => umId(sql`SELECT id::text FROM propostas ORDER BY created_at DESC LIMIT 1`),
   },
   {
-    caminho: "/onface-preview/contatos/empresas/:id", exige: ["Empresa"],
+    caminho: "/empresas/:id", exige: ["Empresa"],
     id: () => umId(sql`SELECT id::text FROM empresas ORDER BY created_at DESC LIMIT 1`),
   },
-  /* As três PONTES do protótipo: endereços que o handoff usava e que hoje só
-     traduzem o parâmetro para a rota real. Entram aqui com o id de verdade
-     porque é assim que elas chegam colada numa conversa — sem id, redirecionam
-     para a lista e não provariam nada. O que se checa é o DESTINO ter aberto. */
   {
-    caminho: "/onface-preview/empresa?lead=:id", exige: ["Empresa"],
+    // A ponte que as telas geradas usam para abrir a empresa a partir do lead
+    // (ver rota-do-desenho.ts). Com id de verdade: sem ele, cai na lista.
+    caminho: "/empresas/por-lead?lead=:id", exige: ["Empresa"],
     id: () => umId(sql`SELECT l.id::text FROM leads l JOIN empresas e ON e.id = l.empresa_id ORDER BY l.updated_at DESC NULLS LAST LIMIT 1`),
   },
   {
-    caminho: "/onface-preview/pessoa?lead=:id", exige: ["Pessoa"],
+    caminho: "/pessoas/:id", exige: ["Pessoa"],
     id: () => umId(sql`SELECT id::text FROM leads ORDER BY updated_at DESC NULLS LAST LIMIT 1`),
   },
   {
-    caminho: "/onface-preview/oportunidade?opp=:id", exige: ["Pipeline"],
-    id: () => umId(sql`SELECT id::text FROM negocios WHERE status NOT IN ('ganho','perdido') ORDER BY updated_at DESC LIMIT 1`),
-  },
-  {
-    caminho: "/onface-preview/contatos/pessoas/:id", exige: ["Contato", "Pessoa"],
+    caminho: "/contatos/pessoas/:id", exige: ["Contato", "Pessoa"],
     // O id vem da MESMA consulta que alimenta a lista, e não de um
-    // `SELECT … FROM leads LIMIT 1`. Não é detalhe de implementação: contato é
-    // a única entidade da tela cujo id pode ser de `pessoas` ou de `leads`, e
-    // um lead que já tem pessoa canônica espelhada é excluído dos dois lados
-    // (`NOT EXISTS (SELECT 1 FROM pessoas WHERE lead_id_legado = l.id)`).
-    //
-    // Pegando o último lead cru, o teste acusou 404 numa rota que está certa —
-    // aquele lead não aparece na lista, então ninguém consegue chegar nele pela
-    // tela. Perseguir aquele 404 teria levado a "consertar" código correto.
-    //
-    // Assim o teste prova o que interessa de verdade: **o primeiro item que a
-    // lista mostra abre no detalhe**.
+    // `SELECT … FROM leads LIMIT 1`: contato é a única entidade cujo id pode ser
+    // de `pessoas` ou de `leads`, e um lead já espelhado em pessoa canônica é
+    // excluído dos dois lados. Pegando o último lead cru, o teste acusou 404
+    // numa rota certa. Assim ele prova o que interessa: **o primeiro item que
+    // a lista mostra abre no detalhe**.
     id: async () => {
       const { diretorioPessoas } = await import("@/lib/vendas/consultas");
       const [org] = await db.execute<{ id: string }>(sql`SELECT id::text FROM organizacoes ORDER BY created_at LIMIT 1`);
@@ -176,11 +164,10 @@ async function main() {
   const abrir = async (rota: Rota, caminho: string) => {
     let r: Response;
     try {
-      // Segue o redirect de propósito: as telas de DETALHE do preview fazem
-      // `redirect("/pipeline/<id>")` — o preview refez as listas e reaproveita
-      // a tela de detalhe oficial. Tratar isso como falha seria acusar uma
-      // decisão de arquitetura. O que não pode é parar em `/login`, e isso o
-      // teste abaixo distingue pela URL final.
+      // Segue o redirect de propósito: item de menu que é área (`/clientes`)
+      // e a ponte `/empresas/por-lead` redirecionam para a tela de destino.
+      // O que não pode é parar em `/login`, e isso o teste abaixo distingue
+      // pela URL final.
       r = await fetch(`${BASE}${caminho}`, { headers: { cookie }, redirect: "follow" });
     } catch (e) {
       ok(false, `${caminho} — não respondeu (${e instanceof Error ? e.message : e})`);

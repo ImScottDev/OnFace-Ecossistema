@@ -36,8 +36,7 @@
     "aceite:contrato": "tsx --env-file=.env src/scripts/aceite-contrato-assinado.ts",
     "aceite:vendas": "tsx --env-file=.env src/scripts/aceite-vendas.ts",
     "check:vendas": "tsx --env-file=.env src/scripts/checar-vendas-dominio.ts && tsx --env-file=.env src/scripts/checar-vendas-consultas.ts",
-    "posvenda:reprocessar": "tsx --env-file=.env src/scripts/reprocessar-pos-venda.ts",
-    "conferir:pasta-01": "cp ../docs/handoff-onface/conferencia-pasta-01.js public/conferencia-pasta-01.js && echo \"pronto — abra /onface-desenho/pre-vendas e rode: (await import(\"/conferencia-pasta-01.js\")).default()\""
+    "posvenda:reprocessar": "tsx --env-file=.env src/scripts/reprocessar-pos-venda.ts"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.285",

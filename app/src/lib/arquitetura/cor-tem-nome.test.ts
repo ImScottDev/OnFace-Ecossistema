@@ -49,10 +49,6 @@ const FORA: string[] = [
   "src/app/cf2-tokens.css",
   "src/app/cf2-design-system.css",
   "src/app/globals.css",
-  // Preview isolado, com escopo e ciclo de vida próprios.
-  "src/app/estudio",
-  // Superfície congelada de referência.
-  "src/app/onface-desenho",
   /* Hex que é DADO, não estilo: a paleta de cores que uma etiqueta nova
      recebe é gravada na linha de `labels` e devolvida para quem a lê. Virar
      `var(--of-…)` gravaria a string do token no banco, e a cor da etiqueta

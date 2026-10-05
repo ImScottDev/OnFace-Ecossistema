@@ -32,7 +32,6 @@ import type { Resultado } from "@/lib/vendas/resultado";
 import {
   Abas, AvisoBloqueio, Board, Busca, Campo, Coluna, ColunaVazia, ComPainel, LimparFiltros,
   Dialogo, Painel, Secao, Tag, dataCurta, dataHora, decorrido, useAcao,
-  type RotaBaseVendas,
 } from "./ui";
 import { AcoesContato } from "./pagina";
 import { CardAquisicao, quandoVence } from "./pre-vendas-card";
@@ -111,7 +110,7 @@ export interface EntradaTarefa {
   descricao: string | null;
 }
 
-export function PreVendas({ dados, filtro, acoes, rotaBase = "", usuarioId }: {
+export function PreVendas({ dados, filtro, acoes, usuarioId }: {
   dados: BoardPreVendas;
   filtro: {
     busca: string;
@@ -123,7 +122,6 @@ export function PreVendas({ dados, filtro, acoes, rotaBase = "", usuarioId }: {
   };
   acoes: AcoesPreVendas;
   /** Prefixo das rotas irmãs do módulo. Vazio = rota oficial do produto. */
-  rotaBase?: RotaBaseVendas;
   /** Quem está olhando. A view "Meus" é sobre esta pessoa. */
   usuarioId: string | null;
 }) {
@@ -233,11 +231,11 @@ export function PreVendas({ dados, filtro, acoes, rotaBase = "", usuarioId }: {
   function aoAgirNoCartao(acao: "whatsapp" | "ligar" | "tarefa" | "mais", card: CardPreVendas) {
     setAlvoRapido(card);
     if (acao === "whatsapp") {
-      router.push(`${rotaBase}/atendimento?leadId=${card.leadId}&canal=whatsapp`);
+      router.push(`/atendimento?leadId=${card.leadId}&canal=whatsapp`);
       return;
     }
     if (acao === "ligar") {
-      router.push(`${rotaBase}/atendimento?leadId=${card.leadId}&canal=ligacao`);
+      router.push(`/atendimento?leadId=${card.leadId}&canal=ligacao`);
       return;
     }
     if (acao === "tarefa") {
@@ -287,7 +285,7 @@ export function PreVendas({ dados, filtro, acoes, rotaBase = "", usuarioId }: {
     setExportando(true);
     try {
       const url = new URL(window.location.href);
-      url.pathname = `${rotaBase}/pre-vendas/exportar`;
+      url.pathname = `/pre-vendas/exportar`;
       window.location.href = url.toString();
     } finally {
       // O download navega; devolver o botão evita deixá-lo girando para sempre
@@ -439,7 +437,6 @@ export function PreVendas({ dados, filtro, acoes, rotaBase = "", usuarioId }: {
           aberto={Boolean(selecionado)}
           painel={
             <PainelLead
-              rotaBase={rotaBase}
               lead={lead}
               timeline={detalhe?.timeline ?? []}
               pendente={pendente}
@@ -492,7 +489,6 @@ export function PreVendas({ dados, filtro, acoes, rotaBase = "", usuarioId }: {
                 selecionado={card.leadId === selecionado}
                 marcado={marcados.has(card.leadId)}
                 emSelecao={emSelecao}
-                rotaBase={rotaBase}
                 aoMarcar={marcar}
                 aoAgir={aoAgirNoCartao}
               />
@@ -668,7 +664,7 @@ const PROXIMO_PASSO: Record<string, {
  * o que já sei (qualificação), o que virou negócio (oportunidades) e o que
  * aconteceu (histórico).
  */
-function PainelLead({ lead, timeline, pendente, bloqueio, responsaveis, aoFechar, aoAgir, acoes, rotaBase }: {
+function PainelLead({ lead, timeline, pendente, bloqueio, responsaveis, aoFechar, aoAgir, acoes }: {
   lead: DetalheLead | null;
   timeline: LinhaDoTempo[];
   pendente: boolean;
@@ -683,7 +679,6 @@ function PainelLead({ lead, timeline, pendente, bloqueio, responsaveis, aoFechar
     reativar: () => Promise<boolean>;
     abrirModal: (m: "qualificar" | "nutrir" | "desqualificar" | "oportunidade" | "tarefa") => void;
   };
-  rotaBase: RotaBaseVendas;
 }) {
   /* Esqueleto com a FORMA do conteúdo, não um "carregando…".
      O painel abre instantâneo e o detalhe chega depois; uma frase centralizada
@@ -760,7 +755,7 @@ function PainelLead({ lead, timeline, pendente, bloqueio, responsaveis, aoFechar
               asChild={passo.primario.tipo === "abrir_oportunidade" && Boolean(lead.oportunidades[0])}
             >
               {passo.primario.tipo === "abrir_oportunidade" && lead.oportunidades[0] ? (
-                <Link href={`${rotaBase}/pipeline?oportunidade=${lead.oportunidades[0].id}`}>
+                <Link href={`/pipeline?oportunidade=${lead.oportunidades[0].id}`}>
                   <ArrowRight aria-hidden />Abrir oportunidade
                 </Link>
               ) : (
@@ -872,7 +867,7 @@ function PainelLead({ lead, timeline, pendente, bloqueio, responsaveis, aoFechar
         </dl>
         {lead.empresa.id ? (
           <Button asChild variant="outline" size="sm">
-            <Link href={`${rotaBase}/empresas/${lead.empresa.id}`}>
+            <Link href={`/empresas/${lead.empresa.id}`}>
               <Building2 aria-hidden />Abrir empresa
             </Link>
           </Button>
@@ -906,7 +901,7 @@ function PainelLead({ lead, timeline, pendente, bloqueio, responsaveis, aoFechar
           <div className="flex flex-col gap-2">
             {lead.oportunidades.map((o) => (
               <Button key={o.id} asChild variant="outline" size="sm" className="justify-start">
-                <Link href={`${rotaBase}/pipeline?oportunidade=${o.id}`}>
+                <Link href={`/pipeline?oportunidade=${o.id}`}>
                   {o.titulo} · {o.etapaRotulo}
                 </Link>
               </Button>

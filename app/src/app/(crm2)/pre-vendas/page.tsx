@@ -6,7 +6,6 @@ import { boardPreVendas, ehView, type ViewPreVendas } from "@/lib/vendas/consult
    cada transcrição dela introduzia divergência visual que só aparecia na
    revisão do Kauã. Ver docs/design/COMO-LIGAR-UMA-TELA.md. */
 import { PreVendasProto } from "@/components/onface/proto/PreVendasProto";
-import { type RotaBaseVendas } from "@/components/onface/vendas/ui";
 import {
   acaoAssociarEmpresa, acaoAtribuir, acaoAtribuirEmMassa, acaoCriarLead,
   acaoCriarOportunidade, acaoCriarTarefa, acaoDesqualificar, acaoDetalhe,
@@ -28,12 +27,8 @@ export const dynamic = "force-dynamic";
  * data. É o que faz F5, link compartilhado e volta do detalhe devolverem
  * exatamente o mesmo board. Recorte em estado de componente morre no primeiro
  * recarregar, e a spec pede o contrário explicitamente (§2).
- *
- * `rotaBase` existe porque a tela linka para as irmãs do módulo (abrir a
- * empresa em Contatos, a oportunidade no Pipeline). Sem ele, um clique na
- * rota oficial devolvia o usuário para dentro do preview.
  */
-export async function PreVendasPage({ searchParams, rotaBase = "" }: {
+export async function PreVendasPage({ searchParams }: {
   searchParams: Promise<{
     view?: string; busca?: string; responsavel?: string;
     origem?: string; campanha?: string; desde?: string;
@@ -43,7 +38,6 @@ export async function PreVendasPage({ searchParams, rotaBase = "" }: {
      *  Fica na URL para sobreviver ao recarregar e ao voltar do detalhe. */
     mostrar?: string;
   }>;
-  rotaBase?: RotaBaseVendas;
 }) {
   const ctx = await getTenantContext();
   if (!ctx) redirect("/login");

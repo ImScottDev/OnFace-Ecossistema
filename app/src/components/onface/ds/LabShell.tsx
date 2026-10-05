@@ -131,7 +131,7 @@ export function LabShell({ secao }: { secao: string }) {
                 <Link
                   key={item.slug || "raiz"}
                   className="ds-lab-link"
-                  href={item.slug ? `/design/onface/${item.slug}` : "/design/onface"}
+                  href={item.slug ? `/design/${item.slug}` : "/design"}
                   aria-current={ativo ? "page" : undefined}
                 >
                   <Icone />

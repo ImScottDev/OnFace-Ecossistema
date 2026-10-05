@@ -4,7 +4,6 @@ import { linhasDeContato } from "@/lib/contatos/tela-contatos";
 /* A tela é o desenho do handoff, convertido por máquina. `vendas/Contatos`
    era a versão recriada à mão e sai da rota — mesmo caminho do Pipeline. */
 import { ContatosProto } from "@/components/onface/proto/ContatosProto";
-import { type RotaBaseVendas } from "@/components/onface/vendas/ui";
 import { acaoCriarEmpresa, acaoCriarPessoa, acaoResponsaveis } from "./actions";
 import { acaoAtribuirEmMassa, acaoCriarLead } from "../pre-vendas/actions";
 
@@ -19,13 +18,9 @@ export const dynamic = "force-dynamic";
  * desenho renderiza tudo de uma vez e refaz a árvore empresa→pessoas a cada
  * hover; com as ~4 mil pessoas da base a tela travava. A busca vai ao banco
  * (?busca=), então nada fica inalcançável, e a tela diz o tamanho do corte.
- *
- * `rotaBase` continua na assinatura porque o espelho em /onface-preview chama
- * esta função; a tela nova navega sempre pelas rotas oficiais.
  */
 export async function ContatosPage({ searchParams }: {
   searchParams: Promise<{ busca?: string }>;
-  rotaBase?: RotaBaseVendas;
 }) {
   const ctx = await getTenantContext();
   if (!ctx) redirect("/login");

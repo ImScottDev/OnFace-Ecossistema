@@ -1197,40 +1197,6 @@ html[data-onface-theme] body[data-scroll-locked] {
   color: var(--onface-cinza);
 }
 
-/* ── Preview canvas (validation surface only) ─────────────────────────── */
-.onface-preview-canvas {
-  width: min(100% - 3rem, 80rem);
-  margin: var(--space-32) auto;
-  padding: clamp(1.5rem, 5vw, 3.5rem);
-  border: 1px solid var(--line-hairline);
-  border-radius: var(--radius-canvas);
-  background: var(--surface-card);
-}
-.onface-preview-title {
-  max-width: 24ch;
-  margin: 0 0 var(--space-16);
-  color: var(--text-strong);
-  font-family: var(--font-onface-display), sans-serif;
-  font-size: clamp(2rem, 5vw, 3.5rem);
-  font-weight: var(--weight-bold);
-  letter-spacing: var(--tracking-wordmark);
-  line-height: 1.02;
-  text-wrap: balance;
-}
-.onface-preview-copy {
-  max-width: 68ch;
-  color: var(--text-muted);
-  font-size: var(--text-lg);
-  line-height: var(--leading-body);
-}
-.onface-preview-note {
-  margin-top: var(--space-32);
-  padding-top: var(--space-16);
-  border-top: 1px solid var(--line-hairline);
-  color: var(--text-subtle);
-  font-size: var(--text-base);
-}
-
 /* ── Focus ────────────────────────────────────────────────────────────── */
 html[data-onface-theme="light"] :is(.onface-app-shell, .onface-menu, .onface-notif, .onface-sheet)
   :is(button, a, [tabindex]):focus-visible {
@@ -1319,12 +1285,6 @@ html[data-onface-theme="light"] :is(.onface-app-shell, .onface-menu, .onface-not
     width: calc(100vw - 2rem);
     max-height: calc(100dvh - 5.5rem);
   }
-  .onface-preview-canvas {
-    width: calc(100% - 2rem);
-    margin-block: var(--space-16);
-    padding: var(--space-20);
-    border-radius: var(--radius-card-lg);
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1337,44 +1297,6 @@ html[data-onface-theme="light"] :is(.onface-app-shell, .onface-menu, .onface-not
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
   }
-}
-
-/* ── Enquadramento do quadro do Figma ──────────────────────────────────
-   `HomePageFigma` é a marcação do Figma e tem 1440px fixos.
-
-   Escalar com `calc(100vw / 1440px)` NÃO funciona: CSS não divide dois
-   comprimentos para produzir um número, e o valor inválido colapsa o quadro
-   inteiro. Sem JS, o caminho previsível é `zoom` em degraus por media query,
-   com rolagem horizontal cobrindo o que sobrar. */
-.onface-figma-frame {
-  width: 100%;
-  overflow-x: auto;
-  background: var(--surface-shell);
-}
-.onface-figma-frame > * {
-  margin-inline: auto;
-}
-
-/* The Figma frame was authored at 967px. On tall displays, keep its lower
-   workspace surface alive through the viewport instead of exposing a blank
-   page after the grid. */
-.onface-figma-frame > [data-name="HomePage"] {
-  height: max(967px, calc(100dvh - var(--shell-topbar-h))) !important;
-}
-.onface-figma-frame [data-name="LowerWorkspace"] {
-  height: calc(100% - 516px) !important;
-}
-.onface-figma-frame [data-name="LowerSurface"],
-.onface-figma-frame [data-name="BackgroundGridEffect"] {
-  height: calc(100% - 13px) !important;
-}
-
-/* The imported Figma classes contain editor-only family aliases such as
-   `Plus_Jakarta_Sans:Bold`. They resolve to a browser fallback, so the visual
-   reference loses its sans-serif hierarchy. Keep the Figma geometry intact
-   while binding every exported text node to the ONFACE display face. */
-.onface-figma-frame [data-node-id] {
-  font-family: var(--font-onface-display), ui-sans-serif, system-ui, sans-serif !important;
 }
 
 /* ═══ Ponte cf2 → ONFACE (promovida do laboratório em 18/09) ═══════════════

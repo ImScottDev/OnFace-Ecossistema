@@ -4,7 +4,6 @@ import { Pagina, PaginaCabecalho, PaginaResumo } from "@/components/onface/shell
 /* A tela é o desenho do handoff, convertido por máquina. `vendas/Propostas`
    era a versão recriada à mão e sai da rota — ver docs/design/PLANO-HANDOFF.md. */
 import { PropostasProto } from "@/components/onface/proto/PropostasProto";
-import { type RotaBaseVendas } from "@/components/onface/vendas/ui";
 import { moeda } from "@/components/onface/vendas/formato";
 import {
   acaoCatalogo, acaoCriar, acaoCriarRevisao, acaoDetalhe, acaoEnviar,
@@ -14,13 +13,9 @@ import {
 export const metadata = { title: "Propostas" };
 export const dynamic = "force-dynamic";
 
-/** Rota OFICIAL do produto. A implementação mudou de casa em 18/09 (F1, lote 2):
- * morava em `/onface-preview/propostas` e agora é daqui. O preview virou um espelho
- * fino que chama esta mesma função com outro `rotaBase` — sem ele, um clique
- * numa tela irmã devolvia o usuário para dentro do preview. */
-export async function PropostasPage({ searchParams, abrirComposer = false, rotaBase = "" }: {
+/** Propostas (Módulo 01, Bloco 03). */
+export async function PropostasPage({ searchParams, abrirComposer = false }: {
   searchParams: Promise<{ status?: string; busca?: string; oportunidade?: string; proposta?: string; acao?: "enviar" | "juridicos" | "revisar" }>;
-  rotaBase?: RotaBaseVendas;
   abrirComposer?: boolean;
 }) {
   const ctx = await getTenantContext();
