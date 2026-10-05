@@ -2,6 +2,7 @@
 # Deploy do ONFACE: commit do repo → servidor → imagens → ambiente → migrations → troca.
 #
 #   ./deploy.sh dev            # roda da raiz do repo, na máquina de quem publica
+#   ./deploy.sh dev --seguir   # reata o acompanhamento de um deploy já em curso
 #
 # Alvos:
 #   dev  → /opt/callface/crm2-dev, compose `crm2-dev`, https://dev.crm.callface.io
@@ -16,14 +17,21 @@
 #     uma tela que abria sem login.
 #   - `--delete` espelha o repo, protegendo o que é do servidor: .env, uploads,
 #     segredos do Documenso e backups (deploy nunca apaga backup).
+#   - **O trabalho pesado roda DESTACADO no servidor.** Em 05/10 a conexão ssh
+#     caiu no meio do `next build`: o build morreu junto e o deploy terminou
+#     dizendo que estava construindo, sem ter trocado nada. Agora o cliente só
+#     acompanha um log; derrubar o terminal não interrompe o deploy, e
+#     `--seguir` reata.
 #   - Build com --cpuset-cpus=1, uma imagem por vez: a EC2 tem 2 vCPU e
 #     produção roda na mesma máquina. Sem isso o build derrubou produção (01/10).
 #   - Ambiente e migrations são conferidos com a imagem NOVA, antes de trocar
 #     container. Com a imagem antiga a migration nova nunca é aplicada.
-#   - `.onface-release` registra o commit publicado.
+#   - `.onface-release` registra o commit publicado, e só no fim: se ele não
+#     mudou, o deploy não chegou ao fim.
 set -euo pipefail
 
 ALVO="${1:-}"
+SEGUIR="${2:-}"
 case "$ALVO" in
   dev)
     DIR=/opt/callface/crm2-dev
@@ -33,25 +41,55 @@ case "$ALVO" in
     CONTAINER_WORKER=callface-crm2-dev-worker
     ;;
   *)
-    echo "uso: ./deploy.sh dev" >&2
+    echo "uso: ./deploy.sh dev [--seguir]" >&2
     exit 1
     ;;
 esac
 
 HOST="${DEPLOY_HOST:-ubuntu@34.204.200.52}"
 CHAVE="${DEPLOY_CHAVE:-$HOME/.ssh/infra_callface.pem}"
-SSH=(ssh -i "$CHAVE" "$HOST")
+SSH=(ssh -o ServerAliveInterval=20 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i "$CHAVE" "$HOST")
 
 cd "$(git rev-parse --show-toplevel)"
+REV="$(git rev-parse HEAD)"
+LOG="/tmp/onface-deploy-$ALVO.log"
+FIM="/tmp/onface-deploy-$ALVO.fim"
+
+# Segue o log remoto até o marcador de fim aparecer. Uma queda de rede aqui só
+# interrompe a LEITURA: o deploy continua no servidor.
+acompanhar() {
+  local linha=0 novo codigo
+  while true; do
+    novo="$("${SSH[@]}" "tail -n +$((linha + 1)) $LOG 2>/dev/null" 2>/dev/null || true)"
+    if [ -n "$novo" ]; then
+      printf '%s\n' "$novo"
+      linha=$((linha + $(printf '%s\n' "$novo" | wc -l)))
+    fi
+    codigo="$("${SSH[@]}" "cat $FIM 2>/dev/null" 2>/dev/null || true)"
+    if [ -n "$codigo" ]; then
+      [ "$codigo" = 0 ] && { echo "✓ publicado: $REV"; return 0; }
+      echo "✘ deploy falhou (código $codigo)" >&2
+      return 1
+    fi
+    sleep 15
+  done
+}
+
+if [ "$SEGUIR" = "--seguir" ]; then
+  echo "=== reatando o acompanhamento de $ALVO ==="
+  acompanhar
+  exit $?
+fi
+
 if ! git diff --quiet || ! git diff --cached --quiet; then
   echo "✘ há mudança não commitada: o deploy publica só o que está no commit" >&2
   exit 1
 fi
-REV="$(git rev-parse HEAD)"
+
 echo "=== ONFACE → $ALVO ($REV) ==="
 
 # ─── 1. Código: o commit, espelhado no servidor ─────────────────────────────
-echo "[1/4] Enviando o commit..."
+echo "[1/2] Enviando o commit..."
 STAGE="/tmp/onface-release-$REV"
 git archive --format=tar HEAD | "${SSH[@]}" "rm -rf $STAGE && mkdir -p $STAGE && tar -x -C $STAGE"
 "${SSH[@]}" "sudo rsync -a --delete \
@@ -62,40 +100,55 @@ git archive --format=tar HEAD | "${SSH[@]}" "rm -rf $STAGE && mkdir -p $STAGE &&
   --exclude='_backup*' --exclude='*.sql.gz' --exclude='*.dump' --exclude='*.bak-*' \
   $STAGE/ $DIR/ && rm -rf $STAGE"
 
-# ─── 2. Imagens, uma por vez, presas a 1 CPU ────────────────────────────────
+# ─── 2. Build, migrations e troca: no servidor, destacado ───────────────────
+REMOTO="/tmp/onface-deploy-$ALVO.sh"
+CORPO="$(mktemp)"
+cat > "$CORPO" <<REMOTE
+#!/bin/bash
+set -euo pipefail
+cd $DIR
+
 for SERVICO in app api worker; do
-  ARQ=Dockerfile; [ "$SERVICO" = app ] || ARQ="Dockerfile.$SERVICO"
-  echo "[2/4] Build $SERVICO (o container antigo continua servindo)..."
-  "${SSH[@]}" "cd $DIR && sudo env DOCKER_BUILDKIT=0 docker build --cpuset-cpus=1 --memory=4g --memory-swap=9g -f $ARQ -t $PREFIXO_IMAGEM-$SERVICO ."
+  ARQ=Dockerfile; [ "\$SERVICO" = app ] || ARQ="Dockerfile.\$SERVICO"
+  echo "[build] \$SERVICO (o container antigo continua servindo)..."
+  sudo env DOCKER_BUILDKIT=0 docker build --cpuset-cpus=1 --memory=4g --memory-swap=9g \
+    -f "\$ARQ" -t "$PREFIXO_IMAGEM-\$SERVICO" . 2>&1 | tail -5
 done
 
-# ─── 3. Ambiente e banco, com a imagem nova, antes de trocar container ──────
-COMPOSE="cd $DIR && sudo docker compose -p $PROJETO"
-echo "[3/4] Conferindo variáveis obrigatórias..."
-"${SSH[@]}" "$COMPOSE run --rm --no-deps --entrypoint '' api node app/dist/checar-env-runtime.mjs" \
-  || { echo "✘ ambiente incompleto — corrija o .env antes de seguir (webhooks são fail-closed)" >&2; exit 1; }
-echo "[3/4] Migrations..."
-if ! "${SSH[@]}" "$COMPOSE run --rm --no-deps --entrypoint '' api env MIGRATIONS_DIR=/repo/app/dist/migrations node app/dist/migrar.mjs --check"; then
-  "${SSH[@]}" "$COMPOSE run --rm --no-deps --entrypoint '' api env MIGRATIONS_DIR=/repo/app/dist/migrations node app/dist/migrar.mjs" \
-    || { echo "✘ falha ao migrar — nenhum container foi trocado" >&2; exit 1; }
+echo "[ambiente] conferindo variáveis obrigatórias..."
+sudo docker compose -p $PROJETO run --rm --no-deps --entrypoint '' api node app/dist/checar-env-runtime.mjs
+
+echo "[banco] migrations..."
+if ! sudo docker compose -p $PROJETO run --rm --no-deps --entrypoint '' api \
+     env MIGRATIONS_DIR=/repo/app/dist/migrations node app/dist/migrar.mjs --check; then
+  sudo docker compose -p $PROJETO run --rm --no-deps --entrypoint '' api \
+    env MIGRATIONS_DIR=/repo/app/dist/migrations node app/dist/migrar.mjs
 fi
 
-# ─── 4. Troca e saúde ───────────────────────────────────────────────────────
-echo "[4/4] Trocando worker, api e app..."
-"${SSH[@]}" "$COMPOSE up -d --no-deps --no-build worker api app"
-for i in $(seq 1 45); do
-  STATUS="$("${SSH[@]}" "sudo docker inspect --format='{{.State.Health.Status}}' $CONTAINER_APP" 2>/dev/null || echo starting)"
-  if [ "$STATUS" = healthy ]; then
-    "${SSH[@]}" "echo $REV | sudo tee $DIR/.onface-release >/dev/null"
+echo "[troca] worker, api e app..."
+sudo docker compose -p $PROJETO up -d --no-deps --no-build worker api app
+
+for i in \$(seq 1 45); do
+  STATUS="\$(sudo docker inspect --format='{{.State.Health.Status}}' $CONTAINER_APP 2>/dev/null || echo starting)"
+  if [ "\$STATUS" = healthy ]; then
+    echo "$REV" | sudo tee $DIR/.onface-release >/dev/null
     # O worker carrega os jobs agendados e o sweep do outbox: se ele ficar
     # unhealthy, o pós-venda congela em silêncio.
-    echo "✓ app saudável · worker: $("${SSH[@]}" "sudo docker inspect --format='{{.State.Health.Status}}' $CONTAINER_WORKER" 2>/dev/null || echo '?')"
-    echo "✓ publicado: $REV"
+    echo "✓ app saudável · worker: \$(sudo docker inspect --format='{{.State.Health.Status}}' $CONTAINER_WORKER 2>/dev/null || echo '?')"
     exit 0
   fi
-  echo "  aguardando app... ($STATUS) [$i/45]"
+  echo "  aguardando app... (\$STATUS) [\$i/45]"
   sleep 2
 done
 echo "⚠ o app não ficou saudável em 90s" >&2
-"${SSH[@]}" "sudo docker logs $CONTAINER_APP --tail 30" >&2
+sudo docker logs $CONTAINER_APP --tail 30 >&2
 exit 1
+REMOTE
+
+"${SSH[@]}" "cat > $REMOTO && chmod +x $REMOTO && rm -f $LOG $FIM" < "$CORPO"
+rm -f "$CORPO"
+"${SSH[@]}" "setsid nohup bash -c '$REMOTO > $LOG 2>&1; echo \$? > $FIM' >/dev/null 2>&1 < /dev/null &"
+
+echo "[2/2] Build, migrations e troca rodando no servidor (seguem mesmo se este terminal cair)."
+echo "      Para reatar: ./deploy.sh $ALVO --seguir"
+acompanhar
