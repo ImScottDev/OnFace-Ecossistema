@@ -23,7 +23,7 @@ import {
 } from "./dominio";
 import { HORAS_ATRASO } from "./sla";
 import { VIEWS_PRE_VENDAS, ehView, type ViewPreVendas } from "./dominio";
-import { boardDeAquisicoes, type EstagioAquisicao } from "@onface/acquisition";
+import { boardDeAquisicoes, somenteDePreVendas, type EstagioAquisicao } from "@onface/acquisition";
 import { boardDeOportunidades } from "@onface/sales";
 
 const LIMITE_PADRAO = 400;
@@ -167,6 +167,9 @@ async function contadoresDeViews(
       SELECT a.closed_at, a.responsavel_id, a.last_touch_at, a.first_touch_at,
              a.created_at, px.vence_em
         FROM aquisicoes a
+        -- Mesmo recorte do board: sem ele o chip "Sem dono" contaria 37
+        -- prospects de outbound que coluna nenhuma mostra.
+        LEFT JOIN leads lg ON lg.id = a.lead_legado_id
         LEFT JOIN LATERAL (
           SELECT COALESCE(t.vence_em, t.data_vencimento::timestamptz) AS vence_em
             FROM tarefas t
@@ -177,6 +180,7 @@ async function contadoresDeViews(
            LIMIT 1
         ) px ON TRUE
        WHERE a.organizacao_id = ${organizacaoId}::uuid
+         AND ${somenteDePreVendas(sql)}
     )
     SELECT
       count(*)::int AS todos,
@@ -409,11 +413,11 @@ export async function boardPreVendas(organizacaoId: string, filtros: FiltrosPreV
     sem_proxima_acao: number; qualificados_no_mes: number; horas_ate_contato: number | null;
   }>(sql`
     SELECT
-      count(*) FILTER (WHERE closed_at IS NULL AND desqualificado_em IS NULL
-                         AND COALESCE(nutricao_status,'') = '')::int AS ativos,
-      count(*) FILTER (WHERE COALESCE(nutricao_status,'') <> '')::int AS nutricao,
-      count(*) FILTER (WHERE desqualificado_em IS NOT NULL)::int AS desqualificados,
-      count(*) FILTER (WHERE closed_at IS NULL AND responsavel_id IS NULL)::int AS sem_responsavel,
+      count(*) FILTER (WHERE a.closed_at IS NULL AND a.desqualificado_em IS NULL
+                         AND COALESCE(a.nutricao_status,'') = '')::int AS ativos,
+      count(*) FILTER (WHERE COALESCE(a.nutricao_status,'') <> '')::int AS nutricao,
+      count(*) FILTER (WHERE a.desqualificado_em IS NOT NULL)::int AS desqualificados,
+      count(*) FILTER (WHERE a.closed_at IS NULL AND a.responsavel_id IS NULL)::int AS sem_responsavel,
       -- "Sem 1o contato" e NAO ter havido toque DEPOIS da chegada, e nao
       -- last_touch_at nulo.
       --
@@ -427,8 +431,8 @@ export async function boardPreVendas(organizacaoId: string, filtros: FiltrosPreV
       -- Conferido por um segundo caminho, independente do canonico: leads
       -- abertos com last_contact_at nulo dao exatamente os mesmos 3.060.
       count(*) FILTER (
-        WHERE closed_at IS NULL
-          AND (last_touch_at IS NULL OR last_touch_at <= first_touch_at)
+        WHERE a.closed_at IS NULL
+          AND (a.last_touch_at IS NULL OR a.last_touch_at <= a.first_touch_at)
       )::int AS sem_primeiro_contato,
       -- Os tres abaixo existem porque a faixa de indicadores do protótipo
       -- nomeia estes cinco, e três deles não tinham número nenhum: a tela
@@ -437,7 +441,7 @@ export async function boardPreVendas(organizacaoId: string, filtros: FiltrosPreV
       -- "Sem próxima ação" é a mesma definição do cartão: lead aberto sem
       -- tarefa em aberto. O join é pelo lead legado, igual ao resto do arquivo.
       count(*) FILTER (
-        WHERE closed_at IS NULL
+        WHERE a.closed_at IS NULL
           AND NOT EXISTS (
             SELECT 1 FROM tarefas t
              WHERE t.lead_id = a.lead_legado_id
@@ -446,13 +450,18 @@ export async function boardPreVendas(organizacaoId: string, filtros: FiltrosPreV
           )
       )::int AS sem_proxima_acao,
       count(*) FILTER (
-        WHERE qualificado_em >= date_trunc('month', now())
+        WHERE a.qualificado_em >= date_trunc('month', now())
       )::int AS qualificados_no_mes,
       -- Média só sobre quem FOI contatado: incluir quem nunca foi puxaria o
       -- número para baixo e diria que o time responde rápido.
-      avg(EXTRACT(EPOCH FROM (last_touch_at - first_touch_at)) / 3600)
-        FILTER (WHERE last_touch_at > first_touch_at)::float AS horas_ate_contato
-      FROM aquisicoes a WHERE organizacao_id = ${organizacaoId}::uuid
+      avg(EXTRACT(EPOCH FROM (a.last_touch_at - a.first_touch_at)) / 3600)
+        FILTER (WHERE a.last_touch_at > a.first_touch_at)::float AS horas_ate_contato
+      FROM aquisicoes a
+      -- Idem: o resumo soma o mesmo universo que as colunas, ou a tela diz
+      -- "ativos 975" com 938 cartões embaixo.
+      LEFT JOIN leads lg ON lg.id = a.lead_legado_id
+     WHERE a.organizacao_id = ${organizacaoId}::uuid
+       AND ${somenteDePreVendas(sql)}
   `);
 
   const contadores = await contadoresDeViews(organizacaoId, filtros.usuarioId);
