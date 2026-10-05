@@ -107,6 +107,26 @@ BEGIN
     DELETE FROM empresas WHERE id = par.duplicado;
   END LOOP;
 
+  -- Declara a própria perda para o gate de sanidade.
+  --
+  -- `checar-carga.sh` compara cada tabela contra a foto tirada antes da carga e
+  -- reprova se alguma perdeu linha. A mescla faz `empresas` perder linha de
+  -- propósito. Pôr `empresas` na allowlist estática do script cegaria o gate
+  -- para perda REAL de empresa daqui em diante; declarar aqui limita a
+  -- tolerância exatamente ao que esta mescla removeu — uma linha a mais que
+  -- suma ainda reprova.
+  CREATE TABLE IF NOT EXISTS _carga_perdas_declaradas (
+    tabela        text NOT NULL,
+    linhas        bigint NOT NULL,
+    motivo        text NOT NULL,
+    declarado_em  timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (tabela, motivo)
+  );
+  INSERT INTO _carga_perdas_declaradas (tabela, linhas, motivo)
+  VALUES ('empresas', total_pares,
+          'mescla de cadastros duplicados por CNPJ (nome fantasia x razão social)')
+  ON CONFLICT (tabela, motivo) DO UPDATE SET linhas = EXCLUDED.linhas, declarado_em = now();
+
   RAISE NOTICE '── mescla concluída: % par(es), % referência(s) repassada(s), % redundante(s) descartada(s)',
                total_pares, total_movidas, conflitos;
 END $$;

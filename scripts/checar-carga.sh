@@ -63,10 +63,15 @@ fi
 set +e
 saida_b=$(psql "$URL" -v ON_ERROR_STOP=1 2>&1 <<'SQL'
 DO $$
-DECLARE r record; n bigint; perdidas int := 0;
+DECLARE r record; n bigint; perdidas int := 0; declarado bigint;
   -- Perdas de linha JÁ DECLARADAS em docs/virada/PLANO-DE-CARGA.md, seção
   -- "Perdas". Qualquer tabela fora desta lista que perca linha reprova.
-  aceitas text[] := ARRAY['lead_labels'];
+  aceitas text[] := ARRAY['lead_labels', 'meta_lead_staging'];
+  -- meta_lead_staging: a migration 0090 deduplica por `fb_lead_id`, mantendo a
+  -- linha mais recente. Medido no dump de 05/10/2026: 18 fb_lead_id repetidos,
+  -- 18 linhas excedentes, delta -18. É o mesmo webhook do Meta gravado mais de
+  -- uma vez; a 0090 cria UNIQUE(fb_lead_id) logo em seguida e sem a limpeza
+  -- ela nem aplicaria. Não é perda de fato: é dado que já nascia duplicado.
 BEGIN
   FOR r IN SELECT tabela, linhas FROM _carga_contagem_antes ORDER BY tabela LOOP
     IF to_regclass('public.' || quote_ident(r.tabela)) IS NULL THEN
@@ -75,10 +80,26 @@ BEGIN
       CONTINUE;
     END IF;
     EXECUTE format('SELECT count(*) FROM %I', r.tabela) INTO n;
+    -- Além da allowlist estática, um passo de carga pode DECLARAR a própria
+    -- perda em `_carga_perdas_declaradas`, dizendo quantas linhas e por quê.
+    -- É o caso da mescla de empresas duplicadas: ela é deliberada, acontece
+    -- depois da carga, e o número exato só se conhece ao rodar. Pôr `empresas`
+    -- na allowlist estática resolveria o sintoma e cegaria o gate para perda
+    -- real de empresa no futuro — a declaração é limitada à quantidade
+    -- informada, então qualquer linha além dela ainda reprova.
+    declarado := 0;
+    IF to_regclass('public._carga_perdas_declaradas') IS NOT NULL THEN
+      EXECUTE 'SELECT COALESCE(sum(linhas),0) FROM _carga_perdas_declaradas WHERE tabela = $1'
+        INTO declarado USING r.tabela;
+    END IF;
     IF n <> r.linhas THEN
       RAISE NOTICE 'tabela %: % -> % (delta %)%', r.tabela, r.linhas, n, n - r.linhas,
-        CASE WHEN n < r.linhas AND r.tabela = ANY(aceitas) THEN '  [perda declarada]' ELSE '' END;
-      IF n < r.linhas AND NOT (r.tabela = ANY(aceitas)) THEN perdidas := perdidas + 1; END IF;
+        CASE WHEN n < r.linhas AND r.tabela = ANY(aceitas) THEN '  [perda declarada]'
+             WHEN n < r.linhas AND (r.linhas - n) <= declarado THEN '  [perda declarada em _carga_perdas_declaradas]'
+             ELSE '' END;
+      IF n < r.linhas AND NOT (r.tabela = ANY(aceitas)) AND (r.linhas - n) > declarado THEN
+        perdidas := perdidas + 1;
+      END IF;
     END IF;
   END LOOP;
   IF perdidas > 0 THEN
