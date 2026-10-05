@@ -22,6 +22,10 @@ import { isPersonalView, isReader } from "@/lib/auth/roles";
 import { filaDeLoops } from "@/lib/vendas/loops-abertos";
 import { lerUsoCallfaceAi } from "@/lib/integrations/callface-ai/leitura-dominio";
 import { verificarProntidao } from "@/lib/ai-platform/prontidao";
+// A MESMA função que o board usa. Importada, não recriada: o painel
+// promete levar à mesma conta do board, e duas cópias da regra divergem
+// em silêncio — foi o que aconteceu até 05/10 (962 contra 925).
+import { somenteDePreVendas } from "@onface/acquisition";
 
 export interface Quem {
   organizacaoId: string;
@@ -72,6 +76,7 @@ export async function retrato(q: Quem): Promise<Retrato> {
     WITH base AS (
       SELECT a.responsavel_id, a.created_at, px.vence_em
         FROM aquisicoes a
+        LEFT JOIN leads lg ON lg.id = a.lead_legado_id
         LEFT JOIN LATERAL (
           SELECT COALESCE(t.vence_em, t.data_vencimento::timestamptz) AS vence_em
             FROM tarefas t
@@ -80,6 +85,7 @@ export async function retrato(q: Quem): Promise<Retrato> {
            LIMIT 1
         ) px ON TRUE
        WHERE a.organizacao_id = ${q.organizacaoId}::uuid AND a.closed_at IS NULL
+         AND ${somenteDePreVendas(sql)}
          AND (${resp}::uuid IS NULL OR a.responsavel_id = ${resp}::uuid)
     )
     SELECT count(*)::int AS abertos,
@@ -117,7 +123,9 @@ export async function retrato(q: Quem): Promise<Retrato> {
       FROM aquisicoes a
       LEFT JOIN empresas e ON e.id = a.empresa_id
       LEFT JOIN pessoas p ON p.id = a.pessoa_id
+      LEFT JOIN leads lg ON lg.id = a.lead_legado_id
      WHERE a.organizacao_id = ${q.organizacaoId}::uuid AND a.closed_at IS NULL
+       AND ${somenteDePreVendas(sql)}
        AND (${resp}::uuid IS NULL OR a.responsavel_id = ${resp}::uuid)
        AND NOT EXISTS (
          SELECT 1 FROM tarefas t
