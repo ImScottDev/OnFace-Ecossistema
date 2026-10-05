@@ -19,6 +19,7 @@ import { syncOportunidadeItensFromProposta } from "@/lib/crm/composicao-comercia
 import { formarGruposComerciais, vincularContratoPreparadoAoGrupo } from "@/lib/crm/grupo-comercial";
 import { exigeContrato } from "@/lib/crm/commercial-model";
 import { gerarContratoDeTemplate } from "@/lib/crm/contrato-template";
+import { appUrl } from "@/lib/app-url";
 
 type PropostaRow = typeof propostas.$inferSelect;
 
@@ -112,7 +113,7 @@ export async function enviarPropostaComCheckout(opts: {
   // o vendedor não preenchia uma data. Materializamos essa regra no registro
   // no momento do envio para que exibição, worker e aceite usem a mesma data.
   const dataValidadeEfetiva = proposta.dataValidade || validadePadraoIso();
-  const base = process.env.NEXTAUTH_URL || "https://crm.callface.io";
+  const base = appUrl();
   const clienteNome = [lead?.nome, lead?.sobrenome].filter(Boolean).join(" ") || lead?.nome || "";
   const linkPublico = `${base}/p/${proposta.id}`;
 

@@ -5,15 +5,7 @@ import { authTokens } from "@/lib/db/schema";
 
 export type TokenTipo = "convite" | "reset";
 
-/** URL base pública do app (pros links de email). */
-export function appUrl(): string {
-  return (
-    process.env.NEXTAUTH_URL ||
-    process.env.AUTH_URL ||
-    process.env.NEXT_PUBLIC_APP_URL ||
-    "https://crm.callface.io"
-  ).replace(/\/$/, "");
-}
+export { appUrl } from "@/lib/app-url";
 
 const sha256 = (raw: string) => crypto.createHash("sha256").update(raw).digest("hex");
 

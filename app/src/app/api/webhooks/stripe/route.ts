@@ -15,6 +15,7 @@ import { notificarPagamentoConfirmado } from "@/lib/crm/notificar";
 import { publicarEvento } from "@/lib/events/outbox";
 import { dispararAutomacoesFinanceiras } from "@/lib/crm/automacao-engine";
 import { isStripeMockMode } from "@/lib/integrations/stripe-checkout";
+import { appUrl } from "@/lib/app-url";
 
 /**
  * Pagamento CONFIRMADO (payment_status === "paid") — Commercial Core v2
@@ -332,7 +333,7 @@ async function handleAsyncPaymentFailed(session: Record<string, unknown>): Promi
       usuarioId: proposta.criadoPorId,
       tipo: "pagamento_falhou",
       titulo: `Boleto não compensou — ${quem}`,
-      mensagem: `O boleto da proposta #P-${String(proposta.numero).padStart(3, "0")}-v${proposta.versao} venceu sem pagamento. O link ${process.env.NEXTAUTH_URL || "https://crm.callface.io"}/p/${proposta.id} já gera um checkout novo automaticamente — combine com o cliente uma nova forma de pagamento.`,
+      mensagem: `O boleto da proposta #P-${String(proposta.numero).padStart(3, "0")}-v${proposta.versao} venceu sem pagamento. O link ${appUrl()}/p/${proposta.id} já gera um checkout novo automaticamente — combine com o cliente uma nova forma de pagamento.`,
       link: `/propostas/${proposta.id}`,
     }).catch((e) => console.error("[StripeWebhook] falha ao notificar boleto falhado:", e));
   }

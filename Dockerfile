@@ -1,20 +1,8 @@
-# Imagem do CRM, construída a partir da RAIZ do repositório.
+# Imagem do app ONFACE (Next), construída a partir da RAIZ do repositório.
 #
-# POR QUE ESTE ARQUIVO EXISTE. O `app/Dockerfile` parou de construir quando o
-# repositório virou workspace pnpm, e ninguém notou porque ninguém constrói a
-# imagem desde então. Provado no CP63, com `docker build --target deps`:
-#
-#     npm error code EUNSUPPORTEDPROTOCOL
-#     npm error Unsupported URL Type "workspace:": workspace:*
-#
-# São duas incompatibilidades no mesmo ponto. `app/package.json` declara os nove
-# `@onface/*` como `workspace:*`, que é protocolo do pnpm e o `npm ci` não
-# entende. E o contexto do build era `./app` (ver `_deploy-prod/
-# docker-compose.yml`), então `packages/` não entrava na imagem nem se o
-# instalador entendesse.
-#
-# Isso não era um detalhe de build: **a virada depende de construir esta
-# imagem**, e ela estava impossível desde a primeira fase do refactor.
+# O contexto é a raiz porque o `app` depende dos `@onface/*` de `packages/`
+# por `workspace:*`, protocolo do pnpm: com contexto `./app` e `npm ci` (o
+# arranjo antigo), a imagem não constrói.
 #
 # O install e o build ficam no MESMO estágio de propósito. O pnpm liga os
 # pacotes do workspace por symlink para dentro de `node_modules`, e copiar essa

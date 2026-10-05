@@ -11,6 +11,9 @@ type Jornada = { nome: string; todas?: string[]; umaDelas?: string[] };
 // Sem estas, o próprio CRM não consegue iniciar de forma coerente.
 const NUCLEO: Jornada[] = [
   { nome: "núcleo", todas: ["DATABASE_URL", "REDIS_URL", "NEXTAUTH_SECRET", "NEXTAUTH_URL"] },
+  // Os webhooks de lead são fail-closed: sem o segredo, todo lead do RD e da
+  // Meta (via n8n) é recusado na entrada, em silêncio para quem opera.
+  { nome: "entrada de leads", todas: ["RD_WEBHOOK_SECRET", "META_LEADIDS_WEBHOOK_SECRET"] },
 ];
 
 // Integrações podem ser habilitadas em momentos distintos. O deploy não deve

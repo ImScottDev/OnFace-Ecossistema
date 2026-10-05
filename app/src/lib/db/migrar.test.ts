@@ -55,7 +55,7 @@ test("o deploy aplica migration antes de trocar container", () => {
   assert.ok(deploy.includes("app/dist/migrar.mjs"), "deploy.sh não chama o migrador empacotado no runtime");
   assert.ok(deploy.includes("MIGRATIONS_DIR=/repo/app/dist/migrations"), "deploy.sh não aponta o migrador para os SQLs da imagem");
   const posMigrar = deploy.indexOf("app/dist/migrar.mjs");
-  const posSwap = deploy.indexOf("docker compose up -d");
+  const posSwap = deploy.indexOf(" up -d --no-deps --no-build");
   assert.ok(posMigrar > -1 && posSwap > -1 && posMigrar < posSwap,
     "a migração precisa rodar ANTES do swap de container, senão o código novo encontra schema velho");
 });
@@ -63,8 +63,8 @@ test("o deploy aplica migration antes de trocar container", () => {
 test("o deploy aponta para caminho e container que existem no compose", () => {
   const deploy = fs.readFileSync(path.join(RAIZ, "deploy.sh"), "utf8");
   const compose = fs.readFileSync(path.join(RAIZ, "docker-compose.yml"), "utf8");
-  const m = deploy.match(/APP_CONTAINER:-([\w-]+)/);
-  assert.ok(m, "deploy.sh sem APP_CONTAINER");
+  const m = deploy.match(/CONTAINER_APP=([\w-]+)/);
+  assert.ok(m, "deploy.sh sem CONTAINER_APP");
   assert.ok(compose.includes(`container_name: ${m[1]}`), `deploy.sh referencia o container "${m[1]}", que não existe no docker-compose.yml`);
 });
 

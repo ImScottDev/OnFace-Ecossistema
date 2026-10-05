@@ -8,8 +8,6 @@ node_modules
 **/dist
 .git
 .github
-_deploy-dev
-_deploy-prod
 docs
 **/*.log
 **/.env
@@ -18,3 +16,14 @@ docs
 # Uploads vivem em volume no runtime; incluí-los no contexto só torna o build
 # lento e não os torna disponíveis dentro da imagem final.
 uploads
+# Nada disto entra na imagem: dado de auditoria, ferramenta de agente, backup.
+_dados
+auditoria-cleanroom-*
+.agents
+**/.agents
+.claude
+.codex
+**/.impeccable
+_backup*
+**/*.sql.gz
+**/*.dump

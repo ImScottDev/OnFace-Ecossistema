@@ -18,7 +18,7 @@ import path from "node:path";
  *   - `/api/apollo/webhook` não tinha verificação nenhuma → HTTP 200, e o
  *     handler sobrescreve telefone/e-mail de lead real.
  *   - `rd-lead` e `meta-lead-ids` caíam num secret literal escrito no próprio
- *     arquivo (`"callface-rd-2026"`), público pra quem tem o repositório.
+ *     arquivo, público pra quem tem o repositório.
  *
  * Este teste lê o código de cada webhook e exige as duas metades do contrato:
  * uma variável de ambiente sem valor literal de fallback, e uma recusa

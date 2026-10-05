@@ -6,6 +6,7 @@ import { contratos } from "@/lib/db/schema";
 import { publicarEvento } from "@/lib/events/outbox";
 import { enviarEmailFinalContrato } from "@/lib/crm/contrato-email-final";
 import { processarContratoAssinado } from "@/lib/crm/pos-assinatura";
+import { appUrl } from "@/lib/app-url";
 
 type Recipient = {
   email?: string;
@@ -123,7 +124,7 @@ export async function POST(request: NextRequest) {
       metadata: { recipients },
     });
     console.log(`[DocumensoWebhook] contrato ${contract.id} assinado — familia=${resultado.familia} ganho=${resultado.ganhoLiberado} entrega=${resultado.entregaLiberada} pendencia=${resultado.pendenciaFinanceiraId ?? "—"}`);
-    const base = process.env.NEXTAUTH_URL || "https://crm.callface.io";
+    const base = appUrl();
     await enviarEmailFinalContrato({
       contrato: contract,
       baseUrl: base,

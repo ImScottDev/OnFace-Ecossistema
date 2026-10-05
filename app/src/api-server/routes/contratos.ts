@@ -7,6 +7,7 @@ import { getCtx } from "../compat.js";
 import { contratoPdfHtml, renderContratoPdf } from "@/lib/crm/contrato-pdf";
 import { baixarDocumentoAssinado, isDocumensoConfigured } from "@/lib/crm/signature/documenso-provider";
 import { enviarEmailFinalContrato } from "@/lib/crm/contrato-email-final";
+import { appUrl } from "@/lib/app-url";
 
 const app = new Hono();
 
@@ -268,7 +269,7 @@ app.post("/contratos/:id/email-final/retry", async (c) => {
   if (!contract) return c.json({ error: "Contrato não encontrado" }, 404);
   if (contract.assinaturaStatus !== "assinado") return c.json({ error: "O contrato ainda não está assinado" }, 409);
 
-  const base = process.env.NEXTAUTH_URL || "https://crm.callface.io";
+  const base = appUrl();
   const entrega = await enviarEmailFinalContrato({ contrato: contract, baseUrl: base, force: true });
   return c.json({ contratoId: id, entrega });
 });

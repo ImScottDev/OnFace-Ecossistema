@@ -13,7 +13,7 @@
  * vez de começar de uma frase.
  *
  * Diferente dos `checar-onface-*`, este precisa do servidor DE PÉ, e dos dois
- * processos — o Next e o Hono na 3011. Em desenvolvimento o rewrite de `/api/*`
+ * processos — o Next e o Hono (API_PORT, 3001). Em desenvolvimento o rewrite de `/api/*`
  * só existe com `NODE_ENV=development`; sem o Hono, 140 telas respondem 200 com
  * o corpo vazio de dado, que é o modo mais convincente de uma tela mentir.
  *
@@ -26,7 +26,7 @@ import { sql } from "drizzle-orm";
 import { DESTINOS } from "@/components/onface/navegacao";
 
 const BASE = process.env.BASE || "http://localhost:3000";
-const API = process.env.API_BASE || "http://localhost:3011";
+const API = process.env.API_BASE || `http://localhost:${process.env.API_PORT || "3001"}`;
 
 let falhas = 0;
 const ok = (cond: unknown, msg: string) => {

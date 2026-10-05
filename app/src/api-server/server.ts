@@ -68,6 +68,7 @@ import { automacoesTagsRoutes } from "./routes/automacoes-tags.js";
 import { aiPlatformRoutes } from "./routes/ai-platform.js";
 import { contratoTemplatesRoutes } from "./routes/contrato-templates.js";
 import { pipelineCrm2Routes } from "./routes/pipeline-crm2.js";
+import { appUrl } from "@/lib/app-url";
 
 const app = new Hono();
 
@@ -79,7 +80,9 @@ app.use("*", logger());
 
 // Global middleware
 app.use("*", cors({
-  origin: ["https://crm.scottstudio.com.br", "https://n8n.scottdev.com.br", "http://localhost:3000"],
+  // O front chama a API pela mesma origem (Traefik em produção, rewrite do
+  // next.config em dev local). n8n e webhooks chamam servidor a servidor, sem CORS.
+  origin: [appUrl(), "http://localhost:3000"],
   allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowHeaders: ["Content-Type", "Authorization"],
   credentials: true,

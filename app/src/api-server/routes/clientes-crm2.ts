@@ -21,6 +21,7 @@ import { getCtx, getGestaoCtx, exigirCtx } from "../compat.js";
 import { abrirPortal } from "@/lib/integrations/stripe-portal";
 import { registrarMudancaResponsavel } from "@/lib/crm/owner";
 import { publicarEvento } from "@/lib/events/outbox";
+import { appUrl } from "@/lib/app-url";
 
 // CS — Health Check (24/08, achado real: NPS já existe como infra (tabela
 // `nps_respostas`, rota pública de resposta em nps.ts) mas NUNCA é
@@ -1729,7 +1730,7 @@ app.post("/clientes/:empresaId/portal-stripe", async (c) => {
     return c.json({ error: `${empresa.nome} não tem cliente no Stripe vinculado. Sem isso não há portal para abrir.` }, 409);
   }
 
-  const base = process.env.NEXTAUTH_URL || "https://crm.callface.io";
+  const base = appUrl();
   try {
     const portal = await abrirPortal({ stripeCustomerId, returnUrl: `${base}/clientes/${empresaId}` });
     // Modo mock (dev sem chave): não há sessão, e dizer isso é melhor do que

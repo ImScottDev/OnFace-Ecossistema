@@ -23,6 +23,7 @@ import { notificarPropostaRespondida } from "@/lib/crm/notificar-proposta";
 import { calcularFamiliaDoGrupo, regraDaFamilia, exigeContratoNoGrupoAsync, propagarFamiliaNosItensDoGrupo } from "@/lib/crm/politica-familia";
 import { notificarValidacaoManualNecessaria } from "@/lib/crm/notificar";
 import type { EstadoFechamento } from "@/lib/crm/estado-fechamento";
+import { appUrl } from "@/lib/app-url";
 
 export interface ResultadoGrupoAceite {
   grupoId: string;
@@ -196,7 +197,7 @@ export async function processarAceiteDaProposta(opts: {
           proximoPasso: "contrato",
           serviceFamily: familia,
           estado: "contrato_enviado",
-          proximoUrl: signingUrl || `${process.env.NEXTAUTH_URL || "https://crm.callface.io"}/p/${proposta.id}#grupo-${grupo.id}`,
+          proximoUrl: signingUrl || `${appUrl()}/p/${proposta.id}#grupo-${grupo.id}`,
         });
       } catch (err) {
         console.error(`[proposta-aceite] falha ao gerar contrato do grupo ${grupo.id}:`, err);

@@ -30,6 +30,7 @@ import {
 } from "@/lib/crm/proposta-publica";
 import { criarPropostaComItens } from "@/lib/crm/proposta-criacao";
 import { agruparItensPorLinhaComercial, organizarVendaMultiLinha } from "@/lib/crm/oportunidade-bundle";
+import { appUrl } from "@/lib/app-url";
 
 const app = new Hono();
 
@@ -580,7 +581,7 @@ app.get("/propostas/:id/publica", async (c) => {
       }
     }
 
-    const base = process.env.NEXTAUTH_URL || "https://crm.callface.io";
+    const base = appUrl();
     let checkoutUrl: string | null = null;
     let pagamentoEstado: "aberto" | "pago" | "boleto_pendente" | "indisponivel" | null = null;
     if (grupo.checkoutId) {

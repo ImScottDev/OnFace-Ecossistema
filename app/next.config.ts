@@ -65,7 +65,8 @@ const nextConfig: NextConfig = {
     // (docker-compose.yml, routers callface-crm / callface-crm-api) só em dev, pra
     // eliminar essa divergência antes de remover as rotas Next duplicadas de vez.
     if (process.env.NODE_ENV === "development") {
-      const apiPort = process.env.HONO_API_PORT || "3002";
+      // A mesma variável que a API lê para escutar (server.ts): uma porta só.
+      const apiPort = process.env.API_PORT || "3001";
       return {
         beforeFiles: [
           uploadsCompat,
@@ -78,18 +79,6 @@ const nextConfig: NextConfig = {
     }
 
     return [uploadsCompat];
-  },
-  async headers() {
-    return [
-      {
-        source: "/api/leads",
-        headers: [
-          { key: "Access-Control-Allow-Origin", value: "*" },
-          { key: "Access-Control-Allow-Methods", value: "POST, OPTIONS" },
-          { key: "Access-Control-Allow-Headers", value: "Content-Type" },
-        ],
-      },
-    ];
   },
 };
 

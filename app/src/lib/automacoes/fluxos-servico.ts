@@ -22,6 +22,7 @@ import {
 } from "./grafo";
 import { configDaVersao, ensaiarFluxo, grafoDaVersao, iniciarExecucao, cancelarExecucao as cancelarNoExecutor } from "./executor";
 import { proximaExecucao } from "./agenda";
+import { appUrl } from "@/lib/app-url";
 
 type Automacao = typeof automacoes.$inferSelect;
 type Versao = typeof automacaoVersoes.$inferSelect;
@@ -55,7 +56,7 @@ const difere = (r: Rascunho, v: Versao | undefined) => !v || canonico({ n: r.gra
 
 function urlWebhook(token: string | null): string | null {
   if (!token) return null;
-  const base = (process.env.NEXTAUTH_URL || process.env.APP_URL || "http://localhost:3000").replace(/\/$/, "");
+  const base = appUrl();
   return `${base}/api/webhooks/automacoes/${token}`;
 }
 

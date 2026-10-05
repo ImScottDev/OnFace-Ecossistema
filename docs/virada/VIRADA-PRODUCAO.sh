@@ -41,14 +41,14 @@ DO_DEV = [
     "DOCUMENSO_API_URL", "DOCUMENSO_API_TOKEN", "DOCUMENSO_WEBHOOK_SECRET",
     # Stripe em modo teste até você virar a chave.
     "STRIPE_CHECKOUT_MODE",
+    # Tokens que o n8n manda no ?token= dos webhooks de lead. O código novo
+    # exige a variável e recusa sem ela: sem estas, lead do RD morre na entrada.
+    "RD_WEBHOOK_SECRET", "META_LEADIDS_WEBHOOK_SECRET",
 ]
 
-# Valores literais: são os tokens que o n8n JÁ MANDA hoje. O código antigo os
-# tinha escritos dentro do arquivo como padrão; o novo exige a variável e
-# recusa sem ela. Sem estas duas, lead do RD morre no primeiro minuto.
+# Valor literal só para o que não é segredo. Os tokens de webhook do RD e da
+# Meta vêm do dev, como o resto: segredo não fica escrito em arquivo versionado.
 LITERAIS = {
-    "RD_WEBHOOK_SECRET": "callface-rd-2026",
-    "META_LEADIDS_WEBHOOK_SECRET": "callface-meta-ids-2026",
     # Os containers rodam em UTC e o navegador em São Paulo: toda tela que
     # conta "há N dias" diverge, e depois das 21h "hoje" vira "ontem".
     "TZ": "America/Sao_Paulo",

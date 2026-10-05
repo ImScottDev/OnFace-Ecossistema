@@ -18,6 +18,7 @@ import {
   wuzapiCreateUser, wuzapiDeleteUser, wuzapiFindUser,
 } from "@/lib/whatsapp/client";
 import { randomBytes } from "crypto";
+import { appUrl } from "@/lib/app-url";
 
 const app = new Hono();
 
@@ -1279,7 +1280,7 @@ app.post("/whatsapp/status", async (c) => {
     }
 
     const token = randomBytes(24).toString("hex");
-    const webhookBaseUrl = `${process.env.NEXTAUTH_URL || "http://mcrm-production:3000"}/api/whatsapp/webhook`;
+    const webhookBaseUrl = `${appUrl()}/api/whatsapp/webhook`;
     const webhookUrl = `${webhookBaseUrl}?secret=${encodeURIComponent(WEBHOOK_SECRET)}`;
 
     try {

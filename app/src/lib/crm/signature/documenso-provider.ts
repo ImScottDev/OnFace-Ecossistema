@@ -18,7 +18,7 @@ function baseUrl(): string {
 }
 
 function apiKey(): string {
-  return process.env.DOCUMENSO_API_TOKEN || process.env.DOCUMENSO_API_KEY || "";
+  return process.env.DOCUMENSO_API_TOKEN || "";
 }
 
 function recipientsFrom(value: unknown): SignatureRecipient[] {

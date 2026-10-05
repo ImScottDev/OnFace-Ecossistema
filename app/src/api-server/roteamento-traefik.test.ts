@@ -32,15 +32,13 @@ function acharRaiz(): string {
   throw new Error("raiz do repositório não encontrada a partir de " + process.cwd());
 }
 const RAIZ = acharRaiz();
-const COMPOSES = ["docker-compose.yml", "_deploy-dev/docker-compose.yml", "_deploy-prod/docker-compose.yml"];
+const COMPOSES = ["docker-compose.yml"];
 
 /**
  * Rotas Next que NÃO devem receber tráfego, com o motivo. Mexer aqui é decisão
  * consciente: ou a rota é código morto a remover, ou precisa entrar na allowlist.
  */
-const INALCANCAVEIS_POR_DECISAO: Record<string, string> = {
-  "/api/meta/resolve": "sem nenhum consumidor no frontend; candidata a remoção (P3 do tracker de production readiness)",
-};
+const INALCANCAVEIS_POR_DECISAO: Record<string, string> = {};
 
 /**
  * Prefixos de `/api` que chegam no Next.

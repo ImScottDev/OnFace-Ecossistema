@@ -20,7 +20,7 @@ name: portão
 
 on:
   push:
-    branches: ["main", "dev", "homolog", "refactor/**", "onface/**"]
+    branches: ["main"]
   pull_request:
 
 jobs:

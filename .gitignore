@@ -68,3 +68,8 @@ infra/documenso/certs/*.pem
 .agent-*.pid
 .agent-*-prompt.txt
 
+# Configuração pessoal e caches de ferramenta (o projeto versiona só o que é do projeto)
+.claude/settings.local.json
+**/.impeccable/*.cache.json
+.vite/
+*.tsbuildinfo

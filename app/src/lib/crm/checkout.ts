@@ -27,6 +27,7 @@ import { boletoExpiresAfterDaysFromValidade, createGroupCheckout, createStripeCu
 import { publicarEvento } from "@/lib/events/outbox";
 import { vincularCheckoutAoGrupo } from "@/lib/crm/grupo-comercial";
 import { montarMetadataComercial } from "@/lib/crm/metadata-comercial";
+import { appUrl } from "@/lib/app-url";
 
 export type CriarCheckoutResult =
   | { ok: true; checkoutId: string; url: string }
@@ -172,7 +173,7 @@ export async function criarCheckoutParaGrupo(opts: {
     }
   }
 
-  const base = process.env.NEXTAUTH_URL || "https://crm.callface.io";
+  const base = appUrl();
   let sessionId: string, url: string;
   try {
     const session = await createGroupCheckout({
