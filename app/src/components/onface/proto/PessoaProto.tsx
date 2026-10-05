@@ -82,7 +82,7 @@ export function PessoaProto({ lead, timeline }: {
 }) {
   const router = useRouter();
 
-  const registro = React.useMemo(() => registroDoDesenho(lead), [lead]);
+  const registro = React.useMemo(() => ({ ...registroDoDesenho(lead), criadoEm: lead.criadoEm }), [lead]);
 
   const catalogo = React.useMemo(() => ({
     EQUIPE: lead.responsavel.nome ? [lead.responsavel.nome] : [],

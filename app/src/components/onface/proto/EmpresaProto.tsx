@@ -49,6 +49,8 @@ export function EmpresaProto({ empresa, lead, timeline }: {
   const registro = React.useMemo(() => {
     const base = lead ? registroDoDesenho(lead) : null;
     return {
+      /* Data real de criação do lead: a ficha mostrava "Hoje"/data fixa. */
+      criadoEm: lead?.criadoEm ?? null,
       ...(base ?? {
         id: empresa.id, registro: empresa.id, pessoa: "Sem contato", cargo: "",
         email: null, tel: null, whatsapp: null, linkedin: null, tags: [],

@@ -238,7 +238,9 @@ class Logica extends React.Component<any, any> {
       ] });
     const juntar = (base) => base.concat(EXTRA.filter(x => !base.some(c => c.id === x.id)));
     const convs = juntar((Es0 && Es0.ler("conversas", null)) || D.CONVERSAS || []).map(c => c.canal === "Instagram" ? Object.assign({}, c, { canal: "WhatsApp", numero: (c.numero || "").indexOf("callface") >= 0 ? "Suporte · (11) 4003-1030" : "Comercial · (11) 4003-1020" }) : c);
-    const EQUIPE = D.EQUIPE || ["Camila Reis", "Diego Nunes", "Ana Vitória"];
+    /* ANTES: sem equipe vinda do adaptador, caía em três nomes do protótipo
+       (Camila Reis, Diego Nunes, Ana Vitória) que não existem na organização. */
+    const EQUIPE = D.EQUIPE || [];
     const EU = EQUIPE[0];
     if (!this._pedidoLido && Es0) {
       this._pedidoLido = true;
@@ -551,7 +553,8 @@ class Logica extends React.Component<any, any> {
     const novasDesde = S.novas && S.novas.id === C.id ? S.novas.desde : (C.naoLidas > 0 ? arr.length - C.naoLidas : -1);
     const nNovas = novasDesde >= 0 ? arr.length - novasDesde : 0;
     const iniEU = ini(C.resp || EU);
-    const email = L.desconhecido ? (L.email || "Sem e-mail") : (slug(primeiro) || "contato") + "@" + (slug(L.empresa) || "email") + ".com.br";
+    /* ANTES: e-mail do lead montado como nome@empresa.com.br quando o lead existia. Falso: ninguém cadastrou esse endereço. Usa só o e-mail real. */
+      const email = L.email || "Sem e-mail";
     const nId = +((L.id || "l1").replace(/\D/g, "")) || 1;
     const tel = L.desconhecido ? (L.tel || "Sem telefone") : "+55 11 9" + String(1000 + (nId * 739) % 9000) + "-" + String(1000 + (nId * 311) % 9000);
     const ligarCallface = () => {
@@ -582,11 +585,11 @@ class Logica extends React.Component<any, any> {
         temDia, dia: m.dia, temNovas, novasLabel: nNovas === 1 ? "1 MENSAGEM NOVA" : nNovas + " MENSAGENS NOVAS",
         t: m.apagada ? "Você apagou esta mensagem" : (m.t || ""), h: m.h, autor: m.autor || "",
         ehSis: m.de === "sis", ehNota: m.de === "nota", ehBalao: (ehIn || ehOut) && !ehMail, ehEmailCard: ehMailM, ehIn, ehOut,
-        mailNome: ehIn ? (L.pessoa || "") : (C.resp || EU), mailEnd: ehIn ? email : slug((C.resp || EU).split(" ")[0]) + "@onface.com.br",
-        mailPara: ehIn ? (C.resp || EU) + " <comercial@onface.com.br>" : (L.pessoa || "") + " <" + email + ">",
+        mailNome: ehIn ? (L.pessoa || "") : (C.resp || EU), /* ANTES: remetente do e-mail enviado montado como <nome>@onface.com.br. Falso: o e-mail do usuário não chega aqui; vazio. */ mailEnd: ehIn ? email : "",
+        /* ANTES: destinatário "comercial@onface.com.br" inventado. Sem e-mail real do usuário, só o nome. */ mailPara: ehIn ? (C.resp || EU) : (L.pessoa || "") + " <" + email + ">",
         mailAv: ehIn ? av(L.pessoa, 32, 11) : "flex:0 0 auto;width:32px;height:32px;border-radius:9999px;background:#12171d;color:#fff;font-size:11px;font-weight:700;display:grid;place-items:center",
         mailCorpo: "font-size:13.5px;line-height:1.6;color:#1f252c;white-space:pre-wrap;text-wrap:pretty;" + (m.apagada ? "font-style:italic;color:#67787c" : ""),
-        assinatura: (C.resp || EU) + " · OnFace\n" + slug((C.resp || EU).split(" ")[0]) + "@onface.com.br · (11) 4003-1020",
+        /* ANTES: assinatura com <nome>@onface.com.br e telefone (11) 4003-1020 inventados. Agora só nome. */ assinatura: (C.resp || EU) + " · OnFace",
         imgWa: m.img ? React.createElement("img", { src: m.img, alt: m.arq || "", onClick: () => { const w = window.open(); if (w) w.document.write('<body style="margin:0;background:#12171d;display:grid;place-items:center;min-height:100vh"><img src="' + m.img + '" style="max-width:100%;max-height:100vh">'); }, style: { display: "block", maxWidth: 260, maxHeight: 260, borderRadius: 10, margin: "0 0 4px", cursor: "zoom-in", background: "#eeeff3" } }) : null,
         imgMail: m.img ? React.createElement("img", { src: m.img, alt: m.arq || "", onClick: () => { const w = window.open(); if (w) w.document.write('<body style="margin:0;background:#12171d;display:grid;place-items:center;min-height:100vh"><img src="' + m.img + '" style="max-width:100%;max-height:100vh">'); }, style: { display: "block", maxWidth: 320, maxHeight: 260, borderRadius: 10, marginTop: 12, cursor: "zoom-in", boxShadow: "inset 0 0 0 1px #e3e7e8" } }) : null,
         temImg: !!m.img, img: m.img || "", verImg: () => { const w = window.open(); if (w) w.document.write('<title>' + (m.arq || 'Imagem') + '</title><body style="margin:0;background:#12171d;display:grid;place-items:center;min-height:100vh"><img src="' + m.img + '" style="max-width:100%;max-height:100vh">'); },
@@ -970,73 +973,8 @@ class Logica extends React.Component<any, any> {
           + (S.modo === k ? "font-weight:600;color:#12171d;box-shadow:inset 0 -2px 0 " + (k === "nota" ? "#c2330f" : "#fe4f2b") : "font-weight:500;color:#67787c")
       })),
       lig: (() => {
-        const ANALISES = {
-          c4: {
-            dur: 192, quando: "Hoje, 11:40", tipo: "Ligação recebida", geradoEm: "11:44",
-            chance: 68, chanceNota: "↑ 22 pts vs. média de clínicas",
-            urg: 3, urgencia: "Alta", urgNota: "Quer implantar antes de dezembro",
-            sent: [-0.1, 0.1, -0.35, -0.4, 0.05, -0.2, -0.3, 0.25, 0.4, 0.55, 0.6, 0.72], sentLabel: "Positivo no fim", sentVirada: "Virou no preço",
-            falaAt: 41, interrup: 1, maiorFala: "0:14",
-            objetivo: "Entender a perda de ligações fora do horário e marcar uma demonstração do Callface AI com a agenda da clínica.",
-            interesses: ["Atendimento 24h com agendamento direto na agenda", "Confirmação de consulta pelo WhatsApp", "Transbordo para humano quando a IA não resolver"],
-            dores: ["Cerca de 40 ligações perdidas por semana depois das 18h", "Sábado sem ninguém na recepção", "Agendamento perdido vira paciente na concorrência"],
-            objecoes: [
-              { t: "Dúvida se a IA entende paciente idoso, que fala devagar e repete perguntas.", r: "Mostrar na demo uma ligação lenta sendo resolvida sem transbordo." },
-              { t: "Não quer contrato longo.", r: "Reforçar: sem fidelidade e sem taxa de setup." }
-            ],
-            bant: [
-              { k: "Orçamento", st: "Confirmado", ev: "≈ R$ 1.200/mês — “cabe”" },
-              { k: "Autoridade", st: "Parcial", ev: "Decide junto com o Dr. Paulo (financeiro)" },
-              { k: "Necessidade", st: "Confirmado", ev: "40 ligações perdidas por semana" },
-              { k: "Prazo", st: "Confirmado", ev: "Colocar no ar antes de dezembro" }
-            ],
-            resumo: [
-              "Dr. Marcos chegou pelo anúncio de atendimento 24h. A clínica tem duas recepcionistas até as 18h; depois disso ninguém atende e ele estima perder umas 40 ligações por semana, com o sábado sendo o pior dia.",
-              "A Camila apresentou o Callface AI atendendo, agendando direto na agenda da clínica e confirmando pelo WhatsApp. A principal dúvida foi se a IA entende pacientes idosos; ela explicou o transbordo para humano quando a IA não resolve.",
-              "No preço, ele rejeitou contrato longo e reagiu bem ao modelo por minuto, sem fidelidade e sem setup (≈ R$ 1.200/mês). Aceitou uma demonstração na quinta às 15h e pediu convite por e-mail e um resumo no WhatsApp para mostrar ao Dr. Paulo, sócio do financeiro."
-            ],
-            chaves: [["atendimento 24h", 4], ["agendamento", 3], ["WhatsApp", 2], ["sem fidelidade", 2], ["demonstração", 2], ["paciente idoso", 1], ["preço por minuto", 1], ["sócios", 1]],
-            passos: [
-              { k: "p1", t: "Enviar convite da demonstração · qui, 15h", meta: "E-mail · Dr. Marcos", acao: "Criar atividade", tipo: "Reunião", quando: "Hoje" },
-              { k: "p2", t: "Mandar resumo e valores pelo WhatsApp", meta: "WhatsApp · para mostrar ao Dr. Paulo", acao: "Enviar agora", wa: true },
-              { k: "p3", t: "Incluir o Dr. Paulo (financeiro) na proposta", meta: "Contato novo · decisor", acao: "Criar atividade", tipo: "Follow up", quando: "Amanhã" }
-            ],
-            falas: [
-              [0, "at", "Cliniface Saúde, bom dia? Aqui é a Camila, da OnFace. Falo com o Dr. Marcos?"],
-              [6, "cl", "Isso, sou eu. Vi o anúncio de vocês sobre atendimento 24 horas."],
-              [13, "at", "Que bom! Me conta como funciona o atendimento da clínica hoje."],
-              [19, "cl", "Temos duas recepcionistas até as 18h. Depois disso o telefone toca e ninguém atende. Perdemos agendamento todo dia."],
-              [33, "at", "Vocês têm ideia de quantas ligações ficam sem resposta?"],
-              [38, "cl", "Umas 40 por semana, fácil. E no sábado é pior."],
-              [46, "at", "O Callface AI atende, agenda direto na agenda da clínica e manda a confirmação no WhatsApp."],
-              [58, "cl", "Mas ele entende paciente idoso? Muita gente liga, fala devagar, pergunta a mesma coisa duas vezes."],
-              [70, "at", "Entende, e quando não consegue resolver transfere para uma pessoa ou deixa recado."],
-              [80, "cl", "E quanto custa isso? Não quero um contrato de dois anos."],
-              [88, "at", "É por minuto falado, sem fidelidade e sem taxa de setup. Para o volume de vocês fica perto de R$ 1.200 por mês."],
-              [103, "cl", "Hum, cabe. Mas preciso ver funcionando antes de levar para os sócios."],
-              [115, "at", "Podemos fazer uma demonstração com a agenda de vocês. Quinta às 15h funciona?"],
-              [124, "cl", "Quinta eu consigo. Manda o convite pro meu e-mail e um resumo no WhatsApp pra eu mostrar pro Dr. Paulo."],
-              [140, "at", "Combinado, te mando hoje ainda. Quem mais participa da decisão?"],
-              [148, "cl", "Eu e o Dr. Paulo, que cuida do financeiro. A ideia é colocar antes de dezembro, que a agenda lota."],
-              [166, "at", "Perfeito, então já deixo a proposta pronta para vocês dois."],
-              [174, "cl", "Ótimo. Obrigado, Camila."],
-              [180, "at", "Eu que agradeço, doutor. Até quinta!"]
-            ],
-            momentos: [
-              [19, "Dor", "Ligações sem resposta depois das 18h", 3],
-              [58, "Objeção", "Dúvida se a IA entende pacientes idosos", 7],
-              [80, "Preço", "Pediu valor e rejeitou contrato longo", 9],
-              [103, "Sinal de compra", "Disse que o valor cabe", 11],
-              [124, "Próximo passo", "Aceitou demo na quinta às 15h", 13],
-              [148, "Decisor", "Dr. Paulo, do financeiro, decide junto", 15]
-            ]
-          }
-        };
-        let A = C.canal === "Telefone" ? ANALISES[C.id] : null;
-        if (!A && C.canal === "Telefone" && L && L.pessoa) {
-          const pn = L.pessoa, p1 = pn.split(" ")[0], emp = L.empresa || "a empresa";
-          A = JSON.parse(JSON.stringify(ANALISES.c4).split("Dr. Marcos Beltrão").join(pn).split("Dr. Marcos").join(p1).split("Marcos").join(p1).split("Cliniface Saúde").join(emp).split("Cliniface").join(emp));
-        }
+        /* ANTES: o painel da ligação mostrava um relatório pronto (duração 3:12, urgência Alta, orçamento ≈ R$ 1.2xx, citações) copiado de ANALISES.c4 para qualquer ligação. Falso: não há transcrição/análise ligada; ninguém disse nada disso. Agora cai no estado "sem análise" (lig.nao). */
+        const A = null;
         this._ehLig = !!A;
         if (!A) return { ativo: false, nao: true };
         const TIPOS = { "Dor": "#fe4f2b", "Objeção": "#d93c1a", "Preço": "#c8a86a", "Sinal de compra": "#1f7256", "Próximo passo": "#12171d", "Decisor": "#67787c" };
@@ -1494,7 +1432,7 @@ class Logica extends React.Component<any, any> {
             const pareceContato = ehWaN ? q.replace(/\D/g, "").length >= 10 : /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(q);
             return (pareceContato ? [{ nome: "Usar " + q, sub: "Novo contato · sem lead ainda", ini: "+", av: "flex:0 0 auto;width:28px;height:28px;border-radius:9999px;background:#12171d;color:#fff;font-size:13px;font-weight:700;display:grid;place-items:center", onClick: () => setN({ livre: q, alvo: null }) }] : []).concat(lista);
           })(),
-          origens: (ehWaN ? numsWa : [{ k: "email", nome: "comercial@onface.com.br", num: "E-mail" }]).map(x => ({
+          origens: (ehWaN ? numsWa : [{ k: "email", nome: "E-mail" /* ANTES: "comercial@onface.com.br" inventado como caixa de saída; o e-mail real do usuário não chega aqui. */, num: "E-mail" }]).map(x => ({
             label: x.nome, titulo: x.num, style: ESTILO_PILL(N && N.de === x.k), onClick: () => setN({ de: x.k })
           })),
           ehWa: ehWaN, ehMail: !ehWaN,
@@ -1511,7 +1449,7 @@ class Logica extends React.Component<any, any> {
           criar: () => {
             if (!okN || !E) return;
             const cx = CAIXAS.find(x => x.k === N.de);
-            const numero = ehWaN ? (cx ? (cx.k === "principal" ? "Pré-vendas · (11) 97700-4410" : cx.nome + " · " + cx.num.split(" · ")[0]) : "Pré-vendas · (11) 97700-4410") : "comercial@onface.com.br";
+            const numero = ehWaN ? (cx ? (cx.k === "principal" ? "Pré-vendas · (11) 97700-4410" : cx.nome + " · " + cx.num.split(" · ")[0]) : "Pré-vendas · (11) 97700-4410") : "E-mail"; /* ANTES: remetente gravado como comercial@onface.com.br (inventado). */
             const tp = TPLS.find(t => t.id === N.tpl);
             const txt = N.modoMsg === "template" ? encherPara(tp ? tp.texto : "") : N.texto.trim();
             const id = "c" + Date.now();

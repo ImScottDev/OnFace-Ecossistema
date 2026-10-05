@@ -208,7 +208,7 @@ class Logica extends React.Component<any, any> {
     if (pv != null && pv !== "" && props[+pv]) { const pp = props[+pv]; return this.setState({ d: Object.assign(deProp(pp), { codigo: pp.codigo, versao: pp.versao || 1 }), idx: +pv, modo: "ver", expandido: true, sujo: false, verVig: pp === vig }); }
     if (vig && vig.status === "rascunho") return this.setState({ d: Object.assign(deProp(vig), { codigo: vig.codigo, versao: vig.versao || 1 }), idx: vi, modo: "editar", baseInfo: null, salvoEm: "" });
     if (vig) return this.setState({ d: Object.assign(deProp(vig), { codigo: vig.codigo, versao: (vig.versao || 1) + 1 }), idx: null, modo: "versao", baseIdx: vi, baseInfo: "Nova versão da v" + (vig.versao || 1) + " · " + ({ enviada: "Enviada", visualizada: "Visualizada", ajuste_solicitado: "Ajuste solicitado", aceita: "Aceita" }[vig.status] || vig.status), sujo: true });
-    this.setState({ d: Object.assign(base, { codigo: "P-" + (1600 + Math.floor(Math.random() * 300)), versao: 1 }), idx: null, modo: "novo", sujo: true });
+    this.setState({ d: Object.assign(base, { codigo: "nova", versao: 1 }), idx: null, modo: "novo", sujo: true });
   }
 
   num(v) { const n = parseFloat(String(v == null ? "" : v).replace(/\./g, "").replace(",", ".")); return isNaN(n) ? 0 : n; }
@@ -553,8 +553,8 @@ class Logica extends React.Component<any, any> {
       checkout: [["Cliente aceita a proposta", "Pelo link, com data, hora e IP"], ["Checkout do Stripe", c.teste ? "Cadastra " + FM.toLowerCase() + " · " + c.tDias + " dias de teste" : [FM, setupTxt].filter(Boolean).join(" · ")], ["Pagamento confirmado", c.teste ? "Método validado · " + recTxt.toLowerCase() : recTxt], ["Oportunidade ganha", "Empresa vira Cliente"]]
     }[d.fechamento];
     const ehAdt = d.fechamento === "contrato" && d.minuta === "aditivo";
-    const semente = String(O.empresa || "").split("").reduce((a, ch) => a + ch.charCodeAt(0), 0);
-    const ORIGENS = O.contratoOrigem ? [O.contratoOrigem] : (empX.contratos && empX.contratos.length ? empX.contratos : [{ id: "CT-" + (2000 + semente % 900), titulo: "Contrato " + FAM[d.familia] + " nº CT-" + (2000 + semente % 900), assinado: "12/03/2026", mrr: Math.max(990, Math.round(c.mrrLiq * 0.6 / 10) * 10) }]);
+    // ANTES: sem contrato real, inventava "Contrato nº CT-2xxx, assinado em 12/03/2026, MRR = 60% do valor" e oferecia aditivo/upgrade sobre ele. Sem contrato real, não há origem (semOrigem).
+    const ORIGENS = O.contratoOrigem ? [O.contratoOrigem] : (empX.contratos && empX.contratos.length ? empX.contratos : []);
     const adtO = ORIGENS.find(x => x.id === d.adtOrigem) || ORIGENS[0] || null;
     const ALTS = [["upgrade", "Upgrade"], ["downgrade", "Downgrade"], ["inclusao", "Inclusão"], ["condicoes", "Condições"]];
     const TIPO_ROT = { nova: "Nova venda", expansao: "Expansão", upgrade: "Upgrade", renovacao: "Renovação" };
@@ -603,7 +603,8 @@ class Logica extends React.Component<any, any> {
       toggleTest: () => up({ testemunhas: !d.testemunhas }), testTrilho: trilho(d.testemunhas), testBola: bolaT,
       podeTest: !d.testemunhas, addTest: () => up({ testemunhas: true }),
       sigCf: (() => {
-        const mail = (nm) => ((nm || "").split(" ")[0] || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "") + "@callface.ai";
+        // ANTES: montava "primeironome@callface.ai" e mostrava como e-mail do vendedor/representante; era chute. Sem e-mail real do usuário, fica vazio.
+        const mail = (nm) => "";
         const cf = d.sigCf || {};
         const linhas = [
           ["vend", "Testemunha · vendedor responsável", O.resp || "", false],
@@ -821,11 +822,12 @@ class Logica extends React.Component<any, any> {
     const selo = (st) => "flex:0 0 auto;display:inline-flex;align-items:center;height:20px;padding:0 8px;border-radius:9999px;font-size:11px;font-weight:600;white-space:nowrap;" + ({ rascunho: "background:#eeeff3;color:#4a5560", enviada: "background:#e8f0fb;color:#2c5f9e", visualizada: "background:#f7edd8;color:#6e5420", ajuste_solicitado: "background:#fff6f4;color:#9c3210", aceita: "background:#e6f4ee;color:#1f7256", recusada: "background:#fdeeea;color:#c2330f" }[st] || "background:#eeeff3;color:#8b949e");
     const pn = (d.contato || "").replace(/^Dr\.?\s+/, "").split(" ")[0] || "";
     const telCad = (LD && (LD.tel || LD.telefone)) || "";
-    const linkP = "propostas.callface.ai/p/" + String(d.codigo || "").toLowerCase() + "-v" + d.versao;
+    // ANTES: "propostas.callface.ai/p/<codigo>-v<versao>", endereço inexistente (rota real: /p/<id>). Sem id gravado, não há link.
+    const linkP = d.id && typeof window !== "undefined" ? window.location.host + "/p/" + d.id : "";
     const prodN = FAM[d.familia] || "";
     const assuntoPadrao = "Proposta " + d.titulo + " · #" + d.codigo + "-v" + d.versao;
     const introPadrao = "Olá, " + pn + "!\n\nConforme conversamos, preparei a proposta de " + prodN + " para a " + O.empresa + ". Abaixo está um resumo com os valores e as principais condições.\n\nNo link você vê todos os detalhes e pode aceitar a proposta ou pedir algum ajuste, se precisar. Qualquer dúvida, fico à disposição.";
-    const waPadrao = "Oi, " + pn + "! Tudo bem? Aqui é " + ((O.resp || "").split(" ")[0] || "") + ", da Callface.\n\nAcabei de te enviar a proposta de " + prodN + " para a " + O.empresa + ":\nhttps://" + linkP + "\n\nPor lá você vê os valores e as condições, e pode aceitar ou pedir algum ajuste. A proposta vale até " + fmtD(valida) + ".\n\nQualquer dúvida, me chama por aqui!";
+    const waPadrao = "Oi, " + pn + "! Tudo bem? Aqui é " + ((O.resp || "").split(" ")[0] || "") + ", da Callface.\n\nAcabei de te enviar a proposta de " + prodN + " para a " + O.empresa + ":" + (linkP ? "\nhttps://" + linkP : "") + "\n\nPor lá você vê os valores e as condições, e pode aceitar ou pedir algum ajuste. A proposta vale até " + fmtD(valida) + ".\n\nQualquer dúvida, me chama por aqui!";
     const condE = [c.teste ? c.tDias + " dias de teste grátis antes da primeira cobrança" : null, c.unico ? "Setup " + (c.parc > 1 ? "em " + c.parc + "x de " + brl(c.unicoLiq / c.parc) : "à vista") : null, (ehWl ? "Ativações vencem" : "Mensalidade vence") + " todo dia " + d.dia, ehWl ? null : (c.fid ? "Fidelidade de " + c.fid + " meses" : "Sem fidelidade"), d.fechamento === "contrato" ? "Contrato com assinatura digital" : "Pagamento pelo checkout seguro do Stripe"].filter(Boolean);
     const addCc = (v) => { if (!mailOk(v)) return this.setState({ ccErro: true }); this.setState({ ccTxt: "", ccErro: false }); up({ cc: (d.cc || []).filter(x => x !== v).concat(v) }); };
     const msgPadrao = "Olá, " + ((d.contato || "").split(" ")[0] || "") + "! Segue a proposta " + d.titulo + " (#" + d.codigo + "-v" + d.versao + "), válida até " + fmtD(valida) + ". Qualquer dúvida, fico à disposição.\n\n" + O.resp + " · Callface";
@@ -848,7 +850,7 @@ class Logica extends React.Component<any, any> {
         onClick: () => up({ canais: on ? canaisSel.filter(x => x !== v) : canaisSel.concat(v), para: v === "email" && !d.para ? email : d.para }) }; }),
       temEmail: canaisSel.indexOf("email") >= 0, temWa: canaisSel.indexOf("whatsapp") >= 0, soLink: !canaisSel.length,
       link: linkP, linkRot: canaisSel.length ? "Link da proposta · vai junto na mensagem" : "Link da proposta · envie por onde preferir",
-      copiar: () => { try { navigator.clipboard.writeText(linkP); } catch (e) {} this.diz("Link copiado", "ok"); },
+      copiar: () => { if (!linkP) return this.diz("Ainda não há link público para esta proposta", "info"); try { navigator.clipboard.writeText(linkP); } catch (e) {} this.diz("Link copiado", "ok"); },
       para: d.para, setPara: (e) => up({ para: e.target.value }), paraStyle: inp(tentou[4] && !mailOk(d.para)),
       cc: (d.cc || []).map((m, i) => ({ m, remover: () => up({ cc: (d.cc || []).filter((_, k) => k !== i) }) })),
       ccTxt: S.ccTxt || "", setCc: (e) => this.setState({ ccTxt: e.target.value, ccErro: false }),
@@ -957,7 +959,8 @@ class Logica extends React.Component<any, any> {
       recusar: () => this.setState({ dec: "recusar", decMot: null, decTxt: "", decFeito: false, decTentou: false }),
       baixar: () => this.diz("O PDF é gerado a partir desta página quando a proposta é enviada", "info"),
       vendIni: ini(O.resp || ""), vendPrimeiro: (O.resp || "o comercial").split(" ")[0],
-      vendSub: [(O.resp || ""), ((O.resp || "").split(" ")[0] || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") + "@callface.ai"].filter(Boolean).join(" · "),
+      // ANTES: acrescentava o e-mail chutado "primeironome@callface.ai" ao vendedor.
+      vendSub: O.resp || "",
       rodape: "Proposta " + d.codigo + "-v" + d.versao + " · página 1 de 1"
     };
 
@@ -1023,7 +1026,8 @@ class Logica extends React.Component<any, any> {
       if (!oks[S.passo]) { this.setState(s => ({ tentou: Object.assign({}, s.tentou, { [s.passo]: true }) })); return this.diz("Complete " + ROTS[S.passo][0].toLowerCase() + " para seguir", "erro"); }
       this.setState(s => ({ passo: s.passo + 1 }));
     };
-    const link = "https://propostas.callface.ai/p/" + d.codigo.toLowerCase() + "-v" + d.versao;
+    // ANTES: link inventado em propostas.callface.ai; ver comentário de linkP.
+    const link = d.id && typeof window !== "undefined" ? window.location.origin + "/p/" + d.id : "";
     const E2 = S.enviado || {};
     const fim = {
       titulo: E2.aprov ? "Enviada para aprovação" : "Proposta enviada",
@@ -1033,7 +1037,7 @@ class Logica extends React.Component<any, any> {
         bola: "flex:0 0 auto;width:14px;height:14px;border-radius:9999px;box-sizing:border-box;" + (done ? "background:#12171d" : "background:#fff;border:1.5px solid #d2d5d5"),
         linhaE: "flex:1;height:2px;background:" + (i === 0 ? "transparent" : i <= 1 ? "#12171d" : "#e3e7e8"), linhaD: "flex:1;height:2px;background:" + (i === a.length - 1 ? "transparent" : i < 1 ? "#12171d" : "#e3e7e8"),
         labelStyle: "font-size:11.5px;font-weight:" + (done ? "600;color:#12171d" : "500;color:#8b949e") }; }),
-      link, copiar: () => { try { navigator.clipboard.writeText(link); } catch (e) {} this.diz("Link copiado", "ok"); }
+      link: link || "—", copiar: () => { if (!link) return this.diz("Ainda não há link público para esta proposta", "info"); try { navigator.clipboard.writeText(link); } catch (e) {} this.diz("Link copiado", "ok"); }
     };
     const T = S.troca;
     const troca = !T ? { aberto: false, familias: [], contatos: [] } : {

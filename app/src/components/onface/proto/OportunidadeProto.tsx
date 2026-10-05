@@ -18,6 +18,7 @@ import type { DetalheOportunidade } from "@/lib/vendas/consultas";
 import type { Resultado } from "@/lib/vendas/resultado";
 import type { LinhaDoTempo } from "@/lib/vendas/eventos";
 import { OportunidadeLiga } from "./OportunidadeLiga";
+import { rotuloProcesso } from "../vendas/Pipeline";
 import { levarParametros } from "./rota-do-desenho";
 import { persistirEtapa, type CommandsDeEtapa } from "./persistencia";
 import { usePecas } from "./pecas-host";
@@ -91,7 +92,9 @@ function paraODesenho(o: DetalheOportunidade, timeline: LinhaDoTempo[]) {
     valor: o.valor,
     titulo: o.titulo,
     leadId: o.leadId,
-    origem: o.sourceProcess,
+    // Rótulo legível (antes ia o código cru); o código vai em origemBruta para a tela decidir pré-vendas x manual.
+    origem: rotuloProcesso(o.sourceProcess),
+    origemBruta: o.sourceProcess,
     motivoPerda: o.motivoPerda,
     obsPerda: "",
     badges: o.badges,

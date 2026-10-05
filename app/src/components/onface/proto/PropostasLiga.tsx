@@ -356,8 +356,11 @@ class Logica extends React.Component<any, any> {
       const log = logDe(o, P), nViews = log.filter(x => x.k === "visualizada" || x.k === "revista").length;
       const resp = log.slice().reverse().find(x => x.texto);
       const vivo = ["enviada", "visualizada", "ajuste_solicitado"].indexOf(P.status) >= 0;
-      const link = "https://propostas.callface.ai/p/" + String(P.codigo).toLowerCase() + "-v" + (P.versao || 1);
-      const validade = (+P.validade || 30);
+      // ANTES: montava "https://propostas.callface.ai/p/<codigo>-v<versao>", endereço que não existe (a rota pública real é /p/<id>), e mostrava "Ativo".
+      const link = P.id && typeof window !== "undefined" ? window.location.origin + "/p/" + P.id : "";
+      // ANTES: toda proposta mostrava "Validade 30 dias" e "vence em N-3 dias", número fixo sem relação com a proposta.
+      // P.validade chega como data (dia()), não como prazo em dias; sem prazo real, omitimos.
+      const validade = 0;
       const btn = (label, onClick, forte) => ({ label, onClick, style: "height:34px;padding:0 13px;border-radius:9px;border:0;font-size:12.5px;font-weight:600;cursor:pointer;white-space:nowrap;" + (forte ? "background:#d93c1a;color:#fff" : "background:#fff;color:#1f252c;box-shadow:inset 0 0 0 1px #dbdede") });
       const editor = () => ir("/onface-preview/proposta", "Proposta", { opp: o.id, ver: "" });
       const vigente = aberta.props.slice().reverse().find(x => ["recusada", "expirada", "substituida"].indexOf(x.status) < 0) === P;
@@ -365,7 +368,8 @@ class Logica extends React.Component<any, any> {
       if (vigente && P.status === "rascunho") acoes.push(btn("Continuar editando", editor, true));
       if (vigente && vivo) acoes.push(btn(P.status === "ajuste_solicitado" ? "Criar nova versão" : "Ajustar em nova versão", editor, P.status === "ajuste_solicitado"));
       const contrato = P.modo !== "PREPAID";
-      const passoAt = P.status === "aceita" ? (o.etapa === "ganho" ? 4 : 2) : 0;
+      // ANTES: aceita = 2 passos feitos, ganho = 4, por regra, sem olhar contrato nem pagamento. Sem dado de contrato/pagamento, nenhum passo é marcado.
+      const passoAt = 0;
       const FL = contrato
         ? [["Cliente aceita a proposta", "Na página pública"], ["Contrato gerado", "Com os dados desta versão"], ["Assinatura", "Cliente assina pelo link"], ["Oportunidade ganha", "Cobrança criada no Stripe"]]
         : [["Cliente aceita a proposta", "Na página pública"], ["Checkout do Stripe", "Cartão ou boleto"], ["Pagamento confirmado", "Webhook do Stripe"], ["Oportunidade ganha", "Cliente ativado"]];
@@ -373,7 +377,7 @@ class Logica extends React.Component<any, any> {
         empresa: o.empresa, pessoa: o.pessoa + (o.cargo ? " · " + o.cargo : ""), empIni: ini(o.empresa),
         irEmpresa: () => ir("/onface-preview/empresa", o.empresa, o.leadId ? { lead: o.leadId } : {}),
         kpis: [["Valor mensal", s.mrr ? brl(s.mrr) : "—", null], ["Setup / único", s.un ? brl(s.un) : "—", null], ["Produto", FAM[o.familia] || "—", null],
-          ["Responsável", o.resp, null], ["Fechamento", contrato ? "Contrato" : "Checkout", null], ["Validade", validade + " dias", P.status === "rascunho" ? "conta a partir do envio" : vivo ? "vence em " + Math.max(1, validade - 3) + " dias" : null]]
+          ["Responsável", o.resp, null], ["Fechamento", contrato ? "Contrato" : "Checkout", null], ["Validade", validade ? validade + " dias" : P.validade || "—", P.status === "rascunho" ? "conta a partir do envio" : null]]
           .map(([l, v, sub]) => ({ l, v, temSub: !!sub, sub: sub || "", vStyle: "display:block;margin-top:3px;font-size:13.5px;font-weight:700;color:#12171d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums",
             subStyle: "display:block;margin-top:2px;font-size:11px;font-weight:600;color:" + (vivo ? "#c2330f" : "#8b949e") })),
         temResp: !!resp || P.status === "aceita",
@@ -381,13 +385,13 @@ class Logica extends React.Component<any, any> {
         respTxt: resp ? "“" + resp.texto + "”" : (contrato ? "Contrato enviado para assinatura." : "Pagamento pelo checkout do Stripe."),
         respBox: "padding:12px 14px;border-radius:11px;background:" + (resp ? "#fff6f4;box-shadow:inset 0 0 0 1px #f6d3c9" : "#e6f4ee;box-shadow:inset 0 0 0 1px #c9e5d8"),
         respTit: "display:block;font-size:11.5px;font-weight:700;color:" + (resp ? "#9c3210" : "#1f7256"),
-        link: P.status === "rascunho" ? "Gerado quando a proposta for enviada" : link, linkAtivo: vivo,
-        linkEstado: vivo ? "Ativo" : P.status === "rascunho" ? "Ainda não gerado" : "Encerrado",
+        link: P.status === "rascunho" ? "Gerado quando a proposta for enviada" : link || "—", linkAtivo: vivo && !!link,
+        linkEstado: vivo && link ? "Ativo" : P.status === "rascunho" ? "Ainda não gerado" : "Encerrado",
         linkSelo: "display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 8px;border-radius:9999px;font-size:11px;font-weight:600;" + (vivo ? "background:#e6f4ee;color:#1f7256" : "background:#eeeff3;color:#67787c"),
         linkUrlStyle: "display:block;margin-top:8px;font-size:12.5px;font-weight:500;word-break:break-all;color:" + (vivo ? "#c2330f" : "#8b949e"),
         linkNota: vivo ? "O cliente abre sem login. Aceite, ajuste e recusa voltam para a oportunidade." : P.status === "rascunho" ? "Envie a proposta para liberar o link." : "Este link não aceita mais respostas.",
         verProposta: () => ir("/onface-preview/proposta", "Proposta", { opp: o.id, ver: String(i) }),
-        copiar: () => { try { navigator.clipboard.writeText(link); } catch (e) {} Es && Es.avisar("Link da proposta copiado", "ok"); },
+        copiar: () => { if (!link) { Es && Es.avisar("Esta proposta ainda não tem link público", "info"); return; } try { navigator.clipboard.writeText(link); } catch (e) {} Es && Es.avisar("Link da proposta copiado", "ok"); },
         irOpp: () => ir("/onface-preview/oportunidade", o.empresa, { opp: o.id, ver: "", aba: "prop" }),
         temAcoes: acoes.length > 0, acoes,
         temLog: log.length > 0, logResumo: [nViews ? nViews + (nViews > 1 ? " visualizações" : " visualização") : "Ainda não aberta", log.length ? "última " + log[log.length - 1].quando.toLowerCase() : ""].filter(Boolean).join(" · "),

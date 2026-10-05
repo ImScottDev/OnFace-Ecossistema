@@ -132,7 +132,7 @@ class Logica extends React.Component<any, any> {
     const O = this.todas().find(x => x.id === this.oppId);
     if (!O || O.derivada) return;
     this._auto = this._auto || {};
-    const RESP_DEMO = { ajuste: "O valor do setup ficou acima do previsto. Conseguem parcelar em 3 vezes ou dar um desconto de 20%?", recusada: "Fechamos com outro fornecedor, com um valor mensal menor." };
+    // ANTES: RESP_DEMO punha na boca do cliente frases fixas ("Fechamos com outro fornecedor...", "parcelar em 3 vezes") em toda proposta recusada/com ajuste. Ninguém escreveu isso. Agora só aparece o que o cliente de fato registrou (p.resposta / log).
     const chavesA = (O.atvs || []).map(a => a.chave).filter(Boolean), chavesN = (O.notas || []).map(n => n.chave).filter(Boolean);
     const novasA = [], novasN = [];
     const agora = new Date();
@@ -164,20 +164,20 @@ class Logica extends React.Component<any, any> {
         return;
       }
       const ev = (p.log || []).slice().reverse().find(x => x.k === k) || {};
-      const motivo = p.resposta || ev.texto || RESP_DEMO[k];
+      const motivo = p.resposta || ev.texto || "";
       const quem = p.recusaInterna ? O.pessoa + " (informado por " + O.resp + ")" : O.pessoa;
       if (chavesA.indexOf("rev:" + base) < 0 && !this._auto["rev:" + base]) {
         this._auto["rev:" + base] = true;
         novasA.push({ chave: "rev:" + base, auto: true, tipo: k === "ajuste" ? "Tarefa" : "Follow up", situacao: "A fazer", feita: false, autor: O.resp, quando: prazo(ev.quando),
           titulo: k === "ajuste" ? "Revisar ajuste pedido na proposta " + cod : "Entender a recusa da proposta " + cod,
           desc: (k === "ajuste"
-            ? quem + " pediu ajuste na proposta " + cod + ":\n“" + motivo + "”\n\nPróximos passos:\n• Avaliar o pedido e, se precisar, alinhar desconto ou condição com a diretoria.\n• Criar a nova versão da proposta.\n• Retornar para " + O.pessoa + " com a proposta revisada."
-            : quem + " recusou a proposta " + cod + ":\n“" + motivo + "”\n\nPróximos passos:\n• Ligar para entender o motivo em detalhe.\n• Ver se cabe uma nova proposta ou se a oportunidade deve ser marcada como perdida.\n• Registrar o resultado aqui.") });
+            ? quem + " pediu ajuste na proposta " + cod + (motivo ? ":\n“" + motivo + "”" : ".") + "\n\nPróximos passos:\n• Avaliar o pedido e, se precisar, alinhar desconto ou condição com a diretoria.\n• Criar a nova versão da proposta.\n• Retornar para " + O.pessoa + " com a proposta revisada."
+            : quem + " recusou a proposta " + cod + (motivo ? ":\n“" + motivo + "”" : ".") + "\n\nPróximos passos:\n• Ligar para entender o motivo em detalhe.\n• Ver se cabe uma nova proposta ou se a oportunidade deve ser marcada como perdida.\n• Registrar o resultado aqui.") });
       }
       if (!p.recusaInterna && chavesN.indexOf("sis:" + base) < 0 && !this._auto["sis:" + base]) {
         this._auto["sis:" + base] = true;
         novasN.push({ autor: "Sistema", sistema: true, chave: "sis:" + base, quando: ev.quando || "Recebido pela proposta", tag: "Proposta " + cod + " · " + (k === "ajuste" ? "Ajuste solicitado" : "Recusada"),
-          texto: "@" + O.resp + " " + O.pessoa + " " + (k === "ajuste" ? "pediu ajuste na proposta " + cod : "recusou a proposta " + cod) + " pela página da proposta: “" + motivo + "”" + (k === "ajuste" ? " Crie uma nova versão para responder." : ""), anexos: [] });
+          texto: "@" + O.resp + " " + O.pessoa + " " + (k === "ajuste" ? "pediu ajuste na proposta " + cod : "recusou a proposta " + cod) + " pela página da proposta" + (motivo ? ": “" + motivo + "”" : ".") + (k === "ajuste" ? " Crie uma nova versão para responder." : ""), anexos: [] });
       }
     });
     if (!novasA.length && !novasN.length) return;
@@ -272,7 +272,7 @@ class Logica extends React.Component<any, any> {
     const registrar = () => abrirModal({ k: "atv", i: null }, { tipo: "Ligação", situacao: "A fazer" });
     const verAtv = (i) => abrirModal({ k: "atvver", i });
     const novaProposta = () => ir("/onface-preview/proposta", "Proposta", { opp: O.id, ver: "" });
-    const novaPropostaModal = () => abrirModal({ k: "proposta" }, { modo: P ? P.modo : "CONTRACT", validade: String(P ? P.validade : 14), itens: (P && P.itens && P.itens.length ? P.itens : [{ nome: "", natureza: "MRR", valor: "", qtd: 1 }]).map(x => Object.assign({}, x, { valor: String(x.valor), qtd: String(x.qtd || 1) })) });
+    const novaPropostaModal = () => abrirModal({ k: "proposta" }, { modo: P ? P.modo : "CONTRACT", validade: String(P && P.validade ? P.validade : 14), itens: (P && P.itens && P.itens.length ? P.itens : [{ nome: "", natureza: "MRR", valor: "", qtd: 1 }]).map(x => Object.assign({}, x, { valor: String(x.valor), qtd: String(x.qtd || 1) })) });
     const mover = (k) => {
       if (k === O.etapa) return;
       if ((k === "proposta" || k === "negociacao") && !P) { this.diz("Crie a proposta antes de avançar", "aviso"); return abrirModal({ k: "proposta", depois: k }, { modo: "CONTRACT", validade: "14", itens: [{ nome: "", natureza: "MRR", valor: "", qtd: "1" }] }); }
@@ -288,9 +288,14 @@ class Logica extends React.Component<any, any> {
 
     const abrirEmpresa = () => O.leadId ? ir("/onface-preview/empresa", O.empresa, { lead: O.leadId }) : this.diz(O.empresa + " ainda não tem página", "aviso");
     const abrirPessoa = () => O.leadId ? ir("/onface-preview/pessoa", O.pessoa, { pessoa: slug(O.pessoa), lead: O.leadId }) : this.diz(O.pessoa + " ainda não tem página", "aviso");
-    const tel = (LD && (LD.tel || LD.telefone)) || "", email = (LD && LD.email) || "";
+    // ANTES: tel/e-mail só vinham do lead (LD, sempre nulo no dado real) e o botão Ligar dizia sempre "Sem telefone cadastrado". Agora lê o contato da oportunidade (O.pessoas).
+    const PP = (O.pessoas || []).find(x => x.principal) || (O.pessoas || []).find(x => x.nome === O.pessoa) || {};
+    const tel = (LD && (LD.tel || LD.telefone)) || PP.telefone || "", email = (LD && LD.email) || PP.email || "";
     const criado = O.criadoEm || (tl.length ? tl[tl.length - 1].quando : "—");
-    const origem = LD ? (LD.origem || "—") : (O.origem || "Criada manualmente");
+    // ANTES: sem LD (lead vem vazio do Proto) 1514 de 1578 oportunidades apareciam "Criada manualmente". Agora decide por leadId / processo de origem reais.
+    const procRot = O.origem && O.origem !== "—" ? O.origem : "";
+    const viaPre = !!LD || !!O.leadId || O.origemBruta === "PRE_SALES", manual = O.origemBruta === "MANUAL";
+    const origem = LD ? (LD.origem || "—") : viaPre ? "Pré-vendas" : (procRot || "—");
     const valorTxt = P && (tot.mrr + tot.un) ? (tot.mrr ? brl(tot.mrr) + "/mês" : "") + (tot.mrr && tot.un ? " + " : "") + (tot.un ? brl(tot.un) : "") : "Definido na proposta";
     const metaBtn = (link) => "display:inline-flex;align-items:center;gap:6px;padding:0;border:0;background:transparent;font-size:12.5px;white-space:nowrap;cursor:" + (link ? "pointer" : "default");
 
@@ -592,15 +597,14 @@ class Logica extends React.Component<any, any> {
       ],
       setResp: (e) => { const v = e.target.value; salva({ resp: v }, "Responsável: " + v); },
       orig: (() => {
-        const viaPre = !!LD;
         const linhas = viaPre
-          ? [["Canal", LD.origem || "—"], ["Campanha", LD.campanha || "—", !!LD.campanha], ["Lead", LD.pessoa + " · " + (LD.empresa || "")], ["Criada em", criado], ["Registro", "Automático"]]
-          : [["Canal", "Manual"], ["Criada por", (tl.length ? tl[tl.length - 1].autor : O.resp) || O.resp], ["Criada em", criado], ["Registro", "Manual"]];
+          ? [["Canal", LD ? (LD.origem || "—") : "Pré-vendas"], ["Campanha", (LD && LD.campanha) || "—", !!(LD && LD.campanha)]].concat(LD ? [["Lead", LD.pessoa + " · " + (LD.empresa || "")]] : []).concat([["Criada em", criado], ["Registro", "Automático"]])
+          : [["Canal", manual ? "Manual" : (procRot || "—")], ["Criada por", (tl.length ? tl[tl.length - 1].autor : O.resp) || O.resp], ["Criada em", criado]].concat(manual ? [["Registro", "Manual"]] : []);
         return {
-          selo: viaPre ? "Automática" : "Manual",
+          selo: viaPre ? "Automática" : manual ? "Manual" : procRot,
           d: viaPre ? "M22 12h-4l-3 9L9 3l-3 9H2" : "M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z",
-          titulo: viaPre ? "Veio do Pré-vendas" : "Criada manualmente",
-          sub: viaPre ? "Lead " + (LD.origem || "inbound") + " qualificado e convertido em oportunidade" : "Aberta direto no Pipeline, sem lead de origem",
+          titulo: viaPre ? "Veio do Pré-vendas" : manual ? "Criada manualmente" : procRot ? "Origem: " + procRot : "Origem não informada",
+          sub: viaPre ? (LD ? "Lead " + (LD.origem || "inbound") + " qualificado e convertido em oportunidade" : "Lead de origem vinculado à oportunidade") : manual ? "Aberta direto no Pipeline, sem lead de origem" : "",
           linhas: linhas.map(([label, valor, destaque]) => ({ label, valor, valorStyle: "min-width:0;font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:" + (destaque ? "#c2330f" : "#12171d") }))
         };
       })(),
@@ -610,7 +614,7 @@ class Logica extends React.Component<any, any> {
         ["M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z", "Criada em", criado]
       ].map(([d, label, valor]) => ({ d, label, valor })),
 
-      propResumo: props.slice().reverse().slice(0, 3).map(p => { const t = somaP(p); return { codigo: "Proposta #" + p.codigo + "-v" + (p.versao || 1), meta: (p.modo === "PREPAID" ? "Pré-pago" : "Contrato") + " · validade " + p.validade + " dias" + (p.enviadaEm ? " · enviada " + p.enviadaEm : ""),
+      propResumo: props.slice().reverse().slice(0, 3).map(p => { const t = somaP(p); return { codigo: "Proposta #" + p.codigo + "-v" + (p.versao || 1), meta: (p.modo === "PREPAID" ? "Pré-pago" : "Contrato") + (p.validade ? " · validade " + p.validade + " dias" : "") + /* ANTES: "validade undefined dias" (o dado real não manda validade) */ (p.enviadaEm ? " · enviada " + p.enviadaEm : ""),
         status: PROP[p.status] || p.status, statusStyle: statusSelo(p.status), total: brl(t.mrr + t.un), codStyle: "display:block;font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:" + (p === P ? "#12171d" : "#8b949e") }; }),
       semPropostas: !props.length,
       relTiles: [
@@ -632,18 +636,18 @@ class Logica extends React.Component<any, any> {
         linhaStyle: "display:flex;align-items:center;gap:11px;width:100%;padding:10px 8px;border:0;background:transparent;cursor:pointer;text-align:left;border-radius:8px;" + (n ? "border-top:1px solid #f3f5f5" : "") }; }),
       nt: (() => {
         const txt = S.nota || "", anx = S.notaAnexos || [], ativa = !!S.notaAtiva || !!txt, pode = !!txt.trim() || anx.length > 0;
-        const RESP_DEMO = { ajuste_solicitado: "O valor do setup ficou acima do previsto. Conseguem parcelar em 3 vezes ou dar um desconto de 20%?", recusada: "Fechamos com outro fornecedor, com um valor mensal menor." };
+    // ANTES: RESP_DEMO punha na boca do cliente frases fixas ("Fechamos com outro fornecedor...", "parcelar em 3 vezes") em toda proposta recusada/com ajuste. Ninguém escreveu isso. Agora só aparece o que o cliente de fato registrou (p.resposta / log).
         const chaves = (O.notas || []).map(n => n.chave).filter(Boolean);
         const virtuais = props.map(p => {
           const k = p.status === "ajuste_solicitado" ? "ajuste" : p.status === "recusada" && !p.recusaInterna ? "recusada" : null;
           if (!k) return null;
           const chave = "sis:" + p.codigo + ":" + (p.versao || 1) + ":" + k;
           if (chaves.indexOf(chave) >= 0) return null;
-          const cod = "#" + p.codigo + "-v" + (p.versao || 1), txtC = p.resposta || RESP_DEMO[p.status];
+          const cod = "#" + p.codigo + "-v" + (p.versao || 1), txtC = p.resposta || "";
           const ev = (p.log || []).slice().reverse().find(x => x.k === k);
           return { autor: "Sistema", sistema: true, virtual: true, chave, quando: ev ? ev.quando : "Recebido pela proposta",
             tag: "Proposta " + cod + " · " + (k === "ajuste" ? "Ajuste solicitado" : "Recusada"),
-            texto: "@" + O.resp + " " + O.pessoa + " " + (k === "ajuste" ? "pediu ajuste na proposta " + cod : "recusou a proposta " + cod) + " pela página da proposta: “" + txtC + "”" + (k === "ajuste" ? " Crie uma nova versão para responder." : ""), anexos: [] };
+            texto: "@" + O.resp + " " + O.pessoa + " " + (k === "ajuste" ? "pediu ajuste na proposta " + cod : "recusou a proposta " + cod) + " pela página da proposta" + (txtC ? ": “" + txtC + "”" : ".") + (k === "ajuste" ? " Crie uma nova versão para responder." : ""), anexos: [] };
         }).filter(Boolean);
         const lista = virtuais.map(n => ({ n, i: -1 })).concat((O.notas || []).map((n, i) => ({ n, i }))).sort((a, b) => (b.n.fixada ? 1 : 0) - (a.n.fixada ? 1 : 0));
         const salvar = () => {
@@ -737,13 +741,13 @@ class Logica extends React.Component<any, any> {
           acoes.push(btn("Recusada", () => this.setState({ propAcao: { i, k: "recusar", txt: "" } })));
         }
         // acompanhamento
-        const RESP_DEMO = { ajuste_solicitado: "O valor do setup ficou acima do previsto. Conseguem parcelar em 3 vezes ou dar um desconto de 20%?", recusada: "Fechamos com outro fornecedor, com um valor mensal menor." };
+    // ANTES: RESP_DEMO punha na boca do cliente frases fixas ("Fechamos com outro fornecedor...", "parcelar em 3 vezes") em toda proposta recusada/com ajuste. Ninguém escreveu isso. Agora só aparece o que o cliente de fato registrou (p.resposta / log).
         const base = p.enviadaEm && p.enviadaEm !== "Hoje" ? p.enviadaEm : null;
         const log = p.log || (p.status === "rascunho" ? [] : [{ k: "enviada", quando: (base || "Hoje") + ", 10:14", quem: O.resp }]
           .concat(["visualizada", "ajuste_solicitado", "aceita", "recusada"].indexOf(p.status) >= 0 ? [{ k: "visualizada", quando: (base || "Hoje") + ", 14:32" }, { k: "revista", quando: "No dia seguinte, 09:05" }] : [])
-          .concat(p.status === "ajuste_solicitado" ? [{ k: "ajuste", quando: "No dia seguinte, 09:21", quem: O.pessoa, texto: p.resposta || RESP_DEMO.ajuste_solicitado }] : [])
+          .concat(p.status === "ajuste_solicitado" ? [{ k: "ajuste", quando: "—" /* ANTES: horário fixo inventado "09:21"; o banco não guarda esse instante */, quem: O.pessoa, texto: p.resposta || "" }] : [])
           .concat(p.status === "aceita" ? [{ k: "aceita", quando: "No dia seguinte, 11:40", quem: O.pessoa }] : [])
-          .concat(p.status === "recusada" ? [{ k: "recusada", quando: "No dia seguinte, 16:02", quem: p.recusaInterna ? O.resp : O.pessoa, texto: p.resposta || RESP_DEMO.recusada, interna: !!p.recusaInterna }] : []));
+          .concat(p.status === "recusada" ? [{ k: "recusada", quando: "—" /* ANTES: horário fixo inventado "16:02" */, quem: p.recusaInterna ? O.resp : O.pessoa, texto: p.resposta || "", interna: !!p.recusaInterna }] : []));
         const LOGT = { enviada: ["Enviada", "M22 2 11 13M22 2l-7 20-4-9-9-4z", "#2c5f9e"], visualizada: ["Aberta pela primeira vez", "M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z", "#6e5420"], revista: ["Vista novamente", "M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z", "#8b949e"], ajuste: ["Ajuste solicitado", "M12 20h9M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4z", "#c2330f"], aceita: ["Aceita", "M20 6 9 17l-5-5", "#1f7256"], recusada: ["Recusada", "M18 6 6 18M6 6l12 12", "#c2330f"] };
         const nViews = log.filter(x => x.k === "visualizada" || x.k === "revista").length;
         const resp = log.slice().reverse().find(x => x.texto);
@@ -751,7 +755,7 @@ class Logica extends React.Component<any, any> {
         const rtt = resp ? RT[resp.k] : null;
         return { codigo: "#" + p.codigo + "-v" + (p.versao || 1), status: PROP[p.status] || p.status, statusStyle: statusSelo(p.status),
           codStyle: "font-size:13.5px;font-weight:600;white-space:nowrap;font-variant-numeric:tabular-nums;color:" + (vig ? "#12171d" : "#8b949e"),
-          meta: (p.modo === "PREPAID" ? "Pré-pago / Checkout" : "Contrato") + " · validade " + p.validade + " dias" + (p.enviadaEm ? " · enviada " + p.enviadaEm : ""),
+          meta: (p.modo === "PREPAID" ? "Pré-pago / Checkout" : "Contrato") + (p.validade ? " · validade " + p.validade + " dias" : "") + /* ANTES: "validade undefined dias" (o dado real não manda validade) */ (p.enviadaEm ? " · enviada " + p.enviadaEm : ""),
           total: brl(t.mrr + t.un), totalLinha: "Total: " + brl(t.mrr + t.un), rec: t.mrr ? "Recorrente: " + brl(t.mrr) + "/mês" : "Sem recorrente",
           aberta: ab, chev: "flex:0 0 auto;transition:transform .15s;transform:rotate(" + (ab ? 0 : -90) + "deg)",
           alternar: () => this.setState(st => ({ abertas: Object.assign({}, st.abertas, { [i]: !ab }) })),

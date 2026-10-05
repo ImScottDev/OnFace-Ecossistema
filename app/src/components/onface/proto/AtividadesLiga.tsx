@@ -180,7 +180,7 @@ class Logica extends React.Component<any, any> {
   renderVals() {
     const S = this.state, E = this.E, D = this.dadosDoProto || {};
     const ini = D.iniciais || ((n) => (n || "").split(" ").map(x => x[0]).slice(0, 2).join("").toUpperCase());
-    const EU = this.eu, equipe = (D.EQUIPE || ["Camila Reis", "Diego Nunes", "Ana Vitória"]).concat([EU]).filter((x, i, a) => a.indexOf(x) === i);
+    const EU = this.eu, equipe = (D.EQUIPE || [] /* ANTES: sem equipe real, listava Camila Reis / Diego Nunes / Ana Vitória como colegas. Nomes inventados. */).concat([EU]).filter((x, i, a) => a.indexOf(x) === i);
     const H0 = this.hoje(), H1 = new Date(H0.getTime() + 864e5), H2 = new Date(H0.getTime() + 2 * 864e5), agora = new Date();
     const fimSem = new Date(H0); fimSem.setDate(fimSem.getDate() + (7 - fimSem.getDay()) % 7 + 1);
     const TIPOS = { "Ligação": ["M13.8 16.6a1 1 0 0 0 1.2-.3l.4-.5A2 2 0 0 1 17 15h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2A18 18 0 0 1 2 4a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v3a2 2 0 0 1-.8 1.6l-.5.4a1 1 0 0 0-.3 1.2 14 14 0 0 0 6.4 6.4z", "#1f7256", "#e6f4ee"],
@@ -326,7 +326,8 @@ class Logica extends React.Component<any, any> {
       const asg = X.assignees && X.assignees.length ? X.assignees : (X.resp ? [X.resp] : []);
       const setAsg = (lista, msg) => this.salvarItem(X, { assignees: lista, resp: lista[0] || null }, msg);
       const av = (n, sz) => "flex:0 0 auto;width:" + (sz || 22) + "px;height:" + (sz || 22) + "px;border-radius:9999px;display:grid;place-items:center;font-size:" + ((sz || 22) < 24 ? 9 : 10) + "px;font-weight:700;" + (n === EU ? "background:#12171d;color:#fff" : n === "NEXO" ? "background:#fe4f2b;color:#fff" : n ? "background:#e3e7e8;color:#4a5560" : "background:#fff;box-shadow:inset 0 0 0 1px #dbdede;color:#a3a8a4");
-      const TEAM = equipe.concat(["NEXO"]);
+      /* ANTES: "NEXO" entrava na lista de pessoas/responsáveis como se fosse gente da equipe. Falso: é o assistente, não um usuário atribuível. */
+      const TEAM = equipe.slice();
       const partes = (t) => { const out = []; const re = new RegExp("@(" + equipe.map(n => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|") + ")", "g"); let last = 0, m; while ((m = re.exec(t || ""))) { if (m.index > last) out.push({ t: t.slice(last, m.index), s: "" }); out.push({ t: m[0], s: "font-weight:600;color:#c2330f;background:#fff6f4;border-radius:4px;padding:0 3px" }); last = m.index + m[0].length; } if (last < (t || "").length) out.push({ t: t.slice(last), s: "" }); return out.length ? out : [{ t: t || "", s: "" }]; };
       const coms = X.comentarios || [];
       const seguidores = X.seguidores || asg.concat(X.criadoPor && X.criadoPor !== "Sistema" && X.criadoPor !== "NEXO" ? [X.criadoPor] : []);
@@ -983,12 +984,13 @@ class Logica extends React.Component<any, any> {
       nx: (() => { this._nx = Object.assign({}, dash.nx, { comandos: ov.comandos }); const NC = S.nexoChat; if (!NC) return { aberto: false, msgs: [], cards: [], recentes: [] };
         const upN = (p) => this.setState(s => ({ nexoChat: Object.assign({}, s.nexoChat, p) }));
         const diz = (t) => this.setState(s => s.nexoChat ? { nexoChat: Object.assign({}, s.nexoChat, { msgs: s.nexoChat.msgs.concat([{ de: "nexo", t }]) }) } : null);
-        const fazer = (k) => { if (k === "reorg") { const c = (ov.comandos || [])[0]; if (c) c.onClick(); diz("Pronto. Redistribuí seus prazos pela prioridade — dá uma olhada no Foco de hoje."); }
+        const fazer = (k) => { if (k === "reorg") { /* ANTES: o chat respondia "Pronto. Redistribuí seus prazos" como se a IA tivesse executado. Falso: era regex + um clique no botão local. Agora só avisa que não está ligado. */ diz("Ainda não está ligado: não mexi em nenhum prazo. Use o botão de reorganizar a semana no painel."); }
           else if (k === "verAtrasadas") this.setState({ nexoChat: null, kpiPop: "late" }); else if (k === "verHoje") this.setState({ nexoChat: null, kpiPop: "hoje" });
           else if (k === "pipeline") E && E.irPara("/onface-preview/pipeline", "Pipeline", {});
           else if (k.indexOf("tarefa:") === 0) { this.setState({ nexoChat: null }); this.abrirEditor(null, { titulo: k.slice(7) }); }
           else if (k.indexOf("p:") === 0) this.enviarNexo(k.slice(2)); };
-        const REC = [["Reorganizar minha agenda", "Hoje, 10:24"], ["Resumo da semana", "Hoje, 09:12"], ["Análise de proposta · Campos Engenharia", "Ontem, 16:48"], ["Estratégia de follow-up", "Ontem, 14:20"], ["Playbook de onboarding", "Seg, 28 de set"]];
+        /* ANTES: "Conversas recentes" com 5 conversas que nunca aconteceram (Resumo da semana · Hoje, 09:12, Campos Engenharia...). Não há histórico de chat gravado: lista vazia. */
+        const REC = [];
         const qb = (NC.busca || "").toLowerCase();
         const CARDS = [["Resumir minha semana", "Mostra seus principais avanços e pendências.", "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M8 13h8M8 17h5", "#fff6f4", "#c2330f"], ["Reorganizar minha agenda", "Prioriza o que realmente importa hoje.", "M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z", "#eeeff3", "#12171d"], ["Criar uma tarefa", "Transforma o que você pedir em tarefa.", "M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11", "#e6f4ee", "#1f7256"], ["Analisar oportunidades", "Ajuda a definir a próxima ação.", "M12 2 2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5", "#efecfa", "#4f3fa8"]];
         const msgs = NC.msgs || [];
@@ -1046,9 +1048,9 @@ class Logica extends React.Component<any, any> {
     clearTimeout(this._nxT); this._nxT = setTimeout(() => { const r = this.respNexo(t); this.setState(s => s.nexoChat ? { nexoChat: Object.assign({}, s.nexoChat, { msgs: s.nexoChat.msgs.concat([Object.assign({ de: "nexo" }, r)]), pensando: false }) } : null); }, 900); }
   respNexo(q) { const t = q.toLowerCase(), N = this._nx || {}, late = N.late || [], hoje = N.hojeAb || [], reu = N.reuH || [];
     if (/resum|semana/.test(t)) return { t: "Resumo da sua semana: " + (N.fSem || 0) + " atividades concluídas, " + late.length + " atrasadas e " + hoje.length + " com prazo hoje. " + (reu.length ? "Hoje você tem " + reu.length + (reu.length > 1 ? " reuniões" : " reunião") + (N.proxH ? ", a próxima às " + N.proxH + "." : ".") : "Sem reuniões hoje."), acoes: late.length ? [["verAtrasadas", "Ver atrasadas"]] : [["verHoje", "Ver o que vence hoje"]] };
-    if (/reorgan|agenda|priori/.test(t)) return { t: late.length ? "Posso redistribuir seus prazos pela prioridade: as " + late.length + " atrasadas entram primeiro e o que é baixa prioridade vai para depois. Quer aplicar?" : "Sua agenda está em dia. Posso ordenar o que vence nesta semana pela prioridade.", acoes: [["reorg", "Aplicar reorganização"]] };
+    if (/reorgan|agenda|priori/.test(t)) return { t: "Ainda não está ligado: o assistente não reorganiza a agenda por conversa.", /* ANTES: prometia redistribuir prazos por prioridade e oferecia "Aplicar reorganização". */ acoes: [] };
     if (/tarefa|criar|lembr/.test(t)) { const tit = q.replace(/^(criar|crie|cria)\s+(uma\s+)?(tarefa|atividade)\s*(de|para|:)?\s*/i, "").trim(); const ok = tit && tit.toLowerCase() !== t; return { t: ok ? "Montei a tarefa “" + tit + "”. Revise o responsável e o prazo antes de salvar." : "Me diga o que precisa ser feito que eu monto a tarefa, ou abra o formulário direto.", acoes: [["tarefa:" + (ok ? tit : ""), "Abrir tarefa"]] }; }
-    if (/oportun|propost|pipeline|negocia/.test(t)) return { t: "Olhei suas oportunidades: Orbe Telecom está em negociação com ajuste de setup pendente, e a proposta v2 da Campos Engenharia foi enviada ontem sem resposta. Sugiro um follow-up hoje com a Luiza Campos.", acoes: [["pipeline", "Abrir Pipeline"], ["tarefa:Follow-up proposta · Campos Engenharia", "Criar follow-up"]] };
+    if (/oportun|propost|pipeline|negocia/.test(t)) return { t: "Ainda não está ligado: não consigo analisar suas oportunidades por aqui. Abra o Pipeline para ver o andamento." /* ANTES: citava Orbe Telecom, proposta v2 da Campos Engenharia e Luiza Campos, que não existem nos dados. */, acoes: [["pipeline", "Abrir Pipeline"]] };
     if (/atras/.test(t)) return { t: late.length ? "Você tem " + late.length + (late.length > 1 ? " atividades atrasadas" : " atividade atrasada") + ". A mais antiga é “" + late[0].titulo + "”." : "Nada atrasado agora.", acoes: late.length ? [["verAtrasadas", "Ver atrasadas"]] : [] };
     return { t: "Entendi. Hoje você tem " + hoje.length + (hoje.length === 1 ? " atividade" : " atividades") + " com prazo e " + late.length + " atrasadas. Quer que eu resuma a semana, reorganize a agenda ou crie uma tarefa?", acoes: [["p:Resumir minha semana", "Resumir semana"], ["p:Reorganizar minha agenda", "Reorganizar agenda"]] };
   }

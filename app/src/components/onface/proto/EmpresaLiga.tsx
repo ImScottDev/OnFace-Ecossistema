@@ -417,7 +417,8 @@ posFlutuante(r, alto) {
       iniciais: ini(E.empresa || E.pessoa),
       etapa: (etapas[E.etapa] || {}).label || "—",
       temEtapaTopo: !E.registro,
-      origemSelo: E.registro ? "Manual" : "Automática",
+      /* Antes: toda empresa "Manual" (E.registro é o id, sempre preenchido). Agora só quando a origem diz manual. */
+      origemSelo: /manual/i.test(E.origem || "") ? "Manual" : "Automática",
       relTopo: E.registro ? (E.rel || "Contato") : "Lead",
       relTopoStyle: "display:inline-flex;align-items:center;height:23px;padding:0 9px;border-radius:7px;font-size:11.5px;font-weight:700;white-space:nowrap;" + (!E.registro || E.rel === "Lead" ? "background:#fff6f4;color:#9c3210" : E.rel === "Cliente" ? "background:#e6f4ee;color:#1f7256" : E.rel === "Prospect" ? "background:#e8f0fb;color:#2c5f9e" : "background:#eeeff3;color:#4a5560"),
       etapaSelo: "display:inline-flex;align-items:center;height:23px;padding:0 9px;border-radius:7px;font-size:11.5px;font-weight:700;white-space:nowrap;background:#eeeff3;color:"
@@ -430,7 +431,8 @@ posFlutuante(r, alto) {
         { label: "Campanha:", valor: E.campanha || "—", destaque: !!E.campanha, d: "M3 11l18-5v12L3 14v-3zM11.6 16.8a3 3 0 1 1-5.8-1.6" },
         { label: "Segmento:", valor: seg, d: "M12 2 2 7l10 5 10-5zM2 17l10 5 10-5M2 12l10 5 10-5" },
         { label: "Porte:", valor: (porte ? porte + " atendentes" : "—"), d: "M3 21V7l9-4 9 4v14M9 21v-6h6v6" },
-        { label: "Criado em:", valor: E.registro ? "Hoje" : "20 set 2026", d: "M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" }
+        /* Antes: "Hoje" ou "20 set 2026" fixos para toda empresa; agora a data real de criação (ou "—"). */
+        { label: "Criado em:", valor: dataCriacao(E.criadoEm), d: "M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" }
       ].map(m => ({
         label: m.label, valor: m.valor, d: m.d,
         valorStyle: "font-weight:600;white-space:nowrap;color:" + (m.destaque ? "#c2330f" : "#12171d")
@@ -494,7 +496,7 @@ posFlutuante(r, alto) {
       })),
 
       timeline: (tlBase = (X.eventos || []).map(ev => [ev.titulo, ev.autor, ev.quando, ev.d, false, ev.vinc || vincDe(ev.autor)]).concat(E.registro ? [
-        ["Cadastrado em Contatos & Empresas", (E.origem || "Cadastro manual") + (E.campanha ? " · " + E.campanha : ""), "Hoje", "M12 5v14M5 12h14", false, "Empresa"]
+        ["Cadastrado em Contatos & Empresas", (E.origem || "Cadastro manual") + (E.campanha ? " · " + E.campanha : ""), dataCriacao(E.criadoEm), "M12 5v14M5 12h14", false, "Empresa"]
       ] : [
         ["Próxima ação agendada", E.acao || "Ligar para " + E.pessoa, "Hoje, 16:30", "M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z", true, E.pessoa],
         ["WhatsApp recebido", E.pessoa, "Ontem, 13:42", ico.wa, false, E.pessoa],
@@ -606,9 +608,8 @@ posFlutuante(r, alto) {
         const INT = { "Callface AI": "CALLFACE_AI", "PABX": "PABX", "White Label": "WHITE_LABEL" };
         const famPad = INT[E.interesse] || INT[qualIni[0]] || "CALLFACE_AI";
         const fam = N.familia || famPad;
-        const seed = String(nomeEmp).split("").reduce((a, ch) => a + ch.charCodeAt(0), 0);
-        const ctId = "CT-" + (2000 + seed % 900);
-        const origem = { id: ctId, titulo: "Contrato " + FAM[famPad] + " nº " + ctId, assinado: "12/03/2026", mrr: { CALLFACE_AI: 2990, PABX: 1890, WHITE_LABEL: 4796 }[famPad] };
+        /* Antes: inventava "Contrato nº CT-2xxx, assinado 12/03/2026, R$ x/mês" (número sorteado do nome, MRR fixo por produto).
+           Não há contrato real ligado à empresa; sem ele, a expansão não aponta para contrato nenhum. */
         const alt = N.tipo && N.tipo !== "nova";
         const cts = pessoas.map(p => p[0]).filter(Boolean);
         const contato = N.contato || cts[0] || E.pessoa || "";
@@ -626,13 +627,13 @@ posFlutuante(r, alto) {
           tipos: TIPOS.map(([v, l, s, dd]) => { const on = N.tipo === v; return { l, s, d: dd, onClick: () => up({ tipo: v, familia: v === "nova" ? N.familia : famPad }),
             style: "display:flex;align-items:flex-start;gap:10px;padding:12px;border-radius:11px;border:0;cursor:pointer;text-align:left;background:#fff;box-shadow:inset 0 0 0 " + (on ? "1.5px #12171d" : "1px #dbdede"),
             ico: "flex:0 0 auto;width:30px;height:30px;border-radius:8px;display:grid;place-items:center;" + (on ? "background:#12171d;color:#fff" : "background:#eeeff3;color:#4a5560") }; }),
-          temOrigem: alt, origemT: origem.titulo, origemS: "Assinado em " + origem.assinado + " · R$ " + origem.mrr.toLocaleString("pt-BR", { minimumFractionDigits: 2 }) + "/mês hoje",
+          temOrigem: false, origemT: "", origemS: "",
           familia: fam, famLabel: FAM[fam], familias: Object.keys(FAM).filter(k => !alt || k === famPad).map(k => ({ v: k, l: FAM[k] })), setFamilia: (ev) => up({ familia: ev.target.value }),
           resp, equipe: equipe.map(p => ({ v: p, l: p })), setResp: (ev) => up({ resp: ev.target.value }),
           contato, contatos: cts.map(p => ({ v: p, l: p })), setContato: (ev) => up({ contato: ev.target.value }),
           nota: N.nota || "", setNota: (ev) => up({ nota: ev.target.value }),
           notaDica: alt ? "Ex: quer ativar mais 30 licenças a partir do mês que vem" : "Ex: interesse em PABX para a filial de Campinas",
-          temAviso: alt, aviso: "A proposta desta oportunidade já nasce como aditivo ao " + ctId + ". Ela altera a assinatura atual, sem criar uma nova.",
+          temAviso: false, aviso: "",
           criarTxt: "Criar oportunidade",
           criarStyle: "height:38px;padding:0 16px;border-radius:9px;border:0;font-size:13px;font-weight:700;white-space:nowrap;" + (ok ? "background:#12171d;color:#fff;cursor:pointer" : "background:#e3e7e8;color:#8b949e;cursor:not-allowed"),
           criar: () => {
@@ -641,9 +642,9 @@ posFlutuante(r, alto) {
             const id = "o" + Date.now().toString(36);
             const rot = { nova: "Nova venda", expansao: "Expansão", upgrade: "Upgrade", renovacao: "Renovação" }[N.tipo];
             lista.push({ id, empresa: nomeEmp, pessoa: contato, cargo: contato === E.pessoa ? (E.cargo || "") : "", familia: fam, etapa: "entrada", resp, dias: 0, leadId: E.id, origem: alt ? "Cliente ativo" : (E.origem || "Empresa"),
-              tipo: N.tipo, contratoOrigem: alt ? origem : undefined, nota: (N.nota || "").trim() || undefined,
+              tipo: N.tipo, nota: (N.nota || "").trim() || undefined,
               itens: [], propostas: [], pessoas: [{ nome: contato, papel: "Contato principal" }], atvs: [],
-              eventos: [{ t: rot + " criada a partir da empresa" + (alt ? " · aditivo ao " + ctId : ""), quando: "Hoje", autor: this.eu }] });
+              eventos: [{ t: rot + " criada a partir da empresa", quando: "Hoje", autor: this.eu }] });
             Es.gravar({ opps: lista });
             this.registrarEvento && this.registrarEvento(nomeEmp, "Oportunidade de " + rot.toLowerCase() + " criada · " + FAM[fam], this.eu);
             this.setState({ nova: null });
@@ -995,7 +996,7 @@ posFlutuante(r, alto) {
         const esfriando = E.registro ? [] : lista.filter(p => p.ms == null || p.ms >= DIA * 7);
         const sinais = [
           maisRecente ? { texto: "Último contato com " + maisRecente.nome.split(" ")[0], valor: rel(maisRecente.ms), tom: maisRecente.ms < DIA * 3 ? "ok" : maisRecente.ms < DIA * 7 ? "alerta" : "risco" } : { texto: "Ninguém da empresa foi contatado", valor: "—", tom: "risco" },
-          E.registro ? { texto: "Relacionamento " + (E.rel || "Contato"), valor: "desde hoje", tom: "ok" } : { texto: "Na etapa " + etapaLbl, valor: dias + (dias === 1 ? " dia" : " dias"), tom: dias <= 3 ? "ok" : dias <= 7 ? "alerta" : "risco" },
+          /* Antes: "Na etapa X · N dias" (N era dias desde a criação, não o tempo na etapa) e "desde hoje" para todo registro, ambos pintados de ok/alerta/risco. Sem o dado real de tempo na etapa, não afirma nada. */
           E.acao ? { texto: "Próxima ação: " + E.acao, valor: E.venceEm || "sem data", tom: "ok" } : { texto: "Sem próxima ação agendada", valor: "agendar", tom: "risco" },
           esfriando.length ? { texto: esfriando.map(p => p.nome.split(" ")[0]).join(", ") + (esfriando.length > 1 ? " esfriando" : " esfriando") + " · 7+ dias sem toque", valor: esfriando.length + (esfriando.length > 1 ? " pessoas" : " pessoa"), tom: "alerta" } : null
         ].filter(Boolean);
@@ -1003,9 +1004,9 @@ posFlutuante(r, alto) {
         const riscos = sinais.filter(s => s.tom === "risco").length;
         const alertas = sinais.filter(s => s.tom === "alerta").length;
         return {
-          selo: riscos ? "Em risco" : alertas ? "Atenção" : "Saudável",
-          seloStyle: "flex:0 0 auto;display:inline-flex;align-items:center;height:20px;padding:0 8px;border-radius:6px;font-size:10.5px;font-weight:700;white-space:nowrap;"
-            + (riscos ? "background:#fff6f4;color:#9c3210" : alertas ? "background:#f7edd8;color:#6e5420" : "background:#e6f4ee;color:#1f7256"),
+          /* Antes: selo "Saudável/Atenção/Em risco" calculado de dias que não são o tempo real na etapa. Sem dado confiável, não afirma saúde. */
+          selo: "Sem avaliação",
+          seloStyle: "flex:0 0 auto;display:inline-flex;align-items:center;height:20px;padding:0 8px;border-radius:6px;font-size:10.5px;font-weight:700;white-space:nowrap;background:#eeeff3;color:#4a5560",
           sinais: sinais.map(s => ({
             texto: s.texto, valor: s.valor,
             caixa: "display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:8px;background:" + corTom[s.tom][1] + ";box-shadow:inset 0 0 0 1px " + (s.tom === "ok" ? "#eef1f1" : s.tom === "alerta" ? "#efe2c4" : "#fadfd8"),
@@ -1030,26 +1031,17 @@ posFlutuante(r, alto) {
         const niveisTodos = ["Todos", "Gerência", "Diretoria", "C-level"];
         const ja = pessoas.map(p => p[0]);
         const mockNomes = ["Marcos Tavares", "Patrícia Moura", "Felipe Andrade", "Luana Ribeiro", "Rogério Sales", "Helena Costa"];
-        const encontrados = [
-          ["Marcos Tavares", "Diretor Financeiro", "Financeiro", "Diretoria", "Verificado", "+55 11 98431-2207"],
-          ["Patrícia Moura", "Coordenadora de Atendimento", "Atendimento / CX", "Gerência", "Verificado", "+55 11 97120-4418"],
-          ["Felipe Andrade", "CTO", "TI", "C-level", "Provável", "+55 11 99652-3071"],
-          ["Luana Ribeiro", "Head de Operações", "Operações", "Diretoria", "Verificado", "+55 11 98877-1560"],
-          ["Rogério Sales", "Gerente de Compras", "Compras", "Gerência", "Provável", "+55 11 97304-6692"],
-          ["Helena Costa", "CEO", "Diretoria", "C-level", "Verificado", ""]
-        ].filter(p => ja.indexOf(p[0]) < 0 && (!Q || !Q.areas.length || Q.areas.indexOf(p[2]) >= 0) && (!Q || Q.nivel === "Todos" || Q.nivel === p[3]));
+        /* Antes: "Encontrar contatos" devolvia 6 pessoas que não existem (nome, cargo, telefone, e-mail) e "Dados da empresa" devolvia funcionários, faturamento, LinkedIn e telefone de exemplo. Não há integração Apollo ligada: a lista fica vazia e a busca avisa. */
+        const encontrados = ([] as any[][]).filter(p => ja.indexOf(p[0]) < 0 && (!Q || !Q.areas.length || Q.areas.indexOf(p[2]) >= 0) && (!Q || Q.nivel === "Todos" || Q.nivel === p[3]));
         const camposAchados = [
           ["cnpj", "CNPJ", cnpj, cnpj],
           ["site", "Site", site, site],
-          ["funcionarios", "Funcionários", X.funcionarios || "", "320 · 201–500"],
-          ["faturamento", "Faturamento anual", X.faturamento || "", "R$ 50–100 mi"],
-          ["linkedin", "LinkedIn", X.linkedin || "", "linkedin.com/company/" + slug(nomeEmp)],
-          ["telefone", "Telefone geral", X.telefone || "", "+55 11 3456-7800"],
-          ["tecnologias", "Tecnologias", X.tecnologias || "", "Zendesk · Salesforce · Twilio"]
         ].filter(c => c[2] !== c[3]);
         const passos = ["Buscando empresa…", "Cruzando domínio " + dominio + "…", "Procurando contatos…", "Verificando e-mails…"];
         const buscar = () => {
           if (!Q.empresa && !Q.contatos) return diz("Escolha o que buscar", "erro");
+          /* Antes: fingia uma busca de 1,8s e mostrava resultado de exemplo. Honesto: sem integração, avisa e não segue. */
+          return diz("Enriquecimento ainda não está ligado", "aviso");
           set({ passo: "busca", prog: 0 });
           clearInterval(this._enrI);
           this._enrI = setInterval(() => this.setState(s => s.enr ? { enr: Object.assign({}, s.enr, { prog: Math.min(3, (s.enr.prog || 0) + 1) }) } : null), 420);
@@ -1332,3 +1324,10 @@ posFlutuante(r, alto) {
 }
 
 export { Logica as EmpresaLiga };
+
+/* Data real de criação do lead (criadoEm vem do Proto). Antes a ficha afirmava "Hoje" ou uma data fixa de exemplo para todo mundo. */
+function dataCriacao(iso) {
+  const d = iso ? new Date(iso) : null;
+  if (!d || isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" }).replace(/\./g, "");
+}

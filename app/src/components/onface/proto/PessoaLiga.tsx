@@ -245,7 +245,7 @@ class Logica extends React.Component<any, any> {
         nStyle: "font-size:11.5px;font-weight:600;font-variant-numeric:tabular-nums;color:" + (on ? "#12171d" : "#8b949e") };
     });
     const semente = L.registro ? [
-      { titulo: "Cadastrado em Contatos & Empresas", detalhe: (L.origem || "Cadastro manual") + (L.campanha ? " · " + L.campanha : ""), quando: "Hoje", tipo: "Sistema", vinc: "contato" }
+      { titulo: "Cadastrado em Contatos & Empresas", detalhe: (L.origem || "Cadastro manual") + (L.campanha ? " · " + L.campanha : ""), quando: dataCriacao(L.criadoEm), tipo: "Sistema", vinc: "contato" }
     ] : (bruto.principal ? [
       { titulo: "WhatsApp recebido", detalhe: "“Consegue me enviar o material?”", quando: "Ontem, 13:42", tipo: "WhatsApp", vinc: "contato" }
     ] : [
@@ -311,7 +311,8 @@ class Logica extends React.Component<any, any> {
       iniciais: ini(P.nome), empIniciais: ini(nomeEmp),
       principal: !!bruto.principal,
       temEtapa: !!bruto.principal,
-      origemSelo: L.registro ? "Manual" : "Automática",
+      /* Antes: todo lead aparecia "Manual" (L.registro é o id, sempre preenchido). Agora só quando a origem diz manual. */
+      origemSelo: /manual/i.test(L.origem || "") ? "Manual" : "Automática",
       etapa: L.registro ? (L.rel || "Contato") : ((etapas[L.etapa] || {}).label || "—"),
       etapaSelo: "display:inline-flex;align-items:center;gap:6px;height:23px;padding:0 9px;border-radius:7px;font-size:11.5px;font-weight:700;white-space:nowrap;background:#fff;box-shadow:inset 0 0 0 1px #e3e7e8;color:#1f252c",
       trilhaTopo: [
@@ -322,7 +323,8 @@ class Logica extends React.Component<any, any> {
         { label: "", valor: P.tel || "—", d: ico.tel },
         { label: "", valor: P.email || "—", d: ico.mail },
         { label: "Responsável:", valor: L.resp || "—", d: "M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0" },
-        { label: "Criado em:", valor: L.registro ? "Hoje" : "20 set 2026", d: ico.cal }
+        /* Antes: "Hoje" ou "20 set 2026" fixos para todo lead; agora a data real de criação (ou "—"). */
+        { label: "Criado em:", valor: dataCriacao(L.criadoEm), d: ico.cal }
       ],
       abas: abas.map(([t, n]) => {
         const on = aba === t;
@@ -642,16 +644,16 @@ class Logica extends React.Component<any, any> {
         const manual = !bruto.principal && !apollo && (X.pessoas || []).some(p => p.nome === P.nome);
         const tipos = {
           lead: { tipo: "Lead inbound", resumo: "Entrou pelo " + (L.origem || "—") + " e originou o lead", d: "M22 12h-4l-3 9L9 3l-3 9H2", cor: "background:#fff6f4;color:#c2330f",
-            linhas: [["Canal", L.origem || "—"], ["Campanha", L.campanha || "—", true], ["Entrada", "20 set 2026 · 09:14"], ["Registro", "Automático"]] },
+            linhas: [["Canal", L.origem || "—"], ["Campanha", L.campanha || "—", true], ["Entrada", dataCriacao(L.criadoEm)], ["Registro", /manual/i.test(L.origem || "") ? "Manual" : "Automático"]] },
           apollo: { tipo: "Apollo", resumo: "Encontrado no enriquecimento da " + nomeEmp, d: "M21 5c0 1.66-4 3-9 3S3 6.66 3 5s4-3 9-3 9 1.34 9 3zM3 5v14c0 1.66 4 3 9 3M21 5v6M3 12c0 1.66 4 3 9 3M18 15v6M15 18h6", cor: "background:#eeeff3;color:#4a5560",
             linhas: [["Fonte", "Enriquecimento Apollo"], ["Dados", [P.email && P.email.indexOf("•") < 0 && P.email ? "e-mail revelado" : null, P.tel && P.tel !== "—" ? "telefone revelado" : null].filter(Boolean).join(" · ") || "sem dados revelados"], ["Adicionado", "Hoje"], ["Por", this.eu]] },
           manual: { tipo: "Cadastro manual", resumo: "Adicionado à mão na página da empresa", d: "M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z", cor: "background:#eeeff3;color:#4a5560",
             linhas: [["Fonte", "Manual"], ["Adicionado", "Hoje"], ["Por", this.eu]] },
           empresa: { tipo: "Mesma da empresa", resumo: "Herdou a origem da " + nomeEmp + " (" + (L.origem || "—") + ")", d: "M3 21V7l9-4 9 4v14M9 21v-6h6v6", cor: "background:#eeeff3;color:#4a5560",
-            linhas: [["Canal", L.origem || "—"], ["Vínculo", "Contato da empresa"], ["Adicionado", "20 set 2026"], ["Registro", "Automático"]] }
+            linhas: [["Canal", L.origem || "—"], ["Vínculo", "Contato da empresa"], ["Adicionado", "—"], ["Registro", "Automático"]] }
         };
         tipos.registro = { tipo: L.origem || "Cadastro manual", resumo: "Cadastrado em Contatos & Empresas" + (L.campanha ? " · " + L.campanha : ""), d: "M12 5v14M5 12h14", cor: "background:#eeeff3;color:#4a5560",
-          linhas: [["Canal", L.origem || "Cadastro manual"], ["Lista / campanha", L.campanha || "—", true], ["Entrada", "Hoje"], ["Registro", "Manual"]] };
+          linhas: [["Canal", L.origem || "Cadastro manual"], ["Lista / campanha", L.campanha || "—", true], /* Antes: "Entrada: Hoje" / "Registro: Manual" para todo lead. */ ["Entrada", dataCriacao(L.criadoEm)], ["Registro", /manual/i.test(L.origem || "") ? "Manual" : "Automático"]] };
         const o = tipos[L.registro && bruto.principal ? "registro" : bruto.principal ? "lead" : apollo ? "apollo" : manual ? "manual" : "empresa"];
         return {
           tipo: o.tipo, resumo: o.resumo, d: o.d,
@@ -845,3 +847,10 @@ class Logica extends React.Component<any, any> {
 }
 
 export { Logica as PessoaLiga };
+
+/* Data real de criação do lead (criadoEm vem do Proto). Antes a ficha afirmava "Hoje" ou uma data fixa de exemplo para todo mundo. */
+function dataCriacao(iso) {
+  const d = iso ? new Date(iso) : null;
+  if (!d || isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" }).replace(/\./g, "");
+}
