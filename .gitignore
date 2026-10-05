@@ -73,3 +73,6 @@ infra/documenso/certs/*.pem
 **/.impeccable/*.cache.json
 .vite/
 *.tsbuildinfo
+
+# Dado real de cliente: fica fora do git (ver docs/operacao/)
+_dados/

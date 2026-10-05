@@ -45,13 +45,19 @@ jobs:
 
       # O mesmo comando que o `build` roda desde o CP61, e a mesma razão: o
       # portão tem que ser o comando de verdade, não uma variação dele.
+      # 2,2 GB de pico medido em 05/10: com o limite padrão do Node o tsc morre
+      # com "JavaScript heap out of memory", e o portão passava a pular as travas.
       - name: typecheck
         working-directory: app
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
         run: pnpm exec tsc --noEmit
 
       # As travas que provam regra de arquitetura: porta canônica, isolamento de
       # tenant, idempotência sem relógio, link que não leva ao vazio, métrica com
       # definição única. Todas leem arquivo, nenhuma toca banco.
+      # `always()`: typecheck vermelho não pode esconder regressão de arquitetura.
       - name: travas de arquitetura
+        if: always()
         working-directory: app
         run: pnpm exec tsx --test "src/lib/arquitetura/*.test.ts"

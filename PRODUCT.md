@@ -42,7 +42,7 @@ The journey must preserve source, campaign, UTM, creator, owner, timeline, activ
 
 Won rules are product-critical. Callface AI normally requires payment. PABX and initial White Label can become Won with signed contract and payment pending. Additional White Label licenses do not always require a new contract. Exceptional financial evidence is controlled, never a verbal shortcut.
 
-Design and implementation must use the existing CRM2 design system. Screens write role tokens and component primitives, not ad hoc numbers: examples include `rounded-card`, `text-corpo`, and semantic background tokens. Do not install UI kits that bring a competing theme system. Use shadcn/Radix-compatible primitives and the local `Cf2*` system.
+Design and implementation must use the ONFACE design system. Screens write role tokens and component primitives, not ad hoc numbers. Do not install UI kits that bring a competing theme system. Primitives live in `app/src/components/ui` (shadcn); tokens in `app/src/app/onface.css`; the living catalogue is the `/design` route.
 
 Definition of done is non-negotiable: the code compiles, the data matches real SQL and top-level KPIs, the create/edit/save/return flow closes, and the screen follows the design system. If a dimension was not verified, say that explicitly instead of reporting it as complete.
 
@@ -50,13 +50,13 @@ Playwright is currently avoided for token/cost reasons. Manual browser validatio
 
 ## Brand Commitments
 
-The product belongs to Callface and must feel operational, trustworthy, fast, and precise. The current CRM2 visual foundation uses a seaweed palette with vivid green over dark ink, a finished design-system route at `/design`, and components under `app/src/components/crm2/ds/` plus shared UI primitives.
+The product belongs to Callface and must feel operational, trustworthy, fast, and precise. The ONFACE visual foundation is graphite shell, paper canvas and a single coral accent (see `DESIGN.md`), with the living design-system route at `/design` and components under `app/src/components/onface/ds/` plus the shared primitives in `app/src/components/ui`.
 
 The interface should prioritize scanability, consistency, dense but organized information, and repeated operational use. Expression lives in precise details, not decorative excess.
 
 ## Evidence on Hand
 
-Project context exists in `CLAUDE.md`, `HANDOFF.md`, `README.md`, `docs/db/`, migrations, schema, and the CRM2 source tree. Vault context exists in `projetos/callface/produto/crm-handoff-atual.md`, `projetos/callface/produto/crm2-mapa-mestre-produto.md`, and related Callface notes.
+Project context exists in `README.md`, `AGENTS.md`, `docs/` (see `docs/README.md`), the migrations and `app/src/lib/db/schema.ts`. Vault context lives in `02_PROJETOS/Callface/ONFACE/`.
 
 Real production-like data is used locally through the dev database refresh process. Some historical reports and claims of completion are evidence to audit, not proof of current behavior. Existing screenshots, Figma references, and old UI do not override current domain rules or the live design system.
 
@@ -65,7 +65,7 @@ Real production-like data is used locally through the dev database refresh proce
 1. Functional truth before visual polish. A beautiful screen that does not close the real workflow is not done.
 2. Preserve context across transitions. Every conversion must carry source, evidence, owner, timeline, and commercial meaning forward.
 3. Trust real data over mock states. Do not fabricate metrics, statuses, health scores, or proof when the model does not support them.
-4. Promote modules incrementally. The legacy and CRM2 surfaces coexist until each module is proven and intentionally switched.
+4. Promote modules incrementally. Underneath the single ONFACE surface the canonical model is still being cut over: `app/src/lib/vendas/ponte-canonica.ts` and `ponte-ganho.ts` keep legacy and canonical tables in sync until the cutover phases close them.
 5. Respect domain boundaries. Lead, opportunity, customer, service, billing, lifecycle, automation, and timeline are separate concepts that connect without collapsing into each other.
 
 ## Accessibility & Inclusion
