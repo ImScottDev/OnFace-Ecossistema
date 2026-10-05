@@ -18,6 +18,7 @@ export {
 
 export {
   boardDeAquisicoes,
+  somenteDePreVendas,
   type CardAquisicao,
   type EstagioAquisicao,
   type FiltrosBoard,

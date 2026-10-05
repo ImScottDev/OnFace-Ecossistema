@@ -149,6 +149,41 @@ function expressaoDeEtapa(sql: SqlTag): unknown {
 }
 
 /**
+ * Prospecção NÃO é Pré-vendas, e o board não pode contar as duas.
+ *
+ * O board de Pré-vendas abria com 62 cards em "Novo" e 37 deles eram leads
+ * `origem='outbound'` que em produção estavam parados na coluna "Outbound" do
+ * board legado — nunca entraram no funil de pré-vendas. O de/para do backfill
+ * 06b manda a coluna `outbound` para a etapa `novo`, e o board, que lê
+ * `aquisicoes` sem olhar o estado de prospecção, os misturava com os 25 leads
+ * de inbound que são Novo de verdade.
+ *
+ * O recorte é o contrato que o próprio módulo de Prospecção já declara
+ * (`lib/vendas/prospeccao.ts`), e por isso vale em runtime, não só na carga:
+ *
+ *   novo, em_cadencia, respondeu, sem_resposta → prospect em trabalho, está
+ *     em Prospecção e em lugar nenhum do Kanban.
+ *   descartado  → `descartar()`: "Desqualificado fica reservado a Pré-vendas",
+ *     ou seja, o descarte do outbound não é uma coluna daqui.
+ *   oportunidade → `oportunidadeDireta()`: "o prospect NÃO vira Lead de
+ *     Pré-vendas", vai direto para o Pipeline.
+ *   pre_qualificado → `preQualificar()`: "Entrou em Pré-vendas na etapa Novo".
+ *     É a ÚNICA saída do outbound que entra neste board.
+ *   NULL → nunca foi prospect. Todo o inbound.
+ *
+ * Fora daqui o conserto seria `closed_at` na aquisição, e seria mentira: o
+ * processo de aquisição do prospect está aberto, só não está em pré-vendas.
+ * Pior, `preQualificar` reabriria o buraco — `registrarEntrada` só reaproveita
+ * aquisição ABERTA, então uma fechada faria a pré-qualificação tentar criar a
+ * segunda e bater no índice único `uq_aquisicoes_lead_legado`.
+ *
+ * Depende do alias `lg` (a tabela `leads`) estar no FROM de quem chama.
+ */
+export function somenteDePreVendas(sql: SqlTag): unknown {
+  return sql`(lg.prospeccao_estado IS NULL OR lg.prospeccao_estado = 'pre_qualificado')`;
+}
+
+/**
  * A tarefa aberta mais próxima de vencer, por aquisição.
  *
  * `LATERAL` e não `JOIN`: só a primeira linha interessa, e um join comum
@@ -250,6 +285,7 @@ export async function boardDeAquisicoes(
               ? sql`(a.closed_at IS NULL OR a.desqualificado_em IS NOT NULL
                      OR COALESCE(a.nutricao_status, '') <> '')`
               : sql`a.closed_at IS NULL`})
+       AND ${somenteDePreVendas(sql)}
        AND (${filtros.responsavelId ?? null}::uuid IS NULL OR a.responsavel_id = ${filtros.responsavelId ?? null}::uuid)
        AND (${filtros.semDono ? sql`a.responsavel_id IS NULL` : sql`TRUE`})
        AND (${filtros.origem ?? null}::text IS NULL OR a.origem = ${filtros.origem ?? null})
@@ -308,6 +344,9 @@ export async function boardDeAquisicoes(
     SELECT ${expressaoDeEtapa(sql)} AS etapa, count(*)::int AS n
       FROM aquisicoes a
       LEFT JOIN pipeline_etapas pe ON pe.id = a.etapa_id
+      -- lg só existe aqui por causa de somenteDePreVendas(). O total e os
+      -- cards precisam do MESMO recorte: duas cópias da regra divergem calado.
+      LEFT JOIN leads lg ON lg.id = a.lead_legado_id
       LEFT JOIN LATERAL (
         SELECT campaign FROM pontos_contato t
          WHERE t.aquisicao_id = a.id
@@ -319,6 +358,7 @@ export async function boardDeAquisicoes(
               ? sql`(a.closed_at IS NULL OR a.desqualificado_em IS NOT NULL
                      OR COALESCE(a.nutricao_status, '') <> '')`
               : sql`a.closed_at IS NULL`})
+       AND ${somenteDePreVendas(sql)}
        AND (${filtros.responsavelId ?? null}::uuid IS NULL OR a.responsavel_id = ${filtros.responsavelId ?? null}::uuid)
        AND (${filtros.semDono ? sql`a.responsavel_id IS NULL` : sql`TRUE`})
        AND (${filtros.origem ?? null}::text IS NULL OR a.origem = ${filtros.origem ?? null})

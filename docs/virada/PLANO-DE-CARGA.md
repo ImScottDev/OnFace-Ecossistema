@@ -426,6 +426,64 @@ docker compose run --rm --no-deps --entrypoint "" api \
 Esperado (igual ao ensaio): **12 migrações** no primeiro comando, **37** no
 terceiro. Qualquer erro aqui: **parar**, não improvisar, ir para 4.7.
 
+### 4.4.c Backfills — SEM ISSO O CANÔNICO FICA VAZIO
+
+Este passo faltava no documento, e é o que separa "o schema converge" de "o
+sistema tem dado". A cadeia de migrações cria as tabelas canônicas; quem as
+POPULA é outro script, que o `ensaio-carga.sh` não chama:
+
+```bash
+./scripts/rodar-backfills.sh "$URL" --dry-run   # ler a saída antes
+./scripts/rodar-backfills.sh "$URL"             # aplicar
+```
+
+São 11 passos em ordem, idempotentes por `backfill_provenance`. Sem eles,
+`pessoas`, `aquisicoes`, `oportunidades`, `communications` e `timeline_events`
+ficam zeradas e a ONFACE abre com as telas vazias — exatamente a cara de "dado
+incoerente" que as cargas anteriores produziram.
+
+Medido em 05/10/2026 contra o dump do dia: 4.040 pessoas, 2.441 aquisições,
+1.115 oportunidades, 43.518 comunicações, 15.056 eventos de timeline.
+
+### 4.4.d Carga complementar — faturamento, histórico, LTV e limpeza
+
+Quatro fases acrescentadas em 05/10, todas idempotentes, aplicadas na ordem:
+
+```bash
+for d in 3-faturamento 4-historico 5-ltv 6-limpeza; do
+  for f in app/src/lib/db/carga/$d/*.sql; do
+    psql "$URL" -v ON_ERROR_STOP=1 -f "$f"
+  done
+done
+```
+
+- **3-faturamento** — mescla cadastros duplicados por CNPJ (16 CNPJs, 17
+  registros; nome fantasia × razão social) e reconcilia clientes ativos contra
+  a planilha do mês. A mescla declara a própria perda em
+  `_carga_perdas_declaradas`, que o check B passou a respeitar.
+- **4-historico** — devolve dono às comunicações órfãs (36.722 entravam sem
+  `pessoa_id`, 96,6% do WhatsApp, porque as mensagens apontam para `contatos`,
+  tabela que `05-identidade` não lê) e leva à timeline as 14.214 linhas que o
+  `14-15` não migra: movimentações de card, notas, reuniões, tarefas, anexos.
+  Também tira o outbound do Kanban de Pré-vendas, que é lugar de Prospecção.
+- **5-ltv** — popula `cliente_receita_mensal` com o histórico de receita de
+  2021-M03 a 2026-M09, a partir da base histórica e das planilhas mensais. É o
+  que alimenta o gráfico de quanto cada cliente pagou mês a mês. Os três
+  últimos meses fecham exato: 445.375,74 / 435.626,64 / 512.404,49.
+- **6-limpeza** — marca (nunca apaga) o lixo herdado do Zoho em
+  `_carga_registros_suspeitos`. Reverter é um `DELETE` na tabela de marcação.
+
+**Armadilha que custou tempo:** `npx drizzle-kit migrate` responde "migrations
+applied successfully" e NÃO aplica nada — o journal do drizzle conhece uma
+migration e as outras 93 são SQL escrito à mão. O runner é
+`app/src/lib/db/migrar.ts`, que registra em `_migracoes_aplicadas`. Conferir
+sempre no banco, nunca no exit code.
+
+**Onde construir o banco:** no Mac, não na EC2. A máquina tem 2 vCPU e hospeda
+produção, homolog e crm2-dev juntos; um build normal já derrubou produção por
+15 minutos. `scripts/aplicar-carga-no-dev.sh` constrói aqui e envia pronto,
+deixando só um `pg_restore` para lá.
+
 ### 4.5 Checks de sanidade
 
 ```bash
