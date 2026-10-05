@@ -114,8 +114,9 @@ Revisão em árvore mutante não existe. A regra:
   serializada. Nunca criar branch ou worktree novo para tarefa pontual.
 - Publicação: `./deploy.sh dev` publica o commit em `dev.crm.callface.io`, onde a
   validação acontece com dado real. Produção só pela virada, com OK do Kauã.
-- Login local de smoke: `kaua.araujo@callface.ai` / `devlocal2026`, banco local.
-  Nunca executar Enriquecer nem Apollo.
+- Smoke local entra pela sessão gerada com a chave do `app/.env`
+  (`src/scripts/checar-rotas-onface.ts`), não por senha: o banco local é cópia
+  de produção e traz as senhas de lá. Nunca executar Enriquecer nem Apollo.
 - Não rodar `pnpm build` com o `next dev` de pé: sobrescreve o `.next` e o dev
   server passa a servir CSS velho. Se a correção "não apareceu", suspeite disso
   e do cache do chunk de CSS do Turbopack antes de mexer no código de novo.

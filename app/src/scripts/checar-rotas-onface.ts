@@ -56,7 +56,8 @@ async function umId(consulta: ReturnType<typeof sql>): Promise<string | null> {
    item, que a casca escreve no cabeçalho da página. */
 const ROTAS: Rota[] = DESTINOS
   .filter((d) => !d.pendente)
-  .map((d) => ({ caminho: d.href, exige: [d.label] }));
+  // O HTML escreve "&" como "&amp;": "Contatos & Empresas" não casaria literal.
+  .map((d) => ({ caminho: d.href, exige: [d.label, d.label.replace(/&/g, "&amp;")] }));
 
 /* Negócio "aberto" é etapa canônica (Bloco 02 §9), nunca o status legado. */
 const OPORTUNIDADE_ABERTA = sql`SELECT id::text FROM negocios WHERE etapa NOT IN ('ganho','perdido') ORDER BY updated_at DESC LIMIT 1`;

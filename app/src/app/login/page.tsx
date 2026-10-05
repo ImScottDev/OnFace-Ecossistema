@@ -33,8 +33,8 @@ export default function LoginPage() {
  * A lógica é a mesma da versão anterior, sem mudança: signIn("credentials")
  * com redirect:false, mesma mensagem de erro, callbackUrl só se for caminho
  * relativo (evita open redirect), destino padrão /inicio. Os nomes dos campos
- * (email/password) seguem iguais porque o NextAuth e scripts/dev-sessao.sh
- * dependem deles.
+ * (email/password) seguem iguais porque o provider de credenciais do NextAuth
+ * depende deles.
  */
 function LoginForm() {
   const router = useRouter();

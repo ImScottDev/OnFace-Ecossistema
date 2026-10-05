@@ -619,8 +619,8 @@ Backend:
 - testes `node --import tsx --env-file-if-exists=.env --test` de grafo, executor
   (espera e retomada, política de falha, idempotência do passo, reentrada),
   agenda e disparo (uma fonte por evento, anti-loop) verdes;
-- smoke `scripts/dev-smoke.sh` de todas as rotas da tabela §5 com status
-  esperado, incluindo `401/403` sem permissão e `404` de outra org;
+- smoke autenticado de todas as rotas da tabela §5 com status esperado,
+  incluindo `401/403` sem permissão e `404` de outra org;
 - SQL mostrando execução e passos gravados de um "Rodar agora" real com tarefa
   de teste (apagada no fim), e um ensaio sem nenhuma linha nova;
 - typecheck só dos arquivos tocados.
