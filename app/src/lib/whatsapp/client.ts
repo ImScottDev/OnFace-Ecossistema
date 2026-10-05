@@ -469,10 +469,27 @@ export function saveBase64ToDisk(
 // ─── CHAT ACTIONS ────────────────────────────────────────
 
 /** React to a message with an emoji */
-export async function reactToMessage(phone: string, messageId: string, emoji: string, config?: WuzapiSessionConfig): Promise<void> {
+/**
+ * Reage a uma mensagem.
+ *
+ * `daNossaMensagem` manda o id com o prefixo `me:`, que é como o wuzapi sabe
+ * que a mensagem reagida é do nosso número (handlers.go: sem o prefixo ele
+ * assume que é do contato). Sem isso, reagir à própria mensagem ia com o
+ * remetente trocado: o WhatsApp ignorava e a tela dizia que tinha reagido.
+ *
+ * `emoji` vazio REMOVE a reação.
+ */
+export async function reactToMessage(
+  phone: string,
+  messageId: string,
+  emoji: string,
+  config?: WuzapiSessionConfig,
+  daNossaMensagem = false,
+): Promise<void> {
+  const id = daNossaMensagem && !messageId.startsWith("me:") ? `me:${messageId}` : messageId;
   const res = await wuzapiFetch("/chat/react", {
     method: "POST",
-    body: JSON.stringify({ Phone: phone, Body: emoji, Id: messageId }),
+    body: JSON.stringify({ Phone: phone, Body: emoji, Id: id }),
   }, config || DEFAULT_CONFIG);
   if (!res.ok) {
     const data = await res.json();

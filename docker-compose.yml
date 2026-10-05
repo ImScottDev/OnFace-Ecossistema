@@ -58,7 +58,11 @@ services:
           memory: 128M
 
   wuzapi:
-    image: asternic/wuzapi:latest
+    # Versão fixa, não `latest`: um `up` futuro trocaria a imagem sem aviso, e
+    # o WhatsApp já caiu inteiro antes por "ClientOutdated" quando o whatsmeow
+    # de dentro dela ficou velho. Subir de versão passa a ser decisão, testada
+    # em dev antes. Última conferida: v1.0.9 (17/09/2026).
+    image: asternic/wuzapi:v1.0.9
     container_name: callface-crm2-dev-wuzapi
     restart: unless-stopped
     environment:

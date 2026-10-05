@@ -1029,8 +1029,14 @@ app.post("/whatsapp/actions", async (c) => {
 
   try {
     switch (data.action) {
-      case "react":
-        await reactToMessage(data.phone, data.messageId, data.emoji, config);
+      case "react": {
+        /* O wuzapi precisa saber se a mensagem reagida é NOSSA (prefixo `me:`).
+           Sem isso a reação na própria mensagem ia com o remetente trocado: o
+           WhatsApp ignorava e a tela dizia que tinha reagido. */
+        const [alvo] = await db.execute<{ direcao: string }>(sql`
+          SELECT direcao FROM whatsapp_mensagens WHERE uazapi_message_id = ${data.messageId} LIMIT 1
+        `);
+        await reactToMessage(data.phone, data.messageId, data.emoji, config, alvo?.direcao === "out");
         await db.execute(sql`
           UPDATE whatsapp_mensagens
           SET reactions = (
@@ -1045,6 +1051,7 @@ app.post("/whatsapp/actions", async (c) => {
           WHERE uazapi_message_id = ${data.messageId}
         `);
         return c.json({ ok: true, emoji: data.emoji });
+      }
       case "markread":
         await markRead(data.messageIds, data.chatPhone, config);
         return c.json({ ok: true });
