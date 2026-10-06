@@ -114,26 +114,44 @@ async function garantirLeadLegado(
   const telefone = n.telefone?.replace(/\D/g, "") || null;
   if (!email && !telefone) return null;
 
+  /* As respostas das perguntas EXTRAS do formulário (tudo que não virou nome/
+     e-mail/telefone/empresa/cargo) são o que o operador pediu para ver na ficha.
+     `normalizarLeadAds` já as separa em `respostas`; aqui elas finalmente são
+     persistidas em `campos_custom`, junto do id do anúncio para o link do
+     criativo. Antes nada disso era gravado e a ficha nascia muda. */
+  const extra: Record<string, unknown> = { ...(n.respostas ?? {}) };
+  if (n.atribuicao.adId) extra.meta_ad_id = n.atribuicao.adId;
+  const camposJson = Object.keys(extra).length ? JSON.stringify(extra) : null;
+
   const [ja] = await db.execute<{ id: string }>(sql`
     SELECT id::text FROM leads
      WHERE organizacao_id = ${organizacaoId}::uuid
        AND ((${email}::text IS NOT NULL AND lower(email) = ${email})
          OR (${telefone}::text IS NOT NULL AND regexp_replace(coalesce(telefone,''), '\D', '', 'g') = ${telefone}))
      ORDER BY created_at ASC LIMIT 1`);
-  if (ja) return ja.id;
+  if (ja) {
+    /* Enriquecimento NÃO toca `updated_at`: o board ordena por ele e um backfill
+       em massa faria todos os leads parecerem "tocados agora". Mescla por `||`
+       para não apagar respostas já gravadas em rodadas anteriores. */
+    if (camposJson) await db.execute(sql`
+      UPDATE leads SET campos_custom = coalesce(campos_custom, '{}'::jsonb) || ${camposJson}::jsonb
+       WHERE id = ${ja.id}::uuid`);
+    return ja.id;
+  }
 
   const partes = (n.nome ?? "").trim().split(/\s+/);
   const [novo] = await db.execute<{ id: string }>(sql`
     INSERT INTO leads (organizacao_id, nome, sobrenome, email, telefone, empresa, cargo,
                        origem, tipo, sdr_status, utm_source, utm_medium, utm_campaign,
                        utm_term, utm_content, meta_ad_id, meta_adset_id, meta_campaign_id,
-                       created_at, updated_at)
+                       campos_custom, created_at, updated_at)
     VALUES (${organizacaoId}::uuid, ${partes[0] || null}, ${partes.slice(1).join(" ") || null},
             ${n.email}, ${n.telefone}, ${n.empresa}, ${n.cargo},
             'Mídia Paga', 'lead', 'pending',
             ${n.atribuicao.utmSource}, ${n.atribuicao.utmMedium}, ${n.atribuicao.utmCampaign},
             ${n.atribuicao.utmTerm}, ${n.atribuicao.utmContent},
             ${n.atribuicao.adId}, ${n.atribuicao.adsetId}, ${n.atribuicao.campaignId},
+            coalesce(${camposJson}::jsonb, '{}'::jsonb),
             ${n.ocorridoEm ?? new Date()}, ${n.ocorridoEm ?? new Date()})
     RETURNING id::text`);
   return novo?.id ?? null;

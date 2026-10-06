@@ -330,7 +330,6 @@ class Logica extends React.Component<any, any> {
         { label: "Pipeline", href: "/onface-preview/pipeline" },
         { label: "Propostas", href: "/onface-preview/propostas" },
         { label: "Prospecção", href: "/onface-preview/prospeccao" },
-        { label: "Campanhas", href: "/automacoes/campanhas" },
         { label: "Contatos & Empresas", href: "/onface-preview/contatos" }
       ] },
       { label: "Operação", d: "m3 17 2 2 4-4M3 7l2 2 4-4M13 6h8M13 12h8M13 18h8", href: "/onface-preview/atividades", filhos: [
