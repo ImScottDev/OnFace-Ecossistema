@@ -1405,7 +1405,8 @@ export interface DetalheLead {
 
 /** Chaves de `campos_custom` que NÃO são resposta de formulário: vieram da
  *  migração do Zoho ou são controle interno. Mostrá-las na ficha seria ruído. */
-const CHAVE_NAO_E_RESPOSTA = /^(zoho|crm2_|fonte_dado|nome_derivado_do_email|recuperacao|qualificacaoSdr)/i;
+const CHAVE_NAO_E_RESPOSTA = /^(zoho|crm2_|fonte_dado|nome_derivado_do_email|recuperacao|qualificacaoSdr|motivo$)/i;
+/* `motivo` só existe nos 92 leads do backfill de recuperação (mesma contagem de `recuperacao`) e é nota técnica, não resposta. */
 
 /** Rótulo legível para a chave: `qual_sua_solucao` vira "Qual sua solucao". */
 function rotuloDaChave(chave: string): string {

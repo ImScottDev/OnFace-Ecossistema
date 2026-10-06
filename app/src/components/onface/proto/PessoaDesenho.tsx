@@ -99,6 +99,8 @@ export interface ValoresDePessoaDesenho {
   opps: any;
   origemC: any;
   origemSelo: any;
+  respostasForm: any;
+  temRespostasForm: any;
   parar: any;
   primeiroNome: any;
   principal: any;
@@ -140,7 +142,7 @@ export interface ValoresDePessoaDesenho {
 }
 
 export function PessoaDesenho(vals: ValoresDePessoaDesenho) {
-  const { abaAtv, abaOpp, abaVisao, abas, abrirEmpresa, abrirResp, abrirTag, abrirVinc2, acaoNota, acaoTitulo, anexarNota, atvEsc, atvFiltros, atvLista, atvVazia, atvVaziaTitulo, blurNota, cad, canais, cancelarNota, cargo, chamada, chamadaTempo, colegas, criarOpp, criarTag, ed, editarResumo, empFatos, empIniciais, empMeta, empTitulo, empresa, empresaTopo, empresaTopoClick, empresaTopoStyle, encerrar, etapa, etapaSelo, exc, extras, focoNota, gridStyle, iniciais, interEsc, interTitulo, interacoes, ligar, mais, maisAberto, maisItens, maisStyle, mencaoAberta, mencaoOpcoes, mencaoStyle, mencaoVazia, meta, mostraInteracoes, nome, notaAnexos, notaAtiva, notaBtnStyle, notaCaixaStyle, notaLinhas, notaRef, notaTexto, notas, notasConta, novaAtv, obs, obsAutor, obsStyle, opps, origemC, origemSelo, parar, primeiroNome, principal, qualif, registrar, relAtivas, resp, respAberto, respBtnStyle, respChevron, respIniciais, respMenuStyle, respOpcoes, resumo, salvarNota, semAcao, semEmpresa, semInteracoes, semOpps, setNota, setTagNova, tagAberto, tagMenuStyle, tagNova, tagOpcoes, tags, teclaNota, teclaTag, temAcao, temEmpresa, temEtapa, temExtras, temNotaAnexos, toques, v2, verAcao, vincularEmpresa, visor } = vals;
+  const { abaAtv, abaOpp, abaVisao, abas, abrirEmpresa, abrirResp, abrirTag, abrirVinc2, acaoNota, acaoTitulo, anexarNota, atvEsc, atvFiltros, atvLista, atvVazia, atvVaziaTitulo, blurNota, cad, canais, cancelarNota, cargo, chamada, chamadaTempo, colegas, criarOpp, criarTag, ed, editarResumo, empFatos, empIniciais, empMeta, empTitulo, empresa, empresaTopo, empresaTopoClick, empresaTopoStyle, encerrar, etapa, etapaSelo, exc, extras, focoNota, gridStyle, iniciais, interEsc, interTitulo, interacoes, ligar, mais, maisAberto, maisItens, maisStyle, mencaoAberta, mencaoOpcoes, mencaoStyle, mencaoVazia, meta, mostraInteracoes, nome, notaAnexos, notaAtiva, notaBtnStyle, notaCaixaStyle, notaLinhas, notaRef, notaTexto, notas, notasConta, novaAtv, obs, obsAutor, obsStyle, opps, origemC, origemSelo, parar, respostasForm, temRespostasForm, primeiroNome, principal, qualif, registrar, relAtivas, resp, respAberto, respBtnStyle, respChevron, respIniciais, respMenuStyle, respOpcoes, resumo, salvarNota, semAcao, semEmpresa, semInteracoes, semOpps, setNota, setTagNova, tagAberto, tagMenuStyle, tagNova, tagOpcoes, tags, teclaNota, teclaTag, temAcao, temEmpresa, temEtapa, temExtras, temNotaAnexos, toques, v2, verAcao, vincularEmpresa, visor } = vals;
   return (
     <>
 <div style={{ flex: "1", minHeight: "0", background: "#f6f6f3", display: "flex", flexDirection: "column", overflow: "hidden" }}>
@@ -1136,6 +1138,32 @@ Origem do contato
 ))}
 </div>
 </section>
+{temRespostasForm ? (
+<section style={{ background: "#fff", borderRadius: "12px", boxShadow: "inset 0 0 0 1px #e3e7e8", padding: "14px 16px 16px" }}>
+<div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px" }}>
+<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#4a5560" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ flex: "0 0 auto" }}>
+<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M9 13h6M9 17h4" />
+</svg>
+<span style={{ flex: "1", minWidth: "0", fontFamily: "'Plus Jakarta Sans',sans-serif", fontSize: "13.5px", fontWeight: "700", letterSpacing: "-.01em", color: "#12171d" }}>
+Respostas do formulário
+</span>
+</div>
+<div style={{ display: "flex", flexDirection: "column", gap: "11px" }}>
+{(respostasForm ?? []).map((r: any, i1: number) => (
+<Fragment key={r?.id ?? i1}>
+<div style={{ minWidth: "0" }}>
+<span style={{ display: "block", fontSize: "12px", color: "#67787c", textWrap: "pretty" }}>
+{r.pergunta}
+</span>
+<span style={{ display: "block", fontSize: "12.5px", fontWeight: "500", color: "#1f252c", marginTop: "2px", textWrap: "pretty" }}>
+{r.resposta}
+</span>
+</div>
+</Fragment>
+))}
+</div>
+</section>
+) : null}
 </div>
 </>) : null}
 </div>

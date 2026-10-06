@@ -35,6 +35,33 @@ export interface RegistroDoDesenho {
   acao: string | null;
   venceEm: string | null;
   dias: number;
+  /** Toda resposta do formulário, na ordem em que veio. Vazio = não há. */
+  respostas: Array<{ pergunta: string; resposta: string }>;
+  /** Origem e rastreamento: só as linhas que têm dado. `href` só existe com id real. */
+  rastreio: Array<{ rotulo: string; valor: string; href?: string }>;
+}
+
+/** Biblioteca de Anúncios da Meta: pública, abre o criativo pelo id do anúncio
+ *  sem exigir login na conta de anúncios (o Gerenciador exige). */
+export function linkDoAnuncio(adId: string | null): string | null {
+  const id = adId?.trim();
+  return id && /^\d+$/.test(id) ? `https://www.facebook.com/ads/library/?id=${id}` : null;
+}
+
+export function rastreioDoLead(a: DetalheLead["atribuicao"]): RegistroDoDesenho["rastreio"] {
+  const linhas: RegistroDoDesenho["rastreio"] = [];
+  const add = (rotulo: string, valor: string | null, href?: string | null) => {
+    if (valor?.trim()) linhas.push(href ? { rotulo, valor: valor.trim(), href } : { rotulo, valor: valor.trim() });
+  };
+  add("Campanha", a.campanha);
+  add("Meio (utm_medium)", a.medium);
+  add("Conteúdo (utm_content)", a.conteudo);
+  add("Termo (utm_term)", a.termo);
+  add("Landing page", a.landingPage);
+  add("ID da campanha (Meta)", a.metaCampaignId);
+  add("ID do conjunto (Meta)", a.metaAdsetId);
+  add("ID do anúncio (Meta)", a.metaAdId, linkDoAnuncio(a.metaAdId));
+  return linhas;
 }
 
 /**
@@ -98,5 +125,7 @@ export function registroDoDesenho(l: DetalheLead): RegistroDoDesenho {
     acao: l.proximaAcao?.titulo ?? null,
     venceEm: l.proximaAcao?.venceEm ?? null,
     dias: diasDesde(l.criadoEm),
+    respostas: l.respostasFormulario,
+    rastreio: rastreioDoLead(l.atribuicao),
   };
 }

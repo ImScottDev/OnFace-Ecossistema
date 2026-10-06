@@ -662,12 +662,32 @@ class Logica extends React.Component<any, any> {
         tipos.registro = { tipo: L.origem || "Cadastro manual", resumo: "Cadastrado em Contatos & Empresas" + (L.campanha ? " · " + L.campanha : ""), d: "M12 5v14M5 12h14", cor: "background:#eeeff3;color:#4a5560",
           linhas: [["Canal", L.origem || "Cadastro manual"], ["Lista / campanha", L.campanha || "—", true], /* Antes: "Entrada: Hoje" / "Registro: Manual" para todo lead. */ ["Entrada", dataCriacao(L.criadoEm)], ["Registro", /manual/i.test(L.origem || "") ? "Manual" : "Automático"]] };
         const o = tipos[L.registro && bruto.principal ? "registro" : bruto.principal ? "lead" : apollo ? "apollo" : manual ? "manual" : "empresa"];
+        /* O rastreamento real entra aqui, e só o que existe: UTMs, ids da Meta
+           e landing page. Antes a ficha parava em Canal/Campanha, que para um
+           lead de mídia paga é quase não dizer nada. O id do anúncio vira link
+           para a Biblioteca de Anúncios, que é pública. */
+        const estilo12 = (destaque) => "flex:1;min-width:0;font-size:12.5px;font-weight:500;text-wrap:pretty;color:" + (destaque ? "#c2330f" : "#1f252c");
+        const linhas = o.linhas.map(([label, valor, destaque]) => ({
+          label, valor, style: estilo12(destaque && valor !== "—")
+        })).concat((L.rastreio || []).map(r => ({
+          label: r.rotulo,
+          valor: r.href
+            ? <a href={r.href} target="_blank" rel="noreferrer" style={{ color: "#c2330f", textDecoration: "underline" }}>{r.valor}</a>
+            : r.valor,
+          style: estilo12(false)
+        })));
         return {
           tipo: o.tipo, resumo: o.resumo, d: o.d,
           icoStyle: "flex:0 0 auto;width:34px;height:34px;border-radius:9px;display:grid;place-items:center;" + o.cor,
-          linhas: o.linhas.map(([label, valor, destaque]) => ({ label, valor, style: "flex:1;min-width:0;font-size:12.5px;font-weight:500;text-wrap:pretty;color:" + (destaque && valor !== "—" ? "#c2330f" : "#1f252c") }))
+          linhas
         };
       })(),
+      /* As respostas do formulário, todas, na ordem em que vieram. Sem
+         dicionário de perguntas: se o formulário tem dez, a ficha mostra dez.
+         Lista vazia esconde a seção, porque o lead pode não ter vindo de
+         formulário nenhum. */
+      respostasForm: (L.respostas || []).map((r, i) => ({ id: "r" + i, pergunta: r.pergunta, resposta: r.resposta })),
+      temRespostasForm: (L.respostas || []).length > 0,
       temEmpresa: !!L.empresa, semEmpresa: !L.empresa,
       ...(() => {
         const extras = P.empresasExtra || [];
