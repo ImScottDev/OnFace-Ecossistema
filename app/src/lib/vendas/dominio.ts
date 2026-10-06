@@ -137,9 +137,10 @@ export function etapaDoStatusLegado(status: string | null | undefined): EtapaPip
   switch (status) {
     case "reuniao_agendada": return "entrada";
     case "reuniao_realizada": return "diagnostico";
-    // Trial é estado contextual, não etapa (Bloco 02 §10): comercialmente,
-    // quem está em trial está em diagnóstico.
-    case "trial": return "diagnostico";
+    // Trial virou Proposta (decisão do Scott, 06/10): o trial deixou de existir
+    // como etapa. O vendedor faz a proposta e pode marcar trial para o cliente
+    // testar, então comercialmente quem está em trial está em Proposta.
+    case "trial": return "proposta";
     case "proposta_apresentada": return "proposta";
     case "negociacao_iniciada": return "negociacao";
     case "ganho": return "ganho";
