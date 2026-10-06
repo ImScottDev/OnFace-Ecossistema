@@ -117,7 +117,12 @@ export function registroDoDesenho(l: DetalheLead): RegistroDoDesenho {
        vinha vazia porque eu não a passava. */
     tags: l.tags.map((t) => t.nome),
     etapa: l.etapa,
-    rel: relacionamentoDaEtapa(l.etapa),
+    /* Cliente ganha do estágio de pré-vendas: um lead com oportunidade em
+       "ganho" é cliente, mesmo que a etapa do lead tenha parado em "novo" na
+       migração. Sem isto a ficha mostrava "Lead" no topo de quem já paga. */
+    rel: l.oportunidades.some((o) => o.etapa === "ganho")
+      ? "Cliente"
+      : relacionamentoDaEtapa(l.etapa),
     resp: l.responsavel.nome,
     origem: l.atribuicao.origem,
     campanha: l.atribuicao.campanha,

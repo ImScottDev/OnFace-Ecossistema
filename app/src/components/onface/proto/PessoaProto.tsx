@@ -107,14 +107,28 @@ export function PessoaProto({ lead, timeline }: {
        oportunidade gravada. Abertas viram linha; perdidas só contam. Ganho
        é cliente (a Visão 360 mostra), não relação em andamento. */
     Relacoes: () => ({
-      itens: lead.oportunidades
-        .filter((o) => o.etapa !== "ganho" && o.etapa !== "perdido")
-        .map((o) => ({
-          k: "opp", tipo: "Oportunidade", titulo: o.titulo,
-          sub: o.familia ? ROTULO_FAMILIA[o.familia as Familia] ?? o.familia : "Família a definir",
-          status: o.etapaRotulo, tom: "coral",
-          ir: () => router.push(`/pipeline/${o.id}`),
-        })),
+      itens: [
+        /* Ganho é o vínculo de cliente — a relação ativa mais importante da
+           ficha. Entra primeiro, com `k:"cliente"` (o que acende "Cliente" no
+           topo) e tom verde. Sem isto, a ficha de quem já paga dizia "Nada em
+           andamento". */
+        ...lead.oportunidades
+          .filter((o) => o.etapa === "ganho")
+          .map((o) => ({
+            k: "cliente", tipo: "Cliente", titulo: o.titulo,
+            sub: o.familia ? ROTULO_FAMILIA[o.familia as Familia] ?? o.familia : "Família a definir",
+            status: "Cliente ativo", tom: "verde",
+            ir: () => router.push(`/pipeline/${o.id}`),
+          })),
+        ...lead.oportunidades
+          .filter((o) => o.etapa !== "ganho" && o.etapa !== "perdido")
+          .map((o) => ({
+            k: "opp", tipo: "Oportunidade", titulo: o.titulo,
+            sub: o.familia ? ROTULO_FAMILIA[o.familia as Familia] ?? o.familia : "Família a definir",
+            status: o.etapaRotulo, tom: "coral",
+            ir: () => router.push(`/pipeline/${o.id}`),
+          })),
+      ],
       perdidas: lead.oportunidades.filter((o) => o.etapa === "perdido").length,
     }),
   }), [lead.responsavel.nome, lead.oportunidades, router]);
