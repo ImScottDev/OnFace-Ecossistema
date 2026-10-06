@@ -496,6 +496,10 @@ export function PreVendasProto({ dados, acoes }: {
             não pelas peças. Ligar só as peças deixava o arraste sem efeito. */}
         <PreVendasLiga
           dados={{ leads }}
+          /* Sem catalogo o board caía nos nomes ficticios (Camila Reis e cia.)
+             no Exportar e no "Atribuir responsavel" da acao em massa. EQUIPE
+             real vem daqui. */
+          catalogo={catalogo}
           abrir={abrir}
           gravar={gravar}
           ir={(href: string) => router.push(href)}

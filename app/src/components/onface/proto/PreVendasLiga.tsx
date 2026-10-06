@@ -713,7 +713,7 @@ class Logica extends React.Component<any, any> {
           }
         })),
         grupos: [
-          { k: "responsavel", titulo: "Responsável", opcoes: [this.eu, "Camila Reis", "Diego Nunes", "Ana Vitória", "Sem responsável"] },
+          { k: "responsavel", titulo: "Responsável", opcoes: [this.eu, ...((this.dadosDoProto.EQUIPE || []).filter(n => n && n !== this.eu)), "Sem responsável"] },
           { k: "origem", titulo: "Canal de entrada", opcoes: ["Meta Ads", "Instagram", "Site", "Formulário", "WhatsApp", "Orgânica"] },
           { k: "interesse", titulo: "Interesse", opcoes: ["Callface AI", "PABX", "White Label"] },
           { k: "sla", titulo: "SLA", opcoes: ["Sem 1º contato", "Sem próxima ação", "Parado 7 dias+", "Parado 14 dias+"] },
@@ -884,9 +884,10 @@ class Logica extends React.Component<any, any> {
         if (S.acaoMassa === "responsavel") {
           return [
             { label: "Atribuir a mim", style: linha, onClick: aplica({ resp: this.eu }, n + " lead(s) atribuídos a você") },
-            { label: "Camila Reis", style: linha, onClick: aplica({ resp: "Camila Reis" }, n + " lead(s) para Camila Reis") },
-            { label: "Diego Nunes", style: linha, onClick: aplica({ resp: "Diego Nunes" }, n + " lead(s) para Diego Nunes") },
-            { label: "Ana Vitória", style: linha, onClick: aplica({ resp: "Ana Vitória" }, n + " lead(s) para Ana Vitória") },
+            // Equipe real da org (antes: Camila Reis/Diego Nunes/Ana Vitória fixos).
+            ...((this.dadosDoProto.EQUIPE || []).filter(nome => nome && nome !== this.eu).map(nome => (
+              { label: nome, style: linha, onClick: aplica({ resp: nome }, n + " lead(s) para " + nome) }
+            ))),
             { label: "Distribuir na fila de inbound", style: linha, onClick: feito("Distribuído por resolverResponsavelInbound") },
             { label: "Remover responsável", style: linha, onClick: aplica({ resp: null }, "Responsável removido — leads voltam para a fila") }
           ];
