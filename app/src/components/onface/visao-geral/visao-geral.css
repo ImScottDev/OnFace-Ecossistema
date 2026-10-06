@@ -879,7 +879,9 @@
 .ovg-row + .ovg-row { box-shadow: 0 -1px 0 #f4f4f2; }
 .ovg-row:hover { background: var(--ovg-paper-sunken); }
 .ovg-row[data-selected="true"] { background: var(--ovg-paper-sunken); }
-.ovg-row-company { margin: 0; font-size: calc(13.6 * var(--onface-u)); font-weight: 700; }
+/* min-width:0 + truncar: numa coluna estreita o nome longo spillava por cima
+   do badge de etapa (empresa e etapa uma sobre a outra). Agora corta com "…". */
+.ovg-row-company { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: calc(13.6 * var(--onface-u)); font-weight: 700; }
 .ovg-row-chevron { color: #b6bcc3; transition: transform 160ms var(--ovg-ease); }
 .ovg-row:hover .ovg-row-chevron { transform: translateX(2px); color: var(--text-muted); /* #7B828B dava 3,88:1 sobre o branco */ }
 /* ── Selo ──────────────────────────────────────────────────────────────
@@ -927,7 +929,7 @@
    navegador em 01/10). A virada olha a largura do próprio painel, então
    funciona igual com o menu aberto ou recolhido. */
 .ovg-board { container-type: inline-size; }
-@container (max-width: 1240px) {
+@container (max-width: 1480px) {
   .ovg-board-grid { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); }
   .ovg-board-grid > :last-child { grid-column: 1 / -1; }
   .ovg-board .ovg-pendencias[data-aberto="true"] { grid-template-columns: minmax(0, 1fr); }
