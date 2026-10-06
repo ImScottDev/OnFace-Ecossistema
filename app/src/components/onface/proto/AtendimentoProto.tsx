@@ -742,7 +742,16 @@ export function AtendimentoProto({ dados, contexto, leadInicial = null }: {
       /* Conversa nova ("Nova conversa"). Só existe envio para quem já é
          contato ou lead — número solto não tem command. */
       if (!antes) {
-        if (depois.canal !== "WhatsApp") continue; // atalho de relatório de ligação do protótipo: não é ação do usuário
+        if (depois.canal !== "WhatsApp") {
+          /* Atendimento só envia por WhatsApp. Se o operador tentou MANDAR algo
+             por outro canal (ex.: compôs um e-mail no painel), avisa que nada
+             saiu, em vez do `continue` seco que engolia o envio enquanto o
+             protótipo já cantava "E-mail enviado". Sem msg "out" é o artefato
+             de relatório de ligação do protótipo, esse segue silencioso. */
+          const tentouEnviar = (depois.msgs ?? []).some((m: any) => m.de === "out");
+          if (tentouEnviar) avisos.add(`Enviar por ${depois.canal} pelo Atendimento ainda não está ligado; nada foi enviado. Por enquanto só WhatsApp.`);
+          continue;
+        }
         const alvo = renderizadoRef.current.find((c: any) => c.lead === depois.lead || c.id === depois.lead);
         const texto = [...(depois.msgs ?? [])].reverse().find((m: any) => m.de === "out")?.t;
         if (!alvo) { avisos.add("Iniciar conversa com um número que não é contato ainda não está ligado. Cadastre o lead em Pré-vendas."); continue; }
