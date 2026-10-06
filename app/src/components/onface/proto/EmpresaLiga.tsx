@@ -523,7 +523,10 @@ posFlutuante(r, alto) {
         nome, cargo, principal,
         iniciais: ini(nome),
         abrir: () => this.E && this.E.irPara("/onface-preview/pessoa", nome, { pessoa: slug(nome || ""), lead: E.id }),
-        email: emailX || (slug((nome || "").split(" ")[0]) + "." + slug((nome || "").split(" ").slice(-1)[0]) + "@" + dominio),
+        /* NUNCA fabricar e-mail do nome: "joao.silva@acme.com.br" parecia real
+           e alguém mandava mensagem pro endereço errado. Sem e-mail real = "—",
+           igual ao telefone logo abaixo. */
+        email: emailX || "—",
         tel: telX || "—",
         linhaStyle: "display:flex;align-items:center;gap:11px;flex-wrap:wrap;padding:11px 0;" + (i === 0 ? "" : "border-top:1px solid #f3f5f5"),
         acoes: [
