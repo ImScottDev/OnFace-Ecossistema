@@ -57,7 +57,7 @@ export default function TabComercialCloser({ periodo }: { periodo: string }) {
         <MetaProgress tipo="mrr_fechado" valorAlvo={Number(metaMrr.valorAlvo)} realizado={Number(metaMrr.realizado) || 0} label="Minha meta do mês (MRR fechado)" />
       ) : (
         <div className="rounded-xl bg-[var(--cf2-bg-surface)] border border-[var(--cf2-border-default)] p-4 text-[12px] text-[var(--cf2-text-tertiary)]">
-          Nenhuma meta de MRR definida pra este mês. Peça ao admin pra configurar em Admin · Usuários.
+          Nenhuma meta de MRR definida pra este mês. Peça ao admin pra configurar em Ajustes · Membros.
         </div>
       )}
 

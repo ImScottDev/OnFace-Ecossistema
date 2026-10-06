@@ -219,7 +219,7 @@ export default function TabComercial({ periodo, ocultarHero = false }: TabComerc
         />
       ) : metaCom ? (
         <div className="rounded-xl bg-[var(--cf2-bg-surface)] border border-[var(--cf2-border-default)] p-4 text-[12px] text-[var(--cf2-text-tertiary)]">
-          Nenhuma meta de MRR definida pras closers neste mês. Configure por pessoa em <span className="text-[var(--cf2-text-secondary)]">Admin · Usuários</span> (o total aparece aqui).
+          Nenhuma meta de MRR definida pras closers neste mês. Configure por pessoa em <span className="text-[var(--cf2-text-secondary)]">Ajustes · Membros</span> (o total aparece aqui).
         </div>
       ) : null}
 
