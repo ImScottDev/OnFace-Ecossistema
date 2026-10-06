@@ -32,7 +32,17 @@ export interface AcoesOportunidade extends CommandsDeEtapa {
     empresaId: string; familias: Array<"CALLFACE_AI" | "PABX" | "WHITE_LABEL">; responsavelId: string;
     titulo?: string | null; leadId?: string | null;
   }) => Promise<Resultado<{ ids: string[] }>>;
+  /** Define/corrige a família comercial desta oportunidade. Usado pelos
+   *  negócios LEGADOS que vieram do dump sem família — sem ela o card não
+   *  avança para Proposta/Negociação nem fecha em Ganho. */
+  alterarFamilia?: (negocioId: string, familia: "CALLFACE_AI" | "PABX" | "WHITE_LABEL", motivo: string | null) => Promise<Resultado<{ propostasIncompativeis: number }>>;
 }
+
+const FAMILIAS_ESCOLHA: Array<{ v: "CALLFACE_AI" | "PABX" | "WHITE_LABEL"; rotulo: string; desc: string }> = [
+  { v: "CALLFACE_AI", rotulo: "Callface AI", desc: "Discador e inteligência de ligação" },
+  { v: "PABX", rotulo: "PABX", desc: "Telefonia, ramais e linhas" },
+  { v: "WHITE_LABEL", rotulo: "White Label", desc: "Revenda da plataforma" },
+];
 
 /* ── Domínio → desenho ─────────────────────────────────────────────────── */
 
@@ -235,12 +245,35 @@ class OportunidadeLigada extends OportunidadeLiga {
 
 /* ── A tela ────────────────────────────────────────────────────────────── */
 
-export function OportunidadeProto({ oportunidade, timeline, acoes }: {
+export function OportunidadeProto({ oportunidade, timeline, acoes, abrirDefinirFamilia = false }: {
   oportunidade: DetalheOportunidade;
   timeline: LinhaDoTempo[];
   acoes: AcoesOportunidade;
+  /** Vem do board quando o gate "defina a família antes de avançar" dispara:
+   *  abre o seletor de família já na entrada. */
+  abrirDefinirFamilia?: boolean;
 }) {
   const router = useRouter();
+
+  /* Seletor de família para o LEGADO sem família. Abre sozinho quando o board
+     mandou (abrirDefinirFamilia) e a oportunidade ainda não tem família. */
+  const semFamilia = !oportunidade.familia;
+  const [famAberto, setFamAberto] = React.useState(false);
+  const [famSalvando, setFamSalvando] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    if (abrirDefinirFamilia && semFamilia) setFamAberto(true);
+  }, [abrirDefinirFamilia, semFamilia]);
+
+  const escolherFamilia = React.useCallback(async (familia: "CALLFACE_AI" | "PABX" | "WHITE_LABEL") => {
+    if (!acoes.alterarFamilia) { toast.error("Definir família ainda não está ligado nesta tela."); return; }
+    setFamSalvando(familia);
+    const r = await acoes.alterarFamilia(oportunidade.id, familia, "Família definida na oportunidade legada");
+    setFamSalvando(null);
+    if (!r.ok) { toast.error(r.erro); return; }
+    toast.success("Família definida. Agora dá para avançar a oportunidade.");
+    setFamAberto(false);
+    router.refresh();
+  }, [acoes, oportunidade.id, router]);
 
   /* O protótipo semeia o estado uma vez e depois só escreve nele. Bumpar a
      chave quando `dados` muda faz a tela renascer sobre a verdade do servidor
@@ -312,6 +345,17 @@ export function OportunidadeProto({ oportunidade, timeline, acoes }: {
 
   return (
     <div data-workspace="desenho">
+      {semFamilia && (
+        <button
+          type="button"
+          onClick={() => setFamAberto(true)}
+          style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", margin: "0 0 12px", padding: "12px 14px", borderRadius: 12, border: "1px solid #f3c6bb", background: "#fff6f4", color: "#c2330f", font: "inherit", fontSize: 13.5, fontWeight: 600, cursor: "pointer", textAlign: "left" }}
+        >
+          <span aria-hidden style={{ flex: "0 0 auto", width: 22, height: 22, borderRadius: 7, background: "#c2330f", color: "#fff", display: "grid", placeItems: "center", fontSize: 14 }}>!</span>
+          Esta oportunidade (legado) está sem família comercial. Clique para definir e poder avançar.
+        </button>
+      )}
+
       <OportunidadeLigada
         key={geracao}
         oppId={oportunidade.id}
@@ -322,6 +366,32 @@ export function OportunidadeProto({ oportunidade, timeline, acoes }: {
         derivar={derivar}
         ir={(href: string) => router.push(href)}
       />
+
+      {famAberto && (
+        <div
+          role="dialog" aria-modal="true" aria-label="Definir família da oportunidade"
+          onClick={() => !famSalvando && setFamAberto(false)}
+          style={{ position: "fixed", inset: 0, zIndex: 60, background: "rgba(18,23,29,.45)", display: "grid", placeItems: "center", padding: 16 }}
+        >
+          <div onClick={(e) => e.stopPropagation()} style={{ width: "min(440px, 100%)", background: "#fff", borderRadius: 18, padding: 22, boxShadow: "0 24px 60px rgba(0,0,0,.25)" }}>
+            <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: "#12171d", letterSpacing: "-.02em" }}>A qual família pertence?</h2>
+            <p style={{ margin: "6px 0 16px", fontSize: 13, color: "#4a5560" }}>Oportunidade legada sem família. Escolha uma para amarrar e seguir o fluxo (proposta, checkout, ganho).</p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {FAMILIAS_ESCOLHA.map((f) => (
+                <button
+                  key={f.v} type="button" disabled={!!famSalvando}
+                  onClick={() => escolherFamilia(f.v)}
+                  style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 2, width: "100%", padding: "12px 14px", borderRadius: 11, border: "1px solid #e3e7e8", background: famSalvando === f.v ? "#fff6f4" : "#fff", cursor: famSalvando ? "wait" : "pointer", textAlign: "left", font: "inherit" }}
+                >
+                  <span style={{ fontSize: 14.5, fontWeight: 700, color: "#12171d" }}>{f.rotulo}{famSalvando === f.v ? " · salvando…" : ""}</span>
+                  <span style={{ fontSize: 12, color: "#67787c" }}>{f.desc}</span>
+                </button>
+              ))}
+            </div>
+            <button type="button" onClick={() => !famSalvando && setFamAberto(false)} style={{ marginTop: 14, width: "100%", padding: "10px", borderRadius: 10, border: 0, background: "transparent", color: "#4a5560", font: "inherit", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>Agora não</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

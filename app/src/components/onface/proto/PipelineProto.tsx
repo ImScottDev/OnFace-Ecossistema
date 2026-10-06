@@ -228,10 +228,8 @@ export function PipelineProto({ dados, acoes }: { dados: BoardPipeline; acoes: A
    * oportunidade é onde os dois se resolvem.
    */
   const destravar = React.useCallback((tipo: string, id: string) => {
-    if (tipo === "alterar_familia" || tipo === "criar_proposta") {
-      router.push(`/pipeline/${id}`);
-      return;
-    }
+    // Família faltando (legado): abre o seletor de família já na entrada do detalhe.
+    if (tipo === "alterar_familia") { router.push(`/pipeline/${id}?definir=familia`); return; }
     router.push(`/pipeline/${id}`);
   }, [router]);
 
