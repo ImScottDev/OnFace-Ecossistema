@@ -115,6 +115,17 @@ telas. Validar o papel na escrita ou normalizar na leitura.
 Financeiro/Início (fonte diferente na carteira). Investigar a fonte do hero.
 [PENDENTE/P3] Saudação de Atividades diz "Bom dia, Scott" logado como QA E2E
 (nome possivelmente hardcoded).
+[CORRIGIDO/verificado] Create contato: Contatos > Novo > Novo contato, 2 passos
+(dados + destino Só salvar/Prospecção/Pré-vendas), salvou com nome/sobrenome/
+cargo/telefone/email corretos no banco (ciclo escreve-lê fechado, DB-verificado).
+[PENDENTE/P3] Contagem "949" na lista de Contatos não refaz fetch após criar
+(fica cacheada até reload). Dado correto, só o contador atrasa.
+[QUEBRADA/P2] /empresas (URL direta/legada) vira /contatos/pessoas/empresas e
+CRASHA (Server Component). O menu usa /contatos (funciona, 949). /projetos e
+/operacao dão 404 (são cabeçalhos de submenu / alcançados por outras telas).
+[render-sweep logado OK] contatos, ajustes, prospeccao, chamados, vendas,
+negocios(->pipeline), calendario, atendimento, automacoes, relatorios, perfil,
+financeiro, clientes, pos-vendas, propostas, pipeline, inicio.
 
 ## Risco para produção
 _(a decidir ao fim)_
