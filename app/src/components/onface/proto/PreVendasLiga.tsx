@@ -222,10 +222,12 @@ class Logica extends React.Component<any, any> {
           respRect: { top: el.top, bottom: el.bottom, left: el.left, right: el.right }
         }));
       },
-      /* Equipe real da organização (D.EQUIPE vem de dados.filtros.responsaveis).
-         Eram três nomes fixos do protótipo, e escolher um deles falhava no
-         gravar com "Não encontrei … na equipe". */
-      respOpcoes: [this.eu].concat((D.EQUIPE || []).filter(n => n && n !== this.eu)).concat([null]).map(nome => ({
+      /* Equipe real da organização (vem de dados.filtros.responsaveis, exposta
+         pelo getter dadosDoProto). Eram três nomes fixos do protótipo, e
+         escolher um deles falhava no gravar com "Não encontrei … na equipe".
+         O alias `D` não existia neste escopo e derrubava o board inteiro
+         (ReferenceError em linhaLista), escondido pelo @ts-nocheck do arquivo. */
+      respOpcoes: [this.eu].concat((this.dadosDoProto.EQUIPE || []).filter(n => n && n !== this.eu)).concat([null]).map(nome => ({
         label: nome || "Sem responsável",
         iniciais: nome ? iniciaisDe(nome) : "—",
         ativo: (L.resp || null) === nome,
