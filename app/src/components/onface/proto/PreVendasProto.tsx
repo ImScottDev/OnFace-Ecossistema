@@ -478,6 +478,12 @@ export function PreVendasProto({ dados, acoes }: {
         dados={{ leads, qual }}
         catalogo={catalogo}
         leads={leads}
+        /* Sem `acoes`, o save-ao-digitar da qualificação (agendarSalvarQualificacao,
+           que lê props.acoes.salvarQualificacao) ficava mudo: o contador subia
+           para "1 de 4" mas nada ia ao banco, e mover o card pedia preencher de
+           novo. É o mesmo bug que o fix pretendia resolver, vivo porque esta
+           instância do board não recebia as ações. */
+        acoes={acoes}
         ir={(href: string) => router.push(href)}
         abrir={abrirGlobal}
         gravar={gravar}
