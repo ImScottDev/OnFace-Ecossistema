@@ -136,6 +136,8 @@ export default function PecasGlobalProto({ peca, id, contexto, fechar, gravou }:
 
   const pecas = React.useRef<PecasGlobais>(null);
   const ultimos = React.useRef<any[] | null>(null);
+  // Tags vivem em `tagsLead`, fora do patch `leads` — mesmo caso do Pré-vendas.
+  const ultimasTags = React.useRef<Record<string, string[]>>({});
   React.useEffect(() => { ultimos.current = leads; }, [leads]);
 
   // Abre a peça assim que o lead chegou e a PecasLiga montou.
@@ -144,15 +146,34 @@ export default function PecasGlobalProto({ peca, id, contexto, fechar, gravou }:
   }, [lead, peca]);
 
   /** O patch das peças → commands. O mesmo caminho de Pré-vendas. */
-  const gravar = React.useCallback(async (patch: { leads?: any[] }) => {
-    if (!patch?.leads) return;
-    const intencoes = intencoesDoPatch(ultimos.current, patch.leads);
-    ultimos.current = patch.leads;
-    if (!intencoes.length) return;
+  const gravar = React.useCallback(async (patch: { leads?: any[]; tagsLead?: Record<string, string[]> }) => {
+    if (!patch?.leads && !patch?.tagsLead) return;
     const ctx = pecas.current?._contexto ?? {};
-    for (const i of intencoes) {
-      const erro = await executarIntencao(i, ctx, ACOES, idDoResponsavel);
-      if (erro) toast.error(erro);
+    if (patch.leads) {
+      const intencoes = intencoesDoPatch(ultimos.current, patch.leads);
+      ultimos.current = patch.leads;
+      for (const i of intencoes) {
+        const erro = await executarIntencao(i, ctx, ACOES, idDoResponsavel);
+        if (erro) toast.error(erro);
+      }
+    }
+    // Tag aplicada/removida na gaveta → command real + evento TagAdded/Removed.
+    if (patch.tagsLead) {
+      for (const leadId of Object.keys(patch.tagsLead)) {
+        const novas = patch.tagsLead[leadId] ?? [];
+        const antigas = ultimasTags.current[leadId] ?? [];
+        for (const t of novas) {
+          if (antigas.includes(t)) continue;
+          const r = await ACOES.tag(leadId, t, "adicionar");
+          if (!r.ok) toast.error(r.erro ?? `Não consegui aplicar a tag "${t}".`);
+        }
+        for (const t of antigas) {
+          if (novas.includes(t)) continue;
+          const r = await ACOES.tag(leadId, t, "remover");
+          if (!r.ok) toast.error(r.erro ?? `Não consegui remover a tag "${t}".`);
+        }
+      }
+      ultimasTags.current = { ...ultimasTags.current, ...patch.tagsLead };
     }
     gravou();
   }, [idDoResponsavel, gravou]);

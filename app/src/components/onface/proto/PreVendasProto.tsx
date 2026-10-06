@@ -369,6 +369,14 @@ export function PreVendasProto({ dados, acoes }: {
   const ultimosLeads = React.useRef<any[] | null>(null);
   React.useEffect(() => { ultimosLeads.current = leads; }, [leads]);
 
+  /* As tags aplicadas na gaveta vivem em `tagsLead` (nome do lead → tags novas
+     da sessão), FORA do patch `leads`. O gravar só olhava `leads`, então
+     aplicar tag não gravava NADA: nenhum `entity_label`, nenhum evento
+     `tag.adicionada`, e por isso automação com gatilho de tag nunca disparava.
+     Este ref guarda o estado anterior das tags para o gravar diferenciar o que
+     entrou e o que saiu. */
+  const ultimasTags = React.useRef<Record<string, string[]>>({});
+
   /* O catálogo estático do protótipo, vindo do domínio.
      Sem ele as peças caem no mock: o dropdown de responsável listava
      "Camila Reis, Diego Nunes, Ana Vitória" e o de etapa mostrava a chave
@@ -438,19 +446,40 @@ export function PreVendasProto({ dados, acoes }: {
    *
    * O que não dá para traduzir NÃO grava em silêncio: avisa e relê.
    */
-  const gravar = React.useCallback(async (patch: { leads?: any[] }) => {
-    if (!patch?.leads) return;
-
-    const intencoes = intencoesDoPatch(ultimosLeads.current, patch.leads);
-    ultimosLeads.current = patch.leads;
-    if (!intencoes.length) return;
+  const gravar = React.useCallback(async (patch: { leads?: any[]; tagsLead?: Record<string, string[]> }) => {
+    if (!patch?.leads && !patch?.tagsLead) return;
 
     const ctx = pecas.current?._contexto ?? {};
     const falhas: string[] = [];
 
-    for (const i of intencoes) {
-      const r = await executarIntencao(i, ctx, acoes, idDoResponsavel);
-      if (r) falhas.push(r);
+    if (patch.leads) {
+      const intencoes = intencoesDoPatch(ultimosLeads.current, patch.leads);
+      ultimosLeads.current = patch.leads;
+      for (const i of intencoes) {
+        const r = await executarIntencao(i, ctx, acoes, idDoResponsavel);
+        if (r) falhas.push(r);
+      }
+    }
+
+    /* Tag aplicada ou removida na gaveta: diferença contra o estado anterior,
+       cada mudança vira um command real (`acoes.tag`), que grava o vínculo e
+       emite o evento que as automações de tag escutam. */
+    if (patch.tagsLead) {
+      for (const leadId of Object.keys(patch.tagsLead)) {
+        const novas = patch.tagsLead[leadId] ?? [];
+        const antigas = ultimasTags.current[leadId] ?? [];
+        for (const t of novas) {
+          if (antigas.includes(t)) continue;
+          const r = await acoes.tag(leadId, t, "adicionar");
+          if (!r.ok) falhas.push(r.erro ?? `Não consegui aplicar a tag "${t}".`);
+        }
+        for (const t of antigas) {
+          if (novas.includes(t)) continue;
+          const r = await acoes.tag(leadId, t, "remover");
+          if (!r.ok) falhas.push(r.erro ?? `Não consegui remover a tag "${t}".`);
+        }
+      }
+      ultimasTags.current = { ...ultimasTags.current, ...patch.tagsLead };
     }
 
     if (falhas.length) falhas.forEach((f) => toast.error(f));
