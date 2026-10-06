@@ -27,6 +27,11 @@ import { usePecas } from "./pecas-host";
 
 export interface AcoesOportunidade extends CommandsDeEtapa {
   definirProximaAcao: (negocioId: string, descricao: string | null, quando: string | null) => Promise<Resultado>;
+  /** Derivar nova oportunidade da mesma empresa. Sem isto o botao avisa que nao grava. */
+  criarOportunidade?: (entrada: {
+    empresaId: string; familias: Array<"CALLFACE_AI" | "PABX" | "WHITE_LABEL">; responsavelId: string;
+    titulo?: string | null; leadId?: string | null;
+  }) => Promise<Resultado<{ ids: string[] }>>;
 }
 
 /* ── Domínio → desenho ─────────────────────────────────────────────────── */
@@ -208,11 +213,23 @@ class OportunidadeLigada extends OportunidadeLiga {
    */
   autoRevisao() {}
 
+  /* Mutacao sem command (nota, atividade, pessoa, resumo...) NAO grava: o `persistir` avisa e a tela
+     relê. O toast de sucesso que o desenho dispara logo depois ("Nota adicionada") era mentira; fica
+     calado ate o fim do tick, e so o aviso de que nao gravou aparece. */
+  private naoGrava = false;
+
   gravarOpp(o: any, evento: string) {
     const antes = (this as any).todas?.().find((x: any) => x.id === o.id);
     const novo = super.gravarOpp(o, evento);
-    (this as any).props.persistir?.(antes, novo, evento);
+    this.naoGrava = !antes || antes.etapa === novo.etapa;
+    if (this.naoGrava) queueMicrotask(() => { this.naoGrava = false; });
+    (this as any).props.persistir?.(antes, novo, evento || "Esta alteração");
     return novo;
+  }
+
+  diz(t: string, tom?: string) {
+    if (this.naoGrava) return;
+    super.diz(t, tom);
   }
 }
 
@@ -266,6 +283,22 @@ export function OportunidadeProto({ oportunidade, timeline, acoes }: {
    * O que não tem command NÃO grava em silêncio: avisa e desfaz. Tela que
    * parece que gravou e não gravou é o defeito mais caro, porque não dá erro.
    */
+  const derivar = React.useCallback(async (f: { familia: any; resp: string; pessoa: string; motivo: string }) => {
+    if (!acoes.criarOportunidade) { toast.error("Derivar oportunidade ainda não é gravado por esta tela."); return; }
+    if (!oportunidade.empresa.id || !oportunidade.responsavel.id || f.resp !== oportunidade.responsavel.nome) {
+      toast.error("Só é possível derivar para o responsável atual desta oportunidade (a lista de equipe ainda não vem do banco).");
+      return;
+    }
+    const r = await acoes.criarOportunidade({
+      empresaId: oportunidade.empresa.id, familias: [f.familia], responsavelId: oportunidade.responsavel.id,
+      titulo: null, leadId: oportunidade.leadId,
+    });
+    if (!r.ok) { toast.error(r.erro); return; }
+    toast.success("Oportunidade criada.");
+    const novo = r.dados?.ids?.[0];
+    if (novo) router.push(`/pipeline/${novo}`); else router.refresh();
+  }, [acoes, oportunidade, router]);
+
   const persistir = React.useCallback(async (antes: any, depois: any, evento: string) => {
     const d = await persistirEtapa(antes, depois, evento, acoes);
     if (d.tipo === "gravou") { router.refresh(); return; }
@@ -286,6 +319,7 @@ export function OportunidadeProto({ oportunidade, timeline, acoes }: {
         catalogo={catalogo}
         abrir={abrir}
         persistir={persistir}
+        derivar={derivar}
         ir={(href: string) => router.push(href)}
       />
     </div>

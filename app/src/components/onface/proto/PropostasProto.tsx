@@ -59,6 +59,23 @@ const MES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out
  * qualquer coisa que não bata. Com "23/09" todas as propostas caíam no mesmo
  * dia e o forecast do mês inteiro desenhava uma reta em R$ 0.
  */
+function hora(iso: string | null): string | null {
+  const d = iso ? new Date(iso) : null;
+  if (!d || Number.isNaN(d.getTime())) return null;
+  return `${dia(iso)}, ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+function logReal(p: LinhaProposta) {
+  const e = p.eventosEm, ev: { k: string; quando: string; quem?: string; texto?: string }[] = [];
+  const add = (k: string, iso: string | null, extra: object = {}) => { const q = hora(iso); if (q) ev.push({ k, quando: q, ...extra }); };
+  add("enviada", p.enviadaEm, { quem: p.responsavel ?? undefined });
+  add("visualizada", e.visualizada);
+  add("ajuste", e.ajuste, { quem: p.pessoa ?? undefined, texto: p.ajusteSolicitado ?? undefined });
+  add("aceita", e.aceita, { quem: p.pessoa ?? undefined });
+  add("recusada", e.recusada, { quem: p.pessoa ?? undefined });
+  return ev;
+}
+
 function dia(iso: string | null): string | null {
   if (!iso) return null;
   const d = new Date(iso);
@@ -107,10 +124,12 @@ function agrupar(linhas: LinhaProposta[]) {
       modo: p.modoFechamento,
       enviadaEm: dia(p.enviadaEm),
       validade: dia(p.validade),
+      validadeDias: p.validadeDias,
+      // Eventos reais; o que o banco não registrou não aparece na linha do tempo.
+      log: logReal(p),
       // O que o cliente respondeu, quando pediu ajuste. É o texto dele.
       resposta: p.ajusteSolicitado,
       itens: itensAgregados(p),
-      log: [],
     });
   }
 

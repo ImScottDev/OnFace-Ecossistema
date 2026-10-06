@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 /* A tela é o desenho do handoff, convertido por máquina
    (ver docs/design/COMO-LIGAR-UMA-TELA.md). */
 import { OportunidadeProto } from "@/components/onface/proto/OportunidadeProto";
-import { acaoDetalhe, acaoMoverEtapa, acaoPerder, acaoTentarGanhar, acaoDefinirProximaAcao } from "../actions";
+import { acaoDetalhe, acaoMoverEtapa, acaoPerder, acaoTentarGanhar, acaoDefinirProximaAcao, acaoCriarOportunidade } from "../actions";
 
 export default async function OportunidadePorId({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -18,6 +18,7 @@ export default async function OportunidadePorId({ params }: { params: Promise<{ 
         perder: acaoPerder,
         tentarGanhar: acaoTentarGanhar,
         definirProximaAcao: acaoDefinirProximaAcao,
+        criarOportunidade: acaoCriarOportunidade,
       }}
     />
   );

@@ -637,20 +637,26 @@ export async function perder(params: {
     throw new RegraDeNegocio("oportunidade_ganha", "Oportunidade ganha não pode ser marcada como perdida.");
   }
 
-  await db.execute(sql`
-    UPDATE negocios SET
-      etapa = 'perdido', etapa_desde = now(), status = 'perdido',
-      motivo_perda_chave = ${params.motivo},
-      motivo_perda = ${params.motivo},
-      motivo_perda_detalhe = ${params.detalhe ?? null},
-      updated_at = now()
-     WHERE id = ${params.negocioId}::uuid
-  `);
+  // A perda e o seu registro no histórico vão JUNTOS, como em `aplicarEtapa`.
+  // Soltos, a FK de `status_changes` deixaria o negócio perdido sem registro de
+  // quem perdeu nem por quê: o relatório de motivo de perda, que é a razão de
+  // existir desta função, ficaria com um buraco invisível.
+  await db.transaction(async (tx) => {
+    await tx.execute(sql`
+      UPDATE negocios SET
+        etapa = 'perdido', etapa_desde = now(), status = 'perdido',
+        motivo_perda_chave = ${params.motivo},
+        motivo_perda = ${params.motivo},
+        motivo_perda_detalhe = ${params.detalhe ?? null},
+        updated_at = now()
+       WHERE id = ${params.negocioId}::uuid
+    `);
 
-  await registrarMudancaDeEtapa({
-    organizacaoId: params.organizacaoId, ator: params.ator, negocioId: params.negocioId,
-    leadId: op.lead_id, de: op.etapa, para: "perdido",
-    tipo: "OpportunityStageChanged", motivo: params.motivo,
+    await registrarMudancaDeEtapa({
+      organizacaoId: params.organizacaoId, ator: params.ator, negocioId: params.negocioId,
+      leadId: op.lead_id, de: op.etapa, para: "perdido",
+      tipo: "OpportunityStageChanged", motivo: params.motivo,
+    }, tx);
   });
 
   await registrarEvento({

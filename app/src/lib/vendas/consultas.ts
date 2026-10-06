@@ -759,9 +759,18 @@ export async function boardPipeline(organizacaoId: string, filtros: FiltrosPipel
       count(*) FILTER (WHERE o.etapa IN ('entrada','diagnostico','proposta','negociacao'))::int AS abertas,
       count(*) FILTER (WHERE o.etapa = 'ganho')::int AS ganhas,
       count(*) FILTER (WHERE o.etapa = 'perdido')::int AS perdidas,
-      -- Próxima ação ainda mora no legado; o join sai na fase 26.
+      -- "Sem próxima ação" tem que olhar a Task real, como o cartao faz
+      -- (ha tarefa aberta, entao tem proxima acao), e nao so a coluna legada
+      -- proxima_acao, que esta vazia em quase tudo. Olhar so o legado dava o
+      -- numero certo por coincidencia (533 de 536), e divergiria do board no
+      -- instante em que alguem definisse uma proxima acao por tarefa.
       count(*) FILTER (WHERE o.etapa IN ('entrada','diagnostico','proposta','negociacao')
-                         AND n.proxima_acao IS NULL)::int AS sem_proxima,
+                         AND n.proxima_acao IS NULL
+                         AND NOT EXISTS (
+                           SELECT 1 FROM tarefas t
+                            WHERE t.negocio_id = n.id
+                              AND t.status IN ('a_fazer','em_andamento','aguardando')
+                         ))::int AS sem_proxima,
       COALESCE(SUM(o.valor) FILTER (WHERE o.etapa IN ('entrada','diagnostico','proposta','negociacao')), 0)::text AS valor_aberto
       FROM oportunidades o
       LEFT JOIN negocios n ON n.id = o.negocio_id_legado

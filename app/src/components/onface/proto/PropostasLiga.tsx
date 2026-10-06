@@ -199,7 +199,7 @@ class Logica extends React.Component<any, any> {
       const diaNo = (d, m, a) => d.getMonth() === m && d.getFullYear() === a ? d.getDate() - 1 : -1;
       const semanaDe = (x) => { const d = diaNo(dataDe(x.p.enviadaEm), mesAt, anoAt); return d; };
       const ABERTOS = ["enviada", "visualizada", "ajuste_solicitado"];
-      const vence = (x) => dataDe(x.p.enviadaEm).getTime() + (+x.p.validade || 30) * 864e5;
+      const vence = (x) => dataDe(x.p.enviadaEm).getTime() + (+x.p.validadeDias || 0) * 864e5;
       const acumMes = (fn, m, a, carrega) => { const ini0 = new Date(a, m, 1).getTime(); const add = Array(N).fill(0);
         vivos.forEach(x => { const dt = dataDe(x.p.enviadaEm), d = diaNo(dt, m, a);
           if (d >= 0 && d < N) add[d] += fn(x);
@@ -290,7 +290,7 @@ class Logica extends React.Component<any, any> {
       const mr = (x) => soma(x.p).mrr + soma(x.p).un; const un = () => 0;
       const k = (n) => !n ? "R$ 0" : n >= 1000 ? "R$ " + (n / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 }) + "k" : brl(n);
       const base2 = filtradas.filter(x => x.p.status !== "substituida" && x.p.status !== "rascunho").map(x => {
-        const env = dataDe(x.p.enviadaEm), val = +x.p.validade || 30, resta = Math.ceil((env.getTime() + val * 864e5 - hojeD.getTime()) / 864e5);
+        const env = dataDe(x.p.enviadaEm), val = +x.p.validadeDias || 0, resta = val ? Math.ceil((env.getTime() + val * 864e5 - hojeD.getTime()) / 864e5) : 9999;
         const exp = x.p.status === "expirada" || (["enviada", "visualizada", "ajuste_solicitado"].indexOf(x.p.status) >= 0 && resta < 0);
         return Object.assign({}, x, { resta, val, exp, mr: mr(x), un: un(x), peso: exp ? 0 : (PESO[x.p.status] || 0) });
       });
@@ -327,9 +327,9 @@ class Logica extends React.Component<any, any> {
           style: "display:flex;align-items:center;gap:10px;width:100%;padding:10px;border-radius:11px;border:0;cursor:pointer;color:#12171d;background:" + (on ? "#f3f4f4" : "transparent"), hover: on ? "" : "background:#fafafa",
           icoStyle: "flex:0 0 auto;color:" + c2, nStyle: "flex:0 0 auto;min-width:22px;height:20px;padding:0 6px;border-radius:9999px;display:grid;place-items:center;font-size:11px;font-weight:700;" + (on ? "background:#12171d;color:#fff" : "background:#eeeff3;color:#4a5560") }; }),
         abaT: AB[1], abaS: AB[2], vazia: !lista.length,
-        itens: lista.map(x => { const prog = Math.max(0, Math.min(1, 1 - x.resta / x.val)); const urg = !x.exp && x.resta <= 3 && ["enviada", "visualizada", "ajuste_solicitado"].indexOf(x.p.status) >= 0;
+        itens: lista.map(x => { const prog = (x.val ? Math.max(0, Math.min(1, 1 - x.resta / x.val)) : 0); const urg = !x.exp && x.val && x.resta <= 3 && ["enviada", "visualizada", "ajuste_solicitado"].indexOf(x.p.status) >= 0;
           return { empresa: x.o.empresa, meta: "#" + x.p.codigo + "-v" + (x.p.versao || 1) + " · " + (FAM[x.o.familia] || "") + " · " + x.o.resp,
-            prazo: x.p.status === "aceita" ? "Aceita" : x.p.status === "recusada" ? "Recusada" : x.exp ? "Expirou há " + Math.abs(x.resta) + (Math.abs(x.resta) === 1 ? " dia" : " dias") : "Vence em " + x.resta + (x.resta === 1 ? " dia" : " dias"),
+            prazo: x.p.status === "aceita" ? "Aceita" : x.p.status === "recusada" ? "Recusada" : x.exp ? "Expirou há " + Math.abs(x.resta) + (Math.abs(x.resta) === 1 ? " dia" : " dias") : !x.val ? "Sem validade" : "Vence em " + x.resta + (x.resta === 1 ? " dia" : " dias"),
             prazoStyle: "font-size:12px;font-weight:600;white-space:nowrap;color:" + (urg ? "#c2330f" : x.exp ? "#8b949e" : "#4a5560"),
             barra: "display:block;height:100%;border-radius:9999px;width:" + Math.round((x.p.status === "aceita" || x.p.status === "recusada" || x.exp ? 1 : prog) * 100) + "%;background:" + (urg ? "#fe4f2b" : x.exp ? "#c4c9ca" : x.p.status === "aceita" ? "#1f7256" : "#8b949e"),
             valor: k(x.mr), valorSub: "",
@@ -337,17 +337,8 @@ class Logica extends React.Component<any, any> {
             abrir: () => this.setState({ fcPop: null, aberta: chave(x) }) }; }) };
     })();
     const aberta = S.aberta ? todas.find(x => chave(x) === S.aberta) : null;
-    const RESP_DEMO = { ajuste_solicitado: "O valor do setup ficou acima do previsto. Conseguem parcelar em 3 vezes ou dar um desconto de 20%?", recusada: "Fechamos com outro fornecedor, com um valor mensal menor." };
-    const logDe = (o, p) => {
-      if (p.log) return p.log;
-      if (p.status === "rascunho") return [];
-      const b = p.enviadaEm && p.enviadaEm !== "Hoje" ? p.enviadaEm : "Hoje";
-      return [{ k: "enviada", quando: b + ", 10:14", quem: o.resp }]
-        .concat(["visualizada", "ajuste_solicitado", "aceita", "recusada"].indexOf(p.status) >= 0 ? [{ k: "visualizada", quando: b + ", 14:32" }, { k: "revista", quando: "No dia seguinte, 09:05" }] : [])
-        .concat(p.status === "ajuste_solicitado" ? [{ k: "ajuste", quando: "No dia seguinte, 09:21", quem: o.pessoa, texto: p.resposta || RESP_DEMO.ajuste_solicitado }] : [])
-        .concat(p.status === "aceita" ? [{ k: "aceita", quando: "No dia seguinte, 11:40", quem: o.pessoa }] : [])
-        .concat(p.status === "recusada" ? [{ k: "recusada", quando: "No dia seguinte, 16:02", quem: o.pessoa, texto: p.resposta || RESP_DEMO.recusada }] : []);
-    };
+    // ANTES: sem p.log, inventava "10:14", "14:32", "No dia seguinte, 09:05" e respostas de exemplo. Agora só o que o banco registrou (PropostasProto.logReal).
+    const logDe = (o, p) => p.log || [];
     const LOGT = { enviada: ["Enviada", ST.enviada[3], "#2c5f9e"], visualizada: ["Aberta pela primeira vez", ST.visualizada[3], "#6e5420"], revista: ["Vista novamente", ST.visualizada[3], "#8b949e"], ajuste: ["Ajuste solicitado", ST.ajuste_solicitado[3], "#c2330f"], aceita: ["Aceita", ST.aceita[3], "#1f7256"], recusada: ["Recusada", ST.recusada[3], "#c2330f"] };
 
     let p = { kpis: [], log: [], fluxo: [], versoes: [], acoes: [] };

@@ -17,6 +17,7 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
+import type { Resultado } from "@/lib/vendas/resultado";
 import type { BoardPipeline, CardPipeline } from "@/lib/vendas/consultas";
 import { PipelineLiga } from "./PipelineLiga";
 import { levarParametros } from "./rota-do-desenho";
@@ -24,7 +25,10 @@ import { persistirEtapa, type CommandsDeEtapa } from "./persistencia";
 import { usePecas } from "./pecas-host";
 
 /** Os commands que a tela precisa. A página é quem os passa. */
-export type AcoesPipeline = CommandsDeEtapa;
+export type AcoesPipeline = CommandsDeEtapa & {
+  /** No-show: devolve o lead ao Pre-vendas. Sem isto o botao avisa que nao grava. */
+  noShow?: (negocioId: string, reuniaoId: string | null) => Promise<Resultado>;
+};
 
 /* ── Domínio → desenho ─────────────────────────────────────────────────── */
 
@@ -132,11 +136,22 @@ class PipelineLigado extends PipelineLiga {
     levarParametros(this as any);
   }
 
+  /* Mutacao sem command nao grava: o `persistir` avisa e a tela relê. O toast de sucesso que o
+     desenho dispara logo depois seria mentira; fica calado ate o fim do tick. */
+  private naoGrava = false;
+
   gravarOpp(o: any, evento: string) {
     const antes = ((this as any).state.opps || []).find((x: any) => x.id === o.id);
     const novo = super.gravarOpp(o, evento);
-    (this as any).props.persistir?.(antes, novo, evento);
+    this.naoGrava = !antes || antes.etapa === novo.etapa;
+    if (this.naoGrava) queueMicrotask(() => { this.naoGrava = false; });
+    (this as any).props.persistir?.(antes, novo, evento || "Esta alteração");
     return novo;
+  }
+
+  diz(t: string, tom?: string) {
+    if (this.naoGrava) return;
+    super.diz(t, tom);
   }
 }
 
@@ -233,6 +248,13 @@ export function PipelineProto({ dados, acoes }: { dados: BoardPipeline; acoes: A
     router.refresh();
   }, [acoes, router, destravar]);
 
+  const registrarNoShow = React.useCallback(async (id: string) => {
+    if (!acoes.noShow) { toast.error("Registrar no-show ainda não é gravado por esta tela."); return; }
+    const r = await acoes.noShow(id, null);
+    if (!r.ok) toast.error(r.erro); else toast.success("No-show registrado. O lead voltou ao Pré-vendas.");
+    router.refresh();
+  }, [acoes, router]);
+
   return (
     <div data-workspace="desenho">
       <PipelineLigado
@@ -241,6 +263,7 @@ export function PipelineProto({ dados, acoes }: { dados: BoardPipeline; acoes: A
         catalogo={catalogo}
         abrir={abrir}
         persistir={persistir}
+        registrarNoShow={registrarNoShow}
         ir={(href: string) => router.push(href)}
       />
     </div>

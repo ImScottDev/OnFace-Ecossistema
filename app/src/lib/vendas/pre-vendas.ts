@@ -150,6 +150,32 @@ export async function concluirAtividadePrimeiroContato(params: {
  * A mesma Empresa pode ter vários Leads históricos de propósito (§4): resolver
  * a empresa evita duplicar a identidade, não reaproveita o processo antigo.
  */
+/**
+ * Guarda de tenant para o responsável.
+ *
+ * O responsavelId vinha do cliente e ia direto ao `responsavel_id`, sem
+ * conferir a organização. Um id de usuário de OUTRA empresa era aceito: o lead
+ * sumia das listas da equipe e passava a aparecer para o outro cliente. A
+ * atribuição só pode apontar para usuário ativo da mesma organização. null é
+ * válido (lead sem dono).
+ */
+export async function exigirResponsavelDaOrg(
+  organizacaoId: string,
+  responsavelId: string | null | undefined,
+): Promise<void> {
+  if (!responsavelId) return;
+  const dono = await db.execute<{ id: string }>(sql`
+    SELECT id::text FROM usuarios
+     WHERE id = ${responsavelId}::uuid
+       AND organizacao_id = ${organizacaoId}::uuid
+       AND ativo = true
+     LIMIT 1
+  `);
+  if (dono.length === 0) {
+    throw new Error("Responsável inválido: não é um usuário ativo desta organização.");
+  }
+}
+
 export async function criarLead(entrada: EntradaDeLead, ator: Ator): Promise<LeadCriado> {
   const { organizacaoId } = entrada;
 
@@ -157,6 +183,8 @@ export async function criarLead(entrada: EntradaDeLead, ator: Ator): Promise<Lea
     ?? (eEntradaInbound(entrada.touchpoint.tipoOrigem)
       ? await resolverResponsavelInbound(organizacaoId)
       : null);
+
+  await exigirResponsavelDaOrg(organizacaoId, responsavelId);
 
   const empresa = entrada.empresa
     ? await resolverEmpresa(organizacaoId, entrada.empresa, ator)
@@ -324,6 +352,8 @@ export async function atribuirResponsavel(params: {
   ator: Ator;
 }): Promise<void> {
   const lead = await carregarLead(params.organizacaoId, params.leadId);
+
+  await exigirResponsavelDaOrg(params.organizacaoId, params.responsavelId);
 
   /* Nada a mudar no legado — mas o board NÃO lê o legado.
    *

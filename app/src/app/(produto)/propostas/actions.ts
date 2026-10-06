@@ -36,6 +36,10 @@ export interface LinhaProposta {
   totalRecorrente: number | null;
   enviadaEm: string | null;
   validade: string | null;
+  /** Prazo real em dias (data_validade - envio); null quando a proposta não tem validade gravada. */
+  validadeDias: number | null;
+  /** Instantes reais do banco para a linha do tempo; nunca inventados. */
+  eventosEm: { visualizada: string | null; ajuste: string | null; aceita: string | null; recusada: string | null; expirada: string | null };
   ajusteSolicitado: string | null;
   /** Quem responde pela oportunidade. A lista filtra por responsável. */
   responsavel: string | null;
@@ -54,6 +58,8 @@ export async function acaoListar(filtros: { status?: string | null; busca?: stri
     familia: string | null; modo: string | null; total: string | null;
     total_recorrente: string | null; enviada_em: string | null;
     validade: string | null; ajuste: string | null;
+    validade_dias: number | null;
+    vis_em: string | null; ajuste_em: string | null; aceita_em: string | null; recusada_em: string | null; expirada_em: string | null;
     responsavel: string | null; pessoa: string | null;
   }>(sql`
     SELECT p.id::text, p.numero, p.versao, p.status,
@@ -72,6 +78,10 @@ export async function acaoListar(filtros: { status?: string | null; busca?: stri
            p.total_geral::text AS total, p.total_recorrente::text,
            p.enviada_em::text, p.data_validade::text AS validade,
            p.ajuste_solicitado_descricao AS ajuste,
+           (p.data_validade - p.enviada_em::date)::int AS validade_dias,
+           p.primeira_visualizacao_em::text AS vis_em, p.ajuste_solicitado_em::text AS ajuste_em,
+           COALESCE(p.aceita_em, CASE WHEN p.status = 'aceita' THEN p.cliente_respondeu_em END)::text AS aceita_em,
+           p.recusada_em::text, p.expirada_em::text,
            -- O responsável e o contato: a lista filtra por um e mostra o outro,
            -- e sem eles o filtro de responsável vinha vazio na tela.
            COALESCE(u.nome, uo.nome) AS responsavel,
@@ -100,6 +110,8 @@ export async function acaoListar(filtros: { status?: string | null; busca?: stri
     total: l.total === null ? null : Number(l.total),
     totalRecorrente: l.total_recorrente === null ? null : Number(l.total_recorrente),
     enviadaEm: l.enviada_em, validade: l.validade, ajusteSolicitado: l.ajuste,
+    validadeDias: l.validade_dias,
+    eventosEm: { visualizada: l.vis_em, ajuste: l.ajuste_em, aceita: l.aceita_em, recusada: l.recusada_em, expirada: l.expirada_em },
     responsavel: l.responsavel, pessoa: l.pessoa,
   }));
 }

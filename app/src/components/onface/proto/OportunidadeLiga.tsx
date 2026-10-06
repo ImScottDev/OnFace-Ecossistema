@@ -440,22 +440,11 @@ class Logica extends React.Component<any, any> {
           salvarLabel: "Criar oportunidade", salvarStyle: forte("#12171d"),
           salvar: () => {
             if (!Fm.familia || !Fm.resp || !Fm.pessoa || !Fm.etapa || !(Fm.motivo || "").trim() || bloq) return this.setState({ tentou: true });
-            const E = this.E, D2 = this.dadosDoProto || {};
-            const atual = (this.state.opps || D2.OPORTUNIDADES || []).slice();
-            const id = "o" + Date.now().toString(36);
-            const pes = (O.pessoas || []).find(p => p.nome === Fm.pessoa);
-            const nova = { id, empresa: O.empresa, pessoa: Fm.pessoa, cargo: Fm.pessoa === O.pessoa ? O.cargo : "", familia: Fm.familia, etapa: Fm.etapa, resp: Fm.resp, dias: 0,
-              leadId: O.leadId || null, derivadaDe: O.id, criadoEm: "Hoje", origem: "Derivada de " + titulo,
-              propostas: [], pessoas: [{ nome: Fm.pessoa, papel: (pes && pes.papel) || "Contato principal" }], atvs: [],
-              notas: [{ autor: this.eu, quando: this.agora(), texto: Fm.motivo.trim(), tag: "Derivada de " + titulo, anexos: [] }],
-              eventos: [{ t: "Oportunidade derivada de " + titulo, quando: this.agora(), autor: this.eu }] };
-            atual.push(nova);
-            const iO = atual.findIndex(x => x.id === O.id);
-            const evO = { t: "Derivou " + FAM[Fm.familia] + " · " + O.empresa + " para " + Fm.resp, quando: this.agora(), autor: this.eu };
-            if (iO >= 0) atual[iO] = Object.assign({}, atual[iO], { eventos: [evO].concat(atual[iO].eventos || []) });
-            this.setState({ opps: atual, modal: null, form: {}, tentou: false });
-            if (E) E.gravar({ opps: atual });
-            this.diz(FAM[Fm.familia] + " · " + O.empresa + " criada em " + ({ entrada: "Entrada", diagnostico: "Diagnóstico" })[Fm.etapa] + " para " + Fm.resp, "ok");
+            /* Antes: empurrava a nova oportunidade so no estado local e avisava "criada" sem gravar nada
+               (sumia no refresh). Agora vai pelo command de criacao; sem ele a tela diz que nao grava. */
+            if (!this.props.derivar) { this.setState({ modal: null, form: {}, tentou: false }); return this.diz("Derivar oportunidade ainda não é gravado por esta tela.", "aviso"); }
+            this.props.derivar({ familia: Fm.familia, resp: Fm.resp, etapa: Fm.etapa, pessoa: Fm.pessoa, motivo: Fm.motivo.trim() });
+            this.setState({ modal: null, form: {}, tentou: false });
           },
           temSecundario: false });
       } else if (md.k === "perda") {

@@ -1018,7 +1018,7 @@ class Logica extends React.Component<any, any> {
       const mover = !precisaAprov && (O.etapa === "entrada" || O.etapa === "diagnostico") ? { etapa: "proposta", dias: 0 } : null;
       this.gravar(P, mover, precisaAprov ? "Proposta #" + d.codigo + "-v" + d.versao + " enviada para aprovação do desconto" : "Proposta #" + d.codigo + "-v" + d.versao + " enviada" + (canaisSel.length ? " por " + canaisSel.map(x => x === "email" ? "e-mail" : "WhatsApp").join(" e ") : " por link") + (precisaCt ? " · contrato preparado com os dados desta versão" : "") + (mover ? " · movido para Proposta" : ""));
       this.setState({ sujo: false, enviado: { aprov: precisaAprov, mover: !!mover } });
-      this.diz(precisaAprov ? "Enviada para aprovação do gestor" : "Proposta enviada para " + (canaisSel.length ? (d.contato || "o contato") : "o link"), "ok");
+      this.diz(precisaAprov ? "Salva como rascunho: desconto acima de 15% exige aprovação, e o fluxo de aprovação ainda não existe. Nada foi enviado ao cliente" : "Proposta enviada para " + (canaisSel.length ? (d.contato || "o contato") : "o link"), "ok");
     };
     if (this._enviarJa) { this._enviarJa = false; setTimeout(() => enviar(), 0); }
     const avancar = () => {
@@ -1030,8 +1030,8 @@ class Logica extends React.Component<any, any> {
     const link = d.id && typeof window !== "undefined" ? window.location.origin + "/p/" + d.id : "";
     const E2 = S.enviado || {};
     const fim = {
-      titulo: E2.aprov ? "Enviada para aprovação" : "Proposta enviada",
-      sub: E2.aprov ? "O desconto de " + c.pctEf.toFixed(1).replace(".", ",") + "% passa pelo gestor. Assim que aprovar, a proposta #" + d.codigo + "-v" + d.versao + " segue para " + (d.contato || "o cliente") + "."
+      titulo: E2.aprov ? "Salva como rascunho" : "Proposta enviada",
+      sub: E2.aprov ? "O desconto de " + c.pctEf.toFixed(1).replace(".", ",") + "% exige aprovação do gestor, mas o fluxo de aprovação ainda não existe. A proposta #" + d.codigo + "-v" + d.versao + " ficou como rascunho e não foi enviada."
         : "#" + d.codigo + "-v" + d.versao + " foi para " + (d.canal === "link" ? "o link público" : d.para) + ". Ela fica vinculada à oportunidade e o status atualiza sozinho." + (E2.mover ? " A oportunidade foi para a etapa Proposta." : ""),
       trilha: (E2.aprov ? ["Rascunho", "Aprovação", "Enviada", "Aceita"] : ["Rascunho", "Enviada", "Visualizada", "Aceita"]).map((l, i, a) => { const done = i <= 1; return { label: l,
         bola: "flex:0 0 auto;width:14px;height:14px;border-radius:9999px;box-sizing:border-box;" + (done ? "background:#12171d" : "background:#fff;border:1.5px solid #d2d5d5"),

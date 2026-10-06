@@ -48,6 +48,14 @@ function corrigirSaida(v: any, c: CarteiraDoDesenho, DC: ClienteDoDesenho | null
   for (const t of v.hero?.kpis ?? []) {
     if (t.l === "Sem contato 30+ dias") t.l = `Sem contato 30+ dias (de ${c.comAtividade})`;
   }
+  /* MRR e ticket "vs. N meses antes", e a curva "Evolução da receita", são o
+     MRR de HOJE somado por data de entrada: cliente_receita_mensal tem 0 linhas,
+     não existe MRR de mês passado. Selo e % fingiriam histórico. A contagem de
+     clientes (data de entrada real) continua. */
+  for (const k of v.kpi ?? []) {
+    if (k.l === "Receita mensal (MRR)" || k.l === "Ticket médio mensal") Object.assign(k, { temD: false, dt: "", sub: "sem histórico de MRR mensal" });
+  }
+  if (v.evo) Object.assign(v.evo, { temD: false, dt: "", desc: "MRR atual por produto, por data de entrada · não é histórico mensal" });
   if (v.evo && semInicio) v.evo.desc += ` · ${semInicio} sem data de início contados no período todo`;
   if (v.cresc && semInicio) v.cresc.rodape2 += ` · ${semInicio} sem data de início`;
 

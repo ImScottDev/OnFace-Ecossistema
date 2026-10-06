@@ -215,10 +215,21 @@ function corrigir(vals: any, S: any, p: { clientes: ClienteDaTela[]; equipe: str
     lista: vals.dist.lista.map((x: any, i: number) => ({ ...x, v: brl(mrrP[i]), pct: Math.round(mrrP[i] / totP * 100) + "%" })),
   };
 
+  /* Saúde da carteira: snapshot real (cs_health_snapshots). Faixas do próprio
+     calculador: >= 70 saudável, 40-69 atenção, < 40 risco; sem serviço ativo, inativo. */
+  const cls = (c: any) => c.fim ? 3 : c.saudeReal >= 70 ? 0 : c.saudeReal >= 40 ? 1 : 2;
+  const cntS = [0, 1, 2, 3].map((k) => base.filter((c) => cls(c) === k).length), totS = Math.max(1, base.length);
+  vals.sau = { ...vals.sau, segs: vals.sau.segs.map((sg: any, k: number) => ({
+    ...sg, pct: Math.round(cntS[k] / totS * 100) + "%", n: cntS[k] + (cntS[k] === 1 ? " conta" : " contas"), dica: sg.l + ": " + cntS[k],
+    barra: sg.barra.replace("display:none;", "display:block;").replace(/flex:0 0 0;/, "flex:" + cntS[k] + " 0 0;"),
+  })) };
+
   // Evolução 12 meses: a mesma regra do desenho, com o MRR repartido por família.
   const W = Array.from({ length: 12 }, (_, i) => new Date(hoje.getFullYear(), hoje.getMonth() - 11 + i, 1));
   const serie = FAM_K.map((k) => W.map((m) => base.filter((c) => ativoEm(c, m)).reduce((a, c) => a + (c.mrrFam[k] ?? 0), 0)));
-  vals.ev = {
+  /* Sem histórico mensal (cliente_receita_mensal = 0 linhas), o Liga entrega
+     cols vazio e o aviso: não redesenhar barras nem apagar o aviso. */
+  if (vals.ev.cols.length) vals.ev = {
     ...vals.ev,
     cols: vals.ev.cols.map((col: any, i: number) => ({
       ...col,
@@ -339,6 +350,9 @@ export function CsProto({ dados, eu, euId, abaInicial, viewInicial }: {
     ...c,
     // Ver o cabeçalho: faixa neutra para todos, 0 só para inadimplência real.
     saude: c.inad ? 0 : 70,
+    /* Score real de cs_health_snapshots (275 de 275 contas têm). Não passa por
+       `saude`: aquele campo alimenta os gatilhos inventados do Liga. */
+    saudeReal: c.saude,
     /* "" e não null: o Liga faz `csmDe(c).split(" ")` no card de atenção e
        cai com null. Vazio continua falso para "Sem responsável". */
     resp: c.resp ?? "",

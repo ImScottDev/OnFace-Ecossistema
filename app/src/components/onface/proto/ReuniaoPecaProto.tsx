@@ -26,6 +26,7 @@ import {
   acaoBaseDaPeca, acaoBuscarContatosDaPeca, acaoReuniaoDaPeca,
   type LeadDaPeca, type MembroDaPeca, type OppDaPeca, type ReuniaoDaPeca,
 } from "@/app/(produto)/calendario/reuniao-actions";
+import { acaoNoShow } from "@/app/(produto)/pipeline/actions";
 import { ReuniaoLiga } from "./ReuniaoLiga";
 import type { PecaProps } from "./pecas-host";
 
@@ -320,6 +321,14 @@ export default function ReuniaoPecaProto({ peca, id, contexto, fechar, gravou }:
       const res = await fetch(`/api/reunioes/${rid}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corpo) });
       const j = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(j.error ?? String(res.status));
+      /* No-show é EVENTO (Bloco 01 §15): o PATCH só troca a coluna. O evento
+         MeetingNoShow, a timeline, o contador do card e o retorno do Lead a
+         Qualificado saem de registrarNoShow, na mesma oportunidade. */
+      const nid = reunioes.get(rid)?.negocioId;
+      if (corpo.status === "no_show" && nid) {
+        const r2 = await acaoNoShow(nid, rid);
+        if (!r2.ok) toast.error(`No-show gravado na reunião, mas o evento falhou: ${r2.erro}`);
+      }
       if (j.avisoAgenda) toast(j.avisoAgenda);
       else if (tipo === "participantes") toast.success("Participantes salvos no CRM. O convite do Outlook não é reenviado por aqui.");
       else toast.success(corpo.status === "cancelada" ? "Reunião cancelada." : "Situação da reunião atualizada.");
@@ -328,7 +337,7 @@ export default function ReuniaoPecaProto({ peca, id, contexto, fechar, gravou }:
     }
     await carregarReuniao(rid);
     gravou();
-  }, [carregarReuniao, gravou]);
+  }, [carregarReuniao, gravou, reunioes]);
 
   const salvar = React.useCallback(async ({ id: rid, corpo }: { id: string | null; corpo: Record<string, unknown> }) => {
     try {

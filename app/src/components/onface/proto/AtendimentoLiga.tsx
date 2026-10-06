@@ -251,7 +251,7 @@ class Logica extends React.Component<any, any> {
         if (!alvo) {
           const base = (Es0.ler("conversas", null) || D.CONVERSAS || []).slice();
           const agora = new Date(), hh = String(agora.getHours()).padStart(2, "0") + ":" + String(agora.getMinutes()).padStart(2, "0");
-          alvo = { id: "cl-" + pl, lead: pl, canal: "Telefone", numero: "PABX · (11) 4003-1020", status: "atendimento", resp: EU, prioridade: "Média", naoLidas: 0, hora: hh, msgs: [{ de: "sis", t: "Ligação realizada · 3:12", h: hh, dia: "Hoje" }] };
+          alvo = { id: "cl-" + pl, lead: pl, canal: "Telefone", numero: "Telefone", status: "atendimento", resp: EU, prioridade: "Média", naoLidas: 0, hora: hh, msgs: [{ de: "sis", t: "Ligação registrada", h: hh, dia: "Hoje" }] };
           Es0.gravar({ conversas: base.concat(alvo) });
         }
         this.setState({ sel: alvo.id, pop: null });

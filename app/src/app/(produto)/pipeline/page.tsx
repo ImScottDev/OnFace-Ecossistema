@@ -50,6 +50,7 @@ export async function PipelinePage({ searchParams }: {
         moverEtapa: acaoMoverEtapa,
         perder: acaoPerder,
         tentarGanhar: acaoTentarGanhar,
+        noShow: acaoNoShow,
       }}
     />
   );

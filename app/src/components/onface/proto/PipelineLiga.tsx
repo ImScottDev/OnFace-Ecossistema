@@ -793,16 +793,13 @@ class Logica extends React.Component<any, any> {
           campos: [campo("obs", "Observação", "Ex: não respondeu no WhatsApp após a reunião", false, true)],
           salvarLabel: "Devolver ao Pré-vendas", salvarStyle: btnForte("#12171d"),
           salvar: () => {
-            if (Es) {
-              let ls = (Es.ler("leads", null) || D.LEADS || []).slice(), lid = MO.leadId;
-              if (lid && ls.some(l => l.id === lid)) ls = ls.map(l => l.id === lid ? Object.assign({}, l, { etapa: "qualificado", dias: 0, acao: "Reagendar reunião", venceEm: "hoje" }) : l);
-              else { lid = "l" + Date.now(); ls.push({ id: lid, etapa: "qualificado", empresa: MO.empresa, pessoa: MO.pessoa, cargo: MO.cargo || "", origem: "Orgânica", campanha: "", resp: MO.resp, interesse: FAM[MO.familia], dias: 0, acao: "Reagendar reunião", venceEm: "hoje" }); }
-              const tg = Object.assign({}, Es.ler("tagsLead", {})); tg[lid] = (tg[lid] || []).filter(t => t !== "No-show").concat("No-show");
-              const opps = (S.opps || D.OPORTUNIDADES || []).filter(x => x.id !== MO.id);
-              Es.gravar({ leads: ls, tagsLead: tg, opps });
-              this.setState({ opps, aberto: null });
-            }
-            fechar(); this.diz(MO.empresa + " voltou ao Pré-vendas · Qualificado · No-show", "aviso");
+            /* Antes: tirava o cartao do estado local, devolvia o lead no localStorage do prototipo e
+               avisava "voltou ao Pre-vendas" sem gravar nada. Agora so grava pelo command (registrarNoShow);
+               sem ele a tela diz que nao grava e nao mexe no cartao. */
+            const pedir = this.props.registrarNoShow;
+            fechar();
+            if (!pedir) return this.diz("Registrar no-show ainda não é gravado por esta tela.", "aviso");
+            pedir(MO.id);
           } });
       } else if (md.k === "proposta") {
         const its = Fm.itens || [];
