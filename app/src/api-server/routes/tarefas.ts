@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { db } from "@/lib/db";
-import { tarefas, leads, usuarios, negocios, empresas } from "@/lib/db/schema";
+import { tarefas, leads, usuarios, negocios, empresas, notificacoes } from "@/lib/db/schema";
 import { desc, eq, ne, and, or, lte, ilike, SQL, asc, isNull, isNotNull } from "drizzle-orm";
 import { z } from "zod";
 import { getCtx } from "../compat.js";
@@ -293,6 +293,23 @@ app.post("/tarefas", async (c) => {
       venceEm: venceEm && !isNaN(venceEm.getTime()) ? venceEm : null,
     })
     .returning();
+
+  /* Tarefa atribuída a outra pessoa avisa o responsável no sininho. */
+  if (usuarioId && usuarioId !== ctx.userId) {
+    try {
+      const link = parsed.data.leadId ? `/pessoas/${parsed.data.leadId}`
+        : parsed.data.negocioId ? `/pipeline/${parsed.data.negocioId}`
+        : parsed.data.empresaId ? `/empresas/${parsed.data.empresaId}` : "/tarefas";
+      await db.insert(notificacoes).values({
+        usuarioId, tipo: "tarefa_atribuida",
+        titulo: "Nova tarefa para você",
+        mensagem: parsed.data.titulo,
+        link,
+      });
+    } catch (e) {
+      console.error("[tarefas] falha ao notificar responsável:", e);
+    }
+  }
 
   return c.json(tarefa, 201);
 });

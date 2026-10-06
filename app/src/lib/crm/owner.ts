@@ -26,7 +26,7 @@
  */
 import { db as dbPadrao } from "@/lib/db";
 import { sql } from "drizzle-orm";
-import { auditLog } from "@/lib/db/schema";
+import { auditLog, notificacoes } from "@/lib/db/schema";
 
 /**
  * Instância de banco a usar.
@@ -90,4 +90,24 @@ export async function registrarMudancaResponsavel(opts: {
     after: { responsavelId: opts.newOwnerId },
     source: opts.source ?? "api",
   });
+
+  /* O novo responsável é avisado no sininho — antes a troca de dono só ia pro
+     audit_log e ninguém sabia que recebeu o lead/negócio. Fire-and-forget. */
+  if (opts.newOwnerId && opts.newOwnerId !== opts.actorId) {
+    const link = opts.entityType === "lead" ? `/pessoas/${opts.entityId}`
+      : opts.entityType === "negocio" ? `/pipeline/${opts.entityId}`
+      : opts.entityType === "cliente" ? `/clientes/${opts.entityId}` : "/";
+    const rotulo = opts.entityType === "negocio" ? "negócio" : opts.entityType === "lead" ? "lead" : "registro";
+    try {
+      await db.insert(notificacoes).values({
+        usuarioId: opts.newOwnerId,
+        tipo: "responsavel_atribuido",
+        titulo: `Um ${rotulo} foi atribuído a você`,
+        mensagem: `Você é o novo responsável por este ${rotulo}.`,
+        link,
+      });
+    } catch (e) {
+      console.error("[owner] falha ao notificar novo responsável:", e);
+    }
+  }
 }

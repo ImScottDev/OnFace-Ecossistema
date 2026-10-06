@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { db } from "@/lib/db";
 import {
   contatos, emails, emailContas, ligacoes, leads, empresas, negocios, negocioLeads,
-  propostas, reunioes, tarefas, aiSdrContatoState, contatoLabels, labels, leadLabels, usuarios, entityLabels,
+  propostas, reunioes, tarefas, aiSdrContatoState, contatoLabels, labels, leadLabels, usuarios, entityLabels, notificacoes,
 } from "@/lib/db/schema";
 import { eq, and, or, desc, asc, isNull, ilike, inArray, gte, sql, type SQL } from "drizzle-orm";
 // Mesma taxonomia de estágio do board real de Pré-vendas (Kanban), não uma
@@ -352,6 +352,22 @@ app.post("/atendimento/conversas/:id/acao", async (c) => {
         ? `contato:${contatoId}:snooze:${(patch.snoozedUntil as Date).getTime()}`
         : `contato:${contatoId}:${acao}:${alvo ?? "nenhum"}`,
     });
+
+    /* Transferência avisa o novo responsável no sininho (o evento sozinho não
+       vira notificação — não há consumidor). Fire-and-forget. */
+    if (acao === "transfer" && alvo && alvo !== ctx.userId) {
+      try {
+        const nome = (updated as { nome?: string | null })?.nome?.trim();
+        await db.insert(notificacoes).values({
+          usuarioId: alvo, tipo: "atendimento_transferido",
+          titulo: "Conversa transferida para você",
+          mensagem: nome ? `${nome} agora é sua no Atendimento.` : "Uma conversa foi transferida para você no Atendimento.",
+          link: "/atendimento",
+        });
+      } catch (e) {
+        console.error("[atendimento] falha ao notificar transferência:", e);
+      }
+    }
   }
 
   return c.json({ contato: updated });

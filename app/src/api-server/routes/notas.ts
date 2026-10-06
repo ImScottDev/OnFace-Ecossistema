@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { db } from "@/lib/db";
-import { notas, usuarios, leads, negocios } from "@/lib/db/schema";
+import { notas, usuarios, leads, negocios, notificacoes } from "@/lib/db/schema";
 import { eq, and, desc } from "drizzle-orm";
 import { z } from "zod";
 import { getCtx } from "../compat.js";
@@ -92,6 +92,26 @@ app.post("/notas", async (c) => {
     if (data.negocioId) {
       await db.update(negocios).set({ updatedAt: now })
         .where(and(eq(negocios.id, data.negocioId), eq(negocios.organizacaoId, ctx.organizacaoId)));
+    }
+
+    /* @menção: quem foi citado na nota recebe notificação (sininho). O @ existia
+       só na UI; aqui fechamos o elo. Casa o nome contra os usuários da org — nada
+       de regex ambígua. Fire-and-forget: nunca derruba o salvar da nota. */
+    try {
+      const usuariosOrg = await db.select({ id: usuarios.id, nome: usuarios.nome })
+        .from(usuarios).where(and(eq(usuarios.organizacaoId, ctx.organizacaoId), eq(usuarios.ativo, true)));
+      const link = data.leadId ? `/pessoas/${data.leadId}` : data.negocioId ? `/pipeline/${data.negocioId}` : data.empresaId ? `/empresas/${data.empresaId}` : data.clienteId ? `/clientes/${data.clienteId}` : "/";
+      const mencionados = usuariosOrg.filter((u) => u.id !== ctx.userId && u.nome && data.conteudo.includes(`@${u.nome}`));
+      if (mencionados.length) {
+        await db.insert(notificacoes).values(mencionados.map((u) => ({
+          usuarioId: u.id, tipo: "mencao",
+          titulo: "Você foi mencionado numa nota",
+          mensagem: data.conteudo.slice(0, 140),
+          link,
+        })));
+      }
+    } catch (e) {
+      console.error("[notas] falha ao notificar menção:", e);
     }
 
     return c.json(nota, 201);
