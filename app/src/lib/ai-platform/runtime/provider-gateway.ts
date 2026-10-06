@@ -98,7 +98,8 @@ async function callOpenAiCompatible(input: ModelCallInput): Promise<ModelCallRes
       })),
       tools: input.tools.length ? input.tools.map((tool) => ({ type: "function", function: { name: tool.name, description: tool.description, parameters: tool.parameters } })) : undefined,
       tool_choice: input.tools.length ? "auto" : undefined,
-      max_tokens: input.maxTokens,
+      // OpenAI recusa `max_tokens` nos modelos atuais (400 medido na credencial do banco); Groq ainda usa o nome antigo.
+      ...(input.provider === "openai" ? { max_completion_tokens: input.maxTokens } : { max_tokens: input.maxTokens }),
       temperature: input.temperature ?? 0.3,
     }),
   });

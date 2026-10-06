@@ -66,6 +66,28 @@ devolve o Lead (exige `pipeline.ts` compartilhado — diff no relatório).
 [PENDENTE/P2] 270 de 331 tarefas a_fazer estão vencidas (dado); a tela de
 Atividades precisa aguentar 82% atrasado sem quebrar o resumo.
 
+## Governança e transversais 2
+[CORRIGIDO/P1] IA/OpenAI — a credencial nunca validava: mandava `max_tokens`,
+e o modelo exige `max_completion_tokens`. Corrigido no gateway (openai usa
+max_completion_tokens; Groq segue com max_tokens). `provider-gateway.ts` + teste.
+[CORRIGIDO] Notificações — PATCH `/:id` com id não-uuid dava 500; agora valida
+e devolve 404. `routes/notificacoes.ts`.
+[PASSOU] Notificações (sino lê o real do usuário, badge por não-lidas, lida não
+conclui tarefa, aba NEXO vazia sem inventar), Busca/Navegação (26 rotas vivas),
+Perfil (senha/nome/foto com bcrypt e checagem), Ajustes (filtra por papel),
+Relatórios/Metas (números sobre `negocios.ganho_at`, setembro confere: 38 ganhos
+R$ 19.808,50), Financeiro MRR canônico.
+[BLOQUEADO] NEXO — sem provider utilizável (`ai_agents` nexo/hermes em draft, 0
+runs). Código diz "IA não configurada", não inventa.
+[BUILD-OUT] Cadências (`cadence_enrollments` 0 linhas), Automações (`automacoes`
+2 linhas inativas, execuções 0), Busca por registro (tela avisa que não cobre).
+[PENDENTE/P1] Financeiro — sync Stripe parado desde 23/09 (12 dias); "cobrado"
+e "vencido" congelam. Infra/dado, não código.
+[PENDENTE/P2] Notificações — 1.232 `callface_ligacao_sem_lead` afogam o sino
+(231 por usuário); "Ver tudo" vai para /tarefas; relatório `/resumo` é endpoint
+morto com MRR legado. Diffs descritos, não aplicados (precisam de decisão/central
+que não existe).
+
 ## Bloqueios que dependem do Scott/externo
 - (herdados do qa-05-10.md §4) closer altera catálogo/contrato via API;
   lead atribuível a usuário de outra org; pagamento sem negócio falha calado;

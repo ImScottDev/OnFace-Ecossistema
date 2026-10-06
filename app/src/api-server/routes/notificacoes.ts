@@ -56,6 +56,12 @@ app.patch("/notificacoes/:id", async (c) => {
 
   const id = c.req.param("id");
 
+  // Id fora do formato uuid faz o Postgres estourar (500) em vez de 404. Como a
+  // coluna é uuid, uma validação barata aqui transforma lixo em "não encontrada".
+  if (!/^[0-9a-f-]{36}$/i.test(id)) {
+    return c.json({ error: "Notificacao nao encontrada" }, 404);
+  }
+
   // Only allow marking own notifications as read
   const [updated] = await db
     .update(notificacoes)
