@@ -31,6 +31,7 @@ import {
 import { criarPropostaComItens } from "@/lib/crm/proposta-criacao";
 import { agruparItensPorLinhaComercial, organizarVendaMultiLinha } from "@/lib/crm/oportunidade-bundle";
 import { appUrl } from "@/lib/app-url";
+import { isDocumensoConfigured } from "@/lib/crm/signature/documenso-provider";
 
 const app = new Hono();
 
@@ -572,12 +573,16 @@ app.get("/propostas/:id/publica", async (c) => {
   const grupos = await Promise.all(gruposRows.map(async (grupo) => {
     const itensDoGrupoIds = (await db.select({ propostaItemId: propostaGrupoComercialItens.propostaItemId }).from(propostaGrupoComercialItens).where(eq(propostaGrupoComercialItens.grupoId, grupo.id))).map((r) => r.propostaItemId);
 
-    let contrato: { id: string; corpoGerado: string | null; assinaturaStatus: string; signatureStatus: string | null; status: string; signingUrl?: string | null } | null = null;
+    let contrato: { id: string; corpoGerado: string | null; assinaturaStatus: string; signatureStatus: string | null; status: string; signingUrl?: string | null; assinaturaExterna: boolean } | null = null;
     if (grupo.contratoId) {
       const [c2] = await db.select().from(contratos).where(eq(contratos.id, grupo.contratoId)).limit(1);
       if (c2) {
         const signatarios = Array.isArray(c2.signatarios) ? c2.signatarios as Array<{ signingUrl?: string | null }> : [];
-        contrato = { id: c2.id, corpoGerado: c2.corpoGerado, assinaturaStatus: c2.assinaturaStatus, signatureStatus: c2.signatureStatus, status: c2.status, signingUrl: signatarios.find((s) => s.signingUrl)?.signingUrl || null };
+        /* assinaturaExterna: com Documenso ativo a assinatura é SEMPRE externa
+           (link do Documenso). A página pública usa isto para, se a signingUrl
+           ainda não chegou, mostrar "preparando o link" em vez do formulário de
+           aceite simples — que sob Documenso daria erro ao enviar. */
+        contrato = { id: c2.id, corpoGerado: c2.corpoGerado, assinaturaStatus: c2.assinaturaStatus, signatureStatus: c2.signatureStatus, status: c2.status, signingUrl: signatarios.find((s) => s.signingUrl)?.signingUrl || null, assinaturaExterna: isDocumensoConfigured() };
       }
     }
 

@@ -27,7 +27,7 @@ interface Grupo {
   commercialModel: string;
   status: string;
   itens: Item[];
-  contrato: { id: string; corpoGerado: string | null; assinaturaStatus: string; signatureStatus: string | null; status: string; signingUrl?: string | null } | null;
+  contrato: { id: string; corpoGerado: string | null; assinaturaStatus: string; signatureStatus: string | null; status: string; signingUrl?: string | null; assinaturaExterna?: boolean } | null;
   checkoutUrl: string | null;
   pagamentoEstado: "aberto" | "pago" | "boleto_pendente" | "indisponivel" | null;
 }
@@ -204,6 +204,11 @@ function GrupoCard({ grupo, id, onAssinado }: { grupo: Grupo; id: string; onAssi
           <a href={grupo.contrato.signingUrl} target="_blank" rel="noreferrer" className="pp-btn pp-btn-primario pp-btn-largo">
             <FileSignature size={15} aria-hidden /> Ler e assinar contrato
           </a>
+        ) : grupo.contrato.assinaturaExterna ? (
+          /* Sob Documenso a assinatura é por link externo. Enquanto a signingUrl
+             não chega, mostramos "preparando" — NUNCA o formulário de aceite
+             simples abaixo, que sob Documenso falharia no envio. */
+          <Aviso tom="neutro">Estamos preparando seu link de assinatura. Recarregue esta página em instantes para assinar o contrato.</Aviso>
         ) : (
           <>
             {grupo.contrato.corpoGerado && (
