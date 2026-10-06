@@ -149,9 +149,13 @@ class PipelineLigado extends PipelineLiga {
     return novo;
   }
 
+  /* super.diz recursava infinito (Liga: diz -> E.avisar -> this.diz -> override
+     -> super.diz ...). Toast direto, igual aos outros protos. */
   diz(t: string, tom?: string) {
     if (this.naoGrava) return;
-    super.diz(t, tom);
+    if (tom === "erro") toast.error(t);
+    else if (tom === "aviso") toast.warning(t);
+    else toast.success(t);
   }
 }
 

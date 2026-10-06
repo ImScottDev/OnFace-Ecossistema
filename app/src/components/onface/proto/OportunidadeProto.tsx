@@ -238,9 +238,15 @@ class OportunidadeLigada extends OportunidadeLiga {
     return novo;
   }
 
+  /* NÃO chamar super.diz: a Liga faz `diz -> E.avisar -> this.diz`, e como
+     `this.diz` é este override, super.diz recursava infinito (Maximum call
+     stack) e travava "Avançar etapa" no drawer. Mostra o toast direto, igual
+     aos outros protos (Empresa/Pessoa/Calendário). */
   diz(t: string, tom?: string) {
     if (this.naoGrava) return;
-    super.diz(t, tom);
+    if (tom === "erro") toast.error(t);
+    else if (tom === "aviso") toast.warning(t);
+    else toast.success(t);
   }
 }
 
