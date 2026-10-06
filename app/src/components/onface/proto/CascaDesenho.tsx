@@ -701,7 +701,7 @@ Consultando a base
 <circle cx="11" cy="11" r="7" />
 <path d="m16.5 16.5 4 4" />
 </svg>
-<input value={termo} onChange={setTermo} onKeyDown={teclaBusca} ref={buscaRef} placeholder="Buscar empresa, pessoa, lead, oportunidade ou proposta" style={{ border: "0", outline: "0", background: "transparent", width: "100%", fontSize: "14px", minWidth: "0" }} />
+<input value={termo} onChange={setTermo} onKeyDown={teclaBusca} ref={buscaRef} placeholder="Buscar e navegar pelo sistema (áreas e telas)" style={{ border: "0", outline: "0", background: "transparent", width: "100%", fontSize: "14px", minWidth: "0" }} />
 <span style={{ flex: "0 0 auto", fontFamily: "'IBM Plex Mono',monospace", fontSize: "11px", color: "#4a5560", background: "#f1f3f3", borderRadius: "4px", padding: "2px 6px" }}>
 ESC
 </span>

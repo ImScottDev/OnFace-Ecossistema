@@ -15,6 +15,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import type { DetalheOportunidade } from "@/lib/vendas/consultas";
+import { ehFamiliaValida } from "@/lib/vendas/dominio";
 import type { Resultado } from "@/lib/vendas/resultado";
 import type { LinhaDoTempo } from "@/lib/vendas/eventos";
 import { OportunidadeLiga } from "./OportunidadeLiga";
@@ -256,8 +257,12 @@ export function OportunidadeProto({ oportunidade, timeline, acoes, abrirDefinirF
   const router = useRouter();
 
   /* Seletor de família para o LEGADO sem família. Abre sozinho quando o board
-     mandou (abrirDefinirFamilia) e a oportunidade ainda não tem família. */
-  const semFamilia = !oportunidade.familia;
+     mandou (abrirDefinirFamilia) e a oportunidade ainda não tem família.
+     SÓ em oportunidade ABERTA: ganho/perdido não muda de família (o command
+     recusa), então o banner viraria um botão que só dá erro. `ehFamiliaValida`
+     cobre o caso `service_family='UNKNOWN'` (string truthy que o gate rejeita). */
+  const semFamilia = !ehFamiliaValida(oportunidade.familia)
+    && oportunidade.etapa !== "ganho" && oportunidade.etapa !== "perdido";
   const [famAberto, setFamAberto] = React.useState(false);
   const [famSalvando, setFamSalvando] = React.useState<string | null>(null);
   React.useEffect(() => {

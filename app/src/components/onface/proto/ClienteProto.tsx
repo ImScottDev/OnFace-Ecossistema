@@ -601,7 +601,11 @@ class ClienteLigada extends ClienteLiga {
       // pessoa deixa de sugerir o domínio inventado.
       mD: { aberto: false, linhas: [], assin: [] },
       mB: { aberto: false, formas: [] },
-      mP: v.mP?.aberto ? { ...v.mP, phEmail: e.dominio ? "nome@" + e.dominio : "nome@empresa.com.br" } : v.mP,
+      /* Nota e "adicionar pessoa" davam toast de "salvo" e o Proto descartava
+         (gravar do Cliente 360 não tem command): dois toasts contraditórios e o
+         dado sumia. Neutraliza o salvar com aviso honesto, igual às outras. */
+      nota: v.nota ? { ...v.nota, salvar: naoGrava("A nota") } : v.nota,
+      mP: v.mP?.aberto ? { ...v.mP, phEmail: e.dominio ? "nome@" + e.dominio : "nome@empresa.com.br", salvar: naoGrava("Adicionar a pessoa") } : v.mP,
     };
   }
 }
