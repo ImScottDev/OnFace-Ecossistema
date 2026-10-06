@@ -442,6 +442,11 @@ app.post("/negocios", async (c) => {
       empresaId: parsed.data.empresaId || null,
       titulo: parsed.data.titulo,
       status: parsed.data.status || "reuniao_agendada",
+      // Sem `etapa` o negócio nascia NULL, e o board (oportunidades.etapa = ANY(...))
+      // nunca casa NULL -> o card sumia de TODAS as colunas do pipeline. "Novo
+      // negócio" entra em `entrada`, mesma etapa inicial de criarOportunidade.
+      etapa: "entrada",
+      etapaDesde: new Date(),
       tipoReceita: parsed.data.tipoReceita,
       servicosInteresse: parsed.data.servicosInteresse,
       concorrenteAtual: parsed.data.concorrenteAtual,
