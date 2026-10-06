@@ -98,7 +98,7 @@ class Logica extends React.Component<any, any> {
       typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get(nome),
   };
 
-  state = { aba: "Visão geral", enr: null, tagMenu: false, tagRect: null, tagNova: "", mencao: null, mencaoIdx: 0, visor: null, etapaMenu: false, etapaRect: null, notaAnexos: [], atvFiltro: "todas", excluir: false, excAlvo: "empresa", excMotivo: null, excObs: "", excTentou: false, notaTexto: "", notaAtiva: false, respMenu: false, respRect: null, editando: null, rascunho: {}, maisMenu: false, maisRect: null, chamada: null, agora: 0 };
+  state = { aba: "Visão geral", enr: null, tagMenu: false, tagRect: null, tagNova: "", mencao: null, mencaoIdx: 0, visor: null, etapaMenu: false, etapaRect: null, notaAnexos: [], atvFiltro: "todas", excluir: false, excAlvo: "empresa", excMotivo: null, excObs: "", excTentou: false, notaTexto: "", notaAtiva: false, respMenu: false, respRect: null, editando: null, rascunho: {}, maisMenu: false, maisRect: null, chamada: null, agora: 0, apolloCred: null, apolloSalvo: null };
 
   constructor(props: any) {
     super(props);
@@ -110,7 +110,45 @@ class Logica extends React.Component<any, any> {
     }
   }
 
+  /* Pedido JSON às rotas /api/apollo/*: erro vira Error com mensagem legível (nunca lista vazia silenciosa). */
+  async apolloPedir(url, init) {
+    let r;
+    try {
+      r = await fetch(url, Object.assign({ credentials: "same-origin", headers: { "Content-Type": "application/json" } }, init));
+    } catch (e) {
+      throw new Error("Sem conexão com o servidor. Verifique a internet e tente de novo.");
+    }
+    const corpo = await r.json().catch(() => null);
+    if (!r.ok) throw new Error((corpo && corpo.error) || "Falha ao falar com o servidor (HTTP " + r.status + ")");
+    return corpo;
+  }
+
+  /* Saldo real do Apollo. Antes: `{ creditos: 48 }` fixo. Sem número inventado: carregando / não configurado / indisponível / erro. */
+  async carregarApollo() {
+    this.setState({ apolloCred: { estado: "carregando" } });
+    try {
+      const j = await this.apolloPedir("/api/apollo/credits");
+      if (!j.configured) return this.setState({ apolloCred: { estado: "nao_configurado" } });
+      if (!j.disponivel) return this.setState({ apolloCred: { estado: "sem_saldo" } });
+      this.setState({ apolloCred: { estado: "ok", restantes: j.credits_remaining } });
+    } catch (e) {
+      this.setState({ apolloCred: { estado: "erro", msg: e.message } });
+    }
+  }
+
+  /* O que o enriquecimento já gravou na empresa (a ficha não recebe estes campos do servidor). */
+  async carregarSalvos() {
+    const P = this.fonte();
+    const L = (P.leads || []).find(x => x.id === P.leadId) || (P.leads || [])[0] || {};
+    if (!L.empresaId) return;
+    try {
+      const j = await this.apolloPedir("/api/apollo/empresa/" + L.empresaId + "/salvos");
+      this.setState({ apolloSalvo: j.campos || {} });
+    } catch (e) { /* sem salvos: a ficha segue sem os campos do Apollo */ }
+  }
+
   componentDidMount() {
+    this.carregarSalvos();
     const E = this.E;
     const assinar = () => {
       const Es = this.E;
@@ -259,7 +297,8 @@ posFlutuante(r, alto) {
 
     const S = this.state;
     const nomeEmp = E.empresa || "Sem empresa";
-    const X = this.empresaDados(nomeEmp);
+    /* Campos que o Apollo já gravou na empresa (GET /apollo/empresa/:id/salvos) entram por cima. */
+    const X = Object.assign({}, this.empresaDados(nomeEmp), S.apolloSalvo || {});
     const dominio = slug(E.empresa || "empresa") + ".com.br";
     const seg = X.segmento || E.segmento || segmentos[E.empresa] || (E.registro ? "—" : "Serviços");
     const porte = P.porte || (E.registro ? "" : "45");
@@ -1029,72 +1068,121 @@ posFlutuante(r, alto) {
         const passo = Q ? Q.passo : "config";
         const areasTodas = ["Operações", "Atendimento / CX", "TI", "Financeiro", "Diretoria", "Compras"];
         const niveisTodos = ["Todos", "Gerência", "Diretoria", "C-level"];
-        const ja = pessoas.map(p => p[0]);
-        const mockNomes = ["Marcos Tavares", "Patrícia Moura", "Felipe Andrade", "Luana Ribeiro", "Rogério Sales", "Helena Costa"];
-        /* Antes: "Encontrar contatos" devolvia 6 pessoas que não existem (nome, cargo, telefone, e-mail) e "Dados da empresa" devolvia funcionários, faturamento, LinkedIn e telefone de exemplo. Não há integração Apollo ligada: a lista fica vazia e a busca avisa. */
-        const encontrados = ([] as any[][]).filter(p => ja.indexOf(p[0]) < 0 && (!Q || !Q.areas.length || Q.areas.indexOf(p[2]) >= 0) && (!Q || Q.nivel === "Todos" || Q.nivel === p[3]));
-        const camposAchados = [
-          ["cnpj", "CNPJ", cnpj, cnpj],
-          ["site", "Site", site, site],
-        ].filter(c => c[2] !== c[3]);
-        const passos = ["Buscando empresa…", "Cruzando domínio " + dominio + "…", "Procurando contatos…", "Verificando e-mails…"];
-        const buscar = () => {
+        /* Antes: lista de 6 pessoas fixas, `mockNomes`, e-mail inventado a partir do nome, saldo fixo de 48
+           créditos e "Reiniciar demonstração". Agora tudo vem do Apollo pela organização (rotas /api/apollo/*). */
+        const AP = S.apolloCred || { estado: "carregando" };
+        const saldoNum = AP.estado === "ok" ? AP.restantes : null;
+        const naoConfig = AP.estado === "nao_configurado";
+        /* Domínio REAL da empresa (site/domínio cadastrado). Antes era `<nome>.com.br` inventado. */
+        const dominioReal = (() => {
+          const bruto = E.dominio || X.site || E.site || "";
+          if (!bruto || bruto === "—") return "";
+          try { return new URL(/^https?:/.test(bruto) ? bruto : "https://" + bruto).hostname.replace(/^www\./, ""); } catch (err) { return ""; }
+        })();
+        const semDominio = !dominioReal;
+        const CAMPOS = [["funcionarios", "Funcionários"], ["faturamento", "Faturamento"], ["linkedin", "LinkedIn"], ["telefone", "Telefone geral"], ["tecnologias", "Tecnologias"]];
+        /* Só entra campo que o Apollo devolveu E que difere do que já está na ficha. */
+        const camposAchados = Q && Q.dadosEmp ? CAMPOS.map(([k, l]) => [k, l, X[k] ? String(X[k]) : "", Q.dadosEmp[k] || ""]).filter(c => c[3] && c[3] !== c[2]) : [];
+        const encontrados = Q && Q.achados ? Q.achados.filter(p => !p.jaImportado) : [];
+        const passos = [Q && Q.empresa ? "Consultando dados de " + nomeEmp + " no Apollo…" : "", Q && Q.contatos ? "Buscando contatos do domínio " + dominioReal + "…" : ""].filter(Boolean);
+        const DEPTO = { "Operações": "operations", "Atendimento / CX": "support", "TI": "information_technology", "Financeiro": "finance", "Diretoria": "c_suite" };
+        const SENIOR = { "Gerência": ["manager", "head"], "Diretoria": ["director", "vp"], "C-level": ["c_suite", "owner", "founder"] };
+        const buscar = async () => {
           if (!Q.empresa && !Q.contatos) return diz("Escolha o que buscar", "erro");
-          /* Antes: fingia uma busca de 1,8s e mostrava resultado de exemplo. Honesto: sem integração, avisa e não segue. */
-          return diz("Enriquecimento ainda não está ligado", "aviso");
-          set({ passo: "busca", prog: 0 });
+          if (naoConfig) return diz("A integração com o Apollo não está configurada", "erro");
+          if (semDominio) return diz("Cadastre o site da empresa antes de buscar no Apollo", "erro");
+          const empresaId = E.empresaId;
+          if (!empresaId) return diz("Esta ficha não está ligada a uma empresa cadastrada", "erro");
+          const seq = this._enrSeq = (this._enrSeq || 0) + 1;
+          set({ passo: "busca", prog: 0, msg: null });
           clearInterval(this._enrI);
-          this._enrI = setInterval(() => this.setState(s => s.enr ? { enr: Object.assign({}, s.enr, { prog: Math.min(3, (s.enr.prog || 0) + 1) }) } : null), 420);
-          clearTimeout(this._enrT);
-          this._enrT = setTimeout(() => {
-            clearInterval(this._enrI);
-            this.setState(s => {
-              if (!s.enr) return null;
-              const selC = {}; camposAchados.forEach(c => { if (!c[2]) selC[c[0]] = true; });
-              const selP = {}; encontrados.forEach(p => { if (p[4] === "Verificado") selP[p[0]] = true; });
-              return { enr: Object.assign({}, s.enr, { passo: "resultado", selC, selP, rev: {} }) };
-            });
-          }, 1800);
+          this._enrI = setInterval(() => this.setState(s => s.enr ? { enr: Object.assign({}, s.enr, { prog: Math.min(2, (s.enr.prog || 0) + 1) }) } : null), 900);
+          const semFiltroArea = Q.areas.filter(a => !DEPTO[a]);
+          const corpoC = { empresaId, departments: Q.areas.map(a => DEPTO[a]).filter(Boolean), seniorities: Q.nivel === "Todos" ? [] : (SENIOR[Q.nivel] || []) };
+          const pedir = (url, corpo) => this.apolloPedir(url, { method: "POST", body: JSON.stringify(corpo) }).then(v => ({ v }), e => ({ e }));
+          const [rE, rC] = await Promise.all([
+            Q.empresa ? pedir("/api/apollo/empresa/dados", { empresaId }) : null,
+            Q.contatos ? pedir("/api/apollo/empresa/contatos", corpoC) : null
+          ]);
+          clearInterval(this._enrI);
+          if (seq !== this._enrSeq || !this.state.enr) return;
+          const notas = [];
+          if (rE && rE.e) notas.push("Dados da empresa: " + rE.e.message);
+          if (rC && rC.e) notas.push("Contatos: " + rC.e.message);
+          if (rE && rE.v && !rE.v.encontrada) notas.push("O Apollo não tem dados cadastrados para " + dominioReal + ".");
+          if (rC && rC.v && !rC.v.pessoas.length) notas.push("O Apollo não devolveu contatos para " + dominioReal + " com esses filtros.");
+          if (rC && rC.v && semFiltroArea.length) notas.push("Sem filtro equivalente no Apollo, ignorado: " + semFiltroArea.join(", ") + ".");
+          const msg = notas.join(" ");
+          if (!((rE && rE.v) || (rC && rC.v))) {
+            set({ passo: "config", msg });
+            return diz(msg, "erro");
+          }
+          if ((rE && rE.e) || (rC && rC.e)) diz(msg, "erro");
+          const dadosEmp = rE && rE.v ? rE.v.campos : null;
+          const achados = rC && rC.v ? rC.v.pessoas : null;
+          const selC = {}; if (dadosEmp) CAMPOS.forEach(([k]) => { if (dadosEmp[k] && !X[k]) selC[k] = true; });
+          const selP = {}; (achados || []).forEach(p => { if (p.temEmail && !p.jaImportado) selP[p.id] = true; });
+          set({ passo: "resultado", dadosEmp, achados: achados || [], erroCont: !!(rC && rC.e), msg, selC, selP, rev: {} });
         };
-        const aplicar = () => {
-          const selC = Q.selC || {}, selP = Q.selP || {}, rev = Q.rev || {};
-          if (custo > saldo) return diz("Créditos insuficientes · faltam " + (custo - saldo), "erro");
+        const aplicar = async () => {
+          if (Q.aplicando) return;
+          const selC = Q.selC || {}, selP = Q.selP || {};
           const campos = Q.empresa ? camposAchados.filter(c => selC[c[0]]) : [];
-          const novos = Q.contatos ? encontrados.filter(p => selP[p[0]]) : [];
+          const novos = Q.contatos ? encontrados.filter(p => selP[p.id]) : [];
           if (!campos.length && !novos.length) return diz("Selecione ao menos um item para aplicar", "erro");
-          const patch = {};
-          campos.forEach(c => { patch[c[0]] = c[3]; });
-          if (novos.length) patch.pessoas = (X.pessoas || []).concat(novos.map(p => ({ nome: p[0], cargo: p[1], tel: (rev[p[0]] || {}).tel && p[5] ? p[5] : "—", email: (rev[p[0]] || {}).email ? mailDe(p[0]) : "" })));
-          if (custo && this.E) this.E.gravar({ apollo: { creditos: saldo - custo } });
-          this.gravarEmpresa(nomeEmp, patch);
-          this.registrarEvento(nomeEmp, "Enriquecido via Apollo · " + [campos.length ? campos.length + (campos.length > 1 ? " campos" : " campo") : "", novos.length ? novos.length + (novos.length > 1 ? " contatos" : " contato") : ""].filter(Boolean).join(" · "), this.eu, "M21 5c0 1.66-4 3-9 3S3 6.66 3 5s4-3 9-3 9 1.34 9 3zM3 5v14c0 1.66 4 3 9 3M21 5v6M3 12c0 1.66 4 3 9 3M18 15v6M15 18h6");
+          if (saldoNum != null && custo > saldoNum) return diz("Créditos insuficientes · faltam " + (custo - saldoNum), "erro");
+          const empresaId = E.empresaId;
+          set({ aplicando: true, msg: null });
+          const falhas = []; let nCampos = 0, nImp = 0;
+          if (campos.length) {
+            try {
+              const cp = {}; campos.forEach(c => { cp[c[0]] = c[3]; });
+              await this.apolloPedir("/api/apollo/empresa/aplicar", { method: "POST", body: JSON.stringify({ empresaId, campos: cp }) });
+              nCampos = campos.length;
+            } catch (e) { falhas.push("Dados da empresa: " + e.message); }
+          }
+          if (novos.length) {
+            try {
+              const r = await this.apolloPedir("/api/apollo/import", { method: "POST", body: JSON.stringify({ apolloIds: novos.map(p => p.id), origem: "apollo", empresaId }) });
+              nImp = r.imported || 0;
+              (r.results || []).filter(x => x.error).slice(0, 3).forEach(x => falhas.push(x.error));
+            } catch (e) { falhas.push("Contatos: " + e.message); }
+          }
+          if (nCampos || nImp) { this.carregarSalvos(); this.carregarApollo(); if (this.props.recarregar) this.props.recarregar(); }
+          if (!this.state.enr) return;
+          const feito = [nCampos ? nCampos + (nCampos > 1 ? " campos" : " campo") : "", nImp ? nImp + (nImp > 1 ? " contatos importados" : " contato importado") : ""].filter(Boolean).join(" · ");
+          if (falhas.length) {
+            const txt = (feito ? feito + ". " : "") + "Falhou: " + falhas.join(" · ");
+            set({ aplicando: false, msg: txt });
+            return diz(txt, "erro");
+          }
           this.setState({ enr: null });
-          diz("Enriquecimento aplicado a " + nomeEmp + (custo ? " · " + custo + (custo > 1 ? " créditos usados" : " crédito usado") : ""), "ok");
+          diz("Enriquecimento aplicado a " + nomeEmp + " · " + feito, "ok");
         };
-        const nC = Q ? Object.keys(Q.selC || {}).filter(k => Q.selC[k]).length : 0;
-        const nP = Q ? Object.keys(Q.selP || {}).filter(k => Q.selP[k]).length : 0;
-        const CUSTO_EMAIL = 1, CUSTO_TEL = 8;
-        const saldo = ((this.E && this.E.ler("apollo", null)) || { creditos: 48 }).creditos;
-        const mailDe = (n) => slug(n.split(" ")[0]) + "." + slug(n.split(" ").slice(-1)[0]) + "@" + dominio;
-        const revs = Q && Q.contatos ? encontrados.filter(p => (Q.selP || {})[p[0]]).map(p => (Q.rev || {})[p[0]] || {}) : [];
-        const nEmail = revs.filter(r => r.email).length, nTel = revs.filter(r => r.tel).length;
-        const custo = nEmail * CUSTO_EMAIL + nTel * CUSTO_TEL;
-        const creditos = saldo;
+        const nC = camposAchados.filter(c => (Q && Q.selC || {})[c[0]]).length;
+        const nP = encontrados.filter(p => (Q && Q.selP || {})[p.id]).length;
+        /* Cada contato importado passa por people/match: 1 crédito (APOLLO_COSTS.enrichPerson). Telefone não é revelado pela importação. */
+        const CUSTO_EMAIL = 1;
+        const custo = Q && Q.contatos ? nP * CUSTO_EMAIL : 0;
+        const falta = saldoNum != null && custo > saldoNum;
         return {
           aberto: !!Q,
-          abrir: () => this.setState({ enr: { passo: "config", empresa: true, contatos: true, areas: ["Operações", "Atendimento / CX", "Diretoria"], nivel: "Todos" }, maisMenu: false }),
-          fechar: () => { clearTimeout(this._enrT); clearInterval(this._enrI); this.setState({ enr: null }); },
-          creditos: saldo,
-          sub: passo === "confirmar" ? "Confirme o uso de créditos antes de revelar." : passo === "resultado" ? "Revise o que o Apollo encontrou e escolha o que aplicar." : "Complete o cadastro e encontre outros contatos a partir do domínio " + dominio + ".",
+          /* Antes: abria já com o saldo fixo de 48. Agora busca o saldo real (GET /api/apollo/credits). */
+          abrir: () => { this.setState({ enr: { passo: "config", empresa: true, contatos: true, areas: ["Operações", "Atendimento / CX", "Diretoria"], nivel: "Todos" }, maisMenu: false }); this.carregarApollo(); },
+          fechar: () => { this._enrSeq = (this._enrSeq || 0) + 1; clearTimeout(this._enrT); clearInterval(this._enrI); this.setState({ enr: null }); },
+          creditos: saldoNum != null ? saldoNum : AP.estado === "carregando" ? "…" : "—",
+          sub: Q && Q.msg ? Q.msg
+            : naoConfig ? "A integração com o Apollo não está configurada para esta organização. Cadastre a chave em Ajustes › Integrações."
+            : AP.estado === "erro" ? AP.msg
+            : passo === "config" && semDominio ? "Esta empresa não tem site cadastrado. Sem o domínio não dá para buscar no Apollo."
+            : passo === "confirmar" ? "Confirme o uso de créditos antes de importar." : passo === "resultado" ? "Revise o que o Apollo encontrou e escolha o que aplicar." : "Complete o cadastro e encontre outros contatos a partir do domínio " + dominioReal + ".",
           passoConfig: passo === "config", passoBusca: passo === "busca", passoResultado: passo === "resultado", passoConfirmar: passo === "confirmar",
           avisoTitulo: "Essa ação consumirá " + custo + (custo === 1 ? " crédito" : " créditos") + " do Apollo",
           custoTxt: custo + (custo === 1 ? " crédito" : " créditos"),
-          saldoAntes: saldo + " créditos", saldoDepois: (saldo - custo) + " créditos",
+          saldoAntes: saldoNum != null ? saldoNum + " créditos" : "indisponível", saldoDepois: saldoNum != null ? (saldoNum - custo) + " créditos" : "indisponível",
           resumoCusto: [
-            nEmail ? { label: "E-mails revelados", conta: nEmail + " × " + CUSTO_EMAIL, total: nEmail * CUSTO_EMAIL } : null,
-            nTel ? { label: "Telefones revelados", conta: nTel + " × " + CUSTO_TEL, total: nTel * CUSTO_TEL } : null,
-            { label: "Contatos adicionados sem revelar", conta: String(Math.max(0, nP - revs.filter(r => r.email || r.tel).length)), total: "grátis" },
-            nC ? { label: "Dados da empresa", conta: String(nC), total: "grátis" } : null
+            nP ? { label: "Contatos importados com e-mail", conta: nP + " × " + CUSTO_EMAIL, total: nP * CUSTO_EMAIL } : null,
+            nC ? { label: "Dados da empresa", conta: String(nC), total: "já consultado" } : null
           ].filter(Boolean).map((r, i) => ({ label: r.label, conta: r.conta, total: typeof r.total === "number" ? r.total + (r.total === 1 ? " crédito" : " créditos") : r.total, linha: "display:flex;align-items:center;gap:10px;padding:10px 14px;" + (i ? "border-top:1px solid #f3f5f5" : "") })),
           itens: Q ? [
             ["empresa", "Dados da empresa", "Funcionários, faturamento, LinkedIn, telefone e tecnologias", "M3 21V7l9-4 9 4v14M9 21v-6h6v6"],
@@ -1130,7 +1218,7 @@ posFlutuante(r, alto) {
             on: Q.nivel === n,
             onClick: () => set({ nivel: n, menu: null }) })) : [],
           barra: "height:100%;border-radius:9999px;background:#fe4f2b;transition:width .4s cubic-bezier(.2,0,.2,1);width:" + (Q ? ((Q.prog || 0) + 1) * 25 : 0) + "%",
-          etapaBusca: passos[Q ? (Q.prog || 0) : 0],
+          etapaBusca: passos.length ? passos[(Q ? (Q.prog || 0) : 0) % passos.length] : "Consultando o Apollo…",
           temCampos: !!(Q && Q.empresa && camposAchados.length),
           camposConta: nC + " de " + camposAchados.length + " selecionados",
           campos: Q && Q.empresa ? camposAchados.map((c, i) => {
@@ -1141,66 +1229,48 @@ posFlutuante(r, alto) {
               linha: "display:flex;align-items:center;gap:10px;width:100%;padding:10px 12px;border:0;background:transparent;cursor:pointer;" + (i ? "border-top:1px solid #f3f5f5" : ""),
               onClick: () => set({ selC: Object.assign({}, Q.selC, { [c[0]]: !on }) }) };
           }) : [],
-          temContatos: !!(Q && Q.contatos),
-          semContatos: !!(Q && Q.contatos) && encontrados.length === 0,
-          podeReiniciar: passo === "config" && (ja.some(n => mockNomes.indexOf(n) >= 0) || saldo !== 48 || !!X.funcionarios),
-          reiniciar: () => {
-            const Es = this.E;
-            this.gravarEmpresa(nomeEmp, {
-              pessoas: (X.pessoas || []).filter(p => mockNomes.indexOf(p.nome) < 0),
-              funcionarios: undefined, faturamento: undefined, linkedin: undefined, telefone: undefined, tecnologias: undefined,
-              eventos: (X.eventos || []).filter(ev => !/^Enriquecido via Apollo/.test(ev.titulo))
-            });
-            if (Es) Es.gravar({ apollo: { creditos: 48 } });
-            set({ passo: "config" });
-            diz("Demonstração reiniciada · 48 créditos", "ok");
-          },
+          temContatos: !!(Q && Q.contatos) && !(Q && Q.erroCont),
+          semContatos: !!(Q && Q.contatos) && !(Q && Q.erroCont) && encontrados.length === 0,
+          /* Antes: "Reiniciar demo" apagava contatos de exemplo e voltava o saldo a 48. Sem demo, não há o que reiniciar. */
+          podeReiniciar: false,
+          /* O botão "Reiniciar demonstração" do estado vazio agora só volta para a busca (não apaga nada). */
+          reiniciar: () => set({ passo: "config", msg: null }),
           listaContatosStyle: encontrados.length ? "border-radius:12px;box-shadow:inset 0 0 0 1px #e3e7e8;overflow:hidden" : "display:none",
-          contatosConta: encontrados.length ? nP + " de " + encontrados.length + " · adicionar é grátis" : "",
+          contatosConta: encontrados.length ? nP + " de " + encontrados.length + " · e-mail revelado ao importar" : "",
           contatos: Q && Q.contatos ? encontrados.map((p, i) => {
-            const on = !!(Q.selP || {})[p[0]];
-            return { nome: p[0], cargo: p[1] + " · " + p[2], iniciais: ini(p[0]), on, caixa: caixa(on),
-              ...(() => {
-                const r = (Q.rev || {})[p[0]] || {};
-                const setRev = (k) => (e) => {
-                  e.stopPropagation();
-                  if (k === "tel" && !p[5]) return diz("Apollo não tem telefone para " + p[0], "aviso");
-                  const nr = Object.assign({}, Q.rev || {});
-                  nr[p[0]] = Object.assign({}, r, { [k]: !r[k] });
-                  const ns = Object.assign({}, Q.selP || {});
-                  if (!r[k]) ns[p[0]] = true;
-                  set({ rev: nr, selP: ns });
-                };
-                const mailM = mailDe(p[0]).replace(/^(.)[^@]*/, "$1•••••");
-                const telM = p[5] ? p[5].replace(/\d(?=[\d-]{4})/g, (c, i) => i < 7 ? c : "•") : "sem telefone";
-                const tag = (on, off) => "display:inline-flex;align-items:center;height:22px;padding:0 7px;border-radius:6px;font-size:10.5px;font-weight:700;white-space:nowrap;cursor:" + (off ? "not-allowed;background:#fafafa;color:#c8ccc9;box-shadow:inset 0 0 0 1px #eef1f1" : on ? "pointer;background:#12171d;color:#fff" : "pointer;background:#fff;color:#4a5560;box-shadow:inset 0 0 0 1px #dbdede");
-                return {
-                  emailTxt: r.email ? mailDe(p[0]) : mailM,
-                  telTxt: r.tel ? p[5] : telM,
-                  emailStyle: "min-width:0;font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" + (r.email ? "color:#1f252c;font-weight:600" : "color:#8b949e"),
-                  telStyle: "flex:0 0 auto;font-size:11.5px;white-space:nowrap;font-variant-numeric:tabular-nums;" + (r.tel ? "color:#1f252c;font-weight:600" : "color:#8b949e"),
-                  revEmail: setRev("email"), revTel: setRev("tel"),
-                  revEmailLabel: r.email ? "E-mail ✓" : "E-mail · " + CUSTO_EMAIL,
-                  revTelLabel: !p[5] ? "Telefone —" : r.tel ? "Telefone ✓" : "Telefone · " + CUSTO_TEL,
-                  revEmailStyle: tag(r.email, false), revTelStyle: tag(r.tel, !p[5])
-                };
-              })(),
-              selo: p[4],
-              seloStyle: "flex:0 0 auto;display:inline-flex;align-items:center;height:18px;padding:0 6px;border-radius:5px;font-size:10px;font-weight:700;white-space:nowrap;" + (p[4] === "Verificado" ? "background:#e6f4ee;color:#1f7256" : "background:#f7edd8;color:#6e5420"),
+            const on = !!(Q.selP || {})[p.id];
+            const tag = (on, off) => "display:inline-flex;align-items:center;height:22px;padding:0 7px;border-radius:6px;font-size:10.5px;font-weight:700;white-space:nowrap;cursor:" + (off ? "not-allowed;background:#fafafa;color:#c8ccc9;box-shadow:inset 0 0 0 1px #eef1f1" : on ? "pointer;background:#12171d;color:#fff" : "pointer;background:#fff;color:#4a5560;box-shadow:inset 0 0 0 1px #dbdede");
+            return { nome: p.nome, cargo: (p.cargo || "Cargo não informado") + (p.organizacao ? " · " + p.organizacao : ""), iniciais: ini(p.nome), on, caixa: caixa(on),
+              emailTxt: p.temEmail ? "E-mail a revelar" : "Sem e-mail no Apollo",
+              telTxt: p.temTelefone ? "Tem telefone" : "Sem telefone",
+              emailStyle: "min-width:0;font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#8b949e",
+              telStyle: "flex:0 0 auto;font-size:11.5px;white-space:nowrap;color:#8b949e",
+              revEmail: (e) => {
+                e.stopPropagation();
+                if (!p.temEmail) return diz("O Apollo não tem e-mail para " + p.nome, "aviso");
+                set({ selP: Object.assign({}, Q.selP, { [p.id]: !on }) });
+              },
+              revTel: (e) => { e.stopPropagation(); diz("Revelar telefone ainda não está ligado: a importação traz só o e-mail.", "aviso"); },
+              revEmailLabel: !p.temEmail ? "E-mail —" : on ? "E-mail ✓" : "E-mail · " + CUSTO_EMAIL,
+              revTelLabel: p.temTelefone ? "Tem telefone" : "Sem telefone",
+              revEmailStyle: tag(on && p.temEmail, !p.temEmail), revTelStyle: tag(false, true),
+              selo: p.temEmail ? "Com e-mail" : "Sem e-mail",
+              seloStyle: "flex:0 0 auto;display:inline-flex;align-items:center;height:18px;padding:0 6px;border-radius:5px;font-size:10px;font-weight:700;white-space:nowrap;" + (p.temEmail ? "background:#e6f4ee;color:#1f7256" : "background:#f7edd8;color:#6e5420"),
               linha: "display:flex;align-items:center;gap:10px;width:100%;padding:10px 12px;border:0;background:transparent;cursor:pointer;" + (i ? "border-top:1px solid #f3f5f5" : ""),
-              onClick: () => set({ selP: Object.assign({}, Q.selP, { [p[0]]: !on }) }) };
+              onClick: () => set({ selP: Object.assign({}, Q.selP, { [p.id]: !on }) }) };
           }) : [],
-          rodape: passo === "confirmar" ? "Ação irreversível · os dados revelados ficam salvos na empresa" : passo === "config" ? "Buscar é grátis · só revelar e-mail ou telefone consome" : passo === "resultado"
-            ? (custo ? "Revelar " + [nEmail ? nEmail + " e-mail" + (nEmail > 1 ? "s" : "") : "", nTel ? nTel + " telefone" + (nTel > 1 ? "s" : "") : ""].filter(Boolean).join(" + ") + " · " + custo + " crédito" + (custo > 1 ? "s" : "") + (custo > saldo ? " · saldo insuficiente" : "") : "Sem custo · revele e-mail (" + CUSTO_EMAIL + ") ou telefone (" + CUSTO_TEL + ") por contato")
-            : "Busca gratuita · créditos só ao revelar e-mail ou telefone",
+          rodape: passo === "confirmar" ? "Os contatos importados ficam salvos na empresa"
+            : passo === "config" ? (naoConfig ? "Configure a chave em Ajustes › Integrações para buscar" : AP.estado === "sem_saldo" ? "O Apollo não informa o saldo desta chave · dados da empresa e cada contato importado consomem créditos" : "Dados da empresa e cada contato importado consomem créditos Apollo")
+            : passo === "resultado" ? (custo ? "Importar " + nP + " contato" + (nP > 1 ? "s" : "") + " · " + custo + " crédito" + (custo > 1 ? "s" : "") + (falta ? " · saldo insuficiente" : "") : "Sem custo · marque contatos para importar (e-mail · " + CUSTO_EMAIL + " crédito)")
+            : "Consultando o Apollo…",
           podeVoltar: passo === "resultado" || passo === "confirmar",
-          voltar: () => set({ passo: passo === "confirmar" ? "resultado" : "config" }),
-          acaoLabel: passo === "confirmar" ? "Confirmar e usar " + custo + (custo === 1 ? " crédito" : " créditos") : passo === "resultado" ? (custo ? "Continuar" : "Aplicar enriquecimento") : passo === "busca" ? "Buscando…" : "Buscar no Apollo",
-          acaoStyle: "height:36px;padding:0 16px;border-radius:9px;border:0;font-size:12.5px;font-weight:600;white-space:nowrap;cursor:" + (passo === "busca" ? "wait;background:#e3e7e8;color:#a3a8a4" : (passo === "resultado" || passo === "confirmar") && custo > saldo ? "not-allowed;background:#f0c6bb;color:#fff" : "pointer;background:#d93c1a;color:#fff"),
+          voltar: () => set({ passo: passo === "confirmar" ? "resultado" : "config", msg: null }),
+          acaoLabel: Q && Q.aplicando ? "Aplicando…" : passo === "confirmar" ? "Confirmar e usar " + custo + (custo === 1 ? " crédito" : " créditos") : passo === "resultado" ? (custo ? "Continuar" : "Aplicar enriquecimento") : passo === "busca" ? "Buscando…" : "Buscar no Apollo",
+          acaoStyle: "height:36px;padding:0 16px;border-radius:9px;border:0;font-size:12.5px;font-weight:600;white-space:nowrap;cursor:" + (passo === "busca" || (Q && Q.aplicando) ? "wait;background:#e3e7e8;color:#a3a8a4" : (passo === "config" && (naoConfig || semDominio)) ? "not-allowed;background:#e3e7e8;color:#a3a8a4" : (passo === "resultado" || passo === "confirmar") && falta ? "not-allowed;background:#f0c6bb;color:#fff" : "pointer;background:#d93c1a;color:#fff"),
           acao: () => {
             if (passo === "config") return buscar();
             if (passo === "resultado") {
-              if (custo > saldo) return diz("Créditos insuficientes · faltam " + (custo - saldo), "erro");
+              if (falta) return diz("Créditos insuficientes · faltam " + (custo - saldoNum), "erro");
               return custo ? set({ passo: "confirmar" }) : aplicar();
             }
             if (passo === "confirmar") return aplicar();

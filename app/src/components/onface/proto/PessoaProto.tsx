@@ -11,7 +11,7 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
-import { ROTULO_ETAPA_PRE_VENDAS } from "@/lib/vendas/dominio";
+import { ROTULO_ETAPA_PRE_VENDAS, ROTULO_FAMILIA, type Familia } from "@/lib/vendas/dominio";
 import type { DetalheLead } from "@/lib/vendas/consultas";
 import type { LinhaDoTempo } from "@/lib/vendas/eventos";
 import { PessoaLiga } from "./PessoaLiga";
@@ -72,6 +72,16 @@ class PessoaLigada extends PessoaLiga {
         linha: `${t.linha};cursor:pointer`, hover: "background:var(--of-papel-alterno)",
         onClick: () => abrir?.("relatorio"),
       });
+    /* A aba "Oportunidades" e o contador dela leem só o lead local
+       (`etapa === "oportunidade"`), nunca as oportunidades gravadas. Aqui vêm
+       do que a ficha carregou: as mesmas do card "Relações em andamento". */
+    const reais: Array<{ titulo: string; etapa: string; familia: string }> = (this as any).props.oportunidades ?? [];
+    vals.opps = reais.map((o) => ({
+      titulo: o.titulo, meta: o.familia, etapa: o.etapa,
+    }));
+    vals.semOpps = reais.length === 0;
+    const aba = (vals.abas ?? []).find((a: any) => a.label === "Oportunidades");
+    if (aba) { aba.conta = String(reais.length); aba.temConta = reais.length > 0; }
     return corrigirInventados(vals, r);
   }
 }
@@ -92,7 +102,30 @@ export function PessoaProto({ lead, timeline }: {
       Object.entries(ROTULO_ETAPA_PRE_VENDAS).map(([k, label]) => [k, { label }]),
     ),
     LEADS: [], CONVERSAS: [], CADENCIAS: [], SEGMENTOS: [],
-  }), [lead.responsavel.nome]);
+    /* O card "Relações em andamento" pergunta por aqui. Sem esta função ele
+       caía em `{ itens: [] }` e dizia "Nada em andamento" mesmo com
+       oportunidade gravada. Abertas viram linha; perdidas só contam. Ganho
+       é cliente (a Visão 360 mostra), não relação em andamento. */
+    Relacoes: () => ({
+      itens: lead.oportunidades
+        .filter((o) => o.etapa !== "ganho" && o.etapa !== "perdido")
+        .map((o) => ({
+          k: "opp", tipo: "Oportunidade", titulo: o.titulo,
+          sub: o.familia ? ROTULO_FAMILIA[o.familia as Familia] ?? o.familia : "Família a definir",
+          status: o.etapaRotulo, tom: "coral",
+          ir: () => router.push(`/pipeline/${o.id}`),
+        })),
+      perdidas: lead.oportunidades.filter((o) => o.etapa === "perdido").length,
+    }),
+  }), [lead.responsavel.nome, lead.oportunidades, router]);
+
+  const oportunidades = React.useMemo(
+    () => lead.oportunidades.map((o) => ({
+      titulo: o.titulo, etapa: o.etapaRotulo,
+      familia: o.familia ? ROTULO_FAMILIA[o.familia as Familia] ?? o.familia : "Família a definir",
+    })),
+    [lead.oportunidades],
+  );
 
   /* Peça do protótipo: abre por cima desta tela pelo hospedeiro global. */
   const { abrir: abrirPeca } = usePecas();
@@ -122,6 +155,7 @@ export function PessoaProto({ lead, timeline }: {
           "E-mail": registro.email,
         }}
         catalogo={catalogo}
+        oportunidades={oportunidades}
         abrir={abrir}
         gravar={gravar}
         ir={(href: string) => router.push(href)}

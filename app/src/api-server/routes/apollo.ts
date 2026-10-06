@@ -3,13 +3,47 @@ import { garantirEntradaCanonica } from "../../lib/vendas/ponte-canonica.js";
 import { Hono } from "hono";
 import { db } from "@/lib/db";
 import { leads, empresas, atividades, buscasSalvas } from "@/lib/db/schema";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, inArray } from "drizzle-orm";
 import { getCtx } from "../compat.js";
-import { searchPeople, extractDomainFromEmail, getCreditsInfo, APOLLO_COSTS } from "@/lib/apollo/client";
+import { searchPeople, enrichOrganization, extractDomainFromEmail, extractDomainFromUrl, getCreditsInfo, APOLLO_COSTS } from "@/lib/apollo/client";
 import { getOrgApolloKey } from "@/lib/apollo/tenant-key";
 import { syncPessoaFromLead } from "@/lib/crm/sync-domain-model";
 
 const app = new Hono();
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Mensagem clara por status do Apollo — a tela mostra isto, nunca "lista vazia". */
+function mensagemApollo(status: number | null): string {
+  if (status === 401) return "A chave do Apollo é inválida ou foi revogada. Atualize em Ajustes › Integrações.";
+  if (status === 403) return "O Apollo recusou o acesso: a chave não tem permissão ou o plano não inclui este recurso.";
+  if (status === 422 || status === 400) return "O Apollo recusou os filtros enviados. Ajuste a busca e tente de novo.";
+  if (status === 429) return "Limite de requisições do Apollo atingido. Aguarde alguns minutos e tente de novo.";
+  if (status && status >= 500) return "O Apollo está instável no momento. Tente de novo em instantes.";
+  if (status === null) return "Não foi possível falar com o Apollo (sem conexão). Tente de novo.";
+  return `O Apollo respondeu com erro ${status}.`;
+}
+
+/** Erro do client/fetch -> { status, mensagem, codigo }. Sem status = falha de rede. */
+function erroApollo(e: unknown) {
+  const texto = e instanceof Error ? e.message : String(e);
+  const m = texto.match(/(?:error|failed:?)\s*(\d{3})/i);
+  const status = m ? Number(m[1]) : /Apollo API key/i.test(texto) ? 400 : null;
+  return { status, codigo: status ? `apollo_${status}` : "apollo_rede", mensagem: mensagemApollo(status) };
+}
+
+/** Empresa do tenant (nunca por organizacaoId vindo do cliente) + domínio para o Apollo. */
+async function empresaComDominio(organizacaoId: string, empresaId: unknown) {
+  if (typeof empresaId !== "string" || !UUID_RE.test(empresaId)) return null;
+  const [emp] = await db
+    .select({ id: empresas.id, nome: empresas.nome, website: empresas.website, dominio: empresas.dominio })
+    .from(empresas)
+    .where(and(eq(empresas.id, empresaId), eq(empresas.organizacaoId, organizacaoId)))
+    .limit(1);
+  if (!emp) return null;
+  const dominio = (emp.dominio ? extractDomainFromUrl(emp.dominio) : null) || (emp.website ? extractDomainFromUrl(emp.website) : null);
+  return { ...emp, dominioApollo: dominio };
+}
 
 // ─── Search ──────────────────────────────────────────────────────
 
@@ -65,7 +99,7 @@ app.post("/import", async (c) => {
   }
 
   const body = await c.req.json();
-  const { apolloIds, origem } = body as { apolloIds: string[]; origem?: string };
+  const { apolloIds, origem, empresaId: empresaIdFixa } = body as { apolloIds: string[]; origem?: string; empresaId?: string };
 
   if (!apolloIds?.length) {
     return c.json({ error: "apolloIds required" }, 400);
@@ -76,10 +110,30 @@ app.post("/import", async (c) => {
     return c.json({ error: "Apollo API key não configurada para esta organização" }, 400);
   }
 
+  /* Novo: a ficha da empresa manda `empresaId` para gravar as pessoas NELA.
+     Antes a empresa era resolvida só pelo nome que o Apollo devolve — que quase
+     nunca bate com o cadastro — e nascia uma empresa duplicada. Validada no tenant. */
+  let empresaFixa: { id: string; nome: string } | null = null;
+  if (empresaIdFixa !== undefined && empresaIdFixa !== null) {
+    const emp = await empresaComDominio(ctx.organizacaoId, empresaIdFixa);
+    if (!emp) return c.json({ error: "Empresa não encontrada" }, 404);
+    empresaFixa = { id: emp.id, nome: emp.nome };
+  }
+
   const results: Array<{ apolloId: string; leadId?: string; error?: string }> = [];
 
   for (const apolloId of apolloIds.slice(0, 25)) {
     try {
+      // Já importado antes? Evita gastar crédito do Apollo à toa (antes só checava o e-mail, depois de pagar).
+      const [jaTem] = await db
+        .select({ id: leads.id })
+        .from(leads)
+        .where(and(eq(leads.apolloId, apolloId), eq(leads.organizacaoId, ctx.organizacaoId)))
+        .limit(1);
+      if (jaTem) {
+        results.push({ apolloId, leadId: jaTem.id, error: "Contato já importado" });
+        continue;
+      }
       // Enrich each by their Apollo ID
       const res = await fetch("https://api.apollo.io/api/v1/people/match", {
         method: "POST",
@@ -91,7 +145,7 @@ app.post("/import", async (c) => {
       });
 
       if (!res.ok) {
-        results.push({ apolloId, error: `Apollo error ${res.status}` });
+        results.push({ apolloId, error: mensagemApollo(res.status) });
         continue;
       }
 
@@ -116,10 +170,10 @@ app.post("/import", async (c) => {
       }
 
       // Resolve or create empresa
-      let empresaId: string | null = null;
-      const orgName = p.organization?.name || p.employment_history?.find((e: Record<string, unknown>) => e.current)?.organization_name;
+      let empresaId: string | null = empresaFixa?.id ?? null;
+      const orgName = empresaFixa?.nome || p.organization?.name || p.employment_history?.find((e: Record<string, unknown>) => e.current)?.organization_name;
 
-      if (orgName) {
+      if (orgName && !empresaFixa) {
         // Check if empresa exists
         const [existingEmp] = await db
           .select({ id: empresas.id })
@@ -242,7 +296,9 @@ app.post("/import", async (c) => {
 
       results.push({ apolloId, leadId: newLead.id });
     } catch (error) {
-      results.push({ apolloId, error: String(error) });
+      // Falha de rede/Apollo/banco: mensagem legível, sem despejar a exceção crua na tela.
+      const { mensagem } = erroApollo(error);
+      results.push({ apolloId, error: /Apollo|fetch/i.test(String(error)) ? mensagem : "Falha ao gravar o contato" });
     }
   }
 
@@ -255,6 +311,10 @@ app.post("/import", async (c) => {
 // ─── Credits ─────────────────────────────────────────────────────
 
 // GET /apollo/credits
+//
+// Antes: `getCreditsInfo` engolia o erro e devolvia zeros; agora há 3 desfechos
+// honestos — { configured:false }, { configured:true, disponivel:false } (a chave
+// responde mas o Apollo não informa saldo) e erro 502 com mensagem por status.
 app.get("/credits", async (c) => {
   const ctx = await getCtx(c);
 
@@ -267,13 +327,165 @@ app.get("/credits", async (c) => {
     });
   }
 
-  const credits = await getCreditsInfo(apiKey);
+  try {
+    const credits = await getCreditsInfo(apiKey);
+    return c.json({
+      configured: true,
+      ...credits,
+      costs: APOLLO_COSTS,
+    });
+  } catch (error) {
+    const e = erroApollo(error);
+    return c.json({ configured: true, error: e.mensagem, codigo: e.codigo, costs: APOLLO_COSTS }, 502);
+  }
+});
 
-  return c.json({
-    configured: true,
-    ...credits,
-    costs: APOLLO_COSTS,
-  });
+// ─── Ficha da empresa (modal "Enriquecer") ───────────────────────
+
+const CAMPOS_EMPRESA = ["funcionarios", "faturamento", "linkedin", "telefone", "tecnologias"] as const;
+
+// GET /apollo/empresa/:id/salvos — o que o enriquecimento já gravou na empresa
+// (a ficha lê só estes campos; só volta o que existe, nunca valor de exemplo).
+app.get("/empresa/:id/salvos", async (c) => {
+  const ctx = await getCtx(c);
+  const id = c.req.param("id");
+  if (!UUID_RE.test(id)) return c.json({ error: "Empresa inválida" }, 400);
+  const [e] = await db
+    .select({
+      employeeCount: empresas.employeeCount,
+      annualRevenue: empresas.annualRevenue,
+      linkedin: empresas.linkedin,
+      telefone: empresas.telefone,
+      techStack: empresas.techStack,
+    })
+    .from(empresas)
+    .where(and(eq(empresas.id, id), eq(empresas.organizacaoId, ctx.organizacaoId)))
+    .limit(1);
+  if (!e) return c.json({ error: "Empresa não encontrada" }, 404);
+  const campos: Record<string, string> = {};
+  if (e.employeeCount) campos.funcionarios = String(e.employeeCount);
+  if (e.annualRevenue) campos.faturamento = e.annualRevenue;
+  if (e.linkedin) campos.linkedin = e.linkedin;
+  if (e.telefone) campos.telefone = e.telefone;
+  if (e.techStack?.length) campos.tecnologias = e.techStack.join(" · ");
+  return c.json({ campos });
+});
+
+// POST /apollo/empresa/dados { empresaId } — consulta o Apollo pelo domínio e DEVOLVE
+// o que veio (não grava; quem grava é /empresa/aplicar, depois da escolha do usuário).
+app.post("/empresa/dados", async (c) => {
+  const ctx = await getCtx(c);
+  if (ctx.userRole !== "super_admin" && ctx.userRole !== "admin") return c.json({ error: "Acesso negado" }, 403);
+
+  const body = await c.req.json().catch(() => ({}));
+  const emp = await empresaComDominio(ctx.organizacaoId, body.empresaId);
+  if (!emp) return c.json({ error: "Empresa não encontrada" }, 404);
+  if (!emp.dominioApollo) return c.json({ error: "A empresa não tem site ou domínio cadastrado; sem ele o Apollo não encontra a organização.", codigo: "sem_dominio" }, 422);
+
+  const apiKey = await getOrgApolloKey(ctx.organizacaoId);
+  if (!apiKey) return c.json({ error: "Apollo API key não configurada para esta organização.", codigo: "sem_chave" }, 400);
+
+  try {
+    const org = await enrichOrganization({ domain: emp.dominioApollo }, apiKey);
+    if (!org) return c.json({ dominio: emp.dominioApollo, encontrada: false, campos: {} });
+    // Só entra o que o Apollo devolveu de fato.
+    const campos: Record<string, string> = {};
+    if (org.estimated_num_employees) campos.funcionarios = String(org.estimated_num_employees);
+    const fat = org.annual_revenue_printed || org.organization_revenue_printed;
+    if (fat) campos.faturamento = fat;
+    if (org.linkedin_url) campos.linkedin = org.linkedin_url;
+    if (org.phone) campos.telefone = org.phone;
+    if (org.technology_names?.length) campos.tecnologias = org.technology_names.slice(0, 12).join(" · ");
+    return c.json({ dominio: emp.dominioApollo, encontrada: true, campos });
+  } catch (error) {
+    console.error("Apollo empresa/dados error:", error);
+    const e = erroApollo(error);
+    return c.json({ error: e.mensagem, codigo: e.codigo }, 502);
+  }
+});
+
+// POST /apollo/empresa/aplicar { empresaId, campos } — grava os campos que o usuário escolheu
+app.post("/empresa/aplicar", async (c) => {
+  const ctx = await getCtx(c);
+  if (ctx.userRole !== "super_admin" && ctx.userRole !== "admin") return c.json({ error: "Acesso negado" }, 403);
+
+  const body = await c.req.json().catch(() => ({}));
+  const emp = await empresaComDominio(ctx.organizacaoId, body.empresaId);
+  if (!emp) return c.json({ error: "Empresa não encontrada" }, 404);
+
+  const campos = (body.campos ?? {}) as Record<string, unknown>;
+  const set: Partial<typeof empresas.$inferInsert> = {};
+  for (const k of CAMPOS_EMPRESA) {
+    const v = typeof campos[k] === "string" ? (campos[k] as string).trim() : "";
+    if (!v) continue;
+    if (k === "funcionarios") {
+      const n = parseInt(v.replace(/\D/g, ""), 10);
+      if (Number.isFinite(n) && n > 0) set.employeeCount = n;
+    } else if (k === "faturamento") set.annualRevenue = v.slice(0, 80);
+    else if (k === "linkedin") set.linkedin = v.slice(0, 300);
+    else if (k === "telefone") set.telefone = v.slice(0, 60);
+    else if (k === "tecnologias") set.techStack = v.split(" · ").map((t) => t.trim()).filter(Boolean).slice(0, 30);
+  }
+  if (!Object.keys(set).length) return c.json({ error: "Nenhum campo válido para gravar" }, 400);
+
+  await db
+    .update(empresas)
+    .set({ ...set, enrichStatus: "enriched", enrichedAt: new Date() })
+    .where(and(eq(empresas.id, emp.id), eq(empresas.organizacaoId, ctx.organizacaoId)));
+  return c.json({ ok: true, gravados: Object.keys(set).length });
+});
+
+// POST /apollo/empresa/contatos { empresaId, departments?, seniorities? } — busca de pessoas
+// pelo domínio da empresa. O Apollo devolve sobrenome ofuscado; e-mail/telefone só vêm
+// ao importar (/import), por isso aqui só há indicação `temEmail` / `temTelefone`.
+app.post("/empresa/contatos", async (c) => {
+  const ctx = await getCtx(c);
+  if (ctx.userRole !== "super_admin" && ctx.userRole !== "admin") return c.json({ error: "Acesso negado" }, 403);
+
+  const body = await c.req.json().catch(() => ({}));
+  const emp = await empresaComDominio(ctx.organizacaoId, body.empresaId);
+  if (!emp) return c.json({ error: "Empresa não encontrada" }, 404);
+  if (!emp.dominioApollo) return c.json({ error: "A empresa não tem site ou domínio cadastrado; sem ele o Apollo não encontra as pessoas.", codigo: "sem_dominio" }, 422);
+
+  const apiKey = await getOrgApolloKey(ctx.organizacaoId);
+  if (!apiKey) return c.json({ error: "Apollo API key não configurada para esta organização.", codigo: "sem_chave" }, 400);
+
+  const lista = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string").slice(0, 20) : undefined);
+
+  try {
+    const r = await searchPeople({
+      q_organization_domains_list: [emp.dominioApollo],
+      person_departments: lista(body.departments),
+      person_seniorities: lista(body.seniorities),
+      page: 1,
+      per_page: 25,
+    }, apiKey);
+
+    const ids = r.people.map((p) => p.id);
+    const feitos = ids.length
+      ? await db.select({ apolloId: leads.apolloId }).from(leads).where(and(eq(leads.organizacaoId, ctx.organizacaoId), inArray(leads.apolloId, ids)))
+      : [];
+    const jaImportados = new Set(feitos.map((f) => f.apolloId));
+
+    return c.json({
+      dominio: emp.dominioApollo,
+      total: r.total,
+      pessoas: r.people.map((p) => ({
+        id: p.id,
+        nome: [p.first_name, p.last_name_obfuscated].filter(Boolean).join(" "),
+        cargo: p.title || null,
+        organizacao: p.organization?.name || null,
+        temEmail: !!p.has_email,
+        // "Yes" / "Maybe: ..." / "No" — só um indício; o telefone real exige revelar.
+        temTelefone: typeof p.has_direct_phone === "string" && /^(yes|maybe)/i.test(p.has_direct_phone),
+        jaImportado: jaImportados.has(p.id),
+      })),
+    });
+  } catch (error) {
+    console.error("Apollo empresa/contatos error:", error);
+    const e = erroApollo(error);
+    return c.json({ error: e.mensagem, codigo: e.codigo }, 502);
+  }
 });
 
 // ─── Saved Searches ──────────────────────────────────────────────

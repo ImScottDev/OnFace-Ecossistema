@@ -29,6 +29,14 @@ class EmpresaLigada extends EmpresaLiga {
     // Sem isto o `irPara` da Liga perde o id do registro e cai em rota do protótipo (404).
     levarParametros(this as any);
   }
+
+  /* `E.avisar` chama `this.diz`, que a Liga gerada não define: todo aviso desta
+     ficha (inclusive o erro do Apollo) morria em TypeError e nada aparecia. */
+  diz(texto: string, tom?: string) {
+    if (tom === "erro") toast.error(texto);
+    else if (tom === "aviso") toast.warning(texto);
+    else toast.success(texto);
+  }
 }
 
 export function EmpresaProto({ empresa, lead, timeline }: {
@@ -64,6 +72,8 @@ export function EmpresaProto({ empresa, lead, timeline }: {
       cidade: [empresa.cidade, empresa.estado].filter(Boolean).join(" / ") || null,
       segmento: empresa.setor,
       site: empresa.website,
+      /* Domínio real da empresa: o modal Enriquecer mostrava "<nome>.com.br" inventado. */
+      dominio: empresa.dominio || empresa.website || null,
     };
   }, [empresa, lead]);
 
@@ -107,12 +117,20 @@ export function EmpresaProto({ empresa, lead, timeline }: {
             porte: empresa.porte,
             cidade: [empresa.cidade, empresa.estado].filter(Boolean).join(" / ") || undefined,
             site: empresa.website,
+            /* Antes só o contato do lead aparecia na aba Pessoas; quem o Apollo
+               importa para a empresa ficava invisível. O contato do lead sai daqui
+               porque a ficha já o mostra à parte. */
+            pessoas: empresa.pessoas
+              .filter((p) => p.nome !== registro.pessoa)
+              .map((p) => ({ nome: p.nome, cargo: p.cargo ?? "", tel: p.telefone || "—", email: p.email ?? "" })),
           } },
         }}
         catalogo={catalogo}
         abrir={abrir}
         gravar={gravar}
         ir={(href: string) => router.push(href)}
+        /* Depois de importar contatos do Apollo a ficha relê o servidor. */
+        recarregar={() => router.refresh()}
       />
     </div>
   );

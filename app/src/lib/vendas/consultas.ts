@@ -123,6 +123,9 @@ export interface CardPreVendas {
   desqualificacaoMotivo: string | null;
   /** Quando o lead já concluiu o handoff, para onde ele leva. */
   oportunidadeId: string | null;
+  /** O que alguém já preencheu em `leads.qualificacao`. Sem isto a gaveta abre
+   *  em branco e mover o card pede preencher tudo de novo. */
+  qualificacao: Record<string, unknown> | null;
   /** Próxima ação: a Task real, nunca uma string digitada no card. */
   proximaAcao: { id: string; titulo: string; venceEm: string | null } | null;
 }
@@ -309,18 +312,18 @@ export async function boardPreVendas(organizacaoId: string, filtros: FiltrosPreV
   const legado = new Map<string, {
     estagio: string | null; servicos: string[] | null;
     pre_qualificado: boolean; whatsapp: string | null; etapa_desde: string | null;
-    negocio_ativo_id: string | null;
+    negocio_ativo_id: string | null; qualificacao: Record<string, unknown> | null;
   }>();
   if (leadIds.length > 0) {
     const linhas = await db.execute<{
       id: string; estagio: string | null; servicos: string[] | null;
       pre_qualificado: boolean; whatsapp: string | null; etapa_desde: string | null;
-      negocio_ativo_id: string | null;
+      negocio_ativo_id: string | null; qualificacao: Record<string, unknown> | null;
     }>(sql`
       SELECT id::text, estagio_pre_vendas AS estagio,
              servicos_interesse AS servicos, pre_qualificado, whatsapp,
              COALESCE(contato_desde_at, created_at)::text AS etapa_desde,
-             negocio_ativo_id::text
+             negocio_ativo_id::text, qualificacao
         FROM leads WHERE id = ANY(${literalDeArray(leadIds)}::uuid[])`);
     for (const l of linhas) legado.set(l.id, l);
   }
@@ -386,6 +389,7 @@ export async function boardPreVendas(organizacaoId: string, filtros: FiltrosPreV
         nutricaoRetomarEm: c.retomarEm,
         desqualificacaoMotivo: c.motivoDesqualificacao,
         oportunidadeId: l?.negocio_ativo_id ?? null,
+        qualificacao: l?.qualificacao ?? null,
         proximaAcao: c.proximaAcao,
       };
     })

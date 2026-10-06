@@ -29,7 +29,9 @@ import {
 } from "@/app/(produto)/pre-vendas/actions";
 import type { AcoesPreVendas } from "../vendas/PreVendas";
 import type { CanalAtendimento } from "../vendas/atendimento";
-import { executarIntencao, PecasLigadas, quando, type LeadDoDesenho } from "./PreVendasProto";
+import {
+  executarIntencao, PecasLigadas, qualDoDesenho, quando, type LeadDoDesenho,
+} from "./PreVendasProto";
 import { intencoesDoPatch } from "./saidas-do-lead";
 import { usePecas, type PecaProps } from "./pecas-host";
 
@@ -117,6 +119,12 @@ export default function PecasGlobalProto({ peca, id, contexto, fechar, gravou }:
 
   const lead = React.useMemo(() => (carga ? doDetalhe(carga.detalhe) : null), [carga]);
   const leads = React.useMemo(() => (lead ? [lead] : []), [lead]);
+  /* A qualificação já gravada, para a peça abrir com o que alguém preencheu
+     em vez de em branco. */
+  const qual = React.useMemo(() => {
+    const campos = lead ? qualDoDesenho(carga?.detalhe.qualificacao) : null;
+    return campos && lead ? { [lead.id]: campos } : {};
+  }, [lead, carga]);
   const catalogo = React.useMemo(() => ({
     EQUIPE: carga?.equipe.map((r) => r.nome) ?? [],
     ETAPAS,
@@ -166,7 +174,7 @@ export default function PecasGlobalProto({ peca, id, contexto, fechar, gravou }:
   return (
     <PecasGlobais
       ref={pecas}
-      dados={{ leads }}
+      dados={{ leads, qual }}
       catalogo={catalogo}
       leads={leads}
       ir={(href: string) => router.push(href)}

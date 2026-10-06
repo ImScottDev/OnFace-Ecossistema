@@ -979,7 +979,8 @@ class Logica extends React.Component<any, any> {
         const ehReuniao = avanco === "reuniao";
         const inp = "width:100%;height:38px;padding:0 12px;border-radius:9px;background:#fff;outline:0;font-size:13px;font-family:inherit;border:1px solid #dbdede";
         const oppNome = (interesses[0] || alvo.interesse || "Oportunidade") + " · " + (alvo.empresa || "Sem empresa");
-        const equipe = ["Camila Reis", "Diego Nunes", "Ana Vitória"];
+        /* Só quem existe na organização: nome do protótipo faz a gravação falhar com "Não encontrei … na equipe". */
+        const equipe = (this.dadosDoProto && this.dadosDoProto.EQUIPE) || [];
         const slugE = (s) => (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z]/g, "");
         const mudarO = (k, v) => this.setState(s => ({ qualOpp: Object.assign({}, s.qualOpp, { [k]: v }) }));
         const vData = O.data || "2026-09-24";

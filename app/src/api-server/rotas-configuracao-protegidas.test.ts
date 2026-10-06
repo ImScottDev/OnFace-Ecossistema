@@ -172,11 +172,16 @@ test("o levantamento de rotas abertas continua visível", () => {
   }
   assert.ok(escritas > 150, "a varredura precisa estar encontrando as rotas");
   assert.ok(
-    semGate <= 171,
+    semGate <= 174,
     `${semGate} rotas de escrita sem autorização (medido em 21/09/2026: 166 depois de fechar ` +
     "automação, agente e plataforma de IA; 171 em 05/10, com PATCH /notificacoes, " +
     "que é dado PESSOAL: o gate dele é a sessão mais o filtro por usuario_id, e " +
-    "não existe permissão de papel que faça sentido aí). Se cresceu, uma rota " +
+    "não existe permissão de papel que faça sentido aí; 174 em 05/10 com o " +
+    "enriquecimento Apollo — POST /apollo/empresa/dados, /empresa/aplicar e " +
+    "/empresa/contatos NÃO estão abertas: cada uma barra quem não é admin " +
+    "lendo `ctx.userRole`, um estilo que o regex deste levantamento não " +
+    "reconhece, e resolve a empresa por `empresaComDominio(ctx.organizacaoId, …)`, " +
+    "então o id vindo do cliente nunca escapa do tenant). Se cresceu, uma rota " +
     "nova entrou aberta.",
   );
 });

@@ -20,6 +20,7 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
+import type { Familia } from "@/lib/vendas/dominio";
 import type { BoardPreVendas, CardPreVendas, DetalheLead } from "@/lib/vendas/consultas";
 import type { LinhaDoTempo } from "@/lib/vendas/eventos";
 import type { AcoesPreVendas } from "../vendas/PreVendas";
@@ -90,6 +91,33 @@ function paraODesenho(c: CardPreVendas): LeadDoDesenho {
   };
 }
 
+/**
+ * `leads.qualificacao` → os campos da peça de qualificação.
+ *
+ * O caminho de volta do que `salvarQualificacao` grava. Sem ele a gaveta abria
+ * sempre em branco: a qualificação ia para o banco e ninguém a lia, então
+ * mover o card pedia preencher tudo outra vez. Os nomes diferem dos dois lados
+ * (o desenho chama `cenario` e `interesse`), e é esta função que traduz.
+ */
+export function qualDoDesenho(q: Record<string, unknown> | null | undefined): Record<string, unknown> | null {
+  if (!q || typeof q !== "object") return null;
+  const texto = (v: unknown) => (typeof v === "string" && v.trim() ? v : undefined);
+  const campos: Record<string, unknown> = {};
+  for (const [desenho, dominio] of [
+    ["icp", "icp"], ["dor", "dor"], ["necessidade", "necessidade"],
+    ["cenario", "cenarioAtual"], ["urgencia", "urgencia"], ["budget", "budget"],
+    ["decisor", "decisor"], ["timing", "timing"],
+  ] as const) {
+    const v = texto(q[dominio]);
+    if (v !== undefined) campos[desenho] = v;
+  }
+  const servicos = q.servicosInteresse;
+  if (Array.isArray(servicos) && servicos.length) {
+    campos.interesse = servicos.filter((s): s is string => typeof s === "string").join("|");
+  }
+  return Object.keys(campos).length ? campos : null;
+}
+
 /** "hoje", "amanhã", "3d" — o vocabulário curto que o cartão usa. */
 export function quando(iso: string): string | null {
   const d = new Date(iso);
@@ -158,12 +186,33 @@ export async function executarIntencao(
       return falhou(await acoes.desqualificar(i.leadId, motivo, ctx.observacao ?? null));
     }
 
-    case "criar-oportunidade":
-      /* Exige família e responsável, e a peça não coleta nem um nem outro —
-         quem faz isso é o fluxo de qualificação com o passo de oportunidade.
-         Chamar com palpite criaria oportunidade na família errada, que depois
-         some do relatório por família. */
-      return "Criar oportunidade daqui ainda não está ligado — use o fluxo de qualificação.";
+    case "criar-oportunidade": {
+      /* Antes devolvia um aviso de não-ligado e a peça mostrava "Oportunidade
+         criada" por cima: o modal mentia e nada era gravado. Agora o command é
+         chamado com o que o modal coletou (`ctx.oportunidade`).
+
+         Família: vem do serviço de interesse que o modal mostra. "Não
+         identificado" vai sem família — o domínio cria "Família a definir" e a
+         recusa de mover para Proposta cobra a escolha depois. */
+      const o = ctx.oportunidade ?? {};
+      if (o.empresa && i.empresa && o.empresa !== i.empresa) {
+        return `Esta oportunidade é de "${o.empresa}", mas o lead pertence a "${i.empresa}". Crie pela ficha da outra empresa.`;
+      }
+      const nome = o.resp ?? i.responsavel;
+      const responsavelId = nome ? idDoResponsavel.get(nome) : null;
+      if (!responsavelId) return nome ? `Não encontrei "${nome}" na equipe.` : "Escolha o responsável comercial.";
+      const familia = i.interesse ? FAMILIA_DO_INTERESSE[i.interesse] : undefined;
+
+      const reuniao = o.avanco === "reuniao" && o.data
+        ? { data: new Date(`${o.data}T${o.hora ?? "14:00"}`).toISOString() } : null;
+      const r = await acoes.criarOportunidade({
+        leadId: i.leadId, familias: familia ? [familia] : [], responsavelId, reuniao,
+      });
+      if (!r.ok) return r.erro ?? "Não foi possível criar a oportunidade.";
+      return o.avanco === "reuniao" && !o.data
+        ? "Oportunidade criada no Pipeline, mas a reunião não foi agendada: faltou a data."
+        : null;
+    }
 
     case "atribuir": {
       /* O desenho guarda o NOME e o command quer o id. O mapa vem do board,
@@ -181,8 +230,15 @@ export async function executarIntencao(
 
 /* ── As peças, com as saídas ligadas ───────────────────────────────────── */
 
+/** O serviço que o modal de oportunidade mostra → a família do domínio. */
+const FAMILIA_DO_INTERESSE: Record<string, Familia> = {
+  "Callface AI": "CALLFACE_AI", PABX: "PABX", "White Label": "WHITE_LABEL",
+};
+
 /** O que a peça sabia no instante em que gravou. */
 export interface ContextoDaSaida {
+  /** O que o modal "Criar oportunidade" coletou (vive em `qualOpp`/`qualEmpresa`). */
+  oportunidade?: { resp?: string | null; avanco?: string | null; data?: string | null; hora?: string | null; empresa?: string | null };
   motivoNutricao?: string | null;
   motivoDesqualificacao?: string | null;
   observacao?: string | null;
@@ -209,6 +265,49 @@ export class PecasLigadas extends PecasLiga {
   }
 
   _contexto: ContextoDaSaida = {};
+  /* Gravar a qualificação digitada, sem esperar o botão Qualificar.
+     O protótipo guardava os campos só na memória da tela: fechar a gaveta
+     perdia tudo, e mover o card pedia preencher de novo. `salvarQualificacao`
+     já existia no servidor e ninguém chamava. Espera 900ms depois da última
+     tecla para não gravar a cada caractere. */
+  _qualTimer: any = null;
+  _qualPendente: Record<string, Record<string, unknown>> = {};
+
+  agendarSalvarQualificacao(leadId: string) {
+    clearTimeout(this._qualTimer);
+    this._qualTimer = setTimeout(() => {
+      const q = this._qualPendente[leadId];
+      if (!q) return;
+      delete this._qualPendente[leadId];
+      const salvar = (this as any).props?.acoes?.salvarQualificacao;
+      if (!salvar) return;
+      const interesse = String(q.interesse ?? "");
+      void salvar(leadId, {
+        icp: q.icp as string | undefined,
+        dor: q.dor as string | undefined,
+        necessidade: q.necessidade as string | undefined,
+        servicosInteresse: interesse ? interesse.split("|").filter(Boolean) : undefined,
+        cenarioAtual: q.cenario as string | undefined,
+        urgencia: q.urgencia as string | undefined,
+        budget: q.budget as string | undefined,
+        decisor: q.decisor as string | undefined,
+        timing: q.timing as string | undefined,
+      }).catch(() => undefined);
+    }, 900);
+  }
+
+  setQual(id: string, campo: string, valor: unknown, padrao?: Record<string, unknown>) {
+    (super.setQual as any).call(this, id, campo, valor, padrao);
+    const atual = ((this as any).state?.qual ?? {})[id] ?? {};
+    this._qualPendente[id] = { ...atual, [campo]: valor };
+    this.agendarSalvarQualificacao(id);
+  }
+
+  componentWillUnmount() {
+    clearTimeout(this._qualTimer);
+    const pai = (PecasLiga.prototype as any).componentWillUnmount;
+    if (pai) pai.call(this);
+  }
 
   setState(atualizacao: any, callback?: () => void) {
     const s: any = (this as any).state ?? {};
@@ -217,6 +316,11 @@ export class PecasLigadas extends PecasLiga {
       motivoDesqualificacao: s.desqMotivo ?? null,
       observacao: (s.desqObs || s.obs) ?? null,
       qualificacoes: s.qual ?? {},
+      oportunidade: {
+        resp: s.qualOpp?.resp ?? null, avanco: s.qualOpp?.avanco ?? null,
+        data: s.qualOpp?.data ?? null, hora: s.qualOpp?.hora ?? null,
+        empresa: s.qualEmpresa ?? null,
+      },
     };
     return super.setState(atualizacao, callback);
   }
@@ -238,6 +342,18 @@ export function PreVendasProto({ dados, acoes }: {
     [dados.colunas],
   );
   const leads = React.useMemo(() => todos.map(paraODesenho), [todos]);
+
+  /* O que já foi qualificado, por lead. Só entra quem tem algo gravado: mapa
+     vazio é a prova de que ninguém preencheu, e não um convite a inventar. */
+  const qual = React.useMemo(() => {
+    const m: Record<string, Record<string, unknown>> = {};
+    for (const c of todos) {
+      if (!c.leadId) continue;
+      const campos = qualDoDesenho(c.qualificacao);
+      if (campos) m[c.leadId] = campos;
+    }
+    return m;
+  }, [todos]);
 
   /* As PEÇAS do protótipo — gaveta, qualificação, nutrição, desqualificação,
      atividade, tags, cadência — vêm de `OnFace Pecas.dc.html`, convertidas.
@@ -359,7 +475,7 @@ export function PreVendasProto({ dados, acoes }: {
 
       <PecasLigadas
         ref={pecas}
-        dados={{ leads }}
+        dados={{ leads, qual }}
         catalogo={catalogo}
         leads={leads}
         ir={(href: string) => router.push(href)}

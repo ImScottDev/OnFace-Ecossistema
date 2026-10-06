@@ -195,6 +195,8 @@ export interface PeopleSearchParams {
   person_locations?: string[];
   person_departments?: string[];
   q_organization_domains?: string;
+  /* Novo: o filtro por domínio na forma de lista (`q_organization_domains_list[]`), usado pela ficha da empresa. */
+  q_organization_domains_list?: string[];
   q_organization_name?: string;
   organization_num_employees_ranges?: string[];
   organization_revenue_ranges?: string[];
@@ -216,6 +218,7 @@ export async function searchPeople(params: PeopleSearchParams, apiKey?: string):
   if (params.person_locations?.length) body.person_locations = params.person_locations;
   if (params.person_departments?.length) body.person_departments = params.person_departments;
   if (params.q_organization_domains) body.q_organization_domains = params.q_organization_domains;
+  if (params.q_organization_domains_list?.length) body.q_organization_domains_list = params.q_organization_domains_list;
   if (params.q_organization_name) body.q_organization_name = params.q_organization_name;
   if (params.organization_num_employees_ranges?.length) body.organization_num_employees_ranges = params.organization_num_employees_ranges;
   if (params.organization_revenue_ranges?.length) body.organization_revenue_ranges = params.organization_revenue_ranges;
@@ -283,35 +286,47 @@ export const APOLLO_COSTS = {
   search: 1,              // por página de busca
 } as const;
 
-/** Fetch Apollo account credit balance */
+/**
+ * Fetch Apollo account credit balance.
+ *
+ * Antes: se as DUAS chamadas falhavam (chave inválida, 429, rede), devolvia
+ * `{ 0, 0, 0, "unknown" }` — a tela mostrava "0 créditos" como se fosse saldo.
+ * Agora a falha sobe como erro e quem chama decide o que dizer. `disponivel`
+ * é false quando o Apollo respondeu mas não informou saldo (o /auth/health
+ * costuma só dizer se a chave está logada).
+ */
 export async function getCreditsInfo(apiKey?: string): Promise<{
   credits_used: number;
   credits_limit: number;
   credits_remaining: number;
   plan: string;
+  disponivel: boolean;
+  autenticado: boolean | null;
 }> {
+  const key = resolveApiKey(apiKey);
   try {
-    const key = resolveApiKey(apiKey);
     const res = await fetch(`${APOLLO_BASE_URL}/api/v1/auth/health`, {
       method: "GET",
       headers: { "x-api-key": key },
       signal: AbortSignal.timeout(10_000),
     });
-    if (!res.ok) throw new Error(`Apollo health check failed: ${res.status}`);
+    if (!res.ok) throw new Error(`Apollo API error ${res.status}: health`);
     const data = await res.json();
-    // Apollo returns: { is_logged_in, credits: { ... } } or similar
-    // Try common response shapes
     const credits = data.credits || data.account?.credits || {};
+    const limite = credits.limit ?? credits.credits_limit ?? credits.total;
+    const usados = credits.used ?? credits.credits_used;
+    const restantes = credits.remaining ?? credits.credits_remaining ?? (limite != null ? limite - (usados || 0) : undefined);
     return {
-      credits_used: credits.used ?? credits.credits_used ?? 0,
-      credits_limit: credits.limit ?? credits.credits_limit ?? credits.total ?? 0,
-      credits_remaining: credits.remaining ?? credits.credits_remaining ?? (credits.limit ? credits.limit - (credits.used || 0) : 0),
+      credits_used: usados ?? 0,
+      credits_limit: limite ?? 0,
+      credits_remaining: restantes ?? 0,
       plan: data.plan?.name || data.account?.plan_name || credits.plan || "unknown",
+      disponivel: typeof restantes === "number",
+      autenticado: typeof data.is_logged_in === "boolean" ? data.is_logged_in : null,
     };
-  } catch {
-    // Fallback: try the usage endpoint
+  } catch (primeiro) {
+    // Fallback: tenta o endpoint de uso; se também falhar, sobe o erro ORIGINAL.
     try {
-      const key = resolveApiKey(apiKey);
       const res = await fetch(`${APOLLO_BASE_URL}/api/v1/usage`, {
         method: "GET",
         headers: { "x-api-key": key, "Content-Type": "application/json" },
@@ -319,14 +334,17 @@ export async function getCreditsInfo(apiKey?: string): Promise<{
       });
       if (!res.ok) throw new Error("usage failed");
       const data = await res.json();
+      const restantes = data.credits_remaining;
       return {
         credits_used: data.credits_used || 0,
         credits_limit: data.credits_limit || 0,
-        credits_remaining: data.credits_remaining || 0,
+        credits_remaining: restantes || 0,
         plan: data.plan || "unknown",
+        disponivel: typeof restantes === "number",
+        autenticado: null,
       };
     } catch {
-      return { credits_used: 0, credits_limit: 0, credits_remaining: 0, plan: "unknown" };
+      throw primeiro;
     }
   }
 }
