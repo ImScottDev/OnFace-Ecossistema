@@ -93,5 +93,28 @@ que não existe).
   lead atribuível a usuário de outra org; pagamento sem negócio falha calado;
   negocios × oportunidades divergem; token RD/Meta versionado.
 
+## Teste interativo logado (06/10, usuário qa.e2e@callface.ai)
+[CORRIGIDO/P0] Pré-vendas board quebrava inteiro (ReferenceError: D is not
+defined em linhaLista; @ts-nocheck escondeu). `this.dadosDoProto.EQUIPE` + trava.
+[CORRIGIDO/P2] Clientes "Carteira": hero "RECEITA RECORRENTE" ainda mostrava
+"24% vs. 12 meses antes" (histórico falso, cliente_receita_mensal vazio);
+corrigirSaida não tocava v.hero. Selo escondido. `ClientesProto.tsx`.
+[PASSOU logado] inicio, pipeline (18 cards reais), oportunidade 360 (dado real,
+timeline real contacted→reuniao_agendada), modal Derivar, sino (escopo por
+usuário, empty honesto), contatos (949), clientes, propostas, pos-vendas (10
+proj), financeiro-admin (MRR 425.619 canônico, fontes rotuladas), insights
+(R$1.030), tarefas, calendario (7 reuniões), atendimento (conversa real),
+automacoes (build-out), perfil.
+[PASSOU] Permissões: admin vê /financeiro; papel não-admin é redirecionado.
+[PASSOU] Edição+persistência+refresh: nome do perfil salvo e relido após reload.
+[PENDENTE/P2] Role: o conjunto canônico é `admin` (não `administrador`);
+`normalizeRole` joga papel desconhecido para `closer`. Se algum seed/usuário
+usar nome PT ("administrador"), ele é silenciosamente rebaixado a closer e perde
+telas. Validar o papel na escrita ou normalizar na leitura.
+[PENDENTE/P2] Clientes MRR R$ 491.591 diverge do canônico R$ 425.619 do
+Financeiro/Início (fonte diferente na carteira). Investigar a fonte do hero.
+[PENDENTE/P3] Saudação de Atividades diz "Bom dia, Scott" logado como QA E2E
+(nome possivelmente hardcoded).
+
 ## Risco para produção
 _(a decidir ao fim)_

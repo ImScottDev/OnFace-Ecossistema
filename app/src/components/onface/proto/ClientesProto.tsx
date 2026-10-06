@@ -55,6 +55,11 @@ function corrigirSaida(v: any, c: CarteiraDoDesenho, DC: ClienteDoDesenho | null
   for (const k of v.kpi ?? []) {
     if (k.l === "Receita mensal (MRR)" || k.l === "Ticket médio mensal") Object.assign(k, { temD: false, dt: "", sub: "sem histórico de MRR mensal" });
   }
+  /* O hero "RECEITA RECORRENTE" trazia o mesmo selo enganoso ("24% vs. 12 meses
+     antes"): a variação é contra o MRR de hoje somado por data de entrada, não
+     contra mês passado. Esconde o selo (dStyle display:none garante que o pill
+     não fica vazio na tela). */
+  if (v.hero) Object.assign(v.hero, { dt: "", dTxt: "", dStyle: "display:none" });
   if (v.evo) Object.assign(v.evo, { temD: false, dt: "", desc: "MRR atual por produto, por data de entrada · não é histórico mensal" });
   if (v.evo && semInicio) v.evo.desc += ` · ${semInicio} sem data de início contados no período todo`;
   if (v.cresc && semInicio) v.cresc.rodape2 += ` · ${semInicio} sem data de início`;
