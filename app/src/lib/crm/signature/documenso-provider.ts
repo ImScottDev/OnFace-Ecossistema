@@ -21,6 +21,28 @@ function apiKey(): string {
   return process.env.DOCUMENSO_API_TOKEN || "";
 }
 
+/** URL da app web do Documenso (onde o signatário assina), não da API.
+ *  O link de assinatura é `${webAppUrl}/sign/${token}`. Deriva de
+ *  DOCUMENSO_PUBLIC_URL quando existe; senão tira o sufixo `/api/vN` da
+ *  DOCUMENSO_API_URL (ex.: https://sign.callface.io/api/v2 -> .../). */
+function webAppUrl(): string {
+  const explicit = process.env.DOCUMENSO_PUBLIC_URL;
+  if (explicit) return explicit.replace(/\/$/, "");
+  return baseUrl().replace(/\/api\/v\d+$/, "");
+}
+
+/** Monta a signingUrl do destinatário a partir do que o Documenso devolve.
+ *  O `/envelope/distribute` do v2 pode trazer a URL pronta (`signingUrl`) OU
+ *  só o `token`/`signingToken` — neste caso montamos `${webApp}/sign/${token}`.
+ *  Sem nenhum dos dois, fica null (e a página pública trata como "link ainda
+ *  não disponível", nunca cai no formulário simples que daria erro). */
+function signingUrlDe(item: Record<string, unknown>): string | null {
+  if (item.signingUrl) return String(item.signingUrl);
+  const token = item.token || item.signingToken;
+  if (token) return `${webAppUrl()}/sign/${encodeURIComponent(String(token))}`;
+  return null;
+}
+
 function recipientsFrom(value: unknown): SignatureRecipient[] {
   if (!Array.isArray(value)) return [];
   return value
@@ -30,7 +52,7 @@ function recipientsFrom(value: unknown): SignatureRecipient[] {
       email: String(item.email || "").trim(),
       papel: item.papel ? String(item.papel) : null,
       ordem: typeof item.ordem === "number" ? item.ordem : index + 1,
-      signingUrl: item.signingUrl ? String(item.signingUrl) : null,
+      signingUrl: signingUrlDe(item),
     }))
     .filter((item) => item.nome && item.email);
 }
