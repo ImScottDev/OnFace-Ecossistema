@@ -264,7 +264,10 @@ class Logica extends React.Component<any, any> {
       diaTxt: (same(dia, H0) ? "Hoje · " : "") + cap(dia.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" })), agenda, agendaVazia: !agenda.length,
       at: (() => { const Y = S.atv ? todos.find(x => x.key === S.atv) : null; if (!Y) return { aberto: false, sits: [], prios: [], subs: [], coms: [], equipe: [], vincs: [] };
         const T = tp(Y.tipo), sv = (p, msg) => { A.salvar(Y, p); if (msg) E && E.avisar(msg, "ok"); };
-        const equipe = (D.EQUIPE || ["Camila Reis", "Diego Nunes", "Ana Vitória"]).concat([EU]).filter((x, i, a) => a.indexOf(x) === i);
+        /* Sem nomes fictícios no fallback: equipe real vem de D.EQUIPE (Proto
+           deriva dos responsáveis das reuniões). Vazio é vazio, não "Camila
+           Reis" e cia. — mesmo saneamento já feito no AtividadesLiga. */
+        const equipe = (D.EQUIPE || []).concat([EU]).filter((x, i, a) => a.indexOf(x) === i);
         const ini2 = D.iniciais || ((n) => (n || "").split(" ").map(x => x[0]).slice(0, 2).join("").toUpperCase());
         const SITS = [["A fazer", "A fazer", "#4a5560"], ["Em andamento", "Em andamento", "#2c5f9e"], ["Aguardando", "Aguardando", "#6e5420"], ["Feita", "Feito", "#1f7256"], ["Declinada", "Declinada", "#c2330f"]];
         const PR = { Alta: "#d93c1a", "Média": "#c9a45c", Baixa: "#8b949e" }, subs = Y.sub || [], coms = Y.comentarios || [], so = Y.src !== "l";
