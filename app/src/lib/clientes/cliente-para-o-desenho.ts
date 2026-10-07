@@ -12,6 +12,7 @@
  * ───────────────────────────────────────────────────────────────────────── */
 
 import { db } from "@/lib/db";
+import { faturamentoMensal, type FaturamentoMes } from "@/lib/financeiro/faturamento-mensal";
 import { sql } from "drizzle-orm";
 import { empresa360, type Empresa360 } from "@/lib/vendas/consultas";
 import { billingDaConta, type FaturaResumo } from "@/lib/cs/billing";
@@ -72,6 +73,10 @@ export interface ClienteDoDesenho {
   assinaturas: Array<{ stripeSubscriptionId: string; status: string; mrr: number | null }>;
   health: Awaited<ReturnType<typeof healthDaEmpresa>>;
   closer: string | null;
+  /** CSM = COALESCE(responsavel_cs_id, responsavel_id) de `clientes` (E8). */
+  csm: string | null;
+  /** Faturamento mensal da empresa por natureza (cliente_receita_mensal). */
+  faturamento: FaturamentoMes[];
   fulfillmentAberto: boolean;
   anexos: AnexoDoCliente[];
   tarefas: TarefaDoCliente[];
@@ -133,6 +138,23 @@ export async function clienteParaODesenho(organizacaoId: string, empresaId: stri
        AND portfolio_included = true
      ORDER BY current_recurring_value DESC NULLS LAST`);
 
+  /* Cliente que FATURA MRR numa família sem serviço de portfólio ficava com a
+   * aba Produtos vazia e MRR 0 no cabeçalho (Matte e Broker, White Label: o
+   * serviço canônico existe com valor 0 e portfolio_included = false). Mesma
+   * fonte da carteira: o MRR faturado no último mês, por família. Só entra a
+   * família que o portfólio não cobre — não mexe em quem já tem serviço. */
+  const faturadoMrr = await db.execute<{ familia: string; valor: string }>(sql`
+    SELECT r.service_family AS familia, SUM(r.valor)::text AS valor
+      FROM cliente_receita_mensal r
+     WHERE r.organizacao_id = ${organizacaoId}::uuid AND r.empresa_id = ${empresaId}::uuid
+       AND r.revenue_nature = 'MRR' AND r.service_family <> 'UNKNOWN'
+       AND r.competencia = (SELECT max(competencia) FROM cliente_receita_mensal WHERE organizacao_id = ${organizacaoId}::uuid)
+     GROUP BY 1`);
+  for (const f of faturadoMrr) {
+    if (servicos.some((x) => x.familia === f.familia)) continue;
+    servicos.push({ id: "receita:" + f.familia, familia: f.familia, produto: null, valor: f.valor, billing_status: null, lifecycle: null, contrato_id: null });
+  }
+
   /* Contrato não tem um caminho só até a empresa. Os três (empresa_id direto,
      negócio/lead por COALESCE — a regra da rota Hono, que respeita o cliente
      final numa revenda — e o contrato do serviço canônico) viram UNIÃO de ids
@@ -173,6 +195,12 @@ export async function clienteParaODesenho(organizacaoId: string, empresaId: stri
     SELECT u.nome FROM negocios n JOIN usuarios u ON u.id = n.responsavel_id
      WHERE n.empresa_id = ${empresaId}::uuid AND n.etapa = 'ganho'
      ORDER BY n.ganho_at ASC NULLS LAST LIMIT 1`);
+
+  const [csmRow] = await db.execute<{ nome: string | null }>(sql`
+    SELECT u.nome FROM clientes c JOIN usuarios u ON u.id = COALESCE(c.responsavel_cs_id, c.responsavel_id)
+     WHERE c.organizacao_id = ${organizacaoId}::uuid AND c.empresa_id = ${empresaId}::uuid
+     ORDER BY c.updated_at DESC NULLS LAST LIMIT 1`);
+  const faturamento = await faturamentoMensal(organizacaoId, { empresaId });
 
   const [fulfill] = await db.execute<{ n: number }>(sql`
     SELECT count(*)::int AS n FROM fulfillments f
@@ -238,6 +266,33 @@ export async function clienteParaODesenho(organizacaoId: string, empresaId: stri
     .map((b) => b.assinatura).filter((a): a is NonNullable<typeof a> => !!a)
     .map((a) => ({ stripeSubscriptionId: a.stripeSubscriptionId, status: a.status, mrr: a.mrr === null ? null : Number(a.mrr) }));
 
+  /* Cliente que fechou DEPOIS do último fechamento (a planilha vai até set/26 e
+   * hoje é outubro) não tem competência nem serviço de portfólio ainda: o 360
+   * mostrava MRR R$0 e "sem histórico de faturamento" para quem acabou de assinar.
+   * Mesma regra da métrica oficial `mrr_atual` da carteira: na ausência de
+   * faturamento fechado, o MRR é o da assinatura ATIVA. Só entra a família que
+   * nem o portfólio nem a receita faturada já cobrem. */
+  for (const b of [...billing.porServico, ...(billing.naoAtribuido ? [billing.naoAtribuido] : [])]) {
+    const a = b.assinatura;
+    if (!a || a.status !== "active" || a.mrr === null) continue;
+    const familia = b.serviceFamily ?? "UNKNOWN";
+    // Assinatura sem serviço atribuído: o único serviço ainda zerado é o dono
+    // dela. Com mais de um candidato não se escolhe no chute — vira linha própria.
+    const zerados = servicos.filter((x) => Number(x.valor ?? 0) === 0);
+    const jaTem = servicos.find((x) => x.familia === familia)
+      ?? (b.serviceFamily === null && zerados.length === 1 ? zerados[0] : undefined);
+    if (jaTem) {
+      // Serviço existe mas ainda sem valor (portfólio criado antes do primeiro
+      // fechamento): quem sabe o MRR é a assinatura.
+      if (Number(jaTem.valor ?? 0) === 0) jaTem.valor = a.mrr;
+      continue;
+    }
+    servicos.push({
+      id: "assinatura:" + a.stripeSubscriptionId, familia, produto: b.produtoCanonico ?? a.produto,
+      valor: a.mrr, billing_status: a.status, lifecycle: null, contrato_id: null,
+    });
+  }
+
   return {
     empresa,
     clienteDesde: cli.cliente_desde,
@@ -259,6 +314,8 @@ export async function clienteParaODesenho(organizacaoId: string, empresaId: stri
     assinaturas,
     health,
     closer: closer?.nome ?? null,
+    csm: csmRow?.nome ?? null,
+    faturamento,
     fulfillmentAberto: (fulfill?.n ?? 0) > 0,
     anexos: anexos.map((a) => ({
       id: a.id, entidadeTipo: a.entidade_tipo, entidadeId: a.entidade_id, categoria: a.categoria, nome: a.nome_arquivo,

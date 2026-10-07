@@ -119,7 +119,7 @@ class Logica extends React.Component<any, any> {
 
   renderVals() {
     const S = this.state, E = this.E, PR = this.dadosDoProto.Projetos, D = this.dadosDoProto || {}, EU = this.eu;
-    const ini = D.iniciais || ((n) => (n || "").split(" ").filter(Boolean).slice(0, 2).map(x => x[0]).join("").toUpperCase());
+    const ini = D.iniciais || ((n) => (n || "").split(" ").filter(Boolean).slice(0, 2).map(x => [...x][0]).join("").toUpperCase());
     const diz = (t, tom) => E && E.avisar(t, tom || "ok");
     const escuro = false;
     const TEMA = escuro ? { bg: "#0f1318", sf: "#161b21", sf2: "#1c222a", ln: "rgba(255,255,255,.08)", tx: "#eef0f1", tx2: "#b3bac0", tx3: "#7b858f", hv: "rgba(255,255,255,.05)", inp: "#12161b", ok: "#3ecf8e", okbg: "rgba(62,207,142,.12)", warn: "#e0b04f", warnbg: "rgba(224,176,79,.12)", err: "#ff7a63", errbg: "rgba(255,106,85,.12)", hero: "#1c222a" }
@@ -250,7 +250,7 @@ class Logica extends React.Component<any, any> {
       const temPrevDe = (nm, f) => lista.some(x => x.empresa === nm && x.familia === f && x.tipo === "onboarding" && (x.concluido || x.handoffFeito)) || seed.some(c => c.nome === nm && c.produto === f && c.status === "Ativo");
       const prevProj = lista.find(x => x.empresa === emp && x.familia === fam && x.tipo === "onboarding" && (x.concluido || x.handoffFeito)), prevBase = seed.find(c => c.nome === emp && c.produto === fam && c.status === "Ativo");
       const temPrev = !!(emp && (prevProj || prevBase)), nomes = seed.map(c => c.nome).concat(opps.filter(o => o.etapa === "ganho").map(o => o.empresa)).filter((x, i, a) => x && a.indexOf(x) === i).sort();
-      const padrao = (k, has) => PR.jornada(k, "onboarding").map(x => x[0]).filter(f => !has || (k === "CALLFACE_AI" ? f === "conf" : f === "form" || f === "passagem"));
+      const padrao = (k, has) => PR.jornada(k, "onboarding").map(x => [...x][0]).filter(f => !has || (k === "CALLFACE_AI" ? f === "conf" : f === "form" || f === "passagem"));
       const chip = (on) => "height:32px;padding:0 12px;border-radius:9999px;border:0;cursor:pointer;font-size:12.5px;font-weight:600;white-space:nowrap;" + (on ? "background:var(--tx);color:var(--sf)" : "background:var(--sf2);box-shadow:inset 0 0 0 1px var(--ln);color:var(--tx2)");
       mn = { aberto: true, clientes: nomes, empresa: emp, setEmpresa: (e) => upM({ empresa: e.target.value, fases: padrao(M.familia, !!e.target.value && temPrevDe(e.target.value, M.familia)) }),
         fams: Object.keys(FAM).map(k => ({ l: FAM[k], st: chip(fam === k), onClick: () => upM({ familia: k, fases: padrao(k, !!emp && temPrevDe(emp, k)) }) })),
@@ -287,7 +287,7 @@ class Logica extends React.Component<any, any> {
       tabs: tabsV, chips: chipsV, tb: { linhas: linhasT, vazio: !linhasT.length },
       tema, f: { q: S.q, setQ: (e) => this.setState({ q: e.target.value }), fam: S.fam, setFam: (e) => this.setState({ fam: e.target.value }), resp: S.resp, setResp: (e) => this.setState({ resp: e.target.value }), equipe: equipeTodos,
         ativo: S.fam !== "todos" || S.resp !== "todos" || !!S.flt || !!qq, limpar: () => this.setState({ fam: "todos", resp: "todos", flt: null, q: "", obF: "todos", imF: "todos" }) },
-      acoes: { novo: () => this.setState({ modal: { k: "novo", empresa: "", familia: "CALLFACE_AI", fases: PR.jornada("CALLFACE_AI", "onboarding").map(x => x[0]), resp: PR.EQUIPE_ONB[0], prazo: "21", erro: "" } }) },
+      acoes: { novo: () => this.setState({ modal: { k: "novo", empresa: "", familia: "CALLFACE_AI", fases: PR.jornada("CALLFACE_AI", "onboarding").map(x => [...x][0]), resp: PR.EQUIPE_ONB[0], prazo: "21", erro: "" } }) },
       kpis, ws: [Object.assign(wsOnb, { mostraVer: S.tab === "todos", verTodos: () => this.setState({ tab: "onb", flt: null }), d: "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM12 8v4l3 2", icoSt: "flex:0 0 auto;width:38px;height:38px;border-radius:11px;display:grid;place-items:center;background:#fff6f4;color:#c2330f;box-shadow:inset 0 0 0 1px #f6d9cf" }), Object.assign(wsImp, { mostraVer: S.tab === "todos", verTodos: () => this.setState({ tab: "imp", flt: null }), d: "M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z", icoSt: "flex:0 0 auto;width:38px;height:38px;border-radius:11px;display:grid;place-items:center;background:var(--sf2);color:var(--tx);box-shadow:inset 0 0 0 1px var(--ln)" })].filter((w, i) => S.tab === "todos" || (S.tab === "onb" ? i === 0 : i === 1)), at, hoje: hojeV, gl, nx, dr, mh, mn, ir: { agenda: () => E && E.irPara("/onface-preview/atividades", "Atividades") },
       fechar: () => this.setState({ modal: null }), fecharDr: () => this.setState({ drawer: null }), parar: (e) => e.stopPropagation()
     };

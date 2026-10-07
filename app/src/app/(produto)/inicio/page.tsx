@@ -16,7 +16,7 @@ export default async function InicioPage() {
   const ctx = await getTenantContext();
   if (!ctx) redirect("/login");
 
-  const dados = await montarVisaoGeral(ctx.organizacaoId, ctx.userId, ctx.userName ?? "");
+  const dados = await montarVisaoGeral(ctx.organizacaoId, ctx.userId, ctx.userName ?? "", new Date(), !isAdminView(ctx.userRole));
   // Financeiro é tela de gestão (middleware: GESTAO). Para closer/SDR o tile
   // mostrava faturas vencidas da organização e levava a uma rota que devolve
   // para cá. Papel efetivo, então "ver como" também respeita.

@@ -15,6 +15,7 @@ import { db } from "@/lib/db";
 import { csRiscos } from "@/lib/db/schema";
 import { and, eq, sql } from "drizzle-orm";
 import { criarTarefaCs } from "./tarefas";
+import { resolveFollowupOwnerId } from "@/lib/crm/sdr-escalation";
 
 export type TipoRisco =
   | "FATURA_ATRASADA"
@@ -340,6 +341,8 @@ export async function reavaliarRiscos(
 
   let abertos = 0, atualizados = 0, resolvidos = 0;
 
+  // E3: risco automático nasce com dono = Jenifer (default da carteira).
+  const donoPadraoId = await resolveFollowupOwnerId(db, organizacaoId);
   for (const [k, sinal] of detectados) {
     const jaAberto = abertosPorChave.get(k);
     if (jaAberto) {
@@ -360,6 +363,7 @@ export async function reavaliarRiscos(
       tipo: sinal.tipo,
       severidade: sinal.severidade,
       origem: "AUTOMATICO",
+      responsavelId: donoPadraoId,
       motivo: sinal.motivo,
       fonte: sinal.fonte,
       detalhe: sinal.detalhe,

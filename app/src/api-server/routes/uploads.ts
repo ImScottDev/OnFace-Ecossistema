@@ -23,6 +23,12 @@ const MIME_TYPES: Record<string, string> = {
   webm: "video/webm",
   ogg: "audio/ogg",
   mp3: "audio/mpeg",
+  // O worker grava mídia de WhatsApp com estas extensões (mimeToExt em lib/whatsapp/client.ts);
+  // sem elas o áudio .m4a e o vídeo .3gp saíam como octet-stream e não tocavam.
+  m4a: "audio/mp4",
+  oga: "audio/ogg",
+  opus: "audio/ogg",
+  "3gp": "video/3gpp",
   wav: "audio/wav",
   pdf: "application/pdf",
   doc: "application/msword",
@@ -227,9 +233,32 @@ app.get("/uploads/*", async (c) => {
   const contentType = MIME_TYPES[ext] || "application/octet-stream";
   const fileBuffer = fs.readFileSync(filePath);
 
+  // Safari/iOS só tocam <audio>/<video> se o servidor responder Range (206); sem isto o
+  // áudio de WhatsApp ficava mudo lá. Só o formato simples "bytes=ini-fim".
+  const faixa = /^bytes=(\d*)-(\d*)$/.exec(c.req.header("range") ?? "");
+  if (faixa && (faixa[1] || faixa[2])) {
+    const tam = fileBuffer.length;
+    const ini = faixa[1] ? parseInt(faixa[1]) : Math.max(0, tam - parseInt(faixa[2]));
+    const fim = faixa[1] && faixa[2] ? Math.min(parseInt(faixa[2]), tam - 1) : tam - 1;
+    if (ini >= tam || ini > fim) {
+      return new Response(null, { status: 416, headers: { "Content-Range": `bytes */${tam}` } });
+    }
+    return new Response(new Uint8Array(fileBuffer.subarray(ini, fim + 1)), {
+      status: 206,
+      headers: {
+        "Content-Type": contentType,
+        "Content-Range": `bytes ${ini}-${fim}/${tam}`,
+        "Content-Length": String(fim - ini + 1),
+        "Accept-Ranges": "bytes",
+        "Cache-Control": "private, max-age=3600",
+      },
+    });
+  }
+
   return new Response(new Uint8Array(fileBuffer), {
     headers: {
       "Content-Type": contentType,
+      "Accept-Ranges": "bytes",
       "Content-Length": String(fileBuffer.length),
       // `private`: é conteúdo de UMA organização, não pode ficar em cache
       // compartilhado de CDN/proxy. Era `public, max-age=31536000, immutable`.

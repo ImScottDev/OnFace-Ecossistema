@@ -161,7 +161,7 @@ class Logica extends React.Component<any, any> {
     });
     const D = this.dadosDoProto || {};
     const slug = D.slug || ((s) => (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z]/g, ""));
-    const ini = D.iniciais || ((n) => (n || "").split(" ").slice(0, 2).map(p => p[0] || "").join("").toUpperCase());
+    const ini = D.iniciais || ((n) => (n || "").split(" ").slice(0, 2).map(p => [...p][0] || "").join("").toUpperCase());
     const etapas = D.ETAPAS || {};
     const diz = (t, tom) => Es && Es.avisar(t, tom);
     const leads0 = (this.E && Es.ler("leads", null)) || D.LEADS || [];
@@ -764,7 +764,9 @@ class Logica extends React.Component<any, any> {
       empresaTopoStyle: "border:0;background:transparent;padding:0;font-size:13px;font-weight:600;cursor:pointer;text-decoration:underline;text-underline-offset:3px;" + (L.empresa ? "color:#12171d;text-decoration-color:#d3d8d9" : "color:#c2330f;text-decoration-color:transparent"),
       empresaTopoClick: () => L.empresa ? (this.E && Es.irPara("/onface-preview/empresa", nomeEmp, { lead: L.id })) : (this.E && Es.abrir("vincular", L.id)),
       empMeta: [X.segmento || L.segmento || (D.SEGMENTOS || {})[nomeEmp] || (L.registro ? "Sem segmento" : "Serviços"), X.funcionarios ? X.funcionarios + " funcionários" : null].filter(Boolean).join(" · "),
-      empFatos: [["Cidade / UF", X.cidade || L.cidade || (L.registro ? "—" : "São Paulo / SP")], ["Site", (X.site || L.site || (L.registro ? "—" : dominio)).replace(/^https?:\/\//, "")], ["Pessoas", String(base.length)]].map(([label, valor]) => ({ label, valor })),
+      empFatos: [["Cidade / UF", X.cidade || L.cidade || (L.registro ? "—" : "São Paulo / SP")], ["Site", (X.site || L.site || (L.registro ? "—" : dominio)).replace(/^https?:\/\//, "")], ["Pessoas", String(base.length)]].concat(L.registro ? [L.empresaTel ? ["Telefone", L.empresaTel] : null, L.leadScore > 0 ? ["Lead score", String(L.leadScore)] : null].filter(Boolean) : []).map(([label, valor]) => ({ label, valor })),
+      empObs: (L.registro && L.empresaObs) || "",
+      anuncioHref: (L.registro && L.anuncioHref) || "",
       resp: L.resp || "Sem responsável", respIniciais: ini(L.resp),
       respAberto: !!S.respMenu,
       respBtnStyle: "display:flex;align-items:center;gap:10px;width:100%;height:42px;padding:0 11px 0 7px;border-radius:9px;border:0;background:#fff;cursor:pointer;box-shadow:inset 0 0 0 " + (S.respMenu ? "1.5px #12171d" : "1px #dbdede"),

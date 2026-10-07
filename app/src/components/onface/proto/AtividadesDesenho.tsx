@@ -2155,7 +2155,8 @@ Prioridade
 Para quem
 </span>
 <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-<div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+<input value={ed.buscaPessoa ?? ""} onChange={ed.setBuscaPessoa} placeholder="Buscar pessoa pelo nome" aria-label="Buscar pessoa" style={{ height: "30px", padding: "0 10px", borderRadius: "8px", border: "0", outline: "0", boxShadow: "inset 0 0 0 1px #dbdede", background: "#fff", fontSize: "12.5px", color: "#12171d" }} />
+<div style={{ display: "flex", gap: "6px", flexWrap: "wrap", maxHeight: "132px", overflowY: "auto" }}>
 {(ed.pessoas ?? []).map((ps: any, i1: number) => (
 <Fragment key={ps?.id ?? ps?.chave ?? i1}>
 <button onClick={ps.onClick} style={estilo(ps.style)}>

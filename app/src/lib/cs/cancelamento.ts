@@ -9,8 +9,8 @@
  * resto do CRM já entende, nunca um DELETE.
  */
 import { db } from "@/lib/db";
-import { csCancelamentos, servicosCanonicos, contratos, faturas } from "@/lib/db/schema";
-import { and, eq, sql } from "drizzle-orm";
+import { csCancelamentos, servicosCanonicos, contratos, faturas, clientes } from "@/lib/db/schema";
+import { and, eq, sql, inArray } from "drizzle-orm";
 import { criarTarefaCs, registrarInteracao } from "./tarefas";
 
 export const MOTIVOS_CANCELAMENTO = [
@@ -64,6 +64,25 @@ async function levantarChecagens(empresaId: string, contratoId: string | null) {
   ));
 
   return { contratoVigente, multaAplicavel, multaValor, pendenciaFinanceira: pend?.valor ?? "0" };
+}
+
+/**
+ * QA pós-venda 06/10: pedir cancelamento duas vezes para o mesmo serviço (duplo
+ * clique, retry) abria dois processos e duas tarefas de retenção. Devolve o
+ * processo ainda em andamento (não decidido) da empresa+serviço, se houver; o
+ * serviço nulo só casa com pedido também sem serviço (conta inteira).
+ */
+export async function pedidoEmAberto(organizacaoId: string, empresaId: string, servicoCanonicoId: string | null) {
+  const [aberto] = await db.select({ id: csCancelamentos.id, status: csCancelamentos.status }).from(csCancelamentos)
+    .where(and(
+      eq(csCancelamentos.organizacaoId, organizacaoId),
+      eq(csCancelamentos.empresaId, empresaId),
+      inArray(csCancelamentos.status, ["SOLICITADO", "EM_RETENCAO", "APROVADO"]),
+      servicoCanonicoId
+        ? eq(csCancelamentos.servicoCanonicoId, servicoCanonicoId)
+        : sql`${csCancelamentos.servicoCanonicoId} IS NULL`,
+    )).limit(1);
+  return aberto ?? null;
 }
 
 export async function registrarPedidoCancelamento(input: {
@@ -134,6 +153,12 @@ export async function atualizarCancelamento(input: {
   motivoFinalDetalhe?: string | null;
 }) {
   const decidiu = input.status === "RETIDO" || input.status === "APROVADO" || input.status === "EFETIVADO";
+  // QA pós-venda 06/10: só a TRANSIÇÃO para EFETIVADO encerra serviço; repetir o
+  // PATCH não pode regravar nada nem duplicar a interação de churn.
+  const [antes] = await db.select({ status: csCancelamentos.status }).from(csCancelamentos)
+    .where(and(eq(csCancelamentos.id, input.id), eq(csCancelamentos.organizacaoId, input.organizacaoId))).limit(1);
+  if (!antes) return null;
+  const efetivando = input.status === "EFETIVADO" && antes.status !== "EFETIVADO";
   const [row] = await db.update(csCancelamentos)
     .set({
       status: input.status ?? undefined,
@@ -156,10 +181,31 @@ export async function atualizarCancelamento(input: {
   // Encerramento do serviço acontece SÓ no EFETIVADO, e como transição de
   // lifecycle — o histórico de receita continua inteiro, o serviço apenas
   // sai do portfólio ativo.
-  if (input.status === "EFETIVADO" && row.servicoCanonicoId) {
+  if (efetivando) {
+    // QA pós-venda 06/10: pedido sem serviço (conta inteira) efetivava sem
+    // encerrar NADA: o cliente seguia ativo e o MRR não caía. Sem serviço
+    // informado, o churn vale para todo serviço ainda no portfólio da empresa.
+    // QA 06/10 (segunda rodada): o alvo era `portfolio_included = true`, e
+    // serviço ATIVO fora do portfólio não era encerrado — é o caso de todo
+    // serviço recém-criado pelo pós-venda (nasce fora do portfólio com valor 0)
+    // e de outros 50 na base. O cliente seguia ACTIVE depois do churn efetivado.
+    // Estar no portfólio é sobre aparecer no MRR; estar ativo é o que o churn
+    // encerra.
     await db.update(servicosCanonicos)
       .set({ commercialLifecycle: "CHURNED", portfolioIncluded: false, updatedAt: new Date() })
-      .where(eq(servicosCanonicos.id, row.servicoCanonicoId));
+      .where(row.servicoCanonicoId
+        ? eq(servicosCanonicos.id, row.servicoCanonicoId)
+        : and(eq(servicosCanonicos.empresaId, row.empresaId), eq(servicosCanonicos.organizacaoId, input.organizacaoId), eq(servicosCanonicos.commercialLifecycle, "ACTIVE")));
+
+    // A carteira (aba Cancelados) lê clientes.status_financeiro. Sem restar
+    // serviço no portfólio, a empresa passa a 'churned'; com outro serviço
+    // ativo, continua cliente (churn parcial).
+    const [restante] = await db.select({ n: sql<number>`count(*)::int` }).from(servicosCanonicos)
+      .where(and(eq(servicosCanonicos.empresaId, row.empresaId), eq(servicosCanonicos.commercialLifecycle, "ACTIVE")));
+    if (!restante?.n) {
+      await db.update(clientes).set({ statusFinanceiro: "churned", updatedAt: new Date() })
+        .where(and(eq(clientes.empresaId, row.empresaId), eq(clientes.organizacaoId, input.organizacaoId)));
+    }
 
     if (row.contratoId) {
       await db.update(contratos)
@@ -173,6 +219,7 @@ export async function atualizarCancelamento(input: {
     }
   }
 
+  if (input.status && input.status === antes.status) return row; // sem mudança de estado, sem interação duplicada
   await registrarInteracao({
     organizacaoId: input.organizacaoId,
     empresaId: row.empresaId,

@@ -10,8 +10,8 @@
  * risco ali) é como o acompanhamento se perde.
  */
 import { db } from "@/lib/db";
-import { csMarcos, tarefas, negocios, empresas, servicosCanonicos } from "@/lib/db/schema";
-import { and, eq } from "drizzle-orm";
+import { csMarcos, tarefas, negocios, empresas, servicosCanonicos, leads } from "@/lib/db/schema";
+import { and, eq, desc } from "drizzle-orm";
 import { abrirProximoCiclo } from "./jornada";
 import { syncOportunidadeFromNegocio } from "@/lib/crm/sync-domain-model";
 import { CODIGO_FECHA_CICLO } from "./playbooks";
@@ -116,9 +116,14 @@ export async function executarCheckpoint(input: ExecutarCheckpointInput): Promis
         .from(servicosCanonicos).where(eq(servicosCanonicos.id, input.expansao.servicoOrigemId)).limit(1);
       serviceFamily = s?.f ?? null;
     }
+    // Sem lead o Ganho manual não gera contrato nem materializa o serviço novo (mesmo fix de POST /cs/clientes/:id/expansao).
+    const [leadDaEmpresa] = await db.select({ id: leads.id }).from(leads)
+      .where(and(eq(leads.empresaId, marco.empresaId), eq(leads.organizacaoId, input.organizacaoId)))
+      .orderBy(desc(leads.updatedAt)).limit(1);
     const [negocio] = await db.insert(negocios).values({
       organizacaoId: input.organizacaoId,
       empresaId: marco.empresaId,
+      leadId: leadDaEmpresa?.id ?? null,
       titulo: input.expansao.titulo,
       descricao: `Identificada no checkpoint ${marco.codigo} do ciclo ${marco.ciclo}`,
       status: "reuniao_agendada",

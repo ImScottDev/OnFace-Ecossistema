@@ -37,7 +37,7 @@ const updateContratoSchema = z.object({
   renovacaoAuto: z.boolean().optional(),
   status: z.enum(["ativo", "pausado", "cancelado", "renovado", "concluido", "churned"]).optional(),
   notas: z.string().optional().nullable(),
-});
+}).strict();
 
 // GET /api/contratos
 app.get("/contratos", async (c) => {

@@ -41,6 +41,8 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import type { DadosTelaCs, ClienteDaTela } from "@/lib/cs/tela-cs";
+import { CAMADAS_FATURAMENTO, passoDoEixo } from "@/lib/clientes/evolucao-geometria";
+import type { FaturamentoMes } from "@/lib/financeiro/faturamento-natureza";
 import { CsLiga } from "./CsLiga";
 import { rotaDoDesenho } from "./rota-do-desenho";
 import { usePecas } from "./pecas-host";
@@ -115,7 +117,7 @@ function textoDoNexo(t: string, porNome: Map<string, ClienteDaTela>): string {
   return out;
 }
 
-function corrigir(vals: any, S: any, p: { clientes: ClienteDaTela[]; equipe: string[]; eu: string; leads: DadosTelaCs["leads"] }) {
+function corrigir(vals: any, S: any, p: { clientes: ClienteDaTela[]; equipe: string[]; eu: string; leads: DadosTelaCs["leads"]; faturamento?: FaturamentoMes[] }) {
   const porNome = new Map(p.clientes.map((c) => [c.nome, c] as const));
   const hoje = new Date();
   // As mesmas bases do Liga: `cart` = ativos no escopo, `base` = escopo com inativos.
@@ -224,20 +226,34 @@ function corrigir(vals: any, S: any, p: { clientes: ClienteDaTela[]; equipe: str
     barra: sg.barra.replace("display:none;", "display:block;").replace(/flex:0 0 0;/, "flex:" + cntS[k] + " 0 0;"),
   })) };
 
-  // Evolução 12 meses: a mesma regra do desenho, com o MRR repartido por família.
+  /* Evolução do FATURAMENTO (cliente_receita_mensal), barras empilhadas por
+     natureza: MRR | Setup/Avulso | Débito recuperado | A classificar. É a
+     carteira inteira (a série não é por responsável). Sem série carregada,
+     fica o aviso do Liga ("sem histórico"). */
+  const FAT = p.faturamento ?? [];
   const W = Array.from({ length: 12 }, (_, i) => new Date(hoje.getFullYear(), hoje.getMonth() - 11 + i, 1));
-  const serie = FAM_K.map((k) => W.map((m) => base.filter((c) => ativoEm(c, m)).reduce((a, c) => a + (c.mrrFam[k] ?? 0), 0)));
-  /* Sem histórico mensal (cliente_receita_mensal = 0 linhas), o Liga entrega
-     cols vazio e o aviso: não redesenhar barras nem apagar o aviso. */
-  if (vals.ev.cols.length) vals.ev = {
-    ...vals.ev,
-    cols: vals.ev.cols.map((col: any, i: number) => ({
-      ...col,
-      segs: FAM_K.map((k, j) => ({ st: "display:block;min-height:0;flex:" + serie[j][i] + " 0 0;background:" + CORF[k] + ";border-radius:" + (j === FAM_K.length - 1 ? "5px 5px 2px 2px" : "2px") })).reverse(),
-    })),
-    dicaL: S.hv != null ? FAM_K.map((k, j) => ({ l: FAM[k], v: brl(serie[j][S.hv]), dot: "width:8px;height:8px;border-radius:2px;background:" + CORF[k] })) : [],
-    dicaT: S.hv != null ? MESL[W[S.hv].getMonth()] + " " + W[S.hv].getFullYear() : "",
-  };
+  if (FAT.length) {
+    const topo = passoDoEixo(Math.max(1, ...FAT.map((m) => m.total))) * 4;
+    const nomeMes = (c: string) => MESL[Number(c.slice(5)) - 1];
+    const hv = S.hv != null && S.hv < FAT.length ? S.hv : null;
+    vals.ev = {
+      ...vals.ev,
+      legenda: CAMADAS_FATURAMENTO.map((c) => ({ l: c.l, dot: "width:9px;height:9px;border-radius:2px;background:" + c.cor })),
+      eixo: [4, 3, 2, 1, 0].map((k) => { const n = topo / 4 * k; return n >= 1000 ? "R$ " + Math.round(n / 1000) + "k" : "R$ " + Math.round(n); }),
+      cols: FAT.map((m, i) => ({
+        l: nomeMes(m.competencia).slice(0, 3),
+        entrar: () => { if (S.hv !== i) S.setState?.({ hv: i }); },
+        rot: "flex:1;min-width:0;text-align:center;font-size:10.5px;white-space:nowrap;overflow:hidden;color:" + (hv === i ? "var(--of-tinta-forte);font-weight:700" : "var(--of-tinta-3)"),
+        barra: "width:100%;max-width:30px;display:flex;flex-direction:column;gap:2px;transition:height .9s cubic-bezier(.16,1,.3,1) " + (i * 40) + "ms,opacity .15s;height:" + (S.pronto ? m.total / topo * 100 : 0) + "%;opacity:" + (hv == null || hv === i ? 1 : .4),
+        segs: CAMADAS_FATURAMENTO.map((c, j) => ({ st: "display:block;min-height:0;flex:" + m[c.k] + " 0 0;background:" + c.cor + ";border-radius:" + (j === CAMADAS_FATURAMENTO.length - 1 ? "5px 5px 2px 2px" : "2px") })).reverse(),
+      })),
+      temDica: hv != null,
+      dicaPos: "position:absolute;z-index:3;pointer-events:none;top:6px;left:8px;width:190px;padding:9px 11px;border-radius:10px;background:#1f252c;box-shadow:0 0 0 1px #2a3139,0 14px 30px -12px rgba(0,0,0,.6)",
+      dicaT: hv != null ? nomeMes(FAT[hv].competencia) + " " + FAT[hv].competencia.slice(0, 4) : "",
+      dicaL: hv != null ? CAMADAS_FATURAMENTO.map((c) => ({ l: c.l, v: brl(FAT[hv][c.k]), dot: "width:8px;height:8px;border-radius:2px;background:" + c.cor })) : [],
+      dicaTot: hv != null ? brl(FAT[hv].total) : "",
+    };
+  }
 
   /* Tempo médio de vida e "clientes vs. 12 meses atrás" dependem da data de
      entrada, que 90 contas não têm (ver tela-cs.ts). A média sai só das contas
@@ -323,7 +339,7 @@ class CsLigada extends CsLiga {
 
   renderVals() {
     const self = this as any;
-    return corrigir(super.renderVals(), self.state, self.props.correcao);
+    return corrigir(super.renderVals(), { ...self.state, setState: (x: any) => self.setState(x) }, self.props.correcao);
   }
 }
 
@@ -491,7 +507,7 @@ export function CsProto({ dados, eu, euId, abaInicial, viewInicial }: {
       <CsLigada
         dados={dadosDoLiga}
         catalogo={catalogo}
-        correcao={{ clientes, equipe, eu, leads: dados.leads }}
+        correcao={{ clientes, equipe, eu, leads: dados.leads, faturamento: dados.faturamento }}
         abaInicial={abaInicial}
         viewInicial={viewInicial}
         abrir={abrir}

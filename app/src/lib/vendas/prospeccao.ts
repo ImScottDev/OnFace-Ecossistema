@@ -19,6 +19,7 @@ import { db } from "@/lib/db";
 import { registrarEvento } from "./eventos";
 import { resolverEmpresa, resolverPessoa, registrarTouchpoint, type DadosEmpresa } from "./identidade";
 import { criarOportunidade } from "./pipeline";
+import { exigirResponsavelDaOrg } from "./pre-vendas";
 import { garantirEntradaCanonica } from "./ponte-canonica";
 import {
   MOTIVOS_DESCARTE, RegraDeNegocio,
@@ -61,6 +62,10 @@ export interface ProspectCriado {
  */
 export async function adicionarProspect(entrada: EntradaDeProspect, ator: Ator): Promise<ProspectCriado> {
   const { organizacaoId } = entrada;
+
+  // Mesma guarda de tenant de Pré-vendas: responsável de outra organização ou
+  // inativo estourava na chave estrangeira e voltava como erro genérico.
+  await exigirResponsavelDaOrg(organizacaoId, entrada.responsavelId);
 
   const empresa = await resolverEmpresa(organizacaoId, entrada.empresa, ator);
 
@@ -563,6 +568,7 @@ export async function atribuirProspect(params: {
 }): Promise<void> {
   const prospect = await carregarProspect(params.organizacaoId, params.leadId);
   if (prospect.responsavel_id === params.responsavelId) return;
+  await exigirResponsavelDaOrg(params.organizacaoId, params.responsavelId);
 
   await db.execute(sql`
     UPDATE leads SET responsavel_id = ${params.responsavelId}::uuid, updated_at = now()

@@ -120,7 +120,7 @@ class Logica extends React.Component<any, any> {
 
   renderVals() {
     const S = this.state, E = this.E, PR = this.dadosDoProto.Projetos, D = this.dadosDoProto || {}, EU = this.eu;
-    const ini = D.iniciais || ((n) => (n || "").split(" ").filter(Boolean).slice(0, 2).map(x => x[0]).join("").toUpperCase());
+    const ini = D.iniciais || ((n) => (n || "").split(" ").filter(Boolean).slice(0, 2).map(x => [...x][0]).join("").toUpperCase());
     const slug = D.slug || ((s) => (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z]/g, ""));
     const diz = (t, tom) => E && E.avisar(t, tom || "ok");
     const escuro = ((E && E.ler("temaOp", "claro")) || "claro") === "escuro";

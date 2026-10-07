@@ -430,6 +430,13 @@ export async function criarPosVendaDoNegocio(
         organizacaoId: negocio.organizacaoId,
         leadId: negocio.leadId,
         negocioId,
+        // QA pós-venda 06/10: sem `empresaId`/`origem`/serviço a tarefa nascia
+        // invisível para a agenda e a fila do CS (ambas juntam por empresa_id)
+        // e como "MANUAL"; a carga do marco zero já grava as do onboarding
+        // assim, então o Ganho novo tem de gravar igual.
+        empresaId: negocio.empresaId,
+        servicoCanonicoId: servicoId,
+        origem: familia === "WHITE_LABEL" ? "IMPLANTACAO" : "ONBOARDING",
         usuarioId: negocio.responsavelId,
         titulo: regra.tarefaInicial,
         tipo: familia === "WHITE_LABEL" ? "implantacao_white_label_contato" : "onboarding_agendar_reuniao",

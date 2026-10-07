@@ -22,7 +22,7 @@
  * Requer STRIPE_API_KEY no .env (restricted key, read-only).
  */
 import { db } from "../db";
-import { assinaturaItens, assinaturas, contratos, faturas, leads, mrrMovimentos, organizacoes, notificacoes, usuarios } from "../db/schema";
+import { assinaturaItens, assinaturas, clientes, contratos, faturas, leads, mrrMovimentos, organizacoes, notificacoes, servicosCanonicos, usuarios } from "../db/schema";
 import { eq, gt, sql, and, inArray, isNotNull } from "drizzle-orm";
 import { resolveBillingCustomer, type BillingResolution } from "./billing-identity";
 
@@ -428,6 +428,30 @@ export async function syncStripe(organizacaoId?: string): Promise<{ subs: number
           await registrarMovimento(mrr > mrrAntes ? "expansao" : "contracao", mrr - mrrAntes, mrrAntes, mrr, existing.id, existing.contratoId, existing.leadId, new Date(), donoDaAlteracao);
         }
 
+        // Cancelamento no Stripe também encerra o SERVIÇO da carteira. Sem isto (QA 06/10)
+        // a assinatura ia a canceled, o contrato a churned e o churn entrava no MRR, mas o
+        // serviço seguia ACTIVE/portfolio_included e o cliente nunca ia pra aba Cancelados.
+        // Mesma regra do cs/cancelamento.ts: cliente só vira 'churned' se não sobrar serviço.
+        if (s.status === "canceled" && existing.status !== "canceled") {
+          const encerrados = await tx.update(servicosCanonicos)
+            .set({ commercialLifecycle: "CHURNED", portfolioIncluded: false, billingStatus: "CANCELED", updatedAt: new Date() })
+            .where(and(
+              eq(servicosCanonicos.organizacaoId, org.id),
+              existing.servicoId
+                ? sql`(${servicosCanonicos.id} = ${existing.servicoId} OR ${servicosCanonicos.currentSubscriptionId} = ${s.id})`
+                : eq(servicosCanonicos.currentSubscriptionId, s.id),
+            ))
+            .returning({ empresaId: servicosCanonicos.empresaId });
+          for (const empresaId of new Set(encerrados.map((e) => e.empresaId).filter((e): e is string => !!e))) {
+            const [restante] = await tx.select({ n: sql<number>`count(*)::int` }).from(servicosCanonicos)
+              .where(and(eq(servicosCanonicos.empresaId, empresaId), eq(servicosCanonicos.portfolioIncluded, true)));
+            if (!restante?.n) {
+              await tx.update(clientes).set({ statusFinanceiro: "churned", updatedAt: new Date() })
+                .where(and(eq(clientes.empresaId, empresaId), eq(clientes.organizacaoId, org.id)));
+            }
+          }
+        }
+
         // transição de status -> reflete no contrato espelho (Carteira)
         if (existing.contratoId) {
           if (s.status === "canceled" && existing.status !== "canceled") {
@@ -475,26 +499,11 @@ export async function syncStripe(organizacaoId?: string): Promise<{ subs: number
               updatedAt: new Date(),
             })
             .where(eq(contratos.id, contratoJaExistente.id));
-        } else {
-          const [novoContrato] = await tx
-            .insert(contratos)
-            .values({
-              organizacaoId: org.id,
-              leadId: lead.id,
-              tipo: "assinatura",
-              descricao: planoNome ? `Assinatura Stripe — ${planoNome}` : "Assinatura Stripe (sync automático)",
-              mrr: String(mrr),
-              status: s.status === "canceled" ? "churned" : "ativo",
-              motivoChurn: s.status === "canceled" ? motivo : null,
-              produto: "ai",
-              stripeSubscriptionId: s.id,
-              renovacaoAuto: true,
-              inicio: s.start_date ? new Date(s.start_date * 1000).toISOString().slice(0, 10) : null,
-              finalizadoAt: canceladaEm,
-            })
-            .returning({ id: contratos.id });
-          contrato = novoContrato;
         }
+        // D8: assinatura Stripe NÃO é contrato (decisão do Scott, marco zero).
+        // Sem contrato pré-existente (aceite de proposta) o sync só grava a
+        // assinatura; contratoId fica null. Carteira/MRR leem de assinaturas
+        // e cliente_receita_mensal, não de contratos espelho.
         const [novaAss] = await tx
           .insert(assinaturas)
           .values({

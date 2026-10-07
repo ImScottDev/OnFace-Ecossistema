@@ -13,6 +13,7 @@ import {
 } from "@/lib/relatorios/comercial";
 import { contarReunioes, getPerdidosPorResponsavel, getFunilVendasEventos } from "@/lib/relatorios/funil-eventos";
 import { getEsteiraSdr } from "@/lib/relatorios/esteira-sdr";
+import { medir } from "@/lib/metricas/catalogo";
 import { getVisoesSdr, ESTAGNADO_DIAS } from "@/lib/relatorios/sdr-visoes";
 import { getLeadsPorCanal } from "@/lib/relatorios/canais";
 import { getMetaComercialAgregada } from "@/lib/metas";
@@ -124,14 +125,18 @@ app.get("/resumo", async (c) => {
     .from(contratos)
     .innerJoin(leads, eq(contratos.leadId, leads.id))
     .where(and(eq(contratos.status, "ativo"), eq(leads.organizacaoId, orgId), leadResp, lt(contratos.createdAt, since)));
-  const mrrCurrentN = Number(mrrCurrent.total) || 0;
+  // Visão da organização: o MRR vem do Catálogo de Métricas (`mrr_atual`), a mesma
+  // definição do Início. Somar `contratos` aqui dava R$ 388.181 contra R$ 385.847
+  // no Início para a mesma pergunta. Closer (visão pessoal) segue por contrato do
+  // lead dele, porque o catálogo não tem recorte por responsável.
+  const mrrCurrentN = responsavelId ? Number(mrrCurrent.total) || 0 : Number((await medir(orgId, "mrr_atual")).valor) || 0;
 
   return c.json({
     leads: { total: leadsCurrentN, delta: crescimento(leadsCurrentN, Number(leadsPrev.total)), trend: leadsTrend },
     // Pipeline é estoque (snapshot), não série temporal → sem delta de período.
     pipeline: { total: pipelineSnap.total, delta: null, trend: [] },
     winRate: { total: wrCurrent.taxa, delta: crescimento(wrCurrent.taxa ?? 0, wrPrev.taxa ?? 0), trend: [] },
-    mrr: { total: mrrCurrentN, delta: crescimento(mrrCurrentN, Number(mrrPrev.total) || 0), trend: [] },
+    mrr: { total: mrrCurrentN, delta: crescimento(Number(mrrCurrent.total) || 0, Number(mrrPrev.total) || 0), trend: [] },
   });
 });
 

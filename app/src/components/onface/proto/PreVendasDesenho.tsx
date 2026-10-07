@@ -252,6 +252,11 @@ Marque os cartões e exporte só eles
 {k.tag}
 </span>
 </>) : null}
+{(k.temCadencia) ? (<>
+<span title="Passo da cadência" style={{ display: "inline-flex", alignItems: "center", height: "19px", padding: "0 7px", borderRadius: "6px", background: "#e8f0fb", color: "#2c5f9e", fontSize: "10.5px", fontWeight: "600", whiteSpace: "nowrap", flex: "0 1 auto", minWidth: "0", overflow: "hidden", textOverflow: "ellipsis" }}>
+{k.cadencia}
+</span>
+</>) : null}
 </div>
 <div style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "9px" }}>
 {(k.urgente) ? (<>

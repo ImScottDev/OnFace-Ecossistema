@@ -67,7 +67,12 @@ const updateNegocioSchema = z.object({
   responsavelId: z.string().uuid().optional().nullable(),
   pipelineId: z.string().uuid().optional().nullable(),
   camposCustom: z.record(z.string(), z.unknown()).optional(),
-});
+/* `.strict()`: campo desconhecido era IGNORADO e a rota devolvia 200 — sucesso
+   sem persistência. Medido em 06/10: `PATCH {serviceFamily}` respondia 200 e a
+   família seguia nula, e só a proposta seguinte revelava que nada tinha mudado.
+   Família tem porta própria (`alterarFamilia`), com validação e evento; aqui o
+   certo é recusar nomeando o campo. Os chamadores mandam só o delta. */
+}).strict();
 
 const labelAssignSchema = z.object({
   labelId: z.string().uuid(),
@@ -636,6 +641,9 @@ app.patch("/negocios/:id", async (c) => {
       const produtoNegocio = produtoNegocioWon;
 
       updateData.ganhoAt = new Date();
+      // O board lê `etapa`, não `status`: ganho manual também precisa mover o card.
+      updateData.etapa = "ganho";
+      updateData.etapaDesde = new Date();
 
       // Check if an accepted proposal already created a contract
       const [existingContract] = await db

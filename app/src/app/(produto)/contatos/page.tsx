@@ -28,8 +28,8 @@ export async function ContatosPage({ searchParams }: {
   const params = await searchParams;
   const busca = params.busca?.trim() || "";
 
-  const [{ linhas, totais }, responsaveis] = await Promise.all([
-    linhasDeContato(ctx.organizacaoId, { busca, limite: 500 }),
+  const [{ linhas, totais, porRelacionamento }, responsaveis] = await Promise.all([
+    linhasDeContato(ctx.organizacaoId, { busca }),
     acaoResponsaveis(),
   ]);
 
@@ -37,6 +37,7 @@ export async function ContatosPage({ searchParams }: {
     <ContatosProto
       linhas={linhas}
       totais={totais}
+      porRelacionamento={porRelacionamento}
       responsaveis={responsaveis}
       busca={busca}
       agora={Date.now()}

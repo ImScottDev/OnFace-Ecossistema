@@ -67,13 +67,6 @@ export function normalizarTelefone(valor: string | null | undefined): string | n
   return digitos.length >= 10 ? digitos : null;
 }
 
-function normalizarNomeEmpresa(nome: string): string {
-  return nome.trim().toLowerCase()
-    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-    .replace(/\b(ltda|me|epp|eireli|s\/?a|sa|comercio|servicos)\b/g, "")
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
-}
 
 /* ── Empresa ───────────────────────────────────────────────────────────── */
 
@@ -143,7 +136,13 @@ export async function resolverEmpresa(
     }
   }
 
-  const nomeNormalizado = normalizarNomeEmpresa(nome);
+  /* Regra do Scott (06/10): sem CNPJ e sem domínio, casa pelo NOME IGUAL,
+     ignorando só caixa, acento, espaço e pontuação. Antes o lado JS tirava
+     "ltda/me/comercio..." e o lado SQL não, então "Acme Ltda" nunca casava
+     com "Acme Ltda" já gravada e a prospecção criava empresa duplicada.
+     Os dois lados agora usam a mesma normalização, sem cortar sufixo. */
+  const nomeNormalizado = nome.toLowerCase().normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "");
   if (nomeNormalizado.length >= 3) {
     const [porNome] = await tx.execute<{ id: string }>(sql`
       SELECT id::text FROM empresas
@@ -151,7 +150,7 @@ export async function resolverEmpresa(
          AND regexp_replace(
                translate(lower(nome), 'áàâãäéèêëíìîïóòôõöúùûüç', 'aaaaaeeeeiiiiooooouuuuc'),
                '[^a-z0-9]+', '', 'g'
-             ) = ${nomeNormalizado.replace(/\s+/g, "")}
+             ) = ${nomeNormalizado}
        LIMIT 1
     `);
     if (porNome) {

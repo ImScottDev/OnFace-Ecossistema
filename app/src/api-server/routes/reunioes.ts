@@ -1,11 +1,12 @@
 import { Hono } from "hono";
 import { db } from "@/lib/db";
 import { reunioes, usuarios, emailContas, leads } from "@/lib/db/schema";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, sql } from "drizzle-orm";
 import { z } from "zod";
 import { getCtx } from "../compat.js";
 import { deleteOutlookEvent, createOutlookEvent } from "@/lib/email/microsoft";
 import { atualizarNaAgenda, cancelarNaAgenda } from "@/lib/calendario/sincronizar";
+import { registrarEvento, type TipoEventoVendas } from "@/lib/vendas/eventos";
 
 type OutlookResultado = { criado: boolean; motivo: string | null };
 
@@ -66,7 +67,40 @@ async function criarEventoOutlookSeConectado(reuniaoId: string, responsavelId: s
   }
 }
 
+/**
+ * Evento de domínio da reunião (MeetingScheduled/Completed/Cancelled/Rescheduled).
+ *
+ * Criar, realizar, cancelar e reagendar pela API só mexia na linha de `reunioes`:
+ * não saía evento nem linha na timeline, e os relatórios por evento (agenda,
+ * comparecimento) não enxergavam a reunião. No-show fica de fora: a tela já
+ * chama `registrarNoShow`, que grava o evento. Best-effort: nunca derruba o
+ * salvar. Sem repetir o mesmo fato da mesma reunião (exceto reagendamento).
+ */
+async function eventoDaReuniao(
+  ctx: { organizacaoId: string; userId: string },
+  r: { id: string; negocioId: string | null; leadId: string | null; data: Date },
+  tipo: Extract<TipoEventoVendas, "MeetingScheduled" | "MeetingCompleted" | "MeetingCancelled" | "MeetingRescheduled">,
+  titulo: string,
+) {
+  if (!r.negocioId && !r.leadId) return;
+  try {
+    if (tipo !== "MeetingRescheduled") {
+      const jaTem = await db.execute(sql`SELECT 1 FROM vendas_eventos WHERE reuniao_id = ${r.id}::uuid AND tipo = ${tipo} LIMIT 1`);
+      if ((jaTem as unknown as unknown[]).length) return;
+    }
+    await registrarEvento({
+      organizacaoId: ctx.organizacaoId, tipo, ator: { tipo: "HUMAN", usuarioId: ctx.userId },
+      negocioId: r.negocioId, leadId: r.leadId, reuniaoId: r.id,
+      contexto: { data: r.data.toISOString() },
+      timeline: { tipo: "reuniao", titulo, descricao: r.data.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }) },
+    });
+  } catch (e) {
+    console.error(`[Reunioes] evento ${tipo} não gravado (best-effort):`, e);
+  }
+}
+
 const app = new Hono();
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Cancela o evento no Outlook do responsável pela reunião, se existir. Best-effort. */
 async function cancelarEventoOutlookSeExistir(reuniaoId: string) {
@@ -93,7 +127,7 @@ const createSchema = z.object({
   negocioId: z.string().uuid().optional().nullable(),
   leadId: z.string().uuid().optional().nullable(),
   titulo: z.string().min(1),
-  data: z.string().min(1), // ISO string
+  data: z.string().min(1).refine((v) => !isNaN(new Date(v).getTime()), "Data invalida"), // ISO string (lixo virava 500 no insert)
   duracao: z.number().int().positive().optional().nullable(),
   tipo: z.enum(["call", "presencial", "video"]).optional(),
   status: z.enum(["agendada", "realizada", "cancelada", "no_show"]).optional(),
@@ -117,7 +151,7 @@ const createSchema = z.object({
 
 const updateSchema = z.object({
   titulo: z.string().min(1).optional(),
-  data: z.string().optional(),
+  data: z.string().refine((v) => !isNaN(new Date(v).getTime()), "Data invalida").optional(),
   duracao: z.number().int().positive().optional().nullable(),
   tipo: z.enum(["call", "presencial", "video"]).optional(),
   status: z.enum(["agendada", "realizada", "cancelada", "no_show"]).optional(),
@@ -125,7 +159,7 @@ const updateSchema = z.object({
   notas: z.string().optional().nullable(),
   transcript: z.string().optional().nullable(),
   resumoTranscript: z.string().optional().nullable(),
-});
+}).strict();
 
 // GET /api/reunioes
 app.get("/reunioes", async (c) => {
@@ -194,6 +228,8 @@ app.post("/reunioes", async (c) => {
       })
       .returning();
 
+    await eventoDaReuniao(ctx, reuniao, "MeetingScheduled", "Reunião agendada");
+
     // Outlook é opt-in por evento (compromisso interno não precisa gerar
     // Teams nem convite) — default true pra reunião/ligação/follow-up fazer
     // sentido sem o usuário precisar lembrar de marcar.
@@ -226,6 +262,7 @@ app.get("/reunioes/:id", async (c) => {
   const ctx = await getCtx(c);
 
   const id = c.req.param("id");
+  if (!UUID_RE.test(id)) return c.json({ error: "Reunião não encontrada" }, 404); // uuid inválido estourava 500 no Postgres
 
   const [reuniao] = await db
     .select()
@@ -245,6 +282,7 @@ app.patch("/reunioes/:id", async (c) => {
   const ctx = await getCtx(c);
 
   const id = c.req.param("id");
+  if (!UUID_RE.test(id)) return c.json({ error: "Reunião não encontrada" }, 404); // uuid inválido estourava 500 no Postgres
 
   try {
     const body = await c.req.json();
@@ -261,6 +299,10 @@ app.patch("/reunioes/:id", async (c) => {
     if (data.transcript !== undefined) updates.transcript = data.transcript;
     if (data.resumoTranscript !== undefined) updates.resumoTranscript = data.resumoTranscript;
 
+    const [antes] = data.data !== undefined
+      ? await db.select({ data: reunioes.data }).from(reunioes).where(and(eq(reunioes.id, id), eq(reunioes.organizacaoId, ctx.organizacaoId))).limit(1)
+      : [];
+
     const [updated] = await db
       .update(reunioes)
       .set(updates)
@@ -270,6 +312,10 @@ app.patch("/reunioes/:id", async (c) => {
     if (!updated) {
       return c.json({ error: "Reunião não encontrada" }, 404);
     }
+
+    if (data.status === "realizada") await eventoDaReuniao(ctx, updated, "MeetingCompleted", "Reunião realizada");
+    else if (data.status === "cancelada") await eventoDaReuniao(ctx, updated, "MeetingCancelled", "Reunião cancelada");
+    else if (antes && new Date(antes.data).getTime() !== new Date(updated.data).getTime()) await eventoDaReuniao(ctx, updated, "MeetingRescheduled", "Reunião reagendada");
 
     // CalendarProvider (Módulo 09): create, update E cancel sincronizam.
     //
@@ -300,7 +346,13 @@ app.delete("/reunioes/:id", async (c) => {
   const ctx = await getCtx(c);
 
   const id = c.req.param("id");
+  if (!UUID_RE.test(id)) return c.json({ error: "Reunião não encontrada" }, 404); // uuid inválido estourava 500 no Postgres
 
+  // Só cancela no Outlook se a reunião for desta organização: antes o evento era
+  // apagado ANTES da checagem de org, então um id de outra org cancelava o convite dela.
+  const [daOrg] = await db.select({ id: reunioes.id }).from(reunioes)
+    .where(and(eq(reunioes.id, id), eq(reunioes.organizacaoId, ctx.organizacaoId))).limit(1);
+  if (!daOrg) return c.json({ error: "Reunião não encontrada" }, 404);
   await cancelarEventoOutlookSeExistir(id);
 
   const [deleted] = await db

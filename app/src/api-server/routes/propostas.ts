@@ -120,7 +120,7 @@ const updateSchema = z.object({
   dataValidade: z.string().optional().nullable(),
   signatarios: z.array(z.object({ nome: z.string().trim().min(1), email: z.string().trim().email(), papel: z.string().trim().optional(), ordem: z.number().int().positive().optional() })).optional(),
   itens: z.array(itemSchema).min(1).optional(),
-});
+}).strict();
 
 const aceitarBodySchema = z.object({
   avancarLeadStatus: z.boolean().default(false),

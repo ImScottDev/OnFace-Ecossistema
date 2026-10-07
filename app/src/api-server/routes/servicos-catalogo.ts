@@ -39,7 +39,7 @@ const updateSchema = z.object({
   supportsUpgrade: z.boolean().optional(),
   supportsDowngrade: z.boolean().optional(),
   supportsProration: z.boolean().optional(),
-});
+}).strict();
 
 // GET /api/servicos-catalogo
 app.get("/servicos-catalogo", async (c) => {

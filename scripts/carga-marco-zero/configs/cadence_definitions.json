@@ -1,0 +1,2238 @@
+[
+    {
+        "id": "aa832321-0594-4a42-9365-ff3339a2a4d3",
+        "nome": "Follow-up pós-proposta",
+        "ativo": true,
+        "steps": [
+            {
+                "id": "d0-revisar",
+                "tipo": "action",
+                "retry": {
+                    "maxTentativas": 3,
+                    "backoffMinutos": [
+                        1,
+                        5,
+                        15
+                    ]
+                },
+                "config": {
+                    "mode": "create_task",
+                    "title": "Confirmar proposta enviada e ajustar follow-up",
+                    "priority": "alta",
+                    "description": "Antes do follow-up automático, confirme o envio, registre os pontos da reunião e ajuste as mensagens. Se já houve resposta, cancele a cadência.",
+                    "due_minutes": 120
+                },
+                "adapter": "crm_create_task",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "w1"
+                    }
+                ]
+            },
+            {
+                "id": "w1",
+                "tipo": "wait",
+                "config": {
+                    "mode": "fixed",
+                    "duration_ms": 86400000
+                },
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "d1-wa"
+                    }
+                ],
+                "esperaMinutos": 1440
+            },
+            {
+                "id": "d1-wa",
+                "tipo": "action",
+                "retry": {
+                    "maxTentativas": 3,
+                    "backoffMinutos": [
+                        1,
+                        5,
+                        15
+                    ]
+                },
+                "config": {
+                    "mode": "ai_message",
+                    "prompt_hint": "WhatsApp, PT-BR, consultivo, curto. Base: «Oi, [primeiro nome], tudo bem? Passando pra saber se você conseguiu olhar a proposta. Se ficou algum ponto pouco claro, me diga que eu explico aqui ou em uma chamada curta, como preferir.»"
+                },
+                "adapter": "ai_agent_message",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "w2"
+                    }
+                ]
+            },
+            {
+                "id": "w2",
+                "tipo": "wait",
+                "config": {
+                    "mode": "fixed",
+                    "duration_ms": 172800000
+                },
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "d3-email"
+                    }
+                ],
+                "esperaMinutos": 2880
+            },
+            {
+                "id": "d3-email",
+                "tipo": "action",
+                "retry": {
+                    "maxTentativas": 3,
+                    "backoffMinutos": [
+                        1,
+                        5,
+                        15
+                    ]
+                },
+                "config": {
+                    "assunto": "Resumo da proposta e próximos passos",
+                    "mensagem": "<p>Olá, tudo bem?</p><p>Retomo a conversa sobre a proposta da Callface. Posso preparar um resumo de uma página com o combinado, os ganhos e o cronograma de implantação.</p><p>Se houver mais alguém que precise validar, posso participar de uma conversa rápida. Qual o melhor dia?</p><p>Abraço,<br>Equipe Callface</p>"
+                },
+                "adapter": "email",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "w3"
+                    }
+                ]
+            },
+            {
+                "id": "w3",
+                "tipo": "wait",
+                "config": {
+                    "mode": "fixed",
+                    "duration_ms": 86400000
+                },
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "d4-ligacao"
+                    }
+                ],
+                "esperaMinutos": 1440
+            },
+            {
+                "id": "d4-ligacao",
+                "tipo": "action",
+                "retry": {
+                    "maxTentativas": 3,
+                    "backoffMinutos": [
+                        1,
+                        5,
+                        15
+                    ]
+                },
+                "config": {
+                    "mode": "callface_call"
+                },
+                "adapter": "crm_callface_call",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "w4"
+                    }
+                ]
+            },
+            {
+                "id": "w4",
+                "tipo": "wait",
+                "config": {
+                    "mode": "fixed",
+                    "duration_ms": 172800000
+                },
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "d6-wa"
+                    }
+                ],
+                "esperaMinutos": 2880
+            },
+            {
+                "id": "d6-wa",
+                "tipo": "action",
+                "retry": {
+                    "maxTentativas": 3,
+                    "backoffMinutos": [
+                        1,
+                        5,
+                        15
+                    ]
+                },
+                "config": {
+                    "mode": "ai_message",
+                    "prompt_hint": "WhatsApp, PT-BR, consultivo, curto. Base: «[primeiro nome], quando uma proposta fica parada costuma ser preço, prazo ou falta de alguém validar. Qual está pesando aí? Se me contar, vejo com o time como destravar sem te empurrar nada.»"
+                },
+                "adapter": "ai_agent_message",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "w5"
+                    }
+                ]
+            },
+            {
+                "id": "w5",
+                "tipo": "wait",
+                "config": {
+                    "mode": "fixed",
+                    "duration_ms": 259200000
+                },
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "humano"
+                    }
+                ],
+                "esperaMinutos": 4320
+            },
+            {
+                "id": "humano",
+                "tipo": "action",
+                "retry": {
+                    "maxTentativas": 3,
+                    "backoffMinutos": [
+                        1,
+                        5,
+                        15
+                    ]
+                },
+                "config": {
+                    "mode": "create_task",
+                    "title": "Proposta sem retorno após 9 dias: definir desfecho",
+                    "priority": "alta",
+                    "description": "Cadência pós-proposta esgotada. Ligar, propor prazo/ajuste, ou marcar como perdido com motivo. Registrar próximo passo, data e responsável.",
+                    "due_minutes": 1440
+                },
+                "adapter": "crm_create_task",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "nota"
+                    }
+                ]
+            },
+            {
+                "id": "nota",
+                "tipo": "action",
+                "retry": {
+                    "maxTentativas": 3,
+                    "backoffMinutos": [
+                        1,
+                        5,
+                        15
+                    ]
+                },
+                "config": {
+                    "mode": "add_note",
+                    "title": "Follow-up pós-proposta esgotado",
+                    "description": "Sem retorno após WhatsApp, e-mail, ligação e novo WhatsApp. Tarefa humana criada. Negócio não abandonado."
+                },
+                "adapter": "crm_add_note",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "fim"
+                    }
+                ]
+            },
+            {
+                "id": "fim",
+                "tipo": "action",
+                "config": {
+                    "note": "Esgotada; tarefa humana criada",
+                    "outcome": "exhausted"
+                },
+                "adapter": "noop",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": null
+                    }
+                ]
+            }
+        ],
+        "status": "published",
+        "versao": 1,
+        "created_at": "2026-10-06T03:06:35.051585-03:00",
+        "updated_at": "2026-10-06T03:06:35.416-03:00",
+        "draft_steps": [
+            {
+                "id": "d0-revisar",
+                "tipo": "action",
+                "retry": {
+                    "maxTentativas": 3,
+                    "backoffMinutos": [
+                        1,
+                        5,
+                        15
+                    ]
+                },
+                "config": {
+                    "mode": "create_task",
+                    "title": "Confirmar proposta enviada e ajustar follow-up",
+                    "priority": "alta",
+                    "description": "Antes do follow-up automático, confirme o envio, registre os pontos da reunião e ajuste as mensagens. Se já houve resposta, cancele a cadência.",
+                    "due_minutes": 120
+                },
+                "adapter": "crm_create_task",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "w1"
+                    }
+                ]
+            },
+            {
+                "id": "w1",
+                "tipo": "wait",
+                "config": {
+                    "mode": "fixed",
+                    "duration_ms": 86400000
+                },
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "d1-wa"
+                    }
+                ],
+                "esperaMinutos": 1440
+            },
+            {
+                "id": "d1-wa",
+                "tipo": "action",
+                "retry": {
+                    "maxTentativas": 3,
+                    "backoffMinutos": [
+                        1,
+                        5,
+                        15
+                    ]
+                },
+                "config": {
+                    "mode": "ai_message",
+                    "prompt_hint": "WhatsApp, PT-BR, consultivo, curto. Base: «Oi, [primeiro nome], tudo bem? Passando pra saber se você conseguiu olhar a proposta. Se ficou algum ponto pouco claro, me diga que eu explico aqui ou em uma chamada curta, como preferir.»"
+                },
+                "adapter": "ai_agent_message",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "w2"
+                    }
+                ]
+            },
+            {
+                "id": "w2",
+                "tipo": "wait",
+                "config": {
+                    "mode": "fixed",
+                    "duration_ms": 172800000
+                },
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "d3-email"
+                    }
+                ],
+                "esperaMinutos": 2880
+            },
+            {
+                "id": "d3-email",
+                "tipo": "action",
+                "retry": {
+                    "maxTentativas": 3,
+                    "backoffMinutos": [
+                        1,
+                        5,
+                        15
+                    ]
+                },
+                "config": {
+                    "assunto": "Resumo da proposta e próximos passos",
+                    "mensagem": "<p>Olá, tudo bem?</p><p>Retomo a conversa sobre a proposta da Callface. Posso preparar um resumo de uma página com o combinado, os ganhos e o cronograma de implantação.</p><p>Se houver mais alguém que precise validar, posso participar de uma conversa rápida. Qual o melhor dia?</p><p>Abraço,<br>Equipe Callface</p>"
+                },
+                "adapter": "email",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "w3"
+                    }
+                ]
+            },
+            {
+                "id": "w3",
+                "tipo": "wait",
+                "config": {
+                    "mode": "fixed",
+                    "duration_ms": 86400000
+                },
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "d4-ligacao"
+                    }
+                ],
+                "esperaMinutos": 1440
+            },
+            {
+                "id": "d4-ligacao",
+                "tipo": "action",
+                "retry": {
+                    "maxTentativas": 3,
+                    "backoffMinutos": [
+                        1,
+                        5,
+                        15
+                    ]
+                },
+                "config": {
+                    "mode": "callface_call"
+                },
+                "adapter": "crm_callface_call",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "w4"
+                    }
+                ]
+            },
+            {
+                "id": "w4",
+                "tipo": "wait",
+                "config": {
+                    "mode": "fixed",
+                    "duration_ms": 172800000
+                },
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "d6-wa"
+                    }
+                ],
+                "esperaMinutos": 2880
+            },
+            {
+                "id": "d6-wa",
+                "tipo": "action",
+                "retry": {
+                    "maxTentativas": 3,
+                    "backoffMinutos": [
+                        1,
+                        5,
+                        15
+                    ]
+                },
+                "config": {
+                    "mode": "ai_message",
+                    "prompt_hint": "WhatsApp, PT-BR, consultivo, curto. Base: «[primeiro nome], quando uma proposta fica parada costuma ser preço, prazo ou falta de alguém validar. Qual está pesando aí? Se me contar, vejo com o time como destravar sem te empurrar nada.»"
+                },
+                "adapter": "ai_agent_message",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "w5"
+                    }
+                ]
+            },
+            {
+                "id": "w5",
+                "tipo": "wait",
+                "config": {
+                    "mode": "fixed",
+                    "duration_ms": 259200000
+                },
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "humano"
+                    }
+                ],
+                "esperaMinutos": 4320
+            },
+            {
+                "id": "humano",
+                "tipo": "action",
+                "retry": {
+                    "maxTentativas": 3,
+                    "backoffMinutos": [
+                        1,
+                        5,
+                        15
+                    ]
+                },
+                "config": {
+                    "mode": "create_task",
+                    "title": "Proposta sem retorno após 9 dias: definir desfecho",
+                    "priority": "alta",
+                    "description": "Cadência pós-proposta esgotada. Ligar, propor prazo/ajuste, ou marcar como perdido com motivo. Registrar próximo passo, data e responsável.",
+                    "due_minutes": 1440
+                },
+                "adapter": "crm_create_task",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "nota"
+                    }
+                ]
+            },
+            {
+                "id": "nota",
+                "tipo": "action",
+                "retry": {
+                    "maxTentativas": 3,
+                    "backoffMinutos": [
+                        1,
+                        5,
+                        15
+                    ]
+                },
+                "config": {
+                    "mode": "add_note",
+                    "title": "Follow-up pós-proposta esgotado",
+                    "description": "Sem retorno após WhatsApp, e-mail, ligação e novo WhatsApp. Tarefa humana criada. Negócio não abandonado."
+                },
+                "adapter": "crm_add_note",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "fim"
+                    }
+                ]
+            },
+            {
+                "id": "fim",
+                "tipo": "action",
+                "config": {
+                    "note": "Esgotada; tarefa humana criada",
+                    "outcome": "exhausted"
+                },
+                "adapter": "noop",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": null
+                    }
+                ]
+            }
+        ],
+        "entity_type": "negocio",
+        "published_at": "2026-10-06T03:06:35.416-03:00",
+        "handoff_policy": {
+            "mode": "pause_on_reply"
+        },
+        "organizacao_id": "320a9052-dd43-4edb-9b74-34be53c5c419",
+        "trigger_config": {
+            "event": "proposal.sent",
+            "filters": {
+            }
+        }
+    },
+    {
+        "id": "fb76317c-0bcd-4ab1-9a0d-e65fdf881a19",
+        "nome": "Primeiro contato inbound",
+        "ativo": true,
+        "steps": [
+            {
+                "id": "d0-ligacao",
+                "tipo": "action",
+                "retry": {
+                    "maxTentativas": 3,
+                    "backoffMinutos": [
+                        1,
+                        5,
+                        15
+                    ]
+                },
+                "config": {
+                    "mode": "callface_call"
+                },
+                "adapter": "crm_callface_call",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "w1"
+                    }
+                ]
+            },
+            {
+                "id": "w1",
+                "tipo": "wait",
+                "config": {
+                    "mode": "fixed",
+                    "duration_ms": 1200000
+                },
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "d0-wa"
+                    }
+                ],
+                "esperaMinutos": 20
+            },
+            {
+                "id": "d0-wa",
+                "tipo": "action",
+                "retry": {
+                    "maxTentativas": 3,
+                    "backoffMinutos": [
+                        1,
+                        5,
+                        15
+                    ]
+                },
+                "config": {
+                    "mode": "ai_message",
+                    "prompt_hint": "Envie por WhatsApp, PT-BR, tom consultivo e humano, curto, sem pressão e sem prometer preço. Use o primeiro nome e adapte ao contexto. Base: «Oi, [primeiro nome], tudo bem? Aqui é da Callface. Vi que você pediu contato e tentei te ligar agora. Quando for um bom momento pra conversarmos 10 minutos sobre telefonia e atendimento comercial aí? Se preferir, me diga o melhor horário por aqui.»"
+                },
+                "adapter": "ai_agent_message",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "w2"
+                    }
+                ]
+            },
+            {
+                "id": "w2",
+                "tipo": "wait",
+                "config": {
+                    "mode": "fixed",
+                    "duration_ms": 86400000
+                },
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "d1-email"
+                    }
+                ],
+                "esperaMinutos": 1440
+            },
+            {
+                "id": "d1-email",
+                "tipo": "action",
+                "retry": {
+                    "maxTentativas": 3,
+                    "backoffMinutos": [
+                        1,
+                        5,
+                        15
+                    ]
+                },
+                "config": {
+                    "assunto": "Sobre o seu contato com a Callface",
+                    "mensagem": "<p>Olá, tudo bem?</p><p>Você entrou em contato com a Callface e queremos entender o seu cenário antes de falar de solução.</p><p>A Callface reúne telefonia na nuvem e IA para a operação comercial saber o que acontece em cada ligação, sem achismo.</p><p>Responda com o melhor dia e horário para 15 minutos. Também podemos falar por WhatsApp.</p><p>Abraço,<br>Equipe Callface</p>"
+                },
+                "adapter": "email",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "w3"
+                    }
+                ]
+            },
+            {
+                "id": "w3",
+                "tipo": "wait",
+                "config": {
+                    "mode": "fixed",
+                    "duration_ms": 86400000
+                },
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "d2-ligacao"
+                    }
+                ],
+                "esperaMinutos": 1440
+            },
+            {
+                "id": "d2-ligacao",
+                "tipo": "action",
+                "retry": {
+                    "maxTentativas": 3,
+                    "backoffMinutos": [
+                        1,
+                        5,
+                        15
+                    ]
+                },
+                "config": {
+                    "mode": "callface_call"
+                },
+                "adapter": "crm_callface_call",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "w4"
+                    }
+                ]
+            },
+            {
+                "id": "w4",
+                "tipo": "wait",
+                "config": {
+                    "mode": "fixed",
+                    "duration_ms": 86400000
+                },
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "d3-wa"
+                    }
+                ],
+                "esperaMinutos": 1440
+            },
+            {
+                "id": "d3-wa",
+                "tipo": "action",
+                "retry": {
+                    "maxTentativas": 3,
+                    "backoffMinutos": [
+                        1,
+                        5,
+                        15
+                    ]
+                },
+                "config": {
+                    "mode": "ai_message",
+                    "prompt_hint": "WhatsApp, PT-BR, consultivo, curto. Base: «[primeiro nome], tentei falar com você nos últimos dias. Pra eu ser útil: hoje o time comercial faz e recebe ligações em volume? E como vocês acompanham o que é conversado? Com isso eu te digo se vale a gente conversar.»"
+                },
+                "adapter": "ai_agent_message",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "w5"
+                    }
+                ]
+            },
+            {
+                "id": "w5",
+                "tipo": "wait",
+                "config": {
+                    "mode": "fixed",
+                    "duration_ms": 345600000
+                },
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "d7-email"
+                    }
+                ],
+                "esperaMinutos": 5760
+            },
+            {
+                "id": "d7-email",
+                "tipo": "action",
+                "retry": {
+                    "maxTentativas": 3,
+                    "backoffMinutos": [
+                        1,
+                        5,
+                        15
+                    ]
+                },
+                "config": {
+                    "assunto": "Posso encerrar por aqui?",
+                    "mensagem": "<p>Olá, tudo bem?</p><p>Tentei contato algumas vezes e não quero ser insistente. Vou deixar seu cadastro em acompanhamento e parar de acionar por ora.</p><p>Se voltar a ser prioridade, responda este e-mail ou chame no WhatsApp que retomamos.</p><p>Abraço,<br>Equipe Callface</p>"
+                },
+                "adapter": "email",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "w6"
+                    }
+                ]
+            },
+            {
+                "id": "w6",
+                "tipo": "wait",
+                "config": {
+                    "mode": "fixed",
+                    "duration_ms": 172800000
+                },
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "humano"
+                    }
+                ],
+                "esperaMinutos": 2880
+            },
+            {
+                "id": "humano",
+                "tipo": "action",
+                "retry": {
+                    "maxTentativas": 3,
+                    "backoffMinutos": [
+                        1,
+                        5,
+                        15
+                    ]
+                },
+                "config": {
+                    "mode": "create_task",
+                    "title": "Lead inbound sem resposta após 8 dias: decidir destino",
+                    "priority": "alta",
+                    "description": "Cadência esgotada (2 ligações, 2 WhatsApps, 2 e-mails) sem resposta. Revisar histórico, tentar última abordagem manual se houver fit, ou nutrir / encerrar com motivo. Definir responsável e próximo toque.",
+                    "due_minutes": 1440
+                },
+                "adapter": "crm_create_task",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "nota"
+                    }
+                ]
+            },
+            {
+                "id": "nota",
+                "tipo": "action",
+                "retry": {
+                    "maxTentativas": 3,
+                    "backoffMinutos": [
+                        1,
+                        5,
+                        15
+                    ]
+                },
+                "config": {
+                    "mode": "add_note",
+                    "title": "Cadência de primeiro contato esgotada",
+                    "description": "Sem resposta em 8 dias. Tarefa humana criada. Lead não abandonado."
+                },
+                "adapter": "crm_add_note",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "fim"
+                    }
+                ]
+            },
+            {
+                "id": "fim",
+                "tipo": "action",
+                "config": {
+                    "note": "Esgotada; tarefa humana criada",
+                    "outcome": "exhausted"
+                },
+                "adapter": "noop",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": null
+                    }
+                ]
+            }
+        ],
+        "status": "published",
+        "versao": 1,
+        "created_at": "2026-10-06T03:05:17.151957-03:00",
+        "updated_at": "2026-10-06T03:05:17.636-03:00",
+        "draft_steps": [
+            {
+                "id": "d0-ligacao",
+                "tipo": "action",
+                "retry": {
+                    "maxTentativas": 3,
+                    "backoffMinutos": [
+                        1,
+                        5,
+                        15
+                    ]
+                },
+                "config": {
+                    "mode": "callface_call"
+                },
+                "adapter": "crm_callface_call",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "w1"
+                    }
+                ]
+            },
+            {
+                "id": "w1",
+                "tipo": "wait",
+                "config": {
+                    "mode": "fixed",
+                    "duration_ms": 1200000
+                },
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "d0-wa"
+                    }
+                ],
+                "esperaMinutos": 20
+            },
+            {
+                "id": "d0-wa",
+                "tipo": "action",
+                "retry": {
+                    "maxTentativas": 3,
+                    "backoffMinutos": [
+                        1,
+                        5,
+                        15
+                    ]
+                },
+                "config": {
+                    "mode": "ai_message",
+                    "prompt_hint": "Envie por WhatsApp, PT-BR, tom consultivo e humano, curto, sem pressão e sem prometer preço. Use o primeiro nome e adapte ao contexto. Base: «Oi, [primeiro nome], tudo bem? Aqui é da Callface. Vi que você pediu contato e tentei te ligar agora. Quando for um bom momento pra conversarmos 10 minutos sobre telefonia e atendimento comercial aí? Se preferir, me diga o melhor horário por aqui.»"
+                },
+                "adapter": "ai_agent_message",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "w2"
+                    }
+                ]
+            },
+            {
+                "id": "w2",
+                "tipo": "wait",
+                "config": {
+                    "mode": "fixed",
+                    "duration_ms": 86400000
+                },
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "d1-email"
+                    }
+                ],
+                "esperaMinutos": 1440
+            },
+            {
+                "id": "d1-email",
+                "tipo": "action",
+                "retry": {
+                    "maxTentativas": 3,
+                    "backoffMinutos": [
+                        1,
+                        5,
+                        15
+                    ]
+                },
+                "config": {
+                    "assunto": "Sobre o seu contato com a Callface",
+                    "mensagem": "<p>Olá, tudo bem?</p><p>Você entrou em contato com a Callface e queremos entender o seu cenário antes de falar de solução.</p><p>A Callface reúne telefonia na nuvem e IA para a operação comercial saber o que acontece em cada ligação, sem achismo.</p><p>Responda com o melhor dia e horário para 15 minutos. Também podemos falar por WhatsApp.</p><p>Abraço,<br>Equipe Callface</p>"
+                },
+                "adapter": "email",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "w3"
+                    }
+                ]
+            },
+            {
+                "id": "w3",
+                "tipo": "wait",
+                "config": {
+                    "mode": "fixed",
+                    "duration_ms": 86400000
+                },
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "d2-ligacao"
+                    }
+                ],
+                "esperaMinutos": 1440
+            },
+            {
+                "id": "d2-ligacao",
+                "tipo": "action",
+                "retry": {
+                    "maxTentativas": 3,
+                    "backoffMinutos": [
+                        1,
+                        5,
+                        15
+                    ]
+                },
+                "config": {
+                    "mode": "callface_call"
+                },
+                "adapter": "crm_callface_call",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "w4"
+                    }
+                ]
+            },
+            {
+                "id": "w4",
+                "tipo": "wait",
+                "config": {
+                    "mode": "fixed",
+                    "duration_ms": 86400000
+                },
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "d3-wa"
+                    }
+                ],
+                "esperaMinutos": 1440
+            },
+            {
+                "id": "d3-wa",
+                "tipo": "action",
+                "retry": {
+                    "maxTentativas": 3,
+                    "backoffMinutos": [
+                        1,
+                        5,
+                        15
+                    ]
+                },
+                "config": {
+                    "mode": "ai_message",
+                    "prompt_hint": "WhatsApp, PT-BR, consultivo, curto. Base: «[primeiro nome], tentei falar com você nos últimos dias. Pra eu ser útil: hoje o time comercial faz e recebe ligações em volume? E como vocês acompanham o que é conversado? Com isso eu te digo se vale a gente conversar.»"
+                },
+                "adapter": "ai_agent_message",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "w5"
+                    }
+                ]
+            },
+            {
+                "id": "w5",
+                "tipo": "wait",
+                "config": {
+                    "mode": "fixed",
+                    "duration_ms": 345600000
+                },
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "d7-email"
+                    }
+                ],
+                "esperaMinutos": 5760
+            },
+            {
+                "id": "d7-email",
+                "tipo": "action",
+                "retry": {
+                    "maxTentativas": 3,
+                    "backoffMinutos": [
+                        1,
+                        5,
+                        15
+                    ]
+                },
+                "config": {
+                    "assunto": "Posso encerrar por aqui?",
+                    "mensagem": "<p>Olá, tudo bem?</p><p>Tentei contato algumas vezes e não quero ser insistente. Vou deixar seu cadastro em acompanhamento e parar de acionar por ora.</p><p>Se voltar a ser prioridade, responda este e-mail ou chame no WhatsApp que retomamos.</p><p>Abraço,<br>Equipe Callface</p>"
+                },
+                "adapter": "email",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "w6"
+                    }
+                ]
+            },
+            {
+                "id": "w6",
+                "tipo": "wait",
+                "config": {
+                    "mode": "fixed",
+                    "duration_ms": 172800000
+                },
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "humano"
+                    }
+                ],
+                "esperaMinutos": 2880
+            },
+            {
+                "id": "humano",
+                "tipo": "action",
+                "retry": {
+                    "maxTentativas": 3,
+                    "backoffMinutos": [
+                        1,
+                        5,
+                        15
+                    ]
+                },
+                "config": {
+                    "mode": "create_task",
+                    "title": "Lead inbound sem resposta após 8 dias: decidir destino",
+                    "priority": "alta",
+                    "description": "Cadência esgotada (2 ligações, 2 WhatsApps, 2 e-mails) sem resposta. Revisar histórico, tentar última abordagem manual se houver fit, ou nutrir / encerrar com motivo. Definir responsável e próximo toque.",
+                    "due_minutes": 1440
+                },
+                "adapter": "crm_create_task",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "nota"
+                    }
+                ]
+            },
+            {
+                "id": "nota",
+                "tipo": "action",
+                "retry": {
+                    "maxTentativas": 3,
+                    "backoffMinutos": [
+                        1,
+                        5,
+                        15
+                    ]
+                },
+                "config": {
+                    "mode": "add_note",
+                    "title": "Cadência de primeiro contato esgotada",
+                    "description": "Sem resposta em 8 dias. Tarefa humana criada. Lead não abandonado."
+                },
+                "adapter": "crm_add_note",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "fim"
+                    }
+                ]
+            },
+            {
+                "id": "fim",
+                "tipo": "action",
+                "config": {
+                    "note": "Esgotada; tarefa humana criada",
+                    "outcome": "exhausted"
+                },
+                "adapter": "noop",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": null
+                    }
+                ]
+            }
+        ],
+        "entity_type": "lead",
+        "published_at": "2026-10-06T03:05:17.636-03:00",
+        "handoff_policy": {
+            "mode": "pause_on_reply"
+        },
+        "organizacao_id": "320a9052-dd43-4edb-9b74-34be53c5c419",
+        "trigger_config": {
+            "event": "lead.created",
+            "filters": {
+            }
+        }
+    },
+    {
+        "id": "5517b7b2-894a-4a67-9b46-2d24d7239a21",
+        "nome": "Reativação de lead frio",
+        "ativo": true,
+        "steps": [
+            {
+                "id": "d0-wa",
+                "tipo": "action",
+                "retry": {
+                    "maxTentativas": 3,
+                    "backoffMinutos": [
+                        1,
+                        5,
+                        15
+                    ]
+                },
+                "config": {
+                    "mode": "ai_message",
+                    "prompt_hint": "WhatsApp, PT-BR, leve, curto. Base: «Oi, [primeiro nome], tudo bem? Faz um tempo que conversamos sobre telefonia e atendimento comercial. Queria saber como as coisas estão por aí e se esse assunto ainda faz sentido pra vocês.»"
+                },
+                "adapter": "ai_agent_message",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "w1"
+                    }
+                ]
+            },
+            {
+                "id": "w1",
+                "tipo": "wait",
+                "config": {
+                    "mode": "fixed",
+                    "duration_ms": 259200000
+                },
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "d3-email"
+                    }
+                ],
+                "esperaMinutos": 4320
+            },
+            {
+                "id": "d3-email",
+                "tipo": "action",
+                "retry": {
+                    "maxTentativas": 3,
+                    "backoffMinutos": [
+                        1,
+                        5,
+                        15
+                    ]
+                },
+                "config": {
+                    "assunto": "Uma novidade que pode interessar à sua operação",
+                    "mensagem": "<p>Olá, tudo bem?</p><p>Desde que conversamos, a Callface evoluiu bastante na leitura das ligações com IA: hoje fica mais claro o que é dito, o que trava a venda e onde o time pode melhorar.</p><p>Se a rotina comercial mudou ou o tema voltou à pauta, vale uma conversa de 15 minutos. Abraço,<br>Equipe Callface</p>"
+                },
+                "adapter": "email",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "w2"
+                    }
+                ]
+            },
+            {
+                "id": "w2",
+                "tipo": "wait",
+                "config": {
+                    "mode": "fixed",
+                    "duration_ms": 345600000
+                },
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "d7-wa"
+                    }
+                ],
+                "esperaMinutos": 5760
+            },
+            {
+                "id": "d7-wa",
+                "tipo": "action",
+                "retry": {
+                    "maxTentativas": 3,
+                    "backoffMinutos": [
+                        1,
+                        5,
+                        15
+                    ]
+                },
+                "config": {
+                    "mode": "ai_message",
+                    "prompt_hint": "WhatsApp, PT-BR, curto. Base: «[primeiro nome], uma pergunta direta: o que mudou desde nossa última conversa? Se a prioridade era outra, tudo bem, só quero saber se faz sentido continuar te acompanhando.»"
+                },
+                "adapter": "ai_agent_message",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "w3"
+                    }
+                ]
+            },
+            {
+                "id": "w3",
+                "tipo": "wait",
+                "config": {
+                    "mode": "fixed",
+                    "duration_ms": 432000000
+                },
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "d12-ligacao"
+                    }
+                ],
+                "esperaMinutos": 7200
+            },
+            {
+                "id": "d12-ligacao",
+                "tipo": "action",
+                "retry": {
+                    "maxTentativas": 3,
+                    "backoffMinutos": [
+                        1,
+                        5,
+                        15
+                    ]
+                },
+                "config": {
+                    "mode": "callface_call"
+                },
+                "adapter": "crm_callface_call",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "w4"
+                    }
+                ]
+            },
+            {
+                "id": "w4",
+                "tipo": "wait",
+                "config": {
+                    "mode": "fixed",
+                    "duration_ms": 172800000
+                },
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "humano"
+                    }
+                ],
+                "esperaMinutos": 2880
+            },
+            {
+                "id": "humano",
+                "tipo": "action",
+                "retry": {
+                    "maxTentativas": 3,
+                    "backoffMinutos": [
+                        1,
+                        5,
+                        15
+                    ]
+                },
+                "config": {
+                    "mode": "create_task",
+                    "title": "Lead frio sem reativar: decidir destino",
+                    "priority": "media",
+                    "description": "Cadência de reativação esgotada. Nutrição de longo prazo com data de revisão, ou arquivar com motivo. Registrar responsável e próximo toque.",
+                    "due_minutes": 1440
+                },
+                "adapter": "crm_create_task",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "nota"
+                    }
+                ]
+            },
+            {
+                "id": "nota",
+                "tipo": "action",
+                "retry": {
+                    "maxTentativas": 3,
+                    "backoffMinutos": [
+                        1,
+                        5,
+                        15
+                    ]
+                },
+                "config": {
+                    "mode": "add_note",
+                    "title": "Reativação esgotada",
+                    "description": "Sem resposta em 14 dias. Tarefa humana criada."
+                },
+                "adapter": "crm_add_note",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "fim"
+                    }
+                ]
+            },
+            {
+                "id": "fim",
+                "tipo": "action",
+                "config": {
+                    "note": "Esgotada; tarefa humana criada",
+                    "outcome": "exhausted"
+                },
+                "adapter": "noop",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": null
+                    }
+                ]
+            }
+        ],
+        "status": "published",
+        "versao": 1,
+        "created_at": "2026-10-06T03:06:36.025636-03:00",
+        "updated_at": "2026-10-06T03:06:36.234-03:00",
+        "draft_steps": [
+            {
+                "id": "d0-wa",
+                "tipo": "action",
+                "retry": {
+                    "maxTentativas": 3,
+                    "backoffMinutos": [
+                        1,
+                        5,
+                        15
+                    ]
+                },
+                "config": {
+                    "mode": "ai_message",
+                    "prompt_hint": "WhatsApp, PT-BR, leve, curto. Base: «Oi, [primeiro nome], tudo bem? Faz um tempo que conversamos sobre telefonia e atendimento comercial. Queria saber como as coisas estão por aí e se esse assunto ainda faz sentido pra vocês.»"
+                },
+                "adapter": "ai_agent_message",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "w1"
+                    }
+                ]
+            },
+            {
+                "id": "w1",
+                "tipo": "wait",
+                "config": {
+                    "mode": "fixed",
+                    "duration_ms": 259200000
+                },
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "d3-email"
+                    }
+                ],
+                "esperaMinutos": 4320
+            },
+            {
+                "id": "d3-email",
+                "tipo": "action",
+                "retry": {
+                    "maxTentativas": 3,
+                    "backoffMinutos": [
+                        1,
+                        5,
+                        15
+                    ]
+                },
+                "config": {
+                    "assunto": "Uma novidade que pode interessar à sua operação",
+                    "mensagem": "<p>Olá, tudo bem?</p><p>Desde que conversamos, a Callface evoluiu bastante na leitura das ligações com IA: hoje fica mais claro o que é dito, o que trava a venda e onde o time pode melhorar.</p><p>Se a rotina comercial mudou ou o tema voltou à pauta, vale uma conversa de 15 minutos. Abraço,<br>Equipe Callface</p>"
+                },
+                "adapter": "email",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "w2"
+                    }
+                ]
+            },
+            {
+                "id": "w2",
+                "tipo": "wait",
+                "config": {
+                    "mode": "fixed",
+                    "duration_ms": 345600000
+                },
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "d7-wa"
+                    }
+                ],
+                "esperaMinutos": 5760
+            },
+            {
+                "id": "d7-wa",
+                "tipo": "action",
+                "retry": {
+                    "maxTentativas": 3,
+                    "backoffMinutos": [
+                        1,
+                        5,
+                        15
+                    ]
+                },
+                "config": {
+                    "mode": "ai_message",
+                    "prompt_hint": "WhatsApp, PT-BR, curto. Base: «[primeiro nome], uma pergunta direta: o que mudou desde nossa última conversa? Se a prioridade era outra, tudo bem, só quero saber se faz sentido continuar te acompanhando.»"
+                },
+                "adapter": "ai_agent_message",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "w3"
+                    }
+                ]
+            },
+            {
+                "id": "w3",
+                "tipo": "wait",
+                "config": {
+                    "mode": "fixed",
+                    "duration_ms": 432000000
+                },
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "d12-ligacao"
+                    }
+                ],
+                "esperaMinutos": 7200
+            },
+            {
+                "id": "d12-ligacao",
+                "tipo": "action",
+                "retry": {
+                    "maxTentativas": 3,
+                    "backoffMinutos": [
+                        1,
+                        5,
+                        15
+                    ]
+                },
+                "config": {
+                    "mode": "callface_call"
+                },
+                "adapter": "crm_callface_call",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "w4"
+                    }
+                ]
+            },
+            {
+                "id": "w4",
+                "tipo": "wait",
+                "config": {
+                    "mode": "fixed",
+                    "duration_ms": 172800000
+                },
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "humano"
+                    }
+                ],
+                "esperaMinutos": 2880
+            },
+            {
+                "id": "humano",
+                "tipo": "action",
+                "retry": {
+                    "maxTentativas": 3,
+                    "backoffMinutos": [
+                        1,
+                        5,
+                        15
+                    ]
+                },
+                "config": {
+                    "mode": "create_task",
+                    "title": "Lead frio sem reativar: decidir destino",
+                    "priority": "media",
+                    "description": "Cadência de reativação esgotada. Nutrição de longo prazo com data de revisão, ou arquivar com motivo. Registrar responsável e próximo toque.",
+                    "due_minutes": 1440
+                },
+                "adapter": "crm_create_task",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "nota"
+                    }
+                ]
+            },
+            {
+                "id": "nota",
+                "tipo": "action",
+                "retry": {
+                    "maxTentativas": 3,
+                    "backoffMinutos": [
+                        1,
+                        5,
+                        15
+                    ]
+                },
+                "config": {
+                    "mode": "add_note",
+                    "title": "Reativação esgotada",
+                    "description": "Sem resposta em 14 dias. Tarefa humana criada."
+                },
+                "adapter": "crm_add_note",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "fim"
+                    }
+                ]
+            },
+            {
+                "id": "fim",
+                "tipo": "action",
+                "config": {
+                    "note": "Esgotada; tarefa humana criada",
+                    "outcome": "exhausted"
+                },
+                "adapter": "noop",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": null
+                    }
+                ]
+            }
+        ],
+        "entity_type": "lead",
+        "published_at": "2026-10-06T03:06:36.234-03:00",
+        "handoff_policy": {
+            "mode": "pause_on_reply"
+        },
+        "organizacao_id": "320a9052-dd43-4edb-9b74-34be53c5c419",
+        "trigger_config": {
+            "event": "manual",
+            "filters": {
+            }
+        }
+    },
+    {
+        "id": "2e024a1d-7dc5-43e9-852c-db7f3b06e05a",
+        "nome": "Recuperação de no-show",
+        "ativo": true,
+        "steps": [
+            {
+                "id": "n0",
+                "tipo": "action",
+                "retry": {
+                    "maxTentativas": 3,
+                    "backoffMinutos": [
+                        1,
+                        5,
+                        15
+                    ]
+                },
+                "config": {
+                    "mode": "add_note",
+                    "title": "No-show: oportunidade preservada",
+                    "description": "Reunião não realizada por ausência. Oportunidade mantida; cadência de recuperação iniciada."
+                },
+                "adapter": "crm_add_note",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "w0"
+                    }
+                ]
+            },
+            {
+                "id": "w0",
+                "tipo": "wait",
+                "config": {
+                    "mode": "fixed",
+                    "duration_ms": 600000
+                },
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "d0-wa"
+                    }
+                ],
+                "esperaMinutos": 10
+            },
+            {
+                "id": "d0-wa",
+                "tipo": "action",
+                "retry": {
+                    "maxTentativas": 3,
+                    "backoffMinutos": [
+                        1,
+                        5,
+                        15
+                    ]
+                },
+                "config": {
+                    "mode": "ai_message",
+                    "prompt_hint": "WhatsApp, PT-BR, empático, curto, sem cobrança. Base: «Oi, [primeiro nome], tudo bem? Não consegui te encontrar na reunião de hoje, imagino que o dia apertou. Sem problema. Posso te sugerir dois novos horários, ou você me diz o que fica melhor?»"
+                },
+                "adapter": "ai_agent_message",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "w1"
+                    }
+                ]
+            },
+            {
+                "id": "w1",
+                "tipo": "wait",
+                "config": {
+                    "mode": "fixed",
+                    "duration_ms": 7200000
+                },
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "d0-ligacao"
+                    }
+                ],
+                "esperaMinutos": 120
+            },
+            {
+                "id": "d0-ligacao",
+                "tipo": "action",
+                "retry": {
+                    "maxTentativas": 3,
+                    "backoffMinutos": [
+                        1,
+                        5,
+                        15
+                    ]
+                },
+                "config": {
+                    "mode": "callface_call"
+                },
+                "adapter": "crm_callface_call",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "w2"
+                    }
+                ]
+            },
+            {
+                "id": "w2",
+                "tipo": "wait",
+                "config": {
+                    "mode": "fixed",
+                    "duration_ms": 86400000
+                },
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "d1-wa"
+                    }
+                ],
+                "esperaMinutos": 1440
+            },
+            {
+                "id": "d1-wa",
+                "tipo": "action",
+                "retry": {
+                    "maxTentativas": 3,
+                    "backoffMinutos": [
+                        1,
+                        5,
+                        15
+                    ]
+                },
+                "config": {
+                    "mode": "ai_message",
+                    "prompt_hint": "WhatsApp, PT-BR, curto. Base: «[primeiro nome], ainda quero te mostrar o que combinamos de ver. Consigo amanhã de manhã ou no fim da tarde, ou outro horário que você sugerir. Qual funciona melhor?»"
+                },
+                "adapter": "ai_agent_message",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "w3"
+                    }
+                ]
+            },
+            {
+                "id": "w3",
+                "tipo": "wait",
+                "config": {
+                    "mode": "fixed",
+                    "duration_ms": 86400000
+                },
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "d2-email"
+                    }
+                ],
+                "esperaMinutos": 1440
+            },
+            {
+                "id": "d2-email",
+                "tipo": "action",
+                "retry": {
+                    "maxTentativas": 3,
+                    "backoffMinutos": [
+                        1,
+                        5,
+                        15
+                    ]
+                },
+                "config": {
+                    "assunto": "Vamos remarcar nossa conversa?",
+                    "mensagem": "<p>Olá, tudo bem?</p><p>Sentimos a sua falta na reunião. Acontece, e a conversa continua valendo.</p><p>Responda com o melhor dia e horário e eu envio um novo convite. Se deixou de ser prioridade, pode me dizer também.</p><p>Abraço,<br>Equipe Callface</p>"
+                },
+                "adapter": "email",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "w4"
+                    }
+                ]
+            },
+            {
+                "id": "w4",
+                "tipo": "wait",
+                "config": {
+                    "mode": "fixed",
+                    "duration_ms": 172800000
+                },
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "d4-ligacao"
+                    }
+                ],
+                "esperaMinutos": 2880
+            },
+            {
+                "id": "d4-ligacao",
+                "tipo": "action",
+                "retry": {
+                    "maxTentativas": 3,
+                    "backoffMinutos": [
+                        1,
+                        5,
+                        15
+                    ]
+                },
+                "config": {
+                    "mode": "callface_call"
+                },
+                "adapter": "crm_callface_call",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "w5"
+                    }
+                ]
+            },
+            {
+                "id": "w5",
+                "tipo": "wait",
+                "config": {
+                    "mode": "fixed",
+                    "duration_ms": 259200000
+                },
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "d7-wa"
+                    }
+                ],
+                "esperaMinutos": 4320
+            },
+            {
+                "id": "d7-wa",
+                "tipo": "action",
+                "retry": {
+                    "maxTentativas": 3,
+                    "backoffMinutos": [
+                        1,
+                        5,
+                        15
+                    ]
+                },
+                "config": {
+                    "mode": "ai_message",
+                    "prompt_hint": "WhatsApp, PT-BR, curto, sem pressão. Base: «[primeiro nome], vou deixar a conversa em pausa pra não ficar insistindo. Se quiser retomar, é só me chamar aqui e a gente remarca na hora.»"
+                },
+                "adapter": "ai_agent_message",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "w6"
+                    }
+                ]
+            },
+            {
+                "id": "w6",
+                "tipo": "wait",
+                "config": {
+                    "mode": "fixed",
+                    "duration_ms": 86400000
+                },
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "humano"
+                    }
+                ],
+                "esperaMinutos": 1440
+            },
+            {
+                "id": "humano",
+                "tipo": "action",
+                "retry": {
+                    "maxTentativas": 3,
+                    "backoffMinutos": [
+                        1,
+                        5,
+                        15
+                    ]
+                },
+                "config": {
+                    "mode": "create_task",
+                    "title": "No-show sem reagendamento: SDR decide destino",
+                    "priority": "alta",
+                    "description": "Cadência de recuperação esgotada. Lead permanece em Qualificado. Abordagem manual final, ou nutrir / encerrar com motivo. Definir responsável e próximo toque.",
+                    "due_minutes": 1440
+                },
+                "adapter": "crm_create_task",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "fim"
+                    }
+                ]
+            },
+            {
+                "id": "fim",
+                "tipo": "action",
+                "config": {
+                    "note": "Esgotada; tarefa do SDR criada",
+                    "outcome": "exhausted"
+                },
+                "adapter": "noop",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": null
+                    }
+                ]
+            }
+        ],
+        "status": "published",
+        "versao": 1,
+        "created_at": "2026-10-06T03:06:35.62095-03:00",
+        "updated_at": "2026-10-06T03:06:35.828-03:00",
+        "draft_steps": [
+            {
+                "id": "n0",
+                "tipo": "action",
+                "retry": {
+                    "maxTentativas": 3,
+                    "backoffMinutos": [
+                        1,
+                        5,
+                        15
+                    ]
+                },
+                "config": {
+                    "mode": "add_note",
+                    "title": "No-show: oportunidade preservada",
+                    "description": "Reunião não realizada por ausência. Oportunidade mantida; cadência de recuperação iniciada."
+                },
+                "adapter": "crm_add_note",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "w0"
+                    }
+                ]
+            },
+            {
+                "id": "w0",
+                "tipo": "wait",
+                "config": {
+                    "mode": "fixed",
+                    "duration_ms": 600000
+                },
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "d0-wa"
+                    }
+                ],
+                "esperaMinutos": 10
+            },
+            {
+                "id": "d0-wa",
+                "tipo": "action",
+                "retry": {
+                    "maxTentativas": 3,
+                    "backoffMinutos": [
+                        1,
+                        5,
+                        15
+                    ]
+                },
+                "config": {
+                    "mode": "ai_message",
+                    "prompt_hint": "WhatsApp, PT-BR, empático, curto, sem cobrança. Base: «Oi, [primeiro nome], tudo bem? Não consegui te encontrar na reunião de hoje, imagino que o dia apertou. Sem problema. Posso te sugerir dois novos horários, ou você me diz o que fica melhor?»"
+                },
+                "adapter": "ai_agent_message",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "w1"
+                    }
+                ]
+            },
+            {
+                "id": "w1",
+                "tipo": "wait",
+                "config": {
+                    "mode": "fixed",
+                    "duration_ms": 7200000
+                },
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "d0-ligacao"
+                    }
+                ],
+                "esperaMinutos": 120
+            },
+            {
+                "id": "d0-ligacao",
+                "tipo": "action",
+                "retry": {
+                    "maxTentativas": 3,
+                    "backoffMinutos": [
+                        1,
+                        5,
+                        15
+                    ]
+                },
+                "config": {
+                    "mode": "callface_call"
+                },
+                "adapter": "crm_callface_call",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "w2"
+                    }
+                ]
+            },
+            {
+                "id": "w2",
+                "tipo": "wait",
+                "config": {
+                    "mode": "fixed",
+                    "duration_ms": 86400000
+                },
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "d1-wa"
+                    }
+                ],
+                "esperaMinutos": 1440
+            },
+            {
+                "id": "d1-wa",
+                "tipo": "action",
+                "retry": {
+                    "maxTentativas": 3,
+                    "backoffMinutos": [
+                        1,
+                        5,
+                        15
+                    ]
+                },
+                "config": {
+                    "mode": "ai_message",
+                    "prompt_hint": "WhatsApp, PT-BR, curto. Base: «[primeiro nome], ainda quero te mostrar o que combinamos de ver. Consigo amanhã de manhã ou no fim da tarde, ou outro horário que você sugerir. Qual funciona melhor?»"
+                },
+                "adapter": "ai_agent_message",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "w3"
+                    }
+                ]
+            },
+            {
+                "id": "w3",
+                "tipo": "wait",
+                "config": {
+                    "mode": "fixed",
+                    "duration_ms": 86400000
+                },
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "d2-email"
+                    }
+                ],
+                "esperaMinutos": 1440
+            },
+            {
+                "id": "d2-email",
+                "tipo": "action",
+                "retry": {
+                    "maxTentativas": 3,
+                    "backoffMinutos": [
+                        1,
+                        5,
+                        15
+                    ]
+                },
+                "config": {
+                    "assunto": "Vamos remarcar nossa conversa?",
+                    "mensagem": "<p>Olá, tudo bem?</p><p>Sentimos a sua falta na reunião. Acontece, e a conversa continua valendo.</p><p>Responda com o melhor dia e horário e eu envio um novo convite. Se deixou de ser prioridade, pode me dizer também.</p><p>Abraço,<br>Equipe Callface</p>"
+                },
+                "adapter": "email",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "w4"
+                    }
+                ]
+            },
+            {
+                "id": "w4",
+                "tipo": "wait",
+                "config": {
+                    "mode": "fixed",
+                    "duration_ms": 172800000
+                },
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "d4-ligacao"
+                    }
+                ],
+                "esperaMinutos": 2880
+            },
+            {
+                "id": "d4-ligacao",
+                "tipo": "action",
+                "retry": {
+                    "maxTentativas": 3,
+                    "backoffMinutos": [
+                        1,
+                        5,
+                        15
+                    ]
+                },
+                "config": {
+                    "mode": "callface_call"
+                },
+                "adapter": "crm_callface_call",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "w5"
+                    }
+                ]
+            },
+            {
+                "id": "w5",
+                "tipo": "wait",
+                "config": {
+                    "mode": "fixed",
+                    "duration_ms": 259200000
+                },
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "d7-wa"
+                    }
+                ],
+                "esperaMinutos": 4320
+            },
+            {
+                "id": "d7-wa",
+                "tipo": "action",
+                "retry": {
+                    "maxTentativas": 3,
+                    "backoffMinutos": [
+                        1,
+                        5,
+                        15
+                    ]
+                },
+                "config": {
+                    "mode": "ai_message",
+                    "prompt_hint": "WhatsApp, PT-BR, curto, sem pressão. Base: «[primeiro nome], vou deixar a conversa em pausa pra não ficar insistindo. Se quiser retomar, é só me chamar aqui e a gente remarca na hora.»"
+                },
+                "adapter": "ai_agent_message",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "w6"
+                    }
+                ]
+            },
+            {
+                "id": "w6",
+                "tipo": "wait",
+                "config": {
+                    "mode": "fixed",
+                    "duration_ms": 86400000
+                },
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "humano"
+                    }
+                ],
+                "esperaMinutos": 1440
+            },
+            {
+                "id": "humano",
+                "tipo": "action",
+                "retry": {
+                    "maxTentativas": 3,
+                    "backoffMinutos": [
+                        1,
+                        5,
+                        15
+                    ]
+                },
+                "config": {
+                    "mode": "create_task",
+                    "title": "No-show sem reagendamento: SDR decide destino",
+                    "priority": "alta",
+                    "description": "Cadência de recuperação esgotada. Lead permanece em Qualificado. Abordagem manual final, ou nutrir / encerrar com motivo. Definir responsável e próximo toque.",
+                    "due_minutes": 1440
+                },
+                "adapter": "crm_create_task",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": "fim"
+                    }
+                ]
+            },
+            {
+                "id": "fim",
+                "tipo": "action",
+                "config": {
+                    "note": "Esgotada; tarefa do SDR criada",
+                    "outcome": "exhausted"
+                },
+                "adapter": "noop",
+                "branches": [
+                    {
+                        "condicao": null,
+                        "proximoStepId": null
+                    }
+                ]
+            }
+        ],
+        "entity_type": "lead",
+        "published_at": "2026-10-06T03:06:35.828-03:00",
+        "handoff_policy": {
+            "mode": "pause_on_reply"
+        },
+        "organizacao_id": "320a9052-dd43-4edb-9b74-34be53c5c419",
+        "trigger_config": {
+            "event": "meeting.no_show",
+            "filters": {
+            }
+        }
+    }
+]

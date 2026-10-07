@@ -1,0 +1,58 @@
+[
+    {
+        "id": "e712bf95-b837-490b-bc04-4a8a593569fc",
+        "nome": "E-mail: agradecimento pós-reunião",
+        "corpo": "<p>Olá, {{nome}},</p><p>Obrigado pelo tempo dedicado hoje. Foi muito bom entender melhor a operação da {{empresa}}.</p><p>Em resumo, ficamos de alinhar os próximos passos e eu retorno com os detalhes ainda hoje. Se quiser acrescentar algo, é só responder este e-mail.</p><p>Abraço,<br>Equipe Callface</p>",
+        "assunto": "Obrigado pela conversa, {{nome}}",
+        "categoria": "pos_venda",
+        "variaveis": [
+            "nome",
+            "empresa"
+        ],
+        "created_at": "2026-10-06T03:03:44.957457-03:00",
+        "updated_at": "2026-10-06T03:03:44.957457-03:00",
+        "organizacao_id": "320a9052-dd43-4edb-9b74-34be53c5c419"
+    },
+    {
+        "id": "f199ee58-1a3e-4003-861c-e36598d28f11",
+        "nome": "E-mail: primeiro contato",
+        "corpo": "<p>Olá, {{nome}},</p><p>Sou da Callface. Ajudamos operações comerciais a transformar cada ligação em dado: o que foi dito, onde o lead esfria e o que o time precisa ajustar.</p><p>Vi que a {{empresa}} depende bastante de conversas por telefone e acredito que isso pode ser útil para vocês. Posso te mostrar em 15 minutos como funciona?</p><p>Se preferir, responda com o melhor dia e horário.</p><p>Abraço,<br>Equipe Callface</p>",
+        "assunto": "{{nome}}, uma ideia para o time comercial da {{empresa}}",
+        "categoria": "primeiro_contato",
+        "variaveis": [
+            "nome",
+            "empresa"
+        ],
+        "created_at": "2026-10-06T03:03:44.622599-03:00",
+        "updated_at": "2026-10-06T03:03:44.622599-03:00",
+        "organizacao_id": "320a9052-dd43-4edb-9b74-34be53c5c419"
+    },
+    {
+        "id": "f449927b-e8c8-423b-912a-759680452ff6",
+        "nome": "E-mail: proposta enviada",
+        "corpo": "<p>Olá, {{nome}},</p><p>Segue a proposta para a {{empresa}}, com escopo, investimento e prazo de implantação conforme conversamos.</p><p>Se ficar alguma dúvida, posso passar pelos pontos com você em uma call curta. Qual horário funciona melhor esta semana?</p><p>Abraço,<br>Equipe Callface</p>",
+        "assunto": "Proposta da Callface para a {{empresa}}",
+        "categoria": "proposta",
+        "variaveis": [
+            "empresa",
+            "nome"
+        ],
+        "created_at": "2026-10-06T03:03:44.791635-03:00",
+        "updated_at": "2026-10-06T03:03:44.791635-03:00",
+        "organizacao_id": "320a9052-dd43-4edb-9b74-34be53c5c419"
+    },
+    {
+        "id": "e00c9cd3-90ef-41c1-9fc8-53a754401647",
+        "nome": "Implantação White Label — solicitar materiais",
+        "corpo": "<p>Olá, {{empresa}}.</p><p>Tudo bem? Eu sou [seu nome], da Callface, e serei o responsável por acompanhar sua implantação White Label.</p><p>Para iniciarmos a configuração do ambiente, peço que preencha as informações de domínio, identidade visual, contato técnico e faturamento no formulário abaixo:</p><p>{{link_implantacao}}</p><p>Depois que recebermos os dados, validaremos o material, configuraremos o ambiente e enviaremos as orientações de DNS quando necessário. Ao final, agendaremos uma reunião para apresentar o ambiente pronto e liberar os acessos administrativos.</p><p>Fico à disposição caso precise de ajuda.</p><p>Atenciosamente,<br>[seu nome]<br>Callface</p>",
+        "assunto": "Próximos passos da implantação White Label",
+        "categoria": "pos_venda",
+        "variaveis": [
+            "empresa",
+            "link_implantacao"
+        ],
+        "created_at": "2026-09-14T10:54:55.376503-03:00",
+        "updated_at": "2026-09-14T10:54:55.376503-03:00",
+        "organizacao_id": "320a9052-dd43-4edb-9b74-34be53c5c419"
+    }
+]

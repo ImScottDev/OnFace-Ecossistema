@@ -30,7 +30,9 @@ export async function syncNegocioValoresFromPropostas(
     .where(
       and(
         eq(propostas.negocioId, negocioId),
-        notInArray(propostas.status, ["recusada"]),
+        // "substituida" fora: a revisão copia os itens da versão anterior, e contar as
+        // duas dobrava o valor do negócio a cada nova versão enviada.
+        notInArray(propostas.status, ["recusada", "substituida"]),
       )
     );
 
@@ -53,4 +55,12 @@ export async function syncNegocioValoresFromPropostas(
       ...(tocarRelogio ? { updatedAt: new Date() } : {}),
     })
     .where(eq(negocios.id, negocioId));
+
+  // O board lê `oportunidades`, não `negocios`: sem o espelho o card seguia com o
+  // valor antigo até a próxima mudança de etapa (proposta criada/revisada e o
+  // total do card e da coluna não mexiam). Best-effort: o valor já está gravado.
+  // Lote de reparo (tocarRelogio=false) não espelha: o espelho também bumpa o relógio.
+  if (tocarRelogio) await import("@/lib/crm/sync-domain-model")
+    .then((m) => m.syncOportunidadeFromNegocio(negocioId))
+    .catch((e) => console.error("[sync-negocio-valores] espelho do valor falhou:", e));
 }

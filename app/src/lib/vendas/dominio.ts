@@ -74,6 +74,10 @@ export const MOTIVOS_DESQUALIFICACAO = [
   { chave: "sem_fit", rotulo: "Empresa sem fit" },
   { chave: "sem_necessidade", rotulo: "Sem necessidade" },
   { chave: "duplicado", rotulo: "Duplicado" },
+  // Chaves que a carga do marco zero já grava (51 no-show sem motivo válido).
+  { chave: "no_show", rotulo: "No-show" },
+  { chave: "nao_respondeu", rotulo: "Não respondeu" },
+  { chave: "fora_perfil", rotulo: "Fora de perfil" },
   { chave: "outro", rotulo: "Outro" },
 ] as const;
 export type MotivoDesqualificacao = (typeof MOTIVOS_DESQUALIFICACAO)[number]["chave"];
@@ -145,8 +149,9 @@ export function etapaDoStatusLegado(status: string | null | undefined): EtapaPip
     case "negociacao_iniciada": return "negociacao";
     case "ganho": return "ganho";
     case "perdido": case "churned": return "perdido";
-    // No-show não é etapa: a oportunidade é preservada onde estava.
-    case "no_show": return "entrada";
+    // No-show vira Perdido com motivo `no_show` (decisão do Scott, 06/10); o
+    // lead volta ao Pré-vendas em qualificação.
+    case "no_show": return "perdido";
     default: return null;
   }
 }
@@ -172,6 +177,7 @@ export const MOTIVOS_PERDA = [
   { chave: "trava_contratual", rotulo: "Trava contratual" },
   { chave: "projeto_cancelado", rotulo: "Projeto cancelado" },
   { chave: "sem_fit", rotulo: "Sem fit após diagnóstico" },
+  { chave: "no_show", rotulo: "No-show" },
   { chave: "outro", rotulo: "Outro" },
 ] as const;
 export type MotivoPerda = (typeof MOTIVOS_PERDA)[number]["chave"];

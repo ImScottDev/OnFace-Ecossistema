@@ -10,7 +10,7 @@ import { Hono } from "hono";
 import { db } from "@/lib/db";
 import {
   csMarcos, csRiscos, csRenovacoes, csCancelamentos, clientes, empresas,
-  tarefas, usuarios, servicosCanonicos, negocios, atividades, contratos,
+  tarefas, usuarios, servicosCanonicos, negocios, atividades, contratos, leads,
 } from "@/lib/db/schema";
 import { and, eq, desc, sql, inArray, isNull } from "drizzle-orm";
 import { z } from "zod";
@@ -31,13 +31,23 @@ import { metricasCs } from "@/lib/cs/metricas";
 import { agendaCs } from "@/lib/cs/agenda";
 import { painelCs } from "@/lib/cs/painel";
 import { decidirRenovacao } from "@/lib/cs/renovacao";
-import { registrarPedidoCancelamento, atualizarCancelamento, MOTIVOS_CANCELAMENTO } from "@/lib/cs/cancelamento";
+import { registrarPedidoCancelamento, pedidoEmAberto, atualizarCancelamento, MOTIVOS_CANCELAMENTO } from "@/lib/cs/cancelamento";
 import { criarTarefaCs, registrarInteracao } from "@/lib/cs/tarefas";
 import { rodarSweepCs } from "@/lib/cs/sweep";
 import { registrarMudancaResponsavel } from "@/lib/crm/owner";
 
 const app = new Hono();
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// QA pós-venda 06/10: `:id` que não é uuid chegava ao Postgres e estourava 500
+// ("invalid input syntax for type uuid"). Um guarda só, para todas as rotas de
+// recurso por id deste arquivo, devolve 404 como qualquer id que não existe.
+for (const rota of ["/cs/riscos/:id/*", "/cs/renovacoes/:id", "/cs/cancelamentos/:id", "/cs/marcos/:id/*"]) {
+  app.use(rota, async (c, next) => {
+    if (!UUID_RE.test(c.req.param("id") ?? "")) return c.json({ error: "Não encontrado" }, 404);
+    await next();
+  });
+}
 
 /** `me` como valor de responsável evita o front ter que saber o próprio id. */
 function resolverResponsavel(valor: string | undefined, userId: string) {
@@ -96,18 +106,29 @@ app.post("/cs/carteira/atribuir", async (c) => {
   const parsed = atribuirSchema.safeParse(await c.req.json().catch(() => ({})));
   if (!parsed.success) return c.json({ error: "Dados inválidos", details: parsed.error.issues }, 400);
 
+  // QA carteira: responsável inexistente/de outra org estourava FK em 500; agora é 400.
+  if (parsed.data.responsavelId) {
+    const [u] = await db.select({ id: usuarios.id }).from(usuarios)
+      .where(and(eq(usuarios.id, parsed.data.responsavelId), eq(usuarios.organizacaoId, ctx.organizacaoId))).limit(1);
+    if (!u) return c.json({ error: "Responsável não encontrado na organização" }, 400);
+  }
+
   const anteriores = await db.select({ empresaId: clientes.empresaId, responsavelId: clientes.responsavelId })
     .from(clientes)
     .where(and(eq(clientes.organizacaoId, ctx.organizacaoId), inArray(clientes.empresaId, parsed.data.empresaIds)));
   const antesPorEmpresa = new Map(anteriores.map((a) => [a.empresaId, a.responsavelId]));
 
-  await db.update(clientes)
+  // `returning` dá a contagem REAL: empresa sem linha em clientes não é atualizada
+  // e antes o endpoint respondia "atualizados: N" (N pedido) e auditava a conta fantasma.
+  const atualizadas = await db.update(clientes)
     .set({ responsavelId: parsed.data.responsavelId, updatedAt: new Date() })
-    .where(and(eq(clientes.organizacaoId, ctx.organizacaoId), inArray(clientes.empresaId, parsed.data.empresaIds)));
+    .where(and(eq(clientes.organizacaoId, ctx.organizacaoId), inArray(clientes.empresaId, parsed.data.empresaIds)))
+    .returning({ empresaId: clientes.empresaId });
+  const idsAtualizados = [...new Set(atualizadas.map((r) => r.empresaId).filter((x): x is string => !!x))];
 
   // Auditoria por conta, não uma linha "mexi em 40" — quem investiga depois
   // pergunta por UMA conta.
-  for (const empresaId of parsed.data.empresaIds) {
+  for (const empresaId of idsAtualizados) {
     await registrarMudancaResponsavel({
       organizacaoId: ctx.organizacaoId,
       actorId: ctx.userId,
@@ -118,7 +139,7 @@ app.post("/cs/carteira/atribuir", async (c) => {
     }).catch(() => {});
   }
 
-  return c.json({ atualizados: parsed.data.empresaIds.length });
+  return c.json({ atualizados: idsAtualizados.length, ignorados: parsed.data.empresaIds.length - idsAtualizados.length });
 });
 
 // ─── Jornada / marcos ───────────────────────────────────────────
@@ -514,6 +535,14 @@ app.patch("/cs/renovacoes/:id", async (c) => {
     return c.json({ error: "Informe o motivo da não renovação" }, 400);
   }
 
+  // QA pós-venda 06/10: decidir de novo a mesma renovação (duplo clique) regravava
+  // a decisão e duplicava a interação na timeline. Mesma decisão final = 409.
+  if (parsed.data.status !== "EM_NEGOCIACAO" && UUID_RE.test(c.req.param("id"))) {
+    const [atual] = await db.select({ status: csRenovacoes.status }).from(csRenovacoes)
+      .where(and(eq(csRenovacoes.id, c.req.param("id")), eq(csRenovacoes.organizacaoId, ctx.organizacaoId))).limit(1);
+    if (atual?.status === parsed.data.status) return c.json({ error: "Renovação já decidida" }, 409);
+  }
+
   const row = await decidirRenovacao({ id: c.req.param("id"), organizacaoId: ctx.organizacaoId, usuarioId: ctx.userId, ...parsed.data });
   if (!row) return c.json({ error: "Renovação não encontrada" }, 404);
 
@@ -563,12 +592,23 @@ app.post("/cs/clientes/:empresaId/expansao", async (c) => {
     serviceFamily = s?.f ?? null;
   }
 
+  // Lead da própria empresa: o Ganho manual só gera contrato e materializa o serviço novo
+  // quando o negócio tem lead. Expansão nascia com leadId NULL, então ganhava sem criar
+  // contrato nem serviço (QA 06/10) e o cliente não recebia o que foi vendido.
+  const [leadDaEmpresa] = await db.select({ id: leads.id }).from(leads)
+    .where(and(eq(leads.empresaId, empresaId), eq(leads.organizacaoId, ctx.organizacaoId)))
+    .orderBy(desc(leads.updatedAt)).limit(1);
+
   const [negocio] = await db.insert(negocios).values({
     organizacaoId: ctx.organizacaoId,
     empresaId,
+    leadId: leadDaEmpresa?.id ?? null,
     titulo: parsed.data.titulo,
     descricao: parsed.data.descricao ?? null,
     status: "reuniao_agendada",
+    // Etapa canônica junto do status legado: sem ela o negócio ficava com
+    // etapa NULL e sumia dos contadores/telas que filtram por etapa.
+    etapa: "entrada",
     origemNegocio: "carteira",
     commercialMotion: "EXPANSION",
     servicoOrigemId: parsed.data.servicoOrigemId ?? null,
@@ -664,6 +704,18 @@ app.post("/cs/clientes/:empresaId/cancelamentos", async (c) => {
     return c.json({ error: 'Com "Outro", o detalhe é obrigatório' }, 400);
   }
 
+  // QA pós-venda 06/10: empresa inexistente estourava 500 (FK); serviço de outra
+  // empresa/organização gravava processo apontando para dado alheio; e pedir
+  // duas vezes abria dois processos e duas tarefas de retenção.
+  if (!(await empresaDaOrg(ctx.organizacaoId, empresaId))) return c.json({ error: "Empresa não encontrada" }, 404);
+  if (parsed.data.servicoCanonicoId) {
+    const [sv] = await db.select({ id: servicosCanonicos.id }).from(servicosCanonicos)
+      .where(and(eq(servicosCanonicos.id, parsed.data.servicoCanonicoId), eq(servicosCanonicos.empresaId, empresaId), eq(servicosCanonicos.organizacaoId, ctx.organizacaoId))).limit(1);
+    if (!sv) return c.json({ error: "Serviço não pertence a esta empresa" }, 404);
+  }
+  const jaAberto = await pedidoEmAberto(ctx.organizacaoId, empresaId, parsed.data.servicoCanonicoId ?? null);
+  if (jaAberto) return c.json({ error: "Já existe um pedido de cancelamento em andamento para este serviço", id: jaAberto.id }, 409);
+
   // Contrato do serviço, quando não veio explícito — é o que habilita as
   // checagens de multa/vigência sem o CS ter que caçar o id.
   let contratoId = parsed.data.contratoId ?? null;
@@ -736,12 +788,24 @@ const novaTarefaSchema = z.object({
   servicoCanonicoId: z.string().uuid().optional().nullable(),
 });
 
+/**
+ * QA pós-venda 06/10: empresa inexistente (ou de outra organização) estourava
+ * 500 por violação de FK no insert. A empresa precisa ser da organização do
+ * usuário, e o erro correto é 404.
+ */
+async function empresaDaOrg(organizacaoId: string, empresaId: string): Promise<boolean> {
+  const [e] = await db.select({ id: empresas.id }).from(empresas)
+    .where(and(eq(empresas.id, empresaId), eq(empresas.organizacaoId, organizacaoId))).limit(1);
+  return !!e;
+}
+
 app.post("/cs/clientes/:empresaId/tarefas", async (c) => {
   const ctx = await getCtx(c);
   const empresaId = c.req.param("empresaId");
   if (!UUID_RE.test(empresaId)) return c.json({ error: "empresaId inválido" }, 400);
   const parsed = novaTarefaSchema.safeParse(await c.req.json().catch(() => ({})));
   if (!parsed.success) return c.json({ error: "Dados inválidos", details: parsed.error.issues }, 400);
+  if (!(await empresaDaOrg(ctx.organizacaoId, empresaId))) return c.json({ error: "Empresa não encontrada" }, 404);
 
   const { id } = await criarTarefaCs({
     organizacaoId: ctx.organizacaoId, empresaId,
@@ -773,11 +837,23 @@ app.post("/cs/tarefas/:id/concluir", async (c) => {
   const parsed = concluirTarefaSchema.safeParse(await c.req.json().catch(() => ({})));
   if (!parsed.success) return c.json({ error: "Dados inválidos" }, 400);
 
+  const tarefaId = c.req.param("id");
+  if (!UUID_RE.test(tarefaId)) return c.json({ error: "Tarefa não encontrada" }, 404);
+
+  // QA pós-venda 06/10: concluir duas vezes (duplo clique, retry) gravava a
+  // interação e criava a próxima ação em duplicidade. Só a primeira conclusão
+  // age: o UPDATE exige `concluida = false`; a segunda devolve 409 sem efeito.
   const [tarefa] = await db.update(tarefas)
     .set({ concluida: true, concluidaEm: new Date() })
-    .where(and(eq(tarefas.id, c.req.param("id")), eq(tarefas.organizacaoId, ctx.organizacaoId)))
+    .where(and(eq(tarefas.id, tarefaId), eq(tarefas.organizacaoId, ctx.organizacaoId), eq(tarefas.concluida, false)))
     .returning();
-  if (!tarefa) return c.json({ error: "Tarefa não encontrada" }, 404);
+  if (!tarefa) {
+    const [existe] = await db.select({ id: tarefas.id }).from(tarefas)
+      .where(and(eq(tarefas.id, tarefaId), eq(tarefas.organizacaoId, ctx.organizacaoId))).limit(1);
+    return existe
+      ? c.json({ error: "Tarefa já concluída" }, 409)
+      : c.json({ error: "Tarefa não encontrada" }, 404);
+  }
 
   if (tarefa.empresaId) {
     await registrarInteracao({
@@ -805,6 +881,10 @@ app.post("/cs/tarefas/:id/reagendar", async (c) => {
   const body = await c.req.json().catch(() => ({})) as { venceEm?: string };
   if (!body.venceEm) return c.json({ error: "Informe a nova data" }, 400);
   const nova = new Date(body.venceEm);
+  // QA pós-venda 06/10: data lixo gerava Invalid Date e `toISOString()` lançava
+  // (500); id fora do formato de uuid também estourava 500 no cast do Postgres.
+  if (Number.isNaN(nova.getTime())) return c.json({ error: "Data inválida" }, 400);
+  if (!UUID_RE.test(c.req.param("id"))) return c.json({ error: "Tarefa não encontrada" }, 404);
   const [row] = await db.update(tarefas)
     .set({ venceEm: nova, dataVencimento: nova.toISOString().slice(0, 10) })
     .where(and(eq(tarefas.id, c.req.param("id")), eq(tarefas.organizacaoId, ctx.organizacaoId)))
@@ -825,6 +905,7 @@ app.post("/cs/clientes/:empresaId/interacoes", async (c) => {
   if (!UUID_RE.test(empresaId)) return c.json({ error: "empresaId inválido" }, 400);
   const parsed = interacaoSchema.safeParse(await c.req.json().catch(() => ({})));
   if (!parsed.success) return c.json({ error: "Dados inválidos", details: parsed.error.issues }, 400);
+  if (!(await empresaDaOrg(ctx.organizacaoId, empresaId))) return c.json({ error: "Empresa não encontrada" }, 404);
 
   const r = await registrarInteracao({
     organizacaoId: ctx.organizacaoId, empresaId,
@@ -844,7 +925,9 @@ app.patch("/cs/clientes/:empresaId/conta", async (c) => {
     .set({ observacoesCs: body.observacoesCs ?? null, updatedAt: new Date() })
     .where(and(eq(clientes.organizacaoId, ctx.organizacaoId), eq(clientes.empresaId, empresaId)))
     .returning();
-  return c.json(row ?? null);
+  // Antes devolvia 200 com null para conta inexistente — a tela mostrava "salvo".
+  if (!row) return c.json({ error: "Conta não encontrada" }, 404);
+  return c.json(row);
 });
 
 /** Roda o sweep sob demanda — usado no teste e quando o CS quer ver o efeito agora. */

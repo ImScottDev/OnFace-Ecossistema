@@ -15,7 +15,7 @@ const app = new Hono();
 
 const patchSchema = z.object({
   role: z.enum(ROLES as [Role, ...Role[]]),
-});
+}).strict();
 
 const inviteSchema = z.object({
   nome: z.string().min(2),

@@ -159,7 +159,7 @@ Nova atividade
 <section data-in="rise" onMouseLeave={ev.sair} style={{ flex: "1.5 1 380px", minWidth: "0", display: "flex", flexDirection: "column", gap: "10px", padding: "16px", background: "#fff", borderRadius: "16px", boxShadow: "0 0 0 1px #e6e9e9,0 1px 2px rgba(18,23,29,.04),0 12px 32px -24px rgba(18,23,29,.25)" }}>
 <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
 <span style={{ flex: "1", minWidth: "0", fontFamily: "'Plus Jakarta Sans',sans-serif", fontSize: "14.5px", fontWeight: "700", letterSpacing: "-.01em", color: "#12171d" }}>
-Evolução da receita (MRR)
+Evolução do faturamento
 </span>
 {(ev.legenda ?? []).map((lg: any, i1: number) => (
 <Fragment key={lg?.id ?? lg?.chave ?? i1}>

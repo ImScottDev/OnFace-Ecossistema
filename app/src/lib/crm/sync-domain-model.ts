@@ -225,7 +225,12 @@ export async function syncOportunidadeFromNegocio(negocioId: string): Promise<vo
       organizacaoId: negocio.organizacaoId,
       pessoaId,
       empresaId: negocio.empresaId,
-      pipelineId: negocio.pipelineId,
+      /* Cópia de carteira (`status = 'ativo'`) fica FORA do funil — é cliente,
+         não oportunidade, e o board a exclui de propósito. Levando o pipeline
+         junto, ela virava "oportunidade COM pipeline e SEM etapa" e derrubava
+         `cobertura.test.ts`. Mesma regra que o `05_funil.sql` aplica na carga;
+         aqui é o caminho de runtime, que a refazia a cada edição do negócio. */
+      pipelineId: negocio.status === "ativo" ? null : negocio.pipelineId,
       stage: negocio.status,
       // `etapa`, `titulo` e `service_family` entraram aqui na fase 17, quando o
       // board de pipeline passou a LER `oportunidades`. Sem eles, mover um card

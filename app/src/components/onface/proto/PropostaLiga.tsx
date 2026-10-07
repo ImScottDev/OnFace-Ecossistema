@@ -263,7 +263,7 @@ class Logica extends React.Component<any, any> {
 
   renderVals() {
     const S = this.state, D = this.dadosDoProto || {}, Es = this.E;
-    const ini = D.iniciais || (s => (s || "").split(" ").map(p => p[0]).slice(0, 2).join("").toUpperCase());
+    const ini = D.iniciais || (s => (s || "").split(" ").map(p => [...p][0]).slice(0, 2).join("").toUpperCase());
     const ir = (href, rot, p) => Es && Es.irPara(href, rot, p);
     const irPipeline = () => ir("/onface-preview/pipeline", "Pipeline");
     const O = this.opp();

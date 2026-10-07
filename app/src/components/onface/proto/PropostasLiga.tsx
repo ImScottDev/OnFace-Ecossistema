@@ -123,7 +123,7 @@ class Logica extends React.Component<any, any> {
 
   renderVals() {
     const S = this.state, D = this.dadosDoProto || {}, Es = this.E;
-    const ini = D.iniciais || ((n) => (n || "").split(" ").map(x => x[0]).slice(0, 2).join("").toUpperCase());
+    const ini = D.iniciais || ((n) => (n || "").split(" ").map(x => [...x][0]).slice(0, 2).join("").toUpperCase());
     const equipe = D.EQUIPE || ["Camila Reis", "Diego Nunes", "Ana Vitória"];
     const FAM = { CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label" };
     const FAMC = { CALLFACE_AI: ["#fff6f4", "#c2330f"], PABX: ["#e8f0fb", "#2c5f9e"], WHITE_LABEL: ["#efecfa", "#4f3fa8"] };

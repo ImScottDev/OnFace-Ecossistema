@@ -188,6 +188,9 @@ export async function acaoAtribuirEmMassa(
     }
   }
   revalidatePath(ROTA);
+  // Nenhum aplicado não é sucesso: devolver ok:true com 0 mostrava "pronto" para
+  // um lote que não mudou nada (ex.: responsável inválido para todos).
+  if (aplicados === 0 && falhas > 0) return { ok: false, erro: "Não consegui atribuir nenhum dos prospects selecionados." };
   return { ok: true, dados: { aplicados, falhas } };
 }
 

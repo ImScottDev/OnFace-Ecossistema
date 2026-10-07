@@ -115,7 +115,7 @@ export async function criarFulfillmentsParaServicos(servicoIds: string[], organi
       const [existente] = await db.select({ id: fulfillments.id }).from(fulfillments).where(eq(fulfillments.servicoCanonicoId, servicoId)).limit(1);
       if (existente) continue;
 
-      const [servico] = await db.select({ serviceFamily: servicosCanonicos.serviceFamily, contratoId: servicosCanonicos.contratoId, leadId: servicosCanonicos.leadId })
+      const [servico] = await db.select({ serviceFamily: servicosCanonicos.serviceFamily, contratoId: servicosCanonicos.contratoId, leadId: servicosCanonicos.leadId, empresaId: servicosCanonicos.empresaId })
         .from(servicosCanonicos).where(eq(servicosCanonicos.id, servicoId)).limit(1);
       if (!servico) continue;
 
@@ -201,6 +201,11 @@ export async function criarFulfillmentsParaServicos(servicoIds: string[], organi
           await db.insert(tarefas).values({
             organizacaoId,
             leadId: servico.leadId,
+            // QA pós-venda 06/10: empresa/serviço/origem para a tarefa aparecer
+            // na agenda e na fila do CS (que juntam por empresa_id), como as da carga.
+            empresaId: servico.empresaId,
+            servicoCanonicoId: servicoId,
+            origem: "ONBOARDING",
             usuarioId: responsavelId,
             titulo: regra.tarefaInicial ?? "Agendar reunião de kickoff com o cliente",
             tipo: "onboarding_agendar_reuniao",

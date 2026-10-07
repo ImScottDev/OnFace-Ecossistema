@@ -25,20 +25,42 @@ import { sql } from "drizzle-orm";
  * aqui atrasa a tela, não perde o trabalho. O backfill reconcilia.
  */
 export async function sincronizarAquisicaoDoLead(leadId: string): Promise<void> {
+  // Etapa vigente da aquisição (gravada) com o legado como reserva.
+  const etapaAtual = sql.raw(
+    "COALESCE((SELECT pe.codigo FROM pipeline_etapas pe WHERE pe.id = a.etapa_id), l.estagio_pre_vendas)",
+  );
   try {
     await db.execute(sql`
       UPDATE aquisicoes a
-         SET qualificado = COALESCE(l.qualificado, false),
-             qualificado_em = l.qualificado_em,
-             desqualificado_em = l.desqualificado_em,
-             motivo_desqualificacao = l.desqualificacao_motivo,
+         SET
+         -- COALESCE (B5, marco zero): a carga grava qualificado, desqualificado
+             -- e nutricao na aquisição, e o lead legado pode chegar com esses
+             -- campos vazios (e com estagio_pre_vendas defasado). Sobrescrever
+             -- com o vazio do legado apagava o estado e devolvia o card ao
+             -- Pré-vendas ativo, sem erro nenhum. O legado preenche, nunca
+             -- apaga. Quem decide se o estado ainda vale é a ETAPA GRAVADA da
+             -- aquisição, que já foi movida pelo comando antes desta ponte
+             -- rodar; o estágio do lead só entra quando a aquisição não tem etapa.
+             qualificado = COALESCE(l.qualificado, false)
+               OR (a.qualificado AND ${etapaAtual} IN ('qualificado', 'oportunidade')),
+             qualificado_em = COALESCE(l.qualificado_em, a.qualificado_em),
+             desqualificado_em = CASE
+               WHEN ${etapaAtual} = 'desqualificado' THEN COALESCE(l.desqualificado_em, a.desqualificado_em)
+               ELSE l.desqualificado_em
+             END,
+             motivo_desqualificacao = CASE
+               WHEN ${etapaAtual} = 'desqualificado' THEN COALESCE(l.desqualificacao_motivo, a.motivo_desqualificacao)
+               ELSE l.desqualificacao_motivo
+             END,
              -- Estado de nutrição é derivado: o legado guarda motivo e data de
              -- retomada, e a leitura só precisa saber SE está em nutrição.
              nutricao_status = CASE
-               WHEN l.estagio_pre_vendas = 'nutricao' THEN COALESCE(NULLIF(l.nutricao_motivo, ''), 'em_nutricao')
+               WHEN ${etapaAtual} = 'nutricao' THEN COALESCE(NULLIF(l.nutricao_motivo, ''), NULLIF(a.nutricao_status, ''), 'em_nutricao')
                ELSE NULL
              END,
-             retomar_em = CASE WHEN l.estagio_pre_vendas = 'nutricao' THEN l.nutricao_retomar_em END,
+             retomar_em = CASE
+               WHEN ${etapaAtual} = 'nutricao' THEN COALESCE(l.nutricao_retomar_em, a.retomar_em)
+             END,
              responsavel_id = l.responsavel_id,
              -- A empresa do lead faltava aqui, e a Empresa 360 lista os leads
              -- da conta por aquisicoes.empresa_id. Vincular uma empresa a um

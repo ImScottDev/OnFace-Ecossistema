@@ -42,7 +42,7 @@ const updatePipelineSchema = z.object({
   })).optional(),
   isDefault: z.boolean().optional(),
   ativo: z.boolean().optional(),
-});
+}).strict();
 
 // GET /api/pipelines — list pipelines for org
 app.get("/pipelines", async (c) => {

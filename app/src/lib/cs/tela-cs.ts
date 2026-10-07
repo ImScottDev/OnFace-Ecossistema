@@ -10,6 +10,7 @@
  */
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
+import { faturamentoMensal, type FaturamentoMes } from "@/lib/financeiro/faturamento-mensal";
 import { ROTULO_ETAPA_PIPELINE, type EtapaPipeline } from "@/lib/vendas/dominio";
 
 type Row = Record<string, any>;
@@ -53,6 +54,8 @@ export interface DadosTelaCs {
   leads: Array<{ id: string | null; empresa: string; origem: string }>;
   expansoes: Array<{ id: string; empresa: string; etapa: string; tipo: "expansao"; itens: any[] }>;
   equipe: Array<{ id: string; nome: string }>;
+  /** Faturamento mensal da carteira por natureza (cliente_receita_mensal). */
+  faturamento: FaturamentoMes[];
 }
 
 /** "Hoje" / "Ontem" / "Há N dias" — o único formato que diasSem() do desenho lê. */
@@ -162,10 +165,12 @@ export async function dadosTelaCs(organizacaoId: string): Promise<DadosTelaCs> {
       WITH ${conta}
       -- etapa canonica (Bloco 02 §9): o campo vira o rotulo da expansao
       -- na tela, e status escreveria 'outra_data' / 'trava_negociacao'.
-      SELECT n.id, c.nome AS empresa, n.etapa, n.valor_total::float AS valor
+      -- QA pós-venda 06/10: expansão da carga tem etapa NULL (status 'ativo');
+      -- sem COALESCE o filtro abaixo descartava todas e a tela mostrava zero.
+      SELECT n.id, c.nome AS empresa, COALESCE(n.etapa, 'entrada') AS etapa, n.valor_total::float AS valor
         FROM negocios n JOIN conta c ON c.empresa_id = n.empresa_id
        WHERE n.organizacao_id = ${organizacaoId} AND n.commercial_motion = 'EXPANSION'
-         AND n.etapa NOT IN ('ganho','perdido')`),
+         AND n.status NOT IN ('ganho','perdido') AND COALESCE(n.etapa, '') NOT IN ('ganho','perdido')`),
 
     db.execute<Row>(sql`
       SELECT id, nome FROM usuarios
@@ -173,6 +178,7 @@ export async function dadosTelaCs(organizacaoId: string): Promise<DadosTelaCs> {
   ]);
 
   return {
+    faturamento: await faturamentoMensal(organizacaoId),
     clientes: clientes.map((r): ClienteDaTela => {
       const mrrFam: Record<string, number> = {};
       for (const f of FAMILIAS) mrrFam[f] = Number(r.mrr_fam?.[f] ?? 0);

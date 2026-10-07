@@ -39,6 +39,12 @@ export interface RegistroDoDesenho {
   respostas: Array<{ pergunta: string; resposta: string }>;
   /** Origem e rastreamento: só as linhas que têm dado. `href` só existe com id real. */
   rastreio: Array<{ rotulo: string; valor: string; href?: string }>;
+  /** Campos que a produção mostrava (E12): score do lead e telefone/observações da empresa. */
+  leadScore: number;
+  empresaTel: string | null;
+  empresaObs: string | null;
+  /** Anúncio de origem na Biblioteca de Anúncios; só com id real. */
+  anuncioHref: string | null;
 }
 
 /** Biblioteca de Anúncios da Meta: pública, abre o criativo pelo id do anúncio
@@ -117,10 +123,10 @@ export function registroDoDesenho(l: DetalheLead): RegistroDoDesenho {
        vinha vazia porque eu não a passava. */
     tags: l.tags.map((t) => t.nome),
     etapa: l.etapa,
-    /* Cliente ganha do estágio de pré-vendas: um lead com oportunidade em
-       "ganho" é cliente, mesmo que a etapa do lead tenha parado em "novo" na
-       migração. Sem isto a ficha mostrava "Lead" no topo de quem já paga. */
-    rel: l.oportunidades.some((o) => o.etapa === "ganho")
+    /* Cliente = a empresa está na carteira (serviço ativo). Antes bastava
+       qualquer oportunidade em "ganho", e quem ganhou e cancelou seguia como
+       Cliente na ficha enquanto Contatos já dizia outra coisa (P12). */
+    rel: l.naCarteira
       ? "Cliente"
       : relacionamentoDaEtapa(l.etapa),
     resp: l.responsavel.nome,
@@ -132,5 +138,9 @@ export function registroDoDesenho(l: DetalheLead): RegistroDoDesenho {
     dias: diasDesde(l.criadoEm),
     respostas: l.respostasFormulario,
     rastreio: rastreioDoLead(l.atribuicao),
+    leadScore: l.leadScore,
+    empresaTel: l.empresa.telefone,
+    empresaObs: l.empresa.observacoes,
+    anuncioHref: linkDoAnuncio(l.atribuicao.metaAdId),
   };
 }

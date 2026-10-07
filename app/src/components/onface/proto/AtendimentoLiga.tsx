@@ -217,7 +217,7 @@ class Logica extends React.Component<any, any> {
     const Es0 = this.E;
     const est = () => this.E;
     const diz = (t, tom) => est() && est().avisar(t, tom);
-    const ini = D.iniciais || ((n) => (n || "").split(" ").slice(0, 2).map(p => p[0] || "").join("").toUpperCase());
+    const ini = D.iniciais || ((n) => (n || "").split(" ").slice(0, 2).map(p => [...p][0] || "").join("").toUpperCase());
     const slug = D.slug || ((s) => (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z]/g, ""));
     const leads = (Es0 && Es0.ler("leads", null)) || D.LEADS || [];
     const EXTRA = [{ id: "c9", lead: null, contato: { nome: "Marcos", tel: "+55 11 98888-1234" }, canal: "WhatsApp", numero: "Pré-vendas · (11) 97700-4410", status: "novo", resp: null, prioridade: "Média", naoLidas: 1, hora: "09:52", msgs: [

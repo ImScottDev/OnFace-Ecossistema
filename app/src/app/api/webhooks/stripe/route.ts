@@ -347,6 +347,10 @@ async function handleAsyncPaymentFailed(session: Record<string, unknown>): Promi
  * A recuperação automática (retries) continua com o Stripe; isso aqui é a fila
  * HUMANA agir em paralelo enquanto o atraso é recente e recuperável.
  */
+/* Dono da conta = responsável do lead ou, sem ele, o dono da carteira (clientes.responsavel_id).
+   Só o lead deixava quase todo aviso de cobrança/cancelamento cair em TODOS os admins. */
+const responsavelDaContaSql = sql<string | null>`COALESCE(${leads.responsavelId}, (SELECT cl.responsavel_id FROM clientes cl WHERE cl.empresa_id = ${leads.empresaId} AND cl.responsavel_id IS NOT NULL LIMIT 1))`;
+
 async function handleInvoicePaymentFailed(invoice: Record<string, unknown>): Promise<string> {
   const checkout = await findCheckoutForBillingObject(invoice);
   if (checkout && checkout.status !== "pago" && checkout.status !== "concluido") {
@@ -369,7 +373,7 @@ async function handleInvoicePaymentFailed(invoice: Record<string, unknown>): Pro
   if (!customer) return "invoice sem customer";
 
   const [lead] = await db
-    .select({ id: leads.id, nome: leads.nome, empresa: leads.empresa, responsavelId: leads.responsavelId })
+    .select({ id: leads.id, nome: leads.nome, empresa: leads.empresa, responsavelId: responsavelDaContaSql })
     .from(leads)
     .where(eq(leads.stripeCustomerId, customer))
     .limit(1);
@@ -485,7 +489,7 @@ async function destinatariosDaConta(responsavelId: string | null): Promise<strin
 async function leadDoCustomer(customerId: string | null) {
   if (!customerId) return null;
   const [lead] = await db
-    .select({ id: leads.id, nome: leads.nome, empresa: leads.empresa, empresaId: leads.empresaId, responsavelId: leads.responsavelId, organizacaoId: leads.organizacaoId })
+    .select({ id: leads.id, nome: leads.nome, empresa: leads.empresa, empresaId: leads.empresaId, responsavelId: responsavelDaContaSql, organizacaoId: leads.organizacaoId })
     .from(leads)
     .where(eq(leads.stripeCustomerId, customerId))
     .limit(1);
@@ -800,11 +804,19 @@ export async function POST(request: NextRequest) {
   // vendas PAGAS: o `return duplicate` vinha antes do tratamento de negócio.
   let inboxEvent = inserido;
   if (!inboxEvent) {
-    [inboxEvent] = await db
-      .select({ id: stripeWebhookEvents.id })
+    const [existente] = await db
+      .select({ id: stripeWebhookEvents.id, status: stripeWebhookEvents.status })
       .from(stripeWebhookEvents)
       .where(eq(stripeWebhookEvents.eventId, event.id))
       .limit(1);
+    // Evento JÁ processado com sucesso: reentrega do Stripe não refaz nada. Sem isto,
+    // cada reenvio do mesmo event id notificava todo mundo de novo (QA 06/10: 12
+    // notificações de "pagamento falhou" para 1 evento entregue 2x). Só `processed`
+    // pula; failed/processing/pending seguem pro reprocesso, como o bloco acima exige.
+    if (existente?.status === "processed") {
+      return NextResponse.json({ received: true, duplicate: true, eventId: event.id });
+    }
+    inboxEvent = existente;
   }
   if (!inboxEvent) {
     // Nem inseriu nem achou: o inbox está inacessível. 500 pra o Stripe reenviar.

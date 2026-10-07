@@ -1,0 +1,112 @@
+[
+    {
+        "id": "b4277b3a-c6b3-46b0-a792-53e769901bf6",
+        "nome": "Agradecimento pós-reunião",
+        "ativo": true,
+        "botoes": null,
+        "conteudo": "Olá, {{nome}}, obrigado pelo tempo hoje. Foi uma conversa muito boa sobre a operação da {{empresa}}. Vou enviar o resumo do que combinamos e os próximos passos ainda hoje. Se lembrar de algo que ficou de fora, me chame por aqui.",
+        "categoria": "pos_venda",
+        "created_at": "2026-10-06T03:03:44.428844-03:00",
+        "updated_at": "2026-10-06T03:03:44.428844-03:00",
+        "organizacao_id": "320a9052-dd43-4edb-9b74-34be53c5c419"
+    },
+    {
+        "id": "f3831462-1a02-4e81-bd84-374092594b6a",
+        "nome": "Cobrança amigável",
+        "ativo": true,
+        "botoes": null,
+        "conteudo": "Olá, {{nome}}, tudo bem? Identificamos uma pendência no pagamento da {{empresa}}. Pode ser só um detalhe do banco ou do boleto. Se precisar de uma segunda via ou de ajuda com a forma de pagamento, me avise que eu resolvo por aqui.",
+        "categoria": "pos_venda",
+        "created_at": "2026-10-06T03:03:44.116926-03:00",
+        "updated_at": "2026-10-06T03:03:44.116926-03:00",
+        "organizacao_id": "320a9052-dd43-4edb-9b74-34be53c5c419"
+    },
+    {
+        "id": "b0b3bb61-61c4-4a20-8203-053e81beb28a",
+        "nome": "Follow-up 1 (2 dias)",
+        "ativo": true,
+        "botoes": null,
+        "conteudo": "Oi, {{nome}}. Passando para retomar a nossa conversa sobre a {{empresa}}. Se fizer sentido, posso te mostrar em 15 minutos como outras operações passaram a ouvir e analisar 100% das ligações. Qual dia da semana é melhor para você?",
+        "categoria": "follow_up",
+        "created_at": "2026-10-06T03:03:43.336925-03:00",
+        "updated_at": "2026-10-06T03:03:43.336925-03:00",
+        "organizacao_id": "320a9052-dd43-4edb-9b74-34be53c5c419"
+    },
+    {
+        "id": "d3ec1446-da98-457d-866c-d00f10dac98c",
+        "nome": "Follow-up 2 (5 dias)",
+        "ativo": true,
+        "botoes": null,
+        "conteudo": "{{nome}}, separei um exemplo prático de como times comerciais usam a análise de chamadas da Callface para achar onde o lead esfria. Posso te enviar o material da {{empresa}} por aqui? Se preferir, a gente conversa por voz.",
+        "categoria": "follow_up",
+        "created_at": "2026-10-06T03:03:43.493604-03:00",
+        "updated_at": "2026-10-06T03:03:43.493604-03:00",
+        "organizacao_id": "320a9052-dd43-4edb-9b74-34be53c5c419"
+    },
+    {
+        "id": "622fd647-7ef7-431b-b372-45fe0ecf114a",
+        "nome": "Follow-up 3 (encerramento)",
+        "ativo": true,
+        "botoes": null,
+        "conteudo": "Oi, {{nome}}. Não quero ser insistente, então vou encerrar por aqui o meu contato. Se o assunto voltar a ser prioridade na {{empresa}}, é só me chamar neste número que eu retomo de onde paramos. Obrigado pela atenção.",
+        "categoria": "follow_up",
+        "created_at": "2026-10-06T03:03:43.650125-03:00",
+        "updated_at": "2026-10-06T03:03:43.650125-03:00",
+        "organizacao_id": "320a9052-dd43-4edb-9b74-34be53c5c419"
+    },
+    {
+        "id": "a238910a-0acf-47e2-804b-a1bd150fd988",
+        "nome": "Implantação White Label — solicitar materiais",
+        "ativo": true,
+        "botoes": null,
+        "conteudo": "Olá, {{empresa}}! Tudo bem? Eu sou [seu nome], da Callface, e vou acompanhar sua implantação White Label. Para começarmos, preencha as informações de domínio, identidade visual, contato técnico e faturamento aqui: {{link_implantacao}}. Depois que recebermos os dados, validamos o material, configuramos o ambiente e orientamos sobre DNS. No final, marcamos uma reunião para apresentar tudo pronto. Qualquer dúvida, pode me chamar por aqui.",
+        "categoria": "pos_venda",
+        "created_at": "2026-09-14T10:54:55.364164-03:00",
+        "updated_at": "2026-09-14T10:54:55.364164-03:00",
+        "organizacao_id": "320a9052-dd43-4edb-9b74-34be53c5c419"
+    },
+    {
+        "id": "66e2594a-c0fd-4864-96ba-9af330bfee73",
+        "nome": "Primeiro contato",
+        "ativo": true,
+        "botoes": null,
+        "conteudo": "Olá, {{nome}}, tudo bem? Aqui é da Callface. Vi que a {{empresa}} trabalha com atendimento e vendas por telefone e queria entender como vocês acompanham essas ligações hoje.\n\nPosso te fazer duas perguntas por aqui, ou prefere que eu ligue em um horário melhor para você?",
+        "categoria": "primeiro_contato",
+        "created_at": "2026-10-06T03:03:43.157959-03:00",
+        "updated_at": "2026-10-06T03:03:43.157959-03:00",
+        "organizacao_id": "320a9052-dd43-4edb-9b74-34be53c5c419"
+    },
+    {
+        "id": "96f77d38-7c0d-495c-9207-650ba5928110",
+        "nome": "Proposta enviada",
+        "ativo": true,
+        "botoes": null,
+        "conteudo": "Olá, {{nome}}. Acabei de enviar a proposta para a {{empresa}}. Ela traz o escopo, o investimento e o prazo de implantação que combinamos. Se quiser, passo por ela com você em 15 minutos para tirar qualquer dúvida. Qual horário fica bom?",
+        "categoria": "proposta",
+        "created_at": "2026-10-06T03:03:43.961872-03:00",
+        "updated_at": "2026-10-06T03:03:43.961872-03:00",
+        "organizacao_id": "320a9052-dd43-4edb-9b74-34be53c5c419"
+    },
+    {
+        "id": "f0a7ad7f-d406-4eb6-bd9e-5def0e92136e",
+        "nome": "Reagendamento pós no-show",
+        "ativo": true,
+        "botoes": null,
+        "conteudo": "Oi, {{nome}}. Tivemos uma reunião marcada hoje e não conseguimos nos encontrar. Sem problema, a agenda aperta mesmo. Posso te sugerir dois novos horários? Me diga o que funciona melhor e eu confirmo na hora.",
+        "categoria": "follow_up",
+        "created_at": "2026-10-06T03:03:43.8047-03:00",
+        "updated_at": "2026-10-06T03:03:43.8047-03:00",
+        "organizacao_id": "320a9052-dd43-4edb-9b74-34be53c5c419"
+    },
+    {
+        "id": "26cf9d14-29c1-4624-a084-cf20cd94c1f3",
+        "nome": "Reativação",
+        "ativo": true,
+        "botoes": null,
+        "conteudo": "Oi, {{nome}}, tudo bem? Faz um tempo que conversamos sobre a {{empresa}}. De lá para cá lançamos novidades em análise de chamadas com IA. Se o tema voltou a ser relevante, posso te mostrar o que mudou em 15 minutos. Faz sentido retomar?",
+        "categoria": "follow_up",
+        "created_at": "2026-10-06T03:03:44.270268-03:00",
+        "updated_at": "2026-10-06T03:03:44.270268-03:00",
+        "organizacao_id": "320a9052-dd43-4edb-9b74-34be53c5c419"
+    }
+]

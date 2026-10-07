@@ -425,7 +425,17 @@ registrarAdapter("crm_create_task", async (ctx) => {
   if (!config.title?.trim()) return { sucesso: false, erro: "tarefa sem título" };
   const links = await entityLinks(ctx);
   const venceEm = new Date(Date.now() + Math.max(0, config.due_minutes ?? 1440) * 60_000);
-  const [row] = await db.insert(tarefas).values({ organizacaoId: ctx.organizacaoId, leadId: links.leadId, negocioId: links.negocioId, empresaId: links.empresaId, servicoCanonicoId: links.servicoId, usuarioId: config.owner_id ?? null, titulo: config.title.trim(), descricao: config.description ?? null, tipo: "follow_up", prioridade: config.priority ?? "media", venceEm, dataVencimento: venceEm.toISOString().slice(0, 10), origem: "AUTOMACAO", motivo: `Cadência ${ctx.enrollmentId}`, chaveIdempotencia: actionKey(ctx) }).onConflictDoNothing().returning({ id: tarefas.id });
+  // Sem responsável explícito a tarefa nascia sem dono e sumia de "Minhas Tarefas" de todo mundo
+  // (medido: regra de tag criava a tarefa com usuario_id NULL). Cai no responsável do lead, como o
+  // executor de Fluxos já faz (`responsavel()` em lib/automacoes/executor.ts).
+  let donoId = config.owner_id ?? null;
+  if (!donoId && links.leadId) {
+    const [l] = await db.select({ r: leads.responsavelId }).from(leads).where(and(eq(leads.id, links.leadId), eq(leads.organizacaoId, ctx.organizacaoId))).limit(1);
+    donoId = l?.r ?? null;
+  }
+  // `enrollmentId` de execução avulsa (regra/fluxo) é uma chave técnica ("avulso:ab12..."), não motivo legível.
+  const motivo = /^(avulso|fluxo):/.test(ctx.enrollmentId) ? "Automação" : `Cadência ${ctx.enrollmentId}`;
+  const [row] = await db.insert(tarefas).values({ organizacaoId: ctx.organizacaoId, leadId: links.leadId, negocioId: links.negocioId, empresaId: links.empresaId, servicoCanonicoId: links.servicoId, usuarioId: donoId, titulo: config.title.trim(), descricao: config.description ?? null, tipo: "follow_up", prioridade: config.priority ?? "media", venceEm, dataVencimento: venceEm.toISOString().slice(0, 10), origem: "AUTOMACAO", motivo, chaveIdempotencia: actionKey(ctx) }).onConflictDoNothing().returning({ id: tarefas.id });
   return { sucesso: true, resultado: { tarefaId: row?.id ?? null, deduplicated: !row } };
 });
 

@@ -51,11 +51,13 @@ export interface LeadDoDesenho {
   venceEm: string | null; etapa: string;
   telefone?: string | null; whatsapp?: string | null; email?: string | null;
   empresaId?: string | null;
+  /** E11: passo da cadência (nome da inscrição ou último toque registrado). */
+  cadencia?: string | null;
 }
 
 export type PecaDoDesenho = "detalhe" | "qualificar" | "nutrir" | "desqualificar";
 
-function paraODesenho(c: CardPreVendas): LeadDoDesenho {
+function paraODesenho(c: CardPreVendas, cadencia: string | null = null): LeadDoDesenho {
   return {
     id: c.leadId,
     // O desenho trata empresa vazia como ausente e escreve "Sem empresa" —
@@ -88,6 +90,7 @@ function paraODesenho(c: CardPreVendas): LeadDoDesenho {
     acao: c.proximaAcao?.titulo ?? null,
     venceEm: c.proximaAcao?.venceEm ? quando(c.proximaAcao.venceEm) : null,
     etapa: c.etapa,
+    cadencia,
   };
 }
 
@@ -328,8 +331,9 @@ export class PecasLigadas extends PecasLiga {
 
 /* ── A tela ────────────────────────────────────────────────────────────── */
 
-export function PreVendasProto({ dados, acoes }: {
+export function PreVendasProto({ dados, acoes, cadenciaPorLead = {} }: {
   dados: BoardPreVendas;
+  cadenciaPorLead?: Record<string, string>;
   acoes: AcoesPreVendas;
 }) {
   const router = useRouter();
@@ -341,7 +345,10 @@ export function PreVendasProto({ dados, acoes }: {
     () => dados.colunas.flatMap((c) => c.cards),
     [dados.colunas],
   );
-  const leads = React.useMemo(() => todos.map(paraODesenho), [todos]);
+  const leads = React.useMemo(
+    () => todos.map((c) => paraODesenho(c, cadenciaPorLead[c.leadId] ?? null)),
+    [todos, cadenciaPorLead],
+  );
 
   /* O que já foi qualificado, por lead. Só entra quem tem algo gravado: mapa
      vazio é a prova de que ninguém preencheu, e não um convite a inventar. */
@@ -495,7 +502,7 @@ export function PreVendasProto({ dados, acoes }: {
         {/* O QUADRO também grava — o arraste entre colunas passa por aqui, e
             não pelas peças. Ligar só as peças deixava o arraste sem efeito. */}
         <PreVendasLiga
-          dados={{ leads }}
+          dados={{ leads, cadencias: cadenciaPorLead }}
           /* Sem catalogo o board caía nos nomes ficticios (Camila Reis e cia.)
              no Exportar e no "Atribuir responsavel" da acao em massa. EQUIPE
              real vem daqui. */

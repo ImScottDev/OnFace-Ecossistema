@@ -20,7 +20,7 @@ import type { DetalheLead, Empresa360 } from "@/lib/vendas/consultas";
 import type { LinhaDoTempo } from "@/lib/vendas/eventos";
 import { EmpresaLiga } from "./EmpresaLiga";
 import { levarParametros } from "./rota-do-desenho";
-import { registroDoDesenho } from "./registro-do-desenho";
+import { registroDoDesenho, linkDoAnuncio } from "./registro-do-desenho";
 import { usePecas } from "./pecas-host";
 
 /* Timeline real (LinhaDoTempo) no formato que a EmpresaLiga lê em `X.eventos`:
@@ -105,6 +105,16 @@ export function EmpresaProto({ empresa, lead, timeline }: {
       site: empresa.website,
       /* Domínio real da empresa: o modal Enriquecer mostrava "<nome>.com.br" inventado. */
       dominio: empresa.dominio || empresa.website || null,
+      /* E12: o que a produção mostrava e a empresa perdeu. O score é o maior
+         entre os leads da empresa, não o do lead principal. */
+      empresaTel: empresa.telefone,
+      empresaObs: empresa.observacoes,
+      leadScore: empresa.leadScore ?? 0,
+      /* Respostas do formulário de cada lead da empresa, com o anúncio de origem. */
+      formularios: empresa.formularios.map((f) => ({
+        id: f.leadId, titulo: [f.nome, f.criadoEm.slice(0, 10).split("-").reverse().join("/")].filter(Boolean).join(" · "),
+        adHref: linkDoAnuncio(f.metaAdId), linhas: f.respostas,
+      })),
     };
   }, [empresa, lead]);
 

@@ -105,9 +105,13 @@ const updateAutomacaoSchema = z.object({
     cadenceDefinitionId: z.string().uuid().optional(),
   }).optional().nullable(),
   ativo: z.boolean().optional(),
-});
+}).strict();
 
 const app = new Hono();
+
+// id que não é uuid estourava no Postgres (500); vira "não encontrada". Dentro do handler (e não
+// em middleware) porque outras rotas (/automacoes/cadencias...) passam por este mesmo roteador.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /* iniciarCadencia (cadence-engine.ts) busca a definição só pelo id. Sem esta
    checagem, uma regra da org A apontando para o UUID de uma cadência da org B
@@ -197,6 +201,7 @@ app.get("/execucoes-resumo", async (c) => {
 app.get("/:id", async (c) => {
   const ctx = await getCtx(c);
   const id = c.req.param("id");
+  if (!UUID_RE.test(id)) return c.json({ error: "Automação não encontrada" }, 404);
 
   const [automacao] = await db
     .select()
@@ -215,6 +220,7 @@ app.get("/:id", async (c) => {
 app.get("/:id/execucoes", async (c) => {
   const ctx = await getCtx(c);
   const id = c.req.param("id");
+  if (!UUID_RE.test(id)) return c.json({ error: "Automação não encontrada" }, 404);
 
   const rows = await db
     .select({
@@ -237,6 +243,7 @@ app.get("/:id/execucoes", async (c) => {
 app.patch("/:id", async (c) => {
   const ctx = await exigirCtx(c, "automation.manage");
   const id = c.req.param("id");
+  if (!UUID_RE.test(id)) return c.json({ error: "Automação não encontrada" }, 404);
 
   try {
     const body = await c.req.json();
@@ -282,6 +289,7 @@ app.patch("/:id", async (c) => {
 app.delete("/:id", async (c) => {
   const ctx = await exigirCtx(c, "automation.manage");
   const id = c.req.param("id");
+  if (!UUID_RE.test(id)) return c.json({ error: "Automação não encontrada" }, 404);
 
   const [deleted] = await db
     .delete(automacoes)

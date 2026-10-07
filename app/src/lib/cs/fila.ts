@@ -320,7 +320,10 @@ export async function pulsoCarteira(organizacaoId: string, responsavelId?: strin
       (SELECT COUNT(*) FROM cs_renovacoes rn JOIN conta c ON c.empresa_id = rn.empresa_id
         WHERE rn.status IN ('ABERTA','EM_NEGOCIACAO'))::text AS renovacoes_proximas,
       (SELECT COUNT(*) FROM negocios n JOIN conta c ON c.empresa_id = n.empresa_id
-        WHERE n.commercial_motion = 'EXPANSION' AND n.etapa NOT IN ('ganho','perdido'))::text AS expansoes_abertas,
+        WHERE n.commercial_motion = 'EXPANSION'
+          -- QA pós-venda 06/10: as 161 expansões da carga têm etapa NULL, e
+          -- NULL NOT IN (...) é NULL (sem crase: crase em comentário SQL fecha o template literal): o card mostrava 0 com 161 abertas.
+          AND n.status NOT IN ('ganho','perdido') AND COALESCE(n.etapa, '') NOT IN ('ganho','perdido'))::text AS expansoes_abertas,
       (SELECT COUNT(*) FROM tarefas t JOIN conta c ON c.empresa_id = t.empresa_id
         WHERE t.concluida = false AND t.vence_em < now())::text AS tarefas_vencidas,
       (SELECT COUNT(*) FROM cs_marcos m JOIN conta c ON c.empresa_id = m.empresa_id

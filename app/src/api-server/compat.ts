@@ -63,6 +63,22 @@ export function errorHandler(err: unknown, c: Context) {
     const e = err as { status: number; message: string };
     return c.json({ error: e.message }, e.status as 400);
   }
+  // id malformado (22P02, ex. uuid inválido em rota pública) é erro do cliente,
+  // não do servidor: devolvia 500 e sujava o log como se fosse falha nossa.
+  const code = (err as { code?: string; cause?: { code?: string } } | null);
+  if (code?.code === "22P02" || code?.cause?.code === "22P02") {
+    return c.json({ error: "Identificador inválido" }, 400);
+  }
+  /* RegraDeNegocio é decisão do domínio, não defeito do servidor. Sem este
+     ramo, "Defina a família comercial antes de criar uma proposta" — que até
+     carrega a AÇÃO para resolver — chegava na tela como "Internal server
+     error" 500 (QA 06/10, criando proposta). O 422 aqui vale para TODA rota,
+     e leva junto o código e a ação, que é o que a tela usa para oferecer o
+     botão certo em vez de um alerta sem saída. */
+  const regra = err as { name?: string; codigo?: string; message?: string; acao?: unknown } | null;
+  if (regra && regra.name === "RegraDeNegocio" && typeof regra.codigo === "string") {
+    return c.json({ error: regra.message, codigo: regra.codigo, acao: regra.acao ?? null }, 422);
+  }
   console.error("[API Error]", err);
   return c.json({ error: "Internal server error" }, 500);
 }

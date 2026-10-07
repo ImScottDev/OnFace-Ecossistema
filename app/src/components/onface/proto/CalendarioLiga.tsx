@@ -268,7 +268,7 @@ class Logica extends React.Component<any, any> {
            deriva dos responsáveis das reuniões). Vazio é vazio, não "Camila
            Reis" e cia. — mesmo saneamento já feito no AtividadesLiga. */
         const equipe = (D.EQUIPE || []).concat([EU]).filter((x, i, a) => a.indexOf(x) === i);
-        const ini2 = D.iniciais || ((n) => (n || "").split(" ").map(x => x[0]).slice(0, 2).join("").toUpperCase());
+        const ini2 = D.iniciais || ((n) => (n || "").split(" ").map(x => [...x][0]).slice(0, 2).join("").toUpperCase());
         const SITS = [["A fazer", "A fazer", "#4a5560"], ["Em andamento", "Em andamento", "#2c5f9e"], ["Aguardando", "Aguardando", "#6e5420"], ["Feita", "Feito", "#1f7256"], ["Declinada", "Declinada", "#c2330f"]];
         const PR = { Alta: "#d93c1a", "Média": "#c9a45c", Baixa: "#8b949e" }, subs = Y.sub || [], coms = Y.comentarios || [], so = Y.src !== "l";
         const agoraTxt = () => { const d2 = new Date(); return "Hoje, " + pad(d2.getHours()) + ":" + pad(d2.getMinutes()); };

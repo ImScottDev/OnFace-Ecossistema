@@ -1,7 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 import {
   BarChart3, Bot, BriefcaseBusiness, Building2, CalendarDays, FileText, Headphones, Home,
-  LayoutDashboard, LifeBuoy, LineChart, ListChecks, Megaphone, PhoneCall,
+  LayoutDashboard, LifeBuoy, LineChart, ListChecks, PhoneCall,
   Repeat, Rocket, Sparkles, Users, Workflow, Zap,
 } from "lucide-react";
 
@@ -17,8 +17,8 @@ import {
  *    do fluxo comercial, e o handoff não o lista. A rota continua existindo e
  *    é alcançada por `/clientes/financeiro`, que herda o destino de Clientes.
  * 2. **Atendimento volta a ser área de primeiro nível** (não filho de
- *    Operação), e VENDAS volta a carregar Prospecção, Campanhas e
- *    Contatos & Empresas.
+ *    Operação), e VENDAS volta a carregar Prospecção e Contatos &
+ *    Empresas (Campanhas saiu do menu por decisão do Scott em 06/10).
  *
  * O handoff também tira Onboarding e Implantação da árvore visível: eles vivem
  * sob Pós-vendas, dentro de Operação. As rotas continuam existindo e acendem o
@@ -68,7 +68,6 @@ export const NAVEGACAO: AreaNav[] = [
       { label: "Pipeline", href: "/pipeline", icon: ListChecks },
       { label: "Propostas", href: "/propostas", icon: FileText },
       { label: "Prospecção", href: "/prospeccao", icon: Sparkles },
-      { label: "Campanhas", href: "/automacoes/campanhas", icon: Megaphone },
       { label: "Contatos & Empresas", href: "/contatos", icon: Users },
     ],
   },

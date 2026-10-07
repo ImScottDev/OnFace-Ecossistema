@@ -28,9 +28,10 @@ export async function GET(request: NextRequest) {
   const orgId = ctx.organizacaoId;
   const produto = request.nextUrl.searchParams.get("produto") || "todos";
 
-  // COALESCE: contrato antigo sem produto é venda AI (backfill 21/07 zerou, mas fica defensivo)
-  const prodCtr = produto === "pabx" ? sql` AND COALESCE(c.produto, 'ai') = 'pabx'`
-    : produto === "ai" ? sql` AND COALESCE(c.produto, 'ai') = 'ai'` : sql``;
+  // E9: a aba lê a tabela `assinaturas` (assinatura Stripe NÃO é contrato).
+  // Assinatura é sempre Stripe/AI; PABX não tem assinatura, então a aba PABX
+  // fica vazia em vez de mostrar contrato como se fosse assinatura.
+  const prodAss = produto === "pabx" ? sql` AND false` : sql``;
   const prodFat = produto === "pabx" ? sql` AND f.origem = 'pabx'`
     : produto === "ai" ? sql` AND f.origem = 'stripe'` : sql``;
 
@@ -40,55 +41,52 @@ export async function GET(request: NextRequest) {
   // KPIs (faturas = fonte de atraso; contratos = base ativa)
   const kpis = (await db.execute(sql`
     SELECT
-      (SELECT count(*) FROM contratos c WHERE (c.organizacao_id = ${orgId} OR c.organizacao_id IS NULL) AND c.status = 'ativo'${prodCtr})::int AS ativos,
-      (SELECT count(*) FROM contratos c WHERE (c.organizacao_id = ${orgId} OR c.organizacao_id IS NULL)${prodCtr})::int AS total,
+      (SELECT count(*) FROM assinaturas a WHERE a.organizacao_id = ${orgId} AND a.status IN ('active', 'trialing', 'past_due')${prodAss})::int AS ativos,
+      (SELECT count(*) FROM assinaturas a WHERE a.organizacao_id = ${orgId}${prodAss})::int AS total,
       (SELECT COALESCE(sum(f.valor), 0) FROM faturas f WHERE (f.organizacao_id = ${orgId} OR f.organizacao_id IS NULL) AND f.status IN ('aberta', 'uncollectible') AND f.emitida_em >= date_trunc('month', now())${prodFat})::float AS valor_atraso,
       (SELECT COALESCE(sum(f.valor), 0) FROM faturas f WHERE (f.organizacao_id = ${orgId} OR f.organizacao_id IS NULL) AND f.status IN ('aberta', 'uncollectible') AND f.emitida_em < date_trunc('month', now())${prodFat})::float AS nao_cobrado,
       (SELECT count(DISTINCT f.lead_id) FROM faturas f WHERE (f.organizacao_id = ${orgId} OR f.organizacao_id IS NULL) AND f.status IN ('aberta', 'uncollectible') AND f.emitida_em >= date_trunc('month', now())${prodFat})::int AS clientes_atraso,
-      (SELECT count(*) FROM contratos c WHERE (c.organizacao_id = ${orgId} OR c.organizacao_id IS NULL) AND c.status = 'churned' AND c.finalizado_at >= date_trunc('month', now())${prodCtr})::int AS churns_mes,
+      (SELECT count(*) FROM assinaturas a WHERE a.organizacao_id = ${orgId} AND a.status = 'canceled' AND a.cancelada_em >= date_trunc('month', now())${prodAss})::int AS churns_mes,
       (SELECT COALESCE(sum(f.valor), 0) FROM faturas f WHERE (f.organizacao_id = ${orgId} OR f.organizacao_id IS NULL) AND f.status = 'emitida' AND f.competencia >= (date_trunc('month', now()) - interval '1 month')${prodFat})::float AS em_aberto_wevy
   `)) as unknown as {
     ativos: number; total: number; valor_atraso: number; nao_cobrado: number; clientes_atraso: number; churns_mes: number;
     em_aberto_wevy: number;
   }[];
 
-  // UMA LINHA POR CONTRATO
+  // UMA LINHA POR ASSINATURA (a chave segue se chamando contratoId no JSON
+  // para não quebrar a tela; o valor é o id da assinatura).
   const contratosRows = (await db.execute(sql`
     SELECT
-      c.id AS contrato_id,
+      a.id AS contrato_id,
       l.id AS lead_id, l.nome, l.email, e.nome AS empresa,
-      c.produto,
-      COALESCE(NULLIF(c.descricao, ''), CASE WHEN c.produto = 'pabx' THEN 'Contrato PABX' ELSE 'Assinatura Callface AI' END) AS contrato,
-      c.mrr::float AS valor,
-      c.status AS contrato_status,
-      c.vencimento,
-      (substring(c.descricao from 'prazo (\\d+)'))::int AS prazo_meses,
+      'ai' AS produto,
+      COALESCE(NULLIF(a.produto, ''), 'Assinatura Callface AI') AS contrato,
+      a.mrr::float AS valor,
+      a.status AS contrato_status,
+      a.current_period_end AS vencimento,
+      NULL::int AS prazo_meses,
       fat.pagas, fat.emitidas, fat.em_atraso, fat.nao_cobrado, fat.em_aberto_wevy, fat.pago_mes, fat.total_pago, fat.ultimo_pagamento, fat.ultima_atividade, fat.dias_atraso
-    FROM contratos c
-    JOIN leads l ON l.id = c.lead_id
-    LEFT JOIN empresas e ON e.id = l.empresa_id
+    FROM assinaturas a
+    LEFT JOIN leads l ON l.id = a.lead_id
+    LEFT JOIN empresas e ON e.id = COALESCE(a.empresa_id, l.empresa_id)
     LEFT JOIN LATERAL (
       SELECT
         count(*) FILTER (WHERE f.status = 'paga')::int AS pagas,
         count(*)::int AS emitidas,
         COALESCE(sum(f.valor) FILTER (WHERE f.status IN ('aberta', 'uncollectible') AND f.emitida_em >= date_trunc('month', now())), 0)::float AS em_atraso,
         COALESCE(sum(f.valor) FILTER (WHERE f.status IN ('aberta', 'uncollectible') AND f.emitida_em < date_trunc('month', now())), 0)::float AS nao_cobrado,
-        count(*) FILTER (WHERE f.status = 'emitida' AND f.competencia >= (date_trunc('month', now()) - interval '1 month'))::int AS em_aberto_wevy,
+        0::int AS em_aberto_wevy,
         count(*) FILTER (WHERE f.status = 'paga' AND f.paga_em >= date_trunc('month', now()))::int AS pago_mes,
         COALESCE(sum(f.valor) FILTER (WHERE f.status = 'paga'), 0)::float AS total_pago,
         max(f.paga_em) AS ultimo_pagamento,
         max(GREATEST(COALESCE(f.paga_em, 'epoch'), COALESCE(f.emitida_em, 'epoch'))) AS ultima_atividade,
         COALESCE(max(EXTRACT(day FROM now() - COALESCE(f.vencimento, f.emitida_em))) FILTER (WHERE f.status IN ('aberta', 'uncollectible')), 0)::int AS dias_atraso
       FROM faturas f
-      WHERE f.lead_id = c.lead_id
-        AND ((COALESCE(c.produto, 'ai') = 'pabx' AND f.origem = 'pabx') OR (COALESCE(c.produto, 'ai') <> 'pabx' AND f.origem = 'stripe'))
-        AND (c.stripe_subscription_id IS NULL OR f.assinatura_id IS NULL OR f.assinatura_id IN (
-          SELECT a.id FROM assinaturas a WHERE a.stripe_subscription_id = c.stripe_subscription_id
-        ))
+      WHERE f.assinatura_id = a.id
     ) fat ON true
-    WHERE (c.organizacao_id = ${orgId} OR c.organizacao_id IS NULL)${prodCtr}
-      AND c.status = 'ativo'
-    ORDER BY COALESCE(fat.em_atraso, 0) DESC, COALESCE(fat.nao_cobrado, 0) DESC, c.mrr DESC NULLS LAST
+    WHERE a.organizacao_id = ${orgId}${prodAss}
+      AND a.status IN ('active', 'trialing', 'past_due', 'unpaid')
+    ORDER BY COALESCE(fat.em_atraso, 0) DESC, COALESCE(fat.nao_cobrado, 0) DESC, a.mrr DESC NULLS LAST
     LIMIT 1000
   `)) as unknown as Record<string, unknown>[];
 

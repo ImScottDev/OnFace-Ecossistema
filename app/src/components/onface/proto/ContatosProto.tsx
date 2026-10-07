@@ -26,7 +26,7 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
-import type { LinhaContato, TotaisContatos } from "@/lib/contatos/tela-contatos";
+import type { LinhaContato, TotaisContatos, PorRelacionamento } from "@/lib/contatos/tela-contatos";
 import type { Resultado } from "@/lib/vendas/resultado";
 import { urlAtendimento } from "@/components/onface/vendas/atendimento";
 import { ContatosLiga } from "./ContatosLiga";
@@ -88,11 +88,12 @@ function ultimaInteracao(iso: string | null, agora: number): { t: string; o: num
  * comercial manda. "Prospect" não é derivável do banco hoje — nenhum registro
  * real cai nele, e isso é melhor do que chutar.
  */
+const ROTULO_REL: Record<string, string> = { cliente: "Cliente", lead: "Lead", prospect: "Prospect", contato: "Contato" };
+
 function relDaPessoa(c: LinhaContato): string {
-  if (c.relEmpresa === "cliente") return "Cliente";
-  if (c.negocios.length) return "Lead";
-  if (c.estagio === "nutricao" || c.estagio === "desqualificado") return "Contato";
-  return c.leadId ? "Lead" : "Contato";
+  // A regra mora no banco (`tela-contatos.ts`), uma só, para a linha e para a
+  // contagem do filtro baterem. Aqui só se traduz o rótulo.
+  return ROTULO_REL[c.relacionamento] ?? "Contato";
 }
 
 function relDaEmpresa(c: LinhaContato, pessoas: string[]): string {
@@ -302,9 +303,10 @@ class ContatosLigada extends ContatosLiga {
 
 /* ── A tela ────────────────────────────────────────────────────────────── */
 
-export function ContatosProto({ linhas, totais, responsaveis, busca, agora, acoes }: {
+export function ContatosProto({ linhas, totais, porRelacionamento, responsaveis, busca, agora, acoes }: {
   linhas: LinhaContato[];
   totais: TotaisContatos;
+  porRelacionamento: PorRelacionamento;
   responsaveis: Array<{ id: string; nome: string }>;
   busca: string;
   agora: number;
@@ -501,6 +503,7 @@ export function ContatosProto({ linhas, totais, responsaveis, busca, agora, acoe
         dados={{}}
         catalogo={catalogo}
         totais={totais}
+        porRelacionamento={porRelacionamento}
         busca={busca}
         agora={agora}
         abrir={abrir}

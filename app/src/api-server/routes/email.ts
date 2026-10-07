@@ -20,6 +20,21 @@ import { createEmailOAuthState, readEmailOAuthState } from "@/lib/email/oauth-st
 
 const app = new Hono();
 
+// Qualquer :id desta família que não seja uuid estourava no Postgres (500). Um porteiro só, em vez de
+// um `if` por rota: contas/templates/sequencias[/execucoes]/:id e /email/:id. "thread" usa id do provedor
+// (não é uuid) e "auth"/"send"/"mark-all-read" são literais — ficam de fora.
+app.use("/email/*", async (c, next) => {
+  const [, , s1, s2, s3] = new URL(c.req.url).pathname.replace(/^\/api/, "").split("/");
+  const id = !s1 ? null
+    : ["thread", "auth", "send", "mark-all-read"].includes(s1) ? null
+    : ["contas", "templates", "sequencias"].includes(s1) ? (s2 === "execucoes" ? s3 : s2)
+    : s1;
+  if (id && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+    return c.json({ error: "Nao encontrado" }, 404);
+  }
+  await next();
+});
+
 // ─── GET /email — list email conversations ──────────────────────────────────
 // Groups emails by thread_id (or by counterpart address if no thread).
 // Shows ALL emails — with or without a lead — like WhatsApp conversations.
@@ -1176,6 +1191,7 @@ app.get("/email/auth/microsoft/callback", async (c) => {
 app.get("/email/:id", async (c) => {
   const ctx = await getCtx(c);
   const id = c.req.param("id");
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) return c.json({ error: "Email não encontrado" }, 404); // uuid inválido estourava 500
 
   const [email] = await db.select()
     .from(emails)
@@ -1196,6 +1212,7 @@ const emailUpdateSchema = z.object({
 app.patch("/email/:id", async (c) => {
   const ctx = await getCtx(c);
   const id = c.req.param("id");
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) return c.json({ error: "Email não encontrado" }, 404); // uuid inválido estourava 500
 
   try {
     const body = await c.req.json();

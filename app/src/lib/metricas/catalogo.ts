@@ -65,35 +65,42 @@ export const CATALOGO: DefinicaoMetrica[] = [
     tipo: "SNAPSHOT",
     unidade: "BRL",
     descricao:
-      "Receita recorrente mensal dos serviços ATIVOS neste instante. É o retrato de hoje, " +
-      "não a soma do que já foi vendido.",
+      "Receita recorrente (natureza MRR) faturada na última competência fechada. É o mesmo " +
+      "número da Carteira e o que o Scott confere na planilha de faturamento do mês.",
     fonte:
-      "servicos_canonicos com commercial_lifecycle = ACTIVE, revenue_nature = MRR e " +
-      "portfolio_included = true, somando current_recurring_value. É a fonte canônica " +
-      "única do Módulo 11.",
+      "cliente_receita_mensal na maior competência, revenue_nature = MRR (regra do Scott, " +
+      "06/10: MRR oficial = faturado no último fechamento). servicos_canonicos continua " +
+      "como leitura de recorrência contratada, mas deixou de ser o MRR exibido: as duas " +
+      "fontes davam R$ 385 mil x R$ 476 mil e cada tela mostrava uma.",
     naoInclui:
-      "setup, venda avulsa, uso pontual, hardware e projeto — o Módulo 11 é explícito que " +
-      "nada disso entra em MRR. Também não inclui serviço CHURNED ou SUPERSEDED, nem " +
-      "serviço marcado fora do portfólio. Hoje o filtro de portfólio exclui exatamente " +
-      "um serviço com valor (R$ 1.000, família UNKNOWN, origem Stripe) e 70 com valor " +
-      "zero; a exclusão é decisão registrada no dado, não invenção desta métrica.",
+      "setup, venda avulsa, débito recuperado e projeto (naturezas SETUP/AVULSO/" +
+      "DEBITO_RECUPERADO da mesma tabela), que aparecem separados como faturamento.",
+    // + clientes vendidos DEPOIS do fechamento: até a competência deles fechar,
+    // entram pela assinatura ativa (mesma regra de lib/clientes/carteira-desenho.ts).
     valor: (org) => sql`
-      SELECT COALESCE(sum(s.current_recurring_value), 0)::numeric AS valor
-        FROM servicos_canonicos s
-       WHERE s.organizacao_id = ${org}::uuid
-         AND s.commercial_lifecycle = 'ACTIVE'
-         AND s.revenue_nature = 'MRR'
-         AND s.portfolio_included = true`,
+      WITH uc AS (SELECT max(competencia) AS c FROM cliente_receita_mensal WHERE organizacao_id = ${org}::uuid)
+      SELECT (
+        SELECT COALESCE(sum(r.valor), 0) FROM cliente_receita_mensal r, uc
+         WHERE r.organizacao_id = ${org}::uuid AND r.revenue_nature = 'MRR' AND r.competencia = uc.c
+      ) + (
+        SELECT COALESCE(sum(a.mrr), 0) FROM assinaturas a
+         WHERE a.organizacao_id = ${org}::uuid AND a.status = 'active' AND a.empresa_id IS NOT NULL
+           AND a.empresa_id IN (SELECT empresa_id FROM clientes WHERE organizacao_id = ${org}::uuid)
+           AND NOT EXISTS (SELECT 1 FROM cliente_receita_mensal r2, uc
+                            WHERE r2.organizacao_id = ${org}::uuid AND r2.empresa_id = a.empresa_id
+                              AND r2.competencia = uc.c AND r2.revenue_nature = 'MRR')
+      )::numeric AS valor`,
     drill: (org) => sql`
-      SELECT s.id::text, e.nome AS empresa, s.canonical_product AS produto,
-             s.service_family AS familia, s.current_recurring_value::numeric AS valor
-        FROM servicos_canonicos s
-        LEFT JOIN empresas e ON e.id = s.empresa_id
-       WHERE s.organizacao_id = ${org}::uuid
-         AND s.commercial_lifecycle = 'ACTIVE'
-         AND s.revenue_nature = 'MRR'
-         AND s.portfolio_included = true
-       ORDER BY s.current_recurring_value DESC NULLS LAST`,
+      SELECT r.empresa_id::text AS id, e.nome AS empresa, NULL::text AS produto,
+             NULL::text AS familia, sum(r.valor)::numeric AS valor
+        FROM cliente_receita_mensal r
+        LEFT JOIN empresas e ON e.id = r.empresa_id
+       WHERE r.organizacao_id = ${org}::uuid
+         AND r.revenue_nature = 'MRR'
+         AND r.competencia = (SELECT max(competencia) FROM cliente_receita_mensal
+                               WHERE organizacao_id = ${org}::uuid)
+       GROUP BY r.empresa_id, e.nome
+       ORDER BY 5 DESC NULLS LAST`,
   },
   {
     codigo: "booking_ganho",

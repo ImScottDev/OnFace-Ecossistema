@@ -224,7 +224,7 @@ class Logica extends React.Component<any, any> {
   renderVals() {
     const S = this.state, D = this.dadosDoProto || {}, Es = this.E;
     const equipe = D.EQUIPE || ["Camila Reis", "Diego Nunes", "Ana Vitória"];
-    const ini = D.iniciais || (s => (s || "").split(" ").map(p => p[0]).slice(0, 2).join("").toUpperCase());
+    const ini = D.iniciais || (s => (s || "").split(" ").map(p => [...p][0]).slice(0, 2).join("").toUpperCase());
     const slug = D.slug || (x => x);
     const ROT = { entrada: "Entrada", diagnostico: "Diagnóstico", proposta: "Proposta", negociacao: "Negociação", ganho: "Ganho", perdido: "Perdido" };
     const COR = { entrada: "#4a5560", diagnostico: "#2c5f9e", proposta: "#9c7a2e", negociacao: "#fe4f2b", ganho: "#1f7256", perdido: "#8b949e" };

@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getTenantContext } from "@/lib/auth/tenant";
+import { passoDaCadenciaPorLead } from "@/lib/vendas/pre-vendas";
 import { boardPreVendas, ehView, type ViewPreVendas } from "@/lib/vendas/consultas";
 /* A tela é o desenho do Claude Design, convertido por máquina — não uma
    recriação. `PreVendasQuadro` era a versão feita à mão e saiu em 24/09:
@@ -71,9 +72,12 @@ export async function PreVendasPage({ searchParams }: {
     view, usuarioId: ctx.userId, porColuna,
   });
 
+  const cadenciaPorLead = await passoDaCadenciaPorLead(ctx.organizacaoId, dados.colunas.flatMap((col) => col.cards.map((c) => c.leadId)));
+
   return (
     <PreVendasProto
       dados={dados}
+      cadenciaPorLead={cadenciaPorLead}
       acoes={{
         moverEtapa: acaoMoverEtapa,
         qualificar: acaoQualificar,

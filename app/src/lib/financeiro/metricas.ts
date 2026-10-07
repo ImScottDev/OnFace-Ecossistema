@@ -82,15 +82,38 @@ export interface MrrAtual {
  * histórico está fora do escopo; o que não pode é somar a mesma assinatura duas
  * vezes na leitura).
  */
+
+/**
+ * MRR OFICIAL por família (regra do Scott, 06/10): o MRR faturado na última
+ * competência fechada (cliente_receita_mensal, natureza MRR) + a assinatura
+ * ativa de quem virou cliente DEPOIS do fechamento e ainda não tem linha no
+ * faturamento. É a mesma conta da métrica `mrr_atual` (lib/metricas/catalogo.ts)
+ * e da Carteira; antes o Financeiro somava servicos_canonicos e mostrava
+ * R$ 385 mil enquanto Início e Carteira mostravam R$ 476 mil.
+ */
+function mrrOficialPorFamilia(orgId: string) {
+  return db.execute<{ familia: string | null; mrr: string; contratos: string }>(sql`
+    WITH uc AS (SELECT max(competencia) AS c FROM cliente_receita_mensal WHERE organizacao_id = ${orgId}),
+    linhas AS (
+      SELECT r.service_family AS familia, r.valor AS mrr, r.empresa_id
+        FROM cliente_receita_mensal r, uc
+       WHERE r.organizacao_id = ${orgId} AND r.revenue_nature = 'MRR' AND r.competencia = uc.c
+      UNION ALL
+      SELECT NULL, a.mrr, a.empresa_id
+        FROM assinaturas a
+       WHERE a.organizacao_id = ${orgId} AND a.status = 'active' AND a.empresa_id IS NOT NULL
+         AND a.empresa_id IN (SELECT empresa_id FROM clientes WHERE organizacao_id = ${orgId})
+         AND NOT EXISTS (SELECT 1 FROM cliente_receita_mensal r2, uc
+                          WHERE r2.organizacao_id = ${orgId} AND r2.empresa_id = a.empresa_id
+                            AND r2.competencia = uc.c AND r2.revenue_nature = 'MRR')
+    )
+    SELECT familia, COALESCE(SUM(mrr), 0)::text AS mrr, COUNT(DISTINCT empresa_id)::text AS contratos
+      FROM linhas GROUP BY 1 ORDER BY 2 DESC`);
+}
+
 export async function getMrrAtual(orgId: string): Promise<MrrAtual> {
   const [canonico, contratado, porProduto] = await Promise.all([
-    db.execute<{ mrr: string }>(sql`
-      SELECT COALESCE(SUM(current_recurring_value), 0)::text AS mrr
-        FROM servicos_canonicos
-       WHERE organizacao_id = ${orgId}
-         AND portfolio_included = true
-         AND revenue_nature = 'MRR'
-         AND commercial_lifecycle = 'ACTIVE'`),
+    mrrOficialPorFamilia(orgId),
     // DISTINCT ON pela assinatura: contrato duplicado pela mesma subscription
     // entra uma vez só. Contrato sem assinatura (boleto/manual) cai no id.
     db.execute<{ mrr: string; contratos: string }>(sql`
@@ -106,19 +129,11 @@ export async function getMrrAtual(orgId: string): Promise<MrrAtual> {
     // NUNCA vale 'pabx', então o `COALESCE(produto,'ai')` que estava aqui
     // reportava os R$ 368.049,69 de PABX como receita de Callface AI e deixava
     // a aba PABX zerada. A quebra real está em `service_family`.
-    db.execute<{ familia: string | null; mrr: string; contratos: string }>(sql`
-      SELECT service_family AS familia, COALESCE(SUM(current_recurring_value), 0)::text AS mrr,
-             COUNT(*)::text AS contratos
-        FROM servicos_canonicos
-       WHERE organizacao_id = ${orgId}
-         AND portfolio_included = true
-         AND revenue_nature = 'MRR'
-         AND commercial_lifecycle = 'ACTIVE'
-       GROUP BY 1 ORDER BY 2 DESC`),
+    mrrOficialPorFamilia(orgId),
   ]);
 
   return {
-    total: round2(Number(canonico[0]?.mrr ?? 0)),
+    total: round2(canonico.reduce((a, l) => a + Number(l.mrr), 0)),
     totalContratado: round2(Number(contratado[0]?.mrr ?? 0)),
     contratosAtivos: Number(contratado[0]?.contratos ?? 0),
     porProduto: agruparPorProduto(
@@ -305,7 +320,10 @@ export async function getAging(orgId: string, produto?: string): Promise<{ faixa
       ELSE '60+' END AS faixa,
       count(*)::int AS count, COALESCE(sum(f.valor), 0)::float AS valor
     FROM faturas f
-    WHERE ${orgFilter("f.organizacao_id", orgId)} AND f.status IN ('aberta', 'uncollectible')${prodSql}
+    -- Só VENCIDAS: fatura aberta com vencimento no futuro não está em atraso, e
+    -- com intervalo negativo caía na faixa 0-15 inflando o aging (mesma regra de resumo-pagina).
+    WHERE ${orgFilter("f.organizacao_id", orgId)} AND f.status IN ('aberta', 'uncollectible')
+      AND COALESCE(f.vencimento, f.emitida_em) < now()${prodSql}
     GROUP BY 1
   `)) as unknown as AgingFaixa[];
   const ordem = ["0-15", "16-30", "31-60", "60+"];
@@ -351,7 +369,9 @@ export async function getFilaCobranca(orgId: string, limite = 100): Promise<Fila
     LEFT JOIN leads l ON l.id = f.lead_id
     LEFT JOIN empresas e ON e.id = COALESCE(l.empresa_id, f.empresa_id)
     LEFT JOIN usuarios u ON u.id = f.acionado_por
+    -- Só vencidas: fatura que ainda não venceu não entra na fila de cobrança.
     WHERE ${orgFilter("f.organizacao_id", orgId)} AND f.status IN ('aberta', 'uncollectible')
+      AND COALESCE(f.vencimento, f.emitida_em) < now()
     ORDER BY
       -- prioridade: atraso recente (recuperável) com valor alto primeiro; 60+ vai pro fim
       CASE WHEN EXTRACT(day FROM now() - COALESCE(f.vencimento, f.emitida_em)) <= 30 THEN 0 ELSE 1 END,
@@ -572,15 +592,7 @@ export async function getFluxoMes(orgId: string, produto?: string): Promise<Flux
   const [mrrPorFamilia, row] = await Promise.all([
     // MRR pela FONTE CANÔNICA, a mesma de `getMrrAtual`. Somar contrato aqui
     // reabriria a divergência que o refactor de 14/09 fechou.
-    db.execute<{ familia: string | null; mrr: string; n: string }>(sql`
-      SELECT service_family AS familia, COALESCE(SUM(current_recurring_value), 0)::text AS mrr,
-             COUNT(*)::text AS n
-        FROM servicos_canonicos
-       WHERE organizacao_id = ${orgId}
-         AND portfolio_included = true
-         AND revenue_nature = 'MRR'
-         AND commercial_lifecycle = 'ACTIVE'
-       GROUP BY 1`),
+    mrrOficialPorFamilia(orgId).then((ls) => ls.map((l) => ({ familia: l.familia, mrr: l.mrr, n: l.contratos }))),
     db.execute<{ faturado: string; recebido: string; aberto: string; rec_n: string; rec_valor: string }>(sql`
       SELECT
         (SELECT COALESCE(sum(f.valor), 0) FROM faturas f

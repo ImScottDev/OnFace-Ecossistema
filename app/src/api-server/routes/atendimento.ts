@@ -26,6 +26,14 @@ import { dispararAutomacoes } from "@/lib/crm/automacao-engine";
  */
 const app = new Hono();
 
+// :id que não é uuid estourava no Postgres (500) em ação/tags da conversa; aqui vira 404.
+app.use("/atendimento/conversas/:id/*", async (c, next) => {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(c.req.param("id"))) {
+    return c.json({ error: "Conversa nao encontrada" }, 404);
+  }
+  await next();
+});
+
 /**
  * Achado real 24/08 (Kauã, testando ao vivo: "essa Rhay tá no CRM e é da
  * G30" — a conversa mostrava "sem lead vinculado"): `contatos.leadId` só
@@ -134,11 +142,12 @@ app.get("/atendimento/conversas", async (c) => {
   // sem duplicar a regra de "todas = fila de atenção" num segundo lugar
   // (risco real de dessincronia, já visto nesta sessão noutro campo). Custo
   // extra é aceitável: são as mesmas queries indexadas que "todas" já fazia.
-  const [whatsappItens, emailItens, ligacaoItens] = await Promise.all([
+  const [wpp, eml, lig] = await Promise.all([
     buscarWhatsapp({ ctx, view, search, effectiveUserId, limit, leadIdFiltro }),
     buscarEmail({ ctx, view, search, effectiveUserId, limit, leadIdFiltro }),
     buscarLigacao({ ctx, view, search, effectiveUserId, limit, leadIdFiltro }),
   ]);
+  const whatsappItens = wpp.itens, emailItens = eml.itens, ligacaoItens = lig.itens;
 
   // Badge Lead/Cliente na lista (24/08, Kauã: "aqui minimalista precisa ter
   // uma tag... se é lead, cliente") — 1 query batendo os leadId já
@@ -159,11 +168,16 @@ app.get("/atendimento/conversas", async (c) => {
   }
 
   const todasFiltrado = [...whatsappItens, ...emailItens, ...ligacaoItens].filter((m) => m.tipo === "ligacao" || m.naoLidas > 0);
+  /* Cada aba conta o TOTAL da sua fonte, não a página que coube no `limit` —
+     com limit=5 a aba dizia "5" e com limit=100 dizia "100", tendo 1.947
+     conversas no banco (QA 06/10). "Todas" é a fila de atenção (ligação ou não
+     lida), regra que mistura as três fontes, e continua derivada da página: ela
+     só fica exata quando a página cobre tudo. */
   const contagens = {
     todas: todasFiltrado.length,
-    whatsapp: whatsappItens.length,
-    email: emailItens.length,
-    ligacao: ligacaoItens.length,
+    whatsapp: wpp.total,
+    email: eml.total,
+    ligacao: lig.total,
   };
 
   const porCanal: Record<string, ItemUnificado[]> = { whatsapp: whatsappItens, email: emailItens, ligacao: ligacaoItens };
@@ -180,7 +194,7 @@ app.get("/atendimento/conversas", async (c) => {
 async function buscarWhatsapp(opts: {
   ctx: Awaited<ReturnType<typeof getCtx>>; view: string; search: string | null;
   effectiveUserId: string; limit: number; leadIdFiltro?: string | null;
-}): Promise<ItemUnificado[]> {
+}): Promise<{ itens: ItemUnificado[]; total: number }> {
   const { ctx, view, search, effectiveUserId, limit, leadIdFiltro } = opts;
 
   const conditions = [eq(contatos.organizacaoId, ctx.organizacaoId), eq(contatos.canal, "whatsapp")];
@@ -241,12 +255,20 @@ async function buscarWhatsapp(opts: {
     .orderBy(sql`${contatos.ultimaMsgAt} DESC NULLS LAST`)
     .limit(limit);
 
+  // Total REAL da aba: COUNT com as MESMAS condições da lista. A contagem saía
+  // de `rows.length`, ou seja, do tamanho da página — com limit=5 a aba dizia
+  // "5" e com limit=100 dizia "100", tendo 1.947 conversas no banco (QA 06/10).
+  const [{ n: total }] = await db.select({ n: sql<number>`count(*)::int` })
+    .from(contatos)
+    .leftJoin(aiSdrContatoState, eq(aiSdrContatoState.contatoId, contatos.id))
+    .where(and(...conditions));
+
   // Fallback por telefone só pra quem não tem leadId direto — evita a
   // query de leads inteira quando não há nenhum caso pra enriquecer.
   const semLeadDireto = rows.some((r) => !r.leadId && r.telefone);
   const porTelefone = semLeadDireto ? await mapaLeadPorTelefone(ctx.organizacaoId) : null;
 
-  return rows.map((r) => ({
+  const itens = rows.map((r) => ({
     id: r.id,
     tipo: "whatsapp" as const,
     nome: r.nome,
@@ -266,6 +288,8 @@ async function buscarWhatsapp(opts: {
     snoozedUntil: r.snoozedUntil ? r.snoozedUntil.toISOString() : null,
     isCliente: false,
   }));
+
+  return { itens, total };
 }
 
 const acaoConversaSchema = z.object({
@@ -293,6 +317,14 @@ app.post("/atendimento/conversas/:id/acao", async (c) => {
   const alvo = parsed.data.usuarioId ?? ctx.userId;
   if (["claim", "transfer"].includes(acao) && !isAdmin && alvo !== ctx.userId) {
     return c.json({ error: "Sem permissao para transferir para outro usuario" }, 403);
+  }
+
+  /* O alvo da transferência precisa ser usuário DESTA org: uuid inexistente estourava
+     FK (500) e uuid de outra org atribuiria a conversa a quem não pode vê-la. */
+  if (["claim", "transfer"].includes(acao) && alvo !== ctx.userId) {
+    const [u] = await db.select({ id: usuarios.id }).from(usuarios)
+      .where(and(eq(usuarios.id, alvo), eq(usuarios.organizacaoId, ctx.organizacaoId))).limit(1);
+    if (!u) return c.json({ error: "Usuario nao encontrado" }, 404);
   }
 
   const agora = new Date();
@@ -350,7 +382,11 @@ app.post("/atendimento/conversas/:id/acao", async (c) => {
       // mesma transição não publica de novo; uma transição diferente sim.
       idempotencyKey: acao === "snooze"
         ? `contato:${contatoId}:snooze:${(patch.snoozedUntil as Date).getTime()}`
-        : `contato:${contatoId}:${acao}:${alvo ?? "nenhum"}`,
+        : `contato:${contatoId}:${acao}:${alvo ?? "nenhum"}:${contato.updatedAt ? new Date(contato.updatedAt).getTime() : 0}`,
+      // ^ sufixo = versão anterior da conversa (updatedAt lido antes do update). Sem ele,
+      //   fechar -> reabrir -> fechar gerava a MESMA chave do 1o fechamento e o 2o
+      //   ConversationClosed era engolido pela dedup. Duplo clique simultâneo lê o
+      //   mesmo updatedAt, então continua deduplicando.
     });
 
     /* Transferência avisa o novo responsável no sininho (o evento sozinho não
@@ -456,20 +492,20 @@ app.delete("/atendimento/conversas/:id/tags/:labelId", async (c) => {
 async function buscarEmail(opts: {
   ctx: Awaited<ReturnType<typeof getCtx>>; view: string; search: string | null;
   effectiveUserId: string; limit: number; leadIdFiltro?: string | null;
-}): Promise<ItemUnificado[]> {
+}): Promise<{ itens: ItemUnificado[]; total: number }> {
   const { ctx, view, search, effectiveUserId, limit, leadIdFiltro } = opts;
 
   // E-mail não tem conceito de "responsável"/"não atribuído" (é por conta
   // conectada, não por atribuição manual) — "não atribuídos" não existe pra
   // esse canal, retorna vazio nesse view em vez de inventar um significado.
-  if (view === "nao_atribuidos" && !leadIdFiltro) return [];
+  if (view === "nao_atribuidos" && !leadIdFiltro) return { itens: [], total: 0 };
 
   let conditions: SQL[];
   if (leadIdFiltro) {
     // Deep link: acha o e-mail DESSE lead na org inteira (qualquer conta),
     // não só a conta do usuário atual (ver comentário na rota).
     const contasOrg = await db.select({ id: emailContas.id }).from(emailContas).where(eq(emailContas.organizacaoId, ctx.organizacaoId));
-    if (contasOrg.length === 0) return [];
+    if (contasOrg.length === 0) return { itens: [], total: 0 };
     conditions = [inArray(emails.contaId, contasOrg.map((cta) => cta.id)), eq(emails.leadId, leadIdFiltro)];
   } else {
     // Mesma privacidade do WhatsApp: cada um só vê os e-mails da própria conta
@@ -477,7 +513,7 @@ async function buscarEmail(opts: {
     // a caixa de entrada de outro vendedor.
     const contaConds = [eq(emailContas.organizacaoId, ctx.organizacaoId), eq(emailContas.usuarioId, effectiveUserId)];
     const contas = await db.select({ id: emailContas.id, usuarioId: emailContas.usuarioId }).from(emailContas).where(and(...contaConds));
-    if (contas.length === 0) return [];
+    if (contas.length === 0) return { itens: [], total: 0 };
     conditions = [inArray(emails.contaId, contas.map((cta) => cta.id))];
   }
   if (search) conditions.push(or(ilike(emails.assunto, `%${search}%`), ilike(emails.de, `%${search}%`), ilike(emails.para, `%${search}%`))!);
@@ -512,7 +548,9 @@ async function buscarEmail(opts: {
     else if (!row.lido) existing.naoLidas++;
   }
 
-  return Array.from(threadMap.values())
+  // Total do e-mail é o número de THREADS antes do corte — a aba contava a
+  // página (QA 06/10: limit=5 mostrava "5", limit=100 mostrava "100").
+  const itens = Array.from(threadMap.values())
     .slice(0, limit)
     .map((r) => ({
       id: r.id,
@@ -534,17 +572,19 @@ async function buscarEmail(opts: {
       snoozedUntil: null,
       isCliente: false,
     }));
+
+  return { itens, total: threadMap.size };
 }
 
 async function buscarLigacao(opts: {
   ctx: Awaited<ReturnType<typeof getCtx>>; view: string; search: string | null;
   effectiveUserId: string; limit: number; leadIdFiltro?: string | null;
-}): Promise<ItemUnificado[]> {
+}): Promise<{ itens: ItemUnificado[]; total: number }> {
   const { ctx, view, search, effectiveUserId, limit, leadIdFiltro } = opts;
 
   // Ligação não tem "não atribuído" — toda ligação já tem o vendedor que
   // atendeu (usuarioId), não existe fila de ligação sem dono.
-  if (view === "nao_atribuidos" && !leadIdFiltro) return [];
+  if (view === "nao_atribuidos" && !leadIdFiltro) return { itens: [], total: 0 };
 
   const conditions = leadIdFiltro
     // Deep link: todas as ligações DESSE lead na org, não só as que o
@@ -581,7 +621,13 @@ async function buscarLigacao(opts: {
     .orderBy(desc(sql`coalesce(${ligacoes.callDate}, ${ligacoes.createdAt})`))
     .limit(limit);
 
-  return rows.map((r) => {
+  // Mesmo motivo do WhatsApp: a aba contava a página, não as ligações.
+  const [{ n: total }] = await db.select({ n: sql<number>`count(*)::int` })
+    .from(ligacoes)
+    .leftJoin(leads, eq(leads.id, ligacoes.leadId))
+    .where(and(...conditions));
+
+  const itens = rows.map((r) => {
     const min = Math.floor((r.duracaoSegundos ?? 0) / 60);
     const seg = (r.duracaoSegundos ?? 0) % 60;
     return {
@@ -605,6 +651,8 @@ async function buscarLigacao(opts: {
       isCliente: false,
     };
   });
+
+  return { itens, total };
 }
 
 // ─── GET /atendimento/contatos-quentes ──────────────────────────────

@@ -113,10 +113,11 @@ class Logica extends React.Component<any, any> {
   componentDidMount() {
     const E = this.E;
     if (E) {
-      const puxa = () => this.setState({ tagsLead: E.ler("tagsLead", {}) || {}, tagsCriadas: E.ler("tagsCriadas", []) || [], extras: E.ler("contatosExtra", []) || [], leads: E.ler("leads", null), salvas: E.ler("visoesContatos", []) || [] });
+      const puxa = () => this.setState({ extras: E.ler("contatosExtra", []) || [], leads: E.ler("leads", null), salvas: E.ler("visoesContatos", []) || [] });
       puxa();
       this._off = E.assinar(puxa);
     }
+    this.carregarTags();
     this._fora = (e) => { if (this.state.pop && !(e.target.closest && e.target.closest("[data-ct-pop]"))) this.setState({ pop: null }); };
     this._rs = () => { const w = (typeof window !== "undefined" ? window.innerWidth : 1440); if (w !== this.state.larg) this.setState({ larg: w }); };
     this._rs();
@@ -131,6 +132,18 @@ class Logica extends React.Component<any, any> {
     document.removeEventListener("keydown", this._esc);
     window.removeEventListener("resize", this._rs);
   }
+
+  /* Tag é dado do banco (`entity_labels`), não do store local: o desenho
+     guardava "tagsLead" no navegador e a tag nunca existia para o resto do
+     produto. Chave da atribuição = "lead:<id>" ou "empresa:<id>". */
+  carregarTags = async () => {
+    try {
+      const [ls, as] = await Promise.all([fetch("/api/labels").then(r => r.ok ? r.json() : []), fetch("/api/labels/atribuicoes").then(r => r.ok ? r.json() : [])]);
+      const atribs = {};
+      as.forEach(a => { const k = a.entityType + ":" + a.entityId; (atribs[k] = atribs[k] || []).push(a.labelId); });
+      this.setState({ labelsOrg: ls.map(l => ({ id: l.id, nome: l.nome })).sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR")), atribs });
+    } catch (e) { /* sem rede: a tela segue sem tags, e não inventa */ }
+  };
 
   abrirPop(k, e, largura) {
     if (this.state.pop && this.state.pop.k === k) return this.setState({ pop: null });
@@ -166,7 +179,7 @@ class Logica extends React.Component<any, any> {
     leads.forEach(L => {
       const id = "p:" + slug(L.pessoa) + "@" + slug(L.empresa || "");
       const u = ultimaDe(L);
-      pessoas.push({ id, tipo: "pessoa", nome: L.pessoa, sub: L.cargo || "—", emp: L.empresa || null, rel: relDe(L.etapa), resp: ov[id] !== undefined ? ov[id] : (L.resp || null), origem: L.origem || "—", campanha: L.campanha || "", opps: L.etapa === "oportunidade" ? 1 : 0, ultima: u.t, ordem: u.o, lead: L, email: slug(L.pessoa.split(" ").filter(p => !/^dr\.?$/i.test(p))[0]) + "@" + dominio(L.empresa), tel: L.tel || telDe(L.pessoa), acao: L.acao, venceEm: L.venceEm });
+      pessoas.push({ id, tipo: "pessoa", nome: L.pessoa, sub: L.cargo || "—", emp: L.empresa || null, rel: relDe(L.etapa), estagio: (L.real && L.real.estagio) || "", motivo: (L.real && L.real.motivo && L.real.motivo.rotulo) || "", motivoDetalhe: (L.real && L.real.motivo && L.real.motivo.detalhe) || "", resp: ov[id] !== undefined ? ov[id] : (L.resp || null), origem: L.origem || "—", campanha: L.campanha || "", opps: L.etapa === "oportunidade" ? 1 : 0, ultima: u.t, ordem: u.o, lead: L, email: slug(L.pessoa.split(" ").filter(p => !/^dr\.?$/i.test(p))[0]) + "@" + dominio(L.empresa), tel: L.tel || telDe(L.pessoa), acao: L.acao, venceEm: L.venceEm });
       if (L.empresa) {
         const e = empresas[L.empresa] || (empresas[L.empresa] = { leads: [], ordem: 999, ultima: "—" });
         e.leads.push(L);
@@ -195,7 +208,7 @@ class Logica extends React.Component<any, any> {
       const e = empresas[nome], L = e.leads[0], id = "e:" + slug(nome);
       const rels = e.leads.map(l => relDe(l.etapa));
       const rel = rels.sort((a, b) => peso[b] - peso[a])[0];
-      return { id, tipo: "empresa", nome, sub: (D.SEGMENTOS || {})[nome] || "Serviços", emp: null, rel, resp: ov[id] !== undefined ? ov[id] : (L.resp || null), origem: L.origem || "—", campanha: L.campanha || "", opps: e.leads.filter(l => l.etapa === "oportunidade").length, ultima: e.ultima, ordem: e.ordem, lead: L, leadsEmp: e.leads, email: "contato@" + dominio(nome), tel: telDe(nome), acao: L.acao, venceEm: L.venceEm };
+      return { id, tipo: "empresa", nome, sub: (D.SEGMENTOS || {})[nome] || "Serviços", emp: null, rel, estagio: "", motivo: "", motivoDetalhe: "", resp: ov[id] !== undefined ? ov[id] : (L.resp || null), origem: L.origem || "—", campanha: L.campanha || "", opps: e.leads.filter(l => l.etapa === "oportunidade").length, ultima: e.ultima, ordem: e.ordem, lead: L, leadsEmp: e.leads, email: "contato@" + dominio(nome), tel: telDe(nome), acao: L.acao, venceEm: L.venceEm };
     });
     prospects.forEach(([emp, seg, , , resp]) => {
       const id = "e:" + slug(emp);
@@ -254,8 +267,15 @@ class Logica extends React.Component<any, any> {
     const respAv = (n) => "flex:0 0 auto;width:22px;height:22px;border-radius:9999px;display:grid;place-items:center;font-size:9.5px;font-weight:700;" + (n ? "background:#12171d;color:#fff" : "background:transparent;color:#8b949e;box-shadow:inset 0 0 0 1px dashed #c9cfd1;border:1px dashed #c9cfd1");
     const respTx = (n) => "min-width:0;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:" + (n ? "#1f252c" : "#8b949e");
 
-    const TLg = S.tagsLead || {};
-    const tagsDe = (x) => TLg[x.lead && x.tipo === "pessoa" ? x.lead.id : x.id] || [];
+    const nomeDeLabel = {}; (S.labelsOrg || []).forEach(l => { nomeDeLabel[l.id] = l.nome; });
+    const alvoDe = (x) => {
+      const c = x.tipo === "pessoa" ? x.lead && x.lead.real : x.real;
+      if (!c) return null;
+      return x.tipo === "pessoa" ? (c.leadId ? ["lead", c.leadId] : null) : (c.empresaId ? ["empresa", c.empresaId] : null);
+    };
+    const TLg = {}; Object.keys(S.atribs || {}).forEach(k => { TLg[k] = S.atribs[k].map(id => nomeDeLabel[id]).filter(Boolean); });
+    const tagsDe = (x) => { const a = alvoDe(x); return (a && TLg[a.join(":")]) || []; };
+    const nomesTags = (S.labelsOrg || []).map(l => l.nome);
     const q = S.q.trim().toLowerCase();
     const F = S.f;
     const passa = (r, ignora) => {
@@ -345,9 +365,11 @@ class Logica extends React.Component<any, any> {
       diz(ids.length > 1 ? ids.length + " registros agora com " + (nome || "ninguém") : "Responsável: " + (nome || "sem responsável"), "ok");
     };
     const exportar = (linhas) => {
-      const cab = ["Nome", "Tipo", "Relacionamento", "Empresa", "Cargo/Segmento", "E-mail", "Telefone", "Responsável", "Origem", "Oportunidades", "Última interação"];
+      // Motivo e estágio vão no CSV porque o export existe para VIRAR AÇÃO:
+      // exportar os perdidos/desqualificados/em nutrição sem o porquê não serve.
+      const cab = ["Nome", "Tipo", "Relacionamento", "Empresa", "Cargo/Segmento", "E-mail", "Telefone", "Responsável", "Origem", "Estágio", "Motivo", "Detalhe do motivo", "Oportunidades", "Última interação"];
       const esc = (v) => '"' + String(v == null ? "" : v).replace(/"/g, '""') + '"';
-      const csv = [cab].concat(linhas.map(r => [r.nome, r.tipo === "empresa" ? "Empresa" : "Pessoa", r.rel, r.emp || (r.tipo === "empresa" ? r.nome : ""), r.sub, r.email, r.tel, r.resp || "", r.origem, r.opps, r.ultima])).map(l => l.map(esc).join(";")).join("\n");
+      const csv = [cab].concat(linhas.map(r => [r.nome, r.tipo === "empresa" ? "Empresa" : "Pessoa", r.rel, r.emp || (r.tipo === "empresa" ? r.nome : ""), r.sub, r.email, r.tel, r.resp || "", r.origem, r.estagio || "", r.motivo || "", r.motivoDetalhe || "", r.opps, r.ultima])).map(l => l.map(esc).join(";")).join("\n");
       const a = document.createElement("a");
       a.href = URL.createObjectURL(new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" }));
       a.download = "onface-contatos-empresas.csv";
@@ -355,12 +377,25 @@ class Logica extends React.Component<any, any> {
       diz(linhas.length + " registros exportados", "ok");
     };
 
-    const contaF = (k, v) => todos.filter(r => passa(r, k) && (k === "resp" ? (r.resp || "—") === v : k === "tag" ? tagsDe(r).indexOf(v) >= 0 : r[k] === v)).length;
+    /* Relacionamento é contado NO BANCO, não no array: a lista é uma fatia das
+       500 pessoas com interação mais recente, e contá-la dizia "Cliente 29"
+       havendo 450 (QA 06/10). O número do banco só vale quando nada está
+       recortando a tela — com busca, outro filtro ou visão, a contagem volta a
+       ser a do que está visível, que é o que o usuário está olhando. */
+    const relDoBanco = this.props.porRelacionamento || null;
+    const semRecorte = !q && !F.resp.length && !F.origem.length && !(F.tag || []).length && S.visao === "todos";
+    const contaF = (k, v) => {
+      if (k === "rel" && relDoBanco && semRecorte) {
+        const n = relDoBanco[String(v).toLowerCase()];
+        if (typeof n === "number") return n;
+      }
+      return todos.filter(r => passa(r, k) && (k === "resp" ? (r.resp || "—") === v : k === "tag" ? tagsDe(r).indexOf(v) >= 0 : r[k] === v)).length;
+    };
     const defsF = [
       ["resp", "Responsável", ico.resp, equipe.concat(["—"]), (v) => v === "—" ? "Sem responsável" : v],
       ["origem", "Origem", ico.origem, Array.from(new Set(todos.map(r => r.origem))).sort(), (v) => v],
       ["rel", "Relacionamento", ico.rel, ["Contato", "Prospect", "Lead", "Cliente"], (v) => v],
-      ["tag", "Tag", "M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L2 12V2h10l8.6 8.6a2 2 0 0 1 0 2.8zM7 7h.01", Array.from(new Set(["Prioridade", "Enterprise", "Reunião pedida", "Sem orçamento", "Concorrente", "Reativar"].concat(S.tagsCriadas || [], ...Object.values(TLg)))), (v) => v]
+      ["tag", "Tag", "M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L2 12V2h10l8.6 8.6a2 2 0 0 1 0 2.8zM7 7h.01", nomesTags, (v) => v]
     ];
 
     let pop = null;
@@ -385,36 +420,37 @@ class Logica extends React.Component<any, any> {
       } else if (P.k === "tags") {
         const ids = Object.keys(marc).filter(k => marc[k]);
         const sel = todos.filter(x => marc[x.id]);
-        const chave = (x) => x.lead && x.tipo === "pessoa" ? x.lead.id : x.id;
-        const TL = S.tagsLead || {};
-        const catalogo = [
-          ["Prioridade", "Sobe no topo da fila", null], ["Enterprise", null, "Pós-proposta"], ["Reunião pedida", null, "Primeiro contato"],
-          ["Sem orçamento", null, "Reativação"], ["Concorrente", "Marca para análise competitiva", null], ["Reativar", null, "Reativação"]
-        ].concat((S.tagsCriadas || []).map(t => [t, "Tag criada por você", null]));
-        const aplicar = (label, fluxo) => {
-          const E = this.E;
-          const todosTem = sel.every(x => (TL[chave(x)] || []).indexOf(label) >= 0);
-          const novo = Object.assign({}, TL);
-          sel.forEach(x => { const k = chave(x); const a = (novo[k] || []).filter(t => t !== label); if (!todosTem) a.push(label); novo[k] = a; });
-          this.setState({ tagsLead: novo });
-          if (E) E.gravar({ tagsLead: novo });
-          diz(todosTem ? "Tag " + label + " removida de " + sel.length : "Tag " + label + " em " + sel.length + (sel.length === 1 ? " registro" : " registros") + (fluxo ? " · fluxo " + fluxo + " disparado" : ""), "ok");
+        const catalogo = nomesTags.map(n => [n, null, null]);
+        const aplicar = async (label, fluxo, lab0) => {
+          const lab = lab0 || (S.labelsOrg || []).find(l => l.nome === label);
+          const comAlvo = sel.filter(alvoDe);
+          if (!lab || !comAlvo.length) { diz("Estes registros não têm lead nem empresa cadastrada para receber tag.", "aviso"); return; }
+          const todosTem = comAlvo.every(x => tagsDe(x).indexOf(label) >= 0);
+          const ok = await Promise.all(comAlvo.map(x => { const [entityType, entityId] = alvoDe(x);
+            return fetch("/api/labels/" + lab.id + "/atribuir", { method: todosTem ? "DELETE" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ entityType, entityId }) }).then(r => r.ok).catch(() => false); }));
+          await this.carregarTags();
+          const falhas = ok.filter(v => !v).length;
+          if (falhas) { diz("Tag " + label + " não gravou em " + falhas + " de " + comAlvo.length, "erro"); return; }
+          diz(todosTem ? "Tag " + label + " removida de " + comAlvo.length : "Tag " + label + " em " + comAlvo.length + (comAlvo.length === 1 ? " registro" : " registros") + (fluxo ? " · fluxo " + fluxo + " disparado" : ""), "ok");
         };
-        const criar = () => {
+        const criar = async () => {
           const t = (S.novaTag || "").trim();
           if (!t) return;
-          const E = this.E;
-          const lista = (S.tagsCriadas || []).indexOf(t) >= 0 ? S.tagsCriadas : (S.tagsCriadas || []).concat(t);
-          this.setState({ tagsCriadas: lista, novaTag: "" });
-          if (E) E.gravar({ tagsCriadas: lista });
-          aplicar(t, null);
+          this.setState({ novaTag: "" });
+          let lab = (S.labelsOrg || []).find(l => l.nome.toLowerCase() === t.toLowerCase());
+          if (!lab) {
+            const r = await fetch("/api/labels", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ nome: t, cor: "#8b949e" }) }).catch(() => null);
+            if (!r || !r.ok) { diz("Não consegui criar a tag " + t, "erro"); return; }
+            lab = await r.json();
+          }
+          await aplicar(lab.nome, null, lab);
         };
         pop = { style: base, temTitulo: true, titulo: "Tag para " + ids.length + (ids.length === 1 ? " registro" : " registros"), temLimpar: false, limpar: null,
           temCriar: true, novaTag: S.novaTag || "", setNovaTag: (e) => this.setState({ novaTag: e.target.value }),
           teclaNova: (e) => { if (e.key === "Enter") criar(); }, criar,
           criarStyle: "flex:0 0 auto;height:32px;padding:0 12px;border-radius:8px;border:0;font-size:12.5px;font-weight:600;cursor:pointer;" + ((S.novaTag || "").trim() ? "background:#12171d;color:#fff" : "background:#eeeff3;color:#8b949e"),
           itens: catalogo.map(([label, nota, fluxo]) => {
-            const n = sel.filter(x => (TL[chave(x)] || []).indexOf(label) >= 0).length;
+            const n = sel.filter(x => tagsDe(x).indexOf(label) >= 0).length;
             const on = n > 0 && n === sel.length;
             return mk({ label, temCheck: true, on, check: chk(on || n > 0).replace("cursor:pointer;", "").replace("width:17px;height:17px", "width:16px;height:16px") + (n > 0 && !on ? ";opacity:.5" : ""),
               temNota: true, nota: fluxo ? "dispara " + fluxo : nota,
@@ -647,7 +683,7 @@ class Logica extends React.Component<any, any> {
           ];
           const rs = S.impResps || [];
           const existentes = linhasM.filter(x => todos.some(t => t.nome.toLowerCase() === x.nome.toLowerCase() || (x.email && t.email === x.email))).length;
-          const tagOps = [["", "Sem tag"]].concat(["Prioridade", "Enterprise", "Reunião pedida", "Reativar"].concat(S.tagsCriadas || []));
+          const tagOps = [["", "Sem tag"]].concat(nomesTags);
           const cfg = [campo("lista", "Nome da lista", { obrig: true, largo: true, dica: "Ex: Evento CX Summit · set/26" })]
             .concat(dest === "prospeccao" ? [campo("cadOut", "Cadência outbound", { obrig: true, opcoes: [["", "Escolha a cadência"]].concat(COUT) }), campo("tagImp", "Tag", { opcoes: tagOps })]
               : dest === "prevendas" ? [campo("origemIn", "Origem inbound", { obrig: true, opcoes: [["", "De onde veio?"]].concat(INB) }), campo("etapaIni", "Etapa inicial", { opcoes: [["novo", "Novo"], ["em_contato", "Em contato"]] }), campo("cadIn", "Cadência", { opcoes: [["", "Sem cadência"]].concat(D.CADENCIAS || []) }), campo("tagImp", "Tag", { opcoes: tagOps })]

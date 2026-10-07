@@ -1,0 +1,72 @@
+[
+    {
+        "id": "2f9a32d5-5b07-4708-899f-b436b98b2819",
+        "kind": "mcp_agent",
+        "nome": "Copiloto de CS",
+        "slug": "copiloto-cs",
+        "status": "draft",
+        "descricao": "Le a conta, resume, identifica risco e expansao e abre a atividade certa para o CS. Nunca fala com o cliente.",
+        "created_at": "2026-10-06T05:08:27.297224-03:00",
+        "finalidade": "cs",
+        "prioridade": 60,
+        "updated_at": "2026-10-06T05:08:27.297224-03:00",
+        "archived_at": null,
+        "organizacao_id": "320a9052-dd43-4edb-9b74-34be53c5c419"
+    },
+    {
+        "id": "368ce5d5-9ffd-42da-a51a-f2a298b251ba",
+        "kind": "mcp_agent",
+        "nome": "Hermes",
+        "slug": "hermes",
+        "status": "draft",
+        "descricao": "Executor operacional: age a partir de evento de dominio, automacao ou condicao do sistema. Nao conversa.",
+        "created_at": "2026-10-05T05:10:18.138755-03:00",
+        "finalidade": "orquestracao",
+        "prioridade": 20,
+        "updated_at": "2026-10-05T05:10:18.138755-03:00",
+        "archived_at": null,
+        "organizacao_id": "320a9052-dd43-4edb-9b74-34be53c5c419"
+    },
+    {
+        "id": "ba3bc40b-5068-4b29-9a88-b64984faa7bf",
+        "kind": "mcp_agent",
+        "nome": "NEXO",
+        "slug": "nexo",
+        "status": "draft",
+        "descricao": "Copiloto operacional: responde sobre a operacao e executa o que o usuario pedir, dentro da permissao dele.",
+        "created_at": "2026-10-05T05:10:18.138755-03:00",
+        "finalidade": "copiloto",
+        "prioridade": 10,
+        "updated_at": "2026-10-05T05:10:18.138755-03:00",
+        "archived_at": null,
+        "organizacao_id": "320a9052-dd43-4edb-9b74-34be53c5c419"
+    },
+    {
+        "id": "6759dfdf-62ce-423a-a30d-4e13aeef06ac",
+        "kind": "mcp_agent",
+        "nome": "Organizador de Pipeline",
+        "slug": "organizador-pipeline",
+        "status": "draft",
+        "descricao": "Olha uma oportunidade por vez, aponta o que esta parado ou sem proximo passo e cria o follow-up certo. Nao mexe em etapa nem valor.",
+        "created_at": "2026-10-06T05:08:27.465979-03:00",
+        "finalidade": "pre_vendas",
+        "prioridade": 70,
+        "updated_at": "2026-10-06T05:08:27.465979-03:00",
+        "archived_at": null,
+        "organizacao_id": "320a9052-dd43-4edb-9b74-34be53c5c419"
+    },
+    {
+        "id": "edd3255d-a3f7-4496-a8fa-fa3c2b75d160",
+        "kind": "mcp_agent",
+        "nome": "SDR Assistente",
+        "slug": "sdr-assistente",
+        "status": "draft",
+        "descricao": "Le a conversa, qualifica com honestidade, prepara a proxima mensagem e deixa tarefa e reuniao encaminhadas. Nada sai ao cliente sem aprovacao.",
+        "created_at": "2026-10-06T05:08:27.065922-03:00",
+        "finalidade": "pre_vendas",
+        "prioridade": 50,
+        "updated_at": "2026-10-06T05:08:27.065922-03:00",
+        "archived_at": null,
+        "organizacao_id": "320a9052-dd43-4edb-9b74-34be53c5c419"
+    }
+]

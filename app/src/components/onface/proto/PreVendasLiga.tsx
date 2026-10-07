@@ -436,7 +436,7 @@ class Logica extends React.Component<any, any> {
     ];
 
     const selecao = S.selecao;
-    const iniciaisDe = (n) => n ? n.split(" ").filter(Boolean).slice(0, 2).map(p => p[0]).join("").toUpperCase() : "—";
+    const iniciaisDe = (n) => n ? n.split(" ").filter(Boolean).slice(0, 2).map(p => [...p][0]).join("").toUpperCase() : "—";
     const q = S.busca.trim().toLowerCase();
     const visiveis = S.leads.filter(L => {
       if (q && ((L.empresa || "") + " " + L.pessoa + " " + L.cargo).toLowerCase().indexOf(q) < 0) return false;
@@ -504,6 +504,7 @@ class Logica extends React.Component<any, any> {
         origemSelo: "display:inline-flex;align-items:center;gap:5px;max-width:100%;min-width:0;height:19px;padding:0 7px;border-radius:6px;font-size:10.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto;"
           + ({ "Meta Ads": "background:#fff6f4;color:#9c3210", "Instagram": "background:#efecfa;color:#4f3fa8", "WhatsApp": "background:#e6f4ee;color:#1f7256", "Formulário": "background:#e8f0fb;color:#2c5f9e", "Site": "background:#e8f0fb;color:#2c5f9e", "Orgânica": "background:#f7edd8;color:#6e5420" }[card.origem] || "background:#eeeff3;color:#4a5560"),
         temTag: !!card.tag, tag: card.tag,
+        temCadencia: !!card.cadencia, cadencia: card.cadencia,
         urgente: !card.acao,
         acao: card.acao ? (card.venceEm ? card.acao + " · " + card.venceEm : card.acao) : "Sem próxima ação",
         acaoStyle: "flex:1;min-width:0;font-size:11.5px;font-weight:"

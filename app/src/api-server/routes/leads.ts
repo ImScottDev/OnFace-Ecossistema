@@ -162,7 +162,7 @@ const updateLeadSchema = z.object({
   tipo: z.enum(["contato", "lead", "cliente"]).optional(),
   whatsappNaoLidas: z.number().int().min(0).optional(),
   camposCustom: z.record(z.string(), z.unknown()).optional(),
-});
+}).strict();
 
 const addActivitySchema = z.object({
   tipo: z.enum([
@@ -1387,8 +1387,23 @@ app.delete("/leads/:id", async (c) => {
   await db.delete(cadenciaExecucoes).where(eq(cadenciaExecucoes.leadId, id));
   await db.delete(contatos).where(eq(contatos.leadId, id));
 
-  // Finally delete the lead
-  await db.delete(leads).where(eq(leads.id, id));
+  // A pessoa canônica e os pontos de contato nascem do lead (lead_id_legado) e
+  // sobrevivem a ele: só se solta o vínculo. Sem isso a FK barrava o DELETE de
+  // praticamente todo lead (4.087 de 4.089 têm pessoa) e a rota estourava 500.
+  await db.execute(sql`UPDATE pessoas SET lead_id_legado = NULL WHERE lead_id_legado = ${id}::uuid`);
+  await db.execute(sql`UPDATE pontos_contato SET lead_id_legado = NULL WHERE lead_id_legado = ${id}::uuid`);
+
+  // Finally delete the lead. Cliente, oportunidade, fatura etc. NÃO se apagam
+  // daqui (são dinheiro/histórico): se ainda apontam para o lead, diz isso em
+  // vez de devolver 500 genérico.
+  try {
+    await db.delete(leads).where(eq(leads.id, id));
+  } catch (e: any) {
+    if ((e?.code ?? e?.cause?.code) === "23503") {
+      return c.json({ error: "Este lead já virou cliente/oportunidade ou tem cobrança vinculada e não pode ser excluído." }, 409);
+    }
+    throw e;
+  }
 
   return c.json({ ok: true });
 });

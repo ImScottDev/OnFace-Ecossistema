@@ -11,7 +11,7 @@
  * tamanho real da cobertura de vigência no CRM hoje.
  */
 import { db } from "@/lib/db";
-import { csRenovacoes, contratos, servicosCanonicos } from "@/lib/db/schema";
+import { csRenovacoes, contratos, servicosCanonicos, tarefas } from "@/lib/db/schema";
 import { and, eq, sql } from "drizzle-orm";
 import { JANELAS_RENOVACAO_DIAS } from "./playbooks";
 import { criarTarefaCs } from "./tarefas";
@@ -98,8 +98,10 @@ export async function gerarTarefasDeRenovacao(organizacaoId: string): Promise<nu
 
   let criadas = 0;
   for (const r of emJanela) {
-    // Maior janela já cruzada. Em D-45 a janela vigente é a de 60.
-    const janela = JANELAS_RENOVACAO_DIAS.find((j) => r.diasRestantes <= j);
+    // Janela vigente = a MENOR já cruzada (em D-45 vale a de 60; em D-20, a de 30).
+    // Com `.find` sobre [90,60,30,15] o resultado era sempre 90: a tarefa nascia só
+    // no D-90, nunca escalava para 60/30/15 e a prioridade "alta" (<=30) jamais valia.
+    const janela = JANELAS_RENOVACAO_DIAS.filter((j) => r.diasRestantes <= j).at(-1);
     if (janela === undefined) continue;
 
     const { criada } = await criarTarefaCs({
@@ -134,6 +136,15 @@ export async function decidirRenovacao(input: {
   observacoes?: string | null;
   motivoNaoRenovacao?: string | null;
 }) {
+  /* Sem status válido não há decisão. `input.status !== "EM_NEGOCIACAO"` dava
+     `true` para `undefined`: a chamada sem status carimbava `decidido_em` e
+     `decidido_por`, concluía a tarefa de janela e deixava a renovação ABERTA —
+     "decidida mas aberta", e o CS perdia a pendência da fila (QA 06/10). O
+     tipo protege o caller TypeScript; a rota e o JS não. */
+  const VALIDOS = ["EM_NEGOCIACAO", "RENOVADA", "NAO_RENOVADA"] as const;
+  if (!VALIDOS.includes(input.status)) {
+    throw new Error(`decidirRenovacao: status inválido (${String(input.status)}); use ${VALIDOS.join(", ")}`);
+  }
   const decidido = input.status !== "EM_NEGOCIACAO";
   const [row] = await db.update(csRenovacoes)
     .set({
@@ -151,6 +162,17 @@ export async function decidirRenovacao(input: {
     .returning();
 
   if (!row) return null;
+
+  // QA pós-venda 06/10: decidida a renovação, a tarefa de janela (D-60/45/30...)
+  // seguia aberta e a conta continuava "com pendência" na fila do CS.
+  if (decidido) {
+    await db.update(tarefas).set({ concluida: true, concluidaEm: new Date() })
+      .where(and(
+        eq(tarefas.organizacaoId, input.organizacaoId),
+        eq(tarefas.concluida, false),
+        sql`${tarefas.chaveIdempotencia} LIKE ${`CS_RENOV_TAREFA:${row.id}:%`}`,
+      ));
+  }
 
   // Renovada com nova data: o contrato precisa refletir isso, senão o
   // próximo sweep reabre a mesma renovação lendo o vencimento antigo.

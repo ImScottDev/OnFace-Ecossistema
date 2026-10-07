@@ -24,6 +24,7 @@ import { acaoNovaOportunidadeDoCliente, type TipoDeVenda } from "@/app/(produto)
 import { toast } from "sonner";
 
 import type { ClienteDoDesenho } from "@/lib/clientes/cliente-para-o-desenho";
+import { geometriaFaturamento } from "@/lib/clientes/evolucao-geometria";
 import { ClienteLiga } from "./ClienteLiga";
 import { levarParametros } from "./rota-do-desenho";
 import { usePecas } from "./pecas-host";
@@ -258,7 +259,10 @@ class ClienteLigada extends ClienteLiga {
         iniTxt: "Início " + dmy(ini0),
         renTxt: !ativo ? "Encerrado" : fim ? "Vence " + dmy(fim) + " · " + dias + "d" : "Sem data de vencimento",
         renStyle: urg ? "color:var(--of-coral-acao-hover);font-weight:600" : "",
-        arq: an?.nome ?? "", assin: an ? "Anexo" : "", abrirDoc: () => abrirAnexo(an),
+        // Sem arquivo disponível o botão PDF não existe (ClienteDesenho esconde
+        // quando `arq` é vazio): botão que só avisa "indisponível" é botão que
+        // falha. A assinatura mora em Documentos/Cobrança, não no contrato.
+        arq: an?.disponivel ? an.nome : "", assin: an?.disponivel ? "Anexo" : "", abrirDoc: () => abrirAnexo(an),
       };
     });
 
@@ -391,6 +395,40 @@ class ClienteLigada extends ClienteLiga {
       rot: W.map((m, i) => ({ l: MES[m.getMonth()], st: "position:absolute;top:0;font-size:10.5px;white-space:nowrap;color:" + (hv === i ? "var(--of-papel)" : "var(--of-tinta-3)") + ";left:" + (i / 11 * 100) + "%;transform:" + (i === 0 ? "none" : i === 11 ? "translateX(-100%)" : "translateX(-50%)") })),
     };
 
+    /* Evolução de FATURAMENTO (cliente_receita_mensal), empilhada por natureza
+     * (MRR | Setup/Avulso | Débito recuperado | A classificar) e a linha de MRR
+     * por cima. Substitui o gráfico de faturas Stripe acima quando a empresa
+     * tem série carregada; sem série, cai no gráfico de faturas (conta que
+     * só existe no Stripe). */
+    const FAT = R.faturamento ?? [];
+    const gx = FAT.length ? geometriaFaturamento(FAT, {}, 600, 140) : null;
+    if (gx) {
+      const n = FAT.length, hiF = S.hv != null && S.hv < n ? S.hv : n - 1, ult = FAT[n - 1];
+      const mesDe = (c: string) => { const [a, m] = c.split("-").map(Number); return { a, m: m - 1 }; };
+      const dF = hiF ? gx.totais[hiF] - gx.totais[hiF - 1] : 0;
+      const eixo = (nv: number) => nv >= 1000 ? "R$ " + (nv / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 }) + "k" : "R$ " + Math.round(nv);
+      Object.assign(g, {
+        ehTotal: true, ehFam: true,
+        modos: [{ l: "Faturamento", onClick: () => {}, style: g.modos[0].style }],
+        legenda: [...gx.visiveis.map((c) => ({ l: c.l, dot: "width:9px;height:9px;border-radius:2px;background:" + c.cor })), { l: "Linha de MRR", dot: "width:14px;height:2.5px;border-radius:2px;background:var(--of-coral-marca)" }],
+        pergunta: "Quanto entrou por mês, por natureza, nos últimos " + n + " meses",
+        yl: [4, 3, 2, 1, 0].map((k) => ({ l: eixo(gx.passo * k), st: "position:absolute;right:0;font-size:10.5px;line-height:10px;color:var(--of-tinta-3);font-variant-numeric:tabular-nums;white-space:nowrap;top:calc(" + (gx.Y(gx.passo * k) / 140 * 100) + "% - 5px)" })),
+        // a linha de MRR (coral) fica sob as áreas translúcidas; sem área/anterior próprios.
+        dLinha: gx.linhaMrr, dArea: "M0 0", dAnt: "M0 0",
+        camadas: gx.camadas.map((c) => ({ d: c.area, cor: c.cor + "b3", st: "" })),
+        dGuia: S.hv != null ? "M" + gx.X(hiF).toFixed(1) + " 0V140" : "M0 0",
+        ponto: "position:absolute;pointer-events:none;width:12px;height:12px;border-radius:9999px;background:var(--of-coral-marca);box-shadow:0 0 0 3px var(--of-tinta-forte),0 0 0 5px rgba(254,79,43,.35);transition:left .15s,top .15s;left:calc(" + (hiF / Math.max(1, n - 1) * 100).toFixed(2) + "% - 6px);top:calc(" + (gx.Y(FAT[hiF].mrr) / 140 * 100).toFixed(2) + "% - 6px)",
+        alvos: FAT.map((_, i) => ({ entrar: () => { if (S.hv !== i) setS({ hv: i }); } })),
+        tipT: MESL[mesDe(FAT[hiF].competencia).m] + " " + mesDe(FAT[hiF].competencia).a, tipTot: brl(FAT[hiF].total),
+        tipL: gx.visiveis.map((c) => ({ l: c.l, v: brl(FAT[hiF][c.k]), dot: "width:8px;height:8px;border-radius:2px;background:" + c.cor })),
+        tipD: hiF ? (dF >= 0 ? "+" : "−") + brl(Math.abs(dF)) + " vs. mês anterior" : "início da janela",
+        tipDStyle: "display:block;margin-top:5px;font-size:11px;font-weight:600;color:" + (dF >= 0 ? "var(--of-sucesso-tinta)" : "var(--of-coral-no-escuro)"),
+        rot: FAT.map((m, i) => ({ l: MES[mesDe(m.competencia).m], st: "position:absolute;top:0;font-size:10.5px;white-space:nowrap;color:" + (S.hv === i ? "var(--of-papel)" : "var(--of-tinta-3)") + ";left:" + (i / Math.max(1, n - 1) * 100) + "%;transform:" + (i === 0 ? "none" : i === n - 1 ? "translateX(-100%)" : "translateX(-50%)") })),
+      });
+    }
+    const ultF = FAT.length ? FAT[FAT.length - 1] : null, antF = FAT.length > 1 ? FAT[FAT.length - 2] : null;
+    const mesRot = ultF ? MES[Number(ultF.competencia.slice(5)) - 1].toLowerCase() + "/" + ultF.competencia.slice(0, 4) : "";
+
     /* ── Stripe ───────────────────────────────────────────────────────────
      * customer id REAL. Método de pagamento não tem fonte (faturas.raw é NULL
      * e assinaturas não guardam payment_method) → "—". O "há 2 min" literal
@@ -438,7 +476,14 @@ class ClienteLigada extends ClienteLiga {
       fatos: [
         { l: "Método", v: "—" },
         { l: "Próxima cobrança", v: proxF ? dmy(proxF.venc) : "—" },
-        { l: "Assinatura", v: subsAtivas.length ? "Ativa · " + subsAtivas.length + (subsAtivas.length > 1 ? " assinaturas" : " assinatura") : R.assinaturas.length ? (ROT_SUB[R.assinaturas[0].status] ?? R.assinaturas[0].status) : "Sem assinatura" },
+        /* Conta com assinatura ativa E uma em atraso só dizia "Ativa": o estado
+           ruim sumia atrás do bom. Agora cada status presente aparece, contado. */
+        { l: "Assinatura", v: R.assinaturas.length
+            ? [...R.assinaturas.reduce((m, a) => m.set(a.status, (m.get(a.status) ?? 0) + 1), new Map<string, number>())]
+                .sort((x, y) => (x[0] === "active" ? -1 : y[0] === "active" ? 1 : 0))
+                .map(([st, n]) => (st === "active" ? "Ativa" : st === "trialing" ? "Em teste" : (ROT_SUB[st] ?? st)) + (n > 1 ? " · " + n : ""))
+                .join(" · ")
+            : "Sem assinatura" },
       ],
     };
 
@@ -471,13 +516,19 @@ class ClienteLigada extends ClienteLiga {
     const hero = {
       ...v.hero,
       mrr: brl(mrr),
-      // Sem série histórica de MRR não há "vs. mês anterior" honesto.
-      dt: "—", dIco: I.up, dTxt: "sem histórico de MRR",
+      // Variação real do faturamento total vs. mês anterior, quando há série.
+      ...(ultF && antF && antF.total > 0
+        ? { dt: Math.abs(Math.round((ultF.total / antF.total - 1) * 100)) + "%", dIco: ultF.total >= antF.total ? I.up : I.dn, dTxt: "faturado vs. mês anterior" }
+        : { dt: "—", dIco: I.up, dTxt: "sem histórico de faturamento" }),
       dStyle: "display:inline-flex;align-items:center;gap:4px;height:24px;padding:0 9px;border-radius:9999px;font-size:12px;font-weight:700;white-space:nowrap;background:rgba(255,255,255,.08);color:var(--of-tinta-4)",
       fams: fams.map((f) => ({ l: f.F.l, v: brl(f.mrr), dot: "flex:0 0 auto;width:8px;height:8px;border-radius:2px;background:" + f.F.cor })),
       tiles: [
+        ...(ultF ? [
+          tile("MRR em " + mesRot, brl(ultF.mrr), "recorrente faturado no mês", "var(--of-papel)", irAba("financeiro")),
+          tile("Setup / Avulso", brl(ultF.avulso + ultF.debito), ultF.debito ? "inclui " + brl(ultF.debito) + " de débito recuperado" : "não recorrente no mês", "var(--of-papel)", irAba("financeiro")),
+          tile("Total faturado em " + mesRot, brl(ultF.total), ultF.semClasse ? brl(ultF.semClasse) + " a classificar" : "MRR + setup/avulso", "var(--of-papel)", irAba("financeiro")),
+        ] : []),
         tile("Receita acumulada", brlK(pagoTotal), primeiroPago ? "faturas pagas desde " + MES[primeiroPago.getMonth()].toLowerCase() + "/" + primeiroPago.getFullYear() : pagoTotal > 0 ? "faturas pagas (sem data de pagamento)" : "nenhuma fatura paga", "var(--of-papel)", irAba("financeiro")),
-        tile("Licenças em uso", "—", "sem dado de uso", "var(--of-papel)", irAba("produtos")),
         tile("Em aberto", brl(emAberto), vencidas.length ? brl(vencido) + " vencido" : proxF?.venc ? "vence " + dm(proxF.venc) : "nada pendente", vencidas.length ? "var(--of-coral-no-escuro)" : "var(--of-papel)", irAba("financeiro")),
         tile("Próxima renovação", proxRen ? dmy(proxRen.d) : "—", proxRen ? "em " + diasAte(proxRen.d!) + " dias" : "sem data de vencimento", proxRen && diasAte(proxRen.d!) <= 45 ? "var(--of-coral-no-escuro)" : "var(--of-papel)", () => proxRen && abrirOpp("renovacao")),
       ],
@@ -514,8 +565,8 @@ class ClienteLigada extends ClienteLiga {
         st: statusC[0], stStyle: pill(statusC[1]), stDot: dotS(statusC[1]),
         meta: [e.setor, desde ? "Cliente desde " + dExt(desde) : null, cidadeUF].filter(Boolean).join("  ·  "),
         tags: fams.map((f) => ({ l: f.F.l })),
-        // Ninguém foi atribuído como CS (clientes.responsavel_cs_id = 0/275).
-        csm: "Sem responsável", csmIni: "—",
+        // E8: COALESCE(responsavel_cs_id, responsavel_id), resolvido em cliente-para-o-desenho.
+        csm: R.csm ?? "Sem responsável", csmIni: R.csm ? ini(R.csm) : "—",
         closer: R.closer ?? "—",
         princ: principal?.nome ?? "Sem contato", princIni: ini(principal?.nome), princCargo: principal?.cargo ?? "",
       },

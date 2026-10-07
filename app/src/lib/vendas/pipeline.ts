@@ -18,11 +18,10 @@ import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { registrarEvento, registrarMudancaDeEtapa } from "./eventos";
 import { publicarEvento } from "@/lib/events/outbox";
-import { voltarParaQualificado } from "./pre-vendas";
 import {
   ehFamiliaValida, RegraDeNegocio, ROTULO_FAMILIA, STATUS_LEGADO_DA_ETAPA,
   type Ator, type EtapaPipeline, type EtapaPipelineAberta, type Familia,
-  type Motion, type MotivoEstagnacao, type MotivoPerda, type ProcessoOrigem, ROTULO_ETAPA_PIPELINE } from "./dominio";
+  MOTIVOS_PERDA, type Motion, type MotivoEstagnacao, type MotivoPerda, type ProcessoOrigem, ROTULO_ETAPA_PIPELINE } from "./dominio";
 
 /* ── Leitura de apoio ──────────────────────────────────────────────────── */
 
@@ -438,6 +437,12 @@ async function aplicarEtapa(
         -- Sair da etapa limpa a estagnação: ela descrevia a parada anterior.
         motivo_estagnacao = NULL,
         estagnado_em = NULL,
+        -- Reabrir uma perdida não pode deixar o motivo da perda grudado numa
+        -- oportunidade aberta: o relatório de perda a contaria como perdida.
+        -- A perda original segue no histórico (vendas_eventos / status_changes).
+        motivo_perda = CASE WHEN ${para} = 'perdido' THEN motivo_perda ELSE NULL END,
+        motivo_perda_chave = CASE WHEN ${para} = 'perdido' THEN motivo_perda_chave ELSE NULL END,
+        motivo_perda_detalhe = CASE WHEN ${para} = 'perdido' THEN motivo_perda_detalhe ELSE NULL END,
         updated_at = now()
        WHERE id = ${op.id}::uuid
     `);
@@ -600,7 +605,14 @@ export async function alterarFamilia(params: {
   `);
 
   await db.execute(sql`
-    UPDATE negocios SET service_family = ${params.familia}, updated_at = now()
+    UPDATE negocios SET service_family = ${params.familia},
+      -- O título nasce "{Empresa} — Família a definir" e a família escolhida depois
+      -- nunca o atualizava: o card seguia dizendo "a definir" já com família.
+      -- Só troca o sufixo gerado; título digitado à mão fica como está.
+      titulo = CASE WHEN titulo LIKE '% — Família a definir'
+                    THEN left(titulo, length(titulo) - length('Família a definir')) || ${ROTULO_FAMILIA[params.familia]}
+                    ELSE titulo END,
+      updated_at = now()
      WHERE id = ${params.negocioId}::uuid
   `);
 
@@ -632,6 +644,11 @@ export async function perder(params: {
   if (!params.motivo) {
     throw new RegraDeNegocio("perda_exige_motivo", "Escolha o motivo da perda.");
   }
+  // Motivo fora da lista fechada gravava mesmo assim (chave "xpto" perdia a
+  // oportunidade) e o relatório de motivo de perda ganhava uma categoria fantasma.
+  if (!MOTIVOS_PERDA.some((m) => m.chave === params.motivo)) {
+    throw new RegraDeNegocio("perda_motivo_invalido", "Motivo de perda inválido. Escolha um da lista.");
+  }
   const op = await carregarOportunidade(params.organizacaoId, params.negocioId);
   if (op.etapa === "ganho") {
     throw new RegraDeNegocio("oportunidade_ganha", "Oportunidade ganha não pode ser marcada como perdida.");
@@ -650,6 +667,15 @@ export async function perder(params: {
         motivo_perda_detalhe = ${params.detalhe ?? null},
         updated_at = now()
        WHERE id = ${params.negocioId}::uuid
+    `);
+
+    // Perdida não pode ter proposta viva: o link público seguia aceitável e o
+    // cliente aceitava (gerando contrato/checkout) numa oportunidade já perdida.
+    // Expira as que aguardam resposta; aceita/recusada/rascunho ficam como estão.
+    await tx.execute(sql`
+      UPDATE propostas SET status = 'expirada', expirada_em = now(), updated_at = now()
+       WHERE negocio_id = ${params.negocioId}::uuid
+         AND status IN ('enviada', 'visualizada', 'ajuste_solicitado')
     `);
 
     await registrarMudancaDeEtapa({
@@ -727,6 +753,27 @@ export async function tentarGanhar(params: {
   });
 
   await espelharNoDominioV2([params.negocioId]);
+
+  /* Pós-venda: o Ganho tinha DOIS caminhos e só um entregava.
+   *
+   * `PATCH /api/negocios` (rota legada) chama `criarPosVendaDoNegocio` e cria
+   * serviço canônico + jornada de onboarding com checklist. A tela do ONFACE
+   * ganha por AQUI, e aqui só rodava `propagarGanhoCanonico`, que cria a
+   * jornada pela OFERTA — e não existe nenhuma oferta comercial cadastrada
+   * (medido em 06/10: 0 linhas). Resultado: ganhar pelo produto novo deixava o
+   * cliente sem entrega nenhuma.
+   *
+   * Mesma forma da rota: não aguardado (o negócio já está ganho e não pode
+   * depender disto), idempotente (a segunda chamada responde "pós-venda já
+   * existe") e sem efeito quando a flag POSVENDA_CANONICO está desligada. */
+  const { criarPosVendaDoNegocio } = await import("@/lib/crm/pos-venda");
+  void criarPosVendaDoNegocio(params.negocioId)
+    .then((r) => {
+      if (r.criado) console.log(`[pos-venda] ${params.negocioId} -> ${r.trilha} (${r.itensChecklist} itens)`);
+      else console.warn(`[pos-venda] ${params.negocioId} não criou: ${r.motivo}`);
+    })
+    .catch((e) => console.error("[pos-venda] falha (negócio segue ganho):", params.negocioId, e));
+
   return { ganhou: true, motivo: "Evidência comercial confirmada." };
 }
 
@@ -794,6 +841,15 @@ export async function registrarNoShow(params: {
 }): Promise<void> {
   const op = await carregarOportunidade(params.organizacaoId, params.negocioId);
 
+  // Idempotência: repetir o no-show da MESMA reunião (duplo clique, retry) somava
+  // o contador do card e duplicava o evento. A reunião já está 'no_show' aqui
+  // porque a tela grava a coluna antes; por isso a trava é o evento, não o status.
+  if (params.reuniaoId) {
+    const jaRegistrado = await db.execute(sql`
+      SELECT 1 FROM vendas_eventos WHERE tipo = 'MeetingNoShow' AND reuniao_id = ${params.reuniaoId}::uuid LIMIT 1`);
+    if ((jaRegistrado as unknown as unknown[]).length) return;
+  }
+
   await db.execute(sql`
     UPDATE negocios SET
       no_show_em = now(),
@@ -817,10 +873,22 @@ export async function registrarNoShow(params: {
   });
 
   if (op.lead_id) {
-    await voltarParaQualificado({
-      organizacaoId: params.organizacaoId, leadId: op.lead_id,
-      motivo: "No-show: lead volta para retrabalho", ator: params.ator,
-    });
+    // Decisão do Scott (06/10, revista): o lead do no-show volta para QUALIFICADO.
+    // Ele já foi qualificado, só não compareceu à reunião; mandá-lo de volta para
+    // Qualificação faria o SDR requalificar quem já estava pronto.
+    const [lead] = await db.execute<{ estagio_pre_vendas: string | null }>(sql`
+      SELECT estagio_pre_vendas FROM leads
+       WHERE id = ${op.lead_id}::uuid AND organizacao_id = ${params.organizacaoId}::uuid`);
+    if (lead && lead.estagio_pre_vendas !== "qualificado") {
+      await db.execute(sql`
+        UPDATE leads SET estagio_pre_vendas = 'qualificado', updated_at = now()
+         WHERE id = ${op.lead_id}::uuid`);
+      await registrarMudancaDeEtapa({
+        organizacaoId: params.organizacaoId, ator: params.ator, leadId: op.lead_id,
+        de: lead.estagio_pre_vendas, para: "qualificado", tipo: "StageChanged",
+        motivo: "No-show: lead volta para Qualificado",
+      });
+    }
   }
 }
 

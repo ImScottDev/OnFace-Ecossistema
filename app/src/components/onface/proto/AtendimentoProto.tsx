@@ -803,6 +803,19 @@ export function AtendimentoProto({ dados, contexto, leadInicial = null }: {
         }
       });
 
+      /* Assumir, transferir, fechar, reabrir e soneca existem só para a
+         conversa de WhatsApp: a rota `/acao` procura o id em `contatos`, e a
+         lista também traz ligação e e-mail, cujos ids não estão lá. Medido em
+         06/10: fechar um item de ligação devolvia 404 e a tela dizia só "A ação
+         não foi aceita". Mesmo tratamento do envio por outro canal — avisa o
+         que não foi feito, em vez de chamar uma rota que vai recusar. */
+      if (antes.canal && antes.canal !== "WhatsApp") {
+        if (depois.resp !== antes.resp || depois.status !== antes.status) {
+          avisos.add(`${antes.canal} não é uma conversa da fila: assumir, transferir ou fechar ainda não está ligado. Nada foi alterado.`);
+        }
+        continue;
+      }
+
       // Responsável: nome → usuário. Sem dono = release.
       const trocouResp = depois.resp !== antes.resp;
       if (trocouResp) {

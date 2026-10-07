@@ -31,6 +31,10 @@ export interface CardOportunidade {
   ganho: boolean;
   perdido: boolean;
   motivoPerda: string | null;
+  /** NEW_BUSINESS | EXPANSION | RENEWAL | REACTIVATION. */
+  motion: string | null;
+  /** Setup/avulso estimado, separado do MRR. */
+  setup: number | null;
   criadoEm: string;
 }
 
@@ -39,6 +43,8 @@ export interface FiltrosPipeline {
   responsavelId?: string | null;
   familia?: string | null;
   motion?: string | null;
+  /** Chave do motivo de perda (E1): separa o perdido de verdade do estagnado. */
+  motivo?: string | null;
   busca?: string | null;
   /** Só as que estão sem próximo passo combinado — o Next Step Invariant. */
   semProximaAcao?: boolean;
@@ -54,7 +60,7 @@ export async function boardDeOportunidades(
   db: Executor, sql: SqlTag, organizacaoId: string, filtros: FiltrosPipeline = {},
 ): Promise<{
   cards: CardOportunidade[];
-  totaisPorEtapa: Record<string, { n: number; valor: number }>;
+  totaisPorEtapa: Record<string, { n: number; valor: number; mrr: number }>;
 }> {
   const etapas = filtros.etapas?.length ? filtros.etapas : null;
   const listaEtapas = etapas ? `{${etapas.join(",")}}` : null;
@@ -65,8 +71,18 @@ export async function boardDeOportunidades(
   // enquanto o cabeçalho dela anuncia outro número.
   const condicoes = sql`
         AND (${filtros.responsavelId ?? null}::uuid IS NULL OR o.responsavel_id = ${filtros.responsavelId ?? null}::uuid)
-        AND (${filtros.familia ?? null}::text IS NULL OR o.service_family = ${filtros.familia ?? null})
+        -- Família NULL conta como Callface AI SÓ no filtro, sem gravar nada
+        -- (decisão do Scott): 1.100 das 1.618 não têm família e o cartão já
+        -- as mostra como Callface AI.
+        AND (${filtros.familia ?? null}::text IS NULL OR o.service_family = ${filtros.familia ?? null}
+             OR (${filtros.familia ?? null} = 'CALLFACE_AI' AND o.service_family IS NULL))
         AND (${filtros.motion ?? null}::text IS NULL OR o.commercial_motion = ${filtros.motion ?? null})
+        -- A chave estruturada mora no negócio legado; a coluna da oportunidade
+        -- guarda texto livre em parte das linhas. A chave vence.
+        AND (${filtros.motivo ?? null}::text IS NULL
+             OR COALESCE(nb.motivo_perda_chave, o.motivo_perda) = ${filtros.motivo ?? null})
+        -- Cópia 'ativo' é a carteira (negocio_origem_id), não funil: nunca no board.
+        AND COALESCE(o.stage, '') <> 'ativo'
         AND (${busca}::text IS NULL OR lower(COALESCE(o.titulo,'')) LIKE ${busca}
              OR lower(COALESCE(e.nome, '')) LIKE ${busca}
              -- Buscar pelo nome que o cartão EXIBE: sem isto, procurar a
@@ -98,7 +114,8 @@ export async function boardDeOportunidades(
              o.bundle_id::text,
              (o.ganho_at IS NOT NULL) AS ganho,
              (o.perdido_at IS NOT NULL) AS perdido,
-             o.motivo_perda, o.created_at::text AS criado_em,
+             COALESCE(nb.motivo_perda_chave, o.motivo_perda) AS motivo_perda, o.commercial_motion AS motion,
+             o.setup_estimado::text AS setup, o.created_at::text AS criado_em,
              o.updated_at AS ordenacao
         FROM oportunidades o
         LEFT JOIN empresas e ON e.id = o.empresa_id
@@ -132,13 +149,16 @@ export async function boardDeOportunidades(
     ganho: Boolean(l.ganho),
     perdido: Boolean(l.perdido),
     motivoPerda: (l.motivo_perda as string) ?? null,
+    motion: (l.motion as string) ?? null,
+    setup: l.setup == null ? null : Number(l.setup),
     criadoEm: String(l.criado_em),
   }));
 
   // Total e valor da coluna vêm de agregação sobre a tabela inteira: somar os
   // cards carregados subestimaria o pipeline.
-  const totais = await db.execute<{ etapa: string; n: number; valor: string | null }>(sql`
-    SELECT o.etapa, count(*)::int AS n, COALESCE(SUM(o.valor), 0)::text AS valor
+  const totais = await db.execute<{ etapa: string; n: number; valor: string | null; mrr: string | null }>(sql`
+    SELECT o.etapa, count(*)::int AS n, COALESCE(SUM(o.valor), 0)::text AS valor,
+           COALESCE(SUM(o.mrr), 0)::text AS mrr
       FROM oportunidades o
       LEFT JOIN empresas e ON e.id = o.empresa_id
       -- Os MESMOS joins da query de cartoes: as condicoes sao compartilhadas
@@ -151,8 +171,8 @@ export async function boardDeOportunidades(
        ${condicoes}
      GROUP BY o.etapa`);
 
-  const totaisPorEtapa: Record<string, { n: number; valor: number }> = {};
-  for (const t of totais) totaisPorEtapa[t.etapa] = { n: Number(t.n), valor: Number(t.valor ?? 0) };
+  const totaisPorEtapa: Record<string, { n: number; valor: number; mrr: number }> = {};
+  for (const t of totais) totaisPorEtapa[t.etapa] = { n: Number(t.n), valor: Number(t.valor ?? 0), mrr: Number(t.mrr ?? 0) };
 
   return { cards, totaisPorEtapa };
 }

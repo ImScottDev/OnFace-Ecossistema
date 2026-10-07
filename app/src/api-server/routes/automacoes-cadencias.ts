@@ -21,6 +21,17 @@ import { validateFollowupForPublish } from "@/lib/ai-platform/followup/validate"
 
 const app = new Hono();
 
+// :id (cadência ou enrollment) que não é uuid estourava no Postgres (500); vira 404.
+// "fila" e o prefixo "enrollments" são rotas literais, não ids.
+app.use("/automacoes/cadencias/*", async (c, next) => {
+  const [, , , seg, sub] = new URL(c.req.url).pathname.replace(/^\/api/, "").split("/");
+  const id = seg === "enrollments" ? sub : seg;
+  if (id && id !== "fila" && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+    return c.json({ error: "Nao encontrado" }, 404);
+  }
+  await next();
+});
+
 app.get("/automacoes/cadencias", async (c) => {
   const ctx = await getCtx(c);
 

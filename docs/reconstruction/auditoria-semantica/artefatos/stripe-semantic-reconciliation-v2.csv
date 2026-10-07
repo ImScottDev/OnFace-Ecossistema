@@ -1,0 +1,134 @@
+stripe_subscription_id,produto_price,valor,status_billing,vinculo_crm_encontrado,revenue_nature_v2
+sub_1U2w3nEd4dqxpSBfQgGhwNJN,Callface AI - Full (price_1U2t3TEd4dqxpSBfEG22Vmv6/month),179.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1U1tZlEd4dqxpSBfOSGXiTKt,Callface AI - Starter (price_1U1tSTEd4dqxpSBfEyNXHkqV/month),179.80,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1U1rztEd4dqxpSBfPteeJiRf,Callface AI - Full (price_1U1rwhEd4dqxpSBfAvC82EGv/month); Agente IA (price_1U1r,629.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1U1YOPEd4dqxpSBfEXjO8Ces,Callface Copilot (price_1Sp7uLEd4dqxpSBfnuM86fYQ/month),1799.00,active,nao,MRR_CONFIRMED_OU_PROBABLE
+sub_1U1VceEd4dqxpSBfLhhO2PFw,Callface AI - Full (price_1U1UCxEd4dqxpSBfy32amhfl/month),539.70,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1U1Ux3Ed4dqxpSBfZPTGZRxO,Callface AI - Full (price_1U1SjYEd4dqxpSBfKH70zuAF/month),179.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1U1RUzEd4dqxpSBflTVDx6Pv,Callface AI - Full (price_1U1RTeEd4dqxpSBf7ZOCtPxf/month),179.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1U1RT7Ed4dqxpSBfAgtnGNSR,Callface AI - Starter (price_1TH7JZEd4dqxpSBfw2pBKJdI/month),89.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1U1QkIEd4dqxpSBfgdnkAUTI,Callface AI - Full (price_1U1QQBEd4dqxpSBfiyKK3Gd2/month),359.80,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1U1ASqEd4dqxpSBfpUUgdm8G,Callface AI - Full (price_1U1A2JEd4dqxpSBfFW7gZzMU/month),129.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1U19lJEd4dqxpSBf1w0ZYTb7,Callface AI - Starter (price_1TH7JZEd4dqxpSBfw2pBKJdI/month),179.80,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1U19TbEd4dqxpSBf1JThb3lY,Callface AI - Full (price_1U19EZEd4dqxpSBf9IoIKEab/month),129.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1U16pOEd4dqxpSBf2JUTBPMZ,Callface AI - Starter (price_1U14j0Ed4dqxpSBfhj4PvcBK/month),269.70,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1U15W8Ed4dqxpSBf1faTDb8R,SETUP BROKER IA (price_1U14c8Ed4dqxpSBfGzGKxC8l/month),1623.75,active,nao,SETUP_OU_INSTALLMENT_PROBABLE
+sub_1U14yNEd4dqxpSBf2bOWi4zx,Callface AI - Full (price_1U14uvEd4dqxpSBfvFrLDAfa/month),179.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1U13u4Ed4dqxpSBfCKhQ66HS,Callface Copilot (price_1U13bXEd4dqxpSBfYlDFr4P8/month),269.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1U0oN7Ed4dqxpSBfR1g8ckuP,Callface AI - Full (price_1U0mjfEd4dqxpSBfTaBskyEU/month),179.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1U0nlwEd4dqxpSBfDoTq1TJN,Callface AI - Starter (price_1U0hntEd4dqxpSBfl4Khn0cc/month),269.70,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1U0NL6Ed4dqxpSBf5VAi5Cdo,Callface AI - Full (price_1U0MiOEd4dqxpSBfRhOAkdKb/month),539.70,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1U0N64Ed4dqxpSBfGjlJO1pZ,Callface AI - Full (price_1U0N4JEd4dqxpSBf2fUtJ5gZ/month),149.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1U0L2LEd4dqxpSBf5tl6EQDl,Callface AI - Full (price_1U0KxrEd4dqxpSBfSIlXEzbt/month); Callface AI - Starter,449.70,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1TzMh2Ed4dqxpSBfB6D7piWq,Callface AI - Full (price_1TzLvOEd4dqxpSBfhuHja23W/month),179.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1TzIN2Ed4dqxpSBfsy9MQTZg,Callface AI - Starter (price_1TzIFbEd4dqxpSBf45biDeDm/month),89.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1TzH4cEd4dqxpSBfMA3EYiD9,Callface Copilot (price_1Sp7uLEd4dqxpSBfnuM86fYQ/month),179.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1TzH2IEd4dqxpSBfOzc5bUTN,Callface AI - Full (price_1TzFYMEd4dqxpSBfBqrOLNfR/month),179.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1TzGkaEd4dqxpSBf4cxeolRS,Callface AI - Full (price_1TzFXbEd4dqxpSBfshfiwNEq/month),179.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1TyxtHEd4dqxpSBfUj66ZsUl,Agente IA (price_1TyxrEEd4dqxpSBf4T2ghlwK/month),629.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1TywzUEd4dqxpSBfw3AIVvdI,Callface AI - Starter (price_1TH7JZEd4dqxpSBfw2pBKJdI/month),89.90,active,nao,MRR_CONFIRMED_OU_PROBABLE
+sub_1Tyv4VEd4dqxpSBfi3ue3gkr,Callface AI - Starter (price_1TH7JZEd4dqxpSBfw2pBKJdI/month),89.90,active,nao,MRR_CONFIRMED_OU_PROBABLE
+sub_1TyttEEd4dqxpSBfdxVQQZ9s,Callface AI - Full (price_1TytOnEd4dqxpSBfhJRb8Iop/month); Callface AI - Starter,809.50,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1TyfwDEd4dqxpSBf1uzQ211x,Callface AI - Full (price_1TyYJFEd4dqxpSBfGPoPeLDI/month); Callface Copilot (pri,359.80,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1Tye9XEd4dqxpSBfiaIWgCcj,Callface AI - Full (price_1TycV8Ed4dqxpSBfVsCyFzSs/month),2857.80,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1TydacEd4dqxpSBfuFy8LGqW,Callface AI - Full (price_1TydXsEd4dqxpSBfJCLFm0KL/month); Callface AI - Starter,809.50,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1TycztEd4dqxpSBf0WdQTAOg,Callface AI - Full (price_1TybZ6Ed4dqxpSBfqlDP5KsE/month),539.70,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1TyXxDEd4dqxpSBfqY3hy3Zq,Callface Copilot (price_1Sp7uLEd4dqxpSBfnuM86fYQ/month),179.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1TyWy7Ed4dqxpSBfWgO0Y7fY,Callface AI - Full (price_1TyGpgEd4dqxpSBftFhvBsrI/month); Agente IA (price_1TyG,1349.50,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1TyIB7Ed4dqxpSBfaH4TAwJd,Callface AI - Full (price_1TyH5uEd4dqxpSBfWCJsyGkM/month),359.80,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1TyHwrEd4dqxpSBf5tRKZuVN,Callface AI - Full (price_1TyHwLEd4dqxpSBfbsmlvqCh/month),179.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1TyHoLEd4dqxpSBfh9CzlViQ,Callface AI - Full (price_1TxwFDEd4dqxpSBfroVL27CU/month),359.80,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1TyHjSEd4dqxpSBfKpHTAF9C,Callface AI - Full (price_1TyFHnEd4dqxpSBfTUj6IH6L/month); Callface AI - Starter,1169.30,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1TyHhnEd4dqxpSBfMm7RIDp0,Callface Copilot (price_1Sp7uLEd4dqxpSBfnuM86fYQ/month),179.90,active,nao,MRR_CONFIRMED_OU_PROBABLE
+sub_1TyH38Ed4dqxpSBfpDSQEkZo,Callface AI - Full (price_1TyDoVEd4dqxpSBfcleNVYuh/month),2248.50,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1TyEbOEd4dqxpSBfwk0dAi9Z,Callface AI - Full (price_1TyEKbEd4dqxpSBfJjKvM7gE/month),179.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1TyAqMEd4dqxpSBfPzX56sb5,Callface AI - Starter (price_1TH7JZEd4dqxpSBfw2pBKJdI/month),89.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1TxvaVEd4dqxpSBfIpf988rG,Callface AI - Full (price_1TxvZGEd4dqxpSBf8yLlLk1Z/month),179.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1TxoSyEd4dqxpSBf5KgCXnTu,Callface AI - Full (price_1TxoRLEd4dqxpSBfyWMh8sIh/month),1259.30,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1TwpsFEd4dqxpSBfNcvwcN0D,Callface AI - Full (price_1TwobrEd4dqxpSBffmPJUP4N/month),359.80,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1TwmeEEd4dqxpSBfo3BZALr4,Callface Copilot (price_1Sp7uLEd4dqxpSBfnuM86fYQ/month),179.90,active,nao,MRR_CONFIRMED_OU_PROBABLE
+sub_1TwPIZEd4dqxpSBfNgp0eyHS,Callface Copilot (price_1Sp7uLEd4dqxpSBfnuM86fYQ/month),179.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1Tw7IxEd4dqxpSBflN1TtoBG,Callface AI - Full (price_1Tw03FEd4dqxpSBf53sYuPW0/month),149.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1Tw1tAEd4dqxpSBfEPHdMYNH,Callface AI - Starter (price_1TvlF9Ed4dqxpSBfajkcQWNz/month),89.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1TvyTLEd4dqxpSBfN3nTOrnW,Callface AI - Starter (price_1TH7JZEd4dqxpSBfw2pBKJdI/month),89.90,active,nao,MRR_CONFIRMED_OU_PROBABLE
+sub_1TvjeaEd4dqxpSBfsJytOApE,Callface Copilot (price_1Sp7uLEd4dqxpSBfnuM86fYQ/month),179.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1TvO7jEd4dqxpSBf7o2T1gRs,Callface AI - Starter (price_1TvO41Ed4dqxpSBfDar1cIIW/month),89.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1TvMwyEd4dqxpSBfvjZY71VW,Callface AI - Full (price_1TvMDaEd4dqxpSBf2sKR4P8N/month),179.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1TvIp6Ed4dqxpSBf8o4RqbYy,Callface AI - Starter (price_1TvIn3Ed4dqxpSBfSiRxWSP0/month),89.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1TvEruEd4dqxpSBfdDMS7Gru,Callface Copilot (price_1Sp7uLEd4dqxpSBfnuM86fYQ/month),179.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1TuDg2Ed4dqxpSBf8I81S4nH,Callface Copilot (price_1Sp7uLEd4dqxpSBfnuM86fYQ/month),179.90,active,nao,MRR_CONFIRMED_OU_PROBABLE
+sub_1TtvphEd4dqxpSBfDGR38RDx,Callface AI - Starter (price_1Ttv3yEd4dqxpSBfOqQipoKn/month),89.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1Ttu9vEd4dqxpSBfgiV5JFHA,Callface Copilot (price_1Sp7uLEd4dqxpSBfnuM86fYQ/month),179.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1TtW23Ed4dqxpSBfZ9C838zG,Callface AI - Starter (price_1TtTmaEd4dqxpSBfs0KJnHkc/month),89.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1Tt6zsEd4dqxpSBfoyPisrf6,Callface AI - Full (price_1Tt6nPEd4dqxpSBfAz8JCcx3/month),539.70,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1TsqUZEd4dqxpSBfPjjqzZzw,Callface Copilot (price_1Sp7uLEd4dqxpSBfnuM86fYQ/month),1259.30,active,nao,MRR_CONFIRMED_OU_PROBABLE
+sub_1TsoAYEd4dqxpSBfxGsC2k83,Callface AI - Starter (price_1TsjsSEd4dqxpSBfIQ0zuomS/month),359.60,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1TslGbEd4dqxpSBfJPxExfoB,Callface Copilot (price_1Sp7uLEd4dqxpSBfnuM86fYQ/month),179.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1Tp88TEd4dqxpSBfc3ZDaJJU,Callface Copilot (price_1Sp7uLEd4dqxpSBfnuM86fYQ/month),1079.40,active,nao,MRR_CONFIRMED_OU_PROBABLE
+sub_1ToqC2Ed4dqxpSBfm0dKtafK,Callface AI - Full (price_1Toq53Ed4dqxpSBfTOtJIHuy/month),359.80,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1Topy7Ed4dqxpSBfRtb3uCMU,Negócios Profissionais (price_1TRyyWEd4dqxpSBf9OfvYgI1/month),1000.00,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1TonvKEd4dqxpSBfO3NPI9l2,Callface Copilot (price_1Sp7uLEd4dqxpSBfnuM86fYQ/month),179.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1TolwIEd4dqxpSBfxkIIoRk1,Callface Copilot (price_1Sp7uLEd4dqxpSBfnuM86fYQ/month),179.90,active,nao,MRR_CONFIRMED_OU_PROBABLE
+sub_1TolFREd4dqxpSBfPssM7Y2U,Callface AI - Starter (price_1TH7JZEd4dqxpSBfw2pBKJdI/month); Callface Copilot (,269.80,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1ToSvNEd4dqxpSBfmYox1sRF,Callface AI - Starter (price_1TH7JZEd4dqxpSBfw2pBKJdI/month),89.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1ToRIlEd4dqxpSBfOM3AK3iU,Callface AI - Starter (price_1TH7JZEd4dqxpSBfw2pBKJdI/month); CALLFACE AI - (CON,384.90,active,nao,MRR_CONFIRMED_OU_PROBABLE
+sub_1To6XJEd4dqxpSBfhX7TNZYB,Callface AI - Starter (price_1TH7JZEd4dqxpSBfw2pBKJdI/month),269.70,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1TnfOqEd4dqxpSBfjGSk881T,Callface AI - Starter (price_1TH7JZEd4dqxpSBfw2pBKJdI/month),89.90,active,nao,MRR_CONFIRMED_OU_PROBABLE
+sub_1TmJDCEd4dqxpSBfH7qRkeCX,Callface AI - Starter (price_1TH7JZEd4dqxpSBfw2pBKJdI/month),359.60,active,nao,MRR_CONFIRMED_OU_PROBABLE
+sub_1TmHoMEd4dqxpSBfj5Rivd0X,Callface Copilot (price_1Sp7uLEd4dqxpSBfnuM86fYQ/month),179.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1TlZLBEd4dqxpSBfts4IAqNn,CALLFACE AI - SMB (price_1TlZHfEd4dqxpSBfCMGuxJKw/month),679.50,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1TlVkNEd4dqxpSBftUuZ0mgz,Callface AI - Starter (price_1TH7JZEd4dqxpSBfw2pBKJdI/month),89.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1TlU86Ed4dqxpSBfp8mAe5An,Callface Copilot (price_1Sp7uLEd4dqxpSBfnuM86fYQ/month),539.70,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1Tl8ziEd4dqxpSBf0IflKHLN,Callface Copilot (price_1Sp7uLEd4dqxpSBfnuM86fYQ/month),1079.40,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1Tl8boEd4dqxpSBfkDqQyoTS,Callface Copilot (price_1Sp7uLEd4dqxpSBfnuM86fYQ/month),179.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1Tl8ThEd4dqxpSBfQlCsVYab,Callface Copilot (price_1Sp7uLEd4dqxpSBfnuM86fYQ/month),179.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1Tl8RAEd4dqxpSBfM6G0YA9W,Callface Copilot (price_1Sp7uLEd4dqxpSBfnuM86fYQ/month),179.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1Tl6OJEd4dqxpSBfqEPKDMaX,Callface AI - Starter (price_1TH7JZEd4dqxpSBfw2pBKJdI/month),269.70,active,nao,MRR_CONFIRMED_OU_PROBABLE
+sub_1Tk8lMEd4dqxpSBfgSWjKMyd,Callface Copilot (price_1Sp7uLEd4dqxpSBfnuM86fYQ/month),179.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1TjPrhEd4dqxpSBfvNhXBf0C,Callface Copilot (price_1Sp7uLEd4dqxpSBfnuM86fYQ/month),179.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1TjNU0Ed4dqxpSBfOMDbhz5b,Callface Copilot (price_1Sp7uLEd4dqxpSBfnuM86fYQ/month),179.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1TjInYEd4dqxpSBfPtAbp6aM,Callface Copilot (price_1Sp7uLEd4dqxpSBfnuM86fYQ/month),179.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1Tiy66Ed4dqxpSBfYZGabfeB,Callface Copilot (price_1Sp7uLEd4dqxpSBfnuM86fYQ/month),179.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1Th8FjEd4dqxpSBf9e4qtZ7p,Callface Copilot (price_1Sp7uLEd4dqxpSBfnuM86fYQ/month),359.80,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1TgV2NEd4dqxpSBfq3Uv7Tpi,Callface Copilot (price_1Sp7uLEd4dqxpSBfnuM86fYQ/month),539.70,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1TgPvbEd4dqxpSBfwBn626YP,CALLFACE AI - (CONTRATO 12 MESES) (price_1TM6jXEd4dqxpSBfrIxqRexF/month); Callfa,1482.20,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1Tg99BEd4dqxpSBf630tgfWU,CALLFACE AI - (CONTRATO 12 MESES) (price_1TM6jXEd4dqxpSBfrIxqRexF/month),1032.50,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1Tg7qaEd4dqxpSBfNmncobL7,Callface Copilot (price_1Sp7uLEd4dqxpSBfnuM86fYQ/month),179.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1TfPytEd4dqxpSBfGUshkPEQ,Callface Copilot (price_1Sp7uLEd4dqxpSBfnuM86fYQ/month),179.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1TeDGwEd4dqxpSBfIxpcz1G1,Callface Copilot (price_1Sp7uLEd4dqxpSBfnuM86fYQ/month),179.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1TdxMxEd4dqxpSBf3ifokSqa,Callface Copilot (price_1Sp7uLEd4dqxpSBfnuM86fYQ/month),179.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1TdaLCEd4dqxpSBfKuKrMGIl,Callface AI - Starter (price_1TH7JZEd4dqxpSBfw2pBKJdI/month),89.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1TcXZVEd4dqxpSBfQAWiNZDD,CALLFACE AI - ILIMITADO (price_1TcRgqEd4dqxpSBfKvVGU324/month),319.80,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1Tc3uVEd4dqxpSBfxRjYE64j,Callface Copilot (price_1Sp7uLEd4dqxpSBfnuM86fYQ/month),179.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1TbS8UEd4dqxpSBfO9F4MWEy,Callface AI - Starter (price_1TH7JZEd4dqxpSBfw2pBKJdI/month),179.80,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1Tb5qkEd4dqxpSBfEtRgS6jM,Agente IA (price_1TP2hzEd4dqxpSBfDYeVILVs/month),450.00,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1Tb5p4Ed4dqxpSBfmx94lNMS,Callface Copilot (price_1Sp7uLEd4dqxpSBfnuM86fYQ/month),179.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1TazabEd4dqxpSBf0buXoz3g,Callface AI - Starter (price_1TH7JZEd4dqxpSBfw2pBKJdI/month),179.80,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1TaxjlEd4dqxpSBfYYV8ShlC,Callface Copilot (price_1Sp7uLEd4dqxpSBfnuM86fYQ/month); Callface AI - Starter (,449.70,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1TZFmYEd4dqxpSBfZmPRwmHp,Callface Copilot (price_1Sp7uLEd4dqxpSBfnuM86fYQ/month),179.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1TZEdBEd4dqxpSBfvgdKa4l1,Callface Copilot (price_1Sp7uLEd4dqxpSBfnuM86fYQ/month),179.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1TYyBEEd4dqxpSBfylZWiXM9,Callface Copilot (price_1Sp7uLEd4dqxpSBfnuM86fYQ/month),179.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1TWhe4Ed4dqxpSBfNgmpDG06,Callface AI - Starter (price_1TH7JZEd4dqxpSBfw2pBKJdI/month),89.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1TTpohEd4dqxpSBf5BfrvuNY,Callface AI - Starter (price_1TH7JZEd4dqxpSBfw2pBKJdI/month),179.80,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1TS0xrEd4dqxpSBfa2aMnINB,Callface Copilot (price_1Sp7uLEd4dqxpSBfnuM86fYQ/month),179.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1TQtUoEd4dqxpSBf9dk13u1S,Callface Copilot (price_1Sp7uLEd4dqxpSBfnuM86fYQ/month),179.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1TQoSXEd4dqxpSBfbKpVt5xO,Callface AI - Starter (price_1TH7JZEd4dqxpSBfw2pBKJdI/month); Callface Copilot (,449.70,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1TL2uEEd4dqxpSBflQ6rWixe,Callface AI - Starter (price_1TH7JZEd4dqxpSBfw2pBKJdI/month),89.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1THqzjEd4dqxpSBfRWin2Iik,Callface Copilot - (Parceiro) (price_1SqJWSEd4dqxpSBflPYLXTlO/month),90.00,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1THRVFEd4dqxpSBfaNj5O911,Callface Copilot (price_1Sp7uLEd4dqxpSBfnuM86fYQ/month),179.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1THO7KEd4dqxpSBfdJ29EsoI,Callface Copilot (price_1Sp7uLEd4dqxpSBfnuM86fYQ/month),179.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1TH8cTEd4dqxpSBfBMHXtrwX,Callface Copilot - (Parceiro) (price_1SqJWSEd4dqxpSBflPYLXTlO/month),90.00,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1TH8NTEd4dqxpSBfIx9VZr1E,Callface Copilot (price_1Sp7uLEd4dqxpSBfnuM86fYQ/month),179.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1TBwvYEd4dqxpSBfxSPVDeAP,Callface Copilot (price_1Sp7uLEd4dqxpSBfnuM86fYQ/month),179.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1T7hFmEd4dqxpSBfNRRaf4Y9,Callface Copilot (price_1Sp7uLEd4dqxpSBfnuM86fYQ/month),179.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1T7dbIEd4dqxpSBf8dN5bH9V,COLD CALLING - 2025 (price_1RizV5Ed4dqxpSBf1QRtFbD8/month),119.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1T7cMeEd4dqxpSBfL8O5HePa,Callface Copilot (price_1Sp7uLEd4dqxpSBfnuM86fYQ/month),179.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1T6xhgEd4dqxpSBfCBxKOdsZ,Callface Copilot (price_1Sp7uLEd4dqxpSBfnuM86fYQ/month),179.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1T44l9Ed4dqxpSBfhFx3AWIB,Callface Copilot (price_1Sp7uLEd4dqxpSBfnuM86fYQ/month),1079.40,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1T2C5VEd4dqxpSBfZzKjsv59,Callface Enterprise - 7000 minutos (price_1T2A6vEd4dqxpSBfTpIDieCG/month); Callf,2889.80,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1StpAjEd4dqxpSBfigNQVukR,Callface Copilot (price_1Sp7uLEd4dqxpSBfnuM86fYQ/month),179.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1Sqf7gEd4dqxpSBfUjZNBofu,Callface Copilot - (Parceiro) (price_1SqJWSEd4dqxpSBflPYLXTlO/month); Callface A,1439.60,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1SmfdpEd4dqxpSBfwMAZKyEe,COLD CALLING - 2025 (price_1RizV5Ed4dqxpSBf1QRtFbD8/month),479.60,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1Seha0Ed4dqxpSBf4wzZ0t2E,COLD CALLING - 2025 (price_1RizV5Ed4dqxpSBf1QRtFbD8/month),119.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1Sb4BrEd4dqxpSBff5GLBOze,COLD CALLING - 2025 (price_1RizV5Ed4dqxpSBf1QRtFbD8/month),119.90,active,sim,MRR_CONFIRMED_OU_PROBABLE
+sub_1Saz8rEd4dqxpSBf2xQAIeOW,PERFOMANCE CALL (price_1RyGP6Ed4dqxpSBfxvC9wfro/month),679.60,active,sim,MRR_CONFIRMED_OU_PROBABLE

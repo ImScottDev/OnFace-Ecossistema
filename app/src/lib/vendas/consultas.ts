@@ -983,8 +983,9 @@ export async function diretorioEmpresas(organizacaoId: string, filtros: {
   }>(sql`
     WITH base AS (
       SELECT e.id, e.nome, e.cnpj, e.setor, e.cidade,
-        (SELECT count(*)::int FROM pessoas p WHERE p.empresa_id = e.id)
-          + (SELECT count(*)::int FROM leads l WHERE l.empresa_id = e.id AND NOT EXISTS (
+        (SELECT count(*)::int FROM pessoas p WHERE p.empresa_id = e.id
+           AND NOT EXISTS (SELECT 1 FROM leads l2 WHERE l2.id = p.lead_id_legado AND l2.canonical_lead_id IS NOT NULL))
+          + (SELECT count(*)::int FROM leads l WHERE l.empresa_id = e.id AND l.canonical_lead_id IS NULL AND NOT EXISTS (
                SELECT 1 FROM pessoas p2 WHERE p2.lead_id_legado = l.id)) AS pessoas,
         (SELECT count(*)::int FROM negocios n WHERE n.empresa_id = e.id
           AND n.etapa IN ('entrada','diagnostico','proposta','negociacao')) AS oportunidades_abertas,
@@ -1143,6 +1144,7 @@ export async function diretorioPessoas(organizacaoId: string, filtros: {
       FROM pessoas p
       LEFT JOIN empresas e ON e.id = p.empresa_id
      WHERE p.organizacao_id = ${organizacaoId}::uuid
+       AND NOT EXISTS (SELECT 1 FROM leads l2 WHERE l2.id = p.lead_id_legado AND l2.canonical_lead_id IS NOT NULL)
        AND (${filtros.empresaId ?? null}::uuid IS NULL OR p.empresa_id = ${filtros.empresaId ?? null}::uuid)
        AND (${filtros.semEmpresa ?? false} = false OR p.empresa_id IS NULL)
        AND (${busca}::text IS NULL OR lower(concat_ws(' ', p.nome, p.sobrenome)) LIKE ${busca}
@@ -1158,6 +1160,7 @@ export async function diretorioPessoas(organizacaoId: string, filtros: {
       LEFT JOIN empresas e ON e.id = l.empresa_id
      WHERE l.organizacao_id = ${organizacaoId}::uuid
        AND NOT EXISTS (SELECT 1 FROM pessoas p WHERE p.lead_id_legado = l.id)
+       AND l.canonical_lead_id IS NULL
        AND (${filtros.empresaId ?? null}::uuid IS NULL OR l.empresa_id = ${filtros.empresaId ?? null}::uuid)
        AND (${filtros.semEmpresa ?? false} = false OR l.empresa_id IS NULL)
        AND (${busca}::text IS NULL OR lower(concat_ws(' ', l.nome, l.sobrenome)) LIKE ${busca}
@@ -1191,6 +1194,7 @@ export async function pessoaPorId(organizacaoId: string, pessoaId: string): Prom
       LEFT JOIN empresas e ON e.id = l.empresa_id
      WHERE l.id = ${pessoaId}::uuid AND l.organizacao_id = ${organizacaoId}::uuid
        AND NOT EXISTS (SELECT 1 FROM pessoas p WHERE p.lead_id_legado = l.id)
+       AND l.canonical_lead_id IS NULL
      LIMIT 1
   `);
   return linha ? mapearLinhaPessoa(linha) : null;
@@ -1209,6 +1213,13 @@ export interface Empresa360 {
   estado: string | null;
   website: string | null;
   dominio: string | null;
+  /** Campos que a produção mostrava e a tela perdeu (680 e 362 empresas). */
+  telefone: string | null;
+  observacoes: string | null;
+  /** Maior lead_score entre os leads da empresa; null = nenhum pontuado. */
+  leadScore: number | null;
+  /** Respostas do formulário (Meta/RD/site) de cada lead, com o anúncio de origem. */
+  formularios: Array<{ leadId: string; nome: string | null; criadoEm: string; metaAdId: string | null; respostas: Array<{ pergunta: string; resposta: string }> }>;
   endereco: { logradouro: string | null; numero: string | null; complemento: string | null; bairro: string | null; cep: string | null };
   relacionamento: RelacionamentoEmpresa;
   relacionamentoRotulo: string;
@@ -1229,9 +1240,10 @@ export async function empresa360(organizacaoId: string, empresaId: string): Prom
     setor: string | null; porte: string | null; cidade: string | null; estado: string | null;
     website: string | null; dominio: string | null; logradouro: string | null;
     numero: string | null; complemento: string | null; bairro: string | null; cep: string | null;
+    telefone: string | null; observacoes: string | null;
   }>(sql`
     SELECT id::text, nome, razao_social, cnpj, setor, porte, cidade, estado, website, dominio,
-           logradouro, numero, complemento, bairro, cep
+           logradouro, numero, complemento, bairro, cep, telefone, observacoes
       FROM empresas WHERE id = ${empresaId}::uuid AND organizacao_id = ${organizacaoId}::uuid
   `);
   if (!e) return null;
@@ -1248,12 +1260,14 @@ export async function empresa360(organizacaoId: string, empresaId: string): Prom
       FROM pessoas p
       LEFT JOIN pessoa_empresa_vinculos v ON v.pessoa_id = p.id AND v.empresa_id = p.empresa_id AND v.encerrado_em IS NULL
      WHERE p.empresa_id = ${empresaId}::uuid
+       AND NOT EXISTS (SELECT 1 FROM leads l2 WHERE l2.id = p.lead_id_legado AND l2.canonical_lead_id IS NOT NULL)
     UNION ALL
     SELECT l.id::text, 'lead' AS fonte, NULLIF(trim(concat_ws(' ', l.nome, l.sobrenome)), '') AS nome,
            l.cargo, NULL AS papel, l.email, l.telefone
       FROM leads l
      WHERE l.empresa_id = ${empresaId}::uuid
        AND NOT EXISTS (SELECT 1 FROM pessoas p WHERE p.lead_id_legado = l.id)
+       AND l.canonical_lead_id IS NULL
      ORDER BY nome
   `);
 
@@ -1281,8 +1295,28 @@ export async function empresa360(organizacaoId: string, empresaId: string): Prom
            o.service_family AS familia, o.valor::text AS valor, u.nome AS responsavel
       FROM oportunidades o LEFT JOIN usuarios u ON u.id = o.responsavel_id
      WHERE o.empresa_id = ${empresaId}::uuid
+       -- A cópia 'ativo' é o espelho da carteira (negocio_origem_id): o cliente já
+       -- aparece em Serviços. Contá-la aqui o mostrava de novo como aberto em Entrada.
+       AND COALESCE(o.stage, '') <> 'ativo'
      ORDER BY o.created_at DESC LIMIT 20
   `);
+
+  // O que o formulário de origem respondeu, pelos leads da empresa, e o maior
+  // score entre eles. Os dois sumiam da empresa: moram no lead, não nela.
+  const doLead = await db.execute<{
+    id: string; nome: string | null; criado_em: string; lead_score: number | null;
+    campos_custom: Record<string, unknown> | null; meta_ad_id: string | null;
+  }>(sql`
+    SELECT l.id::text, NULLIF(trim(concat_ws(' ', l.nome, l.sobrenome)), '') AS nome,
+           l.created_at::text AS criado_em, l.lead_score, l.campos_custom, l.meta_ad_id
+      FROM leads l
+     WHERE l.empresa_id = ${empresaId}::uuid AND l.organizacao_id = ${organizacaoId}::uuid
+     ORDER BY l.created_at DESC LIMIT 50
+  `);
+  const formularios = doLead
+    .map((l) => ({ leadId: l.id, nome: l.nome, criadoEm: l.criado_em, metaAdId: l.meta_ad_id, respostas: respostasDoFormulario(l.campos_custom) }))
+    .filter((f) => f.respostas.length > 0 || f.metaAdId);
+  const scores = doLead.map((l) => l.lead_score ?? 0).filter((n) => n > 0);
 
   const propostas = await db.execute<{
     id: string; numero: number; versao: number; status: string; total: string | null; enviada_em: string | null;
@@ -1327,6 +1361,8 @@ export async function empresa360(organizacaoId: string, empresaId: string): Prom
 
   return {
     id: e.id, nome: e.nome, razaoSocial: e.razao_social, cnpj: e.cnpj,
+    telefone: e.telefone, observacoes: e.observacoes,
+    leadScore: scores.length ? Math.max(...scores) : null, formularios,
     setor: e.setor, porte: e.porte, cidade: e.cidade, estado: e.estado,
     website: e.website, dominio: e.dominio,
     endereco: { logradouro: e.logradouro, numero: e.numero, complemento: e.complemento, bairro: e.bairro, cep: e.cep },
@@ -1375,7 +1411,10 @@ function iniciais(nome: string | null): string | null {
 
 export interface DetalheLead {
   id: string;
-  empresa: { id: string | null; nome: string; setor: string | null; porte: string | null; cidade: string | null; website: string | null; cnpj: string | null };
+  empresa: { id: string | null; nome: string; setor: string | null; porte: string | null; cidade: string | null; website: string | null; cnpj: string | null; telefone: string | null; observacoes: string | null };
+  leadScore: number;
+  /** Empresa com serviço ativo na carteira: é o que define "Cliente". */
+  naCarteira: boolean;
   pessoa: { nome: string; cargo: string | null; email: string | null; telefone: string | null; whatsapp: string | null; linkedin: string | null };
   etapa: EstagioPreVendas;
   etapaRotulo: string;
@@ -1459,12 +1498,18 @@ export async function detalheLead(organizacaoId: string, leadId: string): Promis
     linkedin: string | null;
     campos_custom: Record<string, unknown> | null;
     meta_ad_id: string | null; meta_adset_id: string | null; meta_campaign_id: string | null;
+    lead_score: number | null; emp_telefone: string | null; emp_observacoes: string | null;
+    na_carteira: boolean;
   }>(sql`
     SELECT l.id::text, l.empresa_id::text, COALESCE(e.nome, l.empresa) AS empresa_nome,
            COALESCE(e.setor, l.empresa_setor) AS setor, COALESCE(e.porte, l.empresa_porte) AS porte,
            COALESCE(e.cidade, l.empresa_cidade) AS cidade, e.website, COALESCE(e.cnpj, l.empresa_cnpj) AS cnpj,
            l.nome, l.sobrenome, l.cargo, l.email, l.telefone, l.whatsapp, l.linkedin,
            l.campos_custom, l.meta_ad_id, l.meta_adset_id, l.meta_campaign_id,
+           l.lead_score, e.telefone AS emp_telefone, e.observacoes AS emp_observacoes,
+           -- "Cliente" = está na carteira (serviço ativo), não "teve algum ganho".
+           EXISTS (SELECT 1 FROM servicos_canonicos s
+                    WHERE s.empresa_id = l.empresa_id AND s.commercial_lifecycle = 'ACTIVE') AS na_carteira,
            l.estagio_pre_vendas AS etapa, l.qualificado, l.qualificado_em::text,
            qu.nome AS qualificado_por, l.qualificado_por_tipo, l.pre_qualificado,
            l.qualificacao, COALESCE(a.origem, l.origem) AS origem,
@@ -1538,8 +1583,10 @@ export async function detalheLead(organizacaoId: string, leadId: string): Promis
     SELECT COALESCE(o.negocio_id_legado, o.id)::text AS id, o.titulo, o.etapa,
            o.service_family AS familia
       FROM oportunidades o
-     WHERE o.lead_id = ${leadId}::uuid
-        OR o.negocio_id_legado IN (SELECT id FROM negocios WHERE lead_id = ${leadId}::uuid)
+     WHERE (o.lead_id = ${leadId}::uuid
+        OR o.negocio_id_legado IN (SELECT id FROM negocios WHERE lead_id = ${leadId}::uuid))
+       -- Cópia 'ativo' da carteira não é oportunidade da pessoa (ver empresa360).
+       AND COALESCE(o.stage, '') <> 'ativo'
      ORDER BY o.created_at DESC
   `);
 
@@ -1556,7 +1603,10 @@ export async function detalheLead(organizacaoId: string, leadId: string): Promis
     empresa: {
       id: l.empresa_id, nome: l.empresa_nome?.trim() || "Empresa não informada",
       setor: l.setor, porte: l.porte, cidade: l.cidade, website: l.website, cnpj: l.cnpj,
+      telefone: l.emp_telefone, observacoes: l.emp_observacoes,
     },
+    leadScore: l.lead_score ?? 0,
+    naCarteira: l.na_carteira,
     pessoa: {
       nome: [l.nome, l.sobrenome].filter(Boolean).join(" ").trim() || "Sem contato",
       cargo: l.cargo, email: l.email, telefone: l.telefone, whatsapp: l.whatsapp,

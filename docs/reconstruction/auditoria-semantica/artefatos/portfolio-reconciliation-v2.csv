@@ -1,0 +1,5 @@
+contrato_id,tipo,produto,mrr,status_local,stripe_subscription_id,status_stripe_real,negocio_id,created_at,provenance,lifecycle_correto
+688f5bbd-2a21-43e0-bd5c-4f2aaef0d3e1,Callface AI - Full,ai,1439.20,ativo,,n/a (nunca teve subscription),c7c50044-72f2-49e2-b84f-dff3935df7cf,2026-07-20 17:08:57,PROD,POSSIBLE_DUPLICATE (órfão de proposta aceita, nunca conciliado com d5008d8a)
+d5008d8a-319b-4fff-974e-f594c4778c32,assinatura,ai,3058.30,ativo,sub_1TvKh2Ed4dqxpSBf5kEVBeHD,unpaid,,2026-07-20 17:16:02,PROD,nominal correto (1619.10+1439.20 consolidado) mas billing_status=unpaid — não confirmado saudável
+1a44f099-c704-4894-aa13-9d82465664af,assinatura,ai,1619.10,churned,sub_1TMVocEd4dqxpSBfLRxEyy1Z,canceled,,2026-07-01 10:12:28,PROD,SUPERSEDED_CONTRACT (correto — já está churned, não conta na carteira)
+a6aa15fd-7d53-4d31-9e74-11edc3ccf3c3,legado_zoho,,24450.00,ativo,,n/a (nunca foi Stripe — setup parcelado em 4x),deb6e03f-b6d3-4b81-93fb-02e72b6df381,2026-03-25 22:03:55,HOMOLOG (não existe em PROD),FANTASMA_CONFIRMED (Total Geral do contrato tratado como MRR; White Label, revenue_nature=SETUP)

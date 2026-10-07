@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
+import { faturamentoMensal, type FaturamentoMes } from "@/lib/financeiro/faturamento-mensal";
 import { ROTULO_ETAPA_PIPELINE, type EtapaPipeline } from "@/lib/vendas/dominio";
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -70,6 +71,10 @@ export interface CarteiraDoDesenho {
   comInicio: number;
   /** Quantos têm ao menos uma atividade registrada — vai para "sem contato". */
   comAtividade: number;
+  /** Faturamento mensal por natureza (cliente_receita_mensal), 12 meses até a última competência. */
+  faturamento: FaturamentoMes[];
+  /** Usuários ativos da org: destino da reatribuição em massa (E3). */
+  equipe: { id: string; nome: string }[];
 }
 
 /** O desenho parseia `ultima` com /Há (\d+) dias/ e /^Hoje/ /^Ontem/. */
@@ -100,7 +105,7 @@ export async function carteiraParaODesenho(organizacaoId: string): Promise<Carte
      num mês falso. */
   const linhas = await db.execute<{
     id: string; nome: string; segmento: string; mrr: number; produto: Produto;
-    saude: number | null; faturas_atrasadas: number; resp: string | null;
+    saude: number | null; faturas_atrasadas: number; resp: string | null; cancelado: boolean | null;
     inicio: string | null; ult_dias: number | null; ult_hora: string | null;
   }>(sql`
     WITH universo AS (
@@ -112,7 +117,11 @@ export async function carteiraParaODesenho(organizacaoId: string): Promise<Carte
         -- nenhum — em setembro/2026 eram 38 empresas, R$ 20.813. Quem paga é
         -- cliente, independentemente de o cadastro canônico ter sido feito.
         AND (
-          EXISTS (SELECT 1 FROM servicos_canonicos sc
+          -- E14: cancelado (clientes.status_financeiro = 'churned') entra para
+          -- a aba Cancelados do desenho voltar; antes sumia da carteira.
+          EXISTS (SELECT 1 FROM clientes cc WHERE cc.empresa_id = e.id
+                   AND cc.organizacao_id = ${organizacaoId} AND cc.status_financeiro = 'churned')
+          OR EXISTS (SELECT 1 FROM servicos_canonicos sc
                    WHERE sc.empresa_id = e.id AND sc.portfolio_included = true)
           OR EXISTS (SELECT 1 FROM cliente_receita_mensal r
                       WHERE r.empresa_id = e.id
@@ -151,6 +160,27 @@ export async function carteiraParaODesenho(organizacaoId: string): Promise<Carte
        WHERE r.organizacao_id = ${organizacaoId}
          AND r.competencia = uc.competencia
          AND r.empresa_id IS NOT NULL
+         -- Só natureza MRR: é a mesma regra do MRR do topo da tela. Somar tudo
+         -- (setup 29.990 + débito recuperado 6.000) fazia "Por produto" fechar
+         -- em R$ 503,1 mil contra R$ 476,4 mil de MRR no topo, e jogava o setup
+         -- White Label da Helbor na conta de Callface AI.
+         AND r.revenue_nature = 'MRR'
+       GROUP BY 1
+      UNION ALL
+      -- Regra do Scott (06/10): cliente = faturado no fechamento + venda nova
+      -- DEPOIS dele. Quem assinou depois do fechamento ainda não tem linha no
+      -- faturamento e aparecia na carteira com MRR R$ 0 (5 clientes, R$ 1.599
+      -- no dia da virada). Até a próxima competência fechar, o MRR dele é o da
+      -- assinatura ativa. A mesma regra está em mrr_atual (lib/metricas/catalogo.ts).
+      SELECT a.empresa_id, SUM(a.mrr)
+        FROM assinaturas a
+       WHERE a.organizacao_id = ${organizacaoId}
+         AND a.status = 'active' AND a.empresa_id IS NOT NULL
+         AND a.empresa_id IN (SELECT empresa_id FROM clientes WHERE organizacao_id = ${organizacaoId})
+         AND NOT EXISTS (
+           SELECT 1 FROM cliente_receita_mensal r2, ultima_competencia uc2
+            WHERE r2.organizacao_id = ${organizacaoId} AND r2.empresa_id = a.empresa_id
+              AND r2.competencia = uc2.competencia AND r2.revenue_nature = 'MRR')
        GROUP BY 1
     ),
     -- O desenho tem UM produto por cliente; a família de maior MRR. Só 2
@@ -165,10 +195,20 @@ export async function carteiraParaODesenho(organizacaoId: string): Promise<Carte
     -- como produto. Medido em 05/10: 342 de 342 ficam com família real.
     familia_dominante AS (
       SELECT DISTINCT ON (empresa_id) empresa_id, service_family FROM (
-        SELECT sc.empresa_id, sc.service_family, SUM(sc.current_recurring_value) AS v FROM servicos_canonicos sc
+        -- 1) família do que foi FATURADO como MRR no último mês: é a mesma
+        --    fonte do número, então Matte e G30 (MRR White Label) contam como
+        --    White Label mesmo com serviço canônico de valor 0. prio 1 vence.
+        SELECT r.empresa_id, r.service_family, SUM(r.valor) AS v, 1 AS prio
+          FROM cliente_receita_mensal r, ultima_competencia uc
+         WHERE r.organizacao_id = ${organizacaoId} AND r.competencia = uc.competencia
+           AND r.revenue_nature = 'MRR' AND r.empresa_id IS NOT NULL
+           AND r.service_family <> 'UNKNOWN' GROUP BY 1, 2
+        UNION ALL
+        -- 2) sem MRR classificado no mês: cai no serviço canônico (regra antiga).
+        SELECT sc.empresa_id, sc.service_family, SUM(sc.current_recurring_value) AS v, 2 AS prio FROM servicos_canonicos sc
         WHERE sc.empresa_id IS NOT NULL AND sc.service_family IS NOT NULL
           AND sc.service_family <> 'UNKNOWN' GROUP BY 1, 2) x
-      ORDER BY empresa_id, v DESC, service_family
+      ORDER BY empresa_id, prio, v DESC, service_family
     ),
     -- Relação empresa↔fatura resolvida aqui (COALESCE), nunca com OR no JOIN.
     faturas_agg AS (
@@ -218,6 +258,7 @@ export async function carteiraParaODesenho(organizacaoId: string): Promise<Carte
     SELECT e.id, e.nome, COALESCE(e.setor, '') AS segmento,
       COALESCE(sa.mrr, 0)::float8 AS mrr, fd.service_family AS produto,
       h.score AS saude, COALESCE(fat.n_atrasadas, 0) AS faturas_atrasadas, uo.nome AS resp,
+      (cli.status_financeiro = 'churned') AS cancelado,
       to_char(ia.inicio AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM') AS inicio,
       ((now() AT TIME ZONE 'America/Sao_Paulo')::date - (ua.ultima AT TIME ZONE 'America/Sao_Paulo')::date) AS ult_dias,
       to_char(ua.ultima AT TIME ZONE 'America/Sao_Paulo', 'HH24:MI') AS ult_hora
@@ -252,7 +293,8 @@ export async function carteiraParaODesenho(organizacaoId: string): Promise<Carte
        Nenhum dos dois ocorre (0 fulfillments ativos; churned fora do
        universo). O único sinal de risco real é a fatura vencida: vai no
        texto do status, sem mexer na nota de saúde. */
-    status: r.faturas_atrasadas > 0 ? "Ativo · fatura vencida" : "Ativo",
+    // 'Inativo' é o rótulo que o desenho usa na aba Cancelados (E14).
+    status: r.cancelado ? "Inativo" : r.faturas_atrasadas > 0 ? "Ativo · fatura vencida" : "Ativo",
     // clientes.responsavel_id nunca foi populado (0 de 275): fica vazio.
     resp: r.resp ?? "",
     inicio: r.inicio ?? "",
@@ -311,6 +353,7 @@ export async function carteiraParaODesenho(organizacaoId: string): Promise<Carte
     FROM oportunidades o JOIN universo un ON un.empresa_id = o.empresa_id
     JOIN empresas e ON e.id = o.empresa_id LEFT JOIN usuarios u ON u.id = o.responsavel_id
     WHERE COALESCE(o.etapa, 'entrada') NOT IN ('ganho', 'perdido')
+      AND COALESCE(o.stage, '') <> 'ativo' -- E4: cópia de carteira não é oportunidade aberta
     UNION ALL
     SELECT 'proposta', e.nome, NULL, NULL, NULL, p.status, p.numero, p.versao, p.total_geral::text, p.id::text
     FROM propostas p JOIN oportunidades o ON o.id = p.oportunidade_id
@@ -358,5 +401,8 @@ export async function carteiraParaODesenho(organizacaoId: string): Promise<Carte
     agenda,
     comInicio: clientes.filter((c) => c.inicio).length,
     comAtividade: clientes.filter((c) => c.ultima).length,
+    faturamento: await faturamentoMensal(organizacaoId),
+    equipe: [...await db.execute<{ id: string; nome: string }>(sql`
+      SELECT id::text, nome FROM usuarios WHERE organizacao_id = ${organizacaoId}::uuid AND ativo ORDER BY nome`)],
   };
 }

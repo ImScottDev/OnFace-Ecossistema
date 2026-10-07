@@ -1,0 +1,654 @@
+[
+    {
+        "id": "c749825e-f26e-4682-b88d-6db24f844f1f",
+        "acao": "fluxo",
+        "nome": "Lead quente: ligar hoje",
+        "tipo": "fluxo",
+        "ativo": true,
+        "pasta": "SDR",
+        "gatilho": "fluxo:tag.adicionada",
+        "condicao": null,
+        "rascunho": {
+            "grafo": {
+                "nos": [
+                    {
+                        "id": "n1",
+                        "tipo": "gatilho",
+                        "config": {
+                            "modo": "evento",
+                            "evento": "tag.adicionada",
+                            "filtros": [
+                                {
+                                    "campo": "gatilho.tag",
+                                    "valor": "quente",
+                                    "operador": "igual"
+                                },
+                                {
+                                    "campo": "gatilho.entityType",
+                                    "valor": "lead",
+                                    "operador": "igual"
+                                }
+                            ]
+                        },
+                        "posicao": {
+                            "x": 0,
+                            "y": 0
+                        }
+                    },
+                    {
+                        "id": "n2",
+                        "tipo": "criar_tarefa",
+                        "config": {
+                            "titulo": "Ligar hoje: {{ lead.nome }}",
+                            "descricao": "Lead marcado como quente. Ligar ainda hoje, confirmar a dor principal e agendar a demonstração.",
+                            "prioridade": "alta",
+                            "prazoMinutos": 240
+                        },
+                        "posicao": {
+                            "x": 300,
+                            "y": 0
+                        }
+                    },
+                    {
+                        "id": "n3",
+                        "tipo": "notificar_usuario",
+                        "config": {
+                            "titulo": "Lead quente",
+                            "mensagem": "{{ lead.nome }} recebeu a tag quente. A tarefa de ligação para hoje já está na sua lista."
+                        },
+                        "posicao": {
+                            "x": 600,
+                            "y": 0
+                        }
+                    }
+                ],
+                "versao": 1,
+                "arestas": [
+                    {
+                        "id": "e1",
+                        "saida": "ok",
+                        "origem": "n1",
+                        "destino": "n2"
+                    },
+                    {
+                        "id": "e2",
+                        "saida": "ok",
+                        "origem": "n2",
+                        "destino": "n3"
+                    }
+                ]
+            },
+            "config": {
+                "fuso": "America/Sao_Paulo",
+                "reentrada": "uma_viva",
+                "horarioComercial": {
+                    "fim": "18:00",
+                    "dias": [
+                        1,
+                        2,
+                        3,
+                        4,
+                        5
+                    ],
+                    "inicio": "09:00"
+                }
+            }
+        },
+        "created_at": "2026-10-06T03:03:09.665279-03:00",
+        "updated_at": "2026-10-06T03:03:10.359-03:00",
+        "acao_config": null,
+        "webhook_token": null,
+        "organizacao_id": "320a9052-dd43-4edb-9b74-34be53c5c419",
+        "rascunho_salvo_em": "2026-10-06T03:03:09.609-03:00",
+        "current_version_id": "e5b9d208-bf48-45fb-9af2-bd0c0ac1f2aa",
+        "proxima_execucao_em": null
+    },
+    {
+        "id": "8f8cb059-90c9-49d4-a0ff-bc982d7b7a6d",
+        "acao": "fluxo",
+        "nome": "Lead sem responsável: distribuir",
+        "tipo": "fluxo",
+        "ativo": true,
+        "pasta": "SDR",
+        "gatilho": "fluxo:lead.criado",
+        "condicao": null,
+        "rascunho": {
+            "grafo": {
+                "nos": [
+                    {
+                        "id": "n1",
+                        "tipo": "gatilho",
+                        "config": {
+                            "modo": "evento",
+                            "evento": "lead.criado"
+                        },
+                        "posicao": {
+                            "x": 0,
+                            "y": 0
+                        }
+                    },
+                    {
+                        "id": "n2",
+                        "tipo": "condicao",
+                        "config": {
+                            "regras": [
+                                {
+                                    "campo": "registro.responsavel_id",
+                                    "operador": "vazio"
+                                }
+                            ],
+                            "combinador": "e"
+                        },
+                        "posicao": {
+                            "x": 300,
+                            "y": 0
+                        }
+                    },
+                    {
+                        "id": "n3",
+                        "tipo": "criar_tarefa",
+                        "config": {
+                            "titulo": "Distribuir lead sem responsável: {{ lead.nome }}",
+                            "descricao": "Origem: {{ lead.origem }}. Definir o responsável em até 1 hora para não esfriar o primeiro contato.",
+                            "prioridade": "alta",
+                            "prazoMinutos": 60
+                        },
+                        "posicao": {
+                            "x": 600,
+                            "y": 0
+                        }
+                    }
+                ],
+                "versao": 1,
+                "arestas": [
+                    {
+                        "id": "e1",
+                        "saida": "ok",
+                        "origem": "n1",
+                        "destino": "n2"
+                    },
+                    {
+                        "id": "e2",
+                        "saida": "sim",
+                        "origem": "n2",
+                        "destino": "n3"
+                    }
+                ]
+            },
+            "config": {
+                "fuso": "America/Sao_Paulo",
+                "reentrada": "uma_viva",
+                "horarioComercial": {
+                    "fim": "18:00",
+                    "dias": [
+                        1,
+                        2,
+                        3,
+                        4,
+                        5
+                    ],
+                    "inicio": "09:00"
+                }
+            }
+        },
+        "created_at": "2026-10-06T03:03:12.281477-03:00",
+        "updated_at": "2026-10-06T03:03:12.702-03:00",
+        "acao_config": null,
+        "webhook_token": null,
+        "organizacao_id": "320a9052-dd43-4edb-9b74-34be53c5c419",
+        "rascunho_salvo_em": "2026-10-06T03:03:12.279-03:00",
+        "current_version_id": "5c5e5bdf-dcf1-46e8-ad9d-f67684c2e250",
+        "proxima_execucao_em": null
+    },
+    {
+        "id": "06de29dc-fb90-4d26-8e9b-548f5aea310a",
+        "acao": "fluxo",
+        "nome": "Negócio perdido: reativar em 30 dias",
+        "tipo": "fluxo",
+        "ativo": true,
+        "pasta": "Comercial",
+        "gatilho": "fluxo:negocio.perdido",
+        "condicao": null,
+        "rascunho": {
+            "grafo": {
+                "nos": [
+                    {
+                        "id": "n1",
+                        "tipo": "gatilho",
+                        "config": {
+                            "modo": "evento",
+                            "evento": "negocio.perdido"
+                        },
+                        "posicao": {
+                            "x": 0,
+                            "y": 0
+                        }
+                    },
+                    {
+                        "id": "n2",
+                        "tipo": "esperar",
+                        "config": {
+                            "unidade": "dias",
+                            "quantidade": 30
+                        },
+                        "posicao": {
+                            "x": 300,
+                            "y": 0
+                        }
+                    },
+                    {
+                        "id": "n3",
+                        "tipo": "criar_tarefa",
+                        "config": {
+                            "titulo": "Reativar: {{ negocio.titulo }}",
+                            "descricao": "Perdido há 30 dias. Rever o motivo da perda e fazer um contato novo se o cenário mudou.",
+                            "prioridade": "baixa",
+                            "prazoMinutos": 2880
+                        },
+                        "posicao": {
+                            "x": 600,
+                            "y": 0
+                        }
+                    }
+                ],
+                "versao": 1,
+                "arestas": [
+                    {
+                        "id": "e1",
+                        "saida": "ok",
+                        "origem": "n1",
+                        "destino": "n2"
+                    },
+                    {
+                        "id": "e2",
+                        "saida": "ok",
+                        "origem": "n2",
+                        "destino": "n3"
+                    }
+                ]
+            },
+            "config": {
+                "fuso": "America/Sao_Paulo",
+                "reentrada": "uma_viva",
+                "horarioComercial": {
+                    "fim": "18:00",
+                    "dias": [
+                        1,
+                        2,
+                        3,
+                        4,
+                        5
+                    ],
+                    "inicio": "09:00"
+                }
+            }
+        },
+        "created_at": "2026-10-06T03:03:12.927416-03:00",
+        "updated_at": "2026-10-06T03:03:13.34-03:00",
+        "acao_config": null,
+        "webhook_token": null,
+        "organizacao_id": "320a9052-dd43-4edb-9b74-34be53c5c419",
+        "rascunho_salvo_em": "2026-10-06T03:03:12.925-03:00",
+        "current_version_id": "89721780-929e-4884-a4eb-dd29b73a5545",
+        "proxima_execucao_em": null
+    },
+    {
+        "id": "ffe4ea06-1b5c-48b2-8102-9c7c0d836fd0",
+        "acao": "fluxo",
+        "nome": "No-show: reagendar em duas tentativas",
+        "tipo": "fluxo",
+        "ativo": true,
+        "pasta": "SDR",
+        "gatilho": "fluxo:tag.adicionada",
+        "condicao": null,
+        "rascunho": {
+            "grafo": {
+                "nos": [
+                    {
+                        "id": "n1",
+                        "tipo": "gatilho",
+                        "config": {
+                            "modo": "evento",
+                            "evento": "tag.adicionada",
+                            "filtros": [
+                                {
+                                    "campo": "gatilho.tag",
+                                    "valor": "no-show",
+                                    "operador": "igual"
+                                },
+                                {
+                                    "campo": "gatilho.entityType",
+                                    "valor": "lead",
+                                    "operador": "igual"
+                                }
+                            ]
+                        },
+                        "posicao": {
+                            "x": 0,
+                            "y": 0
+                        }
+                    },
+                    {
+                        "id": "n2",
+                        "tipo": "criar_tarefa",
+                        "config": {
+                            "titulo": "Reagendar reunião (no-show): {{ lead.nome }}",
+                            "descricao": "O lead não compareceu. Entrar em contato hoje, sem cobrança, e oferecer dois novos horários.",
+                            "prioridade": "alta",
+                            "prazoMinutos": 120
+                        },
+                        "posicao": {
+                            "x": 300,
+                            "y": 0
+                        }
+                    },
+                    {
+                        "id": "n3",
+                        "tipo": "adicionar_nota",
+                        "config": {
+                            "titulo": "No-show registrado",
+                            "descricao": "A automação abriu a tarefa de reagendamento de hoje e abrirá uma segunda tentativa em 2 dias."
+                        },
+                        "posicao": {
+                            "x": 600,
+                            "y": 0
+                        }
+                    },
+                    {
+                        "id": "n4",
+                        "tipo": "esperar",
+                        "config": {
+                            "unidade": "dias",
+                            "quantidade": 2
+                        },
+                        "posicao": {
+                            "x": 900,
+                            "y": 0
+                        }
+                    },
+                    {
+                        "id": "n5",
+                        "tipo": "criar_tarefa",
+                        "config": {
+                            "titulo": "2ª tentativa de reagendamento: {{ lead.nome }}",
+                            "descricao": "Primeira tentativa sem retorno. Tentar por outro canal e, sem resposta, mover para nutrição.",
+                            "prioridade": "media",
+                            "prazoMinutos": 1440
+                        },
+                        "posicao": {
+                            "x": 1200,
+                            "y": 0
+                        }
+                    }
+                ],
+                "versao": 1,
+                "arestas": [
+                    {
+                        "id": "e1",
+                        "saida": "ok",
+                        "origem": "n1",
+                        "destino": "n2"
+                    },
+                    {
+                        "id": "e2",
+                        "saida": "ok",
+                        "origem": "n2",
+                        "destino": "n3"
+                    },
+                    {
+                        "id": "e3",
+                        "saida": "ok",
+                        "origem": "n3",
+                        "destino": "n4"
+                    },
+                    {
+                        "id": "e4",
+                        "saida": "ok",
+                        "origem": "n4",
+                        "destino": "n5"
+                    }
+                ]
+            },
+            "config": {
+                "fuso": "America/Sao_Paulo",
+                "reentrada": "uma_viva",
+                "horarioComercial": {
+                    "fim": "18:00",
+                    "dias": [
+                        1,
+                        2,
+                        3,
+                        4,
+                        5
+                    ],
+                    "inicio": "09:00"
+                }
+            }
+        },
+        "created_at": "2026-10-06T03:03:10.571423-03:00",
+        "updated_at": "2026-10-06T03:03:10.921-03:00",
+        "acao_config": null,
+        "webhook_token": null,
+        "organizacao_id": "320a9052-dd43-4edb-9b74-34be53c5c419",
+        "rascunho_salvo_em": "2026-10-06T03:03:10.548-03:00",
+        "current_version_id": "3aff7bc4-ef2a-4c34-a366-3b80e9382a0d",
+        "proxima_execucao_em": null
+    },
+    {
+        "id": "e8083001-866d-444c-9efb-5fb6110f012b",
+        "acao": "fluxo",
+        "nome": "Proposta enviada: follow-up em 3 dias",
+        "tipo": "fluxo",
+        "ativo": true,
+        "pasta": "Comercial",
+        "gatilho": "fluxo:proposta.enviada",
+        "condicao": null,
+        "rascunho": {
+            "grafo": {
+                "nos": [
+                    {
+                        "id": "n1",
+                        "tipo": "gatilho",
+                        "config": {
+                            "modo": "evento",
+                            "evento": "proposta.enviada"
+                        },
+                        "posicao": {
+                            "x": 0,
+                            "y": 0
+                        }
+                    },
+                    {
+                        "id": "n2",
+                        "tipo": "esperar",
+                        "config": {
+                            "unidade": "dias",
+                            "quantidade": 3
+                        },
+                        "posicao": {
+                            "x": 300,
+                            "y": 0
+                        }
+                    },
+                    {
+                        "id": "n3",
+                        "tipo": "condicao",
+                        "config": {
+                            "regras": [
+                                {
+                                    "campo": "negocio.etapa",
+                                    "valor": "proposta",
+                                    "operador": "igual"
+                                }
+                            ],
+                            "combinador": "e"
+                        },
+                        "posicao": {
+                            "x": 600,
+                            "y": 0
+                        }
+                    },
+                    {
+                        "id": "n4",
+                        "tipo": "criar_tarefa",
+                        "config": {
+                            "titulo": "Follow-up da proposta: {{ negocio.titulo }}",
+                            "descricao": "Proposta enviada há 3 dias sem avanço. Perguntar se ficou alguma dúvida e qual o próximo passo para decidir.",
+                            "prioridade": "alta",
+                            "prazoMinutos": 1440
+                        },
+                        "posicao": {
+                            "x": 900,
+                            "y": 0
+                        }
+                    }
+                ],
+                "versao": 1,
+                "arestas": [
+                    {
+                        "id": "e1",
+                        "saida": "ok",
+                        "origem": "n1",
+                        "destino": "n2"
+                    },
+                    {
+                        "id": "e2",
+                        "saida": "ok",
+                        "origem": "n2",
+                        "destino": "n3"
+                    },
+                    {
+                        "id": "e3",
+                        "saida": "sim",
+                        "origem": "n3",
+                        "destino": "n4"
+                    }
+                ]
+            },
+            "config": {
+                "fuso": "America/Sao_Paulo",
+                "reentrada": "uma_viva",
+                "horarioComercial": {
+                    "fim": "18:00",
+                    "dias": [
+                        1,
+                        2,
+                        3,
+                        4,
+                        5
+                    ],
+                    "inicio": "09:00"
+                }
+            }
+        },
+        "created_at": "2026-10-06T03:03:11.10597-03:00",
+        "updated_at": "2026-10-06T03:03:11.495-03:00",
+        "acao_config": null,
+        "webhook_token": null,
+        "organizacao_id": "320a9052-dd43-4edb-9b74-34be53c5c419",
+        "rascunho_salvo_em": "2026-10-06T03:03:11.104-03:00",
+        "current_version_id": "e90c9cd0-12e4-43ac-a690-e9204717bbd3",
+        "proxima_execucao_em": null
+    },
+    {
+        "id": "de46f0ee-431b-47bb-a256-ddbf00ad6794",
+        "acao": "fluxo",
+        "nome": "Proposta parada há 7 dias",
+        "tipo": "fluxo",
+        "ativo": true,
+        "pasta": "Comercial",
+        "gatilho": "fluxo:agendado",
+        "condicao": null,
+        "rascunho": {
+            "grafo": {
+                "nos": [
+                    {
+                        "id": "n1",
+                        "tipo": "gatilho",
+                        "config": {
+                            "alvo": "negocio",
+                            "modo": "agendado",
+                            "horarios": [
+                                "09:00"
+                            ],
+                            "alvoEtapa": "proposta",
+                            "diasSemana": [
+                                1
+                            ],
+                            "frequencia": "semanal",
+                            "alvoParadoHaDias": 7
+                        },
+                        "posicao": {
+                            "x": 0,
+                            "y": 0
+                        }
+                    },
+                    {
+                        "id": "n2",
+                        "tipo": "criar_tarefa",
+                        "config": {
+                            "titulo": "Negócio parado em Proposta: {{ negocio.titulo }}",
+                            "descricao": "Sem movimentação há 7 dias ou mais. Retomar o contato, destravar a objeção ou registrar a perda.",
+                            "prioridade": "alta",
+                            "prazoMinutos": 1440
+                        },
+                        "posicao": {
+                            "x": 300,
+                            "y": 0
+                        }
+                    },
+                    {
+                        "id": "n3",
+                        "tipo": "notificar_usuario",
+                        "config": {
+                            "titulo": "Negócio parado",
+                            "mensagem": "{{ negocio.titulo }} está há mais de 7 dias em Proposta. Veja a tarefa criada."
+                        },
+                        "posicao": {
+                            "x": 600,
+                            "y": 0
+                        }
+                    }
+                ],
+                "versao": 1,
+                "arestas": [
+                    {
+                        "id": "e1",
+                        "saida": "ok",
+                        "origem": "n1",
+                        "destino": "n2"
+                    },
+                    {
+                        "id": "e2",
+                        "saida": "ok",
+                        "origem": "n2",
+                        "destino": "n3"
+                    }
+                ]
+            },
+            "config": {
+                "fuso": "America/Sao_Paulo",
+                "reentrada": "uma_viva",
+                "horarioComercial": {
+                    "fim": "18:00",
+                    "dias": [
+                        1,
+                        2,
+                        3,
+                        4,
+                        5
+                    ],
+                    "inicio": "09:00"
+                }
+            }
+        },
+        "created_at": "2026-10-06T03:03:11.686956-03:00",
+        "updated_at": "2026-10-06T03:03:12.085-03:00",
+        "acao_config": null,
+        "webhook_token": null,
+        "organizacao_id": "320a9052-dd43-4edb-9b74-34be53c5c419",
+        "rascunho_salvo_em": "2026-10-06T03:03:11.685-03:00",
+        "current_version_id": "73db7a5a-7501-49d1-a3e9-f54097d558bd",
+        "proxima_execucao_em": "2026-10-12T09:00:00-03:00"
+    }
+]

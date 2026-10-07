@@ -258,6 +258,28 @@ export async function enviarProposta(envio: EnvioDeProposta): Promise<{ proposta
         { rotulo: "Completar dados da empresa", tipo: "completar_dados_empresa" },
       );
     }
+    // Contrato precisa de signatário. A tela nova nunca coletou um, e o aceite do
+    // cliente estourava depois ("Contrato sem signatários válidos"), com a proposta
+    // já pública e aceita. Sem signatário gravado, o contato da proposta assina;
+    // sem e-mail dele, bloqueia AGORA, antes de o cliente ver a proposta.
+    const [assina] = await db.execute<{ n: number; nome: string | null; email: string | null }>(sql`
+      SELECT COALESCE(jsonb_array_length(CASE WHEN jsonb_typeof(p.signatarios) = 'array' THEN p.signatarios END), 0) AS n,
+             l.nome, l.email
+        FROM propostas p LEFT JOIN leads l ON l.id = p.lead_id
+       WHERE p.id = ${envio.propostaId}::uuid
+    `);
+    if (!assina || Number(assina.n) === 0) {
+      if (!assina?.email?.trim()) {
+        throw new RegraDeNegocio(
+          "proposta_sem_signatario",
+          "Para uma proposta contratual, o contato precisa ter e-mail: é ele quem assina o contrato.",
+        );
+      }
+      await db.execute(sql`
+        UPDATE propostas SET signatarios = ${JSON.stringify([{ nome: assina.nome || assina.email, email: assina.email.trim(), papel: "signer", ordem: 1 }])}::jsonb
+         WHERE id = ${envio.propostaId}::uuid
+      `);
+    }
     if (envio.tipoContratual && TIPOS_CONTRATUAIS_COM_BASE.includes(envio.tipoContratual) && !envio.contratoBaseId) {
       throw new RegraDeNegocio(
         "contrato_base_obrigatorio",

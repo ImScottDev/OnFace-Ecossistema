@@ -1,0 +1,68 @@
+[
+    {
+        "id": "fc0e985a-def3-4df4-bb57-443d80fb489a",
+        "ativo": true,
+        "titulo": "Acompanhamento de saúde e valor",
+        "versao": 1,
+        "conteudo": "Revisar uso, resultado percebido, pendências abertas e risco de perda.\nPerguntar o que precisa ser ajustado para o cliente avançar.\nDiferenciar problema de adoção, suporte, escopo e cobrança.\nRegistrar plano de ação com dono e prazo, sem fabricar health score.",
+        "categoria": "cs",
+        "created_at": "2026-10-05T05:10:16.946466-03:00",
+        "updated_at": "2026-10-05T05:10:16.946466-03:00",
+        "organizacao_id": "320a9052-dd43-4edb-9b74-34be53c5c419"
+    },
+    {
+        "id": "2ef7a136-0d11-48b4-9a97-978d4a32e91a",
+        "ativo": true,
+        "titulo": "Cobrança e inadimplência",
+        "versao": 1,
+        "conteudo": "Conferir fatura, vencimento, valor, contrato e histórico antes de abordar o cliente.\nRegistrar canal, data, retorno e promessa de pagamento quando houver.\nNão alterar status financeiro sem confirmação no dado de cobrança.\nEscalar divergência de valor, contrato ou Stripe para o responsável financeiro.",
+        "categoria": "cobranca_financeiro",
+        "created_at": "2026-10-05T05:10:16.946466-03:00",
+        "updated_at": "2026-10-05T05:10:16.946466-03:00",
+        "organizacao_id": "320a9052-dd43-4edb-9b74-34be53c5c419"
+    },
+    {
+        "id": "d0b918ab-ad21-4782-b16f-d3a080f53ddf",
+        "ativo": true,
+        "titulo": "Follow-up de proposta ou reunião",
+        "versao": 1,
+        "conteudo": "Revisar a última atividade, a proposta vigente e o próximo passo combinado.\nPerguntar o que mudou desde a conversa e se existe algum ponto impedindo a decisão.\nSeparar dúvida de escopo, prazo, investimento e aprovação interna.\nEncerrar com responsável e data do próximo passo registrados no CRM.",
+        "categoria": "comercial_b2b",
+        "created_at": "2026-10-05T05:10:16.946466-03:00",
+        "updated_at": "2026-10-05T05:10:16.946466-03:00",
+        "organizacao_id": "320a9052-dd43-4edb-9b74-34be53c5c419"
+    },
+    {
+        "id": "ed5fd05f-0ca5-4c6a-a163-cdc43801217f",
+        "ativo": true,
+        "titulo": "Levantamento para implantação",
+        "versao": 1,
+        "conteudo": "Confirmar escopo contratado e responsável operacional do cliente.\nMapear acessos, dados, dependências e riscos que podem impedir o início.\nRegistrar o que depende do cliente e o que depende da equipe.\nNão marcar entrega como concluída sem evidência no fulfillment.",
+        "categoria": "implantacao_entrega",
+        "created_at": "2026-10-05T05:10:16.946466-03:00",
+        "updated_at": "2026-10-05T05:10:16.946466-03:00",
+        "organizacao_id": "320a9052-dd43-4edb-9b74-34be53c5c419"
+    },
+    {
+        "id": "958d29ea-41c8-4642-9c33-f86c1aa33af8",
+        "ativo": true,
+        "titulo": "Primeiro contato de onboarding",
+        "versao": 1,
+        "conteudo": "Alinhar objetivo do cliente, participantes e critério de sucesso.\nApresentar a sequência de treinamento e execução prevista para o serviço contratado.\nValidar a próxima sessão e os responsáveis por cada pendência.\nRegistrar bloqueios na timeline e escalar somente com contexto.",
+        "categoria": "onboarding",
+        "created_at": "2026-10-05T05:10:16.946466-03:00",
+        "updated_at": "2026-10-05T05:10:16.946466-03:00",
+        "organizacao_id": "320a9052-dd43-4edb-9b74-34be53c5c419"
+    },
+    {
+        "id": "5afcc739-6f1e-47c6-b57e-a38f6547f19a",
+        "ativo": true,
+        "titulo": "Qualificação inicial",
+        "versao": 1,
+        "conteudo": "Objetivo: entender contexto antes de apresentar solução.\n1. Confirmar quem é a pessoa e o papel dela na decisão.\n2. Perguntar como o processo funciona hoje e onde há retrabalho ou perda de oportunidade.\n3. Registrar dor, urgência, impacto e próximo passo combinado.\nRegra: não prometer diagnóstico, integração ou resultado que não esteja confirmado no CRM.",
+        "categoria": "pre_vendas",
+        "created_at": "2026-10-05T05:10:16.946466-03:00",
+        "updated_at": "2026-10-05T05:10:16.946466-03:00",
+        "organizacao_id": "320a9052-dd43-4edb-9b74-34be53c5c419"
+    }
+]

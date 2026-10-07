@@ -49,7 +49,7 @@ const updateTarefaSchema = z.object({
   concluida: z.boolean().optional(),
   // Estado operacional (migration 0046). O trigger mantém `concluida` em sincronia.
   status: z.enum(["a_fazer", "em_andamento", "aguardando", "concluida", "declinada"]).optional(),
-});
+}).strict();
 
 // GET /api/tarefas
 app.get("/tarefas", async (c) => {
@@ -358,6 +358,8 @@ app.patch("/tarefas/:id", async (c) => {
   const ctx = await getCtx(c);
 
   const id = c.req.param("id");
+  // id que não é uuid estourava no Postgres (500 "Internal server error"); é só "não existe".
+  if (!UUID_RE.test(id)) return c.json({ error: "Tarefa nao encontrada" }, 404);
   const body = await c.req.json();
   const parsed = updateTarefaSchema.safeParse(body);
 
@@ -366,6 +368,10 @@ app.patch("/tarefas/:id", async (c) => {
       { error: "Dados invalidos", details: parsed.error.flatten() },
       400
     );
+  }
+  // Corpo vazio virava UPDATE sem SET no drizzle e estourava 500.
+  if (Object.keys(parsed.data).length === 0) {
+    return c.json({ error: "Nada para atualizar" }, 400);
   }
 
   const [existing] = await db
@@ -444,6 +450,22 @@ app.patch("/tarefas/:id", async (c) => {
     return c.json({ error: "Tarefa nao encontrada" }, 404);
   }
 
+  /* Reatribuir pelo PATCH também avisa o novo responsável (antes só o POST notificava,
+     então "atribuir a outro" numa tarefa existente era silencioso). */
+  if (responsavelId && responsavelId !== existing.usuarioId && responsavelId !== ctx.userId) {
+    try {
+      await db.insert(notificacoes).values({
+        usuarioId: responsavelId, tipo: "tarefa_atribuida",
+        titulo: "Nova tarefa para você",
+        mensagem: updated.titulo,
+        link: updated.leadId ? `/pessoas/${updated.leadId}`
+          : updated.negocioId ? `/pipeline/${updated.negocioId}` : "/tarefas",
+      });
+    } catch (e) {
+      console.error("[tarefas] falha ao notificar novo responsável:", e);
+    }
+  }
+
   return c.json(updated);
 });
 
@@ -451,6 +473,7 @@ app.patch("/tarefas/:id", async (c) => {
 app.delete("/tarefas/:id", async (c) => {
   const ctx = await getCtx(c);
   const id = c.req.param("id");
+  if (!UUID_RE.test(id)) return c.json({ error: "Tarefa nao encontrada" }, 404); // uuid inválido não vira 500
 
   const [existing] = await db
     .select({ id: tarefas.id, usuarioId: tarefas.usuarioId })

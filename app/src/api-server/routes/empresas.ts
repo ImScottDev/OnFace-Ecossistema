@@ -7,8 +7,29 @@ import { getCtx, parseBody } from "../compat.js";
 import { enrichOrganization, bulkEnrichOrganizations, extractDomainFromUrl } from "@/lib/apollo/client";
 import { getOrgApolloKey } from "@/lib/apollo/tenant-key";
 import { enrichmentQueue } from "@/lib/queue";
+import { normalizarCnpj } from "@/lib/vendas/identidade";
 
 const app = new Hono();
+
+/**
+ * CNPJ é único por organização: a identidade da empresa não pode depender de
+ * como alguém digitou a pontuação. Devolve a empresa que já usa esses dígitos
+ * (ignorando `exceto`, para a edição não bater em si mesma), ou null.
+ */
+async function empresaDoCnpj(organizacaoId: string, cnpj: string | null | undefined, exceto?: string) {
+  const digitos = normalizarCnpj(cnpj);
+  if (!digitos) return null;
+  const [achada] = await db
+    .select({ id: empresas.id, nome: empresas.nome })
+    .from(empresas)
+    .where(and(
+      eq(empresas.organizacaoId, organizacaoId),
+      sql`regexp_replace(coalesce(${empresas.cnpj}, ''), '[^0-9]', '', 'g') = ${digitos}`,
+      exceto ? ne(empresas.id, exceto) : undefined,
+    ))
+    .limit(1);
+  return achada ?? null;
+}
 
 // ── Schemas ──────────────────────────────────────────────────────────
 
@@ -37,7 +58,7 @@ const updateEmpresaSchema = z.object({
   numFiliais: z.number().int().optional().nullable(),
   observacoes: z.string().optional().nullable(),
   camposCustom: z.record(z.string(), z.unknown()).optional(),
-});
+}).strict();
 
 // ── GET /empresas ────────────────────────────────────────────────────
 
@@ -99,6 +120,11 @@ app.post("/empresas", async (c) => {
   const parsed = createEmpresaSchema.safeParse(body);
   if (!parsed.success) {
     return c.json({ error: "Dados inválidos", details: parsed.error.flatten() }, 400);
+  }
+
+  const duplicada = await empresaDoCnpj(ctx.organizacaoId, parsed.data.cnpj);
+  if (duplicada) {
+    return c.json({ error: `CNPJ já cadastrado em "${duplicada.nome}"`, empresaId: duplicada.id }, 409);
   }
 
   const [empresa] = await db
@@ -339,6 +365,11 @@ app.patch("/empresas/:id", async (c) => {
   const parsed = updateEmpresaSchema.safeParse(body);
   if (!parsed.success) {
     return c.json({ error: "Dados inválidos", details: parsed.error.flatten() }, 400);
+  }
+
+  const duplicada = await empresaDoCnpj(ctx.organizacaoId, parsed.data.cnpj, id);
+  if (duplicada) {
+    return c.json({ error: `CNPJ já cadastrado em "${duplicada.nome}"`, empresaId: duplicada.id }, 409);
   }
 
   const [updated] = await db

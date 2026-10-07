@@ -61,8 +61,25 @@ function itensAgregados(total: number | null, recorrente: number | null) {
  * Preencher com array vazio é honesto — inventar linha para a timeline parecer
  * cheia seria o mock fingindo produção.
  */
-function paraODesenho(c: CardPipeline) {
+/* O Tipo do desenho (Nova venda / Expansão) vem de commercial_motion. */
+const TIPO_DO_MOTION: Record<string, string> = {
+  NEW_BUSINESS: "nova", EXPANSION: "expansao", RENEWAL: "renovacao", REACTIVATION: "reativacao",
+};
+
+/* Campos que o card canônico traz e o CardPipeline da consulta ainda não declara. */
+type CardComValores = CardPipeline & { mrr?: number | null; setup?: number | null; motion?: string | null };
+
+function paraODesenho(card: CardPipeline) {
+  const c = card as CardComValores;
+  // Sem proposta o cartão ainda mostra o que a oportunidade já sabe, separando
+  // MRR de setup/avulso. Com proposta, quem manda é `proposta.itens`.
+  const itensProp: Array<{ nome: string; natureza: string; valor: number; qtd: number }> = [];
+  if (c.mrr) itensProp.push({ nome: "Recorrente", natureza: "MRR", valor: c.mrr, qtd: 1 });
+  const avulso = c.setup ?? ((c.valor ?? 0) - (c.mrr ?? 0));
+  if (avulso > 0) itensProp.push({ nome: "Setup / avulso", natureza: "SETUP", valor: avulso, qtd: 1 });
   return {
+    itensProp,
+    tipo: TIPO_DO_MOTION[c.motion ?? ""] ?? "nova",
     id: c.id,
     empresa: c.empresa,
     empresaId: c.empresaId,
@@ -199,6 +216,13 @@ export function PipelineProto({ dados, acoes }: { dados: BoardPipeline; acoes: A
     [dados.colunas],
   );
 
+  /* Total REAL da coluna (agregação do servidor). O cabeçalho usava a lista
+     carregada, que é cortada por coluna e anunciava menos do que existe. */
+  const totais = React.useMemo(() => Object.fromEntries(dados.colunas.map((col) => [
+    col.chave,
+    { n: col.total, valor: col.valorTotal, mrr: (col as { mrrTotal?: number }).mrrTotal ?? null },
+  ])), [dados.colunas]);
+
   /**
    * As peças que o desenho pede abrir.
    *
@@ -261,7 +285,7 @@ export function PipelineProto({ dados, acoes }: { dados: BoardPipeline; acoes: A
     <div data-workspace="desenho">
       <PipelineLigado
         key={geracao}
-        dados={{ opps, leads: [] }}
+        dados={{ opps, leads: [], totais }}
         catalogo={catalogo}
         abrir={abrir}
         persistir={persistir}

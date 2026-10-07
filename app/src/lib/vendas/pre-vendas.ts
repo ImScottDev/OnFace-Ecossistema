@@ -19,7 +19,7 @@ import {
   type DadosEmpresa, type Touchpoint,
 } from "./identidade";
 import {
-  MOTIVOS_NUTRICAO, RegraDeNegocio,
+  MOTIVOS_DESQUALIFICACAO, MOTIVOS_NUTRICAO, RegraDeNegocio,
   type Ator, type EstagioPreVendas, type EtapaPreVendas,
   type MotivoDesqualificacao, type MotivoNutricao, type Qualificacao,
 } from "./dominio";
@@ -172,7 +172,9 @@ export async function exigirResponsavelDaOrg(
      LIMIT 1
   `);
   if (dono.length === 0) {
-    throw new Error("Responsável inválido: não é um usuário ativo desta organização.");
+    // RegraDeNegocio, não Error: Error vira "tente de novo em instantes" na tela,
+    // e nenhuma tentativa conserta um responsável de outra organização.
+    throw new RegraDeNegocio("responsavel_invalido", "Responsável inválido: não é um usuário ativo desta organização.");
   }
 }
 
@@ -194,6 +196,22 @@ export async function criarLead(entrada: EntradaDeLead, ator: Ator): Promise<Lea
     ...entrada.pessoa,
     empresaId: empresa?.empresaId ?? null,
   }, ator);
+
+  /* Regra do Scott (06/10): se a pessoa já tem uma aquisição ABERTA, a entrada
+     (webhook, site, rota HTTP) devolve o lead existente em vez de criar outro.
+     Antes nascia um lead órfão, sem aquisição, que nunca aparecia no board.
+     A tela manual continua recusando com mensagem (guarda em pre-vendas/actions.ts). */
+  const [aberta] = await db.execute<{ lead: string }>(sql`
+    SELECT a.lead_legado_id::text AS lead FROM aquisicoes a
+     WHERE a.organizacao_id = ${organizacaoId}::uuid AND a.pessoa_id = ${pessoa.pessoaId}::uuid
+       AND a.closed_at IS NULL AND a.lead_legado_id IS NOT NULL
+     ORDER BY a.created_at DESC LIMIT 1`);
+  if (aberta) {
+    return {
+      leadId: aberta.lead, empresaId: empresa?.empresaId ?? null, pessoaId: pessoa.pessoaId,
+      empresaJaExistia: empresa ? !empresa.criada : false, pessoaJaExistia: true,
+    };
+  }
 
   const nomeCompleto = [entrada.pessoa.nome, entrada.pessoa.sobrenome].filter(Boolean).join(" ").trim();
 
@@ -331,10 +349,18 @@ interface LeadInterno extends Record<string, unknown> {
 
 async function carregarLead(organizacaoId: string, leadId: string, tx: ExecutorDb = db): Promise<LeadInterno> {
   const [lead] = await tx.execute<LeadInterno>(sql`
-    SELECT id::text, organizacao_id::text, estagio_pre_vendas, qualificado,
-           empresa_id::text, responsavel_id::text, primeiro_contato_at::text
-      FROM leads
-     WHERE id = ${leadId}::uuid AND organizacao_id = ${organizacaoId}::uuid
+    -- B4: a etapa vem da aquisição (é o que o board mostra). Ler
+    -- leads.estagio_pre_vendas cru dava 'de' errado e, em lead cuja etapa só
+    -- existe na aquisição (a carga), tratava reativação como movimento comum.
+    -- 'qualificacao' é o único estado que só o legado conhece, igual ao board.
+    SELECT l.id::text, l.organizacao_id::text,
+           CASE WHEN l.estagio_pre_vendas = 'qualificacao' THEN 'qualificacao'
+                ELSE COALESCE(pe.codigo, l.estagio_pre_vendas) END AS estagio_pre_vendas,
+           l.qualificado, l.empresa_id::text, l.responsavel_id::text, l.primeiro_contato_at::text
+      FROM leads l
+      LEFT JOIN aquisicoes a ON a.lead_legado_id = l.id
+      LEFT JOIN pipeline_etapas pe ON pe.id = a.etapa_id
+     WHERE l.id = ${leadId}::uuid AND l.organizacao_id = ${organizacaoId}::uuid
   `);
   if (!lead) throw new RegraDeNegocio("lead_nao_encontrado", "Lead não encontrado.");
   return lead;
@@ -487,6 +513,26 @@ export async function moverEtapa(params: {
       updated_at = now()
      WHERE id = ${params.leadId}::uuid
   `);
+
+  // Reativar de verdade: a saída (nutrição/desqualificação) precisa ser
+  // desfeita no canônico também. A carga grava essas aquisições com `closed_at`
+  // preenchido, e o board só mostra encerrada se ela ainda estiver desqualificada
+  // ou em nutrição. Sem limpar, o lead reativado (183 em nutrição na carga) sumia
+  // do board sem erro nenhum. A tarefa "Retomar lead em nutrição" também perde o
+  // sentido: o lead já voltou, então ela não pode ficar aberta na fila.
+  if (reativando) {
+    await db.execute(sql`
+      UPDATE leads SET desqualificado_em = NULL, desqualificacao_motivo = NULL, desqualificacao_detalhe = NULL
+       WHERE id = ${params.leadId}::uuid`);
+    await db.execute(sql`
+      UPDATE aquisicoes SET closed_at = NULL, desqualificado_em = NULL, motivo_desqualificacao = NULL
+       WHERE lead_legado_id = ${params.leadId}::uuid AND organizacao_id = ${params.organizacaoId}::uuid`);
+    await db.execute(sql`
+      UPDATE tarefas SET status = 'declinada'
+       WHERE organizacao_id = ${params.organizacaoId}::uuid AND lead_id = ${params.leadId}::uuid
+         AND titulo = 'Retomar lead em nutrição' AND origem = 'PLAYBOOK'
+         AND status NOT IN ('concluida', 'declinada')`);
+  }
 
   await registrarMudancaDeEtapa({
     organizacaoId: params.organizacaoId, ator: params.ator, leadId: params.leadId,
@@ -671,7 +717,9 @@ export async function desqualificar(params: {
   detalhe?: string | null;
   ator: Ator;
 }): Promise<void> {
-  if (!params.motivo) {
+  // Motivo precisa ser uma chave conhecida: texto livre quebra o relatório de
+  // desqualificação (o rótulo não resolve e o motivo vira "cru" na tela).
+  if (!params.motivo || !MOTIVOS_DESQUALIFICACAO.some((m) => m.chave === params.motivo)) {
     throw new RegraDeNegocio("desqualificacao_exige_motivo", "Escolha o motivo da desqualificação.");
   }
 
@@ -730,4 +778,42 @@ export async function voltarParaQualificado(params: {
     de: lead.estagio_pre_vendas, para: "qualificado", tipo: "StageChanged",
     motivo: params.motivo,
   });
+}
+
+/**
+ * E11: o passo da cadência de cada lead, para o card e a gaveta do Pré-vendas.
+ *
+ * Quem está inscrito em cadência automática mostra o nome dela. Sem inscrição
+ * (o caso da carga: 1.446 toques em `cadencia_execucoes` e nenhum enrollment),
+ * o último toque registrado É o passo em que o lead está, e esconder isso
+ * deixava o SDR sem saber se já tinha ligado ou mandado WhatsApp.
+ */
+export async function passoDaCadenciaPorLead(
+  organizacaoId: string,
+  leadIds: string[],
+): Promise<Record<string, string>> {
+  if (leadIds.length === 0) return {};
+  const ids = literalDeTexto(leadIds);
+  const linhas = await db.execute<{ lead_id: string; texto: string }>(sql`
+    SELECT l.id::text AS lead_id,
+           COALESCE(
+             'Cadência ' || ce_def.nome,
+             'Toque ' || ex.ordem || ' · ' || CASE ex.canal WHEN 'ligacao' THEN 'Ligação' WHEN 'whatsapp' THEN 'WhatsApp' ELSE ex.canal END
+           ) AS texto
+      FROM leads l
+      LEFT JOIN LATERAL (
+        SELECT cd.nome
+          FROM cadence_enrollments ce
+          JOIN cadence_definitions cd ON cd.id = ce.cadence_definition_id
+         WHERE ce.entity_type = 'lead' AND ce.entity_id = l.id
+         ORDER BY ce.started_at DESC LIMIT 1
+      ) ce_def ON true
+      LEFT JOIN LATERAL (
+        SELECT x.ordem, x.canal FROM cadencia_execucoes x
+         WHERE x.lead_id = l.id ORDER BY x.enviado_em DESC, x.ordem DESC LIMIT 1
+      ) ex ON true
+     WHERE l.organizacao_id = ${organizacaoId}::uuid
+       AND l.id = ANY(${ids}::uuid[])
+       AND (ce_def.nome IS NOT NULL OR ex.ordem IS NOT NULL)`);
+  return Object.fromEntries(linhas.map((r) => [r.lead_id, r.texto]));
 }

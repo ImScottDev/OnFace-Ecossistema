@@ -126,6 +126,8 @@ export interface ValoresDeEmpresaDesenho {
   respMenuStyle: any;
   respOpcoes: any;
   resumo: any;
+  formularios: any;
+  temFormularios: any;
   salvarNota: any;
   semOpps: any;
   setNota: any;
@@ -154,7 +156,7 @@ export interface ValoresDeEmpresaDesenho {
 }
 
 export function EmpresaDesenho(vals: ValoresDeEmpresaDesenho) {
-  const { abaArq, abaAtv, abaOpp, abaVisao, abas, abrirEtapa, abrirResp, abrirTag, acaoNota, acaoTitulo, addPessoa, anexarNota, arquivos, atvFiltros, atvLista, atvVazia, atvVaziaTitulo, atvVinc, blurNota, cadEstado, cadNome, cadPasso, cadPassos, cadSelo, cancelarNota, chamada, chamadaNome, chamadaTempo, criarOpp, criarTag, criarTagStyle, edAberto, edBotao, edCampos, edFechar, edIcone, edSalvar, edSub, edTitulo, editarQualif, editarResumo, encerrar, enr, enviarArquivo, etapa, etapaAberto, etapaMenuStyle, etapaOpcoes, etapaPontoTopo, etapaSelo, exc, focoNota, gridStyle, iniciais, irNota, ligar, mais, maisAberto, maisItens, maisStyle, mencaoAberta, mencaoOpcoes, mencaoStyle, mencaoVazia, meta, mostraPessoas, mostraTimeline, no, nome, notaAnexos, notaAtiva, notaBtnStyle, notaCaixaStyle, notaLinhas, notaRef, notaTexto, notas, notasConta, novaAtv, opps, origem, origemSelo, parar, pausar, pausarLabel, pessoas, pulso, qualif, qualificar, registrar, relAtivas, relTopo, relTopoStyle, removerCad, resp, respAberto, respBtnStyle, respChevron, respIniciais, respMenuStyle, respOpcoes, resumo, salvarNota, semOpps, setNota, setTagNova, tagAberto, tagMenuStyle, tagNova, tagOpcoes, tagsTopo, teclaNota, teclaTag, temCad, temEtapaTopo, temNotaAnexos, timeline, tlAlternar, tlBotao, tlChevron, tlTemMais, tlVinc, trocarCad, trocarLabel, verAcao, verTodasAtv, visor } = vals;
+  const { abaArq, abaAtv, abaOpp, abaVisao, abas, abrirEtapa, abrirResp, abrirTag, acaoNota, acaoTitulo, addPessoa, anexarNota, arquivos, atvFiltros, atvLista, atvVazia, atvVaziaTitulo, atvVinc, blurNota, cadEstado, cadNome, cadPasso, cadPassos, cadSelo, cancelarNota, chamada, chamadaNome, chamadaTempo, criarOpp, criarTag, criarTagStyle, edAberto, edBotao, edCampos, edFechar, edIcone, edSalvar, edSub, edTitulo, editarQualif, editarResumo, encerrar, enr, enviarArquivo, etapa, etapaAberto, etapaMenuStyle, etapaOpcoes, etapaPontoTopo, etapaSelo, exc, focoNota, gridStyle, iniciais, irNota, ligar, mais, maisAberto, maisItens, maisStyle, mencaoAberta, mencaoOpcoes, mencaoStyle, mencaoVazia, meta, mostraPessoas, mostraTimeline, no, nome, notaAnexos, notaAtiva, notaBtnStyle, notaCaixaStyle, notaLinhas, notaRef, notaTexto, notas, notasConta, novaAtv, opps, origem, origemSelo, parar, pausar, pausarLabel, pessoas, pulso, qualif, qualificar, registrar, relAtivas, relTopo, relTopoStyle, removerCad, resp, respAberto, respBtnStyle, respChevron, respIniciais, respMenuStyle, respOpcoes, resumo, formularios, temFormularios, salvarNota, semOpps, setNota, setTagNova, tagAberto, tagMenuStyle, tagNova, tagOpcoes, tagsTopo, teclaNota, teclaTag, temCad, temEtapaTopo, temNotaAnexos, timeline, tlAlternar, tlBotao, tlChevron, tlTemMais, tlVinc, trocarCad, trocarLabel, verAcao, verTodasAtv, visor } = vals;
   return (
     <>
 <div style={{ flex: "1", minHeight: "0", background: "#f6f6f3", display: "flex", flexDirection: "column", overflow: "hidden" }}>
@@ -349,6 +351,32 @@ Editar
 ))}
 </div>
 </section>
+{temFormularios ? (
+<section style={{ background: "#fff", borderRadius: "12px", boxShadow: "inset 0 0 0 1px #e3e7e8", padding: "14px 16px 16px" }}>
+{/* Recolhível: cada lead da empresa pode ter um formulário de até dez perguntas. */}
+<details>
+<summary style={{ cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif", fontSize: "13.5px", fontWeight: "700", letterSpacing: "-.01em", color: "#12171d" }}>
+Respostas do formulário
+</summary>
+<div style={{ display: "flex", flexDirection: "column", gap: "16px", marginTop: "12px" }}>
+{(formularios ?? []).map((f: any) => (
+<div key={f.id} style={{ display: "flex", flexDirection: "column", gap: "9px" }}>
+<div style={{ display: "flex", gap: "10px", fontSize: "12px", color: "#67787c" }}>
+<span style={{ flex: "1", minWidth: "0" }}>{f.titulo}</span>
+{f.adHref ? (<a href={f.adHref} target="_blank" rel="noreferrer" style={{ color: "#c2330f", textDecoration: "underline" }}>Ver anúncio</a>) : null}
+</div>
+{(f.linhas ?? []).map((r: any, i: number) => (
+<div key={i} style={{ minWidth: "0" }}>
+<span style={{ display: "block", fontSize: "12px", color: "#67787c", textWrap: "pretty" }}>{r.pergunta}</span>
+<span style={{ display: "block", fontSize: "12.5px", fontWeight: "500", color: "#1f252c", marginTop: "2px", textWrap: "pretty" }}>{r.resposta}</span>
+</div>
+))}
+</div>
+))}
+</div>
+</details>
+</section>
+) : null}
 <section style={{ background: "#fff", borderRadius: "12px", boxShadow: "inset 0 0 0 1px #e3e7e8", padding: "14px 16px 16px" }}>
 <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "13px" }}>
 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#4a5560" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ flex: "0 0 auto" }}>

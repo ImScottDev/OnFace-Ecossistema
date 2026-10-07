@@ -11,6 +11,7 @@ import { clientes, servicosCanonicos, faturas, empresas } from "@/lib/db/schema"
 import { and, eq, isNotNull, sql } from "drizzle-orm";
 import { iniciarJornadaCs } from "./jornada";
 import { criarTarefaCs } from "./tarefas";
+import { resolveFollowupOwnerId } from "@/lib/crm/sdr-escalation";
 import { csRiscos } from "@/lib/db/schema";
 
 /**
@@ -89,8 +90,12 @@ export async function garantirContaCsPorEmpresa(opts: {
   //
   // COALESCE: preenche só o que está faltando, nunca sobrescreve valor que já
   // existe — continua idempotente e não estraga conta antiga com data real.
+  // E3: dono padrão da carteira = Jenifer (decisão do Scott, marco zero). Todo
+  // mundo vê tudo e a reatribuição em massa troca depois; null se ela não existir.
+  const donoPadraoId = await resolveFollowupOwnerId(db, opts.organizacaoId);
   const inseridos = await db.insert(clientes).values({
     organizacaoId: opts.organizacaoId,
+    responsavelId: donoPadraoId,
     empresaId: opts.empresaId,
     leadIdLegado: leadJaVinculado.length > 0 ? null : (opts.leadId ?? null),
     clienteDesde: entrouEm,
@@ -105,6 +110,7 @@ export async function garantirContaCsPorEmpresa(opts: {
       entrouCarteiraEm: sql`coalesce(${clientes.entrouCarteiraEm}, excluded.entrou_carteira_em)`,
       clienteDesde: sql`coalesce(${clientes.clienteDesde}, excluded.cliente_desde)`,
       statusFinanceiro: sql`coalesce(${clientes.statusFinanceiro}, excluded.status_financeiro)`,
+      responsavelId: sql`coalesce(${clientes.responsavelId}, excluded.responsavel_id)`,
       updatedAt: new Date(),
     },
   }).returning({ id: clientes.id, criadaAgora: sql<boolean>`(xmax = 0)` });

@@ -323,7 +323,7 @@ posFlutuante(r, alto) {
         ["Ricardo Alves", "Gerente de TI", false, null, "+55 11 99876-5432"],
         ["Juliana Prado", "Gerente de CX", false, null, "+55 11 98765-4321"]
       ]).concat((X.pessoas || []).map(p => [p.nome, p.cargo, false, p.email, p.tel]));
-    const nomesP = pessoas.map(p => p[0]).filter(Boolean);
+    const nomesP = pessoas.map(p => [...p][0]).filter(Boolean);
     const vincDe = (quem) => nomesP.indexOf(quem) >= 0 ? quem : "Empresa";
     const vincSel = S.vinc || "tudo";
     const vincOk = (v) => vincSel === "tudo" || v === vincSel;
@@ -427,7 +427,14 @@ posFlutuante(r, alto) {
         return diz(R.nome.trim() + " vinculada à empresa", "ok");
       }
       this.setState({ editando: null });
-      diz("Alterações salvas", "ok");
+      /* NÃO canta sucesso aqui. Estas edições passam por `gravarEmpresa`, que
+         escreve no storage do protótipo (`E.gravar`), não no banco — e o
+         adapter (`EmpresaProto.gravar`) responde a verdade: "Editar a empresa
+         ainda não está ligado nesta tela". Os dois toasts apareciam juntos e o
+         usuário lia primeiro o otimista: digitei no modal, cliquei em Salvar,
+         vi "Alterações salvas", e nenhuma requisição saiu (QA 06/10). Quem
+         sabe se gravou é o adapter, que já é chamado por `gravarEmpresa`
+         logo acima; é dele a mensagem. */
     };
     const ligarCallface = (quem, tel) => {
       let num = String(tel || "").replace(/\D/g, "");
@@ -496,6 +503,9 @@ posFlutuante(r, alto) {
         { label: "Interesse", tipo: "chips", chips: qualIni },
         { label: "Segmento", valor: seg, tipo: "texto" },
         { label: "Fit", tipo: "chips", chips: [qual.fit || (E.registro ? "—" : ((E.tag && E.tag.indexOf("Fit") === 0) ? E.tag.replace("Fit ", "") : "Alto"))] },
+        E.empresaTel ? { label: "Telefone", valor: E.empresaTel, tipo: "texto" } : null,
+        E.leadScore > 0 ? { label: "Lead score", valor: String(E.leadScore), tipo: "texto" } : null,
+        E.empresaObs ? { label: "Observações", valor: E.empresaObs, tipo: "texto" } : null,
         X.funcionarios ? { label: "Funcionários", valor: X.funcionarios, tipo: "texto", apollo: true } : null,
         X.faturamento ? { label: "Faturamento", valor: X.faturamento, tipo: "texto", apollo: true } : null,
         X.telefone ? { label: "Telefone geral", valor: X.telefone, tipo: "texto", apollo: true } : null,
@@ -508,6 +518,8 @@ posFlutuante(r, alto) {
         chips: (r.chips || []).map(c => ({ label: c, style: chip }))
       })),
 
+      formularios: (E.formularios || []).map(f => ({ id: f.id, titulo: f.titulo, adHref: f.adHref || "", linhas: f.linhas })),
+      temFormularios: (E.formularios || []).length > 0,
       qualif: [
         ["Interesse principal", qualIni.join(", ") || "—"],
         ["Dor principal", qual.dor || (E.registro ? "—" : "Alto custo com telefonia")],
@@ -653,7 +665,7 @@ posFlutuante(r, alto) {
         /* Antes: inventava "Contrato nº CT-2xxx, assinado 12/03/2026, R$ x/mês" (número sorteado do nome, MRR fixo por produto).
            Não há contrato real ligado à empresa; sem ele, a expansão não aponta para contrato nenhum. */
         const alt = N.tipo && N.tipo !== "nova";
-        const cts = pessoas.map(p => p[0]).filter(Boolean);
+        const cts = pessoas.map(p => [...p][0]).filter(Boolean);
         const contato = N.contato || cts[0] || E.pessoa || "";
         const resp = N.resp || E.resp || equipe[0];
         const TIPOS = [

@@ -108,7 +108,7 @@ class Logica extends React.Component<any, any> {
       leads: d.leads || [],
       perfilAberto: false,
       sinoAberto: false, filtroSino: "todas",
-      buscaAberta: false, termo: "", idx: 0,
+      buscaAberta: false, termo: "", idx: 0, achados: null,
       qaAberto: false, nexoAberto: false, nexoAba: null, nexoConversa: "c0", nexoRascunho: "", nexoPensando: false,
       nexoMsgs: {
         c0: [{ de: "oni", texto: "Bom dia, Scott. Olhei a sua carteira de pré-vendas agora: 5 leads estão sem próxima ação e 2 entraram hoje sem responsável." },
@@ -167,6 +167,7 @@ class Logica extends React.Component<any, any> {
     if (this._offAviso) this._offAviso();
     clearTimeout(this._t);
     clearTimeout(this._nx);
+    clearTimeout(this._bq);
   }
 
   diz(texto, tom) {
@@ -175,8 +176,24 @@ class Logica extends React.Component<any, any> {
     this._t = setTimeout(() => this.setState({ aviso: null }), 3400);
   }
 
+  /* Registros na paleta: pessoa, empresa, negócio e proposta vêm de
+     /api/busca-global (escopo da sessão). Debounce curto e descarta resposta
+     de termo que já mudou, senão a lista pisca com o resultado velho. */
+  buscarRegistros(termo) {
+    clearTimeout(this._bq);
+    const q = termo.trim();
+    if (q.length < 2) return this.setState({ achados: null });
+    this._bq = setTimeout(async () => {
+      try {
+        const r = await fetch("/api/busca-global?q=" + encodeURIComponent(q), { credentials: "same-origin" });
+        const j = r.ok ? await r.json() : null;
+        if (this.state.termo.trim() === q) this.setState({ achados: j });
+      } catch { /* sem rede: a paleta segue só com destinos */ }
+    }, 220);
+  }
+
   abrirBusca() {
-    this.setState({ buscaAberta: true, termo: "", idx: 0, perfilAberto: false, sinoAberto: false },
+    this.setState({ buscaAberta: true, termo: "", idx: 0, achados: null, perfilAberto: false, sinoAberto: false },
       () => { if (this.buscaRef.current) this.buscaRef.current.focus(); });
   }
 
@@ -201,10 +218,19 @@ class Logica extends React.Component<any, any> {
       })) }
     ];
     const q = this.state.termo.trim().toLowerCase();
+    const A = this.state.achados;
+    const dReg = "M9 18l6-6-6-6";
+    const registros = A ? [["Pessoas", A.pessoas], ["Empresas", A.empresas], ["Negócios", A.negocios], ["Propostas", A.propostas]]
+      .filter(([, l]) => l && l.length)
+      .map(([titulo, l]) => ({ titulo, itens: l.map(r => ({
+        label: r.nome, d: dReg, tag: r.apoio || "",
+        acao: () => { this.setState({ buscaAberta: false }); this.ir(r.href, r.nome); }
+      })) })) : [];
     if (!q) return grupos.map(g => ({ titulo: g.titulo, itens: g.itens.slice(0, g.titulo === "Ações" ? 4 : 6) }));
     return grupos
       .map(g => ({ titulo: g.titulo, itens: g.itens.filter(i => i.label.toLowerCase().includes(q)) }))
-      .filter(g => g.itens.length);
+      .filter(g => g.itens.length)
+      .concat(registros);
   }
 
   montarRadar(modo) {
@@ -265,7 +291,7 @@ class Logica extends React.Component<any, any> {
     const realArea = realLinha + " L " + pts[nD - 1][0] + " " + yBase + " L " + px(0) + " " + yBase + " Z";
 
     const passos = [0, Math.round(teto / 3), Math.round((teto / 3) * 2), teto];
-    const iniciais = (n) => n.split(" ").slice(0, 2).map(p => p[0]).join("").toUpperCase();
+    const iniciais = (n) => n.split(" ").slice(0, 2).map(p => [...p][0]).join("").toUpperCase();
     const ritmo = feito / meta;
     const esperado = mes ? 0.75 : 0.8;
 
@@ -433,7 +459,15 @@ class Logica extends React.Component<any, any> {
           ["Calendário", "Reuniões e compromissos", "/calendario", "M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z", ""]];
         return { alternar: () => this.setState(s2 => ({ qaAberto: !s2.qaAberto })),
           chev: "flex:0 0 auto;opacity:.85;transition:transform .28s cubic-bezier(.16,1,.3,1);transform:rotate(" + (on ? 180 : 0) + "deg)",
-          wrap: "display:grid;grid-template-rows:" + (on ? "1fr" : "0fr") + ";transition:grid-template-rows .32s cubic-bezier(.16,1,.3,1),opacity .2s ease;opacity:" + (on ? 1 : 0),
+          /* Fechado, o painel some por `0fr` + `opacity:0` — mas continuava
+             `visible`, com `pointer-events:auto` e `tabIndex:0`. Resultado
+             medido em 06/10: os três botões invisíveis do Acesso rápido ficavam
+             EM CIMA de Início, Vendas e Pipeline (mesmas coordenadas), comendo
+             o clique do menu, e o Tab levava o foco para botão que ninguém vê.
+             `pointer-events:none` devolve o clique ao menu; `visibility:hidden`
+             tira do foco e do leitor de tela — e, por ser transicionável, não
+             atrapalha a animação de abertura. */
+          wrap: "display:grid;grid-template-rows:" + (on ? "1fr" : "0fr") + ";transition:grid-template-rows .32s cubic-bezier(.16,1,.3,1),opacity .2s ease,visibility .2s;opacity:" + (on ? 1 : 0) + ";" + (on ? "" : "pointer-events:none;visibility:hidden"),
           painel: "display:flex;flex-direction:column;gap:2px;margin-top:6px;padding:4px;border-radius:11px;background:rgba(255,255,255,.04);box-shadow:inset 0 0 0 1px rgba(255,255,255,.06)",
           itens: IT.map(([l, s2, href, d, n], i) => { const at = rota === href || (href === "/atendimento" && /atendimento/.test(rota));
             return { l, s: s2, d, n, temN: !!n, onClick: () => { this.setState({ qaAberto: false }); this.ir(href, l); },
@@ -465,7 +499,7 @@ class Logica extends React.Component<any, any> {
       buscaAberta: S.buscaAberta, buscaRef: this.buscaRef,
       fecharBusca: () => this.setState({ buscaAberta: false }),
       termo: S.termo,
-      setTermo: (e) => this.setState({ termo: e.target.value, idx: 0 }),
+      setTermo: (e) => { const t = e.target.value; this.setState({ termo: t, idx: 0 }); this.buscarRegistros(t); },
       gruposBusca: gruposBusca.map(g => ({
         titulo: g.titulo,
         itens: g.itens.map(i => ({
@@ -480,11 +514,11 @@ class Logica extends React.Component<any, any> {
         else if (e.key === "ArrowUp") { e.preventDefault(); this.setState({ idx: Math.max(0, S.idx - 1) }); }
         else if (e.key === "Enter") { const it = planos[S.idx]; if (it) it.acao(); }
       },
-      buscaSemDados: true,
-      buscaVazioTitulo: S.termo.trim() ? "Nenhum destino com esse nome" : "Registros ainda não entram na busca",
+      buscaSemDados: planos.length === 0 || !S.termo.trim(),
+      buscaVazioTitulo: S.termo.trim() ? "Nada com esse nome" : "Busque por pessoa, empresa, negócio ou proposta",
       buscaVazioTexto: S.termo.trim()
-        ? "Empresas, pessoas, leads, oportunidades e propostas entram aqui quando a busca for ligada ao banco."
-        : "Por enquanto a busca cobre destinos e ações. Empresa, pessoa, lead, oportunidade e proposta vêm do banco.",
+        ? "Nenhum destino, pessoa, empresa, negócio ou proposta encontrado. Digite ao menos 2 letras."
+        : "Digite o nome, e-mail, telefone ou CNPJ. Destinos do menu também aparecem aqui.",
 
       /* A bolinha vermelha ficava acesa sempre, inclusive com a lista vazia.
          Só acende com não lida de verdade (hoje nada alimenta isto, então ela

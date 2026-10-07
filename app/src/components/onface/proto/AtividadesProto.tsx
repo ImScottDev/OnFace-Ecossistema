@@ -83,8 +83,19 @@ export function AtividadesProto({ dados }: { dados: DadosAtividades }) {
     [dados.atividades],
   );
 
+  /* O responsável chega por nome no desenho; o id vem da equipe da org. */
+  const [equipe, setEquipe] = React.useState<Array<{ id: string; nome: string }>>([]);
+  React.useEffect(() => { acaoResponsaveis().then(setEquipe, () => {}); }, []);
+  const idDoResponsavel = React.useCallback((nome: string) => equipe.find((r) => r.nome === nome)?.id, [equipe]);
+
   const catalogo = React.useMemo(() => ({
-    EQUIPE: dados.filtrosResponsavel.map((f) => f.label).filter((n) => n !== "Todos"),
+    /* "Para outra pessoa" lista TODOS os usuários ativos da org. Antes vinha de
+       `filtrosResponsavel`, que só tem quem já tem atividade (e trazia os
+       rótulos "Todos os responsáveis" e "Sem responsável" como se fossem gente).
+       Sem a equipe carregada ainda, cai nos responsáveis que a tela já conhece. */
+    EQUIPE: equipe.length
+      ? equipe.map((r) => r.nome)
+      : dados.filtrosResponsavel.filter((f) => f.valor !== "todos" && f.valor !== "sem-dono").map((f) => f.label),
     // As outras duas fontes do desenho ficam vazias: no produto as três são a
     // mesma tabela, e agregar de novo contaria a tarefa duas vezes.
     OPORTUNIDADES: [],
@@ -92,18 +103,13 @@ export function AtividadesProto({ dados }: { dados: DadosAtividades }) {
     AtividadesSeed: [],
     ProjetosSeed: [],
     Projetos: [],
-  }), [dados.filtrosResponsavel]);
+  }), [dados.filtrosResponsavel, equipe]);
 
   /* Peça do protótipo: abre por cima desta tela pelo hospedeiro global. */
   const { abrir: abrirPeca } = usePecas();
   const abrir = React.useCallback((peca: string, id?: string | null) => {
     abrirPeca(peca, id, { tela: "tarefas" });
   }, [abrirPeca]);
-
-  /* O responsável chega por nome no desenho; o id vem da equipe da org. */
-  const [equipe, setEquipe] = React.useState<Array<{ id: string; nome: string }>>([]);
-  React.useEffect(() => { acaoResponsaveis().then(setEquipe, () => {}); }, []);
-  const idDoResponsavel = React.useCallback((nome: string) => equipe.find((r) => r.nome === nome)?.id, [equipe]);
 
   /* Empresa por nome → id, só das contas que já aparecem na lista (vínculo Cliente). */
   const idDaEmpresa = React.useMemo(() => new Map(

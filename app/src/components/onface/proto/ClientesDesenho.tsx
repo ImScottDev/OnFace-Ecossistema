@@ -522,6 +522,9 @@ Limpar filtros
 <button onClick={tab.exportarSel} style={{ height: "24px", padding: "0 9px", borderRadius: "6px", border: "0", background: "#fff", boxShadow: "inset 0 0 0 1px #f0c3b3", fontSize: "11.5px", fontWeight: "600", color: "#9c3210", cursor: "pointer" }}>
 Exportar
 </button>
+{tab.reatribuir ? (<button onClick={tab.reatribuir} style={{ height: "24px", padding: "0 9px", borderRadius: "6px", border: "0", background: "#fff", boxShadow: "inset 0 0 0 1px #f0c3b3", fontSize: "11.5px", fontWeight: "600", color: "#9c3210", cursor: "pointer" }}>
+Responsável
+</button>) : null}
 <button onClick={tab.limparSel} title="Limpar seleção" style={{ width: "24px", height: "24px", borderRadius: "6px", border: "0", background: "transparent", color: "#9c3210", display: "grid", placeItems: "center", cursor: "pointer" }}>
 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
 <path d="M18 6 6 18M6 6l12 12" />

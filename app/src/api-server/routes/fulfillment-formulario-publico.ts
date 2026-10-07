@@ -237,6 +237,13 @@ app.post("/fulfillment-formulario/:publicToken", async (c) => {
 
   const formulario = await buscarOuCriarFormulario(fulfillment.id, fulfillment.organizacaoId);
 
+  // QA pós-venda 06/10: reenviar o link depois da equipe aprovar (ou durante a
+  // revisão) sobrescrevia as respostas e devolvia o status para SUBMITTED,
+  // desfazendo a aprovação sem ninguém ver. Só reabre se a equipe pediu correção.
+  if (formulario.status === "APPROVED" || formulario.status === "IN_REVIEW") {
+    return c.json({ error: "Formulário já está em análise ou aprovado. Fale com a equipe de implantação para ajustes." }, 409);
+  }
+
   const [atualizado] = await db
     .update(fulfillmentFormularios)
     .set({

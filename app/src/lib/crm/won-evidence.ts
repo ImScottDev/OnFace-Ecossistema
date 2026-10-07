@@ -302,7 +302,14 @@ export async function marcarNegocioGanhoSeAindaNao(
   if (!evidencia.permitido) return;
 
   const deStatus = negocio.status;
-  await db.update(negocios).set({ status: "ganho", ganhoAt: new Date(), updatedAt: new Date() }).where(eq(negocios.id, negocioId));
+  // `etapa` junto com `status`: o board lê a etapa, e só `tentarGanhar` a gravava.
+  // Ganho por pagamento ou contrato assinado (o caminho de PABX/White Label) ficava
+  // com status 'ganho' e card parado em Proposta, e o total da coluna Ganho não o contava.
+  await db.update(negocios).set({ status: "ganho", etapa: "ganho", etapaDesde: new Date(), ganhoAt: new Date(), updatedAt: new Date() }).where(eq(negocios.id, negocioId));
+  // O board lê `oportunidades`: o espelho acompanha. Best-effort, o ganho já está gravado.
+  await import("@/lib/crm/sync-domain-model")
+    .then((m) => m.syncOportunidadeFromNegocio(negocioId))
+    .catch((e) => console.error("[won-evidence] espelho do ganho falhou:", e));
 
   await db.insert(statusChanges).values({
     leadId: negocio.leadId, negocioId, deStatus, paraStatus: "ganho", motivo: "Evidência comercial confirmada",

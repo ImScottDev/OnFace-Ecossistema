@@ -6,6 +6,7 @@ import { z } from "zod";
 import { getCtx } from "../compat.js";
 
 const app = new Hono();
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const createSchema = z.object({
   conteudo: z.string().min(1),
@@ -18,7 +19,7 @@ const createSchema = z.object({
 
 const updateSchema = z.object({
   conteudo: z.string().min(1),
-});
+}).strict();
 
 // GET /api/notas — list notes for the org
 app.get("/notas", async (c) => {
@@ -29,6 +30,11 @@ app.get("/notas", async (c) => {
   const empresaId = c.req.query("empresaId") ?? null;
   const reuniaoId = c.req.query("reuniaoId") ?? null;
   const clienteId = c.req.query("clienteId") ?? null;
+
+  // Filtro com id que não é uuid estourava no Postgres (500); é 400.
+  if ([leadId, negocioId, empresaId, reuniaoId, clienteId].some((v) => v && !UUID_RE.test(v))) {
+    return c.json({ error: "Filtro invalido" }, 400);
+  }
 
   const conditions = [eq(notas.organizacaoId, ctx.organizacaoId)];
 
@@ -128,6 +134,7 @@ app.patch("/notas/:id", async (c) => {
   const ctx = await getCtx(c);
 
   const id = c.req.param("id");
+  if (!UUID_RE.test(id)) return c.json({ error: "Nota não encontrada" }, 404); // uuid inválido estourava 500
 
   const [existing] = await db
     .select({ id: notas.id })
@@ -163,6 +170,7 @@ app.delete("/notas/:id", async (c) => {
   const ctx = await getCtx(c);
 
   const id = c.req.param("id");
+  if (!UUID_RE.test(id)) return c.json({ error: "Nota não encontrada" }, 404); // uuid inválido estourava 500
 
   const [existing] = await db
     .select({ id: notas.id })

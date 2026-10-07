@@ -100,7 +100,7 @@ class Logica extends React.Component<any, any> {
 
   arqRef = React.createRef();
   expRef = React.createRef();
-  state = { visao: "quadro", busca: "", sel: { resp: [], familia: [], proposta: [], parado: [] }, filtroAberto: null, expandidas: {}, listaFechadas: {},
+  state = { visao: "quadro", busca: "", sel: { resp: [], familia: [], proposta: [], parado: [], tipo: [], motivo: [] }, filtroAberto: null, expandidas: {}, listaFechadas: {},
     arrastando: null, sobre: null, aberto: null, modal: null, form: {}, tentou: false, tlTudo: false, ni: { natureza: "MRR", qtd: "1" }, np: { papel: "Influenciador" }, na: { tipo: "Ligação" }, opps: null, leads: null };
 
   constructor(props: any) {
@@ -214,9 +214,10 @@ class Logica extends React.Component<any, any> {
     const D = this.dadosDoProto || {};
     const Es = this.E;
     const equipe = D.EQUIPE || ["Camila Reis", "Diego Nunes", "Ana Vitória"];
-    const ini = D.iniciais || (s => (s || "").split(" ").map(p => p[0]).slice(0, 2).join("").toUpperCase());
+    const ini = D.iniciais || (s => (s || "").split(" ").map(p => [...p][0]).slice(0, 2).join("").toUpperCase());
     const ROT = this.ROT = { entrada: "Entrada", diagnostico: "Diagnóstico", proposta: "Proposta", negociacao: "Negociação", ganho: "Ganho", perdido: "Perdido" };
     const COR = { entrada: "#4a5560", diagnostico: "#2c5f9e", proposta: "#c8a86a", negociacao: "#fe4f2b", ganho: "#1f7256", perdido: "#8b949e" };
+    const MOTIVO_ROT = { sem_retorno: "Sem retorno", sem_interesse: "Sem interesse", preco: "Preço", concorrente: "Escolheu concorrente", sem_orcamento: "Sem orçamento", timing: "Timing / outra data", trava_negociacao: "Trava na negociação", trava_contratual: "Trava contratual", projeto_cancelado: "Projeto cancelado", sem_fit: "Sem fit após diagnóstico", no_show: "No-show", outro: "Outro", nao_respondeu: "Não respondeu", fora_perfil: "Fora de perfil", escolheu_concorrente: "Escolheu concorrente", preco_alto: "Preço alto", sem_budget: "Sem orçamento", vai_internalizar: "Vai internalizar", erro_operacional: "Erro operacional" };
     const FAM = { CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label" };
     const NAT = { MRR: "Recorrente", SETUP: "Setup", PROJECT: "Projeto", ONE_TIME: "Avulso", USAGE: "Uso", HARDWARE: "Hardware" };
     const PROP = { rascunho: "Rascunho", enviada: "Enviada", visualizada: "Visualizada", ajuste_solicitado: "Ajuste solicitado", aceita: "Aceita", recusada: "Recusada", expirada: "Expirada" };
@@ -235,7 +236,10 @@ class Logica extends React.Component<any, any> {
     const passa = (o, ignora) => {
       if (q && ![o.empresa, o.pessoa].some(v => (v || "").toLowerCase().indexOf(q) >= 0)) return false;
       if (ignora !== "resp" && F.resp.length && F.resp.indexOf(o.resp) < 0) return false;
-      if (ignora !== "familia" && F.familia.length && F.familia.indexOf(o.familia) < 0) return false;
+      // Família NULL conta como Callface AI no filtro, sem gravar (decisão do Scott).
+      if (ignora !== "familia" && F.familia.length && F.familia.indexOf(o.familia || "CALLFACE_AI") < 0) return false;
+      if (ignora !== "tipo" && F.tipo.length && F.tipo.indexOf(o.tipo || "nova") < 0) return false;
+      if (ignora !== "motivo" && F.motivo.length && F.motivo.indexOf(o.motivoPerda || "") < 0) return false;
       if (ignora !== "proposta" && F.proposta.length && F.proposta.indexOf(statusProp(o)) < 0) return false;
       if (ignora !== "parado" && F.parado.length && !F.parado.some(p => o.dias >= +p)) return false;
       return true;
@@ -243,7 +247,7 @@ class Logica extends React.Component<any, any> {
     const vis = todas.filter(o => passa(o));
     const exp = (() => {
       const EX = S.exp || {}, esc = EX.escopo || "visao";
-      const TIPO = { nova: "Nova venda", expansao: "Expansão", upgrade: "Upgrade", renovacao: "Renovação" };
+      const TIPO = { nova: "Nova venda", expansao: "Expansão", upgrade: "Upgrade", renovacao: "Renovação", reativacao: "Reativação" };
       const PROPS = { sem: "Sem proposta", rascunho: "Rascunho", enviada: "Enviada", visualizada: "Visualizada", ajuste_solicitado: "Ajuste solicitado", aceita: "Aceita", recusada: "Recusada" };
       const G = [
         ["etapa", "Etapa", ["entrada", "diagnostico", "proposta", "negociacao", "ganho", "perdido"].map(k => [k, ROT[k]]), o => o.etapa],
@@ -295,6 +299,9 @@ class Logica extends React.Component<any, any> {
       { k: "resp", label: "Responsável", titulo: "CLOSER", icone: "M20 21a8 8 0 0 0-16 0M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10z", opcoes: equipe.map(n => [n, n]) },
       { k: "familia", label: "Família", titulo: "PRODUTO", icone: "M12 2 2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5", opcoes: Object.keys(FAM).map(k => [k, FAM[k]]) },
       { k: "proposta", label: "Proposta", titulo: "STATUS DA PROPOSTA", icone: "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6", opcoes: [["sem", "Sem proposta"]].concat(["rascunho", "enviada", "visualizada", "ajuste_solicitado", "aceita"].map(k => [k, PROP[k]])) },
+      { k: "tipo", label: "Tipo", titulo: "NOVA VENDA OU EXPANSÃO", icone: "M12 5v14M5 12h14", opcoes: [["nova", "Nova venda"], ["expansao", "Expansão"], ["renovacao", "Renovação"], ["reativacao", "Reativação"]] },
+      // E1: separa o perdido de verdade do estagnado (timing, sem retorno, travas).
+      { k: "motivo", label: "Motivo", titulo: "MOTIVO DA PERDA", icone: "M18 6 6 18M6 6l12 12", opcoes: Array.from(new Set(todas.map(o => o.motivoPerda).filter(Boolean))).sort().map(k => [k, MOTIVO_ROT[k] || k]) },
       { k: "parado", label: "Parado", titulo: "DIAS NA ETAPA", icone: "M12 8v4l3 2M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z", opcoes: [["7", "7 dias+"], ["14", "14 dias+"]] }
     ];
     const filtros = defs.map(f => {
@@ -312,7 +319,7 @@ class Logica extends React.Component<any, any> {
         limpar: () => this.setState(s => ({ sel: Object.assign({}, s.sel, { [f.k]: [] }) })),
         opcoes: f.opcoes.map(([v, l]) => {
           const on = sel.indexOf(v) >= 0;
-          const n = todas.filter(o => passa(o, f.k) && (f.k === "proposta" ? statusProp(o) === v : f.k === "parado" ? o.dias >= +v : o[f.k] === v)).length;
+          const n = todas.filter(o => passa(o, f.k) && (f.k === "proposta" ? statusProp(o) === v : f.k === "parado" ? o.dias >= +v : f.k === "familia" ? (o.familia || "CALLFACE_AI") === v : f.k === "tipo" ? (o.tipo || "nova") === v : o[f.k === "motivo" ? "motivoPerda" : f.k] === v)).length;
           return { label: l, on, n: String(n),
             caixa: "flex:0 0 auto;width:17px;height:17px;border-radius:9999px;display:grid;place-items:center;" + (on ? "background:#fe4f2b" : "background:#fff;box-shadow:inset 0 0 0 1.5px #c8ccc9"),
             onClick: () => this.setState(s => { const a = s.sel[f.k].slice(); const i = a.indexOf(v); if (i >= 0) a.splice(i, 1); else a.push(v); return { sel: Object.assign({}, s.sel, { [f.k]: a }) }; }) };
@@ -325,11 +332,11 @@ class Logica extends React.Component<any, any> {
       const s = somas(o);
       return {
         empresa: o.empresa, pessoa: o.pessoa + (o.cargo ? " · " + o.cargo : ""), familia: FAM[o.familia] || "—", famStyle: famStyle(o.familia),
-        temTipo: !!o.tipo && o.tipo !== "nova", tipo: ({ expansao: "Expansão", upgrade: "Upgrade", renovacao: "Renovação" }[o.tipo] || "") + (o.contratoOrigem ? " · " + o.contratoOrigem.id : ""),
+        temTipo: !!o.tipo && o.tipo !== "nova", tipo: ({ expansao: "Expansão", upgrade: "Upgrade", renovacao: "Renovação", reativacao: "Reativação" }[o.tipo] || "") + (o.contratoOrigem ? " · " + o.contratoOrigem.id : ""),
         tipoStyle: "display:inline-flex;align-items:center;gap:5px;margin-top:6px;height:20px;padding:0 7px;border-radius:6px;font-size:10.5px;font-weight:700;white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis;" + (o.tipo === "renovacao" ? "background:#eeeff3;color:#4a5560" : "background:#e6f4ee;color:#1f7256"),
-        temValor: !!o.proposta && (s.mrr + s.un) > 0, valorCurto: s.mrr ? brl0(s.mrr) + "/mês" : brl0(s.un),
-        temUnico: !!(o.proposta && s.mrr && s.un), unico: "+ " + brl0(s.un) + " único",
-        valorLinha: o.proposta ? (s.mrr ? brl0(s.mrr) + "/mês" : brl0(s.un)) : "—",
+        temValor: (s.mrr + s.un) > 0, valorCurto: s.mrr ? brl0(s.mrr) + "/mês" : brl0(s.un),
+        temUnico: !!(s.mrr && s.un), unico: "+ " + brl0(s.un) + " único",
+        valorLinha: (s.mrr + s.un) > 0 ? (s.mrr ? brl0(s.mrr) + "/mês" : brl0(s.un)) : "—",
         proposta: o.proposta ? PROP[o.proposta.status] : "Sem proposta", propStyle, propPonto: propPonto(o.proposta && o.proposta.status),
         resp: o.resp || "Sem responsável", iniciais: ini(o.resp), dias: (o.dias || 0) + "d", diasStyle: diasStyle(o.dias || 0),
         abrir: abrir(o), arrastavel: true,
@@ -341,6 +348,13 @@ class Logica extends React.Component<any, any> {
     const soltar = (k) => (e) => { e.preventDefault(); const id = S.arrastando; this.setState({ sobre: null, arrastando: null }); const o = todas.find(x => x.id === id); if (o) this.mover(o, k); };
     const sobre = (k) => (e) => { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = "move"; if (S.sobre !== k) this.setState({ sobre: k }); };
     const sai = (k) => () => { if (S.sobre === k) this.setState({ sobre: null }); };
+    // Cabeçalho da coluna: o board carrega no máximo N cartões por coluna, então
+    // lista.length subestima. Sem filtro/busca de tela vale o total do servidor;
+    // com filtro, só os cartões carregados podem ser contados.
+    const TOT = (D && (this.props.dados || {}).totais) || {};
+    const semFiltro = !S.busca.trim() && !Object.keys(F).some(k => (F[k] || []).length);
+    const contaCol = (k, lista) => String(semFiltro && TOT[k] ? TOT[k].n : lista.length);
+    const totalSrv = (k, lista, fallback) => { const t = TOT[k]; if (!semFiltro || !t) return fallback; if (t.mrr == null) return t.valor ? brl0(t.valor) : fallback; const mrr = t.mrr, un = Math.max(0, (t.valor || 0) - mrr); return mrr + un ? (mrr ? brl0(mrr) + "/mês" : "") + (mrr && un ? " · " : "") + (un ? brl0(un) + " único" : "") : fallback; };
     const totalCol = (lista) => { const t = lista.reduce((a, o) => { const s = somas(o); return { mrr: a.mrr + s.mrr, un: a.un + s.un }; }, { mrr: 0, un: 0 }); return t.mrr + t.un ? brl0(t.mrr) + "/mês" + (t.un ? " · " + brl0(t.un) + " único" : "") : "Valor definido na proposta"; };
     const VAZIO = { entrada: "Oportunidade criada no Pré-vendas ou manualmente começa aqui.", diagnostico: "Reunião feita: entenda volume, dor e decisor.", proposta: "Só entra com proposta criada.", negociacao: "Ajustes, desconto e aprovação interna.", ganho: "Exige proposta aceita ou evidência.", perdido: "Sempre com motivo." };
     const GATE = { proposta: "Exige proposta criada", negociacao: "Exige proposta criada" };
@@ -348,7 +362,7 @@ class Logica extends React.Component<any, any> {
     const colunas = colDefs.filter(c => !c.recolhivel || S.expandidas[c.k]).map((c, ci) => {
       const lista = vis.filter(o => o.etapa === c.k);
       return {
-        label: ROT[c.k], conta: String(lista.length), total: totalCol(lista), temGate: !!GATE[c.k], gate: GATE[c.k] || "",
+        label: ROT[c.k], conta: contaCol(c.k, lista), total: totalSrv(c.k, lista, totalCol(lista)), temGate: !!GATE[c.k], gate: GATE[c.k] || "",
         ponto: "flex:0 0 auto;width:7px;height:7px;border-radius:50%;background:" + COR[c.k],
         recolhivel: c.recolhivel, fechar: (e) => { e.stopPropagation(); this.setState(s => ({ expandidas: Object.assign({}, s.expandidas, { [c.k]: false }) })); },
         atraso: String(260 + ci * 90), cards: lista.map(o => cardDe(o, c)), vazia: !lista.length, vazio: VAZIO[c.k],
@@ -357,7 +371,7 @@ class Logica extends React.Component<any, any> {
       };
     });
     const recolhidas = colDefs.filter(c => c.recolhivel && !S.expandidas[c.k]).map(c => ({
-      label: ROT[c.k], conta: String(vis.filter(o => o.etapa === c.k).length),
+      label: ROT[c.k], conta: contaCol(c.k, vis.filter(o => o.etapa === c.k)),
       ponto: "width:7px;height:7px;border-radius:50%;background:" + COR[c.k],
       style: "flex:0 0 auto;width:46px;display:flex;flex-direction:column;align-items:center;gap:9px;padding:10px 0 12px;border-radius:12px;background:#eeeff3;cursor:pointer;border:0;" + (S.sobre === c.k ? "box-shadow:inset 0 0 0 2px rgba(255,77,41,.25)" : ""),
       abrir: () => this.setState(s => ({ expandidas: Object.assign({}, s.expandidas, { [c.k]: true }) })),
@@ -365,7 +379,7 @@ class Logica extends React.Component<any, any> {
     }));
     const grupos = colDefs.map(c => {
       const lista = vis.filter(o => o.etapa === c.k), aberto = !S.listaFechadas[c.k];
-      return { label: ROT[c.k], conta: String(lista.length), total: totalCol(lista), aberto,
+      return { label: ROT[c.k], conta: contaCol(c.k, lista), total: totalSrv(c.k, lista, totalCol(lista)), aberto,
         ponto: "width:7px;height:7px;border-radius:50%;background:" + COR[c.k],
         chev: "flex:0 0 auto;transition:transform .12s;transform:rotate(" + (aberto ? 0 : -90) + "deg)",
         alternar: () => this.setState(s => ({ listaFechadas: Object.assign({}, s.listaFechadas, { [c.k]: aberto }) })),

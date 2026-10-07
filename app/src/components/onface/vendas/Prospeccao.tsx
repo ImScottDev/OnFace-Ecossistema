@@ -17,7 +17,7 @@
 import { useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { LayoutGrid, List, Plus, Search, Send, Upload, Users, X } from "lucide-react";
+import { Download, LayoutGrid, List, Plus, Search, Send, Upload, Users, X } from "lucide-react";
 import type { LinhaProspeccao } from "@/lib/vendas/consultas";
 import {
   ESTADOS_PROSPECCAO, FAMILIAS, MOTIVOS_DESCARTE, ROTULO_ESTADO_PROSPECCAO, ROTULO_FAMILIA,
@@ -772,6 +772,21 @@ function DialogoImportar({ aberto, listas, responsaveis, pendente, bloqueio, aoF
     setLeitura({ ...lerCsvProspects(texto), arquivo: arquivo.name });
   }
 
+  /* Mesmo recurso do importador de Contatos: o CSV de exemplo tem exatamente as
+     colunas que `lerCsvProspect` reconhece, então baixar, preencher e subir
+     funciona sem renomear nada. BOM para o Excel abrir com acento certo. */
+  function baixarModelo() {
+    const linhasModelo = [
+      ["empresa", "cnpj", "site", "contato", "cargo", "email", "telefone"],
+      ["Nexa Tecnologia", "12.345.678/0001-90", "nexa.com.br", "Mariana Souza", "Head de CX", "mariana@nexa.com.br", "+55 11 99999-9999"],
+      ["Vetor Log", "", "vetorlog.com.br", "Paula Reis", "Diretora de Operações", "paula@vetorlog.com.br", "+55 21 97777-6666"],
+    ];
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob(["\ufeff" + linhasModelo.map((l) => l.join(";")).join("\n")], { type: "text/csv;charset=utf-8" }));
+    a.download = "onface-modelo-prospeccao.csv";
+    document.body.appendChild(a); a.click(); a.remove();
+  }
+
   const linhas = leitura?.linhas ?? [];
   const excede = linhas.length > 500;
 
@@ -784,6 +799,9 @@ function DialogoImportar({ aberto, listas, responsaveis, pendente, bloqueio, aoF
           <span>Arquivo</span>
           <input ref={arquivoRef} type="file" accept=".csv,text/csv" onChange={(e) => ler(e.target.files?.[0])} />
         </label>
+        <button type="button" className="ov-botao" data-variante="neutro" onClick={baixarModelo}>
+          <Download aria-hidden />Baixar modelo (CSV de exemplo)
+        </button>
         {leitura?.erro ? <p className="ov-nota" role="alert">{leitura.erro}</p> : null}
         {leitura && !leitura.erro ? (
           <p className="ov-nota" role="status">

@@ -179,7 +179,7 @@ class Logica extends React.Component<any, any> {
 
   renderVals() {
     const S = this.state, E = this.E, D = this.dadosDoProto || {};
-    const ini = D.iniciais || ((n) => (n || "").split(" ").map(x => x[0]).slice(0, 2).join("").toUpperCase());
+    const ini = D.iniciais || ((n) => (n || "").split(" ").map(x => [...x][0]).slice(0, 2).join("").toUpperCase());
     const EU = this.eu, equipe = (D.EQUIPE || [] /* ANTES: sem equipe real, listava Camila Reis / Diego Nunes / Ana Vitória como colegas. Nomes inventados. */).concat([EU]).filter((x, i, a) => a.indexOf(x) === i);
     const H0 = this.hoje(), H1 = new Date(H0.getTime() + 864e5), H2 = new Date(H0.getTime() + 2 * 864e5), agora = new Date();
     const fimSem = new Date(H0); fimSem.setDate(fimSem.getDate() + (7 - fimSem.getDay()) % 7 + 1);
@@ -472,7 +472,8 @@ class Logica extends React.Component<any, any> {
         iniD: F2.iniD, fimD: F2.fimD, fimH: F2.fimH, setIniD: (e) => up({ iniD: e.target.value }), setFimD: (e) => up({ fimD: e.target.value }), setFimH: (e) => up({ fimH: e.target.value }),
         prio: F2.prioridade, priosOpc: ["Baixa", "Média", "Alta"].map(p => ({ v: p, l: p })), setPrio: (e) => up({ prioridade: e.target.value }), prioCor: "color:" + PRIO[F2.prioridade],
         paraOutro: outro,
-        pessoas: equipe.filter(n => n !== EU).map(n => { const on = (F2.assignees || []).indexOf(n) >= 0; return { l: n, ini: ini(n), onClick: () => up({ fila: null, assignees: on ? F2.assignees.filter(x => x !== n) : (F2.assignees || []).concat(n) }),
+        buscaPessoa: ED.buscaPessoa || "", setBuscaPessoa: (e) => this.setState(s => ({ ed: Object.assign({}, s.ed, { buscaPessoa: e.target.value }) })),
+        pessoas: equipe.filter(n => n !== EU).filter(n => { const q = (ED.buscaPessoa || "").trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""); return !q || n.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").indexOf(q) >= 0 || (F2.assignees || []).indexOf(n) >= 0; }).map(n => { const on = (F2.assignees || []).indexOf(n) >= 0; return { l: n, ini: ini(n), onClick: () => up({ fila: null, assignees: on ? F2.assignees.filter(x => x !== n) : (F2.assignees || []).concat(n) }),
           style: "flex:0 0 auto;white-space:nowrap;display:inline-flex;align-items:center;gap:7px;height:32px;padding:0 12px 0 4px;border-radius:9999px;border:0;cursor:pointer;font-size:12.5px;font-weight:500;" + (on ? "background:#12171d;color:#fff" : "background:#fff;color:#1f252c;box-shadow:inset 0 0 0 1px #dbdede"),
           av: "width:24px;height:24px;border-radius:9999px;display:grid;place-items:center;font-size:9.5px;font-weight:500;" + (on ? "background:#fe4f2b;color:#fff" : "background:#eeeff3;color:#4a5560") }; }),
         filaV: F2.fila || "", filaL: F2.fila ? "Fila de " + F2.fila : "Escolher setor", filasOpc: [{ v: "", l: "Nenhuma fila" }].concat(AREAS.map(x => ({ v: x, l: x }))), setFila: (e) => up({ fila: e.target.value || null, assignees: e.target.value ? [] : F2.assignees }),

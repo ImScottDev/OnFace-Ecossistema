@@ -173,6 +173,25 @@ export async function acaoCriarLead(entrada: {
       if (!e) throw new RegraDeNegocio("empresa_nao_encontrada", "Empresa não encontrada nesta organização.");
       empresa = { nome: e.nome, cnpj: e.cnpj, website: e.website };
     }
+    // A porta canônica reaproveita a aquisição aberta da mesma pessoa. Quando
+    // o SDR cria "de novo" um contato que já está no board, o lead novo nascia
+    // sem aquisição: a tela dizia "criado" e o card nunca aparecia (nem as ações
+    // dele moviam algo). Recusar com o motivo é melhor que um sucesso invisível.
+    const email = entrada.email?.trim().toLowerCase() || null;
+    const fone = entrada.telefone?.trim() || null;
+    if (email || fone) {
+      const [aberta] = await db.execute<{ lead: string | null }>(sql`
+        SELECT a.lead_legado_id::text AS lead FROM aquisicoes a
+          JOIN pessoas p ON p.id = a.pessoa_id
+         WHERE a.organizacao_id = ${ctx.organizacaoId}::uuid AND a.closed_at IS NULL
+           AND a.lead_legado_id IS NOT NULL
+           AND ((${email}::text IS NOT NULL AND lower(p.email) = ${email})
+             OR (${fone}::text IS NOT NULL AND (p.telefone = ${fone} OR p.whatsapp = ${fone})))
+         LIMIT 1`);
+      if (aberta) {
+        throw new RegraDeNegocio("lead_ja_aberto", "Esta pessoa já tem um lead em aberto em Pré-vendas. Trabalhe o lead existente em vez de criar outro.");
+      }
+    }
     const criado = await preVendas.criarLead({
       organizacaoId: ctx.organizacaoId,
       empresa,
@@ -396,6 +415,9 @@ export async function acaoTagDoLead(
       entityId: leadId,
       label,
     });
+    // `adicionarTag` devolve ok:false (tag inexistente) sem lançar. Sem esta
+    // checagem a gaveta recebia "ok" e mostrava a tag aplicada que nunca gravou.
+    if (!r.ok) throw new RegraDeNegocio("tag_invalida", r.erro ?? "Tag não encontrada.");
     revalidatePath(ROTA);
     return { mudou: r.mudou };
   });

@@ -53,6 +53,8 @@ export interface ValoresDePessoaDesenho {
   ed: any;
   editarResumo: any;
   empFatos: any;
+  empObs: any;
+  anuncioHref: any;
   empIniciais: any;
   empMeta: any;
   empTitulo: any;
@@ -142,7 +144,7 @@ export interface ValoresDePessoaDesenho {
 }
 
 export function PessoaDesenho(vals: ValoresDePessoaDesenho) {
-  const { abaAtv, abaOpp, abaVisao, abas, abrirEmpresa, abrirResp, abrirTag, abrirVinc2, acaoNota, acaoTitulo, anexarNota, atvEsc, atvFiltros, atvLista, atvVazia, atvVaziaTitulo, blurNota, cad, canais, cancelarNota, cargo, chamada, chamadaTempo, colegas, criarOpp, criarTag, ed, editarResumo, empFatos, empIniciais, empMeta, empTitulo, empresa, empresaTopo, empresaTopoClick, empresaTopoStyle, encerrar, etapa, etapaSelo, exc, extras, focoNota, gridStyle, iniciais, interEsc, interTitulo, interacoes, ligar, mais, maisAberto, maisItens, maisStyle, mencaoAberta, mencaoOpcoes, mencaoStyle, mencaoVazia, meta, mostraInteracoes, nome, notaAnexos, notaAtiva, notaBtnStyle, notaCaixaStyle, notaLinhas, notaRef, notaTexto, notas, notasConta, novaAtv, obs, obsAutor, obsStyle, opps, origemC, origemSelo, parar, respostasForm, temRespostasForm, primeiroNome, principal, qualif, registrar, relAtivas, resp, respAberto, respBtnStyle, respChevron, respIniciais, respMenuStyle, respOpcoes, resumo, salvarNota, semAcao, semEmpresa, semInteracoes, semOpps, setNota, setTagNova, tagAberto, tagMenuStyle, tagNova, tagOpcoes, tags, teclaNota, teclaTag, temAcao, temEmpresa, temEtapa, temExtras, temNotaAnexos, toques, v2, verAcao, vincularEmpresa, visor } = vals;
+  const { abaAtv, abaOpp, abaVisao, abas, abrirEmpresa, abrirResp, abrirTag, abrirVinc2, acaoNota, acaoTitulo, anexarNota, atvEsc, atvFiltros, atvLista, atvVazia, atvVaziaTitulo, blurNota, cad, canais, cancelarNota, cargo, chamada, chamadaTempo, colegas, criarOpp, criarTag, ed, editarResumo, empFatos, empObs, anuncioHref, empIniciais, empMeta, empTitulo, empresa, empresaTopo, empresaTopoClick, empresaTopoStyle, encerrar, etapa, etapaSelo, exc, extras, focoNota, gridStyle, iniciais, interEsc, interTitulo, interacoes, ligar, mais, maisAberto, maisItens, maisStyle, mencaoAberta, mencaoOpcoes, mencaoStyle, mencaoVazia, meta, mostraInteracoes, nome, notaAnexos, notaAtiva, notaBtnStyle, notaCaixaStyle, notaLinhas, notaRef, notaTexto, notas, notasConta, novaAtv, obs, obsAutor, obsStyle, opps, origemC, origemSelo, parar, respostasForm, temRespostasForm, primeiroNome, principal, qualif, registrar, relAtivas, resp, respAberto, respBtnStyle, respChevron, respIniciais, respMenuStyle, respOpcoes, resumo, salvarNota, semAcao, semEmpresa, semInteracoes, semOpps, setNota, setTagNova, tagAberto, tagMenuStyle, tagNova, tagOpcoes, tags, teclaNota, teclaTag, temAcao, temEmpresa, temEtapa, temExtras, temNotaAnexos, toques, v2, verAcao, vincularEmpresa, visor } = vals;
   return (
     <>
 <div style={{ flex: "1", minHeight: "0", background: "#f6f6f3", display: "flex", flexDirection: "column", overflow: "hidden" }}>
@@ -979,6 +981,7 @@ Abrir empresa
 </Fragment>
 ))}
 </div>
+{empObs ? (<div style={{ marginTop: "10px", fontSize: "12.5px", lineHeight: "1.5", color: "#1f252c", whiteSpace: "pre-wrap", textWrap: "pretty" }}>{empObs}</div>) : null}
 {(temExtras) ? (<>
 <div style={{ marginTop: "12px", borderTop: "1px solid #eef1f1", paddingTop: "6px" }}>
 {(extras ?? []).map((x: any, i1: number) => (
@@ -1140,15 +1143,18 @@ Origem do contato
 </section>
 {temRespostasForm ? (
 <section style={{ background: "#fff", borderRadius: "12px", boxShadow: "inset 0 0 0 1px #e3e7e8", padding: "14px 16px 16px" }}>
-<div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px" }}>
+{/* Recolhível: são até dez perguntas por formulário, e a ficha não pode virar a lista delas. */}
+<details>
+<summary style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer", listStyle: "none" }}>
 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#4a5560" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ flex: "0 0 auto" }}>
 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M9 13h6M9 17h4" />
 </svg>
 <span style={{ flex: "1", minWidth: "0", fontFamily: "'Plus Jakarta Sans',sans-serif", fontSize: "13.5px", fontWeight: "700", letterSpacing: "-.01em", color: "#12171d" }}>
 Respostas do formulário
 </span>
-</div>
-<div style={{ display: "flex", flexDirection: "column", gap: "11px" }}>
+{anuncioHref ? (<a href={anuncioHref} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} style={{ fontSize: "12px", color: "#c2330f", textDecoration: "underline" }}>Ver anúncio</a>) : null}
+</summary>
+<div style={{ display: "flex", flexDirection: "column", gap: "11px", marginTop: "12px" }}>
 {(respostasForm ?? []).map((r: any, i1: number) => (
 <Fragment key={r?.id ?? i1}>
 <div style={{ minWidth: "0" }}>
@@ -1162,6 +1168,7 @@ Respostas do formulário
 </Fragment>
 ))}
 </div>
+</details>
 </section>
 ) : null}
 </div>

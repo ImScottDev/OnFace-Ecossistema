@@ -22,6 +22,13 @@ app.get("/ligacoes", async (c) => {
   const ctx = await getCtx(c);
   const leadId = c.req.query("leadId") ?? null;
   const negocioId = c.req.query("negocioId") ?? null;
+  // Filtro que não é uuid estourava no Postgres (500); parâmetro inválido é 400.
+  for (const q of ["leadId", "negocioId", "usuarioId"]) {
+    const v = c.req.query(q);
+    if (v && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v)) {
+      return c.json({ error: `${q} invalido` }, 400);
+    }
+  }
 
   if (!leadId && !negocioId) {
     const usuarioId = c.req.query("usuarioId") ?? null;

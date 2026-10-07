@@ -5,7 +5,7 @@ import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { getTenantContext } from "@/lib/auth/tenant";
 import {
-  atorHumano, type Familia, type ModoFechamento, type TipoContratual,
+  atorHumano, ehFamiliaValida, RegraDeNegocio, type Familia, type ModoFechamento, type TipoContratual,
 } from "@/lib/vendas/dominio";
 import { executar, type Resultado } from "@/lib/vendas/resultado";
 import * as propostas from "@/lib/vendas/propostas";
@@ -46,6 +46,8 @@ export interface LinhaProposta {
   /** O contato da conversa — o que a linha mostra embaixo da empresa. */
   pessoa: string | null;
 }
+
+const LIMITE_LISTA_PROPOSTAS = 5000;
 
 export async function acaoListar(filtros: { status?: string | null; busca?: string | null } = {}): Promise<LinhaProposta[]> {
   const ctx = await getTenantContext();
@@ -100,8 +102,13 @@ export async function acaoListar(filtros: { status?: string | null; busca?: stri
        AND (${busca}::text IS NULL OR lower(COALESCE(e.nome, l.empresa, '')) LIKE ${busca}
             OR lower(COALESCE(n.titulo, '')) LIKE ${busca} OR p.numero::text LIKE ${busca})
      ORDER BY p.created_at DESC
-     LIMIT 200
+     LIMIT ${LIMITE_LISTA_PROPOSTAS}
   `);
+  // LIMIT 200 cortava 1.550 propostas e a tela contava 200 como se fosse tudo
+  // (e o filtro por status só enxergava os 200 mais novos). A lista é leve, então
+  // o teto sobe acima do universo; passar dele é aviso, não corte silencioso.
+  // ponytail: sem paginação; vira paginação por cursor se passar de ~5 mil propostas.
+  if (linhas.length >= LIMITE_LISTA_PROPOSTAS) console.warn(`[propostas] lista cortada em ${LIMITE_LISTA_PROPOSTAS}`);
 
   return linhas.map((l) => ({
     id: l.id, numero: l.numero, versao: l.versao, status: l.status,
@@ -304,6 +311,16 @@ export async function acaoCriar(entrada: {
       throw new Error("a oportunidade não tem contato vinculado para receber a proposta");
     }
 
+    // O catálogo da tela já vem filtrado pela família, mas a action é chamável com
+    // qualquer id: um preço de outra família entrava na proposta e o aceite fechava
+    // o grupo pela família do ITEM, não pela da oportunidade. Barra aqui.
+    if (ehFamiliaValida(negocio.familia)) {
+      const permitidos = new Set((await propostas.catalogoDaFamilia(ctx.organizacaoId, negocio.familia)).map((c) => c.catalogoPrecoId));
+      if (entrada.itens.some((i) => !permitidos.has(i.catalogoPrecoId))) {
+        throw new RegraDeNegocio("item_de_outra_familia", "Há item de outra família. Use só o catálogo da família desta oportunidade.");
+      }
+    }
+
     const itens: ItemEntrada[] = entrada.itens.map((i, ordem) => ({
       catalogoPrecoId: i.catalogoPrecoId,
       nome: i.nome,
@@ -311,7 +328,10 @@ export async function acaoCriar(entrada: {
       quantidade: i.quantidade,
       valorUnitario: i.valorUnitario,
       desconto: i.desconto,
-      descontoTipo: "percentual",
+      // O desconto que chega aqui é em REAIS (total do item): `itensParaCriar`
+      // já converte o % do desenho em valor. Gravar como "percentual" lia R$ 100
+      // de desconto como 100% e zerava o item (e R$ 50 virava 50% de desconto).
+      descontoTipo: "valor",
       ordem,
     }));
 

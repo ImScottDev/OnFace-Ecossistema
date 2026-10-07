@@ -277,7 +277,7 @@ class Logica extends React.Component<any, any> {
 
   renderVals() {
     const S = this.state;
-    const iniciaisDe = (n) => n ? n.split(" ").filter(Boolean).slice(0, 2).map(p => p[0]).join("").toUpperCase() : "—";
+    const iniciaisDe = (n) => n ? n.split(" ").filter(Boolean).slice(0, 2).map(p => [...p][0]).join("").toUpperCase() : "—";
     const L0 = S.leads.find(x => x.id === S.detalheId) || S.leads[0];
     const rotuloEtapa = { novo: "Novo", em_contato: "Em contato", qualificacao: "Qualificação", qualificado: "Qualificado", oportunidade: "Oportunidade", nutricao: "Nutrição", desqualificado: "Desqualificado" };
     const corEtapa = { novo: "#4a5560", em_contato: "#4c8fe0", qualificacao: "#9b8bd8", qualificado: "#2f9e7a", oportunidade: "#fe4f2b", nutricao: "#c8a86a", desqualificado: "#4a5560" };
@@ -972,7 +972,7 @@ class Logica extends React.Component<any, any> {
           }));
           this.diz(msg, "ok");
         };
-        const iniciaisDe = (n) => (n || "").split(" ").slice(0, 2).map(p => p[0] || "").join("").toUpperCase() || "—";
+        const iniciaisDe = (n) => (n || "").split(" ").slice(0, 2).map(p => [...p][0] || "").join("").toUpperCase() || "—";
         const passo = S.qualPasso || "dados";
         const O = S.qualOpp || {};
         const avanco = O.avanco || null;

@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import {
   leads, contatos, whatsappMensagens, whatsappTemplates, whatsappSessao,
   usuarios, empresas, negocios, leadLabels, leadUserUnread, aiSdrContatoState,
-  communications, pessoas,
+  communications, pessoas, cadenciaExecucoes, aiAgentRuns,
 } from "@/lib/db/schema";
 import { eq, desc, count, and, sql, ilike, or, isNull, inArray, asc, gte, like, SQL } from "drizzle-orm";
 import { z } from "zod";
@@ -21,6 +21,14 @@ import { randomBytes } from "crypto";
 import { appUrl } from "@/lib/app-url";
 
 const app = new Hono();
+
+// :id de template que não é uuid estourava no Postgres (500); vira 404 como "não existe".
+app.use("/whatsapp/templates/:id", async (c, next) => {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(c.req.param("id"))) {
+    return c.json({ error: "Template nao encontrado" }, 404);
+  }
+  await next();
+});
 
 // ─── Webhook (public, no auth) ─────────────────────────────────────────────
 
@@ -224,6 +232,14 @@ app.post("/whatsapp/send", async (c) => {
   }
 
   let resolvedSessaoId = sessaoId;
+
+  /* sessaoId vem do corpo: sem esta conferência qualquer usuário mandava pelo WhatsApp
+     de uma sessão de OUTRA organização (só a ausência de sessão era tratada). */
+  if (resolvedSessaoId) {
+    const [sessaoOrg] = await db.select({ id: whatsappSessao.id }).from(whatsappSessao)
+      .where(and(eq(whatsappSessao.id, resolvedSessaoId), eq(whatsappSessao.organizacaoId, ctx.organizacaoId))).limit(1);
+    if (!sessaoOrg) return c.json({ error: "Sessao nao encontrada" }, 404);
+  }
 
   if (!resolvedSessaoId) {
     // Sessão CONECTADA do próprio usuário: a mensagem sai pelo WhatsApp de quem
@@ -1375,8 +1391,22 @@ app.post("/whatsapp/status", async (c) => {
       const wuzUser = await wuzapiFindUser(sessao.sessionName);
       if (wuzUser) await wuzapiDeleteUser(wuzUser.id);
     } catch { /* ok */ }
-    await db.delete(whatsappMensagens).where(eq(whatsappMensagens.sessaoId, sessao.id));
-    await db.delete(whatsappSessao).where(eq(whatsappSessao.id, sessao.id));
+    /* Remover a sessão NÃO apaga conversa: mensagem é histórico do lead (a
+       tela de Atendimento lê por lead/telefone, não pela sessão). Desvincula
+       mensagens, contatos e execuções de cadência (sessao_id é anulável) e só
+       então apaga a sessão. Se agente/roteador de IA ainda aponta para ela, o
+       FK recusa e a transação desfaz tudo: responde 409 em vez de 500. */
+    try {
+      await db.transaction(async (tx) => {
+        await tx.update(whatsappMensagens).set({ sessaoId: null }).where(eq(whatsappMensagens.sessaoId, sessao.id));
+        await tx.update(contatos).set({ sessaoId: null }).where(eq(contatos.sessaoId, sessao.id));
+        await tx.update(cadenciaExecucoes).set({ sessaoId: null }).where(eq(cadenciaExecucoes.sessaoId, sessao.id));
+        await tx.update(aiAgentRuns).set({ channelSessionId: null }).where(eq(aiAgentRuns.channelSessionId, sessao.id));
+        await tx.delete(whatsappSessao).where(eq(whatsappSessao.id, sessao.id));
+      });
+    } catch (e) {
+      return c.json({ error: "Sessão ainda em uso por agente ou roteador de IA. Troque o canal deles antes de remover." }, 409);
+    }
     return c.json({ ok: true });
   }
 
@@ -1397,7 +1427,7 @@ const updateTemplateSchema = z.object({
   categoria: z.enum(["primeiro_contato", "follow_up", "proposta", "pos_venda", "geral"]).optional(),
   conteudo: z.string().min(1).optional(),
   botoes: z.any().optional(),
-});
+}).strict();
 
 app.get("/whatsapp/templates", async (c) => {
   const ctx = await getCtx(c);

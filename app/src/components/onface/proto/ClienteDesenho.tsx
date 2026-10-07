@@ -651,7 +651,7 @@ Documentos
 {ct.renTxt}
 </span>
 </span>
-<button onClick={ct.abrirDoc} style={{ display: "flex", alignItems: "center", gap: "9px", width: "100%", padding: "8px 10px", borderRadius: "9px", border: "0", background: "#fff", boxShadow: "inset 0 0 0 1px #e3e7e8", cursor: "pointer", textAlign: "left" }} className={[hover("box-shadow:inset 0 0 0 1.5px #fe4f2b")].filter(Boolean).join(" ")}>
+{ct.arq ? (<button onClick={ct.abrirDoc} style={{ display: "flex", alignItems: "center", gap: "9px", width: "100%", padding: "8px 10px", borderRadius: "9px", border: "0", background: "#fff", boxShadow: "inset 0 0 0 1px #e3e7e8", cursor: "pointer", textAlign: "left" }} className={[hover("box-shadow:inset 0 0 0 1.5px #fe4f2b")].filter(Boolean).join(" ")}>
 <span style={{ flex: "0 0 auto", width: "26px", height: "26px", borderRadius: "7px", display: "grid", placeItems: "center", background: "#fff6f4", color: "#c2330f", fontSize: "8.5px", fontWeight: "800", letterSpacing: ".02em" }}>
 PDF
 </span>
@@ -661,7 +661,7 @@ PDF
 <span style={{ fontSize: "11px", color: "#8b949e", whiteSpace: "nowrap" }}>
 {ct.assin}
 </span>
-</button>
+</button>) : null}
 </div>
 </Fragment>
 ))}

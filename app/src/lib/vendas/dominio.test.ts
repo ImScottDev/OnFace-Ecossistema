@@ -40,12 +40,12 @@ describe("etapas do Pipeline", () => {
     }
   });
 
-  it("trial não é etapa: cai em Diagnóstico", () => {
-    assert.equal(etapaDoStatusLegado("trial"), "diagnostico");
+  it("trial não é etapa: cai em Proposta", () => {
+    assert.equal(etapaDoStatusLegado("trial"), "proposta");
   });
 
-  it("no-show não é etapa: a oportunidade fica onde estava", () => {
-    assert.equal(etapaDoStatusLegado("no_show"), "entrada");
+  it("no-show não é etapa: vira Perdido com motivo no_show", () => {
+    assert.equal(etapaDoStatusLegado("no_show"), "perdido");
     assert.ok(!(ETAPAS_PIPELINE as readonly string[]).includes("no_show"));
   });
 

@@ -24,7 +24,7 @@ const updateSchema = z.object({
   obrigatorio: z.boolean().optional(),
   ordem: z.number().int().optional(),
   ativo: z.boolean().optional(),
-});
+}).strict();
 
 // GET /api/custom-fields — list definitions for org
 app.get("/custom-fields", async (c) => {

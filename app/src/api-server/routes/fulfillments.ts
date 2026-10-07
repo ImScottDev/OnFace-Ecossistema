@@ -529,13 +529,24 @@ app.get("/fulfillments/:id", async (c) => {
 const updateFulfillmentSchema = z.object({
   responsavelId: z.string().uuid().nullable().optional(),
   targetAt: z.string().nullable().optional(),
-});
+}).strict();
+// QA pós-venda 06/10: responsável inexistente (ou de outra organização) estourava
+// 500 por violação de FK no UPDATE; o erro correto é 404, como em /tarefas.
+async function responsavelDaOrg(organizacaoId: string, id: string | null | undefined): Promise<boolean> {
+  if (!id) return true;
+  const [u] = await db.select({ id: usuarios.id }).from(usuarios)
+    .where(and(eq(usuarios.id, id), eq(usuarios.organizacaoId, organizacaoId))).limit(1);
+  return !!u;
+}
+
 app.patch("/fulfillments/:id", async (c) => {
   const ctx = await getCtx(c);
   const id = c.req.param("id");
   if (!UUID_RE.test(id)) return c.json({ error: "ID inválido" }, 400);
   const parsed = updateFulfillmentSchema.safeParse(await c.req.json());
   if (!parsed.success) return c.json({ error: "Dados inválidos", details: parsed.error.flatten() }, 400);
+
+  if (!(await responsavelDaOrg(ctx.organizacaoId, parsed.data.responsavelId))) return c.json({ error: "Responsável não encontrado" }, 404);
 
   const updateData: Record<string, unknown> = { updatedAt: new Date() };
   if (parsed.data.responsavelId !== undefined) updateData.responsavelId = parsed.data.responsavelId;
@@ -630,6 +641,8 @@ app.patch("/fulfillments/itens/:id", async (c) => {
 
   const [item] = await db.select().from(fulfillmentItens).where(and(eq(fulfillmentItens.id, id), eq(fulfillmentItens.organizacaoId, ctx.organizacaoId))).limit(1);
   if (!item) return c.json({ error: "Item não encontrado" }, 404);
+
+  if (!(await responsavelDaOrg(ctx.organizacaoId, parsed.data.responsavelId))) return c.json({ error: "Responsável não encontrado" }, 404);
 
   const updateData: Record<string, unknown> = { ...parsed.data, updatedAt: new Date() };
   if (parsed.data.dueDate !== undefined) {
@@ -764,6 +777,9 @@ app.patch("/fulfillments/:id/concluir", async (c) => {
   const [fulfillment] = await db.select({ status: fulfillments.status, servicoCanonicoId: fulfillments.servicoCanonicoId, serviceFamily: fulfillments.serviceFamily })
     .from(fulfillments).where(and(eq(fulfillments.id, id), eq(fulfillments.organizacaoId, ctx.organizacaoId))).limit(1);
   if (!fulfillment) return c.json({ error: "Fulfillment não encontrado" }, 404);
+  // QA pós-venda 06/10: concluir de novo devolvia "itens pendentes" (mentira):
+  // o processo já está concluído, e o correto é dizer isso.
+  if (fulfillment.status === "COMPLETED") return c.json({ error: "Já concluído" }, 409);
   if (fulfillment.status !== "READY_FOR_VALIDATION") {
     return c.json({ error: "Ainda há itens do checklist pendentes — conclua ou marque como não aplicável antes de concluir." }, 400);
   }
@@ -772,6 +788,16 @@ app.patch("/fulfillments/:id/concluir", async (c) => {
     .set({ status: "COMPLETED", completedAt: new Date(), updatedAt: new Date() })
     .where(eq(fulfillments.id, id))
     .returning();
+
+  // QA pós-venda 06/10: concluído o onboarding/implantação, a tarefa inicial
+  // ("Agendar reunião de onboarding") seguia aberta e vencida na agenda e na fila do CS.
+  await db.update(tarefas).set({ concluida: true, concluidaEm: new Date() })
+    .where(and(
+      eq(tarefas.organizacaoId, ctx.organizacaoId),
+      eq(tarefas.servicoCanonicoId, fulfillment.servicoCanonicoId),
+      inArray(tarefas.origem, ["ONBOARDING", "IMPLANTACAO"]),
+      eq(tarefas.concluida, false),
+    ));
 
   const ehPabxOuWhiteLabel = fulfillment.serviceFamily === "PABX" || fulfillment.serviceFamily === "WHITE_LABEL";
   const tipoEvento = ehPabxOuWhiteLabel ? "implantacao_concluida" : "onboarding_concluido";

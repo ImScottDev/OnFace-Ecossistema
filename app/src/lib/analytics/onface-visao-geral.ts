@@ -230,9 +230,11 @@ export async function montarVisaoGeral(
   usuarioId: string,
   nomeUsuario: string,
   hoje = new Date(),
+  /** Colaborador (não admin) vê só o que é dele; admin vê tudo. */
+  somenteDoUsuario = false,
 ): Promise<DadosVisaoGeral> {
   const [
-    mrrAtivo, mrrMes, series, clientes, operacoesAtivas, prioritarias, atencao, agendaCru, metaComercial,
+    mrrAtivo, mrrMes, series, clientes, operacoesAtivasOrg, prioritariasOrg, atencaoOrg, agendaCru, metaComercial,
     nomeOrg, implantacao, financeiro, atendimento,
   ] =
     await Promise.all([
@@ -255,6 +257,30 @@ export async function montarVisaoGeral(
       getAtendimentoResumo(orgId),
     ]);
   const metaMrr = metaComercial.valorAlvo > 0 ? metaComercial.valorAlvo : null;
+
+  // Recorte por responsável: negócio e proposta têm dono (negocios.responsavel_id);
+  // entrega, cobrança e os sinais agregados de "precisa de atenção" são da
+  // organização e não têm dono no modelo, então saem da visão do colaborador
+  // em vez de aparecer como se fossem dele. Pega 60 candidatas, não 9, porque o
+  // filtro roda depois do teto por tipo.
+  let operacoesAtivas = operacoesAtivasOrg;
+  let prioritarias = prioritariasOrg;
+  let atencao = atencaoOrg;
+  if (somenteDoUsuario) {
+    const donos = await db.execute<{ id: string; tipo: string }>(sql`
+      SELECT n.id::text AS id, 'negocio' AS tipo FROM negocios n
+       WHERE n.organizacao_id = ${orgId}::uuid AND n.responsavel_id = ${usuarioId}::uuid
+         AND n.etapa NOT IN ('ganho','perdido')
+      UNION ALL
+      SELECT p.id::text, 'proposta' FROM propostas p JOIN negocios n ON n.id = p.negocio_id
+       WHERE p.organizacao_id = ${orgId}::uuid AND n.responsavel_id = ${usuarioId}::uuid
+    `);
+    const meus = new Set(donos.map((d) => d.id));
+    operacoesAtivas = donos.filter((d) => d.tipo === "negocio").length;
+    prioritarias = (await getOperacoesPrioritarias(orgId, 60))
+      .filter((o) => meus.has(o.id)).slice(0, 9);
+    atencao = [];
+  }
 
   const responsaveis = await getResponsaveis(
     orgId,
