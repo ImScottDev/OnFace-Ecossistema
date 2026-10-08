@@ -610,3 +610,65 @@ export function rotuloFamilia(familia: string | null | undefined): string {
   if (!familia) return ROTULO_FAMILIA.UNKNOWN;
   return ROTULO_FAMILIA[familia as keyof typeof ROTULO_FAMILIA] ?? familia;
 }
+
+/* ── Recusa registrada pelo vendedor e exclusão de rascunho ────────────── */
+
+/**
+ * O cliente recusou por fora do link (ligação, reunião, WhatsApp) e o vendedor
+ * registra. Mesmo efeito da recusa pública: status, instante da resposta, motivo
+ * e o evento `ProposalRejected`, que aqui carrega QUEM registrou. A oportunidade
+ * continua aberta: perder exige decisão e motivo.
+ */
+export async function registrarRecusaInterna(params: {
+  organizacaoId: string; propostaId: string; motivo: string; ator: Ator;
+}): Promise<void> {
+  const p = await carregarProposta(params.organizacaoId, params.propostaId);
+  if (!["enviada", "visualizada", "ajuste_solicitado"].includes(p.status)) {
+    throw new RegraDeNegocio("proposta_nao_recusavel", "Só proposta enviada, visualizada ou com ajuste pedido pode ser recusada.");
+  }
+  await db.execute(sql`
+    UPDATE propostas SET status = 'recusada', recusada_em = now(), cliente_respondeu_em = now(),
+           motivo_recusa = ${params.motivo}, updated_at = now()
+     WHERE id = ${params.propostaId}::uuid`);
+  await registrarEvento({
+    organizacaoId: params.organizacaoId, tipo: "ProposalRejected", ator: params.ator,
+    propostaId: params.propostaId, negocioId: p.negocio_id, leadId: p.lead_id, empresaId: p.empresa_id,
+    contexto: { versao: p.versao, motivo: params.motivo, registradaPeloVendedor: true, de: p.status, para: "recusada" },
+    timeline: { tipo: "nota", titulo: `Proposta #${p.numero} recusada`, descricao: params.motivo },
+  });
+  if (p.negocio_id) {
+    const { syncNegocioValoresFromPropostas } = await import("@/lib/crm/sync-negocio-valores");
+    await syncNegocioValoresFromPropostas(p.negocio_id);
+  }
+}
+
+/** Exclui um rascunho. O evento fica no negócio (o do rascunho some junto com ele). */
+export async function excluirRascunho(params: { organizacaoId: string; propostaId: string; ator: Ator }): Promise<void> {
+  const p = await carregarProposta(params.organizacaoId, params.propostaId);
+  if (p.status !== "rascunho") {
+    throw new RegraDeNegocio("proposta_nao_e_rascunho", "Só rascunho se exclui. Proposta enviada fica no histórico.");
+  }
+  if (p.negocio_id) {
+    const { limparOportunidadeItensDeOrigemProposta } = await import("@/lib/crm/composicao-comercial");
+    await limparOportunidadeItensDeOrigemProposta(p.negocio_id);
+  }
+  /* Rascunho de REVISÃO: a versão anterior aponta para ele (substituida_por_id) e o FK barrava o DELETE
+     ("Não consegui concluir a ação"). Abandonar a revisão devolve a anterior ao estado em que estava. */
+  await db.execute(sql`
+    UPDATE propostas
+       SET status = CASE WHEN ajuste_solicitado_em IS NOT NULL THEN 'ajuste_solicitado'
+                         WHEN primeira_visualizacao_em IS NOT NULL THEN 'visualizada' ELSE 'enviada' END,
+           substituida_em = NULL, substituida_por_id = NULL, updated_at = now()
+     WHERE substituida_por_id = ${params.propostaId}::uuid AND status = 'substituida'`);
+  await db.execute(sql`DELETE FROM propostas WHERE id = ${params.propostaId}::uuid`);
+  await registrarEvento({
+    organizacaoId: params.organizacaoId, tipo: "ProposalDeleted", ator: params.ator,
+    negocioId: p.negocio_id, leadId: p.lead_id, empresaId: p.empresa_id,
+    contexto: { numero: p.numero, versao: p.versao },
+    timeline: p.negocio_id ? { tipo: "nota", titulo: `Rascunho da proposta #${p.numero} excluído` } : null,
+  });
+  if (p.negocio_id) {
+    const { syncNegocioValoresFromPropostas } = await import("@/lib/crm/sync-negocio-valores");
+    await syncNegocioValoresFromPropostas(p.negocio_id);
+  }
+}

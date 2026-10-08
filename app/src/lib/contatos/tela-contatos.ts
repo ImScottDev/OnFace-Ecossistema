@@ -113,7 +113,7 @@ export async function linhasDeContato(organizacaoId: string, opcoes: { busca?: s
   }>(sql`
     WITH ident AS (
       SELECT p.id, 'pessoa'::text AS fonte, p.lead_id_legado AS lead_id,
-             NULLIF(trim(concat_ws(' ', p.nome, p.sobrenome)), '') AS nome,
+             NULLIF(trim((CASE WHEN COALESCE(trim(p.sobrenome),'')='' THEN trim(p.nome) WHEN lower(trim(p.sobrenome))=lower(trim(p.nome)) OR lower(trim(p.sobrenome)) LIKE lower(trim(p.nome))||' %' THEN trim(p.sobrenome) WHEN lower(trim(p.nome)) LIKE '% '||lower(trim(p.sobrenome)) THEN trim(p.nome) ELSE trim(p.nome)||' '||trim(p.sobrenome) END)), '') AS nome,
              COALESCE(p.cargo, l.cargo) AS cargo,
              COALESCE(p.email, l.email) AS email,
              COALESCE(p.telefone, l.telefone) AS telefone,
@@ -125,7 +125,7 @@ export async function linhasDeContato(organizacaoId: string, opcoes: { busca?: s
        WHERE p.organizacao_id = ${organizacaoId}::uuid
       UNION ALL
       SELECT l.id, 'lead', l.id,
-             NULLIF(trim(concat_ws(' ', l.nome, l.sobrenome)), ''),
+             NULLIF(trim((CASE WHEN COALESCE(trim(l.sobrenome),'')='' THEN trim(l.nome) WHEN lower(trim(l.sobrenome))=lower(trim(l.nome)) OR lower(trim(l.sobrenome)) LIKE lower(trim(l.nome))||' %' THEN trim(l.sobrenome) WHEN lower(trim(l.nome)) LIKE '% '||lower(trim(l.sobrenome)) THEN trim(l.nome) ELSE trim(l.nome)||' '||trim(l.sobrenome) END)), ''),
              l.cargo, l.email, l.telefone, l.whatsapp, l.empresa_id, l.empresa
         FROM leads l
        WHERE l.organizacao_id = ${organizacaoId}::uuid

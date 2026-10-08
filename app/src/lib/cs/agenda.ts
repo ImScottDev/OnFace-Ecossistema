@@ -12,6 +12,7 @@
  */
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
+import { nomeEmpresaSql } from "@/lib/vendas/texto";
 
 export type TipoCompromisso = "TAREFA" | "CHECKPOINT" | "RENOVACAO" | "HEALTH_CHECK";
 
@@ -68,7 +69,7 @@ export async function agendaCs(
 
   const conta = sql`
     conta AS (
-      SELECT cli.empresa_id, cli.responsavel_id, e.nome AS empresa_nome, u.nome AS responsavel_nome,
+      SELECT cli.empresa_id, cli.responsavel_id, ${nomeEmpresaSql("e.nome")} AS empresa_nome, u.nome AS responsavel_nome,
              -- Mesmos filtros da métrica canônica mrr_atual, só que por
              -- empresa: ACTIVE + MRR + portfólio. O ciclo de vida faltava, e
              -- sem ele um serviço CHURNED somava no MRR da conta.

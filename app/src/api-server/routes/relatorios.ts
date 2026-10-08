@@ -7,10 +7,11 @@ import { parsePeriodo, clampDesdeGoLive, GO_LIVE_ISO } from "@/lib/relatorios/pe
 import { fetchMetaCampaignInsights, fetchMetaAdInsights, metaConfigured, normCampanha } from "@/lib/integrations/meta-insights";
 import { isPersonalView, isAdminView } from "@/lib/auth/roles";
 import {
-  getPipelineAtual, getWinRate, getMotivosPerda, getCicloMedio,
+  getPipelineAtual, getCoberturaValorPorEtapa, getWinRate, getMotivosPerda, getCicloMedio,
   getFechadoPeriodo, getTicketMedio, getFunilConversao, getPipelineEsfriando,
   getLeadsQualificados, getFechadoPorResponsavel, crescimento,
 } from "@/lib/relatorios/comercial";
+import { getTempoPorEtapa, getConversaoPorOrigem, getTarefasVencidasPorPessoa } from "@/lib/relatorios/gestao-operacional";
 import { contarReunioes, getPerdidosPorResponsavel, getFunilVendasEventos } from "@/lib/relatorios/funil-eventos";
 import { getEsteiraSdr } from "@/lib/relatorios/esteira-sdr";
 import { medir } from "@/lib/metricas/catalogo";
@@ -284,6 +285,20 @@ app.get("/equipe", async (c) => {
     getFechadoPorResponsavel(orgId, since, until),
     getPerdidosPorResponsavel(orgId, since, until),
   ]);
+
+  // Quem fechou ou perdeu no período entra na tabela mesmo sem papel de closer
+  // (ex.: admin que vende). Sem isto, Σ ganhos da tabela ≠ card "ganhos" do topo.
+  if (!soEu) {
+    const faltam = [...new Set([...fechadoPorResp.keys(), ...perdidosPorResp.keys()])]
+      .filter((id) => !userList.some((u) => u.id === id));
+    if (faltam.length) {
+      const extras = await db
+        .select({ id: usuarios.id, nome: usuarios.nome, role: usuarios.role })
+        .from(usuarios)
+        .where(and(eq(usuarios.organizacaoId, orgId), inArray(usuarios.id, faltam)));
+      userList.push(...extras);
+    }
+  }
 
   // Leads per responsavel
   const leadStats = await db
@@ -596,6 +611,7 @@ app.get("/comercial", async (c) => {
   const metaComercial = isAdminView(ctx.userRole)
     ? await getMetaComercialAgregada(orgId, since)
     : null;
+  const coberturaValor = await getCoberturaValorPorEtapa(orgId, responsavelId);
 
   // INSIGHTS DE META. `getMetasPorVendedor` devolve exatamente o
   // `VendedorMetaInput` que `gerarInsights` pede — as duas metades foram
@@ -647,6 +663,7 @@ app.get("/comercial", async (c) => {
   return c.json({
     ganhosList,            // [{id,titulo,leadNome,leadEmpresa,mrrFechado,valorTotal,tipoReceita,ganhoAt}]
     // ─── Fonte única (o /resumo usa as MESMAS funções → topo e aba não divergem) ───
+    coberturaValor,        // [{status,total,comValor,pct}] — oportunidades abertas por etapa
     pipeline,              // { etapas:[{status,count,recorrente,avulso,valor}], total, negociosAbertos, ponderado }
     winRateInfo: winRate,  // { ganhos, perdidos, n, taxa, amostraPequena }
     motivosInfo: motivos,  // { itens:[{motivo,count,pct}], total, semClassificacao, semClassificacaoPct }
@@ -665,6 +682,21 @@ app.get("/comercial", async (c) => {
     cicloMedio: ciclo,
     negociosAbertos: pipeline.negociosAbertos,
   });
+});
+
+// ─── Gestão do funil: tempo por etapa, conversão por origem, tarefas vencidas ──
+// Só gestão (mesmo gate das abas de time): a visão nomeia pessoas.
+// GET /relatorios/gestao?periodo=mes_atual
+app.get("/gestao", async (c) => {
+  const ctx = await getCtx(c);
+  if (!isAdminView(ctx.userRole) && ctx.userRole !== "leitor") return c.json({ error: "Sem acesso" }, 403);
+  const { since, until } = periodWindow(c.req.query("periodo") ?? "mes_atual");
+  const [tempoPorEtapa, conversaoPorOrigem, tarefasVencidas] = await Promise.all([
+    getTempoPorEtapa(ctx.organizacaoId, since, until),
+    getConversaoPorOrigem(ctx.organizacaoId, since, until),
+    getTarefasVencidasPorPessoa(ctx.organizacaoId),
+  ]);
+  return c.json({ tempoPorEtapa, conversaoPorOrigem, tarefasVencidas });
 });
 
 // ─── Growth (visão CEO/estratégia — relatório completo) ──────────
@@ -755,7 +787,8 @@ app.get("/growth", async (c) => {
 
   const leadsTotal = Number(leadsCur[0].c);
   const leadsAnt = Number(leadsPrev[0].c);
-  const mrrAtivo = Number(mrrAtivoRow[0]?.total) || 0;
+  const mrrAtivo = Number((await medir(orgId, "mrr_atual")).valor) || 0;
+  const clientesAtivos = Number((await medir(orgId, "clientes_ativos")).valor) || 0;
   const ganhosCount = fechado.ganhos;
   const cac = ganhosCount > 0 && midia.gasto > 0 ? Math.round((midia.gasto / ganhosCount) * 100) / 100 : null;
   const npsTotal = Number(npsDistRow[0]?.promotores || 0) + Number(npsDistRow[0]?.neutros || 0) + Number(npsDistRow[0]?.detratores || 0);
@@ -801,6 +834,7 @@ app.get("/growth", async (c) => {
     retencao: {
       mrrAtivo,
       contratosAtivos: Number(contratosAtivosRow[0]?.c || 0),
+      clientesAtivos,
       npsMedia: npsRow[0]?.media != null ? Math.round(Number(npsRow[0].media) * 10) / 10 : null,
       nps,
       npsDistrib: { promotores: Number(npsDistRow[0]?.promotores || 0), neutros: Number(npsDistRow[0]?.neutros || 0), detratores: Number(npsDistRow[0]?.detratores || 0) },
@@ -1068,27 +1102,40 @@ app.get("/pos-venda", async (c) => {
     };
   });
 
-  // MRR por tipo de contrato
-  const mrrPorTipoRows = await db
-    .select({
-      tipo: contratos.tipo,
-      mrr: sum(contratos.mrr),
-      count: count(),
-    })
-    .from(contratos)
-    .innerJoin(leads, eq(contratos.leadId, leads.id))
-    .where(and(eq(contratos.status, "ativo"), eq(leads.organizacaoId, ctx.organizacaoId)))
-    .groupBy(contratos.tipo);
-
-  const mrrPorTipo = mrrPorTipoRows.map((row) => ({
-    tipo: row.tipo,
-    mrr: Number(row.mrr) || 0,
-    count: Number(row.count),
-  }));
+  // MRR OFICIAL = Catálogo de Métricas (`mrr_atual`), o mesmo do Início e da
+  // Carteira. Esta aba somava `contratos.mrr` (R$ 388 mil contra R$ 478 mil do
+  // Início). A quebra por família sai da MESMA competência, e a soma das linhas
+  // fecha com o total.
+  const orgPv = ctx.organizacaoId;
+  const [mrrOficial, clientesAtivosM, porFamilia] = await Promise.all([
+    medir(orgPv, "mrr_atual"),
+    medir(orgPv, "clientes_ativos"),
+    db.execute<{ familia: string; mrr: string; n: string }>(sql`
+      WITH uc AS (SELECT max(competencia) AS c FROM cliente_receita_mensal WHERE organizacao_id = ${orgPv}::uuid)
+      SELECT COALESCE(NULLIF(r.service_family, 'UNKNOWN'), 'Sem família') AS familia,
+             sum(r.valor)::text AS mrr, count(DISTINCT r.empresa_id)::text AS n
+        FROM cliente_receita_mensal r, uc
+       WHERE r.organizacao_id = ${orgPv}::uuid AND r.revenue_nature = 'MRR' AND r.competencia = uc.c
+       GROUP BY 1
+      UNION ALL
+      SELECT 'Assinatura ativa, ainda sem fechamento', COALESCE(sum(a.mrr), 0)::text, count(*)::text
+        FROM assinaturas a, uc
+       WHERE a.organizacao_id = ${orgPv}::uuid AND a.status = 'active' AND a.empresa_id IS NOT NULL
+         AND a.empresa_id IN (SELECT empresa_id FROM clientes WHERE organizacao_id = ${orgPv}::uuid)
+         AND NOT EXISTS (SELECT 1 FROM cliente_receita_mensal r2
+                          WHERE r2.organizacao_id = ${orgPv}::uuid AND r2.empresa_id = a.empresa_id
+                            AND r2.competencia = uc.c AND r2.revenue_nature = 'MRR')
+       HAVING count(*) > 0`),
+  ]);
+  const ROT_FAMILIA: Record<string, string> = { PABX: "PABX", CALLFACE_AI: "Callface AI", WHITE_LABEL: "White Label" };
+  const mrrPorTipo = porFamilia
+    .map((r) => ({ tipo: ROT_FAMILIA[r.familia] ?? r.familia, mrr: Number(r.mrr) || 0, count: Number(r.n) }))
+    .sort((x, y) => y.mrr - x.mrr);
 
   return c.json({
-    mrr_total_ativo: Number(mrrResult.mrrTotal) || 0,
+    mrr_total_ativo: Number(mrrOficial.valor) || 0,
     contratos_ativos: Number(mrrResult.totalContratos) || 0,
+    clientes_ativos: Number(clientesAtivosM.valor) || 0,
     nps_medio: npsResult.media ? Number(npsResult.media) : null,
     nps_total_respostas: Number(npsResult.total) || 0,
     nps_distribuicao: {
@@ -1591,6 +1638,7 @@ app.get("/sdr-esteira", async (c) => {
     qualificadosDetalhe: visoes.qualificadosDetalhe,
     qualificacoesPorResponsavel,
     sla: visoes.sla,
+    slaFunil: visoes.slaFunil,
     origem: visoes.origem,
     baseParada: soEuSdr ? null : visoes.baseParada,
   });

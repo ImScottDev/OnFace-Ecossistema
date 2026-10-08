@@ -9,6 +9,7 @@
  */
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
+import { nomeEmpresaSql } from "@/lib/vendas/texto";
 import { ROTULO_RISCO, type TipoRisco } from "./riscos";
 
 /** Tipos de risco que são problema de cobrança — o bloco "Financeiro". */
@@ -56,7 +57,7 @@ export async function painelCs(organizacaoId: string, responsavelId?: string | n
   // Base compartilhada: conta de CS + MRR real do portfólio.
   const conta = sql`
     conta AS (
-      SELECT cli.empresa_id, cli.responsavel_id, e.nome AS empresa_nome, u.nome AS owner_nome,
+      SELECT cli.empresa_id, cli.responsavel_id, ${nomeEmpresaSql("e.nome")} AS empresa_nome, u.nome AS owner_nome,
              -- Mesmos filtros da métrica canônica mrr_atual, só que por
              -- empresa: ACTIVE + MRR + portfólio. O ciclo de vida faltava, e
              -- sem ele um serviço CHURNED somava no MRR da conta.

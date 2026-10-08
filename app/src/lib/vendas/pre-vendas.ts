@@ -249,6 +249,13 @@ export async function criarLead(entrada: EntradaDeLead, ator: Ator): Promise<Lea
     RETURNING id::text
   `);
 
+  // A pessoa nasceu ANTES do lead (o lead precisa da empresa e do contato já resolvidos) e sem
+  // saber a que lead pertence. Sem `lead_id_legado` a ficha não acha a pessoa: vincular outra
+  // empresa recusa com "sem cadastro de pessoa". Mesmo vínculo que `prospeccao.ts` faz.
+  await db.execute(sql`
+    UPDATE pessoas SET lead_id_legado = ${lead.id}::uuid
+     WHERE id = ${pessoa.pessoaId}::uuid AND organizacao_id = ${organizacaoId}::uuid AND lead_id_legado IS NULL`);
+
   // A aquisição canônica nasce AQUI, não em cada chamador.
   //
   // O board de pré-vendas lê `aquisicoes`. Sem esta chamada, lead criado pela
@@ -434,18 +441,25 @@ export async function registrarPrimeiroContato(params: {
   ator: Ator;
   /** Move para Em contato junto, que é o comportamento esperado do board. */
   moverParaEmContato?: boolean;
+  /** Quando o contato de fato ocorreu (ex.: data da ligação). Padrão: agora. */
+  ocorridoEm?: Date;
+  /** De onde veio o marco (tela, atendimento, cadência...), para auditar o SLA. */
+  origem?: string;
 }): Promise<{ registrado: boolean }> {
   const lead = await carregarLead(params.organizacaoId, params.leadId);
   const jaTinha = Boolean(lead.primeiro_contato_at);
+  const quando = params.ocorridoEm ?? new Date();
 
   if (!jaTinha) {
     await db.execute(sql`
-      UPDATE leads SET primeiro_contato_at = now(), last_contact_at = now(), updated_at = now()
+      UPDATE leads SET primeiro_contato_at = ${quando.toISOString()}::timestamptz,
+             last_contact_at = ${quando.toISOString()}::timestamptz, updated_at = now()
        WHERE id = ${params.leadId}::uuid
     `);
     await registrarEvento({
       organizacaoId: params.organizacaoId, tipo: "FirstContactMade", ator: params.ator,
-      leadId: params.leadId, contexto: { canal: params.canal },
+      ocorridoEm: quando,
+      leadId: params.leadId, contexto: { canal: params.canal, origem: params.origem ?? "tela" },
       timeline: { tipo: params.canal, titulo: "Primeiro contato realizado", descricao: `Canal: ${params.canal}` },
     });
     await concluirAtividadePrimeiroContato(params);
@@ -461,6 +475,31 @@ export async function registrarPrimeiroContato(params: {
   }
 
   return { registrado: !jaTinha };
+}
+
+/**
+ * Contato SAINDO por qualquer canal (WhatsApp enviado no Atendimento, ligação
+ * Callface, e-mail): conta como primeiro contato se o lead ainda está em
+ * Pré-vendas e nunca foi contatado. Lead já contatado, cliente ou contato
+ * simples não são tocados. Best-effort: nunca derruba o envio.
+ */
+export async function registrarContatoSaindo(params: {
+  organizacaoId: string;
+  leadId: string;
+  canal: "whatsapp" | "email" | "ligacao";
+  ator: Ator;
+  ocorridoEm?: Date;
+}): Promise<void> {
+  try {
+    const [l] = await db.execute<{ ok: boolean }>(sql`
+      SELECT (l.primeiro_contato_at IS NULL AND l.tipo = 'lead'
+              AND COALESCE(l.estagio_pre_vendas, 'novo') IN ('novo', 'em_contato', 'qualificacao')) AS ok
+        FROM leads l WHERE l.id = ${params.leadId}::uuid AND l.organizacao_id = ${params.organizacaoId}::uuid`);
+    if (!l?.ok) return;
+    await registrarPrimeiroContato({ ...params, origem: "envio", moverParaEmContato: true });
+  } catch (e) {
+    console.warn("[pre-vendas] primeiro contato por envio não registrado:", e);
+  }
 }
 
 /**
@@ -539,6 +578,18 @@ export async function moverEtapa(params: {
     de: lead.estagio_pre_vendas, para: params.para, motivo: params.motivo ?? null,
     tipo: "StageChanged",
   });
+
+  // Sair de Novo para uma etapa de trabalho é, por definição, ter contatado o
+  // lead: sem este marco o card andava e o "tempo até 1º contato" ficava nulo.
+  if (lead.estagio_pre_vendas === "novo" && !lead.primeiro_contato_at
+      && (params.para === "em_contato" || params.para === "qualificacao")) {
+    await db.execute(sql`UPDATE leads SET primeiro_contato_at = now(), last_contact_at = now() WHERE id = ${params.leadId}::uuid AND primeiro_contato_at IS NULL`);
+    await registrarEvento({
+      organizacaoId: params.organizacaoId, tipo: "FirstContactMade", ator: params.ator,
+      leadId: params.leadId, contexto: { canal: "outro", origem: "movimento_de_etapa" },
+    });
+    await concluirAtividadePrimeiroContato(params);
+  }
 
   if (params.para === "qualificacao") {
     await registrarEvento({
@@ -653,12 +704,9 @@ export async function nutrir(params: {
   if (!definicao) {
     throw new RegraDeNegocio("nutricao_motivo_invalido", "Escolha um motivo válido para nutrição.");
   }
-  if (definicao.exigeRetomada && !params.retomarEm) {
-    throw new RegraDeNegocio(
-      "nutricao_exige_retomada",
-      `"${definicao.rotulo}" precisa de uma data para retomar, senão o lead some da operação.`,
-    );
-  }
+  // A data de retomada é opcional (decisão do Scott, 07/10): quando informada,
+  // cria a tarefa de retomada abaixo; quando não, o lead fica em nutrição sem
+  // reaparecer na fila. Nenhum motivo bloqueia por falta de data.
 
   const lead = await carregarLead(params.organizacaoId, params.leadId);
 
@@ -794,26 +842,22 @@ export async function passoDaCadenciaPorLead(
 ): Promise<Record<string, string>> {
   if (leadIds.length === 0) return {};
   const ids = literalDeTexto(leadIds);
+  /* Só a inscrição VIVA conta. Cancelada ou concluída não é "o lead está numa
+     cadência": o chip ficava no cartão depois de remover o lead. E o "Toque N ·
+     canal" que vinha de `cadencia_execucoes` era resto da régua antiga de
+     produção — saiu. */
   const linhas = await db.execute<{ lead_id: string; texto: string }>(sql`
-    SELECT l.id::text AS lead_id,
-           COALESCE(
-             'Cadência ' || ce_def.nome,
-             'Toque ' || ex.ordem || ' · ' || CASE ex.canal WHEN 'ligacao' THEN 'Ligação' WHEN 'whatsapp' THEN 'WhatsApp' ELSE ex.canal END
-           ) AS texto
+    SELECT l.id::text AS lead_id, 'Cadência ' || ce_def.nome AS texto
       FROM leads l
-      LEFT JOIN LATERAL (
+      JOIN LATERAL (
         SELECT cd.nome
           FROM cadence_enrollments ce
           JOIN cadence_definitions cd ON cd.id = ce.cadence_definition_id
          WHERE ce.entity_type = 'lead' AND ce.entity_id = l.id
+           AND ce.status IN ('active', 'waiting')
          ORDER BY ce.started_at DESC LIMIT 1
       ) ce_def ON true
-      LEFT JOIN LATERAL (
-        SELECT x.ordem, x.canal FROM cadencia_execucoes x
-         WHERE x.lead_id = l.id ORDER BY x.enviado_em DESC, x.ordem DESC LIMIT 1
-      ) ex ON true
      WHERE l.organizacao_id = ${organizacaoId}::uuid
-       AND l.id = ANY(${ids}::uuid[])
-       AND (ce_def.nome IS NOT NULL OR ex.ordem IS NOT NULL)`);
+       AND l.id = ANY(${ids}::uuid[])`);
   return Object.fromEntries(linhas.map((r) => [r.lead_id, r.texto]));
 }

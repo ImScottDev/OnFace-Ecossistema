@@ -74,3 +74,46 @@ export async function reunioesDaAgenda(
 
   return linhas.map((l) => ({ ...l, data: l.data.toISOString() }));
 }
+
+/** Uma atividade (`tarefas`) com prazo, na forma que o calendário desenha. */
+export interface TarefaDaAgenda {
+  id: string;
+  titulo: string;
+  tipo: string;
+  status: string;
+  prioridade: string | null;
+  /** Prazo com hora (ISO) quando existe; senão só o dia (YYYY-MM-DD). */
+  venceEm: string | null;
+  dataVencimento: string | null;
+  responsavel: string | null;
+  empresa: string | null;
+  pessoa: string | null;
+  descricao: string | null;
+}
+
+/**
+ * As atividades do usuário com prazo, para o calendário mostrar a MESMA tabela
+ * que a tela de Atividades (uma estrutura só). Só as do próprio usuário: o
+ * calendário já filtra por responsável, e a lista da org inteira poluiria o mês.
+ * ponytail: janela fixa de -90/+180 dias; passa a ser pedida por mês se crescer.
+ */
+export async function tarefasDaAgenda(organizacaoId: string, userId: string): Promise<TarefaDaAgenda[]> {
+  const linhas = await db.execute<Record<string, unknown>>(sql`
+    SELECT t.id::text, t.titulo, t.tipo, t.status, t.prioridade,
+           t.vence_em::text AS "venceEm", t.data_vencimento::text AS "dataVencimento",
+           u.nome AS responsavel,
+           coalesce(e.nome, el.nome, nullif(l.empresa, '')) AS empresa,
+           nullif(trim(coalesce(l.nome, '') || ' ' || coalesce(l.sobrenome, '')), '') AS pessoa,
+           t.descricao
+      FROM tarefas t
+      LEFT JOIN usuarios u ON u.id = t.usuario_id
+      LEFT JOIN leads l ON l.id = t.lead_id
+      LEFT JOIN empresas e ON e.id = t.empresa_id
+      LEFT JOIN empresas el ON el.id = l.empresa_id
+     WHERE t.organizacao_id = ${organizacaoId}::uuid
+       AND t.usuario_id = ${userId}::uuid
+       AND coalesce(t.vence_em::date, t.data_vencimento) BETWEEN current_date - 90 AND current_date + 180
+     ORDER BY coalesce(t.vence_em, t.data_vencimento::timestamptz)
+     LIMIT 1500`);
+  return linhas as unknown as TarefaDaAgenda[];
+}

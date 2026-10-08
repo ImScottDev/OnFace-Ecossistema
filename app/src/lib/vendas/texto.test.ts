@@ -37,3 +37,22 @@ describe("textoSimples", () => {
     assert.equal(textoSimples(undefined), null);
   });
 });
+
+import { nomeCompleto } from "./texto";
+describe("nomeCompleto", () => { it("não repete o nome que a carga já trouxe no sobrenome", () => {
+  assert.equal(nomeCompleto("Lucas", "Lucas Oliveira"), "Lucas Oliveira");
+  assert.equal(nomeCompleto("Lucas Oliveira", "Oliveira"), "Lucas Oliveira");
+  assert.equal(nomeCompleto("Ana", "Souza"), "Ana Souza");
+  assert.equal(nomeCompleto("Ana", null), "Ana");
+  assert.equal(nomeCompleto(null, "Souza"), "Souza");
+}); });
+
+import { nomeEmpresaExibivel } from "./texto";
+describe("nomeEmpresaExibivel", () => {
+  it("tira a base do CNPJ do MEI e preserva o resto", () => {
+    assert.equal(nomeEmpresaExibivel("63.638.421 Anne Camille Beatriz de Almeida"), "Anne Camille Beatriz de Almeida");
+    assert.equal(nomeEmpresaExibivel("Suitable"), "Suitable");
+    assert.equal(nomeEmpresaExibivel("63.638.421"), "63.638.421");
+    assert.equal(nomeEmpresaExibivel(null), "");
+  });
+});

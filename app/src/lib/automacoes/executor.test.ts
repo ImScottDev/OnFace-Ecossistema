@@ -24,7 +24,7 @@ after(async () => {
 });
 
 async function donoDev() {
-  const [u] = await db.execute<{ id: string; org: string }>(sql`SELECT id, organizacao_id AS org FROM usuarios WHERE email = 'dev.local@callface.ai' LIMIT 1`);
+  const [u] = await db.execute<{ id: string; org: string }>(sql`SELECT id, organizacao_id AS org FROM usuarios WHERE role = 'admin' AND ativo = true ORDER BY created_at LIMIT 1`);
   assert.ok(u, "usuário de dev do banco local");
   return u;
 }

@@ -40,7 +40,7 @@ test("entidade do evento: canônico vira o id legado que as telas conhecem", () 
 });
 
 test("evento dispara uma vez por fato; replay, carimbo de automação e gatilho legado duplicado não disparam", async () => {
-  const [u] = await db.execute<{ id: string; org: string }>(sql`SELECT id, organizacao_id AS org FROM usuarios WHERE email = 'dev.local@callface.ai' LIMIT 1`);
+  const [u] = await db.execute<{ id: string; org: string }>(sql`SELECT id, organizacao_id AS org FROM usuarios WHERE role = 'admin' AND ativo = true ORDER BY created_at LIMIT 1`);
   const [lead] = await db.execute<{ id: string }>(sql`SELECT id FROM leads WHERE organizacao_id = ${u.org}::uuid ORDER BY updated_at DESC LIMIT 1`);
   const f = await criarFluxo(u.org, u.id, {
     nome: "[teste disparo]",
@@ -65,6 +65,9 @@ test("evento dispara uma vez por fato; replay, carimbo de automação e gatilho 
     "evento produzido por outra automação é descartado");
   assert.equal(await dispararFluxosPorGatilhoLegado("novo_lead", { organizacaoId: u.org, entityType: "lead", entityId: lead.id, campos: {} }), 0,
     "novo_lead também vira outbox: ouvir os dois dispararia em dobro");
+
+  assert.equal(await dispararFluxosPorEvento({ ...evento, id: randomUUID(), eventType: "AcquisitionCreated", aggregateType: "aquisicao", aggregateId: randomUUID(), payload: { lead_legado_id: lead.id } }), 0,
+    "o mesmo fato gravado em dois tipos de evento (legado e canônico) roda a automação uma vez só");
 
   const execs = await db.select().from(automacaoExecucoes).where(eq(automacaoExecucoes.automacaoId, f.id));
   assert.equal(execs.length, 1);

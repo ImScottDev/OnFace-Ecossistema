@@ -158,8 +158,8 @@ function configDoAdapter(no: NoFluxo, c: Record<string, unknown>, ctx: Ctx, time
       return { adapter: "crm_assign_owner", vars: {}, config: { owner_id: s(c.responsavelId) } };
     case "enviar_whatsapp":
       return c.modo === "template"
-        ? { adapter: "whatsapp_template", vars: {}, config: { template_id: s(c.templateId) } }
-        : { adapter: "whatsapp", vars: { telefone: s(c.telefone) || null }, config: { mensagem: s(c.mensagem) } };
+        ? { adapter: "whatsapp_template", vars: {}, config: { template_id: s(c.templateId), sessao_id: s(c.sessaoId) || undefined } }
+        : { adapter: "whatsapp", vars: { telefone: s(c.telefone) || null }, config: { mensagem: s(c.mensagem), sessao_id: s(c.sessaoId) || undefined } };
     case "enviar_email":
       return { adapter: "email", vars: { email: s(c.para) || null }, config: { assunto: s(c.assunto), mensagem: s(c.mensagem) } };
     case "notificar_usuario":
@@ -167,7 +167,7 @@ function configDoAdapter(no: NoFluxo, c: Record<string, unknown>, ctx: Ctx, time
     case "adicionar_nota":
       return { adapter: "crm_add_note", vars: {}, config: { title: s(c.titulo), description: s(c.descricao) || null } };
     case "ia_responder":
-      return { adapter: "ai_agent_message", vars: {}, config: { agent_id: s(c.agenteId) || undefined, prompt_hint: s(c.instrucao) } };
+      return { adapter: "ai_agent_message", vars: {}, config: { agent_id: s(c.agenteId) || undefined, prompt_hint: s(c.instrucao), sessao_id: s(c.sessaoId) || undefined } };
     case "requisicao_http":
       return { adapter: "fluxo_http", vars: {}, config: { ...c, _timeoutMs: timeoutMs } };
     default:
@@ -368,13 +368,17 @@ export async function iniciarExecucao(p: PedidoInicio): Promise<InicioExecucao> 
     return { barrada: config.reentrada === "uma_vez" ? "Este registro já passou por esta automação uma vez." : "Este registro já está numa execução em andamento desta automação." };
   }
 
+  // Falha ao gravar a execução não pode deixar a inscrição ACTIVE órfã: ela barraria o registro para sempre.
   const [exec] = await db.insert(automacaoExecucoes).values({
     automacaoId: p.automacaoId, organizacaoId: p.organizacaoId,
     entityType: p.entidade?.tipo ?? null, entityId: p.entidade?.id ?? null,
     status: "executando", versionId: p.versaoId, modo: p.modo,
     estado: estadoVazio(p.payload), noAtual: primeiro,
     profundidade: p.profundidade ?? 0, idempotencyKey: p.idempotencyKey ?? null, startedAt: new Date(),
-  }).onConflictDoNothing().returning({ id: automacaoExecucoes.id });
+  }).onConflictDoNothing().returning({ id: automacaoExecucoes.id }).catch(async (e) => {
+    if (inscricao) await db.delete(automacaoInscricoes).where(eq(automacaoInscricoes.id, inscricao));
+    throw e;
+  });
 
   if (!exec) {
     // Corrida com outro disparo da mesma chave: a inscrição que reservei não tem dono.

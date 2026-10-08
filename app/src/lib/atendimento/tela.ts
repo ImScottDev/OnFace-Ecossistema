@@ -13,6 +13,7 @@
  * ("Hoje", "09:52", "Em atendimento") é do adaptador, no cliente: o relógio
  * que importa para "espera há 26 min" é o de quem está olhando.
  */
+import { nomeCompleto } from "@/lib/vendas/texto";
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { veTodasAsConversas } from "@/lib/whatsapp/acesso";
@@ -233,7 +234,7 @@ export async function paginaDeAtendimento(ctx: Ctx): Promise<DadosAtendimento> {
     const l = leadPorId.get(id)!;
     return {
       id: l.id,
-      nome: [l.nome, l.sobrenome].filter(Boolean).join(" "),
+      nome: nomeCompleto(l.nome, l.sobrenome),
       cargo: l.cargo, empresa: l.empresa, empresaId: l.empresa_id, setor: l.setor,
       telefone: l.telefone, email: l.email, etapa: l.etapa, origem: l.origem,
       campanha: l.campanha, interesse: l.interesse || null, responsavelNome: l.responsavel_nome,

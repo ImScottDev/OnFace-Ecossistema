@@ -59,7 +59,10 @@ export interface EventoParaCanonico {
   empresaId?: string | null;
   pessoaId?: string | null;
   propostaId?: string | null;
+  reuniaoId?: string | null;
   atorTipo: string;
+  /** O usuário que fez, quando é uma pessoa: a timeline mostra o nome dele. */
+  atorId?: string | null;
   contexto?: Record<string, unknown> | null;
   ocorridoEm: Date;
   /** Id do evento legado, para a chave de idempotência não depender de tempo. */
@@ -96,6 +99,7 @@ export async function publicarEquivalenteCanonico(
     traducao.agregado === "aquisicao" ? ids.aquisicao_id
       : traducao.agregado === "oportunidade" ? ids.oportunidade_id
       : traducao.agregado === "proposta" ? evento.propostaId ?? null
+      : traducao.agregado === "reuniao" ? evento.reuniaoId ?? null
       : null;
 
   // Sem agregado canônico não há o que publicar: acontece com lead que ainda
@@ -110,6 +114,7 @@ export async function publicarEquivalenteCanonico(
     aggregateId: agregadoId,
     // O módulo fala HUMAN; o canônico fala USER. AI_AGENT e AUTOMATION são os
     // mesmos nos dois, e o resto vira SYSTEM.
+    actorId: evento.atorId ?? null,
     actorType: evento.atorTipo === "HUMAN" ? "USER"
       : evento.atorTipo === "AI_AGENT" ? "AI_AGENT"
       : evento.atorTipo === "AUTOMATION" ? "AUTOMATION"

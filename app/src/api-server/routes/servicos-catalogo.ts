@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { db } from "@/lib/db";
 import { servicosCatalogo, catalogoPrecos, catalogoMapeamentosLegacy } from "@/lib/db/schema";
-import { eq, and, asc, desc, ne, ilike, sql } from "drizzle-orm";
+import { eq, and, asc, desc, ne, ilike, sql, getTableColumns } from "drizzle-orm";
 import { z } from "zod";
 import { getCtx } from "../compat.js";
 
@@ -14,6 +14,8 @@ const createSchema = z.object({
   valorSugerido: z.string().optional(),
   unidade: z.enum(["mensal", "hora", "unidade", "projeto"]).default("mensal"),
   ordem: z.number().int().optional(),
+  // Sem família o serviço nasce UNKNOWN e some do seletor da proposta (que filtra por família).
+  serviceFamily: z.enum(["PABX", "CALLFACE_AI", "WHITE_LABEL", "UNKNOWN"]).optional(),
 });
 
 const updateSchema = z.object({
@@ -61,7 +63,11 @@ app.get("/servicos-catalogo", async (c) => {
   }
 
   const items = await db
-    .select()
+    .select({
+      ...getTableColumns(servicosCatalogo),
+      // A proposta só lista o que tem preço em catalogo_precos: a tela de Ajustes avisa quando falta.
+      precosOficiais: sql<number>`(SELECT count(*)::int FROM catalogo_precos cp WHERE cp.servico_catalogo_id = servicos_catalogo.id AND COALESCE(cp.ativo, true) = true)`,
+    })
     .from(servicosCatalogo)
     .where(and(...conditions))
     .orderBy(asc(servicosCatalogo.ordem), asc(servicosCatalogo.nome));
@@ -89,6 +95,7 @@ app.post("/servicos-catalogo", async (c) => {
       valorSugerido: parsed.data.valorSugerido,
       unidade: parsed.data.unidade,
       ordem: parsed.data.ordem ?? 0,
+      ...(parsed.data.serviceFamily ? { serviceFamily: parsed.data.serviceFamily } : {}),
     })
     .returning();
 

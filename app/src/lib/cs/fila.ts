@@ -12,6 +12,7 @@
  */
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
+import { nomeEmpresaSql } from "@/lib/vendas/texto";
 
 export type MotivoFila =
   | "TAREFA_VENCIDA" | "TAREFA_HOJE" | "RISCO" | "RENOVACAO"
@@ -81,7 +82,7 @@ export async function montarFila(f: FiltrosFila): Promise<ItemFila[]> {
   // seria erro garantido de divergência.
   const contexto = sql`
     conta AS (
-      SELECT cli.empresa_id, cli.responsavel_id, e.nome AS empresa_nome, u.nome AS responsavel_nome
+      SELECT cli.empresa_id, cli.responsavel_id, ${nomeEmpresaSql("e.nome")} AS empresa_nome, u.nome AS responsavel_nome
         FROM clientes cli
         JOIN empresas e ON e.id = cli.empresa_id
         LEFT JOIN usuarios u ON u.id = cli.responsavel_id

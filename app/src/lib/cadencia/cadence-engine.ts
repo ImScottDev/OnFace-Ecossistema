@@ -30,7 +30,7 @@ import { db } from "@/lib/db";
 import { registrarMudancaResponsavel } from "@/lib/crm/owner";
 import { moverEtapa as moverEtapaPreVendas } from "@/lib/vendas/pre-vendas";
 import { ETAPAS_PRE_VENDAS, type EtapaPreVendas, type Ator } from "@/lib/vendas/dominio";
-import { cadenceDefinitions, cadenceDefinitionPointers, cadenceVersions, cadenceEnrollments, cadenceEnrollmentEvents, leads, contatos, negocios, oportunidades, clientes, servicosCanonicos, whatsappTemplates, whatsappMensagens, whatsappSessao, atividades, tarefas, entityLabels, labels, leadLabels, contatoLabels } from "@/lib/db/schema";
+import { aiAgentVersions, cadenceDefinitions, cadenceDefinitionPointers, cadenceVersions, cadenceEnrollments, cadenceEnrollmentEvents, leads, contatos, negocios, oportunidades, clientes, servicosCanonicos, whatsappTemplates, whatsappMensagens, whatsappSessao, atividades, tarefas, entityLabels, labels, leadLabels, contatoLabels } from "@/lib/db/schema";
 import { eq, and, lte, inArray, desc, or, isNull, lt, sql } from "drizzle-orm";
 import { avaliarCondicao, type Condicao } from "@/lib/crm/condicao";
 import { whatsappOutgoingQueue } from "@/lib/queue";
@@ -222,21 +222,36 @@ async function resolverContatoDaEntidade(
   return vazio;
 }
 
-/** Adapter real — envia WhatsApp via a mesma fila usada pelo motor de automação (`enviar_whatsapp`). `step.config.mensagem` é obrigatório. */
+/**
+ * Adapter real — envia WhatsApp de texto livre. `step.config.mensagem` é obrigatório.
+ *
+ * O número que envia é o ESCOLHIDO (`config.sessao_id` do nó, senão o do
+ * responsável do lead), nunca "o primeiro que o worker achar": sem `sessaoId`
+ * na fila o worker caía no token global e a mensagem saía por um número que
+ * ninguém escolheu, sem linha em `whatsapp_mensagens` (a conversa não mostrava
+ * o que a automação mandou).
+ */
 registrarAdapter("whatsapp", async (ctx) => {
   const mensagem = (ctx.step.config?.mensagem as string | undefined)?.trim();
   if (!mensagem) return { sucesso: false, erro: 'step de ação "whatsapp" sem config.mensagem' };
-  let telefone = (ctx.vars.telefone as string | null | undefined) ?? null;
-  if (!telefone) {
-    telefone = (await resolverContatoDaEntidade(ctx.entityType, ctx.entityId, ctx.organizacaoId)).telefone;
-  }
-  if (!telefone) return { sucesso: false, erro: "sem telefone resolvido pra esta entidade" };
-  // A BullMQ recusa jobId com ":" (salvo o formato antigo de 3 partes): o id
-  // `cadence:<inscrição>:<passo>:<tentativa>` estourava "Custom Id cannot
-  // contain :" e nenhum WhatsApp de cadência ou de automação chegava à fila.
+  const telefoneAvulso = ((ctx.vars.telefone as string | null | undefined) ?? "").replace(/\D/g, "") || null;
+  const preferida = (ctx.step.config?.sessao_id as string | undefined) || null;
+  // A BullMQ recusa jobId com ":" (salvo o formato antigo de 3 partes).
   const jobId = `cadence-${ctx.enrollmentId}-${ctx.step.id}-${ctx.attempt}`.replace(/:/g, "-");
-  const job = await whatsappOutgoingQueue.add("send", { phone: telefone, conteudo: mensagem, tipo: "text" }, { jobId });
-  return { sucesso: true, resultado: { jobId: job.id } };
+  try {
+    if (telefoneAvulso) {
+      // Número digitado no nó: não é o contato do registro, então não há conversa para registrar.
+      const { id: sessaoId } = await escolherSessao(ctx.organizacaoId, { preferidaId: preferida, entidade: { tipo: ctx.entityType, id: ctx.entityId } });
+      const job = await whatsappOutgoingQueue.add("send", { phone: telefoneAvulso, conteudo: mensagem, tipo: "text", sessaoId }, { jobId });
+      return { sucesso: true, resultado: { jobId: job.id, sessaoId } };
+    }
+    const contato = await resolverContatoCompleto(ctx.entityType, ctx.entityId, ctx.organizacaoId, { sessaoPreferidaId: preferida });
+    if (!contato) return { sucesso: false, erro: "sem telefone resolvido pra esta entidade" };
+    if (contato.botSilencedUntil && contato.botSilencedUntil > new Date()) return { sucesso: false, erro: "contato com bot silenciado (handoff em curso)" };
+    return await enfileirarWhatsapp({ contato, texto: mensagem, jobId });
+  } catch (err) {
+    return { sucesso: false, erro: err instanceof Error ? err.message : String(err) };
+  }
 });
 
 /** Adapter real — envia e-mail via Resend (mesmo provider do motor de automação). `step.config.mensagem` é obrigatório; `step.config.assunto` é opcional. */
@@ -254,32 +269,105 @@ registrarAdapter("email", async (ctx) => {
   return { sucesso: true, resultado: { resendConfigurado: isResendConfigured(), ...resultado } };
 });
 
-/** Igual a `resolverContatoDaEntidade`, mas devolve o registro completo do contato (necessário pra egress via ai_agent_message/whatsapp_template, que precisam de sessaoId/leadId/botSilencedUntil, não só telefone/nome). */
-async function resolverContatoCompleto(entityType: string, entityId: string, organizacaoId: string): Promise<typeof contatos.$inferSelect | null> {
+/**
+ * Número (sessão WhatsApp) pelo qual a automação fala. Ordem: o escolhido no nó
+ * ou no agente; o número do responsável do registro; só então o padrão da
+ * organização. Sessão desconectada nunca é usada em silêncio: o motivo volta
+ * como erro para aparecer em Execuções.
+ */
+export async function escolherSessao(
+  organizacaoId: string,
+  opts: { preferidaId?: string | null; entidade?: { tipo: string; id: string } },
+): Promise<{ id: string }> {
+  const sessoes = await db.select().from(whatsappSessao).where(eq(whatsappSessao.organizacaoId, organizacaoId));
+  if (opts.preferidaId) {
+    const s = sessoes.find((x) => x.id === opts.preferidaId);
+    if (!s) throw new Error("a sessão de WhatsApp escolhida não existe mais nesta organização");
+    if (s.status !== "connected") throw new Error(`a sessão de WhatsApp escolhida (${s.label ?? s.sessionName}) está desconectada`);
+    return { id: s.id };
+  }
+  const conectadas = sessoes.filter((x) => x.status === "connected");
+  if (!conectadas.length) throw new Error("nenhuma sessão de WhatsApp conectada nesta organização");
+  let responsavelId: string | null = null;
+  if (opts.entidade) {
+    const leadId = opts.entidade.tipo === "lead" ? opts.entidade.id
+      : opts.entidade.tipo === "negocio" ? (await db.select({ leadId: negocios.leadId }).from(negocios).where(eq(negocios.id, opts.entidade.id)).limit(1))[0]?.leadId ?? null
+      : null;
+    if (leadId) responsavelId = (await db.select({ r: leads.responsavelId }).from(leads).where(eq(leads.id, leadId)).limit(1))[0]?.r ?? null;
+    else if (opts.entidade.tipo === "contato") responsavelId = (await db.select({ r: contatos.responsavelId }).from(contatos).where(eq(contatos.id, opts.entidade.id)).limit(1))[0]?.r ?? null;
+  }
+  const doResponsavel = responsavelId ? conectadas.filter((x) => x.usuarioId === responsavelId) : [];
+  const escolhida = doResponsavel.find((x) => x.isDefault) ?? doResponsavel[0] ?? conectadas.find((x) => x.isDefault) ?? conectadas[0];
+  return { id: escolhida.id };
+}
+
+/** Número configurado no agente (versão publicada). Sem agente explícito ou sem número no agente: null (vale a ordem de `escolherSessao`). */
+async function sessaoDoAgente(organizacaoId: string, agentId?: string | null): Promise<string | null> {
+  if (!agentId) return null;
+  const [v] = await db.select({ sessao: aiAgentVersions.channelSessionId }).from(aiAgentVersions)
+    .where(and(eq(aiAgentVersions.agentId, agentId), eq(aiAgentVersions.organizacaoId, organizacaoId), eq(aiAgentVersions.status, "published"))).limit(1);
+  return v?.sessao ?? null;
+}
+
+/**
+ * Igual a `resolverContatoDaEntidade`, mas devolve o registro completo do
+ * contato (necessário pra egress via ai_agent_message/whatsapp_template, que
+ * precisam de sessaoId/leadId/botSilencedUntil, não só telefone/nome).
+ *
+ * Com `sessaoPreferidaId`, só vale conversa DESSE número; se o lead ainda não
+ * tem contato nele, cria um nele (um contato por número, como o resto do CRM).
+ * Pode lançar quando não há número utilizável (ver `escolherSessao`).
+ */
+async function resolverContatoCompleto(
+  entityType: string, entityId: string, organizacaoId: string, opts: { sessaoPreferidaId?: string | null } = {},
+): Promise<typeof contatos.$inferSelect | null> {
+  const preferida = opts.sessaoPreferidaId ?? null;
+  const daSessao = preferida ? [eq(contatos.sessaoId, preferida)] : [];
   if (entityType === "contato") {
     const [row] = await db.select().from(contatos).where(and(eq(contatos.id, entityId), eq(contatos.organizacaoId, organizacaoId))).limit(1);
     return row ?? null;
   }
   if (entityType === "lead") {
-    const [row] = await db.select().from(contatos).where(and(eq(contatos.leadId, entityId), eq(contatos.organizacaoId, organizacaoId))).orderBy(desc(contatos.ultimaMsgAt)).limit(1);
+    const [row] = await db.select().from(contatos).where(and(eq(contatos.leadId, entityId), eq(contatos.organizacaoId, organizacaoId), ...daSessao)).orderBy(desc(contatos.ultimaMsgAt)).limit(1);
     if (row) return row;
     const [lead] = await db.select({ nome: leads.nome, telefone: leads.telefone, email: leads.email, responsavelId: leads.responsavelId }).from(leads).where(and(eq(leads.id, entityId), eq(leads.organizacaoId, organizacaoId))).limit(1);
     if (!lead?.telefone) return null;
-    const sessions = await db.select().from(whatsappSessao).where(and(eq(whatsappSessao.organizacaoId, organizacaoId), eq(whatsappSessao.status, "connected")));
-    const session = sessions.find((item) => item.isDefault) ?? sessions[0];
-    if (!session) return null;
-    const [created] = await db.insert(contatos).values({ organizacaoId, canal: "whatsapp", nome: lead.nome, telefone: lead.telefone.replace(/\D/g, ""), email: lead.email, sessaoId: session.id, responsavelId: lead.responsavelId, leadId: entityId }).returning();
+    const sessao = await escolherSessao(organizacaoId, { preferidaId: preferida, entidade: { tipo: "lead", id: entityId } });
+    const [created] = await db.insert(contatos).values({ organizacaoId, canal: "whatsapp", nome: lead.nome, telefone: lead.telefone.replace(/\D/g, ""), email: lead.email, sessaoId: sessao.id, responsavelId: lead.responsavelId, leadId: entityId }).returning();
     return created;
   }
   if (entityType === "negocio") {
     const [row] = await db.select({ contato: contatos }).from(negocios)
       .innerJoin(leads, eq(leads.id, negocios.leadId))
       .innerJoin(contatos, eq(contatos.leadId, leads.id))
-      .where(and(eq(negocios.id, entityId), eq(negocios.organizacaoId, organizacaoId)))
+      .where(and(eq(negocios.id, entityId), eq(negocios.organizacaoId, organizacaoId), ...daSessao))
       .orderBy(desc(contatos.ultimaMsgAt)).limit(1);
-    return row?.contato ?? null;
+    if (row) return row.contato;
+    // Sem conversa no número escolhido: resolve pelo lead do negócio, que cria o contato nele.
+    if (preferida) {
+      const [neg] = await db.select({ leadId: negocios.leadId }).from(negocios).where(and(eq(negocios.id, entityId), eq(negocios.organizacaoId, organizacaoId))).limit(1);
+      if (neg?.leadId) return resolverContatoCompleto("lead", neg.leadId, organizacaoId, opts);
+    }
+    return null;
   }
   return null;
+}
+
+/** Cria a mensagem em `whatsapp_mensagens` (a conversa passa a mostrá-la) e a põe na fila já amarrada à sessão do contato. */
+async function enfileirarWhatsapp(args: { contato: typeof contatos.$inferSelect; texto: string; templateNome?: string; jobId?: string }): Promise<CadenceActionResult> {
+  const { contato, texto } = args;
+  if (!contato.telefone) return { sucesso: false, erro: "contato sem telefone" };
+  if (!contato.sessaoId) return { sucesso: false, erro: "contato sem sessão de WhatsApp" };
+  // Fila para número desconectado só gera mensagem "pendente" para sempre: melhor falhar já, com o motivo visível em Execuções.
+  const [sessao] = await db.select({ status: whatsappSessao.status, nome: whatsappSessao.label }).from(whatsappSessao).where(eq(whatsappSessao.id, contato.sessaoId)).limit(1);
+  if (!sessao || sessao.status !== "connected") return { sucesso: false, erro: `a sessão de WhatsApp desta conversa${sessao?.nome ? ` (${sessao.nome})` : ""} está desconectada` };
+  const [row] = await db.insert(whatsappMensagens).values({
+    contatoId: contato.id, leadId: contato.leadId, sessaoId: contato.sessaoId, telefone: contato.telefone,
+    direcao: "out", tipo: "text", conteudo: texto, status: "pending", templateNome: args.templateNome ?? null,
+  }).returning({ id: whatsappMensagens.id });
+  const job = await whatsappOutgoingQueue.add("send", { messageId: row.id, phone: contato.telefone, conteudo: texto, tipo: "text", sessaoId: contato.sessaoId }, args.jobId ? { jobId: args.jobId } : undefined);
+  await db.update(contatos).set({ ultimaMsg: texto.slice(0, 100), ultimaMsgAt: new Date(), updatedAt: new Date() }).where(eq(contatos.id, contato.id));
+  return { sucesso: true, resultado: { jobId: job.id, messageId: row.id, sessaoId: contato.sessaoId } };
 }
 
 function resolveLeadId(entityType: string, entityId: string, contato: typeof contatos.$inferSelect | null): string | null {
@@ -288,7 +376,6 @@ function resolveLeadId(entityType: string, entityId: string, contato: typeof con
 }
 
 async function enviarWhatsappTemplate(args: { organizacaoId: string; contato: typeof contatos.$inferSelect; templateId: string; vars: Record<string, unknown> }): Promise<CadenceActionResult> {
-  if (!args.contato.telefone) return { sucesso: false, erro: "contato sem telefone" };
   const [template] = await db.select().from(whatsappTemplates)
     .where(and(eq(whatsappTemplates.id, args.templateId), eq(whatsappTemplates.organizacaoId, args.organizacaoId), eq(whatsappTemplates.ativo, true)))
     .limit(1);
@@ -299,19 +386,20 @@ async function enviarWhatsappTemplate(args: { organizacaoId: string; contato: ty
     if (typeof valor === "string" || typeof valor === "number") texto = texto.replace(new RegExp(`\\{\\{${chave}\\}\\}`, "g"), String(valor));
   }
 
-  const [row] = await db.insert(whatsappMensagens).values({
-    contatoId: args.contato.id, leadId: args.contato.leadId, sessaoId: args.contato.sessaoId, telefone: args.contato.telefone,
-    direcao: "out", tipo: "text", conteudo: texto, status: "pending", templateNome: template.nome,
-  }).returning({ id: whatsappMensagens.id });
-  const job = await whatsappOutgoingQueue.add("send", { messageId: row.id, phone: args.contato.telefone, conteudo: texto, tipo: "text", sessaoId: args.contato.sessaoId ?? undefined });
-  await db.update(contatos).set({ ultimaMsg: texto.slice(0, 100), ultimaMsgAt: new Date(), updatedAt: new Date() }).where(eq(contatos.id, args.contato.id));
-  return { sucesso: true, resultado: { jobId: job.id, messageId: row.id } };
+  return enfileirarWhatsapp({ contato: args.contato, texto, templateNome: template.nome });
 }
 
 /** Adapter real — chama o agente publicado configurado no nó (mesmo runtime do chat ao vivo). Egress passa pela fila/ledger do próprio `executeAgent`, não duplica envio aqui. Se falhar e houver `fallback_template_id`, tenta o template antes de reportar erro. */
 registrarAdapter("ai_agent_message", async (ctx) => {
-  const config = ctx.step.config as { agent_id?: string; prompt_hint?: string; fallback_template_id?: string };
-  const contato = await resolverContatoCompleto(ctx.entityType, ctx.entityId, ctx.organizacaoId);
+  const config = ctx.step.config as { agent_id?: string; prompt_hint?: string; fallback_template_id?: string; sessao_id?: string };
+  // O agente fala pelo número que foi configurado nele (canal da versão publicada); `sessao_id` do nó vence.
+  let contato: typeof contatos.$inferSelect | null;
+  try {
+    const sessaoPreferidaId = config.sessao_id || await sessaoDoAgente(ctx.organizacaoId, config.agent_id);
+    contato = await resolverContatoCompleto(ctx.entityType, ctx.entityId, ctx.organizacaoId, { sessaoPreferidaId });
+  } catch (err) {
+    return { sucesso: false, erro: err instanceof Error ? err.message : String(err) };
+  }
   if (!contato) return { sucesso: false, erro: "sem contato resolvido para esta entidade" };
   if (contato.botSilencedUntil && contato.botSilencedUntil > new Date()) return { sucesso: false, erro: "contato com bot silenciado (handoff em curso)" };
 
@@ -339,9 +427,14 @@ registrarAdapter("ai_agent_message", async (ctx) => {
 
 /** Adapter real — envia template WhatsApp cadastrado (`whatsapp_templates`), com substituição de `{{variavel}}` a partir de `vars` do enrollment. */
 registrarAdapter("whatsapp_template", async (ctx) => {
-  const config = ctx.step.config as { template_id?: string };
+  const config = ctx.step.config as { template_id?: string; sessao_id?: string };
   if (!config.template_id) return { sucesso: false, erro: 'step de ação "whatsapp_template" sem config.template_id' };
-  const contato = await resolverContatoCompleto(ctx.entityType, ctx.entityId, ctx.organizacaoId);
+  let contato: typeof contatos.$inferSelect | null;
+  try {
+    contato = await resolverContatoCompleto(ctx.entityType, ctx.entityId, ctx.organizacaoId, { sessaoPreferidaId: config.sessao_id || null });
+  } catch (err) {
+    return { sucesso: false, erro: err instanceof Error ? err.message : String(err) };
+  }
   if (!contato) return { sucesso: false, erro: "sem contato resolvido para esta entidade" };
   if (contato.botSilencedUntil && contato.botSilencedUntil > new Date()) return { sucesso: false, erro: "contato com bot silenciado (handoff em curso)" };
   return enviarWhatsappTemplate({ organizacaoId: ctx.organizacaoId, contato, templateId: config.template_id, vars: ctx.vars });

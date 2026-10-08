@@ -23,6 +23,7 @@
  */
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
+import { nomeEmpresaSql } from "@/lib/vendas/texto";
 import { ROTULO_RISCO, PESO_SEVERIDADE, type Severidade, type TipoRisco } from "@/lib/cs/riscos";
 
 /** Quem resolve o risco. Não é rótulo: é roteamento de trabalho. */
@@ -85,16 +86,23 @@ interface Linha extends Record<string, unknown> {
 
 export async function carteiraEmRisco(organizacaoId: string, responsavelId?: string | null): Promise<CarteiraEmRisco> {
   const linhas = await db.execute<Linha>(sql`
-    SELECT r.empresa_id::text, e.nome AS empresa_nome,
+    SELECT r.empresa_id::text, ${nomeEmpresaSql("e.nome")} AS empresa_nome,
            r.tipo, r.severidade, r.motivo,
            extract(day FROM now() - r.aberto_em)::int AS desde_dias,
-           -- MRR da conta pela carteira canônica, a mesma fonte do Financeiro.
-           (SELECT COALESCE(sum(sc.current_recurring_value), 0)
-              FROM servicos_canonicos sc
-             WHERE sc.empresa_id = r.empresa_id
-               AND sc.portfolio_included = true
-               AND sc.revenue_nature = 'MRR'
-               AND sc.commercial_lifecycle = 'ACTIVE')::text AS mrr,
+           -- MRR da conta = o oficial (mrr_atual): MRR faturado no último fechamento; sem linha no
+           -- fechamento (cliente novo), a assinatura ativa. Era servicos_canonicos (contratado),
+           -- que dava R$ 385 mil contra os R$ 476 mil do resto do produto.
+           ((SELECT COALESCE(sum(f.valor), 0) FROM cliente_receita_mensal f
+              WHERE f.empresa_id = r.empresa_id AND f.revenue_nature = 'MRR'
+                AND f.competencia = (SELECT max(competencia) FROM cliente_receita_mensal
+                                      WHERE organizacao_id = ${organizacaoId}::uuid))
+             + CASE WHEN EXISTS (SELECT 1 FROM cliente_receita_mensal f2
+                                  WHERE f2.empresa_id = r.empresa_id AND f2.revenue_nature = 'MRR'
+                                    AND f2.competencia = (SELECT max(competencia) FROM cliente_receita_mensal
+                                                           WHERE organizacao_id = ${organizacaoId}::uuid))
+                    THEN 0
+                    ELSE (SELECT COALESCE(sum(a.mrr), 0) FROM assinaturas a
+                           WHERE a.empresa_id = r.empresa_id AND a.status = 'active') END)::text AS mrr,
            r.responsavel_id::text, u.nome AS responsavel_nome
       FROM cs_riscos r
       LEFT JOIN empresas e ON e.id = r.empresa_id

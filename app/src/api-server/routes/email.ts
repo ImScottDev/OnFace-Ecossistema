@@ -348,6 +348,12 @@ app.post("/email/send", async (c) => {
           emailUltimaMsgAt: new Date(),
           updatedAt: new Date(),
         }).where(eq(leads.id, matchedLeadId));
+        // SLA: e-mail enviado a lead de Pré-vendas ainda não contatado = primeiro contato.
+        const { registrarContatoSaindo } = await import("@/lib/vendas/pre-vendas");
+        await registrarContatoSaindo({
+          organizacaoId: ctx.organizacaoId, leadId: matchedLeadId, canal: "email",
+          ator: { tipo: "HUMAN", usuarioId: ctx.userId, ref: null },
+        });
       }
 
       return c.json({ ...emailRecord, status: "sent" }, 201);

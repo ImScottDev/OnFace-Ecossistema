@@ -48,12 +48,12 @@ export function podeVer(acesso: Acesso, papel: string): boolean {
 const INSIGHTS: EntradaBiblioteca[] = [
   {
     id: "comercial", nome: "Comercial", area: "Vendas", tipo: "insights", acesso: "todos", formatos: ["Tela"],
-    descricao: "Fechado no período, win rate, ciclo, ticket, funil de conversão e desempenho por closer. Closer vê o próprio recorte.",
-    fonte: "/relatorios/comercial, /equipe e /fechado-mensal",
+    descricao: "Fechado no período, win rate, ciclo, ticket, funil de conversão e desempenho por closer. Gestão vê também tempo por etapa do pipeline, conversão por origem e tarefas vencidas por pessoa. Closer vê o próprio recorte.",
+    fonte: "/relatorios/comercial, /equipe, /fechado-mensal e /gestao",
   },
   {
     id: "sdr", nome: "Pré-vendas (SDR)", area: "Vendas", tipo: "insights", acesso: "todos", formatos: ["Tela"],
-    descricao: "Esteira da SDR: contato, qualificação, reuniões agendadas e realizadas, SLA e base parada. SDR vê só a própria linha.",
+    descricao: "Esteira da SDR: contato, qualificação, reuniões agendadas e realizadas, SLA do lead (entrada até 1º contato, até oportunidade e até qualificação) e base parada. SDR vê só a própria linha.",
     fonte: "/relatorios/sdr-esteira",
   },
   {
@@ -63,7 +63,7 @@ const INSIGHTS: EntradaBiblioteca[] = [
   },
   {
     id: "pos-venda", nome: "Pós-venda", area: "Clientes", tipo: "insights", acesso: "gestao", formatos: ["Tela"],
-    descricao: "Distribuição de NPS, MRR por tipo de contrato e contratos vencendo nos próximos 90 dias.",
+    descricao: "Distribuição de NPS, MRR oficial por família de serviço e contratos vencendo nos próximos 90 dias.",
     fonte: "/relatorios/pos-venda",
   },
   {

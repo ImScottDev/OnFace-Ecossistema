@@ -92,7 +92,7 @@ app.get("/v1/companies", rota("companies.read", async (c, ator) => {
 app.get("/v1/people", rota("companies.read", async (c, ator) => {
   const { limite, offset } = paginacao(c);
   const linhas = await db.execute<Record<string, unknown>>(sql`
-    SELECT p.id::text, NULLIF(trim(concat_ws(' ', p.nome, p.sobrenome)), '') AS name,
+    SELECT p.id::text, NULLIF(trim((CASE WHEN COALESCE(trim(p.sobrenome),'')='' THEN trim(p.nome) WHEN lower(trim(p.sobrenome))=lower(trim(p.nome)) OR lower(trim(p.sobrenome)) LIKE lower(trim(p.nome))||' %' THEN trim(p.sobrenome) WHEN lower(trim(p.nome)) LIKE '% '||lower(trim(p.sobrenome)) THEN trim(p.nome) ELSE trim(p.nome)||' '||trim(p.sobrenome) END)), '') AS name,
            p.email, p.telefone AS phone, p.cargo AS "jobTitle",
            p.empresa_id::text AS "companyId", p.created_at::text AS "createdAt"
       FROM pessoas p

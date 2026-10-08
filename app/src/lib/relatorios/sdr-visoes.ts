@@ -39,6 +39,22 @@ export interface SlaBase {
   medianaHoras: number;
 }
 
+/** Tempo (h) de uma etapa do SLA de Pré-vendas. n=0 → sem dado de origem. */
+export interface SlaEtapa extends SlaBase {
+  p90Horas: number;
+}
+
+/** SLA do lead em Pré-vendas até virar oportunidade, coorte = leads criados na janela. */
+export interface SlaFunil {
+  leads: number;
+  /** leads.created_at → leads.primeiro_contato_at (gravado por registrarPrimeiroContato). */
+  ate1oContato: SlaEtapa;
+  /** leads.created_at → primeiro negocios.created_at (lead virou oportunidade). */
+  ateOportunidade: SlaEtapa;
+  /** Sem 1º contato: quantos e há quantas horas espera o mais antigo. */
+  semContato: { n: number; maisAntigoHoras: number | null };
+}
+
 export interface OrigemGrupo {
   novos: number;
   trabalhados: number;
@@ -59,6 +75,7 @@ export interface VisoesSdr {
   qualificadosDetalhe: { viaReuniao: number; direta: number };
   qualificacoesPorResponsavel: QualificacaoResponsavel[];
   sla: { coorte: SlaBase; fluxo: SlaBase };
+  slaFunil: SlaFunil;
   origem: { inbound: OrigemGrupo; outbound: OrigemGrupo };
   /** Coorte da janela: em contato/qualificando sem negócio, parados há ESTAGNADO_DIAS+. */
   paradosCoorte: number;
@@ -112,7 +129,7 @@ export async function getVisoesSdr(orgId: string, since: Date, until: Date): Pro
   const untilIso = until.toISOString();
 
   // ── A: split reunião/direta + SLA da coorte ──
-  const [aRows, respRows, fluxoRows, origemRows, paradosRows, antigosRows] = await Promise.all([
+  const [aRows, respRows, fluxoRows, origemRows, paradosRows, antigosRows, slaFunilRows] = await Promise.all([
     db.execute(sql`
       WITH ${qualCte(orgId, sinceIso, untilIso)}
       SELECT
@@ -200,11 +217,51 @@ export async function getVisoesSdr(orgId: string, since: Date, until: Date): Pro
         AND l.created_at < ${sinceIso}
         AND sc.created_at >= ${sinceIso} AND sc.created_at < ${untilIso}
     `),
+    // ── G: SLA do funil de Pré-vendas (1º contato e virada em oportunidade) ──
+    db.execute(sql`
+      WITH c AS (
+        SELECT l.id, l.created_at, l.primeiro_contato_at,
+               (SELECT min(n.created_at) FROM negocios n WHERE n.lead_id = l.id) AS opp_em
+          FROM leads l
+         WHERE l.organizacao_id = ${orgId}
+           AND l.created_at >= ${sinceIso} AND l.created_at < ${untilIso}
+      ),
+      h AS (
+        SELECT EXTRACT(EPOCH FROM primeiro_contato_at - created_at) / 3600.0 AS contato_h,
+               EXTRACT(EPOCH FROM opp_em - created_at) / 3600.0 AS opp_h,
+               primeiro_contato_at, created_at
+          FROM c
+      )
+      SELECT count(*) AS leads,
+        count(contato_h) FILTER (WHERE contato_h >= 0) AS contato_n,
+        avg(contato_h) FILTER (WHERE contato_h >= 0) AS contato_media,
+        percentile_cont(0.5) WITHIN GROUP (ORDER BY contato_h) FILTER (WHERE contato_h >= 0) AS contato_mediana,
+        percentile_cont(0.9) WITHIN GROUP (ORDER BY contato_h) FILTER (WHERE contato_h >= 0) AS contato_p90,
+        count(opp_h) FILTER (WHERE opp_h >= 0) AS opp_n,
+        avg(opp_h) FILTER (WHERE opp_h >= 0) AS opp_media,
+        percentile_cont(0.5) WITHIN GROUP (ORDER BY opp_h) FILTER (WHERE opp_h >= 0) AS opp_mediana,
+        percentile_cont(0.9) WITHIN GROUP (ORDER BY opp_h) FILTER (WHERE opp_h >= 0) AS opp_p90,
+        count(*) FILTER (WHERE primeiro_contato_at IS NULL) AS sem_contato,
+        max(EXTRACT(EPOCH FROM now() - created_at) / 3600.0) FILTER (WHERE primeiro_contato_at IS NULL) AS sem_contato_antigo
+      FROM h
+    `),
   ]);
 
   type Row = Record<string, unknown>;
   const a = ((aRows as unknown as Row[])[0] ?? {}) as Row;
   const fluxo = ((fluxoRows as unknown as Row[])[0] ?? {}) as Row;
+
+  const g = ((slaFunilRows as unknown as Row[])[0] ?? {}) as Row;
+  const etapa = (pref: string): SlaEtapa => ({
+    n: num(g[`${pref}_n`]), mediaHoras: flt(g[`${pref}_media`]),
+    medianaHoras: flt(g[`${pref}_mediana`]), p90Horas: flt(g[`${pref}_p90`]),
+  });
+  const slaFunil: SlaFunil = {
+    leads: num(g.leads),
+    ate1oContato: etapa("contato"),
+    ateOportunidade: etapa("opp"),
+    semContato: { n: num(g.sem_contato), maisAntigoHoras: g.sem_contato_antigo == null ? null : flt(g.sem_contato_antigo) },
+  };
 
   const qualificacoesPorResponsavel: QualificacaoResponsavel[] = (respRows as unknown as Row[]).map((r) => ({
     usuarioId: r.usuario_id ? String(r.usuario_id) : null,
@@ -260,6 +317,7 @@ export async function getVisoesSdr(orgId: string, since: Date, until: Date): Pro
       coorte: { n: num(a.n), mediaHoras: flt(a.media_h), medianaHoras: flt(a.mediana_h) },
       fluxo: { n: num(fluxo.n), mediaHoras: flt(fluxo.media_h), medianaHoras: flt(fluxo.mediana_h) },
     },
+    slaFunil,
     origem,
     paradosCoorte,
     baseParada: {

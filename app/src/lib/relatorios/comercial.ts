@@ -21,6 +21,7 @@ import { db } from "@/lib/db";
 import { negocios, leads } from "@/lib/db/schema";
 import { and, eq, not, inArray, gte, lt, count, sum, sql, isNotNull, isNull, asc, type SQL } from "drizzle-orm";
 import { DEFAULT_STAGES } from "@/lib/crm/pipeline";
+import { MOTIVOS_PERDA } from "@/lib/vendas/dominio";
 
 /**
  * Status de negócio ABERTO, por EXCLUSÃO dos fechados.
@@ -150,7 +151,11 @@ export interface WinRate {
 }
 
 /**
- * Win rate no período = ganho / (ganho + perdido), só negócios "novo" (sem clones de carteira).
+ * Win rate no período = ganho / (ganho + perdido), contando a DECISÃO que caiu
+ * na janela (`oportunidades.ganho_at` / `perdido_at`), só negócios "novo" (sem
+ * clones de carteira). Era coorte de criação do negócio: o card do topo dizia
+ * "5 decididos" ao lado de "6 ganhos" no mesmo período, porque contava coisas
+ * diferentes. Agora ganhos daqui == ganhos do fechado (mesma data de decisão).
  * Expõe a amostra `n` pra sinalizar base pequena.
  */
 export async function getWinRate(
@@ -160,22 +165,17 @@ export async function getWinRate(
   responsavelId?: string | null,
   safra?: Safra,
 ): Promise<WinRate> {
-  const rows = await db
-    .select({ status: negocios.status, total: count() })
-    .from(negocios)
-    .where(and(
-      eq(negocios.organizacaoId, orgId),
-      inArray(negocios.status, ["ganho", "perdido"]),
-      eq(negocios.origemNegocio, "novo"),
-      gte(negocios.createdAt, since),
-      lt(negocios.createdAt, until),
-      scopeResp(responsavelId),
-      scopeSafra(safra),
-    ))
-    .groupBy(negocios.status);
-
-  const ganhos = num(rows.find((r) => r.status === "ganho")?.total);
-  const perdidos = num(rows.find((r) => r.status === "perdido")?.total);
+  const [r] = await db.execute<{ ganhos: string; perdidos: string }>(sql`
+    SELECT count(*) FILTER (WHERE o.ganho_at >= ${since.toISOString()}::timestamptz AND o.ganho_at < ${until.toISOString()}::timestamptz)::text AS ganhos,
+           count(*) FILTER (WHERE o.perdido_at >= ${since.toISOString()}::timestamptz AND o.perdido_at < ${until.toISOString()}::timestamptz)::text AS perdidos
+      FROM oportunidades o
+      LEFT JOIN negocios n ON n.id = o.negocio_id_legado
+     WHERE o.organizacao_id = ${orgId}::uuid
+       AND COALESCE(n.origem_negocio, 'novo') = 'novo'
+       ${responsavelId ? sql`AND o.responsavel_id = ${responsavelId}::uuid` : sql``}
+       ${safra === "legado" ? sql`AND n.zoho_id IS NOT NULL` : safra === "nativo" ? sql`AND n.zoho_id IS NULL` : sql``}`);
+  const ganhos = num(r?.ganhos);
+  const perdidos = num(r?.perdidos);
   const n = ganhos + perdidos;
   return {
     ganhos,
@@ -200,17 +200,15 @@ export async function getMotivosPerda(
   until: Date,
   responsavelId?: string | null,
 ): Promise<MotivosPerda> {
-  const rows = await db
-    .select({ motivo: negocios.motivoPerda, total: count() })
-    .from(negocios)
-    .where(and(
-      eq(negocios.organizacaoId, orgId),
-      eq(negocios.status, "perdido"),
-      gte(negocios.createdAt, since),
-      lt(negocios.createdAt, until),
-      scopeResp(responsavelId),
-    ))
-    .groupBy(negocios.motivoPerda);
+  // Perda DECIDIDA na janela (`oportunidades.perdido_at`), a mesma data do win rate.
+  const rows = (await db.execute<{ motivo: string | null; total: string }>(sql`
+    SELECT COALESCE(o.motivo_perda, n.motivo_perda) AS motivo, count(*)::text AS total
+      FROM oportunidades o
+      LEFT JOIN negocios n ON n.id = o.negocio_id_legado
+     WHERE o.organizacao_id = ${orgId}::uuid
+       AND o.perdido_at >= ${since.toISOString()}::timestamptz AND o.perdido_at < ${until.toISOString()}::timestamptz
+       ${responsavelId ? sql`AND o.responsavel_id = ${responsavelId}::uuid` : sql``}
+     GROUP BY 1`)) as unknown as { motivo: string | null; total: string }[];
 
   const total = rows.reduce((s, r) => s + num(r.total), 0);
   const isSemClass = (m: string | null) => !m || m === "outro" || m === "nao_respondeu";
@@ -218,7 +216,9 @@ export async function getMotivosPerda(
 
   const itens = rows
     .map((r) => ({
-      motivo: r.motivo && !isSemClass(r.motivo) ? r.motivo : "Sem motivo classificado",
+      motivo: r.motivo && !isSemClass(r.motivo)
+        ? (MOTIVOS_PERDA.find((m) => m.chave === r.motivo)?.rotulo ?? r.motivo.replace(/_/g, " "))
+        : "Sem motivo classificado",
       count: num(r.total),
     }))
     // funde todos os "sem classificação" numa entrada só
@@ -364,7 +364,7 @@ export async function getFechadoPorResponsavel(
     if (r.ciclo != null) {
       const atual = cur.cicloMedio != null ? cur.cicloMedio : 0;
       const pesoAtual = cur.ganhos - n;
-      cur.cicloMedio = Math.round(((atual * pesoAtual + Number(r.ciclo) * n) / cur.ganhos) * 100) / 100;
+      cur.cicloMedio = Math.round(((atual * pesoAtual + Number(r.ciclo) * n) / cur.ganhos) * 10) / 10;
     }
     map.set(id, cur);
   }
@@ -390,47 +390,46 @@ export async function getFunilConversao(
   until: Date,
   responsavelId?: string | null,
 ): Promise<{ etapas: FunilEtapa[] }> {
-  const abertos = await db
-    .select({ status: negocios.status, total: count() })
-    .from(negocios)
-    .where(and(
-      eq(negocios.organizacaoId, orgId),
-      inArray(negocios.status, PIPELINE_ATIVO_STATUSES),
-      scopeResp(responsavelId),
-    ))
-    .groupBy(negocios.status);
-
-  const [g] = await db
-    .select({ total: count() })
-    .from(negocios)
-    .where(and(
-      eq(negocios.organizacaoId, orgId),
-      eq(negocios.status, "ganho"),
-      gte(negocios.ganhoAt, since),
-      lt(negocios.ganhoAt, until),
-      scopeResp(responsavelId),
-    ));
-
-  const countByStatus = new Map(abertos.map((r) => [r.status, num(r.total)]));
+  // Por EVENTO, nas 4 etapas canônicas: quantos negócios distintos ATINGIRAM cada
+  // etapa (ou uma posterior) na janela, mais os ganhos da janela. Antes misturava
+  // o snapshot de `negocios.status` com 11 status legados (aparecia "ativo",
+  // "outra_data" e "trava_negociacao" como etapa do funil).
+  const idx: Record<string, number> = {
+    entrada: 0, reuniao_agendada: 0, diagnostico: 1, reuniao_realizada: 1, trial: 1,
+    proposta: 2, proposta_apresentada: 2, negociacao: 3, negociacao_iniciada: 3,
+  };
+  const casos = Object.entries(idx).map(([k, v]) => `WHEN '${k}' THEN ${v}`).join(" ");
+  const [rows, [g]] = await Promise.all([
+    db.execute<{ nivel: string; n: string }>(sql`
+      SELECT nivel::text, count(*)::text AS n FROM (
+        SELECT sc.negocio_id, max(CASE sc.para_status ${sql.raw(casos)} END) AS nivel
+          FROM status_changes sc JOIN negocios n ON n.id = sc.negocio_id
+         WHERE n.organizacao_id = ${orgId}::uuid
+           AND sc.created_at >= ${since.toISOString()}::timestamptz AND sc.created_at < ${until.toISOString()}::timestamptz
+           AND sc.para_status IN (${sql.raw(Object.keys(idx).map((k) => `'${k}'`).join(","))})
+           ${responsavelId ? sql`AND n.responsavel_id = ${responsavelId}::uuid` : sql``}
+         GROUP BY sc.negocio_id) t
+       GROUP BY nivel`),
+    db.select({ total: count() }).from(negocios).where(and(
+      eq(negocios.organizacaoId, orgId), eq(negocios.status, "ganho"),
+      gte(negocios.ganhoAt, since), lt(negocios.ganhoAt, until), scopeResp(responsavelId),
+    )),
+  ]);
+  const porNivel = [0, 0, 0, 0];
+  for (const r of rows) { const i = Number(r.nivel); if (i >= 0 && i < 4) porNivel[i] = num(r.n); }
   const ganhos = num(g?.total);
-  const labelOf = (k: string) => DEFAULT_STAGES.find((s) => s.key === k)?.label ?? (k === "ganho" ? "Ganho" : k);
-  const ordem = [...PIPELINE_ATIVO_STATUSES, "ganho"];
-
-  const etapas: FunilEtapa[] = ordem.map((st, i) => {
-    if (st === "ganho") return { status: st, label: "Ganho", atingiu: ganhos, taxaDoAnterior: null };
-    // cumulativo: quem está nesta etapa ou em qualquer posterior, + os que ganharam
-    let atingiu = ganhos;
-    for (let j = i; j < PIPELINE_ATIVO_STATUSES.length; j++) {
-      atingiu += countByStatus.get(PIPELINE_ATIVO_STATUSES[j]) ?? 0;
-    }
-    return { status: st, label: labelOf(st), atingiu, taxaDoAnterior: null };
-  });
-
+  const etapas: FunilEtapa[] = ETAPAS_DO_FUNIL.map(({ key, label }, i) => ({
+    status: key, label,
+    // quem ganhou passou por todas as etapas, mesmo sem evento na janela (ganho
+    // vindo de migração/atalho): o piso mantém o funil monotônico.
+    atingiu: Math.max(porNivel.slice(i).reduce((a2, b2) => a2 + b2, 0), ganhos),
+    taxaDoAnterior: null as number | null,
+  }));
+  etapas.push({ status: "ganho", label: "Ganho", atingiu: ganhos, taxaDoAnterior: null });
   for (let i = 1; i < etapas.length; i++) {
     const prev = etapas[i - 1].atingiu;
     etapas[i].taxaDoAnterior = prev > 0 ? Math.round((etapas[i].atingiu / prev) * 1000) / 10 : null;
   }
-
   return { etapas };
 }
 
@@ -528,26 +527,20 @@ export async function getCoberturaValorPorEtapa(
   responsavelId?: string | null,
   safra?: Safra,
 ): Promise<CoberturaEtapa[]> {
-  const rows = await db
-    .select({
-      status: negocios.status,
-      total: count(),
-      comValor: sql<number>`COUNT(*) FILTER (WHERE ${negocios.valorTotal} > 0)`,
-    })
-    .from(negocios)
-    .where(and(
-      eq(negocios.organizacaoId, orgId),
-      inArray(negocios.status, PIPELINE_ATIVO_STATUSES),
-      scopeResp(responsavelId),
-      scopeSafra(safra),
-    ))
-    .groupBy(negocios.status);
-
-  const byStatus = new Map(rows.map((r) => [r.status, r]));
-  return PIPELINE_ATIVO_STATUSES.map((st) => {
-    const r = byStatus.get(st);
+  // Mesma fonte do pipeline do topo (`oportunidades` abertas): antes lia
+  // `negocios.status`, que não tem as etapas do funil canônico.
+  const rows = await db.execute<{ etapa: string; total: string; com_valor: string }>(sql`
+    SELECT o.etapa, count(*)::text AS total, count(*) FILTER (WHERE o.valor > 0)::text AS com_valor
+      FROM oportunidades o
+      LEFT JOIN negocios n ON n.id = o.negocio_id_legado
+     WHERE o.organizacao_id = ${orgId}::uuid AND o.ganho_at IS NULL AND o.perdido_at IS NULL
+       ${responsavelId ? sql`AND o.responsavel_id = ${responsavelId}::uuid` : sql``}
+       ${safra === "legado" ? sql`AND n.zoho_id IS NOT NULL` : safra === "nativo" ? sql`AND n.zoho_id IS NULL` : sql``}
+     GROUP BY o.etapa`);
+  return ETAPAS_DO_FUNIL.map(({ key }) => {
+    const r = rows.find((x) => x.etapa === key);
     const total = num(r?.total);
-    const comValor = num(r?.comValor);
-    return { status: st, total, comValor, pct: total > 0 ? Math.round((comValor / total) * 1000) / 10 : 0 };
+    const comValor = num(r?.com_valor);
+    return { status: key, total, comValor, pct: total > 0 ? Math.round((comValor / total) * 1000) / 10 : 0 };
   });
 }

@@ -8,7 +8,7 @@
  */
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { automacoes, automacaoVersoes } from "@/lib/db/schema";
+import { automacoes, automacaoVersoes, automacaoExecucoes } from "@/lib/db/schema";
 import { EVENTOS_PLATAFORMA, avaliarRegras, type TipoEntidade } from "./grafo";
 import { estadoVazio, hidratarContexto, origemAutomacao, type EntidadeRef } from "./contexto";
 import { configDaVersao, iniciarExecucao, profundidadeParaEvento, retomarDevidas } from "./executor";
@@ -64,9 +64,24 @@ async function fluxosAtivos(organizacaoId: string | null, filtro: ReturnType<typ
   return rows.map((r) => ({ ...r, trigger: (r.trigger ?? {}) as Record<string, unknown> }));
 }
 
+/** Já existe execução desta automação, neste registro, nos últimos 60 s, vinda de um evento IRMÃO (outro tipo, mesmo fato)? O evento fica em `estado.gatilho._evento`. */
+async function fatoJaDisparado(automacaoId: string, entidadeId: string, origem: { id: string; irmaos: string[] }): Promise<boolean> {
+  if (origem.irmaos.length < 2) return false;
+  const [ja] = await db.select({ id: automacaoExecucoes.id }).from(automacaoExecucoes)
+    .where(and(
+      eq(automacaoExecucoes.automacaoId, automacaoId), eq(automacaoExecucoes.entityId, entidadeId),
+      sql`${automacaoExecucoes.executedAt} > now() - interval '60 seconds'`,
+      sql`${automacaoExecucoes.estado}->'gatilho'->'_evento'->>'id' <> ${origem.id}`,
+      sql`${automacaoExecucoes.estado}->'gatilho'->'_evento'->>'tipo' IN ${origem.irmaos}`,
+    )).limit(1);
+  return Boolean(ja);
+}
+
 async function dispararParaEventos(args: {
   organizacaoId: string; eventoIds: string[]; entidade: EntidadeRef | null; payload: Record<string, unknown>;
   chave: (automacaoId: string) => string | null;
+  /** Evento de origem + os tipos do outbox que carregam o MESMO fato (ex.: LeadCreated e AcquisitionCreated). */
+  origem?: { id: string; irmaos: string[] };
 }): Promise<number> {
   if (!args.eventoIds.length) return 0;
   const fluxos = await fluxosAtivos(args.organizacaoId, sql`${automacaoVersoes.triggerConfig}->>'modo' = 'evento' AND ${automacaoVersoes.triggerConfig}->>'evento' IN ${args.eventoIds}`);
@@ -84,6 +99,9 @@ async function dispararParaEventos(args: {
       if (profundidade === null) continue;
       const filtros = (f.trigger.filtros as Regra[] | undefined) ?? [];
       if (filtros.length && !avaliarRegras(filtros, "e", ctx)) continue;
+      // Uma ação do usuário grava o fato em dois tipos de evento (legado e canônico).
+      // Sem isto a mesma automação rodava duas vezes: duas tarefas, duas mensagens.
+      if (args.origem && await fatoJaDisparado(f.automacaoId, args.entidade.id, args.origem)) continue;
       const r = await iniciarExecucao({
         automacaoId: f.automacaoId, organizacaoId: args.organizacaoId, versaoId: f.versaoId, modo: "evento",
         entidade: args.entidade, payload: args.payload, idempotencyKey: args.chave(f.automacaoId), profundidade,
@@ -104,11 +122,13 @@ export async function dispararFluxosPorEvento(evento: EventoOutbox): Promise<num
   // Criar oportunidade também grava OpportunityStageChanged (de = null): isso
   // é "Negócio criado", não mudança de etapa.
   if (evento.eventType === "OpportunityStageChanged" && !bruto.de) return 0;
-  const payload = payloadDoGatilho(evento.eventType, (evento.payload ?? {}) as Record<string, unknown>);
+  // `_evento` identifica o fato no estado da execução (barra o disparo em dobro e deixa rastro para relatório).
+  const payload = { ...payloadDoGatilho(evento.eventType, (evento.payload ?? {}) as Record<string, unknown>), _evento: { id: evento.id, tipo: evento.eventType } };
   return dispararParaEventos({
     organizacaoId: evento.organizacaoId, eventoIds: ids.map((e) => e.id),
     entidade: entidadeDoEvento(evento, ids[0].entidade), payload,
     chave: (a) => `evento:${a}:${evento.id}`,
+    origem: { id: evento.id, irmaos: [...new Set(ids.flatMap((e) => e.fontes.outbox ?? []))] },
   });
 }
 

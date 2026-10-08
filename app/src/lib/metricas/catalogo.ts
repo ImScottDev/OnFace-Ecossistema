@@ -231,20 +231,20 @@ export const CATALOGO: DefinicaoMetrica[] = [
     nome: "Oportunidades abertas",
     tipo: "SNAPSHOT",
     unidade: "contagem",
-    descricao: "Oportunidades que não foram ganhas nem perdidas neste instante.",
-    fonte: "oportunidades com ganho_at e perdido_at nulos.",
-    naoInclui: "ganhas e perdidas, inclusive as fechadas hoje.",
+    descricao: "Oportunidades que não foram ganhas nem perdidas neste instante, dentro do funil comercial.",
+    fonte: "oportunidades com ganho_at e perdido_at nulos e etapa canônica preenchida (a mesma contagem do Pipeline).",
+    naoInclui: "ganhas e perdidas, inclusive as fechadas hoje, e o legado com status ativo sem etapa (decisão de 05/10: ativo não é etapa comercial, fica fora do funil).",
     valor: (org) => sql`
       SELECT count(*)::numeric AS valor FROM oportunidades o
        WHERE o.organizacao_id = ${org}::uuid
-         AND o.ganho_at IS NULL AND o.perdido_at IS NULL`,
+         AND o.ganho_at IS NULL AND o.perdido_at IS NULL AND o.etapa IS NOT NULL`,
     drill: (org) => sql`
       SELECT o.id::text, o.titulo, e.nome AS empresa, o.service_family AS familia,
              o.etapa, o.valor::numeric AS valor, o.previsao_fechamento
         FROM oportunidades o
         LEFT JOIN empresas e ON e.id = o.empresa_id
        WHERE o.organizacao_id = ${org}::uuid
-         AND o.ganho_at IS NULL AND o.perdido_at IS NULL
+         AND o.ganho_at IS NULL AND o.perdido_at IS NULL AND o.etapa IS NOT NULL
        ORDER BY o.valor DESC NULLS LAST`,
   },
 ];

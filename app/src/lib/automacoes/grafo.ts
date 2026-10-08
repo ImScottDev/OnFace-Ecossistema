@@ -267,7 +267,7 @@ export const VARIAVEIS_CONTEXTO: { raiz: string; rotulo: string; campos: { chave
 
 export type TipoCampo =
   | "texto" | "texto_longo" | "numero" | "booleano" | "selecao" | "duracao" | "horario" | "horarios" | "dias_semana"
-  | "usuario" | "tag" | "etapa" | "cadencia" | "template_whatsapp" | "agente_ia" | "evento" | "regras" | "rotas"
+  | "usuario" | "tag" | "etapa" | "cadencia" | "template_whatsapp" | "sessao_whatsapp" | "agente_ia" | "evento" | "regras" | "rotas"
   | "classes" | "pares" | "campo_entidade" | "url" | "tipo_entidade" | "somente_leitura";
 
 export interface CampoConfig {
@@ -463,6 +463,7 @@ export const CATALOGO_NOS: Record<TipoNo, MetaNo> = {
       { chave: "mensagem", rotulo: "Mensagem", tipo: "texto_longo", obrigatorio: true, aceitaExpressao: true, mostrarSe: { campo: "modo", valores: ["texto"] } },
       { chave: "templateId", rotulo: "Modelo", tipo: "template_whatsapp", obrigatorio: true, mostrarSe: { campo: "modo", valores: ["template"] } },
       { chave: "telefone", rotulo: "Para o número", tipo: "texto", aceitaExpressao: true, ajuda: "Vazio = telefone do registro." },
+      { chave: "sessaoId", rotulo: "Enviar pelo número", tipo: "sessao_whatsapp", ajuda: "Vazio = o número do responsável do registro; sem ele, o padrão da organização." },
     ],
     saidas: OK, saidaCampos: [{ chave: "jobId", rotulo: "Id do envio" }],
     efeitoExterno: true, exigeEntidade: true,
@@ -563,6 +564,7 @@ export const CATALOGO_NOS: Record<TipoNo, MetaNo> = {
     campos: [
       { chave: "agenteId", rotulo: "Agente", tipo: "agente_ia" },
       { chave: "instrucao", rotulo: "Orientação para esta resposta", tipo: "texto_longo", aceitaExpressao: true },
+      { chave: "sessaoId", rotulo: "Falar pelo número", tipo: "sessao_whatsapp", ajuda: "Vazio = o número configurado no agente." },
     ],
     saidas: OK, saidaCampos: [{ chave: "resposta", rotulo: "Texto enviado" }, { chave: "handoff", rotulo: "Passou para humano" }],
     efeitoExterno: true, exigeEntidade: true,
@@ -950,5 +952,6 @@ export interface OpcoesInspetor {
   etapas: { lead: { valor: string; rotulo: string }[]; negocio: { valor: string; rotulo: string }[] };
   cadencias: { id: string; nome: string; publicada: boolean }[];
   templatesWhatsapp: { id: string; nome: string }[];
+  sessoesWhatsapp: { id: string; nome: string; conectada: boolean }[];
   agentesIa: { id: string; nome: string }[];
 }

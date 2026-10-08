@@ -13,6 +13,7 @@
  *   subtarefa          = cada fulfillment_item do grupo
  */
 import { sql } from "drizzle-orm";
+import { nomeEmpresaSql } from "@/lib/vendas/texto";
 
 import { db } from "@/lib/db";
 import { getOperacaoDetalhe } from "@/lib/analytics/onface-inicio";
@@ -65,6 +66,10 @@ export interface ProjetoReal {
   grupos: GrupoProjeto[];
   eventos: EventoProjeto[];
   formulario: FormularioProjeto | null;
+  /** Arquivos enviados no projeto (acervo canônico, vínculo `fulfillment`). */
+  arquivos: Array<{ id: string; nome: string; tamanhoBytes: number; quando: string; autor: string | null; url: string }>;
+  /** Bloqueio derivado dos itens BLOCKED do checklist; null = nada bloqueado. */
+  bloqueio: { kind: "cliente" | "externo"; texto: string; desde: string | null; itemIds: string[] } | null;
 }
 
 const dia = (d: Date | string | null) => {
@@ -81,14 +86,14 @@ export async function getProjeto(orgId: string, fulfillmentId: string): Promise<
   const det = await getOperacaoDetalhe(orgId, fulfillmentId);
   if (!det) return null;
 
-  const [[cab], itens, eventosTl, conclusoes, [form], [contagem]] = await Promise.all([
+  const [[cab], itens, eventosTl, conclusoes, [form], [contagem], arquivos] = await Promise.all([
     db.execute<{
       status: string; public_token: string | null; started_at: string | null; completed_at: string | null;
       empresa_id: string | null; empresa: string | null; oportunidade_id: string | null; lead_id: string | null;
       nome: string | null; cargo: string | null; telefone: string | null; email: string | null; whatsapp: string | null;
     }>(sql`
       SELECT f.status, f.public_token, f.started_at, f.completed_at,
-             sc.empresa_id, e.nome AS empresa, sc.oportunidade_origem_id AS oportunidade_id, o.lead_id,
+             sc.empresa_id, ${nomeEmpresaSql("e.nome")} AS empresa, sc.oportunidade_origem_id AS oportunidade_id, o.lead_id,
              pe.nome, pe.cargo, pe.telefone, pe.email, pe.whatsapp
         FROM fulfillments f
         JOIN servicos_canonicos sc ON sc.id = f.servico_canonico_id
@@ -98,8 +103,9 @@ export async function getProjeto(orgId: string, fulfillmentId: string): Promise<
        WHERE f.organizacao_id = ${orgId} AND f.id = ${fulfillmentId}
        LIMIT 1
     `),
-    db.execute<{ id: string; workstream: string; titulo: string; status: string; completed_at: string | null; quem: string | null }>(sql`
-      SELECT fi.id, fi.workstream, fi.titulo, fi.status, fi.completed_at, u.nome AS quem
+    db.execute<{ id: string; workstream: string; titulo: string; status: string; completed_at: string | null; quem: string | null; blocker_type: string | null; blocker_reason: string | null; blocked_at: string | null }>(sql`
+      SELECT fi.id, fi.workstream, fi.titulo, fi.status, fi.completed_at, u.nome AS quem,
+             fi.blocker_type, fi.blocker_reason, fi.blocked_at::text AS blocked_at
         FROM fulfillment_itens fi
         LEFT JOIN usuarios u ON u.id = fi.completed_by
        WHERE fi.organizacao_id = ${orgId} AND fi.fulfillment_id = ${fulfillmentId}
@@ -135,6 +141,15 @@ export async function getProjeto(orgId: string, fulfillmentId: string): Promise<
              (SELECT COUNT(*)::int FROM fulfillment_ramais WHERE fulfillment_id = ${fulfillmentId}) AS ramais,
              (SELECT string_agg(DISTINCT operadora_atual, ', ') FILTER (WHERE operadora_atual IS NOT NULL AND operadora_atual <> '')
                 FROM fulfillment_linhas_portabilidade WHERE fulfillment_id = ${fulfillmentId}) AS operadoras
+    `),
+    db.execute<{ id: string; nome: string; tamanho: string; criado_em: string; autor: string | null }>(sql`
+      SELECT fo.id::text AS id, fo.nome_original AS nome, fo.tamanho_bytes::text AS tamanho,
+             fo.created_at::text AS criado_em, u.nome AS autor
+        FROM file_links fl JOIN file_objects fo ON fo.id = fl.file_object_id
+        LEFT JOIN usuarios u ON u.id = fo.enviado_por_id
+       WHERE fl.organizacao_id = ${orgId}::uuid AND fl.entity_type = 'fulfillment'
+         AND fl.entity_id = ${fulfillmentId}::uuid AND fo.deleted_at IS NULL
+       ORDER BY fo.created_at DESC
     `),
   ]);
   if (!cab) return null;
@@ -176,6 +191,18 @@ export async function getProjeto(orgId: string, fulfillmentId: string): Promise<
       : null,
     grupos: [...porChave.values()],
     eventos,
+    arquivos: arquivos.map((a) => ({ id: a.id, nome: a.nome, tamanhoBytes: Number(a.tamanho), quando: new Date(a.criado_em).toISOString(), autor: a.autor, url: "/api/arquivos/" + a.id })),
+    bloqueio: (() => {
+      const b = itens.filter((i) => i.status === "BLOCKED");
+      if (!b.length) return null;
+      const t = b[0];
+      return {
+        kind: /client/i.test(t.blocker_type ?? "") ? "cliente" as const : "externo" as const,
+        texto: t.blocker_reason?.trim() || t.titulo,
+        desde: t.blocked_at ? new Date(t.blocked_at).toISOString() : null,
+        itemIds: b.map((i) => i.id),
+      };
+    })(),
     formulario: form
       ? {
           status: form.status,

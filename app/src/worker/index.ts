@@ -1681,6 +1681,15 @@ async function runAiSdrFirstContactSweep(): Promise<{ iniciados: number }> {
           leadId: lead.id, deStatus: "pending", paraStatus: "contacted",
           usuarioId: aiUserId, motivo: "Agente SDR iniciou contato automaticamente",
         });
+        // SLA: o contato do agente também é o 1º contato (evento com autor AI_AGENT).
+        if (!lead.primeiroContatoAt) {
+          const { registrarEvento } = await import("../lib/vendas/eventos");
+          await registrarEvento({
+            organizacaoId: config.organizacaoId, tipo: "FirstContactMade", leadId: lead.id, ocorridoEm: now,
+            ator: { tipo: "AI_AGENT", usuarioId: aiUserId, ref: "ai-sdr" },
+            contexto: { canal: "whatsapp", origem: "agente_sdr" },
+          }).catch((e) => console.warn("[AI-SDR-Outreach] FirstContactMade não registrado:", e));
+        }
         await db.insert(atividades).values({
           leadId: lead.id, organizacaoId: config.organizacaoId, usuarioId: aiUserId,
           tipo: "nota", titulo: "Etapa de pré-vendas",

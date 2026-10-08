@@ -89,7 +89,7 @@ export interface CriarOportunidade {
   proximaAcao?: string | null;
   proximaAcaoEm?: string | null;
   /** Agendar reunião junto. Bloco 02 §6: reunião NÃO é requisito. */
-  reuniao?: { data: string; duracao?: number; tipo?: "call" | "presencial" | "video"; titulo?: string; notas?: string } | null;
+  reuniao?: { data: string; duracao?: number; tipo?: "call" | "presencial" | "video"; titulo?: string; notas?: string; closerId?: string } | null;
   servicoOrigemId?: string | null;
 }
 
@@ -235,7 +235,7 @@ export async function criarOportunidade(entrada: CriarOportunidade, ator: Ator):
       tipo: entrada.reuniao.tipo,
       titulo: entrada.reuniao.titulo,
       notas: entrada.reuniao.notas,
-      responsavelId: entrada.responsavelId,
+      responsavelId: entrada.reuniao.closerId ?? entrada.responsavelId,
       ator,
     });
     reuniaoId = resultado.reuniaoId;
@@ -872,6 +872,19 @@ export async function registrarNoShow(params: {
     timeline: { tipo: "reuniao", titulo: "No-show", descricao: "Cliente não compareceu à reunião." },
   });
 
+  // A tag "No-show" marca quem faltou: é por ela que o time acha, no board de
+  // Pré-vendas, os leads a remarcar, e a automação de recuperação escuta o
+  // mesmo gatilho. Fica no lead e na oportunidade; a contagem em
+  // `negocios.no_show_contagem` guarda o histórico. Falhar aqui não desfaz o
+  // no-show, que já está gravado.
+  try {
+    const { adicionarTag } = await import("@/lib/crm/tags");
+    await adicionarTag({ organizacaoId: params.organizacaoId, entityType: "negocio", entityId: params.negocioId, label: "No-show", atorId: params.ator.usuarioId ?? null });
+    if (op.lead_id) await adicionarTag({ organizacaoId: params.organizacaoId, entityType: "lead", entityId: op.lead_id, label: "No-show", atorId: params.ator.usuarioId ?? null });
+  } catch (e) {
+    console.warn(`[no-show] tag não aplicada na oportunidade ${params.negocioId}:`, e);
+  }
+
   if (op.lead_id) {
     // Decisão do Scott (06/10, revista): o lead do no-show volta para QUALIFICADO.
     // Ele já foi qualificado, só não compareceu à reunião; mandá-lo de volta para
@@ -1032,4 +1045,39 @@ async function espelharNoDominioV2(negocioIds: string[]): Promise<void> {
       console.error(`[vendas] falha ao espelhar oportunidade ${negocioId} no domain model v2:`, erro);
     }
   }
+}
+
+/**
+ * Troca o responsável da oportunidade.
+ *
+ * O seletor da tela só mexia no estado local e a página voltava ao responsável
+ * antigo. Grava nas duas pontas (negócio e oportunidade canônica) e deixa o
+ * evento com quem era, quem passou a ser e quando: é o que permite medir carga
+ * e tempo por responsável depois.
+ */
+export async function atribuirResponsavelDaOportunidade(params: {
+  organizacaoId: string;
+  negocioId: string;
+  responsavelId: string;
+  ator: Ator;
+}): Promise<void> {
+  const op = await carregarOportunidade(params.organizacaoId, params.negocioId);
+  const [dono] = await db.execute<{ id: string }>(sql`
+    SELECT id::text FROM usuarios
+     WHERE id = ${params.responsavelId}::uuid AND organizacao_id = ${params.organizacaoId}::uuid AND ativo = true`);
+  if (!dono) throw new RegraDeNegocio("responsavel_invalido", "Responsável inválido: não é um usuário ativo desta organização.");
+  if (op.responsavel_id === params.responsavelId) return;
+
+  await db.execute(sql`
+    UPDATE negocios SET responsavel_id = ${params.responsavelId}::uuid, updated_at = now()
+     WHERE id = ${params.negocioId}::uuid`);
+  await db.execute(sql`
+    UPDATE oportunidades SET responsavel_id = ${params.responsavelId}::uuid, updated_at = now()
+     WHERE negocio_id_legado = ${params.negocioId}::uuid`);
+  await registrarEvento({
+    organizacaoId: params.organizacaoId, tipo: "OpportunityAssigned", ator: params.ator,
+    negocioId: params.negocioId, leadId: op.lead_id, empresaId: op.empresa_id,
+    contexto: { de: op.responsavel_id, para: params.responsavelId },
+    timeline: { tipo: "nota", titulo: "Responsável da oportunidade alterado" },
+  });
 }

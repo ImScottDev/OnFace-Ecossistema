@@ -64,7 +64,7 @@ for (const metodo of ["post", "delete"] as const) {
       .where(and(eq(tabela.id, entityId), eq(tabela.organizacaoId, ctx.organizacaoId)));
     if (!dono) return c.json({ error: "Registro não encontrado" }, 404);
 
-    const opts = { organizacaoId: ctx.organizacaoId, entityType, entityId, label: c.req.param("id") };
+    const opts = { organizacaoId: ctx.organizacaoId, entityType, entityId, label: c.req.param("id"), atorId: ctx.userId ?? null };
     const r = metodo === "post" ? await adicionarTag(opts) : await removerTag(opts);
     return r.ok ? c.json(r) : c.json({ error: r.erro }, 404);
   });

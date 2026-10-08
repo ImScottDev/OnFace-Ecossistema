@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
-import { negocios, propostas, propostaItens } from "@/lib/db/schema";
-import { eq, and, notInArray, sql } from "drizzle-orm";
+import { negocios } from "@/lib/db/schema";
+import { eq, sql } from "drizzle-orm";
 
 /**
  * Recalculates negocio financial fields (mrrEstimado, valorProjeto, valorTotal)
@@ -19,22 +19,21 @@ export async function syncNegocioValoresFromPropostas(
   negocioId: string,
   { tocarRelogio = true }: { tocarRelogio?: boolean } = {},
 ) {
-  const [totals] = await db
-    .select({
-      totalRecorrente: sql<string>`COALESCE(SUM(CASE WHEN ${propostaItens.tipo} = 'recorrente' THEN ${propostaItens.subtotal} ELSE 0 END), 0)`,
-      totalAvulso: sql<string>`COALESCE(SUM(CASE WHEN ${propostaItens.tipo} IN ('avulso', 'setup') THEN ${propostaItens.subtotal} ELSE 0 END), 0)`,
-      totalGeral: sql<string>`COALESCE(SUM(${propostaItens.subtotal}), 0)`,
-    })
-    .from(propostaItens)
-    .innerJoin(propostas, eq(propostaItens.propostaId, propostas.id))
-    .where(
-      and(
-        eq(propostas.negocioId, negocioId),
-        // "substituida" fora: a revisão copia os itens da versão anterior, e contar as
-        // duas dobrava o valor do negócio a cada nova versão enviada.
-        notInArray(propostas.status, ["recusada", "substituida"]),
-      )
-    );
+  /* Uma proposta é uma SÉRIE (o mesmo `numero`, versões v1, v2…): só a versão mais nova que
+     não foi recusada nem substituída vale. Somar as versões dobrava o valor quando existia
+     um rascunho v2 ao lado da v1 aceita, e o cartão, a lista e o detalhe passavam a
+     mostrar números diferentes para a mesma venda. */
+  const [totals] = await db.execute<{ totalRecorrente: string; totalAvulso: string; totalGeral: string }>(sql`
+    WITH vigentes AS (
+      SELECT DISTINCT ON (p.numero) p.id
+        FROM propostas p
+       WHERE p.negocio_id = ${negocioId}::uuid AND p.status NOT IN ('recusada', 'substituida')
+       ORDER BY p.numero, p.versao DESC
+    )
+    SELECT COALESCE(SUM(CASE WHEN i.tipo = 'recorrente' THEN i.subtotal ELSE 0 END), 0)::text AS "totalRecorrente",
+           COALESCE(SUM(CASE WHEN i.tipo IN ('avulso', 'setup') THEN i.subtotal ELSE 0 END), 0)::text AS "totalAvulso",
+           COALESCE(SUM(i.subtotal), 0)::text AS "totalGeral"
+      FROM proposta_itens i JOIN vigentes v ON v.id = i.proposta_id`);
 
   await db
     .update(negocios)

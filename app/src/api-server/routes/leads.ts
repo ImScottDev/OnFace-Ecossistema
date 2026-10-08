@@ -71,7 +71,9 @@ import { getSdrStatusInfo } from "@/lib/crm/pipeline";
 import { converterLeadEmOportunidade } from "@/lib/crm/converter-oportunidade";
 import { createOutlookEvent } from "@/lib/email/microsoft";
 import { resolveFollowupOwnerId } from "@/lib/crm/sdr-escalation";
-import { concluirAtividadePrimeiroContato } from "@/lib/vendas/pre-vendas";
+import { concluirAtividadePrimeiroContato, registrarPrimeiroContato } from "@/lib/vendas/pre-vendas";
+import { registrarEvento } from "@/lib/vendas/eventos";
+import { atorHumano } from "@/lib/vendas/dominio";
 
 const app = new Hono();
 
@@ -1123,9 +1125,12 @@ app.patch("/leads/:id", async (c) => {
 
   // ── Board Pré-vendas: transição de sdr_status → timeline + timestamps + dono ──
   // Rota Next tem lógica equivalente, mas quem vale no deploy é o Hono (/api → api-server).
+  // SLA: o primeiro contato marcado por esta rota também precisa do evento
+  // (FirstContactMade), senão o tempo até 1º contato some do relatório.
+  let primeiroContatoNovo = false;
   if (parsed.data.sdrStatus) {
     const [cur] = await db
-      .select({ sdrStatus: leads.sdrStatus, responsavelId: leads.responsavelId })
+      .select({ sdrStatus: leads.sdrStatus, responsavelId: leads.responsavelId, primeiroContatoAt: leads.primeiroContatoAt })
       .from(leads)
       .where(and(eq(leads.id, id), eq(leads.organizacaoId, ctx.organizacaoId)))
       .limit(1);
@@ -1154,6 +1159,7 @@ app.patch("/leads/:id", async (c) => {
       // Marca primeiro contato ao sair de "Novo"
       if ((cur.sdrStatus || "pending") === "pending") {
         updateData.primeiroContatoAt = (updateData.primeiroContatoAt as Date | undefined) ?? new Date();
+        primeiroContatoNovo = !cur.primeiroContatoAt;
       }
       // Entrou em "Em Contato": (re)inicia o relógio de escalação (6h → Follow up)
       if (parsed.data.sdrStatus === "contacted") {
@@ -1211,6 +1217,13 @@ app.patch("/leads/:id", async (c) => {
 
   if (updated.primeiroContatoAt) {
     await concluirAtividadePrimeiroContato({ organizacaoId: ctx.organizacaoId, leadId: id });
+  }
+  if (primeiroContatoNovo) {
+    await registrarEvento({
+      organizacaoId: ctx.organizacaoId, tipo: "FirstContactMade", ator: atorHumano(ctx.userId),
+      leadId: id, ocorridoEm: updated.primeiroContatoAt ?? undefined,
+      contexto: { canal: "outro", origem: "sdr_status" },
+    }).catch((e) => console.warn("[leads] FirstContactMade não registrado:", e));
   }
 
   // AssignOwner (19/08) — mesma regra central de owner.ts (ver negocios.ts).
@@ -1277,11 +1290,12 @@ app.post("/leads/:id", async (c) => {
     parsed.data.tipo === "whatsapp"
   ) {
     if (!lead.primeiroContatoAt) {
-      await db
-        .update(leads)
-        .set({ primeiroContatoAt: new Date(), updatedAt: new Date() })
-        .where(eq(leads.id, id));
-      await concluirAtividadePrimeiroContato({ organizacaoId: ctx.organizacaoId, leadId: id });
+      // Porta canônica: grava primeiro_contato_at, o evento FirstContactMade e conclui a tarefa.
+      await registrarPrimeiroContato({
+        organizacaoId: ctx.organizacaoId, leadId: id,
+        canal: parsed.data.tipo === "ligacao" ? "ligacao" : parsed.data.tipo === "email" ? "email" : "whatsapp",
+        ator: atorHumano(ctx.userId), moverParaEmContato: false,
+      });
     }
   }
 

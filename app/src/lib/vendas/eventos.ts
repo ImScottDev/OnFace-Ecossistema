@@ -14,6 +14,7 @@
  * Quem chama um comando de negócio não escolhe onde grava: chama
  * `registrarEvento` e o roteamento acontece aqui.
  */
+import { tituloDoEvento } from "./rotulos-evento";
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { sincronizarAquisicaoDoLead } from "./sincronizar-aquisicao";
@@ -44,9 +45,11 @@ export type TipoEventoVendas =
   // Propostas
   | "ProposalCreated" | "ProposalSent" | "ProposalViewed" | "ProposalAccepted"
   | "ProposalRejected" | "ProposalExpired" | "ProposalSuperseded"
-  | "ProposalAdjustmentRequested"
+  | "ProposalAdjustmentRequested" | "ProposalEdited" | "ProposalDeleted"
   // Contrato e pagamento
   | "ContractCreated" | "ContractSigned" | "PaymentCreated" | "PaymentConfirmed"
+  // Pós-venda
+  | "OnboardingStarted"
   // Prospecção
   | "ProspectAdded" | "ProspectImported" | "ProspectEnriched" | "ProspectAssigned"
   | "CadenceEnrolled" | "CadencePaused" | "ProspectReplied" | "ProspectPreQualified"
@@ -144,7 +147,9 @@ export async function registrarEvento(evento: EventoVendas, tx: ExecutorDb = db)
       empresaId: evento.empresaId ?? null,
       pessoaId: evento.pessoaId ?? null,
       propostaId: evento.propostaId ?? null,
+      reuniaoId: evento.reuniaoId ?? null,
       atorTipo: evento.ator.tipo,
+      atorId: evento.ator.usuarioId ?? null,
       contexto: evento.contexto ?? null,
       ocorridoEm,
       origemId: idLegado,
@@ -368,7 +373,15 @@ export async function lerLinhaDoTempo(params: {
            (${leadId}::uuid IS NOT NULL AND e.lead_id = ${leadId}::uuid)
            OR (${negocioId}::uuid IS NOT NULL AND e.negocio_id = ${negocioId}::uuid)
            OR (${empresaId}::uuid IS NOT NULL AND e.empresa_id = ${empresaId}::uuid)
+           -- Eventos nascem com lead e negócio, não com a empresa: sem estas duas
+           -- linhas, "Oportunidade criada" e "Reunião agendada" não apareciam
+           -- na timeline da Empresa.
+           OR (${empresaId}::uuid IS NOT NULL AND (
+                 e.lead_id IN (SELECT id FROM leads WHERE empresa_id = ${empresaId}::uuid)
+                 OR e.negocio_id IN (SELECT id FROM negocios WHERE empresa_id = ${empresaId}::uuid)))
            OR (${pessoaId}::uuid IS NOT NULL AND e.pessoa_id = ${pessoaId}::uuid)
+           OR (${pessoaId}::uuid IS NOT NULL AND e.lead_id IN
+                 (SELECT lead_id_legado FROM pessoas WHERE id = ${pessoaId}::uuid))
          )
        ORDER BY e.ocorrido_em DESC LIMIT ${limite}
     )
@@ -405,7 +418,10 @@ export async function lerLinhaDoTempo(params: {
          AND (
            (${leadId}::uuid IS NOT NULL AND tf.lead_id = ${leadId}::uuid)
            OR (${negocioId}::uuid IS NOT NULL AND tf.negocio_id = ${negocioId}::uuid)
-           OR (${empresaId}::uuid IS NOT NULL AND tf.empresa_id = ${empresaId}::uuid)
+           OR (${empresaId}::uuid IS NOT NULL AND (
+                 tf.empresa_id = ${empresaId}::uuid
+                 OR tf.lead_id IN (SELECT id FROM leads WHERE empresa_id = ${empresaId}::uuid)
+                 OR tf.negocio_id IN (SELECT id FROM negocios WHERE empresa_id = ${empresaId}::uuid)))
            OR (${pessoaId}::uuid IS NOT NULL AND tf.lead_id IN
                  (SELECT lead_id_legado FROM pessoas WHERE id = ${pessoaId}::uuid))
          )
@@ -418,7 +434,7 @@ export async function lerLinhaDoTempo(params: {
   return linhas.map((l) => ({
     id: l.id,
     tipo: l.tipo as TipoEventoVendas,
-    titulo: l.titulo,
+    titulo: tituloDoEvento(l.tipo, l.titulo, l.contexto),
     atorTipo: l.ator_tipo,
     usuarioNome: l.usuario_nome,
     contexto: l.contexto,

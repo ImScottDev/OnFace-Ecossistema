@@ -16,7 +16,7 @@
 // inflaria "execuções" com ligação feita à mão.
 import { db } from "@/lib/db";
 import {
-  automacoes, automacaoExecucoes,
+  automacoes, automacaoExecucoes, leads, negocios, contatos, empresas,
   cadenceDefinitions, cadenceEnrollments, cadenceEnrollmentEvents,
   eventOutbox,
 } from "@/lib/db/schema";
@@ -53,6 +53,8 @@ export interface Execucao {
   status: StatusExecucao;
   entidadeTipo: string;
   entidadeId: string;
+  /** Nome legível do registro (lead, negócio, contato, empresa...). Null quando o registro não existe mais ou o tipo não tem nome. */
+  entidadeNome?: string | null;
   detalhe: string | null;
   /** Payload/resultado cru para o painel de detalhe. */
   dados: unknown;
@@ -235,9 +237,28 @@ export async function listarExecucoes(
   }
 
   const tudo = (await Promise.all(consultas)).flat();
-  return tudo.sort((a, b) => b.quando.localeCompare(a.quando)).slice(0, LIMITE);
+  const recorte = tudo.sort((a, b) => b.quando.localeCompare(a.quando)).slice(0, LIMITE);
+  return nomearEntidades(organizacaoId, recorte);
 }
 
+/** Id hexadecimal não diz nada a quem lê a fila: troca por nome, em UMA consulta por tipo (só os ids do recorte). */
+async function nomearEntidades(organizacaoId: string, itens: Execucao[]): Promise<Execucao[]> {
+  const ids = (tipo: string) => [...new Set(itens.filter((i) => i.entidadeTipo === tipo && i.entidadeId).map((i) => i.entidadeId))];
+  const nomes = new Map<string, string>();
+  const [l, n, c, e] = [ids("lead"), ids("negocio"), ids("contato"), ids("empresa")];
+  const [rl, rn, rc, re] = await Promise.all([
+    l.length ? db.select({ id: leads.id, nome: leads.nome }).from(leads).where(and(eq(leads.organizacaoId, organizacaoId), inArray(leads.id, l))) : [],
+    n.length ? db.select({ id: negocios.id, nome: negocios.titulo }).from(negocios).where(and(eq(negocios.organizacaoId, organizacaoId), inArray(negocios.id, n))) : [],
+    c.length ? db.select({ id: contatos.id, nome: contatos.nome }).from(contatos).where(and(eq(contatos.organizacaoId, organizacaoId), inArray(contatos.id, c))) : [],
+    e.length ? db.select({ id: empresas.id, nome: empresas.nome }).from(empresas).where(and(eq(empresas.organizacaoId, organizacaoId), inArray(empresas.id, e))) : [],
+  ]);
+  for (const r of [...rl, ...rn, ...rc, ...re]) if (r.nome) nomes.set(r.id, r.nome);
+  // Eventos canônicos (oportunidade, aquisição) também chegavam com o id cru.
+  const [o, a] = [ids("oportunidade"), ids("aquisicao")];
+  if (o.length) for (const r of await db.execute<{ id: string; nome: string | null }>(sql`SELECT id::text, titulo AS nome FROM oportunidades WHERE organizacao_id = ${organizacaoId}::uuid AND id::text IN (${sql.join(o.map((x) => sql`${x}`), sql`, `)})`)) if (r.nome) nomes.set(r.id, r.nome);
+  if (a.length) for (const r of await db.execute<{ id: string; nome: string | null }>(sql`SELECT a.id::text, trim(concat_ws(' ', p.nome, p.sobrenome)) AS nome FROM aquisicoes a JOIN pessoas p ON p.id = a.pessoa_id WHERE a.organizacao_id = ${organizacaoId}::uuid AND a.id::text IN (${sql.join(a.map((x) => sql`${x}`), sql`, `)})`)) if (r.nome) nomes.set(r.id, r.nome);
+  return itens.map((i) => ({ ...i, entidadeNome: nomes.get(i.entidadeId) ?? null }));
+}
 /** Contagens da org inteira (não só da página listada). */
 export async function resumoExecucoes(organizacaoId: string): Promise<ResumoExecucoes> {
   const [fila, [auto], [cad]] = await Promise.all([

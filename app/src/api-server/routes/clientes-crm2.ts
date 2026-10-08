@@ -22,6 +22,7 @@ import { abrirPortal } from "@/lib/integrations/stripe-portal";
 import { registrarMudancaResponsavel } from "@/lib/crm/owner";
 import { publicarEvento } from "@/lib/events/outbox";
 import { appUrl } from "@/lib/app-url";
+import { guardarNoAcervo } from "@/lib/arquivos/servico";
 
 // CS — Health Check (24/08, achado real: NPS já existe como infra (tabela
 // `nps_respostas`, rota pública de resposta em nps.ts) mas NUNCA é
@@ -1742,6 +1743,33 @@ app.post("/clientes/:empresaId/portal-stripe", async (c) => {
     // customer apagado, chave errada) — e sem isso ninguém conserta.
     return c.json({ error: `O Stripe recusou abrir o portal: ${erro instanceof Error ? erro.message : String(erro)}` }, 502);
   }
+});
+
+// POST /clientes/:empresaId/documentos — multipart `file`. Documento do Cliente 360:
+// vai para o acervo canônico (checksum, dedup, org na chave) com vínculo `empresa`,
+// que é de onde a aba Documentos lê. Antes o botão "Enviar" só avisava que não gravava.
+app.post("/clientes/:empresaId/documentos", async (c) => {
+  const ctx = await getCtx(c);
+  const empresaId = c.req.param("empresaId");
+  if (!UUID_RE.test(empresaId)) return c.json({ error: "empresaId inválido" }, 400);
+  const [cli] = await db.select({ id: clientes.id }).from(clientes)
+    .where(and(eq(clientes.empresaId, empresaId), eq(clientes.organizacaoId, ctx.organizacaoId))).limit(1);
+  if (!cli) return c.json({ error: "Cliente não encontrado" }, 404);
+
+  const file = (await c.req.formData()).get("file") as File | null;
+  if (!file || typeof file === "string") return c.json({ error: "Nenhum arquivo enviado" }, 400);
+
+  const guardado = await guardarNoAcervo({
+    organizacaoId: ctx.organizacaoId,
+    nomeOriginal: file.name,
+    mimeType: file.type,
+    conteudo: new Uint8Array(await file.arrayBuffer()),
+    enviadoPorId: ctx.userId,
+    vinculos: [{ tipo: "empresa", id: empresaId, papel: "documento" }],
+    metadata: { origem: "cliente_360" },
+  });
+  if (!guardado.ok) return c.json({ error: guardado.erro }, 400);
+  return c.json({ id: guardado.arquivo.id, nome: file.name }, 201);
 });
 
 export const clientesCrm2Routes = app;

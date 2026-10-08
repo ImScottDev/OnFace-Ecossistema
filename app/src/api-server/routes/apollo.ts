@@ -1,4 +1,6 @@
 import crypto from "node:crypto";
+import { registrarEvento } from "@/lib/vendas/eventos";
+import { atorHumano } from "@/lib/vendas/dominio";
 import { garantirEntradaCanonica } from "../../lib/vendas/ponte-canonica.js";
 import { Hono } from "hono";
 import { db } from "@/lib/db";
@@ -293,6 +295,13 @@ app.post("/import", async (c) => {
 
       // F1/dual-write: import de prospecção — best-effort.
       await syncPessoaFromLead(newLead.id);
+
+      // Rastro do ciclo: quem importou, quando e de onde (mesmo evento do importar CSV).
+      await registrarEvento({
+        organizacaoId: ctx.organizacaoId, tipo: "ProspectImported", ator: atorHumano(ctx.userId),
+        leadId: newLead.id, empresaId,
+        contexto: { fonte: "apollo", lista: null, empresaJaExistia: Boolean(empresaId) },
+      }).catch((e) => console.warn("[apollo] ProspectImported não registrado:", e));
 
       results.push({ apolloId, leadId: newLead.id });
     } catch (error) {

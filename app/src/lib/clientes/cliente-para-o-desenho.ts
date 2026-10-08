@@ -46,6 +46,10 @@ export interface ContratoDoCliente {
 
 export interface AnexoDoCliente {
   id: string;
+  /** `upload` = enviado pelo 360 (acervo canônico, removível); `legado` = anexo do Zoho. */
+  origem: "legado" | "upload";
+  /** Endereço de entrega do arquivo; só o upload tem. */
+  url: string | null;
   entidadeTipo: string;
   entidadeId: string;
   categoria: string | null;
@@ -63,8 +67,20 @@ export interface TarefaDoCliente {
   responsavel: string | null;
 }
 
+export interface NotaDoCliente { id: string; texto: string; autor: string | null; em: string }
+
 export interface ClienteDoDesenho {
   empresa: Empresa360;
+  /** `clientes.id`: é a chave de `notas.cliente_id`. */
+  clienteId: string;
+  /** Notas escritas na conta (notas.empresa_id), mais recentes primeiro. */
+  notas: NotaDoCliente[];
+  /** Quem é o CSM gravado (COALESCE(responsavel_cs_id, responsavel_id)). */
+  csmId: string | null;
+  /** `clientes.pessoa_principal_id`: o contato principal DESIGNADO (null = ninguém designado). */
+  principalId: string | null;
+  /** Equipe ativa com id: o menu de CS grava pelo id, nunca pelo nome. */
+  equipeIds: Array<{ id: string; nome: string }>;
   clienteDesde: string | null;
   servicos: ServicoDoCliente[];
   contratos: ContratoDoCliente[];
@@ -97,11 +113,14 @@ export async function clienteParaODesenho(organizacaoId: string, empresaId: stri
    * entra como último recurso, e só se a data não for um dia de carga em massa
    * — medido pelo próprio dado (mais de 20 clientes no mesmo dia), para não
    * depender de uma data escrita no código. */
-  const [cli] = await db.execute<{ cliente_desde: string | null }>(sql`
-    SELECT COALESCE(
+  const [cli] = await db.execute<{ cliente_desde: string | null; cliente_id: string; csm_id: string | null; principal_id: string | null }>(sql`
+    SELECT c.id::text AS cliente_id,
+           COALESCE(c.responsavel_cs_id, c.responsavel_id)::text AS csm_id,
+           c.pessoa_principal_id::text AS principal_id,
+           COALESCE(
              LEAST(
-               (SELECT min(n.ganho_at) FROM negocios n
-                 WHERE n.empresa_id = c.empresa_id AND n.organizacao_id = c.organizacao_id AND n.ganho_at IS NOT NULL),
+               (SELECT min(n.ganho_at) FROM negocios n LEFT JOIN leads nl ON nl.id = n.lead_id
+                 WHERE COALESCE(n.empresa_id, nl.empresa_id) = c.empresa_id AND n.organizacao_id = c.organizacao_id AND n.ganho_at IS NOT NULL),
                (SELECT min(ct.inicio)::timestamptz FROM contratos ct
                  WHERE ct.empresa_id = c.empresa_id AND ct.inicio IS NOT NULL),
                (SELECT min(f.paga_em) FROM faturas f
@@ -135,7 +154,10 @@ export async function clienteParaODesenho(organizacaoId: string, empresaId: stri
            commercial_lifecycle AS lifecycle, contrato_id::text
       FROM servicos_canonicos
      WHERE organizacao_id = ${organizacaoId}::uuid AND empresa_id = ${empresaId}::uuid
-       AND portfolio_included = true
+       -- + o serviço que o Ganho acabou de criar (CRM_POSVENDA): nasce fora do portfólio de receita
+       -- de propósito (valor 0, não entra no MRR), mas o cliente comprou e o 360 não pode mostrar
+       -- "0 produtos" com o onboarding em curso.
+       AND (portfolio_included = true OR billing_source = 'CRM_POSVENDA')
      ORDER BY current_recurring_value DESC NULLS LAST`);
 
   /* Cliente que FATURA MRR numa família sem serviço de portfólio ficava com a
@@ -192,8 +214,8 @@ export async function clienteParaODesenho(organizacaoId: string, empresaId: stri
      ORDER BY created_at`) : [];
 
   const [closer] = await db.execute<{ nome: string | null }>(sql`
-    SELECT u.nome FROM negocios n JOIN usuarios u ON u.id = n.responsavel_id
-     WHERE n.empresa_id = ${empresaId}::uuid AND n.etapa = 'ganho'
+    SELECT u.nome FROM negocios n JOIN usuarios u ON u.id = n.responsavel_id LEFT JOIN leads nl ON nl.id = n.lead_id
+     WHERE COALESCE(n.empresa_id, nl.empresa_id) = ${empresaId}::uuid AND n.etapa = 'ganho'
      ORDER BY n.ganho_at ASC NULLS LAST LIMIT 1`);
 
   const [csmRow] = await db.execute<{ nome: string | null }>(sql`
@@ -208,13 +230,14 @@ export async function clienteParaODesenho(organizacaoId: string, empresaId: stri
        AND f.completed_at IS NULL AND f.cancelled_at IS NULL`);
 
   const negocioIds = (await db.execute<{ id: string }>(sql`
-    SELECT id::text FROM negocios WHERE empresa_id = ${empresaId}::uuid`)).map((r) => r.id);
+    SELECT n.id::text FROM negocios n LEFT JOIN leads nl ON nl.id = n.lead_id
+     WHERE COALESCE(n.empresa_id, nl.empresa_id) = ${empresaId}::uuid`)).map((r) => r.id);
 
   /* Anexos do Zoho ligados à empresa, aos contratos e aos negócios dela. O
      binário só existe onde `resolveLocalPath` acha — `disponivel` é a mesma
      regra da rota de download, então o botão não promete o que a rota recusa. */
   const alvosAnexo = [empresaId, ...idsContrato, ...negocioIds];
-  const anexos = await db.execute<{
+  const anexosLegado = await db.execute<{
     id: string; entidade_tipo: string; entidade_id: string; categoria: string | null; nome_arquivo: string;
     tamanho_bytes: number | null; criado_em: string | null; storage_path: string | null;
   }>(sql`
@@ -224,6 +247,26 @@ export async function clienteParaODesenho(organizacaoId: string, empresaId: stri
      WHERE organizacao_id = ${organizacaoId}::uuid
        AND entidade_id IN (${sql.join(alvosAnexo.map((id) => sql`${id}::uuid`), sql`, `)})
      ORDER BY criado_em_original DESC NULLS LAST`);
+
+  /* Arquivos enviados pelo próprio 360 (acervo canônico, `file_links` com
+     entidade empresa). Mesma lista da aba, origem diferente: estes se removem. */
+  const uploads = await db.execute<{ id: string; file_id: string; nome: string; tamanho: string | null; criado_em: string }>(sql`
+    SELECT fl.id::text AS id, fo.id::text AS file_id, fo.nome_original AS nome,
+           fo.tamanho_bytes::text AS tamanho, fo.created_at::text AS criado_em
+      FROM file_links fl JOIN file_objects fo ON fo.id = fl.file_object_id
+     WHERE fl.organizacao_id = ${organizacaoId}::uuid AND fl.entity_type = 'empresa'
+       AND fl.entity_id = ${empresaId}::uuid AND fo.deleted_at IS NULL
+     ORDER BY fo.created_at DESC`);
+
+  const notas = await db.execute<{ id: string; texto: string; autor: string | null; em: string }>(sql`
+    SELECT n.id::text, n.conteudo AS texto, COALESCE(u.nome, n.autor_display_name) AS autor, n.created_at::text AS em
+      FROM notas n LEFT JOIN usuarios u ON u.id = n.autor_id
+     WHERE n.organizacao_id = ${organizacaoId}::uuid
+       AND (n.empresa_id = ${empresaId}::uuid OR n.cliente_id = ${cli.cliente_id}::uuid)
+     ORDER BY n.created_at DESC LIMIT 100`);
+
+  const equipeIds = await db.execute<{ id: string; nome: string }>(sql`
+    SELECT id::text, nome FROM usuarios WHERE organizacao_id = ${organizacaoId}::uuid AND ativo = true ORDER BY nome`);
 
   const tarefas = await db.execute<{
     id: string; titulo: string; tipo: string | null; vence_em: string | null; responsavel: string | null;
@@ -235,7 +278,7 @@ export async function clienteParaODesenho(organizacaoId: string, empresaId: stri
       UNION
       SELECT t.id FROM tarefas t JOIN leads l ON l.id = t.lead_id WHERE l.empresa_id = ${empresaId}::uuid
     )
-    SELECT t.id::text, t.titulo, t.tipo, COALESCE(t.vence_em, t.data_vencimento)::text AS vence_em, u.nome AS responsavel
+    SELECT t.id::text, t.titulo, t.tipo, COALESCE(t.vence_em::text, t.data_vencimento::text) AS vence_em, u.nome AS responsavel
       FROM tarefas t JOIN alvo ON alvo.id = t.id LEFT JOIN usuarios u ON u.id = t.usuario_id
      WHERE NOT t.concluida
      ORDER BY COALESCE(t.vence_em, t.data_vencimento) ASC NULLS LAST LIMIT 20`);
@@ -295,6 +338,11 @@ export async function clienteParaODesenho(organizacaoId: string, empresaId: stri
 
   return {
     empresa,
+    clienteId: cli.cliente_id,
+    notas,
+    csmId: cli.csm_id,
+    principalId: cli.principal_id,
+    equipeIds,
     clienteDesde: cli.cliente_desde,
     servicos: servicos.map((s) => ({
       id: s.id, familia: s.familia, produto: s.produto, valor: Number(s.valor ?? 0),
@@ -317,10 +365,16 @@ export async function clienteParaODesenho(organizacaoId: string, empresaId: stri
     csm: csmRow?.nome ?? null,
     faturamento,
     fulfillmentAberto: (fulfill?.n ?? 0) > 0,
-    anexos: anexos.map((a) => ({
-      id: a.id, entidadeTipo: a.entidade_tipo, entidadeId: a.entidade_id, categoria: a.categoria, nome: a.nome_arquivo,
-      tamanhoBytes: a.tamanho_bytes, criadoEm: a.criado_em, disponivel: resolveLocalPath(a.storage_path) !== null,
-    })),
+    anexos: [
+      ...uploads.map((u): AnexoDoCliente => ({
+        id: u.id, origem: "upload", url: "/api/arquivos/" + u.file_id, entidadeTipo: "empresa", entidadeId: empresaId,
+        categoria: null, nome: u.nome, tamanhoBytes: u.tamanho === null ? null : Number(u.tamanho), criadoEm: u.criado_em, disponivel: true,
+      })),
+      ...anexosLegado.map((a): AnexoDoCliente => ({
+        id: a.id, origem: "legado", url: null, entidadeTipo: a.entidade_tipo, entidadeId: a.entidade_id, categoria: a.categoria, nome: a.nome_arquivo,
+        tamanhoBytes: a.tamanho_bytes, criadoEm: a.criado_em, disponivel: resolveLocalPath(a.storage_path) !== null,
+      })),
+    ],
     tarefas: tarefas.map((t) => ({ id: t.id, titulo: t.titulo, tipo: t.tipo, venceEm: t.vence_em, responsavel: t.responsavel })),
     equipe,
     timeline,

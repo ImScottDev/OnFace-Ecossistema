@@ -9,6 +9,7 @@ import { syncOportunidadeFromNegocio } from "@/lib/crm/sync-domain-model";
 import { dispararAutomacoes } from "@/lib/crm/automacao-engine";
 import { avaliarEvidenciaWon, registrarEvidenciaManual, aplicarEfeitosPosGanho } from "@/lib/crm/won-evidence";
 import { publicarEvento } from "@/lib/events/outbox";
+import { registrarEvento, registrarMudancaDeEtapa } from "@/lib/vendas/eventos";
 import { garantirItemComercialManual } from "@/lib/crm/composicao-comercial";
 import { listarOportunidadesIrmas } from "@/lib/crm/oportunidade-bundle";
 import { materializarServicosCanonicosDoNegocio } from "@/lib/crm/servico-canonico";
@@ -457,6 +458,8 @@ app.post("/negocios", async (c) => {
       concorrenteAtual: parsed.data.concorrenteAtual,
       contratoVenceEm: parsed.data.contratoVenceEm,
       origemNegocio: parsed.data.origemNegocio || "novo",
+      // Sem isto o 360 contava "Veio do Pré-vendas" para negócio criado à mão.
+      sourceProcess: "MANUAL",
       commercialMotion: parsed.data.commercialMotion || "NEW_BUSINESS",
       // Negócio criado manualmente (closer direto, sem passar pelo converter) =
       // qualificação direta sem reunião — relatório SDR separa os dois fluxos.
@@ -480,6 +483,22 @@ app.post("/negocios", async (c) => {
 
   // F1/dual-write: sincroniza Oportunidade — best-effort, nunca bloqueia a criação real.
   await syncOportunidadeFromNegocio(negocio.id);
+
+  // Quem criou, quando e em que etapa: sem estes dois eventos a oportunidade manual nasce sem
+  // histórico (o Pipeline e os relatórios de tempo por etapa leem daqui). Best-effort.
+  try {
+    const ator = { tipo: "HUMAN" as const, usuarioId: ctx.userId };
+    await registrarMudancaDeEtapa({
+      organizacaoId: ctx.organizacaoId, ator, negocioId: negocio.id, leadId: resolvedLeadId || null,
+      de: null, para: "entrada", tipo: "OpportunityStageChanged", motivo: "Oportunidade criada",
+    });
+    await registrarEvento({
+      organizacaoId: ctx.organizacaoId, tipo: "OpportunityCreated", ator, negocioId: negocio.id,
+      leadId: resolvedLeadId || null, empresaId: negocio.empresaId ?? null,
+      contexto: { familia: null, motion: negocio.commercialMotion, sourceProcess: "MANUAL", titulo: negocio.titulo },
+      timeline: { tipo: "nota", titulo: "Oportunidade criada", descricao: negocio.titulo },
+    });
+  } catch (e) { console.error("[negocios] evento de criação:", e); }
 
   // F5/Automation: gatilho "novo_negocio" — best-effort.
   await dispararAutomacoes("novo_negocio", {

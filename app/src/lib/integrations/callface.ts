@@ -408,6 +408,17 @@ export async function processCallfaceCallEvent(db: Db, payload: CallfaceCallPayl
     console.error("[F2/dual-write] falha ao sincronizar communications da ligação (best-effort):", err);
   }
 
+  // SLA: ligação feita para um lead de Pré-vendas ainda não contatado é o
+  // primeiro contato (porta única: registra FirstContactMade com a data da ligação).
+  if (lead) {
+    const { registrarContatoSaindo } = await import("@/lib/vendas/pre-vendas");
+    await registrarContatoSaindo({
+      organizacaoId: orgId, leadId: lead.id, canal: "ligacao",
+      ator: { tipo: "HUMAN", usuarioId, ref: null },
+      ocorridoEm: callDate && !Number.isNaN(callDate.getTime()) ? callDate : undefined,
+    });
+  }
+
   const numeroFmt = payload.destination_number ? formatPhoneDisplay(String(payload.destination_number)) : "número desconhecido";
   const quemLigou = payload.user_name || payload.user_email || "vendedor";
 

@@ -12,6 +12,7 @@
  * Arquivo próprio da tela: `lib/vendas/consultas.ts` é compartilhado.
  */
 import { sql } from "drizzle-orm";
+import { nomeEmpresaSql } from "@/lib/vendas/texto";
 import { db } from "@/lib/db";
 import { MARCOS_AI, MARCO_AI_POR_WORKSTREAM, FASE_PABX_POR_WORKSTREAM } from "@/lib/crm/pos-venda-checklists";
 
@@ -88,7 +89,7 @@ export async function painelOnboarding(organizacaoId: string): Promise<PainelOnb
            f.responsavel_id::text AS resp_id, u.nome AS resp_nome,
            sc.id::text AS servico_id, sc.empresa_id::text, sc.lead_id::text,
            sc.oportunidade_origem_id::text AS opp_id, sc.canonical_product,
-           e.nome AS empresa_nome, l.empresa AS lead_empresa,
+           ${nomeEmpresaSql("e.nome")} AS empresa_nome, l.empresa AS lead_empresa,
            l.nome AS contato_nome, l.cargo, l.email, l.telefone,
            oc.implementation_required AS exige_implantacao,
            /* Gate de handoff: cópia LITERAL de handoff-implantacao.ts:carregar.
@@ -228,7 +229,7 @@ export async function painelOnboarding(organizacaoId: string): Promise<PainelOnb
     const faltaGate = gate.filter((g, ix) => ix < 2 && !g.ok).map((g) => g.n.toLowerCase());
     const atual = abertasItens[0]
       ? paraK(abertasItens[0])
-      : !pronto && exige && !cai && faltaGate.length
+      : tipo === "onboarding" && !pronto && exige && !cai && faltaGate.length
         ? { id: null, titulo: "Handoff pendente: " + faltaGate.join(" e "), tipo: "Gate de handoff", sub: [], fimD: null, fimH: "" }
         : null;
 
@@ -255,7 +256,7 @@ export async function painelOnboarding(organizacaoId: string): Promise<PainelOnb
       bloqueio, prazo: null, concluido: false, handoff: null,
       c: {
         ativo: true, pct, feitas, total: aplicaveis.length, kids: itens.length,
-        atual, atualIdx: 0, proxSub: -1, faseNome: faseDe(familia, abertasItens[0]),
+        atual, atualIdx: 0, proxSub: -1, faseNome: itens.length ? faseDe(familia, abertasItens[0]) : "Sem checklist cadastrado",
         abertas: abertasItens.map(paraK),
         gate, gateOk, tudo, pronto, cai,
         // Sem prazo no banco: nada está PROVADO atrasado, nem perto do go-live.

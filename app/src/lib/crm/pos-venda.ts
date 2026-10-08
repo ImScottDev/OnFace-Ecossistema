@@ -445,6 +445,19 @@ export async function criarPosVendaDoNegocio(
       });
     }
 
+    /* Marco medível: do Ganho ao começo da entrega. Sem este evento o tempo entre os dois só
+       existia como diferença de created_at entre duas tabelas. Best-effort: o pós-venda já nasceu. */
+    try {
+      const { registrarEvento } = await import("@/lib/vendas/eventos");
+      await registrarEvento({
+        organizacaoId: negocio.organizacaoId, tipo: "OnboardingStarted", ator: { tipo: "SYSTEM", usuarioId: null, ref: "pos_venda_canonico" },
+        negocioId, empresaId: negocio.empresaId, leadId: negocio.leadId,
+        contexto: { familia, trilha: regra.trilha, servicoCanonicoId: servicoId, fulfillmentId: fulfillment.id, itensChecklist: regra.checklist.length, ganhoEm: wonAt.toISOString() },
+      });
+    } catch (e) {
+      console.error("[pos-venda] evento OnboardingStarted não gravado:", e);
+    }
+
     return {
       criado: true,
       familia,

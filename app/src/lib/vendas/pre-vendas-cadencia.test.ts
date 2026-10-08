@@ -1,25 +1,37 @@
 /**
  * E11 e item 4 do marco zero, só leitura (nenhuma escrita no banco):
- *  - o passo da cadência vem do último toque quando não há inscrição;
+ *  - o chip de cadência só existe com inscrição viva (a régua antiga "Toque N" saiu);
  *  - o Kanban único traz Nutrição e Desqualificado com card, não só total.
  * Precisa de DATABASE_URL; pula sem ela.
  */
 import test from "node:test";
 import assert from "node:assert/strict";
 
-test("passoDaCadenciaPorLead devolve o último toque de quem não tem inscrição", async (t) => {
+test("passoDaCadenciaPorLead só conta inscrição viva: sem inscrição não há chip, e 'Toque N' não existe mais", async (t) => {
   if (!process.env.DATABASE_URL) return t.skip("DATABASE_URL não definida");
   const { db } = await import("@/lib/db");
   const { sql } = await import("drizzle-orm");
   const { passoDaCadenciaPorLead } = await import("./pre-vendas.js");
 
-  const [x] = await db.execute<{ org: string; lead: string; ordem: number }>(sql`
-    SELECT DISTINCT ON (lead_id) organizacao_id::text AS org, lead_id::text AS lead, ordem
-      FROM cadencia_execucoes ORDER BY lead_id, enviado_em DESC, ordem DESC LIMIT 1`);
-  if (!x) return t.skip("sem cadencia_execucoes");
-  const mapa = await passoDaCadenciaPorLead(x.org, [x.lead]);
-  assert.match(mapa[x.lead] ?? "", new RegExp(`^(Toque ${x.ordem} · |Cadência )`));
-  assert.deepEqual(await passoDaCadenciaPorLead(x.org, []), {});
+  // Lead com régua antiga (cadencia_execucoes) e SEM inscrição viva: não ganha chip.
+  const [x] = await db.execute<{ org: string; lead: string }>(sql`
+    SELECT x.organizacao_id::text AS org, x.lead_id::text AS lead FROM cadencia_execucoes x
+     WHERE NOT EXISTS (SELECT 1 FROM cadence_enrollments e WHERE e.entity_type = 'lead'
+                        AND e.entity_id = x.lead_id AND e.status IN ('active', 'waiting'))
+     LIMIT 1`);
+  if (x) {
+    const mapa = await passoDaCadenciaPorLead(x.org, [x.lead]);
+    assert.equal(mapa[x.lead], undefined);
+  }
+  // Quem tem inscrição viva mostra o nome da cadência, nunca "Toque N · canal".
+  const [v] = await db.execute<{ org: string; lead: string }>(sql`
+    SELECT organizacao_id::text AS org, entity_id::text AS lead FROM cadence_enrollments
+     WHERE entity_type = 'lead' AND status IN ('active', 'waiting') LIMIT 1`);
+  if (v) {
+    const mapa = await passoDaCadenciaPorLead(v.org, [v.lead]);
+    assert.match(mapa[v.lead] ?? "", /^Cadência /);
+  }
+  assert.deepEqual(await passoDaCadenciaPorLead("00000000-0000-0000-0000-000000000000", []), {});
 });
 
 test("o Kanban único mostra cards de Nutrição e Desqualificado", async (t) => {

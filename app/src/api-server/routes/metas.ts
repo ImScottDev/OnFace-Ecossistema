@@ -5,7 +5,7 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { getCtx } from "../compat.js";
 import { isAdminView } from "@/lib/auth/roles";
-import { getMetasDoUsuario, getRealizadoMeta, upsertMeta, META_TIPOS, type MetaTipo } from "@/lib/metas";
+import { getMetasDaOrganizacao, getMetasDoUsuario, getRealizadoMeta, upsertMeta, META_TIPOS, type MetaTipo } from "@/lib/metas";
 
 const app = new Hono();
 
@@ -47,6 +47,14 @@ app.post("/", async (c) => {
     criadoPor: ctx.userId,
   });
   return c.json({ meta });
+});
+
+// GET /metas?periodo=YYYY-MM — metas definidas de toda a equipe no mês (admin/gerente)
+app.get("/", async (c) => {
+  const ctx = await getCtx(c);
+  if (!isAdminView(ctx.userRole)) return c.json({ error: "Forbidden" }, 403);
+  const periodo = c.req.query("periodo") || new Date().toISOString().slice(0, 10);
+  return c.json({ metas: await getMetasDaOrganizacao(ctx.organizacaoId, periodo) });
 });
 
 // GET /metas/usuario/:usuarioId?periodo=YYYY-MM-DD — metas + realizado do mês

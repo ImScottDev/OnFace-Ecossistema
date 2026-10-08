@@ -121,7 +121,9 @@ app.post("/cs/carteira/atribuir", async (c) => {
   // `returning` dá a contagem REAL: empresa sem linha em clientes não é atualizada
   // e antes o endpoint respondia "atualizados: N" (N pedido) e auditava a conta fantasma.
   const atualizadas = await db.update(clientes)
-    .set({ responsavelId: parsed.data.responsavelId, updatedAt: new Date() })
+    // As duas colunas de dono: o 360 e a tela de CS leem COALESCE(responsavel_cs_id, responsavel_id),
+    // então gravar só uma deixava a outra mandando com o nome antigo.
+    .set({ responsavelId: parsed.data.responsavelId, responsavelCsId: parsed.data.responsavelId, updatedAt: new Date() })
     .where(and(eq(clientes.organizacaoId, ctx.organizacaoId), inArray(clientes.empresaId, parsed.data.empresaIds)))
     .returning({ empresaId: clientes.empresaId });
   const idsAtualizados = [...new Set(atualizadas.map((r) => r.empresaId).filter((x): x is string => !!x))];
@@ -570,6 +572,8 @@ const expansaoSchema = z.object({
   valorEstimado: z.string().optional().nullable(),
   descricao: z.string().trim().max(4000).optional().nullable(),
   pipelineId: z.string().uuid().optional().nullable(),
+  /** Closer que assume a expansão; vazio = quem criou. */
+  responsavelId: z.string().uuid().optional().nullable(),
 });
 
 app.post("/cs/clientes/:empresaId/expansao", async (c) => {
@@ -599,6 +603,14 @@ app.post("/cs/clientes/:empresaId/expansao", async (c) => {
     .where(and(eq(leads.empresaId, empresaId), eq(leads.organizacaoId, ctx.organizacaoId)))
     .orderBy(desc(leads.updatedAt)).limit(1);
 
+  let responsavelId = ctx.userId;
+  if (parsed.data.responsavelId) {
+    const [u] = await db.select({ id: usuarios.id }).from(usuarios)
+      .where(and(eq(usuarios.id, parsed.data.responsavelId), eq(usuarios.organizacaoId, ctx.organizacaoId), eq(usuarios.ativo, true))).limit(1);
+    if (!u) return c.json({ error: "Closer não encontrado na equipe" }, 400);
+    responsavelId = u.id;
+  }
+
   const [negocio] = await db.insert(negocios).values({
     organizacaoId: ctx.organizacaoId,
     empresaId,
@@ -614,7 +626,7 @@ app.post("/cs/clientes/:empresaId/expansao", async (c) => {
     servicoOrigemId: parsed.data.servicoOrigemId ?? null,
     serviceFamily,
     valorTotal: parsed.data.valorEstimado ?? null,
-    responsavelId: ctx.userId,
+    responsavelId,
     pipelineId: parsed.data.pipelineId ?? null,
     camposCustom: { tipoExpansao: parsed.data.tipo, origemCs: true },
   }).returning();

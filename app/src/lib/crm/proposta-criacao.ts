@@ -69,6 +69,58 @@ function calcSubtotal(qty: number, unit: number, desc: number, descTipo: string 
   return Math.round(qty * unit * (1 - desc / 100) * 100) / 100;
 }
 
+type ItemCalculado = ItemEntrada & { subtotal: number; ordem: number };
+
+/** Grava as linhas da proposta amarradas ao catálogo oficial. Uma porta só: criar e editar rascunho. */
+async function inserirItensDaProposta(propostaId: string, moeda: string, itensWithCalc: ItemCalculado[]) {
+  if (itensWithCalc.length === 0) return;
+  // Catálogo Oficial Stripe (02/09) — carrega os prices escolhidos DO BANCO.
+  // Nunca confia no que o cliente mandou pra família/natureza/preço de
+  // tabela: o front manda só o `catalogoPrecoId`, o resto é lido aqui.
+  const precoMap = await carregarPrecosOficiais(itensWithCalc.map((i) => i.catalogoPrecoId));
+  // Um price oficial também é a fonte do produto pai. Sem isso a proposta
+  // fica com o price, mas sem `servico_catalogo_id`; o checkout posterior
+  // não consegue carregar o Stripe Product e falha no fim da venda.
+  const servicosCatalogoIds = itensWithCalc.map((item) =>
+    (item.catalogoPrecoId ? precoMap.get(item.catalogoPrecoId)?.servicoCatalogoId : undefined)
+    ?? item.servicoCatalogoId,
+  );
+  const familyMap = await resolverServiceFamiliesPorCatalogoIds(servicosCatalogoIds);
+  const commercialModelMap = await resolverCommercialModelPadraoPorCatalogoIds(servicosCatalogoIds);
+  await db.insert(propostaItens).values(
+    itensWithCalc.map((item) => {
+      const preco = item.catalogoPrecoId ? precoMap.get(item.catalogoPrecoId) : undefined;
+      const servicoCatalogoId = preco?.servicoCatalogoId ?? item.servicoCatalogoId;
+      return {
+        propostaId,
+        servicoCatalogoId: servicoCatalogoId || undefined,
+        nome: item.nome,
+        descricao: item.descricao,
+        tipo: item.tipo,
+        moeda,
+        quantidade: item.quantidade.toString(),
+        valorUnitario: item.valorUnitario.toFixed(2),
+        desconto: item.desconto.toFixed(2),
+        descontoTipo: item.descontoTipo,
+        subtotal: item.subtotal.toFixed(2),
+        ordem: item.ordem,
+        // Família e natureza do PRICE oficial quando existe (é ele que
+        // declara), com o catálogo do produto como fallback pro legado.
+        serviceFamily: preco?.serviceFamily || (servicoCatalogoId ? familyMap.get(servicoCatalogoId) || "UNKNOWN" : "UNKNOWN"),
+        revenueNature: preco?.revenueNature || mapTipoParaRevenueNature(item.tipo),
+        commercialModel: resolverCommercialModelDoItem({ overrideExplicito: item.commercialModel, servicoCatalogoId, catalogoDefaultMap: commercialModelMap }),
+        // Rastreabilidade oficial: imutável, não sofre desconto.
+        catalogoPrecoId: preco?.id,
+        stripeProductId: preco?.stripeProductId,
+        stripePriceId: preco?.stripePriceId,
+        skuPreco: preco?.sku,
+        variacao: preco?.variacao,
+        valorTabela: preco?.valor,
+      };
+    })
+  );
+}
+
 export async function criarPropostaComItens(opts: {
   organizacaoId: string;
   leadId: string;
@@ -156,56 +208,73 @@ export async function criarPropostaComItens(opts: {
     criadoPorId: opts.criadoPorId,
   }).returning();
 
-  if (itensWithCalc.length > 0) {
-    // Catálogo Oficial Stripe (02/09) — carrega os prices escolhidos DO BANCO.
-    // Nunca confia no que o cliente mandou pra família/natureza/preço de
-    // tabela: o front manda só o `catalogoPrecoId`, o resto é lido aqui.
-    const precoMap = await carregarPrecosOficiais(itensWithCalc.map((i) => i.catalogoPrecoId));
-    // Um price oficial também é a fonte do produto pai. Sem isso a proposta
-    // fica com o price, mas sem `servico_catalogo_id`; o checkout posterior
-    // não consegue carregar o Stripe Product e falha no fim da venda.
-    const servicosCatalogoIds = itensWithCalc.map((item) =>
-      (item.catalogoPrecoId ? precoMap.get(item.catalogoPrecoId)?.servicoCatalogoId : undefined)
-      ?? item.servicoCatalogoId,
-    );
-    const familyMap = await resolverServiceFamiliesPorCatalogoIds(servicosCatalogoIds);
-    const commercialModelMap = await resolverCommercialModelPadraoPorCatalogoIds(servicosCatalogoIds);
-    await db.insert(propostaItens).values(
-      itensWithCalc.map((item) => {
-        const preco = item.catalogoPrecoId ? precoMap.get(item.catalogoPrecoId) : undefined;
-        const servicoCatalogoId = preco?.servicoCatalogoId ?? item.servicoCatalogoId;
-        return {
-          propostaId: proposta.id,
-          servicoCatalogoId: servicoCatalogoId || undefined,
-          nome: item.nome,
-          descricao: item.descricao,
-          tipo: item.tipo,
-          moeda: opts.moeda,
-          quantidade: item.quantidade.toString(),
-          valorUnitario: item.valorUnitario.toFixed(2),
-          desconto: item.desconto.toFixed(2),
-          descontoTipo: item.descontoTipo,
-          subtotal: item.subtotal.toFixed(2),
-          ordem: item.ordem,
-          // Família e natureza do PRICE oficial quando existe (é ele que
-          // declara), com o catálogo do produto como fallback pro legado.
-          serviceFamily: preco?.serviceFamily || (servicoCatalogoId ? familyMap.get(servicoCatalogoId) || "UNKNOWN" : "UNKNOWN"),
-          revenueNature: preco?.revenueNature || mapTipoParaRevenueNature(item.tipo),
-          commercialModel: resolverCommercialModelDoItem({ overrideExplicito: item.commercialModel, servicoCatalogoId, catalogoDefaultMap: commercialModelMap }),
-          // Rastreabilidade oficial: imutável, não sofre desconto.
-          catalogoPrecoId: preco?.id,
-          stripeProductId: preco?.stripeProductId,
-          stripePriceId: preco?.stripePriceId,
-          skuPreco: preco?.sku,
-          variacao: preco?.variacao,
-          valorTabela: preco?.valor,
-        };
-      })
-    );
-  }
+  await inserirItensDaProposta(proposta.id, opts.moeda, itensWithCalc);
 
   await syncNegocioValoresFromPropostas(opts.negocioId);
   await syncOportunidadeItensFromProposta(proposta.id);
 
   return { ...proposta, numeroFormatado: `#P-${String(numero).padStart(3, "0")}-v1` };
+}
+
+
+/**
+ * Edita as linhas de um RASCUNHO.
+ *
+ * Linha com `itemExistenteId` (proposta legada, sem preço no catálogo) é mantida
+ * e só tem quantidade, valor e desconto atualizados; linha nova entra pelo
+ * catálogo; o que ficou de fora sai. Os totais são recalculados do que ficou.
+ */
+export async function atualizarItensDoRascunho(opts: {
+  organizacaoId: string;
+  propostaId: string;
+  itens: Array<ItemEntrada & { itemExistenteId?: string | null }>;
+  observacoes?: string | null;
+  prazoContratoMeses?: number | null;
+  parcelas?: number | null;
+}) {
+  const [p] = await db.execute<{ status: string; negocio_id: string | null; moeda: string }>(sql`
+    SELECT status, negocio_id::text, moeda FROM propostas
+     WHERE id = ${opts.propostaId}::uuid AND organizacao_id = ${opts.organizacaoId}::uuid`);
+  if (!p) throw new RegraDeNegocio("proposta_nao_encontrada", "Proposta não encontrada.");
+  if (p.status !== "rascunho") {
+    throw new RegraDeNegocio("proposta_nao_e_rascunho", "Só rascunho se edita. Para mudar uma proposta enviada, crie uma revisão.");
+  }
+  if (opts.itens.length === 0) throw new RegraDeNegocio("proposta_sem_itens", "A proposta precisa de pelo menos um item.");
+
+  const calc = opts.itens.map((item, idx) => ({
+    ...item, ordem: idx,
+    subtotal: calcSubtotal(item.quantidade, item.valorUnitario, item.desconto, item.descontoTipo),
+  }));
+  const mantidos = calc.filter((i) => i.itemExistenteId);
+  const novos = calc.filter((i) => !i.itemExistenteId);
+
+  // oportunidade_itens aponta para proposta_itens (FK RESTRICT): soltar antes de apagar.
+  if (p.negocio_id) {
+    const { limparOportunidadeItensDeOrigemProposta } = await import("@/lib/crm/composicao-comercial");
+    await limparOportunidadeItensDeOrigemProposta(p.negocio_id);
+  }
+  const ids = mantidos.map((i) => i.itemExistenteId as string);
+  const fora = ids.length ? sql`AND id NOT IN (${sql.join(ids.map((i) => sql`${i}::uuid`), sql`, `)})` : sql``;
+  await db.execute(sql`DELETE FROM proposta_itens WHERE proposta_id = ${opts.propostaId}::uuid ${fora}`);
+  for (const i of mantidos) {
+    await db.execute(sql`
+      UPDATE proposta_itens SET quantidade = ${i.quantidade}, valor_unitario = ${i.valorUnitario},
+             desconto = ${i.desconto}, desconto_tipo = ${i.descontoTipo}, subtotal = ${i.subtotal}, ordem = ${i.ordem}
+       WHERE id = ${i.itemExistenteId}::uuid AND proposta_id = ${opts.propostaId}::uuid`);
+  }
+  await inserirItensDaProposta(opts.propostaId, p.moeda, novos);
+
+  await db.execute(sql`
+    UPDATE propostas SET
+      total_recorrente = COALESCE((SELECT sum(subtotal) FROM proposta_itens WHERE proposta_id = ${opts.propostaId}::uuid AND tipo = 'recorrente'), 0),
+      total_avulso = COALESCE((SELECT sum(subtotal) FROM proposta_itens WHERE proposta_id = ${opts.propostaId}::uuid AND tipo <> 'recorrente'), 0),
+      total_geral = COALESCE((SELECT sum(subtotal) FROM proposta_itens WHERE proposta_id = ${opts.propostaId}::uuid), 0),
+      observacoes = COALESCE(${opts.observacoes ?? null}, observacoes),
+      prazo_contrato_meses = COALESCE(${opts.prazoContratoMeses ?? null}::int, prazo_contrato_meses),
+      parcelas = COALESCE(${opts.parcelas ?? null}::int, parcelas),
+      updated_at = now()
+     WHERE id = ${opts.propostaId}::uuid`);
+
+  if (p.negocio_id) await syncNegocioValoresFromPropostas(p.negocio_id);
+  await syncOportunidadeItensFromProposta(opts.propostaId);
 }

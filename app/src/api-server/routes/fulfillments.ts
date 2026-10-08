@@ -7,6 +7,7 @@ import { eq, and, sql, inArray, desc } from "drizzle-orm";
 import { z } from "zod";
 import { getCtx } from "../compat.js";
 import { registrarMudancaResponsavel } from "@/lib/crm/owner";
+import { guardarNoAcervo } from "@/lib/arquivos/servico";
 import { PABX_CHECKLIST, AI_CHECKLIST_BASE, WHITE_LABEL_CHECKLIST, FASE_PABX_POR_WORKSTREAM, FASE_WHITE_LABEL_POR_WORKSTREAM, MARCO_AI_POR_WORKSTREAM, MARCOS_AI, FAMILIAS_ONBOARDING } from "@/lib/crm/fulfillment";
 
 const app = new Hono();
@@ -538,6 +539,29 @@ async function responsavelDaOrg(organizacaoId: string, id: string | null | undef
     .where(and(eq(usuarios.id, id), eq(usuarios.organizacaoId, organizacaoId))).limit(1);
   return !!u;
 }
+
+// POST /fulfillments/:id/arquivos — multipart `file`. Arquivo do projeto: acervo canônico + vínculo `fulfillment`.
+app.post("/fulfillments/:id/arquivos", async (c) => {
+  const ctx = await getCtx(c);
+  const id = c.req.param("id");
+  if (!UUID_RE.test(id)) return c.json({ error: "ID inválido" }, 400);
+  const [f] = await db.select({ id: fulfillments.id }).from(fulfillments)
+    .where(and(eq(fulfillments.id, id), eq(fulfillments.organizacaoId, ctx.organizacaoId))).limit(1);
+  if (!f) return c.json({ error: "Projeto não encontrado" }, 404);
+  const file = (await c.req.formData()).get("file") as File | null;
+  if (!file || typeof file === "string") return c.json({ error: "Nenhum arquivo enviado" }, 400);
+  const guardado = await guardarNoAcervo({
+    organizacaoId: ctx.organizacaoId, nomeOriginal: file.name, mimeType: file.type,
+    conteudo: new Uint8Array(await file.arrayBuffer()), enviadoPorId: ctx.userId,
+    vinculos: [{ tipo: "fulfillment", id, papel: "arquivo" }], metadata: { origem: "projeto" },
+  });
+  if (!guardado.ok) return c.json({ error: guardado.erro }, 400);
+  await db.insert(atividades).values({
+    organizacaoId: ctx.organizacaoId, usuarioId: ctx.userId, tipo: "arquivo_projeto",
+    titulo: "Arquivo enviado · " + file.name, descricao: "Arquivos do projeto", dados: { fulfillmentId: id },
+  });
+  return c.json({ id: guardado.arquivo.id, nome: file.name }, 201);
+});
 
 app.patch("/fulfillments/:id", async (c) => {
   const ctx = await getCtx(c);

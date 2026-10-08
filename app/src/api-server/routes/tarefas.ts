@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { db } from "@/lib/db";
 import { tarefas, leads, usuarios, negocios, empresas, notificacoes } from "@/lib/db/schema";
-import { desc, eq, ne, and, or, lte, ilike, SQL, asc, isNull, isNotNull } from "drizzle-orm";
+import { desc, eq, ne, and, or, lte, ilike, SQL, asc, isNull, isNotNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { getCtx } from "../compat.js";
 import { isPersonalView, isAdminView } from "@/lib/auth/roles";
@@ -50,6 +50,31 @@ const updateTarefaSchema = z.object({
   // Estado operacional (migration 0046). O trigger mantém `concluida` em sincronia.
   status: z.enum(["a_fazer", "em_andamento", "aguardando", "concluida", "declinada"]).optional(),
 }).strict();
+
+
+/**
+ * O fato da tarefa no registro de domínio (`domain_events`): quem, quando, de → para.
+ *
+ * `tarefas` é a única estrutura de atividades e a timeline das fichas já a lê
+ * direto (ver `linhaDoTempo`), então este registro NÃO vira linha de timeline:
+ * existe para medir. Criada → concluída dá o tempo de resposta; reatribuição e
+ * mudança de prazo dão o retrabalho. `created_at` da tarefa não diz quem criou
+ * (o dono pode ser outra pessoa), por isso o ator mora aqui.
+ */
+async function registrarFato(
+  ctx: { organizacaoId: string; userId: string },
+  tarefaId: string,
+  tipo: "TaskCreated" | "TaskStatusChanged" | "TaskReassigned" | "TaskRescheduled" | "TaskDeleted",
+  payload: Record<string, unknown>,
+) {
+  try {
+    await db.execute(sql`
+      INSERT INTO domain_events (organizacao_id, event_type, aggregate_type, aggregate_id, actor_type, actor_id, source, payload)
+      VALUES (${ctx.organizacaoId}::uuid, ${tipo}, 'tarefa', ${tarefaId}::uuid, 'USER', ${ctx.userId}::uuid, 'api', ${JSON.stringify(payload)}::jsonb)`);
+  } catch (e) {
+    console.error(`[tarefas] fato ${tipo} não registrado:`, e);
+  }
+}
 
 // GET /api/tarefas
 app.get("/tarefas", async (c) => {
@@ -311,6 +336,12 @@ app.post("/tarefas", async (c) => {
     }
   }
 
+  await registrarFato(ctx, tarefa.id, "TaskCreated", {
+    titulo: tarefa.titulo, tipo: tarefa.tipo, status: tarefa.status, responsavelId: tarefa.usuarioId,
+    leadId: tarefa.leadId, negocioId: tarefa.negocioId, empresaId: tarefa.empresaId,
+    prazo: tarefa.venceEm ?? tarefa.dataVencimento,
+  });
+
   return c.json(tarefa, 201);
 });
 
@@ -375,7 +406,7 @@ app.patch("/tarefas/:id", async (c) => {
   }
 
   const [existing] = await db
-    .select({ id: tarefas.id, usuarioId: tarefas.usuarioId })
+    .select({ id: tarefas.id, usuarioId: tarefas.usuarioId, status: tarefas.status, venceEm: tarefas.venceEm, dataVencimento: tarefas.dataVencimento })
     .from(tarefas)
     .where(and(eq(tarefas.id, id), eq(tarefas.organizacaoId, ctx.organizacaoId)))
     .limit(1);
@@ -450,6 +481,20 @@ app.patch("/tarefas/:id", async (c) => {
     return c.json({ error: "Tarefa nao encontrada" }, 404);
   }
 
+  // O que mudou, para medir depois (de → para).
+  if (updated.status !== existing.status) {
+    await registrarFato(ctx, id, "TaskStatusChanged", { de: existing.status, para: updated.status, titulo: updated.titulo });
+  }
+  if (updated.usuarioId !== existing.usuarioId) {
+    await registrarFato(ctx, id, "TaskReassigned", { de: existing.usuarioId, para: updated.usuarioId, titulo: updated.titulo });
+  }
+  const prazo = (v: Date | string | null) => (v ? new Date(v).toISOString() : null);
+  if (prazo(updated.venceEm) !== prazo(existing.venceEm) || (updated.dataVencimento ?? null) !== (existing.dataVencimento ?? null)) {
+    await registrarFato(ctx, id, "TaskRescheduled", {
+      de: existing.venceEm ?? existing.dataVencimento, para: updated.venceEm ?? updated.dataVencimento, titulo: updated.titulo,
+    });
+  }
+
   /* Reatribuir pelo PATCH também avisa o novo responsável (antes só o POST notificava,
      então "atribuir a outro" numa tarefa existente era silencioso). */
   if (responsavelId && responsavelId !== existing.usuarioId && responsavelId !== ctx.userId) {
@@ -476,7 +521,7 @@ app.delete("/tarefas/:id", async (c) => {
   if (!UUID_RE.test(id)) return c.json({ error: "Tarefa nao encontrada" }, 404); // uuid inválido não vira 500
 
   const [existing] = await db
-    .select({ id: tarefas.id, usuarioId: tarefas.usuarioId })
+    .select({ id: tarefas.id, usuarioId: tarefas.usuarioId, titulo: tarefas.titulo, status: tarefas.status })
     .from(tarefas)
     .where(and(eq(tarefas.id, id), eq(tarefas.organizacaoId, ctx.organizacaoId)))
     .limit(1);
@@ -491,6 +536,7 @@ app.delete("/tarefas/:id", async (c) => {
   }
 
   await db.delete(tarefas).where(eq(tarefas.id, id));
+  await registrarFato(ctx, id, "TaskDeleted", { titulo: existing.titulo, status: existing.status, responsavelId: existing.usuarioId });
 
   return c.json({ success: true });
 });

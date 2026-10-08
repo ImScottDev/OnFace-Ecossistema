@@ -8,6 +8,7 @@ import { enrichOrganization, bulkEnrichOrganizations, extractDomainFromUrl } fro
 import { getOrgApolloKey } from "@/lib/apollo/tenant-key";
 import { enrichmentQueue } from "@/lib/queue";
 import { normalizarCnpj } from "@/lib/vendas/identidade";
+import { guardarNoAcervo, removerDoAcervo } from "@/lib/arquivos/servico";
 
 const app = new Hono();
 
@@ -413,6 +414,47 @@ app.delete("/empresas/:id", async (c) => {
   }
 
   await db.delete(empresas).where(eq(empresas.id, id));
+  return c.json({ ok: true });
+});
+
+// ── Arquivos da empresa (aba Arquivos da ficha) ──────────────────────
+// Acervo canônico (checksum, dedup, org na chave) com vínculo `empresa` e papel
+// `arquivo`; a ficha lê esse vínculo. Antes o envio só vivia na sessão da tela.
+
+const UUID_ARQ = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+app.post("/empresas/:id/arquivos", async (c) => {
+  const ctx = await getCtx(c);
+  const id = c.req.param("id");
+  if (!UUID_ARQ.test(id)) return c.json({ error: "Empresa não encontrada" }, 404);
+  const [empresa] = await db.select({ id: empresas.id }).from(empresas)
+    .where(and(eq(empresas.id, id), eq(empresas.organizacaoId, ctx.organizacaoId))).limit(1);
+  if (!empresa) return c.json({ error: "Empresa não encontrada" }, 404);
+
+  const file = (await c.req.formData()).get("file") as File | null;
+  if (!file || typeof file === "string") return c.json({ error: "Nenhum arquivo enviado" }, 400);
+
+  const guardado = await guardarNoAcervo({
+    organizacaoId: ctx.organizacaoId, nomeOriginal: file.name, mimeType: file.type,
+    conteudo: new Uint8Array(await file.arrayBuffer()), enviadoPorId: ctx.userId,
+    vinculos: [{ tipo: "empresa", id, papel: "arquivo" }], metadata: { origem: "ficha_empresa" },
+  });
+  if (!guardado.ok) return c.json({ error: guardado.erro }, 400);
+  return c.json({ id: guardado.arquivo.id, nome: file.name }, 201);
+});
+
+app.delete("/empresas/:id/arquivos/:arquivoId", async (c) => {
+  const ctx = await getCtx(c);
+  const id = c.req.param("id");
+  const arquivoId = c.req.param("arquivoId");
+  if (!UUID_ARQ.test(id) || !UUID_ARQ.test(arquivoId)) return c.json({ error: "Arquivo não encontrado" }, 404);
+  const apagado = await db.execute<{ id: string }>(sql`
+    DELETE FROM file_links WHERE organizacao_id = ${ctx.organizacaoId}::uuid AND file_object_id = ${arquivoId}::uuid
+       AND entity_type = 'empresa' AND entity_id = ${id}::uuid AND papel = 'arquivo' RETURNING id::text`);
+  if (!apagado.length) return c.json({ error: "Arquivo não encontrado" }, 404);
+  // O binário só sai quando nenhum outro registro aponta para ele (dedup por checksum).
+  const [resta] = await db.execute<{ n: number }>(sql`SELECT count(*)::int AS n FROM file_links WHERE file_object_id = ${arquivoId}::uuid`);
+  if (!resta?.n) await removerDoAcervo(arquivoId, ctx.organizacaoId);
   return c.json({ ok: true });
 });
 

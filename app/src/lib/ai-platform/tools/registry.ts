@@ -455,6 +455,12 @@ export async function executeRegisteredTool(name: string, ctx: AgentToolContext,
     return { ok: false, error: `sem permissão delegada para ${tool.id} (exige ${v.exigida})` };
   }
 
+  // Parâmetro obrigatório ausente vira erro que o agente lê e corrige. Sem isto
+  // `String(undefined)` gravava a nota "undefined" na timeline do lead.
+  const obrigatorios = (tool.parameters as { required?: string[] }).required ?? [];
+  const faltando = obrigatorios.filter((chave) => input[chave] === undefined || input[chave] === null || String(input[chave]).trim() === "");
+  if (faltando.length) return { ok: false, error: `parâmetro obrigatório ausente: ${faltando.join(", ")}` };
+
   return tool.execute(ctx, input);
 }
 

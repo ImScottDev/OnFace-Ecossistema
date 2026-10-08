@@ -52,6 +52,8 @@ export async function adicionarTag(opts: {
   entityId: string;
   /** Id da tag, ou o nome quando o chamador só tem isso. */
   label: string;
+  /** Usuário que aplicou: é quem aparece na timeline. */
+  atorId?: string | null;
 }): Promise<ResultadoTag> {
   const label = await resolverLabel(opts.organizacaoId, opts.label);
   if (!label) return { ok: false, mudou: false, erro: "tag não encontrada nesta organização" };
@@ -59,7 +61,7 @@ export async function adicionarTag(opts: {
   const [assignment] = await db.insert(entityLabels)
     .values({
       organizacaoId: opts.organizacaoId, entityType: opts.entityType,
-      entityId: opts.entityId, labelId: label.id,
+      entityId: opts.entityId, labelId: label.id, createdById: opts.atorId ?? null,
     })
     .onConflictDoNothing()
     .returning({ id: entityLabels.id });
@@ -84,6 +86,7 @@ export async function adicionarTag(opts: {
       aggregateType: opts.entityType as "lead", aggregateId: opts.entityId,
       payload: { entityType: opts.entityType, entityId: opts.entityId, labelId: label.id, tag: label.nome },
       idempotencyKey: `tag:add:${assignment.id}`,
+      atorId: opts.atorId ?? null,
     });
   }
   return { ok: true, mudou: Boolean(assignment), labelId: label.id };
@@ -94,6 +97,7 @@ export async function removerTag(opts: {
   entityType: EntidadeComTag;
   entityId: string;
   label: string;
+  atorId?: string | null;
 }): Promise<ResultadoTag> {
   const label = await resolverLabel(opts.organizacaoId, opts.label);
   if (!label) return { ok: false, mudou: false, erro: "tag não encontrada nesta organização" };
@@ -123,6 +127,7 @@ export async function removerTag(opts: {
       aggregateType: opts.entityType as "lead", aggregateId: opts.entityId,
       payload: { entityType: opts.entityType, entityId: opts.entityId, labelId: label.id, tag: label.nome },
       idempotencyKey: `tag:remove:${removed.id}`,
+      atorId: opts.atorId ?? null,
     });
   }
   return { ok: true, mudou: Boolean(removed), labelId: label.id };

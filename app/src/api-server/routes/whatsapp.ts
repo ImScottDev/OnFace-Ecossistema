@@ -423,6 +423,15 @@ app.post("/whatsapp/send", async (c) => {
     console.error("[F2/dual-write] falha ao sincronizar communications do envio manual (best-effort):", err);
   }
 
+  // SLA: mensagem enviada a lead de Pré-vendas ainda não contatado = primeiro contato.
+  if (resolvedLeadId) {
+    const { registrarContatoSaindo } = await import("@/lib/vendas/pre-vendas");
+    await registrarContatoSaindo({
+      organizacaoId: ctx.organizacaoId, leadId: resolvedLeadId, canal: "whatsapp",
+      ator: { tipo: "HUMAN", usuarioId: ctx.userId, ref: null },
+    });
+  }
+
   // Cross-save
   if (resolvedSessaoId) {
     try {

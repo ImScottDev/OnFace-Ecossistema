@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 /**
  * Texto vindo de integração, pronto para a tela.
  *
@@ -42,4 +43,35 @@ export function textoSimples(bruto: string | null | undefined): string | null {
     .trim();
 
   return texto;
+}
+
+/**
+ * Nome + sobrenome sem repetir. A carga trouxe "Lucas" + "Lucas Oliveira"
+ * (1.069 leads) e `concat_ws` virava "Lucas Lucas Oliveira" na tela.
+ */
+export function nomeCompleto(nome: string | null | undefined, sobrenome: string | null | undefined): string {
+  const n = (nome ?? "").trim();
+  const s = (sobrenome ?? "").trim();
+  if (!s) return n;
+  if (!n) return s;
+  const ln = n.toLowerCase();
+  const ls = s.toLowerCase();
+  if (ls === ln || ls.startsWith(ln + " ")) return s;
+  if (ln.endsWith(" " + ls)) return n;
+  return `${n} ${s}`;
+}
+
+/**
+ * MEI vem do cadastro como "63.638.421 Anne Camille ..." (base do CNPJ + nome do titular) e a
+ * tela mostrava o número como se fosse parte do nome. O dado fica como está (é o que a Receita
+ * devolve); só a LEITURA tira o prefixo. Uso em SQL: `${nomeEmpresaSql("e.nome")}`.
+ */
+const PREFIXO_CNPJ = /^\d{2}\.\d{3}\.\d{3}\s+/;
+export function nomeEmpresaExibivel(nome: string | null | undefined): string {
+  const n = (nome ?? "").trim();
+  const limpo = n.replace(PREFIXO_CNPJ, "");
+  return limpo || n;
+}
+export function nomeEmpresaSql(coluna: string) {
+  return sql.raw(`regexp_replace(${coluna}, '^[0-9]{2}[.][0-9]{3}[.][0-9]{3}[[:space:]]+', '')`);
 }

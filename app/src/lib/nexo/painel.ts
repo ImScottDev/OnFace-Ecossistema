@@ -227,6 +227,14 @@ export interface DadosRadar {
   sinais: { texto: string; acao: string; href: string; urgente: boolean }[];
 }
 
+/** Início (ISO UTC) do mês/semana corrente no fuso da operação, ou do período anterior. */
+async function inicioDe(unidade: string, recuar?: string): Promise<string> {
+  const [r] = await db.execute<{ t: string }>(sql`
+    SELECT to_char((date_trunc(${unidade}, now(), ${TZ}) - ${recuar ?? "0 days"}::interval) AT TIME ZONE 'UTC',
+                   'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS t`);
+  return r.t;
+}
+
 export async function radar(q: Quem, modo: "mes" | "semana"): Promise<DadosRadar> {
   const resp = escopo(q);
   const unidade = modo === "mes" ? "month" : "week";
@@ -263,24 +271,16 @@ export async function radar(q: Quem, modo: "mes" | "semana"): Promise<DadosRadar
        AND (${resp}::uuid IS NULL OR a.responsavel_id = ${resp}::uuid)
      GROUP BY 1 ORDER BY 2 DESC, 1`);
 
-  // Chegada e 1º contato: mediana só de quem FOI contatado (mesma regra do board).
-  const [k] = await db.execute<{
-    chegaram: number; chegaram_ant: number; horas: number | null; horas_ant: number | null;
-  }>(sql`
-    WITH lim AS (
-      SELECT date_trunc(${unidade}, now(), ${TZ}) AS ini,
-             date_trunc(${unidade}, now(), ${TZ}) - ${passo}::interval AS ini_ant
-    )
-    SELECT count(*) FILTER (WHERE a.created_at >= lim.ini)::int AS chegaram,
-           count(*) FILTER (WHERE a.created_at < lim.ini)::int AS chegaram_ant,
-           percentile_cont(0.5) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (a.last_touch_at - a.first_touch_at)) / 3600)
-             FILTER (WHERE a.created_at >= lim.ini AND a.last_touch_at > a.first_touch_at)::float AS horas,
-           percentile_cont(0.5) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (a.last_touch_at - a.first_touch_at)) / 3600)
-             FILTER (WHERE a.created_at < lim.ini AND a.last_touch_at > a.first_touch_at)::float AS horas_ant
-      FROM aquisicoes a, lim
-     WHERE a.organizacao_id = ${q.organizacaoId}::uuid
-       AND a.created_at >= lim.ini_ant AND a.created_at < lim.ini + ${passo}::interval
-       AND (${resp}::uuid IS NULL OR a.responsavel_id = ${resp}::uuid)`);
+  // Chegada e 1º contato: fonte única em lib/vendas/sla-lead (mediana só de quem FOI contatado).
+  const { resumoSlaPreVendas } = await import("@/lib/vendas/sla-lead");
+  const [atualSla, anteriorSla] = await Promise.all([
+    resumoSlaPreVendas(q.organizacaoId, { desde: await inicioDe(unidade), responsavelId: resp }),
+    resumoSlaPreVendas(q.organizacaoId, { desde: await inicioDe(unidade, passo), ate: await inicioDe(unidade), responsavelId: resp }),
+  ]);
+  const k = {
+    chegaram: atualSla.chegaram, chegaram_ant: anteriorSla.chegaram,
+    horas: atualSla.horasAteContato, horas_ant: anteriorSla.horasAteContato,
+  };
 
   const total = p?.total ?? (modo === "mes" ? 30 : 7);
   const dec = Math.min(total, Math.max(1, p?.dec ?? 1));

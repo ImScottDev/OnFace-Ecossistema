@@ -2,13 +2,14 @@ import { Hono } from "hono";
 import { db } from "@/lib/db";
 import {
   contatos, emails, emailContas, ligacoes, leads, empresas, negocios, negocioLeads,
-  propostas, reunioes, tarefas, aiSdrContatoState, contatoLabels, labels, leadLabels, usuarios, entityLabels, notificacoes,
+  propostas, reunioes, tarefas, atividades, aiSdrContatoState, contatoLabels, labels, leadLabels, usuarios, entityLabels, notificacoes,
 } from "@/lib/db/schema";
 import { eq, and, or, desc, asc, isNull, ilike, inArray, gte, sql, type SQL } from "drizzle-orm";
 // Mesma taxonomia de estágio do board real de Pré-vendas (Kanban), não uma
 // etiqueta inventada pro widget do discador — ver shared.ts pra contexto.
 import { NOVO_COL, EM_CONTATO_COL, QUALIFICACAO_COL, SEM_RESPOSTA_COL, NUTRICAO_MERGED_COL, DESQUALIFICADO_ESTAGNADOS_COL } from "@/lib/crm/qualificacao-colunas";
 import { z } from "zod";
+import { nomeCompleto } from "@/lib/vendas/texto";
 import { getCtx, parseBody } from "../compat.js";
 import { publicarEvento } from "@/lib/events/outbox";
 import { dispararAutomacoes } from "@/lib/crm/automacao-engine";
@@ -293,8 +294,10 @@ async function buscarWhatsapp(opts: {
 }
 
 const acaoConversaSchema = z.object({
-  acao: z.enum(["claim", "transfer", "release", "snooze", "unsnooze", "close", "reopen"]),
+  acao: z.enum(["claim", "transfer", "release", "snooze", "unsnooze", "close", "reopen", "link_lead"]),
   usuarioId: z.string().uuid().nullable().optional(),
+  /** Só para `link_lead`: o lead a que a conversa passa a pertencer. */
+  leadId: z.string().uuid().optional(),
   minutos: z.number().int().min(1).max(60 * 24 * 30).optional(),
 });
 
@@ -313,6 +316,42 @@ app.post("/atendimento/conversas/:id/acao", async (c) => {
   if (!contato) return c.json({ error: "Conversa nao encontrada" }, 404);
 
   const acao = parsed.data.acao;
+
+  /* Vincular a conversa a um lead (antes a tela dizia "vinculada" e não gravava).
+     Grava contatos.lead_id, deixa rastro na timeline do lead e publica o fato
+     com autor, para a conversa passar a contar como histórico daquele lead. */
+  if (acao === "link_lead") {
+    if (!parsed.data.leadId) return c.json({ error: "leadId obrigatorio" }, 400);
+    const [lead] = await db.select({ id: leads.id, nome: leads.nome }).from(leads).where(and(
+      eq(leads.id, parsed.data.leadId), eq(leads.organizacaoId, ctx.organizacaoId),
+    )).limit(1);
+    if (!lead) return c.json({ error: "Lead nao encontrado" }, 404);
+    if (contato.leadId === lead.id) return c.json({ contato });
+    let vinculado: typeof contato | undefined;
+    try {
+      [vinculado] = await db.update(contatos).set({ leadId: lead.id, updatedAt: new Date() })
+        .where(eq(contatos.id, contatoId)).returning();
+    } catch (e) {
+      // idx_contatos_lead_responsavel: um lead só tem UMA conversa por responsável.
+      if ((e as { code?: string; cause?: { code?: string } })?.code === "23505" || (e as { cause?: { code?: string } })?.cause?.code === "23505") {
+        return c.json({ error: "Este lead já tem outra conversa vinculada para o mesmo responsável." }, 409);
+      }
+      throw e;
+    }
+    await db.insert(atividades).values({
+      organizacaoId: ctx.organizacaoId, leadId: lead.id, usuarioId: ctx.userId, tipo: "nota",
+      titulo: "Conversa de WhatsApp vinculada ao lead",
+      descricao: [contato.nome, contato.telefone].filter(Boolean).join(" · ") || null,
+    });
+    await publicarEvento({
+      organizacaoId: ctx.organizacaoId, eventType: "ConversationLinkedToLead",
+      aggregateType: "contato", aggregateId: contatoId, atorId: ctx.userId,
+      payload: { leadId: lead.id, leadAnteriorId: contato.leadId ?? null },
+      idempotencyKey: `contato:${contatoId}:link_lead:${lead.id}`,
+    });
+    return c.json({ contato: vinculado });
+  }
+
   const isAdmin = ["admin", "super_admin", "gerente"].includes(ctx.userRole);
   const alvo = parsed.data.usuarioId ?? ctx.userId;
   if (["claim", "transfer"].includes(acao) && !isAdmin && alvo !== ctx.userId) {
@@ -769,11 +808,22 @@ app.get("/atendimento/buscar-leads", async (c) => {
   const search = c.req.query("search") ?? null;
   if (!search || search.length < 2) return c.json({ leads: [] });
 
+  /* Nome, sobrenome, empresa, e-mail e telefone: o seletor "Vincular a lead" busca em
+     TODOS os leads, e quem procura "Lucas Oliveira" tem `nome`="Lucas" e `sobrenome`="Oliveira". */
+  const termo = `%${search.replace(/[%_\\]/g, (m) => `\\${m}`)}%`;
   const rows = await db
-    .select({ id: leads.id, nome: leads.nome, telefone: leads.telefone, empresaNome: empresas.nome, empresaLegacy: leads.empresa })
+    .select({ id: leads.id, nome: leads.nome, sobrenome: leads.sobrenome, cargo: leads.cargo, telefone: leads.telefone, empresaNome: empresas.nome, empresaLegacy: leads.empresa })
     .from(leads)
     .leftJoin(empresas, eq(leads.empresaId, empresas.id))
-    .where(and(eq(leads.organizacaoId, ctx.organizacaoId), ilike(leads.nome, `%${search}%`)))
+    .where(and(
+      eq(leads.organizacaoId, ctx.organizacaoId),
+      sql`(concat_ws(' ', ${leads.nome}, ${leads.sobrenome}) ILIKE ${termo}
+        OR ${leads.nome} ILIKE ${termo}
+        OR coalesce(${leads.empresa}, ${empresas.nome}, '') ILIKE ${termo}
+        OR coalesce(${leads.email}, '') ILIKE ${termo}
+        OR coalesce(${leads.telefone}, '') ILIKE ${termo})`,
+    ))
+    .orderBy(desc(leads.createdAt))
     .limit(15);
 
   const leadIds = rows.map((r) => r.id);
@@ -789,7 +839,8 @@ app.get("/atendimento/buscar-leads", async (c) => {
   return c.json({
     leads: rows.map((r) => ({
       id: r.id,
-      nome: r.nome,
+      nome: nomeCompleto(r.nome, r.sobrenome),
+      cargo: r.cargo ?? null,
       telefone: r.telefone,
       empresaNome: r.empresaNome ?? r.empresaLegacy ?? null,
       situacao: comNegocio.has(r.id) ? "negociacao" : comProposta.has(r.id) ? "proposta" : null,

@@ -11,7 +11,7 @@ import { randomBytes } from "node:crypto";
 import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
-  aiAgents, automacaoExecucoes, automacaoPassosExecucao, automacaoVersoes, automacoes, cadenceDefinitions, labels, usuarios, whatsappTemplates,
+  aiAgents, automacaoExecucoes, automacaoPassosExecucao, automacaoVersoes, automacoes, cadenceDefinitions, labels, usuarios, whatsappSessao, whatsappTemplates,
 } from "@/lib/db/schema";
 import { ETAPAS_PIPELINE, ETAPAS_PRE_VENDAS, ROTULO_ETAPA_PIPELINE, ROTULO_ETAPA_PRE_VENDAS } from "@/lib/vendas/dominio";
 import {
@@ -228,12 +228,13 @@ export async function listarFluxos(organizacaoId: string, filtro: { busca?: stri
 // ─── Opções do inspetor e registros ────────────────────────────────────────
 
 export async function opcoesInspetor(organizacaoId: string): Promise<OpcoesInspetor> {
-  const [us, tags, cads, tpls, agentes] = await Promise.all([
+  const [us, tags, cads, tpls, agentes, sessoes] = await Promise.all([
     db.select({ id: usuarios.id, nome: usuarios.nome }).from(usuarios).where(and(eq(usuarios.organizacaoId, organizacaoId), eq(usuarios.ativo, true))).orderBy(usuarios.nome),
     db.select({ id: labels.id, nome: labels.nome, cor: labels.cor }).from(labels).where(eq(labels.organizacaoId, organizacaoId)).orderBy(labels.nome),
     db.select({ id: cadenceDefinitions.id, nome: cadenceDefinitions.nome, status: cadenceDefinitions.status, ativo: cadenceDefinitions.ativo }).from(cadenceDefinitions).where(eq(cadenceDefinitions.organizacaoId, organizacaoId)).orderBy(cadenceDefinitions.nome),
     db.select({ id: whatsappTemplates.id, nome: whatsappTemplates.nome }).from(whatsappTemplates).where(and(eq(whatsappTemplates.organizacaoId, organizacaoId), eq(whatsappTemplates.ativo, true))).orderBy(whatsappTemplates.nome),
     db.select({ id: aiAgents.id, nome: aiAgents.nome }).from(aiAgents).where(and(eq(aiAgents.organizacaoId, organizacaoId), isNull(aiAgents.archivedAt))).orderBy(aiAgents.nome),
+    db.select({ id: whatsappSessao.id, label: whatsappSessao.label, nome: whatsappSessao.sessionName, status: whatsappSessao.status }).from(whatsappSessao).where(eq(whatsappSessao.organizacaoId, organizacaoId)).orderBy(whatsappSessao.sessionName),
   ]);
   return {
     usuarios: us, tags,
@@ -243,6 +244,7 @@ export async function opcoesInspetor(organizacaoId: string): Promise<OpcoesInspe
     },
     cadencias: cads.map((c) => ({ id: c.id, nome: c.nome, publicada: c.status === "published" && c.ativo })),
     templatesWhatsapp: tpls, agentesIa: agentes,
+    sessoesWhatsapp: sessoes.map((x) => ({ id: x.id, nome: x.label || x.nome, conectada: x.status === "connected" })),
   };
 }
 

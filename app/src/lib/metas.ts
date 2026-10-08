@@ -108,6 +108,12 @@ export async function getMetaComercialAgregada(organizacaoId: string, periodo: s
   return { valorAlvo, realizado: parseFloat(r?.total ?? "0") || 0, closers: ids.length };
 }
 
+/** Metas de TODOS da organização num mês (a lista de Membros mostra o que já está definido). */
+export async function getMetasDaOrganizacao(organizacaoId: string, periodo: string | Date) {
+  const { primeiroDia } = monthRange(periodo);
+  return db.select().from(metas).where(and(eq(metas.organizacaoId, organizacaoId), eq(metas.periodo, primeiroDia)));
+}
+
 /** Metas do usuário num mês. */
 export async function getMetasDoUsuario(organizacaoId: string, usuarioId: string, periodo: string | Date) {
   const { primeiroDia } = monthRange(periodo);

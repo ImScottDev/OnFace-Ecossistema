@@ -10,7 +10,9 @@
  */
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
+import { nomeEmpresaSql } from "@/lib/vendas/texto";
 import { faturamentoMensal, type FaturamentoMes } from "@/lib/financeiro/faturamento-mensal";
+import { carteiraEmRisco } from "@/lib/cs/carteira-em-risco";
 import { ROTULO_ETAPA_PIPELINE, type EtapaPipeline } from "@/lib/vendas/dominio";
 
 type Row = Record<string, any>;
@@ -56,6 +58,8 @@ export interface DadosTelaCs {
   equipe: Array<{ id: string; nome: string }>;
   /** Faturamento mensal da carteira por natureza (cliente_receita_mensal). */
   faturamento: FaturamentoMes[];
+  /** Risco REAL (cs_riscos, a mesma fonte de /clientes/risco): o desenho calculava o seu por heurística de silêncio. */
+  risco: { criticoEmRisco: number; mrrCriticoEmRisco: number; atencao: number; semResponsavel: number };
 }
 
 /** "Hoje" / "Ontem" / "Há N dias" — o único formato que diasSem() do desenho lê. */
@@ -68,7 +72,7 @@ function ultimaDoDesenho(dias: number): string {
 export async function dadosTelaCs(organizacaoId: string): Promise<DadosTelaCs> {
   const conta = sql`
     conta AS (
-      SELECT cli.empresa_id, e.nome, e.setor, p.nome AS principal, u.nome AS resp,
+      SELECT cli.empresa_id, ${nomeEmpresaSql("e.nome")} AS nome, e.setor, p.nome AS principal, u.nome AS resp,
              cli.cs_sem_evidencia,
              COALESCE(cli.cliente_desde, cli.entrou_carteira_em, cli.created_at) AS inicio
         FROM clientes cli
@@ -102,18 +106,46 @@ export async function dadosTelaCs(organizacaoId: string): Promise<DadosTelaCs> {
       health AS (
         SELECT DISTINCT ON (empresa_id) empresa_id, score
           FROM cs_health_snapshots ORDER BY empresa_id, calculated_at DESC
+      ),
+      /* MRR = o FATURADO como MRR no último fechamento (regra do Scott, 06/10; a mesma de
+         mrr_atual e da Carteira). servicos_canonicos.current_recurring_value é o contratado e
+         dava R$ 385 mil aqui contra R$ 476 mil no resto do produto. Quem assinou DEPOIS do
+         fechamento entra pela assinatura ativa, na família do serviço dele. */
+      fat AS (
+        SELECT r.empresa_id, r.service_family AS f, SUM(r.valor)::float AS v
+          FROM cliente_receita_mensal r
+         WHERE r.organizacao_id = ${organizacaoId} AND r.revenue_nature = 'MRR' AND r.empresa_id IN (SELECT empresa_id FROM conta)
+           AND r.competencia = (SELECT max(competencia) FROM cliente_receita_mensal WHERE organizacao_id = ${organizacaoId})
+         GROUP BY 1, 2
+      ),
+      pos_fechamento AS (
+        SELECT a.empresa_id, SUM(a.mrr)::float AS v
+          FROM assinaturas a
+         WHERE a.organizacao_id = ${organizacaoId} AND a.status = 'active' AND a.empresa_id IN (SELECT empresa_id FROM conta)
+           AND NOT EXISTS (SELECT 1 FROM fat WHERE fat.empresa_id = a.empresa_id)
+         GROUP BY 1
       )
       SELECT c.empresa_id AS id, c.nome, c.setor, c.principal, c.resp,
              to_char(c.inicio, 'YYYY-MM') AS inicio, c.cs_sem_evidencia,
-             (SELECT COALESCE(SUM(s.mrr), 0)::float FROM servico s WHERE s.empresa_id = c.empresa_id AND s.ativo) AS mrr,
+             (COALESCE((SELECT SUM(v) FROM fat WHERE fat.empresa_id = c.empresa_id), 0)
+              + COALESCE((SELECT v FROM pos_fechamento p WHERE p.empresa_id = c.empresa_id), 0))::float AS mrr,
              (SELECT jsonb_object_agg(x.f, x.v) FROM (
-                SELECT s.service_family AS f, SUM(s.mrr)::float AS v FROM servico s
-                 WHERE s.empresa_id = c.empresa_id AND s.ativo GROUP BY 1) x) AS mrr_fam,
+                SELECT fat.f, fat.v FROM fat WHERE fat.empresa_id = c.empresa_id AND fat.f <> 'UNKNOWN'
+                UNION ALL
+                SELECT (SELECT s.service_family FROM servico s WHERE s.empresa_id = c.empresa_id
+                         ORDER BY s.ativo DESC, s.mrr DESC NULLS LAST LIMIT 1), p.v
+                  FROM pos_fechamento p WHERE p.empresa_id = c.empresa_id) x
+               WHERE x.f IS NOT NULL) AS mrr_fam,
              (SELECT s.id FROM servico s WHERE s.empresa_id = c.empresa_id
                ORDER BY s.ativo DESC, s.mrr DESC NULLS LAST LIMIT 1) AS servico_id,
              (SELECT s.service_family FROM servico s WHERE s.empresa_id = c.empresa_id
                ORDER BY s.ativo DESC, s.mrr DESC NULLS LAST LIMIT 1) AS produto,
-             EXISTS (SELECT 1 FROM servico s WHERE s.empresa_id = c.empresa_id AND s.ativo) AS tem_ativo,
+             (EXISTS (SELECT 1 FROM servico s WHERE s.empresa_id = c.empresa_id AND s.ativo)
+              OR EXISTS (SELECT 1 FROM fat WHERE fat.empresa_id = c.empresa_id)
+              OR EXISTS (SELECT 1 FROM pos_fechamento p WHERE p.empresa_id = c.empresa_id)
+              -- Ganho recente: ainda sem faturamento nem serviço de portfólio, mas com onboarding em curso.
+              OR EXISTS (SELECT 1 FROM fulfillments f JOIN servico s ON s.id = f.servico_canonico_id
+                          WHERE s.empresa_id = c.empresa_id AND f.status NOT IN ('COMPLETED','CANCELED'))) AS tem_ativo,
              EXISTS (SELECT 1 FROM fulfillments f JOIN servico s ON s.id = f.servico_canonico_id
                       WHERE s.empresa_id = c.empresa_id AND f.status NOT IN ('COMPLETED','CANCELED')) AS em_implantacao,
              i.quando IS NULL AS nunca,
@@ -177,7 +209,14 @@ export async function dadosTelaCs(organizacaoId: string): Promise<DadosTelaCs> {
        WHERE organizacao_id = ${organizacaoId} AND ativo = true ORDER BY nome`),
   ]);
 
+  const cr = await carteiraEmRisco(organizacaoId);
   return {
+    risco: {
+      criticoEmRisco: cr.resumo.porSeveridade.CRITICO + cr.resumo.porSeveridade.EM_RISCO,
+      mrrCriticoEmRisco: cr.resumo.mrrPorSeveridade.CRITICO + cr.resumo.mrrPorSeveridade.EM_RISCO,
+      atencao: cr.resumo.porSeveridade.ATENCAO,
+      semResponsavel: cr.resumo.semResponsavel,
+    },
     faturamento: await faturamentoMensal(organizacaoId),
     clientes: clientes.map((r): ClienteDaTela => {
       const mrrFam: Record<string, number> = {};

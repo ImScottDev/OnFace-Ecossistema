@@ -11,6 +11,7 @@
  *   - **Contador de resumo nunca sai de lista truncada**: os totais vêm de
  *     `count()` sobre a tabela inteira, não do array que a página carregou.
  */
+import { origemCanonica } from "./origem-canonica";
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
@@ -23,6 +24,7 @@ import {
 } from "./dominio";
 import { HORAS_ATRASO } from "./sla";
 import { VIEWS_PRE_VENDAS, ehView, type ViewPreVendas } from "./dominio";
+import { resumoSlaPreVendas } from "./sla-lead";
 import { boardDeAquisicoes, somenteDePreVendas, type EstagioAquisicao } from "@onface/acquisition";
 import { boardDeOportunidades } from "@onface/sales";
 
@@ -58,7 +60,7 @@ const POR_COLUNA_PADRAO = 4000;
    barra da tela (Client Component) precisa da lista. Importar daqui puxava o
    driver do Postgres para o bundle do navegador e derrubava a rota inteira com
    "Can't resolve 'fs'". Reexportadas para quem já as importava deste módulo. */
-import { textoSimples } from "./texto";
+import { textoSimples, nomeCompleto, nomeEmpresaSql } from "./texto";
 
 export { VIEWS_PRE_VENDAS, ehView, type ViewPreVendas };
 
@@ -118,6 +120,8 @@ export interface CardPreVendas {
   /** Horas desde a última interação: é daqui que sai o sinal de SLA. */
   horasSemInteracao: number | null;
   horasNaEtapa: number | null;
+  /** O lead tem a tag "No-show": faltou à reunião e precisa ser remarcado. */
+  noShow: boolean;
   criadoEm: string;
   nutricaoRetomarEm: string | null;
   desqualificacaoMotivo: string | null;
@@ -255,7 +259,7 @@ export interface BoardPreVendas {
     /** Média de horas entre a chegada e o primeiro toque, ou null se ninguém foi contatado. */
     horasAteContato: number | null;
   };
-  filtros: { responsaveis: Array<{ id: string; nome: string }>; origens: string[]; campanhas: string[] };
+  filtros: { responsaveis: Array<{ id: string; nome: string; papel?: string | null }>; origens: string[]; campanhas: string[] };
   /** Quantos cada view rápida encontra. Sem isto a view é um botão às cegas. */
   contadores: Record<ViewPreVendas, number>;
 }
@@ -322,7 +326,11 @@ export async function boardPreVendas(organizacaoId: string, filtros: FiltrosPreV
     }>(sql`
       SELECT id::text, estagio_pre_vendas AS estagio,
              servicos_interesse AS servicos, pre_qualificado, whatsapp,
-             COALESCE(contato_desde_at, created_at)::text AS etapa_desde,
+             /* Quando entrou na etapa ATUAL: a última mudança para ela. Sem histórico
+                (lead que nunca mudou), vale o primeiro contato ou a criação. */
+             COALESCE((SELECT max(sc.created_at) FROM status_changes sc
+                        WHERE sc.lead_id = leads.id AND sc.para_status = leads.estagio_pre_vendas),
+                      contato_desde_at, created_at)::text AS etapa_desde,
              negocio_ativo_id::text, qualificacao
         FROM leads WHERE id = ANY(${literalDeArray(leadIds)}::uuid[])`);
     for (const l of linhas) legado.set(l.id, l);
@@ -334,6 +342,7 @@ export async function boardPreVendas(organizacaoId: string, filtros: FiltrosPreV
      `lead_labels` é a legada e ainda carrega vínculo que a canônica não tem,
      então as duas entram. Uma tag por lead: o cartão do protótipo mostra uma. */
   const tagPorLead = new Map<string, string>();
+  const noShowPorLead = new Set<string>();
   if (leadIds.length > 0) {
     const linhas = await db.execute<{ lead_id: string; nome: string }>(sql`
       SELECT DISTINCT ON (v.lead_id) v.lead_id::text AS lead_id, l.nome
@@ -347,6 +356,18 @@ export async function boardPreVendas(organizacaoId: string, filtros: FiltrosPreV
         JOIN labels l ON l.id = v.label_id AND l.organizacao_id = ${organizacaoId}::uuid
        ORDER BY v.lead_id, l.nome`);
     for (const t of linhas) tagPorLead.set(t.lead_id, t.nome);
+    const faltaram = await db.execute<{ lead_id: string }>(sql`
+      SELECT DISTINCT v.lead_id::text AS lead_id
+        FROM (
+          SELECT entity_id AS lead_id, label_id FROM entity_labels
+           WHERE entity_type = 'lead' AND entity_id = ANY(${literalDeArray(leadIds)}::uuid[])
+          UNION
+          SELECT lead_id, label_id FROM lead_labels
+           WHERE lead_id = ANY(${literalDeArray(leadIds)}::uuid[])
+        ) v
+        JOIN labels l ON l.id = v.label_id AND l.organizacao_id = ${organizacaoId}::uuid
+       WHERE lower(l.nome) = 'no-show'`);
+    for (const t of faltaram) noShowPorLead.add(t.lead_id);
   }
 
   const agora = Date.now();
@@ -372,7 +393,7 @@ export async function boardPreVendas(organizacaoId: string, filtros: FiltrosPreV
         pessoa: c.pessoa,
         cargo: c.cargo,
         etapa,
-        origem: c.origem,
+        origem: origemCanonica(c.origem),
         campanha: c.campanha,
         servicos: comoLista(l?.servicos),
         tag: (c.leadId ? tagPorLead.get(c.leadId) : null) ?? null,
@@ -385,6 +406,7 @@ export async function boardPreVendas(organizacaoId: string, filtros: FiltrosPreV
         temTelefone: Boolean(c.telefone),
         horasSemInteracao: horasDesde(c.ultimoToque ?? c.criadoEm),
         horasNaEtapa: horasDesde(l?.etapa_desde ?? c.criadoEm),
+        noShow: Boolean(c.leadId && noShowPorLead.has(c.leadId)),
         criadoEm: c.criadoEm,
         nutricaoRetomarEm: c.retomarEm,
         desqualificacaoMotivo: c.motivoDesqualificacao,
@@ -456,10 +478,9 @@ export async function boardPreVendas(organizacaoId: string, filtros: FiltrosPreV
       count(*) FILTER (
         WHERE a.qualificado_em >= date_trunc('month', now())
       )::int AS qualificados_no_mes,
-      -- Média só sobre quem FOI contatado: incluir quem nunca foi puxaria o
-      -- número para baixo e diria que o time responde rápido.
-      avg(EXTRACT(EPOCH FROM (a.last_touch_at - a.first_touch_at)) / 3600)
-        FILTER (WHERE a.last_touch_at > a.first_touch_at)::float AS horas_ate_contato
+      -- Tempo até 1º contato: NÃO é calculado aqui, ver lib/vendas/sla-lead.ts
+      -- (a conta antiga, último toque menos chegada, crescia a cada mensagem).
+      NULL::float AS horas_ate_contato
       FROM aquisicoes a
       -- Idem: o resumo soma o mesmo universo que as colunas, ou a tela diz
       -- "ativos 975" com 938 cartões embaixo.
@@ -470,8 +491,8 @@ export async function boardPreVendas(organizacaoId: string, filtros: FiltrosPreV
 
   const contadores = await contadoresDeViews(organizacaoId, filtros.usuarioId);
 
-  const responsaveis = await db.execute<{ id: string; nome: string }>(sql`
-    SELECT DISTINCT u.id::text, u.nome FROM usuarios u
+  const responsaveis = await db.execute<{ id: string; nome: string; papel: string | null }>(sql`
+    SELECT DISTINCT u.id::text, u.nome, u.role AS papel FROM usuarios u
      WHERE u.organizacao_id = ${organizacaoId}::uuid AND u.ativo = true ORDER BY u.nome
   `);
   const origens = await db.execute<{ origem: string }>(sql`
@@ -495,10 +516,11 @@ export async function boardPreVendas(organizacaoId: string, filtros: FiltrosPreV
       semPrimeiroContato: resumo?.sem_primeiro_contato ?? 0,
       semProximaAcao: resumo?.sem_proxima_acao ?? 0,
       qualificadosNoMes: resumo?.qualificados_no_mes ?? 0,
-      horasAteContato: resumo?.horas_ate_contato ?? null,
+      // Coorte dos últimos 90 dias: a carga histórica chegou toda de uma vez e distorce a mediana.
+      horasAteContato: (await resumoSlaPreVendas(organizacaoId, { desde: new Date(Date.now() - 90 * 86_400_000) })).horasAteContato,
     },
     filtros: {
-      responsaveis: responsaveis.map((r) => ({ id: r.id, nome: r.nome })),
+      responsaveis: responsaveis.map((r) => ({ id: r.id, nome: r.nome, papel: r.papel ?? null })),
       origens: origens.map((o) => o.origem),
       campanhas: campanhas.map((c) => c.campanha),
     },
@@ -858,7 +880,7 @@ export async function listaProspeccao(organizacaoId: string, filtros: FiltrosPro
     descarte_motivo: string | null; criado_em: string;
   }>(sql`
     SELECT l.id::text AS lead_id, COALESCE(e.nome, l.empresa) AS empresa, l.empresa_id::text,
-           NULLIF(trim(concat_ws(' ', l.nome, l.sobrenome)), '') AS pessoa, l.cargo,
+           NULLIF(trim((CASE WHEN COALESCE(trim(l.sobrenome),'')='' THEN trim(l.nome) WHEN lower(trim(l.sobrenome))=lower(trim(l.nome)) OR lower(trim(l.sobrenome)) LIKE lower(trim(l.nome))||' %' THEN trim(l.sobrenome) WHEN lower(trim(l.nome)) LIKE '% '||lower(trim(l.sobrenome)) THEN trim(l.nome) ELSE trim(l.nome)||' '||trim(l.sobrenome) END)), '') AS pessoa, l.cargo,
            e.setor, e.porte, l.prospeccao_estado AS estado, u.nome AS responsavel,
            (SELECT lb.nome FROM lead_labels ll JOIN labels lb ON lb.id = ll.label_id
              WHERE ll.lead_id = l.id ORDER BY lb.nome LIMIT 1) AS lista,
@@ -1138,7 +1160,7 @@ export async function diretorioPessoas(organizacaoId: string, filtros: {
 
   const linhas = await db.execute<LinhaPessoaDb>(sql`
     SELECT p.id::text, 'pessoa' AS fonte,
-           NULLIF(trim(concat_ws(' ', p.nome, p.sobrenome)), '') AS nome,
+           NULLIF(trim((CASE WHEN COALESCE(trim(p.sobrenome),'')='' THEN trim(p.nome) WHEN lower(trim(p.sobrenome))=lower(trim(p.nome)) OR lower(trim(p.sobrenome)) LIKE lower(trim(p.nome))||' %' THEN trim(p.sobrenome) WHEN lower(trim(p.nome)) LIKE '% '||lower(trim(p.sobrenome)) THEN trim(p.nome) ELSE trim(p.nome)||' '||trim(p.sobrenome) END)), '') AS nome,
            p.cargo, p.email, p.telefone, p.whatsapp,
            p.empresa_id::text, e.nome AS empresa
       FROM pessoas p
@@ -1153,7 +1175,7 @@ export async function diretorioPessoas(organizacaoId: string, filtros: {
     UNION ALL
 
     SELECT l.id::text, 'lead' AS fonte,
-           NULLIF(trim(concat_ws(' ', l.nome, l.sobrenome)), '') AS nome,
+           NULLIF(trim((CASE WHEN COALESCE(trim(l.sobrenome),'')='' THEN trim(l.nome) WHEN lower(trim(l.sobrenome))=lower(trim(l.nome)) OR lower(trim(l.sobrenome)) LIKE lower(trim(l.nome))||' %' THEN trim(l.sobrenome) WHEN lower(trim(l.nome)) LIKE '% '||lower(trim(l.sobrenome)) THEN trim(l.nome) ELSE trim(l.nome)||' '||trim(l.sobrenome) END)), '') AS nome,
            l.cargo, l.email, l.telefone, l.whatsapp,
            l.empresa_id::text, COALESCE(e.nome, l.empresa) AS empresa
       FROM leads l
@@ -1177,7 +1199,7 @@ export async function diretorioPessoas(organizacaoId: string, filtros: {
 export async function pessoaPorId(organizacaoId: string, pessoaId: string): Promise<LinhaPessoa | null> {
   const [linha] = await db.execute<LinhaPessoaDb>(sql`
     SELECT p.id::text, 'pessoa' AS fonte,
-           NULLIF(trim(concat_ws(' ', p.nome, p.sobrenome)), '') AS nome,
+           NULLIF(trim((CASE WHEN COALESCE(trim(p.sobrenome),'')='' THEN trim(p.nome) WHEN lower(trim(p.sobrenome))=lower(trim(p.nome)) OR lower(trim(p.sobrenome)) LIKE lower(trim(p.nome))||' %' THEN trim(p.sobrenome) WHEN lower(trim(p.nome)) LIKE '% '||lower(trim(p.sobrenome)) THEN trim(p.nome) ELSE trim(p.nome)||' '||trim(p.sobrenome) END)), '') AS nome,
            p.cargo, p.email, p.telefone, p.whatsapp,
            p.empresa_id::text, e.nome AS empresa
       FROM pessoas p
@@ -1187,7 +1209,7 @@ export async function pessoaPorId(organizacaoId: string, pessoaId: string): Prom
     UNION ALL
 
     SELECT l.id::text, 'lead' AS fonte,
-           NULLIF(trim(concat_ws(' ', l.nome, l.sobrenome)), '') AS nome,
+           NULLIF(trim((CASE WHEN COALESCE(trim(l.sobrenome),'')='' THEN trim(l.nome) WHEN lower(trim(l.sobrenome))=lower(trim(l.nome)) OR lower(trim(l.sobrenome)) LIKE lower(trim(l.nome))||' %' THEN trim(l.sobrenome) WHEN lower(trim(l.nome)) LIKE '% '||lower(trim(l.sobrenome)) THEN trim(l.nome) ELSE trim(l.nome)||' '||trim(l.sobrenome) END)), '') AS nome,
            l.cargo, l.email, l.telefone, l.whatsapp,
            l.empresa_id::text, COALESCE(e.nome, l.empresa) AS empresa
       FROM leads l
@@ -1242,7 +1264,7 @@ export async function empresa360(organizacaoId: string, empresaId: string): Prom
     numero: string | null; complemento: string | null; bairro: string | null; cep: string | null;
     telefone: string | null; observacoes: string | null;
   }>(sql`
-    SELECT id::text, nome, razao_social, cnpj, setor, porte, cidade, estado, website, dominio,
+    SELECT id::text, ${nomeEmpresaSql("nome")} AS nome, razao_social, cnpj, setor, porte, cidade, estado, website, dominio,
            logradouro, numero, complemento, bairro, cep, telefone, observacoes
       FROM empresas WHERE id = ${empresaId}::uuid AND organizacao_id = ${organizacaoId}::uuid
   `);
@@ -1255,14 +1277,14 @@ export async function empresa360(organizacaoId: string, empresaId: string): Prom
     id: string; fonte: string; nome: string; cargo: string | null; papel: string | null;
     email: string | null; telefone: string | null;
   }>(sql`
-    SELECT p.id::text, 'pessoa' AS fonte, NULLIF(trim(concat_ws(' ', p.nome, p.sobrenome)), '') AS nome,
+    SELECT p.id::text, 'pessoa' AS fonte, NULLIF(trim((CASE WHEN COALESCE(trim(p.sobrenome),'')='' THEN trim(p.nome) WHEN lower(trim(p.sobrenome))=lower(trim(p.nome)) OR lower(trim(p.sobrenome)) LIKE lower(trim(p.nome))||' %' THEN trim(p.sobrenome) WHEN lower(trim(p.nome)) LIKE '% '||lower(trim(p.sobrenome)) THEN trim(p.nome) ELSE trim(p.nome)||' '||trim(p.sobrenome) END)), '') AS nome,
            p.cargo, v.papel, p.email, p.telefone
       FROM pessoas p
       LEFT JOIN pessoa_empresa_vinculos v ON v.pessoa_id = p.id AND v.empresa_id = p.empresa_id AND v.encerrado_em IS NULL
      WHERE p.empresa_id = ${empresaId}::uuid
        AND NOT EXISTS (SELECT 1 FROM leads l2 WHERE l2.id = p.lead_id_legado AND l2.canonical_lead_id IS NOT NULL)
     UNION ALL
-    SELECT l.id::text, 'lead' AS fonte, NULLIF(trim(concat_ws(' ', l.nome, l.sobrenome)), '') AS nome,
+    SELECT l.id::text, 'lead' AS fonte, NULLIF(trim((CASE WHEN COALESCE(trim(l.sobrenome),'')='' THEN trim(l.nome) WHEN lower(trim(l.sobrenome))=lower(trim(l.nome)) OR lower(trim(l.sobrenome)) LIKE lower(trim(l.nome))||' %' THEN trim(l.sobrenome) WHEN lower(trim(l.nome)) LIKE '% '||lower(trim(l.sobrenome)) THEN trim(l.nome) ELSE trim(l.nome)||' '||trim(l.sobrenome) END)), '') AS nome,
            l.cargo, NULL AS papel, l.email, l.telefone
       FROM leads l
      WHERE l.empresa_id = ${empresaId}::uuid
@@ -1307,7 +1329,7 @@ export async function empresa360(organizacaoId: string, empresaId: string): Prom
     id: string; nome: string | null; criado_em: string; lead_score: number | null;
     campos_custom: Record<string, unknown> | null; meta_ad_id: string | null;
   }>(sql`
-    SELECT l.id::text, NULLIF(trim(concat_ws(' ', l.nome, l.sobrenome)), '') AS nome,
+    SELECT l.id::text, NULLIF(trim((CASE WHEN COALESCE(trim(l.sobrenome),'')='' THEN trim(l.nome) WHEN lower(trim(l.sobrenome))=lower(trim(l.nome)) OR lower(trim(l.sobrenome)) LIKE lower(trim(l.nome))||' %' THEN trim(l.sobrenome) WHEN lower(trim(l.nome)) LIKE '% '||lower(trim(l.sobrenome)) THEN trim(l.nome) ELSE trim(l.nome)||' '||trim(l.sobrenome) END)), '') AS nome,
            l.created_at::text AS criado_em, l.lead_score, l.campos_custom, l.meta_ad_id
       FROM leads l
      WHERE l.empresa_id = ${empresaId}::uuid AND l.organizacao_id = ${organizacaoId}::uuid
@@ -1376,7 +1398,7 @@ export async function empresa360(organizacaoId: string, empresaId: string): Prom
     leads: leads.map((l) => ({
       id: l.id, etapa: l.etapa ?? "novo",
       etapaRotulo: ROTULO_ETAPA_PRE_VENDAS[(l.etapa ?? "novo") as EstagioPreVendas] ?? l.etapa ?? "",
-      origem: l.origem, criadoEm: l.criado_em,
+      origem: origemCanonica(l.origem), criadoEm: l.criado_em,
     })),
     oportunidades: oportunidades.map((o) => ({
       id: o.id, titulo: o.titulo, etapa: o.etapa ?? "entrada",
@@ -1415,7 +1437,7 @@ export interface DetalheLead {
   leadScore: number;
   /** Empresa com serviço ativo na carteira: é o que define "Cliente". */
   naCarteira: boolean;
-  pessoa: { nome: string; cargo: string | null; email: string | null; telefone: string | null; whatsapp: string | null; linkedin: string | null };
+  pessoa: { nome: string; cargo: string | null; email: string | null; telefone: string | null; whatsapp: string | null; linkedin: string | null; observacao: string | null; cidade: string | null };
   etapa: EstagioPreVendas;
   etapaRotulo: string;
   qualificado: boolean;
@@ -1453,7 +1475,7 @@ export interface DetalheLead {
 
 /** Chaves de `campos_custom` que NÃO são resposta de formulário: vieram da
  *  migração do Zoho ou são controle interno. Mostrá-las na ficha seria ruído. */
-const CHAVE_NAO_E_RESPOSTA = /^(zoho|crm2_|fonte_dado|nome_derivado_do_email|recuperacao|qualificacaoSdr|motivo$)/i;
+const CHAVE_NAO_E_RESPOSTA = /^(zoho|crm2_|fonte_dado|nome_derivado_do_email|recuperacao|qualificacaoSdr|observacaoContato|cidadeContato|motivo$)/i;
 /* `motivo` só existe nos 92 leads do backfill de recuperação (mesma contagem de `recuperacao`) e é nota técnica, não resposta. */
 
 /** Rótulo legível para a chave: `qual_sua_solucao` vira "Qual sua solucao". */
@@ -1467,17 +1489,37 @@ function rotuloDaChave(chave: string): string {
  *  O formulário da Meta muda quando alguém edita o anúncio: pergunta nova tem
  *  que aparecer sozinha na ficha, sem ninguém mexer no código. Por isso a lista
  *  nasce das chaves gravadas, e não de um conjunto fixo. */
-export function respostasDoFormulario(campos: unknown): Array<{ pergunta: string; resposta: string }> {
-  if (!campos || typeof campos !== "object" || Array.isArray(campos)) return [];
-  const saida: Array<{ pergunta: string; resposta: string }> = [];
-  for (const [chave, valor] of Object.entries(campos as Record<string, unknown>)) {
-    if (CHAVE_NAO_E_RESPOSTA.test(chave)) continue;
-    if (valor === null || valor === undefined || valor === "") continue;
-    const texto = typeof valor === "object" ? JSON.stringify(valor) : String(valor);
-    if (!texto.trim()) continue;
-    saida.push({ pergunta: rotuloDaChave(chave), resposta: texto });
+export function respostasDoFormulario(
+  campos: unknown,
+  /** Campos custom definidos em Ajustes (entidade lead): dão o rótulo, a ordem e
+   *  aparecem mesmo sem valor ("Não preenchido"). Sem definição, vale a chave gravada. */
+  definicoes: Array<{ nome: string; label: string }> = [],
+): Array<{ pergunta: string; resposta: string }> {
+  const obj = campos && typeof campos === "object" && !Array.isArray(campos) ? (campos as Record<string, unknown>) : {};
+  const texto = (valor: unknown): string => {
+    if (valor === null || valor === undefined || valor === "") return "";
+    return (typeof valor === "object" ? JSON.stringify(valor) : String(valor)).trim();
+  };
+  const definidas = new Set(definicoes.map((d) => d.nome));
+  const saida: Array<{ pergunta: string; resposta: string }> = definicoes.map((d) => ({
+    pergunta: d.label, resposta: texto(obj[d.nome]) || "Não preenchido",
+  }));
+  for (const [chave, valor] of Object.entries(obj)) {
+    if (definidas.has(chave) || CHAVE_NAO_E_RESPOSTA.test(chave)) continue;
+    const t = texto(valor);
+    if (!t) continue;
+    saida.push({ pergunta: rotuloDaChave(chave), resposta: t });
   }
   return saida;
+}
+
+/** Campos custom ativos do lead, na ordem definida em Ajustes > Campos custom. */
+async function camposCustomDoLead(organizacaoId: string): Promise<Array<{ nome: string; label: string }>> {
+  const r = await db.execute<{ nome: string; label: string }>(sql`
+    SELECT nome, label FROM custom_fields
+     WHERE organizacao_id = ${organizacaoId}::uuid AND entidade = 'lead' AND ativo = true
+     ORDER BY ordem, created_at`);
+  return [...r];
 }
 
 export async function detalheLead(organizacaoId: string, leadId: string): Promise<DetalheLead | null> {
@@ -1591,9 +1633,12 @@ export async function detalheLead(organizacaoId: string, leadId: string): Promis
   `);
 
   const [tarefa] = await db.execute<{ titulo: string; vence_em: string | null }>(sql`
-    SELECT titulo, vence_em::text FROM tarefas
-     WHERE lead_id = ${leadId}::uuid AND status IN ('a_fazer','em_andamento','aguardando')
-     ORDER BY vence_em NULLS LAST LIMIT 1
+    /* MESMA regra do card do board (proximaAcaoLateral): tarefa aberta, a de prazo mais
+       próximo, com a data do dia quando só ela existe. Antes a gaveta ignorava
+       data_vencimento e mostrava outra "próxima ação" que o cartão. */
+    SELECT titulo, COALESCE(vence_em, data_vencimento::timestamptz)::text AS vence_em FROM tarefas
+     WHERE lead_id = ${leadId}::uuid AND organizacao_id = ${organizacaoId}::uuid AND concluida = false
+     ORDER BY COALESCE(vence_em, data_vencimento::timestamptz) ASC NULLS LAST LIMIT 1
   `);
 
   const etapa = (l.etapa ?? "novo") as EstagioPreVendas;
@@ -1608,10 +1653,12 @@ export async function detalheLead(organizacaoId: string, leadId: string): Promis
     leadScore: l.lead_score ?? 0,
     naCarteira: l.na_carteira,
     pessoa: {
-      nome: [l.nome, l.sobrenome].filter(Boolean).join(" ").trim() || "Sem contato",
+      nome: nomeCompleto(l.nome, l.sobrenome) || "Sem contato",
       cargo: l.cargo, email: l.email, telefone: l.telefone, whatsapp: l.whatsapp,
       // Vazio é ausência: a ficha inventava o perfil a partir do nome.
       linkedin: l.linkedin?.trim() || null,
+      observacao: typeof l.campos_custom?.observacaoContato === "string" ? (l.campos_custom.observacaoContato as string).trim() || null : null,
+      cidade: typeof l.campos_custom?.cidadeContato === "string" ? (l.campos_custom.cidadeContato as string).trim() || null : null,
     },
     etapa,
     etapaRotulo: ROTULO_ETAPA_PRE_VENDAS[etapa] ?? etapa,
@@ -1622,12 +1669,12 @@ export async function detalheLead(organizacaoId: string, leadId: string): Promis
     preQualificado: l.pre_qualificado,
     qualificacao: l.qualificacao,
     atribuicao: {
-      origem: l.origem, campanha: l.utm_campaign, medium: l.utm_medium,
+      origem: origemCanonica(l.origem), campanha: l.utm_campaign, medium: l.utm_medium,
       conteudo: l.utm_content, termo: l.utm_term, landingPage: l.landing_page,
       primeiroToque: toques?.primeiro ?? null, ultimoToque: toques?.ultimo ?? null,
       metaAdId: l.meta_ad_id, metaAdsetId: l.meta_adset_id, metaCampaignId: l.meta_campaign_id,
     },
-    respostasFormulario: respostasDoFormulario(l.campos_custom),
+    respostasFormulario: respostasDoFormulario(l.campos_custom, await camposCustomDoLead(organizacaoId)),
     responsavel: { id: l.responsavel_id, nome: l.responsavel },
     servicos: comoLista(l.servicos),
     tags: tags.map((t) => ({ id: t.id, nome: t.nome })),
@@ -1657,6 +1704,8 @@ export interface DetalheOportunidade {
   sourceProcess: string | null;
   valor: number | null;
   previsaoFechamento: string | null;
+  /** Quando a oportunidade nasceu (negocios.created_at). */
+  criadoEm: string;
   responsavel: { id: string | null; nome: string | null };
   empresa: { id: string | null; nome: string };
   contato: { id: string; fonte: "pessoa" | "lead"; nome: string; cargo: string | null; email: string | null; telefone: string | null; whatsapp: string | null } | null;
@@ -1681,7 +1730,11 @@ export interface DetalheOportunidade {
   irmas: Array<{ id: string; titulo: string; etapa: string; familia: string | null }>;
   evidencias: Array<{ tipo: string; em: string }>;
   /** Atividades registradas (ligação, e-mail, reunião, nota de sistema). */
-  atividades: Array<{ id: string; tipo: string; titulo: string | null; descricao: string | null; autor: string | null; em: string }>;
+  atividades: Array<{ id: string; tipo: string; titulo: string | null; descricao: string | null; autor: string | null; em: string; audioUrl: string | null }>;
+  /** Resumo escrito na oportunidade (objetivo, escopo, contexto, dor, solução); vazio = ninguém escreveu. */
+  resumo: Record<string, string> | null;
+  /** As atividades da oportunidade (tabela `tarefas`): a mesma estrutura de /tarefas e da peça de Atividade. */
+  tarefas: Array<{ id: string; titulo: string; tipo: string | null; status: string; descricao: string | null; venceEm: string | null; responsavel: string | null }>;
   /** Notas humanas do negócio. Separadas das atividades porque o 360 as mostra em trilhas diferentes. */
   notas: Array<{ id: string; texto: string; autor: string | null; em: string }>;
   /** Os outros contatos da empresa — o 360 lista o comitê, não só o contato principal. */
@@ -1701,8 +1754,9 @@ export async function detalheOportunidade(organizacaoId: string, negocioId: stri
     proxima_acao_em: string | null; motivo_estagnacao: string | null;
     motivo_perda: string | null; no_show_em: string | null; no_show_contagem: number;
     trial_iniciado_em: string | null; trial_encerrado_em: string | null; bundle_id: string | null;
+    resumo: Record<string, string> | null; criado_em: string;
   }>(sql`
-    SELECT n.id::text, n.titulo, n.etapa,
+    SELECT n.id::text, n.titulo, n.etapa, n.campos_custom->'resumoOportunidade' AS resumo, n.created_at::text AS criado_em,
            -- Familia e origem vem do canonico quando o legado nao tem.
            --
            -- negocios.service_family e NULL em 475 das 1.561 oportunidades, e
@@ -1719,7 +1773,7 @@ export async function detalheOportunidade(organizacaoId: string, negocioId: stri
            n.valor_total::text AS valor,
            n.previsao_fechamento::text AS previsao, n.responsavel_id::text, u.nome AS responsavel,
            n.empresa_id::text, COALESCE(e.nome, l.empresa) AS empresa, n.lead_id::text,
-           NULLIF(trim(concat_ws(' ', l.nome, l.sobrenome)), '') AS lead_nome,
+           NULLIF(trim((CASE WHEN COALESCE(trim(l.sobrenome),'')='' THEN trim(l.nome) WHEN lower(trim(l.sobrenome))=lower(trim(l.nome)) OR lower(trim(l.sobrenome)) LIKE lower(trim(l.nome))||' %' THEN trim(l.sobrenome) WHEN lower(trim(l.nome)) LIKE '% '||lower(trim(l.sobrenome)) THEN trim(l.nome) ELSE trim(l.nome)||' '||trim(l.sobrenome) END)), '') AS lead_nome,
            l.cargo AS lead_cargo, l.email AS lead_email, l.telefone AS lead_telefone, l.whatsapp AS lead_whatsapp,
            l.qualificacao, n.proxima_acao, n.proxima_acao_em::text,
            -- Estagnação mora no canônico desde a 0084; o legado é fallback.
@@ -1742,7 +1796,7 @@ export async function detalheOportunidade(organizacaoId: string, negocioId: stri
   const [pessoaContato] = await db.execute<{
     id: string; nome: string | null; cargo: string | null; email: string | null; telefone: string | null; whatsapp: string | null;
   }>(sql`
-    SELECT p.id::text, NULLIF(trim(concat_ws(' ', p.nome, p.sobrenome)), '') AS nome,
+    SELECT p.id::text, NULLIF(trim((CASE WHEN COALESCE(trim(p.sobrenome),'')='' THEN trim(p.nome) WHEN lower(trim(p.sobrenome))=lower(trim(p.nome)) OR lower(trim(p.sobrenome)) LIKE lower(trim(p.nome))||' %' THEN trim(p.sobrenome) WHEN lower(trim(p.nome)) LIKE '% '||lower(trim(p.sobrenome)) THEN trim(p.nome) ELSE trim(p.nome)||' '||trim(p.sobrenome) END)), '') AS nome,
            p.cargo, p.email, p.telefone, p.whatsapp
       FROM pessoas p
      WHERE p.organizacao_id = ${organizacaoId}::uuid
@@ -1761,7 +1815,9 @@ export async function detalheOportunidade(organizacaoId: string, negocioId: stri
     -- proposta cujo vínculo legado ficou para trás, sem atribuir a esta
     -- oportunidade nenhuma das 455 propostas que só apontam para um lead — essas
     -- são caso de reconciliação, não de palpite.
-    SELECT p.id::text, p.numero, p.versao, p.status, p.total_geral::text AS total,
+    SELECT p.id::text, p.numero, p.versao, p.status,
+           -- O valor vem das LINHAS (a mesma conta da lista e do detalhe da proposta); total_geral só vale sem linha.
+           COALESCE(it.soma, p.total_geral)::text AS total,
            p.enviada_em::text, p.modo_fechamento AS modo,
            -- A composição, na ordem em que foi montada. É o bloco "Produtos e
            -- valores" do 360, que sem isto dizia "crie a primeira proposta"
@@ -1773,7 +1829,7 @@ export async function detalheOportunidade(organizacaoId: string, negocioId: stri
                  'nome', pi.nome, 'natureza', pi.revenue_nature,
                  'quantidade', pi.quantidade, 'valor_unitario', pi.valor_unitario,
                  'subtotal', pi.subtotal
-               ) ORDER BY pi.ordem, pi.created_at) AS itens
+               ) ORDER BY pi.ordem, pi.created_at) AS itens, sum(pi.subtotal) AS soma
           FROM proposta_itens pi
          WHERE pi.proposta_id = p.id
       ) it ON TRUE
@@ -1819,9 +1875,9 @@ export async function detalheOportunidade(organizacaoId: string, negocioId: stri
   // cobre. `timeline_visible` existe porque parte das atividades é ruído de
   // integração que nunca foi para o olho de ninguém.
   const atividades = await db.execute<{
-    id: string; tipo: string; titulo: string | null; descricao: string | null; autor: string | null; em: string;
+    id: string; tipo: string; titulo: string | null; descricao: string | null; autor: string | null; em: string; audio_url: string | null;
   }>(sql`
-    SELECT a.id::text, a.tipo, a.titulo,
+    SELECT a.id::text, a.tipo, a.titulo, a.dados->>'audioUrl' AS audio_url,
            COALESCE(a.descricao, a.descricao_raw) AS descricao,
            COALESCE(u.nome, a.usuario_display_name) AS autor,
            a.created_at::text AS em
@@ -1830,7 +1886,21 @@ export async function detalheOportunidade(organizacaoId: string, negocioId: stri
      WHERE a.negocio_id = ${negocioId}::uuid
        AND a.organizacao_id = ${organizacaoId}::uuid
        AND a.timeline_visible
+       -- Eco de evento de domínio (troca de responsável, mudança de etapa...) já está na Timeline
+       -- (vendas_eventos); aqui entrava como "atividade feita" e inflava o contador de Concluídas.
+       AND NOT (a.tipo IN ('nota', 'reuniao') AND a.dados ? 'evento')
      ORDER BY a.created_at DESC
+     LIMIT 100
+  `);
+
+  const tarefas = await db.execute<{
+    id: string; titulo: string; tipo: string | null; status: string; descricao: string | null; vence_em: string | null; responsavel: string | null;
+  }>(sql`
+    SELECT t.id::text, t.titulo, t.tipo, t.status, t.descricao,
+           COALESCE(t.vence_em, t.data_vencimento)::text AS vence_em, u.nome AS responsavel
+      FROM tarefas t LEFT JOIN usuarios u ON u.id = t.usuario_id
+     WHERE t.negocio_id = ${negocioId}::uuid AND t.organizacao_id = ${organizacaoId}::uuid
+     ORDER BY (t.status IN ('concluida','declinada')), COALESCE(t.vence_em, t.data_vencimento) NULLS LAST, t.created_at DESC
      LIMIT 100
   `);
 
@@ -1897,6 +1967,7 @@ export async function detalheOportunidade(organizacaoId: string, negocioId: stri
     motion: n.motion, sourceProcess: n.source_process,
     valor: n.valor === null ? null : Number(n.valor),
     previsaoFechamento: n.previsao,
+    criadoEm: n.criado_em,
     responsavel: { id: n.responsavel_id, nome: n.responsavel },
     empresa: { id: n.empresa_id, nome: n.empresa?.trim() || "Empresa não informada" },
     contato: pessoaContato ? {
@@ -1936,7 +2007,12 @@ export async function detalheOportunidade(organizacaoId: string, negocioId: stri
     // descrição, e o React escapa tudo — o operador lia a tag no meio da frase.
     atividades: atividades.map((a) => ({
       id: a.id, tipo: a.tipo, titulo: a.titulo,
-      descricao: textoSimples(a.descricao), autor: a.autor, em: a.em,
+      descricao: textoSimples(a.descricao), autor: a.autor, em: a.em, audioUrl: a.audio_url,
+    })),
+    resumo: n.resumo && typeof n.resumo === "object" ? n.resumo : null,
+    tarefas: tarefas.map((t) => ({
+      id: t.id, titulo: t.titulo, tipo: t.tipo, status: t.status, descricao: textoSimples(t.descricao),
+      venceEm: t.vence_em, responsavel: t.responsavel,
     })),
     notas: notas.map((x) => ({
       id: x.id, texto: textoSimples(x.texto) ?? "", autor: x.autor, em: x.em,

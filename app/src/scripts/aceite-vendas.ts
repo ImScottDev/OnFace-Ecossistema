@@ -644,6 +644,15 @@ async function main() {
     ok("Todo evento diz quem executou", (semAtor?.sem_tipo ?? 0) === 0);
     ok("Evento humano identifica o usuário", (semAtor?.humano_sem_usuario ?? 0) === 0);
 
+    // SLA: os marcos do ciclo saem de UMA função (lib/vendas/sla-lead).
+    const { marcosDoLead } = await import("@/lib/vendas/sla-lead");
+    const marcos = await marcosDoLead(org.id, lead.leadId);
+    ok("SLA: marcos chegada, 1º contato, qualificação e conversão existem",
+      Boolean(marcos?.chegouEm && marcos.primeiroContatoEm && marcos.qualificadoEm && marcos.convertidoEm),
+      JSON.stringify(marcos));
+    ok("SLA: tempos são números não negativos",
+      [marcos?.horasAteContato, marcos?.horasAteQualificar, marcos?.horasAteConverter].every((h) => typeof h === "number" && h >= 0));
+
   } finally {
     await limpar(sufixo);
   }

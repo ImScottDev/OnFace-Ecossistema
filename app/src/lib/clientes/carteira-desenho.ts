@@ -1,4 +1,5 @@
 import { sql } from "drizzle-orm";
+import { nomeEmpresaSql } from "@/lib/vendas/texto";
 import { db } from "@/lib/db";
 import { faturamentoMensal, type FaturamentoMes } from "@/lib/financeiro/faturamento-mensal";
 import { ROTULO_ETAPA_PIPELINE, type EtapaPipeline } from "@/lib/vendas/dominio";
@@ -218,8 +219,12 @@ export async function carteiraParaODesenho(organizacaoId: string): Promise<Carte
       FROM faturas f LEFT JOIN assinaturas a ON a.id = f.assinatura_id GROUP BY 1
     ),
     ultima_atividade_agg AS (
-      SELECT l.empresa_id, MAX(at.created_at) AS ultima FROM atividades at JOIN leads l ON l.id = at.lead_id
-      WHERE l.empresa_id IS NOT NULL GROUP BY 1
+      -- Mesma regra do CS (lib/cs/tela-cs.ts): atividade da EMPRESA ou do lead dela. Só pelo lead,
+      -- a atividade registrada direto na conta (ex.: "Nova atividade" do Cliente 360) não contava
+      -- e a Carteira e o CS discordavam de quem está "sem contato".
+      SELECT COALESCE(at.empresa_id, l.empresa_id) AS empresa_id, MAX(at.created_at) AS ultima
+        FROM atividades at LEFT JOIN leads l ON l.id = at.lead_id
+       WHERE COALESCE(at.empresa_id, l.empresa_id) IS NOT NULL GROUP BY 1
     ),
     health AS (
       SELECT DISTINCT ON (empresa_id) empresa_id, score FROM cs_health_snapshots
@@ -255,7 +260,7 @@ export async function carteiraParaODesenho(organizacaoId: string): Promise<Carte
     -- O que resta fora é o que NÃO tem dono: 38 linhas / R$ 20.813,00 com
     -- empresa_id nulo em cliente_receita_mensal — receita não atribuída a
     -- empresa nenhuma, que não dá para pôr em cliente nenhum sem inventar.
-    SELECT e.id, e.nome, COALESCE(e.setor, '') AS segmento,
+    SELECT e.id, ${nomeEmpresaSql("e.nome")} AS nome, COALESCE(e.setor, '') AS segmento,
       COALESCE(sa.mrr, 0)::float8 AS mrr, fd.service_family AS produto,
       h.score AS saude, COALESCE(fat.n_atrasadas, 0) AS faturas_atrasadas, uo.nome AS resp,
       (cli.status_financeiro = 'churned') AS cancelado,
@@ -308,7 +313,7 @@ export async function carteiraParaODesenho(organizacaoId: string): Promise<Carte
     id: string; titulo: string; tipo: string; empresa: string; resp: string | null;
     dias: number | null; hora: string | null;
   }>(sql`
-    SELECT t.id, t.titulo, t.tipo, e.nome AS empresa, u.nome AS resp,
+    SELECT t.id, t.titulo, t.tipo, ${nomeEmpresaSql("e.nome")} AS empresa, u.nome AS resp,
       (COALESCE((t.vence_em AT TIME ZONE 'America/Sao_Paulo')::date, t.data_vencimento)
         - (now() AT TIME ZONE 'America/Sao_Paulo')::date) AS dias,
       to_char(t.vence_em AT TIME ZONE 'America/Sao_Paulo', 'HH24:MI') AS hora
@@ -347,7 +352,7 @@ export async function carteiraParaODesenho(organizacaoId: string): Promise<Carte
       SELECT DISTINCT sc.empresa_id FROM servicos_canonicos sc JOIN empresas e ON e.id = sc.empresa_id
       WHERE sc.portfolio_included = true AND e.organizacao_id = ${organizacaoId}
     )
-    SELECT 'opp' AS k, e.nome AS empresa, o.titulo, o.etapa, u.nome AS resp, NULL AS status,
+    SELECT 'opp' AS k, ${nomeEmpresaSql("e.nome")} AS empresa, o.titulo, o.etapa, u.nome AS resp, NULL AS status,
       NULL::int AS numero, NULL::int AS versao, NULL AS total,
       COALESCE(o.negocio_id_legado, o.id)::text AS id
     FROM oportunidades o JOIN universo un ON un.empresa_id = o.empresa_id
@@ -355,7 +360,7 @@ export async function carteiraParaODesenho(organizacaoId: string): Promise<Carte
     WHERE COALESCE(o.etapa, 'entrada') NOT IN ('ganho', 'perdido')
       AND COALESCE(o.stage, '') <> 'ativo' -- E4: cópia de carteira não é oportunidade aberta
     UNION ALL
-    SELECT 'proposta', e.nome, NULL, NULL, NULL, p.status, p.numero, p.versao, p.total_geral::text, p.id::text
+    SELECT 'proposta', ${nomeEmpresaSql("e.nome")}, NULL, NULL, NULL, p.status, p.numero, p.versao, p.total_geral::text, p.id::text
     FROM propostas p JOIN oportunidades o ON o.id = p.oportunidade_id
     JOIN universo un ON un.empresa_id = o.empresa_id JOIN empresas e ON e.id = o.empresa_id
     WHERE p.status NOT IN ('aceita', 'recusada', 'expirada', 'substituida', 'Proposta Ganha')
@@ -377,7 +382,7 @@ export async function carteiraParaODesenho(organizacaoId: string): Promise<Carte
   const reu = await db.execute<{
     id: string; empresa: string; titulo: string; data: string; pessoa: string | null; resp: string | null; negocio_id: string | null;
   }>(sql`
-    SELECT r.id::text, e.nome AS empresa, r.titulo, to_char(r.data AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS data,
+    SELECT r.id::text, ${nomeEmpresaSql("e.nome")} AS empresa, r.titulo, to_char(r.data AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS data,
       COALESCE(l.nome, ln.nome) AS pessoa, u.nome AS resp, r.negocio_id::text
     FROM reunioes r
     LEFT JOIN leads l ON l.id = r.lead_id

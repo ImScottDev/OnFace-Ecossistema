@@ -136,7 +136,7 @@ export async function executarEmMassa(params: {
         case "remover_tag": {
           if (!valor) { itens.push({ leadId, desfecho: "falhou", motivo: "tag não informada" }); break; }
           const fn = acao === "adicionar_tag" ? adicionarTag : removerTag;
-          const r = await fn({ organizacaoId, entityType: "lead", entityId: leadId, label: valor });
+          const r = await fn({ organizacaoId, entityType: "lead", entityId: leadId, label: valor, atorId: params.atorId ?? null });
           if (!r.ok) { itens.push({ leadId, desfecho: "falhou", motivo: r.erro }); break; }
           // Tag que já estava não é erro nem trabalho: é no-op, e dizer isso
           // evita o relatório mentir que aplicou 50 quando mexeu em 3.

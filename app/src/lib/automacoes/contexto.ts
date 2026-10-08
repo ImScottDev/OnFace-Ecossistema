@@ -118,7 +118,7 @@ export async function hidratarContexto(
   // 2) Os vínculos, cada um com o filtro de organização.
   const [lead, negocio] = await Promise.all([
     leadId ? uma(sql`
-      SELECT l.id, trim(concat_ws(' ', l.nome, l.sobrenome)) AS nome, l.nome AS primeiro, l.email, l.telefone, l.origem,
+      SELECT l.id, trim((CASE WHEN COALESCE(trim(l.sobrenome),'')='' THEN trim(l.nome) WHEN lower(trim(l.sobrenome))=lower(trim(l.nome)) OR lower(trim(l.sobrenome)) LIKE lower(trim(l.nome))||' %' THEN trim(l.sobrenome) WHEN lower(trim(l.nome)) LIKE '% '||lower(trim(l.sobrenome)) THEN trim(l.nome) ELSE trim(l.nome)||' '||trim(l.sobrenome) END)) AS nome, l.nome AS primeiro, l.email, l.telefone, l.origem,
              l.estagio_pre_vendas AS etapa, l.cargo, l.empresa_id, l.responsavel_id,
              COALESCE((SELECT array_agg(DISTINCT lb.nome) FROM labels lb
                         WHERE lb.organizacao_id = l.organizacao_id
