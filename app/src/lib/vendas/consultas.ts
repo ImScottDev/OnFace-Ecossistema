@@ -61,6 +61,7 @@ const POR_COLUNA_PADRAO = 4000;
    driver do Postgres para o bundle do navegador e derrubava a rota inteira com
    "Can't resolve 'fs'". Reexportadas para quem já as importava deste módulo. */
 import { textoSimples, nomeCompleto, nomeEmpresaSql } from "./texto";
+import { CHAVE_RASTREIO_META, valorLegivel, ajustarSiglas, rastreioMetaDeCampos } from "./respostas-formulario";
 
 export { VIEWS_PRE_VENDAS, ehView, type ViewPreVendas };
 
@@ -1461,6 +1462,8 @@ export interface DetalheLead {
    *  As chaves técnicas da migração do Zoho ficam de fora — não são resposta de
    *  ninguém. */
   respostasFormulario: Array<{ pergunta: string; resposta: string }>;
+  /** Rastreio da Meta (chaves `meta_*` de campos_custom), para o cartão de origem. */
+  metaRastreio?: Record<string, string>;
   responsavel: { id: string | null; nome: string | null };
   servicos: string[] | null;
   /** Tags do lead (tabela `labels`). A gaveta mostra estas, não os serviços. */
@@ -1502,13 +1505,13 @@ export function respostasDoFormulario(
   };
   const definidas = new Set(definicoes.map((d) => d.nome));
   const saida: Array<{ pergunta: string; resposta: string }> = definicoes.map((d) => ({
-    pergunta: d.label, resposta: texto(obj[d.nome]) || "Não preenchido",
+    pergunta: d.label, resposta: valorLegivel(texto(obj[d.nome])) || "Não preenchido",
   }));
   for (const [chave, valor] of Object.entries(obj)) {
-    if (definidas.has(chave) || CHAVE_NAO_E_RESPOSTA.test(chave)) continue;
+    if (definidas.has(chave) || CHAVE_NAO_E_RESPOSTA.test(chave) || CHAVE_RASTREIO_META.test(chave)) continue;
     const t = texto(valor);
     if (!t) continue;
-    saida.push({ pergunta: rotuloDaChave(chave), resposta: t });
+    saida.push({ pergunta: ajustarSiglas(rotuloDaChave(chave)), resposta: valorLegivel(t) });
   }
   return saida;
 }
@@ -1675,6 +1678,7 @@ export async function detalheLead(organizacaoId: string, leadId: string): Promis
       metaAdId: l.meta_ad_id, metaAdsetId: l.meta_adset_id, metaCampaignId: l.meta_campaign_id,
     },
     respostasFormulario: respostasDoFormulario(l.campos_custom, await camposCustomDoLead(organizacaoId)),
+    metaRastreio: rastreioMetaDeCampos(l.campos_custom),
     responsavel: { id: l.responsavel_id, nome: l.responsavel },
     servicos: comoLista(l.servicos),
     tags: tags.map((t) => ({ id: t.id, nome: t.nome })),

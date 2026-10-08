@@ -9,6 +9,7 @@
 
 import type { DetalheLead } from "@/lib/vendas/consultas";
 import { qualDoDesenho } from "./qual-do-desenho";
+import { linhasOrigemMeta } from "@/lib/vendas/respostas-formulario";
 
 /** O lead na forma que as fichas leem. */
 export interface RegistroDoDesenho {
@@ -58,7 +59,7 @@ export function linkDoAnuncio(adId: string | null): string | null {
   return id && /^\d+$/.test(id) ? `https://www.facebook.com/ads/library/?id=${id}` : null;
 }
 
-export function rastreioDoLead(a: DetalheLead["atribuicao"]): RegistroDoDesenho["rastreio"] {
+export function rastreioDoLead(a: DetalheLead["atribuicao"], meta?: Record<string, string>): RegistroDoDesenho["rastreio"] {
   const linhas: RegistroDoDesenho["rastreio"] = [];
   const add = (rotulo: string, valor: string | null, href?: string | null) => {
     if (valor?.trim()) linhas.push(href ? { rotulo, valor: valor.trim(), href } : { rotulo, valor: valor.trim() });
@@ -71,6 +72,7 @@ export function rastreioDoLead(a: DetalheLead["atribuicao"]): RegistroDoDesenho[
   add("ID da campanha (Meta)", a.metaCampaignId);
   add("ID do conjunto (Meta)", a.metaAdsetId);
   add("ID do anúncio (Meta)", a.metaAdId, linkDoAnuncio(a.metaAdId));
+  for (const l of linhasOrigemMeta(meta)) add(l.rotulo, l.valor);
   return linhas;
 }
 
@@ -147,7 +149,7 @@ export function registroDoDesenho(l: DetalheLead): RegistroDoDesenho {
     venceEm: l.proximaAcao?.venceEm ?? null,
     dias: diasDesde(l.criadoEm),
     respostas: l.respostasFormulario,
-    rastreio: rastreioDoLead(l.atribuicao),
+    rastreio: rastreioDoLead(l.atribuicao, l.metaRastreio),
     leadScore: l.leadScore,
     empresaTel: l.empresa.telefone,
     empresaObs: l.empresa.observacoes,

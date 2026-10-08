@@ -35,6 +35,8 @@ import {
   type LeadAdsBruto,
 } from "@onface/integrations-meta";
 import { garantirEntradaCanonica } from "@/lib/vendas/ponte-canonica";
+import { resolverEmpresaId, dominioCorporativo } from "@/lib/crm/resolver-empresa";
+import { syncPessoaFromLead } from "@/lib/crm/sync-domain-model";
 
 const APLICAR = process.argv.includes("--aplicar");
 const DIAS = Number(process.argv.find((a) => a.startsWith("--dias="))?.slice("--dias=".length) ?? 90);
@@ -137,6 +139,8 @@ async function garantirLeadLegado(
     const a = n.atribuicao;
     await db.execute(sql`
       UPDATE leads SET
+        empresa = COALESCE(NULLIF(empresa, ''), ${n.empresa ?? null}),
+        cargo   = COALESCE(NULLIF(cargo, ''),   ${n.cargo ?? null}),
         campos_custom = coalesce(campos_custom, '{}'::jsonb) || coalesce(${camposJson}::jsonb, '{}'::jsonb),
         utm_source    = COALESCE(NULLIF(utm_source, ''),    ${a.utmSource ?? null}),
         utm_medium    = COALESCE(NULLIF(utm_medium, ''),    ${a.utmMedium ?? null}),
@@ -147,6 +151,16 @@ async function garantirLeadLegado(
         meta_adset_id    = COALESCE(NULLIF(meta_adset_id, ''),    ${a.adsetId ?? null}),
         meta_campaign_id = COALESCE(NULLIF(meta_campaign_id, ''), ${a.campaignId ?? null})
        WHERE id = ${ja.id}::uuid`);
+    if (n.empresa) {
+      const [sem] = await db.execute<{ id: string }>(sql`SELECT id::text FROM leads WHERE id = ${ja.id}::uuid AND empresa_id IS NULL`);
+      if (sem) {
+        const empresaId = await resolverEmpresaId({ organizacaoId, nome: n.empresa, website: dominioCorporativo(n.email) });
+        if (empresaId) {
+          await db.execute(sql`UPDATE leads SET empresa_id = ${empresaId}::uuid WHERE id = ${ja.id}::uuid AND empresa_id IS NULL`);
+          await syncPessoaFromLead(ja.id).catch(() => null); // dual-write, best-effort
+        }
+      }
+    }
     return ja.id;
   }
 
@@ -202,10 +216,10 @@ async function main() {
     console.log(`  ── ${form.name ?? form.id} — ${leads.length} lead(s) na janela`);
     vistos += leads.length;
 
-    for (const bruto of leads) {
+    const processar = async (bruto: LeadAdsBruto) => {
       const n = normalizarLeadAds(bruto);
-      if (!n.email && !n.telefone) { semIdentidade++; continue; }
-      if (!APLICAR) { criados++; continue; }
+      if (!n.email && !n.telefone) { semIdentidade++; return; }
+      if (!APLICAR) { criados++; return; }
 
       const leadLegadoId = APLICAR ? await garantirLeadLegado(org.id, n, bruto, form.name ?? null) : null;
       const r = await garantirEntradaCanonica({
@@ -230,8 +244,13 @@ async function main() {
         ocorridoEm: n.ocorridoEm,
       }, leadLegadoId);
 
-      if (!r.ok) { falhas++; console.error(`     ✘ ${n.metaLeadId}: ${r.erro ?? "recusado"}`); continue; }
+      if (!r.ok) { falhas++; console.error(`     ✘ ${n.metaLeadId}: ${r.erro ?? "recusado"}`); return; }
       if (r.criada) criados++; else jaExistiam++;
+    };
+    // Seis por vez: o gargalo é a ida e volta ao banco, não a CPU.
+    const POR_VEZ = 6;
+    for (let i = 0; i < leads.length; i += POR_VEZ) {
+      await Promise.all(leads.slice(i, i + POR_VEZ).map((b) => processar(b).catch((e) => { falhas++; console.error("     ✘", e instanceof Error ? e.message : e); })));
     }
   }
 
