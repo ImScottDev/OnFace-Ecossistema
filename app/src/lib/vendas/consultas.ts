@@ -61,7 +61,7 @@ const POR_COLUNA_PADRAO = 4000;
    driver do Postgres para o bundle do navegador e derrubava a rota inteira com
    "Can't resolve 'fs'". Reexportadas para quem já as importava deste módulo. */
 import { textoSimples, nomeCompleto, nomeEmpresaSql } from "./texto";
-import { CHAVE_RASTREIO_META, valorLegivel, ajustarSiglas, rastreioMetaDeCampos } from "./respostas-formulario";
+import { CHAVE_RASTREIO_META, valorLegivel, ajustarSiglas, rastreioMetaDeCampos, comIdentidadeDoFormulario } from "./respostas-formulario";
 
 export { VIEWS_PRE_VENDAS, ehView, type ViewPreVendas };
 
@@ -1677,7 +1677,10 @@ export async function detalheLead(organizacaoId: string, leadId: string): Promis
       primeiroToque: toques?.primeiro ?? null, ultimoToque: toques?.ultimo ?? null,
       metaAdId: l.meta_ad_id, metaAdsetId: l.meta_adset_id, metaCampaignId: l.meta_campaign_id,
     },
-    respostasFormulario: respostasDoFormulario(l.campos_custom, await camposCustomDoLead(organizacaoId)),
+    respostasFormulario: comIdentidadeDoFormulario(
+      respostasDoFormulario(l.campos_custom, await camposCustomDoLead(organizacaoId)),
+      { nome: l.nome, sobrenome: l.sobrenome, email: l.email, telefone: l.telefone, empresa: l.empresa_nome, cargo: l.cargo },
+    ),
     metaRastreio: rastreioMetaDeCampos(l.campos_custom),
     responsavel: { id: l.responsavel_id, nome: l.responsavel },
     servicos: comoLista(l.servicos),

@@ -60,3 +60,30 @@ export function linhasOrigemMeta(meta: Record<string, string> | undefined): Arra
   add("ID do lead (Meta)", meta.meta_leadgen_id);
   return linhas;
 }
+
+/**
+ * O que a pessoa preencheu no formulário inclui nome, e-mail, telefone, empresa
+ * e cargo, que o sistema guarda em colunas do lead (não em `campos_custom`).
+ * Quando o lead tem respostas de formulário, a lista mostra esses campos no
+ * topo, seguidos das outras perguntas. Sem resposta nenhuma, devolve a lista
+ * como está (lead que não veio de formulário não ganha "resposta" inventada).
+ */
+export function comIdentidadeDoFormulario(
+  respostas: Array<{ pergunta: string; resposta: string }>,
+  id: { nome?: string | null; sobrenome?: string | null; email?: string | null; telefone?: string | null; empresa?: string | null; cargo?: string | null },
+): Array<{ pergunta: string; resposta: string }> {
+  if (respostas.length === 0) return respostas;
+  const juntar = (...p: Array<string | null | undefined>) => p.map((x) => x?.trim()).filter(Boolean).join(" ");
+  const base: Array<[string, string]> = [
+    ["Nome", juntar(id.nome, id.sobrenome && id.sobrenome.trim().toLowerCase() === id.nome?.trim().toLowerCase() ? "" : id.sobrenome)],
+    ["E-mail", id.email?.trim() ?? ""],
+    ["Telefone", id.telefone?.trim() ?? ""],
+    ["Empresa", id.empresa?.trim() ?? ""],
+    ["Cargo", id.cargo?.trim() ?? ""],
+  ];
+  const ja = new Set(respostas.map((r) => r.pergunta.trim().toLowerCase()));
+  const topo = base
+    .filter(([rot, val]) => val && !ja.has(rot.toLowerCase()))
+    .map(([pergunta, resposta]) => ({ pergunta, resposta }));
+  return [...topo, ...respostas];
+}

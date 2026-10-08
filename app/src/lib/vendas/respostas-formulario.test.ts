@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { valorLegivel, ajustarSiglas, rastreioMetaDeCampos, linhasOrigemMeta } from "./respostas-formulario";
+import { valorLegivel, ajustarSiglas, rastreioMetaDeCampos, linhasOrigemMeta, comIdentidadeDoFormulario } from "./respostas-formulario";
 
 test("código de opção da Meta vira texto legível", () => {
   assert.equal(valorLegivel("revender_com_a_minha_marca"), "Revender com a minha marca");
@@ -32,4 +32,22 @@ test("rastreio da Meta sai da lista de respostas e vai para a origem", () => {
   assert.ok(linhas.includes("Formulário (Meta)=Form WL"));
   assert.ok(linhas.includes("Lead orgânico=Não"));
   assert.ok(linhas.includes("ID do lead (Meta)=123"));
+});
+
+test("a lista traz nome, e-mail, telefone, empresa e cargo antes das outras perguntas", () => {
+  const r = comIdentidadeDoFormulario(
+    [{ pergunta: "Solução de telefonia atual", resposta: "Telefonia fixa" }],
+    { nome: "Ana", sobrenome: "Lima", email: "ana@x.com", telefone: "+5511999990000", empresa: "X Ltda", cargo: "Diretora" },
+  );
+  assert.deepEqual(r.map((x) => x.pergunta), ["Nome", "E-mail", "Telefone", "Empresa", "Cargo", "Solução de telefonia atual"]);
+  assert.equal(r[0].resposta, "Ana Lima");
+});
+
+test("lead sem resposta de formulário não ganha lista inventada", () => {
+  assert.deepEqual(comIdentidadeDoFormulario([], { nome: "Ana", email: "ana@x.com" }), []);
+});
+
+test("não repete campo que já veio como pergunta", () => {
+  const r = comIdentidadeDoFormulario([{ pergunta: "Telefone", resposta: "1" }], { nome: "Ana", telefone: "2" });
+  assert.equal(r.filter((x) => x.pergunta === "Telefone").length, 1);
 });
