@@ -280,6 +280,9 @@ SELECT md5('pessoa:' || a.id)::uuid AS id, a.organizacao_id, a.empresa_id,
   FROM leads a
   JOIN leads g ON coalesce(g.canonical_lead_id, g.id) = a.id
  WHERE a.canonical_lead_id IS NULL
+   -- lead de teste do dev (origem 'qa', nunca existiu em prod) ja tem pessoa criada pelo app, com id
+   -- proprio: gerar a deterministica bateria em idx_pessoas_lead_legado. Mesma regra do usuarios qa.%.
+   AND a.origem IS DISTINCT FROM 'qa'
  GROUP BY a.id, a.organizacao_id, a.empresa_id, a.nome, a.sobrenome, a.email,
           a.telefone, a.whatsapp, a.cargo;
 SELECT 'pessoas' AS tabela, pg_temp.mz_carga('pessoas', '_pessoa') AS linhas;
