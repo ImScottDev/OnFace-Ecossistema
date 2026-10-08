@@ -257,11 +257,38 @@ class Logica extends React.Component<any, any> {
     return novo;
   }
 
+  /* Quem assina pela Callface, com o que a tela MOSTRA como padrão quando o vendedor não mexeu:
+     vendedor responsável (e-mail do cadastro dele), representante legal (padrão de Ajustes > Contratos
+     ou o usuário logado, sem e-mail inventado) e a segunda testemunha, que só existe se pedida. */
+  cfEfetivo(d) {
+    const O = this.opp() || {}, pad = this.props.repPadrao || {}, cf = d.sigCf || {};
+    const pega = (k, nomePad, mailPad) => { const c = cf[k] || {}; return { nome: String(c.nome != null ? c.nome : nomePad || "").trim(), email: String(c.email != null ? c.email : mailPad || "").trim() }; };
+    return { vend: pega("vend", O.resp, O.respEmail), rep: pega("rep", pad.nome || this.eu, pad.email), test2: d.testemunhas ? pega("test2", "", "") : null };
+  }
+
+  /* A lista que vira propostas.signatarios: cliente (contratante) primeiro, depois a Callface. Vazio não vira e-mail. */
+  signatariosDe(d) {
+    const O = this.opp() || {}, ct = d.ct || {}, cf = this.cfEfetivo(d);
+    const pX = (nome) => (O.pessoas || []).find(p => p.nome === nome) || {};
+    const cli = (d.sigs || []).map((s, i) => {
+      const base = { nome: (s.nome || "").trim(), email: (s.email || "").trim(), papel: "contratante" };
+      if (i > 0) return base;
+      const cargo = ct.sigCargo != null ? ct.sigCargo : pX(base.nome).papel, cpf = ct.sigCpf != null ? ct.sigCpf : pX(base.nome).cpf;
+      return Object.assign(base, cargo ? { cargo } : {}, cpf ? { cpf } : {});
+    });
+    const lado = [["testemunha_vendedor", cf.vend], ["representante_legal", cf.rep], ["testemunha_2", cf.test2]].filter(x => x[1] && x[1].nome).map(x => ({ nome: x[1].nome, email: x[1].email, papel: x[0] }));
+    return cli.concat(lado);
+  }
+
   paraProposta(d, status, extra) {
     const n = this.num.bind(this);
+    /* Empresa e contato moram na Empresa e na Pessoa (uma fonte só); o editor guarda só as condições desta proposta. */
+    const DONOS = ["razao", "fantasia", "cnpj", "rua", "bairro", "cep", "cidade", "uf", "sigQuem", "sigNome", "sigCargo", "sigEmail", "sigTel", "sigCpf"];
+    const ct = Object.assign({}, d.ct || {}); DONOS.forEach(k => { delete ct[k]; });
     return Object.assign({ codigo: d.codigo, versao: d.versao, status, modo: d.fechamento === "checkout" ? "PREPAID" : "CONTRACT", validade: d.validade,
+      signatarios: d.fechamento === "contrato" ? this.signatariosDe(d) : [],
       itens: d.itens.filter(it => (it.nome || "").trim()).map(it => ({ prod: it.prod, preco: it.preco, nome: it.nome.trim(), desc: it.desc || "", natureza: it.natureza, valor: n(it.valor), qtd: n(it.qtd) || 1, descTipo: it.descTipo || "pct", descVal: it.descVal || "", liq: n(it.valor) * (n(it.qtd) || 1) - this.descItem(it, n(it.valor) * (n(it.qtd) || 1)) })),
-      editor: JSON.parse(JSON.stringify(Object.assign({}, d, { itens: undefined }))) }, extra || {});
+      editor: JSON.parse(JSON.stringify(Object.assign({}, d, { itens: undefined, ct }))) }, extra || {});
   }
 
   renderVals() {
@@ -321,7 +348,8 @@ class Logica extends React.Component<any, any> {
     const precisaAprov = c.pctEf > 15;
     const v2 = !precisaAprov || !!(d.desc.justif || "").trim();
     const mailOk = (m) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(m || "");
-    const v3 = d.fechamento !== "contrato" || (d.sigs.length > 0 && d.sigs.every(s => (s.nome || "").trim() && mailOk(s.email)));
+    const cfE = this.cfEfetivo(d);
+    const v3 = d.fechamento !== "contrato" || (d.sigs.length > 0 && d.sigs.every(s => (s.nome || "").trim() && mailOk(s.email)) && !!cfE.rep.nome && mailOk(cfE.rep.email) && (!cfE.test2 || !cfE.test2.email || mailOk(cfE.test2.email)) && (!cfE.vend.email || mailOk(cfE.vend.email)));
     const v4 = (canaisSel.indexOf("email") < 0 || mailOk(d.para)) && (canaisSel.indexOf("whatsapp") < 0 || (d.wa || "").replace(/\D/g, "").length >= 10);
     const oks = [v0, v1, v2, v3, v4];
     const ROTS = [["Dados", "Contexto e validade"], ["Itens e valores", "Produtos e serviços"], ["Condições", "Teste, setup e recorrência"], ["Contrato e pagamento", "Fechamento"], ["Revisão e envio", "Confira e envie"]];
@@ -603,24 +631,24 @@ class Logica extends React.Component<any, any> {
         remover: () => this.setState(st => ({ d: Object.assign({}, st.d, { sigs: st.d.sigs.filter((_, j) => j !== i) }), sujo: true })) })),
       addSig: () => this.setState(st => ({ d: Object.assign({}, st.d, { sigs: st.d.sigs.concat({ nome: "", email: "" }) }), sujo: true })),
       erroSig: !!tentou[3] && !v3,
+      erroSigTxt: !(d.sigs.length > 0 && d.sigs.every(x => (x.nome || "").trim() && mailOk(x.email))) ? "Informe ao menos um signatário do cliente com e-mail válido" : !mailOk(cfE.rep.email) ? "Informe o representante legal da Callface com e-mail válido" : "Confira os e-mails das testemunhas",
       toggleTest: () => up({ testemunhas: !d.testemunhas }), testTrilho: trilho(d.testemunhas), testBola: bolaT,
       podeTest: !d.testemunhas, addTest: () => up({ testemunhas: true }),
       sigCf: (() => {
         // ANTES: montava "primeironome@callface.ai" e mostrava como e-mail do vendedor/representante; era chute. Sem e-mail real do usuário, fica vazio.
-        const mail = (nm) => "";
-        const cf = d.sigCf || {};
+        const cf = d.sigCf || {}, pad = this.props.repPadrao || {};
         const linhas = [
-          ["vend", "Testemunha · vendedor responsável", O.resp || "", false],
-          ["rep", "Representante legal", this.eu, false]
+          ["vend", "Testemunha · vendedor responsável", O.resp || "", O.respEmail || "", false],
+          ["rep", "Representante legal", pad.nome || this.eu, pad.email || "", false]
         ];
-        if (d.testemunhas) linhas.push(["test2", "Segunda testemunha", "", true]);
-        return linhas.map(([k, papel, nomePad, rem]) => {
+        if (d.testemunhas) linhas.push(["test2", "Segunda testemunha", "", "", true]);
+        return linhas.map(([k, papel, nomePad, mailPad, rem]) => {
           const cur = cf[k] || {};
           const nome = cur.nome != null ? cur.nome : nomePad;
-          const email = cur.email != null ? cur.email : (nomePad ? mail(nomePad) : "");
+          const email = cur.email != null ? cur.email : mailPad;
           const set = (patch) => up({ sigCf: Object.assign({}, cf, { [k]: Object.assign({}, cur, patch) }) });
           return { papel, nome, email, setNome: (e) => set({ nome: e.target.value }), setEmail: (e) => set({ email: e.target.value }),
-            temReset: !rem && (cur.nome != null || cur.email != null) && (nome !== nomePad || email !== mail(nomePad)),
+            temReset: !rem && (cur.nome != null || cur.email != null) && (nome !== nomePad || email !== mailPad),
             reset: () => { const c2 = Object.assign({}, cf); delete c2[k]; up({ sigCf: c2 }); },
             removivel: rem, remover: () => { const c2 = Object.assign({}, cf); delete c2[k]; up({ sigCf: c2, testemunhas: false }); } };
         });
@@ -641,7 +669,8 @@ class Logica extends React.Component<any, any> {
     const EV = { razao: empX.razao || "", fantasia: empX.fantasia || O.empresa || "", cnpj: empX.cnpj || "", rua: empX.rua || "", bairro: empX.bairro || "", cep: empX.cep || "", cidade: empX.cidadeCob || cidP[0] || "", uf: empX.uf || (cidP[1] && cidP[1].length === 2 ? cidP[1].toUpperCase() : "") };
     const sig0 = (d.sigs && d.sigs[0]) || {};
     const sigNome = ctD.sigNome != null ? ctD.sigNome : (sig0.nome || d.contato || "");
-    const SD = { sigNome, sigCargo: pessoas.indexOf(sigNome) >= 0 ? papelDe(sigNome) : "", sigEmail: sig0.nome === sigNome ? (sig0.email || "") : "", sigTel: sigNome === O.pessoa && LD ? (LD.tel || LD.telefone || "") : "", sigCpf: "",
+    const pSig = (O.pessoas || []).find(p => p.nome === sigNome) || {};
+    const SD = { sigNome, sigCargo: pessoas.indexOf(sigNome) >= 0 ? papelDe(sigNome) : "", sigEmail: sig0.nome === sigNome ? (sig0.email || "") : (pSig.email || ""), sigTel: pSig.telefone || (sigNome === O.pessoa && LD ? (LD.tel || LD.telefone || "") : ""), sigCpf: pSig.cpf || "",
       prazo: n(d.fidelidade) ? String(n(d.fidelidade)) : "", renov: "auto", aviso: "30", multa: "", dataBase: "Aniversário do contrato",
       prazoImpl: { CALLFACE_AI: "7", PABX: "15", WHITE_LABEL: "30" }[d.familia], inicioImpl: "assinatura", sla: "",
       escopo: { CALLFACE_AI: "Configuração da conta, agentes de IA, números e integrações padrão.", PABX: "Provisionamento de ramais, URA, filas, portabilidade de números e treinamento da equipe.", WHITE_LABEL: "Ambiente com marca própria, domínio, identidade visual, painel do parceiro e treinamento inicial." }[d.familia],
@@ -652,10 +681,13 @@ class Logica extends React.Component<any, any> {
       this.setState(s => { const patch = { ct: Object.assign({}, s.d.ct || {}, { [k]: v }) };
         if (k === "sigNome" || k === "sigEmail") { const x = (s.d.sigs || []).slice(); x[0] = Object.assign({}, x[0] || {}, k === "sigNome" ? { nome: v } : { email: v }); patch.sigs = x; }
         return { d: Object.assign({}, s.d, patch), sujo: true }; });
-      const PK = { sigCargo: "cargo", sigEmail: "email", sigTel: "whats" };
-      if (PK[k] && Es) { const nomeS = cv("sigNome"); const slugF = (D.slug || (s => String(s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "")));
-        if (nomeS) { const t = Object.assign({}, Es.ler("pessoas", {})); const pk = slugF(nomeS) + "@" + slugF(O.empresa); t[pk] = Object.assign({}, t[pk] || {}, { [PK[k]]: v }); Es.gravar({ pessoas: t }); } }
-      if (emp && Es) { const all = Es.ler("empresas", {}); Es.gravar({ empresas: Object.assign({}, all, { [O.empresa]: Object.assign({}, all[O.empresa] || {}, { [k === "cidade" ? "cidadeCob" : k]: v }) }) }); }
+      /* Uma fonte só: o que se digita aqui vai para a EMPRESA e para o CONTATO (portas de domínio, via
+         props.salvarContrato), nunca fica só na proposta. Quem recebe agrupa e grava. */
+      const salvar = this.props.salvarContrato;
+      if (!salvar) return;
+      const PK = { sigCargo: "cargo", sigEmail: "email", sigTel: "telefone", sigCpf: "cpf" };
+      if (PK[k]) { const nomeS = k === "sigNome" ? v : cv("sigNome"); if (nomeS) salvar({ pessoa: { nome: nomeS, pessoaId: ((O.pessoas || []).find(p => p.nome === nomeS) || {}).id || null, [PK[k]]: v } }); }
+      if (["razao", "cnpj", "rua", "bairro", "cep", "cidade", "uf"].indexOf(k) >= 0) salvar({ empresa: { [k]: v } });
     };
     const lic = d.itens.find(it => it.prod === "wl-lic");
     const descT = c.dm + c.du + c.da + (c.dr || 0);
@@ -722,7 +754,7 @@ class Logica extends React.Component<any, any> {
       ]],
       ["ass", "Assinatura", "M20 6 9 17l-5-5", "Quem assina e quando", [
         ["_pc", "Pelo cliente", "Contato", "fixo", false, null, "${Empresas.Razão Social}", false, { valor: sigNome || "—" }],
-        ["_cf", "Pela Callface", "Proposta", "fixo", false, null, "contratada.representante", false, { valor: d.repCf || this.eu }],
+        ["_cf", "Pela Callface", "Proposta", "fixo", false, null, "contratada.representante", false, { valor: cfE.rep.nome || this.eu }],
         ["_test", "Testemunhas", "Proposta", "fixo", false, null, "contrato.testemunhas", false, { valor: (O.resp || "Vendedor") + (d.testemunhas ? " + segunda testemunha" : "") }],
         ["_data", "Data do contrato", "Contrato", "fixo", false, null, "${Contratos.Data de Envio do Contrato}", false, { valor: "Data em que o cliente aceitar" }],
         ["_cod", "Número do contrato", "Contrato", "fixo", false, null, "${Contratos.Código do Contrato}", true, { valor: "Gerado no aceite" }]
@@ -924,7 +956,7 @@ class Logica extends React.Component<any, any> {
       })(),
       temObs: !!(d.obs || "").trim(), obs: d.obs,
       fecho: [["Modelo", MODELOS.find(x => x[0] === d.fechamento)[1]], ["Pagamento", "Stripe · " + FORMAS.find(x => x[0] === d.forma)[1] + (c.teste ? " · " + c.tDias + " dias de teste" : "") + (d.auto ? " · recorrência automática" : "")], ["Contrato", d.fechamento === "contrato" ? (ehAdt ? "Aditivo ao " + (adtO ? adtO.id : "contrato") + " · " + (adtVig === "agora" ? "vale agora, com pró-rata" : "vale no próximo ciclo") : "Contrato " + FAM[d.familia] + " · " + d.sigs.length + " signatário(s)") : "Sem contrato"]].map(([l, v]) => ({ l, v })),
-      assCliente: d.contato || "Contato", assResp: (d.repCf || this.eu) + " · Callface",
+      assCliente: d.contato || "Contato", assResp: (cfE.rep.nome || this.eu) + " · Callface",
       codigoTxt: "Proposta " + d.codigo + "-v" + d.versao, validaTxt: "Válida até " + fmtD(valida),
       para: "Proposta para " + O.empresa,
       porTxt: "Preparada por " + (O.resp || "Callface") + " para " + (d.contato || "você") + (((O.pessoa === d.contato ? O.cargo : ((O.pessoas || []).find(p => p.nome === d.contato) || {}).papel) || "") ? ", " + (O.pessoa === d.contato ? O.cargo : ((O.pessoas || []).find(p => p.nome === d.contato) || {}).papel) : "") + ". Aqui estão o escopo, os valores e as condições, tudo em um lugar só.",

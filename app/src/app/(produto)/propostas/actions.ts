@@ -406,6 +406,9 @@ export async function acaoCriar(entrada: {
   observacoes?: string | null;
   prazoContratoMeses?: number | null;
   parcelasSetup?: number | null;
+  /** Quem assina, dos dois lados, e o estado do editor: ver `salvarEditorDaProposta`. */
+  signatarios?: unknown;
+  editor?: unknown;
 }): Promise<Resultado<{ propostaId: string }>> {
   const ctx = await contexto();
   if (!ctx) return { ok: false, erro: "Sessão expirada." };
@@ -474,6 +477,11 @@ export async function acaoCriar(entrada: {
     await db.execute(sql`
       UPDATE propostas SET service_family = ${negocio.familia} WHERE id = ${proposta.id}::uuid
     `);
+    if (entrada.signatarios !== undefined || entrada.editor !== undefined) {
+      await propostas.salvarEditorDaProposta({
+        organizacaoId: ctx.organizacaoId, propostaId: proposta.id, signatarios: entrada.signatarios, editor: entrada.editor,
+      });
+    }
 
     await registrarEvento({
       organizacaoId: ctx.organizacaoId, tipo: "ProposalCreated", ator: ctx.ator,
@@ -503,6 +511,8 @@ export async function acaoAtualizarRascunho(entrada: {
   observacoes?: string | null;
   prazoContratoMeses?: number | null;
   parcelasSetup?: number | null;
+  signatarios?: unknown;
+  editor?: unknown;
 }): Promise<Resultado<{ propostaId: string }>> {
   const ctx = await contexto();
   if (!ctx) return { ok: false, erro: "Sessão expirada." };
@@ -541,6 +551,12 @@ export async function acaoAtualizarRascunho(entrada: {
       prazoContratoMeses: entrada.prazoContratoMeses ?? null,
       parcelas: entrada.parcelasSetup ?? null,
     });
+
+    if (entrada.signatarios !== undefined || entrada.editor !== undefined) {
+      await propostas.salvarEditorDaProposta({
+        organizacaoId: ctx.organizacaoId, propostaId: entrada.propostaId, signatarios: entrada.signatarios, editor: entrada.editor,
+      });
+    }
 
     await registrarEvento({
       organizacaoId: ctx.organizacaoId, tipo: "ProposalEdited", ator: ctx.ator,
@@ -643,5 +659,26 @@ export async function acaoSalvarJuridicos(
     });
     revalidatePath(ROTA);
     return propostas.conferirDadosJuridicos(ctx.organizacaoId, empresaId);
+  });
+}
+
+
+/**
+ * Grava no modal "Dados do contrato" o que ele promete: os dados da EMPRESA e
+ * do CONTATO que assina, para qualquer outra proposta da mesma empresa já vir
+ * preenchida. Só chega aqui o que o usuário mudou. O endereço é um campo só na
+ * tela ("Rua, número e complemento") e se separa nas colunas da empresa.
+ */
+export async function acaoSalvarDadosDoContrato(entrada: {
+  empresaId: string;
+  empresa?: { razao?: string; cnpj?: string; rua?: string; bairro?: string; cep?: string; cidade?: string; uf?: string };
+  pessoa?: { pessoaId?: string | null; nome: string; cargo?: string; email?: string; telefone?: string; cpf?: string };
+}): Promise<Resultado<{ pessoaSalva: boolean; pessoaId: string | null }>> {
+  const ctx = await contexto();
+  if (!ctx) return { ok: false, erro: "Sessão expirada." };
+  return executar("salvar dados do contrato", async () => {
+    const r = await propostas.salvarDadosDoContrato({ organizacaoId: ctx.organizacaoId, ator: ctx.ator, ...entrada });
+    revalidatePath(ROTA);
+    return r;
   });
 }

@@ -5,7 +5,10 @@ import { sql } from "drizzle-orm";
 /* O Builder é o desenho do handoff, convertido por máquina
    (ver docs/design/COMO-LIGAR-UMA-TELA.md). */
 import { PropostaProto } from "@/components/onface/proto/PropostaProto";
-import { acaoAtualizarRascunho, acaoCatalogo, acaoCriar, acaoCriarRevisao, acaoEnviar } from "../actions";
+import { acaoAtualizarRascunho, acaoCatalogo, acaoCriar, acaoCriarRevisao, acaoEnviar, acaoSalvarDadosDoContrato } from "../actions";
+import { politicaContratual } from "@/lib/crm/contrato-politica";
+import { lerDadosDoContrato, lerPropostasDoNegocio } from "@/lib/vendas/propostas";
+import { editorDeSignatarios } from "@/lib/crm/proposta-signatarios";
 import { PropostasPage } from "../page";
 import type { Familia } from "@/lib/vendas/dominio";
 
@@ -44,12 +47,12 @@ export default async function NovaPropostaPage({ searchParams }: {
     id: string; titulo: string; etapa: string | null; familia: string | null;
     empresa_id: string | null; empresa: string | null; responsavel: string | null;
     lead_id: string | null; lead_nome: string | null; lead_cargo: string | null;
-    source_process: string | null;
+    source_process: string | null; responsavel_email: string | null;
   }>(sql`
     SELECT n.id::text, n.titulo, n.etapa,
            COALESCE(n.service_family, o.service_family) AS familia,
            n.empresa_id::text, COALESCE(e.nome, l.empresa) AS empresa,
-           u.nome AS responsavel, n.lead_id::text, l.nome AS lead_nome, l.cargo AS lead_cargo,
+           u.nome AS responsavel, u.email AS responsavel_email, n.lead_id::text, l.nome AS lead_nome, l.cargo AS lead_cargo,
            COALESCE(n.source_process, o.source_process) AS source_process
       FROM negocios n
       LEFT JOIN empresas e ON e.id = n.empresa_id
@@ -62,37 +65,15 @@ export default async function NovaPropostaPage({ searchParams }: {
   if (!negocio) redirect("/propostas");
 
   // O comitê da empresa: é dele que sai quem recebe a proposta.
-  const contatos = negocio.empresa_id ? await db.execute<{
-    id: string; nome: string; cargo: string | null; email: string | null; telefone: string | null;
-  }>(sql`
-    SELECT id::text, COALESCE(nome, 'Sem nome') AS nome, cargo, email, telefone
-      FROM pessoas
-     WHERE empresa_id = ${negocio.empresa_id}::uuid
-       AND organizacao_id = ${ctx.organizacaoId}::uuid
-     ORDER BY nome LIMIT 50
-  `) : [];
+  const { empresaDados, contatos } = await lerDadosDoContrato(ctx.organizacaoId, negocio.empresa_id);
+
+  const pol = await politicaContratual(ctx.organizacaoId);
+  const repPadrao = pol.representanteNome && pol.representanteEmail ? { nome: pol.representanteNome, email: pol.representanteEmail } : null;
 
   /* As propostas da oportunidade COM os itens: o builder abre o rascunho com as
      linhas dele em vez de abrir vazio. Linha de proposta legada não tem preço no
      catálogo; `preco` vai como "item:<id>" e a ação mantém a linha. */
-  const propostas = await db.execute<{
-    id: string; numero: number; versao: number; status: string; modo: string | null; validade_dias: number | null;
-    observacoes: string | null; prazo: number | null; parcelas: number | null;
-    itens: Array<{ id: string; preco: string | null; prod: string | null; nome: string; descricao: string | null; natureza: string | null; tipo: string;
-      quantidade: string; valor_unitario: string; desconto: string; desconto_tipo: string }> | null;
-  }>(sql`
-    SELECT p.id::text, p.numero, p.versao, p.status, p.modo_fechamento AS modo, p.validade_dias,
-           p.observacoes, p.prazo_contrato_meses AS prazo, p.parcelas,
-           (SELECT json_agg(json_build_object(
-                     'id', i.id, 'preco', i.catalogo_preco_id, 'prod', i.servico_catalogo_id, 'nome', i.nome,
-                     'descricao', i.descricao, 'natureza', i.revenue_nature, 'tipo', i.tipo,
-                     'quantidade', i.quantidade, 'valor_unitario', i.valor_unitario,
-                     'desconto', i.desconto, 'desconto_tipo', i.desconto_tipo) ORDER BY i.ordem, i.created_at)
-              FROM proposta_itens i WHERE i.proposta_id = p.id) AS itens
-      FROM propostas p
-     WHERE p.negocio_id = ${params.oportunidade}::uuid AND p.organizacao_id = ${ctx.organizacaoId}::uuid
-     ORDER BY p.numero, p.versao
-  `);
+  const propostas = await lerPropostasDoNegocio(ctx.organizacaoId, params.oportunidade);
 
   /* As três famílias de uma vez: o Builder deixa trocar a família no passo 0,
      e buscar sob demanda a cada troca daria uma tela que pisca. São 55 preços
@@ -112,16 +93,19 @@ export default async function NovaPropostaPage({ searchParams }: {
         familia: negocio.familia,
         etapa: negocio.etapa ?? "entrada",
         resp: negocio.responsavel,
+        respEmail: negocio.responsavel_email,
+        empresaDados,
         leadId: negocio.lead_id,
         origem: negocio.source_process,
         pessoas: contatos.map((c) => ({
           id: c.id, nome: c.nome, papel: c.cargo ?? "Contato",
-          email: c.email, telefone: c.telefone,
+          email: c.email, telefone: c.telefone, cpf: c.cpf,
         })),
         propostas: propostas.map((p) => ({
           id: p.id, codigo: String(p.numero), versao: p.versao, status: p.status,
           modo: p.modo, validade: p.validade_dias ?? 30,
-          editor: { obs: p.observacoes ?? "", prazo: String(p.prazo ?? 0), parcelas: String(p.parcelas ?? 1) },
+          /* O editor gravado + os signatários, que são a fonte de verdade de quem assina. */
+          editor: { parcelas: String(p.parcelas ?? 1), ...(p.editor ?? {}), obs: p.observacoes ?? "", ...editorDeSignatarios(p.signatarios) },
           itens: (p.itens ?? []).map((i) => ({
             prod: i.prod ?? undefined,
             preco: i.preco ?? `item:${i.id}`,
@@ -134,7 +118,8 @@ export default async function NovaPropostaPage({ searchParams }: {
         })),
       }}
       catalogo={catalogo}
-      acoes={{ criar: acaoCriar, enviar: acaoEnviar, atualizar: acaoAtualizarRascunho, revisar: acaoCriarRevisao }}
+      repPadrao={repPadrao}
+      acoes={{ criar: acaoCriar, enviar: acaoEnviar, atualizar: acaoAtualizarRascunho, revisar: acaoCriarRevisao, salvarDadosContrato: acaoSalvarDadosDoContrato }}
     />
   );
 }

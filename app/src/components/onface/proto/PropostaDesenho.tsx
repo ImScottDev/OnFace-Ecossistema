@@ -1741,7 +1741,7 @@ Assinam pelo cliente
 </div>
 {(f3.erroSig) ? (<>
 <span style={{ display: "block", marginTop: "6px", fontSize: "11.5px", fontWeight: "600", color: "#c2330f" }}>
-Informe ao menos um signatário com e-mail válido
+{f3.erroSigTxt}
 </span>
 </>) : null}
 </div>

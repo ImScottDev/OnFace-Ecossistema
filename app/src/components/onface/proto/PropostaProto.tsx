@@ -38,14 +38,24 @@ export interface OportunidadeDaProposta {
   familia: string | null;
   etapa: string;
   resp: string | null;
+  /** E-mail do cadastro do vendedor responsável: é o da testemunha da Callface. Nunca montado a partir do nome. */
+  respEmail?: string | null;
   leadId: string | null;
   origem: string | null;
-  pessoas: Array<{ id: string; nome: string; papel: string; email: string | null; telefone: string | null }>;
+  /** Dados do contrato já gravados na Empresa, no formato do modal "Dados do contrato". */
+  empresaDados?: Record<string, string>;
+  pessoas: Array<{ id: string; nome: string; papel: string; email: string | null; telefone: string | null; cpf?: string | null }>;
   /** As propostas da oportunidade, com as linhas: o builder abre o rascunho com elas. */
   propostas: Array<{
     id: string; codigo: string; versao: number; status: string; modo?: string | null; validade?: number;
     editor?: Record<string, unknown>; itens?: any[];
   }>;
+}
+
+/** O que o modal "Dados do contrato" mudou: vai para a Empresa e para o contato (ver `acaoSalvarDadosDoContrato`). */
+export interface MudancaDoContrato {
+  empresa?: Record<string, string>;
+  pessoa?: { nome: string; pessoaId?: string | null; cargo?: string; email?: string; telefone?: string; cpf?: string };
 }
 
 export interface ItemParaCriar {
@@ -58,12 +68,15 @@ export interface ItemParaCriar {
 }
 
 export interface AcoesProposta {
+  salvarDadosContrato?: (e: { empresaId: string } & MudancaDoContrato) => Promise<Resultado<{ pessoaSalva: boolean; pessoaId: string | null }>>;
   criar: (e: {
     negocioId: string;
     itens: ItemParaCriar[];
     observacoes?: string | null;
     prazoContratoMeses?: number | null;
     parcelasSetup?: number | null;
+    signatarios?: unknown;
+    editor?: unknown;
   }) => Promise<Resultado<{ propostaId: string }>>;
   /** Edita as linhas de um rascunho que já existe. */
   atualizar: (e: {
@@ -72,6 +85,8 @@ export interface AcoesProposta {
     observacoes?: string | null;
     prazoContratoMeses?: number | null;
     parcelasSetup?: number | null;
+    signatarios?: unknown;
+    editor?: unknown;
   }) => Promise<Resultado<{ propostaId: string }>>;
   /** Nova versão de uma proposta já enviada: copia as linhas e devolve o rascunho. */
   revisar: (propostaId: string) => Promise<Resultado<{ propostaId: string; versao: number }>>;
@@ -218,8 +233,10 @@ class PropostaLigada extends PropostaLiga {
 
 /* ── A tela ────────────────────────────────────────────────────────────── */
 
-export function PropostaProto({ oportunidade, catalogo, acoes }: {
+export function PropostaProto({ oportunidade, catalogo, acoes, repPadrao }: {
   oportunidade: OportunidadeDaProposta;
+  /** Representante legal padrão de Ajustes > Contratos: só valor inicial, a proposta ganha dele. */
+  repPadrao?: { nome: string; email: string } | null;
   /** O catálogo real, já carregado por família. */
   catalogo: Record<string, ItemCatalogo[]>;
   acoes: AcoesProposta;
@@ -235,6 +252,32 @@ export function PropostaProto({ oportunidade, catalogo, acoes }: {
   }), [oportunidade.resp]);
 
   /* Peça do protótipo: abre por cima desta tela pelo hospedeiro global. */
+  /* Os dados da empresa que o modal lê (`Es.ler("empresas")[empresa]`), já gravados no banco. */
+  const dados = React.useMemo(() => ({
+    opps: [oportunidade],
+    empresas: { [oportunidade.empresa]: oportunidade.empresaDados ?? {} },
+  }), [oportunidade]);
+
+  /* O modal grava campo a campo; agrupa o que vem em rajada e grava uma vez. `esvaziar` antes de
+     enviar garante que o gate de dados jurídicos veja o que acabou de ser digitado. */
+  const pendente = React.useRef<MudancaDoContrato>({});
+  const timer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const esvaziar = React.useCallback(async () => {
+    if (timer.current) { clearTimeout(timer.current); timer.current = null; }
+    const m = pendente.current; pendente.current = {};
+    if (!oportunidade.empresaId || !acoes.salvarDadosContrato || (!m.empresa && !m.pessoa)) return;
+    const r = await acoes.salvarDadosContrato({ empresaId: oportunidade.empresaId, ...m });
+    if (!r.ok) toast.error(`Não consegui gravar os dados do contrato na empresa: ${r.erro}`);
+  }, [acoes, oportunidade.empresaId]);
+  const salvarContrato = React.useCallback((m: MudancaDoContrato) => {
+    const p = pendente.current;
+    if (m.empresa) p.empresa = { ...p.empresa, ...m.empresa };
+    if (m.pessoa) p.pessoa = p.pessoa && p.pessoa.nome === m.pessoa.nome ? { ...p.pessoa, ...m.pessoa } : m.pessoa;
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => { void esvaziar(); }, 700);
+  }, [esvaziar]);
+  React.useEffect(() => () => { void esvaziar(); }, [esvaziar]);
+
   const { abrir: abrirPeca } = usePecas();
   const abrir = React.useCallback((peca: string, id?: string | null) => {
     if (peca === "empresa" && id) { router.push(`/empresas/${id}`); return; }
@@ -262,10 +305,18 @@ export function PropostaProto({ oportunidade, catalogo, acoes }: {
       return;
     }
 
+    await esvaziar();
+
+    const ed = proposta?.editor ?? {};
+    const contratual = proposta?.modo !== "PREPAID";
     const condicoes = {
-      observacoes: proposta?.editor?.obs ?? null,
-      prazoContratoMeses: Number(proposta?.editor?.prazo) || null,
-      parcelasSetup: Number(proposta?.editor?.parcelas) || null,
+      observacoes: ed.obs ?? null,
+      /* No contrato, o prazo é o do modal "Dados do contrato" (ou a fidelidade da proposta). */
+      prazoContratoMeses: (contratual ? Number(ed.ct?.prazo) || Number(ed.fidelidade) : 0) || null,
+      parcelasSetup: Number(ed.parcelas) || null,
+      /* Quem assina (dos dois lados) e o editor inteiro, com os dados congelados no envio. */
+      signatarios: contratual ? (proposta?.signatarios ?? []) : [],
+      editor: proposta?.contrato ? { ...ed, contrato: proposta.contrato } : ed,
     };
 
     let criada: Resultado<{ propostaId: string }>;
@@ -318,13 +369,15 @@ export function PropostaProto({ oportunidade, catalogo, acoes }: {
       action: { label: "Abrir proposta", onClick: () => router.push(`/propostas/${id}`) },
     } : undefined);
     if (id) router.push(`/propostas/${id}`);
-  }, [acoes, oportunidade.id, router]);
+  }, [acoes, oportunidade.id, router, esvaziar]);
 
   return (
     <div data-workspace="desenho">
       <PropostaLigada
         oppId={oportunidade.id}
-        dados={{ opps: [oportunidade] }}
+        dados={dados}
+        repPadrao={repPadrao ?? null}
+        salvarContrato={salvarContrato}
         catalogo={catalogoDoProto}
         catalogoReal={catalogoReal}
         abrir={abrir}
